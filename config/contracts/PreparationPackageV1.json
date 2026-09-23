@@ -1,0 +1,95 @@
+{
+  "title": "PreparationPackageV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "snapshot_id",
+    "snapshot_hash",
+    "verification_package_hash",
+    "identifier_refs",
+    "route_id",
+    "contract_id",
+    "fee_schedule_id",
+    "dsp_packages",
+    "submit_not_before",
+    "submit_deadline",
+    "consumer_release_at",
+    "preflight_ref",
+    "queued_job_refs"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "snapshot_id": {
+      "type": "string"
+    },
+    "snapshot_hash": {
+      "type": "string"
+    },
+    "verification_package_hash": {
+      "type": "string"
+    },
+    "identifier_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "route_id": {
+      "type": "string"
+    },
+    "contract_id": {
+      "type": "string"
+    },
+    "fee_schedule_id": {
+      "type": "string"
+    },
+    "dsp_packages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "dsp_id",
+          "package_digest",
+          "asset_manifest_ref"
+        ],
+        "properties": {
+          "dsp_id": {
+            "type": "string"
+          },
+          "package_digest": {
+            "type": "string"
+          },
+          "asset_manifest_ref": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "submit_not_before": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "submit_deadline": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "consumer_release_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "preflight_ref": {
+      "type": "string"
+    },
+    "queued_job_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

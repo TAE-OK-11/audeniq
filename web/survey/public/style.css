@@ -1,0 +1,195 @@
+/* AUDENIQ Survey — visual primitives taken from the existing AUDENIQ public homepage.
+   Keep the homepage palette / shape language here, not a second survey theme.
+   Hero: #F2F6FF / 40px; service card: #F8FAFD / 32px;
+   primary button: #3B63F3 / 16px / 56px tall; no card or choice outlines. */
+:root {
+  --blue:#3B63F3; --blue-hover:#2C56E0; --violet:#7A5AF8;
+  --soft-violet:#EEE8FF; --background:#F8FAFD; --surface:#fff;
+  --surface-alt:#F2F6FF; --ink:#171B29; --muted:#667085;
+  --border:#E6ECF5; --navy:#111C3D; --radius:32px;
+  --container:1120px;
+  --font-body:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  font-family:var(--font-body); color:var(--ink);
+}
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:100px}
+body{margin:0;min-width:300px;background:var(--surface);color:var(--ink);font-family:var(--font-body);line-height:1.7;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}button,input,textarea{font:inherit}
+button,a{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+button{cursor:pointer}button:disabled{cursor:not-allowed}
+:focus-visible{outline:3px solid var(--blue);outline-offset:4px}
+[hidden],.step[hidden],.other-field[hidden]{display:none!important}
+.skip{position:fixed;left:20px;top:-90px;z-index:50;background:white;padding:12px 20px;box-shadow:0 8px 24px #171b2920;color:var(--blue)}
+.skip:focus{top:12px}
+/* Header = homepage's white, unbordered navigation and wordmark */
+.topbar{position:sticky;top:0;z-index:20;background:var(--surface)}
+.topbar-inner{width:calc(100% - 64px);max-width:1240px;min-height:80px;margin:auto;display:flex;align-items:center;gap:20px}
+.brand{display:block;width:158px;flex-shrink:0;line-height:0}.brand img{width:100%;height:auto}
+.header-label{font-size:13px;font-weight:650;letter-spacing:.03em;color:var(--muted)}
+.back-home{margin-left:auto;display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:12px;background:var(--surface-alt);color:var(--blue);font-size:14px;font-weight:650;transition:background .2s,transform .2s}
+.back-home:hover{background:#E8EDF9;transform:translateY(-2px)}.back-home span{font-size:17px}
+/* Homepage hero: large, flat pale-blue panel with an intentional rounded silhouette */
+.layout{max-width:1360px;width:calc(100% - 48px);margin:0 auto;padding:18px 0 64px}
+.intro{position:relative;overflow:hidden;background:var(--surface-alt);border-radius:40px;max-width:none;margin:0 0 70px;padding:76px clamp(30px,6vw,90px) 70px;text-align:left}
+.intro>*{position:relative;z-index:1;max-width:785px}
+.eyebrow,.step-kicker,.mini-label{display:block;font-size:15px;font-weight:700;color:var(--blue);letter-spacing:.03em}
+.eyebrow{margin-bottom:18px}.pulse{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--blue);vertical-align:middle;margin-right:8px}
+.intro h1{margin:0 0 16px;font-size:clamp(40px,4.8vw,62px);line-height:1.24;letter-spacing:-.055em;font-weight:760}
+.accent{color:var(--blue)}
+.intro p{font-size:16px;color:var(--muted);line-height:1.78;margin:0 0 14px}
+.intro .intro-lead{font-size:clamp(17px,2.25vw,22px);line-height:1.46;letter-spacing:-.03em;font-weight:760;color:var(--navy);margin-bottom:22px}
+.intro .intro-callout{font-size:clamp(19px,2.55vw,25px);line-height:1.46;color:#263E77;font-weight:640;letter-spacing:-.035em;margin:0 0 22px}
+.intro .intro-callout strong{color:var(--blue);font-weight:800}
+.intro-summary{max-width:760px}
+.intro-summary p{font-size:15px;line-height:1.73;color:#4F5F7B}
+.intro-purpose{display:flex;align-items:flex-start;gap:13px;max-width:760px;margin-top:22px;padding:17px 20px;background:#fff;border:0;border-radius:18px}
+.intro-purpose .purpose-mark{width:30px;height:30px;flex-shrink:0;display:grid;place-items:center;border-radius:10px;background:#E9F0FF;color:var(--blue);font-size:18px;font-weight:800}
+.intro-purpose p{font-size:13px;line-height:1.65;color:#64718A;margin:0}
+.intro-purpose strong{display:inline-block;color:var(--ink);font-size:14px;font-weight:760;margin-bottom:3px}
+.intro p strong{color:var(--ink);font-weight:650}
+.intro-foot{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin-top:24px;color:#4663A0;font-size:13px;font-weight:720}
+.intro-foot span{display:inline-flex;align-items:center;background:#E3ECFF;border-radius:10px;padding:6px 10px}
+.intro-dot{color:#ABB6CF}
+/* The angled navy detail deliberately echoes the homepage's tilted release concept. */
+.intro::after{content:'AUDENIQ  /  YOUR VOICE MATTERS';position:absolute;z-index:0;right:-67px;bottom:35px;transform:rotate(-8deg);width:370px;text-align:center;padding:18px 12px;background:var(--navy);color:#B7C6EA;font-size:11px;letter-spacing:.11em;font-weight:700;border-radius:13px;box-shadow:0 24px 46px -25px #22396640;pointer-events:none}
+/* The survey is a sequence of homepage-style service cards, not an outlined form-in-a-card. */
+.form-shell{max-width:900px;min-height:0;margin:0 auto;padding:0;background:transparent;border:0;border-radius:0;box-shadow:none;scroll-margin-top:102px}
+.progress-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 4px 14px}
+.mini-label{font-size:13px}.progress-number{color:#8C9AB4;font-size:13px;font-weight:650;white-space:nowrap}.progress-number strong{font-size:18px;color:var(--blue)}
+.progress-track{height:6px;background:#E8EDF9;border-radius:999px;overflow:hidden;margin-bottom:35px}
+.progress-fill{width:16.667%;height:100%;border-radius:999px;background:var(--blue);transition:width .35s cubic-bezier(.22,1,.36,1)}
+.step{min-width:0;margin:0;padding:0;border:0}
+.step-kicker{margin:0 0 8px}.step h2,.complete h2{font-size:clamp(30px,4.1vw,48px);font-weight:740;line-height:1.34;letter-spacing:-.045em;margin:0 0 16px}
+.step-desc{margin:0 0 36px;color:var(--muted);font-size:17px}.step-desc.minor{margin-bottom:18px}
+.question{margin:0 0 20px;padding:34px 36px 36px;background:var(--background);border:0;border-radius:var(--radius)}
+.question:first-of-type{margin-top:0}
+.question-header{display:flex;align-items:center;gap:10px;margin-bottom:15px}
+.question-id{font-size:13px;font-weight:700;color:var(--blue);letter-spacing:.03em}
+.required-tag{background:#EAF0FF;color:#3456C4;font-size:12px;font-weight:650;border-radius:8px;padding:5px 11px;line-height:1.4}
+.question-title,.step .question h3{margin:0 0 9px;font-size:clamp(19px,2.2vw,23px);font-weight:730;line-height:1.5;letter-spacing:-.035em;color:var(--ink)}
+.question-instructions{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:0 0 21px}
+.question-hint{display:inline-flex;align-items:center;gap:9px;font-size:14px;font-weight:730;line-height:1.45;color:#3153A3;background:#E9F0FF;padding:9px 12px;border-radius:10px;margin:0;letter-spacing:-.016em}
+.question-hint::before{content:"✓";display:grid;place-items:center;flex-shrink:0;width:18px;height:18px;border-radius:50%;background:var(--blue);color:#fff;font-size:11px;font-weight:850}
+.selection-count{font-size:13px;font-weight:680;color:#62718E;white-space:nowrap;font-variant-numeric:tabular-nums}
+.selection-count.has-selection{color:var(--blue)}
+.choices{display:grid;grid-template-columns:1fr;gap:10px}
+.choices.two-cols,.two-cols{grid-template-columns:repeat(2,minmax(0,1fr))}
+.choice{position:relative;display:flex;align-items:center;gap:12px;min-width:0;min-height:61px;padding:15px 17px;background:var(--surface);border:0;border-radius:12px;font-size:15px;font-weight:600;line-height:1.48;cursor:pointer;transition:background .2s,color .2s,transform .2s;overflow-wrap:anywhere}
+@media(hover:hover) and (pointer:fine){.choice:not(.is-selected):hover{background:#E8EDF9;transform:translateY(-1px)}}
+.choice:has(input:checked),.choice.is-selected{background:#E2EAFF;color:#274BB2}
+.choice:has(input:focus-visible){outline:3px solid var(--blue);outline-offset:2px}
+.choice input{position:absolute;width:1px;height:1px;opacity:0}
+.choice-label{flex:1;min-width:0}
+.choice-tick{display:grid;place-items:center;flex-shrink:0;width:22px;height:22px;margin-left:auto;border-radius:50%;background:#E8EDF9;color:transparent;font-size:12px;font-weight:750;transition:background .2s,color .2s}
+.choice:has(input:checked) .choice-tick,.choice.is-selected .choice-tick{background:var(--blue);color:#fff}
+.choice-icon{width:30px;height:30px;display:grid;place-items:center;border-radius:10px;flex-shrink:0;background:var(--surface-alt);color:var(--blue);font-size:17px}
+.wide-choice{grid-column:1/-1}.compact .choice{min-height:55px;padding:12px 15px}
+.input-label{display:block;margin:28px 0 10px;font-size:15px;font-weight:680;color:var(--ink);line-height:1.55}
+.input-label span{font-size:12px;color:var(--muted);font-weight:400;margin-left:5px}
+.text-field,.other-field input,#contact,textarea{display:block;width:100%;padding:15px 17px;background:#fff;border:0;border-radius:12px;color:var(--ink);font-size:15px;line-height:1.6;outline:none;resize:vertical;transition:background .2s,box-shadow .2s}
+.text-field:focus,.other-field input:focus,#contact:focus,textarea:focus{background:#fff;box-shadow:0 0 0 3px #3B63F350}
+.text-field::placeholder,.other-field input::placeholder{color:#97A1B2}
+.other-field{display:block;margin-top:17px;font-size:14px;font-weight:650;color:#4B5F88}
+.other-field input{margin-top:9px}.char-count{font-size:12px;text-align:right;color:#8C9AB4;margin:8px 0 0}
+.agree{display:flex;align-items:flex-start;gap:12px;font-size:14px;line-height:1.7;color:#4B5F88;cursor:pointer}
+.agree input{flex-shrink:0;margin:4px 0 0;width:18px;height:18px;accent-color:var(--blue)}
+.agree em{color:var(--muted);font-style:normal}.beta-agree{margin-top:15px}.required-agree{margin-top:23px;font-weight:650}.required-agree strong{color:var(--blue)}
+.privacy{background:var(--surface);border:0;border-radius:20px;margin-top:26px;padding:24px 25px}
+.privacy-title{font-size:15px;font-weight:700;color:var(--ink);margin-bottom:10px}.privacy p{margin:0;font-size:13px;color:var(--muted);line-height:1.85}
+.privacy a{color:var(--blue);text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}
+.turnstile-area{margin-top:24px}.security-status,.final-foot{font-size:13px;color:var(--muted);margin:10px 0 0}
+.form-error{background:#FFF0F0;color:#A83A43;border:0;border-radius:12px;margin:25px 0 0;padding:14px 18px;font-size:14px}
+.form-controls{display:flex;justify-content:space-between;align-items:center;gap:15px;margin-top:28px}
+.previous{border:0;background:var(--surface-alt);border-radius:12px;padding:14px 18px;color:#4B5F88;font-size:15px;font-weight:650;min-height:56px;transition:background .2s,transform .2s}
+.previous:hover{background:#E8EDF9;transform:translateY(-2px)}
+/* Exact homepage primary action proportions and hover motion. */
+.next,.complete-home{display:inline-flex;gap:24px;align-items:center;justify-content:center;min-height:56px;padding:14px 24px;border-radius:16px;border:0;background:var(--blue);color:#fff;font-size:17px;font-weight:650;transition:background .2s,transform .2s}
+.next{margin-left:auto;min-width:160px}.next span{font-size:23px;line-height:1}
+.next:not(:disabled):hover,.complete-home:hover{background:var(--blue-hover);transform:translateY(-2px)}
+.next:disabled{background:#516FD7;opacity:.65}.next:not(:disabled):active,.previous:active{transform:scale(.98)}
+.below-note{font-size:13px;color:var(--muted);text-align:center;margin:26px 0 0}
+.complete{text-align:center;background:var(--surface-alt);padding:65px 35px 58px;border-radius:40px}
+.complete-icon{display:grid;place-items:center;width:68px;height:68px;margin:0 auto 24px;border-radius:22px;background:#DDE7FF;color:var(--blue);font-size:30px;font-weight:800}
+.complete .step-kicker{margin-bottom:13px}.complete p{color:var(--muted);font-size:16px;margin:20px auto 0;max-width:520px}
+.receipt{margin:28px auto 0;max-width:520px;padding:17px;background:#fff;border-radius:16px;color:#607AB7;font-size:13px;overflow-wrap:anywhere}
+.receipt code{display:block;margin-top:5px;font-size:12px;color:var(--ink)}
+.copy-btn{margin-top:13px;border:0;border-radius:12px;background:#DDE7FF;color:#274BB2;padding:11px 16px;font-size:13px;font-weight:650}
+.complete-home{margin:27px auto 0;font-size:15px}
+footer{max-width:none;background:var(--background);padding:38px max(24px,calc((100vw - 1120px)/2)) 45px;display:flex;justify-content:space-between;align-items:center;gap:24px;font-size:13px;color:var(--muted)}
+footer>div:last-child{display:flex;gap:22px}footer a:hover{color:var(--blue)}
+.visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@keyframes rise{from{opacity:0;transform:translateY(15px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:900px){.intro::after{right:-125px;bottom:17px;opacity:.45}.intro>*{max-width:650px}}
+@media(max-width:760px){
+ :root{--radius:28px}
+ .topbar-inner{width:calc(100% - 40px);min-height:68px;gap:9px}.brand{width:138px;margin-left:-8px}.header-label{font-size:11px}.back-home{font-size:12px;padding:9px 11px}
+ .layout{width:calc(100% - 24px);padding:5px 0 50px}
+ .intro{border-radius:30px;padding:45px 24px 42px;margin-bottom:49px}
+ .intro::after{display:none}
+ .eyebrow,.step-kicker,.mini-label{font-size:13px}
+ .intro h1{font-size:clamp(33px,8.9vw,52px);line-height:1.28;margin:0 0 15px}
+ .intro p{font-size:14px;line-height:1.7;margin-bottom:11px}
+ .intro .intro-lead{font-size:16px;margin-bottom:13px}
+ .intro .intro-callout{font-size:18px;line-height:1.5;margin-bottom:17px}
+ .intro-summary p{font-size:13px}
+ .intro-purpose{padding:14px 15px;border-radius:16px;margin-top:16px;gap:10px}
+ .intro-purpose p{font-size:12px;line-height:1.64;margin:0}
+ .intro-purpose strong{font-size:13px}
+ .intro-foot{font-size:11px;gap:7px;margin-top:17px}
+ .intro-foot span{padding:6px 9px}
+ .form-shell{width:calc(100% - 16px);scroll-margin-top:80px}
+ .progress-track{margin-bottom:30px}
+ .step h2,.complete h2{font-size:clamp(27px,6.8vw,38px)}.step-desc{font-size:15px;margin-bottom:26px}
+ .question{border-radius:28px;padding:26px 22px 28px;margin-bottom:15px}
+ .question-title,.step .question h3{font-size:19px;line-height:1.53}
+ .question-instructions{margin-bottom:17px;gap:9px}
+ .question-hint{font-size:12px;padding:9px 11px;gap:7px}
+ .question-hint::before{width:17px;height:17px}
+ .selection-count{font-size:12px}
+ .choices.two-cols,.two-cols{grid-template-columns:1fr}
+ .choice{min-height:54px;padding:13px 14px;font-size:14px;gap:9px}
+ .compact .choice{padding:12px 13px}.choice-tick{width:20px;height:20px}
+ .form-controls{margin-top:25px}.next,.previous{min-height:54px}.next{font-size:16px;padding:13px 22px;border-radius:14px}
+ .complete{padding:47px 22px;border-radius:30px}.privacy{padding:20px 18px}
+ footer{flex-direction:column;align-items:flex-start;padding:30px 24px 36px;gap:12px;font-size:12px}
+}
+@media(max-width:365px){.header-label{display:none}.intro h1{font-size:31px}.choice{font-size:13px}.question{padding:23px 19px}.next{min-width:0}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation:none!important;transition:none!important}}
+
+/* On iOS Safari a tapped label may keep :hover after the checkbox is unchecked.
+   The selected style is tied to input.checked / synchronized class, never hover. */
+@media(hover:none),(pointer:coarse){
+  .choice:hover:not(.is-selected){background:var(--surface);transform:none}
+  .choice:active{transform:scale(.995)}
+}
+@media(max-width:760px){
+  .intro{padding:38px 22px 36px;margin-bottom:38px}
+  .question{padding:25px 20px 27px}
+}
+
+/* AUDENIQ homepage-style motion: translateY(16px), opacity, 760ms easing.
+   JS enables waiting state only after observer is registered. Without JS
+   (or with reduced motion), every question and input remains visible. */
+.motion-waiting{opacity:0;transform:translateY(16px)}
+/* The selection state is independent of animation: never animate checked
+   styles / hover as a substitute for real input state. */
+.choice:has(input:checked) .choice-tick,.choice.is-selected .choice-tick{animation:choice-mark .24s cubic-bezier(.22,.61,.36,1)}
+@keyframes choice-mark{from{transform:scale(.82)}to{transform:scale(1)}}
+@media(hover:hover) and (pointer:fine){
+ .back-home:active,.next:not(:disabled):active,.complete-home:active{transform:scale(.98)}
+}
+@media(prefers-reduced-motion:reduce){.motion-waiting{opacity:1!important;transform:none!important}}
+@media print{.motion-waiting{opacity:1!important;transform:none!important}}
+
+/* Keep header logo size and x-position equal to audeniq.com across breakpoints.
+   Homepage nav-shell: 1240px / 100%-64px, 80px tall, 158px logo on desktop;
+   <=900px logo 138px, <=760px nav-shell 100%-40px and logo margin-left -8px.
+   Hide the redundant survey label on mobile so it cannot squeeze the logo. */
+@media (min-width:761px) and (max-width:900px){
+  .topbar-inner{min-height:68px}
+  .topbar .brand{width:138px}
+}
+@media (max-width:760px){
+  .topbar .brand{width:138px;margin-left:-8px}
+  .topbar .header-label{display:none}
+}
