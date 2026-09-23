@@ -1,0 +1,8 @@
+/target/
+.env
+.env.*
+!.env.example
+node_modules/
+.wrangler/
+*.log
+/test-results/
