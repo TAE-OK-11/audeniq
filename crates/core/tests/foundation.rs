@@ -437,6 +437,19 @@ async fn immutable_revisions_state_and_compare_and_swap(pool: PgPool) {
             .is_err()
     );
     assert!(sqlx::query("UPDATE catalog.releases SET status='READY_FOR_DELIVERY',row_version=row_version+1 WHERE id=$1").bind(release).execute(&pool).await.is_err());
+    let verification = Uuid::new_v4();
+    let snapshot = Uuid::new_v4();
+    sqlx::query("INSERT INTO distribution.verification_packages(id,org_id,revision_id,body,package_hash,rights_epoch) VALUES($1,$2,$3,'{}',$4,0)").bind(verification).bind(a.org).bind(rev).bind("b".repeat(64)).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO distribution.release_snapshots(id,org_id,verification_id,body,snapshot_hash) VALUES($1,$2,$3,'{}',$4)").bind(snapshot).bind(a.org).bind(verification).bind("c".repeat(64)).execute(&pool).await.unwrap();
+    for statement in [
+        "UPDATE distribution.verification_packages SET body='{}'",
+        "DELETE FROM distribution.verification_packages",
+        "UPDATE distribution.release_snapshots SET body='{}'",
+        "DELETE FROM distribution.release_snapshots",
+    ] {
+        let error = sqlx::query(statement).execute(&pool).await.unwrap_err();
+        assert_eq!(error.as_database_error().unwrap().code().unwrap(), "23514");
+    }
     let path = format!("/api/orgs/{}/releases/{release}", a.org);
     let body = json!({"name":"Changed","release_type":"SINGLE","row_version":0});
     let (x, y) = tokio::join!(
