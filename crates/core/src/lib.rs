@@ -5,6 +5,7 @@ pub mod config;
 pub mod contracts;
 pub mod database;
 pub mod domain;
+pub mod drafts;
 pub mod error;
 pub mod operations;
 pub mod packages;
