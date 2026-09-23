@@ -28,6 +28,8 @@ jobs:
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
       - name: Check Rust formatting
+        id: formatting
+        continue-on-error: true
         run: |
           cargo fmt --all
           git diff --exit-code
@@ -35,6 +37,9 @@ jobs:
       - run: cargo build --locked -p audeniq-core --bins
       - run: cargo test --locked -p audeniq-core -- --test-threads=2
       - run: cargo build --locked -p audeniq-edge --target wasm32-unknown-unknown
+      - name: Enforce formatting result
+        if: always() && steps.formatting.outcome == 'failure'
+        run: exit 1
   compose-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 35
