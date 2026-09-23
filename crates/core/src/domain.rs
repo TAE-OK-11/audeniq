@@ -201,3 +201,30 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod drift_tests {
+    #[test]
+    fn database_edges_match_rust_contract() {
+        let contract = super::state_contract();
+        let ddl = include_str!("../../../migrations/0002_state_contract.sql");
+        let edges = contract["transitions"].as_array().unwrap();
+        assert_eq!(
+            ddl.matches("INSERT INTO operations.allowed_transitions")
+                .count(),
+            edges.len()
+        );
+        for pair in edges {
+            let old = pair[0].as_str().unwrap();
+            let next = pair[1].as_str().unwrap();
+            let (axis, _) = contract["axes"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .find(|(_, values)| values.as_array().unwrap().iter().any(|v| v == old))
+                .unwrap();
+            let expected = format!("VALUES ('{axis}','{old}','{next}');");
+            assert!(ddl.contains(&expected), "missing DB edge: {expected}");
+        }
+    }
+}
