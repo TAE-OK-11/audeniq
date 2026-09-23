@@ -1,5 +1,5 @@
 use crate::{
-    auth,
+    auth, drafts,
     catalog::{self, Kind},
     config::Config,
     error::{Error, Result},
@@ -8,7 +8,7 @@ use crate::{
 };
 use axum::{
     Json, Router,
-    extract::{DefaultBodyLimit, Path, Request, State},
+    extract::{DefaultBodyLimit, Path, Query, Request, State},
     http::{HeaderMap, Method},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -57,6 +57,9 @@ pub fn router(s: AppState) -> Router {
         .route("/api/orgs/{org}/uploads/{id}/complete", post(complete))
         .route("/api/orgs/{org}/assets/{id}", get(asset))
         .route("/api/orgs/{org}/releases/{id}/tracks", post(track))
+        .route("/api/orgs/{org}/releases/{id}/tracks/{track}", put(replace_track).delete(archive_track))
+        .route("/api/orgs/{org}/releases/{id}/tracks/{track}/credits", put(replace_credits))
+        .route("/api/orgs/{org}/releases/{id}/preflight", get(preflight))
         .route("/api/orgs/{org}/releases/{id}/submit", post(submit))
         .route("/api/orgs/{org}/{kind}", post(create).get(list))
         .route(
@@ -196,10 +199,11 @@ async fn create(
 async fn list(
     State(s): State<AppState>,
     Path((org, k)): Path<(Uuid, String)>,
+    Query(page): Query<catalog::Page>,
     h: HeaderMap,
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
-    Ok(Json(catalog::list(&s, &a, org, Kind::parse(&k)?).await?))
+    Ok(Json(catalog::list(&s, &a, org, Kind::parse(&k)?, page).await?))
 }
 async fn detail(
     State(s): State<AppState>,
@@ -244,6 +248,41 @@ async fn track(
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, true).await?;
     Ok(Json(catalog::track(&s, &a, org, id, i).await?))
+}
+async fn replace_track(
+    State(s): State<AppState>,
+    Path((org, release, track)): Path<(Uuid, Uuid, Uuid)>,
+    h: HeaderMap,
+    Json(i): Json<catalog::TrackInput>,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, true).await?;
+    Ok(Json(drafts::replace_track(&s, &a, org, release, track, i).await?))
+}
+async fn archive_track(
+    State(s): State<AppState>,
+    Path((org, release, track)): Path<(Uuid, Uuid, Uuid)>,
+    h: HeaderMap,
+    Json(i): Json<Version>,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, true).await?;
+    Ok(Json(drafts::archive_track(&s, &a, org, release, track, i.row_version).await?))
+}
+async fn replace_credits(
+    State(s): State<AppState>,
+    Path((org, release, track)): Path<(Uuid, Uuid, Uuid)>,
+    h: HeaderMap,
+    Json(i): Json<drafts::CreditsInput>,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, true).await?;
+    Ok(Json(drafts::replace_credits(&s, &a, org, release, track, i).await?))
+}
+async fn preflight(
+    State(s): State<AppState>,
+    Path((org, release)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    Ok(Json(drafts::preflight(&s, &a, org, release).await?))
 }
 async fn submit(
     State(s): State<AppState>,

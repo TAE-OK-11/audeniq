@@ -170,6 +170,28 @@ async fn migration_constraints_and_reapplication(pool: PgPool) {
             .is_err()
     );
 }
+
+#[sqlx::test]
+async fn auth_audit_uses_server_request_id(pool: PgPool) {
+    let (api, _) = app(pool.clone()).await;
+    let (status, headers, _) = call(
+        &api,
+        "POST",
+        "/api/auth/register",
+        json!({"email":"request-id@example.test","password":"Long-test-password-123!"}),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let request_id = Uuid::parse_str(headers["x-request-id"].to_str().unwrap()).unwrap();
+    let recorded: Uuid = sqlx::query_scalar(
+        "SELECT request_id FROM operations.audit_events WHERE action='auth.register'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(recorded, request_id);
+}
 #[sqlx::test]
 async fn auth_sessions_csrf_origin_and_gates(pool: PgPool) {
     let (app, _) = app(pool.clone()).await;
@@ -803,23 +825,76 @@ async fn runtime_roles_enforce_foundation_boundary(pool: PgPool) {
 }
 
 #[sqlx::test]
-async fn auth_audit_uses_server_request_id(pool: PgPool) {
+async fn draft_tracks_credits_archive_and_preflight(pool: PgPool) {
     let (api, _) = app(pool.clone()).await;
-    let (status, headers, _) = call(
-        &api,
-        "POST",
-        "/api/auth/register",
-        json!({"email":"request-id@example.test","password":"Long-test-password-123!"}),
-        None,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    let request_id = Uuid::parse_str(headers["x-request-id"].to_str().unwrap()).unwrap();
-    let recorded: Uuid = sqlx::query_scalar(
-        "SELECT request_id FROM operations.audit_events WHERE action='auth.register'",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(recorded, request_id);
+    let a = user(&api).await;
+    let b = user(&api).await;
+    let release = create(&api, &a, "releases").await;
+    let artist = create(&api, &a, "artists").await;
+    let base = format!("/api/orgs/{}/releases/{release}", a.org);
+    let (_, _, empty) = call(&api, "GET", &format!("{base}/preflight"), json!({}), Some(&a)).await;
+    assert_eq!(empty["issues"][0]["code"], "TRACK_REQUIRED");
+    let input = json!({"title":"First","disc_number":1,"track_number":1,"artist_id":artist,"row_version":0});
+    let (status, _, added) = call(&api, "POST", &format!("{base}/tracks"), input.clone(), Some(&a)).await;
+    assert_eq!(status, StatusCode::OK, "{added}");
+    let id = added["id"].as_str().unwrap();
+    let path = format!("{base}/tracks/{id}");
+    let mut edited = input;
+    edited["title"] = json!("Edited");
+    edited["row_version"] = json!(1);
+    assert_eq!(call(&api, "PUT", &path, edited.clone(), Some(&b)).await.0, StatusCode::FORBIDDEN);
+    assert_eq!(call(&api, "PUT", &path, edited.clone(), Some(&a)).await.0, StatusCode::OK);
+    assert_eq!(call(&api, "PUT", &path, edited, Some(&a)).await.0, StatusCode::CONFLICT);
+    let credits = format!("{path}/credits");
+    let bad = json!({"row_version":2,"credits":[{"party_id":b.party,"role":"composer"}]});
+    assert_eq!(call(&api, "PUT", &credits, bad, Some(&a)).await.0, StatusCode::FORBIDDEN);
+    let good = json!({"row_version":2,"credits":[{"party_id":a.party,"role":"composer"}]});
+    assert_eq!(call(&api, "PUT", &credits, good, Some(&a)).await.0, StatusCode::OK);
+    let (_, _, detail) = call(&api, "GET", &base, json!({}), Some(&a)).await;
+    assert_eq!(detail["row_version"], 3);
+    assert_eq!(detail["tracks"][0]["title"], "Edited");
+    assert_eq!(detail["tracks"][0]["credits"][0]["party_id"], a.party.to_string());
+    let (_, _, preflight) = call(&api, "GET", &format!("{base}/preflight"), json!({}), Some(&a)).await;
+    assert_eq!(preflight["issues"][0]["code"], "AUDIO_REQUIRED");
+    assert_eq!(preflight["ready_to_submit"], false);
+    assert_eq!(preflight["submission_enabled"], false);
+    assert_eq!(call(&api, "DELETE", &path, json!({"row_version":3}), Some(&a)).await.0, StatusCode::OK);
+    let (_, _, detail) = call(&api, "GET", &base, json!({}), Some(&a)).await;
+    assert_eq!(detail["tracks"], json!([]));
+    let retained: bool = sqlx::query_scalar("SELECT archived_at IS NOT NULL FROM catalog.tracks WHERE id=$1")
+        .bind(Uuid::parse_str(id).unwrap()).fetch_one(&pool).await.unwrap();
+    assert!(retained);
+    let replacement = json!({"title":"Replacement","disc_number":1,"track_number":1,"artist_id":artist,"row_version":4});
+    assert_eq!(call(&api, "POST", &format!("{base}/tracks"), replacement, Some(&a)).await.0, StatusCode::OK);
+    assert!(sqlx::query("DELETE FROM catalog.tracks WHERE id=$1").bind(Uuid::parse_str(id).unwrap()).execute(&pool).await.is_err());
+    assert_eq!(call(&api, "PUT", &credits, json!({"row_version":5,"credits":[]}), Some(&a)).await.0, StatusCode::NOT_FOUND);
+    let version: i64 = sqlx::query_scalar("SELECT row_version FROM catalog.releases WHERE id=$1").bind(release).fetch_one(&pool).await.unwrap();
+    assert_eq!(version, 5);
+}
+
+#[sqlx::test]
+async fn cursor_pagination_rechecks_acl_and_rejects_invalid_limits(pool: PgPool) {
+    let (api, _) = app(pool.clone()).await;
+    let a = user(&api).await;
+    let b = user(&api).await;
+    for _ in 0..3 {
+        create(&api, &a, "artists").await;
+    }
+    create(&api, &b, "artists").await;
+    let base = format!("/api/orgs/{}/artists", a.org);
+    let (s, _, first) = call(&api, "GET", &format!("{base}?limit=2"), json!({}), Some(&a)).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(first["items"].as_array().unwrap().len(), 2);
+    let cursor = first["next_cursor"].as_str().unwrap();
+    let (_, _, second) = call(&api, "GET", &format!("{base}?limit=2&after={cursor}"), json!({}), Some(&a)).await;
+    assert_eq!(second["items"].as_array().unwrap().len(), 1);
+    assert!(second["next_cursor"].is_null());
+    let last = Uuid::parse_str(second["items"][0]["id"].as_str().unwrap()).unwrap();
+    sqlx::query("UPDATE identity.resource_acl SET revoked_at=now() WHERE resource_id=$1 AND action='read'").bind(last).execute(&pool).await.unwrap();
+    let (_, _, hidden) = call(&api, "GET", &format!("{base}?limit=2&after={cursor}"), json!({}), Some(&a)).await;
+    assert_eq!(hidden["items"], json!([]));
+    assert_eq!(call(&api, "GET", &base, json!({}), Some(&b)).await.0, StatusCode::FORBIDDEN);
+    for query in ["limit=0", "limit=101", "after=invalid", "unknown=true"] {
+        assert_eq!(call(&api, "GET", &format!("{base}?{query}"), json!({}), Some(&a)).await.0, StatusCode::BAD_REQUEST);
+    }
 }
