@@ -270,8 +270,12 @@ pub async fn login(
     }
     let user: Uuid = row.unwrap().get("id");
     // Serialize with password change and recheck the exact credential version before session issuance.
-    let current: Option<String> = sqlx::query_scalar("SELECT password_hash FROM identity.users WHERE id=$1 AND status='ACTIVE' FOR SHARE")
-        .bind(user).fetch_optional(&mut *tx).await?;
+    let current: Option<String> = sqlx::query_scalar(
+        "SELECT password_hash FROM identity.users WHERE id=$1 AND status='ACTIVE' FOR SHARE",
+    )
+    .bind(user)
+    .fetch_optional(&mut *tx)
+    .await?;
     if current.as_deref() != Some(hash.as_str()) {
         return Err(Error::Unauthorized);
     }
@@ -353,7 +357,11 @@ async fn lock_current_session(c: &mut PgConnection, a: &Actor) -> Result<()> {
     id.ok_or(Error::Unauthorized)?;
     Ok(())
 }
-pub async fn sessions(s: &AppState, h: &HeaderMap, page: crate::catalog::Page) -> Result<Json<Value>> {
+pub async fn sessions(
+    s: &AppState,
+    h: &HeaderMap,
+    page: crate::catalog::Page,
+) -> Result<Json<Value>> {
     let a = actor(&s.pool, h, &s.config, false).await?;
     let limit = page.limit.unwrap_or(50);
     if !(1..=100).contains(&limit) {
@@ -363,62 +371,151 @@ pub async fn sessions(s: &AppState, h: &HeaderMap, page: crate::catalog::Page) -
         .bind(a.user).bind(&a.session_hash).bind(page.after).bind(limit+1).fetch_all(&s.pool).await?;
     let more = rows.len() > limit as usize;
     rows.truncate(limit as usize);
-    let next = if more { rows.last().map(|r| r["id"].clone()) } else { None };
+    let next = if more {
+        rows.last().map(|r| r["id"].clone())
+    } else {
+        None
+    };
     Ok(Json(json!({"items":rows,"next_cursor":next,"limit":limit})))
 }
-pub async fn revoke_session(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<(HeaderMap, Json<Value>)> {
+pub async fn revoke_session(
+    s: &AppState,
+    h: &HeaderMap,
+    id: Uuid,
+) -> Result<(HeaderMap, Json<Value>)> {
     let a = actor(&s.pool, h, &s.config, true).await?;
     let mut tx = s.pool.begin().await?;
     // All session-management writes lock user first to avoid mutually revoking-session deadlocks.
-    sqlx::query("SELECT id FROM identity.users WHERE id=$1 FOR UPDATE").bind(a.user).execute(&mut *tx).await?;
+    sqlx::query("SELECT id FROM identity.users WHERE id=$1 FOR UPDATE")
+        .bind(a.user)
+        .execute(&mut *tx)
+        .await?;
     lock_current_session(&mut tx, &a).await?;
     let current: Option<bool> = sqlx::query_scalar("UPDATE identity.sessions SET revoked_at=COALESCE(revoked_at,now()) WHERE user_id=$1 AND id=$2 RETURNING token_hash=$3")
         .bind(a.user).bind(id).bind(&a.session_hash).fetch_optional(&mut *tx).await?;
     let current = current.ok_or(Error::NotFound)?;
-    operations::audit(&mut tx, Some(a.user), None, Some(id), "auth.session_revoked", "USER_REQUEST", a.request).await?;
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        None,
+        Some(id),
+        "auth.session_revoked",
+        "USER_REQUEST",
+        a.request,
+    )
+    .await?;
     tx.commit().await?;
     let mut headers = HeaderMap::new();
     if current {
         headers.insert("set-cookie", cookie(&s.config, "", 0).parse().unwrap());
     }
-    Ok((headers, Json(json!({"revoked":true,"reauthentication_required":current}))))
+    Ok((
+        headers,
+        Json(json!({"revoked":true,"reauthentication_required":current})),
+    ))
 }
 pub async fn logout_all(s: &AppState, h: &HeaderMap) -> Result<(HeaderMap, Json<Value>)> {
     let a = actor(&s.pool, h, &s.config, true).await?;
     let mut tx = s.pool.begin().await?;
-    sqlx::query("SELECT id FROM identity.users WHERE id=$1 FOR UPDATE").bind(a.user).execute(&mut *tx).await?;
+    sqlx::query("SELECT id FROM identity.users WHERE id=$1 FOR UPDATE")
+        .bind(a.user)
+        .execute(&mut *tx)
+        .await?;
     lock_current_session(&mut tx, &a).await?;
-    sqlx::query("UPDATE identity.sessions SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL").bind(a.user).execute(&mut *tx).await?;
-    operations::audit(&mut tx, Some(a.user), None, Some(a.user), "auth.logout_all", "USER_REQUEST", a.request).await?;
+    sqlx::query(
+        "UPDATE identity.sessions SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL",
+    )
+    .bind(a.user)
+    .execute(&mut *tx)
+    .await?;
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        None,
+        Some(a.user),
+        "auth.logout_all",
+        "USER_REQUEST",
+        a.request,
+    )
+    .await?;
     tx.commit().await?;
     let mut headers = HeaderMap::new();
     headers.insert("set-cookie", cookie(&s.config, "", 0).parse().unwrap());
-    Ok((headers, Json(json!({"revoked":true,"reauthentication_required":true}))))
+    Ok((
+        headers,
+        Json(json!({"revoked":true,"reauthentication_required":true})),
+    ))
 }
-pub async fn change_password(s: &AppState, h: &HeaderMap, i: PasswordChange) -> Result<(HeaderMap, Json<Value>)> {
+pub async fn change_password(
+    s: &AppState,
+    h: &HeaderMap,
+    i: PasswordChange,
+) -> Result<(HeaderMap, Json<Value>)> {
     let a = actor(&s.pool, h, &s.config, true).await?;
-    if !(12..=128).contains(&i.new_password.len()) || i.current_password.len()>128 || i.current_password==i.new_password {
+    if !(12..=128).contains(&i.new_password.len())
+        || i.current_password.len() > 128
+        || i.current_password == i.new_password
+    {
         return Err(Error::Invalid);
     }
     rate(&s.pool, &format!("password:{}", a.user), 5).await?;
-    let _permit = s.password_slots.acquire().await.map_err(|_| Error::Internal)?;
+    let _permit = s
+        .password_slots
+        .acquire()
+        .await
+        .map_err(|_| Error::Internal)?;
     let mut tx = s.pool.begin().await?;
-    let old: String = sqlx::query_scalar("SELECT password_hash FROM identity.users WHERE id=$1 AND status='ACTIVE' FOR UPDATE")
-        .bind(a.user).fetch_optional(&mut *tx).await?.ok_or(Error::Unauthorized)?;
+    let old: String = sqlx::query_scalar(
+        "SELECT password_hash FROM identity.users WHERE id=$1 AND status='ACTIVE' FOR UPDATE",
+    )
+    .bind(a.user)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(Error::Unauthorized)?;
     lock_current_session(&mut tx, &a).await?;
     if !verify(i.current_password, old).await {
-        operations::audit(&mut tx, Some(a.user), None, Some(a.user), "auth.password_change_failed", "BAD_CREDENTIALS", a.request).await?;
+        operations::audit(
+            &mut tx,
+            Some(a.user),
+            None,
+            Some(a.user),
+            "auth.password_change_failed",
+            "BAD_CREDENTIALS",
+            a.request,
+        )
+        .await?;
         tx.commit().await?;
         return Err(Error::Unauthorized);
     }
     let hash = password_hash(i.new_password).await?;
-    sqlx::query("UPDATE identity.users SET password_hash=$2 WHERE id=$1").bind(a.user).bind(hash).execute(&mut *tx).await?;
-    sqlx::query("UPDATE identity.sessions SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL").bind(a.user).execute(&mut *tx).await?;
-    operations::audit(&mut tx, Some(a.user), None, Some(a.user), "auth.password_changed", "ALL_SESSIONS_REVOKED", a.request).await?;
+    sqlx::query("UPDATE identity.users SET password_hash=$2 WHERE id=$1")
+        .bind(a.user)
+        .bind(hash)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "UPDATE identity.sessions SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL",
+    )
+    .bind(a.user)
+    .execute(&mut *tx)
+    .await?;
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        None,
+        Some(a.user),
+        "auth.password_changed",
+        "ALL_SESSIONS_REVOKED",
+        a.request,
+    )
+    .await?;
     tx.commit().await?;
     let mut headers = HeaderMap::new();
     headers.insert("set-cookie", cookie(&s.config, "", 0).parse().unwrap());
-    Ok((headers, Json(json!({"changed":true,"reauthentication_required":true}))))
+    Ok((
+        headers,
+        Json(json!({"changed":true,"reauthentication_required":true})),
+    ))
 }
 
 #[cfg(test)]

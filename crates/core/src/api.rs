@@ -317,10 +317,7 @@ async fn revoke_session(
 ) -> Result<(HeaderMap, Json<Value>)> {
     auth::revoke_session(&s, &h, id).await
 }
-async fn logout_all(
-    State(s): State<AppState>,
-    h: HeaderMap,
-) -> Result<(HeaderMap, Json<Value>)> {
+async fn logout_all(State(s): State<AppState>, h: HeaderMap) -> Result<(HeaderMap, Json<Value>)> {
     auth::logout_all(&s, &h).await
 }
 async fn change_password(
