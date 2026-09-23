@@ -59,6 +59,8 @@ pub fn router(s: AppState) -> Router {
         .route("/api/orgs/{org}/memberships", put(member))
         .route("/api/orgs/{org}/resources/{id}/acl", put(acl))
         .route("/api/orgs/{org}/uploads", post(upload))
+        .route("/api/orgs/{org}/uploads/{id}", get(upload_status))
+        .route("/api/orgs/{org}/uploads/{id}/cancel", post(cancel_upload))
         .route("/api/orgs/{org}/uploads/{id}/complete", post(complete))
         .route("/api/orgs/{org}/assets/{id}", get(asset))
         .route("/api/orgs/{org}/releases/{id}/tracks", post(track))
@@ -345,6 +347,22 @@ async fn upload(
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, true).await?;
     Ok(Json(uploads::issue(&s, &a, org, i).await?))
+}
+async fn upload_status(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    Ok(Json(uploads::status(&s, &a, org, id).await?))
+}
+async fn cancel_upload(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, true).await?;
+    Ok(Json(uploads::cancel(&s, &a, org, id).await?))
 }
 async fn complete(
     State(s): State<AppState>,

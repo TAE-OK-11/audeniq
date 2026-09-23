@@ -795,8 +795,7 @@ async fn runtime_roles_enforce_foundation_boundary(pool: PgPool) {
     let artist = create(&api, &u, "artists").await;
     let base = format!("/api/orgs/{}/releases/{release}", u.org);
     let input = json!({"title":"Role test","disc_number":1,"track_number":1,"artist_id":artist,"row_version":0});
-    let (status, _, added) =
-        call(&api, "POST", &format!("{base}/tracks"), input, Some(&u)).await;
+    let (status, _, added) = call(&api, "POST", &format!("{base}/tracks"), input, Some(&u)).await;
     assert_eq!(status, StatusCode::OK);
     let id = added["id"].as_str().unwrap();
     let path = format!("{base}/tracks/{id}/credits");
@@ -1284,4 +1283,42 @@ async fn immutable_contract_route_package_lineage(pool: PgPool) {
         .await
         .unwrap();
     assert_eq!(count, 1);
+}
+
+#[sqlx::test]
+async fn upload_cancel_blocks_late_completion_and_is_idempotent(pool: PgPool) {
+    let (api, store) = app(pool.clone()).await;
+    let a = user(&api).await;
+    let b = user(&api).await;
+    let up = upload(&api, &a).await;
+    let id = up["upload_session_id"].as_str().unwrap();
+    let base = format!("/api/orgs/{}/uploads/{id}", a.org);
+    let result = call(&api, "GET", &base, json!({}), Some(&a)).await;
+    assert_eq!(result.2["status"], "ISSUED");
+    assert!(result.2.get("expected_key").is_none());
+    assert_eq!(call(&api, "GET", &base, json!({}), Some(&b)).await.0, StatusCode::FORBIDDEN);
+    let cancel = format!("{base}/cancel");
+    let result = call(&api, "POST", &cancel, json!({}), Some(&b)).await;
+    assert_eq!(result.0, StatusCode::FORBIDDEN);
+    let result = call(&api, "POST", &cancel, json!({}), Some(&a)).await;
+    assert_eq!(result.0, StatusCode::OK);
+    assert_eq!(result.2["duplicate"], false);
+    let result = call(&api, "POST", &cancel, json!({}), Some(&a)).await;
+    assert_eq!(result.2["duplicate"], true);
+    let key = up["expected_key"].as_str().unwrap();
+    store.objects.lock().await.insert(key.into(), ObjectMeta {
+        size: 100, content_type: "audio/wav".into(),
+        nonce: up["grant"]["headers"]["x-amz-meta-upload-nonce"].as_str().unwrap().into(),
+        etag: "late-upload".into(),
+    });
+    let body = json!({"asset_id":up["asset_id"],"expected_key":key});
+    let result = call(&api, "POST", &format!("{base}/complete"), body, Some(&a)).await;
+    assert_eq!(result.0, StatusCode::CONFLICT);
+    let result = call(&api, "GET", &base, json!({}), Some(&a)).await;
+    assert_eq!(result.2["status"], "CANCELLED");
+    let state: String = sqlx::query_scalar("SELECT state FROM catalog.assets WHERE id=$1")
+        .bind(Uuid::parse_str(up["asset_id"].as_str().unwrap()).unwrap()).fetch_one(&pool).await.unwrap();
+    assert_eq!(state, "REJECTED");
+    let audits: i64 = sqlx::query_scalar("SELECT count(*) FROM operations.audit_events WHERE action='upload.cancelled'").fetch_one(&pool).await.unwrap();
+    assert_eq!(audits, 1);
 }
