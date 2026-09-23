@@ -708,3 +708,83 @@ async fn late_revision_check_never_advances_current_release(pool: PgPool) {
     assert_eq!(r.get::<Uuid, _>("current_revision_id"), new);
     assert_eq!(r.get::<i64, _>("row_version"), 1);
 }
+
+#[sqlx::test]
+async fn runtime_roles_enforce_foundation_boundary(pool: PgPool) {
+    database::MIGRATOR.run(&pool).await.unwrap();
+    sqlx::raw_sql(
+        "DO $$ BEGIN
+         IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='audeniq_api') THEN
+           CREATE ROLE audeniq_api NOLOGIN;
+         END IF;
+         IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='audeniq_worker') THEN
+           CREATE ROLE audeniq_worker NOLOGIN;
+         END IF;
+         END $$;",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::raw_sql(include_str!("../../../deploy/grants.sql"))
+        .execute(&pool)
+        .await
+        .unwrap();
+    let api_pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .after_connect(|c, _| {
+            Box::pin(async move {
+                sqlx::query("SET ROLE audeniq_api").execute(c).await?;
+                Ok(())
+            })
+        })
+        .connect_with((*pool.connect_options()).clone())
+        .await
+        .unwrap();
+    let state = AppState::new(
+        api_pool.clone(),
+        Config {
+            database_url: "unused".into(),
+            origin: ORIGIN.into(),
+            service_secret: SECRET.into(),
+            secure_cookie: false,
+            bind: "127.0.0.1:0".into(),
+            session_seconds: 3600,
+        },
+        Arc::new(MockStore::default()),
+    )
+    .await
+    .unwrap();
+    let api = router(state);
+    let u = user(&api).await;
+    create(&api, &u, "releases").await;
+    for statement in [
+        "UPDATE operations.audit_events SET action='tampered'",
+        "TRUNCATE operations.audit_events",
+        "INSERT INTO catalog.application_revisions DEFAULT VALUES",
+    ] {
+        let error = sqlx::query(statement).execute(&api_pool).await.unwrap_err();
+        assert_eq!(error.as_database_error().unwrap().code().unwrap(), "42501");
+    }
+    let worker_pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .after_connect(|c, _| {
+            Box::pin(async move {
+                sqlx::query("SET ROLE audeniq_worker").execute(c).await?;
+                Ok(())
+            })
+        })
+        .connect_with((*pool.connect_options()).clone())
+        .await
+        .unwrap();
+    let job = operations::claim(&worker_pool, "interactive", "role-test", 60)
+        .await
+        .unwrap()
+        .unwrap();
+    operations::execute(&worker_pool, &job).await.unwrap();
+    assert!(
+        sqlx::query("SELECT password_hash FROM identity.users")
+            .fetch_all(&worker_pool)
+            .await
+            .is_err()
+    );
+}
