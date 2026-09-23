@@ -89,11 +89,7 @@ pub async fn actor(
         user: row.get("user_id"),
         party: row.get("party_id"),
         session_hash: hash,
-        request: headers
-            .get("x-request-id")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| Uuid::parse_str(s).ok())
-            .unwrap_or_else(Uuid::new_v4),
+        request: request_id(headers),
     })
 }
 pub async fn membership(c: &mut PgConnection, a: &Actor, org: Uuid, write: bool) -> Result<String> {
@@ -222,7 +218,7 @@ pub async fn register(s: &AppState, h: &HeaderMap, input: Credentials) -> Result
         Some(user),
         "auth.register",
         "SELF_REGISTER",
-        Uuid::new_v4(),
+        request_id(h),
     )
     .await?;
     tx.commit().await?;
@@ -266,7 +262,7 @@ pub async fn login(
             None,
             "auth.login_failed",
             "BAD_CREDENTIALS",
-            Uuid::new_v4(),
+            request_id(h),
         )
         .await?;
         tx.commit().await?;
@@ -284,7 +280,7 @@ pub async fn login(
         Some(user),
         "auth.login",
         "PASSWORD",
-        Uuid::new_v4(),
+        request_id(h),
     )
     .await?;
     tx.commit().await?;
@@ -331,6 +327,14 @@ pub async fn logout(s: &AppState, h: &HeaderMap) -> Result<(HeaderMap, Json<Valu
     headers.insert("set-cookie", cookie(&s.config, "", 0).parse().unwrap());
     Ok((headers, Json(json!({"revoked":true}))))
 }
+fn request_id(headers: &HeaderMap) -> Uuid {
+    headers
+        .get("x-request-id")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .unwrap_or_else(Uuid::new_v4)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
