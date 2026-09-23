@@ -791,11 +791,29 @@ async fn runtime_roles_enforce_foundation_boundary(pool: PgPool) {
     .unwrap();
     let api = router(state);
     let u = user(&api).await;
-    create(&api, &u, "releases").await;
+    let release = create(&api, &u, "releases").await;
+    let artist = create(&api, &u, "artists").await;
+    let base = format!("/api/orgs/{}/releases/{release}", u.org);
+    let input = json!({"title":"Role test","disc_number":1,"track_number":1,"artist_id":artist,"row_version":0});
+    let (status, _, added) =
+        call(&api, "POST", &format!("{base}/tracks"), input, Some(&u)).await;
+    assert_eq!(status, StatusCode::OK);
+    let id = added["id"].as_str().unwrap();
+    let path = format!("{base}/tracks/{id}/credits");
+    let input = json!({"row_version":1,"credits":[{"party_id":u.party,"role":"composer"}]});
+    let result = call(&api, "PUT", &path, input, Some(&u)).await;
+    assert_eq!(result.0, StatusCode::OK);
+    let input = json!({"row_version":2,"credits":[]});
+    let result = call(&api, "PUT", &path, input, Some(&u)).await;
+    assert_eq!(result.0, StatusCode::OK);
+    let result = call(&api, "GET", "/api/auth/sessions", json!({}), Some(&u)).await;
+    assert_eq!(result.0, StatusCode::OK);
     for statement in [
         "UPDATE operations.audit_events SET action='tampered'",
         "TRUNCATE operations.audit_events",
         "INSERT INTO catalog.application_revisions DEFAULT VALUES",
+        "INSERT INTO distribution.packages DEFAULT VALUES",
+        "INSERT INTO rights.contracts DEFAULT VALUES",
     ] {
         let error = sqlx::query(statement).execute(&api_pool).await.unwrap_err();
         assert_eq!(error.as_database_error().unwrap().code().unwrap(), "42501");
@@ -1012,45 +1030,131 @@ async fn session_inventory_revoke_and_password_rotation(pool: PgPool) {
     let (api, _) = app(pool.clone()).await;
     let a = user(&api).await;
     let b = user(&api).await;
-    let email: String = sqlx::query_scalar("SELECT email FROM identity.users WHERE id=$1").bind(a.user).fetch_one(&pool).await.unwrap();
+    let email: String = sqlx::query_scalar("SELECT email FROM identity.users WHERE id=$1")
+        .bind(a.user)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     let (_, _, inventory) = call(&api, "GET", "/api/auth/sessions", json!({}), Some(&a)).await;
     assert_eq!(inventory["items"].as_array().unwrap().len(), 1);
     assert_eq!(inventory["items"][0]["current"], true);
     assert!(inventory["items"][0].get("token_hash").is_none());
     let session_id = inventory["items"][0]["id"].as_str().unwrap();
     let path = format!("/api/auth/sessions/{session_id}/revoke");
-    assert_eq!(call(&api, "POST", &path, json!({}), Some(&b)).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(
+        call(&api, "POST", &path, json!({}), Some(&b)).await.0,
+        StatusCode::NOT_FOUND
+    );
     let credentials = json!({"email":email,"password":"Long-test-password-123!"});
     let (status, h, login) = call(&api, "POST", "/api/auth/login", credentials.clone(), None).await;
     assert_eq!(status, StatusCode::OK);
     let mut second = a.clone();
-    second.cookie = h["set-cookie"].to_str().unwrap().split(';').next().unwrap().into();
+    second.cookie = h["set-cookie"]
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .into();
     second.csrf = login["csrf_token"].as_str().unwrap().into();
-    assert_eq!(call(&api, "POST", &path, json!({}), Some(&second)).await.0, StatusCode::OK);
-    assert_eq!(call(&api, "GET", "/api/me", json!({}), Some(&a)).await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        call(&api, "POST", &path, json!({}), Some(&second)).await.0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        call(&api, "GET", "/api/me", json!({}), Some(&a)).await.0,
+        StatusCode::UNAUTHORIZED
+    );
     let bad = json!({"current_password":"Wrong-test-password!","new_password":"Changed-long-password-456!"});
-    assert_eq!(call(&api, "POST", "/api/auth/password", bad, Some(&second)).await.0, StatusCode::UNAUTHORIZED);
-    assert_eq!(call(&api, "GET", "/api/me", json!({}), Some(&second)).await.0, StatusCode::OK);
+    assert_eq!(
+        call(&api, "POST", "/api/auth/password", bad, Some(&second))
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        call(&api, "GET", "/api/me", json!({}), Some(&second))
+            .await
+            .0,
+        StatusCode::OK
+    );
     let change = json!({"current_password":"Long-test-password-123!","new_password":"Changed-long-password-456!"});
-    let (status, headers, response) = call(&api, "POST", "/api/auth/password", change, Some(&second)).await;
+    let (status, headers, response) =
+        call(&api, "POST", "/api/auth/password", change, Some(&second)).await;
     assert_eq!(status, StatusCode::OK, "{response}");
-    assert!(headers["set-cookie"].to_str().unwrap().contains("Max-Age=0"));
-    assert_eq!(call(&api, "GET", "/api/me", json!({}), Some(&second)).await.0, StatusCode::UNAUTHORIZED);
-    assert_eq!(call(&api, "POST", "/api/auth/login", credentials, None).await.0, StatusCode::UNAUTHORIZED);
-    let (status, h, login) = call(&api, "POST", "/api/auth/login", json!({"email":email,"password":"Changed-long-password-456!"}), None).await;
+    assert!(
+        headers["set-cookie"]
+            .to_str()
+            .unwrap()
+            .contains("Max-Age=0")
+    );
+    assert_eq!(
+        call(&api, "GET", "/api/me", json!({}), Some(&second))
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        call(&api, "POST", "/api/auth/login", credentials, None)
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let (status, h, login) = call(
+        &api,
+        "POST",
+        "/api/auth/login",
+        json!({"email":email,"password":"Changed-long-password-456!"}),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
-    second.cookie = h["set-cookie"].to_str().unwrap().split(';').next().unwrap().into();
+    second.cookie = h["set-cookie"]
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .into();
     second.csrf = login["csrf_token"].as_str().unwrap().into();
-    assert_eq!(call(&api, "POST", "/api/auth/logout-all", json!({}), Some(&second)).await.0, StatusCode::OK);
-    assert_eq!(call(&api, "GET", "/api/me", json!({}), Some(&second)).await.0, StatusCode::UNAUTHORIZED);
-    assert_eq!(call(&api, "GET", "/api/me", json!({}), Some(&b)).await.0, StatusCode::OK);
-    let active: i64 = sqlx::query_scalar("SELECT count(*) FROM identity.sessions WHERE user_id=$1 AND revoked_at IS NULL").bind(a.user).fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        call(
+            &api,
+            "POST",
+            "/api/auth/logout-all",
+            json!({}),
+            Some(&second)
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        call(&api, "GET", "/api/me", json!({}), Some(&second))
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        call(&api, "GET", "/api/me", json!({}), Some(&b)).await.0,
+        StatusCode::OK
+    );
+    let active: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM identity.sessions WHERE user_id=$1 AND revoked_at IS NULL",
+    )
+    .bind(a.user)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     assert_eq!(active, 0);
 }
 
 #[sqlx::test]
 async fn immutable_contract_route_package_lineage(pool: PgPool) {
-    use audeniq_core::{artifacts, contracts::{DistributionPackage, RouteContract, RouteKind, DeliveryOperation}};
+    use audeniq_core::{
+        artifacts,
+        contracts::{DeliveryOperation, DistributionPackage, RouteContract, RouteKind},
+    };
     let (api, _) = app(pool.clone()).await;
     let a = user(&api).await;
     let b = user(&api).await;
@@ -1072,32 +1176,112 @@ async fn immutable_contract_route_package_lineage(pool: PgPool) {
     sqlx::query("INSERT INTO distribution.verification_packages(id,org_id,revision_id,body,package_hash,rights_epoch) VALUES($1,$2,$3,'{}',$4,0)").bind(verification).bind(a.org).bind(revision).bind(&hash).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO distribution.release_snapshots(id,org_id,verification_id,body,snapshot_hash) VALUES($1,$2,$3,'{}',$4)").bind(snapshot).bind(a.org).bind(verification).bind(&hash).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO identity.parties(id,org_id,kind,display_name) VALUES($1,$2,'PERSON','Synthetic counterparty')").bind(other_party).bind(a.org).execute(&pool).await.unwrap();
-    sqlx::query("INSERT INTO identity.resources(org_id,id,kind) VALUES($1,$2,'asset')").bind(a.org).bind(document).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO identity.resources(org_id,id,kind) VALUES($1,$2,'asset')")
+        .bind(a.org)
+        .bind(document)
+        .execute(&pool)
+        .await
+        .unwrap();
     sqlx::query("INSERT INTO catalog.assets(id,org_id,kind,object_key,size_bytes,content_type) VALUES($1,$2,'IMAGE',$3,1,'image/png')").bind(document).bind(a.org).bind(format!("test-document/{document}")).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO rights.contracts(id,org_id,grantor_party_id,grantee_party_id) VALUES($1,$2,$3,$4)").bind(contract).bind(a.org).bind(a.party).bind(other_party).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO rights.contract_revisions(id,org_id,contract_id,revision,document_asset_id,document_hash,policy_version) VALUES($1,$2,$3,1,$4,$5,'fixture-only')").bind(contract_revision).bind(a.org).bind(contract).bind(document).bind(&hash).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO distribution.dsp_endpoints(id,org_id,dsp_id,adapter_version,profile_version) VALUES($1,$2,$3,'fixture-adapter','fixture-profile')").bind(endpoint).bind(a.org).bind(dsp).execute(&pool).await.unwrap();
     let route_sql = "INSERT INTO distribution.route_plans(id,org_id,dsp_id,route_kind,contract_id,contract_revision_id,endpoint_id,fee_schedule_id,enabled) VALUES($1,$2,$3,'DIRECT',$4,$5,$6,$7,$8)";
-    assert!(sqlx::query(route_sql).bind(route).bind(a.org).bind(dsp).bind(contract).bind(contract_revision).bind(endpoint).bind(fee).bind(true).execute(&pool).await.is_err());
-    assert!(sqlx::query(route_sql).bind(route).bind(b.org).bind(dsp).bind(contract).bind(contract_revision).bind(endpoint).bind(fee).bind(false).execute(&pool).await.is_err());
-    sqlx::query(route_sql).bind(route).bind(a.org).bind(dsp).bind(contract).bind(contract_revision).bind(endpoint).bind(fee).bind(false).execute(&pool).await.unwrap();
+    assert!(
+        sqlx::query(route_sql)
+            .bind(route)
+            .bind(a.org)
+            .bind(dsp)
+            .bind(contract)
+            .bind(contract_revision)
+            .bind(endpoint)
+            .bind(fee)
+            .bind(true)
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    assert!(
+        sqlx::query(route_sql)
+            .bind(route)
+            .bind(b.org)
+            .bind(dsp)
+            .bind(contract)
+            .bind(contract_revision)
+            .bind(endpoint)
+            .bind(fee)
+            .bind(false)
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    sqlx::query(route_sql)
+        .bind(route)
+        .bind(a.org)
+        .bind(dsp)
+        .bind(contract)
+        .bind(contract_revision)
+        .bind(endpoint)
+        .bind(fee)
+        .bind(false)
+        .execute(&pool)
+        .await
+        .unwrap();
     let mut package = DistributionPackage {
-        id: Uuid::new_v4(), org_id: a.org, snapshot_id: snapshot,
-        route: RouteContract { id: route, org_id: a.org, dsp_id: dsp, kind: RouteKind::Direct, contract_id: contract, endpoint_id: endpoint, fee_schedule_id: fee, profile_version: "fixture-profile".into(), adapter_version: "fixture-adapter".into() },
-        operation: DeliveryOperation::NewRelease, package_digest: hash.clone(), manifest_hash: hash, immutable_bytes_ref: Uuid::new_v4(),
+        id: Uuid::new_v4(),
+        org_id: a.org,
+        snapshot_id: snapshot,
+        route: RouteContract {
+            id: route,
+            org_id: a.org,
+            dsp_id: dsp,
+            kind: RouteKind::Direct,
+            contract_id: contract,
+            endpoint_id: endpoint,
+            fee_schedule_id: fee,
+            profile_version: "fixture-profile".into(),
+            adapter_version: "fixture-adapter".into(),
+        },
+        operation: DeliveryOperation::NewRelease,
+        package_digest: hash.clone(),
+        manifest_hash: hash,
+        immutable_bytes_ref: Uuid::new_v4(),
     };
     let mut c = pool.acquire().await.unwrap();
-    assert_eq!(artifacts::store_package(&mut c, &package).await.unwrap(), package.id);
-    assert_eq!(artifacts::store_package(&mut c, &package).await.unwrap(), package.id);
+    assert_eq!(
+        artifacts::store_package(&mut c, &package).await.unwrap(),
+        package.id
+    );
+    assert_eq!(
+        artifacts::store_package(&mut c, &package).await.unwrap(),
+        package.id
+    );
     package.manifest_hash = "b".repeat(64);
     assert!(artifacts::store_package(&mut c, &package).await.is_err());
     package.route.adapter_version = "different".into();
     assert!(artifacts::store_package(&mut c, &package).await.is_err());
-    for table in ["rights.contract_revisions", "distribution.dsp_endpoints", "distribution.route_plans", "distribution.packages"] {
-        let error = sqlx::query(&format!("DELETE FROM {table}")).execute(&pool).await.unwrap_err();
+    for table in [
+        "rights.contract_revisions",
+        "distribution.dsp_endpoints",
+        "distribution.route_plans",
+        "distribution.packages",
+    ] {
+        let error = sqlx::query(&format!("DELETE FROM {table}"))
+            .execute(&pool)
+            .await
+            .unwrap_err();
         assert_eq!(error.as_database_error().unwrap().code().unwrap(), "23514");
     }
-    assert!(sqlx::query("UPDATE distribution.packages SET manifest_hash=$1").bind("c".repeat(64)).execute(&pool).await.is_err());
-    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM distribution.packages").fetch_one(&pool).await.unwrap();
+    assert!(
+        sqlx::query("UPDATE distribution.packages SET manifest_hash=$1")
+            .bind("c".repeat(64))
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM distribution.packages")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(count, 1);
 }
