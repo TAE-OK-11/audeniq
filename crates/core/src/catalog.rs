@@ -1,8 +1,9 @@
 use crate::{
     api::AppState,
     auth::{self, Actor},
+    drafts,
     error::{Error, Result},
-    drafts, operations,
+    operations,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -142,7 +143,11 @@ pub async fn list(s: &AppState, a: &Actor, org: Uuid, kind: Kind, page: Page) ->
     tx.commit().await?;
     let has_more = rows.len() > limit as usize;
     rows.truncate(limit as usize);
-    let next_cursor = if has_more { rows.last().map(|v| v["id"].clone()) } else { None };
+    let next_cursor = if has_more {
+        rows.last().map(|v| v["id"].clone())
+    } else {
+        None
+    };
     Ok(json!({"items":rows,"limit":limit,"next_cursor":next_cursor}))
 }
 pub async fn get(s: &AppState, a: &Actor, org: Uuid, kind: Kind, id: Uuid) -> Result<Value> {
