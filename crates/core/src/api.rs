@@ -1,7 +1,8 @@
 use crate::{
-    auth, drafts,
+    auth,
     catalog::{self, Kind},
     config::Config,
+    drafts,
     error::{Error, Result},
     storage::ObjectStore,
     uploads,
@@ -49,6 +50,10 @@ pub fn router(s: AppState) -> Router {
         .route("/api/auth/register", post(register))
         .route("/api/auth/login", post(login))
         .route("/api/auth/logout", post(logout))
+        .route("/api/auth/logout-all", post(logout_all))
+        .route("/api/auth/sessions", get(sessions))
+        .route("/api/auth/sessions/{id}/revoke", post(revoke_session))
+        .route("/api/auth/password", post(change_password))
         .route("/api/me", get(me))
         .route("/api/orgs", post(create_org).get(orgs))
         .route("/api/orgs/{org}/memberships", put(member))
@@ -57,8 +62,14 @@ pub fn router(s: AppState) -> Router {
         .route("/api/orgs/{org}/uploads/{id}/complete", post(complete))
         .route("/api/orgs/{org}/assets/{id}", get(asset))
         .route("/api/orgs/{org}/releases/{id}/tracks", post(track))
-        .route("/api/orgs/{org}/releases/{id}/tracks/{track}", put(replace_track).delete(archive_track))
-        .route("/api/orgs/{org}/releases/{id}/tracks/{track}/credits", put(replace_credits))
+        .route(
+            "/api/orgs/{org}/releases/{id}/tracks/{track}",
+            put(replace_track).delete(archive_track),
+        )
+        .route(
+            "/api/orgs/{org}/releases/{id}/tracks/{track}/credits",
+            put(replace_credits),
+        )
         .route("/api/orgs/{org}/releases/{id}/preflight", get(preflight))
         .route("/api/orgs/{org}/releases/{id}/submit", post(submit))
         .route("/api/orgs/{org}/{kind}", post(create).get(list))
@@ -203,7 +214,9 @@ async fn list(
     h: HeaderMap,
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
-    Ok(Json(catalog::list(&s, &a, org, Kind::parse(&k)?, page).await?))
+    Ok(Json(
+        catalog::list(&s, &a, org, Kind::parse(&k)?, page).await?,
+    ))
 }
 async fn detail(
     State(s): State<AppState>,
@@ -256,7 +269,9 @@ async fn replace_track(
     Json(i): Json<catalog::TrackInput>,
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, true).await?;
-    Ok(Json(drafts::replace_track(&s, &a, org, release, track, i).await?))
+    Ok(Json(
+        drafts::replace_track(&s, &a, org, release, track, i).await?,
+    ))
 }
 async fn archive_track(
     State(s): State<AppState>,
@@ -265,7 +280,9 @@ async fn archive_track(
     Json(i): Json<Version>,
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, true).await?;
-    Ok(Json(drafts::archive_track(&s, &a, org, release, track, i.row_version).await?))
+    Ok(Json(
+        drafts::archive_track(&s, &a, org, release, track, i.row_version).await?,
+    ))
 }
 async fn replace_credits(
     State(s): State<AppState>,
@@ -274,7 +291,9 @@ async fn replace_credits(
     Json(i): Json<drafts::CreditsInput>,
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, true).await?;
-    Ok(Json(drafts::replace_credits(&s, &a, org, release, track, i).await?))
+    Ok(Json(
+        drafts::replace_credits(&s, &a, org, release, track, i).await?,
+    ))
 }
 async fn preflight(
     State(s): State<AppState>,
@@ -283,6 +302,33 @@ async fn preflight(
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
     Ok(Json(drafts::preflight(&s, &a, org, release).await?))
+}
+async fn sessions(
+    State(s): State<AppState>,
+    Query(page): Query<catalog::Page>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    auth::sessions(&s, &h, page).await
+}
+async fn revoke_session(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    h: HeaderMap,
+) -> Result<(HeaderMap, Json<Value>)> {
+    auth::revoke_session(&s, &h, id).await
+}
+async fn logout_all(
+    State(s): State<AppState>,
+    h: HeaderMap,
+) -> Result<(HeaderMap, Json<Value>)> {
+    auth::logout_all(&s, &h).await
+}
+async fn change_password(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Json(i): Json<auth::PasswordChange>,
+) -> Result<(HeaderMap, Json<Value>)> {
+    auth::change_password(&s, &h, i).await
 }
 async fn submit(
     State(s): State<AppState>,

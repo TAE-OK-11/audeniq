@@ -28,8 +28,24 @@ async fn changed(
     version: i64,
     action: &str,
 ) -> Result<()> {
-    operations::audit(c, Some(a.user), Some(org), Some(release), action, "USER_EDIT", a.request).await?;
-    operations::event(c, org, release, "release.updated", &format!("draft:{release}:{version}")).await?;
+    operations::audit(
+        c,
+        Some(a.user),
+        Some(org),
+        Some(release),
+        action,
+        "USER_EDIT",
+        a.request,
+    )
+    .await?;
+    operations::event(
+        c,
+        org,
+        release,
+        "release.updated",
+        &format!("draft:{release}:{version}"),
+    )
+    .await?;
     Ok(())
 }
 pub async fn track_refs(c: &mut PgConnection, a: &Actor, org: Uuid, i: &TrackInput) -> Result<()> {
@@ -62,7 +78,15 @@ pub async fn replace_track(
     if n != 1 {
         return Err(Error::NotFound);
     }
-    changed(&mut tx, a, org, release, i.row_version + 1, "release.track_updated").await?;
+    changed(
+        &mut tx,
+        a,
+        org,
+        release,
+        i.row_version + 1,
+        "release.track_updated",
+    )
+    .await?;
     tx.commit().await?;
     Ok(json!({"id":track,"row_version":i.row_version+1}))
 }
@@ -82,7 +106,15 @@ pub async fn archive_track(
     if n != 1 {
         return Err(Error::NotFound);
     }
-    changed(&mut tx, a, org, release, version + 1, "release.track_archived").await?;
+    changed(
+        &mut tx,
+        a,
+        org,
+        release,
+        version + 1,
+        "release.track_archived",
+    )
+    .await?;
     tx.commit().await?;
     Ok(json!({"id":track,"archived":true,"row_version":version+1}))
 }
@@ -107,10 +139,14 @@ pub async fn replace_credits(
     i: CreditsInput,
 ) -> Result<Value> {
     let mut keys = BTreeSet::new();
-    if i.credits.len() > 100 || i.credits.iter().any(|v| {
-        v.role.trim().is_empty() || v.role.len() > 80 || v.role != v.role.trim()
-            || !keys.insert((v.party_id, v.role.clone()))
-    }) {
+    if i.credits.len() > 100
+        || i.credits.iter().any(|v| {
+            v.role.trim().is_empty()
+                || v.role.len() > 80
+                || v.role != v.role.trim()
+                || !keys.insert((v.party_id, v.role.clone()))
+        })
+    {
         return Err(Error::Invalid);
     }
     let mut tx = s.pool.begin().await?;
@@ -120,19 +156,42 @@ pub async fn replace_credits(
         .bind(org).bind(release).bind(track).fetch_optional(&mut *tx).await?;
     id.ok_or(Error::NotFound)?;
     for credit in &i.credits {
-        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM identity.parties WHERE org_id=$1 AND id=$2)")
-            .bind(org).bind(credit.party_id).fetch_one(&mut *tx).await?;
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM identity.parties WHERE org_id=$1 AND id=$2)",
+        )
+        .bind(org)
+        .bind(credit.party_id)
+        .fetch_one(&mut *tx)
+        .await?;
         if !exists {
             return Err(Error::Forbidden);
         }
     }
     sqlx::query("DELETE FROM catalog.credits WHERE org_id=$1 AND track_id=$2")
-        .bind(org).bind(track).execute(&mut *tx).await?;
+        .bind(org)
+        .bind(track)
+        .execute(&mut *tx)
+        .await?;
     for credit in i.credits {
-        sqlx::query("INSERT INTO catalog.credits(org_id,track_id,party_id,role) VALUES($1,$2,$3,$4)")
-            .bind(org).bind(track).bind(credit.party_id).bind(credit.role).execute(&mut *tx).await?;
+        sqlx::query(
+            "INSERT INTO catalog.credits(org_id,track_id,party_id,role) VALUES($1,$2,$3,$4)",
+        )
+        .bind(org)
+        .bind(track)
+        .bind(credit.party_id)
+        .bind(credit.role)
+        .execute(&mut *tx)
+        .await?;
     }
-    changed(&mut tx, a, org, release, i.row_version + 1, "release.credits_replaced").await?;
+    changed(
+        &mut tx,
+        a,
+        org,
+        release,
+        i.row_version + 1,
+        "release.credits_replaced",
+    )
+    .await?;
     tx.commit().await?;
     Ok(json!({"id":track,"row_version":i.row_version+1}))
 }
@@ -167,5 +226,7 @@ pub async fn preflight(s: &AppState, a: &Actor, org: Uuid, release: Uuid) -> Res
     }
     let version: i64 = r.get("row_version");
     tx.commit().await?;
-    Ok(json!({"release_id":release,"row_version":version,"issues":issues,"submission_enabled":false,"ready_to_submit":false,"gates":["CONSENT_POLICY_NOT_IMPLEMENTED","LEGAL_REPRESENTATIVE_POLICY_NOT_IMPLEMENTED","STAGE1_QC_NOT_IMPLEMENTED"]}))
+    Ok(
+        json!({"release_id":release,"row_version":version,"issues":issues,"submission_enabled":false,"ready_to_submit":false,"gates":["CONSENT_POLICY_NOT_IMPLEMENTED","LEGAL_REPRESENTATIVE_POLICY_NOT_IMPLEMENTED","STAGE1_QC_NOT_IMPLEMENTED"]}),
+    )
 }
