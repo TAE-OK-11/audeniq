@@ -89,11 +89,7 @@ pub async fn actor(
         user: row.get("user_id"),
         party: row.get("party_id"),
         session_hash: hash,
-        request: headers
-            .get("x-request-id")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| Uuid::parse_str(s).ok())
-            .unwrap_or_else(Uuid::new_v4),
+        request: request_id(headers),
     })
 }
 pub async fn membership(c: &mut PgConnection, a: &Actor, org: Uuid, write: bool) -> Result<String> {
@@ -222,7 +218,7 @@ pub async fn register(s: &AppState, h: &HeaderMap, input: Credentials) -> Result
         Some(user),
         "auth.register",
         "SELF_REGISTER",
-        Uuid::new_v4(),
+        request_id(h),
     )
     .await?;
     tx.commit().await?;
@@ -252,7 +248,7 @@ pub async fn login(
         .as_ref()
         .map(|r| r.get::<String, _>("password_hash"))
         .unwrap_or(s.dummy_hash.clone());
-    let ok = verify(input.password, hash).await;
+    let ok = verify(input.password, hash.clone()).await;
     let mut tx = s.pool.begin().await?;
     if !ok
         || row
@@ -266,13 +262,19 @@ pub async fn login(
             None,
             "auth.login_failed",
             "BAD_CREDENTIALS",
-            Uuid::new_v4(),
+            request_id(h),
         )
         .await?;
         tx.commit().await?;
         return Err(Error::Unauthorized);
     }
     let user: Uuid = row.unwrap().get("id");
+    // Serialize with password change and recheck the exact credential version before session issuance.
+    let current: Option<String> = sqlx::query_scalar("SELECT password_hash FROM identity.users WHERE id=$1 AND status='ACTIVE' FOR SHARE")
+        .bind(user).fetch_optional(&mut *tx).await?;
+    if current.as_deref() != Some(hash.as_str()) {
+        return Err(Error::Unauthorized);
+    }
     let token = random_token();
     let csrf = random_token();
     sqlx::query("INSERT INTO identity.sessions(token_hash,user_id,csrf_hash,expires_at) VALUES($1,$2,$3,now()+make_interval(secs=>$4))")
@@ -284,7 +286,7 @@ pub async fn login(
         Some(user),
         "auth.login",
         "PASSWORD",
-        Uuid::new_v4(),
+        request_id(h),
     )
     .await?;
     tx.commit().await?;
@@ -331,6 +333,94 @@ pub async fn logout(s: &AppState, h: &HeaderMap) -> Result<(HeaderMap, Json<Valu
     headers.insert("set-cookie", cookie(&s.config, "", 0).parse().unwrap());
     Ok((headers, Json(json!({"revoked":true}))))
 }
+fn request_id(headers: &HeaderMap) -> Uuid {
+    headers
+        .get("x-request-id")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .unwrap_or_else(Uuid::new_v4)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PasswordChange {
+    pub current_password: String,
+    pub new_password: String,
+}
+async fn lock_current_session(c: &mut PgConnection, a: &Actor) -> Result<()> {
+    let id: Option<Uuid> = sqlx::query_scalar("SELECT user_id FROM identity.sessions WHERE user_id=$1 AND token_hash=$2 AND revoked_at IS NULL AND expires_at>clock_timestamp() FOR SHARE")
+        .bind(a.user).bind(&a.session_hash).fetch_optional(c).await?;
+    id.ok_or(Error::Unauthorized)?;
+    Ok(())
+}
+pub async fn sessions(s: &AppState, h: &HeaderMap, page: crate::catalog::Page) -> Result<Json<Value>> {
+    let a = actor(&s.pool, h, &s.config, false).await?;
+    let limit = page.limit.unwrap_or(50);
+    if !(1..=100).contains(&limit) {
+        return Err(Error::Invalid);
+    }
+    let mut rows: Vec<Value> = sqlx::query_scalar("SELECT jsonb_build_object('id',id,'created_at',created_at,'expires_at',expires_at,'current',token_hash=$2) FROM identity.sessions WHERE user_id=$1 AND revoked_at IS NULL AND expires_at>now() AND ($3::uuid IS NULL OR id>$3) ORDER BY id LIMIT $4")
+        .bind(a.user).bind(&a.session_hash).bind(page.after).bind(limit+1).fetch_all(&s.pool).await?;
+    let more = rows.len() > limit as usize;
+    rows.truncate(limit as usize);
+    let next = if more { rows.last().map(|r| r["id"].clone()) } else { None };
+    Ok(Json(json!({"items":rows,"next_cursor":next,"limit":limit})))
+}
+pub async fn revoke_session(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<(HeaderMap, Json<Value>)> {
+    let a = actor(&s.pool, h, &s.config, true).await?;
+    let mut tx = s.pool.begin().await?;
+    // All session-management writes lock user first to avoid mutually revoking-session deadlocks.
+    sqlx::query("SELECT id FROM identity.users WHERE id=$1 FOR UPDATE").bind(a.user).execute(&mut *tx).await?;
+    lock_current_session(&mut tx, &a).await?;
+    let current: Option<bool> = sqlx::query_scalar("UPDATE identity.sessions SET revoked_at=COALESCE(revoked_at,now()) WHERE user_id=$1 AND id=$2 RETURNING token_hash=$3")
+        .bind(a.user).bind(id).bind(&a.session_hash).fetch_optional(&mut *tx).await?;
+    let current = current.ok_or(Error::NotFound)?;
+    operations::audit(&mut tx, Some(a.user), None, Some(id), "auth.session_revoked", "USER_REQUEST", a.request).await?;
+    tx.commit().await?;
+    let mut headers = HeaderMap::new();
+    if current {
+        headers.insert("set-cookie", cookie(&s.config, "", 0).parse().unwrap());
+    }
+    Ok((headers, Json(json!({"revoked":true,"reauthentication_required":current}))))
+}
+pub async fn logout_all(s: &AppState, h: &HeaderMap) -> Result<(HeaderMap, Json<Value>)> {
+    let a = actor(&s.pool, h, &s.config, true).await?;
+    let mut tx = s.pool.begin().await?;
+    sqlx::query("SELECT id FROM identity.users WHERE id=$1 FOR UPDATE").bind(a.user).execute(&mut *tx).await?;
+    lock_current_session(&mut tx, &a).await?;
+    sqlx::query("UPDATE identity.sessions SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL").bind(a.user).execute(&mut *tx).await?;
+    operations::audit(&mut tx, Some(a.user), None, Some(a.user), "auth.logout_all", "USER_REQUEST", a.request).await?;
+    tx.commit().await?;
+    let mut headers = HeaderMap::new();
+    headers.insert("set-cookie", cookie(&s.config, "", 0).parse().unwrap());
+    Ok((headers, Json(json!({"revoked":true,"reauthentication_required":true}))))
+}
+pub async fn change_password(s: &AppState, h: &HeaderMap, i: PasswordChange) -> Result<(HeaderMap, Json<Value>)> {
+    let a = actor(&s.pool, h, &s.config, true).await?;
+    if !(12..=128).contains(&i.new_password.len()) || i.current_password.len()>128 || i.current_password==i.new_password {
+        return Err(Error::Invalid);
+    }
+    rate(&s.pool, &format!("password:{}", a.user), 5).await?;
+    let _permit = s.password_slots.acquire().await.map_err(|_| Error::Internal)?;
+    let mut tx = s.pool.begin().await?;
+    let old: String = sqlx::query_scalar("SELECT password_hash FROM identity.users WHERE id=$1 AND status='ACTIVE' FOR UPDATE")
+        .bind(a.user).fetch_optional(&mut *tx).await?.ok_or(Error::Unauthorized)?;
+    lock_current_session(&mut tx, &a).await?;
+    if !verify(i.current_password, old).await {
+        operations::audit(&mut tx, Some(a.user), None, Some(a.user), "auth.password_change_failed", "BAD_CREDENTIALS", a.request).await?;
+        tx.commit().await?;
+        return Err(Error::Unauthorized);
+    }
+    let hash = password_hash(i.new_password).await?;
+    sqlx::query("UPDATE identity.users SET password_hash=$2 WHERE id=$1").bind(a.user).bind(hash).execute(&mut *tx).await?;
+    sqlx::query("UPDATE identity.sessions SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL").bind(a.user).execute(&mut *tx).await?;
+    operations::audit(&mut tx, Some(a.user), None, Some(a.user), "auth.password_changed", "ALL_SESSIONS_REVOKED", a.request).await?;
+    tx.commit().await?;
+    let mut headers = HeaderMap::new();
+    headers.insert("set-cookie", cookie(&s.config, "", 0).parse().unwrap());
+    Ok((headers, Json(json!({"changed":true,"reauthentication_required":true}))))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,6 +1,7 @@
 use crate::{
     api::AppState,
     auth::{self, Actor},
+    drafts,
     error::{Error, Result},
     operations,
 };
@@ -115,20 +116,39 @@ pub async fn create(s: &AppState, a: &Actor, org: Uuid, kind: Kind, i: Input) ->
     tx.commit().await?;
     Ok(json!({"id":id,"row_version":0}))
 }
-pub async fn list(s: &AppState, a: &Actor, org: Uuid, kind: Kind) -> Result<Value> {
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Page {
+    pub after: Option<Uuid>,
+    pub limit: Option<i64>,
+}
+pub async fn list(s: &AppState, a: &Actor, org: Uuid, kind: Kind, page: Page) -> Result<Value> {
+    let limit = page.limit.unwrap_or(50);
+    if !(1..=100).contains(&limit) {
+        return Err(Error::Invalid);
+    }
     let mut tx = s.pool.begin().await?;
     auth::membership(&mut tx, a, org, false).await?;
     let query = format!(
-        "SELECT to_jsonb(t) AS body FROM {} t WHERE t.org_id=$1 AND t.archived_at IS NULL AND EXISTS(SELECT 1 FROM identity.resource_acl acl WHERE acl.org_id=t.org_id AND acl.resource_id=t.id AND acl.principal_party_id=$2 AND acl.action='read' AND acl.revoked_at IS NULL AND acl.starts_at<=now() AND (acl.ends_at IS NULL OR acl.ends_at>now())) ORDER BY t.id LIMIT 100",
+        "SELECT to_jsonb(t) AS body FROM {} t WHERE t.org_id=$1 AND t.archived_at IS NULL AND EXISTS(SELECT 1 FROM identity.resource_acl acl WHERE acl.org_id=t.org_id AND acl.resource_id=t.id AND acl.principal_party_id=$2 AND acl.action='read' AND acl.revoked_at IS NULL AND acl.starts_at<=now() AND (acl.ends_at IS NULL OR acl.ends_at>now())) AND ($3::uuid IS NULL OR t.id>$3) ORDER BY t.id LIMIT $4",
         kind.table()
     );
-    let rows: Vec<Value> = sqlx::query_scalar(&query)
+    let mut rows: Vec<Value> = sqlx::query_scalar(&query)
         .bind(org)
         .bind(a.party)
+        .bind(page.after)
+        .bind(limit + 1)
         .fetch_all(&mut *tx)
         .await?;
     tx.commit().await?;
-    Ok(json!({"items":rows,"limit":100}))
+    let has_more = rows.len() > limit as usize;
+    rows.truncate(limit as usize);
+    let next_cursor = if has_more {
+        rows.last().map(|v| v["id"].clone())
+    } else {
+        None
+    };
+    Ok(json!({"items":rows,"limit":limit,"next_cursor":next_cursor}))
 }
 pub async fn get(s: &AppState, a: &Actor, org: Uuid, kind: Kind, id: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
@@ -144,7 +164,7 @@ pub async fn get(s: &AppState, a: &Actor, org: Uuid, kind: Kind, id: Uuid) -> Re
         .await?
         .ok_or(Error::NotFound)?;
     if matches!(kind, Kind::Release) {
-        let tracks:Vec<Value>=sqlx::query_scalar("SELECT to_jsonb(t) FROM catalog.tracks t WHERE org_id=$1 AND release_id=$2 ORDER BY disc_number,track_number").bind(org).bind(id).fetch_all(&mut *tx).await?;
+        let tracks:Vec<Value>=sqlx::query_scalar("SELECT to_jsonb(t) || jsonb_build_object('credits',COALESCE((SELECT jsonb_agg(jsonb_build_object('party_id',c.party_id,'role',c.role) ORDER BY c.party_id,c.role) FROM catalog.credits c WHERE c.org_id=t.org_id AND c.track_id=t.id),'[]'::jsonb)) FROM catalog.tracks t WHERE org_id=$1 AND release_id=$2 AND archived_at IS NULL ORDER BY disc_number,track_number").bind(org).bind(id).fetch_all(&mut *tx).await?;
         v["tracks"] = json!(tracks);
         v["delivery_status_by_dsp"] = json!([]);
         v["live_status_by_dsp"] = json!([]);
@@ -263,19 +283,10 @@ pub async fn track(
     release: Uuid,
     i: TrackInput,
 ) -> Result<Value> {
-    if i.title.is_empty() || i.title.len() > 300 || i.disc_number < 1 || i.track_number < 1 {
-        return Err(Error::Invalid);
-    }
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, release, "release", true).await?;
-    auth::authorize(&mut tx, a, org, i.artist_id, "artist", false).await?;
-    if let Some(asset) = i.asset_id {
-        auth::authorize(&mut tx, a, org, asset, "asset", false).await?;
-    }
-    let n=sqlx::query("UPDATE catalog.releases SET row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND row_version=$3 AND status='DRAFT' AND archived_at IS NULL").bind(org).bind(release).bind(i.row_version).execute(&mut *tx).await?.rows_affected();
-    if n != 1 {
-        return Err(Error::Conflict);
-    }
+    drafts::track_refs(&mut tx, a, org, &i).await?;
+    drafts::bump(&mut tx, org, release, i.row_version).await?;
     let id = Uuid::new_v4();
     sqlx::query("INSERT INTO catalog.tracks(id,org_id,release_id,title,disc_number,track_number,artist_id,asset_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
  .bind(id).bind(org).bind(release).bind(i.title).bind(i.disc_number).bind(i.track_number).bind(i.artist_id).bind(i.asset_id).execute(&mut *tx).await?;

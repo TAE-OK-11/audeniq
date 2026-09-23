@@ -2,7 +2,7 @@
 
 Rust modular monolith: `audeniq-api`, `audeniq-worker`, `audeniq-migrate`, and a Rust/WASM Cloudflare BFF. Based on FINAL 1.0 (2026-09-23) in `docs/BLUEPRINT.md`.
 
-**Work in progress / NO-GO for customer operation.** Native/WASM builds and local unit checks are available. PostgreSQL execution and real R2/VPC connections have not yet been verified in the implementation sandbox. See `docs/IMPLEMENTATION_REPORT.md` for the final evidence record when present.
+**Foundation implemented / NO-GO for customer operation.** Rust/API/Worker/WASM builds, real PostgreSQL integration tests and Docker Compose startup have passed GitHub Actions. Real R2 and Workers VPC/Tunnel connections remain unverified. See [implementation report](docs/IMPLEMENTATION_REPORT.md), [data model and ERD](docs/DATA_MODEL.md), and [API contract](docs/API.md) for evidence, scope and remaining work.
 
 New application logic and tests are Rust only. The three supplied frontend packages are preserved in `web/` without redesign. Their pre-existing HTML/CSS/JavaScript is not part of the new Rust backend. No Python runtime or application dependency is introduced.
 

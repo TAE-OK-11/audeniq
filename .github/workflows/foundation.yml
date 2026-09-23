@@ -27,8 +27,32 @@ jobs:
           toolchain: 1.98.1
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
-      - run: cargo fmt --all --check
+      - name: Check Rust formatting
+        run: |
+          cargo fmt --all
+          git diff --exit-code
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo build --locked -p audeniq-core --bins
       - run: cargo test --locked -p audeniq-core -- --test-threads=2
       - run: cargo build --locked -p audeniq-edge --target wasm32-unknown-unknown
+  compose-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      POSTGRES_PASSWORD: ephemeral-owner-ci
+      API_DB_PASSWORD: ephemeral-api-ci
+      WORKER_DB_PASSWORD: ephemeral-worker-ci
+      EDGE_SERVICE_SECRET: ephemeral-ci-service-secret-at-least-32-characters
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose up --build -d
+      - name: Check API readiness
+        run: curl --fail --retry 15 --retry-connrefused --retry-delay 2 -H "X-Audeniq-Service:$EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready
+      - name: Runtime logs
+        if: always()
+        run: |
+          docker compose ps -a
+          docker compose logs api worker migrate grants
+      - name: Remove disposable CI environment
+        if: always()
+        run: docker compose down -v
