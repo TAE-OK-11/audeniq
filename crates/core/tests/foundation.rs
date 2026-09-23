@@ -801,3 +801,25 @@ async fn runtime_roles_enforce_foundation_boundary(pool: PgPool) {
             .is_err()
     );
 }
+
+#[sqlx::test]
+async fn auth_audit_uses_server_request_id(pool: PgPool) {
+    let (api, _) = app(pool.clone()).await;
+    let (status, headers, _) = call(
+        &api,
+        "POST",
+        "/api/auth/register",
+        json!({"email":"request-id@example.test","password":"Long-test-password-123!"}),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let request_id = Uuid::parse_str(headers["x-request-id"].to_str().unwrap()).unwrap();
+    let recorded: Uuid = sqlx::query_scalar(
+        "SELECT request_id FROM operations.audit_events WHERE action='auth.register'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(recorded, request_id);
+}
