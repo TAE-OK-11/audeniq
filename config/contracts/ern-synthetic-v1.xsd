@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Internal fixture profile only: NOT a DDEX schema or DSP implementation. -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+ xmlns:s="urn:audeniq:ern:synthetic:1" targetNamespace="urn:audeniq:ern:synthetic:1" elementFormDefault="qualified">
+ <xs:simpleType name="NonEmpty"><xs:restriction base="xs:string"><xs:minLength value="1"/></xs:restriction></xs:simpleType>
+ <xs:simpleType name="Uuid"><xs:restriction base="xs:string"><xs:pattern value="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"/></xs:restriction></xs:simpleType>
+ <xs:simpleType name="Hash"><xs:restriction base="xs:string"><xs:length value="64"/><xs:pattern value="[0-9a-f]{64}"/></xs:restriction></xs:simpleType>
+ <xs:simpleType name="Isrc"><xs:restriction base="xs:string"><xs:length value="12"/><xs:pattern value="[A-Z]{2}[A-Z0-9]{3}[0-9]{7}"/></xs:restriction></xs:simpleType>
+ <xs:simpleType name="Upc"><xs:restriction base="xs:string"><xs:length value="12"/><xs:pattern value="[0-9]{12}"/></xs:restriction></xs:simpleType>
+ <xs:complexType name="File"><xs:sequence>
+  <xs:element name="AssetId" type="s:Uuid"/><xs:element name="URI" type="s:NonEmpty"/>
+  <xs:element name="SHA256" type="s:Hash"/><xs:element name="Size" type="xs:positiveInteger"/>
+  <xs:element name="MediaType" type="s:NonEmpty"/>
+ </xs:sequence></xs:complexType>
+ <xs:element name="NewReleaseMessage"><xs:complexType><xs:sequence>
+  <xs:element name="MessageHeader"><xs:complexType><xs:sequence>
+   <xs:element name="MessageId" type="s:Uuid"/><xs:element name="VerificationPackageId" type="s:Uuid"/>
+   <xs:element name="VerificationPackageHash" type="s:Hash"/><xs:element name="RevisionId" type="s:Uuid"/>
+   <xs:element name="RevisionHash" type="s:Hash"/><xs:element name="RightsEpoch" type="xs:nonNegativeInteger"/>
+  </xs:sequence></xs:complexType></xs:element>
+  <xs:element name="ResourceList"><xs:complexType><xs:sequence>
+   <xs:element name="SoundRecording" maxOccurs="1000"><xs:complexType><xs:sequence>
+    <xs:element name="ResourceReference" type="s:Uuid"/><xs:element name="ISRC" type="s:Isrc"/>
+    <xs:element name="Title" type="s:NonEmpty"/><xs:element name="DisplayArtist" type="s:NonEmpty"/>
+    <xs:element name="File" type="s:File"/>
+   </xs:sequence></xs:complexType></xs:element>
+   <xs:element name="Image"><xs:complexType><xs:sequence>
+    <xs:element name="ResourceReference" type="s:Uuid"/><xs:element name="File" type="s:File"/>
+   </xs:sequence></xs:complexType></xs:element>
+  </xs:sequence></xs:complexType></xs:element>
+  <xs:element name="Release"><xs:complexType><xs:sequence>
+   <xs:element name="ReleaseId" type="s:Uuid"/><xs:element name="UPC" type="s:Upc"/>
+   <xs:element name="Title" type="s:NonEmpty"/><xs:element name="DisplayArtist" type="s:NonEmpty"/>
+   <xs:element name="ReleaseType"><xs:simpleType><xs:restriction base="xs:string">
+    <xs:enumeration value="SINGLE"/><xs:enumeration value="EP"/><xs:enumeration value="ALBUM"/>
+   </xs:restriction></xs:simpleType></xs:element>
+   <xs:element name="ReleaseDate" type="xs:date"/><xs:element name="Language" type="s:NonEmpty"/>
+   <xs:element name="PLine" type="s:NonEmpty"/><xs:element name="CLine" type="s:NonEmpty"/>
+   <xs:element name="TrackList"><xs:complexType><xs:sequence>
+    <xs:element name="Track" maxOccurs="1000"><xs:complexType><xs:sequence>
+     <xs:element name="ResourceReference" type="s:Uuid"/>
+     <xs:element name="DiscNumber" type="xs:positiveInteger"/><xs:element name="TrackNumber" type="xs:positiveInteger"/>
+    </xs:sequence></xs:complexType></xs:element>
+   </xs:sequence></xs:complexType></xs:element>
+   <xs:element name="ArtworkReference" type="s:Uuid"/>
+  </xs:sequence></xs:complexType></xs:element>
+  <xs:element name="ApprovedDestinations"><xs:complexType><xs:sequence>
+   <xs:element name="DSP" type="s:Uuid" minOccurs="0" maxOccurs="unbounded"/>
+  </xs:sequence></xs:complexType></xs:element>
+ </xs:sequence>
+ <xs:attribute name="profile" type="xs:string" use="required" fixed="audeniq-ern-synthetic-1"/>
+ <xs:attribute name="deliveryEnabled" type="xs:boolean" use="required" fixed="false"/>
+ </xs:complexType>
+ <xs:key name="resource"><xs:selector xpath="s:ResourceList/s:SoundRecording"/><xs:field xpath="s:ResourceReference"/></xs:key>
+ <xs:keyref name="trackResource" refer="s:resource"><xs:selector xpath="s:Release/s:TrackList/s:Track"/><xs:field xpath="s:ResourceReference"/></xs:keyref>
+ <xs:key name="artwork"><xs:selector xpath="s:ResourceList/s:Image"/><xs:field xpath="s:ResourceReference"/></xs:key>
+ <xs:keyref name="artworkReference" refer="s:artwork"><xs:selector xpath="s:Release"/><xs:field xpath="s:ArtworkReference"/></xs:keyref>
+ </xs:element>
+</xs:schema>

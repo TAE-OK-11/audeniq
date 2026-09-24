@@ -1,0 +1,95 @@
+{
+  "org_id": "00000000-0000-4000-8000-000000000001",
+  "release_id": "00000000-0000-4000-8000-000000000002",
+  "revision_id": "00000000-0000-4000-8000-000000000003",
+  "revision_hash": "49a1dca488f6604327202518225212f63328fbadc2ee3e70e3e5d62c082e9f99",
+  "snapshot_id": "00000000-0000-4000-8000-000000000004",
+  "verification_package_id": "00000000-0000-4000-8000-000000000005",
+  "verification_package_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "rights_epoch": 1,
+  "approved_scope": [
+    {
+      "dsp_id": "00000000-0000-4000-8000-000000000090"
+    },
+    {
+      "dsp_id": "00000000-0000-4000-8000-000000000091"
+    }
+  ],
+  "title": "바다 & 빛 <Live> \"셋\" '넷'",
+  "artist": "Synthetic Artist",
+  "release_type": "ALBUM",
+  "release_date": "2027-03-01",
+  "language": "ko",
+  "p_line": "2027 Synthetic Rights Owner",
+  "c_line": "2027 Synthetic Rights Owner",
+  "upc": "012345678905",
+  "tracks": [
+    {
+      "id": "00000000-0000-4000-8000-000000000020",
+      "title": "Track 1",
+      "artist": "Synthetic Artist",
+      "isrc": "USAAA2600001",
+      "disc_number": 1,
+      "track_number": 1,
+      "audio": {
+        "id": "00000000-0000-4000-8000-000000000030",
+        "object_key": "synthetic/audio-0.wav",
+        "sha256": "5dbd63fe0e57580bb6041bc976209693557d549423ca1a9495ee57e057299e73",
+        "size_bytes": 17,
+        "content_type": "audio/wav"
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000021",
+      "title": "Track 2",
+      "artist": "Synthetic Artist",
+      "isrc": "USAAA2600002",
+      "disc_number": 1,
+      "track_number": 2,
+      "audio": {
+        "id": "00000000-0000-4000-8000-000000000031",
+        "object_key": "synthetic/audio-1.wav",
+        "sha256": "87c3e664ed45e02760246bb0bc46f44713698e01b635652c2d474d043e6a854d",
+        "size_bytes": 17,
+        "content_type": "audio/wav"
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000022",
+      "title": "Track 3",
+      "artist": "Synthetic Artist",
+      "isrc": "USAAA2600003",
+      "disc_number": 2,
+      "track_number": 1,
+      "audio": {
+        "id": "00000000-0000-4000-8000-000000000032",
+        "object_key": "synthetic/audio-2.wav",
+        "sha256": "b91387a9cff7f2ed6b26753dfd02c1bbed5dd60dae0a46cf9a4c315deb7888b8",
+        "size_bytes": 17,
+        "content_type": "audio/wav"
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000023",
+      "title": "Track 4",
+      "artist": "Synthetic Artist",
+      "isrc": "USAAA2600004",
+      "disc_number": 2,
+      "track_number": 2,
+      "audio": {
+        "id": "00000000-0000-4000-8000-000000000033",
+        "object_key": "synthetic/audio-3.wav",
+        "sha256": "ae46dde26b248a6275a7c928e92cf0a83e7a4aa073fd03f1b998bb574343ab90",
+        "size_bytes": 17,
+        "content_type": "audio/wav"
+      }
+    }
+  ],
+  "artwork": {
+    "id": "00000000-0000-4000-8000-000000000010",
+    "object_key": "synthetic/artwork.jpg",
+    "sha256": "719cdcfdc0f1151c47f452af4e8b18260c9021c34e4f7dfdecf3314c7af4dd15",
+    "size_bytes": 17,
+    "content_type": "image/jpeg"
+  }
+}

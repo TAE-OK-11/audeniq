@@ -1,0 +1,50 @@
+{
+  "org_id": "00000000-0000-4000-8000-000000000001",
+  "release_id": "00000000-0000-4000-8000-000000000002",
+  "revision_id": "00000000-0000-4000-8000-000000000003",
+  "revision_hash": "5fa02e6f1b10cdfaeaa9338668fdc1c939b250aaba0ee83fb7025bce7719f8a0",
+  "snapshot_id": "00000000-0000-4000-8000-000000000004",
+  "verification_package_id": "00000000-0000-4000-8000-000000000005",
+  "verification_package_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "rights_epoch": 1,
+  "approved_scope": [
+    {
+      "dsp_id": "00000000-0000-4000-8000-000000000090"
+    },
+    {
+      "dsp_id": "00000000-0000-4000-8000-000000000091"
+    }
+  ],
+  "title": "연주자의 선율 single",
+  "artist": "Synthetic Artist",
+  "release_type": "SINGLE",
+  "release_date": "2027-03-01",
+  "language": "ko",
+  "p_line": "2027 Synthetic Rights Owner",
+  "c_line": "2027 Synthetic Rights Owner",
+  "upc": "012345678905",
+  "tracks": [
+    {
+      "id": "00000000-0000-4000-8000-000000000020",
+      "title": "Track 1",
+      "artist": "Synthetic Artist",
+      "isrc": "USAAA2600001",
+      "disc_number": 1,
+      "track_number": 1,
+      "audio": {
+        "id": "00000000-0000-4000-8000-000000000030",
+        "object_key": "synthetic/audio-0.wav",
+        "sha256": "5dbd63fe0e57580bb6041bc976209693557d549423ca1a9495ee57e057299e73",
+        "size_bytes": 17,
+        "content_type": "audio/wav"
+      }
+    }
+  ],
+  "artwork": {
+    "id": "00000000-0000-4000-8000-000000000010",
+    "object_key": "synthetic/artwork.jpg",
+    "sha256": "719cdcfdc0f1151c47f452af4e8b18260c9021c34e4f7dfdecf3314c7af4dd15",
+    "size_bytes": 17,
+    "content_type": "image/jpeg"
+  }
+}

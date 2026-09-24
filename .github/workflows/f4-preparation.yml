@@ -1,0 +1,72 @@
+name: F4 preparation acceptance
+on:
+  push:
+    branches: ['validation/f4-astra-*', 'foundation/f4-stage3-distribution']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_USER: f2test
+          POSTGRES_PASSWORD: f2test-local-dev-only
+          POSTGRES_DB: audeniq_f2
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd 'pg_isready -U f2test -d audeniq_f2'
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://f2test:f2test-local-dev-only@localhost/audeniq_f2
+      F4_FIXTURE_XML_DIR: /tmp/f4-fixtures
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.1
+          components: rustfmt, clippy
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: f4-rust-1.98.1-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
+          restore-keys: f4-rust-1.98.1-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-
+      - name: Fixture tooling
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg libxml2-utils
+      - name: Format
+        id: formatting
+        continue-on-error: true
+        run: |
+          cargo fmt --all
+          git diff --exit-code
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Workspace tests
+        run: cargo test --workspace
+      - name: Independent synthetic XSD validation
+        run: |
+          test "$(find /tmp/f4-fixtures -name 'fixture-*.xml' | wc -l)" -eq 3
+          xmllint --nonet --noout --schema config/contracts/ern-synthetic-v1.xsd /tmp/f4-fixtures/fixture-*.xml
+      - name: Formatted source artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: f4-formatted-source
+          path: |
+            crates/core/src/ern.rs
+            crates/core/src/identifiers.rs
+            crates/core/src/preparation_model.rs
+            crates/core/src/preflight.rs
+            crates/core/src/route_plan.rs
+            crates/core/src/lib.rs
+            crates/core/tests/stage3_preparation.rs
+            crates/core/tests/stage3_identifiers.rs
+      - name: Enforce formatting
+        if: always() && steps.formatting.outcome == 'failure'
+        run: exit 1
