@@ -1,0 +1,247 @@
+use crate::error::{Error, Result};
+use serde_json::{Value, json};
+use sqlx::{PgConnection, PgPool, Row};
+use uuid::Uuid;
+#[allow(clippy::too_many_arguments)]
+pub async fn audit(
+    c: &mut PgConnection,
+    user: Option<Uuid>,
+    org: Option<Uuid>,
+    resource: Option<Uuid>,
+    action: &str,
+    reason: &str,
+    request: Uuid,
+) -> Result<()> {
+    sqlx::query("INSERT INTO operations.audit_events(id,actor_user_id,actor_service,org_id,resource_id,action,reason_code,request_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
+ .bind(Uuid::new_v4()).bind(user).bind(if user.is_none(){Some("audeniq-system")}else{None}).bind(org).bind(resource).bind(action).bind(reason).bind(request).execute(c).await?;
+    Ok(())
+}
+pub async fn event(
+    c: &mut PgConnection,
+    org: Uuid,
+    aggregate: Uuid,
+    kind: &str,
+    key: &str,
+) -> Result<Uuid> {
+    let id:Uuid=sqlx::query_scalar("INSERT INTO operations.outbox(id,org_id,aggregate_id,event_type,payload,idempotency_key) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(idempotency_key) DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key WHERE operations.outbox.org_id=EXCLUDED.org_id AND operations.outbox.aggregate_id=EXCLUDED.aggregate_id AND operations.outbox.event_type=EXCLUDED.event_type AND operations.outbox.payload=EXCLUDED.payload RETURNING id")
+ .bind(Uuid::new_v4()).bind(org).bind(aggregate).bind(kind).bind(json!({"resource_id":aggregate})).bind(key).fetch_optional(&mut *c).await?.ok_or(Error::Conflict)?;
+    enqueue(
+        c,
+        "interactive",
+        "outbox.record",
+        &json!({"event_id":id}),
+        &format!("outbox:{id}"),
+        None,
+    )
+    .await?;
+    Ok(id)
+}
+pub async fn enqueue(
+    c: &mut PgConnection,
+    queue: &str,
+    kind: &str,
+    payload: &Value,
+    key: &str,
+    pin: Option<Uuid>,
+) -> Result<Uuid> {
+    sqlx::query_scalar("INSERT INTO operations.jobs(id,queue,kind,payload,idempotency_key,pinned_revision_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(idempotency_key) DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key WHERE operations.jobs.queue=EXCLUDED.queue AND operations.jobs.kind=EXCLUDED.kind AND operations.jobs.payload=EXCLUDED.payload AND operations.jobs.pinned_revision_id IS NOT DISTINCT FROM EXCLUDED.pinned_revision_id RETURNING id")
+ .bind(Uuid::new_v4()).bind(queue).bind(kind).bind(payload).bind(key).bind(pin).fetch_optional(c).await?.ok_or(Error::Conflict)
+}
+#[derive(Debug, Clone)]
+pub struct Job {
+    pub id: Uuid,
+    pub token: Uuid,
+    pub kind: String,
+    pub payload: Value,
+    pub attempts: i32,
+}
+pub async fn claim(
+    pool: &PgPool,
+    queue: &str,
+    worker: &str,
+    lease_seconds: i32,
+) -> Result<Option<Job>> {
+    if !(1..=3600).contains(&lease_seconds) {
+        return Err(Error::Invalid);
+    }
+    let mut tx = pool.begin().await?;
+    // Exhausted crash leases are dead-lettered, never left permanently RUNNING.
+    let expired=sqlx::query("UPDATE operations.jobs SET status='DEAD_LETTER',lock_token=NULL,lease_until=NULL,dead_lettered_at=now(),last_error='LEASE_EXHAUSTED' WHERE queue=$1 AND status='RUNNING' AND lease_until<=now() AND (attempts>=max_attempts OR kind<>'outbox.record') RETURNING id")
+ .bind(queue).fetch_all(&mut *tx).await?;
+    for r in expired {
+        audit(
+            &mut tx,
+            None,
+            None,
+            Some(r.get("id")),
+            "job.dead_letter",
+            "LEASE_EXHAUSTED",
+            Uuid::new_v4(),
+        )
+        .await?;
+    }
+    // Only safe internal jobs are registered. Unknown jobs never execute and are explicitly DLQ'd below.
+    let r=sqlx::query("WITH candidate AS (SELECT id FROM operations.jobs WHERE queue=$1 AND attempts<max_attempts AND ((status='QUEUED' AND run_at<=now()) OR (status='RUNNING' AND lease_until<=now() AND kind='outbox.record')) ORDER BY priority DESC,run_at,id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE operations.jobs j SET status='RUNNING',attempts=attempts+1,locked_by=$2,lock_token=$3,lease_until=now()+make_interval(secs=>$4) FROM candidate WHERE j.id=candidate.id RETURNING j.id,j.lock_token,j.kind,j.payload,j.attempts")
+ .bind(queue).bind(worker).bind(Uuid::new_v4()).bind(lease_seconds as f64).fetch_optional(&mut *tx).await?;
+    let job = r.map(|r| Job {
+        id: r.get("id"),
+        token: r.get("lock_token"),
+        kind: r.get("kind"),
+        payload: r.get("payload"),
+        attempts: r.get("attempts"),
+    });
+    if let Some(j) = &job {
+        audit(
+            &mut tx,
+            None,
+            None,
+            Some(j.id),
+            "job.claim",
+            "LEASE",
+            Uuid::new_v4(),
+        )
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(job)
+}
+pub async fn heartbeat(pool: &PgPool, j: &Job, seconds: i32) -> Result<()> {
+    if !(1..=3600).contains(&seconds) {
+        return Err(Error::Invalid);
+    }
+    let n=sqlx::query("UPDATE operations.jobs SET lease_until=now()+make_interval(secs=>$3) WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp()")
+ .bind(j.id).bind(j.token).bind(seconds as f64).execute(pool).await?.rows_affected();
+    if n == 1 { Ok(()) } else { Err(Error::Conflict) }
+}
+pub async fn fail(pool: &PgPool, j: &Job, permanent: bool, code: &str) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    let r=sqlx::query("UPDATE operations.jobs SET status=CASE WHEN $3 OR attempts>=max_attempts THEN 'DEAD_LETTER' ELSE 'QUEUED' END,dead_lettered_at=CASE WHEN $3 OR attempts>=max_attempts THEN now() END,last_error=$4,run_at=now()+make_interval(secs=>least(3600,power(2,attempts)*5)::double precision),lock_token=NULL,lease_until=NULL WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp() RETURNING status")
+ .bind(j.id).bind(j.token).bind(permanent).bind(code).fetch_optional(&mut *tx).await?.ok_or(Error::Conflict)?;
+    audit(
+        &mut tx,
+        None,
+        None,
+        Some(j.id),
+        if r.get::<String, _>("status") == "DEAD_LETTER" {
+            "job.dead_letter"
+        } else {
+            "job.retry"
+        },
+        code,
+        Uuid::new_v4(),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+pub async fn execute(pool: &PgPool, j: &Job) -> Result<()> {
+    if j.kind != "outbox.record" {
+        return fail(pool, j, true, "UNIMPLEMENTED_JOB_KIND").await;
+    }
+    let event = j
+        .payload
+        .get("event_id")
+        .and_then(Value::as_str)
+        .and_then(|v| Uuid::parse_str(v).ok());
+    let Some(event) = event else {
+        return fail(pool, j, true, "INVALID_JOB_PAYLOAD").await;
+    };
+    let mut tx = pool.begin().await?;
+    let current:Option<Uuid>=sqlx::query_scalar("SELECT id FROM operations.jobs WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp() FOR UPDATE")
+ .bind(j.id).bind(j.token).fetch_optional(&mut *tx).await?;
+    current.ok_or(Error::Conflict)?;
+    let row =
+        sqlx::query("SELECT org_id,aggregate_id FROM operations.outbox WHERE id=$1 FOR UPDATE")
+            .bind(event)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(Error::NotFound)?;
+    let n=sqlx::query("INSERT INTO operations.event_receipts(event_id,consumer) VALUES($1,'foundation.internal') ON CONFLICT DO NOTHING").bind(event).execute(&mut *tx).await?.rows_affected();
+    if n == 1 {
+        audit(
+            &mut tx,
+            None,
+            Some(row.get("org_id")),
+            Some(row.get("aggregate_id")),
+            "outbox.recorded",
+            "INTERNAL_RECEIPT_ONLY",
+            event,
+        )
+        .await?;
+        sqlx::query("UPDATE operations.outbox SET published_at=now() WHERE id=$1")
+            .bind(event)
+            .execute(&mut *tx)
+            .await?;
+    }
+    let n=sqlx::query("UPDATE operations.jobs SET status='SUCCEEDED',lock_token=NULL,lease_until=NULL WHERE id=$1 AND lock_token=$2 AND lease_until>clock_timestamp()")
+ .bind(j.id).bind(j.token).execute(&mut *tx).await?.rows_affected();
+    if n != 1 {
+        return Err(Error::Conflict);
+    }
+    audit(
+        &mut tx,
+        None,
+        None,
+        Some(j.id),
+        "job.succeeded",
+        "INTERNAL_RECEIPT_ONLY",
+        Uuid::new_v4(),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+/// Append a pinned check result without advancing the pipeline.
+/// Owner-only in Foundation. F2 requires explicit minimal grants in deploy/grants.sql
+/// and runtime-role integration tests before adding an authorized orchestrator.
+pub async fn record_check(
+    pool: &PgPool,
+    org: Uuid,
+    release: Uuid,
+    pin: Uuid,
+    code: &str,
+    rule: &str,
+    hash: &str,
+) -> Result<String> {
+    let mut tx = pool.begin().await?;
+    let current: Option<Uuid> = sqlx::query_scalar(
+        "SELECT current_revision_id FROM catalog.releases WHERE org_id=$1 AND id=$2 FOR UPDATE",
+    )
+    .bind(org)
+    .bind(release)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(Error::NotFound)?;
+    let belongs:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM catalog.application_revisions WHERE org_id=$1 AND release_id=$2 AND id=$3)").bind(org).bind(release).bind(pin).fetch_one(&mut *tx).await?;
+    if !belongs {
+        return Err(Error::Forbidden);
+    }
+    // Foundation records pending technical work only. It cannot manufacture PASS.
+    let status = if current == Some(pin) {
+        "UNKNOWN"
+    } else {
+        "STALE"
+    };
+    sqlx::query("INSERT INTO operations.check_results(id,revision_id,check_code,rule_version,status,result_hash) VALUES($1,$2,$3,$4,$5,$6)")
+ .bind(Uuid::new_v4()).bind(pin).bind(code).bind(rule).bind(status).bind(hash).execute(&mut *tx).await?;
+    audit(
+        &mut tx,
+        None,
+        Some(org),
+        Some(release),
+        "check.recorded",
+        status,
+        Uuid::new_v4(),
+    )
+    .await?;
+    event(
+        &mut tx,
+        org,
+        release,
+        "check.recorded",
+        &format!("check:{pin}:{code}:{rule}:{hash}"),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(status.into())
+}

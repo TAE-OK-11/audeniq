@@ -1,0 +1,113 @@
+name: audeniq-production
+x-runtime: &runtime
+  image: ${AUDENIQ_IMAGE:?set verified immutable API image}
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs: [/tmp:size=16m]
+  networks: [backend, egress]
+  logging:
+    driver: json-file
+    options: {max-size: 10m, max-file: '3'}
+services:
+  postgres:
+    restart: unless-stopped
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_USER: audeniq_owner
+      POSTGRES_DB: audeniq_prod
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set production owner password}
+      API_DB_PASSWORD: ${API_DB_PASSWORD:?set production API password}
+      WORKER_DB_PASSWORD: ${WORKER_DB_PASSWORD:?set production worker password}
+    volumes:
+      - pg_prod:/var/lib/postgresql/data
+      - ./bootstrap.sql:/docker-entrypoint-initdb.d/001-roles.sql:ro
+      - ./grants.sql:/opt/audeniq/grants.sql:ro
+    networks: [backend]
+    command: ['postgres', '-c', 'max_connections=40', '-c', 'shared_buffers=128MB']
+    mem_limit: 768m
+    cpus: 1.0
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U audeniq_owner -d audeniq_prod']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  migrate:
+    <<: *runtime
+    command: [audeniq-migrate]
+    environment:
+      DATABASE_URL: postgres://audeniq_owner:${POSTGRES_PASSWORD}@postgres/audeniq_prod
+    depends_on:
+      postgres: {condition: service_healthy}
+    mem_limit: 256m
+    cpus: 0.5
+  grants:
+    image: postgres:17-bookworm
+    command: [psql, -h, postgres, -U, audeniq_owner, -d, audeniq_prod, -v, ON_ERROR_STOP=1, -f, /opt/grants.sql]
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes: ['./grants.sql:/opt/grants.sql:ro']
+    networks: [backend]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+  api:
+    restart: unless-stopped
+    <<: *runtime
+    command: [audeniq-api]
+    environment:
+      APP_ENV: production
+      APP_ORIGIN: ${APP_ORIGIN:?set exact HTTPS Studio origin}
+      API_BIND: 0.0.0.0:8080
+      EDGE_SERVICE_SECRET: ${EDGE_SERVICE_SECRET:?set random service secret}
+      DATABASE_URL: postgres://audeniq_api:${API_DB_PASSWORD}@postgres/audeniq_prod
+      STORAGE_ENABLED: ${STORAGE_ENABLED:-false}
+      S3_ENDPOINT: ${S3_ENDPOINT:-https://unconfigured.invalid}
+      S3_BUCKET: ${S3_BUCKET:-unconfigured}
+      S3_REGION: ${S3_REGION:-auto}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      RUST_LOG: info
+    depends_on:
+      grants: {condition: service_completed_successfully}
+    mem_limit: 512m
+    cpus: 1.0
+  worker:
+    restart: unless-stopped
+    <<: *runtime
+    command: [audeniq-worker]
+    environment:
+      DATABASE_URL: postgres://audeniq_worker:${WORKER_DB_PASSWORD}@postgres/audeniq_prod
+      QUEUE_INTERACTIVE_CONCURRENCY: '1'
+      QUEUE_QC_CONCURRENCY: '0'
+      QUEUE_RIGHTS_CONCURRENCY: '0'
+      QUEUE_DISTRIBUTION_CONCURRENCY: '0'
+      QUEUE_FINANCE_CONCURRENCY: '0'
+      RUST_LOG: info
+    depends_on:
+      grants: {condition: service_completed_successfully}
+    mem_limit: 384m
+    cpus: 0.5
+  tunnel:
+    image: ${CLOUDFLARED_IMAGE:?set tested cloudflared image digest}
+    restart: unless-stopped
+    command: [tunnel, --no-autoupdate, run, --token-file, /run/secrets/tunnel_token]
+    secrets: [tunnel_token]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [backend, egress]
+    depends_on: [api]
+    mem_limit: 256m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: '3'}
+secrets:
+  tunnel_token:
+    file: ./tunnel-token
+volumes:
+  pg_prod:
+networks:
+  backend: {internal: true}
+  egress: {}
