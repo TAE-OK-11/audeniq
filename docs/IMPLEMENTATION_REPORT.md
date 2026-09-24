@@ -129,3 +129,29 @@ SKIP LOCKED, lease token/만료, 제한 재시도, DLQ, 멱등성으로 작업�
 새 통합 테스트는 초안 편집·크레딧·preflight, 페이지네이션·ACL 철회, 세션/비밀번호 회전, 불변 계약/경로/package, 업로드 취소를 다룬다. 기존 runtime role 테스트에도 크레딧 교체와 세션 조회를 추가했다.
 
 검증 중 발생한 Rust 포맷 차이는 rustfmt 결과를 적용해 수정한다. CI는 포맷 차이가 있어도 컴파일/테스트 결과를 함께 수집하지만, 마지막 포맷 게이트가 실패하므로 포맷 오류를 성공으로 표시하지 않는다. 최종 실행 결과는 아래에 기록한다.
+
+## 확장 최종 검증 기록 — 2026-09-24
+
+검증 코드: `e753c64001c89b62e55f6b17e737b28aa3710f8b`.
+[GitHub Actions 35936749958](https://github.com/TAE-OK-11/audeniq/actions/runs/35936749958)에서 rust-postgres와 compose-smoke가 모두 **success**이다.
+
+| 실행 검사 | 결과 |
+|---|---|
+| cargo fmt --all + git diff --exit-code | 통과, 포맷 차이 없음 |
+| cargo clippy --workspace --all-targets --locked -- -D warnings | 통과 |
+| cargo build --locked -p audeniq-core --bins | API/Worker/migrator 통과 |
+| cargo test --locked -p audeniq-core -- --test-threads=2 | 단위 17개 + PostgreSQL 통합 16개 통과, 실패/무시 0개 |
+| cargo build --locked -p audeniq-edge --target wasm32-unknown-unknown | 통과 |
+| docker compose up --build -d | release 이미지 빌드, 마이그레이션 0001–0006 및 runtime grants 적용, API/Worker 기동 성공 |
+| /ready 서비스 인증 HTTP 검사 | 통과 |
+
+추가된 5개 통합 테스트:
+- draft_tracks_credits_archive_and_preflight
+- cursor_pagination_rechecks_acl_and_rejects_invalid_limits
+- session_inventory_revoke_and_password_rotation
+- immutable_contract_route_package_lineage
+- upload_cancel_blocks_late_completion_and_is_idempotent
+
+최종 실행 로그에서 migration/grants 컨테이너는 각각 exit 0, Worker는 Up, API readiness 요청은 성공했다. 최초 Foundation 대비 코드/설정/문서 18개 파일을 변경했고 기존 web 파일과 마이그레이션 0001/0002는 변경하지 않았다.
+
+이 기록을 추가하는 문서 커밋은 실행 코드·마이그레이션·테스트를 변경하지 않는다. 실제 R2/VPC 연결, 법적 동의/서명 검증, 전체 Stage 1 QC, DSP 송출 및 정산 실행은 여전히 완료·검증된 것으로 표시하지 않는다.
