@@ -1415,8 +1415,33 @@ async fn inactive_users_cannot_receive_active_membership(pool: PgPool) {
     let a = user(&app).await;
     let b = user(&app).await;
     sqlx::query("UPDATE identity.users SET status='DISABLED' WHERE id=$1")
-        .bind(b.user).execute(&pool).await.unwrap();
+        .bind(b.user)
+        .execute(&pool)
+        .await
+        .unwrap();
     let path = format!("/api/orgs/{}/memberships", a.org);
-    assert_eq!(call(&app, "PUT", &path, json!({"user_id":b.user,"role":"EDITOR","status":"ACTIVE"}), Some(&a)).await.0, StatusCode::CONFLICT);
-    assert_eq!(call(&app, "PUT", &path, json!({"user_id":b.user,"role":"EDITOR","status":"REVOKED"}), Some(&a)).await.0, StatusCode::OK);
+    assert_eq!(
+        call(
+            &app,
+            "PUT",
+            &path,
+            json!({"user_id":b.user,"role":"EDITOR","status":"ACTIVE"}),
+            Some(&a)
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        call(
+            &app,
+            "PUT",
+            &path,
+            json!({"user_id":b.user,"role":"EDITOR","status":"REVOKED"}),
+            Some(&a)
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
 }

@@ -107,9 +107,21 @@ async fn run(b: &Browser) -> anyhow::Result<()> {
     b.type_in("#name", "Browser Release").await?;
     b.click("[data-form=save] button[type=submit]").await?;
     b.assert_text("Browser Release").await?;
-    let screenshot: Value = b.http.get(format!("{}/screenshot", b.base)).send().await?.error_for_status()?.json().await?;
+    let screenshot: Value = b
+        .http
+        .get(format!("{}/screenshot", b.base))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
     std::fs::create_dir_all("test-results")?;
-    std::fs::write("test-results/studio.png.base64", screenshot["value"].as_str().ok_or_else(|| anyhow::anyhow!("missing screenshot"))?)?;
+    std::fs::write(
+        "test-results/studio.png.base64",
+        screenshot["value"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("missing screenshot"))?,
+    )?;
     b.click("[data-action=preflight]").await?;
     b.assert_text("최종 제출할 수 없어요").await?;
     b.post("/refresh", json!({})).await?;
