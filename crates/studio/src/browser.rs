@@ -53,7 +53,7 @@ fn text(v: &Value, key: &str) -> String {
 fn api_path(suffix: &str) -> String {
     STATE.with(|s| format!("/api/orgs/{}/{}", s.borrow().org, suffix))
 }
-fn fail(_: JsValue) -> String {
+fn fail<T>(_: T) -> String {
     "네트워크 연결을 확인해 주세요. 변경 결과가 불명확하면 목록을 새로 확인해 주세요.".into()
 }
 async fn request(method: &str, path: &str, body: Option<Value>) -> Result<Value> {
@@ -227,7 +227,10 @@ fn editor() {
         html.push_str("</select></label>");
     }
     if kind == "labels" {
-        html.push_str(&format!("<p class=\"small\">내 계정 당사자 ID: {}. 이 조직의 당사자만 연결할 수 있어요.</p>", STATE.with(|s| escape(&s.borrow().party))));
+        html.push_str(&format!(
+            "<p class=\"small\">내 계정 당사자 ID: {}. 이 조직의 당사자만 연결할 수 있어요.</p>",
+            STATE.with(|s| escape(&s.borrow().party))
+        ));
         html.push_str(&input(
             "party",
             "계약 당사자 ID",
@@ -254,7 +257,10 @@ async fn detail(id: &str) -> Result<()> {
         button("archive", "보관하기"),
         button("first", "목록")
     );
-    html.push_str(&format!("<p class=\"small\">내부 ID: {}</p>", text(&v, "id")));
+    html.push_str(&format!(
+        "<p class=\"small\">내부 ID: {}</p>",
+        text(&v, "id")
+    ));
     if kind == "releases" {
         html.push_str("<p class=\"notice\">초안을 저장할 수 있어요. 계약·동의 및 QC가 준비되지 않아 최종 제출과 배급은 비활성 상태예요.</p>");
         for t in v["tracks"].as_array().into_iter().flatten() {

@@ -27,6 +27,7 @@ jobs:
           toolchain: 1.98.1
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
+      - uses: Swatin/rust-cache@v2
       - name: Check Rust formatting
         id: formatting
         continue-on-error: true
@@ -43,6 +44,14 @@ jobs:
       - run: cargo install wasm-bindgen-cli --version 0.2.128 --locked
       - run: cargo run --locked -p audeniq-studio --bin studio-pack
       - run: wasm-bindgen --target web --out-dir web/studio/dist/pkg target/wasm32-unknown-unknown/release/audeniq_studio.wasm
+      - run: cargo install worker-build --version 0.1.12 --locked
+      - name: Build Workers deployment bundle without publishing
+        working-directory: crates/edge
+        env:
+          WRANGLER_SEND_METRICS: 'false'
+        run: |
+          cp wrangler.toml.example wrangler.toml
+          npx --yes wrangler@4.137.0 deploy --dry-run --outdir /tmp/audeniq-edge-bundle
       - uses: browser-actions/setup-chrome@v1
         with:
           install-chromedriver: true
@@ -60,6 +69,7 @@ jobs:
           chromedriver --port=9515 > /tmp/chromedriver.log 2>&1 &
           curl --fail --retry 15 --retry-connrefused --retry-delay 2 -H "X-Audeniq-Service:$EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready
           target/debug/audeniq-browser-smoke
+          base64 --decode test-results/studio.png.base64 > test-results/studio.png
       - name: Browser diagnostics
         if: failure()
         run: cat /tmp/api.log /tmp/web.log /tmp/chromedriver.log 2>/dev/null || true
@@ -67,6 +77,10 @@ jobs:
         with:
           name: studio-static-assets
           path: web/studio/dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: studio-browser-screenshot
+          path: test-results/studio.png
       - name: Enforce formatting result
         if: always() && steps.formatting.outcome == 'failure'
         run: exit 1
