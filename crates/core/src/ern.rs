@@ -20,15 +20,22 @@ fn required(s: &str) -> bool {
 }
 
 pub(crate) fn sha256(s: &str) -> bool {
-    s.len() == 64 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    s.len() == 64
+        && s.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 fn asset_valid(a: &AssetRef) -> bool {
-    !a.id.is_nil() && required(&a.object_key) && required(&a.content_type)
-        && sha256(&a.sha256) && a.size_bytes > 0
+    !a.id.is_nil()
+        && required(&a.object_key)
+        && required(&a.content_type)
+        && sha256(&a.sha256)
+        && a.size_bytes > 0
         && !a.object_key.starts_with('/')
         && !a.object_key.contains(['\\', '?', '#'])
-        && a.object_key.split('/').all(|p| !matches!(p, "" | "." | ".."))
+        && a.object_key
+            .split('/')
+            .all(|p| !matches!(p, "" | "." | ".."))
 }
 
 pub(crate) fn ordered_tracks(c: &CanonicalRelease) -> Vec<&CanonicalTrack> {
@@ -38,30 +45,56 @@ pub(crate) fn ordered_tracks(c: &CanonicalRelease) -> Vec<&CanonicalTrack> {
 }
 
 pub fn validate_metadata(c: &CanonicalRelease) -> Result<()> {
-    if [c.org_id, c.release_id, c.revision_id, c.snapshot_id, c.verification_package_id].iter().any(uuid::Uuid::is_nil)
-        || !sha256(&c.revision_hash) || !sha256(&c.verification_package_hash)
+    if [
+        c.org_id,
+        c.release_id,
+        c.revision_id,
+        c.snapshot_id,
+        c.verification_package_id,
+    ]
+    .iter()
+    .any(uuid::Uuid::is_nil)
+        || !sha256(&c.revision_hash)
+        || !sha256(&c.verification_package_hash)
         || c.rights_epoch < 0
-        || [&c.title, &c.artist, &c.language, &c.p_line, &c.c_line].iter().any(|s| !required(s))
+        || [&c.title, &c.artist, &c.language, &c.p_line, &c.c_line]
+            .iter()
+            .any(|s| !required(s))
         || !matches!(c.release_type.as_str(), "SINGLE" | "EP" | "ALBUM")
-        || c.tracks.is_empty() || c.tracks.len() > 1000
-        || !asset_valid(&c.artwork) || !c.artwork.content_type.starts_with("image/")
-        || !c.language.bytes().all(|b| b.is_ascii_alphabetic() || b == b'-')
-    { return Err(Error::Invalid); }
+        || c.tracks.is_empty()
+        || c.tracks.len() > 1000
+        || !asset_valid(&c.artwork)
+        || !c.artwork.content_type.starts_with("image/")
+        || !c
+            .language
+            .bytes()
+            .all(|b| b.is_ascii_alphabetic() || b == b'-')
+    {
+        return Err(Error::Invalid);
+    }
     validate_upc(&c.upc)?;
-    let mut ids = BTreeSet::new();
+    let mut ids = BTreeSet::from([c.artwork.id]);
     let mut positions = BTreeSet::new();
     let mut isrcs = BTreeSet::new();
     let mut assets = BTreeSet::from([c.artwork.id]);
     let mut keys = BTreeSet::from([c.artwork.object_key.as_str()]);
     for t in &c.tracks {
         validate_isrc(&t.isrc)?;
-        if t.id.is_nil() || !ids.insert(t.id) || !isrcs.insert(&t.isrc)
-            || !positions.insert((t.disc_number,t.track_number))
-            || t.disc_number == 0 || t.track_number == 0
-            || !required(&t.title) || !required(&t.artist)
-            || !asset_valid(&t.audio) || !t.audio.content_type.starts_with("audio/")
-            || !assets.insert(t.audio.id) || !keys.insert(t.audio.object_key.as_str())
-        { return Err(Error::Invalid); }
+        if t.id.is_nil()
+            || !ids.insert(t.id)
+            || !isrcs.insert(&t.isrc)
+            || !positions.insert((t.disc_number, t.track_number))
+            || t.disc_number == 0
+            || t.track_number == 0
+            || !required(&t.title)
+            || !required(&t.artist)
+            || !asset_valid(&t.audio)
+            || !t.audio.content_type.starts_with("audio/")
+            || !assets.insert(t.audio.id)
+            || !keys.insert(t.audio.object_key.as_str())
+        {
+            return Err(Error::Invalid);
+        }
     }
     let dsps: BTreeSet<_> = c.approved_scope.iter().map(|s| s.dsp_id).collect();
     if dsps.len() != c.approved_scope.len() || dsps.iter().any(uuid::Uuid::is_nil) {
@@ -71,8 +104,12 @@ pub fn validate_metadata(c: &CanonicalRelease) -> Result<()> {
 }
 
 fn escaped(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
-        .replace('"', "&quot;").replace('\'', "&apos;").replace('\r', "&#13;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+        .replace('\r', "&#13;")
 }
 
 fn element(out: &mut String, name: &str, value: impl std::fmt::Display) {
@@ -92,11 +129,17 @@ fn file(out: &mut String, a: &AssetRef) {
 pub fn generate_ern(canonical: &CanonicalRelease) -> Result<String> {
     let c = canonical;
     validate_metadata(c)?;
-    let mut out = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<NewReleaseMessage xmlns=\"{SYNTHETIC_NAMESPACE}\" profile=\"{SYNTHETIC_PROFILE}\" deliveryEnabled=\"false\">");
+    let mut out = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<NewReleaseMessage xmlns=\"{SYNTHETIC_NAMESPACE}\" profile=\"{SYNTHETIC_PROFILE}\" deliveryEnabled=\"false\">"
+    );
     out.push_str("<MessageHeader>");
     element(&mut out, "MessageId", c.snapshot_id);
     element(&mut out, "VerificationPackageId", c.verification_package_id);
-    element(&mut out, "VerificationPackageHash", &c.verification_package_hash);
+    element(
+        &mut out,
+        "VerificationPackageHash",
+        &c.verification_package_hash,
+    );
     element(&mut out, "RevisionId", c.revision_id);
     element(&mut out, "RevisionHash", &c.revision_hash);
     element(&mut out, "RightsEpoch", c.rights_epoch);
@@ -135,7 +178,9 @@ pub fn generate_ern(canonical: &CanonicalRelease) -> Result<String> {
     element(&mut out, "ArtworkReference", c.artwork.id);
     out.push_str("</Release><ApprovedDestinations>");
     let dsps: BTreeSet<_> = c.approved_scope.iter().map(|s| s.dsp_id).collect();
-    for id in dsps { element(&mut out, "DSP", id); }
+    for id in dsps {
+        element(&mut out, "DSP", id);
+    }
     out.push_str("</ApprovedDestinations></NewReleaseMessage>\n");
     Ok(out)
 }
@@ -146,6 +191,8 @@ pub fn generate_ern(canonical: &CanonicalRelease) -> Result<String> {
 /// This is not a general DDEX XSD validator. The fixture XSD is independently
 /// checked with xmllint in CI; future partner adapters must validate their XSDs.
 pub fn validate_xml(c: &CanonicalRelease, xml: &str) -> Result<()> {
-    if generate_ern(c)? != xml { return Err(Error::Invalid); }
+    if generate_ern(c)? != xml {
+        return Err(Error::Invalid);
+    }
     Ok(())
 }
