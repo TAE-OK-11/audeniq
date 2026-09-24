@@ -60,9 +60,36 @@ Docker 개발 환경은 `docker compose up --build -d` 후 서비스 시크릿�
 - 전체 기존 신청 마법사·프로필·지원·권리·정산 UI 연결은 미완료다. 현재 레이블 당사자/트랙 아티스트 선택에는 내부 ID 입력이 필요하다.
 - 업로드 완료 중 DB 행 잠금은 유지된다. 네트워크 IO를 분리하는 durable completion lease, 고아 객체 정리, auth_limits 보존 작업, 큐 sweep/upsert 최적화는 남아 있다. 업로드 복사 직후 만료되는 경계에서 고아 객체 가능성이 남는다.
 - F2 package/check 저장소의 runtime 권한은 의도적으로 열지 않았다. 후속 구현 시 최소 권한과 runtime-role 테스트를 함께 추가해야 한다.
-- 법적 동의·미성년 동의, 음원 QC, DDEX/DSP 전송, 권리 자동심사, 로열티 확정·지급은 활성화하지 않았다.
+- 법적 동의(성인 self-consent)·미성년 동의 게이트·음원 QC는 F2에서 활성화했다(브랜치 `foundation/f2-presubmit-stage1`). 미성년·전자서명 자동 경로는 법률 검토 전까지 `MINORITY_REVIEW_REQUIRED` 게이트로 고정. DDEX/DSP 전송, 권리 자동심사, 로열티 확정·지급은 미활성.
 - 실제 운영 배포·병합·DNS/방화벽/계정 변경·유료 서비스 개설은 하지 않았다.
 
 ## ⑦ 다음 단계
 
 법률 검토를 반영한 Pre-submit 동의/계약 및 미성년 동의 요건, 불변 신청 revision 생성, 실제 콘텐츠 체크섬/음원 QC, 작업자 freshness 검증을 연결한다. 기존 신청 마법사의 화면을 구현된 API 범위부터 순차 통합하고 ID 입력을 권한 필터가 적용된 선택 UI로 개선한다. 운영 전에는 실제 R2/VPC/서버 연결, 업로드 취소·복사 경합, 백업 복원 및 부하 검증이 필요하다.
+
+---
+
+## F2 Pre-submit + Stage 1 (브랜치 `foundation/f2-presubmit-stage1`)
+
+BLUEPRINT §§3–4 구현. 법률 검토(§23.1) 스킵 → 미성년·전자서명 자동 경로는 전부
+`MINORITY_REVIEW_REQUIRED` 게이트로 고정. 상세 설계는 `docs/F2_PLAN.md`.
+
+### 구현 범위
+
+- `POST /api/orgs/{org}/releases/{id}/presubmit` — 0-A(계정)·0-D(업로드 admit)·0-B/0-C(미성년 경로 감지) 게이트 평가.
+- `POST /api/orgs/{org}/releases/{id}/consents` — 성인 self-consent 패키지 생성. 미성년 경로 포함 시 `MINORITY_REVIEW_REQUIRED`로 차단.
+- `POST /api/orgs/{org}/releases/{id}/submit` — 게이트 서버 재확인 → 불변 revision 발행 → `qc` 큐에 `stage1` job enqueue. idempotency key: 동일 key+동일 body는 최초 revision으로 수렴, 동일 key+변경 body는 `IDEMPOTENCY_KEY_REUSED` 422.
+- Stage 1 워커: 1-B 필드 검증(8개 check) + 1-C 파일 QC(오디오 6·이미지 4 check, FFprobe 기반) + 변경점 캐시(result_hash, 재분석 0회) + 1-D Validation Package 발행.
+- Stage 1 통과 시 같은 트랜잭션에서 `rights` 큐에 `stage2` job enqueue. `execute()`가 `stage2`를 만나면 `operations::park()`으로 QUEUED에 보존(F3 구현 전까지 DLQ 방지, attempts 리셋).
+- `GET /api/orgs/{org}/releases/{id}/submission` — revision + checks + 상태 조회.
+- 마이그레이션 0007(`distribution.validation_packages`), 0008(`application_revisions.idempotency_key` + unique).
+
+### 로컬 검증 결과 (2026-09-25)
+
+- `cargo fmt --all --check`: 통과
+- `cargo clippy --workspace --all-targets -- -D warnings`: 통과
+- `cargo test --workspace`: 전부 통과
+  - `audeniq-core` lib 26개 (qc 단위 테스트 포함)
+  - `foundation` 18개 (F1 회귀 없음; migration 0008 추가로 raw INSERT 3건에 `idempotency_key` 명시)
+  - `stage1` 10개 (presubmit 게이트, submit 멱등 2, stage1 전체 흐름, 변경점 캐시, 손상 오디오 보완, 초대형 에셋 TECHNICAL_RETRY, 미성년 게이트, stage2 park)
+- GitHub Actions CI 결과는 푸시 후 아래에 기록한다.

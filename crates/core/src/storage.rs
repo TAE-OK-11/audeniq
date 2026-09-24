@@ -31,6 +31,8 @@ pub trait ObjectStore: Send + Sync {
     ) -> Result<UploadGrant>;
     async fn head(&self, key: &str) -> Result<Option<ObjectMeta>>;
     async fn freeze(&self, source: &str, target: &str, etag: &str) -> Result<()>;
+    /// Download full object bytes. Used by QC workers; size-capped by the caller contract.
+    async fn get(&self, key: &str) -> Result<Vec<u8>>;
 }
 pub struct DisabledStore;
 #[async_trait]
@@ -49,6 +51,9 @@ impl ObjectStore for DisabledStore {
         Err(Error::Storage)
     }
     async fn freeze(&self, _: &str, _: &str, _: &str) -> Result<()> {
+        Err(Error::Storage)
+    }
+    async fn get(&self, _: &str) -> Result<Vec<u8>> {
         Err(Error::Storage)
     }
 }
@@ -260,7 +265,40 @@ impl ObjectStore for S3Store {
         }
         Ok(())
     }
+    async fn get(&self, key: &str) -> Result<Vec<u8>> {
+        let url = self.signed("GET", key, &BTreeMap::new(), Utc::now(), 300)?;
+        let r = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|_| Error::Storage)?;
+        if !r.status().is_success() {
+            return Err(Error::Storage);
+        }
+        r.bytes()
+            .await
+            .map(|b| b.to_vec())
+            .map_err(|_| Error::Storage)
+    }
 }
+/// Build the object store from the same env convention as the API binary.
+/// Returns an error when STORAGE_ENABLED=true but S3_* vars are missing/invalid.
+pub fn store_from_env(allow_http: bool) -> anyhow::Result<std::sync::Arc<dyn ObjectStore>> {
+    if std::env::var("STORAGE_ENABLED").as_deref() == Ok("true") {
+        Ok(std::sync::Arc::new(S3Store::new(
+            &std::env::var("S3_ENDPOINT")?,
+            std::env::var("S3_BUCKET")?,
+            std::env::var("S3_ACCESS_KEY_ID")?,
+            std::env::var("S3_SECRET_ACCESS_KEY")?,
+            std::env::var("S3_REGION").unwrap_or_else(|_| "auto".into()),
+            allow_http,
+        )?))
+    } else {
+        Ok(std::sync::Arc::new(DisabledStore))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

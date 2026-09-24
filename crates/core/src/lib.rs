@@ -10,7 +10,9 @@ pub mod drafts;
 pub mod error;
 pub mod operations;
 pub mod packages;
+pub mod qc;
 pub mod storage;
+pub mod submission;
 pub mod uploads;
 pub mod states {
     include!(concat!(env!("OUT_DIR"), "/states.rs"));

@@ -62,6 +62,10 @@ impl ObjectStore for MockStore {
         m.insert(target.into(), obj);
         Ok(())
     }
+    async fn get(&self, key: &str) -> Result<Vec<u8>> {
+        let _ = key;
+        Err(Error::Storage)
+    }
 }
 async fn app(pool: PgPool) -> (Router, Arc<MockStore>) {
     database::MIGRATOR.run(&pool).await.unwrap();
@@ -82,6 +86,10 @@ async fn app(pool: PgPool) -> (Router, Arc<MockStore>) {
     .unwrap();
     (router(s), store)
 }
+async fn noop_store() -> std::sync::Arc<dyn ObjectStore> {
+    std::sync::Arc::new(MockStore::default())
+}
+
 #[derive(Clone)]
 struct User {
     user: Uuid,
@@ -234,6 +242,7 @@ async fn auth_sessions_csrf_origin_and_gates(pool: PgPool) {
         StatusCode::FORBIDDEN
     );
     let release = create(&app, &u, "releases").await;
+    // F2: submit now validates input; an empty body is rejected as invalid.
     assert_eq!(
         call(
             &app,
@@ -244,7 +253,7 @@ async fn auth_sessions_csrf_origin_and_gates(pool: PgPool) {
         )
         .await
         .0,
-        StatusCode::NOT_IMPLEMENTED
+        StatusCode::UNPROCESSABLE_ENTITY
     );
     assert_eq!(
         call(&app, "POST", "/api/auth/logout", json!({}), Some(&u))
@@ -476,7 +485,7 @@ async fn immutable_revisions_state_and_compare_and_swap(pool: PgPool) {
     let a = user(&app).await;
     let release = create(&app, &a, "releases").await;
     let rev = Uuid::new_v4();
-    sqlx::query("INSERT INTO catalog.application_revisions(id,org_id,release_id,revision,body,body_hash,consent_package_hash,created_by) VALUES($1,$2,$3,1,'{}',$4,$4,$5)").bind(rev).bind(a.org).bind(release).bind("a".repeat(64)).bind(a.user).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO catalog.application_revisions(id,org_id,release_id,revision,body,body_hash,consent_package_hash,created_by,idempotency_key) VALUES($1,$2,$3,1,'{}',$4,$4,$5,'test-rev')").bind(rev).bind(a.org).bind(release).bind("a".repeat(64)).bind(a.user).execute(&pool).await.unwrap();
     assert!(
         sqlx::query("UPDATE catalog.application_revisions SET body='{}' WHERE id=$1")
             .bind(rev)
@@ -580,8 +589,14 @@ async fn outbox_atomic_rollback_and_idempotency(pool: PgPool) {
         .await
         .unwrap()
         .unwrap();
-    operations::execute(&pool, &job).await.unwrap();
-    assert!(operations::execute(&pool, &job).await.is_err());
+    operations::execute(&pool, &noop_store().await, &job)
+        .await
+        .unwrap();
+    assert!(
+        operations::execute(&pool, &noop_store().await, &job)
+            .await
+            .is_err()
+    );
     // A duplicated event delivered in another safe job cannot duplicate the business effect.
     let mut tx = pool.begin().await.unwrap();
     operations::enqueue(
@@ -599,7 +614,9 @@ async fn outbox_atomic_rollback_and_idempotency(pool: PgPool) {
         .await
         .unwrap()
         .unwrap();
-    operations::execute(&pool, &job).await.unwrap();
+    operations::execute(&pool, &noop_store().await, &job)
+        .await
+        .unwrap();
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
             "SELECT count(*) FROM operations.event_receipts WHERE event_id=$1"
@@ -651,7 +668,11 @@ async fn queue_claim_crash_fencing_retry_dead_letter(pool: PgPool) {
             .await
             .is_err()
     );
-    assert!(operations::execute(&pool, &old).await.is_err());
+    assert!(
+        operations::execute(&pool, &noop_store().await, &old)
+            .await
+            .is_err()
+    );
     operations::heartbeat(&pool, &new, 60).await.unwrap();
     operations::fail(&pool, &new, false, "RETRYABLE_TEST")
         .await
@@ -698,7 +719,9 @@ async fn queue_claim_crash_fencing_retry_dead_letter(pool: PgPool) {
         .await
         .unwrap()
         .unwrap();
-    operations::execute(&pool, &j).await.unwrap();
+    operations::execute(&pool, &noop_store().await, &j)
+        .await
+        .unwrap();
     let status: String = sqlx::query_scalar("SELECT status FROM operations.jobs WHERE id=$1")
         .bind(j.id)
         .fetch_one(&pool)
@@ -749,7 +772,7 @@ async fn late_revision_check_never_advances_current_release(pool: PgPool) {
     let old = Uuid::new_v4();
     let new = Uuid::new_v4();
     for (revision, id) in [(1, old), (2, new)] {
-        sqlx::query("INSERT INTO catalog.application_revisions(id,org_id,release_id,revision,body,body_hash,consent_package_hash,created_by) VALUES($1,$2,$3,$4,'{}',$5,$5,$6)").bind(id).bind(a.org).bind(release).bind(revision).bind("a".repeat(64)).bind(a.user).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO catalog.application_revisions(id,org_id,release_id,revision,body,body_hash,consent_package_hash,created_by,idempotency_key) VALUES($1,$2,$3,$4,'{}',$5,$5,$6,$7)").bind(id).bind(a.org).bind(release).bind(revision).bind("a".repeat(64)).bind(a.user).bind(format!("test-{revision}")).execute(&pool).await.unwrap();
     }
     sqlx::query(
         "UPDATE catalog.releases SET current_revision_id=$2,row_version=row_version+1 WHERE id=$1",
@@ -865,7 +888,9 @@ async fn runtime_roles_enforce_foundation_boundary(pool: PgPool) {
         .await
         .unwrap()
         .unwrap();
-    operations::execute(&worker_pool, &job).await.unwrap();
+    operations::execute(&worker_pool, &noop_store().await, &job)
+        .await
+        .unwrap();
     assert!(
         sqlx::query("SELECT password_hash FROM identity.users")
             .fetch_all(&worker_pool)
@@ -1204,7 +1229,7 @@ async fn immutable_contract_route_package_lineage(pool: PgPool) {
     let fee = Uuid::new_v4();
     let hash = "a".repeat(64);
     // Synthetic owner-only fixtures; these are not approved agreements or production packages.
-    sqlx::query("INSERT INTO catalog.application_revisions(id,org_id,release_id,revision,body,body_hash,consent_package_hash,created_by) VALUES($1,$2,$3,1,'{}',$4,$4,$5)").bind(revision).bind(a.org).bind(release).bind(&hash).bind(a.user).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO catalog.application_revisions(id,org_id,release_id,revision,body,body_hash,consent_package_hash,created_by,idempotency_key) VALUES($1,$2,$3,1,'{}',$4,$4,$5,'test-rev')").bind(revision).bind(a.org).bind(release).bind(&hash).bind(a.user).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO distribution.verification_packages(id,org_id,revision_id,body,package_hash,rights_epoch) VALUES($1,$2,$3,'{}',$4,0)").bind(verification).bind(a.org).bind(revision).bind(&hash).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO distribution.release_snapshots(id,org_id,verification_id,body,snapshot_hash) VALUES($1,$2,$3,'{}',$4)").bind(snapshot).bind(a.org).bind(verification).bind(&hash).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO identity.parties(id,org_id,kind,display_name) VALUES($1,$2,'PERSON','Synthetic counterparty')").bind(other_party).bind(a.org).execute(&pool).await.unwrap();
