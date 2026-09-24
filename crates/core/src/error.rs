@@ -39,7 +39,7 @@ impl IntoResponse for Error {
             Self::Gated => (StatusCode::NOT_IMPLEMENTED, "PRE_SUBMIT_NOT_IMPLEMENTED"),
             Self::Storage => (StatusCode::SERVICE_UNAVAILABLE, "STORAGE_UNAVAILABLE"),
             Self::Database(sqlx::Error::Database(d))
-                if matches!(d.code().as_deref(), Some("23505" | "23503" | "23514")) =>
+                if matches!(d.code().as_deref(), Some("23505" | "23503" | "23514" | "55P03" | "40001" | "40P01")) =>
             {
                 (StatusCode::CONFLICT, "INVARIANT_CONFLICT")
             }

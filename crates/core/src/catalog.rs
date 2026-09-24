@@ -329,6 +329,11 @@ pub async fn member(s: &AppState, a: &Actor, org: Uuid, i: MemberInput) -> Resul
     if auth::membership(&mut tx, a, org, true).await? != "OWNER" {
         return Err(Error::Forbidden);
     }
+    if i.status == "ACTIVE" {
+        let active: Option<Uuid> = sqlx::query_scalar("SELECT id FROM identity.users WHERE id=$1 AND status='ACTIVE' FOR SHARE")
+            .bind(i.user_id).fetch_optional(&mut *tx).await?;
+        active.ok_or(Error::Conflict)?;
+    }
     sqlx::query("INSERT INTO identity.memberships(org_id,user_id,role,status) VALUES($1,$2,$3,$4) ON CONFLICT(org_id,user_id) DO UPDATE SET role=EXCLUDED.role,status=EXCLUDED.status WHERE identity.memberships.role<>'OWNER'").bind(org).bind(i.user_id).bind(i.role).bind(i.status).execute(&mut *tx).await?;
     operations::audit(
         &mut tx,

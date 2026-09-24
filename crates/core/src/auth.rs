@@ -64,7 +64,7 @@ pub async fn actor(
         .and_then(|s| {
             s.split(';').find_map(|v| {
                 let (k, val) = v.trim().split_once('=')?;
-                (k == config.cookie_name()).then_some(val)
+                (k == config.cookie_name()).then_some(val.trim())
             })
         })
         .ok_or(Error::Unauthorized)?;
@@ -188,6 +188,7 @@ pub async fn register(s: &AppState, h: &HeaderMap, input: Credentials) -> Result
         .await
         .map_err(|_| Error::Internal)?;
     let hash = password_hash(input.password).await?;
+    drop(_permit);
     let mut tx = s.pool.begin().await?;
     let user = Uuid::new_v4();
     let org = Uuid::new_v4();
@@ -249,6 +250,7 @@ pub async fn login(
         .map(|r| r.get::<String, _>("password_hash"))
         .unwrap_or(s.dummy_hash.clone());
     let ok = verify(input.password, hash.clone()).await;
+    drop(_permit);
     let mut tx = s.pool.begin().await?;
     if !ok
         || row
@@ -464,16 +466,22 @@ pub async fn change_password(
         .acquire()
         .await
         .map_err(|_| Error::Internal)?;
-    let mut tx = s.pool.begin().await?;
     let old: String = sqlx::query_scalar(
-        "SELECT password_hash FROM identity.users WHERE id=$1 AND status='ACTIVE' FOR UPDATE",
+        "SELECT password_hash FROM identity.users WHERE id=$1 AND status='ACTIVE'",
     )
     .bind(a.user)
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&s.pool)
     .await?
     .ok_or(Error::Unauthorized)?;
+    let valid = verify(i.current_password, old.clone()).await;
+    let hash = if valid { Some(password_hash(i.new_password).await?) } else { None };
+    drop(_permit);
+    let mut tx = s.pool.begin().await?;
+    let current: Option<String> = sqlx::query_scalar("SELECT password_hash FROM identity.users WHERE id=$1 AND status='ACTIVE' FOR UPDATE")
+        .bind(a.user).fetch_optional(&mut *tx).await?;
     lock_current_session(&mut tx, &a).await?;
-    if !verify(i.current_password, old).await {
+    if current.as_deref() != Some(old.as_str()) { return Err(Error::Unauthorized); }
+    if !valid {
         operations::audit(
             &mut tx,
             Some(a.user),
@@ -487,7 +495,7 @@ pub async fn change_password(
         tx.commit().await?;
         return Err(Error::Unauthorized);
     }
-    let hash = password_hash(i.new_password).await?;
+    let hash = hash.ok_or(Error::Internal)?;
     sqlx::query("UPDATE identity.users SET password_hash=$2 WHERE id=$1")
         .bind(a.user)
         .bind(hash)

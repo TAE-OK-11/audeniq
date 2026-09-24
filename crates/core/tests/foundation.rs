@@ -25,6 +25,7 @@ const ORIGIN: &str = "http://localhost:5173";
 #[derive(Default)]
 struct MockStore {
     objects: Mutex<BTreeMap<String, ObjectMeta>>,
+    calls: std::sync::atomic::AtomicUsize,
 }
 #[async_trait]
 impl ObjectStore for MockStore {
@@ -48,9 +49,11 @@ impl ObjectStore for MockStore {
         })
     }
     async fn head(&self, key: &str) -> Result<Option<ObjectMeta>> {
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok(self.objects.lock().await.get(key).cloned())
     }
     async fn freeze(&self, source: &str, target: &str, etag: &str) -> Result<()> {
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let mut m = self.objects.lock().await;
         let obj = m.get(source).cloned().ok_or(Error::Storage)?;
         if obj.etag != etag {
@@ -403,6 +406,7 @@ async fn upload_binding_expiry_duplicate_and_freeze(pool: PgPool) {
         store.head(&stable).await.unwrap().unwrap().etag,
         "opaque-multipart-etag-3"
     );
+    let before = store.calls.load(std::sync::atomic::Ordering::SeqCst);
     let expired = upload(&app, &a).await;
     let id = Uuid::parse_str(expired["upload_session_id"].as_str().unwrap()).unwrap();
     sqlx::query(
@@ -424,6 +428,11 @@ async fn upload_binding_expiry_duplicate_and_freeze(pool: PgPool) {
         .0,
         StatusCode::CONFLICT
     );
+    assert_eq!(before, store.calls.load(std::sync::atomic::Ordering::SeqCst), "expired sessions must perform no storage IO");
+    sqlx::query("UPDATE identity.auth_limits SET attempts=60 WHERE bucket_hash=$1")
+        .bind(audeniq_core::auth::hash_token(&format!("upload-complete:{}", a.user))).execute(&pool).await.unwrap();
+    assert_eq!(call(&app, "POST", &path, json!({"asset_id":up["asset_id"],"expected_key":up["expected_key"]}), Some(&a)).await.0, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(before, store.calls.load(std::sync::atomic::Ordering::SeqCst));
     let file_path = format!(
         "/api/orgs/{}/assets/{}",
         a.org,

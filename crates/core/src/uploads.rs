@@ -85,9 +85,10 @@ pub async fn complete(
     id: Uuid,
     i: CompleteInput,
 ) -> Result<Value> {
+    auth::rate(&s.pool, &format!("upload-complete:{}", a.user), 60).await?;
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, i.asset_id, "asset", true).await?;
-    let r=sqlx::query("SELECT u.*,a.object_key,(u.expires_at>now()) AS valid FROM catalog.upload_sessions u JOIN catalog.assets a ON a.id=u.asset_id AND a.org_id=u.org_id WHERE u.id=$1 AND u.org_id=$2 FOR UPDATE OF u,a").bind(id).bind(org).fetch_optional(&mut *tx).await?.ok_or(Error::NotFound)?;
+    let r=sqlx::query("SELECT u.*,a.object_key,(u.expires_at>clock_timestamp()) AS valid FROM catalog.upload_sessions u JOIN catalog.assets a ON a.id=u.asset_id AND a.org_id=u.org_id WHERE u.id=$1 AND u.org_id=$2 FOR UPDATE OF u,a").bind(id).bind(org).fetch_optional(&mut *tx).await?.ok_or(Error::NotFound)?;
     let asset: Uuid = r.get("asset_id");
     let key: String = r.get("expected_key");
     if asset != i.asset_id || key != i.expected_key {
@@ -109,6 +110,10 @@ pub async fn complete(
         return Err(Error::Conflict);
     }
     let stable: String = r.get("object_key");
+    // Recheck wall clock after HEAD and lock waits, before incurring a copy.
+    let valid: bool = sqlx::query_scalar("SELECT expires_at>clock_timestamp() FROM catalog.upload_sessions WHERE id=$1")
+        .bind(id).fetch_one(&mut *tx).await?;
+    if !valid { return Err(Error::Conflict); }
     s.storage.freeze(&key, &stable, &meta.etag).await?;
     let copy = s.storage.head(&stable).await?.ok_or(Error::Storage)?;
     if copy.size != size

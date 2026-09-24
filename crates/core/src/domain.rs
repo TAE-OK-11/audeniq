@@ -2,8 +2,9 @@ use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
-pub fn state_contract() -> Value {
-    serde_json::from_str(include_str!("../../../config/states.json")).expect("embedded contract")
+pub fn state_contract() -> &'static Value {
+    static CONTRACT: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
+    CONTRACT.get_or_init(|| serde_json::from_str(include_str!("../../../config/states.json")).expect("embedded contract"))
 }
 pub fn transition(axis: &str, old: &str, next: &str) -> Result<()> {
     let c = state_contract();
@@ -20,6 +21,33 @@ pub fn transition(axis: &str, old: &str, next: &str) -> Result<()> {
         Ok(())
     } else {
         Err(Error::Conflict)
+    }
+}
+
+#[cfg(test)]
+mod drift_tests {
+    #[test]
+    fn database_edges_match_rust_contract() {
+        let contract = super::state_contract();
+        let ddl = include_str!("../../../migrations/0002_state_contract.sql");
+        let edges = contract["transitions"].as_array().unwrap();
+        assert_eq!(
+            ddl.matches("INSERT INTO operations.allowed_transitions")
+                .count(),
+            edges.len()
+        );
+        for pair in edges {
+            let old = pair[0].as_str().unwrap();
+            let next = pair[1].as_str().unwrap();
+            let (axis, _) = contract["axes"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .find(|(_, values)| values.as_array().unwrap().iter().any(|v| v == old))
+                .unwrap();
+            let expected = format!("VALUES ('{axis}','{old}','{next}');");
+            assert!(ddl.contains(&expected), "missing DB edge: {expected}");
+        }
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -199,32 +227,5 @@ mod tests {
             freshness_guard(&a, &b, false, true),
             Err(ReturnTo::PreSubmit)
         );
-    }
-}
-
-#[cfg(test)]
-mod drift_tests {
-    #[test]
-    fn database_edges_match_rust_contract() {
-        let contract = super::state_contract();
-        let ddl = include_str!("../../../migrations/0002_state_contract.sql");
-        let edges = contract["transitions"].as_array().unwrap();
-        assert_eq!(
-            ddl.matches("INSERT INTO operations.allowed_transitions")
-                .count(),
-            edges.len()
-        );
-        for pair in edges {
-            let old = pair[0].as_str().unwrap();
-            let next = pair[1].as_str().unwrap();
-            let (axis, _) = contract["axes"]
-                .as_object()
-                .unwrap()
-                .iter()
-                .find(|(_, values)| values.as_array().unwrap().iter().any(|v| v == old))
-                .unwrap();
-            let expected = format!("VALUES ('{axis}','{old}','{next}');");
-            assert!(ddl.contains(&expected), "missing DB edge: {expected}");
-        }
     }
 }
