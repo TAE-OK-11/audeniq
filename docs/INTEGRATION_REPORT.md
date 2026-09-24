@@ -32,6 +32,14 @@ target/debug/audeniq-browser-smoke
 
 Docker 개발 환경은 `docker compose up --build -d` 후 서비스 시크릿을 포함한 `/ready` 요청으로 검증한다. 운영 Compose는 설정 파싱 및 공개 포트 없음만 검사하며 운영 서비스를 시작하지 않는다. 현재 작업 환경에는 Cargo/Docker가 없어 GitHub Actions의 격리된 러너에서 실행한다.
 
+### 최종 검증 결과 (2026-09-24)
+
+- 검증 커밋: `6913166` (브랜치 `foundation/f0-f1`)
+- GitHub Actions run: [36010757220](https://github.com/TAE-OK-11/audeniq/actions/runs/36010757220) — 2026-09-24T14:09:40Z ~ 14:20:09Z
+- `compose-smoke`: **success**
+- `rust-postgres`: **success** (fmt, clippy `-D warnings`, build, 단위·PostgreSQL 통합 테스트, WASM/edge 빌드, 브라우저 스모크 전부 통과)
+- 위 커밋 이전에는 `cargo fmt` 미적용 1건과 rust-cache 도입 후 `cargo install` 재설치 거부 2건으로 실패했으나 모두 수정 후 녹색 확인.
+
 ## ③ 데이터베이스
 
 기존 마이그레이션 0001~0006 및 6개 스키마·31개 테이블을 유지했다. 이번 변경에 신규 마이그레이션은 없다. 세션/CSRF 원문은 DB에 저장하지 않고 해시만 유지한다. 비밀번호 검증·해싱을 행 잠금 밖에서 수행한 후 같은 비밀번호 버전인지 잠금 안에서 재확인한다. 비활성 사용자의 ACTIVE 멤버십 추가를 거부한다. 크레딧 당사자 검증은 중복 제거 후 한 번의 ANY 조회로 처리한다.
