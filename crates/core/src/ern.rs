@@ -4,7 +4,7 @@
 use crate::{
     error::{Error, Result},
     identifiers::{validate_isrc, validate_upc},
-    preparation_model::{AssetRef, CanonicalRelease, CanonicalTrack},
+    preparation_model::{AssetRef, PreparedRelease, PreparedTrack},
 };
 use std::collections::BTreeSet;
 
@@ -38,13 +38,14 @@ fn asset_valid(a: &AssetRef) -> bool {
             .all(|p| !matches!(p, "" | "." | ".."))
 }
 
-pub(crate) fn ordered_tracks(c: &CanonicalRelease) -> Vec<&CanonicalTrack> {
+pub(crate) fn ordered_tracks(c: &PreparedRelease) -> Vec<&PreparedTrack> {
     let mut tracks: Vec<_> = c.tracks.iter().collect();
     tracks.sort_by_key(|t| (t.disc_number, t.track_number));
     tracks
 }
 
-pub fn validate_metadata(c: &CanonicalRelease) -> Result<()> {
+pub fn validate_metadata(c: &PreparedRelease) -> Result<()> {
+    validate_binding(c)?;
     if [
         c.org_id,
         c.release_id,
@@ -126,7 +127,7 @@ fn file(out: &mut String, a: &AssetRef) {
     out.push_str("</File>");
 }
 
-pub fn generate_ern(canonical: &CanonicalRelease) -> Result<String> {
+pub fn generate_prepared_ern(canonical: &PreparedRelease) -> Result<String> {
     let c = canonical;
     validate_metadata(c)?;
     let mut out = format!(
@@ -142,6 +143,7 @@ pub fn generate_ern(canonical: &CanonicalRelease) -> Result<String> {
     );
     element(&mut out, "RevisionId", c.revision_id);
     element(&mut out, "RevisionHash", &c.revision_hash);
+    element(&mut out, "CanonicalHash", c.canonical.canonical_hash());
     element(&mut out, "RightsEpoch", c.rights_epoch);
     out.push_str("</MessageHeader><ResourceList>");
     for t in ordered_tracks(c) {
@@ -150,6 +152,8 @@ pub fn generate_ern(canonical: &CanonicalRelease) -> Result<String> {
         element(&mut out, "ISRC", &t.isrc);
         element(&mut out, "Title", &t.title);
         element(&mut out, "DisplayArtist", &t.artist);
+        let pinned = c.canonical.tracks.iter().find(|track| track.track_id == t.id).ok_or(Error::Invalid)?;
+        credits(&mut out, &pinned.credits);
         file(&mut out, &t.audio);
         out.push_str("</SoundRecording>");
     }
@@ -190,9 +194,110 @@ pub fn generate_ern(canonical: &CanonicalRelease) -> Result<String> {
 /// missing/duplicate resources and pin tampering, without a network-capable parser.
 /// This is not a general DDEX XSD validator. The fixture XSD is independently
 /// checked with xmllint in CI; future partner adapters must validate their XSDs.
-pub fn validate_xml(c: &CanonicalRelease, xml: &str) -> Result<()> {
-    if generate_ern(c)? != xml {
+pub fn validate_xml(c: &PreparedRelease, xml: &str) -> Result<()> {
+    if generate_prepared_ern(c)? != xml {
         return Err(Error::Invalid);
+    }
+    Ok(())
+}
+
+/// Exact public interface to Muse's immutable canonical snapshot. Only available
+/// fields are serialized: no fabricated UPC, artwork, dates, URLs or party IDs.
+/// This canonical-only fixture is not a complete DSP submission. Use the enriched
+/// preparation API and four checks before treating a submission as prepared.
+pub fn generate_ern(c: &crate::distribution::CanonicalRelease) -> Result<String> {
+    validate_canonical(c)?;
+    let mut out = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<CanonicalReleaseMessage xmlns=\"{SYNTHETIC_NAMESPACE}\" deliveryEnabled=\"false\">");
+    element(&mut out, "CanonicalHash", c.canonical_hash());
+    element(&mut out, "ReleaseId", c.release_id);
+    element(&mut out, "RevisionId", c.revision_id);
+    element(&mut out, "RevisionHash", &c.revision_hash);
+    element(&mut out, "VerificationPackageId", c.verification_package_id);
+    element(&mut out, "VerificationPackageHash", &c.verification_package_hash);
+    element(&mut out, "RightsEpoch", c.rights_epoch);
+    element(&mut out, "Title", &c.release_title);
+    element(&mut out, "ReleaseType", &c.release_type);
+    out.push_str("<Tracks>");
+    let mut tracks: Vec<_> = c.tracks.iter().collect();
+    tracks.sort_by_key(|t| (t.disc_number,t.track_number));
+    for t in tracks {
+        out.push_str("<Track>");
+        element(&mut out, "ResourceReference", t.track_id);
+        element(&mut out, "ISRC", t.isrc.as_deref().ok_or(Error::Invalid)?);
+        element(&mut out, "Title", &t.title);
+        element(&mut out, "DisplayArtist", &t.artist_name);
+        element(&mut out, "DiscNumber", t.disc_number);
+        element(&mut out, "TrackNumber", t.track_number);
+        element(&mut out, "AssetId", t.asset_id.ok_or(Error::Invalid)?);
+        element(&mut out, "SHA256", t.asset_sha256.as_deref().ok_or(Error::Invalid)?);
+        credits(&mut out, &t.credits);
+        out.push_str("</Track>");
+    }
+    out.push_str("</Tracks><ApprovedDestinations>");
+    for id in c.approved_dsp_ids.iter().copied().collect::<BTreeSet<_>>() { element(&mut out,"DSP",id); }
+    out.push_str("</ApprovedDestinations></CanonicalReleaseMessage>\n");
+    Ok(out)
+}
+
+fn credits(out: &mut String, values: &[crate::distribution::CanonicalCredit]) {
+    out.push_str("<Credits>");
+    let mut values: Vec<_> = values.iter().collect();
+    values.sort_by(|a,b| (&a.role,&a.party_name,a.party_id).cmp(&(&b.role,&b.party_name,b.party_id)));
+    for credit in values {
+        out.push_str("<Credit>");
+        element(out,"PartyId",credit.party_id);
+        element(out,"PartyName",&credit.party_name);
+        element(out,"Role",&credit.role);
+        out.push_str("</Credit>");
+    }
+    out.push_str("</Credits>");
+}
+
+fn validate_canonical(c: &crate::distribution::CanonicalRelease) -> Result<()> {
+    if c.schema_version != 1 || !required(&c.rule_version) || c.rights_epoch < 0
+        || [c.org_id,c.release_id,c.revision_id,c.verification_package_id].iter().any(uuid::Uuid::is_nil)
+        || !sha256(&c.revision_hash) || !sha256(&c.verification_package_hash)
+        || !required(&c.release_title) || !matches!(c.release_type.as_str(),"SINGLE"|"EP"|"ALBUM")
+        || c.tracks.is_empty() || c.tracks.len()>1000 {
+        return Err(Error::Invalid);
+    }
+    let mut ids = BTreeSet::new(); let mut positions = BTreeSet::new(); let mut isrcs = BTreeSet::new();
+    for t in &c.tracks {
+        let isrc = t.isrc.as_deref().ok_or(Error::PolicyGate("EXISTING_ISRC_REQUIRED"))?;
+        validate_isrc(isrc)?;
+        if t.track_id.is_nil() || t.artist_id.is_nil() || !ids.insert(t.track_id)
+            || !positions.insert((t.disc_number,t.track_number)) || !isrcs.insert(isrc)
+            || t.disc_number<=0 || t.track_number<=0 || !required(&t.title) || !required(&t.artist_name)
+            || t.asset_id.is_none_or(|id|id.is_nil()) || !t.asset_sha256.as_deref().is_some_and(sha256)
+            || t.credits.iter().any(|x|x.party_id.is_nil() || !required(&x.party_name) || !required(&x.role)) {
+            return Err(Error::Invalid);
+        }
+    }
+    let dsps: BTreeSet<_> = c.approved_dsp_ids.iter().collect();
+    if dsps.len()!=c.approved_dsp_ids.len() || dsps.iter().any(|id|id.is_nil()) {return Err(Error::Invalid);}
+    Ok(())
+}
+
+/// Supplements may add required submission fields; they cannot replace snapshot
+/// metadata or asset pins. Credits are always taken directly from the snapshot.
+fn validate_binding(p: &PreparedRelease) -> Result<()> {
+    let c = &p.canonical;
+    validate_canonical(c)?;
+    if p.org_id!=c.org_id || p.release_id!=c.release_id || p.revision_id!=c.revision_id
+        || p.revision_hash!=c.revision_hash || p.verification_package_id!=c.verification_package_id
+        || p.verification_package_hash!=c.verification_package_hash || p.rights_epoch!=c.rights_epoch
+        || p.title!=c.release_title || p.release_type!=c.release_type || p.tracks.len()!=c.tracks.len()
+        || p.approved_scope.iter().map(|s|s.dsp_id).collect::<BTreeSet<_>>() != c.approved_dsp_ids.iter().copied().collect::<BTreeSet<_>>() {
+        return Err(Error::Conflict);
+    }
+    for t in &p.tracks {
+        let pinned = c.tracks.iter().find(|x|x.track_id==t.id).ok_or(Error::Conflict)?;
+        if t.title!=pinned.title || t.artist!=pinned.artist_name || Some(&t.isrc)!=pinned.isrc.as_ref()
+            || Some(t.audio.id)!=pinned.asset_id || Some(&t.audio.sha256)!=pinned.asset_sha256.as_ref()
+            || i32::try_from(t.disc_number).ok()!=Some(pinned.disc_number)
+            || i32::try_from(t.track_number).ok()!=Some(pinned.track_number) {
+            return Err(Error::Conflict);
+        }
     }
     Ok(())
 }

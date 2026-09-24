@@ -51,7 +51,7 @@ jobs:
         run: cargo test --workspace
       - name: Independent synthetic XSD validation
         run: |
-          test "$(find /tmp/f4-fixtures -name 'fixture-*.xml' | wc -l)" -eq 3
+          test "$(find /tmp/f4-fixtures -name 'fixture-*.xml' | wc -l)" -eq 6
           xmllint --nonet --noout --schema config/contracts/ern-synthetic-v1.xsd /tmp/f4-fixtures/fixture-*.xml
       - name: Formatted source artifact
         if: always()

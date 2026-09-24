@@ -2,9 +2,9 @@
 //! DB freshness facts come from Muse's orchestrator; no state transition here.
 use crate::{
     domain::{FreshnessPin, freshness_guard},
-    ern::{generate_ern, validate_metadata, validate_xml},
+    ern::{generate_prepared_ern, validate_metadata, validate_xml},
     error::Result,
-    preparation_model::{CanonicalRelease, VerificationPackage},
+    preparation_model::{PreparedRelease, VerificationPackage},
     route_plan::verify_scope,
     storage::ObjectStore,
 };
@@ -52,7 +52,7 @@ fn status(pass: bool) -> CheckStatus {
 /// blocked until the store supplies bounded streaming/hash verification.
 pub const MAX_PREFLIGHT_ASSET_BYTES: i64 = 64 * 1024 * 1024;
 
-pub async fn check_files(c: &CanonicalRelease, store: &dyn ObjectStore) -> CheckStatus {
+pub async fn check_files(c: &PreparedRelease, store: &dyn ObjectStore) -> CheckStatus {
     if validate_metadata(c).is_err() {
         return CheckStatus::Fail;
     }
@@ -87,7 +87,7 @@ pub async fn check_files(c: &CanonicalRelease, store: &dyn ObjectStore) -> Check
 /// Reuses the existing shared FreshnessGuard. The expected pin must identify the
 /// bytes being checked, not an independently supplied (possibly stale) package.
 pub fn check_rights(
-    c: &CanonicalRelease,
+    c: &PreparedRelease,
     v: &VerificationPackage,
     xml: &str,
     expected: &FreshnessPin,
@@ -110,7 +110,7 @@ pub fn check_rights(
 }
 
 pub async fn preflight(
-    c: &CanonicalRelease,
+    c: &PreparedRelease,
     v: &VerificationPackage,
     xml: &str,
     expected: &FreshnessPin,
@@ -127,6 +127,6 @@ pub async fn preflight(
 
 /// Convenience for callers that want the canonical byte representation before
 /// pinning it. Does not persist, mark READY, or enqueue anything.
-pub fn preparation_bytes(c: &CanonicalRelease) -> Result<Vec<u8>> {
-    Ok(generate_ern(c)?.into_bytes())
+pub fn preparation_bytes(c: &PreparedRelease) -> Result<Vec<u8>> {
+    Ok(generate_prepared_ern(c)?.into_bytes())
 }

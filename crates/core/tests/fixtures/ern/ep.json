@@ -76,5 +76,78 @@
     "sha256": "719cdcfdc0f1151c47f452af4e8b18260c9021c34e4f7dfdecf3314c7af4dd15",
     "size_bytes": 17,
     "content_type": "image/jpeg"
+  },
+  "canonical": {
+    "schema_version": 1,
+    "rule_version": "1",
+    "org_id": "00000000-0000-4000-8000-000000000001",
+    "release_id": "00000000-0000-4000-8000-000000000002",
+    "revision_id": "00000000-0000-4000-8000-000000000003",
+    "revision_hash": "a74b2e5bfd0a3e5fc8329151747ff7fe1176abce2bf37992a05927bd074d3131",
+    "verification_package_id": "00000000-0000-4000-8000-000000000005",
+    "verification_package_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "rights_epoch": 1,
+    "approved_dsp_ids": [
+      "00000000-0000-4000-8000-000000000090",
+      "00000000-0000-4000-8000-000000000091"
+    ],
+    "release_title": "연주자의 선율 ep",
+    "release_type": "EP",
+    "tracks": [
+      {
+        "track_id": "00000000-0000-4000-8000-000000000020",
+        "title": "Track 1",
+        "disc_number": 1,
+        "track_number": 1,
+        "artist_id": "00000000-0000-4000-8000-000000000050",
+        "artist_name": "Synthetic Artist",
+        "asset_id": "00000000-0000-4000-8000-000000000030",
+        "asset_sha256": "5dbd63fe0e57580bb6041bc976209693557d549423ca1a9495ee57e057299e73",
+        "isrc": "USAAA2600001",
+        "credits": [
+          {
+            "party_id": "00000000-0000-4000-8000-000000000060",
+            "party_name": "Synthetic Composer",
+            "role": "COMPOSER"
+          }
+        ]
+      },
+      {
+        "track_id": "00000000-0000-4000-8000-000000000021",
+        "title": "Track 2",
+        "disc_number": 1,
+        "track_number": 2,
+        "artist_id": "00000000-0000-4000-8000-000000000050",
+        "artist_name": "Synthetic Artist",
+        "asset_id": "00000000-0000-4000-8000-000000000031",
+        "asset_sha256": "87c3e664ed45e02760246bb0bc46f44713698e01b635652c2d474d043e6a854d",
+        "isrc": "USAAA2600002",
+        "credits": [
+          {
+            "party_id": "00000000-0000-4000-8000-000000000060",
+            "party_name": "Synthetic Composer",
+            "role": "COMPOSER"
+          }
+        ]
+      },
+      {
+        "track_id": "00000000-0000-4000-8000-000000000022",
+        "title": "Track 3",
+        "disc_number": 1,
+        "track_number": 3,
+        "artist_id": "00000000-0000-4000-8000-000000000050",
+        "artist_name": "Synthetic Artist",
+        "asset_id": "00000000-0000-4000-8000-000000000032",
+        "asset_sha256": "b91387a9cff7f2ed6b26753dfd02c1bbed5dd60dae0a46cf9a4c315deb7888b8",
+        "isrc": "USAAA2600003",
+        "credits": [
+          {
+            "party_id": "00000000-0000-4000-8000-000000000060",
+            "party_name": "Synthetic Composer",
+            "role": "COMPOSER"
+          }
+        ]
+      }
+    ]
   }
 }

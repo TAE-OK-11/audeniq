@@ -1,4 +1,4 @@
-//! Temporary, pure Stage 3 input contract until Muse's distribution module lands.
+//! Submission supplements bound to Muse's immutable canonical snapshot.
 //! No snapshot creation, persistence, hash assignment, or worker wiring lives here.
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
@@ -16,7 +16,7 @@ pub struct AssetRef {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-pub struct CanonicalTrack {
+pub struct PreparedTrack {
     pub id: Uuid,
     pub title: String,
     pub artist: String,
@@ -33,9 +33,10 @@ pub struct DspScope {
     pub dsp_id: Uuid,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct CanonicalRelease {
+pub struct PreparedRelease {
+    pub canonical: crate::distribution::CanonicalRelease,
     pub org_id: Uuid,
     pub release_id: Uuid,
     pub revision_id: Uuid,
@@ -53,7 +54,7 @@ pub struct CanonicalRelease {
     pub p_line: String,
     pub c_line: String,
     pub upc: String,
-    pub tracks: Vec<CanonicalTrack>,
+    pub tracks: Vec<PreparedTrack>,
     pub artwork: AssetRef,
 }
 

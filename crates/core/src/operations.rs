@@ -228,9 +228,17 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
         }
     }
     if j.kind == "prepare_release" {
-        // F4 owns Stage 3 prep. Park the job (no attempt consumed) so a future
-        // build picks the handoff up; never dead-letter it here.
-        return park(pool, j, "PREPARE_RELEASE_NOT_IMPLEMENTED", 300).await;
+        // F4: the durable prepare_release job (Stage 3 prep: canonical
+        // snapshot + frozen package). None = lease lost; leave the job alone
+        // so the sweeper reclaims it instead of burning an attempt.
+        match crate::distribution::run_prepare_release(pool, j).await {
+            Ok(None) => return Ok(()),
+            Ok(Some(_)) => return succeed(pool, j).await,
+            Err(e) => {
+                let short: String = format!("{e:?}").chars().take(500).collect();
+                return fail(pool, j, false, &format!("PREPARE_RELEASE_ERROR:{short}")).await;
+            }
+        }
     }
     if j.kind != "outbox.record" {
         return fail(pool, j, true, "UNIMPLEMENTED_JOB_KIND").await;

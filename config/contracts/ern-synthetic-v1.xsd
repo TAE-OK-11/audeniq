@@ -12,16 +12,20 @@
   <xs:element name="SHA256" type="s:Hash"/><xs:element name="Size" type="xs:positiveInteger"/>
   <xs:element name="MediaType" type="s:NonEmpty"/>
  </xs:sequence></xs:complexType>
+ <xs:complexType name="Credits"><xs:sequence><xs:element name="Credit" minOccurs="0" maxOccurs="unbounded"><xs:complexType><xs:sequence>
+  <xs:element name="PartyId" type="s:Uuid"/><xs:element name="PartyName" type="s:NonEmpty"/><xs:element name="Role" type="s:NonEmpty"/>
+ </xs:sequence></xs:complexType></xs:element></xs:sequence></xs:complexType>
  <xs:element name="NewReleaseMessage"><xs:complexType><xs:sequence>
   <xs:element name="MessageHeader"><xs:complexType><xs:sequence>
    <xs:element name="MessageId" type="s:Uuid"/><xs:element name="VerificationPackageId" type="s:Uuid"/>
    <xs:element name="VerificationPackageHash" type="s:Hash"/><xs:element name="RevisionId" type="s:Uuid"/>
-   <xs:element name="RevisionHash" type="s:Hash"/><xs:element name="RightsEpoch" type="xs:nonNegativeInteger"/>
+   <xs:element name="RevisionHash" type="s:Hash"/><xs:element name="CanonicalHash" type="s:Hash"/><xs:element name="RightsEpoch" type="xs:nonNegativeInteger"/>
   </xs:sequence></xs:complexType></xs:element>
   <xs:element name="ResourceList"><xs:complexType><xs:sequence>
    <xs:element name="SoundRecording" maxOccurs="1000"><xs:complexType><xs:sequence>
     <xs:element name="ResourceReference" type="s:Uuid"/><xs:element name="ISRC" type="s:Isrc"/>
     <xs:element name="Title" type="s:NonEmpty"/><xs:element name="DisplayArtist" type="s:NonEmpty"/>
+    <xs:element name="Credits" type="s:Credits"/>
     <xs:element name="File" type="s:File"/>
    </xs:sequence></xs:complexType></xs:element>
    <xs:element name="Image"><xs:complexType><xs:sequence>
@@ -56,4 +60,20 @@
  <xs:key name="artwork"><xs:selector xpath="s:ResourceList/s:Image"/><xs:field xpath="s:ResourceReference"/></xs:key>
  <xs:keyref name="artworkReference" refer="s:artwork"><xs:selector xpath="s:Release"/><xs:field xpath="s:ArtworkReference"/></xs:keyref>
  </xs:element>
+ <xs:element name="CanonicalReleaseMessage"><xs:complexType><xs:sequence>
+  <xs:element name="CanonicalHash" type="s:Hash"/><xs:element name="ReleaseId" type="s:Uuid"/>
+  <xs:element name="RevisionId" type="s:Uuid"/><xs:element name="RevisionHash" type="s:Hash"/>
+  <xs:element name="VerificationPackageId" type="s:Uuid"/><xs:element name="VerificationPackageHash" type="s:Hash"/>
+  <xs:element name="RightsEpoch" type="xs:nonNegativeInteger"/><xs:element name="Title" type="s:NonEmpty"/>
+  <xs:element name="ReleaseType" type="s:NonEmpty"/>
+  <xs:element name="Tracks"><xs:complexType><xs:sequence><xs:element name="Track" maxOccurs="1000"><xs:complexType><xs:sequence>
+   <xs:element name="ResourceReference" type="s:Uuid"/><xs:element name="ISRC" type="s:Isrc"/>
+   <xs:element name="Title" type="s:NonEmpty"/><xs:element name="DisplayArtist" type="s:NonEmpty"/>
+   <xs:element name="DiscNumber" type="xs:positiveInteger"/><xs:element name="TrackNumber" type="xs:positiveInteger"/>
+   <xs:element name="AssetId" type="s:Uuid"/><xs:element name="SHA256" type="s:Hash"/><xs:element name="Credits" type="s:Credits"/>
+  </xs:sequence></xs:complexType></xs:element></xs:sequence></xs:complexType></xs:element>
+  <xs:element name="ApprovedDestinations"><xs:complexType><xs:sequence>
+   <xs:element name="DSP" type="s:Uuid" minOccurs="0" maxOccurs="unbounded"/>
+  </xs:sequence></xs:complexType></xs:element>
+ </xs:sequence><xs:attribute name="deliveryEnabled" type="xs:boolean" use="required" fixed="false"/></xs:complexType></xs:element>
 </xs:schema>
