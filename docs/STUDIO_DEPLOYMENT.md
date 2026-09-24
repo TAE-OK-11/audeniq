@@ -43,7 +43,7 @@ docker compose --env-file deploy/production.env -f deploy/compose.production.yam
 
 ## Workers build and configuration
 
-Build the connected assets first. Install a worker-build version compatible with pinned worker 0.6.7, then copy `crates/edge/wrangler.toml.example` to ignored `wrangler.toml`. Build from `crates/edge` using `worker-build --release`. Set the real HTTPS APP_ORIGIN, production custom-domain route and verified VPC service ID. Set `EDGE_SERVICE_SECRET` through Wrangler secret storage, matching the backend. Do not embed it in static assets. Static assets and API are served by the **same Worker and origin**; do not deploy the old Studio wrangler configuration alongside it.
+Build the connected assets first. Install `worker-build 0.1.12` (`cargo install worker-build --version 0.1.12 --locked`), compatible with pinned worker 0.6.7, then copy `crates/edge/wrangler.toml.example` to ignored `wrangler.toml`. Build from `crates/edge` using `worker-build --release`. Validate packaging without publishing using `npx --yes wrangler@4.137.0 deploy --dry-run --outdir /tmp/audeniq-edge-bundle`. Set the real HTTPS APP_ORIGIN, production custom-domain route and verified VPC service ID. Set `EDGE_SERVICE_SECRET` through Wrangler secret storage, matching the backend. Do not embed it in static assets. Static assets and API are served by the **same Worker and origin**; do not deploy the old Studio wrangler configuration alongside it.
 
 `run_worker_first=true` guarantees origin checks and security headers apply to assets; `/api/admin*` remains blocked. No public-origin fallback exists. The generated frontend artifact in CI is useful for review; no CI step deploys it. Wrangler deployment is a separate authorized action.
 

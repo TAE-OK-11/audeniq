@@ -1408,3 +1408,15 @@ async fn csrf_bootstrap_is_same_origin_stable_and_revocation_safe(pool: PgPool) 
         StatusCode::UNAUTHORIZED
     );
 }
+
+#[sqlx::test]
+async fn inactive_users_cannot_receive_active_membership(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    let a = user(&app).await;
+    let b = user(&app).await;
+    sqlx::query("UPDATE identity.users SET status='DISABLED' WHERE id=$1")
+        .bind(b.user).execute(&pool).await.unwrap();
+    let path = format!("/api/orgs/{}/memberships", a.org);
+    assert_eq!(call(&app, "PUT", &path, json!({"user_id":b.user,"role":"EDITOR","status":"ACTIVE"}), Some(&a)).await.0, StatusCode::CONFLICT);
+    assert_eq!(call(&app, "PUT", &path, json!({"user_id":b.user,"role":"EDITOR","status":"REVOKED"}), Some(&a)).await.0, StatusCode::OK);
+}

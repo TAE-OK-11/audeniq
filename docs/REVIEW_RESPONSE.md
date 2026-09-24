@@ -23,3 +23,9 @@ The original reviews are preserved. This record distinguishes implementation fro
 | m4 / E3 / E8 / E10 / Q5 | Rate-bucket retention, sweep cadence, no-op upsert reduction, optional NOTIFY and rate-bucket contention remain optimization/operations tasks. |
 | asynchronous audit/outbox suggestion | Rejected: audit, domain changes and Outbox must commit atomically. Do not move this work to an uncoordinated post-commit call. |
 | merge suggestion | No automatic merge or production deployment performed. User-authorized commits stay on foundation/f0-f1. |
+
+## Additional technology review
+
+`TECH_REVIEW_F0F1.md` (9a37fa7) was added while this work was in progress and is preserved in the branch ancestry. Its BFF warning is accepted: edge code only checks boundaries, serves assets and proxies, while Rust API owns sessions/authorization/business transactions. The TypeScript replacement suggestion conflicts with the user's explicit Rust-only application requirement, so it is not adopted. The original React plan likewise does not override that later instruction; existing visual source remains untouched and connected application logic is Rust/WASM.
+
+Retention/partitioning risks and a price-input cost worksheet are now documented in `OPERATIONS_RETENTION.md`. No purge of immutable data or paid service activation was introduced. The review's older 26-table/28-test numbers are historical, not the latest validation counts. Rust types do not by themselves prove legal or financial correctness; SQLx runtime `query` calls here are verified by PostgreSQL integration tests, not compile-time query macros.

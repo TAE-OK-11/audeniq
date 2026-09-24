@@ -38,6 +38,9 @@ async fn serve(
     State(s): State<Arc<Dev>>,
     req: Request,
 ) -> std::result::Result<Response<Body>, StatusCode> {
+    if req.headers().get("host").and_then(|v| v.to_str().ok()) != Some("localhost:5173") {
+        return Err(StatusCode::FORBIDDEN);
+    }
     let path = req.uri().path().to_owned();
     if path.starts_with("/api/admin") {
         return Err(StatusCode::NOT_FOUND);
