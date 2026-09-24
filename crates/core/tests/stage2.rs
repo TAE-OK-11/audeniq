@@ -381,23 +381,30 @@ async fn stage2_self_rights_holder_passes(pool: PgPool) {
     assert_eq!(pkg["commercial_split_snapshot"]["share_bps"], 10000);
     assert_eq!(pkg["rights_epoch"], 0);
 
-    // Stage 3 handoff is queued; the F3 worker parks it instead of
-    // dead-lettering.
+    // F4: the Stage 3 prep handoff is a real handler now. It builds the
+    // canonical snapshot, freezes the distribution package, and moves the
+    // release to READY_FOR_DELIVERY.
     assert_eq!(
         run_one(&pool, &store, "distribution", "prepare_release").await,
-        "QUEUED"
+        "SUCCEEDED"
     );
-    let (attempts, last_error): (i32, Option<String>) = sqlx::query_as(
-        "SELECT attempts, last_error FROM operations.jobs WHERE kind='prepare_release'",
+    let (attempts, status): (i32, String) = sqlx::query_as(
+        "SELECT j.attempts, r.status FROM operations.jobs j JOIN catalog.releases r ON r.id=$1 WHERE j.kind='prepare_release'",
     )
+    .bind(release)
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(attempts, 0);
-    assert_eq!(
-        last_error.as_deref(),
-        Some("PREPARE_RELEASE_NOT_IMPLEMENTED")
-    );
+    assert_eq!(attempts, 1, "one claim, succeeded first try");
+    assert_eq!(status, "READY_FOR_DELIVERY");
+    let package_hash: String = sqlx::query_scalar(
+        "SELECT dp.package_hash FROM distribution.distribution_packages dp JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id JOIN distribution.verification_packages vp ON vp.id=cr.verification_package_id WHERE vp.revision_id=$1",
+    )
+    .bind(revision_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(package_hash.len(), 64);
 
     // Submission status now exposes the verification package.
     let (s, v) = call(
