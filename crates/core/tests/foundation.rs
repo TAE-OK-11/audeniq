@@ -1260,6 +1260,7 @@ async fn immutable_contract_route_package_lineage(pool: PgPool) {
     package.route.adapter_version = "different".into();
     assert!(artifacts::store_package(&mut c, &package).await.is_err());
     for table in [
+        "rights.contracts",
         "rights.contract_revisions",
         "distribution.dsp_endpoints",
         "distribution.route_plans",
@@ -1296,7 +1297,10 @@ async fn upload_cancel_blocks_late_completion_and_is_idempotent(pool: PgPool) {
     let result = call(&api, "GET", &base, json!({}), Some(&a)).await;
     assert_eq!(result.2["status"], "ISSUED");
     assert!(result.2.get("expected_key").is_none());
-    assert_eq!(call(&api, "GET", &base, json!({}), Some(&b)).await.0, StatusCode::FORBIDDEN);
+    assert_eq!(
+        call(&api, "GET", &base, json!({}), Some(&b)).await.0,
+        StatusCode::FORBIDDEN
+    );
     let cancel = format!("{base}/cancel");
     let result = call(&api, "POST", &cancel, json!({}), Some(&b)).await;
     assert_eq!(result.0, StatusCode::FORBIDDEN);
@@ -1306,19 +1310,34 @@ async fn upload_cancel_blocks_late_completion_and_is_idempotent(pool: PgPool) {
     let result = call(&api, "POST", &cancel, json!({}), Some(&a)).await;
     assert_eq!(result.2["duplicate"], true);
     let key = up["expected_key"].as_str().unwrap();
-    store.objects.lock().await.insert(key.into(), ObjectMeta {
-        size: 100, content_type: "audio/wav".into(),
-        nonce: up["grant"]["headers"]["x-amz-meta-upload-nonce"].as_str().unwrap().into(),
-        etag: "late-upload".into(),
-    });
+    store.objects.lock().await.insert(
+        key.into(),
+        ObjectMeta {
+            size: 100,
+            content_type: "audio/wav".into(),
+            nonce: up["grant"]["headers"]["x-amz-meta-upload-nonce"]
+                .as_str()
+                .unwrap()
+                .into(),
+            etag: "late-upload".into(),
+        },
+    );
     let body = json!({"asset_id":up["asset_id"],"expected_key":key});
     let result = call(&api, "POST", &format!("{base}/complete"), body, Some(&a)).await;
     assert_eq!(result.0, StatusCode::CONFLICT);
     let result = call(&api, "GET", &base, json!({}), Some(&a)).await;
     assert_eq!(result.2["status"], "CANCELLED");
     let state: String = sqlx::query_scalar("SELECT state FROM catalog.assets WHERE id=$1")
-        .bind(Uuid::parse_str(up["asset_id"].as_str().unwrap()).unwrap()).fetch_one(&pool).await.unwrap();
+        .bind(Uuid::parse_str(up["asset_id"].as_str().unwrap()).unwrap())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(state, "REJECTED");
-    let audits: i64 = sqlx::query_scalar("SELECT count(*) FROM operations.audit_events WHERE action='upload.cancelled'").fetch_one(&pool).await.unwrap();
+    let audits: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM operations.audit_events WHERE action='upload.cancelled'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     assert_eq!(audits, 1);
 }

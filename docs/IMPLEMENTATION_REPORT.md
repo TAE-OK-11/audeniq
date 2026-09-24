@@ -35,7 +35,7 @@ docker compose up --build -d
 
 ## ③ 데이터베이스
 
-6개 스키마, 26개 테이블을 생성한다. rights/finance는 예약 스키마이며 업무 테이블은 후속이다. 상세 목록 및 전체 보고서 엔티티의 구현/후속 구분은 DATA_MODEL.md에 있다.
+6개 스키마, 31개 테이블을 생성한다. rights에는 계약·계약 revision 참조 테이블이 있으며 finance 실행 테이블은 후속이다. 상세 목록 및 전체 보고서 엔티티의 구현/후속 구분은 DATA_MODEL.md에 있다.
 
 PK, 조직 복합 FK, 유일성/검사 제약, 조회/선점 인덱스, 불변 트리거 및 상태 전이/row_version 방어를 적용했다. submitted revision과 snapshot은 직접 UPDATE/DELETE할 수 없다. 마이그레이션 재실행과 잘못된 참조/중복 데이터 거부를 통합 테스트로 검사한다.
 
@@ -68,8 +68,8 @@ SKIP LOCKED, lease token/만료, 제한 재시도, DLQ, 멱등성으로 작업�
 - Workers VPC Service/Tunnel 실제 연결과 계정 설정은 미검증이다. Rust/WASM 컴파일 성공은 네트워크 연결 증거가 아니다.
 - Pre-submit 동의/계약/미성년자 요건, 최종 제출, 전체 QC, 권리 심사, DDEX, DSP 전송/접수/LIVE, 로열티·은행 지급은 비활성이다.
 - 관리자 Access JWT와 자체 관리자 권한을 결합한 업무 API는 미구현·비공개다.
-- 후속 권리/배급/정산 엔티티에는 구조 타입과 의존 계약만 준비한 부분이 있다. 배급 package/route/delivery 및 원장 영속화는 후속 마이그레이션이 필요하다.
-- 트랙 교체/삭제·세부 크레딧 편집, 대규모 목록 페이지네이션, 고아 업로드 정리/보존 정책, MFA와 사용자 복구 기능은 후속이다.
+- 후속 권리/배급/정산 엔티티에는 구조 타입과 의존 계약만 준비한 부분이 있다. 계약·route·package 저장 구조는 추가 구현했으며, 실제 승인 흐름·delivery_jobs·원장 영속화는 후속이다.
+- 트랙 교체·보관·크레딧 편집, 카탈로그/세션 페이지네이션, 세션 폐기·비밀번호 변경, 업로드 취소는 추가 구현했다. 고아 업로드 정리/보존 정책, MFA와 비밀번호 분실 복구는 후속이다.
 - 실제 2vCPU/4GB 동시 부하, 백업·복원, 운영 비밀 회전/관측 경보는 검증하지 않았다. 고객 운영 출시는 NO-GO이다.
 
 ## ⑦ 다음 개발 단계
@@ -80,7 +80,7 @@ SKIP LOCKED, lease token/만료, 제한 재시도, DLQ, 멱등성으로 작업�
 4. 보완·새 revision·STALE 결과 처리, 정책버전 및 취소/재시도를 연결한다. 권리 승인이나 DSP 상태는 Stage 1 성공으로 변경하지 않는다.
 5. 이후 Stage 2 권리 증거·심사, Stage 3 snapshot/package, 계약된 경로의 실행기를 순차 구현한다.
 
-## 최종 검증 기록 — 2026-09-23
+## 최초 Foundation 검증 기록 — 2026-09-23
 
 검증한 코드 커밋: `76382712e75eb7e876e65a6ab991afe14fc4ccbc`.
 [GitHub Actions 35858084863](https://github.com/TAE-OK-11/audeniq/actions/runs/35858084863)의 두 job이 모두 success이다.
@@ -110,3 +110,22 @@ SKIP LOCKED, lease token/만료, 제한 재시도, DLQ, 멱등성으로 작업�
 - upload_binding_expiry_duplicate_and_freeze
 
 최종 문서 커밋은 실행 코드·마이그레이션·테스트를 변경하지 않는다. Compose readiness는 프로세스/DB 기동 증거이며 실제 R2/VPC나 고객 부하 검증으로 확대 해석하지 않는다.
+
+## 추가 구현 — Foundation 확장
+
+새 애플리케이션 및 테스트 코드는 계속 Rust로 작성했다. SQL 마이그레이션 0003–0006을 추가했으며 기존 마이그레이션은 수정하지 않았다.
+
+| 영역 | 추가된 실제 기능 |
+|---|---|
+| 카탈로그 | 트랙 metadata/asset 교체, 트랙 soft archive, 크레딧 전체 교체/조회, release row_version 경합 방어 |
+| 조회 | 카탈로그·세션 UUID 커서 페이지네이션, 페이지마다 현재 ACL 검사 |
+| Pre-submit 준비 | 읽기 전용 체크리스트 API; 동의/미성년자/QC 게이트는 계속 비활성 |
+| 계정 | 세션 목록·개별 폐기·전체 로그아웃, 현재 비밀번호 확인 후 변경, 모든 세션 폐기 |
+| 인증 동시성 | 로그인 중 비밀번호가 바뀌면 구 비밀번호 검증 결과로 세션 발급 거부 |
+| 업로드 | 세션 상태 조회, 취소, 중복 취소 멱등성, 취소 이후 늦은 완료 요청 거부 |
+| 배급 데이터 계약 | 계약/revision/endpoint/route/package 5개 테이블과 불변·FK·profile·유일성 제약, 멱등 package 메타데이터 저장 |
+| 실행 경계 | 경로 enabled=false, endpoint INTEGRATION_PENDING, API/Worker의 신규 배급·계약 쓰기 권한 없음 |
+
+새 통합 테스트는 초안 편집·크레딧·preflight, 페이지네이션·ACL 철회, 세션/비밀번호 회전, 불변 계약/경로/package, 업로드 취소를 다룬다. 기존 runtime role 테스트에도 크레딧 교체와 세션 조회를 추가했다.
+
+검증 중 발생한 Rust 포맷 차이는 rustfmt 결과를 적용해 수정한다. CI는 포맷 차이가 있어도 컴파일/테스트 결과를 함께 수집하지만, 마지막 포맷 게이트가 실패하므로 포맷 오류를 성공으로 표시하지 않는다. 최종 실행 결과는 아래에 기록한다.
