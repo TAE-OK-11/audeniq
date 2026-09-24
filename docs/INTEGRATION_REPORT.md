@@ -129,3 +129,10 @@ BLUEPRINT §5 구현. F2에서 park 처리하던 `stage2` job이 이제 실제 �
   - `stage1` 10개 (기존 park 테스트는 `stage2_job_is_executed_not_parked`로 변경 — F3에서 stage2는 실제 실행되어 SUCCEEDED + STAGE2_PASSED)
   - `stage2` 5개 (self rights-holder PASS, 타 조직 duplicate REVIEW, lease loss, two-person override, seniority 매핑)
 - GitHub Actions CI 결과는 푸시 후 아래에 기록한다.
+
+### 최종 검증 결과 (2026-09-25)
+
+- 검증 커밋: `bf513a4` (브랜치 `foundation/f3-stage2-review`)
+- GitHub Actions run: [36068842959](https://github.com/TAE-OK-11/audeniq/actions/runs/36068842959) — `completed/success`
+- `compose-smoke`: **success**
+- `rust-postgres`: **success** (fmt, clippy `-D warnings`, build, 단위·PostgreSQL 통합 테스트 전부 통과)
