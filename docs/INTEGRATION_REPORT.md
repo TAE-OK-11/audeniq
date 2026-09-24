@@ -93,3 +93,11 @@ BLUEPRINT §§3–4 구현. 법률 검토(§23.1) 스킵 → 미성년·전자�
   - `foundation` 18개 (F1 회귀 없음; migration 0008 추가로 raw INSERT 3건에 `idempotency_key` 명시)
   - `stage1` 10개 (presubmit 게이트, submit 멱등 2, stage1 전체 흐름, 변경점 캐시, 손상 오디오 보완, 초대형 에셋 TECHNICAL_RETRY, 미성년 게이트, stage2 park)
 - GitHub Actions CI 결과는 푸시 후 아래에 기록한다.
+
+### 최종 검증 결과 (2026-09-25)
+
+- 검증 커밋: `25cdc9e` (브랜치 `foundation/f2-presubmit-stage1`)
+- GitHub Actions run: [36022926027](https://github.com/TAE-OK-11/audeniq/actions/runs/36022926027) — `completed/success`
+- `compose-smoke`: **success**
+- `rust-postgres`: **success** (fmt, clippy `-D warnings`, build, 단위·PostgreSQL 통합 테스트, WASM/edge 빌드, 브라우저 스모크 전부 통과)
+- 첫 푸시(`f06831d`)의 run 36022203984는 `rust-postgres` 실패: qc 단위 테스트가 픽스처 생성에 `ffmpeg`를 쓰는데 러너에 없어서 5개 실패. 워크플로우에 `ffmpeg` 설치 단계 추가로 해결.
