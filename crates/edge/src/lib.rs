@@ -14,8 +14,12 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
             return Response::error("Method not allowed", 405);
         }
         let mut response = env.assets("ASSETS")?.fetch_request(request).await?;
-        response.headers_mut().set("X-Content-Type-Options", "nosniff")?;
-        response.headers_mut().set("Referrer-Policy", "no-referrer")?;
+        response
+            .headers_mut()
+            .set("X-Content-Type-Options", "nosniff")?;
+        response
+            .headers_mut()
+            .set("Referrer-Policy", "no-referrer")?;
         response.headers_mut().set("X-Frame-Options", "DENY")?;
         response.headers_mut().set("Cache-Control", "no-cache")?;
         response.headers_mut().set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://*.r2.cloudflarestorage.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")?;

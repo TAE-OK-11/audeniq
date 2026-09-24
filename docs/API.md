@@ -52,3 +52,9 @@ Password changes require the current password, 12–128 byte new password, CSRF 
 Preflight is a read-only draft checklist. It reports TRACK_REQUIRED, AUDIO_REQUIRED, AUDIO_NOT_REGISTERED, AUDIO_QC_PENDING_OR_BLOCKED and NOT_DRAFT as applicable. It does not issue consent, run QC, verify rights or create a revision. The legal/consent/Stage 1 gates always keep ready_to_submit=false.
 
 Cancellation prevents asset registration and records audit/Outbox atomically. It does not revoke an already-issued S3 signature or delete bytes. The URL may remain writable until its expiry; a private quarantine lifecycle/cleanup policy remains required. Completed assets cannot be cancelled through this endpoint. The expired field describes the upload grant's deadline, not whether a completed asset has expired.
+
+### Browser session bootstrap
+
+`POST /api/auth/csrf` with `{}` and the HttpOnly session cookie recovers the CSRF token after reload. Exact `Origin` (and same-origin Fetch Metadata when supplied) is mandatory; an old CSRF header is not required for this endpoint. Response: `{ "csrf_token": "..." }`, no-store. Token is HMAC-derived per session and stable across tabs, not a session credential; DB still stores only its digest. Anonymous/revoked/expired sessions receive 401; bad Origin receives 403; per-user limit is 120 per 15 minutes. Subsequent mutations require `X-CSRF-Token` normally. Service secret remains mandatory.
+
+Upload completion is limited to 60 requests per user per 15 minutes, including duplicate or failed requests. Expired uploads are rejected before storage IO, with an additional wall-clock check before copy and the existing final atomic expiry check. Lock timeout/deadlock/serialization conflict returns 409; refresh/reconcile before retrying a mutation.

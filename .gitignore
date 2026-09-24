@@ -11,3 +11,4 @@ node_modules/
 /crates/edge/wrangler.toml
 /deploy/production.env
 /deploy/tunnel-token
+!/deploy/production.env.example

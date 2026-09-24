@@ -1382,11 +1382,29 @@ async fn csrf_bootstrap_is_same_origin_stable_and_revocation_safe(pool: PgPool) 
     let (_, _, v) = call(&app, "POST", "/api/auth/csrf", json!({}), Some(&a)).await;
     let token = v["csrf_token"].as_str().unwrap().to_owned();
     assert_eq!(token, a.csrf);
-    let request = Request::builder().method("POST").uri("/api/auth/csrf")
-        .header("x-audeniq-service", SECRET).header("origin", "https://evil.invalid")
-        .header("cookie", &a.cookie).body(Body::empty()).unwrap();
-    assert_eq!(app.clone().oneshot(request).await.unwrap().status(), StatusCode::FORBIDDEN);
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/auth/csrf")
+        .header("x-audeniq-service", SECRET)
+        .header("origin", "https://evil.invalid")
+        .header("cookie", &a.cookie)
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(
+        app.clone().oneshot(request).await.unwrap().status(),
+        StatusCode::FORBIDDEN
+    );
     a.csrf = token;
-    assert_eq!(call(&app, "POST", "/api/auth/logout", json!({}), Some(&a)).await.0, StatusCode::OK);
-    assert_eq!(call(&app, "POST", "/api/auth/csrf", json!({}), Some(&a)).await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        call(&app, "POST", "/api/auth/logout", json!({}), Some(&a))
+            .await
+            .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        call(&app, "POST", "/api/auth/csrf", json!({}), Some(&a))
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
 }

@@ -191,7 +191,9 @@ pub async fn execute(pool: &PgPool, j: &Job) -> Result<()> {
     tx.commit().await?;
     Ok(())
 }
-/// Append a pinned check result without advancing the pipeline. F2 will add its authorized orchestrator.
+/// Append a pinned check result without advancing the pipeline.
+/// Owner-only in Foundation. F2 requires explicit minimal grants in deploy/grants.sql
+/// and runtime-role integration tests before adding an authorized orchestrator.
 pub async fn record_check(
     pool: &PgPool,
     org: Uuid,

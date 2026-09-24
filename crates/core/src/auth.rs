@@ -333,7 +333,9 @@ pub async fn csrf(s: &AppState, h: &HeaderMap) -> Result<Json<Value>> {
     let token = session_csrf(&s.config.service_secret, &a.session_hash);
     let n = sqlx::query("UPDATE identity.sessions SET csrf_hash=$2 WHERE token_hash=$1 AND revoked_at IS NULL AND expires_at>clock_timestamp()")
         .bind(&a.session_hash).bind(hash_token(&token)).execute(&s.pool).await?.rows_affected();
-    if n != 1 { return Err(Error::Unauthorized); }
+    if n != 1 {
+        return Err(Error::Unauthorized);
+    }
     Ok(Json(json!({"csrf_token":token})))
 }
 pub async fn logout(s: &AppState, h: &HeaderMap) -> Result<(HeaderMap, Json<Value>)> {
