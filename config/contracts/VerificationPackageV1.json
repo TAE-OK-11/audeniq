@@ -1,0 +1,80 @@
+{
+  "title": "VerificationPackageV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "validation_hash",
+    "rights_epoch",
+    "approved_scope",
+    "approved_dsp_ids",
+    "blocked_scope",
+    "evidence_ids",
+    "split_plan_snapshot_id",
+    "catalog_match_refs",
+    "check_matrix_refs",
+    "policy_versions",
+    "verification_package_hash"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "validation_hash": {
+      "type": "string"
+    },
+    "rights_epoch": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "approved_scope": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "approved_dsp_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "blocked_scope": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidence_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "split_plan_snapshot_id": {
+      "type": "string"
+    },
+    "catalog_match_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "check_matrix_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "policy_versions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "verification_package_hash": {
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}
