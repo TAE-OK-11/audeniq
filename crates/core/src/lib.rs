@@ -8,6 +8,7 @@ pub mod database;
 pub mod domain;
 pub mod drafts;
 pub mod error;
+pub mod finance;
 pub mod operations;
 pub mod packages;
 pub mod qc;
