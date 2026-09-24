@@ -282,7 +282,7 @@ pub async fn login(
         return Err(Error::Unauthorized);
     }
     let token = random_token();
-    let csrf = random_token();
+    let csrf = session_csrf(&s.config.service_secret, &hash_token(&token));
     sqlx::query("INSERT INTO identity.sessions(token_hash,user_id,csrf_hash,expires_at) VALUES($1,$2,$3,now()+make_interval(secs=>$4))")
  .bind(hash_token(&token)).bind(user).bind(hash_token(&csrf)).bind(s.config.session_seconds as f64).execute(&mut *tx).await?;
     operations::audit(
@@ -316,6 +316,25 @@ pub fn cookie(c: &Config, token: &str, max_age: i64) -> String {
         max_age,
         if c.secure_cookie { "; Secure" } else { "" }
     )
+}
+fn session_csrf(secret: &str, session_hash: &[u8]) -> String {
+    use hmac::{Hmac, Mac};
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).expect("HMAC key");
+    mac.update(b"audeniq-session-csrf-v1:");
+    mac.update(session_hash);
+    hex::encode(mac.finalize().into_bytes())
+}
+/// Same-origin bootstrap: recovers a per-session CSRF token without browser storage.
+/// The token is stable across tabs. Existing sessions migrate on first bootstrap.
+pub async fn csrf(s: &AppState, h: &HeaderMap) -> Result<Json<Value>> {
+    origin(h, &s.config)?;
+    let a = actor(&s.pool, h, &s.config, false).await?;
+    rate(&s.pool, &format!("csrf:{}", a.user), 120).await?;
+    let token = session_csrf(&s.config.service_secret, &a.session_hash);
+    let n = sqlx::query("UPDATE identity.sessions SET csrf_hash=$2 WHERE token_hash=$1 AND revoked_at IS NULL AND expires_at>clock_timestamp()")
+        .bind(&a.session_hash).bind(hash_token(&token)).execute(&s.pool).await?.rows_affected();
+    if n != 1 { return Err(Error::Unauthorized); }
+    Ok(Json(json!({"csrf_token":token})))
 }
 pub async fn logout(s: &AppState, h: &HeaderMap) -> Result<(HeaderMap, Json<Value>)> {
     let a = actor(&s.pool, h, &s.config, true).await?;
@@ -474,13 +493,23 @@ pub async fn change_password(
     .await?
     .ok_or(Error::Unauthorized)?;
     let valid = verify(i.current_password, old.clone()).await;
-    let hash = if valid { Some(password_hash(i.new_password).await?) } else { None };
+    let hash = if valid {
+        Some(password_hash(i.new_password).await?)
+    } else {
+        None
+    };
     drop(_permit);
     let mut tx = s.pool.begin().await?;
-    let current: Option<String> = sqlx::query_scalar("SELECT password_hash FROM identity.users WHERE id=$1 AND status='ACTIVE' FOR UPDATE")
-        .bind(a.user).fetch_optional(&mut *tx).await?;
+    let current: Option<String> = sqlx::query_scalar(
+        "SELECT password_hash FROM identity.users WHERE id=$1 AND status='ACTIVE' FOR UPDATE",
+    )
+    .bind(a.user)
+    .fetch_optional(&mut *tx)
+    .await?;
     lock_current_session(&mut tx, &a).await?;
-    if current.as_deref() != Some(old.as_str()) { return Err(Error::Unauthorized); }
+    if current.as_deref() != Some(old.as_str()) {
+        return Err(Error::Unauthorized);
+    }
     if !valid {
         operations::audit(
             &mut tx,

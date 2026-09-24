@@ -428,11 +428,35 @@ async fn upload_binding_expiry_duplicate_and_freeze(pool: PgPool) {
         .0,
         StatusCode::CONFLICT
     );
-    assert_eq!(before, store.calls.load(std::sync::atomic::Ordering::SeqCst), "expired sessions must perform no storage IO");
+    assert_eq!(
+        before,
+        store.calls.load(std::sync::atomic::Ordering::SeqCst),
+        "expired sessions must perform no storage IO"
+    );
     sqlx::query("UPDATE identity.auth_limits SET attempts=60 WHERE bucket_hash=$1")
-        .bind(audeniq_core::auth::hash_token(&format!("upload-complete:{}", a.user))).execute(&pool).await.unwrap();
-    assert_eq!(call(&app, "POST", &path, json!({"asset_id":up["asset_id"],"expected_key":up["expected_key"]}), Some(&a)).await.0, StatusCode::TOO_MANY_REQUESTS);
-    assert_eq!(before, store.calls.load(std::sync::atomic::Ordering::SeqCst));
+        .bind(audeniq_core::auth::hash_token(&format!(
+            "upload-complete:{}",
+            a.user
+        )))
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            &path,
+            json!({"asset_id":up["asset_id"],"expected_key":up["expected_key"]}),
+            Some(&a)
+        )
+        .await
+        .0,
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    assert_eq!(
+        before,
+        store.calls.load(std::sync::atomic::Ordering::SeqCst)
+    );
     let file_path = format!(
         "/api/orgs/{}/assets/{}",
         a.org,
@@ -1349,4 +1373,20 @@ async fn upload_cancel_blocks_late_completion_and_is_idempotent(pool: PgPool) {
     .await
     .unwrap();
     assert_eq!(audits, 1);
+}
+
+#[sqlx::test]
+async fn csrf_bootstrap_is_same_origin_stable_and_revocation_safe(pool: PgPool) {
+    let (app, _) = app(pool).await;
+    let mut a = user(&app).await;
+    let (_, _, v) = call(&app, "POST", "/api/auth/csrf", json!({}), Some(&a)).await;
+    let token = v["csrf_token"].as_str().unwrap().to_owned();
+    assert_eq!(token, a.csrf);
+    let request = Request::builder().method("POST").uri("/api/auth/csrf")
+        .header("x-audeniq-service", SECRET).header("origin", "https://evil.invalid")
+        .header("cookie", &a.cookie).body(Body::empty()).unwrap();
+    assert_eq!(app.clone().oneshot(request).await.unwrap().status(), StatusCode::FORBIDDEN);
+    a.csrf = token;
+    assert_eq!(call(&app, "POST", "/api/auth/logout", json!({}), Some(&a)).await.0, StatusCode::OK);
+    assert_eq!(call(&app, "POST", "/api/auth/csrf", json!({}), Some(&a)).await.0, StatusCode::UNAUTHORIZED);
 }

@@ -6,3 +6,8 @@ node_modules/
 .wrangler/
 *.log
 /test-results/
+/web/studio/dist/
+/crates/edge/build/
+/crates/edge/wrangler.toml
+/deploy/production.env
+/deploy/tunnel-token

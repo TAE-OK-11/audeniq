@@ -4,7 +4,10 @@ use serde_json::Value;
 use uuid::Uuid;
 pub fn state_contract() -> &'static Value {
     static CONTRACT: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
-    CONTRACT.get_or_init(|| serde_json::from_str(include_str!("../../../config/states.json")).expect("embedded contract"))
+    CONTRACT.get_or_init(|| {
+        serde_json::from_str(include_str!("../../../config/states.json"))
+            .expect("embedded contract")
+    })
 }
 pub fn transition(axis: &str, old: &str, next: &str) -> Result<()> {
     let c = state_contract();

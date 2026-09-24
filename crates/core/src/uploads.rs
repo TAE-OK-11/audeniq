@@ -111,9 +111,15 @@ pub async fn complete(
     }
     let stable: String = r.get("object_key");
     // Recheck wall clock after HEAD and lock waits, before incurring a copy.
-    let valid: bool = sqlx::query_scalar("SELECT expires_at>clock_timestamp() FROM catalog.upload_sessions WHERE id=$1")
-        .bind(id).fetch_one(&mut *tx).await?;
-    if !valid { return Err(Error::Conflict); }
+    let valid: bool = sqlx::query_scalar(
+        "SELECT expires_at>clock_timestamp() FROM catalog.upload_sessions WHERE id=$1",
+    )
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if !valid {
+        return Err(Error::Conflict);
+    }
     s.storage.freeze(&key, &stable, &meta.etag).await?;
     let copy = s.storage.head(&stable).await?.ok_or(Error::Storage)?;
     if copy.size != size

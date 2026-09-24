@@ -155,10 +155,22 @@ pub async fn replace_credits(
     let id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM catalog.tracks WHERE org_id=$1 AND release_id=$2 AND id=$3 AND archived_at IS NULL")
         .bind(org).bind(release).bind(track).fetch_optional(&mut *tx).await?;
     id.ok_or(Error::NotFound)?;
-    let parties: Vec<Uuid> = i.credits.iter().map(|v| v.party_id).collect::<BTreeSet<_>>().into_iter().collect();
-    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM identity.parties WHERE org_id=$1 AND id=ANY($2)")
-        .bind(org).bind(&parties).fetch_one(&mut *tx).await?;
-    if count != parties.len() as i64 { return Err(Error::Forbidden); }
+    let parties: Vec<Uuid> = i
+        .credits
+        .iter()
+        .map(|v| v.party_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM identity.parties WHERE org_id=$1 AND id=ANY($2)")
+            .bind(org)
+            .bind(&parties)
+            .fetch_one(&mut *tx)
+            .await?;
+    if count != parties.len() as i64 {
+        return Err(Error::Forbidden);
+    }
     sqlx::query("DELETE FROM catalog.credits WHERE org_id=$1 AND track_id=$2")
         .bind(org)
         .bind(track)
