@@ -18,7 +18,7 @@ jobs:
           POSTGRES_DB: audeniq_f2
         ports: ['5432:5432']
         options: >-
-          --health-cmd 'pg_isready -U f2test -d audeniq_f2'
+          --health-cmd "pg_isready -U f2test -d audeniq_f2"
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       DATABASE_URL: postgres://f2test:f2test-local-dev-only@localhost/audeniq_f2
