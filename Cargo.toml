@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/edge"]
+members = ["crates/core", "crates/edge", "crates/studio"]
 default-members = ["crates/core"]
 resolver = "2"
 [workspace.package]

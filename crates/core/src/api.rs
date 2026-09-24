@@ -49,6 +49,7 @@ pub fn router(s: AppState) -> Router {
         .route("/ready", get(ready))
         .route("/api/auth/register", post(register))
         .route("/api/auth/login", post(login))
+        .route("/api/auth/csrf", post(csrf))
         .route("/api/auth/logout", post(logout))
         .route("/api/auth/logout-all", post(logout_all))
         .route("/api/auth/sessions", get(sessions))
@@ -138,6 +139,9 @@ async fn login(
 }
 async fn logout(State(s): State<AppState>, h: HeaderMap) -> Result<(HeaderMap, Json<Value>)> {
     auth::logout(&s, &h).await
+}
+async fn csrf(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
+    auth::csrf(&s, &h).await
 }
 async fn me(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;

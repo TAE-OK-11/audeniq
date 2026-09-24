@@ -6,8 +6,20 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
     if request.url()?.origin().ascii_serialization() != origin {
         return Response::error("Forbidden host", 403);
     }
-    if !request.path().starts_with("/api/") || request.path().starts_with("/api/admin") {
+    if request.path().starts_with("/api/admin") {
         return Response::error("Not found", 404);
+    }
+    if !request.path().starts_with("/api/") {
+        if !matches!(request.method(), Method::Get | Method::Head) {
+            return Response::error("Method not allowed", 405);
+        }
+        let mut response = env.assets("ASSETS")?.fetch_request(request).await?;
+        response.headers_mut().set("X-Content-Type-Options", "nosniff")?;
+        response.headers_mut().set("Referrer-Policy", "no-referrer")?;
+        response.headers_mut().set("X-Frame-Options", "DENY")?;
+        response.headers_mut().set("Cache-Control", "no-cache")?;
+        response.headers_mut().set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://*.r2.cloudflarestorage.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")?;
+        return Ok(response);
     }
     if !matches!(request.method(), Method::Get | Method::Head)
         && request.headers().get("origin")?.as_deref() != Some(&origin)

@@ -37,6 +37,36 @@ jobs:
       - run: cargo build --locked -p audeniq-core --bins
       - run: cargo test --locked -p audeniq-core -- --test-threads=2
       - run: cargo build --locked -p audeniq-edge --target wasm32-unknown-unknown
+      - run: cargo test --locked -p audeniq-studio
+      - run: cargo clippy --locked -p audeniq-studio --lib --target wasm32-unknown-unknown -- -D warnings
+      - run: cargo build --locked -p audeniq-studio --lib --release --target wasm32-unknown-unknown
+      - run: cargo install wasm-bindgen-cli --version 0.2.128 --locked
+      - run: cargo run --locked -p audeniq-studio --bin studio-pack
+      - run: wasm-bindgen --target web --out-dir web/studio/dist/pkg target/wasm32-unknown-unknown/release/audeniq_studio.wasm
+      - uses: browser-actions/setup-chrome@v1
+        with:
+          install-chromedriver: true
+      - name: Browser integration against local API
+        env:
+          APP_ENV: development
+          APP_ORIGIN: http://localhost:5173
+          EDGE_SERVICE_SECRET: ephemeral-browser-service-secret-at-least-32-characters
+          API_BIND: 127.0.0.1:8080
+          STORAGE_ENABLED: 'false'
+        run: |
+          cargo run --locked -p audeniq-core --bin audeniq-migrate
+          target/debug/audeniq-api > /tmp/api.log 2>&1 &
+          target/debug/audeniq-dev-web > /tmp/web.log 2>&1 &
+          chromedriver --port=9515 > /tmp/chromedriver.log 2>&1 &
+          curl --fail --retry 15 --retry-connrefused --retry-delay 2 -H "X-Audeniq-Service:$EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready
+          target/debug/audeniq-browser-smoke
+      - name: Browser diagnostics
+        if: failure()
+        run: cat /tmp/api.log /tmp/web.log /tmp/chromedriver.log 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: studio-static-assets
+          path: web/studio/dist
       - name: Enforce formatting result
         if: always() && steps.formatting.outcome == 'failure'
         run: exit 1

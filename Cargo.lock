@@ -121,6 +121,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "audeniq-studio"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
