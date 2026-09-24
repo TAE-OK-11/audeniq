@@ -211,9 +211,26 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
         }
     }
     if j.kind == "stage2" {
-        // F3 owns Stage 2. Park the job (no attempt consumed) so a future
+        // F3: the durable stage2.review job. None = lease lost; leave the job
+        // alone so the sweeper reclaims it instead of burning an attempt.
+        match crate::review::run_stage2(pool, j).await {
+            Ok(None) => return Ok(()),
+            Ok(Some(summary)) => {
+                if summary.needs_retry {
+                    return fail(pool, j, false, "STAGE2_TECHNICAL_RETRY").await;
+                }
+                return succeed(pool, j).await;
+            }
+            Err(e) => {
+                let short: String = format!("{e:?}").chars().take(500).collect();
+                return fail(pool, j, false, &format!("STAGE2_ERROR:{short}")).await;
+            }
+        }
+    }
+    if j.kind == "prepare_release" {
+        // F4 owns Stage 3 prep. Park the job (no attempt consumed) so a future
         // build picks the handoff up; never dead-letter it here.
-        return park(pool, j, "STAGE2_NOT_IMPLEMENTED", 300).await;
+        return park(pool, j, "PREPARE_RELEASE_NOT_IMPLEMENTED", 300).await;
     }
     if j.kind != "outbox.record" {
         return fail(pool, j, true, "UNIMPLEMENTED_JOB_KIND").await;

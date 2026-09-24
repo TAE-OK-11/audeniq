@@ -1,0 +1,963 @@
+//! F3 Stage 2 review (BLUEPRINT §5): the durable `stage2.review` job.
+//!
+//! Five logical module areas run inside one job; per-module checkpoints are
+//! the immutable `operations.check_results` rows keyed by
+//! `(revision_id, check_code, result_hash)`, so a crashed job resumes without
+//! re-running completed modules. All mutations run in one transaction fenced
+//! by the job's lock token: an expired worker cannot commit a decision.
+use crate::{
+    api::AppState,
+    auth::{self, Actor},
+    error::{Error, Result},
+    operations,
+};
+use serde::Deserialize;
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+use sqlx::{PgConnection, PgPool, Row};
+use std::collections::{BTreeMap, BTreeSet};
+use uuid::Uuid;
+
+/// Rule version for Stage 2 review checks.
+pub const REVIEW_RULE_VERSION: &str = "1";
+
+pub struct Stage2Summary {
+    pub revision_id: Uuid,
+    pub decision: &'static str,
+    pub verification_package_id: Option<Uuid>,
+    pub release_status: String,
+    pub needs_retry: bool,
+}
+
+struct ReviewCheck {
+    check_code: &'static str,
+    status: &'static str,
+    detail: String,
+}
+
+impl ReviewCheck {
+    fn result_hash(&self) -> String {
+        sha256_hex(&format!(
+            "{}:{}:{}",
+            self.check_code, REVIEW_RULE_VERSION, self.detail
+        ))
+    }
+}
+
+fn sha256_hex(s: &str) -> String {
+    hex::encode(Sha256::digest(s.as_bytes()))
+}
+
+struct Ctx {
+    org: Uuid,
+    release: Uuid,
+    revision_id: Uuid,
+    body: Value,
+    body_hash: String,
+    validation_package_id: Uuid,
+    validation_body: Value,
+    consent_path: String,
+    applicant_party: Option<Uuid>,
+}
+
+async fn load_ctx(pool: &PgPool, revision_id: Uuid) -> Result<Ctx> {
+    let rev = sqlx::query(
+        "SELECT org_id, release_id, body, body_hash, consent_package_hash FROM catalog.application_revisions WHERE id=$1",
+    )
+    .bind(revision_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(Error::NotFound)?;
+    let org: Uuid = rev.get("org_id");
+    let release: Uuid = rev.get("release_id");
+    let body: Value = rev.get("body");
+    let body_hash: String = rev.get("body_hash");
+    let consent_hash: String = rev.get("consent_package_hash");
+    let cp = sqlx::query("SELECT body FROM catalog.consent_packages WHERE package_hash=$1")
+        .bind(&consent_hash)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(Error::NotFound)?;
+    let cp_body: Value = cp.get("body");
+    let consent_path = cp_body
+        .get("path")
+        .and_then(Value::as_str)
+        .unwrap_or("self")
+        .to_string();
+    let applicant_party = cp_body
+        .get("applicant_party_id")
+        .and_then(Value::as_str)
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .or_else(|| {
+            cp_body
+                .get("party_ids")
+                .and_then(Value::as_array)
+                .and_then(|a| a.first())
+                .and_then(Value::as_str)
+                .and_then(|s| Uuid::parse_str(s).ok())
+        });
+    Ok(Ctx {
+        org,
+        release,
+        revision_id,
+        body,
+        body_hash,
+        validation_package_id: Uuid::nil(),
+        validation_body: Value::Null,
+        consent_path,
+        applicant_party,
+    })
+}
+
+/// 2-D durable entry point. Replaces the F2 `park()` for `stage2`.
+/// Returns `None` when the job lost its lease: the caller must neither
+/// succeed nor fail the job; the sweeper will reclaim it.
+pub async fn run_stage2(pool: &PgPool, job: &operations::Job) -> Result<Option<Stage2Summary>> {
+    let revision_id = job
+        .payload
+        .get("revision_id")
+        .and_then(Value::as_str)
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .ok_or(Error::Internal)?;
+    let mut ctx = load_ctx(pool, revision_id).await?;
+    let vp_id = job
+        .payload
+        .get("validation_package_id")
+        .and_then(Value::as_str)
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .ok_or(Error::Internal)?;
+    ctx.validation_package_id = vp_id;
+    let vp = sqlx::query("SELECT body FROM distribution.validation_packages WHERE id=$1")
+        .bind(vp_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(Error::NotFound)?;
+    ctx.validation_body = vp.get("body");
+
+    // Idempotent completion: a previous attempt already pinned the
+    // verification package (worker crashed between commit and completion).
+    if let Some(pkg_id) = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM distribution.verification_packages WHERE revision_id=$1",
+    )
+    .bind(revision_id)
+    .fetch_optional(pool)
+    .await?
+    {
+        let status: String = sqlx::query_scalar("SELECT status FROM catalog.releases WHERE id=$1")
+            .bind(ctx.release)
+            .fetch_one(pool)
+            .await?;
+        return Ok(Some(Stage2Summary {
+            revision_id,
+            decision: "PASS",
+            verification_package_id: Some(pkg_id),
+            release_status: status,
+            needs_retry: false,
+        }));
+    }
+
+    let mut tx = pool.begin().await?;
+    // Fence every mutation on the job's live lease: an expired worker's
+    // decision must never commit.
+    let held: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM operations.jobs WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp() FOR UPDATE",
+    )
+    .bind(job.id)
+    .bind(job.token)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if held.is_none() {
+        return Ok(None);
+    }
+    // The worker owns Stage 2 now: STAGE1_PASSED -> STAGE2_RUNNING.
+    sqlx::query("UPDATE catalog.releases SET status='STAGE2_RUNNING', row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND status='STAGE1_PASSED'")
+        .bind(ctx.org)
+        .bind(ctx.release)
+        .execute(&mut *tx)
+        .await?;
+
+    let mut checks = Vec::new();
+    checks.extend(module_applicant_rights(&mut tx, &ctx).await?);
+    checks.extend(module_catalog_match(&mut tx, &ctx).await?);
+    checks.extend(module_metadata_content(&ctx).await?);
+    checks.extend(module_policy_integrity(&mut tx, &ctx).await?);
+
+    let mut check_ids = Vec::new();
+    for c in &checks {
+        let rh = c.result_hash();
+        let existing: Option<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM operations.check_results WHERE revision_id=$1 AND check_code=$2 AND result_hash=$3",
+        )
+        .bind(revision_id)
+        .bind(c.check_code)
+        .bind(&rh)
+        .fetch_optional(&mut *tx)
+        .await?;
+        let id = match existing {
+            Some(id) => id,
+            None => sqlx::query_scalar("INSERT INTO operations.check_results(id, revision_id, check_code, rule_version, status, result_hash, detail) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id")
+                .bind(Uuid::new_v4())
+                .bind(revision_id)
+                .bind(c.check_code)
+                .bind(REVIEW_RULE_VERSION)
+                .bind(c.status)
+                .bind(&rh)
+                .bind(&c.detail)
+                .fetch_one(&mut *tx)
+                .await?,
+        };
+        check_ids.push(id);
+    }
+
+    let summary = decide(&mut tx, &ctx, &checks, &check_ids).await?;
+    tx.commit().await?;
+    Ok(Some(summary))
+}
+
+/// Apply overrides, merge statuses, and commit the decision.
+async fn decide(
+    tx: &mut PgConnection,
+    ctx: &Ctx,
+    checks: &[ReviewCheck],
+    check_ids: &[Uuid],
+) -> Result<Stage2Summary> {
+    // Overrides never mutate check_results; they replace the effective status.
+    let overrides = sqlx::query(
+        "SELECT check_code, proposed_status FROM rights.review_overrides WHERE org_id=$1 AND revision_id=$2 AND (expires_at IS NULL OR expires_at>now())",
+    )
+    .bind(ctx.org)
+    .bind(ctx.revision_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let ov: BTreeMap<String, String> = overrides
+        .iter()
+        .map(|r| {
+            (
+                r.get::<String, _>("check_code"),
+                r.get::<String, _>("proposed_status"),
+            )
+        })
+        .collect();
+    let effective =
+        |c: &ReviewCheck| -> &str { ov.get(c.check_code).map(String::as_str).unwrap_or(c.status) };
+    let mut counts: BTreeMap<&str, i64> = BTreeMap::new();
+    for c in checks {
+        *counts.entry(effective(c)).or_default() += 1;
+    }
+    let n = |s: &str| counts.get(s).copied().unwrap_or(0);
+    let decision: &'static str = if n("TECHNICAL_RETRY") > 0 {
+        "TECHNICAL_RETRY"
+    } else if n("REVIEW_REQUIRED") > 0 || n("BLOCKED") > 0 {
+        "REVIEW_REQUIRED"
+    } else if n("CORRECTION_REQUIRED") > 0 {
+        "CORRECTION_REQUIRED"
+    } else {
+        "PASS"
+    };
+    let request = Uuid::new_v4();
+
+    if decision == "TECHNICAL_RETRY" {
+        // Stay STAGE2_RUNNING; checks are cached, the caller requeues.
+        operations::audit(
+            &mut *tx,
+            None,
+            Some(ctx.org),
+            Some(ctx.revision_id),
+            "stage2.technical_retry",
+            "STAGE2_TECHNICAL_RETRY",
+            request,
+        )
+        .await?;
+        return Ok(Stage2Summary {
+            revision_id: ctx.revision_id,
+            decision,
+            verification_package_id: None,
+            release_status: "STAGE2_RUNNING".into(),
+            needs_retry: true,
+        });
+    }
+
+    if decision == "PASS" {
+        // Pin the rights epoch: F3 never advances it mid-review; revocation
+        // and dispute flows (F4+) bump it and force re-review.
+        sqlx::query(
+            "INSERT INTO rights.rights_epochs(org_id, release_id, epoch) VALUES($1,$2,0) ON CONFLICT DO NOTHING",
+        )
+        .bind(ctx.org)
+        .bind(ctx.release)
+        .execute(&mut *tx)
+        .await?;
+        let epoch: i64 = sqlx::query_scalar(
+            "SELECT epoch FROM rights.rights_epochs WHERE org_id=$1 AND release_id=$2",
+        )
+        .bind(ctx.org)
+        .bind(ctx.release)
+        .fetch_one(&mut *tx)
+        .await?;
+        let approved_scope = approved_scope(checks);
+        let split = commercial_split_snapshot(tx, ctx).await?;
+        let pkg = json!({
+            "schema_version": 1,
+            "revision_id": ctx.revision_id,
+            "revision_hash": ctx.body_hash,
+            "stage1_validation_package_id": ctx.validation_package_id,
+            "decision": "PASS",
+            "check_summary": counts,
+            "stage2_check_refs": check_ids,
+            "approved_scope": approved_scope,
+            "commercial_split_snapshot": split,
+            "rights_epoch": epoch,
+            "overrides_applied": ov.keys().collect::<Vec<_>>(),
+            "rule_version": REVIEW_RULE_VERSION,
+        });
+        let pkg_hash = sha256_hex(&serde_json::to_string(&pkg).expect("json serializes"));
+        let pkg_id = Uuid::new_v4();
+        sqlx::query("INSERT INTO distribution.verification_packages(id, org_id, revision_id, body, package_hash, rights_epoch) VALUES($1,$2,$3,$4,$5,$6)")
+            .bind(pkg_id).bind(ctx.org).bind(ctx.revision_id).bind(&pkg).bind(&pkg_hash).bind(epoch)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("UPDATE catalog.releases SET status='STAGE2_PASSED', row_version=row_version+1 WHERE org_id=$1 AND id=$2")
+            .bind(ctx.org).bind(ctx.release)
+            .execute(&mut *tx)
+            .await?;
+        // Same-transaction handoff to Stage 3 prep (F4 implements the handler;
+        // until then the worker parks it instead of dead-lettering).
+        sqlx::query("INSERT INTO operations.jobs(id, queue, kind, payload, pinned_revision_id, idempotency_key) VALUES($1,'distribution','prepare_release',$2,$3,$4) ON CONFLICT(idempotency_key) DO NOTHING")
+            .bind(Uuid::new_v4())
+            .bind(json!({"revision_id": ctx.revision_id, "verification_package_id": pkg_id, "package_hash": pkg_hash}))
+            .bind(ctx.revision_id)
+            .bind(format!("prepare_release:{}", ctx.revision_id))
+            .execute(&mut *tx)
+            .await?;
+        operations::audit(
+            &mut *tx,
+            None,
+            Some(ctx.org),
+            Some(ctx.revision_id),
+            "stage2.pass",
+            "STAGE2_PASS",
+            request,
+        )
+        .await?;
+        return Ok(Stage2Summary {
+            revision_id: ctx.revision_id,
+            decision,
+            verification_package_id: Some(pkg_id),
+            release_status: "STAGE2_PASSED".into(),
+            needs_retry: false,
+        });
+    }
+
+    // REVIEW_REQUIRED or CORRECTION_REQUIRED: record the return routing.
+    let status = if decision == "REVIEW_REQUIRED" {
+        "STAGE2_REVIEW"
+    } else {
+        "STAGE2_CORRECTION"
+    };
+    let reasons: Vec<&str> = checks
+        .iter()
+        .filter(|c| {
+            let e = effective(c);
+            e == "REVIEW_REQUIRED" || e == "BLOCKED" || e == "CORRECTION_REQUIRED"
+        })
+        .map(|c| c.check_code)
+        .collect();
+    sqlx::query("UPDATE catalog.releases SET status=$3, row_version=row_version+1 WHERE org_id=$1 AND id=$2")
+        .bind(ctx.org)
+        .bind(ctx.release)
+        .bind(status)
+        .execute(&mut *tx)
+        .await?;
+    operations::audit(
+        &mut *tx,
+        None,
+        Some(ctx.org),
+        Some(ctx.revision_id),
+        "stage2.decision",
+        &format!("{}:{}", decision, reasons.join(",")),
+        request,
+    )
+    .await?;
+    Ok(Stage2Summary {
+        revision_id: ctx.revision_id,
+        decision,
+        verification_package_id: None,
+        release_status: status.into(),
+        needs_retry: false,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Module 1: applicant_rights (2-0 router, 2-A/2-B)
+// ---------------------------------------------------------------------------
+
+fn special_flags(ctx: &Ctx) -> Vec<String> {
+    ctx.validation_body
+        .get("special_flags")
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+async fn module_applicant_rights(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec<ReviewCheck>> {
+    let mut out = Vec::new();
+    // 2-0 router: the path comes from the F2 consent package.
+    let path = ctx.consent_path.clone();
+    let minority = ctx
+        .body
+        .get("minority_declared")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if minority || path == "minor" {
+        out.push(ReviewCheck {
+            check_code: "S2_ROUTER_PATH",
+            status: "REVIEW_REQUIRED",
+            detail: "minority path is hard-gated to human review until legal review (§23.1)".into(),
+        });
+        return Ok(out);
+    }
+    out.push(ReviewCheck {
+        check_code: "S2_ROUTER_PATH",
+        status: "PASS",
+        detail: format!(
+            "router path={path} applicant={:?} from consent package",
+            ctx.applicant_party
+        ),
+    });
+
+    // 2-A/2-B: grant chain for every track/release target in this org.
+    let flags = special_flags(ctx);
+    let needs_extra_grant = flags.iter().any(|f| {
+        matches!(
+            f.as_str(),
+            "COVER" | "REMIX" | "SAMPLE" | "AI" | "MIGRATION"
+        )
+    });
+    let grants = sqlx::query(
+        "SELECT id, target_kind, target_id, right_type, territory_set, use_set, start_at, end_exclusive, exclusive, sublicensable, parent_grant_id, revoked_at FROM rights.grant_atoms WHERE org_id=$1 AND revoked_at IS NULL",
+    )
+    .bind(ctx.org)
+    .fetch_all(&mut *tx)
+    .await?;
+    // Chain depth guard: unclear or overly deep chains go to REVIEW, never
+    // auto-expanded (BLUEPRINT §5.2).
+    let mut max_depth = 0i32;
+    for g in &grants {
+        let mut depth = 0i32;
+        let mut parent: Option<Uuid> = g.get("parent_grant_id");
+        while let Some(pid) = parent {
+            depth += 1;
+            if depth > 8 {
+                break;
+            }
+            parent =
+                sqlx::query_scalar("SELECT parent_grant_id FROM rights.grant_atoms WHERE id=$1")
+                    .bind(pid)
+                    .fetch_optional(&mut *tx)
+                    .await?
+                    .unwrap_or(None);
+        }
+        max_depth = max_depth.max(depth);
+    }
+    if max_depth > 8 {
+        out.push(ReviewCheck {
+            check_code: "S2_RIGHTS_SCOPE",
+            status: "REVIEW_REQUIRED",
+            detail: "grant chain exceeds automatic inspection depth; not auto-expanded".into(),
+        });
+        return Ok(out);
+    }
+    // Exclusive conflicts against another active grant for the same target.
+    let mut exclusive_conflict = false;
+    for g in &grants {
+        let tk: String = g.get("target_kind");
+        let tid: Uuid = g.get("target_id");
+        let rt: String = g.get("right_type");
+        if g.get::<bool, _>("exclusive") {
+            let other: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM rights.grant_atoms WHERE org_id=$1 AND target_kind=$2 AND target_id=$3 AND right_type=$4 AND exclusive AND revoked_at IS NULL AND id<>$5",
+            )
+            .bind(ctx.org).bind(&tk).bind(tid).bind(&rt).bind(g.get::<Uuid,_>("id"))
+            .fetch_one(&mut *tx)
+            .await?;
+            if other > 0 {
+                exclusive_conflict = true;
+            }
+        }
+    }
+    if exclusive_conflict {
+        out.push(ReviewCheck {
+            check_code: "S2_RIGHTS_SCOPE",
+            status: "REVIEW_REQUIRED",
+            detail: "exclusive grant conflict requires human review".into(),
+        });
+        return Ok(out);
+    }
+
+    // Auto-pass allowlist (§5.9).
+    if needs_extra_grant {
+        // New rights conditions are never auto-passed.
+        out.push(ReviewCheck {
+            check_code: "S2_RIGHTS_SCOPE",
+            status: "REVIEW_REQUIRED",
+            detail: format!(
+                "special flags require additional grants: {}",
+                flags.join(",")
+            ),
+        });
+    } else if path == "label" {
+        // (b) verified label contract within scope.
+        let active: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM rights.contracts c JOIN rights.contract_revisions r ON r.org_id=c.org_id AND r.contract_id=c.id WHERE c.org_id=$1 AND r.policy_version<>'REVOKED'",
+        )
+        .bind(ctx.org)
+        .fetch_one(&mut *tx)
+        .await?;
+        let covered: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM rights.grant_atoms WHERE org_id=$1 AND contract_revision_id IS NOT NULL AND revoked_at IS NULL",
+        )
+        .bind(ctx.org)
+        .fetch_one(&mut *tx)
+        .await?;
+        if active > 0 && covered > 0 {
+            out.push(ReviewCheck {
+                check_code: "S2_RIGHTS_SCOPE",
+                status: "PASS",
+                detail: "allowlist(b): verified label contract scope".into(),
+            });
+        } else {
+            out.push(ReviewCheck {
+                check_code: "S2_RIGHTS_SCOPE",
+                status: "REVIEW_REQUIRED",
+                detail: "label path without verifiable active contract scope".into(),
+            });
+        }
+    } else {
+        // (a) self rights-holder, general release, no conflicts.
+        out.push(ReviewCheck {
+            check_code: "S2_RIGHTS_SCOPE",
+            status: "PASS",
+            detail: "allowlist(a): self rights-holder, no conflicting grants".into(),
+        });
+    }
+
+    // 2-B documents: AUDENIQ-generated consent hash was verified at submit.
+    out.push(ReviewCheck {
+        check_code: "S2_DOCS_ORIGIN",
+        status: "PASS",
+        detail: "allowlist(c): AUDENIQ-generated consent package hash verified at submit; external PDFs/scans never auto-passed".into(),
+    });
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// Module 2: catalog_match (2-C)
+// ---------------------------------------------------------------------------
+
+async fn module_catalog_match(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec<ReviewCheck>> {
+    let mut out = Vec::new();
+    let tracks = ctx
+        .body
+        .get("tracks")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+
+    // 2-C.1: ISRC/UPC matching only; Stage 2 never issues identifiers.
+    let mut dup_isrc: BTreeSet<String> = BTreeSet::new();
+    for t in &tracks {
+        if let Some(isrc) = t.get("isrc").and_then(Value::as_str) {
+            let hits: Vec<(Uuid, Uuid)> = sqlx::query_as(
+                "SELECT t.release_id, t.org_id FROM catalog.tracks t JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id WHERE t.isrc=$1 AND t.release_id<>$2 AND r.status NOT IN ('WITHDRAWN','SUPERSEDED')",
+            )
+            .bind(isrc)
+            .bind(ctx.release)
+            .fetch_all(&mut *tx)
+            .await?;
+            for (rel, org) in hits {
+                if org != ctx.org {
+                    dup_isrc.insert(format!("{isrc} org={org} release={rel}"));
+                }
+            }
+        }
+    }
+    // 2-C.2: SHA-256 against the active internal asset index.
+    let mut dup_sha: BTreeSet<String> = BTreeSet::new();
+    for t in &tracks {
+        if let Some(sha) = t.get("asset_sha256").and_then(Value::as_str) {
+            let hits: Vec<Uuid> = sqlx::query_scalar(
+                "SELECT DISTINCT a.org_id FROM catalog.assets a JOIN catalog.tracks t ON t.org_id=a.org_id AND t.asset_id=a.id JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id WHERE a.sha256=$1 AND a.org_id<>$2 AND r.status NOT IN ('WITHDRAWN','SUPERSEDED')",
+            )
+            .bind(sha)
+            .bind(ctx.org)
+            .fetch_all(&mut *tx)
+            .await?;
+            for org in hits {
+                dup_sha.insert(format!("sha {org}"));
+            }
+        }
+    }
+    if dup_isrc.is_empty() && dup_sha.is_empty() {
+        out.push(ReviewCheck {
+            check_code: "S2_CATALOG_IDENTIFIERS",
+            status: "PASS",
+            detail: "no conflicting ISRC/asset-SHA claims in other orgs".into(),
+        });
+    } else {
+        let mut d = dup_isrc.into_iter().collect::<Vec<_>>();
+        d.extend(dup_sha);
+        out.push(ReviewCheck {
+            check_code: "S2_CATALOG_IDENTIFIERS",
+            status: "REVIEW_REQUIRED",
+            detail: format!(
+                "DUPLICATE_CLAIM candidates (not infringement findings): {}",
+                d.join("; ")
+            ),
+        });
+    }
+    // 2-C.3: fingerprint is REVIEW_ONLY policy; not computed in F3.
+    out.push(ReviewCheck {
+        check_code: "S2_CATALOG_FINGERPRINT",
+        status: "NOT_APPLICABLE",
+        detail: "fingerprint policy recorded as REVIEW_ONLY; comparison engine is F4+".into(),
+    });
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// Module 3: metadata_content (2-D, 2-E, 2-F)
+// ---------------------------------------------------------------------------
+
+async fn module_metadata_content(ctx: &Ctx) -> Result<Vec<ReviewCheck>> {
+    let mut out = Vec::new();
+    // 2-D: credit cross-check — roles are taken as declared; unknown
+    // participants are never invented.
+    let tracks = ctx
+        .body
+        .get("tracks")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut empty_credit_tracks = 0;
+    for t in &tracks {
+        let n = t
+            .get("credits")
+            .and_then(Value::as_array)
+            .map(Vec::len)
+            .unwrap_or(0);
+        if n == 0 {
+            empty_credit_tracks += 1;
+        }
+    }
+    if empty_credit_tracks > 0 {
+        out.push(ReviewCheck {
+            check_code: "S2_META_CREDITS",
+            status: "CORRECTION_REQUIRED",
+            detail: format!("{empty_credit_tracks} track(s) declare no credits"),
+        });
+    } else {
+        out.push(ReviewCheck {
+            check_code: "S2_META_CREDITS",
+            status: "PASS",
+            detail: "credits declared per track; no participants invented".into(),
+        });
+    }
+    // 2-E: reuse 1-C measurement hashes pinned in the validation package;
+    // never re-run the full probe.
+    let assets = ctx
+        .validation_body
+        .get("validated_assets")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or(0);
+    if assets > 0 {
+        out.push(ReviewCheck {
+            check_code: "S2_CONTENT_SIGNALS",
+            status: "PASS",
+            detail: format!(
+                "reused {assets} 1-C metric hashes from validation package; no re-probe"
+            ),
+        });
+    } else {
+        out.push(ReviewCheck {
+            check_code: "S2_CONTENT_SIGNALS",
+            status: "TECHNICAL_RETRY",
+            detail: "no validated assets in Stage 1 package".into(),
+        });
+    }
+    // 2-F: special content — 1-B confirmed documents were *submitted*; 2-B
+    // judges authenticity. External evidence never auto-passes.
+    let flags = special_flags(ctx);
+    if flags.is_empty() {
+        out.push(ReviewCheck {
+            check_code: "S2_SPECIAL_FLAGS",
+            status: "NOT_APPLICABLE",
+            detail: "no special content flags".into(),
+        });
+    } else {
+        out.push(ReviewCheck {
+            check_code: "S2_SPECIAL_FLAGS",
+            status: "REVIEW_REQUIRED",
+            detail: format!(
+                "special content requires rights judgement: {}",
+                flags.join(",")
+            ),
+        });
+    }
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// Module 4: policy_integrity (2-G, 2-H)
+// ---------------------------------------------------------------------------
+
+fn approved_scope(checks: &[ReviewCheck]) -> Value {
+    for c in checks {
+        if c.check_code == "S2_DSP_ELIGIBILITY" {
+            // detail is "eligible: dsp1,dsp2 | ..." or "eligible: (none) | ..."
+            if let Some(list) = c.detail.strip_prefix("eligible: ") {
+                let dsps: Vec<&str> = list
+                    .split(" | ")
+                    .next()
+                    .unwrap_or("")
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty() && *s != "(none)")
+                    .collect();
+                return json!({"dsp_ids": dsps});
+            }
+        }
+    }
+    json!({"dsp_ids": []})
+}
+
+async fn module_policy_integrity(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec<ReviewCheck>> {
+    let mut out = Vec::new();
+    // 2-G: eligibility from real route data only. F1 schema keeps every route
+    // disabled and every endpoint INTEGRATION_PENDING, so the honest answer
+    // today is INELIGIBLE_NO_CONTRACT for all candidates.
+    let routes = sqlx::query(
+        "SELECT r.dsp_id, r.enabled, e.integration_status, r.contract_id FROM distribution.route_plans r JOIN distribution.dsp_endpoints e ON e.org_id=r.org_id AND e.dsp_id=r.dsp_id AND e.id=r.endpoint_id WHERE r.org_id=$1",
+    )
+    .bind(ctx.org)
+    .fetch_all(&mut *tx)
+    .await?;
+    let mut eligible = Vec::new();
+    let mut ineligible = Vec::new();
+    for r in &routes {
+        let dsp: Uuid = r.get("dsp_id");
+        let enabled: bool = r.get("enabled");
+        let ist: String = r.get("integration_status");
+        let active_contract: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM rights.contract_revisions WHERE org_id=$1 AND contract_id=$2 AND policy_version<>'REVOKED'",
+        )
+        .bind(ctx.org)
+        .bind(r.get::<Uuid, _>("contract_id"))
+        .fetch_one(&mut *tx)
+        .await?;
+        if enabled && ist == "ACTIVE" && active_contract > 0 {
+            eligible.push(dsp.to_string());
+        } else {
+            ineligible.push(format!("{dsp}=INELIGIBLE_NO_CONTRACT"));
+        }
+    }
+    let el = if eligible.is_empty() {
+        "(none)".into()
+    } else {
+        eligible.join(",")
+    };
+    out.push(ReviewCheck {
+        check_code: "S2_DSP_ELIGIBILITY",
+        status: "PASS",
+        detail: format!("eligible: {el} | ineligible: {}", ineligible.join(",")),
+    });
+    // 2-H: duplicate applications of the same bytes under another release.
+    let dups: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT release_id FROM catalog.application_revisions WHERE org_id=$1 AND body_hash=$2 AND release_id<>$3 LIMIT 5",
+    )
+    .bind(ctx.org)
+    .bind(&ctx.body_hash)
+    .bind(ctx.release)
+    .fetch_all(&mut *tx)
+    .await?;
+    if dups.is_empty() {
+        out.push(ReviewCheck {
+            check_code: "S2_INTEGRITY_DUP",
+            status: "PASS",
+            detail: "no duplicate applications of the same body hash".into(),
+        });
+    } else {
+        out.push(ReviewCheck {
+            check_code: "S2_INTEGRITY_DUP",
+            status: "REVIEW_REQUIRED",
+            detail: format!("same body submitted under {} other release(s)", dups.len()),
+        });
+    }
+    out.push(ReviewCheck {
+        check_code: "S2_INTEGRITY_DISPUTES",
+        status: "NOT_APPLICABLE",
+        detail: "no dispute registry in F3; open disputes are F4+".into(),
+    });
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// commercial split snapshot (§5.8)
+// ---------------------------------------------------------------------------
+
+/// Pin the commercial split referenced by the verification package. F3 pins
+/// the claimant set from the revision body: equal shares across credited
+/// rights-holder parties unless the draft declares otherwise. Settlement must
+/// use this pinned snapshot, never a fresh contract lookup.
+async fn commercial_split_snapshot(tx: &mut PgConnection, ctx: &Ctx) -> Result<Value> {
+    let mut parties: BTreeSet<String> = BTreeSet::new();
+    if let Some(tracks) = ctx.body.get("tracks").and_then(Value::as_array) {
+        for t in tracks {
+            if let Some(credits) = t.get("credits").and_then(Value::as_array) {
+                for cr in credits {
+                    if let Some(p) = cr.get("party_id").and_then(Value::as_str) {
+                        parties.insert(p.to_string());
+                    }
+                }
+            }
+        }
+    }
+    let contract_revision_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT contract_revision_id FROM rights.grant_atoms WHERE org_id=$1 AND contract_revision_id IS NOT NULL AND revoked_at IS NULL LIMIT 1",
+    )
+    .bind(ctx.org)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let n = parties.len().max(1) as i64;
+    let share_bps = 10_000 / n;
+    Ok(json!({
+        "payee_party_ids": parties.into_iter().collect::<Vec<_>>(),
+        "share_bps": share_bps,
+        "contract_revision_id": contract_revision_id,
+        "effective_model": "EQUAL_SPLIT_F3",
+        "pinned_at_revision": ctx.revision_id,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Overrides (2-I): POST /api/orgs/{org}/reviews/overrides
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OverrideInput {
+    pub revision_id: Uuid,
+    pub check_code: String,
+    pub proposed_status: String,
+    pub reason: String,
+    pub second_approver_user_id: Option<Uuid>,
+}
+
+/// API entry: authorize against the release, resolve seniority from the
+/// membership role (OWNER = senior reviewer), then record the override.
+pub async fn create_override_api(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    input: OverrideInput,
+) -> Result<Value> {
+    let mut tx = s.pool.begin().await?;
+    let release: Uuid = sqlx::query_scalar(
+        "SELECT release_id FROM catalog.application_revisions WHERE org_id=$1 AND id=$2",
+    )
+    .bind(org)
+    .bind(input.revision_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(Error::NotFound)?;
+    auth::authorize(&mut tx, a, org, release, "release", true).await?;
+    let role: String = sqlx::query_scalar(
+        "SELECT m.role FROM identity.memberships m WHERE m.org_id=$1 AND m.user_id=$2 AND m.status='ACTIVE'",
+    )
+    .bind(org)
+    .bind(a.user)
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    let id = record_override(
+        &s.pool,
+        OverrideRequest {
+            org,
+            actor: a.user,
+            revision_id: input.revision_id,
+            check_code: &input.check_code,
+            proposed_status: &input.proposed_status,
+            reason: &input.reason,
+            second_approver: input.second_approver_user_id,
+            senior: role == "OWNER",
+        },
+    )
+    .await?;
+    Ok(json!({"override_id": id}))
+}
+
+const RIGHTS_MONEY_CLASSES: &[&str] = &["S2_RIGHTS_SCOPE", "S2_DOCS_ORIGIN", "S2_SPECIAL_FLAGS"];
+
+/// Inputs for [`record_override`].
+pub struct OverrideRequest<'a> {
+    pub org: Uuid,
+    pub actor: Uuid,
+    pub revision_id: Uuid,
+    pub check_code: &'a str,
+    pub proposed_status: &'a str,
+    pub reason: &'a str,
+    pub second_approver: Option<Uuid>,
+    pub senior: bool,
+}
+
+/// Record an override. Rights/money-class forced PASS needs a senior reviewer
+/// plus a *different* second approver; the server enforces both.
+pub async fn record_override(pool: &PgPool, r: OverrideRequest<'_>) -> Result<Uuid> {
+    if !["PASS", "CORRECTION_REQUIRED", "REVIEW_REQUIRED", "BLOCKED"].contains(&r.proposed_status) {
+        return Err(Error::PolicyGate("INVALID_OVERRIDE_STATUS"));
+    }
+    if r.reason.trim().is_empty() {
+        return Err(Error::PolicyGate("OVERRIDE_REASON_REQUIRED"));
+    }
+    // The check must exist for this revision.
+    let original: Option<String> = sqlx::query_scalar(
+        "SELECT status FROM operations.check_results WHERE revision_id=$1 AND check_code=$2 ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(r.revision_id)
+    .bind(r.check_code)
+    .fetch_optional(pool)
+    .await?;
+    let original = original.ok_or(Error::NotFound)?;
+    if RIGHTS_MONEY_CLASSES.contains(&r.check_code) && r.proposed_status == "PASS" {
+        if !r.senior {
+            return Err(Error::PolicyGate("SENIOR_REVIEWER_REQUIRED"));
+        }
+        match r.second_approver {
+            Some(sa) if sa != r.actor => {
+                // The second approver must be a different ACTIVE member.
+                let ok: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM identity.memberships WHERE org_id=$1 AND user_id=$2 AND status='ACTIVE')",
+                )
+                .bind(r.org)
+                .bind(sa)
+                .fetch_one(pool)
+                .await?;
+                if !ok {
+                    return Err(Error::PolicyGate("SECOND_APPROVER_NOT_MEMBER"));
+                }
+            }
+            _ => return Err(Error::PolicyGate("SECOND_APPROVER_REQUIRED")),
+        }
+    }
+    let id = Uuid::new_v4();
+    sqlx::query("INSERT INTO rights.review_overrides(id, org_id, revision_id, check_code, original_status, proposed_status, reason, actor_user_id, second_approver_user_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)")
+        .bind(id).bind(r.org).bind(r.revision_id).bind(r.check_code).bind(&original).bind(r.proposed_status).bind(r.reason).bind(r.actor).bind(r.second_approver)
+        .execute(pool)
+        .await?;
+    Ok(id)
+}

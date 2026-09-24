@@ -4,6 +4,7 @@ use crate::{
     config::Config,
     drafts,
     error::{Error, Result},
+    review,
     storage::ObjectStore,
     submission, uploads,
 };
@@ -84,6 +85,7 @@ pub fn router(s: AppState) -> Router {
             "/api/orgs/{org}/releases/{id}/submission",
             get(submission_status),
         )
+        .route("/api/orgs/{org}/reviews/overrides", post(create_override))
         .route("/api/orgs/{org}/{kind}", post(create).get(list))
         .route(
             "/api/orgs/{org}/{kind}/{id}",
@@ -375,6 +377,15 @@ async fn submission_status(
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
     Ok(Json(submission::submission_status(&s, &a, org, id).await?))
+}
+async fn create_override(
+    State(s): State<AppState>,
+    Path(org): Path<Uuid>,
+    h: HeaderMap,
+    Json(i): Json<review::OverrideInput>,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, true).await?;
+    Ok(Json(review::create_override_api(&s, &a, org, i).await?))
 }
 async fn upload(
     State(s): State<AppState>,

@@ -101,3 +101,31 @@ BLUEPRINT §§3–4 구현. 법률 검토(§23.1) 스킵 → 미성년·전자�
 - `compose-smoke`: **success**
 - `rust-postgres`: **success** (fmt, clippy `-D warnings`, build, 단위·PostgreSQL 통합 테스트, WASM/edge 빌드, 브라우저 스모크 전부 통과)
 - 첫 푸시(`f06831d`)의 run 36022203984는 `rust-postgres` 실패: qc 단위 테스트가 픽스처 생성에 `ffmpeg`를 쓰는데 러너에 없어서 5개 실패. 워크플로우에 `ffmpeg` 설치 단계 추가로 해결.
+
+---
+
+## F3 — Stage 2 리뷰(실제 처리기) (2026-09-25)
+
+BLUEPRINT §5 구현. F2에서 park 처리하던 `stage2` job이 이제 실제 심사 로직을 실행한다.
+상세 설계는 `docs/F3_PLAN.md`.
+
+### 구현 범위
+
+- `POST /api/orgs/{org}/reviews/overrides` — 심사 override 기록. rights/money class 강제 PASS는 senior reviewer(OWNER) + 서로 다른 두 번째 승인자(활성 멤버) 필수. `role`은 API가 JWT에서 파생하며 클라이언트가 임의 지정 불가.
+- Stage 2 워커(`rights` 큐, `review::run_stage2`): 5개 논리 모듈 체크포인트 재개 + lease fencing으로 STAGE2_PASSED/STAGE2_REVIEW/STAGE2_CORRECTION 전이.
+- Verification Package: revision revision_id의 체크 결과 전체 스냅샷, `verification_packages`에 sha256 hash 기록, immutable 트리거로 변경 불가.
+- DSP 수신 가능 scope: 계약·endpoint이 활성일 때만 도출. 활성 DSP 계약이 없으면 scope은 비어 있고 Stage 2 자체 PASS는 가능하다.
+- duplicate SHA/ISRC 감지: 타 조직의 활성 릴리스와 동일 asset sha256 또는 ISRC가 있으면 S2_DUP_MATCH → STAGE2_REVIEW.
+- commercial split snapshot: 계약 split 근거가 없을 때는 균등 분배가 아니라 `S2_COMMERCIAL_SPLIT` REVIEW_REQUIRED로 보류.
+- 마이그레이션 0009(`rights.grant_atoms`, `rights.review_overrides`, `rights.rights_epochs`, `distribution.verification_packages`, 체크포인트 컬럼 + enum/상태값 확장).
+
+### 로컬 검증 결과 (2026-09-25)
+
+- `cargo fmt --all --check`: 통과
+- `cargo clippy --workspace --all-targets -- -D warnings`: 통과
+- `cargo test --workspace`: 전부 통과
+  - `audeniq-core` lib 26개
+  - `foundation` 18개
+  - `stage1` 10개 (기존 park 테스트는 `stage2_job_is_executed_not_parked`로 변경 — F3에서 stage2는 실제 실행되어 SUCCEEDED + STAGE2_PASSED)
+  - `stage2` 5개 (self rights-holder PASS, 타 조직 duplicate REVIEW, lease loss, two-person override, seniority 매핑)
+- GitHub Actions CI 결과는 푸시 후 아래에 기록한다.

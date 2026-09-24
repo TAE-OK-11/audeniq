@@ -843,7 +843,7 @@ async fn oversized_asset_is_technical_retry(pool: PgPool) {
 }
 
 #[sqlx::test]
-async fn stage2_job_is_parked_not_dead_lettered(pool: PgPool) {
+async fn stage2_job_is_executed_not_parked(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let dir = tmpdir();
@@ -857,8 +857,8 @@ async fn stage2_job_is_parked_not_dead_lettered(pool: PgPool) {
     assert_eq!(s, StatusCode::OK);
     run_worker(&pool, &store).await;
 
-    // A worker polling the rights queue must not burn the Stage 2 handoff:
-    // the job is parked (QUEUED, no attempt consumed) until F3 implements it.
+    // F3: the rights queue now has a real Stage 2 handler. The handoff job is
+    // executed to a decision, not parked.
     let job = operations::claim(&pool, "rights", "test-worker", 60)
         .await
         .unwrap()
@@ -866,13 +866,18 @@ async fn stage2_job_is_parked_not_dead_lettered(pool: PgPool) {
     assert_eq!(job.kind, "stage2");
     let dyn_store: Arc<dyn ObjectStore> = store.clone();
     operations::execute(&pool, &dyn_store, &job).await.unwrap();
-    let row: (String, i32, String) =
-        sqlx::query_as("SELECT status, attempts, last_error FROM operations.jobs WHERE id=$1")
+    let row: (String, i32) =
+        sqlx::query_as("SELECT status, attempts FROM operations.jobs WHERE id=$1")
             .bind(job.id)
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(row.0, "QUEUED");
-    assert_eq!(row.1, 0, "park is not an execution attempt");
-    assert_eq!(row.2, "STAGE2_NOT_IMPLEMENTED");
+    assert_eq!(row.0, "SUCCEEDED");
+    assert_eq!(row.1, 1, "one claim, succeeded first try");
+    let status: String = sqlx::query_scalar("SELECT status FROM catalog.releases WHERE id=$1")
+        .bind(release)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "STAGE2_PASSED");
 }
