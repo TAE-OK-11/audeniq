@@ -4,16 +4,18 @@ Base: `foundation/f3-stage2-review` at `eb3134ef8ccccfdaa8cfae4da7c0001b0abb4e7b
 
 ## Integration contract for Muse
 
-The base contains no `distribution.rs`, `CanonicalRelease`, `VerificationPackage`,
-or `DspScope` Rust types. `review.rs` stores the F3 package as JSON with
-`approved_scope: { dsp_ids: [...] }`. `preparation_model.rs` holds temporary,
-explicit inputs; it does not create snapshots or implement any worker behavior.
-When Muse's canonical contract lands, adapt/re-export these inputs or replace their
-imports. Do not deserialize an entire F3 row into `CanonicalRelease`.
+Muse's Stage 3 branch is merged without changing its implementation. The exact
+public API is `ern::generate_ern(&distribution::CanonicalRelease) -> Result<String>`.
+This emits a canonical-only synthetic XML fixture including pinned credits/assets.
+Muse's snapshot has no UPC, artwork, date, file location or media type. These are
+explicit `PreparedRelease` supplements: `generate_prepared_ern` and preflight require
+them and reject any mismatch against the embedded canonical snapshot (identity,
+revision, verification digest, scope, title, track positions, ISRC and asset hashes).
+No missing field is silently invented. Canonical-only XML is not a ready submission.
 
-- `ern::generate_ern(&CanonicalRelease) -> Result<String>`: deterministic, pure,
-  sorted track/DSP output; rejects invalid identifiers, XML control characters,
-  duplicate resources/positions and missing metadata. No DB or external service.
+- `ern::generate_ern` and `generate_prepared_ern`: deterministic, pure, sorted output;
+  reject invalid identifiers, XML controls, duplicates and missing metadata. No DB
+  or external service. Both profiles use only the internal synthetic namespace.
 - `route_plan::plan_submissions(canonical, verification)`: checks the actual F3
   JSON digest, row org/revision/epoch, revision hash and exact approved DSP set,
   then maps each approved DSP to XML/audio/artwork references. Empty approval
@@ -45,7 +47,7 @@ namespace `urn:audeniq:ern:synthetic:1`, not a claim of DDEX ERN 3/4 conformance
 The fixed grammar has a checked-in synthetic XSD. Runtime validation requires
 exact equality to the deterministic serializer's bytes, rejecting DTDs, unknown
 elements, altered values/references and even alternate whitespace. CI separately
-parses all three generated fixtures with `xmllint --nonet --schema`.
+parses six XML outputs from three generated fixtures with `xmllint --nonet --schema`.
 Actual DDEX/partner XSDs, licenses, contracts, full territory/use grants and
 transport adapters remain the commercial integration gate. Do not transmit these
 fixtures to a DSP or treat this mapping as an executable route.
