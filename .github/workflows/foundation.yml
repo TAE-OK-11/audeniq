@@ -27,11 +27,16 @@ jobs:
           toolchain: 1.98.1
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
+        id: rust-cache
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
+            ~/.cargo/bin/wasm-bindgen
+            ~/.cargo/bin/wasm-bindgen-test-runner
+            ~/.cargo/bin/worker-build
+            ~/.cargo/bin/worker-codegen
             target
           key: rust-1.98.1-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
           restore-keys: rust-1.98.1-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-
@@ -60,8 +65,11 @@ jobs:
           cp wrangler.toml.example wrangler.toml
           npx --yes wrangler@4.137.0 deploy --dry-run --outdir /tmp/audeniq-edge-bundle
       - uses: browser-actions/setup-chrome@v1
+        id: chrome
         with:
+          chrome-version: stable
           install-chromedriver: true
+          install-dependencies: true
       - name: Browser integration against local API
         env:
           APP_ENV: development
@@ -69,11 +77,13 @@ jobs:
           EDGE_SERVICE_SECRET: ephemeral-browser-service-secret-at-least-32-characters
           API_BIND: 127.0.0.1:8080
           STORAGE_ENABLED: 'false'
+          CHROME_BINARY: ${{ steps.chrome.outputs.chrome-path }}
+          CHROMEDRIVER_BINARY: ${{ steps.chrome.outputs.chromedriver-path }}
         run: |
           cargo run --locked -p audeniq-core --bin audeniq-migrate
           target/debug/audeniq-api > /tmp/api.log 2>&1 &
           target/debug/audeniq-dev-web > /tmp/web.log 2>&1 &
-          chromedriver --port=9515 > /tmp/chromedriver.log 2>&1 &
+          "$CHROMEDRIVER_BINARY" --port=9515 > /tmp/chromedriver.log 2>&1 &
           curl --fail --retry 15 --retry-connrefused --retry-delay 2 -H "X-Audeniq-Service:$EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready
           target/debug/audeniq-browser-smoke
           base64 --decode test-results/studio.png.base64 > test-results/studio.png
@@ -88,6 +98,18 @@ jobs:
         with:
           name: studio-browser-screenshot
           path: test-results/studio.png
+      - uses: actions/cache/save@v4
+        if: always() && steps.rust-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/wasm-bindgen
+            ~/.cargo/bin/wasm-bindgen-test-runner
+            ~/.cargo/bin/worker-build
+            ~/.cargo/bin/worker-codegen
+            target
+          key: ${{ steps.rust-cache.outputs.cache-primary-key }}
       - name: Enforce formatting result
         if: always() && steps.formatting.outcome == 'failure'
         run: exit 1
