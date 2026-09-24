@@ -352,6 +352,30 @@ async fn prepare_release_happy_path_freezes_package(pool: PgPool) {
     let wav = make_good_wav(&dir);
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
     let release = build_submittable(&app, &pool, &u, asset).await;
+    // UPC + cover artwork: DDEX ERN needs both on the canonical snapshot.
+    let art_id = Uuid::new_v4();
+    let art_key = format!("registered/{}/cover.png", u.org);
+    let art_bytes = b"\x89PNGfake";
+    store
+        .files
+        .lock()
+        .await
+        .insert(art_key.clone(), art_bytes.to_vec());
+    sqlx::query("INSERT INTO identity.resources(org_id,id,kind) VALUES($1,$2,'asset')")
+        .bind(u.org)
+        .bind(art_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO catalog.assets(id,org_id,kind,object_key,size_bytes,content_type,sha256,state) VALUES($1,$2,'IMAGE',$3,$4,'image/png',$5,'REGISTERED')")
+        .bind(art_id).bind(u.org).bind(&art_key).bind(art_bytes.len() as i64).bind(sha256_hex(art_bytes))
+        .execute(&pool).await.unwrap();
+    sqlx::query("UPDATE catalog.releases SET upc='880123456789', artwork_asset_id=$1, row_version = row_version + 1 WHERE id=$2")
+        .bind(art_id)
+        .bind(release)
+        .execute(&pool)
+        .await
+        .unwrap();
     let revision_id = consent_and_submit(&app, &u, release, "k-f4-happy").await;
     assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
     assert_eq!(
@@ -394,6 +418,20 @@ async fn prepare_release_happy_path_freezes_package(pool: PgPool) {
     assert_eq!(body["revision_id"], Value::String(revision_id.to_string()));
     assert_eq!(body["release_id"], Value::String(release.to_string()));
     assert!(!body["tracks"].as_array().unwrap().is_empty());
+    assert_eq!(body["schema_version"], Value::from(2));
+    assert_eq!(body["upc"], Value::String("880123456789".into()));
+    assert_eq!(body["artwork"]["object_key"], Value::String(art_key));
+    assert_eq!(
+        body["artwork"]["content_type"],
+        Value::String("image/png".into())
+    );
+    let t0 = &body["tracks"].as_array().unwrap()[0];
+    assert!(
+        t0["asset_object_key"]
+            .as_str()
+            .unwrap()
+            .contains("good.wav")
+    );
     // The frozen package content-addresses the snapshot.
     let (package_id, package_hash, pbody, pstatus): (Uuid, String, Value, String) =
         sqlx::query_as(
