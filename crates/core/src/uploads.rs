@@ -169,29 +169,61 @@ pub async fn status(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Valu
     let status: String = row.get("status");
     let expired: bool = row.get("expired");
     tx.commit().await?;
-    Ok(json!({"upload_session_id":id,"asset_id":asset,"status":status,"expires_at":expires,"completed_at":completed,"expired":expired}))
+    Ok(
+        json!({"upload_session_id":id,"asset_id":asset,"status":status,"expires_at":expires,"completed_at":completed,"expired":expired}),
+    )
 }
 pub async fn cancel(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
     auth::membership(&mut tx, a, org, true).await?;
     // Authorize before acquiring upload locks, matching complete() lock order.
-    let asset: Uuid = sqlx::query_scalar("SELECT asset_id FROM catalog.upload_sessions WHERE org_id=$1 AND id=$2")
-        .bind(org).bind(id).fetch_optional(&mut *tx).await?.ok_or(Error::NotFound)?;
+    let asset: Uuid = sqlx::query_scalar(
+        "SELECT asset_id FROM catalog.upload_sessions WHERE org_id=$1 AND id=$2",
+    )
+    .bind(org)
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(Error::NotFound)?;
     auth::authorize(&mut tx, a, org, asset, "asset", true).await?;
-    let status: String = sqlx::query_scalar("SELECT status FROM catalog.upload_sessions WHERE org_id=$1 AND id=$2 FOR UPDATE")
-        .bind(org).bind(id).fetch_one(&mut *tx).await?;
-    if status=="COMPLETED" {
+    let status: String = sqlx::query_scalar(
+        "SELECT status FROM catalog.upload_sessions WHERE org_id=$1 AND id=$2 FOR UPDATE",
+    )
+    .bind(org)
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if status == "COMPLETED" {
         return Err(Error::Conflict);
     }
-    if status=="CANCELLED" {
+    if status == "CANCELLED" {
         return Ok(json!({"cancelled":true,"duplicate":true}));
     }
     sqlx::query("UPDATE catalog.upload_sessions SET status='CANCELLED' WHERE org_id=$1 AND id=$2")
-        .bind(org).bind(id).execute(&mut *tx).await?;
+        .bind(org)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
     sqlx::query("UPDATE catalog.assets SET state='REJECTED' WHERE org_id=$1 AND id=$2 AND state='UPLOADING'")
         .bind(org).bind(asset).execute(&mut *tx).await?;
-    operations::audit(&mut tx, Some(a.user), Some(org), Some(asset), "upload.cancelled", "USER_REQUEST", a.request).await?;
-    operations::event(&mut tx, org, asset, "asset.upload_cancelled", &format!("upload-cancel:{id}")).await?;
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        Some(org),
+        Some(asset),
+        "upload.cancelled",
+        "USER_REQUEST",
+        a.request,
+    )
+    .await?;
+    operations::event(
+        &mut tx,
+        org,
+        asset,
+        "asset.upload_cancelled",
+        &format!("upload-cancel:{id}"),
+    )
+    .await?;
     tx.commit().await?;
     Ok(json!({"cancelled":true,"duplicate":false}))
 }

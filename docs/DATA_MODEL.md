@@ -4,15 +4,16 @@
 
 ## 실제 PostgreSQL 구조
 
-마이그레이션 0001/0002: 6개 스키마, 업무/기반 테이블 26개(SQLx 이력 테이블 제외).
+마이그레이션 0001–0006: 6개 스키마, 업무/기반 테이블 31개(SQLx 이력 테이블 제외).
 
 | 스키마 | 생성한 테이블 |
 |---|---|
 | identity | orgs, parties, users, memberships, sessions, auth_limits, resources, resource_acl, payees |
 | catalog | labels, artists, releases, assets, upload_sessions, tracks, credits, application_revisions, consent_packages |
-| distribution | verification_packages, release_snapshots |
+| distribution | verification_packages, release_snapshots, dsp_endpoints, route_plans, packages |
 | operations | audit_events, jobs, outbox, event_receipts, check_results, allowed_transitions |
-| rights, finance | 스키마만 예약. 실행 테이블과 업무 API 없음 |
+| rights | contracts, contract_revisions (불변 참조 구조; 계약 승인 API 없음) |
+| finance | 스키마만 예약. 정산 실행 테이블과 업무 API 없음 |
 
 ```mermaid
 erDiagram
@@ -56,12 +57,12 @@ erDiagram
 |---|---|
 | mfa_factors, party_roles, delegations, account_trust_tiers | User/Party/Org 참조를 재사용한다. MFA, 법적 위임 검증, 신뢰 등급 부여는 미구현이다. |
 | publication_revisions | 승인된 공개 필드만 불변 revision으로 만들어 D1에 게시해야 한다. 현재 게시 경로는 없다. |
-| right_claims, contracts, contract_revisions, consents | Party와 신청 revision에 귀속한다. 계약 원문은 private asset 참조로 분리하고 계약 revision을 불변으로 핀해야 한다. |
+| right_claims, contracts, contract_revisions, consents | Party와 신청 revision에 귀속한다. contracts/contract_revisions 테이블이 Party와 private document asset 및 정책/문서 해시를 고정한다. 법적 유효성·서명·권리 승인 및 consents/right_claims는 후속이다. |
 | grant_atoms | Rust GrantAtom/EffectiveRange: 권리 주체·대상·지역·이용·기간·재허락·계약 revision. 구조 검증은 권리 승인과 다르다. |
 | disputes, legal_representative_records | 권리 보류 및 미성년자 대리 동의 증거. 법률 요건 확정 전 제출을 열지 않는다. |
 | commercial_split_plans, commercial_split_lines | Rust SplitPlan/SplitLine: 수취인, 계약 revision, 기간, 10000bp 분배 검증. DB 기간 중복 제약과 승인 흐름은 후속이다. |
 | route_plans, dsp_endpoints | RouteContract는 contract_id, endpoint_id, fee_schedule_id를 필수로 받는다. 실제 계약·검증 endpoint 및 DSP별 적합성 없이는 활성화하지 않는다. |
-| packages, delivery_jobs | DistributionPackage는 snapshot/route/operation/adapter/profile/hash/불변 bytes 참조를 핀한다. 패키지 영속 테이블, 생성기 및 외부 송출기는 후속이다. jobs는 일반 작업 큐이며 delivery_jobs와 다른 생명주기다. |
+| packages, delivery_jobs | DistributionPackage는 snapshot/route/operation/adapter/profile/hash/불변 bytes 참조를 핀한다. packages 영속 테이블과 멱등 저장 함수는 구현했다. 패키지 바이트 생성기·검증기 및 delivery_jobs/외부 송출기는 후속이다. jobs는 일반 작업 큐이며 delivery_jobs와 다른 생명주기다. |
 | external_ids, identifier_pool | 내부 UUID와 ISRC/UPC를 분리한다. 번호 발급·중복 번호 등록 기능은 없다. |
 | live_bindings, migration_cases, match_candidates | DSP 실측 증거, 경로 이전, 카탈로그 중복 후보. 기존 Release/Track ID를 바꾸지 않고 연결할 후속 엔티티다. |
 | royalty_reports, report_lines, royalty_match_candidates | 원본 보고서와 정규화 행, 카탈로그 매칭 후보를 분리한다. 배급 상태에서 수익 확인을 추론하지 않는다. |
@@ -79,3 +80,25 @@ config/contracts의 네 JSON Schema와 packages.rs는 §10의 ConsentPackageV1, 
 FreshnessPin은 revision, verification hash, snapshot, rights epoch, 계약 및 package hash를 대조한다. 권리/계약 변경은 S2, 패키지/스냅샷 변경은 S3_PREP, revision 변경은 Pre-submit으로 환송하는 기준을 제공한다. 실제 송출 직전 원자적 재검사는 배급 실행기 개발 시 연결해야 한다.
 
 jobs는 interactive/qc/rights/distribution/finance 큐, priority, run_at, attempts, max_attempts, lease token/만료를 갖는다. SKIP LOCKED 선점과 토큰·만료 조건으로 오래된 Worker 결과를 차단한다. 현재 안전한 outbox.record만 실행하며 미구현 작업은 성공하지 않는다. 외부 효과가 불명확한 송출/지급을 이 재시도 경로에 그대로 연결하면 안 된다.
+
+## 추가 마이그레이션과 저장 경계
+
+- 0003: 트랙 보관 및 활성 위치 partial unique index, 카탈로그 페이지 인덱스, 트랙/크레딧의 활성 DRAFT 제한.
+- 0004: 세션 조회용 공개 UUID와 사용자별 활성 세션 페이지 인덱스. 인증 토큰의 해시와 공개 ID를 분리한다.
+- 0005: 계약 → 계약 revision → 경로/endpoint → snapshot 기반 배급 package의 복합 조직 FK. package의 adapter/profile은 경로의 고정 설정과 일치해야 한다.
+- 0006: 업로드 CANCELLED 상태와 계약 당사자 변경 방지.
+
+```mermaid
+erDiagram
+  CONTRACTS ||--o{ CONTRACT_REVISIONS : versions
+  CONTRACT_REVISIONS ||--o{ ROUTE_PLANS : pins
+  DSP_ENDPOINTS ||--o{ ROUTE_PLANS : configures
+  ROUTE_PLANS ||--o{ PACKAGES : targets
+  RELEASE_SNAPSHOTS ||--o{ PACKAGES : freezes
+```
+
+contracts/contract_revisions/endpoint/route/package는 UPDATE·DELETE를 거부한다. 수정은 새 ID 또는 새 revision이다. 패키지는 (snapshot,dsp,adapter,profile,package_hash) 유일성을 갖는다. 동일 ID 재저장은 모든 고정 필드가 일치할 때만 성공하며 다른 내용으로 덮어쓰지 않는다.
+
+artifacts::store_package는 이미 생성된 바이트의 참조·해시 메타데이터 저장 함수이다. S3 바이트 존재/내용 검증, DDEX 생성 또는 송출 권한 검사가 아니다. owner 권한의 테스트에서만 사용하며 공개 API/Worker에 연결하지 않았다. document_asset 참조도 서명·법률 검증을 의미하지 않는다.
+
+route_plans.enabled는 false만, dsp_endpoints.integration_status는 INTEGRATION_PENDING만 허용한다. 실제 계약과 기술 연결 승인 흐름을 구현할 때 별도 순차 마이그레이션으로 열어야 한다. Foundation API/Worker에는 rights/distribution 신규 테이블 쓰기 권한이 없다.
