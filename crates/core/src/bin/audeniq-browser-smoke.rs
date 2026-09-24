@@ -76,7 +76,11 @@ async fn main() -> anyhow::Result<()> {
     let http = reqwest::Client::new();
     let chrome = std::env::var("CHROME_BINARY")?;
     let v: Value=http.post("http://127.0.0.1:9515/session").json(&json!({"capabilities":{"alwaysMatch":{"browserName":"chrome","goog:chromeOptions":{"binary":chrome,"args":["--headless=new","--no-sandbox","--disable-dev-shm-usage","--window-size=1440,1100"]}}}})).send().await?.json().await?;
-    anyhow::ensure!(v["value"]["error"].is_null(), "browser startup failed: {}", v["value"]["message"]);
+    anyhow::ensure!(
+        v["value"]["error"].is_null(),
+        "browser startup failed: {}",
+        v["value"]["message"]
+    );
     let id = v["value"]["sessionId"]
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("no browser session"))?;
