@@ -19,6 +19,8 @@ pub enum Error {
     RateLimited,
     #[error("feature gated")]
     Gated,
+    #[error("policy gate: {0}")]
+    PolicyGate(&'static str),
     #[error("storage unavailable")]
     Storage,
     #[error("database error")]
@@ -36,7 +38,8 @@ impl IntoResponse for Error {
             Self::Conflict => (StatusCode::CONFLICT, "CONFLICT"),
             Self::Invalid => (StatusCode::BAD_REQUEST, "INVALID_INPUT"),
             Self::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED"),
-            Self::Gated => (StatusCode::NOT_IMPLEMENTED, "PRE_SUBMIT_NOT_IMPLEMENTED"),
+            Self::Gated => (StatusCode::NOT_IMPLEMENTED, "NOT_IMPLEMENTED"),
+            Self::PolicyGate(code) => (StatusCode::UNPROCESSABLE_ENTITY, *code),
             Self::Storage => (StatusCode::SERVICE_UNAVAILABLE, "STORAGE_UNAVAILABLE"),
             Self::Database(sqlx::Error::Database(d))
                 if matches!(

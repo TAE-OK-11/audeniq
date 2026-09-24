@@ -1,6 +1,8 @@
 use crate::error::{Error, Result};
+use crate::storage::ObjectStore;
 use serde_json::{Value, json};
 use sqlx::{PgConnection, PgPool, Row};
+use std::sync::Arc;
 use uuid::Uuid;
 #[allow(clippy::too_many_arguments)]
 pub async fn audit(
@@ -66,7 +68,9 @@ pub async fn claim(
     }
     let mut tx = pool.begin().await?;
     // Exhausted crash leases are dead-lettered, never left permanently RUNNING.
-    let expired=sqlx::query("UPDATE operations.jobs SET status='DEAD_LETTER',lock_token=NULL,lease_until=NULL,dead_lettered_at=now(),last_error='LEASE_EXHAUSTED' WHERE queue=$1 AND status='RUNNING' AND lease_until<=now() AND (attempts>=max_attempts OR kind<>'outbox.record') RETURNING id")
+    // stage2 is excluded: the Stage 2 handoff must survive until F3 implements
+    // it, even if a worker crashes mid-park.
+    let expired=sqlx::query("UPDATE operations.jobs SET status='DEAD_LETTER',lock_token=NULL,lease_until=NULL,dead_lettered_at=now(),last_error='LEASE_EXHAUSTED' WHERE queue=$1 AND status='RUNNING' AND lease_until<=now() AND kind<>'stage2' AND (attempts>=max_attempts OR kind<>'outbox.record') RETURNING id")
  .bind(queue).fetch_all(&mut *tx).await?;
     for r in expired {
         audit(
@@ -81,7 +85,9 @@ pub async fn claim(
         .await?;
     }
     // Only safe internal jobs are registered. Unknown jobs never execute and are explicitly DLQ'd below.
-    let r=sqlx::query("WITH candidate AS (SELECT id FROM operations.jobs WHERE queue=$1 AND attempts<max_attempts AND ((status='QUEUED' AND run_at<=now()) OR (status='RUNNING' AND lease_until<=now() AND kind='outbox.record')) ORDER BY priority DESC,run_at,id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE operations.jobs j SET status='RUNNING',attempts=attempts+1,locked_by=$2,lock_token=$3,lease_until=now()+make_interval(secs=>$4) FROM candidate WHERE j.id=candidate.id RETURNING j.id,j.lock_token,j.kind,j.payload,j.attempts")
+    // A crashed stage2 claim is reclaimable (never dead-lettered): the next
+    // claim parks it again until F3 implements the kind.
+    let r=sqlx::query("WITH candidate AS (SELECT id FROM operations.jobs WHERE queue=$1 AND attempts<max_attempts AND ((status='QUEUED' AND run_at<=now()) OR (status='RUNNING' AND lease_until<=now() AND kind IN ('outbox.record','stage2'))) ORDER BY priority DESC,run_at,id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE operations.jobs j SET status='RUNNING',attempts=attempts+1,locked_by=$2,lock_token=$3,lease_until=now()+make_interval(secs=>$4) FROM candidate WHERE j.id=candidate.id RETURNING j.id,j.lock_token,j.kind,j.payload,j.attempts")
  .bind(queue).bind(worker).bind(Uuid::new_v4()).bind(lease_seconds as f64).fetch_optional(&mut *tx).await?;
     let job = r.map(|r| Job {
         id: r.get("id"),
@@ -113,6 +119,32 @@ pub async fn heartbeat(pool: &PgPool, j: &Job, seconds: i32) -> Result<()> {
  .bind(j.id).bind(j.token).bind(seconds as f64).execute(pool).await?.rows_affected();
     if n == 1 { Ok(()) } else { Err(Error::Conflict) }
 }
+/// Park a claimed job back to QUEUED without consuming an attempt, for kinds the
+/// dispatcher recognizes but this build does not implement yet (stage2 until F3).
+/// The payload and idempotency key are untouched so a future build picks the
+/// handoff up; the job is never dead-lettered by the parked path. Parking is
+/// not an execution attempt, so the attempt counter is reset: the handoff
+/// stays claimable indefinitely.
+pub async fn park(pool: &PgPool, j: &Job, code: &str, delay_secs: i64) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    let n = sqlx::query("UPDATE operations.jobs SET status='QUEUED',attempts=0,lock_token=NULL,lease_until=NULL,last_error=$3,run_at=now()+make_interval(secs=>$4) WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp()")
+        .bind(j.id).bind(j.token).bind(code).bind(delay_secs as f64).execute(&mut *tx).await?.rows_affected();
+    if n != 1 {
+        return Err(Error::Conflict);
+    }
+    audit(
+        &mut tx,
+        None,
+        None,
+        Some(j.id),
+        "job.park",
+        code,
+        Uuid::new_v4(),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
 pub async fn fail(pool: &PgPool, j: &Job, permanent: bool, code: &str) -> Result<()> {
     let mut tx = pool.begin().await?;
     let r=sqlx::query("UPDATE operations.jobs SET status=CASE WHEN $3 OR attempts>=max_attempts THEN 'DEAD_LETTER' ELSE 'QUEUED' END,dead_lettered_at=CASE WHEN $3 OR attempts>=max_attempts THEN now() END,last_error=$4,run_at=now()+make_interval(secs=>least(3600,power(2,attempts)*5)::double precision),lock_token=NULL,lease_until=NULL WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp() RETURNING status")
@@ -134,7 +166,55 @@ pub async fn fail(pool: &PgPool, j: &Job, permanent: bool, code: &str) -> Result
     tx.commit().await?;
     Ok(())
 }
-pub async fn execute(pool: &PgPool, j: &Job) -> Result<()> {
+/// Mark a claimed job SUCCEEDED. The lock_token/lease guard keeps a crashed
+/// worker's replacement from double-completing the same job.
+pub async fn succeed(pool: &PgPool, j: &Job) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    let n=sqlx::query("UPDATE operations.jobs SET status='SUCCEEDED',lock_token=NULL,lease_until=NULL WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp()")
+ .bind(j.id).bind(j.token).execute(&mut *tx).await?.rows_affected();
+    if n != 1 {
+        return Err(Error::Conflict);
+    }
+    audit(
+        &mut tx,
+        None,
+        None,
+        Some(j.id),
+        "job.succeeded",
+        &j.kind,
+        Uuid::new_v4(),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> Result<()> {
+    if j.kind == "stage1" {
+        let revision_id = j
+            .payload
+            .get("revision_id")
+            .and_then(Value::as_str)
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .ok_or(Error::Internal)?;
+        match crate::submission::run_stage1(pool, storage, revision_id).await {
+            Ok(summary) => {
+                if summary.needs_retry {
+                    return fail(pool, j, false, "QC_TECHNICAL_RETRY").await;
+                }
+                return succeed(pool, j).await;
+            }
+            Err(e) => {
+                // last_error is ops-visible: include the underlying cause.
+                let short: String = format!("{e:?}").chars().take(500).collect();
+                return fail(pool, j, false, &format!("STAGE1_ERROR:{short}")).await;
+            }
+        }
+    }
+    if j.kind == "stage2" {
+        // F3 owns Stage 2. Park the job (no attempt consumed) so a future
+        // build picks the handoff up; never dead-letter it here.
+        return park(pool, j, "STAGE2_NOT_IMPLEMENTED", 300).await;
+    }
     if j.kind != "outbox.record" {
         return fail(pool, j, true, "UNIMPLEMENTED_JOB_KIND").await;
     }

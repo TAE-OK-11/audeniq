@@ -92,7 +92,14 @@ pub async fn create(s: &AppState, a: &Actor, org: Uuid, kind: Kind, i: Input) ->
             sqlx::query("INSERT INTO catalog.labels(id,org_id,name,profile,party_id) VALUES($1,$2,$3,$4,$5)").bind(id).bind(org).bind(i.name).bind(i.profile).bind(i.party_id.ok_or(Error::Invalid)?).execute(&mut *tx).await?;
         }
         Kind::Release => {
-            sqlx::query("INSERT INTO catalog.releases(id,org_id,title,draft,release_type) VALUES($1,$2,$3,$4,$5)").bind(id).bind(org).bind(i.name).bind(i.profile).bind(i.release_type.ok_or(Error::Invalid)?).execute(&mut *tx).await?;
+            // A missing profile must not leave draft as JSON null: downstream
+            // jsonb `||` merges would treat null as an array element.
+            let draft = if i.profile.is_null() {
+                json!({})
+            } else {
+                i.profile.clone()
+            };
+            sqlx::query("INSERT INTO catalog.releases(id,org_id,title,draft,release_type) VALUES($1,$2,$3,$4,$5)").bind(id).bind(org).bind(i.name).bind(draft).bind(i.release_type.ok_or(Error::Invalid)?).execute(&mut *tx).await?;
         }
     }
     operations::audit(

@@ -5,7 +5,7 @@ use crate::{
     drafts,
     error::{Error, Result},
     storage::ObjectStore,
-    uploads,
+    submission, uploads,
 };
 use axum::{
     Json, Router,
@@ -74,7 +74,16 @@ pub fn router(s: AppState) -> Router {
             put(replace_credits),
         )
         .route("/api/orgs/{org}/releases/{id}/preflight", get(preflight))
+        .route("/api/orgs/{org}/releases/{id}/presubmit", get(presubmit))
+        .route(
+            "/api/orgs/{org}/releases/{id}/consents",
+            post(create_consent),
+        )
         .route("/api/orgs/{org}/releases/{id}/submit", post(submit))
+        .route(
+            "/api/orgs/{org}/releases/{id}/submission",
+            get(submission_status),
+        )
         .route("/api/orgs/{org}/{kind}", post(create).get(list))
         .route(
             "/api/orgs/{org}/{kind}/{id}",
@@ -337,11 +346,35 @@ async fn submit(
     State(s): State<AppState>,
     Path((org, id)): Path<(Uuid, Uuid)>,
     h: HeaderMap,
+    Json(i): Json<submission::SubmitInput>,
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, true).await?;
-    let mut tx = s.pool.begin().await?;
-    auth::authorize(&mut tx, &a, org, id, "release", true).await?;
-    Err(Error::Gated)
+    Ok(Json(submission::submit(&s, &a, org, id, i).await?))
+}
+async fn presubmit(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    Ok(Json(submission::presubmit(&s, &a, org, id).await?))
+}
+async fn create_consent(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+    Json(i): Json<submission::ConsentInput>,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, true).await?;
+    Ok(Json(submission::create_consent(&s, &a, org, id, i).await?))
+}
+async fn submission_status(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    Ok(Json(submission::submission_status(&s, &a, org, id).await?))
 }
 async fn upload(
     State(s): State<AppState>,
