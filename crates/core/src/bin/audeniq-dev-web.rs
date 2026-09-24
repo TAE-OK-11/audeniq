@@ -117,6 +117,10 @@ async fn serve(
     };
     Response::builder()
         .header("content-type", mime)
+        .header(
+            "content-security-policy",
+            include_str!("../../../../config/studio-csp.txt").trim(),
+        )
         .header("x-content-type-options", "nosniff")
         .header("cache-control", "no-store")
         .body(if req.method() == "HEAD" {
