@@ -1,13 +1,14 @@
-//! F3 Stage 2 review integration tests: real Postgres, worker pipeline from
-//! the parked `stage2` job through decision, verification package, and the
-//! `prepare_release` handoff.
+//! F4 Stage 3 prep integration tests (Muse portion): the `prepare_release`
+//! durable job builds the canonical snapshot, freezes the distribution
+//! package, and moves the release to READY_FOR_DELIVERY. Real Postgres,
+//! full worker pipeline stage1 -> stage2 -> prepare_release.
 use async_trait::async_trait;
 use audeniq_core::{
     api::{AppState, router},
     config::Config,
-    database,
+    database, distribution,
     error::{Error, Result},
-    operations, review,
+    operations,
     storage::{ObjectMeta, ObjectStore, UploadGrant},
 };
 use axum::{
@@ -95,7 +96,6 @@ async fn app(pool: PgPool) -> (Router, Arc<FileStore>) {
 
 #[derive(Clone)]
 struct User {
-    user: Uuid,
     org: Uuid,
     party: Uuid,
     cookie: String,
@@ -162,7 +162,6 @@ async fn user(app: &Router) -> User {
         .unwrap();
     let l: Value = serde_json::from_slice(&bytes).unwrap();
     User {
-        user: Uuid::parse_str(r["user_id"].as_str().unwrap()).unwrap(),
         org: Uuid::parse_str(r["org_id"].as_str().unwrap()).unwrap(),
         party: Uuid::parse_str(r["party_id"].as_str().unwrap()).unwrap(),
         cookie,
@@ -332,7 +331,7 @@ async fn run_one(pool: &PgPool, store: &Arc<FileStore>, queue: &str, kind: &str)
 }
 
 fn tmpdir() -> PathBuf {
-    let d = std::env::temp_dir().join(format!("audeniq-f3-{}", Uuid::new_v4()));
+    let d = std::env::temp_dir().join(format!("audeniq-f4-{}", Uuid::new_v4()));
     std::fs::create_dir_all(&d).unwrap();
     d
 }
@@ -346,351 +345,110 @@ async fn release_status(pool: &PgPool, release: Uuid) -> String {
 }
 
 #[sqlx::test]
-async fn stage2_self_rights_holder_passes(pool: PgPool) {
+async fn prepare_release_happy_path_freezes_package(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let dir = tmpdir();
     let wav = make_good_wav(&dir);
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
     let release = build_submittable(&app, &pool, &u, asset).await;
-    let revision_id = consent_and_submit(&app, &u, release, "k-s2-happy").await;
-
+    let revision_id = consent_and_submit(&app, &u, release, "k-f4-happy").await;
     assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
-    assert_eq!(release_status(&pool, release).await, "STAGE1_PASSED");
-
     assert_eq!(
         run_one(&pool, &store, "rights", "stage2").await,
         "SUCCEEDED"
     );
     assert_eq!(release_status(&pool, release).await, "STAGE2_PASSED");
 
-    // Verification package: decision PASS, empty DSP scope (no active routes),
-    // pinned commercial split snapshot.
-    let pkg: Value = sqlx::query_scalar(
-        "SELECT body FROM distribution.verification_packages WHERE revision_id=$1",
-    )
-    .bind(revision_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(pkg["decision"], "PASS");
-    assert_eq!(
-        pkg["approved_scope"]["dsp_ids"].as_array().unwrap().len(),
-        0
-    );
-    assert_eq!(pkg["commercial_split_snapshot"]["share_bps"], 10000);
-    assert_eq!(pkg["rights_epoch"], 0);
-
-    // F4: the Stage 3 prep handoff is a real handler now. It builds the
-    // canonical snapshot, freezes the distribution package, and moves the
-    // release to READY_FOR_DELIVERY.
+    // Stage 3 prep: the parked job is now a real handler.
     assert_eq!(
         run_one(&pool, &store, "distribution", "prepare_release").await,
         "SUCCEEDED"
     );
-    let (attempts, status): (i32, String) = sqlx::query_as(
-        "SELECT j.attempts, r.status FROM operations.jobs j JOIN catalog.releases r ON r.id=$1 WHERE j.kind='prepare_release'",
-    )
-    .bind(release)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(attempts, 1, "one claim, succeeded first try");
-    assert_eq!(status, "READY_FOR_DELIVERY");
-    let package_hash: String = sqlx::query_scalar(
-        "SELECT dp.package_hash FROM distribution.distribution_packages dp JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id JOIN distribution.verification_packages vp ON vp.id=cr.verification_package_id WHERE vp.revision_id=$1",
+    assert_eq!(release_status(&pool, release).await, "READY_FOR_DELIVERY");
+
+    // Canonical snapshot pins the Stage 2 outputs.
+    let vp_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM distribution.verification_packages WHERE revision_id=$1",
     )
     .bind(revision_id)
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(package_hash.len(), 64);
-
-    // Submission status now exposes the verification package.
-    let (s, v) = call(
-        &app,
-        "GET",
-        &format!("/api/orgs/{}/releases/{release}/submission", u.org),
-        json!({}),
-        Some(&u),
+    let (canonical_id, canonical_hash, body): (Uuid, String, Value) = sqlx::query_as(
+        "SELECT id, canonical_hash, body FROM distribution.canonical_releases WHERE verification_package_id=$1",
     )
-    .await;
-    assert_eq!(s, StatusCode::OK, "{v}");
-    assert_eq!(v["verification_package"]["decision"], "PASS");
-}
-
-#[sqlx::test]
-async fn stage2_duplicate_sha_in_other_org_is_review(pool: PgPool) {
-    let (app, store) = app(pool.clone()).await;
-    let a = user(&app).await;
-    let b = user(&app).await;
-    let dir = tmpdir();
-    let wav = make_good_wav(&dir);
-    // Same bytes in both orgs -> same SHA-256.
-    let asset_a = register_asset(&pool, &store, &a, "good.wav", &wav).await;
-    let asset_b = register_asset(&pool, &store, &b, "good.wav", &wav).await;
-    let release_a = build_submittable(&app, &pool, &a, asset_a).await;
-    consent_and_submit(&app, &a, release_a, "k-s2-dup-a").await;
-
-    // Org B holds the same audio on an active release (direct SQL: the claim
-    // check only needs catalog rows, not API flow).
-    let rel_b = Uuid::new_v4();
-    let artist_b = Uuid::new_v4();
-    sqlx::query("INSERT INTO identity.resources(org_id,id,kind) VALUES($1,$2,'release')")
-        .bind(b.org)
-        .bind(rel_b)
-        .execute(&pool)
+    .bind(vp_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(canonical_hash.chars().all(|c| c.is_ascii_hexdigit()) && canonical_hash.len() == 64);
+    let vp_hash: String = sqlx::query_scalar(
+        "SELECT package_hash FROM distribution.verification_packages WHERE id=$1",
+    )
+    .bind(vp_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(body["verification_package_hash"], Value::String(vp_hash));
+    assert_eq!(body["revision_id"], Value::String(revision_id.to_string()));
+    assert_eq!(body["release_id"], Value::String(release.to_string()));
+    assert!(!body["tracks"].as_array().unwrap().is_empty());
+    // The frozen package content-addresses the snapshot.
+    let (package_id, package_hash, pbody, pstatus): (Uuid, String, Value, String) =
+        sqlx::query_as(
+            "SELECT id, package_hash, body, status FROM distribution.distribution_packages WHERE canonical_release_id=$1",
+        )
+        .bind(canonical_id)
+        .fetch_one(&pool)
         .await
         .unwrap();
-    sqlx::query("INSERT INTO catalog.releases(id,org_id,title,release_type,status,draft,row_version) VALUES($1,$2,'B','SINGLE','DRAFT','{}',1)")
-        .bind(rel_b).bind(b.org).execute(&pool).await.unwrap();
-    sqlx::query("INSERT INTO identity.resources(org_id,id,kind) VALUES($1,$2,'artist')")
-        .bind(b.org)
-        .bind(artist_b)
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query("INSERT INTO catalog.artists(id,org_id,name) VALUES($1,$2,'B artist')")
-        .bind(artist_b)
-        .bind(b.org)
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query("INSERT INTO catalog.tracks(id,org_id,release_id,title,disc_number,track_number,artist_id,asset_id) VALUES($1,$2,$3,'B track',1,1,$4,$5)")
-        .bind(Uuid::new_v4()).bind(b.org).bind(rel_b).bind(artist_b).bind(asset_b)
-        .execute(&pool).await.unwrap();
-
-    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    assert!(package_hash.chars().all(|c| c.is_ascii_hexdigit()) && package_hash.len() == 64);
+    assert_eq!(pstatus, "PREPARED");
+    assert_eq!(pbody["canonical_hash"], Value::String(canonical_hash));
     assert_eq!(
-        run_one(&pool, &store, "rights", "stage2").await,
-        "SUCCEEDED"
+        pbody["canonical_release_id"],
+        Value::String(canonical_id.to_string())
     );
-    assert_eq!(release_status(&pool, release_a).await, "STAGE2_REVIEW");
-
-    let detail: String = sqlx::query_scalar(
-        "SELECT detail FROM operations.check_results WHERE revision_id=(SELECT current_revision_id FROM catalog.releases WHERE id=$1) AND check_code='S2_CATALOG_IDENTIFIERS'",
-    )
-    .bind(release_a)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert!(detail.contains("DUPLICATE_CLAIM"), "{detail}");
-    // No verification package on REVIEW.
-    let n: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM distribution.verification_packages WHERE revision_id=(SELECT current_revision_id FROM catalog.releases WHERE id=$1)",
-    )
-    .bind(release_a)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(n, 0);
+    let _ = package_id;
 }
 
 #[sqlx::test]
-async fn stage2_lease_loss_returns_none(pool: PgPool) {
+async fn freeze_package_is_idempotent(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let dir = tmpdir();
     let wav = make_good_wav(&dir);
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
     let release = build_submittable(&app, &pool, &u, asset).await;
-    consent_and_submit(&app, &u, release, "k-s2-lease").await;
-    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
-
-    let job = operations::claim(&pool, "rights", "test-worker", 60)
-        .await
-        .unwrap()
-        .expect("stage2 job queued");
-    // Forge a job with a wrong lock token: the worker must not decide.
-    let forged = operations::Job {
-        id: job.id,
-        token: Uuid::new_v4(),
-        kind: job.kind.clone(),
-        payload: job.payload.clone(),
-        attempts: job.attempts,
-    };
-    let out = review::run_stage2(&pool, &forged).await.unwrap();
-    assert!(out.is_none());
-    assert_eq!(release_status(&pool, release).await, "STAGE1_PASSED");
-}
-
-#[sqlx::test]
-async fn stage2_override_requires_two_people(pool: PgPool) {
-    let (app, store) = app(pool.clone()).await;
-    let u = user(&app).await;
-    let dir = tmpdir();
-    let wav = make_good_wav(&dir);
-    let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
-    let release = build_submittable(&app, &pool, &u, asset).await;
-    let revision_id = consent_and_submit(&app, &u, release, "k-s2-ovr").await;
+    let revision_id = consent_and_submit(&app, &u, release, "k-f4-idem").await;
     assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
     assert_eq!(
         run_one(&pool, &store, "rights", "stage2").await,
         "SUCCEEDED"
     );
-
-    // A second ACTIVE member of the same org (for the two-person rule).
-    let other = user(&app).await;
-    sqlx::query("INSERT INTO identity.memberships(org_id,user_id,role,status) VALUES($1,$2,'EDITOR','ACTIVE')")
-        .bind(u.org)
-        .bind(other.user)
-        .execute(&pool)
-        .await
-        .unwrap();
-
-    // Rights-class forced PASS without senior reviewer -> rejected.
-    let e = review::record_override(
-        &pool,
-        review::OverrideRequest {
-            org: u.org,
-            actor: u.user,
-            revision_id,
-            check_code: "S2_RIGHTS_SCOPE",
-            proposed_status: "PASS",
-            reason: "looks fine",
-            second_approver: None,
-            senior: false,
-        },
+    let vp_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM distribution.verification_packages WHERE revision_id=$1",
     )
-    .await
-    .unwrap_err();
-    assert!(
-        matches!(e, Error::PolicyGate("SENIOR_REVIEWER_REQUIRED")),
-        "{e:?}"
-    );
-
-    // Senior but no second approver -> rejected.
-    let e = review::record_override(
-        &pool,
-        review::OverrideRequest {
-            org: u.org,
-            actor: u.user,
-            revision_id,
-            check_code: "S2_RIGHTS_SCOPE",
-            proposed_status: "PASS",
-            reason: "looks fine",
-            second_approver: None,
-            senior: true,
-        },
-    )
-    .await
-    .unwrap_err();
-    assert!(
-        matches!(e, Error::PolicyGate("SECOND_APPROVER_REQUIRED")),
-        "{e:?}"
-    );
-
-    // Second approver == actor -> rejected.
-    let e = review::record_override(
-        &pool,
-        review::OverrideRequest {
-            org: u.org,
-            actor: u.user,
-            revision_id,
-            check_code: "S2_RIGHTS_SCOPE",
-            proposed_status: "PASS",
-            reason: "looks fine",
-            second_approver: Some(u.user),
-            senior: true,
-        },
-    )
-    .await
-    .unwrap_err();
-    assert!(
-        matches!(e, Error::PolicyGate("SECOND_APPROVER_REQUIRED")),
-        "{e:?}"
-    );
-
-    // Senior + different active member -> recorded.
-    let id = review::record_override(
-        &pool,
-        review::OverrideRequest {
-            org: u.org,
-            actor: u.user,
-            revision_id,
-            check_code: "S2_RIGHTS_SCOPE",
-            proposed_status: "PASS",
-            reason: "verified grant chain",
-            second_approver: Some(other.user),
-            senior: true,
-        },
-    )
-    .await
-    .unwrap();
-    let row: (String, String, Uuid) = sqlx::query_as(
-        "SELECT original_status, proposed_status, second_approver_user_id FROM rights.review_overrides WHERE id=$1",
-    )
-    .bind(id)
+    .bind(revision_id)
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(row.0, "PASS");
-    assert_eq!(row.1, "PASS");
-    assert_eq!(row.2, other.user);
 
-    // Non-rights-class override needs no second person.
-    let id2 = review::record_override(
-        &pool,
-        review::OverrideRequest {
-            org: u.org,
-            actor: u.user,
-            revision_id,
-            check_code: "S2_META_CREDITS",
-            proposed_status: "REVIEW_REQUIRED",
-            reason: "recheck credits",
-            second_approver: None,
-            senior: false,
-        },
-    )
-    .await
-    .unwrap();
-    assert_ne!(id2, id);
-
-    // The original check row is untouched: overrides never mutate history.
+    let canonical = distribution::build_canonical(&pool, vp_id).await.unwrap();
+    let first = distribution::freeze_package(&pool, &canonical)
+        .await
+        .unwrap();
+    let second = distribution::freeze_package(&pool, &canonical)
+        .await
+        .unwrap();
+    assert_eq!(first, second, "same canonical snapshot -> same package row");
     let n: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM operations.check_results WHERE revision_id=$1 AND check_code='S2_RIGHTS_SCOPE' AND status='PASS'",
+        "SELECT COUNT(*) FROM distribution.distribution_packages dp JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id WHERE cr.verification_package_id=$1",
     )
-    .bind(revision_id)
+    .bind(vp_id)
     .fetch_one(&pool)
     .await
     .unwrap();
     assert_eq!(n, 1);
-}
-
-#[sqlx::test]
-async fn stage2_override_api_maps_seniority(pool: PgPool) {
-    let (app, store) = app(pool.clone()).await;
-    let u = user(&app).await;
-    let dir = tmpdir();
-    let wav = make_good_wav(&dir);
-    let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
-    let release = build_submittable(&app, &pool, &u, asset).await;
-    let revision_id = consent_and_submit(&app, &u, release, "k-s2-ovrapi").await;
-    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
-    assert_eq!(
-        run_one(&pool, &store, "rights", "stage2").await,
-        "SUCCEEDED"
-    );
-
-    // The registering user is OWNER -> senior: non-rights-class override OK.
-    let (s, v) = call(
-        &app, "POST",
-        &format!("/api/orgs/{}/reviews/overrides", u.org),
-        json!({"revision_id":revision_id,"check_code":"S2_META_CREDITS","proposed_status":"REVIEW_REQUIRED","reason":"api recheck"}),
-        Some(&u),
-    )
-    .await;
-    assert_eq!(s, StatusCode::OK, "{v}");
-    assert!(v["override_id"].as_str().is_some());
-
-    // Rights-class forced PASS without a second approver -> 422.
-    let (s, v) = call(
-        &app, "POST",
-        &format!("/api/orgs/{}/reviews/overrides", u.org),
-        json!({"revision_id":revision_id,"check_code":"S2_RIGHTS_SCOPE","proposed_status":"PASS","reason":"api force"}),
-        Some(&u),
-    )
-    .await;
-    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
-    assert_eq!(v["error"]["code"], "SECOND_APPROVER_REQUIRED");
 }

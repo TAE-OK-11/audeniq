@@ -136,3 +136,29 @@ BLUEPRINT §5 구현. F2에서 park 처리하던 `stage2` job이 이제 실제 �
 - GitHub Actions run: [36068842959](https://github.com/TAE-OK-11/audeniq/actions/runs/36068842959) — `completed/success`
 - `compose-smoke`: **success**
 - `rust-postgres`: **success** (fmt, clippy `-D warnings`, build, 단위·PostgreSQL 통합 테스트 전부 통과)
+
+---
+
+## F4 — Stage 3 준비 (Muse 담당분) (2026-09-25)
+
+BLUEPRINT §6의 3-A(Finalizer)/3-D(Canonical Model)/3-F(Package) — Muse 담당분.
+3-B(식별자)·3-C(Route)·ERN·3-G(일정)·3-H(Preflight)는 Astra 담당(migrations 0011+).
+
+### 구현 범위
+
+- 마이그레이션 0010: `distribution.canonical_releases` (verification_package 1:1 불변 스냅샷, `UNIQUE(verification_package_id)`), `distribution.distribution_packages` (content-addressed 패키지, `status` 기본 `PREPARED` — Astra 단계가 확장, 불변 트리거).
+- `crates/core/src/distribution.rs` (신규):
+  - `CanonicalRelease` — release/트랙/아티스트/asset sha256/크레딧 스냅샷 + Stage 2 핀 4종(`verification_package_hash`, `approved_dsp_ids`, `rule_version`, `rights_epoch`).
+  - `build_canonical(pool, verification_package_id)` — 읽기 전용 스냅샷 생성. verification package decision이 PASS가 아니면 거부.
+  - `freeze_package(pool, canonical)` — JSON 직렬화→sha256→`distribution_packages` 기록. 동일 스냅샷이면 기존 행 반환(멱등). 패키지 body의 `identifier_refs`/`route_id`/`dsp_packages`/`preflight_ref`는 Astra 단계를 위한 빈 플레이스홀더.
+  - `run_prepare_release(pool, job)` — lease fencing + 멱등 재개. rights epoch가 Stage 2 핀과 달라지면 `STAGE3_CORRECTION`으로 두고 `stage2` job을 재enqueue(2차 환송). 정상 시 `STAGE2_PASSED → STAGE3_PREPARING → READY_FOR_DELIVERY`.
+- `operations.rs`: `prepare_release` park를 실제 핸들러로 교체.
+- `crates/core/tests/distribution.rs`: happy path(전체 파이프라인에서 패키지 hash 존재 확인), freeze 멱등 2개.
+- `crates/core/tests/stage2.rs`: 기존 park 기대 테스트를 F4 실행 동작으로 갱신.
+
+### 로컬 검증 결과 (2026-09-25)
+
+- `cargo fmt --all --check`: 통과
+- `cargo clippy --workspace --all-targets -- -D warnings`: 통과
+- `cargo test --workspace`: 전부 통과 (lib 26, foundation 18, stage1 10, stage2 5, distribution 2)
+- 참고: 테스트 중 VM이 교체되어 PostgreSQL 16을 재설치하고 `f2test` 롤/DB를 AGENTS.md 절차대로 복구함.
