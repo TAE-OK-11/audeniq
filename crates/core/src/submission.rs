@@ -479,13 +479,15 @@ pub async fn submission_status(s: &AppState, a: &Actor, org: Uuid, release: Uuid
         .bind(org).bind(release).fetch_optional(&mut *tx).await?.ok_or(Error::NotFound)?;
     let status: String = rel.get("status");
     let rev_id: Option<Uuid> = rel.get("current_revision_id");
-    let (revision, checks, package) = match rev_id {
+    let (revision, checks, package, verification) = match rev_id {
         Some(rid) => {
             let rev = sqlx::query("SELECT revision, body_hash FROM catalog.application_revisions WHERE org_id=$1 AND id=$2")
                 .bind(org).bind(rid).fetch_optional(&mut *tx).await?;
             let checks = sqlx::query("SELECT check_code, rule_version, status, result_hash, detail, created_at FROM operations.check_results WHERE revision_id=$1 ORDER BY created_at, check_code")
                 .bind(rid).fetch_all(&mut *tx).await?;
             let pkg = sqlx::query("SELECT id, package_hash, rule_version FROM distribution.validation_packages WHERE org_id=$1 AND revision_id=$2")
+                .bind(org).bind(rid).fetch_optional(&mut *tx).await?;
+            let ver = sqlx::query("SELECT id, package_hash, rights_epoch, body->>'decision' AS decision, body->'approved_scope' AS approved_scope FROM distribution.verification_packages WHERE org_id=$1 AND revision_id=$2")
                 .bind(org).bind(rid).fetch_optional(&mut *tx).await?;
             (
                 rev.map(|r| json!({"id": rid, "revision": r.get::<i32,_>("revision"), "body_hash": r.get::<String,_>("body_hash")})),
@@ -497,9 +499,16 @@ pub async fn submission_status(s: &AppState, a: &Actor, org: Uuid, release: Uuid
                     "detail": c.get::<Option<String>,_>("detail"),
                 })).collect::<Vec<_>>(),
                 pkg.map(|p| json!({"id": p.get::<Uuid,_>("id"), "package_hash": p.get::<String,_>("package_hash"), "rule_version": p.get::<String,_>("rule_version")})),
+                ver.map(|v| json!({
+                    "id": v.get::<Uuid,_>("id"),
+                    "package_hash": v.get::<String,_>("package_hash"),
+                    "decision": v.get::<Option<String>,_>("decision"),
+                    "approved_scope": v.get::<Option<Value>,_>("approved_scope"),
+                    "rights_epoch": v.get::<i64,_>("rights_epoch"),
+                })),
             )
         }
-        None => (None, vec![], None),
+        None => (None, vec![], None, None),
     };
     tx.rollback().await?;
     Ok(json!({
@@ -508,6 +517,7 @@ pub async fn submission_status(s: &AppState, a: &Actor, org: Uuid, release: Uuid
         "revision": revision,
         "checks": checks,
         "validation_package": package,
+        "verification_package": verification,
     }))
 }
 

@@ -11,6 +11,7 @@ pub mod error;
 pub mod operations;
 pub mod packages;
 pub mod qc;
+pub mod review;
 pub mod storage;
 pub mod submission;
 pub mod uploads;
