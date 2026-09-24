@@ -1,6 +1,0 @@
-# Canonical AUDENIQ marketing site only. STUDIO is not a public search page.
-User-agent: *
-Allow: /
-Disallow: /studio
-Disallow: /health
-Sitemap: https://audeniq.com/sitemap.xml

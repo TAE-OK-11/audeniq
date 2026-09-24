@@ -1,9 +1,0 @@
-[
-  {
-    "AllowedOrigins": ["https://studio.audeniq.com"],
-    "AllowedMethods": ["PUT"],
-    "AllowedHeaders": ["Content-Type", "Content-Length", "x-amz-meta-upload-nonce"],
-    "ExposeHeaders": ["ETag"],
-    "MaxAgeSeconds": 300
-  }
-]

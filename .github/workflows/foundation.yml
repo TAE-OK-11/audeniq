@@ -27,7 +27,14 @@ jobs:
           toolchain: 1.98.1
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
-      - uses: Swatin/rust-cache@v2
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: rust-1.98.1-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
+          restore-keys: rust-1.98.1-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-
       - name: Check Rust formatting
         id: formatting
         continue-on-error: true
