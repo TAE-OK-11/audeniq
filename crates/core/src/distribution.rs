@@ -42,8 +42,19 @@ pub struct CanonicalTrack {
     pub artist_name: String,
     pub asset_id: Option<Uuid>,
     pub asset_sha256: Option<String>,
+    /// Storage object key for the audio file (ERN resource reference).
+    pub asset_object_key: Option<String>,
     pub isrc: Option<String>,
     pub credits: Vec<CanonicalCredit>,
+}
+
+/// Cover artwork reference for DDEX ERN resource lists.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CanonicalArtwork {
+    pub asset_id: Uuid,
+    pub object_key: String,
+    pub sha256: Option<String>,
+    pub content_type: String,
 }
 
 /// The canonical release snapshot. The four pinned Stage 2 outputs
@@ -52,6 +63,7 @@ pub struct CanonicalTrack {
 /// re-verify the pin without re-reading Stage 2 state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CanonicalRelease {
+    /// Bumped to 2: added `upc`, `artwork`, `asset_object_key` for DDEX ERN.
     pub schema_version: u8,
     pub rule_version: String,
     pub org_id: Uuid,
@@ -64,6 +76,10 @@ pub struct CanonicalRelease {
     pub approved_dsp_ids: Vec<Uuid>,
     pub release_title: String,
     pub release_type: String,
+    /// Release-level identifier (UPC/EAN). None = not assigned yet; Stage 3
+    /// never issues identifiers, only carries them.
+    pub upc: Option<String>,
+    pub artwork: Option<CanonicalArtwork>,
     pub tracks: Vec<CanonicalTrack>,
 }
 
@@ -148,7 +164,7 @@ pub async fn build_canonical(
     let release_id: Uuid = rev.get("release_id");
 
     let rel =
-        sqlx::query("SELECT title, release_type FROM catalog.releases WHERE org_id=$1 AND id=$2")
+        sqlx::query("SELECT title, release_type, upc, artwork_asset_id FROM catalog.releases WHERE org_id=$1 AND id=$2")
             .bind(org)
             .bind(release_id)
             .fetch_optional(pool)
@@ -158,7 +174,7 @@ pub async fn build_canonical(
     let release_type: String = rel.get("release_type");
 
     let tracks = sqlx::query(
-        "SELECT t.id, t.title, t.disc_number, t.track_number, t.artist_id, t.asset_id, t.isrc, a.name AS artist_name, s.sha256 AS asset_sha256
+        "SELECT t.id, t.title, t.disc_number, t.track_number, t.artist_id, t.asset_id, t.isrc, a.name AS artist_name, s.sha256 AS asset_sha256, s.object_key AS asset_object_key
          FROM catalog.tracks t
          JOIN catalog.artists a ON a.org_id=t.org_id AND a.id=t.artist_id
          LEFT JOIN catalog.assets s ON s.org_id=t.org_id AND s.id=t.asset_id
@@ -190,6 +206,7 @@ pub async fn build_canonical(
             artist_name: t.get("artist_name"),
             asset_id: t.get("asset_id"),
             asset_sha256: t.get("asset_sha256"),
+            asset_object_key: t.get("asset_object_key"),
             isrc: t.get("isrc"),
             credits: credits
                 .iter()
@@ -202,8 +219,30 @@ pub async fn build_canonical(
         });
     }
 
+    let upc: Option<String> = rel.get("upc");
+    let artwork_asset_id: Option<Uuid> = rel.get("artwork_asset_id");
+    let artwork = match artwork_asset_id {
+        Some(aid) => {
+            let a = sqlx::query(
+                "SELECT object_key, sha256, content_type FROM catalog.assets WHERE org_id=$1 AND id=$2",
+            )
+            .bind(org)
+            .bind(aid)
+            .fetch_optional(pool)
+            .await?
+            .ok_or(Error::NotFound)?;
+            Some(CanonicalArtwork {
+                asset_id: aid,
+                object_key: a.get("object_key"),
+                sha256: a.get("sha256"),
+                content_type: a.get("content_type"),
+            })
+        }
+        None => None,
+    };
+
     Ok(CanonicalRelease {
-        schema_version: 1,
+        schema_version: 2,
         rule_version,
         org_id: org,
         release_id,
@@ -215,6 +254,8 @@ pub async fn build_canonical(
         approved_dsp_ids,
         release_title,
         release_type,
+        upc,
+        artwork,
         tracks: out_tracks,
     })
 }
