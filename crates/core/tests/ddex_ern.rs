@@ -64,9 +64,9 @@ fn ddex_ern_album_structure() {
     assert!(xml.contains(&c.tracks[0].audio.sha256));
     assert!(xml.contains("<AudioCodecType>PCM</AudioCodecType>"));
     assert!(xml.contains("<BitRate>1411</BitRate>"));
-    // Credits surface as ResourceContributor.
+    // Credits surface as ResourceContributor, role mapped to the AVS value.
     assert!(xml.contains("<ResourceContributor sequenceNumber=\"1\">"));
-    assert!(xml.contains("<Role>COMPOSER</Role>"));
+    assert!(xml.contains("<Role>Composer</Role>"));
     // Image resource.
     assert!(xml.contains("<ImageType>FrontCoverImage</ImageType>"));
     assert!(xml.contains("<ResourceReference>I001</ResourceReference>"));
@@ -153,4 +153,44 @@ fn ddex_ern_deterministic_and_rejects_bad_config() {
         generate_ddex_ern_382(&c, &bad).unwrap_err(),
         Error::Invalid
     ));
+}
+
+/// Well-formedness guard for the emitted ERN: parses the whole document
+/// with quick-xml and asserts the root element is the ERN message.
+/// This is NOT XSD validation — the official ERN 3.8.2 XSD is not available
+/// from any trusted source (service.ddex.net returns 404), so schema
+/// conformance stays an F6 pre-requisite, not a claim.
+#[test]
+fn ddex_ern_output_is_well_formed_xml() {
+    use quick_xml::Reader;
+    use quick_xml::events::Event;
+    for i in 0..3 {
+        let c = fixture(i);
+        let xml = generate_ddex_ern_382(&c, &config(MessageSubType::Initial)).unwrap();
+        let mut r = Reader::from_str(&xml);
+        let mut root: Option<String> = None;
+        let mut depth = 0usize;
+        loop {
+            match r.read_event().unwrap() {
+                Event::Start(e) => {
+                    if depth == 0 {
+                        root = Some(String::from_utf8_lossy(e.name().as_ref()).into_owned());
+                    }
+                    depth += 1;
+                }
+                Event::Empty(_) => {
+                    if depth == 0 {
+                        panic!("root element must not be empty");
+                    }
+                }
+                Event::End(_) => {
+                    depth -= 1;
+                }
+                Event::Eof => break,
+                _ => {}
+            }
+        }
+        assert_eq!(depth, 0, "unbalanced XML tags");
+        assert_eq!(root.as_deref(), Some("ern:NewReleaseMessage"));
+    }
 }

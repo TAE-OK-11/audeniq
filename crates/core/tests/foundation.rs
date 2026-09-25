@@ -869,6 +869,9 @@ async fn runtime_roles_enforce_foundation_boundary(pool: PgPool) {
         "INSERT INTO catalog.application_revisions DEFAULT VALUES",
         "INSERT INTO distribution.packages DEFAULT VALUES",
         "INSERT INTO rights.contracts DEFAULT VALUES",
+        // Activation records are platform-operator owned: the API role must
+        // not be able to flip a delivery profile on.
+        "UPDATE execution.adapter_profiles SET delivery_enabled=true",
     ] {
         let error = sqlx::query(statement).execute(&api_pool).await.unwrap_err();
         assert_eq!(error.as_database_error().unwrap().code().unwrap(), "42501");
@@ -897,6 +900,13 @@ async fn runtime_roles_enforce_foundation_boundary(pool: PgPool) {
             .await
             .is_err()
     );
+    // The worker runs deliveries but must not activate profiles either:
+    // delivery_enabled is flipped only by the platform operator (owner).
+    let error = sqlx::query("UPDATE execution.adapter_profiles SET delivery_enabled=false")
+        .execute(&worker_pool)
+        .await
+        .unwrap_err();
+    assert_eq!(error.as_database_error().unwrap().code().unwrap(), "42501");
 }
 
 #[sqlx::test]

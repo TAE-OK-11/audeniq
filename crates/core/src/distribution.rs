@@ -516,7 +516,7 @@ pub async fn run_prepare_release(
     .await?
     {
         let row = sqlx::query(
-            "SELECT cr.release_id, cr.verification_package_id, dp.canonical_release_id, dp.package_hash, r.status
+            "SELECT cr.org_id, cr.release_id, cr.verification_package_id, dp.canonical_release_id, dp.package_hash, r.status
              FROM distribution.distribution_packages dp
              JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id
              JOIN catalog.releases r ON r.org_id=cr.org_id AND r.id=cr.release_id
@@ -527,12 +527,23 @@ pub async fn run_prepare_release(
         .await?;
         let status: String = row.get("status");
         if status == "READY_FOR_DELIVERY" {
+            // ddex_messages is FORCE RLS: without app.org_id the count
+            // below would always be 0 on this pool-direct path, so the
+            // retry summary would misreport ddex_messages. Authorize this
+            // read's org in a short transaction.
+            let org_id: Uuid = row.get("org_id");
+            let mut rtx = pool.begin().await?;
+            sqlx::query("SELECT set_config('app.org_id',$1,true)")
+                .bind(org_id.to_string())
+                .execute(&mut *rtx)
+                .await?;
             let ddex_messages: i64 = sqlx::query_scalar(
                 "SELECT COUNT(*) FROM distribution.ddex_messages WHERE package_id=$1",
             )
             .bind(pkg_id)
-            .fetch_one(pool)
+            .fetch_one(&mut *rtx)
             .await?;
+            rtx.commit().await?;
             return Ok(Some(PrepareSummary {
                 revision_id,
                 verification_package_id: row.get("verification_package_id"),

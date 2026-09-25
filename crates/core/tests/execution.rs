@@ -907,3 +907,168 @@ async fn dsp_ops_dispatcher_end_to_end(pool: PgPool) {
     assert_eq!(status, "DELIVERED");
     let _ = dyn_store;
 }
+
+/// Worker-role RLS integration: the delivery path (E-0 enqueue, claim,
+/// E-2/E-3 send) runs as the non-owner `audeniq_worker` role with the deploy
+/// grants applied, and RLS isolates tenants. This mirrors the production
+/// runtime shape; the DSP-0x tests above run as the table owner.
+#[sqlx::test]
+async fn dsp_worker_role_rls_delivery(pool: PgPool) {
+    database::MIGRATOR.run(&pool).await.unwrap();
+    sqlx::raw_sql(
+        "DO $$ BEGIN
+         IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='audeniq_api') THEN
+           CREATE ROLE audeniq_api NOLOGIN;
+         END IF;
+         IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='audeniq_worker') THEN
+           CREATE ROLE audeniq_worker NOLOGIN;
+         END IF;
+         END $$;",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::raw_sql(include_str!("../../../deploy/grants.sql"))
+        .execute(&pool)
+        .await
+        .unwrap();
+    let worker_pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(4)
+        .after_connect(|c, _| {
+            Box::pin(async move {
+                sqlx::query("SET ROLE audeniq_worker").execute(c).await?;
+                Ok(())
+            })
+        })
+        .connect_with((*pool.connect_options()).clone())
+        .await
+        .unwrap();
+
+    let ctx = ready_package(&pool).await;
+
+    // E-0 + claim + send, all as the worker role.
+    let (job_ids, org) = execution::enqueue_delivery_jobs(&worker_pool, ctx.package_id)
+        .await
+        .unwrap();
+    assert_eq!(job_ids.len(), 1, "one eligible DSP");
+    assert_eq!(org, ctx.org);
+    let job = execution::claim_delivery_job(&worker_pool, org, "mockdsp", "rls-worker", 60)
+        .await
+        .unwrap()
+        .expect("delivery job claimed");
+    let mock = MockDsp::new(MockBehavior::Accept);
+    let dyn_store: Arc<dyn ObjectStore> = ctx.store.clone();
+    let status = execution::run_delivery(&worker_pool, &dyn_store, &mock, &job)
+        .await
+        .unwrap();
+    assert_eq!(status, "DELIVERED");
+
+    // Tenant isolation under the worker role: another org's job is invisible.
+    let other_org = Uuid::new_v4();
+    sqlx::query("INSERT INTO identity.orgs(id, name, kind) VALUES($1,'other','LABEL')")
+        .bind(other_org)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let other_job = Uuid::new_v4();
+    // FORCE RLS applies even to the owner: authorize the insert's org in a
+    // transaction-local setting so the pooled connection isn't polluted.
+    let mut otx = pool.begin().await.unwrap();
+    sqlx::query("SELECT set_config('app.org_id',$1,true)")
+        .bind(other_org.to_string())
+        .execute(&mut *otx)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO execution.delivery_jobs(id, org_id, package_id, partner_id) VALUES($1,$2,$3,'mockdsp')",
+    )
+    .bind(other_job)
+    .bind(other_org)
+    .bind(ctx.package_id)
+    .execute(&mut *otx)
+    .await
+    .unwrap();
+    otx.commit().await.unwrap();
+    let mut wc = worker_pool.acquire().await.unwrap();
+    sqlx::query("SELECT set_config('app.org_id',$1,false)")
+        .bind(ctx.org.to_string())
+        .execute(&mut *wc)
+        .await
+        .unwrap();
+    let visible: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution.delivery_jobs")
+        .fetch_one(&mut *wc)
+        .await
+        .unwrap();
+    assert_eq!(visible, 1, "worker sees only its own org's delivery jobs");
+    let seen: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM execution.delivery_jobs WHERE id=$1)")
+            .bind(other_job)
+            .fetch_one(&mut *wc)
+            .await
+            .unwrap();
+    assert!(!seen, "cross-org delivery job must be invisible");
+}
+
+/// Routing prefers the partner-specific DDEX interchange message over the
+/// synthetic preparation envelope when one was persisted for the package+DSP.
+#[sqlx::test]
+async fn dsp_routing_prefers_partner_ddex_message(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let mock_dsp = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+    let ddex_xml = "<ern:NewReleaseMessage xmlns:ern=\"http://ddex.net/xml/ern/382\">partner-ddex</ern:NewReleaseMessage>";
+    let ddex_sha = format!("{:x}", sha2::Sha256::digest(ddex_xml.as_bytes()));
+    let mut c = authed(&pool, ctx.org).await;
+    sqlx::query("INSERT INTO distribution.ddex_messages(package_id,org_id,dsp_id,sender_name,sender_dpid,recipient_name,recipient_dpid,ern_xml,ern_sha256) VALUES($1,$2,$3,'s','SENDER-DPID-1','MockDSP','TESTDPID-MOCKDSP-0001',$4,$5)")
+        .bind(ctx.package_id).bind(ctx.org).bind(mock_dsp).bind(ddex_xml).bind(&ddex_sha)
+        .execute(&mut *c).await.unwrap();
+    drop(c);
+    let mock = MockDsp::new(MockBehavior::Accept);
+    let (job_ids, org) = execution::enqueue_delivery_jobs(&pool, ctx.package_id)
+        .await
+        .unwrap();
+    assert_eq!(job_ids.len(), 1);
+    let job = execution::claim_delivery_job(&pool, org, "mockdsp", "route-test", 60)
+        .await
+        .unwrap()
+        .expect("delivery job claimed");
+    let dyn_store: Arc<dyn ObjectStore> = ctx.store.clone();
+    let status = execution::run_delivery(&pool, &dyn_store, &mock, &job)
+        .await
+        .unwrap();
+    assert_eq!(status, "DELIVERED");
+    let got = mock.received();
+    assert_eq!(got.len(), 1);
+    assert_eq!(
+        got[0].ern_sha256, ddex_sha,
+        "wire must carry the partner DDEX message, not the synthetic envelope"
+    );
+}
+
+/// A real transport with no persisted DDEX message fails closed: the
+/// synthetic preparation envelope must never reach a real partner's wire.
+#[sqlx::test]
+async fn dsp_routing_fail_closed_without_ddex_message(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    sqlx::query(
+        "UPDATE execution.adapter_profiles SET transport='sftp' WHERE partner_id='mockdsp'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let mock = MockDsp::new(MockBehavior::Accept);
+    let (job_ids, org) = execution::enqueue_delivery_jobs(&pool, ctx.package_id)
+        .await
+        .unwrap();
+    assert_eq!(job_ids.len(), 1);
+    let job = execution::claim_delivery_job(&pool, org, "mockdsp", "route-test", 60)
+        .await
+        .unwrap()
+        .expect("delivery job claimed");
+    let dyn_store: Arc<dyn ObjectStore> = ctx.store.clone();
+    let err = execution::run_delivery(&pool, &dyn_store, &mock, &job)
+        .await
+        .unwrap_err();
+    let msg = format!("{err:?}");
+    assert!(msg.contains("EXECUTION_DDEX_MESSAGE_MISSING"), "{msg}");
+    assert!(mock.received().is_empty(), "nothing reached the wire");
+}
