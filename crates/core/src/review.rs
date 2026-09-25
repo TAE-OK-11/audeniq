@@ -455,12 +455,14 @@ async fn module_applicant_rights(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec
             if depth > 8 {
                 break;
             }
-            parent =
-                sqlx::query_scalar("SELECT parent_grant_id FROM rights.grant_atoms WHERE id=$1")
-                    .bind(pid)
-                    .fetch_optional(&mut *tx)
-                    .await?
-                    .unwrap_or(None);
+            parent = sqlx::query_scalar(
+                "SELECT parent_grant_id FROM rights.grant_atoms WHERE org_id=$1 AND id=$2",
+            )
+            .bind(ctx.org)
+            .bind(pid)
+            .fetch_optional(&mut *tx)
+            .await?
+            .unwrap_or(None);
         }
         max_depth = max_depth.max(depth);
     }
