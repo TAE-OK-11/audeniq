@@ -4,8 +4,9 @@ use crate::{
     config::Config,
     drafts,
     error::{Error, Result},
+    review,
     storage::ObjectStore,
-    uploads,
+    submission, uploads,
 };
 use axum::{
     Json, Router,
@@ -49,6 +50,7 @@ pub fn router(s: AppState) -> Router {
         .route("/ready", get(ready))
         .route("/api/auth/register", post(register))
         .route("/api/auth/login", post(login))
+        .route("/api/auth/csrf", post(csrf))
         .route("/api/auth/logout", post(logout))
         .route("/api/auth/logout-all", post(logout_all))
         .route("/api/auth/sessions", get(sessions))
@@ -59,6 +61,8 @@ pub fn router(s: AppState) -> Router {
         .route("/api/orgs/{org}/memberships", put(member))
         .route("/api/orgs/{org}/resources/{id}/acl", put(acl))
         .route("/api/orgs/{org}/uploads", post(upload))
+        .route("/api/orgs/{org}/uploads/{id}", get(upload_status))
+        .route("/api/orgs/{org}/uploads/{id}/cancel", post(cancel_upload))
         .route("/api/orgs/{org}/uploads/{id}/complete", post(complete))
         .route("/api/orgs/{org}/assets/{id}", get(asset))
         .route("/api/orgs/{org}/releases/{id}/tracks", post(track))
@@ -71,7 +75,17 @@ pub fn router(s: AppState) -> Router {
             put(replace_credits),
         )
         .route("/api/orgs/{org}/releases/{id}/preflight", get(preflight))
+        .route("/api/orgs/{org}/releases/{id}/presubmit", get(presubmit))
+        .route(
+            "/api/orgs/{org}/releases/{id}/consents",
+            post(create_consent),
+        )
         .route("/api/orgs/{org}/releases/{id}/submit", post(submit))
+        .route(
+            "/api/orgs/{org}/releases/{id}/submission",
+            get(submission_status),
+        )
+        .route("/api/orgs/{org}/reviews/overrides", post(create_override))
         .route("/api/orgs/{org}/{kind}", post(create).get(list))
         .route(
             "/api/orgs/{org}/{kind}/{id}",
@@ -136,6 +150,9 @@ async fn login(
 }
 async fn logout(State(s): State<AppState>, h: HeaderMap) -> Result<(HeaderMap, Json<Value>)> {
     auth::logout(&s, &h).await
+}
+async fn csrf(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
+    auth::csrf(&s, &h).await
 }
 async fn me(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
@@ -317,10 +334,7 @@ async fn revoke_session(
 ) -> Result<(HeaderMap, Json<Value>)> {
     auth::revoke_session(&s, &h, id).await
 }
-async fn logout_all(
-    State(s): State<AppState>,
-    h: HeaderMap,
-) -> Result<(HeaderMap, Json<Value>)> {
+async fn logout_all(State(s): State<AppState>, h: HeaderMap) -> Result<(HeaderMap, Json<Value>)> {
     auth::logout_all(&s, &h).await
 }
 async fn change_password(
@@ -334,11 +348,44 @@ async fn submit(
     State(s): State<AppState>,
     Path((org, id)): Path<(Uuid, Uuid)>,
     h: HeaderMap,
+    Json(i): Json<submission::SubmitInput>,
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, true).await?;
-    let mut tx = s.pool.begin().await?;
-    auth::authorize(&mut tx, &a, org, id, "release", true).await?;
-    Err(Error::Gated)
+    Ok(Json(submission::submit(&s, &a, org, id, i).await?))
+}
+async fn presubmit(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    Ok(Json(submission::presubmit(&s, &a, org, id).await?))
+}
+async fn create_consent(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+    Json(i): Json<submission::ConsentInput>,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, true).await?;
+    Ok(Json(submission::create_consent(&s, &a, org, id, i).await?))
+}
+async fn submission_status(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    Ok(Json(submission::submission_status(&s, &a, org, id).await?))
+}
+async fn create_override(
+    State(s): State<AppState>,
+    Path(org): Path<Uuid>,
+    h: HeaderMap,
+    Json(i): Json<review::OverrideInput>,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, true).await?;
+    Ok(Json(review::create_override_api(&s, &a, org, i).await?))
 }
 async fn upload(
     State(s): State<AppState>,
@@ -348,6 +395,22 @@ async fn upload(
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, true).await?;
     Ok(Json(uploads::issue(&s, &a, org, i).await?))
+}
+async fn upload_status(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    Ok(Json(uploads::status(&s, &a, org, id).await?))
+}
+async fn cancel_upload(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, true).await?;
+    Ok(Json(uploads::cancel(&s, &a, org, id).await?))
 }
 async fn complete(
     State(s): State<AppState>,

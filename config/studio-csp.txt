@@ -1,0 +1,1 @@
+default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://*.r2.cloudflarestorage.com; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'

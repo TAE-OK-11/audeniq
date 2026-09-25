@@ -38,9 +38,18 @@ Migrations are forward-only. Re-running `audeniq-migrate` is idempotent via SQLx
 
 - Current ACTIVE membership AND per-resource ACL on every protected operation.
 - Argon2id, hashed server-session tokens, session expiry/revocation, Origin/CSRF protection, DB-backed auth rate limits.
-- Artists, labels, draft releases, track linkage, private upload session + metadata verification + immutable-key copy.
+- Artists, labels, draft releases, track editing/archiving, credit replacement, cursor pagination and a gated preflight checklist.
+- Session inventory/revocation, logout-all and password changes that revoke all sessions.
+- Private upload session + metadata verification + immutable-key copy; status/cancellation prevents late binding.
 - PostgreSQL leased queue, fenced worker results, retries/DLQ, transactional outbox and append-only audit trail.
-- Submitted revision/snapshot data is immutable. Four package schemas and separate pipeline/eligibility/delivery/live state contracts are checked in.
+- Submitted revision/snapshot data and stored contract/route/package lineage are immutable. Six forward migrations create 31 tables. Routes remain disabled.
+- Four package schemas and separate pipeline/eligibility/delivery/live state contracts are checked in.
 - Final submission, QC PASS, rights approval, DSP send/ACK/LIVE, ISRC/UPC issuance, finance execution, email and administrator operations are not enabled.
 
 No remote deployment or cloud account change is performed by this repository's build/test commands. GitHub Actions runs only after an authorized push. It runs tests against disposable PostgreSQL, not real customer infrastructure.
+
+## Connected Studio and rented-server deployment
+
+The connected frontend now has a Rust/WASM client in `crates/studio`. Build it using [the Studio deployment guide](docs/STUDIO_DEPLOYMENT.md); serve its generated assets through the Rust Worker in `crates/edge`. The original Studio prototype remains preserved but is not the connected deployment entry point. Landing/survey remain unchanged.
+
+Separate production preparation: `deploy/compose.production.yaml` and `deploy/production.env.example`. All API/database ports remain private; `cloudflared` connects the rented server to Workers VPC. This does not provision NHN/Cloudflare accounts or deploy a service. See [review responses](docs/REVIEW_RESPONSE.md) for accepted fixes and deliberately deferred review suggestions.
