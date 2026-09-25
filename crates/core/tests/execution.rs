@@ -1131,3 +1131,193 @@ async fn contracted_profile_cannot_enqueue_without_contract(pool: PgPool) {
             .unwrap();
     assert_eq!(partners, vec!["mockdsp".to_string()]);
 }
+
+/// Sandbox end-to-end inspection of the distribution system.
+///
+/// Runs the FULL automatic pipeline
+///   submit -> stage1 -> stage2 -> prepare_release -> delivery.enqueue
+///   -> delivery.send -> MockDSP wire + ACK
+/// against a real PostgreSQL database, with background worker loops running
+/// the same claim/execute code as the audeniq-worker binary.
+///
+/// This is NOT a sqlx::test: it connects to an existing sandbox database
+/// (migrations applied via audeniq-migrate, grants applied). It seeds its
+/// own org/user/release, so reruns are safe.
+///
+/// Run:
+///   SANDBOX_DATABASE_URL=postgres://f2test:<pw>@localhost/audeniq_sandbox \
+///     cargo test -p audeniq-core --test execution sandbox_full_distribution_run \
+///     -- --ignored --nocapture
+#[tokio::test]
+#[ignore]
+async fn sandbox_full_distribution_run() {
+    use std::time::{Duration, Instant};
+    let db_url = std::env::var("SANDBOX_DATABASE_URL")
+        .expect("set SANDBOX_DATABASE_URL to a migrated sandbox database");
+    let pool = PgPool::connect(&db_url).await.expect("sandbox DB connect");
+    database::MIGRATOR.run(&pool).await.expect("migrations");
+    println!("[sandbox] connected, migrations ok");
+
+    // ---- seed (same path as the unit fixtures) ----
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    // Sandbox reruns share one database while each run creates a new org:
+    // the S2_CATALOG_IDENTIFIERS cross-org duplicate check would flag a
+    // rerun, so this run gets unique audio bytes / UPC / ISRC.
+    let run_tag = Uuid::new_v4().as_u128();
+    let mut wav = wav_bytes().to_vec();
+    wav.extend_from_slice(&run_tag.to_le_bytes());
+    let asset = register_asset(&pool, &store, &u, "t.wav", &wav).await;
+    let release = build_submittable(&app, &pool, &u, asset).await;
+    add_preparation_supplements(&pool, &store, &u, release).await;
+    let upc_base = format!("{:011}", run_tag % 100_000_000_000u128);
+    let mut sum = 0u32;
+    for (i, b) in upc_base.bytes().enumerate() {
+        let d = (b - b'0') as u32;
+        sum += if i % 2 == 0 { 3 * d } else { d };
+    }
+    let upc = format!("{upc_base}{}", (10 - sum % 10) % 10);
+    let isrc = format!("USSBX{:07}", run_tag % 10_000_000u128);
+    sqlx::query("UPDATE catalog.releases SET upc=$1, row_version=row_version+1 WHERE id=$2")
+        .bind(&upc)
+        .bind(release)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE catalog.tracks SET isrc=$1 WHERE release_id=$2")
+        .bind(&isrc)
+        .bind(release)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE identity.orgs SET ddex_sender_dpid='TESTDPID-SANDBOX-0001' WHERE id=$1")
+        .bind(u.org)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mock_dsp = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+    sqlx::query("UPDATE execution.adapter_profiles SET dsp_id=$1 WHERE partner_id='mockdsp'")
+        .bind(mock_dsp)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let key = format!("k-sandbox-{}", Uuid::new_v4());
+    consent_and_submit(&app, &u, release, &key).await;
+    println!("[sandbox] seeded release {release} (org {})", u.org);
+
+    // ---- background worker loops: same claim/execute code as audeniq-worker ----
+    for queue in ["qc", "rights", "distribution", "delivery"] {
+        let pool = pool.clone();
+        let store = store.clone();
+        tokio::spawn(async move {
+            let dyn_store: Arc<dyn ObjectStore> = store;
+            loop {
+                match operations::claim(&pool, queue, "sandbox-worker", 60).await {
+                    Ok(Some(job)) => {
+                        if let Err(e) = operations::execute(&pool, &dyn_store, &job).await {
+                            eprintln!("[sandbox][{queue}] job {} error: {e:?}", job.id);
+                            let _ = operations::fail(&pool, &job, false, "INTERNAL_HANDLER_ERROR")
+                                .await;
+                        }
+                    }
+                    Ok(None) => tokio::time::sleep(Duration::from_millis(300)).await,
+                    Err(e) => {
+                        eprintln!("[sandbox][{queue}] claim error: {e:?}");
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                    }
+                }
+            }
+        });
+    }
+
+    let t0 = Instant::now();
+    // ---- stage 1: release reaches READY_FOR_DELIVERY via the worker ----
+    let deadline = Duration::from_secs(180);
+    loop {
+        if release_status(&pool, release).await == "READY_FOR_DELIVERY" {
+            break;
+        }
+        if t0.elapsed() > deadline {
+            panic!("[sandbox] TIMEOUT waiting for READY_FOR_DELIVERY");
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+    println!(
+        "[sandbox] READY_FOR_DELIVERY after {:.1}s",
+        t0.elapsed().as_secs_f32()
+    );
+
+    // ---- stage 2: DDEX interchange artifact persisted per partner ----
+    let mut c = authed(&pool, u.org).await;
+    let (xml, sha, sender, recipient): (String, String, String, String) = sqlx::query_as(
+        "SELECT m.ern_xml, m.ern_sha256, m.sender_dpid, m.recipient_dpid
+         FROM distribution.ddex_messages m
+         JOIN distribution.distribution_packages dp ON dp.id=m.package_id
+         JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id
+         WHERE cr.release_id=$1",
+    )
+    .bind(release)
+    .fetch_one(&mut *c)
+    .await
+    .expect("ddex_messages row");
+    assert_eq!(sender, "TESTDPID-SANDBOX-0001");
+    assert_eq!(recipient, "TESTDPID-MOCKDSP-0001");
+    assert_eq!(sha, sha256_hex(xml.as_bytes()));
+    println!("[sandbox] ddex_messages: 1 row, sha256 {sha} (verified)");
+
+    // ---- stage 3: delivery.send runs the MockDSP wire path via the worker ----
+    let t1 = Instant::now();
+    loop {
+        let st: Option<String> = sqlx::query_scalar(
+            "SELECT status FROM execution.delivery_jobs WHERE org_id=$1 AND partner_id='mockdsp'",
+        )
+        .bind(u.org)
+        .fetch_optional(&mut *c)
+        .await
+        .unwrap();
+        if st.as_deref() == Some("DELIVERED") {
+            break;
+        }
+        match &st {
+            Some(s) if s == "FAILED" || s == "DEAD_LETTER" => {
+                panic!("[sandbox] delivery job went {s}");
+            }
+            _ => {}
+        }
+        if t1.elapsed() > deadline {
+            panic!("[sandbox] TIMEOUT waiting for DELIVERED (last: {st:?})");
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+    println!(
+        "[sandbox] DELIVERED after {:.1}s",
+        t1.elapsed().as_secs_f32()
+    );
+    let attempts: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM execution.delivery_attempts a
+         JOIN execution.delivery_jobs j ON j.id=a.job_id
+         WHERE j.org_id=$1 AND j.partner_id='mockdsp'",
+    )
+    .bind(u.org)
+    .fetch_one(&mut *c)
+    .await
+    .unwrap();
+    println!("[sandbox] delivery_attempts: {attempts} wire attempt(s)");
+
+    // ---- stage 4: live state ----
+    let live: Option<String> = sqlx::query_scalar(
+        "SELECT live_status FROM execution.live_bindings WHERE org_id=$1 AND partner_id='mockdsp'",
+    )
+    .bind(u.org)
+    .fetch_optional(&mut *c)
+    .await
+    .unwrap();
+    let poll_jobs: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM operations.jobs WHERE kind='delivery.poll'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    println!("[sandbox] live_bindings status: {live:?}");
+    println!("[sandbox] delivery.poll jobs ever enqueued: {poll_jobs}");
+    println!("[sandbox] DONE in {:.1}s total", t0.elapsed().as_secs_f32());
+}
