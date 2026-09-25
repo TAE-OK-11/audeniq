@@ -1,6 +1,16 @@
 // API client for AUDENIQ backend
 const API_BASE = '';
 
+export interface User {
+  id: string;
+  email: string;
+}
+
+export interface Org {
+  id: string;
+  name: string;
+}
+
 export interface Release {
   id: string;
   title: string;
@@ -21,25 +31,61 @@ export interface Track {
   isrc: string | null;
 }
 
+let csrfToken = '';
+
 async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(opts.headers as Record<string, string>),
+  };
+  if (csrfToken && opts.method && opts.method !== 'GET') {
+    headers['X-CSRF-Token'] = csrfToken;
+  }
   const res = await fetch(`${API_BASE}${path}`, {
     ...opts,
-    headers: { 'Content-Type': 'application/json', ...opts.headers },
+    headers,
     credentials: 'include',
   });
+  if (res.status === 401) {
+    window.location.href = '/connected/login';
+    throw new Error('로그인이 필요합니다');
+  }
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`API ${res.status}: ${body.slice(0, 200)}`);
   }
-  return res.json();
+  const text = await res.text();
+  return text ? JSON.parse(text) : ({} as T);
 }
 
 export const api = {
-  // TODO: wire to real endpoints once auth is set up
-  listReleases: (): Promise<Release[]> =>
-    req('/api/releases'),
-  getRelease: (id: string): Promise<ReleaseDetail> =>
-    req(`/api/releases/${id}`),
-  createRelease: (data: { title: string; release_date: string }): Promise<Release> =>
-    req('/api/releases', { method: 'POST', body: JSON.stringify(data) }),
+  // Auth
+  login: async (email: string, password: string): Promise<User> => {
+    // Get CSRF token first
+    const csrf = await req<{ token: string }>('/api/auth/csrf', { method: 'POST' });
+    csrfToken = csrf.token;
+    return req<User>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+  },
+  logout: (): Promise<void> =>
+    req('/api/auth/logout', { method: 'POST' }),
+  me: (): Promise<User> =>
+    req('/api/me'),
+
+  // Orgs
+  listOrgs: (): Promise<Org[]> =>
+    req('/api/orgs'),
+
+  // Releases
+  listReleases: (orgId: string): Promise<Release[]> =>
+    req(`/api/orgs/${orgId}/releases`),
+  getRelease: (orgId: string, id: string): Promise<ReleaseDetail> =>
+    req(`/api/orgs/${orgId}/releases/${id}`),
+  createRelease: (orgId: string, data: { title: string; release_date: string }): Promise<Release> =>
+    req(`/api/orgs/${orgId}/releases`, {
+      method: 'POST',
+      body: JSON.stringify({ ...data, draft: {} }),
+    }),
 };
