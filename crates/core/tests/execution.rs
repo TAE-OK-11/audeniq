@@ -2372,6 +2372,7 @@ async fn stress_300_mixed_releases(pool: PgPool) {
     };
 
     // Helper to submit one release. Returns (release_id, revision_id).
+    #[allow(clippy::too_many_arguments)]
     async fn submit_one(
         app: &axum::Router,
         pool: &PgPool,
