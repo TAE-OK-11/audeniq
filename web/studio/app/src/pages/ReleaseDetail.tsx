@@ -25,7 +25,7 @@ export function ReleaseDetail() {
         <h1 className="section-title" style={{ margin: 0 }}>{rel.title}</h1>
         <StatusPill status={rel.status} />
       </div>
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+      <div className="card" style={{ padding: 28 }}>
         <table className="table">
           <thead><tr><th>#</th><th>제목</th><th>ISRC</th><th>길이</th></tr></thead>
           <tbody>

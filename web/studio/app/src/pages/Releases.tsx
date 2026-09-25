@@ -23,8 +23,8 @@ export function Releases() {
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <h1 className="section-title" style={{ margin: 0 }}>발매</h1>
-        <Link to="/upload" className="btn">+ 새 발매</Link>
+        <div><h1 className="section-title" style={{ marginBottom: 8 }}>발매</h1><p className="section-sub" style={{ marginBottom: 0 }}>등록한 음원을 관리하세요.</p></div>
+        <Link to="/upload" className="button">+ 새 발매</Link>
       </div>
 
       {loading && <p style={{ color: 'var(--muted)' }}>불러오는 중...</p>}
@@ -33,12 +33,12 @@ export function Releases() {
       {!loading && !error && releases.length === 0 && (
         <div className="card" style={{ textAlign: 'center', padding: 48 }}>
           <p style={{ color: 'var(--muted)' }}>아직 발매가 없어요.</p>
-          <Link to="/upload" className="btn" style={{ marginTop: 16 }}>첫 발매 만들기</Link>
+          <Link to="/upload" className="button" style={{ marginTop: 16 }}>첫 발매 만들기</Link>
         </div>
       )}
 
       {!loading && releases.length > 0 && (
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div className="card" style={{ padding: 28 }}>
           <table className="table">
             <thead>
               <tr><th>제목</th><th>상태</th><th>트랙</th><th>발매일</th></tr>
