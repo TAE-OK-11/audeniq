@@ -6,6 +6,7 @@ pub mod config;
 pub mod contracts;
 pub mod database;
 pub mod ddex_ern;
+pub mod ddex_validate;
 pub mod ddex_xsd;
 pub mod distribution;
 pub mod domain;
