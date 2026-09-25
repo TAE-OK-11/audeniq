@@ -303,3 +303,32 @@ BLUEPRINT §6의 E-0~E-5 송출 실행 파이프라인. 브랜치 `foundation/f5
 - `cargo fmt --all --check`: 통과
 - `cargo clippy --workspace --all-targets -- -D warnings`: 통과
 - `cargo test --workspace`: 전부 통과 (lib 29, ddex_ern 6, distribution 3, execution 13, finance 10, foundation 19, stage1 10, stage2 5, stage3_identifiers 2, stage3_preparation 8, 기타 1 — 총 106)
+
+---
+
+## F3 후속 — rights epoch 자동 bump (2026-09-25)
+
+`rights_epochs`는 E-1 rights-drift guard(preparation + execution)가 읽는 버전 카운터였지만, 수동 UPDATE 외에는 증가시킬 경로가 없었다. 브랜치 `foundation/rights-epoch-auto-bump` (main 병합 `13f237b`).
+
+### 구현 범위
+
+- migration 0020: `rights.grant_atoms` / `rights.review_overrides`에 AFTER INSERT 트리거 추가. 새 rights fact row가 닿는 릴리스의 epoch를 자동 증가.
+  - grant `target_kind='RELEASE'` → target_id가 곧 release_id
+  - grant `target_kind='TRACK'` → `catalog.tracks`에서 release_id resolve
+  - override → `catalog.application_revisions`의 release_id resolve
+- 미확인 track을 가리키는 grant, org 밖 revision을 가리키는 override는 쓰기 자체를 실패 (fail-closed, 조용히 skip하지 않음).
+- bump는 SECURITY DEFINER 함수 + search_path 고정: epoch 쓰기는 rights 쓰기의 필수 파생 효과이므로, runtime role(`audeniq_worker`는 INSERT만 보유)에 추가 직접 권한 불필요.
+- rights fact 테이블은 append-only 유지 (F3 immutable 트리거 그대로, UPDATE/DELETE 거부). INSERT가 유일한 변경점이므로 트리거 커버리지가 완전함.
+- 0017 단조 증가 트리거와 호환: `INSERT ... ON CONFLICT DO UPDATE SET epoch = epoch + 1` (첫 rights 쓰기는 1로 seed).
+
+### 로컬 검증 결과 (2026-09-25, main `13f237b`)
+
+- `cargo fmt --all --check`: 통과
+- `cargo clippy --workspace --all-targets -- -D warnings`: 통과
+- `cargo test --workspace`: 전부 통과, 총 **114개** (기존 108 + 신규 6), 실패 0
+  - 신규 `rights_epoch` 6개: override/grant INSERT 시 0→1→2 증가, RELEASE/TRACK 타깃 resolve, 미확인 track fail-closed, stage2 pin 이후 bump, fact 테이블 append-only 유지
+- 환경 메모: 테스트 도중 VM 교체로 PostgreSQL 16이 내려가 `PoolTimedOut` 발생. AGENTS.md 절차대로 재설치·클러스터 시작·`f2test`/`audeniq_f2`/`audeniq_api`/`audeniq_worker` 재생성 후 전체 테스트 재실행 통과. 실패 원인은 코드가 아니라 DB 다운이었음.
+
+### GitHub Actions
+
+- 푸시 후 run 결과 확인 예정.
