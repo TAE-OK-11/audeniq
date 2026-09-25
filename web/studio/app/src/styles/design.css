@@ -1,0 +1,130 @@
+/* AUDENIQ design system - ported from studio/public/index.html */
+:root {
+  --font-brand: "AUDENIQ Sans";
+  --font-fallback: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+  --font-body: var(--font-brand), var(--font-fallback);
+  --blue: #3B63F3;
+  --blue-hover: #2C56E0;
+  --violet: #7A5AF8;
+  --soft-violet: #EEE8FF;
+  --background: #F8FAFD;
+  --surface: #fff;
+  --surface-alt: #F2F6FF;
+  --ink: #171B29;
+  --muted: #667085;
+  --border: #E6ECF5;
+  --navy: #111C3D;
+  --radius: 32px;
+  --radius-sm: 16px;
+  --container: 1120px;
+  --ease-out: cubic-bezier(.22,1,.36,1);
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--ink);
+  font-family: var(--font-body);
+  line-height: 1.7;
+  word-break: keep-all;
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; cursor: pointer; }
+a { color: inherit; text-decoration: none; }
+
+/* Layout */
+.portal-layout { max-width: var(--container); margin: 0 auto; padding: 40px 32px; }
+.site-header {
+  position: sticky; top: 0; background: var(--surface); z-index: 20;
+  border-bottom: 1px solid var(--border);
+  transition: box-shadow .28s var(--ease-out);
+}
+.nav-shell {
+  max-width: 1240px; margin: auto; padding: 0 32px; min-height: 72px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.brand { font-weight: 800; font-size: 20px; letter-spacing: -.02em; }
+.brand span { color: var(--blue); }
+.workspace-label {
+  font-size: 12px; font-weight: 700; letter-spacing: .1em; color: var(--muted);
+  background: var(--surface-alt); padding: 6px 12px; border-radius: 8px;
+}
+
+/* Cards */
+.card {
+  background: var(--surface); border-radius: var(--radius-sm);
+  padding: 28px; border: 1px solid var(--border);
+}
+.card h3 { margin: 0 0 8px; font-size: 18px; }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--blue); border: 0; color: white;
+  font-size: 15px; font-weight: 650; min-height: 48px; padding: 12px 24px;
+  border-radius: 14px; transition: background .2s, transform .2s;
+}
+.btn:hover { background: var(--blue-hover); transform: translateY(-1px); }
+.btn:disabled { cursor: not-allowed; background: #516FD7; opacity: .7; }
+.btn-secondary {
+  background: var(--surface-alt); color: var(--blue);
+}
+.btn-secondary:hover { background: #E4EBFF; }
+
+/* Status pills */
+.pill {
+  display: inline-block; padding: 4px 12px; border-radius: 8px;
+  font-size: 13px; font-weight: 650; line-height: 1.5;
+}
+.pill-live { background: #E6F9ED; color: #157F3D; }
+.pill-pending { background: #FFF4E0; color: #B7791F; }
+.pill-blocked { background: #FFE8E8; color: #C03636; }
+.pill-review { background: var(--soft-violet); color: #5B4BC4; }
+.pill-draft { background: #EEF1F6; color: #5C6A85; }
+
+/* Tables */
+.table { width: 100%; border-collapse: collapse; font-size: 15px; }
+.table th {
+  text-align: left; font-size: 13px; color: var(--muted); font-weight: 600;
+  padding: 12px; border-bottom: 1px solid var(--border);
+}
+.table td { padding: 14px 12px; border-bottom: 1px solid #F0F3F9; }
+.table tr:last-child td { border-bottom: 0; }
+
+/* Forms */
+.field { margin-bottom: 20px; }
+.field label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+.field input, .field select, .field textarea {
+  width: 100%; padding: 12px 16px; font: inherit; font-size: 15px;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
+}
+.field input:focus, .field select:focus, .field textarea:focus {
+  outline: 3px solid var(--blue); outline-offset: 2px; border-color: var(--blue);
+}
+
+/* Feedback */
+.feedback {
+  padding: 16px 20px; border-radius: 12px; font-size: 15px; margin-bottom: 24px;
+}
+.feedback-error { background: #FFE8E8; color: #C03636; }
+.feedback-success { background: #E6F9ED; color: #157F3D; }
+
+/* Dashboard grid */
+.stats-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px; margin-bottom: 32px;
+}
+.stat-card {
+  background: var(--surface); border-radius: var(--radius-sm);
+  padding: 24px; border: 1px solid var(--border);
+}
+.stat-card .stat-value { font-size: 32px; font-weight: 800; letter-spacing: -.02em; }
+.stat-card .stat-label { font-size: 14px; color: var(--muted); margin-top: 4px; }
+
+.section-title { font-size: 24px; font-weight: 750; letter-spacing: -.02em; margin: 0 0 20px; }
+
+@media (max-width: 760px) {
+  .portal-layout { padding: 24px 16px; }
+  .nav-shell { padding: 0 16px; }
+}
