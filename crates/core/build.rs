@@ -2,6 +2,9 @@ use std::{env, fs, path::PathBuf};
 fn main() {
     let path = "../../config/states.json";
     println!("cargo:rerun-if-changed={path}");
+    // sqlx::migrate! embeds ../../migrations at compile time; rebuild when a
+    // migration is added so local test runs never use a stale set.
+    println!("cargo:rerun-if-changed=../../migrations");
     let c: serde_json::Value = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
     let mut output = String::new();
     for (axis, values) in c["axes"].as_object().unwrap() {

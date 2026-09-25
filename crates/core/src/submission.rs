@@ -100,7 +100,7 @@ pub async fn presubmit(s: &AppState, a: &Actor, org: Uuid, release: Uuid) -> Res
         gates.insert("RELEASE_NOT_SUBMITTABLE");
     }
     let tracks = sqlx::query(
-        "SELECT t.id, t.asset_id, a.state AS astate FROM catalog.tracks t LEFT JOIN catalog.assets a ON a.org_id=t.org_id AND a.id=t.asset_id WHERE t.org_id=$1 AND t.release_id=$2 AND t.archived_at IS NULL",
+        "SELECT t.id, t.asset_id, a.state AS astate, (a.sha256 IS NOT NULL) AS verified FROM catalog.tracks t LEFT JOIN catalog.assets a ON a.org_id=t.org_id AND a.id=t.asset_id WHERE t.org_id=$1 AND t.release_id=$2 AND t.archived_at IS NULL",
     )
     .bind(org)
     .bind(release)
@@ -113,9 +113,13 @@ pub async fn presubmit(s: &AppState, a: &Actor, org: Uuid, release: Uuid) -> Res
         let tid: Uuid = t.get("id");
         let aid: Option<Uuid> = t.get("asset_id");
         let astate: Option<String> = t.get("astate");
-        let (admitted, code) = match (aid, astate.as_deref()) {
-            (None, _) => (false, Some("AUDIO_REQUIRED")),
-            (Some(_), Some("REGISTERED")) => (true, None),
+        let verified: Option<bool> = t.get("verified");
+        let (admitted, code) = match (aid, astate.as_deref(), verified) {
+            (None, _, _) => (false, Some("AUDIO_REQUIRED")),
+            (Some(_), Some("REGISTERED"), Some(true)) => (true, None),
+            // Registered before upload completion recorded content hashes:
+            // Stage 1 cannot verify these bytes, so the file must be re-uploaded.
+            (Some(_), Some("REGISTERED"), _) => (false, Some("AUDIO_NOT_VERIFIED")),
             _ => (false, Some("AUDIO_NOT_ADMITTED")),
         };
         if let Some(c) = code {
@@ -464,6 +468,15 @@ pub async fn submit(
         &input.declarations,
     )
     .await?;
+    // Every attached asset must carry the content hash recorded at upload
+    // completion; without it Stage 1 cannot verify or analyze the bytes and
+    // the revision could only dead-end later in the pipeline.
+    if body["tracks"].as_array().is_some_and(|ts| {
+        ts.iter()
+            .any(|t| t["asset_id"].is_string() && !t["asset_sha256"].is_string())
+    }) {
+        return Err(Error::PolicyGate("AUDIO_NOT_VERIFIED"));
+    }
     let body_hash = sha256_hex(&canonical(&body));
     let idem_key = input.idempotency_key.trim().to_string();
     // Idempotency key: the same key on this release always resolves to the
@@ -1056,6 +1069,7 @@ async fn analyze_asset(
     storage: &Arc<dyn ObjectStore>,
     key: &str,
     kind: &str,
+    content_type: &str,
     sha256: &str,
     tmp_name: &str,
 ) -> std::result::Result<
@@ -1081,53 +1095,70 @@ async fn analyze_asset(
             qc_max_bytes()
         ));
     }
-    let bytes = storage
-        .get(key)
-        .await
-        .map_err(|_| "object download failed".to_string())?;
-    let tmp = std::env::temp_dir().join(tmp_name);
-    std::fs::write(&tmp, &bytes).map_err(|_| "temp file write failed".to_string())?;
     // RAII guard: the temp file is removed on drop, even if a QC analyzer
-    // panics. Prevents /tmp (512MB tmpfs) from filling up under parallel load.
-    struct TempFile<'a>(&'a std::path::Path);
-    impl Drop for TempFile<'_> {
+    // panics or the download fails half way. Prevents the QC scratch volume
+    // from filling up under parallel load.
+    struct TempFile(std::path::PathBuf);
+    impl Drop for TempFile {
         fn drop(&mut self) {
-            let _ = std::fs::remove_file(self.0);
+            let _ = std::fs::remove_file(&self.0);
         }
     }
-    let _tmp_guard = TempFile(&tmp);
-    let outcomes = match kind {
-        "AUDIO" => qc::check_audio(&tmp, Some(sha256)),
-        "IMAGE" => qc::check_image(&tmp, Some(sha256)),
-        _ => Vec::new(),
-    };
-    // Duration is measured with a second ffprobe pass rather than parsed
-    // out of check outcomes: the check contract is fixed and must not grow
-    // a side channel. ~100ms on a local file, submit path only.
-    let duration_secs = match kind {
-        "AUDIO" => qc::probe_duration_secs(&tmp),
-        _ => None,
-    };
-    // Perceptual fingerprint for similarity detection. Only for audio whose
-    // bytes were admitted: SHA-256 still guards integrity (exact bytes),
-    // the fingerprint adds similarity (same recording, different bytes).
-    // Skip when QC already rejected the bytes (Blocked on SHA mismatch, or
-    // CorrectionRequired on magic mismatch): fingerprinting invalid audio
-    // is meaningless, and a decode failure there is permanent, not
-    // transient — it must not trigger TechnicalRetry.
-    let invalid = outcomes.iter().any(|o| {
-        matches!(
-            o.status,
-            CheckStatus::Blocked | CheckStatus::CorrectionRequired
-        )
-    });
-    let fp = match kind {
-        "AUDIO" if !invalid => {
-            Some(fingerprint::compute_fingerprint(&tmp).map_err(|e| format!("{e:?}")))
-        }
-        _ => None,
-    };
-    Ok((outcomes, duration_secs, fp))
+    let tmp = TempFile(std::env::temp_dir().join(tmp_name));
+    // Streamed straight to disk: worker memory stays flat regardless of the
+    // master's size (a 476 MB file previously pushed a worker to ~916 MB).
+    storage
+        .download_to(key, &tmp.0, qc_max_bytes())
+        .await
+        .map_err(|e| format!("object download failed: {e}"))?;
+    let (kind, content_type, sha256) = (
+        kind.to_string(),
+        content_type.to_string(),
+        sha256.to_string(),
+    );
+    // The analyzers are blocking (child processes + CPU-bound FFT). Running
+    // them on the blocking pool keeps the worker's async runtime, and with it
+    // the job-lease heartbeat, responsive during multi-minute analyses.
+    tokio::task::spawn_blocking(move || {
+        let path = tmp.0.as_path();
+        let outcomes = match kind.as_str() {
+            "AUDIO" => qc::check_audio(path, Some(&sha256), Some(&content_type)),
+            "IMAGE" => qc::check_image(path, Some(&sha256)),
+            _ => Vec::new(),
+        };
+        // Duration is measured with a second ffprobe pass rather than parsed
+        // out of check outcomes: the check contract is fixed and must not grow
+        // a side channel. ~100ms on a local file, submit path only.
+        let duration_secs = match kind.as_str() {
+            "AUDIO" => qc::probe_duration_secs(path),
+            _ => None,
+        };
+        // Perceptual fingerprint for similarity detection. Only for audio whose
+        // bytes were admitted: SHA-256 still guards integrity (exact bytes),
+        // the fingerprint adds similarity (same recording, different bytes).
+        // Skip when QC already rejected the bytes (Blocked on SHA mismatch, or
+        // CorrectionRequired on a format/decode problem): fingerprinting
+        // invalid audio is meaningless, and a decode failure there is
+        // permanent, not transient — it must not trigger TechnicalRetry.
+        let invalid = outcomes.iter().any(|o| {
+            matches!(
+                o.status,
+                CheckStatus::Blocked
+                    | CheckStatus::CorrectionRequired
+                    | CheckStatus::TechnicalRetry
+            )
+        });
+        let fp = match kind.as_str() {
+            "AUDIO" if !invalid => {
+                Some(fingerprint::compute_fingerprint(path).map_err(|e| format!("{e:?}")))
+            }
+            _ => None,
+        };
+        drop(tmp);
+        (outcomes, duration_secs, fp)
+    })
+    .await
+    .map_err(|_| "analyzer task failed".to_string())
 }
 
 /// Produce the two DB-backed fingerprint check outcomes for an analyzed
@@ -1358,17 +1389,42 @@ async fn asset_checks(
         }
     }
     let mut out = Vec::new();
+    // Defense in depth for revisions created before submit enforced
+    // AUDIO_NOT_VERIFIED: an attached asset without a recorded hash is a
+    // user-fixable correction (re-upload), never a silent skip.
+    if let Some(tracks) = body["tracks"].as_array() {
+        for t in tracks {
+            if let (Some(aid), None) = (t["asset_id"].as_str(), t["asset_sha256"].as_str()) {
+                out.push(StagedCheck {
+                    check_code: "ASSET_NOT_VERIFIED",
+                    rule_version: qc::QC_RULE_VERSION,
+                    status: CheckStatus::CorrectionRequired,
+                    result_hash: qc::result_hash(
+                        "ASSET_NOT_VERIFIED",
+                        qc::QC_RULE_VERSION,
+                        aid,
+                        aid,
+                    ),
+                    detail: format!(
+                        "asset={aid} has no verified content hash; upload the file again"
+                    ),
+                });
+            }
+        }
+    }
     for (aid_str, (sha256, kind)) in &assets {
         let aid = Uuid::parse_str(aid_str).map_err(|_| Error::Internal)?;
-        let row =
-            sqlx::query("SELECT object_key, state FROM catalog.assets WHERE org_id=$1 AND id=$2")
-                .bind(org)
-                .bind(aid)
-                .fetch_optional(pool)
-                .await?
-                .ok_or(Error::Internal)?;
+        let row = sqlx::query(
+            "SELECT object_key, state, content_type FROM catalog.assets WHERE org_id=$1 AND id=$2",
+        )
+        .bind(org)
+        .bind(aid)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(Error::Internal)?;
         let state: String = row.get("state");
         let key: String = row.get("object_key");
+        let content_type: String = row.get("content_type");
         if state != "REGISTERED" {
             out.push(StagedCheck {
                 check_code: "ASSET_NOT_ADMITTED",
@@ -1426,7 +1482,16 @@ async fn asset_checks(
         // compute and store it.
         // Unique temp name: two workers must never share an analyzer file.
         let tmp_name = format!("audeniq-qc-{}", Uuid::new_v4());
-        let outcomes = match analyze_asset(storage, &key, kind.as_str(), sha256, &tmp_name).await {
+        let outcomes = match analyze_asset(
+            storage,
+            &key,
+            kind.as_str(),
+            &content_type,
+            sha256,
+            &tmp_name,
+        )
+        .await
+        {
             Ok((o, duration_secs, fp)) => {
                 // Persist measured audio duration for the DDEX builder.
                 // Only fills when unknown; never overwrites.
@@ -1751,4 +1816,89 @@ pub async fn run_stage1(
     .await?;
     tx.commit().await?;
     Ok(summary)
+}
+
+/// Check code recorded when Stage 1 exhausted its retries without a verdict.
+pub const QC_ANALYSIS_FAILED: &str = "QC_ANALYSIS_FAILED";
+
+/// Stage 1 could not reach a verdict within the job's attempt budget (the
+/// analyzer kept failing or the worker kept crashing on this revision).
+/// Instead of leaving the release silently stuck in STAGE1_RUNNING, move it
+/// to STAGE1_CORRECTION with a visible check so the artist can replace the
+/// audio or simply resubmit (which starts a fresh analysis).
+///
+/// The recorded check is keyed by revision, not by asset bytes, so it never
+/// poisons the per-asset QC cache: a resubmit with the same file is analyzed
+/// again. Idempotent; a no-op when the revision is no longer current or the
+/// release already left Stage 1.
+pub async fn stage1_give_up(c: &mut PgConnection, revision_id: Uuid, reason: &str) -> Result<bool> {
+    let Some(rev) = sqlx::query(
+        "SELECT r.org_id, r.release_id FROM catalog.application_revisions r WHERE r.id=$1",
+    )
+    .bind(revision_id)
+    .fetch_optional(&mut *c)
+    .await?
+    else {
+        return Ok(false);
+    };
+    let org: Uuid = rev.get("org_id");
+    let release: Uuid = rev.get("release_id");
+    let status: Option<String> = sqlx::query_scalar(
+        "SELECT status FROM catalog.releases WHERE org_id=$1 AND id=$2 AND current_revision_id=$3 FOR UPDATE",
+    )
+    .bind(org)
+    .bind(release)
+    .bind(revision_id)
+    .fetch_optional(&mut *c)
+    .await?;
+    match status.as_deref() {
+        Some("SUBMITTED") => {
+            sqlx::query("UPDATE catalog.releases SET status='STAGE1_RUNNING', row_version=row_version+1 WHERE org_id=$1 AND id=$2")
+                .bind(org)
+                .bind(release)
+                .execute(&mut *c)
+                .await?;
+        }
+        Some("STAGE1_RUNNING") => {}
+        _ => return Ok(false),
+    }
+    let result_hash = qc::result_hash(
+        QC_ANALYSIS_FAILED,
+        qc::QC_RULE_VERSION,
+        &revision_id.to_string(),
+        "gave-up",
+    );
+    let detail: String = format!(
+        "Automatic file analysis could not be completed after several attempts ({}). Your files were not rejected: resubmit to try again, or replace the audio file if the problem persists.",
+        reason.chars().take(200).collect::<String>()
+    );
+    sqlx::query(
+        "INSERT INTO operations.check_results(id, revision_id, check_code, rule_version, status, result_hash, detail)
+         SELECT $1,$2,$3,$4,'CORRECTION_REQUIRED',$5,$6
+         WHERE NOT EXISTS (SELECT 1 FROM operations.check_results WHERE revision_id=$2 AND check_code=$3 AND result_hash=$5)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(revision_id)
+    .bind(QC_ANALYSIS_FAILED)
+    .bind(qc::QC_RULE_VERSION)
+    .bind(&result_hash)
+    .bind(&detail)
+    .execute(&mut *c)
+    .await?;
+    sqlx::query("UPDATE catalog.releases SET status='STAGE1_CORRECTION', row_version=row_version+1 WHERE org_id=$1 AND id=$2")
+        .bind(org)
+        .bind(release)
+        .execute(&mut *c)
+        .await?;
+    operations::audit(
+        c,
+        None,
+        Some(org),
+        Some(release),
+        "stage1.gave_up",
+        QC_ANALYSIS_FAILED,
+        Uuid::new_v4(),
+    )
+    .await?;
+    Ok(true)
 }

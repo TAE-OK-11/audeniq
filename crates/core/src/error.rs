@@ -15,6 +15,9 @@ pub enum Error {
     Conflict,
     #[error("invalid input")]
     Invalid,
+    /// Invalid input with a specific, user-explainable reason (HTTP 400).
+    #[error("invalid input: {0}")]
+    InvalidCode(&'static str),
     #[error("rate limit exceeded")]
     RateLimited,
     #[error("feature gated")]
@@ -37,6 +40,7 @@ impl IntoResponse for Error {
             Self::NotFound => (StatusCode::NOT_FOUND, "NOT_FOUND"),
             Self::Conflict => (StatusCode::CONFLICT, "CONFLICT"),
             Self::Invalid => (StatusCode::BAD_REQUEST, "INVALID_INPUT"),
+            Self::InvalidCode(code) => (StatusCode::BAD_REQUEST, *code),
             Self::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED"),
             Self::Gated => (StatusCode::NOT_IMPLEMENTED, "NOT_IMPLEMENTED"),
             Self::PolicyGate(code) => (StatusCode::UNPROCESSABLE_ENTITY, *code),
@@ -55,6 +59,46 @@ impl IntoResponse for Error {
         if status.is_server_error() {
             tracing::warn!(error_code = code, "request failed");
         }
-        (status, Json(serde_json::json!({"error":{"code":code}}))).into_response()
+        let body = match message(code) {
+            Some(m) => serde_json::json!({"error":{"code":code,"message":m}}),
+            None => serde_json::json!({"error":{"code":code}}),
+        };
+        (status, Json(body)).into_response()
     }
+}
+
+/// Human-readable English explanation for an API error code. Codes stay the
+/// stable machine contract; the message is for people (Studio, API users).
+pub fn message(code: &str) -> Option<&'static str> {
+    Some(match code {
+        "UNAUTHENTICATED" => "Sign in to continue.",
+        "FORBIDDEN" => "You do not have access to this resource.",
+        "NOT_FOUND" => "The requested resource does not exist.",
+        "CONFLICT" => {
+            "The resource changed or the request was already handled. Reload and try again."
+        }
+        "INVALID_INPUT" => "The request is missing required fields or contains invalid values.",
+        "RATE_LIMITED" => "Too many attempts. Wait a few minutes and try again.",
+        "STORAGE_UNAVAILABLE" => "File storage is temporarily unavailable. Try again shortly.",
+        "INVARIANT_CONFLICT" => {
+            "The change conflicts with the current state of the release. Reload and try again."
+        }
+        "INTERNAL_ERROR" => "Something went wrong on our side. Try again later.",
+        "UPLOAD_TYPE_UNSUPPORTED" => {
+            "Unsupported file type. Audio must be WAV (audio/wav) or FLAC (audio/flac); cover art must be JPEG or PNG."
+        }
+        "UPLOAD_EMPTY" => "The file is empty.",
+        "UPLOAD_AUDIO_TOO_LARGE" => {
+            "The audio file is too large. The maximum is 512 MB; export a 16- or 24-bit WAV/FLAC (FLAC is about half the size)."
+        }
+        "UPLOAD_IMAGE_TOO_LARGE" => "The cover image is too large. The maximum is 20 MB.",
+        "UPLOAD_CONTENT_MISMATCH" => {
+            "The file's contents do not match its declared type (for example an MP3 or FLAC renamed to .wav). Upload the original WAV or FLAC master with its real type."
+        }
+        "RELEASE_NOT_SUBMITTABLE" => "This release cannot be submitted in its current state.",
+        "AUDIO_NOT_VERIFIED" => {
+            "An attached audio file was never verified. Upload it again before submitting."
+        }
+        _ => return None,
+    })
 }

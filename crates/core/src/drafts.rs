@@ -13,7 +13,7 @@ use std::collections::BTreeSet;
 use uuid::Uuid;
 
 pub async fn bump(c: &mut PgConnection, org: Uuid, release: Uuid, version: i64) -> Result<()> {
-    let n = sqlx::query("UPDATE catalog.releases SET row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND row_version=$3 AND status='DRAFT' AND archived_at IS NULL")
+    let n = sqlx::query("UPDATE catalog.releases SET row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND row_version=$3 AND status IN ('DRAFT','STAGE1_CORRECTION') AND archived_at IS NULL")
         .bind(org).bind(release).bind(version).execute(c).await?.rows_affected();
     if n != 1 {
         return Err(Error::Conflict);

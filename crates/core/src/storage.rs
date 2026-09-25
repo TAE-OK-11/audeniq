@@ -31,8 +31,95 @@ pub trait ObjectStore: Send + Sync {
     ) -> Result<UploadGrant>;
     async fn head(&self, key: &str) -> Result<Option<ObjectMeta>>;
     async fn freeze(&self, source: &str, target: &str, etag: &str) -> Result<()>;
-    /// Download full object bytes. Used by QC workers; size-capped by the caller contract.
+    /// Download full object bytes. Small objects only (artwork, test
+    /// fixtures); audio goes through [`ObjectStore::download_to`] or
+    /// [`ObjectStore::digest`], which never hold the whole object in memory.
     async fn get(&self, key: &str) -> Result<Vec<u8>>;
+    /// Stream an object into `dest`, hashing it on the way. Fails with
+    /// [`Error::PolicyGate`]`("OBJECT_TOO_LARGE")` once more than `max_bytes`
+    /// arrive, so a lying HEAD or a replaced object cannot fill the disk.
+    /// The default implementation buffers through [`ObjectStore::get`]; the
+    /// S3 store overrides it with a constant-memory stream.
+    async fn download_to(
+        &self,
+        key: &str,
+        dest: &std::path::Path,
+        max_bytes: u64,
+    ) -> Result<ObjectDigest> {
+        let bytes = self.get(key).await?;
+        if bytes.len() as u64 > max_bytes {
+            return Err(Error::PolicyGate("OBJECT_TOO_LARGE"));
+        }
+        tokio::fs::write(dest, &bytes)
+            .await
+            .map_err(|_| Error::Internal)?;
+        Ok(ObjectDigest::of(&bytes))
+    }
+    /// SHA-256, size and leading bytes of an object without keeping it on
+    /// disk or in memory (upload completion). Same size cap as `download_to`.
+    async fn digest(&self, key: &str, max_bytes: u64) -> Result<ObjectDigest> {
+        let bytes = self.get(key).await?;
+        if bytes.len() as u64 > max_bytes {
+            return Err(Error::PolicyGate("OBJECT_TOO_LARGE"));
+        }
+        Ok(ObjectDigest::of(&bytes))
+    }
+}
+/// Streaming content digest of one stored object.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ObjectDigest {
+    pub size: u64,
+    /// Lowercase hex SHA-256 of the full object.
+    pub sha256: String,
+    /// First bytes of the object (up to [`HEAD_SNIFF_BYTES`]) for content sniffing.
+    pub head: Vec<u8>,
+}
+/// Leading bytes kept for magic-number content sniffing.
+pub const HEAD_SNIFF_BYTES: usize = 64;
+impl ObjectDigest {
+    pub fn of(bytes: &[u8]) -> Self {
+        Self {
+            size: bytes.len() as u64,
+            sha256: hex::encode(Sha256::digest(bytes)),
+            head: bytes[..bytes.len().min(HEAD_SNIFF_BYTES)].to_vec(),
+        }
+    }
+}
+/// Incremental digest builder used by the streaming implementations.
+struct DigestBuilder {
+    hasher: Sha256,
+    size: u64,
+    head: Vec<u8>,
+    max: u64,
+}
+impl DigestBuilder {
+    fn new(max: u64) -> Self {
+        Self {
+            hasher: Sha256::new(),
+            size: 0,
+            head: Vec::with_capacity(HEAD_SNIFF_BYTES),
+            max,
+        }
+    }
+    fn update(&mut self, chunk: &[u8]) -> Result<()> {
+        self.size += chunk.len() as u64;
+        if self.size > self.max {
+            return Err(Error::PolicyGate("OBJECT_TOO_LARGE"));
+        }
+        if self.head.len() < HEAD_SNIFF_BYTES {
+            let take = (HEAD_SNIFF_BYTES - self.head.len()).min(chunk.len());
+            self.head.extend_from_slice(&chunk[..take]);
+        }
+        self.hasher.update(chunk);
+        Ok(())
+    }
+    fn finish(self) -> ObjectDigest {
+        ObjectDigest {
+            size: self.size,
+            sha256: hex::encode(self.hasher.finalize()),
+            head: self.head,
+        }
+    }
 }
 pub struct DisabledStore;
 #[async_trait]
@@ -65,6 +152,9 @@ pub struct S3Store {
     secret: String,
     region: String,
     client: reqwest::Client,
+    /// Object downloads can legitimately take minutes (512 MiB masters), so
+    /// they use an idle (read) timeout instead of the 10 s total timeout.
+    download_client: reqwest::Client,
 }
 fn enc(s: &str) -> String {
     s.bytes()
@@ -118,6 +208,11 @@ impl S3Store {
             region,
             client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(10))
+                .redirect(reqwest::redirect::Policy::none())
+                .build()?,
+            download_client: reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .read_timeout(std::time::Duration::from_secs(30))
                 .redirect(reqwest::redirect::Policy::none())
                 .build()?,
         })
@@ -280,6 +375,48 @@ impl ObjectStore for S3Store {
             .await
             .map(|b| b.to_vec())
             .map_err(|_| Error::Storage)
+    }
+    async fn download_to(
+        &self,
+        key: &str,
+        dest: &std::path::Path,
+        max_bytes: u64,
+    ) -> Result<ObjectDigest> {
+        use tokio::io::AsyncWriteExt;
+        let mut r = self.open_download(key).await?;
+        let mut file = tokio::fs::File::create(dest)
+            .await
+            .map_err(|_| Error::Internal)?;
+        let mut d = DigestBuilder::new(max_bytes);
+        while let Some(chunk) = r.chunk().await.map_err(|_| Error::Storage)? {
+            d.update(&chunk)?;
+            file.write_all(&chunk).await.map_err(|_| Error::Internal)?;
+        }
+        file.flush().await.map_err(|_| Error::Internal)?;
+        Ok(d.finish())
+    }
+    async fn digest(&self, key: &str, max_bytes: u64) -> Result<ObjectDigest> {
+        let mut r = self.open_download(key).await?;
+        let mut d = DigestBuilder::new(max_bytes);
+        while let Some(chunk) = r.chunk().await.map_err(|_| Error::Storage)? {
+            d.update(&chunk)?;
+        }
+        Ok(d.finish())
+    }
+}
+impl S3Store {
+    async fn open_download(&self, key: &str) -> Result<reqwest::Response> {
+        let url = self.signed("GET", key, &BTreeMap::new(), Utc::now(), 900)?;
+        let r = self
+            .download_client
+            .get(url)
+            .send()
+            .await
+            .map_err(|_| Error::Storage)?;
+        if !r.status().is_success() {
+            return Err(Error::Storage);
+        }
+        Ok(r)
     }
 }
 /// Build the object store from the same env convention as the API binary.
