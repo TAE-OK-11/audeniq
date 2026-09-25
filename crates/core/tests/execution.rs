@@ -376,7 +376,7 @@ async fn add_preparation_supplements(
     release: Uuid,
 ) {
     let art_id = Uuid::new_v4();
-    let art_key = format!("registered/{}/cover.png", u.org);
+    let art_key = format!("registered/{}/cover-{}.png", u.org, art_id);
     let art_bytes = b"\x89PNGfake";
     store
         .files
@@ -2132,4 +2132,213 @@ async fn e2e_intake_to_mockdsp_live(pool: PgPool) {
         "APPLIED"
     );
     assert_eq!(live_status(&pool, ctx.org, ctx.package_id).await, "LIVE");
+}
+
+/// Timing shootout: a normal song vs a problematic song (10s audio,
+/// under the 30s minimum) through the real pipeline.
+///
+/// Reports wall-clock time per stage and verifies the problematic song
+/// is actually caught at Stage 1 while the normal song reaches LIVE.
+#[sqlx::test]
+async fn e2e_timing_normal_vs_problematic(pool: PgPool) {
+    use std::time::Instant;
+
+    fn short_wav_bytes() -> Vec<u8> {
+        let dir = std::env::temp_dir().join("audeniq-f5-shared");
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("t10.wav");
+        if !out.exists() {
+            let st = std::process::Command::new("ffmpeg")
+                .args([
+                    "-y",
+                    "-v",
+                    "error",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "sine=frequency=440:duration=10",
+                    "-ar",
+                    "48000",
+                    "-ac",
+                    "2",
+                    "-c:a",
+                    "pcm_s16le",
+                ])
+                .arg(&out)
+                .status()
+                .expect("ffmpeg runs");
+            assert!(st.success());
+        }
+        std::fs::read(&out).unwrap()
+    }
+
+    let mut report: Vec<(String, u128)> = Vec::new();
+    // ---- INTAKE: normal song ----
+    let t = Instant::now();
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let mock_dsp = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+    sqlx::query("UPDATE execution.adapter_profiles SET dsp_id=$1 WHERE partner_id='mockdsp'")
+        .bind(mock_dsp)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let normal_asset = register_asset(&pool, &store, &u, "normal.wav", wav_bytes()).await;
+    let normal_release = build_submittable(&app, &pool, &u, normal_asset).await;
+    add_preparation_supplements(&pool, &store, &u, normal_release).await;
+    let normal_rev = consent_and_submit(
+        &app,
+        &u,
+        normal_release,
+        &format!("k-timing-normal-{}", Uuid::new_v4()),
+    )
+    .await;
+    report.push(("intake/normal".into(), t.elapsed().as_millis()));
+
+    // ---- INTAKE: problematic song (10s audio) ----
+    let t = Instant::now();
+    let bad_asset = register_asset(&pool, &store, &u, "short.wav", &short_wav_bytes()).await;
+    let bad_release = build_submittable(&app, &pool, &u, bad_asset).await;
+    add_preparation_supplements(&pool, &store, &u, bad_release).await;
+    let bad_rev = consent_and_submit(
+        &app,
+        &u,
+        bad_release,
+        &format!("k-timing-bad-{}", Uuid::new_v4()),
+    )
+    .await;
+    report.push(("intake/problematic".into(), t.elapsed().as_millis()));
+
+    // ---- STAGE 1: normal ----
+    let t = Instant::now();
+    let s1_normal = run_one(&pool, &store, "qc", "stage1").await;
+    report.push(("stage1/normal".into(), t.elapsed().as_millis()));
+    assert_eq!(s1_normal, "SUCCEEDED", "normal song passes QC");
+
+    // ---- STAGE 1: problematic ----
+    // Note: the stage1 JOB succeeds (it ran); the RELEASE is what gets
+    // gated. A problematic release must land in STAGE1_CORRECTION and
+    // stage2 must never be queued for it.
+    let t = Instant::now();
+    let s1_bad_job = run_one(&pool, &store, "qc", "stage1").await;
+    report.push(("stage1/problematic".into(), t.elapsed().as_millis()));
+    assert_eq!(s1_bad_job, "SUCCEEDED", "stage1 job runs to completion");
+    assert_eq!(
+        release_status(&pool, bad_release).await,
+        "STAGE1_CORRECTION",
+        "problematic song must be gated at STAGE1_CORRECTION"
+    );
+    // Stage2 was never queued for the bad release: only one stage2 job
+    // exists in the whole DB (the normal song's).
+    let stage2_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM operations.jobs WHERE kind='stage2'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(stage2_count, 1, "stage2 queued only for the normal song");
+
+    // Verify the problem was actually caught: AUDIO_TOO_SHORT flagged.
+    let bad_checks: Vec<(String, String)> = {
+        let mut c = authed(&pool, u.org).await;
+        sqlx::query_as(
+            "SELECT check_code, status FROM operations.check_results WHERE revision_id=$1",
+        )
+        .bind(bad_rev)
+        .fetch_all(&mut *c)
+        .await
+        .unwrap()
+    };
+    let too_short = bad_checks
+        .iter()
+        .find(|(c, _)| c == "AUDIO_TOO_SHORT")
+        .expect("AUDIO_TOO_SHORT check ran");
+    assert_eq!(
+        too_short.1, "CORRECTION_REQUIRED",
+        "10s audio flagged: {bad_checks:?}"
+    );
+    // And the normal song had no such flag.
+    let normal_checks: Vec<(String, String)> = {
+        let mut c = authed(&pool, u.org).await;
+        sqlx::query_as(
+            "SELECT check_code, status FROM operations.check_results WHERE revision_id=$1",
+        )
+        .bind(normal_rev)
+        .fetch_all(&mut *c)
+        .await
+        .unwrap()
+    };
+    assert!(
+        normal_checks
+            .iter()
+            .all(|(_, s)| s == "PASS" || s == "REVIEW_REQUIRED"),
+        "normal song: no blockers: {normal_checks:?}"
+    );
+
+    // ---- STAGE 2 + PREPARE + DELIVERY: normal only ----
+    let t = Instant::now();
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    report.push(("stage2/normal".into(), t.elapsed().as_millis()));
+
+    let t = Instant::now();
+    assert_eq!(
+        run_one(&pool, &store, "distribution", "prepare_release").await,
+        "SUCCEEDED"
+    );
+    report.push(("prepare/normal".into(), t.elapsed().as_millis()));
+    assert_eq!(
+        release_status(&pool, normal_release).await,
+        "READY_FOR_DELIVERY"
+    );
+
+    let package_id: Uuid = sqlx::query_scalar(
+        "SELECT dp.id FROM distribution.distribution_packages dp
+         JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id
+         WHERE cr.release_id=$1",
+    )
+    .bind(normal_release)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let ctx = ReadyCtx {
+        org: u.org,
+        release: normal_release,
+        package_id,
+        store,
+    };
+    let t = Instant::now();
+    let mock = MockDsp::new(MockBehavior::Accept);
+    let (job_id, status) = run_send(&pool, &ctx, &mock).await;
+    report.push(("delivery/normal".into(), t.elapsed().as_millis()));
+    assert_eq!(status, "DELIVERED");
+    let pmid: String = {
+        let mut c = authed(&pool, ctx.org).await;
+        sqlx::query_scalar(
+            "SELECT partner_message_id FROM execution.delivery_attempts WHERE job_id=$1",
+        )
+        .bind(job_id)
+        .fetch_one(&mut *c)
+        .await
+        .unwrap()
+    };
+    let payload = mock.emit_webhook(&pmid, "live");
+    assert_eq!(
+        execution::ingest_ack(&pool, ctx.org, &mock, &payload)
+            .await
+            .unwrap(),
+        "APPLIED"
+    );
+    assert_eq!(live_status(&pool, ctx.org, ctx.package_id).await, "LIVE");
+
+    // ---- TIMING REPORT ----
+    println!("\n=== TIMING REPORT (normal vs problematic) ===");
+    for (label, ms) in &report {
+        println!("  {label:<22} {ms}ms");
+    }
+    let total: u128 = report.iter().map(|(_, ms)| ms).sum();
+    println!("  ------------------------------");
+    println!("  total                  {total}ms");
+    println!("=== normal song: LIVE | problematic song: blocked at stage1 (AUDIO_TOO_SHORT) ===\n");
 }
