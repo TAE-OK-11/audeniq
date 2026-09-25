@@ -1,10 +1,22 @@
 //! F3 Stage 2 review (BLUEPRINT §5): the durable `stage2.review` job.
 //!
-//! Five logical module areas run inside one job; per-module checkpoints are
+//! Five logical module areas run inside one job. Per-check checkpoints are
 //! the immutable `operations.check_results` rows keyed by
-//! `(revision_id, check_code, result_hash)`, so a crashed job resumes without
-//! re-running completed modules. All mutations run in one transaction fenced
-//! by the job's lock token: an expired worker cannot commit a decision.
+//! `(revision_id, check_code, result_hash)`:
+//!
+//! - a retry that crashed *before* the verification package was pinned
+//!   re-runs the modules (they are pure reads, so re-running is safe and
+//!   picks up any rights/catalog changes since the crash) and the checkpoint
+//!   rows dedupe identical results instead of recording them twice;
+//! - a retry that crashed *after* the package was pinned returns the pinned
+//!   package immediately without re-running anything (idempotent
+//!   completion at the top of `run_stage2`).
+//!
+//! Checkpoints are therefore an idempotent audit trail and the source for
+//! overrides ("the check must exist for this revision"), not a skip gate:
+//! modules are never resumed from stale per-module state.
+//! All mutations run in one transaction fenced by the job's lock token: an
+//! expired worker cannot commit a decision.
 use crate::{
     api::AppState,
     auth::{self, Actor},
@@ -41,6 +53,40 @@ impl ReviewCheck {
             "{}:{}:{}",
             self.check_code, REVIEW_RULE_VERSION, self.detail
         ))
+    }
+}
+
+/// Idempotent checkpoint record: an identical check for the same revision
+/// returns the existing row instead of inserting a duplicate; a changed
+/// detail (new result_hash) records a new row so retries never serve stale
+/// results. Visible for tests.
+async fn record_check_result(
+    tx: &mut PgConnection,
+    revision_id: Uuid,
+    c: &ReviewCheck,
+) -> Result<Uuid> {
+    let rh = c.result_hash();
+    let existing: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM operations.check_results WHERE revision_id=$1 AND check_code=$2 AND result_hash=$3",
+    )
+    .bind(revision_id)
+    .bind(c.check_code)
+    .bind(&rh)
+    .fetch_optional(&mut *tx)
+    .await?;
+    match existing {
+        Some(id) => Ok(id),
+        None => sqlx::query_scalar("INSERT INTO operations.check_results(id, revision_id, check_code, rule_version, status, result_hash, detail) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id")
+            .bind(Uuid::new_v4())
+            .bind(revision_id)
+            .bind(c.check_code)
+            .bind(REVIEW_RULE_VERSION)
+            .bind(c.status)
+            .bind(&rh)
+            .bind(&c.detail)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(Error::from),
     }
 }
 
@@ -184,29 +230,7 @@ pub async fn run_stage2(pool: &PgPool, job: &operations::Job) -> Result<Option<S
 
     let mut check_ids = Vec::new();
     for c in &checks {
-        let rh = c.result_hash();
-        let existing: Option<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM operations.check_results WHERE revision_id=$1 AND check_code=$2 AND result_hash=$3",
-        )
-        .bind(revision_id)
-        .bind(c.check_code)
-        .bind(&rh)
-        .fetch_optional(&mut *tx)
-        .await?;
-        let id = match existing {
-            Some(id) => id,
-            None => sqlx::query_scalar("INSERT INTO operations.check_results(id, revision_id, check_code, rule_version, status, result_hash, detail) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id")
-                .bind(Uuid::new_v4())
-                .bind(revision_id)
-                .bind(c.check_code)
-                .bind(REVIEW_RULE_VERSION)
-                .bind(c.status)
-                .bind(&rh)
-                .bind(&c.detail)
-                .fetch_one(&mut *tx)
-                .await?,
-        };
-        check_ids.push(id);
+        check_ids.push(record_check_result(&mut tx, revision_id, c).await?);
     }
 
     let summary = decide(&mut tx, &ctx, &checks, &check_ids).await?;
@@ -984,4 +1008,86 @@ pub async fn record_override(pool: &PgPool, r: OverrideRequest<'_>) -> Result<Uu
         .execute(pool)
         .await?;
     Ok(id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::database;
+
+    fn check(code: &'static str, status: &'static str, detail: &str) -> ReviewCheck {
+        ReviewCheck {
+            check_code: code,
+            status,
+            detail: detail.into(),
+        }
+    }
+
+    #[sqlx::test]
+    async fn checkpoint_dedupes_identical_results(pool: sqlx::PgPool) {
+        database::MIGRATOR.run(&pool).await.unwrap();
+        let org = Uuid::new_v4();
+        let release = Uuid::new_v4();
+        let user = Uuid::new_v4();
+        let revision_id = Uuid::new_v4();
+        let hash = "c".repeat(64);
+        sqlx::query("INSERT INTO identity.orgs(id, name, kind) VALUES($1,'t','LABEL')")
+            .bind(org)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO identity.parties(id, org_id, kind, display_name) VALUES($1,$2,'PERSON','t')")
+            .bind(user)
+            .bind(org)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO identity.users(id, email, password_hash, party_id) VALUES($1,'t@t','x',$1)")
+            .bind(user)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO identity.resources(org_id, id, kind) VALUES($1,$2,'release')")
+            .bind(org)
+            .bind(release)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO catalog.releases(id, org_id, title, release_type) VALUES($1,$2,'t','SINGLE')")
+            .bind(release)
+            .bind(org)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO catalog.application_revisions(id, org_id, release_id, revision, body, body_hash, consent_package_hash, created_by) VALUES($1,$2,$3,1,'{}',$4,$4,$5)")
+            .bind(revision_id)
+            .bind(org)
+            .bind(release)
+            .bind(&hash)
+            .bind(user)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let c = check("S2_RIGHTS_SCOPE", "PASS", "ok");
+        let first = record_check_result(&mut tx, revision_id, &c).await.unwrap();
+        // Same check again (simulated retry): no duplicate row.
+        let second = record_check_result(&mut tx, revision_id, &c).await.unwrap();
+        assert_eq!(first, second);
+        // Changed detail = new result: recorded as a new row, never stale.
+        let changed = check("S2_RIGHTS_SCOPE", "PASS", "ok-changed");
+        let third = record_check_result(&mut tx, revision_id, &changed)
+            .await
+            .unwrap();
+        assert_ne!(first, third);
+        let n: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM operations.check_results WHERE revision_id=$1",
+        )
+        .bind(revision_id)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(n, 2);
+        tx.commit().await.unwrap();
+    }
 }

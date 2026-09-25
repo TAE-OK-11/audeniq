@@ -30,5 +30,6 @@ rust_decimal = { version = "1", features = ["serde", "db-postgres"] }
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
+quick-xml = "0.38"
 [build-dependencies]
 serde_json = "1"
