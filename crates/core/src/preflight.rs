@@ -8,6 +8,7 @@ use crate::{
     route_plan::verify_scope,
     storage::ObjectStore,
 };
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 pub struct CurrentFacts {
@@ -16,14 +17,14 @@ pub struct CurrentFacts {
     pub contract_active: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum CheckStatus {
     Pass,
     Fail,
     Unknown,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct PreflightReport {
     pub xml: CheckStatus,
     pub metadata: CheckStatus,
@@ -62,8 +63,7 @@ pub async fn check_files(c: &PreparedRelease, store: &dyn ObjectStore) -> CheckS
             return CheckStatus::Fail;
         }
         match store.head(&a.object_key).await {
-            Ok(Some(meta)) if meta.size == a.size_bytes && meta.content_type == a.content_type => {
-            }
+            Ok(Some(meta)) if meta.size == a.size_bytes && meta.content_type == a.content_type => {}
             Ok(_) => return CheckStatus::Fail,
             Err(_) => {
                 outcome = CheckStatus::Unknown;

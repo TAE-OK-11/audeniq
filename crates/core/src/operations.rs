@@ -231,12 +231,23 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
         // F4: the durable prepare_release job (Stage 3 prep: canonical
         // snapshot + frozen package). None = lease lost; leave the job alone
         // so the sweeper reclaims it instead of burning an attempt.
-        match crate::distribution::run_prepare_release(pool, j).await {
+        match crate::distribution::run_prepare_release(pool, storage, j).await {
             Ok(None) => return Ok(()),
             Ok(Some(_)) => return succeed(pool, j).await,
             Err(e) => {
                 let short: String = format!("{e:?}").chars().take(500).collect();
-                return fail(pool, j, false, &format!("PREPARE_RELEASE_ERROR:{short}")).await;
+                // An identifier conflict is provably permanent: the UPC/ISRC
+                // is already assigned to a different release or track, so no
+                // retry can succeed. Dead-letter for human review instead of
+                // burning attempts.
+                let permanent = matches!(e, Error::PolicyGate("IDENTIFIER_CONFLICT"));
+                return fail(
+                    pool,
+                    j,
+                    permanent,
+                    &format!("PREPARE_RELEASE_ERROR:{short}"),
+                )
+                .await;
             }
         }
     }

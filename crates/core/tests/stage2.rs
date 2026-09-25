@@ -36,7 +36,7 @@ const ORIGIN: &str = "http://localhost:5173";
 
 #[derive(Default)]
 struct FileStore {
-    files: Mutex<BTreeMap<String, Vec<u8>>>,
+    files: Mutex<BTreeMap<String, (Vec<u8>, String)>>,
     get_calls: AtomicUsize,
 }
 #[async_trait]
@@ -52,9 +52,9 @@ impl ObjectStore for FileStore {
         Err(Error::Storage)
     }
     async fn head(&self, key: &str) -> Result<Option<ObjectMeta>> {
-        Ok(self.files.lock().await.get(key).map(|b| ObjectMeta {
+        Ok(self.files.lock().await.get(key).map(|(b, ct)| ObjectMeta {
             size: b.len() as i64,
-            content_type: "application/octet-stream".into(),
+            content_type: ct.clone(),
             nonce: String::new(),
             etag: String::new(),
         }))
@@ -68,7 +68,7 @@ impl ObjectStore for FileStore {
             .lock()
             .await
             .get(key)
-            .cloned()
+            .map(|(b, _)| b.clone())
             .ok_or(Error::Storage)
     }
 }
@@ -235,7 +235,11 @@ async fn register_asset(
     let org = u.org;
     let id = Uuid::new_v4();
     let key = format!("registered/{org}/{id}/{name}");
-    store.files.lock().await.insert(key.clone(), bytes.to_vec());
+    store
+        .files
+        .lock()
+        .await
+        .insert(key.clone(), (bytes.to_vec(), "audio/wav".into()));
     sqlx::query("INSERT INTO identity.resources(org_id,id,kind) VALUES($1,$2,'asset')")
         .bind(org)
         .bind(id)
@@ -353,6 +357,36 @@ async fn stage2_self_rights_holder_passes(pool: PgPool) {
     let wav = make_good_wav(&dir);
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
     let release = build_submittable(&app, &pool, &u, asset).await;
+    // F4 preparation supplements: the merged worker fails closed without
+    // UPC, cover artwork, ISRC and release metadata.
+    let art_id = Uuid::new_v4();
+    let art_key = format!("registered/{}/cover.png", u.org);
+    let art_bytes = b"\x89PNGfake";
+    store
+        .files
+        .lock()
+        .await
+        .insert(art_key.clone(), (art_bytes.to_vec(), "image/png".into()));
+    sqlx::query("INSERT INTO identity.resources(org_id,id,kind) VALUES($1,$2,'asset')")
+        .bind(u.org)
+        .bind(art_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO catalog.assets(id,org_id,kind,object_key,size_bytes,content_type,sha256,state) VALUES($1,$2,'IMAGE',$3,$4,'image/png',$5,'REGISTERED')")
+        .bind(art_id).bind(u.org).bind(&art_key).bind(art_bytes.len() as i64).bind(sha256_hex(art_bytes))
+        .execute(&pool).await.unwrap();
+    sqlx::query("UPDATE catalog.releases SET upc='036000291452', artwork_asset_id=$1, draft = draft || '{\"language\":\"ko\",\"artist\":\"Test Artist\",\"p_line\":\"P 2027 Test Label\",\"c_line\":\"C 2027 Test Label\"}'::jsonb, row_version = row_version + 1 WHERE id=$2")
+        .bind(art_id)
+        .bind(release)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE catalog.tracks SET isrc='USABC2600001' WHERE release_id=$1")
+        .bind(release)
+        .execute(&pool)
+        .await
+        .unwrap();
     let revision_id = consent_and_submit(&app, &u, release, "k-s2-happy").await;
 
     assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");

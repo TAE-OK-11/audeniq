@@ -162,3 +162,36 @@ BLUEPRINT §6의 3-A(Finalizer)/3-D(Canonical Model)/3-F(Package) — Muse 담�
 - `cargo clippy --workspace --all-targets -- -D warnings`: 통과
 - `cargo test --workspace`: 전부 통과 (lib 26, foundation 18, stage1 10, stage2 5, distribution 2)
 - 참고: 테스트 중 VM이 교체되어 PostgreSQL 16을 재설치하고 `f2test` 롤/DB를 AGENTS.md 절차대로 복구함.
+
+---
+
+## F4 — Astra 병합·연동 (2026-09-25)
+
+`origin/validation/f4-astra-preparation`을 `foundation/f4-stage3-distribution`에 병합(충돌 없음) 후, Astra 모듈을 `prepare_release` 워커에 실제로 연동.
+
+### 병합 내용 (Astra)
+
+- `crates/core/src/`: `ern.rs`(synthetic ERN 생성·검증), `identifiers.rs`(식별자 ledger, `record_existing`), `preflight.rs`(XML/metadata/files/rights 4종 독립 체크), `preparation_model.rs`(`PreparedRelease`/`VerificationPackage`), `route_plan.rs`(DSP scope 검증·제출 계획).
+- 마이그레이션 0011: `distribution.identifier_assignments` (append-only, 불변 트리거, 강제 RLS, UPC-A 체크섬·ISRC 형식 SQL 검증).
+- 테스트: `stage3_identifiers.rs`(동시성·멱등·충돌·RLS), `stage3_preparation.rs`(synthetic 픽스처 3종·XSD).
+- `.github/workflows/f4-preparation.yml`: F4 acceptance 워크플로.
+
+### 연동 내용 (Muse)
+
+- 마이그레이션 0012: `catalog.releases.upc`, `artwork_asset_id`, `CanonicalRelease.schema_version = 2` (UPC·아트워크·트랙 오디오 object key 포함).
+- `PreparedRelease::from_canonical(pool, snapshot_id, canonical)` — canonical 스냅샷 + catalog DB에서 UPC·아트워크·오디오 asset·ISRC·발매 메타데이터를 읽어 준비 모델 생성. 누락 시 값을 만들어내지 않고 policy gate로 fail-closed.
+- `run_prepare_release` 파이프라인: canonical → freeze → `from_canonical` → synthetic ERN 생성 → 4종 preflight → route plan → preflight 통과 시에만 `READY_FOR_DELIVERY`. ERN XML sha256·preflight 결과·제출 수를 audit reason에 기록.
+- 마이그레이션 0013: `distribution.preparation_artifacts` (package당 1행, append-only, 불변 트리거) — ERN sha256·preflight 리포트·route plan 영속화. frozen package body는 canonical 스냅샷 그대로 불변 유지.
+- 식별자 ledger 연동: `READY_FOR_DELIVERY` 커밋과 같은 트랜잭션에서 UPC + 전 트랙 ISRC를 `record_existing`으로 기록 (`app.org_id` 세팅). exact-target 재시도는 멱등, cross-target 충돌은 `IDENTIFIER_CONFLICT`로 즉시 DEAD_LETTER (재시도 무의미).
+- `CheckStatus`/`PreflightReport`에 `Serialize` 추가 (artifact JSON 저장용). uuid `v5` feature (synthetic route contract 결정적 ID).
+- 테스트 수정:
+  - `distribution.rs`: FileStore가 content-type을 실제처럼 반환하도록 수정, 준비 보충물(UPC·아트워크·ISRC·메타데이터) 헬퍼화, artifact 행·ledger 기록 검증, 식별자 충돌 시 DEAD_LETTER 신규 테스트.
+  - `stage2.rs`: happy-path 끝에 `prepare_release`가 도는 부분에 보충물 추가 (새 파이프라인이 fail-closed라 필요).
+  - `stage3_identifiers.rs`: Astra CI가 postgres 슈퍼유저라 RLS가 우회됐던 테스트를 수정 — `app.org_id` 명시 세팅, 트리거/CHECK 검증은 RLS 통과 후 실제 행에 닿도록, `SET ROLE`용 롤 멤버십 부여.
+
+### 로컬 검증 결과 (2026-09-25)
+
+- `cargo fmt --all --check`: 통과
+- `cargo clippy --workspace --all-targets -- -D warnings`: 통과
+- `cargo test --workspace`: 전부 통과 (lib 29, distribution 3, foundation 18, stage1 10, stage2 5, stage3_identifiers 2, stage3_preparation 8 — 총 75)
+- 참고: 테스트 중 `/tmp`(tmpfs 512M)가 ffmpeg 산출물로 가득 차 stage2 테스트가 실패했으나, 코드 문제가 아니라 디스크 문제였음. `/tmp/audeniq-*` 정리 후 전부 통과.
