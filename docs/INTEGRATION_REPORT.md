@@ -331,4 +331,5 @@ BLUEPRINT §6의 E-0~E-5 송출 실행 파이프라인. 브랜치 `foundation/f5
 
 ### GitHub Actions
 
-- 푸시 후 run 결과 확인 예정.
+- run [36093955569](https://github.com/TAE-OK-11/audeniq/actions/runs/36093955569) (main 병합) — **success**
+- run [36093964764](https://github.com/TAE-OK-11/audeniq/actions/runs/36093964764) (문서) — **success**
