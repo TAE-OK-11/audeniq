@@ -40,7 +40,7 @@ when two approvers don't exist.
   `APPROVER_ROLE_NOT_ELIGIBLE`.
 - The approver must have accepted their membership at least
   `MIN_APPROVER_TENURE_HOURS` (72 h) earlier (`APPROVER_TENURE_TOO_SHORT`).
-  Memberships created before migration 0035 have `accepted_at = NULL`. They
+  Memberships created before migration 0036 have `accepted_at = NULL`. They
   count as accepted legacy memberships because they predate the invitation
   flow.
 - The approver must have read access (an ACL entry) to the release.

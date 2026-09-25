@@ -10,7 +10,7 @@ FROM debian:13-slim
 # (probe, loudness, clipping, truncation) and fingerprinting shell out to them.
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 audeniq && useradd --uid 10001 --gid 10001 --no-create-home audeniq
-COPY --from=build /build/target/release/audeniq-api /build/target/release/audeniq-worker /build/target/release/audeniq-migrate /usr/local/bin/
+COPY --from=build /build/target/release/audeniq-api /build/target/release/audeniq-worker /build/target/release/audeniq-migrate /build/target/release/audeniq-admin /usr/local/bin/
 USER 10001:10001
 ENV RUST_LOG=info
 CMD ["audeniq-api"]

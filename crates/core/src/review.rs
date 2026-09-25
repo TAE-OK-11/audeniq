@@ -1073,7 +1073,7 @@ async fn commercial_split_snapshot(tx: &mut PgConnection, ctx: &Ctx) -> Result<V
 //   approver. Rights/money-class PASS also needs an OWNER requester.
 // - Approver eligibility: ACTIVE membership, role OWNER or EDITOR (never
 //   VIEWER), accepted invitation at least MIN_APPROVER_TENURE_HOURS ago
-//   (legacy memberships from before migration 0035 count as accepted), and
+//   (legacy memberships from before migration 0036 count as accepted), and
 //   read access to the release.
 // - An applied override re-evaluates a release parked in STAGE2_REVIEW.
 // ---------------------------------------------------------------------------

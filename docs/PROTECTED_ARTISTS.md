@@ -6,7 +6,9 @@ impersonation is now a **hard block**: a name on the protected list is
 refused with a correctable error. It never becomes a review item or a late
 failure.
 
-Code: `crates/core/src/protected_names.rs`. Schema: `migrations/0033_protected_artists.sql`.
+Code: `crates/core/src/protected_names.rs`, `crates/core/src/protected_admin.rs`,
+`crates/core/src/bin/audeniq-admin.rs`. Schema: `migrations/0033_protected_artists.sql`,
+`migrations/0035_protected_artist_policy.sql` (round 3: per-name policy, seed list, change log).
 
 ## Policy
 
@@ -38,6 +40,38 @@ Code: `crates/core/src/protected_names.rs`. Schema: `migrations/0033_protected_a
   only. This is how the artist's real label or verified rights holder
   releases normally. By default nobody is allowlisted.
 
+## Per-name policy (round 3)
+
+Each entry name and each alias has two settings:
+
+| Setting | Values | Meaning |
+|---|---|---|
+| `action` | `BLOCK` (default) | Refused at input and submit (422 `ARTIST_NAME_PROTECTED`). Stage 1 returns CORRECTION_REQUIRED. |
+| | `REVIEW` | Accepted at input. Stage 1 records `ARTIST_NAME_REVIEW` = REVIEW_REQUIRED, and a person decides. |
+| `match_mode` | `CONTAINS` (default) | Word-boundary match with full folding, including leetspeak and separator removal (below). |
+| | `TOKEN` | The name must appear as whole words. Words are split on spaces and punctuation, with the plain fold and no leetspeak. For Hangul names, a trailing Korean particle is allowed. |
+
+Rules of thumb:
+
+- Use **CONTAINS + BLOCK** for distinctive full names and Korean spellings
+  (`Taylor Swift`, `테일러 스위프트`, `BLACKPINK`, `방탄소년단`).
+- Use **TOKEN + REVIEW** for short or generic names. `BTS` is also
+  "behind the scenes", and `IU`, `Drake`, `Adele`, `TWICE` and
+  `SEVENTEEN` are ordinary words or names, so they must never hard-block
+  unrelated text or match inside words (`Subtitles`, `Iuliana`).
+- Use **TOKEN + BLOCK** for short but distinctive Korean spellings
+  (`아이유`, `뉴진스`, `트와이스`). `아이유의 노래` is blocked;
+  `아이유니버스` is not.
+- Minimum length: CONTAINS names need at least 4 folded characters, or 3
+  for Hangul. TOKEN names need at least 2.
+
+The seed (0035) contains Taylor Swift with Korean aliases, BTS, BLACKPINK,
+NewJeans, IU, TWICE, SEVENTEEN, Stray Kids, Beyoncé, Ed Sheeran,
+Billie Eilish, The Weeknd, Ariana Grande, Bruno Mars, Justin Bieber, Rihanna,
+Coldplay, Bad Bunny, Olivia Rodrigo, Dua Lipa, Drake and Adele. Every entry
+has Korean aliases, and each name carries the policy described above. To see
+the live list, run `audeniq-admin protected list`.
+
 ## Matching
 
 Each character goes through these steps:
@@ -53,7 +87,22 @@ Each character goes through these steps:
 5. Removal of diacritics (NFD, then combining marks dropped).
 6. Only letters and digits are kept. Spaces, dots, dashes and other
    punctuation are dropped, so `T a y l o r  S w i f t`, `T.aylor Swift`
-   and `Taylor-Swift` all match.
+   and `Taylor-Swift` all match. Hangul is compared as whole syllables,
+   and spaces don't matter, so `테일러스위프트` equals `테일러 스위프트`.
+7. **Leetspeak** (CONTAINS only) is tried as extra readings of a character:
+   - `4` and `@` read as a
+   - `0` reads as o
+   - `3` reads as e
+   - `7` and `+` read as t
+   - `$` and `5` read as s
+   - `1`, `!` and `|` read as i or l
+   - `8` reads as b
+   - `9` and `6` read as g
+   - `2` reads as z
+
+   A symbol can still act as a separator, so `T4ylor Swift`, `Tayl0r Sw1ft`,
+   `7aylor $wift`, `Love Story (T4ylor's Version)` and `Taylor + Swift` are
+   all blocked. `Tayl0rmade Sw1fts` and `Swift 4 Taylor` are not.
 
 A hit is a match of a folded entry inside the folded text that **starts at a
 word start and ends at a word end of the original text**. So:
@@ -65,10 +114,14 @@ word start and ends at a word end of the original text**. So:
 | `Тaylor Swіft` (Cyrillic Т, і), `Ｔａｙｌｏｒ Ｓｗｉｆｔ` | blocked |
 | `Song (feat. Taylor Swift)`, `DJ X ft. Taylor Swift`, `Me & Taylor Swift`, `Me x Taylor Swift` | blocked |
 | `Love Story (Taylor's Version)` (signature phrase) | blocked |
+| `T4ylor Swift`, `Tayl0r Sw1ft`, `7aylor $wift` (leet) | blocked |
+| `테일러 스위프트`, `테일러스위프트`, `Song (feat. 테일러 스위프트)`, `테일러 스위프트의 노래` | blocked |
+| `BTS`, `Song (feat. BTS)` | accepted, Stage 1 review |
+| `Subtitles`, `Iuliana`, `Behind the scenes` | allowed |
 | `Taylor`, `Swift`, `Taylor Made`, `Swift Boys`, `Taylor Swiftly` | allowed |
 
-Aliases shorter than 4 folded characters are ignored, because they would
-match too much.
+CONTAINS aliases shorter than 4 folded characters (3 for Hangul) are ignored,
+because they would match too much. Use TOKEN for these instead.
 
 The unit tests in `protected_names.rs` cover the evasion variants and the
 non-matches. `crates/core/tests/sandbox_regressions.rs` covers the API paths:
@@ -77,62 +130,43 @@ credited party, submit, and an allowlisted org.
 
 ## Managing the list
 
-The list is managed by operators. The runtime roles have SELECT only
-(`deploy/grants.sql`), so changes run as the schema owner (migration role)
-through `psql` or a seed migration. Entries take effect immediately: the list
-is read on every check, with no cache.
+The runtime roles have SELECT only (`deploy/grants.sql`). Operators change the
+list with the **`audeniq-admin`** CLI, which runs with the schema-owner
+`DATABASE_URL` (the same role as `audeniq-migrate`). Every change needs an
+operator name and is written in the same transaction to:
 
-Add an artist with aliases and signature phrases:
+- `catalog.protected_artist_changes`: operator, op, entry, details as JSON.
+  The table is append-only.
+- `operations.audit_events`: `actor_service = audeniq-admin:<operator>`,
+  `action = protected_artist.<op>`.
 
-```sql
-WITH p AS (
-  INSERT INTO catalog.protected_artists(name, note)
-  VALUES ('Artist Name', 'why / ticket reference') RETURNING id
-)
-INSERT INTO catalog.protected_artist_aliases(protected_artist_id, alias, kind)
-SELECT p.id, v.alias, v.kind FROM p, (VALUES
-  ('Legal Name Of Artist', 'NAME'),     -- alternative names
-  ('Signature Phrase',     'PHRASE')    -- titles like "Taylor's Version"
-) AS v(alias, kind);
+Changes take effect immediately, because the list is read on every check
+with no cache.
+
+```sh
+export DATABASE_URL=postgres://<owner>@.../audeniq AUDENIQ_OPERATOR=ops-kim
+audeniq-admin protected list                                   # JSON: entries, policy, aliases, exceptions
+audeniq-admin protected add "Artist Name" --note "ticket 123"  # CONTAINS + BLOCK
+audeniq-admin protected add "XY" --mode TOKEN --action REVIEW  # short/generic name
+audeniq-admin protected alias "Artist Name" "아티스트 네임"       # Korean alias (CONTAINS + BLOCK)
+audeniq-admin protected alias "Artist Name" "Signature Title" --phrase
+audeniq-admin protected remove-alias "Artist Name" "아티스트 네임"
+audeniq-admin protected remove "Artist Name"                   # deactivate (history kept)
+audeniq-admin protected activate "Artist Name"
+audeniq-admin protected grant-exception "Artist Name" <org uuid> --reason "verified label, contract ref ..."
+audeniq-admin protected revoke-exception "Artist Name" <org uuid>
 ```
 
-Add an alias to an existing entry:
-
-```sql
-INSERT INTO catalog.protected_artist_aliases(protected_artist_id, alias, kind)
-SELECT id, 'Another Alias', 'NAME' FROM catalog.protected_artists WHERE name = 'Artist Name';
-```
-
-Deactivate or reactivate an entry. Rows are kept for audit:
-
-```sql
-UPDATE catalog.protected_artists SET active = false WHERE name = 'Artist Name';
-```
-
-Grant an exception to a verified rights holder, after verifying the label
-agreement or letter of direction:
-
-```sql
-INSERT INTO catalog.protected_artist_exceptions(protected_artist_id, org_id, reason, granted_by)
-SELECT id, '<org uuid>', 'Verified label: contract ref ...', 'ops:<your name>'
-FROM catalog.protected_artists WHERE name = 'Artist Name';
-```
-
-Revoke an exception:
-
-```sql
-UPDATE catalog.protected_artist_exceptions SET revoked_at = now()
-WHERE org_id = '<org uuid>'
-  AND protected_artist_id = (SELECT id FROM catalog.protected_artists WHERE name = 'Artist Name');
-```
-
-For bulk seeding, add a new migration with the same `INSERT` shape as the
-seed in `0033_protected_artists.sql`. Keep entries to full names and
-distinctive phrases. Single common words such as "Swift" are not suitable
-entries.
+`add` on an existing name reactivates it and updates its policy. `alias` on an
+existing alias updates its kind and policy. For bulk seeding, add a new
+migration with the same shape as `0035_protected_artist_policy.sql`.
 
 ## Known limits
 
-- Phonetic or transliterated spellings (`Teilor Swifft`, `테일러 스위프트`)
-  are not matched unless they are added as aliases.
-- There is no admin API or UI yet. The list is managed with SQL (see above).
+- Phonetic spellings and romanizations (`Teilor Swifft`, `Teillreo Seuwipeuteu`)
+  aren't matched automatically. Korean and other spellings must be added as
+  aliases; the seed covers the common Korean spellings.
+- Only single-character leet readings are covered. Multi-character forms
+  such as `|-|` for H or `\/` for V are not.
+- TOKEN names don't collapse spelled-out initials (`B.T.S.` is three words).
+- There is no web admin UI. The CLI above is the supported path.
