@@ -7,7 +7,7 @@ export function localStamp(v: unknown): string {
   if (!v) return '기록 없음';
   const dt = new Date(String(v));
   if (Number.isNaN(dt.getTime())) return '기록 없음';
-  return new Intl.DateTimeFormat('ko-KR', { dateStyle: 'long', timeStyle: 'medium' }).format(dt);
+  return new Intl.DateTimeFormat('ko-KR', { dateStyle: 'long', timeStyle: 'short' }).format(dt);
 }
 
 export function money(n: number): string {
