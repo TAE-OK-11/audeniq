@@ -13,6 +13,7 @@ import { Rights } from './pages/Rights';
 import { Support } from './pages/Support';
 import { Profile } from './pages/Profile';
 import './styles/design.css';
+import './styles/live.css';
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
