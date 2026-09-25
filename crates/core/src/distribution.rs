@@ -9,6 +9,7 @@
 use std::sync::Arc;
 
 use crate::{
+    ddex_ern,
     domain::FreshnessPin,
     ern,
     error::{Error, Result},
@@ -102,6 +103,8 @@ pub struct PrepareSummary {
     pub package_hash: String,
     pub release_status: String,
     pub returned_to_s2: bool,
+    /// Real DDEX ERN 3.8.2 messages persisted for DSPs with configured DPIDs.
+    pub ddex_messages: usize,
 }
 
 fn sha256_hex(s: &str) -> String {
@@ -408,6 +411,77 @@ fn map_ledger_error(e: Error) -> Error {
     }
 }
 
+/// F5.5: persist one real DDEX ERN 3.8.2 `NewReleaseMessage` per DSP in the
+/// frozen route plan. The internal synthetic ERN stays the preflight integrity
+/// envelope; these rows are the interchange artifacts, stored in the same
+/// transaction as the READY_FOR_DELIVERY flip so they are as durable as the
+/// delivery handoff.
+///
+/// DPIDs are partner-onboarding data (F6): a DSP without a recipient DPID, or
+/// an org without a sender DPID, gets no row — preparation never invents
+/// party identifiers. Wire transmission of these messages is F6 work.
+async fn persist_ddex_messages(
+    tx: &mut PgConnection,
+    org: Uuid,
+    package_id: Uuid,
+    prepared: &preparation_model::PreparedRelease,
+    submissions: &[route_plan::SubmissionItems],
+) -> Result<usize> {
+    let sender: Option<(String, Option<String>)> =
+        sqlx::query_as("SELECT name, ddex_sender_dpid FROM identity.orgs WHERE id=$1")
+            .bind(org)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let Some((sender_name, Some(sender_dpid))) = sender else {
+        return Ok(0);
+    };
+    let created_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let deal_start = prepared.release_date.format("%Y-%m-%d").to_string();
+    let mut generated = 0usize;
+    for s in submissions {
+        let profile: Option<(String, Option<String>)> = sqlx::query_as(
+        "SELECT display_name, ddex_recipient_dpid FROM execution.adapter_profiles WHERE dsp_id=$1",
+    )
+    .bind(s.scope.dsp_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+        let (recipient_name, recipient_dpid) = match profile {
+            Some((name, Some(dpid))) => (name, dpid),
+            _ => continue,
+        };
+        let config = ddex_ern::DdexErnConfig {
+            message_id: format!("AUDENIQ-ERN-{package_id}-{}", s.scope.dsp_id),
+            message_sub_type: ddex_ern::MessageSubType::Initial,
+            created_at: created_at.clone(),
+            sender_name: sender_name.clone(),
+            sender_party_id: Some(sender_dpid.clone()),
+            sent_on_behalf_of: None,
+            recipient_name: recipient_name.clone(),
+            recipient_party_id: Some(recipient_dpid.clone()),
+            deal_start_date: deal_start.clone(),
+            takedown_date: None,
+        };
+        let xml = ddex_ern::generate_ddex_ern_382(prepared, &config)?;
+        let sha = hex::encode(Sha256::digest(xml.as_bytes()));
+        let res = sqlx::query(
+        "INSERT INTO distribution.ddex_messages(package_id,org_id,dsp_id,sender_name,sender_dpid,recipient_name,recipient_dpid,ern_xml,ern_sha256) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(package_id,dsp_id) DO NOTHING",
+    )
+    .bind(package_id)
+    .bind(org)
+    .bind(s.scope.dsp_id)
+    .bind(&sender_name)
+    .bind(&sender_dpid)
+    .bind(&recipient_name)
+    .bind(&recipient_dpid)
+    .bind(&xml)
+    .bind(&sha)
+    .execute(&mut *tx)
+    .await?;
+        generated += usize::try_from(res.rows_affected()).unwrap_or(0);
+    }
+    Ok(generated)
+}
+
 /// 3-A/3-D/3-F durable entry point. Replaces the F3 `park()` for
 /// `prepare_release`. Returns `None` when the job lost its lease: the caller
 /// must neither succeed nor fail the job; the sweeper will reclaim it.
@@ -453,6 +527,12 @@ pub async fn run_prepare_release(
         .await?;
         let status: String = row.get("status");
         if status == "READY_FOR_DELIVERY" {
+            let ddex_messages: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM distribution.ddex_messages WHERE package_id=$1",
+            )
+            .bind(pkg_id)
+            .fetch_one(pool)
+            .await?;
             return Ok(Some(PrepareSummary {
                 revision_id,
                 verification_package_id: row.get("verification_package_id"),
@@ -461,6 +541,7 @@ pub async fn run_prepare_release(
                 package_hash: row.get("package_hash"),
                 release_status: status,
                 returned_to_s2: false,
+                ddex_messages: usize::try_from(ddex_messages).unwrap_or(0),
             }));
         }
     }
@@ -535,6 +616,7 @@ pub async fn run_prepare_release(
             package_hash: String::new(),
             release_status: "STAGE3_CORRECTION".into(),
             returned_to_s2: true,
+            ddex_messages: 0,
         }));
     }
 
@@ -676,6 +758,12 @@ pub async fn run_prepare_release(
     .execute(&mut *tx2)
     .await?;
 
+    // F5.5: real DDEX ERN 3.8.2 interchange messages, one per DSP in the
+    // frozen route plan, in the same transaction. DPIDs are partner
+    // onboarding data; DSPs without one get no row (never invented).
+    let ddex_generated =
+        persist_ddex_messages(&mut tx2, org, package_id, &prepared, &submissions).await?;
+
     // Durable handoff: READY_FOR_DELIVERY and the delivery.enqueue job commit
     // atomically in this transaction. The package-scoped idempotency key
     // makes exact-target retries of this worker safe: a retry reuses the
@@ -697,7 +785,7 @@ pub async fn run_prepare_release(
         Some(revision_id),
         "stage3.prepared",
         &format!(
-            "PREPARE_RELEASE_READY preflight=xml:{:?},metadata:{:?},files:{:?},rights:{:?} submissions={} ern_sha256={} artifact={artifact_id} identifiers={}",
+            "PREPARE_RELEASE_READY preflight=xml:{:?},metadata:{:?},files:{:?},rights:{:?} submissions={} ern_sha256={} artifact={artifact_id} identifiers={} ddex_messages={ddex_generated}",
             report.xml, report.metadata, report.files, report.rights,
             submissions.len(),
             xml_sha,
@@ -716,5 +804,6 @@ pub async fn run_prepare_release(
         package_hash,
         release_status: "READY_FOR_DELIVERY".into(),
         returned_to_s2: false,
+        ddex_messages: ddex_generated,
     }))
 }
