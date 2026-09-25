@@ -619,6 +619,15 @@ pub async fn submission_status(s: &AppState, a: &Actor, org: Uuid, release: Uuid
                     "status": c.get::<String,_>("status"),
                     "result_hash": c.get::<String,_>("result_hash"),
                     "detail": c.get::<Option<String>,_>("detail"),
+                    // REVIEW_REQUIRED is either an advisory WARNING or a HOLD
+                    // that keeps the release in review (docs/REVIEW_OVERRIDES.md).
+                    "severity": match c.get::<String,_>("status").as_str() {
+                        "PASS" | "NOT_APPLICABLE" => "NONE",
+                        "REVIEW_REQUIRED" => crate::review::stage1_review_severity(&c.get::<String,_>("check_code")),
+                        "CORRECTION_REQUIRED" => "CORRECTION",
+                        "BLOCKED" => "HOLD",
+                        _ => "OTHER",
+                    },
                 })).collect::<Vec<_>>(),
                 pkg.map(|p| json!({"id": p.get::<Uuid,_>("id"), "package_hash": p.get::<String,_>("package_hash"), "rule_version": p.get::<String,_>("rule_version")})),
                 ver.map(|v| json!({
