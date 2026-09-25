@@ -89,10 +89,10 @@ export function Settlement() {
         </button>
       </div>
 
-      <div className="stat-grid">
-        <div className="stat-card"><small>기록한 정산액</small><strong>{money(total)}</strong></div>
-        <div className="stat-card"><small>요청 전 잔액</small><strong>{money(left)}</strong></div>
-        <div className="stat-card"><small>지급 요청 기록 합계</small><strong>{money(used)}</strong></div>
+      <div className="stat-grid" id="settlementStats">
+        <div className="surface white stat-card"><small>기록한 정산액</small><strong>{money(total)}</strong></div>
+        <div className="surface white stat-card"><small>요청 전 잔액</small><strong>{money(left)}</strong></div>
+        <div className="surface white stat-card"><small>지급 요청 기록 합계</small><strong>{money(used)}</strong></div>
       </div>
 
       <section className="studio-payout-surface" aria-labelledby="payoutHeading">
@@ -119,14 +119,15 @@ export function Settlement() {
       </div>
       <div className="data-list">
         {statements.length ? statements.map(s => (
-          <div key={s.id} className="track-row">
+          <div key={s.id} className="statement-row">
+            <span className="document-icon">₩</span>
             <div>
               <span className="row-name">{s.period} · {s.platform}</span>
-              <span className="row-sub">{s.created}{s.note ? ` · ${s.note}` : ''}</span>
+              <span className="row-sub">{s.note || '수기 등록 정산 내역'} · {s.created}</span>
             </div>
-            <div><span className="row-name">{money(s.amount)}</span></div>
             <div className="row-end">
-              <button type="button" className="link-btn" onClick={() => deleteStatement(s.id)}>삭제</button>
+              <strong>{money(s.amount)}</strong>
+              <button type="button" className="link-btn" onClick={() => deleteStatement(s.id)} aria-label="정산 내역 삭제">×</button>
             </div>
           </div>
         )) : (
@@ -137,14 +138,15 @@ export function Settlement() {
       <div className="section-top"><h2>지급 요청 기록</h2></div>
       <div className="data-list">
         {payouts.length ? payouts.map(p => (
-          <div key={p.id} className="track-row">
+          <div key={p.id} className="statement-row">
+            <span className="document-icon">↗</span>
             <div>
-              <span className="row-name">{money(p.amount)} 지급 요청</span>
-              <span className="row-sub">{p.created}{p.note ? ` · ${p.note}` : ''}</span>
+              <span className="row-name">{money(p.amount)} · 지급 요청 기록</span>
+              <span className="row-sub">{p.created} · {p.note || '현재 작업 공간에만 기록됨'}</span>
             </div>
             <div className="row-end">
-              <span className="status-chip review">전송 전</span>
-              <button type="button" className="link-btn" onClick={() => deletePayout(p.id)}>삭제</button>
+              <span className="status-chip ready">전송 전</span>
+              <button type="button" className="link-btn" onClick={() => deletePayout(p.id)} aria-label="요청 기록 삭제">×</button>
             </div>
           </div>
         )) : (

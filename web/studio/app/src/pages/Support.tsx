@@ -197,12 +197,22 @@ export function Support() {
 
       {openTicket && (
         <Modal title={openTicket.subject} onClose={() => setOpenTicket(null)}>
-          <p className="small muted">{openTicket.category} · {openTicket.created}{openTicket.releaseTitle ? ` · ${openTicket.releaseTitle}` : ''}</p>
-          <p style={{ marginTop: 16, whiteSpace: 'pre-wrap' }}>{openTicket.body}</p>
-          <div className="doc-connection" style={{ marginTop: 16 }}>
-            {openTicket.status === '답변 완료'
-              ? '답변: 확인해 주셔서 감사해요. 관련 내용을 메일로 안내드렸어요.'
-              : '답변: 운영팀의 답변이 준비 중이에요. (테스트 모드)'}
+          <p className="small muted">{openTicket.category} · {openTicket.created} · {openTicket.releaseTitle || '일반 문의'}</p>
+          <div className="document-body" style={{ marginTop: 16, whiteSpace: 'pre-wrap' }}>{openTicket.body}</div>
+          <div className="notice" style={{ marginTop: 20 }}>
+            현재 문의 내역은 운영팀에 아직 전달되지 않았어요.
+          </div>
+          <div className="row-actions" style={{ marginTop: 20 }}>
+            <button
+              type="button" className="button danger"
+              onClick={() => {
+                setTickets(ts => ts.filter(t => t.id !== openTicket.id));
+                setOpenTicket(null);
+                toast('문의 기록을 삭제했어요.');
+              }}
+            >
+              문의 기록 삭제
+            </button>
           </div>
         </Modal>
       )}
