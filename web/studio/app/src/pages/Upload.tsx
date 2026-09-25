@@ -488,6 +488,7 @@ export function Upload() {
   const back = () => {
     if (step === 0) { nav('/'); return; }
     setStep(s => s - 1);
+    setError('');
     window.scrollTo({ top: 0 });
   };
 
