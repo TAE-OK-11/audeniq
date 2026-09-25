@@ -79,6 +79,11 @@ export function Layout({ children }: { children: ReactNode }) {
 
   useEffect(() => setMenuOpen(false), [loc.pathname]);
 
+  // 페이지 전환 시 맨 위로 스크롤 (스크롤 위치 유지 버그 수정)
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [loc.pathname]);
+
   const go = (to: string) => {
     setMenuOpen(false);
     nav(to);
