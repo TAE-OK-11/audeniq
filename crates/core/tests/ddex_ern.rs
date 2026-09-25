@@ -212,3 +212,26 @@ fn ddex_ern_parental_warning_explicit() {
         "non-explicit release must not carry ParentalWarningType"
     );
 }
+
+#[test]
+fn ddex_ern_version_title_emitted_when_set() {
+    // Spotify Metadata Style Guide: version info goes in a dedicated
+    // version field, rendered as DDEX VersionTitle — never glued to Title.
+    let mut f = fixture(0);
+    f.tracks[0].version = "Radio Edit".into();
+    let xml = generate_ddex_ern_382(&f, &config(MessageSubType::Initial)).unwrap();
+    assert!(
+        xml.contains("<VersionTitle>Radio Edit</VersionTitle>"),
+        "version must be emitted as VersionTitle"
+    );
+    assert!(
+        xml.contains("<TitleText>Track 1</TitleText>"),
+        "title element must stay clean of version info"
+    );
+    let f2 = fixture(0);
+    let xml2 = generate_ddex_ern_382(&f2, &config(MessageSubType::Initial)).unwrap();
+    assert!(
+        !xml2.contains("VersionTitle"),
+        "empty version must not emit VersionTitle"
+    );
+}

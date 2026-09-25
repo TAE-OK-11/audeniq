@@ -27,6 +27,10 @@ pub struct AssetRef {
 pub struct PreparedTrack {
     pub id: Uuid,
     pub title: String,
+    /// Version/designation ("Radio Edit"). Empty = none; emitted as DDEX
+    /// VersionTitle only when non-empty.
+    #[serde(default)]
+    pub version: String,
     pub artist: String,
     pub isrc: String,
     pub disc_number: u32,
@@ -161,6 +165,7 @@ impl PreparedRelease {
             tracks.push(PreparedTrack {
                 id: t.track_id,
                 title: t.title.clone(),
+                version: t.version.clone(),
                 artist: t.artist_name.clone(),
                 isrc,
                 disc_number: u32::try_from(t.disc_number)

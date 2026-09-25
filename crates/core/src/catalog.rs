@@ -288,6 +288,10 @@ pub struct TrackInput {
     /// Parental advisory flag for explicit content. Drives the EXPLICIT
     /// special flag and the DDEX ParentalWarningType.
     pub parental_advisory: Option<bool>,
+    /// Version/designation of the recording ("Radio Edit", "2024 Remaster").
+    /// Spotify Style Guide 8.2/8.4: version info belongs here, not in the
+    /// title. Empty = no version; maps to DDEX VersionTitle.
+    pub version: Option<String>,
 }
 pub async fn track(
     s: &AppState,
@@ -302,8 +306,14 @@ pub async fn track(
     drafts::bump(&mut tx, org, release, i.row_version).await?;
     let id = Uuid::new_v4();
     let lyrics = i.lyrics.as_deref().filter(|s| !s.trim().is_empty());
-    sqlx::query("INSERT INTO catalog.tracks(id,org_id,release_id,title,disc_number,track_number,artist_id,asset_id,lyrics,parental_advisory) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
- .bind(id).bind(org).bind(release).bind(i.title).bind(i.disc_number).bind(i.track_number).bind(i.artist_id).bind(i.asset_id).bind(lyrics).bind(i.parental_advisory.unwrap_or(false)).execute(&mut *tx).await?;
+    let version = i
+        .version
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("");
+    sqlx::query("INSERT INTO catalog.tracks(id,org_id,release_id,title,version,disc_number,track_number,artist_id,asset_id,lyrics,parental_advisory) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)")
+ .bind(id).bind(org).bind(release).bind(i.title).bind(version).bind(i.disc_number).bind(i.track_number).bind(i.artist_id).bind(i.asset_id).bind(lyrics).bind(i.parental_advisory.unwrap_or(false)).execute(&mut *tx).await?;
     operations::audit(
         &mut tx,
         Some(a.user),

@@ -300,7 +300,7 @@ async fn build_submittable(app: &Router, pool: &PgPool, u: &User, asset: Uuid) -
             "/api/orgs/{}/releases/{release}/tracks/{track}/credits",
             u.org
         ),
-        json!({"row_version":rv,"credits":[{"party_id":u.party,"role":"ARTIST"}]}),
+        json!({"row_version":rv,"credits":[{"party_id":u.party,"role":"ARTIST"},{"party_id":u.party,"role":"COMPOSER"}]}),
         Some(u),
     )
     .await;
@@ -1781,4 +1781,184 @@ async fn route_taxonomy_placeholders_cannot_send(pool: PgPool) {
     for c in caps {
         assert_eq!(c["send_or_publish"], serde_json::Value::Bool(false));
     }
+}
+
+/// Routing engine: fail-closed per-DSP route decisions.
+/// - no profile -> NO_ROUTE/NO_PROFILE
+/// - CONTRACTED profile without a contract route -> NO_ROUTE/NO_CONTRACT_ROUTE
+/// - MOCK direct profile (enabled + send_or_publish) -> ROUTABLE direct
+/// - aggregator with explicit route_coverage -> ROUTABLE aggregator
+/// - upstream WITHOUT coverage -> NO_ROUTE (coverage never assumed)
+/// - upstream WITH coverage -> ROUTABLE upstream
+/// - direct beats aggregator beats upstream
+/// - placeholder flipped to delivery_enabled but send_or_publish=false ->
+///   NO_ROUTE/ADAPTER_CANNOT_SEND (never reaches the wire)
+/// - duplicate DSP ids decided once; decisions persist idempotently.
+#[sqlx::test]
+async fn route_decisions_without_contracts(pool: PgPool) {
+    database::MIGRATOR.run(&pool).await.unwrap();
+    use audeniq_core::routing::{self, RouteKind};
+    let org = Uuid::new_v4();
+    let dsp_no_profile = Uuid::new_v4();
+    let dsp_contracted = Uuid::new_v4();
+    let dsp_mock = Uuid::new_v4();
+    let dsp_agg = Uuid::new_v4();
+    let dsp_up_nocov = Uuid::new_v4();
+    let dsp_up_cov = Uuid::new_v4();
+    let dsp_both = Uuid::new_v4();
+    let dsp_placeholder = Uuid::new_v4();
+
+    let caps = |sendable: bool| serde_json::json!({"send_or_publish": sendable}).to_string();
+    let ins = |pid: &str,
+               dsp: Option<Uuid>,
+               enabled: bool,
+               act: &str,
+               kind: &str,
+               sendable: bool| {
+        let (pool, dsp, caps) = (pool.clone(), dsp, caps(sendable));
+        let (pid, act, kind) = (pid.to_string(), act.to_string(), kind.to_string());
+        async move {
+            sqlx::query("INSERT INTO execution.adapter_profiles(partner_id,display_name,profile_version,dsp_id,delivery_enabled,activation_kind,route_kind,capabilities) VALUES($1,'T','1',$2,$3,$4,$5,$6::jsonb)")
+                .bind(pid).bind(dsp).bind(enabled).bind(act).bind(kind).bind(caps)
+                .execute(&pool).await.unwrap();
+        }
+    };
+    // CONTRACTED direct profile, enabled, but no contract route exists.
+    ins(
+        "p-contracted",
+        Some(dsp_contracted),
+        true,
+        "CONTRACTED",
+        "direct",
+        true,
+    )
+    .await;
+    // MOCK direct profile: always sendable.
+    ins("p-mock", Some(dsp_mock), true, "MOCK", "direct", true).await;
+    // Aggregator covering dsp_agg (MOCK => sendable).
+    ins("p-agg", None, true, "MOCK", "aggregator", true).await;
+    sqlx::query("INSERT INTO execution.route_coverage(partner_id,dsp_id) VALUES('p-agg',$1)")
+        .bind(dsp_agg)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // Upstream, sendable, but covering only dsp_up_cov.
+    ins("p-up", None, true, "MOCK", "upstream", true).await;
+    sqlx::query("INSERT INTO execution.route_coverage(partner_id,dsp_id) VALUES('p-up',$1)")
+        .bind(dsp_up_cov)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // dsp_both: direct MOCK + aggregator MOCK covering -> direct wins.
+    ins(
+        "p-both-direct",
+        Some(dsp_both),
+        true,
+        "MOCK",
+        "direct",
+        true,
+    )
+    .await;
+    sqlx::query("INSERT INTO execution.route_coverage(partner_id,dsp_id) VALUES('p-agg',$1)")
+        .bind(dsp_both)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // Placeholder trap: enabled but the adapter declares it cannot send.
+    ins(
+        "p-trap",
+        Some(dsp_placeholder),
+        true,
+        "MOCK",
+        "direct",
+        false,
+    )
+    .await;
+    // Seeded placeholders (merlin/limbo-upstream) stay CONTRACTED + disabled.
+
+    let dsps = vec![
+        dsp_no_profile,
+        dsp_contracted,
+        dsp_mock,
+        dsp_agg,
+        dsp_up_nocov,
+        dsp_up_cov,
+        dsp_both,
+        dsp_placeholder,
+        dsp_mock, // duplicate: decided once
+    ];
+    let decisions = routing::decide_routes(&pool, org, &dsps).await.unwrap();
+    assert_eq!(decisions.len(), 8);
+    let by_dsp: std::collections::HashMap<_, _> = decisions.iter().map(|d| (d.dsp_id, d)).collect();
+
+    let d = by_dsp[&dsp_no_profile];
+    assert!(
+        !d.routable && d.reason == "NO_PROFILE" && d.route_kind.is_none(),
+        "{d:?}"
+    );
+
+    let d = by_dsp[&dsp_contracted];
+    assert!(!d.routable && d.reason == "NO_CONTRACT_ROUTE", "{d:?}");
+
+    let d = by_dsp[&dsp_mock];
+    assert!(
+        d.routable && d.route_kind == Some(RouteKind::Direct),
+        "{d:?}"
+    );
+    assert_eq!(d.partner_id.as_deref(), Some("p-mock"));
+
+    let d = by_dsp[&dsp_agg];
+    assert!(
+        d.routable && d.route_kind == Some(RouteKind::Aggregator),
+        "{d:?}"
+    );
+    assert_eq!(d.partner_id.as_deref(), Some("p-agg"));
+
+    let d = by_dsp[&dsp_up_nocov];
+    assert!(!d.routable && d.reason == "NO_PROFILE", "{d:?}");
+
+    let d = by_dsp[&dsp_up_cov];
+    assert!(
+        d.routable && d.route_kind == Some(RouteKind::Upstream),
+        "{d:?}"
+    );
+    assert_eq!(d.partner_id.as_deref(), Some("p-up"));
+
+    let d = by_dsp[&dsp_both];
+    assert!(
+        d.routable && d.route_kind == Some(RouteKind::Direct),
+        "{d:?}"
+    );
+    assert_eq!(d.partner_id.as_deref(), Some("p-both-direct"));
+
+    let d = by_dsp[&dsp_placeholder];
+    assert!(!d.routable && d.reason == "ADAPTER_CANNOT_SEND", "{d:?}");
+
+    // Decisions persist per package and are re-readable.
+    let package = Uuid::new_v4();
+    routing::record_route_decisions(&pool, org, package, &decisions)
+        .await
+        .unwrap();
+    let back = routing::get_route_decision(&pool, org, package, dsp_mock)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(back.routable && back.route_kind == Some(RouteKind::Direct));
+    assert_eq!(back.partner_id.as_deref(), Some("p-mock"));
+    let no_route = routing::get_route_decision(&pool, org, package, dsp_no_profile)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!no_route.routable && no_route.route_kind.is_none());
+    // Idempotent re-record: still one row per dsp.
+    routing::record_route_decisions(&pool, org, package, &decisions)
+        .await
+        .unwrap();
+    let n: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM execution.route_decisions WHERE package_id=$1")
+            .bind(package)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(n, 8);
 }

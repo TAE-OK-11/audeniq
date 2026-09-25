@@ -167,14 +167,15 @@ async fn authorize_org(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, org: Uuid
 }
 
 /// E-0: enqueue one delivery job per eligible DSP for a frozen package.
-/// Eligible = the route plan's approved dsp_id maps to an adapter profile
-/// with delivery_enabled=true. No profile (or disabled) = no job, no send.
-/// CONTRACTED profiles additionally require the contract route (route
-/// enabled + endpoint ACTIVE + non-revoked contract revision):
-/// delivery_enabled alone is only the operator kill-switch, never the
-/// eligibility proof. This is defense in depth behind the Stage 2
-/// eligibility module, which applies the same rule when freezing the
-/// route plan.
+/// Eligibility now comes from the routing engine (`crate::routing`):
+/// each approved DSP resolves to direct > aggregator > upstream, and only
+/// ROUTABLE decisions enqueue a job. NO_ROUTE decisions are recorded on the
+/// package for F6 contract onboarding instead of failing. CONTRACTED
+/// profiles additionally require the contract route (route enabled +
+/// endpoint ACTIVE + non-revoked contract revision): delivery_enabled alone
+/// is only the operator kill-switch, never the eligibility proof. This is
+/// defense in depth behind the Stage 2 eligibility module, which applies
+/// the same rule when freezing the route plan.
 pub async fn enqueue_delivery_jobs(pool: &PgPool, package_id: Uuid) -> Result<(Vec<Uuid>, Uuid)> {
     let mut tx = pool.begin().await?;
     let row = sqlx::query(
@@ -190,41 +191,30 @@ pub async fn enqueue_delivery_jobs(pool: &PgPool, package_id: Uuid) -> Result<(V
     let org_id: Uuid = row.get("org_id");
     authorize_org(&mut tx, org_id).await?;
     let route_plan: Value = row.get("route_plan");
-    let mut job_ids = Vec::new();
     let items = route_plan.as_array().cloned().unwrap_or_default();
-    for item in items {
-        let dsp_id = item
+    let mut dsp_ids = Vec::new();
+    for item in &items {
+        if let Some(dsp_id) = item
             .pointer("/scope/dsp_id")
             .and_then(Value::as_str)
-            .and_then(|s| Uuid::parse_str(s).ok());
-        let Some(dsp_id) = dsp_id else { continue };
-        let profile: Option<(String, String)> = sqlx::query_as(
-            "SELECT partner_id, activation_kind FROM execution.adapter_profiles WHERE dsp_id=$1 AND delivery_enabled",
-        )
-        .bind(dsp_id)
-        .fetch_optional(&mut *tx)
-        .await?;
-        let Some((partner_id, activation_kind)) = profile else {
-            continue;
-        };
-        // CONTRACTED profiles can never enqueue on delivery_enabled alone:
-        // the contract route must exist. A MOCK profile skips this check.
-        if activation_kind == "CONTRACTED" {
-            let contracted: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM distribution.route_plans r
-                 JOIN distribution.dsp_endpoints e ON e.org_id=r.org_id AND e.dsp_id=r.dsp_id AND e.id=r.endpoint_id
-                 JOIN rights.contract_revisions cr ON cr.org_id=r.org_id AND cr.contract_id=r.contract_id
-                 WHERE r.org_id=$1 AND r.dsp_id=$2 AND r.enabled
-                   AND e.integration_status='ACTIVE' AND cr.policy_version<>'REVOKED'",
-            )
-            .bind(org_id)
-            .bind(dsp_id)
-            .fetch_one(&mut *tx)
-            .await?;
-            if contracted == 0 {
-                continue;
-            }
+            .and_then(|s| Uuid::parse_str(s).ok())
+        {
+            dsp_ids.push(dsp_id);
         }
+    }
+    tx.commit().await?;
+    // The routing engine owns profile resolution and the contract-route
+    // gate; its verdict is persisted per package for audit and F6.
+    let decisions = crate::routing::decide_routes(pool, org_id, &dsp_ids).await?;
+    crate::routing::record_route_decisions(pool, org_id, package_id, &decisions).await?;
+    let mut tx = pool.begin().await?;
+    authorize_org(&mut tx, org_id).await?;
+    let mut job_ids = Vec::new();
+    for d in &decisions {
+        if !d.routable {
+            continue;
+        }
+        let partner_id = d.partner_id.as_deref().ok_or(Error::Internal)?;
         let job_id: Option<Uuid> = sqlx::query_scalar(
             "INSERT INTO execution.delivery_jobs(id,org_id,package_id,partner_id)
              VALUES($1,$2,$3,$4) ON CONFLICT(org_id,package_id,partner_id) DO NOTHING RETURNING id",
@@ -232,7 +222,7 @@ pub async fn enqueue_delivery_jobs(pool: &PgPool, package_id: Uuid) -> Result<(V
         .bind(Uuid::new_v4())
         .bind(org_id)
         .bind(package_id)
-        .bind(&partner_id)
+        .bind(partner_id)
         .fetch_optional(&mut *tx)
         .await?;
         if let Some(id) = job_id {
@@ -243,7 +233,7 @@ pub async fn enqueue_delivery_jobs(pool: &PgPool, package_id: Uuid) -> Result<(V
                 Some(org_id),
                 Some(id),
                 "delivery.enqueued",
-                &partner_id,
+                partner_id,
                 Uuid::new_v4(),
             )
             .await?;
