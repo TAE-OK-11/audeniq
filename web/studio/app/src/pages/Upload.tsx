@@ -328,12 +328,30 @@ export function Upload() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const coverInputRef = useRef<HTMLInputElement>(null);
+  const progressRef = useRef<HTMLDivElement>(null);
+  const prevStepRef = useRef(0);
 
   // 라이브와 동일: 위자드에서는 헤더 숨김 + 레이아웃 패딩 제거
   useEffect(() => {
     document.body.classList.add('wizard-mode');
     return () => document.body.classList.remove('wizard-mode');
   }, []);
+
+  // 라이브와 동일: 다음 단계로 넘어갈 때 새 진행 구간이 왼쪽에서 차오르는 애니메이션
+  useEffect(() => {
+    const el = progressRef.current;
+    if (step > prevStepRef.current && el) {
+      const spans = el.querySelectorAll('span');
+      const newSpan = spans[step] as HTMLElement | undefined;
+      if (newSpan && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        newSpan.animate(
+          [{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }],
+          { duration: 280, easing: 'cubic-bezier(.22,1,.36,1)' }
+        );
+      }
+    }
+    prevStepRef.current = step;
+  }, [step]);
 
   const set = <K extends keyof WizardForm>(key: K, value: WizardForm[K]) =>
     setForm(f => ({ ...f, [key]: value }));
@@ -541,7 +559,7 @@ export function Upload() {
         <button type="button" id="saveDraft" className="link-btn" onClick={saveDraft}>임시 저장</button>
       </div>
 
-      <div className="wizard-progress" id="wizardProgress" aria-label="발매 신청 진행 단계">
+      <div className="wizard-progress" id="wizardProgress" ref={progressRef} aria-label="발매 신청 진행 단계">
         {STEPS.map((_, i) => (
           <span key={i} className={i <= step ? 'current' : ''} />
         ))}
