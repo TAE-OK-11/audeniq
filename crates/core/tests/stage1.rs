@@ -551,7 +551,7 @@ async fn stage1_happy_path_passes(pool: PgPool) {
     .fetch_all(&pool)
     .await
     .unwrap();
-    assert_eq!(codes.len(), 13, "{codes:?}");
+    assert_eq!(codes.len(), 16, "{codes:?}");
     let bad: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM operations.check_results WHERE revision_id=$1 AND status<>'PASS'",
     )
@@ -625,6 +625,184 @@ async fn stage1_happy_path_passes(pool: PgPool) {
         pkg_id
     );
     assert_eq!(payload["package_hash"].as_str().unwrap(), pkg_hash.as_str());
+}
+#[sqlx::test]
+async fn stage1_duplicate_isrc_rejected(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let wav = make_good_wav(&dir);
+    let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
+    let (release, artist) = build_submittable(&app, &pool, &store, &u, asset).await;
+    // EP allows two tracks; both carry the same ISRC.
+    sqlx::query(
+        "UPDATE catalog.releases SET release_type='EP', row_version=row_version+1 WHERE id=$1",
+    )
+    .bind(release)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let rv = row_version(&pool, release).await;
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{}/releases/{release}/tracks", u.org),
+        json!({"title":"T2","disc_number":1,"track_number":2,"artist_id":artist,"asset_id":asset,"row_version":rv}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let track2 = Uuid::parse_str(v["id"].as_str().unwrap()).unwrap();
+    let rv = row_version(&pool, release).await;
+    let (s, v) = call(
+        &app,
+        "PUT",
+        &format!(
+            "/api/orgs/{}/releases/{release}/tracks/{track2}/credits",
+            u.org
+        ),
+        json!({"row_version":rv,"credits":[{"party_id":u.party,"role":"ARTIST"}]}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    sqlx::query("UPDATE catalog.tracks SET isrc='USABC2600001' WHERE release_id=$1")
+        .bind(release)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (s, v) = consent(&app, &u, release, false).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let consent_id = Uuid::parse_str(v["consent_id"].as_str().unwrap()).unwrap();
+    let (s, v) = submit(&app, &u, release, consent_id, false, "k-dupisrc").await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let revision_id = Uuid::parse_str(v["revision_id"].as_str().unwrap()).unwrap();
+
+    run_worker(&pool, &store).await;
+
+    let status: String = sqlx::query_scalar("SELECT status FROM catalog.releases WHERE id=$1")
+        .bind(release)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "STAGE1_CORRECTION");
+    let hit: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM operations.check_results WHERE revision_id=$1 AND check_code='ISRC_DUPLICATE' AND status='CORRECTION_REQUIRED')",
+    )
+    .bind(revision_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(hit, "duplicate ISRC must force correction");
+}
+
+#[sqlx::test]
+async fn stage1_malformed_upc_rejected(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let wav = make_good_wav(&dir);
+    let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
+    let (release, _) = build_submittable(&app, &pool, &store, &u, asset).await;
+    sqlx::query(
+        "UPDATE catalog.releases SET upc='012345678904', row_version=row_version+1 WHERE id=$1",
+    )
+    .bind(release)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let (s, v) = consent(&app, &u, release, false).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let consent_id = Uuid::parse_str(v["consent_id"].as_str().unwrap()).unwrap();
+    let (s, v) = submit(&app, &u, release, consent_id, false, "k-badupc").await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let revision_id = Uuid::parse_str(v["revision_id"].as_str().unwrap()).unwrap();
+
+    run_worker(&pool, &store).await;
+
+    let status: String = sqlx::query_scalar("SELECT status FROM catalog.releases WHERE id=$1")
+        .bind(release)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "STAGE1_CORRECTION");
+    let hit: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM operations.check_results WHERE revision_id=$1 AND check_code='UPC_FORMAT_INVALID' AND status='CORRECTION_REQUIRED')",
+    )
+    .bind(revision_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(hit, "malformed UPC must force correction");
+}
+
+#[sqlx::test]
+async fn stage1_bad_release_date_rejected(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let wav = make_good_wav(&dir);
+    let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
+    let (release, _) = build_submittable(&app, &pool, &store, &u, asset).await;
+    sqlx::query("UPDATE catalog.releases SET draft = draft || '{\"release_date\":\"next friday\"}'::jsonb, row_version = row_version + 1 WHERE id=$1")
+        .bind(release)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (s, v) = consent(&app, &u, release, false).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let consent_id = Uuid::parse_str(v["consent_id"].as_str().unwrap()).unwrap();
+    let (s, v) = submit(&app, &u, release, consent_id, false, "k-baddate").await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let revision_id = Uuid::parse_str(v["revision_id"].as_str().unwrap()).unwrap();
+
+    run_worker(&pool, &store).await;
+
+    let status: String = sqlx::query_scalar("SELECT status FROM catalog.releases WHERE id=$1")
+        .bind(release)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "STAGE1_CORRECTION");
+    let hit: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM operations.check_results WHERE revision_id=$1 AND check_code='FIELD_RELEASE_DATE_INVALID' AND status='CORRECTION_REQUIRED')",
+    )
+    .bind(revision_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(hit, "bad release_date format must force correction");
+}
+
+#[sqlx::test]
+async fn submit_with_expired_consent_rejected(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let wav = make_good_wav(&dir);
+    let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
+    let (release, _) = build_submittable(&app, &pool, &store, &u, asset).await;
+    let (s, v) = consent(&app, &u, release, false).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let consent_id = Uuid::parse_str(v["consent_id"].as_str().unwrap()).unwrap();
+    // Age the consent past its validity window without touching the scope.
+    // The immutability trigger is disabled inside this test's transaction only.
+    sqlx::query("ALTER TABLE catalog.consent_packages DISABLE TRIGGER immutable")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE catalog.consent_packages SET body = body || '{\"valid_until\":\"2020-01-01T00:00:00Z\"}'::jsonb WHERE id=$1")
+        .bind(consent_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (s, v) = submit(&app, &u, release, consent_id, false, "k-expired").await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(v["error"]["code"], "CONSENT_EXPIRED", "{v}");
 }
 
 #[sqlx::test]

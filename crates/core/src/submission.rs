@@ -6,6 +6,7 @@ use crate::{
     api::AppState,
     auth::{self, Actor},
     error::{Error, Result},
+    identifiers::{validate_isrc, validate_upc},
     operations,
     qc::{self, CheckStatus},
     storage::ObjectStore,
@@ -428,6 +429,19 @@ pub async fn submit(
     if c.get::<String, _>("policy_version") != CONSENT_POLICY_VERSION {
         return Err(Error::PolicyGate("CONSENT_POLICY_MISMATCH"));
     }
+    // Consent expires: a stale consent package cannot authorize a new submit.
+    let consent_body: Value = c.get("body");
+    let valid_until = consent_body
+        .get("valid_until")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let expired = valid_until.is_empty()
+        || chrono::DateTime::parse_from_rfc3339(valid_until)
+            .map(|dt| dt < chrono::Utc::now())
+            .unwrap_or(true);
+    if expired {
+        return Err(Error::PolicyGate("CONSENT_EXPIRED"));
+    }
     let scope_hash = sha256_hex(&canonical(&scope_of(&mut tx, org, release).await?));
     let consent_scope = c
         .get::<Value, _>("body")
@@ -623,16 +637,6 @@ fn field_cache_key(check_code: &str, inputs: &str) -> String {
 fn asset_cache_key(check_code: &str, asset_sha256: &str) -> String {
     qc::result_hash(check_code, qc::QC_RULE_VERSION, asset_sha256, asset_sha256)
 }
-fn is_valid_isrc(s: &str) -> bool {
-    let b = s.as_bytes();
-    b.len() == 12
-        && b[..2].iter().all(|c| c.is_ascii_uppercase())
-        && b[2..5]
-            .iter()
-            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
-        && b[5..].iter().all(|c| c.is_ascii_digit())
-}
-
 /// 1-B: pure field checks over the immutable revision body.
 fn field_checks(body: &Value) -> Vec<StagedCheck> {
     let mut out = Vec::new();
@@ -676,6 +680,54 @@ fn field_checks(body: &Value) -> Vec<StagedCheck> {
         },
         rdate,
         format!("release_date present={}", !rdate.is_empty()),
+    );
+    let rdate_ok = rdate.is_empty() || chrono::NaiveDate::parse_from_str(rdate, "%Y-%m-%d").is_ok();
+    push(
+        "FIELD_RELEASE_DATE_INVALID",
+        if rdate_ok {
+            CheckStatus::Pass
+        } else {
+            CheckStatus::CorrectionRequired
+        },
+        rdate,
+        format!("release_date format valid={rdate_ok}"),
+    );
+    // UPC is optional at submit but, when supplied, must be a real UPC-A.
+    // A malformed UPC currently sails through review and dies at prepare.
+    let upc = rel["upc"].as_str().unwrap_or("");
+    let upc_ok = upc.is_empty() || validate_upc(upc).is_ok();
+    push(
+        "UPC_FORMAT_INVALID",
+        if upc_ok {
+            CheckStatus::Pass
+        } else {
+            CheckStatus::CorrectionRequired
+        },
+        upc,
+        format!("upc format valid={upc_ok}"),
+    );
+    // Duplicate ISRC inside one release is always a data error: two tracks
+    // cannot share a recording identifier.
+    let mut seen_isrc: BTreeSet<&str> = BTreeSet::new();
+    let mut dup_isrc: BTreeSet<&str> = BTreeSet::new();
+    for t in &tracks {
+        let isrc = t["isrc"].as_str().unwrap_or("");
+        if !isrc.is_empty() && !seen_isrc.insert(isrc) {
+            dup_isrc.insert(isrc);
+        }
+    }
+    push(
+        "ISRC_DUPLICATE",
+        if dup_isrc.is_empty() {
+            CheckStatus::Pass
+        } else {
+            CheckStatus::CorrectionRequired
+        },
+        &dup_isrc.iter().cloned().collect::<Vec<_>>().join(","),
+        format!(
+            "duplicate isrcs={}",
+            dup_isrc.iter().cloned().collect::<Vec<_>>().join(",")
+        ),
     );
     let n = tracks.len();
     let type_ok = match rtype {
@@ -734,7 +786,7 @@ fn field_checks(body: &Value) -> Vec<StagedCheck> {
             format!("track={tid} credits={credits}"),
         );
         let isrc = t["isrc"].as_str().unwrap_or("");
-        let isrc_ok = isrc.is_empty() || is_valid_isrc(isrc);
+        let isrc_ok = isrc.is_empty() || validate_isrc(isrc).is_ok();
         push(
             "ISRC_FORMAT_INVALID",
             if isrc_ok {

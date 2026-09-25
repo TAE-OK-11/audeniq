@@ -521,6 +521,37 @@ async fn stage2_duplicate_sha_in_other_org_is_review(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn stage2_far_future_release_date_flagged(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let wav = make_good_wav(&dir);
+    let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
+    let release = build_submittable(&app, &pool, &u, asset).await;
+    // A street date two years out is almost always a typo (2037 vs 2027).
+    sqlx::query("UPDATE catalog.releases SET draft = draft || jsonb_build_object('release_date', to_char(now() + interval '2 years', 'YYYY-MM-DD')), row_version = row_version + 1 WHERE id=$1")
+        .bind(release).execute(&pool).await.unwrap();
+    consent_and_submit(&app, &u, release, "k-s2-future").await;
+
+    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(release_status(&pool, release).await, "STAGE1_PASSED");
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(release_status(&pool, release).await, "STAGE2_REVIEW");
+
+    let detail: String = sqlx::query_scalar(
+        "SELECT detail FROM operations.check_results WHERE revision_id=(SELECT current_revision_id FROM catalog.releases WHERE id=$1) AND check_code='S2_RELEASE_DATE_FAR_FUTURE'",
+    )
+    .bind(release)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(detail.contains("more than a year"), "{detail}");
+}
+
+#[sqlx::test]
 async fn stage2_lease_loss_returns_none(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
