@@ -96,12 +96,7 @@ async fn main() -> anyhow::Result<()> {
     let cpu_count = std::thread::available_parallelism()
         .map(usize::from)
         .unwrap_or(1);
-    let max_in_flight = env_usize(
-        "WORKER_MAX_IN_FLIGHT",
-        (cpu_count * 2).clamp(2, 8),
-        1,
-        64,
-    )?;
+    let max_in_flight = env_usize("WORKER_MAX_IN_FLIGHT", (cpu_count * 2).clamp(2, 8), 1, 64)?;
     let database_max = env_usize(
         "DATABASE_MAX_CONNECTIONS",
         (max_in_flight + 3).clamp(4, 32),
@@ -180,7 +175,10 @@ async fn main() -> anyhow::Result<()> {
             });
         }
     }
-    anyhow::ensure!(configured_workers > 0, "at least one queue worker is required");
+    anyhow::ensure!(
+        configured_workers > 0,
+        "at least one queue worker is required"
+    );
 
     {
         let pool = pool.clone();
