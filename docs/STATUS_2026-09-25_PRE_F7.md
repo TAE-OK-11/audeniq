@@ -7,6 +7,7 @@
 검증 기준: `cargo fmt --all --check` 통과, `cargo clippy --workspace --all-targets -- -D warnings` 통과,
 `cargo test --workspace` **125개 전부 통과** (신규 7개 포함), 실패 0.
 CI run [36097605861](https://github.com/TAE-OK-11/audeniq/actions/runs/36097605861) — **success** (2026-09-25 확인).
+CI run [36100301770](https://github.com/TAE-OK-11/audeniq/actions/runs/36100301770) (activation 모델 병합 `bba09ae`) — **success** (2026-09-25 확인).
 
 관련 커밋 (main): `89cce75` (F3 grant FK 병합), `4d2b59d` (pre-F7 audit 병합), `8346e8f` (문서).
 
