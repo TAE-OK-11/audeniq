@@ -66,6 +66,57 @@ pub async fn enqueue(
     sqlx::query_scalar("INSERT INTO operations.jobs(id,queue,kind,payload,idempotency_key,pinned_revision_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(idempotency_key) DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key WHERE operations.jobs.queue=EXCLUDED.queue AND operations.jobs.kind=EXCLUDED.kind AND operations.jobs.payload=EXCLUDED.payload AND operations.jobs.pinned_revision_id IS NOT DISTINCT FROM EXCLUDED.pinned_revision_id RETURNING id")
  .bind(Uuid::new_v4()).bind(queue).bind(kind).bind(payload).bind(key).bind(pin).fetch_optional(c).await?.ok_or(Error::Conflict)
 }
+
+/// Reclaim expired leases before selecting new work.
+///
+/// Every handler in the pipeline is idempotent and fenced by immutable revision
+/// or package identifiers. A worker crash must therefore requeue the job until
+/// `max_attempts` is exhausted instead of permanently losing an album halfway
+/// through the pipeline.
+///
+/// A reclaimed job is immediately claimable: the expired lease already delayed
+/// it by the full lease duration, and the crashed worker's token is fenced off
+/// by the new `lock_token`. Exponential backoff is reserved for explicit
+/// retryable failures reported through [`fail`].
+async fn reclaim_expired(c: &mut PgConnection, queue: &str) -> Result<()> {
+    let rows = sqlx::query(
+        "UPDATE operations.jobs
+         SET status = CASE WHEN attempts >= max_attempts THEN 'DEAD_LETTER' ELSE 'QUEUED' END,
+             locked_by = NULL,
+             lock_token = NULL,
+             lease_until = NULL,
+             dead_lettered_at = CASE WHEN attempts >= max_attempts THEN now() ELSE NULL END,
+             last_error = 'LEASE_EXPIRED',
+             run_at = CASE
+                 WHEN attempts >= max_attempts THEN run_at
+                 ELSE clock_timestamp()
+             END
+         WHERE queue = $1 AND status = 'RUNNING' AND lease_until <= clock_timestamp()
+         RETURNING id, status",
+    )
+    .bind(queue)
+    .fetch_all(&mut *c)
+    .await?;
+
+    for row in rows {
+        let status: String = row.get("status");
+        audit(
+            c,
+            None,
+            None,
+            Some(row.get("id")),
+            if status == "DEAD_LETTER" {
+                "job.dead_letter"
+            } else {
+                "job.retry"
+            },
+            "LEASE_EXPIRED",
+            Uuid::new_v4(),
+        )
+        .await?;
+    }
+    Ok(())
+}
 /// Schedule a delayed live-state poll for one (package, partner) delivery.
 /// Idempotent per (package, partner, poll number): a send retry or poll
 /// requeue never double-schedules the same poll, and two partners receiving
@@ -115,27 +166,10 @@ pub async fn claim(
         return Err(Error::Invalid);
     }
     let mut tx = pool.begin().await?;
-    // Exhausted crash leases are dead-lettered, never left permanently RUNNING.
-    // stage2 is excluded: the Stage 2 handoff must survive until F3 implements
-    // it, even if a worker crashes mid-park.
-    let expired=sqlx::query("UPDATE operations.jobs SET status='DEAD_LETTER',lock_token=NULL,lease_until=NULL,dead_lettered_at=now(),last_error='LEASE_EXHAUSTED' WHERE queue=$1 AND status='RUNNING' AND lease_until<=now() AND kind<>'stage2' AND (attempts>=max_attempts OR kind<>'outbox.record') RETURNING id")
- .bind(queue).fetch_all(&mut *tx).await?;
-    for r in expired {
-        audit(
-            &mut tx,
-            None,
-            None,
-            Some(r.get("id")),
-            "job.dead_letter",
-            "LEASE_EXHAUSTED",
-            Uuid::new_v4(),
-        )
-        .await?;
-    }
-    // Only safe internal jobs are registered. Unknown jobs never execute and are explicitly DLQ'd below.
-    // A crashed stage2 claim is reclaimable (never dead-lettered): the next
-    // claim parks it again until F3 implements the kind.
-    let r=sqlx::query("WITH candidate AS (SELECT id FROM operations.jobs WHERE queue=$1 AND attempts<max_attempts AND ((status='QUEUED' AND run_at<=now()) OR (status='RUNNING' AND lease_until<=now() AND kind IN ('outbox.record','stage2'))) ORDER BY priority DESC,run_at,id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE operations.jobs j SET status='RUNNING',attempts=attempts+1,locked_by=$2,lock_token=$3,lease_until=now()+make_interval(secs=>$4) FROM candidate WHERE j.id=candidate.id RETURNING j.id,j.lock_token,j.kind,j.payload,j.attempts")
+    reclaim_expired(&mut tx, queue).await?;
+    // SKIP LOCKED lets multiple worker processes drain the same durable list
+    // without blocking each other or claiming the same album twice.
+    let r=sqlx::query("WITH candidate AS (SELECT id FROM operations.jobs WHERE queue=$1 AND status='QUEUED' AND attempts<max_attempts AND run_at<=clock_timestamp() ORDER BY priority DESC,run_at,id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE operations.jobs j SET status='RUNNING',attempts=attempts+1,locked_by=$2,lock_token=$3,lease_until=clock_timestamp()+make_interval(secs=>$4) FROM candidate WHERE j.id=candidate.id RETURNING j.id,j.lock_token,j.kind,j.payload,j.attempts")
  .bind(queue).bind(worker).bind(Uuid::new_v4()).bind(lease_seconds as f64).fetch_optional(&mut *tx).await?;
     let job = r.map(|r| Job {
         id: r.get("id"),

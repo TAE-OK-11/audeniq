@@ -1328,10 +1328,10 @@ async fn find_similar_assets(
         let Ok(other) = fingerprint::Fingerprint::from_bytes(&hash) else {
             continue;
         };
-        if let Some(ber) = fingerprint::bit_error_rate(frames, &other.frames) {
-            if ber <= fingerprint::SIMILAR_BER {
-                hits.push((other_id, ber));
-            }
+        if let Some(ber) = fingerprint::bit_error_rate(frames, &other.frames)
+            && ber <= fingerprint::SIMILAR_BER
+        {
+            hits.push((other_id, ber));
         }
     }
     hits.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -1415,18 +1415,15 @@ async fn asset_checks(
         // bytes. The similarity result depends on catalog state, but the
         // fingerprint itself is immutable for unchanged bytes.
         let only_similarity = to_run == ["AUDIO_SIMILAR_TO_EXISTING"];
-        if only_similarity {
-            if let Some(stored_fp) = load_stored_fingerprint(pool, org, aid).await? {
-                let fp_opt = Some(Ok(stored_fp));
-                handle_fingerprint_checks(pool, org, aid, sha256, &fp_opt, &to_run, &mut out)
-                    .await?;
-                // Emit the cached codes for the other checks (already in `out`
-                // via the cache_hit path above); nothing more to do for this asset.
-                continue;
-            }
-            // No stored fingerprint: fall through to analyze_asset which will
-            // compute and store it.
+        if only_similarity && let Some(stored_fp) = load_stored_fingerprint(pool, org, aid).await? {
+            let fp_opt = Some(Ok(stored_fp));
+            handle_fingerprint_checks(pool, org, aid, sha256, &fp_opt, &to_run, &mut out).await?;
+            // Emit the cached codes for the other checks (already in `out`
+            // via the cache_hit path above); nothing more to do for this asset.
+            continue;
         }
+        // No stored fingerprint: fall through to analyze_asset which will
+        // compute and store it.
         // Unique temp name: two workers must never share an analyzer file.
         let tmp_name = format!("audeniq-qc-{}", Uuid::new_v4());
         let outcomes = match analyze_asset(storage, &key, kind.as_str(), sha256, &tmp_name).await {

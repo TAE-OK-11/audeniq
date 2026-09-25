@@ -48,10 +48,10 @@ jobs:
           git diff --exit-code
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo build --locked -p audeniq-core --bins
-      - name: Install FFmpeg (QC fixture generation + ffprobe)
+      - name: Install FFmpeg (QC fixture generation + ffprobe) and xmllint (DDEX XSD validation)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg
+          sudo apt-get install -y -qq ffmpeg libxml2-utils
       - run: cargo test --locked -p audeniq-core -- --test-threads=2
       - run: cargo build --locked -p audeniq-edge --target wasm32-unknown-unknown
       - run: cargo test --locked -p audeniq-studio
