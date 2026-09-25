@@ -1080,3 +1080,15 @@ body.aq-nav-locked #portalNav{
 
 /* 차트 막대: 스크롤로 보일 때 한 번 자라나는 애니메이션 (라이브와 동일) */
 .report-bar.grow{animation:bar-in .6s var(--portal-ease) both!important}
+
+/* 페이지 전환 애니메이션 복원: 라우트 변경 시에만 재생 (key 변경으로 리마운트) */
+.view-enter{animation:studio-enter .35s var(--studio-ease) both}
+@media(prefers-reduced-motion:reduce){
+  .view-enter{animation:none!important}
+}
+
+/* 대시보드 카드 호버 리프트 복원 */
+.dashboard-grid .service-item:hover{transform:translateY(-3px)!important;box-shadow:var(--studio-shadow)!important;background:#f0f4fc!important}
+@media(prefers-reduced-motion:reduce){
+  .dashboard-grid .service-item:hover{transform:none!important;box-shadow:none!important}
+}

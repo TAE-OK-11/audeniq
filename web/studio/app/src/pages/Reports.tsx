@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useToast } from '../components/Toast';
+import { useGrowOnView, type CSSVarStyle } from '../hooks/useAnimations';
 
 const PERIODS = [
   { value: 'all', label: '전체 기간' },
@@ -29,33 +30,13 @@ function num(n: number): string {
 }
 
 function Chart({ rows }: { rows: ReportRow[] }) {
-  const chartRef = useRef<HTMLDivElement>(null);
+  const chartRef = useGrowOnView<HTMLDivElement>();
   const buckets = new Map<string, number>();
   for (const r of rows) {
     const k = r.period.slice(0, 7) || '기타';
     buckets.set(k, (buckets.get(k) || 0) + Number(r.revenue || 0));
   }
   const vals = [...buckets.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-8);
-
-  // 라이브와 동일: 차트가 화면에 보일 때 막대가 한 번 자라나는 애니메이션
-  useEffect(() => {
-    const el = chartRef.current;
-    if (!el) return;
-    const bars = el.querySelectorAll('.report-bar');
-    const io = new IntersectionObserver(
-      entries => {
-        for (const e of entries) {
-          if (e.isIntersecting) {
-            bars.forEach(b => b.classList.add('grow'));
-            io.disconnect();
-          }
-        }
-      },
-      { threshold: 0.3 }
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, [vals.length]);
 
   if (!vals.length) {
     return (
@@ -65,6 +46,9 @@ function Chart({ rows }: { rows: ReportRow[] }) {
     );
   }
   const high = Math.max(1, ...vals.map(x => x[1]));
+  const barStyle = (v: number): CSSVarStyle => ({
+    '--h': `${Math.max(2, Math.round((v / high) * 100))}%`,
+  });
   return (
     <>
       <div className="report-chart" ref={chartRef} role="img" aria-label="기간별 수익 막대그래프">
@@ -72,7 +56,7 @@ function Chart({ rows }: { rows: ReportRow[] }) {
           <div
             key={k}
             className="report-bar"
-            style={{ ['--h' as string]: `${Math.max(2, Math.round((v / high) * 100))}%` }}
+            style={barStyle(v)}
             title={`${k} · ${money(v)}`}
           />
         ))}
