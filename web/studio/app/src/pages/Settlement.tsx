@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
+import { BankLogo } from '../components/BankLogo';
 
 interface Statement { id: string; period: string; platform: string; amount: number; note: string; created: string }
 interface Payout { id: string; amount: number; note: string; created: string; status: string }
@@ -15,6 +16,9 @@ const INITIAL_PAYOUTS: Payout[] = [
   { id: 'p1', amount: 18920, note: '', created: '2026-08-15', status: 'recorded' },
 ];
 
+// mock 수령 정보 (라이브 db.payment)
+const MOCK_PAYMENT = { recipient: '서린', bank: 'KB국민은행', accountNumber: '1234567890', last4: '1234' };
+
 function money(n: number): string {
   return new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW', maximumFractionDigits: 0 }).format(n || 0);
 }
@@ -22,7 +26,7 @@ function money(n: number): string {
 export function Settlement() {
   const nav = useNavigate();
   const toast = useToast();
-  const [statements] = useState<Statement[]>(INITIAL_STATEMENTS);
+  const [statements, setStatements] = useState<Statement[]>(INITIAL_STATEMENTS);
   const [payouts, setPayouts] = useState<Payout[]>(INITIAL_PAYOUTS);
   const [showPayout, setShowPayout] = useState(false);
   const [amount, setAmount] = useState('');
@@ -33,10 +37,28 @@ export function Settlement() {
   const left = Math.max(0, total - used);
 
   const openPayoutModal = () => {
+    const pay = MOCK_PAYMENT;
+    if (!pay.recipient || !pay.bank || pay.bank === '미설정' || !pay.accountNumber || !pay.last4 || pay.last4 === '0000') {
+      toast('수익을 받을 정보를 먼저 등록해 주세요.');
+      nav('/profile');
+      return;
+    }
     if (!left) { toast('지급을 요청할 수 있는 잔액이 없어요.'); return; }
     setAmount('');
     setPayoutNote('');
     setShowPayout(true);
+  };
+
+  const deleteStatement = (id: string) => {
+    if (!window.confirm('선택한 내역을 삭제할까요?')) return;
+    setStatements(ss => ss.filter(s => s.id !== id));
+    toast('정산 내역을 삭제했어요.');
+  };
+
+  const deletePayout = (id: string) => {
+    if (!window.confirm('선택한 내역을 삭제할까요?')) return;
+    setPayouts(ps => ps.filter(p => p.id !== id));
+    toast('요청 기록을 삭제했어요.');
   };
 
   const submitPayout = (e: React.FormEvent) => {
@@ -65,9 +87,9 @@ export function Settlement() {
       </div>
 
       <div className="stat-grid" id="settlementStats">
-        <div className="surface white stat-card"><small>확정된 정산 금액</small><strong>{money(total)}</strong></div>
-        <div className="surface white stat-card"><small>수령 가능 금액</small><strong>{money(left)}</strong></div>
-        <div className="surface white stat-card"><small>지급 요청 금액</small><strong>{money(used)}</strong></div>
+        <div className="surface white stat-card"><small>기록한 정산액</small><strong>{money(total)}</strong></div>
+        <div className="surface white stat-card"><small>요청 전 잔액</small><strong>{money(left)}</strong></div>
+        <div className="surface white stat-card"><small>지급 요청 기록 합계</small><strong>{money(used)}</strong></div>
       </div>
 
       <section className="studio-payout-surface" aria-labelledby="payoutHeading">
@@ -76,14 +98,14 @@ export function Settlement() {
           <h2 id="payoutHeading">수익을 받아보세요.</h2>
           <p>지급 가능한 내역과 수령 정보를 확인한 뒤 요청할 수 있어요.</p>
         </div>
-        <div className="studio-payout-actions" style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+        <div className="studio-payout-actions">
           <span className="studio-available">{money(left)}</span>
           <button type="button" className="button" onClick={openPayoutModal}>수익 받기</button>
         </div>
       </section>
 
       <div className="notice">
-        확정된 정산 금액과 지급 진행 상황을 확인할 수 있어요. 수령 금액은 정산이 확정된 뒤 안내해 드려요.
+        정산 내역과 지급 요청 기록을 확인해 주세요. 실제 송금은 지급 서비스 연결 후 진행돼요.
       </div>
 
       <div className="section-top">
@@ -95,30 +117,40 @@ export function Settlement() {
             <span className="document-icon">₩</span>
             <div>
               <span className="row-name">{s.period} · {s.platform}</span>
-              <span className="row-sub">{s.note || '최종 지급 예정 금액'} · {s.created}</span>
+              <span className="row-sub">{s.note || '수기 등록 정산 내역'} · {s.created}</span>
             </div>
             <div className="row-end">
               <strong>{money(s.amount)}</strong>
-              <span className="status-chip live">확정</span>
+              <button type="button" className="link-btn" aria-label="정산 내역 삭제" onClick={() => deleteStatement(s.id)}>×</button>
             </div>
           </div>
         )) : (
-          <div className="empty-note">확정된 정산 내역이 없어요. 정산이 확정되면 여기에서 확인할 수 있어요.</div>
+          <div className="empty-page">
+            <h2>정산 내역이 없어요.</h2>
+            <p>정산서를 받은 뒤 금액과 기간을 직접 기록할 수 있어요.</p>
+          </div>
         )}
       </div>
 
       <div className="section-top"><h2>지급 요청 기록</h2></div>
       <div className="data-list">
-        {payouts.length ? payouts.map(p => (
+        {payouts.length ? [...payouts].reverse().map(p => (
           <div key={p.id} className="statement-row">
-            <span className="document-icon">₩</span>
+            <span className="document-icon">↗</span>
             <div>
-              <span className="row-name">{money(p.amount)} · 수익 지급 요청</span>
-              <span className="row-sub">{p.created} · {p.status === 'recorded' ? '접수 전 · 신청 내용 보관' : '진행 중'}</span>
+              <span className="row-name">{money(p.amount)} · 지급 요청 기록</span>
+              <span className="row-sub">{p.created} · {p.note || '현재 작업 공간에만 기록됨'}</span>
+            </div>
+            <div className="row-end">
+              <span className="status-chip ready">전송 전</span>
+              <button type="button" className="link-btn" aria-label="요청 기록 삭제" onClick={() => deletePayout(p.id)}>×</button>
             </div>
           </div>
         )) : (
-          <div className="empty-note">지급 요청 내역이 없어요. 수령 가능 금액을 확인하고 지급을 요청할 수 있어요.</div>
+          <div className="empty-page">
+            <h2>지급 요청 기록이 없어요.</h2>
+            <p>지급 요청 내용을 저장하면 이곳에 표시돼요.</p>
+          </div>
         )}
       </div>
 
@@ -142,10 +174,10 @@ export function Settlement() {
                 <p className="help">요청 가능 금액을 초과할 수 없어요.</p>
               </div>
               <div className="studio-receive-account">
-                <span className="document-icon" aria-hidden="true">₩</span>
+                <BankLogo name={MOCK_PAYMENT.bank} />
                 <div>
-                  <strong>국민은행</strong>
-                  <p className="small muted">서린 · •••• 1234</p>
+                  <strong>{MOCK_PAYMENT.bank || '은행 미등록'}</strong>
+                  <p className="small muted">{MOCK_PAYMENT.recipient || '수령인 미등록'} · {MOCK_PAYMENT.last4 ? `•••• ${MOCK_PAYMENT.last4}` : '계좌 미등록'}</p>
                 </div>
                 <span className="studio-account-check" aria-label="선택된 수령 계좌">✓</span>
               </div>

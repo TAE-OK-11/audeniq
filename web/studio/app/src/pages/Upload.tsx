@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../components/Toast';
+import { mockApi } from '../api/mock';
 
 const STEPS = [
   { kicker: '01 / 06 · 발매 정보', title: '어떤 음악을\n발매할까요?', sub: '발매 정보와 아티스트명을 입력해 주세요.' },
@@ -43,6 +44,15 @@ interface Track {
   audioName: string; audioSize: number; explicit: boolean; duration: string;
 }
 
+interface ReleaseOptions {
+  express: boolean; expressAck: boolean; expressReason: string;
+  minor: boolean; guardian: string; guardianRelation: string; guardianContact: string; guardianFileName: string;
+  cover: boolean; sample: boolean; featured: boolean;
+  ai: boolean; aiTool: string;
+  shared: boolean;
+  rerelease: boolean; previousTitle: string; previousId: string;
+}
+
 interface WizardForm {
   artist: string; title: string; type: string; language: string; genre: string;
   genreCustom: string; label: string; notes: string;
@@ -52,6 +62,7 @@ interface WizardForm {
   territories: string[]; platforms: string[];
   ownership: string; phonogram: string; copyright: string;
   rightsChecks: Record<string, boolean>;
+  options: ReleaseOptions;
 }
 
 const newTrack = (): Track => ({
@@ -59,6 +70,15 @@ const newTrack = (): Track => ({
   title: '', version: '', isrc: '', composers: '', lyricists: '', arrangers: '', performers: '',
   audioName: '', audioSize: 0, explicit: false, duration: '',
 });
+
+const EMPTY_OPTIONS: ReleaseOptions = {
+  express: false, expressAck: false, expressReason: '',
+  minor: false, guardian: '', guardianRelation: '', guardianContact: '', guardianFileName: '',
+  cover: false, sample: false, featured: false,
+  ai: false, aiTool: '',
+  shared: false,
+  rerelease: false, previousTitle: '', previousId: '',
+};
 
 const EMPTY: WizardForm = {
   artist: '', title: '', type: 'single', language: 'ko', genre: '', genreCustom: '',
@@ -69,7 +89,19 @@ const EMPTY: WizardForm = {
   territories: ['WORLD'], platforms: DSP.map(d => d[0]),
   ownership: '', phonogram: '', copyright: '',
   rightsChecks: {},
+  options: EMPTY_OPTIONS,
 };
+
+const OPTIONS_CATALOG: [keyof ReleaseOptions, string, string][] = [
+  ['express', '신속 발매 요청', '희망 일정과 우선 검토 가능 여부를 확인해요.'],
+  ['minor', '미성년 아티스트·권리자', '법정대리인의 동의와 권한 확인이 필요해요.'],
+  ['cover', '커버곡', '원곡의 작사·작곡 저작물 이용 권한을 확인해요.'],
+  ['sample', '샘플링·타인 음원 사용', '원본 음원과 저작물의 이용 허락을 확인해요.'],
+  ['featured', '피처링·공동 실연', '참여자 크레딧 및 필요한 이용 허락을 확인해요.'],
+  ['ai', 'AI 생성·보조 제작', '제작 방식과 각 플랫폼의 수용 기준을 검토해요.'],
+  ['shared', '공동 권리자·레이블 계약', '각 권리자와 배급 위임 범위를 확인해요.'],
+  ['rerelease', '기존 발매 이전·재발매', '이전 발매의 식별자와 중복 송출 여부를 확인해요.'],
+];
 
 function rightsOk(f: WizardForm): boolean {
   return RIGHTS_CHECKS.every(([k]) => f.rightsChecks[k]);
@@ -84,13 +116,208 @@ function BackIcon() {
   );
 }
 
+function selectedOptions(o: ReleaseOptions): [keyof ReleaseOptions, string, string][] {
+  return OPTIONS_CATALOG.filter(([id]) => !!o[id]);
+}
+
+function OptionsSection({ form, set }: {
+  form: WizardForm;
+  set: <K extends keyof WizardForm>(key: K, value: WizardForm[K]) => void;
+}) {
+  const o = form.options;
+  const setOpt = <K extends keyof ReleaseOptions>(key: K, value: ReleaseOptions[K]) =>
+    set('options', { ...o, [key]: value });
+
+  return (
+    <>
+      <h2 className="subhead" style={{ marginTop: 25 }}>발매 추가 옵션</h2>
+      <p className="aq-option-intro">해당하는 항목만 선택해 주세요. 필요한 확인 사항과 서류가 자동으로 안내돼요.</p>
+      <div className="aq-options">
+        {OPTIONS_CATALOG.map(([id, title, sub]) => (
+          <label key={id} className="aq-option">
+            <span className="aq-option-text"><strong>{title}</strong><small>{sub}</small></span>
+            <input
+              type="checkbox" aria-label={title}
+              checked={!!o[id]}
+              onChange={e => setOpt(id, e.target.checked as ReleaseOptions[typeof id])}
+            />
+          </label>
+        ))}
+      </div>
+      {o.express && (
+        <div className="aq-option-detail">
+          <h3>신속 발매 요청</h3>
+          <p className="aq-option-intro">신속 발매는 가능 여부와 조건을 확인한 뒤 진행해요. 특정 발매일이나 플랫폼 송출을 보장하지 않아요.</p>
+          <div className="field">
+            <label htmlFor="aqExpressReason">신속 발매가 필요한 이유 (선택)</label>
+            <input
+              id="aqExpressReason" maxLength={300} value={o.expressReason}
+              onChange={e => setOpt('expressReason', e.target.value)}
+              placeholder="예: 공연 일정에 맞춰 발매하고 싶어요."
+            />
+          </div>
+          <label className="check-line">
+            <input
+              type="checkbox" id="aqExpressAck"
+              checked={o.expressAck}
+              onChange={e => setOpt('expressAck', e.target.checked)}
+            />
+            <span>가능한 일정과 비용 등 별도 안내를 확인한 후 진행할게요.<small>신청 단계에서 추가 비용이 자동 결제되지는 않아요.</small></span>
+          </label>
+        </div>
+      )}
+      {o.minor && (
+        <div className="aq-option-detail">
+          <h3>법정대리인 확인</h3>
+          <p className="aq-option-intro">본인 및 권리자의 동의 범위를 확인할 수 있도록 보호자 정보를 입력해 주세요.</p>
+          <div className="field">
+            <label htmlFor="aqGuardian">법정대리인 성명 <span className="required">*</span></label>
+            <input
+              id="aqGuardian" autoComplete="name" maxLength={90} value={o.guardian}
+              onChange={e => setOpt('guardian', e.target.value)}
+              placeholder="법정대리인 성명"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="aqGuardianRelation">아티스트와의 관계 <span className="required">*</span></label>
+            <select
+              id="aqGuardianRelation" value={o.guardianRelation}
+              onChange={e => setOpt('guardianRelation', e.target.value)}
+            >
+              <option value="">관계를 선택해 주세요.</option>
+              {['부', '모', '기타 법정대리인'].map(x => (
+                <option key={x} value={x}>{x}</option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="aqGuardianContact">법정대리인 연락처 또는 이메일 <span className="required">*</span></label>
+            <input
+              id="aqGuardianContact" maxLength={160} value={o.guardianContact}
+              onChange={e => setOpt('guardianContact', e.target.value)}
+              placeholder="확인이 가능한 연락처"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="aqGuardianFile">법정대리인 동의서 (제출할 수 있다면)</label>
+            <input
+              type="file" id="aqGuardianFile"
+              accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/*"
+              onChange={e => {
+                const f = e.target.files?.[0];
+                if (f) setOpt('guardianFileName', f.name);
+              }}
+            />
+            <p className="help">
+              {o.guardianFileName
+                ? `선택한 서류 · ${o.guardianFileName}`
+                : '아직 동의서를 첨부하지 않았다면, 발매 접수 후 권리 증빙 메뉴에서 추가할 수 있어요.'}
+            </p>
+          </div>
+          <p className="aq-option-note">법정대리인 정보 입력만으로 본인 확인이나 동의 검증이 완료되지는 않아요. 담당자 확인 후 서명 단계를 안내해요.</p>
+        </div>
+      )}
+      {o.rerelease && (
+        <div className="aq-option-detail">
+          <h3>기존 발매 정보</h3>
+          <div className="field">
+            <label htmlFor="aqPreviousTitle">기존 발매명</label>
+            <input
+              id="aqPreviousTitle" maxLength={180} value={o.previousTitle}
+              onChange={e => setOpt('previousTitle', e.target.value)}
+              placeholder="기존 앨범·싱글 제목"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="aqPreviousId">기존 UPC / ISRC (보유 시)</label>
+            <input
+              id="aqPreviousId" maxLength={100} value={o.previousId}
+              onChange={e => setOpt('previousId', e.target.value)}
+              placeholder="이전 식별자"
+            />
+          </div>
+          <p className="help">기존 발매 중복과 스트리밍 매칭 여부를 별도로 확인해요.</p>
+        </div>
+      )}
+      {o.ai && (
+        <div className="aq-option-detail">
+          <h3>AI 활용 내역</h3>
+          <div className="field">
+            <label htmlFor="aqAiTool">사용한 도구와 활용 방식 <span className="required">*</span></label>
+            <textarea
+              id="aqAiTool" maxLength={600} rows={2} value={o.aiTool}
+              onChange={e => setOpt('aiTool', e.target.value)}
+              placeholder="도구명, AI가 생성하거나 보조한 부분을 입력해 주세요."
+            />
+          </div>
+          <p className="help">이용 약관과 상업적 이용 허가 자료를 요청할 수 있어요. 모든 배급 플랫폼이 AI 음악을 받는 것은 아니에요.</p>
+        </div>
+      )}
+      <p className="aq-option-note">선택한 내용에 따라 권리·계약 서류가 별도로 준비돼요. 신속 발매와 미성년자 발매를 함께 선택할 수도 있어요.</p>
+    </>
+  );
+}
+
+function OptionDocsBanner({ options }: { options: ReleaseOptions }) {
+  const chosen = selectedOptions(options);
+  if (!chosen.length) return null;
+  return (
+    <div className="aq-req-banner">
+      <h3>추가 확인이 필요한 항목</h3>
+      <p>선택하신 발매 조건에 맞는 서류가 권리 증빙 메뉴에 준비돼요. 원본 확인과 검토는 별도로 진행돼요.</p>
+      <div>{chosen.map(([id, , title]) => <span key={id} className="aq-req-tag">{title}</span>)}</div>
+      {options.minor && (
+        <p style={{ marginTop: 13 }}>법정대리인 동의서는 아티스트 본인의 확인과 별도로 관리돼요.</p>
+      )}
+    </div>
+  );
+}
+
+function FinalReviewBanner({ form }: { form: WizardForm }) {
+  const o = form.options;
+  const chosen = selectedOptions(o);
+  const warnings: string[] = [];
+  if (o.express) warnings.push('신속 발매: 희망일 및 이용 조건 확인 후 진행');
+  if (o.minor) warnings.push('미성년: 법정대리인 동의서 및 자격 확인 필요');
+  if (o.ai) warnings.push('AI 음원: 이용 권한과 플랫폼별 허용 기준 확인 필요');
+  if (chosen.length) warnings.push('선택한 추가 옵션의 관련 서류는 권리 증빙에서 제출');
+  const incomplete = form.tracks.filter(t => !t.audioName || !t.title || !t.composers).length;
+  const withAudio = form.tracks.filter(t => t.audioName).length;
+  return (
+    <div className="aq-req-banner">
+      <h3>접수 전 확인해 주세요.</h3>
+      <div className="aq-review-list">
+        <div className="aq-review-item">
+          <span>발매 옵션</span>
+          <strong>{chosen.length ? chosen.map(([, , t]) => t).join(' · ') : '일반 발매'}</strong>
+        </div>
+        <div className="aq-review-item">
+          <span>트랙 필수 정보</span>
+          <strong>{incomplete ? `${incomplete}곡 보완 필요` : '입력 완료'}</strong>
+        </div>
+        <div className="aq-review-item">
+          <span>원본 음원</span>
+          <strong>{withAudio} / {form.tracks.length}곡 선택</strong>
+        </div>
+        <div className="aq-review-item">
+          <span>커버아트</span>
+          <strong>{form.coverName || '미등록'}</strong>
+        </div>
+      </div>
+      {warnings.map(w => <p key={w} className="aq-option-note">{w}</p>)}
+      <p className="help" style={{ marginTop: 13 }}>
+        접수하기를 누르면 입력 내용을 바탕으로 신청서와 필요한 서류 목록이 생성돼요. 최종 승인 및 배급일은 검토 후 결정돼요.
+      </p>
+    </div>
+  );
+}
+
 export function Upload() {
   const nav = useNavigate();
   const toast = useToast();
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<WizardForm>(EMPTY);
   const [error, setError] = useState('');
-  const [done, setDone] = useState(false);
   const coverInputRef = useRef<HTMLInputElement>(null);
 
   const set = <K extends keyof WizardForm>(key: K, value: WizardForm[K]) =>
@@ -99,36 +326,60 @@ export function Upload() {
   const setTrack = (id: string, key: keyof Track, value: string | boolean | number) =>
     setForm(f => ({ ...f, tracks: f.tracks.map(t => (t.id === id ? { ...t, [key]: value } : t)) }));
 
+  const fail = (msg: string, sel: string | null): boolean => {
+    setError(msg);
+    if (sel) {
+      requestAnimationFrame(() => {
+        document.querySelector<HTMLElement>(sel)?.focus();
+      });
+    }
+    return false;
+  };
+
   const validate = (): boolean => {
     if (step === 0) {
-      if (!form.artist.trim()) { setError('아티스트명을 입력해 주세요.'); return false; }
-      if (!form.title.trim()) { setError('발매 제목을 입력해 주세요.'); return false; }
+      if (!form.artist.trim()) return fail('아티스트명을 입력해 주세요.', '#f-artist');
+      if (!form.title.trim()) return fail('발매 제목을 입력해 주세요.', '#f-title');
       const genreVal = form.genre === '__other__' ? form.genreCustom : form.genre;
-      if (!genreVal.trim()) { setError('장르를 선택해 주세요.'); return false; }
+      if (!genreVal.trim()) return fail('장르를 선택해 주세요.', '#f-genre');
     }
     if (step === 1) {
-      for (const t of form.tracks) {
-        if (!t.title.trim()) { setError('곡 제목을 입력해 주세요.'); return false; }
-        if (!t.composers.trim()) { setError('작곡 참여자를 입력해 주세요.'); return false; }
+      for (let i = 0; i < form.tracks.length; i++) {
+        const t = form.tracks[i];
+        if (!t.title.trim()) return fail(`트랙 ${i + 1}의 곡 제목을 입력해 주세요.`, `#tr-${i}-title`);
+        if (!t.composers.trim()) return fail(`트랙 ${i + 1}의 작곡자를 입력해 주세요.`, `#tr-${i}-composers`);
+        if (!t.audioName) return fail(`트랙 ${i + 1}의 음원 파일을 선택해 주세요.`, `#trackFile-${i}`);
       }
     }
-    if (step === 2 && !form.coverName) { setError('커버아트를 등록해 주세요.'); return false; }
-    if (step === 3 && !form.releaseDate) { setError('발매 예정일을 입력해 주세요.'); return false; }
+    if (step === 2 && !form.coverName) return fail('커버아트를 등록해 주세요.', '#coverFile');
+    if (step === 3) {
+      if (!form.releaseDate) return fail('발매일을 선택해 주세요.', '#f-releaseDate');
+      if (!form.platforms.length) return fail('배급할 플랫폼을 하나 이상 선택해 주세요.', null);
+      const o = form.options;
+      if (o.express && !o.expressAck) return fail('신속 발매 안내를 확인해 주세요.', '#aqExpressAck');
+      if (o.minor) {
+        if (!o.guardian.trim()) return fail('법정대리인 성명을 입력해 주세요.', '#aqGuardian');
+        if (!o.guardianRelation) return fail('법정대리인과의 관계를 선택해 주세요.', '#aqGuardianRelation');
+        if (!o.guardianContact.trim()) return fail('법정대리인의 연락처를 입력해 주세요.', '#aqGuardianContact');
+      }
+      if (o.ai && !o.aiTool.trim()) return fail('AI 도구명과 활용 방식을 입력해 주세요.', '#aqAiTool');
+    }
     if (step === 4) {
-      if (!form.ownership.trim()) { setError('음원(마스터) 권리자를 입력해 주세요.'); return false; }
-      if (!form.phonogram.trim()) { setError('℗ 음반제작자 권리 표기를 입력해 주세요.'); return false; }
-      if (!form.copyright.trim()) { setError('© 아트워크 / 앨범 권리 표기를 입력해 주세요.'); return false; }
-      if (!rightsOk(form)) { setError('필수 확인 항목을 모두 체크해 주세요.'); return false; }
+      if (!form.ownership.trim()) return fail('음원 권리자를 입력해 주세요.', '#f-ownership');
+      if (!form.phonogram.trim()) return fail('℗ 표기를 입력해 주세요.', '#f-phonogram');
+      if (!form.copyright.trim()) return fail('© 표기를 입력해 주세요.', '#f-copyright');
+      if (!rightsOk(form)) return fail('권리 확인 항목을 모두 확인해 주세요.', null);
     }
     setError('');
     return true;
   };
 
-  const next = () => {
+  const next = async () => {
     if (!validate()) return;
     if (step === STEPS.length - 1) {
-      setDone(true);
+      const r = await mockApi.createRelease({ title: form.title.trim(), release_date: form.releaseDate || '' });
       toast('발매 신청이 접수됐어요.');
+      nav(`/releases/${r.id}`);
       return;
     }
     setStep(s => s + 1);
@@ -160,28 +411,6 @@ export function Upload() {
     }));
     toast('음원 파일이 등록됐어요.');
   };
-
-  if (done) {
-    return (
-      <div className="wizard">
-        <div className="wizard-topbar" aria-label="발매 신청 탐색">
-          <button type="button" className="wizard-topback" aria-label="이전으로 돌아가기" onClick={() => nav('/')}>
-            <BackIcon />
-          </button>
-          <span className="wizard-top-title">새로운 발매</span>
-          <span className="wizard-top-count">완료</span>
-        </div>
-        <div className="empty-page" style={{ marginTop: 40 }}>
-          <h3>발매 신청이 접수됐어요.</h3>
-          <p>신청 내용과 권리 확인서가 생성됐어요. (테스트 모드)</p>
-          <div style={{ marginTop: 20, display: 'flex', gap: 10, justifyContent: 'center' }}>
-            <button type="button" className="button" onClick={() => nav('/contracts')}>배급신청서 보기</button>
-            <button type="button" className="button secondary" onClick={() => nav('/')}>홈으로</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   const s = STEPS[step];
   const genreIsCustom = form.genre === '__other__';
@@ -225,11 +454,11 @@ export function Upload() {
             <div className="form-grid">
               <div className="field">
                 <label htmlFor="f-artist">아티스트명 <span className="required">*</span></label>
-                <input id="f-artist" value={form.artist} onChange={e => set('artist', e.target.value)} maxLength={120} placeholder="활동명을 입력해 주세요." />
+                <input id="f-artist" value={form.artist} onChange={e => set('artist', e.target.value)} maxLength={120} placeholder="예: AUDENIQ" />
               </div>
               <div className="field">
                 <label htmlFor="f-title">발매 제목 <span className="required">*</span></label>
-                <input id="f-title" value={form.title} onChange={e => set('title', e.target.value)} maxLength={180} placeholder="싱글 또는 앨범 제목을 입력해 주세요." />
+                <input id="f-title" value={form.title} onChange={e => set('title', e.target.value)} maxLength={180} placeholder="싱글 또는 앨범 제목" />
               </div>
               <div className="field">
                 <label htmlFor="f-type">발매 유형</label>
@@ -238,11 +467,17 @@ export function Upload() {
                 </select>
               </div>
               <div className="field">
+                <label htmlFor="f-language">주요 언어</label>
+                <select id="f-language" value={form.language} onChange={e => set('language', e.target.value)}>
+                  {LANGUAGES.map(([id, title]) => <option key={id} value={id}>{title}</option>)}
+                </select>
+              </div>
+              <div className="field">
                 <label htmlFor="f-genre">장르 <span className="required">*</span></label>
                 <select
                   id="f-genre" value={genreIsCustom ? '__other__' : form.genre}
                   onChange={e => set('genre', e.target.value)}
-                  aria-describedby="genreHelp"
+                  required aria-describedby="genreHelp"
                 >
                   {GENRES.map(([id, title]) => (
                     <option key={id || 'empty'} value={id} disabled={id === ''}>{title}</option>
@@ -258,29 +493,21 @@ export function Upload() {
                 )}
                 <p className="help" id="genreHelp">발매할 음악의 장르를 선택해 주세요.</p>
               </div>
-            </div>
-            <details className="studio-expand">
-              <summary>발매 정보 더 입력하기 <span aria-hidden="true">＋</span></summary>
-              <div className="form-grid">
-                <div className="field">
-                  <label htmlFor="f-language">주요 언어</label>
-                  <select id="f-language" value={form.language} onChange={e => set('language', e.target.value)}>
-                    {LANGUAGES.map(([id, title]) => <option key={id} value={id}>{title}</option>)}
-                  </select>
-                </div>
+              <details className="studio-expand">
+                <summary>추가 정보 <span aria-hidden="true">＋</span></summary>
                 <div className="field">
                   <label htmlFor="f-label">레이블 / 발매사 표기</label>
                   <input id="f-label" value={form.label} onChange={e => set('label', e.target.value)} maxLength={120} placeholder="권리 계약에 맞는 표기" />
                 </div>
-              </div>
-              <div className="field">
-                <label htmlFor="f-notes">앨범 소개</label>
-                <textarea
-                  id="f-notes" value={form.notes} onChange={e => set('notes', e.target.value)}
-                  rows={3} maxLength={1500} placeholder="발매 소개를 작성해 주세요."
-                />
-              </div>
-            </details>
+              </details>
+            </div>
+            <div className="field">
+              <label htmlFor="f-notes">앨범 소개</label>
+              <textarea
+                id="f-notes" value={form.notes} onChange={e => set('notes', e.target.value)}
+                rows={3} maxLength={1500} placeholder="발매 소개와 전달 메모"
+              />
+            </div>
           </section>
         )}
 
@@ -363,7 +590,13 @@ export function Upload() {
               ))}
             </div>
             <div className="spaced-actions">
-              <button type="button" className="button secondary" onClick={() => set('tracks', [...form.tracks, newTrack()])}>
+              <button
+                type="button" className="button secondary"
+                onClick={() => {
+                  set('tracks', [...form.tracks, newTrack()]);
+                  toast('곡을 추가했어요.');
+                }}
+              >
                 ＋ 트랙 추가
               </button>
               <span className="small muted">곡명·참여자·음원 파일 확인</span>
@@ -461,6 +694,7 @@ export function Upload() {
                 ))}
               </div>
             </details>
+            <OptionsSection form={form} set={set} />
           </section>
         )}
 
@@ -496,6 +730,7 @@ export function Upload() {
             <div className="notice">
               권리 확인 체크는 실제 계약 체결이나 저작권 확인을 대신하지 않아요. 권리 관련 증빙은 '계약서·권리' 메뉴에서 발매별로 등록해 주세요.
             </div>
+            <OptionDocsBanner options={form.options} />
           </section>
         )}
 
@@ -510,11 +745,12 @@ export function Upload() {
             <div className="notice" style={{ marginTop: 24 }}>
               '접수하기'를 누르면 신청 내용과 권리 확인서가 생성돼요. 접수 번호 발급과 담당자 심사는 서버가 연결된 후 진행돼요.
             </div>
+            <FinalReviewBanner form={form} />
           </section>
         )}
       </div>
 
-      {error && <div className="notice error" role="alert" style={{ marginTop: 16 }}>{error}</div>}
+      {error && <div className="notice error" role="alert">{error}</div>}
 
       <div className="step-actions">
         <button type="button" className="button secondary" onClick={back}>
