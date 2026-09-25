@@ -4,13 +4,19 @@ import { mockApi } from '../api/mock';
 import type { ReleaseDetail as RD } from '../api/client';
 import { useToast } from '../components/Toast';
 import { Modal } from '../components/Modal';
+import { STATUS_LABEL } from '../lib/format';
 
-const STATUS_MAP: Record<string, { chip: string; label: string }> = {
-  LIVE: { chip: 'live', label: '발매 완료' },
-  STAGE1_PASSED: { chip: 'review', label: '심사 통과' },
-  STAGE1_CORRECTION: { chip: 'needs', label: '수정 필요' },
-  DRAFT: { chip: 'draft', label: '초안' },
-};
+const KINDS: [string, string][] = [
+  ['single', '싱글'], ['ep', 'EP'], ['album', '정규 앨범'], ['compilation', '컴필레이션'],
+];
+
+const DSP: [string, string][] = [
+  ['melon', '멜론'], ['genie', '지니'], ['flo', 'FLO'], ['bugs', '벅스'],
+  ['spotify', 'Spotify'], ['apple', 'Apple Music / iTunes'], ['youtube', 'YouTube Music'],
+  ['amazon', 'Amazon Music'], ['tidal', 'TIDAL'], ['deezer', 'Deezer'], ['qobuz', 'Qobuz'],
+];
+
+const RIGHTS_KEYS = ['rightsMaster', 'rightsComposition', 'rightsArtwork', 'rightsSamples', 'rightsConsent'];
 
 const DETAIL_TABS = [
   { value: 'overview', label: '기본 정보' },
@@ -18,6 +24,10 @@ const DETAIL_TABS = [
   { value: 'delivery', label: '배급·권리' },
   { value: 'history', label: '변경 기록' },
 ];
+
+function rightsOk(checks: Record<string, boolean> | undefined): boolean {
+  return RIGHTS_KEYS.every(k => checks?.[k]);
+}
 
 export function ReleaseDetail() {
   const { id } = useParams();
@@ -36,12 +46,14 @@ export function ReleaseDetail() {
   if (error) return <div className="notice error">{error}</div>;
   if (!rel) return <p style={{ color: 'var(--muted)' }}>불러오는 중...</p>;
 
-  const st = STATUS_MAP[rel.status] ?? { chip: 'draft', label: rel.status };
-  const isDraft = rel.status === 'DRAFT';
+  const d = rel.draft;
+  const isDraft = rel.status === 'draft';
+  const editLabel = isDraft ? '계속 작성' : rel.status === 'live' ? '수정 요청 준비' : '수정하기';
+  const kindLabel = KINDS.find(k => k[0] === d?.type)?.[1] || '앨범';
 
-  const handleDelete = () => {
-    // mock 삭제
+  const handleDelete = async () => {
     setDeleteOpen(false);
+    await mockApi.deleteRelease(rel.id);
     toast('발매를 삭제했어요.');
     nav('/releases');
   };
@@ -56,15 +68,17 @@ export function ReleaseDetail() {
             className="button secondary"
             onClick={() => nav(`/upload?edit=${rel.id}`)}
           >
-            {isDraft ? '계속 작성' : '수정하기'}
+            {editLabel}
           </button>
-          <button
-            type="button"
-            className="button danger"
-            onClick={() => setDeleteOpen(true)}
-          >
-            삭제
-          </button>
+          {isDraft && (
+            <button
+              type="button"
+              className="button danger"
+              onClick={() => setDeleteOpen(true)}
+            >
+              삭제
+            </button>
+          )}
         </div>
       </div>
 
@@ -72,22 +86,22 @@ export function ReleaseDetail() {
         <div>
           <p className="eyebrow">RELEASE DETAIL</p>
           <h1>{rel.title || '제목 없는 발매'}</h1>
-          <p>테스트 레이블 · {rel.track_count}곡 · {rel.release_date || '발매일 미정'}</p>
+          <p>{rel.artist || '아티스트 미입력'} · {rel.tracks.length}곡 · {rel.release_date || '발매일 미정'}</p>
         </div>
-        <div><span className={`status-chip ${st.chip}`}>{st.label}</span></div>
+        <div><span className={`status-chip ${rel.status}`}>{STATUS_LABEL[rel.status] || rel.status}</span></div>
       </div>
 
       <div className="studio-album-hero" aria-label="앨범 아트워크 및 발매 정보">
         <div className="studio-album-art">
-          <span className="cover" aria-hidden="true">{rel.title.charAt(0)}</span>
+          <span className="cover" aria-hidden="true">♫</span>
         </div>
         <div className="studio-album-summary">
-          <span className="eyebrow">싱글</span>
+          <span className="eyebrow">{kindLabel}</span>
           <h2>{rel.title || '제목 없는 발매'}</h2>
-          <p>테스트 레이블</p>
+          <p>{rel.artist || '아티스트 미입력'}</p>
           <div className="studio-album-facts">
-            <span>{rel.track_count}곡</span>
-            <span>장르 미등록</span>
+            <span>{rel.tracks.length}곡</span>
+            <span>{d?.genre || '장르 미등록'}</span>
             <span>{rel.release_date || '발매일 미정'}</span>
           </div>
         </div>
@@ -96,7 +110,7 @@ export function ReleaseDetail() {
       <div className="tabs" role="tablist" aria-label="발매 상세 메뉴">
         {DETAIL_TABS.map(t => (
           <button
-            key={t.value} type="button" className="tab" role="tab"
+            key={t.value} type="button" className="tab" data-release-tab={t.value}
             aria-selected={tab === t.value}
             onClick={() => setTab(t.value)}
           >{t.label}</button>
@@ -109,21 +123,21 @@ export function ReleaseDetail() {
             <div>
               <h2 className="subhead">발매 정보</h2>
               <dl className="information">
-                <div><dt>아티스트</dt><dd>테스트 레이블</dd></div>
-                <div><dt>발매 유형</dt><dd>싱글</dd></div>
+                <div><dt>아티스트</dt><dd>{rel.artist || ''}</dd></div>
+                <div><dt>발매 유형</dt><dd>{d?.type ? (KINDS.find(k => k[0] === d.type)?.[1] || d.type) : ''}</dd></div>
                 <div><dt>발매 예정일</dt><dd>{rel.release_date || '미정'}</dd></div>
-                <div><dt>UPC / EAN</dt><dd>등록 전</dd></div>
-                <div><dt>장르</dt><dd>미입력</dd></div>
-                <div><dt>레이블</dt><dd>미입력</dd></div>
+                <div><dt>UPC / EAN</dt><dd>{d?.upc || '등록 전'}</dd></div>
+                <div><dt>장르</dt><dd>{d?.genre || '미입력'}</dd></div>
+                <div><dt>레이블</dt><dd>{d?.label || '미입력'}</dd></div>
               </dl>
               <h2 className="subhead">앨범 소개</h2>
-              <p className="muted small break">등록된 소개가 없어요.</p>
+              <p className="muted small break">{d?.notes || '등록된 소개가 없어요.'}</p>
             </div>
             <div className="studio-album-aside">
               <h2 className="subhead">커버아트 정보</h2>
-              <p className="small muted break">커버아트 없음</p>
+              <p className="small muted break">{d?.coverName || '커버아트 없음'}</p>
               <h2 className="subhead">진행 상태</h2>
-              <span className={`status-chip ${st.chip}`}>{st.label}</span>
+              <span className={`status-chip ${rel.status}`}>{STATUS_LABEL[rel.status] || rel.status}</span>
               <p className="small muted" style={{ marginTop: 16 }}>
                 상세 정보를 수정하려면 상단의 수정하기를 눌러 주세요.
               </p>
@@ -139,15 +153,15 @@ export function ReleaseDetail() {
                 <div key={t.id} className="track-row">
                   <div className="document-icon">{i + 1}</div>
                   <div>
-                    <span className="row-name">{t.title || '곡명 없음'}</span>
+                    <span className="row-name">{t.title || '곡명 없음'}{t.version ? ` (${t.version})` : ''}</span>
                     <span className="row-sub">
-                      ISRC {t.isrc || '등록 전'} · 작곡 미입력 · 작사 없음
+                      ISRC {t.isrc || '등록 전'} · 작곡 {t.composers || '미입력'} · 작사 {t.lyricists || '없음'}
                     </span>
                     <span className="row-sub">
-                      음원: 미등록 · 원본 파일 없음
+                      음원: {t.audioName || '미등록'} · {t.sample ? '원본 파일 확인 필요' : t.audioName ? '파일 재첨부가 필요할 수 있어요' : '원본 파일 없음'}
                     </span>
                   </div>
-                  <span className="status-chip draft">파일 없음</span>
+                  <span className={`status-chip ${t.audioName ? 'ready' : 'draft'}`}>{t.audioName ? '파일명 등록' : '파일 없음'}</span>
                 </div>
               ))}
             </div>
@@ -162,78 +176,69 @@ export function ReleaseDetail() {
             <div>
               <h2 className="subhead">배급 설정</h2>
               <dl className="information">
-                <div><dt>희망 배급 지역</dt><dd>전 세계</dd></div>
+                <div><dt>희망 배급 지역</dt><dd>{d && d.territories.includes('WORLD') ? '전 세계' : '지정 안 함'}</dd></div>
                 <div><dt>발매 예정일</dt><dd>{rel.release_date || '미정'}</dd></div>
               </dl>
               <div className="tag-row">
-                {['Spotify', 'Apple Music', 'YouTube Music', 'Melon'].map(p => (
-                  <span key={p} className="tag">{p}</span>
-                ))}
+                {d?.platforms?.length ? (
+                  d.platforms.map(p => <span key={p} className="tag">{DSP.find(x => x[0] === p)?.[1] || p}</span>)
+                ) : (
+                  <span className="muted small">플랫폼 미선택</span>
+                )}
               </div>
               <h2 className="subhead">권리 확인</h2>
               <dl className="information">
-                <div><dt>마스터 권리자</dt><dd>미입력</dd></div>
-                <div><dt>℗ 표기</dt><dd>미입력</dd></div>
-                <div><dt>© 표기</dt><dd>미입력</dd></div>
+                <div><dt>마스터 권리자</dt><dd>{d?.ownership || '미입력'}</dd></div>
+                <div><dt>℗ 표기</dt><dd>{d?.phonogram || '미입력'}</dd></div>
+                <div><dt>© 표기</dt><dd>{d?.copyright || '미입력'}</dd></div>
               </dl>
+              <p className="small muted">{rightsOk(d?.rightsChecks) ? '신청서 권리 확인 항목 작성 완료' : '권리 확인 항목을 보완해 주세요.'}</p>
             </div>
-            <div>
-              <section className="surface">
-                <div className="section-top">
-                  <h2>계약·증빙</h2>
-                </div>
-                <p className="small muted">
-                  배급 신청서와 권리 증빙은 계약서 메뉴에서 확인할 수 있어요.
-                </p>
-                <button
-                  type="button"
-                  className="link-btn"
-                  style={{ marginTop: 12 }}
-                  onClick={() => nav('/contracts')}
-                >
-                  문서 관리 ↗
-                </button>
-              </section>
+            <div className="surface white">
+              <h2 className="subhead">계약·증빙</h2>
+              <p className="small muted">발매 관련 권리 증빙과 계약 문서를 관리해 보세요.</p>
+              <button className="button secondary" type="button" onClick={() => nav('/contracts')}>문서 관리 ↗</button>
             </div>
           </div>
         )}
 
         {tab === 'history' && (
-          <div className="data-list">
-            <div className="track-row">
-              <div><span className="row-name">발매 정보 등록</span></div>
-              <div><span className="row-sub">{rel.created_at}</span></div>
-              <div />
+          <>
+            <h2 className="subhead">변경 기록</h2>
+            <div className="data-list">
+              {d?.history?.length ? d.history.map((h, i) => (
+                <div key={i} className="statement-row">
+                  <div className="document-icon">↗</div>
+                  <div>
+                    <span className="row-name">{h.text}</span>
+                    <span className="row-sub">{new Date(h.time).toLocaleString('ko-KR')}</span>
+                  </div>
+                </div>
+              )) : (
+                <div className="empty-note">등록된 변경 기록이 없어요.</div>
+              )}
             </div>
-            <div className="track-row">
-              <div><span className="row-name">상태 변경: {st.label}</span></div>
-              <div><span className="row-sub">{rel.created_at}</span></div>
-              <div />
-            </div>
-          </div>
+          </>
         )}
       </div>
 
       {deleteOpen && (
-        <Modal
-          title="발매 삭제"
-          onClose={() => setDeleteOpen(false)}
-        >
-        <p className="muted small">
-          {rel.title} 발매를 현재 작업 공간의 카탈로그에서 삭제할까요? 이 작업은 되돌릴 수 없어요.
-        </p>
-        <div className="row-actions" style={{ marginTop: 24 }}>
-          <button type="button" className="button danger" onClick={handleDelete}>
-            삭제
-          </button>
-          <button
-            type="button"
-            className="button secondary"
-            onClick={() => setDeleteOpen(false)}
-          >
-            취소
-          </button>
-        </div>
+        <Modal title="발매 삭제" onClose={() => setDeleteOpen(false)}>
+          <p className="muted small">
+            {rel.title} 발매를 현재 작업 공간의 카탈로그에서 삭제할까요? 이 작업은 되돌릴 수 없어요.
+          </p>
+          <div className="row-actions" style={{ marginTop: 24 }}>
+            <button type="button" className="button danger" onClick={handleDelete}>
+              삭제
+            </button>
+            <button
+              type="button"
+              className="button secondary"
+              onClick={() => setDeleteOpen(false)}
+            >
+              취소
+            </button>
+          </div>
         </Modal>
       )}
     </>

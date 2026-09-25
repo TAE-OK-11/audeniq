@@ -4,9 +4,11 @@ interface ModalProps {
   title: string;
   onClose: () => void;
   children: ReactNode;
+  /** #modal에 추가할 클래스 (예: aq-payout-setup-mode, aq-signature-mode) */
+  modalClass?: string;
 }
 
-export function Modal({ title, onClose, children }: ModalProps) {
+export function Modal({ title, onClose, children, modalClass }: ModalProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -22,7 +24,7 @@ export function Modal({ title, onClose, children }: ModalProps) {
   return (
     <div
       id="modal"
-      className="modal"
+      className={modalClass ? `modal ${modalClass}` : 'modal'}
       onClick={e => {
         if (e.target === e.currentTarget) onClose();
       }}

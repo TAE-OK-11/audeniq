@@ -1,15 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { mockApi } from '../api/mock';
 import type { Release, Track } from '../api/client';
-
-// mock 상태를 라이브 필터 카테고리로 매핑
-const STATUS_MAP: Record<string, { chip: string; label: string }> = {
-  LIVE: { chip: 'live', label: '발매 완료' },
-  STAGE1_PASSED: { chip: 'review', label: '검토 중' },
-  STAGE1_CORRECTION: { chip: 'needs', label: '보완 필요' },
-  DRAFT: { chip: 'draft', label: '작성 중' },
-};
+import { STATUS_LABEL } from '../lib/format';
 
 const FILTERS = [
   { value: 'all', label: '전체' },
@@ -74,7 +67,8 @@ export function Releases() {
     return () => { cancelled = true; };
   }, []);
 
-  const chipOf = (status: string) => STATUS_MAP[status]?.chip ?? 'draft';
+  const chipOf = (status: string) => status || 'draft';
+  const labelOf = (status: string) => STATUS_LABEL[status] || status;
 
   const filtered = list.filter(r => {
     const matchFilter = filter === 'all' || chipOf(r.status) === filter;
@@ -95,20 +89,20 @@ export function Releases() {
       <div className="view-title">
         <div>
           <p className="eyebrow">CATALOG</p>
-          <h1>내 음악</h1>
+          <h1 id="catalogTitle">내 음악</h1>
           <p>발매한 음악과 심사 진행 상황을 한눈에 확인해 보세요.</p>
         </div>
-        <Link className="button" to="/upload">새 발매</Link>
+        <button type="button" className="button" onClick={() => nav('/upload')}>새 발매</button>
       </div>
 
       <div className="tabs" role="tablist" aria-label="카탈로그 메뉴">
         <button
-          type="button" className="tab" role="tab"
+          type="button" className="tab" data-cat-tab="releases"
           aria-selected={tab === 'releases'}
           onClick={() => setTab('releases')}
         >발매 목록</button>
         <button
-          type="button" className="tab" role="tab"
+          type="button" className="tab" data-cat-tab="tracks"
           aria-selected={tab === 'tracks'}
           onClick={() => setTab('tracks')}
         >전체 트랙</button>
@@ -120,14 +114,14 @@ export function Releases() {
         <div>
           <div className="toolbar">
             <input
-              type="search" aria-label="발매 검색" placeholder="발매명·아티스트 검색"
+              id="catalogSearch" type="search" aria-label="발매 검색" placeholder="발매명·아티스트 검색"
               value={query} onChange={e => setQuery(e.target.value)}
             />
-            <select aria-label="발매 상태" value={filter} onChange={e => setFilter(e.target.value)}>
+            <select id="catalogFilter" aria-label="발매 상태" value={filter} onChange={e => setFilter(e.target.value)}>
               {SELECT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
-          <div className="studio-filterrail" role="group" aria-label="발매 진행 상태">
+          <div className="studio-filterrail" id="catalogFilterRail" role="group" aria-label="발매 진행 상태">
             {FILTERS.map(f => {
               const active = filter === f.value;
               const count = f.value === 'all'
@@ -137,6 +131,7 @@ export function Releases() {
                 <button
                   key={f.value} type="button"
                   className={`studio-filter${active ? ' active' : ''}`}
+                  data-status-filter={f.value}
                   aria-pressed={active}
                   onClick={() => setFilter(f.value)}
                 >
@@ -146,27 +141,24 @@ export function Releases() {
               );
             })}
           </div>
-          <div className="studio-result-count" aria-live="polite">{filtered.length}개의 발매</div>
+          <div className="studio-result-count" id="catalogCount" aria-live="polite">{filtered.length}개의 발매</div>
           {filtered.length ? (
             <div className="data-list studio-catalog-list">
-              {filtered.map(r => {
-                const st = STATUS_MAP[r.status] ?? { chip: 'draft', label: r.status };
-                return (
-                  <article key={r.id} className="release-row studio-album-row" onClick={() => openRelease(r.id)} style={{ cursor: 'pointer' }}>
-                    <Cover />
-                    <div className="min-0">
-                      <button type="button" className="row-name" onClick={e => { e.stopPropagation(); openRelease(r.id); }}>
-                        {r.title || '제목 없는 발매'}
-                      </button>
-                      <span className="row-sub">{r.artist || '아티스트 미입력'} · {r.track_count}곡</span>
-                      <span className="row-sub">{r.release_date ?? '발매일 미정'}</span>
-                    </div>
-                    <div className="row-end">
-                      <span className={`status-chip ${st.chip}`}>{st.label}</span>
-                    </div>
-                  </article>
-                );
-              })}
+              {filtered.map(r => (
+                <article key={r.id} className="release-row studio-album-row" onClick={() => openRelease(r.id)} style={{ cursor: 'pointer' }}>
+                  <Cover />
+                  <div className="min-0">
+                    <button type="button" className="row-name" onClick={e => { e.stopPropagation(); openRelease(r.id); }}>
+                      {r.title || '제목 없는 발매'}
+                    </button>
+                    <span className="row-sub">{r.artist || '아티스트 미입력'} · {r.track_count}곡</span>
+                    <span className="row-sub">{r.release_date ?? '발매일 미정'}</span>
+                  </div>
+                  <div className="row-end">
+                    <span className={`status-chip ${chipOf(r.status)}`}>{labelOf(r.status)}</span>
+                  </div>
+                </article>
+              ))}
             </div>
           ) : (
             <div className="empty-page">
@@ -179,7 +171,7 @@ export function Releases() {
         <div>
           <div className="toolbar">
             <input
-              type="search" aria-label="트랙 검색" placeholder="곡명·아티스트·ISRC 검색"
+              id="trackSearch" type="search" aria-label="트랙 검색" placeholder="곡명·아티스트·ISRC 검색"
               value={trackQuery} onChange={e => setTrackQuery(e.target.value)}
             />
           </div>

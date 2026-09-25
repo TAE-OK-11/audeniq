@@ -1,19 +1,11 @@
+// 권리·보완 서류 — 라이브 view-rights / renderRights / openRequiredDocForm 대응
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { addDoc, useDocs, type DocRecord } from '../store/docs';
+import { DocCard, DocEmpty } from '../components/DocCard';
+import { DocumentModal } from '../components/DocumentModal';
+import { SignatureModal } from '../components/SignatureModal';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
-
-interface RightsDoc {
-  id: string;
-  title: string;
-  releaseTitle: string;
-  kind: string;
-  reviewStatus: 'awaiting_documents' | 'review' | 'prepared' | 'approved' | 'needs';
-  created: string;
-  fileName: string;
-  reviewNote: string;
-  version: string;
-}
 
 const REQUIRED_DOCS: [string, string, string][] = [
   ['master', '마스터 음원 권리 확인서', '본인은 해당 마스터 음원에 관한 배급 권한을 보유하거나 권리자로부터 적법한 이용 허락을 받았음을 확인합니다.'],
@@ -24,62 +16,40 @@ const REQUIRED_DOCS: [string, string, string][] = [
   ['custom', '기타 요청 서류', '요청받은 서류의 명칭과 해당 발매에 필요한 권리 범위를 확인해 주세요.'],
 ];
 
+// mock 발매 목록 (디자인 테스트용)
 const MOCK_RELEASES = [
-  { id: 'r1', title: '첫 번째 싱글' },
-  { id: 'r2', title: '여름 EP' },
-  { id: 'r3', title: '데모 트랙' },
+  { id: 'r1', title: '첫 번째 싱글', artist: '서린' },
+  { id: 'r2', title: '여름 EP', artist: '서린' },
+  { id: 'r3', title: '데모 트랙', artist: '서린' },
 ];
 
-const INITIAL: RightsDoc[] = [
-  { id: 'd1', title: '첫 번째 싱글 · 마스터 음원 권리 확인서', releaseTitle: '첫 번째 싱글', kind: 'master', reviewStatus: 'review', created: '2026-09-22', fileName: '', reviewNote: '', version: '1.0' },
-  { id: 'd2', title: '여름 EP · 작사·작곡 및 커버곡 이용 허락서', releaseTitle: '여름 EP', kind: 'composition', reviewStatus: 'needs', created: '2026-09-23', fileName: 'credit_proof.pdf', reviewNote: '서명란에 서명자 이름이 빠져 있어요. 보완 후 다시 제출해 주세요.', version: '1.0' },
-  { id: 'd3', title: '데모 트랙 · 커버아트 이용 허락서', releaseTitle: '데모 트랙', kind: 'artwork', reviewStatus: 'awaiting_documents', created: '2026-09-24', fileName: '', reviewNote: '', version: '1.0' },
-];
-
-function docState(c: RightsDoc): string {
-  if (c.reviewStatus === 'approved') return '검토 완료';
-  if (c.reviewStatus === 'needs') return '보완 요청';
-  if (c.reviewStatus === 'review' || c.reviewStatus === 'prepared') return '검토 중';
-  return '서류 접수 대기';
-}
-
-function DocCard({ c, onOpen }: { c: RightsDoc; onOpen: (id: string) => void }) {
-  const state = docState(c);
-  const tone = c.reviewStatus === 'needs' ? 'is-needs'
-    : c.reviewStatus === 'approved' ? 'is-approved'
-    : (c.reviewStatus === 'review' || c.reviewStatus === 'prepared') ? 'is-review' : '';
-  return (
-    <article className={`aq-doc-card ${tone}`}>
-      <span className="document-icon" aria-hidden="true">▤</span>
-      <div className="aq-doc-copy">
-        <button type="button" className="row-name" onClick={() => onOpen(c.id)}>{c.title}</button>
-        <span className="row-sub">{c.releaseTitle || '공통 문서'} · {c.created}</span>
-        <div className="aq-doc-state-line">
-          <span className="aq-doc-state-pill">{state}</span>
-          {c.fileName && <span>{c.fileName}</span>}
-          {c.reviewNote && <span>{c.reviewNote}</span>}
-        </div>
-      </div>
-      <button className="button secondary" type="button" onClick={() => onOpen(c.id)}>
-        {c.reviewStatus === 'needs' ? '보완하기' : '자세히 보기'}
-      </button>
-    </article>
-  );
+function stampNow(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
 export function Rights() {
-  const navigate = useNavigate();
   const toast = useToast();
-  const [docs, setDocs] = useState<RightsDoc[]>(INITIAL);
+  const docs = useDocs();
   const [formOpen, setFormOpen] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [signing, setSigning] = useState(false);
   const [releaseId, setReleaseId] = useState('');
   const [kind, setKind] = useState(REQUIRED_DOCS[0][0]);
   const [docName, setDocName] = useState(REQUIRED_DOCS[0][1]);
-  const [fileName, setFileName] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const needed = docs.filter(c => !['review', 'prepared', 'approved'].includes(c.reviewStatus)).length;
-  const review = docs.filter(c => ['review', 'prepared'].includes(c.reviewStatus)).length;
-  const fix = docs.filter(c => c.reviewStatus === 'needs').length;
+  const openDoc = openId ? docs.find(d => d.id === openId) ?? null : null;
+  const rights = docs
+    .filter(c => c.kind === 'rights')
+    .slice()
+    .sort((a, b) => String(b.created || '').localeCompare(String(a.created || '')));
+
+  const needed = rights.filter(c => !['review', 'prepared', 'approved'].includes(c.reviewStatus)).length;
+  const review = rights.filter(c => ['review', 'prepared'].includes(c.reviewStatus)).length;
+  const fix = rights.filter(c => c.reviewStatus === 'needs').length;
 
   const onKindChange = (v: string) => {
     setKind(v);
@@ -87,31 +57,56 @@ export function Rights() {
     if (item) setDocName(item[1]);
   };
 
-  const submitForm = (e: React.FormEvent) => {
+  const submitForm = async (e: React.FormEvent) => {
     e.preventDefault();
     const r = MOCK_RELEASES.find(x => x.id === releaseId);
     if (!r) { toast('관련 발매를 선택해 주세요.'); return; }
-    if (!docName.trim()) return;
+    const name = docName.trim();
+    if (!name) return;
     const item = REQUIRED_DOCS.find(x => x[0] === kind) || REQUIRED_DOCS[0];
-    const c: RightsDoc = {
-      id: 'd' + Date.now(),
-      title: r.title + ' · ' + docName.trim(),
-      releaseTitle: r.title,
-      kind,
-      reviewStatus: 'awaiting_documents',
-      created: new Date().toISOString().slice(0, 10),
-      fileName,
-      reviewNote: '',
-      version: '1.0',
-    };
-    setDocs(ds => [c, ...ds]);
-    setFormOpen(false);
-    setReleaseId('');
-    setKind(REQUIRED_DOCS[0][0]);
-    setDocName(REQUIRED_DOCS[0][1]);
-    setFileName('');
-    toast('서류를 접수했어요.');
-    void item;
+    const at = stampNow();
+    setSubmitting(true);
+    try {
+      const c: DocRecord = {
+        id: 'd' + Date.now(),
+        kind: 'rights',
+        releaseId: r.id,
+        releaseTitle: r.title,
+        title: r.title + ' · ' + name,
+        version: '1.0',
+        content: [
+          '서류 종류: ' + name,
+          '관련 발매: ' + r.title,
+          '아티스트: ' + r.artist,
+          '권리 확인 내용: ' + item[2],
+          '제출 서류: ' + name,
+        ].join('\n'),
+        fileName: file ? file.name : '',
+        fileBlob: file,
+        checked: false,
+        checkedAt: '',
+        created: at,
+        consentHistory: [],
+        reviewHistory: [{ status: '서류 접수 대기', time: at, detail: name + ' 접수 준비' }],
+        reviewStatus: 'awaiting_documents',
+        reviewNote: '',
+        signerName: '',
+        localSignatureData: '',
+        localSignatureAt: '',
+      };
+      addDoc(c);
+      setFormOpen(false);
+      setReleaseId('');
+      setKind(REQUIRED_DOCS[0][0]);
+      setDocName(REQUIRED_DOCS[0][1]);
+      setFile(null);
+      // 라이브: 접수 후 바로 문서 모달을 연다
+      setOpenId(c.id);
+    } catch {
+      toast('원본을 첨부할 수 없어요.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -134,17 +129,15 @@ export function Rights() {
       </div>
 
       <div id="rightsList">
-        {docs.length ? (
+        {rights.length ? (
           <div className="aq-doc-grid">
-            {docs.map(c => (
-              <DocCard key={c.id} c={c} onOpen={() => navigate('/contracts')} />
-            ))}
+            {rights.map(c => <DocCard key={c.id} c={c} onOpen={setOpenId} />)}
           </div>
         ) : (
-          <div className="empty-page">
-            <p>제출할 권리 서류가 없어요.</p>
-            <span>보완 자료가 필요하면 요청 내용과 제출 항목이 여기에 표시돼요.</span>
-          </div>
+          <DocEmpty
+            title="제출할 권리 서류가 없어요."
+            desc="보완 자료가 필요하면 요청 내용과 제출 항목이 여기에 표시돼요."
+          />
         )}
       </div>
 
@@ -157,7 +150,7 @@ export function Rights() {
           <p className="small muted">
             발매를 선택하고 필요한 서류를 등록해 주세요. 확인할 내용과 첨부한 원본을 하나의 서류로 관리할 수 있어요.
           </p>
-          <form onSubmit={submitForm} style={{ marginTop: 16 }}>
+          <form id="aqRequiredDocForm" onSubmit={submitForm}>
             <div className="field">
               <label htmlFor="aqRequiredRelease">관련 발매</label>
               <select
@@ -193,13 +186,31 @@ export function Rights() {
               <input
                 type="file" id="aqRequiredFile"
                 accept=".pdf,.txt,image/png,image/jpeg,image/webp,application/pdf,text/plain"
-                onChange={e => setFileName(e.target.files?.[0]?.name || '')}
+                onChange={e => setFile(e.target.files?.[0] || null)}
               />
-              <p className="help">원본 첨부 전에는 '서류 접수 대기'로 표시돼요.</p>
+              <p className="help">원본 첨부 전에는 ‘서류 접수 대기’로 표시돼요.</p>
             </div>
-            <button type="submit" className="button studio-submit-wide">서류 접수하기</button>
+            <button type="submit" className="button studio-submit-wide" disabled={submitting}>
+              서류 접수하기
+            </button>
           </form>
         </Modal>
+      )}
+
+      {openDoc && !signing && (
+        <DocumentModal
+          doc={openDoc}
+          onClose={() => setOpenId(null)}
+          onOpenSignature={() => setSigning(true)}
+        />
+      )}
+
+      {openDoc && signing && (
+        <SignatureModal
+          doc={openDoc}
+          onBack={() => setSigning(false)}
+          onSaved={() => setSigning(false)}
+        />
       )}
     </>
   );
