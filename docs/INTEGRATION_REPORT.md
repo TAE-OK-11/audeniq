@@ -333,3 +333,26 @@ BLUEPRINT §6의 E-0~E-5 송출 실행 파이프라인. 브랜치 `foundation/f5
 
 - run [36093955569](https://github.com/TAE-OK-11/audeniq/actions/runs/36093955569) (main 병합) — **success**
 - run [36093964764](https://github.com/TAE-OK-11/audeniq/actions/runs/36093964764) (문서) — **success**
+
+---
+
+## F3 후속 — grant FK tenant 경계 (2026-09-25)
+
+`rights.grant_atoms.parent_grant_id`와 `.contract_revision_id`가 전역 id만 참조해서, org A의 grant가 org B의 grant/contract revision을 부모로 삼을 수 있었다. 브랜치 `foundation/grant-fk-tenant-boundary` (main 병합 `89cce75`).
+
+### 구현 범위
+
+- migration 0021: 두 FK를 복합 `(org_id, id)` FK로 교체 (`grant_atoms_parent_org_fkey`, `grant_atoms_contract_rev_org_fkey`). FK 타깃용으로 `contract_revisions`에 `UNIQUE(org_id,id)` 추가 (`grant_atoms`는 0009부터 보유).
+- 기존 단일 컬럼 FK는 제약 컬럼 기준으로 찾아 drop하는 DO 블록으로 제거 (자동 생성된 제약명 추측 안 함). 기존 row는 새 제약으로 전체 검증 — 이미 있는 cross-org 링크가 있으면 migration이 실패함.
+- `review.rs`의 parent chain walk도 `org_id` 스코프로 수정 (defense in depth).
+
+### 로컬 검증 결과 (2026-09-25, main `89cce75`)
+
+- `cargo fmt --all --check`: 통과
+- `cargo clippy --workspace --all-targets -- -D warnings`: 통과
+- `cargo test --workspace`: 전부 통과, 총 **118개** (기존 114 + 신규 4), 실패 0
+  - 신규 `rights_tenant` 4개: 동일 org parent/contract 허용, 타 org parent/contract는 FK violation으로 거부
+
+### GitHub Actions
+
+- 푸시 후 run 결과 확인 예정.
