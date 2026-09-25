@@ -47,8 +47,10 @@ export function Layout({ children }: { children: ReactNode }) {
   }, []);
 
   // 라이브와 동일: 헤더 바깥 클릭 시 메뉴 닫기
+  // iOS 스크롤 체이닝 방지: 메뉴 열림 시 body 스크롤 잠금
   useEffect(() => {
     if (!menuOpen) return;
+    const scrollY = window.scrollY;
     const onClick = (e: MouseEvent) => {
       if (!(e.target as HTMLElement).closest('.portal-header')) {
         setMenuOpen(false);
@@ -59,9 +61,19 @@ export function Layout({ children }: { children: ReactNode }) {
     };
     document.addEventListener('click', onClick);
     document.addEventListener('keydown', onKey);
+    // body 스크롤 잠금 (위치 유지)
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.left = '0';
+    document.body.style.right = '0';
     return () => {
       document.removeEventListener('click', onClick);
       document.removeEventListener('keydown', onKey);
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.left = '';
+      document.body.style.right = '';
+      window.scrollTo(0, scrollY);
     };
   }, [menuOpen]);
 
