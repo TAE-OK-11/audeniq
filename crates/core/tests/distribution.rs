@@ -37,7 +37,7 @@ const ORIGIN: &str = "http://localhost:5173";
 
 #[derive(Default)]
 struct FileStore {
-    files: Mutex<BTreeMap<String, Vec<u8>>>,
+    files: Mutex<BTreeMap<String, (Vec<u8>, String)>>,
     get_calls: AtomicUsize,
 }
 #[async_trait]
@@ -53,9 +53,9 @@ impl ObjectStore for FileStore {
         Err(Error::Storage)
     }
     async fn head(&self, key: &str) -> Result<Option<ObjectMeta>> {
-        Ok(self.files.lock().await.get(key).map(|b| ObjectMeta {
+        Ok(self.files.lock().await.get(key).map(|(b, ct)| ObjectMeta {
             size: b.len() as i64,
-            content_type: "application/octet-stream".into(),
+            content_type: ct.clone(),
             nonce: String::new(),
             etag: String::new(),
         }))
@@ -69,7 +69,7 @@ impl ObjectStore for FileStore {
             .lock()
             .await
             .get(key)
-            .cloned()
+            .map(|(b, _)| b.clone())
             .ok_or(Error::Storage)
     }
 }
@@ -234,7 +234,11 @@ async fn register_asset(
     let org = u.org;
     let id = Uuid::new_v4();
     let key = format!("registered/{org}/{id}/{name}");
-    store.files.lock().await.insert(key.clone(), bytes.to_vec());
+    store
+        .files
+        .lock()
+        .await
+        .insert(key.clone(), (bytes.to_vec(), "audio/wav".into()));
     sqlx::query("INSERT INTO identity.resources(org_id,id,kind) VALUES($1,$2,'asset')")
         .bind(org)
         .bind(id)
@@ -344,14 +348,14 @@ async fn release_status(pool: &PgPool, release: Uuid) -> String {
         .unwrap()
 }
 
-#[sqlx::test]
-async fn prepare_release_happy_path_freezes_package(pool: PgPool) {
-    let (app, store) = app(pool.clone()).await;
-    let u = user(&app).await;
-    let dir = tmpdir();
-    let wav = make_good_wav(&dir);
-    let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
-    let release = build_submittable(&app, &pool, &u, asset).await;
+/// UPC + cover artwork + ISRC + release metadata: DDEX ERN and the
+/// preflight checks need all of them on the canonical snapshot.
+async fn add_preparation_supplements(
+    pool: &PgPool,
+    store: &Arc<FileStore>,
+    u: &User,
+    release: Uuid,
+) -> String {
     // UPC + cover artwork: DDEX ERN needs both on the canonical snapshot.
     let art_id = Uuid::new_v4();
     let art_key = format!("registered/{}/cover.png", u.org);
@@ -360,22 +364,101 @@ async fn prepare_release_happy_path_freezes_package(pool: PgPool) {
         .files
         .lock()
         .await
-        .insert(art_key.clone(), art_bytes.to_vec());
+        .insert(art_key.clone(), (art_bytes.to_vec(), "image/png".into()));
     sqlx::query("INSERT INTO identity.resources(org_id,id,kind) VALUES($1,$2,'asset')")
         .bind(u.org)
         .bind(art_id)
-        .execute(&pool)
+        .execute(pool)
         .await
         .unwrap();
     sqlx::query("INSERT INTO catalog.assets(id,org_id,kind,object_key,size_bytes,content_type,sha256,state) VALUES($1,$2,'IMAGE',$3,$4,'image/png',$5,'REGISTERED')")
         .bind(art_id).bind(u.org).bind(&art_key).bind(art_bytes.len() as i64).bind(sha256_hex(art_bytes))
-        .execute(&pool).await.unwrap();
-    sqlx::query("UPDATE catalog.releases SET upc='880123456789', artwork_asset_id=$1, row_version = row_version + 1 WHERE id=$2")
+        .execute(pool).await.unwrap();
+    sqlx::query("UPDATE catalog.releases SET upc='036000291452', artwork_asset_id=$1, draft = draft || '{\"language\":\"ko\",\"artist\":\"Test Artist\",\"p_line\":\"P 2027 Test Label\",\"c_line\":\"C 2027 Test Label\"}'::jsonb, row_version = row_version + 1 WHERE id=$2")
         .bind(art_id)
         .bind(release)
-        .execute(&pool)
+        .execute(pool)
         .await
         .unwrap();
+    sqlx::query("UPDATE catalog.tracks SET isrc='USABC2600001' WHERE release_id=$1")
+        .bind(release)
+        .execute(pool)
+        .await
+        .unwrap();
+    art_key
+}
+
+/// Seed a second release/track/revision in the same org and claim `isrc` on
+/// its track through the real ledger path, so the release under test hits a
+/// cross-target identifier conflict in its worker.
+async fn seed_conflicting_isrc(pool: &PgPool, u: &User, isrc: &str) {
+    let org = u.org;
+    let release = Uuid::new_v4();
+    let revision = Uuid::new_v4();
+    let track = Uuid::new_v4();
+    let artist = Uuid::new_v4();
+    let user_id: Uuid = sqlx::query_scalar("SELECT id FROM identity.users WHERE party_id=$1")
+        .bind(u.party)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    for (id, kind) in [(release, "release"), (artist, "artist")] {
+        sqlx::query("INSERT INTO identity.resources(org_id,id,kind) VALUES($1,$2,$3)")
+            .bind(org)
+            .bind(id)
+            .bind(kind)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+    sqlx::query(
+        "INSERT INTO catalog.releases(id,org_id,title,release_type) VALUES($1,$2,'Other','SINGLE')",
+    )
+    .bind(release)
+    .bind(org)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO catalog.artists(id,org_id,name) VALUES($1,$2,'Other')")
+        .bind(artist)
+        .bind(org)
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO catalog.tracks(id,org_id,release_id,title,disc_number,track_number,artist_id) VALUES($1,$2,$3,'Other',1,1,$4)")
+        .bind(track).bind(org).bind(release).bind(artist).execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO catalog.application_revisions(id,org_id,release_id,revision,body,body_hash,consent_package_hash,created_by) VALUES($1,$2,$3,1,'{}',$4,$4,$5)")
+        .bind(revision).bind(org).bind(release).bind("a".repeat(64)).bind(user_id).execute(pool).await.unwrap();
+    let mut conn = pool.acquire().await.unwrap();
+    sqlx::query("SELECT set_config('app.org_id',$1,false)")
+        .bind(org.to_string())
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    audeniq_core::identifiers::record_existing(
+        &mut conn,
+        &audeniq_core::identifiers::ExistingAssignment {
+            org_id: org,
+            release_id: release,
+            track_id: Some(track),
+            revision_id: revision,
+            kind: audeniq_core::identifiers::IdentifierKind::Isrc,
+            value: isrc,
+        },
+    )
+    .await
+    .unwrap();
+}
+
+#[sqlx::test]
+async fn prepare_release_happy_path_freezes_package(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let wav = make_good_wav(&dir);
+    let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
+    let release = build_submittable(&app, &pool, &u, asset).await;
+    let art_key = add_preparation_supplements(&pool, &store, &u, release).await;
     let revision_id = consent_and_submit(&app, &u, release, "k-f4-happy").await;
     assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
     assert_eq!(
@@ -419,7 +502,7 @@ async fn prepare_release_happy_path_freezes_package(pool: PgPool) {
     assert_eq!(body["release_id"], Value::String(release.to_string()));
     assert!(!body["tracks"].as_array().unwrap().is_empty());
     assert_eq!(body["schema_version"], Value::from(2));
-    assert_eq!(body["upc"], Value::String("880123456789".into()));
+    assert_eq!(body["upc"], Value::String("036000291452".into()));
     assert_eq!(body["artwork"]["object_key"], Value::String(art_key));
     assert_eq!(
         body["artwork"]["content_type"],
@@ -448,7 +531,84 @@ async fn prepare_release_happy_path_freezes_package(pool: PgPool) {
         pbody["canonical_release_id"],
         Value::String(canonical_id.to_string())
     );
-    let _ = package_id;
+    // Preparation artifacts: one append-only row per frozen package with the
+    // ERN hash, preflight report and route plan.
+    let (ern_sha, preflight, route): (String, Value, Value) = sqlx::query_as(
+        "SELECT ern_sha256, preflight_report, route_plan FROM distribution.preparation_artifacts WHERE package_id=$1",
+    )
+    .bind(package_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(ern_sha.chars().all(|c| c.is_ascii_hexdigit()) && ern_sha.len() == 64);
+    for check in ["xml", "metadata", "files", "rights"] {
+        assert_eq!(preflight[check], Value::String("Pass".into()), "{check}");
+    }
+    assert!(
+        route
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|s| s["delivery_enabled"] == Value::Bool(false))
+    );
+    // Identifier ledger: the UPC and the track ISRC are recorded, bound to
+    // this org/release/revision. The ledger is RLS-protected, so the test
+    // authorizes its org on one connection like the worker does.
+    let mut conn = pool.acquire().await.unwrap();
+    sqlx::query("SELECT set_config('app.org_id',$1,false)")
+        .bind(u.org.to_string())
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT kind, identifier FROM distribution.identifier_assignments WHERE release_id=$1 ORDER BY kind",
+    )
+    .bind(release)
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(
+        rows,
+        vec![
+            ("ISRC".to_string(), "USABC2600001".to_string()),
+            ("UPC".to_string(), "036000291452".to_string()),
+        ]
+    );
+}
+
+#[sqlx::test]
+async fn prepare_release_identifier_conflict_dead_letters(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let wav = make_good_wav(&dir);
+    let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
+    let release = build_submittable(&app, &pool, &u, asset).await;
+    add_preparation_supplements(&pool, &store, &u, release).await;
+    // Another release in the same org already owns this ISRC.
+    seed_conflicting_isrc(&pool, &u, "USABC2600001").await;
+    let _revision_id = consent_and_submit(&app, &u, release, "k-f4-conflict").await;
+    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(release_status(&pool, release).await, "STAGE2_PASSED");
+
+    // The conflict is permanent: no retry can fix a cross-target claim, so the
+    // job dead-letters and the release never reaches READY_FOR_DELIVERY.
+    assert_eq!(
+        run_one(&pool, &store, "distribution", "prepare_release").await,
+        "DEAD_LETTER"
+    );
+    let err: Option<String> = sqlx::query_scalar(
+        "SELECT last_error FROM operations.jobs WHERE kind='prepare_release' ORDER BY created_at DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(err.unwrap().contains("IDENTIFIER_CONFLICT"));
+    assert_eq!(release_status(&pool, release).await, "STAGE3_PREPARING");
 }
 
 #[sqlx::test]

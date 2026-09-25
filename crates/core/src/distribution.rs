@@ -1,20 +1,22 @@
-//! F4 Stage 3 prep (BLUEPRINT §6 3-A/3-D/3-F), Muse portion.
-//!
-//! `build_canonical` pins the Stage 2 verification package — its hash, the
-//! approved DSP set, the policy rule version and the rights epoch — into one
-//! byte-immutable canonical snapshot (`distribution.canonical_releases`).
-//! `freeze_package` then content-addresses that snapshot into a frozen
-//! distribution package (`distribution.distribution_packages`, status
-//! `PREPARED`).
-//!
-//! What this module deliberately does NOT do (Astra's half, migrations
-//! 0011+): identifier allocation/reservation, route planning, ERN generation,
-//! scheduling and preflight. Those stages consume `distribution_packages`
-//! rows and extend `status`; they never mutate the canonical snapshot.
+//! F4 Stage 3 prep (BLUEPRINT §6 3-A/3-D/3-F) plus the merged preparation
+//! pipeline: after the canonical snapshot is frozen, the worker builds
+//! Astra's `PreparedRelease` supplements from the pinned snapshot, generates
+//! the synthetic ERN, and runs the four independent preflight checks
+//! (XML / metadata / files / rights) with a route plan. Anything missing
+//! (UPC, artwork, ISRC, file bytes, stale pin) fails closed here — the
+//! release never reaches READY_FOR_DELIVERY on an unchecked package.
+
+use std::sync::Arc;
 
 use crate::{
+    domain::FreshnessPin,
+    ern,
     error::{Error, Result},
+    identifiers::{self, ExistingAssignment, IdentifierKind},
     operations,
+    preflight::{self, CurrentFacts},
+    preparation_model, route_plan,
+    storage::ObjectStore,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -348,8 +350,7 @@ pub async fn freeze_package(pool: &PgPool, canonical: &CanonicalRelease) -> Resu
     }
 }
 
-/// Freshness guard: if the rights epoch moved since Stage 2 pinned it, the
-/// release goes back to Stage 2 for re-verification (BLUEPRINT §6.1
+/// Freshness guard: if the rights epoch moved since Stage 2 pinned it, the/// release goes back to Stage 2 for re-verification (BLUEPRINT §6.1
 /// `return_to=S2`). Returns true when the caller must stop here.
 async fn return_to_s2_if_epoch_moved(
     tx: &mut PgConnection,
@@ -397,11 +398,22 @@ async fn return_to_s2_if_epoch_moved(
     Ok(true)
 }
 
+/// A ledger conflict means the identifier is already assigned to a *different*
+/// release or track: retrying can never fix it, so it fails closed and the
+/// dispatcher dead-letters the job for human review.
+fn map_ledger_error(e: Error) -> Error {
+    match e {
+        Error::Conflict => Error::PolicyGate("IDENTIFIER_CONFLICT"),
+        other => other,
+    }
+}
+
 /// 3-A/3-D/3-F durable entry point. Replaces the F3 `park()` for
 /// `prepare_release`. Returns `None` when the job lost its lease: the caller
 /// must neither succeed nor fail the job; the sweeper will reclaim it.
 pub async fn run_prepare_release(
     pool: &PgPool,
+    storage: &Arc<dyn ObjectStore>,
     job: &operations::Job,
 ) -> Result<Option<PrepareSummary>> {
     let revision_id = job
@@ -538,6 +550,59 @@ pub async fn run_prepare_release(
     .fetch_one(pool)
     .await?;
 
+    // Stage 3 preparation: supplements + synthetic ERN + four independent
+    // preflight checks (XML / metadata / files / rights) + route plan, all
+    // bound to the frozen snapshot. Fail-closed: a missing UPC, artwork,
+    // ISRC, file bytes or a stale pin never becomes READY_FOR_DELIVERY.
+    // The canonical snapshot and frozen package stay immutable; the worker
+    // persists the preparation outputs (identifier ledger entries, ERN hash,
+    // preflight report, route plan) in the same commit that flips the
+    // release to READY_FOR_DELIVERY.
+    let prepared =
+        preparation_model::PreparedRelease::from_canonical(pool, canonical_id, &canonical).await?;
+    let vp = preparation_model::VerificationPackage::load(pool, verification_package_id).await?;
+    let xml = ern::generate_prepared_ern(&prepared)?;
+    let xml_sha = hex::encode(Sha256::digest(xml.as_bytes()));
+    // Synthetic profile: no commercial route contract exists yet (F5+), so
+    // the freshness pin uses a deterministic synthetic id. It still binds
+    // expected vs current facts; it never authorizes a real route.
+    let route_contract_id = Uuid::new_v5(&Uuid::NAMESPACE_OID, verification_package_id.as_bytes());
+    let expected = FreshnessPin {
+        revision_id,
+        verification_hash: vp.package_hash.clone(),
+        snapshot_id: prepared.snapshot_id,
+        rights_epoch: u64::try_from(canonical.rights_epoch)
+            .map_err(|_| Error::PolicyGate("PREPARATION_EPOCH_INVALID"))?,
+        route_contract_id,
+        package_hash: xml_sha.clone(),
+    };
+    // Current facts are re-read from trusted state inside this boundary:
+    // rights epoch from the rights table, no F4-scope hold table exists
+    // (finance holds are F7), commercial contract gating is F5's job.
+    let live_epoch: i64 = sqlx::query_scalar(
+        "SELECT epoch FROM rights.rights_epochs WHERE org_id=$1 AND release_id=$2",
+    )
+    .bind(org)
+    .bind(release_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(Error::NotFound)?;
+    let current = CurrentFacts {
+        pin: FreshnessPin {
+            rights_epoch: u64::try_from(live_epoch)
+                .map_err(|_| Error::PolicyGate("PREPARATION_EPOCH_INVALID"))?,
+            ..expected.clone()
+        },
+        hold: false,
+        contract_active: true,
+    };
+    let report =
+        preflight::preflight(&prepared, &vp, &xml, &expected, &current, storage.as_ref()).await;
+    if !report.passed() {
+        return Err(Error::PolicyGate("PREFLIGHT_FAILED"));
+    }
+    let submissions = route_plan::plan_submissions(&prepared, &vp)?;
+
     // Freeze is done; mark the release ready for delivery prep. Actual
     // external send is F5's job, never this worker's.
     let mut tx2 = pool.begin().await?;
@@ -556,13 +621,73 @@ pub async fn run_prepare_release(
         .bind(release_id)
         .execute(&mut *tx2)
         .await?;
+
+    // The identifier ledger is RLS-protected: authorize this transaction's org.
+    sqlx::query("SELECT set_config('app.org_id',$1,true)")
+        .bind(org.to_string())
+        .execute(&mut *tx2)
+        .await?;
+    // Record supplied identifiers in the append-only ledger, bound to this
+    // revision: the release UPC plus every track ISRC. Exact-target retries
+    // are idempotent; a cross-target conflict is a permanent integrity
+    // failure, never something a retry can fix.
+    let upc = ExistingAssignment {
+        org_id: org,
+        release_id,
+        track_id: None,
+        revision_id,
+        kind: IdentifierKind::Upc,
+        value: &prepared.upc,
+    };
+    identifiers::record_existing(&mut tx2, &upc)
+        .await
+        .map_err(map_ledger_error)?;
+    for t in &prepared.tracks {
+        let isrc = ExistingAssignment {
+            org_id: org,
+            release_id,
+            track_id: Some(t.id),
+            revision_id,
+            kind: IdentifierKind::Isrc,
+            value: &t.isrc,
+        };
+        identifiers::record_existing(&mut tx2, &isrc)
+            .await
+            .map_err(map_ledger_error)?;
+    }
+
+    // Persist the preparation outputs append-only, keyed by frozen package.
+    // The frozen body stays the immutable canonical snapshot; ERN hash,
+    // preflight report and route plan live here for audit.
+    let artifact_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO distribution.preparation_artifacts(id,org_id,release_id,revision_id,canonical_release_id,package_id,ern_sha256,preflight_report,route_plan) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(package_id) DO NOTHING",
+    )
+    .bind(artifact_id)
+    .bind(org)
+    .bind(release_id)
+    .bind(revision_id)
+    .bind(canonical_id)
+    .bind(package_id)
+    .bind(&xml_sha)
+    .bind(serde_json::to_value(&report).map_err(|_| Error::Internal)?)
+    .bind(serde_json::to_value(&submissions).map_err(|_| Error::Internal)?)
+    .execute(&mut *tx2)
+    .await?;
+
     operations::audit(
         &mut tx2,
         None,
         Some(org),
         Some(revision_id),
         "stage3.prepared",
-        "PREPARE_RELEASE_READY",
+        &format!(
+            "PREPARE_RELEASE_READY preflight=xml:{:?},metadata:{:?},files:{:?},rights:{:?} submissions={} ern_sha256={} artifact={artifact_id} identifiers={}",
+            report.xml, report.metadata, report.files, report.rights,
+            submissions.len(),
+            xml_sha,
+            prepared.tracks.len() + 1,
+        ),
         request,
     )
     .await?;

@@ -4,14 +4,16 @@ Base: `foundation/f3-stage2-review` at `eb3134ef8ccccfdaa8cfae4da7c0001b0abb4e7b
 
 ## Integration contract for Muse
 
-Muse's Stage 3 branch is merged without changing its implementation. The exact
-public API is `ern::generate_ern(&distribution::CanonicalRelease) -> Result<String>`.
-This emits a canonical-only synthetic XML fixture including pinned credits/assets.
-Muse's snapshot has no UPC, artwork, date, file location or media type. These are
-explicit `PreparedRelease` supplements: `generate_prepared_ern` and preflight require
-them and reject any mismatch against the embedded canonical snapshot (identity,
-revision, verification digest, scope, title, track positions, ISRC and asset hashes).
-No missing field is silently invented. Canonical-only XML is not a ready submission.
+Muse's Stage 3 branch is merged and wired into the worker. The public API is
+`ern::generate_prepared_ern(&preparation_model::PreparedRelease) -> Result<String>`.
+Since migration 0012 (`CanonicalRelease.schema_version = 2`), the canonical
+snapshot carries UPC, the artwork asset reference and each track's audio
+object key. `PreparedRelease::from_canonical(pool, snapshot_id, canonical)`
+reads those supplements plus catalog metadata (release date, artist, language,
+P/C-lines, ISRCs, asset hashes/sizes/content types) from the pinned snapshot
+and the database. Nothing is invented: a missing UPC, artwork, ISRC, file
+bytes or stale pin fails closed in `run_prepare_release` before the release
+can reach READY_FOR_DELIVERY. Canonical-only XML is not a ready submission.
 
 - `ern::generate_ern` and `generate_prepared_ern`: deterministic, pure, sorted output;
   reject invalid identifiers, XML controls, duplicates and missing metadata. No DB
@@ -38,7 +40,11 @@ No missing field is silently invented. Canonical-only XML is not a ready submiss
 Migration **0011** is independent of 0010. It enforces both Rust identifier formats
 in SQL, composite tenant FKs, track/release matching, uniqueness, immutability and
 forced RLS. No runtime grants are added. An authorized transaction must set
-`app.org_id` locally; superuser CI uses an explicit non-bypass role to test RLS.
+`app.org_id`; the tests set it explicitly on every connection/transaction
+(Astra's CI ran as a postgres superuser, which silently bypasses RLS — the
+tests were fixed to not depend on that). A non-bypass role is still used to
+verify RLS org isolation, with role membership granted so `SET ROLE` works for
+non-superuser test users.
 
 ## Profile boundary
 
@@ -60,8 +66,27 @@ remain blocked/unknown. No passing preparation result itself enables delivery.
 
 ## Ownership
 
-Unchanged: `distribution.rs`, `operations.rs`, all existing migrations, especially
-Muse's reserved 0010, snapshot/hash persistence and `prepare_release` wiring.
+Merged 2026-09-25 into `foundation/f4-stage3-distribution` and wired into the
+worker: `distribution::run_prepare_release` now drives canonical → freeze →
+`PreparedRelease::from_canonical` → synthetic ERN → four preflight checks →
+route plan → (pass only) READY_FOR_DELIVERY. `operations::execute` routes the
+`prepare_release` job through the real handler with storage; an
+`IDENTIFIER_CONFLICT` dead-letters immediately instead of retrying.
+
+Migration **0012** adds `catalog.releases.upc` / `artwork_asset_id` and bumps
+the canonical schema to v2. Migration **0013** adds append-only
+`distribution.preparation_artifacts` (one row per frozen package: ERN SHA-256,
+preflight report JSON, route plan JSON, immutable trigger) written in the same
+commit that flips the release to READY_FOR_DELIVERY. The frozen package body
+stays the immutable canonical snapshot; its `identifier_refs`/`route_id`/
+`dsp_packages`/`preflight_ref` placeholders resolve via the artifact row and
+the identifier ledger, not by mutating the package.
+
+`identifiers::record_existing` is called by the worker inside the
+READY_FOR_DELIVERY transaction (with `app.org_id` set for the RLS-protected
+ledger): the release UPC plus every track ISRC. Exact-target retries are
+idempotent; a cross-target conflict is a permanent integrity failure.
+
 Only module exports in `lib.rs` are shared. Merge Muse's exports additively.
 
 ## Verification
