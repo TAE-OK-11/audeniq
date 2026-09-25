@@ -1,4 +1,8 @@
 // API client for AUDENIQ backend
+import { mockApi } from './mock';
+
+// Design test mode: no real API calls
+const MOCK = true;
 const API_BASE = '';
 
 export interface User {
@@ -61,6 +65,7 @@ async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
 export const api = {
   // Auth
   login: async (email: string, password: string): Promise<User> => {
+    if (MOCK) { const u = await mockApi.login(); mockApi.setSession(); return u; }
     // Get CSRF token first
     const csrf = await req<{ token: string }>('/api/auth/csrf', { method: 'POST' });
     csrfToken = csrf.token;
@@ -69,23 +74,35 @@ export const api = {
       body: JSON.stringify({ email, password }),
     });
   },
-  logout: (): Promise<void> =>
-    req('/api/auth/logout', { method: 'POST' }),
-  me: (): Promise<User> =>
-    req('/api/me'),
+  logout: (): Promise<void> => {
+    if (MOCK) { mockApi.clearSession(); return mockApi.logout(); }
+    return req('/api/auth/logout', { method: 'POST' });
+  },
+  me: (): Promise<User> => {
+    if (MOCK) return mockApi.me();
+    return req('/api/me');
+  },
 
   // Orgs
-  listOrgs: (): Promise<Org[]> =>
-    req('/api/orgs'),
+  listOrgs: (): Promise<Org[]> => {
+    if (MOCK) return mockApi.listOrgs();
+    return req('/api/orgs');
+  },
 
   // Releases
-  listReleases: (orgId: string): Promise<Release[]> =>
-    req(`/api/orgs/${orgId}/releases`),
-  getRelease: (orgId: string, id: string): Promise<ReleaseDetail> =>
-    req(`/api/orgs/${orgId}/releases/${id}`),
-  createRelease: (orgId: string, data: { title: string; release_date: string }): Promise<Release> =>
-    req(`/api/orgs/${orgId}/releases`, {
+  listReleases: (orgId: string): Promise<Release[]> => {
+    if (MOCK) return mockApi.listReleases();
+    return req(`/api/orgs/${orgId}/releases`);
+  },
+  getRelease: (orgId: string, id: string): Promise<ReleaseDetail> => {
+    if (MOCK) return mockApi.getRelease(id);
+    return req(`/api/orgs/${orgId}/releases/${id}`);
+  },
+  createRelease: (orgId: string, data: { title: string; release_date: string }): Promise<Release> => {
+    if (MOCK) return mockApi.createRelease(data);
+    return req(`/api/orgs/${orgId}/releases`, {
       method: 'POST',
       body: JSON.stringify({ ...data, draft: {} }),
-    }),
+    });
+  },
 };

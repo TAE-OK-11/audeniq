@@ -5,8 +5,7 @@ import { useAuth } from '../api/auth';
 export function Login() {
   const { login } = useAuth();
   const nav = useNavigate();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('test@audeniq.kr');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -15,7 +14,7 @@ export function Login() {
     setError('');
     setBusy(true);
     try {
-      await login(email, password);
+      await login(email, '');
       nav('/');
     } catch (err) {
       setError(err instanceof Error ? err.message : '로그인 실패');
@@ -34,12 +33,8 @@ export function Login() {
             <label htmlFor="email">이메일</label>
             <input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} required autoComplete="email" />
           </div>
-          <div className="field">
-            <label htmlFor="pw">비밀번호</label>
-            <input id="pw" type="password" value={password} onChange={e => setPassword(e.target.value)} required autoComplete="current-password" />
-          </div>
           <button className="btn" style={{ width: '100%' }} disabled={busy}>
-            {busy ? '로그인 중...' : '로그인'}
+            {busy ? '들어가는 중...' : '로그인 (테스트)'}
           </button>
         </form>
       </div>
