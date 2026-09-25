@@ -6,6 +6,7 @@ use crate::{
     api::AppState,
     auth::{self, Actor},
     error::{Error, Result},
+    fingerprint,
     identifiers::{validate_isrc, validate_upc},
     operations,
     qc::{self, CheckStatus},
@@ -1042,13 +1043,29 @@ fn qc_max_bytes() -> u64 {
 /// Download one asset and run the fixed check contract over it. Storage and
 /// local-IO failures are returned as a detail string so the caller can record
 /// per-asset TECHNICAL_RETRY instead of aborting the whole Stage 1 run.
+///
+/// Returns the check outcomes, the measured audio duration in seconds
+/// (`None` for images or when probing fails), and — for audio whose bytes
+/// passed QC — the perceptual fingerprint computation result. The caller
+/// persists the duration to `catalog.assets.duration_secs` (DDEX ERN needs
+/// it) and the fingerprint to `catalog.asset_fingerprints` (similarity
+/// detection). Fingerprinting the wrong bytes is meaningless, so audio
+/// blocked by SHA256_MISMATCH yields `None` here; its fingerprint codes
+/// are already covered by check_audio's NotApplicable tail.
 async fn analyze_asset(
     storage: &Arc<dyn ObjectStore>,
     key: &str,
     kind: &str,
     sha256: &str,
     tmp_name: &str,
-) -> std::result::Result<Vec<qc::CheckOutcome>, String> {
+) -> std::result::Result<
+    (
+        Vec<qc::CheckOutcome>,
+        Option<f64>,
+        Option<std::result::Result<fingerprint::Fingerprint, String>>,
+    ),
+    String,
+> {
     let size = storage
         .head(key)
         .await
@@ -1070,13 +1087,256 @@ async fn analyze_asset(
         .map_err(|_| "object download failed".to_string())?;
     let tmp = std::env::temp_dir().join(tmp_name);
     std::fs::write(&tmp, &bytes).map_err(|_| "temp file write failed".to_string())?;
+    // RAII guard: the temp file is removed on drop, even if a QC analyzer
+    // panics. Prevents /tmp (512MB tmpfs) from filling up under parallel load.
+    struct TempFile<'a>(&'a std::path::Path);
+    impl Drop for TempFile<'_> {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(self.0);
+        }
+    }
+    let _tmp_guard = TempFile(&tmp);
     let outcomes = match kind {
         "AUDIO" => qc::check_audio(&tmp, Some(sha256)),
         "IMAGE" => qc::check_image(&tmp, Some(sha256)),
         _ => Vec::new(),
     };
-    let _ = std::fs::remove_file(&tmp);
-    Ok(outcomes)
+    // Duration is measured with a second ffprobe pass rather than parsed
+    // out of check outcomes: the check contract is fixed and must not grow
+    // a side channel. ~100ms on a local file, submit path only.
+    let duration_secs = match kind {
+        "AUDIO" => qc::probe_duration_secs(&tmp),
+        _ => None,
+    };
+    // Perceptual fingerprint for similarity detection. Only for audio whose
+    // bytes were admitted: SHA-256 still guards integrity (exact bytes),
+    // the fingerprint adds similarity (same recording, different bytes).
+    // Skip when QC already rejected the bytes (Blocked on SHA mismatch, or
+    // CorrectionRequired on magic mismatch): fingerprinting invalid audio
+    // is meaningless, and a decode failure there is permanent, not
+    // transient — it must not trigger TechnicalRetry.
+    let invalid = outcomes.iter().any(|o| {
+        matches!(
+            o.status,
+            CheckStatus::Blocked | CheckStatus::CorrectionRequired
+        )
+    });
+    let fp = match kind {
+        "AUDIO" if !invalid => {
+            Some(fingerprint::compute_fingerprint(&tmp).map_err(|e| format!("{e:?}")))
+        }
+        _ => None,
+    };
+    Ok((outcomes, duration_secs, fp))
+}
+
+/// Produce the two DB-backed fingerprint check outcomes for an analyzed
+/// audio asset.
+///
+/// - `AUDIO_FINGERPRINT_FAILED`: Pass when the fingerprint computed;
+///   TechnicalRetry on decode failure (transient); NotApplicable when the
+///   audio is too short for a meaningful fingerprint (retrying the same
+///   bytes cannot help) or when QC blocked the bytes (tail already
+///   covered the code).
+/// - `AUDIO_SIMILAR_TO_EXISTING`: compares the new fingerprint against
+///   every other fingerprint in the org at the same algorithm version.
+///   A BER at or below `SIMILAR_BER` is REVIEW_REQUIRED — similarity is a
+///   human judgement, never an auto-block. Byte-identical re-uploads score
+///   BER 0 and are flagged here; SHA-256 remains the integrity guard.
+///
+/// Codes already present in `out` (e.g. via a check_audio tail) are left
+/// alone.
+async fn handle_fingerprint_checks(
+    pool: &PgPool,
+    org: Uuid,
+    aid: Uuid,
+    sha256: &str,
+    fp: &Option<std::result::Result<fingerprint::Fingerprint, String>>,
+    to_run: &[&str],
+    out: &mut Vec<StagedCheck>,
+) -> Result<()> {
+    fn already_emitted(out: &[StagedCheck], code: &str) -> bool {
+        out.iter().any(|s| s.check_code == code)
+    }
+    let want_fp_failed = to_run.contains(&"AUDIO_FINGERPRINT_FAILED")
+        && !already_emitted(out, "AUDIO_FINGERPRINT_FAILED");
+    let want_similar = to_run.contains(&"AUDIO_SIMILAR_TO_EXISTING")
+        && !already_emitted(out, "AUDIO_SIMILAR_TO_EXISTING");
+    if !want_fp_failed && !want_similar {
+        return Ok(());
+    }
+    let fp = match fp {
+        Some(Ok(fp)) => fp,
+        Some(Err(detail)) => {
+            // Distinguish "too short to fingerprint" (deterministic) from a
+            // decode failure (transient). Match on the typed PolicyGate code,
+            // not the Debug rendering.
+            let too_short = detail.contains(fingerprint::TOO_SHORT_CODE);
+            if want_fp_failed {
+                out.push(StagedCheck {
+                    check_code: "AUDIO_FINGERPRINT_FAILED",
+                    rule_version: qc::QC_RULE_VERSION,
+                    status: if too_short {
+                        CheckStatus::NotApplicable
+                    } else {
+                        CheckStatus::TechnicalRetry
+                    },
+                    result_hash: asset_cache_key("AUDIO_FINGERPRINT_FAILED", sha256),
+                    detail: detail.clone(),
+                });
+            }
+            if want_similar {
+                out.push(StagedCheck {
+                    check_code: "AUDIO_SIMILAR_TO_EXISTING",
+                    rule_version: qc::QC_RULE_VERSION,
+                    status: CheckStatus::NotApplicable,
+                    result_hash: asset_cache_key("AUDIO_SIMILAR_TO_EXISTING", sha256),
+                    detail: "no fingerprint available; similarity not evaluated".into(),
+                });
+            }
+            return Ok(());
+        }
+        // Non-audio, or QC blocked the bytes: tails already covered these.
+        None => return Ok(()),
+    };
+    if want_fp_failed {
+        out.push(StagedCheck {
+            check_code: "AUDIO_FINGERPRINT_FAILED",
+            rule_version: qc::QC_RULE_VERSION,
+            status: CheckStatus::Pass,
+            result_hash: asset_cache_key("AUDIO_FINGERPRINT_FAILED", sha256),
+            detail: format!(
+                "fingerprint v{} frames={}",
+                fingerprint::FINGERPRINT_VERSION,
+                fp.frames.len()
+            ),
+        });
+    }
+    if fp.is_empty() {
+        // Fingerprint computed but too few frames for a meaningful
+        // comparison: do not pretend similarity was evaluated.
+        if want_similar {
+            out.push(StagedCheck {
+                check_code: "AUDIO_SIMILAR_TO_EXISTING",
+                rule_version: qc::QC_RULE_VERSION,
+                status: CheckStatus::NotApplicable,
+                result_hash: asset_cache_key("AUDIO_SIMILAR_TO_EXISTING", sha256),
+                detail: "audio too short for fingerprint comparison".into(),
+            });
+        }
+        return Ok(());
+    }
+    // Idempotent store: one row per asset; a re-run reuses the row.
+    // asset_fingerprints is FORCE RLS: authorize this write's org in a
+    // short transaction, same pattern as distribution.rs.
+    let mut ftx = pool.begin().await?;
+    sqlx::query("SELECT set_config('app.org_id',$1,true)")
+        .bind(org.to_string())
+        .execute(&mut *ftx)
+        .await?;
+    sqlx::query(
+        "INSERT INTO catalog.asset_fingerprints(asset_id, org_id, version, frames, duration_secs, hash)
+         VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(asset_id) DO NOTHING",
+    )
+    .bind(aid)
+    .bind(org)
+    .bind(fingerprint::FINGERPRINT_VERSION)
+    .bind(fp.frames.len() as i32)
+    .bind(fp.duration_secs)
+    .bind(fp.to_bytes())
+    .execute(&mut *ftx)
+    .await?;
+    if want_similar {
+        let hits = find_similar_assets(&mut ftx, org, aid, &fp.frames).await?;
+        let (status, detail) = if hits.is_empty() {
+            (CheckStatus::Pass, "no similar audio in catalog".to_string())
+        } else {
+            let listed: Vec<String> = hits
+                .iter()
+                .map(|(id, ber)| format!("{id} (BER={ber:.3})"))
+                .collect();
+            (
+                CheckStatus::ReviewRequired,
+                format!("similar to {} asset(s): {}", hits.len(), listed.join(", ")),
+            )
+        };
+        out.push(StagedCheck {
+            check_code: "AUDIO_SIMILAR_TO_EXISTING",
+            rule_version: qc::QC_RULE_VERSION,
+            status,
+            result_hash: asset_cache_key("AUDIO_SIMILAR_TO_EXISTING", sha256),
+            detail,
+        });
+    }
+    ftx.commit().await?;
+    Ok(())
+}
+
+/// Load a previously stored fingerprint for `aid`, if any. Used when the
+/// only uncached check is AUDIO_SIMILAR_TO_EXISTING: the bytes are unchanged
+/// (all other checks hit the cache), so we reuse the stored fingerprint
+/// instead of re-downloading and re-analyzing the file.
+async fn load_stored_fingerprint(
+    pool: &PgPool,
+    org: Uuid,
+    aid: Uuid,
+) -> Result<Option<fingerprint::Fingerprint>> {
+    let mut rtx = pool.begin().await?;
+    sqlx::query("SELECT set_config('app.org_id',$1,true)")
+        .bind(org.to_string())
+        .execute(&mut *rtx)
+        .await?;
+    let row: Option<(Vec<u8>, f64)> = sqlx::query_as(
+        "SELECT hash, duration_secs FROM catalog.asset_fingerprints WHERE asset_id=$1 AND version=$2",
+    )
+    .bind(aid)
+    .bind(fingerprint::FINGERPRINT_VERSION)
+    .fetch_optional(&mut *rtx)
+    .await?;
+    rtx.rollback().await?;
+    match row {
+        Some((bytes, duration_secs)) => {
+            let mut fp =
+                fingerprint::Fingerprint::from_bytes(&bytes).map_err(|_| Error::Internal)?;
+            fp.duration_secs = duration_secs;
+            Ok(Some(fp))
+        }
+        None => Ok(None),
+    }
+}
+
+/// Best-similarity matches for `frames` among the org's stored
+/// fingerprints at the current algorithm version, excluding `aid`
+/// itself. Sorted by BER ascending, capped at 3 for the check detail.
+async fn find_similar_assets(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    org: Uuid,
+    aid: Uuid,
+    frames: &[u32],
+) -> Result<Vec<(Uuid, f64)>> {
+    let rows: Vec<(Uuid, Vec<u8>)> = sqlx::query_as(
+        "SELECT asset_id, hash FROM catalog.asset_fingerprints
+          WHERE org_id=$1 AND asset_id<>$2 AND version=$3",
+    )
+    .bind(org)
+    .bind(aid)
+    .bind(fingerprint::FINGERPRINT_VERSION)
+    .fetch_all(&mut **tx)
+    .await?;
+    let mut hits = Vec::new();
+    for (other_id, hash) in rows {
+        let Ok(other) = fingerprint::Fingerprint::from_bytes(&hash) else {
+            continue;
+        };
+        if let Some(ber) = fingerprint::bit_error_rate(frames, &other.frames) {
+            if ber <= fingerprint::SIMILAR_BER {
+                hits.push((other_id, ber));
+            }
+        }
+    }
+    hits.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    hits.truncate(3);
+    Ok(hits)
 }
 
 async fn asset_checks(
@@ -1126,6 +1386,14 @@ async fn asset_checks(
         };
         let mut to_run: Vec<&str> = Vec::new();
         for code in expected {
+            // AUDIO_SIMILAR_TO_EXISTING is never cached: the result depends
+            // on what else is in the catalog at check time, not just the
+            // bytes. A byte-identical re-upload must be flagged as similar
+            // to the original, even though the SHA-256 matches a cached PASS.
+            if *code == "AUDIO_SIMILAR_TO_EXISTING" {
+                to_run.push(code);
+                continue;
+            }
             let rh = asset_cache_key(code, sha256);
             match cached_status(pool, code, qc::QC_RULE_VERSION, &rh).await? {
                 // A cached TECHNICAL_RETRY is transient: re-run instead of copying it.
@@ -1142,10 +1410,46 @@ async fn asset_checks(
         if to_run.is_empty() {
             continue;
         }
+        // If the only uncached check is AUDIO_SIMILAR_TO_EXISTING and we
+        // have a stored fingerprint, reuse it without re-downloading the
+        // bytes. The similarity result depends on catalog state, but the
+        // fingerprint itself is immutable for unchanged bytes.
+        let only_similarity = to_run == ["AUDIO_SIMILAR_TO_EXISTING"];
+        if only_similarity {
+            if let Some(stored_fp) = load_stored_fingerprint(pool, org, aid).await? {
+                let fp_opt = Some(Ok(stored_fp));
+                handle_fingerprint_checks(pool, org, aid, sha256, &fp_opt, &to_run, &mut out)
+                    .await?;
+                // Emit the cached codes for the other checks (already in `out`
+                // via the cache_hit path above); nothing more to do for this asset.
+                continue;
+            }
+            // No stored fingerprint: fall through to analyze_asset which will
+            // compute and store it.
+        }
         // Unique temp name: two workers must never share an analyzer file.
         let tmp_name = format!("audeniq-qc-{}", Uuid::new_v4());
         let outcomes = match analyze_asset(storage, &key, kind.as_str(), sha256, &tmp_name).await {
-            Ok(o) => o,
+            Ok((o, duration_secs, fp)) => {
+                // Persist measured audio duration for the DDEX builder.
+                // Only fills when unknown; never overwrites.
+                if let Some(secs) = duration_secs {
+                    let _ = sqlx::query(
+                        "UPDATE catalog.assets SET duration_secs=$1 WHERE org_id=$2 AND id=$3 AND duration_secs IS NULL",
+                    )
+                    .bind(secs)
+                    .bind(org)
+                    .bind(aid)
+                    .execute(pool)
+                    .await;
+                }
+                // Perceptual fingerprint: store + similarity check. The two
+                // fingerprint codes are DB-backed so they are produced here,
+                // not in check_audio; codes already emitted via a QC tail
+                // (e.g. blocked bytes) are not duplicated.
+                handle_fingerprint_checks(pool, org, aid, sha256, &fp, &to_run, &mut out).await?;
+                o
+            }
             Err(detail) => {
                 // Storage/IO failure is per-asset TECHNICAL_RETRY: other
                 // assets' results still persist and the job is requeued.

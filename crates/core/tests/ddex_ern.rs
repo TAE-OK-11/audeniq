@@ -60,16 +60,20 @@ fn ddex_ern_album_structure() {
     assert!(xml.contains("<FileName>012345678905_01_001.wav</FileName>"));
     assert!(xml.contains("<FileName>012345678905_02_002.wav</FileName>"));
     // SHA-256 pinned hashes, PCM details for WAV.
-    assert!(xml.contains("<HashSumAlgorithmType>SHA256</HashSumAlgorithmType>"));
+    assert!(xml.contains("<HashSumAlgorithmType>UserDefined</HashSumAlgorithmType>"));
     assert!(xml.contains(&c.tracks[0].audio.sha256));
     assert!(xml.contains("<AudioCodecType>PCM</AudioCodecType>"));
     assert!(xml.contains("<BitRate>1411</BitRate>"));
     // Credits surface as ResourceContributor, role mapped to the AVS value.
-    assert!(xml.contains("<ResourceContributor sequenceNumber=\"1\">"));
-    assert!(xml.contains("<Role>Composer</Role>"));
+    assert!(xml.contains("<ResourceContributor>"));
+    // The fixture credit is "composer"; ERN 3.8.2 has no Composer enum value,
+    // so it maps to the generic Contributor (name preserved in PartyName).
+    assert!(xml.contains("<ResourceContributorRole>Contributor</ResourceContributorRole>"));
     // Image resource.
     assert!(xml.contains("<ImageType>FrontCoverImage</ImageType>"));
-    assert!(xml.contains("<ResourceReference>I001</ResourceReference>"));
+    // Image takes the next A-number after the 4 tracks (XSD pattern
+    // requires ResourceReference to start with 'A').
+    assert!(xml.contains("<ResourceReference>A005</ResourceReference>"));
     assert!(xml.contains("<FileName>012345678905.jpg</FileName>"));
     assert!(xml.contains("<ImageCodecType>JPEG</ImageCodecType>"));
     // ReleaseList.
@@ -84,7 +88,9 @@ fn ddex_ern_album_structure() {
     assert!(xml.contains("<UseType>OnDemandStream</UseType>"));
     assert!(xml.contains("<StartDate>2026-10-01</StartDate>"));
     assert!(!xml.contains("<EndDate>"));
-    assert!(xml.contains("<DealId>R001_DEAL_1</DealId>"));
+    // ERN 3.8.2 has no DealId element: Deal = DealReference?, DealTerms?,
+    // ... — the builder must not emit one.
+    assert!(!xml.contains("DealId"));
     assert!(xml.ends_with("</ern:NewReleaseMessage>\n"));
 }
 
@@ -157,9 +163,8 @@ fn ddex_ern_deterministic_and_rejects_bad_config() {
 
 /// Well-formedness guard for the emitted ERN: parses the whole document
 /// with quick-xml and asserts the root element is the ERN message.
-/// This is NOT XSD validation — the official ERN 3.8.2 XSD is not available
-/// from any trusted source (service.ddex.net returns 404), so schema
-/// conformance stays an F6 pre-requisite, not a claim.
+/// Full schema conformance is asserted by `ddex_ern_fixtures_pass_xsd_validation`
+/// against the vendored ERN 3.8.2 XSD.
 #[test]
 fn ddex_ern_output_is_well_formed_xml() {
     use quick_xml::Reader;
@@ -214,15 +219,21 @@ fn ddex_ern_parental_warning_explicit() {
 }
 
 #[test]
-fn ddex_ern_version_title_emitted_when_set() {
-    // Spotify Metadata Style Guide: version info goes in a dedicated
-    // version field, rendered as DDEX VersionTitle — never glued to Title.
+fn ddex_ern_version_emitted_as_subtitle_when_set() {
+    // ERN 3.8.2 has no VersionTitle element. The DDEX definition of SubTitle
+    // explicitly covers "Titles of Versions used to differentiate different
+    // versions of the same Title", so the version/designation goes there —
+    // never glued onto the title text (Spotify Metadata Style Guide 8.2/8.4).
     let mut f = fixture(0);
     f.tracks[0].version = "Radio Edit".into();
     let xml = generate_ddex_ern_382(&f, &config(MessageSubType::Initial)).unwrap();
     assert!(
-        xml.contains("<VersionTitle>Radio Edit</VersionTitle>"),
-        "version must be emitted as VersionTitle"
+        xml.contains("<SubTitle>Radio Edit</SubTitle>"),
+        "version must be emitted as SubTitle"
+    );
+    assert!(
+        !xml.contains("VersionTitle"),
+        "ERN 3.8.2 has no VersionTitle element"
     );
     assert!(
         xml.contains("<TitleText>Track 1</TitleText>"),
@@ -231,7 +242,46 @@ fn ddex_ern_version_title_emitted_when_set() {
     let f2 = fixture(0);
     let xml2 = generate_ddex_ern_382(&f2, &config(MessageSubType::Initial)).unwrap();
     assert!(
-        !xml2.contains("VersionTitle"),
-        "empty version must not emit VersionTitle"
+        !xml2.contains("SubTitle"),
+        "empty version must not emit SubTitle"
     );
+}
+
+#[test]
+fn ddex_ern_missing_duration_fails_closed() {
+    // SoundRecording/Duration is schema-required. Without a measured
+    // duration the builder must fail with DDEX_DURATION_UNKNOWN, never
+    // emit a schema-invalid message.
+    let mut f = fixture(0);
+    f.tracks[0].audio.duration_secs = None;
+    let err = generate_ddex_ern_382(&f, &config(MessageSubType::Initial)).unwrap_err();
+    assert!(
+        matches!(err, Error::PolicyGate("DDEX_DURATION_UNKNOWN")),
+        "unexpected error: {err:?}"
+    );
+}
+
+#[test]
+fn ddex_ern_duration_format() {
+    let c = fixture(0); // single.json: duration_secs = 205.3
+    let xml = generate_ddex_ern_382(&c, &config(MessageSubType::Initial)).unwrap();
+    assert!(
+        xml.contains("<Duration>PT205.3S</Duration>"),
+        "xs:duration format expected"
+    );
+}
+
+/// Full XSD validation against the vendored ERN 3.8.2 schema: every
+/// fixture (single/EP/album) must produce a schema-valid
+/// `NewReleaseMessage`. This is the F6 pre-contract proof that any
+/// interchange message we would send is well-formed per the standard.
+#[test]
+fn ddex_ern_fixtures_pass_xsd_validation() {
+    use audeniq_core::ddex_xsd::validate_ern_382_xml;
+    for i in 0..3 {
+        let c = fixture(i);
+        let xml = generate_ddex_ern_382(&c, &config(MessageSubType::Initial)).unwrap();
+        validate_ern_382_xml(&xml)
+            .unwrap_or_else(|e| panic!("fixture {i} failed XSD validation: {e:?}"));
+    }
 }

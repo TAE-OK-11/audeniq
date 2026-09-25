@@ -12,7 +12,7 @@ use crate::{
     identifiers::validate_upc,
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct AssetRef {
     pub id: Uuid,
@@ -20,15 +20,19 @@ pub struct AssetRef {
     pub sha256: String,
     pub size_bytes: i64,
     pub content_type: String,
+    /// Measured audio duration in seconds (Stage 1 QC). None when unknown;
+    /// the DDEX builder fails closed without it (DDEX_DURATION_UNKNOWN).
+    #[serde(default)]
+    pub duration_secs: Option<f64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct PreparedTrack {
     pub id: Uuid,
     pub title: String,
     /// Version/designation ("Radio Edit"). Empty = none; emitted as DDEX
-    /// VersionTitle only when non-empty.
+    /// SubTitle only when non-empty (ERN 3.8.2 has no VersionTitle element).
     #[serde(default)]
     pub version: String,
     pub artist: String,
@@ -96,7 +100,7 @@ async fn asset_ref(
     kind_prefix: &str,
 ) -> Result<AssetRef> {
     let row = sqlx::query(
-        "SELECT object_key, sha256, size_bytes, content_type FROM catalog.assets WHERE org_id=$1 AND id=$2",
+        "SELECT object_key, sha256, size_bytes, content_type, duration_secs FROM catalog.assets WHERE org_id=$1 AND id=$2",
     )
     .bind(org_id)
     .bind(asset_id)
@@ -115,6 +119,7 @@ async fn asset_ref(
             .ok_or(Error::PolicyGate("PREPARATION_ASSET_SHA_MISSING"))?,
         size_bytes: row.get("size_bytes"),
         content_type,
+        duration_secs: row.get("duration_secs"),
     })
 }
 

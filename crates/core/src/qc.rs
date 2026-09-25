@@ -201,6 +201,17 @@ fn parse_image(v: &serde_json::Value) -> Result<ImageMetrics> {
     })
 }
 
+/// Measured audio duration in seconds via ffprobe. Returns `None` when the
+/// file cannot be probed or has no parseable duration. Used by Stage 1 to
+/// persist `catalog.assets.duration_secs`, which the DDEX ERN builder needs
+/// for the schema-required `SoundRecording/Duration` element.
+pub fn probe_duration_secs(path: &Path) -> Option<f64> {
+    let v = probe(path).ok()?;
+    let p: ProbeJson = serde_json::from_value(v).ok()?;
+    let secs: f64 = p.format.duration.parse().ok()?;
+    (secs > 0.0).then_some(secs)
+}
+
 /// Detect container from magic bytes. Returns a canonical tag or "UNKNOWN".
 pub fn detect_container(head: &[u8]) -> &'static str {
     if head.len() >= 12 && &head[0..4] == b"RIFF" && &head[8..12] == b"WAVE" {
@@ -268,6 +279,13 @@ pub const AUDIO_CHECK_CODES: &[&str] = &[
     "AUDIO_BIT_DEPTH_LOW",
     "AUDIO_CHANNEL_INVALID",
     "AUDIO_LOUDNESS_OUT_OF_RANGE",
+    // Perceptual similarity is DB-backed and computed in submission.rs, not
+    // in check_audio: the codes live here so the fixed contract (tails,
+    // caching, counts) covers them, but check_audio only emits them via
+    // tail() short-circuits. The real outcomes are produced by
+    // submission::handle_fingerprint_checks.
+    "AUDIO_FINGERPRINT_FAILED",
+    "AUDIO_SIMILAR_TO_EXISTING",
 ];
 
 /// Stage 1 basic QC for an audio asset file.
@@ -776,8 +794,8 @@ mod tests {
             .unwrap();
         assert_eq!(sha.status, CheckStatus::Blocked);
         // Blocked short-circuits: the remaining checks are NOT_APPLICABLE,
-        // but the eight-check contract still holds.
-        assert_eq!(out.len(), 8);
+        // but the ten-check contract still holds (8 QC + 2 fingerprint).
+        assert_eq!(out.len(), 10);
         assert!(
             out[1..]
                 .iter()

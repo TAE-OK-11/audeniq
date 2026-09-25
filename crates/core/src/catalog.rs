@@ -290,7 +290,7 @@ pub struct TrackInput {
     pub parental_advisory: Option<bool>,
     /// Version/designation of the recording ("Radio Edit", "2024 Remaster").
     /// Spotify Style Guide 8.2/8.4: version info belongs here, not in the
-    /// title. Empty = no version; maps to DDEX VersionTitle.
+    /// title. Empty = no version; maps to DDEX SubTitle (ERN 3.8.2 has no VersionTitle element).
     pub version: Option<String>,
 }
 pub async fn track(

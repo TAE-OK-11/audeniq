@@ -15,11 +15,16 @@
 //! supplies message ids and timestamps so output is deterministic.
 //!
 //! Deliberate deviations from the reference, all documented here:
-//! - `HashSum` uses SHA-256 (the hash pinned on `catalog.assets`), not MD5.
+//! - `HashSum` carries the hex SHA-256 pinned on `catalog.assets`, labelled
+//!   `UserDefined`: ERN 3.8.2's `HashSumAlgorithmType` enum has no SHA-256
+//!   entry, and mislabelling it SHA1 would be false. Sender convention:
+//!   `UserDefined` = lowercase hex SHA-256.
 //! - Audio technical details come from the asset `content_type`
 //!   (`audio/wav` -> PCM/WAV, `audio/flac` -> FLAC, `audio/mpeg` -> MP3).
 //!   PCM-specific fields (1411/44100/16/2) are emitted for WAV only.
-//! - Duration is omitted: `PreparedTrack` carries no duration.
+//! - Duration is required by the schema: emitted as `PT{secs}S` from
+//!   `AssetRef::duration_secs` (Stage 1 persists it from ffprobe); missing
+//!   duration fails closed with `DDEX_DURATION_UNKNOWN`.
 //! - Image dimensions are omitted: not stored on the asset.
 //! - Credits are emitted as `ResourceContributor` with roles mapped onto
 //!   the DDEX `ContributorRole` allowed-value set (`contributor_role`);
@@ -145,11 +150,13 @@ fn image_codec(content_type: &str) -> (&'static str, &'static str) {
 }
 
 fn message_header(out: &mut String, c: &DdexErnConfig) {
+    // XSD order: MessageThreadId?, MessageId, MessageFileName?,
+    // MessageSender, SentOnBehalfOf?, MessageRecipient,
+    // MessageCreatedDateTime, MessageAuditTrail?, Comment?,
+    // MessageControlType?
     out.push_str("<MessageHeader>");
     element(out, "MessageThreadId", &c.message_id);
     element(out, "MessageId", &c.message_id);
-    element(out, "MessageCreatedDateTime", &c.created_at);
-    element(out, "MessageControlType", c.message_sub_type.control_type());
     out.push_str("<MessageSender>");
     if let Some(id) = &c.sender_party_id {
         element(out, "PartyId", id);
@@ -171,6 +178,8 @@ fn message_header(out: &mut String, c: &DdexErnConfig) {
     out.push_str("<PartyName>");
     element(out, "FullName", &c.recipient_name);
     out.push_str("</PartyName></MessageRecipient>");
+    element(out, "MessageCreatedDateTime", &c.created_at);
+    element(out, "MessageControlType", c.message_sub_type.control_type());
     out.push_str("</MessageHeader>");
 }
 
@@ -178,9 +187,16 @@ fn file_block(out: &mut String, file_name: &str, sha256: &str) {
     out.push_str("<File>");
     element(out, "FileName", file_name);
     element(out, "FilePath", file_name);
+    // XSD order inside HashSum: HashSum, HashSumAlgorithmType,
+    // HashSumDataType?
+    // The value is the hex SHA-256 pinned on catalog.assets. ERN 3.8.2's
+    // HashSumAlgorithmType enum has no SHA-256 entry (only MD4/MD5/SHA/
+    // SHA1/UserDefined), so it is labelled UserDefined: mislabelling it
+    // SHA1 would be a lie. Documented sender convention: UserDefined =
+    // lowercase hex SHA-256.
     out.push_str("<HashSum>");
-    element(out, "HashSumAlgorithmType", "SHA256");
     element(out, "HashSum", sha256);
+    element(out, "HashSumAlgorithmType", "UserDefined");
     out.push_str("</HashSum></File>");
 }
 
@@ -191,23 +207,27 @@ fn file_block(out: &mut String, file_name: &str, sha256: &str) {
 /// carries allowed values. The stored role text is unchanged in the
 /// database; review this table against the partner's profile AVS before
 /// F6 production use.
+/// Map a free-text studio credit role onto the ERN 3.8.2
+/// `ResourceContributorRole` AVS (`avs_20161006.xsd`). That enum has no
+/// Composer/Lyricist/Arranger/Mixer/Engineer values, so studio roles map
+/// onto the closest valid value and everything else falls back to the
+/// generic `Contributor`. The credit's display name is always preserved in
+/// `PartyName`; only the role code is generalized — never an invented
+/// enum value, or the message fails XSD validation.
 fn contributor_role(role: &str) -> &'static str {
     match role.trim().to_ascii_lowercase().as_str() {
-        "composer" | "songwriter" | "writer" | "music" => "Composer",
-        "lyricist" | "lyrics" | "words" => "Lyricist",
-        "arranger" => "Arranger",
         "producer" | "music producer" | "executive producer" | "co-producer" => "Producer",
-        "publisher" | "music publisher" => "Publisher",
-        "engineer" | "recording engineer" | "sound engineer" | "audio engineer"
-        | "mastering engineer" => "Engineer",
-        "mixer" | "mix engineer" | "mixing engineer" => "Mixer",
-        "remixer" => "Remixer",
+        "featured artist" | "featuring" | "feat." | "feat" => "FeaturedArtist",
         "conductor" => "Conductor",
         "narrator" => "Narrator",
-        "author" => "Author",
-        "musician" | "instrumentalist" | "performer" => "Musician",
-        "featured artist" | "featuring" | "feat." | "feat" => "FeaturedArtist",
         "artist" | "main artist" => "Artist",
+        "musician" | "instrumentalist" | "performer" | "associated performer" => {
+            "AssociatedPerformer"
+        }
+        "engineer" | "recording engineer" | "sound engineer" | "audio engineer"
+        | "mastering engineer" | "mixer" | "mix engineer" | "mixing engineer" => "StudioPersonnel",
+        // Composer, songwriter, lyricist, arranger, remixer, publisher have
+        // no 3.8.2 enum value: generic Contributor, name preserved.
         _ => "Contributor",
     }
 }
@@ -229,7 +249,7 @@ fn credit_map(prepared: &PreparedRelease) -> BTreeMap<uuid::Uuid, Vec<(String, S
     map
 }
 
-fn resource_list(out: &mut String, prepared: &PreparedRelease) {
+fn resource_list(out: &mut String, prepared: &PreparedRelease) -> Result<()> {
     out.push_str("<ResourceList>");
     let credits = credit_map(prepared);
     for (i, track) in ordered_tracks(prepared).iter().enumerate() {
@@ -240,45 +260,58 @@ fn resource_list(out: &mut String, prepared: &PreparedRelease) {
             "{}_{:02}_{:03}.{ext}",
             prepared.upc, track.disc_number, track.track_number
         );
+        // XSD order: SoundRecordingType?, IsArtistRelated?,
+        // SoundRecordingId, ResourceReference, ReferenceTitle, ...,
+        // LanguageOfPerformance?, Duration,
+        // SoundRecordingDetailsByTerritory.
         out.push_str("<SoundRecording>");
         element(out, "SoundRecordingType", "MusicalWorkSoundRecording");
-        element(out, "ResourceReference", &resource_ref);
         out.push_str("<SoundRecordingId>");
         element(out, "ISRC", &track.isrc);
         out.push_str("</SoundRecordingId>");
+        element(out, "ResourceReference", &resource_ref);
         out.push_str("<ReferenceTitle>");
         element(out, "TitleText", &track.title);
         out.push_str("</ReferenceTitle>");
-        out.push_str("<DisplayTitle>");
+        element(out, "LanguageOfPerformance", &prepared.language);
+        let secs = track
+            .audio
+            .duration_secs
+            .ok_or(Error::PolicyGate("DDEX_DURATION_UNKNOWN"))?;
+        element(out, "Duration", format!("PT{secs:.1}S"));
+        // The details element is SoundRecordingDetailsByTerritory (not
+        // DetailsByTerritory). Inside: TerritoryCode, Title?, DisplayArtist?,
+        // ResourceContributor*, PLine?, TechnicalSoundRecordingDetails?.
+        // ERN 3.8.2 has no VersionTitle element; the DDEX definition of
+        // SubTitle explicitly covers "Titles of Versions used to
+        // differentiate different versions of the same Title", so the
+        // version/designation goes there — never glued onto the title text.
+        out.push_str("<SoundRecordingDetailsByTerritory>");
+        element(out, "TerritoryCode", "Worldwide");
+        out.push_str("<Title>");
         element(out, "TitleText", &track.title);
-        // Spotify Metadata Style Guide: version/designation belongs in the
-        // dedicated version field, rendered here as DDEX VersionTitle —
-        // never glued onto the title text.
         if !track.version.is_empty() {
-            element(out, "VersionTitle", &track.version);
+            element(out, "SubTitle", &track.version);
         }
-        out.push_str("</DisplayTitle>");
+        out.push_str("</Title>");
         out.push_str("<DisplayArtist><PartyName>");
         element(out, "FullName", &track.artist);
         out.push_str("</PartyName>");
         element(out, "ArtistRole", "MainArtist");
         out.push_str("</DisplayArtist>");
-        out.push_str("<DetailsByTerritory>");
-        element(out, "TerritoryCode", "Worldwide");
         if let Some(list) = credits.get(&track.id) {
-            for (n, (name, role)) in list.iter().enumerate() {
-                out.push_str(&format!(
-                    "<ResourceContributor{}>",
-                    attr("sequenceNumber", &(n + 1).to_string())
-                ));
+            // ResourceContributor has no sequenceNumber attribute in
+            // ERN 3.8.2, and the role element is ResourceContributorRole
+            // (not Role).
+            for (name, role) in list.iter() {
+                out.push_str("<ResourceContributor>");
                 out.push_str("<PartyName>");
                 element(out, "FullName", name);
                 out.push_str("</PartyName>");
-                element(out, "Role", contributor_role(role));
+                element(out, "ResourceContributorRole", contributor_role(role));
                 out.push_str("</ResourceContributor>");
             }
         }
-        element(out, "LanguageOfPerformance", &prepared.language);
         out.push_str("<PLine>");
         element(out, "Year", prepared.release_date.format("%Y").to_string());
         element(out, "PLineText", &prepared.p_line);
@@ -287,26 +320,37 @@ fn resource_list(out: &mut String, prepared: &PreparedRelease) {
         element(out, "TechnicalResourceDetailsReference", &tech_ref);
         element(out, "AudioCodecType", codec);
         if is_pcm {
+            // XSD order: BitRate, NumberOfChannels, SamplingRate,
+            // BitsPerSample.
             element(out, "BitRate", "1411");
+            element(out, "NumberOfChannels", "2");
             element(out, "SamplingRate", "44100");
             element(out, "BitsPerSample", "16");
-            element(out, "NumberOfChannels", "2");
         }
         file_block(out, &file_name, &track.audio.sha256);
         out.push_str("</TechnicalSoundRecordingDetails>");
-        out.push_str("</DetailsByTerritory>");
+        out.push_str("</SoundRecordingDetailsByTerritory>");
         out.push_str("</SoundRecording>");
     }
-    image_resource(out, prepared);
+    image_resource(
+        out,
+        prepared,
+        &format!("A{:03}", ordered_tracks(prepared).len() + 1),
+    );
     out.push_str("</ResourceList>");
+    Ok(())
 }
 
-fn image_resource(out: &mut String, prepared: &PreparedRelease) {
+/// The image's ResourceReference must match the XSD pattern
+/// `A[\d\-_a-zA-Z]+` (same as sound recordings), so it takes the next
+/// A-number after the tracks rather than an `I001`-style id.
+fn image_resource(out: &mut String, prepared: &PreparedRelease, image_ref: &str) {
     let art: &AssetRef = &prepared.artwork;
     let (codec, ext) = image_codec(&art.content_type);
+    // XSD order: ImageType?, IsArtistRelated?, ImageId, ResourceReference,
+    // ..., ImageDetailsByTerritory.
     out.push_str("<Image>");
     element(out, "ImageType", "FrontCoverImage");
-    element(out, "ResourceReference", "I001");
     out.push_str("<ImageId>");
     out.push_str(&format!(
         "<ProprietaryId{}>{}</ProprietaryId>",
@@ -314,14 +358,15 @@ fn image_resource(out: &mut String, prepared: &PreparedRelease) {
         escaped(&format!("{}_IMG_001", prepared.upc))
     ));
     out.push_str("</ImageId>");
-    out.push_str("<DetailsByTerritory>");
+    element(out, "ResourceReference", image_ref);
+    out.push_str("<ImageDetailsByTerritory>");
     element(out, "TerritoryCode", "Worldwide");
     out.push_str("<TechnicalImageDetails>");
     element(out, "TechnicalResourceDetailsReference", "TI001");
     element(out, "ImageCodecType", codec);
     file_block(out, &format!("{}.{ext}", prepared.upc), &art.sha256);
     out.push_str("</TechnicalImageDetails>");
-    out.push_str("</DetailsByTerritory>");
+    out.push_str("</ImageDetailsByTerritory>");
     out.push_str("</Image>");
 }
 
@@ -335,14 +380,14 @@ fn release_type_ddex(release_type: &str) -> &'static str {
 
 fn release_list(out: &mut String, prepared: &PreparedRelease) {
     let year = prepared.release_date.format("%Y").to_string();
+    // XSD order: ReleaseId+, ReleaseReference*,
+    // ReferenceTitle, ReleaseResourceReferenceList,
+    // ReleaseCollectionReferenceList?, ReleaseType?,
+    // ReleaseDetailsByTerritory, PLine?, CLine?, ...,
+    // GlobalOriginalReleaseDate?
+    // (DisplayTitle is only valid in CatalogItem, not in Release.)
     out.push_str("<ReleaseList>");
     out.push_str(&format!("<Release{}>", attr("IsMainRelease", "true")));
-    element(out, "ReleaseReference", "R001");
-    element(
-        out,
-        "ReleaseType",
-        release_type_ddex(&prepared.release_type),
-    );
     out.push_str("<ReleaseId>");
     out.push_str(&format!(
         "<ICPN{}>{}</ICPN>",
@@ -350,17 +395,43 @@ fn release_list(out: &mut String, prepared: &PreparedRelease) {
         escaped(&prepared.upc)
     ));
     out.push_str("</ReleaseId>");
+    element(out, "ReleaseReference", "R001");
     out.push_str("<ReferenceTitle>");
     element(out, "TitleText", &prepared.title);
     out.push_str("</ReferenceTitle>");
-    out.push_str("<DisplayTitle>");
-    element(out, "TitleText", &prepared.title);
-    out.push_str("</DisplayTitle>");
+    out.push_str("<ReleaseResourceReferenceList>");
+    for (i, _) in ordered_tracks(prepared).iter().enumerate() {
+        element(out, "ReleaseResourceReference", format!("A{:03}", i + 1));
+    }
+    // Same A-numbered reference as the Image resource above.
+    element(
+        out,
+        "ReleaseResourceReference",
+        format!("A{:03}", ordered_tracks(prepared).len() + 1),
+    );
+    out.push_str("</ReleaseResourceReferenceList>");
+    element(
+        out,
+        "ReleaseType",
+        release_type_ddex(&prepared.release_type),
+    );
+    out.push_str("<ReleaseDetailsByTerritory>");
+    element(out, "TerritoryCode", "Worldwide");
+    element(out, "DisplayArtistName", &prepared.artist);
     out.push_str("<DisplayArtist><PartyName>");
     element(out, "FullName", &prepared.artist);
     out.push_str("</PartyName>");
     element(out, "ArtistRole", "MainArtist");
     out.push_str("</DisplayArtist>");
+    if prepared.explicit {
+        element(out, "ParentalWarningType", "Explicit");
+    }
+    element(
+        out,
+        "ReleaseDate",
+        prepared.release_date.format("%Y-%m-%d").to_string(),
+    );
+    out.push_str("</ReleaseDetailsByTerritory>");
     out.push_str("<PLine>");
     element(out, "Year", &year);
     element(out, "PLineText", &prepared.p_line);
@@ -374,29 +445,15 @@ fn release_list(out: &mut String, prepared: &PreparedRelease) {
         "GlobalOriginalReleaseDate",
         prepared.release_date.format("%Y-%m-%d").to_string(),
     );
-    out.push_str("<ReleaseDetailsByTerritory>");
-    element(out, "TerritoryCode", "Worldwide");
-    element(out, "DisplayArtistName", &prepared.artist);
-    if prepared.explicit {
-        element(out, "ParentalWarningType", "Explicit");
-    }
-    element(
-        out,
-        "ReleaseDate",
-        prepared.release_date.format("%Y-%m-%d").to_string(),
-    );
-    out.push_str("<ReleaseResourceReferenceList>");
-    for (i, _) in ordered_tracks(prepared).iter().enumerate() {
-        element(out, "ReleaseResourceReference", format!("A{:03}", i + 1));
-    }
-    element(out, "ReleaseResourceReference", "I001");
-    out.push_str("</ReleaseResourceReferenceList>");
-    out.push_str("</ReleaseDetailsByTerritory>");
-    out.push_str("</Release>");
-    out.push_str("</ReleaseList>");
+    out.push_str("</Release></ReleaseList>");
 }
 
 fn deal_list(out: &mut String, c: &DdexErnConfig) {
+    // XSD: ReleaseDeal = DealReleaseReference, Deal, EffectiveDate?.
+    // Deal = DealReference?, DealTerms?, ... — there is no DealId element;
+    // DealReference is optional and pattern-constrained, so it is omitted.
+    // DealTerms minimal valid set: CommercialModelType?, Usage+,
+    // TerritoryCode+, ValidityPeriod+.
     out.push_str("<DealList><ReleaseDeal>");
     element(out, "DealReleaseReference", "R001");
     out.push_str("<Deal><DealTerms>");
@@ -414,9 +471,7 @@ fn deal_list(out: &mut String, c: &DdexErnConfig) {
         element(out, "EndDate", end);
     }
     out.push_str("</ValidityPeriod>");
-    out.push_str("</DealTerms>");
-    element(out, "DealId", "R001_DEAL_1");
-    out.push_str("</Deal></ReleaseDeal></DealList>");
+    out.push_str("</DealTerms></Deal></ReleaseDeal></DealList>");
 }
 
 /// Build a DDEX ERN 3.8.2 `NewReleaseMessage` for a prepared release.
@@ -444,7 +499,7 @@ pub fn generate_ddex_ern_382(prepared: &PreparedRelease, config: &DdexErnConfig)
     out.push_str(&attr("xs:schemaLocation", DDEX_ERN_382_SCHEMA));
     out.push('>');
     message_header(&mut out, config);
-    resource_list(&mut out, prepared);
+    resource_list(&mut out, prepared)?;
     release_list(&mut out, prepared);
     deal_list(&mut out, config);
     out.push_str("</ern:NewReleaseMessage>\n");
@@ -457,14 +512,17 @@ mod tests {
 
     #[test]
     fn contributor_role_maps_studio_roles_to_avs() {
-        assert_eq!(contributor_role("composer"), "Composer");
-        assert_eq!(contributor_role("Songwriter"), "Composer");
-        assert_eq!(contributor_role("lyricist"), "Lyricist");
-        assert_eq!(contributor_role("ARRANGER"), "Arranger");
-        assert_eq!(contributor_role("Mixing Engineer"), "Mixer");
-        assert_eq!(contributor_role("Mastering Engineer"), "Engineer");
+        // Every value below must be in the ERN 3.8.2 ResourceContributorRole
+        // AVS; anything else fails XSD validation.
+        assert_eq!(contributor_role("composer"), "Contributor");
+        assert_eq!(contributor_role("Songwriter"), "Contributor");
+        assert_eq!(contributor_role("lyricist"), "Contributor");
+        assert_eq!(contributor_role("ARRANGER"), "Contributor");
+        assert_eq!(contributor_role("Mixing Engineer"), "StudioPersonnel");
+        assert_eq!(contributor_role("Mastering Engineer"), "StudioPersonnel");
         assert_eq!(contributor_role("feat."), "FeaturedArtist");
         assert_eq!(contributor_role("  producer  "), "Producer");
+        assert_eq!(contributor_role("Conductor"), "Conductor");
     }
 
     #[test]

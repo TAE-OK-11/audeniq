@@ -9,7 +9,7 @@
 use std::sync::Arc;
 
 use crate::{
-    ddex_ern,
+    ddex_ern, ddex_xsd,
     domain::FreshnessPin,
     ern,
     error::{Error, Result},
@@ -40,7 +40,7 @@ pub struct CanonicalTrack {
     pub track_id: Uuid,
     pub title: String,
     /// Version/designation ("Radio Edit"). Empty = none; emitted as
-    /// DDEX VersionTitle only when non-empty.
+    /// DDEX SubTitle only when non-empty (ERN 3.8.2 has no VersionTitle element).
     #[serde(default)]
     pub version: String,
     pub disc_number: i32,
@@ -480,6 +480,11 @@ async fn persist_ddex_messages(
             takedown_date: None,
         };
         let xml = ddex_ern::generate_ddex_ern_382(prepared, &config)?;
+        // Contract-free F6 groundwork: every interchange message is proven
+        // schema-valid before it is persisted. A message that fails XSD
+        // validation never becomes a ddex_messages row (fail-closed); the
+        // worker retries only when the cause is transient.
+        ddex_xsd::validate_ern_382_xml(&xml)?;
         let sha = hex::encode(Sha256::digest(xml.as_bytes()));
         let res = sqlx::query(
         "INSERT INTO distribution.ddex_messages(package_id,org_id,dsp_id,sender_name,sender_dpid,recipient_name,recipient_dpid,ern_xml,ern_sha256) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(package_id,dsp_id) DO NOTHING",
