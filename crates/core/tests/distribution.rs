@@ -474,6 +474,24 @@ async fn prepare_release_happy_path_freezes_package(pool: PgPool) {
     );
     assert_eq!(release_status(&pool, release).await, "READY_FOR_DELIVERY");
 
+    // Durable handoff: prepare_release enqueues delivery.enqueue for the
+    // frozen package in the same transaction as READY_FOR_DELIVERY.
+    let package_id: Uuid = sqlx::query_scalar(
+        "SELECT package_id FROM distribution.preparation_artifacts WHERE release_id=$1",
+    )
+    .bind(release)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let (kind, payload): (String, Value) = sqlx::query_as(
+        "SELECT kind, payload FROM operations.jobs WHERE queue='delivery' AND kind='delivery.enqueue'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(kind, "delivery.enqueue");
+    assert_eq!(payload["package_id"], Value::String(package_id.to_string()));
+
     // Canonical snapshot pins the Stage 2 outputs.
     let vp_id: Uuid = sqlx::query_scalar(
         "SELECT id FROM distribution.verification_packages WHERE revision_id=$1",

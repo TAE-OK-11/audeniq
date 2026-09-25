@@ -900,6 +900,70 @@ async fn runtime_roles_enforce_foundation_boundary(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn worker_pipeline_grants_cover_handoff_and_reconciler(pool: PgPool) {
+    database::MIGRATOR.run(&pool).await.unwrap();
+    sqlx::raw_sql(
+        "DO $$ BEGIN
+         IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='audeniq_api') THEN
+           CREATE ROLE audeniq_api NOLOGIN;
+         END IF;
+         IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='audeniq_worker') THEN
+           CREATE ROLE audeniq_worker NOLOGIN;
+         END IF;
+         END $$;",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::raw_sql(include_str!("../../../deploy/grants.sql"))
+        .execute(&pool)
+        .await
+        .unwrap();
+    // The worker needs these for the READY_FOR_DELIVERY -> delivery.enqueue
+    // handoff and the F5 reconciler (identity.orgs enumeration).
+    for (table, privs) in [
+        ("identity.orgs", "SELECT"),
+        ("rights.rights_epochs", "SELECT"),
+        ("catalog.releases", "SELECT,UPDATE"),
+        ("catalog.assets", "SELECT,UPDATE"),
+        ("distribution.preparation_artifacts", "SELECT,INSERT"),
+        ("distribution.identifier_assignments", "SELECT,INSERT"),
+        ("execution.delivery_jobs", "SELECT,INSERT,UPDATE"),
+        ("execution.delivery_attempts", "SELECT,INSERT,UPDATE"),
+        ("execution.live_bindings", "SELECT,INSERT,UPDATE"),
+        ("execution.reconciliation_cases", "SELECT,INSERT,UPDATE"),
+        ("execution.adapter_profiles", "SELECT"),
+        ("finance.payout_orders", "SELECT,INSERT,UPDATE"),
+        ("operations.check_results", "INSERT"),
+    ] {
+        for priv_name in privs.split(',') {
+            let ok: bool =
+                sqlx::query_scalar("SELECT has_table_privilege('audeniq_worker', $1, $2)")
+                    .bind(table)
+                    .bind(priv_name)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            assert!(ok, "audeniq_worker missing {priv_name} on {table}");
+        }
+    }
+    // The API role must still be denied writes on the pipeline schemas.
+    for (table, priv_name) in [
+        ("execution.delivery_jobs", "INSERT"),
+        ("distribution.packages", "INSERT"),
+        ("finance.ledger_transactions", "INSERT"),
+    ] {
+        let ok: bool = sqlx::query_scalar("SELECT has_table_privilege('audeniq_api', $1, $2)")
+            .bind(table)
+            .bind(priv_name)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert!(!ok, "audeniq_api unexpectedly has {priv_name} on {table}");
+    }
+}
+
+#[sqlx::test]
 async fn draft_tracks_credits_archive_and_preflight(pool: PgPool) {
     let (api, _) = app(pool.clone()).await;
     let a = user(&api).await;
