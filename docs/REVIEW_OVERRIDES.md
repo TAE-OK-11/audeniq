@@ -70,6 +70,26 @@ time, and repeating an identical override is a no-op (`ALREADY_APPLIED`): it
 queues no job and does not bump the rights epoch. Reasons are capped at 2000
 characters and must not contain control characters.
 
+## REVIEW_REQUIRED: WARNING vs HOLD (sandbox round 3)
+
+Stage 1 used to record REVIEW_REQUIRED (for example
+`AUDIO_SIMILAR_TO_EXISTING`), and the release still went on to delivery.
+Stage 1 REVIEW_REQUIRED results now fall into two groups:
+
+| Severity | Codes | Effect |
+|---|---|---|
+| **WARNING** (advisory) | `AUDIO_LOUDNESS_OUT_OF_RANGE`, `AUDIO_CLIPPING` (short clip events; heavy clipping is a correction), `TRACK_TITLE_HAS_VERSION_INFO`, `ADULT_MARKING_REVIEW` | Recorded and shown to the artist, but never gates the release |
+| **HOLD** | every other REVIEW_REQUIRED/BLOCKED code, e.g. `AUDIO_SIMILAR_TO_EXISTING` (same or cross-org), `ASSET_REUSED`, `AUDIO_CONTENT_SUSPECT`, `TRACK_TITLE_SEO_SPAM`, `ARTIST_NAME_REVIEW` | Stage 2 carries it into its decision under the same check code, so the release parks in `STAGE2_REVIEW` until a reviewer override clears it |
+
+New or unknown Stage 1 review codes default to HOLD (fail closed). Holds
+without a code of their own are carried as `S1_REVIEW_HOLD`. All Stage 2
+`S2_*` REVIEW codes are holds.
+
+Clearing a hold is an override like any other. PASS on a hold code is not
+low-risk, so it always needs a genuine second approver. `GET .../submission`
+reports a `severity` for every check: `NONE`, `WARNING`, `HOLD`,
+`CORRECTION` or `OTHER`. The list lives in `review::STAGE1_WARNING_CODES`.
+
 ## Grants
 
 `deploy/grants.sql` gives `audeniq_api` these grants:

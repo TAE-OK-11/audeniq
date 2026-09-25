@@ -252,6 +252,7 @@ pub async fn run_stage2(pool: &PgPool, job: &operations::Job) -> Result<Option<S
     checks.extend(module_catalog_match(&mut tx, &ctx).await?);
     checks.extend(module_metadata_content(&ctx).await?);
     checks.extend(module_policy_integrity(&mut tx, &ctx).await?);
+    checks.extend(module_stage1_holds(&mut tx, &ctx).await?);
 
     let mut check_ids = Vec::new();
     for c in &checks {
@@ -261,6 +262,101 @@ pub async fn run_stage2(pool: &PgPool, job: &operations::Job) -> Result<Option<S
     let summary = decide(&mut tx, &ctx, &checks, &check_ids).await?;
     tx.commit().await?;
     Ok(Some(summary))
+}
+
+// ---------------------------------------------------------------------------
+// Stage 1 review results: WARNING vs HOLD (sandbox round 3)
+//
+// Stage 1 records REVIEW_REQUIRED for two different kinds of finding:
+// - WARNING: advisory quality notes shown to the artist that never gate a
+//   release (loudness outside the delivery target, a few short clip events,
+//   version info in a title, the explicit-content marking).
+// - HOLD: something a person must clear before delivery (audio similar to an
+//   existing recording, a master reused under another ISRC, suspicious
+//   content, SEO spam titles, a review-policy protected name). Stage 2
+//   carries every HOLD into its own decision under the same check code, so
+//   the release parks in STAGE2_REVIEW until a reviewer override (PASS,
+//   two-person rule per docs/REVIEW_OVERRIDES.md) clears it.
+// Any Stage 1 REVIEW_REQUIRED/BLOCKED code not listed as a WARNING is a HOLD
+// (fail closed for new codes).
+// ---------------------------------------------------------------------------
+
+/// Stage 1 REVIEW_REQUIRED codes that are advisory only (never hold).
+pub const STAGE1_WARNING_CODES: &[&str] = &[
+    "AUDIO_LOUDNESS_OUT_OF_RANGE",
+    "AUDIO_CLIPPING",
+    "TRACK_TITLE_HAS_VERSION_INFO",
+    "ADULT_MARKING_REVIEW",
+];
+
+/// Stage 1 codes that may be carried into Stage 2 as holds under their own
+/// name (anything else is carried as S1_REVIEW_HOLD).
+const STAGE1_HOLD_CODES: &[&str] = &[
+    "ASSET_REUSED",
+    "TRACK_TITLE_SEO_SPAM",
+    crate::protected_names::ARTIST_NAME_REVIEW,
+];
+
+/// "WARNING" (advisory) or "HOLD" (blocks until a reviewer clears it) for a
+/// Stage 1 REVIEW_REQUIRED code.
+pub fn stage1_review_severity(code: &str) -> &'static str {
+    if STAGE1_WARNING_CODES.contains(&code) {
+        "WARNING"
+    } else {
+        "HOLD"
+    }
+}
+
+fn static_stage1_code(code: &str) -> &'static str {
+    crate::qc::AUDIO_CHECK_CODES
+        .iter()
+        .chain(STAGE1_HOLD_CODES.iter())
+        .find(|c| **c == code)
+        .copied()
+        .unwrap_or("S1_REVIEW_HOLD")
+}
+
+/// Stage 1 HOLD results on this revision, as Stage 2 review checks.
+async fn module_stage1_holds(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec<ReviewCheck>> {
+    let rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
+        "SELECT DISTINCT ON (check_code) check_code, status, detail
+           FROM operations.check_results
+          WHERE revision_id=$1 AND check_code NOT LIKE 'S2\\_%'
+          ORDER BY check_code, created_at DESC",
+    )
+    .bind(ctx.revision_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let mut out = Vec::new();
+    let mut other: Vec<String> = Vec::new();
+    for (code, status, detail) in rows {
+        if !matches!(status.as_str(), "REVIEW_REQUIRED" | "BLOCKED")
+            || stage1_review_severity(&code) == "WARNING"
+        {
+            continue;
+        }
+        let stat = static_stage1_code(&code);
+        if stat == "S1_REVIEW_HOLD" {
+            other.push(code);
+            continue;
+        }
+        out.push(ReviewCheck {
+            check_code: stat,
+            status: "REVIEW_REQUIRED",
+            detail: format!(
+                "held from Stage 1 until a reviewer clears it: {}",
+                detail.unwrap_or_default()
+            ),
+        });
+    }
+    if !other.is_empty() {
+        out.push(ReviewCheck {
+            check_code: "S1_REVIEW_HOLD",
+            status: "REVIEW_REQUIRED",
+            detail: format!("held from Stage 1: {}", other.join(", ")),
+        });
+    }
+    Ok(out)
 }
 
 /// Apply overrides, merge statuses, and commit the decision.

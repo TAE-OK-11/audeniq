@@ -1648,7 +1648,9 @@ async fn two_person_override_needs_a_genuine_independent_approver(pool: PgPool) 
     .await;
     assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
     assert_eq!(code(&v), "SENIOR_REVIEWER_REQUIRED");
+}
 
+// ---------------------------------------------------------------------------
 // Round 3 (findings_round3.md): protected-artist policy and admin path
 // ---------------------------------------------------------------------------
 
@@ -1801,4 +1803,140 @@ async fn protected_list_admin_changes_apply_and_are_logged(pool: PgPool) {
             .iter()
             .any(|x| x["name"] == "BTS" && x["match_mode"] == "TOKEN")
     );
+}
+
+/// Round 3 item 5: a Stage 1 HOLD (audio similar to an existing recording)
+/// used to be recorded as REVIEW_REQUIRED and then delivered anyway. Stage 2
+/// now carries it, so the release parks in STAGE2_REVIEW until a genuine
+/// second person approves a PASS override. An advisory WARNING (version info
+/// in a title) never holds a release.
+#[sqlx::test]
+async fn stage1_hold_parks_release_until_override_but_warning_does_not(pool: PgPool) {
+    let e = env(pool).await;
+    let u = user(&e.api).await;
+    let o = u.org;
+    let dir = tmpdir();
+    let wav = good_wav(&dir.0, "a.wav", 440);
+    let cover = upload(&e, &u, "IMAGE", "image/png", &cover_png(&dir.0)).await;
+
+    // 1) WARNING only: version info in the title -> still passes Stage 2.
+    let audio1 = upload(&e, &u, "AUDIO", "audio/wav", &wav).await;
+    let (first, _, _) = build_release(&e, &u, audio1, cover).await;
+    sqlx::query("UPDATE catalog.tracks SET title='Sandbox Song (Radio Edit)' WHERE release_id=$1")
+        .bind(first)
+        .execute(&e.owner)
+        .await
+        .unwrap();
+    let rev1 = consent_and_submit(&e, &u, first, "sbx-warn").await;
+    assert_eq!(run_one(&e, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(
+        check_status(&e, rev1, "TRACK_TITLE_HAS_VERSION_INFO").await,
+        "REVIEW_REQUIRED"
+    );
+    assert_eq!(run_one(&e, "rights", "stage2").await, "SUCCEEDED");
+    assert_eq!(release_status(&e, first).await, "STAGE2_PASSED");
+    let s = submission(&e, &u, first).await;
+    let sev = |s: &Value, code: &str| -> String {
+        s.pointer("/checks")
+            .and_then(Value::as_array)
+            .and_then(|a| a.iter().rev().find(|c| c["check_code"] == code))
+            .map(|c| c["severity"].as_str().unwrap_or("").to_string())
+            .unwrap_or_default()
+    };
+    assert_eq!(sev(&s, "TRACK_TITLE_HAS_VERSION_INFO"), "WARNING", "{s}");
+
+    // 2) HOLD: the same recording uploaded again under a new UPC/ISRC.
+    let audio2 = upload(&e, &u, "AUDIO", "audio/wav", &wav).await;
+    let (second, _, _) = build_release(&e, &u, audio2, cover).await;
+    sqlx::query(
+        "UPDATE catalog.releases SET upc='042100005264', row_version=row_version+1 WHERE id=$1",
+    )
+    .bind(second)
+    .execute(&e.owner)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE catalog.tracks SET isrc='USABC2600007' WHERE release_id=$1")
+        .bind(second)
+        .execute(&e.owner)
+        .await
+        .unwrap();
+    let rev2 = consent_and_submit(&e, &u, second, "sbx-hold").await;
+    assert_eq!(run_one(&e, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(
+        check_status(&e, rev2, "AUDIO_SIMILAR_TO_EXISTING").await,
+        "REVIEW_REQUIRED"
+    );
+    assert_eq!(release_status(&e, second).await, "STAGE1_PASSED");
+    assert_eq!(run_one(&e, "rights", "stage2").await, "SUCCEEDED");
+    assert_eq!(
+        release_status(&e, second).await,
+        "STAGE2_REVIEW",
+        "a similarity match must hold the release"
+    );
+    let s = submission(&e, &u, second).await;
+    assert_eq!(sev(&s, "AUDIO_SIMILAR_TO_EXISTING"), "HOLD", "{s}");
+    // Nothing reaches Stage 3 while held.
+    let prep: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM operations.jobs WHERE kind='prepare_release' AND pinned_revision_id=$1",
+    )
+    .bind(rev2)
+    .fetch_one(&e.owner)
+    .await
+    .unwrap();
+    assert_eq!(prep, 0);
+
+    // A sole owner cannot clear a similarity hold alone.
+    let (st, v) = override_call(
+        &e,
+        &u,
+        json!({"revision_id":rev2,"check_code":"AUDIO_SIMILAR_TO_EXISTING","proposed_status":"PASS","reason":"same artist, re-release"}),
+    )
+    .await;
+    assert_eq!(st, StatusCode::OK, "{v}");
+    assert_eq!(v["status"], "PENDING_SECOND_APPROVAL");
+    let request = v["override_request_id"].as_str().unwrap().to_string();
+
+    // A genuine, tenured second person with access approves.
+    let editor = user(&e.api).await;
+    ok(
+        &e.api,
+        "PUT",
+        &format!("/api/orgs/{o}/memberships"),
+        json!({"user_id":editor.user,"role":"EDITOR","status":"ACTIVE"}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "POST",
+        &format!("/api/orgs/{o}/memberships/accept"),
+        json!({}),
+        &editor,
+    )
+    .await;
+    sqlx::query("UPDATE identity.memberships SET accepted_at=now()-interval '4 days' WHERE org_id=$1 AND user_id=$2")
+        .bind(o)
+        .bind(editor.user)
+        .execute(&e.owner)
+        .await
+        .unwrap();
+    ok(
+        &e.api,
+        "PUT",
+        &format!("/api/orgs/{o}/resources/{second}/acl"),
+        json!({"user_id":editor.user,"action":"read","revoked":false}),
+        &u,
+    )
+    .await;
+    let v = ok(
+        &e.api,
+        "POST",
+        &format!("/api/orgs/{o}/reviews/overrides/{request}/approve"),
+        json!({}),
+        &editor,
+    )
+    .await;
+    assert_eq!(v["reevaluation_queued"], true, "{v}");
+    assert_eq!(run_one(&e, "rights", "stage2").await, "SUCCEEDED");
+    assert_eq!(release_status(&e, second).await, "STAGE2_PASSED");
 }
