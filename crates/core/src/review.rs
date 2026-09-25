@@ -764,6 +764,22 @@ async fn module_metadata_content(ctx: &Ctx) -> Result<Vec<ReviewCheck>> {
             ),
         });
     }
+    // 2-F.3: release date more than a year out is almost always a typo
+    // (2037 vs 2027). A human confirms before DSPs receive a far-future
+    // street date.
+    if let Some(rdate) = ctx
+        .body
+        .pointer("/release/draft/release_date")
+        .and_then(Value::as_str)
+        && let Ok(d) = chrono::NaiveDate::parse_from_str(rdate, "%Y-%m-%d")
+        && d > chrono::Utc::now().date_naive() + chrono::Duration::days(365)
+    {
+        out.push(ReviewCheck {
+            check_code: "S2_RELEASE_DATE_FAR_FUTURE",
+            status: "REVIEW_REQUIRED",
+            detail: format!("release_date {rdate} is more than a year out"),
+        });
+    }
     Ok(out)
 }
 
