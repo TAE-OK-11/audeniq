@@ -9,7 +9,7 @@
 use std::sync::Arc;
 
 use crate::{
-    ddex_ern, ddex_xsd,
+    ddex_ern, ddex_validate, ddex_xsd,
     domain::FreshnessPin,
     ern,
     error::{Error, Result},
@@ -485,6 +485,37 @@ async fn persist_ddex_messages(
         // validation never becomes a ddex_messages row (fail-closed); the
         // worker retries only when the cause is transient.
         ddex_xsd::validate_ern_382_xml(&xml)?;
+        // Business-rule layer (ddex-workbench-inspired, Rust from scratch):
+        // structural, profile, and cross-reference checks that XSD alone
+        // cannot express. Errors fail closed like the XSD gate above;
+        // warnings are logged and do not block the message.
+        let expected_profile = if prepared.tracks.len() > 1 {
+            Some(ddex_validate::ErnProfile::AudioAlbum)
+        } else {
+            Some(ddex_validate::ErnProfile::AudioSingle)
+        };
+        let report = ddex_validate::validate_ern_message(&xml, expected_profile);
+        for warning in report.warnings() {
+            tracing::warn!(
+                rule = %warning.rule_id,
+                message = %warning.message,
+                "ERN business-rule warning"
+            );
+        }
+        if !report.is_valid() {
+            let rules = report
+                .errors()
+                .iter()
+                .map(|e| e.rule_id.as_ref())
+                .collect::<Vec<_>>()
+                .join(",");
+            tracing::warn!(
+                gate = "DDEX_BUSINESS_RULE",
+                rules = %rules,
+                "ERN business-rule validation failed"
+            );
+            return Err(Error::PolicyGate("DDEX_BUSINESS_RULE"));
+        }
         let sha = hex::encode(Sha256::digest(xml.as_bytes()));
         let res = sqlx::query(
         "INSERT INTO distribution.ddex_messages(package_id,org_id,dsp_id,sender_name,sender_dpid,recipient_name,recipient_dpid,ern_xml,ern_sha256) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(package_id,dsp_id) DO NOTHING",
