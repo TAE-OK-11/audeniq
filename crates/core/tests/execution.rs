@@ -1072,3 +1072,62 @@ async fn dsp_routing_fail_closed_without_ddex_message(pool: PgPool) {
     assert!(msg.contains("EXECUTION_DDEX_MESSAGE_MISSING"), "{msg}");
     assert!(mock.received().is_empty(), "nothing reached the wire");
 }
+
+/// Activation model: a CONTRACTED profile with delivery_enabled=true but no
+/// contract route must not enqueue a delivery job. delivery_enabled alone
+/// is only the operator kill-switch; the contract route (route enabled +
+/// endpoint ACTIVE + non-revoked contract revision) is the eligibility
+/// proof. The MOCK profile in the same route plan still enqueues.
+///
+/// Note: preparation_artifacts is immutable by trigger (the frozen package
+/// must never change), so this test disables the trigger to craft the
+/// route plan, then re-enables it. The Stage 2 path is covered by
+/// stage2_contracted_profile_not_eligible_without_contract, which goes
+/// through the real pipeline.
+#[sqlx::test]
+async fn contracted_profile_cannot_enqueue_without_contract(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let mock_dsp = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+    let contracted_dsp = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO execution.adapter_profiles(partner_id, display_name, profile_version, dsp_id, delivery_enabled, transport, activation_kind)
+         VALUES('contracted-test','Contracted Test Partner','1',$1,true,'sftp','CONTRACTED')",
+    )
+    .bind(contracted_dsp)
+    .execute(&pool)
+    .await
+    .unwrap();
+    // Route plan names both DSPs; only the MOCK one may produce a job.
+    let route_plan = serde_json::json!([
+        {"scope": {"dsp_id": mock_dsp.to_string()}},
+        {"scope": {"dsp_id": contracted_dsp.to_string()}},
+    ]);
+    sqlx::query("ALTER TABLE distribution.preparation_artifacts DISABLE TRIGGER preparation_artifacts_immutable")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE distribution.preparation_artifacts SET route_plan=$1 WHERE package_id=$2")
+        .bind(&route_plan)
+        .bind(ctx.package_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("ALTER TABLE distribution.preparation_artifacts ENABLE TRIGGER preparation_artifacts_immutable")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (job_ids, org) = execution::enqueue_delivery_jobs(&pool, ctx.package_id)
+        .await
+        .unwrap();
+    assert_eq!(org, ctx.org);
+    assert_eq!(job_ids.len(), 1, "only the MOCK DSP enqueues");
+    // delivery_jobs is FORCE RLS: read through an authorized connection.
+    let mut c = authed(&pool, ctx.org).await;
+    let partners: Vec<String> =
+        sqlx::query_scalar("SELECT partner_id FROM execution.delivery_jobs WHERE package_id=$1")
+            .bind(ctx.package_id)
+            .fetch_all(&mut *c)
+            .await
+            .unwrap();
+    assert_eq!(partners, vec!["mockdsp".to_string()]);
+}

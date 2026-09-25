@@ -785,3 +785,90 @@ async fn freeze_package_is_idempotent(pool: PgPool) {
     .unwrap();
     assert_eq!(n, 1);
 }
+
+/// Regression: the READY_FOR_DELIVERY idempotent path of run_prepare_release
+/// must report the real ddex_messages count. ddex_messages is FORCE RLS, so
+/// a pool-direct COUNT without app.org_id would silently return 0 and the
+/// retry summary would misreport; the handler authorizes the read's org in
+/// a short transaction.
+#[sqlx::test]
+async fn prepare_release_retry_reports_ddex_count_under_rls(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let wav = make_good_wav(&dir);
+    let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
+    let release = build_submittable(&app, &pool, &u, asset).await;
+    let _art_key = add_preparation_supplements(&pool, &store, &u, release).await;
+    let revision_id = consent_and_submit(&app, &u, release, "k-f4-ddex-retry").await;
+    sqlx::query("UPDATE identity.orgs SET ddex_sender_dpid='TESTDPID-SENDER-0001' WHERE id=$1")
+        .bind(u.org)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mock_dsp = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+    sqlx::query("UPDATE execution.adapter_profiles SET dsp_id=$1 WHERE partner_id='mockdsp'")
+        .bind(mock_dsp)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        run_one(&pool, &store, "distribution", "prepare_release").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(release_status(&pool, release).await, "READY_FOR_DELIVERY");
+
+    let (package_id, verification_package_id): (Uuid, Uuid) = sqlx::query_as(
+        "SELECT dp.id, cr.verification_package_id
+         FROM distribution.distribution_packages dp
+         JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id
+         JOIN catalog.releases r ON r.org_id=cr.org_id AND r.id=cr.release_id
+         WHERE r.id=$1",
+    )
+    .bind(release)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    // Simulate the worker-crash retry: re-run the handler on a pool with no
+    // app.org_id set anywhere. Without the fix, the FORCE RLS count reads 0.
+    let retry_job = operations::Job {
+        id: Uuid::new_v4(),
+        token: Uuid::new_v4(),
+        kind: "prepare_release".to_string(),
+        payload: json!({"revision_id": revision_id, "verification_package_id": verification_package_id}),
+        attempts: 1,
+    };
+    let dyn_store: Arc<dyn ObjectStore> = store.clone();
+    let summary = distribution::run_prepare_release(&pool, &dyn_store, &retry_job)
+        .await
+        .unwrap()
+        .expect("idempotent completion");
+    assert_eq!(summary.package_id, package_id);
+    assert_eq!(summary.release_status, "READY_FOR_DELIVERY");
+    assert!(
+        !summary.returned_to_s2,
+        "retry must not bounce back to stage 2"
+    );
+    assert_eq!(
+        summary.ddex_messages, 1,
+        "retry must report the persisted DDEX row, not 0"
+    );
+    // No duplicate package or DDEX rows from the retry.
+    let pkgs: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM distribution.distribution_packages dp
+         JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id
+         JOIN catalog.releases r ON r.org_id=cr.org_id AND r.id=cr.release_id
+         WHERE r.id=$1",
+    )
+    .bind(release)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(pkgs, 1);
+}

@@ -80,7 +80,7 @@ CI run [36097605861](https://github.com/TAE-OK-11/audeniq/actions/runs/360976058
    production XML 검증을 의존시키는 방식은 쓰지 않음.
 
 - **남은 것:**
-  - `run_prepare_release` retry가 기존 DDEX row 수를 정상 반환함을 증명하는 integration test (코드 수정은 완료, 테스트 미작성).
+  - ~~`run_prepare_release` retry가 기존 DDEX row 수를 정상 반환함을 증명하는 integration test (코드 수정은 완료, 테스트 미작성)~~ → **2026-09-25 완료** (`prepare_release_retry_reports_ddex_count_under_rls`; fix 되돌리면 실패 확인).
   - 공식 XSD 기반 schema validation — 신뢰 가능한 XSD 확보 또는 첫 파트너 계약 후.
 
 ## F5 — MockDSP + Execution (실제 전송 인터페이스): 완료
@@ -116,10 +116,10 @@ CI run [36097605861](https://github.com/TAE-OK-11/audeniq/actions/runs/360976058
   - partner profile, DDEX 명세 준수 확인, 라이선스
   - 공식 XSD 기반 schema validation, DDEX 인증
   - 실제 테스트 릴리스 접수·라이브 확인, runbook
-  - 명시적 activation 모델 (`MOCK` vs `CONTRACTED`): 현재 `delivery_enabled`는
+  - ~~명시적 activation 모델 (`MOCK` vs `CONTRACTED`): 현재 `delivery_enabled`는
     operator 전용으로 잠갔지만, 상용 partner가 계약 경로를 우회하지 못하도록
     non-mock profile에 contract/endpoint/profile readiness를 강제하는 구조는
-    계약 없이도 DB/code 레벨에서 구현 가능 — 다음 작업 후보.
+    계약 없이도 DB/code 레벨에서 구현 가능 — 다음 작업 후보.~~ → **2026-09-25 완료** (migration 0022 + Stage 2/E-0/materialize 3중 게이트 + 테스트 2개).
 
 ## F7 — Finance: 부분 완료
 
@@ -141,11 +141,16 @@ CI run [36097605861](https://github.com/TAE-OK-11/audeniq/actions/runs/360976058
 
 ---
 
-## 계약 없이 추가로 가능한 다음 작업 (우선순위 순)
+## 계약 없이 추가로 가능한 다음 작업 — 2026-09-25 갱신
 
-1. `run_prepare_release` retry의 DDEX row-count RLS integration test 작성
-   (F4 — 코드 수정 완료, 테스트만 남음).
-2. `delivery_enabled` 명시적 activation 모델 (`MOCK` | `CONTRACTED`) 설계·구현 —
-   상용 partner의 계약 우회를 DB/code 레벨에서 원천 차단 (F6 준비).
-3. 위 2건 완료 후 F6 계약 작업은 파트너 측 blocker이므로, 태영 결정에 따라
-   F7 보고서 파서용 synthetic fixture 설계 또는 F8 운영 항목 선행 가능.
+1. ~~`run_prepare_release` retry의 DDEX row-count RLS integration test 작성~~ → **완료**
+   (`prepare_release_retry_reports_ddex_count_under_rls`; fix 되돌리면 실패 확인).
+2. ~~`delivery_enabled` 명시적 activation 모델 (`MOCK` | `CONTRACTED`) 설계·구현~~ → **완료**:
+   - migration `0022`: `execution.adapter_profiles.activation_kind` (`MOCK`|`CONTRACTED`, default `MOCK`).
+   - Stage 2: `MOCK`만 `delivery_enabled`으로 eligible에 합류. `CONTRACTED` + 계약 경로 없음 → `INELIGIBLE_NO_CONTRACT`로 감사 trail에 명시.
+   - E-0: route plan에 있어도 `CONTRACTED`는 계약 경로(route enabled + endpoint ACTIVE + 미해지 계약 revision) 없으면 job 생성 안 함 (defense in depth).
+   - materialize: `CONTRACTED`는 DDEX artifact 없으면 transport 무관하게 fail-closed (합성 envelope이 상용 파트너 wire에 나갈 수 없음).
+   - 테스트 2개: `stage2_contracted_profile_not_eligible_without_contract`, `contracted_profile_cannot_enqueue_without_contract`.
+   - 참고: F1 스키마가 route `enabled`와 endpoint `ACTIVE`를 CHECK로 원천 차단하므로, 현재 스키마에서 상용 전송은 구조적으로 불가능 — 이 모델은 F6에서 그 CHECK가 풀릴 때를 대비한 것.
+3. 남은 계약-프리 작업: 공식 XSD 확보 전까지 F6 schema validation은 blocker 유지.
+   그 다음은 태영 결정에 따라 F7 보고서 파서용 synthetic fixture 설계 또는 F8 운영 항목 선행 가능.
