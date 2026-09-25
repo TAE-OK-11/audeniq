@@ -80,13 +80,13 @@ function ReleaseRow({ r }: { r: Release }) {
   const navigate = useNavigate();
   const st = STATUS_LABEL[r.status] || r.status;
   return (
-    <article className="release-row studio-album-row">
-      <span className="cover" aria-hidden="true">♪</span>
+    <article className="release-row studio-album-row" onClick={() => navigate(`/releases/${r.id}`)} style={{ cursor: 'pointer' }}>
+      <span className="cover" aria-hidden="true">♫</span>
       <div className="min-0">
-        <button type="button" className="row-name" onClick={() => navigate(`/releases/${r.id}`)}>
+        <button type="button" className="row-name" onClick={e => { e.stopPropagation(); navigate(`/releases/${r.id}`); }}>
           {r.title || '제목 없는 발매'}
         </button>
-        <span className="row-sub">테스트 레이블 · {r.track_count}곡</span>
+        <span className="row-sub">{r.artist || '아티스트 미입력'} · {r.track_count}곡</span>
         <span className="row-sub">{r.release_date || '발매일 미정'}</span>
       </div>
       <div className="row-end">
@@ -108,9 +108,11 @@ export function Dashboard() {
   const drafts = releases.filter(r => r.status === 'DRAFT').length;
   const unread = 2; // mock 읽지 않은 알림
 
+  const profileName = '서린'; // mock 프로필 이름 (라이브 db.profile.name)
   const tasks: { icon: string; name: string; sub: string; btn: string; to: string }[] = [];
   if (needs) tasks.push({ icon: '!', name: `보완이 필요한 발매 ${needs}건`, sub: '발매별 제출 정보와 증빙을 확인해 보세요.', btn: '확인', to: '/releases' });
   if (drafts) tasks.push({ icon: '↗', name: `작성 중인 발매 ${drafts}건`, sub: '필수 정보와 권리 항목을 확인해 보세요.', btn: '보기', to: '/releases' });
+  if (!profileName) tasks.push({ icon: '◉', name: '아티스트 정보 등록', sub: '활동명과 연락처를 입력해 주세요.', btn: '등록', to: '/profile' });
   if (unread) tasks.push({ icon: '♧', name: `읽지 않은 알림 ${unread}건`, sub: '최근 변경사항을 확인해 보세요.', btn: '확인', to: '/support' });
 
   const monthSum = MOCK_REPORTS.reduce((n, r) => n + r.revenue, 0);
@@ -120,7 +122,7 @@ export function Dashboard() {
       <div className="view-title">
         <div>
           <p className="eyebrow">AUDENIQ / STUDIO</p>
-          <h1>서린님의 작업실</h1>
+          <h1>{profileName ? `${profileName}님의 작업실` : '내 작업실'}</h1>
           <p>발매 현황과 확인할 작업을 한곳에서 살펴보세요.</p>
         </div>
         <Link className="button" to="/upload">새로운 발매</Link>
@@ -171,7 +173,7 @@ export function Dashboard() {
           <div id="homeTasks">
             {tasks.length ? (
               tasks.map((t, i) => (
-                <div key={i} className="statement-row aq-action-card">
+                <div key={i} className={`statement-row aq-action-card${/보완|오류|부족/.test(t.name) ? ' is-warning' : ''}`}>
                   <div className="document-icon">{t.icon}</div>
                   <div>
                     <span className="row-name">{t.name}</span>

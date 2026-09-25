@@ -9,10 +9,10 @@ const mockOrgs: Org[] = [
 ];
 
 const mockReleases: Release[] = [
-  { id: 'r1', title: '첫 번째 싱글', status: 'LIVE', release_date: '2026-10-01', created_at: '2026-09-20', track_count: 2 },
-  { id: 'r2', title: '여름 EP', status: 'STAGE1_PASSED', release_date: '2026-11-15', created_at: '2026-09-22', track_count: 4 },
-  { id: 'r3', title: '데모 트랙', status: 'STAGE1_CORRECTION', release_date: null, created_at: '2026-09-24', track_count: 1 },
-  { id: 'r4', title: '미발매 작업물', status: 'DRAFT', release_date: null, created_at: '2026-09-25', track_count: 0 },
+  { id: 'r1', title: '첫 번째 싱글', status: 'LIVE', release_date: '2026-10-01', created_at: '2026-09-20', track_count: 2, artist: '서린' },
+  { id: 'r2', title: '여름 EP', status: 'STAGE1_PASSED', release_date: '2026-11-15', created_at: '2026-09-22', track_count: 4, artist: '서린' },
+  { id: 'r3', title: '데모 트랙', status: 'STAGE1_CORRECTION', release_date: null, created_at: '2026-09-24', track_count: 1, artist: '서린' },
+  { id: 'r4', title: '미발매 작업물', status: 'DRAFT', release_date: null, created_at: '2026-09-25', track_count: 0, artist: '서린' },
 ];
 
 const mockDetails: Record<string, ReleaseDetail> = {
