@@ -594,6 +594,123 @@ async fn prepare_release_happy_path_freezes_package(pool: PgPool) {
     );
 }
 
+/// F5.5: prepare_release persists one real DDEX ERN 3.8.2 message per DSP
+/// with configured DPIDs, in the same transaction as READY_FOR_DELIVERY.
+/// The message is the interchange artifact; the synthetic ERN stays the
+/// preflight integrity envelope.
+#[sqlx::test]
+async fn prepare_release_persists_ddex_ern_per_dsp(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let wav = make_good_wav(&dir);
+    let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
+    let release = build_submittable(&app, &pool, &u, asset).await;
+    let _art_key = add_preparation_supplements(&pool, &store, &u, release).await;
+    let _revision_id = consent_and_submit(&app, &u, release, "k-f4-ddex").await;
+    // Sender DPID = org distributor identity (partner onboarding data).
+    sqlx::query("UPDATE identity.orgs SET ddex_sender_dpid='TESTDPID-SENDER-0001' WHERE id=$1")
+        .bind(u.org)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // Pin the seeded MockDSP profile to a fixed DSP id BEFORE stage2 runs:
+    // stage2's DSP-eligibility module reads activated adapter profiles.
+    let mock_dsp = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+    sqlx::query("UPDATE execution.adapter_profiles SET dsp_id=$1 WHERE partner_id='mockdsp'")
+        .bind(mock_dsp)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        run_one(&pool, &store, "distribution", "prepare_release").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(release_status(&pool, release).await, "READY_FOR_DELIVERY");
+
+    let package_id: Uuid = sqlx::query_scalar(
+        "SELECT package_id FROM distribution.preparation_artifacts WHERE release_id=$1",
+    )
+    .bind(release)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    // distribution.ddex_messages has FORCE ROW LEVEL SECURITY: even the
+    // table owner must present the tenant via app.org_id.
+    let mut authed = pool.acquire().await.unwrap();
+    sqlx::query("SELECT set_config('app.org_id', $1, false)")
+        .bind(u.org.to_string())
+        .execute(&mut *authed)
+        .await
+        .unwrap();
+    let (xml, sha, sender_dpid, recipient_dpid): (String, String, String, String) =
+        sqlx::query_as(
+            "SELECT ern_xml, ern_sha256, sender_dpid, recipient_dpid FROM distribution.ddex_messages WHERE package_id=$1 AND dsp_id=$2",
+        )
+        .bind(package_id)
+        .bind(mock_dsp)
+        .fetch_one(&mut *authed)
+        .await
+        .unwrap();
+    assert_eq!(sender_dpid, "TESTDPID-SENDER-0001");
+    assert_eq!(recipient_dpid, "TESTDPID-MOCKDSP-0001");
+    assert!(xml.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"));
+    assert!(xml.contains("<ern:NewReleaseMessage"));
+    assert!(xml.contains("ern/382"));
+    assert!(xml.contains("036000291452"), "UPC in release list");
+    assert!(xml.contains("USABC2600001"), "ISRC in resource list");
+    assert_eq!(sha, sha256_hex(xml.as_bytes()));
+    // Exactly one DSP had configured DPIDs: no invented rows.
+    let n: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM distribution.ddex_messages WHERE package_id=$1")
+            .bind(package_id)
+            .fetch_one(&mut *authed)
+            .await
+            .unwrap();
+    assert_eq!(n, 1);
+}
+
+/// F5.5: without DPIDs configured, preparation persists no DDEX rows — party
+/// identifiers are partner-onboarding data and are never invented.
+#[sqlx::test]
+async fn prepare_release_skips_ddex_without_dpids(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let wav = make_good_wav(&dir);
+    let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
+    let release = build_submittable(&app, &pool, &u, asset).await;
+    let _art_key = add_preparation_supplements(&pool, &store, &u, release).await;
+    let _revision_id = consent_and_submit(&app, &u, release, "k-f4-ddex-nodpid").await;
+    // NOTE: no sender DPID on the org, no dsp_id pin on the profile.
+    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        run_one(&pool, &store, "distribution", "prepare_release").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(release_status(&pool, release).await, "READY_FOR_DELIVERY");
+    let mut authed = pool.acquire().await.unwrap();
+    sqlx::query("SELECT set_config('app.org_id', $1, false)")
+        .bind(u.org.to_string())
+        .execute(&mut *authed)
+        .await
+        .unwrap();
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM distribution.ddex_messages")
+        .fetch_one(&mut *authed)
+        .await
+        .unwrap();
+    assert_eq!(n, 0);
+}
+
 #[sqlx::test]
 async fn prepare_release_identifier_conflict_dead_letters(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
