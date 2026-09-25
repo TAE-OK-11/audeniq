@@ -2009,3 +2009,127 @@ async fn dsp_xx_malformed_ack_rejected(pool: PgPool) {
     .unwrap_err();
     assert!(matches!(err, audeniq_core::error::Error::Invalid));
 }
+
+/// End-to-end: a release comes in through the API, flows through the
+/// internal pipeline (Stage 1 QC -> Stage 2 rights -> DDEX preparation),
+/// and is virtually delivered to MockDSP until the partner reports LIVE.
+///
+/// This is the single test that proves the whole machine works: intake,
+/// internal processing, and (virtual) distribution.
+#[sqlx::test]
+async fn e2e_intake_to_mockdsp_live(pool: PgPool) {
+    // ---- 1. INTAKE: release conditions come in via the API ----
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let wav = wav_bytes();
+    let asset = register_asset(&pool, &store, &u, "single.wav", wav).await;
+    let release = build_submittable(&app, &pool, &u, asset).await;
+    add_preparation_supplements(&pool, &store, &u, release).await;
+    let revision_id =
+        consent_and_submit(&app, &u, release, &format!("k-e2e-{}", Uuid::new_v4())).await;
+
+    // Pin the seeded MockDSP profile to a fixed DSP id BEFORE stage2 runs.
+    let mock_dsp = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+    sqlx::query("UPDATE execution.adapter_profiles SET dsp_id=$1 WHERE partner_id='mockdsp'")
+        .bind(mock_dsp)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // ---- 2. INTERNAL: Stage 1 (QC) ----
+    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    // QC actually ran and passed: the fingerprint and similarity checks
+    // are present, and the audio was not flagged.
+    let qc_statuses: Vec<(String, String)> = {
+        let mut c = authed(&pool, u.org).await;
+        sqlx::query_as(
+            "SELECT check_code, status FROM operations.check_results WHERE revision_id=$1 ORDER BY check_code",
+        )
+        .bind(revision_id)
+        .fetch_all(&mut *c)
+        .await
+        .unwrap()
+    };
+    assert!(
+        qc_statuses
+            .iter()
+            .any(|(c, s)| c == "AUDIO_FINGERPRINT_FAILED" && s == "PASS"),
+        "fingerprint computed: {qc_statuses:?}"
+    );
+    assert!(
+        !qc_statuses
+            .iter()
+            .any(|(_, s)| s == "BLOCKED" || s == "CORRECTION_REQUIRED"),
+        "no QC blockers: {qc_statuses:?}"
+    );
+
+    // ---- 3. INTERNAL: Stage 2 (rights review) ----
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+
+    // ---- 4. INTERNAL: DDEX preparation ----
+    assert_eq!(
+        run_one(&pool, &store, "distribution", "prepare_release").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(release_status(&pool, release).await, "READY_FOR_DELIVERY");
+    // A real ERN package was built and frozen.
+    let package_id: Uuid = sqlx::query_scalar(
+        "SELECT dp.id FROM distribution.distribution_packages dp
+         JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id
+         WHERE cr.release_id=$1",
+    )
+    .bind(release)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let ern_len: i32 = sqlx::query_scalar(
+        "SELECT length(ern_xml) FROM distribution.preparation_artifacts WHERE package_id=$1",
+    )
+    .bind(package_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(ern_len > 1000, "ERN XML generated ({ern_len} bytes)");
+
+    // ---- 5. VIRTUAL DELIVERY via MockDSP ----
+    let ctx = ReadyCtx {
+        org: u.org,
+        release,
+        package_id,
+        store,
+    };
+    let mock = MockDsp::new(MockBehavior::Accept);
+    let (job_id, status) = run_send(&pool, &ctx, &mock).await;
+    assert_eq!(status, "DELIVERED");
+    assert_eq!(job_status(&pool, ctx.org, job_id).await, "DELIVERED");
+    assert_eq!(attempt_outcome(&pool, ctx.org, job_id).await, "ACCEPTED");
+    // Exactly one wire send: the idempotency key did its job.
+    assert_eq!(mock.received().len(), 1);
+    assert_eq!(
+        live_status(&pool, ctx.org, ctx.package_id).await,
+        "INGESTING"
+    );
+
+    // ---- 6. Partner reports LIVE via webhook ----
+    let pmid: String = {
+        let mut c = authed(&pool, ctx.org).await;
+        sqlx::query_scalar(
+            "SELECT partner_message_id FROM execution.delivery_attempts WHERE job_id=$1",
+        )
+        .bind(job_id)
+        .fetch_one(&mut *c)
+        .await
+        .unwrap()
+    };
+    let payload = mock.emit_webhook(&pmid, "live");
+    assert_eq!(
+        execution::ingest_ack(&pool, ctx.org, &mock, &payload)
+            .await
+            .unwrap(),
+        "APPLIED"
+    );
+    assert_eq!(live_status(&pool, ctx.org, ctx.package_id).await, "LIVE");
+}
