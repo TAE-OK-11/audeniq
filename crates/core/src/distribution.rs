@@ -676,6 +676,20 @@ pub async fn run_prepare_release(
     .execute(&mut *tx2)
     .await?;
 
+    // Durable handoff: READY_FOR_DELIVERY and the delivery.enqueue job commit
+    // atomically in this transaction. The package-scoped idempotency key
+    // makes exact-target retries of this worker safe: a retry reuses the
+    // existing job instead of fanning out a second delivery.
+    operations::enqueue(
+        &mut tx2,
+        "delivery",
+        "delivery.enqueue",
+        &json!({"package_id": package_id}),
+        &format!("delivery.enqueue:{package_id}"),
+        Some(revision_id),
+    )
+    .await?;
+
     operations::audit(
         &mut tx2,
         None,
