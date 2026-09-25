@@ -93,6 +93,7 @@ pub fn parse_csv(content: &str) -> Result<Vec<ReportLine>> {
 /// Ingest a royalty report. Returns the report id.
 ///
 /// Rejects duplicates by content hash (UNIQUE(org_id, source_hash)).
+#[allow(clippy::too_many_arguments)]
 pub async fn ingest_report(
     pool: &PgPool,
     org_id: Uuid,

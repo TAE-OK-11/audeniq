@@ -72,12 +72,13 @@ impl Fingerprint {
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        if bytes.len() % 4 != 0 || bytes.is_empty() {
+        let (chunks, remainder) = bytes.as_chunks::<4>();
+        if !remainder.is_empty() || bytes.is_empty() {
             return Err(Error::Internal);
         }
-        let frames = bytes
-            .chunks_exact(4)
-            .map(|c| u32::from_be_bytes([c[0], c[1], c[2], c[3]]))
+        let frames = chunks
+            .iter()
+            .map(|chunk| u32::from_be_bytes(*chunk))
             .collect::<Vec<_>>();
         Ok(Fingerprint {
             frames,
@@ -132,12 +133,13 @@ fn decode_mono(path: &Path) -> Result<Vec<f32>> {
         }
     };
     let status = child.wait().map_err(|_| Error::Internal)?;
-    if !status.success() || bytes.len() % 2 != 0 || bytes.len() / 2 > MAX_SAMPLES {
+    let (sample_chunks, remainder) = bytes.as_chunks::<2>();
+    if !status.success() || !remainder.is_empty() || sample_chunks.len() > MAX_SAMPLES {
         return Err(Error::Internal);
     }
-    Ok(bytes
-        .chunks_exact(2)
-        .map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0)
+    Ok(sample_chunks
+        .iter()
+        .map(|chunk| i16::from_le_bytes(*chunk) as f32 / 32768.0)
         .collect())
 }
 
@@ -145,9 +147,9 @@ fn decode_mono(path: &Path) -> Result<Vec<f32>> {
 fn band_edges() -> [usize; N_BANDS + 1] {
     let bin_hz = SAMPLE_RATE as f64 / FRAME_SIZE as f64;
     let mut edges = [0usize; N_BANDS + 1];
-    for m in 0..=N_BANDS {
+    for (m, edge) in edges.iter_mut().enumerate() {
         let freq = FREQ_MIN * (FREQ_MAX / FREQ_MIN).powf(m as f64 / N_BANDS as f64);
-        edges[m] = (freq / bin_hz).round() as usize;
+        *edge = (freq / bin_hz).round() as usize;
     }
     edges[N_BANDS] = edges[N_BANDS].min(FRAME_SIZE / 2);
     edges
@@ -186,8 +188,8 @@ pub fn compute_fingerprint(path: &Path) -> Result<Fingerprint> {
             let lo = edges[m];
             let hi = edges[m + 1].max(lo + 1);
             let mut e = 0.0f32;
-            for k in lo..hi.min(FRAME_SIZE / 2) {
-                let mag = buf[k].norm();
+            for value in buf.iter().take(hi.min(FRAME_SIZE / 2)).skip(lo) {
+                let mag = value.norm();
                 e += mag * mag;
             }
             // Log energy with floor: Philips uses log energies; the floor
@@ -297,8 +299,8 @@ mod tests {
                 let lo = edges[m];
                 let hi = edges[m + 1].max(lo + 1);
                 let mut e = 0.0f32;
-                for k in lo..hi.min(FRAME_SIZE / 2) {
-                    let mag = buf[k].norm();
+                for value in buf.iter().take(hi.min(FRAME_SIZE / 2)).skip(lo) {
+                    let mag = value.norm();
                     e += mag * mag;
                 }
                 bands[m] = (e + 1e-10).ln();

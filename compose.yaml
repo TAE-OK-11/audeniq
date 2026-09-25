@@ -79,18 +79,26 @@ services:
     command: [audeniq-worker]
     environment:
       DATABASE_URL: postgres://audeniq_worker:${WORKER_DB_PASSWORD}@postgres/audeniq_dev
+      WORKER_MAX_IN_FLIGHT: '${WORKER_MAX_IN_FLIGHT:-2}'
+      DATABASE_MAX_CONNECTIONS: '${DATABASE_MAX_CONNECTIONS:-6}'
+      JOB_LEASE_SECONDS: '${JOB_LEASE_SECONDS:-300}'
       QUEUE_INTERACTIVE_CONCURRENCY: '1'
-      QUEUE_QC_CONCURRENCY: '0'
-      QUEUE_RIGHTS_CONCURRENCY: '0'
-      QUEUE_DISTRIBUTION_CONCURRENCY: '0'
-      QUEUE_FINANCE_CONCURRENCY: '0'
+      QUEUE_QC_CONCURRENCY: '1'
+      QUEUE_RIGHTS_CONCURRENCY: '1'
+      QUEUE_DISTRIBUTION_CONCURRENCY: '1'
+      QUEUE_FINANCE_CONCURRENCY: '1'
+      QUEUE_DELIVERY_CONCURRENCY: '1'
+      TMPDIR: /var/tmp/audeniq
       RUST_LOG: info
+    volumes:
+      - worker_tmp:/var/tmp/audeniq
     depends_on:
       grants: {condition: service_completed_successfully}
-    mem_limit: 384m
-    cpus: 0.5
+    mem_limit: 1536m
+    cpus: 1.5
 volumes:
   pg_dev:
+  worker_tmp:
 networks:
   backend: {internal: true}
   egress: {}
