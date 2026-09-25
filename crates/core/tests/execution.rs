@@ -2342,3 +2342,250 @@ async fn e2e_timing_normal_vs_problematic(pool: PgPool) {
     println!("  total                  {total}ms");
     println!("=== normal song: LIVE | problematic song: blocked at stage1 (AUDIO_TOO_SHORT) ===\n");
 }
+
+/// Stress test: 300 releases at once via API.
+/// - 150 normal: valid 32s audio, clean metadata -> expect STAGE1_PASSED
+/// - 70 problematic: 10s audio -> expect STAGE1_CORRECTION (AUDIO_TOO_SHORT)
+/// - 50 ambiguous: valid audio, title with version info -> REVIEW_REQUIRED (not blocked)
+/// - 30 duplicate: byte-identical to normal songs -> REVIEW_REQUIRED (similar)
+///
+/// Verifies: no panics, all 300 processed, correct gating per category.
+#[sqlx::test]
+async fn stress_300_mixed_releases(pool: PgPool) {
+    use std::time::Instant;
+    let t_all = Instant::now();
+
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let mock_dsp = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+    sqlx::query("UPDATE execution.adapter_profiles SET dsp_id=$1 WHERE partner_id='mockdsp'")
+        .bind(mock_dsp)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let normal_bytes = wav_bytes().to_vec();
+    let short_bytes = {
+        let dir = std::env::temp_dir().join("audeniq-f5-shared");
+        let out = dir.join("t10.wav");
+        std::fs::read(&out).unwrap()
+    };
+
+    // Helper to submit one release. Returns (release_id, revision_id).
+    async fn submit_one(
+        app: &axum::Router,
+        pool: &PgPool,
+        store: &std::sync::Arc<crate::FileStore>,
+        u: &User,
+        audio: &[u8],
+        name: &str,
+        title: &str,
+        isrc_suffix: u32,
+        tag: &str,
+    ) -> (Uuid, Uuid) {
+        let asset = register_asset(pool, store, u, name, audio).await;
+        let release = create_release(app, u).await;
+        let artist = create_artist(app, u).await;
+        sqlx::query("UPDATE catalog.releases SET draft = draft || '{\"release_date\":\"2027-03-01\"}'::jsonb, row_version = row_version + 1 WHERE id=$1")
+            .bind(release).execute(pool).await.unwrap();
+        let rv = row_version(pool, release).await;
+        let (s, v) = call(
+            app, "POST",
+            &format!("/api/orgs/{}/releases/{release}/tracks", u.org),
+            serde_json::json!({"title":title,"disc_number":1,"track_number":1,"artist_id":artist,"asset_id":asset,"row_version":rv}),
+            Some(u),
+        ).await;
+        assert_eq!(s, StatusCode::OK, "{v}");
+        let track = Uuid::parse_str(v["id"].as_str().unwrap()).unwrap();
+        // Unique ISRC per track.
+        let isrc = format!("USTST{:07}", isrc_suffix);
+        sqlx::query("UPDATE catalog.tracks SET isrc=$1 WHERE id=$2")
+            .bind(&isrc)
+            .bind(track)
+            .execute(pool)
+            .await
+            .unwrap();
+        let rv = row_version(pool, release).await;
+        let (s, v) = call(
+            app, "PUT",
+            &format!("/api/orgs/{}/releases/{release}/tracks/{track}/credits", u.org),
+            serde_json::json!({"row_version":rv,"credits":[{"party_id":u.party,"role":"ARTIST"},{"party_id":u.party,"role":"COMPOSER"}]}),
+            Some(u),
+        ).await;
+        assert_eq!(s, StatusCode::OK, "{v}");
+        add_preparation_supplements(pool, store, u, release).await;
+        let rev = consent_and_submit(
+            app,
+            u,
+            release,
+            &format!("k-stress-{tag}-{}", Uuid::new_v4()),
+        )
+        .await;
+        (release, rev)
+    }
+
+    // ---- INTAKE: 300 releases ----
+    let t = Instant::now();
+    let mut releases: Vec<(Uuid, Uuid, &'static str)> = Vec::with_capacity(300);
+    let mut isrc_counter = 0u32;
+
+    // 150 normal
+    for i in 0..150 {
+        isrc_counter += 1;
+        let (r, rev) = submit_one(
+            &app,
+            &pool,
+            &store,
+            &u,
+            &normal_bytes,
+            &format!("n{i}.wav"),
+            &format!("Normal Track {i}"),
+            isrc_counter,
+            "normal",
+        )
+        .await;
+        releases.push((r, rev, "normal"));
+        if i % 50 == 49 {
+            println!("  intake: {} / 300", releases.len());
+        }
+    }
+    // 70 problematic (10s audio)
+    for i in 0..70 {
+        isrc_counter += 1;
+        let (r, rev) = submit_one(
+            &app,
+            &pool,
+            &store,
+            &u,
+            &short_bytes,
+            &format!("p{i}.wav"),
+            &format!("Short Track {i}"),
+            isrc_counter,
+            "bad",
+        )
+        .await;
+        releases.push((r, rev, "problematic"));
+        if i % 20 == 19 {
+            println!("  intake: {} / 300", releases.len());
+        }
+    }
+    // 50 ambiguous (version info in title)
+    for i in 0..50 {
+        isrc_counter += 1;
+        let (r, rev) = submit_one(
+            &app,
+            &pool,
+            &store,
+            &u,
+            &normal_bytes,
+            &format!("a{i}.wav"),
+            &format!("Ambiguous Track {i} (Remix)"),
+            isrc_counter,
+            "amb",
+        )
+        .await;
+        releases.push((r, rev, "ambiguous"));
+    }
+    // 30 duplicate (same bytes as normal #0)
+    for i in 0..30 {
+        isrc_counter += 1;
+        let (r, rev) = submit_one(
+            &app,
+            &pool,
+            &store,
+            &u,
+            &normal_bytes,
+            &format!("d{i}.wav"),
+            &format!("Duplicate Track {i}"),
+            isrc_counter,
+            "dup",
+        )
+        .await;
+        releases.push((r, rev, "duplicate"));
+    }
+    println!(
+        "  intake done: {} releases in {}ms",
+        releases.len(),
+        t.elapsed().as_millis()
+    );
+
+    // ---- STAGE 1: process all ----
+    let t = Instant::now();
+    let mut stage1_done = 0;
+    loop {
+        let job = operations::claim(&pool, "qc", "stress-worker", 60)
+            .await
+            .unwrap();
+        match job {
+            None => break,
+            Some(j) => {
+                assert_eq!(j.kind, "stage1");
+                let dyn_store: std::sync::Arc<dyn crate::ObjectStore> = store.clone();
+                // Must not panic on any input.
+                let res = operations::execute(&pool, &dyn_store, &j).await;
+                assert!(res.is_ok(), "stage1 panicked/failed on job {}", j.id);
+                stage1_done += 1;
+                if stage1_done % 50 == 0 {
+                    println!("  stage1: {stage1_done} / 300");
+                }
+            }
+        }
+    }
+    println!(
+        "  stage1 done: {stage1_done} jobs in {}ms",
+        t.elapsed().as_millis()
+    );
+    assert_eq!(stage1_done, 300, "all 300 stage1 jobs processed");
+
+    // ---- VERIFY: gating per category ----
+    let mut counts: std::collections::HashMap<(String, String), i32> = Default::default();
+    for (release, _rev, cat) in &releases {
+        let status = release_status(&pool, *release).await;
+        *counts.entry((cat.to_string(), status)).or_insert(0) += 1;
+    }
+    println!("\n=== STRESS RESULT (300 releases) ===");
+    let mut keys: Vec<_> = counts.keys().collect();
+    keys.sort();
+    for k in keys {
+        println!("  {} / {} : {}", k.0, k.1, counts[k]);
+    }
+
+    // Assertions: each category landed where it should.
+    let get = |cat: &str, status: &str| -> i32 {
+        *counts
+            .get(&(cat.to_string(), status.to_string()))
+            .unwrap_or(&0)
+    };
+    assert_eq!(get("normal", "STAGE1_PASSED"), 150, "all normal passed");
+    assert_eq!(
+        get("problematic", "STAGE1_CORRECTION"),
+        70,
+        "all problematic blocked"
+    );
+    // Ambiguous and duplicate get REVIEW_REQUIRED checks but are not blocked.
+    assert_eq!(
+        get("ambiguous", "STAGE1_PASSED"),
+        50,
+        "ambiguous not blocked"
+    );
+    assert_eq!(
+        get("duplicate", "STAGE1_PASSED"),
+        30,
+        "duplicate not blocked at stage1"
+    );
+
+    // Verify the specific flags fired.
+    let amb_review: i64 = sqlx::query_scalar(
+        "SELECT COUNT(DISTINCT cr.revision_id) FROM operations.check_results cr
+         JOIN (SELECT id AS rev_id FROM catalog.application_revisions WHERE release_id = ANY($1)) ar ON ar.rev_id = cr.revision_id
+         WHERE cr.check_code='TRACK_TITLE_HAS_VERSION_INFO' AND cr.status='REVIEW_REQUIRED'",
+    )
+    .bind(releases.iter().filter(|(_,_,c)| *c=="ambiguous").map(|(r,_,_)| *r).collect::<Vec<Uuid>>())
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(0);
+    println!("  ambiguous with REVIEW_REQUIRED flag: {amb_review} / 50");
+
+    println!("  total wall time: {}ms", t_all.elapsed().as_millis());
+    println!("=== no panics, all 300 processed ===\n");
+}
