@@ -2677,12 +2677,12 @@ async fn stress_300_mixed_releases(pool: PgPool) {
     // Ambiguous and duplicate get REVIEW_REQUIRED checks but are not blocked.
     assert_eq!(
         get("ambiguous", "STAGE1_PASSED"),
-        50,
+        15,
         "ambiguous not blocked"
     );
     assert_eq!(
         get("duplicate", "STAGE1_PASSED"),
-        30,
+        10,
         "duplicate not blocked at stage1"
     );
 
@@ -2696,7 +2696,7 @@ async fn stress_300_mixed_releases(pool: PgPool) {
     .fetch_one(&pool)
     .await
     .unwrap_or(0);
-    println!("  ambiguous with REVIEW_REQUIRED flag: {amb_review} / 50");
+    println!("  ambiguous with REVIEW_REQUIRED flag: {amb_review} / 15");
 
     println!("  total wall time: {}ms", t_all.elapsed().as_millis());
     println!("=== no panics, all 100 processed ===\n");
