@@ -31,6 +31,12 @@ pub trait ObjectStore: Send + Sync {
     ) -> Result<UploadGrant>;
     async fn head(&self, key: &str) -> Result<Option<ObjectMeta>>;
     async fn freeze(&self, source: &str, target: &str, etag: &str) -> Result<()>;
+    /// Delete an object; a missing object is success. Used to drop the
+    /// quarantine copy once an upload is completed or cancelled. The default
+    /// is a no-op for stores without deletion (test doubles).
+    async fn delete(&self, _key: &str) -> Result<()> {
+        Ok(())
+    }
     /// Download full object bytes. Small objects only (artwork, test
     /// fixtures); audio goes through [`ObjectStore::download_to`] or
     /// [`ObjectStore::digest`], which never hold the whole object in memory.
@@ -359,6 +365,20 @@ impl ObjectStore for S3Store {
             return Err(Error::Storage);
         }
         Ok(())
+    }
+    async fn delete(&self, key: &str) -> Result<()> {
+        let url = self.signed("DELETE", key, &BTreeMap::new(), Utc::now(), 60)?;
+        let r = self
+            .client
+            .delete(url)
+            .send()
+            .await
+            .map_err(|_| Error::Storage)?;
+        if r.status().is_success() || r.status() == reqwest::StatusCode::NOT_FOUND {
+            Ok(())
+        } else {
+            Err(Error::Storage)
+        }
     }
     async fn get(&self, key: &str) -> Result<Vec<u8>> {
         let url = self.signed("GET", key, &BTreeMap::new(), Utc::now(), 300)?;

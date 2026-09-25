@@ -780,6 +780,24 @@ async fn module_metadata_content(ctx: &Ctx) -> Result<Vec<ReviewCheck>> {
             detail: format!("release_date {rdate} is more than a year out"),
         });
     }
+    // 2-F.4: a street date before 1950 is a placeholder or typo (sandbox
+    // round 2: 1900-01-01 was delivered unflagged). Genuine historic catalog
+    // backfills are confirmed by a human.
+    if let Some(rdate) = ctx
+        .body
+        .pointer("/release/draft/release_date")
+        .and_then(Value::as_str)
+        && let Ok(d) = chrono::NaiveDate::parse_from_str(rdate, "%Y-%m-%d")
+        && d < chrono::NaiveDate::from_ymd_opt(1950, 1, 1).expect("valid date")
+    {
+        out.push(ReviewCheck {
+            check_code: "S2_RELEASE_DATE_FAR_PAST",
+            status: "REVIEW_REQUIRED",
+            detail: format!(
+                "release_date {rdate} is before 1950; confirm it is the real street date, not a placeholder"
+            ),
+        });
+    }
     Ok(out)
 }
 

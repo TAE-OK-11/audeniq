@@ -28,6 +28,9 @@ anyhow = "1"
 jsonschema = "0.33"
 rust_decimal = { version = "1", features = ["serde", "db-postgres"] }
 rustfft = "6"
+libc = "0.2"
+unicode-normalization = "0.1.25"
+unicode-security = "0.1.2"
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
