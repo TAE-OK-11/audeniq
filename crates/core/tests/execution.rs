@@ -1321,3 +1321,262 @@ async fn sandbox_full_distribution_run() {
     println!("[sandbox] delivery.poll jobs ever enqueued: {poll_jobs}");
     println!("[sandbox] DONE in {:.1}s total", t0.elapsed().as_secs_f32());
 }
+
+fn mp3_bytes() -> Vec<u8> {
+    // Same musical content as wav_bytes (440Hz sine, 32s) but re-encoded as
+    // MP3: different bytes, same music. This is the fingerprint-gap probe.
+    static ONCE: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    ONCE.get_or_init(|| {
+        let dir = std::env::temp_dir().join("audeniq-f5-shared");
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("t32.mp3");
+        if !out.exists() {
+            let st = std::process::Command::new("ffmpeg")
+                .args([
+                    "-y",
+                    "-v",
+                    "error",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "sine=frequency=440:duration=32",
+                    "-ar",
+                    "44100",
+                    "-ac",
+                    "2",
+                    "-c:a",
+                    "libmp3lame",
+                    "-b:a",
+                    "128k",
+                ])
+                .arg(&out)
+                .status()
+                .expect("ffmpeg runs");
+            assert!(st.success());
+        }
+        std::fs::read(&out).unwrap()
+    })
+    .clone()
+}
+
+/// Seed one submittable release for adversarial scenarios, with run-unique
+/// UPC/ISRC. Audio bytes are used as-is: callers must pass unique bytes per
+/// scenario (except the deliberate byte-identical copy) so the cross-org
+/// S2_CATALOG_IDENTIFIERS check does not flag unrelated scenarios.
+async fn adversarial_seed(
+    app: &Router,
+    pool: &PgPool,
+    store: &Arc<FileStore>,
+    audio: &[u8],
+    track_title: &str,
+) -> (User, Uuid) {
+    let u = user(app).await;
+    let asset = register_asset(pool, store, &u, "t.wav", audio).await;
+    let release = build_submittable(app, pool, &u, asset).await;
+    add_preparation_supplements(pool, store, &u, release).await;
+    let tag = Uuid::new_v4().as_u128();
+    let upc_base = format!("{:011}", tag % 100_000_000_000u128);
+    let mut sum = 0u32;
+    for (i, b) in upc_base.bytes().enumerate() {
+        let d = (b - b'0') as u32;
+        sum += if i % 2 == 0 { 3 * d } else { d };
+    }
+    let upc = format!("{upc_base}{}", (10 - sum % 10) % 10);
+    let isrc = format!("USSBX{:07}", tag % 10_000_000u128);
+    sqlx::query("UPDATE catalog.releases SET upc=$1, row_version=row_version+1 WHERE id=$2")
+        .bind(&upc)
+        .bind(release)
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE catalog.tracks SET isrc=$1, title=$2 WHERE release_id=$3")
+        .bind(&isrc)
+        .bind(track_title)
+        .bind(release)
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE identity.orgs SET ddex_sender_dpid='TESTDPID-SANDBOX-0001' WHERE id=$1")
+        .bind(u.org)
+        .execute(pool)
+        .await
+        .unwrap();
+    let mock_dsp = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+    sqlx::query("UPDATE execution.adapter_profiles SET dsp_id=$1 WHERE partner_id='mockdsp'")
+        .bind(mock_dsp)
+        .execute(pool)
+        .await
+        .unwrap();
+    (u, release)
+}
+
+async fn wait_release_status(
+    pool: &PgPool,
+    release: Uuid,
+    want: &[&str],
+    timeout_secs: u64,
+) -> String {
+    let deadline = std::time::Duration::from_secs(timeout_secs);
+    let t0 = std::time::Instant::now();
+    loop {
+        let s = release_status(pool, release).await;
+        if want.contains(&s.as_str()) {
+            return s;
+        }
+        if t0.elapsed() > deadline {
+            panic!("TIMEOUT waiting for {want:?}, last status: {s}");
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
+}
+
+/// Adversarial submission scenarios (red-team inspection).
+///
+/// Each scenario drives a realistic abuse case through the real pipeline and
+/// records whether the system catches it:
+///   S1: byte-identical re-upload of another org's released audio (plagiarism)
+///   S2: same music re-encoded as MP3 (fingerprint-gap probe)
+///   S3: minor who declares minority at consent (must be hard-blocked)
+///   S4: minor who lies (minority_declared=false) (age-verification gap probe)
+///   S5: cover song, "(Cover)" in title (declaration/detection gap probe)
+///   S6: explicit lyrics (verifies no lyrics channel exists in the API)
+///
+/// Run: SANDBOX_DATABASE_URL=... cargo test -p audeniq-core --test execution
+///   sandbox_adversarial_submissions -- --ignored --nocapture
+#[tokio::test]
+#[ignore]
+async fn sandbox_adversarial_submissions() {
+    let db_url = std::env::var("SANDBOX_DATABASE_URL")
+        .expect("set SANDBOX_DATABASE_URL to a migrated sandbox database");
+    let pool = PgPool::connect(&db_url).await.expect("sandbox DB connect");
+    database::MIGRATOR.run(&pool).await.expect("migrations");
+    let (app, store) = app(pool.clone()).await;
+    for queue in ["qc", "rights", "distribution", "delivery"] {
+        let pool = pool.clone();
+        let store = store.clone();
+        tokio::spawn(async move {
+            let dyn_store: Arc<dyn ObjectStore> = store;
+            loop {
+                match operations::claim(&pool, queue, "sandbox-worker", 60).await {
+                    Ok(Some(job)) => {
+                        if operations::execute(&pool, &dyn_store, &job).await.is_err() {
+                            let _ = operations::fail(&pool, &job, false, "INTERNAL_HANDLER_ERROR")
+                                .await;
+                        }
+                    }
+                    Ok(None) => tokio::time::sleep(std::time::Duration::from_millis(300)).await,
+                    Err(_) => tokio::time::sleep(std::time::Duration::from_secs(1)).await,
+                }
+            }
+        });
+    }
+
+    // S1: the "original" release goes live first...
+    fn unique_audio(base: &[u8]) -> Vec<u8> {
+        let mut v = base.to_vec();
+        v.extend_from_slice(&Uuid::new_v4().as_u128().to_le_bytes());
+        v
+    }
+    let base_wav = wav_bytes().to_vec();
+    let audio_s1a = unique_audio(&base_wav);
+    let (_u1, r1) = adversarial_seed(&app, &pool, &store, &audio_s1a, "Original Song").await;
+    consent_and_submit(&app, &_u1, r1, &format!("k-adv1-{}", Uuid::new_v4())).await;
+    assert_eq!(
+        wait_release_status(&pool, r1, &["READY_FOR_DELIVERY"], 180).await,
+        "READY_FOR_DELIVERY"
+    );
+    println!("[adv] S1a original released: READY_FOR_DELIVERY");
+
+    // ...then a different org re-uploads the exact same bytes as their own.
+    let (u2, r2) = adversarial_seed(&app, &pool, &store, &audio_s1a, "My Original Song").await;
+    consent_and_submit(&app, &u2, r2, &format!("k-adv2-{}", Uuid::new_v4())).await;
+    let s2 = wait_release_status(&pool, r2, &["STAGE2_REVIEW", "READY_FOR_DELIVERY"], 180).await;
+    println!("[adv] S1b byte-identical re-upload -> {s2}");
+    assert_eq!(
+        s2, "STAGE2_REVIEW",
+        "byte-identical plagiarism must be caught"
+    );
+
+    // S2: same music, re-encoded (different bytes) — the fingerprint gap.
+    // (Trailing tag bytes keep reruns unique; ffprobe/QC read the frames.)
+    let mut mp3 = mp3_bytes();
+    mp3.extend_from_slice(&Uuid::new_v4().as_u128().to_le_bytes());
+    assert_ne!(sha256_hex(&audio_s1a), sha256_hex(&mp3));
+    let (u3, r3) = adversarial_seed(&app, &pool, &store, &mp3, "Totally New Song").await;
+    consent_and_submit(&app, &u3, r3, &format!("k-adv3-{}", Uuid::new_v4())).await;
+    let s3 = wait_release_status(&pool, r3, &["STAGE2_REVIEW", "READY_FOR_DELIVERY"], 180).await;
+    println!("[adv] S2 re-encoded same music -> {s3} (gap if READY_FOR_DELIVERY)");
+
+    // S3: minor declares minority at consent -> hard block.
+    let (u4, r4) =
+        adversarial_seed(&app, &pool, &store, &unique_audio(&base_wav), "Kid Song").await;
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{}/releases/{r4}/consents", u4.org),
+        json!({"parties":[{"party_id":u4.party,"role":"ARTIST"}],"minority_declared":true}),
+        Some(&u4),
+    )
+    .await;
+    println!("[adv] S3 minority-declared consent -> HTTP {s} {v}");
+    assert_ne!(s, StatusCode::OK, "declared minority must be blocked");
+
+    // S4: minor lies (minority_declared=false) -> no age verification exists.
+    consent_and_submit(&app, &u4, r4, &format!("k-adv4-{}", Uuid::new_v4())).await;
+    let s4 = wait_release_status(&pool, r4, &["STAGE2_REVIEW", "READY_FOR_DELIVERY"], 180).await;
+    println!("[adv] S4 undeclared minor -> {s4} (gap if READY_FOR_DELIVERY)");
+
+    // S5: cover song — no declaration field, no detection.
+    let (u5, r5) = adversarial_seed(
+        &app,
+        &pool,
+        &store,
+        &unique_audio(&base_wav),
+        "Blinding Lights (Cover)",
+    )
+    .await;
+    consent_and_submit(&app, &u5, r5, &format!("k-adv5-{}", Uuid::new_v4())).await;
+    let s5 = wait_release_status(&pool, r5, &["STAGE2_REVIEW", "READY_FOR_DELIVERY"], 180).await;
+    println!("[adv] S5 cover song -> {s5} (gap if READY_FOR_DELIVERY)");
+
+    // S6: explicit lyrics — there is no lyrics channel in the API at all.
+    let (u6, r6) = adversarial_seed(
+        &app,
+        &pool,
+        &store,
+        &unique_audio(&base_wav),
+        "Explicit Song",
+    )
+    .await;
+    let rv: i64 = sqlx::query_scalar("SELECT row_version FROM catalog.releases WHERE id=$1")
+        .bind(r6)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let artist: Uuid = sqlx::query_scalar("SELECT id FROM catalog.artists WHERE org_id=$1 LIMIT 1")
+        .bind(u6.org)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let asset: Uuid = sqlx::query_scalar("SELECT asset_id FROM catalog.tracks WHERE release_id=$1")
+        .bind(r6)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{}/releases/{r6}/tracks", u6.org),
+        json!({"title":"T2","disc_number":1,"track_number":2,"artist_id":artist,"asset_id":asset,"row_version":rv,"lyrics":"explicit lyrics here"}),
+        Some(&u6),
+    )
+    .await;
+    println!("[adv] S6 lyrics field submission -> HTTP {s} {v}");
+    assert_ne!(
+        s,
+        StatusCode::OK,
+        "lyrics field must be rejected (no such channel)"
+    );
+
+    println!("[adv] DONE");
+}
