@@ -22,10 +22,9 @@ function money(n: number): string {
 export function Settlement() {
   const nav = useNavigate();
   const toast = useToast();
-  const [statements, setStatements] = useState<Statement[]>(INITIAL_STATEMENTS);
+  const [statements] = useState<Statement[]>(INITIAL_STATEMENTS);
   const [payouts, setPayouts] = useState<Payout[]>(INITIAL_PAYOUTS);
   const [showPayout, setShowPayout] = useState(false);
-  const [showStatement, setShowStatement] = useState(false);
   const [amount, setAmount] = useState('');
   const [payoutNote, setPayoutNote] = useState('');
 
@@ -52,30 +51,6 @@ export function Settlement() {
     toast('지급 요청 내역을 저장했어요.');
   };
 
-  const submitStatement = (e: React.FormEvent) => {
-    e.preventDefault();
-    const form = e.target as HTMLFormElement;
-    const data = new FormData(form);
-    const period = String(data.get('sPeriod') || '');
-    const platform = String(data.get('sPlatform') || '').trim();
-    const amt = Number(data.get('sAmount') || 0);
-    const note = String(data.get('sNote') || '').trim();
-    if (!period || !platform || !amt) { toast('필수 항목을 입력해 주세요.'); return; }
-    setStatements(ss => [...ss, { id: 'st' + Date.now(), period, platform, amount: amt, note, created: new Date().toISOString().slice(0, 10) }]);
-    setShowStatement(false);
-    toast('정산 내역을 저장했어요.');
-  };
-
-  const deleteStatement = (id: string) => {
-    if (!window.confirm('선택한 내역을 삭제할까요?')) return;
-    setStatements(ss => ss.filter(s => s.id !== id));
-  };
-
-  const deletePayout = (id: string) => {
-    if (!window.confirm('선택한 내역을 삭제할까요?')) return;
-    setPayouts(ps => ps.filter(p => p.id !== id));
-  };
-
   return (
     <>
       <div className="view-title">
@@ -90,9 +65,9 @@ export function Settlement() {
       </div>
 
       <div className="stat-grid" id="settlementStats">
-        <div className="surface white stat-card"><small>기록한 정산액</small><strong>{money(total)}</strong></div>
-        <div className="surface white stat-card"><small>요청 전 잔액</small><strong>{money(left)}</strong></div>
-        <div className="surface white stat-card"><small>지급 요청 기록 합계</small><strong>{money(used)}</strong></div>
+        <div className="surface white stat-card"><small>확정된 정산 금액</small><strong>{money(total)}</strong></div>
+        <div className="surface white stat-card"><small>수령 가능 금액</small><strong>{money(left)}</strong></div>
+        <div className="surface white stat-card"><small>지급 요청 금액</small><strong>{money(used)}</strong></div>
       </div>
 
       <section className="studio-payout-surface" aria-labelledby="payoutHeading">
@@ -108,14 +83,11 @@ export function Settlement() {
       </section>
 
       <div className="notice">
-        정산 내역과 지급 요청 기록을 확인해 주세요. 실제 송금은 지급 서비스 연결 후 진행돼요.
+        확정된 정산 금액과 지급 진행 상황을 확인할 수 있어요. 수령 금액은 정산이 확정된 뒤 안내해 드려요.
       </div>
 
       <div className="section-top">
         <h2>정산 내역</h2>
-        <div className="row-actions">
-          <button type="button" className="button ghost" onClick={() => setShowStatement(true)}>정산 내역 기록</button>
-        </div>
       </div>
       <div className="data-list">
         {statements.length ? statements.map(s => (
@@ -123,15 +95,15 @@ export function Settlement() {
             <span className="document-icon">₩</span>
             <div>
               <span className="row-name">{s.period} · {s.platform}</span>
-              <span className="row-sub">{s.note || '수기 등록 정산 내역'} · {s.created}</span>
+              <span className="row-sub">{s.note || '최종 지급 예정 금액'} · {s.created}</span>
             </div>
             <div className="row-end">
               <strong>{money(s.amount)}</strong>
-              <button type="button" className="link-btn" onClick={() => deleteStatement(s.id)} aria-label="정산 내역 삭제">×</button>
+              <span className="status-chip live">확정</span>
             </div>
           </div>
         )) : (
-          <div className="empty-note">기록된 정산 내역이 없어요.</div>
+          <div className="empty-note">확정된 정산 내역이 없어요. 정산이 확정되면 여기에서 확인할 수 있어요.</div>
         )}
       </div>
 
@@ -139,18 +111,14 @@ export function Settlement() {
       <div className="data-list">
         {payouts.length ? payouts.map(p => (
           <div key={p.id} className="statement-row">
-            <span className="document-icon">↗</span>
+            <span className="document-icon">₩</span>
             <div>
-              <span className="row-name">{money(p.amount)} · 지급 요청 기록</span>
-              <span className="row-sub">{p.created} · {p.note || '현재 작업 공간에만 기록됨'}</span>
-            </div>
-            <div className="row-end">
-              <span className="status-chip ready">전송 전</span>
-              <button type="button" className="link-btn" onClick={() => deletePayout(p.id)} aria-label="요청 기록 삭제">×</button>
+              <span className="row-name">{money(p.amount)} · 수익 지급 요청</span>
+              <span className="row-sub">{p.created} · {p.status === 'recorded' ? '접수 전 · 신청 내용 보관' : '진행 중'}</span>
             </div>
           </div>
         )) : (
-          <div className="empty-note">지급 요청 기록이 없어요.</div>
+          <div className="empty-note">지급 요청 내역이 없어요. 수령 가능 금액을 확인하고 지급을 요청할 수 있어요.</div>
         )}
       </div>
 
@@ -197,30 +165,7 @@ export function Settlement() {
         </Modal>
       )}
 
-      {showStatement && (
-        <Modal title="정산 내역 기록" onClose={() => setShowStatement(false)}>
-          <p className="small muted">받은 정산서를 확인한 뒤 직접 입력해 주세요. 기록된 금액은 AUDENIQ에서 확정한 금액이 아니에요.</p>
-          <form onSubmit={submitStatement} style={{ marginTop: 16 }}>
-            <div className="field">
-              <label htmlFor="sPeriod">정산 기간 (월)</label>
-              <input id="sPeriod" name="sPeriod" type="month" required />
-            </div>
-            <div className="field">
-              <label htmlFor="sPlatform">지급 플랫폼 / 정산 출처</label>
-              <input id="sPlatform" name="sPlatform" maxLength={100} required placeholder="예: Spotify" />
-            </div>
-            <div className="field">
-              <label htmlFor="sAmount">정산 금액 (원)</label>
-              <input id="sAmount" name="sAmount" type="number" min={0} step={1} required placeholder="0" />
-            </div>
-            <div className="field">
-              <label htmlFor="sNote">메모</label>
-              <input id="sNote" name="sNote" maxLength={200} placeholder="정산서 번호 등" />
-            </div>
-            <button className="button" type="submit">내역 저장</button>
-          </form>
-        </Modal>
-      )}
+
     </>
   );
 }

@@ -22,6 +22,7 @@ export interface Release {
   release_date: string | null;
   created_at: string;
   track_count: number;
+  artist?: string;
 }
 
 export interface ReleaseDetail extends Release {

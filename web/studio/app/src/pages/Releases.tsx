@@ -6,9 +6,9 @@ import type { Release, Track } from '../api/client';
 // mock 상태를 라이브 필터 카테고리로 매핑
 const STATUS_MAP: Record<string, { chip: string; label: string }> = {
   LIVE: { chip: 'live', label: '발매 완료' },
-  STAGE1_PASSED: { chip: 'review', label: '심사 통과' },
-  STAGE1_CORRECTION: { chip: 'needs', label: '수정 필요' },
-  DRAFT: { chip: 'draft', label: '초안' },
+  STAGE1_PASSED: { chip: 'review', label: '검토 중' },
+  STAGE1_CORRECTION: { chip: 'needs', label: '보완 필요' },
+  DRAFT: { chip: 'draft', label: '작성 중' },
 };
 
 const FILTERS = [
@@ -31,13 +31,11 @@ const SELECT_OPTIONS = [
   { value: 'live', label: '발매 완료' },
 ];
 
-type TrackWithRelease = Track & { releaseTitle: string; releaseId: string };
+type TrackWithRelease = Track & { releaseTitle: string; releaseId: string; artist?: string };
 
-function Cover({ title }: { title: string }) {
+function Cover() {
   return (
-    <span className="cover" aria-hidden="true">
-      {title.charAt(0)}
-    </span>
+    <span className="cover" aria-hidden="true">♫</span>
   );
 }
 
@@ -64,7 +62,7 @@ export function Releases() {
             const d = await mockApi.getRelease(r.id);
             if (cancelled) return;
             for (const t of d.tracks) {
-              all.push({ ...t, releaseTitle: d.title, releaseId: d.id });
+              all.push({ ...t, releaseTitle: d.title, releaseId: d.id, artist: d.artist });
             }
           } catch { /* ignore */ }
         }
@@ -154,13 +152,13 @@ export function Releases() {
               {filtered.map(r => {
                 const st = STATUS_MAP[r.status] ?? { chip: 'draft', label: r.status };
                 return (
-                  <article key={r.id} className="release-row studio-album-row">
-                    <Cover title={r.title} />
+                  <article key={r.id} className="release-row studio-album-row" onClick={() => openRelease(r.id)} style={{ cursor: 'pointer' }}>
+                    <Cover />
                     <div className="min-0">
-                      <button type="button" className="row-name" onClick={() => openRelease(r.id)}>
+                      <button type="button" className="row-name" onClick={e => { e.stopPropagation(); openRelease(r.id); }}>
                         {r.title || '제목 없는 발매'}
                       </button>
-                      <span className="row-sub">테스트 레이블 · {r.track_count}곡</span>
+                      <span className="row-sub">{r.artist || '아티스트 미입력'} · {r.track_count}곡</span>
                       <span className="row-sub">{r.release_date ?? '발매일 미정'}</span>
                     </div>
                     <div className="row-end">
@@ -172,7 +170,7 @@ export function Releases() {
             </div>
           ) : (
             <div className="empty-page">
-              <h3>{query ? '검색 결과가 없어요.' : '아직 등록한 발매가 없어요.'}</h3>
+              <h2>{query ? '검색 결과가 없어요.' : '아직 등록한 발매가 없어요.'}</h2>
               <p>발매 정보를 저장하면 이곳에서 수정하고 관리할 수 있어요.</p>
             </div>
           )}
@@ -189,10 +187,10 @@ export function Releases() {
             <div className="data-list">
               {filteredTracks.map(t => (
                 <div key={t.id} className="track-row">
-                  <Cover title={t.title} />
+                  <Cover />
                   <div>
                     <span className="row-name">{t.title || '제목 없는 곡'}</span>
-                    <span className="row-sub">{t.releaseTitle} · 테스트 레이블{t.isrc ? ` · ISRC ${t.isrc}` : ''}</span>
+                    <span className="row-sub">{t.releaseTitle} · {t.artist || '아티스트 미입력'}{t.isrc ? ` · ISRC ${t.isrc}` : ''}</span>
                   </div>
                   <button className="link-btn" type="button" onClick={() => openRelease(t.releaseId)}>
                     자세히 보기
@@ -202,7 +200,7 @@ export function Releases() {
             </div>
           ) : (
             <div className="empty-page">
-              <h3>표시할 트랙이 없어요.</h3>
+              <h2>표시할 트랙이 없어요.</h2>
               <p>새로운 발매를 등록하면 곡별 정보를 볼 수 있어요.</p>
             </div>
           )}
