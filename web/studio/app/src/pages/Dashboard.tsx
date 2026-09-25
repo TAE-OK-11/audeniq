@@ -112,7 +112,7 @@ export function Dashboard() {
   const monthSum = MOCK_REPORTS.reduce((n, r) => n + r.revenue, 0);
 
   return (
-    <>
+    <div id="view-home" className="view">
       <div className="view-title">
         <div>
           <p className="eyebrow">AUDENIQ / STUDIO</p>
@@ -196,6 +196,6 @@ export function Dashboard() {
           <p className="dashboard-help">플랫폼 보고서를 기준으로 집계한 수익을 확인해 보세요.</p>
         </div>
       </section>
-    </>
+    </div>
   );
 }

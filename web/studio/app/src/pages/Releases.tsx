@@ -85,7 +85,7 @@ export function Releases() {
   const openRelease = (id: string) => nav(`/releases/${id}`);
 
   return (
-    <>
+    <div id="view-catalog" className="view">
       <div className="view-title">
         <div>
           <p className="eyebrow">CATALOG</p>
@@ -198,6 +198,6 @@ export function Releases() {
           )}
         </div>
       )}
-    </>
+    </div>
   );
 }

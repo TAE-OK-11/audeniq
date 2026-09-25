@@ -59,7 +59,7 @@ export function ReleaseDetail() {
   };
 
   return (
-    <>
+    <div id="view-release" className="view">
       <div className="spaced-actions">
         <button type="button" className="link-btn" onClick={() => nav('/releases')}>← 발매 목록</button>
         <div className="row-actions">
@@ -241,6 +241,6 @@ export function ReleaseDetail() {
           </div>
         </Modal>
       )}
-    </>
+    </div>
   );
 }

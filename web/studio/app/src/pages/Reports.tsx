@@ -104,7 +104,7 @@ export function Reports() {
   };
 
   return (
-    <>
+    <div id="view-reports" className="view">
       <div className="view-title">
         <div>
           <p className="eyebrow">INSIGHTS</p>
@@ -169,6 +169,6 @@ export function Reports() {
           <p>CSV 파일을 가져오면 재생·수익 내역과 기간별 그래프가 여기에 표시돼요.</p>
         </div>
       )}
-    </>
+    </div>
   );
 }

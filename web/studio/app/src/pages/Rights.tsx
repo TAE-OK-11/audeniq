@@ -110,7 +110,7 @@ export function Rights() {
   };
 
   return (
-    <>
+    <div id="view-rights" className="view">
       <div className="view-title">
         <div>
           <p className="eyebrow">RIGHTS &amp; DOCUMENTS</p>
@@ -212,6 +212,6 @@ export function Rights() {
           onSaved={() => setSigning(false)}
         />
       )}
-    </>
+    </div>
   );
 }

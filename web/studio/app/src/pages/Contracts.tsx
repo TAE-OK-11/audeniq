@@ -23,7 +23,7 @@ export function Contracts() {
   };
 
   return (
-    <>
+    <div id="view-contracts" className="view">
       <div className="view-title">
         <div>
           <p className="eyebrow">AUDENIQ AGREEMENTS</p>
@@ -82,6 +82,6 @@ export function Contracts() {
           onSaved={() => setSigning(false)}
         />
       )}
-    </>
+    </div>
   );
 }
