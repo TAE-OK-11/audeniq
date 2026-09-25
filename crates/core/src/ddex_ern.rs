@@ -21,8 +21,9 @@
 //!   PCM-specific fields (1411/44100/16/2) are emitted for WAV only.
 //! - Duration is omitted: `PreparedTrack` carries no duration.
 //! - Image dimensions are omitted: not stored on the asset.
-//! - Credits are emitted as `ResourceContributor` with the stored role text;
-//!   mapping roles onto the DDEX allowed-value list is future work.
+//! - Credits are emitted as `ResourceContributor` with roles mapped onto
+//!   the DDEX `ContributorRole` allowed-value set (`contributor_role`);
+//!   unmapped roles fall back to the generic `Contributor` value.
 //! - `MessageControlType` is `LiveMessage` for Initial, `UpdateMessage` for
 //!   Update/Takedown. A Takedown closes the deal via
 //!   `ValidityPeriod/EndDate`.
@@ -183,6 +184,34 @@ fn file_block(out: &mut String, file_name: &str, sha256: &str) {
     out.push_str("</HashSum></File>");
 }
 
+/// Map a free-text credit role onto the DDEX ERN 3.8.2 `ContributorRole`
+/// allowed-value set. The table is a curated, documented subset: common
+/// studio roles map to their AVS counterpart, and anything unmapped falls
+/// back to `Contributor`, the AVS generic value, so emitted XML only ever
+/// carries allowed values. The stored role text is unchanged in the
+/// database; review this table against the partner's profile AVS before
+/// F6 production use.
+fn contributor_role(role: &str) -> &'static str {
+    match role.trim().to_ascii_lowercase().as_str() {
+        "composer" | "songwriter" | "writer" | "music" => "Composer",
+        "lyricist" | "lyrics" | "words" => "Lyricist",
+        "arranger" => "Arranger",
+        "producer" | "music producer" | "executive producer" | "co-producer" => "Producer",
+        "publisher" | "music publisher" => "Publisher",
+        "engineer" | "recording engineer" | "sound engineer" | "audio engineer"
+        | "mastering engineer" => "Engineer",
+        "mixer" | "mix engineer" | "mixing engineer" => "Mixer",
+        "remixer" => "Remixer",
+        "conductor" => "Conductor",
+        "narrator" => "Narrator",
+        "author" => "Author",
+        "musician" | "instrumentalist" | "performer" => "Musician",
+        "featured artist" | "featuring" | "feat." | "feat" => "FeaturedArtist",
+        "artist" | "main artist" => "Artist",
+        _ => "Contributor",
+    }
+}
+
 /// Credits keyed by canonical track id, for `ResourceContributor` output.
 fn credit_map(prepared: &PreparedRelease) -> BTreeMap<uuid::Uuid, Vec<(String, String)>> {
     let mut map: BTreeMap<uuid::Uuid, Vec<(String, String)>> = BTreeMap::new();
@@ -239,7 +268,7 @@ fn resource_list(out: &mut String, prepared: &PreparedRelease) {
                 out.push_str("<PartyName>");
                 element(out, "FullName", name);
                 out.push_str("</PartyName>");
-                element(out, "Role", role);
+                element(out, "Role", contributor_role(role));
                 out.push_str("</ResourceContributor>");
             }
         }
@@ -411,4 +440,27 @@ pub fn generate_ddex_ern_382(prepared: &PreparedRelease, config: &DdexErnConfig)
     deal_list(&mut out, config);
     out.push_str("</ern:NewReleaseMessage>\n");
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::contributor_role;
+
+    #[test]
+    fn contributor_role_maps_studio_roles_to_avs() {
+        assert_eq!(contributor_role("composer"), "Composer");
+        assert_eq!(contributor_role("Songwriter"), "Composer");
+        assert_eq!(contributor_role("lyricist"), "Lyricist");
+        assert_eq!(contributor_role("ARRANGER"), "Arranger");
+        assert_eq!(contributor_role("Mixing Engineer"), "Mixer");
+        assert_eq!(contributor_role("Mastering Engineer"), "Engineer");
+        assert_eq!(contributor_role("feat."), "FeaturedArtist");
+        assert_eq!(contributor_role("  producer  "), "Producer");
+    }
+
+    #[test]
+    fn contributor_role_unknown_falls_back_to_generic() {
+        assert_eq!(contributor_role("vibe curator"), "Contributor");
+        assert_eq!(contributor_role(""), "Contributor");
+    }
 }
