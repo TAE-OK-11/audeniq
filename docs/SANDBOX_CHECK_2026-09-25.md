@@ -89,3 +89,36 @@ Notes:
   / age-verification vendors) before customer operation.
 - S1's catch is exact-match only: trim, re-encode, or pitch-shift the audio
   and it becomes S2.
+
+## Content-control hardening (2026-09-25, post red-team)
+
+Implemented after the adversarial run above:
+
+1. **Submit-time declarations** (`SubmitInput.declarations`): `rights_confirmed`
+   + `adult_confirmed` are mandatory (else `422 DECLARATION_REQUIRED`);
+   `is_cover` / `is_remix` / `contains_samples` / `ai_involved` /
+   `explicit_content` are captured immutably in the revision body.
+2. **`special_flags` now live**: the validation-package builder maps
+   declarations (and per-track `parental_advisory`) to
+   `COVER` / `REMIX` / `SAMPLE` / `AI` / `EXPLICIT`. The Stage 2 logic that
+   was unreachable dead code now fires: any flag -> `REVIEW_REQUIRED`
+   (`S2_SPECIAL_FLAGS`, plus grant-chain scrutiny in 2-A).
+3. **Undeclared-content tripwire** (2-F.2, `S2_UNDECLARED_CONTENT`): token-
+   boundary title scan for cover/remix/AI indicators without the matching
+   declaration -> human review. ("Discovery" does not match "cover".)
+4. **Lyrics + parental advisory**: `TrackInput.lyrics` (<=20k chars),
+   `TrackInput.parental_advisory`; migration `0023_content_controls.sql`.
+5. **DDEX ERN `ParentalWarningType`**: explicit releases emit
+   `<ParentalWarningType>Explicit</ParentalWarningType>` in
+   `ReleaseDetailsByTerritory`.
+6. **UPC cross-org duplicate check** in 2-C (was ISRC/SHA only).
+
+New adversarial scenarios S5-S9 verify each control at runtime (all must
+land in `STAGE2_REVIEW`, S8 must be rejected at submit).
+
+Still open (product/vendor decisions, not code gaps):
+- Audio fingerprinting for re-encoded plagiarism (F4+).
+- Real age verification (external IDV vendor).
+- Detecting *lies* on declarations (human review + legal trail exist now;
+  automated lie detection does not).
+- Artist-identity impersonation (no external artist registry wired).

@@ -309,6 +309,17 @@ async fn build_submittable(app: &Router, pool: &PgPool, u: &User, asset: Uuid) -
 }
 
 async fn consent_and_submit(app: &Router, u: &User, release: Uuid, key: &str) -> Uuid {
+    consent_and_submit_decl(app, u, release, key, json!({})).await
+}
+
+/// Submit with declaration overrides merged over the all-false baseline.
+async fn consent_and_submit_decl(
+    app: &Router,
+    u: &User,
+    release: Uuid,
+    key: &str,
+    decl_overrides: Value,
+) -> Uuid {
     let (s, v) = call(
         app,
         "POST",
@@ -319,11 +330,15 @@ async fn consent_and_submit(app: &Router, u: &User, release: Uuid, key: &str) ->
     .await;
     assert_eq!(s, StatusCode::OK, "{v}");
     let consent_id = Uuid::parse_str(v["consent_id"].as_str().unwrap()).unwrap();
+    let mut decl = json!({"rights_confirmed":true,"adult_confirmed":true,"is_cover":false,"is_remix":false,"contains_samples":false,"ai_involved":false,"explicit_content":false});
+    for (k, val) in decl_overrides.as_object().unwrap() {
+        decl[k] = val.clone();
+    }
     let (s, v) = call(
         app,
         "POST",
         &format!("/api/orgs/{}/releases/{release}/submit", u.org),
-        json!({"consent_id":consent_id,"minority_declared":false,"idempotency_key":key}),
+        json!({"consent_id":consent_id,"minority_declared":false,"idempotency_key":key,"declarations":decl}),
         Some(u),
     )
     .await;
@@ -1438,8 +1453,11 @@ async fn wait_release_status(
 ///   S2: same music re-encoded as MP3 (fingerprint-gap probe)
 ///   S3: minor who declares minority at consent (must be hard-blocked)
 ///   S4: minor who lies (minority_declared=false) (age-verification gap probe)
-///   S5: cover song, "(Cover)" in title (declaration/detection gap probe)
-///   S6: explicit lyrics (verifies no lyrics channel exists in the API)
+///   S5: cover song, "(Cover)" in title but undeclared (tripwire probe)
+///   S6: explicit lyrics + parental advisory (special-flag probe)
+///   S7: declared cover via is_cover=true (special-flag probe)
+///   S8: submit without rights/adult declarations (must be rejected)
+///   S9: UPC already claimed by another org's live release (duplicate probe)
 ///
 /// Run: SANDBOX_DATABASE_URL=... cargo test -p audeniq-core --test execution
 ///   sandbox_adversarial_submissions -- --ignored --nocapture
@@ -1526,7 +1544,7 @@ async fn sandbox_adversarial_submissions() {
     let s4 = wait_release_status(&pool, r4, &["STAGE2_REVIEW", "READY_FOR_DELIVERY"], 180).await;
     println!("[adv] S4 undeclared minor -> {s4} (gap if READY_FOR_DELIVERY)");
 
-    // S5: cover song — no declaration field, no detection.
+    // S5: cover song, honestly titled but undeclared -> tripwire review.
     let (u5, r5) = adversarial_seed(
         &app,
         &pool,
@@ -1537,9 +1555,13 @@ async fn sandbox_adversarial_submissions() {
     .await;
     consent_and_submit(&app, &u5, r5, &format!("k-adv5-{}", Uuid::new_v4())).await;
     let s5 = wait_release_status(&pool, r5, &["STAGE2_REVIEW", "READY_FOR_DELIVERY"], 180).await;
-    println!("[adv] S5 cover song -> {s5} (gap if READY_FOR_DELIVERY)");
+    println!("[adv] S5 undeclared cover title -> {s5} (must be STAGE2_REVIEW)");
+    assert_eq!(
+        s5, "STAGE2_REVIEW",
+        "undeclared cover title must trip review"
+    );
 
-    // S6: explicit lyrics — there is no lyrics channel in the API at all.
+    // S6: explicit lyrics + parental advisory -> special-flag review.
     let (u6, r6) = adversarial_seed(
         &app,
         &pool,
@@ -1548,35 +1570,96 @@ async fn sandbox_adversarial_submissions() {
         "Explicit Song",
     )
     .await;
-    let rv: i64 = sqlx::query_scalar("SELECT row_version FROM catalog.releases WHERE id=$1")
+    sqlx::query("UPDATE catalog.tracks SET lyrics='explicit lyrics here', parental_advisory=true WHERE release_id=$1")
         .bind(r6)
-        .fetch_one(&pool)
+        .execute(&pool)
         .await
         .unwrap();
-    let artist: Uuid = sqlx::query_scalar("SELECT id FROM catalog.artists WHERE org_id=$1 LIMIT 1")
-        .bind(u6.org)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    let asset: Uuid = sqlx::query_scalar("SELECT asset_id FROM catalog.tracks WHERE release_id=$1")
-        .bind(r6)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    consent_and_submit(&app, &u6, r6, &format!("k-adv6-{}", Uuid::new_v4())).await;
+    let s6 = wait_release_status(&pool, r6, &["STAGE2_REVIEW", "READY_FOR_DELIVERY"], 180).await;
+    println!("[adv] S6 parental advisory -> {s6} (must be STAGE2_REVIEW)");
+    assert_eq!(s6, "STAGE2_REVIEW", "explicit content must route to review");
+
+    // S7: declared cover (is_cover=true) -> special-flag review.
+    let (u7, r7) = adversarial_seed(
+        &app,
+        &pool,
+        &store,
+        &unique_audio(&base_wav),
+        "Declared Cover Song",
+    )
+    .await;
+    consent_and_submit_decl(
+        &app,
+        &u7,
+        r7,
+        &format!("k-adv7-{}", Uuid::new_v4()),
+        json!({"is_cover": true}),
+    )
+    .await;
+    let s7 = wait_release_status(&pool, r7, &["STAGE2_REVIEW", "READY_FOR_DELIVERY"], 180).await;
+    println!("[adv] S7 declared cover -> {s7} (must be STAGE2_REVIEW)");
+    assert_eq!(s7, "STAGE2_REVIEW", "declared cover must route to review");
+
+    // S8: missing rights/adult declarations -> submit rejected.
+    let (u8, r8) = adversarial_seed(
+        &app,
+        &pool,
+        &store,
+        &unique_audio(&base_wav),
+        "No Declaration Song",
+    )
+    .await;
     let (s, v) = call(
         &app,
         "POST",
-        &format!("/api/orgs/{}/releases/{r6}/tracks", u6.org),
-        json!({"title":"T2","disc_number":1,"track_number":2,"artist_id":artist,"asset_id":asset,"row_version":rv,"lyrics":"explicit lyrics here"}),
-        Some(&u6),
+        &format!("/api/orgs/{}/releases/{r8}/consents", u8.org),
+        json!({"parties":[{"party_id":u8.party,"role":"ARTIST"}],"minority_declared":false}),
+        Some(&u8),
     )
     .await;
-    println!("[adv] S6 lyrics field submission -> HTTP {s} {v}");
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let consent_id = Uuid::parse_str(v["consent_id"].as_str().unwrap()).unwrap();
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{}/releases/{r8}/submit", u8.org),
+        json!({"consent_id":consent_id,"minority_declared":false,"idempotency_key":format!("k-adv8-{}", Uuid::new_v4()),
+            "declarations":{"rights_confirmed":false,"adult_confirmed":true,"is_cover":false,"is_remix":false,"contains_samples":false,"ai_involved":false,"explicit_content":false}}),
+        Some(&u8),
+    )
+    .await;
+    println!("[adv] S8 missing rights declaration -> HTTP {s} {v}");
     assert_ne!(
         s,
         StatusCode::OK,
-        "lyrics field must be rejected (no such channel)"
+        "submit without rights confirmation must be rejected"
     );
+
+    // S9: UPC claimed by another org's live release -> duplicate review.
+    let (u9, r9) = adversarial_seed(
+        &app,
+        &pool,
+        &store,
+        &unique_audio(&base_wav),
+        "UPC Clash Song",
+    )
+    .await;
+    let stolen_upc: String = sqlx::query_scalar("SELECT upc FROM catalog.releases WHERE id=$1")
+        .bind(r1)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE catalog.releases SET upc=$1, row_version=row_version+1 WHERE id=$2")
+        .bind(&stolen_upc)
+        .bind(r9)
+        .execute(&pool)
+        .await
+        .unwrap();
+    consent_and_submit(&app, &u9, r9, &format!("k-adv9-{}", Uuid::new_v4())).await;
+    let s9 = wait_release_status(&pool, r9, &["STAGE2_REVIEW", "READY_FOR_DELIVERY"], 180).await;
+    println!("[adv] S9 duplicate UPC -> {s9} (must be STAGE2_REVIEW)");
+    assert_eq!(s9, "STAGE2_REVIEW", "duplicate UPC must route to review");
 
     println!("[adv] DONE");
 }

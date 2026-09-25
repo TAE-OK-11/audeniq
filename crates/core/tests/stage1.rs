@@ -340,7 +340,7 @@ async fn submit(
         app,
         "POST",
         &format!("/api/orgs/{}/releases/{release}/submit", u.org),
-        json!({"consent_id":consent_id,"minority_declared":minority,"idempotency_key":key}),
+        json!({"consent_id":consent_id,"minority_declared":minority,"idempotency_key":key,"declarations":{"rights_confirmed":true,"adult_confirmed":true,"is_cover":false,"is_remix":false,"contains_samples":false,"ai_involved":false,"explicit_content":false}}),
         Some(u),
     )
     .await

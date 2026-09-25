@@ -40,7 +40,10 @@ fn canonical(v: &Value) -> String {
 /// submits must not invalidate an already-given consent — otherwise no submit
 /// could ever be retried.
 async fn scope_of(c: &mut PgConnection, org: Uuid, release: Uuid) -> Result<Value> {
-    revision_body(c, org, release, "", false).await
+    // Declarations are a submit-time legal act, not draft content: the
+    // consent scope pins them at their default so consent stays valid
+    // regardless of what the submitter later declares.
+    revision_body(c, org, release, "", false, &DeclarationsInput::default()).await
 }
 
 // ---------------------------------------------------------------------------
@@ -231,6 +234,49 @@ pub struct SubmitInput {
     pub consent_id: Uuid,
     pub minority_declared: bool,
     pub idempotency_key: String,
+    pub declarations: DeclarationsInput,
+}
+
+/// Legally-weighted self-declarations captured immutably at submit time.
+/// A declaration never auto-passes: any special-content flag routes the
+/// revision to human review via `special_flags`. Lying on a declaration is
+/// a terms violation with an immutable audit trail — detection of lies is a
+/// human/vendor process, not something this struct claims to do.
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct DeclarationsInput {
+    /// "I own or control all rights needed to distribute this release."
+    pub rights_confirmed: bool,
+    /// "I am 18+ or have legal-guardian consent to distribute."
+    pub adult_confirmed: bool,
+    pub is_cover: bool,
+    pub is_remix: bool,
+    pub contains_samples: bool,
+    pub ai_involved: bool,
+    pub explicit_content: bool,
+}
+
+impl DeclarationsInput {
+    /// Special-content flags consumed by Stage 2 (`special_flags`).
+    pub fn special_flags(&self) -> Vec<&'static str> {
+        let mut out = Vec::new();
+        if self.is_cover {
+            out.push("COVER");
+        }
+        if self.is_remix {
+            out.push("REMIX");
+        }
+        if self.contains_samples {
+            out.push("SAMPLE");
+        }
+        if self.ai_involved {
+            out.push("AI");
+        }
+        if self.explicit_content {
+            out.push("EXPLICIT");
+        }
+        out
+    }
 }
 
 async fn enqueue_stage1(c: &mut PgConnection, revision_id: Uuid) -> Result<()> {
@@ -252,16 +298,17 @@ async fn revision_body(
     release: Uuid,
     consent_package_hash: &str,
     minority_declared: bool,
+    declarations: &DeclarationsInput,
 ) -> Result<Value> {
     let r = sqlx::query(
-        "SELECT id, title, release_type, draft FROM catalog.releases WHERE org_id=$1 AND id=$2",
+        "SELECT id, title, release_type, draft, upc FROM catalog.releases WHERE org_id=$1 AND id=$2",
     )
     .bind(org)
     .bind(release)
     .fetch_one(&mut *c)
     .await?;
     let tracks = sqlx::query(
-        "SELECT t.id, t.title, t.disc_number, t.track_number, t.artist_id, t.isrc, t.asset_id, a.sha256 AS asha, a.kind AS akind FROM catalog.tracks t LEFT JOIN catalog.assets a ON a.org_id=t.org_id AND a.id=t.asset_id WHERE t.org_id=$1 AND t.release_id=$2 AND t.archived_at IS NULL ORDER BY t.disc_number, t.track_number",
+        "SELECT t.id, t.title, t.disc_number, t.track_number, t.artist_id, t.isrc, t.asset_id, t.parental_advisory, a.sha256 AS asha, a.kind AS akind FROM catalog.tracks t LEFT JOIN catalog.assets a ON a.org_id=t.org_id AND a.id=t.asset_id WHERE t.org_id=$1 AND t.release_id=$2 AND t.archived_at IS NULL ORDER BY t.disc_number, t.track_number",
     )
     .bind(org).bind(release).fetch_all(&mut *c).await?;
     let mut tj = Vec::new();
@@ -279,6 +326,7 @@ async fn revision_body(
             "asset_id": t.get::<Option<Uuid>,_>("asset_id"),
             "asset_sha256": t.get::<Option<String>,_>("asha"),
             "asset_kind": t.get::<Option<String>,_>("akind"),
+            "parental_advisory": t.get::<bool,_>("parental_advisory"),
             "credits": credits.iter().map(|cr| json!({"party_id": cr.get::<Uuid,_>("party_id"), "role": cr.get::<String,_>("role")})).collect::<Vec<_>>(),
         }));
     }
@@ -289,10 +337,20 @@ async fn revision_body(
             "title": r.get::<String,_>("title"),
             "release_type": r.get::<String,_>("release_type"),
             "draft": r.get::<Value,_>("draft"),
+            "upc": r.get::<Option<String>,_>("upc"),
         },
         "tracks": tj,
         "consent_package_hash": consent_package_hash,
         "minority_declared": minority_declared,
+        "declarations": {
+            "rights_confirmed": declarations.rights_confirmed,
+            "adult_confirmed": declarations.adult_confirmed,
+            "is_cover": declarations.is_cover,
+            "is_remix": declarations.is_remix,
+            "contains_samples": declarations.contains_samples,
+            "ai_involved": declarations.ai_involved,
+            "explicit_content": declarations.explicit_content,
+        },
     }))
 }
 
@@ -337,6 +395,9 @@ pub async fn submit(
     if input.minority_declared {
         return Err(Error::PolicyGate("MINORITY_REVIEW_REQUIRED"));
     }
+    if !input.declarations.rights_confirmed || !input.declarations.adult_confirmed {
+        return Err(Error::PolicyGate("DECLARATION_REQUIRED"));
+    }
     if input.idempotency_key.trim().is_empty() || input.idempotency_key.len() > 128 {
         return Err(Error::Invalid);
     }
@@ -378,7 +439,15 @@ pub async fn submit(
         return Err(Error::PolicyGate("CONSENT_SCOPE_MISMATCH"));
     }
     let consent_package_hash: String = c.get("package_hash");
-    let body = revision_body(&mut tx, org, release, &consent_package_hash, false).await?;
+    let body = revision_body(
+        &mut tx,
+        org,
+        release,
+        &consent_package_hash,
+        false,
+        &input.declarations,
+    )
+    .await?;
     let body_hash = sha256_hex(&canonical(&body));
     let idem_key = input.idempotency_key.trim().to_string();
     // Idempotency key: the same key on this release always resolves to the
@@ -928,6 +997,20 @@ fn validation_package(
 ) -> Value {
     let mut validated_assets = Vec::new();
     let mut claimant_parties = BTreeSet::new();
+    let mut flags: BTreeSet<&str> = BTreeSet::new();
+    if let Some(d) = body.get("declarations") {
+        for (key, flag) in [
+            ("is_cover", "COVER"),
+            ("is_remix", "REMIX"),
+            ("contains_samples", "SAMPLE"),
+            ("ai_involved", "AI"),
+            ("explicit_content", "EXPLICIT"),
+        ] {
+            if d.get(key).and_then(Value::as_bool).unwrap_or(false) {
+                flags.insert(flag);
+            }
+        }
+    }
     if let Some(tracks) = body["tracks"].as_array() {
         for t in tracks {
             if let (Some(aid), Some(sha)) = (t["asset_id"].as_str(), t["asset_sha256"].as_str()) {
@@ -936,6 +1019,12 @@ fn validation_package(
                     "sha256": sha,
                     "metric_hash": sha256_hex(&format!("{aid}:{sha}")),
                 }));
+            }
+            if t.get("parental_advisory")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            {
+                flags.insert("EXPLICIT");
             }
             if let Some(credits) = t["credits"].as_array() {
                 for cr in credits {
@@ -951,7 +1040,7 @@ fn validation_package(
         "revision_id": revision_id,
         "revision_hash": body_hash,
         "validated_assets": validated_assets,
-        "special_flags": [],
+        "special_flags": flags.into_iter().collect::<Vec<_>>(),
         "claimant_party_ids": claimant_parties.into_iter().collect::<Vec<_>>(),
         "consent_package_hash": consent_package_hash,
         "stage1_check_refs": check_ids,
