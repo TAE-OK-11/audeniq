@@ -271,3 +271,25 @@ BLUEPRINT §6의 E-0~E-5 송출 실행 파이프라인. 브랜치 `foundation/f5
 - 검증 커밋: `fd70814` (브랜치 `foundation/f5-mockdsp-execution`)
 - Foundation run: [36086474881](https://github.com/TAE-OK-11/audeniq/actions/runs/36086474881) — **success** (compose-smoke + rust-postgres 전부 통과)
 - 참고: 첫 push(`47472cc`)에서는 clippy 수정 후 `cargo fmt`를 다시 안 돌려 let-chain 포맷에서 CI가 실패했음. `fd70814`에서 수정 후 녹색.
+
+## F5.5 — Durable delivery handoff + DDEX ERN 3.8.2 (2026-09-25)
+
+### Durable READY_FOR_DELIVERY handoff (브랜치 `foundation/delivery-handoff`, main 병합 `388b13b`)
+
+- Stage 3의 `READY_FOR_DELIVERY` 전환 + preparation artifact 저장 + `delivery.enqueue` 생성이 **같은 PostgreSQL 트랜잭션**에서 커밋됨. 크래시해도 상태와 큐가 어긋나지 않음.
+- job payload: `{"package_id": ...}`, idempotency key: `delivery.enqueue:{package_id}`, pinned revision ID 사용.
+- `deploy/grants.sql`에 distribution/finance/execution/rights worker 권한 보완. API 역할은 pipeline schema 쓰기 권한 없음(유지).
+- 근본 수정: `dsp_ops_dispatcher_end_to_end` 테스트가 수동 enqueue를 시도해 `Conflict`로 실패 — handoff가 이미 같은 idempotency key로 넣었기 때문. 테스트를 새 설계에 맞게 수정(수동 enqueue 제거, QUEUED 상태의 `delivery.enqueue` 존재를 assert).
+
+### DDEX ERN 3.8.2 빌더 (브랜치 `foundation/ddex-ern-382`, main 병합 `a0d3898`)
+
+- `daddykev/stardust-distro`(MIT, commit `7080368`)의 ERN 3.8.2 구조를 참고해 Rust로 새로 작성: `crates/core/src/ddex_ern.rs` + `crates/core/tests/ddex_ern.rs` (6개 테스트).
+- 결정론적 `NewReleaseMessage` 생성: Initial/Update/Takedown, `http://ddex.net/xml/ern/382`, 파일명 `UPC_DD_TTT.ext`, 트랙/ISRC/artwork/P-C line/deal/contributor, WAV/FLAC/MP3·JPEG/PNG 매핑, SHA-256 사용(Stardust의 MD5 미사용), XML escaping·결정론적 정렬.
+- 미연결·미검증 명시: 아직 실제 pipeline에 연결되지 않음(Stage 3 preparation은 synthetic ERN 유지), 공식 XSD 검증 없음, contributor role allowed-value 매핑 후속, DDEX 인증 주장 없음. Stardust README의 성능·"production ready" 주장은 독립 검증하지 않음.
+- F6 레퍼런스 메모: stardust의 `deliverViaFTP/SFTP/S3/API/Azure` + 재시도 스케줄(5min/15min/1hr)은 F6 실제 DSP 연동 설계 시 참고. F6은 실제 파트너 계약·명세·샌드박스·credentials 없이는 완료로 보지 않음.
+
+### 로컬 검증 결과 (2026-09-25, main `cc8b5df`)
+
+- `cargo fmt --all --check`: 통과
+- `cargo clippy --workspace --all-targets -- -D warnings`: 통과
+- `cargo test --workspace`: 전부 통과 (lib 29, ddex_ern 6, distribution 3, execution 13, finance 10, foundation 19, stage1 10, stage2 5, stage3_identifiers 2, stage3_preparation 8, 기타 1 — 총 106)
