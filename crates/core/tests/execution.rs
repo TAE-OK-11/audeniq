@@ -70,8 +70,12 @@ impl FileStore {
 }
 impl Default for FileStore {
     fn default() -> Self {
-        let dir = std::path::PathBuf::from("/home/hatch/workspace/.test-stores")
-            .join(format!("audeniq-test-store-{}", Uuid::new_v4()));
+        // Disk-backed store root: AUDENIQ_TEST_STORE_DIR, else the system temp
+        // dir (a hard-coded developer home path fails on CI and other hosts).
+        let root = std::env::var_os("AUDENIQ_TEST_STORE_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::env::temp_dir().join("audeniq-test-stores"));
+        let dir = root.join(format!("audeniq-test-store-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         Self {
             dir,
