@@ -76,7 +76,9 @@ fn advance_live_poll(inner: &mut Inner, pmid: &str) {
         *polls += 1;
         *polls
     };
-    if count >= threshold && let Some(s) = inner.submissions.get_mut(pmid) {
+    if count >= threshold
+        && let Some(s) = inner.submissions.get_mut(pmid)
+    {
         s.live = true;
     }
 }
