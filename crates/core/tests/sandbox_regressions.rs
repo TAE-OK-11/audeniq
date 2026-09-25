@@ -191,6 +191,7 @@ async fn env(owner: PgPool) -> Env {
 
 #[derive(Clone)]
 struct User {
+    user: Uuid,
     org: Uuid,
     party: Uuid,
     cookie: String,
@@ -292,6 +293,7 @@ async fn user(app: &Router) -> User {
     let (s, l, cookie) = call(app, "POST", "/api/auth/login", credentials, None).await;
     assert_eq!(s, StatusCode::OK, "{l}");
     User {
+        user: Uuid::parse_str(r["user_id"].as_str().unwrap()).unwrap(),
         org: Uuid::parse_str(r["org_id"].as_str().unwrap()).unwrap(),
         party: Uuid::parse_str(r["party_id"].as_str().unwrap()).unwrap(),
         cookie: cookie.unwrap(),
@@ -1374,4 +1376,258 @@ async fn reused_master_under_new_isrc_goes_to_review(pool: PgPool) {
         check_status(&e, revision, "ASSET_REUSED").await,
         "REVIEW_REQUIRED"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Round 2.5 (findings_round25.md): review overrides
+// ---------------------------------------------------------------------------
+
+/// A release parked in STAGE2_REVIEW only because its street date is before
+/// 1950 (S2_RELEASE_DATE_FAR_PAST, a low-risk review code).
+async fn release_in_stage2_review(e: &Env, u: &User, key: &str) -> (Uuid, Uuid) {
+    let dir = tmpdir();
+    let audio = upload(e, u, "AUDIO", "audio/wav", &good_wav(&dir.0, "a.wav", 440)).await;
+    let cover = upload(e, u, "IMAGE", "image/png", &cover_png(&dir.0)).await;
+    let (release, _, _) = build_release(e, u, audio, cover).await;
+    sqlx::query("UPDATE catalog.releases SET draft = draft || '{\"release_date\":\"1940-05-01\"}'::jsonb, row_version=row_version+1 WHERE id=$1")
+        .bind(release)
+        .execute(&e.owner)
+        .await
+        .unwrap();
+    let revision = consent_and_submit(e, u, release, key).await;
+    assert_eq!(run_one(e, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(run_one(e, "rights", "stage2").await, "SUCCEEDED");
+    assert_eq!(release_status(e, release).await, "STAGE2_REVIEW");
+    assert_eq!(
+        check_status(e, revision, "S2_RELEASE_DATE_FAR_PAST").await,
+        "REVIEW_REQUIRED"
+    );
+    (release, revision)
+}
+
+async fn override_call(e: &Env, u: &User, body: Value) -> (StatusCode, Value) {
+    let (s, v, _) = call(
+        &e.api,
+        "POST",
+        &format!("/api/orgs/{}/reviews/overrides", u.org),
+        body,
+        Some(u),
+    )
+    .await;
+    (s, v)
+}
+
+/// P1: POST /reviews/overrides was a guaranteed 500 in production (no grant
+/// on schema rights for audeniq_api). Under the split roles it works now, a
+/// sole owner may clear a low-risk review code, and the override actually
+/// re-runs Stage 2 so the release leaves STAGE2_REVIEW.
+#[sqlx::test]
+async fn low_risk_override_works_under_split_roles_and_reevaluates(pool: PgPool) {
+    let e = env(pool).await;
+    let u = user(&e.api).await;
+    let (release, revision) = release_in_stage2_review(&e, &u, "sbx-ovr-low").await;
+    let body = json!({"revision_id":revision,"check_code":"S2_RELEASE_DATE_FAR_PAST","proposed_status":"PASS","reason":"reissue of a 1940 recording; date is real"});
+    let (s, v) = override_call(&e, &u, body.clone()).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["status"], "APPLIED");
+    assert_eq!(v["reevaluation_queued"], true);
+    let audited: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM operations.audit_events WHERE action='override.self_approved'",
+    )
+    .fetch_one(&e.owner)
+    .await
+    .unwrap();
+    assert_eq!(audited, 1);
+    // Repeating it is a no-op (no second row, no epoch bump, no new job).
+    let (s, v) = override_call(&e, &u, body).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["status"], "ALREADY_APPLIED");
+    let rows: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM rights.review_overrides WHERE revision_id=$1")
+            .bind(revision)
+            .fetch_one(&e.owner)
+            .await
+            .unwrap();
+    assert_eq!(rows, 1);
+    // Oversized reasons are refused (the sandbox stored 300 x 60 KB).
+    let (s, v) = override_call(
+        &e,
+        &u,
+        json!({"revision_id":revision,"check_code":"S2_META_CREDITS","proposed_status":"REVIEW_REQUIRED","reason":"x".repeat(5000)}),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(code(&v), "OVERRIDE_REASON_TOO_LONG");
+
+    assert_eq!(run_one(&e, "rights", "stage2").await, "SUCCEEDED");
+    assert_eq!(release_status(&e, release).await, "STAGE2_PASSED");
+    assert_eq!(
+        run_one(&e, "distribution", "prepare_release").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(release_status(&e, release).await, "READY_FOR_DELIVERY");
+}
+
+/// P1: separation of duties. The owner used to enroll any account as a
+/// member without its consent and pass that id as `second_approver_user_id`
+/// to force S2_RIGHTS_SCOPE to PASS; a sole owner could also self-PASS
+/// ordinary review codes. Now: membership needs the invitee's acceptance,
+/// the approver acts from their own session, VIEWERs and fresh members are
+/// ineligible, and only a genuine second person can apply the PASS.
+#[sqlx::test]
+async fn two_person_override_needs_a_genuine_independent_approver(pool: PgPool) {
+    let e = env(pool).await;
+    let u = user(&e.api).await;
+    let o = u.org;
+    let (release, revision) = release_in_stage2_review(&e, &u, "sbx-ovr-sod").await;
+
+    // The old attack: enroll a puppet and name it as second approver.
+    let puppet = user(&e.api).await;
+    let v = ok(
+        &e.api,
+        "PUT",
+        &format!("/api/orgs/{o}/memberships"),
+        json!({"user_id":puppet.user,"role":"VIEWER","status":"ACTIVE"}),
+        &u,
+    )
+    .await;
+    assert_eq!(v["status"], "INVITED", "no membership without consent");
+    let (s, v) = override_call(
+        &e,
+        &u,
+        json!({"revision_id":revision,"check_code":"S2_RIGHTS_SCOPE","proposed_status":"PASS","reason":"self","second_approver_user_id":puppet.user}),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(code(&v), "SECOND_APPROVER_MUST_APPROVE_IN_OWN_SESSION");
+
+    // A sole owner's PASS on an ordinary review code is only a request.
+    let (s, v) = override_call(
+        &e,
+        &u,
+        json!({"revision_id":revision,"check_code":"S2_CATALOG_IDENTIFIERS","proposed_status":"PASS","reason":"identifiers verified"}),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["status"], "PENDING_SECOND_APPROVAL");
+    let request = v["override_request_id"].as_str().unwrap().to_string();
+    let approve = format!("/api/orgs/{o}/reviews/overrides/{request}/approve");
+    let listed = ok(
+        &e.api,
+        "GET",
+        &format!("/api/orgs/{o}/reviews/overrides"),
+        json!({}),
+        &u,
+    )
+    .await;
+    assert_eq!(listed["items"].as_array().unwrap().len(), 1, "{listed}");
+
+    // The requester cannot approve their own request.
+    let (s, v, _) = call(&e.api, "POST", &approve, json!({}), Some(&u)).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(code(&v), "SECOND_APPROVER_MUST_DIFFER");
+    // An invitee who has not accepted is not a member at all.
+    let (s, _, _) = call(&e.api, "POST", &approve, json!({}), Some(&puppet)).await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    // Accepted, but a VIEWER is never an eligible approver.
+    ok(
+        &e.api,
+        "POST",
+        &format!("/api/orgs/{o}/memberships/accept"),
+        json!({}),
+        &puppet,
+    )
+    .await;
+    let (s, v, _) = call(&e.api, "POST", &approve, json!({}), Some(&puppet)).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(code(&v), "APPROVER_ROLE_NOT_ELIGIBLE");
+
+    // A freshly joined EDITOR is not eligible yet (minimum tenure).
+    let editor = user(&e.api).await;
+    ok(
+        &e.api,
+        "PUT",
+        &format!("/api/orgs/{o}/memberships"),
+        json!({"user_id":editor.user,"role":"EDITOR","status":"ACTIVE"}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "POST",
+        &format!("/api/orgs/{o}/memberships/accept"),
+        json!({}),
+        &editor,
+    )
+    .await;
+    let (s, v, _) = call(&e.api, "POST", &approve, json!({}), Some(&editor)).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(code(&v), "APPROVER_TENURE_TOO_SHORT");
+    // Simulate the tenure window passing.
+    sqlx::query("UPDATE identity.memberships SET accepted_at=now()-interval '4 days' WHERE org_id=$1 AND user_id=$2")
+        .bind(o)
+        .bind(editor.user)
+        .execute(&e.owner)
+        .await
+        .unwrap();
+    // Tenured, but the approver must be able to see the release.
+    let (s, _, _) = call(&e.api, "POST", &approve, json!({}), Some(&editor)).await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    ok(
+        &e.api,
+        "PUT",
+        &format!("/api/orgs/{o}/resources/{release}/acl"),
+        json!({"user_id":editor.user,"action":"read","revoked":false}),
+        &u,
+    )
+    .await;
+    let v = ok(&e.api, "POST", &approve, json!({}), &editor).await;
+    assert_eq!(v["status"], "APPLIED", "{v}");
+    assert_eq!(v["reevaluation_queued"], true);
+    let (actor, second): (Uuid, Uuid) = sqlx::query_as(
+        "SELECT actor_user_id, second_approver_user_id FROM rights.review_overrides WHERE revision_id=$1 AND check_code='S2_CATALOG_IDENTIFIERS'",
+    )
+    .bind(revision)
+    .fetch_one(&e.owner)
+    .await
+    .unwrap();
+    assert_eq!((actor, second), (u.user, editor.user));
+    // A decided request cannot be approved twice.
+    let (s, _, _) = call(&e.api, "POST", &approve, json!({}), Some(&editor)).await;
+    assert_eq!(s, StatusCode::CONFLICT);
+
+    // Re-evaluation ran: the approved override is honoured, the release
+    // stays in review only for the still-open far-past date.
+    assert_eq!(run_one(&e, "rights", "stage2").await, "SUCCEEDED");
+    assert_eq!(release_status(&e, release).await, "STAGE2_REVIEW");
+    let (s, v) = override_call(
+        &e,
+        &u,
+        json!({"revision_id":revision,"check_code":"S2_RELEASE_DATE_FAR_PAST","proposed_status":"PASS","reason":"date is real"}),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(run_one(&e, "rights", "stage2").await, "SUCCEEDED");
+    assert_eq!(release_status(&e, release).await, "STAGE2_PASSED");
+
+    // Rights-scope PASS requested by an EDITOR (even with write access) is
+    // refused: rights/money classes need a senior (OWNER) requester.
+    ok(
+        &e.api,
+        "PUT",
+        &format!("/api/orgs/{o}/resources/{release}/acl"),
+        json!({"user_id":editor.user,"action":"write","revoked":false}),
+        &u,
+    )
+    .await;
+    let (s, v, _) = call(
+        &e.api,
+        "POST",
+        &format!("/api/orgs/{o}/reviews/overrides"),
+        json!({"revision_id":revision,"check_code":"S2_RIGHTS_SCOPE","proposed_status":"PASS","reason":"editor"}),
+        Some(&editor),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(code(&v), "SENIOR_REVIEWER_REQUIRED");
 }

@@ -351,6 +351,12 @@ pub struct MemberInput {
     pub role: String,
     pub status: String,
 }
+/// PUT /memberships (OWNER only). Adding someone never makes them a member
+/// on the owner's word alone (sandbox round 2.5: an owner enrolled arbitrary
+/// accounts and used them as "second approvers"). A user without an ACTIVE
+/// membership gets an INVITED row that only their own session can accept
+/// (POST /memberships/accept). Role changes of already-ACTIVE members and
+/// revocations apply directly. A REVOKED member must be invited again.
 pub async fn member(s: &AppState, a: &Actor, org: Uuid, i: MemberInput) -> Result<Value> {
     if !matches!(i.role.as_str(), "EDITOR" | "VIEWER")
         || !matches!(i.status.as_str(), "ACTIVE" | "REVOKED")
@@ -362,7 +368,35 @@ pub async fn member(s: &AppState, a: &Actor, org: Uuid, i: MemberInput) -> Resul
     if auth::membership(&mut tx, a, org, true).await? != "OWNER" {
         return Err(Error::Forbidden);
     }
-    if i.status == "ACTIVE" {
+    let current: Option<(String, String)> = sqlx::query_as(
+        "SELECT role, status FROM identity.memberships WHERE org_id=$1 AND user_id=$2 FOR UPDATE",
+    )
+    .bind(org)
+    .bind(i.user_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if matches!(&current, Some((role, _)) if role == "OWNER") {
+        // Owners are never demoted or revoked through this endpoint.
+        return Err(Error::Conflict);
+    }
+    let outcome = if i.status == "REVOKED" {
+        // Idempotent: revoking a non-member records a REVOKED row.
+        sqlx::query("INSERT INTO identity.memberships(org_id,user_id,role,status,accepted_at) VALUES($1,$2,$3,'REVOKED',NULL) ON CONFLICT(org_id,user_id) DO UPDATE SET status='REVOKED', role=EXCLUDED.role WHERE identity.memberships.role<>'OWNER'")
+            .bind(org)
+            .bind(i.user_id)
+            .bind(&i.role)
+            .execute(&mut *tx)
+            .await?;
+        "REVOKED"
+    } else if matches!(&current, Some((_, status)) if status == "ACTIVE") {
+        sqlx::query("UPDATE identity.memberships SET role=$3 WHERE org_id=$1 AND user_id=$2")
+            .bind(org)
+            .bind(i.user_id)
+            .bind(&i.role)
+            .execute(&mut *tx)
+            .await?;
+        "ACTIVE"
+    } else {
         let active: Option<Uuid> = sqlx::query_scalar(
             "SELECT id FROM identity.users WHERE id=$1 AND status='ACTIVE' FOR SHARE",
         )
@@ -370,20 +404,57 @@ pub async fn member(s: &AppState, a: &Actor, org: Uuid, i: MemberInput) -> Resul
         .fetch_optional(&mut *tx)
         .await?;
         active.ok_or(Error::Conflict)?;
-    }
-    sqlx::query("INSERT INTO identity.memberships(org_id,user_id,role,status) VALUES($1,$2,$3,$4) ON CONFLICT(org_id,user_id) DO UPDATE SET role=EXCLUDED.role,status=EXCLUDED.status WHERE identity.memberships.role<>'OWNER'").bind(org).bind(i.user_id).bind(i.role).bind(i.status).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO identity.memberships(org_id,user_id,role,status,accepted_at,invited_by,invited_at) VALUES($1,$2,$3,'INVITED',NULL,$4,now()) ON CONFLICT(org_id,user_id) DO UPDATE SET role=EXCLUDED.role,status='INVITED',accepted_at=NULL,invited_by=EXCLUDED.invited_by,invited_at=EXCLUDED.invited_at WHERE identity.memberships.role<>'OWNER'")
+            .bind(org)
+            .bind(i.user_id)
+            .bind(&i.role)
+            .bind(a.user)
+            .execute(&mut *tx)
+            .await?;
+        "INVITED"
+    };
     operations::audit(
         &mut tx,
         Some(a.user),
         Some(org),
         Some(i.user_id),
-        "membership.changed",
+        if outcome == "INVITED" {
+            "membership.invited"
+        } else {
+            "membership.changed"
+        },
         "OWNER_REQUEST",
         a.request,
     )
     .await?;
     tx.commit().await?;
-    Ok(json!({"updated":true}))
+    Ok(json!({"updated":true,"status":outcome}))
+}
+
+/// POST /memberships/accept: the invitee accepts in their own session.
+pub async fn accept_membership(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
+    let mut tx = s.pool.begin().await?;
+    let n = sqlx::query("UPDATE identity.memberships m SET status='ACTIVE', accepted_at=now() FROM identity.users u WHERE u.id=m.user_id AND u.status='ACTIVE' AND m.org_id=$1 AND m.user_id=$2 AND m.status='INVITED'")
+        .bind(org)
+        .bind(a.user)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    if n == 0 {
+        return Err(Error::NotFound);
+    }
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        Some(org),
+        Some(a.user),
+        "membership.accepted",
+        "INVITEE_ACCEPT",
+        a.request,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"status":"ACTIVE"}))
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
