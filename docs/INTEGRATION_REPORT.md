@@ -268,4 +268,6 @@ BLUEPRINT §6의 E-0~E-5 송출 실행 파이프라인. 브랜치 `foundation/f5
 
 ### CI 검증 결과 (2026-09-25)
 
-- (검증 완료 후 기록)
+- 검증 커밋: `fd70814` (브랜치 `foundation/f5-mockdsp-execution`)
+- Foundation run: [36086474881](https://github.com/TAE-OK-11/audeniq/actions/runs/36086474881) — **success** (compose-smoke + rust-postgres 전부 통과)
+- 참고: 첫 push(`47472cc`)에서는 clippy 수정 후 `cargo fmt`를 다시 안 돌려 let-chain 포맷에서 CI가 실패했음. `fd70814`에서 수정 후 녹색.
