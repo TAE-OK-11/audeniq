@@ -1,19 +1,24 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type Release } from '../api/client';
+import { useAuth } from '../api/auth';
 import { StatusPill } from '../components/StatusPill';
 
 export function Releases() {
+  const { org } = useAuth();
   const [releases, setReleases] = useState<Release[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.listReleases()
+    if (!org) return;
+    api.listReleases(org.id)
       .then(setReleases)
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [org]);
+
+  if (!org) return <p style={{ color: 'var(--muted)' }}>조직을 선택해주세요.</p>;
 
   return (
     <>

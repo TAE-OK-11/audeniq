@@ -1,17 +1,19 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api, type ReleaseDetail as RD } from '../api/client';
+import { useAuth } from '../api/auth';
 import { StatusPill } from '../components/StatusPill';
 
 export function ReleaseDetail() {
   const { id } = useParams();
+  const { org } = useAuth();
   const [rel, setRel] = useState<RD | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!id) return;
-    api.getRelease(id).catch(e => setError(e.message)).then(r => r && setRel(r));
-  }, [id]);
+    if (!id || !org) return;
+    api.getRelease(org.id, id).then(setRel).catch(e => setError(e.message));
+  }, [id, org]);
 
   if (error) return <div className="feedback feedback-error">{error}</div>;
   if (!rel) return <p style={{ color: 'var(--muted)' }}>불러오는 중...</p>;

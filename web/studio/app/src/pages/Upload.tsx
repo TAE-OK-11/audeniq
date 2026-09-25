@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
+import { useAuth } from '../api/auth';
 
 export function Upload() {
   const nav = useNavigate();
+  const { org } = useAuth();
   const [title, setTitle] = useState('');
   const [releaseDate, setReleaseDate] = useState('');
   const [error, setError] = useState('');
@@ -11,10 +13,11 @@ export function Upload() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (!org) { setError('조직을 선택해주세요'); return; }
     setError('');
     setBusy(true);
     try {
-      const r = await api.createRelease({ title, release_date: releaseDate });
+      const r = await api.createRelease(org.id, { title, release_date: releaseDate });
       nav(`/releases/${r.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : '발매 생성 실패');
