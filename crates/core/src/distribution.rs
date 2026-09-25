@@ -469,6 +469,10 @@ async fn persist_ddex_messages(
         };
         let config = ddex_ern::DdexErnConfig {
             message_id: format!("AUDENIQ-ERN-{package_id}-{}", s.scope.dsp_id),
+            // Initial messages open a new thread keyed on the message id;
+            // updates/takedowns (not yet generated here) must pass the
+            // original thread id so the recipient can correlate them.
+            message_thread_id: None,
             message_sub_type: ddex_ern::MessageSubType::Initial,
             created_at: created_at.clone(),
             sender_name: sender_name.clone(),
@@ -479,6 +483,11 @@ async fn persist_ddex_messages(
             deal_start_date: deal_start.clone(),
             takedown_date: None,
         };
+        // Pre-generation preflight (ddex-suite preflight categories,
+        // adapted): the model and message config are validated before any
+        // XML is built. Errors fail closed; warnings are logged.
+        let preflight = ddex_validate::preflight_release(prepared, &config);
+        ddex_validate::gate_findings(&preflight, "DDEX_PREFLIGHT", "ERN preflight")?;
         let xml = ddex_ern::generate_ddex_ern_382(prepared, &config)?;
         // Contract-free F6 groundwork: every interchange message is proven
         // schema-valid before it is persisted. A message that fails XSD
@@ -495,27 +504,7 @@ async fn persist_ddex_messages(
             Some(ddex_validate::ErnProfile::AudioSingle)
         };
         let report = ddex_validate::validate_ern_message(&xml, expected_profile);
-        for warning in report.warnings() {
-            tracing::warn!(
-                rule = %warning.rule_id,
-                message = %warning.message,
-                "ERN business-rule warning"
-            );
-        }
-        if !report.is_valid() {
-            let rules = report
-                .errors()
-                .iter()
-                .map(|e| e.rule_id.as_ref())
-                .collect::<Vec<_>>()
-                .join(",");
-            tracing::warn!(
-                gate = "DDEX_BUSINESS_RULE",
-                rules = %rules,
-                "ERN business-rule validation failed"
-            );
-            return Err(Error::PolicyGate("DDEX_BUSINESS_RULE"));
-        }
+        ddex_validate::gate_findings(&report.findings, "DDEX_BUSINESS_RULE", "ERN business-rule")?;
         let sha = hex::encode(Sha256::digest(xml.as_bytes()));
         let res = sqlx::query(
         "INSERT INTO distribution.ddex_messages(package_id,org_id,dsp_id,sender_name,sender_dpid,recipient_name,recipient_dpid,ern_xml,ern_sha256) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(package_id,dsp_id) DO NOTHING",

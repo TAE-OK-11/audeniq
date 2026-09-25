@@ -7,6 +7,7 @@ fn main() {
     let p: PreparedRelease = serde_json::from_str(raw).unwrap();
     let c = DdexErnConfig {
         message_id: "MSG-2026-09-25-001".into(),
+        message_thread_id: None,
         message_sub_type: MessageSubType::Initial,
         created_at: "2026-09-25T11:00:00Z".into(),
         sender_name: "AUDENIQ".into(),

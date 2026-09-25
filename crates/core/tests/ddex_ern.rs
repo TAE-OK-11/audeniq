@@ -18,6 +18,7 @@ fn fixture(index: usize) -> PreparedRelease {
 fn config(sub: MessageSubType) -> DdexErnConfig {
     DdexErnConfig {
         message_id: "MSG-2026-09-25-001".into(),
+        message_thread_id: None,
         message_sub_type: sub,
         created_at: "2026-09-25T11:00:00Z".into(),
         sender_name: "AUDENIQ".into(),

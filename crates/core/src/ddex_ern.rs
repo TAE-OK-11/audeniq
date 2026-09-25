@@ -32,6 +32,12 @@
 //! - `MessageControlType` is `LiveMessage` for Initial, `UpdateMessage` for
 //!   Update/Takedown. A Takedown closes the deal via
 //!   `ValidityPeriod/EndDate`.
+//! - `UpdateIndicator` is emitted (`OriginalMessage` for Initial,
+//!   `UpdateMessage` otherwise): deprecated in ERN 3.8.2 but still
+//!   schema-valid, and receivers (ddex-workbench's validator,
+//!   stardust-dsp's ingestion parser) key message intent off it.
+//! - `MessageThreadId` defaults to the message id; updates/takedowns must
+//!   pass the original thread id via `DdexErnConfig::message_thread_id`.
 use crate::{
     ern::{ordered_tracks, validate_metadata},
     error::{Error, Result},
@@ -63,6 +69,10 @@ impl MessageSubType {
 /// clock or an id generator lives here so the builder stays pure.
 pub struct DdexErnConfig {
     pub message_id: String,
+    /// Thread this message belongs to. `None` falls back to `message_id`
+    /// (a new thread). Updates and takedowns MUST pass the original
+    /// message's thread id so the recipient can correlate them.
+    pub message_thread_id: Option<String>,
     pub message_sub_type: MessageSubType,
     /// ISO-8601 creation timestamp, e.g. `2026-09-25T11:00:00Z`.
     pub created_at: String,
@@ -155,7 +165,11 @@ fn message_header(out: &mut String, c: &DdexErnConfig) {
     // MessageCreatedDateTime, MessageAuditTrail?, Comment?,
     // MessageControlType?
     out.push_str("<MessageHeader>");
-    element(out, "MessageThreadId", &c.message_id);
+    element(
+        out,
+        "MessageThreadId",
+        c.message_thread_id.as_deref().unwrap_or(&c.message_id),
+    );
     element(out, "MessageId", &c.message_id);
     out.push_str("<MessageSender>");
     if let Some(id) = &c.sender_party_id {
@@ -499,6 +513,20 @@ pub fn generate_ddex_ern_382(prepared: &PreparedRelease, config: &DdexErnConfig)
     out.push_str(&attr("xs:schemaLocation", DDEX_ERN_382_SCHEMA));
     out.push('>');
     message_header(&mut out, config);
+    // XSD sequence after MessageHeader: UpdateIndicator?, IsBackfill?, ...
+    // The element is deprecated in 3.8.2 (DDEX recommends against using
+    // it), but it is still schema-valid and several receivers
+    // (ddex-workbench's validator, stardust-dsp's ingestion parser) key
+    // message intent off it, so we emit it explicitly rather than leaving
+    // intent implicit.
+    element(
+        &mut out,
+        "UpdateIndicator",
+        match config.message_sub_type {
+            MessageSubType::Initial => "OriginalMessage",
+            MessageSubType::Update | MessageSubType::Takedown => "UpdateMessage",
+        },
+    );
     resource_list(&mut out, prepared)?;
     release_list(&mut out, prepared);
     deal_list(&mut out, config);
