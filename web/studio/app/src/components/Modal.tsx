@@ -21,6 +21,7 @@ export function Modal({ title, onClose, children }: ModalProps) {
 
   return (
     <div
+      id="modal"
       className="modal"
       onClick={e => {
         if (e.target === e.currentTarget) onClose();
