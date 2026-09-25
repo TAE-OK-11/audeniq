@@ -766,6 +766,28 @@ async fn module_policy_integrity(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec
             ineligible.push(format!("{dsp}=INELIGIBLE_NO_CONTRACT"));
         }
     }
+    // F5: adapter profiles are the activation record for delivery partners
+    // (MockDSP in tests, contracted partners from F6 on). A profile with
+    // delivery_enabled marks a partner the org has actually activated, so its
+    // dsp_id joins the eligible set alongside contracted routes. The F1
+    // route_plans table can never be enabled (CHECK constraint), so without
+    // this the frozen route plan would always be empty and E-0 could never
+    // enqueue a delivery job. Review otherwise runs without RLS auth; set the
+    // org on this tx so the execution-table policy sees the right tenant.
+    sqlx::query("SELECT set_config('app.org_id', $1, true)")
+        .bind(ctx.org.to_string())
+        .execute(&mut *tx)
+        .await?;
+    let activated: Vec<String> = sqlx::query_scalar(
+        "SELECT dsp_id::text FROM execution.adapter_profiles WHERE delivery_enabled AND dsp_id IS NOT NULL",
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    for dsp in activated {
+        if !eligible.contains(&dsp) {
+            eligible.push(dsp);
+        }
+    }
     let el = if eligible.is_empty() {
         "(none)".into()
     } else {

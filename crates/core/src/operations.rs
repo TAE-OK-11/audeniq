@@ -2,8 +2,25 @@ use crate::error::{Error, Result};
 use crate::storage::ObjectStore;
 use serde_json::{Value, json};
 use sqlx::{PgConnection, PgPool, Row};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use uuid::Uuid;
+
+/// Process-wide MockDSP shared by every delivery handler the dispatcher runs.
+/// MockDsp is Arc<Mutex<..>> internally, so clones share partner-side state:
+/// a submission accepted by delivery.send is visible to delivery.poll and
+/// delivery.takedown in the same worker process. F5's MockDSP is local-only
+/// (Accept behavior); F6 replaces this with credential-backed adapters owned
+/// by the API layer, where adapter lifecycle and state live.
+fn shared_mockdsp() -> Arc<crate::mockdsp::MockDsp> {
+    static INSTANCE: OnceLock<Arc<crate::mockdsp::MockDsp>> = OnceLock::new();
+    INSTANCE
+        .get_or_init(|| {
+            Arc::new(crate::mockdsp::MockDsp::new(
+                crate::mockdsp::MockBehavior::Accept,
+            ))
+        })
+        .clone()
+}
 #[allow(clippy::too_many_arguments)]
 pub async fn audit(
     c: &mut PgConnection,
@@ -250,6 +267,184 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
                 .await;
             }
         }
+    }
+    if j.kind == "delivery.enqueue" {
+        // F5: fan out one delivery.send per eligible partner for a frozen package.
+        let package_id = j
+            .payload
+            .get("package_id")
+            .and_then(Value::as_str)
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .ok_or(Error::Internal)?;
+        match crate::execution::enqueue_delivery_jobs(pool, package_id).await {
+            Ok((job_ids, org)) => {
+                let mut tx = pool.begin().await?;
+                for job_id in job_ids {
+                    enqueue(
+                        &mut tx,
+                        "delivery",
+                        "delivery.send",
+                        &json!({"delivery_job_id": job_id, "org_id": org}),
+                        &format!("delivery.send:{job_id}"),
+                        None,
+                    )
+                    .await?;
+                }
+                tx.commit().await?;
+                return succeed(pool, j).await;
+            }
+            Err(e) => {
+                let short: String = format!("{e:?}").chars().take(500).collect();
+                return fail(pool, j, false, &format!("DELIVERY_ENQUEUE_ERROR:{short}")).await;
+            }
+        }
+    }
+    if j.kind == "delivery.send" {
+        // F5: E-0..E-3 for one delivery job. The adapter registry ships the
+        // local MockDSP only; real partners register in F6/F9.
+        let job_id = j
+            .payload
+            .get("delivery_job_id")
+            .and_then(Value::as_str)
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .ok_or(Error::Internal)?;
+        let org = j
+            .payload
+            .get("org_id")
+            .and_then(Value::as_str)
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .ok_or(Error::Internal)?;
+        // RLS-safe: execution.delivery_jobs is org-scoped, so the status read
+        // authorizes the org from the payload before touching the table.
+        let terminal = crate::execution::delivery_job_status(pool, org, job_id).await?;
+        match terminal.as_deref() {
+            Some("DELIVERED")
+            | Some("FAILED")
+            | Some("DEAD_LETTER")
+            | Some("AWAITING_RECONCILIATION") => return succeed(pool, j).await,
+            None => return fail(pool, j, true, "DELIVERY_JOB_MISSING").await,
+            _ => {}
+        }
+        let djob =
+            match crate::execution::lease_delivery_job(pool, job_id, org, "delivery-worker", 300)
+                .await?
+            {
+                Some(d) => d,
+                // Lease lost; leave the job alone so the sweeper reclaims it.
+                None => return Ok(()),
+            };
+        let mut registry = crate::execution::AdapterRegistry::new();
+        registry.register(shared_mockdsp());
+        let adapter = registry
+            .get(&djob.partner_id)
+            .ok_or(Error::PolicyGate("EXECUTION_NO_ADAPTER"))?;
+        return match crate::execution::run_delivery(pool, storage, adapter.as_ref(), &djob).await {
+            Ok(status) => match status.as_str() {
+                "DELIVERED" | "AWAITING_RECONCILIATION" => succeed(pool, j).await,
+                _ => fail(pool, j, true, &format!("DELIVERY_{status}")).await,
+            },
+            Err(e) => {
+                let short: String = format!("{e:?}").chars().take(500).collect();
+                let permanent = matches!(e, Error::PolicyGate(_));
+                fail(pool, j, permanent, &format!("DELIVERY_ERROR:{short}")).await
+            }
+        };
+    }
+    if j.kind == "delivery.poll" {
+        // F5: E-4 live-state poll for one (package, partner).
+        let package_id = j
+            .payload
+            .get("package_id")
+            .and_then(Value::as_str)
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .ok_or(Error::Internal)?;
+        let partner_id = j
+            .payload
+            .get("partner_id")
+            .and_then(Value::as_str)
+            .ok_or(Error::Internal)?;
+        let org: Uuid =
+            sqlx::query_scalar("SELECT org_id FROM distribution.distribution_packages WHERE id=$1")
+                .bind(package_id)
+                .fetch_optional(pool)
+                .await?
+                .ok_or(Error::NotFound)?;
+        let mut registry = crate::execution::AdapterRegistry::new();
+        registry.register(shared_mockdsp());
+        let adapter = registry
+            .get(partner_id)
+            .ok_or(Error::PolicyGate("EXECUTION_NO_ADAPTER"))?;
+        return match crate::execution::poll_live(
+            pool,
+            org,
+            adapter.as_ref(),
+            package_id,
+            partner_id,
+        )
+        .await
+        {
+            Ok(_) => succeed(pool, j).await,
+            Err(e) => {
+                let short: String = format!("{e:?}").chars().take(500).collect();
+                fail(pool, j, false, &format!("DELIVERY_POLL_ERROR:{short}")).await
+            }
+        };
+    }
+    if j.kind == "delivery.reconcile" {
+        // F5: E-5 reconciliation sweep.
+        return match crate::execution::reconcile(pool, 3600).await {
+            Ok(_) => succeed(pool, j).await,
+            Err(e) => {
+                let short: String = format!("{e:?}").chars().take(500).collect();
+                fail(pool, j, false, &format!("DELIVERY_RECONCILE_ERROR:{short}")).await
+            }
+        };
+    }
+    if j.kind == "delivery.takedown" {
+        let package_id = j
+            .payload
+            .get("package_id")
+            .and_then(Value::as_str)
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .ok_or(Error::Internal)?;
+        let partner_id = j
+            .payload
+            .get("partner_id")
+            .and_then(Value::as_str)
+            .ok_or(Error::Internal)?;
+        let org: Uuid =
+            sqlx::query_scalar("SELECT org_id FROM distribution.distribution_packages WHERE id=$1")
+                .bind(package_id)
+                .fetch_optional(pool)
+                .await?
+                .ok_or(Error::NotFound)?;
+        let mut registry = crate::execution::AdapterRegistry::new();
+        registry.register(shared_mockdsp());
+        let adapter = registry
+            .get(partner_id)
+            .ok_or(Error::PolicyGate("EXECUTION_NO_ADAPTER"))?;
+        return match crate::execution::takedown_release(
+            pool,
+            org,
+            adapter.as_ref(),
+            package_id,
+            partner_id,
+        )
+        .await
+        {
+            Ok(_) => succeed(pool, j).await,
+            Err(e) => {
+                let short: String = format!("{e:?}").chars().take(500).collect();
+                let permanent = matches!(e, Error::PolicyGate(_));
+                fail(
+                    pool,
+                    j,
+                    permanent,
+                    &format!("DELIVERY_TAKEDOWN_ERROR:{short}"),
+                )
+                .await
+            }
+        };
     }
     if j.kind != "outbox.record" {
         return fail(pool, j, true, "UNIMPLEMENTED_JOB_KIND").await;
