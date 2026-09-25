@@ -205,7 +205,12 @@ fn sha256_hex(bytes: &[u8]) -> String {
 /// Generate a valid 32s stereo 48kHz WAV with ffmpeg, mastered into the
 /// -14 LUFS ±1 band so the loudness check passes cleanly.
 fn make_good_wav(dir: &std::path::Path) -> Vec<u8> {
-    let out = dir.join("good.wav");
+    make_sine_wav(dir, "good.wav", 440)
+}
+
+/// 32 s stereo sine at `freq` Hz, loud enough to pass QC loudness gates.
+fn make_sine_wav(dir: &std::path::Path, name: &str, freq: u32) -> Vec<u8> {
+    let out = dir.join(name);
     let st = std::process::Command::new("ffmpeg")
         .args([
             "-y",
@@ -214,7 +219,7 @@ fn make_good_wav(dir: &std::path::Path) -> Vec<u8> {
             "-f",
             "lavfi",
             "-i",
-            "sine=frequency=440:duration=32",
+            &format!("sine=frequency={freq}:duration=32"),
             "-ar",
             "48000",
             "-ac",
@@ -410,10 +415,25 @@ async fn run_worker_on(pool: &PgPool, store: &Arc<dyn ObjectStore>, expect_succe
     );
 }
 
-fn tmpdir() -> PathBuf {
+/// RAII temp dir: removed on drop, even if the test panics. Prevents
+/// /tmp (512MB tmpfs) from filling up across parallel test runs.
+struct TmpDir {
+    path: PathBuf,
+}
+impl TmpDir {
+    fn path(&self) -> &PathBuf {
+        &self.path
+    }
+}
+impl Drop for TmpDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+fn tmpdir() -> TmpDir {
     let d = std::env::temp_dir().join(format!("audeniq-f2-{}", Uuid::new_v4()));
     std::fs::create_dir_all(&d).unwrap();
-    d
+    TmpDir { path: d }
 }
 
 #[sqlx::test]
@@ -440,7 +460,7 @@ async fn presubmit_gates_track_requirement(pool: PgPool) {
     );
 
     let dir = tmpdir();
-    let wav = make_good_wav(&dir);
+    let wav = make_good_wav(dir.path());
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
     let (full_release, _) = build_submittable(&app, &pool, &store, &u, asset).await;
 
@@ -462,7 +482,7 @@ async fn minority_paths_are_hard_gated(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let dir = tmpdir();
-    let wav = make_good_wav(&dir);
+    let wav = make_good_wav(dir.path());
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
     let (release, _) = build_submittable(&app, &pool, &store, &u, asset).await;
 
@@ -484,7 +504,7 @@ async fn consent_scope_mismatch_rejects_submit(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let dir = tmpdir();
-    let wav = make_good_wav(&dir);
+    let wav = make_good_wav(dir.path());
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
     let (release, artist) = build_submittable(&app, &pool, &store, &u, asset).await;
     let (s, v) = consent(&app, &u, release, false).await;
@@ -513,7 +533,7 @@ async fn stage1_happy_path_passes(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let dir = tmpdir();
-    let wav = make_good_wav(&dir);
+    let wav = make_good_wav(dir.path());
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
     let (release, _) = build_submittable(&app, &pool, &store, &u, asset).await;
 
@@ -554,7 +574,7 @@ async fn stage1_happy_path_passes(pool: PgPool) {
     .fetch_all(&pool)
     .await
     .unwrap();
-    assert_eq!(codes.len(), 25, "{codes:?}");
+    assert_eq!(codes.len(), 27, "{codes:?}");
     let bad: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM operations.check_results WHERE revision_id=$1 AND status<>'PASS'",
     )
@@ -634,7 +654,7 @@ async fn stage1_duplicate_isrc_rejected(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let dir = tmpdir();
-    let wav = make_good_wav(&dir);
+    let wav = make_good_wav(dir.path());
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
     let (release, artist) = build_submittable(&app, &pool, &store, &u, asset).await;
     // EP allows two tracks; both carry the same ISRC.
@@ -705,7 +725,7 @@ async fn stage1_malformed_upc_rejected(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let dir = tmpdir();
-    let wav = make_good_wav(&dir);
+    let wav = make_good_wav(dir.path());
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
     let (release, _) = build_submittable(&app, &pool, &store, &u, asset).await;
     sqlx::query(
@@ -746,7 +766,7 @@ async fn stage1_bad_release_date_rejected(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let dir = tmpdir();
-    let wav = make_good_wav(&dir);
+    let wav = make_good_wav(dir.path());
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
     let (release, _) = build_submittable(&app, &pool, &store, &u, asset).await;
     sqlx::query("UPDATE catalog.releases SET draft = draft || '{\"release_date\":\"next friday\"}'::jsonb, row_version = row_version + 1 WHERE id=$1")
@@ -785,7 +805,7 @@ async fn submit_with_expired_consent_rejected(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let dir = tmpdir();
-    let wav = make_good_wav(&dir);
+    let wav = make_good_wav(dir.path());
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
     let (release, _) = build_submittable(&app, &pool, &store, &u, asset).await;
     let (s, v) = consent(&app, &u, release, false).await;
@@ -859,7 +879,7 @@ async fn unchanged_audio_is_not_reanalyzed(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let dir = tmpdir();
-    let wav = make_good_wav(&dir);
+    let wav = make_good_wav(dir.path());
     // one asset, shared by two releases
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
 
@@ -925,7 +945,7 @@ async fn submit_idempotency_key_dedups(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let dir = tmpdir();
-    let wav = make_good_wav(&dir);
+    let wav = make_good_wav(dir.path());
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
     let (release, _) = build_submittable(&app, &pool, &store, &u, asset).await;
     let (s, v) = consent(&app, &u, release, false).await;
@@ -956,7 +976,7 @@ async fn submit_idempotency_key_reused_with_changed_body(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let dir = tmpdir();
-    let wav = make_good_wav(&dir);
+    let wav = make_good_wav(dir.path());
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
     let (release, _) = build_submittable(&app, &pool, &store, &u, asset).await;
     let (s, v) = consent(&app, &u, release, false).await;
@@ -982,7 +1002,7 @@ async fn oversized_asset_is_technical_retry(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let dir = tmpdir();
-    let wav = make_good_wav(&dir);
+    let wav = make_good_wav(dir.path());
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
     let (release, _) = build_submittable(&app, &pool, &store, &u, asset).await;
     let (s, v) = consent(&app, &u, release, false).await;
@@ -1011,7 +1031,7 @@ async fn oversized_asset_is_technical_retry(pool: PgPool) {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(retry, 8, "all 8 audio checks recorded as technical retry");
+    assert_eq!(retry, 10, "all 10 audio checks recorded as technical retry");
     let status: String = sqlx::query_scalar("SELECT status FROM catalog.releases WHERE id=$1")
         .bind(release)
         .fetch_one(&pool)
@@ -1024,11 +1044,89 @@ async fn oversized_asset_is_technical_retry(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn fingerprint_flags_byte_identical_reupload_for_review(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let wav_a = make_sine_wav(dir.path(), "a.wav", 440);
+    let wav_b = make_sine_wav(dir.path(), "b.wav", 880);
+    let store_obj: Arc<dyn ObjectStore> = store.clone();
+
+    async fn submit_one(
+        app: &Router,
+        pool: &PgPool,
+        store: &Arc<FileStore>,
+        u: &User,
+        name: &str,
+        bytes: &[u8],
+        idem: &str,
+    ) -> Uuid {
+        let asset = register_asset(pool, store, u, name, bytes).await;
+        let (release, _) = build_submittable(app, pool, store, u, asset).await;
+        let (s, v) = consent(app, u, release, false).await;
+        assert_eq!(s, StatusCode::OK, "{v}");
+        let consent_id = Uuid::parse_str(v["consent_id"].as_str().unwrap()).unwrap();
+        let (s, v) = submit(app, u, release, consent_id, false, idem).await;
+        assert_eq!(s, StatusCode::OK, "{v}");
+        Uuid::parse_str(v["revision_id"].as_str().unwrap()).unwrap()
+    }
+    async fn fp_status(pool: &PgPool, revision: Uuid) -> (String, String) {
+        sqlx::query_as(
+            "SELECT status, detail FROM operations.check_results WHERE revision_id=$1 AND check_code='AUDIO_SIMILAR_TO_EXISTING'",
+        )
+        .bind(revision)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    // First upload: nothing in the catalog to match -> PASS.
+    let rev_a = submit_one(&app, &pool, &store, &u, "a.wav", &wav_a, "k-fp-a").await;
+    run_worker_on(&pool, &store_obj, true).await;
+    let (st, _) = fp_status(&pool, rev_a).await;
+    assert_eq!(st, "PASS", "first upload has nothing to match");
+
+    // Same bytes under a new asset: BER 0 -> REVIEW_REQUIRED, never blocked.
+    let rev_b = submit_one(&app, &pool, &store, &u, "a2.wav", &wav_a, "k-fp-b").await;
+    run_worker_on(&pool, &store_obj, true).await;
+    let (st, detail) = fp_status(&pool, rev_b).await;
+    assert_eq!(
+        st, "REVIEW_REQUIRED",
+        "byte-identical re-upload flagged: {detail}"
+    );
+    assert!(
+        detail.contains("BER=0.000"),
+        "identical bytes score BER 0: {detail}"
+    );
+
+    // Different recording: no match -> PASS.
+    let rev_c = submit_one(&app, &pool, &store, &u, "b.wav", &wav_b, "k-fp-c").await;
+    run_worker_on(&pool, &store_obj, true).await;
+    let (st, _) = fp_status(&pool, rev_c).await;
+    assert_eq!(st, "PASS", "different recording does not match");
+
+    // The fingerprint rows are persisted for future comparisons.
+    // asset_fingerprints is FORCE RLS: authorize the read via app.org_id.
+    let mut rtx = pool.begin().await.unwrap();
+    sqlx::query("SELECT set_config('app.org_id',$1,true)")
+        .bind(u.org.to_string())
+        .execute(&mut *rtx)
+        .await
+        .unwrap();
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM catalog.asset_fingerprints")
+        .fetch_one(&mut *rtx)
+        .await
+        .unwrap();
+    rtx.rollback().await.unwrap();
+    assert_eq!(n, 3, "one fingerprint row per analyzed asset");
+}
+
+#[sqlx::test]
 async fn stage2_job_is_executed_not_parked(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let dir = tmpdir();
-    let wav = make_good_wav(&dir);
+    let wav = make_good_wav(dir.path());
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
     let (release, _) = build_submittable(&app, &pool, &store, &u, asset).await;
     let (s, v) = consent(&app, &u, release, false).await;
@@ -1070,7 +1168,7 @@ async fn stage1_duplicate_track_title_rejected(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let dir = tmpdir();
-    let wav = make_good_wav(&dir);
+    let wav = make_good_wav(dir.path());
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
     let (release, artist) = build_submittable(&app, &pool, &store, &u, asset).await;
     sqlx::query(
@@ -1122,7 +1220,7 @@ async fn stage1_title_version_info_flagged(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let dir = tmpdir();
-    let wav = make_good_wav(&dir);
+    let wav = make_good_wav(dir.path());
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
     let (release, artist) = build_submittable(&app, &pool, &store, &u, asset).await;
     sqlx::query("UPDATE catalog.tracks SET title='Midnight (Radio Edit)' WHERE release_id=$1")
@@ -1157,7 +1255,7 @@ async fn stage1_title_seo_spam_flagged(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let dir = tmpdir();
-    let wav = make_good_wav(&dir);
+    let wav = make_good_wav(dir.path());
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
     let (release, _) = build_submittable(&app, &pool, &store, &u, asset).await;
     sqlx::query("UPDATE catalog.tracks SET title='Deep Sleep Music' WHERE release_id=$1")
@@ -1192,7 +1290,7 @@ async fn stage1_missing_pline_cline_rejected(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let dir = tmpdir();
-    let wav = make_good_wav(&dir);
+    let wav = make_good_wav(dir.path());
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
     let (release, _) = build_submittable(&app, &pool, &store, &u, asset).await;
     sqlx::query("UPDATE catalog.releases SET draft = draft - 'p_line' - 'c_line', row_version = row_version + 1 WHERE id=$1")
@@ -1236,7 +1334,7 @@ async fn stage1_writer_credit_missing_rejected(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let dir = tmpdir();
-    let wav = make_good_wav(&dir);
+    let wav = make_good_wav(dir.path());
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
     let (release, _) = build_submittable(&app, &pool, &store, &u, asset).await;
     // Strip the writer credit, keep the performer credit.
@@ -1278,7 +1376,7 @@ async fn stage1_explicit_content_review_does_not_block(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let dir = tmpdir();
-    let wav = make_good_wav(&dir);
+    let wav = make_good_wav(dir.path());
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
     let (release, _) = build_submittable(&app, &pool, &store, &u, asset).await;
     sqlx::query("UPDATE catalog.tracks SET parental_advisory=true WHERE release_id=$1")
@@ -1319,7 +1417,7 @@ async fn stage1_review_flags_do_not_block(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let dir = tmpdir();
-    let wav = make_good_wav(&dir);
+    let wav = make_good_wav(dir.path());
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
     let (release, _) = build_submittable(&app, &pool, &store, &u, asset).await;
     sqlx::query("UPDATE catalog.tracks SET title='Midnight (Radio Edit)' WHERE release_id=$1")
@@ -1360,7 +1458,7 @@ async fn stage1_track_version_round_trip(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let dir = tmpdir();
-    let wav = make_good_wav(&dir);
+    let wav = make_good_wav(dir.path());
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
     let release = create_release(&app, &u).await;
     let artist = create_artist(&app, &u).await;

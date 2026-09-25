@@ -48,7 +48,10 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Workspace tests
-        run: cargo test --workspace
+        # --test-threads=2: the DB-backed suites (stage1/stage2/execution)
+        # exhaust /tmp (512MB tmpfs) and postgres under high parallelism;
+        # see the RAII tmpdir guard in crates/core/tests/stage1.rs.
+        run: cargo test --workspace -- --test-threads=2
       - name: Independent synthetic XSD validation
         run: |
           test "$(find /tmp/f4-fixtures -name 'fixture-*.xml' | wc -l)" -eq 6

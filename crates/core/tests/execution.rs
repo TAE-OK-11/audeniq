@@ -1962,3 +1962,50 @@ async fn route_decisions_without_contracts(pool: PgPool) {
             .unwrap();
     assert_eq!(n, 8);
 }
+
+/// Malformed ACK payloads are rejected without touching delivery state.
+/// The partner's garbage must not corrupt our side.
+#[sqlx::test]
+async fn dsp_xx_malformed_ack_rejected(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let mock = MockDsp::new(MockBehavior::Accept);
+
+    // Not JSON at all.
+    let err = execution::ingest_ack(&pool, ctx.org, &mock, b"not json{{{")
+        .await
+        .unwrap_err();
+    assert!(matches!(err, audeniq_core::error::Error::Invalid));
+
+    // Valid JSON, missing event_id.
+    let err = execution::ingest_ack(
+        &pool,
+        ctx.org,
+        &mock,
+        br#"{"type":"accepted","partner_message_id":"x"}"#,
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(err, audeniq_core::error::Error::Invalid));
+
+    // Valid JSON, unknown event type.
+    let err = execution::ingest_ack(
+        &pool,
+        ctx.org,
+        &mock,
+        br#"{"event_id":"e1","type":"frobnicated"}"#,
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(err, audeniq_core::error::Error::Invalid));
+
+    // Valid JSON, accepted but missing partner_message_id.
+    let err = execution::ingest_ack(
+        &pool,
+        ctx.org,
+        &mock,
+        br#"{"event_id":"e2","type":"accepted"}"#,
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(err, audeniq_core::error::Error::Invalid));
+}

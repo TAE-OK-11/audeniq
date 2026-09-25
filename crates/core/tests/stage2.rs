@@ -267,7 +267,13 @@ async fn row_version(pool: &PgPool, release: Uuid) -> i64 {
         .unwrap()
 }
 
-async fn build_submittable(app: &Router, pool: &PgPool, u: &User, asset: Uuid) -> Uuid {
+async fn build_submittable(
+    app: &Router,
+    pool: &PgPool,
+    store: &Arc<FileStore>,
+    u: &User,
+    asset: Uuid,
+) -> Uuid {
     let release = create_release(app, u).await;
     let artist = create_artist(app, u).await;
     sqlx::query("UPDATE catalog.releases SET draft = draft || '{\"release_date\":\"2027-03-01\"}'::jsonb, row_version = row_version + 1 WHERE id=$1")
@@ -295,6 +301,37 @@ async fn build_submittable(app: &Router, pool: &PgPool, u: &User, asset: Uuid) -
     )
     .await;
     assert_eq!(s, StatusCode::OK, "{v}");
+    // F4 preparation supplements: the merged worker fails closed without
+    // UPC, cover artwork, ISRC and release metadata. All stage2 tests need
+    // stage1 to reach STAGE1_PASSED.
+    let art_id = Uuid::new_v4();
+    let art_key = format!("registered/{}/cover.png", u.org);
+    let art_bytes = b"\x89PNGfake";
+    store
+        .files
+        .lock()
+        .await
+        .insert(art_key.clone(), (art_bytes.to_vec(), "image/png".into()));
+    sqlx::query("INSERT INTO identity.resources(org_id,id,kind) VALUES($1,$2,'asset')")
+        .bind(u.org)
+        .bind(art_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO catalog.assets(id,org_id,kind,object_key,size_bytes,content_type,sha256,state) VALUES($1,$2,'IMAGE',$3,$4,'image/png',$5,'REGISTERED')")
+        .bind(art_id).bind(u.org).bind(&art_key).bind(art_bytes.len() as i64).bind(sha256_hex(art_bytes))
+        .execute(pool).await.unwrap();
+    sqlx::query("UPDATE catalog.releases SET upc='036000291452', artwork_asset_id=$1, draft = draft || '{\"language\":\"ko\",\"artist\":\"Test Artist\",\"p_line\":\"P 2027 Test Label\",\"c_line\":\"C 2027 Test Label\"}'::jsonb, row_version = row_version + 1 WHERE id=$2")
+        .bind(art_id)
+        .bind(release)
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE catalog.tracks SET isrc='USABC2600001' WHERE release_id=$1")
+        .bind(release)
+        .execute(pool)
+        .await
+        .unwrap();
     release
 }
 
@@ -358,37 +395,7 @@ async fn stage2_self_rights_holder_passes(pool: PgPool) {
     let dir = tmpdir();
     let wav = make_good_wav(&dir);
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
-    let release = build_submittable(&app, &pool, &u, asset).await;
-    // F4 preparation supplements: the merged worker fails closed without
-    // UPC, cover artwork, ISRC and release metadata.
-    let art_id = Uuid::new_v4();
-    let art_key = format!("registered/{}/cover.png", u.org);
-    let art_bytes = b"\x89PNGfake";
-    store
-        .files
-        .lock()
-        .await
-        .insert(art_key.clone(), (art_bytes.to_vec(), "image/png".into()));
-    sqlx::query("INSERT INTO identity.resources(org_id,id,kind) VALUES($1,$2,'asset')")
-        .bind(u.org)
-        .bind(art_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query("INSERT INTO catalog.assets(id,org_id,kind,object_key,size_bytes,content_type,sha256,state) VALUES($1,$2,'IMAGE',$3,$4,'image/png',$5,'REGISTERED')")
-        .bind(art_id).bind(u.org).bind(&art_key).bind(art_bytes.len() as i64).bind(sha256_hex(art_bytes))
-        .execute(&pool).await.unwrap();
-    sqlx::query("UPDATE catalog.releases SET upc='036000291452', artwork_asset_id=$1, draft = draft || '{\"language\":\"ko\",\"artist\":\"Test Artist\",\"p_line\":\"P 2027 Test Label\",\"c_line\":\"C 2027 Test Label\"}'::jsonb, row_version = row_version + 1 WHERE id=$2")
-        .bind(art_id)
-        .bind(release)
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query("UPDATE catalog.tracks SET isrc='USABC2600001' WHERE release_id=$1")
-        .bind(release)
-        .execute(&pool)
-        .await
-        .unwrap();
+    let release = build_submittable(&app, &pool, &store, &u, asset).await;
     let revision_id = consent_and_submit(&app, &u, release, "k-s2-happy").await;
 
     assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
@@ -465,7 +472,7 @@ async fn stage2_duplicate_sha_in_other_org_is_review(pool: PgPool) {
     // Same bytes in both orgs -> same SHA-256.
     let asset_a = register_asset(&pool, &store, &a, "good.wav", &wav).await;
     let asset_b = register_asset(&pool, &store, &b, "good.wav", &wav).await;
-    let release_a = build_submittable(&app, &pool, &a, asset_a).await;
+    let release_a = build_submittable(&app, &pool, &store, &a, asset_a).await;
     consent_and_submit(&app, &a, release_a, "k-s2-dup-a").await;
 
     // Org B holds the same audio on an active release (direct SQL: the claim
@@ -529,7 +536,7 @@ async fn stage2_far_future_release_date_flagged(pool: PgPool) {
     let dir = tmpdir();
     let wav = make_good_wav(&dir);
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
-    let release = build_submittable(&app, &pool, &u, asset).await;
+    let release = build_submittable(&app, &pool, &store, &u, asset).await;
     // A street date two years out is almost always a typo (2037 vs 2027).
     sqlx::query("UPDATE catalog.releases SET draft = draft || jsonb_build_object('release_date', to_char(now() + interval '2 years', 'YYYY-MM-DD')), row_version = row_version + 1 WHERE id=$1")
         .bind(release).execute(&pool).await.unwrap();
@@ -560,7 +567,7 @@ async fn stage2_lease_loss_returns_none(pool: PgPool) {
     let dir = tmpdir();
     let wav = make_good_wav(&dir);
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
-    let release = build_submittable(&app, &pool, &u, asset).await;
+    let release = build_submittable(&app, &pool, &store, &u, asset).await;
     consent_and_submit(&app, &u, release, "k-s2-lease").await;
     assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
 
@@ -588,7 +595,7 @@ async fn stage2_override_requires_two_people(pool: PgPool) {
     let dir = tmpdir();
     let wav = make_good_wav(&dir);
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
-    let release = build_submittable(&app, &pool, &u, asset).await;
+    let release = build_submittable(&app, &pool, &store, &u, asset).await;
     let revision_id = consent_and_submit(&app, &u, release, "k-s2-ovr").await;
     assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
     assert_eq!(
@@ -731,7 +738,7 @@ async fn stage2_override_api_maps_seniority(pool: PgPool) {
     let dir = tmpdir();
     let wav = make_good_wav(&dir);
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
-    let release = build_submittable(&app, &pool, &u, asset).await;
+    let release = build_submittable(&app, &pool, &store, &u, asset).await;
     let revision_id = consent_and_submit(&app, &u, release, "k-s2-ovrapi").await;
     assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
     assert_eq!(
@@ -773,7 +780,7 @@ async fn stage2_contracted_profile_not_eligible_without_contract(pool: PgPool) {
     let dir = tmpdir();
     let wav = make_good_wav(&dir);
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
-    let release = build_submittable(&app, &pool, &u, asset).await;
+    let release = build_submittable(&app, &pool, &store, &u, asset).await;
     let revision_id = consent_and_submit(&app, &u, release, "k-s2-activation").await;
 
     // MOCK control: pin the seeded MockDSP profile to a fixed DSP id.

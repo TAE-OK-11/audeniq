@@ -36,7 +36,8 @@
         "object_key": "synthetic/audio-0.wav",
         "sha256": "5dbd63fe0e57580bb6041bc976209693557d549423ca1a9495ee57e057299e73",
         "size_bytes": 17,
-        "content_type": "audio/wav"
+        "content_type": "audio/wav",
+        "duration_secs": 198.7
       }
     },
     {
@@ -51,7 +52,8 @@
         "object_key": "synthetic/audio-1.wav",
         "sha256": "87c3e664ed45e02760246bb0bc46f44713698e01b635652c2d474d043e6a854d",
         "size_bytes": 17,
-        "content_type": "audio/wav"
+        "content_type": "audio/wav",
+        "duration_secs": 224.1
       }
     },
     {
@@ -66,7 +68,8 @@
         "object_key": "synthetic/audio-2.wav",
         "sha256": "b91387a9cff7f2ed6b26753dfd02c1bbed5dd60dae0a46cf9a4c315deb7888b8",
         "size_bytes": 17,
-        "content_type": "audio/wav"
+        "content_type": "audio/wav",
+        "duration_secs": 211.5
       }
     }
   ],
