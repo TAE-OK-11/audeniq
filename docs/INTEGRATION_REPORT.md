@@ -355,4 +355,33 @@ BLUEPRINT §6의 E-0~E-5 송출 실행 파이프라인. 브랜치 `foundation/f5
 
 ### GitHub Actions
 
-- 푸시 후 run 결과 확인 예정.
+- run [36096180495](https://github.com/TAE-OK-11/audeniq/actions/runs/36096180495) (main 병합 `89cce75`) — **success** (2026-09-25 확인)
+- run [36096187165](https://github.com/TAE-OK-11/audeniq/actions/runs/36096187165) (문서 `015b5dc`) — **success** (2026-09-25 확인)
+
+---
+
+## Pre-F7 감사 — 미완료 항목 전수 점검·수정 (2026-09-25)
+
+F7 진입 전 F0~F6를 실제 코드·테스트 기준으로 전수 점검하고, 계약 없이 가능한 항목은 전부 수정. 브랜치 `foundation/pre-f7-audit-fixes` (main 병합 `4d2b59d`).
+
+### 구현 범위
+
+- **DDEX retry-count RLS 수정** (`distribution.rs`): `READY_FOR_DELIVERY` idempotent 경로의 `ddex_messages` COUNT가 일반 pool로 실행돼, FORCE RLS 테이블에서 `app.org_id` 없이 0을 반환할 수 있었다. idempotent 조회 row에 `org_id`를 포함시키고 짧은 transaction에서 `set_config('app.org_id',...)` 후 count 조회.
+- **Stage 2 checkpoint 의미 정정** (`review.rs`): 기존 주석은 "완료 모듈 재실행 안 함"이었으나 실제로는 네 모듈을 매번 실행 (check_results는 중복 저장 방지용). 동작은 유지하고 문서를 실제에 맞춤 — pre-package retry는 모듈 재실행(읽기 기반, crash 이후 변경 반영), post-package retry는 pinned package 즉시 반환. checkpoint는 skip gate가 아니라 idempotent audit trail. 중복 저장을 `record_check_result`로 분리 + 단위 테스트.
+- **`delivery_enabled` 경계 고정** (`foundation.rs`): 활성화 플래그(`execution.adapter_profiles.delivery_enabled`)는 schema owner/platform operator만 변경 가능 — `audeniq_api`·`audeniq_worker`의 UPDATE는 `42501`이어야 한다는 테스트 2개 추가. MockDSP 경로는 stage3 합성 ERN fallback으로 유지, 상용 partner 계약 우회는 별도 명시적 activation 모델 필요 (미구현).
+- **worker RLS end-to-end 테스트** (`execution.rs::dsp_worker_role_rls_delivery`): non-owner `audeniq_worker` 역할로 E-0 enqueue → claim → send 전체를 수행하고, 타 org `delivery_jobs`가 보이지 않음을 검증. 부수 발견: FORCE RLS는 owner에게도 WITH CHECK를 적용 — org context 없이 직접 INSERT하면 42501.
+- **partner별 DDEX artifact routing** (`execution.rs::materialize`): 전송 문서는 `(package_id, dsp_id)`의 `ddex_messages` row를 우선 사용 (sha256 검증). DDEX row가 없고 transport가 mock이 아니면 `EXECUTION_DDEX_MESSAGE_MISSING`으로 fail-closed — 합성 preparation envelope이 실제 partner wire에 나가는 일을 원천 차단. 테스트 2개 (routing 선호 / fail-closed), MockDsp는 받은 문서의 ern_sha256을 기록.
+- **contributor role 매핑** (`ddex_ern.rs`): credit role을 DDEX `ContributorRole` allowed-value subset으로 매핑, 미매핑은 generic `Contributor` fallback. 기존 `<Role>COMPOSER</Role>` 테스트를 `<Role>Composer</Role>`로 갱신.
+- **ERN well-formed guard** (`ddex_ern.rs` 테스트): quick-xml(dev-dep)로 3개 fixture 전체 파싱, 루트 `ern:NewReleaseMessage` + 태그 균형 확인.
+- **공식 XSD 미확보 명시**: ERN 3.8.2 공식 schema는 신뢰 가능한 경로에서 확보 불가 확인 — `service.ddex.net/xml/ern/382/*`는 404 HTML, ddex-workbench 저장소·PyPI wheel에도 XSD 없음 (`/tmp/ddex-xsd`의 파일들은 404 HTML로 확인). 공식 XSD validation은 F6 전제 조건으로 미완료 유지.
+
+### 로컬 검증 결과 (2026-09-25, main `4d2b59d`)
+
+- `cargo fmt --all --check`: 통과
+- `cargo clippy --workspace --all-targets -- -D warnings`: 통과
+- `cargo test --workspace`: 전부 통과, 총 **125개** (기존 118 + 신규 7), 실패 0
+  - 신규: `checkpoint_dedupes_identical_results`, `dsp_worker_role_rls_delivery`, `dsp_routing_prefers_partner_ddex_message`, `dsp_routing_fail_closed_without_ddex_message`, `contributor_role_maps_studio_roles_to_avs`, `contributor_role_unknown_falls_back_to_generic`, `ddex_ern_output_is_well_formed_xml`
+
+### GitHub Actions
+
+- run [36097605861](https://github.com/TAE-OK-11/audeniq/actions/runs/36097605861) (main 병합 `4d2b59d`) — 결과 확인 예정.
