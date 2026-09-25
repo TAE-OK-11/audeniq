@@ -49,6 +49,8 @@ pub struct CanonicalTrack {
     pub asset_object_key: Option<String>,
     pub isrc: Option<String>,
     pub credits: Vec<CanonicalCredit>,
+    #[serde(default)]
+    pub parental_advisory: bool,
 }
 
 /// Cover artwork reference for DDEX ERN resource lists.
@@ -84,6 +86,10 @@ pub struct CanonicalRelease {
     pub upc: Option<String>,
     pub artwork: Option<CanonicalArtwork>,
     pub tracks: Vec<CanonicalTrack>,
+    /// True when any track carries parental advisory or the Stage 2
+    /// verification package recorded the EXPLICIT special flag.
+    #[serde(default)]
+    pub explicit: bool,
 }
 
 impl CanonicalRelease {
@@ -179,7 +185,7 @@ pub async fn build_canonical(
     let release_type: String = rel.get("release_type");
 
     let tracks = sqlx::query(
-        "SELECT t.id, t.title, t.disc_number, t.track_number, t.artist_id, t.asset_id, t.isrc, a.name AS artist_name, s.sha256 AS asset_sha256, s.object_key AS asset_object_key
+        "SELECT t.id, t.title, t.disc_number, t.track_number, t.artist_id, t.asset_id, t.isrc, t.parental_advisory, a.name AS artist_name, s.sha256 AS asset_sha256, s.object_key AS asset_object_key
          FROM catalog.tracks t
          JOIN catalog.artists a ON a.org_id=t.org_id AND a.id=t.artist_id
          LEFT JOIN catalog.assets s ON s.org_id=t.org_id AND s.id=t.asset_id
@@ -213,6 +219,7 @@ pub async fn build_canonical(
             asset_sha256: t.get("asset_sha256"),
             asset_object_key: t.get("asset_object_key"),
             isrc: t.get("isrc"),
+            parental_advisory: t.get("parental_advisory"),
             credits: credits
                 .iter()
                 .map(|c| CanonicalCredit {
@@ -261,6 +268,12 @@ pub async fn build_canonical(
         release_type,
         upc,
         artwork,
+        explicit: out_tracks.iter().any(|t| t.parental_advisory)
+            || body
+                .get("special_flags")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().any(|f| f.as_str() == Some("EXPLICIT")))
+                .unwrap_or(false),
         tracks: out_tracks,
     })
 }

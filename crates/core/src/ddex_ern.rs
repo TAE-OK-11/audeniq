@@ -371,6 +371,9 @@ fn release_list(out: &mut String, prepared: &PreparedRelease) {
     out.push_str("<ReleaseDetailsByTerritory>");
     element(out, "TerritoryCode", "Worldwide");
     element(out, "DisplayArtistName", &prepared.artist);
+    if prepared.explicit {
+        element(out, "ParentalWarningType", "Explicit");
+    }
     element(
         out,
         "ReleaseDate",

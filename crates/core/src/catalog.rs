@@ -282,6 +282,12 @@ pub struct TrackInput {
     pub artist_id: Uuid,
     pub asset_id: Option<Uuid>,
     pub row_version: i64,
+    /// Optional lyrics text (max 20_000 chars). Stored for future screening;
+    /// presence alone never blocks.
+    pub lyrics: Option<String>,
+    /// Parental advisory flag for explicit content. Drives the EXPLICIT
+    /// special flag and the DDEX ParentalWarningType.
+    pub parental_advisory: Option<bool>,
 }
 pub async fn track(
     s: &AppState,
@@ -295,8 +301,9 @@ pub async fn track(
     drafts::track_refs(&mut tx, a, org, &i).await?;
     drafts::bump(&mut tx, org, release, i.row_version).await?;
     let id = Uuid::new_v4();
-    sqlx::query("INSERT INTO catalog.tracks(id,org_id,release_id,title,disc_number,track_number,artist_id,asset_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
- .bind(id).bind(org).bind(release).bind(i.title).bind(i.disc_number).bind(i.track_number).bind(i.artist_id).bind(i.asset_id).execute(&mut *tx).await?;
+    let lyrics = i.lyrics.as_deref().filter(|s| !s.trim().is_empty());
+    sqlx::query("INSERT INTO catalog.tracks(id,org_id,release_id,title,disc_number,track_number,artist_id,asset_id,lyrics,parental_advisory) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
+ .bind(id).bind(org).bind(release).bind(i.title).bind(i.disc_number).bind(i.track_number).bind(i.artist_id).bind(i.asset_id).bind(lyrics).bind(i.parental_advisory.unwrap_or(false)).execute(&mut *tx).await?;
     operations::audit(
         &mut tx,
         Some(a.user),

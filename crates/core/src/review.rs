@@ -332,6 +332,7 @@ async fn decide(
             "commercial_split_snapshot": split,
             "rights_epoch": epoch,
             "overrides_applied": ov.keys().collect::<Vec<_>>(),
+            "special_flags": special_flags(ctx),
             "rule_version": REVIEW_RULE_VERSION,
         });
         let pkg_hash = sha256_hex(&serde_json::to_string(&pkg).expect("json serializes"));
@@ -459,7 +460,7 @@ async fn module_applicant_rights(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec
     let needs_extra_grant = flags.iter().any(|f| {
         matches!(
             f.as_str(),
-            "COVER" | "REMIX" | "SAMPLE" | "AI" | "MIGRATION"
+            "COVER" | "REMIX" | "SAMPLE" | "AI" | "MIGRATION" | "EXPLICIT"
         )
     });
     let grants = sqlx::query(
@@ -612,6 +613,20 @@ async fn module_catalog_match(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec<Re
             }
         }
     }
+    // 2-C.1b: UPC claimed by another org on a live release.
+    if let Some(upc) = ctx.body.pointer("/release/upc").and_then(Value::as_str) {
+        let hits: Vec<(Uuid, Uuid)> = sqlx::query_as(
+            "SELECT id, org_id FROM catalog.releases WHERE upc=$1 AND id<>$2 AND org_id<>$3 AND status NOT IN ('WITHDRAWN','SUPERSEDED')",
+        )
+        .bind(upc)
+        .bind(ctx.release)
+        .bind(ctx.org)
+        .fetch_all(&mut *tx)
+        .await?;
+        for (rel, org) in hits {
+            dup_isrc.insert(format!("UPC {upc} org={org} release={rel}"));
+        }
+    }
     // 2-C.2: SHA-256 against the active internal asset index.
     let mut dup_sha: BTreeSet<String> = BTreeSet::new();
     for t in &tracks {
@@ -735,7 +750,75 @@ async fn module_metadata_content(ctx: &Ctx) -> Result<Vec<ReviewCheck>> {
             ),
         });
     }
+    // 2-F.2: undeclared-content tripwire. Titles that advertise special
+    // content without the matching declaration route to human review.
+    // Token-boundary matching only ("discovery" must not match "cover").
+    let hits = undeclared_content_hits(ctx);
+    if !hits.is_empty() {
+        out.push(ReviewCheck {
+            check_code: "S2_UNDECLARED_CONTENT",
+            status: "REVIEW_REQUIRED",
+            detail: format!(
+                "title advertises special content without declaration: {}",
+                hits.join("; ")
+            ),
+        });
+    }
     Ok(out)
+}
+
+/// Scan release + track titles for special-content indicators that lack the
+/// matching submit-time declaration. Returns human-readable hit strings.
+fn undeclared_content_hits(ctx: &Ctx) -> Vec<String> {
+    let Some(decl) = ctx.body.get("declarations") else {
+        return Vec::new();
+    };
+    let declared = |key: &str| decl.get(key).and_then(Value::as_bool).unwrap_or(false);
+    // (indicator tokens, declaration key, label)
+    const RULES: &[(&[&str], &str, &str)] = &[
+        (&["cover", "커버"], "is_cover", "COVER"),
+        (&["remix", "리믹스"], "is_remix", "REMIX"),
+        (
+            &["suno", "udio", "aicover", "aigenerated", "aivoice"],
+            "ai_involved",
+            "AI",
+        ),
+    ];
+    let mut titles: Vec<String> = Vec::new();
+    if let Some(t) = ctx.body.pointer("/release/title").and_then(Value::as_str) {
+        titles.push(t.to_string());
+    }
+    if let Some(tracks) = ctx.body.get("tracks").and_then(Value::as_array) {
+        for t in tracks {
+            if let Some(title) = t.get("title").and_then(Value::as_str) {
+                titles.push(title.to_string());
+            }
+        }
+    }
+    let mut hits = Vec::new();
+    for title in &titles {
+        let tokens: Vec<String> = title
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_lowercase())
+            .collect();
+        // "ai cover" / "ai generated" arrive as separate tokens.
+        let joined = tokens.join(" ");
+        for (indicators, decl_key, label) in RULES {
+            if declared(decl_key) {
+                continue;
+            }
+            let hit = indicators.iter().any(|ind| {
+                tokens.iter().any(|t| t == ind)
+                    || joined.contains(&format!("ai {ind}"))
+                    || joined.contains(&format!("ai-{ind}"))
+            });
+            if hit {
+                hits.push(format!("{label} in title {title:?}"));
+            }
+        }
+    }
+    hits
 }
 
 // ---------------------------------------------------------------------------

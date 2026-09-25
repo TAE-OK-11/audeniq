@@ -194,3 +194,21 @@ fn ddex_ern_output_is_well_formed_xml() {
         assert_eq!(root.as_deref(), Some("ern:NewReleaseMessage"));
     }
 }
+
+#[test]
+fn ddex_ern_parental_warning_explicit() {
+    let mut f = fixture(0);
+    f.explicit = true;
+    let xml = generate_ddex_ern_382(&f, &config(MessageSubType::Initial)).unwrap();
+    assert!(
+        xml.contains("<ParentalWarningType>Explicit</ParentalWarningType>"),
+        "explicit release must carry ParentalWarningType"
+    );
+    let mut f2 = fixture(0);
+    f2.explicit = false;
+    let xml2 = generate_ddex_ern_382(&f2, &config(MessageSubType::Initial)).unwrap();
+    assert!(
+        !xml2.contains("ParentalWarningType"),
+        "non-explicit release must not carry ParentalWarningType"
+    );
+}

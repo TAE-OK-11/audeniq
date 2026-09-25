@@ -52,6 +52,9 @@ pub async fn track_refs(c: &mut PgConnection, a: &Actor, org: Uuid, i: &TrackInp
     if i.title.trim().is_empty() || i.title.len() > 300 || i.disc_number < 1 || i.track_number < 1 {
         return Err(Error::Invalid);
     }
+    if i.lyrics.as_ref().map(|s| s.chars().count()).unwrap_or(0) > 20_000 {
+        return Err(Error::Invalid);
+    }
     auth::authorize(c, a, org, i.artist_id, "artist", false).await?;
     let artist: Option<Uuid> = sqlx::query_scalar("SELECT id FROM catalog.artists WHERE org_id=$1 AND id=$2 AND archived_at IS NULL FOR SHARE")
         .bind(org).bind(i.artist_id).fetch_optional(&mut *c).await?;
@@ -73,8 +76,9 @@ pub async fn replace_track(
     auth::authorize(&mut tx, a, org, release, "release", true).await?;
     track_refs(&mut tx, a, org, &i).await?;
     bump(&mut tx, org, release, i.row_version).await?;
-    let n = sqlx::query("UPDATE catalog.tracks SET title=$4,disc_number=$5,track_number=$6,artist_id=$7,asset_id=$8 WHERE org_id=$1 AND release_id=$2 AND id=$3 AND archived_at IS NULL")
-        .bind(org).bind(release).bind(track).bind(i.title).bind(i.disc_number).bind(i.track_number).bind(i.artist_id).bind(i.asset_id).execute(&mut *tx).await?.rows_affected();
+    let lyrics = i.lyrics.as_deref().filter(|s| !s.trim().is_empty());
+    let n = sqlx::query("UPDATE catalog.tracks SET title=$4,disc_number=$5,track_number=$6,artist_id=$7,asset_id=$8,lyrics=$9,parental_advisory=$10 WHERE org_id=$1 AND release_id=$2 AND id=$3 AND archived_at IS NULL")
+        .bind(org).bind(release).bind(track).bind(i.title).bind(i.disc_number).bind(i.track_number).bind(i.artist_id).bind(i.asset_id).bind(lyrics).bind(i.parental_advisory.unwrap_or(false)).execute(&mut *tx).await?.rows_affected();
     if n != 1 {
         return Err(Error::NotFound);
     }

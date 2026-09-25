@@ -310,7 +310,7 @@ async fn consent_and_submit(app: &Router, u: &User, release: Uuid, key: &str) ->
         app,
         "POST",
         &format!("/api/orgs/{}/releases/{release}/submit", u.org),
-        json!({"consent_id":consent_id,"minority_declared":false,"idempotency_key":key}),
+        json!({"consent_id":consent_id,"minority_declared":false,"idempotency_key":key,"declarations":{"rights_confirmed":true,"adult_confirmed":true,"is_cover":false,"is_remix":false,"contains_samples":false,"ai_involved":false,"explicit_content":false}}),
         Some(u),
     )
     .await;

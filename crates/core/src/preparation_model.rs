@@ -64,6 +64,9 @@ pub struct PreparedRelease {
     pub upc: String,
     pub tracks: Vec<PreparedTrack>,
     pub artwork: AssetRef,
+    /// Drives DDEX ERN ParentalWarningType.
+    #[serde(default)]
+    pub explicit: bool,
 }
 
 /// Trusted DB row envelope plus the original F3 JSON bytes' semantic value.
@@ -205,6 +208,7 @@ impl PreparedRelease {
             upc,
             tracks,
             artwork,
+            explicit: c.explicit,
         })
     }
 }
