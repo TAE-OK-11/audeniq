@@ -421,7 +421,24 @@ export function Contracts() {
             </>
           )}
           {openDoc.reviewStatus === 'needs' && (
-            <div className="notice error" style={{ marginTop: 16 }}>{openDoc.reviewNote || '보완을 요청한 서류를 첨부해 주세요.'}</div>
+            <>
+              <div className="notice error" style={{ marginTop: 16 }}>{openDoc.reviewNote || '보완을 요청한 서류를 첨부해 주세요.'}</div>
+              <div className="field" style={{ marginTop: 16 }}>
+                <label htmlFor="aqEvidenceFile">요청된 서류 첨부</label>
+                <input
+                  type="file" id="aqEvidenceFile"
+                  accept=".pdf,.txt,image/png,image/jpeg,image/webp,application/pdf,text/plain"
+                  onChange={e => {
+                    const f = e.target.files?.[0];
+                    if (f) {
+                      setDocs(ds => ds.map(d => d.id === openDoc.id ? { ...d, fileName: f.name } : d));
+                      toast('서류를 첨부했어요.');
+                    }
+                  }}
+                />
+                <p className="help">서류를 선택하면 원본과 발매 정보가 함께 보관돼요.</p>
+              </div>
+            </>
           )}
           <label className="check-line doc-consent">
             <input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />
@@ -443,6 +460,17 @@ export function Contracts() {
           <div className="doc-actions" style={{ marginTop: 16 }}>
             <button type="button" className="button" onClick={confirmDoc}>확인 및 저장</button>
             <button type="button" className="button secondary" onClick={() => toast('검토 요청을 준비했어요. (테스트 모드)')}>검토 요청</button>
+            <button
+              type="button" className="button ghost"
+              onClick={() => {
+                if (!window.confirm('문서를 삭제할까요? 등록된 첨부 원본과 확인 내역이 함께 삭제돼요.')) return;
+                setDocs(ds => ds.filter(d => d.id !== openDoc.id));
+                setOpenId(null);
+                toast('문서를 삭제했어요.');
+              }}
+            >
+              문서 삭제
+            </button>
           </div>
         </Modal>
       )}

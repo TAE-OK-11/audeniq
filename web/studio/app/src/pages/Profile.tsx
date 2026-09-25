@@ -145,7 +145,7 @@ function PaymentWizard({ onDone, onClose }: { onDone: (p: PaymentInfo) => void; 
                 <button
                   key={name} type="button"
                   className={`aq-bank ${bank === name ? 'selected' : ''}`}
-                  onClick={() => setBank(name)}
+                  onClick={() => { setBank(name); setStep(2); }}
                 >
                   <span className="aq-bank-logo" aria-hidden="true">{mark}</span>
                   <strong>{name}</strong>
