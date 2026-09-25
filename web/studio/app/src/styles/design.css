@@ -230,8 +230,6 @@ button { font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparen
 .tab:not(:disabled):active,
 .aq-sign-provider:not(:disabled):active{transform:scale(.985)!important}
 .tab,.aq-option,.aq-sign-tabs button,.aq-sign-provider,
- #view-new .wizard-progress span,#view-new .studio-expand summary span,
- .aq-switch span,.check-line input,.aq-option input{transition:none!important;transform:none!important}
 
 /* .toolbar */
 .toolbar{display:flex;gap:10px;justify-content:space-between;flex-wrap:wrap;margin:0 0 21px}
@@ -268,8 +266,6 @@ button { font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparen
 .studio-filter:not(:disabled):active,.studio-alert-filter:not(:disabled):active,.tab:not(:disabled):active,
 .aq-sign-provider:not(:disabled):active{transform:scale(.985)!important}
 .studio-filter,.studio-alert-filter,.tab,.aq-option,.aq-sign-tabs button,.aq-sign-provider,
- #view-new .wizard-progress span,#view-new .studio-expand summary span,
- .aq-switch span,.check-line input,.aq-option input{transition:none!important;transform:none!important}
 
 /* .studio-result-count */
 .studio-result-count{color:#8290a6;font-size:12px;font-weight:700;margin:5px 0 6px}
@@ -461,8 +457,7 @@ button { font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparen
 .wizard-progress{margin-bottom:20px!important}
 .wizard-progress{margin-bottom:19px!important}
 .wizard-progress span{transition:background-color .28s var(--aq-motion-ease)!important;transform-origin:left center}
-.wizard-progress span,#view-new .studio-expand summary span,
- .aq-switch span,.check-line input,.aq-option input{transition:none!important;transform:none!important}
+.wizard-progress span,#view-new .studio-expand summary span{}
 
 /* .wizard-header */
 .wizard-header{padding-top:8px;margin-bottom:40px}
@@ -604,8 +599,6 @@ button { font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparen
 .studio-alert-filter:not(:disabled):active,.tab:not(:disabled):active,
 .aq-sign-provider:not(:disabled):active{transform:scale(.985)!important}
 .studio-alert-filter,.tab,.aq-option,.aq-sign-tabs button,.aq-sign-provider,
- #view-new .wizard-progress span,#view-new .studio-expand summary span,
- .aq-switch span,.check-line input,.aq-option input{transition:none!important;transform:none!important}
 
 /* .data-list */
 .data-list{border-top:1px solid var(--portal-border);border-bottom:1px solid var(--portal-border)}
