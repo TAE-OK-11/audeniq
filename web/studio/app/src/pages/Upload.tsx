@@ -225,22 +225,16 @@ export function Upload() {
             <div className="form-grid">
               <div className="field">
                 <label htmlFor="f-artist">아티스트명 <span className="required">*</span></label>
-                <input id="f-artist" value={form.artist} onChange={e => set('artist', e.target.value)} maxLength={120} placeholder="예: AUDENIQ" />
+                <input id="f-artist" value={form.artist} onChange={e => set('artist', e.target.value)} maxLength={120} placeholder="활동명을 입력해 주세요." />
               </div>
               <div className="field">
                 <label htmlFor="f-title">발매 제목 <span className="required">*</span></label>
-                <input id="f-title" value={form.title} onChange={e => set('title', e.target.value)} maxLength={180} placeholder="싱글 또는 앨범 제목" />
+                <input id="f-title" value={form.title} onChange={e => set('title', e.target.value)} maxLength={180} placeholder="싱글 또는 앨범 제목을 입력해 주세요." />
               </div>
               <div className="field">
                 <label htmlFor="f-type">발매 유형</label>
                 <select id="f-type" value={form.type} onChange={e => set('type', e.target.value)}>
                   {KINDS.map(([id, title]) => <option key={id} value={id}>{title}</option>)}
-                </select>
-              </div>
-              <div className="field">
-                <label htmlFor="f-language">주요 언어</label>
-                <select id="f-language" value={form.language} onChange={e => set('language', e.target.value)}>
-                  {LANGUAGES.map(([id, title]) => <option key={id} value={id}>{title}</option>)}
                 </select>
               </div>
               <div className="field">
@@ -264,18 +258,29 @@ export function Upload() {
                 )}
                 <p className="help" id="genreHelp">발매할 음악의 장르를 선택해 주세요.</p>
               </div>
-              <div className="field">
-                <label htmlFor="f-label">레이블 / 발매사 표기</label>
-                <input id="f-label" value={form.label} onChange={e => set('label', e.target.value)} maxLength={120} placeholder="권리 계약에 맞는 표기" />
+            </div>
+            <details className="studio-expand">
+              <summary>발매 정보 더 입력하기 <span aria-hidden="true">＋</span></summary>
+              <div className="form-grid">
+                <div className="field">
+                  <label htmlFor="f-language">주요 언어</label>
+                  <select id="f-language" value={form.language} onChange={e => set('language', e.target.value)}>
+                    {LANGUAGES.map(([id, title]) => <option key={id} value={id}>{title}</option>)}
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="f-label">레이블 / 발매사 표기</label>
+                  <input id="f-label" value={form.label} onChange={e => set('label', e.target.value)} maxLength={120} placeholder="권리 계약에 맞는 표기" />
+                </div>
               </div>
-            </div>
-            <div className="field">
-              <label htmlFor="f-notes">앨범 소개</label>
-              <textarea
-                id="f-notes" value={form.notes} onChange={e => set('notes', e.target.value)}
-                rows={3} maxLength={1500} placeholder="발매 소개와 전달 메모"
-              />
-            </div>
+              <div className="field">
+                <label htmlFor="f-notes">앨범 소개</label>
+                <textarea
+                  id="f-notes" value={form.notes} onChange={e => set('notes', e.target.value)}
+                  rows={3} maxLength={1500} placeholder="발매 소개를 작성해 주세요."
+                />
+              </div>
+            </details>
           </section>
         )}
 
@@ -293,57 +298,67 @@ export function Upload() {
                       >삭제</button>
                     )}
                   </div>
-                  <div className="form-grid">
-                    <div className="field">
-                      <label htmlFor={`tr-${i}-title`}>곡 제목 <span className="required">*</span></label>
-                      <input id={`tr-${i}-title`} value={t.title} onChange={e => setTrack(t.id, 'title', e.target.value)} placeholder="곡명을 입력해" maxLength={200} />
-                    </div>
-                    <div className="field">
-                      <label htmlFor={`tr-${i}-version`}>버전 / 부제</label>
-                      <input id={`tr-${i}-version`} value={t.version} onChange={e => setTrack(t.id, 'version', e.target.value)} placeholder="예: Acoustic Version" maxLength={200} />
-                    </div>
-                    <div className="field">
-                      <label htmlFor={`tr-${i}-isrc`}>ISRC (보유 시)</label>
-                      <input id={`tr-${i}-isrc`} value={t.isrc} onChange={e => setTrack(t.id, 'isrc', e.target.value)} placeholder="예: KR-ABC-26-00001" maxLength={200} />
-                    </div>
-                    <div className="track-duration-label" aria-live="polite">
-                      {t.duration ? `곡 길이 · ${t.duration}` : '음원을 선택하면 곡 길이를 자동으로 확인해요.'}
-                    </div>
-                    <div className="field">
-                      <label htmlFor={`tr-${i}-composers`}>작곡 <span className="required">*</span></label>
-                      <input id={`tr-${i}-composers`} value={t.composers} onChange={e => setTrack(t.id, 'composers', e.target.value)} placeholder="참여자 이름을 쉼표로 구분" maxLength={200} />
-                    </div>
-                    <div className="field">
-                      <label htmlFor={`tr-${i}-lyricists`}>작사</label>
-                      <input id={`tr-${i}-lyricists`} value={t.lyricists} onChange={e => setTrack(t.id, 'lyricists', e.target.value)} placeholder="가사가 없는 곡이라면 비워둬" maxLength={200} />
-                    </div>
-                    <div className="field">
-                      <label htmlFor={`tr-${i}-arrangers`}>편곡</label>
-                      <input id={`tr-${i}-arrangers`} value={t.arrangers} onChange={e => setTrack(t.id, 'arrangers', e.target.value)} placeholder="참여자 이름" maxLength={200} />
-                    </div>
-                    <div className="field">
-                      <label htmlFor={`tr-${i}-performers`}>실연자 / 피처링</label>
-                      <input id={`tr-${i}-performers`} value={t.performers} onChange={e => setTrack(t.id, 'performers', e.target.value)} placeholder="참여자 이름" maxLength={200} />
-                    </div>
+                  <div className="field">
+                    <label htmlFor={`tr-${i}-title`}>곡 제목 <span className="required">*</span></label>
+                    <input id={`tr-${i}-title`} value={t.title} onChange={e => setTrack(t.id, 'title', e.target.value)} placeholder="곡 제목을 입력해 주세요." maxLength={200} />
                   </div>
                   <div className="field">
                     <label htmlFor={`trackFile-${i}`}>음원 파일 <span className="required">*</span></label>
                     <input
                       type="file" id={`trackFile-${i}`}
-                      accept="audio/wav,audio/x-wav,audio/flac,audio/aiff,audio/x-aiff,audio/mpeg,audio/mp4,audio/*"
+                      accept="audio/*,.wav,.flac,.aiff,.mp3"
                       onChange={e => onTrackAudio(t.id, e)}
                     />
-                    <p className="help">
-                      {t.audioName ? `${t.audioName}${t.audioSize ? ` · ${Math.round(t.audioSize / 1024 / 1024 * 100) / 100}MB` : ''}` : '선택한 파일 없음'}. 권장: 무손실 WAV/FLAC 파일, 최종 QC 후 송출.
+                    <p className="help" id={`audioLabel-${i}`}>
+                      {t.audioName ? `${t.audioName}${t.audioSize ? ` · ${Math.round(t.audioSize / 1024 / 1024 * 100) / 100}MB` : ''}` : '선택한 파일 없음'}
                     </p>
+                    <div className="track-duration-label">
+                      {t.duration ? `곡 길이 · ${t.duration}` : '음원을 선택하면 곡 길이를 자동으로 확인해요.'}
+                    </div>
                   </div>
-                  <label className="check-line">
-                    <input
-                      type="checkbox" checked={t.explicit}
-                      onChange={e => setTrack(t.id, 'explicit', e.target.checked)}
-                    />
-                    <span>청소년 이용불가 / Explicit 가사가 포함돼요.</span>
-                  </label>
+                  <div className="field">
+                    <label htmlFor={`tr-${i}-composers`}>작곡자 <span className="required">*</span></label>
+                    <input id={`tr-${i}-composers`} value={t.composers} onChange={e => setTrack(t.id, 'composers', e.target.value)} placeholder="작곡자를 입력해 주세요." maxLength={200} />
+                  </div>
+                  <details className="studio-expand">
+                    <summary>참여자·곡 정보 더 입력하기 <span aria-hidden="true">＋</span></summary>
+                    <div className="form-grid">
+                      <div className="field">
+                        <label htmlFor={`tr-${i}-version`}>버전 / 부제</label>
+                        <input id={`tr-${i}-version`} value={t.version} onChange={e => setTrack(t.id, 'version', e.target.value)} placeholder="버전 / 부제을 입력해 주세요." maxLength={200} />
+                      </div>
+                      <div className="field">
+                        <label htmlFor={`tr-${i}-isrc`}>ISRC (보유 시)</label>
+                        <input id={`tr-${i}-isrc`} value={t.isrc} onChange={e => setTrack(t.id, 'isrc', e.target.value)} placeholder="ISRC (보유 시)을 입력해 주세요." maxLength={200} />
+                      </div>
+                      <div className="field">
+                        <label htmlFor={`tr-${i}-lyricists`}>작사가</label>
+                        <input id={`tr-${i}-lyricists`} value={t.lyricists} onChange={e => setTrack(t.id, 'lyricists', e.target.value)} placeholder="작사가을 입력해 주세요." maxLength={200} />
+                      </div>
+                      <div className="field">
+                        <label htmlFor={`tr-${i}-arrangers`}>편곡자</label>
+                        <input id={`tr-${i}-arrangers`} value={t.arrangers} onChange={e => setTrack(t.id, 'arrangers', e.target.value)} placeholder="편곡자을 입력해 주세요." maxLength={200} />
+                      </div>
+                      <div className="field">
+                        <label htmlFor={`tr-${i}-performers`}>실연자 / 피처링</label>
+                        <input id={`tr-${i}-performers`} value={t.performers} onChange={e => setTrack(t.id, 'performers', e.target.value)} placeholder="실연자 / 피처링을 입력해 주세요." maxLength={200} />
+                      </div>
+                    </div>
+                    <label className="check-line">
+                      <input
+                        type="checkbox" checked={t.explicit}
+                        onChange={e => setTrack(t.id, 'explicit', e.target.checked)}
+                      />
+                      <span>청소년 이용불가 / Explicit 가사가 포함돼요.</span>
+                    </label>
+                  </details>
+                  <div className="aq-explicit-note">
+                    <i aria-hidden="true">!</i>
+                    <span>
+                      <strong>Explicit 표기와 국가별 청소년 제한</strong>
+                      선정적인 가사나 표현을 Explicit로 선택하면 대한민국 등 일부 국가에서 청소년 이용 제한 또는 노출 제한이 적용될 수 있어요. 발매 후에는 원본을 유지하면서 Clean 버전을 함께 제출할 수 있어요.
+                    </span>
+                  </div>
                 </article>
               ))}
             </div>
