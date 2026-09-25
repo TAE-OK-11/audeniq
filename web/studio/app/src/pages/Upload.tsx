@@ -28,9 +28,10 @@ export function Upload() {
 
   return (
     <>
-      <h1 className="section-title">새 발매</h1>
+      <h1 className="section-title" style={{ marginBottom: 8 }}>새 발매</h1>
+      <p className="section-sub">음원 정보를 입력하고 발매를 시작하세요.</p>
       {error && <div className="feedback feedback-error">{error}</div>}
-      <div className="card" style={{ maxWidth: 560 }}>
+      <div className="card" style={{ maxWidth: 640 }}>
         <form onSubmit={submit}>
           <div className="field">
             <label htmlFor="title">발매 제목</label>
@@ -46,7 +47,7 @@ export function Upload() {
               onChange={e => setReleaseDate(e.target.value)} required
             />
           </div>
-          <button className="btn" disabled={busy}>
+          <button className="button" disabled={busy}>
             {busy ? '만드는 중...' : '발매 만들기'}
           </button>
         </form>
