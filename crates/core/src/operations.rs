@@ -66,6 +66,37 @@ pub async fn enqueue(
     sqlx::query_scalar("INSERT INTO operations.jobs(id,queue,kind,payload,idempotency_key,pinned_revision_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(idempotency_key) DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key WHERE operations.jobs.queue=EXCLUDED.queue AND operations.jobs.kind=EXCLUDED.kind AND operations.jobs.payload=EXCLUDED.payload AND operations.jobs.pinned_revision_id IS NOT DISTINCT FROM EXCLUDED.pinned_revision_id RETURNING id")
  .bind(Uuid::new_v4()).bind(queue).bind(kind).bind(payload).bind(key).bind(pin).fetch_optional(c).await?.ok_or(Error::Conflict)
 }
+/// Schedule a delayed live-state poll for one (package, partner) delivery.
+/// Idempotent per (delivery job, poll number): a send retry or poll requeue
+/// never double-schedules the same poll.
+async fn schedule_delivery_poll(
+    pool: &PgPool,
+    package_id: Uuid,
+    partner_id: &str,
+    dedup_job_id: Uuid,
+    poll_no: i32,
+    delay_hours: i64,
+) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    let id = enqueue(
+        &mut tx,
+        "delivery",
+        "delivery.poll",
+        &json!({"package_id": package_id, "partner_id": partner_id, "poll_no": poll_no}),
+        &format!("delivery.poll:{dedup_job_id}:{poll_no}"),
+        None,
+    )
+    .await?;
+    sqlx::query(
+        "UPDATE operations.jobs SET run_at = now() + make_interval(hours => $2) WHERE id = $1",
+    )
+    .bind(id)
+    .bind(delay_hours as i32)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
 #[derive(Debug, Clone)]
 pub struct Job {
     pub id: Uuid,
@@ -340,7 +371,21 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
             .ok_or(Error::PolicyGate("EXECUTION_NO_ADAPTER"))?;
         return match crate::execution::run_delivery(pool, storage, adapter.as_ref(), &djob).await {
             Ok(status) => match status.as_str() {
-                "DELIVERED" | "AWAITING_RECONCILIATION" => succeed(pool, j).await,
+                "DELIVERED" => {
+                    // E-4: ingestion takes hours; schedule the first live-state
+                    // poll before marking the send job done.
+                    schedule_delivery_poll(
+                        pool,
+                        djob.package_id,
+                        &djob.partner_id,
+                        djob.package_id,
+                        0,
+                        1,
+                    )
+                    .await?;
+                    succeed(pool, j).await
+                }
+                "AWAITING_RECONCILIATION" => succeed(pool, j).await,
                 _ => fail(pool, j, true, &format!("DELIVERY_{status}")).await,
             },
             Err(e) => {
@@ -351,7 +396,12 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
         };
     }
     if j.kind == "delivery.poll" {
-        // F5: E-4 live-state poll for one (package, partner).
+        // F5: E-4 live-state poll for one (package, partner). While the
+        // release is still ingesting, the poll re-schedules itself with
+        // backoff; terminal states (LIVE/TAKEN_DOWN/REJECTED) stop the chain.
+        // The 56-poll cap is ~14 days at 6h intervals, past any sane DSP
+        // ingestion window — after that, delivery.reconcile owns the case.
+        const MAX_POLLS: i64 = 56;
         let package_id = j
             .payload
             .get("package_id")
@@ -363,6 +413,11 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
             .get("partner_id")
             .and_then(Value::as_str)
             .ok_or(Error::Internal)?;
+        let poll_no = j
+            .payload
+            .get("poll_no")
+            .and_then(Value::as_i64)
+            .unwrap_or(0);
         let org: Uuid =
             sqlx::query_scalar("SELECT org_id FROM distribution.distribution_packages WHERE id=$1")
                 .bind(package_id)
@@ -383,7 +438,20 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
         )
         .await
         {
-            Ok(_) => succeed(pool, j).await,
+            Ok(status) => {
+                if (status == "INGESTING" || status == "NO_ATTEMPT") && poll_no < MAX_POLLS {
+                    schedule_delivery_poll(
+                        pool,
+                        package_id,
+                        partner_id,
+                        package_id,
+                        poll_no as i32 + 1,
+                        6,
+                    )
+                    .await?;
+                }
+                succeed(pool, j).await
+            }
             Err(e) => {
                 let short: String = format!("{e:?}").chars().take(500).collect();
                 fail(pool, j, false, &format!("DELIVERY_POLL_ERROR:{short}")).await

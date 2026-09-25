@@ -18,6 +18,8 @@ pub const QC_RULE_VERSION: &str = "1";
 pub const MIN_AUDIO_SECS: f64 = 30.0;
 /// Minimum sample rate accepted without correction.
 pub const MIN_SAMPLE_RATE: u32 = 44_100;
+/// Spotify floor: below 16-bit is upconverted but ineligible for lossless.
+pub const MIN_BIT_DEPTH: u32 = 16;
 /// Minimum long-side pixels for cover art.
 pub const MIN_IMAGE_LONG_SIDE: u32 = 3000;
 /// Upper bound on ffprobe JSON output we will parse. A corrupt file must not
@@ -263,6 +265,7 @@ pub const AUDIO_CHECK_CODES: &[&str] = &[
     "AUDIO_PROBE_FAILED",
     "AUDIO_TOO_SHORT",
     "AUDIO_SAMPLE_RATE_LOW",
+    "AUDIO_BIT_DEPTH_LOW",
     "AUDIO_CHANNEL_INVALID",
 ];
 
@@ -388,6 +391,18 @@ pub fn check_audio(path: &Path, registered_sha256: Option<&str>) -> Vec<CheckOut
         },
         input_hash: mh.clone(),
         detail: format!("sample_rate={}", metrics.sample_rate),
+    });
+    // Spotify: below 16-bit is upconverted but ineligible for lossless.
+    // Unknown bit depth (probe didn't report it) is not a failure — the
+    // checks we can't verify, we don't block on.
+    out.push(CheckOutcome {
+        check_code: "AUDIO_BIT_DEPTH_LOW",
+        status: match metrics.bits_per_sample {
+            Some(b) if b < MIN_BIT_DEPTH => CheckStatus::CorrectionRequired,
+            _ => CheckStatus::Pass,
+        },
+        input_hash: mh.clone(),
+        detail: format!("bits_per_sample={:?}", metrics.bits_per_sample),
     });
     out.push(CheckOutcome {
         check_code: "AUDIO_CHANNEL_INVALID",
@@ -630,8 +645,8 @@ mod tests {
             .unwrap();
         assert_eq!(sha.status, CheckStatus::Blocked);
         // Blocked short-circuits: the remaining checks are NOT_APPLICABLE,
-        // but the six-check contract still holds.
-        assert_eq!(out.len(), 6);
+        // but the seven-check contract still holds.
+        assert_eq!(out.len(), 7);
         assert!(
             out[1..]
                 .iter()
