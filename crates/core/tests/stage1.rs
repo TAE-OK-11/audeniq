@@ -574,7 +574,9 @@ async fn stage1_happy_path_passes(pool: PgPool) {
     .fetch_all(&pool)
     .await
     .unwrap();
-    assert_eq!(codes.len(), 27, "{codes:?}");
+    // 17 metadata checks + 14 audio checks (QC rule v2 added format,
+    // truncation, silence and clipping).
+    assert_eq!(codes.len(), 31, "{codes:?}");
     let bad: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM operations.check_results WHERE revision_id=$1 AND status<>'PASS'",
     )
@@ -925,9 +927,10 @@ async fn unchanged_audio_is_not_reanalyzed(pool: PgPool) {
         "no re-download for unchanged audio"
     );
     let cached: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM operations.check_results WHERE revision_id=$1 AND rule_version='1' AND check_code IN ('SHA256_MISMATCH','AUDIO_MAGIC_MISMATCH','AUDIO_PROBE_FAILED','AUDIO_TOO_SHORT','AUDIO_SAMPLE_RATE_LOW','AUDIO_CHANNEL_INVALID') AND detail='cache_hit'",
+        "SELECT COUNT(*) FROM operations.check_results WHERE revision_id=$1 AND rule_version=$2 AND check_code IN ('SHA256_MISMATCH','AUDIO_MAGIC_MISMATCH','AUDIO_PROBE_FAILED','AUDIO_TOO_SHORT','AUDIO_SAMPLE_RATE_LOW','AUDIO_CHANNEL_INVALID') AND detail='cache_hit'",
     )
     .bind(rev_b)
+    .bind(audeniq_core::qc::QC_RULE_VERSION)
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -1031,7 +1034,7 @@ async fn oversized_asset_is_technical_retry(pool: PgPool) {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(retry, 10, "all 10 audio checks recorded as technical retry");
+    assert_eq!(retry, 14, "all 14 audio checks recorded as technical retry");
     let status: String = sqlx::query_scalar("SELECT status FROM catalog.releases WHERE id=$1")
         .bind(release)
         .fetch_one(&pool)

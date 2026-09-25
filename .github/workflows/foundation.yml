@@ -136,9 +136,17 @@ jobs:
           docker compose -f deploy/compose.production.yaml config --format json > /tmp/production.json
           jq -e '[.services[] | .ports // [] | length] | all(. == 0)' /tmp/production.json
           jq -e '.services.api.environment.APP_ENV == "production" and .name == "audeniq-production"' /tmp/production.json
+          # Workers analyze and package the stored masters: they need the
+          # object store and non-zero QC/rights/distribution concurrency.
+          jq -e '.services.worker.environment | has("STORAGE_ENABLED") and has("S3_BUCKET") and has("S3_ENDPOINT")' /tmp/production.json
+          jq -e '.services.worker.environment | [.QUEUE_QC_CONCURRENCY, .QUEUE_RIGHTS_CONCURRENCY, .QUEUE_DISTRIBUTION_CONCURRENCY] | all(tonumber > 0)' /tmp/production.json
       - run: docker compose up --build -d
       - name: Check API readiness
         run: curl --fail --retry 15 --retry-connrefused --retry-delay 2 -H "X-Audeniq-Service:$EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready
+      - name: Worker image ships the audio analyzers
+        run: |
+          docker compose run --rm --no-deps --entrypoint ffprobe worker -version
+          docker compose run --rm --no-deps --entrypoint ffmpeg worker -version
       - name: Runtime logs
         if: always()
         run: |

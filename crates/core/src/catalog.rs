@@ -196,7 +196,7 @@ pub async fn update(
     let n=match kind{
  Kind::Artist=>sqlx::query("UPDATE catalog.artists SET name=$3,profile=$4,party_id=$6,label_id=$7,row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND row_version=$5 AND archived_at IS NULL").bind(org).bind(id).bind(i.name).bind(i.profile).bind(expected).bind(i.party_id).bind(i.label_id).execute(&mut *tx).await?.rows_affected(),
  Kind::Label=>sqlx::query("UPDATE catalog.labels SET name=$3,profile=$4,party_id=$6,row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND row_version=$5 AND archived_at IS NULL").bind(org).bind(id).bind(i.name).bind(i.profile).bind(expected).bind(i.party_id.ok_or(Error::Invalid)?).execute(&mut *tx).await?.rows_affected(),
- Kind::Release=>sqlx::query("UPDATE catalog.releases SET title=$3,draft=$4,release_type=$6,row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND row_version=$5 AND status='DRAFT' AND archived_at IS NULL").bind(org).bind(id).bind(i.name).bind(i.profile).bind(expected).bind(i.release_type.ok_or(Error::Invalid)?).execute(&mut *tx).await?.rows_affected(),
+ Kind::Release=>sqlx::query("UPDATE catalog.releases SET title=$3,draft=$4,release_type=$6,row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND row_version=$5 AND status IN ('DRAFT','STAGE1_CORRECTION') AND archived_at IS NULL").bind(org).bind(id).bind(i.name).bind(i.profile).bind(expected).bind(i.release_type.ok_or(Error::Invalid)?).execute(&mut *tx).await?.rows_affected(),
  };
     if n != 1 {
         return Err(Error::Conflict);
@@ -233,7 +233,7 @@ pub async fn archive(
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, id, kind.resource(), true).await?;
     let extra = if matches!(kind, Kind::Release) {
-        " AND status='DRAFT'"
+        " AND status IN ('DRAFT','STAGE1_CORRECTION')"
     } else {
         ""
     };

@@ -22,22 +22,43 @@ pub struct CompleteInput {
     pub asset_id: Uuid,
     pub expected_key: String,
 }
+/// Largest accepted audio master (512 MiB; about 50 min of 24-bit/48 kHz stereo WAV).
+pub const MAX_AUDIO_BYTES: i64 = 512 * 1024 * 1024;
+/// Largest accepted cover-art image (20 MiB).
+pub const MAX_IMAGE_BYTES: i64 = 20 * 1024 * 1024;
+
+/// Container the declared (kind, content type) pair promises, or `None` when
+/// the pair is not accepted at all. Upload completion sniffs the real bytes
+/// and refuses an object whose magic number does not match, so an MP3 or a
+/// FLAC renamed to `.wav` never becomes a registered master.
+pub fn expected_container(kind: &str, content_type: &str) -> Option<&'static str> {
+    match (kind, content_type) {
+        ("AUDIO", "audio/wav" | "audio/x-wav") => Some("WAV"),
+        ("AUDIO", "audio/flac") => Some("FLAC"),
+        ("IMAGE", "image/jpeg") => Some("JPEG"),
+        ("IMAGE", "image/png") => Some("PNG"),
+        _ => None,
+    }
+}
+
 pub async fn issue(s: &AppState, a: &Actor, org: Uuid, i: UploadInput) -> Result<Value> {
-    let permitted = match i.kind.as_str() {
-        "AUDIO" => matches!(
-            i.content_type.as_str(),
-            "audio/wav" | "audio/x-wav" | "audio/flac"
-        ),
-        "IMAGE" => matches!(i.content_type.as_str(), "image/jpeg" | "image/png"),
-        _ => false,
-    };
+    if expected_container(&i.kind, &i.content_type).is_none() {
+        return Err(Error::InvalidCode("UPLOAD_TYPE_UNSUPPORTED"));
+    }
+    if i.size_bytes < 1 {
+        return Err(Error::InvalidCode("UPLOAD_EMPTY"));
+    }
     let max = if i.kind == "IMAGE" {
-        20 * 1024 * 1024
+        MAX_IMAGE_BYTES
     } else {
-        512 * 1024 * 1024
+        MAX_AUDIO_BYTES
     };
-    if !permitted || i.size_bytes < 1 || i.size_bytes > max {
-        return Err(Error::Invalid);
+    if i.size_bytes > max {
+        return Err(Error::InvalidCode(if i.kind == "IMAGE" {
+            "UPLOAD_IMAGE_TOO_LARGE"
+        } else {
+            "UPLOAD_AUDIO_TOO_LARGE"
+        }));
     }
     auth::rate(&s.pool, &format!("uploads:{}", a.user), 60).await?;
     let mut tx = s.pool.begin().await?;
@@ -134,9 +155,34 @@ pub async fn complete(
     if n != 1 {
         return Err(Error::Conflict);
     }
-    sqlx::query("UPDATE catalog.assets SET state='REGISTERED',etag=$2 WHERE id=$1")
+    // Content verification. The frozen copy is immutable, so hashing it here
+    // binds catalog.assets.sha256 to exactly the bytes every later stage
+    // reads (Stage 1 re-verifies the hash before analysis). Streaming keeps
+    // API memory constant even for 512 MiB masters.
+    let digest = match s.storage.digest(&stable, size as u64).await {
+        Ok(d) => d,
+        Err(Error::PolicyGate("OBJECT_TOO_LARGE")) => return Err(Error::Conflict),
+        Err(e) => return Err(e),
+    };
+    if digest.size != size as u64 {
+        return Err(Error::Conflict);
+    }
+    let kind: String = sqlx::query_scalar("SELECT kind FROM catalog.assets WHERE id=$1")
+        .bind(asset)
+        .fetch_one(&mut *tx)
+        .await?;
+    let detected = crate::qc::detect_container(&digest.head);
+    if expected_container(&kind, &mime) != Some(detected) {
+        // Nothing is registered: the transaction rolls back, the session
+        // stays unusable for these bytes, and the user re-uploads the real
+        // master with its real type.
+        tracing::info!(%asset, detected, declared = %mime, "upload content mismatch");
+        return Err(Error::PolicyGate("UPLOAD_CONTENT_MISMATCH"));
+    }
+    sqlx::query("UPDATE catalog.assets SET state='REGISTERED',etag=$2,sha256=$3 WHERE id=$1")
         .bind(asset)
         .bind(copy.etag)
+        .bind(&digest.sha256)
         .execute(&mut *tx)
         .await?;
     operations::audit(
@@ -158,7 +204,9 @@ pub async fn complete(
     )
     .await?;
     tx.commit().await?;
-    Ok(json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":false}))
+    Ok(
+        json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":false,"sha256":digest.sha256,"detected_container":detected}),
+    )
 }
 pub async fn get(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
