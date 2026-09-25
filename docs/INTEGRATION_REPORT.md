@@ -195,3 +195,9 @@ BLUEPRINT §6의 3-A(Finalizer)/3-D(Canonical Model)/3-F(Package) — Muse 담�
 - `cargo clippy --workspace --all-targets -- -D warnings`: 통과
 - `cargo test --workspace`: 전부 통과 (lib 29, distribution 3, foundation 18, stage1 10, stage2 5, stage3_identifiers 2, stage3_preparation 8 — 총 75)
 - 참고: 테스트 중 `/tmp`(tmpfs 512M)가 ffmpeg 산출물로 가득 차 stage2 테스트가 실패했으나, 코드 문제가 아니라 디스크 문제였음. `/tmp/audeniq-*` 정리 후 전부 통과.
+
+### CI 검증 결과 (2026-09-25)
+
+- 검증 커밋: `0236829` (브랜치 `foundation/f4-stage3-distribution`)
+- F4 preparation acceptance run: [36077276805](https://github.com/TAE-OK-11/audeniq/actions/runs/36077276805) — **success** (6m24s)
+- Foundation run: [36077276749](https://github.com/TAE-OK-11/audeniq/actions/runs/36077276749) — **success** (16m15s)
