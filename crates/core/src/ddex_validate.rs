@@ -19,12 +19,24 @@
 //!   not as SVRL.
 //! - Parsing is streaming via `quick-xml` and fail-closed: a document that
 //!   does not parse is invalid, never "unchecked".
+//! - Beyond the inbound post-generation checks, this module also provides
+//!   `preflight_release`: pre-generation validation of the release model
+//!   and message config (date chronology, config completeness, track
+//!   prerequisites), inspired by the check *categories* in daddykev/
+//!   ddex-suite's (MIT) `packages/ddex-builder/src/preflight.rs`.
 //!
-//! Primary consumer: `distribution::prepare_release` runs this on every
-//! generated ERN document right after the XSD gate, so a structurally
-//! broken message (dangling resource reference, wrong profile, missing
-//! section) never becomes a persisted `distribution.ddex_messages` row.
+//! Primary consumer: `distribution::prepare_release` runs `preflight_release`
+//! on the model/config before building the XML, then runs
+//! `validate_ern_message` on the generated document right after the XSD
+//! gate, so a structurally broken message (dangling resource reference,
+//! wrong profile, missing section) never becomes a persisted
+//! `distribution.ddex_messages` row.
 
+use crate::{
+    ddex_ern::DdexErnConfig,
+    error::{Error, Result as CoreResult},
+    preparation_model::PreparedRelease,
+};
 use quick_xml::{Reader, events::Event};
 use std::borrow::Cow;
 
@@ -452,6 +464,141 @@ pub fn validate_ern_message(
         profile,
         findings,
     }
+}
+
+// ---------------------------------------------------------------------------
+// Pre-generation preflight
+// ---------------------------------------------------------------------------
+
+/// Validate the release model and message config *before* XML is built.
+///
+/// Structural reference: daddykev/ddex-suite (MIT)
+/// `packages/ddex-builder/src/preflight.rs` (identifier/date/reference
+/// preflight categories). Written from scratch against AUDENIQ's own
+/// `PreparedRelease`/`DdexErnConfig` types; no code copied.
+///
+/// This complements `ern::validate_metadata` (format-level checks on the
+/// frozen release) with the message-level concerns a distributor must
+/// verify before generating an interchange document: date chronology,
+/// config completeness, and per-track build prerequisites. Findings use
+/// the same `ErnFinding` shape as [`validate_ern_message`] so callers can
+/// run [`gate_findings`] over both uniformly.
+pub fn preflight_release(prepared: &PreparedRelease, config: &DdexErnConfig) -> Vec<ErnFinding> {
+    let mut findings = Vec::new();
+
+    // --- Message identity -------------------------------------------------
+    if config.message_id.trim().is_empty() {
+        findings.push(ErnFinding::error(
+            "DDEX-PREFLIGHT-MESSAGE-ID",
+            "message_id is empty",
+        ));
+    }
+    if chrono::DateTime::parse_from_rfc3339(&config.created_at).is_err() {
+        findings.push(ErnFinding::error(
+            "DDEX-PREFLIGHT-CREATED",
+            format!("created_at is not RFC-3339: '{}'", config.created_at),
+        ));
+    }
+    if config.sender_name.trim().is_empty() || config.recipient_name.trim().is_empty() {
+        findings.push(ErnFinding::error(
+            "DDEX-PREFLIGHT-PARTY",
+            "sender_name and recipient_name must both be set",
+        ));
+    }
+
+    // --- Date chronology ---------------------------------------------------
+    match chrono::NaiveDate::parse_from_str(&config.deal_start_date, "%Y-%m-%d") {
+        Err(_) => findings.push(ErnFinding::error(
+            "DDEX-PREFLIGHT-DATE-FORMAT",
+            format!(
+                "deal_start_date is not YYYY-MM-DD: '{}'",
+                config.deal_start_date
+            ),
+        )),
+        Ok(deal_start) => {
+            if deal_start < prepared.release_date {
+                findings.push(ErnFinding::error(
+                    "DDEX-PREFLIGHT-DATE-CHRONOLOGY",
+                    format!(
+                        "deal starts {} before release date {}",
+                        config.deal_start_date, prepared.release_date
+                    ),
+                ));
+            }
+            if let Some(takedown) = &config.takedown_date {
+                match chrono::NaiveDate::parse_from_str(takedown, "%Y-%m-%d") {
+                    Err(_) => findings.push(ErnFinding::error(
+                        "DDEX-PREFLIGHT-DATE-FORMAT",
+                        format!("takedown_date is not YYYY-MM-DD: '{takedown}'"),
+                    )),
+                    Ok(takedown_date) if takedown_date <= deal_start => {
+                        findings.push(ErnFinding::error(
+                            "DDEX-PREFLIGHT-TAKEDOWN-CHRONOLOGY",
+                            format!(
+                                "takedown date {takedown} is not after deal start {}",
+                                config.deal_start_date
+                            ),
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    // --- Per-track build prerequisites --------------------------------------
+    // The builder fails closed on a missing duration
+    // (`DDEX_DURATION_UNKNOWN`); surface it here with a rule id instead.
+    for (i, track) in prepared.tracks.iter().enumerate() {
+        if track.audio.duration_secs.is_none() {
+            findings.push(ErnFinding::error(
+                "DDEX-PREFLIGHT-DURATION",
+                format!("track {} ('{}') has no probed duration", i + 1, track.title),
+            ));
+        }
+    }
+
+    // --- Release-type consistency --------------------------------------------
+    match (prepared.release_type.as_str(), prepared.tracks.len()) {
+        ("SINGLE", n) if n > 1 => findings.push(ErnFinding::warning(
+            "DDEX-PREFLIGHT-RELEASE-TYPE",
+            format!("release_type is SINGLE but {n} tracks are attached"),
+            Some("set release_type to EP/ALBUM or split the release"),
+        )),
+        ("ALBUM", 1) => findings.push(ErnFinding::warning(
+            "DDEX-PREFLIGHT-RELEASE-TYPE",
+            "release_type is ALBUM but only one track is attached",
+            Some("set release_type to SINGLE"),
+        )),
+        _ => {}
+    }
+
+    findings
+}
+
+/// Fail-closed gate over pre-computed findings: warnings are logged, and
+/// any error-severity finding becomes `Err(Error::PolicyGate(gate))`.
+/// `what` names the validation stage for the log lines
+/// (e.g. `"ERN preflight"`).
+pub fn gate_findings(findings: &[ErnFinding], gate: &'static str, what: &str) -> CoreResult<()> {
+    for warning in findings.iter().filter(|f| f.severity == Severity::Warning) {
+        tracing::warn!(
+            rule = %warning.rule_id,
+            message = %warning.message,
+            "{what} warning"
+        );
+    }
+    let errors: Vec<&ErnFinding> = findings.iter().filter(|f| f.is_error()).collect();
+    if errors.is_empty() {
+        return Ok(());
+    }
+    let rules = errors
+        .iter()
+        .map(|e| e.rule_id.as_ref())
+        .collect::<Vec<_>>()
+        .join(",");
+    tracing::warn!(gate, rules = %rules, "{what} failed");
+    Err(Error::PolicyGate(gate))
 }
 
 // ---------------------------------------------------------------------------
