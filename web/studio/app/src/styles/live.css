@@ -1092,3 +1092,8 @@ body.aq-nav-locked #portalNav{
 @media(prefers-reduced-motion:reduce){
   .dashboard-grid .service-item:hover{transform:none!important;box-shadow:none!important}
 }
+
+/* 모달 배경 어둡게 처리 제거: 카드 그림자로만 구분 */
+.modal{background:transparent!important}
+#modal:not([hidden]){animation:none!important}
+.modal-inner{box-shadow:0 24px 70px rgba(17,24,39,.18)!important}
