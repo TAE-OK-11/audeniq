@@ -551,7 +551,7 @@ async fn stage1_happy_path_passes(pool: PgPool) {
     .fetch_all(&pool)
     .await
     .unwrap();
-    assert_eq!(codes.len(), 16, "{codes:?}");
+    assert_eq!(codes.len(), 20, "{codes:?}");
     let bad: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM operations.check_results WHERE revision_id=$1 AND status<>'PASS'",
     )
@@ -1008,7 +1008,7 @@ async fn oversized_asset_is_technical_retry(pool: PgPool) {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(retry, 6, "all 6 audio checks recorded as technical retry");
+    assert_eq!(retry, 7, "all 7 audio checks recorded as technical retry");
     let status: String = sqlx::query_scalar("SELECT status FROM catalog.releases WHERE id=$1")
         .bind(release)
         .fetch_one(&pool)
@@ -1058,4 +1058,126 @@ async fn stage2_job_is_executed_not_parked(pool: PgPool) {
         .await
         .unwrap();
     assert_eq!(status, "STAGE2_PASSED");
+}
+
+/// Spotify Metadata Style Guide 8.1: track titles must be unique within a
+/// product unless they are different versions of the same track.
+#[sqlx::test]
+async fn stage1_duplicate_track_title_rejected(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let wav = make_good_wav(&dir);
+    let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
+    let (release, artist) = build_submittable(&app, &pool, &store, &u, asset).await;
+    sqlx::query(
+        "UPDATE catalog.releases SET release_type='EP', row_version=row_version+1 WHERE id=$1",
+    )
+    .bind(release)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let rv = row_version(&pool, release).await;
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{}/releases/{release}/tracks", u.org),
+        json!({"title":"T1","disc_number":1,"track_number":2,"artist_id":artist,"asset_id":asset,"row_version":rv}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+
+    let (s, v) = consent(&app, &u, release, false).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let consent_id = Uuid::parse_str(v["consent_id"].as_str().unwrap()).unwrap();
+    let (s, v) = submit(&app, &u, release, consent_id, false, "k-duptitle").await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let revision_id = Uuid::parse_str(v["revision_id"].as_str().unwrap()).unwrap();
+
+    run_worker(&pool, &store).await;
+
+    let status: String = sqlx::query_scalar("SELECT status FROM catalog.releases WHERE id=$1")
+        .bind(release)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "STAGE1_CORRECTION");
+    let hit: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM operations.check_results WHERE revision_id=$1 AND check_code='TRACK_TITLE_DUPLICATE' AND status='CORRECTION_REQUIRED')",
+    )
+    .bind(revision_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(hit, "duplicate track title must force correction");
+}
+
+/// Spotify 8.2/8.4: version info belongs in the version field, not the title.
+#[sqlx::test]
+async fn stage1_title_version_info_flagged(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let wav = make_good_wav(&dir);
+    let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
+    let (release, artist) = build_submittable(&app, &pool, &store, &u, asset).await;
+    sqlx::query("UPDATE catalog.tracks SET title='Midnight (Radio Edit)' WHERE release_id=$1")
+        .bind(release)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let _ = artist;
+
+    let (s, v) = consent(&app, &u, release, false).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let consent_id = Uuid::parse_str(v["consent_id"].as_str().unwrap()).unwrap();
+    let (s, v) = submit(&app, &u, release, consent_id, false, "k-verinfo").await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let revision_id = Uuid::parse_str(v["revision_id"].as_str().unwrap()).unwrap();
+
+    run_worker(&pool, &store).await;
+
+    let hit: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM operations.check_results WHERE revision_id=$1 AND check_code='TRACK_TITLE_HAS_VERSION_INFO' AND status='REVIEW_REQUIRED')",
+    )
+    .bind(revision_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(hit, "version info in title must route to review");
+}
+
+/// Spotify 8.9: SEO terms in titles risk removal/strike — human review.
+#[sqlx::test]
+async fn stage1_title_seo_spam_flagged(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let wav = make_good_wav(&dir);
+    let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
+    let (release, _) = build_submittable(&app, &pool, &store, &u, asset).await;
+    sqlx::query("UPDATE catalog.tracks SET title='Deep Sleep Music' WHERE release_id=$1")
+        .bind(release)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (s, v) = consent(&app, &u, release, false).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let consent_id = Uuid::parse_str(v["consent_id"].as_str().unwrap()).unwrap();
+    let (s, v) = submit(&app, &u, release, consent_id, false, "k-seospam").await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let revision_id = Uuid::parse_str(v["revision_id"].as_str().unwrap()).unwrap();
+
+    run_worker(&pool, &store).await;
+
+    let hit: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM operations.check_results WHERE revision_id=$1 AND check_code='TRACK_TITLE_SEO_SPAM' AND status='REVIEW_REQUIRED')",
+    )
+    .bind(revision_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(hit, "SEO terms in title must route to review");
 }

@@ -1663,3 +1663,122 @@ async fn sandbox_adversarial_submissions() {
 
     println!("[adv] DONE");
 }
+
+/// E-4 wiring: delivery.send on DELIVERED schedules the first delayed
+/// delivery.poll; while the partner reports ingesting, each poll re-queues
+/// the next; a poll at the cap schedules nothing further (reconcile owns it).
+#[sqlx::test]
+async fn dsp_poll_chain_schedules_and_caps(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    assert_eq!(
+        run_one(&pool, &ctx.store, "delivery", "delivery.enqueue").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        run_one(&pool, &ctx.store, "delivery", "delivery.send").await,
+        "SUCCEEDED"
+    );
+    // First poll scheduled, delayed ~1h, poll_no=0.
+    let (poll_no, delayed): (i32, bool) = sqlx::query_as(
+        "SELECT (payload->>'poll_no')::int, run_at > now() FROM operations.jobs
+         WHERE queue='delivery' AND kind='delivery.poll' AND status='QUEUED'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(poll_no, 0);
+    assert!(delayed, "first poll must be delayed, not immediate");
+    // Force it due and run: the Accept mock keeps reporting ingesting on the
+    // submission-inquiry path, so the next poll must be queued.
+    sqlx::query(
+        "UPDATE operations.jobs SET run_at=now() WHERE queue='delivery' AND kind='delivery.poll'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        run_one(&pool, &ctx.store, "delivery", "delivery.poll").await,
+        "SUCCEEDED"
+    );
+    let next: i32 = sqlx::query_scalar(
+        "SELECT (payload->>'poll_no')::int FROM operations.jobs
+         WHERE queue='delivery' AND kind='delivery.poll' AND status='QUEUED'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(next, 1);
+    let mut c = authed(&pool, ctx.org).await;
+    let live: String = sqlx::query_scalar(
+        "SELECT live_status FROM execution.live_bindings WHERE package_id=$1 AND partner_id='mockdsp'",
+    )
+    .bind(ctx.package_id)
+    .fetch_one(&mut *c)
+    .await
+    .unwrap();
+    assert_eq!(live, "INGESTING");
+    // At the cap, no further poll is scheduled.
+    sqlx::query(
+        "UPDATE operations.jobs SET payload=jsonb_set(payload,'{poll_no}','56'), run_at=now()
+         WHERE queue='delivery' AND kind='delivery.poll' AND status='QUEUED'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        run_one(&pool, &ctx.store, "delivery", "delivery.poll").await,
+        "SUCCEEDED"
+    );
+    let remaining: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM operations.jobs WHERE queue='delivery' AND kind='delivery.poll' AND status='QUEUED'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(remaining, 0, "poll chain must stop at the cap");
+}
+
+/// Route taxonomy: merlin (aggregator) and limbo-upstream (upstream) profiles
+/// exist as CONTRACTED + delivery_enabled=false placeholders. They document
+/// the multi-path model and can never reach the wire until F6 registers a
+/// real contract; E-0 only enqueues for profiles with a dsp_id mapping.
+#[sqlx::test]
+async fn route_taxonomy_placeholders_cannot_send(pool: PgPool) {
+    database::MIGRATOR.run(&pool).await.unwrap();
+    let rows: Vec<(String, String, String, bool)> = sqlx::query_as(
+        "SELECT partner_id, route_kind, activation_kind, delivery_enabled
+         FROM execution.adapter_profiles WHERE partner_id IN ('merlin','limbo-upstream')
+         ORDER BY partner_id",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].1, "upstream");
+    assert_eq!(rows[1].1, "aggregator");
+    for (pid, _route, activation, enabled) in &rows {
+        assert_eq!(activation, "CONTRACTED", "{pid}");
+        assert!(
+            !enabled,
+            "{pid} must not be delivery-enabled without a contract"
+        );
+    }
+    // No dsp_id mapping: E-0's eligible-partner lookup can never select them.
+    let mapped: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM execution.adapter_profiles WHERE partner_id IN ('merlin','limbo-upstream') AND dsp_id IS NOT NULL",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(mapped, 0);
+    // send_or_publish capability off: even a hand-built job fails closed.
+    let caps: Vec<serde_json::Value> = sqlx::query_scalar(
+        "SELECT capabilities FROM execution.adapter_profiles WHERE partner_id IN ('merlin','limbo-upstream')",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    for c in caps {
+        assert_eq!(c["send_or_publish"], serde_json::Value::Bool(false));
+    }
+}

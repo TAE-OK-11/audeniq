@@ -729,6 +729,103 @@ fn field_checks(body: &Value) -> Vec<StagedCheck> {
             dup_isrc.iter().cloned().collect::<Vec<_>>().join(",")
         ),
     );
+    // Spotify Metadata Style Guide 8.1: each track title in a product must be
+    // unique; the only exception is different versions of the same track.
+    // Identical title + identical version = duplicate entry, not a version.
+    let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut dup_titles: Vec<String> = Vec::new();
+    for t in &tracks {
+        let title = t["title"].as_str().unwrap_or("").trim().to_lowercase();
+        let version = t["version"].as_str().unwrap_or("").trim().to_lowercase();
+        let key = format!("{title}\u{1f}{version}");
+        let count = seen.entry(key).or_insert(0);
+        *count += 1;
+        if *count == 2 {
+            dup_titles.push(t["title"].as_str().unwrap_or("").to_string());
+        }
+    }
+    push(
+        "TRACK_TITLE_DUPLICATE",
+        if dup_titles.is_empty() {
+            CheckStatus::Pass
+        } else {
+            CheckStatus::CorrectionRequired
+        },
+        &dup_titles.join(","),
+        format!("duplicate track titles={}", dup_titles.join(",")),
+    );
+    // Spotify Metadata Style Guide 8.2/8.4: version information ("Radio
+    // Edit", "Remaster", "Original Mix"...) belongs in the version field,
+    // not the title. Flag for review; a human confirms the split.
+    const VERSION_TERMS: &[&str] = &[
+        "radio edit",
+        "extended mix",
+        "extended version",
+        "original mix",
+        "album version",
+        "original version",
+        "remaster",
+        "remastered",
+        "acoustic version",
+        "live version",
+        "instrumental version",
+        "sped up",
+        "slowed",
+        "nightcore",
+    ];
+    let mut version_in_title: Vec<String> = Vec::new();
+    for t in &tracks {
+        let title = t["title"].as_str().unwrap_or("");
+        let lower = title.to_lowercase();
+        if VERSION_TERMS.iter().any(|term| lower.contains(term)) {
+            version_in_title.push(title.to_string());
+        }
+    }
+    push(
+        "TRACK_TITLE_HAS_VERSION_INFO",
+        if version_in_title.is_empty() {
+            CheckStatus::Pass
+        } else {
+            CheckStatus::ReviewRequired
+        },
+        &version_in_title.join(","),
+        format!(
+            "titles carrying version info={}",
+            version_in_title.join(",")
+        ),
+    );
+    // Spotify Metadata Style Guide 8.9: SEO terms intended to mislead or
+    // game discovery get the product removed and can trigger a strike.
+    // Keyword match is a tripwire for human review, not proof of spam.
+    const SEO_TERMS: &[&str] = &[
+        "sleep music",
+        "music for sleep",
+        "music for studying",
+        "study music",
+        "relaxing music",
+        "chill beats to",
+        "8d audio",
+        "432hz",
+        "528hz",
+    ];
+    let mut seo_titles: Vec<String> = Vec::new();
+    for t in &tracks {
+        let title = t["title"].as_str().unwrap_or("");
+        let lower = title.to_lowercase();
+        if SEO_TERMS.iter().any(|term| lower.contains(term)) {
+            seo_titles.push(title.to_string());
+        }
+    }
+    push(
+        "TRACK_TITLE_SEO_SPAM",
+        if seo_titles.is_empty() {
+            CheckStatus::Pass
+        } else {
+            CheckStatus::ReviewRequired
+        },
+        &seo_titles.join(","),
+        format!("titles with seo terms={}", seo_titles.join(",")),
+    );
     let n = tracks.len();
     let type_ok = match rtype {
         "SINGLE" => n == 1,
