@@ -11,6 +11,7 @@ pub mod drafts;
 pub mod ern;
 pub mod error;
 pub mod identifiers;
+pub mod finance;
 pub mod operations;
 pub mod packages;
 pub mod preflight;
