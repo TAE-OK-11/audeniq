@@ -28,7 +28,7 @@ export function Profile() {
   };
 
   return (
-    <>
+    <div id="view-profile" className="view">
       <div className="view-title">
         <div>
           <p className="eyebrow">ARTIST &amp; SETTINGS</p>
@@ -110,6 +110,6 @@ export function Profile() {
       </div>
 
       {showWizard && <PaymentSetupModal onClose={() => setShowWizard(false)} />}
-    </>
+    </div>
   );
 }

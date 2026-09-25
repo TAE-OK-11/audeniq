@@ -73,7 +73,7 @@ export function Settlement() {
   const orderedStatements = statements.slice().sort((a, b) => b.period.localeCompare(a.period));
 
   return (
-    <>
+    <div id="view-settlement" className="view">
       <div className="view-title">
         <div>
           <p className="eyebrow">ROYALTIES &amp; PAYOUTS</p>
@@ -211,6 +211,6 @@ export function Settlement() {
       )}
 
       {showPaySetup && <PaymentSetupModal onClose={() => setShowPaySetup(false)} />}
-    </>
+    </div>
   );
 }

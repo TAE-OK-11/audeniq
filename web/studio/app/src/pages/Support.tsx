@@ -65,7 +65,7 @@ export function Support() {
   };
 
   return (
-    <>
+    <div id="view-support" className="view">
       <div className="view-title">
         <div>
           <p className="eyebrow">SUPPORT</p>
@@ -222,6 +222,6 @@ export function Support() {
           </div>
         </Modal>
       )}
-    </>
+    </div>
   );
 }

@@ -520,32 +520,32 @@ export function Upload() {
   ];
 
   return (
-    <div className="wizard">
+    <div id="view-new" className="wizard">
       <div className="wizard-topbar" aria-label="발매 신청 탐색">
-        <button type="button" className="wizard-topback" aria-label="이전으로 돌아가기" onClick={back}>
+        <button type="button" id="wizardTopBack" className="wizard-topback" aria-label="이전으로 돌아가기" onClick={back}>
           <BackIcon />
         </button>
         <span className="wizard-top-title">새로운 발매</span>
-        <span className="wizard-top-count">{step + 1} / 6</span>
+        <span className="wizard-top-count" id="wizardTopCount">{step + 1} / 6</span>
       </div>
 
       <div className="row-actions">
-        <button type="button" className="link-btn" onClick={saveDraft}>임시 저장</button>
+        <button type="button" id="saveDraft" className="link-btn" onClick={saveDraft}>임시 저장</button>
       </div>
 
-      <div className="wizard-progress" aria-label="발매 신청 진행 단계">
+      <div className="wizard-progress" id="wizardProgress" aria-label="발매 신청 진행 단계">
         {STEPS.map((_, i) => (
           <span key={i} className={i <= step ? 'current' : ''} />
         ))}
       </div>
 
       <div className="wizard-header">
-        <p className="wizard-kicker">{s.kicker}</p>
-        <h1 style={{ whiteSpace: 'pre-line' }}>{s.title}</h1>
-        <p>{s.sub}</p>
+        <p className="wizard-kicker" id="wizardKicker">{s.kicker}</p>
+        <h1 id="newTitle" style={{ whiteSpace: 'pre-line' }}>{s.title}</h1>
+        <p id="wizardSubtitle">{s.sub}</p>
       </div>
 
-      <div aria-live="polite">
+      <div id="wizardBody" aria-live="polite">
         {step === 0 && (
           <section className="step-section">
             <div className="form-grid">
@@ -844,13 +844,13 @@ export function Upload() {
         )}
       </div>
 
-      {error && <div className="notice error" role="alert">{error}</div>}
+      {error && <div id="wizardError" className="notice error" role="alert">{error}</div>}
 
       <div className="step-actions">
-        <button type="button" className="button secondary" onClick={back}>
-          {step === 0 ? '홈으로' : '이전으로'}
+        <button type="button" id="wizardBack" className="button secondary" onClick={back}>
+          {step === 0 ? '홈으로' : '이전'}
         </button>
-        <button type="button" className="button" onClick={next} disabled={submitting}>
+        <button type="button" id="wizardNext" className="button" onClick={next} disabled={submitting}>
           {step === STEPS.length - 1 ? '접수하기' : '다음으로'}
         </button>
       </div>
