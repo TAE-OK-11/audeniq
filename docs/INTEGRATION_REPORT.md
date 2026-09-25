@@ -288,6 +288,16 @@ BLUEPRINT §6의 E-0~E-5 송출 실행 파이프라인. 브랜치 `foundation/f5
 - 미연결·미검증 명시: 아직 실제 pipeline에 연결되지 않음(Stage 3 preparation은 synthetic ERN 유지), 공식 XSD 검증 없음, contributor role allowed-value 매핑 후속, DDEX 인증 주장 없음. Stardust README의 성능·"production ready" 주장은 독립 검증하지 않음.
 - F6 레퍼런스 메모: stardust의 `deliverViaFTP/SFTP/S3/API/Azure` + 재시도 스케줄(5min/15min/1hr)은 F6 실제 DSP 연동 설계 시 참고. F6은 실제 파트너 계약·명세·샌드박스·credentials 없이는 완료로 보지 않음.
 
+### DDEX pipeline wiring (브랜치 `foundation/ddex-wiring`, main 병합 `744bbdc`)
+
+- `prepare_release`가 frozen route plan의 DSP마다 실제 ERN 3.8.2 `NewReleaseMessage`를 생성해 `distribution.ddex_messages`에 저장. `READY_FOR_DELIVERY` 전환 + preparation artifact + `delivery.enqueue`와 **같은 트랜잭션**에서 커밋.
+- 내부 synthetic ERN은 preflight integrity envelope으로 유지. `ddex_messages`는 별도 interchange artifact. 송출선(wire transmission)은 F6.
+- DPID는 파트너 온보딩 데이터(F6): sender DPID(`identity.orgs.ddex_sender_dpid`)나 recipient DPID(`execution.adapter_profiles.ddex_recipient_dpid`)가 없으면 해당 DSP에 row를 만들지 않음 — 식별자를 발명하지 않음.
+- `ddex_messages`: `(package_id, dsp_id)` PK, org RLS + FORCE RLS. migration 0019는 MockDSP profile에만 명백한 테스트 ID(`TESTDPID-MOCKDSP-0001`)를 seed.
+- `PrepareSummary.ddex_messages` 카운트 추가(실제 insert 기준, idempotent retry는 기존 row 수 반환).
+- 테스트 2개 추가: DPID 설정 시 ERN row 1개(namespace/DPID/UPC/ISRC/sha256 검증), DPID 미설정 시 0개. FORCE RLS 때문에 테스트는 `app.org_id`를 세팅한 커넥션으로 조회.
+- Foundation run: [36091055565](https://github.com/TAE-OK-11/audeniq/actions/runs/36091055565) — **success** (compose-smoke + rust-postgres 전부 통과)
+
 ### 로컬 검증 결과 (2026-09-25, main `cc8b5df`)
 
 - `cargo fmt --all --check`: 통과
