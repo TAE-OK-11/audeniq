@@ -661,7 +661,7 @@ pub async fn run_prepare_release(
     // preflight report and route plan live here for audit.
     let artifact_id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO distribution.preparation_artifacts(id,org_id,release_id,revision_id,canonical_release_id,package_id,ern_sha256,preflight_report,route_plan) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(package_id) DO NOTHING",
+        "INSERT INTO distribution.preparation_artifacts(id,org_id,release_id,revision_id,canonical_release_id,package_id,ern_sha256,ern_xml,preflight_report,route_plan) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(package_id) DO NOTHING",
     )
     .bind(artifact_id)
     .bind(org)
@@ -670,6 +670,7 @@ pub async fn run_prepare_release(
     .bind(canonical_id)
     .bind(package_id)
     .bind(&xml_sha)
+    .bind(&xml)
     .bind(serde_json::to_value(&report).map_err(|_| Error::Internal)?)
     .bind(serde_json::to_value(&submissions).map_err(|_| Error::Internal)?)
     .execute(&mut *tx2)

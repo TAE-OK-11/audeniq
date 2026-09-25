@@ -227,3 +227,45 @@ BLUEPRINT §6의 3-A(Finalizer)/3-D(Canonical Model)/3-F(Package) — Muse 담�
 - F4 preparation acceptance run: [36080175477](https://github.com/TAE-OK-11/audeniq/actions/runs/36080175477) — **success** (7m26s)
 - Foundation run: [36080175476](https://github.com/TAE-OK-11/audeniq/actions/runs/36080175476) — **success** (14m16s)
 - 참고: 병합 직후 push(`585151f`)에서는 CI의 `cargo fmt --all`이 `lib.rs` 모듈 순서(`finance`가 `identifiers`보다 먼저)를 지적해 acceptance가 실패했음. 로컬 rustfmt 컴포넌트가 빠져 있어 사전에 못 잡은 것. `3a88498`에서 수정 후 전부 녹색.
+
+---
+
+## F5 — MockDSP + Distribution Execution (2026-09-25)
+
+BLUEPRINT §6의 E-0~E-5 송출 실행 파이프라인. 브랜치 `foundation/f5-mockdsp-execution` (`7341f20`에서 분기). 상업 DSP 연동(F6)은 실제 파트너 계약·명세·샌드박스·credentials가 필요한 단계이므로, F5는 로컬 MockDSP만을 상대로 실행 계층의 내구성·멱등·fail-closed를 검증한다.
+
+### 구현 범위
+
+- 마이그레이션 0015: `execution` 스키마 —
+  - `delivery_jobs` (QUEUED→LEASED→SENDING→DELIVERED/FAILED/AWAITING_RECONCILIATION, lease fencing, 조직별 RLS)
+  - `delivery_attempts` (송출 시도 1행 = 1회 wire call; `idempotency_key` UNIQUE가 중복 송출 방지. outcome은 `IN_FLIGHT→terminal` 상태머신으로 UPDATE 허용하되 wire fact(id·key·request hash·attempt_no)는 불변, `ACCEPTED`/`REJECTED`는 종단 — blanket immutable 트리거를 컬럼 제한 가드 `guard_attempt_mutation()`으로 교체)
+  - `live_bindings` (파트너측 lifecycle: DELIVERED ≠ LIVE 분리)
+  - `reconciliation_cases` (E-5 인간 개입 큐)
+  - `adapter_profiles` (로컬 MockDSP 프로파일; DSP/route 매핑)
+- 마이그레이션 0016: `distribution.preparation_artifacts.ern_xml TEXT` — preparation 단계가 생성한 실제 ERN XML을 hash와 함께 저장. E-2는 저장된 XML 바이트를 읽고 SHA-256을 검증 (synthetic comment 아님). 누락 시 `EXECUTION_ERN_MISSING`으로 fail-closed.
+- 마이그레이션 0017: `rights.rights_epochs`의 F3 blanket immutable 트리거를 단조 증가 가드로 교체 — epoch는 write-once가 아니라 버전 카운터여야 E-1의 rights-drift guard가 실제로 동작함. (grant/override 변경 시 자동 bump는 F3 후속 과제)
+- 마이그레이션 0018: `operations.jobs` queue CHECK에 `'delivery'` 추가 (wire-call용 독립 워커 풀).
+- `crates/core/src/execution.rs` (신규): `DspAdapter` async trait + capability flags + registry. E-0 enqueue/claim/lease, E-1 release/rights epoch/finance hold/profile freshness 게이트, E-2 package/preflight/files materialization (catalog.assets 핀 + storage 바이트 SHA-256 재검증, ERN XML 검증), E-3 durable attempt + wire call (송출 전 attempt/idempotency key 커밋, 외부 호출은 PG 트랜잭션 밖), E-4 ACK·polling·duplicate webhook 차단·LIVE/TAKEDOWN, E-5 reconciliation + unknown resolution (명시적 inquiry만, 재송출 없음).
+- `crates/core/src/mockdsp.rs` (신규): ACCEPT/REJECT/TIMEOUT/UNKNOWN/duplicate webhook/delayed live, update/takedown, idempotency key별 호출 기록·inquiry. `Arc<Mutex>` 내부라 clone 시 상태 공유.
+- `crates/core/src/operations.rs`: `delivery.enqueue` → 파트너별 `delivery.send` fan-out, `delivery.send`(lease 후 E-0~E-3), `delivery.poll`, `delivery.reconcile`, `delivery.takedown`. dispatcher는 프로세스 공용 MockDsp(`OnceLock`)를 사용해 send→poll→takedown 상태가 이어짐. RLS 테이블 조회는 `delivery_job_status` 등 org 인증 헬퍼 경유.
+- `crates/core/src/review.rs`: Stage 2 DSP eligibility가 `execution.adapter_profiles`의 `delivery_enabled=true`인 dsp_id도 읽도록 확장 (execution RLS용 `app.org_id` 설정).
+- `crates/core/tests/execution.rs` (신규): DSP-01~12 + operations dispatcher 시나리오, 13개 테스트.
+
+### 로컬 검증 결과 (2026-09-25)
+
+- `cargo fmt --all --check`: 통과
+- `cargo clippy --workspace --all-targets -- -D warnings`: 통과
+- `cargo test --workspace`: 전부 통과 (lib 29, distribution 3, execution 13, finance 10, foundation 18, stage1 10, stage2 5, stage3_identifiers 2, stage3_preparation 8 — 총 99)
+- 참고: 첫 시도에서 VM 교체로 PostgreSQL이 내려가 distribution 3개가 `PoolTimedOut`으로 실패했으나 인프라 문제였음. AGENTS.md 절차대로 postgres 재시작·`f2test` 롤/DB·`audeniq_api`/`audeniq_worker` 롤 및 `WITH SET TRUE` 부여 후 재실행해 전부 통과.
+- 디버깅 중 수정한 근본 문제:
+  - E-2가 canonical body의 `/audio/object_key`를 찾았으나 실제 구조는 `asset_object_key`/`asset_id` — catalog.assets 핀 + storage 바이트 SHA-256 재검증으로 교체
+  - `delivery_attempts` 불변 트리거와 `IN_FLIGHT→terminal` UPDATE 충돌 — 컬럼 제한 가드로 교체
+  - `RETURNING 1` (INT4)을 i64로 디코딩 — i32로 수정
+  - `poll_live` 폴백 쿼리의 RLS 미인증 — org 인증 트랜잭션으로 수정
+  - `rights_epochs` epoch 증가 불가 — 단조 증가 가드로 교체 (0017)
+  - dispatcher의 `delivery.send` 상태 조회 RLS 차단 — `delivery_job_status` 헬퍼 추가
+  - MockDSP `DelayedLive`가 `inquire_submission` 경로에서 poll을 카운트하지 않음 — 양쪽 endpoint 모두 카운트하도록 수정
+
+### CI 검증 결과 (2026-09-25)
+
+- (검증 완료 후 기록)
