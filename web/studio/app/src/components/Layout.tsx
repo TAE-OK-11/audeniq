@@ -143,7 +143,12 @@ export function Layout({ children }: { children: ReactNode }) {
         </nav>
       </header>
 
-      <main className="portal-layout" id="main">{children}</main>
+      <main className="portal-layout" id="main">
+        {/* 라우트 변경 시에만 view 진입 애니메이션 재생 (리렌더에는 재생 안 됨) */}
+        <div key={loc.pathname} className="view-enter">
+          {children}
+        </div>
+      </main>
     </>
   );
 }
