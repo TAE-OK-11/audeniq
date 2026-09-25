@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../api/auth';
 import type { ReactNode } from 'react';
 
+// 라이브 HTML의 portalNav와 동일한 구조
 const NAV_GROUPS: { group: string; items: { to: string; label: string }[] }[] = [
   {
     group: '내 작업실',
@@ -45,16 +46,22 @@ export function Layout({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
+  // 라이브와 동일: 헤더 바깥 클릭 시 메뉴 닫기
   useEffect(() => {
     if (!menuOpen) return;
+    const onClick = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('.portal-header')) {
+        setMenuOpen(false);
+      }
+    };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setMenuOpen(false);
     };
+    document.addEventListener('click', onClick);
     document.addEventListener('keydown', onKey);
-    document.body.style.overflow = 'hidden';
     return () => {
+      document.removeEventListener('click', onClick);
       document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = '';
     };
   }, [menuOpen]);
 
@@ -65,7 +72,7 @@ export function Layout({ children }: { children: ReactNode }) {
     nav(to);
   };
 
-  const initial = (user?.email?.[0] ?? '서').toUpperCase();
+  const initial = (user?.email?.[0] ?? 'A').toUpperCase();
 
   return (
     <>
@@ -75,7 +82,9 @@ export function Layout({ children }: { children: ReactNode }) {
             <img src="/connected/assets/AUDENIQ_Logo_Light.svg" alt="AUDENIQ" />
           </Link>
           <div className="header-right">
+            <span className="workspace-label">STUDIO</span>
             <button
+              id="headerProfile"
               className="header-profile"
               type="button"
               aria-label="아티스트 계정"
@@ -85,46 +94,44 @@ export function Layout({ children }: { children: ReactNode }) {
             </button>
             <button
               type="button"
+              id="menuToggle"
               className="menu-toggle"
               aria-label={menuOpen ? '메뉴 닫기' : '메뉴 열기'}
+              aria-controls="portalNav"
               aria-expanded={menuOpen}
               onClick={() => setMenuOpen(v => !v)}
             >
-              {menuOpen ? (
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-              ) : (
-                <><span></span><span></span></>
-              )}
+              <span></span>
+              <span></span>
             </button>
           </div>
         </div>
+        <nav
+          className="portal-nav"
+          id="portalNav"
+          aria-label="아티스트 포털 전체 메뉴"
+          hidden={!menuOpen}
+        >
+          {NAV_GROUPS.map(g => (
+            <div key={g.group}>
+              <div className="nav-group">{g.group}</div>
+              {g.items.map(item => (
+                <button
+                  key={item.to}
+                  type="button"
+                  className={loc.pathname === item.to ? 'active' : ''}
+                  onClick={() => go(item.to)}
+                >
+                  {item.label} <span>↗</span>
+                </button>
+              ))}
+            </div>
+          ))}
+          <div className="nav-foot">AUDENIQ / STUDIO</div>
+        </nav>
       </header>
 
-      {menuOpen && (
-        <div className="menu-overlay" role="dialog" aria-label="전체 메뉴">
-          <div className="menu-sheet">
-            <h2 className="menu-title">메뉴</h2>
-            {NAV_GROUPS.map(g => (
-              <div key={g.group} className="menu-group">
-                <div className="menu-group-label">{g.group}</div>
-                {g.items.map(item => (
-                  <button
-                    key={item.to}
-                    type="button"
-                    className={`menu-item${loc.pathname === item.to ? ' active' : ''}`}
-                    onClick={() => go(item.to)}
-                  >
-                    {item.label}
-                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 6 6 6-6 6"/></svg>
-                  </button>
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <main className="portal-layout">{children}</main>
+      <main className="portal-layout" id="main">{children}</main>
     </>
   );
 }

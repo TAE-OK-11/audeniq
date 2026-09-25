@@ -1072,3 +1072,8 @@ body.aq-nav-locked #portalNav{
  .aq-pay-top{min-height:67px;padding-left:max(18px,env(safe-area-inset-left));padding-right:max(18px,env(safe-area-inset-right))}.aq-pay-main{width:calc(100% - 40px);padding:34px 0 30px}.aq-pay-main>h1{font-size:34px}.aq-pay-lead{font-size:14px}.aq-pay-actions{padding-left:20px;padding-right:20px}.aq-bank-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.aq-bank{min-height:108px;border-radius:19px}.aq-bank>strong{font-size:11px}.aq-bank-logo{width:43px;height:43px;flex-basis:43px}.aq-bank-logo svg{width:36px;height:36px}.aq-pay-field input{font-size:21px!important}.aq-pay-success{min-height:calc(100dvh - 120px)}
 }
 @media(max-width:370px){.aq-pay-main{width:calc(100% - 30px)}.aq-pay-actions{padding-left:15px;padding-right:15px}.aq-bank{min-height:95px;padding-inline:5px}.aq-bank>strong{font-size:10px}}
+
+/* 진행 기록 타임라인 (React 추가) */
+.process-timeline{display:grid;gap:10px;margin-top:4px}
+.timeline-row{background:#f5f8ff;border-radius:15px;padding:13px 16px}
+.timeline-row strong{display:block;font-size:13px;color:#202b40}

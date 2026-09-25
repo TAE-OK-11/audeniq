@@ -1,6 +1,7 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './api/auth';
 import { Layout } from './components/Layout';
+import { ToastProvider } from './components/Toast';
 import { Dashboard } from './pages/Dashboard';
 import { Releases } from './pages/Releases';
 import { ReleaseDetail } from './pages/ReleaseDetail';
@@ -26,6 +27,7 @@ export function App() {
   return (
     <HashRouter>
       <AuthProvider>
+        <ToastProvider>
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/*" element={
@@ -47,6 +49,7 @@ export function App() {
             </Protected>
           } />
         </Routes>
+        </ToastProvider>
       </AuthProvider>
     </HashRouter>
   );
