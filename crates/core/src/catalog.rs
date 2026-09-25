@@ -55,10 +55,17 @@ fn validate(i: &Input) -> Result<()> {
         || i.name.len() > 200
         || (!i.profile.is_null() && !i.profile.is_object())
     {
-        Err(Error::Invalid)
-    } else {
-        Ok(())
+        return Err(Error::Invalid);
     }
+    crate::text_policy::check(&i.name)?;
+    crate::text_policy::check_json(&i.profile)
+}
+/// Hard block on protected artist names in the name and every profile
+/// string (display artist, featured artists, P/C lines...).
+async fn protected(c: &mut PgConnection, org: Uuid, i: &Input) -> Result<()> {
+    let mut texts = vec![i.name.as_str()];
+    texts.extend(crate::protected_names::json_strings(&i.profile));
+    crate::protected_names::enforce(c, org, &texts).await
 }
 async fn refs(c: &mut PgConnection, a: &Actor, org: Uuid, i: &Input) -> Result<()> {
     if let Some(id) = i.label_id {
@@ -84,6 +91,7 @@ pub async fn create(s: &AppState, a: &Actor, org: Uuid, kind: Kind, i: Input) ->
     let id = Uuid::new_v4();
     auth::create_resource(&mut tx, a, org, id, kind.resource()).await?;
     refs(&mut tx, a, org, &i).await?;
+    protected(&mut tx, org, &i).await?;
     match kind {
         Kind::Artist => {
             sqlx::query("INSERT INTO catalog.artists(id,org_id,name,profile,party_id,label_id) VALUES($1,$2,$3,$4,$5,$6)").bind(id).bind(org).bind(i.name).bind(i.profile).bind(i.party_id).bind(i.label_id).execute(&mut *tx).await?;
@@ -193,10 +201,11 @@ pub async fn update(
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, id, kind.resource(), true).await?;
     refs(&mut tx, a, org, &i).await?;
+    protected(&mut tx, org, &i).await?;
     let n=match kind{
  Kind::Artist=>sqlx::query("UPDATE catalog.artists SET name=$3,profile=$4,party_id=$6,label_id=$7,row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND row_version=$5 AND archived_at IS NULL").bind(org).bind(id).bind(i.name).bind(i.profile).bind(expected).bind(i.party_id).bind(i.label_id).execute(&mut *tx).await?.rows_affected(),
  Kind::Label=>sqlx::query("UPDATE catalog.labels SET name=$3,profile=$4,party_id=$6,row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND row_version=$5 AND archived_at IS NULL").bind(org).bind(id).bind(i.name).bind(i.profile).bind(expected).bind(i.party_id.ok_or(Error::Invalid)?).execute(&mut *tx).await?.rows_affected(),
- Kind::Release=>sqlx::query("UPDATE catalog.releases SET title=$3,draft=$4,release_type=$6,row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND row_version=$5 AND status IN ('DRAFT','STAGE1_CORRECTION') AND archived_at IS NULL").bind(org).bind(id).bind(i.name).bind(i.profile).bind(expected).bind(i.release_type.ok_or(Error::Invalid)?).execute(&mut *tx).await?.rows_affected(),
+ Kind::Release=>sqlx::query("UPDATE catalog.releases SET title=$3,draft=$4,release_type=$6,row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND row_version=$5 AND catalog.is_editable_status(status) AND archived_at IS NULL").bind(org).bind(id).bind(i.name).bind(i.profile).bind(expected).bind(i.release_type.ok_or(Error::Invalid)?).execute(&mut *tx).await?.rows_affected(),
  };
     if n != 1 {
         return Err(Error::Conflict);
@@ -233,7 +242,7 @@ pub async fn archive(
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, id, kind.resource(), true).await?;
     let extra = if matches!(kind, Kind::Release) {
-        " AND status IN ('DRAFT','STAGE1_CORRECTION')"
+        " AND catalog.is_editable_status(status)"
     } else {
         ""
     };

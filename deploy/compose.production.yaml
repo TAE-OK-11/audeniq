@@ -76,11 +76,15 @@ services:
     restart: unless-stopped
     <<: *runtime
     command: [audeniq-worker]
+    # SIGTERM drains in-flight jobs for WORKER_DRAIN_SECONDS, then releases
+    # unfinished leases; the grace period must exceed the drain window.
+    stop_grace_period: 45s
     environment:
       DATABASE_URL: postgres://audeniq_worker:${WORKER_DB_PASSWORD}@postgres/audeniq_prod
       WORKER_MAX_IN_FLIGHT: '${WORKER_MAX_IN_FLIGHT:-3}'
       DATABASE_MAX_CONNECTIONS: '${DATABASE_MAX_CONNECTIONS:-8}'
       JOB_LEASE_SECONDS: '${JOB_LEASE_SECONDS:-300}'
+      WORKER_DRAIN_SECONDS: '${WORKER_DRAIN_SECONDS:-30}'
       QUEUE_INTERACTIVE_CONCURRENCY: '1'
       QUEUE_QC_CONCURRENCY: '1'
       QUEUE_RIGHTS_CONCURRENCY: '1'

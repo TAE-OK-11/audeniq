@@ -574,9 +574,11 @@ async fn stage1_happy_path_passes(pool: PgPool) {
     .fetch_all(&pool)
     .await
     .unwrap();
-    // 17 metadata checks + 14 audio checks (QC rule v2 added format,
-    // truncation, silence and clipping).
-    assert_eq!(codes.len(), 31, "{codes:?}");
+    // 22 metadata/policy checks (round 2 added TEXT_INVALID_CHARACTERS,
+    // ARTIST_NAME_PROTECTED, IDENTIFIER_IN_USE, ASSET_REUSED; round 3
+    // ARTIST_NAME_REVIEW) + 15 audio checks (QC rule v3 added
+    // AUDIO_CONTENT_SUSPECT).
+    assert_eq!(codes.len(), 37, "{codes:?}");
     let bad: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM operations.check_results WHERE revision_id=$1 AND status<>'PASS'",
     )
@@ -1034,7 +1036,11 @@ async fn oversized_asset_is_technical_retry(pool: PgPool) {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(retry, 14, "all 14 audio checks recorded as technical retry");
+    assert_eq!(
+        retry as usize,
+        audeniq_core::qc::AUDIO_CHECK_CODES.len(),
+        "every audio check recorded as technical retry"
+    );
     let status: String = sqlx::query_scalar("SELECT status FROM catalog.releases WHERE id=$1")
         .bind(release)
         .fetch_one(&pool)

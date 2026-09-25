@@ -480,17 +480,43 @@ async fn add_preparation_supplements(
     sqlx::query("INSERT INTO catalog.assets(id,org_id,kind,object_key,size_bytes,content_type,sha256,state) VALUES($1,$2,'IMAGE',$3,$4,'image/png',$5,'REGISTERED')")
         .bind(art_id).bind(u.org).bind(&art_key).bind(art_bytes.len() as i64).bind(sha256_hex(art_bytes))
         .execute(pool).await.unwrap();
-    sqlx::query("UPDATE catalog.releases SET upc='036000291452', artwork_asset_id=$1, draft = draft || '{\"language\":\"ko\",\"artist\":\"Test Artist\",\"p_line\":\"P 2027 Test Label\",\"c_line\":\"C 2027 Test Label\"}'::jsonb, row_version = row_version + 1 WHERE id=$2")
+    // Identifiers are unique per release: Stage 1 refuses a UPC/ISRC already
+    // used by another release in the org (IDENTIFIER_IN_USE), and several
+    // tests here put many releases in one org.
+    // Process-wide counter: concurrent tests/tasks never share a code.
+    static NEXT_CODE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let n = NEXT_CODE.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let (upc, isrc) = unique_codes(n);
+    sqlx::query("UPDATE catalog.releases SET upc=$3, artwork_asset_id=$1, draft = draft || '{\"language\":\"ko\",\"artist\":\"Test Artist\",\"p_line\":\"P 2027 Test Label\",\"c_line\":\"C 2027 Test Label\"}'::jsonb, row_version = row_version + 1 WHERE id=$2")
         .bind(art_id)
         .bind(release)
+        .bind(&upc)
         .execute(pool)
         .await
         .unwrap();
-    sqlx::query("UPDATE catalog.tracks SET isrc='USABC2600001' WHERE release_id=$1")
+    sqlx::query("UPDATE catalog.tracks SET isrc=$2 WHERE release_id=$1")
         .bind(release)
+        .bind(&isrc)
         .execute(pool)
         .await
         .unwrap();
+}
+
+/// The n-th fixture UPC (valid GS1 check digit) and ISRC; n=0 gives the
+/// historic fixture values 036000291452 / USABC2600001.
+fn unique_codes(n: u32) -> (String, String) {
+    let body = if n == 0 {
+        "03600029145".to_string()
+    } else {
+        format!("036{n:08}")
+    };
+    let sum: u32 = body
+        .chars()
+        .enumerate()
+        .map(|(i, c)| c.to_digit(10).unwrap() * if i % 2 == 0 { 3 } else { 1 })
+        .sum();
+    let upc = format!("{body}{}", (10 - sum % 10) % 10);
+    (upc, format!("USABC26{:05}", n + 1))
 }
 
 struct ReadyCtx {
@@ -2674,4 +2700,227 @@ async fn stress_300_mixed_releases(pool: PgPool) {
 
     println!("  total wall time: {}ms", t_all.elapsed().as_millis());
     println!("=== no panics, all 100 processed ===\n");
+}
+
+// ---------------------------------------------------------------------------
+// Sandbox round 2: delivery lease vs worker crash / shutdown
+// ---------------------------------------------------------------------------
+
+async fn delivery_job_for(pool: &PgPool, ctx: &ReadyCtx) -> Uuid {
+    let mut c = authed(pool, ctx.org).await;
+    sqlx::query_scalar(
+        "SELECT id FROM execution.delivery_jobs WHERE package_id=$1 AND partner_id='mockdsp'",
+    )
+    .bind(ctx.package_id)
+    .fetch_one(&mut *c)
+    .await
+    .unwrap()
+}
+
+async fn attempts_for(pool: &PgPool, org: Uuid, job: Uuid) -> i64 {
+    let mut c = authed(pool, org).await;
+    sqlx::query_scalar("SELECT count(*) FROM execution.delivery_attempts WHERE job_id=$1")
+        .bind(job)
+        .fetch_one(&mut *c)
+        .await
+        .unwrap()
+}
+
+/// A worker killed while holding the delivery lease (short lease). The send
+/// job used to return without finishing, burning an attempt per job lease
+/// until DEAD_LETTER while the delivery job stayed LEASED. Now it waits out
+/// the lease without consuming attempts and delivers exactly once.
+#[sqlx::test]
+async fn delivery_send_waits_out_crashed_lease_and_delivers_once(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    assert_eq!(
+        run_one(&pool, &ctx.store, "delivery", "delivery.enqueue").await,
+        "SUCCEEDED"
+    );
+    let djob = delivery_job_for(&pool, &ctx).await;
+    // The crashed holder: leased, then never heard from again.
+    assert!(
+        execution::lease_delivery_job(&pool, djob, ctx.org, "crashed-worker", 2)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert_eq!(
+        run_one(&pool, &ctx.store, "delivery", "delivery.send").await,
+        "QUEUED",
+        "parked behind the live lease"
+    );
+    let (attempts, err): (i32, Option<String>) = sqlx::query_as(
+        "SELECT attempts, last_error FROM operations.jobs WHERE kind='delivery.send'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(attempts, 0, "waiting for a lease consumes no attempt");
+    assert_eq!(err.as_deref(), Some("DELIVERY_LEASE_HELD"));
+    tokio::time::sleep(std::time::Duration::from_millis(3200)).await;
+    sqlx::query("UPDATE operations.jobs SET run_at=now() WHERE kind='delivery.send'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        run_one(&pool, &ctx.store, "delivery", "delivery.send").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(job_status(&pool, ctx.org, djob).await, "DELIVERED");
+    assert_eq!(
+        attempts_for(&pool, ctx.org, djob).await,
+        1,
+        "sent exactly once"
+    );
+}
+
+/// The state the old code left behind (delivery job LEASED with an expired
+/// lease, its send job dead-lettered) is repaired by reconcile, and the
+/// repaired send delivers exactly once; a second sweep does nothing.
+#[sqlx::test]
+async fn reconcile_repairs_stalled_leased_delivery(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    assert_eq!(
+        run_one(&pool, &ctx.store, "delivery", "delivery.enqueue").await,
+        "SUCCEEDED"
+    );
+    let djob = delivery_job_for(&pool, &ctx).await;
+    execution::lease_delivery_job(&pool, djob, ctx.org, "crashed-worker", 1)
+        .await
+        .unwrap()
+        .unwrap();
+    sqlx::query("UPDATE operations.jobs SET status='DEAD_LETTER', dead_lettered_at=now(), last_error='LEASE_EXPIRED' WHERE kind='delivery.send'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    execution::reconcile(&pool, 3600).await.unwrap();
+    assert_eq!(job_status(&pool, ctx.org, djob).await, "QUEUED");
+    let live: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM operations.jobs WHERE kind='delivery.send' AND status='QUEUED'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(live, 1, "one fresh send job");
+    assert_eq!(
+        run_one(&pool, &ctx.store, "delivery", "delivery.send").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(job_status(&pool, ctx.org, djob).await, "DELIVERED");
+    assert_eq!(
+        attempts_for(&pool, ctx.org, djob).await,
+        1,
+        "sent exactly once"
+    );
+    execution::reconcile(&pool, 3600).await.unwrap();
+    let sends: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM operations.jobs WHERE kind='delivery.send'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(sends, 2, "no further send enqueued for a delivered job");
+}
+
+/// Graceful shutdown hands an unfinished job back at once, without
+/// consuming the attempt, and a stale token cannot release someone else's.
+#[sqlx::test]
+async fn shutdown_release_requeues_without_burning_an_attempt(pool: PgPool) {
+    database::MIGRATOR.run(&pool).await.unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    operations::enqueue(&mut tx, "qc", "noop.test", &json!({}), "k-release", None)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let job = operations::claim(&pool, "qc", "w1", 300)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        !operations::release_lease(&pool, job.id, Uuid::new_v4())
+            .await
+            .unwrap()
+    );
+    assert!(
+        operations::release_lease(&pool, job.id, job.token)
+            .await
+            .unwrap()
+    );
+    let (status, attempts): (String, i32) =
+        sqlx::query_as("SELECT status, attempts FROM operations.jobs WHERE id=$1")
+            .bind(job.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!((status.as_str(), attempts), ("QUEUED", 0));
+    let again = operations::claim(&pool, "qc", "w2", 300)
+        .await
+        .unwrap()
+        .expect("immediately claimable by another worker");
+    assert_eq!(again.id, job.id);
+}
+
+/// DSP failure injection: a partner outage (refused before processing) is
+/// retried with a new attempt and delivers exactly once when the partner
+/// recovers; nothing is ever parked as SENT_UNKNOWN for a definite refusal.
+#[sqlx::test]
+async fn dsp_unavailable_is_retried_and_delivers_once(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let mock = MockDsp::new(MockBehavior::Unavailable { remaining: 2 });
+    let (job_id, status) = run_send(&pool, &ctx, &mock).await;
+    assert_eq!(status, "RETRY");
+    assert_eq!(job_status(&pool, ctx.org, job_id).await, "QUEUED");
+    let dyn_store: Arc<dyn ObjectStore> = ctx.store.clone();
+    for expected in ["RETRY", "DELIVERED"] {
+        let job = execution::lease_delivery_job(&pool, job_id, ctx.org, "retry-worker", 60)
+            .await
+            .unwrap()
+            .expect("re-leasable after a retryable refusal");
+        let status = execution::run_delivery(&pool, &dyn_store, &mock, &job)
+            .await
+            .unwrap();
+        assert_eq!(status, expected);
+    }
+    assert_eq!(job_status(&pool, ctx.org, job_id).await, "DELIVERED");
+    let mut c = authed(&pool, ctx.org).await;
+    let accepted: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM execution.delivery_attempts WHERE job_id=$1 AND outcome='ACCEPTED'",
+    )
+    .bind(job_id)
+    .fetch_one(&mut *c)
+    .await
+    .unwrap();
+    assert_eq!(accepted, 1, "accepted exactly once");
+    for (key, count) in mock.key_counts() {
+        assert_eq!(count, 1, "key {key} used once");
+    }
+    assert!(!case_exists(&pool, ctx.org, job_id, "SENT_UNKNOWN").await);
+}
+
+/// A partner that stays down exhausts the delivery job's attempts: it ends
+/// DEAD_LETTER (visible), never a silent LEASED/QUEUED limbo.
+#[sqlx::test]
+async fn dsp_unavailable_exhausts_to_dead_letter(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let mock = MockDsp::new(MockBehavior::Unavailable { remaining: 100 });
+    let (job_id, status) = run_send(&pool, &ctx, &mock).await;
+    assert_eq!(status, "RETRY");
+    let dyn_store: Arc<dyn ObjectStore> = ctx.store.clone();
+    while let Some(job) = execution::lease_delivery_job(&pool, job_id, ctx.org, "retry-worker", 60)
+        .await
+        .unwrap()
+    {
+        let status = execution::run_delivery(&pool, &dyn_store, &mock, &job)
+            .await
+            .unwrap();
+        assert_eq!(status, "RETRY");
+    }
+    assert_eq!(
+        execution::delivery_lease_blocked(&pool, ctx.org, job_id)
+            .await
+            .unwrap(),
+        execution::LeaseBlocked::Exhausted
+    );
+    assert_eq!(job_status(&pool, ctx.org, job_id).await, "DEAD_LETTER");
 }

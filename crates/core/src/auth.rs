@@ -144,6 +144,67 @@ pub async fn rate(pool: &PgPool, key: &str, limit: i32) -> Result<()> {
         Ok(())
     }
 }
+/// Header carrying the end-user IP. Only the edge worker sets it (from
+/// Cloudflare's `CF-Connecting-IP`, which Cloudflare overwrites on every
+/// request); browser-supplied copies are not forwarded by the edge, and every
+/// API request must carry the service secret, so a caller cannot forge it.
+/// `X-Forwarded-For` is deliberately never read.
+pub const CLIENT_IP_HEADER: &str = "x-audeniq-client-ip";
+
+/// Rate-limit source key: the client IP (IPv6 grouped by /64, since one host
+/// usually owns the whole prefix), or `None` when the deployment does not
+/// provide it (direct API access in dev/tests).
+pub fn client_ip_key(h: &HeaderMap) -> Option<String> {
+    let raw = h.get(CLIENT_IP_HEADER)?.to_str().ok()?.trim();
+    match raw.parse::<std::net::IpAddr>().ok()? {
+        std::net::IpAddr::V4(v4) => Some(v4.to_string()),
+        std::net::IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return Some(v4.to_string());
+            }
+            let s = v6.segments();
+            Some(format!("{:x}:{:x}:{:x}:{:x}::/64", s[0], s[1], s[2], s[3]))
+        }
+    }
+}
+
+/// Auth rate limits (15-minute windows). Sandbox round 2: a single
+/// `login:{email}` bucket let anyone lock any account with 10 wrong
+/// passwords, and `register:global` let anyone stop all signups.
+///
+/// - per source+account: the brute-force lockout. Only that source is locked.
+/// - per source: bounds one IP spraying many accounts / mass signups.
+/// - per account (all sources): a much higher ceiling against distributed
+///   guessing; reaching it needs many source IPs.
+///
+/// Without a trusted client IP every caller shares the "unknown" source, so
+/// its per-source limits are larger (they then act as a soft global cap).
+pub const LOGIN_PER_SOURCE_ACCOUNT: i32 = 10;
+pub const LOGIN_PER_SOURCE: i32 = 100;
+pub const LOGIN_PER_ACCOUNT: i32 = 100;
+pub const REGISTER_PER_SOURCE: i32 = 20;
+pub const REGISTER_PER_ACCOUNT: i32 = 5;
+pub const UNKNOWN_SOURCE_FACTOR: i32 = 10;
+
+async fn rate_auth(
+    pool: &PgPool,
+    h: &HeaderMap,
+    action: &str,
+    email: &str,
+    per_source: i32,
+    per_source_account: Option<i32>,
+    per_account: i32,
+) -> Result<()> {
+    let (source, factor) = match client_ip_key(h) {
+        Some(ip) => (ip, 1),
+        None => ("unknown".to_string(), UNKNOWN_SOURCE_FACTOR),
+    };
+    rate(pool, &format!("{action}:src:{source}"), per_source * factor).await?;
+    if let Some(limit) = per_source_account {
+        rate(pool, &format!("{action}:src-acct:{source}|{email}"), limit).await?;
+    }
+    rate(pool, &format!("{action}:acct:{email}"), per_account).await
+}
 fn credentials(c: &Credentials) -> Result<String> {
     let email = c.email.trim().to_lowercase();
     if email.len() > 254
@@ -180,8 +241,16 @@ async fn verify(password: String, hash: String) -> bool {
 pub async fn register(s: &AppState, h: &HeaderMap, input: Credentials) -> Result<Json<Value>> {
     origin(h, &s.config)?;
     let email = credentials(&input)?;
-    rate(&s.pool, "register:global", 100).await?;
-    rate(&s.pool, &format!("register:{email}"), 5).await?;
+    rate_auth(
+        &s.pool,
+        h,
+        "register",
+        &email,
+        REGISTER_PER_SOURCE,
+        None,
+        REGISTER_PER_ACCOUNT,
+    )
+    .await?;
     let _permit = s
         .password_slots
         .acquire()
@@ -234,8 +303,16 @@ pub async fn login(
 ) -> Result<(HeaderMap, Json<Value>)> {
     origin(h, &s.config)?;
     let email = credentials(&input)?;
-    rate(&s.pool, "login:global", 300).await?;
-    rate(&s.pool, &format!("login:{email}"), 10).await?;
+    rate_auth(
+        &s.pool,
+        h,
+        "login",
+        &email,
+        LOGIN_PER_SOURCE,
+        Some(LOGIN_PER_SOURCE_ACCOUNT),
+        LOGIN_PER_ACCOUNT,
+    )
+    .await?;
     let _permit = s
         .password_slots
         .acquire()

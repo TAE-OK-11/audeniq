@@ -22,6 +22,8 @@ pub mod packages;
 pub mod partner_onboarding;
 pub mod preflight;
 pub mod preparation_model;
+pub mod protected_admin;
+pub mod protected_names;
 pub mod qc;
 pub mod review;
 pub mod route_plan;
@@ -29,6 +31,7 @@ pub mod routing;
 pub mod royalty;
 pub mod storage;
 pub mod submission;
+pub mod text_policy;
 pub mod uploads;
 pub mod states {
     include!(concat!(env!("OUT_DIR"), "/states.rs"));

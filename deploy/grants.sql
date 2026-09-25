@@ -25,10 +25,15 @@ GRANT USAGE ON SCHEMA distribution,finance,execution,rights,identity,catalog TO 
 GRANT SELECT ON ALL TABLES IN SCHEMA distribution,finance,execution,rights TO audeniq_worker;
 GRANT SELECT ON catalog.application_revisions,catalog.artists,catalog.labels,catalog.tracks,catalog.credits,catalog.assets,catalog.consent_packages,catalog.upload_sessions TO audeniq_worker;
 GRANT SELECT ON identity.orgs,identity.memberships,identity.parties TO audeniq_worker;
+-- Stage 1 re-checks protected artist names (list is operator-managed; no runtime writes).
+GRANT SELECT ON catalog.protected_artists,catalog.protected_artist_aliases,catalog.protected_artist_exceptions TO audeniq_worker;
 -- Worker writes: stage transitions, frozen artifacts, delivery state,
 -- finance ledger, review overrides/epochs.
 GRANT SELECT,UPDATE ON catalog.releases,catalog.assets TO audeniq_worker;
 GRANT SELECT,INSERT ON catalog.asset_fingerprints TO audeniq_worker;
+-- Cross-org similarity (REVIEW only) reads other orgs' fingerprints via one
+-- narrow SECURITY DEFINER function; the table itself stays org-scoped.
+GRANT EXECUTE ON FUNCTION catalog.fingerprints_outside_org(uuid, smallint) TO audeniq_worker;
 GRANT INSERT ON catalog.application_revisions,catalog.consent_packages TO audeniq_worker;
 GRANT INSERT ON distribution.canonical_releases,distribution.distribution_packages,distribution.verification_packages,distribution.validation_packages,distribution.preparation_artifacts,distribution.identifier_assignments,distribution.ddex_messages TO audeniq_worker;
 GRANT INSERT,UPDATE ON execution.delivery_jobs,execution.delivery_attempts,execution.live_bindings,execution.reconciliation_cases TO audeniq_worker;
