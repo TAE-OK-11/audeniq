@@ -320,7 +320,7 @@ async fn organization_acl_and_revocation(pool: PgPool) {
         assert_eq!(call(&app,"PUT",&path,json!({"name":"intrusion","row_version":0,"party_id":b.party,"release_type":"SINGLE"}),Some(&b)).await.0,StatusCode::FORBIDDEN);
     }
     let r = create(&app, &a, "releases").await;
-    call(
+    let (s, _, v) = call(
         &app,
         "PUT",
         &format!("/api/orgs/{}/memberships", a.org),
@@ -328,6 +328,33 @@ async fn organization_acl_and_revocation(pool: PgPool) {
         Some(&a),
     )
     .await;
+    // Adding a member only invites them; the invitee must accept.
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["status"], "INVITED");
+    assert_eq!(
+        call(
+            &app,
+            "GET",
+            &format!("/api/orgs/{}/releases", a.org),
+            json!({}),
+            Some(&b)
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            &format!("/api/orgs/{}/memberships/accept", a.org),
+            json!({}),
+            Some(&b)
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
     let path = format!("/api/orgs/{}/releases/{r}", a.org);
     assert_eq!(
         call(&app, "GET", &path, json!({}), Some(&b)).await.0,

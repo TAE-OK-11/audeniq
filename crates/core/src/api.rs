@@ -59,6 +59,10 @@ pub fn router(s: AppState) -> Router {
         .route("/api/me", get(me))
         .route("/api/orgs", post(create_org).get(orgs))
         .route("/api/orgs/{org}/memberships", put(member))
+        .route(
+            "/api/orgs/{org}/memberships/accept",
+            post(accept_membership),
+        )
         .route("/api/orgs/{org}/resources/{id}/acl", put(acl))
         .route("/api/orgs/{org}/uploads", post(upload))
         .route("/api/orgs/{org}/uploads/{id}", get(upload_status))
@@ -85,7 +89,18 @@ pub fn router(s: AppState) -> Router {
             "/api/orgs/{org}/releases/{id}/submission",
             get(submission_status),
         )
-        .route("/api/orgs/{org}/reviews/overrides", post(create_override))
+        .route(
+            "/api/orgs/{org}/reviews/overrides",
+            post(create_override).get(list_override_requests),
+        )
+        .route(
+            "/api/orgs/{org}/reviews/overrides/{request}/approve",
+            post(approve_override),
+        )
+        .route(
+            "/api/orgs/{org}/reviews/overrides/{request}/decline",
+            post(decline_override),
+        )
         .route("/api/orgs/{org}/{kind}", post(create).get(list))
         .route(
             "/api/orgs/{org}/{kind}/{id}",
@@ -406,6 +421,34 @@ async fn create_override(
     let a = auth::actor(&s.pool, &h, &s.config, true).await?;
     Ok(Json(review::create_override_api(&s, &a, org, i).await?))
 }
+async fn list_override_requests(
+    State(s): State<AppState>,
+    Path(org): Path<Uuid>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    Ok(Json(review::list_override_requests(&s, &a, org).await?))
+}
+async fn approve_override(
+    State(s): State<AppState>,
+    Path((org, request)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, true).await?;
+    Ok(Json(
+        review::approve_override_request(&s, &a, org, request).await?,
+    ))
+}
+async fn decline_override(
+    State(s): State<AppState>,
+    Path((org, request)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, true).await?;
+    Ok(Json(
+        review::decline_override_request(&s, &a, org, request).await?,
+    ))
+}
 async fn upload(
     State(s): State<AppState>,
     Path(org): Path<Uuid>,
@@ -456,6 +499,14 @@ async fn member(
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, true).await?;
     Ok(Json(catalog::member(&s, &a, org, i).await?))
+}
+async fn accept_membership(
+    State(s): State<AppState>,
+    Path(org): Path<Uuid>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, true).await?;
+    Ok(Json(catalog::accept_membership(&s, &a, org).await?))
 }
 async fn acl(
     State(s): State<AppState>,
