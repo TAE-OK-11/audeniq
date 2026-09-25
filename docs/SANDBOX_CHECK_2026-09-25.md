@@ -63,3 +63,29 @@ not trip the cross-org duplicate check.
   S3 or Disabled).
 - HTTP API user journey (signup -> upload -> release); seeding used the
   same internal paths the API handlers call.
+
+## Adversarial scenarios (red-team, 2026-09-25)
+
+Driver: `sandbox_adversarial_submissions` in `crates/core/tests/execution.rs`
+(`#[ignore]`). Each scenario seeds a fresh org/user/release and drives the
+real pipeline; verdicts observed in the sandbox DB, not assumed.
+
+| # | Scenario | Result | Verdict |
+|---|----------|--------|---------|
+| S1 | Plagiarism: byte-identical re-upload of another org's released audio, new ISRC/UPC | `STAGE2_REVIEW` (`REVIEW_REQUIRED:S2_CATALOG_IDENTIFIERS`) | **Caught** — exact SHA-256 match across orgs |
+| S2 | Plagiarism: same music re-encoded as MP3 (different bytes) | `READY_FOR_DELIVERY` | **Gap** — `S2_CATALOG_FINGERPRINT` is `NOT_APPLICABLE`; audio fingerprinting engine does not exist ("comparison engine is F4+", review.rs) |
+| S3 | Minor declares `minority_declared=true` at consent | HTTP 422 `MINORITY_REVIEW_REQUIRED` | **Blocked** — hard gate at consent/submit |
+| S4 | Minor lies (`minority_declared=false`) | `READY_FOR_DELIVERY` | **Gap** — no DOB collected at signup (`/api/auth/register` takes email+password only); no age verification anywhere |
+| S5 | Cover song ("Blinding Lights (Cover)") | `READY_FOR_DELIVERY` | **Gap** — no cover-declaration field in any draft/release input (`deny_unknown_fields` everywhere); stage2 `special_flags` (`COVER`/`REMIX`/`SAMPLE`/`AI`) is hardcoded to `[]` in the validation-package builder (`submission.rs`), so the detection logic in `review.rs` is unreachable dead code |
+| S6 | Explicit lyrics | HTTP 422 (field rejected) | **Gap** — no lyrics channel exists in the API at all; nothing to screen. QC is audio-technical only (SHA-256, container magic, duration, image dimensions) |
+
+AI-generated music: same as S5 — no disclosure field, no detection, no
+provenance check; the `AI` special-flag path is equally unreachable.
+
+Notes:
+- S2/S4/S5 passing means: the pipeline cannot distinguish these from
+  legitimate submissions today. All three need product decisions (human
+  review queues, declarations with legal weight, third-party fingerprinting
+  / age-verification vendors) before customer operation.
+- S1's catch is exact-match only: trim, re-encode, or pitch-shift the audio
+  and it becomes S2.
