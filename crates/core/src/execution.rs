@@ -524,15 +524,44 @@ async fn materialize(
             .ok_or(Error::PolicyGate("EXECUTION_FILE_REF_MISSING"))?;
         files.push(verify_file(tx, storage, org_id, asset_id, key).await?);
     }
+    // Transfer document routing. The partner-specific DDEX interchange
+    // message persisted for this package+DSP is the real interchange
+    // artifact and wins when present. The synthetic preparation envelope is
+    // only a fallback for the mock transport; a real transport with no DDEX
+    // message fails closed instead of silently sending the synthetic bytes.
+    let profile: Option<(Option<Uuid>, String)> = sqlx::query_as(
+        "SELECT dsp_id, transport FROM execution.adapter_profiles WHERE partner_id=$1",
+    )
+    .bind(&job.partner_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let (dsp_id, transport) = profile.unwrap_or((None, "mock".to_string()));
+    let ddex: Option<(String, String)> = match dsp_id {
+        Some(dsp) => sqlx::query_as(
+            "SELECT ern_xml, ern_sha256 FROM distribution.ddex_messages WHERE package_id=$1 AND dsp_id=$2",
+        )
+        .bind(job.package_id)
+        .bind(dsp)
+        .fetch_optional(&mut **tx)
+        .await?,
+        None => None,
+    };
+    let (ern_xml, ern_sha256): (String, String) = match ddex {
+        Some((xml, sha)) => (xml, sha),
+        None if transport != "mock" => {
+            return Err(Error::PolicyGate("EXECUTION_DDEX_MESSAGE_MISSING"));
+        }
+        None => (
+            row.try_get("ern_xml")
+                .ok()
+                .flatten()
+                .ok_or(Error::PolicyGate("EXECUTION_ERN_MISSING"))?,
+            row.get("ern_sha256"),
+        ),
+    };
     // The transfer document is the ERN XML frozen at preparation time, not a
     // synthetic comment. Its bytes are verified against the stored hash;
     // a missing or tampered document fails closed before any wire call.
-    let ern_sha256: String = row.get("ern_sha256");
-    let ern_xml: String = row
-        .try_get("ern_xml")
-        .ok()
-        .flatten()
-        .ok_or(Error::PolicyGate("EXECUTION_ERN_MISSING"))?;
     if hex::encode(sha2::Sha256::digest(ern_xml.as_bytes())) != ern_sha256 {
         return Err(Error::PolicyGate("EXECUTION_ERN_TAMPERED"));
     }
