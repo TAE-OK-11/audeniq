@@ -20,7 +20,7 @@ GRANT SELECT ON identity.orgs,identity.memberships,identity.parties TO audeniq_w
 -- finance ledger, review overrides/epochs.
 GRANT SELECT,UPDATE ON catalog.releases,catalog.assets TO audeniq_worker;
 GRANT INSERT ON catalog.application_revisions,catalog.consent_packages TO audeniq_worker;
-GRANT INSERT ON distribution.canonical_releases,distribution.distribution_packages,distribution.verification_packages,distribution.validation_packages,distribution.preparation_artifacts,distribution.identifier_assignments TO audeniq_worker;
+GRANT INSERT ON distribution.canonical_releases,distribution.distribution_packages,distribution.verification_packages,distribution.validation_packages,distribution.preparation_artifacts,distribution.identifier_assignments,distribution.ddex_messages TO audeniq_worker;
 GRANT INSERT,UPDATE ON execution.delivery_jobs,execution.delivery_attempts,execution.live_bindings,execution.reconciliation_cases TO audeniq_worker;
 GRANT INSERT ON operations.check_results TO audeniq_worker;
 GRANT INSERT ON rights.review_overrides,rights.rights_epochs TO audeniq_worker;

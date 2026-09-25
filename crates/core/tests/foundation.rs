@@ -928,6 +928,7 @@ async fn worker_pipeline_grants_cover_handoff_and_reconciler(pool: PgPool) {
         ("catalog.assets", "SELECT,UPDATE"),
         ("distribution.preparation_artifacts", "SELECT,INSERT"),
         ("distribution.identifier_assignments", "SELECT,INSERT"),
+        ("distribution.ddex_messages", "SELECT,INSERT"),
         ("execution.delivery_jobs", "SELECT,INSERT,UPDATE"),
         ("execution.delivery_attempts", "SELECT,INSERT,UPDATE"),
         ("execution.live_bindings", "SELECT,INSERT,UPDATE"),
