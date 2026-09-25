@@ -1103,3 +1103,7 @@ body.aq-nav-locked #portalNav{
 
 /* 서명 방법 탭 버튼 크기: 일반 버튼과 동일한 규격 */
 .aq-sign-tabs button{min-height:52px!important;font-size:15px!important;font-weight:750!important;border-radius:16px!important}
+
+/* 모달 위치 수정: 내용이 길어도 위가 잘리지 않도록 */
+.modal{display:flex!important;overflow-y:auto!important}
+.modal-inner{margin:auto!important;flex-shrink:0!important}
