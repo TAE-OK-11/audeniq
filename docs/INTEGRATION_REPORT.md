@@ -220,3 +220,10 @@ BLUEPRINT §6의 3-A(Finalizer)/3-D(Canonical Model)/3-F(Package) — Muse 담�
 - `cargo fmt --all --check`: 통과
 - `cargo clippy --workspace --all-targets -- -D warnings`: 통과
 - `cargo test --workspace`: 전부 통과 (lib 29, distribution 3, finance 10, foundation 18, stage1 10, stage2 5, stage3_identifiers 2, stage3_preparation 8 — 총 85)
+
+### CI 검증 결과 (2026-09-25)
+
+- 검증 커밋: `3a88498` (브랜치 `foundation/f4-stage3-distribution`)
+- F4 preparation acceptance run: [36080175477](https://github.com/TAE-OK-11/audeniq/actions/runs/36080175477) — **success** (7m26s)
+- Foundation run: [36080175476](https://github.com/TAE-OK-11/audeniq/actions/runs/36080175476) — **success** (14m16s)
+- 참고: 병합 직후 push(`585151f`)에서는 CI의 `cargo fmt --all`이 `lib.rs` 모듈 순서(`finance`가 `identifiers`보다 먼저)를 지적해 acceptance가 실패했음. 로컬 rustfmt 컴포넌트가 빠져 있어 사전에 못 잡은 것. `3a88498`에서 수정 후 전부 녹색.
