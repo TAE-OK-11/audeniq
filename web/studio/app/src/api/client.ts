@@ -47,7 +47,7 @@ async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
     credentials: 'include',
   });
   if (res.status === 401) {
-    window.location.href = '/connected/login';
+    window.location.href = '/connected/#/login';
     throw new Error('로그인이 필요합니다');
   }
   if (!res.ok) {
