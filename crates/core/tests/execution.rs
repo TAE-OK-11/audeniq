@@ -872,28 +872,22 @@ async fn dsp_12_capability_flags_gate_wire_calls(pool: PgPool) {
     );
 }
 
-/// The operations dispatcher wiring: delivery.enqueue fans out delivery.send
-/// jobs that the existing claim/execute loop drives to DELIVERED.
+/// The operations dispatcher wiring: the durable READY_FOR_DELIVERY handoff
+/// already enqueued delivery.enqueue in the same transaction that flipped the
+/// release status, so the dispatcher only has to run it — it fans out
+/// delivery.send jobs that the existing claim/execute loop drives to DELIVERED.
 #[sqlx::test]
 async fn dsp_ops_dispatcher_end_to_end(pool: PgPool) {
     let ctx = ready_package(&pool).await;
     let dyn_store: Arc<dyn ObjectStore> = ctx.store.clone();
-    // Enqueue the fan-out job directly (the API layer would do this when a
-    // package becomes READY_FOR_DELIVERY).
-    {
-        let mut tx = pool.begin().await.unwrap();
-        operations::enqueue(
-            &mut tx,
-            "delivery",
-            "delivery.enqueue",
-            &json!({"package_id": ctx.package_id}),
-            &format!("delivery.enqueue:{}", ctx.package_id),
-            None,
-        )
-        .await
-        .unwrap();
-        tx.commit().await.unwrap();
-    }
+    // No manual enqueue: the handoff did it. Assert the job exists and is queued.
+    let queued: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM operations.jobs WHERE queue='delivery' AND kind='delivery.enqueue' AND status='QUEUED'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(queued, 1);
     assert_eq!(
         run_one(&pool, &ctx.store, "delivery", "delivery.enqueue").await,
         "SUCCEEDED"
