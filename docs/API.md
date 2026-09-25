@@ -19,7 +19,12 @@ Request JSON rejects unknown top-level fields. Body limit 64 KiB. Errors have `{
 | GET | `/api/me` | user_id, party_id; never treats headers as user identity |
 | GET | `/api/orgs` | Current ACTIVE memberships only |
 | POST | `/api/orgs` | `{name,kind: LABEL or COMPANY}` → org_id, unverified party_id |
-| PUT | `/api/orgs/{org}/memberships` | `{user_id,role: EDITOR or VIEWER,status: ACTIVE or REVOKED}`; OWNER only, cannot edit owner/self |
+| PUT | `/api/orgs/{org}/memberships` | `{user_id,role: EDITOR or VIEWER,status: ACTIVE or REVOKED}`; OWNER only, cannot edit owner/self. A user without an ACTIVE membership is only **invited** (`status: INVITED` in the response) and has no access until they accept; role changes of ACTIVE members and revocations apply directly |
+| POST | `/api/orgs/{org}/memberships/accept` | `{}` from the invitee's own session → ACTIVE (records accepted_at); 404 when there is no pending invitation |
+| POST | `/api/orgs/{org}/reviews/overrides` | `{revision_id,check_code,proposed_status,reason}` → `APPLIED` / `ALREADY_APPLIED` (override_id, reevaluation_queued) or `PENDING_SECOND_APPROVAL` (override_request_id, expires_at). `second_approver_user_id` is refused (422). See docs/REVIEW_OVERRIDES.md |
+| GET | `/api/orgs/{org}/reviews/overrides` | Open (PENDING, unexpired) override requests in the org |
+| POST | `/api/orgs/{org}/reviews/overrides/{request}/approve` | `{}` from the second approver's own session → APPLIED; requester, VIEWER, un-tenured or non-member approvers are refused |
+| POST | `/api/orgs/{org}/reviews/overrides/{request}/decline` | `{}` requester withdraws or an OWNER/EDITOR declines |
 | PUT | `/api/orgs/{org}/resources/{id}/acl` | `{user_id,action: read or write,revoked}`; active target membership, OWNER + write ACL required |
 | POST/GET | `/api/orgs/{org}/artists` | Create `{name,profile?,party_id?,label_id?}` / authorized list |
 | GET/PUT/DELETE | `/api/orgs/{org}/artists/{id}` | Read / replace profile and refs with row_version / archive `{row_version}` |

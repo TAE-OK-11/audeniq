@@ -17,6 +17,13 @@ GRANT INSERT ON catalog.consent_packages,catalog.application_revisions TO audeni
 GRANT SELECT ON operations.check_results TO audeniq_api;
 GRANT USAGE ON SCHEMA distribution TO audeniq_api;
 GRANT SELECT ON distribution.validation_packages,distribution.verification_packages TO audeniq_api;
+-- Review overrides (POST /reviews/overrides and the two-person approval
+-- flow) run in the API request. review_overrides is append-only (immutable
+-- trigger); override_requests only moves PENDING -> APPROVED/DECLINED (guard
+-- trigger). The rights-epoch bump on override insert is SECURITY DEFINER.
+GRANT USAGE ON SCHEMA rights TO audeniq_api;
+GRANT SELECT,INSERT ON rights.review_overrides TO audeniq_api;
+GRANT SELECT,INSERT,UPDATE ON rights.override_requests TO audeniq_api;
 -- Distribution pipeline schemas (F2/F4/F5/F7). The worker runs the job
 -- queues; the API never writes here (the roles test asserts 42501 for api
 -- inserts into distribution). The reconciler enumerates identity.orgs,
