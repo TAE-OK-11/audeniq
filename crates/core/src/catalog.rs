@@ -92,7 +92,14 @@ pub async fn create(s: &AppState, a: &Actor, org: Uuid, kind: Kind, i: Input) ->
             sqlx::query("INSERT INTO catalog.labels(id,org_id,name,profile,party_id) VALUES($1,$2,$3,$4,$5)").bind(id).bind(org).bind(i.name).bind(i.profile).bind(i.party_id.ok_or(Error::Invalid)?).execute(&mut *tx).await?;
         }
         Kind::Release => {
-            sqlx::query("INSERT INTO catalog.releases(id,org_id,title,draft,release_type) VALUES($1,$2,$3,$4,$5)").bind(id).bind(org).bind(i.name).bind(i.profile).bind(i.release_type.ok_or(Error::Invalid)?).execute(&mut *tx).await?;
+            // A missing profile must not leave draft as JSON null: downstream
+            // jsonb `||` merges would treat null as an array element.
+            let draft = if i.profile.is_null() {
+                json!({})
+            } else {
+                i.profile.clone()
+            };
+            sqlx::query("INSERT INTO catalog.releases(id,org_id,title,draft,release_type) VALUES($1,$2,$3,$4,$5)").bind(id).bind(org).bind(i.name).bind(draft).bind(i.release_type.ok_or(Error::Invalid)?).execute(&mut *tx).await?;
         }
     }
     operations::audit(
@@ -328,6 +335,15 @@ pub async fn member(s: &AppState, a: &Actor, org: Uuid, i: MemberInput) -> Resul
     let mut tx = s.pool.begin().await?;
     if auth::membership(&mut tx, a, org, true).await? != "OWNER" {
         return Err(Error::Forbidden);
+    }
+    if i.status == "ACTIVE" {
+        let active: Option<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM identity.users WHERE id=$1 AND status='ACTIVE' FOR SHARE",
+        )
+        .bind(i.user_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        active.ok_or(Error::Conflict)?;
     }
     sqlx::query("INSERT INTO identity.memberships(org_id,user_id,role,status) VALUES($1,$2,$3,$4) ON CONFLICT(org_id,user_id) DO UPDATE SET role=EXCLUDED.role,status=EXCLUDED.status WHERE identity.memberships.role<>'OWNER'").bind(org).bind(i.user_id).bind(i.role).bind(i.status).execute(&mut *tx).await?;
     operations::audit(
