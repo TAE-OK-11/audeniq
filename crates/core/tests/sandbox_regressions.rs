@@ -949,6 +949,19 @@ async fn protected_artist_names_are_refused_at_input(pool: PgPool) {
         "DJ Kim ft. Taylor Swift",
         "DJ Kim x Taylor Swift",
         "Taylor Alison Swift",
+        // round 3: leetspeak, Korean, more seeded artists
+        "T4ylor Swift",
+        "Tayl0r Sw1ft",
+        "7aylor $wift",
+        "Love Story (T4ylor's Version)",
+        "테일러 스위프트",
+        "테일러스위프트",
+        "Song (feat. 테일러 스위프트)",
+        "방탄소년단",
+        "Bangtan Boys",
+        "BLACKPINK",
+        "블랙핑크",
+        "아이유",
     ] {
         let (s, v, _) = call(
             &e.api,
@@ -988,6 +1001,11 @@ async fn protected_artist_names_are_refused_at_input(pool: PgPool) {
         "Taylor Made",
         "The Swift Boys",
         "Taylor Swiftly",
+        // short/generic names are REVIEW (Stage 1), never refused at input
+        "BTS",
+        "IU",
+        "Drake",
+        "Subtitles",
     ] {
         ok(
             &e.api,
@@ -1373,5 +1391,160 @@ async fn reused_master_under_new_isrc_goes_to_review(pool: PgPool) {
     assert_eq!(
         check_status(&e, revision, "ASSET_REUSED").await,
         "REVIEW_REQUIRED"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Round 3 (findings_round3.md): protected-artist policy and admin path
+// ---------------------------------------------------------------------------
+
+/// A REVIEW-policy name (short/generic, e.g. "BTS") is accepted at input but
+/// Stage 1 records ARTIST_NAME_REVIEW for a human; BLOCK names stay a
+/// correction.
+#[sqlx::test]
+async fn review_policy_names_are_flagged_in_stage1(pool: PgPool) {
+    let e = env(pool).await;
+    let u = user(&e.api).await;
+    let dir = tmpdir();
+    let audio = upload(
+        &e,
+        &u,
+        "AUDIO",
+        "audio/wav",
+        &good_wav(&dir.0, "a.wav", 440),
+    )
+    .await;
+    let cover = upload(&e, &u, "IMAGE", "image/png", &cover_png(&dir.0)).await;
+    let (release, track, _) = build_release(&e, &u, audio, cover).await;
+    let rv = row_version(&e, release).await;
+    let artist = ok(
+        &e.api,
+        "POST",
+        &format!("/api/orgs/{}/artists", u.org),
+        json!({"name":"Sandbox Artist"}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "PUT",
+        &format!("/api/orgs/{}/releases/{release}/tracks/{track}", u.org),
+        json!({"title":"Dynamite (BTS cover)","disc_number":1,"track_number":1,"artist_id":artist["id"],"asset_id":audio,"row_version":rv}),
+        &u,
+    )
+    .await;
+    let revision = consent_and_submit(&e, &u, release, "sbx-review-name").await;
+    assert_eq!(run_one(&e, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(
+        check_status(&e, revision, "ARTIST_NAME_REVIEW").await,
+        "REVIEW_REQUIRED"
+    );
+    assert_eq!(
+        check_status(&e, revision, "ARTIST_NAME_PROTECTED").await,
+        "PASS"
+    );
+}
+
+/// The list is managed through `audeniq_core::protected_admin` (the
+/// `audeniq-admin protected ...` CLI, owner role): changes take effect
+/// immediately and every change is logged with the operator.
+#[sqlx::test]
+async fn protected_list_admin_changes_apply_and_are_logged(pool: PgPool) {
+    use audeniq_core::protected_admin as admin;
+    use audeniq_core::protected_names::{Action, Mode};
+    let e = env(pool).await;
+    let u = user(&e.api).await;
+    let o = u.org;
+    let try_name = |name: &'static str| {
+        let api = e.api.clone();
+        let u = u.clone();
+        async move {
+            call(
+                &api,
+                "POST",
+                &format!("/api/orgs/{o}/artists"),
+                json!({"name":name}),
+                Some(&u),
+            )
+            .await
+            .0
+        }
+    };
+    assert_eq!(try_name("Zephyr Quill").await, StatusCode::OK);
+    admin::add(
+        &e.owner,
+        "ops-kim",
+        "Zephyr Quill",
+        Mode::Contains,
+        Action::Block,
+        Some("test"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        try_name("Z3phyr Qu1ll").await,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    admin::add_alias(
+        &e.owner,
+        "ops-kim",
+        "Zephyr Quill",
+        "제퍼 퀼",
+        false,
+        Mode::Contains,
+        Action::Block,
+    )
+    .await
+    .unwrap();
+    assert_eq!(try_name("제퍼퀼").await, StatusCode::UNPROCESSABLE_ENTITY);
+    admin::remove_alias(&e.owner, "ops-kim", "Zephyr Quill", "제퍼 퀼")
+        .await
+        .unwrap();
+    assert_eq!(try_name("제퍼 퀼").await, StatusCode::OK);
+    admin::grant_exception(&e.owner, "ops-kim", "Zephyr Quill", o, "verified label")
+        .await
+        .unwrap();
+    assert_eq!(try_name("Zephyr Quill Live").await, StatusCode::OK);
+    admin::revoke_exception(&e.owner, "ops-kim", "Zephyr Quill", o)
+        .await
+        .unwrap();
+    admin::set_active(&e.owner, "ops-kim", "Zephyr Quill", false)
+        .await
+        .unwrap();
+    assert_eq!(try_name("Zephyr Quill 2").await, StatusCode::OK);
+    // An operator name is mandatory.
+    assert!(
+        admin::set_active(&e.owner, " ", "Zephyr Quill", true)
+            .await
+            .is_err()
+    );
+    let ops: Vec<String> = sqlx::query_scalar(
+        "SELECT op FROM catalog.protected_artist_changes WHERE operator='ops-kim' ORDER BY occurred_at, op",
+    )
+    .fetch_all(&e.owner)
+    .await
+    .unwrap();
+    assert_eq!(ops.len(), 6, "{ops:?}");
+    let audited: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM operations.audit_events WHERE actor_service='audeniq-admin:ops-kim'",
+    )
+    .fetch_one(&e.owner)
+    .await
+    .unwrap();
+    assert_eq!(audited, 6);
+    // The runtime API role still cannot write the list.
+    let api_pool = role_pool(&e.owner, "audeniq_api").await;
+    assert!(
+        sqlx::query("INSERT INTO catalog.protected_artists(name) VALUES('Nope Nope')")
+            .execute(&api_pool)
+            .await
+            .is_err()
+    );
+    let list = admin::list(&e.owner).await.unwrap();
+    assert!(
+        list.as_array()
+            .unwrap()
+            .iter()
+            .any(|x| x["name"] == "BTS" && x["match_mode"] == "TOKEN")
     );
 }

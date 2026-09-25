@@ -789,6 +789,28 @@ async fn policy_checks(
             None => "no protected artist names".into(),
         },
     );
+    // REVIEW-policy names (short/generic ones such as "BTS") are accepted at
+    // input but must be looked at by a human before release.
+    let review_hit = crate::protected_names::find_review(&entries, &refs).map(|e| e.name.clone());
+    let review_check = StagedCheck {
+        check_code: crate::protected_names::ARTIST_NAME_REVIEW,
+        rule_version: FIELD_RULE_VERSION,
+        status: if review_hit.is_some() {
+            CheckStatus::ReviewRequired
+        } else {
+            CheckStatus::Pass
+        },
+        result_hash: field_cache_key(
+            crate::protected_names::ARTIST_NAME_REVIEW,
+            review_hit.as_deref().unwrap_or(""),
+        ),
+        detail: match &review_hit {
+            Some(name) => format!(
+                "a name, title or credit may refer to the protected artist \"{name}\"; a reviewer must confirm it is not an impersonation"
+            ),
+            None => "no protected artist names for review".into(),
+        },
+    };
     // Identifier reuse inside the org (cross-org reuse is a Stage 2 review
     // matter). The UPC/ISRC ledger is unique; a code already assigned to a
     // different release/track, or claimed by another active draft, can
@@ -873,6 +895,7 @@ async fn policy_checks(
     }
     reused.sort();
     reused.dedup();
+    out.push(review_check);
     out.push(StagedCheck {
         check_code: "ASSET_REUSED",
         rule_version: FIELD_RULE_VERSION,
