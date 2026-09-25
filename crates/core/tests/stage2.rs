@@ -728,3 +728,64 @@ async fn stage2_override_api_maps_seniority(pool: PgPool) {
     assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
     assert_eq!(v["error"]["code"], "SECOND_APPROVER_REQUIRED");
 }
+
+/// Activation model at the Stage 2 gate: a CONTRACTED adapter profile with
+/// delivery_enabled=true but no contract route must NOT join the eligible
+/// DSP set. delivery_enabled alone is only the operator kill-switch. The
+/// MOCK profile in the same run stays eligible (control).
+#[sqlx::test]
+async fn stage2_contracted_profile_not_eligible_without_contract(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let wav = make_good_wav(&dir);
+    let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
+    let release = build_submittable(&app, &pool, &u, asset).await;
+    let revision_id = consent_and_submit(&app, &u, release, "k-s2-activation").await;
+
+    // MOCK control: pin the seeded MockDSP profile to a fixed DSP id.
+    let mock_dsp = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+    sqlx::query("UPDATE execution.adapter_profiles SET dsp_id=$1 WHERE partner_id='mockdsp'")
+        .bind(mock_dsp)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // Commercial partner with the operator switch on but no contract route.
+    let contracted_dsp = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO execution.adapter_profiles(partner_id, display_name, profile_version, dsp_id, delivery_enabled, transport, activation_kind)
+         VALUES('contracted-test','Contracted Test Partner','1',$1,true,'sftp','CONTRACTED')",
+    )
+    .bind(contracted_dsp)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+
+    let detail: String = sqlx::query_scalar(
+        "SELECT detail FROM operations.check_results WHERE revision_id=$1 AND check_code='S2_DSP_ELIGIBILITY' ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(revision_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let parts: Vec<&str> = detail.splitn(2, " | ineligible: ").collect();
+    assert_eq!(parts.len(), 2, "eligibility detail shape: {detail}");
+    assert!(
+        parts[0].contains(&mock_dsp.to_string()),
+        "MOCK profile stays eligible: {detail}"
+    );
+    assert!(
+        !parts[0].contains(&contracted_dsp.to_string()),
+        "CONTRACTED without contract must not be eligible: {detail}"
+    );
+    assert!(
+        parts[1].contains(&format!("{contracted_dsp}=INELIGIBLE_NO_CONTRACT")),
+        "contract bypass is explicitly refused in the audit trail: {detail}"
+    );
+}
