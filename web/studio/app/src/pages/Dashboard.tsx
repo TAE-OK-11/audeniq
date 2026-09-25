@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { mockApi } from '../api/mock';
 import type { Release } from '../api/client';
 import { STATUS_LABEL } from '../lib/format';
@@ -36,13 +36,35 @@ const MOCK_REPORTS = [
   { period: '2026-09-22', revenue: 156700 },
 ];
 
-function makeChart(rows: { period: string; revenue: number }[]) {
+function Chart({ rows }: { rows: { period: string; revenue: number }[] }) {
+  const chartRef = useRef<HTMLDivElement>(null);
   const buckets = new Map<string, number>();
   for (const r of rows) {
     const k = r.period.slice(0, 7) || '기타';
     buckets.set(k, (buckets.get(k) || 0) + Number(r.revenue || 0));
   }
   const vals = [...buckets.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-8);
+
+  // 라이브와 동일: 차트가 화면에 보일 때 막대가 한 번 자라나는 애니메이션
+  useEffect(() => {
+    const el = chartRef.current;
+    if (!el) return;
+    const bars = el.querySelectorAll('.report-bar');
+    const io = new IntersectionObserver(
+      entries => {
+        for (const e of entries) {
+          if (e.isIntersecting) {
+            bars.forEach(b => b.classList.add('grow'));
+            io.disconnect();
+          }
+        }
+      },
+      { threshold: 0.3 }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [vals.length]);
+
   if (!vals.length) {
     return (
       <div className="empty-graph">
@@ -53,7 +75,7 @@ function makeChart(rows: { period: string; revenue: number }[]) {
   const high = Math.max(1, ...vals.map(x => x[1]));
   return (
     <>
-      <div className="report-chart" role="img" aria-label="기간별 수익 막대그래프">
+      <div className="report-chart" ref={chartRef} role="img" aria-label="기간별 수익 막대그래프">
         {vals.map(([k, v]) => (
           <div
             key={k}
@@ -192,7 +214,7 @@ export function Dashboard() {
           <div className="section-top">
             <h2>{money(monthSum)} <span className="small muted">· 이번 달 수익 집계</span></h2>
           </div>
-          {makeChart(MOCK_REPORTS)}
+          {<Chart rows={MOCK_REPORTS} />}
           <p className="dashboard-help">플랫폼 보고서를 기준으로 집계한 수익을 확인해 보세요.</p>
         </div>
       </section>

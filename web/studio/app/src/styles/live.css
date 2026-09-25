@@ -1077,3 +1077,6 @@ body.aq-nav-locked #portalNav{
 .process-timeline{display:grid;gap:10px;margin-top:4px}
 .timeline-row{background:#f5f8ff;border-radius:15px;padding:13px 16px}
 .timeline-row strong{display:block;font-size:13px;color:#202b40}
+
+/* 차트 막대: 스크롤로 보일 때 한 번 자라나는 애니메이션 (라이브와 동일) */
+.report-bar.grow{animation:bar-in .6s var(--portal-ease) both!important}
