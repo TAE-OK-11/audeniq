@@ -5,7 +5,6 @@ pub mod catalog;
 pub mod config;
 pub mod contracts;
 pub mod database;
-pub mod ddex_ern;
 pub mod distribution;
 pub mod domain;
 pub mod drafts;
