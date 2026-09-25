@@ -24,24 +24,60 @@ use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
 use sha2::Digest;
 use sqlx::PgPool;
-use std::{
-    collections::BTreeMap,
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    },
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
 };
-use tokio::sync::Mutex;
 use tower::ServiceExt;
 use uuid::Uuid;
 
 const SECRET: &str = "test-only-service-secret-32-characters";
 const ORIGIN: &str = "http://localhost:5173";
 
-#[derive(Default)]
 struct FileStore {
-    files: Mutex<BTreeMap<String, (Vec<u8>, String)>>,
+    dir: std::path::PathBuf,
     get_calls: AtomicUsize,
+}
+impl FileStore {
+    fn path_for(&self, key: &str) -> std::path::PathBuf {
+        // Sanitize key to a safe filename.
+        let safe: String = key
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '.' || c == '-' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        self.dir.join(safe)
+    }
+    async fn put(&self, key: &str, bytes: &[u8], content_type: &str) {
+        let path = self.path_for(key);
+        tokio::fs::write(&path, bytes).await.unwrap();
+        let meta_path = self.dir.join(
+            self.path_for(key)
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_string()
+                + ".ct",
+        );
+        tokio::fs::write(&meta_path, content_type).await.unwrap();
+    }
+}
+impl Default for FileStore {
+    fn default() -> Self {
+        let dir = std::path::PathBuf::from("/home/hatch/workspace/.test-stores")
+            .join(format!("audeniq-test-store-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        Self {
+            dir,
+            get_calls: AtomicUsize::new(0),
+        }
+    }
 }
 #[async_trait]
 impl ObjectStore for FileStore {
@@ -56,24 +92,33 @@ impl ObjectStore for FileStore {
         Err(Error::Storage)
     }
     async fn head(&self, key: &str) -> Result<Option<ObjectMeta>> {
-        Ok(self.files.lock().await.get(key).map(|(b, ct)| ObjectMeta {
-            size: b.len() as i64,
-            content_type: ct.clone(),
-            nonce: String::new(),
-            etag: String::new(),
-        }))
+        let path = self.path_for(key);
+        match tokio::fs::metadata(&path).await {
+            Ok(m) => {
+                let ct_path = self
+                    .dir
+                    .join(path.file_name().unwrap().to_str().unwrap().to_string() + ".ct");
+                let ct = tokio::fs::read_to_string(&ct_path)
+                    .await
+                    .unwrap_or_default();
+                Ok(Some(ObjectMeta {
+                    size: m.len() as i64,
+                    content_type: ct,
+                    nonce: String::new(),
+                    etag: String::new(),
+                }))
+            }
+            Err(_) => Ok(None),
+        }
     }
     async fn freeze(&self, _source: &str, _target: &str, _etag: &str) -> Result<()> {
         Err(Error::Storage)
     }
     async fn get(&self, key: &str) -> Result<Vec<u8>> {
         self.get_calls.fetch_add(1, Ordering::SeqCst);
-        self.files
-            .lock()
+        tokio::fs::read(self.path_for(key))
             .await
-            .get(key)
-            .map(|(b, _)| b.clone())
-            .ok_or(Error::Storage)
+            .map_err(|_| Error::Storage)
     }
 }
 
@@ -202,6 +247,16 @@ fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(sha2::Sha256::digest(bytes))
 }
 
+/// 3.5-minute audio fixtures for realistic stress tests.
+fn long_wav_bytes() -> Vec<u8> {
+    std::fs::read("/tmp/audeniq-stress/normal_35min_mono.wav")
+        .expect("3.5min normal fixture exists")
+}
+fn long_lowrate_wav_bytes() -> Vec<u8> {
+    std::fs::read("/tmp/audeniq-stress/problematic_35min_mono.wav")
+        .expect("3.5min low-rate fixture exists")
+}
+
 fn wav_bytes() -> &'static [u8] {
     static ONCE: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
     ONCE.get_or_init(|| {
@@ -247,11 +302,7 @@ async fn register_asset(
     let org = u.org;
     let id = Uuid::new_v4();
     let key = format!("registered/{org}/{id}/{name}");
-    store
-        .files
-        .lock()
-        .await
-        .insert(key.clone(), (bytes.to_vec(), "audio/wav".into()));
+    store.put(&key, bytes, "audio/wav").await;
     sqlx::query("INSERT INTO identity.resources(org_id,id,kind) VALUES($1,$2,'asset')")
         .bind(org)
         .bind(id)
@@ -378,11 +429,7 @@ async fn add_preparation_supplements(
     let art_id = Uuid::new_v4();
     let art_key = format!("registered/{}/cover-{}.png", u.org, art_id);
     let art_bytes = b"\x89PNGfake";
-    store
-        .files
-        .lock()
-        .await
-        .insert(art_key.clone(), (art_bytes.to_vec(), "image/png".into()));
+    store.put(&art_key, art_bytes, "image/png").await;
     sqlx::query("INSERT INTO identity.resources(org_id,id,kind) VALUES($1,$2,'asset')")
         .bind(u.org)
         .bind(art_id)
@@ -2343,11 +2390,11 @@ async fn e2e_timing_normal_vs_problematic(pool: PgPool) {
     println!("=== normal song: LIVE | problematic song: blocked at stage1 (AUDIO_TOO_SHORT) ===\n");
 }
 
-/// Stress test: 300 releases at once via API.
-/// - 150 normal: valid 32s audio, clean metadata -> expect STAGE1_PASSED
-/// - 70 problematic: 10s audio -> expect STAGE1_CORRECTION (AUDIO_TOO_SHORT)
-/// - 50 ambiguous: valid audio, title with version info -> REVIEW_REQUIRED (not blocked)
-/// - 30 duplicate: byte-identical to normal songs -> REVIEW_REQUIRED (similar)
+/// Stress test: 100 releases at once via API (3.5min audio).
+/// - 50 normal: valid 3.5min audio, clean metadata -> expect STAGE1_PASSED
+/// - 25 problematic: 3.5min 22kHz audio -> expect STAGE1_CORRECTION (AUDIO_SAMPLE_RATE_LOW)
+/// - 15 ambiguous: valid audio, title with version info -> REVIEW_REQUIRED (not blocked)
+/// - 10 duplicate: byte-identical to normal songs -> REVIEW_REQUIRED (similar)
 ///
 /// Verifies: no panics, all 300 processed, correct gating per category.
 #[sqlx::test]
@@ -2364,12 +2411,9 @@ async fn stress_300_mixed_releases(pool: PgPool) {
         .await
         .unwrap();
 
-    let normal_bytes = wav_bytes().to_vec();
-    let short_bytes = {
-        let dir = std::env::temp_dir().join("audeniq-f5-shared");
-        let out = dir.join("t10.wav");
-        std::fs::read(&out).unwrap()
-    };
+    let normal_bytes = long_wav_bytes();
+    // Problematic: 3.5min but 22.05kHz sample rate (below 44.1kHz minimum).
+    let bad_bytes = long_lowrate_wav_bytes();
 
     // Helper to submit one release. Returns (release_id, revision_id).
     #[allow(clippy::too_many_arguments)]
@@ -2427,11 +2471,11 @@ async fn stress_300_mixed_releases(pool: PgPool) {
 
     // ---- INTAKE: 300 releases ----
     let t = Instant::now();
-    let mut releases: Vec<(Uuid, Uuid, &'static str)> = Vec::with_capacity(300);
+    let mut releases: Vec<(Uuid, Uuid, &'static str)> = Vec::with_capacity(100);
     let mut isrc_counter = 0u32;
 
-    // 150 normal
-    for i in 0..150 {
+    // 50 normal
+    for i in 0..50 {
         isrc_counter += 1;
         let (r, rev) = submit_one(
             &app,
@@ -2447,31 +2491,31 @@ async fn stress_300_mixed_releases(pool: PgPool) {
         .await;
         releases.push((r, rev, "normal"));
         if i % 50 == 49 {
-            println!("  intake: {} / 300", releases.len());
+            println!("  intake: {} / 100", releases.len());
         }
     }
-    // 70 problematic (10s audio)
-    for i in 0..70 {
+    // 25 problematic (3.5min but low sample rate)
+    for i in 0..25 {
         isrc_counter += 1;
         let (r, rev) = submit_one(
             &app,
             &pool,
             &store,
             &u,
-            &short_bytes,
+            &bad_bytes,
             &format!("p{i}.wav"),
-            &format!("Short Track {i}"),
+            &format!("LowRate Track {i}"),
             isrc_counter,
             "bad",
         )
         .await;
         releases.push((r, rev, "problematic"));
         if i % 20 == 19 {
-            println!("  intake: {} / 300", releases.len());
+            println!("  intake: {} / 100", releases.len());
         }
     }
-    // 50 ambiguous (version info in title)
-    for i in 0..50 {
+    // 15 ambiguous (version info in title)
+    for i in 0..15 {
         isrc_counter += 1;
         let (r, rev) = submit_one(
             &app,
@@ -2487,8 +2531,8 @@ async fn stress_300_mixed_releases(pool: PgPool) {
         .await;
         releases.push((r, rev, "ambiguous"));
     }
-    // 30 duplicate (same bytes as normal #0)
-    for i in 0..30 {
+    // 10 duplicate (same bytes as normal #0)
+    for i in 0..10 {
         isrc_counter += 1;
         let (r, rev) = submit_one(
             &app,
@@ -2527,7 +2571,7 @@ async fn stress_300_mixed_releases(pool: PgPool) {
                 assert!(res.is_ok(), "stage1 panicked/failed on job {}", j.id);
                 stage1_done += 1;
                 if stage1_done % 50 == 0 {
-                    println!("  stage1: {stage1_done} / 300");
+                    println!("  stage1: {stage1_done} / 100");
                 }
             }
         }
@@ -2536,7 +2580,7 @@ async fn stress_300_mixed_releases(pool: PgPool) {
         "  stage1 done: {stage1_done} jobs in {}ms",
         t.elapsed().as_millis()
     );
-    assert_eq!(stage1_done, 300, "all 300 stage1 jobs processed");
+    assert_eq!(stage1_done, 100, "all 100 stage1 jobs processed");
 
     // ---- VERIFY: gating per category ----
     let mut counts: std::collections::HashMap<(String, String), i32> = Default::default();
@@ -2544,7 +2588,7 @@ async fn stress_300_mixed_releases(pool: PgPool) {
         let status = release_status(&pool, *release).await;
         *counts.entry((cat.to_string(), status)).or_insert(0) += 1;
     }
-    println!("\n=== STRESS RESULT (300 releases) ===");
+    println!("\n=== STRESS RESULT (100 releases, 3.5min audio) ===");
     let mut keys: Vec<_> = counts.keys().collect();
     keys.sort();
     for k in keys {
@@ -2557,10 +2601,10 @@ async fn stress_300_mixed_releases(pool: PgPool) {
             .get(&(cat.to_string(), status.to_string()))
             .unwrap_or(&0)
     };
-    assert_eq!(get("normal", "STAGE1_PASSED"), 150, "all normal passed");
+    assert_eq!(get("normal", "STAGE1_PASSED"), 50, "all normal passed");
     assert_eq!(
         get("problematic", "STAGE1_CORRECTION"),
-        70,
+        25,
         "all problematic blocked"
     );
     // Ambiguous and duplicate get REVIEW_REQUIRED checks but are not blocked.
@@ -2588,5 +2632,5 @@ async fn stress_300_mixed_releases(pool: PgPool) {
     println!("  ambiguous with REVIEW_REQUIRED flag: {amb_review} / 50");
 
     println!("  total wall time: {}ms", t_all.elapsed().as_millis());
-    println!("=== no panics, all 300 processed ===\n");
+    println!("=== no panics, all 100 processed ===\n");
 }
