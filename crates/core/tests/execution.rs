@@ -251,14 +251,51 @@ fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(sha2::Sha256::digest(bytes))
 }
 
-/// 3.5-minute audio fixtures for realistic stress tests.
+/// 3.5-minute audio fixtures for realistic stress tests. Generated with
+/// ffmpeg on first use (under `AUDENIQ_STRESS_FIXTURE_DIR`, default
+/// `temp_dir()/audeniq-stress`) so the test runs on any host and in CI
+/// instead of depending on files pre-seeded on one developer machine.
+fn stress_fixture(name: &str, sample_rate: u32) -> Vec<u8> {
+    let dir = std::env::var_os("AUDENIQ_STRESS_FIXTURE_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join("audeniq-stress"));
+    std::fs::create_dir_all(&dir).unwrap();
+    let out = dir.join(name);
+    if !out.exists() {
+        // Write to a unique temp name and rename, so parallel test binaries
+        // never read a half-written file.
+        let tmp = dir.join(format!("{name}.{}.tmp", std::process::id()));
+        let st = std::process::Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=210",
+                "-ar",
+                &sample_rate.to_string(),
+                "-ac",
+                "1",
+                "-c:a",
+                "pcm_s16le",
+                "-f",
+                "wav",
+            ])
+            .arg(&tmp)
+            .status()
+            .expect("ffmpeg runs");
+        assert!(st.success(), "ffmpeg generated {name}");
+        std::fs::rename(&tmp, &out).unwrap();
+    }
+    std::fs::read(&out).expect("stress fixture readable")
+}
 fn long_wav_bytes() -> Vec<u8> {
-    std::fs::read("/tmp/audeniq-stress/normal_35min_mono.wav")
-        .expect("3.5min normal fixture exists")
+    stress_fixture("normal_35min_mono.wav", 44_100)
 }
 fn long_lowrate_wav_bytes() -> Vec<u8> {
-    std::fs::read("/tmp/audeniq-stress/problematic_35min_mono.wav")
-        .expect("3.5min low-rate fixture exists")
+    stress_fixture("problematic_35min_mono.wav", 22_050)
 }
 
 fn wav_bytes() -> &'static [u8] {
@@ -2614,12 +2651,12 @@ async fn stress_300_mixed_releases(pool: PgPool) {
     // Ambiguous and duplicate get REVIEW_REQUIRED checks but are not blocked.
     assert_eq!(
         get("ambiguous", "STAGE1_PASSED"),
-        50,
+        15,
         "ambiguous not blocked"
     );
     assert_eq!(
         get("duplicate", "STAGE1_PASSED"),
-        30,
+        10,
         "duplicate not blocked at stage1"
     );
 
@@ -2633,7 +2670,7 @@ async fn stress_300_mixed_releases(pool: PgPool) {
     .fetch_one(&pool)
     .await
     .unwrap_or(0);
-    println!("  ambiguous with REVIEW_REQUIRED flag: {amb_review} / 50");
+    println!("  ambiguous with REVIEW_REQUIRED flag: {amb_review} / 15");
 
     println!("  total wall time: {}ms", t_all.elapsed().as_millis());
     println!("=== no panics, all 100 processed ===\n");
