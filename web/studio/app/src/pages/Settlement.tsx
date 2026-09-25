@@ -1,8 +1,12 @@
+// 정산·지급 — 라이브 view-settlement / renderSettlement / openPayout 대응
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { BankLogo } from '../components/BankLogo';
+import { PaymentSetupModal } from '../components/PaymentSetupModal';
+import { isPaymentRegistered, usePayment } from '../store/payment';
+import { money, niceDate } from '../lib/format';
 
 interface Statement { id: string; period: string; platform: string; amount: number; note: string; created: string }
 interface Payout { id: string; amount: number; note: string; created: string; status: string }
@@ -16,19 +20,14 @@ const INITIAL_PAYOUTS: Payout[] = [
   { id: 'p1', amount: 18920, note: '', created: '2026-08-15', status: 'recorded' },
 ];
 
-// mock 수령 정보 (라이브 db.payment)
-const MOCK_PAYMENT = { recipient: '서린', bank: 'KB국민은행', accountNumber: '1234567890', last4: '1234' };
-
-function money(n: number): string {
-  return new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW', maximumFractionDigits: 0 }).format(n || 0);
-}
-
 export function Settlement() {
   const nav = useNavigate();
   const toast = useToast();
+  const payment = usePayment();
   const [statements, setStatements] = useState<Statement[]>(INITIAL_STATEMENTS);
   const [payouts, setPayouts] = useState<Payout[]>(INITIAL_PAYOUTS);
   const [showPayout, setShowPayout] = useState(false);
+  const [showPaySetup, setShowPaySetup] = useState(false);
   const [amount, setAmount] = useState('');
   const [payoutNote, setPayoutNote] = useState('');
 
@@ -37,10 +36,10 @@ export function Settlement() {
   const left = Math.max(0, total - used);
 
   const openPayoutModal = () => {
-    const pay = MOCK_PAYMENT;
-    if (!pay.recipient || !pay.bank || pay.bank === '미설정' || !pay.accountNumber || !pay.last4 || pay.last4 === '0000') {
+    // 라이브 openPayout: 미등록이면 토스트 후 수령 정보 등록 모달을 연다
+    if (!isPaymentRegistered(payment)) {
       toast('수익을 받을 정보를 먼저 등록해 주세요.');
-      nav('/profile');
+      setShowPaySetup(true);
       return;
     }
     if (!left) { toast('지급을 요청할 수 있는 잔액이 없어요.'); return; }
@@ -52,13 +51,11 @@ export function Settlement() {
   const deleteStatement = (id: string) => {
     if (!window.confirm('선택한 내역을 삭제할까요?')) return;
     setStatements(ss => ss.filter(s => s.id !== id));
-    toast('정산 내역을 삭제했어요.');
   };
 
   const deletePayout = (id: string) => {
     if (!window.confirm('선택한 내역을 삭제할까요?')) return;
     setPayouts(ps => ps.filter(p => p.id !== id));
-    toast('요청 기록을 삭제했어요.');
   };
 
   const submitPayout = (e: React.FormEvent) => {
@@ -72,6 +69,8 @@ export function Settlement() {
     setShowPayout(false);
     toast('지급 요청 내역을 저장했어요.');
   };
+
+  const orderedStatements = statements.slice().sort((a, b) => b.period.localeCompare(a.period));
 
   return (
     <>
@@ -99,32 +98,40 @@ export function Settlement() {
           <p>지급 가능한 내역과 수령 정보를 확인한 뒤 요청할 수 있어요.</p>
         </div>
         <div className="studio-payout-actions">
-          <span className="studio-available">{money(left)}</span>
-          <button type="button" className="button" onClick={openPayoutModal}>수익 받기</button>
+          <span id="studioAvailable" className="studio-available">{money(left)}</span>
+          <button type="button" className="button" id="studioPayoutOpen" onClick={openPayoutModal}>수익 받기</button>
         </div>
       </section>
 
-      <div className="notice">
+      <div className="notice" id="settlementNotice">
         정산 내역과 지급 요청 기록을 확인해 주세요. 실제 송금은 지급 서비스 연결 후 진행돼요.
       </div>
 
       <div className="section-top">
         <h2>정산 내역</h2>
+        <div className="row-actions">
+          <button type="button" id="newStatement" className="button ghost" hidden disabled aria-hidden="true" tabIndex={-1}>정산 내역 관리</button>
+          <button type="button" id="requestPayout" className="button" hidden aria-hidden="true" tabIndex={-1}>수익 받기</button>
+        </div>
       </div>
-      <div className="data-list">
-        {statements.length ? statements.map(s => (
-          <div key={s.id} className="statement-row">
-            <span className="document-icon">₩</span>
-            <div>
-              <span className="row-name">{s.period} · {s.platform}</span>
-              <span className="row-sub">{s.note || '수기 등록 정산 내역'} · {s.created}</span>
-            </div>
-            <div className="row-end">
-              <strong>{money(s.amount)}</strong>
-              <button type="button" className="link-btn" aria-label="정산 내역 삭제" onClick={() => deleteStatement(s.id)}>×</button>
-            </div>
+      <div id="statementList">
+        {orderedStatements.length ? (
+          <div className="data-list">
+            {orderedStatements.map(s => (
+              <div key={s.id} className="statement-row">
+                <span className="document-icon">₩</span>
+                <div>
+                  <span className="row-name">{s.period} · {s.platform}</span>
+                  <span className="row-sub">{s.note || '수기 등록 정산 내역'} · {niceDate(s.created)}</span>
+                </div>
+                <div className="row-end">
+                  <strong>{money(s.amount)}</strong>
+                  <button type="button" className="link-btn" aria-label="정산 내역 삭제" onClick={() => deleteStatement(s.id)}>×</button>
+                </div>
+              </div>
+            ))}
           </div>
-        )) : (
+        ) : (
           <div className="empty-page">
             <h2>정산 내역이 없어요.</h2>
             <p>정산서를 받은 뒤 금액과 기간을 직접 기록할 수 있어요.</p>
@@ -133,20 +140,24 @@ export function Settlement() {
       </div>
 
       <div className="section-top"><h2>지급 요청 기록</h2></div>
-      <div className="data-list">
-        {payouts.length ? [...payouts].reverse().map(p => (
-          <div key={p.id} className="statement-row">
-            <span className="document-icon">↗</span>
-            <div>
-              <span className="row-name">{money(p.amount)} · 지급 요청 기록</span>
-              <span className="row-sub">{p.created} · {p.note || '현재 작업 공간에만 기록됨'}</span>
-            </div>
-            <div className="row-end">
-              <span className="status-chip ready">전송 전</span>
-              <button type="button" className="link-btn" aria-label="요청 기록 삭제" onClick={() => deletePayout(p.id)}>×</button>
-            </div>
+      <div id="payoutList">
+        {payouts.length ? (
+          <div className="data-list">
+            {[...payouts].reverse().map(p => (
+              <div key={p.id} className="statement-row">
+                <span className="document-icon">↗</span>
+                <div>
+                  <span className="row-name">{money(p.amount)} · 지급 요청 기록</span>
+                  <span className="row-sub">{niceDate(p.created)} · {p.note || '현재 작업 공간에만 기록됨'}</span>
+                </div>
+                <div className="row-end">
+                  <span className="status-chip ready">전송 전</span>
+                  <button type="button" className="link-btn" aria-label="요청 기록 삭제" onClick={() => deletePayout(p.id)}>×</button>
+                </div>
+              </div>
+            ))}
           </div>
-        )) : (
+        ) : (
           <div className="empty-page">
             <h2>지급 요청 기록이 없어요.</h2>
             <p>지급 요청 내용을 저장하면 이곳에 표시돼요.</p>
@@ -160,7 +171,7 @@ export function Settlement() {
             <p className="eyebrow">지급 요청 가능 금액</p>
             <strong className="studio-payout-number">{money(left)}</strong>
             <p className="small muted">원하는 금액을 입력하고 받으실 계좌를 확인해 주세요.</p>
-            <form onSubmit={submitPayout}>
+            <form id="payoutForm" onSubmit={submitPayout}>
               <div className="field">
                 <label htmlFor="pAmount">받을 금액 (원)</label>
                 <div className="studio-amount-field">
@@ -169,15 +180,17 @@ export function Settlement() {
                     required placeholder="금액을 입력해 주세요"
                     value={amount} onChange={e => setAmount(e.target.value)}
                   />
-                  <button type="button" className="link-btn" onClick={() => setAmount(String(left))}>전액</button>
+                  <button type="button" id="payoutAll" className="link-btn" onClick={() => setAmount(String(left))}>전액</button>
                 </div>
                 <p className="help">요청 가능 금액을 초과할 수 없어요.</p>
               </div>
               <div className="studio-receive-account">
-                <BankLogo name={MOCK_PAYMENT.bank} />
+                <BankLogo name={payment?.bank || ''} />
                 <div>
-                  <strong>{MOCK_PAYMENT.bank || '은행 미등록'}</strong>
-                  <p className="small muted">{MOCK_PAYMENT.recipient || '수령인 미등록'} · {MOCK_PAYMENT.last4 ? `•••• ${MOCK_PAYMENT.last4}` : '계좌 미등록'}</p>
+                  <strong>{payment?.bank || '은행 미등록'}</strong>
+                  <p className="small muted">
+                    {payment?.recipient || '수령인 미등록'} · {payment?.last4 ? `•••• ${payment.last4}` : '계좌 미등록'}
+                  </p>
                 </div>
                 <span className="studio-account-check" aria-label="선택된 수령 계좌">✓</span>
               </div>
@@ -197,7 +210,7 @@ export function Settlement() {
         </Modal>
       )}
 
-
+      {showPaySetup && <PaymentSetupModal onClose={() => setShowPaySetup(false)} />}
     </>
   );
 }

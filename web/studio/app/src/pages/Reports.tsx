@@ -108,20 +108,22 @@ export function Reports() {
       <div className="view-title">
         <div>
           <p className="eyebrow">INSIGHTS</p>
-          <h1>음악 리포트</h1>
+          <h1 id="reportsTitle">음악 리포트</h1>
           <p>플랫폼별 실적을 기간과 곡별로 확인해 보세요.</p>
         </div>
         <button type="button" className="button secondary" onClick={exportCsv}>CSV 내보내기 ↗</button>
       </div>
 
       <div className="report-tools">
-        <select aria-label="리포트 기간" value={period} onChange={e => setPeriod(e.target.value)}>
+        <select id="reportPeriod" aria-label="리포트 기간" value={period} onChange={e => setPeriod(e.target.value)}>
           {PERIODS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
         </select>
-        <select aria-label="발매별 필터" value={release} onChange={e => setRelease(e.target.value)}>
+        <select id="reportRelease" aria-label="발매별 필터" value={release} onChange={e => setRelease(e.target.value)}>
           <option value="all">전체 발매</option>
           {releases.map(r => <option key={r} value={r}>{r}</option>)}
         </select>
+        <input id="reportFile" hidden aria-hidden="true" tabIndex={-1} type="file" accept=".csv,text/csv" aria-label="리포트 CSV 가져오기" />
+        <button id="importHelp" hidden aria-hidden="true" tabIndex={-1} className="button ghost" type="button">가져오기 형식</button>
       </div>
 
       <div className="stat-grid">

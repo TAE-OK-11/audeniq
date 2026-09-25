@@ -27,6 +27,23 @@ export interface Release {
 
 export interface ReleaseDetail extends Release {
   tracks: Track[];
+  draft?: ReleaseDraft;
+}
+
+export interface ReleaseDraft {
+  type: string;
+  genre: string;
+  label: string;
+  upc: string;
+  notes: string;
+  coverName: string;
+  territories: string[];
+  platforms: string[];
+  ownership: string;
+  phonogram: string;
+  copyright: string;
+  rightsChecks: Record<string, boolean>;
+  history: { text: string; time: string }[];
 }
 
 export interface Track {
@@ -34,6 +51,11 @@ export interface Track {
   title: string;
   duration_ms: number | null;
   isrc: string | null;
+  version?: string | null;
+  composers?: string | null;
+  lyricists?: string | null;
+  audioName?: string | null;
+  sample?: boolean;
 }
 
 let csrfToken = '';

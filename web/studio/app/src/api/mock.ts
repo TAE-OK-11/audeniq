@@ -9,10 +9,10 @@ const mockOrgs: Org[] = [
 ];
 
 const mockReleases: Release[] = [
-  { id: 'r1', title: '첫 번째 싱글', status: 'LIVE', release_date: '2026-10-01', created_at: '2026-09-20', track_count: 2, artist: '서린' },
-  { id: 'r2', title: '여름 EP', status: 'STAGE1_PASSED', release_date: '2026-11-15', created_at: '2026-09-22', track_count: 4, artist: '서린' },
-  { id: 'r3', title: '데모 트랙', status: 'STAGE1_CORRECTION', release_date: null, created_at: '2026-09-24', track_count: 1, artist: '서린' },
-  { id: 'r4', title: '미발매 작업물', status: 'DRAFT', release_date: null, created_at: '2026-09-25', track_count: 0, artist: '서린' },
+  { id: 'r1', title: '첫 번째 싱글', status: 'live', release_date: '2026-10-01', created_at: '2026-09-20', track_count: 2, artist: '서린' },
+  { id: 'r2', title: '여름 EP', status: 'review', release_date: '2026-11-15', created_at: '2026-09-22', track_count: 4, artist: '서린' },
+  { id: 'r3', title: '데모 트랙', status: 'needs', release_date: null, created_at: '2026-09-24', track_count: 1, artist: '서린' },
+  { id: 'r4', title: '미발매 작업물', status: 'draft', release_date: null, created_at: '2026-09-25', track_count: 0, artist: '서린' },
 ];
 
 const mockDetails: Record<string, ReleaseDetail> = {
@@ -74,7 +74,7 @@ export const mockApi = {
     const r: Release = {
       id: 'r' + Date.now(),
       title: data.title,
-      status: 'DRAFT',
+      status: 'draft',
       release_date: data.release_date || null,
       created_at: new Date().toISOString().slice(0, 10),
       track_count: 0,
@@ -82,5 +82,73 @@ export const mockApi = {
     mockReleases.unshift(r);
     mockDetails[r.id] = { ...r, tracks: [] };
     return r;
+  },
+  /** 발매 신청 접수 — 라이브 최종 제출(draft.status='review', 입력 전체 보존) 대응 */
+  submitRelease: async (data: {
+    title: string;
+    artist: string;
+    type: string;
+    genre: string;
+    label: string;
+    upc: string;
+    notes: string;
+    coverName: string;
+    release_date: string;
+    tracks: { id: string; title: string; isrc: string; duration: string; version: string; composers: string; lyricists: string; audioName: string }[];
+    territories: string[];
+    platforms: string[];
+    ownership: string;
+    phonogram: string;
+    copyright: string;
+    rightsChecks: Record<string, boolean>;
+  }): Promise<Release> => {
+    await delay(500);
+    const at = new Date();
+    const stamp = `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')} ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+    const r: Release = {
+      id: 'r' + Date.now(),
+      title: data.title,
+      artist: data.artist || undefined,
+      status: 'review',
+      release_date: data.release_date || null,
+      created_at: new Date().toISOString().slice(0, 10),
+      track_count: data.tracks.length,
+    };
+    mockReleases.unshift(r);
+    mockDetails[r.id] = {
+      ...r,
+      tracks: data.tracks.map(t => ({
+        id: t.id,
+        title: t.title,
+        duration_ms: null,
+        isrc: t.isrc || null,
+        version: t.version || null,
+        composers: t.composers || null,
+        lyricists: t.lyricists || null,
+        audioName: t.audioName || null,
+      })),
+      draft: {
+        type: data.type,
+        genre: data.genre,
+        label: data.label,
+        upc: data.upc,
+        notes: data.notes,
+        coverName: data.coverName,
+        territories: data.territories,
+        platforms: data.platforms,
+        ownership: data.ownership,
+        phonogram: data.phonogram,
+        copyright: data.copyright,
+        rightsChecks: data.rightsChecks,
+        history: [{ text: '발매 신청 접수 완료 · AUDENIQ 검토 시작', time: stamp }],
+      },
+    };
+    return r;
+  },
+  deleteRelease: async (id: string): Promise<void> => {
+    await delay(300);
+    const i = mockReleases.findIndex(r => r.id === id);
+    if (i >= 0) mockReleases.splice(i, 1);
+    delete mockDetails[id];
   },
 };

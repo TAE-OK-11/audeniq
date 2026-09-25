@@ -2,6 +2,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { mockApi } from '../api/mock';
 import type { Release } from '../api/client';
+import { STATUS_LABEL } from '../lib/format';
+import { unreadCount } from '../store/support';
 
 const GRID_ITEMS = [
   {
@@ -21,13 +23,6 @@ const GRID_ITEMS = [
     icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h8l4 4v13a1 1 0 0 1-1 1H7a2 2 0 0 1-2-2V5a2 2 0 0 1-2-2Z"/><path d="M15 3v5h4M9 12h6M9 16h6"/></svg>,
   },
 ];
-
-const STATUS_LABEL: Record<string, string> = {
-  LIVE: '발매 완료', STAGE1_PASSED: '검토 중', STAGE1_CORRECTION: '보완 필요', DRAFT: '작성 중',
-};
-const STATUS_CLASS: Record<string, string> = {
-  LIVE: 'live', STAGE1_PASSED: 'review', STAGE1_CORRECTION: 'needs', DRAFT: 'draft',
-};
 
 function money(n: number): string {
   return new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW', maximumFractionDigits: 0 }).format(n || 0);
@@ -78,7 +73,6 @@ function makeChart(rows: { period: string; revenue: number }[]) {
 
 function ReleaseRow({ r }: { r: Release }) {
   const navigate = useNavigate();
-  const st = STATUS_LABEL[r.status] || r.status;
   return (
     <article className="release-row studio-album-row" onClick={() => navigate(`/releases/${r.id}`)} style={{ cursor: 'pointer' }}>
       <span className="cover" aria-hidden="true">♫</span>
@@ -90,7 +84,7 @@ function ReleaseRow({ r }: { r: Release }) {
         <span className="row-sub">{r.release_date || '발매일 미정'}</span>
       </div>
       <div className="row-end">
-        <span className={`status-chip ${STATUS_CLASS[r.status] || ''}`}>{st}</span>
+        <span className={`status-chip ${r.status || 'draft'}`}>{STATUS_LABEL[r.status] || r.status}</span>
       </div>
     </article>
   );
@@ -104,9 +98,9 @@ export function Dashboard() {
     mockApi.listReleases().then(setReleases).catch(() => {});
   }, []);
 
-  const needs = releases.filter(r => r.status === 'STAGE1_CORRECTION').length;
-  const drafts = releases.filter(r => r.status === 'DRAFT').length;
-  const unread = 2; // mock 읽지 않은 알림
+  const needs = releases.filter(r => r.status === 'needs').length;
+  const drafts = releases.filter(r => r.status === 'draft').length;
+  const unread = unreadCount();
 
   const profileName = '서린'; // mock 프로필 이름 (라이브 db.profile.name)
   const tasks: { icon: string; name: string; sub: string; btn: string; to: string }[] = [];

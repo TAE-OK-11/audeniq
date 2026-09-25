@@ -2,6 +2,8 @@ import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../components/Toast';
 import { mockApi } from '../api/mock';
+import { addDoc, type DocRecord } from '../store/docs';
+import { localStamp } from '../lib/format';
 
 const STEPS = [
   { kicker: '01 / 06 · 발매 정보', title: '어떤 음악을\n발매할까요?', sub: '발매 정보와 아티스트명을 입력해 주세요.' },
@@ -105,6 +107,12 @@ const OPTIONS_CATALOG: [keyof ReleaseOptions, string, string][] = [
 
 function rightsOk(f: WizardForm): boolean {
   return RIGHTS_CHECKS.every(([k]) => f.rightsChecks[k]);
+}
+
+function stampNow(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
 function BackIcon() {
@@ -265,7 +273,7 @@ function OptionDocsBanner({ options }: { options: ReleaseOptions }) {
     <div className="aq-req-banner">
       <h3>추가 확인이 필요한 항목</h3>
       <p>선택하신 발매 조건에 맞는 서류가 권리 증빙 메뉴에 준비돼요. 원본 확인과 검토는 별도로 진행돼요.</p>
-      <div>{chosen.map(([id, , title]) => <span key={id} className="aq-req-tag">{title}</span>)}</div>
+      <div>{chosen.map(([id, title]) => <span key={id} className="aq-req-tag">{title}</span>)}</div>
       {options.minor && (
         <p style={{ marginTop: 13 }}>법정대리인 동의서는 아티스트 본인의 확인과 별도로 관리돼요.</p>
       )}
@@ -289,7 +297,7 @@ function FinalReviewBanner({ form }: { form: WizardForm }) {
       <div className="aq-review-list">
         <div className="aq-review-item">
           <span>발매 옵션</span>
-          <strong>{chosen.length ? chosen.map(([, , t]) => t).join(' · ') : '일반 발매'}</strong>
+          <strong>{chosen.length ? chosen.map(([, title]) => title).join(' · ') : '일반 발매'}</strong>
         </div>
         <div className="aq-review-item">
           <span>트랙 필수 정보</span>
@@ -318,6 +326,7 @@ export function Upload() {
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<WizardForm>(EMPTY);
   const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const coverInputRef = useRef<HTMLInputElement>(null);
 
   const set = <K extends keyof WizardForm>(key: K, value: WizardForm[K]) =>
@@ -374,12 +383,96 @@ export function Upload() {
     return true;
   };
 
+  /** 라이브 ensureReleaseDocuments — 접수된 발매의 계약서·권리 서류를 준비 */
+  const ensureReleaseDocuments = (f: WizardForm, releaseId: string) => {
+    const title = f.title.trim() || '제목 없는 발매';
+    const genreVal = f.genre === '__other__' ? f.genreCustom.trim() : f.genre;
+    const at = stampNow();
+    const lines = [
+      '발매 신청 정보',
+      `신청한 발매: ${title}`,
+      `아티스트: ${f.artist.trim() || '미입력'}`,
+      `앨범 구분: ${KINDS.find(k => k[0] === f.type)?.[1] || f.type}`,
+      `장르: ${genreVal || '미입력'}`,
+      `발매 희망일: ${f.releaseDate || '미정'}`,
+      `레이블: ${f.label.trim() || '미입력'}`,
+      `수록곡: ${f.tracks.map((t, i) => `${i + 1}. ${t.title.trim() || '제목 없음'} / ${t.duration || '길이 확인 전'} / ${t.composers.trim() || '작곡자 미입력'}`).join(' · ')}`,
+      `배급 플랫폼: ${f.platforms.map(p => DSP.find(d => d[0] === p)?.[1] || p).join(', ')}`,
+      `마스터 권리자: ${f.ownership.trim() || '미입력'}`,
+      `℗ 권리 표기: ${f.phonogram.trim() || '미입력'}`,
+      `© 권리 표기: ${f.copyright.trim() || '미입력'}`,
+      `신청일: ${localStamp(at)}`,
+      '권리 확인: 신청자는 음원, 작사·작곡, 커버 이미지 및 제3자 권리 이용에 필요한 허락을 확인하고 증빙 요청 시 제출할 것을 확인합니다.',
+    ];
+    const agreement: DocRecord = {
+      id: 'doc' + Date.now(), kind: 'agreements',
+      title: title + ' · 발매 신청 및 권리 확인서',
+      releaseId, releaseTitle: title, version: '1.0', created: at,
+      content: lines.join('\n'), fileName: '', checked: false, checkedAt: '',
+      consentHistory: [],
+      reviewHistory: [{ status: '접수 요청', time: at, detail: '신청서가 작성됐어요. 담당자 검토 접수는 전송 후 시작됩니다.' }],
+      reviewStatus: 'prepared', reviewNote: '', signerName: '', localSignatureData: '', localSignatureAt: '',
+    };
+    const rights: DocRecord = {
+      id: 'doc' + Date.now() + '-r', kind: 'rights',
+      title: title + ' · 권리 증빙 제출',
+      releaseId, releaseTitle: title, version: '1.0', created: at,
+      content: '발매 권리를 확인할 수 있는 자료를 제출해 주세요. 해당하는 자료: 마스터 음원 제작 또는 이용 허락서, 커버아트 사용 허락서, 공동 창작·피처링 또는 커버곡의 권리 허락서. 필요한 자료만 제출하면 돼요.',
+      fileName: '', checked: false, checkedAt: '',
+      consentHistory: [],
+      reviewHistory: [{ status: '서류 접수 대기', time: at, detail: '권리 관련 증빙이 필요한 경우 제출해 주세요.' }],
+      reviewStatus: 'awaiting_documents', reviewNote: '', signerName: '', localSignatureData: '', localSignatureAt: '',
+    };
+    addDoc(rights);
+    addDoc(agreement);
+  };
+
+  const saveDraft = async () => {
+    try {
+      await mockApi.createRelease({
+        title: form.title.trim() || '제목 없음',
+        release_date: form.releaseDate || '',
+      });
+      toast('임시 저장했어요.');
+    } catch {
+      toast('임시 저장에 실패했어요.');
+    }
+  };
+
   const next = async () => {
     if (!validate()) return;
     if (step === STEPS.length - 1) {
-      const r = await mockApi.createRelease({ title: form.title.trim(), release_date: form.releaseDate || '' });
-      toast('발매 신청이 접수됐어요.');
-      nav(`/releases/${r.id}`);
+      if (submitting) return;
+      setSubmitting(true);
+      try {
+        const r = await mockApi.submitRelease({
+          title: form.title.trim(),
+          artist: form.artist.trim(),
+          type: form.type,
+          genre: form.genre === '__other__' ? form.genreCustom.trim() : form.genre,
+          label: form.label.trim(),
+          upc: form.upc.trim(),
+          notes: form.notes.trim(),
+          coverName: form.coverName,
+          release_date: form.releaseDate || '',
+          tracks: form.tracks.map(t => ({
+            id: t.id, title: t.title.trim(), isrc: t.isrc.trim(), duration: t.duration,
+            version: t.version.trim(), composers: t.composers.trim(),
+            lyricists: t.lyricists.trim(), audioName: t.audioName,
+          })),
+          territories: form.territories,
+          platforms: form.platforms,
+          ownership: form.ownership.trim(),
+          phonogram: form.phonogram.trim(),
+          copyright: form.copyright.trim(),
+          rightsChecks: form.rightsChecks,
+        });
+        ensureReleaseDocuments(form, r.id);
+        toast('발매 신청이 접수됐어요.');
+        nav(`/releases/${r.id}`);
+      } finally {
+        setSubmitting(false);
+      }
       return;
     }
     setStep(s => s + 1);
@@ -434,6 +527,10 @@ export function Upload() {
         </button>
         <span className="wizard-top-title">새로운 발매</span>
         <span className="wizard-top-count">{step + 1} / 6</span>
+      </div>
+
+      <div className="row-actions">
+        <button type="button" className="link-btn" onClick={saveDraft}>임시 저장</button>
       </div>
 
       <div className="wizard-progress" aria-label="발매 신청 진행 단계">
@@ -493,13 +590,10 @@ export function Upload() {
                 )}
                 <p className="help" id="genreHelp">발매할 음악의 장르를 선택해 주세요.</p>
               </div>
-              <details className="studio-expand">
-                <summary>추가 정보 <span aria-hidden="true">＋</span></summary>
-                <div className="field">
-                  <label htmlFor="f-label">레이블 / 발매사 표기</label>
-                  <input id="f-label" value={form.label} onChange={e => set('label', e.target.value)} maxLength={120} placeholder="권리 계약에 맞는 표기" />
-                </div>
-              </details>
+              <div className="field">
+                <label htmlFor="f-label">레이블 / 발매사 표기</label>
+                <input id="f-label" value={form.label} onChange={e => set('label', e.target.value)} maxLength={120} placeholder="권리 계약에 맞는 표기" />
+              </div>
             </div>
             <div className="field">
               <label htmlFor="f-notes">앨범 소개</label>
@@ -756,7 +850,7 @@ export function Upload() {
         <button type="button" className="button secondary" onClick={back}>
           {step === 0 ? '홈으로' : '이전으로'}
         </button>
-        <button type="button" className="button" onClick={next}>
+        <button type="button" className="button" onClick={next} disabled={submitting}>
           {step === STEPS.length - 1 ? '접수하기' : '다음으로'}
         </button>
       </div>
