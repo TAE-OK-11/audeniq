@@ -1415,9 +1415,7 @@ async fn asset_checks(
         // bytes. The similarity result depends on catalog state, but the
         // fingerprint itself is immutable for unchanged bytes.
         let only_similarity = to_run == ["AUDIO_SIMILAR_TO_EXISTING"];
-        if only_similarity
-            && let Some(stored_fp) = load_stored_fingerprint(pool, org, aid).await?
-        {
+        if only_similarity && let Some(stored_fp) = load_stored_fingerprint(pool, org, aid).await? {
             let fp_opt = Some(Ok(stored_fp));
             handle_fingerprint_checks(pool, org, aid, sha256, &fp_opt, &to_run, &mut out).await?;
             // Emit the cached codes for the other checks (already in `out`

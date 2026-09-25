@@ -13,10 +13,11 @@ const QUEUES: [&str; 6] = [
 ];
 
 fn env_usize(name: &str, default: usize, min: usize, max: usize) -> anyhow::Result<usize> {
-    let value = std::env::var(name)
-        .map(|raw| raw.parse::<usize>())
-        .transpose()?
-        .unwrap_or(default);
+    let value = match std::env::var(name) {
+        Ok(raw) => raw.parse::<usize>()?,
+        Err(std::env::VarError::NotPresent) => default,
+        Err(error) => return Err(error.into()),
+    };
     anyhow::ensure!((min..=max).contains(&value), "{name} must be {min}..={max}");
     Ok(value)
 }
