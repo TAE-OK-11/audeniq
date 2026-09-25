@@ -254,15 +254,15 @@ impl DspAdapter for MockDsp {
             accepted: false,
             live: false,
         };
-        if let MockBehavior::Unavailable { remaining } = inner.behavior {
-            if remaining > 0 {
-                inner.behavior = MockBehavior::Unavailable {
-                    remaining: remaining - 1,
-                };
-                return Ok(SendOutcome::Unavailable {
-                    detail: "mock partner unavailable (503)".to_string(),
-                });
-            }
+        if let MockBehavior::Unavailable { remaining } = inner.behavior
+            && remaining > 0
+        {
+            inner.behavior = MockBehavior::Unavailable {
+                remaining: remaining - 1,
+            };
+            return Ok(SendOutcome::Unavailable {
+                detail: "mock partner unavailable (503)".to_string(),
+            });
         }
         match inner.behavior.clone() {
             MockBehavior::Accept
