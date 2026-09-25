@@ -201,3 +201,22 @@ BLUEPRINT §6의 3-A(Finalizer)/3-D(Canonical Model)/3-F(Package) — Muse 담�
 - 검증 커밋: `0236829` (브랜치 `foundation/f4-stage3-distribution`)
 - F4 preparation acceptance run: [36077276805](https://github.com/TAE-OK-11/audeniq/actions/runs/36077276805) — **success** (6m24s)
 - Foundation run: [36077276749](https://github.com/TAE-OK-11/audeniq/actions/runs/36077276749) — **success** (16m15s)
+
+---
+
+## F7 — Finance ledger 병합 (2026-09-25)
+
+`origin/foundation/f7-finance-ledger`(`c8101ac`, Codex)를 `foundation/f4-stage3-distribution`에 병합.
+
+### 병합 내용
+
+- `crates/core/src/finance.rs` (신규): 이중기입 원장 코어 — `post_transaction`(1통화·ΣDEBIT=ΣCREDIT·음수 거부·모호 매칭 금지), `reverse_transaction`(역분개, 원본 불변), `apply_split_snapshot`/`effective_split`(append-only), `create_payout_order`(idempotency_key 멱등·hold 당사자 거부), `approve_payout_order`→`mark_payout_submitted`→`record_bank_result`(`SUBMITTED_UNKNOWN` 비재시도), `place_hold`/`release_hold`/`is_payable`(scope 한정).
+- 마이그레이션: 원 브랜치의 `0011_finance_ledger.sql`은 F4의 0011/0012/0013과 번호가 겹쳐 `0014_finance_ledger.sql`로 재번호화. identity·catalog만 참조하므로 의존성상 안전.
+- 충돌 해결: `lib.rs`에 `finance` + `identifiers` 모듈 둘 다 유지. `Cargo.toml`은 F7의 `rust_decimal`(sqlx `rust_decimal` feature 포함)을 병합하되 F4의 uuid `v5` feature 유지.
+- `crates/core/tests/finance.rs`: 10개 테스트 전부 통과.
+
+### 로컬 검증 결과 (2026-09-25)
+
+- `cargo fmt --all --check`: 통과
+- `cargo clippy --workspace --all-targets -- -D warnings`: 통과
+- `cargo test --workspace`: 전부 통과 (lib 29, distribution 3, finance 10, foundation 18, stage1 10, stage2 5, stage3_identifiers 2, stage3_preparation 8 — 총 85)
