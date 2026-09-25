@@ -8,16 +8,16 @@ const PERIODS = [
 ];
 
 interface ReportRow {
-  period: string; platform: string; release: string; plays: number; revenue: number;
+  period: string; platform: string; release: string; track: string; plays: number; revenue: number;
 }
 
 const MOCK_ROWS: ReportRow[] = [
-  { period: '2026-09', platform: 'Spotify', release: '첫 번째 싱글', plays: 12480, revenue: 10736 },
-  { period: '2026-09', platform: 'Apple Music', release: '첫 번째 싱글', plays: 8216, revenue: 9202 },
-  { period: '2026-09', platform: 'Melon', release: '여름 EP', plays: 5934, revenue: 4391 },
-  { period: '2026-09', platform: 'YouTube Music', release: '여름 EP', plays: 4102, revenue: 2789 },
-  { period: '2026-08', platform: 'Spotify', release: '첫 번째 싱글', plays: 9870, revenue: 8492 },
-  { period: '2026-08', platform: 'Melon', release: '첫 번째 싱글', plays: 4210, revenue: 3115 },
+  { period: '2026-09', platform: 'Spotify', release: '첫 번째 싱글', track: '첫 번째 싱글', plays: 12480, revenue: 10736 },
+  { period: '2026-09', platform: 'Apple Music', release: '첫 번째 싱글', track: '첫 번째 싱글', plays: 8216, revenue: 9202 },
+  { period: '2026-09', platform: 'Melon', release: '여름 EP', track: '파도', plays: 5934, revenue: 4391 },
+  { period: '2026-09', platform: 'YouTube Music', release: '여름 EP', track: '전체', plays: 4102, revenue: 2789 },
+  { period: '2026-08', platform: 'Spotify', release: '첫 번째 싱글', track: '첫 번째 싱글', plays: 9870, revenue: 8492 },
+  { period: '2026-08', platform: 'Melon', release: '첫 번째 싱글', track: '전체', plays: 4210, revenue: 3115 },
 ];
 
 function money(n: number): string {
@@ -85,19 +85,21 @@ export function Reports() {
   const releases = [...new Set(MOCK_ROWS.map(r => r.release))];
 
   const exportCsv = () => {
-    const header = '기간,플랫폼,발매/곡,재생,수익(원)';
+    if (!filtered.length) { toast('내보낼 리포트가 없어요.'); return; }
+    const cell = (v: string | number) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const header = 'period,platform,releaseTitle,track,plays,revenue';
     const lines = filtered.map(r =>
-      [r.period, r.platform, `"${r.release}"`, r.plays, r.revenue].join(','));
-    const csv = '\uFEFF' + [header, ...lines].join('\n');
+      [r.period, r.platform, r.release, r.track, r.plays, r.revenue].map(cell).join(','));
+    const csv = '\uFEFF' + [header, ...lines].join('\r\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'audeniq_report.csv';
+    a.download = 'AUDENIQ_report.csv';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
     toast('리포트를 CSV로 내보냈어요.');
   };
 
@@ -123,9 +125,9 @@ export function Reports() {
       </div>
 
       <div className="stat-grid">
-        <div className="stat-card"><small>집계 수익</small><strong>{money(totalRevenue)}</strong></div>
-        <div className="stat-card"><small>재생 수</small><strong>{num(totalPlays)}</strong></div>
-        <div className="stat-card"><small>플랫폼</small><strong>{platforms}</strong></div>
+        <div className="surface white stat-card"><small>집계 수익</small><strong>{money(totalRevenue)}</strong></div>
+        <div className="surface white stat-card"><small>재생 수</small><strong>{num(totalPlays)}</strong></div>
+        <div className="surface white stat-card"><small>플랫폼</small><strong>{platforms}</strong></div>
       </div>
 
       <section className="surface" aria-labelledby="reportGraphTitle">
@@ -137,27 +139,34 @@ export function Reports() {
       </section>
 
       <div className="section-top"><h2>플랫폼별 상세 내역</h2></div>
-      <div className="scroll-x">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>기간</th><th>플랫폼</th><th>발매/곡</th>
-              <th className="num">재생</th><th className="num">수익</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((r, i) => (
-              <tr key={i}>
-                <td>{r.period}</td>
-                <td>{r.platform}</td>
-                <td>{r.release}</td>
-                <td className="num">{num(r.plays)}</td>
-                <td className="num">{money(r.revenue)}</td>
+      {filtered.length ? (
+        <div className="scroll-x">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>기간</th><th>플랫폼</th><th>발매 / 곡</th>
+                <th className="num">재생</th><th className="num">수익</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {filtered.map((r, i) => (
+                <tr key={i}>
+                  <td>{r.period}</td>
+                  <td>{r.platform}</td>
+                  <td>{r.release || '—'} / {r.track || '전체'}</td>
+                  <td className="num">{num(r.plays)}</td>
+                  <td className="num">{money(r.revenue)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="empty-page">
+          <h2>아직 가져온 실적이 없어요.</h2>
+          <p>CSV 파일을 가져오면 재생·수익 내역과 기간별 그래프가 여기에 표시돼요.</p>
+        </div>
+      )}
     </>
   );
 }
