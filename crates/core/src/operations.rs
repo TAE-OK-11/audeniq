@@ -73,6 +73,11 @@ pub async fn enqueue(
 /// or package identifiers. A worker crash must therefore requeue the job until
 /// `max_attempts` is exhausted instead of permanently losing an album halfway
 /// through the pipeline.
+///
+/// A reclaimed job is immediately claimable: the expired lease already delayed
+/// it by the full lease duration, and the crashed worker's token is fenced off
+/// by the new `lock_token`. Exponential backoff is reserved for explicit
+/// retryable failures reported through [`fail`].
 async fn reclaim_expired(c: &mut PgConnection, queue: &str) -> Result<()> {
     let rows = sqlx::query(
         "UPDATE operations.jobs
@@ -84,7 +89,7 @@ async fn reclaim_expired(c: &mut PgConnection, queue: &str) -> Result<()> {
              last_error = 'LEASE_EXPIRED',
              run_at = CASE
                  WHEN attempts >= max_attempts THEN run_at
-                 ELSE now() + make_interval(secs => least(60, power(2, attempts))::double precision)
+                 ELSE clock_timestamp()
              END
          WHERE queue = $1 AND status = 'RUNNING' AND lease_until <= clock_timestamp()
          RETURNING id, status",
