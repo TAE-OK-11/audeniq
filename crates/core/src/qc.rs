@@ -12,12 +12,14 @@ use std::process::Stdio;
 use std::time::Duration;
 
 /// Bump when any threshold, check set, or metric definition changes.
-pub const QC_RULE_VERSION: &str = "2";
+pub const QC_RULE_VERSION: &str = "3";
 
 /// Minimum audio duration in seconds before flagging as suspiciously short.
 pub const MIN_AUDIO_SECS: f64 = 30.0;
 /// Minimum sample rate accepted without correction.
 pub const MIN_SAMPLE_RATE: u32 = 44_100;
+/// Highest accepted sample rate (the DSP hi-res ceiling).
+pub const MAX_SAMPLE_RATE: u32 = 192_000;
 /// Spotify floor: below 16-bit is upconverted but ineligible for lossless.
 pub const MIN_BIT_DEPTH: u32 = 16;
 /// Minimum long-side pixels for cover art.
@@ -254,7 +256,11 @@ pub fn probe_duration_secs(path: &Path) -> Option<f64> {
 
 /// Detect container from magic bytes. Returns a canonical tag or "UNKNOWN".
 pub fn detect_container(head: &[u8]) -> &'static str {
-    if head.len() >= 12 && &head[0..4] == b"RIFF" && &head[8..12] == b"WAVE" {
+    // RF64/BW64 are the EBU >4 GiB WAV variants (ffmpeg reads them as "wav").
+    if head.len() >= 12
+        && matches!(&head[0..4], b"RIFF" | b"RF64" | b"BW64")
+        && &head[8..12] == b"WAVE"
+    {
         "WAV"
     } else if head.len() >= 4 && &head[0..4] == b"fLaC" {
         "FLAC"
@@ -332,6 +338,7 @@ pub const AUDIO_CHECK_CODES: &[&str] = &[
     "AUDIO_SILENT",
     "AUDIO_CLIPPING",
     "AUDIO_LOUDNESS_OUT_OF_RANGE",
+    "AUDIO_CONTENT_SUSPECT",
     // Perceptual similarity is DB-backed and computed in submission.rs, not
     // in check_audio: the codes live here so the fixed contract (tails,
     // caching, counts) covers them, but check_audio only emits them via
@@ -577,13 +584,18 @@ pub fn check_audio(
     } else {
         None
     };
-    if !channels_ok {
-        // Decoding a 5.1 file to measure it is pointless: it is rejected anyway.
+    if !channels_ok || !format_ok {
+        // Decoding a 5.1 / 384 kHz / float file to measure it is pointless
+        // (and can be very expensive): it is rejected anyway.
         out.extend(tail(
             "AUDIO_TRUNCATED",
             CheckStatus::NotApplicable,
             &mh,
-            "channel layout rejected",
+            if channels_ok {
+                "sample format rejected"
+            } else {
+                "channel layout rejected"
+            },
         ));
         return out;
     }
@@ -726,7 +738,110 @@ pub fn check_audio(
         &ah,
         loud_detail,
     ));
+    let suspicions = content_suspicions(&analysis, &metrics);
+    out.push(outcome(
+        "AUDIO_CONTENT_SUSPECT",
+        suspicions.is_empty(),
+        CheckStatus::ReviewRequired,
+        &metric_hash(&[&ah, &suspicions.join("|")]),
+        if suspicions.is_empty() {
+            "no near-silence, long silence, dead channel, steady noise or loop pattern".into()
+        } else {
+            format!("for review (not blocking): {}", suspicions.join("; "))
+        },
+    ));
     out
+}
+
+/// Integrated loudness below this is "near-silent" content.
+pub const NEAR_SILENT_LUFS: f64 = -45.0;
+/// Silence covering this share of the track, or one silent stretch at least
+/// this long, is flagged (padding a short clip out to a billable length).
+pub const SILENCE_SHARE_REVIEW: f64 = 0.5;
+pub const SILENCE_RUN_REVIEW_SECS: f64 = 30.0;
+/// A stereo channel this quiet while the other carries audio is "dead".
+pub const DEAD_CHANNEL_PEAK: f32 = 0.001;
+/// Zero-crossing rate typical of broadband noise (music is far lower).
+pub const NOISE_ZCR: f64 = 0.3;
+
+/// Review-only content heuristics (sandbox round 2: near-silent, white
+/// noise, one silent channel, a 5 s loop x12, 5 s audio + 45 s silence were
+/// all delivered). They never block: they route the release to a human.
+pub fn content_suspicions(a: &DecodeAnalysis, m: &AudioMetrics) -> Vec<String> {
+    let mut out = Vec::new();
+    if a.peak < SILENCE_PEAK {
+        return out; // fully silent: AUDIO_SILENT already rejects it
+    }
+    if let Some(i) = a.integrated_lufs.filter(|i| *i < NEAR_SILENT_LUFS) {
+        out.push(format!("near-silent programme ({i:.1} LUFS)"));
+    } else if a.integrated_lufs.is_none() {
+        out.push("near-silent programme (below the loudness gate)".into());
+    }
+    let block_secs = BLOCK_SECS;
+    let share = a.silent_blocks as f64 / a.blocks.max(1) as f64;
+    let run_secs = a.longest_silent_run as f64 * block_secs;
+    if share >= SILENCE_SHARE_REVIEW || run_secs >= SILENCE_RUN_REVIEW_SECS {
+        out.push(format!(
+            "long silence ({:.0}% of the track silent, longest stretch {run_secs:.0}s)",
+            share * 100.0
+        ));
+    }
+    if m.channels == 2 && a.channel_peaks.len() == 2 {
+        let (l, r) = (a.channel_peaks[0], a.channel_peaks[1]);
+        if (l < DEAD_CHANNEL_PEAK) != (r < DEAD_CHANNEL_PEAK) {
+            out.push(format!(
+                "one channel is silent ({} channel peak {:.0} dBFS)",
+                if l < DEAD_CHANNEL_PEAK {
+                    "left"
+                } else {
+                    "right"
+                },
+                db(f64::from(l.min(r)))
+            ));
+        }
+    }
+    let loud: Vec<f32> = a.block_db.iter().copied().filter(|d| *d > -60.0).collect();
+    if loud.len() >= 100 {
+        let mean = loud.iter().map(|d| f64::from(*d)).sum::<f64>() / loud.len() as f64;
+        let std = (loud
+            .iter()
+            .map(|d| (f64::from(*d) - mean).powi(2))
+            .sum::<f64>()
+            / loud.len() as f64)
+            .sqrt();
+        if a.zero_crossing_rate >= NOISE_ZCR && std < 1.5 {
+            out.push(format!(
+                "steady broadband noise (zero-crossing rate {:.2}, level variation {std:.1} dB)",
+                a.zero_crossing_rate
+            ));
+        } else if std >= 3.0
+            && let Some(period) = loop_period(&a.block_db)
+        {
+            out.push(format!(
+                "the track appears to repeat a {:.1}s segment throughout",
+                period as f64 * block_secs
+            ));
+        }
+    }
+    out
+}
+
+/// Smallest lag (1-15 s) at which the block-energy envelope repeats almost
+/// exactly over the whole track: a copy-pasted loop. Needs at least four
+/// repetitions and real dynamics (a steady tone trivially "repeats").
+fn loop_period(db: &[f32]) -> Option<usize> {
+    let min_lag = (1.0 / BLOCK_SECS) as usize;
+    let max_lag = (15.0 / BLOCK_SECS) as usize;
+    (min_lag..=max_lag)
+        .filter(|lag| db.len() >= lag * 4)
+        .find(|&lag| {
+            let n = db.len() - lag;
+            let diff = (0..n)
+                .map(|i| f64::from((db[i] - db[i + lag]).abs()))
+                .sum::<f64>()
+                / n as f64;
+            diff < 0.75
+        })
 }
 
 fn db(linear: f64) -> f64 {
@@ -744,6 +859,15 @@ fn db(linear: f64) -> f64 {
 /// silently passed through.
 fn sample_format_policy(container: &str, m: &AudioMetrics) -> (bool, String) {
     let codec = m.codec_name.as_str();
+    if m.sample_rate > MAX_SAMPLE_RATE {
+        return (
+            false,
+            format!(
+                "sample_rate={}: above {MAX_SAMPLE_RATE} Hz is not accepted by DSPs; export at 44.1-192 kHz",
+                m.sample_rate
+            ),
+        );
+    }
     let ok = match container {
         "WAV" => {
             m.format_name == "wav"
@@ -825,7 +949,26 @@ pub struct DecodeAnalysis {
     pub integrated_lufs: Option<f64>,
     /// EBU R128 true peak (dBTP); `None` for -inf (silence).
     pub true_peak_dbtp: Option<f64>,
+    /// Absolute sample peak per channel.
+    pub channel_peaks: Vec<f32>,
+    /// Number of 50 ms blocks, and how many of them are silent (< -60 dBFS).
+    pub blocks: u64,
+    pub silent_blocks: u64,
+    /// Longest run of consecutive silent blocks.
+    pub longest_silent_run: u64,
+    /// Zero crossings (all channels) over total samples.
+    pub zero_crossing_rate: f64,
+    /// Per-block RMS level in dB (capped to MAX_ENERGY_BLOCKS), for the
+    /// loop / steady-noise heuristics.
+    pub block_db: Vec<f32>,
 }
+
+/// Block length for silence / structure measurements.
+pub const BLOCK_SECS: f64 = 0.05;
+/// A block whose peak stays below this (-60 dBFS) counts as silent.
+pub const BLOCK_SILENCE_PEAK: f32 = 0.001;
+/// Block energies kept for the loop heuristic (50 ms blocks: 30 min).
+const MAX_ENERGY_BLOCKS: usize = 36_000;
 
 impl DecodeAnalysis {
     pub fn decoded_secs(&self) -> f64 {
@@ -893,11 +1036,25 @@ pub fn decode_analysis(
         tail.into_iter().collect::<Vec<u8>>()
     });
     let (tx, rx) = std::sync::mpsc::channel();
+    let block_frames = ((f64::from(m.sample_rate.max(1)) * BLOCK_SECS) as u64).max(1);
     std::thread::spawn(move || {
-        let mut a = DecodeAnalysis::default();
-        let mut runs = vec![0u32; channels];
-        let mut ch = 0usize;
-        let mut samples: u64 = 0;
+        let mut a = DecodeAnalysis {
+            channel_peaks: vec![0.0; channels],
+            ..DecodeAnalysis::default()
+        };
+        let mut st = Meter {
+            runs: vec![0u32; channels],
+            last_sign: vec![0i8; channels],
+            ch: 0,
+            samples: 0,
+            channels,
+            block_frames,
+            block_frame: 0,
+            block_peak: 0.0,
+            block_sq: 0.0,
+            silent_run: 0,
+            crossings: 0,
+        };
         let mut buf = vec![0u8; 1 << 16];
         let mut carry: Vec<u8> = Vec::with_capacity(4);
         loop {
@@ -920,37 +1077,80 @@ pub fn decode_analysis(
                 }
                 let v = f32::from_le_bytes([carry[0], carry[1], carry[2], carry[3]]);
                 carry.clear();
-                measure(v, &mut a, &mut runs, &mut ch, channels, &mut samples);
+                measure(v, &mut a, &mut st);
             }
             let (chunks, rest) = data.as_chunks::<4>();
             for c in chunks {
-                measure(
-                    f32::from_le_bytes(*c),
-                    &mut a,
-                    &mut runs,
-                    &mut ch,
-                    channels,
-                    &mut samples,
-                );
+                measure(f32::from_le_bytes(*c), &mut a, &mut st);
             }
             carry.extend_from_slice(rest);
         }
-        a.samples_per_channel = samples / channels as u64;
+        if st.block_frame > 0 {
+            close_block(&mut a, &mut st);
+        }
+        a.samples_per_channel = st.samples / channels as u64;
+        a.zero_crossing_rate = st.crossings as f64 / st.samples.max(1) as f64;
         let _ = tx.send(Some(a));
     });
-    fn measure(
-        v: f32,
-        a: &mut DecodeAnalysis,
-        runs: &mut [u32],
-        ch: &mut usize,
+    struct Meter {
+        runs: Vec<u32>,
+        last_sign: Vec<i8>,
+        ch: usize,
+        samples: u64,
         channels: usize,
-        samples: &mut u64,
-    ) {
-        let x = if v.is_finite() { v.abs() } else { 0.0 };
+        block_frames: u64,
+        block_frame: u64,
+        block_peak: f32,
+        block_sq: f64,
+        silent_run: u64,
+        crossings: u64,
+    }
+    fn close_block(a: &mut DecodeAnalysis, st: &mut Meter) {
+        a.blocks += 1;
+        if st.block_peak < BLOCK_SILENCE_PEAK {
+            a.silent_blocks += 1;
+            st.silent_run += 1;
+            a.longest_silent_run = a.longest_silent_run.max(st.silent_run);
+        } else {
+            st.silent_run = 0;
+        }
+        if a.block_db.len() < MAX_ENERGY_BLOCKS {
+            let n = (st.block_frame * st.channels as u64).max(1) as f64;
+            let rms = (st.block_sq / n).sqrt();
+            a.block_db.push((20.0 * rms.max(1e-9).log10()) as f32);
+        }
+        st.block_frame = 0;
+        st.block_peak = 0.0;
+        st.block_sq = 0.0;
+    }
+    fn measure(v: f32, a: &mut DecodeAnalysis, st: &mut Meter) {
+        let v = if v.is_finite() { v } else { 0.0 };
+        let x = v.abs();
         if x > a.peak {
             a.peak = x;
         }
-        let run = &mut runs[*ch];
+        let ch = st.ch;
+        if x > a.channel_peaks[ch] {
+            a.channel_peaks[ch] = x;
+        }
+        let sign = if v > 1e-6 {
+            1
+        } else if v < -1e-6 {
+            -1
+        } else {
+            0
+        };
+        if sign != 0 {
+            if st.last_sign[ch] != 0 && sign != st.last_sign[ch] {
+                st.crossings += 1;
+            }
+            st.last_sign[ch] = sign;
+        }
+        if x > st.block_peak {
+            st.block_peak = x;
+        }
+        st.block_sq += f64::from(v) * f64::from(v);
+        let run = &mut st.runs[ch];
         if x >= CLIP_LEVEL {
             *run += 1;
             if *run == CLIP_RUN {
@@ -962,8 +1162,14 @@ pub fn decode_analysis(
         } else {
             *run = 0;
         }
-        *ch = (*ch + 1) % channels;
-        *samples += 1;
+        st.ch = (ch + 1) % st.channels;
+        st.samples += 1;
+        if st.ch == 0 {
+            st.block_frame += 1;
+            if st.block_frame == st.block_frames {
+                close_block(a, st);
+            }
+        }
     }
     let analysis = match rx.recv_timeout(decode_timeout(m.duration_secs)) {
         Ok(Some(a)) => a,
@@ -1223,6 +1429,8 @@ mod tests {
     #[test]
     fn detect_container_tags() {
         assert_eq!(detect_container(b"RIFF\x00\x00\x00\x00WAVE"), "WAV");
+        assert_eq!(detect_container(b"RF64\xff\xff\xff\xffWAVE"), "WAV");
+        assert_eq!(detect_container(b"RIFX\x00\x00\x00\x00WAVE"), "UNKNOWN");
         assert_eq!(detect_container(b"fLaC\x00"), "FLAC");
         assert_eq!(detect_container(b"ID3\x04\x00"), "MP3");
         assert_eq!(detect_container(b"\x89PNG\r\n\x1a\n"), "PNG");
@@ -1300,8 +1508,8 @@ mod tests {
             .unwrap();
         assert_eq!(sha.status, CheckStatus::Blocked);
         // Blocked short-circuits: the remaining checks are NOT_APPLICABLE,
-        // but the full contract still holds (12 QC + 2 fingerprint).
-        assert_eq!(out.len(), 14);
+        // but the full contract still holds (13 QC + 2 fingerprint).
+        assert_eq!(out.len(), 15);
         assert!(
             out[1..]
                 .iter()
@@ -1461,6 +1669,109 @@ mod tests {
         // comes from bits_per_raw_sample, not the (absent) bits_per_sample.
         let out = check_audio(&p, None, Some("audio/flac"));
         assert!(out.iter().all(|o| o.status == CheckStatus::Pass), "{out:?}");
+        let _ = std::fs::remove_file(&p);
+    }
+
+    fn suspect(out: &[CheckOutcome]) -> &CheckOutcome {
+        out.iter()
+            .find(|o| o.check_code == "AUDIO_CONTENT_SUSPECT")
+            .expect("AUDIO_CONTENT_SUSPECT missing")
+    }
+
+    #[test]
+    fn content_suspect_flags_sandbox_round2_patterns() {
+        // Sandbox round 2: each of these reached a DSP without any review.
+        let cases: &[(&str, &str, &[&str], &str)] = &[
+            (
+                "noise",
+                "anoisesrc=color=white:amplitude=0.5:duration=40:sample_rate=48000",
+                &["-c:a", "pcm_s16le"],
+                "noise",
+            ),
+            (
+                "deadch",
+                "sine=frequency=440:duration=40:sample_rate=48000",
+                &[
+                    "-af",
+                    "volume=8dB,pan=stereo|c0=c0|c1=0*c0",
+                    "-c:a",
+                    "pcm_s16le",
+                ],
+                "one channel is silent",
+            ),
+            (
+                "nearsilent",
+                "sine=frequency=440:duration=40:sample_rate=48000",
+                &["-af", "volume=-45dB", "-c:a", "pcm_s16le"],
+                "near-silent",
+            ),
+            (
+                "padded",
+                "sine=frequency=440:duration=10:sample_rate=48000",
+                &["-af", "volume=8dB,apad=whole_dur=50", "-c:a", "pcm_s16le"],
+                "long silence",
+            ),
+            (
+                "loop",
+                "aevalsrc='0.5*sin(2*PI*440*t)*(0.1+0.9*mod(t\\,5)/5)':d=60:s=48000",
+                &["-c:a", "pcm_s16le"],
+                "repeat",
+            ),
+        ];
+        for (name, src, extra, want) in cases {
+            let p = tmp(&format!("suspect-{name}.wav"));
+            render(&p, src, extra);
+            let out = check_audio(&p, None, Some("audio/wav"));
+            let s = suspect(&out);
+            assert_eq!(
+                s.status,
+                CheckStatus::ReviewRequired,
+                "{name}: {}",
+                s.detail
+            );
+            assert!(s.detail.contains(want), "{name}: {}", s.detail);
+            // Review only: nothing here may become a blocking correction.
+            assert!(
+                out.iter()
+                    .all(|o| o.status != CheckStatus::CorrectionRequired),
+                "{name}: {out:?}"
+            );
+            let _ = std::fs::remove_file(&p);
+        }
+    }
+
+    #[test]
+    fn content_suspect_passes_ordinary_programme() {
+        // A non-repeating, dynamic stereo signal must not be flagged.
+        let p = tmp("suspect-ordinary.wav");
+        render(
+            &p,
+            "aevalsrc='0.4*sin(2*PI*(220+40*sin(0.31*t))*t)*(0.55+0.45*sin(0.17*t*t))|0.4*sin(2*PI*(330+30*sin(0.23*t))*t)*(0.55+0.45*cos(0.13*t*t))':d=60:s=48000",
+            &["-c:a", "pcm_s16le"],
+        );
+        let out = check_audio(&p, None, Some("audio/wav"));
+        let s = suspect(&out);
+        assert_eq!(s.status, CheckStatus::Pass, "{}", s.detail);
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn audio_rejects_sample_rate_above_192k_without_decoding() {
+        let p = tmp("384k.wav");
+        render(
+            &p,
+            "sine=frequency=440:duration=5:sample_rate=384000",
+            &["-c:a", "pcm_s16le"],
+        );
+        let out = check_audio(&p, None, Some("audio/wav"));
+        assert_eq!(
+            status_of(&out, "AUDIO_SAMPLE_FORMAT_UNSUPPORTED"),
+            CheckStatus::CorrectionRequired
+        );
+        assert_eq!(
+            status_of(&out, "AUDIO_TRUNCATED"),
+            CheckStatus::NotApplicable
+        );
         let _ = std::fs::remove_file(&p);
     }
 

@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 /// Scripted partner behavior per test.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum MockBehavior {
     /// Immediate accept with a fresh partner message id.
     #[default]
@@ -37,6 +37,33 @@ pub enum MockBehavior {
     /// Accept, then `get_release_status` reports ingesting until
     /// `polls_before_live` polls have happened.
     DelayedLive { polls_before_live: u32 },
+    /// The next `remaining` sends are refused before processing (partner
+    /// outage, nothing created); later sends are accepted.
+    Unavailable { remaining: u32 },
+}
+
+impl MockBehavior {
+    /// Parse a `MOCKDSP_BEHAVIOR` spec: `accept`, `reject:<CODE>`, `timeout`,
+    /// `unknown`, `delayed_live:<N>`, `unavailable:<N>` (first N sends fail).
+    pub fn from_spec(spec: &str) -> Option<Self> {
+        let (kind, arg) = match spec.trim().split_once(':') {
+            Some((k, a)) => (k, Some(a)),
+            None => (spec.trim(), None),
+        };
+        Some(match (kind.to_ascii_lowercase().as_str(), arg) {
+            ("accept", None) => Self::Accept,
+            ("reject", Some(code)) if !code.is_empty() => Self::Reject { code: code.into() },
+            ("timeout", None) => Self::Timeout,
+            ("unknown", None) => Self::Unknown,
+            ("delayed_live", Some(n)) => Self::DelayedLive {
+                polls_before_live: n.parse().ok()?,
+            },
+            ("unavailable", Some(n)) => Self::Unavailable {
+                remaining: n.parse().ok()?,
+            },
+            _ => return None,
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -227,8 +254,20 @@ impl DspAdapter for MockDsp {
             accepted: false,
             live: false,
         };
+        if let MockBehavior::Unavailable { remaining } = inner.behavior {
+            if remaining > 0 {
+                inner.behavior = MockBehavior::Unavailable {
+                    remaining: remaining - 1,
+                };
+                return Ok(SendOutcome::Unavailable {
+                    detail: "mock partner unavailable (503)".to_string(),
+                });
+            }
+        }
         match inner.behavior.clone() {
-            MockBehavior::Accept | MockBehavior::DelayedLive { .. } => {
+            MockBehavior::Accept
+            | MockBehavior::DelayedLive { .. }
+            | MockBehavior::Unavailable { .. } => {
                 let mut state = state;
                 state.accepted = true;
                 inner.submissions.insert(pmid.clone(), state);
@@ -402,5 +441,34 @@ impl DspAdapter for MockDsp {
             }),
             None => Ok(InquiryOutcome::StillUnknown),
         }
+    }
+}
+
+#[cfg(test)]
+mod spec_tests {
+    use super::MockBehavior;
+
+    #[test]
+    fn behavior_specs_parse() {
+        assert_eq!(
+            MockBehavior::from_spec("accept"),
+            Some(MockBehavior::Accept)
+        );
+        assert_eq!(
+            MockBehavior::from_spec("unavailable:3"),
+            Some(MockBehavior::Unavailable { remaining: 3 })
+        );
+        assert_eq!(
+            MockBehavior::from_spec("reject:BAD_ART"),
+            Some(MockBehavior::Reject {
+                code: "BAD_ART".into()
+            })
+        );
+        assert_eq!(
+            MockBehavior::from_spec("timeout"),
+            Some(MockBehavior::Timeout)
+        );
+        assert_eq!(MockBehavior::from_spec("unavailable:x"), None);
+        assert_eq!(MockBehavior::from_spec("explode"), None);
     }
 }

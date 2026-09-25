@@ -204,9 +204,25 @@ pub async fn complete(
     )
     .await?;
     tx.commit().await?;
+    drop_quarantine(s, &key).await;
     Ok(
         json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":false,"sha256":digest.sha256,"detected_container":detected}),
     )
+}
+/// Best-effort removal of the quarantine object after complete/cancel
+/// (sandbox round 2: quarantine copies were never deleted). A presigned PUT
+/// cannot be revoked, so a client may still write the key until the grant
+/// expires; the bucket's `quarantine/` lifecycle rule (docs/API.md) removes
+/// such leftovers. Failure never fails the request: the registered copy and
+/// the session state are already committed.
+async fn drop_quarantine(s: &AppState, key: &str) {
+    if let Err(error) = s.storage.delete(key).await {
+        tracing::warn!(
+            key,
+            ?error,
+            "quarantine object delete failed; lifecycle rule will expire it"
+        );
+    }
 }
 pub async fn get(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
@@ -245,8 +261,8 @@ pub async fn cancel(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Valu
     .await?
     .ok_or(Error::NotFound)?;
     auth::authorize(&mut tx, a, org, asset, "asset", true).await?;
-    let status: String = sqlx::query_scalar(
-        "SELECT status FROM catalog.upload_sessions WHERE org_id=$1 AND id=$2 FOR UPDATE",
+    let (status, key): (String, String) = sqlx::query_as(
+        "SELECT status, expected_key FROM catalog.upload_sessions WHERE org_id=$1 AND id=$2 FOR UPDATE",
     )
     .bind(org)
     .bind(id)
@@ -284,5 +300,6 @@ pub async fn cancel(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Valu
     )
     .await?;
     tx.commit().await?;
+    drop_quarantine(s, &key).await;
     Ok(json!({"cancelled":true,"duplicate":false}))
 }

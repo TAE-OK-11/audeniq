@@ -30,6 +30,9 @@ pub enum Error {
     Database(#[from] sqlx::Error),
     #[error("internal error")]
     Internal,
+    /// Request headers exceed the API limit (HTTP 431).
+    #[error("request headers too large")]
+    HeadersTooLarge,
 }
 pub type Result<T> = std::result::Result<T, Error>;
 impl IntoResponse for Error {
@@ -45,6 +48,10 @@ impl IntoResponse for Error {
             Self::Gated => (StatusCode::NOT_IMPLEMENTED, "NOT_IMPLEMENTED"),
             Self::PolicyGate(code) => (StatusCode::UNPROCESSABLE_ENTITY, *code),
             Self::Storage => (StatusCode::SERVICE_UNAVAILABLE, "STORAGE_UNAVAILABLE"),
+            Self::HeadersTooLarge => (
+                StatusCode::REQUEST_HEADER_FIELDS_TOO_LARGE,
+                "REQUEST_HEADERS_TOO_LARGE",
+            ),
             Self::Database(sqlx::Error::Database(d))
                 if matches!(
                     d.code().as_deref(),
@@ -52,6 +59,9 @@ impl IntoResponse for Error {
                 ) =>
             {
                 (StatusCode::CONFLICT, "INVARIANT_CONFLICT")
+            }
+            Self::Database(e) if db_unavailable(e) => {
+                (StatusCode::SERVICE_UNAVAILABLE, "DATABASE_UNAVAILABLE")
             }
             _ => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR"),
         };
@@ -63,7 +73,32 @@ impl IntoResponse for Error {
             Some(m) => serde_json::json!({"error":{"code":code,"message":m}}),
             None => serde_json::json!({"error":{"code":code}}),
         };
-        (status, Json(body)).into_response()
+        let mut response = (status, Json(body)).into_response();
+        if status == StatusCode::SERVICE_UNAVAILABLE {
+            response
+                .headers_mut()
+                .insert(axum::http::header::RETRY_AFTER, "5".parse().unwrap());
+        }
+        response
+    }
+}
+
+/// The database is unreachable or shutting down, as opposed to a bug or a
+/// bad query (sandbox round 2: a Postgres outage answered 500). These are
+/// retryable, so the API answers 503 + Retry-After.
+pub fn db_unavailable(e: &sqlx::Error) -> bool {
+    match e {
+        sqlx::Error::PoolTimedOut
+        | sqlx::Error::PoolClosed
+        | sqlx::Error::Io(_)
+        | sqlx::Error::Tls(_)
+        | sqlx::Error::WorkerCrashed => true,
+        // 08xxx connection exception, 57P01-57P03 admin/crash shutdown,
+        // cannot connect now.
+        sqlx::Error::Database(d) => d.code().is_some_and(|c| {
+            c.starts_with("08") || matches!(c.as_ref(), "57P01" | "57P02" | "57P03")
+        }),
+        _ => false,
     }
 }
 
@@ -99,6 +134,34 @@ pub fn message(code: &str) -> Option<&'static str> {
         "AUDIO_NOT_VERIFIED" => {
             "An attached audio file was never verified. Upload it again before submitting."
         }
+        "TEXT_INVALID_CHARACTERS" => {
+            "The text contains control, invisible or text-direction characters (for example NUL, escape codes, zero-width spaces or right-to-left overrides). Remove them and try again."
+        }
+        "ARTIST_NAME_PROTECTED" => {
+            "A name, title or credit matches a protected artist. Releasing under a protected artist name requires verified rights; change the name or contact support if you represent this artist."
+        }
+        "IDENTIFIER_IN_USE" => {
+            "The UPC or an ISRC is already used by another release or track in your account. Assign unique codes."
+        }
+        "REQUEST_HEADERS_TOO_LARGE" => "The request headers are too large.",
+        "DATABASE_UNAVAILABLE" => {
+            "The service is temporarily unavailable. Try again in a few seconds."
+        }
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod unavailable_tests {
+    use super::*;
+
+    #[test]
+    fn database_outage_is_503_with_retry_after() {
+        let r = Error::Database(sqlx::Error::PoolTimedOut).into_response();
+        assert_eq!(r.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(r.headers().get("retry-after").unwrap(), "5");
+        let r = Error::Database(sqlx::Error::RowNotFound).into_response();
+        assert_eq!(r.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(r.headers().get("retry-after").is_none());
+    }
 }

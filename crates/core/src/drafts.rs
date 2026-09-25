@@ -13,7 +13,7 @@ use std::collections::BTreeSet;
 use uuid::Uuid;
 
 pub async fn bump(c: &mut PgConnection, org: Uuid, release: Uuid, version: i64) -> Result<()> {
-    let n = sqlx::query("UPDATE catalog.releases SET row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND row_version=$3 AND status IN ('DRAFT','STAGE1_CORRECTION') AND archived_at IS NULL")
+    let n = sqlx::query("UPDATE catalog.releases SET row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND row_version=$3 AND catalog.is_editable_status(status) AND archived_at IS NULL")
         .bind(org).bind(release).bind(version).execute(c).await?.rows_affected();
     if n != 1 {
         return Err(Error::Conflict);
@@ -58,6 +58,19 @@ pub async fn track_refs(c: &mut PgConnection, a: &Actor, org: Uuid, i: &TrackInp
     if i.version.as_ref().map(|s| s.chars().count()).unwrap_or(0) > 200 {
         return Err(Error::Invalid);
     }
+    crate::text_policy::check(&i.title)?;
+    if let Some(v) = &i.version {
+        crate::text_policy::check(v)?;
+    }
+    if let Some(l) = &i.lyrics {
+        crate::text_policy::check_multiline(l)?;
+    }
+    crate::protected_names::enforce(
+        c,
+        org,
+        &[i.title.as_str(), i.version.as_deref().unwrap_or("")],
+    )
+    .await?;
     auth::authorize(c, a, org, i.artist_id, "artist", false).await?;
     let artist: Option<Uuid> = sqlx::query_scalar("SELECT id FROM catalog.artists WHERE org_id=$1 AND id=$2 AND archived_at IS NULL FOR SHARE")
         .bind(org).bind(i.artist_id).fetch_optional(&mut *c).await?;
@@ -162,6 +175,9 @@ pub async fn replace_credits(
     {
         return Err(Error::Invalid);
     }
+    for v in &i.credits {
+        crate::text_policy::check(&v.role)?;
+    }
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, release, "release", true).await?;
     bump(&mut tx, org, release, i.row_version).await?;
@@ -184,6 +200,17 @@ pub async fn replace_credits(
     if count != parties.len() as i64 {
         return Err(Error::Forbidden);
     }
+    // Credited contributors are published: their names get the same
+    // protected-artist block as artist names.
+    let names: Vec<String> = sqlx::query_scalar(
+        "SELECT display_name FROM identity.parties WHERE org_id=$1 AND id=ANY($2)",
+    )
+    .bind(org)
+    .bind(&parties)
+    .fetch_all(&mut *tx)
+    .await?;
+    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    crate::protected_names::enforce(&mut tx, org, &refs).await?;
     sqlx::query("DELETE FROM catalog.credits WHERE org_id=$1 AND track_id=$2")
         .bind(org)
         .bind(track)

@@ -94,7 +94,22 @@ pub fn router(s: AppState) -> Router {
         .fallback(|| async { Error::NotFound.into_response() })
         .layer(DefaultBodyLimit::max(64 * 1024))
         .layer(middleware::from_fn_with_state(s.clone(), boundary))
+        .layer(middleware::from_fn(header_limit))
         .with_state(s)
+}
+/// Total request-header budget. Browsers and the edge send a few KiB; hyper
+/// alone accepted a single 200 KB header (sandbox round 2).
+pub const MAX_HEADER_BYTES: usize = 16 * 1024;
+async fn header_limit(req: Request, next: Next) -> Response {
+    let total: usize = req
+        .headers()
+        .iter()
+        .map(|(k, v)| k.as_str().len() + v.as_bytes().len() + 4)
+        .sum();
+    if total > MAX_HEADER_BYTES {
+        return Error::HeadersTooLarge.into_response();
+    }
+    next.run(req).await
 }
 async fn boundary(State(s): State<AppState>, mut req: Request, next: Next) -> Response {
     let id = Uuid::new_v4();
@@ -178,9 +193,13 @@ async fn create_org(
     if i.name.is_empty() || i.name.len() > 200 || !matches!(i.kind.as_str(), "LABEL" | "COMPANY") {
         return Err(Error::Invalid);
     }
+    crate::text_policy::check(&i.name)?;
     let mut tx = s.pool.begin().await?;
     let id = Uuid::new_v4();
     let party = Uuid::new_v4();
+    // The org name becomes the party credited on tracks: a brand-new org
+    // holds no protected-name exception.
+    crate::protected_names::enforce(&mut tx, id, &[i.name.as_str()]).await?;
     sqlx::query("INSERT INTO identity.orgs(id,name,kind) VALUES($1,$2,$3)")
         .bind(id)
         .bind(&i.name)

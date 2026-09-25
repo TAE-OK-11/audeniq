@@ -715,6 +715,8 @@ async fn prepare_release_skips_ddex_without_dpids(pool: PgPool) {
 
 #[sqlx::test]
 async fn prepare_release_identifier_conflict_dead_letters(pool: PgPool) {
+    // Round 2: a same-org ISRC reuse is now a Stage 1 correction
+    // (IDENTIFIER_IN_USE) instead of passing Stage 1/2 and dying in packaging.
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let dir = tmpdir();
@@ -724,16 +726,41 @@ async fn prepare_release_identifier_conflict_dead_letters(pool: PgPool) {
     add_preparation_supplements(&pool, &store, &u, release).await;
     // Another release in the same org already owns this ISRC.
     seed_conflicting_isrc(&pool, &u, "USABC2600001").await;
-    let _revision_id = consent_and_submit(&app, &u, release, "k-f4-conflict").await;
+    let revision_id = consent_and_submit(&app, &u, release, "k-f4-conflict").await;
+    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(release_status(&pool, release).await, "STAGE1_CORRECTION");
+    let status: String = sqlx::query_scalar(
+        "SELECT status FROM operations.check_results WHERE revision_id=$1 AND check_code='IDENTIFIER_IN_USE'",
+    )
+    .bind(revision_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(status, "CORRECTION_REQUIRED");
+}
+
+#[sqlx::test]
+async fn prepare_release_late_identifier_conflict_is_recoverable(pool: PgPool) {
+    // A conflict that appears after Stage 1 (a race with another release)
+    // is still permanent for packaging, but the release lands in
+    // STAGE3_CORRECTION with an explanation instead of a silent
+    // STAGE3_PREPARING dead end.
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let wav = make_good_wav(&dir);
+    let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
+    let release = build_submittable(&app, &pool, &u, asset).await;
+    add_preparation_supplements(&pool, &store, &u, release).await;
+    let revision_id = consent_and_submit(&app, &u, release, "k-f4-late-conflict").await;
     assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
     assert_eq!(
         run_one(&pool, &store, "rights", "stage2").await,
         "SUCCEEDED"
     );
     assert_eq!(release_status(&pool, release).await, "STAGE2_PASSED");
+    seed_conflicting_isrc(&pool, &u, "USABC2600001").await;
 
-    // The conflict is permanent: no retry can fix a cross-target claim, so the
-    // job dead-letters and the release never reaches READY_FOR_DELIVERY.
     assert_eq!(
         run_one(&pool, &store, "distribution", "prepare_release").await,
         "DEAD_LETTER"
@@ -745,7 +772,15 @@ async fn prepare_release_identifier_conflict_dead_letters(pool: PgPool) {
     .await
     .unwrap();
     assert!(err.unwrap().contains("IDENTIFIER_CONFLICT"));
-    assert_eq!(release_status(&pool, release).await, "STAGE3_PREPARING");
+    assert_eq!(release_status(&pool, release).await, "STAGE3_CORRECTION");
+    let detail: String = sqlx::query_scalar(
+        "SELECT detail FROM operations.check_results WHERE revision_id=$1 AND check_code='STAGE3_PREPARATION_FAILED' AND status='CORRECTION_REQUIRED'",
+    )
+    .bind(revision_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(!detail.is_empty());
 }
 
 #[sqlx::test]
