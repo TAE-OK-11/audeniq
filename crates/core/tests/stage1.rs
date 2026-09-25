@@ -202,7 +202,8 @@ fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(sha2::Sha256::digest(bytes))
 }
 
-/// Generate a valid 32s stereo 48kHz WAV with ffmpeg.
+/// Generate a valid 32s stereo 48kHz WAV with ffmpeg, mastered into the
+/// -14 LUFS ±1 band so the loudness check passes cleanly.
 fn make_good_wav(dir: &std::path::Path) -> Vec<u8> {
     let out = dir.join("good.wav");
     let st = std::process::Command::new("ffmpeg")
@@ -218,6 +219,8 @@ fn make_good_wav(dir: &std::path::Path) -> Vec<u8> {
             "48000",
             "-ac",
             "2",
+            "-filter:a",
+            "volume=8dB",
             "-c:a",
             "pcm_s16le",
         ])
@@ -285,7 +288,7 @@ async fn build_submittable(
 ) -> (Uuid, Uuid) {
     let release = create_release(app, u).await;
     let artist = create_artist(app, u).await;
-    sqlx::query("UPDATE catalog.releases SET draft = draft || '{\"release_date\":\"2027-03-01\"}'::jsonb, row_version = row_version + 1 WHERE id=$1")
+    sqlx::query("UPDATE catalog.releases SET draft = draft || '{\"release_date\":\"2027-03-01\",\"p_line\":\"℗ 2027 Test Label\",\"c_line\":\"© 2027 Test Label\"}'::jsonb, row_version = row_version + 1 WHERE id=$1")
         .bind(release)
         .execute(pool)
         .await
@@ -309,7 +312,7 @@ async fn build_submittable(
             "/api/orgs/{}/releases/{release}/tracks/{track}/credits",
             u.org
         ),
-        json!({"row_version":rv,"credits":[{"party_id":u.party,"role":"ARTIST"}]}),
+        json!({"row_version":rv,"credits":[{"party_id":u.party,"role":"ARTIST"},{"party_id":u.party,"role":"COMPOSER"}]}),
         Some(u),
     )
     .await;
@@ -551,7 +554,7 @@ async fn stage1_happy_path_passes(pool: PgPool) {
     .fetch_all(&pool)
     .await
     .unwrap();
-    assert_eq!(codes.len(), 20, "{codes:?}");
+    assert_eq!(codes.len(), 25, "{codes:?}");
     let bad: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM operations.check_results WHERE revision_id=$1 AND status<>'PASS'",
     )
@@ -1008,7 +1011,7 @@ async fn oversized_asset_is_technical_retry(pool: PgPool) {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(retry, 7, "all 7 audio checks recorded as technical retry");
+    assert_eq!(retry, 8, "all 8 audio checks recorded as technical retry");
     let status: String = sqlx::query_scalar("SELECT status FROM catalog.releases WHERE id=$1")
         .bind(release)
         .fetch_one(&pool)
@@ -1180,4 +1183,239 @@ async fn stage1_title_seo_spam_flagged(pool: PgPool) {
     .await
     .unwrap();
     assert!(hit, "SEO terms in title must route to review");
+}
+
+/// DDEX ERN requires P-line/C-line: missing lines block at submit time now,
+/// not at prepare time.
+#[sqlx::test]
+async fn stage1_missing_pline_cline_rejected(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let wav = make_good_wav(&dir);
+    let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
+    let (release, _) = build_submittable(&app, &pool, &store, &u, asset).await;
+    sqlx::query("UPDATE catalog.releases SET draft = draft - 'p_line' - 'c_line', row_version = row_version + 1 WHERE id=$1")
+        .bind(release)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (s, v) = consent(&app, &u, release, false).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let consent_id = Uuid::parse_str(v["consent_id"].as_str().unwrap()).unwrap();
+    let (s, v) = submit(&app, &u, release, consent_id, false, "k-noline").await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let revision_id = Uuid::parse_str(v["revision_id"].as_str().unwrap()).unwrap();
+
+    run_worker(&pool, &store).await;
+
+    for code in ["PLINE_MISSING", "CLINE_MISSING"] {
+        let hit: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM operations.check_results WHERE revision_id=$1 AND check_code=$2 AND status='CORRECTION_REQUIRED')",
+        )
+        .bind(revision_id)
+        .bind(code)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(hit, "{code} must force correction");
+    }
+    let status: String = sqlx::query_scalar("SELECT status FROM catalog.releases WHERE id=$1")
+        .bind(release)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "STAGE1_CORRECTION");
+}
+
+/// Deezer requires a composer/lyricist credit per track; presence is
+/// objective and blocks, name authenticity stays human review.
+#[sqlx::test]
+async fn stage1_writer_credit_missing_rejected(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let wav = make_good_wav(&dir);
+    let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
+    let (release, _) = build_submittable(&app, &pool, &store, &u, asset).await;
+    // Strip the writer credit, keep the performer credit.
+    let track: Uuid = sqlx::query_scalar("SELECT id FROM catalog.tracks WHERE release_id=$1")
+        .bind(release)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM catalog.credits WHERE track_id=$1 AND role='COMPOSER'")
+        .bind(track)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (s, v) = consent(&app, &u, release, false).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let consent_id = Uuid::parse_str(v["consent_id"].as_str().unwrap()).unwrap();
+    let (s, v) = submit(&app, &u, release, consent_id, false, "k-nowriter").await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let revision_id = Uuid::parse_str(v["revision_id"].as_str().unwrap()).unwrap();
+
+    run_worker(&pool, &store).await;
+
+    let hit: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM operations.check_results WHERE revision_id=$1 AND check_code='TRACK_WRITER_CREDIT_MISSING' AND status='CORRECTION_REQUIRED')",
+    )
+    .bind(revision_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(hit, "missing writer credit must force correction");
+}
+
+/// Explicit content: the flag is recorded and the 19금 marking step is
+/// surfaced for review, but the release is NOT blocked — harmfulness is a
+/// human judgment.
+#[sqlx::test]
+async fn stage1_explicit_content_review_does_not_block(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let wav = make_good_wav(&dir);
+    let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
+    let (release, _) = build_submittable(&app, &pool, &store, &u, asset).await;
+    sqlx::query("UPDATE catalog.tracks SET parental_advisory=true WHERE release_id=$1")
+        .bind(release)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (s, v) = consent(&app, &u, release, false).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let consent_id = Uuid::parse_str(v["consent_id"].as_str().unwrap()).unwrap();
+    let (s, v) = submit(&app, &u, release, consent_id, false, "k-explicit").await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let revision_id = Uuid::parse_str(v["revision_id"].as_str().unwrap()).unwrap();
+
+    run_worker(&pool, &store).await;
+
+    let hit: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM operations.check_results WHERE revision_id=$1 AND check_code='ADULT_MARKING_REVIEW' AND status='REVIEW_REQUIRED')",
+    )
+    .bind(revision_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(hit, "explicit content must surface the 19금 marking review");
+    let status: String = sqlx::query_scalar("SELECT status FROM catalog.releases WHERE id=$1")
+        .bind(release)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "STAGE1_PASSED", "review-only flags must not block");
+}
+
+/// Review-only flags (version info in title) no longer block the release:
+/// they are recorded for the Stage 2 human reviewer.
+#[sqlx::test]
+async fn stage1_review_flags_do_not_block(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let wav = make_good_wav(&dir);
+    let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
+    let (release, _) = build_submittable(&app, &pool, &store, &u, asset).await;
+    sqlx::query("UPDATE catalog.tracks SET title='Midnight (Radio Edit)' WHERE release_id=$1")
+        .bind(release)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (s, v) = consent(&app, &u, release, false).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let consent_id = Uuid::parse_str(v["consent_id"].as_str().unwrap()).unwrap();
+    let (s, v) = submit(&app, &u, release, consent_id, false, "k-reviewpass").await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let revision_id = Uuid::parse_str(v["revision_id"].as_str().unwrap()).unwrap();
+
+    run_worker(&pool, &store).await;
+
+    let hit: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM operations.check_results WHERE revision_id=$1 AND check_code='TRACK_TITLE_HAS_VERSION_INFO' AND status='REVIEW_REQUIRED')",
+    )
+    .bind(revision_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(hit, "version info in title must be flagged for review");
+    let status: String = sqlx::query_scalar("SELECT status FROM catalog.releases WHERE id=$1")
+        .bind(release)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "STAGE1_PASSED", "review-only flags must not block");
+}
+
+/// The version field travels from the track API into the revision body, and
+/// identical title + identical version is still a duplicate.
+#[sqlx::test]
+async fn stage1_track_version_round_trip(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let wav = make_good_wav(&dir);
+    let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
+    let release = create_release(&app, &u).await;
+    let artist = create_artist(&app, &u).await;
+    sqlx::query("UPDATE catalog.releases SET draft = draft || '{\"release_date\":\"2027-03-01\",\"p_line\":\"℗ 2027 T\",\"c_line\":\"© 2027 T\"}'::jsonb, row_version = row_version + 1 WHERE id=$1")
+        .bind(release)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let rv = row_version(&pool, release).await;
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{}/releases/{release}/tracks", u.org),
+        json!({"title":"Midnight","version":"Radio Edit","disc_number":1,"track_number":1,"artist_id":artist,"asset_id":asset,"row_version":rv}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let track = Uuid::parse_str(v["id"].as_str().unwrap()).unwrap();
+    let rv = row_version(&pool, release).await;
+    let (s, v) = call(
+        &app,
+        "PUT",
+        &format!(
+            "/api/orgs/{}/releases/{release}/tracks/{track}/credits",
+            u.org
+        ),
+        json!({"row_version":rv,"credits":[{"party_id":u.party,"role":"COMPOSER"}]}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+
+    let (s, v) = consent(&app, &u, release, false).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let consent_id = Uuid::parse_str(v["consent_id"].as_str().unwrap()).unwrap();
+    let (s, v) = submit(&app, &u, release, consent_id, false, "k-version").await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let revision_id = Uuid::parse_str(v["revision_id"].as_str().unwrap()).unwrap();
+
+    let body: serde_json::Value =
+        sqlx::query_scalar("SELECT body FROM catalog.application_revisions WHERE id=$1")
+            .bind(revision_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(body["tracks"][0]["version"], "Radio Edit");
+    // Plain title carries no version info -> no review flag.
+    run_worker(&pool, &store).await;
+    let hit: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM operations.check_results WHERE revision_id=$1 AND check_code='TRACK_TITLE_HAS_VERSION_INFO' AND status='REVIEW_REQUIRED')",
+    )
+    .bind(revision_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(!hit, "version in the version field must not flag the title");
 }

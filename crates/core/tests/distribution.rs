@@ -214,6 +214,8 @@ fn make_good_wav(dir: &std::path::Path) -> Vec<u8> {
             "48000",
             "-ac",
             "2",
+            "-filter:a",
+            "volume=8dB",
             "-c:a",
             "pcm_s16le",
         ])
@@ -287,7 +289,7 @@ async fn build_submittable(app: &Router, pool: &PgPool, u: &User, asset: Uuid) -
             "/api/orgs/{}/releases/{release}/tracks/{track}/credits",
             u.org
         ),
-        json!({"row_version":rv,"credits":[{"party_id":u.party,"role":"ARTIST"}]}),
+        json!({"row_version":rv,"credits":[{"party_id":u.party,"role":"ARTIST"},{"party_id":u.party,"role":"COMPOSER"}]}),
         Some(u),
     )
     .await;
@@ -754,6 +756,7 @@ async fn freeze_package_is_idempotent(pool: PgPool) {
     let wav = make_good_wav(&dir);
     let asset = register_asset(&pool, &store, &u, "good.wav", &wav).await;
     let release = build_submittable(&app, &pool, &u, asset).await;
+    add_preparation_supplements(&pool, &store, &u, release).await;
     let revision_id = consent_and_submit(&app, &u, release, "k-f4-idem").await;
     assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
     assert_eq!(

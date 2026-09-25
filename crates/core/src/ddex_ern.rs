@@ -251,6 +251,12 @@ fn resource_list(out: &mut String, prepared: &PreparedRelease) {
         out.push_str("</ReferenceTitle>");
         out.push_str("<DisplayTitle>");
         element(out, "TitleText", &track.title);
+        // Spotify Metadata Style Guide: version/designation belongs in the
+        // dedicated version field, rendered here as DDEX VersionTitle —
+        // never glued onto the title text.
+        if !track.version.is_empty() {
+            element(out, "VersionTitle", &track.version);
+        }
         out.push_str("</DisplayTitle>");
         out.push_str("<DisplayArtist><PartyName>");
         element(out, "FullName", &track.artist);

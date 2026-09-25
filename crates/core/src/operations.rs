@@ -67,13 +67,13 @@ pub async fn enqueue(
  .bind(Uuid::new_v4()).bind(queue).bind(kind).bind(payload).bind(key).bind(pin).fetch_optional(c).await?.ok_or(Error::Conflict)
 }
 /// Schedule a delayed live-state poll for one (package, partner) delivery.
-/// Idempotent per (delivery job, poll number): a send retry or poll requeue
-/// never double-schedules the same poll.
+/// Idempotent per (package, partner, poll number): a send retry or poll
+/// requeue never double-schedules the same poll, and two partners receiving
+/// the same package never collide.
 async fn schedule_delivery_poll(
     pool: &PgPool,
     package_id: Uuid,
     partner_id: &str,
-    dedup_job_id: Uuid,
     poll_no: i32,
     delay_hours: i64,
 ) -> Result<()> {
@@ -83,7 +83,7 @@ async fn schedule_delivery_poll(
         "delivery",
         "delivery.poll",
         &json!({"package_id": package_id, "partner_id": partner_id, "poll_no": poll_no}),
-        &format!("delivery.poll:{dedup_job_id}:{poll_no}"),
+        &format!("delivery.poll:{package_id}:{partner_id}:{poll_no}"),
         None,
     )
     .await?;
@@ -374,15 +374,7 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
                 "DELIVERED" => {
                     // E-4: ingestion takes hours; schedule the first live-state
                     // poll before marking the send job done.
-                    schedule_delivery_poll(
-                        pool,
-                        djob.package_id,
-                        &djob.partner_id,
-                        djob.package_id,
-                        0,
-                        1,
-                    )
-                    .await?;
+                    schedule_delivery_poll(pool, djob.package_id, &djob.partner_id, 0, 1).await?;
                     succeed(pool, j).await
                 }
                 "AWAITING_RECONCILIATION" => succeed(pool, j).await,
@@ -440,15 +432,8 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
         {
             Ok(status) => {
                 if (status == "INGESTING" || status == "NO_ATTEMPT") && poll_no < MAX_POLLS {
-                    schedule_delivery_poll(
-                        pool,
-                        package_id,
-                        partner_id,
-                        package_id,
-                        poll_no as i32 + 1,
-                        6,
-                    )
-                    .await?;
+                    schedule_delivery_poll(pool, package_id, partner_id, poll_no as i32 + 1, 6)
+                        .await?;
                 }
                 succeed(pool, j).await
             }

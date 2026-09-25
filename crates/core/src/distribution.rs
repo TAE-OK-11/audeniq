@@ -39,6 +39,10 @@ pub struct CanonicalCredit {
 pub struct CanonicalTrack {
     pub track_id: Uuid,
     pub title: String,
+    /// Version/designation ("Radio Edit"). Empty = none; emitted as
+    /// DDEX VersionTitle only when non-empty.
+    #[serde(default)]
+    pub version: String,
     pub disc_number: i32,
     pub track_number: i32,
     pub artist_id: Uuid,
@@ -185,7 +189,7 @@ pub async fn build_canonical(
     let release_type: String = rel.get("release_type");
 
     let tracks = sqlx::query(
-        "SELECT t.id, t.title, t.disc_number, t.track_number, t.artist_id, t.asset_id, t.isrc, t.parental_advisory, a.name AS artist_name, s.sha256 AS asset_sha256, s.object_key AS asset_object_key
+        "SELECT t.id, t.title, t.version, t.disc_number, t.track_number, t.artist_id, t.asset_id, t.isrc, t.parental_advisory, a.name AS artist_name, s.sha256 AS asset_sha256, s.object_key AS asset_object_key
          FROM catalog.tracks t
          JOIN catalog.artists a ON a.org_id=t.org_id AND a.id=t.artist_id
          LEFT JOIN catalog.assets s ON s.org_id=t.org_id AND s.id=t.asset_id
@@ -211,6 +215,7 @@ pub async fn build_canonical(
         out_tracks.push(CanonicalTrack {
             track_id,
             title: t.get("title"),
+            version: t.get("version"),
             disc_number: t.get("disc_number"),
             track_number: t.get("track_number"),
             artist_id: t.get("artist_id"),

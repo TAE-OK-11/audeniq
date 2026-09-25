@@ -256,7 +256,7 @@ fn head_bytes(path: &Path) -> Result<Vec<u8>> {
 }
 
 /// Fixed Stage 1 audio check contract: every analyzed audio asset yields exactly
-/// these six outcomes, in order. Later stages and the Studio UI can rely on the
+/// these eight outcomes, in order. Later stages and the Studio UI can rely on the
 /// set being stable; checks that could not run are NOT_APPLICABLE or
 /// TECHNICAL_RETRY instead of being silently dropped.
 pub const AUDIO_CHECK_CODES: &[&str] = &[
@@ -267,6 +267,7 @@ pub const AUDIO_CHECK_CODES: &[&str] = &[
     "AUDIO_SAMPLE_RATE_LOW",
     "AUDIO_BIT_DEPTH_LOW",
     "AUDIO_CHANNEL_INVALID",
+    "AUDIO_LOUDNESS_OUT_OF_RANGE",
 ];
 
 /// Stage 1 basic QC for an audio asset file.
@@ -371,6 +372,10 @@ pub fn check_audio(path: &Path, registered_sha256: Option<&str>) -> Vec<CheckOut
         &metrics.duration_secs.to_string(),
         &metrics.sample_rate.to_string(),
         &metrics.channels.to_string(),
+        &metrics
+            .bits_per_sample
+            .map(|b| b.to_string())
+            .unwrap_or_default(),
     ]);
     out.push(CheckOutcome {
         check_code: "AUDIO_TOO_SHORT",
@@ -411,19 +416,114 @@ pub fn check_audio(path: &Path, registered_sha256: Option<&str>) -> Vec<CheckOut
         } else {
             CheckStatus::CorrectionRequired
         },
-        input_hash: mh,
+        input_hash: mh.clone(),
         detail: format!("channels={}", metrics.channels),
     });
+    // Spotify normalizes to -14 LUFS (true peak <= -1 dBTP). DSPs normalize
+    // rather than reject, so an out-of-range master is review-only: the
+    // measurement is objective, the mastering call is not.
+    match measure_loudness(path) {
+        Ok((integrated, true_peak)) => {
+            let in_range = (integrated - LOUDNESS_TARGET_LUFS).abs() <= LOUDNESS_TOLERANCE_LU
+                && true_peak <= TRUE_PEAK_MAX_DBTP;
+            out.push(CheckOutcome {
+                check_code: "AUDIO_LOUDNESS_OUT_OF_RANGE",
+                status: if in_range {
+                    CheckStatus::Pass
+                } else {
+                    CheckStatus::ReviewRequired
+                },
+                input_hash: metric_hash(&[&format!("{integrated:.1}"), &format!("{true_peak:.1}")]),
+                detail: format!("integrated_lufs={integrated:.1} true_peak_dbtp={true_peak:.1}"),
+            });
+        }
+        Err(_) => out.extend(tail(
+            7,
+            CheckStatus::TechnicalRetry,
+            &mh,
+            "ebur128 measurement failed",
+        )),
+    }
     out
 }
 
+/// Spotify normalization target: -14 LUFS. ±1 LU is the practical tolerance
+/// band used across distributors; misses are review-only.
+pub const LOUDNESS_TARGET_LUFS: f64 = -14.0;
+pub const LOUDNESS_TOLERANCE_LU: f64 = 1.0;
+/// True peak ceiling: -1 dBTP (Spotify asks -2 dB when the master is hot).
+pub const TRUE_PEAK_MAX_DBTP: f64 = -1.0;
+
+/// Measure integrated loudness (LUFS) and true peak (dBTP) with ffmpeg's
+/// ebur128 filter. Any failure (missing binary, timeout) is an error;
+/// callers map it to TECHNICAL_RETRY.
+fn measure_loudness(path: &Path) -> Result<(f64, f64)> {
+    use std::io::Read;
+    let mut child = std::process::Command::new("ffmpeg")
+        .args([
+            "-hide_banner",
+            "-nostats",
+            "-i",
+            &path.to_string_lossy(),
+            "-filter_complex",
+            // framelog=quiet: only the final summary prints, so the 65 KB
+            // stderr cap can never truncate it on long files.
+            "ebur128=peak=true:framelog=quiet",
+            "-f",
+            "null",
+            "-",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|_| Error::Internal)?;
+    let stderr = child.stderr.take().ok_or(Error::Internal)?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let r = stderr.take(65_537).read_to_end(&mut buf).map(|_| buf);
+        let _ = tx.send(r);
+    });
+    let buf = match rx.recv_timeout(probe_timeout()) {
+        Ok(Ok(buf)) => buf,
+        _ => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(Error::Internal);
+        }
+    };
+    let _ = child.wait();
+    parse_ebur128(&String::from_utf8_lossy(&buf)).ok_or(Error::Internal)
+}
+
+fn parse_ebur128(text: &str) -> Option<(f64, f64)> {
+    let mut integrated = None;
+    let mut peak = None;
+    let mut lines = text.lines();
+    while let Some(line) = lines.next() {
+        match line.trim() {
+            "Integrated loudness:" => integrated = lines.next().and_then(parse_ebur128_value),
+            "True peak:" => peak = lines.next().and_then(parse_ebur128_value),
+            _ => {}
+        }
+    }
+    Some((integrated?, peak?))
+}
+
+fn parse_ebur128_value(line: &str) -> Option<f64> {
+    // "    I:         -13.8 LUFS" / "    Peak:      -10.1 dBFS"
+    let num = line.split(':').nth(1)?.split_whitespace().next()?;
+    num.parse::<f64>().ok().filter(|f| f.is_finite())
+}
+
 /// Fixed Stage 1 image check contract: every analyzed cover-art asset yields
-/// exactly these four outcomes, in order.
+/// exactly these five outcomes, in order.
 pub const IMAGE_CHECK_CODES: &[&str] = &[
     "SHA256_MISMATCH",
     "IMAGE_MAGIC_MISMATCH",
     "IMAGE_PROBE_FAILED",
     "IMAGE_TOO_SMALL",
+    "IMAGE_NOT_SQUARE",
 ];
 
 /// Stage 1 basic QC for a cover-art image file.
@@ -532,6 +632,18 @@ pub fn check_image(path: &Path, registered_sha256: Option<&str>) -> Vec<CheckOut
         input_hash: metric_hash(&[&metrics.width.to_string(), &metrics.height.to_string()]),
         detail: format!("{}x{}", metrics.width, metrics.height),
     });
+    // Every DSP requires 1:1 cover art. Non-square is an objective,
+    // user-fixable defect, so it blocks like a too-small image.
+    out.push(CheckOutcome {
+        check_code: "IMAGE_NOT_SQUARE",
+        status: if metrics.width == metrics.height {
+            CheckStatus::Pass
+        } else {
+            CheckStatus::CorrectionRequired
+        },
+        input_hash: metric_hash(&[&metrics.width.to_string(), &metrics.height.to_string()]),
+        detail: format!("{}x{}", metrics.width, metrics.height),
+    });
     out
 }
 
@@ -596,8 +708,27 @@ mod tests {
 
     #[test]
     fn audio_passes_on_clean_wav() {
+        // The default sine sits at about -21.8 LUFS (review-only loudness
+        // flag), so the all-pass fixture is mastered into the -14 ±1 band.
         let p = tmp("clean.wav");
-        make_wav(&p, 60, 44100);
+        let st = Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=60:sample_rate=44100",
+                "-filter:a",
+                "volume=8dB",
+                "-c:a",
+                "pcm_s16le",
+                &p.to_string_lossy(),
+            ])
+            .status()
+            .expect("ffmpeg missing");
+        assert!(st.success());
         let out = check_audio(&p, None);
         assert!(out.iter().all(|o| o.status == CheckStatus::Pass), "{out:?}");
         let _ = std::fs::remove_file(&p);
@@ -645,8 +776,8 @@ mod tests {
             .unwrap();
         assert_eq!(sha.status, CheckStatus::Blocked);
         // Blocked short-circuits: the remaining checks are NOT_APPLICABLE,
-        // but the seven-check contract still holds.
-        assert_eq!(out.len(), 7);
+        // but the eight-check contract still holds.
+        assert_eq!(out.len(), 8);
         assert!(
             out[1..]
                 .iter()
@@ -675,6 +806,81 @@ mod tests {
         let out = check_image(&p, None);
         assert!(out.iter().all(|o| o.status == CheckStatus::Pass), "{out:?}");
         let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn image_flags_nonsquare_cover() {
+        let p = tmp("nonsquare.png");
+        make_png(&p, 3000, 2000);
+        let out = check_image(&p, None);
+        let sq = out
+            .iter()
+            .find(|o| o.check_code == "IMAGE_NOT_SQUARE")
+            .unwrap();
+        assert_eq!(sq.status, CheckStatus::CorrectionRequired);
+        // 3000px long side still passes the size gate; only shape fails.
+        let small = out
+            .iter()
+            .find(|o| o.check_code == "IMAGE_TOO_SMALL")
+            .unwrap();
+        assert_eq!(small.status, CheckStatus::Pass);
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn audio_flags_loudness_out_of_range() {
+        // Default lavfi sine measures about -21.8 LUFS: outside -14 ±1,
+        // so the check trips as review-only (DSPs normalize, never reject).
+        let p = tmp("quiet.wav");
+        make_wav(&p, 60, 44100);
+        let out = check_audio(&p, None);
+        let loud = out
+            .iter()
+            .find(|o| o.check_code == "AUDIO_LOUDNESS_OUT_OF_RANGE")
+            .unwrap();
+        assert_eq!(loud.status, CheckStatus::ReviewRequired);
+        assert!(loud.detail.contains("integrated_lufs="), "{}", loud.detail);
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn audio_passes_loudness_in_range() {
+        // +8 dB on the same sine lands at about -13.8 LUFS: inside the band.
+        let p = tmp("hot.wav");
+        let st = Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=60:sample_rate=44100",
+                "-filter:a",
+                "volume=8dB",
+                "-c:a",
+                "pcm_s16le",
+                &p.to_string_lossy(),
+            ])
+            .status()
+            .expect("ffmpeg missing");
+        assert!(st.success());
+        let out = check_audio(&p, None);
+        let loud = out
+            .iter()
+            .find(|o| o.check_code == "AUDIO_LOUDNESS_OUT_OF_RANGE")
+            .unwrap();
+        assert_eq!(loud.status, CheckStatus::Pass, "{}", loud.detail);
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn ebur128_parse_reads_summary() {
+        let text = "  Integrated loudness:\n    I:         -13.8 LUFS\n  True peak:\n    Peak:      -10.1 dBFS\n";
+        let (i, p) = parse_ebur128(text).unwrap();
+        assert!((i - -13.8).abs() < 0.01);
+        assert!((p - -10.1).abs() < 0.01);
+        assert!(parse_ebur128("garbage").is_none());
     }
 
     #[test]

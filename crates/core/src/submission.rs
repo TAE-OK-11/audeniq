@@ -309,7 +309,7 @@ async fn revision_body(
     .fetch_one(&mut *c)
     .await?;
     let tracks = sqlx::query(
-        "SELECT t.id, t.title, t.disc_number, t.track_number, t.artist_id, t.isrc, t.asset_id, t.parental_advisory, a.sha256 AS asha, a.kind AS akind FROM catalog.tracks t LEFT JOIN catalog.assets a ON a.org_id=t.org_id AND a.id=t.asset_id WHERE t.org_id=$1 AND t.release_id=$2 AND t.archived_at IS NULL ORDER BY t.disc_number, t.track_number",
+        "SELECT t.id, t.title, t.version, t.disc_number, t.track_number, t.artist_id, t.isrc, t.asset_id, t.parental_advisory, a.sha256 AS asha, a.kind AS akind FROM catalog.tracks t LEFT JOIN catalog.assets a ON a.org_id=t.org_id AND a.id=t.asset_id WHERE t.org_id=$1 AND t.release_id=$2 AND t.archived_at IS NULL ORDER BY t.disc_number, t.track_number",
     )
     .bind(org).bind(release).fetch_all(&mut *c).await?;
     let mut tj = Vec::new();
@@ -320,6 +320,7 @@ async fn revision_body(
         tj.push(json!({
             "id": tid,
             "title": t.get::<String,_>("title"),
+            "version": t.get::<String,_>("version"),
             "disc_number": t.get::<i32,_>("disc_number"),
             "track_number": t.get::<i32,_>("track_number"),
             "artist_id": t.get::<Uuid,_>("artist_id"),
@@ -826,6 +827,97 @@ fn field_checks(body: &Value) -> Vec<StagedCheck> {
         &seo_titles.join(","),
         format!("titles with seo terms={}", seo_titles.join(",")),
     );
+    // DDEX ERN requires P-line and C-line on every release. Preparation
+    // rejects a missing line; catching it here keeps the fix in the
+    // artist's hands at submit time instead of failing at prepare time.
+    let p_line = draft.get("p_line").and_then(Value::as_str).unwrap_or("");
+    push(
+        "PLINE_MISSING",
+        if p_line.trim().is_empty() {
+            CheckStatus::CorrectionRequired
+        } else {
+            CheckStatus::Pass
+        },
+        p_line,
+        format!("p_line present={}", !p_line.trim().is_empty()),
+    );
+    let c_line = draft.get("c_line").and_then(Value::as_str).unwrap_or("");
+    push(
+        "CLINE_MISSING",
+        if c_line.trim().is_empty() {
+            CheckStatus::CorrectionRequired
+        } else {
+            CheckStatus::Pass
+        },
+        c_line,
+        format!("c_line present={}", !c_line.trim().is_empty()),
+    );
+    // Deezer requires at least one composer/lyricist per track; Apple
+    // rejects initials/aliases. We can only verify presence of a writing
+    // credit here, not the name's authenticity — that stays human review.
+    const WRITER_ROLES: &[&str] = &[
+        "composer",
+        "writer",
+        "lyricist",
+        "songwriter",
+        "author",
+        "작사",
+        "작곡",
+    ];
+    for t in &tracks {
+        let tid = t["id"].as_str().unwrap_or("?");
+        let has_writer = t["credits"]
+            .as_array()
+            .map(|cs| {
+                cs.iter().any(|c| {
+                    let role = c["role"].as_str().unwrap_or("").to_lowercase();
+                    WRITER_ROLES.iter().any(|w| role.contains(w))
+                })
+            })
+            .unwrap_or(false);
+        push(
+            "TRACK_WRITER_CREDIT_MISSING",
+            if has_writer {
+                CheckStatus::Pass
+            } else {
+                CheckStatus::CorrectionRequired
+            },
+            &format!("{tid}:{has_writer}"),
+            format!("track={tid} writer_credit={has_writer}"),
+        );
+    }
+    // Explicit content: Spotify/Apple/Deezer require the flag (never "E" in
+    // the title); domestic DSPs additionally carry a legal duty to mark
+    // 19세 미만 이용 불가 (청소년보호법). Whether the content is actually
+    // harmful is a human judgment — this check only makes sure the marking
+    // step cannot be forgotten.
+    let explicit_declared = body["declarations"]["explicit_content"]
+        .as_bool()
+        .unwrap_or(false);
+    let explicit_tracks: Vec<String> = tracks
+        .iter()
+        .filter(|t| t["parental_advisory"].as_bool().unwrap_or(false))
+        .map(|t| t["title"].as_str().unwrap_or("?").to_string())
+        .collect();
+    let explicit_any = explicit_declared || !explicit_tracks.is_empty();
+    push(
+        "ADULT_MARKING_REVIEW",
+        if explicit_any {
+            CheckStatus::ReviewRequired
+        } else {
+            CheckStatus::Pass
+        },
+        &format!(
+            "declared={explicit_declared} tracks={}",
+            explicit_tracks.join(",")
+        ),
+        if explicit_any {
+            "explicit content flagged: confirm DSP explicit flag + domestic 19금 marking (청소년보호법)"
+                .to_string()
+        } else {
+            "no explicit content declared".to_string()
+        },
+    );
     let n = tracks.len();
     let type_ok = match rtype {
         "SINGLE" => n == 1,
@@ -1284,7 +1376,10 @@ pub async fn run_stage1(
     }
     let n = |s: &str| counts.get(s).copied().unwrap_or(0);
     let needs_retry = n("TECHNICAL_RETRY") > 0;
-    let has_failure = n("BLOCKED") > 0 || n("CORRECTION_REQUIRED") > 0 || n("REVIEW_REQUIRED") > 0;
+    // Only objective failures block: BLOCKED or CORRECTION_REQUIRED.
+    // REVIEW_REQUIRED is recorded for the Stage 2 human reviewer and never
+    // stops the release — uncertain calls pass through, per policy.
+    let has_blocking = n("BLOCKED") > 0 || n("CORRECTION_REQUIRED") > 0;
     let mut summary = Stage1Summary {
         revision_id,
         status_counts: counts,
@@ -1303,7 +1398,7 @@ pub async fn run_stage1(
 
     update_asset_qc(&mut tx, org, &body, &checks).await?;
 
-    if has_failure {
+    if has_blocking {
         sqlx::query(
             "UPDATE catalog.releases SET status='STAGE1_CORRECTION', row_version=row_version+1 WHERE org_id=$1 AND id=$2",
         )

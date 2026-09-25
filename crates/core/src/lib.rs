@@ -22,6 +22,7 @@ pub mod preparation_model;
 pub mod qc;
 pub mod review;
 pub mod route_plan;
+pub mod routing;
 pub mod storage;
 pub mod submission;
 pub mod uploads;

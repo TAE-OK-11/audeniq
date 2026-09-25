@@ -151,6 +151,9 @@ pub fn generate_prepared_ern(canonical: &PreparedRelease) -> Result<String> {
         element(&mut out, "ResourceReference", t.id);
         element(&mut out, "ISRC", &t.isrc);
         element(&mut out, "Title", &t.title);
+        if !t.version.is_empty() {
+            element(&mut out, "VersionTitle", &t.version);
+        }
         element(&mut out, "DisplayArtist", &t.artist);
         let pinned = c
             .canonical
@@ -236,6 +239,9 @@ pub fn generate_ern(c: &crate::distribution::CanonicalRelease) -> Result<String>
         element(&mut out, "ResourceReference", t.track_id);
         element(&mut out, "ISRC", t.isrc.as_deref().ok_or(Error::Invalid)?);
         element(&mut out, "Title", &t.title);
+        if !t.version.is_empty() {
+            element(&mut out, "VersionTitle", &t.version);
+        }
         element(&mut out, "DisplayArtist", &t.artist_name);
         element(&mut out, "DiscNumber", t.disc_number);
         element(&mut out, "TrackNumber", t.track_number);
