@@ -22,6 +22,16 @@ use uuid::Uuid;
 
 /// Consent policy version for F2: adult self-consent only. Minority and
 /// third-party consent automation require legal review (§23.1) and are gated.
+/// Statuses in which a release is an editable draft and can be (re)submitted:
+/// the initial draft and every stage's correction state. Mirrors the SQL
+/// function `catalog.is_editable_status` (migration 0032).
+pub fn is_editable_status(status: &str) -> bool {
+    matches!(
+        status,
+        "DRAFT" | "STAGE1_CORRECTION" | "STAGE2_CORRECTION" | "STAGE3_CORRECTION"
+    )
+}
+
 pub const CONSENT_POLICY_VERSION: &str = "v1-self";
 /// Rule version for Stage 1 field checks (1-B).
 pub const FIELD_RULE_VERSION: &str = "1";
@@ -96,11 +106,11 @@ pub async fn presubmit(s: &AppState, a: &Actor, org: Uuid, release: Uuid) -> Res
     .await?
     .ok_or(Error::NotFound)?;
     let status: String = rel.get("status");
-    if status != "DRAFT" && status != "STAGE1_CORRECTION" {
+    if !is_editable_status(&status) {
         gates.insert("RELEASE_NOT_SUBMITTABLE");
     }
     let tracks = sqlx::query(
-        "SELECT t.id, t.asset_id, a.state AS astate FROM catalog.tracks t LEFT JOIN catalog.assets a ON a.org_id=t.org_id AND a.id=t.asset_id WHERE t.org_id=$1 AND t.release_id=$2 AND t.archived_at IS NULL",
+        "SELECT t.id, t.asset_id, a.state AS astate, (a.sha256 IS NOT NULL) AS verified FROM catalog.tracks t LEFT JOIN catalog.assets a ON a.org_id=t.org_id AND a.id=t.asset_id WHERE t.org_id=$1 AND t.release_id=$2 AND t.archived_at IS NULL",
     )
     .bind(org)
     .bind(release)
@@ -113,9 +123,13 @@ pub async fn presubmit(s: &AppState, a: &Actor, org: Uuid, release: Uuid) -> Res
         let tid: Uuid = t.get("id");
         let aid: Option<Uuid> = t.get("asset_id");
         let astate: Option<String> = t.get("astate");
-        let (admitted, code) = match (aid, astate.as_deref()) {
-            (None, _) => (false, Some("AUDIO_REQUIRED")),
-            (Some(_), Some("REGISTERED")) => (true, None),
+        let verified: Option<bool> = t.get("verified");
+        let (admitted, code) = match (aid, astate.as_deref(), verified) {
+            (None, _, _) => (false, Some("AUDIO_REQUIRED")),
+            (Some(_), Some("REGISTERED"), Some(true)) => (true, None),
+            // Registered before upload completion recorded content hashes:
+            // Stage 1 cannot verify these bytes, so the file must be re-uploaded.
+            (Some(_), Some("REGISTERED"), _) => (false, Some("AUDIO_NOT_VERIFIED")),
             _ => (false, Some("AUDIO_NOT_ADMITTED")),
         };
         if let Some(c) = code {
@@ -412,7 +426,7 @@ pub async fn submit(
     let current_revision: Option<Uuid> = rel.get("current_revision_id");
     // In-flight submissions (SUBMITTED/STAGE1_RUNNING) accept only the idempotent
     // path below; anything else is not submittable.
-    if !["DRAFT", "STAGE1_CORRECTION", "SUBMITTED", "STAGE1_RUNNING"].contains(&status.as_str()) {
+    if !is_editable_status(&status) && !["SUBMITTED", "STAGE1_RUNNING"].contains(&status.as_str()) {
         return Err(Error::PolicyGate("RELEASE_NOT_SUBMITTABLE"));
     }
     // 0-A re-verified server-side: ACTIVE user + ACTIVE membership + non-viewer role.
@@ -464,6 +478,15 @@ pub async fn submit(
         &input.declarations,
     )
     .await?;
+    // Every attached asset must carry the content hash recorded at upload
+    // completion; without it Stage 1 cannot verify or analyze the bytes and
+    // the revision could only dead-end later in the pipeline.
+    if body["tracks"].as_array().is_some_and(|ts| {
+        ts.iter()
+            .any(|t| t["asset_id"].is_string() && !t["asset_sha256"].is_string())
+    }) {
+        return Err(Error::PolicyGate("AUDIO_NOT_VERIFIED"));
+    }
     let body_hash = sha256_hex(&canonical(&body));
     let idem_key = input.idempotency_key.trim().to_string();
     // Idempotency key: the same key on this release always resolves to the
@@ -505,10 +528,24 @@ pub async fn submit(
             );
         }
     }
-    if status != "DRAFT" && status != "STAGE1_CORRECTION" {
+    if !is_editable_status(&status) {
         // In flight with a *changed* body: the user must wait or correct first.
         return Err(Error::PolicyGate("RELEASE_NOT_SUBMITTABLE"));
     }
+    // Re-check everything that will be published before a revision exists:
+    // input-time checks can be bypassed by data written before they existed
+    // (or by list changes), and a late failure would otherwise surface only
+    // at packaging.
+    let texts = published_texts(&mut tx, org, &body).await?;
+    if !texts.iter().all(|t| crate::text_policy::is_clean(t, false))
+        || !crate::text_policy::json_is_clean(&body["release"]["draft"])
+    {
+        return Err(Error::InvalidCode(
+            crate::text_policy::TEXT_INVALID_CHARACTERS,
+        ));
+    }
+    let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+    crate::protected_names::enforce(&mut tx, org, &refs).await?;
     let revision: i32 = sqlx::query_scalar(
         "SELECT COALESCE(MAX(revision),0)+1 FROM catalog.application_revisions WHERE release_id=$1",
     )
@@ -582,6 +619,15 @@ pub async fn submission_status(s: &AppState, a: &Actor, org: Uuid, release: Uuid
                     "status": c.get::<String,_>("status"),
                     "result_hash": c.get::<String,_>("result_hash"),
                     "detail": c.get::<Option<String>,_>("detail"),
+                    // REVIEW_REQUIRED is either an advisory WARNING or a HOLD
+                    // that keeps the release in review (docs/REVIEW_OVERRIDES.md).
+                    "severity": match c.get::<String,_>("status").as_str() {
+                        "PASS" | "NOT_APPLICABLE" => "NONE",
+                        "REVIEW_REQUIRED" => crate::review::stage1_review_severity(&c.get::<String,_>("check_code")),
+                        "CORRECTION_REQUIRED" => "CORRECTION",
+                        "BLOCKED" => "HOLD",
+                        _ => "OTHER",
+                    },
                 })).collect::<Vec<_>>(),
                 pkg.map(|p| json!({"id": p.get::<Uuid,_>("id"), "package_hash": p.get::<String,_>("package_hash"), "rule_version": p.get::<String,_>("rule_version")})),
                 ver.map(|v| json!({
@@ -639,6 +685,248 @@ fn field_cache_key(check_code: &str, inputs: &str) -> String {
 fn asset_cache_key(check_code: &str, asset_sha256: &str) -> String {
     qc::result_hash(check_code, qc::QC_RULE_VERSION, asset_sha256, asset_sha256)
 }
+/// Every name and title of a revision that ends up in delivery messages:
+/// release title/version fields, profile strings, track titles/versions,
+/// track artist names and credited party names.
+async fn published_texts(c: &mut PgConnection, org: Uuid, body: &Value) -> Result<Vec<String>> {
+    let mut out: Vec<String> = Vec::new();
+    let rel = &body["release"];
+    out.push(rel["title"].as_str().unwrap_or("").to_string());
+    out.extend(
+        crate::protected_names::json_strings(&rel["draft"])
+            .into_iter()
+            .map(str::to_string),
+    );
+    let mut artists: Vec<Uuid> = Vec::new();
+    let mut parties: Vec<Uuid> = Vec::new();
+    for t in body["tracks"].as_array().into_iter().flatten() {
+        out.push(t["title"].as_str().unwrap_or("").to_string());
+        out.push(t["version"].as_str().unwrap_or("").to_string());
+        if let Some(a) = t["artist_id"]
+            .as_str()
+            .and_then(|s| Uuid::parse_str(s).ok())
+        {
+            artists.push(a);
+        }
+        for cr in t["credits"].as_array().into_iter().flatten() {
+            if let Some(p) = cr["party_id"]
+                .as_str()
+                .and_then(|s| Uuid::parse_str(s).ok())
+            {
+                parties.push(p);
+            }
+        }
+    }
+    let names: Vec<String> =
+        sqlx::query_scalar("SELECT name FROM catalog.artists WHERE org_id=$1 AND id=ANY($2)")
+            .bind(org)
+            .bind(&artists)
+            .fetch_all(&mut *c)
+            .await?;
+    out.extend(names);
+    let names: Vec<String> = sqlx::query_scalar(
+        "SELECT display_name FROM identity.parties WHERE org_id=$1 AND id=ANY($2)",
+    )
+    .bind(org)
+    .bind(&parties)
+    .fetch_all(&mut *c)
+    .await?;
+    out.extend(names);
+    out.retain(|s| !s.is_empty());
+    Ok(out)
+}
+
+/// Stage 1 policy checks that need the database: text hygiene, protected
+/// artist names and identifier reuse. All are CORRECTION_REQUIRED so the
+/// artist can fix them; none can fail late at packaging any more.
+async fn policy_checks(
+    pool: &PgPool,
+    org: Uuid,
+    release: Uuid,
+    body: &Value,
+) -> Result<Vec<StagedCheck>> {
+    let mut tx = pool.begin().await?;
+    // identifier ledger is RLS-scoped to the org
+    sqlx::query("SELECT set_config('app.org_id',$1,true)")
+        .bind(org.to_string())
+        .execute(&mut *tx)
+        .await?;
+    let texts = published_texts(&mut tx, org, body).await?;
+    let mut out = Vec::new();
+    let mut push = |check_code: &'static str, bad: bool, inputs: &str, detail: String| {
+        out.push(StagedCheck {
+            check_code,
+            rule_version: FIELD_RULE_VERSION,
+            status: if bad {
+                CheckStatus::CorrectionRequired
+            } else {
+                CheckStatus::Pass
+            },
+            result_hash: field_cache_key(check_code, inputs),
+            detail,
+        });
+    };
+    let dirty: Vec<&String> = texts
+        .iter()
+        .filter(|t| !crate::text_policy::is_clean(t, false))
+        .collect();
+    let dirty_draft = !crate::text_policy::json_is_clean(&body["release"]["draft"]);
+    push(
+        crate::text_policy::TEXT_INVALID_CHARACTERS,
+        !dirty.is_empty() || dirty_draft,
+        &format!("{}:{dirty_draft}", dirty.len()),
+        if dirty.is_empty() && !dirty_draft {
+            "no control, invisible or bidi-override characters".into()
+        } else {
+            format!(
+                "{} field(s) contain control, invisible or text-direction characters that cannot be delivered; remove them and resubmit",
+                dirty.len() + usize::from(dirty_draft)
+            )
+        },
+    );
+    let entries = crate::protected_names::load(&mut tx, org).await?;
+    let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+    let hit = crate::protected_names::find(&entries, &refs).map(|e| e.name.clone());
+    push(
+        crate::protected_names::ARTIST_NAME_PROTECTED,
+        hit.is_some(),
+        hit.as_deref().unwrap_or(""),
+        match &hit {
+            Some(name) => format!(
+                "a name, title or credit matches the protected artist \"{name}\"; releasing under a protected name requires verified rights (contact support)"
+            ),
+            None => "no protected artist names".into(),
+        },
+    );
+    // REVIEW-policy names (short/generic ones such as "BTS") are accepted at
+    // input but must be looked at by a human before release.
+    let review_hit = crate::protected_names::find_review(&entries, &refs).map(|e| e.name.clone());
+    let review_check = StagedCheck {
+        check_code: crate::protected_names::ARTIST_NAME_REVIEW,
+        rule_version: FIELD_RULE_VERSION,
+        status: if review_hit.is_some() {
+            CheckStatus::ReviewRequired
+        } else {
+            CheckStatus::Pass
+        },
+        result_hash: field_cache_key(
+            crate::protected_names::ARTIST_NAME_REVIEW,
+            review_hit.as_deref().unwrap_or(""),
+        ),
+        detail: match &review_hit {
+            Some(name) => format!(
+                "a name, title or credit may refer to the protected artist \"{name}\"; a reviewer must confirm it is not an impersonation"
+            ),
+            None => "no protected artist names for review".into(),
+        },
+    };
+    // Identifier reuse inside the org (cross-org reuse is a Stage 2 review
+    // matter). The UPC/ISRC ledger is unique; a code already assigned to a
+    // different release/track, or claimed by another active draft, can
+    // never be packaged for this release.
+    let mut conflicts: Vec<String> = Vec::new();
+    if let Some(upc) = body["release"]["upc"].as_str().filter(|u| !u.is_empty()) {
+        let used: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM catalog.releases WHERE org_id=$1 AND upc=$2 AND id<>$3 AND archived_at IS NULL)
+                 OR EXISTS(SELECT 1 FROM distribution.identifier_assignments WHERE kind='UPC' AND identifier=$2 AND release_id<>$3)",
+        )
+        .bind(org)
+        .bind(upc)
+        .bind(release)
+        .fetch_one(&mut *tx)
+        .await?;
+        if used {
+            conflicts.push(format!("UPC {upc}"));
+        }
+    }
+    for t in body["tracks"].as_array().into_iter().flatten() {
+        let (Some(isrc), Some(tid)) = (
+            t["isrc"].as_str().filter(|i| !i.is_empty()),
+            t["id"].as_str().and_then(|s| Uuid::parse_str(s).ok()),
+        ) else {
+            continue;
+        };
+        let used: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM catalog.tracks t JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id
+                           WHERE t.org_id=$1 AND t.isrc=$2 AND t.release_id<>$3 AND t.archived_at IS NULL AND r.archived_at IS NULL)
+                 OR EXISTS(SELECT 1 FROM distribution.identifier_assignments WHERE kind='ISRC' AND identifier=$2 AND track_id<>$4)",
+        )
+        .bind(org)
+        .bind(isrc)
+        .bind(release)
+        .bind(tid)
+        .fetch_one(&mut *tx)
+        .await?;
+        if used {
+            conflicts.push(format!("ISRC {isrc}"));
+        }
+    }
+    push(
+        "IDENTIFIER_IN_USE",
+        !conflicts.is_empty(),
+        &conflicts.join(","),
+        if conflicts.is_empty() {
+            "UPC/ISRC not used by another release in this account".into()
+        } else {
+            format!(
+                "{} already used by another release or track in this account; assign unique codes and resubmit",
+                conflicts.join(", ")
+            )
+        },
+    );
+    // Same master attached to a track of another live release in this
+    // account (sandbox round 2: a delivered asset could be re-released under
+    // a new UPC with no signal; the fingerprint check skips the asset itself).
+    // Reusing a recording on a single and then an album is legitimate when
+    // both tracks carry the same ISRC, so only a reuse under a different or
+    // missing ISRC goes to review.
+    let mut reused: Vec<String> = Vec::new();
+    for t in body["tracks"].as_array().into_iter().flatten() {
+        let Some(aid) = t["asset_id"].as_str().and_then(|s| Uuid::parse_str(s).ok()) else {
+            continue;
+        };
+        let isrc = t["isrc"].as_str().filter(|i| !i.is_empty());
+        let others: Vec<(Uuid, Option<String>)> = sqlx::query_as(
+            "SELECT t.release_id, t.isrc FROM catalog.tracks t JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id
+              WHERE t.org_id=$1 AND t.asset_id=$2 AND t.release_id<>$3 AND t.archived_at IS NULL
+                AND r.archived_at IS NULL AND r.status NOT IN ('DRAFT','WITHDRAWN','SUPERSEDED')",
+        )
+        .bind(org)
+        .bind(aid)
+        .bind(release)
+        .fetch_all(&mut *tx)
+        .await?;
+        for (other, other_isrc) in others {
+            if isrc.is_none() || other_isrc.as_deref() != isrc {
+                reused.push(format!("asset {aid} (release {other})"));
+            }
+        }
+    }
+    reused.sort();
+    reused.dedup();
+    out.push(review_check);
+    out.push(StagedCheck {
+        check_code: "ASSET_REUSED",
+        rule_version: FIELD_RULE_VERSION,
+        status: if reused.is_empty() {
+            CheckStatus::Pass
+        } else {
+            CheckStatus::ReviewRequired
+        },
+        result_hash: field_cache_key("ASSET_REUSED", &reused.join(",")),
+        detail: if reused.is_empty() {
+            "audio not used by another submitted release (or reused with the same ISRC)".into()
+        } else {
+            format!(
+                "audio already submitted in another release under a different or missing ISRC: {}; reuse a recording with its original ISRC",
+                reused.join(", ")
+            )
+        },
+    });
+    tx.commit().await?;
+    Ok(out)
+}
+
 /// 1-B: pure field checks over the immutable revision body.
 fn field_checks(body: &Value) -> Vec<StagedCheck> {
     let mut out = Vec::new();
@@ -1057,6 +1345,7 @@ async fn analyze_asset(
     storage: &Arc<dyn ObjectStore>,
     key: &str,
     kind: &str,
+    content_type: &str,
     sha256: &str,
     tmp_name: &str,
 ) -> std::result::Result<
@@ -1082,55 +1371,73 @@ async fn analyze_asset(
             qc_max_bytes()
         ));
     }
-    let bytes = storage
-        .get(key)
-        .await
-        .map_err(|_| "object download failed".to_string())?;
-    let tmp = std::env::temp_dir().join(tmp_name);
-    std::fs::write(&tmp, &bytes).map_err(|_| "temp file write failed".to_string())?;
     // RAII guard: the temp file is removed on drop, even if a QC analyzer
-    // panics. Prevents /tmp (512MB tmpfs) from filling up under parallel load.
-    struct TempFile<'a>(&'a std::path::Path);
-    impl Drop for TempFile<'_> {
+    // panics or the download fails half way. Prevents the QC scratch volume
+    // from filling up under parallel load.
+    struct TempFile(std::path::PathBuf);
+    impl Drop for TempFile {
         fn drop(&mut self) {
-            let _ = std::fs::remove_file(self.0);
+            let _ = std::fs::remove_file(&self.0);
         }
     }
-    let _tmp_guard = TempFile(&tmp);
-    let outcomes = match kind {
-        "AUDIO" => qc::check_audio(&tmp, Some(sha256)),
-        "IMAGE" => qc::check_image(&tmp, Some(sha256)),
-        _ => Vec::new(),
-    };
-    // Duration and technical specs are measured with a second ffprobe pass
-    // rather than parsed out of check outcomes: the check contract is fixed
-    // and must not grow a side channel. ~100ms on a local file, submit path
-    // only. One probe yields both the duration and the real sample
-    // rate/channels/bits-per-sample the DDEX ERN builder emits.
-    let metrics = match kind {
-        "AUDIO" => qc::probe_audio_metrics(&tmp),
-        _ => None,
-    };
-    // Perceptual fingerprint for similarity detection. Only for audio whose
-    // bytes were admitted: SHA-256 still guards integrity (exact bytes),
-    // the fingerprint adds similarity (same recording, different bytes).
-    // Skip when QC already rejected the bytes (Blocked on SHA mismatch, or
-    // CorrectionRequired on magic mismatch): fingerprinting invalid audio
-    // is meaningless, and a decode failure there is permanent, not
-    // transient — it must not trigger TechnicalRetry.
-    let invalid = outcomes.iter().any(|o| {
-        matches!(
-            o.status,
-            CheckStatus::Blocked | CheckStatus::CorrectionRequired
-        )
-    });
-    let fp = match kind {
-        "AUDIO" if !invalid => {
-            Some(fingerprint::compute_fingerprint(&tmp).map_err(|e| format!("{e:?}")))
-        }
-        _ => None,
-    };
-    Ok((outcomes, metrics, fp))
+    let tmp = TempFile(std::env::temp_dir().join(tmp_name));
+    // Streamed straight to disk: worker memory stays flat regardless of the
+    // master's size (a 476 MB file previously pushed a worker to ~916 MB).
+    storage
+        .download_to(key, &tmp.0, qc_max_bytes())
+        .await
+        .map_err(|e| format!("object download failed: {e}"))?;
+    // The analyzers are blocking (child processes + CPU-bound FFT). Running
+    // them on the blocking pool keeps the worker's async runtime, and with it
+    // the job-lease heartbeat, responsive during multi-minute analyses.
+    let (kind, content_type, sha256) = (
+        kind.to_string(),
+        content_type.to_string(),
+        sha256.to_string(),
+    );
+    tokio::task::spawn_blocking(move || {
+        let path = tmp.0.as_path();
+        let outcomes = match kind.as_str() {
+            "AUDIO" => qc::check_audio(path, Some(&sha256), Some(&content_type)),
+            "IMAGE" => qc::check_image(path, Some(&sha256)),
+            _ => Vec::new(),
+        };
+        // Duration and technical specs are measured with a second ffprobe
+        // pass rather than parsed out of check outcomes: the check contract
+        // is fixed and must not grow a side channel. ~100ms on a local file,
+        // submit path only. One probe yields both the duration and the real
+        // sample rate/channels/bits-per-sample the DDEX ERN builder emits.
+        let metrics = match kind.as_str() {
+            "AUDIO" => qc::probe_audio_metrics(path),
+            _ => None,
+        };
+        // Perceptual fingerprint for similarity detection. Only for audio
+        // whose bytes were admitted: SHA-256 still guards integrity (exact
+        // bytes), the fingerprint adds similarity (same recording, different
+        // bytes). Skip when QC already rejected the bytes (Blocked on SHA
+        // mismatch, CorrectionRequired on a format/decode problem,
+        // TechnicalRetry on a transient decode failure): fingerprinting
+        // invalid audio is meaningless, and a decode failure there must not
+        // trigger a second TechnicalRetry.
+        let invalid = outcomes.iter().any(|o| {
+            matches!(
+                o.status,
+                CheckStatus::Blocked
+                    | CheckStatus::CorrectionRequired
+                    | CheckStatus::TechnicalRetry
+            )
+        });
+        let fp = match kind.as_str() {
+            "AUDIO" if !invalid => {
+                Some(fingerprint::compute_fingerprint(path).map_err(|e| format!("{e:?}")))
+            }
+            _ => None,
+        };
+        drop(tmp);
+        (outcomes, metrics, fp)
+    })
+    .await
+    .map_err(|_| "analyzer task failed".to_string())
 }
 
 /// Produce the two DB-backed fingerprint check outcomes for an analyzed
@@ -1142,7 +1449,8 @@ async fn analyze_asset(
 ///   bytes cannot help) or when QC blocked the bytes (tail already
 ///   covered the code).
 /// - `AUDIO_SIMILAR_TO_EXISTING`: compares the new fingerprint against
-///   every other fingerprint in the org at the same algorithm version.
+///   every other fingerprint in the org and, via the narrow cross-org read
+///   (migration 0034), in other orgs at the same algorithm version.
 ///   A BER at or below `SIMILAR_BER` is REVIEW_REQUIRED — similarity is a
 ///   human judgement, never an auto-block. Byte-identical re-uploads score
 ///   BER 0 and are flagged here; SHA-256 remains the integrity guard.
@@ -1256,7 +1564,18 @@ async fn handle_fingerprint_checks(
         } else {
             let listed: Vec<String> = hits
                 .iter()
-                .map(|(id, ber)| format!("{id} (BER={ber:.3})"))
+                .map(|h| {
+                    format!(
+                        "{}{} (BER={:.3})",
+                        h.asset_id,
+                        if h.other_org {
+                            " in another organization's catalog"
+                        } else {
+                            ""
+                        },
+                        h.ber
+                    )
+                })
                 .collect();
             (
                 CheckStatus::ReviewRequired,
@@ -1316,7 +1635,7 @@ async fn find_similar_assets(
     org: Uuid,
     aid: Uuid,
     frames: &[u32],
-) -> Result<Vec<(Uuid, f64)>> {
+) -> Result<Vec<SimilarHit>> {
     let rows: Vec<(Uuid, Vec<u8>)> = sqlx::query_as(
         "SELECT asset_id, hash FROM catalog.asset_fingerprints
           WHERE org_id=$1 AND asset_id<>$2 AND version=$3",
@@ -1326,20 +1645,49 @@ async fn find_similar_assets(
     .bind(fingerprint::FINGERPRINT_VERSION)
     .fetch_all(&mut **tx)
     .await?;
+    // Sandbox round 2: re-encoded copies of another account's audio were
+    // delivered because only the own org was compared. Other orgs'
+    // fingerprints come through a narrow SECURITY DEFINER read (migration
+    // 0034); matches are REVIEW only, exactly like same-org matches.
+    let foreign: Vec<(Uuid, Uuid, Vec<u8>)> = sqlx::query_as(
+        "SELECT asset_id, org_id, hash FROM catalog.fingerprints_outside_org($1,$2)",
+    )
+    .bind(org)
+    .bind(fingerprint::FINGERPRINT_VERSION)
+    .fetch_all(&mut **tx)
+    .await?;
+    let candidates = rows
+        .into_iter()
+        .map(|(id, hash)| (id, false, hash))
+        .chain(foreign.into_iter().map(|(id, _, hash)| (id, true, hash)));
     let mut hits = Vec::new();
-    for (other_id, hash) in rows {
+    for (other_id, other_org, hash) in candidates {
         let Ok(other) = fingerprint::Fingerprint::from_bytes(&hash) else {
             continue;
         };
         if let Some(ber) = fingerprint::bit_error_rate(frames, &other.frames)
             && ber <= fingerprint::SIMILAR_BER
         {
-            hits.push((other_id, ber));
+            hits.push(SimilarHit {
+                asset_id: other_id,
+                other_org,
+                ber,
+            });
         }
     }
-    hits.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    hits.sort_by(|a, b| {
+        a.ber
+            .partial_cmp(&b.ber)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     hits.truncate(3);
     Ok(hits)
+}
+
+struct SimilarHit {
+    asset_id: Uuid,
+    other_org: bool,
+    ber: f64,
 }
 
 async fn asset_checks(
@@ -1361,17 +1709,42 @@ async fn asset_checks(
         }
     }
     let mut out = Vec::new();
+    // Defense in depth for revisions created before submit enforced
+    // AUDIO_NOT_VERIFIED: an attached asset without a recorded hash is a
+    // user-fixable correction (re-upload), never a silent skip.
+    if let Some(tracks) = body["tracks"].as_array() {
+        for t in tracks {
+            if let (Some(aid), None) = (t["asset_id"].as_str(), t["asset_sha256"].as_str()) {
+                out.push(StagedCheck {
+                    check_code: "ASSET_NOT_VERIFIED",
+                    rule_version: qc::QC_RULE_VERSION,
+                    status: CheckStatus::CorrectionRequired,
+                    result_hash: qc::result_hash(
+                        "ASSET_NOT_VERIFIED",
+                        qc::QC_RULE_VERSION,
+                        aid,
+                        aid,
+                    ),
+                    detail: format!(
+                        "asset={aid} has no verified content hash; upload the file again"
+                    ),
+                });
+            }
+        }
+    }
     for (aid_str, (sha256, kind)) in &assets {
         let aid = Uuid::parse_str(aid_str).map_err(|_| Error::Internal)?;
-        let row =
-            sqlx::query("SELECT object_key, state FROM catalog.assets WHERE org_id=$1 AND id=$2")
-                .bind(org)
-                .bind(aid)
-                .fetch_optional(pool)
-                .await?
-                .ok_or(Error::Internal)?;
+        let row = sqlx::query(
+            "SELECT object_key, state, content_type FROM catalog.assets WHERE org_id=$1 AND id=$2",
+        )
+        .bind(org)
+        .bind(aid)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(Error::Internal)?;
         let state: String = row.get("state");
         let key: String = row.get("object_key");
+        let content_type: String = row.get("content_type");
         if state != "REGISTERED" {
             out.push(StagedCheck {
                 check_code: "ASSET_NOT_ADMITTED",
@@ -1429,7 +1802,16 @@ async fn asset_checks(
         // compute and store it.
         // Unique temp name: two workers must never share an analyzer file.
         let tmp_name = format!("audeniq-qc-{}", Uuid::new_v4());
-        let outcomes = match analyze_asset(storage, &key, kind.as_str(), sha256, &tmp_name).await {
+        let outcomes = match analyze_asset(
+            storage,
+            &key,
+            kind.as_str(),
+            &content_type,
+            sha256,
+            &tmp_name,
+        )
+        .await
+        {
             Ok((o, metrics, fp)) => {
                 // Persist measured audio duration + real technical specs for
                 // the DDEX builder. COALESCE fills only unknown columns;
@@ -1641,6 +2023,7 @@ pub async fn run_stage1(
     }
 
     let mut checks = field_checks(&body);
+    checks.extend(policy_checks(pool, org, release, &body).await?);
     checks.extend(asset_checks(pool, storage, org, &body).await?);
 
     let mut tx = pool.begin().await?;
@@ -1683,11 +2066,15 @@ pub async fn run_stage1(
         *counts.entry(c.status.as_db()).or_default() += 1;
     }
     let n = |s: &str| counts.get(s).copied().unwrap_or(0);
-    let needs_retry = n("TECHNICAL_RETRY") > 0;
     // Only objective failures block: BLOCKED or CORRECTION_REQUIRED.
     // REVIEW_REQUIRED is recorded for the Stage 2 human reviewer and never
     // stops the release — uncertain calls pass through, per policy.
     let has_blocking = n("BLOCKED") > 0 || n("CORRECTION_REQUIRED") > 0;
+    // A transient failure is only worth retrying when it could change the
+    // verdict: once something already requires correction the artist has to
+    // act anyway, so the release goes to STAGE1_CORRECTION now instead of
+    // spinning in STAGE1_RUNNING (sandbox: 8-channel 384 kHz FLAC).
+    let needs_retry = n("TECHNICAL_RETRY") > 0 && !has_blocking;
     let mut summary = Stage1Summary {
         revision_id,
         status_counts: counts,
@@ -1758,4 +2145,89 @@ pub async fn run_stage1(
     .await?;
     tx.commit().await?;
     Ok(summary)
+}
+
+/// Check code recorded when Stage 1 exhausted its retries without a verdict.
+pub const QC_ANALYSIS_FAILED: &str = "QC_ANALYSIS_FAILED";
+
+/// Stage 1 could not reach a verdict within the job's attempt budget (the
+/// analyzer kept failing or the worker kept crashing on this revision).
+/// Instead of leaving the release silently stuck in STAGE1_RUNNING, move it
+/// to STAGE1_CORRECTION with a visible check so the artist can replace the
+/// audio or simply resubmit (which starts a fresh analysis).
+///
+/// The recorded check is keyed by revision, not by asset bytes, so it never
+/// poisons the per-asset QC cache: a resubmit with the same file is analyzed
+/// again. Idempotent; a no-op when the revision is no longer current or the
+/// release already left Stage 1.
+pub async fn stage1_give_up(c: &mut PgConnection, revision_id: Uuid, reason: &str) -> Result<bool> {
+    let Some(rev) = sqlx::query(
+        "SELECT r.org_id, r.release_id FROM catalog.application_revisions r WHERE r.id=$1",
+    )
+    .bind(revision_id)
+    .fetch_optional(&mut *c)
+    .await?
+    else {
+        return Ok(false);
+    };
+    let org: Uuid = rev.get("org_id");
+    let release: Uuid = rev.get("release_id");
+    let status: Option<String> = sqlx::query_scalar(
+        "SELECT status FROM catalog.releases WHERE org_id=$1 AND id=$2 AND current_revision_id=$3 FOR UPDATE",
+    )
+    .bind(org)
+    .bind(release)
+    .bind(revision_id)
+    .fetch_optional(&mut *c)
+    .await?;
+    match status.as_deref() {
+        Some("SUBMITTED") => {
+            sqlx::query("UPDATE catalog.releases SET status='STAGE1_RUNNING', row_version=row_version+1 WHERE org_id=$1 AND id=$2")
+                .bind(org)
+                .bind(release)
+                .execute(&mut *c)
+                .await?;
+        }
+        Some("STAGE1_RUNNING") => {}
+        _ => return Ok(false),
+    }
+    let result_hash = qc::result_hash(
+        QC_ANALYSIS_FAILED,
+        qc::QC_RULE_VERSION,
+        &revision_id.to_string(),
+        "gave-up",
+    );
+    let detail: String = format!(
+        "Automatic file analysis could not be completed after several attempts ({}). Your files were not rejected: resubmit to try again, or replace the audio file if the problem persists.",
+        reason.chars().take(200).collect::<String>()
+    );
+    sqlx::query(
+        "INSERT INTO operations.check_results(id, revision_id, check_code, rule_version, status, result_hash, detail)
+         SELECT $1,$2,$3,$4,'CORRECTION_REQUIRED',$5,$6
+         WHERE NOT EXISTS (SELECT 1 FROM operations.check_results WHERE revision_id=$2 AND check_code=$3 AND result_hash=$5)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(revision_id)
+    .bind(QC_ANALYSIS_FAILED)
+    .bind(qc::QC_RULE_VERSION)
+    .bind(&result_hash)
+    .bind(&detail)
+    .execute(&mut *c)
+    .await?;
+    sqlx::query("UPDATE catalog.releases SET status='STAGE1_CORRECTION', row_version=row_version+1 WHERE org_id=$1 AND id=$2")
+        .bind(org)
+        .bind(release)
+        .execute(&mut *c)
+        .await?;
+    operations::audit(
+        c,
+        None,
+        Some(org),
+        Some(release),
+        "stage1.gave_up",
+        QC_ANALYSIS_FAILED,
+        Uuid::new_v4(),
+    )
+    .await?;
+    Ok(true)
 }

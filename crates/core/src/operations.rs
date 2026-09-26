@@ -15,9 +15,16 @@ fn shared_mockdsp() -> Arc<crate::mockdsp::MockDsp> {
     static INSTANCE: OnceLock<Arc<crate::mockdsp::MockDsp>> = OnceLock::new();
     INSTANCE
         .get_or_init(|| {
-            Arc::new(crate::mockdsp::MockDsp::new(
-                crate::mockdsp::MockBehavior::Accept,
-            ))
+            // MOCKDSP_BEHAVIOR injects partner failures for sandbox testing
+            // (see MockBehavior::from_spec); default: accept everything.
+            let behavior = match std::env::var("MOCKDSP_BEHAVIOR") {
+                Ok(spec) => crate::mockdsp::MockBehavior::from_spec(&spec).unwrap_or_else(|| {
+                    tracing::warn!(spec, "invalid MOCKDSP_BEHAVIOR; using accept");
+                    crate::mockdsp::MockBehavior::Accept
+                }),
+                Err(_) => crate::mockdsp::MockBehavior::Accept,
+            };
+            Arc::new(crate::mockdsp::MockDsp::new(behavior))
         })
         .clone()
 }
@@ -92,7 +99,7 @@ async fn reclaim_expired(c: &mut PgConnection, queue: &str) -> Result<()> {
                  ELSE clock_timestamp()
              END
          WHERE queue = $1 AND status = 'RUNNING' AND lease_until <= clock_timestamp()
-         RETURNING id, status",
+         RETURNING id, status, kind, payload",
     )
     .bind(queue)
     .fetch_all(&mut *c)
@@ -100,6 +107,13 @@ async fn reclaim_expired(c: &mut PgConnection, queue: &str) -> Result<()> {
 
     for row in rows {
         let status: String = row.get("status");
+        if status == "DEAD_LETTER" {
+            // The worker died on every attempt (e.g. OOM on one file): the
+            // release must not stay silently stuck in a running state.
+            let kind: String = row.get("kind");
+            let payload: Value = row.get("payload");
+            surface_dead_letter(c, &kind, &payload, "LEASE_EXPIRED").await?;
+        }
         audit(
             c,
             None,
@@ -148,6 +162,37 @@ async fn schedule_delivery_poll(
     tx.commit().await?;
     Ok(())
 }
+static JOB_LEASE_SECONDS: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(300);
+
+/// Configure the job lease (the worker's JOB_LEASE_SECONDS). Leases that
+/// guard work done inside a job (the delivery-job lease) use the same
+/// duration, so a crashed holder's lease never outlives the job lease that
+/// the retry machinery counts in.
+pub fn set_job_lease_seconds(seconds: i32) {
+    JOB_LEASE_SECONDS.store(seconds.clamp(1, 3600), std::sync::atomic::Ordering::Relaxed);
+}
+pub fn job_lease_seconds() -> i32 {
+    JOB_LEASE_SECONDS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Give a claimed job back immediately without consuming its attempt
+/// (graceful shutdown of a job that could not finish in the drain window).
+/// Handlers are idempotent under lease-expiry retry already; this only makes
+/// the retry happen now instead of after JOB_LEASE_SECONDS.
+pub async fn release_lease(pool: &PgPool, id: Uuid, token: Uuid) -> Result<bool> {
+    let n = sqlx::query(
+        "UPDATE operations.jobs SET status='QUEUED', attempts=GREATEST(attempts-1,0), lock_token=NULL,
+         lease_until=NULL, run_at=now(), last_error='RELEASED_ON_SHUTDOWN'
+         WHERE id=$1 AND lock_token=$2 AND status='RUNNING'",
+    )
+    .bind(id)
+    .bind(token)
+    .execute(pool)
+    .await?
+    .rows_affected();
+    Ok(n == 1)
+}
+
 #[derive(Debug, Clone)]
 pub struct Job {
     pub id: Uuid,
@@ -248,6 +293,211 @@ pub async fn fail(pool: &PgPool, j: &Job, permanent: bool, code: &str) -> Result
     tx.commit().await?;
     Ok(())
 }
+/// Pipeline job kinds whose dead-letter must be surfaced on the release.
+const SURFACED_KINDS: [&str; 3] = ["stage1", "stage2", "prepare_release"];
+
+/// A pipeline job is being dead-lettered: move its release out of the
+/// running state so the outcome is visible and recoverable instead of a
+/// permanent STAGE1_RUNNING / STAGE2_RUNNING zombie.
+///
+/// - stage1 -> STAGE1_CORRECTION with a QC_ANALYSIS_FAILED check; the artist
+///   can replace audio and resubmit.
+/// - stage2 -> STAGE2_REVIEW: rights review is a platform decision, so an
+///   exhausted automatic review goes to the human review queue.
+pub async fn surface_dead_letter(
+    c: &mut PgConnection,
+    kind: &str,
+    payload: &Value,
+    reason: &str,
+) -> Result<()> {
+    let Some(revision_id) = payload
+        .get("revision_id")
+        .and_then(Value::as_str)
+        .and_then(|s| Uuid::parse_str(s).ok())
+    else {
+        return Ok(());
+    };
+    match kind {
+        "stage1" => {
+            crate::submission::stage1_give_up(c, revision_id, reason).await?;
+        }
+        "stage2" => {
+            let row = sqlx::query(
+                "SELECT rel.org_id, rel.id, rel.status FROM catalog.application_revisions r
+                 JOIN catalog.releases rel ON rel.org_id=r.org_id AND rel.id=r.release_id AND rel.current_revision_id=r.id
+                 WHERE r.id=$1 FOR UPDATE OF rel",
+            )
+            .bind(revision_id)
+            .fetch_optional(&mut *c)
+            .await?;
+            if let Some(row) = row {
+                let org: Uuid = row.get("org_id");
+                let release: Uuid = row.get("id");
+                let status: String = row.get("status");
+                let steps: &[&str] = match status.as_str() {
+                    "STAGE1_PASSED" => &["STAGE2_RUNNING", "STAGE2_REVIEW"],
+                    "STAGE2_RUNNING" => &["STAGE2_REVIEW"],
+                    _ => &[],
+                };
+                for next in steps {
+                    sqlx::query("UPDATE catalog.releases SET status=$3, row_version=row_version+1 WHERE org_id=$1 AND id=$2")
+                        .bind(org)
+                        .bind(release)
+                        .bind(next)
+                        .execute(&mut *c)
+                        .await?;
+                }
+                if !steps.is_empty() {
+                    audit(
+                        c,
+                        None,
+                        Some(org),
+                        Some(release),
+                        "stage2.gave_up",
+                        &reason.chars().take(200).collect::<String>(),
+                        Uuid::new_v4(),
+                    )
+                    .await?;
+                }
+            }
+        }
+        "prepare_release" => {
+            stage3_give_up(c, revision_id, reason).await?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Check code recorded when Stage 3 preparation failed for good.
+pub const STAGE3_PREPARATION_FAILED: &str = "STAGE3_PREPARATION_FAILED";
+
+/// Plain-language explanation of a Stage 3 failure for the artist.
+fn stage3_failure_message(reason: &str) -> &'static str {
+    if reason.contains("IDENTIFIER_CONFLICT") {
+        "The UPC or an ISRC on this release is already used by another release or track in your account. Assign unique codes and resubmit."
+    } else if reason.contains("PREFLIGHT_FAILED") {
+        "The final delivery check could not verify this release's files or metadata. Re-upload the audio/artwork if you changed them, then resubmit; contact support if it happens again."
+    } else if reason.contains("Invalid") {
+        "Some release or track metadata cannot be written into a delivery message (for example unsupported characters). Correct the titles and names, then resubmit."
+    } else {
+        "Delivery preparation could not be completed. Your release was not rejected: resubmit to try again, and contact support if it happens again."
+    }
+}
+
+/// Stage 3 preparation failed permanently or ran out of attempts: move the
+/// release from STAGE2_PASSED/STAGE3_PREPARING to STAGE3_CORRECTION with a
+/// visible check. The release is then editable and can be resubmitted
+/// (migration 0032). Idempotent; a no-op for stale revisions.
+pub async fn stage3_give_up(c: &mut PgConnection, revision_id: Uuid, reason: &str) -> Result<bool> {
+    let Some(row) = sqlx::query(
+        "SELECT rel.org_id, rel.id, rel.status FROM catalog.application_revisions r
+         JOIN catalog.releases rel ON rel.org_id=r.org_id AND rel.id=r.release_id AND rel.current_revision_id=r.id
+         WHERE r.id=$1 FOR UPDATE OF rel",
+    )
+    .bind(revision_id)
+    .fetch_optional(&mut *c)
+    .await?
+    else {
+        return Ok(false);
+    };
+    let org: Uuid = row.get("org_id");
+    let release: Uuid = row.get("id");
+    let status: String = row.get("status");
+    let steps: &[&str] = match status.as_str() {
+        "STAGE2_PASSED" => &["STAGE3_PREPARING", "STAGE3_CORRECTION"],
+        "STAGE3_PREPARING" => &["STAGE3_CORRECTION"],
+        _ => return Ok(false),
+    };
+    for next in steps {
+        sqlx::query("UPDATE catalog.releases SET status=$3, row_version=row_version+1 WHERE org_id=$1 AND id=$2")
+            .bind(org)
+            .bind(release)
+            .bind(next)
+            .execute(&mut *c)
+            .await?;
+    }
+    let detail = format!(
+        "{} (reason: {})",
+        stage3_failure_message(reason),
+        reason.chars().take(120).collect::<String>()
+    );
+    let result_hash = crate::qc::result_hash(
+        STAGE3_PREPARATION_FAILED,
+        crate::qc::QC_RULE_VERSION,
+        &revision_id.to_string(),
+        "gave-up",
+    );
+    sqlx::query(
+        "INSERT INTO operations.check_results(id, revision_id, check_code, rule_version, status, result_hash, detail)
+         SELECT $1,$2,$3,$4,'CORRECTION_REQUIRED',$5,$6
+         WHERE NOT EXISTS (SELECT 1 FROM operations.check_results WHERE revision_id=$2 AND check_code=$3 AND result_hash=$5)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(revision_id)
+    .bind(STAGE3_PREPARATION_FAILED)
+    .bind(crate::qc::QC_RULE_VERSION)
+    .bind(&result_hash)
+    .bind(&detail)
+    .execute(&mut *c)
+    .await?;
+    audit(
+        c,
+        None,
+        Some(org),
+        Some(release),
+        "stage3.gave_up",
+        &reason.chars().take(200).collect::<String>(),
+        Uuid::new_v4(),
+    )
+    .await?;
+    Ok(true)
+}
+
+/// Retry a failed pipeline job, or — when this was its last attempt —
+/// dead-letter it and surface the failure on the release in one transaction.
+async fn retry_or_surface(pool: &PgPool, j: &Job, code: &str) -> Result<()> {
+    retry_or_surface_with(pool, j, code, false).await
+}
+
+/// As [`retry_or_surface`]; `permanent` failures skip the remaining retries.
+async fn retry_or_surface_with(pool: &PgPool, j: &Job, code: &str, permanent: bool) -> Result<()> {
+    let exhausted: bool =
+        sqlx::query_scalar("SELECT attempts>=max_attempts FROM operations.jobs WHERE id=$1")
+            .bind(j.id)
+            .fetch_one(pool)
+            .await?;
+    if !SURFACED_KINDS.contains(&j.kind.as_str()) {
+        return fail(pool, j, permanent, code).await;
+    }
+    if !exhausted && !permanent {
+        return fail(pool, j, false, code).await;
+    }
+    let mut tx = pool.begin().await?;
+    let n = sqlx::query("UPDATE operations.jobs SET status='DEAD_LETTER',dead_lettered_at=now(),last_error=$3,lock_token=NULL,lease_until=NULL WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp()")
+        .bind(j.id)
+        .bind(j.token)
+        .bind(code)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    if n != 1 {
+        return Err(Error::Conflict);
+    }
+    audit(
+        &mut tx,
+        None,
+        None,
+        Some(j.id),
+        "job.dead_letter",
+        code,
+        Uuid::new_v4(),
+    )
+    .await?;
+    surface_dead_letter(&mut tx, &j.kind, &j.payload, code).await?;
+    tx.commit().await?;
+    Ok(())
+}
 /// Mark a claimed job SUCCEEDED. The lock_token/lease guard keeps a crashed
 /// worker's replacement from double-completing the same job.
 pub async fn succeed(pool: &PgPool, j: &Job) -> Result<()> {
@@ -281,14 +531,14 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
         match crate::submission::run_stage1(pool, storage, revision_id).await {
             Ok(summary) => {
                 if summary.needs_retry {
-                    return fail(pool, j, false, "QC_TECHNICAL_RETRY").await;
+                    return retry_or_surface(pool, j, "QC_TECHNICAL_RETRY").await;
                 }
                 return succeed(pool, j).await;
             }
             Err(e) => {
                 // last_error is ops-visible: include the underlying cause.
                 let short: String = format!("{e:?}").chars().take(500).collect();
-                return fail(pool, j, false, &format!("STAGE1_ERROR:{short}")).await;
+                return retry_or_surface(pool, j, &format!("STAGE1_ERROR:{short}")).await;
             }
         }
     }
@@ -299,13 +549,13 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
             Ok(None) => return Ok(()),
             Ok(Some(summary)) => {
                 if summary.needs_retry {
-                    return fail(pool, j, false, "STAGE2_TECHNICAL_RETRY").await;
+                    return retry_or_surface(pool, j, "STAGE2_TECHNICAL_RETRY").await;
                 }
                 return succeed(pool, j).await;
             }
             Err(e) => {
                 let short: String = format!("{e:?}").chars().take(500).collect();
-                return fail(pool, j, false, &format!("STAGE2_ERROR:{short}")).await;
+                return retry_or_surface(pool, j, &format!("STAGE2_ERROR:{short}")).await;
             }
         }
     }
@@ -322,12 +572,17 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
                 // is already assigned to a different release or track, so no
                 // retry can succeed. Dead-letter for human review instead of
                 // burning attempts.
-                let permanent = matches!(e, Error::PolicyGate("IDENTIFIER_CONFLICT"));
-                return fail(
+                // Invalid metadata (e.g. characters an ERN cannot carry) is
+                // equally permanent. Either way the release is surfaced as
+                // STAGE3_CORRECTION with a readable reason, never left in
+                // STAGE3_PREPARING behind a silent dead letter.
+                let permanent =
+                    matches!(e, Error::PolicyGate("IDENTIFIER_CONFLICT") | Error::Invalid);
+                return retry_or_surface_with(
                     pool,
                     j,
-                    permanent,
                     &format!("PREPARE_RELEASE_ERROR:{short}"),
+                    permanent,
                 )
                 .await;
             }
@@ -390,14 +645,33 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
             None => return fail(pool, j, true, "DELIVERY_JOB_MISSING").await,
             _ => {}
         }
-        let djob =
-            match crate::execution::lease_delivery_job(pool, job_id, org, "delivery-worker", 300)
-                .await?
-            {
-                Some(d) => d,
-                // Lease lost; leave the job alone so the sweeper reclaims it.
-                None => return Ok(()),
-            };
+        let djob = match crate::execution::lease_delivery_job(
+            pool,
+            job_id,
+            org,
+            "delivery-worker",
+            job_lease_seconds(),
+        )
+        .await?
+        {
+            Some(d) => d,
+            // Never return without finishing our own job (that burned an
+            // attempt per job lease until the send was dead-lettered and
+            // the delivery job stayed LEASED forever): wait out a live
+            // holder's lease without consuming attempts, or record why
+            // the send cannot proceed.
+            None => {
+                return match crate::execution::delivery_lease_blocked(pool, org, job_id).await? {
+                    crate::execution::LeaseBlocked::HeldFor(secs) => {
+                        park(pool, j, "DELIVERY_LEASE_HELD", secs + 1).await
+                    }
+                    crate::execution::LeaseBlocked::Exhausted => {
+                        fail(pool, j, true, "DELIVERY_ATTEMPTS_EXHAUSTED").await
+                    }
+                    crate::execution::LeaseBlocked::Gone => succeed(pool, j).await,
+                };
+            }
+        };
         let mut registry = crate::execution::AdapterRegistry::new();
         registry.register(shared_mockdsp());
         let adapter = registry
@@ -412,6 +686,8 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
                     succeed(pool, j).await
                 }
                 "AWAITING_RECONCILIATION" => succeed(pool, j).await,
+                // Partner unavailable, nothing received: retry with backoff.
+                "RETRY" => fail(pool, j, false, "DELIVERY_PARTNER_UNAVAILABLE").await,
                 _ => fail(pool, j, true, &format!("DELIVERY_{status}")).await,
             },
             Err(e) => {

@@ -603,14 +603,51 @@ async fn stage2_override_requires_two_people(pool: PgPool) {
         "SUCCEEDED"
     );
 
-    // A second ACTIVE member of the same org (for the two-person rule).
+    // A second ACTIVE member of the same org (for the two-person rule) who
+    // accepted the invitation long enough ago to be an eligible approver.
     let other = user(&app).await;
-    sqlx::query("INSERT INTO identity.memberships(org_id,user_id,role,status) VALUES($1,$2,'EDITOR','ACTIVE')")
+    sqlx::query("INSERT INTO identity.memberships(org_id,user_id,role,status,accepted_at) VALUES($1,$2,'EDITOR','ACTIVE',now()-interval '4 days')")
         .bind(u.org)
         .bind(other.user)
         .execute(&pool)
         .await
         .unwrap();
+    // Ineligible approvers: a VIEWER and a member who joined just now.
+    let viewer = user(&app).await;
+    sqlx::query("INSERT INTO identity.memberships(org_id,user_id,role,status,accepted_at) VALUES($1,$2,'VIEWER','ACTIVE',now()-interval '30 days')")
+        .bind(u.org)
+        .bind(viewer.user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let newcomer = user(&app).await;
+    sqlx::query("INSERT INTO identity.memberships(org_id,user_id,role,status,accepted_at) VALUES($1,$2,'EDITOR','ACTIVE',now())")
+        .bind(u.org)
+        .bind(newcomer.user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    for (approver, want) in [
+        (viewer.user, "APPROVER_ROLE_NOT_ELIGIBLE"),
+        (newcomer.user, "APPROVER_TENURE_TOO_SHORT"),
+    ] {
+        let e = review::record_override(
+            &pool,
+            review::OverrideRequest {
+                org: u.org,
+                actor: u.user,
+                revision_id,
+                check_code: "S2_RIGHTS_SCOPE",
+                proposed_status: "PASS",
+                reason: "looks fine",
+                second_approver: Some(approver),
+                senior: true,
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(e, Error::PolicyGate(c) if c == want), "{e:?}");
+    }
 
     // Rights-class forced PASS without senior reviewer -> rejected.
     let e = review::record_override(
@@ -757,7 +794,8 @@ async fn stage2_override_api_maps_seniority(pool: PgPool) {
     assert_eq!(s, StatusCode::OK, "{v}");
     assert!(v["override_id"].as_str().is_some());
 
-    // Rights-class forced PASS without a second approver -> 422.
+    // Rights-class forced PASS is only a request until a second person
+    // approves it from their own session; nothing is overridden yet.
     let (s, v) = call(
         &app, "POST",
         &format!("/api/orgs/{}/reviews/overrides", u.org),
@@ -765,8 +803,29 @@ async fn stage2_override_api_maps_seniority(pool: PgPool) {
         Some(&u),
     )
     .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["status"], "PENDING_SECOND_APPROVAL");
+    let n: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM rights.review_overrides WHERE revision_id=$1 AND check_code='S2_RIGHTS_SCOPE'",
+    )
+    .bind(revision_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(n, 0);
+    // Naming a second approver in the request is refused outright.
+    let (s, v) = call(
+        &app, "POST",
+        &format!("/api/orgs/{}/reviews/overrides", u.org),
+        json!({"revision_id":revision_id,"check_code":"S2_RIGHTS_SCOPE","proposed_status":"PASS","reason":"api force","second_approver_user_id":Uuid::new_v4()}),
+        Some(&u),
+    )
+    .await;
     assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
-    assert_eq!(v["error"]["code"], "SECOND_APPROVER_REQUIRED");
+    assert_eq!(
+        v["error"]["code"],
+        "SECOND_APPROVER_MUST_APPROVE_IN_OWN_SESSION"
+    );
 }
 
 /// Activation model at the Stage 2 gate: a CONTRACTED adapter profile with

@@ -215,8 +215,33 @@ pub async fn run_stage2(pool: &PgPool, job: &operations::Job) -> Result<Option<S
     if held.is_none() {
         return Ok(None);
     }
-    // The worker owns Stage 2 now: STAGE1_PASSED -> STAGE2_RUNNING.
-    sqlx::query("UPDATE catalog.releases SET status='STAGE2_RUNNING', row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND status='STAGE1_PASSED'")
+    // Only a release still waiting on this Stage 2 run may be decided. A
+    // re-evaluation (queued after a reviewer override) can race a withdrawal
+    // or resubmission; then there is nothing to decide.
+    let status: String = sqlx::query_scalar(
+        "SELECT status FROM catalog.releases WHERE org_id=$1 AND id=$2 FOR UPDATE",
+    )
+    .bind(ctx.org)
+    .bind(ctx.release)
+    .fetch_one(&mut *tx)
+    .await?;
+    if !matches!(
+        status.as_str(),
+        "STAGE1_PASSED" | "STAGE2_RUNNING" | "STAGE2_REVIEW"
+    ) {
+        tx.commit().await?;
+        return Ok(Some(Stage2Summary {
+            revision_id,
+            decision: "SKIPPED",
+            verification_package_id: None,
+            release_status: status,
+            needs_retry: false,
+        }));
+    }
+    // The worker owns Stage 2 now: STAGE1_PASSED -> STAGE2_RUNNING, or
+    // STAGE2_REVIEW -> STAGE2_RUNNING when an override triggered a
+    // re-evaluation (allowed transition since 0002).
+    sqlx::query("UPDATE catalog.releases SET status='STAGE2_RUNNING', row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND status IN ('STAGE1_PASSED','STAGE2_REVIEW')")
         .bind(ctx.org)
         .bind(ctx.release)
         .execute(&mut *tx)
@@ -227,6 +252,7 @@ pub async fn run_stage2(pool: &PgPool, job: &operations::Job) -> Result<Option<S
     checks.extend(module_catalog_match(&mut tx, &ctx).await?);
     checks.extend(module_metadata_content(&ctx).await?);
     checks.extend(module_policy_integrity(&mut tx, &ctx).await?);
+    checks.extend(module_stage1_holds(&mut tx, &ctx).await?);
 
     let mut check_ids = Vec::new();
     for c in &checks {
@@ -238,6 +264,101 @@ pub async fn run_stage2(pool: &PgPool, job: &operations::Job) -> Result<Option<S
     Ok(Some(summary))
 }
 
+// ---------------------------------------------------------------------------
+// Stage 1 review results: WARNING vs HOLD (sandbox round 3)
+//
+// Stage 1 records REVIEW_REQUIRED for two different kinds of finding:
+// - WARNING: advisory quality notes shown to the artist that never gate a
+//   release (loudness outside the delivery target, a few short clip events,
+//   version info in a title, the explicit-content marking).
+// - HOLD: something a person must clear before delivery (audio similar to an
+//   existing recording, a master reused under another ISRC, suspicious
+//   content, SEO spam titles, a review-policy protected name). Stage 2
+//   carries every HOLD into its own decision under the same check code, so
+//   the release parks in STAGE2_REVIEW until a reviewer override (PASS,
+//   two-person rule per docs/REVIEW_OVERRIDES.md) clears it.
+// Any Stage 1 REVIEW_REQUIRED/BLOCKED code not listed as a WARNING is a HOLD
+// (fail closed for new codes).
+// ---------------------------------------------------------------------------
+
+/// Stage 1 REVIEW_REQUIRED codes that are advisory only (never hold).
+pub const STAGE1_WARNING_CODES: &[&str] = &[
+    "AUDIO_LOUDNESS_OUT_OF_RANGE",
+    "AUDIO_CLIPPING",
+    "TRACK_TITLE_HAS_VERSION_INFO",
+    "ADULT_MARKING_REVIEW",
+];
+
+/// Stage 1 codes that may be carried into Stage 2 as holds under their own
+/// name (anything else is carried as S1_REVIEW_HOLD).
+const STAGE1_HOLD_CODES: &[&str] = &[
+    "ASSET_REUSED",
+    "TRACK_TITLE_SEO_SPAM",
+    crate::protected_names::ARTIST_NAME_REVIEW,
+];
+
+/// "WARNING" (advisory) or "HOLD" (blocks until a reviewer clears it) for a
+/// Stage 1 REVIEW_REQUIRED code.
+pub fn stage1_review_severity(code: &str) -> &'static str {
+    if STAGE1_WARNING_CODES.contains(&code) {
+        "WARNING"
+    } else {
+        "HOLD"
+    }
+}
+
+fn static_stage1_code(code: &str) -> &'static str {
+    crate::qc::AUDIO_CHECK_CODES
+        .iter()
+        .chain(STAGE1_HOLD_CODES.iter())
+        .find(|c| **c == code)
+        .copied()
+        .unwrap_or("S1_REVIEW_HOLD")
+}
+
+/// Stage 1 HOLD results on this revision, as Stage 2 review checks.
+async fn module_stage1_holds(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec<ReviewCheck>> {
+    let rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
+        "SELECT DISTINCT ON (check_code) check_code, status, detail
+           FROM operations.check_results
+          WHERE revision_id=$1 AND check_code NOT LIKE 'S2\\_%'
+          ORDER BY check_code, created_at DESC",
+    )
+    .bind(ctx.revision_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let mut out = Vec::new();
+    let mut other: Vec<String> = Vec::new();
+    for (code, status, detail) in rows {
+        if !matches!(status.as_str(), "REVIEW_REQUIRED" | "BLOCKED")
+            || stage1_review_severity(&code) == "WARNING"
+        {
+            continue;
+        }
+        let stat = static_stage1_code(&code);
+        if stat == "S1_REVIEW_HOLD" {
+            other.push(code);
+            continue;
+        }
+        out.push(ReviewCheck {
+            check_code: stat,
+            status: "REVIEW_REQUIRED",
+            detail: format!(
+                "held from Stage 1 until a reviewer clears it: {}",
+                detail.unwrap_or_default()
+            ),
+        });
+    }
+    if !other.is_empty() {
+        out.push(ReviewCheck {
+            check_code: "S1_REVIEW_HOLD",
+            status: "REVIEW_REQUIRED",
+            detail: format!("held from Stage 1: {}", other.join(", ")),
+        });
+    }
+    Ok(out)
+}
+
 /// Apply overrides, merge statuses, and commit the decision.
 async fn decide(
     tx: &mut PgConnection,
@@ -246,8 +367,9 @@ async fn decide(
     check_ids: &[Uuid],
 ) -> Result<Stage2Summary> {
     // Overrides never mutate check_results; they replace the effective status.
+    // Oldest first, so the latest override for a check wins.
     let overrides = sqlx::query(
-        "SELECT check_code, proposed_status FROM rights.review_overrides WHERE org_id=$1 AND revision_id=$2 AND (expires_at IS NULL OR expires_at>now())",
+        "SELECT check_code, proposed_status FROM rights.review_overrides WHERE org_id=$1 AND revision_id=$2 AND (expires_at IS NULL OR expires_at>now()) ORDER BY created_at, id",
     )
     .bind(ctx.org)
     .bind(ctx.revision_id)
@@ -780,6 +902,24 @@ async fn module_metadata_content(ctx: &Ctx) -> Result<Vec<ReviewCheck>> {
             detail: format!("release_date {rdate} is more than a year out"),
         });
     }
+    // 2-F.4: a street date before 1950 is a placeholder or typo (sandbox
+    // round 2: 1900-01-01 was delivered unflagged). Genuine historic catalog
+    // backfills are confirmed by a human.
+    if let Some(rdate) = ctx
+        .body
+        .pointer("/release/draft/release_date")
+        .and_then(Value::as_str)
+        && let Ok(d) = chrono::NaiveDate::parse_from_str(rdate, "%Y-%m-%d")
+        && d < chrono::NaiveDate::from_ymd_opt(1950, 1, 1).expect("valid date")
+    {
+        out.push(ReviewCheck {
+            check_code: "S2_RELEASE_DATE_FAR_PAST",
+            status: "REVIEW_REQUIRED",
+            detail: format!(
+                "release_date {rdate} is before 1950; confirm it is the real street date, not a placeholder"
+            ),
+        });
+    }
     Ok(out)
 }
 
@@ -1011,8 +1151,46 @@ async fn commercial_split_snapshot(tx: &mut PgConnection, ctx: &Ctx) -> Result<V
 }
 
 // ---------------------------------------------------------------------------
-// Overrides (2-I): POST /api/orgs/{org}/reviews/overrides
+// Overrides (2-I) with separation of duties (sandbox round 2.5)
+//
+//   POST /api/orgs/{org}/reviews/overrides                     request/apply
+//   GET  /api/orgs/{org}/reviews/overrides                     pending requests
+//   POST /api/orgs/{org}/reviews/overrides/{request}/approve   second person
+//   POST /api/orgs/{org}/reviews/overrides/{request}/decline   withdraw/decline
+//
+// Policy (docs/REVIEW_OVERRIDES.md):
+// - A stricter override (anything but PASS) by an OWNER/EDITOR with write
+//   access applies immediately.
+// - PASS on a low-risk code (LOW_RISK_SELF_APPROVABLE) may be applied by an
+//   OWNER alone; it is audited as `override.self_approved`.
+// - Every other PASS (rights/money classes, catalog identifiers, duplicates,
+//   content signals, ...) becomes a PENDING request. A *different* member
+//   approves it from their own session; the requester can never name the
+//   approver. Rights/money-class PASS also needs an OWNER requester.
+// - Approver eligibility: ACTIVE membership, role OWNER or EDITOR (never
+//   VIEWER), accepted invitation at least MIN_APPROVER_TENURE_HOURS ago
+//   (legacy memberships from before migration 0036 count as accepted), and
+//   read access to the release.
+// - An applied override re-evaluates a release parked in STAGE2_REVIEW.
 // ---------------------------------------------------------------------------
+
+/// PASS overrides a sole OWNER may apply without a second person.
+pub const LOW_RISK_SELF_APPROVABLE: &[&str] = &[
+    "S2_RELEASE_DATE_FAR_FUTURE",
+    "S2_RELEASE_DATE_FAR_PAST",
+    "S2_META_CREDITS",
+];
+/// Minimum time since a second approver accepted their membership.
+pub const MIN_APPROVER_TENURE_HOURS: i32 = 72;
+/// Upper bound on an override reason (the sandbox stored 300 x 60 KB).
+pub const MAX_OVERRIDE_REASON_CHARS: usize = 2000;
+const OVERRIDE_STATUSES: &[&str] = &["PASS", "CORRECTION_REQUIRED", "REVIEW_REQUIRED", "BLOCKED"];
+const RIGHTS_MONEY_CLASSES: &[&str] = &["S2_RIGHTS_SCOPE", "S2_DOCS_ORIGIN", "S2_SPECIAL_FLAGS"];
+
+/// True when forcing `proposed_status` on `check_code` needs a second person.
+pub fn needs_second_approver(check_code: &str, proposed_status: &str) -> bool {
+    proposed_status == "PASS" && !LOW_RISK_SELF_APPROVABLE.contains(&check_code)
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1021,53 +1199,453 @@ pub struct OverrideInput {
     pub check_code: String,
     pub proposed_status: String,
     pub reason: String,
+    /// Accepted only to give a clear error: the second approver must approve
+    /// from their own session, never be named by the requester.
     pub second_approver_user_id: Option<Uuid>,
 }
 
-/// API entry: authorize against the release, resolve seniority from the
-/// membership role (OWNER = senior reviewer), then record the override.
+fn validate_override(proposed_status: &str, reason: &str) -> Result<()> {
+    if !OVERRIDE_STATUSES.contains(&proposed_status) {
+        return Err(Error::PolicyGate("INVALID_OVERRIDE_STATUS"));
+    }
+    if reason.trim().is_empty() {
+        return Err(Error::PolicyGate("OVERRIDE_REASON_REQUIRED"));
+    }
+    if reason.chars().count() > MAX_OVERRIDE_REASON_CHARS {
+        return Err(Error::PolicyGate("OVERRIDE_REASON_TOO_LONG"));
+    }
+    crate::text_policy::check_multiline(reason)?;
+    Ok(())
+}
+
+/// Latest recorded status of `check_code` on the revision (NotFound if the
+/// check never ran for it).
+async fn original_status(
+    c: &mut PgConnection,
+    revision_id: Uuid,
+    check_code: &str,
+) -> Result<String> {
+    let original: Option<String> = sqlx::query_scalar(
+        "SELECT status FROM operations.check_results WHERE revision_id=$1 AND check_code=$2 ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(revision_id)
+    .bind(check_code)
+    .fetch_optional(&mut *c)
+    .await?;
+    original.ok_or(Error::NotFound)
+}
+
+/// Second-approver eligibility (see module policy). Non-members get 403 so
+/// membership is not disclosed; members that fail a rule get a 422 code.
+pub async fn check_approver_eligible(
+    c: &mut PgConnection,
+    org: Uuid,
+    approver: Uuid,
+) -> Result<()> {
+    let row = sqlx::query(
+        "SELECT m.role, m.accepted_at IS NULL AS legacy,
+                COALESCE(m.accepted_at <= now() - make_interval(hours => $3), false) AS tenured
+           FROM identity.memberships m JOIN identity.users u ON u.id=m.user_id
+          WHERE m.org_id=$1 AND m.user_id=$2 AND m.status='ACTIVE' AND u.status='ACTIVE'
+          FOR SHARE OF m",
+    )
+    .bind(org)
+    .bind(approver)
+    .bind(MIN_APPROVER_TENURE_HOURS)
+    .fetch_optional(&mut *c)
+    .await?
+    .ok_or(Error::Forbidden)?;
+    let role: String = row.get("role");
+    if !matches!(role.as_str(), "OWNER" | "EDITOR") {
+        return Err(Error::PolicyGate("APPROVER_ROLE_NOT_ELIGIBLE"));
+    }
+    let legacy: bool = row.get("legacy");
+    let tenured: bool = row.get("tenured");
+    if !legacy && !tenured {
+        return Err(Error::PolicyGate("APPROVER_TENURE_TOO_SHORT"));
+    }
+    Ok(())
+}
+
+async fn release_of(c: &mut PgConnection, org: Uuid, revision_id: Uuid) -> Result<Uuid> {
+    sqlx::query_scalar(
+        "SELECT release_id FROM catalog.application_revisions WHERE org_id=$1 AND id=$2",
+    )
+    .bind(org)
+    .bind(revision_id)
+    .fetch_optional(&mut *c)
+    .await?
+    .ok_or(Error::NotFound)
+}
+
+async fn active_role(c: &mut PgConnection, org: Uuid, user: Uuid) -> Result<String> {
+    sqlx::query_scalar(
+        "SELECT m.role FROM identity.memberships m WHERE m.org_id=$1 AND m.user_id=$2 AND m.status='ACTIVE'",
+    )
+    .bind(org)
+    .bind(user)
+    .fetch_optional(&mut *c)
+    .await?
+    .ok_or(Error::Forbidden)
+}
+
+/// Write one override row (append-only) in the caller's transaction.
+#[allow(clippy::too_many_arguments)]
+async fn insert_override(
+    c: &mut PgConnection,
+    org: Uuid,
+    revision_id: Uuid,
+    check_code: &str,
+    original: &str,
+    proposed_status: &str,
+    reason: &str,
+    actor: Uuid,
+    second_approver: Option<Uuid>,
+) -> Result<Uuid> {
+    let id = Uuid::new_v4();
+    sqlx::query("INSERT INTO rights.review_overrides(id, org_id, revision_id, check_code, original_status, proposed_status, reason, actor_user_id, second_approver_user_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)")
+        .bind(id).bind(org).bind(revision_id).bind(check_code).bind(original).bind(proposed_status).bind(reason).bind(actor).bind(second_approver)
+        .execute(&mut *c)
+        .await?;
+    Ok(id)
+}
+
+/// Overrides only change the outcome when Stage 2 decides again. If the
+/// release is parked in STAGE2_REVIEW on this revision, queue a re-run of
+/// Stage 2 (same validation package as the original run). Returns whether a
+/// job was queued. At most one queued re-run per revision at a time.
+pub async fn enqueue_reevaluation(
+    c: &mut PgConnection,
+    org: Uuid,
+    revision_id: Uuid,
+    cause: Uuid,
+) -> Result<bool> {
+    let status: Option<String> = sqlx::query_scalar(
+        "SELECT rel.status FROM catalog.application_revisions r
+           JOIN catalog.releases rel ON rel.org_id=r.org_id AND rel.id=r.release_id AND rel.current_revision_id=r.id
+          WHERE r.org_id=$1 AND r.id=$2",
+    )
+    .bind(org)
+    .bind(revision_id)
+    .fetch_optional(&mut *c)
+    .await?;
+    if status.as_deref() != Some("STAGE2_REVIEW") {
+        return Ok(false);
+    }
+    let queued: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM operations.jobs WHERE kind='stage2' AND pinned_revision_id=$1 AND status='QUEUED')",
+    )
+    .bind(revision_id)
+    .fetch_one(&mut *c)
+    .await?;
+    if queued {
+        return Ok(true);
+    }
+    let payload: Option<Value> = sqlx::query_scalar(
+        "SELECT payload FROM operations.jobs WHERE kind='stage2' AND pinned_revision_id=$1 ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(revision_id)
+    .fetch_optional(&mut *c)
+    .await?;
+    let Some(payload) = payload else {
+        return Ok(false);
+    };
+    let n = sqlx::query("INSERT INTO operations.jobs(id, queue, kind, payload, pinned_revision_id, idempotency_key) VALUES($1,'rights','stage2',$2,$3,$4) ON CONFLICT(idempotency_key) DO NOTHING")
+        .bind(Uuid::new_v4())
+        .bind(payload)
+        .bind(revision_id)
+        .bind(format!("stage2:{revision_id}:override:{cause}"))
+        .execute(&mut *c)
+        .await?
+        .rows_affected();
+    Ok(n > 0)
+}
+
+/// POST /reviews/overrides. Applies a stricter or low-risk override, or
+/// files a PENDING request that needs a second person.
 pub async fn create_override_api(
     s: &AppState,
     a: &Actor,
     org: Uuid,
     input: OverrideInput,
 ) -> Result<Value> {
+    if input.second_approver_user_id.is_some() {
+        return Err(Error::PolicyGate(
+            "SECOND_APPROVER_MUST_APPROVE_IN_OWN_SESSION",
+        ));
+    }
+    validate_override(&input.proposed_status, &input.reason)?;
     let mut tx = s.pool.begin().await?;
-    let release: Uuid = sqlx::query_scalar(
-        "SELECT release_id FROM catalog.application_revisions WHERE org_id=$1 AND id=$2",
+    let release = release_of(&mut tx, org, input.revision_id).await?;
+    auth::authorize(&mut tx, a, org, release, "release", true).await?;
+    let role = active_role(&mut tx, org, a.user).await?;
+    let original = original_status(&mut tx, input.revision_id, &input.check_code).await?;
+
+    if needs_second_approver(&input.check_code, &input.proposed_status) {
+        if RIGHTS_MONEY_CLASSES.contains(&input.check_code.as_str()) && role != "OWNER" {
+            return Err(Error::PolicyGate("SENIOR_REVIEWER_REQUIRED"));
+        }
+        // One open request per (revision, check, status): repeats return it.
+        let existing = sqlx::query(
+            "SELECT id, expires_at FROM rights.override_requests WHERE org_id=$1 AND revision_id=$2 AND check_code=$3 AND proposed_status=$4 AND status='PENDING' AND expires_at>now() ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(org)
+        .bind(input.revision_id)
+        .bind(&input.check_code)
+        .bind(&input.proposed_status)
+        .fetch_optional(&mut *tx)
+        .await?;
+        let (id, expires_at): (Uuid, chrono::DateTime<chrono::Utc>) = match existing {
+            Some(r) => (r.get("id"), r.get("expires_at")),
+            None => {
+                let id = Uuid::new_v4();
+                let expires_at: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
+                    "INSERT INTO rights.override_requests(id, org_id, revision_id, check_code, original_status, proposed_status, reason, requested_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING expires_at",
+                )
+                .bind(id)
+                .bind(org)
+                .bind(input.revision_id)
+                .bind(&input.check_code)
+                .bind(&original)
+                .bind(&input.proposed_status)
+                .bind(&input.reason)
+                .bind(a.user)
+                .fetch_one(&mut *tx)
+                .await?;
+                operations::audit(
+                    &mut tx,
+                    Some(a.user),
+                    Some(org),
+                    Some(id),
+                    "override.requested",
+                    "REVIEWER_REQUEST",
+                    a.request,
+                )
+                .await?;
+                (id, expires_at)
+            }
+        };
+        tx.commit().await?;
+        return Ok(json!({
+            "status": "PENDING_SECOND_APPROVAL",
+            "override_request_id": id,
+            "expires_at": expires_at,
+        }));
+    }
+
+    if input.proposed_status == "PASS" && role != "OWNER" {
+        // Low-risk self-approval is an OWNER privilege.
+        return Err(Error::PolicyGate("SENIOR_REVIEWER_REQUIRED"));
+    }
+    // Repeating the override that is already in effect changes nothing (and
+    // must not bump the rights epoch or queue work again).
+    let current: Option<(Uuid, String)> = sqlx::query_as(
+        "SELECT id, proposed_status FROM rights.review_overrides WHERE org_id=$1 AND revision_id=$2 AND check_code=$3 AND (expires_at IS NULL OR expires_at>now()) ORDER BY created_at DESC, id DESC LIMIT 1",
     )
     .bind(org)
     .bind(input.revision_id)
+    .bind(&input.check_code)
     .fetch_optional(&mut *tx)
-    .await?
-    .ok_or(Error::NotFound)?;
-    auth::authorize(&mut tx, a, org, release, "release", true).await?;
-    let role: String = sqlx::query_scalar(
-        "SELECT m.role FROM identity.memberships m WHERE m.org_id=$1 AND m.user_id=$2 AND m.status='ACTIVE'",
-    )
-    .bind(org)
-    .bind(a.user)
-    .fetch_one(&mut *tx)
     .await?;
+    if let Some((id, status)) = current
+        && status == input.proposed_status
+    {
+        tx.commit().await?;
+        return Ok(
+            json!({"override_id": id, "status": "ALREADY_APPLIED", "reevaluation_queued": false}),
+        );
+    }
+    let id = insert_override(
+        &mut tx,
+        org,
+        input.revision_id,
+        &input.check_code,
+        &original,
+        &input.proposed_status,
+        &input.reason,
+        a.user,
+        None,
+    )
+    .await?;
+    let action = if input.proposed_status == "PASS" {
+        "override.self_approved"
+    } else {
+        "override.recorded"
+    };
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        Some(org),
+        Some(id),
+        action,
+        "REVIEWER_OVERRIDE",
+        a.request,
+    )
+    .await?;
+    let queued = enqueue_reevaluation(&mut tx, org, input.revision_id, id).await?;
     tx.commit().await?;
-    let id = record_override(
-        &s.pool,
-        OverrideRequest {
-            org,
-            actor: a.user,
-            revision_id: input.revision_id,
-            check_code: &input.check_code,
-            proposed_status: &input.proposed_status,
-            reason: &input.reason,
-            second_approver: input.second_approver_user_id,
-            senior: role == "OWNER",
-        },
-    )
-    .await?;
-    Ok(json!({"override_id": id}))
+    Ok(json!({"override_id": id, "status": "APPLIED", "reevaluation_queued": queued}))
 }
 
-const RIGHTS_MONEY_CLASSES: &[&str] = &["S2_RIGHTS_SCOPE", "S2_DOCS_ORIGIN", "S2_SPECIAL_FLAGS"];
+/// GET /reviews/overrides: open requests in the org (any active member).
+pub async fn list_override_requests(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
+    let mut tx = s.pool.begin().await?;
+    auth::membership(&mut tx, a, org, false).await?;
+    let rows = sqlx::query(
+        "SELECT id, revision_id, check_code, original_status, proposed_status, reason, requested_by, created_at, expires_at
+           FROM rights.override_requests WHERE org_id=$1 AND status='PENDING' AND expires_at>now()
+          ORDER BY created_at LIMIT 200",
+    )
+    .bind(org)
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    let items: Vec<Value> = rows
+        .iter()
+        .map(|r| {
+            json!({
+                "id": r.get::<Uuid, _>("id"),
+                "revision_id": r.get::<Uuid, _>("revision_id"),
+                "check_code": r.get::<String, _>("check_code"),
+                "original_status": r.get::<String, _>("original_status"),
+                "proposed_status": r.get::<String, _>("proposed_status"),
+                "reason": r.get::<String, _>("reason"),
+                "requested_by": r.get::<Uuid, _>("requested_by"),
+                "created_at": r.get::<chrono::DateTime<chrono::Utc>, _>("created_at"),
+                "expires_at": r.get::<chrono::DateTime<chrono::Utc>, _>("expires_at"),
+            })
+        })
+        .collect();
+    Ok(json!({"items": items}))
+}
+
+struct PendingRequest {
+    revision_id: Uuid,
+    check_code: String,
+    original_status: String,
+    proposed_status: String,
+    reason: String,
+    requested_by: Uuid,
+}
+
+async fn lock_pending(c: &mut PgConnection, org: Uuid, request_id: Uuid) -> Result<PendingRequest> {
+    let r = sqlx::query(
+        "SELECT revision_id, check_code, original_status, proposed_status, reason, requested_by, status, expires_at>now() AS live
+           FROM rights.override_requests WHERE org_id=$1 AND id=$2 FOR UPDATE",
+    )
+    .bind(org)
+    .bind(request_id)
+    .fetch_optional(&mut *c)
+    .await?
+    .ok_or(Error::NotFound)?;
+    if r.get::<String, _>("status") != "PENDING" {
+        return Err(Error::Conflict);
+    }
+    if !r.get::<bool, _>("live") {
+        return Err(Error::PolicyGate("OVERRIDE_REQUEST_EXPIRED"));
+    }
+    Ok(PendingRequest {
+        revision_id: r.get("revision_id"),
+        check_code: r.get("check_code"),
+        original_status: r.get("original_status"),
+        proposed_status: r.get("proposed_status"),
+        reason: r.get("reason"),
+        requested_by: r.get("requested_by"),
+    })
+}
+
+/// POST /reviews/overrides/{request}/approve: the second person, acting in
+/// their own authenticated session.
+pub async fn approve_override_request(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    request_id: Uuid,
+) -> Result<Value> {
+    let mut tx = s.pool.begin().await?;
+    // Membership first so non-members learn nothing about request ids.
+    auth::membership(&mut tx, a, org, false).await?;
+    let req = lock_pending(&mut tx, org, request_id).await?;
+    if req.requested_by == a.user {
+        return Err(Error::PolicyGate("SECOND_APPROVER_MUST_DIFFER"));
+    }
+    check_approver_eligible(&mut tx, org, a.user).await?;
+    let release = release_of(&mut tx, org, req.revision_id).await?;
+    auth::authorize(&mut tx, a, org, release, "release", false).await?;
+    // The requester must still be entitled to ask (not revoked meanwhile).
+    let requester_role = active_role(&mut tx, org, req.requested_by)
+        .await
+        .map_err(|_| Error::PolicyGate("REQUESTER_NO_LONGER_MEMBER"))?;
+    if RIGHTS_MONEY_CLASSES.contains(&req.check_code.as_str()) && requester_role != "OWNER" {
+        return Err(Error::PolicyGate("SENIOR_REVIEWER_REQUIRED"));
+    }
+    let id = insert_override(
+        &mut tx,
+        org,
+        req.revision_id,
+        &req.check_code,
+        &req.original_status,
+        &req.proposed_status,
+        &req.reason,
+        req.requested_by,
+        Some(a.user),
+    )
+    .await?;
+    sqlx::query("UPDATE rights.override_requests SET status='APPROVED', decided_by=$3, decided_at=now(), override_id=$4 WHERE org_id=$1 AND id=$2")
+        .bind(org)
+        .bind(request_id)
+        .bind(a.user)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        Some(org),
+        Some(id),
+        "override.approved",
+        "SECOND_APPROVER",
+        a.request,
+    )
+    .await?;
+    let queued = enqueue_reevaluation(&mut tx, org, req.revision_id, id).await?;
+    tx.commit().await?;
+    Ok(json!({"override_id": id, "status": "APPLIED", "reevaluation_queued": queued}))
+}
+
+/// POST /reviews/overrides/{request}/decline: the requester withdraws, or
+/// another OWNER/EDITOR declines.
+pub async fn decline_override_request(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    request_id: Uuid,
+) -> Result<Value> {
+    let mut tx = s.pool.begin().await?;
+    let role = auth::membership(&mut tx, a, org, false).await?;
+    let req = lock_pending(&mut tx, org, request_id).await?;
+    if req.requested_by != a.user && !matches!(role.as_str(), "OWNER" | "EDITOR") {
+        return Err(Error::Forbidden);
+    }
+    sqlx::query("UPDATE rights.override_requests SET status='DECLINED', decided_by=$3, decided_at=now() WHERE org_id=$1 AND id=$2")
+        .bind(org)
+        .bind(request_id)
+        .bind(a.user)
+        .execute(&mut *tx)
+        .await?;
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        Some(org),
+        Some(request_id),
+        "override.declined",
+        "REVIEWER_DECISION",
+        a.request,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"status": "DECLINED"}))
+}
 
 /// Inputs for [`record_override`].
 pub struct OverrideRequest<'a> {
@@ -1081,50 +1659,44 @@ pub struct OverrideRequest<'a> {
     pub senior: bool,
 }
 
-/// Record an override. Rights/money-class forced PASS needs a senior reviewer
-/// plus a *different* second approver; the server enforces both.
+/// Library-level override writer (operator tooling and tests; the API uses
+/// the request/approve flow above). Enforces the same rules: a PASS that
+/// needs a second person requires a *different*, eligible approver (ACTIVE,
+/// OWNER/EDITOR, accepted and tenured), and rights/money-class PASS also a
+/// senior actor. The caller vouches that `second_approver` really approved.
 pub async fn record_override(pool: &PgPool, r: OverrideRequest<'_>) -> Result<Uuid> {
-    if !["PASS", "CORRECTION_REQUIRED", "REVIEW_REQUIRED", "BLOCKED"].contains(&r.proposed_status) {
-        return Err(Error::PolicyGate("INVALID_OVERRIDE_STATUS"));
-    }
-    if r.reason.trim().is_empty() {
-        return Err(Error::PolicyGate("OVERRIDE_REASON_REQUIRED"));
-    }
-    // The check must exist for this revision.
-    let original: Option<String> = sqlx::query_scalar(
-        "SELECT status FROM operations.check_results WHERE revision_id=$1 AND check_code=$2 ORDER BY created_at DESC LIMIT 1",
-    )
-    .bind(r.revision_id)
-    .bind(r.check_code)
-    .fetch_optional(pool)
-    .await?;
-    let original = original.ok_or(Error::NotFound)?;
-    if RIGHTS_MONEY_CLASSES.contains(&r.check_code) && r.proposed_status == "PASS" {
-        if !r.senior {
+    validate_override(r.proposed_status, r.reason)?;
+    let mut tx = pool.begin().await?;
+    let original = original_status(&mut tx, r.revision_id, r.check_code).await?;
+    if needs_second_approver(r.check_code, r.proposed_status) {
+        if RIGHTS_MONEY_CLASSES.contains(&r.check_code) && !r.senior {
             return Err(Error::PolicyGate("SENIOR_REVIEWER_REQUIRED"));
         }
         match r.second_approver {
-            Some(sa) if sa != r.actor => {
-                // The second approver must be a different ACTIVE member.
-                let ok: bool = sqlx::query_scalar(
-                    "SELECT EXISTS(SELECT 1 FROM identity.memberships WHERE org_id=$1 AND user_id=$2 AND status='ACTIVE')",
-                )
-                .bind(r.org)
-                .bind(sa)
-                .fetch_one(pool)
-                .await?;
-                if !ok {
+            Some(sa) if sa != r.actor => match check_approver_eligible(&mut tx, r.org, sa).await {
+                Ok(()) => {}
+                Err(Error::Forbidden) => {
                     return Err(Error::PolicyGate("SECOND_APPROVER_NOT_MEMBER"));
                 }
-            }
+                Err(e) => return Err(e),
+            },
             _ => return Err(Error::PolicyGate("SECOND_APPROVER_REQUIRED")),
         }
     }
-    let id = Uuid::new_v4();
-    sqlx::query("INSERT INTO rights.review_overrides(id, org_id, revision_id, check_code, original_status, proposed_status, reason, actor_user_id, second_approver_user_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)")
-        .bind(id).bind(r.org).bind(r.revision_id).bind(r.check_code).bind(&original).bind(r.proposed_status).bind(r.reason).bind(r.actor).bind(r.second_approver)
-        .execute(pool)
-        .await?;
+    let id = insert_override(
+        &mut tx,
+        r.org,
+        r.revision_id,
+        r.check_code,
+        &original,
+        r.proposed_status,
+        r.reason,
+        r.actor,
+        r.second_approver,
+    )
+    .await?;
+    enqueue_reevaluation(&mut tx, r.org, r.revision_id, id).await?;
+    tx.commit().await?;
     Ok(id)
 }
 

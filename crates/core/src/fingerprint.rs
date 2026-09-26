@@ -47,8 +47,13 @@ const MIN_OVERLAP_FRAMES: usize = 32;
 /// fingerprint. Not transient: retrying the same bytes will not help.
 pub const TOO_SHORT_CODE: &str = "AUDIO_TOO_SHORT_FOR_FINGERPRINT";
 
-/// Maximum audio the fingerprinter will decode (10 min at 11025 Hz mono).
-const MAX_SAMPLES: usize = 11025 * 600;
+/// Length of audio the fingerprint covers: the first 10 minutes. Longer
+/// tracks are fingerprinted over this bounded segment (ffmpeg stops decoding
+/// at the limit), which is ample for similarity matching and keeps time and
+/// memory bounded (~13 MB of PCM) for 45-minute masters. Previously a longer
+/// track overflowed the decode cap and failed every attempt.
+pub const MAX_FINGERPRINT_SECS: u32 = 600;
+const MAX_SAMPLES: usize = SAMPLE_RATE as usize * MAX_FINGERPRINT_SECS as usize;
 
 pub struct Fingerprint {
     /// 32-bit sub-fingerprints, one per frame, in time order.
@@ -98,6 +103,8 @@ fn decode_mono(path: &Path) -> Result<Vec<f32>> {
             "error",
             "-i",
             path.to_str().ok_or(Error::Internal)?,
+            "-t",
+            &MAX_FINGERPRINT_SECS.to_string(),
             "-ac",
             "1",
             "-ar",
@@ -132,9 +139,16 @@ fn decode_mono(path: &Path) -> Result<Vec<f32>> {
             return Err(Error::Internal);
         }
     };
+    if bytes.len() > max_bytes {
+        // Defensive: `-t` bounds the output, but never block in wait() on a
+        // decoder that is still writing into a pipe nobody reads.
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(Error::Internal);
+    }
     let status = child.wait().map_err(|_| Error::Internal)?;
     let (sample_chunks, remainder) = bytes.as_chunks::<2>();
-    if !status.success() || !remainder.is_empty() || sample_chunks.len() > MAX_SAMPLES {
+    if !status.success() || !remainder.is_empty() {
         return Err(Error::Internal);
     }
     Ok(sample_chunks
@@ -264,6 +278,36 @@ pub fn bit_error_rate(a: &[u32], b: &[u32]) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn long_tracks_fingerprint_a_bounded_segment() {
+        // Sandbox: 11 and 45 minute masters hung the fingerprint step until
+        // the 600 s timeout and then died after five retries. Only the first
+        // MAX_FINGERPRINT_SECS are decoded now, so length no longer matters.
+        let p = std::env::temp_dir().join(format!("audeniq-fp-long-{}.wav", std::process::id()));
+        let st = std::process::Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=660:sample_rate=22050",
+                "-c:a",
+                "pcm_s16le",
+            ])
+            .arg(&p)
+            .status()
+            .expect("ffmpeg missing");
+        assert!(st.success());
+        let started = std::time::Instant::now();
+        let fp = compute_fingerprint(&p);
+        let _ = std::fs::remove_file(&p);
+        let fp = fp.expect("11 minute track fingerprints");
+        assert!(!fp.is_empty());
+        assert!(started.elapsed() < std::time::Duration::from_secs(120));
+    }
 
     fn sine_frames(freq: f64, secs: f64, phase: f64) -> Fingerprint {
         // Build a fingerprint directly from synthetic PCM, bypassing ffmpeg.

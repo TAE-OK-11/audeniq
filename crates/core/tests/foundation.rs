@@ -15,6 +15,7 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
+use sha2::Digest;
 use sqlx::{PgPool, Row};
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::Mutex;
@@ -25,7 +26,25 @@ const ORIGIN: &str = "http://localhost:5173";
 #[derive(Default)]
 struct MockStore {
     objects: Mutex<BTreeMap<String, ObjectMeta>>,
+    /// Explicit object bodies; objects without one get synthesized bytes
+    /// whose magic matches their content type (see `get`).
+    bodies: Mutex<BTreeMap<String, Vec<u8>>>,
     calls: std::sync::atomic::AtomicUsize,
+}
+/// Deterministic placeholder bytes: `size` long, starting with the container
+/// magic of `content_type`, so upload completion's content sniff passes.
+fn synth_body(content_type: &str, size: i64) -> Vec<u8> {
+    let magic: &[u8] = match content_type {
+        "audio/wav" | "audio/x-wav" => b"RIFF\0\0\0\0WAVE",
+        "audio/flac" => b"fLaC",
+        "image/png" => b"\x89PNG\r\n\x1a\n",
+        "image/jpeg" => b"\xFF\xD8\xFF",
+        _ => b"",
+    };
+    let mut v = vec![0u8; size.max(0) as usize];
+    let n = magic.len().min(v.len());
+    v[..n].copy_from_slice(&magic[..n]);
+    v
 }
 #[async_trait]
 impl ObjectStore for MockStore {
@@ -60,11 +79,19 @@ impl ObjectStore for MockStore {
             return Err(Error::Conflict);
         }
         m.insert(target.into(), obj);
+        let mut b = self.bodies.lock().await;
+        if let Some(body) = b.get(source).cloned() {
+            b.insert(target.into(), body);
+        }
         Ok(())
     }
     async fn get(&self, key: &str) -> Result<Vec<u8>> {
-        let _ = key;
-        Err(Error::Storage)
+        if let Some(b) = self.bodies.lock().await.get(key) {
+            return Ok(b.clone());
+        }
+        let m = self.objects.lock().await;
+        let meta = m.get(key).ok_or(Error::Storage)?;
+        Ok(synth_body(&meta.content_type, meta.size))
     }
 }
 async fn app(pool: PgPool) -> (Router, Arc<MockStore>) {
@@ -293,7 +320,7 @@ async fn organization_acl_and_revocation(pool: PgPool) {
         assert_eq!(call(&app,"PUT",&path,json!({"name":"intrusion","row_version":0,"party_id":b.party,"release_type":"SINGLE"}),Some(&b)).await.0,StatusCode::FORBIDDEN);
     }
     let r = create(&app, &a, "releases").await;
-    call(
+    let (s, _, v) = call(
         &app,
         "PUT",
         &format!("/api/orgs/{}/memberships", a.org),
@@ -301,6 +328,33 @@ async fn organization_acl_and_revocation(pool: PgPool) {
         Some(&a),
     )
     .await;
+    // Adding a member only invites them; the invitee must accept.
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["status"], "INVITED");
+    assert_eq!(
+        call(
+            &app,
+            "GET",
+            &format!("/api/orgs/{}/releases", a.org),
+            json!({}),
+            Some(&b)
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            &format!("/api/orgs/{}/memberships/accept", a.org),
+            json!({}),
+            Some(&b)
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
     let path = format!("/api/orgs/{}/releases/{r}", a.org);
     assert_eq!(
         call(&app, "GET", &path, json!({}), Some(&b)).await.0,
@@ -356,6 +410,81 @@ async fn upload(app: &Router, u: &User) -> Value {
     v
 }
 #[sqlx::test]
+async fn upload_errors_are_specific_and_content_is_sniffed(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let a = user(&app).await;
+    let uploads = format!("/api/orgs/{}/uploads", a.org);
+    for (body, status, code) in [
+        (
+            json!({"kind":"AUDIO","size_bytes":100,"content_type":"audio/mpeg"}),
+            StatusCode::BAD_REQUEST,
+            "UPLOAD_TYPE_UNSUPPORTED",
+        ),
+        (
+            json!({"kind":"AUDIO","size_bytes":0,"content_type":"audio/wav"}),
+            StatusCode::BAD_REQUEST,
+            "UPLOAD_EMPTY",
+        ),
+        (
+            json!({"kind":"AUDIO","size_bytes":600_i64*1024*1024,"content_type":"audio/wav"}),
+            StatusCode::BAD_REQUEST,
+            "UPLOAD_AUDIO_TOO_LARGE",
+        ),
+        (
+            json!({"kind":"IMAGE","size_bytes":30_i64*1024*1024,"content_type":"image/png"}),
+            StatusCode::BAD_REQUEST,
+            "UPLOAD_IMAGE_TOO_LARGE",
+        ),
+    ] {
+        let (s, _, v) = call(&app, "POST", &uploads, body, Some(&a)).await;
+        assert_eq!(s, status, "{v}");
+        assert_eq!(v["error"]["code"], code, "{v}");
+        assert!(
+            v["error"]["message"]
+                .as_str()
+                .is_some_and(|m| !m.is_empty()),
+            "human-readable message missing: {v}"
+        );
+    }
+    // An MP3 renamed to .wav (declared audio/wav) is refused at completion
+    // and never registered, so it cannot reach QC or a DSP package.
+    let up = upload(&app, &a).await;
+    let key = up["expected_key"].as_str().unwrap();
+    let mut mp3 = b"ID3\x04\x00".to_vec();
+    mp3.resize(100, 0);
+    store.bodies.lock().await.insert(key.into(), mp3);
+    store.objects.lock().await.insert(
+        key.into(),
+        ObjectMeta {
+            size: 100,
+            content_type: "audio/wav".into(),
+            nonce: up["grant"]["headers"]["x-amz-meta-upload-nonce"]
+                .as_str()
+                .unwrap()
+                .into(),
+            etag: "mp3-etag".into(),
+        },
+    );
+    let path = format!(
+        "/api/orgs/{}/uploads/{}/complete",
+        a.org,
+        up["upload_session_id"].as_str().unwrap()
+    );
+    let body = json!({"asset_id":up["asset_id"],"expected_key":key});
+    let (s, _, v) = call(&app, "POST", &path, body, Some(&a)).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(v["error"]["code"], "UPLOAD_CONTENT_MISMATCH");
+    let (state, sha): (String, Option<String>) =
+        sqlx::query_as("SELECT state,sha256 FROM catalog.assets WHERE id=$1")
+            .bind(Uuid::parse_str(up["asset_id"].as_str().unwrap()).unwrap())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_ne!(state, "REGISTERED");
+    assert!(sha.is_none());
+}
+
+#[sqlx::test]
 async fn upload_binding_expiry_duplicate_and_freeze(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let a = user(&app).await;
@@ -401,6 +530,18 @@ async fn upload_binding_expiry_duplicate_and_freeze(pool: PgPool) {
     let (s, _, v) = call(&app, "POST", &path, body.clone(), Some(&a)).await;
     assert_eq!(s, StatusCode::OK, "{v}");
     assert_eq!(v["qc_status"], "PENDING");
+    // Regression (sandbox P0-1): completion must persist the content hash of
+    // the frozen bytes, otherwise Stage 1 never runs audio QC.
+    let expected_sha = hex::encode(sha2::Sha256::digest(synth_body("audio/wav", 100)));
+    assert_eq!(v["sha256"], expected_sha.as_str());
+    assert_eq!(v["detected_container"], "WAV");
+    let stored: Option<String> =
+        sqlx::query_scalar("SELECT sha256 FROM catalog.assets WHERE id=$1")
+            .bind(Uuid::parse_str(up["asset_id"].as_str().unwrap()).unwrap())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(stored.as_deref(), Some(expected_sha.as_str()));
     let (s, _, v) = call(&app, "POST", &path, body, Some(&a)).await;
     assert_eq!(s, StatusCode::OK);
     assert_eq!(v["duplicate"], true);
@@ -866,7 +1007,14 @@ async fn runtime_roles_enforce_foundation_boundary(pool: PgPool) {
     for statement in [
         "UPDATE operations.audit_events SET action='tampered'",
         "TRUNCATE operations.audit_events",
-        "INSERT INTO catalog.application_revisions DEFAULT VALUES",
+        // The API appends submitted revisions and consent packages (consent +
+        // submit run in the request) but can never rewrite or remove them.
+        "UPDATE catalog.application_revisions SET body='{}'",
+        "DELETE FROM catalog.application_revisions",
+        "UPDATE catalog.consent_packages SET body='{}'",
+        "DELETE FROM catalog.consent_packages",
+        "INSERT INTO operations.check_results DEFAULT VALUES",
+        "INSERT INTO distribution.validation_packages DEFAULT VALUES",
         "INSERT INTO distribution.packages DEFAULT VALUES",
         "INSERT INTO rights.contracts DEFAULT VALUES",
         // Activation records are platform-operator owned: the API role must

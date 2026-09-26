@@ -48,29 +48,30 @@ fn status(pass: bool) -> CheckStatus {
     }
 }
 
-/// Bounded per-object check. The existing ObjectStore API buffers `get`; this
-/// preparation pass therefore refuses assets over 64 MiB. Large masters remain
-/// blocked until the store supplies bounded streaming/hash verification.
-pub const MAX_PREFLIGHT_ASSET_BYTES: i64 = 64 * 1024 * 1024;
+/// Largest asset any stage accepts. It is the upload cap itself (the largest
+/// audio master), so nothing that passed upload can be refused later for
+/// size. Hash verification streams (`ObjectStore::digest`), so memory stays
+/// constant regardless of the object size.
+pub const MAX_PREFLIGHT_ASSET_BYTES: i64 = crate::uploads::MAX_AUDIO_BYTES;
 
-/// One asset's object-store verification: HEAD metadata match, then full
-/// byte + SHA-256 match.
+/// One asset's object-store verification: HEAD metadata match, then a
+/// streaming SHA-256/size check via `ObjectStore::digest` — constant memory
+/// regardless of asset size, no full download into RAM.
 async fn check_one_asset(a: &AssetRef, store: &dyn ObjectStore) -> CheckStatus {
     match store.head(&a.object_key).await {
         Ok(Some(meta)) if meta.size == a.size_bytes && meta.content_type == a.content_type => {}
         Ok(_) => return CheckStatus::Fail,
         Err(_) => return CheckStatus::Unknown,
     }
-    match store.get(&a.object_key).await {
-        Ok(bytes) => {
-            if i64::try_from(bytes.len()).ok() == Some(a.size_bytes)
-                && hex::encode(Sha256::digest(&bytes)) == a.sha256
-            {
+    match store.digest(&a.object_key, a.size_bytes as u64).await {
+        Ok(d) => {
+            if i64::try_from(d.size).ok() == Some(a.size_bytes) && d.sha256 == a.sha256 {
                 CheckStatus::Pass
             } else {
                 CheckStatus::Fail
             }
         }
+        Err(crate::error::Error::PolicyGate(_)) => CheckStatus::Fail,
         Err(_) => CheckStatus::Unknown,
     }
 }

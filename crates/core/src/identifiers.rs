@@ -16,6 +16,13 @@ pub fn validate_isrc(value: &str) -> Result<()> {
     {
         return Err(Error::Invalid);
     }
+    // Placeholders, never issued: an all-zero registrant or designation code
+    // (sandbox round 2: 'ZZ0000000000' was accepted and delivered). "ZZ"
+    // itself is a real prefix (issued directly by the International ISRC
+    // Agency), so the country code alone is not rejected.
+    if &b[2..5] == b"000" || &b[7..] == b"00000" {
+        return Err(Error::Invalid);
+    }
     Ok(())
 }
 
@@ -194,6 +201,26 @@ pub async fn record_existing(c: &mut PgConnection, a: &ExistingAssignment<'_>) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn placeholder_isrcs_are_rejected() {
+        for bad in [
+            "ZZ0000000000",
+            "USABC2600000",
+            "US0002600001",
+            "KRA0026000001",
+        ] {
+            assert!(validate_isrc(bad).is_err(), "{bad}");
+        }
+        for good in [
+            "ZZA012600001",
+            "USABC2600001",
+            "KRA302612345",
+            "QZES82600001",
+        ] {
+            assert!(validate_isrc(good).is_ok(), "{good}");
+        }
+    }
+
     #[test]
     fn normalized_isrc_only() {
         for s in ["USAAA2600001", "KRA1Z2600002"] {
