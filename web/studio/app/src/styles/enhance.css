@@ -634,3 +634,9 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 
 /* 상태 표시는 모두 '발매 완료'와 같은 글자 pill로 통일 (앞의 점·깜빡임 없음) */
 .status-chip::before,.status-chip::after{content:none!important;display:none!important}
+
+/* 파일 업로드 진행률 — 윤곽선 없는 얇은 바 */
+.aq-upload-progress{display:grid;gap:6px;margin-top:10px;animation:aq-fade-up .25s ease both}
+.aq-upload-progress>span{display:block;height:6px;border-radius:999px;background:var(--aq-e-blue-soft);overflow:hidden}
+.aq-upload-progress>span>i{display:block;height:100%;border-radius:inherit;background:var(--aq-e-blue);transition:width .3s var(--aq-e-ease)}
+.aq-upload-progress>small{font-size:12px;font-weight:600;color:var(--aq-e-muted)}
