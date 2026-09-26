@@ -1,9 +1,10 @@
 // API client for AUDENIQ backend
 import { mockApi } from './mock';
 
-// Design test mode: no real API calls
-const MOCK = true;
-const API_BASE = '';
+// 빌드 시 VITE_MOCK=false로 설정하면 실제 백엔드 API 사용
+// 백엔드 준비 전까지는 기본값 true (목 데이터 모드)
+const MOCK = import.meta.env.VITE_MOCK !== 'false';
+const API_BASE = import.meta.env.VITE_API_BASE || '';
 
 export interface User {
   id: string;
