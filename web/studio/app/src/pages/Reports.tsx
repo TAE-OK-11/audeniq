@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useToast } from '../components/Toast';
 import { useGrowOnView, type CSSVarStyle } from '../hooks/useAnimations';
 
@@ -88,6 +88,18 @@ export function Reports() {
   const totalPlays = filtered.reduce((n, r) => n + r.plays, 0);
   const platforms = new Set(filtered.map(r => r.platform)).size;
 
+  const byPlatform = useMemo(() => {
+    const map = new Map<string, { plays: number; revenue: number }>();
+    for (const r of filtered) {
+      const cur = map.get(r.platform) || { plays: 0, revenue: 0 };
+      cur.plays += r.plays;
+      cur.revenue += r.revenue;
+      map.set(r.platform, cur);
+    }
+    return [...map.entries()].sort((a, b) => b[1].revenue - a[1].revenue);
+  }, [filtered]);
+  const maxPlatformRevenue = Math.max(1, ...byPlatform.map(([, v]) => v.revenue));
+
   const releases = [...new Set(MOCK_ROWS.map(r => r.release))];
 
   const exportCsv = () => {
@@ -128,8 +140,6 @@ export function Reports() {
           <option value="all">전체 발매</option>
           {releases.map(r => <option key={r} value={r}>{r}</option>)}
         </select>
-        <input id="reportFile" hidden aria-hidden="true" tabIndex={-1} type="file" accept=".csv,text/csv" aria-label="리포트 CSV 가져오기" />
-        <button id="importHelp" hidden aria-hidden="true" tabIndex={-1} className="button ghost" type="button">가져오기 형식</button>
       </div>
 
       <div className="stat-grid">
@@ -137,6 +147,28 @@ export function Reports() {
         <div className="surface white stat-card"><small>재생 수</small><strong>{num(totalPlays)}</strong></div>
         <div className="surface white stat-card"><small>플랫폼</small><strong>{platforms}</strong></div>
       </div>
+
+      {byPlatform.length > 0 && (
+        <section className="surface" aria-labelledby="platformTitle">
+          <div className="section-top">
+            <h2 id="platformTitle">플랫폼별 수익</h2>
+          </div>
+          <ul className="aq-platform-bars">
+            {byPlatform.map(([name, v]) => (
+              <li key={name}>
+                <div className="aq-platform-row">
+                  <span>{name}</span>
+                  <strong>{money(v.revenue)}</strong>
+                </div>
+                <div className="aq-platform-track">
+                  <span style={{ width: `${Math.max(3, Math.round((v.revenue / maxPlatformRevenue) * 100))}%` }} />
+                </div>
+                <small>{num(v.plays)}회 재생</small>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="surface" aria-labelledby="reportGraphTitle">
         <div className="section-top">
@@ -171,8 +203,8 @@ export function Reports() {
         </div>
       ) : (
         <div className="empty-page">
-          <h2>아직 가져온 실적이 없어요.</h2>
-          <p>CSV 파일을 가져오면 재생·수익 내역과 기간별 그래프가 여기에 표시돼요.</p>
+          <h2>아직 집계된 실적이 없어요.</h2>
+          <p>플랫폼 정산이 반영되면 재생·수익 내역이 여기에 표시돼요.</p>
         </div>
       )}
     </div>

@@ -351,6 +351,13 @@ button,input,select,textarea{font-family:inherit;letter-spacing:inherit}button{-
 #homeReport .section-top h2 .small{display:block;font-size:12px;font-weight:500;margin-top:6px;letter-spacing:0}
 #homeReport .dashboard-help{margin:20px 0 0}
 .report-chart{gap:9px;height:170px;border-bottom:1px solid #dfe6f3;margin:25px 0 8px}
+.aq-platform-bars{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:18px}
+.aq-platform-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.aq-platform-row span{font-size:14px;font-weight:750;color:var(--portal-ink)}
+.aq-platform-row strong{font-size:15px;letter-spacing:-.02em;color:var(--portal-ink)}
+.aq-platform-track{height:8px;background:#e9edf5;border-radius:99px;margin-top:9px;overflow:hidden}
+.aq-platform-track span{display:block;height:100%;background:linear-gradient(90deg,#5c77e5,#a7baff);border-radius:99px;transition:width .5s var(--portal-ease)}
+.aq-platform-bars small{display:block;margin-top:6px;font-size:11px;color:var(--portal-muted)}
 .report-bar{background:linear-gradient(180deg,#5e7dec,#a4b5fa);border-radius:9px 9px 0 0;animation-duration:.7s}
 .report-axis{color:#8794aa}
 .empty-graph{color:#8995a8;font-size:13px;min-height:115px}
