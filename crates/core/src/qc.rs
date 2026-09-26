@@ -388,24 +388,11 @@ pub const TRUNCATION_TOLERANCE_RATIO: f64 = 0.01;
 ///
 /// `declared_content_type` is the MIME type the upload was registered with;
 /// when given, the real container must match it.
-/// Thin wrapper keeping the historical `check_audio` contract for tests.
 pub fn check_audio(
     path: &Path,
     registered_sha256: Option<&str>,
     declared_content_type: Option<&str>,
 ) -> Vec<CheckOutcome> {
-    check_audio_full(path, registered_sha256, declared_content_type).0
-}
-
-/// Full audio check contract plus the fingerprint tap samples collected
-/// during the single `decode_analysis` pass (mono 11025 Hz PCM over the
-/// [`crate::fingerprint::segment_windows`]; empty when the bytes were
-/// rejected before decoding).
-pub fn check_audio_full(
-    path: &Path,
-    registered_sha256: Option<&str>,
-    declared_content_type: Option<&str>,
-) -> (Vec<CheckOutcome>, Vec<f32>) {
     /// Emit `AUDIO_CHECK_CODES[from..]` with a uniform status (short-circuit tail).
     fn tail(from: &str, status: CheckStatus, input_hash: &str, detail: &str) -> Vec<CheckOutcome> {
         AUDIO_CHECK_CODES[audio_code_index(from)..]
@@ -435,14 +422,11 @@ pub fn check_audio_full(
     let actual = match sha256_file(path) {
         Ok(h) => h,
         Err(_) => {
-            return (
-                tail(
-                    "SHA256_MISMATCH",
-                    CheckStatus::TechnicalRetry,
-                    &metric_hash(&["unreadable"]),
-                    "cannot read file",
-                ),
-                Vec::new(),
+            return tail(
+                "SHA256_MISMATCH",
+                CheckStatus::TechnicalRetry,
+                &metric_hash(&["unreadable"]),
+                "cannot read file",
             );
         }
     };
@@ -469,7 +453,7 @@ pub fn check_audio_full(
             &metric_hash(&[&actual]),
             "sha256 mismatch",
         ));
-        return (out, Vec::new());
+        return out;
     }
     let head = head_bytes(path).unwrap_or_default();
     let container = detect_container(&head);
@@ -508,7 +492,7 @@ pub fn check_audio_full(
             &magic_hash,
             "not an accepted audio container",
         ));
-        return (out, Vec::new());
+        return out;
     }
     let metrics = match probe_classified(path)
         .and_then(|v| parse_audio(&v).map_err(|_| AnalyzerError::Undecodable))
@@ -544,7 +528,7 @@ pub fn check_audio_full(
                 &metric_hash(&[&actual]),
                 "probe failed",
             ));
-            return (out, Vec::new());
+            return out;
         }
     };
     out.push(CheckOutcome {
@@ -625,10 +609,10 @@ pub fn check_audio_full(
                 "channel layout rejected"
             },
         ));
-        return (out, Vec::new());
+        return out;
     }
-    let (analysis, fp_samples) = match decode_analysis(path, &metrics) {
-        Ok((a, s)) => (a, s),
+    let analysis = match decode_analysis(path, &metrics) {
+        Ok(a) => a,
         Err(e) => {
             let (status, detail) = match e {
                 AnalyzerError::Undecodable => (
@@ -643,7 +627,7 @@ pub fn check_audio_full(
             out.extend(tail("AUDIO_TRUNCATED", status, &mh, detail));
             // Fingerprint codes are produced by the DB-backed step, but only
             // for admitted audio; a decode failure there is already covered.
-            return (out, Vec::new());
+            return out;
         }
     };
     let decoded_secs = analysis.decoded_secs();
@@ -778,7 +762,7 @@ pub fn check_audio_full(
             format!("for review (not blocking): {}", suspicions.join("; "))
         },
     ));
-    (out, fp_samples)
+    out
 }
 
 /// Integrated loudness below this is "near-silent" content.
@@ -1017,7 +1001,7 @@ fn decode_timeout(duration_secs: f64) -> Duration {
 pub fn decode_analysis(
     path: &Path,
     m: &AudioMetrics,
-) -> std::result::Result<(DecodeAnalysis, Vec<f32>), AnalyzerError> {
+) -> std::result::Result<DecodeAnalysis, AnalyzerError> {
     use AnalyzerError::{Unavailable, Undecodable};
     let channels = m.channels.max(1) as usize;
     let mut child = std::process::Command::new(ffmpeg_bin())
@@ -1065,19 +1049,7 @@ pub fn decode_analysis(
     });
     let (tx, rx) = std::sync::mpsc::channel();
     let block_frames = ((f64::from(m.sample_rate.max(1)) * BLOCK_SECS) as u64).max(1);
-    // Fingerprint tap: the perceptual fingerprint needs mono 11025 Hz PCM
-    // over the configured segment windows. Tapping it out of this same
-    // decode pass removes the second full ffmpeg decode the fingerprint
-    // step used to run (~2.5 s per 3:30 track). Box-filter decimation is a
-    // crude anti-alias filter, but the fingerprint only needs log band
-    // energies; it is robust to mild aliasing by construction.
-    let fp_tap = FpTap::new(
-        m.sample_rate.max(1),
-        channels,
-        crate::fingerprint::segment_windows(m.duration_secs),
-    );
     std::thread::spawn(move || {
-        let mut tap = fp_tap;
         let mut a = DecodeAnalysis {
             channel_peaks: vec![0.0; channels],
             ..DecodeAnalysis::default()
@@ -1118,13 +1090,10 @@ pub fn decode_analysis(
                 let v = f32::from_le_bytes([carry[0], carry[1], carry[2], carry[3]]);
                 carry.clear();
                 measure(v, &mut a, &mut st);
-                tap.push(v);
             }
             let (chunks, rest) = data.as_chunks::<4>();
             for c in chunks {
-                let v = f32::from_le_bytes(*c);
-                measure(v, &mut a, &mut st);
-                tap.push(v);
+                measure(f32::from_le_bytes(*c), &mut a, &mut st);
             }
             carry.extend_from_slice(rest);
         }
@@ -1133,87 +1102,11 @@ pub fn decode_analysis(
         }
         a.samples_per_channel = st.samples / channels as u64;
         a.zero_crossing_rate = st.crossings as f64 / st.samples.max(1) as f64;
-        let _ = tx.send(Some((a, tap.finish())));
+        let _ = tx.send(Some(a));
     });
     /// Downmix + decimate tap feeding the perceptual fingerprint from the
     /// single decode pass. Only samples inside the configured segment
     /// windows are retained (~4 MB for 3 x 30 s at 11025 Hz mono).
-    struct FpTap {
-        channels: usize,
-        ch: usize,
-        frame_sum: f64,
-        frame_idx: u64,
-        /// Input frames per output sample.
-        step: f64,
-        bin: u64,
-        bin_sum: f64,
-        bin_n: u32,
-        /// Segment windows in output-sample units: (first_bin, one_past_last).
-        windows: Vec<(u64, u64)>,
-        samples: Vec<f32>,
-    }
-    impl FpTap {
-        fn new(input_rate: u32, channels: usize, windows_secs: Vec<(f64, f64)>) -> Self {
-            let out_rate = crate::fingerprint::FINGERPRINT_SAMPLE_RATE as f64;
-            let windows = windows_secs
-                .into_iter()
-                .map(|(s, len)| {
-                    let first = (s.max(0.0) * out_rate) as u64;
-                    let last = ((s + len).max(0.0) * out_rate) as u64;
-                    (first, last.max(first))
-                })
-                .collect();
-            FpTap {
-                channels: channels.max(1),
-                ch: 0,
-                frame_sum: 0.0,
-                frame_idx: 0,
-                step: f64::from(input_rate.max(1)) / out_rate,
-                bin: 0,
-                bin_sum: 0.0,
-                bin_n: 0,
-                windows,
-                samples: Vec::new(),
-            }
-        }
-        fn push(&mut self, v: f32) {
-            self.frame_sum += f64::from(if v.is_finite() { v } else { 0.0 });
-            self.ch += 1;
-            if self.ch < self.channels {
-                return;
-            }
-            self.ch = 0;
-            let mono = self.frame_sum / self.channels as f64;
-            self.frame_sum = 0.0;
-            let o = (self.frame_idx as f64 / self.step) as u64;
-            self.frame_idx += 1;
-            if o != self.bin {
-                self.flush_bin();
-                self.bin = o;
-            }
-            self.bin_sum += mono;
-            self.bin_n += 1;
-        }
-        fn flush_bin(&mut self) {
-            if self.bin_n == 0 {
-                return;
-            }
-            let avg = (self.bin_sum / f64::from(self.bin_n)) as f32;
-            self.bin_sum = 0.0;
-            self.bin_n = 0;
-            if self
-                .windows
-                .iter()
-                .any(|(first, last)| self.bin >= *first && self.bin < *last)
-            {
-                self.samples.push(avg);
-            }
-        }
-        fn finish(mut self) -> Vec<f32> {
-            self.flush_bin();
-            self.samples
-        }
-    }
     struct Meter {
         runs: Vec<u32>,
         last_sign: Vec<i8>,
@@ -1293,8 +1186,8 @@ pub fn decode_analysis(
             }
         }
     }
-    let (analysis, fp_samples) = match rx.recv_timeout(decode_timeout(m.duration_secs)) {
-        Ok(Some((a, s))) => (a, s),
+    let analysis = match rx.recv_timeout(decode_timeout(m.duration_secs)) {
+        Ok(Some(a)) => a,
         Ok(None) => {
             let _ = child.kill();
             let _ = child.wait();
@@ -1313,15 +1206,12 @@ pub fn decode_analysis(
     }
     let (integrated, true_peak) =
         parse_ebur128(&String::from_utf8_lossy(&err_text)).ok_or(Undecodable)?;
-    Ok((
-        DecodeAnalysis {
-            sample_rate: m.sample_rate,
-            integrated_lufs: integrated,
-            true_peak_dbtp: true_peak,
-            ..analysis
-        },
-        fp_samples,
-    ))
+    Ok(DecodeAnalysis {
+        sample_rate: m.sample_rate,
+        integrated_lufs: integrated,
+        true_peak_dbtp: true_peak,
+        ..analysis
+    })
 }
 
 fn ffmpeg_bin() -> String {
@@ -1514,16 +1404,16 @@ mod tests {
     }
 
     #[test]
-    fn segmented_fingerprint_tap_matches_across_sample_rates() {
-        // The v2 fingerprint taps head/middle/tail segments out of the
-        // single decode pass (FpTap downmix + decimate). The same recording
-        // at 44.1 kHz and 48 kHz must still match as near-duplicates: this
-        // exercises the tap's non-integer decimation as well as the
-        // segmented comparison. A chord with slow tremolo gives the
-        // differential bits a time-varying spectrum to bite on.
-        fn write_chord_wav(path: &Path, rate: u32) {
+    fn segmented_fingerprint_properties() {
+        // The v2 fingerprint decodes only the head/middle/tail segment
+        // windows via ffmpeg's own resampler (compute_fingerprint). The
+        // same bytes must fingerprint deterministically, a lossless
+        // re-encode (WAV -> FLAC, same rate) must match as a near-duplicate,
+        // and a 100 s track must cover exactly the 90 s of windows.
+        fn write_song_wav(path: &Path, rate: u32) {
             let secs = 100u32;
             let n = (secs * rate) as usize;
+            let chords = [220.0f64, 196.0, 174.61, 146.83];
             let mut data = Vec::with_capacity(44 + n * 2);
             data.extend_from_slice(b"RIFF");
             data.extend_from_slice(&((36 + n * 2) as u32).to_le_bytes());
@@ -1539,44 +1429,51 @@ mod tests {
             data.extend_from_slice(&((n * 2) as u32).to_le_bytes());
             for i in 0..n {
                 let t = i as f64 / f64::from(rate);
-                let trem = 0.6 + 0.4 * (2.0 * std::f64::consts::PI * 2.0 * t).sin();
-                let s = ((2.0 * std::f64::consts::PI * 440.0 * t).sin()
-                    + 0.6 * (2.0 * std::f64::consts::PI * 660.0 * t).sin()
-                    + 0.4 * (2.0 * std::f64::consts::PI * 880.0 * t).sin())
-                    * 0.25
-                    * trem;
-                data.extend_from_slice(&((s.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes());
+                let f = chords[(t / 4.0) as usize % 4];
+                let s = (2.0 * std::f64::consts::PI * f * t).sin() * 0.3
+                    + (2.0 * std::f64::consts::PI * f * 2.0 * t).sin() * 0.15;
+                let swell = 0.7 + 0.3 * (2.0 * std::f64::consts::PI * 0.25 * t).sin();
+                let v = ((s * swell).clamp(-1.0, 1.0) * 30000.0) as i16;
+                data.extend_from_slice(&v.to_le_bytes());
             }
             std::fs::write(path, &data).unwrap();
         }
-        let pa = tmp(&format!("fp-tap-a-{}", std::process::id()));
-        let pb = tmp(&format!("fp-tap-b-{}", std::process::id()));
-        write_chord_wav(&pa, 44100);
-        write_chord_wav(&pb, 48000);
-        let (outcomes_a, sa) = check_audio_full(&pa, None, Some("audio/wav"));
-        let (outcomes_b, sb) = check_audio_full(&pb, None, Some("audio/wav"));
+        let pa = tmp(&format!("fp-seg-a-{}.wav", std::process::id()));
+        let pb = tmp(&format!("fp-seg-b-{}.flac", std::process::id()));
+        write_song_wav(&pa, 44100);
+        let st = Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-i",
+                &pa.to_string_lossy(),
+                "-c:a",
+                "flac",
+            ])
+            .arg(&pb)
+            .status()
+            .expect("ffmpeg missing");
+        assert!(st.success());
+        let fa = crate::fingerprint::compute_fingerprint(&pa, 100.0).unwrap();
+        let fa2 = crate::fingerprint::compute_fingerprint(&pa, 100.0).unwrap();
+        let fb = crate::fingerprint::compute_fingerprint(&pb, 100.0).unwrap();
         let _ = std::fs::remove_file(&pa);
         let _ = std::fs::remove_file(&pb);
-        assert!(
-            outcomes_a.iter().all(|o| o.status == CheckStatus::Pass
-                || o.status == CheckStatus::ReviewRequired),
-            "44.1k checks"
-        );
-        assert!(
-            outcomes_b.iter().all(|o| o.status == CheckStatus::Pass
-                || o.status == CheckStatus::ReviewRequired),
-            "48k checks"
-        );
-        // 100 s > 90 s coverage: exactly the three 30 s segments.
-        let want = 90 * crate::fingerprint::FINGERPRINT_SAMPLE_RATE as usize;
-        assert_eq!(sa.len(), want, "44.1k tap samples");
-        assert_eq!(sb.len(), want, "48k tap samples");
-        let fa = crate::fingerprint::fingerprint_from_samples(&sa).unwrap();
-        let fb = crate::fingerprint::fingerprint_from_samples(&sb).unwrap();
+        let ber = crate::fingerprint::bit_error_rate(&fa.frames, &fa2.frames).unwrap();
+        assert_eq!(ber, 0.0, "same bytes must fingerprint deterministically");
         let ber = crate::fingerprint::bit_error_rate(&fa.frames, &fb.frames).unwrap();
         assert!(
             ber < crate::fingerprint::NEAR_DUPLICATE_BER,
-            "cross-rate segmented fingerprints should match, got BER {ber}"
+            "WAV -> FLAC re-encode should match, got BER {ber}"
+        );
+        // 100 s track -> exactly the 3 x 30 s windows (~966 frames for
+        // 90 s at 11025 Hz with 1024-sample hop); clearly not the whole
+        // track and not a single window.
+        assert!(
+            (900..=1000).contains(&fa.frames.len()),
+            "expected ~90 s of frames, got {}",
+            fa.frames.len()
         );
     }
 
