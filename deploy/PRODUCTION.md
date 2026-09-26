@@ -25,11 +25,11 @@ Current configuration examples are not evidence of an established Tunnel, VPC Se
 
 ## GHCR 이미지 배포 (백엔드)
 
-`main`에 푸시되고 **Foundation**(테스트) 워크플로가 통과하면 **Backend image** 워크플로(`.github/workflows/backend-image.yml`)가 `deploy/Dockerfile`로 이미지를 만들어 GHCR에 올린다.
+`main`에 백엔드 변경(`crates/core`, `migrations`, `config`, `Cargo.*`, `deploy/Dockerfile`)이 푸시되면 **Backend image** 워크플로(`.github/workflows/backend-image.yml`)가 바로 `deploy/Dockerfile`로 이미지를 만들어 GHCR에 올린다. 테스트(Foundation)는 따로 돌고 이미지 빌드를 막지 않는다. 지금은 테스트 서버용이라 `CARGO_PROFILE=fast`(`Cargo.toml` `[profile.fast]`: LTO 없음, opt-level 1)로 빌드한다. 운영용으로 바꿀 때는 워크플로의 `build-args`를 지우면 기본값 `release`(thin LTO)로 빌드된다.
 
 - 이미지: `ghcr.io/tae-ok-11/audeniq` — `audeniq-api`, `audeniq-worker`, `audeniq-migrate`, `audeniq-admin` + ffmpeg/ffprobe, UID 10001, `linux/amd64`
 - 태그: `sha-<커밋 전체 해시>`(커밋과 1:1), `main`, `latest`. 배포에는 항상 **digest**(`@sha256:…`)를 쓴다. 실행 요약(Summary)에 digest와 배포 명령이 나온다.
-- 테스트가 실패한 커밋, PR, 다른 브랜치는 이미지를 만들지 않는다. Actions → Backend image → *Run workflow*로 수동 빌드도 된다.
+- PR과 다른 브랜치는 이미지를 만들지 않는다. Actions → Backend image → *Run workflow*로 수동 빌드도 된다.
 - 올린 뒤 바이너리·ffmpeg·UID를 확인하는 스모크 테스트를 돈다. SBOM과 provenance가 함께 올라가고, 공개 저장소면 GitHub attestation도 붙는다 (`gh attestation verify oci://ghcr.io/tae-ok-11/audeniq@sha256:… --owner TAE-OK-11`).
 
 ### 서버 준비 (한 번)
@@ -65,6 +65,6 @@ cd /opt/audeniq
 | Secret | `DEPLOY_SSH_KEY` | 배포 전용 SSH 개인키 |
 | Secret | `DEPLOY_KNOWN_HOSTS` | `ssh-keyscan <서버>` 결과 (호스트 키 고정) |
 | Variable | `DEPLOY_PATH` | 기본 `/opt/audeniq` |
-| Variable (저장소) | `AUTO_DEPLOY` | `true`면 main 통과 때마다 자동 배포 |
+| Variable (저장소) | `AUTO_DEPLOY` | `true`면 main에 이미지가 올라갈 때마다 자동 배포 |
 
 그러면 Actions → Backend image → *Run workflow*에서 `deploy`를 켜 수동 배포하거나, `AUTO_DEPLOY=true`로 자동 배포할 수 있다. 배포 작업은 같은 커밋의 `compose.production.yaml`·`grants.sql`·`bootstrap.sql`·`deploy.sh`를 서버에 복사하고, 그 작업 동안만 유효한 토큰으로 GHCR에 로그인해 `deploy.sh`를 실행한다. 비밀 파일(`production.env`, `tunnel-token`)은 서버에만 있다.

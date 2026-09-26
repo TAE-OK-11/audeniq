@@ -1,13 +1,21 @@
 name: Backend image
-# Foundation(테스트)이 main에서 통과한 커밋만 이미지로 만들어 GHCR에 올린다.
+# main에 백엔드 변경이 푸시되면 바로 이미지를 만들어 GHCR에 올린다 (테스트는 Foundation이 따로 돈다).
+# 지금은 테스트 서버용이라 빠른 프로필(Cargo.toml [profile.fast], LTO 없음)로 빌드한다.
 #   ghcr.io/<owner>/audeniq:sha-<commit>, :main, :latest  (api·worker·migrate·admin 바이너리 포함)
 # 배포는 deploy/deploy.sh가 그 이미지를 digest로 고정해 docker compose로 올린다.
 # 서버 접속 정보가 production 환경에 있으면 이 워크플로에서 바로 배포까지 할 수 있다 (deploy 작업).
 on:
-  workflow_run:
-    workflows: [Foundation]
-    types: [completed]
+  push:
     branches: [main]
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - crates/core/**
+      - config/**
+      - migrations/**
+      - deploy/Dockerfile
+      - .dockerignore
+      - .github/workflows/backend-image.yml
   workflow_dispatch:
     inputs:
       deploy:
@@ -17,13 +25,10 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: backend-image-${{ github.event.workflow_run.head_sha || github.sha }}
-  cancel-in-progress: false
+  group: backend-image-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   image:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -37,8 +42,6 @@ jobs:
       sha: ${{ steps.name.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - id: name
         name: Image name
         run: |
@@ -57,8 +60,8 @@ jobs:
           images: ${{ steps.name.outputs.image }}
           tags: |
             type=raw,value=sha-${{ steps.name.outputs.sha }}
-            type=raw,value=main,enable=${{ github.event_name == 'workflow_run' || github.ref == 'refs/heads/main' }}
-            type=raw,value=latest,enable=${{ github.event_name == 'workflow_run' || github.ref == 'refs/heads/main' }}
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
           labels: |
             org.opencontainers.image.title=audeniq
             org.opencontainers.image.description=AUDENIQ API, worker, migrate and admin binaries
@@ -68,6 +71,7 @@ jobs:
         with:
           context: .
           file: deploy/Dockerfile
+          build-args: CARGO_PROFILE=fast
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -120,7 +124,7 @@ jobs:
     # 수동 실행에서 deploy를 켰거나, 저장소 변수 AUTO_DEPLOY=true면 main 통과 때마다 배포
     if: >-
       (github.event_name == 'workflow_dispatch' && inputs.deploy) ||
-      (github.event_name == 'workflow_run' && vars.AUTO_DEPLOY == 'true')
+      (github.event_name == 'push' && vars.AUTO_DEPLOY == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: production
