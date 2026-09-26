@@ -14,12 +14,12 @@ The user-facing Studio is the React app in `web/studio/app`. It has two builds:
 
 | Build | Command | Output | Data |
 |---|---|---|---|
-| Demo (committed) | `bun run build` | `web/studio/public/connected` | browser storage mock |
-| Server-connected | `bun run build:edge` | `web/studio/edge-dist/connected` (ignored) | real API through the edge |
+| Demo (committed) | `bun run build` | `web/studio/public` | browser storage mock |
+| Server-connected | `bun run build:edge` | `web/studio/edge-dist` (ignored) | real API through the edge |
 
-Request path: browser → `crates/edge` Worker (same origin, serves `/connected/` and proxies `/api/*`) → Workers VPC service `PRIVATE_API` → Cloudflare Tunnel → rented-server Rust API → PostgreSQL / worker queues that run the actual distribution.
+Request path: browser → `crates/edge` Worker (same origin, serves the app at `/` and proxies `/api/*`) → Workers VPC service `PRIVATE_API` → Cloudflare Tunnel → rented-server Rust API → PostgreSQL / worker queues that run the actual distribution.
 
-- The Worker exposes only `/connected/`, `/connected/assets/*` (immutable) and `/connected/static/*`. Any other path without an extension is redirected (308) to `/connected/`; the React app uses hash routing, so deep links look like `/connected/#/releases`.
+- The Worker exposes only `/`, `/assets/*` (immutable), `/static/*`, `/favicon.ico` and `/robots.txt`. Any other path without an extension (old `/connected/`, `/studio` bookmarks) is redirected (308) to `/`; the React app uses hash routing, so deep links look like `/#/releases`.
 - The React CSP is `config/studio-react-csp.txt`. It allows inline style attributes (React animation styles), `blob:`/`data:` previews and direct uploads to `https://*.r2.cloudflarestorage.com`. Scripts stay `'self'` only.
 - The browser keeps the HttpOnly session cookie and the CSRF token in memory only. After a reload it calls `POST /api/auth/csrf`. It never sees `EDGE_SERVICE_SECRET`.
 - Saving a draft maps to the Foundation API: release create/update (`profile` holds wizard fields, with multi-line notes stored as `notes_lines`), artist lookup/creation, and track create/update/archive in `row_version` order. Submit runs preflight, consent (`RIGHTS_HOLDER`), then submit with idempotency key `studio:{release}:{row_version}`.

@@ -8,10 +8,12 @@ import { useProfile } from '../store/profile';
 import { dspLabel, genreLabel, kindLabel, languageLabel } from '../lib/catalog';
 import { formatKoreanDate, parseStamp } from '../lib/date';
 import { localStamp } from '../lib/format';
-import { AGREEMENTS, OPTION_LABELS, hashLabel, snapshotFromRelease, verifyApplication } from '../lib/application';
+import type { ApplicationRecord } from '../api/types';
+import { AGREEMENTS, OPTION_LABELS, displayCode, hashLabel, legacyApplication, snapshotFromRelease, verifyApplication } from '../lib/application';
+import { docsForRelease, useDocs } from '../store/docs';
 import { PROFILE_LINKS } from '../lib/dsp';
 
-type Integrity = 'checking' | 'ok' | 'changed';
+type Integrity = 'checking' | 'ok' | 'changed' | 'legacy';
 
 const dash = (v?: string | null) => (v && v.trim() ? v : '—');
 
@@ -27,16 +29,30 @@ export function Application() {
   const nav = useNavigate();
   const profile = useProfile();
   const { data: rel, loading, error, reload } = useAsync(() => api.getRelease(id), [id]);
-  const app = rel?.draft?.application;
+  const allDocs = useDocs();
+  const issued = rel?.draft?.application;
+  // 서명 기능 전에 접수된 발매는 발매 기록으로 신청서를 만든다 (계약서 서명이 있으면 그 서명을 표시)
+  const [legacy, setLegacy] = useState<ApplicationRecord | null>(null);
+  const app = issued ?? legacy;
   const [integrity, setIntegrity] = useState<Integrity>('checking');
+
+  const contract = rel ? docsForRelease(allDocs, rel.id, rel.title).find(d => d.kind === 'agreements' && d.localSignatureData) : undefined;
+  useEffect(() => {
+    if (!rel || issued || rel.status === 'draft') { setLegacy(null); return; }
+    let live = true;
+    const signed = contract ? { name: contract.signerName, signature: contract.localSignatureData, at: contract.localSignatureAt } : undefined;
+    legacyApplication(rel, signed).then(a => { if (live) setLegacy(a); }).catch(() => {});
+    return () => { live = false; };
+  }, [rel, issued, contract?.localSignatureData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!rel || !app) return;
+    if (!issued) { setIntegrity('legacy'); return; }
     let live = true;
     setIntegrity('checking');
-    verifyApplication(app, rel).then(ok => { if (live) setIntegrity(ok ? 'ok' : 'changed'); }).catch(() => { if (live) setIntegrity('changed'); });
+    verifyApplication(issued, rel).then(ok => { if (live) setIntegrity(ok ? 'ok' : 'changed'); }).catch(() => { if (live) setIntegrity('changed'); });
     return () => { live = false; };
-  }, [rel, app]);
+  }, [rel, app, issued]);
 
   if (loading) {
     return <div className="view aq-doc-view"><SkeletonBlock height={640} /></div>;
@@ -50,14 +66,17 @@ export function Application() {
       </div>
     );
   }
-  if (!app) {
+  if (rel.status === 'draft' && !issued) {
     return (
       <div className="empty-page">
-        <h2>서명된 신청서가 없어요.</h2>
-        <p>발매 신청서는 신청서 마지막 단계에서 서명하고 접수하면 발급돼요.</p>
-        <button type="button" className="button" onClick={() => nav(`/releases/${rel.id}`)}>발매 상세로</button>
+        <h2>아직 접수 전인 발매예요.</h2>
+        <p>신청서 마지막 단계에서 서명하고 접수하면 배급 신청서가 발급돼요.</p>
+        <button type="button" className="button" onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}>계속 작성</button>
       </div>
     );
+  }
+  if (!app) {
+    return <div className="view aq-doc-view"><SkeletonBlock height={640} /></div>;
   }
 
   const snap = snapshotFromRelease(rel);
@@ -91,9 +110,9 @@ export function Application() {
           <div className="aq-paper-brand">
             <img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" />
             <dl className="aq-paper-meta">
-              <div><dt>신청서 번호</dt><dd>{app.no}</dd></div>
+              <div><dt>신청서 번호</dt><dd>{displayCode(app.no)}</dd></div>
               <div><dt>접수 일시</dt><dd>{localStamp(app.submittedAt)}</dd></div>
-              <div><dt>서식</dt><dd>{app.form}</dd></div>
+              <div><dt>서식</dt><dd>{displayCode(app.form)}</dd></div>
             </dl>
           </div>
           <h1>디지털 음원 배급 신청서</h1>
@@ -180,7 +199,12 @@ export function Application() {
 
         <section className="aq-paper-sec">
           <h2><span>5</span>신청인 확인 및 동의</h2>
-          <ol className="aq-paper-agree">
+          {!issued && (
+            <p className="aq-paper-note">
+              전자서명 신청 기능 도입 전에 접수된 발매예요. 접수 당시 동의 내용은 {contract ? 'AUDENIQ 계약서 서명으로 확인됐어요.' : 'AUDENIQ 계약서 서명으로 확인해요.'}
+            </p>
+          )}
+          {issued && <ol className="aq-paper-agree">
             {AGREEMENTS.map(a => (
               <li key={a.id} className={app.agreements.includes(a.id) ? 'is-on' : ''}>
                 <span className="aq-paper-check" aria-label={app.agreements.includes(a.id) ? '동의함' : '동의하지 않음'}>
@@ -189,7 +213,7 @@ export function Application() {
                 {a.text}
               </li>
             ))}
-          </ol>
+          </ol>}
         </section>
 
         <section className="aq-paper-signoff">
@@ -199,7 +223,7 @@ export function Application() {
             <span>신청인</span>
             <strong>{app.signerName}</strong>
             <span className="aq-paper-sig">
-              {app.signature ? <img src={app.signature} alt={`${app.signerName} 서명`} /> : <em>(서명)</em>}
+              {app.signature ? <img src={app.signature} alt={`${app.signerName} 서명`} /> : <em>{issued ? '(서명)' : '(계약서 서명 전)'}</em>}
             </span>
           </div>
           <p className="aq-paper-to">AUDENIQ 귀중</p>
@@ -211,9 +235,11 @@ export function Application() {
             <code>{hashLabel(app.hash)}</code>
           </div>
           <span className={`aq-paper-integrity is-${integrity}`}>
-            {integrity === 'ok' ? '접수 원본과 일치' : integrity === 'changed' ? '접수 후 내용이 바뀌었어요' : '원본 확인 중'}
+            {integrity === 'ok' ? '접수 원본과 일치' : integrity === 'changed' ? '접수 후 내용이 바뀌었어요' : integrity === 'legacy' ? '기존 접수 건 · 현재 내용 기준' : '원본 확인 중'}
           </span>
-          <p>이 신청서는 AUDENIQ STUDIO에서 전자서명으로 작성됐어요. 문서 확인 코드는 신청 내용과 서명으로 계산돼, 내용이 바뀌면 달라져요.</p>
+          <p>{issued
+            ? '이 신청서는 AUDENIQ STUDIO에서 전자서명으로 작성됐어요. 문서 확인 코드는 신청 내용과 서명으로 계산돼, 내용이 바뀌면 달라져요.'
+            : '이 신청서는 기존 접수 기록으로 다시 발급됐어요. 문서 확인 코드는 현재 발매 정보 기준이에요.'}</p>
         </footer>
       </article>
     </div>

@@ -88,9 +88,10 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
     }
 }
 
-/// React Studio build (`bun run build:edge` → web/studio/edge-dist/connected).
-/// Only the SPA shell and its hashed assets are exposed.
-const STUDIO_BASE: &str = "/connected/";
+/// React Studio build (`bun run build:edge` → web/studio/edge-dist), served
+/// at the site root. Only the SPA shell, its hashed assets and static files
+/// are exposed.
+const STUDIO_BASE: &str = "/";
 
 enum StaticRoute {
     Asset(&'static str),
@@ -100,15 +101,16 @@ enum StaticRoute {
 
 fn static_route(path: &str) -> StaticRoute {
     match path {
-        "/connected/" => StaticRoute::Asset("no-cache"),
-        _ if path.starts_with("/connected/assets/") => {
+        "/" => StaticRoute::Asset("no-cache"),
+        "/favicon.ico" | "/robots.txt" => StaticRoute::Asset("public, max-age=86400"),
+        _ if path.starts_with("/assets/") => {
             StaticRoute::Asset("public, max-age=31536000, immutable")
         }
-        _ if path.starts_with("/connected/static/") => {
+        _ if path.starts_with("/static/") => {
             StaticRoute::Asset("public, max-age=86400, stale-while-revalidate=604800")
         }
-        // Hash routing keeps every screen at /connected/, so any other path is
-        // an old bookmark or a typo: send it to the app shell.
+        // Hash routing keeps every screen at /, so any other path is an old
+        // bookmark (e.g. /connected/, /studio) or a typo: send it to the shell.
         _ if path.contains('.') => StaticRoute::NotFound,
         _ => StaticRoute::Redirect,
     }
@@ -161,26 +163,24 @@ mod tests {
 
     #[test]
     fn routes_only_the_react_build() {
-        assert_eq!(cache_of("/connected/"), Some("no-cache"));
+        assert_eq!(cache_of("/"), Some("no-cache"));
         assert!(
-            cache_of("/connected/assets/index-abc.js")
+            cache_of("/assets/index-abc.js")
                 .unwrap()
                 .contains("immutable")
         );
-        assert!(cache_of("/connected/static/logo.svg").is_some());
-        assert!(matches!(static_route("/"), StaticRoute::Redirect));
-        assert!(matches!(static_route("/connected"), StaticRoute::Redirect));
-        assert!(matches!(static_route("/studio/"), StaticRoute::Redirect));
-        // legacy prototype files in web/studio/public are never served
+        assert!(cache_of("/static/AUDENIQ_Logo_Light.svg").is_some());
+        assert!(cache_of("/favicon.ico").is_some());
+        // old entry points go to the app shell
+        assert!(matches!(static_route("/connected/"), StaticRoute::Redirect));
+        assert!(matches!(static_route("/studio"), StaticRoute::Redirect));
+        // anything else with a file extension is not exposed
         assert!(matches!(static_route("/index.html"), StaticRoute::NotFound));
         assert!(matches!(
             static_route("/connected/index.html"),
             StaticRoute::NotFound
         ));
-        assert!(matches!(
-            static_route("/assets/app.js"),
-            StaticRoute::NotFound
-        ));
+        assert!(matches!(static_route("/404.html"), StaticRoute::NotFound));
     }
 
     #[test]
