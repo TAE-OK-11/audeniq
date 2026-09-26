@@ -247,7 +247,15 @@ export default {
     const r = route(request.method, url.pathname);
     if (r) return handleContent(request, env, r);
     if (url.pathname.startsWith('/api/')) return error(404, 'NOT_FOUND');
-    // 그 외는 정적 에셋 (없는 화면 경로는 wrangler.jsonc의 SPA 설정으로 index.html)
-    return env.ASSETS.fetch(request);
+    // 그 외는 정적 에셋. 없는 화면 경로(/login, /notices/abc)는 wrangler.jsonc의 SPA 설정이
+    // index.html로 답하지만, 설정이 빠지거나 Worker가 먼저 불린 경우를 위해 여기서도 한 번 더 받는다.
+    const res = await env.ASSETS.fetch(request);
+    if (res.status !== 404 || /\.[a-z0-9]+$/i.test(url.pathname) || !['GET', 'HEAD'].includes(request.method)) return res;
+    const index = await env.ASSETS.fetch(new Request(new URL('/', request.url), request));
+    if (!index.ok) return res;
+    // 에셋 응답의 보안 헤더(_headers의 CSP 등)는 그대로 두고 캐시만 끈다
+    const headers = new Headers(index.headers);
+    headers.set('Cache-Control', 'no-cache');
+    return new Response(index.body, { status: 200, headers });
   },
 };
