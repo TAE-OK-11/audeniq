@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from '../lib/router';
 import { useToast } from '../components/Toast';
 import { Modal } from '../components/Modal';
+import { SignaturePad, type SignaturePadHandle } from '../components/SignaturePad';
 import { useConfirm } from '../components/Confirm';
 import { useProgressFill } from '../hooks/useAnimations';
 import { api, type ReleasePayload } from '../api/client';
@@ -200,12 +201,21 @@ function DocAttach({ id, label, fileName, onSelect, required, help }: {
   );
 }
 
+const certSvg = (d: string) => (
+  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d} /></svg>
+);
+const CERT_METHODS: { key: string; label: string; sub: string; icon: React.ReactNode }[] = [
+  { key: 'camera', label: '직접 촬영', sub: '카메라로 찍기', icon: certSvg('M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Zm8 9a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z') },
+  { key: 'pdf', label: 'PDF 선택', sub: '파일에서 고르기', icon: certSvg('M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Zm0 0v5h5M9 13h6M9 17h4') },
+  { key: 'wallet', label: '전자문서지갑', sub: '연동 준비 중', icon: certSvg('M3 7a2 2 0 0 1 2-2h13v4M3 7v10a2 2 0 0 0 2 2h15V9H5a2 2 0 0 1-2-2Zm13 7h.01') },
+];
+
 function GuardianConsentModal({ guardianName, onClose, onComplete }: {
   guardianName: string;
   onClose: () => void;
   onComplete: (certName: string, certMethod: string) => void;
 }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const padRef = useRef<SignaturePadHandle>(null);
   const [signed, setSigned] = useState(false);
   const [certName, setCertName] = useState('');
   const [certMethod, setCertMethod] = useState('');
@@ -213,130 +223,76 @@ function GuardianConsentModal({ guardianName, onClose, onComplete }: {
   const cameraRef = useRef<HTMLInputElement>(null);
   const pdfRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ratio = Math.min(2, window.devicePixelRatio || 1);
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = Math.max(1, Math.round(rect.width * ratio));
-    canvas.height = Math.max(1, Math.round(rect.height * ratio));
-    const ctx = canvas.getContext('2d')!;
-    ctx.scale(ratio, ratio);
-    ctx.lineWidth = 2.5;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = '#1c2740';
-  }, []);
-
-  const pos = (e: React.PointerEvent) => {
-    const r = canvasRef.current!.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  const pick = (method: string) => {
+    if (method === 'camera') cameraRef.current?.click();
+    else if (method === 'pdf') pdfRef.current?.click();
+    else { setCertMethod('wallet'); setCertName('전자문서지갑에서 가져옴'); }
   };
-  const drawing = useRef(false);
-  const startDraw = (e: React.PointerEvent) => {
-    if (e.button !== 0 && e.pointerType === 'mouse') return;
-    e.preventDefault();
-    drawing.current = true;
-    canvasRef.current!.setPointerCapture(e.pointerId);
-    const p = pos(e);
-    const ctx = canvasRef.current!.getContext('2d')!;
-    ctx.beginPath();
-    ctx.moveTo(p.x, p.y);
-  };
-  const moveDraw = (e: React.PointerEvent) => {
-    if (!drawing.current) return;
-    const p = pos(e);
-    const ctx = canvasRef.current!.getContext('2d')!;
-    ctx.lineTo(p.x, p.y);
-    ctx.stroke();
-    setSigned(true);
-  };
-  const endDraw = () => { drawing.current = false; };
-  const clearSign = () => {
-    const canvas = canvasRef.current!;
-    const ctx = canvas.getContext('2d')!;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    setSigned(false);
+  const onFile = (method: string) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (f) { setCertMethod(method); setCertName(f.name); }
+    e.target.value = '';
   };
 
-  const pickCert = (method: string, name: string) => {
-    setCertMethod(method);
-    setCertName(name);
-  };
-
-  const canComplete = signed && certName && ack;
+  const missing = !ack ? '동의 항목을 체크해 주세요.' : !signed ? '법정대리인 서명을 입력해 주세요.' : !certName ? '가족관계증명서를 제출해 주세요.' : '';
 
   return (
-    <Modal title="법정대리인 동의" onClose={onClose} dismissible={false}>
-        <div className="guardian-modal-body">
-          <p className="guardian-consent-text">
-            미성년 아티스트의 음원 발매에 대해 법정대리인
-            {guardianName ? <strong> {guardianName}</strong> : ''}님의 동의를 확인합니다.
-            아래 내용을 확인하고 서명해 주세요.
-          </p>
-          <label className="check-line">
-            <input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} />
-            <span>미성년자의 음원 발매 및 배급에 법정대리인으로서 동의합니다.<small>동의 내용은 발매 심사 시 확인돼요.</small></span>
-          </label>
-          <div className="field" style={{ marginTop: 16 }}>
-            <label>법정대리인 전자서명 <span className="required">*</span></label>
-            <div className="sign-pad-wrap">
-              <canvas
-                ref={canvasRef} className="sign-pad" style={{ touchAction: 'none' }}
-                aria-label="법정대리인 서명 입력"
-                onPointerDown={startDraw} onPointerMove={moveDraw}
-                onPointerUp={endDraw} onPointerCancel={endDraw}
-              />
-              {!signed && <span className="sign-pad-hint">여기에 서명해 주세요.</span>}
+    <Modal title="법정대리인 동의" onClose={onClose} dismissible={false} modalClass="aq-guardian-mode">
+      <div className="guardian-modal-body">
+        <p className="guardian-consent-text">
+          미성년 아티스트의 음원 발매에 대해 법정대리인{guardianName ? <strong> {guardianName}</strong> : ''}님의 동의를 확인해요.
+          아래 순서대로 진행해 주세요.
+        </p>
+
+        <ol className="aq-guardian-steps">
+          <li className={ack ? 'is-done' : ''}>
+            <span className="aq-guardian-no" aria-hidden="true">{ack ? '✓' : 1}</span>
+            <label className="aq-guardian-agree">
+              <input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} />
+              <span>미성년자의 음원 발매와 배급에 법정대리인으로서 동의해요.<small>동의 내용은 발매 심사 때 확인돼요.</small></span>
+            </label>
+          </li>
+          <li className={signed ? 'is-done' : ''}>
+            <span className="aq-guardian-no" aria-hidden="true">{signed ? '✓' : 2}</span>
+            <div className="min-0">
+              <strong className="aq-guardian-label">법정대리인 전자서명 <span className="required">*</span></strong>
+              <SignaturePad ref={padRef} id="aqGuardianPad" label="법정대리인 서명 입력" height={170} onChange={setSigned} />
             </div>
-            <button type="button" className="link-btn" onClick={clearSign} style={{ marginTop: 8 }}>서명 지우기</button>
-          </div>
-          <div className="field" style={{ marginTop: 16 }}>
-            <label>가족관계증명서 <span className="required">*</span></label>
-            <div className="cert-methods">
-              <button type="button" className={`cert-method${certMethod === 'camera' ? ' active' : ''}`} onClick={() => cameraRef.current?.click()}>
-                <span className="cert-icon">📷</span>
-                <span>직접 촬영</span>
-              </button>
-              <button type="button" className={`cert-method${certMethod === 'pdf' ? ' active' : ''}`} onClick={() => pdfRef.current?.click()}>
-                <span className="cert-icon">📄</span>
-                <span>PDF 선택</span>
-              </button>
-              <button type="button" className={`cert-method${certMethod === 'wallet' ? ' active' : ''}`} onClick={() => pickCert('wallet', '전자문서지갑에서 가져옴')}>
-                <span className="cert-icon">👛</span>
-                <span>전자문서지갑</span>
-              </button>
+          </li>
+          <li className={certName ? 'is-done' : ''}>
+            <span className="aq-guardian-no" aria-hidden="true">{certName ? '✓' : 3}</span>
+            <div className="min-0">
+              <strong className="aq-guardian-label">가족관계증명서 <span className="required">*</span></strong>
+              <div className="aq-cert-methods" role="radiogroup" aria-label="가족관계증명서 제출 방법">
+                {CERT_METHODS.map(m => (
+                  <button
+                    key={m.key} type="button" role="radio" aria-checked={certMethod === m.key}
+                    className={`aq-cert-method${certMethod === m.key ? ' is-active' : ''}`}
+                    onClick={() => pick(m.key)}
+                  >
+                    <span className="aq-cert-icon">{m.icon}</span>
+                    <strong>{m.label}</strong>
+                    <small>{m.sub}</small>
+                  </button>
+                ))}
+              </div>
+              <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={onFile('camera')} />
+              <input ref={pdfRef} type="file" accept=".pdf,application/pdf" hidden onChange={onFile('pdf')} />
+              {certName && (
+                <p className="aq-cert-picked">
+                  <span aria-hidden="true">✓</span> {certName}
+                  {certMethod === 'wallet' && <small>전자문서지갑 연동 후 원본을 가져와요. 지금은 선택 상태로 저장돼요.</small>}
+                </p>
+              )}
             </div>
-            <input
-              ref={cameraRef} type="file" accept="image/*" capture="environment"
-              style={{ display: 'none' }}
-              onChange={e => {
-                const f = e.target.files?.[0];
-                if (f) pickCert('camera', f.name);
-              }}
-            />
-            <input
-              ref={pdfRef} type="file" accept=".pdf,application/pdf"
-              style={{ display: 'none' }}
-              onChange={e => {
-                const f = e.target.files?.[0];
-                if (f) pickCert('pdf', f.name);
-              }}
-            />
-            {certName && <p className="help" style={{ marginTop: 8 }}>선택됨 · {certName}</p>}
-            {certMethod === 'wallet' && (
-              <p className="help" style={{ marginTop: 8 }}>전자문서지갑 연동 후 가져올 수 있어요. 현재는 선택 상태로 저장돼요.</p>
-            )}
-          </div>
-        </div>
-        <div className="aq-modal-foot">
-          <button type="button" className="button secondary" onClick={onClose}>취소</button>
-          <button
-            type="button" className="button"
-            disabled={!canComplete}
-            onClick={() => onComplete(certName, certMethod)}
-          >동의 완료</button>
-        </div>
+          </li>
+        </ol>
+      </div>
+      <div className="aq-modal-foot aq-guardian-foot">
+        <p className="aq-guardian-missing" aria-live="polite">{missing}</p>
+        <button type="button" className="button secondary" onClick={onClose}>취소</button>
+        <button type="button" className="button" disabled={!!missing} onClick={() => onComplete(certName, certMethod)}>동의 완료</button>
+      </div>
     </Modal>
   );
 }
