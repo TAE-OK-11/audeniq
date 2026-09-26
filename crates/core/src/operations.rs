@@ -588,6 +588,21 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
             }
         }
     }
+    if j.kind == "delivery.stage" {
+        let package_id = j
+            .payload
+            .get("package_id")
+            .and_then(Value::as_str)
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .ok_or(Error::Internal)?;
+        return match crate::delivery_staging::stage_package(pool, package_id).await {
+            Ok(_) => succeed(pool, j).await,
+            Err(e) => {
+                let short: String = format!("{e:?}").chars().take(500).collect();
+                fail(pool, j, false, &format!("DELIVERY_STAGE_ERROR:{short}")).await
+            }
+        };
+    }
     if j.kind == "delivery.enqueue" {
         // F5: fan out one delivery.send per eligible partner for a frozen package.
         let package_id = j

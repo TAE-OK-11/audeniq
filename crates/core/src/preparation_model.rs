@@ -236,13 +236,21 @@ impl PreparedRelease {
             });
         }
 
-        let draft: Value =
-            sqlx::query_scalar("SELECT draft FROM catalog.releases WHERE org_id=$1 AND id=$2")
-                .bind(c.org_id)
-                .bind(c.release_id)
-                .fetch_optional(pool)
-                .await?
-                .ok_or(Error::NotFound)?;
+        // Release metadata comes from the submitted revision (frozen, what
+        // Stage 1/2 reviewed), never the live draft: the delivered message
+        // must describe exactly the reviewed application. Revisions without a
+        // frozen draft (hand-built fixtures) fall back to the release row.
+        let draft: Value = sqlx::query_scalar(
+            "SELECT COALESCE(NULLIF(ar.body -> 'release' -> 'draft', 'null'::jsonb), r.draft)
+             FROM catalog.application_revisions ar
+             JOIN catalog.releases r ON r.org_id=ar.org_id AND r.id=ar.release_id
+             WHERE ar.org_id=$1 AND ar.id=$2",
+        )
+        .bind(c.org_id)
+        .bind(c.revision_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(Error::NotFound)?;
         let release_date_raw =
             draft_field(&draft, "release_date", "PREPARATION_RELEASE_DATE_MISSING")?;
         let release_date = NaiveDate::parse_from_str(&release_date_raw, "%Y-%m-%d")

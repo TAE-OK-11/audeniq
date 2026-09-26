@@ -9,6 +9,7 @@
 // - 접수 = 동의(consent) 생성 → submit(동의 ID, 자기 선언)
 import type {
   Correction,
+  DeliveryItem,
   DraftTrack, Org, PreflightIssue, Release, ReleaseDetail, ReleaseDraft, ReleasePayload,
   SaveResult, Track, UploadKind, UploadResult, User,
 } from './types';
@@ -350,11 +351,20 @@ async function syncTracks(release: ServerRelease, tracks: DraftTrack[], artistId
 function detailPath(id: string) { return orgPath(`/releases/${encodeURIComponent(id)}`); }
 
 interface ServerCheck { check_code: string; status: string; severity?: string; detail?: string | null }
+interface ServerNote { check_code: string | null; decision: string; note: string }
 
 /** 보완 필요 발매의 검사 결과 중 사용자가 고쳐야 하는 항목 (접수 이력의 check_results) */
 async function fetchCorrections(id: string): Promise<Correction[]> {
   try {
-    const r = await req<{ checks?: ServerCheck[] }>(`${detailPath(id)}/submission`, { quiet401: true });
+    const r = await req<{ checks?: ServerCheck[]; review_notes?: ServerNote[] }>(`${detailPath(id)}/submission`, { quiet401: true });
+    // 담당자가 남긴 검토 의견: 항목별 의견은 그 항목 안내 대신, 전체 의견은 별도 항목으로
+    const notes = new Map<string, string>();
+    let general = '';
+    for (const n of r.review_notes ?? []) {
+      if (!n.note?.trim()) continue;
+      if (n.check_code) notes.set(n.check_code, n.note.trim());
+      else general = n.note.trim();
+    }
     const seen = new Set<string>();
     const out: Correction[] = [];
     for (const c of r.checks ?? []) {
@@ -365,8 +375,10 @@ async function fetchCorrections(id: string): Promise<Correction[]> {
       if (seen.has(key)) continue;
       seen.add(key);
       // detail은 내부 기록용이라 화면에는 코드별 안내 문구를 쓴다
-      out.push(trackId ? { code: c.check_code, message: '', trackId } : { code: c.check_code, message: '' });
+      const message = notes.get(c.check_code) ?? '';
+      out.push(trackId ? { code: c.check_code, message, trackId } : { code: c.check_code, message });
     }
+    if (general) out.push({ code: 'REVIEW_NOTE', message: general });
     return out;
   } catch {
     return [];
@@ -476,6 +488,11 @@ export const remoteApi = {
   },
   async getRelease(id: string): Promise<ReleaseDetail> {
     return withCorrections(toDetail(await fetchRelease(id)));
+  },
+  /** 플랫폼별 배급 진행 (3단계 이후 준비된 패키지 기준, 없으면 빈 목록) */
+  async getDelivery(id: string): Promise<DeliveryItem[]> {
+    const r = await req<{ items: DeliveryItem[] }>(`${detailPath(id)}/delivery`, { quiet401: true });
+    return r.items ?? [];
   },
   async saveDraft(id: string | null, data: ReleasePayload): Promise<SaveResult> {
     const rel = await persist(id, data, id ? null : '임시 저장 시작');
