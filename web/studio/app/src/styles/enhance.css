@@ -39,7 +39,6 @@ img{max-width:100%}
 @keyframes aq-shake{0%,100%{transform:none}20%{transform:translateX(-6px)}40%{transform:translateX(5px)}60%{transform:translateX(-3px)}80%{transform:translateX(2px)}}
 @keyframes aq-spin{to{transform:rotate(360deg)}}
 @keyframes aq-float{0%,100%{transform:translate3d(0,0,0)}50%{transform:translate3d(0,-12px,0)}}
-@keyframes aq-pulse-ring{0%{box-shadow:0 0 0 0 rgba(104,82,186,.35)}70%{box-shadow:0 0 0 7px rgba(104,82,186,0)}100%{box-shadow:0 0 0 0 rgba(104,82,186,0)}}
 @keyframes aq-grow-y{from{transform:scaleY(0)}to{transform:scaleY(1)}}
 @keyframes aq-grow-x{from{transform:scaleX(0)}to{transform:scaleX(1)}}
 @keyframes aq-draw{from{stroke-dashoffset:40}to{stroke-dashoffset:0}}
@@ -178,8 +177,6 @@ img{max-width:100%}
 
 /* ---------- 상태 칩 ---------- */
 .status-chip{transition:background-color .3s,color .3s}
-.status-chip.review::before,.status-chip.needs::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0}
-.status-chip.review::before{animation:aq-pulse-ring 1.8s ease-out infinite}
 .status-chip.pending{background:#EAF0FF!important;color:#365cd4!important}
 
 /* ---------- 버튼 ---------- */
@@ -531,7 +528,6 @@ body:has(.aq-payout-setup-mode) .aq-toast-stack{bottom:calc(104px + env(safe-are
 .aq-sign-check{padding-top:4px!important}
 .aq-sign-wait{display:flex;flex-direction:column;align-items:center;text-align:center;padding:22px 6px 8px;animation:aq-fade-up .45s var(--aq-e-ease) both}
 .aq-sign-wait-icon{display:grid;place-items:center;width:58px;height:58px;border-radius:50%;background:#F0EDFF;color:#6852BA;margin-bottom:16px}
-.aq-sign-wait-icon svg path{transform-origin:12px 12px;animation:aq-spin 6s linear infinite}
 .aq-sign-wait strong{font-size:18px;letter-spacing:-.03em;color:var(--aq-e-ink)}
 .aq-sign-wait>p{margin-top:8px;font-size:13px;line-height:1.7;color:#6f7b8e;max-width:360px}
 .aq-sign-wait-steps{list-style:none;margin:22px 0 4px;padding:16px;width:100%;display:grid;gap:10px;background:#f5f8ff;border-radius:20px;text-align:left}
@@ -540,7 +536,7 @@ body:has(.aq-payout-setup-mode) .aq-toast-stack{bottom:calc(104px + env(safe-are
 .aq-sign-wait-steps li.is-done{color:#4c5a74}
 .aq-sign-wait-steps li.is-done span{background:var(--aq-e-blue);color:#fff}
 .aq-sign-wait-steps li.is-current{color:#6852BA}
-.aq-sign-wait-steps li.is-current span{background:#6852BA;color:#fff;animation:aq-pulse-ring 1.8s ease-out infinite}
+.aq-sign-wait-steps li.is-current span{background:#6852BA;color:#fff}
 .aq-sign-wait-demo{margin-top:14px!important;font-size:12px!important;color:#98a2b3!important}
 .aq-sign-foot .aq-sign-full{grid-column:1/-1}
 @media(prefers-reduced-motion:reduce){.aq-sign-wait-icon svg path{animation:none}}
@@ -635,3 +631,6 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 .aq-guardian-missing{grid-column:1/-1;margin:0 0 2px;font-size:12px;color:#8591a5;text-align:center}
 .aq-guardian-missing:empty{display:none}
 @media(max-width:380px){.aq-cert-method small{display:none}.aq-guardian-steps>li{padding:14px 12px;gap:10px}}
+
+/* 상태 표시는 모두 '발매 완료'와 같은 글자 pill로 통일 (앞의 점·깜빡임 없음) */
+.status-chip::before,.status-chip::after{content:none!important;display:none!important}
