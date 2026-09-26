@@ -48,6 +48,10 @@ Migrations are forward-only. Re-running `audeniq-migrate` is idempotent via SQLx
 
 No remote deployment or cloud account change is performed by this repository's build/test commands. GitHub Actions runs only after an authorized push. It runs tests against disposable PostgreSQL, not real customer infrastructure.
 
+## Distribution staging and staff portal
+
+Every platform is addressed by an internal code (`D-1`…`D-11`). After Stage 3, each requested platform gets a staged delivery (spec checks, the exact DDEX ERN it would receive, partner blockers) that staff approve through `/api/staff/*` before E-0 may send. Real sends still require a signed, onboarded partner. See [distribution staging](docs/DISTRIBUTION_STAGING.md) and the staff section of the [API contract](docs/API.md). Grant staff roles with `audeniq-admin --operator NAME staff grant EMAIL REVIEWER`.
+
 ## Connected Studio and rented-server deployment
 
 The connected frontend now has a Rust/WASM client in `crates/studio`. Build it using [the Studio deployment guide](docs/STUDIO_DEPLOYMENT.md); serve its generated assets through the Rust Worker in `crates/edge`. The original Studio prototype remains preserved but is not the connected deployment entry point. Landing/survey remain unchanged.

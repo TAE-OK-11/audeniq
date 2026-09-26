@@ -79,6 +79,10 @@ pub fn router(s: AppState) -> Router {
             put(replace_credits),
         )
         .route("/api/orgs/{org}/releases/{id}/preflight", get(preflight))
+        .route(
+            "/api/orgs/{org}/releases/{id}/delivery",
+            get(delivery_status),
+        )
         .route("/api/orgs/{org}/releases/{id}/presubmit", get(presubmit))
         .route(
             "/api/orgs/{org}/releases/{id}/consents",
@@ -108,6 +112,7 @@ pub fn router(s: AppState) -> Router {
             get(detail).put(update).delete(archive),
         )
         .merge(crate::portal::routes())
+        .merge(crate::staff::routes())
         .fallback(|| async { Error::NotFound.into_response() })
         .layer(DefaultBodyLimit::max(64 * 1024))
         .layer(middleware::from_fn_with_state(s.clone(), boundary))
@@ -410,6 +415,20 @@ async fn preflight(
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
     Ok(Json(drafts::preflight(&s, &a, org, release).await?))
+}
+/// Per-DSP delivery status of the release's latest staged package.
+async fn delivery_status(
+    State(s): State<AppState>,
+    Path((org, release)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    let mut tx = s.pool.begin().await?;
+    auth::authorize(&mut tx, &a, org, release, "release", false).await?;
+    tx.commit().await?;
+    Ok(Json(
+        crate::delivery_staging::release_delivery_view(&s.pool, org, release).await?,
+    ))
 }
 async fn sessions(
     State(s): State<AppState>,

@@ -32,7 +32,14 @@ mod drift_tests {
     #[test]
     fn database_edges_match_rust_contract() {
         let contract = super::state_contract();
-        let ddl = include_str!("../../../migrations/0002_state_contract.sql");
+        // Edges are added by later forward-only migrations too; the DB set is
+        // their union and must equal the Rust contract exactly.
+        let ddl = [
+            include_str!("../../../migrations/0002_state_contract.sql"),
+            include_str!("../../../migrations/0032_recoverable_corrections.sql"),
+            include_str!("../../../migrations/0044_staff_portal.sql"),
+        ]
+        .concat();
         let edges = contract["transitions"].as_array().unwrap();
         assert_eq!(
             ddl.matches("INSERT INTO operations.allowed_transitions")
@@ -48,7 +55,7 @@ mod drift_tests {
                 .iter()
                 .find(|(_, values)| values.as_array().unwrap().iter().any(|v| v == old))
                 .unwrap();
-            let expected = format!("VALUES ('{axis}','{old}','{next}');");
+            let expected = format!("VALUES ('{axis}','{old}','{next}')");
             assert!(ddl.contains(&expected), "missing DB edge: {expected}");
         }
     }
@@ -114,10 +121,40 @@ pub fn contract_schema(name: &str) -> Option<Value> {
 }
 /// SHA-256 of deterministically key-sorted JSON. Versioned internal canonical format, not an assertion of JCS.
 pub fn digest(value: &Value) -> String {
-    use sha2::{Digest, Sha256};
-    hex::encode(Sha256::digest(
-        serde_json::to_vec(value).expect("json value"),
-    ))
+    sha256_json(value)
+}
+
+/// `io::Write` sink that feeds bytes straight into SHA-256.
+struct HashWriter(sha2::Sha256);
+impl std::io::Write for HashWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        sha2::Digest::update(&mut self.0, buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Hex SHA-256 of `serde_json::to_string(value)` without building the
+/// string: the serializer streams into the hasher (packages and snapshots
+/// are hashed on every freeze and every delivery attempt).
+pub fn sha256_json<T: Serialize + ?Sized>(value: &T) -> String {
+    use sha2::Digest;
+    let mut w = HashWriter(sha2::Sha256::new());
+    serde_json::to_writer(&mut w, value).expect("json serializes");
+    hex::encode(w.0.finalize())
+}
+
+#[cfg(test)]
+mod hash_tests {
+    #[test]
+    fn streamed_hash_equals_buffered_hash() {
+        use sha2::{Digest, Sha256};
+        let v = serde_json::json!({"b": [1, 2, {"c": "한글"}], "a": null, "z": 1.5});
+        let buffered = hex::encode(Sha256::digest(serde_json::to_string(&v).unwrap()));
+        assert_eq!(super::sha256_json(&v), buffered);
+    }
 }
 pub fn validate_package(name: &str, body: &Value) -> Result<()> {
     let schema = contract_schema(name).ok_or(Error::Invalid)?;

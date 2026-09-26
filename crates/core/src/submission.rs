@@ -601,34 +601,47 @@ pub async fn submission_status(s: &AppState, a: &Actor, org: Uuid, release: Uuid
         .bind(org).bind(release).fetch_optional(&mut *tx).await?.ok_or(Error::NotFound)?;
     let status: String = rel.get("status");
     let rev_id: Option<Uuid> = rel.get("current_revision_id");
+    let mut review_notes: Vec<Value> = Vec::new();
     let (revision, checks, package, verification) = match rev_id {
         Some(rid) => {
             let rev = sqlx::query("SELECT revision, body_hash FROM catalog.application_revisions WHERE org_id=$1 AND id=$2")
                 .bind(org).bind(rid).fetch_optional(&mut *tx).await?;
-            let checks = sqlx::query("SELECT check_code, rule_version, status, result_hash, detail, created_at FROM operations.check_results WHERE revision_id=$1 ORDER BY created_at, check_code")
-                .bind(rid).fetch_all(&mut *tx).await?;
+            // A reviewer override (staff or member) replaces the check's
+            // effective status; the recorded result itself never changes.
+            let checks = sqlx::query("SELECT c.check_code, c.rule_version, c.status, c.result_hash, c.detail, c.created_at,
+                    (SELECT o.proposed_status FROM rights.review_overrides o WHERE o.org_id=$2 AND o.revision_id=c.revision_id AND o.check_code=c.check_code AND (o.expires_at IS NULL OR o.expires_at>now()) ORDER BY o.created_at DESC, o.id DESC LIMIT 1) AS overridden
+                 FROM operations.check_results c WHERE c.revision_id=$1 ORDER BY c.created_at, c.check_code")
+                .bind(rid).bind(org).fetch_all(&mut *tx).await?;
+            let notes: Vec<Value> = sqlx::query_scalar("SELECT jsonb_build_object('check_code',check_code,'decision',decision,'note',note,'at',created_at) FROM rights.review_notes WHERE org_id=$1 AND revision_id=$2 AND note<>'' ORDER BY created_at")
+                .bind(org).bind(rid).fetch_all(&mut *tx).await?;
+            review_notes = notes;
             let pkg = sqlx::query("SELECT id, package_hash, rule_version FROM distribution.validation_packages WHERE org_id=$1 AND revision_id=$2")
                 .bind(org).bind(rid).fetch_optional(&mut *tx).await?;
             let ver = sqlx::query("SELECT id, package_hash, rights_epoch, body->>'decision' AS decision, body->'approved_scope' AS approved_scope FROM distribution.verification_packages WHERE org_id=$1 AND revision_id=$2")
                 .bind(org).bind(rid).fetch_optional(&mut *tx).await?;
             (
                 rev.map(|r| json!({"id": rid, "revision": r.get::<i32,_>("revision"), "body_hash": r.get::<String,_>("body_hash")})),
-                checks.iter().map(|c| json!({
-                    "check_code": c.get::<String,_>("check_code"),
-                    "rule_version": c.get::<String,_>("rule_version"),
-                    "status": c.get::<String,_>("status"),
-                    "result_hash": c.get::<String,_>("result_hash"),
-                    "detail": c.get::<Option<String>,_>("detail"),
-                    // REVIEW_REQUIRED is either an advisory WARNING or a HOLD
-                    // that keeps the release in review (docs/REVIEW_OVERRIDES.md).
-                    "severity": match c.get::<String,_>("status").as_str() {
-                        "PASS" | "NOT_APPLICABLE" => "NONE",
-                        "REVIEW_REQUIRED" => crate::review::stage1_review_severity(&c.get::<String,_>("check_code")),
-                        "CORRECTION_REQUIRED" => "CORRECTION",
-                        "BLOCKED" => "HOLD",
-                        _ => "OTHER",
-                    },
-                })).collect::<Vec<_>>(),
+                checks.iter().map(|c| {
+                    let status: String = c.get("status");
+                    let effective = c.get::<Option<String>,_>("overridden").unwrap_or_else(|| status.clone());
+                    json!({
+                        "check_code": c.get::<String,_>("check_code"),
+                        "rule_version": c.get::<String,_>("rule_version"),
+                        "status": status,
+                        "effective_status": effective,
+                        "result_hash": c.get::<String,_>("result_hash"),
+                        "detail": c.get::<Option<String>,_>("detail"),
+                        // REVIEW_REQUIRED is either an advisory WARNING or a HOLD
+                        // that keeps the release in review (docs/REVIEW_OVERRIDES.md).
+                        "severity": match effective.as_str() {
+                            "PASS" | "NOT_APPLICABLE" => "NONE",
+                            "REVIEW_REQUIRED" => crate::review::stage1_review_severity(&c.get::<String,_>("check_code")),
+                            "CORRECTION_REQUIRED" => "CORRECTION",
+                            "BLOCKED" => "HOLD",
+                            _ => "OTHER",
+                        },
+                    })
+                }).collect::<Vec<_>>(),
                 pkg.map(|p| json!({"id": p.get::<Uuid,_>("id"), "package_hash": p.get::<String,_>("package_hash"), "rule_version": p.get::<String,_>("rule_version")})),
                 ver.map(|v| json!({
                     "id": v.get::<Uuid,_>("id"),
@@ -649,6 +662,7 @@ pub async fn submission_status(s: &AppState, a: &Actor, org: Uuid, release: Uuid
         "checks": checks,
         "validation_package": package,
         "verification_package": verification,
+        "review_notes": review_notes,
     }))
 }
 

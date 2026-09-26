@@ -1,4 +1,4 @@
-import{d as e,f as t,n,p as r,u as i}from"./router-BIAOtr7c.js";import{o as a}from"./date-BzpewfDX.js";import{a as o,n as s,o as c}from"./index-C3LWjLc8.js";import{t as l}from"./useAsync-D-9TroLt.js";var u=r(),d=t(),f=[{id:`n1`,title:`AUDENIQ STUDIO 정식 서비스 안내`,date:`2026-09-26`,pinned:!0,body:`AUDENIQ STUDIO가 정식 서비스를 시작합니다.
+import{d as e,f as t,n,p as r,u as i}from"./router-BIAOtr7c.js";import{o as a}from"./date-BzpewfDX.js";import{a as o,n as s,o as c}from"./index-D1S-_zib.js";import{t as l}from"./useAsync-D-9TroLt.js";var u=r(),d=t(),f=[{id:`n1`,title:`AUDENIQ STUDIO 정식 서비스 안내`,date:`2026-09-26`,pinned:!0,body:`AUDENIQ STUDIO가 정식 서비스를 시작합니다.
 
 이제 발매 접수부터 정산 확인까지 모든 과정을 스튜디오에서 진행할 수 있어요.
 
