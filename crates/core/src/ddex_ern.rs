@@ -43,6 +43,7 @@ use crate::{
     error::{Error, Result},
     preparation_model::{AssetRef, PreparedRelease},
 };
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 pub const DDEX_ERN_382_NAMESPACE: &str = "http://ddex.net/xml/ern/382";
@@ -99,6 +100,49 @@ fn escaped(s: &str) -> String {
 
 fn element(out: &mut String, name: &str, value: impl std::fmt::Display) {
     out.push_str(&format!("<{name}>{}</{name}>", escaped(&value.to_string())));
+}
+
+/// NFC-normalize the human-text fields of a release.
+///
+/// Returns a borrow when every field is already NFC (the common case) and
+/// an owned normalized copy otherwise, so the hot path never allocates.
+fn normalize_nfc(prepared: &PreparedRelease) -> Cow<'_, PreparedRelease> {
+    use unicode_normalization::UnicodeNormalization;
+
+    let dirty = |s: &str| !unicode_normalization::is_nfc(s);
+    let release_dirty = [
+        &prepared.title,
+        &prepared.artist,
+        &prepared.p_line,
+        &prepared.c_line,
+    ]
+    .iter()
+    .any(|s| dirty(s));
+    let tracks_dirty = prepared
+        .tracks
+        .iter()
+        .any(|t| dirty(&t.title) || dirty(&t.artist) || dirty(&t.version));
+    if !release_dirty && !tracks_dirty {
+        return Cow::Borrowed(prepared);
+    }
+    let nfc = |s: &str| -> String {
+        if dirty(s) {
+            s.nfc().collect()
+        } else {
+            s.to_string()
+        }
+    };
+    let mut out = prepared.clone();
+    out.title = nfc(&prepared.title);
+    out.artist = nfc(&prepared.artist);
+    out.p_line = nfc(&prepared.p_line);
+    out.c_line = nfc(&prepared.c_line);
+    for (dst, src) in out.tracks.iter_mut().zip(prepared.tracks.iter()) {
+        dst.title = nfc(&src.title);
+        dst.artist = nfc(&src.artist);
+        dst.version = nfc(&src.version);
+    }
+    Cow::Owned(out)
 }
 
 fn attr(name: &str, value: &str) -> String {
@@ -492,6 +536,18 @@ fn deal_list(out: &mut String, c: &DdexErnConfig) {
 pub fn generate_ddex_ern_382(prepared: &PreparedRelease, config: &DdexErnConfig) -> Result<String> {
     validate_metadata(prepared)?;
     validate_config(config)?;
+    // Canonicalize human-text fields to Unicode NFC before generating.
+    // Korean metadata in particular may arrive NFD (decomposed Jamo) or
+    // NFC (precomposed); without normalization the same release would
+    // produce byte-different XML and different ern_sha256 rows, breaking
+    // idempotency. Identifiers (ISRC/UPC) are ASCII by validation and are
+    // left untouched. (Category from ddex-suite's determinism guarantees;
+    // implemented here with the unicode-normalization crate.)
+    let normalized;
+    let prepared: &PreparedRelease = {
+        normalized = normalize_nfc(prepared);
+        normalized.as_ref()
+    };
     let profile = if prepared.tracks.len() > 1 {
         "AudioAlbum"
     } else {

@@ -454,21 +454,63 @@ async fn persist_ddex_messages(
         return Ok(0);
     };
     let created_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
-    let deal_start = prepared.release_date.format("%Y-%m-%d").to_string();
     let mut generated = 0usize;
     for s in submissions {
-        let profile: Option<(String, Option<String>)> = sqlx::query_as(
-        "SELECT display_name, ddex_recipient_dpid FROM execution.adapter_profiles WHERE dsp_id=$1",
+        let profile: Option<(String, Option<String>, serde_json::Value)> = sqlx::query_as(
+        "SELECT display_name, ddex_recipient_dpid, capabilities FROM execution.adapter_profiles WHERE dsp_id=$1",
     )
     .bind(s.scope.dsp_id)
     .fetch_optional(&mut *tx)
     .await?;
-        let (recipient_name, recipient_dpid) = match profile {
-            Some((name, Some(dpid))) => (name, dpid),
+        let (recipient_name, recipient_dpid, capabilities) = match profile {
+            Some((name, Some(dpid), caps)) => (name, dpid, caps),
             _ => continue,
         };
+        // Per-DSP message preset (ddex-suite presets / delivery-toolkit
+        // PROFILES ideas, Rust from scratch). A malformed preset is an
+        // operator config error: skip this DSP loudly, never take down
+        // the other DSPs' messages with it.
+        let preset =
+            match crate::ddex_preset::DspMessagePreset::resolve(&recipient_name, &capabilities) {
+                Ok(p) => p,
+                Err(e) => {
+                    tracing::warn!(
+                        dsp_id = %s.scope.dsp_id,
+                        error = ?e,
+                        "invalid ddex_preset; skipping DSP"
+                    );
+                    continue;
+                }
+            };
+        let deal_start = match preset.deal_start_date(prepared.release_date) {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::warn!(
+                    dsp_id = %s.scope.dsp_id,
+                    error = ?e,
+                    "preset deal_start_offset_days out of range; skipping DSP"
+                );
+                continue;
+            }
+        };
+        let date_yyyymmdd = deal_start.format("%Y%m%d").to_string();
+        let message_id = match preset.render_message_id(
+            &package_id.to_string(),
+            &s.scope.dsp_id.to_string(),
+            &date_yyyymmdd,
+        ) {
+            Ok(id) => id,
+            Err(e) => {
+                tracing::warn!(
+                    dsp_id = %s.scope.dsp_id,
+                    error = ?e,
+                    "preset message_id_template invalid; skipping DSP"
+                );
+                continue;
+            }
+        };
         let config = ddex_ern::DdexErnConfig {
-            message_id: format!("AUDENIQ-ERN-{package_id}-{}", s.scope.dsp_id),
+            message_id,
             // Initial messages open a new thread keyed on the message id;
             // updates/takedowns (not yet generated here) must pass the
             // original thread id so the recipient can correlate them.
@@ -480,13 +522,14 @@ async fn persist_ddex_messages(
             sent_on_behalf_of: None,
             recipient_name: recipient_name.clone(),
             recipient_party_id: Some(recipient_dpid.clone()),
-            deal_start_date: deal_start.clone(),
+            deal_start_date: deal_start.format("%Y-%m-%d").to_string(),
             takedown_date: None,
         };
         // Pre-generation preflight (ddex-suite preflight categories,
         // adapted): the model and message config are validated before any
-        // XML is built. Errors fail closed; warnings are logged.
-        let preflight = ddex_validate::preflight_release(prepared, &config);
+        // XML is built. Errors fail closed; warnings are logged. The
+        // preset may escalate warnings to errors for this DSP.
+        let preflight = ddex_validate::preflight_release(prepared, &config, &preset);
         ddex_validate::gate_findings(&preflight, "DDEX_PREFLIGHT", "ERN preflight")?;
         let xml = ddex_ern::generate_ddex_ern_382(prepared, &config)?;
         // Contract-free F6 groundwork: every interchange message is proven

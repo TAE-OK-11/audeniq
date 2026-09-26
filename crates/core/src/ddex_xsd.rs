@@ -59,7 +59,11 @@ pub fn validate_ern_382_xml(xml: &str) -> Result<()> {
 
 fn run_xmllint(schema: &std::path::Path, doc: &std::path::Path) -> Result<()> {
     let mut child = Command::new("xmllint")
-        .args(["--noout", "--schema"])
+        // --nonet: never fetch external DTDs/schemas/entities over the
+        // network (ddex-suite's parser hardens the same way with
+        // allow_network=false). We only validate our own generated
+        // documents, but one flag removes the whole class.
+        .args(["--noout", "--nonet", "--schema"])
         .arg(schema)
         .arg(doc)
         .stdin(Stdio::null())
