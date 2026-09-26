@@ -640,3 +640,201 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 .aq-upload-progress>span{display:block;height:6px;border-radius:999px;background:var(--aq-e-blue-soft);overflow:hidden}
 .aq-upload-progress>span>i{display:block;height:100%;border-radius:inherit;background:var(--aq-e-blue);transition:width .3s var(--aq-e-ease)}
 .aq-upload-progress>small{font-size:12px;font-weight:600;color:var(--aq-e-muted)}
+
+/* ── 신청서(위자드) 단계 목록 · 데스크톱 2단 레이아웃 ───────────────── */
+.aq-wiz-rail{display:none}
+.aq-wiz-main{min-width:0}
+.aq-step-title{white-space:pre-line}
+.aq-wiz-rail-kicker{font-size:12px;font-weight:800;letter-spacing:.12em;color:var(--aq-e-blue);margin:0 0 14px 12px}
+.aq-wiz-steps{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.aq-wiz-steps button{display:flex;align-items:center;gap:12px;width:100%;border:0;background:transparent;padding:10px 12px;border-radius:14px;font:inherit;font-size:14px;font-weight:650;color:#98a1b3;text-align:left;cursor:pointer;transition:background-color .2s var(--aq-e-ease),color .2s var(--aq-e-ease)}
+.aq-wiz-steps button:disabled{cursor:default}
+.aq-wiz-steps li.is-done button{color:#3a4458}
+.aq-wiz-steps li.is-done button:hover{background:#f3f6fc}
+.aq-wiz-steps li.is-current button{background:var(--aq-e-blue-soft);color:var(--aq-e-blue);font-weight:780}
+.aq-wiz-step-no{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;flex:none;font-size:12px;font-weight:800;background:#eef1f6;color:#98a1b3;transition:background-color .25s var(--aq-e-ease),color .25s var(--aq-e-ease)}
+.aq-wiz-steps li.is-done .aq-wiz-step-no{background:#e3eafc;color:var(--aq-e-blue)}
+.aq-wiz-steps li.is-current .aq-wiz-step-no{background:var(--aq-e-blue);color:#fff}
+.aq-wiz-step-label{flex:1;min-width:0}
+.aq-wiz-step-fix{font-style:normal;font-size:11px;font-weight:800;color:var(--aq-e-amber);background:var(--aq-e-amber-soft);padding:3px 8px;border-radius:99px}
+.aq-wiz-summary{display:flex;gap:12px;align-items:center;margin-top:22px;padding:14px;border-radius:20px;background:#f5f8ff}
+.aq-wiz-summary img,.aq-wiz-summary-cover{width:52px;height:52px;border-radius:14px;object-fit:cover;flex:none}
+.aq-wiz-summary-cover{display:grid;place-items:center;background:linear-gradient(135deg,#e4ebff,#cdd9ff);color:var(--aq-e-blue);font-size:20px}
+.aq-wiz-summary strong{display:block;font-size:14px;font-weight:780;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-wiz-summary .min-0 span{display:block;font-size:12px;color:var(--aq-e-muted);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-wiz-rail-note{font-size:12px;line-height:1.6;color:var(--aq-e-muted);margin:14px 12px 0}
+
+@media(min-width:1024px){
+  body.wizard-mode .portal-layout{width:min(1120px,calc(100% - 64px))!important}
+  body.wizard-mode #view-new .wizard{max-width:none!important}
+  #view-new .wizard-progress{display:none!important}
+  .aq-wiz-layout{display:grid;grid-template-columns:248px minmax(0,1fr);gap:64px;align-items:start;flex:1 0 auto}
+  .aq-wiz-rail{display:block;position:sticky;top:92px;padding-top:6px;animation:aq-fade-up .45s var(--aq-e-ease) both}
+  #view-new .wizard-header h1.aq-step-title{white-space:normal;font-size:36px!important;line-height:1.25!important}
+  /* 하단 버튼: 바는 화면 전체, 버튼은 입력 영역에 맞춰 양 끝 정렬 */
+  #view-new .step-actions{padding-left:max(344px,calc(50vw - 248px))!important;padding-right:max(32px,calc(50vw - 560px))!important;justify-content:space-between!important;align-items:center}
+  #view-new .step-actions .button{flex:0 0 auto!important;width:auto!important;min-width:140px!important;padding:12px 26px!important}
+  #view-new .step-actions #wizardNext{min-width:220px!important}
+}
+
+/* ── 보완 요청 ─────────────────────────────────────────────────────── */
+.aq-fix-icon{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;flex:none;background:#fde3c6;color:var(--aq-e-amber);font-weight:900;font-size:16px}
+/* 위자드 상단 보완 패널 */
+.aq-fix-panel{background:var(--aq-e-amber-soft);border-radius:22px;padding:16px 16px 12px;margin:0 0 24px;animation:aq-fade-up .35s var(--aq-e-ease) both}
+.aq-fix-head strong{display:block;font-size:15px;font-weight:800;color:#8a4d12}
+.aq-fix-head span{display:block;font-size:12px;color:#9a6a3a;margin-top:3px}
+.aq-fix-panel ul,.aq-correction-list{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:6px}
+.aq-fix-panel li button,.aq-correction-list button{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 12px;width:100%;border:0;text-align:left;background:rgba(255,255,255,.62);border-radius:14px;padding:12px 14px;font:inherit;color:inherit;cursor:pointer;transition:background-color .2s var(--aq-e-ease),transform .2s var(--aq-e-ease)}
+.aq-fix-panel li button:hover,.aq-correction-list button:hover{background:#fff}
+.aq-fix-panel li button:active,.aq-correction-list button:active{transform:scale(.99)}
+.aq-fix-panel li.is-here button{background:#fff}
+.aq-fix-panel em,.aq-correction-where{grid-column:1;font-style:normal;font-size:12px;font-weight:800;color:var(--aq-e-amber)}
+.aq-fix-panel li span,.aq-correction-msg{grid-column:1;font-size:13px;line-height:1.55;color:#3a3f4b}
+.aq-fix-panel b,.aq-correction-go{grid-column:2;grid-row:1/3;align-self:center;font-size:12px;font-weight:800;color:var(--aq-e-amber);white-space:nowrap}
+/* 이동한 입력칸을 잠깐 물들여 위치를 알려 준다 (윤곽선 없이 배경만) */
+.aq-fix-flash{border-radius:18px;animation:aq-fix-flash 2s var(--aq-e-ease) 1}
+@keyframes aq-fix-flash{0%,100%{background-color:transparent;box-shadow:0 0 0 0 transparent}12%,65%{background-color:var(--aq-e-amber-soft);box-shadow:0 0 0 12px var(--aq-e-amber-soft)}}
+/* 발매 상세 보완 카드 */
+.aq-fix-card{background:var(--aq-e-amber-soft);border-radius:26px;padding:20px;margin:0 0 22px;animation:aq-fade-up .4s var(--aq-e-ease) both}
+.aq-fix-card-head{display:flex;gap:14px;align-items:flex-start}
+.aq-fix-card h2{font-size:17px;font-weight:800;letter-spacing:-.03em;margin:5px 0 4px;color:#7a4410}
+.aq-fix-card p{margin:0;font-size:13px;line-height:1.6;color:#8c6a48}
+.aq-fix-card .aq-correction-list{margin-top:16px}
+/* 발매 목록 안내 배너 */
+.aq-fix-banner{display:flex;align-items:center;gap:14px;background:var(--aq-e-amber-soft);border-radius:22px;padding:14px 16px;margin:2px 0 16px;animation:aq-fade-up .4s var(--aq-e-ease) both}
+.aq-fix-banner>.min-0{flex:1}
+.aq-fix-banner strong{display:block;font-size:14px;font-weight:800;color:#7a4410}
+.aq-fix-banner span:not(.aq-fix-icon){display:block;font-size:12px;line-height:1.55;color:#8c6a48;margin-top:2px}
+.aq-fix-banner .button{flex:none;min-height:40px!important;padding:9px 16px!important;font-size:13px!important;border-radius:14px!important}
+/* 보완 필요 카드 하단 줄 */
+.aq-release-fix{grid-column:1/-1;display:flex;align-items:center;gap:12px;background:var(--aq-e-amber-soft);border-radius:16px;padding:10px 10px 10px 14px;font-size:12px;line-height:1.5;color:#8a5a2b}
+.aq-release-fix>span{flex:1;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.aq-release-fix b{color:var(--aq-e-amber);margin-right:6px}
+.aq-release-fix-btn{flex:none;border:0;background:#fff;color:var(--aq-e-amber);font:inherit;font-size:12px;font-weight:800;padding:8px 12px;border-radius:12px;white-space:nowrap;cursor:pointer;transition:background-color .2s ease}
+.aq-release-fix-btn:hover{background:#fffaf4}
+@media(max-width:560px){
+  .aq-fix-banner{flex-wrap:wrap}
+  .aq-fix-banner .button{width:100%}
+}
+
+/* ── 데스크톱: 아티스트 정보 2단, 수익 받기 흐름 폭 ─────────────────── */
+@media(min-width:1024px){
+  #view-profile{display:grid;grid-template-columns:minmax(0,1fr) 380px;column-gap:20px;align-items:start}
+  #view-profile>.view-title,#view-profile>.aq-reset-line{grid-column:1/-1}
+  #view-profile .aq-profile-card{max-width:none}
+  #view-profile .aq-payment-card{margin-top:0;position:sticky;top:96px}
+  #view-profile .aq-payment-card .section-top{margin-top:0}
+  .aq-pay-top{width:min(816px,100%);margin:0 auto;padding-top:22px;box-sizing:border-box}
+  .aq-pay-main>h1{font-size:44px}
+}
+
+/* ── 신청서: 아티스트 프로필 선택 · 연주곡 · 서명 ───────────────────── */
+.aq-choice-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0 0 16px}
+.aq-choice{position:relative;display:grid;gap:4px;padding:16px 18px;border-radius:18px;background:#f5f8ff;cursor:pointer;transition:background-color .2s var(--aq-e-ease),color .2s var(--aq-e-ease)}
+.aq-choice input{position:absolute;opacity:0;pointer-events:none}
+.aq-choice strong{font-size:14px;font-weight:780;color:#2b3345}
+.aq-choice small{font-size:12px;line-height:1.5;color:var(--aq-e-muted)}
+.aq-choice.is-on{background:var(--aq-e-blue-soft)}
+.aq-choice.is-on strong{color:var(--aq-e-blue)}
+.aq-choice:has(input:focus-visible){background:#e6edff}
+@media(max-width:560px){.aq-choice-row{grid-template-columns:1fr}}
+.aq-inst-line{margin:-8px 0 14px}
+.track-editor .field input:disabled{opacity:.55}
+.aq-apply-sign{margin-top:30px}
+.aq-apply-sign>.help{margin:-4px 0 18px}
+.aq-agree-box{background:#f5f8ff;border-radius:20px;padding:6px 18px;margin-top:4px}
+.aq-agree-box .check-line{font-size:13px;line-height:1.6}
+.aq-agree-box .check-line+.check-line{border-top:1px solid #e9eef8}
+.aq-agree-all-line strong{font-size:14px}
+
+/* ── 배급 신청서 (정식 서류) ─────────────────────────────────────────── */
+.aq-doc-view{max-width:880px;margin:0 auto}
+.aq-doc-done{display:flex;align-items:center;gap:14px;background:var(--aq-e-green-soft);border-radius:22px;padding:16px 18px;margin:0 0 18px;animation:aq-fade-up .45s var(--aq-e-ease) both}
+.aq-doc-done-mark{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;flex:none;background:var(--aq-e-green);color:#fff;animation:aq-doc-pop .5s var(--aq-e-spring) .15s both}
+.aq-doc-done-mark path{stroke-dasharray:24;stroke-dashoffset:24;animation:aq-doc-draw .45s ease .45s forwards}
+.aq-doc-done strong{display:block;font-size:15px;font-weight:800;color:#155c40}
+.aq-doc-done .min-0 span{display:block;font-size:13px;line-height:1.55;color:#3f7a62;margin-top:2px}
+@keyframes aq-doc-pop{from{transform:scale(.4);opacity:0}to{transform:none;opacity:1}}
+@keyframes aq-doc-draw{to{stroke-dashoffset:0}}
+.aq-doc-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 16px}
+.aq-paper{background:#fff;border-radius:10px;padding:56px 60px 40px;color:#1d2433;box-shadow:0 1px 2px rgba(20,33,68,.06),0 30px 70px -38px rgba(27,51,104,.38);animation:aq-paper-in .6s var(--aq-e-ease) .05s both}
+@keyframes aq-paper-in{from{opacity:0;transform:translateY(22px) scale(.99)}to{opacity:1;transform:none}}
+.aq-paper-head{text-align:center;padding-bottom:26px;margin-bottom:28px;border-bottom:2px solid #1d2433}
+.aq-paper-brand{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;text-align:left;margin-bottom:34px}
+.aq-paper-brand img{height:22px;width:auto;margin-top:4px}
+.aq-paper-meta{margin:0;display:grid;gap:3px;font-size:11.5px}
+.aq-paper-meta div{display:flex;gap:10px;justify-content:flex-end}
+.aq-paper-meta dt{color:#8a93a6}
+.aq-paper-meta dd{margin:0;font-weight:700;font-variant-numeric:tabular-nums;min-width:132px;text-align:right}
+.aq-paper-head h1{font-size:28px;font-weight:800;letter-spacing:.18em;margin:0}
+.aq-paper-en{margin:8px 0 0;font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:#8a93a6}
+.aq-paper-sec{margin:0 0 26px;break-inside:avoid}
+.aq-paper-sec h2{display:flex;align-items:center;gap:9px;font-size:15px;font-weight:800;letter-spacing:-.02em;margin:0 0 10px}
+.aq-paper-sec h2>span{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:#1d2433;color:#fff;font-size:11px;font-weight:800}
+.aq-paper-sec h2 small{font-size:12px;font-weight:600;color:#8a93a6}
+.aq-paper table{width:100%;border-collapse:collapse;font-size:13px;line-height:1.55}
+.aq-paper-kv th,.aq-paper-kv td,.aq-paper-grid th,.aq-paper-grid td{border:1px solid #dfe4ec;padding:9px 12px;text-align:left;vertical-align:top}
+.aq-paper-kv th{width:108px;background:#f6f8fb;color:#5a6477;font-weight:700;font-size:12px;white-space:nowrap}
+.aq-paper-kv td strong{font-size:14px}
+.aq-paper-release{display:flex;gap:16px;align-items:flex-start}
+.aq-paper-release>table{flex:1;min-width:0}
+.aq-paper-cover{width:112px;height:112px;border-radius:6px;object-fit:cover;flex:none;box-shadow:0 0 0 1px #dfe4ec}
+.aq-paper-scroll{overflow-x:auto}
+.aq-paper-grid{min-width:560px}
+.aq-paper-grid thead th{background:#f6f8fb;color:#5a6477;font-size:12px;font-weight:700;white-space:nowrap}
+.aq-paper-grid td small{display:block;font-size:11.5px;color:#6d7689;margin-top:2px}
+.aq-paper-grid .num{text-align:center;white-space:nowrap;font-variant-numeric:tabular-nums}
+.aq-paper-grid tr{break-inside:avoid}
+.aq-paper-tag{font-style:normal;display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:#d93a3a;color:#fff;font-size:9.5px;font-weight:800;margin-left:6px;vertical-align:1px}
+.aq-paper-agree{list-style:none;margin:0;padding:0;counter-reset:agree;border:1px solid #dfe4ec}
+.aq-paper-agree li{display:flex;gap:12px;align-items:flex-start;padding:10px 14px;font-size:13px;line-height:1.6}
+.aq-paper-agree li+li{border-top:1px solid #eef1f6}
+.aq-paper-check{width:18px;height:18px;flex:none;margin-top:2px;border:1.5px solid #1d2433;display:grid;place-items:center;font-size:12px;font-weight:900;line-height:1}
+.aq-paper-signoff{text-align:center;margin:40px 0 34px;break-inside:avoid}
+.aq-paper-signoff p{margin:0;font-size:14px;color:#1d2433}
+.aq-paper-date{margin-top:18px!important;font-size:15px!important;font-weight:700;letter-spacing:.06em}
+.aq-paper-signer{display:flex;align-items:center;justify-content:flex-end;gap:16px;margin:30px 0 0;font-size:14px}
+.aq-paper-signer>span:first-child{color:#5a6477;letter-spacing:.3em}
+.aq-paper-signer strong{font-size:17px;letter-spacing:.14em}
+.aq-paper-sig{position:relative;min-width:150px;height:64px;display:grid;place-items:center;border-bottom:1px solid #1d2433}
+.aq-paper-sig img{max-width:180px;max-height:70px;object-fit:contain;animation:aq-sig-in .9s ease .5s both}
+.aq-paper-sig em{font-style:normal;color:#8a93a6;font-size:12px}
+@keyframes aq-sig-in{from{opacity:0;clip-path:inset(0 100% 0 0)}to{opacity:1;clip-path:inset(0 0 0 0)}}
+.aq-paper-to{color:#1d2433;margin-top:34px!important;font-size:18px!important;font-weight:800;letter-spacing:.3em;text-align:left}
+.aq-paper-foot{background:none!important;margin:0!important;border-top:1px dashed #cfd6e2;padding-top:16px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 16px;align-items:center;font-size:11.5px;color:#6d7689}
+.aq-paper-foot>div span{display:block;margin-bottom:3px}
+.aq-paper-foot code{font:600 12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:#1d2433;letter-spacing:.04em;word-break:break-all}
+.aq-paper-foot p{grid-column:1/-1;margin:0!important;font-size:11.5px!important;line-height:1.6!important;color:#6d7689!important;max-width:none!important}
+.aq-paper-integrity{font-weight:800;font-size:12px;padding:6px 10px;border-radius:99px;white-space:nowrap}
+.aq-paper-integrity.is-ok{background:var(--aq-e-green-soft);color:var(--aq-e-green)}
+.aq-paper-integrity.is-changed{background:var(--aq-e-red-soft);color:var(--aq-e-red)}
+.aq-paper-integrity.is-checking{background:#f1f4f9;color:#7a8497}
+@media(max-width:640px){
+  .aq-paper{padding:28px 18px 24px;border-radius:14px}
+  .aq-paper-brand{flex-direction:column;gap:14px;margin-bottom:22px}
+  .aq-paper-meta div{justify-content:flex-start}
+  .aq-paper-meta dd{min-width:0;text-align:left}
+  .aq-paper-head h1{font-size:21px;letter-spacing:.1em}
+  .aq-paper-release{flex-direction:column}
+  .aq-paper-kv th{width:84px;padding:8px}
+  .aq-paper-kv td{padding:8px}
+  .aq-paper-kv tr{display:grid;grid-template-columns:84px minmax(0,1fr)}
+  .aq-paper-kv tr>*{border-top:0}
+  .aq-paper-kv tr:first-child>*{border-top:1px solid #dfe4ec}
+  .aq-paper-kv td[colspan]{grid-column:2}
+  .aq-paper-signer{justify-content:center;flex-wrap:wrap}
+  .aq-paper-foot{grid-template-columns:1fr}
+}
+
+/* 인쇄·PDF: 서류만 A4에 */
+@media print{
+  @page{size:A4;margin:14mm}
+  html,body{background:#fff!important}
+  .portal-header,.aq-skip-link,.aq-doc-toolbar,.aq-doc-done,.aq-toast-stack,.footer-line{display:none!important}
+  .portal-layout,#main,.view-enter,.aq-doc-view{padding:0!important;margin:0!important;max-width:none!important;width:auto!important;animation:none!important}
+  .aq-paper{box-shadow:none!important;padding:0!important;border-radius:0!important;animation:none!important}
+  .aq-paper *{animation:none!important}
+  .aq-paper-kv th,.aq-paper-grid thead th{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .aq-paper-scroll{overflow:visible}
+  .aq-paper-grid{min-width:0}
+}

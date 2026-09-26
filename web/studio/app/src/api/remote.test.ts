@@ -36,10 +36,19 @@ function fakeServer() {
     const p = url.pathname.replace(`/api/orgs/${ORG}`, '');
     if (p === '/artists' && method === 'GET') return json(200, { items: artists, limit: 100, next_cursor: null });
     if (p === '/artists' && method === 'POST') { const a = { id: `artist-${++seq}`, name: body.name }; artists.push(a); return json(200, { id: a.id, row_version: 0 }); }
+    if (p === '/releases' && method === 'GET') return json(200, { items: [...releases.values()], limit: 100, next_cursor: null });
     if (p === '/releases' && method === 'POST') {
       const id = `rel-${++seq}`;
       releases.set(id, { id, title: body.name, release_type: body.release_type, status: 'DRAFT', draft: body.profile, row_version: 0, created_at: '2030-01-01T00:00:00Z', tracks: [] });
       return json(200, { id, row_version: 0 });
+    }
+    const sub = p.match(/^\/releases\/([^/]+)\/submission$/);
+    if (sub) {
+      return json(200, { status: releases.get(sub[1])?.status, checks: [
+        { check_code: 'IMAGE_TOO_SMALL', status: 'CORRECTION_REQUIRED', severity: 'CORRECTION', detail: 'w=1000' },
+        { check_code: 'IMAGE_TOO_SMALL', status: 'CORRECTION_REQUIRED', severity: 'CORRECTION', detail: 'dup' },
+        { check_code: 'AUDIO_CLIPPING', status: 'PASS', severity: 'NONE', detail: null },
+      ] });
     }
     const m = p.match(/^\/releases\/([^/]+)(\/tracks(?:\/([^/]+))?)?$/);
     if (m) {
@@ -143,6 +152,16 @@ describe('remoteApi (가짜 서버)', () => {
     const r = await remoteApi.saveDraft(null, payload());
     server.releases.get(r.id)!.status = 'STAGE1_REVIEW';
     await expect(remoteApi.saveDraft(r.id, payload())).rejects.toMatchObject({ code: 'NOT_EDITABLE' });
+  });
+
+  it('보완 단계 발매는 검사 결과의 보완 항목을 함께 돌려준다', async () => {
+    const r = await remoteApi.saveDraft(null, payload());
+    server.releases.get(r.id)!.status = 'STAGE1_CORRECTION';
+    const detail = await remoteApi.getRelease(r.id);
+    expect(detail.status).toBe('needs');
+    expect(detail.corrections).toEqual([{ code: 'IMAGE_TOO_SMALL', message: '' }]);
+    const list = await remoteApi.listReleases();
+    expect(list[0].corrections).toHaveLength(1);
   });
 
   it('서버 오류 코드는 한국어 문구로 바뀐다', async () => {

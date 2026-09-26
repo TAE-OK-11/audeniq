@@ -35,6 +35,7 @@ const FindAccount = lazyPage(pageLoaders.FindAccount, m => m.FindAccount);
 const Dashboard = lazyPage(pageLoaders.Dashboard, m => m.Dashboard);
 const Releases = lazyPage(pageLoaders.Releases, m => m.Releases);
 const ReleaseDetail = lazyPage(pageLoaders.ReleaseDetail, m => m.ReleaseDetail);
+const Application = lazyPage(pageLoaders.Application, m => m.Application);
 const Upload = lazyPage(pageLoaders.Upload, m => m.Upload);
 const Reports = lazyPage(pageLoaders.Reports, m => m.Reports);
 const Settlement = lazyPage(pageLoaders.Settlement, m => m.Settlement);
@@ -92,6 +93,7 @@ function PortalRoutes() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/releases" element={<Releases />} />
             <Route path="/releases/:id" element={<ReleaseDetail />} />
+            <Route path="/releases/:id/application" element={<Application />} />
             <Route path="/upload" element={<UploadRoute />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/settlement" element={<Settlement />} />
