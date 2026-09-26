@@ -13,3 +13,6 @@ node_modules/
 /deploy/tunnel-token
 !/deploy/production.env.example
 /web/studio/edge-dist/
+
+# deploy.sh 배포 기록 (서버 전용)
+/deploy/deploy-history.log

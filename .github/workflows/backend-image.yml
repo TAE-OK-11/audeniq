@@ -1,0 +1,180 @@
+name: Backend image
+# Foundation(테스트)이 main에서 통과한 커밋만 이미지로 만들어 GHCR에 올린다.
+#   ghcr.io/<owner>/audeniq:sha-<commit>, :main, :latest  (api·worker·migrate·admin 바이너리 포함)
+# 배포는 deploy/deploy.sh가 그 이미지를 digest로 고정해 docker compose로 올린다.
+# 서버 접속 정보가 production 환경에 있으면 이 워크플로에서 바로 배포까지 할 수 있다 (deploy 작업).
+on:
+  workflow_run:
+    workflows: [Foundation]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: 이미지를 만든 뒤 production 서버에 배포
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: backend-image-${{ github.event.workflow_run.head_sha || github.sha }}
+  cancel-in-progress: false
+jobs:
+  image:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      image: ${{ steps.name.outputs.image }}
+      digest: ${{ steps.build.outputs.digest }}
+      sha: ${{ steps.name.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - id: name
+        name: Image name
+        run: |
+          # GHCR 이름은 소문자만 허용
+          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/audeniq" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.name.outputs.image }}
+          tags: |
+            type=raw,value=sha-${{ steps.name.outputs.sha }}
+            type=raw,value=main,enable=${{ github.event_name == 'workflow_run' || github.ref == 'refs/heads/main' }}
+            type=raw,value=latest,enable=${{ github.event_name == 'workflow_run' || github.ref == 'refs/heads/main' }}
+          labels: |
+            org.opencontainers.image.title=audeniq
+            org.opencontainers.image.description=AUDENIQ API, worker, migrate and admin binaries
+            org.opencontainers.image.revision=${{ steps.name.outputs.sha }}
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
+          provenance: mode=max
+          sbom: true
+      - name: Smoke test the pushed image
+        env:
+          REF: ${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}
+        run: |
+          docker pull "$REF"
+          docker run --rm --entrypoint sh "$REF" -c '
+            set -e
+            for b in audeniq-api audeniq-worker audeniq-migrate audeniq-admin ffmpeg ffprobe; do command -v "$b"; done
+            test "$(id -u)" = 10001'
+      - name: Attest build provenance
+        # 비공개 저장소의 attestation은 GitHub Enterprise Cloud에서만 지원된다
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ steps.name.outputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Summary
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          SHA: ${{ steps.name.outputs.sha }}
+        run: |
+          {
+            echo "### Backend image"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| commit | \`$SHA\` |"
+            echo "| tag | \`$IMAGE:sha-$SHA\` |"
+            echo "| digest | \`$IMAGE@$DIGEST\` |"
+            echo
+            echo "서버에서 배포:"
+            echo
+            echo '```sh'
+            echo "cd /opt/audeniq && ./deploy.sh $IMAGE@$DIGEST"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    needs: image
+    # 수동 실행에서 deploy를 켰거나, 저장소 변수 AUTO_DEPLOY=true면 main 통과 때마다 배포
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.deploy) ||
+      (github.event_name == 'workflow_run' && vars.AUTO_DEPLOY == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: read
+    env:
+      REF: ${{ needs.image.outputs.image }}@${{ needs.image.outputs.digest }}
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/audeniq' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.image.outputs.sha }}
+      - name: Check deploy settings
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          missing=""
+          [ -n "$DEPLOY_HOST" ] || missing="$missing DEPLOY_HOST"
+          [ -n "$DEPLOY_USER" ] || missing="$missing DEPLOY_USER"
+          [ -n "$KEY" ] || missing="$missing DEPLOY_SSH_KEY"
+          [ -n "$KNOWN" ] || missing="$missing DEPLOY_KNOWN_HOSTS"
+          if [ -n "$missing" ]; then
+            echo "::error::production 환경 시크릿이 없어요:$missing (deploy/PRODUCTION.md 'GHCR 이미지 배포' 참고)"
+            exit 1
+          fi
+      - name: SSH setup
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN" > ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts
+      - name: Copy deploy files of this commit
+        # compose·grants·bootstrap은 이미지(마이그레이션)와 같은 커밋이어야 한다. 비밀 파일은 서버에만 있다.
+        run: |
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
+          scp -i ~/.ssh/deploy_key deploy/compose.production.yaml deploy/bootstrap.sql deploy/grants.sql deploy/deploy.sh \
+            "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+      - name: Deploy
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          # 이 작업 동안만 유효한 토큰으로 GHCR에 로그인해 받고, 끝나면 로그아웃한다
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd '$DEPLOY_PATH' && chmod +x deploy.sh && GHCR_USER='$ACTOR' GHCR_TOKEN_STDIN=1 ./deploy.sh '$REF'" <<< "$TOKEN"
+      - name: Summary
+        run: |
+          echo "배포됨: \`$REF\` → \`$DEPLOY_HOST:$DEPLOY_PATH\`" >> "$GITHUB_STEP_SUMMARY"
