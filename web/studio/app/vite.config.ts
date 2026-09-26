@@ -6,7 +6,12 @@ import { compactCss, purgeCss } from './build/purge-css';
 
 const src = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
-export default defineConfig(({ command }) => ({
+// 엣지 Worker 배포용 서버 연결 빌드는 `vite build --mode edge` → web/studio/edge-dist/connected
+// (저장소의 public/connected는 체험(목) 모드 빌드)
+const API_TARGET = process.env.AUDENIQ_API ?? 'http://127.0.0.1:8080';
+const SERVICE_SECRET = process.env.EDGE_SERVICE_SECRET;
+
+export default defineConfig(({ command, mode }) => ({
   base: '/connected/',
   plugins: [react()],
   css: {
@@ -18,7 +23,7 @@ export default defineConfig(({ command }) => ({
     },
   },
   build: {
-    outDir: '../public/connected',
+    outDir: mode === 'edge' ? '../edge-dist/connected' : '../public/connected',
     emptyOutDir: true,
     target: 'baseline-widely-available',
     // Lightning CSS 압축기가 !important 규칙을 잘못 병합하므로 끄고 compactCss()로 안전하게 압축
@@ -28,8 +33,21 @@ export default defineConfig(({ command }) => ({
     reportCompressedSize: false,
   },
   server: {
+    // 로컬 백엔드 연동: 엣지 Worker처럼 서비스 비밀 헤더를 붙여 API로 전달한다.
+    // 실행: EDGE_SERVICE_SECRET=... bun run dev:api  (APP_ORIGIN=http://localhost:5173)
     proxy: {
-      '/api': 'http://localhost:8080',
+      '/api': {
+        target: API_TARGET,
+        headers: SERVICE_SECRET ? { 'x-audeniq-service': SERVICE_SECRET } : undefined,
+        configure: proxy => {
+          // 브라우저가 보낸 서비스 신원·IP 헤더는 엣지와 같이 버린다
+          proxy.on('proxyReq', req => {
+            req.removeHeader('x-audeniq-client-ip');
+            if (SERVICE_SECRET) req.setHeader('x-audeniq-service', SERVICE_SECRET);
+            else req.removeHeader('x-audeniq-service');
+          });
+        },
+      },
     },
   },
   test: {

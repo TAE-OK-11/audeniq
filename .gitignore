@@ -12,3 +12,4 @@ node_modules/
 /deploy/production.env
 /deploy/tunnel-token
 !/deploy/production.env.example
+/web/studio/edge-dist/

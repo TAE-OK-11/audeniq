@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { Link, useNavigate } from '../lib/router';
 import { useAuth } from '../api/auth';
+import { PASSWORD_MIN } from '../api/client';
 import { errorMessage } from '../api/errors';
 import { AuthLayout, PasswordInput } from '../components/AuthLayout';
 import { patchProfile } from '../store/profile';
 
 function strength(pw: string): { score: number; label: string } {
   let score = 0;
-  if (pw.length >= 8) score++;
-  if (pw.length >= 12) score++;
+  if (pw.length >= PASSWORD_MIN) score++;
+  if (pw.length >= PASSWORD_MIN + 4) score++;
   if (/[A-Za-z]/.test(pw) && /\d/.test(pw)) score++;
   if (/[^A-Za-z0-9]/.test(pw)) score++;
   const label = ['너무 짧아요', '보통', '괜찮아요', '안전해요', '매우 안전해요'][score];
@@ -35,7 +36,7 @@ export function Signup() {
     if (busy) return;
     setError('');
     if (!name.trim()) { setError('이름을 입력해 주세요.'); return; }
-    if (password.length < 8) { setError('비밀번호는 8자 이상이어야 해요.'); return; }
+    if (password.length < PASSWORD_MIN) { setError(`비밀번호는 ${PASSWORD_MIN}자 이상이어야 해요.`); return; }
     if (password !== confirm) { setError('비밀번호가 일치하지 않아요.'); return; }
     if (!agreeTerms || !agreePrivacy) { setError('필수 약관에 동의해 주세요.'); return; }
     setBusy(true);
@@ -72,8 +73,8 @@ export function Signup() {
         <div className="field">
           <label htmlFor="suPassword">비밀번호</label>
           <PasswordInput
-            id="suPassword" required autoComplete="new-password" minLength={8}
-            placeholder="8자 이상 입력해 주세요" aria-describedby="suPwHelp"
+            id="suPassword" required autoComplete="new-password" minLength={PASSWORD_MIN}
+            placeholder={`${PASSWORD_MIN}자 이상 입력해 주세요`} aria-describedby="suPwHelp"
             value={password} onChange={e => setPassword(e.target.value)}
             show={showPw} onToggle={() => setShowPw(v => !v)}
           />

@@ -8,7 +8,33 @@ The deployment entry point is `crates/edge`: Rust Workers WASM serves **generate
 
 New application code and browser automation are Rust. `wasm-bindgen` emits JavaScript loader glue, and Wrangler is a deployment tool. No Python runtime is used.
 
-## Build and local browser integration
+## React Studio on the edge Worker
+
+The user-facing Studio is the React app in `web/studio/app`. It has two builds:
+
+| Build | Command | Output | Data |
+|---|---|---|---|
+| Demo (committed) | `bun run build` | `web/studio/public/connected` | browser storage mock |
+| Server-connected | `bun run build:edge` | `web/studio/edge-dist/connected` (ignored) | real API through the edge |
+
+Request path: browser → `crates/edge` Worker (same origin, serves `/connected/` and proxies `/api/*`) → Workers VPC service `PRIVATE_API` → Cloudflare Tunnel → rented-server Rust API → PostgreSQL / worker queues that run the actual distribution.
+
+- The Worker exposes only `/connected/`, `/connected/assets/*` (immutable) and `/connected/static/*`. Any other path without an extension is redirected (308) to `/connected/`; the React app uses hash routing, so deep links look like `/connected/#/releases`.
+- The React CSP is `config/studio-react-csp.txt`. It allows inline style attributes (React animation styles), `blob:`/`data:` previews and direct uploads to `https://*.r2.cloudflarestorage.com`. Scripts stay `'self'` only.
+- The browser keeps the HttpOnly session cookie and the CSRF token in memory only. After a reload it calls `POST /api/auth/csrf`. It never sees `EDGE_SERVICE_SECRET`.
+- Saving a draft maps to the Foundation API: release create/update (`profile` holds wizard fields, with multi-line notes stored as `notes_lines`), artist lookup/creation, and track create/update/archive in `row_version` order. Submit runs preflight, consent (`RIGHTS_HOLDER`), then submit with idempotency key `studio:{release}:{row_version}`.
+- Audio (WAV/FLAC) and cover (JPG/PNG) files go straight to R2 through the upload grant. Only JSON control traffic passes through the Worker, which keeps its 64 KiB body cap.
+- Minor-artist releases are held on the client until the guardian review flow exists on the server.
+
+Local run against a real API, without the Worker:
+
+```sh
+# API with APP_ORIGIN=http://localhost:5173 and the same EDGE_SERVICE_SECRET
+cd web/studio/app
+EDGE_SERVICE_SECRET=... bun run dev:api   # Vite on :5173, proxies /api and adds the service header like the edge
+```
+
+## Build and local browser integration (Rust/WASM shell)
 
 From repository root, Rust toolchain from `rust-toolchain.toml`:
 
@@ -43,7 +69,7 @@ docker compose --env-file deploy/production.env -f deploy/compose.production.yam
 
 ## Workers build and configuration
 
-Build the connected assets first. Install `worker-build 0.1.12` (`cargo install worker-build --version 0.1.12 --locked`), compatible with pinned worker 0.6.7, then copy `crates/edge/wrangler.toml.example` to ignored `wrangler.toml`. Build from `crates/edge` using `worker-build --release`. Validate packaging without publishing using `npx --yes wrangler@4.137.0 deploy --dry-run --outdir /tmp/audeniq-edge-bundle`. Set the real HTTPS APP_ORIGIN, production custom-domain route and verified VPC service ID. Set `EDGE_SERVICE_SECRET` through Wrangler secret storage, matching the backend. Do not embed it in static assets. Static assets and API are served by the **same Worker and origin**; do not deploy the old Studio wrangler configuration alongside it.
+Build the connected assets first (`cd web/studio/app && bun install --frozen-lockfile && bun run build:edge`). Install `worker-build 0.1.12` (`cargo install worker-build --version 0.1.12 --locked`), compatible with pinned worker 0.6.7, then copy `crates/edge/wrangler.toml.example` to ignored `wrangler.toml`. Build from `crates/edge` using `worker-build --release`. Validate packaging without publishing using `npx --yes wrangler@4.137.0 deploy --dry-run --outdir /tmp/audeniq-edge-bundle`. Set the real HTTPS APP_ORIGIN, production custom-domain route and verified VPC service ID. Set `EDGE_SERVICE_SECRET` through Wrangler secret storage, matching the backend. Do not embed it in static assets. Static assets and API are served by the **same Worker and origin**; do not deploy the old Studio wrangler configuration alongside it.
 
 `run_worker_first=true` guarantees origin checks and security headers apply to assets; `/api/admin*` remains blocked. No public-origin fallback exists. The generated frontend artifact in CI is useful for review; no CI step deploys it. Wrangler deployment is a separate authorized action.
 
