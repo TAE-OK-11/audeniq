@@ -89,10 +89,23 @@ pub struct SendContext {
 /// unknowable: the worker must NOT retry automatically.
 #[derive(Debug, Clone)]
 pub enum SendOutcome {
-    Accepted { partner_message_id: String },
-    Rejected { code: String, message: String },
+    Accepted {
+        partner_message_id: String,
+    },
+    Rejected {
+        code: String,
+        message: String,
+    },
     Timeout,
-    Unknown { detail: String },
+    Unknown {
+        detail: String,
+    },
+    /// The partner refused the call before processing it (e.g. HTTP 503 or
+    /// a connection refused before any byte was accepted): nothing was
+    /// created partner-side, so a new attempt is safe.
+    Unavailable {
+        detail: String,
+    },
 }
 
 /// Normalized partner webhook event.
@@ -448,8 +461,13 @@ async fn verify_file(
     if head.size != size_bytes || head.content_type != content_type {
         return Err(Error::PolicyGate("EXECUTION_FILE_DRIFT"));
     }
-    let bytes = storage.get(key).await.map_err(|_| Error::Storage)?;
-    if hex::encode(sha2::Sha256::digest(&bytes)) != sha256 {
+    // Streamed hash: constant memory for masters up to the upload cap.
+    let digest = match storage.digest(key, size_bytes as u64).await {
+        Ok(d) => d,
+        Err(Error::PolicyGate(_)) => return Err(Error::PolicyGate("EXECUTION_FILE_DRIFT")),
+        Err(_) => return Err(Error::Storage),
+    };
+    if digest.size != size_bytes as u64 || digest.sha256 != sha256 {
         return Err(Error::PolicyGate("EXECUTION_FILE_TAMPERED"));
     }
     Ok(TransferFile {
@@ -752,6 +770,33 @@ pub async fn run_delivery(
             open_case(&mut tx, job, "PARTNER_REJECTED", &json!({"code": code})).await?;
             tx.commit().await?;
             Ok("FAILED".to_string())
+        }
+        Ok(SendOutcome::Unavailable { detail }) => {
+            // Definitely not received: close this attempt (REJECTED with a
+            // retryable marker; the next attempt gets a new key) and hand the
+            // delivery job back for a retry with backoff.
+            sqlx::query(
+                "UPDATE execution.delivery_attempts SET outcome='REJECTED', response=$2 WHERE id=$1",
+            )
+            .bind(attempt_id)
+            .bind(json!({"code": "PARTNER_UNAVAILABLE", "retryable": true, "message": detail}))
+            .execute(&mut *tx)
+            .await?;
+            let n = sqlx::query(
+                "UPDATE execution.delivery_jobs SET status='QUEUED', last_error='PARTNER_UNAVAILABLE',
+                 locked_by=NULL, lock_token=NULL, lease_until=NULL, updated_at=now()
+                 WHERE id=$1 AND lock_token=$2",
+            )
+            .bind(job.id)
+            .bind(job.token)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+            if n != 1 {
+                return Err(Error::Conflict);
+            }
+            tx.commit().await?;
+            Ok("RETRY".to_string())
         }
         Ok(SendOutcome::Timeout) | Ok(SendOutcome::Unknown { .. }) | Err(_) => {
             let label = match &outcome {
@@ -1157,8 +1202,61 @@ async fn reconcile_org(pool: &PgPool, org: Uuid, ack_deadline_secs: i64) -> Resu
             opened += 1;
         }
     }
+    // Repairs are not reconciliation cases; the return value keeps counting
+    // opened cases only.
+    repair_stalled_sends(&mut tx, org).await?;
     tx.commit().await?;
     Ok(opened)
+}
+
+/// Sandbox round 2: a worker killed while holding a delivery lease left the
+/// delivery job LEASED with its send job dead-lettered, so the release
+/// showed READY_FOR_DELIVERY but was never sent, and nothing repaired it.
+///
+/// A delivery job that is QUEUED, or LEASED with an expired lease, has not
+/// started a wire send (SENDING is the state that may have reached the
+/// partner; it is never touched here and stays with the SENT_UNKNOWN
+/// inquiry path). If no send job is alive for it, the lease is cleared and
+/// a fresh send job is enqueued. Exactly-once is preserved: only the holder
+/// of the delivery-job lease can send, and `lease_delivery_job` grants it to
+/// one caller at a time.
+pub async fn repair_stalled_sends(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    org: Uuid,
+) -> Result<usize> {
+    let stalled: Vec<(Uuid, i32)> = sqlx::query_as(
+        "SELECT j.id, j.attempts FROM execution.delivery_jobs j
+          WHERE j.org_id=$1 AND j.attempts < j.max_attempts
+            AND (j.status='QUEUED' OR (j.status='LEASED' AND j.lease_until < now()))
+            AND NOT EXISTS (
+              SELECT 1 FROM operations.jobs o
+               WHERE o.kind='delivery.send' AND o.status IN ('QUEUED','RUNNING')
+                 AND o.payload->>'delivery_job_id' = j.id::text)
+          FOR UPDATE OF j SKIP LOCKED",
+    )
+    .bind(org)
+    .fetch_all(&mut **tx)
+    .await?;
+    for (id, attempts) in &stalled {
+        sqlx::query(
+            "UPDATE execution.delivery_jobs SET status='QUEUED', locked_by=NULL, lock_token=NULL,
+             lease_until=NULL, last_error='REQUEUED_BY_RECONCILE', updated_at=now() WHERE id=$1",
+        )
+        .bind(id)
+        .execute(&mut **tx)
+        .await?;
+        crate::operations::enqueue(
+            tx,
+            "delivery",
+            "delivery.send",
+            &serde_json::json!({"delivery_job_id": id, "org_id": org}),
+            &format!("delivery.send:{id}:repair:{attempts}"),
+            None,
+        )
+        .await?;
+        tracing::warn!(delivery_job_id=%id, "reconcile requeued a stalled delivery send");
+    }
+    Ok(stalled.len())
 }
 
 struct DeliveryJobRef {
@@ -1318,6 +1416,7 @@ pub async fn update_release(
         SendOutcome::Timeout | SendOutcome::Unknown { .. } => {
             Err(Error::PolicyGate("UPDATE_UNKNOWN"))
         }
+        SendOutcome::Unavailable { .. } => Err(Error::Storage),
     }
 }
 
@@ -1384,6 +1483,10 @@ pub async fn takedown_release(
             tx.rollback().await?;
             Err(Error::PolicyGate("TAKEDOWN_UNKNOWN"))
         }
+        SendOutcome::Unavailable { .. } => {
+            tx.rollback().await?;
+            Err(Error::Storage)
+        }
     }
 }
 
@@ -1426,6 +1529,62 @@ pub async fn lease_delivery_job(
     });
     tx.commit().await?;
     Ok(job)
+}
+
+/// Why a delivery job could not be leased (sandbox round 2: a worker killed
+/// mid-send left the job LEASED; the dispatcher then returned without
+/// finishing its own job, burning one attempt per job lease until the send
+/// was dead-lettered while the delivery job stayed LEASED forever).
+#[derive(Debug, Clone, PartialEq)]
+pub enum LeaseBlocked {
+    /// Another (possibly crashed) holder's lease runs for this many seconds.
+    HeldFor(i64),
+    /// attempts reached max_attempts; the job is now DEAD_LETTER.
+    Exhausted,
+    /// Terminal or missing: nothing left to send.
+    Gone,
+}
+
+/// Explain a failed `lease_delivery_job`, dead-lettering the delivery job
+/// itself when its attempts are exhausted so the state is never a silent
+/// LEASED zombie.
+pub async fn delivery_lease_blocked(
+    pool: &PgPool,
+    org: Uuid,
+    job_id: Uuid,
+) -> Result<LeaseBlocked> {
+    let mut tx = pool.begin().await?;
+    authorize_org(&mut tx, org).await?;
+    let row = sqlx::query(
+        "SELECT status, attempts, max_attempts,
+                GREATEST(0, CEIL(EXTRACT(EPOCH FROM (lease_until - now()))))::bigint AS remaining
+         FROM execution.delivery_jobs WHERE id=$1 FOR UPDATE",
+    )
+    .bind(job_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(row) = row else {
+        tx.commit().await?;
+        return Ok(LeaseBlocked::Gone);
+    };
+    let status: String = row.get("status");
+    let out = if !matches!(status.as_str(), "QUEUED" | "LEASED" | "SENDING") {
+        LeaseBlocked::Gone
+    } else if row.get::<i32, _>("attempts") >= row.get::<i32, _>("max_attempts") {
+        sqlx::query(
+            "UPDATE execution.delivery_jobs SET status='DEAD_LETTER', lock_token=NULL,
+             lease_until=NULL, last_error='DELIVERY_ATTEMPTS_EXHAUSTED', updated_at=now()
+             WHERE id=$1",
+        )
+        .bind(job_id)
+        .execute(&mut *tx)
+        .await?;
+        LeaseBlocked::Exhausted
+    } else {
+        LeaseBlocked::HeldFor(row.get::<Option<i64>, _>("remaining").unwrap_or(0).max(1))
+    };
+    tx.commit().await?;
+    Ok(out)
 }
 
 /// RLS-safe status read for the operations dispatcher: the caller passes the

@@ -57,6 +57,13 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
             forwarded.headers_mut()?.set(name, &value)?;
         }
     }
+    // End-user IP for per-source auth rate limits. CF-Connecting-IP is set by
+    // Cloudflare itself (client copies are overwritten); X-Forwarded-For is
+    // client-controlled and never used. A browser-sent x-audeniq-client-ip is
+    // not in the allowlist above, so it cannot reach the API.
+    if let Some(ip) = request.headers().get("cf-connecting-ip")? {
+        forwarded.headers_mut()?.set("x-audeniq-client-ip", &ip)?;
+    }
     forwarded.headers_mut()?.set(
         "x-audeniq-service",
         &env.secret("EDGE_SERVICE_SECRET")?.to_string(),

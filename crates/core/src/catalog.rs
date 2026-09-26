@@ -55,10 +55,17 @@ fn validate(i: &Input) -> Result<()> {
         || i.name.len() > 200
         || (!i.profile.is_null() && !i.profile.is_object())
     {
-        Err(Error::Invalid)
-    } else {
-        Ok(())
+        return Err(Error::Invalid);
     }
+    crate::text_policy::check(&i.name)?;
+    crate::text_policy::check_json(&i.profile)
+}
+/// Hard block on protected artist names in the name and every profile
+/// string (display artist, featured artists, P/C lines...).
+async fn protected(c: &mut PgConnection, org: Uuid, i: &Input) -> Result<()> {
+    let mut texts = vec![i.name.as_str()];
+    texts.extend(crate::protected_names::json_strings(&i.profile));
+    crate::protected_names::enforce(c, org, &texts).await
 }
 async fn refs(c: &mut PgConnection, a: &Actor, org: Uuid, i: &Input) -> Result<()> {
     if let Some(id) = i.label_id {
@@ -84,6 +91,7 @@ pub async fn create(s: &AppState, a: &Actor, org: Uuid, kind: Kind, i: Input) ->
     let id = Uuid::new_v4();
     auth::create_resource(&mut tx, a, org, id, kind.resource()).await?;
     refs(&mut tx, a, org, &i).await?;
+    protected(&mut tx, org, &i).await?;
     match kind {
         Kind::Artist => {
             sqlx::query("INSERT INTO catalog.artists(id,org_id,name,profile,party_id,label_id) VALUES($1,$2,$3,$4,$5,$6)").bind(id).bind(org).bind(i.name).bind(i.profile).bind(i.party_id).bind(i.label_id).execute(&mut *tx).await?;
@@ -193,10 +201,11 @@ pub async fn update(
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, id, kind.resource(), true).await?;
     refs(&mut tx, a, org, &i).await?;
+    protected(&mut tx, org, &i).await?;
     let n=match kind{
  Kind::Artist=>sqlx::query("UPDATE catalog.artists SET name=$3,profile=$4,party_id=$6,label_id=$7,row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND row_version=$5 AND archived_at IS NULL").bind(org).bind(id).bind(i.name).bind(i.profile).bind(expected).bind(i.party_id).bind(i.label_id).execute(&mut *tx).await?.rows_affected(),
  Kind::Label=>sqlx::query("UPDATE catalog.labels SET name=$3,profile=$4,party_id=$6,row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND row_version=$5 AND archived_at IS NULL").bind(org).bind(id).bind(i.name).bind(i.profile).bind(expected).bind(i.party_id.ok_or(Error::Invalid)?).execute(&mut *tx).await?.rows_affected(),
- Kind::Release=>sqlx::query("UPDATE catalog.releases SET title=$3,draft=$4,release_type=$6,row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND row_version=$5 AND status='DRAFT' AND archived_at IS NULL").bind(org).bind(id).bind(i.name).bind(i.profile).bind(expected).bind(i.release_type.ok_or(Error::Invalid)?).execute(&mut *tx).await?.rows_affected(),
+ Kind::Release=>sqlx::query("UPDATE catalog.releases SET title=$3,draft=$4,release_type=$6,row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND row_version=$5 AND catalog.is_editable_status(status) AND archived_at IS NULL").bind(org).bind(id).bind(i.name).bind(i.profile).bind(expected).bind(i.release_type.ok_or(Error::Invalid)?).execute(&mut *tx).await?.rows_affected(),
  };
     if n != 1 {
         return Err(Error::Conflict);
@@ -233,7 +242,7 @@ pub async fn archive(
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, id, kind.resource(), true).await?;
     let extra = if matches!(kind, Kind::Release) {
-        " AND status='DRAFT'"
+        " AND catalog.is_editable_status(status)"
     } else {
         ""
     };
@@ -342,6 +351,12 @@ pub struct MemberInput {
     pub role: String,
     pub status: String,
 }
+/// PUT /memberships (OWNER only). Adding someone never makes them a member
+/// on the owner's word alone (sandbox round 2.5: an owner enrolled arbitrary
+/// accounts and used them as "second approvers"). A user without an ACTIVE
+/// membership gets an INVITED row that only their own session can accept
+/// (POST /memberships/accept). Role changes of already-ACTIVE members and
+/// revocations apply directly. A REVOKED member must be invited again.
 pub async fn member(s: &AppState, a: &Actor, org: Uuid, i: MemberInput) -> Result<Value> {
     if !matches!(i.role.as_str(), "EDITOR" | "VIEWER")
         || !matches!(i.status.as_str(), "ACTIVE" | "REVOKED")
@@ -353,7 +368,35 @@ pub async fn member(s: &AppState, a: &Actor, org: Uuid, i: MemberInput) -> Resul
     if auth::membership(&mut tx, a, org, true).await? != "OWNER" {
         return Err(Error::Forbidden);
     }
-    if i.status == "ACTIVE" {
+    let current: Option<(String, String)> = sqlx::query_as(
+        "SELECT role, status FROM identity.memberships WHERE org_id=$1 AND user_id=$2 FOR UPDATE",
+    )
+    .bind(org)
+    .bind(i.user_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if matches!(&current, Some((role, _)) if role == "OWNER") {
+        // Owners are never demoted or revoked through this endpoint.
+        return Err(Error::Conflict);
+    }
+    let outcome = if i.status == "REVOKED" {
+        // Idempotent: revoking a non-member records a REVOKED row.
+        sqlx::query("INSERT INTO identity.memberships(org_id,user_id,role,status,accepted_at) VALUES($1,$2,$3,'REVOKED',NULL) ON CONFLICT(org_id,user_id) DO UPDATE SET status='REVOKED', role=EXCLUDED.role WHERE identity.memberships.role<>'OWNER'")
+            .bind(org)
+            .bind(i.user_id)
+            .bind(&i.role)
+            .execute(&mut *tx)
+            .await?;
+        "REVOKED"
+    } else if matches!(&current, Some((_, status)) if status == "ACTIVE") {
+        sqlx::query("UPDATE identity.memberships SET role=$3 WHERE org_id=$1 AND user_id=$2")
+            .bind(org)
+            .bind(i.user_id)
+            .bind(&i.role)
+            .execute(&mut *tx)
+            .await?;
+        "ACTIVE"
+    } else {
         let active: Option<Uuid> = sqlx::query_scalar(
             "SELECT id FROM identity.users WHERE id=$1 AND status='ACTIVE' FOR SHARE",
         )
@@ -361,20 +404,57 @@ pub async fn member(s: &AppState, a: &Actor, org: Uuid, i: MemberInput) -> Resul
         .fetch_optional(&mut *tx)
         .await?;
         active.ok_or(Error::Conflict)?;
-    }
-    sqlx::query("INSERT INTO identity.memberships(org_id,user_id,role,status) VALUES($1,$2,$3,$4) ON CONFLICT(org_id,user_id) DO UPDATE SET role=EXCLUDED.role,status=EXCLUDED.status WHERE identity.memberships.role<>'OWNER'").bind(org).bind(i.user_id).bind(i.role).bind(i.status).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO identity.memberships(org_id,user_id,role,status,accepted_at,invited_by,invited_at) VALUES($1,$2,$3,'INVITED',NULL,$4,now()) ON CONFLICT(org_id,user_id) DO UPDATE SET role=EXCLUDED.role,status='INVITED',accepted_at=NULL,invited_by=EXCLUDED.invited_by,invited_at=EXCLUDED.invited_at WHERE identity.memberships.role<>'OWNER'")
+            .bind(org)
+            .bind(i.user_id)
+            .bind(&i.role)
+            .bind(a.user)
+            .execute(&mut *tx)
+            .await?;
+        "INVITED"
+    };
     operations::audit(
         &mut tx,
         Some(a.user),
         Some(org),
         Some(i.user_id),
-        "membership.changed",
+        if outcome == "INVITED" {
+            "membership.invited"
+        } else {
+            "membership.changed"
+        },
         "OWNER_REQUEST",
         a.request,
     )
     .await?;
     tx.commit().await?;
-    Ok(json!({"updated":true}))
+    Ok(json!({"updated":true,"status":outcome}))
+}
+
+/// POST /memberships/accept: the invitee accepts in their own session.
+pub async fn accept_membership(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
+    let mut tx = s.pool.begin().await?;
+    let n = sqlx::query("UPDATE identity.memberships m SET status='ACTIVE', accepted_at=now() FROM identity.users u WHERE u.id=m.user_id AND u.status='ACTIVE' AND m.org_id=$1 AND m.user_id=$2 AND m.status='INVITED'")
+        .bind(org)
+        .bind(a.user)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    if n == 0 {
+        return Err(Error::NotFound);
+    }
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        Some(org),
+        Some(a.user),
+        "membership.accepted",
+        "INVITEE_ACCEPT",
+        a.request,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"status":"ACTIVE"}))
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

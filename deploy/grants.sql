@@ -9,6 +9,21 @@ GRANT DELETE ON catalog.credits TO audeniq_api;
 GRANT SELECT,INSERT,UPDATE ON operations.jobs,operations.outbox TO audeniq_api;
 GRANT INSERT ON operations.audit_events TO audeniq_api;
 GRANT SELECT ON operations.allowed_transitions TO audeniq_api;
+-- Consent + submit run in the API request: it signs the consent package and
+-- freezes the submitted application revision (both append-only; no UPDATE or
+-- DELETE is granted, and the tables' own triggers enforce immutability).
+GRANT INSERT ON catalog.consent_packages,catalog.application_revisions TO audeniq_api;
+-- Pre-submit / submission status read stage results and package summaries.
+GRANT SELECT ON operations.check_results TO audeniq_api;
+GRANT USAGE ON SCHEMA distribution TO audeniq_api;
+GRANT SELECT ON distribution.validation_packages,distribution.verification_packages TO audeniq_api;
+-- Review overrides (POST /reviews/overrides and the two-person approval
+-- flow) run in the API request. review_overrides is append-only (immutable
+-- trigger); override_requests only moves PENDING -> APPROVED/DECLINED (guard
+-- trigger). The rights-epoch bump on override insert is SECURITY DEFINER.
+GRANT USAGE ON SCHEMA rights TO audeniq_api;
+GRANT SELECT,INSERT ON rights.review_overrides TO audeniq_api;
+GRANT SELECT,INSERT,UPDATE ON rights.override_requests TO audeniq_api;
 -- Distribution pipeline schemas (F2/F4/F5/F7). The worker runs the job
 -- queues; the API never writes here (the roles test asserts 42501 for api
 -- inserts into distribution). The reconciler enumerates identity.orgs,
@@ -17,19 +32,25 @@ GRANT USAGE ON SCHEMA distribution,finance,execution,rights,identity,catalog TO 
 GRANT SELECT ON ALL TABLES IN SCHEMA distribution,finance,execution,rights TO audeniq_worker;
 GRANT SELECT ON catalog.application_revisions,catalog.artists,catalog.labels,catalog.tracks,catalog.credits,catalog.assets,catalog.consent_packages,catalog.upload_sessions TO audeniq_worker;
 GRANT SELECT ON identity.orgs,identity.memberships,identity.parties TO audeniq_worker;
+-- Stage 1 re-checks protected artist names (list is operator-managed; no runtime writes).
+GRANT SELECT ON catalog.protected_artists,catalog.protected_artist_aliases,catalog.protected_artist_exceptions TO audeniq_worker;
 -- Worker writes: stage transitions, frozen artifacts, delivery state,
 -- finance ledger, review overrides/epochs.
 GRANT SELECT,UPDATE ON catalog.releases,catalog.assets TO audeniq_worker;
 GRANT SELECT,INSERT ON catalog.asset_fingerprints TO audeniq_worker;
+-- Cross-org similarity (REVIEW only) reads other orgs' fingerprints via one
+-- narrow SECURITY DEFINER function; the table itself stays org-scoped.
+GRANT EXECUTE ON FUNCTION catalog.fingerprints_outside_org(uuid, smallint) TO audeniq_worker;
 GRANT INSERT ON catalog.application_revisions,catalog.consent_packages TO audeniq_worker;
 GRANT INSERT ON distribution.canonical_releases,distribution.distribution_packages,distribution.verification_packages,distribution.validation_packages,distribution.preparation_artifacts,distribution.identifier_assignments,distribution.ddex_messages TO audeniq_worker;
 GRANT INSERT,UPDATE ON execution.delivery_jobs,execution.delivery_attempts,execution.live_bindings,execution.reconciliation_cases TO audeniq_worker;
 GRANT INSERT,UPDATE ON execution.route_decisions TO audeniq_worker;
-GRANT INSERT ON operations.check_results TO audeniq_worker;
+GRANT SELECT,INSERT ON operations.check_results TO audeniq_worker;
+GRANT SELECT ON operations.allowed_transitions TO audeniq_worker;
 GRANT INSERT ON rights.review_overrides,rights.rights_epochs TO audeniq_worker;
 GRANT INSERT ON finance.ledger_transactions,finance.ledger_entries,finance.commercial_split_snapshots TO audeniq_worker;
 GRANT SELECT,INSERT,UPDATE ON finance.payout_orders,finance.finance_holds TO audeniq_worker;
--- Submitted revisions, signed evidence and stage packages cannot be inserted by the Foundation API.
+-- Stage packages, canonical releases and delivery evidence cannot be written by the Foundation API.
 GRANT USAGE ON SCHEMA operations TO audeniq_worker;
 GRANT SELECT,INSERT,UPDATE ON operations.jobs,operations.outbox TO audeniq_worker;
 GRANT SELECT,INSERT ON operations.event_receipts TO audeniq_worker;
