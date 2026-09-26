@@ -39,7 +39,6 @@ img{max-width:100%}
 @keyframes aq-shake{0%,100%{transform:none}20%{transform:translateX(-6px)}40%{transform:translateX(5px)}60%{transform:translateX(-3px)}80%{transform:translateX(2px)}}
 @keyframes aq-spin{to{transform:rotate(360deg)}}
 @keyframes aq-float{0%,100%{transform:translate3d(0,0,0)}50%{transform:translate3d(0,-12px,0)}}
-@keyframes aq-pulse-ring{0%{box-shadow:0 0 0 0 rgba(104,82,186,.35)}70%{box-shadow:0 0 0 7px rgba(104,82,186,0)}100%{box-shadow:0 0 0 0 rgba(104,82,186,0)}}
 @keyframes aq-grow-y{from{transform:scaleY(0)}to{transform:scaleY(1)}}
 @keyframes aq-grow-x{from{transform:scaleX(0)}to{transform:scaleX(1)}}
 @keyframes aq-draw{from{stroke-dashoffset:40}to{stroke-dashoffset:0}}
@@ -178,8 +177,6 @@ img{max-width:100%}
 
 /* ---------- 상태 칩 ---------- */
 .status-chip{transition:background-color .3s,color .3s}
-.status-chip.review::before,.status-chip.needs::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0}
-.status-chip.review::before{animation:aq-pulse-ring 1.8s ease-out infinite}
 .status-chip.pending{background:#EAF0FF!important;color:#365cd4!important}
 
 /* ---------- 버튼 ---------- */
@@ -531,7 +528,6 @@ body:has(.aq-payout-setup-mode) .aq-toast-stack{bottom:calc(104px + env(safe-are
 .aq-sign-check{padding-top:4px!important}
 .aq-sign-wait{display:flex;flex-direction:column;align-items:center;text-align:center;padding:22px 6px 8px;animation:aq-fade-up .45s var(--aq-e-ease) both}
 .aq-sign-wait-icon{display:grid;place-items:center;width:58px;height:58px;border-radius:50%;background:#F0EDFF;color:#6852BA;margin-bottom:16px}
-.aq-sign-wait-icon svg path{transform-origin:12px 12px;animation:aq-spin 6s linear infinite}
 .aq-sign-wait strong{font-size:18px;letter-spacing:-.03em;color:var(--aq-e-ink)}
 .aq-sign-wait>p{margin-top:8px;font-size:13px;line-height:1.7;color:#6f7b8e;max-width:360px}
 .aq-sign-wait-steps{list-style:none;margin:22px 0 4px;padding:16px;width:100%;display:grid;gap:10px;background:#f5f8ff;border-radius:20px;text-align:left}
@@ -540,7 +536,7 @@ body:has(.aq-payout-setup-mode) .aq-toast-stack{bottom:calc(104px + env(safe-are
 .aq-sign-wait-steps li.is-done{color:#4c5a74}
 .aq-sign-wait-steps li.is-done span{background:var(--aq-e-blue);color:#fff}
 .aq-sign-wait-steps li.is-current{color:#6852BA}
-.aq-sign-wait-steps li.is-current span{background:#6852BA;color:#fff;animation:aq-pulse-ring 1.8s ease-out infinite}
+.aq-sign-wait-steps li.is-current span{background:#6852BA;color:#fff}
 .aq-sign-wait-demo{margin-top:14px!important;font-size:12px!important;color:#98a2b3!important}
 .aq-sign-foot .aq-sign-full{grid-column:1/-1}
 @media(prefers-reduced-motion:reduce){.aq-sign-wait-icon svg path{animation:none}}
@@ -599,3 +595,42 @@ body:has(.aq-payout-setup-mode) .aq-toast-stack{bottom:calc(104px + env(safe-are
 .aq-task-go i{font-style:normal;font-size:17px;line-height:1;transition:transform .2s var(--aq-e-ease)}
 .aq-task:focus-visible{outline:3px solid #6F91FF;outline-offset:2px}
 @media(max-width:380px){.aq-task-go{padding:7px 8px}.aq-task-go{font-size:0;gap:0}.aq-task-go i{font-size:20px}}
+
+/* ==========================================================================
+   공용 서명 칸 + 법정대리인 동의 창
+   ========================================================================== */
+.aq-pad{position:relative;background:#f5f8ff;border-radius:18px;overflow:hidden;margin-top:10px}
+.aq-pad canvas{display:block;width:100%;cursor:crosshair}
+.aq-pad-hint{position:absolute;inset:0;display:grid;place-items:center;color:#a0adc2;font-size:14px;pointer-events:none}
+/* 모달이 열려 있는 동안 위자드 하단 버튼 바가 모달 버튼을 가리지 않도록 숨김 */
+body:has(#modal) #view-new .step-actions{visibility:hidden}
+.guardian-consent-text{font-size:14px;color:#56637a;line-height:1.7;margin:-4px 0 18px}
+.aq-guardian-steps{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.aq-guardian-steps>li{display:grid;grid-template-columns:28px minmax(0,1fr);gap:12px;align-items:start;padding:16px;border-radius:20px;background:#f7f9fc;transition:background-color .25s}
+.aq-guardian-steps>li.is-done{background:#f1f6ff}
+.aq-guardian-no{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#e4e9f2;color:#6a778d;font-size:12px;font-weight:800;margin-top:1px;transition:background-color .25s,color .25s}
+.aq-guardian-steps>li.is-done .aq-guardian-no{background:var(--aq-e-blue);color:#fff;animation:aq-pop .35s var(--aq-e-spring) both}
+.aq-guardian-label{display:block;font-size:14px;font-weight:750;color:var(--aq-e-ink)}
+.aq-guardian-steps .aq-pad{background:#fff}
+.aq-guardian-agree{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
+.aq-guardian-agree input{flex:0 0 20px;width:20px;height:20px;margin:2px 0 0;accent-color:var(--aq-e-blue)}
+.aq-guardian-agree span{font-size:14px;font-weight:650;line-height:1.55;color:var(--aq-e-ink)}
+.aq-guardian-agree small{display:block;margin-top:3px;font-size:12px;font-weight:400;color:#8591a5}
+.aq-cert-methods{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
+.aq-cert-method{display:flex;flex-direction:column;align-items:center;gap:4px;padding:14px 6px 12px;border:0;border-radius:16px;background:#fff;color:#3c4b63;cursor:pointer;transition:background-color .2s,color .2s,transform .15s}
+.aq-cert-method:active{transform:scale(.97)}
+.aq-cert-method strong{font-size:13px;font-weight:750;letter-spacing:-.02em}
+.aq-cert-method small{font-size:10.5px;color:#98a2b3}
+.aq-cert-icon{display:grid;place-items:center;width:40px;height:40px;border-radius:13px;background:#eef3ff;color:var(--aq-e-blue);margin-bottom:4px;transition:background-color .2s,color .2s}
+.aq-cert-method.is-active{background:#e6eeff;color:#2f55d4}
+.aq-cert-method.is-active .aq-cert-icon{background:var(--aq-e-blue);color:#fff}
+.aq-cert-method:focus-visible{outline:3px solid #6F91FF;outline-offset:2px}
+.aq-cert-picked{margin-top:10px;font-size:13px;font-weight:650;color:#2f55d4;overflow-wrap:anywhere}
+.aq-cert-picked small{display:block;margin-top:3px;font-weight:400;color:#8591a5;font-size:12px}
+.aq-guardian-foot{position:sticky;bottom:0;background:#fff;padding-bottom:4px;z-index:2}
+.aq-guardian-missing{grid-column:1/-1;margin:0 0 2px;font-size:12px;color:#8591a5;text-align:center}
+.aq-guardian-missing:empty{display:none}
+@media(max-width:380px){.aq-cert-method small{display:none}.aq-guardian-steps>li{padding:14px 12px;gap:10px}}
+
+/* 상태 표시는 모두 '발매 완료'와 같은 글자 pill로 통일 (앞의 점·깜빡임 없음) */
+.status-chip::before,.status-chip::after{content:none!important;display:none!important}

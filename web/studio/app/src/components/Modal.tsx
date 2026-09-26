@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 interface ModalProps {
   title: string;
@@ -109,7 +110,9 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
 
   const cls = ['modal', modalClass, leaving ? 'is-leaving' : ''].filter(Boolean).join(' ');
 
-  return (
+  // body 바로 아래에 그린다 — 애니메이션(transform) 중인 부모 안에 있으면 position:fixed의 기준이
+  // 화면이 아니라 부모가 되어 창이 밀리거나 다른 고정 요소에 가려지는 문제를 막는다
+  return createPortal(
     <div
       id="modal"
       className={cls}
@@ -131,6 +134,7 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
           <ModalCloseContext.Provider value={requestClose}>{children}</ModalCloseContext.Provider>
         </div>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
