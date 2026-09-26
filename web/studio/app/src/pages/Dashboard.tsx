@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router';
+import { Link, useNavigate } from '../lib/router';
 import { api } from '../api/client';
 import { STATUS_LABEL, money, num } from '../lib/format';
 import { useUnreadCount } from '../store/support';
@@ -11,6 +11,7 @@ import { ReleaseCover } from '../components/ReleaseCover';
 import { latestSummary, periodLabel } from '../data/reports';
 import type { CSSVarStyle } from '../hooks/useAnimations';
 import { useGrowOnView } from '../hooks/useAnimations';
+import { prefetchRoute } from '../routes';
 
 const GRID_ITEMS = [
   {
@@ -88,7 +89,7 @@ export function Dashboard() {
           <h1>{profileName ? `${profileName}님의 작업실` : '내 작업실'}</h1>
           <p>{greeting()} 발매 현황과 확인할 작업을 한곳에서 살펴보세요.</p>
         </div>
-        <Link className="button" to="/upload">새로운 발매</Link>
+        <Link className="button" to="/upload" onPointerEnter={() => prefetchRoute('/upload')}>새로운 발매</Link>
       </div>
 
       <div className="portal-hero aq-hero-animated">
@@ -98,12 +99,12 @@ export function Dashboard() {
           <h2>새로운 발매를<br />시작해 보세요.</h2>
           <p>음원과 커버아트, 크레딧을 등록하고 발매를 준비해 보세요.</p>
         </div>
-        <Link className="button aq-hero-cta" to="/upload">발매 등록하기 <span aria-hidden="true">→</span></Link>
+        <Link className="button aq-hero-cta" to="/upload" onPointerEnter={() => prefetchRoute('/upload')}>발매 등록하기 <span aria-hidden="true">→</span></Link>
       </div>
 
       <div className="dashboard-grid aq-stagger" aria-label="주요 업무">
         {GRID_ITEMS.map(item => (
-          <Link key={item.to} className="service-item" to={item.to}>
+          <Link key={item.to} className="service-item" to={item.to} onPointerEnter={() => prefetchRoute(item.to)} onFocus={() => prefetchRoute(item.to)}>
             <span className="icon-chip">{item.icon}</span>
             <div>
               <h3>{item.title}</h3>

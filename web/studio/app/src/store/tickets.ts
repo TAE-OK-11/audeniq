@@ -13,5 +13,8 @@ const INITIAL_TICKETS: Ticket[] = [
 
 export const ticketsStore = createStore<Ticket[]>(INITIAL_TICKETS, {
   persist: 'tickets',
-  revive: (raw, fb) => (Array.isArray(raw) ? raw as Ticket[] : fb),
+  revive: (raw, fb) => (Array.isArray(raw)
+    ? (raw as Ticket[]).filter(t => t && typeof t.id === 'string')
+      .map(t => ({ ...t, subject: String(t.subject ?? ''), body: String(t.body ?? ''), created: String(t.created ?? ''), releaseTitle: String(t.releaseTitle ?? ''), status: String(t.status ?? '답변 대기'), category: String(t.category ?? '') }))
+    : fb),
 });

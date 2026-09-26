@@ -9,3 +9,11 @@
   Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; media-src 'self' blob: data:; frame-src blob:; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'
 /
   Cache-Control: no-cache
+/connected/
+  Cache-Control: no-cache
+/connected/index.html
+  Cache-Control: no-cache
+/connected/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+/connected/static/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800

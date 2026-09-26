@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Link } from 'react-router';
+import { Link } from '../lib/router';
 
 export function AuthLayout({ title, sub, children }: { title: string; sub: string; children: ReactNode }) {
   return (
@@ -8,7 +8,7 @@ export function AuthLayout({ title, sub, children }: { title: string; sub: strin
       <div className="auth-split">
         <div className="auth-card">
           <Link to="/login" className="aq-auth-brand" aria-label="AUDENIQ STUDIO">
-            <img src={`${import.meta.env.BASE_URL}assets/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" />
+            <img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" />
             <span>STUDIO</span>
           </Link>
           <h1>{title}</h1>

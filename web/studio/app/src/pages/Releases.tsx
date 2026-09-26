@@ -1,5 +1,5 @@
-import { useDeferredValue, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from '../lib/router';
 import { api, type Track } from '../api/client';
 import { STATUS_LABEL } from '../lib/format';
 import { useAsync } from '../hooks/useAsync';
@@ -44,20 +44,27 @@ export function Releases() {
     setParams(next, { replace: true });
   };
 
-  const { data, loading, error, reload } = useAsync(async () => {
-    const list = await api.listReleases();
-    const details = await Promise.all(list.map(r => api.getRelease(r.id).catch(() => null)));
-    const tracks: TrackWithRelease[] = [];
+  const { data: listData, loading: listLoading, error: listError, reload } = useAsync(() => api.listReleases(), []);
+  const list = useMemo(() => listData ?? [], [listData]);
+  // 트랙은 '전체 트랙' 탭을 처음 열 때만 발매별 상세를 불러온다 (목록만 볼 때 N건 추가 요청 방지)
+  const [tracksWanted, setTracksWanted] = useState(tab === 'tracks');
+  useEffect(() => { if (tab === 'tracks') setTracksWanted(true); }, [tab]);
+  const { data: trackData, loading: tracksLoading, error: tracksError } = useAsync(async () => {
+    if (!tracksWanted || !listData) return null;
+    const details = await Promise.all(listData.map(r => api.getRelease(r.id).catch(() => null)));
+    const out: TrackWithRelease[] = [];
     for (const d of details) {
       if (!d) continue;
       for (const t of d.tracks) {
-        tracks.push({ ...t, releaseTitle: d.title, releaseId: d.id, artist: d.artist, coverData: d.draft?.coverData });
+        out.push({ ...t, releaseTitle: d.title, releaseId: d.id, artist: d.artist, coverData: d.draft?.coverData });
       }
     }
-    return { list, tracks };
-  }, []);
-  const list = useMemo(() => data?.list ?? [], [data]);
-  const tracks = useMemo(() => data?.tracks ?? [], [data]);
+    return out;
+  }, [tracksWanted, listData]);
+  const tracks = useMemo(() => trackData ?? [], [trackData]);
+  const trackCount = useMemo(() => list.reduce((n, r) => n + (r.track_count || 0), 0), [list]);
+  const loading = listLoading || (tab === 'tracks' && (tracksLoading || (!trackData && !tracksError)));
+  const error = listError || (tab === 'tracks' ? tracksError : '');
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: list.length };
@@ -102,11 +109,11 @@ export function Releases() {
         <button
           type="button" role="tab" className="tab" aria-selected={tab === 'releases'}
           onClick={() => setParam('tab', 'releases', 'releases')}
-        >발매 목록 {!loading && <small className="aq-tab-count">{list.length}</small>}</button>
+        >발매 목록 {!listLoading && <small className="aq-tab-count">{list.length}</small>}</button>
         <button
           type="button" role="tab" className="tab" aria-selected={tab === 'tracks'}
           onClick={() => setParam('tab', 'tracks', 'releases')}
-        >전체 트랙 {!loading && <small className="aq-tab-count">{tracks.length}</small>}</button>
+        >전체 트랙 {!listLoading && <small className="aq-tab-count">{trackCount}</small>}</button>
       </div>
 
       {loading ? (
