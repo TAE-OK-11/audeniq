@@ -1169,3 +1169,16 @@ body.aq-nav-locked #portalNav{
 .wizard-progress-seg{position:relative!important;height:5px!important;background:#e9eef8!important;border-radius:99px!important;flex:1!important}
 .wizard-progress-seg em{position:absolute!important;top:-20px!important;left:0!important;font-style:normal!important;font-size:11px!important;font-weight:700!important;color:#2f6df6!important;letter-spacing:-.01em!important;white-space:nowrap!important;line-height:1.2!important}
 .wizard-progress-seg.current{background:#2f6df6!important}
+
+/* 트랙 상세 정보 토글 */
+.track-detail-toggle{width:100%;display:flex;justify-content:space-between;align-items:center;background:#f7f9fc;border:1px solid #e8edf5;border-radius:12px;padding:12px 16px;font-size:13px;font-weight:700;color:#3c4b63;cursor:pointer;margin-top:12px}
+.track-detail-toggle:hover{background:#eef2f9}
+.track-detail-toggle .toggle-arrow{font-size:18px;color:#8a94a8;transition:transform .2s;display:inline-block}
+.track-detail-toggle .toggle-arrow.open{transform:rotate(90deg)}
+.track-detail-body{margin-top:12px;padding-top:4px;animation:fadeIn .2s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+.track-title-field input{font-size:16px!important;font-weight:700!important}
+
+/* 트랙 카드 간격 */
+#trackEditors{display:flex!important;flex-direction:column!important;gap:16px!important}
+.track-editor{margin:0!important}

@@ -329,6 +329,7 @@ export function Upload() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [draftId, setDraftId] = useState<string | null>(null);
+  const [expandedTracks, setExpandedTracks] = useState<Set<string>>(new Set());
   const coverInputRef = useRef<HTMLInputElement>(null);
   const progressRef = useProgressFill(step);
 
@@ -664,7 +665,17 @@ export function Upload() {
         {step === 1 && (
           <section className="step-section">
             <div id="trackEditors">
-              {form.tracks.map((t, i) => (
+              {form.tracks.map((t, i) => {
+                const expanded = expandedTracks.has(t.id);
+                const toggleExpand = () => {
+                  setExpandedTracks(prev => {
+                    const next = new Set(prev);
+                    if (next.has(t.id)) next.delete(t.id);
+                    else next.add(t.id);
+                    return next;
+                  });
+                };
+                return (
                 <article key={t.id} className="track-editor">
                   <div className="minor-actions">
                     <h3>트랙 {i + 1}</h3>
@@ -675,38 +686,9 @@ export function Upload() {
                       >삭제</button>
                     )}
                   </div>
-                  <div className="form-grid">
-                    <div className="field">
-                      <label htmlFor={`tr-${i}-title`}>곡 제목 <span className="required">*</span></label>
-                      <input id={`tr-${i}-title`} value={t.title} onChange={e => setTrack(t.id, 'title', e.target.value)} placeholder="곡명을 입력해" maxLength={200} />
-                    </div>
-                    <div className="field">
-                      <label htmlFor={`tr-${i}-version`}>버전 / 부제</label>
-                      <input id={`tr-${i}-version`} value={t.version} onChange={e => setTrack(t.id, 'version', e.target.value)} placeholder="예: Acoustic Version" maxLength={200} />
-                    </div>
-                    <div className="field">
-                      <label htmlFor={`tr-${i}-isrc`}>ISRC (보유 시)</label>
-                      <input id={`tr-${i}-isrc`} value={t.isrc} onChange={e => setTrack(t.id, 'isrc', e.target.value)} placeholder="예: KR-ABC-26-00001" maxLength={200} />
-                    </div>
-                    <div className="track-duration-label" aria-live="polite">
-                      {t.duration ? `곡 길이 · ${t.duration}` : '음원을 선택하면 곡 길이를 자동으로 확인해요.'}
-                    </div>
-                    <div className="field">
-                      <label htmlFor={`tr-${i}-composers`}>작곡 <span className="required">*</span></label>
-                      <input id={`tr-${i}-composers`} value={t.composers} onChange={e => setTrack(t.id, 'composers', e.target.value)} placeholder="참여자 이름을 쉼표로 구분" maxLength={200} />
-                    </div>
-                    <div className="field">
-                      <label htmlFor={`tr-${i}-lyricists`}>작사</label>
-                      <input id={`tr-${i}-lyricists`} value={t.lyricists} onChange={e => setTrack(t.id, 'lyricists', e.target.value)} placeholder="가사가 없는 곡이라면 비워둬" maxLength={200} />
-                    </div>
-                    <div className="field">
-                      <label htmlFor={`tr-${i}-arrangers`}>편곡</label>
-                      <input id={`tr-${i}-arrangers`} value={t.arrangers} onChange={e => setTrack(t.id, 'arrangers', e.target.value)} placeholder="참여자 이름" maxLength={200} />
-                    </div>
-                    <div className="field">
-                      <label htmlFor={`tr-${i}-performers`}>실연자 / 피처링</label>
-                      <input id={`tr-${i}-performers`} value={t.performers} onChange={e => setTrack(t.id, 'performers', e.target.value)} placeholder="참여자 이름" maxLength={200} />
-                    </div>
+                  <div className="field track-title-field">
+                    <label htmlFor={`tr-${i}-title`}>곡 제목 <span className="required">*</span></label>
+                    <input id={`tr-${i}-title`} value={t.title} onChange={e => setTrack(t.id, 'title', e.target.value)} placeholder="곡명을 입력해" maxLength={200} />
                   </div>
                   <div className="field">
                     <label htmlFor={`trackFile-${i}`}>음원 파일 <span className="required">*</span></label>
@@ -719,15 +701,57 @@ export function Upload() {
                       {t.audioName ? `${t.audioName}${t.audioSize ? ` · ${Math.round(t.audioSize / 1024 / 1024 * 100) / 100}MB` : ''}` : '선택한 파일 없음'}. 권장: 무손실 WAV/FLAC 파일, 최종 QC 후 송출.
                     </p>
                   </div>
-                  <label className="check-line">
-                    <input
-                      type="checkbox" checked={t.explicit}
-                      onChange={e => setTrack(t.id, 'explicit', e.target.checked)}
-                    />
-                    <span>청소년 이용불가 / Explicit 가사가 포함돼요.</span>
-                  </label>
+                  <div className="track-duration-label" aria-live="polite">
+                    {t.duration ? `곡 길이 · ${t.duration}` : '음원을 선택하면 곡 길이를 자동으로 확인해요.'}
+                  </div>
+                  <button
+                    type="button" className="track-detail-toggle"
+                    onClick={toggleExpand}
+                    aria-expanded={expanded}
+                  >
+                    <span>상세 정보 {t.isrc ? `· ${t.isrc}` : ''}</span>
+                    <span className={`toggle-arrow${expanded ? ' open' : ''}`}>›</span>
+                  </button>
+                  {expanded && (
+                    <div className="track-detail-body">
+                      <div className="form-grid">
+                        <div className="field">
+                          <label htmlFor={`tr-${i}-version`}>버전 / 부제</label>
+                          <input id={`tr-${i}-version`} value={t.version} onChange={e => setTrack(t.id, 'version', e.target.value)} placeholder="예: Acoustic Version" maxLength={200} />
+                        </div>
+                        <div className="field">
+                          <label htmlFor={`tr-${i}-isrc`}>ISRC (보유 시)</label>
+                          <input id={`tr-${i}-isrc`} value={t.isrc} onChange={e => setTrack(t.id, 'isrc', e.target.value)} placeholder="예: KR-ABC-26-00001" maxLength={200} />
+                        </div>
+                        <div className="field">
+                          <label htmlFor={`tr-${i}-composers`}>작곡 <span className="required">*</span></label>
+                          <input id={`tr-${i}-composers`} value={t.composers} onChange={e => setTrack(t.id, 'composers', e.target.value)} placeholder="참여자 이름을 쉼표로 구분" maxLength={200} />
+                        </div>
+                        <div className="field">
+                          <label htmlFor={`tr-${i}-lyricists`}>작사</label>
+                          <input id={`tr-${i}-lyricists`} value={t.lyricists} onChange={e => setTrack(t.id, 'lyricists', e.target.value)} placeholder="가사가 없는 곡이라면 비워둬" maxLength={200} />
+                        </div>
+                        <div className="field">
+                          <label htmlFor={`tr-${i}-arrangers`}>편곡</label>
+                          <input id={`tr-${i}-arrangers`} value={t.arrangers} onChange={e => setTrack(t.id, 'arrangers', e.target.value)} placeholder="참여자 이름" maxLength={200} />
+                        </div>
+                        <div className="field">
+                          <label htmlFor={`tr-${i}-performers`}>실연자 / 피처링</label>
+                          <input id={`tr-${i}-performers`} value={t.performers} onChange={e => setTrack(t.id, 'performers', e.target.value)} placeholder="참여자 이름" maxLength={200} />
+                        </div>
+                      </div>
+                      <label className="check-line">
+                        <input
+                          type="checkbox" checked={t.explicit}
+                          onChange={e => setTrack(t.id, 'explicit', e.target.checked)}
+                        />
+                        <span>청소년 이용불가 / Explicit 가사가 포함돼요.</span>
+                      </label>
+                    </div>
+                  )}
                 </article>
-              ))}
+                );
+              })}
             </div>
             <div className="spaced-actions">
               <button
