@@ -45,6 +45,7 @@ const Inquiries = lazyPage(pageLoaders.Inquiries, m => m.Inquiries);
 const Notifications = lazyPage(pageLoaders.Notifications, m => m.Notifications);
 const Events = lazyPage(pageLoaders.Events, m => m.Events);
 const Notices = lazyPage(pageLoaders.Notices, m => m.Notices);
+const NoticeDetail = lazyPage(pageLoaders.Notices, m => m.NoticeDetail);
 const Profile = lazyPage(pageLoaders.Profile, m => m.Profile);
 
 function BootScreen() {
@@ -103,6 +104,7 @@ function PortalRoutes() {
             <Route path="/notifications" element={<Notifications />} />
             <Route path="/events" element={<Events />} />
             <Route path="/notices" element={<Notices />} />
+            <Route path="/notices/:id" element={<NoticeDetail />} />
             <Route path="/support" element={<Navigate to="/inquiries" replace />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="*" element={<Navigate to="/" replace />} />

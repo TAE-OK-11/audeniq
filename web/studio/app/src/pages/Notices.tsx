@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
+import { Link, useParams, useSearchParams } from '../lib/router';
 import { MOCK } from '../lib/mode';
 import { fetchNotices } from '../api/portal';
 import { useAsync } from '../hooks/useAsync';
@@ -34,22 +35,64 @@ const NOTICES: Notice[] = [
     date: '2026-09-15',
     body: '9월 15일 새벽에 진행된 시스템 점검이 완료됐습니다.\n\n점검 시간: 2026-09-15 02:00 ~ 04:00 (KST)\n영향: 점검 시간 중 발매 접수 일시 중단\n\n이용에 불편을 드려 죄송합니다.',
   },
+  {
+    id: 'n4',
+    title: '발매 신청서 양식 변경 안내 (AUD 번호 체계)',
+    date: '2026-09-10',
+    body: '발매 신청서 번호가 AUD-YYYYMMDD-XXXXXX 형식으로 바뀌었어요.\n\n이전에 접수한 발매도 새 양식의 신청서로 확인할 수 있어요.',
+  },
+  {
+    id: 'n5',
+    title: '추석 연휴 고객센터 운영 안내',
+    date: '2026-09-01',
+    body: '추석 연휴 기간에는 문의 답변이 평소보다 늦어질 수 있어요.\n\n연휴 이후 순서대로 빠르게 답변드릴게요.',
+  },
 ];
 
-export function Notices() {
-  const { data, loading, error, reload } = useAsync(async (): Promise<Notice[]> => (MOCK
+const PAGE_SIZE = 10;
+
+/** 2026-09-26 → 2026.09.26 */
+const dotted = (d: string) => d.replaceAll('-', '.');
+
+function useNotices() {
+  const state = useAsync(async (): Promise<Notice[]> => (MOCK
     ? NOTICES
     : (await fetchNotices()).map(n => ({ id: n.id, title: n.title, body: n.body, pinned: n.pinned, date: toKstDate(n.published_at) }))), []);
-  const list = data ?? [];
-  const [openId, setOpenId] = useState<string | null>(null);
-  useEffect(() => { if (list[0] && openId === null) setOpenId(list.find(n => n.pinned)?.id ?? list[0].id); }, [list, openId]);
+  const ordered = useMemo(() => (state.data ?? []).slice().sort((a, b) => b.date.localeCompare(a.date)), [state.data]);
+  return { ...state, ordered };
+}
 
-  const ordered = list.slice().sort((a, b) => {
-    if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
-    return b.date.localeCompare(a.date);
-  });
+function LoadState({ loading, error, reload, empty }: { loading: boolean; error: string | null; reload: () => void; empty: boolean }) {
+  if (loading) return <SkeletonRows count={4} />;
+  if (error) return (
+    <div className="empty-page">
+      <h2>공지사항을 불러오지 못했어요.</h2>
+      <p>{error}</p>
+      <button type="button" className="button secondary" onClick={reload}>다시 불러오기</button>
+    </div>
+  );
+  if (empty) return <div className="empty-page"><h2>등록된 공지가 없어요.</h2><p>새 소식이 생기면 이곳에서 알려 드릴게요.</p></div>;
+  return null;
+}
+
+function Body({ text }: { text: string }) {
+  return <>{text.split('\n').map((line, i) => <p key={i}>{line || '\u00A0'}</p>)}</>;
+}
+
+export function Notices() {
+  const { data, loading, error, reload, ordered } = useNotices();
+  const [params, setParams] = useSearchParams();
   const pinned = ordered.filter(n => n.pinned);
-  const regular = ordered.filter(n => !n.pinned);
+  const pages = Math.max(1, Math.ceil(ordered.length / PAGE_SIZE));
+  const page = Math.min(pages, Math.max(1, Number(params.get('page')) || 1));
+  const rows = ordered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  // 페이지 번호는 현재 페이지 주변 5개까지만
+  const first = Math.max(1, Math.min(page - 2, pages - 4));
+  const numbers = Array.from({ length: Math.min(5, pages) }, (_, i) => first + i);
+  const go = (p: number) => {
+    setParams(p > 1 ? { page: String(p) } : {});
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   return (
     <div id="view-notices" className="view">
@@ -61,72 +104,98 @@ export function Notices() {
         </div>
       </div>
 
-      {loading && !data ? <SkeletonRows count={3} /> : error ? (
-        <div className="empty-page">
-          <h2>공지사항을 불러오지 못했어요.</h2>
-          <p>{error}</p>
-          <button type="button" className="button secondary" onClick={reload}>다시 불러오기</button>
-        </div>
-      ) : !list.length ? (
-        <div className="empty-page"><h2>등록된 공지가 없어요.</h2><p>새 소식이 생기면 이곳에서 알려 드릴게요.</p></div>
-      ) : null}
+      <LoadState loading={loading && !data} error={error} reload={reload} empty={!!data && !ordered.length} />
 
       {pinned.length > 0 && (
-        <>
-          <div className="aq-notice-featured-list">
-            {pinned.map(n => (
-              <button
-                key={n.id} type="button" className="aq-notice-featured"
-                onClick={() => setOpenId(openId === n.id ? null : n.id)}
-                aria-expanded={openId === n.id}
-              >
-                <span className="aq-pin-badge">고정</span>
-                <span className="aq-notice-featured-title">{n.title}</span>
-                <span className="aq-notice-featured-date">{n.date}</span>
-                {openId === n.id && (
-                  <span className="aq-notice-featured-body">
-                    {n.body.split('\n').map((line, i) => (
-                      <span key={i}>{line || '\u00A0'}<br /></span>
-                    ))}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-          <div className="section-top"><h2>전체 공지</h2></div>
-        </>
+        <div className="aq-notice-featured-list">
+          {pinned.map(n => (
+            <Link key={n.id} to={`/notices/${encodeURIComponent(n.id)}`} className="aq-notice-featured">
+              <span className="aq-pin-badge">중요</span>
+              <span className="aq-notice-featured-title">{n.title}</span>
+              <span className="aq-notice-featured-date">{dotted(n.date)}</span>
+            </Link>
+          ))}
+        </div>
       )}
 
-      <div className="aq-notice-list">
-        {regular.map(n => {
-          const open = openId === n.id;
-          return (
-            <div key={n.id} className="aq-notice-item">
-              <button
-                type="button" className="aq-notice-head"
-                aria-expanded={open}
-                onClick={() => setOpenId(open ? null : n.id)}
-              >
-                <span className="min-0">
-                  <span className="row-name">
-                    {n.pinned && <em className="aq-pin-badge">고정</em>}
+      {ordered.length > 0 && (
+        <section className="aq-nboard" aria-labelledby="aqNoticeAll">
+          <div className="aq-nboard-top">
+            <h2 id="aqNoticeAll">전체 공지</h2>
+            <span className="aq-nboard-count">{ordered.length}건</span>
+          </div>
+          <ul className="aq-nboard-list">
+            {rows.map(n => (
+              <li key={n.id}>
+                <Link to={`/notices/${encodeURIComponent(n.id)}`} className="aq-nboard-row">
+                  <span className="aq-nboard-title">
+                    {n.pinned && <em className="aq-nboard-tag">중요</em>}
                     {n.title}
                   </span>
-                  <span className="row-sub">{n.date}</span>
-                </span>
-                <span className={`aq-chevron${open ? ' is-open' : ''}`} aria-hidden="true">›</span>
-              </button>
-              {open && (
-                <div className="aq-notice-body">
-                  {n.body.split('\n').map((line, i) => (
-                    <p key={i}>{line || '\u00A0'}</p>
-                  ))}
-                </div>
-              )}
+                  <span className="aq-nboard-date">{dotted(n.date)}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {pages > 1 && (
+            <div className="aq-nboard-pages" role="navigation" aria-label="공지 페이지">
+              <button type="button" className="aq-nboard-arrow" disabled={page === 1} onClick={() => go(page - 1)} aria-label="이전 페이지">‹</button>
+              {numbers.map(p => (
+                <button
+                  key={p} type="button" onClick={() => go(p)}
+                  className={p === page ? 'is-current' : undefined}
+                  aria-current={p === page ? 'page' : undefined}
+                >{p}</button>
+              ))}
+              <button type="button" className="aq-nboard-arrow" disabled={page === pages} onClick={() => go(page + 1)} aria-label="다음 페이지">›</button>
             </div>
-          );
-        })}
-      </div>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
+
+export function NoticeDetail() {
+  const { id } = useParams<{ id: string }>();
+  const { data, loading, error, reload, ordered } = useNotices();
+  const idx = ordered.findIndex(n => n.id === id);
+  const notice = idx >= 0 ? ordered[idx] : null;
+  const newer = idx > 0 ? ordered[idx - 1] : null;
+  const older = idx >= 0 && idx < ordered.length - 1 ? ordered[idx + 1] : null;
+
+  return (
+    <div id="view-notice-detail" className="view">
+      <Link to="/notices" className="aq-nboard-back">‹ 공지사항</Link>
+      <LoadState loading={loading && !data} error={error} reload={reload} empty={false} />
+      {data && !notice && (
+        <div className="empty-page">
+          <h2>공지를 찾을 수 없어요.</h2>
+          <p>삭제됐거나 주소가 바뀌었을 수 있어요.</p>
+          <Link to="/notices" className="button secondary">목록으로</Link>
+        </div>
+      )}
+      {notice && (
+        <article className="aq-nboard-article">
+          <header>
+            {notice.pinned && <em className="aq-nboard-tag">중요</em>}
+            <h1>{notice.title}</h1>
+            <time dateTime={notice.date}>{dotted(notice.date)}</time>
+          </header>
+          <div className="aq-nboard-content"><Body text={notice.body} /></div>
+          <div className="aq-nboard-sibling" role="navigation" aria-label="다른 공지">
+            {newer && (
+              <Link to={`/notices/${encodeURIComponent(newer.id)}`}><span>다음 글</span><strong>{newer.title}</strong></Link>
+            )}
+            {older && (
+              <Link to={`/notices/${encodeURIComponent(older.id)}`}><span>이전 글</span><strong>{older.title}</strong></Link>
+            )}
+          </div>
+          <div className="aq-nboard-foot">
+            <Link to="/notices" className="button secondary">목록으로</Link>
+          </div>
+        </article>
+      )}
     </div>
   );
 }
