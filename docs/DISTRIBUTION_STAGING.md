@@ -89,7 +89,7 @@ releases; staff never edit check results.
 
 | Decision | Effect | People |
 |---|---|---|
-| APPROVE | PASS overrides for the open checks → Stage 2 re-run | 1 reviewer; **2** when an open check is `S2_RIGHTS_SCOPE`, `S2_DOCS_ORIGIN`, `S2_SPECIAL_FLAGS` or BLOCKED |
+| APPROVE | PASS overrides for the open checks → Stage 2 re-run | **2** reviewers for every PASS except the low-risk codes (`S2_RELEASE_DATE_FAR_*`, `S2_META_CREDITS`) — same rule as member overrides, so duplicate masters, fingerprint matches, protected names and rights classes always need a second person; anything BLOCKED needs two |
 | REQUEST_CORRECTION | open checks → CORRECTION_REQUIRED → `STAGE2_CORRECTION`, notes shown to the artist | 1 |
 | REJECT | `STAGE2_REVIEW → WITHDRAWN` (new state edge), artist notified | 1 |
 
@@ -97,6 +97,44 @@ Review checklist a reviewer sees per release (review sheet): Stage 1 audio /
 artwork / metadata results, fingerprint and duplicate holds, protected
 artist names, declarations (cover, samples, AI, explicit), rights scope,
 signed application, documents, and each platform's staging verdict.
+
+### Audio advisories
+
+Loudness outside the delivery target and short clip events never block, but
+they no longer pass silently: the review sheet lists them (`advisories`),
+each staged DSP carries `DSP_LOUDNESS_ADVISORY` (the measured LUFS against
+that platform's normalisation target, e.g. "−7.5 LUFS vs D-6 target −16: the
+platform will turn it down 8.5 dB") or `DSP_CLIPPING_ADVISORY`, the overview
+counts `audio_advisories`, and approving such a row requires
+`acknowledge_warnings: true` (`WARNINGS_NOT_ACKNOWLEDGED` otherwise).
+
+### Test-range UPC/ISRC (VIRTUAL codes)
+
+Codes issued before the company registered its GS1 prefix / ISRC registrant
+code come from the VIRTUAL ranges and can never reach a contracted partner.
+Once real ranges are registered (`audeniq-admin identifier-issuer register`):
+
+1. `POST /api/staff/releases/{id}/reissue-identifiers {reason}` sends a
+   READY_FOR_DELIVERY release with virtual codes back to the artist
+   (`STAGE3_CORRECTION`, with the reason as a note). Refused when nothing
+   would change, when no real range exists, or when a contracted partner
+   already has the package.
+2. The artist resubmits; that Stage 3 run RETIRES the virtual ledger rows
+   (migration 0046, one-way, never deleted, never re-issued) and issues real
+   codes.
+3. The old package is history: it leaves the staff queue and E-1 refuses it
+   (`EXECUTION_PACKAGE_SUPERSEDED`, `STAGING_SUPERSEDED`).
+
+### Live status
+
+Delivery jobs and live bindings (per partner, latest package) are part of
+the release detail and list (`delivery_status_by_dsp`, `live_status_by_dsp`);
+Studio shows a release as 발매 완료 once any platform is LIVE, and the first
+LIVE partner raises the "released" notification (migration 0045).
+Live polling: contracted partners 1 h then every 6 h; MOCK partners 60 s then
+every 2 min (`DELIVERY_POLL_FIRST_SECS` / `DELIVERY_POLL_INTERVAL_SECS`
+override). The sandbox mock goes LIVE on its second status check and
+recovers its own submissions after a worker restart.
 
 ## 4. Data path changes
 

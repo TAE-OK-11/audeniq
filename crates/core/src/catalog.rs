@@ -7,7 +7,7 @@ use crate::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sqlx::PgConnection;
+use sqlx::{PgConnection, Row};
 use uuid::Uuid;
 #[derive(Clone, Copy)]
 pub enum Kind {
@@ -203,15 +203,83 @@ pub async fn list(s: &AppState, a: &Actor, org: Uuid, kind: Kind, page: Page) ->
         .bind(limit + 1)
         .fetch_all(&mut *tx)
         .await?;
-    tx.commit().await?;
     let has_more = rows.len() > limit as usize;
     rows.truncate(limit as usize);
+    if matches!(kind, Kind::Release) {
+        let ids: Vec<Uuid> = rows
+            .iter()
+            .filter_map(|v| v["id"].as_str().and_then(|s| Uuid::parse_str(s).ok()))
+            .collect();
+        let mut axes = delivery_axes(&mut tx, org, &ids).await?;
+        for v in &mut rows {
+            let id = v["id"].as_str().and_then(|s| Uuid::parse_str(s).ok());
+            let (delivery, live) = id.and_then(|i| axes.remove(&i)).unwrap_or_default();
+            v["delivery_status_by_dsp"] = json!(delivery);
+            v["live_status_by_dsp"] = json!(live);
+        }
+    }
+    tx.commit().await?;
     let next_cursor = if has_more {
         rows.last().map(|v| v["id"].clone())
     } else {
         None
     };
     Ok(json!({"items":rows,"limit":limit,"next_cursor":next_cursor}))
+}
+/// Per-DSP delivery job and live state of each release's latest frozen
+/// package (one batched read for any number of releases). The execution
+/// tables are org-scoped by RLS, so this authorizes `org` on the caller's
+/// transaction. Registry partners carry their D-code as `dsp`.
+pub(crate) async fn delivery_axes(
+    tx: &mut sqlx::PgConnection,
+    org: Uuid,
+    releases: &[Uuid],
+) -> Result<std::collections::HashMap<Uuid, (Vec<Value>, Vec<Value>)>> {
+    let mut out: std::collections::HashMap<Uuid, (Vec<Value>, Vec<Value>)> =
+        std::collections::HashMap::new();
+    if releases.is_empty() {
+        return Ok(out);
+    }
+    sqlx::query("SELECT set_config('app.org_id',$1,true)")
+        .bind(org.to_string())
+        .execute(&mut *tx)
+        .await?;
+    let rows = sqlx::query(
+        "WITH latest AS (
+           SELECT DISTINCT ON (cr.release_id) cr.release_id, dp.id AS package_id
+           FROM distribution.canonical_releases cr
+           JOIN distribution.distribution_packages dp ON dp.canonical_release_id=cr.id
+           WHERE cr.org_id=$1 AND cr.release_id = ANY($2)
+           ORDER BY cr.release_id, dp.created_at DESC)
+         SELECT l.release_id, j.partner_id, j.status, j.attempts, j.updated_at,
+                b.live_status, b.partner_release_id, b.last_checked_at
+         FROM latest l
+         JOIN execution.delivery_jobs j ON j.org_id=$1 AND j.package_id=l.package_id
+         LEFT JOIN execution.live_bindings b ON b.org_id=$1 AND b.package_id=l.package_id AND b.partner_id=j.partner_id
+         ORDER BY l.release_id, j.partner_id",
+    )
+    .bind(org)
+    .bind(releases)
+    .fetch_all(&mut *tx)
+    .await?;
+    for r in rows {
+        let partner: String = r.get("partner_id");
+        let dsp = crate::dsp_registry::Dsp::from_code(&partner).map(|d| d.code());
+        let entry = out.entry(r.get("release_id")).or_default();
+        entry.0.push(json!({
+            "partner_id": partner, "dsp": dsp, "status": r.get::<String,_>("status"),
+            "attempts": r.get::<i32,_>("attempts"),
+            "updated_at": r.get::<chrono::DateTime<chrono::Utc>,_>("updated_at"),
+        }));
+        if let Some(live) = r.get::<Option<String>, _>("live_status") {
+            entry.1.push(json!({
+                "partner_id": partner, "dsp": dsp, "live_status": live,
+                "partner_release_id": r.get::<Option<String>,_>("partner_release_id"),
+                "last_checked_at": r.get::<Option<chrono::DateTime<chrono::Utc>>,_>("last_checked_at"),
+            }));
+        }
+    }
+    Ok(out)
 }
 pub async fn get(s: &AppState, a: &Actor, org: Uuid, kind: Kind, id: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
@@ -229,8 +297,10 @@ pub async fn get(s: &AppState, a: &Actor, org: Uuid, kind: Kind, id: Uuid) -> Re
     if matches!(kind, Kind::Release) {
         let tracks:Vec<Value>=sqlx::query_scalar("SELECT to_jsonb(t) || jsonb_build_object('credits',COALESCE((SELECT jsonb_agg(jsonb_build_object('party_id',c.party_id,'role',c.role) ORDER BY c.party_id,c.role) FROM catalog.credits c WHERE c.org_id=t.org_id AND c.track_id=t.id),'[]'::jsonb)) FROM catalog.tracks t WHERE org_id=$1 AND release_id=$2 AND archived_at IS NULL ORDER BY disc_number,track_number").bind(org).bind(id).fetch_all(&mut *tx).await?;
         v["tracks"] = json!(tracks);
-        v["delivery_status_by_dsp"] = json!([]);
-        v["live_status_by_dsp"] = json!([]);
+        let mut axes = delivery_axes(&mut tx, org, &[id]).await?;
+        let (delivery, live) = axes.remove(&id).unwrap_or_default();
+        v["delivery_status_by_dsp"] = json!(delivery);
+        v["live_status_by_dsp"] = json!(live);
         v["submission_enabled"] = json!(false);
     }
     tx.commit().await?;

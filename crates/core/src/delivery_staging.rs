@@ -90,6 +90,23 @@ pub struct StagingInput<'a> {
     pub artwork_px: Option<(u32, u32)>,
     pub tracks: &'a HashMap<Uuid, TrackFacts>,
     pub today: NaiveDate,
+    /// Stage 1 advisory audio findings (code, detail): loudness outside the
+    /// delivery target, short clip events. Never blocking; staff must see
+    /// and acknowledge them before approving a delivery.
+    pub audio_advisories: &'a [(String, String)],
+}
+
+/// Codes of advisory findings that need an explicit staff acknowledgement.
+pub const ACK_REQUIRED: &[&str] = &["DSP_LOUDNESS_ADVISORY", "DSP_CLIPPING_ADVISORY"];
+
+/// `integrated_lufs=-7.5 ...` -> -7.5
+fn integrated_lufs(detail: &str) -> Option<f32> {
+    let rest = detail.split("integrated_lufs=").nth(1)?;
+    let num: String = rest
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '-' || *c == '.')
+        .collect();
+    num.parse().ok()
 }
 
 fn lossless(content_type: &str) -> bool {
@@ -214,6 +231,39 @@ pub fn evaluate(spec: &DspSpec, i: &StagingInput<'_>) -> Vec<DspCheck> {
                 spec.lead_days
             ),
         ));
+    }
+    for (code, detail) in i.audio_advisories {
+        match code.as_str() {
+            "AUDIO_LOUDNESS_OUT_OF_RANGE" => {
+                let what = match integrated_lufs(detail) {
+                    Some(l) => format!(
+                        "integrated {l:.1} LUFS vs {} target {:.0} LUFS: the platform will turn it {} by {:.1} dB",
+                        spec.code,
+                        spec.loudness_target_lufs,
+                        if l > spec.loudness_target_lufs {
+                            "down"
+                        } else {
+                            "up"
+                        },
+                        (l - spec.loudness_target_lufs).abs()
+                    ),
+                    None => detail.clone(),
+                };
+                out.push(DspCheck::new(
+                    "DSP_LOUDNESS_ADVISORY",
+                    Content,
+                    Warning,
+                    what,
+                ));
+            }
+            "AUDIO_CLIPPING" => out.push(DspCheck::new(
+                "DSP_CLIPPING_ADVISORY",
+                Content,
+                Warning,
+                detail.clone(),
+            )),
+            _ => {}
+        }
     }
     if spec.region == Region::Kr && p.explicit {
         out.push(DspCheck::new(
@@ -391,6 +441,9 @@ fn credit_facts(canonical: &CanonicalRelease, draft: &Value) -> HashMap<Uuid, Tr
 
 /// Parse the Stage 1 cover measurement ("3000x3000").
 fn parse_px(detail: &str) -> Option<(u32, u32)> {
+    let detail = detail
+        .trim_start_matches("cache_hit")
+        .trim_start_matches(": ");
     let (w, h) = detail.split_once('x')?;
     Some((w.trim().parse().ok()?, h.trim().parse().ok()?))
 }
@@ -451,6 +504,14 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
     .await?
     .as_deref()
     .and_then(parse_px);
+    let audio_advisories: Vec<(String, String)> = sqlx::query_as(
+        "SELECT DISTINCT check_code, COALESCE(detail,'') FROM operations.check_results
+         WHERE revision_id=$1 AND status='REVIEW_REQUIRED'
+           AND check_code IN ('AUDIO_LOUDNESS_OUT_OF_RANGE','AUDIO_CLIPPING')",
+    )
+    .bind(revision_id)
+    .fetch_all(pool)
+    .await?;
     let facts = credit_facts(&canonical, &draft);
     let today = chrono::Utc::now().date_naive();
     let approved: HashSet<Uuid> = canonical.approved_dsp_ids.iter().copied().collect();
@@ -479,6 +540,7 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
         artwork_px,
         tracks: &facts,
         today,
+        audio_advisories: &audio_advisories,
     };
     struct Staged {
         dsp: Dsp,
@@ -703,9 +765,10 @@ pub async fn release_delivery_view(pool: &PgPool, org: Uuid, release: Uuid) -> R
     .bind(release)
     .fetch_all(&mut *tx)
     .await?;
-    let jobs: HashMap<String, String> = sqlx::query(
-        "SELECT j.partner_id, j.status FROM execution.delivery_jobs j
+    let jobs: HashMap<String, (String, Option<String>)> = sqlx::query(
+        "SELECT j.partner_id, j.status, b.live_status FROM execution.delivery_jobs j
          JOIN distribution.delivery_staging s ON s.package_id=j.package_id AND s.dsp_code=j.partner_id
+         LEFT JOIN execution.live_bindings b ON b.org_id=j.org_id AND b.package_id=j.package_id AND b.partner_id=j.partner_id
          WHERE s.org_id=$1 AND s.release_id=$2",
     )
     .bind(org)
@@ -713,7 +776,12 @@ pub async fn release_delivery_view(pool: &PgPool, org: Uuid, release: Uuid) -> R
     .fetch_all(&mut *tx)
     .await?
     .into_iter()
-    .map(|r| (r.get("partner_id"), r.get("status")))
+    .map(|r| {
+        (
+            r.get("partner_id"),
+            (r.get("status"), r.get("live_status")),
+        )
+    })
     .collect();
     tx.commit().await?;
     let mut items: Vec<(Dsp, Value)> = rows
@@ -731,8 +799,11 @@ pub async fn release_delivery_view(pool: &PgPool, org: Uuid, release: Uuid) -> R
                 .collect();
             let readiness: String = r.get("readiness");
             let approval: String = r.get("approval");
-            let delivery = jobs.get(&code).cloned();
+            let (delivery, live) = jobs.get(&code).cloned().unzip();
+            let live = live.flatten();
             let stage = match (delivery.as_deref(), readiness.as_str(), approval.as_str()) {
+                _ if live.as_deref() == Some("LIVE") => "LIVE",
+                _ if live.as_deref() == Some("TAKEN_DOWN") => "TAKEN_DOWN",
                 (Some("DELIVERED"), _, _) => "DELIVERED",
                 (Some(_), _, _) => "SENDING",
                 (None, "CONTENT_BLOCKED", _) => "NEEDS_CORRECTION",
@@ -746,7 +817,7 @@ pub async fn release_delivery_view(pool: &PgPool, org: Uuid, release: Uuid) -> R
                 json!({
                     "dsp": code, "slug": dsp.spec().slug, "name": dsp.spec().name,
                     "stage": stage, "readiness": readiness, "approval": approval,
-                    "delivery_status": delivery, "issues": issues,
+                    "delivery_status": delivery, "live_status": live, "issues": issues,
                     "staged_at": r.get::<chrono::DateTime<chrono::Utc>, _>("staged_at"),
                 }),
             ))
@@ -846,6 +917,7 @@ mod tests {
             artwork_px: Some((3000, 3000)),
             tracks: &facts,
             today: NaiveDate::from_ymd_opt(2026, 10, 1).unwrap(),
+            audio_advisories: &[],
         };
         for d in Dsp::ALL {
             let c = evaluate(d.spec(), &i);
@@ -873,6 +945,7 @@ mod tests {
             artwork_px: Some((5000, 5000)),
             tracks: &facts,
             today: NaiveDate::from_ymd_opt(2026, 11, 25).unwrap(),
+            audio_advisories: &[],
         };
         // Deezer: 4096px cap and lyricist required.
         let d = codes(&evaluate(Dsp::D10.spec(), &i));
@@ -907,6 +980,7 @@ mod tests {
             artwork_px: None,
             tracks: &facts,
             today: NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
+            audio_advisories: &[],
         };
         let c = evaluate(Dsp::D1.spec(), &i);
         let k = codes(&c);
@@ -917,8 +991,48 @@ mod tests {
     }
 
     #[test]
+    fn loud_masters_are_advised_per_dsp_target() {
+        let t = track(asset("audio/wav", Some(44_100), Some(16)));
+        let mut facts = HashMap::new();
+        facts.insert(
+            t.id,
+            TrackFacts {
+                has_composer: true,
+                has_lyricist: true,
+                instrumental: false,
+            },
+        );
+        let p = release(vec![t], false);
+        let adv = vec![(
+            "AUDIO_LOUDNESS_OUT_OF_RANGE".to_string(),
+            "integrated_lufs=-7.5 target=-14±1".to_string(),
+        )];
+        let i = StagingInput {
+            prepared: &p,
+            genre: Some("Pop"),
+            artwork_px: Some((3000, 3000)),
+            tracks: &facts,
+            today: NaiveDate::from_ymd_opt(2026, 10, 1).unwrap(),
+            audio_advisories: &adv,
+        };
+        let apple = evaluate(Dsp::D6.spec(), &i);
+        let c = apple
+            .iter()
+            .find(|c| c.code == "DSP_LOUDNESS_ADVISORY")
+            .unwrap();
+        assert!(
+            c.detail.contains("-16") && c.detail.contains("8.5"),
+            "{}",
+            c.detail
+        );
+        // Advisory only: the release stays deliverable.
+        assert_eq!(Readiness::of(&apple), Readiness::Ready);
+    }
+
+    #[test]
     fn stage1_cover_detail_parses() {
         assert_eq!(parse_px("3000x3000"), Some((3000, 3000)));
+        assert_eq!(parse_px("cache_hit: 3000x3000"), Some((3000, 3000)));
         assert_eq!(parse_px("probe failed"), None);
     }
 }

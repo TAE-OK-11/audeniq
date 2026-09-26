@@ -385,7 +385,8 @@ async fn freshness_check(
 ) -> Result<()> {
     let row = sqlx::query(
         "SELECT dp.package_hash, cr.release_id, vp.rights_epoch AS pinned_epoch,
-                cr.verification_package_id, r.status AS release_status, r.org_id
+                cr.verification_package_id, r.status AS release_status, r.org_id,
+                cr.revision_id = r.current_revision_id AS current_revision
          FROM distribution.distribution_packages dp
          JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id
          JOIN distribution.verification_packages vp ON vp.id=cr.verification_package_id
@@ -398,6 +399,11 @@ async fn freshness_check(
     .ok_or(Error::NotFound)?;
     if row.get::<String, _>("release_status") != "READY_FOR_DELIVERY" {
         return Err(Error::PolicyGate("EXECUTION_RELEASE_NOT_READY"));
+    }
+    // A package from an older revision (resubmitted, codes re-issued) never
+    // goes out, even when the new revision is READY_FOR_DELIVERY again.
+    if !row.get::<bool, _>("current_revision") {
+        return Err(Error::PolicyGate("EXECUTION_PACKAGE_SUPERSEDED"));
     }
     let release_id: Uuid = row.get("release_id");
     let org_id: Uuid = row.get("org_id");
