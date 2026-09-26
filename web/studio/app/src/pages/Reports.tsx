@@ -104,6 +104,46 @@ export function Reports() {
 
   const periodLabel = period === 'month' ? '2026년 9월' : period === 'prev' ? '2026년 8월' : '전체 기간';
 
+  // 전월 대비 인사이트 (발매 필터는 반영, 기간 필터와 무관하게 두 달 비교)
+  const insight = useMemo(() => {
+    if (period === 'prev') return null;
+    const rel = MOCK_ROWS.filter(r => release === 'all' || r.release === release);
+    const prev = rel.filter(r => r.period === lastMonth);
+    const cur = rel.filter(r => r.period === thisMonth);
+    if (!prev.length || !cur.length) return null;
+    const sum = (rows: ReportRow[], k: 'revenue' | 'plays') => rows.reduce((n, r) => n + r[k], 0);
+    const prevRevenue = sum(prev, 'revenue');
+    const curRevenue = sum(cur, 'revenue');
+    const prevPlays = sum(prev, 'plays');
+    const curPlays = sum(cur, 'plays');
+    const pct = (c: number, p: number) => (p > 0 ? ((c - p) / p) * 100 : null);
+
+    const prevByPlat = new Map<string, { revenue: number; plays: number }>();
+    for (const r of prev) {
+      const v = prevByPlat.get(r.platform) || { revenue: 0, plays: 0 };
+      v.revenue += r.revenue; v.plays += r.plays;
+      prevByPlat.set(r.platform, v);
+    }
+    const platChanges = [...byPlatform].map(([name, v]) => {
+      const p = prevByPlat.get(name);
+      return {
+        name,
+        revenue: v.revenue,
+        prevRevenue: p?.revenue ?? 0,
+        change: p ? pct(v.revenue, p.revenue) : null, // null = 신규 유입
+        isNew: !p,
+      };
+    }).sort((a, b) => (b.revenue - b.prevRevenue) - (a.revenue - a.prevRevenue));
+    const topDriver = platChanges[0];
+
+    return {
+      revenueChange: pct(curRevenue, prevRevenue),
+      playsChange: pct(curPlays, prevPlays),
+      prevRevenue, curRevenue, prevPlays, curPlays,
+      platChanges, topDriver,
+    };
+  }, [period, release, lastMonth, thisMonth, byPlatform]);
+
   const exportCsv = () => {
     if (!filtered.length) { toast('내보낼 리포트가 없어요.'); return; }
     const cell = (v: string | number) => `"${String(v ?? '').replace(/"/g, '""')}"`;
@@ -157,6 +197,50 @@ export function Reports() {
           <div><small>재생 수</small><strong>{num(totalPlays)}회</strong></div>
           <div><small>플랫폼</small><strong>{platforms}곳</strong></div>
         </div>
+
+        {insight && (
+          <section aria-label="전월 대비 인사이트">
+            <h3>전월 대비</h3>
+            <div className="aq-insight-cards">
+              <div className="aq-insight-card">
+                <small>수익 변화</small>
+                <strong className={insight.revenueChange != null && insight.revenueChange >= 0 ? 'up' : 'down'}>
+                  {insight.revenueChange == null ? '—' : `${insight.revenueChange >= 0 ? '+' : ''}${insight.revenueChange.toFixed(1)}%`}
+                </strong>
+                <span>{money(insight.prevRevenue)} → {money(insight.curRevenue)}</span>
+              </div>
+              <div className="aq-insight-card">
+                <small>재생 변화</small>
+                <strong className={insight.playsChange != null && insight.playsChange >= 0 ? 'up' : 'down'}>
+                  {insight.playsChange == null ? '—' : `${insight.playsChange >= 0 ? '+' : ''}${insight.playsChange.toFixed(1)}%`}
+                </strong>
+                <span>{num(insight.prevPlays)}회 → {num(insight.curPlays)}회</span>
+              </div>
+            </div>
+            <ul className="aq-insight-list">
+              {insight.platChanges.map(p => (
+                <li key={p.name}>
+                  <span>{p.name}</span>
+                  {p.isNew ? (
+                    <em className="aq-new-badge">신규 유입</em>
+                  ) : (
+                    <strong className={p.change != null && p.change >= 0 ? 'up' : 'down'}>
+                      {p.change == null ? '—' : `${p.change >= 0 ? '+' : ''}${p.change.toFixed(1)}%`}
+                    </strong>
+                  )}
+                </li>
+              ))}
+            </ul>
+            {insight.topDriver && (
+              <p className="aq-insight-note">
+                이번 달 성장을 이끈 곳은 <b>{insight.topDriver.name}</b>이에요.
+                {insight.platChanges.some(p => p.isNew) && (
+                  <> {insight.platChanges.filter(p => p.isNew).map(p => p.name).join(', ')}에서 신규 유입도 있었어요.</>
+                )}
+              </p>
+            )}
+          </section>
+        )}
 
         {byPlatform.length > 0 && (
           <section aria-label="플랫폼별 수익">
