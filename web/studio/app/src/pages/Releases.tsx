@@ -1,6 +1,7 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from '../lib/router';
-import { api, type Track } from '../api/client';
+import { api, type Release, type Track } from '../api/client';
+import { fixPath, resolveCorrection } from '../lib/corrections';
 import { STATUS_LABEL } from '../lib/format';
 import { useAsync } from '../hooks/useAsync';
 import { SkeletonRows } from '../components/Skeleton';
@@ -23,6 +24,15 @@ const SORTS = [
 ];
 
 type TrackWithRelease = Track & { releaseTitle: string; releaseId: string; artist?: string; coverData?: string };
+
+/** 첫 보완 요청 한 줄 요약 */
+function firstFixText(r: Release): string {
+  const list = r.corrections ?? [];
+  if (!list.length) return '요청 내용을 확인하고 고쳐 주세요.';
+  const first = resolveCorrection(list[0]);
+  const text = first.message.startsWith(first.label) ? first.message : `${first.label}: ${first.message}`;
+  return `${text}${list.length > 1 ? ` 외 ${list.length - 1}건` : ''}`;
+}
 
 const norm = (s: string | null | undefined) => (s ?? '').toLowerCase().replace(/\s+/g, '');
 
@@ -65,6 +75,8 @@ export function Releases() {
   const trackCount = useMemo(() => list.reduce((n, r) => n + (r.track_count || 0), 0), [list]);
   const loading = listLoading || (tab === 'tracks' && (tracksLoading || (!trackData && !tracksError)));
   const error = listError || (tab === 'tracks' ? tracksError : '');
+
+  const needsList = useMemo(() => list.filter(r => r.status === 'needs'), [list]);
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: list.length };
@@ -153,6 +165,24 @@ export function Releases() {
               );
             })}
           </div>
+          {needsList.length > 0 && (
+            <div className="aq-fix-banner" role="status">
+              <span className="aq-fix-icon" aria-hidden="true">!</span>
+              <div className="min-0">
+                <strong>보완이 필요한 발매가 {needsList.length}건 있어요.</strong>
+                <span>
+                  {needsList.length === 1
+                    ? `‘${needsList[0].title}’ · ${firstFixText(needsList[0])}`
+                    : '요청 항목을 고쳐서 다시 접수하면 검토가 이어져요.'}
+                </span>
+              </div>
+              {needsList.length === 1 ? (
+                <button type="button" className="button" onClick={() => nav(fixPath(needsList[0].id, needsList[0].corrections?.[0]))}>보완하기</button>
+              ) : filter !== 'needs' ? (
+                <button type="button" className="button" onClick={() => setParam('status', 'needs', 'all')}>보완 필요만 보기</button>
+              ) : null}
+            </div>
+          )}
           <div className="studio-result-count" id="catalogCount" aria-live="polite">{filtered.length}개의 발매</div>
           {filtered.length ? (
             <div className="aq-catalog-cards aq-stagger">
@@ -171,6 +201,19 @@ export function Releases() {
                   <div className="aq-release-end">
                     <span className={`status-chip ${r.status || 'draft'}`}>{STATUS_LABEL[r.status] || r.status}</span>
                   </div>
+                  {r.status === 'needs' && (
+                    <div className="aq-release-fix">
+                      <span className="min-0">
+                        <b>보완 요청{r.corrections?.length ? ` ${r.corrections.length}건` : ''}</b>
+                        {firstFixText(r)}
+                      </span>
+                      <button
+                        type="button" className="aq-release-fix-btn"
+                        onClick={e => { e.stopPropagation(); nav(fixPath(r.id, r.corrections?.[0])); }}
+                        onKeyDown={e => e.stopPropagation()}
+                      >보완하기 ›</button>
+                    </div>
+                  )}
                 </article>
               ))}
             </div>

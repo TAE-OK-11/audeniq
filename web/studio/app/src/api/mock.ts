@@ -1,5 +1,5 @@
 // 목 API — 실제 서버 없이도 전체 흐름을 쓸 수 있도록 브라우저 저장소(localStorage)에 영속화한다.
-import type { User, Org, Release, ReleaseDetail, ReleasePayload, Track } from './types';
+import type { Correction, User, Org, Release, ReleaseDetail, ReleasePayload, Track } from './types';
 import { ApiError } from './errors';
 import { createStore, uid } from '../lib/store';
 import { readJSON, removeKey, writeJSON } from '../lib/storage';
@@ -9,6 +9,14 @@ import { stampNow, todayStr } from '../lib/date';
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 const mockOrgs: Org[] = [{ id: 'org_1', name: '내 작업 공간' }];
+
+// 데모: 담당자 보완 요청 (코드 → 신청서 위치는 lib/corrections.ts)
+const SEED_CORRECTIONS: Record<string, Correction[]> = {
+  r3: [
+    { code: 'IMAGE_TOO_SMALL', message: '커버아트 해상도가 1000×1000이에요. 3000×3000 이상 정사각형 이미지로 다시 올려 주세요.' },
+    { code: 'S2_META_CREDITS', message: '‘데모 트랙’의 작곡가 정보가 비어 있어요. 실제 작곡가 이름을 입력해 주세요.', trackId: 't7' },
+  ],
+};
 
 const SEED: ReleaseDetail[] = [
   {
@@ -42,8 +50,19 @@ const SEED: ReleaseDetail[] = [
     },
   },
   {
-    id: 'r3', title: '데모 트랙', status: 'needs', release_date: null, created_at: '2026-09-24', updated_at: '2026-09-24 11:20', track_count: 1, artist: '서린',
-    tracks: [{ id: 't7', title: '데모 트랙', duration_ms: 172000, isrc: null }],
+    id: 'r3', title: '데모 트랙', status: 'needs', release_date: '2026-12-05', created_at: '2026-09-24', updated_at: '2026-09-24 11:20', track_count: 1, artist: '서린',
+    tracks: [{ id: 't7', title: '데모 트랙', duration_ms: 172000, isrc: null, audioName: 'demo_track_master.wav' }],
+    draft: {
+      artist: '서린', type: 'single', language: 'ko', genre: 'Indie Pop', label: '', upc: '', notes: '',
+      coverName: 'demo_cover.jpg', territories: ['WORLD'], platforms: ['spotify', 'apple', 'youtube', 'melon'],
+      ownership: '서린', phonogram: '2026 서린', copyright: '2026 서린',
+      rightsChecks: { rightsMaster: true, rightsComposition: true, rightsArtwork: true, rightsConsent: true },
+      history: [
+        { text: '발매 신청 접수 완료 · AUDENIQ 검토 시작', time: '2026-09-23 10:02' },
+        { text: '검토 결과 · 보완 요청 2건', time: '2026-09-23 11:20' },
+      ],
+    },
+    corrections: SEED_CORRECTIONS.r3,
   },
   {
     id: 'r4', title: '미발매 작업물', status: 'draft', release_date: null, created_at: '2026-09-25', updated_at: '2026-09-25 18:02', track_count: 0, artist: '서린', tracks: [],
@@ -62,11 +81,17 @@ export function normalizeRelease(raw: unknown): ReleaseDetail | null {
   const tracks = arr<Track>(r.tracks).filter(t => t && typeof t === 'object' && typeof t.id === 'string')
     .map(t => ({ ...t, title: str(t.title), duration_ms: typeof t.duration_ms === 'number' ? t.duration_ms : null, isrc: t.isrc ?? null }));
   const d = r.draft && typeof r.draft === 'object' ? r.draft : undefined;
+  const status = STATUSES.has(str(r.status)) ? str(r.status) : 'draft';
+  // 보완 요청은 '보완 필요' 상태에서만 유지 (예전 저장 데이터의 데모 발매에는 기본 요청을 채운다)
+  const corrections = status !== 'needs' ? undefined
+    : Array.isArray(r.corrections) ? r.corrections.filter(c => c && typeof c.code === 'string')
+    : SEED_CORRECTIONS[r.id];
   return {
     ...r,
     id: r.id,
     title: str(r.title, '제목 없는 발매'),
-    status: STATUSES.has(str(r.status)) ? str(r.status) : 'draft',
+    status,
+    corrections,
     release_date: typeof r.release_date === 'string' && r.release_date ? r.release_date : null,
     created_at: str(r.created_at, todayStr()),
     track_count: tracks.length,
@@ -94,6 +119,7 @@ const summary = (d: ReleaseDetail): Release => ({
   id: d.id, title: d.title, status: d.status, release_date: d.release_date,
   created_at: d.created_at, updated_at: d.updated_at, track_count: d.tracks.length,
   artist: d.artist, coverData: d.draft?.coverData || undefined,
+  corrections: d.corrections?.length ? d.corrections : undefined,
 });
 
 function durationMs(mmss: string): number | null {
@@ -123,6 +149,8 @@ function apply(existing: ReleaseDetail | undefined, data: ReleasePayload, status
     title: data.title || '제목 없는 발매',
     artist: data.artist || undefined,
     status,
+    // 보완 필요 상태로 임시 저장할 때는 요청 항목을 그대로 두고, 다시 접수하면 비운다
+    corrections: status === 'needs' ? existing?.corrections : undefined,
     release_date: data.release_date || null,
     created_at: existing?.created_at ?? todayStr(),
     updated_at: now,

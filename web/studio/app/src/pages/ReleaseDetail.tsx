@@ -10,6 +10,8 @@ import { STATUS_LABEL, localStamp } from '../lib/format';
 import { dspLabel, durationLabel, genreLabel, kindLabel, languageLabel } from '../lib/catalog';
 import { docState, docsForRelease, useDocs } from '../store/docs';
 import { errorMessage } from '../api/errors';
+import { CorrectionList } from '../components/CorrectionList';
+import { fixPath } from '../lib/corrections';
 
 const RIGHTS_KEYS = ['rightsMaster', 'rightsComposition', 'rightsArtwork', 'rightsConsent'];
 
@@ -77,6 +79,8 @@ export function ReleaseDetail() {
   const docs = docsForRelease(allDocs, rel.id, rel.title);
   const stage = pipelineIndex(rel.status);
   const genre = d?.genre ? genreLabel(d.genre) : '';
+  const needsFix = rel.status === 'needs';
+  const fixes = rel.corrections ?? [];
 
   const handleDelete = async () => {
     const ok = await confirm({
@@ -102,7 +106,10 @@ export function ReleaseDetail() {
       <div className="spaced-actions">
         <button type="button" className="link-btn aq-back-link" onClick={() => nav('/releases')}>← 발매 목록</button>
         <div className="row-actions">
-          <button type="button" className="button secondary" onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}>
+          <button
+            type="button" className={`button${needsFix ? '' : ' secondary'}`}
+            onClick={() => nav(needsFix ? fixPath(rel.id, fixes[0]) : `/upload?edit=${encodeURIComponent(rel.id)}`)}
+          >
             {editLabel}
           </button>
           {isDraft && (
@@ -139,10 +146,25 @@ export function ReleaseDetail() {
         ))}
       </ol>
 
-      {rel.status === 'needs' && (
-        <div className="notice error aq-attention">
-          보완이 필요한 항목이 있어요. 알림과 권리·보완 서류에서 요청 내용을 확인한 뒤 ‘보완하기’로 다시 제출해 주세요.
-        </div>
+      {needsFix && (
+        <section className="aq-fix-card" aria-labelledby="aqFixCardHead">
+          <div className="aq-fix-card-head">
+            <span className="aq-fix-icon" aria-hidden="true">!</span>
+            <div className="min-0">
+              <h2 id="aqFixCardHead">{fixes.length ? `보완 요청 ${fixes.length}건` : '보완이 필요해요'}</h2>
+              <p>{fixes.length
+                ? '항목을 누르면 신청서에서 고쳐야 할 칸으로 바로 이동해요. 고친 뒤 마지막 단계에서 다시 접수해 주세요.'
+                : '알림과 권리·보완 서류에서 요청 내용을 확인한 뒤 ‘보완하기’로 다시 접수해 주세요.'}</p>
+            </div>
+          </div>
+          {fixes.length > 0 && (
+            <CorrectionList
+              releaseId={rel.id} corrections={fixes}
+              trackIds={(d?.draftTracks ?? rel.tracks).map(t => t.id)}
+              trackTitles={Object.fromEntries((d?.draftTracks ?? rel.tracks).map(t => [t.id, t.title]))}
+            />
+          )}
+        </section>
       )}
 
       <div className="tabs aq-tabs" role="tablist" aria-label="발매 상세 메뉴">
