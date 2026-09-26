@@ -36,7 +36,7 @@ export function Modal({ title, onClose, children, modalClass }: ModalProps) {
             ×
           </button>
         </div>
-        <div>{children}</div>
+        <div id="modalBody">{children}</div>
       </section>
     </div>
   );
