@@ -195,8 +195,8 @@ export function SystemStatus({ children }: { children: ReactNode }) {
     return (
       <ErrorScreen
         kind="maintenance" fullPage
-        eyebrow="서버 점검 중"
-        title={<>더 나은 스튜디오를 위해<br /><em>잠시 점검하고 있어요.</em></>}
+        eyebrow="서버 점검"
+        title="지금은 서버 점검 중이에요"
         description={active ? (
           <>
             <p className="aq-errscreen-window">{windowLabel(active)}</p>

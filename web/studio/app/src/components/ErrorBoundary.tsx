@@ -50,9 +50,9 @@ export class ErrorBoundary extends Component<Props, State> {
       return (
         <ErrorScreen
           kind="update" fullPage={this.props.fullPage}
-          eyebrow="새 버전"
-          title={<>스튜디오가 <em>새 버전</em>으로<br />업데이트됐어요.</>}
-          description="새로고침하면 바로 이어서 쓸 수 있어요. 네트워크가 불안정할 때도 이 화면이 보일 수 있어요."
+          eyebrow="업데이트"
+          title="스튜디오가 새 버전으로 업데이트됐어요"
+          description="새로고침하면 바로 이어서 쓸 수 있어요. 네트워크가 불안정할 때도 이 안내가 보일 수 있어요."
           actions={[{ label: '새로고침', onClick: this.retry, primary: true }, { label: '홈으로', href: home }]}
           meta={meta}
         />
@@ -62,8 +62,8 @@ export class ErrorBoundary extends Component<Props, State> {
       <ErrorScreen
         kind="crash" fullPage={this.props.fullPage}
         eyebrow="화면 오류"
-        title={<>화면을 그리다가<br /><em>문제가 생겼어요.</em></>}
-        description="저장한 내용은 그대로 있어요. 다시 시도해도 같은 화면이 나오면 아래 오류 코드와 함께 문의해 주세요."
+        title="화면을 표시하는 중 문제가 생겼어요"
+        description="저장한 내용은 그대로 있어요. 같은 문제가 계속되면 아래 오류 코드와 함께 문의해 주세요."
         actions={[{ label: '다시 시도', onClick: this.retry, primary: true }, { label: '홈으로', href: home }]}
         meta={meta}
       />

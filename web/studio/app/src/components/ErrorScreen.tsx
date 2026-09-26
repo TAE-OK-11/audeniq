@@ -1,5 +1,5 @@
-// 오류·점검 화면 — 홍보 페이지 톤의 연파랑 패널에 큰 코드/아이콘, 헤드라인, 안내, 행동 버튼.
-// 스튜디오 안(헤더 있음)과 앱 전체(로고만)에서 같은 모양으로 쓴다.
+// 오류·점검 화면 — 앱 안의 오류 카드(.empty-page)와 같은 가운데 정렬 연파랑 카드에
+// 아이콘 배지·오류 코드 칩·제목·안내·버튼. 스튜디오 안(헤더 있음)과 앱 전체(로고만)에서 같은 모양.
 import type { ReactNode } from 'react';
 
 export type ErrorKind = 'not-found' | 'server' | 'crash' | 'update' | 'offline' | 'maintenance' | 'device';
@@ -13,7 +13,7 @@ interface Action {
 
 interface Props {
   kind: ErrorKind;
-  /** 큰 글씨로 보여 줄 코드 (예: 404, 500). 없으면 종류별 아이콘 */
+  /** 제목 위 칩에 보여 줄 코드 (예: 404, 502) */
   code?: string;
   eyebrow?: string;
   title: ReactNode;
@@ -47,10 +47,13 @@ export function ErrorIcon({ kind }: { kind: ErrorKind }) {
 export function ErrorScreen({ kind, code, eyebrow, title, description, actions = [], meta, fullPage, children }: Props) {
   const body = (
     <section className={`aq-errscreen is-${kind}`} role={kind === 'maintenance' || kind === 'update' ? 'status' : 'alert'}>
-      <div className="aq-errscreen-mark" aria-hidden="true">
-        {code ? <span className="aq-errscreen-code">{code}</span> : <span className="aq-errscreen-icon"><ErrorIcon kind={kind} /></span>}
-      </div>
-      {eyebrow && <p className="aq-errscreen-eyebrow">{eyebrow}</p>}
+      <span className="aq-errscreen-icon" aria-hidden="true"><ErrorIcon kind={kind} /></span>
+      {(code || eyebrow) && (
+        <p className="aq-errscreen-eyebrow">
+          {code && <span className="aq-errscreen-code">{code}</span>}
+          {eyebrow}
+        </p>
+      )}
       <h1>{title}</h1>
       {description && <div className="aq-errscreen-desc">{description}</div>}
       {children}
