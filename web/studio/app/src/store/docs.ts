@@ -105,11 +105,42 @@ const INITIAL_DOCS: DocRecord[] = [
   },
 ];
 
+const STATUSES: DocRecord['reviewStatus'][] = ['awaiting_documents', 'review', 'prepared', 'approved', 'needs'];
+
+/** 저장된 문서를 현재 형식으로 보정 (필드 누락 시 목록 화면이 깨지는 것 방지) */
+function normalizeDoc(raw: unknown): DocRecord | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const d = raw as Partial<DocRecord>;
+  if (typeof d.id !== 'string' || !d.id) return null;
+  const s = (v: unknown) => (typeof v === 'string' ? v : '');
+  return {
+    ...d,
+    id: d.id,
+    kind: d.kind === 'agreements' ? 'agreements' : 'rights',
+    title: s(d.title) || '제목 없는 문서',
+    releaseTitle: s(d.releaseTitle),
+    version: s(d.version) || '1.0',
+    created: s(d.created),
+    content: s(d.content),
+    fileName: s(d.fileName),
+    fileBlob: null,
+    checked: !!d.checked,
+    checkedAt: s(d.checkedAt),
+    consentHistory: Array.isArray(d.consentHistory) ? d.consentHistory : [],
+    reviewHistory: Array.isArray(d.reviewHistory) ? d.reviewHistory : [],
+    reviewStatus: STATUSES.includes(d.reviewStatus as DocRecord['reviewStatus']) ? d.reviewStatus as DocRecord['reviewStatus'] : 'awaiting_documents',
+    reviewNote: s(d.reviewNote),
+    signerName: s(d.signerName),
+    localSignatureData: s(d.localSignatureData),
+    localSignatureAt: s(d.localSignatureAt),
+  };
+}
+
 const store = createStore<DocRecord[]>(INITIAL_DOCS, {
   persist: 'docs',
   // File 객체는 직렬화할 수 없으므로 저장하지 않는다 (원본은 현재 세션에서만 열람)
   serialize: list => list.map(({ fileBlob: _omit, ...rest }) => rest),
-  revive: (raw, fallback) => (Array.isArray(raw) ? raw as DocRecord[] : fallback),
+  revive: (raw, fallback) => (Array.isArray(raw) ? raw.map(normalizeDoc).filter((d): d is DocRecord => !!d) : fallback),
 });
 
 export const useDocs = store.use;

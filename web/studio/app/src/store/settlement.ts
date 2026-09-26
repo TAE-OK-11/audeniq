@@ -13,10 +13,14 @@ const INITIAL_PAYOUTS: Payout[] = [
   { id: 'p1', amount: 18920, note: '', created: '2026-08-15', status: 'recorded' },
 ];
 
-const isArr = <T,>(raw: unknown, fb: T[]) => (Array.isArray(raw) ? raw as T[] : fb);
+// 금액이 숫자가 아닌 손상 데이터는 버린다 (잔액 계산이 NaN이 되는 것 방지)
+const validRows = <T extends { id: string; amount: number }>(raw: unknown, fb: T[]): T[] =>
+  (Array.isArray(raw)
+    ? (raw as T[]).filter(r => r && typeof r.id === 'string' && Number.isFinite(Number(r.amount))).map(r => ({ ...r, amount: Number(r.amount) }))
+    : fb);
 
-export const statementsStore = createStore<Statement[]>(INITIAL_STATEMENTS, { persist: 'statements', revive: isArr });
-export const payoutsStore = createStore<Payout[]>(INITIAL_PAYOUTS, { persist: 'payouts', revive: isArr });
+export const statementsStore = createStore<Statement[]>(INITIAL_STATEMENTS, { persist: 'statements', revive: validRows });
+export const payoutsStore = createStore<Payout[]>(INITIAL_PAYOUTS, { persist: 'payouts', revive: validRows });
 
 export function balance(statements: Statement[], payouts: Payout[]) {
   const total = statements.reduce((n, s) => n + (Number(s.amount) || 0), 0);

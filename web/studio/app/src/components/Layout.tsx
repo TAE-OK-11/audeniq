@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router';
+import { Link, useLocation, useNavigate } from '../lib/router';
 import { useAuth } from '../api/auth';
 import { useProfile } from '../store/profile';
 import { useUnreadCount } from '../store/support';
 import { useConfirm } from './Confirm';
 import { useToast } from './Toast';
+import { prefetchCommonRoutes, prefetchRoute } from '../routes';
 
 // 라우트 변경 시 view 진입 애니메이션만 재시작 (children remount 없음 → useEffect/API 재실행 방지)
 function ViewEnter({ pathname, children }: { pathname: string; children: ReactNode }) {
@@ -81,6 +82,9 @@ export function Layout({ children }: { children: ReactNode }) {
 
   useEffect(() => () => { if (closeTimer.current) window.clearTimeout(closeTimer.current); }, []);
 
+  // 로그인 직후 한가한 시간에 주요 화면 청크를 미리 받아 첫 이동을 빠르게
+  useEffect(() => { prefetchCommonRoutes(); }, []);
+
   useEffect(() => {
     let ticking = false;
     const onScroll = () => {
@@ -147,7 +151,7 @@ export function Layout({ children }: { children: ReactNode }) {
       <header className={`portal-header${scrolled ? ' is-scrolled' : ''}`}>
         <div className="nav-shell">
           <Link to="/" className="brand" aria-label="AUDENIQ STUDIO 홈">
-            <img src={`${import.meta.env.BASE_URL}assets/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" />
+            <img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" />
           </Link>
           <div className="header-right">
             <span className="workspace-label">STUDIO</span>
@@ -203,6 +207,8 @@ export function Layout({ children }: { children: ReactNode }) {
                     className={active ? 'active' : ''}
                     aria-current={active ? 'page' : undefined}
                     onClick={() => go(item.to)}
+                    onPointerEnter={() => prefetchRoute(item.to)}
+                    onFocus={() => prefetchRoute(item.to)}
                   >
                     <em className="aq-nav-label">
                       {item.label}

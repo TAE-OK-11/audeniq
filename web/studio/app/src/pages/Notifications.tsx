@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate } from '../lib/router';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { localStamp } from '../lib/format';

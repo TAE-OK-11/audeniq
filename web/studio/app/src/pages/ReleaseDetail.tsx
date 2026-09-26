@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useNavigate, useParams } from '../lib/router';
 import { api } from '../api/client';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
