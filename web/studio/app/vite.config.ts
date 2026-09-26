@@ -7,6 +7,7 @@ export default defineConfig({
   build: {
     outDir: '../public/connected',
     emptyOutDir: true,
+    cssMinify: false,
   },
   server: {
     proxy: {
