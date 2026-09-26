@@ -17,8 +17,7 @@ use crate::{
     auth::{self, Actor},
     dsp_registry::{self, Dsp},
     error::{Error, Result},
-    operations,
-    review::{self, RIGHTS_MONEY_CLASSES},
+    operations, review,
 };
 use axum::{
     Json, Router,
@@ -173,8 +172,14 @@ pub async fn overview(s: &AppState, h: &HeaderMap) -> Result<Value> {
            (SELECT count(*) FROM rights.staff_approvals WHERE status='PENDING' AND expires_at>now()) AS second_approvals,
            (SELECT count(*) FROM portal.documents WHERE status='REVIEW') AS documents,
            (SELECT count(*) FROM portal.inquiries WHERE status='OPEN') AS inquiries,
-           (SELECT count(*) FROM distribution.delivery_staging WHERE approval='PENDING' AND readiness<>'CONTENT_BLOCKED') AS deliveries_to_approve,
-           (SELECT count(*) FROM distribution.delivery_staging WHERE readiness='CONTENT_BLOCKED') AS deliveries_blocked,
+           (SELECT count(*) FROM distribution.delivery_staging s JOIN catalog.releases r ON r.id=s.release_id AND r.current_revision_id=s.revision_id
+              WHERE s.approval='PENDING' AND s.readiness<>'CONTENT_BLOCKED') AS deliveries_to_approve,
+           (SELECT count(*) FROM distribution.delivery_staging s JOIN catalog.releases r ON r.id=s.release_id AND r.current_revision_id=s.revision_id
+              WHERE s.readiness='CONTENT_BLOCKED') AS deliveries_blocked,
+           (SELECT count(DISTINCT s.release_id) FROM distribution.delivery_staging s
+              JOIN catalog.releases r ON r.id=s.release_id AND r.current_revision_id=s.revision_id
+              WHERE s.approval='PENDING'
+              AND EXISTS(SELECT 1 FROM jsonb_array_elements(s.checks) c WHERE c->>'code' IN ('DSP_LOUDNESS_ADVISORY','DSP_CLIPPING_ADVISORY'))) AS audio_advisories,
            (SELECT count(*) FROM portal.payout_requests WHERE status='REQUESTED') AS payout_requests",
     )
     .fetch_one(&mut *tx)
@@ -185,7 +190,8 @@ pub async fn overview(s: &AppState, h: &HeaderMap) -> Result<Value> {
         "review": n("review"), "correction": n("correction"), "in_pipeline": n("in_pipeline"),
         "second_approvals": n("second_approvals"), "documents": n("documents"),
         "inquiries": n("inquiries"), "deliveries_to_approve": n("deliveries_to_approve"),
-        "deliveries_blocked": n("deliveries_blocked"), "payout_requests": n("payout_requests"),
+        "deliveries_blocked": n("deliveries_blocked"), "audio_advisories": n("audio_advisories"),
+        "payout_requests": n("payout_requests"),
     }))
 }
 
@@ -347,6 +353,18 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
         .await?,
         None => Vec::new(),
     };
+    // Advisory Stage 1 findings (never blocking) the reviewer should see:
+    // loudness outside the delivery target, short clip events, ...
+    let advisories: Vec<Value> = checks
+        .iter()
+        .filter(|c| {
+            c["status"] == "REVIEW_REQUIRED"
+                && c["check_code"]
+                    .as_str()
+                    .is_some_and(|code| review::STAGE1_WARNING_CODES.contains(&code))
+        })
+        .cloned()
+        .collect();
     let open: Vec<Value> = match revision {
         Some(rev) => open_checks(&mut tx, rev)
             .await?
@@ -443,6 +461,7 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
         "signed_application": application,
         "checks": checks,
         "open_checks": open,
+        "advisories": advisories,
         "overrides": overrides,
         "notes": notes,
         "second_approvals": approvals,
@@ -472,9 +491,12 @@ pub struct DecisionInput {
     pub notes: Vec<CheckNote>,
 }
 
-/// Needs a second staff reviewer to PASS.
+/// Needs a second staff reviewer to PASS: the same rule as member overrides
+/// (docs/REVIEW_OVERRIDES.md) — every PASS except the low-risk codes, so a
+/// duplicate master, fingerprint match, protected name or rights class is
+/// never cleared by one person — plus anything BLOCKED.
 fn sensitive(c: &OpenCheck) -> bool {
-    c.status == "BLOCKED" || RIGHTS_MONEY_CLASSES.contains(&c.code.as_str())
+    c.status == "BLOCKED" || review::needs_second_approver(&c.code, "PASS")
 }
 
 async fn locked_review_release(
@@ -852,6 +874,118 @@ pub async fn decide_second_approval(
     Ok(json!({"result": "APPLIED", "reevaluation_queued": queued}))
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReissueInput {
+    pub reason: String,
+}
+
+/// A READY_FOR_DELIVERY release whose frozen package carries test-range
+/// (VIRTUAL) codes goes back to the artist (STAGE3_CORRECTION) once a real
+/// range is registered: the resubmission's Stage 3 retires the virtual codes
+/// and issues real ones (migration 0046). Refused when nothing would change
+/// or when the package already reached a contracted partner.
+pub async fn reissue_identifiers(
+    s: &AppState,
+    h: &HeaderMap,
+    release: Uuid,
+    i: ReissueInput,
+) -> Result<Value> {
+    let st = staff(s, h, true).await?;
+    require(&st, Duty::Review)?;
+    let reason = i.reason.trim();
+    if reason.is_empty() {
+        return Err(Error::PolicyGate("DECISION_REASON_REQUIRED"));
+    }
+    note_ok(reason, 2000)?;
+    let mut tx = s.pool.begin().await?;
+    let row = sqlx::query(
+        "SELECT r.org_id, r.status, r.current_revision_id, cr.body AS snapshot, dp.id AS package_id
+         FROM catalog.releases r
+         JOIN distribution.canonical_releases cr ON cr.org_id=r.org_id AND cr.revision_id=r.current_revision_id
+         JOIN distribution.distribution_packages dp ON dp.canonical_release_id=cr.id
+         WHERE r.id=$1 FOR UPDATE OF r",
+    )
+    .bind(release)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(Error::NotFound)?;
+    if row.get::<String, _>("status") != "READY_FOR_DELIVERY" {
+        return Err(Error::PolicyGate("RELEASE_NOT_READY_FOR_DELIVERY"));
+    }
+    let org: Uuid = row.get("org_id");
+    let snapshot: Value = row.get("snapshot");
+    use crate::identifiers::{IdentifierKind, is_virtual};
+    let virtual_upc = snapshot["upc"]
+        .as_str()
+        .is_some_and(|u| is_virtual(IdentifierKind::Upc, u));
+    let virtual_isrc = snapshot["tracks"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|t| t["isrc"].as_str())
+        .any(|v| is_virtual(IdentifierKind::Isrc, v));
+    if !virtual_upc && !virtual_isrc {
+        return Err(Error::PolicyGate("NO_VIRTUAL_IDENTIFIERS"));
+    }
+    let registered: Vec<String> = sqlx::query_scalar(
+        "SELECT kind FROM distribution.identifier_issuers WHERE active AND mode='REGISTERED'",
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    if (virtual_upc && !registered.iter().any(|k| k == "UPC"))
+        || (virtual_isrc && !registered.iter().any(|k| k == "ISRC"))
+    {
+        return Err(Error::PolicyGate("REGISTERED_ISSUER_MISSING"));
+    }
+    sqlx::query("SELECT set_config('app.org_id',$1,true)")
+        .bind(org.to_string())
+        .execute(&mut *tx)
+        .await?;
+    let package: Uuid = row.get("package_id");
+    let sent_to_partner: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM execution.delivery_jobs j JOIN execution.adapter_profiles p ON p.partner_id=j.partner_id
+                        WHERE j.org_id=$1 AND j.package_id=$2 AND p.activation_kind='CONTRACTED')",
+    )
+    .bind(org)
+    .bind(package)
+    .fetch_one(&mut *tx)
+    .await?;
+    if sent_to_partner {
+        return Err(Error::PolicyGate("PACKAGE_ALREADY_WITH_PARTNER"));
+    }
+    let revision: Uuid = row.get("current_revision_id");
+    sqlx::query(
+        "UPDATE catalog.releases SET status='STAGE3_CORRECTION', row_version=row_version+1 WHERE id=$1 AND status='READY_FOR_DELIVERY'",
+    )
+    .bind(release)
+    .execute(&mut *tx)
+    .await?;
+    write_note(
+        &mut tx,
+        org,
+        release,
+        revision,
+        None,
+        "REQUEST_CORRECTION",
+        reason,
+        st.actor.user,
+    )
+    .await?;
+    operations::audit(
+        &mut tx,
+        Some(st.actor.user),
+        Some(org),
+        Some(release),
+        "staff.identifiers_reissue",
+        "READY_FOR_DELIVERY->STAGE3_CORRECTION",
+        st.actor.request,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"release_id": release, "status": "STAGE3_CORRECTION"}))
+}
+
 pub async fn list_second_approvals(s: &AppState, h: &HeaderMap) -> Result<Value> {
     staff(s, h, false).await?;
     let items: Vec<Value> = sqlx::query_scalar(
@@ -1152,11 +1286,15 @@ pub async fn list_deliveries(s: &AppState, h: &HeaderMap, p: DeliveryPage) -> Re
                 'release_id',s.release_id,'title',r.title,'readiness',s.readiness,'approval',s.approval,
                 'route_status',s.route_status,'route_reason',s.route_reason,'ern_is_preview',s.ern_is_preview,
                 'blockers',(SELECT COALESCE(jsonb_agg(c->>'code'),'[]'::jsonb) FROM jsonb_array_elements(s.checks) c WHERE c->>'severity'='BLOCKER'),
+                'warnings',(SELECT COALESCE(jsonb_agg(c->>'code'),'[]'::jsonb) FROM jsonb_array_elements(s.checks) c WHERE c->>'severity'='WARNING'),
                 'staged_at',s.staged_at)
          FROM distribution.delivery_staging s
          JOIN identity.orgs o ON o.id=s.org_id
          JOIN catalog.releases r ON r.org_id=s.org_id AND r.id=s.release_id
-         WHERE s.approval=$1 AND ($2::text IS NULL OR s.readiness=$2) AND ($3::text IS NULL OR s.dsp_code=$3)
+         -- Only the release's current revision: a superseded package (e.g.
+         -- sent back for code re-issue) is history, not work.
+         WHERE s.revision_id=r.current_revision_id
+           AND s.approval=$1 AND ($2::text IS NULL OR s.readiness=$2) AND ($3::text IS NULL OR s.dsp_code=$3)
          ORDER BY s.staged_at, s.dsp_code LIMIT $4 OFFSET $5",
     )
     .bind(approval)
@@ -1202,6 +1340,10 @@ pub struct DeliveryDecision {
     pub note: String,
     /// The ERN the operator reviewed; a re-stage in between changes it.
     pub ern_sha256: Option<String>,
+    /// Required when the row carries audio advisories (loudness, clipping):
+    /// they never block, but an operator must have seen them.
+    #[serde(default)]
+    pub acknowledge_warnings: bool,
 }
 
 pub async fn decide_delivery(
@@ -1228,21 +1370,31 @@ pub async fn decide_delivery(
     let mut tx = s.pool.begin().await?;
     staff_scope(&mut tx).await?;
     let row = sqlx::query(
-        "SELECT org_id, release_id, readiness, ern_sha256 FROM distribution.delivery_staging
-         WHERE package_id=$1 AND dsp_code=$2 FOR UPDATE",
+        "SELECT s.org_id, s.release_id, s.readiness, s.ern_sha256,
+                EXISTS(SELECT 1 FROM jsonb_array_elements(s.checks) c WHERE c->>'code' = ANY($3)) AS advisories,
+                (r.current_revision_id = s.revision_id AND r.status='READY_FOR_DELIVERY') AS current
+         FROM distribution.delivery_staging s JOIN catalog.releases r ON r.id=s.release_id
+         WHERE s.package_id=$1 AND s.dsp_code=$2 FOR UPDATE OF s",
     )
     .bind(package)
     .bind(code)
+    .bind(crate::delivery_staging::ACK_REQUIRED)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(Error::NotFound)?;
     let org: Uuid = row.get("org_id");
+    if !row.get::<bool, _>("current") {
+        return Err(Error::PolicyGate("STAGING_SUPERSEDED"));
+    }
     if approval == "APPROVED" {
         if row.get::<String, _>("readiness") == "CONTENT_BLOCKED" {
             return Err(Error::PolicyGate("DELIVERY_CONTENT_BLOCKED"));
         }
         if i.ern_sha256.is_some() && i.ern_sha256 != row.get::<Option<String>, _>("ern_sha256") {
             return Err(Error::Conflict);
+        }
+        if row.get::<bool, _>("advisories") && !i.acknowledge_warnings {
+            return Err(Error::PolicyGate("WARNINGS_NOT_ACKNOWLEDGED"));
         }
     }
     sqlx::query(
@@ -1433,6 +1585,14 @@ async fn h_decide(
 ) -> Result<Json<Value>> {
     Ok(Json(decide(&s, &h, id, i).await?))
 }
+async fn h_reissue(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    h: HeaderMap,
+    Json(i): Json<ReissueInput>,
+) -> Result<Json<Value>> {
+    Ok(Json(reissue_identifiers(&s, &h, id, i).await?))
+}
 async fn h_approvals(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     Ok(Json(list_second_approvals(&s, &h).await?))
 }
@@ -1549,6 +1709,10 @@ pub fn routes() -> Router<AppState> {
         .route("/api/staff/releases", get(h_releases))
         .route("/api/staff/releases/{id}", get(h_release))
         .route("/api/staff/releases/{id}/decision", post(h_decide))
+        .route(
+            "/api/staff/releases/{id}/reissue-identifiers",
+            post(h_reissue),
+        )
         .route("/api/staff/approvals", get(h_approvals))
         .route(
             "/api/staff/approvals/{id}/approve",
@@ -1601,8 +1765,13 @@ mod tests {
             detail: String::new(),
         };
         assert!(sensitive(&c("S2_RIGHTS_SCOPE", "REVIEW_REQUIRED")));
-        assert!(sensitive(&c("S2_INTEGRITY_DUP", "BLOCKED")));
-        assert!(!sensitive(&c("S2_INTEGRITY_DUP", "REVIEW_REQUIRED")));
+        assert!(sensitive(&c("S2_INTEGRITY_DUP", "REVIEW_REQUIRED")));
+        assert!(sensitive(&c(
+            "AUDIO_SIMILAR_TO_EXISTING",
+            "REVIEW_REQUIRED"
+        )));
+        assert!(!sensitive(&c("S2_META_CREDITS", "REVIEW_REQUIRED")));
+        assert!(sensitive(&c("S2_META_CREDITS", "BLOCKED")));
     }
 
     #[test]
