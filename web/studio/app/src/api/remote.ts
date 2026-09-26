@@ -40,7 +40,9 @@ interface ServerTrack {
   version?: string | null;
   lyrics?: string | null;
   parental_advisory?: boolean | null;
+  credits?: ServerCredit[];
 }
+interface ServerCredit { party_id: string; role: string }
 
 // ---------------------------------------------------------------------------
 // 상태·유형 매핑
@@ -108,6 +110,9 @@ function buildProfile(data: ReleasePayload, prev: Record<string, unknown> | null
     ownership: data.ownership,
     phonogram: data.phonogram,
     copyright: data.copyright,
+    // 서버 1차 검사·DDEX는 p_line/c_line을 읽는다 (화면 입력은 기호 없이 '연도 권리자명')
+    p_line: data.phonogram,
+    c_line: data.copyright,
     rightsChecks: data.rightsChecks,
     options: data.options,
     draftTracks: data.tracks,
@@ -234,6 +239,43 @@ async function ensureArtist(name: string): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
+// 크레딧 — 작곡·작사 등 입력한 이름을 서버 파티로 만들고 트랙 크레딧으로 교체
+// ---------------------------------------------------------------------------
+const partyCache = new Map<string, string>();
+async function ensureParty(name: string): Promise<string> {
+  const path = orgPath('/parties');
+  const key = `${path}\n${name}`;
+  const hit = partyCache.get(key);
+  if (hit) return hit;
+  // 같은 이름이면 서버가 기존 파티를 돌려준다
+  const r = await req<{ party_id: string }>(path, { method: 'POST', body: { display_name: name } });
+  partyCache.set(key, r.party_id);
+  return r.party_id;
+}
+
+// 역할명은 DDEX 표기 그대로 저장 (서버 1차 검사는 Composer·Lyricist를 작가 크레딧으로 본다)
+const CREDIT_FIELDS: [keyof DraftTrack, string][] = [
+  ['composers', 'Composer'], ['lyricists', 'Lyricist'], ['arrangers', 'Arranger'], ['producer', 'Producer'],
+];
+
+/** '홍길동, 김철수' → 이름 목록 (쉼표로 구분, 중복 제거) */
+export function creditNames(v: unknown): string[] {
+  if (typeof v !== 'string') return [];
+  return [...new Set(v.split(/[,，、]/).map(s => cleanText(s)).filter(Boolean))];
+}
+
+async function wantedCredits(t: DraftTrack): Promise<ServerCredit[]> {
+  const out: ServerCredit[] = [];
+  for (const [field, role] of CREDIT_FIELDS) {
+    if (field === 'lyricists' && t.instrumental) continue;
+    for (const name of creditNames(t[field])) out.push({ party_id: await ensureParty(name), role });
+  }
+  return out;
+}
+
+const creditKey = (cs: ServerCredit[]) => cs.map(c => `${c.party_id}|${c.role}`).sort().join(',');
+
+// ---------------------------------------------------------------------------
 // 트랙 동기화 — 제목이 있는 트랙만 서버에 반영 (작성 중인 빈 트랙은 profile에만)
 // ---------------------------------------------------------------------------
 async function syncTracks(release: ServerRelease, tracks: DraftTrack[], artistId: string): Promise<{ rowVersion: number; tracks: DraftTrack[] }> {
@@ -268,6 +310,7 @@ async function syncTracks(release: ServerRelease, tracks: DraftTrack[], artistId
       version: cleanText(t.version) || null,
     };
     const existing = t.serverId ? server.get(t.serverId) : undefined;
+    let trackId: string;
     if (existing) {
       const same = existing.title === body.title && existing.track_number === no && existing.asset_id === body.asset_id
         && (existing.version ?? null) === body.version && !!existing.parental_advisory === body.parental_advisory
@@ -276,11 +319,18 @@ async function syncTracks(release: ServerRelease, tracks: DraftTrack[], artistId
         const r = await req<{ row_version: number }>(`${base}/${existing.id}`, { method: 'PUT', body });
         rv = r.row_version;
       }
+      trackId = existing.id;
       out.push(t);
     } else {
       const r = await req<{ id: string; row_version: number }>(base, { method: 'POST', body });
       rv = r.row_version;
+      trackId = r.id;
       out.push({ ...t, serverId: r.id });
+    }
+    const credits = await wantedCredits(t);
+    if (creditKey(credits) !== creditKey(existing?.credits ?? [])) {
+      const r = await req<{ row_version: number }>(`${base}/${trackId}/credits`, { method: 'PUT', body: { row_version: rv, credits } });
+      rv = r.row_version;
     }
   }
   return { rowVersion: rv, tracks: out };
@@ -298,10 +348,13 @@ async function fetchCorrections(id: string): Promise<Correction[]> {
     const out: Correction[] = [];
     for (const c of r.checks ?? []) {
       if (c.severity !== 'CORRECTION' && c.status !== 'CORRECTION_REQUIRED') continue;
-      if (seen.has(c.check_code)) continue;
-      seen.add(c.check_code);
+      // 트랙별 검사는 detail에 'track=<id>'가 있다 → 그 트랙 입력칸으로 안내
+      const trackId = /track=([0-9a-f-]{36})/.exec(c.detail ?? '')?.[1];
+      const key = `${c.check_code}:${trackId ?? ''}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
       // detail은 내부 기록용이라 화면에는 코드별 안내 문구를 쓴다
-      out.push({ code: c.check_code, message: '' });
+      out.push(trackId ? { code: c.check_code, message: '', trackId } : { code: c.check_code, message: '' });
     }
     return out;
   } catch {
@@ -383,7 +436,7 @@ export const remoteApi = {
     return remoteApi.login(email, password);
   },
   async logout(): Promise<void> {
-    try { await req('/api/auth/logout', { method: 'POST', quiet401: true }); } finally { setCsrf(''); partyId = ''; artistCache.clear(); }
+    try { await req('/api/auth/logout', { method: 'POST', quiet401: true }); } finally { setCsrf(''); partyId = ''; artistCache.clear(); partyCache.clear(); }
   },
   async me(): Promise<User> {
     const me = await req<{ user_id: string; party_id: string }>('/api/me', { quiet401: true });

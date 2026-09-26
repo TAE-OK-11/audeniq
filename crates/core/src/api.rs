@@ -101,6 +101,7 @@ pub fn router(s: AppState) -> Router {
             "/api/orgs/{org}/reviews/overrides/{request}/decline",
             post(decline_override),
         )
+        .route("/api/orgs/{org}/parties", post(create_party))
         .route("/api/orgs/{org}/{kind}", post(create).get(list))
         .route(
             "/api/orgs/{org}/{kind}/{id}",
@@ -247,6 +248,61 @@ async fn create_org(
     .await?;
     tx.commit().await?;
     Ok(Json(json!({"org_id":id,"party_id":party})))
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PartyInput {
+    display_name: String,
+}
+/// A named person that track credits (composer, lyricist, ...) point at.
+/// It is only a display name inside the org: no rights, no verified identity.
+/// The same name in the same org returns the existing party.
+async fn create_party(
+    State(s): State<AppState>,
+    Path(org): Path<Uuid>,
+    h: HeaderMap,
+    Json(i): Json<PartyInput>,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, true).await?;
+    let name = i.display_name.trim();
+    if name.is_empty() || name.chars().count() > 200 {
+        return Err(Error::Invalid);
+    }
+    crate::text_policy::check(name)?;
+    let mut tx = s.pool.begin().await?;
+    auth::membership(&mut tx, &a, org, true).await?;
+    let existing: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM identity.parties WHERE org_id=$1 AND kind='PERSON' AND display_name=$2 ORDER BY id LIMIT 1",
+    )
+    .bind(org)
+    .bind(name)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if let Some(id) = existing {
+        tx.commit().await?;
+        return Ok(Json(json!({"party_id":id,"created":false})));
+    }
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO identity.parties(id,org_id,kind,display_name) VALUES($1,$2,'PERSON',$3)",
+    )
+    .bind(id)
+    .bind(org)
+    .bind(name)
+    .execute(&mut *tx)
+    .await?;
+    crate::operations::audit(
+        &mut tx,
+        Some(a.user),
+        Some(org),
+        Some(id),
+        "party.created",
+        "USER_EDIT",
+        a.request,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(Json(json!({"party_id":id,"created":true})))
 }
 async fn create(
     State(s): State<AppState>,
