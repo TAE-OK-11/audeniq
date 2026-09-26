@@ -25,6 +25,7 @@ function fakeServer() {
   const calls: Call[] = [];
   const releases = new Map<string, { id: string; title: string; release_type: string; status: string; draft: unknown; row_version: number; created_at: string; tracks: Record<string, unknown>[] }>();
   const artists: { id: string; name: string }[] = [];
+  const parties = new Map<string, string>();
   let seq = 0;
   const json = (status: number, data: unknown) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
 
@@ -36,6 +37,23 @@ function fakeServer() {
     const p = url.pathname.replace(`/api/orgs/${ORG}`, '');
     if (p === '/artists' && method === 'GET') return json(200, { items: artists, limit: 100, next_cursor: null });
     if (p === '/artists' && method === 'POST') { const a = { id: `artist-${++seq}`, name: body.name }; artists.push(a); return json(200, { id: a.id, row_version: 0 }); }
+    // 같은 이름이면 기존 파티를 돌려준다 (서버와 같은 동작)
+    if (p === '/parties' && method === 'POST') {
+      const hit = parties.get(body.display_name);
+      if (hit) return json(200, { party_id: hit, created: false });
+      const id = `party-${++seq}`;
+      parties.set(body.display_name, id);
+      return json(200, { party_id: id, created: true });
+    }
+    const cr = p.match(/^\/releases\/([^/]+)\/tracks\/([^/]+)\/credits$/);
+    if (cr && method === 'PUT') {
+      const rel = releases.get(cr[1])!;
+      if (body.row_version !== rel.row_version) return json(409, { error: { code: 'CONFLICT', message: 'stale' } });
+      rel.row_version += 1;
+      const t = rel.tracks.find(x => x.id === cr[2])!;
+      t.credits = body.credits;
+      return json(200, { id: cr[2], row_version: rel.row_version });
+    }
     if (p === '/releases' && method === 'GET') return json(200, { items: [...releases.values()], limit: 100, next_cursor: null });
     if (p === '/releases' && method === 'POST') {
       const id = `rel-${++seq}`;
@@ -47,6 +65,8 @@ function fakeServer() {
       return json(200, { status: releases.get(sub[1])?.status, checks: [
         { check_code: 'IMAGE_TOO_SMALL', status: 'CORRECTION_REQUIRED', severity: 'CORRECTION', detail: 'w=1000' },
         { check_code: 'IMAGE_TOO_SMALL', status: 'CORRECTION_REQUIRED', severity: 'CORRECTION', detail: 'dup' },
+        { check_code: 'TRACK_WRITER_CREDIT_MISSING', status: 'CORRECTION_REQUIRED', severity: 'CORRECTION', detail: 'track=11111111-1111-4111-8111-111111111111 writer_credit=false' },
+        { check_code: 'TRACK_WRITER_CREDIT_MISSING', status: 'CORRECTION_REQUIRED', severity: 'CORRECTION', detail: 'track=22222222-2222-4222-8222-222222222222 writer_credit=false' },
         { check_code: 'AUDIO_CLIPPING', status: 'PASS', severity: 'NONE', detail: null },
       ] });
     }
@@ -64,7 +84,7 @@ function fakeServer() {
       rel.row_version += 1;
       if (method === 'POST') { const t = { ...body, id: `track-${++seq}` }; rel.tracks.push(t); return json(200, { id: t.id, row_version: rel.row_version }); }
       const i = rel.tracks.findIndex(t => t.id === m[3]);
-      if (method === 'PUT') { rel.tracks[i] = { ...body, id: m[3] }; return json(200, { id: m[3], row_version: rel.row_version }); }
+      if (method === 'PUT') { rel.tracks[i] = { ...body, id: m[3], credits: rel.tracks[i].credits }; return json(200, { id: m[3], row_version: rel.row_version }); }
       if (method === 'DELETE') { rel.tracks.splice(i, 1); return json(200, { row_version: rel.row_version }); }
     }
     return json(404, { error: { code: 'NOT_FOUND', message: p } });
@@ -123,6 +143,36 @@ describe('remoteApi (가짜 서버)', () => {
     for (const c of mutations) expect(c.headers['X-CSRF-Token']).toBe('csrf-token');
   });
 
+  it('권리 표기를 p_line/c_line으로 보내고, 작곡·작사 이름을 파티 크레딧으로 저장한다', async () => {
+    const data = payload();
+    data.tracks[0] = { ...data.tracks[0], composers: '김작곡, 이작곡', lyricists: '김작곡', producer: '' };
+    const r = await remoteApi.saveDraft(null, data);
+    const rel = server.releases.get(r.id)!;
+    expect(rel.draft).toMatchObject({ p_line: 'p', c_line: 'c', phonogram: 'p', copyright: 'c' });
+    const credits = rel.tracks[0].credits as { party_id: string; role: string }[];
+    expect(credits.map(c => c.role).sort()).toEqual(['Composer', 'Composer', 'Lyricist']);
+    // 같은 이름은 한 파티로
+    const kim = credits.filter(c => c.role === 'Composer')[0].party_id;
+    expect(credits.find(c => c.role === 'Lyricist')!.party_id).toBe(kim);
+
+    // 연주곡은 작사 크레딧을 보내지 않는다
+    server.calls.length = 0;
+    const inst = { ...data, tracks: [{ ...data.tracks[0], serverId: r.trackServerIds!.t1, instrumental: true }] };
+    await remoteApi.saveDraft(r.id, inst);
+    expect((rel.tracks[0].credits as { role: string }[]).map(c => c.role)).toEqual(['Composer', 'Composer']);
+  });
+
+  it('보완 요청은 트랙별로 나누고 트랙 ID를 붙인다', async () => {
+    const r = await remoteApi.saveDraft(null, payload());
+    server.releases.get(r.id)!.status = 'STAGE1_CORRECTION';
+    const d = await remoteApi.getRelease(r.id);
+    expect(d.corrections).toEqual([
+      { code: 'IMAGE_TOO_SMALL', message: '' },
+      { code: 'TRACK_WRITER_CREDIT_MISSING', message: '', trackId: '11111111-1111-4111-8111-111111111111' },
+      { code: 'TRACK_WRITER_CREDIT_MISSING', message: '', trackId: '22222222-2222-4222-8222-222222222222' },
+    ]);
+  });
+
   it('다시 저장하면 바뀐 트랙만 고치고, 지운 트랙은 보관 처리한다', async () => {
     const first = await remoteApi.saveDraft(null, payload());
     const serverId = first.trackServerIds!.t1;
@@ -159,9 +209,9 @@ describe('remoteApi (가짜 서버)', () => {
     server.releases.get(r.id)!.status = 'STAGE1_CORRECTION';
     const detail = await remoteApi.getRelease(r.id);
     expect(detail.status).toBe('needs');
-    expect(detail.corrections).toEqual([{ code: 'IMAGE_TOO_SMALL', message: '' }]);
+    expect(detail.corrections?.map(c => c.code)).toEqual(['IMAGE_TOO_SMALL', 'TRACK_WRITER_CREDIT_MISSING', 'TRACK_WRITER_CREDIT_MISSING']);
     const list = await remoteApi.listReleases();
-    expect(list[0].corrections).toHaveLength(1);
+    expect(list[0].corrections).toHaveLength(3);
   });
 
   it('서버 오류 코드는 한국어 문구로 바뀐다', async () => {
