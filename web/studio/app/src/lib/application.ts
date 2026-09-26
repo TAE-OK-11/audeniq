@@ -3,7 +3,12 @@ import type { ApplicationRecord, DraftTrack, ReleaseDetail, ReleasePayload } fro
 import { cleanText } from '../api/remote';
 import { stampNow } from './date';
 
-export const APPLICATION_FORM = 'AQ-DIST-APP 1.0';
+export const APPLICATION_FORM = 'AUD-DIST-APP 1.0';
+/** 신청서 번호·서식 앞자리 */
+export const APPLICATION_PREFIX = 'AUD';
+
+/** 예전에 AQ-로 발급된 번호·서식도 AUD-로 표기 (해시 검증에는 저장된 원래 값을 쓴다) */
+export const displayCode = (v: string) => v.replace(/^AQ-/, `${APPLICATION_PREFIX}-`);
 
 /** 신고 항목 이름 (신청서 표기용) */
 export const OPTION_LABELS: Record<string, string> = {
@@ -130,8 +135,40 @@ export function snapshotFromRelease(r: ReleaseDetail): ApplicationSnapshot {
   const d = r.draft;
   return snapBase({
     ...d, title: r.title, artist: d?.artist ?? r.artist, releaseDate: r.release_date,
-    tracks: d?.draftTracks ?? [],
+    tracks: d?.draftTracks?.length ? d.draftTracks : r.tracks.map(trackFromServer),
   });
+}
+
+/** 신청서 기능 전에 등록된 발매는 곡 목록만 있어 신청서 형식으로 옮긴다 */
+function trackFromServer(t: ReleaseDetail['tracks'][number]): DraftTrack {
+  const secs = t.duration_ms ? Math.round(t.duration_ms / 1000) : 0;
+  return {
+    id: t.id, title: t.title, version: t.version ?? '', isrc: t.isrc ?? '',
+    composers: t.composers ?? '', lyricists: t.lyricists ?? '', arrangers: '', performers: '', producer: '',
+    lyrics: '', audioName: t.audioName ?? '', audioSize: 0, explicit: !!t.explicit,
+    duration: secs ? `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}` : '',
+  };
+}
+
+/**
+ * 서명 기능 도입 전에 접수된 발매의 신청서 — 발매 기록으로 같은 번호가 나오도록 만든다.
+ * 서명은 해당 발매의 계약서 서명이 있으면 그것을 쓰고, 해시는 현재 내용 기준.
+ */
+export async function legacyApplication(rel: ReleaseDetail, signed?: { name: string; signature: string; at: string }): Promise<ApplicationRecord> {
+  const hist = rel.draft?.history ?? [];
+  const submitted = hist.find(h => h.text.includes('접수'))?.time || rel.created_at;
+  const idHash = await sha256Hex(`application:${rel.id}`);
+  const code = [...idHash.slice(0, 12)].reduce<string[]>((a, _, i, arr) => (i % 2 ? a : [...a, NO_ALPHABET[parseInt(arr[i] + arr[i + 1], 16) % NO_ALPHABET.length]]), []).join('');
+  const base: Omit<ApplicationRecord, 'hash'> = {
+    no: `${APPLICATION_PREFIX}-${submitted.slice(0, 10).replace(/-/g, '')}-${code}`,
+    form: APPLICATION_FORM,
+    submittedAt: submitted,
+    signerName: signed?.name || rel.draft?.ownership || rel.draft?.artist || rel.artist || '',
+    signerRole: SIGNER_ROLES[0],
+    signature: signed?.signature ?? '',
+    agreements: [],
+  };
+  return { ...base, hash: await sha256Hex(hashInput(snapshotFromRelease(rel), base)) };
 }
 
 function hashInput(snap: ApplicationSnapshot, rec: Omit<ApplicationRecord, 'hash'>): string {
@@ -141,11 +178,12 @@ function hashInput(snap: ApplicationSnapshot, rec: Omit<ApplicationRecord, 'hash
   });
 }
 
+const NO_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
 function newApplicationNo(date: string): string {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const bytes = new Uint8Array(6);
   crypto.getRandomValues(bytes);
-  return `AQ-${date.replace(/-/g, '')}-${[...bytes].map(b => alphabet[b % alphabet.length]).join('')}`;
+  return `${APPLICATION_PREFIX}-${date.replace(/-/g, '')}-${[...bytes].map(b => NO_ALPHABET[b % NO_ALPHABET.length]).join('')}`;
 }
 
 export async function createApplication(args: {

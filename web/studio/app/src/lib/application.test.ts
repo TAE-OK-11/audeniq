@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ReleaseDetail, ReleasePayload } from '../api/types';
-import { createApplication, hashLabel, verifyApplication } from './application';
+import { createApplication, displayCode, hashLabel, legacyApplication, verifyApplication } from './application';
 
 const payload: ReleasePayload = {
   title: '밤의 정원', artist: '서린', type: 'single', language: 'ko', genre: 'Pop', genreCustom: '', label: '',
@@ -21,7 +21,8 @@ const saved = (p: ReleasePayload): ReleaseDetail => ({
 describe('배급 신청서', () => {
   it('서명한 내용으로 번호·해시를 만들고, 저장된 발매와 대조한다', async () => {
     const app = await createApplication({ payload, signerName: ' 서린 ', signerRole: '아티스트 본인', signature: 'data:image/png;base64,AA', agreements: ['truth'] });
-    expect(app.no).toMatch(/^AQ-\d{8}-[A-Z2-9]{6}$/);
+    expect(app.no).toMatch(/^AUD-\d{8}-[A-Z2-9]{6}$/);
+    expect(app.form).toMatch(/^AUD-/);
     expect(app.hash).toMatch(/^[0-9a-f]{64}$/);
     expect(app.signerName).toBe('서린');
     expect(hashLabel(app.hash).split(' ')).toHaveLength(8);
@@ -31,5 +32,21 @@ describe('배급 신청서', () => {
     const changed = saved({ ...payload, tracks: [{ ...payload.tracks[0], composers: '다른 사람' }] });
     expect(await verifyApplication(app, changed)).toBe(false);
     expect(await verifyApplication({ ...app, signature: 'data:image/png;base64,BB' }, saved(payload))).toBe(false);
+  });
+
+  it('예전 접수 건도 같은 번호로 신청서를 만들고, AQ 번호는 AUD로 표기한다', async () => {
+    const rel: ReleaseDetail = {
+      id: 'r1', title: '첫 번째 싱글', status: 'live', release_date: '2026-10-01', created_at: '2026-09-20', track_count: 1, artist: '서린',
+      tracks: [{ id: 't1', title: '첫 번째 싱글', duration_ms: 214000, isrc: 'KRA262600001', composers: '서린' }],
+      draft: { type: 'single', genre: 'Pop', label: '', upc: '', notes: '', coverName: '', territories: ['WORLD'], platforms: [], ownership: '서린', phonogram: '', copyright: '', rightsChecks: {}, history: [{ text: '발매 신청 접수 완료', time: '2026-09-20 14:32' }] },
+    };
+    const a = await legacyApplication(rel);
+    const b = await legacyApplication(rel);
+    expect(a.no).toBe(b.no);
+    expect(a.no).toMatch(/^AUD-20260920-[A-Z2-9]{6}$/);
+    expect(a.submittedAt).toBe('2026-09-20 14:32');
+    expect(a.signerName).toBe('서린');
+    expect(displayCode('AQ-20260926-ABCDEF')).toBe('AUD-20260926-ABCDEF');
+    expect(displayCode('AQ-DIST-APP 1.0')).toBe('AUD-DIST-APP 1.0');
   });
 });

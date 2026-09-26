@@ -1,6 +1,7 @@
 // 문서 상세 모달 — 라이브 openDocument(오버라이드) 대응
 import { useEffect, useRef, useState } from 'react';
 import { Modal } from './Modal';
+import { useNavigate } from '../lib/router';
 import { useToast } from './Toast';
 import { updateDoc, type DocRecord } from '../store/docs';
 import { fileSize, localStamp } from '../lib/format';
@@ -65,6 +66,7 @@ export function DocumentModal({
   onOpenSignature: () => void;
 }) {
   const toast = useToast();
+  const nav = useNavigate();
   const [confirmed, setConfirmed] = useState(!!doc.checkedAt);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const downloadUrlRef = useRef<string>('');
@@ -165,6 +167,11 @@ export function DocumentModal({
 
       <h3 className="doc-section-title">문서 내용</h3>
       <div className="aq-document-snapshot">{doc.content || '첨부된 문서의 원본을 확인해 주세요.'}</div>
+      {doc.kind === 'agreements' && doc.releaseId && (
+        <button type="button" className="button secondary aq-doc-open-app" onClick={() => nav(`/releases/${encodeURIComponent(doc.releaseId!)}/application`)}>
+          배급 신청서 보기
+        </button>
+      )}
       {doc.fileName && (
         <>
           <p className="small muted">첨부 파일 · {doc.fileName}</p>

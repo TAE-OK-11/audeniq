@@ -6,7 +6,7 @@ preview_urls = false
 [build]
 command = "worker-build --release"
 [assets]
-# React Studio server build: cd web/studio/app && bun run build:edge
+# React Studio server build (served at /): cd web/studio/app && bun run build:edge
 directory = "../../web/studio/edge-dist"
 binding = "ASSETS"
 run_worker_first = true
