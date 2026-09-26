@@ -617,7 +617,9 @@ body.wizard-mode .portal-header,body.wizard-mode .footer-line{display:none!impor
 .aq-profile-avatar{width:72px!important;height:72px!important;border-radius:22px!important;font-size:30px!important;margin:0!important;flex:0 0 72px;background:linear-gradient(135deg,#bcd8ff,#7162db 65%,#394b83)!important;color:#fff!important}
 .aq-profile-head strong{display:block;font-size:19px;letter-spacing:-.03em;color:var(--portal-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .aq-profile-head p{margin:6px 0 0;font-size:13px;color:var(--portal-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.aq-profile-card .field input,.aq-profile-card .field textarea,.aq-profile-card .field select{background:#fff}
+.aq-profile-card .field input:not([type=checkbox]):not([type=radio]):not([type=file]),.aq-profile-card .field textarea,.aq-profile-card .field select{background:#fff;border:0!important;border-radius:16px;padding:15px 17px;min-height:54px;font-size:15px}
+.aq-profile-card .field textarea{min-height:120px;resize:vertical}
+.aq-profile-card .field input:focus,.aq-profile-card .field textarea:focus,.aq-profile-card .field select:focus{outline:2px solid var(--portal-blue)!important;outline-offset:-2px}
 .aq-profile-card .field:last-of-type{margin-bottom:24px}
 .aq-ticket-card,.aq-notice-card{display:grid;grid-template-columns:48px minmax(0,1fr) auto;gap:14px;align-items:center;width:100%;background:#f7f9fd;border:0;border-radius:22px;padding:16px;cursor:pointer;text-align:left;color:var(--portal-ink);transition:transform .15s ease,background .15s ease}
 .aq-ticket-card:active,.aq-notice-card:active{transform:scale(.985);background:#edf1f9}

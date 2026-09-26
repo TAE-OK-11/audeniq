@@ -1751,7 +1751,7 @@ async fn qc_single_asset(
         // to the original, even though the SHA-256 matches a cached PASS.
         if *code == "AUDIO_SIMILAR_TO_EXISTING" {
             to_run.push(code);
-            return Ok(out);
+            continue;
         }
         let rh = asset_cache_key(code, sha256);
         match cached_status(&pool, code, qc::QC_RULE_VERSION, &rh).await? {
