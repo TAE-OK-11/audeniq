@@ -20,6 +20,17 @@ export interface Release {
   track_count: number;
   artist?: string;
   coverData?: string;
+  /** 검토 결과 보완이 필요한 항목 (status === 'needs'일 때) */
+  corrections?: Correction[];
+}
+
+/** 보완 요청 한 건 — code로 신청서의 어느 단계·입력칸을 고쳐야 하는지 찾는다 (lib/corrections.ts) */
+export interface Correction {
+  code: string;
+  /** 담당자·검사가 남긴 요청 내용 */
+  message: string;
+  /** 특정 곡에 대한 요청이면 해당 트랙 ID */
+  trackId?: string;
 }
 
 export interface ReleaseDetail extends Release {

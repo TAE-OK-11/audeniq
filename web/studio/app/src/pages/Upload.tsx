@@ -13,6 +13,7 @@ import { useProfile } from '../store/profile';
 import { fileSize, localStamp } from '../lib/format';
 import { DSP, GENRES, KINDS, LANGUAGES, dspLabel, genreLabel, kindLabel } from '../lib/catalog';
 import { formatKoreanDate, stampNow, todayStr } from '../lib/date';
+import { correctionWhere, resolveCorrection, type ResolvedCorrection } from '../lib/corrections';
 import { uid } from '../lib/store';
 
 const STEPS = [
@@ -900,7 +901,14 @@ export function Upload() {
   const profile = useProfile();
   const [searchParams] = useSearchParams();
   const editId = searchParams.get('edit');
+  const fixCode = searchParams.get('fix');
+  const fixTrack = searchParams.get('track');
   const [step, setStep] = useState(0);
+  // 지금까지 열어 본 가장 먼 단계 (단계 목록에서 바로 이동 가능)
+  const [reached, setReached] = useState(0);
+  // 보완 요청 — 수정 모드에서 불러온 발매의 요청 항목과 신청서 위치
+  const [fixes, setFixes] = useState<ResolvedCorrection[]>([]);
+  const [focusField, setFocusField] = useState<{ id: string; n: number } | null>(null);
   const [dir, setDir] = useState<'fwd' | 'back'>('fwd');
   const [form, setForm] = useState<WizardForm>(() => ({ ...EMPTY, artist: profile.name || '', tracks: [newTrack()] }));
   const [error, setError] = useState('');
@@ -994,6 +1002,18 @@ export function Upload() {
       const d = rel.draft;
       setOrigStatus(rel.status);
       setOrigDate(rel.release_date || '');
+      const tracks: Track[] = d?.draftTracks?.length
+        ? d.draftTracks.map(t => ({ ...newTrack(), ...t, id: t.id || uid('t'), assetId: t.assetId || '', serverId: t.serverId || '' }))
+        : rel.tracks.length
+          ? rel.tracks.map(t => ({
+              ...newTrack(),
+              id: t.id, title: t.title || '', isrc: t.isrc || '',
+              version: t.version || '', composers: t.composers || '',
+              lyricists: t.lyricists || '', audioName: t.audioName || '',
+              explicit: !!t.explicit, assetId: t.assetId || '', serverId: MOCK ? '' : t.id,
+              duration: t.duration_ms ? `${String(Math.floor(t.duration_ms / 60000)).padStart(2, '0')}:${String(Math.floor((t.duration_ms % 60000) / 1000)).padStart(2, '0')}` : '',
+            }))
+          : [newTrack()];
       setForm(f => ({
         ...f,
         artist: d?.artist || rel.artist || '',
@@ -1017,21 +1037,23 @@ export function Upload() {
         copyright: d?.copyright || '',
         rightsChecks: d?.rightsChecks || {},
         options: d?.options ? { ...EMPTY_OPTIONS, ...d.options } : { ...EMPTY_OPTIONS },
-        tracks: d?.draftTracks?.length
-          ? d.draftTracks.map(t => ({ ...newTrack(), ...t, id: t.id || uid('t'), assetId: t.assetId || '', serverId: t.serverId || '' }))
-          : rel.tracks.length
-            ? rel.tracks.map(t => ({
-                ...newTrack(),
-                id: t.id, title: t.title || '', isrc: t.isrc || '',
-                version: t.version || '', composers: t.composers || '',
-                lyricists: t.lyricists || '', audioName: t.audioName || '',
-                explicit: !!t.explicit, assetId: t.assetId || '', serverId: MOCK ? '' : t.id,
-                duration: t.duration_ms ? `${String(Math.floor(t.duration_ms / 60000)).padStart(2, '0')}:${String(Math.floor((t.duration_ms % 60000) / 1000)).padStart(2, '0')}` : '',
-              }))
-            : [newTrack()],
+        tracks,
       }));
-      // 작성 중인 발매는 마지막으로 머문 단계에서 이어서 작성
-      if (rel.status === 'draft' && d?.lastStep) setStep(Math.min(STEPS.length - 1, Math.max(0, d.lastStep)));
+      // 작성 중인 발매는 마지막으로 머문 단계에서 이어서 작성, 접수된 발매는 모든 단계를 바로 열 수 있게
+      const last = Math.min(STEPS.length - 1, Math.max(0, d?.lastStep ?? 0));
+      setReached(rel.status === 'draft' ? last : STEPS.length - 1);
+      const resolved = (rel.corrections ?? []).map(c => resolveCorrection(c, tracks.map(t => t.id)));
+      setFixes(resolved);
+      // 보완하기로 들어왔으면 요청 항목의 단계·입력칸으로 바로 이동
+      const target = fixCode
+        ? resolved.find(c => c.code === fixCode && (!fixTrack || c.trackId === fixTrack)) ?? resolved[0]
+        : undefined;
+      if (target) {
+        setStep(target.step);
+        if (target.field) setFocusField({ id: target.field, n: Date.now() });
+      } else if (rel.status === 'draft' && d?.lastStep) {
+        setStep(last);
+      }
       setLoadingEdit(false);
     }).catch(e => {
       if (cancelled) return;
@@ -1040,7 +1062,7 @@ export function Upload() {
       nav('/releases', { replace: true });
     });
     return () => { cancelled = true; };
-  }, [editId, nav, toast]);
+  }, [editId, nav, toast]); // eslint-disable-line react-hooks/exhaustive-deps -- fix 파라미터는 처음 불러올 때만 쓴다
 
   // 위자드에서는 헤더 숨김 + 레이아웃 패딩 제거
   useEffect(() => {
@@ -1209,6 +1231,7 @@ export function Upload() {
   const goStep = (to: number) => {
     setDir(to > step ? 'fwd' : 'back');
     setStep(to);
+    setReached(r => Math.max(r, to));
     setError('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -1334,6 +1357,33 @@ export function Upload() {
     audio.src = url;
   }, [startUpload]);
 
+  // 보완 항목으로 이동: 단계를 바꾸고 해당 입력칸을 강조
+  const jumpToFix = (c: ResolvedCorrection) => {
+    const m = c.field && /^tr-(\d+)-isrc$/.exec(c.field);
+    if (m) {
+      const t = form.tracks[+m[1]];
+      if (t) setExpandedTracks(prev => new Set(prev).add(t.id));
+    }
+    if (c.step !== step) goStep(c.step);
+    setFocusField(c.field ? { id: c.field, n: Date.now() } : null);
+  };
+
+  useEffect(() => {
+    if (!focusField || loadingEdit) return;
+    // 단계 전환 애니메이션이 자리 잡은 뒤 스크롤
+    const timer = window.setTimeout(() => {
+      const el = document.getElementById(focusField.id);
+      if (!el) return;
+      const box = el.closest<HTMLElement>('.field, .check-line, details, .aq-fix-zone, .aq-dropzone') ?? el;
+      box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      box.classList.remove('aq-fix-flash');
+      void box.offsetWidth;
+      box.classList.add('aq-fix-flash');
+      if (el.matches('input:not([type=file]), select, textarea')) el.focus({ preventScroll: true });
+    }, 380);
+    return () => window.clearTimeout(timer);
+  }, [focusField, step, loadingEdit]);
+
   const s = STEPS[step];
   const genreIsCustom = form.genre === '__other__';
   const allPlatforms = DSP.every(d => form.platforms.includes(d[0]));
@@ -1382,20 +1432,79 @@ export function Upload() {
         {STEPS.map((st, i) => (
           <span
             key={i}
-            className={`wizard-progress-seg${i <= step ? ' current' : ''}${i < step ? ' aq-seg-link' : ''}`}
-            onClick={i < step ? () => goStep(i) : undefined}
-            title={i < step ? `${st.short}(으)로 이동` : st.short}
+            className={`wizard-progress-seg${i <= step ? ' current' : ''}${i <= reached && i !== step ? ' aq-seg-link' : ''}`}
+            onClick={i <= reached && i !== step ? () => goStep(i) : undefined}
+            title={i <= reached && i !== step ? `${st.short}(으)로 이동` : st.short}
           >
             {i === step && <em>{st.short}</em>}
           </span>
         ))}
       </div>
 
+      <div className="aq-wiz-layout">
+      <aside className="aq-wiz-rail" aria-label="발매 신청 단계">
+        <p className="aq-wiz-rail-kicker">발매 신청</p>
+        <ol className="aq-wiz-steps">
+          {STEPS.map((st, i) => {
+            const state = i === step ? 'is-current' : i <= reached ? 'is-done' : '';
+            const fixHere = fixes.some(f => f.step === i);
+            return (
+              <li key={i} className={`${state}${fixHere ? ' is-fix' : ''}`}>
+                <button
+                  type="button" disabled={i > reached}
+                  aria-current={i === step ? 'step' : undefined}
+                  onClick={i <= reached && i !== step ? () => goStep(i) : undefined}
+                >
+                  <span className="aq-wiz-step-no" aria-hidden="true">
+                    {i !== step && i <= reached ? <svg viewBox="0 0 16 16" width="12" height="12"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg> : i + 1}
+                  </span>
+                  <span className="aq-wiz-step-label">{st.short}</span>
+                  {fixHere && <em className="aq-wiz-step-fix">보완</em>}
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+        <div className="aq-wiz-summary">
+          {form.coverData
+            ? <img src={form.coverData} alt="" />
+            : <span className="aq-wiz-summary-cover" aria-hidden="true">♪</span>}
+          <div className="min-0">
+            <strong>{form.title.trim() || '제목 없는 발매'}</strong>
+            <span>{form.artist.trim() || '아티스트 미입력'} · {kindLabel(form.type)}</span>
+            <span>{form.tracks.filter(t => t.title.trim()).length}곡{form.releaseDate ? ` · ${formatKoreanDate(form.releaseDate)}` : ''}</span>
+          </div>
+        </div>
+        <p className="aq-wiz-rail-note">
+          {canAutoSave ? '입력 내용은 자동으로 임시 저장돼요.' : '수정 내용은 마지막 단계에서 ‘수정 완료’를 눌러야 반영돼요.'}
+        </p>
+      </aside>
+      <div className="aq-wiz-main">
       <div className={`wizard-header aq-step-anim is-${dir}`} key={`h-${step}`}>
         <p className="aq-step-kicker">{s.kicker}</p>
-        <h1 id="newTitle" style={{ whiteSpace: 'pre-line' }}>{s.title}</h1>
+        <h1 id="newTitle" className="aq-step-title">{s.title}</h1>
         <p id="wizardSubtitle">{s.sub}</p>
       </div>
+
+      {fixes.length > 0 && (
+        <section className="aq-fix-panel" aria-labelledby="aqFixHead">
+          <div className="aq-fix-head">
+            <strong id="aqFixHead">보완 요청 {fixes.length}건</strong>
+            <span>항목을 누르면 고쳐야 할 입력칸으로 이동해요.</span>
+          </div>
+          <ul>
+            {fixes.map((c, i) => (
+              <li key={`${c.code}-${c.trackId ?? ''}-${i}`} className={c.step === step ? 'is-here' : ''}>
+                <button type="button" onClick={() => jumpToFix(c)}>
+                  <em>{correctionWhere(c)}</em>
+                  <span>{c.message}</span>
+                  <b aria-hidden="true">{c.step === step ? '입력칸 보기' : '이동'} ›</b>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <div id="wizardBody" className={`aq-step-anim is-${dir}`} key={`b-${step}`}>
         {step === 0 && (
@@ -1593,7 +1702,7 @@ export function Upload() {
                 <span />
               </label>
             </div>
-            <details className="studio-expand" open={!allPlatforms}>
+            <details className="studio-expand" id="aqPlatforms" open={!allPlatforms}>
               <summary>플랫폼 직접 선택 <span aria-hidden="true">＋</span></summary>
               <div className="distribution-options">
                 {DSP.map(([key, label]) => (
@@ -1610,7 +1719,7 @@ export function Upload() {
                 ))}
               </div>
             </details>
-            <OptionsSection form={form} set={set} />
+            <div id="aqSpecialOptions" className="aq-fix-zone"><OptionsSection form={form} set={set} /></div>
           </section>
         )}
 
@@ -1700,6 +1809,8 @@ export function Upload() {
       </div>
 
       {error && <div id="wizardError" className="notice error aq-shake" role="alert" key={error}>{error}</div>}
+      </div>
+      </div>
 
       <div className="step-actions">
         <button type="button" id="wizardBack" className="button secondary" onClick={back} disabled={submitting}>

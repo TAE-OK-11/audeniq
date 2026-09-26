@@ -8,6 +8,7 @@
 // - 트랙은 아티스트 ID·자산 ID로 연결, 파일은 서명 URL로 R2에 직접 업로드
 // - 접수 = 동의(consent) 생성 → submit(동의 ID, 자기 선언)
 import type {
+  Correction,
   DraftTrack, Org, PreflightIssue, Release, ReleaseDetail, ReleaseDraft, ReleasePayload,
   SaveResult, Track, UploadKind, UploadResult, User,
 } from './types';
@@ -282,6 +283,33 @@ async function syncTracks(release: ServerRelease, tracks: DraftTrack[], artistId
 
 function detailPath(id: string) { return orgPath(`/releases/${encodeURIComponent(id)}`); }
 
+interface ServerCheck { check_code: string; status: string; severity?: string; detail?: string | null }
+
+/** 보완 필요 발매의 검사 결과 중 사용자가 고쳐야 하는 항목 (접수 이력의 check_results) */
+async function fetchCorrections(id: string): Promise<Correction[]> {
+  try {
+    const r = await req<{ checks?: ServerCheck[] }>(`${detailPath(id)}/submission`, { quiet401: true });
+    const seen = new Set<string>();
+    const out: Correction[] = [];
+    for (const c of r.checks ?? []) {
+      if (c.severity !== 'CORRECTION' && c.status !== 'CORRECTION_REQUIRED') continue;
+      if (seen.has(c.check_code)) continue;
+      seen.add(c.check_code);
+      // detail은 내부 기록용이라 화면에는 코드별 안내 문구를 쓴다
+      out.push({ code: c.check_code, message: '' });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+async function withCorrections<T extends Release>(r: T): Promise<T> {
+  if (r.status !== 'needs') return r;
+  const corrections = await fetchCorrections(r.id);
+  return corrections.length ? { ...r, corrections } : r;
+}
+
 async function fetchRelease(id: string): Promise<ServerRelease> {
   return req<ServerRelease>(detailPath(id));
 }
@@ -368,10 +396,11 @@ export const remoteApi = {
   },
   async listReleases(): Promise<Release[]> {
     const items = await listAll<ServerRelease>(orgPath('/releases'));
-    return items.map(toSummary).sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+    const list = await Promise.all(items.map(toSummary).map(withCorrections));
+    return list.sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
   },
   async getRelease(id: string): Promise<ReleaseDetail> {
-    return toDetail(await fetchRelease(id));
+    return withCorrections(toDetail(await fetchRelease(id)));
   },
   async saveDraft(id: string | null, data: ReleasePayload): Promise<SaveResult> {
     const rel = await persist(id, data, id ? null : '임시 저장 시작');
