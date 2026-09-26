@@ -11,6 +11,14 @@
 </head>
 <body>
   <div id="root"></div>
+  <noscript>
+    <div class="aq-legacy">
+      <strong>JavaScript가 꺼져 있어요</strong>
+      <p>AUDENIQ STUDIO를 쓰려면 브라우저 설정에서 JavaScript를 켜 주세요.</p>
+    </div>
+  </noscript>
+  <!-- 모듈을 지원하지 않는 오래된 브라우저에서만 실행돼 업데이트 안내를 띄운다 -->
+  <script nomodule src="/static/unsupported.js"></script>
   <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>

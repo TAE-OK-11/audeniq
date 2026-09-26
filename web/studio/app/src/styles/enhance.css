@@ -965,3 +965,76 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
   .aq-cadmin{padding:36px 32px 100px}
   .aq-cadmin-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
+
+/* ---------- 오류·점검 화면 (홍보 페이지 톤: 연파랑 패널, 큰 코드, 그림자 없음) ---------- */
+.aq-errscreen{position:relative;overflow:hidden;background:#F5F8FF;border-radius:30px;padding:44px 24px 36px;margin:8px 0 40px;animation:aq-fade-up .45s var(--aq-e-ease) both}
+.aq-errscreen-mark{margin:0 0 22px}
+.aq-errscreen-code{display:inline-block;font-size:clamp(84px,24vw,168px);font-weight:800;line-height:.9;letter-spacing:-.07em;background:linear-gradient(135deg,var(--aq-e-blue) 10%,#9db4ff 90%);-webkit-background-clip:text;background-clip:text;color:transparent;font-variant-numeric:tabular-nums}
+.aq-errscreen-icon{display:grid;place-items:center;width:64px;height:64px;border-radius:22px;background:#fff;color:var(--aq-e-blue)}
+.aq-errscreen.is-server .aq-errscreen-icon,.aq-errscreen.is-crash .aq-errscreen-icon{color:var(--aq-e-red)}
+.aq-errscreen.is-maintenance .aq-errscreen-icon{color:var(--aq-e-amber)}
+.aq-errscreen.is-offline .aq-errscreen-icon{color:#5b6678}
+.aq-errscreen-eyebrow{margin:0 0 14px;font-size:13px;font-weight:700;letter-spacing:.03em;color:var(--aq-e-blue)}
+.aq-errscreen h1{margin:0;font-size:32px;font-weight:780;line-height:1.3;letter-spacing:-.055em;color:var(--aq-e-ink)}
+.aq-errscreen h1 em{font-style:normal;color:var(--aq-e-blue)}
+.aq-errscreen-desc{margin:18px 0 0;max-width:560px;font-size:15px;line-height:1.8;color:#718096}
+.aq-errscreen-desc p{margin:0 0 6px;color:inherit}
+.aq-errscreen-window{font-size:17px;font-weight:750;color:var(--aq-e-ink)!important;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.aq-errscreen-path{display:inline-block;margin-top:10px;padding:4px 10px;border-radius:10px;background:#fff;color:#4a5568;font-size:13px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all}
+.aq-errscreen-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:30px}
+.aq-errscreen-actions .button{min-width:140px;text-decoration:none}
+.aq-errscreen-meta{margin:26px 0 0;font-size:12px;color:#94a0b4;font-variant-numeric:tabular-nums;letter-spacing:0}
+.aq-errpage{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;padding:20px 16px 40px;background:#fff}
+.aq-errpage-brand{display:inline-flex;align-items:center;gap:10px;margin:0 0 20px;text-decoration:none}
+.aq-errpage-brand img{height:22px;display:block}
+.aq-errpage-brand span{font-size:11px;font-weight:800;letter-spacing:.14em;color:var(--aq-e-blue);background:#F2F6FF;border-radius:10px;padding:6px 10px}
+.aq-errpage .aq-errscreen{width:100%;max-width:1120px;margin:auto}
+@media (min-width:768px){
+  .aq-errscreen{border-radius:40px;padding:72px 64px 60px}
+  .aq-errscreen-eyebrow{font-size:15px;margin-bottom:20px}
+  .aq-errscreen h1{font-size:clamp(40px,4.6vw,56px);line-height:1.24}
+  .aq-errscreen-desc{font-size:17px;margin-top:24px}
+  .aq-errpage{padding:28px 40px 56px}
+  .aq-errpage-brand{margin-bottom:28px}
+}
+
+/* ---------- 상태 띠 (오프라인·점검 예고) — 헤더 위 전체 폭 ---------- */
+.aq-sysbar-stack{position:relative;z-index:60}
+.aq-sysbar{display:flex;align-items:center;gap:10px;padding:11px 16px;font-size:13px;line-height:1.5;animation:aq-fade-up .3s var(--aq-e-ease) both}
+.aq-sysbar svg{flex:0 0 auto;width:18px;height:18px}
+.aq-sysbar span{flex:1;min-width:0}
+.aq-sysbar strong{font-weight:750;margin-right:4px}
+.aq-sysbar.is-offline{background:#1f2b47;color:#fff}
+.aq-sysbar.is-upcoming{background:var(--aq-e-amber-soft);color:#7a4a17}
+.aq-sysbar-close{flex:0 0 auto;width:30px;height:30px;border:0;border-radius:10px;background:transparent;color:inherit;font-size:20px;line-height:1;cursor:pointer}
+.aq-sysbar-close:hover{background:rgba(0,0,0,.06)}
+@media (min-width:768px){.aq-sysbar{justify-content:center;font-size:14px}.aq-sysbar span{flex:0 1 auto}}
+
+/* ---------- 상태 창 (서버 오류·새 버전·기기 확인) ---------- */
+.aq-sysdialog{text-align:left}
+.aq-sysdialog-icon{display:grid;place-items:center;width:56px;height:56px;border-radius:20px;background:#F2F6FF;color:var(--aq-e-blue);margin:0 0 18px}
+.aq-sysdialog.is-server .aq-sysdialog-icon{background:var(--aq-e-red-soft);color:var(--aq-e-red)}
+.aq-sysdialog.is-device .aq-sysdialog-icon{background:var(--aq-e-amber-soft);color:var(--aq-e-amber)}
+.aq-sysdialog h2{margin:0 0 10px;font-size:22px;font-weight:780;letter-spacing:-.045em;color:var(--aq-e-ink)}
+.aq-sysdialog-body{font-size:15px;line-height:1.75;color:#5b6678}
+.aq-sysdialog-body p{margin:0;color:inherit}
+.aq-sysdialog-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+.aq-sysdialog-list li{display:flex;flex-direction:column;gap:2px;padding:14px 16px;border-radius:16px;background:#F5F8FF}
+.aq-sysdialog-list strong{color:var(--aq-e-ink);font-size:15px}
+.aq-sysdialog-list span{font-size:14px}
+.aq-sysdialog-meta{margin:16px 0 0;font-size:12px;color:#94a0b4;font-variant-numeric:tabular-nums}
+.aq-sysdialog-actions{display:flex;gap:10px;margin-top:24px}
+.aq-sysdialog-actions .button{flex:1}
+
+/* ---------- 오래된 브라우저·JavaScript 꺼짐 ---------- */
+.aq-legacy{max-width:480px;margin:18vh auto 0;padding:36px 28px;border-radius:30px;background:#F5F8FF;font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;color:#171B29}
+.aq-legacy strong{display:block;font-size:24px;letter-spacing:-.04em;margin-bottom:10px}
+.aq-legacy p{margin:0;font-size:15px;line-height:1.7;color:#5b6678}
+
+/* 콘텐츠 관리: 점검 상태 */
+.aq-cadmin-state.is-active{background:var(--aq-e-red-soft);color:var(--aq-e-red)}
+.aq-cadmin-state.is-ended{background:#eef1f6;color:#8a94a6}
+/* 상태 창: 창 제목은 스크린리더용으로만 두고(본문 제목과 같은 문구) 닫기 버튼만 오른쪽 위에 */
+#modal.aq-sysdialog-mode .modal-top{justify-content:flex-end;margin-bottom:-44px;position:relative;z-index:1}
+#modal.aq-sysdialog-mode .modal-top h2{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@media (min-width:768px){#modal.aq-sysdialog-mode .modal-inner{max-width:460px}}

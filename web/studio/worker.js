@@ -11,13 +11,21 @@
  *   POST   /api/content/notices|events        새 글
  *   PUT    /api/content/notices|events/:id    수정
  *   DELETE /api/content/notices|events/:id    삭제 (deleted_at 기록, 복구 가능)
+ *   (서버 점검 일정도 같은 방식: /api/content/maintenance[/:id])
+ * 상태
+ *   GET  /api/status   진행 중·예정된 서버 점검 (스튜디오의 점검 화면·예고 배너)
  *
  * 경로·입력 규칙은 crates/edge/src/content.rs(Rust 엣지)와 같다.
  */
 
-const TABLES = new Set(['notices', 'events']);
+const TABLES = new Set(['notices', 'events', 'maintenance']);
+// 공개 목록·상세가 있는 표 (maintenance는 /api/status로만 공개)
+const PUBLIC_TABLES = new Set(['notices', 'events']);
 const NOTICE_COLUMNS = 'id, title, body, pinned, published_at, updated_at';
 const EVENT_COLUMNS = 'id, title, summary, body, place, starts_on, ends_on, link_url, published_at, updated_at';
+const MAINTENANCE_COLUMNS = 'id, title, body, starts_at, ends_at, published_at, updated_at';
+// 예고 배너는 시작 72시간 전부터
+const NOTICE_AHEAD_MS = 72 * 3_600_000;
 const PUBLIC_CACHE = 'public, max-age=30';
 const MAX_BODY = 64 * 1024;
 
@@ -40,6 +48,7 @@ export function eventStatus(startsOn, endsOn, today = todayKst()) {
 /** 공개 목록·상세 응답 모양으로 (pinned는 불리언, 이벤트는 진행 상태 포함) */
 export function present(table, row, today = todayKst()) {
   if (table === 'notices') return { ...row, pinned: row.pinned === 1 || row.pinned === true };
+  if (table === 'maintenance') return row;
   return { ...row, status: eventStatus(row.starts_on, row.ends_on, today) };
 }
 
@@ -85,6 +94,25 @@ export function validate(table, input) {
         text(input.title, 200, { required: true }),
         text(input.body, 20000, { multiline: true }),
         input.pinned ? 1 : 0,
+        publishedAt(input.published_at),
+      ],
+    };
+  }
+  if (table === 'maintenance') {
+    checkKeys(input, ['id', 'title', 'body', 'starts_at', 'ends_at', 'published_at']);
+    const startsAt = input.starts_at;
+    const endsAt = input.ends_at;
+    if (typeof startsAt !== 'string' || !TS_RE.test(startsAt) || typeof endsAt !== 'string' || !TS_RE.test(endsAt) || endsAt <= startsAt) {
+      throw new InputError('DATES_INVALID');
+    }
+    return {
+      id: checkId(input.id),
+      columns: ['title', 'body', 'starts_at', 'ends_at', 'published_at'],
+      values: [
+        text(input.title, 200, { required: true }),
+        text(input.body, 2000, { multiline: true }),
+        startsAt,
+        endsAt,
         publishedAt(input.published_at),
       ],
     };
@@ -141,7 +169,9 @@ export function route(method, pathname) {
   if (pathname.startsWith('/api/content/')) { admin = true; rest = pathname.slice(13); }
   else if (pathname.startsWith('/api/')) rest = pathname.slice(5);
   else return null;
+  if (!admin && rest === 'status') return (method === 'GET' || method === 'HEAD') ? { kind: 'status' } : { kind: 'method' };
   const [table, id, extra] = rest.split('/');
+  if (!admin && !PUBLIC_TABLES.has(table)) return null;
   if (!TABLES.has(table) || extra !== undefined || (id !== undefined && id !== '' && !ID_RE.test(id))) {
     return admin ? { kind: 'notfound' } : null;
   }
@@ -158,8 +188,19 @@ export function route(method, pathname) {
   return { kind: 'method' };
 }
 
-const columnsOf = table => (table === 'notices' ? NOTICE_COLUMNS : EVENT_COLUMNS);
-const orderOf = table => (table === 'notices' ? 'pinned DESC, published_at DESC' : 'starts_on DESC');
+const columnsOf = table => ({ notices: NOTICE_COLUMNS, events: EVENT_COLUMNS, maintenance: MAINTENANCE_COLUMNS })[table];
+const orderOf = table => ({ notices: 'pinned DESC, published_at DESC', events: 'starts_on DESC', maintenance: 'starts_at DESC' })[table];
+
+/** 지금 진행 중인 점검과, 72시간 안에 시작하는 예고된 점검 */
+export function pickStatus(rows, now) {
+  const nowMs = Date.parse(now);
+  const live = rows.filter(r => r.published_at <= now && r.ends_at > now);
+  const active = live.filter(r => r.starts_at <= now).sort((a, b) => a.starts_at.localeCompare(b.starts_at))[0] ?? null;
+  const upcoming = live
+    .filter(r => r.starts_at > now && Date.parse(r.starts_at) - nowMs <= NOTICE_AHEAD_MS)
+    .sort((a, b) => a.starts_at.localeCompare(b.starts_at))[0] ?? null;
+  return { now, maintenance: { active, upcoming } };
+}
 
 async function readJson(request) {
   const raw = await request.text();
@@ -171,9 +212,23 @@ export async function handleContent(request, env, r) {
   if (r.kind === 'notfound') return error(404, 'NOT_FOUND');
   if (r.kind === 'method') return error(405, 'METHOD_NOT_ALLOWED');
   const db = env.CONTENT_DB;
-  if (!db) return error(503, 'CONTENT_UNAVAILABLE');
   const { table } = r;
   const now = nowUtc();
+
+  if (r.kind === 'status') {
+    try {
+      if (!db) throw new Error('CONTENT_DB binding missing');
+      const { results } = await db.prepare(
+        `SELECT ${MAINTENANCE_COLUMNS} FROM maintenance WHERE deleted_at IS NULL AND ends_at > ?1 ORDER BY starts_at LIMIT 20`,
+      ).bind(now).all();
+      return json(pickStatus(results ?? [], now), 200, 'no-store');
+    } catch (e) {
+      // 테이블이 아직 없어도(마이그레이션 전) 스튜디오는 정상 동작하게 빈 상태로 답한다
+      console.error('status error', e);
+      return json({ now, maintenance: { active: null, upcoming: null } }, 200, 'no-store');
+    }
+  }
+  if (!db) return error(503, 'CONTENT_UNAVAILABLE');
 
   try {
     if (r.kind === 'list') {
@@ -212,7 +267,7 @@ export async function handleContent(request, env, r) {
     const input = await readJson(request);
     const row = validate(table, input);
     if (r.kind === 'create') {
-      const id = row.id ?? `${table === 'notices' ? 'n' : 'e'}-${now.slice(0, 10).replaceAll('-', '')}-${crypto.randomUUID().slice(0, 8)}`;
+      const id = row.id ?? `${({ notices: 'n', events: 'e', maintenance: 'm' })[table]}-${now.slice(0, 10).replaceAll('-', '')}-${crypto.randomUUID().slice(0, 8)}`;
       const cols = ['id', ...row.columns];
       try {
         await db.prepare(
@@ -278,10 +333,10 @@ export default {
       if (!isAsset) {
         const indexRes = await env.ASSETS.fetch(new Request(new URL('/', request.url), request));
         if (indexRes.ok) {
-          return new Response(indexRes.body, {
-            status: 200,
-            headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-cache' },
-          });
+          // 에셋 응답의 보안 헤더(_headers의 CSP 등)는 그대로 두고 캐시만 끈다
+          const headers = new Headers(indexRes.headers);
+          headers.set('Cache-Control', 'no-cache');
+          return new Response(indexRes.body, { status: 200, headers });
         }
       }
     }

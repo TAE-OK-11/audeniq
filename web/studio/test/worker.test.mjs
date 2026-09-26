@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { bearerOk, eventStatus, route, validate } from '../worker.js';
+import worker, { bearerOk, eventStatus, pickStatus, route, validate } from '../worker.js';
 
 const TOKEN = 'x'.repeat(40);
 
 /** 메모리 D1 대역 — worker.js가 쓰는 prepare().bind().all/first/run만 흉내 */
 function fakeDb() {
-  const rows = { notices: [], events: [] };
+  const rows = { notices: [], events: [], maintenance: [] };
   const exec = (sql, args) => {
     const table = /FROM (\w+)|INTO (\w+)|UPDATE (\w+)/.exec(sql).slice(1).find(Boolean);
     const list = rows[table];
@@ -123,7 +123,6 @@ test('posting a notice makes it public; scheduled and removed ones stay hidden',
 test('admin API is off without a token, other paths go to assets', async () => {
   const e = { ...env(), CONTENT_ADMIN_TOKEN: undefined };
   assert.equal((await call(e, 'GET', '/api/content/notices')).status, 503);
-  assert.equal((await call(e, 'GET', '/api/unknown')).status, 404);
   assert.equal(await (await call(e, 'GET', '/notices/abc')).text(), 'asset');
 });
 
@@ -139,4 +138,59 @@ test('screen paths fall back to index.html when assets answer 404', async () => 
   assert.equal(r.headers.get('Content-Security-Policy'), "default-src 'self'");
   assert.equal(r.headers.get('Cache-Control'), 'no-cache');
   assert.equal((await call(e, 'GET', '/missing.js')).status, 404);
+});
+
+test('maintenance: admin schedules it, /api/status shows active and upcoming', async () => {
+  const e = env();
+  e.CONTENT_DB.rows.maintenance = [];
+  const iso = ms => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const now = Date.now();
+  assert.equal((await call(e, 'POST', '/api/content/maintenance', { title: '점검', starts_at: iso(now + 3600e3), ends_at: iso(now) })).status, 400);
+  assert.equal((await call(e, 'POST', '/api/content/maintenance', { title: '다음 점검', body: 'DB 업그레이드', starts_at: iso(now + 3600e3), ends_at: iso(now + 7200e3) })).status, 201);
+  let st = await (await call(e, 'GET', '/api/status')).json();
+  assert.equal(st.maintenance.active, null);
+  assert.equal(st.maintenance.upcoming.title, '다음 점검');
+  await call(e, 'POST', '/api/content/maintenance', { id: 'now', title: '지금 점검', starts_at: iso(now - 60e3), ends_at: iso(now + 600e3) });
+  st = await (await call(e, 'GET', '/api/status')).json();
+  assert.equal(st.maintenance.active.id, 'now');
+  // 공개 목록 경로는 없다
+  assert.equal(route('GET', '/api/maintenance'), null);
+  // 끝나면 사라진다
+  await call(e, 'DELETE', '/api/content/maintenance/now');
+  st = await (await call(e, 'GET', '/api/status')).json();
+  assert.equal(st.maintenance.active, null);
+});
+
+test('status answers even without the maintenance table', async () => {
+  const e = { ...env(), CONTENT_DB: undefined };
+  const st = await (await call(e, 'GET', '/api/status')).json();
+  assert.deepEqual(st.maintenance, { active: null, upcoming: null });
+});
+
+test('pickStatus ignores unpublished and far-future windows', () => {
+  const now = '2026-09-26T00:00:00Z';
+  const rows = [
+    { id: 'a', starts_at: '2026-09-30T00:00:00Z', ends_at: '2026-09-30T02:00:00Z', published_at: '2026-09-01T00:00:00Z' },
+    { id: 'b', starts_at: '2026-09-26T05:00:00Z', ends_at: '2026-09-26T06:00:00Z', published_at: '2026-09-27T00:00:00Z' },
+  ];
+  assert.deepEqual(pickStatus(rows, now).maintenance, { active: null, upcoming: null });
+});
+
+test('other /api/* calls go to the backend with the service header; a dead backend is 502', async () => {
+  const seen = [];
+  const real = globalThis.fetch;
+  try {
+    globalThis.fetch = async req => { seen.push(req); return new Response('{"ok":true}', { status: 200 }); };
+    const e = { ...env(), EDGE_SERVICE_SECRET: 's'.repeat(40) };
+    const r = await call(e, 'GET', '/api/me?x=1');
+    assert.equal(r.status, 200);
+    assert.match(seen[0].url, /\/api\/me\?x=1$/);
+    assert.equal(seen[0].headers.get('x-audeniq-service'), 's'.repeat(40));
+    globalThis.fetch = async () => { throw new Error('down'); };
+    const down = await call(e, 'GET', '/api/me');
+    assert.equal(down.status, 502);
+    assert.equal((await down.json()).error.code, 'BACKEND_UNAVAILABLE');
+  } finally {
+    globalThis.fetch = real;
+  }
 });

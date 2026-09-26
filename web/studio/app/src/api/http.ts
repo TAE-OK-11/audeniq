@@ -17,6 +17,7 @@ export function setCsrf(token: string) { csrfToken = token; }
 export function hasCsrf() { return !!csrfToken; }
 export function setOrgId(id: string) { currentOrgId = id; }
 import { currentPath, toHref } from '../lib/router';
+import { classifyServerIssue, reportServerIssue } from '../lib/systemEvents';
 export function orgId() { return currentOrgId; }
 
 export function orgPath(path: string): string {
@@ -30,6 +31,8 @@ interface ReqOptions {
   timeoutMs?: number;
   /** 401이어도 로그인 화면으로 보내지 않음 (세션 확인·로그인 요청용) */
   quiet401?: boolean;
+  /** 서버 장애여도 전역 오류 창을 띄우지 않음 (화면에서 직접 안내하는 요청용) */
+  quietServer?: boolean;
   signal?: AbortSignal;
 }
 
@@ -54,6 +57,8 @@ export async function req<T>(path: string, opts: ReqOptions = {}): Promise<T> {
     res = await fetch(`${API_BASE}${path}`, { method, headers, body, credentials: 'include', signal: ctrl.signal, cache: 'no-store' });
   } catch (e) {
     const aborted = e instanceof DOMException && e.name === 'AbortError';
+    // 기기가 온라인인데 연결 자체가 안 되면 서버 쪽 문제로 본다 (오프라인은 SystemStatus가 따로 알린다)
+    if (!aborted && !opts.quietServer && navigator.onLine && !opts.signal?.aborted) reportServerIssue({ kind: 'down', status: 0, code: 'NETWORK' });
     throw new ApiError(aborted ? '서버 응답이 늦어요. 잠시 후 다시 시도해 주세요.' : '네트워크 연결을 확인해 주세요.', 0, aborted ? 'TIMEOUT' : 'NETWORK');
   } finally {
     window.clearTimeout(timer);
@@ -73,6 +78,8 @@ export async function req<T>(path: string, opts: ReqOptions = {}): Promise<T> {
       const onAuthPage = /^\/(login|signup|find-account)/.test(currentPath());
       if (!onAuthPage) window.location.assign(toHref('/login'));
     }
+    const issue = classifyServerIssue(res.status, code);
+    if (issue && !opts.quietServer) reportServerIssue(issue);
     const msg = code === 'PAYLOAD_TOO_LARGE' ? '보낼 정보가 너무 커요. 앨범 소개나 가사 길이를 줄여 주세요.' : messageForCode(code, res.status);
     throw new ApiError(msg, res.status, code);
   }

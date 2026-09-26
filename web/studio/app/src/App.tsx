@@ -5,6 +5,7 @@ import { Layout } from './components/Layout';
 import { ToastProvider } from './components/Toast';
 import { ConfirmProvider } from './components/Confirm';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { SystemStatus } from './components/SystemStatus';
 import { PageSkeleton } from './components/Skeleton';
 import { pageLoaders } from './routes';
 import './styles/design.css';
@@ -46,6 +47,7 @@ const Notifications = lazyPage(pageLoaders.Notifications, m => m.Notifications);
 const Events = lazyPage(pageLoaders.Events, m => m.Events);
 const Notices = lazyPage(pageLoaders.Notices, m => m.Notices);
 const NoticeDetail = lazyPage(pageLoaders.Notices, m => m.NoticeDetail);
+const NotFound = lazyPage(pageLoaders.NotFound, m => m.NotFound);
 const ContentAdmin = lazyPage(pageLoaders.ContentAdmin, m => m.ContentAdmin);
 const Profile = lazyPage(pageLoaders.Profile, m => m.Profile);
 
@@ -108,7 +110,7 @@ function PortalRoutes() {
             <Route path="/notices/:id" element={<NoticeDetail />} />
             <Route path="/support" element={<Navigate to="/inquiries" replace />} />
             <Route path="/profile" element={<Profile />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>
       </ErrorBoundary>
@@ -122,17 +124,19 @@ export function App() {
       <AuthProvider>
         <ToastProvider>
           <ConfirmProvider>
-            <ErrorBoundary>
-              <Suspense fallback={<BootScreen />}>
-                <Routes>
-                  <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />
-                  <Route path="/signup" element={<GuestOnly><Signup /></GuestOnly>} />
-                  <Route path="/find-account" element={<GuestOnly><FindAccount /></GuestOnly>} />
-                  {/* 공지·이벤트 관리 — 로그인 대신 Worker 관리자 토큰으로 인증 */}
-                  <Route path="/content-admin" element={<ContentAdmin />} />
-                  <Route path="/*" element={<Protected><PortalRoutes /></Protected>} />
-                </Routes>
-              </Suspense>
+            <ErrorBoundary fullPage>
+              <SystemStatus>
+                <Suspense fallback={<BootScreen />}>
+                  <Routes>
+                    <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />
+                    <Route path="/signup" element={<GuestOnly><Signup /></GuestOnly>} />
+                    <Route path="/find-account" element={<GuestOnly><FindAccount /></GuestOnly>} />
+                    {/* 공지·이벤트 관리 — 로그인 대신 Worker 관리자 토큰으로 인증 */}
+                    <Route path="/content-admin" element={<ContentAdmin />} />
+                    <Route path="/*" element={<Protected><PortalRoutes /></Protected>} />
+                  </Routes>
+                </Suspense>
+              </SystemStatus>
             </ErrorBoundary>
           </ConfirmProvider>
         </ToastProvider>
