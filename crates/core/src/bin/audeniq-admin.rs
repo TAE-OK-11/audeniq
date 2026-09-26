@@ -17,10 +17,16 @@
 //! audeniq-admin partner list
 //! audeniq-admin partner set-dsp PARTNER_ID [DSP_UUID]
 //!   (links the partner to the DSP id Stage 2 eligibility keys on)
+//! audeniq-admin staff list
+//! audeniq-admin staff grant EMAIL ADMIN|REVIEWER|OPERATOR|SUPPORT
+//! audeniq-admin staff revoke EMAIL
+//!   (AUDENIQ employees for /api/staff; the API can only read this)
+//! audeniq-admin dsp list
+//!   (the D-1..D-11 registry with each direct route's onboarding gaps)
 use audeniq_core::protected_admin as admin;
 use audeniq_core::protected_names::{Action, Mode};
 
-const USAGE: &str = "usage: audeniq-admin [--operator NAME] protected <list|add|remove|activate|alias|remove-alias|grant-exception|revoke-exception> ...\n       audeniq-admin [--operator NAME] identifier-issuer <list|register UPC|ISRC PREFIX>\n       audeniq-admin [--operator NAME] partner <list|set-dsp PARTNER_ID [DSP_UUID]>";
+const USAGE: &str = "usage: audeniq-admin [--operator NAME] protected <list|add|remove|activate|alias|remove-alias|grant-exception|revoke-exception> ...\n       audeniq-admin [--operator NAME] identifier-issuer <list|register UPC|ISRC PREFIX>\n       audeniq-admin [--operator NAME] partner <list|set-dsp PARTNER_ID [DSP_UUID]>\n       audeniq-admin [--operator NAME] staff <list|grant EMAIL ROLE|revoke EMAIL>\n       audeniq-admin dsp list";
 
 fn take_opt(args: &mut Vec<String>, key: &str) -> Option<String> {
     let i = args.iter().position(|a| a == key)?;
@@ -64,6 +70,43 @@ async fn main() -> anyhow::Result<()> {
     let note = take_opt(&mut args, "--note");
     let reason = take_opt(&mut args, "--reason");
     let phrase = take_flag(&mut args, "--phrase");
+    if args.first().map(String::as_str) == Some("staff") {
+        use audeniq_core::staff_admin;
+        let pool = audeniq_core::database::connect(&std::env::var("DATABASE_URL")?, 1).await?;
+        match (args.get(1).map(String::as_str), args.get(2), args.get(3)) {
+            (Some("list"), None, None) => println!(
+                "{}",
+                serde_json::to_string_pretty(&staff_admin::list(&pool).await?)?
+            ),
+            (Some(cmd @ ("grant" | "revoke")), Some(email), role) => {
+                if operator.trim().is_empty() {
+                    anyhow::bail!("--operator NAME (or AUDENIQ_OPERATOR) is required for changes");
+                }
+                if cmd == "grant" {
+                    let role = role.ok_or_else(|| anyhow::anyhow!(USAGE))?;
+                    staff_admin::grant(&pool, &operator, email, &role.to_ascii_uppercase()).await?;
+                } else {
+                    staff_admin::revoke(&pool, &operator, email).await?;
+                }
+                println!("ok");
+            }
+            _ => anyhow::bail!(USAGE),
+        }
+        return Ok(());
+    }
+    if args.first().map(String::as_str) == Some("dsp") {
+        let pool = audeniq_core::database::connect(&std::env::var("DATABASE_URL")?, 1).await?;
+        match args.get(1).map(String::as_str) {
+            Some("list") => println!(
+                "{}",
+                serde_json::to_string_pretty(
+                    &audeniq_core::staff_admin::dsp_overview(&pool).await?
+                )?
+            ),
+            _ => anyhow::bail!(USAGE),
+        }
+        return Ok(());
+    }
     if args.first().map(String::as_str) == Some("partner") {
         use audeniq_core::partner_onboarding::{list_profiles, set_dsp};
         let pool = audeniq_core::database::connect(&std::env::var("DATABASE_URL")?, 1).await?;

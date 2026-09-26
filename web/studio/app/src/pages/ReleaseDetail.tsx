@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from '../lib/router';
-import { api } from '../api/client';
+import { api, type DeliveryItem } from '../api/client';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
 import { SkeletonBlock, SkeletonRows } from '../components/Skeleton';
@@ -12,6 +12,33 @@ import { docState, docsForRelease, useDocs } from '../store/docs';
 import { errorMessage } from '../api/errors';
 import { CorrectionList } from '../components/CorrectionList';
 import { fixPath } from '../lib/corrections';
+
+// 플랫폼별 배급 진행 단계 (서버 delivery_staging 기준)
+const DELIVERY_STAGE: Record<string, string> = {
+  NEEDS_CORRECTION: '보완 필요',
+  IN_REVIEW: '배급 검토 중',
+  PREPARING: '플랫폼 연결 준비 중',
+  SCHEDULED: '전송 대기',
+  ON_HOLD: '보류',
+  SENDING: '전송 중',
+  DELIVERED: '전송 완료',
+};
+
+// 플랫폼 기준으로 고쳐야 하는 항목 안내
+const DELIVERY_ISSUE: Record<string, string> = {
+  DSP_ARTWORK_NOT_SQUARE: '커버아트를 1:1 정사각형으로 바꿔 주세요.',
+  DSP_ARTWORK_TOO_SMALL: '이 플랫폼 기준보다 커버아트 해상도가 낮아요.',
+  DSP_ARTWORK_TOO_LARGE: '이 플랫폼이 받는 크기보다 커버아트가 커요. 해상도를 줄여 주세요.',
+  DSP_AUDIO_NOT_LOSSLESS: 'WAV·FLAC 무손실 음원이 필요해요.',
+  DSP_AUDIO_SAMPLE_RATE_LOW: '음원의 샘플레이트가 기준(44.1kHz)보다 낮아요.',
+  DSP_AUDIO_BIT_DEPTH_LOW: '음원의 비트 심도가 기준(16bit)보다 낮아요.',
+  DSP_CREDIT_COMPOSER_MISSING: '곡마다 작곡가 크레딧이 필요해요.',
+  DSP_CREDIT_LYRICIST_MISSING: '가사가 있는 곡은 작사가 크레딧이 필요해요.',
+  DSP_GENRE_MISSING: '장르를 선택해 주세요.',
+  DSP_LEAD_TIME_SHORT: '발매일까지 여유가 짧아 공개가 늦어질 수 있어요.',
+  DSP_ARTWORK_UNMEASURED: '커버아트 크기를 확인하지 못했어요.',
+  DSP_AUDIO_UNMEASURED: '음원 규격을 확인하지 못했어요.',
+};
 
 const RIGHTS_KEYS = ['rightsMaster', 'rightsComposition', 'rightsArtwork', 'rightsConsent'];
 
@@ -50,6 +77,11 @@ export function ReleaseDetail() {
   const [tab, setTab] = useState('overview');
   const [deleting, setDeleting] = useState(false);
   const { data: rel, error, loading, reload } = useAsync(() => api.getRelease(id), [id]);
+  // 배급 탭을 열 때만 플랫폼별 진행을 불러온다 (준비 전이면 빈 목록)
+  const delivery = useAsync<DeliveryItem[]>(
+    () => (tab === 'delivery' ? api.getDelivery(id).catch(() => []) : Promise.resolve([])),
+    [id, tab],
+  );
 
   if (loading && !rel) {
     return (
@@ -262,6 +294,24 @@ export function ReleaseDetail() {
                   <span className="muted small">플랫폼 미선택</span>
                 )}
               </div>
+              {!!delivery.data?.length && (
+                <>
+                  <h2 className="subhead">플랫폼별 배급 진행</h2>
+                  <ul className="aq-linked-docs">
+                    {delivery.data.map(item => (
+                      <li key={item.dsp}>
+                        <div className="min-0">
+                          <span>{dspLabel(item.slug)}</span>
+                          {item.issues.filter(i => i.severity === 'BLOCKER').map(i => (
+                            <p key={i.code} className="small muted">{DELIVERY_ISSUE[i.code] ?? '이 플랫폼 기준에 맞게 확인이 필요해요.'}</p>
+                          ))}
+                        </div>
+                        <em>{DELIVERY_STAGE[item.stage] ?? item.stage}</em>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
               <h2 className="subhead">권리 확인</h2>
               <dl className="information">
                 <div><dt>마스터 권리자</dt><dd>{d?.ownership || '미입력'}</dd></div>

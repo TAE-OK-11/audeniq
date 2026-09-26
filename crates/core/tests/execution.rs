@@ -2924,3 +2924,463 @@ async fn dsp_unavailable_exhausts_to_dead_letter(pool: PgPool) {
     );
     assert_eq!(job_status(&pool, ctx.org, job_id).await, "DEAD_LETTER");
 }
+
+// ---------------------------------------------------------------------------
+// Staff portal + per-DSP delivery staging (migrations 0042-0044)
+// ---------------------------------------------------------------------------
+
+async fn staff_user(app: &Router, pool: &PgPool, role: &str) -> User {
+    let s = user(app).await;
+    let (st, me) = call(app, "GET", "/api/me", Value::Null, Some(&s)).await;
+    assert_eq!(st, StatusCode::OK, "{me}");
+    let id = Uuid::parse_str(me["user_id"].as_str().unwrap()).unwrap();
+    sqlx::query(
+        "INSERT INTO identity.staff_members(user_id,role,granted_by) VALUES($1,$2,'test-operator')",
+    )
+    .bind(id)
+    .bind(role)
+    .execute(pool)
+    .await
+    .unwrap();
+    s
+}
+
+/// A parental-advisory single asking for Spotify (D-5) and Melon (D-1),
+/// submitted and taken through Stage 2 into STAGE2_REVIEW (S2_SPECIAL_FLAGS).
+async fn explicit_release_in_review(
+    app: &Router,
+    pool: &PgPool,
+    store: &Arc<FileStore>,
+    u: &User,
+) -> Uuid {
+    let mut audio = wav_bytes().to_vec();
+    audio.extend_from_slice(&Uuid::new_v4().as_u128().to_le_bytes());
+    let asset = register_asset(pool, store, u, "t.wav", &audio).await;
+    let release = build_submittable(app, pool, u, asset).await;
+    add_preparation_supplements(pool, store, u, release).await;
+    sqlx::query("UPDATE catalog.releases SET draft = draft || '{\"genre\":\"K-Pop\",\"platforms\":[\"spotify\",\"melon\"]}'::jsonb, row_version = row_version + 1 WHERE id=$1")
+        .bind(release)
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE catalog.tracks SET lyrics='explicit lyrics here', parental_advisory=true WHERE release_id=$1")
+        .bind(release)
+        .execute(pool)
+        .await
+        .unwrap();
+    consent_and_submit(app, u, release, &format!("k-staff-{}", Uuid::new_v4())).await;
+    assert_eq!(run_one(pool, store, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(run_one(pool, store, "rights", "stage2").await, "SUCCEEDED");
+    assert_eq!(release_status(pool, release).await, "STAGE2_REVIEW");
+    release
+}
+
+async fn current_revision(pool: &PgPool, release: Uuid) -> Uuid {
+    sqlx::query_scalar("SELECT current_revision_id FROM catalog.releases WHERE id=$1")
+        .bind(release)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+#[sqlx::test(migrations = false)]
+async fn staff_two_person_approval_then_per_dsp_staging(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let artist = user(&app).await;
+    let release = explicit_release_in_review(&app, &pool, &store, &artist).await;
+
+    // Staff endpoints are closed to ordinary members.
+    let (s, _) = call(
+        &app,
+        "GET",
+        "/api/staff/overview",
+        Value::Null,
+        Some(&artist),
+    )
+    .await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+
+    let r1 = staff_user(&app, &pool, "REVIEWER").await;
+    let r2 = staff_user(&app, &pool, "ADMIN").await;
+    let (s, v) = call(
+        &app,
+        "GET",
+        "/api/staff/releases?status=STAGE2_REVIEW",
+        Value::Null,
+        Some(&r1),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let row = v["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["id"] == release.to_string())
+        .expect("release in the review queue");
+    assert_eq!(row["platforms"], json!(["D-1", "D-5"]));
+    let (s, v) = call(
+        &app,
+        "GET",
+        &format!("/api/staff/releases/{release}"),
+        Value::Null,
+        Some(&r1),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert!(
+        v["open_checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["check_code"] == "S2_SPECIAL_FLAGS"),
+        "{v}"
+    );
+
+    // A rights/money class needs a second staff reviewer.
+    let rev = current_revision(&pool, release).await;
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/staff/releases/{release}/decision"),
+        json!({"action":"APPROVE","revision_id":rev,"reason":"explicit marking verified"}),
+        Some(&r1),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["result"], "PENDING_SECOND_APPROVAL");
+    let approval = v["approval_id"].as_str().unwrap().to_string();
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/staff/approvals/{approval}/approve"),
+        json!({}),
+        Some(&r1),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(v["error"]["code"], "SECOND_APPROVER_MUST_DIFFER");
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/staff/approvals/{approval}/approve"),
+        json!({}),
+        Some(&r2),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["reevaluation_queued"], true);
+
+    // The pipeline, not the staff call, moves the release on.
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        run_one(&pool, &store, "distribution", "prepare_release").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(release_status(&pool, release).await, "READY_FOR_DELIVERY");
+    assert_eq!(
+        run_one(&pool, &store, "distribution", "delivery.stage").await,
+        "SUCCEEDED"
+    );
+
+    // Only the requested DSPs are staged, each with its own verdict.
+    let mut c = authed(&pool, artist.org).await;
+    let rows: Vec<(String, String, bool, bool)> = sqlx::query_as(
+        "SELECT dsp_code, readiness, ern_xml IS NOT NULL, ern_is_preview FROM distribution.delivery_staging WHERE release_id=$1 ORDER BY dsp_code",
+    )
+    .bind(release)
+    .fetch_all(&mut *c)
+    .await
+    .unwrap();
+    drop(c);
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    let d1 = rows.iter().find(|r| r.0 == "D-1").unwrap();
+    let d5 = rows.iter().find(|r| r.0 == "D-5").unwrap();
+    // Melon needs a lyricist credit: a content correction.
+    assert_eq!(d1.1, "CONTENT_BLOCKED");
+    // Spotify's content is fine; only onboarding (contract, DPIDs) remains,
+    // and the exact ERN it would receive is already built as a preview.
+    assert_eq!(d5.1, "AWAITING_PARTNER");
+    assert!(d5.2 && d5.3, "{d5:?}");
+
+    // The artist sees one line per requested platform.
+    let (s, v) = call(
+        &app,
+        "GET",
+        &format!("/api/orgs/{}/releases/{release}/delivery", artist.org),
+        Value::Null,
+        Some(&artist),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let items = v["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0]["dsp"], "D-1");
+    assert_eq!(items[0]["stage"], "NEEDS_CORRECTION");
+    assert!(
+        items[0]["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["code"] == "DSP_CREDIT_LYRICIST_MISSING")
+    );
+    assert_eq!(items[1]["stage"], "PREPARING");
+
+    // Delivery approval is an operator duty; content-blocked rows refuse it.
+    let (s, deliveries) = call(
+        &app,
+        "GET",
+        "/api/staff/deliveries?approval=PENDING",
+        Value::Null,
+        Some(&r2),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{deliveries}");
+    let package = deliveries["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["release_id"] == release.to_string())
+        .unwrap()["package_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let path = |code: &str| format!("/api/staff/deliveries/{package}/{code}/decision");
+    let (s, _) = call(
+        &app,
+        "POST",
+        &path("D-5"),
+        json!({"action":"APPROVE"}),
+        Some(&r1),
+    )
+    .await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    let (s, v) = call(
+        &app,
+        "POST",
+        &path("D-1"),
+        json!({"action":"APPROVE"}),
+        Some(&r2),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(v["error"]["code"], "DELIVERY_CONTENT_BLOCKED");
+    let (s, v) = call(
+        &app,
+        "POST",
+        &path("D-5"),
+        json!({"action":"APPROVE","note":"ERN checked"}),
+        Some(&r2),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["approval"], "APPROVED");
+    let r = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/staff/deliveries/{package}/D-5/ern"))
+                .header("x-audeniq-service", SECRET)
+                .header("cookie", &r2.cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+    let xml = axum::body::to_bytes(r.into_body(), 1 << 22).await.unwrap();
+    assert!(
+        std::str::from_utf8(&xml)
+            .unwrap()
+            .contains("NewReleaseMessage")
+    );
+
+    // An approved-but-unrouted DSP still never gets a delivery job.
+    let (s, v) = call(&app, "GET", "/api/staff/dsps", Value::Null, Some(&r2)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let d5 = v["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["code"] == "D-5")
+        .unwrap();
+    assert_eq!(d5["route"]["delivery_enabled"], false);
+    assert!(
+        d5["route"]["onboarding_gaps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|g| g == "contract_signed")
+    );
+}
+
+#[sqlx::test(migrations = false)]
+async fn staff_correction_and_rejection_reach_the_artist(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let artist = user(&app).await;
+    let reviewer = staff_user(&app, &pool, "REVIEWER").await;
+
+    // Correction: one reviewer is enough (stricter status).
+    let r1 = explicit_release_in_review(&app, &pool, &store, &artist).await;
+    let rev = current_revision(&pool, r1).await;
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/staff/releases/{r1}/decision"),
+        json!({"action":"REQUEST_CORRECTION","revision_id":rev,"reason":"mark the explicit track",
+               "notes":[{"check_code":"S2_SPECIAL_FLAGS","note":"19금 표시와 가사 확인이 필요해요."}]}),
+        Some(&reviewer),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(release_status(&pool, r1).await, "STAGE2_CORRECTION");
+    let (s, v) = call(
+        &app,
+        "GET",
+        &format!("/api/orgs/{}/releases/{r1}/submission", artist.org),
+        Value::Null,
+        Some(&artist),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert!(
+        v["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["check_code"] == "S2_SPECIAL_FLAGS" && c["severity"] == "CORRECTION"),
+        "{v}"
+    );
+    assert!(
+        v["review_notes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|n| n["check_code"] == "S2_SPECIAL_FLAGS"),
+        "{v}"
+    );
+
+    // A stale revision id is refused; rejection closes the application.
+    let r2 = explicit_release_in_review(&app, &pool, &store, &artist).await;
+    let (s, _) = call(
+        &app,
+        "POST",
+        &format!("/api/staff/releases/{r2}/decision"),
+        json!({"action":"REJECT","revision_id":Uuid::new_v4(),"reason":"x"}),
+        Some(&reviewer),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CONFLICT);
+    let rev = current_revision(&pool, r2).await;
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/staff/releases/{r2}/decision"),
+        json!({"action":"REJECT","revision_id":rev,"reason":"unlicensed sample"}),
+        Some(&reviewer),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(release_status(&pool, r2).await, "WITHDRAWN");
+    let notified: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM portal.notifications WHERE org_id=$1 AND title LIKE '%반려%')",
+    )
+    .bind(artist.org)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(notified);
+}
+
+/// E-0 never sends to a registry DSP (D-n) without a staff-approved staging
+/// row, even when its route is live; approval enqueues it.
+#[sqlx::test(migrations = false)]
+async fn registry_dsp_waits_for_staff_approval_before_send(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let artist = user(&app).await;
+    // Make D-5's direct route live as a test partner: evidence first (the
+    // 0027 guard refuses delivery_enabled while onboarding gaps remain).
+    sqlx::query(
+        "UPDATE execution.partner_onboarding SET dpid_registered=true, endpoint_url='https://d5.example.test',
+            credential_kind='api_key', credential_status='STORED', test_ern_validated_at=now(),
+            test_ack_parsed_at=now(), contract_signed_at=now(), contract_ref='TEST' WHERE partner_id='D-5'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE execution.adapter_profiles SET activation_kind='MOCK', delivery_enabled=true,
+            capabilities = capabilities || '{\"send_or_publish\":true}'::jsonb WHERE partner_id='D-5'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let mut audio = wav_bytes().to_vec();
+    audio.extend_from_slice(&Uuid::new_v4().as_u128().to_le_bytes());
+    let asset = register_asset(&pool, &store, &artist, "t.wav", &audio).await;
+    let release = build_submittable(&app, &pool, &artist, asset).await;
+    add_preparation_supplements(&pool, &store, &artist, release).await;
+    sqlx::query("UPDATE catalog.releases SET draft = draft || '{\"genre\":\"Pop\",\"platforms\":[\"spotify\"]}'::jsonb, row_version = row_version + 1 WHERE id=$1")
+        .bind(release)
+        .execute(&pool)
+        .await
+        .unwrap();
+    consent_and_submit(&app, &artist, release, &format!("k-e0-{}", Uuid::new_v4())).await;
+    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        run_one(&pool, &store, "distribution", "prepare_release").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(release_status(&pool, release).await, "READY_FOR_DELIVERY");
+    // First E-0 runs before any approval: the live route is not enough.
+    assert_eq!(
+        run_one(&pool, &store, "delivery", "delivery.enqueue").await,
+        "SUCCEEDED"
+    );
+    let jobs = |pool: PgPool| async move {
+        let mut c = authed(&pool, artist.org).await;
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM execution.delivery_jobs WHERE partner_id='D-5'",
+        )
+        .fetch_one(&mut *c)
+        .await
+        .unwrap()
+    };
+    assert_eq!(jobs(pool.clone()).await, 0);
+    assert_eq!(
+        run_one(&pool, &store, "distribution", "delivery.stage").await,
+        "SUCCEEDED"
+    );
+    let operator = staff_user(&app, &pool, "OPERATOR").await;
+    let package: Uuid = sqlx::query_scalar(
+        "SELECT dp.id FROM distribution.distribution_packages dp JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id WHERE cr.release_id=$1",
+    )
+    .bind(release)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/staff/deliveries/{package}/D-5/decision"),
+        json!({"action":"APPROVE"}),
+        Some(&operator),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(
+        run_one(&pool, &store, "delivery", "delivery.enqueue").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(jobs(pool.clone()).await, 1);
+}

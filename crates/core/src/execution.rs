@@ -204,17 +204,29 @@ pub async fn enqueue_delivery_jobs(pool: &PgPool, package_id: Uuid) -> Result<(V
     let org_id: Uuid = row.get("org_id");
     authorize_org(&mut tx, org_id).await?;
     let route_plan: Value = row.get("route_plan");
-    let items = route_plan.as_array().cloned().unwrap_or_default();
-    let mut dsp_ids = Vec::new();
-    for item in &items {
-        if let Some(dsp_id) = item
-            .pointer("/scope/dsp_id")
-            .and_then(Value::as_str)
-            .and_then(|s| Uuid::parse_str(s).ok())
-        {
-            dsp_ids.push(dsp_id);
-        }
-    }
+    // Borrow the plan items; the old `.cloned()` copied the whole array.
+    let dsp_ids: Vec<Uuid> = route_plan
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|item| {
+            item.pointer("/scope/dsp_id")
+                .and_then(Value::as_str)
+                .and_then(|s| Uuid::parse_str(s).ok())
+        })
+        .collect();
+    // Registry DSPs (D-n) additionally need a staff-approved staging row:
+    // staff approve exactly the message that goes out (delivery_staging).
+    let approved_codes: std::collections::HashSet<String> = sqlx::query_scalar(
+        "SELECT dsp_code FROM distribution.delivery_staging
+         WHERE package_id=$1 AND approval='APPROVED' AND readiness<>'CONTENT_BLOCKED'",
+    )
+    .bind(package_id)
+    .fetch_all(&mut *tx)
+    .await?
+    .into_iter()
+    .collect();
     tx.commit().await?;
     // The routing engine owns profile resolution and the contract-route
     // gate; its verdict is persisted per package for audit and F6.
@@ -228,6 +240,11 @@ pub async fn enqueue_delivery_jobs(pool: &PgPool, package_id: Uuid) -> Result<(V
             continue;
         }
         let partner_id = d.partner_id.as_deref().ok_or(Error::Internal)?;
+        if let Some(dsp) = crate::dsp_registry::Dsp::from_uuid(d.dsp_id)
+            && !approved_codes.contains(dsp.code())
+        {
+            continue;
+        }
         let job_id: Option<Uuid> = sqlx::query_scalar(
             "INSERT INTO execution.delivery_jobs(id,org_id,package_id,partner_id)
              VALUES($1,$2,$3,$4) ON CONFLICT(org_id,package_id,partner_id) DO NOTHING RETURNING id",
@@ -500,7 +517,7 @@ async fn materialize(
     job: &DeliveryJob,
 ) -> Result<TransferPackage> {
     let row = sqlx::query(
-        "SELECT dp.package_hash, dp.body, cr.org_id, cr.release_id,
+        "SELECT dp.package_hash, dp.body, cr.org_id, cr.release_id, cr.body AS snapshot,
                 pa.ern_sha256, pa.ern_xml, pa.preflight_report
          FROM distribution.distribution_packages dp
          JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id
@@ -513,11 +530,9 @@ async fn materialize(
     .ok_or(Error::NotFound)?;
     let body: Value = row.get("body");
     let package_hash: String = row.get("package_hash");
-    // The frozen body must hash to the stored package hash.
-    let recomputed = hex::encode(sha2::Sha256::digest(
-        serde_json::to_string(&body).unwrap_or_default().as_bytes(),
-    ));
-    if recomputed != package_hash {
+    // The frozen body must hash to the stored package hash (streamed into
+    // the hasher: no serialized copy of the package is built).
+    if crate::domain::sha256_json(&body) != package_hash {
         return Err(Error::PolicyGate("EXECUTION_PACKAGE_TAMPERED"));
     }
     let preflight: Value = row.get("preflight_report");
@@ -526,19 +541,10 @@ async fn materialize(
             return Err(Error::PolicyGate("EXECUTION_PREFLIGHT_NOT_PASS"));
         }
     }
-    // Rebuild the transfer manifest from the canonical release: every file
-    // must still exist in storage with the pinned size/content type.
-    let canonical_id: Uuid = sqlx::query_scalar(
-        "SELECT canonical_release_id FROM distribution.distribution_packages WHERE id=$1",
-    )
-    .bind(job.package_id)
-    .fetch_one(&mut **tx)
-    .await?;
-    let snapshot: Value =
-        sqlx::query_scalar("SELECT body FROM distribution.canonical_releases WHERE id=$1")
-            .bind(canonical_id)
-            .fetch_one(&mut **tx)
-            .await?;
+    // Rebuild the transfer manifest from the canonical release (fetched in
+    // the same round trip): every file must still exist in storage with the
+    // pinned size/content type.
+    let snapshot: Value = row.get("snapshot");
     let mut files = Vec::new();
     // Every file is verified against its pinned catalog.assets record and
     // then against storage bytes: existence, size, content type and SHA-256

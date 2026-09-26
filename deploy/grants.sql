@@ -35,6 +35,22 @@ GRANT SELECT,INSERT ON portal.inquiry_messages,portal.notification_reads,portal.
 GRANT SELECT ON portal.notifications TO audeniq_api;
 GRANT USAGE ON SCHEMA finance TO audeniq_api;
 GRANT SELECT ON finance.ledger_transactions,finance.ledger_entries,finance.payout_orders,finance.royalty_reports,finance.report_lines,finance.finance_holds TO audeniq_api;
+-- DSP registry + delivery staging (0042/0043): artists read their release's
+-- per-DSP status; staff (/api/staff, identity.staff_members) approve or hold
+-- staged rows and read the DSP overview. Staging rows are written only by
+-- the worker; the API may change the approval columns (RLS: app.org_id, or
+-- app.staff after the staff role check).
+GRANT SELECT ON distribution.dsp_registry TO audeniq_api;
+GRANT SELECT,UPDATE ON distribution.delivery_staging TO audeniq_api;
+GRANT SELECT ON distribution.distribution_packages TO audeniq_api;
+GRANT USAGE ON SCHEMA execution TO audeniq_api;
+GRANT SELECT ON execution.adapter_profiles,execution.delivery_jobs TO audeniq_api;
+GRANT EXECUTE ON FUNCTION execution.partner_readiness(text) TO audeniq_api;
+-- Staff review (0044): second-person approvals and reviewer notes. The
+-- staff role table itself is read-only for the API (granted by the CLI).
+GRANT SELECT,INSERT,UPDATE ON rights.staff_approvals TO audeniq_api;
+GRANT SELECT,INSERT ON rights.review_notes TO audeniq_api;
+GRANT SELECT ON operations.audit_events TO audeniq_api;
 -- Distribution pipeline schemas (F2/F4/F5/F7). The worker runs the job
 -- queues; the API never writes here (the roles test asserts 42501 for api
 -- inserts into distribution). The reconciler enumerates identity.orgs,
@@ -59,6 +75,7 @@ GRANT INSERT ON distribution.canonical_releases,distribution.distribution_packag
 GRANT INSERT,UPDATE ON distribution.identifier_counters TO audeniq_worker;
 GRANT INSERT,UPDATE ON execution.delivery_jobs,execution.delivery_attempts,execution.live_bindings,execution.reconciliation_cases TO audeniq_worker;
 GRANT INSERT,UPDATE ON execution.route_decisions TO audeniq_worker;
+GRANT INSERT,UPDATE ON distribution.delivery_staging TO audeniq_worker;
 GRANT SELECT,INSERT ON operations.check_results TO audeniq_worker;
 GRANT SELECT ON operations.allowed_transitions TO audeniq_worker;
 GRANT INSERT ON rights.review_overrides,rights.rights_epochs TO audeniq_worker;

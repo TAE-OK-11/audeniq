@@ -62,12 +62,23 @@ function fakeServer() {
     }
     const sub = p.match(/^\/releases\/([^/]+)\/submission$/);
     if (sub) {
-      return json(200, { status: releases.get(sub[1])?.status, checks: [
+      const noted = releases.get(sub[1])?.status === 'STAGE2_CORRECTION';
+      return json(200, { status: releases.get(sub[1])?.status, review_notes: noted ? [
+        { check_code: 'IMAGE_TOO_SMALL', decision: 'REQUEST_CORRECTION', note: '3000px 이상 커버로 바꿔 주세요.' },
+        { check_code: null, decision: 'REQUEST_CORRECTION', note: '전체적으로 표기를 다시 확인해 주세요.' },
+      ] : [], checks: [
         { check_code: 'IMAGE_TOO_SMALL', status: 'CORRECTION_REQUIRED', severity: 'CORRECTION', detail: 'w=1000' },
         { check_code: 'IMAGE_TOO_SMALL', status: 'CORRECTION_REQUIRED', severity: 'CORRECTION', detail: 'dup' },
         { check_code: 'TRACK_WRITER_CREDIT_MISSING', status: 'CORRECTION_REQUIRED', severity: 'CORRECTION', detail: 'track=11111111-1111-4111-8111-111111111111 writer_credit=false' },
         { check_code: 'TRACK_WRITER_CREDIT_MISSING', status: 'CORRECTION_REQUIRED', severity: 'CORRECTION', detail: 'track=22222222-2222-4222-8222-222222222222 writer_credit=false' },
         { check_code: 'AUDIO_CLIPPING', status: 'PASS', severity: 'NONE', detail: null },
+      ] });
+    }
+    const dl = p.match(/^\/releases\/([^/]+)\/delivery$/);
+    if (dl) {
+      return json(200, { release_id: dl[1], items: [
+        { dsp: 'D-1', slug: 'melon', name: 'Melon', stage: 'NEEDS_CORRECTION', issues: [{ code: 'DSP_CREDIT_LYRICIST_MISSING', severity: 'BLOCKER', detail: '' }] },
+        { dsp: 'D-5', slug: 'spotify', name: 'Spotify', stage: 'PREPARING', issues: [] },
       ] });
     }
     const m = p.match(/^\/releases\/([^/]+)(\/tracks(?:\/([^/]+))?)?$/);
@@ -192,6 +203,20 @@ describe('remoteApi (가짜 서버)', () => {
       { code: 'TRACK_WRITER_CREDIT_MISSING', message: '', trackId: '11111111-1111-4111-8111-111111111111' },
       { code: 'TRACK_WRITER_CREDIT_MISSING', message: '', trackId: '22222222-2222-4222-8222-222222222222' },
     ]);
+  });
+
+  it('담당자 검토 의견은 해당 보완 항목의 안내가 되고, 전체 의견은 따로 붙는다', async () => {
+    const r = await remoteApi.saveDraft(null, payload());
+    server.releases.get(r.id)!.status = 'STAGE2_CORRECTION';
+    const d = await remoteApi.getRelease(r.id);
+    expect(d.corrections?.[0]).toEqual({ code: 'IMAGE_TOO_SMALL', message: '3000px 이상 커버로 바꿔 주세요.' });
+    expect(d.corrections?.at(-1)).toEqual({ code: 'REVIEW_NOTE', message: '전체적으로 표기를 다시 확인해 주세요.' });
+  });
+
+  it('플랫폼별 배급 진행을 DSP 코드와 함께 돌려준다', async () => {
+    const r = await remoteApi.saveDraft(null, payload());
+    const items = await remoteApi.getDelivery(r.id);
+    expect(items.map(i => [i.dsp, i.slug, i.stage])).toEqual([['D-1', 'melon', 'NEEDS_CORRECTION'], ['D-5', 'spotify', 'PREPARING']]);
   });
 
   it('다시 저장하면 바뀐 트랙만 고치고, 지운 트랙은 보관 처리한다', async () => {

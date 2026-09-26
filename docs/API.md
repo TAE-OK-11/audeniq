@@ -93,7 +93,49 @@ The API never writes finance tables. Operations turns a `portal.payout_requests`
 
 Notifications are raised in the database by SECURITY DEFINER triggers, so the worker role needs no portal grants: release status (SUBMITTED, *_CORRECTION, ON_HOLD_RIGHTS, READY_FOR_DELIVERY, LIVE, TAKEN_DOWN), document status (agreement APPROVED, proof AWAITING_DOCUMENTS/NEEDS/APPROVED), staff inquiry replies and payout order SETTLED/FAILED/RETURNED. The API adds account-registered and payout-requested notices.
 
-Staff actions (no browser endpoint): `SELECT portal.staff_reply(inquiry_id, 'answer')`; `UPDATE portal.documents SET status='APPROVED'|'NEEDS', review_note=... WHERE id=...`; rights proof requests are `INSERT INTO portal.documents(... kind='RIGHTS_PROOF', status='AWAITING_DOCUMENTS')`.
+Staff actions (agreement/proof review, proof requests, inquiry replies) now go through the staff portal API below. The SQL functions remain for operations tooling.
+
+## Release delivery status (artist)
+
+| Method | Path | Body / response |
+|---|---|---|
+| GET | `/api/orgs/{org}/releases/{id}/delivery` | Per-DSP status of the release's latest staged package (release read ACL). `items[]`: `{dsp:"D-5", slug:"spotify", name, stage, readiness, approval, delivery_status, issues[], staged_at}`. `stage` is `NEEDS_CORRECTION` · `IN_REVIEW` · `PREPARING` (content fine, partner onboarding pending) · `SCHEDULED` (staff approved) · `ON_HOLD` · `SENDING` · `DELIVERED`. `issues` lists only CONTENT findings the artist can fix. Empty before Stage 3 |
+
+`GET .../submission` also returns `effective_status` per check (a reviewer override replaces the recorded status; `severity` follows it) and `review_notes[]` (`{check_code|null, decision, note, at}`) written by staff.
+
+## Staff portal (`/api/staff/*`)
+
+Implemented in `crates/core/src/staff.rs` (docs/DISTRIBUTION_STAGING.md). Same session, CSRF, Origin and service-secret rules. The caller needs an ACTIVE `identity.staff_members` row, granted only by `audeniq-admin staff grant EMAIL ROLE` (schema-owner login); non-staff get 403. Every write is audited with the staff user.
+
+| Role | Duties |
+|---|---|
+| ADMIN | everything, payout-request list |
+| REVIEWER | release decisions, second approvals, documents, inquiries |
+| OPERATOR | delivery staging decisions, re-stage |
+| SUPPORT | inquiries |
+
+All roles can read every list below.
+
+| Method | Path | Body / response |
+|---|---|---|
+| GET | `/api/staff/me` | `{user_id, role, duties[]}` |
+| GET | `/api/staff/overview` | Queue counts: review, correction, in_pipeline, second_approvals, documents, inquiries, deliveries_to_approve, deliveries_blocked, payout_requests |
+| GET | `/api/staff/releases?status=STAGE2_REVIEW&limit&offset` | Cross-org release queue with artist, release date, requested platforms as D-codes |
+| GET | `/api/staff/releases/{id}` | Review sheet: release, frozen application (tracks, credits, declarations, platforms), latest check per code, `open_checks` (what holds Stage 2), overrides, notes, second approvals, documents, signed application, delivery staging rows, audit timeline |
+| POST | `/api/staff/releases/{id}/decision` | `{action: APPROVE|REQUEST_CORRECTION|REJECT, revision_id, reason, notes?:[{check_code,note}]}`. Release must be STAGE2_REVIEW on `revision_id` (else 409/422 `RELEASE_NOT_IN_REVIEW`). APPROVE writes PASS overrides and queues Stage 2; if an open check is a rights/money class or BLOCKED it returns `PENDING_SECOND_APPROVAL` + `approval_id` instead. REQUEST_CORRECTION turns every open check into CORRECTION_REQUIRED (one reviewer) and stores notes for the artist. REJECT moves the release to WITHDRAWN and notifies the org |
+| GET | `/api/staff/approvals` | Open second-person approvals |
+| POST | `/api/staff/approvals/{id}/approve` · `/decline` | `{}`. A different staff reviewer must approve (`SECOND_APPROVER_MUST_DIFFER`); approval writes the PASS overrides with `second_approver_user_id` and queues Stage 2 |
+| GET | `/api/staff/documents?status=REVIEW` | Agreements and rights proofs waiting on staff |
+| POST | `/api/staff/documents/{id}/review` | `{status: APPROVED|NEEDS, note, row_version}`; NEEDS requires a note. Agreements in REVIEW/PREPARED, proofs in REVIEW; the trigger notifies the org |
+| POST | `/api/staff/orgs/{org}/documents` | `{release_id,title,body?}` → rights-proof request (AWAITING_DOCUMENTS) |
+| GET | `/api/staff/inquiries?status=OPEN` · `/api/staff/inquiries/{id}` | Threads across orgs |
+| POST | `/api/staff/inquiries/{id}/reply` | `{body}` → STAFF message; thread becomes ANSWERED, author notified. CLOSED → 422 `INQUIRY_CLOSED` |
+| GET | `/api/staff/deliveries?approval=PENDING&readiness=&dsp=D-5` | Staging rows with blocker codes |
+| GET | `/api/staff/deliveries/{package}/{dsp}/ern` | The exact ERN 3.8.2 XML (or placeholder-DPID preview) staff approve, `application/xml` |
+| POST | `/api/staff/deliveries/{package}/{dsp}/decision` | `{action: APPROVE|HOLD, note?, ern_sha256?}`. APPROVE refuses CONTENT_BLOCKED rows (`DELIVERY_CONTENT_BLOCKED`) and a changed ERN (409), then queues E-0; HOLD needs a note |
+| POST | `/api/staff/deliveries/{package}/restage` | Re-run staging after onboarding or issuer changes |
+| GET | `/api/staff/dsps` | D-1..D-11 registry with spec, route profile and onboarding gaps |
+| GET | `/api/staff/payouts?status=REQUESTED` | ADMIN only; read-only (money still moves through operations tooling) |
 
 ## Notices and events (edge Worker + D1)
 

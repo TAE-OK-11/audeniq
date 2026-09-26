@@ -113,3 +113,13 @@ describe('음원 규격 확인', () => {
     expect(checkAudioHeader(mp3).error).toContain('WAV·FLAC 원본');
   });
 });
+
+describe('DSP 코드', () => {
+  it('스튜디오 플랫폼 키를 서버 레지스트리 코드로 바꾼다', async () => {
+    const { dspCode } = await import('./catalog');
+    expect(dspCode('melon')).toBe('D-1');
+    expect(dspCode('spotify')).toBe('D-5');
+    expect(dspCode('qobuz')).toBe('D-11');
+    expect(dspCode('nope')).toBe('');
+  });
+});
