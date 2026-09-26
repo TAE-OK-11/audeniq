@@ -1188,11 +1188,11 @@ body.aq-nav-locked #portalNav{
 
 /* 커버아트 배급 미리보기 */
 .cover-dist-preview{margin-top:20px}
-.dist-mock{background:#111318;border-radius:20px;padding:20px;max-width:340px}
-.dist-mock img{width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:12px;display:block}
-.dist-mock-meta{margin-top:14px}
-.dist-mock-meta strong{display:block;color:#fff;font-size:16px;font-weight:700;letter-spacing:-.01em}
-.dist-mock-meta span{display:block;color:#9aa3b2;font-size:13px;margin-top:4px}
+.dist-mock{display:flex;gap:16px;align-items:center;background:#f7f9fc;border:1px solid #e8edf5;border-radius:18px;padding:16px}
+.dist-mock img{width:120px;height:120px;aspect-ratio:1/1;object-fit:cover;border-radius:12px;flex-shrink:0;display:block}
+.dist-mock-meta{min-width:0;flex:1}
+.dist-mock-meta strong{display:block;font-size:16px;font-weight:800;letter-spacing:-.01em;color:#1c2740;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dist-mock-meta span{display:block;color:#6b7689;font-size:13px;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cover-dist-preview .help{margin-top:12px}
 .cover-dist-preview .link-btn{margin-top:8px}
 
