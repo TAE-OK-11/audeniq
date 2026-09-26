@@ -62,6 +62,7 @@ enum RunResult {
 
 async fn execute_with_heartbeat(
     pool: &sqlx::PgPool,
+    heartbeat_pool: &sqlx::PgPool,
     store: &Arc<dyn storage::ObjectStore>,
     job: &operations::Job,
     lease_seconds: i32,
@@ -77,11 +78,11 @@ async fn execute_with_heartbeat(
         tokio::select! {
             result = &mut execution => return RunResult::Finished(result),
             _ = ticker.tick() => {
-                match operations::heartbeat(pool, job, lease_seconds).await {
+                match operations::heartbeat(heartbeat_pool, job, lease_seconds).await {
                     Ok(()) => {}
                     // Fenced out: another worker owns the job now.
-                    Err(audeniq_core::error::Error::Conflict) => {
-                        tracing::warn!(job_id=%job.id, "job lease lost; cancelling stale handler");
+                    Err(audeniq_core::error::Error::LeaseLost) => {
+                        tracing::warn!(job_id=%job.id, kind=%job.kind, "job lease lost; cancelling stale handler");
                         return RunResult::LeaseLost;
                     }
                     // Database briefly unreachable: the lease is still valid
@@ -132,7 +133,9 @@ async fn main() -> anyhow::Result<()> {
     let max_in_flight = env_usize("WORKER_MAX_IN_FLIGHT", (cpu_count * 2).clamp(2, 8), 1, 64)?;
     let database_max = env_usize(
         "DATABASE_MAX_CONNECTIONS",
-        (max_in_flight + 3).clamp(4, 32),
+        // A Stage 1 job runs several asset analyses at once, each using
+        // connections of its own: size for that, not just one per job.
+        (max_in_flight + cpu_count * 2 + 3).clamp(4, 48),
         2,
         64,
     )?;
@@ -140,6 +143,11 @@ async fn main() -> anyhow::Result<()> {
     operations::set_job_lease_seconds(lease_seconds);
     let database_url = std::env::var("DATABASE_URL")?;
     let pool = database::connect(&database_url, database_max as u32).await?;
+    // Lease heartbeats get their own connections: a Stage 1 run analysing
+    // hundreds of assets can keep the main pool busy for longer than the
+    // 5 s acquire timeout, and a starved heartbeat used to lose the lease
+    // of the very job that was working.
+    let heartbeat_pool = database::connect(&database_url, 2).await?;
     let store: Arc<dyn storage::ObjectStore> =
         storage::store_from_env(std::env::var("ALLOW_HTTP_STORAGE").as_deref() == Ok("true"))?;
     let drain_seconds = env_usize("WORKER_DRAIN_SECONDS", 30, 0, 3600)? as u64;
@@ -165,6 +173,7 @@ async fn main() -> anyhow::Result<()> {
         configured_workers += count;
         for n in 0..count {
             let pool = pool.clone();
+            let heartbeat_pool = heartbeat_pool.clone();
             let store = store.clone();
             let limiter = limiter.clone();
             let wakeup = wakeup.clone();
@@ -193,10 +202,17 @@ async fn main() -> anyhow::Result<()> {
                                 .expect("in-flight registry")
                                 .insert(job.id, job.token);
                             let outcome =
-                                execute_with_heartbeat(&pool, &store, &job, lease_seconds).await;
+                                execute_with_heartbeat(&pool, &heartbeat_pool, &store, &job, lease_seconds)
+                                    .await;
                             in_flight.lock().expect("in-flight registry").remove(&job.id);
                             match outcome {
                                 RunResult::Finished(Ok(())) | RunResult::LeaseLost => {}
+                                // Already logged with its reason and the
+                                // result it could not record; calling fail()
+                                // would only be fenced out again.
+                                RunResult::Finished(Err(
+                                    audeniq_core::error::Error::LeaseLost,
+                                )) => {}
                                 RunResult::Finished(Err(error)) => {
                                     let short: String =
                                         format!("{error:?}").chars().take(500).collect();

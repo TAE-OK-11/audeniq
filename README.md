@@ -67,6 +67,9 @@ Designed for labels delivering hundreds to thousands of tracks at once:
 | `DATABASE_MAX_CONNECTIONS` | api | 20 | API pool size (was fixed at 6) |
 | `PASSWORD_HASH_CONCURRENCY` | api | 2 | Concurrent Argon2id hashes (~19 MiB each) |
 | `AUDENIQ_QC_ASSET_PARALLELISM` | worker | CPU count (max 8) | Process-wide cap on concurrent audio analyses, shared by all QC jobs |
+| `AUDENIQ_QC_DOWNLOAD_PARALLELISM` | worker | 2 × analysis slots (2–16) | Concurrent master downloads feeding the analysers, so CPU never waits on storage |
 | `QUEUE_QC_CONCURRENCY` etc. | worker | 1 | QC jobs claimed in parallel; safe to raise because analysis is capped above |
+
+Load checks (explicit run): `cargo test --release -p audeniq-core --test stage1_bulk -- --ignored --nocapture` (Stage 1 throughput; `AUDENIQ_BENCH_TRACKS`, `AUDENIQ_TEST_STORAGE_LATENCY_MS`) and `--test foundation concurrent_upload_registrations -- --ignored --nocapture` (500 concurrent upload registrations).
 
 The API drains in-flight requests on SIGTERM and hourly purges expired rate-limit buckets (`deploy/grants.sql` grants that DELETE).

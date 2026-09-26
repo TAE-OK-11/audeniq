@@ -1,4 +1,4 @@
-# Audio QC policy (Stage 1, rule version 3)
+# Audio QC policy (Stage 1, rule version 4)
 
 This document explains each Stage 1 audio check: what it measures, how strict
 it is, and why. The code lives in `crates/core/src/qc.rs` (thresholds are
@@ -40,7 +40,7 @@ Every API error now carries a stable `code` and a human-readable `message`.
 | `AUDIO_BIT_DEPTH_LOW` | CORRECTION | Minimum bit depth is 16. For FLAC it is read from `bits_per_raw_sample`. |
 | `AUDIO_CHANNEL_INVALID` | CORRECTION | The file must be mono or stereo. |
 | `AUDIO_TRUNCATED` | CORRECTION | For WAV, the `data` chunk may not declare more bytes than the file holds. For any format, the decoded length may not fall short of the header duration by more than max(1 s, 1 %). A WAV cut at 80 % used to pass. |
-| `AUDIO_SILENT` | CORRECTION | The file's peak is below −80 dBFS, i.e. digital silence. The loudness meter's `-inf` output is handled, not a parse failure. |
+| `AUDIO_SILENT` | CORRECTION | Digital silence: the file's peak is below −80 dBFS (lossless encoders leave about −91 dBFS on synthetic silence). Or inaudible content (rule 4): nothing above the EBU R128 absolute gate (≤ −70 LUFS or unmeasurable) with ≥ 99 % of 50 ms blocks below −60 dBFS (faint hiss/dither), or less than 1 s in total above −80 dBFS (a lone click on silence, which R128 gating measures at about −45 LUFS). A quiet real programme (e.g. a tone at −63 dBFS) is not silent; it stays a review-only "near-silent" suspicion. The loudness meter's `-inf` output is handled, not a parse failure. |
 | `AUDIO_CLIPPING` | CORRECTION or REVIEW | A clip event is 3 or more consecutive samples at or above 0.999 full scale. If clip events cover at least 0.1 % of all samples, the result is CORRECTION: the waveform is audibly flattened. Any smaller amount of clipping, or a true peak above 0 dBTP (inter-sample overs), gives a REVIEW warning. |
 | `AUDIO_LOUDNESS_OUT_OF_RANGE` | REVIEW only | Integrated loudness and true peak (EBU R128) are always recorded. Outside −14 ±1 LUFS, or true peak above −1 dBTP, the result is a **warning only**. |
 | `AUDIO_CONTENT_SUSPECT` | REVIEW only | Spam/filler heuristics (see below). Routes the release to a human; never blocks on its own. |

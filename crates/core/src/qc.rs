@@ -12,7 +12,7 @@ use std::process::Stdio;
 use std::time::Duration;
 
 /// Bump when any threshold, check set, or metric definition changes.
-pub const QC_RULE_VERSION: &str = "3";
+pub const QC_RULE_VERSION: &str = "4";
 
 /// Minimum audio duration in seconds before flagging as suspiciously short.
 pub const MIN_AUDIO_SECS: f64 = 30.0;
@@ -380,7 +380,48 @@ pub const CLIP_RUN: u32 = 3;
 /// (0.1 %). Below this, clip events are recorded as a review-only warning.
 pub const CLIP_REJECT_RATIO: f64 = 0.001;
 /// Whole-file peak below this (-80 dBFS) is treated as digital silence.
+/// Lossless encoders leave a noise floor around -91 dBFS on synthetic
+/// silence, so true digital silence always lands well below it.
 pub const SILENCE_PEAK: f32 = 1e-4;
+/// Second, loudness-based silence criterion. A single peak threshold missed
+/// "silence" carrying faint noise just above -80 dBFS (dither, hiss) or one
+/// click: the peak test passed while nothing audible was there. A file is
+/// also silent when EBU R128 finds nothing above the absolute gate
+/// (integrated loudness unmeasurable or at the -70 LUFS floor) AND at least
+/// this share of its 50 ms blocks peak below -60 dBFS, or when it has less
+/// than [`SILENCE_MIN_AUDIBLE_SECS`] of audible material at all.
+pub const SILENCE_GATE_LUFS: f64 = -70.0;
+pub const SILENCE_BLOCK_SHARE: f64 = 0.99;
+/// Less material than this in total above digital silence (blocks peaking
+/// at or above -80 dBFS) is silence whatever the loudness meter says: R128 gating keeps the one
+/// 400 ms window around a lone click, so a click on silence measures about
+/// -45 LUFS. Any real recording carries far more than one second.
+pub const SILENCE_MIN_AUDIBLE_SECS: f64 = 1.0;
+
+/// Why a file counts as silent, if it does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Silence {
+    /// Whole-file peak below [`SILENCE_PEAK`].
+    Digital,
+    /// Peak above it, but inaudible by loudness and block structure.
+    Inaudible,
+}
+
+/// Silence verdict from the decode analysis (see [`SILENCE_PEAK`] and
+/// [`SILENCE_GATE_LUFS`]).
+pub fn silence(a: &DecodeAnalysis) -> Option<Silence> {
+    if a.peak < SILENCE_PEAK {
+        return Some(Silence::Digital);
+    }
+    if a.blocks == 0 {
+        return None;
+    }
+    let gated = a.integrated_lufs.is_none_or(|i| i <= SILENCE_GATE_LUFS);
+    let share = a.silent_blocks as f64 / a.blocks as f64;
+    let audible_secs = a.nonzero_blocks as f64 * BLOCK_SECS;
+    ((gated && share >= SILENCE_BLOCK_SHARE) || audible_secs < SILENCE_MIN_AUDIBLE_SECS)
+        .then_some(Silence::Inaudible)
+}
 /// Truncation tolerance: decoded audio may fall short of the header's
 /// promise by at most max(1 s, 1 %) before the file counts as truncated.
 pub const TRUNCATION_TOLERANCE_SECS: f64 = 1.0;
@@ -699,19 +740,27 @@ fn check_audio_inner(
         &ah,
         trunc_detail,
     ));
-    let silent = analysis.peak < SILENCE_PEAK;
+    let silent = silence(&analysis);
     out.push(outcome(
         "AUDIO_SILENT",
-        !silent,
+        silent.is_none(),
         CheckStatus::CorrectionRequired,
         &ah,
-        if silent {
-            format!(
+        match silent {
+            Some(Silence::Digital) => format!(
                 "the whole file is silent (peak {:.1} dBFS); upload the actual recording",
                 db(analysis.peak as f64)
-            )
-        } else {
-            format!("peak_dbfs={:.2}", db(analysis.peak as f64))
+            ),
+            Some(Silence::Inaudible) => format!(
+                "the file contains no audible programme (loudness {}, {:.2}% of the file below -60 dBFS, peak {:.1} dBFS); upload the actual recording",
+                analysis
+                    .integrated_lufs
+                    .map(|i| format!("{i:.1} LUFS"))
+                    .unwrap_or_else(|| "below the -70 LUFS gate".into()),
+                100.0 * analysis.silent_blocks as f64 / analysis.blocks.max(1) as f64,
+                db(analysis.peak as f64)
+            ),
+            None => format!("peak_dbfs={:.2}", db(analysis.peak as f64)),
         },
     ));
     let total_samples = analysis.samples_per_channel * u64::from(metrics.channels.max(1));
@@ -810,8 +859,8 @@ pub const NOISE_ZCR: f64 = 0.3;
 /// all delivered). They never block: they route the release to a human.
 pub fn content_suspicions(a: &DecodeAnalysis, m: &AudioMetrics) -> Vec<String> {
     let mut out = Vec::new();
-    if a.peak < SILENCE_PEAK {
-        return out; // fully silent: AUDIO_SILENT already rejects it
+    if silence(a).is_some() {
+        return out; // silent: AUDIO_SILENT already rejects it
     }
     if let Some(i) = a.integrated_lufs.filter(|i| *i < NEAR_SILENT_LUFS) {
         out.push(format!("near-silent programme ({i:.1} LUFS)"));
@@ -997,6 +1046,9 @@ pub struct DecodeAnalysis {
     pub silent_blocks: u64,
     /// Longest run of consecutive silent blocks.
     pub longest_silent_run: u64,
+    /// Blocks whose peak reaches [`SILENCE_PEAK`] (-80 dBFS): anything that
+    /// is not digital silence, however quiet.
+    pub nonzero_blocks: u64,
     /// Zero crossings (all channels) over total samples.
     pub zero_crossing_rate: f64,
     /// Per-block RMS level in dB (capped to MAX_ENERGY_BLOCKS), for the
@@ -1213,6 +1265,9 @@ fn decode_analysis_inner(
     }
     fn close_block(a: &mut DecodeAnalysis, st: &mut Meter) {
         a.blocks += 1;
+        if st.block_peak >= SILENCE_PEAK {
+            a.nonzero_blocks += 1;
+        }
         if st.block_peak < BLOCK_SILENCE_PEAK {
             a.silent_blocks += 1;
             st.silent_run += 1;
@@ -2025,6 +2080,50 @@ mod tests {
         );
         assert!(
             out.iter().all(|o| o.status != CheckStatus::TechnicalRetry),
+            "{out:?}"
+        );
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn inaudible_noise_or_a_single_click_counts_as_silence() {
+        // Faint noise just above the -80 dBFS peak threshold, and digital
+        // silence with one loud click: both passed the peak-only test.
+        for (name, src) in [
+            ("hiss.wav", "anoisesrc=a=0.0002:c=white:r=48000"),
+            ("click.wav", "aevalsrc=if(eq(n\\,48000)\\,0.5\\,0):s=48000"),
+        ] {
+            let p = tmp(name);
+            render(&p, src, &["-t", "40", "-c:a", "pcm_s16le"]);
+            let out = check_audio(&p, None, Some("audio/wav"));
+            let silent = out.iter().find(|o| o.check_code == "AUDIO_SILENT").unwrap();
+            assert_eq!(
+                silent.status,
+                CheckStatus::CorrectionRequired,
+                "{name}: {out:?}"
+            );
+            assert!(
+                silent.detail.contains("no audible programme"),
+                "{name}: {}",
+                silent.detail
+            );
+            let _ = std::fs::remove_file(&p);
+        }
+    }
+
+    #[test]
+    fn quiet_real_programme_is_not_silence() {
+        // A soft (-40 dBFS) tone is quiet, not silent.
+        let p = tmp("quiet.wav");
+        render(
+            &p,
+            "sine=frequency=440:sample_rate=48000,volume=0.01",
+            &["-t", "40", "-c:a", "pcm_s16le"],
+        );
+        let out = check_audio(&p, None, Some("audio/wav"));
+        assert_eq!(
+            status_of(&out, "AUDIO_SILENT"),
+            CheckStatus::Pass,
             "{out:?}"
         );
         let _ = std::fs::remove_file(&p);

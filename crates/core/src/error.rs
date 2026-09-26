@@ -30,6 +30,12 @@ pub enum Error {
     Database(#[from] sqlx::Error),
     #[error("internal error")]
     Internal,
+    /// A worker no longer holds the job lease it tried to record a result
+    /// under (expired, reclaimed by another worker, or already finished).
+    /// Distinct from [`Error::Conflict`] so a lease problem is never
+    /// mistaken for (or hides) the handler's own failure.
+    #[error("job lease lost")]
+    LeaseLost,
     /// Request headers exceed the API limit (HTTP 431).
     #[error("request headers too large")]
     HeadersTooLarge,
@@ -42,6 +48,7 @@ impl IntoResponse for Error {
             Self::Forbidden => (StatusCode::FORBIDDEN, "FORBIDDEN"),
             Self::NotFound => (StatusCode::NOT_FOUND, "NOT_FOUND"),
             Self::Conflict => (StatusCode::CONFLICT, "CONFLICT"),
+            Self::LeaseLost => (StatusCode::CONFLICT, "LEASE_LOST"),
             Self::Invalid => (StatusCode::BAD_REQUEST, "INVALID_INPUT"),
             Self::InvalidCode(code) => (StatusCode::BAD_REQUEST, *code),
             Self::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED"),

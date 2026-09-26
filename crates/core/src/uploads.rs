@@ -140,8 +140,9 @@ pub async fn complete(
     // Phase 1: short validation transaction.
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, i.asset_id, "asset", true).await?;
-    let r=sqlx::query("SELECT u.*,a.object_key,(u.expires_at>clock_timestamp()) AS valid FROM catalog.upload_sessions u JOIN catalog.assets a ON a.id=u.asset_id AND a.org_id=u.org_id WHERE u.id=$1 AND u.org_id=$2").bind(id).bind(org).fetch_optional(&mut *tx).await?.ok_or(Error::NotFound)?;
+    let r=sqlx::query("SELECT u.*,a.object_key,a.kind AS asset_kind,(u.expires_at>clock_timestamp()) AS valid FROM catalog.upload_sessions u JOIN catalog.assets a ON a.id=u.asset_id AND a.org_id=u.org_id WHERE u.id=$1 AND u.org_id=$2").bind(id).bind(org).fetch_optional(&mut *tx).await?.ok_or(Error::NotFound)?;
     tx.commit().await?;
+    let kind: String = r.get("asset_kind");
     let asset: Uuid = r.get("asset_id");
     let key: String = r.get("expected_key");
     if asset != i.asset_id || key != i.expected_key {
@@ -195,10 +196,6 @@ pub async fn complete(
     if digest.size != size as u64 {
         return Err(Error::Conflict);
     }
-    let kind: String = sqlx::query_scalar("SELECT kind FROM catalog.assets WHERE id=$1")
-        .bind(asset)
-        .fetch_one(&s.pool)
-        .await?;
     let detected = crate::qc::detect_container(&digest.head);
     if expected_container(&kind, &mime) != Some(detected) {
         // Nothing is registered: the session stays ISSUED but unusable for

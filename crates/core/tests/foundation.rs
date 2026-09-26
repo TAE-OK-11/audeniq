@@ -46,6 +46,16 @@ fn synth_body(content_type: &str, size: i64) -> Vec<u8> {
     v[..n].copy_from_slice(&magic[..n]);
     v
 }
+/// Simulated object-store round trip for load checks
+/// (AUDENIQ_TEST_STORAGE_LATENCY_MS, default 0).
+async fn storage_latency() {
+    if let Some(ms) = std::env::var("AUDENIQ_TEST_STORAGE_LATENCY_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+    {
+        tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
+    }
+}
 #[async_trait]
 impl ObjectStore for MockStore {
     async fn presign_put(
@@ -68,10 +78,12 @@ impl ObjectStore for MockStore {
         })
     }
     async fn head(&self, key: &str) -> Result<Option<ObjectMeta>> {
+        storage_latency().await;
         self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok(self.objects.lock().await.get(key).cloned())
     }
     async fn freeze(&self, source: &str, target: &str, etag: &str) -> Result<()> {
+        storage_latency().await;
         self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let mut m = self.objects.lock().await;
         let obj = m.get(source).cloned().ok_or(Error::Storage)?;
@@ -86,6 +98,7 @@ impl ObjectStore for MockStore {
         Ok(())
     }
     async fn get(&self, key: &str) -> Result<Vec<u8>> {
+        storage_latency().await;
         if let Some(b) = self.bodies.lock().await.get(key) {
             return Ok(b.clone());
         }
@@ -804,12 +817,20 @@ async fn queue_claim_crash_fencing_retry_dead_letter(pool: PgPool) {
         .unwrap();
     assert_ne!(old.token, new.token);
     assert_eq!(new.attempts, 2);
-    assert!(operations::heartbeat(&pool, &old, 60).await.is_err());
-    assert!(
-        operations::fail(&pool, &old, true, "STALE_WORKER")
-            .await
-            .is_err()
-    );
+    // A fenced-out worker gets LeaseLost (never a generic Conflict that
+    // would hide the handler's own result).
+    assert!(matches!(
+        operations::heartbeat(&pool, &old, 60).await,
+        Err(Error::LeaseLost)
+    ));
+    assert!(matches!(
+        operations::fail(&pool, &old, true, "STALE_WORKER").await,
+        Err(Error::LeaseLost)
+    ));
+    assert!(matches!(
+        operations::succeed(&pool, &old).await,
+        Err(Error::LeaseLost)
+    ));
     assert!(
         operations::execute(&pool, &noop_store().await, &old)
             .await
@@ -1779,4 +1800,88 @@ async fn batch_tracks_are_atomic_acl_checked_and_bump_version_once(pool: PgPool)
     .await;
     assert_eq!(detail["tracks"].as_array().unwrap().len(), 300);
     assert_eq!(detail["row_version"], 1);
+}
+
+/// Load check (run explicitly): 500 concurrent upload registrations
+/// (issue + complete) by one label account on a 20-connection API pool,
+/// like production. Prints p50/p99; asserts only that every one succeeds.
+/// `cargo test --test foundation concurrent_upload_registrations -- --ignored --nocapture`
+#[sqlx::test]
+#[ignore]
+async fn concurrent_upload_registrations(pool: PgPool) {
+    database::MIGRATOR.run(&pool).await.unwrap();
+    let api_pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(
+            std::env::var("AUDENIQ_TEST_API_POOL")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(20),
+        )
+        .connect_with((*pool.connect_options()).clone())
+        .await
+        .unwrap();
+    let store = Arc::new(MockStore::default());
+    let s = AppState::new(
+        api_pool,
+        Config {
+            database_url: "unused".into(),
+            origin: ORIGIN.into(),
+            service_secret: SECRET.into(),
+            secure_cookie: false,
+            bind: "127.0.0.1:0".into(),
+            session_seconds: 3600,
+        },
+        store.clone(),
+    )
+    .await
+    .unwrap();
+    let app = router(s);
+    let u = user(&app).await;
+    let started = std::time::Instant::now();
+    let mut set = tokio::task::JoinSet::new();
+    for _ in 0..500 {
+        let (app, u, store) = (app.clone(), u.clone(), store.clone());
+        set.spawn(async move {
+            let t = std::time::Instant::now();
+            let up = upload(&app, &u).await;
+            let key = up["expected_key"].as_str().unwrap().to_string();
+            store.objects.lock().await.insert(
+                key.clone(),
+                ObjectMeta {
+                    size: 100,
+                    content_type: "audio/wav".into(),
+                    nonce: up["grant"]["headers"]["x-amz-meta-upload-nonce"]
+                        .as_str()
+                        .unwrap()
+                        .into(),
+                    etag: format!("etag-{key}"),
+                },
+            );
+            let path = format!(
+                "/api/orgs/{}/uploads/{}/complete",
+                u.org,
+                up["upload_session_id"].as_str().unwrap()
+            );
+            let (s, _, v) = call(
+                &app,
+                "POST",
+                &path,
+                json!({"asset_id":up["asset_id"],"expected_key":key}),
+                Some(&u),
+            )
+            .await;
+            assert_eq!(s, StatusCode::OK, "{v}");
+            t.elapsed()
+        });
+    }
+    let mut lat: Vec<std::time::Duration> = set.join_all().await;
+    lat.sort();
+    let p = |q: f64| lat[((lat.len() as f64 * q) as usize).min(lat.len() - 1)];
+    println!(
+        "500 registrations in {:?}: p50 {:?} p99 {:?} max {:?}",
+        started.elapsed(),
+        p(0.50),
+        p(0.99),
+        lat[lat.len() - 1]
+    );
 }

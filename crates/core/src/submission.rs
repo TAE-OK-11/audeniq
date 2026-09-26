@@ -1390,16 +1390,40 @@ fn qc_asset_parallelism() -> usize {
         .clamp(1, 8)
 }
 
-/// Process-wide cap on concurrent asset downloads + analyses, shared by
-/// every Stage 1 job this worker runs. Per-job parallelism alone let N
+/// Process-wide cap on concurrent CPU-bound analyses (decode + FFT), shared
+/// by every Stage 1 job this worker runs. Per-job parallelism alone let N
 /// concurrent QC jobs start N x cores analyses (CPU thrash, and each holds a
-/// decoded PCM tap in memory); with this cap the QC queue concurrency can be
-/// raised so many small releases (singles) drain in parallel safely.
+/// decoded PCM tap in memory).
 fn analysis_slots() -> Arc<tokio::sync::Semaphore> {
     static SLOTS: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> = std::sync::OnceLock::new();
     SLOTS
         .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(qc_asset_parallelism().max(1))))
         .clone()
+}
+
+/// Concurrent asset downloads (network/disk bound). Separate from the CPU
+/// slots so the next files are already on local disk while the cores
+/// analyse the current ones: with one shared slot per core a 2-core worker
+/// alternated between downloading and analysing and sat at ~30% CPU
+/// (500 tracks: 688 s). Override with AUDENIQ_QC_DOWNLOAD_PARALLELISM.
+fn qc_download_parallelism() -> usize {
+    std::env::var("AUDENIQ_QC_DOWNLOAD_PARALLELISM")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .filter(|n| *n > 0)
+        .unwrap_or_else(|| (qc_asset_parallelism() * 2).clamp(2, 16))
+}
+fn download_slots() -> Arc<tokio::sync::Semaphore> {
+    static SLOTS: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> = std::sync::OnceLock::new();
+    SLOTS
+        .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(qc_download_parallelism())))
+        .clone()
+}
+
+/// Assets one Stage 1 job keeps in flight: enough to cover the CPU slots
+/// and the downloads that feed them. Bounds temp-disk use per job.
+fn qc_job_parallelism() -> usize {
+    qc_asset_parallelism() + qc_download_parallelism()
 }
 
 /// Download one asset and run the fixed check contract over it. Storage and
@@ -1457,10 +1481,21 @@ async fn analyze_asset(
     let tmp = TempFile(std::env::temp_dir().join(tmp_name));
     // Streamed straight to disk: worker memory stays flat regardless of the
     // master's size (a 476 MB file previously pushed a worker to ~916 MB).
-    storage
-        .download_to(key, &tmp.0, qc_max_bytes())
+    {
+        let _io = download_slots()
+            .acquire_owned()
+            .await
+            .map_err(|_| "download scheduler closed".to_string())?;
+        storage
+            .download_to(key, &tmp.0, qc_max_bytes())
+            .await
+            .map_err(|e| format!("object download failed: {e}"))?;
+    }
+    // CPU slot only for the analysis itself (see analysis_slots).
+    let _cpu = analysis_slots()
+        .acquire_owned()
         .await
-        .map_err(|e| format!("object download failed: {e}"))?;
+        .map_err(|_| "analysis scheduler closed".to_string())?;
     // The analyzers are blocking (child processes + CPU-bound FFT). Running
     // them on the blocking pool keeps the worker's async runtime, and with it
     // the job-lease heartbeat, responsive during multi-minute analyses.
@@ -1913,13 +1948,8 @@ async fn qc_single_asset(
     // compute and store it.
     // Unique temp name: two workers must never share an analyzer file.
     let tmp_name = format!("audeniq-qc-{}", Uuid::new_v4());
-    let permit = analysis_slots()
-        .acquire_owned()
-        .await
-        .map_err(|_| Error::Internal)?;
-    let analyzed = analyze_asset(&storage, &key, kind, &content_type, sha256, &tmp_name).await;
-    drop(permit);
-    let outcomes = match analyzed {
+    let outcomes = match analyze_asset(&storage, &key, kind, &content_type, sha256, &tmp_name).await
+    {
         Ok((o, metrics, fp)) => {
             // Persist measured audio duration + real technical specs for
             // the DDEX builder. COALESCE fills only unknown columns;
@@ -2028,7 +2058,7 @@ async fn asset_checks(
     // Bounded scheduling: keep up to `parallelism` assets in flight, spawning
     // the next as each completes. Avoids the chunks() barrier where a slow
     // asset in a chunk blocks the next chunk from starting.
-    let parallelism = qc_asset_parallelism().max(1);
+    let parallelism = qc_job_parallelism().max(1);
     let mut set = tokio::task::JoinSet::new();
     let mut iter = asset_list.into_iter();
     for _ in 0..parallelism {

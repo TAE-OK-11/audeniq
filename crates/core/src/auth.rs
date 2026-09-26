@@ -124,15 +124,18 @@ pub async fn create_resource(
     kind: &str,
 ) -> Result<()> {
     membership(c, a, org, true).await?;
-    sqlx::query("INSERT INTO identity.resources(org_id,id,kind) VALUES($1,$2,$3)")
-        .bind(org)
-        .bind(id)
-        .bind(kind)
-        .execute(&mut *c)
-        .await?;
-    for action in ["read", "write"] {
-        sqlx::query("INSERT INTO identity.resource_acl(org_id,resource_id,principal_party_id,action) VALUES($1,$2,$3,$4)").bind(org).bind(id).bind(a.party).bind(action).execute(&mut *c).await?;
-    }
+    // Resource + creator's read/write ACL in one round trip (was three).
+    sqlx::query(
+        "WITH r AS (INSERT INTO identity.resources(org_id,id,kind) VALUES($1,$2,$3) RETURNING org_id,id)
+         INSERT INTO identity.resource_acl(org_id,resource_id,principal_party_id,action)
+         SELECT r.org_id, r.id, $4, x.action FROM r CROSS JOIN (VALUES ('read'),('write')) AS x(action)",
+    )
+    .bind(org)
+    .bind(id)
+    .bind(kind)
+    .bind(a.party)
+    .execute(&mut *c)
+    .await?;
     Ok(())
 }
 pub async fn rate(pool: &PgPool, key: &str, limit: i32) -> Result<()> {

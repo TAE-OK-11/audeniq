@@ -49,18 +49,38 @@ pub async fn event(
     kind: &str,
     key: &str,
 ) -> Result<Uuid> {
-    let id:Uuid=sqlx::query_scalar("INSERT INTO operations.outbox(id,org_id,aggregate_id,event_type,payload,idempotency_key) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(idempotency_key) DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key WHERE operations.outbox.org_id=EXCLUDED.org_id AND operations.outbox.aggregate_id=EXCLUDED.aggregate_id AND operations.outbox.event_type=EXCLUDED.event_type AND operations.outbox.payload=EXCLUDED.payload RETURNING id")
- .bind(Uuid::new_v4()).bind(org).bind(aggregate).bind(kind).bind(json!({"resource_id":aggregate})).bind(key).fetch_optional(&mut *c).await?.ok_or(Error::Conflict)?;
-    enqueue(
-        c,
-        "interactive",
-        "outbox.record",
-        &json!({"event_id":id}),
-        &format!("outbox:{id}"),
-        None,
+    // Outbox row and its delivery job in one statement (was two round trips
+    // on every catalog write). Same idempotency rules as before: a repeated
+    // key must carry the same event, and the job key must match exactly.
+    let row: Option<(Uuid, i64)> = sqlx::query_as(
+        "WITH o AS (
+           INSERT INTO operations.outbox(id,org_id,aggregate_id,event_type,payload,idempotency_key) VALUES($1,$2,$3,$4,$5,$6)
+           ON CONFLICT(idempotency_key) DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key
+           WHERE operations.outbox.org_id=EXCLUDED.org_id AND operations.outbox.aggregate_id=EXCLUDED.aggregate_id
+             AND operations.outbox.event_type=EXCLUDED.event_type AND operations.outbox.payload=EXCLUDED.payload
+           RETURNING id),
+         j AS (
+           INSERT INTO operations.jobs(id,queue,kind,payload,idempotency_key,pinned_revision_id)
+           SELECT $7,'interactive','outbox.record',jsonb_build_object('event_id',o.id),'outbox:'||o.id,NULL FROM o
+           ON CONFLICT(idempotency_key) DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key
+           WHERE operations.jobs.queue=EXCLUDED.queue AND operations.jobs.kind=EXCLUDED.kind
+             AND operations.jobs.payload=EXCLUDED.payload AND operations.jobs.pinned_revision_id IS NULL
+           RETURNING id)
+         SELECT o.id, (SELECT count(*) FROM j) FROM o",
     )
+    .bind(Uuid::new_v4())
+    .bind(org)
+    .bind(aggregate)
+    .bind(kind)
+    .bind(json!({"resource_id":aggregate}))
+    .bind(key)
+    .bind(Uuid::new_v4())
+    .fetch_optional(&mut *c)
     .await?;
-    Ok(id)
+    match row {
+        Some((id, 1)) => Ok(id),
+        _ => Err(Error::Conflict),
+    }
 }
 pub async fn enqueue(
     c: &mut PgConnection,
@@ -193,6 +213,52 @@ pub async fn release_lease(pool: &PgPool, id: Uuid, token: Uuid) -> Result<bool>
     Ok(n == 1)
 }
 
+/// Explain why a fenced job update matched no row, log it with the result
+/// that could not be recorded, and return [`Error::LeaseLost`].
+///
+/// Before, every such case was a bare `Conflict`: a Stage 1 run whose lease
+/// expired looked identical to one that failed, and the analysis error it
+/// was trying to record was dropped. `attempted` is the result code the
+/// caller wanted to write (it carries the handler's own error text).
+pub async fn lease_lost(pool: &PgPool, j: &Job, action: &str, attempted: &str) -> Error {
+    let state = sqlx::query(
+        "SELECT status, locked_by, lock_token=$2 AS ours, lease_until, lease_until<=clock_timestamp() AS expired
+           FROM operations.jobs WHERE id=$1",
+    )
+    .bind(j.id)
+    .bind(j.token)
+    .fetch_optional(pool)
+    .await;
+    let reason = match &state {
+        Ok(Some(r)) => {
+            let status: String = r.get("status");
+            let ours: Option<bool> = r.get("ours");
+            let expired: Option<bool> = r.get("expired");
+            match (status.as_str(), ours, expired) {
+                ("RUNNING", Some(true), Some(true)) => "LEASE_EXPIRED".to_string(),
+                ("RUNNING", _, _) => format!(
+                    "RECLAIMED_BY:{}",
+                    r.get::<Option<String>, _>("locked_by").unwrap_or_default()
+                ),
+                (other, _, _) => format!("JOB_ALREADY_{other}"),
+            }
+        }
+        Ok(None) => "JOB_MISSING".to_string(),
+        Err(e) => format!("STATE_UNREADABLE:{e}"),
+    };
+    let attempted: String = attempted.chars().take(500).collect();
+    tracing::warn!(
+        job_id = %j.id,
+        kind = %j.kind,
+        attempt = j.attempts,
+        action,
+        reason = %reason,
+        attempted_result = %attempted,
+        "job result not recorded: lease lost"
+    );
+    Error::LeaseLost
+}
+
 #[derive(Debug, Clone)]
 pub struct Job {
     pub id: Uuid,
@@ -244,7 +310,11 @@ pub async fn heartbeat(pool: &PgPool, j: &Job, seconds: i32) -> Result<()> {
     }
     let n=sqlx::query("UPDATE operations.jobs SET lease_until=now()+make_interval(secs=>$3) WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp()")
  .bind(j.id).bind(j.token).bind(seconds as f64).execute(pool).await?.rows_affected();
-    if n == 1 { Ok(()) } else { Err(Error::Conflict) }
+    if n == 1 {
+        Ok(())
+    } else {
+        Err(lease_lost(pool, j, "heartbeat", "").await)
+    }
 }
 /// Park a claimed job back to QUEUED without consuming an attempt, for kinds the
 /// dispatcher recognizes but this build does not implement yet (stage2 until F3).
@@ -257,7 +327,8 @@ pub async fn park(pool: &PgPool, j: &Job, code: &str, delay_secs: i64) -> Result
     let n = sqlx::query("UPDATE operations.jobs SET status='QUEUED',attempts=0,lock_token=NULL,lease_until=NULL,last_error=$3,run_at=now()+make_interval(secs=>$4) WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp()")
         .bind(j.id).bind(j.token).bind(code).bind(delay_secs as f64).execute(&mut *tx).await?.rows_affected();
     if n != 1 {
-        return Err(Error::Conflict);
+        drop(tx);
+        return Err(lease_lost(pool, j, "park", code).await);
     }
     audit(
         &mut tx,
@@ -275,7 +346,11 @@ pub async fn park(pool: &PgPool, j: &Job, code: &str, delay_secs: i64) -> Result
 pub async fn fail(pool: &PgPool, j: &Job, permanent: bool, code: &str) -> Result<()> {
     let mut tx = pool.begin().await?;
     let r=sqlx::query("UPDATE operations.jobs SET status=CASE WHEN $3 OR attempts>=max_attempts THEN 'DEAD_LETTER' ELSE 'QUEUED' END,dead_lettered_at=CASE WHEN $3 OR attempts>=max_attempts THEN now() END,last_error=$4,run_at=now()+make_interval(secs=>least(3600,power(2,attempts)*5)::double precision),lock_token=NULL,lease_until=NULL WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp() RETURNING status")
- .bind(j.id).bind(j.token).bind(permanent).bind(code).fetch_optional(&mut *tx).await?.ok_or(Error::Conflict)?;
+ .bind(j.id).bind(j.token).bind(permanent).bind(code).fetch_optional(&mut *tx).await?;
+    let Some(r) = r else {
+        drop(tx);
+        return Err(lease_lost(pool, j, "fail", code).await);
+    };
     audit(
         &mut tx,
         None,
@@ -482,7 +557,8 @@ async fn retry_or_surface_with(pool: &PgPool, j: &Job, code: &str, permanent: bo
         .await?
         .rows_affected();
     if n != 1 {
-        return Err(Error::Conflict);
+        drop(tx);
+        return Err(lease_lost(pool, j, "dead_letter", code).await);
     }
     audit(
         &mut tx,
@@ -505,7 +581,8 @@ pub async fn succeed(pool: &PgPool, j: &Job) -> Result<()> {
     let n=sqlx::query("UPDATE operations.jobs SET status='SUCCEEDED',lock_token=NULL,lease_until=NULL WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp()")
  .bind(j.id).bind(j.token).execute(&mut *tx).await?.rows_affected();
     if n != 1 {
-        return Err(Error::Conflict);
+        drop(tx);
+        return Err(lease_lost(pool, j, "succeed", "").await);
     }
     audit(
         &mut tx,
@@ -537,6 +614,9 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
             }
             Err(e) => {
                 // last_error is ops-visible: include the underlying cause.
+                // Logged first so the cause survives even if the lease is
+                // gone and the failure cannot be recorded on the job.
+                tracing::warn!(job_id=%j.id, kind=%j.kind, attempt=j.attempts, error=?e, "stage1 handler failed");
                 let short: String = format!("{e:?}").chars().take(500).collect();
                 return retry_or_surface(pool, j, &format!("STAGE1_ERROR:{short}")).await;
             }
@@ -554,6 +634,7 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
                 return succeed(pool, j).await;
             }
             Err(e) => {
+                tracing::warn!(job_id=%j.id, kind=%j.kind, attempt=j.attempts, error=?e, "stage2 handler failed");
                 let short: String = format!("{e:?}").chars().take(500).collect();
                 return retry_or_surface(pool, j, &format!("STAGE2_ERROR:{short}")).await;
             }
@@ -567,6 +648,7 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
             Ok(None) => return Ok(()),
             Ok(Some(_)) => return succeed(pool, j).await,
             Err(e) => {
+                tracing::warn!(job_id=%j.id, kind=%j.kind, attempt=j.attempts, error=?e, "prepare_release handler failed");
                 let short: String = format!("{e:?}").chars().take(500).collect();
                 // An identifier conflict is provably permanent: the UPC/ISRC
                 // is already assigned to a different release or track, so no
@@ -823,7 +905,10 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
     let mut tx = pool.begin().await?;
     let current:Option<Uuid>=sqlx::query_scalar("SELECT id FROM operations.jobs WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp() FOR UPDATE")
  .bind(j.id).bind(j.token).fetch_optional(&mut *tx).await?;
-    current.ok_or(Error::Conflict)?;
+    if current.is_none() {
+        drop(tx);
+        return Err(lease_lost(pool, j, "outbox", "").await);
+    }
     let row =
         sqlx::query("SELECT org_id,aggregate_id FROM operations.outbox WHERE id=$1 FOR UPDATE")
             .bind(event)
@@ -850,7 +935,8 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
     let n=sqlx::query("UPDATE operations.jobs SET status='SUCCEEDED',lock_token=NULL,lease_until=NULL WHERE id=$1 AND lock_token=$2 AND lease_until>clock_timestamp()")
  .bind(j.id).bind(j.token).execute(&mut *tx).await?.rows_affected();
     if n != 1 {
-        return Err(Error::Conflict);
+        drop(tx);
+        return Err(lease_lost(pool, j, "outbox", "").await);
     }
     audit(
         &mut tx,
