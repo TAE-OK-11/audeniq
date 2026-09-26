@@ -95,16 +95,19 @@ export function Dashboard() {
       <div className="portal-hero">
         <div>
           <p className="eyebrow">NEW RELEASE</p>
-          <h2>새로운 발매를<br />시작해 보세요.</h2>
+          <h2>새로운 발매를<br /><span className="aq-accent">시작해 보세요.</span></h2>
           <p>음원과 커버아트, 크레딧을 등록하고 발매를 준비해 보세요.</p>
         </div>
         <Link className="button aq-hero-cta" to="/upload" onPointerEnter={() => prefetchRoute('/upload')}>발매 등록하기 <span aria-hidden="true">→</span></Link>
       </div>
 
       <div className="dashboard-grid aq-stagger" aria-label="주요 업무">
-        {GRID_ITEMS.map(item => (
+        {GRID_ITEMS.map((item, i) => (
           <Link key={item.to} className="service-item" to={item.to} onPointerEnter={() => prefetchRoute(item.to)} onFocus={() => prefetchRoute(item.to)}>
-            <span className="icon-chip">{item.icon}</span>
+            <span className="aq-service-top">
+              <span className="icon-chip">{item.icon}</span>
+              <span className="aq-service-no" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span>
+            </span>
             <div>
               <h3>{item.title}</h3>
               <p>{item.desc}</p>
