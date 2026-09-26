@@ -31,8 +31,8 @@ Request JSON rejects unknown top-level fields. Body limit 64 KiB. Errors have `{
 | POST/GET | `/api/orgs/{org}/labels` | Create `{name,party_id,profile?}` / authorized list |
 | GET/PUT/DELETE | `/api/orgs/{org}/labels/{id}` | Read / replace with row_version / archive `{row_version}` |
 | POST/GET | `/api/orgs/{org}/releases` | Create `{name,release_type:SINGLE or EP or ALBUM,profile?}` / authorized list |
-| GET/PUT/DELETE | `/api/orgs/{org}/releases/{id}` | Read with tracks and separate empty DSP axes / replace DRAFT with row_version / archive DRAFT |
-| POST | `/api/orgs/{org}/releases/{id}/tracks` | `{title,disc_number,track_number,artist_id,asset_id?,row_version}` → track ID and new release version |
+| GET/PUT/DELETE | `/api/orgs/{org}/releases/{id}` | Read with tracks and separate empty DSP axes / replace DRAFT with row_version / archive DRAFT. Create and replace also take optional `upc` (UPC-A, 12 digits, check digit verified; empty = Stage 3 issues one) and `artwork_asset_id` (a REGISTERED IMAGE asset of the org) |
+| POST | `/api/orgs/{org}/releases/{id}/tracks` | `{title,disc_number,track_number,artist_id,asset_id?,isrc?,row_version}` → track ID and new release version. `isrc` is normalized (dashes, case); empty = Stage 3 issues one |
 | PUT | `/api/orgs/{org}/releases/{id}/tracks/{track}` | Same fields as track creation; replaces metadata/file reference, increments release row_version |
 | DELETE | `/api/orgs/{org}/releases/{id}/tracks/{track}` | `{row_version}` → archive track, preserve its internal ID, increment release version |
 | PUT | `/api/orgs/{org}/releases/{id}/tracks/{track}/credits` | `{row_version,credits:[{party_id,role}]}` → atomic replacement, empty list clears draft credits |

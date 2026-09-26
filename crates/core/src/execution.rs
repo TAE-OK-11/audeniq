@@ -478,6 +478,22 @@ async fn verify_file(
     })
 }
 
+fn has_virtual_identifier(snapshot: &Value) -> bool {
+    use crate::identifiers::{IdentifierKind, is_virtual};
+    let upc = snapshot
+        .get("upc")
+        .and_then(Value::as_str)
+        .is_some_and(|u| is_virtual(IdentifierKind::Upc, u));
+    let isrc = snapshot
+        .get("tracks")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|t| t.get("isrc").and_then(Value::as_str))
+        .any(|i| is_virtual(IdentifierKind::Isrc, i));
+    upc || isrc
+}
+
 async fn materialize(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     storage: &Arc<dyn ObjectStore>,
@@ -569,6 +585,12 @@ async fn materialize(
     .await?;
     let (dsp_id, transport, activation_kind) =
         profile.unwrap_or((None, "mock".to_string(), "MOCK".to_string()));
+    // Virtual (test) UPC/ISRC codes never reach a real partner. Checked on the
+    // frozen snapshot itself, so it fails closed without ledger visibility.
+    if (transport != "mock" || activation_kind == "CONTRACTED") && has_virtual_identifier(&snapshot)
+    {
+        return Err(Error::PolicyGate("EXECUTION_VIRTUAL_IDENTIFIER"));
+    }
     let ddex: Option<(String, String)> = match dsp_id {
         Some(dsp) => sqlx::query_as(
             "SELECT ern_xml, ern_sha256 FROM distribution.ddex_messages WHERE package_id=$1 AND dsp_id=$2",

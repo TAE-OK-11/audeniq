@@ -76,3 +76,18 @@ cd /opt/audeniq
 - **SSH**: fail2ban으로 비밀번호 대입을 막고, 가능하면 키 로그인으로 바꾼 뒤 `PasswordAuthentication no`.
 - **메모리**: 1GB 서버는 스왑 파일(2GB)을 추가해 큰 음원 QC 중 OOM을 피한다. vCPU 1개 서버는 `compose.override.yaml`에서 worker `cpus: 1.0`.
 - **이미지 정리**: 주 1회 `docker image prune -af --filter until=168h` (현재 이미지와 직전 이미지는 사용 중이거나 1주 이내라 남는다).
+
+### UPC/ISRC 발급
+
+UPC나 ISRC 없이 접수된 발매는 3단계(배포 준비)에서 활성 발급 범위로 번호를 받는다 (migration 0041). 한 번 받은 번호는 재시도·재접수에도 그대로다.
+
+- 회사 코드가 없는 지금은 **가상(테스트) 범위**가 발급한다: UPC `2…`(GS1 매장 내 전용), ISRC `XXAUD…`(ISO 사용자 지정 국가 코드). 실제 상품에 쓰이지 않는 범위라 겹치지 않는다.
+- 가상 번호가 들어간 발매는 **실제 DSP로 전송되지 않는다** (`EXECUTION_VIRTUAL_IDENTIFIER`). mock 전송만 된다.
+- 발급 자격(GS1 회사 접두어, ISRC 등록자 코드)을 받으면 등록한다. 그때부터 새 번호가 실제 범위에서 나온다. 이미 가상 번호를 받은 발매는 바뀌지 않으니 다시 받아야 하면 새로 접수한다.
+
+```sh
+docker exec -e DATABASE_URL="postgres://audeniq_owner:$POSTGRES_PASSWORD@postgres/audeniq_prod" audeniq-production-api-1 \
+  audeniq-admin --operator 이름 identifier-issuer register UPC 0812345      # GS1 회사 접두어 (6~10자리)
+#  ... identifier-issuer register ISRC KR-A1B                               # ISRC 등록자 코드
+#  ... identifier-issuer list                                               # 범위와 사용량
+```
