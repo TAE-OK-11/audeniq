@@ -1,6 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { useGrowOnView, type CSSVarStyle } from '../hooks/useAnimations';
 import { mockApi } from '../api/mock';
 import type { Release } from '../api/client';
 import { STATUS_LABEL } from '../lib/format';
@@ -29,53 +28,16 @@ function money(n: number): string {
   return new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW', maximumFractionDigits: 0 }).format(n || 0);
 }
 
-// mock 이번 달 리포트 데이터
-const MOCK_REPORTS = [
-  { period: '2026-09-01', revenue: 45230 },
-  { period: '2026-09-08', revenue: 128400 },
-  { period: '2026-09-15', revenue: 89300 },
-  { period: '2026-09-22', revenue: 156700 },
-];
-
-function Chart({ rows }: { rows: { period: string; revenue: number }[] }) {
-  const chartRef = useGrowOnView<HTMLDivElement>();
-  const buckets = new Map<string, number>();
-  for (const r of rows) {
-    const k = r.period.slice(0, 7) || '기타';
-    buckets.set(k, (buckets.get(k) || 0) + Number(r.revenue || 0));
-  }
-  const vals = [...buckets.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-8);
-
-  if (!vals.length) {
-    return (
-      <div className="empty-graph">
-        아직 수익 리포트가 없어요.<br />정산이 반영되면 이곳에서 확인할 수 있어요.
-      </div>
-    );
-  }
-  const high = Math.max(1, ...vals.map(x => x[1]));
-  const barStyle = (v: number): CSSVarStyle => ({
-    '--h': `${Math.max(2, Math.round((v / high) * 100))}%`,
-  });
-  return (
-    <>
-      <div className="report-chart" ref={chartRef} role="img" aria-label="기간별 수익 막대그래프">
-        {vals.map(([k, v]) => (
-          <div
-            key={k}
-            className="report-bar"
-            style={barStyle(v)}
-            title={`${k} · ${money(v)}`}
-          />
-        ))}
-      </div>
-      <div className="report-axis">
-        <span>{vals[0][0]}</span>
-        <span>{vals[vals.length - 1][0]}</span>
-      </div>
-    </>
-  );
-}
+// mock 이번 달 리포트 요약
+const REPORT = {
+  revenue: 419630,
+  change: 12.4,
+  streams: 86214,
+  settled: 312000,
+  pending: 107630,
+  topTrack: '여름밤 드라이브',
+  topPlatform: 'Spotify',
+};
 
 function ReleaseRow({ r }: { r: Release }) {
   const navigate = useNavigate();
@@ -114,8 +76,6 @@ export function Dashboard() {
   if (drafts) tasks.push({ icon: '↗', name: `작성 중인 발매 ${drafts}건`, sub: '필수 정보와 권리 항목을 확인해 보세요.', btn: '보기', to: '/releases' });
   if (!profileName) tasks.push({ icon: '◉', name: '아티스트 정보 등록', sub: '활동명과 연락처를 입력해 주세요.', btn: '등록', to: '/profile' });
   if (unread) tasks.push({ icon: '♧', name: `읽지 않은 알림 ${unread}건`, sub: '최근 변경사항을 확인해 보세요.', btn: '확인', to: '/support' });
-
-  const monthSum = MOCK_REPORTS.reduce((n, r) => n + r.revenue, 0);
 
   return (
     <div id="view-home" className="view">
@@ -193,14 +153,21 @@ export function Dashboard() {
         <h2>이번 달 음악 리포트</h2>
         <button className="link-btn" type="button" onClick={() => navigate('/reports')}>리포트 보기 ↗</button>
       </div>
-      <section className="surface" aria-label="월별 수익">
-        <div id="homeReport">
-          <div className="section-top">
-            <h2>{money(monthSum)} <span className="small muted">· 이번 달 수익 집계</span></h2>
-          </div>
-          {<Chart rows={MOCK_REPORTS} />}
-          <p className="dashboard-help">플랫폼 보고서를 기준으로 집계한 수익을 확인해 보세요.</p>
+      <section className="surface aq-report-card" aria-label="이번 달 리포트 요약">
+        <div className="aq-report-total">
+          <small>이번 달 수익</small>
+          <strong>{money(REPORT.revenue)}</strong>
+          <span className="aq-report-delta">전월 대비 +{REPORT.change}%</span>
         </div>
+        <div className="aq-report-grid">
+          <div><small>총 재생</small><strong>{REPORT.streams.toLocaleString('ko-KR')}회</strong></div>
+          <div><small>정산 확정</small><strong>{money(REPORT.settled)}</strong></div>
+          <div><small>정산 예정</small><strong>{money(REPORT.pending)}</strong></div>
+        </div>
+        <ul className="aq-report-tops">
+          <li><span>Top 트랙</span><strong>{REPORT.topTrack}</strong></li>
+          <li><span>Top 플랫폼</span><strong>{REPORT.topPlatform}</strong></li>
+        </ul>
       </section>
     </div>
   );
