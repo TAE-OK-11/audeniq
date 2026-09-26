@@ -102,6 +102,8 @@ export function Reports() {
 
   const releases = [...new Set(MOCK_ROWS.map(r => r.release))];
 
+  const periodLabel = period === 'month' ? '2026년 9월' : period === 'prev' ? '2026년 8월' : '전체 기간';
+
   const exportCsv = () => {
     if (!filtered.length) { toast('내보낼 리포트가 없어요.'); return; }
     const cell = (v: string | number) => `"${String(v ?? '').replace(/"/g, '""')}"`;
@@ -142,71 +144,69 @@ export function Reports() {
         </select>
       </div>
 
-      <div className="stat-grid">
-        <div className="surface white stat-card"><small>집계 수익</small><strong>{money(totalRevenue)}</strong></div>
-        <div className="surface white stat-card"><small>재생 수</small><strong>{num(totalPlays)}</strong></div>
-        <div className="surface white stat-card"><small>플랫폼</small><strong>{platforms}</strong></div>
-      </div>
+      {/* 보고서 문서 */}
+      <article className="aq-report-doc" aria-label={`${periodLabel} 음악 리포트`}>
+        <header className="aq-report-doc-head">
+          <p className="eyebrow">MONTHLY REPORT</p>
+          <h2>{periodLabel} 음악 리포트</h2>
+          <p className="muted small">발행일 2026-09-26 · AUDENIQ STUDIO</p>
+        </header>
 
-      {byPlatform.length > 0 && (
-        <section className="surface" aria-labelledby="platformTitle">
-          <div className="section-top">
-            <h2 id="platformTitle">플랫폼별 수익</h2>
-          </div>
-          <ul className="aq-platform-bars">
-            {byPlatform.map(([name, v]) => (
-              <li key={name}>
-                <div className="aq-platform-row">
-                  <span>{name}</span>
-                  <strong>{money(v.revenue)}</strong>
-                </div>
-                <div className="aq-platform-track">
-                  <span style={{ width: `${Math.max(3, Math.round((v.revenue / maxPlatformRevenue) * 100))}%` }} />
-                </div>
-                <small>{num(v.plays)}회 재생</small>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      <section className="surface" aria-labelledby="reportGraphTitle">
-        <div className="section-top">
-          <h2 id="reportGraphTitle">기간별 수익</h2>
-          <span className="muted small">기간별 재생·수익 내역</span>
+        <div className="aq-report-doc-stats">
+          <div><small>집계 수익</small><strong>{money(totalRevenue)}</strong></div>
+          <div><small>재생 수</small><strong>{num(totalPlays)}회</strong></div>
+          <div><small>플랫폼</small><strong>{platforms}곳</strong></div>
         </div>
-        <div id="reportGraph"><Chart rows={filtered} /></div>
-      </section>
 
-      <div className="section-top"><h2>플랫폼별 상세 내역</h2></div>
-      {filtered.length ? (
-        <div className="scroll-x">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>기간</th><th>플랫폼</th><th>발매 / 곡</th>
-                <th className="num">재생</th><th className="num">수익</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((r, i) => (
-                <tr key={i}>
-                  <td>{r.period}</td>
-                  <td>{r.platform}</td>
-                  <td>{r.release || '—'} / {r.track || '전체'}</td>
-                  <td className="num">{num(r.plays)}</td>
-                  <td className="num">{money(r.revenue)}</td>
-                </tr>
+        {byPlatform.length > 0 && (
+          <section aria-label="플랫폼별 수익">
+            <h3>플랫폼별 수익</h3>
+            <ul className="aq-platform-bars">
+              {byPlatform.map(([name, v]) => (
+                <li key={name}>
+                  <div className="aq-platform-row">
+                    <span>{name}</span>
+                    <strong>{money(v.revenue)}</strong>
+                  </div>
+                  <div className="aq-platform-track">
+                    <span style={{ width: `${Math.max(3, Math.round((v.revenue / maxPlatformRevenue) * 100))}%` }} />
+                  </div>
+                  <small>{num(v.plays)}회 재생</small>
+                </li>
               ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="empty-page">
-          <h2>아직 집계된 실적이 없어요.</h2>
-          <p>플랫폼 정산이 반영되면 재생·수익 내역이 여기에 표시돼요.</p>
-        </div>
-      )}
+            </ul>
+          </section>
+        )}
+
+        <section aria-label="기간별 추이">
+          <h3>기간별 추이</h3>
+          <div id="reportGraph"><Chart rows={filtered} /></div>
+        </section>
+
+        <section aria-label="상세 내역">
+          <h3>상세 내역</h3>
+          {filtered.length ? (
+            <ul className="aq-report-details">
+              {filtered.map((r, i) => (
+                <li key={i}>
+                  <div className="aq-detail-top">
+                    <strong>{r.platform}</strong>
+                    <span>{money(r.revenue)}</span>
+                  </div>
+                  <div className="aq-detail-sub">
+                    {r.release || '—'} / {r.track || '전체'} · {r.period} · {num(r.plays)}회 재생
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="empty-page">
+              <h2>아직 집계된 실적이 없어요.</h2>
+              <p>플랫폼 정산이 반영되면 재생·수익 내역이 여기에 표시돼요.</p>
+            </div>
+          )}
+        </section>
+      </article>
     </div>
   );
 }

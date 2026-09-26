@@ -358,6 +358,25 @@ button,input,select,textarea{font-family:inherit;letter-spacing:inherit}button{-
 .aq-platform-track{height:8px;background:#e9edf5;border-radius:99px;margin-top:9px;overflow:hidden}
 .aq-platform-track span{display:block;height:100%;background:linear-gradient(90deg,#5c77e5,#a7baff);border-radius:99px;transition:width .5s var(--portal-ease)}
 .aq-platform-bars small{display:block;margin-top:6px;font-size:11px;color:var(--portal-muted)}
+.aq-report-doc{background:#fff;border:1px solid var(--portal-border);border-radius:28px;padding:28px 24px;margin-top:4px}
+.aq-report-doc-head{padding-bottom:20px;border-bottom:1px solid var(--portal-border)}
+.aq-report-doc-head .eyebrow{margin:0}
+.aq-report-doc-head h2{font-size:24px;letter-spacing:-.045em;margin:8px 0 6px;color:var(--portal-ink)}
+.aq-report-doc-head p{margin:0}
+.aq-report-doc-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:22px 0;border-bottom:1px solid var(--portal-border)}
+.aq-report-doc-stats small{display:block;font-size:11px;font-weight:750;color:var(--portal-muted)}
+.aq-report-doc-stats strong{display:block;font-size:clamp(17px,4.6vw,23px);letter-spacing:-.04em;margin-top:6px;color:var(--portal-ink);overflow-wrap:anywhere}
+.aq-report-doc section{padding:22px 0;border-bottom:1px solid var(--portal-border)}
+.aq-report-doc section:last-child{border-bottom:0;padding-bottom:0}
+.aq-report-doc section h3{font-size:17px;letter-spacing:-.03em;margin:0 0 18px;color:var(--portal-ink)}
+.aq-report-doc .aq-platform-bars{gap:16px}
+.aq-report-details{list-style:none;margin:0;padding:0}
+.aq-report-details li{padding:15px 0;border-bottom:1px solid #eef1f7}
+.aq-report-details li:last-child{border-bottom:0}
+.aq-detail-top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.aq-detail-top strong{font-size:14px;color:var(--portal-ink)}
+.aq-detail-top span{font-size:14px;font-weight:750;letter-spacing:-.02em;color:var(--portal-ink)}
+.aq-detail-sub{font-size:12px;color:var(--portal-muted);margin-top:6px;line-height:1.6}
 .report-bar{background:linear-gradient(180deg,#5e7dec,#a4b5fa);border-radius:9px 9px 0 0;animation-duration:.7s}
 .report-axis{color:#8794aa}
 .empty-graph{color:#8995a8;font-size:13px;min-height:115px}
