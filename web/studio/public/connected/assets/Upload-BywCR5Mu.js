@@ -1,4 +1,4 @@
-import{a as ve,c as fe,d as Ne,r as x,m as M,j as e}from"./index-BAd11m9v.js";import{u as ke}from"./useAnimations-v6zHdOot.js";import{a as ee}from"./docs-CodQU3J9.js";import{l as be}from"./format-JrqA868E.js";const O=[{short:"발매 정보",kicker:"01 / 06 · 발매 정보",title:`어떤 음악을
+import{a as ve,c as fe,d as Ne,r as x,m as M,j as e}from"./index-Ba-pr3QR.js";import{u as ke}from"./useAnimations-rWa_ckyw.js";import{a as ee}from"./docs-CCjNWWla.js";import{l as be}from"./format-JrqA868E.js";const O=[{short:"발매 정보",kicker:"01 / 06 · 발매 정보",title:`어떤 음악을
 발매할까요?`,sub:"발매 정보와 아티스트명을 입력해 주세요."},{short:"트랙 등록",kicker:"02 / 06 · 트랙 등록",title:`발매할 곡을
 등록해 주세요.`,sub:"곡별 음원 파일과 크레딧을 입력해 주세요."},{short:"커버아트",kicker:"03 / 06 · 커버아트",title:`커버아트를
 등록해 주세요.`,sub:"정사각형 커버아트를 등록해 주세요."},{short:"배급 설정",kicker:"04 / 06 · 배급 설정",title:`언제, 어디에
