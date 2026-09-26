@@ -1,0 +1,12 @@
+# The image only needs Cargo.toml/Cargo.lock, crates/, config/ and migrations/
+# (see deploy/Dockerfile). Keep build outputs, web apps and secrets out of the context.
+.git
+target
+web
+**/node_modules
+crates/edge/build
+crates/edge/.wrangler
+.env
+.env.*
+deploy/production.env
+deploy/tunnel-token
