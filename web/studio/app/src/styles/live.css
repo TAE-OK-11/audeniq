@@ -1112,6 +1112,6 @@ body.aq-nav-locked #portalNav{
 
 /* 모바일에서 모달이 화면을 풀로 사용하도록 (원본처럼) */
 @media(max-width:760px){
-  .modal{padding:8px!important;place-items:start center!important}
-  .modal-inner{width:100%!important;max-width:100%!important;max-height:calc(100dvh - 16px)!important;min-height:calc(100dvh - 16px)!important;padding:24px 20px!important}
+  .modal{padding:14px!important;place-items:start center!important}
+  .modal-inner{width:100%!important;max-width:100%!important;max-height:calc(100dvh - 28px)!important;min-height:calc(100dvh - 28px)!important;padding:24px 20px!important}
 }
