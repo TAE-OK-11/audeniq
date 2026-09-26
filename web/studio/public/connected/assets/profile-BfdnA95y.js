@@ -1,1 +1,0 @@
-import{r as n}from"./index-CbHDp4nS.js";let r={name:"서린",email:"artist.demo@example.com",bio:"도시의 풍경과 하루의 감정을 음악으로 기록합니다.",country:"KR"};const t=new Set;function o(){t.forEach(e=>e())}function i(e){return t.add(e),()=>{t.delete(e)}}function s(){return r}function a(){return n.useSyncExternalStore(i,s)}function c(){return r}function f(e){r=e,o()}export{c as g,f as s,a as u};
