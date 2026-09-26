@@ -17,21 +17,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     css.push_str("\n[hidden]{display:none!important}.connected-nav{display:flex;gap:12px;flex-wrap:wrap;padding:12px 0}.connected-form{display:grid;gap:16px;max-width:640px}.connected-form input,.connected-form select{width:100%;padding:12px;border:1px solid var(--border);border-radius:12px;font:inherit}.connected-form label{display:block}#feedback{white-space:pre-wrap;margin:16px 0}.connected-row{display:flex;justify-content:space-between;gap:16px;padding:20px 0;border-bottom:1px solid var(--border)}button:disabled{opacity:.5;cursor:wait}.connected-detail{margin-top:24px} .connected-nav button{border:0;background:var(--surface-alt);padding:10px 16px;border-radius:12px}\n");
     fs::write(out.join("studio.css"), css)?;
     // Minimal module bootstrap. All application state, requests and DOM handling are Rust.
-    // NOTE: do not reuse the old Vite prototype shell (web/studio/public/connected/index.html);
-    // it references a bundled JS artifact that no longer exists and never loads boot.js.
+    // NOTE: this shell is the original studio shell (it provides #workspace / #feedback
+    // for the wasm app). Do not reuse the old Vite prototype shell
+    // (web/studio/public/connected/index.html); it references a bundled JS artifact
+    // that no longer exists and never loads boot.js.
     fs::write(
         out.join("index.html"),
         concat!(
-            "<!doctype html>\n<html lang=\"ko\">\n<head>\n",
-            "  <meta charset=\"utf-8\">\n",
-            "  <meta name=\"viewport\" content=\"width=device-width,initial-scale=1,viewport-fit=cover\">\n",
-            "  <meta name=\"robots\" content=\"noindex,nofollow\">\n",
-            "  <title>AUDENIQ STUDIO</title>\n",
-            "  <link rel=\"stylesheet\" href=\"/studio.css\">\n",
-            "</head>\n<body>\n",
-            "  <div id=\"root\"></div>\n",
-            "  <script type=\"module\" src=\"/boot.js\"></script>\n",
-            "</body>\n</html>\n",
+            "<!doctype html><html lang=\"ko\"><head>",
+            "<meta charset=\"utf-8\">",
+            "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1,viewport-fit=cover\">",
+            "<meta name=\"robots\" content=\"noindex,nofollow\">",
+            "<title>AUDENIQ STUDIO</title>",
+            "<link rel=\"stylesheet\" href=\"/studio.css\">",
+            "<script type=\"module\" src=\"/boot.js\"></script>",
+            "</head>\n",
+            "<body>",
+            "<a class=\"skip-link\" href=\"#main\">본문으로 바로가기</a>",
+            "<header class=\"site-header portal-header\"><div class=\"nav-shell\">",
+            "<a href=\"/\" class=\"brand\" aria-label=\"AUDENIQ STUDIO 홈\">",
+            "<img src=\"/assets/AUDENIQ_Logo_Light.svg\" alt=\"AUDENIQ\"></a>",
+            "<span class=\"workspace-label\">STUDIO</span>",
+            "</div></header>\n",
+            "<main id=\"main\" class=\"portal-layout\">",
+            "<div id=\"feedback\" role=\"status\" aria-live=\"polite\">작업실을 불러오고 있어요.</div>",
+            "<div id=\"workspace\"></div>",
+            "<noscript>작업실을 사용하려면 브라우저의 JavaScript와 WebAssembly를 활성화해 주세요.</noscript>",
+            "</main></body></html>\n",
         ),
     )?;
     fs::copy(
