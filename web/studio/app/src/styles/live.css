@@ -780,7 +780,8 @@ body.wizard-mode .portal-layout{padding:0!important;min-height:100dvh}
  #contractList .studio-document-row .row-name{font-size:14px!important}
  body.aq-nav-locked #portalNav{top:68px!important;right:20px!important;max-height:calc(100dvh - 80px - env(safe-area-inset-bottom,0px))!important}
  #modal.aq-signature-mode{padding:8px!important}
- #modal.aq-signature-mode .modal-inner{max-height:calc(100dvh - 16px)!important;min-height:0!important;width:100%!important;padding:22px 19px 16px!important;border-radius:24px!important}
+ #modal.aq-signature-mode .modal-inner{height:calc(100dvh - 16px)!important;max-height:calc(100dvh - 16px)!important;width:100%!important;padding:22px 19px 0!important;border-radius:24px!important}
+ #modal.aq-signature-mode .aq-sign-body{padding-bottom:16px!important}
  .aq-sign-sheet canvas{height:175px}
  #view-new .wizard-header h1{font-size:clamp(27px,7.4vw,33px)!important;line-height:1.28!important}
  #view-new .wizard-header p{font-size:14px!important;line-height:1.6!important}
