@@ -10,10 +10,14 @@
 //! audeniq-admin protected remove-alias NAME ALIAS
 //! audeniq-admin protected grant-exception NAME ORG_ID --reason TEXT
 //! audeniq-admin protected revoke-exception NAME ORG_ID
+//! audeniq-admin identifier-issuer list
+//! audeniq-admin identifier-issuer register UPC|ISRC PREFIX
+//!   (GS1 company prefix / ISRC registrant code, e.g. `register ISRC KR-A1B`;
+//!    replaces the virtual test range for new codes)
 use audeniq_core::protected_admin as admin;
 use audeniq_core::protected_names::{Action, Mode};
 
-const USAGE: &str = "usage: audeniq-admin [--operator NAME] protected <list|add|remove|activate|alias|remove-alias|grant-exception|revoke-exception> ...";
+const USAGE: &str = "usage: audeniq-admin [--operator NAME] protected <list|add|remove|activate|alias|remove-alias|grant-exception|revoke-exception> ...\n       audeniq-admin [--operator NAME] identifier-issuer <list|register UPC|ISRC PREFIX>";
 
 fn take_opt(args: &mut Vec<String>, key: &str) -> Option<String> {
     let i = args.iter().position(|a| a == key)?;
@@ -57,6 +61,28 @@ async fn main() -> anyhow::Result<()> {
     let note = take_opt(&mut args, "--note");
     let reason = take_opt(&mut args, "--reason");
     let phrase = take_flag(&mut args, "--phrase");
+    if args.first().map(String::as_str) == Some("identifier-issuer") {
+        use audeniq_core::identifiers::{IdentifierKind, list_issuers, register_issuer};
+        let pool = audeniq_core::database::connect(&std::env::var("DATABASE_URL")?, 1).await?;
+        match (args.get(1).map(String::as_str), args.get(2), args.get(3)) {
+            (Some("list"), None, None) => {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&list_issuers(&pool).await?)?
+                )
+            }
+            (Some("register"), Some(kind), Some(prefix)) => {
+                if operator.trim().is_empty() {
+                    anyhow::bail!("--operator NAME (or AUDENIQ_OPERATOR) is required for changes");
+                }
+                let id =
+                    register_issuer(&pool, &operator, IdentifierKind::parse(kind)?, prefix).await?;
+                println!("registered {id}\nok");
+            }
+            _ => anyhow::bail!(USAGE),
+        }
+        return Ok(());
+    }
     if args.first().map(String::as_str) != Some("protected") || args.len() < 2 {
         anyhow::bail!(USAGE);
     }

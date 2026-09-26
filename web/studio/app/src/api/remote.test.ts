@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReleasePayload } from './types';
 import { ApiError } from './errors';
 import { setCsrf, setOrgId } from './http';
-import { cleanText, remoteApi, sanitizeProfile, uiStatus, uploadContentType } from './remote';
+import { cleanText, remoteApi, sanitizeProfile, serverUpc, uiStatus, uploadContentType } from './remote';
 
 const ORG = 'org-1';
 
@@ -23,7 +23,7 @@ interface Call { method: string; path: string; body: unknown; headers: Record<st
 /** 백엔드 계약(docs/API.md)을 따르는 작은 가짜 서버 */
 function fakeServer() {
   const calls: Call[] = [];
-  const releases = new Map<string, { id: string; title: string; release_type: string; status: string; draft: unknown; row_version: number; created_at: string; tracks: Record<string, unknown>[] }>();
+  const releases = new Map<string, { id: string; title: string; release_type: string; status: string; draft: unknown; row_version: number; created_at: string; tracks: Record<string, unknown>[]; upc?: string | null; artwork_asset_id?: string | null }>();
   const artists: { id: string; name: string }[] = [];
   const parties = new Map<string, string>();
   let seq = 0;
@@ -57,7 +57,7 @@ function fakeServer() {
     if (p === '/releases' && method === 'GET') return json(200, { items: [...releases.values()], limit: 100, next_cursor: null });
     if (p === '/releases' && method === 'POST') {
       const id = `rel-${++seq}`;
-      releases.set(id, { id, title: body.name, release_type: body.release_type, status: 'DRAFT', draft: body.profile, row_version: 0, created_at: '2030-01-01T00:00:00Z', tracks: [] });
+      releases.set(id, { id, title: body.name, release_type: body.release_type, status: 'DRAFT', draft: body.profile, row_version: 0, created_at: '2030-01-01T00:00:00Z', tracks: [], upc: body.upc, artwork_asset_id: body.artwork_asset_id });
       return json(200, { id, row_version: 0 });
     }
     const sub = p.match(/^\/releases\/([^/]+)\/submission$/);
@@ -77,7 +77,7 @@ function fakeServer() {
       if (!m[2]) {
         if (method === 'GET') return json(200, rel);
         if (body.row_version !== rel.row_version) return json(409, { error: { code: 'CONFLICT', message: 'stale' } });
-        if (method === 'PUT') { rel.title = body.name; rel.draft = body.profile; rel.row_version += 1; return json(200, { id: rel.id, row_version: rel.row_version }); }
+        if (method === 'PUT') { rel.title = body.name; rel.draft = body.profile; rel.upc = body.upc; rel.artwork_asset_id = body.artwork_asset_id; rel.row_version += 1; return json(200, { id: rel.id, row_version: rel.row_version }); }
         if (method === 'DELETE') { releases.delete(rel.id); return json(200, { id: rel.id }); }
       }
       if (body?.row_version !== rel.row_version) return json(409, { error: { code: 'CONFLICT', message: 'stale' } });
@@ -160,6 +160,27 @@ describe('remoteApi (가짜 서버)', () => {
     const inst = { ...data, tracks: [{ ...data.tracks[0], serverId: r.trackServerIds!.t1, instrumental: true }] };
     await remoteApi.saveDraft(r.id, inst);
     expect((rel.tracks[0].credits as { role: string }[]).map(c => c.role)).toEqual(['Composer', 'Composer']);
+  });
+
+  it('UPC·커버·ISRC를 서버 칸으로 보내고, 없으면 비워서 3단계 발급에 맡긴다', async () => {
+    expect(serverUpc('036000291452')).toBe('036000291452');
+    expect(serverUpc('0036000291452')).toBe('036000291452');
+    expect(serverUpc('4006381333931')).toBeNull();
+    expect(serverUpc('')).toBeNull();
+
+    const data = payload({ upc: '036000291452', coverAssetId: 'cover-1' });
+    data.tracks[0] = { ...data.tracks[0], isrc: 'kr-abc-26-00001' };
+    const r = await remoteApi.saveDraft(null, data);
+    const rel = server.releases.get(r.id)!;
+    expect(rel).toMatchObject({ upc: '036000291452', artwork_asset_id: 'cover-1' });
+    expect(rel.tracks[0].isrc).toBe('KRABC2600001');
+
+    // 비우면 null (3단계가 발급), 커버는 이전 저장값 유지
+    const empty = payload({ upc: '' });
+    empty.tracks[0] = { ...empty.tracks[0], serverId: r.trackServerIds!.t1 };
+    await remoteApi.saveDraft(r.id, empty);
+    expect(rel).toMatchObject({ upc: null, artwork_asset_id: 'cover-1' });
+    expect(rel.tracks[0].isrc).toBeNull();
   });
 
   it('보완 요청은 트랙별로 나누고 트랙 ID를 붙인다', async () => {
