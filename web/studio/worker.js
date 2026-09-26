@@ -60,7 +60,25 @@ export default {
       }
     }
 
-    // --- 그 외는 정적 에셋으로 폴백 ---
-    return env.ASSETS.fetch(request);
+    // --- 그 외는 정적 에셋으로 폴백 (SPA: 없는 경로는 index.html) ---
+    const assetRes = await env.ASSETS.fetch(request);
+    if (assetRes.status === 404) {
+      // 에셋·API가 아닌 경로 + 확장자 없음 → SPA 폴백
+      const isAsset = /\.[a-z0-9]+$/i.test(url.pathname);
+      if (!isAsset && !url.pathname.startsWith('/api/')) {
+        const indexReq = new Request(new URL('/', request.url), request);
+        const indexRes = await env.ASSETS.fetch(indexReq);
+        if (indexRes.ok) {
+          return new Response(indexRes.body, {
+            status: 200,
+            headers: {
+              'Content-Type': 'text/html;charset=utf-8',
+              'Cache-Control': 'no-cache',
+            },
+          });
+        }
+      }
+    }
+    return assetRes;
   },
 };
