@@ -8,6 +8,9 @@ import { localStamp, stripSampleSuffix } from '../lib/format';
 import { stampNow } from '../lib/date';
 import { uid } from '../lib/store';
 import { pushNotice } from '../store/support';
+import { MOCK } from '../api/client';
+import { parseStamp } from '../lib/date';
+import { MOCK_REVIEW_SECONDS } from '../store/mockReviewer';
 
 const CERT_PROVIDERS = ['PASS', '카카오 인증서', '네이버 인증서', '토스 인증서'];
 
@@ -67,7 +70,7 @@ export function SignatureModal({
   // 서명 단계에 들어올 때마다 빈 캔버스로 초기화하고(이전 획 수가 남아 빈 서명이 저장되던 문제 방지),
   // 화면 회전·창 크기 변경 시에는 그린 서명을 보존한 채 해상도만 다시 맞춘다.
   useEffect(() => {
-    if (phase !== 'sign') return;
+    if (phase !== 'sign' || readOnly) return;
     setStrokes(0);
     const t = window.setTimeout(initCanvas, 0);
     const canvas = canvasRef.current;
@@ -91,7 +94,7 @@ export function SignatureModal({
     }) : null;
     if (canvas && ro) ro.observe(canvas);
     return () => { window.clearTimeout(t); ro?.disconnect(); };
-  }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [phase, readOnly]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const xy = (e: React.PointerEvent) => {
     const r = canvasRef.current!.getBoundingClientRect();
@@ -422,7 +425,29 @@ export function SignatureModal({
           <div className="help">{readOnly ? '검토 진행 중' : '검토 완료'} · {doc.releaseTitle || '공통 문서'}</div>
         </div>
 
-        {phase === 'sign' ? (
+        {phase === 'sign' && readOnly ? (
+          <section id="aqWaitPane" className="aq-sign-wait">
+            <span className="aq-sign-wait-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+            </span>
+            <strong>계약서를 검토하고 있어요.</strong>
+            <p>AUDENIQ 담당자가 신청 내용을 확인한 뒤 서명할 수 있어요. 검토가 끝나면 알림으로 알려드릴게요.</p>
+            <ol className="aq-sign-wait-steps">
+              <li className="is-done"><span>✓</span>신청서 접수</li>
+              <li className="is-current"><span>2</span>담당자 검토</li>
+              <li><span>3</span>서명·본인 인증</li>
+            </ol>
+            {MOCK && (
+              <p className="aq-sign-wait-demo">
+                체험 모드에서는 접수 후 약 {Math.round(MOCK_REVIEW_SECONDS / 60)}분 뒤 검토가 자동으로 완료돼요.
+                {(() => {
+                  const last = parseStamp(doc.reviewHistory.at(-1)?.time);
+                  return last ? ` (접수 ${last.getHours()}:${String(last.getMinutes()).padStart(2, '0')})` : '';
+                })()}
+              </p>
+            )}
+          </section>
+        ) : phase === 'sign' ? (
           <section id="aqDrawPane">
             <div className="field">
               <label htmlFor="aqSignerName">서명자 이름</label>
@@ -446,10 +471,10 @@ export function SignatureModal({
                 <span id="aqSignPlaceholder" className="aq-sign-placeholder" hidden={strokes > 0}>
                   여기에 손가락으로 서명해 주세요.
                 </span>
+                {strokes > 0 && (
+                  <button type="button" className="aq-sign-clear" id="aqSignClear" onClick={clear}>다시 그리기</button>
+                )}
               </div>
-            </div>
-            <div className="aq-sign-tools">
-              <button type="button" className="link-btn" id="aqSignClear" onClick={clear}>다시 그리기</button>
             </div>
             <label className="aq-sign-check">
               <input type="checkbox" id="aqSignAck" checked={ack} onChange={e => setAck(e.target.checked)} />
@@ -458,7 +483,6 @@ export function SignatureModal({
                 <small>서명을 저장하면 다음 단계에서 본인 인증(전자서명)을 진행해요.</small>
               </span>
             </label>
-            {readOnly && <div className="notice">문서 검토가 완료되면 서명을 저장할 수 있어요.</div>}
           </section>
         ) : phase === 'cert' ? (
           <section id="aqCertPane">
@@ -480,10 +504,14 @@ export function SignatureModal({
         )}
       </div>
       <div className="aq-sign-foot">
-        {phase === 'sign' ? (
+        {phase === 'sign' && readOnly ? (
+          <button type="button" className="button secondary aq-sign-full" id="aqSignReturn" onClick={onBack}>
+            문서로 돌아가기
+          </button>
+        ) : phase === 'sign' ? (
           <>
-            <button type="button" className="button" id="aqSignSave" disabled={readOnly} onClick={save}>
-              서명 저장하고 전자서명 진행
+            <button type="button" className="button" id="aqSignSave" onClick={save}>
+              서명 저장 후 본인 인증
             </button>
             <button type="button" className="button secondary" id="aqSignReturn" onClick={onBack}>
               문서로 돌아가기
