@@ -175,7 +175,6 @@ export function Releases() {
                   </div>
                   <div className="aq-release-end">
                     <span className={`status-chip ${chipOf(r.status)}`}>{labelOf(r.status)}</span>
-                    <span className="chevron" aria-hidden="true">›</span>
                   </div>
                 </article>
               ))}
