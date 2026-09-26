@@ -126,3 +126,17 @@ test('admin API is off without a token, other paths go to assets', async () => {
   assert.equal((await call(e, 'GET', '/api/unknown')).status, 404);
   assert.equal(await (await call(e, 'GET', '/notices/abc')).text(), 'asset');
 });
+
+test('screen paths fall back to index.html when assets answer 404', async () => {
+  const assets = { fetch: async req => {
+    const p = new URL(req.url).pathname;
+    return p === '/' ? new Response('<html>', { headers: { 'Content-Security-Policy': "default-src 'self'" } }) : new Response('nf', { status: 404 });
+  } };
+  const e = { ...env(), ASSETS: assets };
+  const r = await call(e, 'GET', '/notices/abc');
+  assert.equal(r.status, 200);
+  assert.equal(await r.text(), '<html>');
+  assert.equal(r.headers.get('Content-Security-Policy'), "default-src 'self'");
+  assert.equal(r.headers.get('Cache-Control'), 'no-cache');
+  assert.equal((await call(e, 'GET', '/missing.js')).status, 404);
+});
