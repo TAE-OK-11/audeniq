@@ -99,11 +99,14 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
 
 /// React Studio build (`bun run build:edge` → web/studio/edge-dist), served
 /// at the site root. Only the SPA shell, its hashed assets and static files
-/// are exposed.
+/// are exposed. Screens use real paths (/login, /releases/r1), so every
+/// extensionless path gets the shell and the client router picks the screen.
 const STUDIO_BASE: &str = "/";
 
 enum StaticRoute {
     Asset(&'static str),
+    /// Client-side route: answer with the index shell.
+    Shell,
     Redirect,
     NotFound,
 }
@@ -118,16 +121,23 @@ fn static_route(path: &str) -> StaticRoute {
         _ if path.starts_with("/static/") => {
             StaticRoute::Asset("public, max-age=86400, stale-while-revalidate=604800")
         }
-        // Hash routing keeps every screen at /, so any other path is an old
-        // bookmark (e.g. /connected/, /studio) or a typo: send it to the shell.
+        // Old entry points from before the app moved to the site root.
+        _ if is_under(path, "/studio") || is_under(path, "/connected") => StaticRoute::Redirect,
+        // Unknown files are not exposed; everything else is an app screen.
         _ if path.contains('.') => StaticRoute::NotFound,
-        _ => StaticRoute::Redirect,
+        _ => StaticRoute::Shell,
     }
 }
 
+fn is_under(path: &str, prefix: &str) -> bool {
+    path == prefix || path.starts_with(&format!("{prefix}/"))
+}
+
 async fn serve_studio(request: Request, env: &Env, origin: &str) -> Result<Response> {
-    let cache = match static_route(&request.path()) {
-        StaticRoute::Asset(cache) => cache,
+    let route = static_route(&request.path());
+    let (cache, shell) = match route {
+        StaticRoute::Asset(cache) => (cache, false),
+        StaticRoute::Shell => ("no-cache", true),
         StaticRoute::Redirect => {
             let mut to = Url::parse(origin)?;
             to.set_path(STUDIO_BASE);
@@ -135,7 +145,16 @@ async fn serve_studio(request: Request, env: &Env, origin: &str) -> Result<Respo
         }
         StaticRoute::NotFound => return Response::error("Not found", 404),
     };
-    let mut response = env.assets("ASSETS")?.fetch_request(request).await?;
+    let assets = env.assets("ASSETS")?;
+    let mut response = if shell {
+        let mut index = Url::parse(origin)?;
+        index.set_path(STUDIO_BASE);
+        let mut init = RequestInit::new();
+        init.with_method(request.method());
+        assets.fetch(index.to_string(), Some(init)).await?
+    } else {
+        assets.fetch_request(request).await?
+    };
     let ok = response.status_code() == 200 || response.status_code() == 304;
     let headers = response.headers_mut();
     headers.set("X-Content-Type-Options", "nosniff")?;
@@ -180,14 +199,29 @@ mod tests {
         );
         assert!(cache_of("/static/AUDENIQ_Logo_Light.svg").is_some());
         assert!(cache_of("/favicon.ico").is_some());
-        // old entry points go to the app shell
+        // app screens are real paths served by the shell
+        for p in [
+            "/login",
+            "/signup",
+            "/releases/r1",
+            "/releases/r1/",
+            "/settlement",
+        ] {
+            assert!(matches!(static_route(p), StaticRoute::Shell), "{p}");
+        }
+        // old entry points go to the site root
         assert!(matches!(static_route("/connected/"), StaticRoute::Redirect));
         assert!(matches!(static_route("/studio"), StaticRoute::Redirect));
+        assert!(matches!(
+            static_route("/studio/login"),
+            StaticRoute::Redirect
+        ));
+        assert!(matches!(static_route("/studios"), StaticRoute::Shell));
         // anything else with a file extension is not exposed
         assert!(matches!(static_route("/index.html"), StaticRoute::NotFound));
         assert!(matches!(
             static_route("/connected/index.html"),
-            StaticRoute::NotFound
+            StaticRoute::Redirect
         ));
         assert!(matches!(static_route("/404.html"), StaticRoute::NotFound));
     }

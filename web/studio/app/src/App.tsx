@@ -1,5 +1,5 @@
 import { Suspense, lazy, type ComponentType, type ReactNode } from 'react';
-import { HashRouter, Routes, Route, Navigate, useLocation } from './lib/router';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from './lib/router';
 import { AuthProvider, useAuth } from './api/auth';
 import { Layout } from './components/Layout';
 import { ToastProvider } from './components/Toast';
@@ -115,7 +115,7 @@ function PortalRoutes() {
 
 export function App() {
   return (
-    <HashRouter>
+    <BrowserRouter>
       <AuthProvider>
         <ToastProvider>
           <ConfirmProvider>
@@ -132,6 +132,6 @@ export function App() {
           </ConfirmProvider>
         </ToastProvider>
       </AuthProvider>
-    </HashRouter>
+    </BrowserRouter>
   );
 }

@@ -16,6 +16,7 @@ let currentOrgId = '';
 export function setCsrf(token: string) { csrfToken = token; }
 export function hasCsrf() { return !!csrfToken; }
 export function setOrgId(id: string) { currentOrgId = id; }
+import { currentPath, toHref } from '../lib/router';
 export function orgId() { return currentOrgId; }
 
 export function orgPath(path: string): string {
@@ -69,8 +70,8 @@ export async function req<T>(path: string, opts: ReqOptions = {}): Promise<T> {
       ?? STATUS_CODES[res.status] ?? '';
     if (res.status === 401 && !opts.quiet401) {
       csrfToken = '';
-      const onAuthPage = /#\/(login|signup|find-account)/.test(window.location.hash || '');
-      if (!onAuthPage) window.location.assign(`${import.meta.env.BASE_URL}#/login`);
+      const onAuthPage = /^\/(login|signup|find-account)/.test(currentPath());
+      if (!onAuthPage) window.location.assign(toHref('/login'));
     }
     const msg = code === 'PAYLOAD_TOO_LARGE' ? '보낼 정보가 너무 커요. 앨범 소개나 가사 길이를 줄여 주세요.' : messageForCode(code, res.status);
     throw new ApiError(msg, res.status, code);

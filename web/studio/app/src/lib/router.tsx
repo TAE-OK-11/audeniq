@@ -1,5 +1,5 @@
-// 경량 해시 라우터 — 이 앱이 쓰는 react-router API의 부분집합만 같은 이름·시그니처로 구현한다.
-// (HashRouter, Routes, Route, Navigate, Link, useNavigate, useLocation, useParams, useSearchParams)
+// 경량 경로(History API) 라우터 — 이 앱이 쓰는 react-router API의 부분집합만 같은 이름·시그니처로 구현한다.
+// (BrowserRouter, Routes, Route, Navigate, Link, useNavigate, useLocation, useParams, useSearchParams)
 // react-router 전체(약 48KB min / 15KB gzip) 대신 2KB 남짓으로 같은 동작을 제공한다.
 // 필요해지면 import 경로를 'react-router'로 바꾸는 것만으로 되돌릴 수 있다.
 import {
@@ -33,46 +33,66 @@ const ParamsContext = createContext<Record<string, string>>({});
 let keySeq = 0;
 const nextKey = () => (++keySeq).toString(36) + Date.now().toString(36).slice(-4);
 
+// 앱이 올라가는 경로 접두사 (기본 '/'). 라우터 내부 경로는 항상 이 접두사를 뺀 값이다.
+const BASE = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '');
+
+/** 앱 경로('/login') → 실제 주소('/login' 또는 '<base>/login') */
+export function toHref(to: string): string {
+  return BASE + (to.startsWith('/') ? to : '/' + to);
+}
+
+function stripBase(pathname: string): string {
+  if (BASE && (pathname === BASE || pathname.startsWith(BASE + '/'))) pathname = pathname.slice(BASE.length);
+  return pathname || '/';
+}
+
+/**
+ * 예전 해시 주소(/#/login, /#/releases/r1?tab=x)로 들어오면 같은 화면의 경로 주소로 바꿔 둔다.
+ * 북마크·메일 속 옛 링크가 계속 동작하도록 라우터가 뜨기 전에 한 번 호출한다.
+ */
+export function migrateHashUrl(): void {
+  const h = window.location.hash;
+  if (!h.startsWith('#/')) return;
+  window.history.replaceState(window.history.state, '', toHref(h.slice(1)));
+}
+
+/** 현재 주소의 앱 경로 (검색어·해시 제외) */
+export function currentPath(): string {
+  migrateHashUrl();
+  return stripBase(window.location.pathname);
+}
+
 function readLocation(): Location {
-  const raw = window.location.hash.replace(/^#/, '') || '/';
-  const hashIdx = raw.indexOf('#');
-  const noHash = hashIdx >= 0 ? raw.slice(0, hashIdx) : raw;
-  const q = noHash.indexOf('?');
-  const pathname = (q >= 0 ? noHash.slice(0, q) : noHash) || '/';
   const st = window.history.state as { usr?: unknown; key?: string } | null;
   return {
-    pathname: pathname.startsWith('/') ? pathname : '/' + pathname,
-    search: q >= 0 ? noHash.slice(q) : '',
-    hash: hashIdx >= 0 ? raw.slice(hashIdx) : '',
+    pathname: stripBase(window.location.pathname),
+    search: window.location.search,
+    hash: window.location.hash,
     state: st?.usr ?? null,
     key: st?.key ?? 'default',
   };
 }
 
-export function HashRouter({ children }: { children: ReactNode }) {
+export function BrowserRouter({ children }: { children: ReactNode }) {
   const [location, setLocation] = useState<Location>(() => {
-    if (!window.location.hash) window.history.replaceState({ usr: null, key: 'default' }, '', '#/');
+    migrateHashUrl();
     return readLocation();
   });
 
   useEffect(() => {
+    // 뒤로/앞으로 가기
     const sync = () => startTransition(() => setLocation(readLocation()));
-    // popstate: 뒤로/앞으로 가기, hashchange: 주소창에서 해시를 직접 바꾼 경우
     window.addEventListener('popstate', sync);
-    window.addEventListener('hashchange', sync);
-    return () => {
-      window.removeEventListener('popstate', sync);
-      window.removeEventListener('hashchange', sync);
-    };
+    return () => window.removeEventListener('popstate', sync);
   }, []);
 
   const navigate = useCallback<NavigateFunction>((to, opts = {}) => {
     if (typeof to === 'number') { window.history.go(to); return; }
-    const target = '#' + (to.startsWith('/') ? to : '/' + to);
+    const target = toHref(to);
     const entry = { usr: opts.state ?? null, key: nextKey() };
     // 같은 주소로의 이동은 기록을 쌓지 않는다
-    const same = window.location.hash === target;
-    if (opts.replace || same) window.history.replaceState(entry, '', target);
+    const here = window.location.pathname + window.location.search + window.location.hash;
+    if (opts.replace || here === target) window.history.replaceState(entry, '', target);
     else window.history.pushState(entry, '', target);
     // 전환으로 처리해 다음 화면 청크를 받는 동안 현재 화면을 유지한다 (스켈레톤 깜빡임 방지)
     const next = readLocation();
@@ -85,7 +105,7 @@ export function HashRouter({ children }: { children: ReactNode }) {
 
 function useRouter(): RouterCtx {
   const ctx = useContext(RouterContext);
-  if (!ctx) throw new Error('라우터 훅은 <HashRouter> 안에서만 쓸 수 있어요.');
+  if (!ctx) throw new Error('라우터 훅은 <BrowserRouter> 안에서만 쓸 수 있어요.');
   return ctx;
 }
 
@@ -167,5 +187,5 @@ export function Link({ to, replace, state, onClick, target, children, ...rest }:
     e.preventDefault();
     navigate(to, { replace, state });
   };
-  return <a {...rest} target={target} href={'#' + to} onClick={handle}>{children}</a>;
+  return <a {...rest} target={target} href={toHref(to)} onClick={handle}>{children}</a>;
 }
