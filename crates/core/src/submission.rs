@@ -1332,11 +1332,20 @@ fn qc_max_bytes() -> u64 {
 /// CPU-bound (full decode + FFT) plus a storage download; 4 saturates a
 /// typical worker without starving the job-lease heartbeat.
 fn qc_asset_parallelism() -> usize {
-    std::env::var("AUDENIQ_QC_ASSET_PARALLELISM")
+    if let Some(n) = std::env::var("AUDENIQ_QC_ASSET_PARALLELISM")
         .ok()
         .and_then(|s| s.parse::<usize>().ok())
         .filter(|n| *n > 0)
+    {
+        return n;
+    }
+    // Default matches the machine: asset analyses are CPU-bound (ffmpeg +
+    // FFT), so more in flight than cores only adds contention. Override
+    // with AUDENIQ_QC_ASSET_PARALLELISM.
+    std::thread::available_parallelism()
+        .map(|n| n.get())
         .unwrap_or(4)
+        .clamp(1, 8)
 }
 
 /// Download one asset and run the fixed check contract over it. Storage and
@@ -1408,20 +1417,31 @@ async fn analyze_asset(
     );
     tokio::task::spawn_blocking(move || {
         let path = tmp.0.as_path();
-        let outcomes = match kind.as_str() {
-            "AUDIO" => qc::check_audio(path, Some(&sha256), Some(&content_type)),
-            "IMAGE" => qc::check_image(path, Some(&sha256)),
-            _ => Vec::new(),
-        };
-        // Duration and technical specs are measured with a second ffprobe
-        // pass rather than parsed out of check outcomes: the check contract
-        // is fixed and must not grow a side channel. ~100ms on a local file,
-        // submit path only. One probe yields both the duration and the real
-        // sample rate/channels/bits-per-sample the DDEX ERN builder emits.
-        let metrics = match kind.as_str() {
-            "AUDIO" => qc::probe_audio_metrics(path),
-            _ => None,
-        };
+        // check_audio (full decode + ebur128 + outcomes, tapping the
+        // fingerprint PCM out of the same single decode) runs concurrently
+        // with the metrics probe; the probe is ~100 ms and would otherwise
+        // sit on the critical path.
+        let (outcomes, tap_pcm, metrics) = std::thread::scope(|s| {
+            let h_qc = s.spawn(|| match kind.as_str() {
+                "AUDIO" => {
+                    qc::check_audio_with_fp_tap(path, Some(&sha256), Some(&content_type))
+                }
+                "IMAGE" => (qc::check_image(path, Some(&sha256)), None),
+                _ => (Vec::new(), None),
+            });
+            let h_probe = s.spawn(|| match kind.as_str() {
+                // Duration and technical specs are measured with a second
+                // ffprobe pass rather than parsed out of check outcomes: the
+                // check contract is fixed and must not grow a side channel.
+                // One probe yields both the duration and the real sample
+                // rate/channels/bits-per-sample the DDEX ERN builder emits.
+                "AUDIO" => qc::probe_audio_metrics(path),
+                _ => None,
+            });
+            let (outcomes, tap_pcm) = h_qc.join().expect("qc thread panicked");
+            let metrics = h_probe.join().expect("probe thread panicked");
+            (outcomes, tap_pcm, metrics)
+        });
         // Perceptual fingerprint for similarity detection. Only for audio
         // whose bytes were admitted: SHA-256 still guards integrity (exact
         // bytes), the fingerprint adds similarity (same recording, different
@@ -1438,15 +1458,26 @@ async fn analyze_asset(
                     | CheckStatus::TechnicalRetry
             )
         });
-        // Perceptual fingerprint over the head/middle/tail segment windows,
-        // decoded by ffmpeg's own resampler (decode_window with -ss/-t seeks,
-        // so only the windows are decoded). Replaces the old contiguous
-        // first-600 s decode; identical DSP, ~7x less audio.
+        // Perceptual fingerprint over the head/middle/tail segment windows.
+        // The window PCM is sliced from the mono 11025 Hz tap of the single
+        // decode pass above (ffmpeg's own resampler); the three separate
+        // segment decodes are gone.
         let duration_secs = metrics.as_ref().map(|m| m.duration_secs).unwrap_or(0.0);
         let fp = match kind.as_str() {
-            "AUDIO" if !invalid && duration_secs > 0.0 => Some(
-                fingerprint::compute_fingerprint(path, duration_secs).map_err(|e| format!("{e:?}")),
-            ),
+            "AUDIO" if !invalid && duration_secs > 0.0 => Some((|| {
+                let pcm = tap_pcm.ok_or_else(|| "fingerprint tap missing".to_string())?;
+                let sr = fingerprint::FINGERPRINT_SAMPLE_RATE as f64;
+                let mut samples = Vec::new();
+                for (start, len) in fingerprint::segment_windows(duration_secs) {
+                    let lo = (start * sr) as usize;
+                    let hi = ((start + len) * sr).ceil() as usize;
+                    let hi = hi.min(pcm.len());
+                    if lo < hi {
+                        samples.extend_from_slice(&pcm[lo..hi]);
+                    }
+                }
+                fingerprint::fingerprint_from_samples(&samples).map_err(|e| format!("{e:?}"))
+            })()),
             _ => None,
         };
         drop(tmp);
@@ -1892,17 +1923,28 @@ async fn asset_checks(
         .iter()
         .map(|(aid, (sha, kind))| (aid.clone(), sha.clone(), kind.clone()))
         .collect();
-    for chunk in asset_list.chunks(qc_asset_parallelism().max(1)) {
-        let mut set = tokio::task::JoinSet::new();
-        for (aid_str, sha256, kind) in chunk {
+    // Bounded scheduling: keep up to `parallelism` assets in flight, spawning
+    // the next as each completes. Avoids the chunks() barrier where a slow
+    // asset in a chunk blocks the next chunk from starting.
+    let parallelism = qc_asset_parallelism().max(1);
+    let mut set = tokio::task::JoinSet::new();
+    let mut iter = asset_list.into_iter();
+    for _ in 0..parallelism {
+        let Some((aid_str, sha256, kind)) = iter.next() else {
+            break;
+        };
+        let (pool_c, storage_c) = (pool.clone(), Arc::clone(storage));
+        set.spawn(async move {
+            qc_single_asset(pool_c, storage_c, org, &aid_str, &sha256, &kind).await
+        });
+    }
+    while let Some(r) = set.join_next().await {
+        out.extend(r.map_err(|_| Error::Internal)??);
+        if let Some((aid_str, sha256, kind)) = iter.next() {
             let (pool_c, storage_c) = (pool.clone(), Arc::clone(storage));
-            let (aid_s, sha_s, kind_s) = (aid_str.clone(), sha256.clone(), kind.clone());
             set.spawn(async move {
-                qc_single_asset(pool_c, storage_c, org, &aid_s, &sha_s, &kind_s).await
+                qc_single_asset(pool_c, storage_c, org, &aid_str, &sha256, &kind).await
             });
-        }
-        while let Some(r) = set.join_next().await {
-            out.extend(r.map_err(|_| Error::Internal)??);
         }
     }
     Ok(out)

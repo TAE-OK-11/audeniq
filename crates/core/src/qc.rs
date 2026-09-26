@@ -393,6 +393,28 @@ pub fn check_audio(
     registered_sha256: Option<&str>,
     declared_content_type: Option<&str>,
 ) -> Vec<CheckOutcome> {
+    check_audio_inner(path, registered_sha256, declared_content_type, false).0
+}
+
+/// Like [`check_audio`], but additionally returns the perceptual-fingerprint
+/// PCM tapped from the single decode pass (mono 11025 Hz `f32`, full length;
+/// `None` when the file was rejected before decoding or the tap failed).
+/// The caller slices the configured segment windows and runs
+/// [`crate::fingerprint::fingerprint_from_samples`].
+pub fn check_audio_with_fp_tap(
+    path: &Path,
+    registered_sha256: Option<&str>,
+    declared_content_type: Option<&str>,
+) -> (Vec<CheckOutcome>, Option<Vec<f32>>) {
+    check_audio_inner(path, registered_sha256, declared_content_type, true)
+}
+
+fn check_audio_inner(
+    path: &Path,
+    registered_sha256: Option<&str>,
+    declared_content_type: Option<&str>,
+    want_fp_tap: bool,
+) -> (Vec<CheckOutcome>, Option<Vec<f32>>) {
     /// Emit `AUDIO_CHECK_CODES[from..]` with a uniform status (short-circuit tail).
     fn tail(from: &str, status: CheckStatus, input_hash: &str, detail: &str) -> Vec<CheckOutcome> {
         AUDIO_CHECK_CODES[audio_code_index(from)..]
@@ -422,12 +444,12 @@ pub fn check_audio(
     let actual = match sha256_file(path) {
         Ok(h) => h,
         Err(_) => {
-            return tail(
+            return (tail(
                 "SHA256_MISMATCH",
                 CheckStatus::TechnicalRetry,
                 &metric_hash(&["unreadable"]),
                 "cannot read file",
-            );
+            ), None);
         }
     };
     let mut out = Vec::with_capacity(AUDIO_CHECK_CODES.len());
@@ -453,7 +475,7 @@ pub fn check_audio(
             &metric_hash(&[&actual]),
             "sha256 mismatch",
         ));
-        return out;
+        return (out, None);
     }
     let head = head_bytes(path).unwrap_or_default();
     let container = detect_container(&head);
@@ -492,7 +514,7 @@ pub fn check_audio(
             &magic_hash,
             "not an accepted audio container",
         ));
-        return out;
+        return (out, None);
     }
     let metrics = match probe_classified(path)
         .and_then(|v| parse_audio(&v).map_err(|_| AnalyzerError::Undecodable))
@@ -528,7 +550,7 @@ pub fn check_audio(
                 &metric_hash(&[&actual]),
                 "probe failed",
             ));
-            return out;
+            return (out, None);
         }
     };
     out.push(CheckOutcome {
@@ -609,10 +631,10 @@ pub fn check_audio(
                 "channel layout rejected"
             },
         ));
-        return out;
+        return (out, None);
     }
-    let analysis = match decode_analysis(path, &metrics) {
-        Ok(a) => a,
+    let (analysis, fp_tap) = match decode_analysis_inner(path, &metrics, want_fp_tap) {
+        Ok((a, t)) => (a, t),
         Err(e) => {
             let (status, detail) = match e {
                 AnalyzerError::Undecodable => (
@@ -627,7 +649,7 @@ pub fn check_audio(
             out.extend(tail("AUDIO_TRUNCATED", status, &mh, detail));
             // Fingerprint codes are produced by the DB-backed step, but only
             // for admitted audio; a decode failure there is already covered.
-            return out;
+            return (out, None);
         }
     };
     let decoded_secs = analysis.decoded_secs();
@@ -762,7 +784,7 @@ pub fn check_audio(
             format!("for review (not blocking): {}", suspicions.join("; "))
         },
     ));
-    out
+    (out, fp_tap)
 }
 
 /// Integrated loudness below this is "near-silent" content.
@@ -1002,10 +1024,54 @@ pub fn decode_analysis(
     path: &Path,
     m: &AudioMetrics,
 ) -> std::result::Result<DecodeAnalysis, AnalyzerError> {
+    decode_analysis_inner(path, m, false).map(|(a, _)| a)
+}
+
+/// Like [`decode_analysis`], but additionally taps the perceptual-fingerprint
+/// PCM (mono 11025 Hz s16le) from the SAME single decode via a second ffmpeg
+/// output. The input is decoded once and fanned out to both filter chains,
+/// so this replaces the three separate fingerprint segment decodes without
+/// re-decoding the file. Returns the tap samples (`s16le` → `f32`, full
+/// length; the caller slices the configured segment windows), or `None`
+/// when the tap output could not be produced.
+pub fn decode_analysis_with_fp_tap(
+    path: &Path,
+    m: &AudioMetrics,
+) -> std::result::Result<(DecodeAnalysis, Option<Vec<f32>>), AnalyzerError> {
+    decode_analysis_inner(path, m, true)
+}
+
+/// Unique counter for fingerprint-tap temp files.
+static FP_TAP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn decode_analysis_inner(
+    path: &Path,
+    m: &AudioMetrics,
+    want_tap: bool,
+) -> std::result::Result<(DecodeAnalysis, Option<Vec<f32>>), AnalyzerError> {
     use AnalyzerError::{Unavailable, Undecodable};
     let channels = m.channels.max(1) as usize;
-    let mut child = std::process::Command::new(ffmpeg_bin())
-        .args(["-nostdin", "-hide_banner", "-nostats", "-i"])
+    // Tap file: removed on drop, even if the decode fails half way.
+    struct TapFile(Option<std::path::PathBuf>);
+    impl Drop for TapFile {
+        fn drop(&mut self) {
+            if let Some(p) = self.0.take() {
+                let _ = std::fs::remove_file(p);
+            }
+        }
+    }
+    let tap = if want_tap {
+        let p = std::env::temp_dir().join(format!(
+            "audeniq-fptap-{}-{}",
+            std::process::id(),
+            FP_TAP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        Some(TapFile(Some(p)))
+    } else {
+        None
+    };
+    let mut cmd = std::process::Command::new(ffmpeg_bin());
+    cmd.args(["-nostdin", "-hide_banner", "-nostats", "-i"])
         .arg(path)
         .args([
             "-map",
@@ -1019,8 +1085,18 @@ pub fn decode_analysis(
             "f32le",
             "-acodec",
             "pcm_f32le",
-            "-",
+            "pipe:1",
+        ]);
+    if let Some(t) = tap.as_ref().and_then(|t| t.0.as_ref()) {
+        // Second output, same single decode: mono 11025 Hz, matching the
+        // fingerprint segment decoder's `-ac 1 -ar 11025` exactly.
+        cmd.args([
+            "-map", "0:a:0", "-ac", "1", "-ar", "11025", "-f", "s16le", "-acodec",
+            "pcm_s16le",
         ])
+        .arg(t);
+    }
+    let mut child = cmd
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -1186,7 +1262,7 @@ pub fn decode_analysis(
             }
         }
     }
-    let analysis = match rx.recv_timeout(decode_timeout(m.duration_secs)) {
+    let mut analysis = match rx.recv_timeout(decode_timeout(m.duration_secs)) {
         Ok(Some(a)) => a,
         Ok(None) => {
             let _ = child.kill();
@@ -1206,12 +1282,32 @@ pub fn decode_analysis(
     }
     let (integrated, true_peak) =
         parse_ebur128(&String::from_utf8_lossy(&err_text)).ok_or(Undecodable)?;
-    Ok(DecodeAnalysis {
-        sample_rate: m.sample_rate,
-        integrated_lufs: integrated,
-        true_peak_dbtp: true_peak,
-        ..analysis
-    })
+    // Fingerprint tap: s16le mono 11025 Hz → f32, same scaling as the
+    // segment decoder. Read before the TapFile guard drops (deletes) it.
+    // A missing or malformed tap is not a QC failure: the caller maps it
+    // to a fingerprint TECHNICAL_RETRY.
+    let tap_samples: Option<Vec<f32>> = tap.as_ref().and_then(|t| {
+        let bytes = std::fs::read(t.0.as_ref()?).ok()?;
+        let (chunks, rest) = bytes.as_chunks::<2>();
+        if !rest.is_empty() || chunks.is_empty() {
+            return None;
+        }
+        Some(
+            chunks
+                .iter()
+                .map(|c| i16::from_le_bytes(*c) as f32 / 32768.0)
+                .collect(),
+        )
+    });
+    Ok((
+        DecodeAnalysis {
+            sample_rate: m.sample_rate,
+            integrated_lufs: integrated,
+            true_peak_dbtp: true_peak,
+            ..analysis
+        },
+        tap_samples,
+    ))
 }
 
 fn ffmpeg_bin() -> String {
@@ -1227,6 +1323,10 @@ pub const TRUE_PEAK_MAX_DBTP: f64 = -1.0;
 
 /// Parse the ebur128 summary. Each value is `Some(finite)` or `None` for
 /// `-inf` (digital silence); a missing summary is a parse failure.
+
+/// True peak is computed on the fly in the metering thread (see `measure`);
+/// the standalone batch version was removed to avoid duplication.
+
 fn parse_ebur128(text: &str) -> Option<(Option<f64>, Option<f64>)> {
     let mut integrated = None;
     let mut peak = None;
@@ -1238,6 +1338,8 @@ fn parse_ebur128(text: &str) -> Option<(Option<f64>, Option<f64>)> {
             _ => {}
         }
     }
+    // Integrated loudness and true peak are both required (ebur128 runs
+    // with peak=true).
     Some((integrated?, peak?))
 }
 

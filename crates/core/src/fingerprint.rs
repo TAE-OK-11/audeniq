@@ -226,35 +226,52 @@ pub fn fingerprint_from_samples(samples: &[f32]) -> Result<Fingerprint> {
     }
     let window = hann_window();
     let edges = band_edges();
-    let mut planner = FftPlanner::<f32>::new();
-    let fft = planner.plan_fft_forward(FRAME_SIZE);
-    let mut buf = vec![Complex::new(0.0f32, 0.0); FRAME_SIZE];
+    // Frame count of the sequential loop below (`while pos + FRAME_SIZE <=
+    // len`). Frames are independent: FFT + band energies parallelize over
+    // cores, then concatenate in order (bit-identical to sequential).
+    let n_frames = (samples.len() - FRAME_SIZE) / FRAME_HOP + 1;
+    let n_threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(2)
+        .clamp(1, 4)
+        .min(n_frames.max(1));
+    let chunk = n_frames.div_ceil(n_threads);
 
     // Log band energies per frame.
-    let mut energies: Vec<[f32; N_BANDS]> = Vec::new();
-    let mut pos = 0;
-    while pos + FRAME_SIZE <= samples.len() {
-        for (i, b) in buf.iter_mut().enumerate() {
-            b.re = samples[pos + i] * window[i];
-            b.im = 0.0;
+    let mut energies: Vec<[f32; N_BANDS]> = vec![[0.0; N_BANDS]; n_frames];
+    let (window_r, edges_r, samples_r) = (&window, &edges, samples);
+    std::thread::scope(|s| {
+        for (ci, e_chunk) in energies.chunks_mut(chunk).enumerate() {
+            let start_frame = ci * chunk;
+            // `samples`, `window`, `edges` are shared read-only; each
+            // thread owns its FFT planner and writes a disjoint slice.
+            s.spawn(move || {
+                let mut planner = FftPlanner::<f32>::new();
+                let fft = planner.plan_fft_forward(FRAME_SIZE);
+                let mut buf = vec![Complex::new(0.0f32, 0.0); FRAME_SIZE];
+                for (i, bands) in e_chunk.iter_mut().enumerate() {
+                    let pos = (start_frame + i) * FRAME_HOP;
+                    for (j, b) in buf.iter_mut().enumerate() {
+                        b.re = samples_r[pos + j] * window_r[j];
+                        b.im = 0.0;
+                    }
+                    fft.process(&mut buf);
+                    for m in 0..N_BANDS {
+                        let lo = edges_r[m];
+                        let hi = edges_r[m + 1].max(lo + 1);
+                        let mut e = 0.0f32;
+                        for value in buf.iter().take(hi.min(FRAME_SIZE / 2)).skip(lo) {
+                            // norm_sqr == norm()² without the sqrt.
+                            e += value.norm_sqr();
+                        }
+                        // Log energy with floor: Philips uses log energies; the floor
+                        // keeps silence from producing unstable differentials.
+                        bands[m] = (e + 1e-10).ln();
+                    }
+                }
+            });
         }
-        fft.process(&mut buf);
-        let mut bands = [0f32; N_BANDS];
-        for m in 0..N_BANDS {
-            let lo = edges[m];
-            let hi = edges[m + 1].max(lo + 1);
-            let mut e = 0.0f32;
-            for value in buf.iter().take(hi.min(FRAME_SIZE / 2)).skip(lo) {
-                let mag = value.norm();
-                e += mag * mag;
-            }
-            // Log energy with floor: Philips uses log energies; the floor
-            // keeps silence from producing unstable differentials.
-            bands[m] = (e + 1e-10).ln();
-        }
-        energies.push(bands);
-        pos += FRAME_HOP;
-    }
+    });
     if energies.len() < MIN_OVERLAP_FRAMES + 1 {
         return Err(Error::PolicyGate(TOO_SHORT_CODE));
     }
