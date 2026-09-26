@@ -10,3 +10,11 @@ license = "UNLICENSED"
 lto = "thin"
 codegen-units = 1
 strip = true
+
+# 테스트 서버용 이미지 빌드 (GitHub Actions Backend image): LTO·단일 코드젠 없이 빨리 컴파일
+[profile.fast]
+inherits = "release"
+lto = false
+codegen-units = 16
+opt-level = 1
+strip = true
