@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useToast } from '../components/Toast';
 import { useProgressFill } from '../hooks/useAnimations';
 import { mockApi } from '../api/mock';
@@ -738,14 +738,78 @@ function FinalReviewBanner({ form }: { form: WizardForm }) {
 export function Upload() {
   const nav = useNavigate();
   const toast = useToast();
+  const [searchParams] = useSearchParams();
+  const editId = searchParams.get('edit');
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<WizardForm>(EMPTY);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [draftId, setDraftId] = useState<string | null>(null);
+  const [loadingEdit, setLoadingEdit] = useState(!!editId);
   const [expandedTracks, setExpandedTracks] = useState<Set<string>>(new Set());
   const coverInputRef = useRef<HTMLInputElement>(null);
   const progressRef = useProgressFill(step);
+
+  // 수정 모드: 기존 발매 데이터를 불러와 폼에 채움
+  useEffect(() => {
+    if (!editId) return;
+    let cancelled = false;
+    mockApi.getRelease(editId).then(rel => {
+      if (cancelled) return;
+      const d = rel.draft;
+      setDraftId(rel.id);
+      setForm(f => ({
+        ...f,
+        artist: d?.artist || rel.artist || '',
+        title: rel.title || '',
+        type: d?.type || 'single',
+        language: d?.language || 'ko',
+        genre: d?.genre || '',
+        genreCustom: d?.genreCustom || '',
+        label: d?.label || '',
+        notes: d?.notes || '',
+        coverName: d?.coverName || '',
+        coverData: d?.coverData || '',
+        releaseDate: rel.release_date || '',
+        originalDate: d?.originalDate || '',
+        upc: d?.upc || '',
+        territories: d?.territories?.length ? d.territories : ['WORLD'],
+        platforms: d?.platforms?.length ? d.platforms : f.platforms,
+        ownership: d?.ownership || '',
+        phonogram: d?.phonogram || '',
+        copyright: d?.copyright || '',
+        rightsChecks: d?.rightsChecks || {},
+        options: d?.options ? { ...EMPTY_OPTIONS, ...d.options } : { ...EMPTY_OPTIONS },
+        tracks: d?.draftTracks?.length
+          ? d.draftTracks.map(t => ({
+              id: t.id || ('t' + Math.random().toString(36).slice(2, 9)),
+              title: t.title || '', version: t.version || '', isrc: t.isrc || '',
+              composers: t.composers || '', lyricists: t.lyricists || '',
+              arrangers: t.arrangers || '', performers: t.performers || '',
+              producer: t.producer || '', lyrics: t.lyrics || '',
+              audioName: t.audioName || '', audioSize: t.audioSize || 0,
+              explicit: !!t.explicit, duration: t.duration || '',
+            }))
+          : rel.tracks.length
+            ? rel.tracks.map(t => ({
+                ...newTrack(),
+                id: t.id, title: t.title || '', isrc: t.isrc || '',
+                version: t.version || '', composers: t.composers || '',
+                lyricists: t.lyricists || '', audioName: t.audioName || '',
+                duration: t.duration_ms ? `${String(Math.floor(t.duration_ms / 60000)).padStart(2, '0')}:${String(Math.floor((t.duration_ms % 60000) / 1000)).padStart(2, '0')}` : '',
+              }))
+            : [newTrack()],
+      }));
+      setLoadingEdit(false);
+    }).catch(() => {
+      if (!cancelled) {
+        setLoadingEdit(false);
+        toast('발매 정보를 불러오지 못했어요.');
+      }
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editId]);
 
   // 라이브와 동일: 위자드에서는 헤더 숨김 + 레이아웃 패딩 제거
   useEffect(() => {
@@ -904,20 +968,26 @@ export function Upload() {
       if (submitting) return;
       setSubmitting(true);
       try {
-        const r = await mockApi.submitRelease({
+        const payload = {
           title: form.title.trim(),
           artist: form.artist.trim(),
           type: form.type,
+          language: form.language,
           genre: form.genre === '__other__' ? form.genreCustom.trim() : form.genre,
+          genreCustom: form.genreCustom.trim(),
           label: form.label.trim(),
           upc: form.upc.trim(),
           notes: form.notes.trim(),
           coverName: form.coverName,
+          coverData: form.coverData,
+          originalDate: form.originalDate,
           release_date: form.releaseDate || '',
           tracks: form.tracks.map(t => ({
             id: t.id, title: t.title.trim(), isrc: t.isrc.trim(), duration: t.duration,
             version: t.version.trim(), composers: t.composers.trim(),
-            lyricists: t.lyricists.trim(), audioName: t.audioName,
+            lyricists: t.lyricists.trim(), arrangers: t.arrangers.trim(),
+            performers: t.performers.trim(), audioName: t.audioName,
+            audioSize: t.audioSize, explicit: t.explicit,
             producer: t.producer.trim(),
             lyrics: t.lyrics.trim(),
           })),
@@ -927,9 +997,13 @@ export function Upload() {
           phonogram: form.phonogram.trim(),
           copyright: form.copyright.trim(),
           rightsChecks: form.rightsChecks,
-        });
+          options: { ...form.options },
+        };
+        const r = editId
+          ? await mockApi.updateReleaseFull(editId, payload)
+          : await mockApi.submitRelease(payload);
         ensureReleaseDocuments(form, r.id);
-        toast('발매 신청이 접수됐어요.');
+        toast(editId ? '발매 정보가 수정됐어요.' : '발매 신청이 접수됐어요.');
         nav(`/releases/${r.id}`);
       } finally {
         setSubmitting(false);
@@ -1015,6 +1089,11 @@ export function Upload() {
   return (
     <section id="view-new" className="view">
     <div className="wizard">
+      {loadingEdit && (
+        <div className="notice" role="status" style={{ marginBottom: 12 }}>
+          기존 발매 정보를 불러오는 중이에요...
+        </div>
+      )}
       <div className="wizard-topbar" aria-label="발매 신청 탐색">
         <button type="button" id="wizardTopBack" className="wizard-topback" aria-label="이전으로 돌아가기" onClick={back}>
           <BackIcon />
@@ -1382,8 +1461,8 @@ export function Upload() {
         <button type="button" id="wizardBack" className="button secondary" onClick={back}>
           {step === 0 ? '홈으로' : '이전'}
         </button>
-        <button type="button" id="wizardNext" className="button" onClick={next} disabled={submitting}>
-          {step === STEPS.length - 1 ? '접수하기' : '다음으로'}
+        <button type="button" id="wizardNext" className="button" onClick={next} disabled={submitting || loadingEdit}>
+          {step === STEPS.length - 1 ? (editId ? '수정 완료' : '접수하기') : '다음으로'}
         </button>
       </div>
     </div>

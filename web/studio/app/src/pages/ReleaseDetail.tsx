@@ -16,7 +16,7 @@ const DSP: [string, string][] = [
   ['amazon', 'Amazon Music'], ['tidal', 'TIDAL'], ['deezer', 'Deezer'], ['qobuz', 'Qobuz'],
 ];
 
-const RIGHTS_KEYS = ['rightsMaster', 'rightsComposition', 'rightsArtwork', 'rightsSamples', 'rightsConsent'];
+const RIGHTS_KEYS = ['rightsMaster', 'rightsComposition', 'rightsArtwork', 'rightsConsent'];
 
 const DETAIL_TABS = [
   { value: 'overview', label: '기본 정보' },
@@ -25,8 +25,13 @@ const DETAIL_TABS = [
   { value: 'history', label: '변경 기록' },
 ];
 
-function rightsOk(checks: Record<string, boolean> | undefined): boolean {
-  return RIGHTS_KEYS.every(k => checks?.[k]);
+function rightsOk(checks: Record<string, boolean> | undefined, options?: { sample?: boolean; featured?: boolean; ai?: boolean; shared?: boolean; rerelease?: boolean }): boolean {
+  if (!RIGHTS_KEYS.every(k => checks?.[k])) return false;
+  if (options?.sample || options?.featured) { if (!checks?.['rightsSamples']) return false; }
+  if (options?.ai) { if (!checks?.['rightsAi']) return false; }
+  if (options?.shared) { if (!checks?.['rightsShared']) return false; }
+  if (options?.rerelease) { if (!checks?.['rightsRerelease']) return false; }
+  return true;
 }
 
 export function ReleaseDetail() {
@@ -192,7 +197,7 @@ export function ReleaseDetail() {
                 <div><dt>℗ 표기</dt><dd>{d?.phonogram || '미입력'}</dd></div>
                 <div><dt>© 표기</dt><dd>{d?.copyright || '미입력'}</dd></div>
               </dl>
-              <p className="small muted">{rightsOk(d?.rightsChecks) ? '신청서 권리 확인 항목 작성 완료' : '권리 확인 항목을 보완해 주세요.'}</p>
+              <p className="small muted">{rightsOk(d?.rightsChecks, d?.options) ? '신청서 권리 확인 항목 작성 완료' : '권리 확인 항목을 보완해 주세요.'}</p>
             </div>
             <div className="surface white">
               <h2 className="subhead">계약·증빙</h2>
