@@ -54,6 +54,11 @@ const EVENTS: AudenEvent[] = [
 export function Events() {
   const [selected, setSelected] = useState<AudenEvent | null>(null);
 
+  const featured = EVENTS.find(e => e.status === 'ongoing')
+    ?? EVENTS.find(e => e.status === 'upcoming')
+    ?? null;
+  const rest = featured ? EVENTS.filter(e => e.id !== featured.id) : EVENTS;
+
   return (
     <div id="view-events" className="view">
       <div className="view-title">
@@ -64,8 +69,21 @@ export function Events() {
         </div>
       </div>
 
+      {featured && (
+        <button type="button" className="aq-event-hero" onClick={() => setSelected(featured)}>
+          <span className="aq-event-hero-badge">{STATUS_LABEL[featured.status]}</span>
+          <span className="aq-event-hero-title">{featured.title}</span>
+          <span className="aq-event-hero-meta">
+            {featured.date}{featured.endDate ? ` ~ ${featured.endDate}` : ''} · {featured.place}
+          </span>
+          <span className="aq-event-hero-summary">{featured.summary}</span>
+          <span className="aq-event-hero-cta">자세히 보기 ›</span>
+        </button>
+      )}
+
+      <div className="section-top"><h2>전체 이벤트</h2></div>
       <div className="aq-catalog-cards">
-        {EVENTS.map(ev => (
+        {rest.map(ev => (
           <button key={ev.id} type="button" className="aq-event-card" onClick={() => setSelected(ev)}>
             <span className="aq-event-date" aria-hidden="true">
               <b>{ev.date.slice(5, 7)}</b>
