@@ -612,6 +612,20 @@ body.wizard-mode .portal-header,body.wizard-mode .footer-line{display:none!impor
 .aq-track-num{display:grid;place-items:center;width:44px;height:44px;border-radius:14px;background:#e7edfb;color:#355bd2;font-weight:800;font-size:15px;flex:0 0 44px}
 .aq-track-card .row-name{font-size:15px;font-weight:780;letter-spacing:-.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .aq-track-card .row-sub{display:block;font-size:12px;color:var(--portal-muted);margin-top:5px;line-height:1.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-ticket-card,.aq-notice-card{display:grid;grid-template-columns:48px minmax(0,1fr) auto;gap:14px;align-items:center;width:100%;background:#f7f9fd;border:0;border-radius:22px;padding:16px;cursor:pointer;text-align:left;color:var(--portal-ink);transition:transform .15s ease,background .15s ease}
+.aq-ticket-card:active,.aq-notice-card:active{transform:scale(.985);background:#edf1f9}
+.aq-ticket-icon,.aq-notice-symbol,.aq-statement-icon{display:grid;place-items:center;width:48px;height:48px;flex:0 0 48px;border-radius:16px;background:#e5edff;color:#426aeb;font-size:18px;font-weight:800}
+.aq-ticket-card .row-name,.aq-notice-copy strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-notice-card.is-read{opacity:.62}
+.aq-notice-copy{display:flex;flex-direction:column;gap:2px;min-width:0}
+.aq-notice-meta{font-size:11px;color:#8492a9;font-weight:700}
+.aq-notice-copy strong{font-size:14px;font-weight:780;line-height:1.5}
+.aq-notice-detail{font-size:12px;color:#72809a;line-height:1.6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-unread{width:8px;height:8px;background:#3b63f3;border-radius:50%;flex:0 0 8px}
+.aq-statement-card{display:grid;grid-template-columns:48px minmax(0,1fr) auto;gap:14px;align-items:center;background:#f7f9fd;border-radius:22px;padding:16px}
+.aq-statement-card .row-name{font-size:15px}
+.aq-statement-end{display:flex;align-items:center;gap:6px}
+.aq-statement-end strong{font-size:15px;letter-spacing:-.02em}
 @media(max-width:760px){
   .aq-detail-hero{grid-template-columns:92px minmax(0,1fr);gap:15px;padding:19px;border-radius:27px}
   .aq-detail-cover{width:92px!important;height:92px!important;border-radius:19px!important;font-size:32px!important;flex-basis:92px}

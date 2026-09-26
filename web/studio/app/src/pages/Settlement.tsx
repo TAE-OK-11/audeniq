@@ -86,9 +86,9 @@ export function Settlement() {
       </div>
 
       <div className="stat-grid" id="settlementStats">
-        <div className="surface white stat-card"><small>기록한 정산액</small><strong>{money(total)}</strong></div>
-        <div className="surface white stat-card"><small>요청 전 잔액</small><strong>{money(left)}</strong></div>
-        <div className="surface white stat-card"><small>지급 요청 기록 합계</small><strong>{money(used)}</strong></div>
+        <div className="surface stat-card"><small>기록한 정산액</small><strong>{money(total)}</strong></div>
+        <div className="surface stat-card"><small>요청 전 잔액</small><strong>{money(left)}</strong></div>
+        <div className="surface stat-card"><small>지급 요청 기록 합계</small><strong>{money(used)}</strong></div>
       </div>
 
       <section className="studio-payout-surface" aria-labelledby="payoutHeading">
@@ -116,15 +116,15 @@ export function Settlement() {
       </div>
       <div id="statementList">
         {orderedStatements.length ? (
-          <div className="data-list">
+          <div className="aq-catalog-cards">
             {orderedStatements.map(s => (
-              <div key={s.id} className="statement-row">
-                <span className="document-icon">₩</span>
-                <div>
+              <div key={s.id} className="aq-statement-card">
+                <span className="aq-statement-icon" aria-hidden="true">₩</span>
+                <div className="min-0">
                   <span className="row-name">{s.period} · {s.platform}</span>
                   <span className="row-sub">{s.note || '수기 등록 정산 내역'} · {niceDate(s.created)}</span>
                 </div>
-                <div className="row-end">
+                <div className="aq-statement-end">
                   <strong>{money(s.amount)}</strong>
                   <button type="button" className="link-btn" aria-label="정산 내역 삭제" onClick={() => deleteStatement(s.id)}>×</button>
                 </div>
@@ -142,15 +142,15 @@ export function Settlement() {
       <div className="section-top"><h2>지급 요청 기록</h2></div>
       <div id="payoutList">
         {payouts.length ? (
-          <div className="data-list">
+          <div className="aq-catalog-cards">
             {[...payouts].reverse().map(p => (
-              <div key={p.id} className="statement-row">
-                <span className="document-icon">↗</span>
-                <div>
+              <div key={p.id} className="aq-statement-card">
+                <span className="aq-statement-icon" aria-hidden="true">↗</span>
+                <div className="min-0">
                   <span className="row-name">{money(p.amount)} · 지급 요청 기록</span>
                   <span className="row-sub">{niceDate(p.created)} · {p.note || '현재 작업 공간에만 기록됨'}</span>
                 </div>
-                <div className="row-end">
+                <div className="aq-statement-end">
                   <span className="status-chip ready">전송 전</span>
                   <button type="button" className="link-btn" aria-label="요청 기록 삭제" onClick={() => deletePayout(p.id)}>×</button>
                 </div>
