@@ -25,8 +25,9 @@ const NAV_GROUPS: { group: string; items: { to: string; label: string }[] }[] = 
   {
     group: '계정·지원',
     items: [
-      { to: '/support', label: '문의·알림' },
-      { to: '/profile', label: '아티스트·정산 정보' },
+      { to: '/inquiries', label: '문의' },
+      { to: '/notifications', label: '알림' },
+      { to: '/profile', label: '아티스트 정보' },
     ],
   },
 ];

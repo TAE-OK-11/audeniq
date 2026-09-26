@@ -1,11 +1,10 @@
 // 정산·지급 — 라이브 view-settlement / renderSettlement / openPayout 대응
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { BankLogo } from '../components/BankLogo';
 import { PaymentSetupModal } from '../components/PaymentSetupModal';
-import { isPaymentRegistered, usePayment } from '../store/payment';
+import { isPaymentRegistered, usePayment, TYPE_LABEL } from '../store/payment';
 import { money, niceDate } from '../lib/format';
 
 interface Statement { id: string; period: string; platform: string; amount: number; note: string; created: string }
@@ -21,15 +20,17 @@ const INITIAL_PAYOUTS: Payout[] = [
 ];
 
 export function Settlement() {
-  const nav = useNavigate();
   const toast = useToast();
   const payment = usePayment();
   const [statements, setStatements] = useState<Statement[]>(INITIAL_STATEMENTS);
   const [payouts, setPayouts] = useState<Payout[]>(INITIAL_PAYOUTS);
   const [showPayout, setShowPayout] = useState(false);
   const [showPaySetup, setShowPaySetup] = useState(false);
+  const [showPaymentSetup, setShowPaymentSetup] = useState(false);
   const [amount, setAmount] = useState('');
   const [payoutNote, setPayoutNote] = useState('');
+
+  const paymentRegistered = isPaymentRegistered(payment);
 
   const total = statements.reduce((n, s) => n + Number(s.amount || 0), 0);
   const used = payouts.reduce((n, p) => n + Number(p.amount || 0), 0);
@@ -80,9 +81,6 @@ export function Settlement() {
           <h1>정산·지급</h1>
           <p>확정된 정산 금액과 지급 요청 내역을 확인해 보세요.</p>
         </div>
-        <button type="button" className="button secondary" onClick={() => nav('/profile')}>
-          정산 정보 관리 ↗
-        </button>
       </div>
 
       <div className="stat-grid" id="settlementStats">
@@ -101,6 +99,37 @@ export function Settlement() {
           <span id="studioAvailable" className="studio-available">{money(left)}</span>
           <button type="button" className="button" id="studioPayoutOpen" onClick={openPayoutModal}>수익 받기</button>
         </div>
+      </section>
+
+      <div className="section-top">
+        <h2>수익 수령 정보</h2>
+      </div>
+      <section className="aq-payment-summary" id="paymentSummary" aria-live="polite">
+        {paymentRegistered && payment ? (
+          <>
+            <BankLogo name={payment.bank} />
+            <div className="min-0" style={{ flex: 1 }}>
+              <span className="aq-payment-state">등록 완료</span>
+              <strong>{payment.bank} · •••• {payment.last4}</strong>
+              <p>{payment.recipient} · {TYPE_LABEL[payment.type]}</p>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="aq-payment-badge is-empty" aria-hidden="true">₩</div>
+            <div className="min-0" style={{ flex: 1 }}>
+              <span className="aq-payment-state">등록 필요</span>
+              <strong>수익을 받을 정보를 등록해 주세요.</strong>
+              <p>수령인과 계좌 정보를 단계별로 안전하게 입력해요.</p>
+            </div>
+          </>
+        )}
+        <button
+          type="button" className="button secondary" id="openPaymentSetup"
+          onClick={() => setShowPaymentSetup(true)}
+        >
+          {paymentRegistered ? '수령 정보 변경' : '수령 정보 등록'}
+        </button>
       </section>
 
       <div className="notice" id="settlementNotice">
@@ -211,6 +240,7 @@ export function Settlement() {
       )}
 
       {showPaySetup && <PaymentSetupModal onClose={() => setShowPaySetup(false)} />}
+      {showPaymentSetup && <PaymentSetupModal onClose={() => setShowPaymentSetup(false)} />}
     </div>
   );
 }

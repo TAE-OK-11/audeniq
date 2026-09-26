@@ -11,7 +11,8 @@ import { Reports } from './pages/Reports';
 import { Settlement } from './pages/Settlement';
 import { Contracts } from './pages/Contracts';
 import { Rights } from './pages/Rights';
-import { Support } from './pages/Support';
+import { Inquiries } from './pages/Inquiries';
+import { Notifications } from './pages/Notifications';
 import { Profile } from './pages/Profile';
 import './styles/design.css';
 import './styles/live.css';
@@ -42,7 +43,9 @@ export function App() {
                   <Route path="/settlement" element={<Settlement />} />
                   <Route path="/contracts" element={<Contracts />} />
                   <Route path="/rights" element={<Rights />} />
-                  <Route path="/support" element={<Support />} />
+                  <Route path="/inquiries" element={<Inquiries />} />
+                  <Route path="/notifications" element={<Notifications />} />
+                  <Route path="/support" element={<Navigate to="/inquiries" replace />} />
                   <Route path="/profile" element={<Profile />} />
                 </Routes>
               </Layout>
