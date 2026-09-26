@@ -7,6 +7,7 @@ export const pageLoaders = {
   Dashboard: () => import('./pages/Dashboard'),
   Releases: () => import('./pages/Releases'),
   ReleaseDetail: () => import('./pages/ReleaseDetail'),
+  Application: () => import('./pages/Application'),
   Upload: () => import('./pages/Upload'),
   Reports: () => import('./pages/Reports'),
   Settlement: () => import('./pages/Settlement'),
@@ -25,6 +26,7 @@ type PageName = keyof typeof pageLoaders;
 const ROUTE_PAGES: [RegExp, PageName[]][] = [
   [/^\/$/, ['Dashboard']],
   [/^\/releases\/?$/, ['Releases']],
+  [/^\/releases\/[^/]+\/application/, ['Application']],
   [/^\/releases\/.+/, ['ReleaseDetail']],
   [/^\/upload/, ['Upload']],
   [/^\/reports/, ['Reports']],

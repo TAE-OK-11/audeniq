@@ -45,4 +45,18 @@ describe('mockApi releases', () => {
     await mockApi.logout();
     await expect(mockApi.me()).rejects.toThrow();
   });
+
+  it('보완 필요 발매는 요청 항목을 보여 주고, 다시 접수하면 비운다', async () => {
+    const before = await mockApi.getRelease('r3');
+    expect(before.status).toBe('needs');
+    expect(before.corrections?.map(c => c.code)).toEqual(['IMAGE_TOO_SMALL', 'S2_META_CREDITS']);
+    expect((await mockApi.listReleases()).find(r => r.id === 'r3')?.corrections).toHaveLength(2);
+    // 임시 저장해도 요청은 남는다
+    await mockApi.saveDraft('r3', payload('데모 트랙'));
+    expect((await mockApi.getRelease('r3')).corrections).toHaveLength(2);
+    await mockApi.submitRelease('r3', payload('데모 트랙'));
+    const after = await mockApi.getRelease('r3');
+    expect(after.status).toBe('review');
+    expect(after.corrections).toBeUndefined();
+  });
 });

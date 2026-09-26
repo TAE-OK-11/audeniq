@@ -14,7 +14,7 @@ export interface Notice {
 
 const INITIAL_NOTICES: Notice[] = [
   { id: 'n1', kind: '발매', title: '여름 EP 검토가 시작됐어요.', detail: '여름 EP의 발매 신청이 접수돼 AUDENIQ 담당자가 검토하고 있어요. 결과는 알림으로 알려드릴게요.', time: '2026-09-22 09:10', read: false, link: '/releases/r2' },
-  { id: 'n2', kind: '발매', title: '데모 트랙에 보완 요청이 있어요.', detail: '데모 트랙의 커버아트 해상도가 규격에 맞지 않아요. 3000×3000 이상으로 다시 등록해 주세요.', time: '2026-09-23 11:20', read: false, link: '/releases/r3' },
+  { id: 'n2', kind: '발매', title: '데모 트랙에 보완 요청이 있어요.', detail: '커버아트 해상도와 작곡가 정보, 2건의 보완이 필요해요. 발매 관리에서 ‘보완하기’를 누르면 고칠 곳으로 바로 이동해요.', time: '2026-09-23 11:20', read: false, link: '/releases/r3' },
   { id: 'n3', kind: '지급', title: '2026년 8월 정산이 확정됐어요.', detail: '2026년 8월 정산 ₩24,406이 확정됐어요. 지급 요청은 정산·지급 화면에서 할 수 있어요.', time: '2026-09-10 10:00', read: true, link: '/settlement' },
 ];
 

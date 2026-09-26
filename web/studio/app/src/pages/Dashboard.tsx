@@ -1,4 +1,5 @@
 import { Link, useNavigate } from '../lib/router';
+import { fixPath, resolveCorrection } from '../lib/corrections';
 import { api } from '../api/client';
 import { STATUS_LABEL, money, num } from '../lib/format';
 import { useUnreadCount } from '../store/support';
@@ -87,7 +88,16 @@ export function Dashboard() {
   const profileName = profile.name.trim();
   type TaskTone = 'warn' | 'sign' | 'info';
   const tasks: { icon: keyof typeof TASK_ICONS; name: string; sub: string; btn: string; to: string; tone: TaskTone }[] = [];
-  if (needs) tasks.push({ icon: 'alert', name: `보완이 필요한 발매 ${needs}건`, sub: '제출 정보와 증빙을 확인해 주세요.', btn: '확인', to: '/releases?status=needs', tone: 'warn' });
+  if (needs) {
+    // 한 건이면 신청서의 보완할 입력칸으로 바로
+    const only = needs === 1 ? releases.find(r => r.status === 'needs') : undefined;
+    const first = only?.corrections?.[0];
+    tasks.push({
+      icon: 'alert', name: `보완이 필요한 발매 ${needs}건`,
+      sub: only ? `‘${only.title}’ · ${first ? resolveCorrection(first).label : '요청 내용'}을 고쳐 주세요.` : '요청 항목을 고쳐서 다시 접수해 주세요.',
+      btn: '보완', to: only ? fixPath(only.id, first) : '/releases?status=needs', tone: 'warn',
+    });
+  }
   if (docFix) tasks.push({ icon: 'doc', name: `보완 요청된 서류 ${docFix}건`, sub: '요청 사유를 보고 새 원본을 제출해 주세요.', btn: '제출', to: '/rights', tone: 'warn' });
   if (toSign) tasks.push({ icon: 'pen', name: `서명할 계약서 ${toSign}건`, sub: '검토가 끝난 계약서에 서명해 주세요.', btn: '서명', to: '/contracts', tone: 'sign' });
   if (drafts) tasks.push({ icon: 'draft', name: `작성 중인 발매 ${drafts}건`, sub: '이어서 작성하고 접수해 보세요.', btn: '보기', to: '/releases?status=draft', tone: 'info' });
