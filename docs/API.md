@@ -36,6 +36,7 @@ Request JSON rejects unknown top-level fields. Body limit 64 KiB. Errors have `{
 | PUT | `/api/orgs/{org}/releases/{id}/tracks/{track}` | Same fields as track creation; replaces metadata/file reference, increments release row_version |
 | DELETE | `/api/orgs/{org}/releases/{id}/tracks/{track}` | `{row_version}` → archive track, preserve its internal ID, increment release version |
 | PUT | `/api/orgs/{org}/releases/{id}/tracks/{track}/credits` | `{row_version,credits:[{party_id,role}]}` → atomic replacement, empty list clears draft credits |
+| POST | `/api/orgs/{org}/parties` | `{display_name}` → party_id, created. A PERSON credit party (composer, lyricist, …) in the org; OWNER/EDITOR. The same name returns the existing party (`created:false`). A display name only: no rights, no verified identity |
 | GET | `/api/orgs/{org}/releases/{id}/preflight` | release_id, row_version, issues, explicit unmet gates, ready_to_submit=false |
 | POST | `/api/orgs/{org}/releases/{id}/submit` | Always authenticated/authorized **501 PRE_SUBMIT_NOT_IMPLEMENTED**; no revision/job created |
 | POST | `/api/orgs/{org}/uploads` | `{kind:AUDIO, IMAGE or DOCUMENT,size_bytes,content_type}` → upload_session_id, asset_id, expected_key, PUT grant. DOCUMENT (rights proofs) accepts application/pdf, image/jpeg, image/png up to 20 MiB (`UPLOAD_DOCUMENT_TOO_LARGE`) |

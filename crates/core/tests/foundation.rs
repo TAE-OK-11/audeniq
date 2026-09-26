@@ -1123,6 +1123,89 @@ async fn worker_pipeline_grants_cover_handoff_and_reconciler(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn credit_parties_are_org_scoped_and_reused_by_name(pool: PgPool) {
+    let (api, _) = app(pool.clone()).await;
+    let a = user(&api).await;
+    let b = user(&api).await;
+    let parties = format!("/api/orgs/{}/parties", a.org);
+    let (s, _, first) = call(
+        &api,
+        "POST",
+        &parties,
+        json!({"display_name":" 홍길동 "}),
+        Some(&a),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{first}");
+    assert_eq!(first["created"], true);
+    let (_, _, again) = call(
+        &api,
+        "POST",
+        &parties,
+        json!({"display_name":"홍길동"}),
+        Some(&a),
+    )
+    .await;
+    assert_eq!(again["party_id"], first["party_id"]);
+    assert_eq!(again["created"], false);
+    let name: String = sqlx::query_scalar("SELECT display_name FROM identity.parties WHERE id=$1")
+        .bind(Uuid::parse_str(first["party_id"].as_str().unwrap()).unwrap())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(name, "홍길동");
+    assert_eq!(
+        call(
+            &api,
+            "POST",
+            &parties,
+            json!({"display_name":"x"}),
+            Some(&b)
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(
+            &api,
+            "POST",
+            &parties,
+            json!({"display_name":"  "}),
+            Some(&a)
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+
+    // The party can be credited on a track in its own org.
+    let release = create(&api, &a, "releases").await;
+    let artist = create(&api, &a, "artists").await;
+    let base = format!("/api/orgs/{}/releases/{release}", a.org);
+    let (s, _, t) = call(
+        &api,
+        "POST",
+        &format!("{base}/tracks"),
+        json!({"title":"First","disc_number":1,"track_number":1,"artist_id":artist,"row_version":0}),
+        Some(&a),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{t}");
+    let credits =
+        json!({"row_version":1,"credits":[{"party_id":first["party_id"],"role":"Composer"}]});
+    let (s, _, r) = call(
+        &api,
+        "PUT",
+        &format!("{base}/tracks/{}/credits", t["id"].as_str().unwrap()),
+        credits,
+        Some(&a),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{r}");
+}
+
+#[sqlx::test]
 async fn draft_tracks_credits_archive_and_preflight(pool: PgPool) {
     let (api, _) = app(pool.clone()).await;
     let a = user(&api).await;
