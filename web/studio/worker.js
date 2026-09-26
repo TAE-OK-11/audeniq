@@ -247,10 +247,19 @@ export default {
     const r = route(request.method, url.pathname);
     if (r) return handleContent(request, env, r);
     // /api/* 중 D1 콘텐츠가 아니면 테스트 백엔드로 프록시
-    if (url.pathname.startsWith('/api/')) {
+    if (url.pathname.startsWith('/api/') || url.pathname === '/ready') {
       const backend = 'https://binding-textile-tale-ccd.trycloudflare.com';
       const backendUrl = backend + url.pathname + url.search;
-      const proxyReq = new Request(backendUrl, request);
+      const proxyHeaders = new Headers(request.headers);
+      if (env.EDGE_SERVICE_SECRET) {
+        proxyHeaders.set('x-audeniq-service', env.EDGE_SERVICE_SECRET);
+      }
+      const proxyReq = new Request(backendUrl, {
+        method: request.method,
+        headers: proxyHeaders,
+        body: request.body,
+        redirect: 'manual',
+      });
       try {
         const res = await fetch(proxyReq);
         // CORS 헤더 추가 (프론트에서 직접 호출 대비)
