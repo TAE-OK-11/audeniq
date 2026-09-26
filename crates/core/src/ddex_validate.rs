@@ -34,6 +34,7 @@
 
 use crate::{
     ddex_ern::DdexErnConfig,
+    ddex_preset::DspMessagePreset,
     error::{Error, Result as CoreResult},
     preparation_model::PreparedRelease,
 };
@@ -480,10 +481,16 @@ pub fn validate_ern_message(
 /// This complements `ern::validate_metadata` (format-level checks on the
 /// frozen release) with the message-level concerns a distributor must
 /// verify before generating an interchange document: date chronology,
-/// config completeness, and per-track build prerequisites. Findings use
+/// config completeness, and per-track build prerequisites. The `preset`
+/// lets a DSP escalate selected warnings to errors
+/// (`DspMessagePreset::escalate_to_error`). Findings use
 /// the same `ErnFinding` shape as [`validate_ern_message`] so callers can
 /// run [`gate_findings`] over both uniformly.
-pub fn preflight_release(prepared: &PreparedRelease, config: &DdexErnConfig) -> Vec<ErnFinding> {
+pub fn preflight_release(
+    prepared: &PreparedRelease,
+    config: &DdexErnConfig,
+    preset: &DspMessagePreset,
+) -> Vec<ErnFinding> {
     let mut findings = Vec::new();
 
     // --- Message identity -------------------------------------------------
@@ -573,6 +580,14 @@ pub fn preflight_release(prepared: &PreparedRelease, config: &DdexErnConfig) -> 
         _ => {}
     }
 
+    // Per-DSP escalation: warnings this partner treats as deal-breakers
+    // become errors before the gate sees them.
+    for finding in &mut findings {
+        if finding.severity == Severity::Warning && preset.escalates(&finding.rule_id) {
+            finding.severity = Severity::Error;
+        }
+    }
+
     findings
 }
 
@@ -647,6 +662,18 @@ fn local_name(raw: &[u8]) -> &str {
 /// text on malformed XML (fail-closed: the caller turns this into an
 /// `ERN-XML-WELLFORMED` finding).
 fn scan_document(xml: &str) -> Result<Scan, String> {
+    // Hardening (ddex-suite's SecurityConfig categories, adapted):
+    // fail closed on absurd inputs before the event loop. 8_000_000 matches
+    // the `distribution.ddex_messages.ern_xml` CHECK upper bound; depth 64
+    // is far beyond any real ERN document.
+    const MAX_XML_BYTES: usize = 8_000_000;
+    const MAX_DEPTH: usize = 64;
+    if xml.len() > MAX_XML_BYTES {
+        return Err(format!(
+            "document too large: {} bytes (limit {MAX_XML_BYTES})",
+            xml.len()
+        ));
+    }
     let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(true);
     let mut scan = Scan::default();
@@ -660,6 +687,9 @@ fn scan_document(xml: &str) -> Result<Scan, String> {
             Err(e) => return Err(e.to_string()),
             Ok(Event::Eof) => break,
             Ok(Event::Start(e)) => {
+                if stack.len() >= MAX_DEPTH {
+                    return Err(format!("element nesting too deep (limit {MAX_DEPTH})"));
+                }
                 let name = local_name(e.local_name().as_ref()).to_string();
                 if stack.is_empty() {
                     scan.root = Some(name.clone());

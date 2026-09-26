@@ -4,6 +4,7 @@
 //! `ddex_ern` tests use.
 use audeniq_core::{
     ddex_ern::{DdexErnConfig, MessageSubType, generate_ddex_ern_382},
+    ddex_preset::DspMessagePreset,
     ddex_validate::{
         ErnProfile, ErnVersion, extract_ern_metadata, gate_findings, preflight_release,
         validate_ern_message,
@@ -140,7 +141,7 @@ fn has_rule(findings: &[audeniq_core::ddex_validate::ErnFinding], rule: &str) ->
 #[test]
 fn preflight_passes_for_good_release_and_config() {
     let prepared = fixture(0);
-    let findings = preflight_release(&prepared, &config());
+    let findings = preflight_release(&prepared, &config(), &DspMessagePreset::default());
     assert!(findings.is_empty(), "findings: {findings:?}");
     assert!(gate_findings(&findings, "DDEX_PREFLIGHT", "ERN preflight").is_ok());
 }
@@ -150,7 +151,7 @@ fn preflight_rejects_deal_starting_before_release_date() {
     let prepared = fixture(0);
     let mut cfg = config();
     cfg.deal_start_date = "2027-01-01".into(); // release_date is 2027-03-01
-    let findings = preflight_release(&prepared, &cfg);
+    let findings = preflight_release(&prepared, &cfg, &DspMessagePreset::default());
     assert!(has_rule(&findings, "DDEX-PREFLIGHT-DATE-CHRONOLOGY"));
     let err = gate_findings(&findings, "DDEX_PREFLIGHT", "ERN preflight").unwrap_err();
     assert!(matches!(
@@ -164,12 +165,12 @@ fn preflight_rejects_bad_date_formats_and_takedown_chronology() {
     let prepared = fixture(0);
     let mut cfg = config();
     cfg.deal_start_date = "03/01/2027".into();
-    let findings = preflight_release(&prepared, &cfg);
+    let findings = preflight_release(&prepared, &cfg, &DspMessagePreset::default());
     assert!(has_rule(&findings, "DDEX-PREFLIGHT-DATE-FORMAT"));
 
     let mut cfg = config();
     cfg.takedown_date = Some("2027-03-01".into()); // not after deal start
-    let findings = preflight_release(&prepared, &cfg);
+    let findings = preflight_release(&prepared, &cfg, &DspMessagePreset::default());
     assert!(has_rule(&findings, "DDEX-PREFLIGHT-TAKEDOWN-CHRONOLOGY"));
 }
 
@@ -177,7 +178,7 @@ fn preflight_rejects_bad_date_formats_and_takedown_chronology() {
 fn preflight_rejects_missing_duration_before_build() {
     let mut prepared = fixture(0);
     prepared.tracks[0].audio.duration_secs = None;
-    let findings = preflight_release(&prepared, &config());
+    let findings = preflight_release(&prepared, &config(), &DspMessagePreset::default());
     assert!(has_rule(&findings, "DDEX-PREFLIGHT-DURATION"));
     assert!(gate_findings(&findings, "DDEX_PREFLIGHT", "ERN preflight").is_err());
 }
@@ -189,7 +190,7 @@ fn preflight_rejects_bad_message_identity() {
     cfg.message_id = "   ".into();
     cfg.created_at = "not-a-timestamp".into();
     cfg.sender_name.clear();
-    let findings = preflight_release(&prepared, &cfg);
+    let findings = preflight_release(&prepared, &cfg, &DspMessagePreset::default());
     assert!(has_rule(&findings, "DDEX-PREFLIGHT-MESSAGE-ID"));
     assert!(has_rule(&findings, "DDEX-PREFLIGHT-CREATED"));
     assert!(has_rule(&findings, "DDEX-PREFLIGHT-PARTY"));
@@ -199,8 +200,109 @@ fn preflight_rejects_bad_message_identity() {
 fn preflight_warns_on_single_with_many_tracks_but_passes_gate() {
     let mut prepared = fixture(1); // EP fixture, >1 track
     prepared.release_type = "SINGLE".into();
-    let findings = preflight_release(&prepared, &config());
+    let findings = preflight_release(&prepared, &config(), &DspMessagePreset::default());
     assert!(has_rule(&findings, "DDEX-PREFLIGHT-RELEASE-TYPE"));
     // Warnings are logged, not fatal.
     assert!(gate_findings(&findings, "DDEX_PREFLIGHT", "ERN preflight").is_ok());
+}
+
+// ---------------------------------------------------------------------------
+// NFC normalization (#1)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn nfd_korean_input_produces_nfc_xml_deterministically() {
+    use unicode_normalization::UnicodeNormalization;
+    let nfc_title = "가을 하늘";
+    assert!(unicode_normalization::is_nfc(nfc_title));
+    let nfd_title: String = nfc_title.nfd().collect();
+    assert!(!unicode_normalization::is_nfc(&nfd_title));
+    assert_ne!(nfc_title, nfd_title);
+
+    let mut nfd_release = fixture(0);
+    nfd_release.title = nfd_title.clone();
+    // Keep the tamper-evident binding intact: the canonical snapshot pins
+    // the same titles.
+    nfd_release.canonical.release_title = nfd_title;
+    nfd_release.tracks[0].title = "바람".nfd().collect::<String>();
+    nfd_release.canonical.tracks[0].title = nfd_release.tracks[0].title.clone();
+
+    let mut nfc_release = fixture(0);
+    nfc_release.title = nfc_title.to_string();
+    nfc_release.canonical.release_title = nfc_title.to_string();
+    nfc_release.tracks[0].title = "바람".to_string();
+    nfc_release.canonical.tracks[0].title = "바람".to_string();
+
+    let xml_nfd = generate_ddex_ern_382(&nfd_release, &config()).unwrap();
+    let xml_nfc = generate_ddex_ern_382(&nfc_release, &config()).unwrap();
+    // Same release in different normalization forms -> byte-identical XML.
+    assert_eq!(xml_nfd, xml_nfc);
+    assert!(xml_nfd.contains("<TitleText>가을 하늘</TitleText>"));
+}
+
+// ---------------------------------------------------------------------------
+// Scan hardening: size / depth guards (#3)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn oversized_document_fails_closed() {
+    let big = format!(
+        "<ern:NewReleaseMessage>{}</ern:NewReleaseMessage>",
+        "x".repeat(8_000_001)
+    );
+    let report = validate_ern_message(&big, None);
+    assert!(!report.is_valid());
+    assert!(
+        report
+            .findings
+            .iter()
+            .any(|f| f.rule_id == "ERN-XML-WELLFORMED"),
+        "findings: {:?}",
+        report.findings
+    );
+}
+
+#[test]
+fn deeply_nested_document_fails_closed() {
+    let mut xml = String::from("<ern:NewReleaseMessage>");
+    for i in 0..100 {
+        xml.push_str(&format!("<Level{i}>"));
+    }
+    let report = validate_ern_message(&xml, None);
+    assert!(!report.is_valid());
+    assert!(
+        report
+            .findings
+            .iter()
+            .any(|f| f.rule_id == "ERN-XML-WELLFORMED"),
+        "findings: {:?}",
+        report.findings
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Preset escalation (#4)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn preset_escalates_warning_to_error() {
+    let mut prepared = fixture(1); // EP fixture, >1 track
+    prepared.release_type = "SINGLE".into();
+    let preset = DspMessagePreset {
+        escalate_to_error: vec!["DDEX-PREFLIGHT-RELEASE-TYPE".to_string()],
+        ..DspMessagePreset::default()
+    };
+
+    let findings = preflight_release(&prepared, &config(), &preset);
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.rule_id == "DDEX-PREFLIGHT-RELEASE-TYPE" && f.is_error()),
+        "findings: {findings:?}"
+    );
+    let err = gate_findings(&findings, "DDEX_PREFLIGHT", "ERN preflight").unwrap_err();
+    assert!(matches!(
+        err,
+        audeniq_core::error::Error::PolicyGate("DDEX_PREFLIGHT")
+    ));
 }
