@@ -645,7 +645,6 @@ export function Upload() {
                     style={{ marginTop: 10 }}
                   />
                 )}
-                <p className="help" id="genreHelp">발매할 음악의 장르를 선택해 주세요.</p>
               </div>
               <div className="field">
                 <label htmlFor="f-label">레이블 / 발매사 표기</label>
