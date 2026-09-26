@@ -20,6 +20,8 @@ export interface Release {
   track_count: number;
   artist?: string;
   coverData?: string;
+  /** 공개(LIVE)된 플랫폼 — 서버 DSP 코드(D-n) 또는 파트너 ID */
+  livePlatforms?: string[];
   /** 검토 결과 보완이 필요한 항목 (status === 'needs'일 때) */
   corrections?: Correction[];
 }

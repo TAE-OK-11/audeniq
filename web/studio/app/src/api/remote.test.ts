@@ -110,6 +110,9 @@ describe('서버 값 정리', () => {
     expect(uiStatus('ON_HOLD_RIGHTS')).toBe('needs');
     expect(uiStatus('READY_FOR_DELIVERY')).toBe('scheduled');
     expect(uiStatus('STAGE1_REVIEW')).toBe('review');
+    // 한 플랫폼이라도 공개되면 발매 완료, 철회·반려는 종료
+    expect(uiStatus('READY_FOR_DELIVERY', true)).toBe('live');
+    expect(uiStatus('WITHDRAWN')).toBe('closed');
   });
 
   it('profile은 lyrics만 여러 줄을 허용하고 제어·방향 문자를 지운다', () => {

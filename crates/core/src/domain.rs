@@ -38,6 +38,7 @@ mod drift_tests {
             include_str!("../../../migrations/0002_state_contract.sql"),
             include_str!("../../../migrations/0032_recoverable_corrections.sql"),
             include_str!("../../../migrations/0044_staff_portal.sql"),
+            include_str!("../../../migrations/0046_identifier_reissue.sql"),
         ]
         .concat();
         let edges = contract["transitions"].as_array().unwrap();

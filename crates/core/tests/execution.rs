@@ -469,7 +469,7 @@ async fn add_preparation_supplements(
 ) {
     let art_id = Uuid::new_v4();
     let art_key = format!("registered/{}/cover-{}.png", u.org, art_id);
-    let art_bytes = b"\x89PNGfake";
+    let art_bytes = cover_png();
     store.put(&art_key, art_bytes, "image/png").await;
     sqlx::query("INSERT INTO identity.resources(org_id,id,kind) VALUES($1,$2,'asset')")
         .bind(u.org)
@@ -524,6 +524,8 @@ struct ReadyCtx {
     release: Uuid,
     package_id: Uuid,
     store: Arc<FileStore>,
+    app: Router,
+    user: User,
 }
 
 /// Full pipeline to READY_FOR_DELIVERY, then pin the mock profile to the
@@ -574,6 +576,8 @@ async fn ready_package(pool: &PgPool) -> ReadyCtx {
         release,
         package_id,
         store,
+        app,
+        user: u,
     }
 }
 
@@ -683,6 +687,41 @@ async fn dsp_01_accept_happy_path_goes_live(pool: PgPool) {
     assert_eq!(live_status(&pool, ctx.org, ctx.package_id).await, "LIVE");
     // No reconciliation case on the happy path.
     assert!(!case_exists(&pool, ctx.org, job_id, "MISSING_ACK").await);
+
+    // The artist sees it: release detail and list carry the per-partner
+    // delivery and live state (they used to be hard-coded empty), and the
+    // first LIVE partner raises the "released" notification.
+    let (s, v) = call(
+        &ctx.app,
+        "GET",
+        &format!("/api/orgs/{}/releases/{}", ctx.org, ctx.release),
+        Value::Null,
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["delivery_status_by_dsp"][0]["status"], "DELIVERED", "{v}");
+    assert_eq!(v["live_status_by_dsp"][0]["live_status"], "LIVE", "{v}");
+    let (_, list) = call(
+        &ctx.app,
+        "GET",
+        &format!("/api/orgs/{}/releases", ctx.org),
+        Value::Null,
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(
+        list["items"][0]["live_status_by_dsp"][0]["live_status"],
+        "LIVE"
+    );
+    let released: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM portal.notifications WHERE org_id=$1 AND title LIKE '%발매됐어요%'",
+    )
+    .bind(ctx.org)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(released, 1);
 }
 
 #[sqlx::test]
@@ -2214,6 +2253,8 @@ async fn e2e_intake_to_mockdsp_live(pool: PgPool) {
         release,
         package_id,
         store,
+        app: app.clone(),
+        user: u.clone(),
     };
     let mock = MockDsp::new(MockBehavior::Accept);
     let (job_id, status) = run_send(&pool, &ctx, &mock).await;
@@ -2421,6 +2462,8 @@ async fn e2e_timing_normal_vs_problematic(pool: PgPool) {
         release: normal_release,
         package_id,
         store,
+        app: app.clone(),
+        user: u.clone(),
     };
     let t = Instant::now();
     let mock = MockDsp::new(MockBehavior::Accept);
@@ -3175,6 +3218,18 @@ async fn staff_two_person_approval_then_per_dsp_staging(pool: PgPool) {
         Some(&r2),
     )
     .await;
+    // The fixture's loudness is an advisory: never blocking, but an operator
+    // must acknowledge it explicitly.
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(v["error"]["code"], "WARNINGS_NOT_ACKNOWLEDGED");
+    let (s, v) = call(
+        &app,
+        "POST",
+        &path("D-5"),
+        json!({"action":"APPROVE","note":"ERN checked","acknowledge_warnings":true}),
+        Some(&r2),
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "{v}");
     assert_eq!(v["approval"], "APPROVED");
     let r = app
@@ -3373,7 +3428,7 @@ async fn registry_dsp_waits_for_staff_approval_before_send(pool: PgPool) {
         &app,
         "POST",
         &format!("/api/staff/deliveries/{package}/D-5/decision"),
-        json!({"action":"APPROVE"}),
+        json!({"action":"APPROVE","acknowledge_warnings":true}),
         Some(&operator),
     )
     .await;
@@ -3383,4 +3438,169 @@ async fn registry_dsp_waits_for_staff_approval_before_send(pool: PgPool) {
         "SUCCEEDED"
     );
     assert_eq!(jobs(pool.clone()).await, 1);
+}
+
+/// A real 3000x3000 PNG cover: Stage 1 QCs the release artwork (size,
+/// square), so a fake header no longer passes. Generated once per binary.
+fn cover_png() -> &'static [u8] {
+    static ONCE: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    ONCE.get_or_init(|| {
+        let dir = std::env::temp_dir().join("audeniq-cover-fixture");
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("cover3000.png");
+        if !out.exists() {
+            let tmp = dir.join(format!("cover.{}.png", std::process::id()));
+            let st = std::process::Command::new("ffmpeg")
+                .args([
+                    "-y",
+                    "-v",
+                    "error",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "color=c=0x3355aa:s=3000x3000",
+                    "-frames:v",
+                    "1",
+                ])
+                .arg(&tmp)
+                .status()
+                .expect("ffmpeg runs");
+            assert!(st.success(), "ffmpeg generated the cover fixture");
+            std::fs::rename(&tmp, &out).unwrap();
+        }
+        std::fs::read(&out).unwrap()
+    })
+}
+
+/// A package frozen with VIRTUAL codes: staff send it back once real ranges
+/// are registered; the resubmission retires the test codes and issues real
+/// ones, and the superseded package can never be sent.
+#[sqlx::test(migrations = false)]
+async fn virtual_codes_are_reissued_after_registration(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let artist = user(&app).await;
+    let mut audio = wav_bytes().to_vec();
+    audio.extend_from_slice(&Uuid::new_v4().as_u128().to_le_bytes());
+    let asset = register_asset(&pool, &store, &artist, "t.wav", &audio).await;
+    let release = build_submittable(&app, &pool, &artist, asset).await;
+    add_preparation_supplements(&pool, &store, &artist, release).await;
+    // No UPC/ISRC supplied: Stage 3 issues them from the (virtual) ranges.
+    sqlx::query("UPDATE catalog.releases SET upc=NULL, row_version=row_version+1 WHERE id=$1")
+        .bind(release)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE catalog.tracks SET isrc=NULL WHERE release_id=$1")
+        .bind(release)
+        .execute(&pool)
+        .await
+        .unwrap();
+    consent_and_submit(&app, &artist, release, &format!("k-re-{}", Uuid::new_v4())).await;
+    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        run_one(&pool, &store, "distribution", "prepare_release").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(release_status(&pool, release).await, "READY_FOR_DELIVERY");
+    assert_eq!(
+        run_one(&pool, &store, "distribution", "delivery.stage").await,
+        "SUCCEEDED"
+    );
+    let old_package: Uuid = sqlx::query_scalar(
+        "SELECT dp.id FROM distribution.distribution_packages dp JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id WHERE cr.release_id=$1",
+    )
+    .bind(release)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let reviewer = staff_user(&app, &pool, "REVIEWER").await;
+    let path = format!("/api/staff/releases/{release}/reissue-identifiers");
+    // Nothing to gain before a real range exists.
+    let (s, v) = call(
+        &app,
+        "POST",
+        &path,
+        json!({"reason":"real codes"}),
+        Some(&reviewer),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(v["error"]["code"], "REGISTERED_ISSUER_MISSING");
+    let op = "test-operator";
+    audeniq_core::identifiers::register_issuer(
+        &pool,
+        op,
+        audeniq_core::identifiers::IdentifierKind::Upc,
+        "880123",
+    )
+    .await
+    .unwrap();
+    audeniq_core::identifiers::register_issuer(
+        &pool,
+        op,
+        audeniq_core::identifiers::IdentifierKind::Isrc,
+        "KRA1B",
+    )
+    .await
+    .unwrap();
+    let (s, v) = call(
+        &app,
+        "POST",
+        &path,
+        json!({"reason":"정식 코드로 다시 접수해 주세요."}),
+        Some(&reviewer),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(release_status(&pool, release).await, "STAGE3_CORRECTION");
+
+    consent_and_submit(&app, &artist, release, &format!("k-re2-{}", Uuid::new_v4())).await;
+    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        run_one(&pool, &store, "distribution", "prepare_release").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(release_status(&pool, release).await, "READY_FOR_DELIVERY");
+    let mut c = authed(&pool, artist.org).await;
+    let codes: Vec<(String, String, String)> = sqlx::query_as(
+        "SELECT identifier, source, status FROM distribution.identifier_assignments WHERE release_id=$1 ORDER BY created_at",
+    )
+    .bind(release)
+    .fetch_all(&mut *c)
+    .await
+    .unwrap();
+    drop(c);
+    let live: Vec<_> = codes.iter().filter(|c| c.2 == "ASSIGNED").collect();
+    assert_eq!(live.len(), 2, "{codes:?}");
+    assert!(
+        live.iter()
+            .all(|c| c.1 == "ISSUED" && !c.0.starts_with('2') && !c.0.starts_with("XX")),
+        "{codes:?}"
+    );
+    assert_eq!(
+        codes.iter().filter(|c| c.2 == "RETIRED").count(),
+        2,
+        "{codes:?}"
+    );
+    // The old package is history: E-1 refuses it even though the release is
+    // READY_FOR_DELIVERY again.
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/staff/deliveries/{old_package}/D-5/decision"),
+        json!({"action":"HOLD","note":"x"}),
+        Some(&staff_user(&app, &pool, "OPERATOR").await),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(v["error"]["code"], "STAGING_SUPERSEDED");
 }

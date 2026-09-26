@@ -16,15 +16,21 @@ fn shared_mockdsp() -> Arc<crate::mockdsp::MockDsp> {
     INSTANCE
         .get_or_init(|| {
             // MOCKDSP_BEHAVIOR injects partner failures for sandbox testing
-            // (see MockBehavior::from_spec); default: accept everything.
+            // (see MockBehavior::from_spec). Default: accept, then report
+            // LIVE on the second status check. Plain `accept` never goes
+            // live through polling (only via a webhook the sandbox never
+            // sends), which left sandbox releases INGESTING forever.
+            let sandbox = crate::mockdsp::MockBehavior::DelayedLive {
+                polls_before_live: 2,
+            };
             let behavior = match std::env::var("MOCKDSP_BEHAVIOR") {
                 Ok(spec) => crate::mockdsp::MockBehavior::from_spec(&spec).unwrap_or_else(|| {
-                    tracing::warn!(spec, "invalid MOCKDSP_BEHAVIOR; using accept");
-                    crate::mockdsp::MockBehavior::Accept
+                    tracing::warn!(spec, "invalid MOCKDSP_BEHAVIOR; using delayed_live:2");
+                    sandbox.clone()
                 }),
-                Err(_) => crate::mockdsp::MockBehavior::Accept,
+                Err(_) => sandbox,
             };
-            Arc::new(crate::mockdsp::MockDsp::new(behavior))
+            Arc::new(crate::mockdsp::MockDsp::sandbox(behavior))
         })
         .clone()
 }
@@ -131,6 +137,33 @@ async fn reclaim_expired(c: &mut PgConnection, queue: &str) -> Result<()> {
     }
     Ok(())
 }
+/// Live-state poll cadence (first poll after the send, then between polls)
+/// in seconds. Contracted DSPs ingest over hours, so they start at 1h and
+/// back off to 6h; MOCK/test partners answer within a minute, so they poll
+/// after 60s and every 2 min (a 1h wait made test releases look stuck in
+/// INGESTING). `DELIVERY_POLL_FIRST_SECS` / `DELIVERY_POLL_INTERVAL_SECS`
+/// override both for operations.
+async fn poll_cadence(pool: &PgPool, partner_id: &str) -> Result<(i64, i64)> {
+    let env = |k: &str| {
+        std::env::var(k)
+            .ok()
+            .and_then(|v| v.parse::<i64>().ok())
+            .filter(|v| (10..=86_400).contains(v))
+    };
+    let mock: bool = sqlx::query_scalar(
+        "SELECT activation_kind='MOCK' FROM execution.adapter_profiles WHERE partner_id=$1",
+    )
+    .bind(partner_id)
+    .fetch_optional(pool)
+    .await?
+    .unwrap_or(false);
+    let (first, next) = if mock { (60, 120) } else { (3_600, 21_600) };
+    Ok((
+        env("DELIVERY_POLL_FIRST_SECS").unwrap_or(first),
+        env("DELIVERY_POLL_INTERVAL_SECS").unwrap_or(next),
+    ))
+}
+
 /// Schedule a delayed live-state poll for one (package, partner) delivery.
 /// Idempotent per (package, partner, poll number): a send retry or poll
 /// requeue never double-schedules the same poll, and two partners receiving
@@ -140,8 +173,9 @@ async fn schedule_delivery_poll(
     package_id: Uuid,
     partner_id: &str,
     poll_no: i32,
-    delay_hours: i64,
 ) -> Result<()> {
+    let (first, next) = poll_cadence(pool, partner_id).await?;
+    let delay = if poll_no == 0 { first } else { next };
     let mut tx = pool.begin().await?;
     let id = enqueue(
         &mut tx,
@@ -153,10 +187,10 @@ async fn schedule_delivery_poll(
     )
     .await?;
     sqlx::query(
-        "UPDATE operations.jobs SET run_at = now() + make_interval(hours => $2) WHERE id = $1",
+        "UPDATE operations.jobs SET run_at = now() + make_interval(secs => $2) WHERE id = $1",
     )
     .bind(id)
-    .bind(delay_hours as i32)
+    .bind(delay as f64)
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -697,7 +731,7 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
                 "DELIVERED" => {
                     // E-4: ingestion takes hours; schedule the first live-state
                     // poll before marking the send job done.
-                    schedule_delivery_poll(pool, djob.package_id, &djob.partner_id, 0, 1).await?;
+                    schedule_delivery_poll(pool, djob.package_id, &djob.partner_id, 0).await?;
                     succeed(pool, j).await
                 }
                 "AWAITING_RECONCILIATION" => succeed(pool, j).await,
@@ -716,7 +750,7 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
         // F5: E-4 live-state poll for one (package, partner). While the
         // release is still ingesting, the poll re-schedules itself with
         // backoff; terminal states (LIVE/TAKEN_DOWN/REJECTED) stop the chain.
-        // The 56-poll cap is ~14 days at 6h intervals, past any sane DSP
+        // The 56-poll cap is ~14 days at the 6h contracted-DSP interval, past any sane DSP
         // ingestion window — after that, delivery.reconcile owns the case.
         const MAX_POLLS: i64 = 56;
         let package_id = j
@@ -757,7 +791,7 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
         {
             Ok(status) => {
                 if (status == "INGESTING" || status == "NO_ATTEMPT") && poll_no < MAX_POLLS {
-                    schedule_delivery_poll(pool, package_id, partner_id, poll_no as i32 + 1, 6)
+                    schedule_delivery_poll(pool, package_id, partner_id, poll_no as i32 + 1)
                         .await?;
                 }
                 succeed(pool, j).await

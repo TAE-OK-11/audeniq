@@ -929,7 +929,7 @@ async fn unchanged_audio_is_not_reanalyzed(pool: PgPool) {
         "no re-download for unchanged audio"
     );
     let cached: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM operations.check_results WHERE revision_id=$1 AND rule_version=$2 AND check_code IN ('SHA256_MISMATCH','AUDIO_MAGIC_MISMATCH','AUDIO_PROBE_FAILED','AUDIO_TOO_SHORT','AUDIO_SAMPLE_RATE_LOW','AUDIO_CHANNEL_INVALID') AND detail='cache_hit'",
+        "SELECT COUNT(*) FROM operations.check_results WHERE revision_id=$1 AND rule_version=$2 AND check_code IN ('SHA256_MISMATCH','AUDIO_MAGIC_MISMATCH','AUDIO_PROBE_FAILED','AUDIO_TOO_SHORT','AUDIO_SAMPLE_RATE_LOW','AUDIO_CHANNEL_INVALID') AND detail LIKE 'cache_hit%'",
     )
     .bind(rev_b)
     .bind(audeniq_core::qc::QC_RULE_VERSION)

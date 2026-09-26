@@ -44,7 +44,8 @@ GRANT SELECT ON distribution.dsp_registry TO audeniq_api;
 GRANT SELECT,UPDATE ON distribution.delivery_staging TO audeniq_api;
 GRANT SELECT ON distribution.distribution_packages TO audeniq_api;
 GRANT USAGE ON SCHEMA execution TO audeniq_api;
-GRANT SELECT ON execution.adapter_profiles,execution.delivery_jobs TO audeniq_api;
+GRANT SELECT ON execution.adapter_profiles,execution.delivery_jobs,execution.live_bindings TO audeniq_api;
+GRANT SELECT ON distribution.canonical_releases,distribution.identifier_issuers TO audeniq_api;
 GRANT EXECUTE ON FUNCTION execution.partner_readiness(text) TO audeniq_api;
 -- Staff review (0044): second-person approvals and reviewer notes. The
 -- staff role table itself is read-only for the API (granted by the CLI).
@@ -73,6 +74,9 @@ GRANT INSERT ON distribution.canonical_releases,distribution.distribution_packag
 -- Stage 3 issues missing UPC/ISRC codes (migration 0041): the worker reads the
 -- active issuer (SELECT via the schema-wide grant) and advances its counter.
 GRANT INSERT,UPDATE ON distribution.identifier_counters TO audeniq_worker;
+-- 0046: a VIRTUAL code may be retired (trigger-guarded, one way) when the
+-- registered range replaces it.
+GRANT UPDATE(status,retired_at) ON distribution.identifier_assignments TO audeniq_worker;
 GRANT INSERT,UPDATE ON execution.delivery_jobs,execution.delivery_attempts,execution.live_bindings,execution.reconciliation_cases TO audeniq_worker;
 GRANT INSERT,UPDATE ON execution.route_decisions TO audeniq_worker;
 GRANT INSERT,UPDATE ON distribution.delivery_staging TO audeniq_worker;

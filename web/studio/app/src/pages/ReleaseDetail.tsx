@@ -22,6 +22,8 @@ const DELIVERY_STAGE: Record<string, string> = {
   ON_HOLD: '보류',
   SENDING: '전송 중',
   DELIVERED: '전송 완료',
+  LIVE: '공개됨',
+  TAKEN_DOWN: '내려감',
 };
 
 // 플랫폼 기준으로 고쳐야 하는 항목 안내
@@ -143,12 +145,14 @@ export function ReleaseDetail() {
               신청서 보기
             </button>
           )}
-          <button
-            type="button" className={`button${needsFix ? '' : ' secondary'}`}
-            onClick={() => nav(needsFix ? fixPath(rel.id, fixes[0]) : `/upload?edit=${encodeURIComponent(rel.id)}`)}
-          >
-            {editLabel}
-          </button>
+          {rel.status !== 'closed' && (
+            <button
+              type="button" className={`button${needsFix ? '' : ' secondary'}`}
+              onClick={() => nav(needsFix ? fixPath(rel.id, fixes[0]) : `/upload?edit=${encodeURIComponent(rel.id)}`)}
+            >
+              {editLabel}
+            </button>
+          )}
           {isDraft && (
             <button type="button" className="button danger" onClick={handleDelete} disabled={deleting}>
               {deleting ? '삭제 중' : '삭제'}
