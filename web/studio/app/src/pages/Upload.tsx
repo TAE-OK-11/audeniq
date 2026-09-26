@@ -691,6 +691,10 @@ export function Upload() {
                     <input id={`tr-${i}-title`} value={t.title} onChange={e => setTrack(t.id, 'title', e.target.value)} placeholder="곡명을 입력해" maxLength={200} />
                   </div>
                   <div className="field">
+                    <label htmlFor={`tr-${i}-composers`}>작곡 <span className="required">*</span></label>
+                    <input id={`tr-${i}-composers`} value={t.composers} onChange={e => setTrack(t.id, 'composers', e.target.value)} placeholder="참여자 이름을 쉼표로 구분" maxLength={200} />
+                  </div>
+                  <div className="field">
                     <label htmlFor={`trackFile-${i}`}>음원 파일 <span className="required">*</span></label>
                     <input
                       type="file" id={`trackFile-${i}`}
@@ -722,10 +726,6 @@ export function Upload() {
                         <div className="field">
                           <label htmlFor={`tr-${i}-isrc`}>ISRC (보유 시)</label>
                           <input id={`tr-${i}-isrc`} value={t.isrc} onChange={e => setTrack(t.id, 'isrc', e.target.value)} placeholder="예: KR-ABC-26-00001" maxLength={200} />
-                        </div>
-                        <div className="field">
-                          <label htmlFor={`tr-${i}-composers`}>작곡 <span className="required">*</span></label>
-                          <input id={`tr-${i}-composers`} value={t.composers} onChange={e => setTrack(t.id, 'composers', e.target.value)} placeholder="참여자 이름을 쉼표로 구분" maxLength={200} />
                         </div>
                         <div className="field">
                           <label htmlFor={`tr-${i}-lyricists`}>작사</label>
