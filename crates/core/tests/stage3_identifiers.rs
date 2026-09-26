@@ -1,6 +1,9 @@
 use audeniq_core::{
     database,
-    identifiers::{ExistingAssignment, IdentifierKind, record_existing, record_existing_batch},
+    identifiers::{
+        ExistingAssignment, IdentifierKind, is_virtual, issue_or_reuse, record_existing,
+        record_existing_batch, register_issuer,
+    },
 };
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
@@ -254,4 +257,160 @@ async fn record_existing_batch_assigns_all_and_is_idempotent(pool: PgPool) {
         .await
         .unwrap();
     assert_eq!(count, 2);
+}
+
+#[sqlx::test]
+async fn missing_codes_are_issued_once_from_the_active_issuer(pool: PgPool) {
+    database::MIGRATOR.run(&pool).await.unwrap();
+    let s = seed(&pool).await;
+    // Until real ranges are registered the virtual test ranges issue.
+    let mut tx = org_tx(&pool, s.org).await;
+    let upc = issue_or_reuse(
+        &mut tx,
+        s.org,
+        s.release,
+        None,
+        s.revision,
+        IdentifierKind::Upc,
+    )
+    .await
+    .unwrap();
+    let isrc = issue_or_reuse(
+        &mut tx,
+        s.org,
+        s.release,
+        Some(s.track),
+        s.revision,
+        IdentifierKind::Isrc,
+    )
+    .await
+    .unwrap();
+    assert!(is_virtual(IdentifierKind::Upc, &upc), "{upc}");
+    assert!(is_virtual(IdentifierKind::Isrc, &isrc), "{isrc}");
+    // A target keeps its code.
+    assert_eq!(
+        issue_or_reuse(
+            &mut tx,
+            s.org,
+            s.release,
+            None,
+            s.revision,
+            IdentifierKind::Upc
+        )
+        .await
+        .unwrap(),
+        upc
+    );
+    assert_eq!(
+        issue_or_reuse(
+            &mut tx,
+            s.org,
+            s.release,
+            Some(s.track),
+            s.revision,
+            IdentifierKind::Isrc,
+        )
+        .await
+        .unwrap(),
+        isrc
+    );
+    // UPC and ISRC must match their target shape.
+    assert!(
+        issue_or_reuse(
+            &mut tx,
+            s.org,
+            s.release,
+            Some(s.track),
+            s.revision,
+            IdentifierKind::Upc
+        )
+        .await
+        .is_err()
+    );
+    let sources: Vec<String> =
+        sqlx::query_scalar("SELECT source FROM distribution.identifier_assignments ORDER BY kind")
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+    assert_eq!(sources, ["VIRTUAL", "VIRTUAL"]);
+    tx.commit().await.unwrap();
+
+    // Registering the real range: virtual or malformed ranges are refused,
+    // and an operator name is required.
+    assert!(
+        register_issuer(&pool, "tester", IdentifierKind::Upc, "2123456")
+            .await
+            .is_err()
+    );
+    assert!(
+        register_issuer(&pool, "tester", IdentifierKind::Isrc, "XX-A1B")
+            .await
+            .is_err()
+    );
+    assert!(
+        register_issuer(&pool, "tester", IdentifierKind::Upc, "08123")
+            .await
+            .is_err()
+    );
+    assert!(
+        register_issuer(&pool, " ", IdentifierKind::Upc, "0812345")
+            .await
+            .is_err()
+    );
+    register_issuer(&pool, "tester", IdentifierKind::Upc, "0812345")
+        .await
+        .unwrap();
+    register_issuer(&pool, "tester", IdentifierKind::Isrc, "kr-a1b")
+        .await
+        .unwrap();
+
+    let other = seed(&pool).await;
+    let mut tx = org_tx(&pool, other.org).await;
+    let real = issue_or_reuse(
+        &mut tx,
+        other.org,
+        other.release,
+        None,
+        other.revision,
+        IdentifierKind::Upc,
+    )
+    .await
+    .unwrap();
+    assert!(real.starts_with("0812345"), "{real}");
+    let real_isrc = issue_or_reuse(
+        &mut tx,
+        other.org,
+        other.release,
+        Some(other.track),
+        other.revision,
+        IdentifierKind::Isrc,
+    )
+    .await
+    .unwrap();
+    assert!(real_isrc.starts_with("KRA1B"), "{real_isrc}");
+    let source: String = sqlx::query_scalar(
+        "SELECT source FROM distribution.identifier_assignments WHERE identifier=$1",
+    )
+    .bind(&real)
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    assert_eq!(source, "ISSUED");
+    tx.commit().await.unwrap();
+
+    // Codes already assigned never change.
+    let mut tx = org_tx(&pool, s.org).await;
+    assert_eq!(
+        issue_or_reuse(
+            &mut tx,
+            s.org,
+            s.release,
+            None,
+            s.revision,
+            IdentifierKind::Upc
+        )
+        .await
+        .unwrap(),
+        upc
+    );
 }

@@ -91,6 +91,7 @@ pub async fn replace_track(
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, release, "release", true).await?;
     track_refs(&mut tx, a, org, &i).await?;
+    let isrc = i.isrc()?;
     bump(&mut tx, org, release, i.row_version).await?;
     let lyrics = i.lyrics.as_deref().filter(|s| !s.trim().is_empty());
     let version = i
@@ -99,8 +100,8 @@ pub async fn replace_track(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .unwrap_or("");
-    let n = sqlx::query("UPDATE catalog.tracks SET title=$4,version=$11,disc_number=$5,track_number=$6,artist_id=$7,asset_id=$8,lyrics=$9,parental_advisory=$10 WHERE org_id=$1 AND release_id=$2 AND id=$3 AND archived_at IS NULL")
-        .bind(org).bind(release).bind(track).bind(i.title).bind(i.disc_number).bind(i.track_number).bind(i.artist_id).bind(i.asset_id).bind(lyrics).bind(i.parental_advisory.unwrap_or(false)).bind(version).execute(&mut *tx).await?.rows_affected();
+    let n = sqlx::query("UPDATE catalog.tracks SET title=$4,version=$11,disc_number=$5,track_number=$6,artist_id=$7,asset_id=$8,lyrics=$9,parental_advisory=$10,isrc=$12 WHERE org_id=$1 AND release_id=$2 AND id=$3 AND archived_at IS NULL")
+        .bind(org).bind(release).bind(track).bind(i.title).bind(i.disc_number).bind(i.track_number).bind(i.artist_id).bind(i.asset_id).bind(lyrics).bind(i.parental_advisory.unwrap_or(false)).bind(version).bind(isrc).execute(&mut *tx).await?.rows_affected();
     if n != 1 {
         return Err(Error::NotFound);
     }
