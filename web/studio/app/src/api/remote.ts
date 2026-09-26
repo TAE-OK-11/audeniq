@@ -112,6 +112,9 @@ function buildProfile(data: ReleasePayload, prev: Record<string, unknown> | null
     options: data.options,
     draftTracks: data.tracks,
     lastStep: data.lastStep,
+    artistProfile: data.artistProfile,
+    // 서명한 신청서는 한 번 기록되면 이후 임시 저장에서도 유지
+    application: data.application ?? (prev?.application as ReleasePayload['application']),
     history,
     saved_at: stampNow(),
   };
@@ -153,6 +156,8 @@ function readDraft(r: ServerRelease): ReleaseDraft {
     options: p.options as ReleaseDraft['options'],
     draftTracks: a<DraftTrack>('draftTracks'),
     lastStep: typeof p.lastStep === 'number' ? p.lastStep : undefined,
+    artistProfile: p.artistProfile && typeof p.artistProfile === 'object' ? p.artistProfile as ReleaseDraft['artistProfile'] : undefined,
+    application: p.application && typeof p.application === 'object' ? p.application as ReleaseDraft['application'] : undefined,
     history: a<{ text: string; time: string }>('history'),
   };
 }

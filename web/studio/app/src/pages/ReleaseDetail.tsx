@@ -106,6 +106,11 @@ export function ReleaseDetail() {
       <div className="spaced-actions">
         <button type="button" className="link-btn aq-back-link" onClick={() => nav('/releases')}>← 발매 목록</button>
         <div className="row-actions">
+          {d?.application && (
+            <button type="button" className="button secondary" onClick={() => nav(`/releases/${encodeURIComponent(rel.id)}/application`)}>
+              신청서 보기
+            </button>
+          )}
           <button
             type="button" className={`button${needsFix ? '' : ' secondary'}`}
             onClick={() => nav(needsFix ? fixPath(rel.id, fixes[0]) : `/upload?edit=${encodeURIComponent(rel.id)}`)}

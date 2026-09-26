@@ -163,6 +163,8 @@ function apply(existing: ReleaseDetail | undefined, data: ReleasePayload, status
       territories: data.territories, platforms: data.platforms, ownership: data.ownership,
       phonogram: data.phonogram, copyright: data.copyright, rightsChecks: data.rightsChecks,
       options: data.options, draftTracks: data.tracks.map(t => ({ ...t })), lastStep: data.lastStep,
+      artistProfile: data.artistProfile,
+      application: data.application ?? existing?.draft?.application,
       history: historyText ? [...prevHistory, { text: historyText, time: now }] : prevHistory,
     },
   };

@@ -29,6 +29,9 @@ EDGE_SERVICE_SECRET=... bun run dev:api  # 로컬 API(127.0.0.1:8080)와 연결�
 ## 구조
 - `api/` — API 진입점(`client.ts`), 서버 어댑터(`remote.ts`, `http.ts`), 목 서버(`mock.ts`), 오류 문구(`errors.ts`), 인증 컨텍스트
 - `lib/` — 날짜(`date.ts`, 사파리 호환 파싱), 영속 스토어(`store.ts`), 저장소 래퍼, 카탈로그 상수
+- `lib/dsp.ts` — 실제 배급 기준 검사: 발매 유형(곡 수·길이), 제목·아티스트 표기(피처링·버전·이모지·홍보 문구), UPC 체크 숫자, ISRC 형식·중복, ℗/© 표기, 기존 아티스트 프로필 주소, 커버 3000~6000px 정사각형, 발매일 준비 기간(일반 14일·신속 3일)
+- `lib/audioSpec.ts` — WAV/FLAC 머리를 읽어 44.1kHz·16bit 이상, 2채널 이하, PCM 여부를 업로드 전에 확인
+- `lib/application.ts` + `pages/Application.tsx` — 마지막 단계 서명으로 배급 신청서 발급(번호·SHA-256 문서 확인 코드), `/releases/{id}/application`에서 정식 서류로 보기·인쇄·PDF 저장
 - `lib/corrections.ts` — 보완 요청 코드(서버 검사 `check_code` 포함) → 신청서 단계·입력칸 매핑. 발매 목록·상세의 ‘보완하기’는 `/upload?edit={id}&fix={code}`로 해당 칸에 바로 이동
 - `store/` — 공유 상태(프로필, 수령 정보, 알림, 서류, 정산, 문의)
 - `components/` — 모달(퇴장 애니메이션·포커스 트랩), 확인 대화상자, 토스트 스택, 스켈레톤, 오류 경계

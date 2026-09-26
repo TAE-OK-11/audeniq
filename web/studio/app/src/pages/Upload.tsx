@@ -5,7 +5,7 @@ import { Modal } from '../components/Modal';
 import { SignaturePad, type SignaturePadHandle } from '../components/SignaturePad';
 import { useConfirm } from '../components/Confirm';
 import { useProgressFill } from '../hooks/useAnimations';
-import { MOCK, api, type ReleasePayload } from '../api/client';
+import { MOCK, api, type ArtistProfileLinks, type ReleasePayload } from '../api/client';
 import { errorMessage } from '../api/errors';
 import { addDoc, docsForRelease, getDocsSnapshot, type DocRecord } from '../store/docs';
 import { pushNotice } from '../store/support';
@@ -14,6 +14,12 @@ import { fileSize, localStamp } from '../lib/format';
 import { DSP, GENRES, KINDS, LANGUAGES, dspLabel, genreLabel, kindLabel } from '../lib/catalog';
 import { formatKoreanDate, stampNow, todayStr } from '../lib/date';
 import { correctionWhere, resolveCorrection, type ResolvedCorrection } from '../lib/corrections';
+import { checkAudioFile, formatDuration, specLabel } from '../lib/audioSpec';
+import { AGREEMENTS, SIGNER_ROLES, compactSignature, createApplication } from '../lib/application';
+import {
+  artistIssue, artistWarning, coverIssue, isrcValid, minReleaseDate, mmssToSeconds, normalizeIsrc,
+  profileLinkIssue, PROFILE_LINKS, releaseTypeIssue, rightsLineIssue, titleIssue, titleWarning, upcValid,
+} from '../lib/dsp';
 import { uid } from '../lib/store';
 
 const STEPS = [
@@ -50,6 +56,10 @@ interface Track {
   assetId: string;
   /** 서버 트랙 ID (실서버, 임시 저장 간 매칭) */
   serverId: string;
+  featuring: string;
+  instrumental: boolean;
+  /** 음원 규격 표기 */
+  audioSpec: string;
 }
 
 /** 파일 업로드 진행 상태 (저장하지 않는 화면 전용 상태) */
@@ -86,6 +96,7 @@ interface WizardForm {
   ownership: string; phonogram: string; copyright: string;
   rightsChecks: Record<string, boolean>;
   options: ReleaseOptions;
+  artistProfile: ArtistProfileLinks;
 }
 
 const newTrack = (): Track => ({
@@ -94,7 +105,7 @@ const newTrack = (): Track => ({
   producer: '',
   lyrics: '',
   audioName: '', audioSize: 0, explicit: false, duration: '',
-  assetId: '', serverId: '',
+  assetId: '', serverId: '', featuring: '', instrumental: false, audioSpec: '',
 });
 
 const EMPTY_OPTIONS: ReleaseOptions = {
@@ -121,6 +132,7 @@ const EMPTY: WizardForm = {
   ownership: '', phonogram: '', copyright: '',
   rightsChecks: {},
   options: EMPTY_OPTIONS,
+  artistProfile: { isNew: true, spotify: '', apple: '', melon: '' },
 };
 
 const SERVICE_OPTIONS: [keyof ReleaseOptions, string, string][] = [
@@ -635,6 +647,18 @@ function FinalReviewBanner({ form }: { form: WizardForm }) {
   if (o.minor) warnings.push('미성년: 법정대리인 동의서 및 자격 확인 필요');
   if (o.ai) warnings.push('AI 음원: 이용 권한과 플랫폼별 허용 기준 확인 필요');
   if (chosen.length) warnings.push('선택한 추가 옵션의 관련 서류는 권리 증빙에서 제출');
+  // 배급은 되지만 플랫폼 검수에서 걸릴 수 있는 표기
+  const named = form.tracks.filter(t => t.title.trim());
+  for (const w of [titleWarning(form.title), artistWarning(form.artist)]) if (w) warnings.push(w);
+  named.forEach((t, k) => {
+    const w = titleWarning(t.title);
+    if (w) warnings.push(`트랙 ${k + 1}: ${w}`);
+    if (t.audioSpec.includes('모노')) warnings.push(`트랙 ${k + 1}: 모노 음원이에요. 스테레오 마스터가 있다면 교체해 주세요.`);
+    const secs = mmssToSeconds(t.duration);
+    if (secs && secs < 30) warnings.push(`트랙 ${k + 1}: 30초 미만 곡은 일부 플랫폼에서 재생 수익이 집계되지 않아요.`);
+  });
+  const noLyrics = named.filter(t => !t.instrumental && !t.lyrics.trim()).length;
+  if (noLyrics) warnings.push(`가사가 없는 보컬 곡이 ${noLyrics}곡 있어요. 국내 플랫폼 가사 노출을 원하면 곡 상세 정보에 가사를 입력해 주세요.`);
   const incomplete = form.tracks.filter(t => !t.audioName || !t.title || !t.composers).length;
   const withAudio = form.tracks.filter(t => t.audioName).length;
   return (
@@ -700,12 +724,30 @@ const TrackEditor = memo(function TrackEditor({
       </div>
       <div className="field track-title-field">
         <label htmlFor={`tr-${i}-title`}>곡 제목 <span className="required">*</span></label>
-        <input id={`tr-${i}-title`} value={t.title} onChange={e => setTrack(t.id, 'title', e.target.value)} placeholder="곡명을 입력해 주세요" maxLength={200} />
+        <input id={`tr-${i}-title`} value={t.title} onChange={e => setTrack(t.id, 'title', e.target.value)} placeholder="곡명만 입력 (피처링·버전 표기 제외)" maxLength={200} />
       </div>
       <div className="field">
-        <label htmlFor={`tr-${i}-composers`}>작곡 <span className="required">*</span></label>
-        <input id={`tr-${i}-composers`} value={t.composers} onChange={e => setTrack(t.id, 'composers', e.target.value)} placeholder="참여자 이름을 쉼표로 구분" maxLength={200} />
+        <label htmlFor={`tr-${i}-featuring`}>피처링 아티스트</label>
+        <input id={`tr-${i}-featuring`} value={t.featuring} onChange={e => setTrack(t.id, 'featuring', e.target.value)} placeholder="없으면 비워 두세요 · 여러 명은 쉼표로 구분" maxLength={200} />
       </div>
+      <div className="form-grid">
+        <div className="field">
+          <label htmlFor={`tr-${i}-composers`}>작곡 <span className="required">*</span></label>
+          <input id={`tr-${i}-composers`} value={t.composers} onChange={e => setTrack(t.id, 'composers', e.target.value)} placeholder="실명 또는 활동명, 쉼표로 구분" maxLength={200} />
+        </div>
+        <div className="field">
+          <label htmlFor={`tr-${i}-lyricists`}>작사 {!t.instrumental && <span className="required">*</span>}</label>
+          <input
+            id={`tr-${i}-lyricists`} value={t.instrumental ? '' : t.lyricists} disabled={t.instrumental}
+            onChange={e => setTrack(t.id, 'lyricists', e.target.value)}
+            placeholder={t.instrumental ? '연주곡은 입력하지 않아요' : '실명 또는 활동명, 쉼표로 구분'} maxLength={200}
+          />
+        </div>
+      </div>
+      <label className="check-line aq-inst-line">
+        <input type="checkbox" checked={t.instrumental} onChange={e => setTrack(t.id, 'instrumental', e.target.checked)} />
+        <span><strong>가사 없는 연주곡이에요</strong><small>보컬·가사가 없으면 작사와 가사를 입력하지 않아도 돼요.</small></span>
+      </label>
       <div className="field">
         <label htmlFor={`trackFile-${i}`}>음원 파일 <span className="required">*</span></label>
         <input
@@ -714,8 +756,8 @@ const TrackEditor = memo(function TrackEditor({
           onChange={e => onTrackAudio(t.id, e)}
         />
         <UploadStatus upload={upload} idle={t.audioName
-          ? `${t.audioName}${t.audioSize ? ` · ${fileSize(t.audioSize)}` : ''}${t.assetId ? ' · 업로드 완료' : MOCK ? '' : ' · 업로드되지 않았어요. 파일을 다시 선택해 주세요.'}`
-          : '선택한 파일 없음 · 무손실 WAV 또는 FLAC 원본을 올려 주세요.'} />
+          ? `${t.audioName}${t.audioSpec ? ` · ${t.audioSpec}` : t.audioSize ? ` · ${fileSize(t.audioSize)}` : ''}${t.assetId ? ' · 업로드 완료' : MOCK ? '' : ' · 업로드되지 않았어요. 파일을 다시 선택해 주세요.'}`
+          : '무손실 WAV·FLAC 원본 · 44.1kHz 이상, 16bit 이상, 스테레오'} />
       </div>
       <div className="track-duration-label" aria-live="polite">
         {t.duration ? `곡 길이 · ${t.duration}` : '음원을 선택하면 곡 길이를 자동으로 확인해요.'}
@@ -740,15 +782,11 @@ const TrackEditor = memo(function TrackEditor({
               <input id={`tr-${i}-isrc`} value={t.isrc} onChange={e => setTrack(t.id, 'isrc', e.target.value)} placeholder="예: KR-ABC-26-00001" maxLength={200} />
             </div>
             <div className="field">
-              <label htmlFor={`tr-${i}-lyricists`}>작사</label>
-              <input id={`tr-${i}-lyricists`} value={t.lyricists} onChange={e => setTrack(t.id, 'lyricists', e.target.value)} placeholder="가사가 없는 곡이면 비워 두세요" maxLength={200} />
-            </div>
-            <div className="field">
               <label htmlFor={`tr-${i}-arrangers`}>편곡</label>
               <input id={`tr-${i}-arrangers`} value={t.arrangers} onChange={e => setTrack(t.id, 'arrangers', e.target.value)} placeholder="참여자 이름" maxLength={200} />
             </div>
             <div className="field">
-              <label htmlFor={`tr-${i}-performers`}>실연자 / 피처링</label>
+              <label htmlFor={`tr-${i}-performers`}>실연자 (보컬·연주)</label>
               <input id={`tr-${i}-performers`} value={t.performers} onChange={e => setTrack(t.id, 'performers', e.target.value)} placeholder="참여자 이름" maxLength={200} />
             </div>
             <div className="field">
@@ -756,14 +794,14 @@ const TrackEditor = memo(function TrackEditor({
               <input id={`tr-${i}-producer`} value={t.producer} onChange={e => setTrack(t.id, 'producer', e.target.value)} placeholder="프로듀서 이름" maxLength={200} />
             </div>
           </div>
-          <div className="field">
+          {!t.instrumental && <div className="field">
             <label htmlFor={`tr-${i}-lyrics`}>가사 전문</label>
             <textarea
               id={`tr-${i}-lyrics`} value={t.lyrics}
               onChange={e => setTrack(t.id, 'lyrics', e.target.value)}
-              rows={4} maxLength={10000} placeholder="가사 전체를 입력해 주세요"
+              rows={4} maxLength={10000} placeholder="가사 전체를 입력해 주세요 (국내 플랫폼 가사 노출·심의에 쓰여요)"
             />
-          </div>
+          </div>}
           <label className="check-line">
             <input
               type="checkbox" checked={t.explicit}
@@ -802,6 +840,7 @@ function toPayload(form: WizardForm, step: number): ReleasePayload {
       audioSize: t.audioSize, explicit: t.explicit,
       producer: t.producer.trim(), lyrics: t.lyrics.trim(),
       assetId: t.assetId || undefined, serverId: t.serverId || undefined,
+      featuring: t.featuring.trim(), instrumental: t.instrumental, audioSpec: t.audioSpec || undefined,
     })),
     territories: form.territories,
     platforms: form.platforms,
@@ -811,6 +850,9 @@ function toPayload(form: WizardForm, step: number): ReleasePayload {
     rightsChecks: form.rightsChecks,
     options: { ...form.options },
     lastStep: step,
+    artistProfile: form.artistProfile.isNew
+      ? { isNew: true, spotify: '', apple: '', melon: '' }
+      : { ...form.artistProfile, spotify: form.artistProfile.spotify.trim(), apple: form.artistProfile.apple.trim(), melon: form.artistProfile.melon.trim() },
   };
 }
 
@@ -909,6 +951,11 @@ export function Upload() {
   // 보완 요청 — 수정 모드에서 불러온 발매의 요청 항목과 신청서 위치
   const [fixes, setFixes] = useState<ResolvedCorrection[]>([]);
   const [focusField, setFocusField] = useState<{ id: string; n: number } | null>(null);
+  // 신청인 서명 (마지막 단계)
+  const signRef = useRef<SignaturePadHandle>(null);
+  const [signed, setSigned] = useState(false);
+  const [signer, setSigner] = useState({ name: '', role: SIGNER_ROLES[0], touched: false });
+  const [agreed, setAgreed] = useState<Record<string, boolean>>({});
   const [dir, setDir] = useState<'fwd' | 'back'>('fwd');
   const [form, setForm] = useState<WizardForm>(() => ({ ...EMPTY, artist: profile.name || '', tracks: [newTrack()] }));
   const [error, setError] = useState('');
@@ -1003,7 +1050,10 @@ export function Upload() {
       setOrigStatus(rel.status);
       setOrigDate(rel.release_date || '');
       const tracks: Track[] = d?.draftTracks?.length
-        ? d.draftTracks.map(t => ({ ...newTrack(), ...t, id: t.id || uid('t'), assetId: t.assetId || '', serverId: t.serverId || '' }))
+        ? d.draftTracks.map(t => ({
+            ...newTrack(), ...t, id: t.id || uid('t'), assetId: t.assetId || '', serverId: t.serverId || '',
+            featuring: t.featuring || '', instrumental: !!t.instrumental, audioSpec: t.audioSpec || '',
+          }))
         : rel.tracks.length
           ? rel.tracks.map(t => ({
               ...newTrack(),
@@ -1037,6 +1087,7 @@ export function Upload() {
         copyright: d?.copyright || '',
         rightsChecks: d?.rightsChecks || {},
         options: d?.options ? { ...EMPTY_OPTIONS, ...d.options } : { ...EMPTY_OPTIONS },
+        artistProfile: d?.artistProfile ? { ...EMPTY.artistProfile, ...d.artistProfile } : { ...EMPTY.artistProfile },
         tracks,
       }));
       // 작성 중인 발매는 마지막으로 머문 단계에서 이어서 작성, 접수된 발매는 모든 단계를 바로 열 수 있게
@@ -1163,22 +1214,48 @@ export function Upload() {
       if (!form.title.trim()) return fail('발매 제목을 입력해 주세요.', '#f-title');
       const genreVal = form.genre === '__other__' ? form.genreCustom : form.genre;
       if (!genreVal.trim()) return fail(form.genre === '__other__' ? '장르를 직접 입력해 주세요.' : '장르를 선택해 주세요.', form.genre === '__other__' ? '#f-genre-custom' : '#f-genre');
+      const artistErr = artistIssue(form.artist);
+      if (artistErr) return fail(artistErr, '#f-artist');
+      const titleErr = titleIssue(form.title, 'release');
+      if (titleErr) return fail(titleErr, '#f-title');
+      const ap = form.artistProfile;
+      if (!ap.isNew) {
+        for (const l of PROFILE_LINKS) {
+          const err = profileLinkIssue(l.key, ap[l.key]);
+          if (err) return fail(err, `#f-link-${l.key}`);
+        }
+        if (!PROFILE_LINKS.some(l => ap[l.key].trim())) {
+          return fail('이미 발매한 적이 있다면 기존 아티스트 페이지 주소를 하나 이상 입력해 주세요. 다른 동명 아티스트 페이지로 잘못 올라가는 것을 막아요.', '#f-link-spotify');
+        }
+      }
     }
     if (i === 1) {
       for (let k = 0; k < form.tracks.length; k++) {
         const t = form.tracks[k];
         if (!t.title.trim()) return fail(`트랙 ${k + 1}의 곡 제목을 입력해 주세요.`, `#tr-${k}-title`);
+        const tErr = titleIssue(t.title, 'track');
+        if (tErr) return fail(`트랙 ${k + 1}: ${tErr}`, `#tr-${k}-title`);
         if (!t.composers.trim()) return fail(`트랙 ${k + 1}의 작곡자를 입력해 주세요.`, `#tr-${k}-composers`);
+        if (!t.instrumental && !t.lyricists.trim()) return fail(`트랙 ${k + 1}의 작사자를 입력해 주세요. 가사 없는 곡이면 ‘연주곡’을 선택해 주세요.`, `#tr-${k}-lyricists`);
         if (!t.audioName) return fail(`트랙 ${k + 1}의 음원 파일을 선택해 주세요.`, `#trackFile-${k}`);
         const up = uploads[t.id];
         if (up?.state === 'uploading') return fail(`트랙 ${k + 1}의 음원을 올리는 중이에요. 업로드가 끝나면 다음으로 넘어갈 수 있어요.`, null);
         if (up?.state === 'error') return fail(`트랙 ${k + 1}의 음원 업로드에 실패했어요. 파일을 다시 선택해 주세요.`, `#trackFile-${k}`);
         if (!MOCK && !t.assetId) return fail(`트랙 ${k + 1}의 음원 파일을 다시 선택해 주세요. (업로드 기록이 없어요)`, `#trackFile-${k}`);
-        if (t.isrc.trim() && !/^[A-Z]{2}-?[A-Z0-9]{3}-?\d{2}-?\d{5}$/i.test(t.isrc.trim())) {
+        const dupIsrc = t.isrc.trim() && form.tracks.findIndex(o => o.isrc.trim() && normalizeIsrc(o.isrc) === normalizeIsrc(t.isrc)) !== k;
+        if (dupIsrc) {
+          setExpandedTracks(prev => new Set(prev).add(t.id));
+          return fail(`트랙 ${k + 1}의 ISRC가 다른 곡과 같아요. 곡마다 고유한 ISRC를 써야 해요.`, `#tr-${k}-isrc`);
+        }
+        if (t.isrc.trim() && !isrcValid(t.isrc)) {
           setExpandedTracks(prev => new Set(prev).add(t.id));
           return fail(`트랙 ${k + 1}의 ISRC 형식을 확인해 주세요. (예: KR-ABC-26-00001)`, `#tr-${k}-isrc`);
         }
       }
+    }
+    if (i === 1) {
+      const typeErr = releaseTypeIssue(form.type, form.tracks.map(t => mmssToSeconds(t.duration)));
+      if (typeErr) return fail(typeErr, null);
     }
     if (i === 2) {
       if (!form.coverName) return fail('커버아트를 등록해 주세요.', '#coverFile');
@@ -1189,9 +1266,13 @@ export function Upload() {
     if (i === 3) {
       if (!form.releaseDate) return fail('발매일을 선택해 주세요.', '#f-releaseDate');
       // 수정 모드에서 기존 발매일을 그대로 두는 경우는 과거여도 허용
-      if (form.releaseDate < todayStr() && form.releaseDate !== origDate) return fail('발매 예정일은 오늘 이후로 선택해 주세요.', '#f-releaseDate');
+      if (form.releaseDate < minReleaseDate(form.options.express) && form.releaseDate !== origDate) {
+        return fail(form.options.express
+          ? '신속 발매도 플랫폼 납품에 최소 3일이 필요해요. 3일 뒤 이후 날짜를 선택해 주세요.'
+          : '플랫폼 납품·검수에 2주가 필요해요. 오늘부터 14일 뒤 이후로 선택하거나, 급하면 아래 ‘신속 발매 요청’을 선택해 주세요.', '#f-releaseDate');
+      }
       if (!form.platforms.length) return fail('배급할 플랫폼을 하나 이상 선택해 주세요.', null);
-      if (form.upc.trim() && !/^\d{12,13}$/.test(form.upc.trim())) return fail('UPC/EAN은 숫자 12~13자리로 입력해 주세요.', '#f-upc');
+      if (form.upc.trim() && !upcValid(form.upc.trim())) return fail('UPC/EAN 번호가 올바르지 않아요. 숫자 12~13자리와 마지막 확인 숫자를 확인해 주세요.', '#f-upc');
       const o = form.options;
       if (o.express && !o.expressAck) return fail('신속 발매 안내를 확인해 주세요.', '#aqExpressAck');
       if (o.minor) {
@@ -1222,7 +1303,17 @@ export function Upload() {
       if (!form.ownership.trim()) return fail('음원 권리자를 입력해 주세요.', '#f-ownership');
       if (!form.phonogram.trim()) return fail('℗ 표기를 입력해 주세요.', '#f-phonogram');
       if (!form.copyright.trim()) return fail('© 표기를 입력해 주세요.', '#f-copyright');
+      const pErr = rightsLineIssue(form.phonogram);
+      if (pErr) return fail(`℗ 표기: ${pErr}`, '#f-phonogram');
+      const cErr = rightsLineIssue(form.copyright);
+      if (cErr) return fail(`© 표기: ${cErr}`, '#f-copyright');
       if (!rightsOk(form)) return fail('권리 확인 항목을 모두 확인해 주세요.', null);
+    }
+    if (i === 5) {
+      if (!signerName.trim()) return fail('신청인 성명을 입력해 주세요.', '#f-signer');
+      if (!signed || signRef.current?.isEmpty()) return fail('신청인 서명을 그려 주세요.', '#aqApplyPad');
+      const missing = AGREEMENTS.find(a => !agreed[a.id]);
+      if (missing) return fail('신청 확인 항목에 모두 동의해 주세요.', `#agree-${missing.id}`);
     }
     setError('');
     return true;
@@ -1238,7 +1329,7 @@ export function Upload() {
 
   const submit = async () => {
     // 앞 단계까지 모두 다시 검증 (단계를 건너뛰어 돌아온 경우 대비)
-    for (let i = 0; i < STEPS.length - 1; i++) {
+    for (let i = 0; i < STEPS.length; i++) {
       if (!validateStep(i)) { if (i !== step) goStep(i); return; }
     }
     if (submittingRef.current) return;
@@ -1246,7 +1337,13 @@ export function Upload() {
     setSubmitting(true);
     try {
       await saveChain.current.catch(() => {});
-      const r = await api.submitRelease(draftIdRef.current, toPayload(form, step));
+      const payload = toPayload(form, step);
+      const signature = await compactSignature(signRef.current?.toDataURL() ?? '');
+      const application = await createApplication({
+        payload, signature, signerName, signerRole: signer.role,
+        agreements: AGREEMENTS.map(a => a.id),
+      });
+      const r = await api.submitRelease(draftIdRef.current, { ...payload, application });
       draftIdRef.current = r.id;
       dirtyRef.current = false;
       ensureReleaseDocuments(form, r.id);
@@ -1256,7 +1353,8 @@ export function Upload() {
         detail: '담당자 검토가 시작됐어요. 계약서와 권리 서류 메뉴에서 준비된 문서를 확인해 주세요.',
       });
       toast(editId && origStatus !== 'draft' ? '발매 정보가 수정됐어요.' : '발매 신청이 접수됐어요.', 'success');
-      nav(`/releases/${r.id}`, { replace: true });
+      // 서명한 신청서를 정식 서류로 바로 보여 준다
+      nav(`/releases/${r.id}/application?done=1`, { replace: true });
     } catch (e) {
       setError(errorMessage(e, '제출에 실패했어요. 잠시 후 다시 시도해 주세요.'));
       toast('제출에 실패했어요. 다시 시도해 주세요.');
@@ -1298,14 +1396,22 @@ export function Upload() {
       if (input) input.value = '';
       return;
     }
+    if (file.size > 20 * 1024 * 1024) {
+      toast('커버 이미지는 20MB 이하로 올려 주세요.');
+      if (input) input.value = '';
+      return;
+    }
     try {
       const thumb = await makeCoverThumbnail(file);
-      const warn = thumb.width !== thumb.height
-        ? `정사각형이 아니에요 (${thumb.width}×${thumb.height}). 플랫폼에서 잘릴 수 있어요.`
-        : thumb.width < 3000
-          ? `해상도가 ${thumb.width}×${thumb.height}예요. 3000×3000 이상을 권장해요.`
-          : '';
-      setCoverWarn(warn);
+      // 플랫폼 기준(정사각형, 3000~6000px)에 맞지 않으면 받지 않는다
+      const issue = coverIssue(thumb.width, thumb.height);
+      if (issue) {
+        setCoverWarn(issue);
+        toast('커버아트 규격을 확인해 주세요.');
+        if (input) input.value = '';
+        return;
+      }
+      setCoverWarn('');
       set('coverName', file.name);
       setForm(f => ({ ...f, coverData: thumb.data, coverAssetId: '' }));
       const assetId = await startUpload('cover', file, 'IMAGE');
@@ -1329,10 +1435,28 @@ export function Upload() {
       input.value = '';
       return;
     }
+    if (file.size > 512 * 1024 * 1024) {
+      toast('음원 파일은 512MB 이하로 올려 주세요.');
+      input.value = '';
+      return;
+    }
+    void checkAudioFile(file).then(check => {
+      if (check.error) {
+        // 규격에 맞지 않으면 올리지 않고 사유를 파일 칸 아래에 보여 준다
+        setUpload(id, { pct: 0, state: 'error', message: check.error });
+        input.value = '';
+        return;
+      }
+      if (check.warnings.length) toast(check.warnings[0], 'info');
+      acceptAudio(id, file, check.spec ? specLabel(check.spec) : '', check.spec?.duration ? formatDuration(check.spec.duration) : '');
+    }).catch(() => acceptAudio(id, file, '', ''));
+  }, [startUpload, setUpload, toast]); // eslint-disable-line react-hooks/exhaustive-deps -- acceptAudio는 매 렌더 새로 만들어지지만 상태 setter만 쓴다
+
+  const acceptAudio = (id: string, file: File, spec: string, headerDuration: string) => {
     dirtyRef.current = true;
     setForm(f => ({
       ...f,
-      tracks: f.tracks.map(t => (t.id === id ? { ...t, audioName: file.name, audioSize: file.size, assetId: '' } : t)),
+      tracks: f.tracks.map(t => (t.id === id ? { ...t, audioName: file.name, audioSize: file.size, assetId: '', audioSpec: spec, duration: headerDuration || t.duration } : t)),
     }));
     void startUpload(id, file, 'AUDIO').then(assetId => {
       if (!assetId) return;
@@ -1340,11 +1464,12 @@ export function Upload() {
       dirtyRef.current = true;
       toast('음원 파일이 등록됐어요.');
     });
+    // 파일 머리에서 길이를 읽었으면 끝, 아니면 브라우저로 길이 추출 (못 읽어도 파일 등록은 진행)
+    if (headerDuration) return;
     const commit = (duration: string) => {
       if (!duration) return;
       setForm(f => ({ ...f, tracks: f.tracks.map(t => (t.id === id ? { ...t, duration } : t)) }));
     };
-    // 오디오 길이 자동 추출 (메타데이터를 읽지 못해도 파일 등록은 진행)
     const url = URL.createObjectURL(file);
     const audio = new Audio();
     audio.preload = 'metadata';
@@ -1355,7 +1480,7 @@ export function Upload() {
     };
     audio.onerror = () => done('');
     audio.src = url;
-  }, [startUpload]);
+  };
 
   // 보완 항목으로 이동: 단계를 바꾸고 해당 입력칸을 강조
   const jumpToFix = (c: ResolvedCorrection) => {
@@ -1384,6 +1509,8 @@ export function Upload() {
     return () => window.clearTimeout(timer);
   }, [focusField, step, loadingEdit]);
 
+  // 서명자 기본값: 권리자 → 아티스트 정보의 이름
+  const signerName = signer.touched ? signer.name : (form.ownership || profile.name || '');
   const s = STEPS[step];
   const genreIsCustom = form.genre === '__other__';
   const allPlatforms = DSP.every(d => form.platforms.includes(d[0]));
@@ -1568,6 +1695,36 @@ export function Upload() {
               />
               <p className="help aq-counter">{form.notes.length} / 1500</p>
             </div>
+            <h2 className="subhead">플랫폼 아티스트 프로필</h2>
+            <div className="aq-choice-row" role="radiogroup" aria-label="플랫폼 아티스트 프로필">
+              {([[true, '처음 발매해요', '플랫폼에 새 아티스트 페이지가 만들어져요.'], [false, '이미 발매한 적이 있어요', '기존 아티스트 페이지에 이어서 올라가요.']] as const).map(([v, t, sub]) => (
+                <label key={t} className={`aq-choice${form.artistProfile.isNew === v ? ' is-on' : ''}`}>
+                  <input
+                    type="radio" name="artistIsNew" checked={form.artistProfile.isNew === v}
+                    onChange={() => set('artistProfile', { ...form.artistProfile, isNew: v })}
+                  />
+                  <strong>{t}</strong>
+                  <small>{sub}</small>
+                </label>
+              ))}
+            </div>
+            {!form.artistProfile.isNew && (
+              <div className="aq-reveal">
+                <p className="help" style={{ margin: '4px 0 14px' }}>
+                  기존 아티스트 페이지 주소를 하나 이상 입력해 주세요. 이름이 같은 다른 아티스트 페이지로 잘못 올라가는 것을 막아요.
+                </p>
+                {PROFILE_LINKS.map(l => (
+                  <div className="field" key={l.key}>
+                    <label htmlFor={`f-link-${l.key}`}>{l.label}</label>
+                    <input
+                      id={`f-link-${l.key}`} type="url" inputMode="url" autoComplete="off"
+                      value={form.artistProfile[l.key]} placeholder={l.placeholder} maxLength={300}
+                      onChange={e => set('artistProfile', { ...form.artistProfile, [l.key]: e.target.value })}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
         )}
 
@@ -1671,7 +1828,7 @@ export function Upload() {
             <div className="form-grid">
               <KoreanDateField
                 id="f-releaseDate" label="발매 예정일" required
-                value={form.releaseDate} min={origDate && origDate < todayStr() ? origDate : todayStr()}
+                value={form.releaseDate} min={origDate && origDate < minReleaseDate(form.options.express) ? origDate : minReleaseDate(form.options.express)}
                 onChange={v => set('releaseDate', v)}
               />
               <div className="field">
@@ -1801,9 +1958,51 @@ export function Upload() {
               ))}
             </div>
             <div className="notice" style={{ marginTop: 24 }}>
-              ‘{editId && origStatus !== 'draft' ? '수정 완료' : '접수하기'}’를 누르면 신청 내용과 권리 확인서가 생성돼요. 최종 승인과 배급일은 담당자 검토 후 확정돼요.
+              아래에 서명하고 ‘{editId && origStatus !== 'draft' ? '서명하고 수정 완료' : '서명하고 접수하기'}’를 누르면 배급 신청서가 발급되고 권리 확인서가 준비돼요. 최종 승인과 배급일은 담당자 검토 후 확정돼요.
             </div>
             <FinalReviewBanner form={form} />
+
+            <section className="aq-apply-sign" aria-labelledby="aqApplySignHead">
+              <h2 className="subhead" id="aqApplySignHead">신청인 서명</h2>
+              <p className="help">서명하면 입력한 내용으로 배급 신청서가 만들어지고, 접수 후 바로 확인·저장할 수 있어요.</p>
+              <div className="form-grid">
+                <div className="field">
+                  <label htmlFor="f-signer">신청인 성명 <span className="required">*</span></label>
+                  <input
+                    id="f-signer" autoComplete="name" maxLength={80} value={signerName}
+                    onChange={e => setSigner(v => ({ ...v, name: e.target.value, touched: true }))} placeholder="실명 또는 법인명"
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="f-signer-role">신청인 구분</label>
+                  <select id="f-signer-role" value={signer.role} onChange={e => setSigner(v => ({ ...v, role: e.target.value }))}>
+                    {SIGNER_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="field">
+                <label htmlFor="aqApplyPad">서명 <span className="required">*</span></label>
+                <SignaturePad ref={signRef} id="aqApplyPad" label="신청인 서명 입력" height={170} onChange={setSigned} />
+              </div>
+              <div className="aq-agree-box">
+                <label className="check-line aq-agree-all-line">
+                  <input
+                    type="checkbox" checked={AGREEMENTS.every(a => agreed[a.id])}
+                    onChange={e => setAgreed(Object.fromEntries(AGREEMENTS.map(a => [a.id, e.target.checked])))}
+                  />
+                  <span><strong>아래 내용에 모두 동의해요</strong></span>
+                </label>
+                {AGREEMENTS.map(a => (
+                  <label key={a.id} className="check-line">
+                    <input
+                      type="checkbox" id={`agree-${a.id}`} checked={!!agreed[a.id]}
+                      onChange={e => setAgreed(v => ({ ...v, [a.id]: e.target.checked }))}
+                    />
+                    <span>{a.text}</span>
+                  </label>
+                ))}
+              </div>
+            </section>
           </section>
         )}
       </div>
@@ -1821,7 +2020,7 @@ export function Upload() {
           className={`button${submitting ? ' is-busy' : ''}`}
           onClick={next} disabled={submitting || loadingEdit} aria-busy={submitting}
         >
-          {submitting ? '접수하는 중' : step === STEPS.length - 1 ? (editId && origStatus !== 'draft' ? '수정 완료' : '접수하기') : '다음으로'}
+          {submitting ? '접수하는 중' : step === STEPS.length - 1 ? (editId && origStatus !== 'draft' ? '서명하고 수정 완료' : '서명하고 접수하기') : '다음으로'}
         </button>
       </div>
     </div>
