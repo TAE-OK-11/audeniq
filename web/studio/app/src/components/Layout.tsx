@@ -27,6 +27,8 @@ const NAV_GROUPS: { group: string; items: { to: string; label: string }[] }[] = 
     items: [
       { to: '/inquiries', label: '문의' },
       { to: '/notifications', label: '알림' },
+      { to: '/events', label: '이벤트' },
+      { to: '/notices', label: '공지사항' },
       { to: '/profile', label: '아티스트 정보' },
     ],
   },

@@ -129,6 +129,15 @@ export const api = {
       body: JSON.stringify({ email, password }),
     });
   },
+  signup: async (email: string, password: string): Promise<User> => {
+    if (MOCK) { const u = await mockApi.login(); mockApi.setSession(); return u; }
+    const csrf = await req<{ token: string }>('/api/auth/csrf', { method: 'POST' });
+    csrfToken = csrf.token;
+    return req<User>('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+  },
   logout: (): Promise<void> => {
     if (MOCK) { mockApi.clearSession(); return mockApi.logout(); }
     return req('/api/auth/logout', { method: 'POST' });

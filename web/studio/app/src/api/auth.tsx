@@ -7,6 +7,7 @@ interface AuthState {
   orgs: Org[];
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  signup: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   selectOrg: (org: Org) => void;
 }
@@ -39,6 +40,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (o.length > 0) setOrg(o[0]);
   }
 
+  async function signup(email: string, password: string) {
+    const u = await api.signup(email, password);
+    setUser(u);
+    const o = await api.listOrgs();
+    setOrgs(o);
+    if (o.length > 0) setOrg(o[0]);
+  }
+
   async function logout() {
     await api.logout();
     setUser(null);
@@ -47,7 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthCtx.Provider value={{ user, org, orgs, loading, login, logout, selectOrg: setOrg }}>
+    <AuthCtx.Provider value={{ user, org, orgs, loading, login, signup, logout, selectOrg: setOrg }}>
       {children}
     </AuthCtx.Provider>
   );
