@@ -1093,7 +1093,7 @@ export function Upload() {
       // 작성 중인 발매는 마지막으로 머문 단계에서 이어서 작성, 접수된 발매는 모든 단계를 바로 열 수 있게
       const last = Math.min(STEPS.length - 1, Math.max(0, d?.lastStep ?? 0));
       setReached(rel.status === 'draft' ? last : STEPS.length - 1);
-      const resolved = (rel.corrections ?? []).map(c => resolveCorrection(c, tracks.map(t => t.id)));
+      const resolved = (rel.corrections ?? []).map(c => resolveCorrection(c, tracks.map(t => t.serverId || t.id)));
       setFixes(resolved);
       // 보완하기로 들어왔으면 요청 항목의 단계·입력칸으로 바로 이동
       const target = fixCode
