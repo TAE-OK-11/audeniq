@@ -382,13 +382,22 @@ function OptionsSection({ form, set }: {
             />
           </div>
           <div className="field">
-            <label htmlFor="aqPreviousId">기존 UPC / ISRC (보유 시)</label>
+            <label htmlFor="f-upc">기존 UPC / EAN (있는 경우)</label>
+            <input id="f-upc" value={form.upc} onChange={e => set('upc', e.target.value)} maxLength={20} placeholder="없으면 비워두세요." />
+          </div>
+          <div className="field">
+            <label htmlFor="aqPreviousId">기존 ISRC (보유 시)</label>
             <input
               id="aqPreviousId" maxLength={100} value={o.previousId}
               onChange={e => setOpt('previousId', e.target.value)}
               placeholder="이전 식별자"
             />
           </div>
+          <KoreanDateField
+            id="aqOriginalDate" label="최초 발매일"
+            value={form.originalDate}
+            onChange={v => set('originalDate', v)}
+          />
           <p className="help">기존 발매 중복과 스트리밍 매칭 여부를 별도로 확인해요.</p>
         </div>
       )}
@@ -984,15 +993,6 @@ export function Upload() {
                 value={form.releaseDate} min={todayStr()}
                 onChange={v => set('releaseDate', v)}
               />
-              <KoreanDateField
-                id="f-originalDate" label="최초 발매일 (재발매인 경우)"
-                value={form.originalDate}
-                onChange={v => set('originalDate', v)}
-              />
-              <div className="field">
-                <label htmlFor="f-upc">UPC / EAN (있는 경우)</label>
-                <input id="f-upc" value={form.upc} onChange={e => set('upc', e.target.value)} maxLength={20} placeholder="없으면 비워두세요." />
-              </div>
             </div>
             <h2 className="subhead">배급 대상</h2>
             <label className="check-line">
