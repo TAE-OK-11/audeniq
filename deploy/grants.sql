@@ -6,6 +6,8 @@ GRANT INSERT,UPDATE ON identity.orgs,identity.parties,identity.users,identity.me
 GRANT INSERT,UPDATE ON catalog.artists,catalog.labels,catalog.releases,catalog.tracks,catalog.credits,catalog.assets,catalog.upload_sessions TO audeniq_api;
 GRANT SELECT ON catalog.asset_fingerprints TO audeniq_api;
 GRANT DELETE ON catalog.credits TO audeniq_api;
+-- Housekeeping: expired rate-limit buckets are deleted by the API (0040).
+GRANT DELETE ON identity.auth_limits TO audeniq_api;
 GRANT SELECT,INSERT,UPDATE ON operations.jobs,operations.outbox TO audeniq_api;
 GRANT INSERT ON operations.audit_events TO audeniq_api;
 GRANT SELECT ON operations.allowed_transitions TO audeniq_api;
@@ -52,6 +54,8 @@ GRANT SELECT,INSERT ON catalog.asset_fingerprints TO audeniq_worker;
 -- Cross-org similarity (REVIEW only) reads other orgs' fingerprints via one
 -- narrow SECURITY DEFINER function; the table itself stays org-scoped.
 GRANT EXECUTE ON FUNCTION catalog.fingerprints_outside_org(uuid, smallint) TO audeniq_worker;
+-- Duration-bounded variant used by Stage 1 (migration 0040).
+GRANT EXECUTE ON FUNCTION catalog.fingerprints_outside_org_near(uuid, smallint, double precision, double precision, double precision) TO audeniq_worker;
 GRANT INSERT ON catalog.application_revisions,catalog.consent_packages TO audeniq_worker;
 GRANT INSERT ON distribution.canonical_releases,distribution.distribution_packages,distribution.verification_packages,distribution.validation_packages,distribution.preparation_artifacts,distribution.identifier_assignments,distribution.ddex_messages TO audeniq_worker;
 GRANT INSERT,UPDATE ON execution.delivery_jobs,execution.delivery_attempts,execution.live_bindings,execution.reconciliation_cases TO audeniq_worker;

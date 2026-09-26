@@ -33,6 +33,7 @@ Request JSON rejects unknown top-level fields. Body limit 64 KiB. Errors have `{
 | POST/GET | `/api/orgs/{org}/releases` | Create `{name,release_type:SINGLE or EP or ALBUM,profile?}` / authorized list |
 | GET/PUT/DELETE | `/api/orgs/{org}/releases/{id}` | Read with tracks and separate empty DSP axes / replace DRAFT with row_version / archive DRAFT |
 | POST | `/api/orgs/{org}/releases/{id}/tracks` | `{title,disc_number,track_number,artist_id,asset_id?,row_version}` → track ID and new release version |
+| POST | `/api/orgs/{org}/releases/{id}/tracks/batch` | `{row_version,tracks:[{title,disc_number,track_number,artist_id,asset_id?,version?,parental_advisory?,lyrics?}]}` (1–1000 tracks, 2 MiB body) → `{ids,count,row_version}`. All-or-nothing: one transaction, one release version increment; duplicate positions → 400 `TRACK_POSITION_DUPLICATE` |
 | PUT | `/api/orgs/{org}/releases/{id}/tracks/{track}` | Same fields as track creation; replaces metadata/file reference, increments release row_version |
 | DELETE | `/api/orgs/{org}/releases/{id}/tracks/{track}` | `{row_version}` → archive track, preserve its internal ID, increment release version |
 | PUT | `/api/orgs/{org}/releases/{id}/tracks/{track}/credits` | `{row_version,credits:[{party_id,role}]}` → atomic replacement, empty list clears draft credits |

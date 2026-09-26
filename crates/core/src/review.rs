@@ -27,7 +27,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use sqlx::{PgConnection, PgPool, Row};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use uuid::Uuid;
 
 /// Rule version for Stage 2 review checks.
@@ -593,6 +593,18 @@ async fn module_applicant_rights(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec
     .await?;
     // Chain depth guard: unclear or overly deep chains go to REVIEW, never
     // auto-expanded (BLUEPRINT §5.2).
+    // Walk parent links in memory: all active grants are loaded above; a
+    // parent outside that set (revoked) is fetched once and memoized. The
+    // old walk issued one query per chain step per grant.
+    let mut parent_of: HashMap<Uuid, Option<Uuid>> = grants
+        .iter()
+        .map(|g| {
+            (
+                g.get::<Uuid, _>("id"),
+                g.get::<Option<Uuid>, _>("parent_grant_id"),
+            )
+        })
+        .collect();
     let mut max_depth = 0i32;
     for g in &grants {
         let mut depth = 0i32;
@@ -602,14 +614,21 @@ async fn module_applicant_rights(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec
             if depth > 8 {
                 break;
             }
-            parent = sqlx::query_scalar(
-                "SELECT parent_grant_id FROM rights.grant_atoms WHERE org_id=$1 AND id=$2",
-            )
-            .bind(ctx.org)
-            .bind(pid)
-            .fetch_optional(&mut *tx)
-            .await?
-            .unwrap_or(None);
+            parent = match parent_of.get(&pid) {
+                Some(p) => *p,
+                None => {
+                    let p: Option<Uuid> = sqlx::query_scalar(
+                        "SELECT parent_grant_id FROM rights.grant_atoms WHERE org_id=$1 AND id=$2",
+                    )
+                    .bind(ctx.org)
+                    .bind(pid)
+                    .fetch_optional(&mut *tx)
+                    .await?
+                    .unwrap_or(None);
+                    parent_of.insert(pid, p);
+                    p
+                }
+            };
         }
         max_depth = max_depth.max(depth);
     }
@@ -718,20 +737,23 @@ async fn module_catalog_match(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec<Re
         .unwrap_or_default();
 
     // 2-C.1: ISRC/UPC matching only; Stage 2 never issues identifiers.
+    // One set-based query per identifier kind (was one per track).
     let mut dup_isrc: BTreeSet<String> = BTreeSet::new();
-    for t in &tracks {
-        if let Some(isrc) = t.get("isrc").and_then(Value::as_str) {
-            let hits: Vec<(Uuid, Uuid)> = sqlx::query_as(
-                "SELECT t.release_id, t.org_id FROM catalog.tracks t JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id WHERE t.isrc=$1 AND t.release_id<>$2 AND r.status NOT IN ('WITHDRAWN','SUPERSEDED')",
-            )
-            .bind(isrc)
-            .bind(ctx.release)
-            .fetch_all(&mut *tx)
-            .await?;
-            for (rel, org) in hits {
-                if org != ctx.org {
-                    dup_isrc.insert(format!("{isrc} org={org} release={rel}"));
-                }
+    let isrcs: Vec<&str> = tracks
+        .iter()
+        .filter_map(|t| t.get("isrc").and_then(Value::as_str))
+        .collect();
+    if !isrcs.is_empty() {
+        let hits: Vec<(String, Uuid, Uuid)> = sqlx::query_as(
+            "SELECT t.isrc, t.release_id, t.org_id FROM catalog.tracks t JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id WHERE t.isrc = ANY($1) AND t.release_id<>$2 AND r.status NOT IN ('WITHDRAWN','SUPERSEDED')",
+        )
+        .bind(&isrcs)
+        .bind(ctx.release)
+        .fetch_all(&mut *tx)
+        .await?;
+        for (isrc, rel, org) in hits {
+            if org != ctx.org {
+                dup_isrc.insert(format!("{isrc} org={org} release={rel}"));
             }
         }
     }
@@ -751,18 +773,20 @@ async fn module_catalog_match(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec<Re
     }
     // 2-C.2: SHA-256 against the active internal asset index.
     let mut dup_sha: BTreeSet<String> = BTreeSet::new();
-    for t in &tracks {
-        if let Some(sha) = t.get("asset_sha256").and_then(Value::as_str) {
-            let hits: Vec<Uuid> = sqlx::query_scalar(
-                "SELECT DISTINCT a.org_id FROM catalog.assets a JOIN catalog.tracks t ON t.org_id=a.org_id AND t.asset_id=a.id JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id WHERE a.sha256=$1 AND a.org_id<>$2 AND r.status NOT IN ('WITHDRAWN','SUPERSEDED')",
-            )
-            .bind(sha)
-            .bind(ctx.org)
-            .fetch_all(&mut *tx)
-            .await?;
-            for org in hits {
-                dup_sha.insert(format!("sha {org}"));
-            }
+    let shas: Vec<&str> = tracks
+        .iter()
+        .filter_map(|t| t.get("asset_sha256").and_then(Value::as_str))
+        .collect();
+    if !shas.is_empty() {
+        let hits: Vec<Uuid> = sqlx::query_scalar(
+            "SELECT DISTINCT a.org_id FROM catalog.assets a JOIN catalog.tracks t ON t.org_id=a.org_id AND t.asset_id=a.id JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id WHERE a.sha256 = ANY($1) AND a.org_id<>$2 AND r.status NOT IN ('WITHDRAWN','SUPERSEDED')",
+        )
+        .bind(&shas)
+        .bind(ctx.org)
+        .fetch_all(&mut *tx)
+        .await?;
+        for org in hits {
+            dup_sha.insert(format!("sha {org}"));
         }
     }
     if dup_isrc.is_empty() && dup_sha.is_empty() {

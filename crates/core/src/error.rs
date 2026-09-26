@@ -67,7 +67,15 @@ impl IntoResponse for Error {
         };
         // Deliberately never log SQL bind values, credentials, signed URLs, or user payloads.
         if status.is_server_error() {
-            tracing::warn!(error_code = code, "request failed");
+            // The Display form carries the cause class (e.g. "database error",
+            // pool timeout) and, for sqlx, the server message; never bind
+            // values or request payloads.
+            match &self {
+                Self::Database(e) => {
+                    tracing::warn!(error_code = code, cause = %e, "request failed")
+                }
+                other => tracing::warn!(error_code = code, cause = %other, "request failed"),
+            }
         }
         let body = match message(code) {
             Some(m) => serde_json::json!({"error":{"code":code,"message":m}}),
@@ -144,6 +152,9 @@ pub fn message(code: &str) -> Option<&'static str> {
             "The UPC or an ISRC is already used by another release or track in your account. Assign unique codes."
         }
         "REQUEST_HEADERS_TOO_LARGE" => "The request headers are too large.",
+        "TRACK_POSITION_DUPLICATE" => {
+            "Two tracks in the request use the same disc and track number."
+        }
         "DATABASE_UNAVAILABLE" => {
             "The service is temporarily unavailable. Try again in a few seconds."
         }

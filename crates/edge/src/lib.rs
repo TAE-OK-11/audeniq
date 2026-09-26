@@ -66,15 +66,16 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
     )?;
     // JSON control-plane only. Never proxy original audio bytes.
     if !matches!(request.method(), Method::Get | Method::Head) {
+        let limit = body_limit(&request.path());
         let length = request
             .headers()
             .get("content-length")?
             .and_then(|s| s.parse::<usize>().ok());
-        if length.is_none_or(|n| n > 65536) {
+        if length.is_none_or(|n| n > limit) {
             return Response::error("Length required or payload too large", 413);
         }
         let body = request.bytes().await?;
-        if body.len() > 65536 {
+        if body.len() > limit {
             return Response::error("Payload too large", 413);
         }
         let headers = forwarded.headers().clone();
@@ -94,6 +95,17 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
             Ok(response)
         }
         Err(_) => Response::error("Private API unavailable", 503),
+    }
+}
+
+/// Largest JSON body proxied for `path`. Mirrors the API: 64 KiB, except the
+/// bulk track endpoint (up to 1,000 track objects), which the API caps at
+/// 2 MiB.
+fn body_limit(path: &str) -> usize {
+    if path.starts_with("/api/orgs/") && path.ends_with("/tracks/batch") {
+        2 * 1024 * 1024
+    } else {
+        65536
     }
 }
 
@@ -170,6 +182,15 @@ mod tests {
         }
     }
 
+    #[test]
+    fn only_bulk_tracks_get_a_larger_body() {
+        assert_eq!(body_limit("/api/orgs/o/releases/r/tracks"), 65536);
+        assert_eq!(
+            body_limit("/api/orgs/o/releases/r/tracks/batch"),
+            2 * 1024 * 1024
+        );
+        assert_eq!(body_limit("/api/auth/login"), 65536);
+    }
     #[test]
     fn routes_only_the_react_build() {
         assert_eq!(cache_of("/"), Some("no-cache"));

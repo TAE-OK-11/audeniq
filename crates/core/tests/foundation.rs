@@ -583,11 +583,12 @@ async fn upload_binding_expiry_duplicate_and_freeze(pool: PgPool) {
         store.calls.load(std::sync::atomic::Ordering::SeqCst),
         "expired sessions must perform no storage IO"
     );
-    sqlx::query("UPDATE identity.auth_limits SET attempts=60 WHERE bucket_hash=$1")
+    sqlx::query("UPDATE identity.auth_limits SET attempts=$2 WHERE bucket_hash=$1")
         .bind(audeniq_core::auth::hash_token(&format!(
             "upload-complete:{}",
             a.user
         )))
+        .bind(audeniq_core::uploads::UPLOAD_COMPLETE_LIMIT)
         .execute(&pool)
         .await
         .unwrap();
@@ -1692,4 +1693,90 @@ async fn inactive_users_cannot_receive_active_membership(pool: PgPool) {
         .0,
         StatusCode::OK
     );
+}
+
+#[sqlx::test]
+async fn batch_tracks_are_atomic_acl_checked_and_bump_version_once(pool: PgPool) {
+    let (api, _) = app(pool.clone()).await;
+    let u = user(&api).await;
+    let other = user(&api).await;
+    let release = create(&api, &u, "releases").await;
+    let artist = create(&api, &u, "artists").await;
+    let foreign_artist = create(&api, &other, "artists").await;
+    let base = format!("/api/orgs/{}/releases/{release}/tracks/batch", u.org);
+    let tracks: Vec<Value> = (1..=300)
+        .map(|n| json!({"title":format!("Track {n}"),"disc_number":1 + (n - 1) / 100,"track_number":1 + (n - 1) % 100,"artist_id":artist,"version":"  Live  "}))
+        .collect();
+    // Stale row_version: nothing is written.
+    let (s, _, _) = call(
+        &api,
+        "POST",
+        &base,
+        json!({"row_version":7,"tracks":tracks}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CONFLICT);
+    // Duplicate position inside the batch is refused before any write.
+    let dup = json!({"row_version":0,"tracks":[
+        {"title":"A","disc_number":1,"track_number":1,"artist_id":artist},
+        {"title":"B","disc_number":1,"track_number":1,"artist_id":artist}]});
+    let (s, _, v) = call(&api, "POST", &base, dup, Some(&u)).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    assert_eq!(v["error"]["code"], "TRACK_POSITION_DUPLICATE");
+    // An artist from another org is not readable: whole batch refused.
+    let bad = json!({"row_version":0,"tracks":[
+        {"title":"A","disc_number":1,"track_number":1,"artist_id":artist},
+        {"title":"B","disc_number":1,"track_number":2,"artist_id":foreign_artist}]});
+    let (s, _, _) = call(&api, "POST", &base, bad, Some(&u)).await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    // Other users cannot write the release.
+    let (s, _, _) = call(
+        &api,
+        "POST",
+        &base,
+        json!({"row_version":0,"tracks":tracks}),
+        Some(&other),
+    )
+    .await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM catalog.tracks WHERE release_id=$1")
+        .bind(release)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+    let (s, _, v) = call(
+        &api,
+        "POST",
+        &base,
+        json!({"row_version":0,"tracks":tracks}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["count"], 300);
+    assert_eq!(v["row_version"], 1);
+    let (count, version): (i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM catalog.tracks WHERE release_id=$1 AND version='Live'), row_version FROM catalog.releases WHERE id=$1",
+    )
+    .bind(release)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!((count, version), (300, 1));
+    // Occupied positions conflict as a whole batch.
+    let again = json!({"row_version":1,"tracks":[{"title":"X","disc_number":1,"track_number":1,"artist_id":artist}]});
+    let (s, _, _) = call(&api, "POST", &base, again, Some(&u)).await;
+    assert_eq!(s, StatusCode::CONFLICT);
+    let (_, _, detail) = call(
+        &api,
+        "GET",
+        &format!("/api/orgs/{}/releases/{release}", u.org),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(detail["tracks"].as_array().unwrap().len(), 300);
+    assert_eq!(detail["row_version"], 1);
 }

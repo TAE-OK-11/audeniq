@@ -16,7 +16,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use sqlx::{PgConnection, PgPool, Row};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -327,11 +327,21 @@ async fn revision_body(
         "SELECT t.id, t.title, t.version, t.disc_number, t.track_number, t.artist_id, t.isrc, t.asset_id, t.parental_advisory, a.sha256 AS asha, a.kind AS akind FROM catalog.tracks t LEFT JOIN catalog.assets a ON a.org_id=t.org_id AND a.id=t.asset_id WHERE t.org_id=$1 AND t.release_id=$2 AND t.archived_at IS NULL ORDER BY t.disc_number, t.track_number",
     )
     .bind(org).bind(release).fetch_all(&mut *c).await?;
-    let mut tj = Vec::new();
+    // Credits for every track in one query (was one query per track).
+    let track_ids: Vec<Uuid> = tracks.iter().map(|t| t.get::<Uuid, _>("id")).collect();
+    let credit_rows = sqlx::query("SELECT track_id, party_id, role FROM catalog.credits WHERE org_id=$1 AND track_id = ANY($2) ORDER BY track_id, party_id, role")
+        .bind(org).bind(&track_ids).fetch_all(&mut *c).await?;
+    let mut credits_by_track: HashMap<Uuid, Vec<Value>> = HashMap::new();
+    for cr in &credit_rows {
+        credits_by_track
+            .entry(cr.get("track_id"))
+            .or_default()
+            .push(json!({"party_id": cr.get::<Uuid,_>("party_id"), "role": cr.get::<String,_>("role")}));
+    }
+    let mut tj = Vec::with_capacity(tracks.len());
     for t in &tracks {
         let tid: Uuid = t.get("id");
-        let credits = sqlx::query("SELECT party_id, role FROM catalog.credits WHERE org_id=$1 AND track_id=$2 ORDER BY party_id, role")
-            .bind(org).bind(tid).fetch_all(&mut *c).await?;
+        let credits = credits_by_track.remove(&tid).unwrap_or_default();
         tj.push(json!({
             "id": tid,
             "title": t.get::<String,_>("title"),
@@ -344,7 +354,7 @@ async fn revision_body(
             "asset_sha256": t.get::<Option<String>,_>("asha"),
             "asset_kind": t.get::<Option<String>,_>("akind"),
             "parental_advisory": t.get::<bool,_>("parental_advisory"),
-            "credits": credits.iter().map(|cr| json!({"party_id": cr.get::<Uuid,_>("party_id"), "role": cr.get::<String,_>("role")})).collect::<Vec<_>>(),
+            "credits": credits,
         }));
     }
     Ok(json!({
@@ -839,27 +849,33 @@ async fn policy_checks(
             conflicts.push(format!("UPC {upc}"));
         }
     }
+    // One set-based query for every track (was one query per track). The
+    // ordinality keeps `conflicts` in track order: it feeds the result hash.
+    let (mut isrcs, mut tids): (Vec<String>, Vec<Uuid>) = (Vec::new(), Vec::new());
     for t in body["tracks"].as_array().into_iter().flatten() {
-        let (Some(isrc), Some(tid)) = (
+        if let (Some(isrc), Some(tid)) = (
             t["isrc"].as_str().filter(|i| !i.is_empty()),
             t["id"].as_str().and_then(|s| Uuid::parse_str(s).ok()),
-        ) else {
-            continue;
-        };
-        let used: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM catalog.tracks t JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id
-                           WHERE t.org_id=$1 AND t.isrc=$2 AND t.release_id<>$3 AND t.archived_at IS NULL AND r.archived_at IS NULL)
-                 OR EXISTS(SELECT 1 FROM distribution.identifier_assignments WHERE kind='ISRC' AND identifier=$2 AND track_id<>$4)",
+        ) {
+            isrcs.push(isrc.to_string());
+            tids.push(tid);
+        }
+    }
+    if !isrcs.is_empty() {
+        let used: Vec<String> = sqlx::query_scalar(
+            "SELECT u.isrc FROM UNNEST($2::text[], $4::uuid[]) WITH ORDINALITY AS u(isrc, tid, ord)
+              WHERE EXISTS(SELECT 1 FROM catalog.tracks t JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id
+                            WHERE t.org_id=$1 AND t.isrc=u.isrc AND t.release_id<>$3 AND t.archived_at IS NULL AND r.archived_at IS NULL)
+                 OR EXISTS(SELECT 1 FROM distribution.identifier_assignments WHERE kind='ISRC' AND identifier=u.isrc AND track_id<>u.tid)
+              ORDER BY u.ord",
         )
         .bind(org)
-        .bind(isrc)
+        .bind(&isrcs)
         .bind(release)
-        .bind(tid)
-        .fetch_one(&mut *tx)
+        .bind(&tids)
+        .fetch_all(&mut *tx)
         .await?;
-        if used {
-            conflicts.push(format!("ISRC {isrc}"));
-        }
+        conflicts.extend(used.into_iter().map(|isrc| format!("ISRC {isrc}")));
     }
     push(
         "IDENTIFIER_IN_USE",
@@ -881,25 +897,35 @@ async fn policy_checks(
     // both tracks carry the same ISRC, so only a reuse under a different or
     // missing ISRC goes to review.
     let mut reused: Vec<String> = Vec::new();
+    let (mut aids, mut a_isrcs): (Vec<Uuid>, Vec<Option<String>>) = (Vec::new(), Vec::new());
     for t in body["tracks"].as_array().into_iter().flatten() {
-        let Some(aid) = t["asset_id"].as_str().and_then(|s| Uuid::parse_str(s).ok()) else {
-            continue;
-        };
-        let isrc = t["isrc"].as_str().filter(|i| !i.is_empty());
-        let others: Vec<(Uuid, Option<String>)> = sqlx::query_as(
-            "SELECT t.release_id, t.isrc FROM catalog.tracks t JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id
-              WHERE t.org_id=$1 AND t.asset_id=$2 AND t.release_id<>$3 AND t.archived_at IS NULL
-                AND r.archived_at IS NULL AND r.status NOT IN ('DRAFT','WITHDRAWN','SUPERSEDED')",
+        if let Some(aid) = t["asset_id"].as_str().and_then(|s| Uuid::parse_str(s).ok()) {
+            aids.push(aid);
+            a_isrcs.push(
+                t["isrc"]
+                    .as_str()
+                    .filter(|i| !i.is_empty())
+                    .map(str::to_string),
+            );
+        }
+    }
+    if !aids.is_empty() {
+        let others: Vec<(Uuid, Uuid)> = sqlx::query_as(
+            "SELECT u.aid, t.release_id FROM UNNEST($2::uuid[], $4::text[]) AS u(aid, isrc)
+               JOIN catalog.tracks t ON t.org_id=$1 AND t.asset_id=u.aid
+               JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id
+              WHERE t.release_id<>$3 AND t.archived_at IS NULL
+                AND r.archived_at IS NULL AND r.status NOT IN ('DRAFT','WITHDRAWN','SUPERSEDED')
+                AND (u.isrc IS NULL OR t.isrc IS DISTINCT FROM u.isrc)",
         )
         .bind(org)
-        .bind(aid)
+        .bind(&aids)
         .bind(release)
+        .bind(&a_isrcs)
         .fetch_all(&mut *tx)
         .await?;
-        for (other, other_isrc) in others {
-            if isrc.is_none() || other_isrc.as_deref() != isrc {
-                reused.push(format!("asset {aid} (release {other})"));
-            }
+        for (aid, other) in others {
+            reused.push(format!("asset {aid} (release {other})"));
         }
     }
     reused.sort();
@@ -1290,29 +1316,45 @@ fn field_checks(body: &Value) -> Vec<StagedCheck> {
     out
 }
 
-async fn cached_status(
+/// Latest cached status per `(check_code, rule_version, result_hash)` for a
+/// batch of checks, in one indexed query (migration 0040) instead of one
+/// query per check. TECHNICAL_RETRY rows are returned too; the caller treats
+/// them as uncached.
+async fn cached_statuses(
     pool: &PgPool,
-    check_code: &str,
-    rule_version: &str,
-    result_hash: &str,
-) -> Result<Option<CheckStatus>> {
-    let s: Option<String> = sqlx::query_scalar(
-        "SELECT status FROM operations.check_results WHERE check_code=$1 AND rule_version=$2 AND result_hash=$3 ORDER BY created_at DESC LIMIT 1",
+    keys: &[(&str, &str, String)],
+) -> Result<HashMap<String, CheckStatus>> {
+    if keys.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let hashes: Vec<&str> = keys.iter().map(|(_, _, h)| h.as_str()).collect();
+    let rows: Vec<(String, String, String, String)> = sqlx::query_as(
+        "SELECT DISTINCT ON (check_code, rule_version, result_hash) check_code, rule_version, result_hash, status
+           FROM operations.check_results WHERE result_hash = ANY($1)
+          ORDER BY check_code, rule_version, result_hash, created_at DESC",
     )
-    .bind(check_code)
-    .bind(rule_version)
-    .bind(result_hash)
-    .fetch_optional(pool)
+    .bind(&hashes)
+    .fetch_all(pool)
     .await?;
-    Ok(s.and_then(|v| match v.as_str() {
-        "PASS" => Some(CheckStatus::Pass),
-        "CORRECTION_REQUIRED" => Some(CheckStatus::CorrectionRequired),
-        "REVIEW_REQUIRED" => Some(CheckStatus::ReviewRequired),
-        "BLOCKED" => Some(CheckStatus::Blocked),
-        "TECHNICAL_RETRY" => Some(CheckStatus::TechnicalRetry),
-        "NOT_APPLICABLE" => Some(CheckStatus::NotApplicable),
-        _ => None,
-    }))
+    let wanted: HashSet<(&str, &str, &str)> =
+        keys.iter().map(|(c, r, h)| (*c, *r, h.as_str())).collect();
+    let mut out = HashMap::new();
+    for (code, rule, hash, status) in rows {
+        if !wanted.contains(&(code.as_str(), rule.as_str(), hash.as_str())) {
+            continue;
+        }
+        let st = match status.as_str() {
+            "PASS" => CheckStatus::Pass,
+            "CORRECTION_REQUIRED" => CheckStatus::CorrectionRequired,
+            "REVIEW_REQUIRED" => CheckStatus::ReviewRequired,
+            "BLOCKED" => CheckStatus::Blocked,
+            "TECHNICAL_RETRY" => CheckStatus::TechnicalRetry,
+            "NOT_APPLICABLE" => CheckStatus::NotApplicable,
+            _ => continue,
+        };
+        out.insert(hash, st);
+    }
+    Ok(out)
 }
 
 /// 1-C: file QC over the revision's assets. Bytes-unchanged assets hit the
@@ -1346,6 +1388,18 @@ fn qc_asset_parallelism() -> usize {
         .map(|n| n.get())
         .unwrap_or(4)
         .clamp(1, 8)
+}
+
+/// Process-wide cap on concurrent asset downloads + analyses, shared by
+/// every Stage 1 job this worker runs. Per-job parallelism alone let N
+/// concurrent QC jobs start N x cores analyses (CPU thrash, and each holds a
+/// decoded PCM tap in memory); with this cap the QC queue concurrency can be
+/// raised so many small releases (singles) drain in parallel safely.
+fn analysis_slots() -> Arc<tokio::sync::Semaphore> {
+    static SLOTS: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> = std::sync::OnceLock::new();
+    SLOTS
+        .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(qc_asset_parallelism().max(1))))
+        .clone()
 }
 
 /// Download one asset and run the fixed check contract over it. Storage and
@@ -1488,12 +1542,14 @@ async fn analyze_asset(
 ///
 /// Codes already present in `out` (e.g. via a check_audio tail) are left
 /// alone.
+#[allow(clippy::too_many_arguments)]
 async fn handle_fingerprint_checks(
     pool: &PgPool,
     org: Uuid,
     aid: Uuid,
     sha256: &str,
     fp: &Option<std::result::Result<fingerprint::Fingerprint, String>>,
+    track_duration: Option<f64>,
     to_run: &[&str],
     out: &mut Vec<StagedCheck>,
 ) -> Result<()> {
@@ -1576,9 +1632,10 @@ async fn handle_fingerprint_checks(
         .bind(org.to_string())
         .execute(&mut *ftx)
         .await?;
+    let track_duration = track_duration.filter(|d| d.is_finite() && *d > 0.0);
     sqlx::query(
-        "INSERT INTO catalog.asset_fingerprints(asset_id, org_id, version, frames, duration_secs, hash)
-         VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(asset_id) DO NOTHING",
+        "INSERT INTO catalog.asset_fingerprints(asset_id, org_id, version, frames, duration_secs, hash, track_duration_secs)
+         VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(asset_id) DO NOTHING",
     )
     .bind(aid)
     .bind(org)
@@ -1586,10 +1643,22 @@ async fn handle_fingerprint_checks(
     .bind(fp.frames.len() as i32)
     .bind(fp.duration_secs)
     .bind(fp.to_bytes())
+    .bind(track_duration)
     .execute(&mut *ftx)
     .await?;
-    if want_similar {
-        let hits = find_similar_assets(&mut ftx, org, aid, &fp.frames).await?;
+    let candidates = if want_similar {
+        Some(similarity_candidates(&mut ftx, org, aid, track_duration).await?)
+    } else {
+        None
+    };
+    // Commit before the CPU-bound comparison: no connection or transaction
+    // is held while comparing.
+    ftx.commit().await?;
+    if let Some(candidates) = candidates {
+        let frames = fp.frames.clone();
+        let hits = tokio::task::spawn_blocking(move || rank_similar(&frames, candidates))
+            .await
+            .map_err(|_| Error::Internal)?;
         let (status, detail) = if hits.is_empty() {
             (CheckStatus::Pass, "no similar audio in catalog".to_string())
         } else {
@@ -1621,7 +1690,6 @@ async fn handle_fingerprint_checks(
             detail,
         });
     }
-    ftx.commit().await?;
     Ok(())
 }
 
@@ -1658,39 +1726,72 @@ async fn load_stored_fingerprint(
     }
 }
 
-/// Best-similarity matches for `frames` among the org's stored
-/// fingerprints at the current algorithm version, excluding `aid`
-/// itself. Sorted by BER ascending, capped at 3 for the check detail.
-async fn find_similar_assets(
+/// Tracks at or below this duration get a single whole-track fingerprint
+/// window (plus tolerance); a snippet can match any part of a longer track,
+/// so short candidates are never filtered by duration.
+const FP_SHORT_TRACK_SECS: f64 =
+    fingerprint::FINGERPRINT_SEGMENTS as f64 * fingerprint::FINGERPRINT_SEGMENT_SECS + 15.0;
+/// Duration tolerance for long tracks. Head/middle/tail windows only align
+/// when durations agree to well under a second; 10 s is deliberately loose.
+const FP_DURATION_TOLERANCE_SECS: f64 = 10.0;
+
+/// Stored fingerprints (own org and, via the narrow SECURITY DEFINER read,
+/// other orgs) that can possibly match a track of `track_duration`, at the
+/// current algorithm version, excluding `aid` itself. The old query loaded
+/// every fingerprint on the platform for every new track.
+async fn similarity_candidates(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     org: Uuid,
     aid: Uuid,
-    frames: &[u32],
-) -> Result<Vec<SimilarHit>> {
+    track_duration: Option<f64>,
+) -> Result<Vec<(Uuid, bool, Vec<u8>)>> {
+    let (lo, hi) = match track_duration {
+        Some(d) if d > FP_SHORT_TRACK_SECS => (
+            d - FP_DURATION_TOLERANCE_SECS,
+            d + FP_DURATION_TOLERANCE_SECS,
+        ),
+        // Short or unknown duration: compare against everything.
+        _ => (0.0, f64::MAX),
+    };
     let rows: Vec<(Uuid, Vec<u8>)> = sqlx::query_as(
         "SELECT asset_id, hash FROM catalog.asset_fingerprints
-          WHERE org_id=$1 AND asset_id<>$2 AND version=$3",
+          WHERE org_id=$1 AND asset_id<>$2 AND version=$3
+            AND (track_duration_secs IS NULL OR track_duration_secs BETWEEN $4 AND $5
+                 OR track_duration_secs <= $6)",
     )
     .bind(org)
     .bind(aid)
     .bind(fingerprint::FINGERPRINT_VERSION)
+    .bind(lo)
+    .bind(hi)
+    .bind(FP_SHORT_TRACK_SECS)
     .fetch_all(&mut **tx)
     .await?;
     // Sandbox round 2: re-encoded copies of another account's audio were
     // delivered because only the own org was compared. Other orgs'
-    // fingerprints come through a narrow SECURITY DEFINER read (migration
-    // 0034); matches are REVIEW only, exactly like same-org matches.
+    // fingerprints come through a narrow SECURITY DEFINER read (migrations
+    // 0034/0040); matches are REVIEW only, exactly like same-org matches.
     let foreign: Vec<(Uuid, Uuid, Vec<u8>)> = sqlx::query_as(
-        "SELECT asset_id, org_id, hash FROM catalog.fingerprints_outside_org($1,$2)",
+        "SELECT asset_id, org_id, hash FROM catalog.fingerprints_outside_org_near($1,$2,$3,$4,$5)",
     )
     .bind(org)
     .bind(fingerprint::FINGERPRINT_VERSION)
+    .bind(lo)
+    .bind(hi)
+    .bind(FP_SHORT_TRACK_SECS)
     .fetch_all(&mut **tx)
     .await?;
-    let candidates = rows
+    Ok(rows
         .into_iter()
         .map(|(id, hash)| (id, false, hash))
-        .chain(foreign.into_iter().map(|(id, _, hash)| (id, true, hash)));
+        .chain(foreign.into_iter().map(|(id, _, hash)| (id, true, hash)))
+        .collect())
+}
+
+/// Best-similarity matches (BER at or below `SIMILAR_BER`), sorted by BER
+/// ascending and capped at 3 for the check detail. CPU-bound: callers run
+/// it on the blocking pool.
+fn rank_similar(frames: &[u32], candidates: Vec<(Uuid, bool, Vec<u8>)>) -> Vec<SimilarHit> {
     let mut hits = Vec::new();
     for (other_id, other_org, hash) in candidates {
         let Ok(other) = fingerprint::Fingerprint::from_bytes(&hash) else {
@@ -1712,7 +1813,7 @@ async fn find_similar_assets(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     hits.truncate(3);
-    Ok(hits)
+    hits
 }
 
 struct SimilarHit {
@@ -1735,7 +1836,7 @@ async fn qc_single_asset(
     let mut out = Vec::new();
     let aid = Uuid::parse_str(aid_str).map_err(|_| Error::Internal)?;
     let row = sqlx::query(
-        "SELECT object_key, state, content_type FROM catalog.assets WHERE org_id=$1 AND id=$2",
+        "SELECT object_key, state, content_type, duration_secs FROM catalog.assets WHERE org_id=$1 AND id=$2",
     )
     .bind(org)
     .bind(aid)
@@ -1745,6 +1846,7 @@ async fn qc_single_asset(
     let state: String = row.get("state");
     let key: String = row.get("object_key");
     let content_type: String = row.get("content_type");
+    let duration: Option<f64> = row.get("duration_secs");
     if state != "REGISTERED" {
         out.push(StagedCheck {
             check_code: "ASSET_NOT_ADMITTED",
@@ -1761,6 +1863,12 @@ async fn qc_single_asset(
         _ => &[],
     };
     let mut to_run: Vec<&str> = Vec::new();
+    let cache_keys: Vec<(&str, &str, String)> = expected
+        .iter()
+        .filter(|c| **c != "AUDIO_SIMILAR_TO_EXISTING")
+        .map(|c| (*c, qc::QC_RULE_VERSION, asset_cache_key(c, sha256)))
+        .collect();
+    let cached = cached_statuses(&pool, &cache_keys).await?;
     for code in expected {
         // AUDIO_SIMILAR_TO_EXISTING is never cached: the result depends
         // on what else is in the catalog at check time, not just the
@@ -1771,7 +1879,7 @@ async fn qc_single_asset(
             continue;
         }
         let rh = asset_cache_key(code, sha256);
-        match cached_status(&pool, code, qc::QC_RULE_VERSION, &rh).await? {
+        match cached.get(&rh).copied() {
             // A cached TECHNICAL_RETRY is transient: re-run instead of copying it.
             Some(st) if st != CheckStatus::TechnicalRetry => out.push(StagedCheck {
                 check_code: code,
@@ -1793,7 +1901,10 @@ async fn qc_single_asset(
     let only_similarity = to_run == ["AUDIO_SIMILAR_TO_EXISTING"];
     if only_similarity && let Some(stored_fp) = load_stored_fingerprint(&pool, org, aid).await? {
         let fp_opt = Some(Ok(stored_fp));
-        handle_fingerprint_checks(&pool, org, aid, sha256, &fp_opt, &to_run, &mut out).await?;
+        handle_fingerprint_checks(
+            &pool, org, aid, sha256, &fp_opt, duration, &to_run, &mut out,
+        )
+        .await?;
         // Emit the cached codes for the other checks (already in `out`
         // via the cache_hit path above); nothing more to do for this asset.
         return Ok(out);
@@ -1802,12 +1913,18 @@ async fn qc_single_asset(
     // compute and store it.
     // Unique temp name: two workers must never share an analyzer file.
     let tmp_name = format!("audeniq-qc-{}", Uuid::new_v4());
-    let outcomes = match analyze_asset(&storage, &key, kind, &content_type, sha256, &tmp_name).await
-    {
+    let permit = analysis_slots()
+        .acquire_owned()
+        .await
+        .map_err(|_| Error::Internal)?;
+    let analyzed = analyze_asset(&storage, &key, kind, &content_type, sha256, &tmp_name).await;
+    drop(permit);
+    let outcomes = match analyzed {
         Ok((o, metrics, fp)) => {
             // Persist measured audio duration + real technical specs for
             // the DDEX builder. COALESCE fills only unknown columns;
             // never overwrites measured values.
+            let measured = metrics.as_ref().map(|m| m.duration_secs).or(duration);
             if let Some(m) = metrics {
                 let _ = sqlx::query(
                     "UPDATE catalog.assets SET duration_secs=COALESCE(duration_secs,$1), sample_rate=COALESCE(sample_rate,$2), channels=COALESCE(channels,$3), bits_per_sample=COALESCE(bits_per_sample,$4) WHERE org_id=$5 AND id=$6",
@@ -1825,7 +1942,8 @@ async fn qc_single_asset(
             // fingerprint codes are DB-backed so they are produced here,
             // not in check_audio; codes already emitted via a QC tail
             // (e.g. blocked bytes) are not duplicated.
-            handle_fingerprint_checks(&pool, org, aid, sha256, &fp, &to_run, &mut out).await?;
+            handle_fingerprint_checks(&pool, org, aid, sha256, &fp, measured, &to_run, &mut out)
+                .await?;
             o
         }
         Err(detail) => {
@@ -2101,33 +2219,7 @@ pub async fn run_stage1(
         .bind(release)
         .execute(&mut *tx)
         .await?;
-    let mut check_ids = Vec::new();
-    for c in &checks {
-        let existing: Option<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM operations.check_results WHERE revision_id=$1 AND check_code=$2 AND result_hash=$3",
-        )
-        .bind(revision_id)
-        .bind(c.check_code)
-        .bind(&c.result_hash)
-        .fetch_optional(&mut *tx)
-        .await?;
-        let id = match existing {
-            Some(id) => id,
-            None => {
-                sqlx::query_scalar("INSERT INTO operations.check_results(id, revision_id, check_code, rule_version, status, result_hash, detail) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id")
-                    .bind(Uuid::new_v4())
-                    .bind(revision_id)
-                    .bind(c.check_code)
-                    .bind(c.rule_version)
-                    .bind(c.status.as_db())
-                    .bind(&c.result_hash)
-                    .bind(&c.detail)
-                    .fetch_one(&mut *tx)
-                    .await?
-            }
-        };
-        check_ids.push(id);
-    }
+    let check_ids = persist_checks(&mut tx, revision_id, &checks).await?;
 
     let mut counts: BTreeMap<&'static str, i64> = BTreeMap::new();
     for c in &checks {
@@ -2213,6 +2305,68 @@ pub async fn run_stage1(
     .await?;
     tx.commit().await?;
     Ok(summary)
+}
+
+/// Record every staged check for `revision_id` idempotently and return the
+/// row ids in `checks` order. A check already recorded for this revision with
+/// the same code and result hash reuses its row (a retried run never
+/// duplicates). One read and one multi-row insert replace the old
+/// per-check SELECT + INSERT round trips (thousands for a large album).
+async fn persist_checks(
+    c: &mut PgConnection,
+    revision_id: Uuid,
+    checks: &[StagedCheck],
+) -> Result<Vec<Uuid>> {
+    let existing: Vec<(String, String, Uuid)> = sqlx::query_as(
+        "SELECT check_code, result_hash, id FROM operations.check_results WHERE revision_id=$1",
+    )
+    .bind(revision_id)
+    .fetch_all(&mut *c)
+    .await?;
+    let mut known: HashMap<(String, String), Uuid> = HashMap::with_capacity(existing.len());
+    for (code, hash, id) in existing {
+        // Keep the first row, like the old `SELECT id ... ` fetch_optional.
+        known.entry((code, hash)).or_insert(id);
+    }
+    let mut ids = Vec::with_capacity(checks.len());
+    let (mut n_id, mut n_code, mut n_rule, mut n_status, mut n_hash, mut n_detail) =
+        (vec![], vec![], vec![], vec![], vec![], vec![]);
+    for ch in checks {
+        let key = (ch.check_code.to_string(), ch.result_hash.clone());
+        let id = match known.get(&key) {
+            Some(id) => *id,
+            None => {
+                let id = Uuid::new_v4();
+                known.insert(key, id);
+                n_id.push(id);
+                n_code.push(ch.check_code);
+                n_rule.push(ch.rule_version);
+                n_status.push(ch.status.as_db());
+                n_hash.push(ch.result_hash.as_str());
+                n_detail.push(ch.detail.as_str());
+                id
+            }
+        };
+        ids.push(id);
+    }
+    if !n_id.is_empty() {
+        sqlx::query(
+            "INSERT INTO operations.check_results(id, revision_id, check_code, rule_version, status, result_hash, detail)
+             SELECT u.id, $1, u.code, u.rule, u.status, u.hash, u.detail
+               FROM UNNEST($2::uuid[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[])
+                    AS u(id, code, rule, status, hash, detail)",
+        )
+        .bind(revision_id)
+        .bind(&n_id)
+        .bind(&n_code)
+        .bind(&n_rule)
+        .bind(&n_status)
+        .bind(&n_hash)
+        .bind(&n_detail)
+        .execute(&mut *c)
+        .await?;
+    }
+    Ok(ids)
 }
 
 /// Check code recorded when Stage 1 exhausted its retries without a verdict.

@@ -77,9 +77,21 @@ async fn execute_with_heartbeat(
         tokio::select! {
             result = &mut execution => return RunResult::Finished(result),
             _ = ticker.tick() => {
-                if let Err(error) = operations::heartbeat(pool, job, lease_seconds).await {
-                    tracing::warn!(job_id=%job.id, %error, "job lease lost; cancelling stale handler");
-                    return RunResult::LeaseLost;
+                match operations::heartbeat(pool, job, lease_seconds).await {
+                    Ok(()) => {}
+                    // Fenced out: another worker owns the job now.
+                    Err(audeniq_core::error::Error::Conflict) => {
+                        tracing::warn!(job_id=%job.id, "job lease lost; cancelling stale handler");
+                        return RunResult::LeaseLost;
+                    }
+                    // Database briefly unreachable: the lease is still valid
+                    // (heartbeats run every lease/3), so keep working and
+                    // retry on the next tick instead of throwing away a
+                    // multi-minute QC analysis. If the lease really expires,
+                    // the next heartbeat is fenced out (Conflict) above.
+                    Err(error) => {
+                        tracing::warn!(job_id=%job.id, %error, "job heartbeat failed; retrying next tick");
+                    }
                 }
             }
         }

@@ -62,7 +62,7 @@ pub async fn issue(s: &AppState, a: &Actor, org: Uuid, i: UploadInput) -> Result
     if i.size_bytes > max {
         return Err(Error::InvalidCode(too_large));
     }
-    auth::rate(&s.pool, &format!("uploads:{}", a.user), 60).await?;
+    auth::rate(&s.pool, &format!("uploads:{}", a.user), UPLOAD_ISSUE_LIMIT).await?;
     let mut tx = s.pool.begin().await?;
     let asset = Uuid::new_v4();
     let session = Uuid::new_v4();
@@ -101,6 +101,29 @@ pub async fn issue(s: &AppState, a: &Actor, org: Uuid, i: UploadInput) -> Result
         json!({"upload_session_id":session,"asset_id":asset,"expected_key":key,"grant":grant,"qc_status":"PENDING"}),
     )
 }
+/// Upload issue / completion budget per user per 15-minute window. Sized for
+/// a label delivering a large catalog (a 1,000-track batch plus artwork in
+/// one window) while still bounding one account's storage churn.
+pub const UPLOAD_ISSUE_LIMIT: i32 = 2_000;
+pub const UPLOAD_COMPLETE_LIMIT: i32 = 2_000;
+
+/// Complete an upload: verify the quarantined object, copy it to its
+/// immutable key, hash it and register the asset.
+///
+/// The storage work (HEAD, server-side copy, streaming SHA-256 of up to
+/// 512 MiB) runs with **no database connection or transaction held**. The
+/// old implementation kept a transaction with row locks open across all of
+/// it, so a handful of concurrent large uploads exhausted the API pool and
+/// every other request failed. Correctness is kept by re-checking state in
+/// short transactions around the IO:
+///
+/// 1. authorize + validate the session (ISSUED, unexpired, key matches);
+/// 2. HEAD + copy + HEAD (no DB);
+/// 3. re-check expiry on the wall clock after that IO, before hashing;
+/// 4. stream the digest and sniff the container (no DB);
+/// 5. lock the session and register only if it is still ISSUED: a cancel
+///    during the IO wins (CONFLICT), and a concurrent duplicate completion
+///    converges on `duplicate: true`.
 pub async fn complete(
     s: &AppState,
     a: &Actor,
@@ -108,10 +131,17 @@ pub async fn complete(
     id: Uuid,
     i: CompleteInput,
 ) -> Result<Value> {
-    auth::rate(&s.pool, &format!("upload-complete:{}", a.user), 60).await?;
+    auth::rate(
+        &s.pool,
+        &format!("upload-complete:{}", a.user),
+        UPLOAD_COMPLETE_LIMIT,
+    )
+    .await?;
+    // Phase 1: short validation transaction.
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, i.asset_id, "asset", true).await?;
-    let r=sqlx::query("SELECT u.*,a.object_key,(u.expires_at>clock_timestamp()) AS valid FROM catalog.upload_sessions u JOIN catalog.assets a ON a.id=u.asset_id AND a.org_id=u.org_id WHERE u.id=$1 AND u.org_id=$2 FOR UPDATE OF u,a").bind(id).bind(org).fetch_optional(&mut *tx).await?.ok_or(Error::NotFound)?;
+    let r=sqlx::query("SELECT u.*,a.object_key,(u.expires_at>clock_timestamp()) AS valid FROM catalog.upload_sessions u JOIN catalog.assets a ON a.id=u.asset_id AND a.org_id=u.org_id WHERE u.id=$1 AND u.org_id=$2").bind(id).bind(org).fetch_optional(&mut *tx).await?.ok_or(Error::NotFound)?;
+    tx.commit().await?;
     let asset: Uuid = r.get("asset_id");
     let key: String = r.get("expected_key");
     if asset != i.asset_id || key != i.expected_key {
@@ -125,22 +155,18 @@ pub async fn complete(
     if r.get::<String, _>("status") != "ISSUED" || !r.get::<bool, _>("valid") {
         return Err(Error::Conflict);
     }
-    let meta = s.storage.head(&key).await?.ok_or(Error::Conflict)?;
     let size: i64 = r.get("expected_bytes");
     let mime: String = r.get("content_type");
     let nonce: Uuid = r.get("nonce");
+    let stable: String = r.get("object_key");
+
+    // Phase 2: storage verification and immutable copy, no DB held.
+    let meta = s.storage.head(&key).await?.ok_or(Error::Conflict)?;
     if meta.size != size || meta.content_type != mime || meta.nonce != nonce.to_string() {
         return Err(Error::Conflict);
     }
-    let stable: String = r.get("object_key");
-    // Recheck wall clock after HEAD and lock waits, before incurring a copy.
-    let valid: bool = sqlx::query_scalar(
-        "SELECT expires_at>clock_timestamp() FROM catalog.upload_sessions WHERE id=$1",
-    )
-    .bind(id)
-    .fetch_one(&mut *tx)
-    .await?;
-    if !valid {
+    // Recheck wall clock after HEAD, before incurring a copy.
+    if !session_unexpired(s, id).await? {
         return Err(Error::Conflict);
     }
     s.storage.freeze(&key, &stable, &meta.etag).await?;
@@ -152,15 +178,15 @@ pub async fn complete(
     {
         return Err(Error::Conflict);
     }
-    // Expiry is checked again after network IO using wall clock, not the transaction start time.
-    let n=sqlx::query("UPDATE catalog.upload_sessions SET status='COMPLETED',completed_at=clock_timestamp() WHERE id=$1 AND expires_at>clock_timestamp()").bind(id).execute(&mut *tx).await?.rows_affected();
-    if n != 1 {
+    // Phase 3: expiry is checked again after network IO using wall clock.
+    if !session_unexpired(s, id).await? {
         return Err(Error::Conflict);
     }
-    // Content verification. The frozen copy is immutable, so hashing it here
-    // binds catalog.assets.sha256 to exactly the bytes every later stage
-    // reads (Stage 1 re-verifies the hash before analysis). Streaming keeps
-    // API memory constant even for 512 MiB masters.
+
+    // Phase 4: content verification. The frozen copy is immutable, so
+    // hashing it here binds catalog.assets.sha256 to exactly the bytes every
+    // later stage reads (Stage 1 re-verifies the hash before analysis).
+    // Streaming keeps API memory constant even for 512 MiB masters.
     let digest = match s.storage.digest(&stable, size as u64).await {
         Ok(d) => d,
         Err(Error::PolicyGate("OBJECT_TOO_LARGE")) => return Err(Error::Conflict),
@@ -171,22 +197,52 @@ pub async fn complete(
     }
     let kind: String = sqlx::query_scalar("SELECT kind FROM catalog.assets WHERE id=$1")
         .bind(asset)
-        .fetch_one(&mut *tx)
+        .fetch_one(&s.pool)
         .await?;
     let detected = crate::qc::detect_container(&digest.head);
     if expected_container(&kind, &mime) != Some(detected) {
-        // Nothing is registered: the transaction rolls back, the session
-        // stays unusable for these bytes, and the user re-uploads the real
-        // master with its real type.
+        // Nothing is registered: the session stays ISSUED but unusable for
+        // these bytes, and the user re-uploads the real master with its
+        // real type.
         tracing::info!(%asset, detected, declared = %mime, "upload content mismatch");
         return Err(Error::PolicyGate("UPLOAD_CONTENT_MISMATCH"));
     }
-    sqlx::query("UPDATE catalog.assets SET state='REGISTERED',etag=$2,sha256=$3 WHERE id=$1")
+
+    // Phase 5: register, only if nothing changed the session meanwhile.
+    let mut tx = s.pool.begin().await?;
+    // Membership/ACL may have been revoked during the IO.
+    auth::authorize(&mut tx, a, org, asset, "asset", true).await?;
+    let status: Option<String> = sqlx::query_scalar(
+        "SELECT status FROM catalog.upload_sessions WHERE id=$1 AND org_id=$2 FOR UPDATE",
+    )
+    .bind(id)
+    .bind(org)
+    .fetch_optional(&mut *tx)
+    .await?;
+    match status.as_deref() {
+        Some("ISSUED") => {}
+        Some("COMPLETED") => {
+            tx.commit().await?;
+            return Ok(
+                json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":true}),
+            );
+        }
+        _ => return Err(Error::Conflict),
+    }
+    sqlx::query("UPDATE catalog.upload_sessions SET status='COMPLETED',completed_at=clock_timestamp() WHERE id=$1")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    let n = sqlx::query("UPDATE catalog.assets SET state='REGISTERED',etag=$2,sha256=$3 WHERE id=$1 AND state='UPLOADING'")
         .bind(asset)
         .bind(copy.etag)
         .bind(&digest.sha256)
         .execute(&mut *tx)
-        .await?;
+        .await?
+        .rows_affected();
+    if n != 1 {
+        return Err(Error::Conflict);
+    }
     operations::audit(
         &mut tx,
         Some(a.user),
@@ -210,6 +266,16 @@ pub async fn complete(
     Ok(
         json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":false,"sha256":digest.sha256,"detected_container":detected}),
     )
+}
+/// Wall-clock expiry check for one upload session (no lock held).
+async fn session_unexpired(s: &AppState, id: Uuid) -> Result<bool> {
+    Ok(sqlx::query_scalar(
+        "SELECT expires_at>clock_timestamp() FROM catalog.upload_sessions WHERE id=$1",
+    )
+    .bind(id)
+    .fetch_optional(&s.pool)
+    .await?
+    .unwrap_or(false))
 }
 /// Best-effort removal of the quarantine object after complete/cancel
 /// (sandbox round 2: quarantine copies were never deleted). A presigned PUT

@@ -87,6 +87,16 @@ async fn refs(c: &mut PgConnection, a: &Actor, org: Uuid, i: &Input) -> Result<(
 }
 pub async fn create(s: &AppState, a: &Actor, org: Uuid, kind: Kind, i: Input) -> Result<Value> {
     validate(&i)?;
+    // Omitted profile = empty object for every kind (artists and labels
+    // stored a literal JSON null before).
+    let i = Input {
+        profile: if i.profile.is_null() {
+            json!({})
+        } else {
+            i.profile
+        },
+        ..i
+    };
     let mut tx = s.pool.begin().await?;
     let id = Uuid::new_v4();
     auth::create_resource(&mut tx, a, org, id, kind.resource()).await?;
@@ -198,6 +208,17 @@ pub async fn update(
 ) -> Result<Value> {
     validate(&i)?;
     let expected = i.row_version.ok_or(Error::Invalid)?;
+    // An omitted profile is an empty object, as on create: binding JSON null
+    // stored a literal `null` document (NOT NULL does not catch it) and later
+    // `jsonb ||` merges into the release draft turned it into an array.
+    let i = Input {
+        profile: if i.profile.is_null() {
+            json!({})
+        } else {
+            i.profile
+        },
+        ..i
+    };
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, id, kind.resource(), true).await?;
     refs(&mut tx, a, org, &i).await?;

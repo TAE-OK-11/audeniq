@@ -62,6 +62,10 @@ services:
       EDGE_SERVICE_SECRET: ${EDGE_SERVICE_SECRET:?set random service secret}
       PAYOUT_ACCOUNT_KEY: ${PAYOUT_ACCOUNT_KEY:?set 64-hex AES-256 key for payout account numbers}
       DATABASE_URL: postgres://audeniq_api:${API_DB_PASSWORD}@postgres/audeniq_prod
+      # Upload completion no longer holds a connection during storage IO,
+      # but bulk catalog edits and concurrent Studio users still need room.
+      DATABASE_MAX_CONNECTIONS: '${API_DATABASE_MAX_CONNECTIONS:-20}'
+      PASSWORD_HASH_CONCURRENCY: '${PASSWORD_HASH_CONCURRENCY:-2}'
       STORAGE_ENABLED: ${STORAGE_ENABLED:-false}
       S3_ENDPOINT: ${S3_ENDPOINT:-https://unconfigured.invalid}
       S3_BUCKET: ${S3_BUCKET:-unconfigured}
@@ -82,14 +86,16 @@ services:
     stop_grace_period: 45s
     environment:
       DATABASE_URL: postgres://audeniq_worker:${WORKER_DB_PASSWORD}@postgres/audeniq_prod
-      WORKER_MAX_IN_FLIGHT: '${WORKER_MAX_IN_FLIGHT:-3}'
-      DATABASE_MAX_CONNECTIONS: '${DATABASE_MAX_CONNECTIONS:-8}'
+      WORKER_MAX_IN_FLIGHT: '${WORKER_MAX_IN_FLIGHT:-6}'
+      DATABASE_MAX_CONNECTIONS: '${DATABASE_MAX_CONNECTIONS:-12}'
       JOB_LEASE_SECONDS: '${JOB_LEASE_SECONDS:-300}'
       WORKER_DRAIN_SECONDS: '${WORKER_DRAIN_SECONDS:-30}'
-      QUEUE_INTERACTIVE_CONCURRENCY: '1'
-      QUEUE_QC_CONCURRENCY: '1'
-      QUEUE_RIGHTS_CONCURRENCY: '1'
-      QUEUE_DISTRIBUTION_CONCURRENCY: '1'
+      QUEUE_INTERACTIVE_CONCURRENCY: '${QUEUE_INTERACTIVE_CONCURRENCY:-2}'
+      # Several QC jobs (many singles at once) may run together: CPU-heavy
+      # analysis is capped process-wide by AUDENIQ_QC_ASSET_PARALLELISM.
+      QUEUE_QC_CONCURRENCY: '${QUEUE_QC_CONCURRENCY:-3}'
+      QUEUE_RIGHTS_CONCURRENCY: '${QUEUE_RIGHTS_CONCURRENCY:-2}'
+      QUEUE_DISTRIBUTION_CONCURRENCY: '${QUEUE_DISTRIBUTION_CONCURRENCY:-2}'
       QUEUE_FINANCE_CONCURRENCY: '1'
       QUEUE_DELIVERY_CONCURRENCY: '2'
       # Workers read the frozen masters for Stage 1 QC and packaging; they

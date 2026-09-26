@@ -337,7 +337,10 @@ pub fn fingerprint_from_samples(samples: &[f32]) -> Result<Fingerprint> {
 
 /// Bit error rate between two sub-fingerprint sequences at a fixed offset.
 /// `offset` shifts `b` relative to `a`: negative = b starts earlier.
-fn ber_at_offset(a: &[u32], b: &[u32], offset: isize) -> Option<f64> {
+/// Returns `None` when the overlap is too short, or when the rate is
+/// provably above `cap` (the comparison stops as soon as the accumulated
+/// bit errors exceed it; `f64::INFINITY` never stops early).
+fn ber_at_offset_capped(a: &[u32], b: &[u32], offset: isize, cap: f64) -> Option<f64> {
     let (a_lo, b_lo) = if offset >= 0 {
         (offset as usize, 0)
     } else {
@@ -347,16 +350,34 @@ fn ber_at_offset(a: &[u32], b: &[u32], offset: isize) -> Option<f64> {
     if overlap < MIN_OVERLAP_FRAMES {
         return None;
     }
+    let total_bits = overlap as f64 * 32.0;
+    // Largest distance that can still produce a rate <= cap.
+    let limit = if cap.is_finite() {
+        (cap * total_bits).floor() as u64
+    } else {
+        u64::MAX
+    };
+    let (a, b) = (&a[a_lo..a_lo + overlap], &b[b_lo..b_lo + overlap]);
     let mut dist = 0u64;
-    for i in 0..overlap {
-        dist += (a[a_lo + i] ^ b[b_lo + i]).count_ones() as u64;
+    for (ca, cb) in a.chunks(64).zip(b.chunks(64)) {
+        for (x, y) in ca.iter().zip(cb) {
+            dist += (x ^ y).count_ones() as u64;
+        }
+        if dist > limit {
+            return None;
+        }
     }
-    Some(dist as f64 / (overlap as f64 * 32.0))
+    Some(dist as f64 / total_bits)
 }
 
 /// Minimum BER over all alignments with sufficient overlap.
 /// Returns `None` when either sequence is too short for a meaningful
 /// comparison.
+///
+/// Exact: an alignment is abandoned only once its errors already exceed
+/// the best rate found so far, so the minimum is unchanged. Unrelated
+/// recordings (rate ~0.5 everywhere) are rejected after about half of each
+/// overlap instead of all of it.
 pub fn bit_error_rate(a: &[u32], b: &[u32]) -> Option<f64> {
     if a.len() < MIN_OVERLAP_FRAMES || b.len() < MIN_OVERLAP_FRAMES {
         return None;
@@ -366,7 +387,8 @@ pub fn bit_error_rate(a: &[u32], b: &[u32]) -> Option<f64> {
     let min_off = -((a.len() as isize) - MIN_OVERLAP_FRAMES as isize);
     let max_off = b.len() as isize - MIN_OVERLAP_FRAMES as isize;
     for off in min_off..=max_off {
-        if let Some(ber) = ber_at_offset(a, b, off) {
+        let cap = best.unwrap_or(f64::INFINITY);
+        if let Some(ber) = ber_at_offset_capped(a, b, off, cap) {
             best = Some(best.map_or(ber, |v: f64| v.min(ber)));
         }
     }
@@ -481,5 +503,44 @@ mod tests {
         assert_eq!(bytes.len(), a.frames.len() * 4);
         let back = Fingerprint::from_bytes(&bytes).unwrap();
         assert_eq!(back.frames, a.frames);
+    }
+}
+
+#[cfg(test)]
+mod ber_pruning_tests {
+    use super::*;
+
+    /// Reference implementation: exhaustive minimum without pruning.
+    fn exhaustive(a: &[u32], b: &[u32]) -> Option<f64> {
+        let min_off = -((a.len() as isize) - MIN_OVERLAP_FRAMES as isize);
+        let max_off = b.len() as isize - MIN_OVERLAP_FRAMES as isize;
+        (min_off..=max_off)
+            .filter_map(|off| ber_at_offset_capped(a, b, off, f64::INFINITY))
+            .reduce(f64::min)
+    }
+
+    #[test]
+    fn pruned_search_equals_exhaustive_minimum() {
+        // Deterministic xorshift noise; b = shifted, partially corrupted a.
+        let mut x = 0x9E37_79B9u32;
+        let mut next = || {
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            x
+        };
+        let a: Vec<u32> = (0..400).map(|_| next()).collect();
+        let mut b: Vec<u32> = (0..37).map(|_| next()).collect();
+        b.extend(
+            a[..300]
+                .iter()
+                .map(|v| if v % 5 == 0 { v ^ 0x00FF } else { *v }),
+        );
+        let unrelated: Vec<u32> = (0..350).map(|_| next()).collect();
+        for (p, q) in [(&a, &b), (&b, &a), (&a, &unrelated), (&a, &a)] {
+            assert_eq!(bit_error_rate(p, q), exhaustive(p, q));
+        }
+        assert!(bit_error_rate(&a, &b).unwrap() < 0.1);
+        assert_eq!(bit_error_rate(&a, &a), Some(0.0));
     }
 }

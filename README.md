@@ -53,3 +53,20 @@ No remote deployment or cloud account change is performed by this repository's b
 The connected frontend now has a Rust/WASM client in `crates/studio`. Build it using [the Studio deployment guide](docs/STUDIO_DEPLOYMENT.md); serve its generated assets through the Rust Worker in `crates/edge`. The original Studio prototype remains preserved but is not the connected deployment entry point. Landing/survey remain unchanged.
 
 Separate production preparation: `deploy/compose.production.yaml` and `deploy/production.env.example`. All API/database ports remain private; `cloudflared` connects the rented server to Workers VPC. This does not provision NHN/Cloudflare accounts or deploy a service. See [review responses](docs/REVIEW_RESPONSE.md) for accepted fixes and deliberately deferred review suggestions.
+
+## Bulk ingestion and runtime tuning
+
+Designed for labels delivering hundreds to thousands of tracks at once:
+
+- `POST /api/orgs/{org}/releases/{id}/tracks/batch` adds up to 1,000 tracks in one transaction (one release version bump). See `docs/API.md`.
+- Upload completion holds no database connection while copying/hashing the object; upload issue/complete limits are 2,000 per user per 15 minutes.
+- Migration `0040` indexes every catalog-wide lookup on the ingest path (QC cache, check results, ISRC/UPC/SHA-256, ledger balances) and bounds fingerprint similarity to duration-compatible candidates.
+
+| Variable | Binary | Default | Purpose |
+|---|---|---|---|
+| `DATABASE_MAX_CONNECTIONS` | api | 20 | API pool size (was fixed at 6) |
+| `PASSWORD_HASH_CONCURRENCY` | api | 2 | Concurrent Argon2id hashes (~19 MiB each) |
+| `AUDENIQ_QC_ASSET_PARALLELISM` | worker | CPU count (max 8) | Process-wide cap on concurrent audio analyses, shared by all QC jobs |
+| `QUEUE_QC_CONCURRENCY` etc. | worker | 1 | QC jobs claimed in parallel; safe to raise because analysis is capped above |
+
+The API drains in-flight requests on SIGTERM and hourly purges expired rate-limit buckets (`deploy/grants.sql` grants that DELETE).

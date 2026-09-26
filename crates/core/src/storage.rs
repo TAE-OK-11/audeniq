@@ -161,6 +161,49 @@ pub struct S3Store {
     /// Object downloads can legitimately take minutes (512 MiB masters), so
     /// they use an idle (read) timeout instead of the 10 s total timeout.
     download_client: reqwest::Client,
+    /// Server-side copy of a 512 MiB master can take well over 10 s on R2/S3
+    /// and sends no body until it finishes, so it gets its own total timeout.
+    copy_client: reqwest::Client,
+}
+
+/// Attempts for idempotent storage requests (HEAD/GET/DELETE and the
+/// ETag-conditioned copy). Transport errors, 429 and 5xx are retried with a
+/// short backoff; anything else is final.
+const STORAGE_ATTEMPTS: u32 = 3;
+
+fn transient(status: reqwest::StatusCode) -> bool {
+    status.is_server_error() || status == reqwest::StatusCode::TOO_MANY_REQUESTS
+}
+
+/// Send `build()` up to [`STORAGE_ATTEMPTS`] times. Each attempt builds a
+/// fresh request (a freshly signed URL when `build` signs).
+async fn send_retrying<F>(mut build: F) -> Result<reqwest::Response>
+where
+    F: FnMut() -> Result<reqwest::RequestBuilder>,
+{
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        let last = attempt >= STORAGE_ATTEMPTS;
+        match build()?.send().await {
+            Ok(r) if transient(r.status()) && !last => {
+                tracing::warn!(
+                    status = r.status().as_u16(),
+                    attempt,
+                    "storage request retried"
+                );
+            }
+            Ok(r) => return Ok(r),
+            Err(error) if !last => {
+                tracing::warn!(%error, attempt, "storage request retried");
+            }
+            Err(_) => return Err(Error::Storage),
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(
+            200 * 4u64.pow(attempt - 1),
+        ))
+        .await;
+    }
 }
 fn enc(s: &str) -> String {
     s.bytes()
@@ -219,6 +262,11 @@ impl S3Store {
             download_client: reqwest::Client::builder()
                 .connect_timeout(std::time::Duration::from_secs(10))
                 .read_timeout(std::time::Duration::from_secs(30))
+                .redirect(reqwest::redirect::Policy::none())
+                .build()?,
+            copy_client: reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .timeout(std::time::Duration::from_secs(300))
                 .redirect(reqwest::redirect::Policy::none())
                 .build()?,
         })
@@ -310,13 +358,12 @@ impl ObjectStore for S3Store {
         })
     }
     async fn head(&self, key: &str) -> Result<Option<ObjectMeta>> {
-        let url = self.signed("HEAD", key, &BTreeMap::new(), Utc::now(), 60)?;
-        let r = self
-            .client
-            .head(url)
-            .send()
-            .await
-            .map_err(|_| Error::Storage)?;
+        let r = send_retrying(|| {
+            Ok(self
+                .client
+                .head(self.signed("HEAD", key, &BTreeMap::new(), Utc::now(), 60)?))
+        })
+        .await?;
         if r.status() == reqwest::StatusCode::NOT_FOUND {
             return Ok(None);
         }
@@ -350,12 +397,17 @@ impl ObjectStore for S3Store {
             ("x-amz-copy-source-if-match".into(), etag.into()),
             ("x-amz-metadata-directive".into(), "COPY".into()),
         ]);
-        let url = self.signed("PUT", target, &headers, Utc::now(), 60)?;
-        let mut req = self.client.put(url);
-        for (k, v) in &headers {
-            req = req.header(k, v);
-        }
-        let r = req.send().await.map_err(|_| Error::Storage)?;
+        // Idempotent: the copy is conditioned on the source ETag and always
+        // writes the same bytes to the same target.
+        let r = send_retrying(|| {
+            let url = self.signed("PUT", target, &headers, Utc::now(), 60)?;
+            let mut req = self.copy_client.put(url);
+            for (k, v) in &headers {
+                req = req.header(k, v);
+            }
+            Ok(req)
+        })
+        .await?;
         if !r.status().is_success() {
             return Err(Error::Storage);
         }
@@ -367,13 +419,12 @@ impl ObjectStore for S3Store {
         Ok(())
     }
     async fn delete(&self, key: &str) -> Result<()> {
-        let url = self.signed("DELETE", key, &BTreeMap::new(), Utc::now(), 60)?;
-        let r = self
-            .client
-            .delete(url)
-            .send()
-            .await
-            .map_err(|_| Error::Storage)?;
+        let r = send_retrying(|| {
+            Ok(self
+                .client
+                .delete(self.signed("DELETE", key, &BTreeMap::new(), Utc::now(), 60)?))
+        })
+        .await?;
         if r.status().is_success() || r.status() == reqwest::StatusCode::NOT_FOUND {
             Ok(())
         } else {
@@ -381,13 +432,16 @@ impl ObjectStore for S3Store {
         }
     }
     async fn get(&self, key: &str) -> Result<Vec<u8>> {
-        let url = self.signed("GET", key, &BTreeMap::new(), Utc::now(), 300)?;
-        let r = self
-            .client
-            .get(url)
-            .send()
-            .await
-            .map_err(|_| Error::Storage)?;
+        let r = send_retrying(|| {
+            Ok(self.download_client.get(self.signed(
+                "GET",
+                key,
+                &BTreeMap::new(),
+                Utc::now(),
+                300,
+            )?))
+        })
+        .await?;
         if !r.status().is_success() {
             return Err(Error::Storage);
         }
@@ -426,13 +480,16 @@ impl ObjectStore for S3Store {
 }
 impl S3Store {
     async fn open_download(&self, key: &str) -> Result<reqwest::Response> {
-        let url = self.signed("GET", key, &BTreeMap::new(), Utc::now(), 900)?;
-        let r = self
-            .download_client
-            .get(url)
-            .send()
-            .await
-            .map_err(|_| Error::Storage)?;
+        let r = send_retrying(|| {
+            Ok(self.download_client.get(self.signed(
+                "GET",
+                key,
+                &BTreeMap::new(),
+                Utc::now(),
+                900,
+            )?))
+        })
+        .await?;
         if !r.status().is_success() {
             return Err(Error::Storage);
         }

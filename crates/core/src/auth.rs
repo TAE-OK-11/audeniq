@@ -144,6 +144,17 @@ pub async fn rate(pool: &PgPool, key: &str, limit: i32) -> Result<()> {
         Ok(())
     }
 }
+/// Delete rate-limit buckets whose window ended more than a day ago. A
+/// bucket younger than that may still be counting (15-minute windows), so it
+/// is never touched. Bounded per call so one run never holds long locks.
+pub async fn purge_expired_rate_limits(pool: &PgPool) -> Result<u64> {
+    Ok(sqlx::query(
+        "DELETE FROM identity.auth_limits WHERE bucket_hash IN (SELECT bucket_hash FROM identity.auth_limits WHERE window_start < now() - interval '1 day' LIMIT 50000)",
+    )
+    .execute(pool)
+    .await?
+    .rows_affected())
+}
 /// Header carrying the end-user IP. Only the edge worker sets it (from
 /// Cloudflare's `CF-Connecting-IP`, which Cloudflare overwrites on every
 /// request); browser-supplied copies are not forwarded by the edge, and every

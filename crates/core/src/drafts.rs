@@ -49,22 +49,13 @@ async fn changed(
     Ok(())
 }
 pub async fn track_refs(c: &mut PgConnection, a: &Actor, org: Uuid, i: &TrackInput) -> Result<()> {
-    if i.title.trim().is_empty() || i.title.len() > 300 || i.disc_number < 1 || i.track_number < 1 {
-        return Err(Error::Invalid);
-    }
-    if i.lyrics.as_ref().map(|s| s.chars().count()).unwrap_or(0) > 20_000 {
-        return Err(Error::Invalid);
-    }
-    if i.version.as_ref().map(|s| s.chars().count()).unwrap_or(0) > 200 {
-        return Err(Error::Invalid);
-    }
-    crate::text_policy::check(&i.title)?;
-    if let Some(v) = &i.version {
-        crate::text_policy::check(v)?;
-    }
-    if let Some(l) = &i.lyrics {
-        crate::text_policy::check_multiline(l)?;
-    }
+    check_track_fields(
+        &i.title,
+        i.disc_number,
+        i.track_number,
+        i.lyrics.as_deref(),
+        i.version.as_deref(),
+    )?;
     crate::protected_names::enforce(
         c,
         org,
@@ -273,4 +264,216 @@ pub async fn preflight(s: &AppState, a: &Actor, org: Uuid, release: Uuid) -> Res
     Ok(
         json!({"release_id":release,"row_version":version,"issues":issues,"submission_enabled":false,"ready_to_submit":false,"gates":["CONSENT_POLICY_NOT_IMPLEMENTED","LEGAL_REPRESENTATIVE_POLICY_NOT_IMPLEMENTED","STAGE1_QC_NOT_IMPLEMENTED"]}),
     )
+}
+
+/// Largest number of tracks one batch request may add (a box set or a
+/// large compilation). Bigger catalogs are split client-side.
+pub const MAX_BATCH_TRACKS: usize = 1_000;
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BatchTrack {
+    pub title: String,
+    pub disc_number: i32,
+    pub track_number: i32,
+    pub artist_id: Uuid,
+    pub asset_id: Option<Uuid>,
+    pub lyrics: Option<String>,
+    pub parental_advisory: Option<bool>,
+    pub version: Option<String>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BatchTracksInput {
+    pub row_version: i64,
+    pub tracks: Vec<BatchTrack>,
+}
+
+/// Field checks shared with single-track writes (see [`track_refs`]).
+fn check_track_fields(
+    title: &str,
+    disc: i32,
+    track: i32,
+    lyrics: Option<&str>,
+    version: Option<&str>,
+) -> Result<()> {
+    if title.trim().is_empty() || title.len() > 300 || disc < 1 || track < 1 {
+        return Err(Error::Invalid);
+    }
+    if lyrics.map(|s| s.chars().count()).unwrap_or(0) > 20_000
+        || version.map(|s| s.chars().count()).unwrap_or(0) > 200
+    {
+        return Err(Error::Invalid);
+    }
+    crate::text_policy::check(title)?;
+    if let Some(v) = version {
+        crate::text_policy::check(v)?;
+    }
+    if let Some(l) = lyrics {
+        crate::text_policy::check_multiline(l)?;
+    }
+    Ok(())
+}
+
+/// Resource ids of `kind` in `ids` the actor may read, locking the ACL rows
+/// like [`auth::authorize`] does for one id.
+async fn readable(
+    c: &mut PgConnection,
+    a: &Actor,
+    org: Uuid,
+    kind: &str,
+    ids: &[Uuid],
+) -> Result<BTreeSet<Uuid>> {
+    let rows: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT r.id FROM identity.resources r JOIN identity.resource_acl acl ON acl.org_id=r.org_id AND acl.resource_id=r.id
+          WHERE r.org_id=$1 AND r.id = ANY($2) AND r.kind=$3 AND acl.principal_party_id=$4 AND acl.action='read'
+            AND acl.revoked_at IS NULL AND acl.starts_at<=now() AND (acl.ends_at IS NULL OR acl.ends_at>now())
+          FOR SHARE OF acl",
+    )
+    .bind(org)
+    .bind(ids)
+    .bind(kind)
+    .bind(a.party)
+    .fetch_all(&mut *c)
+    .await?;
+    Ok(rows.into_iter().collect())
+}
+
+/// POST /releases/{id}/tracks/batch: add many tracks atomically.
+///
+/// Same rules as one-by-one creation (release write ACL, DRAFT/editable,
+/// optimistic `row_version`, artist/asset read ACL, text policy, protected
+/// names), but one transaction, one release version bump, set-based checks
+/// and a single multi-row insert. Adding 1,000 tracks one request at a time
+/// meant 1,000 serialized round trips that each bumped the release version,
+/// so a single concurrent edit forced the client to start over.
+pub async fn add_tracks_batch(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    release: Uuid,
+    i: BatchTracksInput,
+) -> Result<Value> {
+    if i.tracks.is_empty() || i.tracks.len() > MAX_BATCH_TRACKS {
+        return Err(Error::Invalid);
+    }
+    let mut positions = BTreeSet::new();
+    for t in &i.tracks {
+        check_track_fields(
+            &t.title,
+            t.disc_number,
+            t.track_number,
+            t.lyrics.as_deref(),
+            t.version.as_deref(),
+        )?;
+        if !positions.insert((t.disc_number, t.track_number)) {
+            return Err(Error::InvalidCode("TRACK_POSITION_DUPLICATE"));
+        }
+    }
+    let mut tx = s.pool.begin().await?;
+    auth::authorize(&mut tx, a, org, release, "release", true).await?;
+    let texts: Vec<&str> = i
+        .tracks
+        .iter()
+        .flat_map(|t| [t.title.as_str(), t.version.as_deref().unwrap_or("")])
+        .collect();
+    crate::protected_names::enforce(&mut tx, org, &texts).await?;
+    let artists: Vec<Uuid> = i
+        .tracks
+        .iter()
+        .map(|t| t.artist_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    if readable(&mut tx, a, org, "artist", &artists).await?.len() != artists.len() {
+        return Err(Error::Forbidden);
+    }
+    let live: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM (SELECT id FROM catalog.artists WHERE org_id=$1 AND id = ANY($2) AND archived_at IS NULL FOR SHARE) x",
+    )
+    .bind(org)
+    .bind(&artists)
+    .fetch_one(&mut *tx)
+    .await?;
+    if live != artists.len() as i64 {
+        return Err(Error::Conflict);
+    }
+    let assets: Vec<Uuid> = i
+        .tracks
+        .iter()
+        .filter_map(|t| t.asset_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    if !assets.is_empty()
+        && readable(&mut tx, a, org, "asset", &assets).await?.len() != assets.len()
+    {
+        return Err(Error::Forbidden);
+    }
+    bump(&mut tx, org, release, i.row_version).await?;
+    let n = i.tracks.len();
+    let ids: Vec<Uuid> = (0..n).map(|_| Uuid::new_v4()).collect();
+    let mut titles = Vec::with_capacity(n);
+    let mut versions = Vec::with_capacity(n);
+    let mut discs = Vec::with_capacity(n);
+    let mut numbers = Vec::with_capacity(n);
+    let mut artist_ids = Vec::with_capacity(n);
+    let mut asset_ids: Vec<Option<Uuid>> = Vec::with_capacity(n);
+    let mut lyrics: Vec<Option<String>> = Vec::with_capacity(n);
+    let mut advisories = Vec::with_capacity(n);
+    for t in i.tracks {
+        titles.push(t.title);
+        versions.push(
+            t.version
+                .as_deref()
+                .map(str::trim)
+                .unwrap_or("")
+                .to_string(),
+        );
+        discs.push(t.disc_number);
+        numbers.push(t.track_number);
+        artist_ids.push(t.artist_id);
+        asset_ids.push(t.asset_id);
+        lyrics.push(t.lyrics.filter(|s| !s.trim().is_empty()));
+        advisories.push(t.parental_advisory.unwrap_or(false));
+    }
+    sqlx::query(
+        "INSERT INTO catalog.tracks(id,org_id,release_id,title,version,disc_number,track_number,artist_id,asset_id,lyrics,parental_advisory)
+         SELECT u.id,$1,$2,u.title,u.version,u.disc,u.num,u.artist,u.asset,u.lyrics,u.pa
+           FROM UNNEST($3::uuid[],$4::text[],$5::text[],$6::int[],$7::int[],$8::uuid[],$9::uuid[],$10::text[],$11::bool[])
+                AS u(id,title,version,disc,num,artist,asset,lyrics,pa)",
+    )
+    .bind(org)
+    .bind(release)
+    .bind(&ids)
+    .bind(&titles)
+    .bind(&versions)
+    .bind(&discs)
+    .bind(&numbers)
+    .bind(&artist_ids)
+    .bind(&asset_ids)
+    .bind(&lyrics)
+    .bind(&advisories)
+    .execute(&mut *tx)
+    .await?;
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        Some(org),
+        Some(release),
+        "release.tracks_batch_added",
+        "USER_EDIT",
+        a.request,
+    )
+    .await?;
+    operations::event(
+        &mut tx,
+        org,
+        release,
+        "release.updated",
+        &format!("draft:{release}:{}", i.row_version + 1),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"ids":ids,"count":n,"row_version":i.row_version+1}))
 }

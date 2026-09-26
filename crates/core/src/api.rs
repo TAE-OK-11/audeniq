@@ -71,6 +71,12 @@ pub fn router(s: AppState) -> Router {
         .route("/api/orgs/{org}/assets/{id}", get(asset))
         .route("/api/orgs/{org}/releases/{id}/tracks", post(track))
         .route(
+            "/api/orgs/{org}/releases/{id}/tracks/batch",
+            // Up to MAX_BATCH_TRACKS track objects; lyrics belong on the
+            // per-track endpoint, so 2 MiB is ample.
+            post(tracks_batch).layer(DefaultBodyLimit::max(2 * 1024 * 1024)),
+        )
+        .route(
             "/api/orgs/{org}/releases/{id}/tracks/{track}",
             put(replace_track).delete(archive_track),
         )
@@ -313,6 +319,15 @@ async fn track(
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, true).await?;
     Ok(Json(catalog::track(&s, &a, org, id, i).await?))
+}
+async fn tracks_batch(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+    Json(i): Json<drafts::BatchTracksInput>,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, true).await?;
+    Ok(Json(drafts::add_tracks_batch(&s, &a, org, id, i).await?))
 }
 async fn replace_track(
     State(s): State<AppState>,
