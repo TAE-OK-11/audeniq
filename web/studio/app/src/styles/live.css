@@ -1116,9 +1116,10 @@ body.aq-nav-locked #portalNav{
   .modal-inner{width:100%!important;max-width:100%!important;max-height:calc(100dvh - 20px)!important;min-height:calc(100dvh - 20px)!important;padding:24px 20px!important}
 }
 
-/* 서명 모달: 본문 스크롤 + 하단 버튼 sticky 고정 */
-#modal.aq-signature-mode .modal-inner{overflow-y:auto!important}
-#modal.aq-signature-mode .aq-sign-foot{position:sticky!important;bottom:0!important;background:#fff!important;z-index:5!important;border-top:1px solid #edf1f7!important;padding:14px 0 8px!important;margin-top:16px!important}
+/* 서명 모달: 본문 스크롤 + 하단 버튼 절대 고정 */
+#modal.aq-signature-mode .modal-inner{position:relative!important;overflow:hidden!important;height:calc(100dvh - 16px)!important}
+#modal.aq-signature-mode .aq-sign-body{height:100%!important;overflow-y:auto!important;overscroll-behavior:contain!important;padding-bottom:96px!important;box-sizing:border-box!important}
+#modal.aq-signature-mode .aq-sign-foot{position:absolute!important;bottom:0!important;left:19px!important;right:19px!important;background:#fff!important;z-index:5!important;border-top:1px solid #edf1f7!important;padding:14px 0 16px!important;margin:0!important}
 
 /* 주민등록번호 입력 */
 .aq-rrn-row{display:flex;align-items:center;gap:8px}
