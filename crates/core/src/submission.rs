@@ -1408,13 +1408,10 @@ async fn analyze_asset(
     );
     tokio::task::spawn_blocking(move || {
         let path = tmp.0.as_path();
-        // check_audio_full returns the fingerprint tap samples collected
-        // during the single decode_analysis pass: no second ffmpeg decode
-        // for the fingerprint step anymore.
-        let (outcomes, fp_samples) = match kind.as_str() {
-            "AUDIO" => qc::check_audio_full(path, Some(&sha256), Some(&content_type)),
-            "IMAGE" => (qc::check_image(path, Some(&sha256)), Vec::new()),
-            _ => (Vec::new(), Vec::new()),
+        let outcomes = match kind.as_str() {
+            "AUDIO" => qc::check_audio(path, Some(&sha256), Some(&content_type)),
+            "IMAGE" => qc::check_image(path, Some(&sha256)),
+            _ => Vec::new(),
         };
         // Duration and technical specs are measured with a second ffprobe
         // pass rather than parsed out of check outcomes: the check contract
@@ -1441,9 +1438,14 @@ async fn analyze_asset(
                     | CheckStatus::TechnicalRetry
             )
         });
+        // Perceptual fingerprint over the head/middle/tail segment windows,
+        // decoded by ffmpeg's own resampler (decode_window with -ss/-t seeks,
+        // so only the windows are decoded). Replaces the old contiguous
+        // first-600 s decode; identical DSP, ~7x less audio.
+        let duration_secs = metrics.as_ref().map(|m| m.duration_secs).unwrap_or(0.0);
         let fp = match kind.as_str() {
-            "AUDIO" if !invalid && !fp_samples.is_empty() => Some(
-                fingerprint::fingerprint_from_samples(&fp_samples).map_err(|e| format!("{e:?}")),
+            "AUDIO" if !invalid && duration_secs > 0.0 => Some(
+                fingerprint::compute_fingerprint(path, duration_secs).map_err(|e| format!("{e:?}")),
             ),
             _ => None,
         };

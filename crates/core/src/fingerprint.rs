@@ -51,15 +51,6 @@ const MIN_OVERLAP_FRAMES: usize = 32;
 /// fingerprint. Not transient: retrying the same bytes will not help.
 pub const TOO_SHORT_CODE: &str = "AUDIO_TOO_SHORT_FOR_FINGERPRINT";
 
-/// Length of audio the file-decode entry point covers: the first 10 minutes.
-/// Longer tracks are fingerprinted over this bounded segment (ffmpeg stops
-/// decoding at the limit), which keeps time and memory bounded (~13 MB of
-/// PCM) for 45-minute masters. The production QC path no longer uses this:
-/// it taps the configured segment windows out of the single
-/// `decode_analysis` pass (see [`segment_windows`]).
-pub const MAX_FINGERPRINT_SECS: u32 = 600;
-const MAX_SAMPLES: usize = SAMPLE_RATE as usize * MAX_FINGERPRINT_SECS as usize;
-
 /// Number of segments a v2 fingerprint covers, and each segment's length.
 /// 3 x 30 s spread over the track replaces the contiguous first-600 s
 /// coverage: ~4.7x less decode + FFT work, while the discriminative parts
@@ -124,19 +115,22 @@ impl Fingerprint {
     }
 }
 
-/// Decode an audio file to mono 11025 Hz f32 PCM via ffmpeg.
-/// Uses the same helper-thread + timeout pattern as `qc::probe_with` so a
-/// hung decoder cannot wedge the worker.
-fn decode_mono(path: &Path) -> Result<Vec<f32>> {
+/// Decode one window of an audio file to mono 11025 Hz f32 PCM via
+/// ffmpeg (`-ss`/`-t` as input options, so the decoder seeks instead of
+/// decoding from the start). Uses the same helper-thread + timeout pattern
+/// as `qc::probe_with` so a hung decoder cannot wedge the worker.
+fn decode_window(path: &Path, start_secs: f64, len_secs: f64) -> Result<Vec<f32>> {
     use std::io::Read;
     let mut child = Command::new("ffmpeg")
         .args([
             "-v",
             "error",
+            "-ss",
+            &start_secs.to_string(),
+            "-t",
+            &len_secs.to_string(),
             "-i",
             path.to_str().ok_or(Error::Internal)?,
-            "-t",
-            &MAX_FINGERPRINT_SECS.to_string(),
             "-ac",
             "1",
             "-ar",
@@ -153,7 +147,7 @@ fn decode_mono(path: &Path) -> Result<Vec<f32>> {
         .spawn()
         .map_err(|_| Error::Internal)?;
     let stdout = child.stdout.take().ok_or(Error::Internal)?;
-    let max_bytes = (MAX_SAMPLES + 1) * 2;
+    let max_bytes = ((len_secs * SAMPLE_RATE as f64).ceil() as usize + 1) * 2;
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let mut buf = Vec::new();
@@ -209,8 +203,15 @@ fn hann_window() -> Vec<f32> {
 }
 
 /// Compute the perceptual fingerprint of an audio file.
-pub fn compute_fingerprint(path: &Path) -> Result<Fingerprint> {
-    let samples = decode_mono(path)?;
+/// Perceptual fingerprint over the configured [`segment_windows`]
+/// (head/middle/tail), decoded with ffmpeg's own resampler to mono
+/// 11025 Hz. Each window is decoded independently with input seeking, so a
+/// 3:30 track decodes 90 s of audio instead of the whole track.
+pub fn compute_fingerprint(path: &Path, duration_secs: f64) -> Result<Fingerprint> {
+    let mut samples = Vec::new();
+    for (start, len) in segment_windows(duration_secs) {
+        samples.extend(decode_window(path, start, len)?);
+    }
     fingerprint_from_samples(&samples)
 }
 
@@ -323,8 +324,9 @@ mod tests {
     #[test]
     fn long_tracks_fingerprint_a_bounded_segment() {
         // Sandbox: 11 and 45 minute masters hung the fingerprint step until
-        // the 600 s timeout and then died after five retries. Only the first
-        // MAX_FINGERPRINT_SECS are decoded now, so length no longer matters.
+        // the 600 s timeout and then died after five retries. Only the
+        // configured head/middle/tail windows (90 s) are decoded now, so
+        // length no longer matters.
         let p = std::env::temp_dir().join(format!("audeniq-fp-long-{}.wav", std::process::id()));
         let st = std::process::Command::new("ffmpeg")
             .args([
@@ -343,7 +345,7 @@ mod tests {
             .expect("ffmpeg missing");
         assert!(st.success());
         let started = std::time::Instant::now();
-        let fp = compute_fingerprint(&p);
+        let fp = compute_fingerprint(&p, 660.0);
         let _ = std::fs::remove_file(&p);
         let fp = fp.expect("11 minute track fingerprints");
         assert!(!fp.is_empty());
@@ -379,7 +381,6 @@ mod tests {
             .collect();
         fingerprint_from_samples(&samples).unwrap()
     }
-
 
     #[test]
     fn identical_audio_has_zero_ber() {
