@@ -3,8 +3,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {validateSubmission,default as worker} from '../src/worker.js';
 import questions from '../questions.json' with {type:'json'};
+import {STEPS} from '../app/src/survey.ts';
+import {applyChoice,emptyState,payload,validateAll} from '../app/src/logic.ts';
 const html=fs.readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
-const client=fs.readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
+const read=p=>fs.readFileSync(new URL(p,import.meta.url),'utf8');
+const client=read('../app/src/App.tsx')+read('../app/src/logic.ts');
+const ui=new Map(STEPS.flatMap(s=>s.questions).map(q=>[q.key,q]));
 function valid(){
  const answers={};
  for(const [key,q] of Object.entries(questions)){
@@ -14,19 +18,37 @@ function valid(){
  answers.q4_provider='';answers.q14='';
  return {submission_id:'ccb1d9d3-65de-4a58-96d7-4fe041109895',answers,beta:'',contact:'',beta_contact_consent:false,survey_consent:true,turnstile_token:'unit-test-token'};
 }
-test('all 18 questions, added DSP, payout, pricing and release timing are present',()=>{
+test('all 18 questions in the React UI match the server questions exactly',()=>{
  assert.equal(Object.keys(questions).length,17);
  for(const [key,q] of Object.entries(questions)){
-  assert.match(html,new RegExp(`id="question-${key}"`));
-  assert.ok(html.includes(q.title),`missing question ${key}`);
+  const u=ui.get(key);
+  assert.ok(u,`missing question ${key}`);
+  assert.equal(u.title,q.title,`title ${key}`);
+  assert.deepEqual(u.options,q.options,`options ${key}`);
+  assert.equal(u.kind,q.type,`type ${key}`);
+  assert.equal(u.required,!!q.required,`required ${key}`);
+  assert.equal(u.max??null,q.max??null,`max ${key}`);
   assert.ok(q.options.length>=5);
  }
- assert.match(html,/id="question-q14"/);
- assert.match(html,/name="beta"/);
- assert.match(html,/AUDENIQ_Logo_Light.svg/);
+ assert.ok(ui.has('q14'));
+ assert.equal(ui.get('beta').options.length,4);
+ assert.match(client,/AUDENIQ_Logo_Light.svg/);
  assert.equal(questions.q11.max,5);
- assert.match(html,/DSP에서 실제 발매되는 시점과는 별개/);
- assert.match(client,/refreshExperienceBranch/);
+ assert.match(ui.get('q8').hint,/DSP에서 실제 발매되는 시점과는 별개/);
+ assert.match(client,/noDistributorExperience/);
+});
+test('what the React form sends passes server validation',()=>{
+ let st=emptyState();
+ const pick=(k,v,on=true)=>{st=applyChoice(st,k,v,on).state;};
+ for(const [k,q] of ui) if(q.required&&q.options&&k!=='beta') pick(k,'0');
+ pick('q2','3'); // no release: q3 becomes '6', experience questions are cleared
+ st={...st,surveyConsent:true};
+ assert.equal(validateAll(st),'');
+ const body=payload(st,'ccb1d9d3-65de-4a58-96d7-4fe041109895','unit-test-token');
+ assert.equal(body.answers.q3,'6');
+ assert.ok(validateSubmission(body),'server must accept the client payload');
+ pick('q4','9'); st={...st,provider:'x'};
+ assert.equal(payload(st,'ccb1d9d3-65de-4a58-96d7-4fe041109895','t').answers.q4_provider,'');
 });
 test('complete anonymous survey with experience passes',()=>{
  const v=validateSubmission(valid());assert.ok(v);assert.equal(v.contact,null);assert.equal(JSON.parse(v.answers).q1[0],'0');
@@ -79,7 +101,8 @@ test('config cannot accept submissions without credentials; invalid Origin forbi
 test('unknown URL is 404; static files bypass Worker, with security headers',async()=>{
  const r=await worker.fetch(new Request('https://survey.audeniq.com/invalid'),{});
  assert.equal(r.status,404);
- const headers=fs.readFileSync(new URL('../public/_headers',import.meta.url),'utf8');
+ const headers=fs.readFileSync(new URL('../app/public/_headers',import.meta.url),'utf8');
+ assert.equal(fs.readFileSync(new URL('../public/_headers',import.meta.url),'utf8'),headers,'build copies _headers');
  assert.match(headers,/X-Robots-Tag: noindex/);
  assert.match(headers,/frame-ancestors 'none'/);
 });

@@ -1,16 +1,17 @@
 {
   "name": "audeniq-survey",
   "private": true,
-  "version": "5.0.0",
+  "version": "6.0.0",
   "type": "module",
   "scripts": {
     "dev": "bunx wrangler dev",
-    "deploy": "bun run preflight && bunx wrangler deploy",
+    "deploy": "bun run build && bun run preflight && bunx wrangler deploy",
     "preflight": "bun scripts/preflight.mjs",
     "test": "bun test test/*.test.mjs",
     "check": "bun run test && bun run preflight",
     "db:local": "bunx wrangler d1 migrations apply audeniq-survey --local",
-    "db:remote": "bunx wrangler d1 migrations apply audeniq-survey --remote"
+    "db:remote": "bunx wrangler d1 migrations apply audeniq-survey --remote",
+    "build": "cd app && bun install --frozen-lockfile && bun run build"
   },
   "devDependencies": {
     "wrangler": "^4.135.0"
