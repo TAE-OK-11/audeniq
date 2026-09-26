@@ -110,7 +110,7 @@ export function Dashboard() {
       </div>
 
       <div className="dashboard-columns">
-        <section className="surface white" aria-labelledby="upcomingTitle">
+        <section className="surface" aria-labelledby="upcomingTitle">
           <div className="section-top">
             <h2 id="upcomingTitle">내 발매</h2>
             <button type="button" className="link-btn" onClick={() => navigate('/releases')}>전체 보기 ↗</button>
