@@ -585,7 +585,7 @@ export function Upload() {
       <div className="wizard-progress" id="wizardProgress" ref={progressRef} aria-label="발매 신청 진행 단계">
         {STEPS.map((s, i) => (
           <span key={i} className={`wizard-progress-seg${i <= step ? ' current' : ''}`}>
-            <em>{s.short}</em>
+            {i === step && <em>{s.short}</em>}
           </span>
         ))}
       </div>
