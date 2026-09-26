@@ -557,6 +557,9 @@ body.wizard-mode .portal-header,body.wizard-mode .footer-line{display:none!impor
 .studio-album-row .cover{height:64px;width:64px;border-radius:15px}
 .studio-album-row .row-name{font-size:15px;font-weight:790;margin-bottom:5px}
 .studio-album-row .row-sub{font-size:12px;line-height:1.6}
+.aq-track-row{background:#f7f9fd!important;border-bottom:0!important;border-radius:20px!important;padding:14px 16px!important;margin-bottom:10px;transition:transform .15s ease,background .15s ease}
+.aq-track-row:active{transform:scale(.985);background:#edf1f9!important}
+.aq-track-row .row-sub{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .studio-album-row .row-end{gap:10px}
 .studio-row-arrow{border:0;background:transparent;display:grid;place-items:center;width:23px;height:33px;color:#8a9ab3;font-size:23px;border-radius:8px}
 .studio-row-arrow:hover{background:#e8efff;color:#345ed6}

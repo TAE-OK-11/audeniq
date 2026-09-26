@@ -178,15 +178,13 @@ export function Releases() {
           {filteredTracks.length ? (
             <div className="data-list">
               {filteredTracks.map(t => (
-                <div key={t.id} className="track-row">
+                <div key={t.id} className="track-row aq-track-row" onClick={() => openRelease(t.releaseId)} style={{ cursor: 'pointer' }}>
                   <Cover />
-                  <div>
+                  <div className="min-0">
                     <span className="row-name">{t.title || '제목 없는 곡'}</span>
                     <span className="row-sub">{t.releaseTitle} · {t.artist || '아티스트 미입력'}{t.isrc ? ` · ISRC ${t.isrc}` : ''}</span>
                   </div>
-                  <button className="link-btn" type="button" onClick={() => openRelease(t.releaseId)}>
-                    자세히 보기
-                  </button>
+                  <span className="chevron" aria-hidden="true">›</span>
                 </div>
               ))}
             </div>
