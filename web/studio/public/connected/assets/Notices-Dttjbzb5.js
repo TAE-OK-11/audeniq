@@ -1,4 +1,4 @@
-import{t as e}from"./react-Dlbx1jMz.js";import{D as t}from"./index-CGI3uy3j.js";var n=e(),r=t(),i=[{id:`n1`,title:`AUDENIQ STUDIO 정식 서비스 안내`,date:`2026-09-26`,pinned:!0,body:`AUDENIQ STUDIO가 정식 서비스를 시작합니다.
+import{t as e}from"./react-Dlbx1jMz.js";import{O as t}from"./index-TnQibp8P.js";var n=e(),r=t(),i=[{id:`n1`,title:`AUDENIQ STUDIO 정식 서비스 안내`,date:`2026-09-26`,pinned:!0,body:`AUDENIQ STUDIO가 정식 서비스를 시작합니다.
 
 이제 발매 접수부터 정산 확인까지 모든 과정을 스튜디오에서 진행할 수 있어요.
 
