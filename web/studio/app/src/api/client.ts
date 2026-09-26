@@ -30,19 +30,51 @@ export interface ReleaseDetail extends Release {
   draft?: ReleaseDraft;
 }
 
+export interface DraftTrack {
+  id: string; title: string; version: string; isrc: string;
+  composers: string; lyricists: string; arrangers: string; performers: string;
+  producer: string; lyrics: string; audioName: string; audioSize: number;
+  explicit: boolean; duration: string;
+}
+
+export interface CoverTrackData {
+  trackId: string; originalTitle: string; originalArtist: string; originalWriters: string;
+}
+
+export interface ReleaseOptionsData {
+  express: boolean; expressAck: boolean; expressReason: string;
+  minor: boolean;
+  guardian: string; guardianRelation: string; guardianContact: string;
+  guardian2: string; guardian2Relation: string; guardian2Contact: string;
+  guardianConsentDone: boolean; familyCertName: string; familyCertMethod: string;
+  cover: boolean; coverTracks: CoverTrackData[]; coverRightsAck: boolean; coverLicenseFile: string;
+  sample: boolean; sampleLicenseFile: string;
+  featured: boolean; featuredConsentFile: string;
+  ai: boolean; aiTool: string;
+  shared: boolean; sharedContractFile: string;
+  rerelease: boolean; previousTitle: string; previousId: string;
+}
+
 export interface ReleaseDraft {
+  artist?: string;
   type: string;
+  language?: string;
   genre: string;
+  genreCustom?: string;
   label: string;
   upc: string;
   notes: string;
   coverName: string;
+  coverData?: string;
+  originalDate?: string;
   territories: string[];
   platforms: string[];
   ownership: string;
   phonogram: string;
   copyright: string;
   rightsChecks: Record<string, boolean>;
+  options?: ReleaseOptionsData;
+  draftTracks?: DraftTrack[];
   history: { text: string; time: string }[];
 }
 

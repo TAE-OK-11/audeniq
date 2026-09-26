@@ -1,5 +1,5 @@
 // Mock data for design testing - no real API calls
-import type { User, Org, Release, ReleaseDetail } from './client';
+import type { User, Org, Release, ReleaseDetail, ReleaseOptionsData } from './client';
 
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -99,19 +99,24 @@ export const mockApi = {
     title: string;
     artist: string;
     type: string;
+    language: string;
     genre: string;
+    genreCustom: string;
     label: string;
     upc: string;
     notes: string;
     coverName: string;
+    coverData: string;
+    originalDate: string;
     release_date: string;
-    tracks: { id: string; title: string; isrc: string; duration: string; version: string; composers: string; lyricists: string; audioName: string }[];
+    tracks: { id: string; title: string; isrc: string; duration: string; version: string; composers: string; lyricists: string; arrangers: string; performers: string; producer: string; lyrics: string; audioName: string; audioSize: number; explicit: boolean }[];
     territories: string[];
     platforms: string[];
     ownership: string;
     phonogram: string;
     copyright: string;
     rightsChecks: Record<string, boolean>;
+    options: ReleaseOptionsData;
   }): Promise<Release> => {
     await delay(500);
     const at = new Date();
@@ -139,21 +144,102 @@ export const mockApi = {
         audioName: t.audioName || null,
       })),
       draft: {
+        artist: data.artist,
         type: data.type,
+        language: data.language,
         genre: data.genre,
+        genreCustom: data.genreCustom,
         label: data.label,
         upc: data.upc,
         notes: data.notes,
         coverName: data.coverName,
+        coverData: data.coverData,
+        originalDate: data.originalDate,
         territories: data.territories,
         platforms: data.platforms,
         ownership: data.ownership,
         phonogram: data.phonogram,
         copyright: data.copyright,
         rightsChecks: data.rightsChecks,
+        options: data.options,
+        draftTracks: data.tracks.map(t => ({ ...t })),
         history: [{ text: '발매 신청 접수 완료 · AUDENIQ 검토 시작', time: stamp }],
       },
     };
+    return r;
+  },
+  /** 발매 수정 — 기존 발매의 draft를 전체 위자드 상태로 갱신 */
+  updateReleaseFull: async (id: string, data: {
+    title: string;
+    artist: string;
+    type: string;
+    language: string;
+    genre: string;
+    genreCustom: string;
+    label: string;
+    upc: string;
+    notes: string;
+    coverName: string;
+    coverData: string;
+    originalDate: string;
+    release_date: string;
+    tracks: { id: string; title: string; isrc: string; duration: string; version: string; composers: string; lyricists: string; arrangers: string; performers: string; producer: string; lyrics: string; audioName: string; audioSize: number; explicit: boolean }[];
+    territories: string[];
+    platforms: string[];
+    ownership: string;
+    phonogram: string;
+    copyright: string;
+    rightsChecks: Record<string, boolean>;
+    options: ReleaseOptionsData;
+  }): Promise<Release> => {
+    await delay(500);
+    const r = mockReleases.find(x => x.id === id);
+    if (!r) throw new Error('발매를 찾을 수 없음');
+    const at = new Date();
+    const stamp = `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')} ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+    r.title = data.title;
+    r.artist = data.artist || undefined;
+    r.release_date = data.release_date || null;
+    r.track_count = data.tracks.length;
+    const d = mockDetails[id];
+    if (d) {
+      d.title = r.title;
+      d.artist = r.artist;
+      d.release_date = r.release_date;
+      d.track_count = r.track_count;
+      d.tracks = data.tracks.map(t => ({
+        id: t.id,
+        title: t.title,
+        duration_ms: null,
+        isrc: t.isrc || null,
+        version: t.version || null,
+        composers: t.composers || null,
+        lyricists: t.lyricists || null,
+        audioName: t.audioName || null,
+      }));
+      d.draft = {
+        artist: data.artist,
+        type: data.type,
+        language: data.language,
+        genre: data.genre,
+        genreCustom: data.genreCustom,
+        label: data.label,
+        upc: data.upc,
+        notes: data.notes,
+        coverName: data.coverName,
+        coverData: data.coverData,
+        originalDate: data.originalDate,
+        territories: data.territories,
+        platforms: data.platforms,
+        ownership: data.ownership,
+        phonogram: data.phonogram,
+        copyright: data.copyright,
+        rightsChecks: data.rightsChecks,
+        options: data.options,
+        draftTracks: data.tracks.map(t => ({ ...t })),
+        history: [...(d.draft?.history || []), { text: '발매 정보 수정 접수', time: stamp }],
+      };
+    }
     return r;
   },
   deleteRelease: async (id: string): Promise<void> => {
