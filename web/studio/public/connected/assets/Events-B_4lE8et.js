@@ -1,4 +1,4 @@
-import{n as e,t}from"./jsx-runtime-DLNB9Qsn.js";import{o as n}from"./index-DpXGRY3z.js";var r=e(),i=t(),a={ongoing:`진행 중`,upcoming:`예정`,ended:`종료`},o=[{id:`ev1`,title:`AUDENIQ 런칭 기념 프로모션`,date:`2026-10-01`,endDate:`2026-10-31`,place:`AUDENIQ STUDIO`,status:`upcoming`,summary:`정식 런칭을 기념해 첫 발매 수수료 무료 혜택을 드려요.`,body:`AUDENIQ 정식 런칭을 기념해 10월 한 달간 첫 발매의 유통 수수료를 무료로 지원합니다.
+import{n as e,t}from"./jsx-runtime-DLNB9Qsn.js";import{o as n}from"./index-9J-X6zML.js";var r=e(),i=t(),a={ongoing:`진행 중`,upcoming:`예정`,ended:`종료`},o=[{id:`ev1`,title:`AUDENIQ 런칭 기념 프로모션`,date:`2026-10-01`,endDate:`2026-10-31`,place:`AUDENIQ STUDIO`,status:`upcoming`,summary:`정식 런칭을 기념해 첫 발매 수수료 무료 혜택을 드려요.`,body:`AUDENIQ 정식 런칭을 기념해 10월 한 달간 첫 발매의 유통 수수료를 무료로 지원합니다.
 
 대상: 2026년 10월 중 발매 접수된 첫 싱글/앨범
 신청: 별도 신청 없이 자동 적용
