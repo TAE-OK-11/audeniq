@@ -33,8 +33,6 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            ~/.cargo/bin/wasm-bindgen
-            ~/.cargo/bin/wasm-bindgen-test-runner
             ~/.cargo/bin/worker-build
             ~/.cargo/bin/worker-codegen
             target
@@ -54,12 +52,6 @@ jobs:
           sudo apt-get install -y -qq ffmpeg libxml2-utils
       - run: cargo test --locked -p audeniq-core -- --test-threads=2
       - run: cargo build --locked -p audeniq-edge --target wasm32-unknown-unknown
-      - run: cargo test --locked -p audeniq-studio
-      - run: cargo clippy --locked -p audeniq-studio --lib --target wasm32-unknown-unknown -- -D warnings
-      - run: cargo build --locked -p audeniq-studio --lib --release --target wasm32-unknown-unknown
-      - run: cargo install wasm-bindgen-cli --version 0.2.128 --locked --force
-      - run: cargo run --locked -p audeniq-studio --bin studio-pack
-      - run: wasm-bindgen --target web --out-dir web/studio/dist/pkg target/wasm32-unknown-unknown/release/audeniq_studio.wasm
       - run: cargo install worker-build --version 0.1.12 --locked --force
       - uses: oven-sh/setup-bun@v2
         with:
@@ -77,48 +69,40 @@ jobs:
         run: |
           cp wrangler.toml.example wrangler.toml
           npx --yes wrangler@4.137.0 deploy --dry-run --outdir /tmp/audeniq-edge-bundle
-      - uses: browser-actions/setup-chrome@v1
-        id: chrome
-        with:
-          chrome-version: stable
-          install-chromedriver: true
-          install-dependencies: true
-      - name: Browser integration against local API
+      - name: Studio Worker and D1 content tests
+        working-directory: web/studio
+        run: bun test test/
+      - name: Browser smoke (React Studio against the local API)
+        working-directory: web/studio/app
         env:
           APP_ENV: development
           APP_ORIGIN: http://localhost:5173
           EDGE_SERVICE_SECRET: ephemeral-browser-service-secret-at-least-32-characters
           API_BIND: 127.0.0.1:8080
           STORAGE_ENABLED: 'false'
-          CHROME_BINARY: ${{ steps.chrome.outputs.chrome-path }}
-          CHROMEDRIVER_BINARY: ${{ steps.chrome.outputs.chromedriver-path }}
         run: |
-          cargo run --locked -p audeniq-core --bin audeniq-migrate
-          target/debug/audeniq-api > /tmp/api.log 2>&1 &
-          target/debug/audeniq-dev-web > /tmp/web.log 2>&1 &
-          "$CHROMEDRIVER_BINARY" --port=9515 > /tmp/chromedriver.log 2>&1 &
+          bunx playwright install --with-deps chromium
+          (cd ../../.. && cargo run --locked -p audeniq-core --bin audeniq-migrate)
+          ../../../target/debug/audeniq-api > /tmp/api.log 2>&1 &
           curl --fail --retry 15 --retry-connrefused --retry-delay 2 -H "X-Audeniq-Service:$EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready
-          target/debug/audeniq-browser-smoke
-          base64 --decode test-results/studio.png.base64 > test-results/studio.png
+          bun run preview:api > /tmp/web.log 2>&1 &
+          curl --fail --retry 15 --retry-connrefused --retry-delay 1 -o /dev/null http://localhost:5173/login
+          bun run e2e
       - name: Browser diagnostics
         if: failure()
-        run: cat /tmp/api.log /tmp/web.log /tmp/chromedriver.log 2>/dev/null || true
+        run: cat /tmp/api.log /tmp/web.log 2>/dev/null || true
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: studio-static-assets
-          path: web/studio/dist
-      - uses: actions/upload-artifact@v4
-        with:
-          name: studio-browser-screenshot
-          path: test-results/studio.png
+          name: studio-browser-results
+          path: web/studio/app/test-results
+          if-no-files-found: ignore
       - uses: actions/cache/save@v4
         if: always() && steps.rust-cache.outputs.cache-hit != 'true'
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            ~/.cargo/bin/wasm-bindgen
-            ~/.cargo/bin/wasm-bindgen-test-runner
             ~/.cargo/bin/worker-build
             ~/.cargo/bin/worker-codegen
             target

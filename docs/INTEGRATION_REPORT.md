@@ -1,5 +1,7 @@
 # Studio 연동 및 GitHub 리뷰 반영 보고서
 
+> 2026-09-26: 이 보고서의 Rust/WASM Studio(`crates/studio`, `studio-pack`, `audeniq-dev-web`, `audeniq-browser-smoke`)는 React Studio(`web/studio/app`)로 대체되어 삭제됐어요. 현재 절차는 `docs/STUDIO_DEPLOYMENT.md`를 보세요.
+
 ## ① 실제 구현 결과
 
 - `crates/studio`: Rust/WASM 브라우저 앱. 회원 등록·로그인·로그아웃, 조직 선택, 카탈로그 페이지네이션, 아티스트·레이블·발매 초안 생성/수정/보관, 트랙 추가/보관, WAV/FLAC R2 직접 업로드, 제출 준비 상태 조회, 세션 폐기.
