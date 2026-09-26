@@ -1,4 +1,5 @@
 use worker::*;
+pub mod content;
 /// Rust/WASM edge BFF. The generated JS loader is toolchain glue, not application logic.
 #[event(fetch)]
 pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Response> {
@@ -7,6 +8,14 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
         return Response::error("Forbidden host", 403);
     }
     if request.path().starts_with("/api/admin") {
+        return Response::error("Not found", 404);
+    }
+    // Notices and events are served from D1 at the edge (no private API hop).
+    let path = request.path();
+    if let Some(r) = content::route(&request.method(), &path) {
+        return content::handle(request, &env, r).await;
+    }
+    if path.starts_with("/api/content/") {
         return Response::error("Not found", 404);
     }
     if !request.path().starts_with("/api/") {

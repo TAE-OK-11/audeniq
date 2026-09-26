@@ -11,7 +11,8 @@ import { remoteApi } from './remote';
 export * from './types';
 export { ApiError };
 
-export const MOCK = import.meta.env.MODE !== 'edge' && import.meta.env.VITE_MOCK !== 'false';
+import { MOCK } from '../lib/mode';
+export { MOCK };
 
 /** 체험 모드는 비밀번호 8자, 실서버는 12자 이상 (서버 정책) */
 export const PASSWORD_MIN = MOCK ? 8 : 12;

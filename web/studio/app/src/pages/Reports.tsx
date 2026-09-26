@@ -4,7 +4,8 @@ import { CountUp } from '../components/CountUp';
 import { money, num } from '../lib/format';
 import { todayStr } from '../lib/date';
 import { useGrowOnView, type CSSVarStyle } from '../hooks/useAnimations';
-import { REPORT_ROWS as MOCK_ROWS, periodLabel as monthLabel, periods, type ReportRow } from '../data/reports';
+import { periodLabel as monthLabel, periods, type ReportRow } from '../data/reports';
+import { useReportRows } from '../hooks/useReportRows';
 
 const PERIODS = [
   { value: 'all', label: '전체 기간' },
@@ -57,6 +58,7 @@ export function Reports() {
   const [period, setPeriod] = useState('all');
   const [release, setRelease] = useState('all');
 
+  const { rows: MOCK_ROWS } = useReportRows(); // 체험 모드는 예시 행, 실서버는 플랫폼 리포트
   const [thisMonth = '', lastMonth = ''] = periods(MOCK_ROWS);
 
   const filtered = useMemo(() => MOCK_ROWS.filter(r => {
@@ -64,7 +66,7 @@ export function Reports() {
     if (period === 'prev' && r.period !== lastMonth) return false;
     if (release !== 'all' && r.release !== release) return false;
     return true;
-  }), [period, release, thisMonth, lastMonth]);
+  }), [MOCK_ROWS, period, release, thisMonth, lastMonth]);
 
   const totalRevenue = filtered.reduce((n, r) => n + r.revenue, 0);
   const totalPlays = filtered.reduce((n, r) => n + r.plays, 0);
@@ -131,7 +133,7 @@ export function Reports() {
       prevRevenue, curRevenue, prevPlays, curPlays,
       platChanges, topDriver,
     };
-  }, [period, release, lastMonth, thisMonth]);
+  }, [MOCK_ROWS, period, release, lastMonth, thisMonth]);
 
   const exportCsv = () => {
     if (!filtered.length) { toast('내보낼 리포트가 없어요.'); return; }

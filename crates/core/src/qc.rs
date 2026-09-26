@@ -284,6 +284,8 @@ pub fn detect_container(head: &[u8]) -> &'static str {
         "PNG"
     } else if head.len() >= 3 && &head[0..3] == b"\xFF\xD8\xFF" {
         "JPEG"
+    } else if head.len() >= 5 && &head[0..5] == b"%PDF-" {
+        "PDF"
     } else {
         "UNKNOWN"
     }

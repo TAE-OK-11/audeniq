@@ -44,6 +44,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => { cancelled = true; };
   }, [loadOrgs]);
 
+  // 실서버: 로그인한 작업 공간의 포털 데이터를 불러오고 알림을 주기적으로 새로 받는다
+  useEffect(() => {
+    if (MOCK || !user || !org) return;
+    let stop: (() => void) | undefined;
+    let cancelled = false;
+    void import('../store/portalSync').then(m => { if (!cancelled) stop = m.startPortalSync(); });
+    return () => { cancelled = true; stop?.(); };
+  }, [user, org]);
+
   // 다른 탭에서 로그아웃/로그인하면 이 탭도 따라간다 (목 모드 세션은 localStorage 공유)
   useEffect(() => {
     if (!MOCK) return;

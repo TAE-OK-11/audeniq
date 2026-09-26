@@ -106,6 +106,7 @@ pub fn router(s: AppState) -> Router {
             "/api/orgs/{org}/{kind}/{id}",
             get(detail).put(update).delete(archive),
         )
+        .merge(crate::portal::routes())
         .fallback(|| async { Error::NotFound.into_response() })
         .layer(DefaultBodyLimit::max(64 * 1024))
         .layer(middleware::from_fn_with_state(s.clone(), boundary))

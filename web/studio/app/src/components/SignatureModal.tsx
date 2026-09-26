@@ -9,6 +9,10 @@ import { stampNow } from '../lib/date';
 import { uid } from '../lib/store';
 import { pushNotice } from '../store/support';
 import { MOCK } from '../api/client';
+import * as portal from '../api/portal';
+import { errorMessage } from '../api/errors';
+import { refreshDocs } from '../store/portalSync';
+import { compactSignature } from '../lib/application';
 import { parseStamp } from '../lib/date';
 import { MOCK_REVIEW_SECONDS } from '../store/mockReviewer';
 
@@ -36,6 +40,7 @@ export function SignatureModal({
   const [phase, setPhase] = useState<'sign' | 'cert' | 'complete'>('sign');
   const [name, setName] = useState(doc.signerName || getProfileSnapshot().name || '');
   const [ack, setAck] = useState(false);
+  const [signing, setSigning] = useState(false);
   const [strokes, setStrokes] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawing = useRef(false);
@@ -144,11 +149,31 @@ export function SignatureModal({
     setStrokes(0);
   };
 
-  const save = () => {
+  const save = async () => {
     if (!name.trim()) { toast('서명자 이름을 입력해 주세요.'); return; }
     if (!strokes) { toast('서명을 직접 그려 주세요.'); return; }
     if (!ack) { toast('문서 내용을 확인해 주세요.'); return; }
     const data = canvasRef.current!.toDataURL('image/png');
+    if (!MOCK) {
+      // 실서버: 확인 기록 후 서명을 서버에 저장하면 계약이 체결된다.
+      // (휴대폰 본인 인증은 인증 기관 연동 전이라 실서버에서는 진행하지 않는다)
+      if (signing) return;
+      setSigning(true);
+      try {
+        let rv = doc.rowVersion ?? 0;
+        if (!doc.checkedAt) rv = await portal.checkDocument(doc.id);
+        const compact = await compactSignature(data);
+        await portal.signDocument(doc.id, name.trim(), compact || data, rv);
+        await refreshDocs();
+        onSaved?.();
+        setPhase('complete');
+      } catch (err) {
+        toast(errorMessage(err, '서명을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'));
+      } finally {
+        setSigning(false);
+      }
+      return;
+    }
     const at = stampNow();
     updateDoc(doc.id, {
       signerName: name.trim(),
@@ -510,8 +535,8 @@ export function SignatureModal({
           </button>
         ) : phase === 'sign' ? (
           <>
-            <button type="button" className="button" id="aqSignSave" onClick={save}>
-              서명 저장 후 본인 인증
+            <button type="button" className={`button${signing ? ' is-busy' : ''}`} id="aqSignSave" onClick={save} disabled={signing}>
+              {MOCK ? '서명 저장 후 본인 인증' : signing ? '서명하는 중' : '서명하고 계약 체결'}
             </button>
             <button type="button" className="button secondary" id="aqSignReturn" onClick={onBack}>
               문서로 돌아가기

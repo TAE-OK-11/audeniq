@@ -7,7 +7,19 @@ import { CountUp } from '../components/CountUp';
 import { BankLogo } from '../components/BankLogo';
 import { PaymentSetupModal } from '../components/PaymentSetupModal';
 import { isPaymentRegistered, usePayment } from '../store/payment';
-import { balance, payoutsStore, statementsStore } from '../store/settlement';
+import { balance, payoutsStore, statementsStore, useBalance, type Payout } from '../store/settlement';
+import { MOCK } from '../lib/mode';
+import * as portal from '../api/portal';
+import { errorMessage } from '../api/errors';
+import { refreshFinance } from '../store/portalSync';
+
+const PAYOUT_STATUS: Record<Payout['status'], [string, string]> = {
+  recorded: ['전송 전', 'ready'],
+  requested: ['요청 접수', 'review'],
+  processing: ['지급 처리 중', 'review'],
+  sent: ['지급 완료', 'live'],
+  failed: ['지급 실패', 'needs'],
+};
 import { money, niceDate } from '../lib/format';
 import { monthKey, todayStr } from '../lib/date';
 import { uid } from '../lib/store';
@@ -75,7 +87,8 @@ export function Settlement() {
 
   const paymentRegistered = isPaymentRegistered(payment);
 
-  const { total, used, left } = balance(statements, payouts);
+  const { total, used, left, minimum } = useBalance();
+  const [requesting, setRequesting] = useState(false);
 
   const openPayoutModal = () => {
     if (!isPaymentRegistered(payment)) {
@@ -84,6 +97,7 @@ export function Settlement() {
       return;
     }
     if (!left) { toast('지급을 요청할 수 있는 잔액이 없어요.'); return; }
+    if (left < minimum) { toast(`${money(minimum)} 이상부터 지급을 요청할 수 있어요.`); return; }
     setAmount('');
     setPayoutNote('');
     setShowPayout(true);
@@ -110,11 +124,28 @@ export function Settlement() {
     toast('지급 요청 기록을 삭제했어요.');
   };
 
-  const submitPayout = (e: React.FormEvent) => {
+  const submitPayout = async (e: React.FormEvent) => {
     e.preventDefault();
     const amt = Number(amount);
     if (!Number.isInteger(amt) || amt <= 0 || amt > left) {
       toast('요청 가능 금액 안에서 입력해 주세요.');
+      return;
+    }
+    if (amt < minimum) { toast(`${money(minimum)} 이상부터 요청할 수 있어요.`); return; }
+    if (!MOCK) {
+      if (requesting) return;
+      setRequesting(true);
+      try {
+        await portal.requestPayout(amt);
+        await refreshFinance();
+        setShowPayout(false);
+        setTab('payouts');
+        toast('지급을 요청했어요. 담당자 확인 후 등록한 계좌로 보내 드려요.');
+      } catch (err) {
+        toast(errorMessage(err, '지급을 요청하지 못했어요. 잠시 후 다시 시도해 주세요.'));
+      } finally {
+        setRequesting(false);
+      }
       return;
     }
     payoutsStore.set(ps => [...ps, { id: uid('p'), amount: amt, note: payoutNote.trim(), created: todayStr(), status: 'recorded' }]);
@@ -142,11 +173,11 @@ export function Settlement() {
             <h2 id="settleHeroHeading">요청 전 잔액</h2>
             <strong className="settle-hero-amount"><CountUp value={left} format={money} /></strong>
             <p className="settle-hero-sub">
-              기록한 정산액 {money(total)} · 지급 요청 합계 {money(used)}
+              {MOCK ? `기록한 정산액 ${money(total)} · 지급 요청 합계 ${money(used)}` : `확정 정산액 ${money(total)} · 처리 중인 지급 ${money(used)}`}
             </p>
           </div>
           <div className="row-actions">
-            <button type="button" className="button secondary" onClick={() => setShowStatement(true)}>정산 기록</button>
+            {MOCK && <button type="button" className="button secondary" onClick={() => setShowStatement(true)}>정산 기록</button>}
             <button type="button" className="button" onClick={openPayoutModal}>수익 받기</button>
           </div>
         </div>
@@ -193,11 +224,11 @@ export function Settlement() {
                   <span className="aq-statement-icon" aria-hidden="true">₩</span>
                   <div className="min-0">
                     <span className="row-name">{s.period} · {s.platform}</span>
-                    <span className="row-sub">{s.note || '수기 등록 정산 내역'} · {niceDate(s.created)}</span>
+                    <span className="row-sub">{s.note || (MOCK ? '수기 등록 정산 내역' : '플랫폼 정산')} · {niceDate(s.created)}</span>
                   </div>
                   <div className="aq-statement-end">
                     <strong>{money(s.amount)}</strong>
-                    <button type="button" className="link-btn" aria-label="정산 내역 삭제" onClick={() => deleteStatement(s.id)}>×</button>
+                    {MOCK && <button type="button" className="link-btn" aria-label="정산 내역 삭제" onClick={() => deleteStatement(s.id)}>×</button>}
                   </div>
                 </div>
               ))}
@@ -205,8 +236,10 @@ export function Settlement() {
           ) : (
             <div className="empty-page">
               <h2>정산 내역이 없어요.</h2>
-              <p>정산서를 받은 뒤 금액과 기간을 직접 기록할 수 있어요.</p>
-              <button type="button" className="button" onClick={() => setShowStatement(true)}>정산 내역 기록하기</button>
+              {MOCK ? (<>
+                <p>정산서를 받은 뒤 금액과 기간을 직접 기록할 수 있어요.</p>
+                <button type="button" className="button" onClick={() => setShowStatement(true)}>정산 내역 기록하기</button>
+              </>) : <p>플랫폼 정산이 확정되면 이곳에 표시돼요. 보통 매월 중순에 전월 정산이 반영돼요.</p>}
             </div>
           )}
         </div>
@@ -214,16 +247,16 @@ export function Settlement() {
         <div id="payoutList" className="aq-tab-panel" key="po">
           {payouts.length ? (
             <div className="aq-catalog-cards aq-stagger">
-              {[...payouts].reverse().map(p => (
+              {(MOCK ? [...payouts].reverse() : payouts).map(p => (
                 <div key={p.id} className="aq-statement-card">
                   <span className="aq-statement-icon" aria-hidden="true">↗</span>
                   <div className="min-0">
-                    <span className="row-name">{money(p.amount)} · 지급 요청 기록</span>
-                    <span className="row-sub">{niceDate(p.created)} · {p.note || '현재 작업 공간에만 기록됨'}</span>
+                    <span className="row-name">{money(p.amount)} · 지급 요청</span>
+                    <span className="row-sub">{niceDate(p.created)} · {p.note || (MOCK ? '현재 작업 공간에만 기록됨' : '등록한 계좌로 지급')}</span>
                   </div>
                   <div className="aq-statement-end">
-                    <span className="status-chip ready">전송 전</span>
-                    <button type="button" className="link-btn" aria-label="요청 기록 삭제" onClick={() => deletePayout(p.id)}>×</button>
+                    <span className={`status-chip ${PAYOUT_STATUS[p.status]?.[1] ?? 'review'}`}>{PAYOUT_STATUS[p.status]?.[0] ?? p.status}</span>
+                    {MOCK && <button type="button" className="link-btn" aria-label="요청 기록 삭제" onClick={() => deletePayout(p.id)}>×</button>}
                   </div>
                 </div>
               ))}
@@ -266,17 +299,21 @@ export function Settlement() {
                 </div>
                 <span className="studio-account-check" aria-label="선택된 수령 계좌">✓</span>
               </div>
-              <div className="field">
+              {MOCK && <div className="field">
                 <label htmlFor="pNote">메모 (선택)</label>
                 <input
                   id="pNote" maxLength={200} placeholder="필요한 내용을 남겨 주세요"
                   value={payoutNote} onChange={e => setPayoutNote(e.target.value)}
                 />
-              </div>
+              </div>}
               <div className="doc-connection">
-                신청 내용은 현재 작업 공간에 저장돼요. 지급 서비스가 연결되기 전에는 실제 송금이 진행되지 않아요.
+                {MOCK
+                  ? '신청 내용은 현재 작업 공간에 저장돼요. 지급 서비스가 연결되기 전에는 실제 송금이 진행되지 않아요.'
+                  : `담당자가 확인한 뒤 등록한 계좌로 보내 드려요. ${money(minimum)} 이상부터 요청할 수 있어요.`}
               </div>
-              <button className="button studio-submit-wide" type="submit">지급 요청 내용 저장</button>
+              <button className={`button studio-submit-wide${requesting ? ' is-busy' : ''}`} type="submit" disabled={requesting}>
+                {MOCK ? '지급 요청 내용 저장' : requesting ? '요청하는 중' : '지급 요청하기'}
+              </button>
             </form>
           </div>
         </Modal>

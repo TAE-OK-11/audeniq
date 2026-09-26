@@ -38,7 +38,7 @@ Request JSON rejects unknown top-level fields. Body limit 64 KiB. Errors have `{
 | PUT | `/api/orgs/{org}/releases/{id}/tracks/{track}/credits` | `{row_version,credits:[{party_id,role}]}` → atomic replacement, empty list clears draft credits |
 | GET | `/api/orgs/{org}/releases/{id}/preflight` | release_id, row_version, issues, explicit unmet gates, ready_to_submit=false |
 | POST | `/api/orgs/{org}/releases/{id}/submit` | Always authenticated/authorized **501 PRE_SUBMIT_NOT_IMPLEMENTED**; no revision/job created |
-| POST | `/api/orgs/{org}/uploads` | `{kind:AUDIO or IMAGE,size_bytes,content_type}` → upload_session_id, asset_id, expected_key, PUT grant |
+| POST | `/api/orgs/{org}/uploads` | `{kind:AUDIO, IMAGE or DOCUMENT,size_bytes,content_type}` → upload_session_id, asset_id, expected_key, PUT grant. DOCUMENT (rights proofs) accepts application/pdf, image/jpeg, image/png up to 20 MiB (`UPLOAD_DOCUMENT_TOO_LARGE`) |
 | POST | `/api/orgs/{org}/uploads/{id}/complete` | `{asset_id,expected_key}` → REGISTERED, QC_PENDING, duplicate flag; server checks both against stored session |
 | GET | `/api/orgs/{org}/uploads/{id}` | asset_id, status (ISSUED/COMPLETED/CANCELLED), expires_at, completed_at, expired; no object key or grant |
 | POST | `/api/orgs/{org}/uploads/{id}/cancel` | `{}` → cancelled, duplicate; completed sessions return 409 |
@@ -63,3 +63,46 @@ Cancellation prevents asset registration and records audit/Outbox atomically. It
 `POST /api/auth/csrf` with `{}` and the HttpOnly session cookie recovers the CSRF token after reload. Exact `Origin` (and same-origin Fetch Metadata when supplied) is mandatory; an old CSRF header is not required for this endpoint. Response: `{ "csrf_token": "..." }`, no-store. Token is HMAC-derived per session and stable across tabs, not a session credential; DB still stores only its digest. Anonymous/revoked/expired sessions receive 401; bad Origin receives 403; per-user limit is 120 per 15 minutes. Subsequent mutations require `X-CSRF-Token` normally. Service secret remains mandatory.
 
 Upload completion is limited to 60 requests per user per 15 minutes, including duplicate or failed requests. Expired uploads are rejected before storage IO, with an additional wall-clock check before copy and the existing final atomic expiry check. Lock timeout/deadlock/serialization conflict returns 409; refresh/reconcile before retrying a mutation.
+
+## Portal (studio artist features)
+
+Implemented in `crates/core/src/portal.rs`, schema `portal` (migration 0039). Same session, CSRF, Origin and service-secret rules as above. Every call rechecks the ACTIVE membership; release-scoped records also need the release ACL. VIEWER members can read; writes need OWNER/EDITOR; payout account and payout requests need OWNER.
+
+| Method | Path | Body / response |
+|---|---|---|
+| GET/PUT | `/api/me/profile` | Per-user artist profile `{display_name,contact_email,bio(multi-line),country(ISO-2),row_version}`; PUT with `row_version` 0 creates, otherwise optimistic update (409 on stale) |
+| GET/PUT | `/api/orgs/{org}/payout-account` | GET → `{registered:false}` or `{payee_type,holder_name,bank_name,account_last4,registered_at}`. PUT (OWNER) `{payee_type:INDIVIDUAL/SOLE_PROPRIETOR/CORPORATION,holder_name,bank_name,account_number}`; the full number is sealed with AES-256-GCM (`PAYOUT_ACCOUNT_KEY`, 64 hex chars, org id as associated data) and never returned. Missing key → 422 `PAYOUT_ACCOUNT_KEY_MISSING`; bad number → `ACCOUNT_NUMBER_INVALID` |
+| GET/POST | `/api/orgs/{org}/inquiries` | List (with release title, message count) / create `{category:RELEASE/SETTLEMENT/CONTRACT/ACCOUNT/OTHER,release_id?,subject,body}` |
+| GET | `/api/orgs/{org}/inquiries/{id}` | Thread with messages (`author_kind` ARTIST/STAFF) |
+| POST | `/api/orgs/{org}/inquiries/{id}/messages` | `{body}`; reopens an ANSWERED thread; CLOSED → 422 `INQUIRY_CLOSED` |
+| POST | `/api/orgs/{org}/inquiries/{id}/close` | `{}` |
+| GET | `/api/orgs/{org}/notifications` | Latest 100 for the org or the user, with per-user `read`, plus `unread` |
+| POST | `/api/orgs/{org}/notifications/read` | `{ids:[...]}` or `{all:true}` |
+| GET/POST | `/api/orgs/{org}/documents` | Agreements and rights proofs. POST `{release_id,title,body?,asset_id?,file_name?}` adds a rights proof (with a file → REVIEW, without → AWAITING_DOCUMENTS) |
+| POST | `/api/orgs/{org}/documents/{id}/check` | `{}` read confirmation → row_version |
+| POST | `/api/orgs/{org}/documents/{id}/sign` | `{signer_name,signature(PNG data URL ≤60000),row_version}`; only APPROVED + checked agreements (`DOCUMENT_NOT_APPROVED` / `DOCUMENT_NOT_CHECKED`) |
+| POST | `/api/orgs/{org}/documents/{id}/proof` | `{asset_id(DOCUMENT/IMAGE, registered),file_name,row_version}` → REVIEW |
+| GET/POST | `/api/orgs/{org}/releases/{id}/application` | Signed studio application `{application_no:AUD-YYYYMMDD-XXXXXX,form,content_hash(sha256 hex),signer_name,signer_role,agreements[],signature,submitted_at}`. Same number + same hash is idempotent, same number + other hash → 409. Recording opens (or re-opens) the release's AGREEMENT document for staff review |
+| GET | `/api/orgs/{org}/finance/summary` | KRW `payable` (ROYALTY_PAYABLE credits − debits), `pending` (REQUESTED portal requests + unsettled payout orders), `available`, `minimum_payout`, `account_registered` |
+| GET | `/api/orgs/{org}/finance/statements` | Ledger transactions touching ROYALTY_PAYABLE (description, source_ref, signed amount) |
+| GET/POST | `/api/orgs/{org}/finance/payouts` | Payout requests with linked order status / request `{amount(integer KRW ≥ 10000),idempotency_key}` (OWNER). Errors: `PAYOUT_ACCOUNT_REQUIRED`, `PAYOUT_BELOW_MINIMUM`, `PAYOUT_EXCEEDS_BALANCE`, `PAYEE_ON_HOLD`. Requests are serialised per org |
+| GET | `/api/orgs/{org}/reports` | Last 12 months of AUTO-matched royalty lines: `by_month`, `by_dsp`, `by_release`, and `rows` (month × dsp × release) |
+
+The API never writes finance tables. Operations turns a `portal.payout_requests` row (status REQUESTED) into a `finance.payout_orders` row, links it (`payout_order_id`, status ORDERED) and approves it under the manual payout policy. `portal.open_account()` in Rust decrypts the account number for that tooling only.
+
+Notifications are raised in the database by SECURITY DEFINER triggers, so the worker role needs no portal grants: release status (SUBMITTED, *_CORRECTION, ON_HOLD_RIGHTS, READY_FOR_DELIVERY, LIVE, TAKEN_DOWN), document status (agreement APPROVED, proof AWAITING_DOCUMENTS/NEEDS/APPROVED), staff inquiry replies and payout order SETTLED/FAILED/RETURNED. The API adds account-registered and payout-requested notices.
+
+Staff actions (no browser endpoint): `SELECT portal.staff_reply(inquiry_id, 'answer')`; `UPDATE portal.documents SET status='APPROVED'|'NEEDS', review_note=... WHERE id=...`; rights proof requests are `INSERT INTO portal.documents(... kind='RIGHTS_PROOF', status='AWAITING_DOCUMENTS')`.
+
+## Notices and events (edge Worker + D1)
+
+Served by `crates/edge` from the D1 binding `CONTENT_DB` (migrations in `crates/edge/migrations`), never proxied to the private API.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/notices`, `/api/notices/{id}` | Published (`published_at` ≤ now), not deleted; pinned first. `Cache-Control: public, max-age=60` |
+| GET | `/api/events`, `/api/events/{id}` | Adds `status` upcoming/ongoing/ended from KST dates (`starts_on`, `ends_on`) |
+| POST | `/api/content/notices`, `/api/content/events` | `Authorization: Bearer <CONTENT_ADMIN_TOKEN>`. Notice `{id?,title,body,pinned,published_at:"YYYY-MM-DDTHH:MM:SSZ"}`; event `{id?,title,summary,body,place,starts_on,ends_on?,link_url?(https),published_at}` |
+| PUT/DELETE | `/api/content/{notices|events}/{id}` | Replace / soft delete (`deleted_at`) |
+
+A future `published_at` schedules a post. IDs are lowercase letters, digits and hyphens (≤ 64). Text rejects control, bidi and zero-width characters.

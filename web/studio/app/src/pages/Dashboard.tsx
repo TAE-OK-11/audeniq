@@ -10,6 +10,7 @@ import { SkeletonRows } from '../components/Skeleton';
 import { CountUp } from '../components/CountUp';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { latestSummary, periodLabel } from '../data/reports';
+import { useReportRows } from '../hooks/useReportRows';
 import type { CSSVarStyle } from '../hooks/useAnimations';
 import { useGrowOnView } from '../hooks/useAnimations';
 import { prefetchRoute } from '../routes';
@@ -78,7 +79,8 @@ export function Dashboard() {
   const unread = useUnreadCount();
   const docs = useDocs();
   const { data: releases = [], loading, error, reload } = useAsync(() => api.listReleases(), []);
-  const report = latestSummary();
+  const { rows: reportRows } = useReportRows();
+  const report = latestSummary(reportRows);
 
   const needs = releases.filter(r => r.status === 'needs').length;
   const drafts = releases.filter(r => r.status === 'draft').length;

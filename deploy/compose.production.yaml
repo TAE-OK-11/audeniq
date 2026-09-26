@@ -60,6 +60,7 @@ services:
       APP_ORIGIN: ${APP_ORIGIN:?set exact HTTPS Studio origin}
       API_BIND: 0.0.0.0:8080
       EDGE_SERVICE_SECRET: ${EDGE_SERVICE_SECRET:?set random service secret}
+      PAYOUT_ACCOUNT_KEY: ${PAYOUT_ACCOUNT_KEY:?set 64-hex AES-256 key for payout account numbers}
       DATABASE_URL: postgres://audeniq_api:${API_DB_PASSWORD}@postgres/audeniq_prod
       STORAGE_ENABLED: ${STORAGE_ENABLED:-false}
       S3_ENDPOINT: ${S3_ENDPOINT:-https://unconfigured.invalid}

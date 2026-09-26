@@ -1,6 +1,7 @@
 // 계약·권리 서류 공유 스토어 — 라이브 db.contracts 대응
 // Contracts(계약서)와 Rights(권리·보완 서류)가 같은 문서를 공유한다.
 import { createStore } from '../lib/store';
+import { MOCK } from '../lib/mode';
 
 export interface ConsentRecord { time: string; action: string; version: string }
 export interface ReviewRecord { status: string; time: string; detail: string }
@@ -29,6 +30,8 @@ export interface DocRecord {
   signerName: string;
   localSignatureData: string;
   localSignatureAt: string;
+  /** 실서버 낙관적 잠금 버전 */
+  rowVersion?: number;
 }
 
 const AGREEMENT_CONTENT = [
@@ -136,8 +139,9 @@ function normalizeDoc(raw: unknown): DocRecord | null {
   };
 }
 
-const store = createStore<DocRecord[]>(INITIAL_DOCS, {
-  persist: 'docs',
+// 실서버 모드: 서버에서 불러오고 브라우저에는 남기지 않는다 (계정 간 섞임 방지)
+const store = createStore<DocRecord[]>(MOCK ? INITIAL_DOCS : [], {
+  persist: MOCK ? 'docs' : undefined,
   // File 객체는 직렬화할 수 없으므로 저장하지 않는다 (원본은 현재 세션에서만 열람)
   serialize: list => list.map(({ fileBlob: _omit, ...rest }) => rest),
   revive: (raw, fallback) => (Array.isArray(raw) ? raw.map(normalizeDoc).filter((d): d is DocRecord => !!d) : fallback),
@@ -148,6 +152,10 @@ export const getDocsSnapshot = store.get;
 
 export function getDoc(id: string): DocRecord | undefined {
   return store.get().find(d => d.id === id);
+}
+
+export function setDocs(list: DocRecord[]): void {
+  store.set(list);
 }
 
 export function addDoc(doc: DocRecord): void {

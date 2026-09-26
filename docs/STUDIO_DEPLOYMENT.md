@@ -26,12 +26,32 @@ Request path: browser → `crates/edge` Worker (same origin, serves the app at `
 - Audio (WAV/FLAC) and cover (JPG/PNG) files go straight to R2 through the upload grant. Only JSON control traffic passes through the Worker, which keeps its 64 KiB body cap.
 - Minor-artist releases are held on the client until the guardian review flow exists on the server.
 
+Studio features that used to live in browser storage now have server APIs (docs/API.md "Portal"): artist profile, payout account (AES-256-GCM sealed with `PAYOUT_ACCOUNT_KEY`), inquiries with staff replies, notifications raised by pipeline triggers, agreement signing and rights proofs, the signed release application, settlement (ledger read-only + payout requests) and reports. In the server-connected build the stores start empty, are filled after login, keep nothing in localStorage and refresh notifications every minute and on focus. Identity verification (PASS/카카오 etc.) is not wired: in the connected build a drawn signature on an approved, read-confirmed agreement completes the contract.
+
+Notices and events are served by the edge Worker from D1 (binding `CONTENT_DB`, `crates/edge/migrations`), not by the private API:
+
+```sh
+cd crates/edge
+npx wrangler d1 create audeniq-content            # put database_id into wrangler.toml
+npx wrangler d1 migrations apply audeniq-content --remote
+npx wrangler secret put CONTENT_ADMIN_TOKEN       # ≥ 32 random characters
+# publish a notice
+curl -X POST https://studio.audeniq.com/api/content/notices \
+  -H "authorization: Bearer $CONTENT_ADMIN_TOKEN" -H 'content-type: application/json' \
+  -d '{"id":"maintenance-2026-10","title":"10월 점검 안내","body":"…","pinned":false,"published_at":"2026-10-01T00:00:00Z"}'
+```
+
+The API server needs `PAYOUT_ACCOUNT_KEY` (`openssl rand -hex 32`); keep it outside the database backups it protects.
+
 Local run against a real API, without the Worker:
 
 ```sh
 # API with APP_ORIGIN=http://localhost:5173 and the same EDGE_SERVICE_SECRET
 cd web/studio/app
 EDGE_SERVICE_SECRET=... bun run dev:api   # Vite on :5173, proxies /api and adds the service header like the edge
+# notices/events from a local Worker + local D1 (optional):
+#   cd crates/edge && npx wrangler d1 migrations apply audeniq-content --local && npx wrangler dev --port 8787
+#   EDGE_CONTENT_URL=http://localhost:8787 EDGE_SERVICE_SECRET=... bun run dev:api
 ```
 
 ## Build and local browser integration (Rust/WASM shell)

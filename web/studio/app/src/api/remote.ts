@@ -454,7 +454,17 @@ export const remoteApi = {
         },
       },
     });
-    // 접수 기록을 profile에 남긴다 (접수 후에는 편집 불가 상태라 실패해도 무시)
+    // 4) 서명한 신청서를 서버에도 기록 — 신청서 번호·문서 확인 코드가 남고 배급 계약서 검토가 시작된다
+    const app = data.application;
+    if (app) {
+      await req(orgPath(`/releases/${rel.id}/application`), {
+        method: 'POST',
+        body: {
+          application_no: app.no, form: app.form, content_hash: app.hash, signer_name: app.signerName,
+          signer_role: app.signerRole, agreements: app.agreements, signature: app.signature, submitted_at: app.submittedAt,
+        },
+      });
+    }
     const fresh = await fetchRelease(rel.id);
     return { ...toSummary(fresh), updated_at: stampNow() };
   },
@@ -467,7 +477,7 @@ export const remoteApi = {
   async uploadFile(file: File, kind: UploadKind, onProgress?: (r: number) => void, signal?: AbortSignal): Promise<UploadResult> {
     const contentType = uploadContentType(file, kind);
     if (!contentType) {
-      throw new ApiError(kind === 'AUDIO' ? '음원은 WAV 또는 FLAC 파일만 올릴 수 있어요.' : '커버는 JPG 또는 PNG 파일만 올릴 수 있어요.', 400, 'UPLOAD_TYPE_UNSUPPORTED');
+      throw new ApiError(kind === 'AUDIO' ? '음원은 WAV 또는 FLAC 파일만 올릴 수 있어요.' : kind === 'DOCUMENT' ? '서류는 PDF, JPG, PNG 파일만 올릴 수 있어요.' : '커버는 JPG 또는 PNG 파일만 올릴 수 있어요.', 400, 'UPLOAD_TYPE_UNSUPPORTED');
     }
     const issued = await req<{ upload_session_id: string; asset_id: string; expected_key: string; grant: UploadGrant }>(orgPath('/uploads'), {
       method: 'POST', body: { kind, size_bytes: file.size, content_type: contentType },
@@ -495,6 +505,7 @@ export function uploadContentType(file: File, kind: UploadKind): string {
     if (t === 'audio/flac' || t === 'audio/x-flac' || name.endsWith('.flac')) return 'audio/flac';
     return '';
   }
+  if (kind === 'DOCUMENT' && (t === 'application/pdf' || name.endsWith('.pdf'))) return 'application/pdf';
   if (t === 'image/jpeg' || /\.jpe?g$/.test(name)) return 'image/jpeg';
   if (t === 'image/png' || name.endsWith('.png')) return 'image/png';
   return '';

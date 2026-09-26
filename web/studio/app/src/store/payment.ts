@@ -1,6 +1,7 @@
 // 수령(지급) 정보 공유 스토어 — Profile/Settlement가 같은 상태를 공유
 // 보안: 계좌번호 전체값은 브라우저 저장소에 남기지 않고 마스킹된 값만 영속화한다.
 import { createStore } from '../lib/store';
+import { MOCK } from '../lib/mode';
 
 export interface PaymentInfo {
   recipient: string;
@@ -20,7 +21,7 @@ export const TYPE_LABEL: Record<PaymentInfo['type'], string> = {
 const mask = (p: PaymentInfo): PaymentInfo => ({ ...p, accountNumber: p.last4 ? `••••${p.last4}` : '' });
 
 const store = createStore<PaymentInfo | null>(null, {
-  persist: 'payment',
+  persist: MOCK ? 'payment' : undefined,
   serialize: p => (p ? mask(p) : null),
 });
 
@@ -32,6 +33,6 @@ export function isPaymentRegistered(p: PaymentInfo | null): p is PaymentInfo {
   return !!p && !!p.recipient && !!p.bank && p.bank !== '미설정' && !!p.accountNumber && /^\d{4}$/.test(p.last4);
 }
 
-export function setPayment(p: PaymentInfo): void {
+export function setPayment(p: PaymentInfo | null): void {
   store.set(p);
 }
