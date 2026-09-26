@@ -48,7 +48,7 @@ function TicketForm({ onSave }: { onSave: (t: Omit<Ticket, 'id' | 'created' | 's
       </div>
       <div className="field">
         <label htmlFor="tSubject">문의 제목</label>
-        <input id="tSubject" maxLength={180} required placeholder="문의 제목" data-autofocus value={subject} onChange={e => setSubject(e.target.value)} />
+        <input id="tSubject" maxLength={180} required placeholder="문의 제목" value={subject} onChange={e => setSubject(e.target.value)} />
       </div>
       <div className="field">
         <label htmlFor="tBody">문의 내용</label>
