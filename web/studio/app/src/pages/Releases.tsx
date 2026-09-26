@@ -57,6 +57,7 @@ export function Releases() {
   const [list, setList] = useState<Release[]>([]);
   const [tracks, setTracks] = useState<TrackWithRelease[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,17 +66,21 @@ export function Releases() {
         const rs = await mockApi.listReleases();
         if (cancelled) return;
         setList(rs);
+        // N+1 순차 호출 → 병렬화 (latency가 발매 수에 비례해 누적되는 문제 해결)
+        const details = await Promise.all(
+          rs.map(r => mockApi.getRelease(r.id).catch(() => null)),
+        );
+        if (cancelled) return;
         const all: TrackWithRelease[] = [];
-        for (const r of rs) {
-          try {
-            const d = await mockApi.getRelease(r.id);
-            if (cancelled) return;
-            for (const t of d.tracks) {
-              all.push({ ...t, releaseTitle: d.title, releaseId: d.id, artist: d.artist });
-            }
-          } catch { /* ignore */ }
+        for (const d of details) {
+          if (!d) continue;
+          for (const t of d.tracks) {
+            all.push({ ...t, releaseTitle: d.title, releaseId: d.id, artist: d.artist });
+          }
         }
         setTracks(all);
+      } catch {
+        if (!cancelled) setLoadError(true);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -126,6 +131,12 @@ export function Releases() {
 
       {loading ? (
         <p style={{ color: 'var(--muted)' }}>불러오는 중...</p>
+      ) : loadError ? (
+        <div className="empty-page">
+          <h2>발매 목록을 불러오지 못했어요.</h2>
+          <p>네트워크 연결을 확인하고 다시 시도해 주세요.</p>
+          <button type="button" className="button secondary" onClick={() => window.location.reload()}>다시 불러오기</button>
+        </div>
       ) : tab === 'releases' ? (
         <div>
           <div className="toolbar">

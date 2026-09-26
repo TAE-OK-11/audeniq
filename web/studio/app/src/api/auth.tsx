@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, type User, type Org } from './client';
 
 interface AuthState {
@@ -32,31 +32,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
   }, []);
 
-  async function login(email: string, password: string) {
+  const login = useCallback(async (email: string, password: string) => {
     const u = await api.login(email, password);
     setUser(u);
     const o = await api.listOrgs();
     setOrgs(o);
     if (o.length > 0) setOrg(o[0]);
-  }
+  }, []);
 
-  async function signup(email: string, password: string) {
+  const signup = useCallback(async (email: string, password: string) => {
     const u = await api.signup(email, password);
     setUser(u);
     const o = await api.listOrgs();
     setOrgs(o);
     if (o.length > 0) setOrg(o[0]);
-  }
+  }, []);
 
-  async function logout() {
+  const logout = useCallback(async () => {
     await api.logout();
     setUser(null);
     setOrg(null);
     setOrgs([]);
-  }
+  }, []);
+
+  const value = useMemo(() => ({
+    user, org, orgs, loading, login, signup, logout, selectOrg: setOrg,
+  }), [user, org, orgs, loading, login, signup, logout]);
 
   return (
-    <AuthCtx.Provider value={{ user, org, orgs, loading, login, signup, logout, selectOrg: setOrg }}>
+    <AuthCtx.Provider value={value}>
       {children}
     </AuthCtx.Provider>
   );

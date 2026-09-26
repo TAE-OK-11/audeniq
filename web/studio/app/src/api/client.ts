@@ -106,7 +106,12 @@ async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
     credentials: 'include',
   });
   if (res.status === 401) {
-    window.location.href = '/connected/#/login';
+    // 로그인 페이지 자체에서의 401은 리다이렉트 스킵 (무한 새로고침 루프 방지)
+    const hash = window.location.hash || '';
+    const onAuthPage = /#\/(login|signup|find-account)/.test(hash);
+    if (!onAuthPage) {
+      window.location.href = '/connected/#/login';
+    }
     throw new Error('로그인이 필요합니다');
   }
   if (!res.ok) {

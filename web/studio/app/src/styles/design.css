@@ -229,7 +229,6 @@ button { font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparen
 }
 .tab:not(:disabled):active,
 .aq-sign-provider:not(:disabled):active{transform:scale(.985)!important}
-.tab,.aq-option,.aq-sign-tabs button,.aq-sign-provider,
 
 /* .toolbar */
 .toolbar{display:flex;gap:10px;justify-content:space-between;flex-wrap:wrap;margin:0 0 21px}
@@ -265,7 +264,6 @@ button { font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparen
 }
 .studio-filter:not(:disabled):active,.studio-alert-filter:not(:disabled):active,.tab:not(:disabled):active,
 .aq-sign-provider:not(:disabled):active{transform:scale(.985)!important}
-.studio-filter,.studio-alert-filter,.tab,.aq-option,.aq-sign-tabs button,.aq-sign-provider,
 
 /* .studio-result-count */
 .studio-result-count{color:#8290a6;font-size:12px;font-weight:700;margin:5px 0 6px}
@@ -598,7 +596,6 @@ button { font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparen
 }
 .studio-alert-filter:not(:disabled):active,.tab:not(:disabled):active,
 .aq-sign-provider:not(:disabled):active{transform:scale(.985)!important}
-.studio-alert-filter,.tab,.aq-option,.aq-sign-tabs button,.aq-sign-provider,
 
 /* .data-list */
 .data-list{border-top:1px solid var(--portal-border);border-bottom:1px solid var(--portal-border)}

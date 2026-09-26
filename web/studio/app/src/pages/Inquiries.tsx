@@ -121,6 +121,7 @@ export function Inquiries() {
             <button
               type="button" className="button danger"
               onClick={() => {
+                if (!window.confirm('이 문의 기록을 삭제할까요? 삭제하면 되돌릴 수 없어요.')) return;
                 setTickets(ts => ts.filter(t => t.id !== openTicket.id));
                 setOpenTicket(null);
                 toast('문의 기록을 삭제했어요.');

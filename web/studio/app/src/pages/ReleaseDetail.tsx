@@ -74,8 +74,13 @@ export function ReleaseDetail() {
 
   const handleDelete = async () => {
     setDeleteOpen(false);
-    await mockApi.deleteRelease(rel.id);
-    toast('발매를 삭제했어요.');
+    try {
+      await mockApi.deleteRelease(rel.id);
+      toast('발매를 삭제했어요.');
+    } catch {
+      toast('삭제에 실패했어요. 다시 시도해 주세요.');
+      return;
+    }
     nav('/releases');
   };
 

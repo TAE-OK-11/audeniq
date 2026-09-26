@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useToast } from '../components/Toast';
+import { money, num } from '../lib/format';
 import { useGrowOnView, type CSSVarStyle } from '../hooks/useAnimations';
 
 const PERIODS = [
@@ -20,14 +21,6 @@ const MOCK_ROWS: ReportRow[] = [
   { period: '2026-08', platform: 'Spotify', release: '첫 번째 싱글', track: '첫 번째 싱글', plays: 9870, revenue: 8492 },
   { period: '2026-08', platform: 'Melon', release: '첫 번째 싱글', track: '전체', plays: 4210, revenue: 3115 },
 ];
-
-function money(n: number): string {
-  return new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW', maximumFractionDigits: 0 }).format(n || 0);
-}
-
-function num(n: number): string {
-  return new Intl.NumberFormat('ko-KR').format(n || 0);
-}
 
 function Chart({ rows }: { rows: ReportRow[] }) {
   const chartRef = useGrowOnView<HTMLDivElement>();
@@ -124,7 +117,14 @@ export function Reports() {
       v.revenue += r.revenue; v.plays += r.plays;
       prevByPlat.set(r.platform, v);
     }
-    const platChanges = [...byPlatform].map(([name, v]) => {
+    // 인사이트는 이번 달 기준으로 계산 (byPlatform은 기간 필터 반영이라 전체 기간 선택 시 뻥튀기됨)
+    const curByPlat = new Map<string, { revenue: number; plays: number }>();
+    for (const r of cur) {
+      const v = curByPlat.get(r.platform) || { revenue: 0, plays: 0 };
+      v.revenue += r.revenue; v.plays += r.plays;
+      curByPlat.set(r.platform, v);
+    }
+    const platChanges = [...curByPlat.entries()].map(([name, v]) => {
       const p = prevByPlat.get(name);
       return {
         name,
@@ -142,7 +142,7 @@ export function Reports() {
       prevRevenue, curRevenue, prevPlays, curPlays,
       platChanges, topDriver,
     };
-  }, [period, release, lastMonth, thisMonth, byPlatform]);
+  }, [period, release, lastMonth, thisMonth]);
 
   const exportCsv = () => {
     if (!filtered.length) { toast('내보낼 리포트가 없어요.'); return; }
