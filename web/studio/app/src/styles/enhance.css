@@ -855,3 +855,46 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 #modal .aq-thread-reply,.aq-thread-reply{display:grid!important;grid-template-columns:minmax(0,1fr)!important;grid-auto-flow:row!important;gap:10px;margin-top:16px}
 .aq-thread-reply textarea{width:100%!important;min-height:88px;border:0;border-radius:16px;background:#f5f8ff;padding:12px 14px;font:inherit;font-size:14px;resize:vertical}
 .aq-thread-reply>.row-actions{grid-column:1!important;grid-row:auto!important;justify-content:flex-end!important}
+
+/* ---------- 공지사항: 한 줄 목록 + 상세 페이지 (카드 대신 구분선, 제목·날짜만) ---------- */
+a.aq-notice-featured{text-decoration:none;color:var(--aq-e-ink);transition:transform .25s var(--aq-e-ease),box-shadow .25s var(--aq-e-ease)}
+@media (hover:hover){a.aq-notice-featured:hover{transform:translateY(-2px);box-shadow:var(--aq-e-lift)}}
+.aq-nboard{margin-top:12px}
+.aq-nboard-top{display:flex;align-items:baseline;gap:8px;margin:0 0 14px}
+.aq-nboard-top h2{margin:0;font-size:21px;font-weight:760;letter-spacing:-.04em;color:var(--aq-e-ink)}
+.aq-nboard-count{font-size:14px;font-weight:700;color:var(--aq-e-blue)}
+.aq-nboard-list{list-style:none;margin:0;padding:0;border-top:1px solid var(--aq-e-line)}
+.aq-nboard-list li{border-bottom:1px solid var(--aq-e-line)}
+.aq-nboard-row{display:flex;flex-direction:column;gap:6px;padding:22px 12px;margin:0 -12px;border-radius:16px;text-decoration:none;color:var(--aq-e-ink);transition:background-color .2s var(--aq-e-ease)}
+.aq-nboard-row:active{background:#f2f5fa}
+@media (hover:hover){.aq-nboard-row:hover{background:#f7f9fd}.aq-nboard-row:hover .aq-nboard-title{color:var(--aq-e-blue)}}
+.aq-nboard-row:focus-visible{outline:2px solid var(--aq-e-blue);outline-offset:-2px}
+.aq-nboard-title{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:17px;font-weight:650;line-height:1.5;letter-spacing:-.03em;transition:color .2s var(--aq-e-ease)}
+.aq-nboard-date{font-size:13px;font-weight:500;color:#8b95a7;font-variant-numeric:tabular-nums}
+.aq-nboard-tag{display:inline-block;vertical-align:2px;margin-right:8px;padding:2px 7px;border-radius:7px;background:var(--aq-e-blue-soft);color:var(--aq-e-blue);font-style:normal;font-size:12px;font-weight:800;letter-spacing:0;line-height:1.5}
+.aq-nboard-pages{display:flex;justify-content:center;align-items:center;gap:4px;margin:36px 0 8px}
+.aq-nboard-pages button{min-width:38px;height:38px;padding:0 6px;border:0;border-radius:12px;background:none;color:#8b95a7;font-size:15px;font-weight:700;cursor:pointer;font-variant-numeric:tabular-nums;transition:background-color .2s,color .2s}
+.aq-nboard-pages button:hover:not(:disabled){background:#f2f5fa;color:var(--aq-e-ink)}
+.aq-nboard-pages button.is-current{background:var(--aq-e-blue-soft)!important;color:var(--aq-e-blue)!important}
+.aq-nboard-pages .aq-nboard-arrow{font-size:20px}
+.aq-nboard-pages button:disabled{opacity:.35;cursor:default}
+@media (min-width:768px){
+  .aq-nboard-row{flex-direction:row;align-items:center;justify-content:space-between;gap:24px;padding:24px 16px;margin:0 -16px}
+  .aq-nboard-title{font-size:18px}
+  .aq-nboard-date{flex:0 0 auto;font-size:14px}
+}
+.aq-nboard-back{display:inline-flex;align-items:center;gap:4px;margin:0 0 20px;font-size:14px;font-weight:700;color:#6b7684;text-decoration:none}
+.aq-nboard-back:hover{color:var(--aq-e-blue)}
+.aq-nboard-article header{padding-bottom:26px;border-bottom:1px solid var(--aq-e-line)}
+.aq-nboard-article h1{margin:10px 0 12px;font-size:26px;font-weight:780;line-height:1.4;letter-spacing:-.045em;color:var(--aq-e-ink)}
+.aq-nboard-article time{font-size:14px;color:#8b95a7;font-variant-numeric:tabular-nums}
+.aq-nboard-content{padding:30px 0 40px;font-size:16px;line-height:1.85;color:#333d4b;letter-spacing:-.02em}
+.aq-nboard-content p{margin:0 0 4px;color:inherit}
+.aq-nboard-sibling{display:flex;flex-direction:column;border-top:1px solid var(--aq-e-line)}
+.aq-nboard-sibling a{display:flex;align-items:center;gap:16px;padding:18px 4px;border-bottom:1px solid var(--aq-e-line);text-decoration:none;color:var(--aq-e-ink);min-width:0}
+.aq-nboard-sibling span{flex:0 0 auto;font-size:13px;font-weight:700;color:#8b95a7}
+.aq-nboard-sibling strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px;font-weight:600}
+@media (hover:hover){.aq-nboard-sibling a:hover strong{color:var(--aq-e-blue)}}
+.aq-nboard-foot{display:flex;justify-content:center;margin-top:32px}
+.aq-nboard-foot .button{min-width:160px;text-decoration:none}
+@media (min-width:768px){.aq-nboard-article h1{font-size:32px}}
