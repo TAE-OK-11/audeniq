@@ -38,6 +38,8 @@ export function Notices() {
     if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
     return b.date.localeCompare(a.date);
   });
+  const pinned = ordered.filter(n => n.pinned);
+  const regular = ordered.filter(n => !n.pinned);
 
   return (
     <div id="view-notices" className="view">
@@ -49,8 +51,34 @@ export function Notices() {
         </div>
       </div>
 
+      {pinned.length > 0 && (
+        <>
+          <div className="aq-notice-featured-list">
+            {pinned.map(n => (
+              <button
+                key={n.id} type="button" className="aq-notice-featured"
+                onClick={() => setOpenId(openId === n.id ? null : n.id)}
+                aria-expanded={openId === n.id}
+              >
+                <span className="aq-pin-badge">고정</span>
+                <span className="aq-notice-featured-title">{n.title}</span>
+                <span className="aq-notice-featured-date">{n.date}</span>
+                {openId === n.id && (
+                  <span className="aq-notice-featured-body">
+                    {n.body.split('\n').map((line, i) => (
+                      <span key={i}>{line || '\u00A0'}<br /></span>
+                    ))}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+          <div className="section-top"><h2>전체 공지</h2></div>
+        </>
+      )}
+
       <div className="aq-notice-list">
-        {ordered.map(n => {
+        {regular.map(n => {
           const open = openId === n.id;
           return (
             <div key={n.id} className="aq-notice-item">
