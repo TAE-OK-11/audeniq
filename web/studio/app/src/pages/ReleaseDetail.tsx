@@ -25,6 +25,22 @@ const DETAIL_TABS = [
   { value: 'history', label: '변경 기록' },
 ];
 
+const COVER_GRADIENTS = [
+  'linear-gradient(135deg,#bcd8ff,#7162db 65%,#394b83)',
+  'linear-gradient(135deg,#ffd9c1,#e58a7a 65%,#8a3d4b)',
+  'linear-gradient(135deg,#bdf0d9,#4dae8a 65%,#2a6b52)',
+  'linear-gradient(135deg,#ecd9ff,#a97ae5 65%,#5b3d8a)',
+  'linear-gradient(135deg,#fff0b8,#e0a83f 65%,#8a6a2a)',
+  'linear-gradient(135deg,#b8e6ff,#5c9ae5 65%,#2a4d8a)',
+  'linear-gradient(135deg,#ffcfe3,#e57aa5 65%,#8a3d63)',
+];
+
+function gradientFor(id: string): string {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return COVER_GRADIENTS[h % COVER_GRADIENTS.length];
+}
+
 function rightsOk(checks: Record<string, boolean> | undefined, options?: { sample?: boolean; featured?: boolean; ai?: boolean; shared?: boolean; rerelease?: boolean }): boolean {
   if (!RIGHTS_KEYS.every(k => checks?.[k])) return false;
   if (options?.sample || options?.featured) { if (!checks?.['rightsSamples']) return false; }
@@ -87,24 +103,16 @@ export function ReleaseDetail() {
         </div>
       </div>
 
-      <div className="view-title">
-        <div>
-          <p className="eyebrow">RELEASE DETAIL</p>
+      <div className="aq-detail-hero" aria-label="발매 정보">
+        <span className="cover aq-detail-cover" aria-hidden="true" style={{ background: gradientFor(rel.id) }}>♫</span>
+        <div className="aq-detail-info">
+          <div className="aq-detail-top">
+            <span className="eyebrow">{kindLabel}</span>
+            <span className={`status-chip ${rel.status}`}>{STATUS_LABEL[rel.status] || rel.status}</span>
+          </div>
           <h1>{rel.title || '제목 없는 발매'}</h1>
-          <p>{rel.artist || '아티스트 미입력'} · {rel.tracks.length}곡 · {rel.release_date || '발매일 미정'}</p>
-        </div>
-        <div><span className={`status-chip ${rel.status}`}>{STATUS_LABEL[rel.status] || rel.status}</span></div>
-      </div>
-
-      <div className="studio-album-hero" aria-label="앨범 아트워크 및 발매 정보">
-        <div className="studio-album-art">
-          <span className="cover" aria-hidden="true">♫</span>
-        </div>
-        <div className="studio-album-summary">
-          <span className="eyebrow">{kindLabel}</span>
-          <h2>{rel.title || '제목 없는 발매'}</h2>
-          <p>{rel.artist || '아티스트 미입력'}</p>
-          <div className="studio-album-facts">
+          <p className="aq-detail-artist">{rel.artist || '아티스트 미입력'}</p>
+          <div className="aq-detail-facts">
             <span>{rel.tracks.length}곡</span>
             <span>{d?.genre || '장르 미등록'}</span>
             <span>{rel.release_date || '발매일 미정'}</span>
@@ -153,20 +161,20 @@ export function ReleaseDetail() {
         {tab === 'tracks' && (
           <>
             <h2 className="subhead">트랙 목록 · {rel.tracks.length}곡</h2>
-            <div className="data-list">
+            <div className="aq-catalog-cards">
               {rel.tracks.map((t, i) => (
-                <div key={t.id} className="track-row">
-                  <div className="document-icon">{i + 1}</div>
-                  <div>
+                <div key={t.id} className="aq-track-card">
+                  <span className="aq-track-num" aria-hidden="true">{i + 1}</span>
+                  <div className="min-0">
                     <span className="row-name">{t.title || '곡명 없음'}{t.version ? ` (${t.version})` : ''}</span>
                     <span className="row-sub">
                       ISRC {t.isrc || '등록 전'} · 작곡 {t.composers || '미입력'} · 작사 {t.lyricists || '없음'}
                     </span>
                     <span className="row-sub">
-                      음원: {t.audioName || '미등록'} · {t.sample ? '원본 파일 확인 필요' : t.audioName ? '파일 재첨부가 필요할 수 있어요' : '원본 파일 없음'}
+                      음원 파일: {t.audioName || '미등록'}
                     </span>
                   </div>
-                  <span className={`status-chip ${t.audioName ? 'ready' : 'draft'}`}>{t.audioName ? '파일명 등록' : '파일 없음'}</span>
+                  <span className={`status-chip ${t.audioName ? 'ready' : 'draft'}`}>{t.audioName ? '파일 등록' : '파일 없음'}</span>
                 </div>
               ))}
             </div>
@@ -199,7 +207,7 @@ export function ReleaseDetail() {
               </dl>
               <p className="small muted">{rightsOk(d?.rightsChecks, d?.options) ? '신청서 권리 확인 항목 작성 완료' : '권리 확인 항목을 보완해 주세요.'}</p>
             </div>
-            <div className="surface white">
+            <div className="surface">
               <h2 className="subhead">계약·증빙</h2>
               <p className="small muted">발매 관련 권리 증빙과 계약 문서를 관리해 보세요.</p>
               <button className="button secondary" type="button" onClick={() => nav('/contracts')}>문서 관리 ↗</button>
