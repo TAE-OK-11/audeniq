@@ -13,8 +13,20 @@ export interface ContentEvent {
   id: string; title: string; summary: string; body: string; place: string;
   starts_on: string; ends_on: string | null; link_url: string | null; status: 'upcoming' | 'ongoing' | 'ended';
 }
-export const fetchNotices = () => req<{ items: ContentNotice[] }>('/api/notices', { quiet401: true }).then(r => items(r));
-export const fetchEvents = () => req<{ items: ContentEvent[] }>('/api/events', { quiet401: true }).then(r => items(r));
+export const fetchNotices = () => req<{ items: ContentNotice[] }>('/api/notices', { quiet401: true, quietServer: true }).then(r => items(r));
+export const fetchEvents = () => req<{ items: ContentEvent[] }>('/api/events', { quiet401: true, quietServer: true }).then(r => items(r));
+
+/** 서버 점검 일정 (D1) — 진행 중인 점검과 72시간 안의 예고 */
+export interface MaintenanceWindow { id: string; title: string; body: string; starts_at: string; ends_at: string; updated_at: string }
+export interface ServiceStatus { now: string; maintenance: { active: MaintenanceWindow | null; upcoming: MaintenanceWindow | null } }
+export async function fetchStatus(): Promise<ServiceStatus | null> {
+  try {
+    const r = await req<ServiceStatus>('/api/status', { quiet401: true, quietServer: true, timeoutMs: 8000 });
+    return r && typeof r === 'object' && r.maintenance ? r : null;
+  } catch {
+    return null; // 상태를 못 읽어도 스튜디오는 그대로 쓴다
+  }
+}
 
 function items<T>(r: { items?: T[] } | null): T[] {
   if (!Array.isArray(r?.items)) throw new ApiError('공지 서버에 연결하지 못했어요.', 0, 'CONTENT_UNAVAILABLE');
@@ -40,10 +52,12 @@ export async function loadContent<T, U>(fetcher: () => Promise<T[]>, map: (row: 
 // ---------------------------------------------------------------------------
 // 관리 (콘텐츠 관리자 토큰)
 // ---------------------------------------------------------------------------
-export type ContentKind = 'notices' | 'events';
+export type ContentKind = 'notices' | 'events' | 'maintenance';
 
 export interface AdminNotice extends ContentNotice { created_at: string; updated_at: string; deleted_at: string | null }
 export interface AdminEvent extends ContentEvent { published_at: string; created_at: string; updated_at: string; deleted_at: string | null }
+export interface AdminMaintenance extends MaintenanceWindow { published_at: string; created_at: string; deleted_at: string | null }
+export type MaintenanceInput = { title: string; body: string; starts_at: string; ends_at: string; published_at: string };
 export type NoticeInput = { title: string; body: string; pinned: boolean; published_at: string };
 export type EventInput = {
   title: string; summary: string; body: string; place: string;
@@ -58,7 +72,7 @@ const ADMIN_MESSAGES: Record<string, string> = {
   TOO_LONG: '입력한 내용이 너무 길어요.',
   TEXT_INVALID_CHARACTERS: '쓸 수 없는 문자가 들어 있어요.',
   PUBLISHED_AT_INVALID: '게시 시각을 확인해 주세요.',
-  DATES_INVALID: '이벤트 기간을 확인해 주세요. (종료일은 시작일 이후)',
+  DATES_INVALID: '기간을 확인해 주세요. (종료는 시작 이후)',
   LINK_URL_INVALID: '링크는 https://로 시작해야 해요.',
   ID_TAKEN: '같은 ID의 글이 이미 있어요.',
   NOT_FOUND: '글을 찾을 수 없어요. 목록을 새로 불러와 주세요.',
@@ -91,10 +105,10 @@ async function admin<T>(token: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE'
 
 export const contentAdmin = {
   list: <K extends ContentKind>(token: string, kind: K) =>
-    admin<{ items: (K extends 'notices' ? AdminNotice : AdminEvent)[]; now: string }>(token, 'GET', `/api/content/${kind}`),
-  create: (token: string, kind: ContentKind, input: NoticeInput | EventInput) =>
+    admin<{ items: (K extends 'notices' ? AdminNotice : K extends 'events' ? AdminEvent : AdminMaintenance)[]; now: string }>(token, 'GET', `/api/content/${kind}`),
+  create: (token: string, kind: ContentKind, input: NoticeInput | EventInput | MaintenanceInput) =>
     admin<{ id: string }>(token, 'POST', `/api/content/${kind}`, input),
-  update: (token: string, kind: ContentKind, id: string, input: NoticeInput | EventInput) =>
+  update: (token: string, kind: ContentKind, id: string, input: NoticeInput | EventInput | MaintenanceInput) =>
     admin<{ id: string }>(token, 'PUT', `/api/content/${kind}/${encodeURIComponent(id)}`, input),
   remove: (token: string, kind: ContentKind, id: string) =>
     admin<{ id: string }>(token, 'DELETE', `/api/content/${kind}/${encodeURIComponent(id)}`),
