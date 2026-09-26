@@ -112,16 +112,20 @@ export function Support() {
 
       {tab === 'tickets' ? (
         tickets.length ? (
-          <div className="data-list">
+          <div className="aq-catalog-cards">
             {tickets.slice().reverse().map(t => (
-              <div key={t.id} className="ticket-row">
-                <span className="document-icon" aria-hidden="true">✉</span>
-                <div className="min-0">
+              <button
+                key={t.id} type="button"
+                className="aq-ticket-card"
+                onClick={() => setOpenTicket(t)}
+              >
+                <span className="aq-ticket-icon" aria-hidden="true">✉</span>
+                <span className="min-0">
                   <span className="row-name">{t.subject}</span>
                   <span className="row-sub">{t.category} · {niceDate(t.created)} · {t.releaseTitle || '일반 문의'}</span>
-                </div>
-                <button className="link-btn" type="button" onClick={() => setOpenTicket(t)}>열기 ↗</button>
-              </div>
+                </span>
+                <span className={`status-chip ${t.status === '답변 완료' ? 'ready' : 'review'}`}>{t.status}</span>
+              </button>
             ))}
           </div>
         ) : (
@@ -132,20 +136,20 @@ export function Support() {
         )
       ) : (
         shown.length ? (
-          <div className="studio-notice-list">
+          <div className="aq-catalog-cards">
             {shown.map(n => (
               <button
                 key={n.id} type="button"
-                className={`studio-notice ${n.read ? 'is-read' : ''}`}
+                className={`aq-notice-card${n.read ? ' is-read' : ''}`}
                 onClick={() => openNoticeDetail(n)}
               >
-                <span className="studio-notice-symbol">{noticeSymbol(n.kind)}</span>
-                <span className="studio-notice-copy">
-                  <span className="studio-notice-meta">{n.kind || '안내'} · {niceDate(n.time)}</span>
+                <span className="aq-notice-symbol" aria-hidden="true">{noticeSymbol(n.kind)}</span>
+                <span className="min-0 aq-notice-copy">
+                  <span className="aq-notice-meta">{n.kind || '안내'} · {niceDate(n.time)}</span>
                   <strong>{n.title}</strong>
-                  <span>{n.detail}</span>
+                  <span className="aq-notice-detail">{n.detail}</span>
                 </span>
-                {n.read ? null : <i className="studio-unread" aria-label="읽지 않음" />}
+                {n.read ? null : <i className="aq-unread" aria-label="읽지 않음" />}
               </button>
             ))}
           </div>
