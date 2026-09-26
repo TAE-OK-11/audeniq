@@ -6,6 +6,7 @@ import { useUnreadCount } from '../store/support';
 import { useConfirm } from './Confirm';
 import { useToast } from './Toast';
 import { prefetchCommonRoutes, prefetchRoute } from '../routes';
+import { useScrollReveal } from '../hooks/useScrollReveal';
 
 // 라우트 변경 시 view 진입 애니메이션만 재시작 (children remount 없음 → useEffect/API 재실행 방지)
 function ViewEnter({ pathname, children }: { pathname: string; children: ReactNode }) {
@@ -77,6 +78,7 @@ export function Layout({ children }: { children: ReactNode }) {
     if (closeTimer.current) window.clearTimeout(closeTimer.current);
     closeTimer.current = window.setTimeout(() => setMenuClosing(false), NAV_EXIT_MS);
   };
+  useScrollReveal(loc.pathname);
   const closeMenuRef = useRef(closeMenu);
   closeMenuRef.current = closeMenu;
 
@@ -154,7 +156,7 @@ export function Layout({ children }: { children: ReactNode }) {
             <img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" />
           </Link>
           <div className="header-right">
-            <span className="workspace-label">STUDIO</span>
+            <span className="workspace-label aq-workspace-pill">STUDIO</span>
             <button
               type="button"
               className="aq-header-bell"
