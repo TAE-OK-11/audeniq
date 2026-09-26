@@ -1,5 +1,6 @@
 // 라우트별 코드 스플리팅 로더 — App의 lazy()와 프리페치가 같은 로더를 공유한다.
 // 같은 import()는 브라우저가 한 번만 받으므로 프리페치 후 실제 이동 시 즉시 렌더된다.
+import { currentPath } from './lib/router';
 export const pageLoaders = {
   Login: () => import('./pages/Login'),
   Signup: () => import('./pages/Signup'),
@@ -66,7 +67,7 @@ export function prefetchCommonRoutes() {
 
 /** 앱 시작 즉시 현재 주소의 화면 청크를 받기 시작 — 인증 확인과 병렬로 진행돼 첫 화면이 빨라진다 */
 export function prefetchInitialRoute() {
-  const path = (window.location.hash.replace(/^#/, '') || '/').split('?')[0];
+  const path = currentPath();
   if (/^\/(login|signup|find-account)/.test(path)) {
     load(path.startsWith('/signup') ? 'Signup' : path.startsWith('/find') ? 'FindAccount' : 'Login');
   } else {

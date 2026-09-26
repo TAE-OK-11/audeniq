@@ -5,7 +5,7 @@
 | 도구 | 버전 |
 |---|---|
 | React / React DOM | 19.3 |
-| 라우터 | 자체 경량 해시 라우터 `src/lib/router.tsx` (react-router 호환 API) |
+| 라우터 | 자체 경량 경로 라우터 `src/lib/router.tsx` (History API, react-router 호환 API). `/login`처럼 실제 경로를 쓰고, 예전 `/#/login` 주소는 자동으로 바뀐다. 정적 호스팅은 SPA 폴백(없는 경로 → `index.html`)이 필요하다 |
 | Vite / @vitejs/plugin-react | 8.3 / 6.1 |
 | TypeScript | 7.0 (네이티브 `tsc`) |
 | Vitest + jsdom | 5.0 / 30 |
