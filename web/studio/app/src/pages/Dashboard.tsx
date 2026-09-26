@@ -17,7 +17,7 @@ import { prefetchRoute } from '../routes';
 
 const GRID_ITEMS = [
   {
-    to: '/releases', title: '발매·곡 관리', desc: '발매 목록과 곡별 정보를 관리하세요',
+    to: '/releases', title: '발매·곡 관리', desc: '발매 목록과 곡별 정보',
     icon: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M7 5V3m5 2V3m5 2V3M7 10h10M7 14h6"/></svg>,
   },
   {
@@ -45,6 +45,12 @@ const TASK_ICONS = {
   user: svg('M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z'),
   bell: svg('M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0'),
 };
+
+/** 9월 26일 토요일 */
+function todayLabel(): string {
+  const d = new Date();
+  return `${d.getMonth() + 1}월 ${d.getDate()}일 ${'일월화수목금토'[d.getDay()]}요일`;
+}
 
 function greeting(): string {
   const h = new Date().getHours();
@@ -108,23 +114,22 @@ export function Dashboard() {
 
   return (
     <div id="view-home" className="view">
-      <div className="view-title">
+      <div className="view-title aq-home-title">
         <div>
-          <p className="eyebrow">AUDENIQ / STUDIO</p>
-          <h1>{profileName ? `${profileName}님의 작업실` : '내 작업실'}</h1>
-          <p>{greeting()} 발매 현황과 확인할 작업을 한곳에서 살펴보세요.</p>
+          <p className="aq-home-date">{todayLabel()}</p>
+          <h1>{profileName ? <>{profileName}<span className="aq-home-suffix">님의 작업실</span></> : '내 작업실'}</h1>
+          <p>{greeting()} 오늘 확인할 작업을 모아 두었어요.</p>
         </div>
-        <Link className="button" to="/upload" onPointerEnter={() => prefetchRoute('/upload')}>새로운 발매</Link>
       </div>
 
-      <div className="portal-hero">
+      <Link className="portal-hero aq-home-hero" to="/upload" onPointerEnter={() => prefetchRoute('/upload')}>
         <div>
-          <p className="eyebrow">NEW RELEASE</p>
-          <h2>새로운 발매를<br /><span className="aq-accent">시작해 보세요.</span></h2>
-          <p>음원과 커버아트, 크레딧을 등록하고 발매를 준비해 보세요.</p>
+          <p className="eyebrow">새 발매</p>
+          <h2>새로운 발매를 <span className="aq-accent">시작해 보세요.</span></h2>
+          <p>음원과 커버아트, 크레딧을 등록하고 발매를 준비해요.</p>
         </div>
-        <Link className="button aq-hero-cta" to="/upload" onPointerEnter={() => prefetchRoute('/upload')}>발매 등록하기 <span aria-hidden="true">→</span></Link>
-      </div>
+        <span className="button aq-hero-cta">발매 등록하기 <span aria-hidden="true">→</span></span>
+      </Link>
 
       <div className="dashboard-grid aq-stagger" aria-label="주요 업무">
         {GRID_ITEMS.map((item, i) => (
