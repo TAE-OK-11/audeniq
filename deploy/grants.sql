@@ -54,6 +54,9 @@ GRANT SELECT,INSERT ON catalog.asset_fingerprints TO audeniq_worker;
 GRANT EXECUTE ON FUNCTION catalog.fingerprints_outside_org(uuid, smallint) TO audeniq_worker;
 GRANT INSERT ON catalog.application_revisions,catalog.consent_packages TO audeniq_worker;
 GRANT INSERT ON distribution.canonical_releases,distribution.distribution_packages,distribution.verification_packages,distribution.validation_packages,distribution.preparation_artifacts,distribution.identifier_assignments,distribution.ddex_messages TO audeniq_worker;
+-- Stage 3 issues missing UPC/ISRC codes (migration 0041): the worker reads the
+-- active issuer (SELECT via the schema-wide grant) and advances its counter.
+GRANT INSERT,UPDATE ON distribution.identifier_counters TO audeniq_worker;
 GRANT INSERT,UPDATE ON execution.delivery_jobs,execution.delivery_attempts,execution.live_bindings,execution.reconciliation_cases TO audeniq_worker;
 GRANT INSERT,UPDATE ON execution.route_decisions TO audeniq_worker;
 GRANT SELECT,INSERT ON operations.check_results TO audeniq_worker;

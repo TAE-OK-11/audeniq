@@ -15,6 +15,7 @@ import type {
 import { ApiError } from './errors';
 import { bootstrapCsrf, hasCsrf, listAll, orgPath, putToGrant, req, setCsrf, type UploadGrant } from './http';
 import { stampNow } from '../lib/date';
+import { normalizeIsrc } from '../lib/dsp';
 
 // ---------------------------------------------------------------------------
 // 서버 모델
@@ -56,6 +57,13 @@ export function uiStatus(server: string): string {
 }
 const EDITABLE = new Set(['DRAFT', 'STAGE1_CORRECTION', 'STAGE2_CORRECTION', 'STAGE3_CORRECTION']);
 
+/** 서버는 UPC-A(12자리)만 받는다: 0으로 시작하는 EAN-13은 같은 번호라 앞 0을 뗀다. 비우면 3단계에서 발급 */
+export function serverUpc(v: string): string | null {
+  const d = v.trim();
+  if (/^\d{12}$/.test(d)) return d;
+  if (/^0\d{12}$/.test(d)) return d.slice(1);
+  return null;
+}
 const toReleaseType = (t: string): ServerRelease['release_type'] => (t === 'ep' ? 'EP' : t === 'album' || t === 'compilation' ? 'ALBUM' : 'SINGLE');
 const fromReleaseType = (t: string) => (t === 'EP' ? 'ep' : t === 'ALBUM' ? 'album' : 'single');
 
@@ -308,13 +316,16 @@ async function syncTracks(release: ServerRelease, tracks: DraftTrack[], artistId
       lyrics: t.lyrics ? cleanText(t.lyrics, true) : null,
       parental_advisory: t.explicit,
       version: cleanText(t.version) || null,
+      // 없으면 3단계에서 발급
+      isrc: normalizeIsrc(t.isrc ?? '') || null,
     };
     const existing = t.serverId ? server.get(t.serverId) : undefined;
     let trackId: string;
     if (existing) {
       const same = existing.title === body.title && existing.track_number === no && existing.asset_id === body.asset_id
         && (existing.version ?? null) === body.version && !!existing.parental_advisory === body.parental_advisory
-        && (existing.lyrics ?? null) === body.lyrics && existing.artist_id === artistId;
+        && (existing.lyrics ?? null) === body.lyrics && existing.artist_id === artistId
+        && (existing.isrc ?? null) === body.isrc;
       if (!same) {
         const r = await req<{ row_version: number }>(`${base}/${existing.id}`, { method: 'PUT', body });
         rv = r.row_version;
@@ -372,6 +383,12 @@ async function fetchRelease(id: string): Promise<ServerRelease> {
   return req<ServerRelease>(detailPath(id));
 }
 
+/** 3단계가 읽는 발매 칸: UPC(없으면 발급)와 커버 이미지 */
+function releaseRefs(data: ReleasePayload, prev: Record<string, unknown> | null) {
+  const cover = data.coverAssetId ?? (typeof prev?.coverAssetId === 'string' ? prev.coverAssetId : undefined);
+  return { upc: serverUpc(data.upc), artwork_asset_id: cover || null };
+}
+
 /** 발매 저장 공통 — 새로 만들거나, 편집 가능한 상태면 정보와 트랙을 갱신 */
 async function persist(id: string | null, data: ReleasePayload, historyText: string | null): Promise<ServerRelease & { trackServerIds: Record<string, string> }> {
   const name = cleanText(data.title) || '제목 없는 발매';
@@ -380,7 +397,7 @@ async function persist(id: string | null, data: ReleasePayload, historyText: str
     const history = historyText ? [{ text: historyText, time: stampNow() }] : [];
     const created = await req<{ id: string; row_version: number }>(orgPath('/releases'), {
       method: 'POST',
-      body: { name, release_type: toReleaseType(data.type), profile: buildProfile(data, null, history) },
+      body: { name, release_type: toReleaseType(data.type), profile: buildProfile(data, null, history), ...releaseRefs(data, null) },
     });
     rel = await fetchRelease(created.id);
   } else {
@@ -398,7 +415,7 @@ async function persist(id: string | null, data: ReleasePayload, historyText: str
   const profile = buildProfile({ ...data, tracks: synced.tracks }, rel.draft, history);
   const r = await req<{ row_version: number }>(detailPath(rel.id), {
     method: 'PUT',
-    body: { name, release_type: toReleaseType(data.type), profile, row_version: synced.rowVersion },
+    body: { name, release_type: toReleaseType(data.type), profile, row_version: synced.rowVersion, ...releaseRefs(data, rel.draft) },
   });
   const trackServerIds: Record<string, string> = {};
   for (const t of synced.tracks) if (t.serverId) trackServerIds[t.id] = t.serverId;
