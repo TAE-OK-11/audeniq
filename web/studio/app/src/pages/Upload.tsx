@@ -58,7 +58,9 @@ interface CoverTrackInfo {
 
 interface ReleaseOptions {
   express: boolean; expressAck: boolean; expressReason: string;
-  minor: boolean; guardian: string; guardianRelation: string; guardianContact: string; guardianFileName: string;
+  minor: boolean;
+  guardian: string; guardianRelation: string; guardianContact: string; guardianFileName: string;
+  guardian2: string; guardian2Relation: string; guardian2Contact: string;
   cover: boolean; coverTracks: CoverTrackInfo[]; coverRightsAck: boolean;
   sample: boolean; featured: boolean;
   ai: boolean; aiTool: string;
@@ -89,6 +91,7 @@ const newTrack = (): Track => ({
 const EMPTY_OPTIONS: ReleaseOptions = {
   express: false, expressAck: false, expressReason: '',
   minor: false, guardian: '', guardianRelation: '', guardianContact: '', guardianFileName: '',
+  guardian2: '', guardian2Relation: '', guardian2Contact: '',
   cover: false, coverTracks: [], coverRightsAck: false,
   sample: false, featured: false,
   ai: false, aiTool: '',
@@ -197,7 +200,8 @@ function OptionsSection({ form, set }: {
       {o.minor && (
         <div className="aq-option-detail">
           <h3>법정대리인 확인</h3>
-          <p className="aq-option-intro">본인 및 권리자의 동의 범위를 확인할 수 있도록 보호자 정보를 입력해 주세요.</p>
+          <p className="aq-option-intro">본인 및 권리자의 동의 범위를 확인할 수 있도록 보호자 정보를 입력해 주세요. 법정대리인은 2명을 입력하는 것이 원칙이지만, 1명인 경우도 접수할 수 있어요.</p>
+          <h4 className="aq-guardian-head">법정대리인 1</h4>
           <div className="field">
             <label htmlFor="aqGuardian">법정대리인 성명 <span className="required">*</span></label>
             <input
@@ -223,6 +227,35 @@ function OptionsSection({ form, set }: {
             <input
               id="aqGuardianContact" maxLength={160} value={o.guardianContact}
               onChange={e => setOpt('guardianContact', e.target.value)}
+              placeholder="확인이 가능한 연락처"
+            />
+          </div>
+          <h4 className="aq-guardian-head">법정대리인 2 <small>(해당하는 경우)</small></h4>
+          <div className="field">
+            <label htmlFor="aqGuardian2">법정대리인 성명</label>
+            <input
+              id="aqGuardian2" autoComplete="name" maxLength={90} value={o.guardian2}
+              onChange={e => setOpt('guardian2', e.target.value)}
+              placeholder="법정대리인 성명"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="aqGuardian2Relation">아티스트와의 관계</label>
+            <select
+              id="aqGuardian2Relation" value={o.guardian2Relation}
+              onChange={e => setOpt('guardian2Relation', e.target.value)}
+            >
+              <option value="">관계를 선택해 주세요.</option>
+              {['부', '모', '기타 법정대리인'].map(x => (
+                <option key={x} value={x}>{x}</option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="aqGuardian2Contact">법정대리인 연락처 또는 이메일</label>
+            <input
+              id="aqGuardian2Contact" maxLength={160} value={o.guardian2Contact}
+              onChange={e => setOpt('guardian2Contact', e.target.value)}
               placeholder="확인이 가능한 연락처"
             />
           </div>
@@ -468,6 +501,12 @@ export function Upload() {
         if (!o.guardian.trim()) return fail('법정대리인 성명을 입력해 주세요.', '#aqGuardian');
         if (!o.guardianRelation) return fail('법정대리인과의 관계를 선택해 주세요.', '#aqGuardianRelation');
         if (!o.guardianContact.trim()) return fail('법정대리인의 연락처를 입력해 주세요.', '#aqGuardianContact');
+        const g2 = [o.guardian2.trim(), o.guardian2Relation, o.guardian2Contact.trim()];
+        if (g2.some(v => v)) {
+          if (!o.guardian2.trim()) return fail('두 번째 법정대리인 성명을 입력해 주세요.', '#aqGuardian2');
+          if (!o.guardian2Relation) return fail('두 번째 법정대리인과의 관계를 선택해 주세요.', '#aqGuardian2Relation');
+          if (!o.guardian2Contact.trim()) return fail('두 번째 법정대리인의 연락처를 입력해 주세요.', '#aqGuardian2Contact');
+        }
       }
       if (o.ai && !o.aiTool.trim()) return fail('AI 도구명과 활용 방식을 입력해 주세요.', '#aqAiTool');
       if (o.cover) {
