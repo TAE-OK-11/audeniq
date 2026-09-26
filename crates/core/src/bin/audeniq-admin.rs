@@ -14,10 +14,13 @@
 //! audeniq-admin identifier-issuer register UPC|ISRC PREFIX
 //!   (GS1 company prefix / ISRC registrant code, e.g. `register ISRC KR-A1B`;
 //!    replaces the virtual test range for new codes)
+//! audeniq-admin partner list
+//! audeniq-admin partner set-dsp PARTNER_ID [DSP_UUID]
+//!   (links the partner to the DSP id Stage 2 eligibility keys on)
 use audeniq_core::protected_admin as admin;
 use audeniq_core::protected_names::{Action, Mode};
 
-const USAGE: &str = "usage: audeniq-admin [--operator NAME] protected <list|add|remove|activate|alias|remove-alias|grant-exception|revoke-exception> ...\n       audeniq-admin [--operator NAME] identifier-issuer <list|register UPC|ISRC PREFIX>";
+const USAGE: &str = "usage: audeniq-admin [--operator NAME] protected <list|add|remove|activate|alias|remove-alias|grant-exception|revoke-exception> ...\n       audeniq-admin [--operator NAME] identifier-issuer <list|register UPC|ISRC PREFIX>\n       audeniq-admin [--operator NAME] partner <list|set-dsp PARTNER_ID [DSP_UUID]>";
 
 fn take_opt(args: &mut Vec<String>, key: &str) -> Option<String> {
     let i = args.iter().position(|a| a == key)?;
@@ -61,6 +64,28 @@ async fn main() -> anyhow::Result<()> {
     let note = take_opt(&mut args, "--note");
     let reason = take_opt(&mut args, "--reason");
     let phrase = take_flag(&mut args, "--phrase");
+    if args.first().map(String::as_str) == Some("partner") {
+        use audeniq_core::partner_onboarding::{list_profiles, set_dsp};
+        let pool = audeniq_core::database::connect(&std::env::var("DATABASE_URL")?, 1).await?;
+        match (args.get(1).map(String::as_str), args.get(2), args.get(3)) {
+            (Some("list"), None, None) => {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&list_profiles(&pool).await?)?
+                )
+            }
+            (Some("set-dsp"), Some(partner), dsp) => {
+                if operator.trim().is_empty() {
+                    anyhow::bail!("--operator NAME (or AUDENIQ_OPERATOR) is required for changes");
+                }
+                let dsp = dsp.map(|d| uuid::Uuid::parse_str(d)).transpose()?;
+                let id = set_dsp(&pool, &operator, partner, dsp).await?;
+                println!("{partner} dsp_id={id}\nok");
+            }
+            _ => anyhow::bail!(USAGE),
+        }
+        return Ok(());
+    }
     if args.first().map(String::as_str) == Some("identifier-issuer") {
         use audeniq_core::identifiers::{IdentifierKind, list_issuers, register_issuer};
         let pool = audeniq_core::database::connect(&std::env::var("DATABASE_URL")?, 1).await?;
