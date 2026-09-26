@@ -1163,3 +1163,10 @@ body.aq-nav-locked #portalNav{
 .aq-complete-summary div:last-child{border-bottom:0}
 .aq-complete-summary small{font-size:12px;color:#8a94a8}
 .aq-complete-summary strong{font-size:14px;color:#1d2b45;text-align:right}
+
+/* 발매 위자드 진행 바 단계 라벨 */
+.wizard-progress-seg{position:relative!important;display:flex!important;flex-direction:column!important;height:auto!important;background:none!important;border-radius:0!important}
+.wizard-progress-seg em{font-style:normal!important;font-size:10px!important;font-weight:700!important;color:#9aa5bb!important;letter-spacing:-.01em!important;margin-bottom:5px!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;line-height:1.2!important}
+.wizard-progress-seg::after{content:'';height:5px;background:#e9eef8;border-radius:99px;width:100%;transition:background-color .28s var(--aq-motion-ease)}
+.wizard-progress-seg.current em{color:#2f6df6!important}
+.wizard-progress-seg.current::after{background:#2f6df6!important}
