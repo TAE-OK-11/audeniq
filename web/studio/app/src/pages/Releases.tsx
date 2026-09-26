@@ -26,9 +26,25 @@ const SELECT_OPTIONS = [
 
 type TrackWithRelease = Track & { releaseTitle: string; releaseId: string; artist?: string };
 
-function Cover() {
+const COVER_GRADIENTS = [
+  'linear-gradient(135deg,#bcd8ff,#7162db 65%,#394b83)',
+  'linear-gradient(135deg,#ffd9c1,#e58a7a 65%,#8a3d4b)',
+  'linear-gradient(135deg,#bdf0d9,#4dae8a 65%,#2a6b52)',
+  'linear-gradient(135deg,#ecd9ff,#a97ae5 65%,#5b3d8a)',
+  'linear-gradient(135deg,#fff0b8,#e0a83f 65%,#8a6a2a)',
+  'linear-gradient(135deg,#b8e6ff,#5c9ae5 65%,#2a4d8a)',
+  'linear-gradient(135deg,#ffcfe3,#e57aa5 65%,#8a3d63)',
+];
+
+function gradientFor(id: string): string {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return COVER_GRADIENTS[h % COVER_GRADIENTS.length];
+}
+
+function Cover({ id }: { id?: string }) {
   return (
-    <span className="cover" aria-hidden="true">♫</span>
+    <span className="cover aq-cover" aria-hidden="true" style={id ? { background: gradientFor(id) } : undefined}>♫</span>
   );
 }
 
@@ -151,7 +167,7 @@ export function Releases() {
                   onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openRelease(r.id); } }}
                   tabIndex={0} role="button" aria-label={`${r.title || '제목 없는 발매'} 상세 보기`}
                 >
-                  <Cover />
+                  <Cover id={r.id} />
                   <div className="min-0">
                     <span className="row-name">{r.title || '제목 없는 발매'}</span>
                     <span className="row-sub">{r.artist || '아티스트 미입력'} · {r.track_count}곡</span>
@@ -189,7 +205,7 @@ export function Releases() {
                   onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openRelease(t.releaseId); } }}
                   tabIndex={0} role="button" aria-label={`${t.title || '제목 없는 곡'} 상세 보기`}
                 >
-                  <Cover />
+                  <Cover id={t.releaseId + t.id} />
                   <div className="min-0">
                     <span className="row-name">{t.title || '제목 없는 곡'}</span>
                     <span className="row-sub">{t.releaseTitle} · {t.artist || '아티스트 미입력'}{t.isrc ? ` · ISRC ${t.isrc}` : ''}</span>
