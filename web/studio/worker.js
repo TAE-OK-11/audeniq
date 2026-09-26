@@ -246,16 +246,36 @@ export default {
     const url = new URL(request.url);
     const r = route(request.method, url.pathname);
     if (r) return handleContent(request, env, r);
-    if (url.pathname.startsWith('/api/')) return error(404, 'NOT_FOUND');
-    // 그 외는 정적 에셋. 없는 화면 경로(/login, /notices/abc)는 wrangler.jsonc의 SPA 설정이
-    // index.html로 답하지만, 설정이 빠지거나 Worker가 먼저 불린 경우를 위해 여기서도 한 번 더 받는다.
-    const res = await env.ASSETS.fetch(request);
-    if (res.status !== 404 || /\.[a-z0-9]+$/i.test(url.pathname) || !['GET', 'HEAD'].includes(request.method)) return res;
-    const index = await env.ASSETS.fetch(new Request(new URL('/', request.url), request));
-    if (!index.ok) return res;
-    // 에셋 응답의 보안 헤더(_headers의 CSP 등)는 그대로 두고 캐시만 끈다
-    const headers = new Headers(index.headers);
-    headers.set('Cache-Control', 'no-cache');
-    return new Response(index.body, { status: 200, headers });
+    // /api/* 중 D1 콘텐츠가 아니면 테스트 백엔드로 프록시
+    if (url.pathname.startsWith('/api/')) {
+      const backend = 'http://[2001:19f0:5401:1a3e:5400:06ff:febd:db59]:8080';
+      const backendUrl = backend + url.pathname + url.search;
+      const proxyReq = new Request(backendUrl, request);
+      try {
+        const res = await fetch(proxyReq);
+        // CORS 헤더 추가 (프론트에서 직접 호출 대비)
+        const headers = new Headers(res.headers);
+        headers.set('Access-Control-Allow-Origin', 'https://studio.audeniq.com');
+        headers.set('Access-Control-Allow-Credentials', 'true');
+        return new Response(res.body, { status: res.status, headers });
+      } catch (e) {
+        return error(502, 'BACKEND_UNAVAILABLE');
+      }
+    }
+    // 그 외는 정적 에셋 (없는 화면 경로는 index.html로 SPA 폴백)
+    const assetRes = await env.ASSETS.fetch(request);
+    if (assetRes.status === 404) {
+      const isAsset = /\.[a-z0-9]+$/i.test(url.pathname);
+      if (!isAsset) {
+        const indexRes = await env.ASSETS.fetch(new Request(new URL('/', request.url), request));
+        if (indexRes.ok) {
+          return new Response(indexRes.body, {
+            status: 200,
+            headers: { 'Content-Type': 'text/html;charset=utf-8', 'Cache-Control': 'no-cache' },
+          });
+        }
+      }
+    }
+    return assetRes;
   },
 };
