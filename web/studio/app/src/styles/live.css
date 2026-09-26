@@ -568,7 +568,9 @@ body.wizard-mode .portal-header,body.wizard-mode .footer-line{display:none!impor
 .studio-available{font-size:clamp(20px,2.2vw,28px);color:#3159da;letter-spacing:-.04em;font-weight:800;white-space:nowrap}
 .studio-payout-form .eyebrow{margin-bottom:5px}.studio-payout-number{font-size:clamp(25px,6vw,34px);font-weight:800;color:#1c283d;letter-spacing:-.04em}
 .studio-payout-form .field{margin:22px 0}.studio-amount-field{display:flex;align-items:center;background:#f8faff;border:1px solid #dce5f8;border-radius:17px;padding-right:9px;min-width:0}
-.studio-amount-field input{border:0!important;box-shadow:none!important;background:transparent!important;flex:1;min-width:0;min-height:52px;font-size:18px;font-weight:750;padding:12px 14px}
+.studio-amount-field input{border:0!important;box-shadow:none!important;background:transparent!important;flex:1;min-width:0;min-height:52px;font-size:18px;font-weight:750;padding:12px 10px 12px 26px}
+.studio-amount-field #payoutAll{flex:0 0 auto;background:#fff;border:0;border-radius:13px;padding:11px 17px;margin-right:5px;color:var(--studio-blue);font-size:14px;font-weight:780;box-shadow:0 2px 8px rgba(20,31,52,.07);transition:transform .15s ease,box-shadow .15s ease}
+.studio-amount-field #payoutAll:active{transform:scale(.95)}
 .studio-receive-account{display:flex;align-items:center;gap:13px;background:#f3f6ff;border-radius:22px;padding:18px;margin:18px 0}
 .studio-account-icon{display:grid;place-items:center;background:#e0eaff;border-radius:13px;width:42px;height:42px;color:#3b63f3;font-weight:850;font-size:20px;flex-shrink:0}
 .studio-receive-account>div{flex:1;min-width:0}.studio-receive-account strong{display:block;font-size:14px}
