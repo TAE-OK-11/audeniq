@@ -17,7 +17,13 @@ export const fetchNotices = () => req<{ items: ContentNotice[] }>('/api/notices'
 export const fetchEvents = () => req<{ items: ContentEvent[] }>('/api/events', { quiet401: true, quietServer: true }).then(r => items(r));
 
 /** 서버 점검 일정 (D1) — 진행 중인 점검과 72시간 안의 예고 */
-export interface MaintenanceWindow { id: string; title: string; body: string; starts_at: string; ends_at: string; updated_at: string }
+export interface MaintenanceWindow {
+  id: string; title: string; body: string; starts_at: string; ends_at: string; updated_at: string;
+  /** 관리 화면의 '긴급 점검 시작'·비상 스위치로 시작된 점검 */
+  kind?: 'scheduled' | 'emergency';
+  /** 끝나는 시각을 모름 (ends_at은 임시 값) */
+  end_unknown?: boolean;
+}
 export interface ServiceStatus { now: string; maintenance: { active: MaintenanceWindow | null; upcoming: MaintenanceWindow | null } }
 export async function fetchStatus(): Promise<ServiceStatus | null> {
   try {
@@ -57,7 +63,10 @@ export type ContentKind = 'notices' | 'events' | 'maintenance';
 export interface AdminNotice extends ContentNotice { created_at: string; updated_at: string; deleted_at: string | null }
 export interface AdminEvent extends ContentEvent { published_at: string; created_at: string; updated_at: string; deleted_at: string | null }
 export interface AdminMaintenance extends MaintenanceWindow { published_at: string; created_at: string; deleted_at: string | null }
-export type MaintenanceInput = { title: string; body: string; starts_at: string; ends_at: string; published_at: string };
+export type MaintenanceInput = {
+  title: string; body: string; starts_at: string; ends_at: string; published_at: string;
+  kind?: 'scheduled' | 'emergency'; end_unknown?: boolean;
+};
 export type NoticeInput = { title: string; body: string; pinned: boolean; published_at: string };
 export type EventInput = {
   title: string; summary: string; body: string; place: string;

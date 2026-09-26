@@ -1,9 +1,11 @@
 // 서비스·기기 상태 알림
-// - 서버 점검: /api/status(D1)에 진행 중인 점검이 있거나 서버가 MAINTENANCE로 답하면 점검 화면, 72시간 안의 점검은 상단 예고
+// - 서버 점검: /api/status(D1·비상 스위치)에 진행 중인 점검이 있거나 API가 503 MAINTENANCE로 답하면
+//   점검 화면을 앱 위에 덮는다 (앱은 그대로 두어 작성 중인 내용이 남는다). 72시간 안의 점검은 상단 예고
 // - 서버 장애: API가 502/503/504·연결 실패면 오류 창 (1분에 한 번까지)
 // - 새 버전: 배포로 index의 앱 번들이 바뀌면 새로고침 안내 창
 // - 기기 문제: 오프라인 배너, 쿠키·저장소 차단, 보안 연결이 아닌 경우 안내 창
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Modal, useModalClose } from './Modal';
 import { ErrorIcon, ErrorScreen, incidentMeta, type ErrorKind } from './ErrorScreen';
 import { useToast } from './Toast';
@@ -11,8 +13,9 @@ import { useLocation } from '../lib/router';
 import { SERVER_ISSUE_EVENT, type ServerIssue } from '../lib/systemEvents';
 import { fetchStatus, type MaintenanceWindow } from '../api/content';
 
-const STATUS_EVERY_MS = 5 * 60_000;
-const STATUS_DURING_MAINTENANCE_MS = 60_000;
+// 긴급 점검을 1분 안에 알아차리도록 (Worker의 /api/status는 D1 한 번 읽기라 가볍다)
+const STATUS_EVERY_MS = 60_000;
+const STATUS_DURING_MAINTENANCE_MS = 30_000;
 const VERSION_EVERY_MS = 5 * 60_000;
 const SERVER_DIALOG_COOLDOWN_MS = 60_000;
 
@@ -34,8 +37,9 @@ export function kstWhen(iso: string, withDate = true): string {
   return `${d.getUTCMonth() + 1}월 ${d.getUTCDate()}일(${wd}) ${hm}`;
 }
 
-/** 점검 기간 문구 — 같은 날이면 끝 시각만 */
-export function windowLabel(w: Pick<MaintenanceWindow, 'starts_at' | 'ends_at'>): string {
+/** 점검 기간 문구 — 같은 날이면 끝 시각만, 끝을 모르면 '종료 시각 미정' */
+export function windowLabel(w: Pick<MaintenanceWindow, 'starts_at' | 'ends_at' | 'end_unknown'>): string {
+  if (w.end_unknown) return `${kstWhen(w.starts_at)}부터 · 종료 시각 미정`;
   const sameDay = kstWhen(w.starts_at).slice(0, -6) === kstWhen(w.ends_at).slice(0, -6);
   return `${kstWhen(w.starts_at)} ~ ${sameDay ? kstWhen(w.ends_at, false) : kstWhen(w.ends_at)}`;
 }
@@ -120,6 +124,7 @@ export function SystemStatus({ children }: { children: ReactNode }) {
   const [deviceIssues, setDeviceIssues] = useState<DeviceIssue[]>([]);
   const [dismissed, setDismissed] = useState(() => safeGet('local', DISMISS_KEY) ?? '');
   const lastServerDialog = useRef(0);
+  const wasMaintenance = useRef(false);
   const updateDismissedFor = useRef<string | null>(null);
 
   // --- 서버 점검 상태 ---
@@ -134,9 +139,24 @@ export function SystemStatus({ children }: { children: ReactNode }) {
   const maintenance = !!active || serverSaysMaintenance;
   useEffect(() => {
     void refreshStatus();
-    const t = window.setInterval(() => void refreshStatus(), maintenance ? STATUS_DURING_MAINTENANCE_MS : STATUS_EVERY_MS);
-    return () => window.clearInterval(t);
+    const t = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refreshStatus();
+    }, maintenance ? STATUS_DURING_MAINTENANCE_MS : STATUS_EVERY_MS);
+    // 다른 탭에 있다가 돌아오면 바로 확인
+    const onVisible = () => { if (document.visibilityState === 'visible') void refreshStatus(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { window.clearInterval(t); document.removeEventListener('visibilitychange', onVisible); };
   }, [refreshStatus, maintenance]);
+
+  // 점검이 끝나면 알린다 (앱은 그대로 남아 있어 이어서 쓸 수 있다)
+  useEffect(() => {
+    if (wasMaintenance.current && !maintenance) toast('점검이 끝났어요. 이어서 이용할 수 있어요.', 'success');
+    wasMaintenance.current = maintenance;
+    if (!maintenance || adminPage) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [maintenance, adminPage, toast]);
 
   // --- 온라인/오프라인 ---
   useEffect(() => {
@@ -152,7 +172,12 @@ export function SystemStatus({ children }: { children: ReactNode }) {
     const onIssue = (e: Event) => {
       const issue = (e as CustomEvent<ServerIssue>).detail;
       if (!issue) return;
-      if (issue.kind === 'maintenance') { setServerSaysMaintenance(true); void refreshStatus(); return; }
+      if (issue.kind === 'maintenance') {
+        const w = issue.window as MaintenanceWindow | undefined;
+        if (w && typeof w === 'object' && typeof w.starts_at === 'string') setActive(w);
+        setServerSaysMaintenance(true);
+        return;
+      }
       if (!navigator.onLine) return; // 오프라인은 배너로 안내
       const now = Date.now();
       if (now - lastServerDialog.current < SERVER_DIALOG_COOLDOWN_MS) return;
@@ -190,24 +215,33 @@ export function SystemStatus({ children }: { children: ReactNode }) {
     else safeSet('session', DEVICE_KEY, '1');
   }, []);
 
-  // 점검 중이면 스튜디오 대신 점검 화면 (관리 화면은 그대로 열어 둔다)
-  if (maintenance && !adminPage) {
-    return (
+  // 점검 중이면 앱 위에 점검 화면을 덮는다 (관리 화면은 그대로 열어 둔다).
+  // 앱을 내리지 않으므로 작성 중이던 입력은 점검이 끝난 뒤 그대로 이어서 쓸 수 있다.
+  const blocking = maintenance && !adminPage;
+  const emergency = active?.kind === 'emergency';
+  const overlay = blocking && createPortal(
+    <div className="aq-maint-layer" role="dialog" aria-modal="true" aria-label="서버 점검">
       <ErrorScreen
         kind="maintenance" fullPage
-        eyebrow="서버 점검"
-        title="지금은 서버 점검 중이에요"
-        description={active ? (
+        eyebrow={emergency ? '긴급 점검' : '서버 점검'}
+        title={emergency ? '긴급 점검 중이에요' : '지금은 서버 점검 중이에요'}
+        description={(
           <>
-            <p className="aq-errscreen-window">{windowLabel(active)}</p>
-            <p>{active.body || '점검이 끝나면 자동으로 다시 열려요. 작성하던 내용은 그대로 저장돼 있어요.'}</p>
+            {active && <p className="aq-errscreen-window">{windowLabel(active)}</p>}
+            <p>
+              {active?.body || (emergency
+                ? '서비스를 안정적으로 되돌리고 있어요. 끝나는 대로 자동으로 다시 열려요.'
+                : '점검이 끝나면 자동으로 다시 열려요.')}
+            </p>
+            <p>이 창을 닫지 않으면 작성하던 내용은 그대로 남아 있어요.</p>
           </>
-        ) : <p>점검이 끝나면 자동으로 다시 열려요. 작성하던 내용은 그대로 저장돼 있어요.</p>}
+        )}
         actions={[{ label: '상태 다시 확인', onClick: () => void refreshStatus(), primary: true }]}
-        meta={[active ? active.title : '서버 점검', '1분마다 자동으로 확인해요']}
+        meta={[active ? active.title : '서버 점검', '30초마다 자동으로 확인해요']}
       />
-    );
-  }
+    </div>,
+    document.body,
+  );
 
   const upcomingKey = upcoming ? `${upcoming.id}@${upcoming.updated_at}` : '';
   const showUpcoming = !!upcoming && dismissed !== upcomingKey && !adminPage;
@@ -234,14 +268,15 @@ export function SystemStatus({ children }: { children: ReactNode }) {
           )}
         </div>
       )}
-      {children}
+      <div className="aq-app-shell" inert={blocking || undefined} aria-hidden={blocking || undefined}>{children}</div>
+      {overlay}
 
       {serverIssue && (
         <Modal title="서버에 연결하지 못했어요" onClose={() => setServerIssue(null)} modalClass="aq-sysdialog-mode">
           <DialogBody
             kind="server"
             title="서버에 연결하지 못했어요"
-            body={<p>잠시 서버가 응답하지 않아요. 입력한 내용은 이 기기에 남아 있으니, 잠시 뒤 다시 시도해 주세요. 계속되면 아래 오류 코드와 함께 문의해 주세요.</p>}
+            body={<p>잠시 서버가 응답하지 않아요. 이 창을 닫고 잠시 뒤 다시 시도해 주세요. 새로고침하면 저장하지 않은 입력은 사라질 수 있어요. 계속되면 아래 오류 코드와 함께 문의해 주세요.</p>}
             meta={serverIssue.meta}
             actions={[
               { label: '닫기', onClick: () => setServerIssue(null) },

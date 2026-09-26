@@ -14,6 +14,11 @@
  *   (서버 점검 일정도 같은 방식: /api/content/maintenance[/:id])
  * 상태
  *   GET  /api/status   진행 중·예정된 서버 점검 (스튜디오의 점검 화면·예고 배너)
+ * 점검 중 차단
+ *   점검이 진행 중이면 백엔드로 가는 /api/* 요청은 503 MAINTENANCE로 막는다 (스튜디오는 즉시 점검 화면).
+ * 비상 스위치 (D1·관리 화면이 안 될 때)
+ *   켜기: echo on | npx wrangler secret put MAINTENANCE_MODE   (선택: MAINTENANCE_MESSAGE, MAINTENANCE_UNTIL=ISO 시각)
+ *   끄기: npx wrangler secret delete MAINTENANCE_MODE
  *
  * 경로·입력 규칙은 crates/edge/src/content.rs(Rust 엣지)와 같다.
  */
@@ -23,7 +28,7 @@ const TABLES = new Set(['notices', 'events', 'maintenance']);
 const PUBLIC_TABLES = new Set(['notices', 'events']);
 const NOTICE_COLUMNS = 'id, title, body, pinned, published_at, updated_at';
 const EVENT_COLUMNS = 'id, title, summary, body, place, starts_on, ends_on, link_url, published_at, updated_at';
-const MAINTENANCE_COLUMNS = 'id, title, body, starts_at, ends_at, published_at, updated_at';
+const MAINTENANCE_COLUMNS = 'id, title, body, starts_at, ends_at, kind, end_unknown, published_at, updated_at';
 // 예고 배너는 시작 72시간 전부터
 const NOTICE_AHEAD_MS = 72 * 3_600_000;
 const PUBLIC_CACHE = 'public, max-age=30';
@@ -48,7 +53,7 @@ export function eventStatus(startsOn, endsOn, today = todayKst()) {
 /** 공개 목록·상세 응답 모양으로 (pinned는 불리언, 이벤트는 진행 상태 포함) */
 export function present(table, row, today = todayKst()) {
   if (table === 'notices') return { ...row, pinned: row.pinned === 1 || row.pinned === true };
-  if (table === 'maintenance') return row;
+  if (table === 'maintenance') return { ...row, kind: row.kind === 'emergency' ? 'emergency' : 'scheduled', end_unknown: row.end_unknown === 1 || row.end_unknown === true };
   return { ...row, status: eventStatus(row.starts_on, row.ends_on, today) };
 }
 
@@ -99,7 +104,9 @@ export function validate(table, input) {
     };
   }
   if (table === 'maintenance') {
-    checkKeys(input, ['id', 'title', 'body', 'starts_at', 'ends_at', 'published_at']);
+    checkKeys(input, ['id', 'title', 'body', 'starts_at', 'ends_at', 'published_at', 'kind', 'end_unknown']);
+    if (input.kind != null && input.kind !== 'scheduled' && input.kind !== 'emergency') throw new InputError('INVALID_INPUT');
+    if (input.end_unknown != null && typeof input.end_unknown !== 'boolean') throw new InputError('INVALID_INPUT');
     const startsAt = input.starts_at;
     const endsAt = input.ends_at;
     if (typeof startsAt !== 'string' || !TS_RE.test(startsAt) || typeof endsAt !== 'string' || !TS_RE.test(endsAt) || endsAt <= startsAt) {
@@ -107,12 +114,14 @@ export function validate(table, input) {
     }
     return {
       id: checkId(input.id),
-      columns: ['title', 'body', 'starts_at', 'ends_at', 'published_at'],
+      columns: ['title', 'body', 'starts_at', 'ends_at', 'kind', 'end_unknown', 'published_at'],
       values: [
         text(input.title, 200, { required: true }),
         text(input.body, 2000, { multiline: true }),
         startsAt,
         endsAt,
+        input.kind === 'emergency' ? 'emergency' : 'scheduled',
+        input.end_unknown ? 1 : 0,
         publishedAt(input.published_at),
       ],
     };
@@ -191,6 +200,26 @@ export function route(method, pathname) {
 const columnsOf = table => ({ notices: NOTICE_COLUMNS, events: EVENT_COLUMNS, maintenance: MAINTENANCE_COLUMNS })[table];
 const orderOf = table => ({ notices: 'pinned DESC, published_at DESC', events: 'starts_on DESC', maintenance: 'starts_at DESC' })[table];
 
+const OFF = new Set(['', '0', 'off', 'false', 'no']);
+/** 비상 스위치(Worker 시크릿 MAINTENANCE_MODE)가 켜져 있으면 지금부터의 긴급 점검 */
+export function envMaintenance(env, now) {
+  const mode = String(env?.MAINTENANCE_MODE ?? '').trim().toLowerCase();
+  if (OFF.has(mode)) return null;
+  const until = String(env.MAINTENANCE_UNTIL ?? '').trim();
+  const known = TS_RE.test(until) && until > now;
+  return {
+    id: 'emergency-switch',
+    title: String(env.MAINTENANCE_TITLE ?? '').trim() || '긴급 서버 점검',
+    body: String(env.MAINTENANCE_MESSAGE ?? '').trim(),
+    starts_at: now,
+    ends_at: known ? until : '9999-12-31T00:00:00Z',
+    kind: 'emergency',
+    end_unknown: !known,
+    published_at: now,
+    updated_at: now,
+  };
+}
+
 /** 지금 진행 중인 점검과, 72시간 안에 시작하는 예고된 점검 */
 export function pickStatus(rows, now) {
   const nowMs = Date.parse(now);
@@ -208,6 +237,34 @@ async function readJson(request) {
   try { return JSON.parse(raw); } catch { throw new InputError('INVALID_INPUT'); }
 }
 
+/** 비상 스위치 + D1 점검 일정. D1을 못 읽어도(마이그레이션 전 등) 스튜디오는 정상 동작하게 빈 상태로 답한다 */
+export async function serviceStatus(env, now = nowUtc()) {
+  let status = { now, maintenance: { active: null, upcoming: null } };
+  try {
+    if (!env.CONTENT_DB) throw new Error('CONTENT_DB binding missing');
+    const { results } = await env.CONTENT_DB.prepare(
+      `SELECT ${MAINTENANCE_COLUMNS} FROM maintenance WHERE deleted_at IS NULL AND ends_at > ?1 ORDER BY starts_at LIMIT 20`,
+    ).bind(now).all();
+    status = pickStatus((results ?? []).map(row => present('maintenance', row)), now);
+  } catch (e) {
+    console.error('status error', e);
+  }
+  const forced = envMaintenance(env, now);
+  if (forced) status.maintenance.active = forced;
+  return status;
+}
+
+// 점검 중 API 차단용 — 요청마다 D1을 읽지 않도록 15초 캐시 (Worker 인스턴스 단위)
+let activeCache = { at: 0, value: null };
+export function resetMaintenanceCache() { activeCache = { at: 0, value: null }; }
+async function activeMaintenance(env) {
+  if (envMaintenance(env, nowUtc())) return envMaintenance(env, nowUtc());
+  if (Date.now() - activeCache.at < 15_000) return activeCache.value;
+  const st = await serviceStatus(env);
+  activeCache = { at: Date.now(), value: st.maintenance.active };
+  return st.maintenance.active;
+}
+
 export async function handleContent(request, env, r) {
   if (r.kind === 'notfound') return error(404, 'NOT_FOUND');
   if (r.kind === 'method') return error(405, 'METHOD_NOT_ALLOWED');
@@ -215,19 +272,7 @@ export async function handleContent(request, env, r) {
   const { table } = r;
   const now = nowUtc();
 
-  if (r.kind === 'status') {
-    try {
-      if (!db) throw new Error('CONTENT_DB binding missing');
-      const { results } = await db.prepare(
-        `SELECT ${MAINTENANCE_COLUMNS} FROM maintenance WHERE deleted_at IS NULL AND ends_at > ?1 ORDER BY starts_at LIMIT 20`,
-      ).bind(now).all();
-      return json(pickStatus(results ?? [], now), 200, 'no-store');
-    } catch (e) {
-      // 테이블이 아직 없어도(마이그레이션 전) 스튜디오는 정상 동작하게 빈 상태로 답한다
-      console.error('status error', e);
-      return json({ now, maintenance: { active: null, upcoming: null } }, 200, 'no-store');
-    }
-  }
+  if (r.kind === 'status') return json(await serviceStatus(env, now), 200, 'no-store');
   if (!db) return error(503, 'CONTENT_UNAVAILABLE');
 
   try {
@@ -249,6 +294,8 @@ export async function handleContent(request, env, r) {
     // ---- 관리 ----
     if (!env.CONTENT_ADMIN_TOKEN) return error(503, 'CONTENT_ADMIN_DISABLED');
     if (!bearerOk(request.headers.get('Authorization'), env.CONTENT_ADMIN_TOKEN)) return error(401, 'UNAUTHENTICATED');
+    // 점검 일정을 바꾸면 이 인스턴스의 API 차단 캐시를 바로 비운다
+    if (table === 'maintenance' && r.kind !== 'adminList') resetMaintenanceCache();
 
     if (r.kind === 'adminList') {
       const { results } = await db.prepare(
@@ -303,6 +350,14 @@ export default {
     if (r) return handleContent(request, env, r);
     // /api/* 중 D1 콘텐츠가 아니면 백엔드로 프록시 (named tunnel audeniq-backend → compose api:8080)
     if (url.pathname.startsWith('/api/') || url.pathname === '/ready') {
+      // 점검 중에는 백엔드로 보내지 않는다 (DB 작업 중 쓰기 방지, 스튜디오는 이 응답을 받자마자 점검 화면)
+      const maint = url.pathname === '/ready' ? null : await activeMaintenance(env);
+      if (maint) {
+        return Response.json(
+          { error: { code: 'MAINTENANCE', message: maint.title }, maintenance: maint },
+          { status: 503, headers: { 'Cache-Control': 'no-store', 'Retry-After': '60', 'X-Content-Type-Options': 'nosniff' } },
+        );
+      }
       const backend = 'https://api-origin.audeniq.com';
       const backendUrl = backend + url.pathname + url.search;
       const proxyHeaders = new Headers(request.headers);
