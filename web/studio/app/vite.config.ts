@@ -2,7 +2,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
-import { purgeCss } from './build/purge-css';
+import { compactCss, purgeCss } from './build/purge-css';
 
 const src = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -13,7 +13,7 @@ export default defineConfig(({ command }) => ({
     postcss: {
       // 빌드에서만 미사용 CSS 제거 (개발 중에는 새 클래스를 바로 쓸 수 있도록 전체 유지)
       plugins: command === 'build'
-        ? [purgeCss({ content: [src('./src'), src('./index.html')] })]
+        ? [purgeCss({ content: [src('./src'), src('./index.html')] }), compactCss()]
         : [],
     },
   },
@@ -21,6 +21,8 @@ export default defineConfig(({ command }) => ({
     outDir: '../public/connected',
     emptyOutDir: true,
     target: 'baseline-widely-available',
+    // Lightning CSS 압축기가 !important 규칙을 잘못 병합하므로 끄고 compactCss()로 안전하게 압축
+    cssMinify: false,
     // 대상 브라우저가 모두 modulepreload를 지원하므로 폴리필 제거
     modulePreload: { polyfill: false },
     reportCompressedSize: false,

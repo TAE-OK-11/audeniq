@@ -36,3 +36,14 @@ describe('purgeCss', () => {
     expect(out).not.toContain('@media');
   });
 });
+
+describe('compactCss', () => {
+  it('!important와 규칙 순서를 그대로 두고 공백·주석만 제거', async () => {
+    const { compactCss } = await import('./purge-css');
+    const out = postcss([compactCss()]).process(
+      '/* c */\n.a p {\n  font-size: 14px !important;\n}\n@media (max-width: 760px) {\n  .a p { color: red }\n}\n.a p { font-size: 15px; }',
+      { from: undefined },
+    ).css;
+    expect(out).toBe('.a p{font-size:14px!important}@media (max-width: 760px){.a p{color:red}}.a p{font-size:15px}');
+  });
+});

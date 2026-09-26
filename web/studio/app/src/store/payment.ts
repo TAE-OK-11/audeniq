@@ -27,9 +27,9 @@ const store = createStore<PaymentInfo | null>(null, {
 export const getPayment = store.get;
 export const usePayment = store.use;
 
-/** 라이브 등록 판정: recipient && bank && bank!=='미설정' && accountNumber && last4 && last4!=='0000' */
+/** 등록 판정 — 끝자리가 0000인 실제 계좌도 있으므로 끝자리 값으로 거르지 않는다 */
 export function isPaymentRegistered(p: PaymentInfo | null): p is PaymentInfo {
-  return !!p && !!p.recipient && !!p.bank && p.bank !== '미설정' && !!p.accountNumber && !!p.last4 && p.last4 !== '0000';
+  return !!p && !!p.recipient && !!p.bank && p.bank !== '미설정' && !!p.accountNumber && /^\d{4}$/.test(p.last4);
 }
 
 export function setPayment(p: PaymentInfo): void {
