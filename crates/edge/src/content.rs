@@ -4,9 +4,11 @@
 //! - `GET /api/notices`, `GET /api/notices/{id}`, `GET /api/events`,
 //!   `GET /api/events/{id}`: published, not deleted rows. Event status
 //!   (upcoming / ongoing / ended) is computed from KST dates on read.
-//! - `POST /api/content/{notices|events}`, `PUT|DELETE .../{id}`: content
+//! - `GET|POST /api/content/{notices|events}`, `PUT|DELETE .../{id}`: content
 //!   administration with `Authorization: Bearer <CONTENT_ADMIN_TOKEN>`
-//!   (Wrangler secret). Deletes are soft (`deleted_at`).
+//!   (Wrangler secret). The admin list includes scheduled and removed rows.
+//!   Deletes are soft (`deleted_at`); saving a removed row publishes it again.
+//!   Same contract as the static Studio Worker (web/studio/worker.js).
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use worker::{D1Database, Env, Method, Request, Response, Result, wasm_bindgen::JsValue};
@@ -19,6 +21,7 @@ const EVENT_COLUMNS: &str =
 pub enum Route<'a> {
     List(&'a str),
     Get(&'a str, &'a str),
+    AdminList(&'a str),
     Create(&'a str),
     Update(&'a str, &'a str),
     Delete(&'a str, &'a str),
@@ -43,6 +46,7 @@ pub fn route<'a>(method: &Method, path: &'a str) -> Option<Route<'a>> {
     match (admin, method, id) {
         (false, Method::Get | Method::Head, None) => Some(Route::List(table)),
         (false, Method::Get | Method::Head, Some(id)) => Some(Route::Get(table, id)),
+        (true, Method::Get | Method::Head, None) => Some(Route::AdminList(table)),
         (true, Method::Post, None) => Some(Route::Create(table)),
         (true, Method::Put, Some(id)) => Some(Route::Update(table, id)),
         (true, Method::Delete, Some(id)) => Some(Route::Delete(table, id)),
@@ -351,6 +355,43 @@ pub async fn handle(mut req: Request, env: &Env, r: Route<'_>) -> Result<Respons
             if !bearer_ok(req.headers().get("authorization")?.as_deref(), &secret) {
                 return error(401, "UNAUTHENTICATED");
             }
+            if let Route::AdminList(table) = admin {
+                let today = today_kst();
+                let rows = db
+                    .prepare(format!(
+                        "SELECT {}, created_at, deleted_at FROM {table} ORDER BY {} LIMIT 500",
+                        if table == "notices" {
+                            NOTICE_COLUMNS
+                        } else {
+                            EVENT_COLUMNS
+                        },
+                        if table == "notices" {
+                            "pinned DESC, published_at DESC"
+                        } else {
+                            "starts_on DESC"
+                        }
+                    ))
+                    .all()
+                    .await?
+                    .results::<Value>()?;
+                let items: Vec<Value> = rows
+                    .into_iter()
+                    .map(|mut v| {
+                        if table == "notices" {
+                            v["pinned"] = json!(v["pinned"].as_f64() == Some(1.0));
+                        } else {
+                            let status = event_status(
+                                v["starts_on"].as_str().unwrap_or_default(),
+                                v["ends_on"].as_str(),
+                                &today,
+                            );
+                            v["status"] = json!(status);
+                        }
+                        v
+                    })
+                    .collect();
+                return json_response(&json!({ "items": items, "now": now }), 200, "no-store");
+            }
             let (table, id, body) = match admin {
                 Route::Create(t) => (t, None, Some(req.text().await?)),
                 Route::Update(t, id) => (t, Some(id.to_string()), Some(req.text().await?)),
@@ -434,7 +475,7 @@ pub async fn handle(mut req: Request, env: &Env, r: Route<'_>) -> Result<Respons
                     values.push(JsValue::from(id.clone()));
                     (
                         format!(
-                            "UPDATE {table} SET {}, updated_at = ?{} WHERE id = ?{} AND deleted_at IS NULL",
+                            "UPDATE {table} SET {}, updated_at = ?{}, deleted_at = NULL WHERE id = ?{}",
                             sets.join(", "),
                             columns.len() + 1,
                             columns.len() + 2
@@ -483,7 +524,11 @@ mod tests {
         );
         // writes only under /api/content, reads only under /api
         assert_eq!(route(&Method::Post, "/api/notices"), None);
-        assert_eq!(route(&Method::Get, "/api/content/notices"), None);
+        assert_eq!(
+            route(&Method::Get, "/api/content/notices"),
+            Some(Route::AdminList("notices"))
+        );
+        assert_eq!(route(&Method::Put, "/api/content/notices"), None);
         assert_eq!(route(&Method::Get, "/api/notices/Bad_ID"), None);
         assert_eq!(route(&Method::Get, "/api/notices/a/b"), None);
         assert_eq!(route(&Method::Get, "/api/orgs/x/releases"), None);

@@ -1,7 +1,7 @@
 -- Studio notices and events, served by the edge Worker from D1
 -- (binding CONTENT_DB). Written through the Worker's content admin API
 -- (Bearer CONTENT_ADMIN_TOKEN) or `wrangler d1 execute`.
-CREATE TABLE notices (
+CREATE TABLE IF NOT EXISTS notices (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL CHECK (length(title) BETWEEN 1 AND 200),
   body TEXT NOT NULL CHECK (length(body) <= 20000),
@@ -11,9 +11,9 @@ CREATE TABLE notices (
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
   deleted_at TEXT
 );
-CREATE INDEX notices_listing ON notices (deleted_at, pinned DESC, published_at DESC);
+CREATE INDEX IF NOT EXISTS notices_listing ON notices (deleted_at, pinned DESC, published_at DESC);
 
-CREATE TABLE events (
+CREATE TABLE IF NOT EXISTS events (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL CHECK (length(title) BETWEEN 1 AND 200),
   summary TEXT NOT NULL DEFAULT '' CHECK (length(summary) <= 300),
@@ -28,4 +28,4 @@ CREATE TABLE events (
   deleted_at TEXT,
   CHECK (ends_on IS NULL OR ends_on >= starts_on)
 );
-CREATE INDEX events_listing ON events (deleted_at, starts_on DESC);
+CREATE INDEX IF NOT EXISTS events_listing ON events (deleted_at, starts_on DESC);
