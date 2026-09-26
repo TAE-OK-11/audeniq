@@ -184,7 +184,7 @@ export function Support() {
               <label htmlFor="tBody">문의 내용</label>
               <textarea id="tBody" name="tBody" maxLength={4000} rows={6} required placeholder="상황과 확인이 필요한 내용을 자세히 입력해 주세요." />
             </div>
-            <button className="button" type="submit">문의 저장</button>
+            <button className="button studio-submit-wide" type="submit">문의 저장</button>
           </form>
         </Modal>
       )}
