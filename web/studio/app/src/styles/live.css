@@ -1200,3 +1200,8 @@ body.aq-nav-locked #portalNav{
 .cover-track-item{background:#f7f9fc;border:1px solid #e8edf5;border-radius:14px;padding:14px 16px;margin-top:10px}
 .cover-track-fields{margin-top:12px;display:flex;flex-direction:column;gap:10px}
 .cover-track-fields .field{margin:0}
+
+/* 법정대리인 구분 제목 */
+.aq-guardian-head{font-size:14px;font-weight:800;color:#1c2740;margin:18px 0 4px;letter-spacing:-.01em}
+.aq-guardian-head:first-of-type{margin-top:6px}
+.aq-guardian-head small{font-weight:600;color:#8a94a8;font-size:12px}
