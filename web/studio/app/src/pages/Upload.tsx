@@ -1273,6 +1273,7 @@ export function Upload() {
       }
       if (!form.platforms.length) return fail('배급할 플랫폼을 하나 이상 선택해 주세요.', null);
       if (form.upc.trim() && !upcValid(form.upc.trim())) return fail('UPC/EAN 번호가 올바르지 않아요. 숫자 12~13자리와 마지막 확인 숫자를 확인해 주세요.', '#f-upc');
+      if (form.upc.trim() && !/^0?\d{12}$/.test(form.upc.trim())) return fail('UPC는 12자리(UPC-A)만 받을 수 있어요. 13자리 EAN은 0으로 시작하는 번호만 쓸 수 있어요.', '#f-upc');
       const o = form.options;
       if (o.express && !o.expressAck) return fail('신속 발매 안내를 확인해 주세요.', '#aqExpressAck');
       if (o.minor) {
