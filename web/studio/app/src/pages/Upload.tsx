@@ -49,10 +49,18 @@ interface Track {
   audioName: string; audioSize: number; explicit: boolean; duration: string;
 }
 
+interface CoverTrackInfo {
+  trackId: string;
+  originalTitle: string;
+  originalArtist: string;
+  originalWriters: string;
+}
+
 interface ReleaseOptions {
   express: boolean; expressAck: boolean; expressReason: string;
   minor: boolean; guardian: string; guardianRelation: string; guardianContact: string; guardianFileName: string;
-  cover: boolean; sample: boolean; featured: boolean;
+  cover: boolean; coverTracks: CoverTrackInfo[]; coverRightsAck: boolean;
+  sample: boolean; featured: boolean;
   ai: boolean; aiTool: string;
   shared: boolean;
   rerelease: boolean; previousTitle: string; previousId: string;
@@ -81,7 +89,8 @@ const newTrack = (): Track => ({
 const EMPTY_OPTIONS: ReleaseOptions = {
   express: false, expressAck: false, expressReason: '',
   minor: false, guardian: '', guardianRelation: '', guardianContact: '', guardianFileName: '',
-  cover: false, sample: false, featured: false,
+  cover: false, coverTracks: [], coverRightsAck: false,
+  sample: false, featured: false,
   ai: false, aiTool: '',
   shared: false,
   rerelease: false, previousTitle: '', previousId: '',
@@ -118,6 +127,12 @@ function stampNow(): string {
   const d = new Date();
   const p = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function todayStr(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
 function BackIcon() {
@@ -228,6 +243,71 @@ function OptionsSection({ form, set }: {
             </p>
           </div>
           <p className="aq-option-note">법정대리인 정보 입력만으로 본인 확인이나 동의 검증이 완료되지는 않아요. 담당자 확인 후 서명 단계를 안내해요.</p>
+        </div>
+      )}
+      {o.cover && (
+        <div className="aq-option-detail">
+          <h3>커버곡 정보</h3>
+          <p className="aq-option-intro">커버한 트랙을 선택하고, 원곡 정보를 입력해 주세요.</p>
+          {form.tracks.map((t, i) => {
+            const info = o.coverTracks.find(c => c.trackId === t.id);
+            const toggleCover = (checked: boolean) => {
+              setOpt('coverTracks', checked
+                ? [...o.coverTracks, { trackId: t.id, originalTitle: '', originalArtist: '', originalWriters: '' }]
+                : o.coverTracks.filter(c => c.trackId !== t.id));
+            };
+            const setCoverInfo = (key: keyof Omit<CoverTrackInfo, 'trackId'>, value: string) => {
+              setOpt('coverTracks', o.coverTracks.map(c =>
+                c.trackId === t.id ? { ...c, [key]: value } : c));
+            };
+            return (
+              <div key={t.id} className="cover-track-item">
+                <label className="check-line">
+                  <input
+                    type="checkbox" checked={!!info}
+                    onChange={e => toggleCover(e.target.checked)}
+                  />
+                  <span><strong>트랙 {i + 1} · {t.title.trim() || '(제목 없음)'}</strong></span>
+                </label>
+                {info && (
+                  <div className="cover-track-fields">
+                    <div className="field">
+                      <label htmlFor={`cover-orig-title-${i}`}>원곡 제목 <span className="required">*</span></label>
+                      <input
+                        id={`cover-orig-title-${i}`} maxLength={200} value={info.originalTitle}
+                        onChange={e => setCoverInfo('originalTitle', e.target.value)}
+                        placeholder="원곡의 제목"
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`cover-orig-artist-${i}`}>원곡 아티스트 <span className="required">*</span></label>
+                      <input
+                        id={`cover-orig-artist-${i}`} maxLength={200} value={info.originalArtist}
+                        onChange={e => setCoverInfo('originalArtist', e.target.value)}
+                        placeholder="원곡자 또는 원 아티스트"
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`cover-orig-writers-${i}`}>원곡 작사 / 작곡</label>
+                      <input
+                        id={`cover-orig-writers-${i}`} maxLength={200} value={info.originalWriters}
+                        onChange={e => setCoverInfo('originalWriters', e.target.value)}
+                        placeholder="알고 있다면 입력"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          <label className="check-line" style={{ marginTop: 12 }}>
+            <input
+              type="checkbox" id="aqCoverRightsAck"
+              checked={o.coverRightsAck}
+              onChange={e => setOpt('coverRightsAck', e.target.checked)}
+            />
+            <span>원곡 저작권자의 이용 허락을 받았거나, 정당한 라이선스 절차를 진행할 것을 확인해요.<small>허락 없는 커버곡 배급은 저작권 침해가 될 수 있어요.</small></span>
+          </label>
         </div>
       )}
       {o.rerelease && (
@@ -380,6 +460,7 @@ export function Upload() {
     if (step === 2 && !form.coverName) return fail('커버아트를 등록해 주세요.', '#coverFile');
     if (step === 3) {
       if (!form.releaseDate) return fail('발매일을 선택해 주세요.', '#f-releaseDate');
+      if (form.releaseDate < todayStr()) return fail('발매 예정일은 오늘 이후로 선택해 주세요.', '#f-releaseDate');
       if (!form.platforms.length) return fail('배급할 플랫폼을 하나 이상 선택해 주세요.', null);
       const o = form.options;
       if (o.express && !o.expressAck) return fail('신속 발매 안내를 확인해 주세요.', '#aqExpressAck');
@@ -389,6 +470,15 @@ export function Upload() {
         if (!o.guardianContact.trim()) return fail('법정대리인의 연락처를 입력해 주세요.', '#aqGuardianContact');
       }
       if (o.ai && !o.aiTool.trim()) return fail('AI 도구명과 활용 방식을 입력해 주세요.', '#aqAiTool');
+      if (o.cover) {
+        if (!o.coverTracks.length) return fail('커버곡에 해당하는 트랙을 하나 이상 선택해 주세요.', null);
+        for (const c of o.coverTracks) {
+          const idx = form.tracks.findIndex(t => t.id === c.trackId);
+          if (!c.originalTitle.trim()) return fail(`트랙 ${idx + 1}의 원곡 제목을 입력해 주세요.`, `#cover-orig-title-${idx}`);
+          if (!c.originalArtist.trim()) return fail(`트랙 ${idx + 1}의 원곡 아티스트를 입력해 주세요.`, `#cover-orig-artist-${idx}`);
+        }
+        if (!o.coverRightsAck) return fail('커버곡 권리 확인을 체크해 주세요.', '#aqCoverRightsAck');
+      }
     }
     if (step === 4) {
       if (!form.ownership.trim()) return fail('음원 권리자를 입력해 주세요.', '#f-ownership');
@@ -825,7 +915,7 @@ export function Upload() {
             <div className="form-grid">
               <div className="field">
                 <label htmlFor="f-releaseDate">발매 예정일 <span className="required">*</span></label>
-                <input id="f-releaseDate" type="date" value={form.releaseDate} onChange={e => set('releaseDate', e.target.value)} />
+                <input id="f-releaseDate" type="date" value={form.releaseDate} min={todayStr()} onChange={e => set('releaseDate', e.target.value)} />
               </div>
               <div className="field">
                 <label htmlFor="f-originalDate">최초 발매일 (재발매인 경우)</label>
