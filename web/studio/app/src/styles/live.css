@@ -1107,3 +1107,6 @@ body.aq-nav-locked #portalNav{
 /* 모달 위치 수정: 내용이 길어도 위가 잘리지 않도록 (grid 유지) */
 .modal{overflow-y:auto!important}
 .modal-inner{margin-top:auto!important;margin-bottom:auto!important;flex-shrink:0!important}
+
+/* 날짜 줄바꿈 방지: overflow-wrap:anywhere가 날짜 중간을 자르는 문제 수정 */
+.information dd{overflow-wrap:break-word!important;word-break:keep-all!important}
