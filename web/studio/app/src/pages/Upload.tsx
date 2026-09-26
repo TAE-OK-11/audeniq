@@ -5,7 +5,7 @@ import { Modal } from '../components/Modal';
 import { SignaturePad, type SignaturePadHandle } from '../components/SignaturePad';
 import { useConfirm } from '../components/Confirm';
 import { useProgressFill } from '../hooks/useAnimations';
-import { api, type ReleasePayload } from '../api/client';
+import { MOCK, api, type ReleasePayload } from '../api/client';
 import { errorMessage } from '../api/errors';
 import { addDoc, docsForRelease, getDocsSnapshot, type DocRecord } from '../store/docs';
 import { pushNotice } from '../store/support';
@@ -45,7 +45,14 @@ interface Track {
   producer: string;
   lyrics: string;
   audioName: string; audioSize: number; explicit: boolean; duration: string;
+  /** 업로드 완료된 음원 자산 ID (실서버) */
+  assetId: string;
+  /** 서버 트랙 ID (실서버, 임시 저장 간 매칭) */
+  serverId: string;
 }
+
+/** 파일 업로드 진행 상태 (저장하지 않는 화면 전용 상태) */
+interface UploadState { pct: number; state: 'uploading' | 'done' | 'error'; message?: string }
 
 interface CoverTrackInfo {
   trackId: string;
@@ -72,7 +79,7 @@ interface WizardForm {
   artist: string; title: string; type: string; language: string; genre: string;
   genreCustom: string; label: string; notes: string;
   tracks: Track[];
-  coverName: string; coverData: string;
+  coverName: string; coverData: string; coverAssetId: string;
   releaseDate: string; originalDate: string; upc: string;
   territories: string[]; platforms: string[];
   ownership: string; phonogram: string; copyright: string;
@@ -86,6 +93,7 @@ const newTrack = (): Track => ({
   producer: '',
   lyrics: '',
   audioName: '', audioSize: 0, explicit: false, duration: '',
+  assetId: '', serverId: '',
 });
 
 const EMPTY_OPTIONS: ReleaseOptions = {
@@ -106,7 +114,7 @@ const EMPTY: WizardForm = {
   artist: '', title: '', type: 'single', language: 'ko', genre: '', genreCustom: '',
   label: '', notes: '',
   tracks: [newTrack()],
-  coverName: '', coverData: '',
+  coverName: '', coverData: '', coverAssetId: '',
   releaseDate: '', originalDate: '', upc: '',
   territories: ['WORLD'], platforms: DSP.map(d => d[0]),
   ownership: '', phonogram: '', copyright: '',
@@ -657,15 +665,29 @@ function FinalReviewBanner({ form }: { form: WizardForm }) {
   );
 }
 
+/** 업로드 진행 표시 */
+function UploadStatus({ upload, idle }: { upload?: UploadState; idle: string }) {
+  if (!upload || upload.state === 'done') return <p className="help">{idle}</p>;
+  if (upload.state === 'error') return <p className="help aq-help-error" role="alert">{upload.message || '업로드에 실패했어요. 파일을 다시 선택해 주세요.'}</p>;
+  const pct = Math.round(upload.pct * 100);
+  return (
+    <div className="aq-upload-progress" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="업로드 진행률">
+      <span><i style={{ width: `${Math.max(4, pct)}%` }} /></span>
+      <small>{pct < 100 ? `업로드 중 ${pct}%` : '서버에서 확인하는 중…'}</small>
+    </div>
+  );
+}
+
 // 트랙 입력 행 — memo로 감싸 한 곡 입력 시 다른 곡이 리렌더되지 않도록 분리
 const TrackEditor = memo(function TrackEditor({
-  track: t, index: i, expanded, canDelete,
+  track: t, index: i, expanded, canDelete, upload,
   onToggleExpand, onDeleteTrack, setTrack, onTrackAudio,
 }: {
   track: Track; index: number; expanded: boolean; canDelete: boolean;
   onToggleExpand: (id: string) => void; onDeleteTrack: (id: string) => void;
   setTrack: (id: string, key: keyof Track, value: string | boolean | number) => void;
   onTrackAudio: (id: string, e: React.ChangeEvent<HTMLInputElement>) => void;
+  upload?: UploadState;
 }) {
   return (
     <article className="track-editor">
@@ -687,12 +709,12 @@ const TrackEditor = memo(function TrackEditor({
         <label htmlFor={`trackFile-${i}`}>음원 파일 <span className="required">*</span></label>
         <input
           type="file" id={`trackFile-${i}`}
-          accept="audio/wav,audio/x-wav,audio/flac,audio/aiff,audio/x-aiff,audio/mpeg,audio/mp4,audio/*"
+          accept=".wav,.flac,audio/wav,audio/x-wav,audio/flac"
           onChange={e => onTrackAudio(t.id, e)}
         />
-        <p className="help" id={`audioLabel-${i}`}>
-          {t.audioName ? `${t.audioName}${t.audioSize ? ` · ${Math.round(t.audioSize / 1024 / 1024 * 100) / 100}MB` : ''}` : '선택한 파일 없음'}. 권장: 무손실 WAV/FLAC 파일, 최종 QC 후 송출.
-        </p>
+        <UploadStatus upload={upload} idle={t.audioName
+          ? `${t.audioName}${t.audioSize ? ` · ${fileSize(t.audioSize)}` : ''}${t.assetId ? ' · 업로드 완료' : MOCK ? '' : ' · 업로드되지 않았어요. 파일을 다시 선택해 주세요.'}`
+          : '선택한 파일 없음 · 무손실 WAV 또는 FLAC 원본을 올려 주세요.'} />
       </div>
       <div className="track-duration-label" aria-live="polite">
         {t.duration ? `곡 길이 · ${t.duration}` : '음원을 선택하면 곡 길이를 자동으로 확인해요.'}
@@ -768,6 +790,7 @@ function toPayload(form: WizardForm, step: number): ReleasePayload {
     notes: form.notes.trim(),
     coverName: form.coverName,
     coverData: form.coverData,
+    coverAssetId: form.coverAssetId || undefined,
     originalDate: form.originalDate,
     release_date: form.releaseDate || '',
     tracks: form.tracks.map(t => ({
@@ -777,6 +800,7 @@ function toPayload(form: WizardForm, step: number): ReleasePayload {
       performers: t.performers.trim(), audioName: t.audioName,
       audioSize: t.audioSize, explicit: t.explicit,
       producer: t.producer.trim(), lyrics: t.lyrics.trim(),
+      assetId: t.assetId || undefined, serverId: t.serverId || undefined,
     })),
     territories: form.territories,
     platforms: form.platforms,
@@ -796,21 +820,22 @@ function makeCoverThumbnail(file: File): Promise<{ data: string; width: number; 
     const img = new Image();
     img.onload = () => {
       URL.revokeObjectURL(url);
-      const max = 480;
+      // 실서버는 발매 정보(최대 64KB)에 함께 저장하므로 더 작게
+      const max = MOCK ? 480 : 240;
       const scale = Math.min(1, max / Math.max(img.width, img.height));
       const w = Math.max(1, Math.round(img.width * scale));
       const h = Math.max(1, Math.round(img.height * scale));
       const canvas = document.createElement('canvas');
       canvas.width = w; canvas.height = h;
       canvas.getContext('2d')?.drawImage(img, 0, 0, w, h);
-      resolve({ data: canvas.toDataURL('image/jpeg', 0.8), width: img.width, height: img.height });
+      resolve({ data: canvas.toDataURL('image/jpeg', MOCK ? 0.8 : 0.72), width: img.width, height: img.height });
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('이미지를 읽을 수 없어요.')); };
     img.src = url;
   });
 }
 
-const AUDIO_RE = /\.(wav|flac|aiff?|mp3|m4a|aac|ogg)$/i;
+const AUDIO_RE = /\.(wav|flac)$/i;
 
 /** 발매 신청 시 계약서·권리 서류를 준비 (같은 발매에 이미 있으면 다시 만들지 않음) */
 function ensureReleaseDocuments(f: WizardForm, releaseId: string) {
@@ -888,6 +913,41 @@ export function Upload() {
   const [expandedTracks, setExpandedTracks] = useState<Set<string>>(new Set());
   const [save, setSave] = useState<SaveState>({ kind: 'idle' });
   const [dragOver, setDragOver] = useState(false);
+  // 업로드 진행 상태 — 키: 트랙 ID 또는 'cover'
+  const [uploads, setUploads] = useState<Record<string, UploadState>>({});
+  const uploadAborts = useRef(new Map<string, AbortController>());
+  const setUpload = useCallback((key: string, u: UploadState | null) => {
+    setUploads(prev => {
+      const next = { ...prev };
+      if (u) next[key] = u; else delete next[key];
+      return next;
+    });
+  }, []);
+  // 파일을 고르면 바로 저장소에 올린다 (실서버: R2 서명 URL로 직접, 체험: 진행률만)
+  const startUpload = useCallback(async (key: string, file: File, kind: 'AUDIO' | 'IMAGE'): Promise<string | null> => {
+    uploadAborts.current.get(key)?.abort();
+    const ctrl = new AbortController();
+    uploadAborts.current.set(key, ctrl);
+    setUpload(key, { pct: 0, state: 'uploading' });
+    try {
+      const r = await api.uploadFile(file, kind, pct => setUpload(key, { pct, state: 'uploading' }), ctrl.signal);
+      if (ctrl.signal.aborted) return null;
+      setUpload(key, { pct: 1, state: 'done' });
+      // '올리는 중' 안내가 떠 있었다면 끝났으니 지운다
+      setError(prev => (prev.includes('올리는 중이에요') ? '' : prev));
+      return r.assetId;
+    } catch (e) {
+      if (ctrl.signal.aborted) return null;
+      setUpload(key, { pct: 0, state: 'error', message: errorMessage(e, '업로드에 실패했어요. 파일을 다시 선택해 주세요.') });
+      return null;
+    } finally {
+      if (uploadAborts.current.get(key) === ctrl) uploadAborts.current.delete(key);
+    }
+  }, [setUpload]);
+  useEffect(() => {
+    const aborts = uploadAborts.current;
+    return () => { aborts.forEach(c => c.abort()); aborts.clear(); };
+  }, []);
   const [coverWarn, setCoverWarn] = useState('');
   // 최신 form/step/draftId를 비동기 콜백에서 참조하기 위한 ref (stale closure 방지)
   const formRef = useRef(form);
@@ -916,12 +976,14 @@ export function Upload() {
     const filled = t && (t.title || t.audioName || t.composers);
     if (filled && !(await confirm({ title: '트랙을 삭제할까요?', message: `‘${t.title || '제목 없는 트랙'}’의 입력 내용이 사라져요.`, confirmLabel: '삭제', danger: true }))) return;
     dirtyRef.current = true;
+    uploadAborts.current.get(id)?.abort();
+    setUpload(id, null);
     setForm(f => (f.tracks.length > 1 ? {
       ...f,
       tracks: f.tracks.filter(x => x.id !== id),
       options: { ...f.options, coverTracks: f.options.coverTracks.filter(c => c.trackId !== id) },
     } : f));
-  }, [confirm]);
+  }, [confirm, setUpload]);
 
   // 수정/이어쓰기 모드: 기존 발매 데이터를 불러와 폼에 채움
   useEffect(() => {
@@ -944,6 +1006,7 @@ export function Upload() {
         notes: d?.notes || '',
         coverName: d?.coverName || '',
         coverData: d?.coverData || '',
+        coverAssetId: d?.coverAssetId || '',
         releaseDate: rel.release_date || '',
         originalDate: d?.originalDate || '',
         upc: d?.upc || '',
@@ -955,14 +1018,14 @@ export function Upload() {
         rightsChecks: d?.rightsChecks || {},
         options: d?.options ? { ...EMPTY_OPTIONS, ...d.options } : { ...EMPTY_OPTIONS },
         tracks: d?.draftTracks?.length
-          ? d.draftTracks.map(t => ({ ...newTrack(), ...t, id: t.id || uid('t') }))
+          ? d.draftTracks.map(t => ({ ...newTrack(), ...t, id: t.id || uid('t'), assetId: t.assetId || '', serverId: t.serverId || '' }))
           : rel.tracks.length
             ? rel.tracks.map(t => ({
                 ...newTrack(),
                 id: t.id, title: t.title || '', isrc: t.isrc || '',
                 version: t.version || '', composers: t.composers || '',
                 lyricists: t.lyricists || '', audioName: t.audioName || '',
-                explicit: !!t.explicit,
+                explicit: !!t.explicit, assetId: t.assetId || '', serverId: MOCK ? '' : t.id,
                 duration: t.duration_ms ? `${String(Math.floor(t.duration_ms / 60000)).padStart(2, '0')}:${String(Math.floor((t.duration_ms % 60000) / 1000)).padStart(2, '0')}` : '',
               }))
             : [newTrack()],
@@ -1015,6 +1078,19 @@ export function Upload() {
       try {
         const r = await api.saveDraft(draftIdRef.current, toPayload(formRef.current, stepRef.current));
         draftIdRef.current = r.id;
+        // 서버가 새로 만든 트랙 ID를 반영해야 다음 저장 때 트랙이 중복 생성되지 않는다
+        const ids = r.trackServerIds;
+        if (ids && Object.keys(ids).length) {
+          setForm(f => {
+            let changed = false;
+            const tracks = f.tracks.map(t => {
+              const sid = ids[t.id];
+              if (sid && sid !== t.serverId) { changed = true; return { ...t, serverId: sid }; }
+              return t;
+            });
+            return changed ? { ...f, tracks } : f;
+          });
+        }
         dirtyRef.current = false;
         setSave({ kind: 'saved', at: stampNow().slice(11) });
       } catch {
@@ -1072,13 +1148,22 @@ export function Upload() {
         if (!t.title.trim()) return fail(`트랙 ${k + 1}의 곡 제목을 입력해 주세요.`, `#tr-${k}-title`);
         if (!t.composers.trim()) return fail(`트랙 ${k + 1}의 작곡자를 입력해 주세요.`, `#tr-${k}-composers`);
         if (!t.audioName) return fail(`트랙 ${k + 1}의 음원 파일을 선택해 주세요.`, `#trackFile-${k}`);
+        const up = uploads[t.id];
+        if (up?.state === 'uploading') return fail(`트랙 ${k + 1}의 음원을 올리는 중이에요. 업로드가 끝나면 다음으로 넘어갈 수 있어요.`, null);
+        if (up?.state === 'error') return fail(`트랙 ${k + 1}의 음원 업로드에 실패했어요. 파일을 다시 선택해 주세요.`, `#trackFile-${k}`);
+        if (!MOCK && !t.assetId) return fail(`트랙 ${k + 1}의 음원 파일을 다시 선택해 주세요. (업로드 기록이 없어요)`, `#trackFile-${k}`);
         if (t.isrc.trim() && !/^[A-Z]{2}-?[A-Z0-9]{3}-?\d{2}-?\d{5}$/i.test(t.isrc.trim())) {
           setExpandedTracks(prev => new Set(prev).add(t.id));
           return fail(`트랙 ${k + 1}의 ISRC 형식을 확인해 주세요. (예: KR-ABC-26-00001)`, `#tr-${k}-isrc`);
         }
       }
     }
-    if (i === 2 && !form.coverName) return fail('커버아트를 등록해 주세요.', '#coverFile');
+    if (i === 2) {
+      if (!form.coverName) return fail('커버아트를 등록해 주세요.', '#coverFile');
+      if (uploads.cover?.state === 'uploading') return fail('커버아트를 올리는 중이에요. 업로드가 끝나면 다음으로 넘어갈 수 있어요.', null);
+      if (uploads.cover?.state === 'error') return fail('커버아트 업로드에 실패했어요. 이미지를 다시 선택해 주세요.', '#coverFile');
+      if (!MOCK && !form.coverAssetId) return fail('커버아트를 다시 선택해 주세요. (업로드 기록이 없어요)', '#coverFile');
+    }
     if (i === 3) {
       if (!form.releaseDate) return fail('발매일을 선택해 주세요.', '#f-releaseDate');
       // 수정 모드에서 기존 발매일을 그대로 두는 경우는 과거여도 허용
@@ -1184,9 +1269,9 @@ export function Upload() {
 
   const applyCover = async (file: File | undefined, input?: HTMLInputElement | null) => {
     if (!file) return;
-    const okType = /^image\/(jpeg|png|webp)$/i.test(file.type) || /\.(jpe?g|png|webp)$/i.test(file.name);
+    const okType = /^image\/(jpeg|png)$/i.test(file.type) || /\.(jpe?g|png)$/i.test(file.name);
     if (!okType) {
-      toast('커버는 JPG, PNG, WEBP 파일만 등록할 수 있어요.');
+      toast('커버는 JPG 또는 PNG 파일만 등록할 수 있어요.');
       if (input) input.value = '';
       return;
     }
@@ -1199,8 +1284,13 @@ export function Upload() {
           : '';
       setCoverWarn(warn);
       set('coverName', file.name);
-      setForm(f => ({ ...f, coverData: thumb.data }));
-      toast('커버 이미지가 등록됐어요.');
+      setForm(f => ({ ...f, coverData: thumb.data, coverAssetId: '' }));
+      const assetId = await startUpload('cover', file, 'IMAGE');
+      if (assetId) {
+        setForm(f => (f.coverName === file.name ? { ...f, coverAssetId: assetId } : f));
+        dirtyRef.current = true;
+        toast('커버 이미지가 등록됐어요.');
+      }
     } catch {
       toast('커버 이미지를 불러오지 못했어요.');
       if (input) input.value = '';
@@ -1211,18 +1301,25 @@ export function Upload() {
     const input = e.target;
     const file = input.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith('audio/') && !AUDIO_RE.test(file.name)) {
-      toast('WAV, FLAC, AIFF, MP3 같은 음원 파일을 선택해 주세요.');
+    if (!AUDIO_RE.test(file.name) && !/^audio\/(x-)?(wav|wave|flac)$/i.test(file.type)) {
+      toast('음원은 무손실 WAV 또는 FLAC 파일만 올릴 수 있어요.');
       input.value = '';
       return;
     }
     dirtyRef.current = true;
-    const commit = (duration: string) => {
-      setForm(f => ({
-        ...f,
-        tracks: f.tracks.map(t => (t.id === id ? { ...t, audioName: file.name, audioSize: file.size, duration: duration || t.duration } : t)),
-      }));
+    setForm(f => ({
+      ...f,
+      tracks: f.tracks.map(t => (t.id === id ? { ...t, audioName: file.name, audioSize: file.size, assetId: '' } : t)),
+    }));
+    void startUpload(id, file, 'AUDIO').then(assetId => {
+      if (!assetId) return;
+      setForm(f => ({ ...f, tracks: f.tracks.map(t => (t.id === id && t.audioName === file.name ? { ...t, assetId } : t)) }));
+      dirtyRef.current = true;
       toast('음원 파일이 등록됐어요.');
+    });
+    const commit = (duration: string) => {
+      if (!duration) return;
+      setForm(f => ({ ...f, tracks: f.tracks.map(t => (t.id === id ? { ...t, duration } : t)) }));
     };
     // 오디오 길이 자동 추출 (메타데이터를 읽지 못해도 파일 등록은 진행)
     const url = URL.createObjectURL(file);
@@ -1235,7 +1332,7 @@ export function Upload() {
     };
     audio.onerror = () => done('');
     audio.src = url;
-  }, [toast]);
+  }, [startUpload]);
 
   const s = STEPS[step];
   const genreIsCustom = form.genre === '__other__';
@@ -1379,6 +1476,7 @@ export function Upload() {
                   onDeleteTrack={deleteTrack}
                   setTrack={setTrack}
                   onTrackAudio={onTrackAudio}
+                  upload={uploads[t.id]}
                 />
               ))}
             </div>
@@ -1413,7 +1511,7 @@ export function Upload() {
               >
                 <input
                   type="file" id="coverFile" ref={coverInputRef}
-                  accept="image/png,image/jpeg,image/webp"
+                  accept=".jpg,.jpeg,.png,image/jpeg,image/png"
                   onChange={e => void applyCover(e.target.files?.[0], e.target)}
                 />
                 {form.coverData ? (
@@ -1425,9 +1523,10 @@ export function Upload() {
                 )}
                 <span className="aq-dropzone-text">
                   <strong>{form.coverName || '이미지를 끌어다 놓거나 눌러서 선택'}</strong>
-                  <small>{form.coverName ? '다른 이미지로 바꾸려면 다시 선택해 주세요.' : 'JPG · PNG · WEBP, 정사각형 3000×3000 이상 권장'}</small>
+                  <small>{form.coverName ? '다른 이미지로 바꾸려면 다시 선택해 주세요.' : 'JPG · PNG, 정사각형 3000×3000 이상 권장 (최대 20MB)'}</small>
                 </span>
               </label>
+              {uploads.cover && uploads.cover.state !== 'done' && <UploadStatus upload={uploads.cover} idle="" />}
               {coverWarn && <p className="help aq-help-warn">{coverWarn}</p>}
             </div>
             {form.coverData && (
@@ -1444,8 +1543,11 @@ export function Upload() {
                 <button
                   type="button" className="link-btn"
                   onClick={() => {
+                    uploadAborts.current.get('cover')?.abort();
+                    uploadAborts.current.delete('cover');
+                    setUpload('cover', null);
                     set('coverName', '');
-                    setForm(f => ({ ...f, coverData: '' }));
+                    setForm(f => ({ ...f, coverData: '', coverAssetId: '' }));
                     setCoverWarn('');
                     if (coverInputRef.current) coverInputRef.current.value = '';
                   }}

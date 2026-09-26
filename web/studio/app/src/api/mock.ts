@@ -1,5 +1,5 @@
 // 목 API — 실제 서버 없이도 전체 흐름을 쓸 수 있도록 브라우저 저장소(localStorage)에 영속화한다.
-import type { User, Org, Release, ReleaseDetail, ReleasePayload, Track } from './client';
+import type { User, Org, Release, ReleaseDetail, ReleasePayload, Track } from './types';
 import { ApiError } from './errors';
 import { createStore, uid } from '../lib/store';
 import { readJSON, removeKey, writeJSON } from '../lib/storage';
