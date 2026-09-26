@@ -11,11 +11,17 @@ export function readJSON<T>(key: string, fallback: T): T {
   }
 }
 
+/** 저장 실패(용량 초과 등) 시 앱 전체에 알리는 이벤트 이름 */
+export const STORAGE_FAIL_EVENT = 'aq:storage-fail';
+
 export function writeJSON(key: string, value: unknown): boolean {
   try {
     window.localStorage.setItem(PREFIX + key, JSON.stringify(value));
     return true;
-  } catch {
+  } catch (e) {
+    // 조용히 실패하면 새로고침 후 데이터가 사라진 걸 뒤늦게 알게 되므로 사용자에게 알린다
+    const quota = e instanceof DOMException && (e.name === 'QuotaExceededError' || e.code === 22);
+    window.dispatchEvent(new CustomEvent(STORAGE_FAIL_EVENT, { detail: { key, quota } }));
     return false;
   }
 }

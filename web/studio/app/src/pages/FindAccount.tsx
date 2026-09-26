@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router';
+import { Link } from '../lib/router';
 import { AuthLayout } from '../components/AuthLayout';
 
 // 백엔드에 계정 찾기 API가 아직 없어서 프론트엔드 흐름만 구현.

@@ -1,37 +1,55 @@
-import { Suspense, lazy, type ReactNode } from 'react';
-import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router';
+import { Suspense, lazy, type ComponentType, type ReactNode } from 'react';
+import { HashRouter, Routes, Route, Navigate, useLocation } from './lib/router';
 import { AuthProvider, useAuth } from './api/auth';
 import { Layout } from './components/Layout';
 import { ToastProvider } from './components/Toast';
 import { ConfirmProvider } from './components/Confirm';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { PageSkeleton } from './components/Skeleton';
+import { pageLoaders } from './routes';
 import './styles/design.css';
 import './styles/live.css';
 import './styles/enhance.css';
 
-// 라우트별 코드 스플리팅 — 첫 진입(로그인) 시 전체 번들을 받지 않도록 분리
-const Login = lazy(() => import('./pages/Login').then(m => ({ default: m.Login })));
-const Signup = lazy(() => import('./pages/Signup').then(m => ({ default: m.Signup })));
-const FindAccount = lazy(() => import('./pages/FindAccount').then(m => ({ default: m.FindAccount })));
-const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
-const Releases = lazy(() => import('./pages/Releases').then(m => ({ default: m.Releases })));
-const ReleaseDetail = lazy(() => import('./pages/ReleaseDetail').then(m => ({ default: m.ReleaseDetail })));
-const Upload = lazy(() => import('./pages/Upload').then(m => ({ default: m.Upload })));
-const Reports = lazy(() => import('./pages/Reports').then(m => ({ default: m.Reports })));
-const Settlement = lazy(() => import('./pages/Settlement').then(m => ({ default: m.Settlement })));
-const Contracts = lazy(() => import('./pages/Contracts').then(m => ({ default: m.Contracts })));
-const Rights = lazy(() => import('./pages/Rights').then(m => ({ default: m.Rights })));
-const Inquiries = lazy(() => import('./pages/Inquiries').then(m => ({ default: m.Inquiries })));
-const Notifications = lazy(() => import('./pages/Notifications').then(m => ({ default: m.Notifications })));
-const Events = lazy(() => import('./pages/Events').then(m => ({ default: m.Events })));
-const Notices = lazy(() => import('./pages/Notices').then(m => ({ default: m.Notices })));
-const Profile = lazy(() => import('./pages/Profile').then(m => ({ default: m.Profile })));
+// 배포 직후 옛 청크가 사라져 동적 import가 실패하면 한 번만 새로고침해 새 버전을 받는다
+const RELOAD_FLAG = 'aq.chunk-reload';
+function lazyPage<M>(load: () => Promise<M>, pick: (m: M) => ComponentType) {
+  return lazy(async () => {
+    try {
+      const mod = await load();
+      return { default: pick(mod) };
+    } catch (e) {
+      if (!sessionStorage.getItem(RELOAD_FLAG)) {
+        sessionStorage.setItem(RELOAD_FLAG, '1');
+        window.location.reload();
+        await new Promise(() => {}); // 새로고침될 때까지 대기 (오류 화면 깜빡임 방지)
+      }
+      throw e;
+    }
+  });
+}
+
+const Login = lazyPage(pageLoaders.Login, m => m.Login);
+const Signup = lazyPage(pageLoaders.Signup, m => m.Signup);
+const FindAccount = lazyPage(pageLoaders.FindAccount, m => m.FindAccount);
+const Dashboard = lazyPage(pageLoaders.Dashboard, m => m.Dashboard);
+const Releases = lazyPage(pageLoaders.Releases, m => m.Releases);
+const ReleaseDetail = lazyPage(pageLoaders.ReleaseDetail, m => m.ReleaseDetail);
+const Upload = lazyPage(pageLoaders.Upload, m => m.Upload);
+const Reports = lazyPage(pageLoaders.Reports, m => m.Reports);
+const Settlement = lazyPage(pageLoaders.Settlement, m => m.Settlement);
+const Contracts = lazyPage(pageLoaders.Contracts, m => m.Contracts);
+const Rights = lazyPage(pageLoaders.Rights, m => m.Rights);
+const Inquiries = lazyPage(pageLoaders.Inquiries, m => m.Inquiries);
+const Notifications = lazyPage(pageLoaders.Notifications, m => m.Notifications);
+const Events = lazyPage(pageLoaders.Events, m => m.Events);
+const Notices = lazyPage(pageLoaders.Notices, m => m.Notices);
+const Profile = lazyPage(pageLoaders.Profile, m => m.Profile);
 
 function BootScreen() {
   return (
     <div className="aq-boot" role="status" aria-label="AUDENIQ STUDIO를 불러오는 중">
-      <img src={`${import.meta.env.BASE_URL}assets/AUDENIQ_Logo_Light.svg`} alt="" />
+      <img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="" />
       <span className="aq-boot-bar" />
     </div>
   );

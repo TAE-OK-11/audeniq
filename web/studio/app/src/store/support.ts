@@ -20,7 +20,10 @@ const INITIAL_NOTICES: Notice[] = [
 
 const store = createStore<Notice[]>(INITIAL_NOTICES, {
   persist: 'notifications',
-  revive: (raw, fallback) => (Array.isArray(raw) ? raw as Notice[] : fallback),
+  revive: (raw, fallback) => (Array.isArray(raw)
+    ? (raw as Notice[]).filter(n => n && typeof n.id === 'string' && typeof n.title === 'string')
+      .map(n => ({ ...n, kind: String(n.kind ?? ''), detail: String(n.detail ?? ''), time: String(n.time ?? ''), read: !!n.read }))
+    : fallback),
 });
 
 export const useNotices = store.use;

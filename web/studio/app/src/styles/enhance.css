@@ -400,3 +400,6 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
   #homeReleases .aq-cover{width:54px!important;height:54px!important;flex-basis:54px!important;border-radius:15px!important}
   #homeReleases .release-row{grid-template-columns:54px minmax(0,1fr) auto!important;gap:12px!important}
 }
+
+/* 로딩이 150ms 안에 끝나면 스켈레톤이 아예 보이지 않도록 늦게 등장 (깜빡임 방지) */
+.aq-skeleton-list,.aq-skel-block,.aq-page-skeleton{animation:aq-fade-in .2s ease .15s both!important}

@@ -9,7 +9,7 @@
 - [x] `dangerouslySetInnerHTML` 1건 — `esc()` 이스케이프 처리됨 (BankLogo)
 - [x] 주민등록번호: 메모리 state에만 존재, 저장·로그·전송 없음
 - [x] localStorage(`aq.studio.v2.*`): 목 모드 데이터만 저장. 계좌번호는 마스킹(뒤 4자리)만, 첨부 원본(File)은 저장하지 않음
-- [x] 의존성(2026-09-26 최신): React 19.3.0 / React Router 8.4.0 / Vite 8.3.1 / TypeScript 7.0.2 / Vitest 5.0.2 — 알려진 CVE 없음
+- [x] 의존성(2026-09-26 최신): React 19.3.0 / 자체 경량 라우터 / Vite 8.3.1 / TypeScript 7.0.2 / Vitest 5.0.2 — 알려진 CVE 없음
   - React RSC 계열 CVE(CVE-2025-55182 등): 서버 컴포넌트 미사용으로 해당 없음
   - Vite CVE: dev-server 전용, 6.4.3은 패치 버전
 - [x] CSP 강화 (`public/_headers`): `/connected/*`에 strict CSP 적용
@@ -27,7 +27,9 @@
 - [x] CSS syntax warning 수정 (깨진 주석 `not boxed page frames. */`)
 - [x] `bun run check` + `bun run build` 통과
 - [x] MOCK 모드 환경변수화 (`VITE_MOCK`, `VITE_API_BASE`) — 실제로 `api/client.ts`가 읽도록 연결
-- [x] `bun run test` (Vitest 12건) + Playwright E2E 15개 시나리오 통과
+- [x] `bun run test` (Vitest 19건) + Playwright E2E 23개 시나리오 + CSS 정리 전후 계산 스타일 비교(48개 화면 상태, 차이 0) 통과
+- [x] 캐시 헤더: 해시 자산 immutable 1년, index.html no-cache
+- [ ] `VITE_API_BASE`를 다른 출처로 쓰면 `_headers`의 `connect-src`에 해당 출처 추가 필요
 
 ## ⚠️ 실제 운영 전환 전 필수
 
