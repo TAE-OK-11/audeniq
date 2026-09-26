@@ -16,7 +16,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     css.push_str("\n[hidden]{display:none!important}.connected-nav{display:flex;gap:12px;flex-wrap:wrap;padding:12px 0}.connected-form{display:grid;gap:16px;max-width:640px}.connected-form input,.connected-form select{width:100%;padding:12px;border:1px solid var(--border);border-radius:12px;font:inherit}.connected-form label{display:block}#feedback{white-space:pre-wrap;margin:16px 0}.connected-row{display:flex;justify-content:space-between;gap:16px;padding:20px 0;border-bottom:1px solid var(--border)}button:disabled{opacity:.5;cursor:wait}.connected-detail{margin-top:24px} .connected-nav button{border:0;background:var(--surface-alt);padding:10px 16px;border-radius:12px}\n");
     fs::write(out.join("studio.css"), css)?;
-    fs::copy("web/studio/public/connected/index.html", out.join("index.html"))?;
+    fs::copy(
+        "web/studio/public/connected/index.html",
+        out.join("index.html"),
+    )?;
     fs::copy(
         "web/studio/public/assets/AUDENIQ_Logo_Light.svg",
         out.join("assets/AUDENIQ_Logo_Light.svg"),
