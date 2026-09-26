@@ -82,3 +82,37 @@ export function purgeCss(opts: { content: string[]; safelist?: RegExp[] }): Plug
   };
 }
 purgeCss.postcss = true;
+
+/**
+ * 의미를 바꾸지 않는 안전한 압축 — 주석과 공백만 지운다.
+ * Lightning CSS 압축기는 같은 선택자 규칙이 뒤에 다시 나오면 앞 규칙의 `!important` 선언을
+ * 잘못 제거하는 문제가 있어(예: `.a{x:1!important}` … `.a{x:2}` → x:2로 바뀜) 사용하지 않는다.
+ */
+export function compactCss(): Plugin {
+  return {
+    postcssPlugin: 'aq-compact-css',
+    OnceExit(root: Root) {
+      root.walkComments(c => { c.remove(); });
+      root.raws = {};
+      root.walk(node => {
+        node.raws.before = '';
+        if (node.type === 'decl') {
+          node.raws.between = ':';
+          node.value = node.value.replace(/\s*\n\s*/g, ' ').trim();
+          if (node.important) node.raws.important = '!important';
+        } else if (node.type === 'rule') {
+          node.raws.between = '';
+          node.raws.after = '';
+          node.raws.semicolon = false;
+          node.selector = node.selectors.map(s => s.replace(/\s+/g, ' ').trim()).join(',');
+        } else if (node.type === 'atrule') {
+          node.raws.between = '';
+          node.raws.after = '';
+          node.raws.afterName = node.params ? ' ' : '';
+          node.raws.semicolon = false;
+        }
+      });
+    },
+  };
+}
+compactCss.postcss = true;

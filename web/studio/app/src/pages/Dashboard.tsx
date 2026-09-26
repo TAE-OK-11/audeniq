@@ -92,8 +92,7 @@ export function Dashboard() {
         <Link className="button" to="/upload" onPointerEnter={() => prefetchRoute('/upload')}>새로운 발매</Link>
       </div>
 
-      <div className="portal-hero aq-hero-animated">
-        <div className="aq-hero-orbs" aria-hidden="true"><i /><i /><i /></div>
+      <div className="portal-hero">
         <div>
           <p className="eyebrow">NEW RELEASE</p>
           <h2>새로운 발매를<br />시작해 보세요.</h2>

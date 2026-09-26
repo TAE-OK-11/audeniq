@@ -721,7 +721,7 @@ const TrackEditor = memo(function TrackEditor({
       </div>
       <div className="field track-title-field">
         <label htmlFor={`tr-${i}-title`}>곡 제목 <span className="required">*</span></label>
-        <input id={`tr-${i}-title`} value={t.title} onChange={e => setTrack(t.id, 'title', e.target.value)} placeholder="곡명을 입력해" maxLength={200} />
+        <input id={`tr-${i}-title`} value={t.title} onChange={e => setTrack(t.id, 'title', e.target.value)} placeholder="곡명을 입력해 주세요" maxLength={200} />
       </div>
       <div className="field">
         <label htmlFor={`tr-${i}-composers`}>작곡 <span className="required">*</span></label>
@@ -762,7 +762,7 @@ const TrackEditor = memo(function TrackEditor({
             </div>
             <div className="field">
               <label htmlFor={`tr-${i}-lyricists`}>작사</label>
-              <input id={`tr-${i}-lyricists`} value={t.lyricists} onChange={e => setTrack(t.id, 'lyricists', e.target.value)} placeholder="가사가 없는 곡이라면 비워둬" maxLength={200} />
+              <input id={`tr-${i}-lyricists`} value={t.lyricists} onChange={e => setTrack(t.id, 'lyricists', e.target.value)} placeholder="가사가 없는 곡이면 비워 두세요" maxLength={200} />
             </div>
             <div className="field">
               <label htmlFor={`tr-${i}-arrangers`}>편곡</label>
@@ -1295,10 +1295,14 @@ export function Upload() {
     ['권리 확인', rightsOk(form) ? '필수 확인 완료' : '필수 확인 항목 누락', 4],
   ];
 
-  const saveLabel = !canAutoSave ? '수정 중 · 완료를 눌러야 반영돼요'
-    : save.kind === 'saving' ? '저장 중…'
-    : save.kind === 'saved' ? `자동 저장됨 · ${save.at}`
-    : save.kind === 'error' ? '자동 저장 실패' : '';
+  // 상단 바 오른쪽 칸에 들어가도록 짧게 (긴 문구는 title 속성으로)
+  const saveLabel = !canAutoSave ? '수정 중'
+    : save.kind === 'saving' ? '저장 중'
+    : save.kind === 'saved' ? `저장됨 ${save.at}`
+    : save.kind === 'error' ? '저장 실패' : '';
+  const saveTitle = !canAutoSave ? '수정 내용은 마지막 단계에서 ‘수정 완료’를 눌러야 반영돼요.'
+    : save.kind === 'saved' ? `${save.at}에 자동 저장됐어요.`
+    : save.kind === 'error' ? '자동 저장에 실패했어요. 네트워크를 확인해 주세요.' : '';
 
   return (
     <section id="view-new" className="view">
@@ -1308,9 +1312,11 @@ export function Upload() {
           <BackIcon />
         </button>
         <span className="wizard-top-title">{editId ? (origStatus === 'draft' ? '발매 이어서 작성' : '발매 정보 수정') : '새로운 발매'}</span>
-        {saveLabel && (
-          <span className={`aq-save-state is-${canAutoSave ? save.kind : 'edit'}`} aria-live="polite">{saveLabel}</span>
-        )}
+        <span className="aq-save-slot" aria-live="polite">
+          {saveLabel && (
+            <span className={`aq-save-state is-${canAutoSave ? save.kind : 'edit'}`} title={saveTitle}>{saveLabel}</span>
+          )}
+        </span>
       </div>
 
       {loadingEdit && (
