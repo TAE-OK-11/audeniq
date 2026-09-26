@@ -1,25 +1,15 @@
 import { useMemo, useState } from 'react';
 import { useToast } from '../components/Toast';
+import { CountUp } from '../components/CountUp';
 import { money, num } from '../lib/format';
+import { todayStr } from '../lib/date';
 import { useGrowOnView, type CSSVarStyle } from '../hooks/useAnimations';
+import { REPORT_ROWS as MOCK_ROWS, periodLabel as monthLabel, periods, type ReportRow } from '../data/reports';
 
 const PERIODS = [
   { value: 'all', label: '전체 기간' },
-  { value: 'month', label: '이번 달' },
-  { value: 'prev', label: '지난달' },
-];
-
-interface ReportRow {
-  period: string; platform: string; release: string; track: string; plays: number; revenue: number;
-}
-
-const MOCK_ROWS: ReportRow[] = [
-  { period: '2026-09', platform: 'Spotify', release: '첫 번째 싱글', track: '첫 번째 싱글', plays: 12480, revenue: 10736 },
-  { period: '2026-09', platform: 'Apple Music', release: '첫 번째 싱글', track: '첫 번째 싱글', plays: 8216, revenue: 9202 },
-  { period: '2026-09', platform: 'Melon', release: '여름 EP', track: '파도', plays: 5934, revenue: 4391 },
-  { period: '2026-09', platform: 'YouTube Music', release: '여름 EP', track: '전체', plays: 4102, revenue: 2789 },
-  { period: '2026-08', platform: 'Spotify', release: '첫 번째 싱글', track: '첫 번째 싱글', plays: 9870, revenue: 8492 },
-  { period: '2026-08', platform: 'Melon', release: '첫 번째 싱글', track: '전체', plays: 4210, revenue: 3115 },
+  { value: 'month', label: '최근 달' },
+  { value: 'prev', label: '그 전 달' },
 ];
 
 function Chart({ rows }: { rows: ReportRow[] }) {
@@ -67,15 +57,14 @@ export function Reports() {
   const [period, setPeriod] = useState('all');
   const [release, setRelease] = useState('all');
 
-  const thisMonth = '2026-09';
-  const lastMonth = '2026-08';
+  const [thisMonth = '', lastMonth = ''] = periods(MOCK_ROWS);
 
-  const filtered = MOCK_ROWS.filter(r => {
+  const filtered = useMemo(() => MOCK_ROWS.filter(r => {
     if (period === 'month' && r.period !== thisMonth) return false;
     if (period === 'prev' && r.period !== lastMonth) return false;
     if (release !== 'all' && r.release !== release) return false;
     return true;
-  });
+  }), [period, release, thisMonth, lastMonth]);
 
   const totalRevenue = filtered.reduce((n, r) => n + r.revenue, 0);
   const totalPlays = filtered.reduce((n, r) => n + r.plays, 0);
@@ -95,7 +84,7 @@ export function Reports() {
 
   const releases = [...new Set(MOCK_ROWS.map(r => r.release))];
 
-  const periodLabel = period === 'month' ? '2026년 9월' : period === 'prev' ? '2026년 8월' : '전체 기간';
+  const periodLabel = period === 'month' ? monthLabel(thisMonth) : period === 'prev' ? monthLabel(lastMonth) : '전체 기간';
 
   // 전월 대비 인사이트 (발매 필터는 반영, 기간 필터와 무관하게 두 달 비교)
   const insight = useMemo(() => {
@@ -155,7 +144,7 @@ export function Reports() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'AUDENIQ_report.csv';
+    a.download = `AUDENIQ_report_${period === 'all' ? 'all' : period === 'month' ? thisMonth : lastMonth}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -189,12 +178,12 @@ export function Reports() {
         <header className="aq-report-doc-head">
           <p className="eyebrow">MONTHLY REPORT</p>
           <h2>{periodLabel} 음악 리포트</h2>
-          <p className="muted small">발행일 2026-09-26 · AUDENIQ STUDIO</p>
+          <p className="muted small">발행일 {todayStr()} · AUDENIQ STUDIO</p>
         </header>
 
         <div className="aq-report-doc-stats">
-          <div><small>집계 수익</small><strong>{money(totalRevenue)}</strong></div>
-          <div><small>재생 수</small><strong>{num(totalPlays)}회</strong></div>
+          <div><small>집계 수익</small><strong><CountUp value={totalRevenue} format={money} /></strong></div>
+          <div><small>재생 수</small><strong><CountUp value={totalPlays} format={n => `${num(n)}회`} /></strong></div>
           <div><small>플랫폼</small><strong>{platforms}곳</strong></div>
         </div>
 
@@ -253,7 +242,10 @@ export function Reports() {
                     <strong>{money(v.revenue)}</strong>
                   </div>
                   <div className="aq-platform-track">
-                    <span style={{ width: `${Math.max(3, Math.round((v.revenue / maxPlatformRevenue) * 100))}%` }} />
+                    <span
+                      key={`${period}-${release}`}
+                      style={{ width: `${Math.max(3, Math.round((v.revenue / maxPlatformRevenue) * 100))}%` }}
+                    />
                   </div>
                   <small>{num(v.plays)}회 재생</small>
                 </li>
@@ -264,7 +256,7 @@ export function Reports() {
 
         <section aria-label="기간별 추이">
           <h3>기간별 추이</h3>
-          <div id="reportGraph"><Chart rows={filtered} /></div>
+          <div id="reportGraph"><Chart key={`${period}-${release}`} rows={filtered} /></div>
         </section>
 
         <section aria-label="상세 내역">

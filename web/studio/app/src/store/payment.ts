@@ -1,6 +1,6 @@
-// 수령(지급) 정보 공유 스토어 — 라이브 db.payment 대응
-// Profile(등록/변경)과 Settlement(수익 받기)가 같은 상태를 공유한다.
-import { useSyncExternalStore } from 'react';
+// 수령(지급) 정보 공유 스토어 — Profile/Settlement가 같은 상태를 공유
+// 보안: 계좌번호 전체값은 브라우저 저장소에 남기지 않고 마스킹된 값만 영속화한다.
+import { createStore } from '../lib/store';
 
 export interface PaymentInfo {
   recipient: string;
@@ -17,33 +17,21 @@ export const TYPE_LABEL: Record<PaymentInfo['type'], string> = {
   corporate: '법인',
 };
 
-// 라이브 초기값: payment:{recipient:'',type:'personal',bank:'',accountNumber:'',last4:''}
-let payment: PaymentInfo | null = null;
-const listeners = new Set<() => void>();
+const mask = (p: PaymentInfo): PaymentInfo => ({ ...p, accountNumber: p.last4 ? `••••${p.last4}` : '' });
 
-function emit() {
-  listeners.forEach(l => l());
-}
+const store = createStore<PaymentInfo | null>(null, {
+  persist: 'payment',
+  serialize: p => (p ? mask(p) : null),
+});
 
-function subscribe(l: () => void): () => void {
-  listeners.add(l);
-  return () => { listeners.delete(l); };
-}
-
-export function getPayment(): PaymentInfo | null {
-  return payment;
-}
+export const getPayment = store.get;
+export const usePayment = store.use;
 
 /** 라이브 등록 판정: recipient && bank && bank!=='미설정' && accountNumber && last4 && last4!=='0000' */
-export function isPaymentRegistered(p: PaymentInfo | null): boolean {
+export function isPaymentRegistered(p: PaymentInfo | null): p is PaymentInfo {
   return !!p && !!p.recipient && !!p.bank && p.bank !== '미설정' && !!p.accountNumber && !!p.last4 && p.last4 !== '0000';
 }
 
 export function setPayment(p: PaymentInfo): void {
-  payment = p;
-  emit();
-}
-
-export function usePayment(): PaymentInfo | null {
-  return useSyncExternalStore(subscribe, getPayment);
+  store.set(p);
 }

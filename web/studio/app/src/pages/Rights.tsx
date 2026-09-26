@@ -6,6 +6,10 @@ import { DocumentModal } from '../components/DocumentModal';
 import { SignatureModal } from '../components/SignatureModal';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
+import { api } from '../api/client';
+import { useAsync } from '../hooks/useAsync';
+import { stampNow } from '../lib/date';
+import { uid } from '../lib/store';
 
 const REQUIRED_DOCS: [string, string, string][] = [
   ['master', '마스터 음원 권리 확인서', '본인은 해당 마스터 음원에 관한 배급 권한을 보유하거나 권리자로부터 적법한 이용 허락을 받았음을 확인합니다.'],
@@ -16,22 +20,10 @@ const REQUIRED_DOCS: [string, string, string][] = [
   ['custom', '기타 요청 서류', '요청받은 서류의 명칭과 해당 발매에 필요한 권리 범위를 확인해 주세요.'],
 ];
 
-// mock 발매 목록 (디자인 테스트용)
-const MOCK_RELEASES = [
-  { id: 'r1', title: '첫 번째 싱글', artist: '서린' },
-  { id: 'r2', title: '여름 EP', artist: '서린' },
-  { id: 'r3', title: '데모 트랙', artist: '서린' },
-];
-
-function stampNow(): string {
-  const d = new Date();
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
 export function Rights() {
   const toast = useToast();
   const docs = useDocs();
+  const { data: releases = [] } = useAsync(() => api.listReleases(), []);
   const [formOpen, setFormOpen] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [signing, setSigning] = useState(false);
@@ -59,7 +51,7 @@ export function Rights() {
 
   const submitForm = async (e: React.FormEvent) => {
     e.preventDefault();
-    const r = MOCK_RELEASES.find(x => x.id === releaseId);
+    const r = releases.find(x => x.id === releaseId);
     if (!r) { toast('관련 발매를 선택해 주세요.'); return; }
     const name = docName.trim();
     if (!name) return;
@@ -68,7 +60,7 @@ export function Rights() {
     setSubmitting(true);
     try {
       const c: DocRecord = {
-        id: 'd' + Date.now(),
+        id: uid('d'),
         kind: 'rights',
         releaseId: r.id,
         releaseTitle: r.title,
@@ -77,12 +69,14 @@ export function Rights() {
         content: [
           '서류 종류: ' + name,
           '관련 발매: ' + r.title,
-          '아티스트: ' + r.artist,
+          '아티스트: ' + (r.artist || '미입력'),
           '권리 확인 내용: ' + item[2],
           '제출 서류: ' + name,
         ].join('\n'),
         fileName: file ? file.name : '',
         fileBlob: file,
+        fileType: file?.type,
+        uploadedAt: file ? at : undefined,
         checked: false,
         checkedAt: '',
         created: at,
@@ -130,7 +124,7 @@ export function Rights() {
 
       <div id="rightsList">
         {rights.length ? (
-          <div className="aq-doc-grid">
+          <div className="aq-doc-grid aq-stagger">
             {rights.map(c => <DocCard key={c.id} c={c} onOpen={setOpenId} />)}
           </div>
         ) : (
@@ -146,7 +140,7 @@ export function Rights() {
       </div>
 
       {formOpen && (
-        <Modal title="권리 서류 접수" onClose={() => setFormOpen(false)}>
+        <Modal title="권리 서류 접수" onClose={() => setFormOpen(false)} dismissible={false}>
           <p className="small muted">
             발매를 선택하고 필요한 서류를 등록해 주세요. 확인할 내용과 첨부한 원본을 하나의 서류로 관리할 수 있어요.
           </p>
@@ -158,7 +152,7 @@ export function Rights() {
                 value={releaseId} onChange={e => setReleaseId(e.target.value)}
               >
                 <option value="">발매를 선택해 주세요</option>
-                {MOCK_RELEASES.map(r => (
+                {releases.map(r => (
                   <option key={r.id} value={r.id}>{r.title}</option>
                 ))}
               </select>
@@ -209,7 +203,7 @@ export function Rights() {
         <SignatureModal
           doc={openDoc}
           onBack={() => setSigning(false)}
-          onSaved={() => setSigning(false)}
+          onSaved={() => {}}
         />
       )}
     </div>

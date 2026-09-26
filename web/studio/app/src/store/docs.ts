@@ -1,6 +1,6 @@
 // 계약·권리 서류 공유 스토어 — 라이브 db.contracts 대응
 // Contracts(계약서)와 Rights(권리·보완 서류)가 같은 문서를 공유한다.
-import { useSyncExternalStore } from 'react';
+import { createStore } from '../lib/store';
 
 export interface ConsentRecord { time: string; action: string; version: string }
 export interface ReviewRecord { status: string; time: string; detail: string }
@@ -15,7 +15,7 @@ export interface DocRecord {
   created: string;
   content: string;
   fileName: string;
-  /** 첨부 원본 File (IndexedDB 대체, 메모리 보관) */
+  /** 첨부 원본 File — 직렬화할 수 없어 현재 세션 메모리에만 보관 */
   fileBlob?: File | null;
   fileType?: string;
   uploadedAt?: string;
@@ -63,7 +63,7 @@ const INITIAL_DOCS: DocRecord[] = [
   {
     id: 'doc1', kind: 'agreements',
     title: '첫 번째 싱글 · AUDENIQ 디지털 음원 배급 신청·계약서',
-    releaseTitle: '첫 번째 싱글', version: '1.0', created: '2026-09-20',
+    releaseId: 'r1', releaseTitle: '첫 번째 싱글', version: '1.0', created: '2026-09-20',
     content: AGREEMENT_CONTENT, fileName: '', checked: true, checkedAt: '2026-09-20 14:32',
     consentHistory: [{ time: '2026-09-20 14:32', action: '내용 확인', version: '1.0' }],
     reviewHistory: [{ status: '검토 완료', time: '2026-09-21 10:05', detail: 'AUDENIQ 담당자 검토 완료' }],
@@ -72,7 +72,7 @@ const INITIAL_DOCS: DocRecord[] = [
   {
     id: 'doc2', kind: 'agreements',
     title: '여름 EP · AUDENIQ 디지털 음원 배급 신청·계약서',
-    releaseTitle: '여름 EP', version: '1.0', created: '2026-09-22',
+    releaseId: 'r2', releaseTitle: '여름 EP', version: '1.0', created: '2026-09-22',
     content: '', fileName: '', checked: false, checkedAt: '',
     consentHistory: [],
     reviewHistory: [{ status: '접수 요청', time: '2026-09-22 09:10', detail: '신청서가 작성됐어요. 담당자 검토 접수는 전송 후 시작됩니다.' }],
@@ -81,7 +81,7 @@ const INITIAL_DOCS: DocRecord[] = [
   {
     id: 'd1', kind: 'rights',
     title: '첫 번째 싱글 · 마스터 음원 권리 확인서',
-    releaseTitle: '첫 번째 싱글', version: '1.0', created: '2026-09-22',
+    releaseId: 'r1', releaseTitle: '첫 번째 싱글', version: '1.0', created: '2026-09-22',
     content: '', fileName: '', checked: false, checkedAt: '',
     consentHistory: [], reviewHistory: [],
     reviewStatus: 'review', reviewNote: '', signerName: '', localSignatureData: '', localSignatureAt: '',
@@ -89,7 +89,7 @@ const INITIAL_DOCS: DocRecord[] = [
   {
     id: 'd2', kind: 'rights',
     title: '여름 EP · 작사·작곡 및 커버곡 이용 허락서',
-    releaseTitle: '여름 EP', version: '1.0', created: '2026-09-23',
+    releaseId: 'r2', releaseTitle: '여름 EP', version: '1.0', created: '2026-09-23',
     content: '', fileName: 'credit_proof.pdf', checked: false, checkedAt: '',
     consentHistory: [], reviewHistory: [],
     reviewStatus: 'needs', reviewNote: '서명란에 서명자 이름이 빠져 있어요. 보완 후 다시 제출해 주세요.',
@@ -98,45 +98,42 @@ const INITIAL_DOCS: DocRecord[] = [
   {
     id: 'd3', kind: 'rights',
     title: '데모 트랙 · 커버아트 이용 허락서',
-    releaseTitle: '데모 트랙', version: '1.0', created: '2026-09-24',
+    releaseId: 'r3', releaseTitle: '데모 트랙', version: '1.0', created: '2026-09-24',
     content: '', fileName: '', checked: false, checkedAt: '',
     consentHistory: [], reviewHistory: [],
     reviewStatus: 'awaiting_documents', reviewNote: '', signerName: '', localSignatureData: '', localSignatureAt: '',
   },
 ];
 
-let docs: DocRecord[] = INITIAL_DOCS;
-const listeners = new Set<() => void>();
+const store = createStore<DocRecord[]>(INITIAL_DOCS, {
+  persist: 'docs',
+  // File 객체는 직렬화할 수 없으므로 저장하지 않는다 (원본은 현재 세션에서만 열람)
+  serialize: list => list.map(({ fileBlob: _omit, ...rest }) => rest),
+  revive: (raw, fallback) => (Array.isArray(raw) ? raw as DocRecord[] : fallback),
+});
 
-function emit() { listeners.forEach(l => l()); }
-function subscribe(l: () => void): () => void {
-  listeners.add(l);
-  return () => { listeners.delete(l); };
-}
-
-function getDocs(): DocRecord[] { return docs; }
-
-export function useDocs(): DocRecord[] {
-  return useSyncExternalStore(subscribe, getDocs);
-}
+export const useDocs = store.use;
+export const getDocsSnapshot = store.get;
 
 export function getDoc(id: string): DocRecord | undefined {
-  return docs.find(d => d.id === id);
+  return store.get().find(d => d.id === id);
 }
 
 export function addDoc(doc: DocRecord): void {
-  docs = [doc, ...docs];
-  emit();
+  store.set(list => [doc, ...list]);
 }
 
 export function updateDoc(id: string, patch: Partial<DocRecord>): void {
-  docs = docs.map(d => (d.id === id ? { ...d, ...patch } : d));
-  emit();
+  store.set(list => list.map(d => (d.id === id ? { ...d, ...patch } : d)));
 }
 
 export function removeDoc(id: string): void {
-  docs = docs.filter(d => d.id !== id);
-  emit();
+  store.set(list => list.filter(d => d.id !== id));
+}
+
+/** 발매에 연결된 문서 (releaseId 우선, 없으면 제목으로 매칭) */
+export function docsForRelease(list: DocRecord[], releaseId: string, releaseTitle?: string): DocRecord[] {
+  return list.filter(d => (d.releaseId ? d.releaseId === releaseId : !!releaseTitle && d.releaseTitle === releaseTitle));
 }
 
 /** 라이브 aqDocumentState */
