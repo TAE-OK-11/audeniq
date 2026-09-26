@@ -592,13 +592,14 @@ body.wizard-mode .portal-header,body.wizard-mode .footer-line{display:none!impor
 .studio-album-row .row-name{font-size:15px;font-weight:790;margin-bottom:5px}
 .studio-album-row .row-sub{font-size:12px;line-height:1.6}
 .aq-catalog-cards{display:grid;gap:10px}
-.aq-release-card,.aq-track-row{display:grid;grid-template-columns:60px minmax(0,1fr) auto;gap:14px;align-items:center;background:#f7f9fd!important;border:0!important;border-radius:22px!important;padding:16px!important;margin:0;cursor:pointer;transition:transform .15s ease,background .15s ease;text-align:left;width:100%}
+.aq-release-card,.aq-track-row{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:15px;align-items:center;background:#f7f9fd!important;border:0!important;border-radius:24px!important;padding:15px 16px!important;margin:0;cursor:pointer;transition:transform .15s ease,background .15s ease;text-align:left;width:100%}
 .aq-release-card:active,.aq-track-row:active{transform:scale(.985);background:#edf1f9!important}
 .aq-release-card:focus-visible,.aq-track-row:focus-visible{outline:2px solid var(--portal-blue);outline-offset:2px}
-.aq-release-card .cover,.aq-track-row .cover{width:60px;height:60px;border-radius:15px}
-.aq-release-card .row-name,.aq-track-row .row-name{font-size:15px;font-weight:790;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.aq-release-card .row-sub,.aq-track-row .row-sub{display:block;font-size:12px;color:var(--portal-muted);margin-top:4px;line-height:1.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.aq-release-end{display:flex;align-items:center;gap:8px}
+.aq-cover{width:64px!important;height:64px!important;border-radius:17px!important;box-shadow:0 8px 18px rgba(70,90,170,.22);font-size:24px!important;flex:0 0 64px}
+.aq-release-card .row-name,.aq-track-row .row-name{font-size:16px;font-weight:800;letter-spacing:-.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-release-card .row-sub,.aq-track-row .row-sub{display:block;font-size:12px;color:var(--portal-muted);margin-top:5px;line-height:1.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-release-end{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.aq-release-end .chevron{line-height:1}
 .studio-album-row .row-end{gap:10px}
 .studio-row-arrow{border:0;background:transparent;display:grid;place-items:center;width:23px;height:33px;color:#8a9ab3;font-size:23px;border-radius:8px}
 .studio-row-arrow:hover{background:#e8efff;color:#345ed6}
