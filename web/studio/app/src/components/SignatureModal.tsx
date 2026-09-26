@@ -64,18 +64,33 @@ export function SignatureModal({
     ctx.clearRect(0, 0, rect.width, rect.height);
   };
 
-  // 서명 단계에서는 모달 열 때 한 번만 initCanvas
+  // 서명 단계에 들어올 때마다 빈 캔버스로 초기화하고(이전 획 수가 남아 빈 서명이 저장되던 문제 방지),
+  // 화면 회전·창 크기 변경 시에는 그린 서명을 보존한 채 해상도만 다시 맞춘다.
   useEffect(() => {
+    if (phase !== 'sign') return;
+    setStrokes(0);
     const t = window.setTimeout(initCanvas, 0);
-    return () => window.clearTimeout(t);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // 서명 단계로 돌아오면 캔버스 다시 초기화
-  useEffect(() => {
-    if (phase === 'sign') {
-      const t = window.setTimeout(initCanvas, 0);
-      return () => window.clearTimeout(t);
-    }
+    const canvas = canvasRef.current;
+    let lastWidth = 0;
+    const ro = canvas && 'ResizeObserver' in window ? new ResizeObserver(entries => {
+      const w = Math.round(entries[0].contentRect.width);
+      if (!lastWidth) { lastWidth = w; return; }
+      if (w === lastWidth || !canvas.width) return;
+      lastWidth = w;
+      const snapshot = document.createElement('canvas');
+      snapshot.width = canvas.width; snapshot.height = canvas.height;
+      snapshot.getContext('2d')?.drawImage(canvas, 0, 0);
+      initCanvas();
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(snapshot, 0, 0, canvas.width, canvas.height);
+        ctx.restore();
+      }
+    }) : null;
+    if (canvas && ro) ro.observe(canvas);
+    return () => { window.clearTimeout(t); ro?.disconnect(); };
   }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const xy = (e: React.PointerEvent) => {

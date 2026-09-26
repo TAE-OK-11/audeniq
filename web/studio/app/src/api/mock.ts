@@ -5,6 +5,7 @@ import { createStore, uid } from '../lib/store';
 import { readJSON, removeKey, writeJSON } from '../lib/storage';
 import { stampNow, todayStr } from '../lib/date';
 
+// 네트워크 흉내 지연 — 읽기는 거의 즉시, 인증·접수만 짧게 (버튼 진행 상태가 보이도록)
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 const mockOrgs: Org[] = [{ id: 'org_1', name: '내 작업 공간' }];
@@ -49,9 +50,44 @@ const SEED: ReleaseDetail[] = [
   },
 ];
 
+const STATUSES = new Set(['draft', 'ready', 'needs', 'review', 'scheduled', 'live']);
+const str = (v: unknown, d = '') => (typeof v === 'string' ? v : d);
+const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? v as T[] : []);
+
+/** 저장된 발매를 현재 형식으로 보정 — 구버전·손상 데이터 때문에 화면이 깨지지 않도록 */
+export function normalizeRelease(raw: unknown): ReleaseDetail | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Partial<ReleaseDetail>;
+  if (typeof r.id !== 'string' || !r.id) return null;
+  const tracks = arr<Track>(r.tracks).filter(t => t && typeof t === 'object' && typeof t.id === 'string')
+    .map(t => ({ ...t, title: str(t.title), duration_ms: typeof t.duration_ms === 'number' ? t.duration_ms : null, isrc: t.isrc ?? null }));
+  const d = r.draft && typeof r.draft === 'object' ? r.draft : undefined;
+  return {
+    ...r,
+    id: r.id,
+    title: str(r.title, '제목 없는 발매'),
+    status: STATUSES.has(str(r.status)) ? str(r.status) : 'draft',
+    release_date: typeof r.release_date === 'string' && r.release_date ? r.release_date : null,
+    created_at: str(r.created_at, todayStr()),
+    track_count: tracks.length,
+    tracks,
+    draft: d && {
+      ...d,
+      type: str(d.type, 'single'), genre: str(d.genre), label: str(d.label), upc: str(d.upc), notes: str(d.notes),
+      coverName: str(d.coverName), territories: arr<string>(d.territories), platforms: arr<string>(d.platforms),
+      ownership: str(d.ownership), phonogram: str(d.phonogram), copyright: str(d.copyright),
+      rightsChecks: d.rightsChecks && typeof d.rightsChecks === 'object' ? d.rightsChecks : {},
+      draftTracks: d.draftTracks ? arr(d.draftTracks) : undefined,
+      history: arr<{ text: string; time: string }>(d.history).filter(h => h && typeof h.text === 'string'),
+    },
+  };
+}
+
 const db = createStore<ReleaseDetail[]>(() => structuredClone(SEED), {
   persist: 'mock.releases',
-  revive: (raw, fallback) => (Array.isArray(raw) ? raw as ReleaseDetail[] : fallback),
+  revive: (raw, fallback) => (Array.isArray(raw)
+    ? raw.map(normalizeRelease).filter((r): r is ReleaseDetail => !!r)
+    : fallback),
 });
 
 const summary = (d: ReleaseDetail): Release => ({
@@ -123,7 +159,7 @@ function sessionUser(s: Session): User {
 
 export const mockApi = {
   login: async (email: string, password: string): Promise<User> => {
-    await delay(450);
+    await delay(250);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ApiError('이메일 형식을 확인해 주세요.', 400);
     if (!password) throw new ApiError('비밀번호를 입력해 주세요.', 400);
     const s: Session = { email };
@@ -131,7 +167,7 @@ export const mockApi = {
     return sessionUser(s);
   },
   signup: async (email: string, password: string): Promise<User> => {
-    await delay(550);
+    await delay(300);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ApiError('이메일 형식을 확인해 주세요.', 400);
     if (password.length < 8) throw new ApiError('비밀번호는 8자 이상이어야 해요.', 400);
     const s: Session = { email };
@@ -139,33 +175,33 @@ export const mockApi = {
     return sessionUser(s);
   },
   logout: async (): Promise<void> => {
-    await delay(150);
+    await delay(0);
     removeKey(SESSION_KEY);
   },
   me: async (): Promise<User> => {
-    await delay(120);
+    await delay(0);
     const s = readJSON<Session | null>(SESSION_KEY, null);
     if (!s?.email) throw new ApiError('로그인이 필요해요.', 401);
     return sessionUser(s);
   },
   listOrgs: async (): Promise<Org[]> => {
-    await delay(80);
+    await delay(0);
     return mockOrgs;
   },
   listReleases: async (): Promise<Release[]> => {
-    await delay(320);
+    await delay(60);
     return db.get()
       .map(summary)
       .sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)));
   },
   getRelease: async (id: string): Promise<ReleaseDetail> => {
-    await delay(220);
+    await delay(40);
     const d = db.get().find(r => r.id === id);
     if (!d) throw new ApiError('발매를 찾을 수 없어요. 삭제됐거나 주소가 잘못됐을 수 있어요.', 404);
     return structuredClone(d);
   },
   saveDraft: async (id: string | null, data: ReleasePayload): Promise<Release> => {
-    await delay(160);
+    await delay(0);
     const existing = id ? db.get().find(r => r.id === id) : undefined;
     if (id && !existing) throw new ApiError('임시 저장을 찾을 수 없어요.', 404);
     // 이미 접수된 발매는 임시 저장으로 상태를 되돌리지 않는다
@@ -175,7 +211,7 @@ export const mockApi = {
     return summary(next);
   },
   submitRelease: async (id: string | null, data: ReleasePayload): Promise<Release> => {
-    await delay(600);
+    await delay(250);
     const existing = id ? db.get().find(r => r.id === id) : undefined;
     if (id && !existing) throw new ApiError('발매를 찾을 수 없어요.', 404);
     const prev = existing?.status ?? 'draft';
@@ -190,7 +226,7 @@ export const mockApi = {
     return summary(next);
   },
   deleteRelease: async (id: string): Promise<void> => {
-    await delay(260);
+    await delay(80);
     db.set(list => list.filter(r => r.id !== id));
   },
   /** 데모 데이터 초기화 */

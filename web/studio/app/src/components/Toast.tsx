@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { STORAGE_FAIL_EVENT } from '../lib/storage';
 
 type ToastTone = 'info' | 'success' | 'error';
 type ToastFn = (message: string, tone?: ToastTone) => void;
@@ -42,6 +43,22 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     });
     timers.current.set(id, window.setTimeout(() => dismiss(id), DURATION));
   }, [dismiss]);
+
+  // 브라우저 저장 공간 부족 등으로 저장이 실패하면 알림
+  useEffect(() => {
+    let last = 0;
+    const onFail = (e: Event) => {
+      const now = Date.now();
+      if (now - last < 5000) return; // 연속 실패 시 알림 폭주 방지
+      last = now;
+      const quota = (e as CustomEvent<{ quota: boolean }>).detail?.quota;
+      toast(quota
+        ? '브라우저 저장 공간이 부족해 변경 내용을 저장하지 못했어요. 사용하지 않는 발매나 커버 이미지를 정리해 주세요.'
+        : '변경 내용을 이 브라우저에 저장하지 못했어요. 개인정보 보호 모드인지 확인해 주세요.', 'error');
+    };
+    window.addEventListener(STORAGE_FAIL_EVENT, onFail);
+    return () => window.removeEventListener(STORAGE_FAIL_EVENT, onFail);
+  }, [toast]);
 
   useEffect(() => {
     const map = timers.current;

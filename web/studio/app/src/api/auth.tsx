@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { api, setCurrentOrg, type User, type Org } from './client';
+import { MOCK, api, setCurrentOrg, type User, type Org } from './client';
 
 interface AuthState {
   user: User | null;
@@ -43,6 +43,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [loadOrgs]);
+
+  // 다른 탭에서 로그아웃/로그인하면 이 탭도 따라간다 (목 모드 세션은 localStorage 공유)
+  useEffect(() => {
+    if (!MOCK) return;
+    const onStorage = (e: StorageEvent) => {
+      if (!e.key?.endsWith('mock.session')) return;
+      if (e.newValue == null) {
+        setUser(null);
+        setOrg(null);
+      } else {
+        api.me().then(async u => { setUser(u); await loadOrgs(); }).catch(() => {});
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [loadOrgs, setOrg]);
 
   const login = useCallback(async (email: string, password: string) => {
     const u = await api.login(email, password);

@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { useNavigate, useSearchParams } from '../lib/router';
 import { useToast } from '../components/Toast';
 import { Modal } from '../components/Modal';
 import { useConfirm } from '../components/Confirm';
@@ -833,21 +833,21 @@ function toPayload(form: WizardForm, step: number): ReleasePayload {
   };
 }
 
-// 미리보기용 썸네일 생성 (최대 600px JPEG) — 브라우저 저장소 용량을 넘지 않도록 원본 대신 저장
+// 미리보기용 썸네일 생성 (최대 480px JPEG, 보통 20~40KB) — 브라우저 저장소 용량을 넘지 않도록 원본 대신 저장
 function makeCoverThumbnail(file: File): Promise<{ data: string; width: number; height: number }> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
       URL.revokeObjectURL(url);
-      const max = 600;
+      const max = 480;
       const scale = Math.min(1, max / Math.max(img.width, img.height));
       const w = Math.max(1, Math.round(img.width * scale));
       const h = Math.max(1, Math.round(img.height * scale));
       const canvas = document.createElement('canvas');
       canvas.width = w; canvas.height = h;
       canvas.getContext('2d')?.drawImage(img, 0, 0, w, h);
-      resolve({ data: canvas.toDataURL('image/jpeg', 0.84), width: img.width, height: img.height });
+      resolve({ data: canvas.toDataURL('image/jpeg', 0.8), width: img.width, height: img.height });
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('이미지를 읽을 수 없어요.')); };
     img.src = url;
@@ -1069,6 +1069,13 @@ export function Upload() {
     saveChain.current = p;
     return p;
   }, [canAutoSave]);
+
+  // 화면을 떠날 때(뒤로 가기·메뉴 이동 등) 아직 저장 안 된 입력을 마지막으로 저장
+  const autoSaveRef = useRef(autoSave);
+  autoSaveRef.current = autoSave;
+  useEffect(() => () => {
+    if (dirtyRef.current && !submittingRef.current) void autoSaveRef.current();
+  }, []);
 
   // 입력이 멈추고 2초 뒤 조용히 자동 저장
   useEffect(() => {

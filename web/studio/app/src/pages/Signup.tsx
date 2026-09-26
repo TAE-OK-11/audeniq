@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useNavigate } from '../lib/router';
 import { useAuth } from '../api/auth';
 import { errorMessage } from '../api/errors';
 import { AuthLayout, PasswordInput } from '../components/AuthLayout';
