@@ -141,6 +141,7 @@ jobs:
           AUDENIQ_IMAGE: audeniq:test
           CLOUDFLARED_IMAGE: cloudflare/cloudflared:test
           APP_ORIGIN: https://studio.audeniq.test
+          PAYOUT_ACCOUNT_KEY: 0000000000000000000000000000000000000000000000000000000000000000
         run: |
           docker compose -f deploy/compose.production.yaml config --format json > /tmp/production.json
           jq -e '[.services[] | .ports // [] | length] | all(. == 0)' /tmp/production.json

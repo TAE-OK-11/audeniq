@@ -1346,7 +1346,8 @@ export function Upload() {
       const r = await api.submitRelease(draftIdRef.current, { ...payload, application });
       draftIdRef.current = r.id;
       dirtyRef.current = false;
-      ensureReleaseDocuments(form, r.id);
+      // 실서버는 계약서를 서버가 만든다 (알림·서류는 pushNotice가 새로 받게 한다)
+      if (MOCK) ensureReleaseDocuments(form, r.id);
       pushNotice({
         id: uid('n'), kind: '발매', time: stampNow(), link: `/releases/${r.id}`,
         title: editId && origStatus !== 'draft' ? `${r.title} 수정 내용이 접수됐어요.` : `${r.title} 발매 신청이 접수됐어요.`,

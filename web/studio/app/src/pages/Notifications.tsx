@@ -7,7 +7,7 @@ import { relativeTime } from '../lib/date';
 import { markAllNoticesRead, markNoticeRead, useNotices, useUnreadCount, type Notice } from '../store/support';
 
 function noticeSymbol(kind: string): string {
-  return kind === '지급' ? '₩' : kind === '발매' ? '♫' : kind === '서류' ? '▤' : '•';
+  return kind === '지급' ? '₩' : kind === '발매' ? '♫' : kind === '서류' ? '▤' : kind === '문의' ? '✉' : kind === '계정' ? '◎' : '•';
 }
 
 export function Notifications() {

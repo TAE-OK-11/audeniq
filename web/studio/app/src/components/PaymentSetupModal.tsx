@@ -7,6 +7,10 @@ import { setPayment, TYPE_LABEL, type PaymentInfo } from '../store/payment';
 import { getProfileSnapshot } from '../store/profile';
 import { stampNow } from '../lib/date';
 import { localStamp } from '../lib/format';
+import { MOCK } from '../lib/mode';
+import * as portal from '../api/portal';
+import { errorMessage } from '../api/errors';
+import { requestPortalRefresh } from '../store/portalSync';
 
 const FINANCIAL_INSTITUTIONS: Record<string, { label: string; note: string; items: string[] }> = {
   bank: {
@@ -89,6 +93,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
 
   const flowRef = useRef<HTMLDivElement>(null);
   const [registeredAt, setRegisteredAt] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     // 실제 스크롤 컨테이너(.modal-inner)를 위로 — window.scrollTo는 모달 안에서 무효
@@ -144,21 +149,36 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
     setStep(3);
   };
 
-  const nextFrom3 = () => {
+  const nextFrom3 = async () => {
     if (!agrees.every(Boolean)) {
       toast('필수 약관을 모두 확인해 주세요.');
       return;
     }
+    if (saving) return;
     const at = stampNow();
-    setRegisteredAt(localStamp(at));
-    setPayment({
+    const info = {
       recipient: draft.recipient,
       type: draft.type,
       bank: draft.bank,
       accountNumber: draft.account,
       last4: draft.last4,
       registeredAt: at,
-    });
+    };
+    if (!MOCK) {
+      // 실서버: 계좌번호 전체는 서버로만 보내고(암호화 저장) 화면에는 끝자리만 남긴다
+      setSaving(true);
+      try {
+        await portal.savePayoutAccount(info, draft.account);
+      } catch (err) {
+        toast(errorMessage(err, '계좌를 등록하지 못했어요. 잠시 후 다시 시도해 주세요.'));
+        return;
+      } finally {
+        setSaving(false);
+      }
+      requestPortalRefresh();
+    }
+    setRegisteredAt(localStamp(at));
+    setPayment(info);
     setDraft(d => ({ ...d, account: '' }));
     setStep(4);
   };
@@ -171,11 +191,12 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
   const allAgreed = agrees.every(Boolean);
   // 라이브: step2의 다음 버튼은 계좌번호·예금주가 모두 입력될 때까지 비활성화
   const step2Ready = !!draft.account.replace(/\D/g, '') && !!draft.recipient.trim();
-  const nextDisabled = step === 1 ? true : step === 2 ? !step2Ready : step === 3 ? !allAgreed : false;
+  const nextDisabled = saving || (step === 1 ? true : step === 2 ? !step2Ready : step === 3 ? !allAgreed : false);
 
   const actionLabel = step === 0 ? '다음으로'
     : step === 1 ? '금융기관을 선택해 주세요'
     : step === 2 ? '계좌 확인'
+    : saving ? '등록하는 중'
     : '동의하고 등록';
 
   return (

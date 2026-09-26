@@ -1,5 +1,6 @@
 // 아티스트 프로필 공유 스토어 — Profile(편집), Dashboard(인사말), SignatureModal(서명자 기본값)이 공유
 import { createStore } from '../lib/store';
+import { MOCK } from '../lib/mode';
 
 export interface ProfileInfo {
   name: string;
@@ -15,8 +16,8 @@ const INITIAL: ProfileInfo = {
   country: 'KR',
 };
 
-const store = createStore<ProfileInfo>(INITIAL, {
-  persist: 'profile',
+const store = createStore<ProfileInfo>(MOCK ? INITIAL : { name: '', email: '', bio: '', country: 'KR' }, {
+  persist: MOCK ? 'profile' : undefined,
   revive: (raw, fallback) => (raw && typeof raw === 'object' ? { ...fallback, ...(raw as Partial<ProfileInfo>) } : fallback),
 });
 

@@ -8,6 +8,76 @@ import { uid } from '../lib/store';
 import { api } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { ticketsStore, type Ticket } from '../store/tickets';
+import { MOCK } from '../lib/mode';
+import * as portal from '../api/portal';
+import { errorMessage } from '../api/errors';
+import { refreshTickets } from '../store/portalSync';
+
+/** 실서버 문의 대화 — 담당자 답변을 보고 이어서 묻거나 문의를 닫는다 */
+function TicketThread({ ticket, onClosed }: { ticket: Ticket; onClosed: () => void }) {
+  const toast = useToast();
+  const { data, loading, error, reload } = useAsync(() => portal.fetchInquiry(ticket.id), [ticket.id]);
+  const [reply, setReply] = useState('');
+  const [busy, setBusy] = useState(false);
+  const status = data?.ticket.status ?? ticket.status;
+
+  const send = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reply.trim() || busy) return;
+    setBusy(true);
+    try {
+      await portal.replyInquiry(ticket.id, reply.trim());
+      setReply('');
+      reload();
+      void refreshTickets();
+    } catch (err) {
+      toast(errorMessage(err, '메시지를 보내지 못했어요.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const close = async () => {
+    setBusy(true);
+    try {
+      await portal.closeInquiry(ticket.id);
+      await refreshTickets();
+      toast('문의를 종료했어요.');
+      onClosed();
+    } catch (err) {
+      toast(errorMessage(err, '문의를 종료하지 못했어요.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (loading && !data) return <p className="small muted">대화를 불러오는 중이에요…</p>;
+  if (error) return <button type="button" className="button secondary" onClick={reload}>다시 불러오기</button>;
+  return (
+    <>
+      <ol className="aq-thread">
+        {(data?.messages ?? []).map(m => (
+          <li key={m.id} className={m.from === 'staff' ? 'is-staff' : ''}>
+            <span className="aq-thread-who">{m.from === 'staff' ? 'AUDENIQ 담당자' : '나'} · {m.time}</span>
+            <p>{m.body}</p>
+          </li>
+        ))}
+      </ol>
+      {status !== '종료' ? (
+        <form onSubmit={send} className="aq-thread-reply">
+          <label htmlFor="tReply" className="sr-only">추가 메시지</label>
+          <textarea id="tReply" rows={3} maxLength={4000} value={reply} onChange={e => setReply(e.target.value)} placeholder="추가로 전할 내용을 입력해 주세요" />
+          <div className="row-actions">
+            <button type="button" className="button secondary" onClick={close} disabled={busy}>문의 종료</button>
+            <button type="submit" className="button" disabled={busy || !reply.trim()}>보내기</button>
+          </div>
+        </form>
+      ) : (
+        <div className="notice" style={{ marginTop: 16 }}>종료된 문의예요. 더 궁금한 점은 새 문의로 남겨 주세요.</div>
+      )}
+    </>
+  );
+}
 
 const CATEGORIES = ['발매·심사', '수정·테이크다운', '정산·지급', '계약·권리', '계정·기타'];
 
@@ -100,7 +170,7 @@ export function Inquiries() {
                 <span className="row-name">{t.subject}</span>
                 <span className="row-sub">{t.category} · {niceDate(t.created)} · {t.releaseTitle || '일반 문의'}</span>
               </span>
-              <span className={`status-chip ${t.status === '답변 완료' ? 'ready' : 'review'}`}>{t.status}</span>
+              <span className={`status-chip ${t.status === '답변 완료' ? 'ready' : t.status === '종료' ? 'draft' : 'review'}`}>{t.status}</span>
             </button>
           ))}
         </div>
@@ -115,7 +185,17 @@ export function Inquiries() {
       {showForm && (
         <Modal title="새 문의 작성" onClose={() => setShowForm(false)} dismissible={false}>
           <TicketForm
-            onSave={t => {
+            onSave={async t => {
+              if (!MOCK) {
+                try {
+                  await portal.createInquiry(t);
+                  await refreshTickets();
+                  toast('문의를 보냈어요. 답변이 오면 알림으로 알려 드릴게요.');
+                } catch (err) {
+                  toast(errorMessage(err, '문의를 보내지 못했어요. 잠시 후 다시 시도해 주세요.'));
+                }
+                return;
+              }
               ticketsStore.set(ts => [...ts, { ...t, id: uid('q'), created: todayStr(), status: '답변 대기' }]);
               toast('문의 내용을 저장했어요.');
             }}
@@ -126,6 +206,7 @@ export function Inquiries() {
       {openTicket && (
         <Modal title={openTicket.subject} onClose={() => setOpenId(null)}>
           <p className="small muted">{openTicket.category} · {niceDate(openTicket.created)} · {openTicket.releaseTitle || '일반 문의'}</p>
+          {!MOCK ? <TicketThread ticket={openTicket} onClosed={() => setOpenId(null)} /> : (<>
           <div className="document-body aq-ticket-body">{openTicket.body}</div>
           <div className="notice" style={{ marginTop: 20 }}>
             {openTicket.status === '답변 완료'
@@ -137,6 +218,7 @@ export function Inquiries() {
               문의 기록 삭제
             </button>
           </div>
+          </>)}
         </Modal>
       )}
     </div>

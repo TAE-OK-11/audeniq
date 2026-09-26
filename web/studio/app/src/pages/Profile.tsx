@@ -1,5 +1,5 @@
 // 아티스트 정보 — 라이브 view-profile 대응 (프로필 + 수령 정보)
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
 import { BankLogo } from '../components/BankLogo';
@@ -7,6 +7,8 @@ import { PaymentSetupModal } from '../components/PaymentSetupModal';
 import { setProfile, useProfile, type ProfileInfo } from '../store/profile';
 import { isPaymentRegistered, TYPE_LABEL, usePayment } from '../store/payment';
 import { MOCK } from '../api/client';
+import * as portal from '../api/portal';
+import { errorMessage } from '../api/errors';
 import { clearAll } from '../lib/storage';
 import { localStamp } from '../lib/format';
 
@@ -20,13 +22,16 @@ export function Profile() {
   const profile = useProfile();
   const payment = usePayment();
   const [draft, setDraft] = useState<ProfileInfo>(profile);
+  const [saving, setSaving] = useState(false);
+  // 실서버: 로그인 직후 서버에서 불러온 프로필을 입력칸에 반영
+  useEffect(() => { setDraft(profile); }, [profile]);
   const [showPayment, setShowPayment] = useState(false);
   const [emailError, setEmailError] = useState('');
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(profile);
   const setField = <K extends keyof ProfileInfo>(k: K, v: ProfileInfo[K]) => setDraft(d => ({ ...d, [k]: v }));
 
-  const saveProfile = (e: React.FormEvent) => {
+  const saveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     const next = { ...draft, name: draft.name.trim(), email: draft.email.trim(), bio: draft.bio.trim() };
     if (!next.name) { toast('활동명을 입력해 주세요.'); return; }
@@ -36,6 +41,17 @@ export function Profile() {
       return;
     }
     setEmailError('');
+    if (!MOCK) {
+      setSaving(true);
+      try {
+        await portal.saveProfile(next);
+      } catch (err) {
+        toast(errorMessage(err, '프로필을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'));
+        return;
+      } finally {
+        setSaving(false);
+      }
+    }
     setProfile(next);
     setDraft(next);
     toast('프로필을 저장했어요.');
@@ -114,8 +130,8 @@ export function Profile() {
             {dirty && (
               <button type="button" className="button secondary" onClick={() => setDraft(profile)}>되돌리기</button>
             )}
-            <button type="submit" className="button studio-submit-wide" disabled={!dirty}>
-              {dirty ? '프로필 저장' : '저장된 상태예요'}
+            <button type="submit" className={`button studio-submit-wide${saving ? ' is-busy' : ''}`} disabled={!dirty || saving}>
+              {saving ? '저장하는 중' : dirty ? '프로필 저장' : '저장된 상태예요'}
             </button>
           </div>
         </form>

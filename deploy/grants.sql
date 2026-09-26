@@ -24,6 +24,17 @@ GRANT SELECT ON distribution.validation_packages,distribution.verification_packa
 GRANT USAGE ON SCHEMA rights TO audeniq_api;
 GRANT SELECT,INSERT ON rights.review_overrides TO audeniq_api;
 GRANT SELECT,INSERT,UPDATE ON rights.override_requests TO audeniq_api;
+-- Studio portal (docs/API.md "Portal"): profile, payout account, inquiries,
+-- notifications, documents, signed applications, payout requests. Staff
+-- replies/approvals come from operations tooling, not this role. Finance is
+-- read-only for the API (balances, statements, reports); payout requests are
+-- turned into finance.payout_orders by operations.
+GRANT USAGE ON SCHEMA portal TO audeniq_api;
+GRANT SELECT,INSERT,UPDATE ON portal.artist_profiles,portal.payout_accounts,portal.inquiries,portal.documents TO audeniq_api;
+GRANT SELECT,INSERT ON portal.inquiry_messages,portal.notification_reads,portal.release_applications,portal.payout_requests TO audeniq_api;
+GRANT SELECT ON portal.notifications TO audeniq_api;
+GRANT USAGE ON SCHEMA finance TO audeniq_api;
+GRANT SELECT ON finance.ledger_transactions,finance.ledger_entries,finance.payout_orders,finance.royalty_reports,finance.report_lines,finance.finance_holds TO audeniq_api;
 -- Distribution pipeline schemas (F2/F4/F5/F7). The worker runs the job
 -- queues; the API never writes here (the roles test asserts 42501 for api
 -- inserts into distribution). The reconciler enumerates identity.orgs,

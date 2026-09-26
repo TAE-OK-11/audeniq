@@ -10,6 +10,8 @@ const src = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 // (저장소의 public/connected는 체험(목) 모드 빌드)
 const API_TARGET = process.env.AUDENIQ_API ?? 'http://127.0.0.1:8080';
 const SERVICE_SECRET = process.env.EDGE_SERVICE_SECRET;
+// 공지·이벤트는 운영에서 엣지 Worker(D1)가 서빙한다. 로컬에서는 `wrangler dev` 주소를 지정하면 그쪽으로 보낸다.
+const CONTENT_TARGET = process.env.EDGE_CONTENT_URL;
 
 export default defineConfig(({ command, mode }) => ({
   base: '/',
@@ -36,6 +38,7 @@ export default defineConfig(({ command, mode }) => ({
     // 로컬 백엔드 연동: 엣지 Worker처럼 서비스 비밀 헤더를 붙여 API로 전달한다.
     // 실행: EDGE_SERVICE_SECRET=... bun run dev:api  (APP_ORIGIN=http://localhost:5173)
     proxy: {
+      ...(CONTENT_TARGET ? { '^/api/(notices|events)': { target: CONTENT_TARGET, changeOrigin: true } } : {}),
       '/api': {
         target: API_TARGET,
         headers: SERVICE_SECRET ? { 'x-audeniq-service': SERVICE_SECRET } : undefined,

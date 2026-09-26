@@ -171,7 +171,8 @@ export interface ReleasePayload {
   application?: ApplicationRecord;
 }
 
-export type UploadKind = 'AUDIO' | 'IMAGE';
+/** DOCUMENT = 권리 증빙 (PDF 또는 스캔 이미지) */
+export type UploadKind = 'AUDIO' | 'IMAGE' | 'DOCUMENT';
 
 /** 임시 저장 결과 — 실서버는 새로 만든 트랙의 서버 ID를 함께 돌려준다 */
 export interface SaveResult extends Release {

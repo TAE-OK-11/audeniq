@@ -1,4 +1,8 @@
 import { useState } from 'react';
+import { MOCK } from '../lib/mode';
+import { fetchEvents } from '../api/portal';
+import { useAsync } from '../hooks/useAsync';
+import { SkeletonRows } from '../components/Skeleton';
 import { Modal } from '../components/Modal';
 
 interface AudenEvent {
@@ -18,8 +22,8 @@ const STATUS_LABEL: Record<AudenEvent['status'], string> = {
   ended: '종료',
 };
 
-// TODO: 백엔드 이벤트 API 연동 시 이 mock 데이터를 교체
-const EVENTS: AudenEvent[] = [
+// 체험 모드 이벤트 — 실서버는 엣지 Worker(D1)의 /api/events (진행 상태는 서버가 날짜로 계산)
+const EVENT_SEED: AudenEvent[] = [
   {
     id: 'ev1',
     title: 'AUDENIQ 런칭 기념 프로모션',
@@ -54,6 +58,13 @@ const EVENTS: AudenEvent[] = [
 export function Events() {
   const [selected, setSelected] = useState<AudenEvent | null>(null);
 
+  const { data, loading, error, reload } = useAsync(async (): Promise<AudenEvent[]> => (MOCK
+    ? EVENT_SEED
+    : (await fetchEvents()).map(e => ({
+      id: e.id, title: e.title, date: e.starts_on, endDate: e.ends_on ?? undefined, place: e.place || 'AUDENIQ STUDIO',
+      status: e.status === 'ongoing' ? 'ongoing' : e.status === 'upcoming' ? 'upcoming' : 'ended', summary: e.summary, body: e.body,
+    }))), []);
+  const EVENTS = data ?? [];
   const featured = EVENTS.find(e => e.status === 'ongoing')
     ?? EVENTS.find(e => e.status === 'upcoming')
     ?? null;
@@ -68,6 +79,16 @@ export function Events() {
           <p>진행 중인 이벤트와 지난 소식을 확인해 보세요.</p>
         </div>
       </div>
+
+      {loading && !data ? <SkeletonRows count={3} /> : error ? (
+        <div className="empty-page">
+          <h2>이벤트를 불러오지 못했어요.</h2>
+          <p>{error}</p>
+          <button type="button" className="button secondary" onClick={reload}>다시 불러오기</button>
+        </div>
+      ) : !EVENTS.length ? (
+        <div className="empty-page"><h2>진행 중인 이벤트가 없어요.</h2><p>새 이벤트가 열리면 이곳에서 알려 드릴게요.</p></div>
+      ) : null}
 
       {featured && (
         <button type="button" className="aq-event-hero" onClick={() => setSelected(featured)}>

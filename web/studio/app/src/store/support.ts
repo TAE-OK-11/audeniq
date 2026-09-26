@@ -1,5 +1,7 @@
 // 알림 공유 스토어 — Notifications(목록), Dashboard/Layout(읽지 않은 수)가 공유
 import { createStore } from '../lib/store';
+import { MOCK } from '../lib/mode';
+import { markNotifications } from '../api/portal';
 
 export interface Notice {
   id: string;
@@ -18,8 +20,8 @@ const INITIAL_NOTICES: Notice[] = [
   { id: 'n3', kind: '지급', title: '2026년 8월 정산이 확정됐어요.', detail: '2026년 8월 정산 ₩24,406이 확정됐어요. 지급 요청은 정산·지급 화면에서 할 수 있어요.', time: '2026-09-10 10:00', read: true, link: '/settlement' },
 ];
 
-const store = createStore<Notice[]>(INITIAL_NOTICES, {
-  persist: 'notifications',
+const store = createStore<Notice[]>(MOCK ? INITIAL_NOTICES : [], {
+  persist: MOCK ? 'notifications' : undefined,
   revive: (raw, fallback) => (Array.isArray(raw)
     ? (raw as Notice[]).filter(n => n && typeof n.id === 'string' && typeof n.title === 'string')
       .map(n => ({ ...n, kind: String(n.kind ?? ''), detail: String(n.detail ?? ''), time: String(n.time ?? ''), read: !!n.read }))
@@ -27,19 +29,28 @@ const store = createStore<Notice[]>(INITIAL_NOTICES, {
 });
 
 export const useNotices = store.use;
+export const noticesStore = store;
 
 export function useUnreadCount(): number {
   return store.use().filter(n => !n.read).length;
 }
 
 export function markNoticeRead(id: string) {
-  store.set(list => (list.some(n => n.id === id && !n.read) ? list.map(n => (n.id === id ? { ...n, read: true } : n)) : list));
+  const unread = store.get().some(n => n.id === id && !n.read);
+  store.set(list => (unread ? list.map(n => (n.id === id ? { ...n, read: true } : n)) : list));
+  if (!MOCK && unread) void markNotifications([id]).catch(() => {});
 }
 
 export function markAllNoticesRead() {
   store.set(list => list.map(n => (n.read ? n : { ...n, read: true })));
+  if (!MOCK) void markNotifications('all').catch(() => {});
 }
 
+/** 화면에서 만든 알림 — 실서버에서는 서버가 알림을 만들므로 새로 받기만 한다 */
 export function pushNotice(n: Omit<Notice, 'read'>) {
+  if (!MOCK) {
+    window.dispatchEvent(new Event('aq:portal-refresh'));
+    return;
+  }
   store.set(list => [{ ...n, read: false }, ...list]);
 }

@@ -1,6 +1,10 @@
 // 권리·보완 서류 — 라이브 view-rights / renderRights / openRequiredDocForm 대응
 import { useState } from 'react';
 import { addDoc, useDocs, type DocRecord } from '../store/docs';
+import { MOCK } from '../lib/mode';
+import * as portal from '../api/portal';
+import { errorMessage } from '../api/errors';
+import { refreshDocs } from '../store/portalSync';
 import { DocCard, DocEmpty } from '../components/DocCard';
 import { DocumentModal } from '../components/DocumentModal';
 import { SignatureModal } from '../components/SignatureModal';
@@ -88,7 +92,13 @@ export function Rights() {
         localSignatureData: '',
         localSignatureAt: '',
       };
-      addDoc(c);
+      if (!MOCK) {
+        if (file && !/\.(pdf|jpe?g|png)$/i.test(file.name)) { toast('서류는 PDF, JPG, PNG 파일로 올려 주세요.'); return; }
+        c.id = await portal.createDocument(r.id, c.title, c.content, file);
+        await refreshDocs();
+      } else {
+        addDoc(c);
+      }
       setFormOpen(false);
       setReleaseId('');
       setKind(REQUIRED_DOCS[0][0]);
@@ -96,8 +106,8 @@ export function Rights() {
       setFile(null);
       // 라이브: 접수 후 바로 문서 모달을 연다
       setOpenId(c.id);
-    } catch {
-      toast('원본을 첨부할 수 없어요.');
+    } catch (err) {
+      toast(MOCK ? '원본을 첨부할 수 없어요.' : errorMessage(err, '서류를 등록하지 못했어요. 잠시 후 다시 시도해 주세요.'));
     } finally {
       setSubmitting(false);
     }

@@ -26,6 +26,8 @@ pub struct CompleteInput {
 pub const MAX_AUDIO_BYTES: i64 = 512 * 1024 * 1024;
 /// Largest accepted cover-art image (20 MiB).
 pub const MAX_IMAGE_BYTES: i64 = 20 * 1024 * 1024;
+/// Rights proof documents (PDF or scanned image).
+pub const MAX_DOCUMENT_BYTES: i64 = 20 * 1024 * 1024;
 
 /// Container the declared (kind, content type) pair promises, or `None` when
 /// the pair is not accepted at all. Upload completion sniffs the real bytes
@@ -37,6 +39,10 @@ pub fn expected_container(kind: &str, content_type: &str) -> Option<&'static str
         ("AUDIO", "audio/flac") => Some("FLAC"),
         ("IMAGE", "image/jpeg") => Some("JPEG"),
         ("IMAGE", "image/png") => Some("PNG"),
+        // Rights proofs (licences, consent letters): PDF or a scan.
+        ("DOCUMENT", "application/pdf") => Some("PDF"),
+        ("DOCUMENT", "image/jpeg") => Some("JPEG"),
+        ("DOCUMENT", "image/png") => Some("PNG"),
         _ => None,
     }
 }
@@ -48,17 +54,13 @@ pub async fn issue(s: &AppState, a: &Actor, org: Uuid, i: UploadInput) -> Result
     if i.size_bytes < 1 {
         return Err(Error::InvalidCode("UPLOAD_EMPTY"));
     }
-    let max = if i.kind == "IMAGE" {
-        MAX_IMAGE_BYTES
-    } else {
-        MAX_AUDIO_BYTES
+    let (max, too_large) = match i.kind.as_str() {
+        "IMAGE" => (MAX_IMAGE_BYTES, "UPLOAD_IMAGE_TOO_LARGE"),
+        "DOCUMENT" => (MAX_DOCUMENT_BYTES, "UPLOAD_DOCUMENT_TOO_LARGE"),
+        _ => (MAX_AUDIO_BYTES, "UPLOAD_AUDIO_TOO_LARGE"),
     };
     if i.size_bytes > max {
-        return Err(Error::InvalidCode(if i.kind == "IMAGE" {
-            "UPLOAD_IMAGE_TOO_LARGE"
-        } else {
-            "UPLOAD_AUDIO_TOO_LARGE"
-        }));
+        return Err(Error::InvalidCode(too_large));
     }
     auth::rate(&s.pool, &format!("uploads:{}", a.user), 60).await?;
     let mut tx = s.pool.begin().await?;

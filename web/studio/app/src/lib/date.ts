@@ -55,3 +55,11 @@ export function relativeTime(v: unknown, now: Date = new Date()): string {
   if (diff < 86400 * 7) return `${Math.floor(diff / 86400)}일 전`;
   return todayStr(d);
 }
+
+/** ISO 시각(UTC) → 한국 날짜 'YYYY-MM-DD' (공지 게시일 표기용) */
+export function toKstDate(iso: string): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return iso.slice(0, 10);
+  const d = new Date(t + 9 * 3_600_000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}

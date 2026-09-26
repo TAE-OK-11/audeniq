@@ -23,7 +23,7 @@ EDGE_SERVICE_SECRET=... bun run dev:api  # 로컬 API(127.0.0.1:8080)와 연결�
 
 ## 데이터 모드
 - 기본(`VITE_MOCK` 미설정): 브라우저 저장소(`localStorage`, 키 `aq.studio.v2.*`)에 발매·서류·정산·문의가 저장돼 새로고침 후에도 유지됩니다. 아티스트 정보 화면 하단에서 초기화할 수 있습니다.
-- 서버 연결(`--mode edge` 또는 `VITE_MOCK=false`): `api/remote.ts`가 같은 출처의 `/api/*`를 호출하고, 엣지 Worker(`crates/edge`)가 Workers VPC → Cloudflare Tunnel → 메인 서버로 전달합니다. 로그인·회원가입, 발매 임시 저장·수정·삭제, 트랙 동기화, 음원·커버 R2 직접 업로드, 사전 점검·동의·접수가 서버를 씁니다. 서명·정산·문의·서류 등은 아직 로컬 저장소 기반입니다. 배포 흐름은 `docs/STUDIO_DEPLOYMENT.md` 참고.
+- 서버 연결(`--mode edge` 또는 `VITE_MOCK=false`): `api/remote.ts`가 같은 출처의 `/api/*`를 호출하고, 엣지 Worker(`crates/edge`)가 Workers VPC → Cloudflare Tunnel → 메인 서버로 전달합니다. 로그인·회원가입, 발매 임시 저장·수정·삭제, 트랙 동기화, 음원·커버 R2 직접 업로드, 사전 점검·동의·접수·서명 신청서, 아티스트 정보, 수령 계좌, 문의(담당자 답변), 알림, 계약서 확인·서명, 권리 증빙 제출, 정산(원장)·지급 요청, 리포트가 모두 서버를 씁니다(`api/portal.ts`, `store/portalSync.ts`). 공지·이벤트는 엣지 Worker가 D1에서 서빙합니다. 실서버 모드의 스토어는 로그인 후 서버에서 채우고 브라우저 저장소에 남기지 않습니다. 배포 흐름은 `docs/STUDIO_DEPLOYMENT.md` 참고.
 - 서버 모드 제약: 비밀번호 12자 이상, 음원 WAV·FLAC(최대 512MB), 커버 JPG·PNG(최대 20MB), 미성년 발매 접수는 서버의 법정대리인 절차가 준비될 때까지 보류.
 
 ## 구조

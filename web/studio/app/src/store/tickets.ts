@@ -1,5 +1,6 @@
 // 문의 기록 스토어
 import { createStore } from '../lib/store';
+import { MOCK } from '../lib/mode';
 
 export interface Ticket {
   id: string; category: string; releaseId: string; releaseTitle: string;
@@ -11,8 +12,8 @@ const INITIAL_TICKETS: Ticket[] = [
   { id: 'q2', category: '정산·지급', releaseId: '', releaseTitle: '', subject: '정산 금액 확인 요청', body: '2026년 8월 정산 금액의 상세 내역을 확인하고 싶어요.', created: '2026-09-21', status: '답변 대기' },
 ];
 
-export const ticketsStore = createStore<Ticket[]>(INITIAL_TICKETS, {
-  persist: 'tickets',
+export const ticketsStore = createStore<Ticket[]>(MOCK ? INITIAL_TICKETS : [], {
+  persist: MOCK ? 'tickets' : undefined,
   revive: (raw, fb) => (Array.isArray(raw)
     ? (raw as Ticket[]).filter(t => t && typeof t.id === 'string')
       .map(t => ({ ...t, subject: String(t.subject ?? ''), body: String(t.body ?? ''), created: String(t.created ?? ''), releaseTitle: String(t.releaseTitle ?? ''), status: String(t.status ?? '답변 대기'), category: String(t.category ?? '') }))

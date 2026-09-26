@@ -2,6 +2,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Modal } from './Modal';
 import { useNavigate } from '../lib/router';
+import { MOCK } from '../lib/mode';
+import * as portal from '../api/portal';
+import { errorMessage } from '../api/errors';
+import { refreshDocs } from '../store/portalSync';
 import { useToast } from './Toast';
 import { updateDoc, type DocRecord } from '../store/docs';
 import { fileSize, localStamp } from '../lib/format';
@@ -67,6 +71,7 @@ export function DocumentModal({
 }) {
   const toast = useToast();
   const nav = useNavigate();
+  const [sending, setSending] = useState(false);
   const [confirmed, setConfirmed] = useState(!!doc.checkedAt);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const downloadUrlRef = useRef<string>('');
@@ -83,8 +88,19 @@ export function DocumentModal({
   const versions = doc.consentHistory.filter(x => x.action === '내용 확인');
   const stages = buildStages(doc);
 
-  const confirmSave = () => {
+  const confirmSave = async () => {
     if (!confirmed) { toast('문서 내용을 확인해 주세요.'); return; }
+    if (!MOCK) {
+      try {
+        if (!doc.checkedAt) await portal.checkDocument(doc.id);
+        await refreshDocs();
+        onClose();
+        toast('문서 확인 기록을 저장했어요.');
+      } catch (err) {
+        toast(errorMessage(err, '확인 기록을 저장하지 못했어요.'));
+      }
+      return;
+    }
     if (!doc.checkedAt) {
       const at = stampNow();
       updateDoc(doc.id, {
@@ -97,7 +113,28 @@ export function DocumentModal({
     toast('문서 확인 기록을 저장했어요.');
   };
 
-  const submitReview = () => {
+  const submitReview = async () => {
+    if (!MOCK) {
+      // 실서버: 확인 기록 → (권리 서류) 원본 업로드 후 검토 요청. 계약서는 담당자 검토가 자동으로 시작된다.
+      if (!doc.checkedAt && !confirmed) { toast('문서 내용을 확인했다고 체크해 주세요.'); return; }
+      if (doc.kind === 'rights' && !pendingFile && !doc.fileName) { toast('요청된 증빙 서류를 첨부해 주세요.'); return; }
+      if (pendingFile && !/\.(pdf|jpe?g|png)$/i.test(pendingFile.name)) { toast('서류는 PDF, JPG, PNG 파일로 올려 주세요.'); return; }
+      if (['review', 'prepared', 'approved'].includes(doc.reviewStatus) && !pendingFile) { toast('이미 검토 요청된 문서예요.', 'info'); return; }
+      setSending(true);
+      try {
+        let rv = doc.rowVersion ?? 0;
+        if (!doc.checkedAt) rv = await portal.checkDocument(doc.id);
+        if (pendingFile && doc.kind === 'rights') await portal.submitProof(doc.id, pendingFile, rv);
+        await refreshDocs();
+        onClose();
+        toast(doc.kind === 'rights' ? '서류를 제출했어요. 검토가 끝나면 알려 드릴게요.' : '문서 확인 기록을 저장했어요.');
+      } catch (err) {
+        toast(errorMessage(err, '서류를 제출하지 못했어요. 잠시 후 다시 시도해 주세요.'));
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
     let base: Partial<DocRecord> = {};
     let history = doc.reviewHistory;
     let fileName = doc.fileName;
@@ -250,7 +287,7 @@ export function DocumentModal({
 
       <div className="doc-actions">
         <button id="aqDocConfirm" type="button" className="button" onClick={confirmSave}>확인 및 저장</button>
-        <button id="aqDocSubmit" type="button" className="button secondary" onClick={submitReview}>검토 요청</button>
+        <button id="aqDocSubmit" type="button" className="button secondary" onClick={submitReview} disabled={sending}>{sending ? '제출하는 중' : '검토 요청'}</button>
         {doc.fileName && (
           <button id="aqDocDownload" type="button" className="button secondary" onClick={download}>원본 열기</button>
         )}

@@ -1,4 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { MOCK } from '../lib/mode';
+import { fetchNotices } from '../api/portal';
+import { useAsync } from '../hooks/useAsync';
+import { SkeletonRows } from '../components/Skeleton';
+import { toKstDate } from '../lib/date';
 
 interface Notice {
   id: string;
@@ -8,7 +13,7 @@ interface Notice {
   body: string;
 }
 
-// TODO: 백엔드 공지사항 API 연동 시 이 mock 데이터를 교체
+// 체험 모드 공지 — 실서버는 엣지 Worker(D1)의 /api/notices
 const NOTICES: Notice[] = [
   {
     id: 'n1',
@@ -32,9 +37,14 @@ const NOTICES: Notice[] = [
 ];
 
 export function Notices() {
-  const [openId, setOpenId] = useState<string | null>(NOTICES[0]?.id ?? null);
+  const { data, loading, error, reload } = useAsync(async (): Promise<Notice[]> => (MOCK
+    ? NOTICES
+    : (await fetchNotices()).map(n => ({ id: n.id, title: n.title, body: n.body, pinned: n.pinned, date: toKstDate(n.published_at) }))), []);
+  const list = data ?? [];
+  const [openId, setOpenId] = useState<string | null>(null);
+  useEffect(() => { if (list[0] && openId === null) setOpenId(list.find(n => n.pinned)?.id ?? list[0].id); }, [list, openId]);
 
-  const ordered = NOTICES.slice().sort((a, b) => {
+  const ordered = list.slice().sort((a, b) => {
     if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
     return b.date.localeCompare(a.date);
   });
@@ -50,6 +60,16 @@ export function Notices() {
           <p>꼭 알아야 할 소식과 업데이트를 전해 드려요.</p>
         </div>
       </div>
+
+      {loading && !data ? <SkeletonRows count={3} /> : error ? (
+        <div className="empty-page">
+          <h2>공지사항을 불러오지 못했어요.</h2>
+          <p>{error}</p>
+          <button type="button" className="button secondary" onClick={reload}>다시 불러오기</button>
+        </div>
+      ) : !list.length ? (
+        <div className="empty-page"><h2>등록된 공지가 없어요.</h2><p>새 소식이 생기면 이곳에서 알려 드릴게요.</p></div>
+      ) : null}
 
       {pinned.length > 0 && (
         <>

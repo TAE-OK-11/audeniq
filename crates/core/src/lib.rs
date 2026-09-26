@@ -22,6 +22,7 @@ pub mod mockdsp;
 pub mod operations;
 pub mod packages;
 pub mod partner_onboarding;
+pub mod portal;
 pub mod preflight;
 pub mod preparation_model;
 pub mod protected_admin;
