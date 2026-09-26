@@ -248,7 +248,7 @@ export default {
     if (r) return handleContent(request, env, r);
     // /api/* 중 D1 콘텐츠가 아니면 테스트 백엔드로 프록시
     if (url.pathname.startsWith('/api/')) {
-      const backend = 'http://[2001:19f0:5401:1a3e:5400:06ff:febd:db59]:8080';
+      const backend = 'http://172.237.7.91:8080';
       const backendUrl = backend + url.pathname + url.search;
       const proxyReq = new Request(backendUrl, request);
       try {
