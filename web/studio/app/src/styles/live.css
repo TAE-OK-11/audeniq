@@ -1106,3 +1106,6 @@ body.aq-nav-locked #portalNav{
 .modal{overflow-y:auto!important}
 .modal-inner{margin-top:auto!important;margin-bottom:auto!important;flex-shrink:0!important}
 
+
+/* 날짜가 시간 중간에서 잘리지 않도록 (예: "9:00:"/"00" 분리 방지) */
+.information dd{overflow-wrap:break-word!important;word-break:keep-all!important}
