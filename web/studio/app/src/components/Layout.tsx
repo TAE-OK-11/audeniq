@@ -3,7 +3,20 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../api/auth';
 import type { ReactNode } from 'react';
 
-// 라이브 HTML의 portalNav와 동일한 구조
+// 라우트 변경 시 view 진입 애니메이션만 재시작 (children remount 없음 → useEffect/API 재실행 방지)
+function ViewEnter({ pathname, children }: { pathname: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const first = useRef(true);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (first.current) { first.current = false; return; } // 첫 마운트는 CSS가 자동 재생
+    el.classList.remove('view-enter');
+    void el.offsetWidth; // reflow로 애니메이션 리트리거
+    el.classList.add('view-enter');
+  }, [pathname]);
+  return <div ref={ref} className="view-enter">{children}</div>;
+}
 const NAV_GROUPS: { group: string; items: { to: string; label: string }[] }[] = [
   {
     group: '내 작업실',
@@ -152,10 +165,9 @@ export function Layout({ children }: { children: ReactNode }) {
       </header>
 
       <main className="portal-layout" id="main">
-        {/* 라우트 변경 시에만 view 진입 애니메이션 재생 (리렌더에는 재생 안 됨) */}
-        <div key={loc.pathname} className="view-enter">
+        <ViewEnter pathname={loc.pathname}>
           {children}
-        </div>
+        </ViewEnter>
       </main>
     </>
   );

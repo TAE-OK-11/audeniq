@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useToast } from '../components/Toast';
 import { useProgressFill } from '../hooks/useAnimations';
@@ -516,9 +516,8 @@ function OptionsSection({ form, set }: {
           guardianName={o.guardian}
           onClose={() => setShowGuardianModal(false)}
           onComplete={(certName, certMethod) => {
-            setOpt('guardianConsentDone', true);
-            setOpt('familyCertName', certName);
-            setOpt('familyCertMethod', certMethod);
+            // 단일 업데이트로 통합 — 연속 setOpt는 stale closure로 마지막만 남음
+            set('options', { ...o, guardianConsentDone: true, familyCertName: certName, familyCertMethod: certMethod });
             setShowGuardianModal(false);
           }}
         />
@@ -735,6 +734,103 @@ function FinalReviewBanner({ form }: { form: WizardForm }) {
   );
 }
 
+// 트랙 입력 행 — memo로 감싸 한 곡 입력 시 다른 곡이 리렌더되지 않도록 분리
+const TrackEditor = memo(function TrackEditor({
+  track: t, index: i, expanded, canDelete,
+  onToggleExpand, onDeleteTrack, setTrack, onTrackAudio,
+}: {
+  track: Track; index: number; expanded: boolean; canDelete: boolean;
+  onToggleExpand: (id: string) => void; onDeleteTrack: (id: string) => void;
+  setTrack: (id: string, key: keyof Track, value: string | boolean | number) => void;
+  onTrackAudio: (id: string, e: React.ChangeEvent<HTMLInputElement>) => void;
+}) {
+  return (
+    <article className="track-editor">
+      <div className="minor-actions">
+        <h3>트랙 {i + 1}</h3>
+        {canDelete && (
+          <button type="button" className="link-btn" onClick={() => onDeleteTrack(t.id)}>삭제</button>
+        )}
+      </div>
+      <div className="field track-title-field">
+        <label htmlFor={`tr-${i}-title`}>곡 제목 <span className="required">*</span></label>
+        <input id={`tr-${i}-title`} value={t.title} onChange={e => setTrack(t.id, 'title', e.target.value)} placeholder="곡명을 입력해" maxLength={200} />
+      </div>
+      <div className="field">
+        <label htmlFor={`tr-${i}-composers`}>작곡 <span className="required">*</span></label>
+        <input id={`tr-${i}-composers`} value={t.composers} onChange={e => setTrack(t.id, 'composers', e.target.value)} placeholder="참여자 이름을 쉼표로 구분" maxLength={200} />
+      </div>
+      <div className="field">
+        <label htmlFor={`trackFile-${i}`}>음원 파일 <span className="required">*</span></label>
+        <input
+          type="file" id={`trackFile-${i}`}
+          accept="audio/wav,audio/x-wav,audio/flac,audio/aiff,audio/x-aiff,audio/mpeg,audio/mp4,audio/*"
+          onChange={e => onTrackAudio(t.id, e)}
+        />
+        <p className="help" id={`audioLabel-${i}`}>
+          {t.audioName ? `${t.audioName}${t.audioSize ? ` · ${Math.round(t.audioSize / 1024 / 1024 * 100) / 100}MB` : ''}` : '선택한 파일 없음'}. 권장: 무손실 WAV/FLAC 파일, 최종 QC 후 송출.
+        </p>
+      </div>
+      <div className="track-duration-label" aria-live="polite">
+        {t.duration ? `곡 길이 · ${t.duration}` : '음원을 선택하면 곡 길이를 자동으로 확인해요.'}
+      </div>
+      <button
+        type="button" className="track-detail-toggle"
+        onClick={() => onToggleExpand(t.id)}
+        aria-expanded={expanded}
+      >
+        <span>상세 정보 {t.isrc ? `· ${t.isrc}` : ''}</span>
+        <span className={`toggle-arrow${expanded ? ' open' : ''}`}>›</span>
+      </button>
+      {expanded && (
+        <div className="track-detail-body">
+          <div className="form-grid">
+            <div className="field">
+              <label htmlFor={`tr-${i}-version`}>버전 / 부제</label>
+              <input id={`tr-${i}-version`} value={t.version} onChange={e => setTrack(t.id, 'version', e.target.value)} placeholder="예: Acoustic Version" maxLength={200} />
+            </div>
+            <div className="field">
+              <label htmlFor={`tr-${i}-isrc`}>ISRC (보유 시)</label>
+              <input id={`tr-${i}-isrc`} value={t.isrc} onChange={e => setTrack(t.id, 'isrc', e.target.value)} placeholder="예: KR-ABC-26-00001" maxLength={200} />
+            </div>
+            <div className="field">
+              <label htmlFor={`tr-${i}-lyricists`}>작사</label>
+              <input id={`tr-${i}-lyricists`} value={t.lyricists} onChange={e => setTrack(t.id, 'lyricists', e.target.value)} placeholder="가사가 없는 곡이라면 비워둬" maxLength={200} />
+            </div>
+            <div className="field">
+              <label htmlFor={`tr-${i}-arrangers`}>편곡</label>
+              <input id={`tr-${i}-arrangers`} value={t.arrangers} onChange={e => setTrack(t.id, 'arrangers', e.target.value)} placeholder="참여자 이름" maxLength={200} />
+            </div>
+            <div className="field">
+              <label htmlFor={`tr-${i}-performers`}>실연자 / 피처링</label>
+              <input id={`tr-${i}-performers`} value={t.performers} onChange={e => setTrack(t.id, 'performers', e.target.value)} placeholder="참여자 이름" maxLength={200} />
+            </div>
+            <div className="field">
+              <label htmlFor={`tr-${i}-producer`}>프로듀서</label>
+              <input id={`tr-${i}-producer`} value={t.producer} onChange={e => setTrack(t.id, 'producer', e.target.value)} placeholder="프로듀서 이름" maxLength={200} />
+            </div>
+          </div>
+          <div className="field">
+            <label htmlFor={`tr-${i}-lyrics`}>가사 전문</label>
+            <textarea
+              id={`tr-${i}-lyrics`} value={t.lyrics}
+              onChange={e => setTrack(t.id, 'lyrics', e.target.value)}
+              rows={4} maxLength={10000} placeholder="가사 전체를 입력해 주세요"
+            />
+          </div>
+          <label className="check-line">
+            <input
+              type="checkbox" checked={t.explicit}
+              onChange={e => setTrack(t.id, 'explicit', e.target.checked)}
+            />
+            <span>청소년 이용불가 / Explicit 가사가 포함돼요.</span>
+          </label>
+        </div>
+      )}
+    </article>
+  );
+});
+
 export function Upload() {
   const nav = useNavigate();
   const toast = useToast();
@@ -744,10 +840,58 @@ export function Upload() {
   const [form, setForm] = useState<WizardForm>(EMPTY);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [draftId, setDraftId] = useState<string | null>(null);
+  // 중복 제출 방지용 ref (비동기 경계에서도 동작)
+  const submittingRef = useRef(false);
   const [loadingEdit, setLoadingEdit] = useState(!!editId);
   const [expandedTracks, setExpandedTracks] = useState<Set<string>>(new Set());
+  // 최신 form/draftId를 비동기 콜백에서 참조하기 위한 ref (stale closure 방지)
+  const formRef = useRef(form);
+  formRef.current = form;
+  const draftIdRef = useRef<string | null>(null);
+
+  const toggleTrackExpand = useCallback((id: string) => {
+    setExpandedTracks(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const deleteTrack = useCallback((id: string) => {
+    setForm(f => (f.tracks.length > 1 ? { ...f, tracks: f.tracks.filter(x => x.id !== id) } : f));
+  }, []);
   const coverInputRef = useRef<HTMLInputElement>(null);
+  // 커버 원본 File은 ref에 보관 (state에 수 MB base64를 들고 있으면 매 입력마다 전체 리렌더가 무거워짐)
+  const coverFileRef = useRef<File | null>(null);
+
+  // 미리보기용 썸네일 생성 (최대 480px JPEG) — 원본은 coverFileRef에 보관
+  const makeCoverThumbnail = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const max = 480;
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d')?.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.82));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('이미지 로드 실패')); };
+      img.src = url;
+    });
+
+  const readFileAsDataURL = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error('파일 읽기 실패'));
+      reader.readAsDataURL(file);
+    });
   const progressRef = useProgressFill(step);
 
   // 수정 모드: 기존 발매 데이터를 불러와 폼에 채움
@@ -757,7 +901,7 @@ export function Upload() {
     mockApi.getRelease(editId).then(rel => {
       if (cancelled) return;
       const d = rel.draft;
-      setDraftId(rel.id);
+      draftIdRef.current = rel.id;
       setForm(f => ({
         ...f,
         artist: d?.artist || rel.artist || '',
@@ -817,18 +961,19 @@ export function Upload() {
     return () => document.body.classList.remove('wizard-mode');
   }, []);
 
-  // 과거 발매 예정일이 저장돼 있으면 비움
+  // 과거 발매 예정일이 저장돼 있으면 비움 (수정 모드에서는 기존 발매일 유지)
   useEffect(() => {
+    if (editId) return;
     if (form.releaseDate && form.releaseDate < todayStr()) {
       setForm(f => ({ ...f, releaseDate: '' }));
     }
-  }, [form.releaseDate]);
+  }, [form.releaseDate, editId]);
 
-  const set = <K extends keyof WizardForm>(key: K, value: WizardForm[K]) =>
-    setForm(f => ({ ...f, [key]: value }));
+  const set = useCallback(<K extends keyof WizardForm>(key: K, value: WizardForm[K]) =>
+    setForm(f => ({ ...f, [key]: value })), []);
 
-  const setTrack = (id: string, key: keyof Track, value: string | boolean | number) =>
-    setForm(f => ({ ...f, tracks: f.tracks.map(t => (t.id === id ? { ...t, [key]: value } : t)) }));
+  const setTrack = useCallback((id: string, key: keyof Track, value: string | boolean | number) =>
+    setForm(f => ({ ...f, tracks: f.tracks.map(t => (t.id === id ? { ...t, [key]: value } : t)) })), []);
 
   const fail = (msg: string, sel: string | null): boolean => {
     setError(msg);
@@ -943,31 +1088,38 @@ export function Upload() {
   };
 
   // 자동 임시 저장 (조용히, 토스트 없음)
-  const autoSave = async () => {
+  // formRef로 최신 form을 참조해 stale closure 방지 (비동기 콜백에서 호출돼도 최신 값 저장)
+  const autoSave = useCallback(async () => {
     try {
+      const f = formRef.current;
       const data = {
-        title: form.title.trim() || '제목 없음',
-        release_date: form.releaseDate || '',
+        title: f.title.trim() || '제목 없음',
+        release_date: f.releaseDate || '',
       };
-      if (draftId) {
-        await mockApi.updateRelease(draftId, data);
+      if (draftIdRef.current) {
+        await mockApi.updateRelease(draftIdRef.current, data);
       } else {
         const r = await mockApi.createRelease(data);
-        setDraftId(r.id);
+        draftIdRef.current = r.id;
       }
     } catch {
       // 자동 저장 실패는 조용히 무시
     }
-  };
+  }, []);
 
   const next = async () => {
     if (!validate()) return;
     // 단계 넘어갈 때 자동 임시 저장
     await autoSave();
     if (step === STEPS.length - 1) {
-      if (submitting) return;
+      // ref 기반 가드 — 클로저의 submitting은 await autoSave() 뒤 연속 클릭에서 중복 제출을 못 막음
+      if (submittingRef.current) return;
+      submittingRef.current = true;
       setSubmitting(true);
       try {
+        // 제출 시점에 원본 커버를 읽어 payload에 포함 (state에는 썸네일만 보관)
+        const coverFile = coverFileRef.current;
+        const coverDataFull = coverFile ? await readFileAsDataURL(coverFile) : form.coverData;
         const payload = {
           title: form.title.trim(),
           artist: form.artist.trim(),
@@ -979,7 +1131,7 @@ export function Upload() {
           upc: form.upc.trim(),
           notes: form.notes.trim(),
           coverName: form.coverName,
-          coverData: form.coverData,
+          coverData: coverDataFull,
           originalDate: form.originalDate,
           release_date: form.releaseDate || '',
           tracks: form.tracks.map(t => ({
@@ -1005,7 +1157,11 @@ export function Upload() {
         ensureReleaseDocuments(form, r.id);
         toast(editId ? '발매 정보가 수정됐어요.' : '발매 신청이 접수됐어요.');
         nav(`/releases/${r.id}`);
+      } catch {
+        setError('제출에 실패했어요. 잠시 후 다시 시도해 주세요.');
+        toast('제출에 실패했어요. 다시 시도해 주세요.');
       } finally {
+        submittingRef.current = false;
         setSubmitting(false);
       }
       return;
@@ -1021,7 +1177,7 @@ export function Upload() {
     window.scrollTo({ top: 0 });
   };
 
-  const onCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onCoverChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     // 커버 파일 타입 검증 (JPG/PNG/WEBP만 허용)
@@ -1032,15 +1188,20 @@ export function Upload() {
       e.target.value = '';
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      setForm(f => ({ ...f, coverName: file.name, coverData: String(reader.result) }));
+    // 원본은 ref에 보관, state에는 미리보기용 썸네일만 (수 MB base64가 매 렌더를 무겁게 만드는 문제 해결)
+    coverFileRef.current = file;
+    try {
+      const thumb = await makeCoverThumbnail(file);
+      setForm(f => ({ ...f, coverName: file.name, coverData: thumb }));
       toast('커버 이미지가 등록됐어요.');
-    };
-    reader.readAsDataURL(file);
+    } catch {
+      toast('커버 이미지를 불러오지 못했어요.');
+      coverFileRef.current = null;
+      e.target.value = '';
+    }
   };
 
-  const onTrackAudio = (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
+  const onTrackAudio = useCallback((id: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     // 오디오 duration 자동 추출
@@ -1070,7 +1231,7 @@ export function Upload() {
     };
     audio.src = url;
     toast('음원 파일이 등록됐어요.');
-  };
+  }, [autoSave, toast]);
 
   const s = STEPS[step];
   const genreIsCustom = form.genre === '__other__';
@@ -1099,7 +1260,6 @@ export function Upload() {
           <BackIcon />
         </button>
         <span className="wizard-top-title">새로운 발매</span>
-        <span className="wizard-top-count" id="wizardTopCount">{step + 1} / 6</span>
       </div>
 
       <div className="wizard-progress" id="wizardProgress" ref={progressRef} aria-label="발매 신청 진행 단계">
@@ -1184,105 +1344,19 @@ export function Upload() {
         {step === 1 && (
           <section className="step-section">
             <div id="trackEditors">
-              {form.tracks.map((t, i) => {
-                const expanded = expandedTracks.has(t.id);
-                const toggleExpand = () => {
-                  setExpandedTracks(prev => {
-                    const next = new Set(prev);
-                    if (next.has(t.id)) next.delete(t.id);
-                    else next.add(t.id);
-                    return next;
-                  });
-                };
-                return (
-                <article key={t.id} className="track-editor">
-                  <div className="minor-actions">
-                    <h3>트랙 {i + 1}</h3>
-                    {form.tracks.length > 1 && (
-                      <button
-                        type="button" className="link-btn"
-                        onClick={() => set('tracks', form.tracks.filter(x => x.id !== t.id))}
-                      >삭제</button>
-                    )}
-                  </div>
-                  <div className="field track-title-field">
-                    <label htmlFor={`tr-${i}-title`}>곡 제목 <span className="required">*</span></label>
-                    <input id={`tr-${i}-title`} value={t.title} onChange={e => setTrack(t.id, 'title', e.target.value)} placeholder="곡명을 입력해" maxLength={200} />
-                  </div>
-                  <div className="field">
-                    <label htmlFor={`tr-${i}-composers`}>작곡 <span className="required">*</span></label>
-                    <input id={`tr-${i}-composers`} value={t.composers} onChange={e => setTrack(t.id, 'composers', e.target.value)} placeholder="참여자 이름을 쉼표로 구분" maxLength={200} />
-                  </div>
-                  <div className="field">
-                    <label htmlFor={`trackFile-${i}`}>음원 파일 <span className="required">*</span></label>
-                    <input
-                      type="file" id={`trackFile-${i}`}
-                      accept="audio/wav,audio/x-wav,audio/flac,audio/aiff,audio/x-aiff,audio/mpeg,audio/mp4,audio/*"
-                      onChange={e => onTrackAudio(t.id, e)}
-                    />
-                    <p className="help" id={`audioLabel-${i}`}>
-                      {t.audioName ? `${t.audioName}${t.audioSize ? ` · ${Math.round(t.audioSize / 1024 / 1024 * 100) / 100}MB` : ''}` : '선택한 파일 없음'}. 권장: 무손실 WAV/FLAC 파일, 최종 QC 후 송출.
-                    </p>
-                  </div>
-                  <div className="track-duration-label" aria-live="polite">
-                    {t.duration ? `곡 길이 · ${t.duration}` : '음원을 선택하면 곡 길이를 자동으로 확인해요.'}
-                  </div>
-                  <button
-                    type="button" className="track-detail-toggle"
-                    onClick={toggleExpand}
-                    aria-expanded={expanded}
-                  >
-                    <span>상세 정보 {t.isrc ? `· ${t.isrc}` : ''}</span>
-                    <span className={`toggle-arrow${expanded ? ' open' : ''}`}>›</span>
-                  </button>
-                  {expanded && (
-                    <div className="track-detail-body">
-                      <div className="form-grid">
-                        <div className="field">
-                          <label htmlFor={`tr-${i}-version`}>버전 / 부제</label>
-                          <input id={`tr-${i}-version`} value={t.version} onChange={e => setTrack(t.id, 'version', e.target.value)} placeholder="예: Acoustic Version" maxLength={200} />
-                        </div>
-                        <div className="field">
-                          <label htmlFor={`tr-${i}-isrc`}>ISRC (보유 시)</label>
-                          <input id={`tr-${i}-isrc`} value={t.isrc} onChange={e => setTrack(t.id, 'isrc', e.target.value)} placeholder="예: KR-ABC-26-00001" maxLength={200} />
-                        </div>
-                        <div className="field">
-                          <label htmlFor={`tr-${i}-lyricists`}>작사</label>
-                          <input id={`tr-${i}-lyricists`} value={t.lyricists} onChange={e => setTrack(t.id, 'lyricists', e.target.value)} placeholder="가사가 없는 곡이라면 비워둬" maxLength={200} />
-                        </div>
-                        <div className="field">
-                          <label htmlFor={`tr-${i}-arrangers`}>편곡</label>
-                          <input id={`tr-${i}-arrangers`} value={t.arrangers} onChange={e => setTrack(t.id, 'arrangers', e.target.value)} placeholder="참여자 이름" maxLength={200} />
-                        </div>
-                        <div className="field">
-                          <label htmlFor={`tr-${i}-performers`}>실연자 / 피처링</label>
-                          <input id={`tr-${i}-performers`} value={t.performers} onChange={e => setTrack(t.id, 'performers', e.target.value)} placeholder="참여자 이름" maxLength={200} />
-                        </div>
-                        <div className="field">
-                          <label htmlFor={`tr-${i}-producer`}>프로듀서</label>
-                          <input id={`tr-${i}-producer`} value={t.producer} onChange={e => setTrack(t.id, 'producer', e.target.value)} placeholder="프로듀서 이름" maxLength={200} />
-                        </div>
-                      </div>
-                      <div className="field">
-                        <label htmlFor={`tr-${i}-lyrics`}>가사 전문</label>
-                        <textarea
-                          id={`tr-${i}-lyrics`} value={t.lyrics}
-                          onChange={e => setTrack(t.id, 'lyrics', e.target.value)}
-                          rows={4} maxLength={10000} placeholder="가사 전체를 입력해 주세요"
-                        />
-                      </div>
-                      <label className="check-line">
-                        <input
-                          type="checkbox" checked={t.explicit}
-                          onChange={e => setTrack(t.id, 'explicit', e.target.checked)}
-                        />
-                        <span>청소년 이용불가 / Explicit 가사가 포함돼요.</span>
-                      </label>
-                    </div>
-                  )}
-                </article>
-                );
-              })}
+              {form.tracks.map((t, i) => (
+                <TrackEditor
+                  key={t.id}
+                  track={t}
+                  index={i}
+                  expanded={expandedTracks.has(t.id)}
+                  canDelete={form.tracks.length > 1}
+                  onToggleExpand={toggleTrackExpand}
+                  onDeleteTrack={deleteTrack}
+                  setTrack={setTrack}
+                  onTrackAudio={onTrackAudio}
+                />
+              ))}
             </div>
             <div className="spaced-actions">
               <button
@@ -1325,6 +1399,7 @@ export function Upload() {
                   type="button" className="link-btn"
                   onClick={() => {
                     set('coverName', ''); set('coverData', '');
+                    coverFileRef.current = null;
                     if (coverInputRef.current) coverInputRef.current.value = '';
                   }}
                 >커버 삭제</button>

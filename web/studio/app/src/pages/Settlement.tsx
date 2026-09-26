@@ -26,7 +26,6 @@ export function Settlement() {
   const [payouts, setPayouts] = useState<Payout[]>(INITIAL_PAYOUTS);
   const [tab, setTab] = useState<'statements' | 'payouts'>('statements');
   const [showPayout, setShowPayout] = useState(false);
-  const [showPaySetup, setShowPaySetup] = useState(false);
   const [showPaymentSetup, setShowPaymentSetup] = useState(false);
   const [amount, setAmount] = useState('');
   const [payoutNote, setPayoutNote] = useState('');
@@ -40,7 +39,7 @@ export function Settlement() {
   const openPayoutModal = () => {
     if (!isPaymentRegistered(payment)) {
       toast('수익을 받을 정보를 먼저 등록해 주세요.');
-      setShowPaySetup(true);
+      setShowPaymentSetup(true);
       return;
     }
     if (!left) { toast('지급을 요청할 수 있는 잔액이 없어요.'); return; }
@@ -226,7 +225,6 @@ export function Settlement() {
         </Modal>
       )}
 
-      {showPaySetup && <PaymentSetupModal onClose={() => setShowPaySetup(false)} />}
       {showPaymentSetup && <PaymentSetupModal onClose={() => setShowPaymentSetup(false)} />}
     </div>
   );

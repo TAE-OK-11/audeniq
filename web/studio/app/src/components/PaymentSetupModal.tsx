@@ -90,8 +90,12 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener('resize', update);
   }, [step, category]);
 
+  const flowRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    window.scrollTo({ top: 0 });
+    // 실제 스크롤 컨테이너(.modal-inner)를 위로 — window.scrollTo는 모달 안에서 무효
+    const scroller = flowRef.current?.closest('.modal-inner') as HTMLElement | null;
+    scroller?.scrollTo({ top: 0 });
   }, [step]);
 
   useEffect(() => {
@@ -174,7 +178,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal title="수익 정산 정보 등록" onClose={onClose} modalClass="aq-payout-setup-mode">
-      <div className="aq-pay-flow">
+      <div className="aq-pay-flow" ref={flowRef}>
         <header className="aq-pay-top">
           <button type="button" aria-label="이전으로" onClick={back}>‹</button>
           <div className="aq-pay-progress" aria-label={`수령 정보 등록 ${step + 1}단계`}>

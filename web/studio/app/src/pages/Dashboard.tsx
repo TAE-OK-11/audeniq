@@ -2,7 +2,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { mockApi } from '../api/mock';
 import type { Release } from '../api/client';
-import { STATUS_LABEL } from '../lib/format';
+import { STATUS_LABEL, money } from '../lib/format';
 import { unreadCount } from '../store/support';
 
 const GRID_ITEMS = [
@@ -23,10 +23,6 @@ const GRID_ITEMS = [
     icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h8l4 4v13a1 1 0 0 1-1 1H7a2 2 0 0 1-2-2V5a2 2 0 0 1-2-2Z"/><path d="M15 3v5h4M9 12h6M9 16h6"/></svg>,
   },
 ];
-
-function money(n: number): string {
-  return new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW', maximumFractionDigits: 0 }).format(n || 0);
-}
 
 // mock 이번 달 리포트 요약
 const REPORT = {
@@ -61,9 +57,15 @@ function ReleaseRow({ r }: { r: Release }) {
 export function Dashboard() {
   const navigate = useNavigate();
   const [releases, setReleases] = useState<Release[]>([]);
+  const [loadingReleases, setLoadingReleases] = useState(true);
 
   useEffect(() => {
-    mockApi.listReleases().then(setReleases).catch(() => {});
+    let cancelled = false;
+    mockApi.listReleases()
+      .then(rs => { if (!cancelled) setReleases(rs); })
+      .catch(() => { /* 조용한 실패 — 빈 상태로 표시 */ })
+      .finally(() => { if (!cancelled) setLoadingReleases(false); });
+    return () => { cancelled = true; };
   }, []);
 
   const needs = releases.filter(r => r.status === 'needs').length;
@@ -116,7 +118,9 @@ export function Dashboard() {
             <button type="button" className="link-btn" onClick={() => navigate('/releases')}>전체 보기 ↗</button>
           </div>
           <div id="homeReleases" aria-live="polite">
-            {releases.length ? (
+            {loadingReleases ? (
+              <div className="empty-note" aria-live="polite">불러오는 중...</div>
+            ) : releases.length ? (
               releases.slice(0, 4).map(r => <ReleaseRow key={r.id} r={r} />)
             ) : (
               <div className="empty-note">

@@ -13,14 +13,14 @@ export function FindAccount() {
 
   function submitId(e: React.FormEvent) {
     e.preventDefault();
-    // TODO: POST /api/auth/find-id { name, phone } 연동
-    setDone(`입력하신 정보와 일치하는 계정을 찾았어요.\n등록된 이메일로 아이디를 보내드렸어요.`);
+    // TODO: POST /api/auth/find-id { name, phone } 연동 — API 준비 전까지 실제 발송 없음
+    setDone(`계정 찾기 기능은 현재 준비 중이에요.\n가입하신 이메일이 기억나지 않으면 문의하기로 연락해 주세요.`);
   }
 
   function submitPw(e: React.FormEvent) {
     e.preventDefault();
-    // TODO: POST /api/auth/reset-password { email } 연동
-    setDone(`${email.trim()} 주소로 비밀번호 재설정 링크를 보냈어요.\n메일을 확인해 주세요.`);
+    // TODO: POST /api/auth/reset-password { email } 연동 — API 준비 전까지 실제 발송 없음
+    setDone(`비밀번호 재설정 기능은 현재 준비 중이에요.\n급하시면 문의하기로 연락해 주세요.`);
   }
 
   const reset = () => { setDone(null); };
