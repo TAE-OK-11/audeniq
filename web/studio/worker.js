@@ -246,9 +246,9 @@ export default {
     const url = new URL(request.url);
     const r = route(request.method, url.pathname);
     if (r) return handleContent(request, env, r);
-    // /api/* 중 D1 콘텐츠가 아니면 테스트 백엔드로 프록시
+    // /api/* 중 D1 콘텐츠가 아니면 백엔드로 프록시 (named tunnel audeniq-backend → compose api:8080)
     if (url.pathname.startsWith('/api/') || url.pathname === '/ready') {
-      const backend = 'https://binding-textile-tale-ccd.trycloudflare.com';
+      const backend = 'https://api-origin.audeniq.com';
       const backendUrl = backend + url.pathname + url.search;
       const proxyHeaders = new Headers(request.headers);
       if (env.EDGE_SERVICE_SECRET) {
