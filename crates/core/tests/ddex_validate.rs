@@ -6,8 +6,8 @@ use audeniq_core::{
     ddex_ern::{DdexErnConfig, MessageSubType, generate_ddex_ern_382},
     ddex_preset::DspMessagePreset,
     ddex_validate::{
-        ErnProfile, ErnVersion, extract_ern_metadata, gate_findings, preflight_release,
-        validate_ern_message,
+        ErnProfile, ErnVersion, escalated_warnings, extract_ern_metadata, gate_findings,
+        preflight_release, validate_ern_message,
     },
     preparation_model::PreparedRelease,
 };
@@ -134,29 +134,46 @@ fn update_message_emits_update_indicator_and_custom_thread() {
 // Pre-generation preflight
 // ---------------------------------------------------------------------------
 
-fn has_rule(findings: &[audeniq_core::ddex_validate::ErnFinding], rule: &str) -> bool {
-    findings.iter().any(|f| f.rule_id == rule)
+fn has_rule(findings: &audeniq_core::ddex_validate::PreflightFindings, rule: &str) -> bool {
+    findings.all().any(|f| f.rule_id == rule)
+}
+
+fn assert_empty(pf: &audeniq_core::ddex_validate::PreflightFindings) {
+    assert!(
+        pf.release.is_empty() && pf.message.is_empty(),
+        "findings: {pf:?}"
+    );
 }
 
 #[test]
 fn preflight_passes_for_good_release_and_config() {
     let prepared = fixture(0);
-    let findings = preflight_release(&prepared, &config(), &DspMessagePreset::default());
-    assert!(findings.is_empty(), "findings: {findings:?}");
-    assert!(gate_findings(&findings, "DDEX_PREFLIGHT", "ERN preflight").is_ok());
+    let pf = preflight_release(&prepared, &config());
+    assert_empty(&pf);
+    assert!(gate_findings(&pf.release, "DDEX_PREFLIGHT", "ERN preflight").is_ok());
+    assert!(gate_findings(&pf.message, "DDEX_PREFLIGHT_DSP", "ERN preflight (DSP)").is_ok());
 }
 
+/// A deal start before the release date is a *per-DSP* config error (the
+/// deal start carries the DSP preset's offset): it must skip that DSP, not
+/// fail the whole batch.
 #[test]
-fn preflight_rejects_deal_starting_before_release_date() {
+fn preflight_deal_starting_before_release_date_skips_only_its_dsp() {
     let prepared = fixture(0);
     let mut cfg = config();
     cfg.deal_start_date = "2027-01-01".into(); // release_date is 2027-03-01
-    let findings = preflight_release(&prepared, &cfg, &DspMessagePreset::default());
-    assert!(has_rule(&findings, "DDEX-PREFLIGHT-DATE-CHRONOLOGY"));
-    let err = gate_findings(&findings, "DDEX_PREFLIGHT", "ERN preflight").unwrap_err();
+    let pf = preflight_release(&prepared, &cfg);
+    assert!(has_rule(&pf, "DDEX-PREFLIGHT-DATE-CHRONOLOGY"));
+    assert!(
+        pf.release.iter().all(|f| !f.is_error()),
+        "release-level findings must not fail the batch: {:?}",
+        pf.release
+    );
+    assert!(gate_findings(&pf.release, "DDEX_PREFLIGHT", "ERN preflight").is_ok());
+    let err = gate_findings(&pf.message, "DDEX_PREFLIGHT_DSP", "ERN preflight (DSP)").unwrap_err();
     assert!(matches!(
         err,
-        audeniq_core::error::Error::PolicyGate("DDEX_PREFLIGHT")
+        audeniq_core::error::Error::PolicyGate("DDEX_PREFLIGHT_DSP")
     ));
 }
 
@@ -165,22 +182,25 @@ fn preflight_rejects_bad_date_formats_and_takedown_chronology() {
     let prepared = fixture(0);
     let mut cfg = config();
     cfg.deal_start_date = "03/01/2027".into();
-    let findings = preflight_release(&prepared, &cfg, &DspMessagePreset::default());
-    assert!(has_rule(&findings, "DDEX-PREFLIGHT-DATE-FORMAT"));
+    let pf = preflight_release(&prepared, &cfg);
+    assert!(has_rule(&pf, "DDEX-PREFLIGHT-DATE-FORMAT"));
+    assert!(pf.release.iter().all(|f| !f.is_error()));
 
     let mut cfg = config();
     cfg.takedown_date = Some("2027-03-01".into()); // not after deal start
-    let findings = preflight_release(&prepared, &cfg, &DspMessagePreset::default());
-    assert!(has_rule(&findings, "DDEX-PREFLIGHT-TAKEDOWN-CHRONOLOGY"));
+    let pf = preflight_release(&prepared, &cfg);
+    assert!(has_rule(&pf, "DDEX-PREFLIGHT-TAKEDOWN-CHRONOLOGY"));
+    assert!(pf.release.iter().all(|f| !f.is_error()));
 }
 
 #[test]
 fn preflight_rejects_missing_duration_before_build() {
     let mut prepared = fixture(0);
     prepared.tracks[0].audio.duration_secs = None;
-    let findings = preflight_release(&prepared, &config(), &DspMessagePreset::default());
-    assert!(has_rule(&findings, "DDEX-PREFLIGHT-DURATION"));
-    assert!(gate_findings(&findings, "DDEX_PREFLIGHT", "ERN preflight").is_err());
+    let pf = preflight_release(&prepared, &config());
+    assert!(has_rule(&pf, "DDEX-PREFLIGHT-DURATION"));
+    // Release-level: the missing duration fails the whole batch closed.
+    assert!(gate_findings(&pf.release, "DDEX_PREFLIGHT", "ERN preflight").is_err());
 }
 
 #[test]
@@ -190,20 +210,33 @@ fn preflight_rejects_bad_message_identity() {
     cfg.message_id = "   ".into();
     cfg.created_at = "not-a-timestamp".into();
     cfg.sender_name.clear();
-    let findings = preflight_release(&prepared, &cfg, &DspMessagePreset::default());
-    assert!(has_rule(&findings, "DDEX-PREFLIGHT-MESSAGE-ID"));
-    assert!(has_rule(&findings, "DDEX-PREFLIGHT-CREATED"));
-    assert!(has_rule(&findings, "DDEX-PREFLIGHT-PARTY"));
+    cfg.recipient_name.clear();
+    let pf = preflight_release(&prepared, &cfg);
+    assert!(has_rule(&pf, "DDEX-PREFLIGHT-MESSAGE-ID"));
+    assert!(has_rule(&pf, "DDEX-PREFLIGHT-CREATED"));
+    assert!(has_rule(&pf, "DDEX-PREFLIGHT-PARTY"));
+    // created_at and sender_name are batch-wide (release-level);
+    // message_id and recipient_name are per-DSP (message-level).
+    assert!(
+        pf.release
+            .iter()
+            .any(|f| f.rule_id == "DDEX-PREFLIGHT-CREATED")
+    );
+    assert!(
+        pf.message
+            .iter()
+            .any(|f| f.rule_id == "DDEX-PREFLIGHT-MESSAGE-ID")
+    );
 }
 
 #[test]
 fn preflight_warns_on_single_with_many_tracks_but_passes_gate() {
     let mut prepared = fixture(1); // EP fixture, >1 track
     prepared.release_type = "SINGLE".into();
-    let findings = preflight_release(&prepared, &config(), &DspMessagePreset::default());
-    assert!(has_rule(&findings, "DDEX-PREFLIGHT-RELEASE-TYPE"));
+    let pf = preflight_release(&prepared, &config());
+    assert!(has_rule(&pf, "DDEX-PREFLIGHT-RELEASE-TYPE"));
     // Warnings are logged, not fatal.
-    assert!(gate_findings(&findings, "DDEX_PREFLIGHT", "ERN preflight").is_ok());
+    assert!(gate_findings(&pf.release, "DDEX_PREFLIGHT", "ERN preflight").is_ok());
 }
 
 // ---------------------------------------------------------------------------
@@ -281,11 +314,11 @@ fn deeply_nested_document_fails_closed() {
 }
 
 // ---------------------------------------------------------------------------
-// Preset escalation (#4)
+// Preset escalation: escalated warnings skip only their own DSP (#4)
 // ---------------------------------------------------------------------------
 
 #[test]
-fn preset_escalates_warning_to_error() {
+fn preset_escalation_skips_only_its_own_dsp() {
     let mut prepared = fixture(1); // EP fixture, >1 track
     prepared.release_type = "SINGLE".into();
     let preset = DspMessagePreset {
@@ -293,16 +326,22 @@ fn preset_escalates_warning_to_error() {
         ..DspMessagePreset::default()
     };
 
-    let findings = preflight_release(&prepared, &config(), &preset);
+    // Base findings keep the warning at warning level: the gate passes,
+    // so one DSP's strictness cannot fail the whole batch.
+    let pf = preflight_release(&prepared, &config());
     assert!(
-        findings
-            .iter()
-            .any(|f| f.rule_id == "DDEX-PREFLIGHT-RELEASE-TYPE" && f.is_error()),
-        "findings: {findings:?}"
+        pf.all()
+            .any(|f| f.rule_id == "DDEX-PREFLIGHT-RELEASE-TYPE" && !f.is_error()),
+        "findings: {pf:?}"
     );
-    let err = gate_findings(&findings, "DDEX_PREFLIGHT", "ERN preflight").unwrap_err();
-    assert!(matches!(
-        err,
-        audeniq_core::error::Error::PolicyGate("DDEX_PREFLIGHT")
-    ));
+    assert!(gate_findings(&pf.release, "DDEX_PREFLIGHT", "ERN preflight").is_ok());
+
+    // The escalation is reported separately, per DSP.
+    let all: Vec<audeniq_core::ddex_validate::ErnFinding> = pf.all().cloned().collect();
+    let escalated = escalated_warnings(&all, &preset);
+    assert_eq!(escalated, vec!["DDEX-PREFLIGHT-RELEASE-TYPE"]);
+
+    // A DSP without the escalation sees nothing to skip over.
+    let escalated_default = escalated_warnings(&all, &DspMessagePreset::default());
+    assert!(escalated_default.is_empty());
 }

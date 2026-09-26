@@ -437,8 +437,11 @@ pub fn validate_ern_message(
     // Every resource a release points at must be defined in ResourceList;
     // every release a deal points at must be defined in ReleaseList.
     // A dangling reference is a certain DSP rejection, so these are errors.
+    // Set lookups: the old nested linear scan was O(refs x defs).
+    let defined: std::collections::HashSet<&str> =
+        scan.defined_resources.iter().map(String::as_str).collect();
     for r in &scan.referenced_resources {
-        if !scan.defined_resources.iter().any(|d| d == r) {
+        if !defined.contains(r.as_str()) {
             findings.push(ErnFinding::error(
                 "ERN-Xref-Resource",
                 format!(
@@ -447,12 +450,13 @@ pub fn validate_ern_message(
             ));
         }
     }
+    let releases: std::collections::HashSet<&str> = scan
+        .releases
+        .iter()
+        .filter_map(|rel| rel.reference.as_deref())
+        .collect();
     for r in &scan.deal_release_refs {
-        if !scan
-            .releases
-            .iter()
-            .any(|rel| rel.reference.as_deref() == Some(r))
-        {
+        if !releases.contains(r.as_str()) {
             findings.push(ErnFinding::error(
                 "ERN-Xref-Release",
                 format!("DealReleaseReference '{r}' has no matching Release in ReleaseList"),
@@ -473,6 +477,29 @@ pub fn validate_ern_message(
 
 /// Validate the release model and message config *before* XML is built.
 ///
+/// Preflight findings split by blast radius.
+///
+/// `release`: the release model itself — probed durations, release-type
+/// consistency, the batch-wide timestamp and sender name. Identical for
+/// every DSP; an error here fails the whole batch closed.
+///
+/// `message`: this DSP's message config — the per-DSP message id, the
+/// recipient, and the deal/takedown dates (which carry the DSP preset's
+/// `deal_start_offset_days`). An error here skips just this DSP; one DSP's
+/// preset must not take down the other DSPs' messages.
+#[derive(Debug)]
+pub struct PreflightFindings {
+    pub release: Vec<ErnFinding>,
+    pub message: Vec<ErnFinding>,
+}
+
+impl PreflightFindings {
+    /// Every finding, for preset warning-escalation checks.
+    pub fn all(&self) -> impl Iterator<Item = &ErnFinding> {
+        self.release.iter().chain(self.message.iter())
+    }
+}
+
 /// Structural reference: daddykev/ddex-suite (MIT)
 /// `packages/ddex-builder/src/preflight.rs` (identifier/date/reference
 /// preflight categories). Written from scratch against AUDENIQ's own
@@ -481,41 +508,54 @@ pub fn validate_ern_message(
 /// This complements `ern::validate_metadata` (format-level checks on the
 /// frozen release) with the message-level concerns a distributor must
 /// verify before generating an interchange document: date chronology,
-/// config completeness, and per-track build prerequisites. The `preset`
-/// lets a DSP escalate selected warnings to errors
-/// (`DspMessagePreset::escalate_to_error`). Findings use
+/// config completeness, and per-track build prerequisites. Findings use
 /// the same `ErnFinding` shape as [`validate_ern_message`] so callers can
 /// run [`gate_findings`] over both uniformly.
-pub fn preflight_release(
-    prepared: &PreparedRelease,
-    config: &DdexErnConfig,
-    preset: &DspMessagePreset,
-) -> Vec<ErnFinding> {
-    let mut findings = Vec::new();
+///
+/// A DSP that treats selected warnings as deal-breakers uses
+/// [`escalated_warnings`] with its own [`DspMessagePreset`] — the caller
+/// skips just that DSP instead of failing the whole batch.
+pub fn preflight_release(prepared: &PreparedRelease, config: &DdexErnConfig) -> PreflightFindings {
+    let mut release = Vec::new();
+    let mut message = Vec::new();
 
-    // --- Message identity -------------------------------------------------
-    if config.message_id.trim().is_empty() {
-        findings.push(ErnFinding::error(
-            "DDEX-PREFLIGHT-MESSAGE-ID",
-            "message_id is empty",
-        ));
-    }
+    // --- Batch-wide identity ----------------------------------------------
+    // created_at is computed once for the whole batch and sender_name is
+    // the same for every DSP: failures here are release-level.
     if chrono::DateTime::parse_from_rfc3339(&config.created_at).is_err() {
-        findings.push(ErnFinding::error(
+        release.push(ErnFinding::error(
             "DDEX-PREFLIGHT-CREATED",
             format!("created_at is not RFC-3339: '{}'", config.created_at),
         ));
     }
-    if config.sender_name.trim().is_empty() || config.recipient_name.trim().is_empty() {
-        findings.push(ErnFinding::error(
+    if config.sender_name.trim().is_empty() {
+        release.push(ErnFinding::error(
             "DDEX-PREFLIGHT-PARTY",
-            "sender_name and recipient_name must both be set",
+            "sender_name must be set",
         ));
     }
 
-    // --- Date chronology ---------------------------------------------------
+    // --- Per-DSP message identity ------------------------------------------
+    // message_id comes from the DSP preset's template and recipient_name
+    // from the DSP profile: failures here skip just this DSP.
+    if config.message_id.trim().is_empty() {
+        message.push(ErnFinding::error(
+            "DDEX-PREFLIGHT-MESSAGE-ID",
+            "message_id is empty",
+        ));
+    }
+    if config.recipient_name.trim().is_empty() {
+        message.push(ErnFinding::error(
+            "DDEX-PREFLIGHT-PARTY",
+            "recipient_name must be set",
+        ));
+    }
+
+    // --- Date chronology (per DSP: the deal start carries the preset ------
+    // --- offset, so a chronology error here is this DSP's config, ---------
+    // --- not the release) --------------------------------------------------
     match chrono::NaiveDate::parse_from_str(&config.deal_start_date, "%Y-%m-%d") {
-        Err(_) => findings.push(ErnFinding::error(
+        Err(_) => message.push(ErnFinding::error(
             "DDEX-PREFLIGHT-DATE-FORMAT",
             format!(
                 "deal_start_date is not YYYY-MM-DD: '{}'",
@@ -524,7 +564,7 @@ pub fn preflight_release(
         )),
         Ok(deal_start) => {
             if deal_start < prepared.release_date {
-                findings.push(ErnFinding::error(
+                message.push(ErnFinding::error(
                     "DDEX-PREFLIGHT-DATE-CHRONOLOGY",
                     format!(
                         "deal starts {} before release date {}",
@@ -534,12 +574,12 @@ pub fn preflight_release(
             }
             if let Some(takedown) = &config.takedown_date {
                 match chrono::NaiveDate::parse_from_str(takedown, "%Y-%m-%d") {
-                    Err(_) => findings.push(ErnFinding::error(
+                    Err(_) => message.push(ErnFinding::error(
                         "DDEX-PREFLIGHT-DATE-FORMAT",
                         format!("takedown_date is not YYYY-MM-DD: '{takedown}'"),
                     )),
                     Ok(takedown_date) if takedown_date <= deal_start => {
-                        findings.push(ErnFinding::error(
+                        message.push(ErnFinding::error(
                             "DDEX-PREFLIGHT-TAKEDOWN-CHRONOLOGY",
                             format!(
                                 "takedown date {takedown} is not after deal start {}",
@@ -553,26 +593,26 @@ pub fn preflight_release(
         }
     }
 
-    // --- Per-track build prerequisites --------------------------------------
+    // --- Per-track build prerequisites (release-level) ----------------------
     // The builder fails closed on a missing duration
     // (`DDEX_DURATION_UNKNOWN`); surface it here with a rule id instead.
     for (i, track) in prepared.tracks.iter().enumerate() {
         if track.audio.duration_secs.is_none() {
-            findings.push(ErnFinding::error(
+            release.push(ErnFinding::error(
                 "DDEX-PREFLIGHT-DURATION",
                 format!("track {} ('{}') has no probed duration", i + 1, track.title),
             ));
         }
     }
 
-    // --- Release-type consistency --------------------------------------------
+    // --- Release-type consistency (release-level, warning) -------------------
     match (prepared.release_type.as_str(), prepared.tracks.len()) {
-        ("SINGLE", n) if n > 1 => findings.push(ErnFinding::warning(
+        ("SINGLE", n) if n > 1 => release.push(ErnFinding::warning(
             "DDEX-PREFLIGHT-RELEASE-TYPE",
             format!("release_type is SINGLE but {n} tracks are attached"),
             Some("set release_type to EP/ALBUM or split the release"),
         )),
-        ("ALBUM", 1) => findings.push(ErnFinding::warning(
+        ("ALBUM", 1) => release.push(ErnFinding::warning(
             "DDEX-PREFLIGHT-RELEASE-TYPE",
             "release_type is ALBUM but only one track is attached",
             Some("set release_type to SINGLE"),
@@ -580,15 +620,7 @@ pub fn preflight_release(
         _ => {}
     }
 
-    // Per-DSP escalation: warnings this partner treats as deal-breakers
-    // become errors before the gate sees them.
-    for finding in &mut findings {
-        if finding.severity == Severity::Warning && preset.escalates(&finding.rule_id) {
-            finding.severity = Severity::Error;
-        }
-    }
-
-    findings
+    PreflightFindings { release, message }
 }
 
 /// Fail-closed gate over pre-computed findings: warnings are logged, and
@@ -614,6 +646,20 @@ pub fn gate_findings(findings: &[ErnFinding], gate: &'static str, what: &str) ->
         .join(",");
     tracing::warn!(gate, rules = %rules, "{what} failed");
     Err(Error::PolicyGate(gate))
+}
+
+/// Rule ids of findings that a DSP's message preset escalates from warning
+/// to error (`DspMessagePreset::escalate_to_error`). Genuine errors are not
+/// listed: release-level ones fail the whole batch in [`gate_findings`],
+/// message-config ones skip just that DSP. Escalation is a per-DSP affair —
+/// the caller skips just that DSP and keeps generating the others'
+/// messages.
+pub fn escalated_warnings(findings: &[ErnFinding], preset: &DspMessagePreset) -> Vec<String> {
+    findings
+        .iter()
+        .filter(|f| f.severity == Severity::Warning && preset.escalates(&f.rule_id))
+        .map(|f| f.rule_id.clone().into_owned())
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -686,7 +732,14 @@ fn scan_document(xml: &str) -> Result<Scan, String> {
         match reader.read_event() {
             Err(e) => return Err(e.to_string()),
             Ok(Event::Eof) => break,
-            Ok(Event::Start(e)) => {
+            ev @ (Ok(Event::Start(_)) | Ok(Event::Empty(_))) => {
+                // Start and Empty (self-closing) share all bookkeeping;
+                // only Start pushes a stack entry. Handle both in one arm.
+                let is_start = matches!(ev, Ok(Event::Start(_)));
+                let e = match ev {
+                    Ok(Event::Start(e)) | Ok(Event::Empty(e)) => e,
+                    _ => unreachable!("matched above"),
+                };
                 if stack.len() >= MAX_DEPTH {
                     return Err(format!("element nesting too deep (limit {MAX_DEPTH})"));
                 }
@@ -716,35 +769,8 @@ fn scan_document(xml: &str) -> Result<Scan, String> {
                 if name == "Video" && parent_is_resource_list {
                     scan.has_video_resource = true;
                 }
-                stack.push(name);
-            }
-            Ok(Event::Empty(e)) => {
-                // Self-closing: same bookkeeping as Start, without the push.
-                let name = local_name(e.local_name().as_ref()).to_string();
-                if stack.is_empty() {
-                    scan.root = Some(name.clone());
-                } else if stack.len() == 1 {
-                    match name.as_str() {
-                        "MessageHeader" => scan.has_message_header = true,
-                        "ReleaseList" => scan.has_release_list = true,
-                        "ResourceList" => scan.has_resource_list = true,
-                        "DealList" => scan.has_deal_list = true,
-                        "UpdateIndicator" => scan.has_update_indicator = true,
-                        _ => {}
-                    }
-                }
-                let parent_is_release_list = stack.len() == 2
-                    && stack[0] == "NewReleaseMessage"
-                    && stack[1] == "ReleaseList";
-                let parent_is_resource_list = stack.len() == 2
-                    && stack[0] == "NewReleaseMessage"
-                    && stack[1] == "ResourceList";
-                if name == "Release" && parent_is_release_list {
-                    scan.release_count += 1;
-                    scan.releases.push(ReleaseInfo::default());
-                }
-                if name == "Video" && parent_is_resource_list {
-                    scan.has_video_resource = true;
+                if is_start {
+                    stack.push(name);
                 }
             }
             Ok(Event::Text(e)) => {

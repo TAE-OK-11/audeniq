@@ -63,6 +63,7 @@ pub fn issue_identifier(_kind: IdentifierKind) -> Result<String> {
     Err(Error::PolicyGate("IDENTIFIER_ISSUANCE_OFF"))
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct ExistingAssignment<'a> {
     pub org_id: Uuid,
     pub release_id: Uuid,
@@ -74,6 +75,96 @@ pub struct ExistingAssignment<'a> {
 
 /// Caller owns authorization and transaction. Global uniqueness serializes competing
 /// assignments; a conflict is never reassigned. Exact same target is idempotent.
+/// Batch version of [`record_existing`]: one revision-membership check per
+/// distinct (org, release, revision) triple and a single multi-row INSERT
+/// for all assignments, instead of 2N round trips. Semantics are identical:
+/// exact-target retries are idempotent (the existing row id is returned), a
+/// cross-target conflict is a permanent [`Error::Conflict`], and the whole
+/// batch aborts on the first conflict — the caller rolls the transaction
+/// back, so no partial batch ever commits.
+pub async fn record_existing_batch(
+    c: &mut PgConnection,
+    assignments: &[ExistingAssignment<'_>],
+) -> Result<Vec<Uuid>> {
+    use std::collections::{HashMap, HashSet};
+    if assignments.is_empty() {
+        return Ok(Vec::new());
+    }
+    for a in assignments {
+        a.kind.validate(a.value)?;
+        if matches!(a.kind, IdentifierKind::Isrc) != a.track_id.is_some() {
+            return Err(Error::Invalid);
+        }
+    }
+    // The membership check is loop-invariant per triple; run it once each.
+    let triples: HashSet<(Uuid, Uuid, Uuid)> = assignments
+        .iter()
+        .map(|a| (a.org_id, a.release_id, a.revision_id))
+        .collect();
+    for (org_id, release_id, revision_id) in &triples {
+        let belongs: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM catalog.application_revisions WHERE org_id=$1 AND release_id=$2 AND id=$3)",
+        )
+        .bind(org_id)
+        .bind(release_id)
+        .bind(revision_id)
+        .fetch_one(&mut *c)
+        .await?;
+        if !belongs {
+            return Err(Error::Conflict);
+        }
+    }
+    // Single multi-row INSERT; rows that lose a uniqueness race are skipped
+    // by ON CONFLICT DO NOTHING and resolved per row below (rare path).
+    let mut qb = sqlx::QueryBuilder::new(
+        "INSERT INTO distribution.identifier_assignments(id,org_id,release_id,track_id,revision_id,kind,identifier) ",
+    );
+    let ids: Vec<Uuid> = assignments.iter().map(|_| Uuid::new_v4()).collect();
+    qb.push_values(assignments.iter().zip(ids.iter()), |mut b, (a, id)| {
+        b.push_bind(id)
+            .push_bind(a.org_id)
+            .push_bind(a.release_id)
+            .push_bind(a.track_id)
+            .push_bind(a.revision_id)
+            .push_bind(a.kind.label())
+            .push_bind(a.value);
+    });
+    qb.push(" ON CONFLICT DO NOTHING RETURNING id, kind, identifier, track_id");
+    let inserted: Vec<(Uuid, String, String, Option<Uuid>)> =
+        qb.build_query_as().fetch_all(&mut *c).await?;
+    // (kind, identifier, track_id) -> row id, for the rows this batch won.
+    let won: HashMap<(&str, &str, Option<Uuid>), Uuid> = inserted
+        .iter()
+        .map(|(id, kind, identifier, track_id)| {
+            ((kind.as_str(), identifier.as_str(), *track_id), *id)
+        })
+        .collect();
+    let mut out = Vec::with_capacity(assignments.len());
+    for a in assignments {
+        if let Some(won_id) = won.get(&(a.kind.label(), a.value, a.track_id)) {
+            out.push(*won_id);
+            continue;
+        }
+        // Lost the race: exact-target retry is idempotent, anything else is
+        // a permanent cross-target conflict. (Separate statement sees the
+        // committed winner after a concurrent INSERT wait.)
+        let existing: Option<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM distribution.identifier_assignments WHERE kind=$1 AND identifier=$2 AND org_id=$3 AND release_id=$4 AND track_id IS NOT DISTINCT FROM $5",
+        )
+        .bind(a.kind.label())
+        .bind(a.value)
+        .bind(a.org_id)
+        .bind(a.release_id)
+        .bind(a.track_id)
+        .fetch_optional(&mut *c)
+        .await?;
+        match existing {
+            Some(existing_id) => out.push(existing_id),
+            None => return Err(Error::Conflict),
+        }
+    }
+    Ok(out)
+}
 pub async fn record_existing(c: &mut PgConnection, a: &ExistingAssignment<'_>) -> Result<Uuid> {
     a.kind.validate(a.value)?;
     if matches!(a.kind, IdentifierKind::Isrc) != a.track_id.is_some() {

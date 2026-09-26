@@ -206,10 +206,22 @@ fn parse_image(v: &serde_json::Value) -> Result<ImageMetrics> {
 /// persist `catalog.assets.duration_secs`, which the DDEX ERN builder needs
 /// for the schema-required `SoundRecording/Duration` element.
 pub fn probe_duration_secs(path: &Path) -> Option<f64> {
+    probe_audio_metrics(path).map(|m| m.duration_secs)
+}
+
+/// Measured audio technical metrics via ffprobe: duration plus the real
+/// sample rate / channel count / bits per sample. Returns `None` when the
+/// file cannot be probed or has no audio stream. Stage 1 persists these to
+/// `catalog.assets.{sample_rate,channels,bits_per_sample}` so the DDEX ERN
+/// builder can emit the true `TechnicalSoundRecordingDetails` instead of
+/// fabricated constants.
+pub fn probe_audio_metrics(path: &Path) -> Option<AudioMetrics> {
     let v = probe(path).ok()?;
-    let p: ProbeJson = serde_json::from_value(v).ok()?;
-    let secs: f64 = p.format.duration.parse().ok()?;
-    (secs > 0.0).then_some(secs)
+    let m = parse_audio(&v).ok()?;
+    // A non-positive or non-finite duration is not a measurement; the DDEX
+    // builder fails closed without one (DDEX_DURATION_UNKNOWN).
+    (m.sample_rate > 0 && m.channels > 0 && m.duration_secs.is_finite() && m.duration_secs > 0.0)
+        .then_some(m)
 }
 
 /// Detect container from magic bytes. Returns a canonical tag or "UNKNOWN".

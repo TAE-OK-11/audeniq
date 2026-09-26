@@ -4,7 +4,7 @@ use crate::{
     domain::{FreshnessPin, freshness_guard},
     ern::{generate_prepared_ern, validate_metadata, validate_xml},
     error::Result,
-    preparation_model::{PreparedRelease, VerificationPackage},
+    preparation_model::{AssetRef, PreparedRelease, VerificationPackage},
     route_plan::verify_scope,
     storage::ObjectStore,
 };
@@ -53,35 +53,84 @@ fn status(pass: bool) -> CheckStatus {
 /// blocked until the store supplies bounded streaming/hash verification.
 pub const MAX_PREFLIGHT_ASSET_BYTES: i64 = 64 * 1024 * 1024;
 
+/// One asset's object-store verification: HEAD metadata match, then full
+/// byte + SHA-256 match.
+async fn check_one_asset(a: &AssetRef, store: &dyn ObjectStore) -> CheckStatus {
+    match store.head(&a.object_key).await {
+        Ok(Some(meta)) if meta.size == a.size_bytes && meta.content_type == a.content_type => {}
+        Ok(_) => return CheckStatus::Fail,
+        Err(_) => return CheckStatus::Unknown,
+    }
+    match store.get(&a.object_key).await {
+        Ok(bytes) => {
+            if i64::try_from(bytes.len()).ok() == Some(a.size_bytes)
+                && hex::encode(Sha256::digest(&bytes)) == a.sha256
+            {
+                CheckStatus::Pass
+            } else {
+                CheckStatus::Fail
+            }
+        }
+        Err(_) => CheckStatus::Unknown,
+    }
+}
+
 pub async fn check_files(c: &PreparedRelease, store: &dyn ObjectStore) -> CheckStatus {
     if validate_metadata(c).is_err() {
         return CheckStatus::Fail;
     }
+    let assets: Vec<&AssetRef> = std::iter::once(&c.artwork)
+        .chain(c.tracks.iter().map(|t| &t.audio))
+        .collect();
+    if assets
+        .iter()
+        .any(|a| a.size_bytes > MAX_PREFLIGHT_ASSET_BYTES)
+    {
+        return CheckStatus::Fail;
+    }
+    // Object-store round trips dominate this check; run them with bounded
+    // concurrency, eight assets at a time (the old loop was fully
+    // sequential). Each asset resolves to Pass/Fail/Unknown independently;
+    // Fail wins, else Unknown, else Pass — same verdict as the sequential
+    // loop.
+    //
+    // NOTE: `futures::stream::buffer_unordered` was tried here and
+    // reverted: buffering the borrowed per-asset futures broke the
+    // higher-ranked `Send` bound the worker's spawned tasks require
+    // ("implementation of Send is not general enough"). The chunked
+    // `tokio::join!` below awaits every future directly in this frame,
+    // which keeps the borrow checker happy.
     let mut outcome = CheckStatus::Pass;
-    for a in std::iter::once(&c.artwork).chain(c.tracks.iter().map(|t| &t.audio)) {
-        if a.size_bytes > MAX_PREFLIGHT_ASSET_BYTES {
-            return CheckStatus::Fail;
-        }
-        match store.head(&a.object_key).await {
-            Ok(Some(meta)) if meta.size == a.size_bytes && meta.content_type == a.content_type => {}
-            Ok(_) => return CheckStatus::Fail,
-            Err(_) => {
-                outcome = CheckStatus::Unknown;
-                continue;
+    for chunk in assets.chunks(8) {
+        let (r1, r2, r3, r4, r5, r6, r7, r8) = tokio::join!(
+            check_some(chunk, 0, store),
+            check_some(chunk, 1, store),
+            check_some(chunk, 2, store),
+            check_some(chunk, 3, store),
+            check_some(chunk, 4, store),
+            check_some(chunk, 5, store),
+            check_some(chunk, 6, store),
+            check_some(chunk, 7, store),
+        );
+        for r in [r1, r2, r3, r4, r5, r6, r7, r8] {
+            match r {
+                CheckStatus::Fail => return CheckStatus::Fail,
+                CheckStatus::Unknown => outcome = CheckStatus::Unknown,
+                CheckStatus::Pass => {}
             }
-        }
-        match store.get(&a.object_key).await {
-            Ok(bytes) => {
-                if i64::try_from(bytes.len()).ok() != Some(a.size_bytes)
-                    || hex::encode(Sha256::digest(&bytes)) != a.sha256
-                {
-                    return CheckStatus::Fail;
-                }
-            }
-            Err(_) => outcome = CheckStatus::Unknown,
         }
     }
     outcome
+}
+
+/// Probe `chunk[i]` when present, else `Pass`. Exists so the fan-out in
+/// [`check_files`] can name eight statically-known futures for
+/// `tokio::join!` without storing borrowed futures in a combinator.
+async fn check_some(chunk: &[&AssetRef], i: usize, store: &dyn ObjectStore) -> CheckStatus {
+    match chunk.get(i) {
+        Some(a) => check_one_asset(a, store).await,
+        None => CheckStatus::Pass,
+    }
 }
 
 /// Reuses the existing shared FreshnessGuard. The expected pin must identify the

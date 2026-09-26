@@ -159,8 +159,9 @@ impl DspMessagePreset {
             .ok_or(Error::Invalid)
     }
 
-    /// Promote warnings to errors for rule ids this DSP escalates.
-    /// Applied by `ddex_validate::preflight_release`.
+    /// Whether this DSP treats the rule id as a deal-breaker. Applied by
+    /// `ddex_validate::escalated_warnings`: an escalated warning skips
+    /// just this DSP's message, it does not fail the whole batch.
     pub fn escalates(&self, rule_id: &str) -> bool {
         self.escalate_to_error.iter().any(|r| r == rule_id)
     }

@@ -64,7 +64,12 @@ fn ddex_ern_album_structure() {
     assert!(xml.contains("<HashSumAlgorithmType>UserDefined</HashSumAlgorithmType>"));
     assert!(xml.contains(&c.tracks[0].audio.sha256));
     assert!(xml.contains("<AudioCodecType>PCM</AudioCodecType>"));
-    assert!(xml.contains("<BitRate>1411</BitRate>"));
+    // The JSON fixtures carry no measured audio specs, so the technical
+    // fields are omitted — the old code fabricated 1411/44100/16/2 here.
+    assert!(!xml.contains("<BitRate>"));
+    assert!(!xml.contains("<SamplingRate>"));
+    assert!(!xml.contains("<BitsPerSample>"));
+    assert!(!xml.contains("<NumberOfChannels>"));
     // Credits surface as ResourceContributor, role mapped to the AVS value.
     assert!(xml.contains("<ResourceContributor>"));
     // The fixture credit is "composer"; ERN 3.8.2 has no Composer enum value,
@@ -285,4 +290,46 @@ fn ddex_ern_fixtures_pass_xsd_validation() {
         validate_ern_382_xml(&xml)
             .unwrap_or_else(|e| panic!("fixture {i} failed XSD validation: {e:?}"));
     }
+}
+
+/// Measured audio specs (ffprobe -> catalog.assets -> AssetRef) are emitted
+/// as the real `TechnicalSoundRecordingDetails`: 48kHz/24-bit stereo is
+/// 2304 kbps, not the fabricated 1411 the old code wrote for every WAV.
+#[test]
+fn ddex_ern_emits_measured_audio_specs() {
+    let mut c = fixture(0); // single, one WAV track
+    let audio = &mut c.tracks[0].audio;
+    audio.sample_rate = Some(48000);
+    audio.channels = Some(2);
+    audio.bits_per_sample = Some(24);
+    let xml = generate_ddex_ern_382(&c, &config(MessageSubType::Initial)).unwrap();
+    assert!(xml.contains("<BitRate>2304</BitRate>"), "48000*2*24/1000");
+    assert!(xml.contains("<NumberOfChannels>2</NumberOfChannels>"));
+    assert!(xml.contains("<SamplingRate>48000</SamplingRate>"));
+    assert!(xml.contains("<BitsPerSample>24</BitsPerSample>"));
+}
+
+/// The image's proprietary id lives in the *sender's* namespace. The old
+/// builder hardcoded a foreign DPID left over from the structural
+/// reference; that must never appear again.
+#[test]
+fn ddex_ern_image_namespace_uses_sender_dpid() {
+    let c = fixture(0);
+    let xml = generate_ddex_ern_382(&c, &config(MessageSubType::Initial)).unwrap();
+    assert!(
+        !xml.contains("PADPIDA2023081501R"),
+        "foreign DPID must not be hardcoded"
+    );
+    assert!(xml.contains("Namespace=\"DPID:PADPIDA2026092501A\""));
+}
+
+/// A missing sender DPID fails closed: the builder must not emit a
+/// fabricated `DPID:AUDENIQ` namespace.
+#[test]
+fn ddex_ern_missing_sender_dpid_fails_closed() {
+    let c = fixture(0);
+    let mut cfg = config(MessageSubType::Initial);
+    cfg.sender_party_id = None;
+    let err = generate_ddex_ern_382(&c, &cfg).unwrap_err();
+    assert!(matches!(err, Error::PolicyGate("DDEX_SENDER_DPID_MISSING")));
 }

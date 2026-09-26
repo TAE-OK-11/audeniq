@@ -15,6 +15,7 @@ use crate::error::{Error, Result};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::Duration;
+use uuid::Uuid;
 
 /// Vendored ERN 3.8.2 schema, relative to the workspace root of the
 /// `audeniq-core` crate directory layout (`crates/core/../../schemas/...`).
@@ -42,22 +43,69 @@ pub fn validate_ern_382_xml(xml: &str) -> Result<()> {
     // writes diagnostics to stderr, and a large invalid document could fill
     // the stderr pipe while we block on the child — a classic pipe
     // deadlock. A file argument avoids all three pipes entirely.
-    let doc_path = std::env::temp_dir().join(format!(
-        "audeniq-ern-{}-{}.xml",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0)
-    ));
-    std::fs::write(&doc_path, xml.as_bytes())
-        .map_err(|_| Error::PolicyGate("ERN_XSD_VALIDATOR_UNAVAILABLE"))?;
-    let result = run_xmllint(&schema, &doc_path);
-    let _ = std::fs::remove_file(&doc_path);
-    result
+    let doc = TempDoc::create(xml.as_bytes())?;
+    run_xmllint(&schema, &doc.path)
+}
+
+/// A temp XML document that always cleans itself up, even if validation
+/// panics or returns early. The name is pid + UUID v4 and the file is
+/// created with `create_new`, so a concurrent validator (or a hostile
+/// /tmp neighbor) can neither collide with nor pre-create it — the old
+/// pid+nanoseconds name was guessable and racy.
+struct TempDoc {
+    path: PathBuf,
+}
+
+impl TempDoc {
+    /// An empty temp file. The name is pid + UUID v4 and the file is
+    /// created with `create_new`, so a concurrent validator (or a hostile
+    /// /tmp neighbor) can neither collide with nor pre-create it — the old
+    /// pid+nanoseconds name was guessable and racy.
+    fn empty() -> Result<Self> {
+        for _ in 0..8 {
+            let path = std::env::temp_dir().join(format!(
+                "audeniq-ern-{}-{}.xml",
+                std::process::id(),
+                Uuid::new_v4().as_simple()
+            ));
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+            {
+                Ok(_) => return Ok(Self { path }),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(_) => return Err(Error::PolicyGate("ERN_XSD_VALIDATOR_UNAVAILABLE")),
+            }
+        }
+        Err(Error::PolicyGate("ERN_XSD_VALIDATOR_UNAVAILABLE"))
+    }
+
+    fn create(xml: &[u8]) -> Result<Self> {
+        let this = Self::empty()?;
+        // On write failure `this` drops here and the Drop impl removes the
+        // partial file — no leak, unlike the old create-then-write order.
+        std::fs::write(&this.path, xml)
+            .map_err(|_| Error::PolicyGate("ERN_XSD_VALIDATOR_UNAVAILABLE"))?;
+        Ok(this)
+    }
+}
+
+impl Drop for TempDoc {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
 }
 
 fn run_xmllint(schema: &std::path::Path, doc: &std::path::Path) -> Result<()> {
+    // xmllint's diagnostics go to a temp *file*, not a pipe: with a pipe,
+    // a pathological document's error spew (>64KB) would block the child
+    // on write while we block on its exit — a classic pipe deadlock that
+    // only the 60s timeout would break. Files have no such rendezvous.
+    // stdout is empty under --noout, so it goes to null.
+    let err_log = TempDoc::empty()?;
+    let err_sink = std::fs::File::create(&err_log.path)
+        .map_err(|_| Error::PolicyGate("ERN_XSD_VALIDATOR_UNAVAILABLE"))?;
     let mut child = Command::new("xmllint")
         // --nonet: never fetch external DTDs/schemas/entities over the
         // network (ddex-suite's parser hardens the same way with
@@ -67,60 +115,58 @@ fn run_xmllint(schema: &std::path::Path, doc: &std::path::Path) -> Result<()> {
         .arg(schema)
         .arg(doc)
         .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::from(err_sink))
         .spawn()
         .map_err(|_| Error::PolicyGate("ERN_XSD_VALIDATOR_UNAVAILABLE"))?;
     // xmllint on a local document returns quickly; guard against a hung
     // validator the same way the QC pipeline guards ffmpeg.
-    let output = wait_with_timeout(&mut child, Duration::from_secs(60))
+    let status = wait_status_with_timeout(&mut child, Duration::from_secs(60))
         .ok_or(Error::PolicyGate("ERN_XSD_VALIDATOR_UNAVAILABLE"))?;
-    if output.status.success() {
+    if status.success() {
         return Ok(());
     }
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let detail: String = stderr
-        .lines()
-        .take(8)
-        .collect::<Vec<_>>()
-        .join(" | ")
-        .chars()
-        .take(500)
-        .collect();
+    // Bound the diagnostics: a pathological document could make the log
+    // large; we only surface the first 8 lines / 500 chars.
+    let detail: String = std::fs::File::open(&err_log.path)
+        .ok()
+        .and_then(|f| {
+            use std::io::Read;
+            let mut buf = Vec::with_capacity(4096);
+            // 16KB is far more than the 8 lines we keep.
+            f.take(16 * 1024).read_to_end(&mut buf).ok()?;
+            let text = String::from_utf8_lossy(&buf);
+            Some(
+                text.lines()
+                    .take(8)
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+                    .chars()
+                    .take(500)
+                    .collect(),
+            )
+        })
+        .unwrap_or_default();
     // The gate code stays a plain PolicyGate so the API error surface is
     // unchanged; the validator diagnostics go to the log, never the client.
     tracing::warn!(gate = "ERN_XSD_INVALID", detail = %detail, "ERN 3.8.2 XSD validation failed");
     Err(Error::PolicyGate("ERN_XSD_INVALID"))
 }
 
-fn wait_with_timeout(
+fn wait_status_with_timeout(
     child: &mut std::process::Child,
     timeout: Duration,
-) -> Option<std::process::Output> {
-    use std::io::Read;
+) -> Option<std::process::ExitStatus> {
     let start = std::time::Instant::now();
     loop {
         match child.try_wait() {
-            Ok(Some(status)) => {
-                // The child has exited; drain the pipes without taking
-                // ownership (wait_with_output needs `self` by value).
-                let mut stdout = Vec::new();
-                let mut stderr = Vec::new();
-                if let Some(out) = child.stdout.as_mut() {
-                    let _ = out.read_to_end(&mut stdout);
-                }
-                if let Some(err) = child.stderr.as_mut() {
-                    let _ = err.read_to_end(&mut stderr);
-                }
-                return Some(std::process::Output {
-                    status,
-                    stdout,
-                    stderr,
-                });
-            }
+            Ok(Some(status)) => return Some(status),
             Ok(None) => {
                 if start.elapsed() >= timeout {
                     let _ = child.kill();
+                    // Reap the zombie: kill alone leaves it unreaped until
+                    // the Child handle is dropped, and drop does not wait.
+                    let _ = child.wait();
                     return None;
                 }
                 std::thread::sleep(Duration::from_millis(50));

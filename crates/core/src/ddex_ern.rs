@@ -21,7 +21,10 @@
 //!   `UserDefined` = lowercase hex SHA-256.
 //! - Audio technical details come from the asset `content_type`
 //!   (`audio/wav` -> PCM/WAV, `audio/flac` -> FLAC, `audio/mpeg` -> MP3).
-//!   PCM-specific fields (1411/44100/16/2) are emitted for WAV only.
+//!   The PCM spec fields (BitRate/NumberOfChannels/SamplingRate/
+//!   BitsPerSample) carry the ffprobe-measured values persisted on
+//!   `catalog.assets` by Stage 1 QC, for WAV only; they are omitted when
+//!   unknown, never fabricated.
 //! - Duration is required by the schema: emitted as `PT{secs}S` from
 //!   `AssetRef::duration_secs` (Stage 1 persists it from ffprobe); missing
 //!   duration fails closed with `DDEX_DURATION_UNKNOWN`.
@@ -39,9 +42,9 @@
 //! - `MessageThreadId` defaults to the message id; updates/takedowns must
 //!   pass the original thread id via `DdexErnConfig::message_thread_id`.
 use crate::{
-    ern::{ordered_tracks, validate_metadata},
+    ern::{element, ordered_tracks, push_escaped, validate_metadata},
     error::{Error, Result},
-    preparation_model::{AssetRef, PreparedRelease},
+    preparation_model::{AssetRef, PreparedRelease, PreparedTrack},
 };
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -78,6 +81,10 @@ pub struct DdexErnConfig {
     /// ISO-8601 creation timestamp, e.g. `2026-09-25T11:00:00Z`.
     pub created_at: String,
     pub sender_name: String,
+    /// The sender's own DPID. Required: without it message generation
+    /// fails closed (`DDEX_SENDER_DPID_MISSING`) rather than emitting a
+    /// fabricated `DPID:` namespace. The pipeline only calls this when
+    /// the org has a sender DPID.
     pub sender_party_id: Option<String>,
     /// (party_id, name) of the party the sender acts for.
     pub sent_on_behalf_of: Option<(String, String)>,
@@ -87,19 +94,6 @@ pub struct DdexErnConfig {
     pub deal_start_date: String,
     /// Deal end, `YYYY-MM-DD`. Required for `MessageSubType::Takedown`.
     pub takedown_date: Option<String>,
-}
-
-fn escaped(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;")
-        .replace('\r', "&#13;")
-}
-
-fn element(out: &mut String, name: &str, value: impl std::fmt::Display) {
-    out.push_str(&format!("<{name}>{}</{name}>", escaped(&value.to_string())));
 }
 
 /// NFC-normalize the human-text fields of a release.
@@ -146,7 +140,13 @@ fn normalize_nfc(prepared: &PreparedRelease) -> Cow<'_, PreparedRelease> {
 }
 
 fn attr(name: &str, value: &str) -> String {
-    format!(" {name}=\"{}\"", escaped(value))
+    let mut out = String::with_capacity(name.len() + value.len() + 4);
+    out.push(' ');
+    out.push_str(name);
+    out.push_str("=\"");
+    push_escaped(&mut out, value);
+    out.push('"');
+    out
 }
 
 fn required(s: &str) -> bool {
@@ -162,10 +162,16 @@ fn validate_config(c: &DdexErnConfig) -> Result<()> {
     {
         return Err(Error::Invalid);
     }
-    for opt in [&c.sender_party_id, &c.recipient_party_id] {
+    for opt in [&c.recipient_party_id] {
         if opt.as_deref().is_some_and(|v| !required(v)) {
             return Err(Error::Invalid);
         }
+    }
+    // The image ProprietaryId namespace is `DPID:{sender_party_id}`; a
+    // missing sender DPID must fail here, never become a fabricated
+    // `DPID:AUDENIQ` fallback.
+    if !c.sender_party_id.as_deref().is_some_and(required) {
+        return Err(Error::PolicyGate("DDEX_SENDER_DPID_MISSING"));
     }
     if c.sent_on_behalf_of
         .as_ref()
@@ -185,13 +191,16 @@ fn validate_config(c: &DdexErnConfig) -> Result<()> {
     }
 }
 
-/// (codec, file extension); PCM-specific technical fields only for WAV.
-fn audio_codec(content_type: &str) -> (&'static str, &'static str, bool) {
+/// (codec, file extension). Technical spec fields (bit rate, channels,
+/// sample rate, bit depth) are NOT derived here: they come from the
+/// ffprobe-measured `AssetRef` fields, and are omitted when unknown rather
+/// than fabricated.
+fn audio_codec(content_type: &str) -> (&'static str, &'static str) {
     match content_type {
-        "audio/wav" | "audio/x-wav" => ("PCM", "wav", true),
-        "audio/flac" => ("FLAC", "flac", false),
-        "audio/mpeg" => ("MP3", "mp3", false),
-        _ => ("Unknown", "bin", false),
+        "audio/wav" | "audio/x-wav" => ("PCM", "wav"),
+        "audio/flac" => ("FLAC", "flac"),
+        "audio/mpeg" => ("MP3", "mp3"),
+        _ => ("Unknown", "bin"),
     }
 }
 
@@ -291,29 +300,54 @@ fn contributor_role(role: &str) -> &'static str {
 }
 
 /// Credits keyed by canonical track id, for `ResourceContributor` output.
-fn credit_map(prepared: &PreparedRelease) -> BTreeMap<uuid::Uuid, Vec<(String, String)>> {
-    let mut map: BTreeMap<uuid::Uuid, Vec<(String, String)>> = BTreeMap::new();
-    let mut tracks: Vec<_> = prepared.canonical.tracks.iter().collect();
-    tracks.sort_by_key(|t| (t.disc_number, t.track_number));
+/// Built from the already-ordered prepared tracks via a canonical-track
+/// index: no second sort, no per-track clone of the credit list.
+fn credit_map<'a>(
+    tracks: &[&'a PreparedTrack],
+    canonical_by_id: &std::collections::HashMap<
+        uuid::Uuid,
+        &'a crate::distribution::CanonicalTrack,
+    >,
+) -> BTreeMap<uuid::Uuid, Vec<(&'a str, &'a str)>> {
+    let mut map: BTreeMap<uuid::Uuid, Vec<(&str, &str)>> = BTreeMap::new();
     for t in tracks {
-        let mut credits: Vec<_> = t
-            .credits
-            .iter()
-            .map(|c| (c.party_name.clone(), c.role.clone()))
-            .collect();
-        credits.sort();
-        map.insert(t.track_id, credits);
+        if let Some(pinned) = canonical_by_id.get(&t.id) {
+            let mut credits: Vec<(&str, &str)> = pinned
+                .credits
+                .iter()
+                .map(|c| (c.party_name.as_str(), c.role.as_str()))
+                .collect();
+            credits.sort();
+            map.insert(t.id, credits);
+        }
     }
     map
 }
 
-fn resource_list(out: &mut String, prepared: &PreparedRelease) -> Result<()> {
+fn resource_list(
+    out: &mut String,
+    prepared: &PreparedRelease,
+    tracks: &[&PreparedTrack],
+    sender_dpid: &str,
+) -> Result<()> {
     out.push_str("<ResourceList>");
-    let credits = credit_map(prepared);
-    for (i, track) in ordered_tracks(prepared).iter().enumerate() {
+    // The resource refs (A001…), the credit index and the image ref below
+    // all follow the one ordered list the caller computed, so the
+    // A-numbers agree with the release list.
+    let canonical_by_id: std::collections::HashMap<
+        uuid::Uuid,
+        &crate::distribution::CanonicalTrack,
+    > = prepared
+        .canonical
+        .tracks
+        .iter()
+        .map(|t| (t.track_id, t))
+        .collect();
+    let credits = credit_map(tracks, &canonical_by_id);
+    for (i, track) in tracks.iter().enumerate() {
         let resource_ref = format!("A{:03}", i + 1);
         let tech_ref = format!("T{resource_ref}");
-        let (codec, ext, is_pcm) = audio_codec(&track.audio.content_type);
+        let (codec, ext) = audio_codec(&track.audio.content_type);
         let file_name = format!(
             "{}_{:02}_{:03}.{ext}",
             prepared.upc, track.disc_number, track.track_number
@@ -336,7 +370,9 @@ fn resource_list(out: &mut String, prepared: &PreparedRelease) -> Result<()> {
             .audio
             .duration_secs
             .ok_or(Error::PolicyGate("DDEX_DURATION_UNKNOWN"))?;
-        element(out, "Duration", format!("PT{secs:.1}S"));
+        // Full f64 precision: the old `{:.1}` formatting silently rounded
+        // probed durations (e.g. 200.046s became PT200.0S).
+        element(out, "Duration", format!("PT{secs}S"));
         // The details element is SoundRecordingDetailsByTerritory (not
         // DetailsByTerritory). Inside: TerritoryCode, Title?, DisplayArtist?,
         // ResourceContributor*, PLine?, TechnicalSoundRecordingDetails?.
@@ -361,7 +397,7 @@ fn resource_list(out: &mut String, prepared: &PreparedRelease) -> Result<()> {
             // ResourceContributor has no sequenceNumber attribute in
             // ERN 3.8.2, and the role element is ResourceContributorRole
             // (not Role).
-            for (name, role) in list.iter() {
+            for &(name, role) in list {
                 out.push_str("<ResourceContributor>");
                 out.push_str("<PartyName>");
                 element(out, "FullName", name);
@@ -377,13 +413,30 @@ fn resource_list(out: &mut String, prepared: &PreparedRelease) -> Result<()> {
         out.push_str("<TechnicalSoundRecordingDetails>");
         element(out, "TechnicalResourceDetailsReference", &tech_ref);
         element(out, "AudioCodecType", codec);
-        if is_pcm {
+        // Real measured specs for WAV, from Stage 1 ffprobe via
+        // `AssetRef`. All four elements are optional per the XSD; when the
+        // asset predates spec persistence (or probing failed) they are
+        // omitted — never fabricated. The old code emitted
+        // 1411/44100/16/2 for every WAV, which is false for e.g. 48kHz
+        // 24-bit masters. BitRate's default unit is kbps, SamplingRate's
+        // is Hz, so no UnitOfMeasure attributes are needed.
+        if matches!(
+            track.audio.content_type.as_str(),
+            "audio/wav" | "audio/x-wav"
+        ) && let (Some(sample_rate), Some(channels), Some(bits_per_sample)) = (
+            track.audio.sample_rate,
+            track.audio.channels,
+            track.audio.bits_per_sample,
+        ) {
             // XSD order: BitRate, NumberOfChannels, SamplingRate,
             // BitsPerSample.
-            element(out, "BitRate", "1411");
-            element(out, "NumberOfChannels", "2");
-            element(out, "SamplingRate", "44100");
-            element(out, "BitsPerSample", "16");
+            let kbps = (i64::from(sample_rate) * i64::from(channels) * i64::from(bits_per_sample)
+                + 500)
+                / 1000;
+            element(out, "BitRate", kbps);
+            element(out, "NumberOfChannels", channels);
+            element(out, "SamplingRate", sample_rate);
+            element(out, "BitsPerSample", bits_per_sample);
         }
         file_block(out, &file_name, &track.audio.sha256);
         out.push_str("</TechnicalSoundRecordingDetails>");
@@ -393,7 +446,8 @@ fn resource_list(out: &mut String, prepared: &PreparedRelease) -> Result<()> {
     image_resource(
         out,
         prepared,
-        &format!("A{:03}", ordered_tracks(prepared).len() + 1),
+        &format!("A{:03}", tracks.len() + 1),
+        sender_dpid,
     );
     out.push_str("</ResourceList>");
     Ok(())
@@ -402,7 +456,12 @@ fn resource_list(out: &mut String, prepared: &PreparedRelease) -> Result<()> {
 /// The image's ResourceReference must match the XSD pattern
 /// `A[\d\-_a-zA-Z]+` (same as sound recordings), so it takes the next
 /// A-number after the tracks rather than an `I001`-style id.
-fn image_resource(out: &mut String, prepared: &PreparedRelease, image_ref: &str) {
+fn image_resource(
+    out: &mut String,
+    prepared: &PreparedRelease,
+    image_ref: &str,
+    sender_dpid: &str,
+) {
     let art: &AssetRef = &prepared.artwork;
     let (codec, ext) = image_codec(&art.content_type);
     // XSD order: ImageType?, IsArtistRelated?, ImageId, ResourceReference,
@@ -410,11 +469,17 @@ fn image_resource(out: &mut String, prepared: &PreparedRelease, image_ref: &str)
     out.push_str("<Image>");
     element(out, "ImageType", "FrontCoverImage");
     out.push_str("<ImageId>");
-    out.push_str(&format!(
-        "<ProprietaryId{}>{}</ProprietaryId>",
-        attr("Namespace", "DPID:PADPIDA2023081501R"),
-        escaped(&format!("{}_IMG_001", prepared.upc))
-    ));
+    // The proprietary id lives in the *sender's* namespace. The old code
+    // hardcoded a foreign DPID here (`DPID:PADPIDA2023081501R`, left over
+    // from the structural reference) — misattributing our images to someone
+    // else's party id. `validate_config` guarantees a sender DPID is
+    // present; there is no fallback namespace.
+    let namespace = format!("DPID:{sender_dpid}");
+    out.push_str("<ProprietaryId");
+    out.push_str(&attr("Namespace", &namespace));
+    out.push('>');
+    push_escaped(out, &format!("{}_IMG_001", prepared.upc));
+    out.push_str("</ProprietaryId>");
     out.push_str("</ImageId>");
     element(out, "ResourceReference", image_ref);
     out.push_str("<ImageDetailsByTerritory>");
@@ -436,7 +501,7 @@ fn release_type_ddex(release_type: &str) -> &'static str {
     }
 }
 
-fn release_list(out: &mut String, prepared: &PreparedRelease) {
+fn release_list(out: &mut String, prepared: &PreparedRelease, tracks: &[&PreparedTrack]) {
     let year = prepared.release_date.format("%Y").to_string();
     // XSD order: ReleaseId+, ReleaseReference*,
     // ReferenceTitle, ReleaseResourceReferenceList,
@@ -447,25 +512,25 @@ fn release_list(out: &mut String, prepared: &PreparedRelease) {
     out.push_str("<ReleaseList>");
     out.push_str(&format!("<Release{}>", attr("IsMainRelease", "true")));
     out.push_str("<ReleaseId>");
-    out.push_str(&format!(
-        "<ICPN{}>{}</ICPN>",
-        attr("IsEan", "true"),
-        escaped(&prepared.upc)
-    ));
+    out.push_str("<ICPN");
+    out.push_str(&attr("IsEan", "true"));
+    out.push('>');
+    push_escaped(out, &prepared.upc);
+    out.push_str("</ICPN>");
     out.push_str("</ReleaseId>");
     element(out, "ReleaseReference", "R001");
     out.push_str("<ReferenceTitle>");
     element(out, "TitleText", &prepared.title);
     out.push_str("</ReferenceTitle>");
     out.push_str("<ReleaseResourceReferenceList>");
-    for (i, _) in ordered_tracks(prepared).iter().enumerate() {
+    for (i, _) in tracks.iter().enumerate() {
         element(out, "ReleaseResourceReference", format!("A{:03}", i + 1));
     }
     // Same A-numbered reference as the Image resource above.
     element(
         out,
         "ReleaseResourceReference",
-        format!("A{:03}", ordered_tracks(prepared).len() + 1),
+        format!("A{:03}", tracks.len() + 1),
     );
     out.push_str("</ReleaseResourceReferenceList>");
     element(
@@ -583,8 +648,18 @@ pub fn generate_ddex_ern_382(prepared: &PreparedRelease, config: &DdexErnConfig)
             MessageSubType::Update | MessageSubType::Takedown => "UpdateMessage",
         },
     );
-    resource_list(&mut out, prepared)?;
-    release_list(&mut out, prepared);
+    // One ordered track list for the resource list, the release list and
+    // the image ref: the A-numbers must agree across all three.
+    let tracks = ordered_tracks(prepared);
+    // validate_config already rejected a missing sender DPID; re-check
+    // here so the namespace below can never come from a fallback.
+    let sender_dpid = config
+        .sender_party_id
+        .as_deref()
+        .filter(|s| required(s))
+        .ok_or(Error::PolicyGate("DDEX_SENDER_DPID_MISSING"))?;
+    resource_list(&mut out, prepared, &tracks, sender_dpid)?;
+    release_list(&mut out, prepared, &tracks);
     deal_list(&mut out, config);
     out.push_str("</ern:NewReleaseMessage>\n");
     Ok(out)

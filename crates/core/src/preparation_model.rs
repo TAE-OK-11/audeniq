@@ -24,6 +24,17 @@ pub struct AssetRef {
     /// the DDEX builder fails closed without it (DDEX_DURATION_UNKNOWN).
     #[serde(default)]
     pub duration_secs: Option<f64>,
+    /// ffprobe-measured audio technical specs (Stage 1 QC), persisted to
+    /// `catalog.assets`. None for images, for legacy rows probed before
+    /// the columns existed, or when probing failed. The DDEX ERN builder
+    /// emits these as the real `TechnicalSoundRecordingDetails` and omits
+    /// the elements when unknown — never fabricated constants.
+    #[serde(default)]
+    pub sample_rate: Option<i32>,
+    #[serde(default)]
+    pub channels: Option<i32>,
+    #[serde(default)]
+    pub bits_per_sample: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -89,38 +100,54 @@ pub struct VerificationPackage {
     pub body: serde_json::Value,
 }
 
-/// Load a file reference from the trusted assets table. Size and media type
+/// Load file references from the trusted assets table. Size and media type
 /// are not part of the canonical snapshot, so they are read here; id, key
 /// and hash must already be pinned on the snapshot (binding is re-checked
 /// by `ern::validate_binding` downstream).
-async fn asset_ref(
+///
+/// One query for all `asset_ids` (the old per-track loop was N+1). Returns
+/// the refs keyed by asset id; the caller checks kind per id so the
+/// `PREPARATION_ASSET_KIND_MISMATCH` error still names the right cause.
+async fn asset_refs(
     pool: &PgPool,
     org_id: Uuid,
-    asset_id: Uuid,
-    kind_prefix: &str,
-) -> Result<AssetRef> {
-    let row = sqlx::query(
-        "SELECT object_key, sha256, size_bytes, content_type, duration_secs FROM catalog.assets WHERE org_id=$1 AND id=$2",
+    asset_ids: &[Uuid],
+    expected_kinds: &std::collections::HashMap<Uuid, &'static str>,
+) -> Result<std::collections::HashMap<Uuid, AssetRef>> {
+    let rows = sqlx::query(
+        "SELECT id, object_key, sha256, size_bytes, content_type, duration_secs, sample_rate, channels, bits_per_sample FROM catalog.assets WHERE org_id=$1 AND id = ANY($2)",
     )
     .bind(org_id)
-    .bind(asset_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or(Error::PolicyGate("PREPARATION_ASSET_MISSING"))?;
-    let content_type: String = row.get("content_type");
-    if !content_type.starts_with(kind_prefix) {
-        return Err(Error::PolicyGate("PREPARATION_ASSET_KIND_MISMATCH"));
+    .bind(asset_ids)
+    .fetch_all(pool)
+    .await?;
+    let mut out = std::collections::HashMap::with_capacity(asset_ids.len());
+    for row in &rows {
+        let id: Uuid = row.get("id");
+        let content_type: String = row.get("content_type");
+        if let Some(kind) = expected_kinds.get(&id)
+            && !content_type.starts_with(*kind)
+        {
+            return Err(Error::PolicyGate("PREPARATION_ASSET_KIND_MISMATCH"));
+        }
+        out.insert(
+            id,
+            AssetRef {
+                id,
+                object_key: row.get("object_key"),
+                sha256: row
+                    .get::<Option<String>, _>("sha256")
+                    .ok_or(Error::PolicyGate("PREPARATION_ASSET_SHA_MISSING"))?,
+                size_bytes: row.get("size_bytes"),
+                content_type,
+                duration_secs: row.get("duration_secs"),
+                sample_rate: row.get("sample_rate"),
+                channels: row.get("channels"),
+                bits_per_sample: row.get("bits_per_sample"),
+            },
+        );
     }
-    Ok(AssetRef {
-        id: asset_id,
-        object_key: row.get("object_key"),
-        sha256: row
-            .get::<Option<String>, _>("sha256")
-            .ok_or(Error::PolicyGate("PREPARATION_ASSET_SHA_MISSING"))?,
-        size_bytes: row.get("size_bytes"),
-        content_type,
-        duration_secs: row.get("duration_secs"),
-    })
+    Ok(out)
 }
 
 fn draft_field(draft: &Value, key: &str, code: &'static str) -> Result<String> {
@@ -156,7 +183,31 @@ impl PreparedRelease {
             .as_ref()
             .ok_or(Error::PolicyGate("PREPARATION_ARTWORK_MISSING"))?
             .asset_id;
-        let artwork = asset_ref(pool, c.org_id, artwork_asset_id, "image").await?;
+        // One batched asset lookup for the artwork plus every track file
+        // (the old per-track loop was N+1 round trips).
+        let mut asset_ids = Vec::with_capacity(c.tracks.len() + 1);
+        let mut seen = std::collections::HashSet::with_capacity(c.tracks.len() + 1);
+        let mut expected_kinds = std::collections::HashMap::with_capacity(c.tracks.len() + 1);
+        asset_ids.push(artwork_asset_id);
+        seen.insert(artwork_asset_id);
+        // Artwork keeps its "image" expectation if the same asset id ever
+        // shows up as track audio (pathological data): first wins, matching
+        // the old load-artwork-first order.
+        expected_kinds.insert(artwork_asset_id, "image");
+        for t in &c.tracks {
+            if let Some(asset_id) = t.asset_id
+                && seen.insert(asset_id)
+            {
+                asset_ids.push(asset_id);
+                expected_kinds.entry(asset_id).or_insert("audio");
+            }
+        }
+        let refs = asset_refs(pool, c.org_id, &asset_ids, &expected_kinds).await?;
+
+        let artwork = refs
+            .get(&artwork_asset_id)
+            .cloned()
+            .ok_or(Error::PolicyGate("PREPARATION_ASSET_MISSING"))?;
 
         let mut tracks = Vec::with_capacity(c.tracks.len());
         for t in &c.tracks {
@@ -167,6 +218,10 @@ impl PreparedRelease {
             let asset_id = t
                 .asset_id
                 .ok_or(Error::PolicyGate("PREPARATION_AUDIO_MISSING"))?;
+            let audio = refs
+                .get(&asset_id)
+                .cloned()
+                .ok_or(Error::PolicyGate("PREPARATION_ASSET_MISSING"))?;
             tracks.push(PreparedTrack {
                 id: t.track_id,
                 title: t.title.clone(),
@@ -177,7 +232,7 @@ impl PreparedRelease {
                     .map_err(|_| Error::PolicyGate("PREPARATION_TRACK_NUMBER_INVALID"))?,
                 track_number: u32::try_from(t.track_number)
                     .map_err(|_| Error::PolicyGate("PREPARATION_TRACK_NUMBER_INVALID"))?,
-                audio: asset_ref(pool, c.org_id, asset_id, "audio").await?,
+                audio,
             });
         }
 
