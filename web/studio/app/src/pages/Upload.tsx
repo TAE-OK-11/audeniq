@@ -1441,12 +1441,14 @@ export function Upload() {
 
         {step === 5 && (
           <section className="step-section">
-            {reviewSections.map(([h, t]) => (
-              <div key={h} className="review-section">
-                <h3>{h}</h3>
-                <p className="break">{t}</p>
-              </div>
-            ))}
+            <div className="aq-catalog-cards">
+              {reviewSections.map(([h, t]) => (
+                <div key={h} className="aq-review-card">
+                  <strong>{h}</strong>
+                  <p className="break">{t}</p>
+                </div>
+              ))}
+            </div>
             <div className="notice" style={{ marginTop: 24 }}>
               '접수하기'를 누르면 신청 내용과 권리 확인서가 생성돼요. 접수 번호 발급과 담당자 심사는 서버가 연결된 후 진행돼요.
             </div>

@@ -218,14 +218,14 @@ export function ReleaseDetail() {
         {tab === 'history' && (
           <>
             <h2 className="subhead">변경 기록</h2>
-            <div className="data-list">
+            <div className="aq-catalog-cards">
               {d?.history?.length ? d.history.map((h, i) => (
-                <div key={i} className="statement-row">
-                  <div className="document-icon">↗</div>
-                  <div>
+                <div key={i} className="aq-track-card">
+                  <span className="aq-track-num" aria-hidden="true">↗</span>
+                  <span className="min-0">
                     <span className="row-name">{h.text}</span>
                     <span className="row-sub">{new Date(h.time).toLocaleString('ko-KR')}</span>
-                  </div>
+                  </span>
                 </div>
               )) : (
                 <div className="empty-note">등록된 변경 기록이 없어요.</div>
