@@ -780,8 +780,7 @@ body.wizard-mode .portal-layout{padding:0!important;min-height:100dvh}
  #contractList .studio-document-row .row-name{font-size:14px!important}
  body.aq-nav-locked #portalNav{top:68px!important;right:20px!important;max-height:calc(100dvh - 80px - env(safe-area-inset-bottom,0px))!important}
  #modal.aq-signature-mode{padding:8px!important}
- #modal.aq-signature-mode .modal-inner{max-height:calc(100dvh - 16px)!important;min-height:0!important;width:100%!important;padding:22px 19px!important;border-radius:24px!important;display:flex!important;flex-direction:column!important}
- #modal.aq-signature-mode .aq-sign-foot{position:sticky!important;bottom:0!important;margin-top:auto!important;background:#fff!important;z-index:5!important;padding:12px 0 4px!important}
+ #modal.aq-signature-mode .modal-inner{max-height:calc(100dvh - 16px)!important;min-height:0!important;width:100%!important;padding:22px 19px 16px!important;border-radius:24px!important}
  .aq-sign-sheet canvas{height:175px}
  #view-new .wizard-header h1{font-size:clamp(27px,7.4vw,33px)!important;line-height:1.28!important}
  #view-new .wizard-header p{font-size:14px!important;line-height:1.6!important}
@@ -1115,4 +1114,28 @@ body.aq-nav-locked #portalNav{
 @media(max-width:760px){
   .modal{padding:8px!important;place-items:start center!important}
   .modal-inner{width:100%!important;max-width:100%!important;max-height:calc(100dvh - 20px)!important;min-height:calc(100dvh - 20px)!important;padding:24px 20px!important}
+}
+
+/* 서명 모달: 본문 스크롤 + 하단 버튼 고정 */
+#modal.aq-signature-mode .modal-inner{display:flex!important;flex-direction:column!important;overflow:hidden!important}
+#modal.aq-signature-mode .aq-sign-body{flex:1 1 auto!important;overflow-y:auto!important;min-height:0!important;overscroll-behavior:contain!important}
+#modal.aq-signature-mode .aq-sign-foot{flex-shrink:0!important;position:static!important;margin-top:0!important;border-top:1px solid #edf1f7!important;padding:14px 0 4px!important;background:#fff!important}
+
+/* 주민등록번호 입력 */
+.aq-rrn-row{display:flex;align-items:center;gap:8px}
+.aq-rrn-row input{flex:1;min-width:0;text-align:center;letter-spacing:.1em}
+.aq-rrn-row input#aqCertRrnBack{max-width:52px}
+.aq-rrn-dash{color:#a0adc2;font-weight:700}
+.aq-rrn-mask{color:#c3cede;letter-spacing:.2em;font-size:14px}
+
+/* 인증 완료 화면 */
+.aq-cert-done{text-align:center;padding:32px 16px}
+.aq-cert-done-icon{width:64px;height:64px;margin:0 auto 16px;border-radius:50%;background:#e8f5e9;color:#2e7d32;font-size:32px;display:grid;place-items:center;font-weight:800}
+.aq-cert-done strong{font-size:18px;display:block;margin-bottom:8px}
+.aq-cert-done p{color:#5b6b85;margin:4px 0}
+
+/* 발매 상세 상단 빈 공간 축소 */
+#view-release .spaced-actions{margin-top:0!important}
+@media(max-width:760px){
+  #view-release .spaced-actions{margin-top:0!important;margin-bottom:20px!important}
 }
