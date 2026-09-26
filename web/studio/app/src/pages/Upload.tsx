@@ -492,6 +492,13 @@ export function Upload() {
     return () => document.body.classList.remove('wizard-mode');
   }, []);
 
+  // 과거 발매 예정일이 저장돼 있으면 비움
+  useEffect(() => {
+    if (form.releaseDate && form.releaseDate < todayStr()) {
+      setForm(f => ({ ...f, releaseDate: '' }));
+    }
+  }, [form.releaseDate]);
+
   const set = <K extends keyof WizardForm>(key: K, value: WizardForm[K]) =>
     setForm(f => ({ ...f, [key]: value }));
 
