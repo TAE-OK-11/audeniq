@@ -7,12 +7,12 @@ import { addDoc, type DocRecord } from '../store/docs';
 import { localStamp } from '../lib/format';
 
 const STEPS = [
-  { kicker: '01 / 06 · 발매 정보', title: '어떤 음악을\n발매할까요?', sub: '발매 정보와 아티스트명을 입력해 주세요.' },
-  { kicker: '02 / 06 · 트랙 등록', title: '발매할 곡을\n등록해 주세요.', sub: '곡별 음원 파일과 크레딧을 입력해 주세요.' },
-  { kicker: '03 / 06 · 커버아트', title: '커버아트를\n등록해 주세요.', sub: '정사각형 커버아트를 등록해 주세요.' },
-  { kicker: '04 / 06 · 배급 설정', title: '언제, 어디에\n발매할까요?', sub: '발매일과 배급할 플랫폼을 선택해 주세요.' },
-  { kicker: '05 / 06 · 권리 확인', title: '음악의 권리를\n확인해 주세요.', sub: '권리자 정보와 필요한 증빙을 준비해 주세요.' },
-  { kicker: '06 / 06 · 최종 확인', title: '발매 정보를\n마지막으로 확인해 주세요.', sub: '입력한 정보와 빠진 항목을 확인해 주세요.' },
+  { short: '발매 정보', kicker: '01 / 06 · 발매 정보', title: '어떤 음악을\n발매할까요?', sub: '발매 정보와 아티스트명을 입력해 주세요.' },
+  { short: '트랙 등록', kicker: '02 / 06 · 트랙 등록', title: '발매할 곡을\n등록해 주세요.', sub: '곡별 음원 파일과 크레딧을 입력해 주세요.' },
+  { short: '커버아트', kicker: '03 / 06 · 커버아트', title: '커버아트를\n등록해 주세요.', sub: '정사각형 커버아트를 등록해 주세요.' },
+  { short: '배급 설정', kicker: '04 / 06 · 배급 설정', title: '언제, 어디에\n발매할까요?', sub: '발매일과 배급할 플랫폼을 선택해 주세요.' },
+  { short: '권리 확인', kicker: '05 / 06 · 권리 확인', title: '음악의 권리를\n확인해 주세요.', sub: '권리자 정보와 필요한 증빙을 준비해 주세요.' },
+  { short: '최종 확인', kicker: '06 / 06 · 최종 확인', title: '발매 정보를\n마지막으로 확인해 주세요.', sub: '입력한 정보와 빠진 항목을 확인해 주세요.' },
 ];
 
 const KINDS = [['single', '싱글'], ['ep', 'EP'], ['album', '정규 앨범'], ['compilation', '컴필레이션']];
@@ -439,7 +439,8 @@ export function Upload() {
     addDoc(agreement);
   };
 
-  const saveDraft = async () => {
+  // 자동 임시 저장 (조용히, 토스트 없음)
+  const autoSave = async () => {
     try {
       const data = {
         title: form.title.trim() || '제목 없음',
@@ -451,14 +452,15 @@ export function Upload() {
         const r = await mockApi.createRelease(data);
         setDraftId(r.id);
       }
-      toast('임시 저장했어요.');
     } catch {
-      toast('임시 저장에 실패했어요.');
+      // 자동 저장 실패는 조용히 무시
     }
   };
 
   const next = async () => {
     if (!validate()) return;
+    // 단계 넘어갈 때 자동 임시 저장
+    await autoSave();
     if (step === STEPS.length - 1) {
       if (submitting) return;
       setSubmitting(true);
@@ -539,6 +541,8 @@ export function Upload() {
         tracks: f.tracks.map(t => (t.id === id ? { ...t, audioName: file.name, audioSize: file.size, duration: `${mm}:${ss}` } : t)),
       }));
       URL.revokeObjectURL(url);
+      // 1곡 등록될 때마다 자동 임시 저장
+      autoSave();
     };
     audio.onerror = () => {
       setForm(f => ({
@@ -546,6 +550,8 @@ export function Upload() {
         tracks: f.tracks.map(t => (t.id === id ? { ...t, audioName: file.name, audioSize: file.size } : t)),
       }));
       URL.revokeObjectURL(url);
+      // 1곡 등록될 때마다 자동 임시 저장
+      autoSave();
     };
     audio.src = url;
     toast('음원 파일이 등록됐어요.');
@@ -576,13 +582,11 @@ export function Upload() {
         <span className="wizard-top-count" id="wizardTopCount">{step + 1} / 6</span>
       </div>
 
-      <div className="row-actions">
-        <button type="button" id="saveDraft" className="link-btn" onClick={saveDraft}>임시 저장</button>
-      </div>
-
       <div className="wizard-progress" id="wizardProgress" ref={progressRef} aria-label="발매 신청 진행 단계">
-        {STEPS.map((_, i) => (
-          <span key={i} className={i <= step ? 'current' : ''} />
+        {STEPS.map((s, i) => (
+          <span key={i} className={`wizard-progress-seg${i <= step ? ' current' : ''}`}>
+            <em>{s.short}</em>
+          </span>
         ))}
       </div>
 
