@@ -580,3 +580,22 @@ body:has(.aq-payout-setup-mode) .aq-toast-stack{bottom:calc(104px + env(safe-are
 }
 @keyframes aq-sheet-up{from{transform:translate3d(0,40px,0);opacity:.6}to{transform:none;opacity:1}}
 @keyframes aq-sheet-down{to{transform:translate3d(0,40px,0);opacity:0}}
+
+/* ---------- 홈 '확인할 작업': 전체가 눌리는 한 줄 카드 ---------- */
+.aq-task-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.aq-task{width:100%;display:flex;align-items:center;gap:13px;padding:14px 14px 14px 14px;border:0;border-radius:20px;background:#fff;text-align:left;color:var(--aq-e-ink);cursor:pointer;transition:background-color .2s,transform .2s var(--aq-e-ease)}
+.aq-task:active{transform:scale(.985)}
+@media(hover:hover) and (pointer:fine){.aq-task:hover{transform:translateX(3px)}.aq-task:hover .aq-task-go i{transform:translateX(3px)}}
+.aq-task-icon{flex:0 0 42px;width:42px;height:42px;display:grid;place-items:center;border-radius:14px;background:#eaf0ff;color:#3b63f3}
+.aq-task.is-warn{background:#fff6ec}
+.aq-task.is-warn .aq-task-icon{background:#ffe9d2;color:#c26a1e}
+.aq-task.is-sign .aq-task-icon{background:#efeaff;color:#6852BA}
+.aq-task-text{flex:1;min-width:0;display:grid;gap:2px}
+.aq-task-text strong{font-size:15px;font-weight:750;letter-spacing:-.02em;line-height:1.4}
+.aq-task-text small{font-size:12px;color:#7c879b;line-height:1.5;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.aq-task-go{flex-shrink:0;display:inline-flex;align-items:center;gap:3px;font-size:13px;font-weight:750;color:#3b63f3;padding:7px 10px 7px 12px;border-radius:11px;background:#f1f5ff}
+.aq-task.is-warn .aq-task-go{background:#fff;color:#b35f19}
+.aq-task.is-sign .aq-task-go{color:#6852BA;background:#f4f1ff}
+.aq-task-go i{font-style:normal;font-size:17px;line-height:1;transition:transform .2s var(--aq-e-ease)}
+.aq-task:focus-visible{outline:3px solid #6F91FF;outline-offset:2px}
+@media(max-width:380px){.aq-task-go{padding:7px 8px}.aq-task-go{font-size:0;gap:0}.aq-task-go i{font-size:20px}}
