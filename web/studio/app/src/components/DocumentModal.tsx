@@ -236,7 +236,7 @@ export function DocumentModal({
       {doc.kind === 'agreements' && (
         <div className="aq-doc-extra">
           <button type="button" id="aqSignIntent" className="button" onClick={onOpenSignature}>
-            {doc.reviewStatus === 'approved' ? '서명 진행하기' : '서명 절차 확인'}
+            {doc.reviewStatus === 'approved' ? (doc.localSignatureAt ? '서명 다시 하기' : '서명 진행하기') : '검토 진행 상황 보기'}
           </button>
         </div>
       )}

@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { prefetchInitialRoute } from './routes';
+import { MOCK } from './api/client';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('#root 요소를 찾을 수 없어요.');
@@ -18,6 +19,9 @@ window.addEventListener('vite:preloadError', e => {
 window.setTimeout(() => sessionStorage.removeItem(RELOAD_FLAG), 10000);
 
 prefetchInitialRoute();
+
+// 체험 모드: 접수된 계약서 검토를 자동 완료 (별도 청크로 분리해 실제 모드 번들에는 포함되지 않음)
+if (MOCK) void import('./store/mockReviewer').then(m => m.startMockReviewer());
 
 createRoot(root).render(
   <StrictMode>

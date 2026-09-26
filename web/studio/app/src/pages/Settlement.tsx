@@ -47,7 +47,7 @@ function StatementForm({ onSave }: { onSave: (s: { period: string; platform: str
       </div>
       <div className="field">
         <label htmlFor="stAmount">정산 금액 (원)</label>
-        <input id="stAmount" inputMode="numeric" required placeholder="예: 24406" data-autofocus
+        <input id="stAmount" inputMode="numeric" required placeholder="예: 24406"
           value={amount} onChange={e => setAmount(e.target.value.replace(/[^\d]/g, ''))} />
         {amount && <p className="help">{money(Number(amount))}</p>}
       </div>
