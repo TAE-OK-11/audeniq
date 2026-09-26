@@ -289,13 +289,14 @@ impl ObjectStore for S3Store {
     async fn presign_put(
         &self,
         key: &str,
-        size: i64,
+        _size: i64,
         mime: &str,
         nonce: &str,
         expires: DateTime<Utc>,
     ) -> Result<UploadGrant> {
+        // Browsers cannot set Content-Length, so it is not signed; completion
+        // checks the stored object's size against the upload session instead.
         let headers = BTreeMap::from([
-            ("content-length".into(), size.to_string()),
             ("content-type".into(), mime.into()),
             ("x-amz-meta-upload-nonce".into(), nonce.into()),
         ]);
