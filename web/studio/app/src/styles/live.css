@@ -358,7 +358,7 @@ button,input,select,textarea{font-family:inherit;letter-spacing:inherit}button{-
 .aq-platform-track{height:8px;background:#e9edf5;border-radius:99px;margin-top:9px;overflow:hidden}
 .aq-platform-track span{display:block;height:100%;background:linear-gradient(90deg,#5c77e5,#a7baff);border-radius:99px;transition:width .5s var(--portal-ease)}
 .aq-platform-bars small{display:block;margin-top:6px;font-size:11px;color:var(--portal-muted)}
-.aq-report-doc{background:#fff;border:1px solid var(--portal-border);border-radius:28px;padding:28px 24px;margin-top:4px}
+.aq-report-doc{background:#f5f8ff;border:0;border-radius:32px;padding:28px 24px;margin-top:4px}
 .aq-report-doc-head{padding-bottom:20px;border-bottom:1px solid var(--portal-border)}
 .aq-report-doc-head .eyebrow{margin:0}
 .aq-report-doc-head h2{font-size:24px;letter-spacing:-.045em;margin:8px 0 6px;color:var(--portal-ink)}
