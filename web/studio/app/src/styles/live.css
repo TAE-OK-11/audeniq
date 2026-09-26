@@ -1139,3 +1139,7 @@ body.aq-nav-locked #portalNav{
 @media(max-width:760px){
   #view-release .spaced-actions{margin-top:0!important;margin-bottom:20px!important}
 }
+
+/* X 닫기 버튼 디자인 통일 */
+.icon-button{border:0!important;border-radius:13px!important;background:#f3f5fa!important;width:39px!important;height:39px!important;min-width:39px!important;display:grid!important;place-items:center!important;font-size:20px!important;line-height:1!important;color:#3c4b63!important;cursor:pointer!important;padding:0!important}
+.icon-button:hover{background:#e8edf4!important}
