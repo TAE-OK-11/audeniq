@@ -14,7 +14,7 @@ function stampNow(): string {
 
 const CERT_PROVIDERS = ['PASS', '카카오 인증서', '네이버 인증서', '토스 인증서'];
 
-type CertStep = 'select' | 'phone' | 'rrn' | 'verify' | 'done';
+type CertStep = 'select' | 'phone' | 'rrn' | 'verify';
 
 export function SignatureModal({
   doc,
@@ -205,15 +205,6 @@ export function SignatureModal({
     setPhase('complete');
   };
 
-  const resetCert = () => {
-    setCertStep('select');
-    setCertProvider('');
-    setPhone('');
-    setRrnFront('');
-    setRrnBack('');
-    setVerifyCode('');
-  };
-
   const title = stripSampleSuffix(doc.title);
 
   const renderCertBody = () => {
@@ -313,15 +304,6 @@ export function SignatureModal({
             </button>
           </>
         );
-      case 'done':
-        return (
-          <div className="aq-cert-done">
-            <div className="aq-cert-done-icon">✓</div>
-            <strong>본인 인증이 완료됐어요</strong>
-            <p>{certProvider} · {certName} · {phone}</p>
-            <p className="help">계약서 서명 기록에 본인 인증 내역이 저장됐어요.</p>
-          </div>
-        );
     }
   };
 
@@ -363,17 +345,6 @@ export function SignatureModal({
             </button>
             <button type="button" className="button secondary" onClick={() => setCertStep('rrn')}>
               이전
-            </button>
-          </>
-        );
-      case 'done':
-        return (
-          <>
-            <button type="button" className="button" onClick={() => { onSaved(); }}>
-              확인
-            </button>
-            <button type="button" className="button secondary" onClick={resetCert}>
-              다시 인증하기
             </button>
           </>
         );

@@ -70,16 +70,18 @@ export function Reports() {
   const thisMonth = '2026-09';
   const lastMonth = '2026-08';
 
-  const filtered = MOCK_ROWS.filter(r => {
+  const filtered = useMemo(() => MOCK_ROWS.filter(r => {
     if (period === 'month' && r.period !== thisMonth) return false;
     if (period === 'prev' && r.period !== lastMonth) return false;
     if (release !== 'all' && r.release !== release) return false;
     return true;
-  });
+  }), [period, release, thisMonth, lastMonth]);
 
-  const totalRevenue = filtered.reduce((n, r) => n + r.revenue, 0);
-  const totalPlays = filtered.reduce((n, r) => n + r.plays, 0);
-  const platforms = new Set(filtered.map(r => r.platform)).size;
+  const { totalRevenue, totalPlays, platforms } = useMemo(() => ({
+    totalRevenue: filtered.reduce((n, r) => n + r.revenue, 0),
+    totalPlays: filtered.reduce((n, r) => n + r.plays, 0),
+    platforms: new Set(filtered.map(r => r.platform)).size,
+  }), [filtered]);
 
   const byPlatform = useMemo(() => {
     const map = new Map<string, { plays: number; revenue: number }>();
