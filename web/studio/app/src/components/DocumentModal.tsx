@@ -76,7 +76,6 @@ export function DocumentModal({
   const [confirmed, setConfirmed] = useState(!!doc.checkedAt);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const downloadUrlRef = useRef<string>('');
-  const timersRef = useRef<number[]>([]);
 
   useEffect(() => {
     setConfirmed(!!doc.checkedAt);
@@ -85,8 +84,6 @@ export function DocumentModal({
 
   useEffect(() => () => {
     if (downloadUrlRef.current) URL.revokeObjectURL(downloadUrlRef.current);
-    timersRef.current.forEach(t => window.clearTimeout(t));
-    timersRef.current = [];
   }, []);
 
   const versions = doc.consentHistory.filter(x => x.action === '내용 확인');
@@ -141,14 +138,12 @@ export function DocumentModal({
     a.href = url;
     a.download = doc.fileName || 'AUDENIQ-document';
     a.click();
-    const timer = window.setTimeout(() => {
+    window.setTimeout(() => {
       if (downloadUrlRef.current === url) {
         URL.revokeObjectURL(url);
         downloadUrlRef.current = '';
       }
     }, 30000);
-    // unmount 시 타이머 정리 (누수 방지)
-    timersRef.current.push(timer);
   };
 
   return (
