@@ -143,19 +143,23 @@ export function Releases() {
           </div>
           <div className="studio-result-count" id="catalogCount" aria-live="polite">{filtered.length}개의 발매</div>
           {filtered.length ? (
-            <div className="data-list studio-catalog-list">
+            <div className="aq-catalog-cards">
               {filtered.map(r => (
-                <article key={r.id} className="release-row studio-album-row" onClick={() => openRelease(r.id)} style={{ cursor: 'pointer' }}>
+                <article
+                  key={r.id} className="aq-release-card"
+                  onClick={() => openRelease(r.id)}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openRelease(r.id); } }}
+                  tabIndex={0} role="button" aria-label={`${r.title || '제목 없는 발매'} 상세 보기`}
+                >
                   <Cover />
                   <div className="min-0">
-                    <button type="button" className="row-name" onClick={e => { e.stopPropagation(); openRelease(r.id); }}>
-                      {r.title || '제목 없는 발매'}
-                    </button>
+                    <span className="row-name">{r.title || '제목 없는 발매'}</span>
                     <span className="row-sub">{r.artist || '아티스트 미입력'} · {r.track_count}곡</span>
                     <span className="row-sub">{r.release_date ?? '발매일 미정'}</span>
                   </div>
-                  <div className="row-end">
+                  <div className="aq-release-end">
                     <span className={`status-chip ${chipOf(r.status)}`}>{labelOf(r.status)}</span>
+                    <span className="chevron" aria-hidden="true">›</span>
                   </div>
                 </article>
               ))}
@@ -175,10 +179,16 @@ export function Releases() {
               value={trackQuery} onChange={e => setTrackQuery(e.target.value)}
             />
           </div>
+          <div className="studio-result-count" aria-live="polite">{filteredTracks.length}개의 트랙</div>
           {filteredTracks.length ? (
-            <div className="data-list">
+            <div className="aq-catalog-cards">
               {filteredTracks.map(t => (
-                <div key={t.id} className="track-row aq-track-row" onClick={() => openRelease(t.releaseId)} style={{ cursor: 'pointer' }}>
+                <div
+                  key={t.id} className="track-row aq-track-row"
+                  onClick={() => openRelease(t.releaseId)}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openRelease(t.releaseId); } }}
+                  tabIndex={0} role="button" aria-label={`${t.title || '제목 없는 곡'} 상세 보기`}
+                >
                   <Cover />
                   <div className="min-0">
                     <span className="row-name">{t.title || '제목 없는 곡'}</span>
