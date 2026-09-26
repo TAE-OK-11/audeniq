@@ -52,7 +52,7 @@ export function Contracts() {
 
       <div id="contractList">
         {agreements.length ? (
-          <div className="aq-doc-grid">
+          <div className="aq-doc-grid aq-stagger">
             {agreements.map(c => <DocCard key={c.id} c={c} onOpen={setOpenId} />)}
           </div>
         ) : (
@@ -79,7 +79,8 @@ export function Contracts() {
         <SignatureModal
           doc={openDoc}
           onBack={() => setSigning(false)}
-          onSaved={() => setSigning(false)}
+          onDone={() => { setSigning(false); setOpenId(null); }}
+          onSaved={() => {}}
         />
       )}
     </div>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { AuthLayout } from '../components/AuthLayout';
 
 // 백엔드에 계정 찾기 API가 아직 없어서 프론트엔드 흐름만 구현.
@@ -27,7 +27,7 @@ export function FindAccount() {
 
   return (
     <AuthLayout title="계정을 찾아드릴게요." sub="가입할 때 입력한 정보를 입력해 주세요.">
-      <div className="tabs" role="tablist" aria-label="계정 찾기 구분">
+      <div className="tabs aq-tabs" role="tablist" aria-label="계정 찾기 구분">
         <button type="button" role="tab" className="tab" aria-selected={tab === 'id'}
           onClick={() => { setTab('id'); reset(); }}>아이디 찾기</button>
         <button type="button" role="tab" className="tab" aria-selected={tab === 'password'}
@@ -36,6 +36,7 @@ export function FindAccount() {
 
       {done ? (
         <div className="auth-done">
+          <span className="aq-done-icon" aria-hidden="true">i</span>
           <p style={{ whiteSpace: 'pre-line' }}>{done}</p>
           <Link to="/login" className="button auth-submit">로그인으로 돌아가기</Link>
         </div>

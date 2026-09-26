@@ -5,6 +5,7 @@ import { BankLogo } from './BankLogo';
 import { useToast } from './Toast';
 import { setPayment, TYPE_LABEL, type PaymentInfo } from '../store/payment';
 import { getProfileSnapshot } from '../store/profile';
+import { stampNow } from '../lib/date';
 
 const FINANCIAL_INSTITUTIONS: Record<string, { label: string; note: string; items: string[] }> = {
   bank: {
@@ -54,11 +55,6 @@ interface Draft {
   account: string;
 }
 
-function stampNow(): string {
-  const d = new Date();
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
 
 export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
   const toast = useToast();
@@ -110,7 +106,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
   );
 
   const back = () => {
-    if (step === 0) { onClose(); return; }
+    if (step === 0 || step === 4) { onClose(); return; }
     setStep(s => s - 1);
   };
 

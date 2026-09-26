@@ -4,13 +4,10 @@ import { Modal } from './Modal';
 import { useToast } from './Toast';
 import { updateDoc, type DocRecord } from '../store/docs';
 import { getProfileSnapshot } from '../store/profile';
-import { stripSampleSuffix } from '../lib/format';
-
-function stampNow(): string {
-  const d = new Date();
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
+import { localStamp, stripSampleSuffix } from '../lib/format';
+import { stampNow } from '../lib/date';
+import { uid } from '../lib/store';
+import { pushNotice } from '../store/support';
 
 const CERT_PROVIDERS = ['PASS', '카카오 인증서', '네이버 인증서', '토스 인증서'];
 
@@ -20,10 +17,15 @@ export function SignatureModal({
   doc,
   onBack,
   onSaved,
+  onDone,
 }: {
   doc: DocRecord;
+  /** 서명 창을 닫고 문서 상세로 돌아감 */
   onBack: () => void;
-  onSaved: () => void;
+  /** 서명·인증이 저장될 때마다 호출 (창은 닫지 않음) */
+  onSaved?: () => void;
+  /** 계약서 완성 후 확인 — 없으면 onBack */
+  onDone?: () => void;
 }) {
   const toast = useToast();
   const readOnly = doc.reviewStatus !== 'approved';
@@ -139,7 +141,7 @@ export function SignatureModal({
         { status: '직접 서명 입력 보관', time: at, detail: '서명 이미지 보관 · 본인 인증 및 법적 전자서명 대기' },
       ],
     });
-    onSaved();
+    onSaved?.();
     // 2단계: 전자서명 진행으로
     setCertStep('select');
     setPhase('cert');
@@ -200,7 +202,12 @@ export function SignatureModal({
         { status: '계약서 완성', time: at, detail: '직접 서명 + 전자서명(본인 인증) 완료' },
       ],
     });
-    onSaved();
+    onSaved?.();
+    pushNotice({
+      id: uid('n'), kind: '서류', time: at, link: '/contracts',
+      title: `${stripSampleSuffix(doc.releaseTitle || doc.title)} 계약서 서명이 완료됐어요.`,
+      detail: '직접 서명과 본인 인증이 완료됐어요. 계약서 사본은 계약서 메뉴에서 언제든 확인할 수 있어요.',
+    });
     // 3단계: 계약서 완성
     setPhase('complete');
   };
@@ -369,7 +376,7 @@ export function SignatureModal({
       case 'done':
         return (
           <>
-            <button type="button" className="button" onClick={() => { onSaved(); }}>
+            <button type="button" className="button" onClick={() => (onDone ?? onBack)()}>
               확인
             </button>
             <button type="button" className="button secondary" onClick={resetCert}>
@@ -397,7 +404,7 @@ export function SignatureModal({
         <div className="aq-sign-doc">
           <small>{readOnly ? '서명 절차를 확인할 문서' : '서명할 문서'} · v{doc.version || '1.0'}</small>
           <strong>{title}</strong>
-          <div className="help">검토 완료 · {doc.releaseTitle || '공통 문서'}</div>
+          <div className="help">{readOnly ? '검토 진행 중' : '검토 완료'} · {doc.releaseTitle || '공통 문서'}</div>
         </div>
 
         {phase === 'sign' ? (
@@ -452,7 +459,7 @@ export function SignatureModal({
             <div className="aq-complete-summary">
               <div><small>서명자</small><strong>{name || certName || doc.signerName || '-'}</strong></div>
               <div><small>인증 수단</small><strong>{certProvider || '-'}</strong></div>
-              <div><small>완성 시각</small><strong>{doc.localSignatureAt || stampNow()}</strong></div>
+              <div><small>완성 시각</small><strong>{localStamp(doc.localSignatureAt || stampNow())}</strong></div>
             </div>
           </section>
         )}
@@ -471,7 +478,7 @@ export function SignatureModal({
           renderCertFoot()
         ) : (
           <>
-            <button type="button" className="button" onClick={onBack}>
+            <button type="button" className="button" onClick={() => (onDone ?? onBack)()}>
               계약서 완성 확인
             </button>
             <button type="button" className="button secondary" onClick={() => { setPhase('sign'); }}>

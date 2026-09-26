@@ -3,19 +3,11 @@ import { useEffect, useRef, useState } from 'react';
 import { Modal } from './Modal';
 import { useToast } from './Toast';
 import { updateDoc, type DocRecord } from '../store/docs';
-import { localStamp } from '../lib/format';
+import { fileSize, localStamp } from '../lib/format';
+import { stampNow } from '../lib/date';
+import { docState } from '../store/docs';
 
-function stampNow(): string {
-  const d = new Date();
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
-function statusPill(c: DocRecord): string {
-  if (c.reviewStatus === 'awaiting_documents') return '서류 접수 대기';
-  if (c.reviewStatus === 'approved') return '검토 완료';
-  return '접수 대기';
-}
+const statusPill = docState;
 
 interface Stage { status: string; time: string; detail: string }
 
@@ -37,7 +29,7 @@ function FilePreview({ doc }: { doc: DocRecord }) {
   const [body, setBody] = useState<React.ReactNode>('첨부 서류를 확인하고 있어요.');
   useEffect(() => {
     const blob = doc.fileBlob;
-    if (!blob) { setBody('첨부 서류를 확인하고 있어요.'); return; }
+    if (!blob) { setBody('원본 파일은 첨부한 기기의 현재 세션에서만 미리 볼 수 있어요. 파일명과 제출 기록은 보관돼요.'); return; }
     let url = '';
     let cancelled = false;
     (async () => {
@@ -107,6 +99,15 @@ export function DocumentModal({
     let base: Partial<DocRecord> = {};
     let history = doc.reviewHistory;
     let fileName = doc.fileName;
+    // 체크박스만 체크하고 바로 검토 요청을 누른 경우 확인 기록을 함께 남긴다
+    if (!doc.checkedAt && confirmed) {
+      const at = stampNow();
+      base = {
+        checked: true,
+        checkedAt: at,
+        consentHistory: [...doc.consentHistory, { time: at, action: '내용 확인', version: doc.version || '1.0' }],
+      };
+    }
     if (pendingFile) {
       const okType = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'text/plain'].includes(pendingFile.type)
         || /\.(pdf|txt)$/i.test(pendingFile.name);
@@ -114,9 +115,13 @@ export function DocumentModal({
       const at = stampNow();
       fileName = pendingFile.name;
       history = [...history, { status: '서류 등록', time: at, detail: pendingFile.name + ' 원본 첨부' }];
-      base = { fileName: pendingFile.name, fileBlob: pendingFile, fileType: pendingFile.type, uploadedAt: at };
+      base = { ...base, fileName: pendingFile.name, fileBlob: pendingFile, fileType: pendingFile.type, uploadedAt: at };
     }
-    if (!doc.checkedAt) { toast('먼저 문서 내용을 확인하고 저장해 주세요.'); return; }
+    if (!doc.checkedAt && !confirmed) { toast('문서 내용을 확인했다고 체크해 주세요.'); return; }
+    if (['review', 'prepared', 'approved'].includes(doc.reviewStatus) && !pendingFile) {
+      toast('이미 검토 요청된 문서예요.', 'info');
+      return;
+    }
     if (doc.kind === 'rights' && !fileName) { toast('요청된 증빙 서류를 첨부해 주세요.'); return; }
     const at = stampNow();
     updateDoc(doc.id, {
@@ -222,7 +227,9 @@ export function DocumentModal({
             accept=".pdf,.txt,image/png,image/jpeg,image/webp,application/pdf,text/plain"
             onChange={e => setPendingFile(e.target.files?.[0] || null)}
           />
-          <p className="help">서류를 선택하면 원본과 발매 정보가 함께 보관돼요.</p>
+          <p className="help">
+            {pendingFile ? `선택한 파일 · ${pendingFile.name} (${fileSize(pendingFile.size)}) — ‘검토 요청’을 누르면 제출돼요.` : '서류를 선택하면 원본과 발매 정보가 함께 보관돼요.'}
+          </p>
         </div>
       )}
 

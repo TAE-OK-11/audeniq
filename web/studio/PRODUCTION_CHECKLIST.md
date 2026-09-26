@@ -8,13 +8,14 @@
 - [x] 하드코딩된 시크릿 없음 (소스·빌드 산출물 스캔)
 - [x] `dangerouslySetInnerHTML` 1건 — `esc()` 이스케이프 처리됨 (BankLogo)
 - [x] 주민등록번호: 메모리 state에만 존재, 저장·로그·전송 없음
-- [x] localStorage: mock 세션 플래그만 저장 (민감정보 없음)
-- [x] 의존성: React 19.3.0 / Vite 6.4.3 / react-router 7.18.4 — 알려진 CVE 없음
+- [x] localStorage(`aq.studio.v2.*`): 목 모드 데이터만 저장. 계좌번호는 마스킹(뒤 4자리)만, 첨부 원본(File)은 저장하지 않음
+- [x] 의존성(2026-09-26 최신): React 19.3.0 / React Router 8.4.0 / Vite 8.3.1 / TypeScript 7.0.2 / Vitest 5.0.2 — 알려진 CVE 없음
   - React RSC 계열 CVE(CVE-2025-55182 등): 서버 컴포넌트 미사용으로 해당 없음
   - Vite CVE: dev-server 전용, 6.4.3은 패치 버전
 - [x] CSP 강화 (`public/_headers`): `/connected/*`에 strict CSP 적용
   - `script-src 'self'` (인라인 스크립트 없음 확인)
-  - `style-src 'self' 'unsafe-inline'` (React 인라인 스타일 40건 때문)
+  - `style-src 'self' 'unsafe-inline'` (React 인라인 스타일 때문)
+  - `frame-src blob:` (첨부 PDF 미리보기)
 - [x] 보안 헤더: nosniff, Referrer-Policy, Permissions-Policy, COOP, X-Robots-Tag
 - [x] `robots` noindex/nofollow (스테이징 단계)
 
@@ -25,7 +26,8 @@
 ### 빌드
 - [x] CSS syntax warning 수정 (깨진 주석 `not boxed page frames. */`)
 - [x] `bun run check` + `bun run build` 통과
-- [x] MOCK 모드 환경변수화 (`VITE_MOCK`, `VITE_API_BASE`)
+- [x] MOCK 모드 환경변수화 (`VITE_MOCK`, `VITE_API_BASE`) — 실제로 `api/client.ts`가 읽도록 연결
+- [x] `bun run test` (Vitest 12건) + Playwright E2E 15개 시나리오 통과
 
 ## ⚠️ 실제 운영 전환 전 필수
 
