@@ -15,6 +15,8 @@ set -euo pipefail
 cd "$(dirname "$0")"
 ENV_FILE=production.env
 COMPOSE=(docker compose -p audeniq-production -f compose.production.yaml --env-file "$ENV_FILE")
+# 서버에만 있는 조정 (예: 터널 토큰 전 임시 포트 매핑)은 compose.override.yaml에 둔다
+[ -f compose.override.yaml ] && COMPOSE+=(-f compose.override.yaml)
 HISTORY=deploy-history.log
 
 die() { echo "deploy: $*" >&2; exit 1; }
