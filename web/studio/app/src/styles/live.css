@@ -1143,3 +1143,23 @@ body.aq-nav-locked #portalNav{
 /* X 닫기 버튼 디자인 통일 */
 .icon-button{border:0!important;border-radius:13px!important;background:#f3f5fa!important;width:39px!important;height:39px!important;min-width:39px!important;display:grid!important;place-items:center!important;font-size:20px!important;line-height:1!important;color:#3c4b63!important;cursor:pointer!important;padding:0!important}
 .icon-button:hover{background:#e8edf4!important}
+
+/* 서명 절차 단계 표시 */
+.aq-phase-steps{display:flex;gap:6px;margin:0 0 14px}
+.aq-phase-step{flex:1;display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:#8a94a8;background:#f3f5fa;border-radius:10px;padding:8px 6px;justify-content:center}
+.aq-phase-step em{font-style:normal;width:18px;height:18px;border-radius:50%;background:#d5dbe7;color:#fff;font-size:11px;display:grid;place-items:center;flex-shrink:0}
+.aq-phase-step.active{background:#e8effe;color:#2f6df6}
+.aq-phase-step.active em{background:#2f6df6}
+.aq-phase-step.done{color:#2f6df6}
+.aq-phase-step.done em{background:#2f6df6}
+
+/* 계약서 완성 화면 */
+.aq-complete-hero{text-align:center;padding:28px 0 20px}
+.aq-complete-check{display:inline-grid;place-items:center;width:64px;height:64px;border-radius:50%;background:#e6f7ed;color:#16a34a;font-size:30px;font-weight:700;margin-bottom:14px}
+.aq-complete-hero h3{font-size:20px;margin:0 0 8px;letter-spacing:-.02em}
+.aq-complete-hero p{font-size:14px;color:#5b6b82;margin:0}
+.aq-complete-summary{background:#f7f9fc;border-radius:16px;padding:6px 18px;margin-top:8px}
+.aq-complete-summary div{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid #edf1f7;gap:12px}
+.aq-complete-summary div:last-child{border-bottom:0}
+.aq-complete-summary small{font-size:12px;color:#8a94a8}
+.aq-complete-summary strong{font-size:14px;color:#1d2b45;text-align:right}

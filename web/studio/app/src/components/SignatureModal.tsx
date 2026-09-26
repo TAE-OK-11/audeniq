@@ -27,7 +27,8 @@ export function SignatureModal({
 }) {
   const toast = useToast();
   const readOnly = doc.reviewStatus !== 'approved';
-  const [tab, setTab] = useState<'draw' | 'cert'>('draw');
+  // 순차 단계: 1) 서명 진행 → 2) 전자서명 진행 → 3) 계약서 완성
+  const [phase, setPhase] = useState<'sign' | 'cert' | 'complete'>('sign');
   const [name, setName] = useState(doc.signerName || getProfileSnapshot().name || '');
   const [ack, setAck] = useState(false);
   const [strokes, setStrokes] = useState(0);
@@ -61,19 +62,19 @@ export function SignatureModal({
     ctx.clearRect(0, 0, rect.width, rect.height);
   };
 
-  // 라이브는 모달 열 때 한 번만 initCanvas (탭 전환 시 다시 그리지 않음)
+  // 서명 단계에서는 모달 열 때 한 번만 initCanvas
   useEffect(() => {
     const t = window.setTimeout(initCanvas, 0);
     return () => window.clearTimeout(t);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 직접 서명 탭으로 돌아오면 캔버스 다시 초기화
+  // 서명 단계로 돌아오면 캔버스 다시 초기화
   useEffect(() => {
-    if (tab === 'draw') {
+    if (phase === 'sign') {
       const t = window.setTimeout(initCanvas, 0);
       return () => window.clearTimeout(t);
     }
-  }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const xy = (e: React.PointerEvent) => {
     const r = canvasRef.current!.getBoundingClientRect();
@@ -139,7 +140,10 @@ export function SignatureModal({
       ],
     });
     onSaved();
-    toast('서명 입력을 보관했어요.');
+    // 2단계: 전자서명 진행으로
+    setCertStep('select');
+    setPhase('cert');
+    toast('서명이 저장됐어요. 전자서명을 진행해 주세요.');
   };
 
   // --- 민간인증서 플로우 ---
@@ -193,9 +197,12 @@ export function SignatureModal({
       reviewHistory: [
         ...doc.reviewHistory,
         { status: `${certProvider} 본인 인증 완료`, time: at, detail: `휴대폰 본인 확인 · ${phone}` },
+        { status: '계약서 완성', time: at, detail: '직접 서명 + 전자서명(본인 인증) 완료' },
       ],
     });
-    setCertStep('done');
+    onSaved();
+    // 3단계: 계약서 완성
+    setPhase('complete');
   };
 
   const resetCert = () => {
@@ -322,8 +329,8 @@ export function SignatureModal({
     switch (certStep) {
       case 'select':
         return (
-          <button type="button" className="button secondary" onClick={onBack}>
-            문서로 돌아가기
+          <button type="button" className="button secondary" onClick={() => setPhase('sign')}>
+            이전: 서명 단계로
           </button>
         );
       case 'phone':
@@ -373,34 +380,28 @@ export function SignatureModal({
     }
   };
 
+  const phaseLabel = phase === 'sign' ? '1단계 · 서명 진행' : phase === 'cert' ? '2단계 · 전자서명 진행' : '3단계 · 계약서 완성';
+  const phaseIndex = phase === 'sign' ? 0 : phase === 'cert' ? 1 : 2;
+
   return (
     <Modal title="계약서 서명" onClose={onBack} modalClass="aq-signature-mode">
       <div className="aq-sign-body">
-        <p className="aq-sign-intro">계약서 내용을 확인하고 서명 방법을 선택해 주세요.</p>
+        <div className="aq-phase-steps" aria-label="서명 절차 단계">
+          {['서명 진행', '전자서명 진행', '계약서 완성'].map((label, i) => (
+            <span key={label} className={`aq-phase-step${i === phaseIndex ? ' active' : ''}${i < phaseIndex ? ' done' : ''}`}>
+              <em>{i + 1}</em>{label}
+            </span>
+          ))}
+        </div>
+        <p className="aq-sign-intro">{phaseLabel}</p>
         <div className="aq-sign-doc">
           <small>{readOnly ? '서명 절차를 확인할 문서' : '서명할 문서'} · v{doc.version || '1.0'}</small>
           <strong>{title}</strong>
           <div className="help">검토 완료 · {doc.releaseTitle || '공통 문서'}</div>
         </div>
-        <div className="aq-sign-tabs" role="tablist" aria-label="서명 방법">
-          <button
-            type="button" id="aqTabDraw" role="tab"
-            aria-selected={tab === 'draw'} aria-controls="aqDrawPane"
-            onClick={() => setTab('draw')}
-          >
-            직접 서명
-          </button>
-          <button
-            type="button" id="aqTabCert" role="tab"
-            aria-selected={tab === 'cert'} aria-controls="aqCertPane"
-            onClick={() => { setTab('cert'); setCertStep('select'); }}
-          >
-            민간인증서
-          </button>
-        </div>
 
-        {tab === 'draw' ? (
-          <section id="aqDrawPane" role="tabpanel">
+        {phase === 'sign' ? (
+          <section id="aqDrawPane">
             <div className="field">
               <label htmlFor="aqSignerName">서명자 이름</label>
               <input
@@ -432,29 +433,51 @@ export function SignatureModal({
               <input type="checkbox" id="aqSignAck" checked={ack} onChange={e => setAck(e.target.checked)} />
               <span>
                 서명할 문서의 내용을 확인했어요.
-                <small>이 단계에서는 서명 이미지를 입력·보관하며, 법적 전자서명과 본인 인증은 별도 연동이 필요해요.</small>
+                <small>서명을 저장하면 다음 단계에서 본인 인증(전자서명)을 진행해요.</small>
               </span>
             </label>
             {readOnly && <div className="notice">문서 검토가 완료되면 서명을 저장할 수 있어요.</div>}
           </section>
-        ) : (
-          <section id="aqCertPane" role="tabpanel">
+        ) : phase === 'cert' ? (
+          <section id="aqCertPane">
             {renderCertBody()}
+          </section>
+        ) : (
+          <section id="aqCompletePane">
+            <div className="aq-complete-hero">
+              <span className="aq-complete-check" aria-hidden="true">✓</span>
+              <h3>계약서 서명이 완성됐어요</h3>
+              <p>직접 서명과 전자서명(본인 인증)이 모두 완료됐어요.</p>
+            </div>
+            <div className="aq-complete-summary">
+              <div><small>서명자</small><strong>{name || certName || doc.signerName || '-'}</strong></div>
+              <div><small>인증 수단</small><strong>{certProvider || '-'}</strong></div>
+              <div><small>완성 시각</small><strong>{doc.localSignatureAt || stampNow()}</strong></div>
+            </div>
           </section>
         )}
       </div>
       <div className="aq-sign-foot">
-        {tab === 'draw' ? (
+        {phase === 'sign' ? (
           <>
             <button type="button" className="button" id="aqSignSave" disabled={readOnly} onClick={save}>
-              서명 입력 저장
+              서명 저장하고 전자서명 진행
             </button>
             <button type="button" className="button secondary" id="aqSignReturn" onClick={onBack}>
               문서로 돌아가기
             </button>
           </>
-        ) : (
+        ) : phase === 'cert' ? (
           renderCertFoot()
+        ) : (
+          <>
+            <button type="button" className="button" onClick={onBack}>
+              계약서 완성 확인
+            </button>
+            <button type="button" className="button secondary" onClick={() => { setPhase('sign'); }}>
+              서명 다시 하기
+            </button>
+          </>
         )}
       </div>
     </Modal>
