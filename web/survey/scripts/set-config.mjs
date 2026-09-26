@@ -14,10 +14,13 @@ db.database_id = databaseId;
 cfg.vars ??= {};
 cfg.vars.TURNSTILE_SITE_KEY = siteKey;
 writeFileSync(path, `${JSON.stringify(cfg, null, 2)}\n`);
-const htmlPath = new URL('../public/index.html', import.meta.url);
-const html = readFileSync(htmlPath, 'utf8');
+// React 원본(app/index.html)과 커밋된 빌드(public/index.html)의 공개 키 메타태그를 함께 바꾼다
 const meta = /<meta name="turnstile-site-key" content="[^"]*">/;
-if (!meta.test(html)) throw new Error('index.html의 Turnstile 공개 키 메타태그가 없습니다.');
-writeFileSync(htmlPath, html.replace(meta, `<meta name="turnstile-site-key" content="${siteKey}">`));
-console.log('wrangler.jsonc 및 정적 index.html에 D1 ID와 공개 Site Key를 적용했습니다.');
+for (const file of ['../app/index.html', '../public/index.html']) {
+  const htmlPath = new URL(file, import.meta.url);
+  const html = readFileSync(htmlPath, 'utf8');
+  if (!meta.test(html)) throw new Error(`${file}의 Turnstile 공개 키 메타태그가 없습니다.`);
+  writeFileSync(htmlPath, html.replace(meta, `<meta name="turnstile-site-key" content="${siteKey}">`));
+}
+console.log('wrangler.jsonc, app/index.html, public/index.html에 D1 ID와 공개 Site Key를 적용했습니다.');
 console.log('비밀 키는 파일에 쓰지 않았습니다.');
