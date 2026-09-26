@@ -1,10 +1,10 @@
-// 정산·지급 — 라이브 view-settlement / renderSettlement / openPayout 대응
+// 정산·지급 — hero + 탭 구조의 단순화된 레이아웃
 import { useState } from 'react';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { BankLogo } from '../components/BankLogo';
 import { PaymentSetupModal } from '../components/PaymentSetupModal';
-import { isPaymentRegistered, usePayment, TYPE_LABEL } from '../store/payment';
+import { isPaymentRegistered, usePayment } from '../store/payment';
 import { money, niceDate } from '../lib/format';
 
 interface Statement { id: string; period: string; platform: string; amount: number; note: string; created: string }
@@ -24,6 +24,7 @@ export function Settlement() {
   const payment = usePayment();
   const [statements, setStatements] = useState<Statement[]>(INITIAL_STATEMENTS);
   const [payouts, setPayouts] = useState<Payout[]>(INITIAL_PAYOUTS);
+  const [tab, setTab] = useState<'statements' | 'payouts'>('statements');
   const [showPayout, setShowPayout] = useState(false);
   const [showPaySetup, setShowPaySetup] = useState(false);
   const [showPaymentSetup, setShowPaymentSetup] = useState(false);
@@ -37,7 +38,6 @@ export function Settlement() {
   const left = Math.max(0, total - used);
 
   const openPayoutModal = () => {
-    // 라이브 openPayout: 미등록이면 토스트 후 수령 정보 등록 모달을 연다
     if (!isPaymentRegistered(payment)) {
       toast('수익을 받을 정보를 먼저 등록해 주세요.');
       setShowPaySetup(true);
@@ -83,116 +83,103 @@ export function Settlement() {
         </div>
       </div>
 
-      <div className="stat-grid" id="settlementStats">
-        <div className="surface stat-card"><small>기록한 정산액</small><strong>{money(total)}</strong></div>
-        <div className="surface stat-card"><small>요청 전 잔액</small><strong>{money(left)}</strong></div>
-        <div className="surface stat-card"><small>지급 요청 기록 합계</small><strong>{money(used)}</strong></div>
-      </div>
-
-      <section className="studio-payout-surface" aria-labelledby="payoutHeading">
-        <div>
-          <span className="eyebrow">PAYOUT</span>
-          <h2 id="payoutHeading">수익을 받아보세요.</h2>
-          <p>지급 가능한 내역과 수령 정보를 확인한 뒤 요청할 수 있어요.</p>
+      <section className="surface settle-hero" aria-labelledby="settleHeroHeading">
+        <div className="settle-hero-top">
+          <div>
+            <span className="eyebrow">PAYOUT</span>
+            <h2 id="settleHeroHeading">요청 전 잔액</h2>
+            <strong className="settle-hero-amount">{money(left)}</strong>
+            <p className="settle-hero-sub">
+              기록한 정산액 {money(total)} · 지급 요청 합계 {money(used)}
+            </p>
+          </div>
+          <button type="button" className="button" onClick={openPayoutModal}>수익 받기</button>
         </div>
-        <div className="studio-payout-actions">
-          <span id="studioAvailable" className="studio-available">{money(left)}</span>
-          <button type="button" className="button" id="studioPayoutOpen" onClick={openPayoutModal}>수익 받기</button>
+        <div className="settle-hero-account">
+          {paymentRegistered && payment ? (
+            <>
+              <BankLogo name={payment.bank} />
+              <span className="min-0">{payment.bank} · •••• {payment.last4} · {payment.recipient}</span>
+              <button type="button" className="link-btn" onClick={() => setShowPaymentSetup(true)}>변경</button>
+            </>
+          ) : (
+            <>
+              <span className="aq-payment-badge is-empty" aria-hidden="true">₩</span>
+              <span className="min-0">수익을 받을 계좌를 등록해 주세요.</span>
+              <button type="button" className="link-btn" onClick={() => setShowPaymentSetup(true)}>등록하기</button>
+            </>
+          )}
         </div>
       </section>
 
-      <div className="section-top">
-        <h2>수익 수령 정보</h2>
-      </div>
-      <section className="aq-payment-summary" id="paymentSummary" aria-live="polite">
-        {paymentRegistered && payment ? (
-          <>
-            <BankLogo name={payment.bank} />
-            <div className="min-0" style={{ flex: 1 }}>
-              <span className="aq-payment-state">등록 완료</span>
-              <strong>{payment.bank} · •••• {payment.last4}</strong>
-              <p>{payment.recipient} · {TYPE_LABEL[payment.type]}</p>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="aq-payment-badge is-empty" aria-hidden="true">₩</div>
-            <div className="min-0" style={{ flex: 1 }}>
-              <span className="aq-payment-state">등록 필요</span>
-              <strong>수익을 받을 정보를 등록해 주세요.</strong>
-              <p>수령인과 계좌 정보를 단계별로 안전하게 입력해요.</p>
-            </div>
-          </>
-        )}
+      <div className="tabs" role="tablist" aria-label="정산 내역 구분">
         <button
-          type="button" className="button secondary" id="openPaymentSetup"
-          onClick={() => setShowPaymentSetup(true)}
+          type="button" role="tab" className="tab"
+          aria-selected={tab === 'statements'}
+          onClick={() => setTab('statements')}
         >
-          {paymentRegistered ? '수령 정보 변경' : '수령 정보 등록'}
+          정산 내역
         </button>
-      </section>
-
-      <div className="notice" id="settlementNotice">
-        정산 내역과 지급 요청 기록을 확인해 주세요. 실제 송금은 지급 서비스 연결 후 진행돼요.
+        <button
+          type="button" role="tab" className="tab"
+          aria-selected={tab === 'payouts'}
+          onClick={() => setTab('payouts')}
+        >
+          지급 요청 기록
+        </button>
       </div>
 
-      <div className="section-top">
-        <h2>정산 내역</h2>
-        <div className="row-actions">
-          <button type="button" id="newStatement" className="button ghost" hidden disabled aria-hidden="true" tabIndex={-1}>정산 내역 관리</button>
-          <button type="button" id="requestPayout" className="button" hidden aria-hidden="true" tabIndex={-1}>수익 받기</button>
+      {tab === 'statements' ? (
+        <div id="statementList">
+          {orderedStatements.length ? (
+            <div className="aq-catalog-cards">
+              {orderedStatements.map(s => (
+                <div key={s.id} className="aq-statement-card">
+                  <span className="aq-statement-icon" aria-hidden="true">₩</span>
+                  <div className="min-0">
+                    <span className="row-name">{s.period} · {s.platform}</span>
+                    <span className="row-sub">{s.note || '수기 등록 정산 내역'} · {niceDate(s.created)}</span>
+                  </div>
+                  <div className="aq-statement-end">
+                    <strong>{money(s.amount)}</strong>
+                    <button type="button" className="link-btn" aria-label="정산 내역 삭제" onClick={() => deleteStatement(s.id)}>×</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-page">
+              <h2>정산 내역이 없어요.</h2>
+              <p>정산서를 받은 뒤 금액과 기간을 직접 기록할 수 있어요.</p>
+            </div>
+          )}
         </div>
-      </div>
-      <div id="statementList">
-        {orderedStatements.length ? (
-          <div className="aq-catalog-cards">
-            {orderedStatements.map(s => (
-              <div key={s.id} className="aq-statement-card">
-                <span className="aq-statement-icon" aria-hidden="true">₩</span>
-                <div className="min-0">
-                  <span className="row-name">{s.period} · {s.platform}</span>
-                  <span className="row-sub">{s.note || '수기 등록 정산 내역'} · {niceDate(s.created)}</span>
+      ) : (
+        <div id="payoutList">
+          {payouts.length ? (
+            <div className="aq-catalog-cards">
+              {[...payouts].reverse().map(p => (
+                <div key={p.id} className="aq-statement-card">
+                  <span className="aq-statement-icon" aria-hidden="true">↗</span>
+                  <div className="min-0">
+                    <span className="row-name">{money(p.amount)} · 지급 요청 기록</span>
+                    <span className="row-sub">{niceDate(p.created)} · {p.note || '현재 작업 공간에만 기록됨'}</span>
+                  </div>
+                  <div className="aq-statement-end">
+                    <span className="status-chip ready">전송 전</span>
+                    <button type="button" className="link-btn" aria-label="요청 기록 삭제" onClick={() => deletePayout(p.id)}>×</button>
+                  </div>
                 </div>
-                <div className="aq-statement-end">
-                  <strong>{money(s.amount)}</strong>
-                  <button type="button" className="link-btn" aria-label="정산 내역 삭제" onClick={() => deleteStatement(s.id)}>×</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="empty-page">
-            <h2>정산 내역이 없어요.</h2>
-            <p>정산서를 받은 뒤 금액과 기간을 직접 기록할 수 있어요.</p>
-          </div>
-        )}
-      </div>
-
-      <div className="section-top"><h2>지급 요청 기록</h2></div>
-      <div id="payoutList">
-        {payouts.length ? (
-          <div className="aq-catalog-cards">
-            {[...payouts].reverse().map(p => (
-              <div key={p.id} className="aq-statement-card">
-                <span className="aq-statement-icon" aria-hidden="true">↗</span>
-                <div className="min-0">
-                  <span className="row-name">{money(p.amount)} · 지급 요청 기록</span>
-                  <span className="row-sub">{niceDate(p.created)} · {p.note || '현재 작업 공간에만 기록됨'}</span>
-                </div>
-                <div className="aq-statement-end">
-                  <span className="status-chip ready">전송 전</span>
-                  <button type="button" className="link-btn" aria-label="요청 기록 삭제" onClick={() => deletePayout(p.id)}>×</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="empty-page">
-            <h2>지급 요청 기록이 없어요.</h2>
-            <p>지급 요청 내용을 저장하면 이곳에 표시돼요.</p>
-          </div>
-        )}
-      </div>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-page">
+              <h2>지급 요청 기록이 없어요.</h2>
+              <p>지급 요청 내용을 저장하면 이곳에 표시돼요.</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {showPayout && (
         <Modal title="수익 지급 요청" onClose={() => setShowPayout(false)}>
