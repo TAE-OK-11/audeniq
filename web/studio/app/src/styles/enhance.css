@@ -522,3 +522,25 @@ body:has(.aq-payout-setup-mode) .aq-toast-stack{bottom:calc(104px + env(safe-are
 }
 @media(max-width:400px){.portal-header .aq-workspace-pill{display:none!important}}
 @media print{.aq-reveal-wait{opacity:1!important}}
+
+/* ---------- 계약서 서명: 검토 대기 화면, 다시 그리기 위치 ---------- */
+.aq-sign-sheet{position:relative}
+.aq-sign-clear{position:absolute;top:10px;right:10px;border:0;background:rgba(255,255,255,.92);color:#315bd6;font-size:12px;font-weight:750;padding:7px 11px;border-radius:10px;box-shadow:0 4px 12px -6px rgba(27,51,104,.35);animation:aq-fade-in .2s ease both}
+.aq-sign-clear:hover{background:#fff}
+#aqDrawPane .field{margin-bottom:18px}
+.aq-sign-check{padding-top:4px!important}
+.aq-sign-wait{display:flex;flex-direction:column;align-items:center;text-align:center;padding:22px 6px 8px;animation:aq-fade-up .45s var(--aq-e-ease) both}
+.aq-sign-wait-icon{display:grid;place-items:center;width:58px;height:58px;border-radius:50%;background:#F0EDFF;color:#6852BA;margin-bottom:16px}
+.aq-sign-wait-icon svg path{transform-origin:12px 12px;animation:aq-spin 6s linear infinite}
+.aq-sign-wait strong{font-size:18px;letter-spacing:-.03em;color:var(--aq-e-ink)}
+.aq-sign-wait>p{margin-top:8px;font-size:13px;line-height:1.7;color:#6f7b8e;max-width:360px}
+.aq-sign-wait-steps{list-style:none;margin:22px 0 4px;padding:16px;width:100%;display:grid;gap:10px;background:#f5f8ff;border-radius:20px;text-align:left}
+.aq-sign-wait-steps li{display:flex;align-items:center;gap:11px;font-size:14px;font-weight:650;color:#9aa4b6}
+.aq-sign-wait-steps li span{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#e8edf6;font-size:12px;font-weight:800;flex-shrink:0}
+.aq-sign-wait-steps li.is-done{color:#4c5a74}
+.aq-sign-wait-steps li.is-done span{background:var(--aq-e-blue);color:#fff}
+.aq-sign-wait-steps li.is-current{color:#6852BA}
+.aq-sign-wait-steps li.is-current span{background:#6852BA;color:#fff;animation:aq-pulse-ring 1.8s ease-out infinite}
+.aq-sign-wait-demo{margin-top:14px!important;font-size:12px!important;color:#98a2b3!important}
+.aq-sign-foot .aq-sign-full{grid-column:1/-1}
+@media(prefers-reduced-motion:reduce){.aq-sign-wait-icon svg path{animation:none}}
