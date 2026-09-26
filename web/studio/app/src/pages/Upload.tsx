@@ -138,6 +138,33 @@ function todayStr(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
+function formatKoreanDate(iso: string): string {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return iso;
+  return `${y}년 ${m}월 ${d}일`;
+}
+
+function KoreanDateField({ id, label, required, value, min, onChange }: {
+  id: string; label: React.ReactNode; required?: boolean;
+  value: string; min?: string; onChange: (v: string) => void;
+}) {
+  return (
+    <div className="field">
+      <label htmlFor={id}>{label}{required && <> <span className="required">*</span></>}</label>
+      <div className="kdate-wrap">
+        <input
+          id={id} type="date" className="kdate-input"
+          value={value} min={min} onChange={e => onChange(e.target.value)}
+        />
+        <div className={`kdate-display${value ? '' : ' empty'}`} aria-hidden="true">
+          {value ? formatKoreanDate(value) : '날짜를 선택해 주세요.'}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BackIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" width="24" height="24" fill="none"
@@ -952,14 +979,16 @@ export function Upload() {
         {step === 3 && (
           <section className="step-section">
             <div className="form-grid">
-              <div className="field">
-                <label htmlFor="f-releaseDate">발매 예정일 <span className="required">*</span></label>
-                <input id="f-releaseDate" type="date" value={form.releaseDate} min={todayStr()} onChange={e => set('releaseDate', e.target.value)} />
-              </div>
-              <div className="field">
-                <label htmlFor="f-originalDate">최초 발매일 (재발매인 경우)</label>
-                <input id="f-originalDate" type="date" value={form.originalDate} onChange={e => set('originalDate', e.target.value)} />
-              </div>
+              <KoreanDateField
+                id="f-releaseDate" label="발매 예정일" required
+                value={form.releaseDate} min={todayStr()}
+                onChange={v => set('releaseDate', v)}
+              />
+              <KoreanDateField
+                id="f-originalDate" label="최초 발매일 (재발매인 경우)"
+                value={form.originalDate}
+                onChange={v => set('originalDate', v)}
+              />
               <div className="field">
                 <label htmlFor="f-upc">UPC / EAN (있는 경우)</label>
                 <input id="f-upc" value={form.upc} onChange={e => set('upc', e.target.value)} maxLength={20} placeholder="없으면 비워두세요." />

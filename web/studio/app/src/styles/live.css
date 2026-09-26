@@ -1205,3 +1205,10 @@ body.aq-nav-locked #portalNav{
 .aq-guardian-head{font-size:14px;font-weight:800;color:#1c2740;margin:18px 0 4px;letter-spacing:-.01em}
 .aq-guardian-head:first-of-type{margin-top:6px}
 .aq-guardian-head small{font-weight:600;color:#8a94a8;font-size:12px}
+
+/* 한국어 날짜 표시 */
+.kdate-wrap{position:relative}
+.kdate-input{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;opacity:0!important;cursor:pointer!important;margin:0!important;padding:0!important;border:0!important}
+.kdate-display{padding:14px 16px;font-size:17px;font-weight:600;color:#1c2740;text-align:center;border-bottom:2px solid #e8edf5;letter-spacing:-.01em;min-height:52px;display:flex;align-items:center;justify-content:center}
+.kdate-display.empty{color:#9aa5bb;font-weight:500;font-size:15px}
+.kdate-wrap:active .kdate-display{border-bottom-color:#2f6df6}
