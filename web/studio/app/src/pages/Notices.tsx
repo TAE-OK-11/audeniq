@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import { Link, useParams, useSearchParams } from '../lib/router';
-import { MOCK } from '../lib/mode';
-import { fetchNotices } from '../api/portal';
+import { fetchNotices, loadContent } from '../api/content';
 import { useAsync } from '../hooks/useAsync';
 import { SkeletonRows } from '../components/Skeleton';
 import { toKstDate } from '../lib/date';
@@ -14,7 +13,7 @@ interface Notice {
   body: string;
 }
 
-// 체험 모드 공지 — 실서버는 엣지 Worker(D1)의 /api/notices
+// 예시 공지 — Worker(D1)가 없는 로컬 체험 모드에서만 보인다. 실제 글은 /api/notices
 const NOTICES: Notice[] = [
   {
     id: 'n1',
@@ -55,9 +54,11 @@ const PAGE_SIZE = 10;
 const dotted = (d: string) => d.replaceAll('-', '.');
 
 function useNotices() {
-  const state = useAsync(async (): Promise<Notice[]> => (MOCK
-    ? NOTICES
-    : (await fetchNotices()).map(n => ({ id: n.id, title: n.title, body: n.body, pinned: n.pinned, date: toKstDate(n.published_at) }))), []);
+  const state = useAsync(() => loadContent(
+    fetchNotices,
+    (n): Notice => ({ id: n.id, title: n.title, body: n.body, pinned: !!n.pinned, date: toKstDate(n.published_at) }),
+    NOTICES,
+  ), []);
   const ordered = useMemo(() => (state.data ?? []).slice().sort((a, b) => b.date.localeCompare(a.date)), [state.data]);
   return { ...state, ordered };
 }

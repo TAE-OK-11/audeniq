@@ -260,14 +260,3 @@ export interface ServerReports {
   rows: { month: string; dsp: string; release_id: string | null; release: string; streams: string; revenue: string }[];
 }
 export const fetchReports = () => req<ServerReports>(orgPath('/reports'));
-
-// ---------------------------------------------------------------------------
-// 공지·이벤트 (엣지 Worker + D1)
-// ---------------------------------------------------------------------------
-export interface ContentNotice { id: string; title: string; body: string; pinned: boolean; published_at: string }
-export interface ContentEvent {
-  id: string; title: string; summary: string; body: string; place: string;
-  starts_on: string; ends_on: string | null; link_url: string | null; status: 'upcoming' | 'ongoing' | 'ended';
-}
-export const fetchNotices = () => req<{ items: ContentNotice[] }>('/api/notices', { quiet401: true }).then(r => r.items);
-export const fetchEvents = () => req<{ items: ContentEvent[] }>('/api/events', { quiet401: true }).then(r => r.items);
