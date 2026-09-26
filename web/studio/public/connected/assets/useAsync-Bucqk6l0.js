@@ -1,5 +1,0 @@
-<<<<<<<< HEAD:web/studio/public/connected/assets/useAsync-Bucqk6l0.js
-import{n as e}from"./jsx-runtime-DLNB9Qsn.js";import{x as t}from"./index-9J-X6zML.js";var n=e();function r(e,r){let[i,a]=(0,n.useState)(),[o,s]=(0,n.useState)(``),[c,l]=(0,n.useState)(!0),[u,d]=(0,n.useState)(0),f=(0,n.useRef)(e);return f.current=e,(0,n.useEffect)(()=>{let e=!0;return l(!0),s(``),f.current().then(t=>{e&&a(t)}).catch(n=>{e&&s(t(n))}).finally(()=>{e&&l(!1)}),()=>{e=!1}},[...r,u]),{data:i,error:o,loading:c,reload:(0,n.useCallback)(()=>d(e=>e+1),[])}}export{r as t};
-========
-import{n as e}from"./jsx-runtime-DLNB9Qsn.js";import{x as t}from"./index-BwOfUnnE.js";var n=e();function r(e,r){let[i,a]=(0,n.useState)(),[o,s]=(0,n.useState)(``),[c,l]=(0,n.useState)(!0),[u,d]=(0,n.useState)(0),f=(0,n.useRef)(e);return f.current=e,(0,n.useEffect)(()=>{let e=!0;return l(!0),s(``),f.current().then(t=>{e&&a(t)}).catch(n=>{e&&s(t(n))}).finally(()=>{e&&l(!1)}),()=>{e=!1}},[...r,u]),{data:i,error:o,loading:c,reload:(0,n.useCallback)(()=>d(e=>e+1),[])}}export{r as t};
->>>>>>>> origin/claude/audeniq-studio-react-migration-9bxzxi:web/studio/public/connected/assets/useAsync-BJc2l2r6.js
