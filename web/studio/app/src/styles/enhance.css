@@ -599,3 +599,39 @@ body:has(.aq-payout-setup-mode) .aq-toast-stack{bottom:calc(104px + env(safe-are
 .aq-task-go i{font-style:normal;font-size:17px;line-height:1;transition:transform .2s var(--aq-e-ease)}
 .aq-task:focus-visible{outline:3px solid #6F91FF;outline-offset:2px}
 @media(max-width:380px){.aq-task-go{padding:7px 8px}.aq-task-go{font-size:0;gap:0}.aq-task-go i{font-size:20px}}
+
+/* ==========================================================================
+   공용 서명 칸 + 법정대리인 동의 창
+   ========================================================================== */
+.aq-pad{position:relative;background:#f5f8ff;border-radius:18px;overflow:hidden;margin-top:10px}
+.aq-pad canvas{display:block;width:100%;cursor:crosshair}
+.aq-pad-hint{position:absolute;inset:0;display:grid;place-items:center;color:#a0adc2;font-size:14px;pointer-events:none}
+/* 모달이 열려 있는 동안 위자드 하단 버튼 바가 모달 버튼을 가리지 않도록 숨김 */
+body:has(#modal) #view-new .step-actions{visibility:hidden}
+.guardian-consent-text{font-size:14px;color:#56637a;line-height:1.7;margin:-4px 0 18px}
+.aq-guardian-steps{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.aq-guardian-steps>li{display:grid;grid-template-columns:28px minmax(0,1fr);gap:12px;align-items:start;padding:16px;border-radius:20px;background:#f7f9fc;transition:background-color .25s}
+.aq-guardian-steps>li.is-done{background:#f1f6ff}
+.aq-guardian-no{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#e4e9f2;color:#6a778d;font-size:12px;font-weight:800;margin-top:1px;transition:background-color .25s,color .25s}
+.aq-guardian-steps>li.is-done .aq-guardian-no{background:var(--aq-e-blue);color:#fff;animation:aq-pop .35s var(--aq-e-spring) both}
+.aq-guardian-label{display:block;font-size:14px;font-weight:750;color:var(--aq-e-ink)}
+.aq-guardian-steps .aq-pad{background:#fff}
+.aq-guardian-agree{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
+.aq-guardian-agree input{flex:0 0 20px;width:20px;height:20px;margin:2px 0 0;accent-color:var(--aq-e-blue)}
+.aq-guardian-agree span{font-size:14px;font-weight:650;line-height:1.55;color:var(--aq-e-ink)}
+.aq-guardian-agree small{display:block;margin-top:3px;font-size:12px;font-weight:400;color:#8591a5}
+.aq-cert-methods{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
+.aq-cert-method{display:flex;flex-direction:column;align-items:center;gap:4px;padding:14px 6px 12px;border:0;border-radius:16px;background:#fff;color:#3c4b63;cursor:pointer;transition:background-color .2s,color .2s,transform .15s}
+.aq-cert-method:active{transform:scale(.97)}
+.aq-cert-method strong{font-size:13px;font-weight:750;letter-spacing:-.02em}
+.aq-cert-method small{font-size:10.5px;color:#98a2b3}
+.aq-cert-icon{display:grid;place-items:center;width:40px;height:40px;border-radius:13px;background:#eef3ff;color:var(--aq-e-blue);margin-bottom:4px;transition:background-color .2s,color .2s}
+.aq-cert-method.is-active{background:#e6eeff;color:#2f55d4}
+.aq-cert-method.is-active .aq-cert-icon{background:var(--aq-e-blue);color:#fff}
+.aq-cert-method:focus-visible{outline:3px solid #6F91FF;outline-offset:2px}
+.aq-cert-picked{margin-top:10px;font-size:13px;font-weight:650;color:#2f55d4;overflow-wrap:anywhere}
+.aq-cert-picked small{display:block;margin-top:3px;font-weight:400;color:#8591a5;font-size:12px}
+.aq-guardian-foot{position:sticky;bottom:0;background:#fff;padding-bottom:4px;z-index:2}
+.aq-guardian-missing{grid-column:1/-1;margin:0 0 2px;font-size:12px;color:#8591a5;text-align:center}
+.aq-guardian-missing:empty{display:none}
+@media(max-width:380px){.aq-cert-method small{display:none}.aq-guardian-steps>li{padding:14px 12px;gap:10px}}
