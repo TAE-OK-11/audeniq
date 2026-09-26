@@ -183,23 +183,32 @@ fn decode_window(path: &Path, start_secs: f64, len_secs: f64) -> Result<Vec<f32>
         .collect())
 }
 
-/// FFT bin edges for 33 logarithmically spaced bands over [300, 3000] Hz.
-fn band_edges() -> [usize; N_BANDS + 1] {
-    let bin_hz = SAMPLE_RATE as f64 / FRAME_SIZE as f64;
-    let mut edges = [0usize; N_BANDS + 1];
-    for (m, edge) in edges.iter_mut().enumerate() {
-        let freq = FREQ_MIN * (FREQ_MAX / FREQ_MIN).powf(m as f64 / N_BANDS as f64);
-        *edge = (freq / bin_hz).round() as usize;
-    }
-    edges[N_BANDS] = edges[N_BANDS].min(FRAME_SIZE / 2);
-    edges
+/// FFT bin edges for 33 logarithmically spaced bands over [300, 3000] Hz,
+/// computed once.
+fn band_edges() -> &'static [usize; N_BANDS + 1] {
+    static EDGES: std::sync::OnceLock<[usize; N_BANDS + 1]> = std::sync::OnceLock::new();
+    EDGES.get_or_init(|| {
+        let bin_hz = SAMPLE_RATE as f64 / FRAME_SIZE as f64;
+        let mut edges = [0usize; N_BANDS + 1];
+        for (m, edge) in edges.iter_mut().enumerate() {
+            let freq = FREQ_MIN * (FREQ_MAX / FREQ_MIN).powf(m as f64 / N_BANDS as f64);
+            *edge = (freq / bin_hz).round() as usize;
+        }
+        edges[N_BANDS] = edges[N_BANDS].min(FRAME_SIZE / 2);
+        edges
+    })
 }
 
-/// Hann window, precomputed.
-fn hann_window() -> Vec<f32> {
-    (0..FRAME_SIZE)
-        .map(|n| 0.5 * (1.0 - (2.0 * std::f32::consts::PI * n as f32 / FRAME_SIZE as f32).cos()))
-        .collect()
+/// Hann window, precomputed once.
+fn hann_window() -> &'static [f32] {
+    static WINDOW: std::sync::OnceLock<Vec<f32>> = std::sync::OnceLock::new();
+    WINDOW.get_or_init(|| {
+        (0..FRAME_SIZE)
+            .map(|n| {
+                0.5 * (1.0 - (2.0 * std::f32::consts::PI * n as f32 / FRAME_SIZE as f32).cos())
+            })
+            .collect()
+    })
 }
 
 /// Compute the perceptual fingerprint of an audio file.
@@ -208,11 +217,36 @@ fn hann_window() -> Vec<f32> {
 /// 11025 Hz. Each window is decoded independently with input seeking, so a
 /// 3:30 track decodes 90 s of audio instead of the whole track.
 pub fn compute_fingerprint(path: &Path, duration_secs: f64) -> Result<Fingerprint> {
-    let mut samples = Vec::new();
+    let mut segments: Vec<Vec<f32>> = Vec::new();
     for (start, len) in segment_windows(duration_secs) {
-        samples.extend(decode_window(path, start, len)?);
+        segments.push(decode_window(path, start, len)?);
     }
-    fingerprint_from_samples(&samples)
+    let refs: Vec<&[f32]> = segments.iter().map(|v| v.as_slice()).collect();
+    fingerprint_from_segments(&refs)
+}
+
+/// Compute the fingerprint over multiple non-contiguous segments, avoiding
+/// fake boundary frames: each segment is fingerprinted separately and the
+/// frame vectors are concatenated in order. The segments are &[f32] slices
+/// of mono 11025 Hz PCM.
+pub fn fingerprint_from_segments(segments: &[&[f32]]) -> Result<Fingerprint> {
+    let mut frames = Vec::new();
+    let mut total_secs = 0.0;
+    for seg in segments {
+        if seg.is_empty() {
+            continue;
+        }
+        let fp = fingerprint_from_samples(seg)?;
+        frames.extend(fp.frames);
+        total_secs += fp.duration_secs;
+    }
+    if frames.len() < MIN_OVERLAP_FRAMES + 1 {
+        return Err(Error::PolicyGate(TOO_SHORT_CODE));
+    }
+    Ok(Fingerprint {
+        frames,
+        duration_secs: total_secs,
+    })
 }
 
 /// Compute the perceptual fingerprint from mono 11025 Hz f32 PCM samples.
@@ -237,17 +271,22 @@ pub fn fingerprint_from_samples(samples: &[f32]) -> Result<Fingerprint> {
         .min(n_frames.max(1));
     let chunk = n_frames.div_ceil(n_threads);
 
+    // The FFT plan is expensive to create (~22ms); share one Arc across
+    // all threads instead of planning per-thread.
+    let fft = {
+        let mut planner = FftPlanner::<f32>::new();
+        planner.plan_fft_forward(FRAME_SIZE)
+    };
+
     // Log band energies per frame.
     let mut energies: Vec<[f32; N_BANDS]> = vec![[0.0; N_BANDS]; n_frames];
-    let (window_r, edges_r, samples_r) = (&window, &edges, samples);
+    let (window_r, edges_r, samples_r, fft_r) = (&window, &edges, samples, &fft);
     std::thread::scope(|s| {
         for (ci, e_chunk) in energies.chunks_mut(chunk).enumerate() {
             let start_frame = ci * chunk;
-            // `samples`, `window`, `edges` are shared read-only; each
-            // thread owns its FFT planner and writes a disjoint slice.
+            // `samples`, `window`, `edges`, `fft` are shared read-only; each
+            // thread owns its scratch buffer and writes a disjoint slice.
             s.spawn(move || {
-                let mut planner = FftPlanner::<f32>::new();
-                let fft = planner.plan_fft_forward(FRAME_SIZE);
                 let mut buf = vec![Complex::new(0.0f32, 0.0); FRAME_SIZE];
                 for (i, bands) in e_chunk.iter_mut().enumerate() {
                     let pos = (start_frame + i) * FRAME_HOP;
@@ -255,7 +294,7 @@ pub fn fingerprint_from_samples(samples: &[f32]) -> Result<Fingerprint> {
                         b.re = samples_r[pos + j] * window_r[j];
                         b.im = 0.0;
                     }
-                    fft.process(&mut buf);
+                    fft_r.process(&mut buf);
                     for m in 0..N_BANDS {
                         let lo = edges_r[m];
                         let hi = edges_r[m + 1].max(lo + 1);

@@ -398,14 +398,15 @@ pub fn check_audio(
 
 /// Like [`check_audio`], but additionally returns the perceptual-fingerprint
 /// PCM tapped from the single decode pass (mono 11025 Hz `f32`, full length;
-/// `None` when the file was rejected before decoding or the tap failed).
+/// `None` when the file was rejected before decoding or the tap failed)
+/// and the audio metrics from the probe.
 /// The caller slices the configured segment windows and runs
 /// [`crate::fingerprint::fingerprint_from_samples`].
 pub fn check_audio_with_fp_tap(
     path: &Path,
     registered_sha256: Option<&str>,
     declared_content_type: Option<&str>,
-) -> (Vec<CheckOutcome>, Option<Vec<f32>>) {
+) -> (Vec<CheckOutcome>, Option<Vec<f32>>, Option<AudioMetrics>) {
     check_audio_inner(path, registered_sha256, declared_content_type, true)
 }
 
@@ -414,7 +415,7 @@ fn check_audio_inner(
     registered_sha256: Option<&str>,
     declared_content_type: Option<&str>,
     want_fp_tap: bool,
-) -> (Vec<CheckOutcome>, Option<Vec<f32>>) {
+) -> (Vec<CheckOutcome>, Option<Vec<f32>>, Option<AudioMetrics>) {
     /// Emit `AUDIO_CHECK_CODES[from..]` with a uniform status (short-circuit tail).
     fn tail(from: &str, status: CheckStatus, input_hash: &str, detail: &str) -> Vec<CheckOutcome> {
         AUDIO_CHECK_CODES[audio_code_index(from)..]
@@ -444,12 +445,16 @@ fn check_audio_inner(
     let actual = match sha256_file(path) {
         Ok(h) => h,
         Err(_) => {
-            return (tail(
-                "SHA256_MISMATCH",
-                CheckStatus::TechnicalRetry,
-                &metric_hash(&["unreadable"]),
-                "cannot read file",
-            ), None);
+            return (
+                tail(
+                    "SHA256_MISMATCH",
+                    CheckStatus::TechnicalRetry,
+                    &metric_hash(&["unreadable"]),
+                    "cannot read file",
+                ),
+                None,
+                None,
+            );
         }
     };
     let mut out = Vec::with_capacity(AUDIO_CHECK_CODES.len());
@@ -475,7 +480,7 @@ fn check_audio_inner(
             &metric_hash(&[&actual]),
             "sha256 mismatch",
         ));
-        return (out, None);
+        return (out, None, None);
     }
     let head = head_bytes(path).unwrap_or_default();
     let container = detect_container(&head);
@@ -514,7 +519,7 @@ fn check_audio_inner(
             &magic_hash,
             "not an accepted audio container",
         ));
-        return (out, None);
+        return (out, None, None);
     }
     let metrics = match probe_classified(path)
         .and_then(|v| parse_audio(&v).map_err(|_| AnalyzerError::Undecodable))
@@ -550,7 +555,7 @@ fn check_audio_inner(
                 &metric_hash(&[&actual]),
                 "probe failed",
             ));
-            return (out, None);
+            return (out, None, None);
         }
     };
     out.push(CheckOutcome {
@@ -631,7 +636,7 @@ fn check_audio_inner(
                 "channel layout rejected"
             },
         ));
-        return (out, None);
+        return (out, None, Some(metrics.clone()));
     }
     let (analysis, fp_tap) = match decode_analysis_inner(path, &metrics, want_fp_tap) {
         Ok((a, t)) => (a, t),
@@ -649,7 +654,7 @@ fn check_audio_inner(
             out.extend(tail("AUDIO_TRUNCATED", status, &mh, detail));
             // Fingerprint codes are produced by the DB-backed step, but only
             // for admitted audio; a decode failure there is already covered.
-            return (out, None);
+            return (out, None, Some(metrics.clone()));
         }
     };
     let decoded_secs = analysis.decoded_secs();
@@ -784,7 +789,7 @@ fn check_audio_inner(
             format!("for review (not blocking): {}", suspicions.join("; "))
         },
     ));
-    (out, fp_tap)
+    (out, fp_tap, Some(metrics))
 }
 
 /// Integrated loudness below this is "near-silent" content.
@@ -1091,7 +1096,15 @@ fn decode_analysis_inner(
         // Second output, same single decode: mono 11025 Hz, matching the
         // fingerprint segment decoder's `-ac 1 -ar 11025` exactly.
         cmd.args([
-            "-map", "0:a:0", "-ac", "1", "-ar", "11025", "-f", "s16le", "-acodec",
+            "-map",
+            "0:a:0",
+            "-ac",
+            "1",
+            "-ar",
+            "11025",
+            "-f",
+            "s16le",
+            "-acodec",
             "pcm_s16le",
         ])
         .arg(t);
@@ -1262,7 +1275,7 @@ fn decode_analysis_inner(
             }
         }
     }
-    let mut analysis = match rx.recv_timeout(decode_timeout(m.duration_secs)) {
+    let analysis = match rx.recv_timeout(decode_timeout(m.duration_secs)) {
         Ok(Some(a)) => a,
         Ok(None) => {
             let _ = child.kill();
@@ -1323,10 +1336,8 @@ pub const TRUE_PEAK_MAX_DBTP: f64 = -1.0;
 
 /// Parse the ebur128 summary. Each value is `Some(finite)` or `None` for
 /// `-inf` (digital silence); a missing summary is a parse failure.
-
 /// True peak is computed on the fly in the metering thread (see `measure`);
 /// the standalone batch version was removed to avoid duplication.
-
 fn parse_ebur128(text: &str) -> Option<(Option<f64>, Option<f64>)> {
     let mut integrated = None;
     let mut peak = None;

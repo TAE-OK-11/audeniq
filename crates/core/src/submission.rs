@@ -1417,31 +1417,14 @@ async fn analyze_asset(
     );
     tokio::task::spawn_blocking(move || {
         let path = tmp.0.as_path();
-        // check_audio (full decode + ebur128 + outcomes, tapping the
-        // fingerprint PCM out of the same single decode) runs concurrently
-        // with the metrics probe; the probe is ~100 ms and would otherwise
-        // sit on the critical path.
-        let (outcomes, tap_pcm, metrics) = std::thread::scope(|s| {
-            let h_qc = s.spawn(|| match kind.as_str() {
-                "AUDIO" => {
-                    qc::check_audio_with_fp_tap(path, Some(&sha256), Some(&content_type))
-                }
-                "IMAGE" => (qc::check_image(path, Some(&sha256)), None),
-                _ => (Vec::new(), None),
-            });
-            let h_probe = s.spawn(|| match kind.as_str() {
-                // Duration and technical specs are measured with a second
-                // ffprobe pass rather than parsed out of check outcomes: the
-                // check contract is fixed and must not grow a side channel.
-                // One probe yields both the duration and the real sample
-                // rate/channels/bits-per-sample the DDEX ERN builder emits.
-                "AUDIO" => qc::probe_audio_metrics(path),
-                _ => None,
-            });
-            let (outcomes, tap_pcm) = h_qc.join().expect("qc thread panicked");
-            let metrics = h_probe.join().expect("probe thread panicked");
-            (outcomes, tap_pcm, metrics)
-        });
+        // check_audio runs the single decode pass (full analysis + ebur128 +
+        // outcomes), tapping the fingerprint PCM out of the same decode, and
+        // returns the probe metrics: no second ffprobe pass is needed.
+        let (outcomes, tap_pcm, metrics) = match kind.as_str() {
+            "AUDIO" => qc::check_audio_with_fp_tap(path, Some(&sha256), Some(&content_type)),
+            "IMAGE" => (qc::check_image(path, Some(&sha256)), None, None),
+            _ => (Vec::new(), None, None),
+        };
         // Perceptual fingerprint for similarity detection. Only for audio
         // whose bytes were admitted: SHA-256 still guards integrity (exact
         // bytes), the fingerprint adds similarity (same recording, different
@@ -1461,22 +1444,23 @@ async fn analyze_asset(
         // Perceptual fingerprint over the head/middle/tail segment windows.
         // The window PCM is sliced from the mono 11025 Hz tap of the single
         // decode pass above (ffmpeg's own resampler); the three separate
-        // segment decodes are gone.
+        // segment decodes are gone. Each segment is fingerprinted separately
+        // to avoid fake boundary frames at the junctions.
         let duration_secs = metrics.as_ref().map(|m| m.duration_secs).unwrap_or(0.0);
         let fp = match kind.as_str() {
             "AUDIO" if !invalid && duration_secs > 0.0 => Some((|| {
                 let pcm = tap_pcm.ok_or_else(|| "fingerprint tap missing".to_string())?;
                 let sr = fingerprint::FINGERPRINT_SAMPLE_RATE as f64;
-                let mut samples = Vec::new();
+                let mut segments: Vec<&[f32]> = Vec::new();
                 for (start, len) in fingerprint::segment_windows(duration_secs) {
                     let lo = (start * sr) as usize;
                     let hi = ((start + len) * sr).ceil() as usize;
                     let hi = hi.min(pcm.len());
                     if lo < hi {
-                        samples.extend_from_slice(&pcm[lo..hi]);
+                        segments.push(&pcm[lo..hi]);
                     }
                 }
-                fingerprint::fingerprint_from_samples(&samples).map_err(|e| format!("{e:?}"))
+                fingerprint::fingerprint_from_segments(&segments).map_err(|e| format!("{e:?}"))
             })()),
             _ => None,
         };
