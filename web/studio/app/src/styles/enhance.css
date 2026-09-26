@@ -133,15 +133,8 @@ img{max-width:100%}
 .aq-all-done span{display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:var(--aq-e-green-soft);color:var(--aq-e-green);font-weight:800;animation:aq-pop .5s var(--aq-e-spring) both}
 
 /* ---------- 홈 히어로 ---------- */
-.aq-hero-animated{isolation:isolate}
-.portal-hero>.aq-hero-orbs{position:absolute!important;inset:0;pointer-events:none;z-index:0!important;overflow:hidden;border-radius:inherit}
-.aq-hero-orbs i{position:absolute;border-radius:50%;filter:blur(2px);opacity:.75;animation:aq-float 7s ease-in-out infinite}
-.aq-hero-orbs i:nth-child(1){width:120px;height:120px;right:18%;bottom:-50px;background:radial-gradient(circle at 30% 30%,#d9e3ff,#b7c8ff 60%,transparent 72%)}
-.aq-hero-orbs i:nth-child(2){width:64px;height:64px;right:34%;top:18px;background:radial-gradient(circle at 30% 30%,#efe9ff,#d7caff 60%,transparent 72%);animation-delay:-2s;animation-duration:9s}
-.aq-hero-orbs i:nth-child(3){width:36px;height:36px;right:8%;top:30px;background:radial-gradient(circle at 30% 30%,#e3f4ff,#bfe2ff 60%,transparent 72%);animation-delay:-4s;animation-duration:6s}
 .aq-hero-cta span{display:inline-block;transition:transform .25s var(--aq-e-ease)}
 .aq-hero-cta:hover span{transform:translateX(4px)}
-@media(max-width:760px){.aq-hero-orbs i:nth-child(1){right:-20px}.aq-hero-orbs i:nth-child(2){right:12%}}
 
 /* 이번 달 리포트 미니 추이 */
 .aq-report-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:4px 28px;align-items:end}
@@ -384,7 +377,7 @@ input[aria-invalid=true]{box-shadow:0 0 0 2px #f2a3a3 inset!important}
 
 /* ---------- 모션 줄이기 ---------- */
 @media(prefers-reduced-motion:reduce){
-  .aq-stagger>*,.aq-tab-panel,.aq-step-anim,.aq-toast,.aq-hero-orbs i,.aq-skel,.aq-mini-bar,.aq-platform-track span,.aq-pipeline li::before,.aq-timeline li,.status-chip::before{animation:none!important}
+  .aq-stagger>*,.aq-tab-panel,.aq-step-anim,.aq-toast,.aq-skel,.aq-mini-bar,.aq-platform-track span,.aq-pipeline li::before,.aq-timeline li,.status-chip::before{animation:none!important}
   .aq-mini-bar{transform:none!important}
 }
 
@@ -403,3 +396,67 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
 
 /* 로딩이 150ms 안에 끝나면 스켈레톤이 아예 보이지 않도록 늦게 등장 (깜빡임 방지) */
 .aq-skeleton-list,.aq-skel-block,.aq-page-skeleton{animation:aq-fade-in .2s ease .15s both!important}
+
+/* ---------- 홈 히어로: 물방울 장식 제거 (단색 카드로 정돈) ---------- */
+.portal-hero::after,.portal-hero:after{display:none!important;content:none!important}
+
+/* ---------- 위자드 상단 바: 저장 상태가 칸을 넘쳐 페이지가 가로로 밀리던 문제 ---------- */
+#view-new .wizard-topbar{grid-template-columns:84px minmax(0,1fr) 84px!important}
+.aq-save-slot{display:flex;justify-content:flex-end;min-width:0}
+.aq-save-state{margin-left:0;max-width:100%;padding:5px 9px;font-size:10.5px}
+
+/* ---------- 수령 정보 입력: 테두리 있는 입력 칸 ---------- */
+#modal .aq-pay-field input{
+  border:1.5px solid #e1e7f1!important;border-radius:16px!important;background:#f7f9fc!important;
+  padding:16px 18px!important;min-height:60px;font-size:20px!important;font-weight:700;letter-spacing:.01em;
+  transition:border-color .2s,background-color .2s,box-shadow .2s!important
+}
+#modal .aq-pay-field input::placeholder{color:#a9b3c3;font-weight:600}
+#modal .aq-pay-field input:hover{border-color:#cdd7e8!important}
+#modal .aq-pay-field input:focus{border-color:#3b63f3!important;background:#fff!important;box-shadow:0 0 0 4px rgba(59,99,243,.12)!important;outline:0!important}
+#modal .aq-pay-field label{display:block;margin-bottom:9px}
+.aq-pay-field{margin-top:30px}
+@media(max-width:760px){#modal .aq-pay-field input{font-size:18px!important;min-height:56px}}
+
+/* ---------- 수령 정보 등록 완료 화면 ---------- */
+@keyframes aq-ring-draw{from{stroke-dashoffset:252}to{stroke-dashoffset:0}}
+@keyframes aq-tick-draw{from{stroke-dashoffset:60}to{stroke-dashoffset:0}}
+.aq-pay-success{justify-content:flex-start!important;padding-top:clamp(8px,6vh,56px);min-height:0!important}
+.aq-success-mark{width:84px;height:84px;margin-bottom:22px;animation:aq-pop .5s var(--aq-e-spring) both}
+.aq-success-ring{fill:#eef3ff;stroke:#3b63f3;stroke-width:4;stroke-dasharray:252;stroke-dashoffset:0;animation:aq-ring-draw .7s var(--aq-e-ease) both;transform:rotate(-90deg);transform-origin:center}
+.aq-success-tick{fill:none;stroke:#3b63f3;stroke-width:6;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:60;animation:aq-tick-draw .45s var(--aq-e-ease) .45s both}
+.aq-pay-success .eyebrow{margin-bottom:12px}
+.aq-pay-success h1{font-size:clamp(26px,6.4vw,38px)!important;line-height:1.3!important;letter-spacing:-.05em}
+.aq-pay-success-sub{margin-top:12px;color:#6f7b8e;font-size:14px;line-height:1.65}
+.aq-pay-receipt{width:min(440px,100%);margin:26px 0 14px;border:1px solid #e6ecf5;border-radius:22px;background:#fff;text-align:left;overflow:hidden;box-shadow:0 18px 40px -30px rgba(27,51,104,.35);animation:aq-fade-up .5s var(--aq-e-ease) .25s both}
+.aq-pay-receipt-head{display:flex;align-items:center;gap:13px;padding:17px 18px;background:#f7f9fd;border-bottom:1px dashed #dfe6f2}
+.aq-pay-receipt-head>.aq-bank-logo{width:44px;height:44px;flex:0 0 44px;border-radius:14px}
+.aq-pay-receipt-head strong{display:block;font-size:15px;color:#191f28}
+.aq-pay-receipt-head small{display:block;font-size:11px;color:#8591a5;margin-top:2px}
+.aq-pay-receipt-badge{margin-left:auto;flex-shrink:0;font-size:11px;font-weight:800;color:#21815B;background:#E8F6F0;padding:5px 9px;border-radius:9px}
+.aq-pay-receipt dl{margin:0;padding:8px 18px 12px}
+.aq-pay-receipt dl>div{display:flex;justify-content:space-between;gap:16px;padding:10px 0;border-bottom:1px solid #f0f3f8}
+.aq-pay-receipt dl>div:last-child{border-bottom:0}
+.aq-pay-receipt dt{font-size:13px;color:#8591a5}
+.aq-pay-receipt dd{margin:0;font-size:14px;font-weight:700;color:#191f28;text-align:right;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.aq-pay-success-note{width:min(440px,100%);font-size:12px;line-height:1.65;color:#98a2b3;margin-bottom:22px}
+.aq-pay-success>.button{width:min(440px,100%)}
+@media(prefers-reduced-motion:reduce){.aq-success-ring,.aq-success-tick,.aq-pay-receipt,.aq-success-mark{animation:none!important;stroke-dashoffset:0!important}}
+
+/* ---------- 입력 칸 윤곽: 배경과 같은 색이라 칸이 안 보이던 문제 (위자드·모달·프로필 공통) ---------- */
+.wizard .field input:not([type=checkbox]):not([type=radio]):not([type=file]),.wizard .field textarea,.wizard .field select,
+#modal .field input:not([type=checkbox]):not([type=radio]):not([type=file]),#modal .field textarea,#modal .field select,
+.aq-profile-card .field input:not([type=checkbox]):not([type=radio]):not([type=file]),.aq-profile-card .field textarea,.aq-profile-card .field select{
+  border:1.5px solid #e1e7f1!important;transition:border-color .2s,background-color .2s,box-shadow .2s!important
+}
+.wizard .field input:not([type=checkbox]):not([type=radio]):not([type=file]):hover,.wizard .field textarea:hover,.wizard .field select:hover,
+#modal .field input:not([type=checkbox]):not([type=radio]):not([type=file]):hover,#modal .field textarea:hover,#modal .field select:hover{border-color:#cdd7e8!important}
+.wizard .field input:focus,.wizard .field textarea:focus,.wizard .field select:focus,
+#modal .field input:focus,#modal .field textarea:focus,#modal .field select:focus,
+.aq-profile-card .field input:focus,.aq-profile-card .field textarea:focus,.aq-profile-card .field select:focus{
+  border-color:#3b63f3!important;background:#fff!important;outline:0!important;box-shadow:0 0 0 4px rgba(59,99,243,.12)!important
+}
+/* 트랙 카드 안은 카드 배경과 구분되도록 흰 칸 */
+.track-editor .field input:not([type=checkbox]):not([type=radio]):not([type=file]),.track-editor .field textarea,.track-editor .field select,
+.aq-option-detail .field input:not([type=checkbox]):not([type=radio]):not([type=file]),.aq-option-detail .field textarea,.aq-option-detail .field select{background:#fff!important}
+.wizard .field input[aria-invalid=true],#modal .field input[aria-invalid=true],.aq-invalid{border-color:#e46d6d!important}

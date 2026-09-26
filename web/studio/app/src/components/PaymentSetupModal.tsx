@@ -6,6 +6,7 @@ import { useToast } from './Toast';
 import { setPayment, TYPE_LABEL, type PaymentInfo } from '../store/payment';
 import { getProfileSnapshot } from '../store/profile';
 import { stampNow } from '../lib/date';
+import { localStamp } from '../lib/format';
 
 const FINANCIAL_INSTITUTIONS: Record<string, { label: string; note: string; items: string[] }> = {
   bank: {
@@ -87,11 +88,14 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
   }, [step, category]);
 
   const flowRef = useRef<HTMLDivElement>(null);
+  const [registeredAt, setRegisteredAt] = useState('');
 
   useEffect(() => {
     // 실제 스크롤 컨테이너(.modal-inner)를 위로 — window.scrollTo는 모달 안에서 무효
-    const scroller = flowRef.current?.closest('.modal-inner') as HTMLElement | null;
-    scroller?.scrollTo({ top: 0 });
+    // 단계가 바뀌면 실제로 스크롤되는 영역(.aq-pay-main, .modal-inner)을 모두 맨 위로
+    // (이전 단계 스크롤이 남아 제목 위쪽이 상단 바에 가려지던 문제 방지)
+    flowRef.current?.querySelector('.aq-pay-main')?.scrollTo({ top: 0 });
+    (flowRef.current?.closest('.modal-inner') as HTMLElement | null)?.scrollTo({ top: 0 });
   }, [step]);
 
   useEffect(() => {
@@ -145,13 +149,15 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
       toast('필수 약관을 모두 확인해 주세요.');
       return;
     }
+    const at = stampNow();
+    setRegisteredAt(localStamp(at));
     setPayment({
       recipient: draft.recipient,
       type: draft.type,
       bank: draft.bank,
       accountNumber: draft.account,
       last4: draft.last4,
-      registeredAt: stampNow(),
+      registeredAt: at,
     });
     setDraft(d => ({ ...d, account: '' }));
     setStep(4);
@@ -295,7 +301,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
                 />
               </div>
               <p className="aq-pay-privacy">
-                계좌번호 전체값을 등록하고 화면에는 마스킹해 표시해요. 실제 서비스에서는 암호화된 서버 저장소에 안전하게 보관돼요.
+                화면에는 계좌번호 뒤 4자리만 표시해요. 실제 서비스에서는 암호화된 서버 저장소에 안전하게 보관돼요.
               </p>
             </>
           )}
@@ -340,16 +346,30 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
 
           {step === 4 && (
             <div className="aq-pay-success">
-              <div className="aq-success-check">✓</div>
+              <svg className="aq-success-mark" viewBox="0 0 88 88" aria-hidden="true">
+                <circle className="aq-success-ring" cx="44" cy="44" r="40" />
+                <path className="aq-success-tick" d="M27 45.5 39.5 58 62 33" />
+              </svg>
               <p className="eyebrow">PAYOUT READY</p>
-              <h1>수익을 받을 정보가<br />등록됐어요.</h1>
-              <div className="aq-pay-review">
-                <BankLogo name={draft.bank} />
-                <div>
-                  <strong>{draft.bank} · •••• {draft.last4}</strong>
-                  <small>{draft.recipient}</small>
+              <h1>수익을 받을 계좌가<br />등록됐어요.</h1>
+              <p className="aq-pay-success-sub">정산이 확정되면 이 계좌로 수익을 받을 수 있어요.</p>
+              <div className="aq-pay-receipt">
+                <div className="aq-pay-receipt-head">
+                  <BankLogo name={draft.bank} />
+                  <div className="min-0">
+                    <strong>{draft.bank}</strong>
+                    <small>수익 정산 계좌</small>
+                  </div>
+                  <span className="aq-pay-receipt-badge">등록 완료</span>
                 </div>
+                <dl>
+                  <div><dt>계좌번호</dt><dd>•••• •••• {draft.last4}</dd></div>
+                  <div><dt>예금주</dt><dd>{draft.recipient}</dd></div>
+                  <div><dt>수령 유형</dt><dd>{TYPE_LABEL[draft.type]}</dd></div>
+                  <div><dt>등록 일시</dt><dd>{registeredAt}</dd></div>
+                </dl>
               </div>
+              <p className="aq-pay-success-note">계좌번호는 뒤 4자리만 화면에 표시돼요. 계좌를 바꾸려면 정산·지급 또는 아티스트 정보에서 변경할 수 있어요.</p>
               <button type="button" className="button" id="aqPayDone" onClick={done}>확인</button>
             </div>
           )}
