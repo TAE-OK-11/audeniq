@@ -36,8 +36,14 @@ const RIGHTS_CHECKS: [string, string][] = [
   ['rightsMaster', '음원 마스터를 배급할 권한이 있어요.'],
   ['rightsComposition', '작사·작곡·편곡 등 저작물 이용에 필요한 허락을 확보했어요.'],
   ['rightsArtwork', '커버아트와 사용한 이미지·폰트에 필요한 이용 권한이 있어요.'],
-  ['rightsSamples', '샘플링·커버곡·피처링 등에 제3자 권리가 있다면 필요한 허락을 확보했어요.'],
   ['rightsConsent', '입력한 정보가 정확하며 필요한 권리 증빙을 요청받으면 제출할 수 있어요.'],
+];
+
+const CONDITIONAL_RIGHTS: [string, string, (o: ReleaseOptions) => boolean][] = [
+  ['rightsSamples', '샘플링·피처링 관련 제3자 권리 허락을 확보했어요.', o => o.sample || o.featured],
+  ['rightsAi', 'AI 생성·보조 제작물의 플랫폼 수용 기준을 확인했어요.', o => o.ai],
+  ['rightsShared', '공동 권리자와의 배급 위임 범위를 확인했어요.', o => o.shared],
+  ['rightsRerelease', '기존 발매와의 중복 송출 여부를 확인했어요.', o => o.rerelease],
 ];
 
 interface Track {
@@ -136,7 +142,16 @@ const OPTIONS_CATALOG: [keyof ReleaseOptions, string, string][] = [
 ];
 
 function rightsOk(f: WizardForm): boolean {
-  return RIGHTS_CHECKS.every(([k]) => f.rightsChecks[k]);
+  if (!RIGHTS_CHECKS.every(([k]) => f.rightsChecks[k])) return false;
+  return CONDITIONAL_RIGHTS
+    .filter(([, , cond]) => cond(f.options))
+    .every(([k]) => f.rightsChecks[k]);
+}
+
+function applicableConditionals(o: ReleaseOptions): [string, string][] {
+  return CONDITIONAL_RIGHTS
+    .filter(([, , cond]) => cond(o))
+    .map(([k, label]) => [k, label]);
 }
 
 function stampNow(): string {
@@ -1321,6 +1336,23 @@ export function Upload() {
                 </label>
               ))}
             </div>
+            {applicableConditionals(form.options).length > 0 && (
+              <>
+                <h2 className="subhead" style={{ marginTop: 20 }}>선택한 옵션 추가 확인</h2>
+                <div className="field-group">
+                  {applicableConditionals(form.options).map(([k, label]) => (
+                    <label key={k} className="check-line">
+                      <input
+                        type="checkbox"
+                        checked={!!form.rightsChecks[k]}
+                        onChange={e => set('rightsChecks', { ...form.rightsChecks, [k]: e.target.checked })}
+                      />
+                      <span>{label}</span>
+                    </label>
+                  ))}
+                </div>
+              </>
+            )}
             <div className="notice">
               권리 확인 체크는 실제 계약 체결이나 저작권 확인을 대신하지 않아요. 권리 관련 증빙은 '계약서·권리' 메뉴에서 발매별로 등록해 주세요.
             </div>
