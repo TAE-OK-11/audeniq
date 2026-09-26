@@ -42,6 +42,8 @@ const CODE_MESSAGES: Record<string, string> = {
   IDEMPOTENCY_KEY_REUSED: '이미 처리된 접수 요청이에요. 발매 상태를 확인해 주세요.',
   PREFLIGHT_FAILED: '접수 전 점검을 통과하지 못했어요. 표시된 항목을 보완해 주세요.',
   NOT_IMPLEMENTED: '아직 준비 중인 기능이에요.',
+  BACKEND_UNAVAILABLE: '서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.',
+  MAINTENANCE: '지금은 서버 점검 중이에요. 점검이 끝나면 다시 이용할 수 있어요.',
 };
 
 export function messageForCode(code: string, status = 0): string {
