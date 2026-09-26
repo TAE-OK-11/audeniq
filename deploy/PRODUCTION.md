@@ -22,3 +22,49 @@ Cloudflare references checked during implementation (2026-09-23):
 - https://developers.cloudflare.com/r2/buckets/cors/
 
 Current configuration examples are not evidence of an established Tunnel, VPC Service, Access policy or R2 account connection.
+
+## GHCR 이미지 배포 (백엔드)
+
+`main`에 푸시되고 **Foundation**(테스트) 워크플로가 통과하면 **Backend image** 워크플로(`.github/workflows/backend-image.yml`)가 `deploy/Dockerfile`로 이미지를 만들어 GHCR에 올린다.
+
+- 이미지: `ghcr.io/tae-ok-11/audeniq` — `audeniq-api`, `audeniq-worker`, `audeniq-migrate`, `audeniq-admin` + ffmpeg/ffprobe, UID 10001, `linux/amd64`
+- 태그: `sha-<커밋 전체 해시>`(커밋과 1:1), `main`, `latest`. 배포에는 항상 **digest**(`@sha256:…`)를 쓴다. 실행 요약(Summary)에 digest와 배포 명령이 나온다.
+- 테스트가 실패한 커밋, PR, 다른 브랜치는 이미지를 만들지 않는다. Actions → Backend image → *Run workflow*로 수동 빌드도 된다.
+- 올린 뒤 바이너리·ffmpeg·UID를 확인하는 스모크 테스트를 돈다. SBOM과 provenance가 함께 올라가고, 공개 저장소면 GitHub attestation도 붙는다 (`gh attestation verify oci://ghcr.io/tae-ok-11/audeniq@sha256:… --owner TAE-OK-11`).
+
+### 서버 준비 (한 번)
+
+```sh
+sudo mkdir -p /opt/audeniq && sudo chown "$USER" /opt/audeniq && cd /opt/audeniq
+# 저장소의 deploy/ 에서 복사: compose.production.yaml bootstrap.sql grants.sql deploy.sh
+cp production.env.example production.env && chmod 600 production.env   # 값 채우기
+printf '%s' '<cloudflared 터널 토큰>' > tunnel-token && chmod 600 tunnel-token
+# 패키지가 비공개면 read:packages 권한 토큰으로 로그인 (GitHub Actions 배포는 이 단계가 필요 없음)
+echo '<PAT>' | docker login ghcr.io -u <github 아이디> --password-stdin
+```
+
+### 배포·되돌리기
+
+```sh
+cd /opt/audeniq
+./deploy.sh ghcr.io/tae-ok-11/audeniq@sha256:<digest>   # 또는 :sha-<커밋> 태그 (digest로 고정해 기록)
+./deploy.sh --status
+./deploy.sh --rollback                                  # 직전 정상 이미지로 (DB 마이그레이션은 되돌리지 않음)
+```
+
+`deploy.sh`는 이미지를 받아 필요한 바이너리가 있는지 먼저 확인하고, `production.env`의 `AUDENIQ_IMAGE`를 digest로 바꾼 뒤 `docker compose up -d`를 한다. migrate → grants가 성공해야 api·worker가 새 이미지로 바뀌고, 둘이 30초 동안 재시작 없이 떠 있어야 성공으로 `deploy-history.log`에 남긴다. 실패하면 로그를 보여 주고 멈춘다 (자동으로 되돌리지 않음).
+
+### GitHub Actions에서 바로 배포 (선택)
+
+저장소 Settings → Environments → `production`을 만들고 (필요하면 승인자 지정) 다음을 넣는다.
+
+| 종류 | 이름 | 값 |
+|---|---|---|
+| Secret | `DEPLOY_HOST` | 서버 주소 |
+| Secret | `DEPLOY_USER` | SSH 사용자 (docker 권한) |
+| Secret | `DEPLOY_SSH_KEY` | 배포 전용 SSH 개인키 |
+| Secret | `DEPLOY_KNOWN_HOSTS` | `ssh-keyscan <서버>` 결과 (호스트 키 고정) |
+| Variable | `DEPLOY_PATH` | 기본 `/opt/audeniq` |
+| Variable (저장소) | `AUTO_DEPLOY` | `true`면 main 통과 때마다 자동 배포 |
+
+그러면 Actions → Backend image → *Run workflow*에서 `deploy`를 켜 수동 배포하거나, `AUTO_DEPLOY=true`로 자동 배포할 수 있다. 배포 작업은 같은 커밋의 `compose.production.yaml`·`grants.sql`·`bootstrap.sql`·`deploy.sh`를 서버에 복사하고, 그 작업 동안만 유효한 토큰으로 GHCR에 로그인해 `deploy.sh`를 실행한다. 비밀 파일(`production.env`, `tunnel-token`)은 서버에만 있다.
