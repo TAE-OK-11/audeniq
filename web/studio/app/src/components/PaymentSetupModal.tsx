@@ -72,6 +72,23 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
   const [agrees, setAgrees] = useState<boolean[]>([false, false, false, false]);
   const [payError, setPayError] = useState<{ title: string; detail: string } | null>(null);
   const errorCloseRef = useRef<HTMLButtonElement>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const [tabPill, setTabPill] = useState({ left: 0, width: 0, height: 0 });
+
+  // 선택된 탭으로 흰색 pill이 미끄러지듯 이동
+  useEffect(() => {
+    if (step !== 1) return;
+    const update = () => {
+      const container = tabsRef.current;
+      if (!container) return;
+      const active = container.querySelector<HTMLElement>('[aria-selected="true"]');
+      if (!active) return;
+      setTabPill({ left: active.offsetLeft, width: active.offsetWidth, height: active.offsetHeight });
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, [step, category]);
 
   useEffect(() => {
     window.scrollTo({ top: 0 });
@@ -200,7 +217,16 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
               <p className="eyebrow">PAYOUT ACCOUNT</p>
               <h1>수익을 받을<br />금융기관을 선택해 주세요.</h1>
               <p className="aq-pay-lead">은행, 저축은행, 증권사 계좌를 등록할 수 있어요.</p>
-              <div className="aq-bank-tabs" role="tablist" aria-label="금융기관 종류">
+              <div className="aq-bank-tabs" ref={tabsRef} role="tablist" aria-label="금융기관 종류">
+                <span
+                  className="aq-bank-tab-pill" aria-hidden="true"
+                  style={{
+                    transform: `translateX(${tabPill.left}px)`,
+                    width: tabPill.width || undefined,
+                    height: tabPill.height || undefined,
+                    opacity: tabPill.width ? 1 : 0,
+                  }}
+                />
                 {Object.entries(FINANCIAL_INSTITUTIONS).map(([key, value]) => (
                   <button
                     key={key} type="button"
