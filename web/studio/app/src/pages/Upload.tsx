@@ -59,12 +59,14 @@ interface CoverTrackInfo {
 interface ReleaseOptions {
   express: boolean; expressAck: boolean; expressReason: string;
   minor: boolean;
-  guardian: string; guardianRelation: string; guardianContact: string; guardianFileName: string;
+  guardian: string; guardianRelation: string; guardianContact: string;
   guardian2: string; guardian2Relation: string; guardian2Contact: string;
-  cover: boolean; coverTracks: CoverTrackInfo[]; coverRightsAck: boolean;
-  sample: boolean; featured: boolean;
+  guardianConsentDone: boolean; familyCertName: string; familyCertMethod: string;
+  cover: boolean; coverTracks: CoverTrackInfo[]; coverRightsAck: boolean; coverLicenseFile: string;
+  sample: boolean; sampleLicenseFile: string;
+  featured: boolean; featuredConsentFile: string;
   ai: boolean; aiTool: string;
-  shared: boolean;
+  shared: boolean; sharedContractFile: string;
   rerelease: boolean; previousTitle: string; previousId: string;
 }
 
@@ -90,12 +92,15 @@ const newTrack = (): Track => ({
 
 const EMPTY_OPTIONS: ReleaseOptions = {
   express: false, expressAck: false, expressReason: '',
-  minor: false, guardian: '', guardianRelation: '', guardianContact: '', guardianFileName: '',
+  minor: false,
+  guardian: '', guardianRelation: '', guardianContact: '',
   guardian2: '', guardian2Relation: '', guardian2Contact: '',
-  cover: false, coverTracks: [], coverRightsAck: false,
-  sample: false, featured: false,
+  guardianConsentDone: false, familyCertName: '', familyCertMethod: '',
+  cover: false, coverTracks: [], coverRightsAck: false, coverLicenseFile: '',
+  sample: false, sampleLicenseFile: '',
+  featured: false, featuredConsentFile: '',
   ai: false, aiTool: '',
-  shared: false,
+  shared: false, sharedContractFile: '',
   rerelease: false, previousTitle: '', previousId: '',
 };
 
@@ -111,8 +116,11 @@ const EMPTY: WizardForm = {
   options: EMPTY_OPTIONS,
 };
 
-const OPTIONS_CATALOG: [keyof ReleaseOptions, string, string][] = [
+const SERVICE_OPTIONS: [keyof ReleaseOptions, string, string][] = [
   ['express', '신속 발매 요청', '희망 일정과 우선 검토 가능 여부를 확인해요.'],
+];
+
+const RIGHTS_OPTIONS: [keyof ReleaseOptions, string, string][] = [
   ['minor', '미성년 아티스트·권리자', '법정대리인의 동의와 권한 확인이 필요해요.'],
   ['cover', '커버곡', '원곡의 작사·작곡 저작물 이용 권한을 확인해요.'],
   ['sample', '샘플링·타인 음원 사용', '원본 음원과 저작물의 이용 허락을 확인해요.'],
@@ -120,6 +128,11 @@ const OPTIONS_CATALOG: [keyof ReleaseOptions, string, string][] = [
   ['ai', 'AI 생성·보조 제작', '제작 방식과 각 플랫폼의 수용 기준을 검토해요.'],
   ['shared', '공동 권리자·레이블 계약', '각 권리자와 배급 위임 범위를 확인해요.'],
   ['rerelease', '기존 발매 이전·재발매', '이전 발매의 식별자와 중복 송출 여부를 확인해요.'],
+];
+
+const OPTIONS_CATALOG: [keyof ReleaseOptions, string, string][] = [
+  ...SERVICE_OPTIONS,
+  ...RIGHTS_OPTIONS,
 ];
 
 function rightsOk(f: WizardForm): boolean {
@@ -178,6 +191,171 @@ function selectedOptions(o: ReleaseOptions): [keyof ReleaseOptions, string, stri
   return OPTIONS_CATALOG.filter(([id]) => !!o[id]);
 }
 
+function DocAttach({ id, label, fileName, onSelect, required, help }: {
+  id: string; label: React.ReactNode; fileName: string;
+  onSelect: (name: string) => void; required?: boolean; help?: string;
+}) {
+  return (
+    <div className="field doc-attach">
+      <label htmlFor={id}>{label}{required && <> <span className="required">*</span></>}</label>
+      <input
+        type="file" id={id}
+        accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/*"
+        onChange={e => {
+          const f = e.target.files?.[0];
+          if (f) onSelect(f.name);
+        }}
+      />
+      <p className="help">
+        {fileName ? `선택한 서류 · ${fileName}` : (help || '서류를 첨부해 주세요.')}
+      </p>
+    </div>
+  );
+}
+
+function GuardianConsentModal({ guardianName, onClose, onComplete }: {
+  guardianName: string;
+  onClose: () => void;
+  onComplete: (certName: string, certMethod: string) => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [signed, setSigned] = useState(false);
+  const [certName, setCertName] = useState('');
+  const [certMethod, setCertMethod] = useState('');
+  const [ack, setAck] = useState(false);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const pdfRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ratio = Math.min(2, window.devicePixelRatio || 1);
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = Math.max(1, Math.round(rect.width * ratio));
+    canvas.height = Math.max(1, Math.round(rect.height * ratio));
+    const ctx = canvas.getContext('2d')!;
+    ctx.scale(ratio, ratio);
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#1c2740';
+  }, []);
+
+  const pos = (e: React.PointerEvent) => {
+    const r = canvasRef.current!.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  };
+  const drawing = useRef(false);
+  const startDraw = (e: React.PointerEvent) => {
+    drawing.current = true;
+    canvasRef.current!.setPointerCapture(e.pointerId);
+    const p = pos(e);
+    const ctx = canvasRef.current!.getContext('2d')!;
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+  };
+  const moveDraw = (e: React.PointerEvent) => {
+    if (!drawing.current) return;
+    const p = pos(e);
+    const ctx = canvasRef.current!.getContext('2d')!;
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    setSigned(true);
+  };
+  const endDraw = () => { drawing.current = false; };
+  const clearSign = () => {
+    const canvas = canvasRef.current!;
+    const ctx = canvas.getContext('2d')!;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setSigned(false);
+  };
+
+  const pickCert = (method: string, name: string) => {
+    setCertMethod(method);
+    setCertName(name);
+  };
+
+  const canComplete = signed && certName && ack;
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card guardian-modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-head">
+          <h2>법정대리인 동의</h2>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="닫기">✕</button>
+        </div>
+        <div className="modal-body">
+          <p className="guardian-consent-text">
+            미성년 아티스트의 음원 발매에 대해 법정대리인
+            {guardianName ? <strong> {guardianName}</strong> : ''}님의 동의를 확인합니다.
+            아래 내용을 확인하고 서명해 주세요.
+          </p>
+          <label className="check-line">
+            <input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} />
+            <span>미성년자의 음원 발매 및 배급에 법정대리인으로서 동의합니다.<small>동의 내용은 발매 심사 시 확인돼요.</small></span>
+          </label>
+          <div className="field" style={{ marginTop: 16 }}>
+            <label>법정대리인 전자서명 <span className="required">*</span></label>
+            <div className="sign-pad-wrap">
+              <canvas
+                ref={canvasRef} className="sign-pad"
+                onPointerDown={startDraw} onPointerMove={moveDraw}
+                onPointerUp={endDraw} onPointerCancel={endDraw}
+              />
+              {!signed && <span className="sign-pad-hint">여기에 서명해 주세요.</span>}
+            </div>
+            <button type="button" className="link-btn" onClick={clearSign} style={{ marginTop: 8 }}>서명 지우기</button>
+          </div>
+          <div className="field" style={{ marginTop: 16 }}>
+            <label>가족관계증명서 <span className="required">*</span></label>
+            <div className="cert-methods">
+              <button type="button" className={`cert-method${certMethod === 'camera' ? ' active' : ''}`} onClick={() => cameraRef.current?.click()}>
+                <span className="cert-icon">📷</span>
+                <span>직접 촬영</span>
+              </button>
+              <button type="button" className={`cert-method${certMethod === 'pdf' ? ' active' : ''}`} onClick={() => pdfRef.current?.click()}>
+                <span className="cert-icon">📄</span>
+                <span>PDF 선택</span>
+              </button>
+              <button type="button" className={`cert-method${certMethod === 'wallet' ? ' active' : ''}`} onClick={() => pickCert('wallet', '전자문서지갑에서 가져옴')}>
+                <span className="cert-icon">👛</span>
+                <span>전자문서지갑</span>
+              </button>
+            </div>
+            <input
+              ref={cameraRef} type="file" accept="image/*" capture="environment"
+              style={{ display: 'none' }}
+              onChange={e => {
+                const f = e.target.files?.[0];
+                if (f) pickCert('camera', f.name);
+              }}
+            />
+            <input
+              ref={pdfRef} type="file" accept=".pdf,application/pdf"
+              style={{ display: 'none' }}
+              onChange={e => {
+                const f = e.target.files?.[0];
+                if (f) pickCert('pdf', f.name);
+              }}
+            />
+            {certName && <p className="help" style={{ marginTop: 8 }}>선택됨 · {certName}</p>}
+            {certMethod === 'wallet' && (
+              <p className="help" style={{ marginTop: 8 }}>전자문서지갑 연동 후 가져올 수 있어요. 현재는 선택 상태로 저장돼요.</p>
+            )}
+          </div>
+        </div>
+        <div className="modal-foot">
+          <button type="button" className="button secondary" onClick={onClose}>취소</button>
+          <button
+            type="button" className="button"
+            disabled={!canComplete}
+            onClick={() => onComplete(certName, certMethod)}
+          >동의 완료</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OptionsSection({ form, set }: {
   form: WizardForm;
   set: <K extends keyof WizardForm>(key: K, value: WizardForm[K]) => void;
@@ -185,13 +363,28 @@ function OptionsSection({ form, set }: {
   const o = form.options;
   const setOpt = <K extends keyof ReleaseOptions>(key: K, value: ReleaseOptions[K]) =>
     set('options', { ...o, [key]: value });
+  const [showGuardianModal, setShowGuardianModal] = useState(false);
 
   return (
     <>
-      <h2 className="subhead" style={{ marginTop: 25 }}>발매 추가 옵션</h2>
-      <p className="aq-option-intro">해당하는 항목만 선택해 주세요. 필요한 확인 사항과 서류가 자동으로 안내돼요.</p>
+      <h2 className="subhead" style={{ marginTop: 25 }}>부가서비스</h2>
+      <p className="aq-option-intro">필요한 서비스를 선택해 주세요.</p>
       <div className="aq-options">
-        {OPTIONS_CATALOG.map(([id, title, sub]) => (
+        {SERVICE_OPTIONS.map(([id, title, sub]) => (
+          <label key={id} className="aq-option">
+            <span className="aq-option-text"><strong>{title}</strong><small>{sub}</small></span>
+            <input
+              type="checkbox" aria-label={title}
+              checked={!!o[id]}
+              onChange={e => setOpt(id, e.target.checked as ReleaseOptions[typeof id])}
+            />
+          </label>
+        ))}
+      </div>
+      <h2 className="subhead" style={{ marginTop: 25 }}>권리 확인</h2>
+      <p className="aq-option-intro">해당하는 항목을 모두 선택해 주세요. 필요한 확인 사항과 서류가 자동으로 안내돼요.</p>
+      <div className="aq-options">
+        {RIGHTS_OPTIONS.map(([id, title, sub]) => (
           <label key={id} className="aq-option">
             <span className="aq-option-text"><strong>{title}</strong><small>{sub}</small></span>
             <input
@@ -287,23 +480,33 @@ function OptionsSection({ form, set }: {
             />
           </div>
           <div className="field">
-            <label htmlFor="aqGuardianFile">법정대리인 동의서 (제출할 수 있다면)</label>
-            <input
-              type="file" id="aqGuardianFile"
-              accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/*"
-              onChange={e => {
-                const f = e.target.files?.[0];
-                if (f) setOpt('guardianFileName', f.name);
-              }}
-            />
+            <label>법정대리인 동의</label>
+            <button
+              type="button" className="button secondary" style={{ width: '100%' }}
+              onClick={() => setShowGuardianModal(true)}
+            >
+              {o.guardianConsentDone ? '법정대리인 동의 완료 ✓ (다시 진행)' : '법정대리인 동의 진행하기'}
+            </button>
             <p className="help">
-              {o.guardianFileName
-                ? `선택한 서류 · ${o.guardianFileName}`
-                : '아직 동의서를 첨부하지 않았다면, 발매 접수 후 권리 증빙 메뉴에서 추가할 수 있어요.'}
+              {o.guardianConsentDone
+                ? `동의 완료${o.familyCertName ? ` · 가족관계증명서: ${o.familyCertName}` : ''}`
+                : '동의창에서 법정대리인 서명과 가족관계증명서를 제출해요.'}
             </p>
           </div>
           <p className="aq-option-note">법정대리인 정보 입력만으로 본인 확인이나 동의 검증이 완료되지는 않아요. 담당자 확인 후 서명 단계를 안내해요.</p>
         </div>
+      )}
+      {showGuardianModal && (
+        <GuardianConsentModal
+          guardianName={o.guardian}
+          onClose={() => setShowGuardianModal(false)}
+          onComplete={(certName, certMethod) => {
+            setOpt('guardianConsentDone', true);
+            setOpt('familyCertName', certName);
+            setOpt('familyCertMethod', certMethod);
+            setShowGuardianModal(false);
+          }}
+        />
       )}
       {o.cover && (
         <div className="aq-option-detail">
@@ -368,6 +571,49 @@ function OptionsSection({ form, set }: {
             />
             <span>원곡 저작권자의 이용 허락을 받았거나, 정당한 라이선스 절차를 진행할 것을 확인해요.<small>허락 없는 커버곡 배급은 저작권 침해가 될 수 있어요.</small></span>
           </label>
+          <DocAttach
+            id="aqCoverLicense" label="원곡 이용 허락서 (보유 시)"
+            fileName={o.coverLicenseFile}
+            onSelect={v => setOpt('coverLicenseFile', v)}
+            help="이용 허락서나 라이선스 계약서를 첨부해 주세요."
+          />
+        </div>
+      )}
+      {o.sample && (
+        <div className="aq-option-detail">
+          <h3>샘플링·타인 음원 사용</h3>
+          <p className="aq-option-intro">사용한 원본 음원과 저작물의 출처를 확인해요.</p>
+          <DocAttach
+            id="aqSampleLicense" label="원본 이용 허락서"
+            fileName={o.sampleLicenseFile}
+            onSelect={v => setOpt('sampleLicenseFile', v)}
+            help="샘플링 원본의 이용 허락서나 라이선스 계약서를 첨부해 주세요."
+          />
+          <p className="aq-option-note">허락 없는 샘플링은 저작권 침해가 될 수 있어요.</p>
+        </div>
+      )}
+      {o.featured && (
+        <div className="aq-option-detail">
+          <h3>피처링·공동 실연</h3>
+          <p className="aq-option-intro">참여자의 크레딧과 이용 허락을 확인해요.</p>
+          <DocAttach
+            id="aqFeaturedConsent" label="참여자 동의서 (보유 시)"
+            fileName={o.featuredConsentFile}
+            onSelect={v => setOpt('featuredConsentFile', v)}
+            help="피처링 참여자의 동의서나 계약서를 첨부해 주세요."
+          />
+        </div>
+      )}
+      {o.shared && (
+        <div className="aq-option-detail">
+          <h3>공동 권리자·레이블 계약</h3>
+          <p className="aq-option-intro">각 권리자와의 배급 위임 범위를 확인해요.</p>
+          <DocAttach
+            id="aqSharedContract" label="공동 권리 계약서"
+            fileName={o.sharedContractFile}
+            onSelect={v => setOpt('sharedContractFile', v)}
+            help="배급 위임 범위가 명시된 계약서를 첨부해 주세요."
+          />
         </div>
       )}
       {o.rerelease && (
@@ -550,6 +796,7 @@ export function Upload() {
           if (!o.guardian2Relation) return fail('두 번째 법정대리인과의 관계를 선택해 주세요.', '#aqGuardian2Relation');
           if (!o.guardian2Contact.trim()) return fail('두 번째 법정대리인의 연락처를 입력해 주세요.', '#aqGuardian2Contact');
         }
+        if (!o.guardianConsentDone) return fail('법정대리인 동의를 진행해 주세요.', null);
       }
       if (o.ai && !o.aiTool.trim()) return fail('AI 도구명과 활용 방식을 입력해 주세요.', '#aqAiTool');
       if (o.cover) {
