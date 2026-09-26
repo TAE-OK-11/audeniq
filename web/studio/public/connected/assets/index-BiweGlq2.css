@@ -1922,16 +1922,16 @@ body.aq-nav-locked #portalNav{position:fixed!important;top:calc(var(--aq-menu-to
 
 /* ===== Auth pages (login / signup / find-account) ===== */
 .auth-page{min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 20px;background:linear-gradient(160deg,#eef2ff 0%,#f7f9fd 55%,#f7f9fd 100%)}
-.auth-split{display:flex;width:min(920px,100%);border-radius:32px;overflow:hidden;background:#fff;box-shadow:0 16px 48px rgba(35,55,120,.12)}
-.auth-brand{flex:1 1 42%;background:linear-gradient(140deg,#1e3ab8 0%,#3b5bf0 55%,#6a8bff 100%);color:#fff;padding:52px 44px;display:flex;flex-direction:column;justify-content:center;position:relative;overflow:hidden}
-.auth-brand::after{content:"";position:absolute;right:-90px;top:-90px;width:280px;height:280px;border-radius:50%;background:#ffffff14}
-.auth-brand::before{content:"";position:absolute;left:-60px;bottom:-70px;width:200px;height:200px;border-radius:50%;background:#ffffff0d}
-.auth-brand-logo{width:150px;height:auto;display:block;margin-bottom:36px;filter:brightness(0) invert(1)}
-.auth-brand h2{font-size:30px;letter-spacing:-.045em;line-height:1.35;margin:0 0 14px;position:relative;z-index:1}
-.auth-brand p{font-size:14px;line-height:1.75;opacity:.85;margin:0 0 30px;position:relative;z-index:1}
-.auth-brand ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px;position:relative;z-index:1}
-.auth-brand li{font-size:13px;font-weight:600;display:flex;align-items:center;gap:10px}
-.auth-brand li::before{content:"✓";display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#ffffff2e;font-size:12px;flex-shrink:0}
+.auth-split{display:flex;width:min(480px,100%);border-radius:32px;overflow:hidden;background:#fff;box-shadow:0 16px 48px rgba(35,55,120,.12)}
+
+
+
+
+
+
+
+
+
 .auth-card{flex:1 1 58%;padding:48px 44px}
 .auth-card h1{font-size:26px;letter-spacing:-.04em;margin:0 0 8px}
 .auth-sub{font-size:14px;color:var(--portal-muted);margin:0 0 28px}
@@ -1950,11 +1950,11 @@ body.aq-nav-locked #portalNav{position:fixed!important;top:calc(var(--aq-menu-to
 .auth-foot{display:flex;align-items:center;gap:10px;margin-top:28px;font-size:12px;color:#8a97ab}
 .auth-foot a{color:#8a97ab;text-decoration:none}
 @media(max-width:760px){
-  .auth-split{flex-direction:column;border-radius:26px}
-  .auth-brand{padding:36px 30px}
-  .auth-brand h2{font-size:24px}
-  .auth-brand p{margin-bottom:22px}
-  .auth-brand ul{flex-direction:row;flex-wrap:wrap;gap:8px 18px}
+  .auth-split{border-radius:26px}
+  
+  
+  
+  
   .auth-card{padding:36px 26px}
   .auth-card h1{font-size:22px}
 }
