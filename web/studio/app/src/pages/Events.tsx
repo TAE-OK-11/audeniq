@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { MOCK } from '../lib/mode';
-import { fetchEvents } from '../api/portal';
+import { fetchEvents, loadContent } from '../api/content';
 import { useAsync } from '../hooks/useAsync';
 import { SkeletonRows } from '../components/Skeleton';
 import { Modal } from '../components/Modal';
@@ -14,6 +13,7 @@ interface AudenEvent {
   status: 'ongoing' | 'upcoming' | 'ended';
   summary: string;
   body: string;
+  link?: string;
 }
 
 const STATUS_LABEL: Record<AudenEvent['status'], string> = {
@@ -22,7 +22,7 @@ const STATUS_LABEL: Record<AudenEvent['status'], string> = {
   ended: '종료',
 };
 
-// 체험 모드 이벤트 — 실서버는 엣지 Worker(D1)의 /api/events (진행 상태는 서버가 날짜로 계산)
+// 예시 이벤트 — Worker(D1)가 없는 로컬 체험 모드에서만 보인다. 실제 글은 /api/events (진행 상태는 서버가 날짜로 계산)
 const EVENT_SEED: AudenEvent[] = [
   {
     id: 'ev1',
@@ -58,12 +58,15 @@ const EVENT_SEED: AudenEvent[] = [
 export function Events() {
   const [selected, setSelected] = useState<AudenEvent | null>(null);
 
-  const { data, loading, error, reload } = useAsync(async (): Promise<AudenEvent[]> => (MOCK
-    ? EVENT_SEED
-    : (await fetchEvents()).map(e => ({
+  const { data, loading, error, reload } = useAsync(() => loadContent(
+    fetchEvents,
+    (e): AudenEvent => ({
       id: e.id, title: e.title, date: e.starts_on, endDate: e.ends_on ?? undefined, place: e.place || 'AUDENIQ STUDIO',
       status: e.status === 'ongoing' ? 'ongoing' : e.status === 'upcoming' ? 'upcoming' : 'ended', summary: e.summary, body: e.body,
-    }))), []);
+      link: e.link_url ?? undefined,
+    }),
+    EVENT_SEED,
+  ), []);
   const EVENTS = data ?? [];
   const featured = EVENTS.find(e => e.status === 'ongoing')
     ?? EVENTS.find(e => e.status === 'upcoming')
@@ -133,6 +136,11 @@ export function Events() {
               <p key={i}>{line || '\u00A0'}</p>
             ))}
           </div>
+          {selected.link && /^https:\/\//.test(selected.link) && (
+            <a className="button" href={selected.link} target="_blank" rel="noopener noreferrer" style={{ marginTop: 20, width: '100%' }}>
+              이벤트 페이지 열기
+            </a>
+          )}
         </Modal>
       )}
     </div>

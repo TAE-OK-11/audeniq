@@ -18,6 +18,7 @@ export const pageLoaders = {
   Notifications: () => import('./pages/Notifications'),
   Events: () => import('./pages/Events'),
   Notices: () => import('./pages/Notices'),
+  ContentAdmin: () => import('./pages/ContentAdmin'),
   Profile: () => import('./pages/Profile'),
 };
 
