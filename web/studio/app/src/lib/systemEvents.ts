@@ -4,8 +4,8 @@ export const SERVER_ISSUE_EVENT = 'aq:server-issue';
 export type ServerIssue =
   /** 서버·게이트웨이가 응답하지 않음 (502/503/504, 연결 실패) */
   | { kind: 'down'; status: number; code: string }
-  /** 서버가 점검 중이라고 답함 (503 MAINTENANCE) */
-  | { kind: 'maintenance'; status: number; code: string };
+  /** 서버가 점검 중이라고 답함 (503 MAINTENANCE). Worker가 점검 정보를 함께 준다 */
+  | { kind: 'maintenance'; status: number; code: string; window?: unknown };
 
 export function reportServerIssue(issue: ServerIssue) {
   try {

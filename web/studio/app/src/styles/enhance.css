@@ -1036,3 +1036,29 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 #modal.aq-sysdialog-mode .modal-top{justify-content:flex-end;margin-bottom:-44px;position:relative;z-index:1}
 #modal.aq-sysdialog-mode .modal-top h2{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 @media (min-width:768px){#modal.aq-sysdialog-mode .modal-inner{max-width:460px}}
+/* 점검 화면은 앱 위에 덮는다 (앱은 그대로 남아 입력 보존) */
+.aq-app-shell{display:contents}
+.aq-maint-layer{position:fixed;inset:0;z-index:900;overflow-y:auto;background:#fff;animation:aq-fade-up .3s var(--aq-e-ease) both}
+.aq-errscreen.is-maintenance .aq-errscreen-desc p+p{margin-top:6px}
+
+/* 콘텐츠 관리: 긴급 점검 패널 */
+.aq-cadmin-emergency{margin:24px 0 8px;padding:20px 20px 18px;border-radius:22px;background:#F5F8FF}
+.aq-cadmin-emergency.is-active{background:var(--aq-e-red-soft)}
+.aq-cadmin-emergency-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.aq-cadmin-emergency-head strong{font-size:16px;font-weight:780;letter-spacing:-.03em;color:var(--aq-e-ink)}
+.aq-cadmin-emergency-head span:last-child{font-size:13px;color:#718096;font-variant-numeric:tabular-nums}
+.aq-cadmin-emergency.is-active .aq-cadmin-emergency-head strong{color:var(--aq-e-red)}
+.aq-cadmin-emergency>p{margin:8px 0 0;font-size:14px;color:#6b4a4a}
+.aq-cadmin-dot{width:10px;height:10px;border-radius:50%;background:var(--aq-e-green);box-shadow:0 0 0 4px var(--aq-e-green-soft)}
+.aq-cadmin-pulse{width:10px;height:10px;border-radius:50%;background:var(--aq-e-red);animation:aq-cadmin-pulse 1.6s ease-in-out infinite}
+@keyframes aq-cadmin-pulse{0%,100%{box-shadow:0 0 0 0 rgba(194,59,59,.35)}50%{box-shadow:0 0 0 7px rgba(194,59,59,0)}}
+@media (prefers-reduced-motion:reduce){.aq-cadmin-pulse{animation:none}}
+.aq-cadmin-emergency-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+.aq-cadmin-emergency-form{margin-top:14px}
+.aq-cadmin-emergency-form textarea{min-height:88px!important}
+.aq-cadmin-label{display:block;font-size:14px;font-weight:750;margin-bottom:10px}
+.aq-cadmin-chips{display:flex;flex-wrap:wrap;gap:8px}
+.aq-cadmin-chip{min-height:38px;padding:0 14px;border:1.5px solid #dfe5f0;border-radius:12px;background:#fff;font-size:14px;font-weight:700;color:#4a5568;cursor:pointer}
+.aq-cadmin-chip.is-on{border-color:var(--aq-e-blue);color:var(--aq-e-blue);background:var(--aq-e-blue-soft)}
+.aq-cadmin-emergency .button.aq-cadmin-danger-fill.aq-cadmin-danger-fill{background:var(--aq-e-red)!important;color:#fff!important}
+.aq-cadmin-emergency .button.aq-cadmin-danger-fill.aq-cadmin-danger-fill:hover:not(:disabled){background:#a93030!important}

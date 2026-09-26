@@ -18,5 +18,6 @@ describe('점검 시각 표기 (한국 시간)', () => {
     expect(kstWhen('2026-09-29T17:00:00Z')).toBe('9월 30일(수) 02:00');
     expect(windowLabel({ starts_at: '2026-09-29T17:00:00Z', ends_at: '2026-09-29T19:30:00Z' })).toBe('9월 30일(수) 02:00 ~ 04:30');
     expect(windowLabel({ starts_at: '2026-09-29T14:00:00Z', ends_at: '2026-09-29T16:00:00Z' })).toBe('9월 29일(화) 23:00 ~ 9월 30일(수) 01:00');
+    expect(windowLabel({ starts_at: '2026-09-29T17:00:00Z', ends_at: '9999-12-31T00:00:00Z', end_unknown: true })).toBe('9월 30일(수) 02:00부터 · 종료 시각 미정');
   });
 });

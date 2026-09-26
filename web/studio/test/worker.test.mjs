@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { bearerOk, eventStatus, pickStatus, route, validate } from '../worker.js';
+import worker, { bearerOk, eventStatus, pickStatus, resetMaintenanceCache, route, validate } from '../worker.js';
 
 const TOKEN = 'x'.repeat(40);
 
@@ -190,6 +190,59 @@ test('other /api/* calls go to the backend with the service header; a dead backe
     const down = await call(e, 'GET', '/api/me');
     assert.equal(down.status, 502);
     assert.equal((await down.json()).error.code, 'BACKEND_UNAVAILABLE');
+  } finally {
+    globalThis.fetch = real;
+  }
+});
+
+test('emergency: env switch forces maintenance and API calls get 503 MAINTENANCE', async () => {
+  resetMaintenanceCache();
+  const real = globalThis.fetch;
+  let proxied = 0;
+  globalThis.fetch = async () => { proxied++; return new Response('{}'); };
+  try {
+    const e = { ...env(), MAINTENANCE_MODE: 'on', MAINTENANCE_MESSAGE: 'DB 복구 중이에요.' };
+    const st = await (await call(e, 'GET', '/api/status')).json();
+    assert.equal(st.maintenance.active.kind, 'emergency');
+    assert.equal(st.maintenance.active.end_unknown, true);
+    assert.equal(st.maintenance.active.body, 'DB 복구 중이에요.');
+    const blocked = await call(e, 'POST', '/api/releases', { a: 1 });
+    assert.equal(blocked.status, 503);
+    assert.equal((await blocked.json()).error.code, 'MAINTENANCE');
+    assert.equal(proxied, 0);
+    // 공지·관리 API와 화면은 그대로
+    assert.equal((await call(e, 'GET', '/api/notices')).status, 200);
+    // 끄면 다시 통과
+    const off = { ...e, MAINTENANCE_MODE: 'off' };
+    resetMaintenanceCache();
+    assert.equal((await call(off, 'GET', '/api/me')).status, 200);
+    assert.equal(proxied, 1);
+  } finally {
+    globalThis.fetch = real;
+  }
+});
+
+test('emergency window from the admin API blocks the API until it ends', async () => {
+  resetMaintenanceCache();
+  const real = globalThis.fetch;
+  globalThis.fetch = async () => new Response('{}');
+  try {
+    const e = env();
+    const iso = ms => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
+    const created = await (await call(e, 'POST', '/api/content/maintenance', {
+      id: 'urgent', title: '긴급 점검', kind: 'emergency', end_unknown: true,
+      starts_at: iso(Date.now() - 1000), ends_at: iso(Date.now() + 3600e3),
+    })).json();
+    assert.equal(created.kind, 'emergency');
+    assert.equal(created.end_unknown, true);
+    assert.equal((await call(e, 'GET', '/api/me')).status, 503);
+    // 종료: ends_at을 지금으로
+    const res = await call(e, 'PUT', '/api/content/maintenance/urgent', {
+      title: '긴급 점검', kind: 'emergency', starts_at: created.starts_at, ends_at: iso(Date.now()),
+    });
+    assert.equal(res.status, 200);
+    assert.equal((await call(e, 'GET', '/api/me')).status, 200);
+    assert.throws(() => validate('maintenance', { title: 'x', starts_at: created.starts_at, ends_at: iso(Date.now() + 1e6), kind: 'soon' }), { code: 'INVALID_INPUT' });
   } finally {
     globalThis.fetch = real;
   }
