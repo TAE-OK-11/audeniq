@@ -591,7 +591,6 @@ export function Upload() {
       </div>
 
       <div className="wizard-header">
-        <p className="wizard-kicker" id="wizardKicker">{s.kicker}</p>
         <h1 id="newTitle" style={{ whiteSpace: 'pre-line' }}>{s.title}</h1>
         <p id="wizardSubtitle">{s.sub}</p>
       </div>
