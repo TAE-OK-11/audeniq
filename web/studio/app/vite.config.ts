@@ -7,6 +7,7 @@ export default defineConfig({
   build: {
     outDir: '../public/connected',
     emptyOutDir: true,
+    cssMinify: false, // esbuild가 @media를 버리는 버그 우회
   },
   server: {
     proxy: {
