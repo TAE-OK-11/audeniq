@@ -75,7 +75,7 @@ export function Dashboard() {
   if (needs) tasks.push({ icon: '!', name: `보완이 필요한 발매 ${needs}건`, sub: '발매별 제출 정보와 증빙을 확인해 보세요.', btn: '확인', to: '/releases' });
   if (drafts) tasks.push({ icon: '↗', name: `작성 중인 발매 ${drafts}건`, sub: '필수 정보와 권리 항목을 확인해 보세요.', btn: '보기', to: '/releases' });
   if (!profileName) tasks.push({ icon: '◉', name: '아티스트 정보 등록', sub: '활동명과 연락처를 입력해 주세요.', btn: '등록', to: '/profile' });
-  if (unread) tasks.push({ icon: '♧', name: `읽지 않은 알림 ${unread}건`, sub: '최근 변경사항을 확인해 보세요.', btn: '확인', to: '/support' });
+  if (unread) tasks.push({ icon: '♧', name: `읽지 않은 알림 ${unread}건`, sub: '최근 변경사항을 확인해 보세요.', btn: '확인', to: '/notifications' });
 
   return (
     <div id="view-home" className="view">

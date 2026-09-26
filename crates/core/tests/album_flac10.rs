@@ -9,8 +9,7 @@ use async_trait::async_trait;
 use audeniq_core::{
     api::{AppState, router},
     config::Config,
-    database,
-    ddex_xsd,
+    database, ddex_xsd,
     error::{Error, Result},
     operations,
     storage::{ObjectMeta, ObjectStore, UploadGrant},
@@ -123,7 +122,9 @@ async fn call(
         .header("origin", ORIGIN)
         .header("content-type", "application/json");
     if let Some(u) = user {
-        b = b.header("cookie", &u.cookie).header("x-csrf-token", &u.csrf);
+        b = b
+            .header("cookie", &u.cookie)
+            .header("x-csrf-token", &u.csrf);
     }
     let r = app
         .clone()
@@ -326,9 +327,7 @@ async fn album_10x_flac_330_distribution_timing(pool: PgPool) {
     let t = Instant::now();
     let mut assets = Vec::with_capacity(TRACKS);
     for (i, bytes) in flacs.iter().enumerate() {
-        assets.push(
-            register_asset(&pool, &store, &u, &format!("track{i:02}.flac"), bytes).await,
-        );
+        assets.push(register_asset(&pool, &store, &u, &format!("track{i:02}.flac"), bytes).await);
     }
     // Drop the raw bytes; the store holds its own copies.
     drop(flacs);
@@ -451,7 +450,10 @@ async fn album_10x_flac_330_distribution_timing(pool: PgPool) {
 
     // 6. Stage 2 rights.
     let t = Instant::now();
-    assert_eq!(run_one(&pool, &store, "rights", "stage2").await, "SUCCEEDED");
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
     assert_eq!(release_status(&pool, release).await, "STAGE2_PASSED");
     phases.push(("stage2 rights", t.elapsed()));
 
@@ -466,11 +468,12 @@ async fn album_10x_flac_330_distribution_timing(pool: PgPool) {
 
     // 8. Album-level assertions.
     let t = Instant::now();
-    let track_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM catalog.tracks WHERE release_id=$1")
-        .bind(release)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    let track_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM catalog.tracks WHERE release_id=$1")
+            .bind(release)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(track_count, TRACKS as i64);
     let mut authed = pool.acquire().await.unwrap();
     sqlx::query("SELECT set_config('app.org_id',$1,false)")
@@ -489,7 +492,10 @@ async fn album_10x_flac_330_distribution_timing(pool: PgPool) {
     assert!(rows.iter().any(|(k, v)| k == "UPC" && v == "036000291452"));
     for n in 1..=TRACKS {
         let isrc = format!("USABC26{n:05}");
-        assert!(rows.iter().any(|(k, v)| k == "ISRC" && v == &isrc), "ledger has {isrc}");
+        assert!(
+            rows.iter().any(|(k, v)| k == "ISRC" && v == &isrc),
+            "ledger has {isrc}"
+        );
     }
     let package_id: Uuid = sqlx::query_scalar(
         "SELECT package_id FROM distribution.preparation_artifacts WHERE release_id=$1",

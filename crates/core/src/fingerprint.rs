@@ -25,9 +25,13 @@ use std::time::Duration;
 
 /// Fingerprint algorithm version, stored alongside the hash so a future
 /// algorithm change can coexist with (not silently mix with) old rows.
-pub const FINGERPRINT_VERSION: i16 = 1;
+/// v2 = segmented coverage (head/middle/tail windows); v1 covered the
+/// first 600 s contiguously.
+pub const FINGERPRINT_VERSION: i16 = 2;
 
 const SAMPLE_RATE: u32 = 11025;
+/// Sample rate of the PCM the fingerprint operates on.
+pub const FINGERPRINT_SAMPLE_RATE: u32 = SAMPLE_RATE;
 const FRAME_SIZE: usize = 2048; // ~186 ms at 11025 Hz
 const FRAME_HOP: usize = 1024; // ~93 ms
 /// 33 bands -> 32 differential bits per sub-fingerprint.
@@ -47,13 +51,41 @@ const MIN_OVERLAP_FRAMES: usize = 32;
 /// fingerprint. Not transient: retrying the same bytes will not help.
 pub const TOO_SHORT_CODE: &str = "AUDIO_TOO_SHORT_FOR_FINGERPRINT";
 
-/// Length of audio the fingerprint covers: the first 10 minutes. Longer
-/// tracks are fingerprinted over this bounded segment (ffmpeg stops decoding
-/// at the limit), which is ample for similarity matching and keeps time and
-/// memory bounded (~13 MB of PCM) for 45-minute masters. Previously a longer
-/// track overflowed the decode cap and failed every attempt.
+/// Length of audio the file-decode entry point covers: the first 10 minutes.
+/// Longer tracks are fingerprinted over this bounded segment (ffmpeg stops
+/// decoding at the limit), which keeps time and memory bounded (~13 MB of
+/// PCM) for 45-minute masters. The production QC path no longer uses this:
+/// it taps the configured segment windows out of the single
+/// `decode_analysis` pass (see [`segment_windows`]).
 pub const MAX_FINGERPRINT_SECS: u32 = 600;
 const MAX_SAMPLES: usize = SAMPLE_RATE as usize * MAX_FINGERPRINT_SECS as usize;
+
+/// Number of segments a v2 fingerprint covers, and each segment's length.
+/// 3 x 30 s spread over the track replaces the contiguous first-600 s
+/// coverage: ~4.7x less decode + FFT work, while the discriminative parts
+/// (intro, chorus, outro) stay covered.
+pub const FINGERPRINT_SEGMENTS: usize = 3;
+pub const FINGERPRINT_SEGMENT_SECS: f64 = 30.0;
+
+/// Time windows (start, length) in seconds covered by a v2 fingerprint:
+/// head, middle, and tail of the track. Tracks shorter than the total
+/// coverage get a single whole-track window; non-positive durations get
+/// none.
+pub fn segment_windows(duration_secs: f64) -> Vec<(f64, f64)> {
+    if !duration_secs.is_finite() || duration_secs <= 0.0 {
+        return Vec::new();
+    }
+    let total = FINGERPRINT_SEGMENTS as f64 * FINGERPRINT_SEGMENT_SECS;
+    if duration_secs <= total {
+        return vec![(0.0, duration_secs)];
+    }
+    let seg = FINGERPRINT_SEGMENT_SECS;
+    vec![
+        (0.0, seg),
+        ((duration_secs / 2.0 - seg / 2.0).max(0.0), seg),
+        ((duration_secs - seg).max(0.0), seg),
+    ]
+}
 
 pub struct Fingerprint {
     /// 32-bit sub-fingerprints, one per frame, in time order.
@@ -179,6 +211,15 @@ fn hann_window() -> Vec<f32> {
 /// Compute the perceptual fingerprint of an audio file.
 pub fn compute_fingerprint(path: &Path) -> Result<Fingerprint> {
     let samples = decode_mono(path)?;
+    fingerprint_from_samples(&samples)
+}
+
+/// Compute the perceptual fingerprint from mono 11025 Hz f32 PCM samples.
+///
+/// This is the FFT/differential core shared by the file-decode entry point
+/// and the QC fast path, where the segment samples are tapped out of the
+/// single `decode_analysis` pass instead of a second ffmpeg decode.
+pub fn fingerprint_from_samples(samples: &[f32]) -> Result<Fingerprint> {
     if samples.len() < FRAME_SIZE + FRAME_HOP * MIN_OVERLAP_FRAMES {
         return Err(Error::PolicyGate(TOO_SHORT_CODE));
     }

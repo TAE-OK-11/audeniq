@@ -1328,6 +1328,17 @@ fn qc_max_bytes() -> u64 {
         .unwrap_or(512 * 1024 * 1024)
 }
 
+/// How many assets Stage 1 analyzes concurrently. Each analysis is
+/// CPU-bound (full decode + FFT) plus a storage download; 4 saturates a
+/// typical worker without starving the job-lease heartbeat.
+fn qc_asset_parallelism() -> usize {
+    std::env::var("AUDENIQ_QC_ASSET_PARALLELISM")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .filter(|n| *n > 0)
+        .unwrap_or(4)
+}
+
 /// Download one asset and run the fixed check contract over it. Storage and
 /// local-IO failures are returned as a detail string so the caller can record
 /// per-asset TECHNICAL_RETRY instead of aborting the whole Stage 1 run.
@@ -1397,10 +1408,13 @@ async fn analyze_asset(
     );
     tokio::task::spawn_blocking(move || {
         let path = tmp.0.as_path();
-        let outcomes = match kind.as_str() {
-            "AUDIO" => qc::check_audio(path, Some(&sha256), Some(&content_type)),
-            "IMAGE" => qc::check_image(path, Some(&sha256)),
-            _ => Vec::new(),
+        // check_audio_full returns the fingerprint tap samples collected
+        // during the single decode_analysis pass: no second ffmpeg decode
+        // for the fingerprint step anymore.
+        let (outcomes, fp_samples) = match kind.as_str() {
+            "AUDIO" => qc::check_audio_full(path, Some(&sha256), Some(&content_type)),
+            "IMAGE" => (qc::check_image(path, Some(&sha256)), Vec::new()),
+            _ => (Vec::new(), Vec::new()),
         };
         // Duration and technical specs are measured with a second ffprobe
         // pass rather than parsed out of check outcomes: the check contract
@@ -1428,9 +1442,9 @@ async fn analyze_asset(
             )
         });
         let fp = match kind.as_str() {
-            "AUDIO" if !invalid => {
-                Some(fingerprint::compute_fingerprint(path).map_err(|e| format!("{e:?}")))
-            }
+            "AUDIO" if !invalid && !fp_samples.is_empty() => Some(
+                fingerprint::fingerprint_from_samples(&fp_samples).map_err(|e| format!("{e:?}")),
+            ),
             _ => None,
         };
         drop(tmp);
@@ -1690,6 +1704,142 @@ struct SimilarHit {
     ber: f64,
 }
 
+/// Run the Stage 1 check contract for a single asset: cache lookup, then
+/// download + analysis for the uncached checks. Assets are independent, so
+/// `asset_checks` runs several of these concurrently.
+async fn qc_single_asset(
+    pool: PgPool,
+    storage: Arc<dyn ObjectStore>,
+    org: Uuid,
+    aid_str: &str,
+    sha256: &str,
+    kind: &str,
+) -> Result<Vec<StagedCheck>> {
+    let mut out = Vec::new();
+    let aid = Uuid::parse_str(aid_str).map_err(|_| Error::Internal)?;
+    let row = sqlx::query(
+        "SELECT object_key, state, content_type FROM catalog.assets WHERE org_id=$1 AND id=$2",
+    )
+    .bind(org)
+    .bind(aid)
+    .fetch_optional(&pool)
+    .await?
+    .ok_or(Error::Internal)?;
+    let state: String = row.get("state");
+    let key: String = row.get("object_key");
+    let content_type: String = row.get("content_type");
+    if state != "REGISTERED" {
+        out.push(StagedCheck {
+            check_code: "ASSET_NOT_ADMITTED",
+            rule_version: qc::QC_RULE_VERSION,
+            status: CheckStatus::Blocked,
+            result_hash: asset_cache_key("ASSET_NOT_ADMITTED", sha256),
+            detail: format!("asset state={state}"),
+        });
+        return Ok(out);
+    }
+    let expected: &[&str] = match kind {
+        "AUDIO" => qc::AUDIO_CHECK_CODES,
+        "IMAGE" => qc::IMAGE_CHECK_CODES,
+        _ => &[],
+    };
+    let mut to_run: Vec<&str> = Vec::new();
+    for code in expected {
+        // AUDIO_SIMILAR_TO_EXISTING is never cached: the result depends
+        // on what else is in the catalog at check time, not just the
+        // bytes. A byte-identical re-upload must be flagged as similar
+        // to the original, even though the SHA-256 matches a cached PASS.
+        if *code == "AUDIO_SIMILAR_TO_EXISTING" {
+            to_run.push(code);
+            return Ok(out);
+        }
+        let rh = asset_cache_key(code, sha256);
+        match cached_status(&pool, code, qc::QC_RULE_VERSION, &rh).await? {
+            // A cached TECHNICAL_RETRY is transient: re-run instead of copying it.
+            Some(st) if st != CheckStatus::TechnicalRetry => out.push(StagedCheck {
+                check_code: code,
+                rule_version: qc::QC_RULE_VERSION,
+                status: st,
+                result_hash: rh,
+                detail: "cache_hit".into(),
+            }),
+            _ => to_run.push(code),
+        }
+    }
+    if to_run.is_empty() {
+        return Ok(out);
+    }
+    // If the only uncached check is AUDIO_SIMILAR_TO_EXISTING and we
+    // have a stored fingerprint, reuse it without re-downloading the
+    // bytes. The similarity result depends on catalog state, but the
+    // fingerprint itself is immutable for unchanged bytes.
+    let only_similarity = to_run == ["AUDIO_SIMILAR_TO_EXISTING"];
+    if only_similarity && let Some(stored_fp) = load_stored_fingerprint(&pool, org, aid).await? {
+        let fp_opt = Some(Ok(stored_fp));
+        handle_fingerprint_checks(&pool, org, aid, sha256, &fp_opt, &to_run, &mut out).await?;
+        // Emit the cached codes for the other checks (already in `out`
+        // via the cache_hit path above); nothing more to do for this asset.
+        return Ok(out);
+    }
+    // No stored fingerprint: fall through to analyze_asset which will
+    // compute and store it.
+    // Unique temp name: two workers must never share an analyzer file.
+    let tmp_name = format!("audeniq-qc-{}", Uuid::new_v4());
+    let outcomes = match analyze_asset(&storage, &key, kind, &content_type, sha256, &tmp_name).await
+    {
+        Ok((o, metrics, fp)) => {
+            // Persist measured audio duration + real technical specs for
+            // the DDEX builder. COALESCE fills only unknown columns;
+            // never overwrites measured values.
+            if let Some(m) = metrics {
+                let _ = sqlx::query(
+                    "UPDATE catalog.assets SET duration_secs=COALESCE(duration_secs,$1), sample_rate=COALESCE(sample_rate,$2), channels=COALESCE(channels,$3), bits_per_sample=COALESCE(bits_per_sample,$4) WHERE org_id=$5 AND id=$6",
+                )
+                .bind(m.duration_secs)
+                .bind(i32::try_from(m.sample_rate).ok())
+                .bind(i32::try_from(m.channels).ok())
+                .bind(m.bits_per_sample.and_then(|b| i32::try_from(b).ok()))
+                .bind(org)
+                .bind(aid)
+                .execute(&pool)
+                .await;
+            }
+            // Perceptual fingerprint: store + similarity check. The two
+            // fingerprint codes are DB-backed so they are produced here,
+            // not in check_audio; codes already emitted via a QC tail
+            // (e.g. blocked bytes) are not duplicated.
+            handle_fingerprint_checks(&pool, org, aid, sha256, &fp, &to_run, &mut out).await?;
+            o
+        }
+        Err(detail) => {
+            // Storage/IO failure is per-asset TECHNICAL_RETRY: other
+            // assets' results still persist and the job is requeued.
+            for code in &to_run {
+                out.push(StagedCheck {
+                    check_code: code,
+                    rule_version: qc::QC_RULE_VERSION,
+                    status: CheckStatus::TechnicalRetry,
+                    result_hash: asset_cache_key(code, sha256),
+                    detail: detail.clone(),
+                });
+            }
+            return Ok(out);
+        }
+    };
+    for o in outcomes {
+        if to_run.contains(&o.check_code) {
+            out.push(StagedCheck {
+                check_code: o.check_code,
+                rule_version: qc::QC_RULE_VERSION,
+                status: o.status,
+                result_hash: asset_cache_key(o.check_code, sha256),
+                detail: o.detail,
+            });
+        }
+    }
+    Ok(out)
+}
+
 async fn asset_checks(
     pool: &PgPool,
     storage: &Arc<dyn ObjectStore>,
@@ -1732,135 +1882,25 @@ async fn asset_checks(
             }
         }
     }
-    for (aid_str, (sha256, kind)) in &assets {
-        let aid = Uuid::parse_str(aid_str).map_err(|_| Error::Internal)?;
-        let row = sqlx::query(
-            "SELECT object_key, state, content_type FROM catalog.assets WHERE org_id=$1 AND id=$2",
-        )
-        .bind(org)
-        .bind(aid)
-        .fetch_optional(pool)
-        .await?
-        .ok_or(Error::Internal)?;
-        let state: String = row.get("state");
-        let key: String = row.get("object_key");
-        let content_type: String = row.get("content_type");
-        if state != "REGISTERED" {
-            out.push(StagedCheck {
-                check_code: "ASSET_NOT_ADMITTED",
-                rule_version: qc::QC_RULE_VERSION,
-                status: CheckStatus::Blocked,
-                result_hash: asset_cache_key("ASSET_NOT_ADMITTED", sha256),
-                detail: format!("asset state={state}"),
+    // Bounded parallelism: each asset analysis is CPU-bound (full decode
+    // + FFT) plus a storage download. 4 concurrent analyses saturate a
+    // typical worker without starving the job-lease heartbeat; override
+    // with AUDENIQ_QC_ASSET_PARALLELISM.
+    let asset_list: Vec<(String, String, String)> = assets
+        .iter()
+        .map(|(aid, (sha, kind))| (aid.clone(), sha.clone(), kind.clone()))
+        .collect();
+    for chunk in asset_list.chunks(qc_asset_parallelism().max(1)) {
+        let mut set = tokio::task::JoinSet::new();
+        for (aid_str, sha256, kind) in chunk {
+            let (pool_c, storage_c) = (pool.clone(), Arc::clone(storage));
+            let (aid_s, sha_s, kind_s) = (aid_str.clone(), sha256.clone(), kind.clone());
+            set.spawn(async move {
+                qc_single_asset(pool_c, storage_c, org, &aid_s, &sha_s, &kind_s).await
             });
-            continue;
         }
-        let expected: &[&str] = match kind.as_str() {
-            "AUDIO" => qc::AUDIO_CHECK_CODES,
-            "IMAGE" => qc::IMAGE_CHECK_CODES,
-            _ => &[],
-        };
-        let mut to_run: Vec<&str> = Vec::new();
-        for code in expected {
-            // AUDIO_SIMILAR_TO_EXISTING is never cached: the result depends
-            // on what else is in the catalog at check time, not just the
-            // bytes. A byte-identical re-upload must be flagged as similar
-            // to the original, even though the SHA-256 matches a cached PASS.
-            if *code == "AUDIO_SIMILAR_TO_EXISTING" {
-                to_run.push(code);
-                continue;
-            }
-            let rh = asset_cache_key(code, sha256);
-            match cached_status(pool, code, qc::QC_RULE_VERSION, &rh).await? {
-                // A cached TECHNICAL_RETRY is transient: re-run instead of copying it.
-                Some(st) if st != CheckStatus::TechnicalRetry => out.push(StagedCheck {
-                    check_code: code,
-                    rule_version: qc::QC_RULE_VERSION,
-                    status: st,
-                    result_hash: rh,
-                    detail: "cache_hit".into(),
-                }),
-                _ => to_run.push(code),
-            }
-        }
-        if to_run.is_empty() {
-            continue;
-        }
-        // If the only uncached check is AUDIO_SIMILAR_TO_EXISTING and we
-        // have a stored fingerprint, reuse it without re-downloading the
-        // bytes. The similarity result depends on catalog state, but the
-        // fingerprint itself is immutable for unchanged bytes.
-        let only_similarity = to_run == ["AUDIO_SIMILAR_TO_EXISTING"];
-        if only_similarity && let Some(stored_fp) = load_stored_fingerprint(pool, org, aid).await? {
-            let fp_opt = Some(Ok(stored_fp));
-            handle_fingerprint_checks(pool, org, aid, sha256, &fp_opt, &to_run, &mut out).await?;
-            // Emit the cached codes for the other checks (already in `out`
-            // via the cache_hit path above); nothing more to do for this asset.
-            continue;
-        }
-        // No stored fingerprint: fall through to analyze_asset which will
-        // compute and store it.
-        // Unique temp name: two workers must never share an analyzer file.
-        let tmp_name = format!("audeniq-qc-{}", Uuid::new_v4());
-        let outcomes = match analyze_asset(
-            storage,
-            &key,
-            kind.as_str(),
-            &content_type,
-            sha256,
-            &tmp_name,
-        )
-        .await
-        {
-            Ok((o, metrics, fp)) => {
-                // Persist measured audio duration + real technical specs for
-                // the DDEX builder. COALESCE fills only unknown columns;
-                // never overwrites measured values.
-                if let Some(m) = metrics {
-                    let _ = sqlx::query(
-                        "UPDATE catalog.assets SET duration_secs=COALESCE(duration_secs,$1), sample_rate=COALESCE(sample_rate,$2), channels=COALESCE(channels,$3), bits_per_sample=COALESCE(bits_per_sample,$4) WHERE org_id=$5 AND id=$6",
-                    )
-                    .bind(m.duration_secs)
-                    .bind(i32::try_from(m.sample_rate).ok())
-                    .bind(i32::try_from(m.channels).ok())
-                    .bind(m.bits_per_sample.and_then(|b| i32::try_from(b).ok()))
-                    .bind(org)
-                    .bind(aid)
-                    .execute(pool)
-                    .await;
-                }
-                // Perceptual fingerprint: store + similarity check. The two
-                // fingerprint codes are DB-backed so they are produced here,
-                // not in check_audio; codes already emitted via a QC tail
-                // (e.g. blocked bytes) are not duplicated.
-                handle_fingerprint_checks(pool, org, aid, sha256, &fp, &to_run, &mut out).await?;
-                o
-            }
-            Err(detail) => {
-                // Storage/IO failure is per-asset TECHNICAL_RETRY: other
-                // assets' results still persist and the job is requeued.
-                for code in &to_run {
-                    out.push(StagedCheck {
-                        check_code: code,
-                        rule_version: qc::QC_RULE_VERSION,
-                        status: CheckStatus::TechnicalRetry,
-                        result_hash: asset_cache_key(code, sha256),
-                        detail: detail.clone(),
-                    });
-                }
-                continue;
-            }
-        };
-        for o in outcomes {
-            if to_run.contains(&o.check_code) {
-                out.push(StagedCheck {
-                    check_code: o.check_code,
-                    rule_version: qc::QC_RULE_VERSION,
-                    status: o.status,
-                    result_hash: asset_cache_key(o.check_code, sha256),
-                    detail: o.detail,
-                });
-            }
+        while let Some(r) = set.join_next().await {
+            out.extend(r.map_err(|_| Error::Internal)??);
         }
     }
     Ok(out)
