@@ -1118,8 +1118,8 @@ body.aq-nav-locked #portalNav{
 
 /* 서명 모달: 단일 스크롤 컨테이너 + 하단 버튼 sticky 고정 */
 #modal.aq-signature-mode{overflow:visible!important}
-#modal.aq-signature-mode .modal-inner{overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;max-height:calc(100dvh - 16px)!important}
-#modal.aq-signature-mode .aq-sign-foot{position:sticky!important;bottom:0!important;background:#fff!important;z-index:5!important;border-top:1px solid #edf1f7!important;padding:14px 0 16px!important;margin:16px -19px -16px!important;padding-left:19px!important;padding-right:19px!important}
+#modal.aq-signature-mode .modal-inner{overflow-y:auto!important;-webkit-overflow-scrolling:touch!important;max-height:calc(100dvh - 16px)!important;padding-bottom:0!important}
+#modal.aq-signature-mode .aq-sign-foot{position:sticky!important;bottom:0!important;background:#fff!important;z-index:5!important;border-top:1px solid #edf1f7!important;margin:16px -19px 0!important;padding:14px 19px calc(20px + env(safe-area-inset-bottom,0px))!important;border-radius:0 0 24px 24px!important}
 
 /* 주민등록번호 입력 */
 .aq-rrn-row{display:flex;align-items:center;gap:8px}
