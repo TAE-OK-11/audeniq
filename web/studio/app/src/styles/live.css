@@ -1185,3 +1185,13 @@ body.aq-nav-locked #portalNav{
 
 /* 트랙 삭제 버튼 넓게 */
 .track-editor .minor-actions .link-btn{padding:10px 24px!important;background:#fff!important;border-radius:12px!important;font-weight:700!important}
+
+/* 커버아트 배급 미리보기 */
+.cover-dist-preview{margin-top:20px}
+.dist-mock{background:#111318;border-radius:20px;padding:20px;max-width:340px}
+.dist-mock img{width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:12px;display:block}
+.dist-mock-meta{margin-top:14px}
+.dist-mock-meta strong{display:block;color:#fff;font-size:16px;font-weight:700;letter-spacing:-.01em}
+.dist-mock-meta span{display:block;color:#9aa3b2;font-size:13px;margin-top:4px}
+.cover-dist-preview .help{margin-top:12px}
+.cover-dist-preview .link-btn{margin-top:8px}
