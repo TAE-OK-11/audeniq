@@ -32,6 +32,18 @@ const GRID_ITEMS = [
   },
 ];
 
+const svg = (d: string) => (
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={d} /></svg>
+);
+const TASK_ICONS = {
+  alert: svg('M12 8v5m0 3.5v.01M10.3 3.9 2.6 17.3A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.7L13.7 3.9a2 2 0 0 0-3.4 0Z'),
+  doc: svg('M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Zm0 0v5h5M9 13h6M9 17h4'),
+  pen: svg('M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z'),
+  draft: svg('M4 20h4L18.5 9.5a2.8 2.8 0 0 0-4-4L4 16v4Zm9.5-13.5 4 4'),
+  user: svg('M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z'),
+  bell: svg('M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0'),
+};
+
 function greeting(): string {
   const h = new Date().getHours();
   if (h < 6) return '늦은 밤에도 반가워요.';
@@ -73,13 +85,14 @@ export function Dashboard() {
   const docFix = docs.filter(d => d.kind === 'rights' && d.reviewStatus === 'needs').length;
 
   const profileName = profile.name.trim();
-  const tasks: { icon: string; name: string; sub: string; btn: string; to: string; warn?: boolean }[] = [];
-  if (needs) tasks.push({ icon: '!', name: `보완이 필요한 발매 ${needs}건`, sub: '발매별 제출 정보와 증빙을 확인해 보세요.', btn: '확인', to: '/releases', warn: true });
-  if (docFix) tasks.push({ icon: '!', name: `보완 요청된 서류 ${docFix}건`, sub: '요청 사유를 확인하고 새 원본을 제출해 주세요.', btn: '제출', to: '/rights', warn: true });
-  if (drafts) tasks.push({ icon: '↗', name: `작성 중인 발매 ${drafts}건`, sub: '필수 정보와 권리 항목을 확인해 보세요.', btn: '보기', to: '/releases' });
-  if (toSign) tasks.push({ icon: '✎', name: `서명할 계약서 ${toSign}건`, sub: '검토가 끝난 계약서에 서명해 주세요.', btn: '서명', to: '/contracts' });
-  if (!profileName) tasks.push({ icon: '◉', name: '아티스트 정보 등록', sub: '활동명과 연락처를 입력해 주세요.', btn: '등록', to: '/profile' });
-  if (unread) tasks.push({ icon: '♧', name: `읽지 않은 알림 ${unread}건`, sub: '최근 변경사항을 확인해 보세요.', btn: '확인', to: '/notifications' });
+  type TaskTone = 'warn' | 'sign' | 'info';
+  const tasks: { icon: keyof typeof TASK_ICONS; name: string; sub: string; btn: string; to: string; tone: TaskTone }[] = [];
+  if (needs) tasks.push({ icon: 'alert', name: `보완이 필요한 발매 ${needs}건`, sub: '제출 정보와 증빙을 확인해 주세요.', btn: '확인', to: '/releases?status=needs', tone: 'warn' });
+  if (docFix) tasks.push({ icon: 'doc', name: `보완 요청된 서류 ${docFix}건`, sub: '요청 사유를 보고 새 원본을 제출해 주세요.', btn: '제출', to: '/rights', tone: 'warn' });
+  if (toSign) tasks.push({ icon: 'pen', name: `서명할 계약서 ${toSign}건`, sub: '검토가 끝난 계약서에 서명해 주세요.', btn: '서명', to: '/contracts', tone: 'sign' });
+  if (drafts) tasks.push({ icon: 'draft', name: `작성 중인 발매 ${drafts}건`, sub: '이어서 작성하고 접수해 보세요.', btn: '보기', to: '/releases?status=draft', tone: 'info' });
+  if (!profileName) tasks.push({ icon: 'user', name: '아티스트 정보 등록', sub: '활동명과 연락처를 입력해 주세요.', btn: '등록', to: '/profile', tone: 'info' });
+  if (unread) tasks.push({ icon: 'bell', name: `읽지 않은 알림 ${unread}건`, sub: '최근 변경사항을 확인해 보세요.', btn: '확인', to: '/notifications', tone: 'info' });
 
   return (
     <div id="view-home" className="view">
@@ -162,18 +175,20 @@ export function Dashboard() {
             {loading ? (
               <SkeletonRows count={2} />
             ) : tasks.length ? (
-              <div className="aq-stagger">
+              <ul className="aq-task-list aq-stagger">
                 {tasks.map(t => (
-                  <div key={t.name} className={`statement-row aq-action-card${t.warn ? ' is-warning' : ''}`}>
-                    <div className="document-icon">{t.icon}</div>
-                    <div>
-                      <span className="row-name">{t.name}</span>
-                      <span className="row-sub">{t.sub}</span>
-                    </div>
-                    <button type="button" className="link-btn" onClick={() => navigate(t.to)}>{t.btn}</button>
-                  </div>
+                  <li key={t.name}>
+                    <button type="button" className={`aq-task is-${t.tone}`} onClick={() => navigate(t.to)}>
+                      <span className="aq-task-icon" aria-hidden="true">{TASK_ICONS[t.icon]}</span>
+                      <span className="aq-task-text">
+                        <strong>{t.name}</strong>
+                        <small>{t.sub}</small>
+                      </span>
+                      <span className="aq-task-go">{t.btn}<i aria-hidden="true">›</i></span>
+                    </button>
+                  </li>
                 ))}
-              </div>
+              </ul>
             ) : (
               <div className="empty-note aq-all-done">
                 <span aria-hidden="true">✓</span>
