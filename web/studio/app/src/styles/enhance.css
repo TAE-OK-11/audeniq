@@ -477,3 +477,48 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
 .toolbar input,.toolbar select,.report-tools input,.report-tools select{border:0!important;box-shadow:none}
 .toolbar input:focus,.toolbar select:focus{box-shadow:0 0 0 3px rgba(59,99,243,.22)!important;outline:0!important;background:#fff!important}
 body:has(.aq-payout-setup-mode) .aq-toast-stack{bottom:calc(104px + env(safe-area-inset-bottom))}
+
+/* ==========================================================================
+   입력창 윤곽선 완전 제거 (홍보·설문 페이지와 같은 면 스타일)
+   - 평소: 테두리·링 없이 배경색 면
+   - 포커스: 선 대신 면이 밝아지고 부드러운 그림자로 떠오름
+   - 오류: 붉은 면으로 표시
+   ========================================================================== */
+:is(#root,#modal) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea){
+  border:0!important;outline:none!important;border-radius:14px;
+}
+:is(#root,#modal) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),select,textarea):not(:focus){box-shadow:none!important}
+:is(#root,#modal) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea):is(:focus,:focus-visible){
+  outline:none!important;background-color:#fff!important;
+  box-shadow:0 12px 28px -16px rgba(59,99,243,.55),0 2px 6px -2px rgba(23,27,41,.06)!important
+}
+/* 흰 배경 위의 입력창은 포커스 때 연한 파란 면으로 */
+:is(#root,#modal) :is(.track-editor,.aq-option-detail,.cover-track-item,.auth-card) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea):focus{background-color:#f3f6ff!important}
+/* 파일 선택 */
+:is(#root,#modal) input[type=file]:is(:focus,:focus-visible){background-color:#eaf0ff!important;box-shadow:none!important}
+.aq-dropzone:focus-within{outline:none!important;background:#eaf0ff}
+/* 오류 표시: 붉은 링 대신 붉은 면 */
+:is(#root,#modal) :is(input,select,textarea):is([aria-invalid=true],.aq-invalid){background-color:#fff1f1!important;box-shadow:none!important}
+
+/* ==========================================================================
+   홍보 페이지(web/landing) 디자인 언어 반영
+   ========================================================================== */
+:root{--aq-e-ease:cubic-bezier(.22,.61,.36,1)} /* 홍보·설문 페이지와 같은 감속 곡선 */
+/* 스크롤 등장 대기 (IntersectionObserver가 보일 때 떠오르게 함) */
+.aq-reveal-wait{opacity:0}
+@media(prefers-reduced-motion:reduce){.aq-reveal-wait{opacity:1!important}}
+/* 제목 마지막 줄 파란 강조 — 홍보 페이지 히어로 '더 넓은 세상으로.' */
+.aq-accent{color:var(--aq-e-blue)}
+/* 헤더 STUDIO 표시를 홍보 페이지 메뉴의 pill(사전 설문 안내)처럼 */
+.portal-header .aq-workspace-pill{display:inline-flex;align-items:center;min-height:30px;padding:0 11px;border-radius:10px;background:#F2F6FF;color:var(--aq-e-blue);letter-spacing:.14em}
+/* 홈 업무 카드: 홍보 페이지 서비스 카드처럼 번호 표시 */
+.aq-service-top{display:flex;align-items:flex-start;justify-content:space-between;width:100%}
+.aq-service-no{font-size:13px;font-weight:650;color:#8C9AB4;letter-spacing:.02em;font-variant-numeric:tabular-nums}
+/* 기본 버튼: 홍보 페이지처럼 호버 시 진한 파랑 + 살짝 떠오름 */
+@media(hover:hover) and (pointer:fine){
+  .button:not(.secondary):not(.danger):not(:disabled):hover{background:#2C56E0!important;transform:translateY(-2px)!important;filter:none!important}
+  .button.secondary:not(:disabled):hover,.button.danger:not(:disabled):hover{transform:translateY(-2px)!important}
+  .step-actions .button:not(:disabled):hover{transform:none!important}
+}
+@media(max-width:400px){.portal-header .aq-workspace-pill{display:none!important}}
+@media print{.aq-reveal-wait{opacity:1!important}}
