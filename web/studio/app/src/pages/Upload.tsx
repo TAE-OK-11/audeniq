@@ -396,20 +396,6 @@ function OptionsSection({ form, set }: {
           </label>
         ))}
       </div>
-      <h2 className="subhead" style={{ marginTop: 25 }}>권리 확인</h2>
-      <p className="aq-option-intro">해당하는 항목을 모두 선택해 주세요. 필요한 확인 사항과 서류가 자동으로 안내돼요.</p>
-      <div className="aq-options">
-        {RIGHTS_OPTIONS.map(([id, title, sub]) => (
-          <label key={id} className="aq-option">
-            <span className="aq-option-text"><strong>{title}</strong><small>{sub}</small></span>
-            <input
-              type="checkbox" aria-label={title}
-              checked={!!o[id]}
-              onChange={e => setOpt(id, e.target.checked as ReleaseOptions[typeof id])}
-            />
-          </label>
-        ))}
-      </div>
       {o.express && (
         <div className="aq-option-detail">
           <h3>신속 발매 요청</h3>
@@ -432,6 +418,20 @@ function OptionsSection({ form, set }: {
           </label>
         </div>
       )}
+      <h2 className="subhead" style={{ marginTop: 25 }}>권리 확인</h2>
+      <p className="aq-option-intro">해당하는 항목을 모두 선택해 주세요. 필요한 확인 사항과 서류가 자동으로 안내돼요.</p>
+      <div className="aq-options">
+        {RIGHTS_OPTIONS.map(([id, title, sub]) => (
+          <label key={id} className="aq-option">
+            <span className="aq-option-text"><strong>{title}</strong><small>{sub}</small></span>
+            <input
+              type="checkbox" aria-label={title}
+              checked={!!o[id]}
+              onChange={e => setOpt(id, e.target.checked as ReleaseOptions[typeof id])}
+            />
+          </label>
+        ))}
+      </div>
       {o.minor && (
         <div className="aq-option-detail">
           <h3>법정대리인 확인</h3>
