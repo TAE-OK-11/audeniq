@@ -79,7 +79,9 @@ export async function req<T>(path: string, opts: ReqOptions = {}): Promise<T> {
       if (!onAuthPage) window.location.assign(toHref('/login'));
     }
     const issue = classifyServerIssue(res.status, code);
-    if (issue && !opts.quietServer) reportServerIssue(issue);
+    if (issue?.kind === 'maintenance') issue.window = (data as { maintenance?: unknown } | null)?.maintenance;
+    // 점검은 조용한 요청이어도 알린다 (어느 요청이든 먼저 받은 쪽이 점검 화면을 띄운다)
+    if (issue && (!opts.quietServer || issue.kind === 'maintenance')) reportServerIssue(issue);
     const msg = code === 'PAYLOAD_TOO_LARGE' ? '보낼 정보가 너무 커요. 앨범 소개나 가사 길이를 줄여 주세요.' : messageForCode(code, res.status);
     throw new ApiError(msg, res.status, code);
   }

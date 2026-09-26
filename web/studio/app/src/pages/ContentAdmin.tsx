@@ -57,13 +57,15 @@ interface Draft {
   /** 서버 점검 시작·예상 종료 (datetime-local, KST) */
   maintStart: string;
   maintEnd: string;
+  maintKind: 'scheduled' | 'emergency';
+  endUnknown: boolean;
   deleted: boolean;
 }
 
 const emptyDraft = (): Draft => ({
   id: null, title: '', body: '', pinned: false, publishedAt: nowKstInput(),
   summary: '', place: '', startsOn: nowKstInput().slice(0, 10), endsOn: '', linkUrl: '', deleted: false,
-  maintStart: '', maintEnd: '',
+  maintStart: '', maintEnd: '', maintKind: 'scheduled', endUnknown: false,
 });
 
 function draftOf(kind: ContentKind, r: Row): Draft {
@@ -71,7 +73,10 @@ function draftOf(kind: ContentKind, r: Row): Draft {
   if (kind === 'notices') return { ...base, pinned: !!(r as AdminNotice).pinned };
   if (kind === 'maintenance') {
     const m = r as AdminMaintenance;
-    return { ...base, maintStart: toKstInput(m.starts_at), maintEnd: toKstInput(m.ends_at) };
+    return {
+      ...base, maintStart: toKstInput(m.starts_at), maintEnd: toKstInput(m.ends_at),
+      maintKind: m.kind === 'emergency' ? 'emergency' : 'scheduled', endUnknown: !!m.end_unknown,
+    };
   }
   const e = r as AdminEvent;
   return { ...base, summary: e.summary, place: e.place, startsOn: e.starts_on, endsOn: e.ends_on ?? '', linkUrl: e.link_url ?? '' };
@@ -81,7 +86,10 @@ function inputOf(kind: ContentKind, d: Draft): NoticeInput | EventInput | Mainte
   const published_at = fromKstInput(d.publishedAt);
   if (kind === 'notices') return { title: d.title, body: d.body, pinned: d.pinned, published_at };
   if (kind === 'maintenance') {
-    return { title: d.title, body: d.body, starts_at: fromKstInput(d.maintStart), ends_at: fromKstInput(d.maintEnd), published_at };
+    return {
+      title: d.title, body: d.body, starts_at: fromKstInput(d.maintStart), ends_at: fromKstInput(d.maintEnd), published_at,
+      kind: d.maintKind, end_unknown: d.endUnknown,
+    };
   }
   return {
     title: d.title, summary: d.summary, body: d.body, place: d.place,
@@ -158,6 +166,10 @@ function Editor({ kind, draft, saving, onChange, onSave, onCancel, onDelete }: {
             <label htmlFor="caMaintEnd">예상 종료 (한국 시간) <span className="required">*</span></label>
             <input id="caMaintEnd" type="datetime-local" required min={draft.maintStart} value={draft.maintEnd} onChange={e => set('maintEnd', e.target.value)} />
           </div>
+          <label className="aq-cadmin-check">
+            <input type="checkbox" checked={draft.endUnknown} onChange={e => set('endUnknown', e.target.checked)} />
+            <span>스튜디오에 '종료 시각 미정'으로 표시</span>
+          </label>
         </div>
       )}
       {kind === 'events' && (
@@ -220,6 +232,128 @@ function Editor({ kind, draft, saving, onChange, onSave, onCancel, onDelete }: {
         </button>
       </div>
     </form>
+  );
+}
+
+const EMERGENCY_DURATIONS: { label: string; minutes: number | null }[] = [
+  { label: '30분', minutes: 30 }, { label: '1시간', minutes: 60 }, { label: '2시간', minutes: 120 },
+  { label: '4시간', minutes: 240 }, { label: '미정', minutes: null },
+];
+const EMERGENCY_TEXT = '서비스를 안정적으로 되돌리기 위해 긴급 점검을 하고 있어요. 점검 중에는 로그인과 발매 접수를 할 수 없어요. 불편을 드려 죄송해요.';
+const isoIn = (ms: number) => new Date(Date.now() + ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
+const minutesSince = (iso: string) => Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60_000));
+
+/** 서버 점검 탭 맨 위: 지금 상태 + 긴급 점검 시작·연장·종료 */
+function EmergencyPanel({ token, rows, now, onChanged }: {
+  token: string; rows: AdminMaintenance[]; now: string; onChanged: () => Promise<void>;
+}) {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const [open, setOpen] = useState(false);
+  const [body, setBody] = useState(EMERGENCY_TEXT);
+  const [minutes, setMinutes] = useState<number | null>(60);
+  const [busy, setBusy] = useState(false);
+  const active = rows.find(r => stateOf(r, now) === 'active') ?? null;
+
+  const run = async (work: () => Promise<unknown>, done: string) => {
+    setBusy(true);
+    try {
+      await work();
+      toast(done, 'success');
+      setOpen(false);
+      await onChanged();
+    } catch (e) {
+      toast(errorMessage(e, '처리하지 못했어요.'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const start = async () => {
+    const ok = await confirm({
+      title: '지금 긴급 점검을 시작할까요?',
+      message: '스튜디오를 쓰는 모든 사용자에게 바로 점검 화면이 뜨고, 백엔드 API 요청이 막혀요.',
+      confirmLabel: '긴급 점검 시작',
+      danger: true,
+    });
+    if (!ok) return;
+    const unknown = minutes === null;
+    await run(() => contentAdmin.create(token, 'maintenance', {
+      title: '긴급 서버 점검', body: body.trim(), kind: 'emergency', end_unknown: unknown,
+      starts_at: isoIn(-1000), ends_at: isoIn((unknown ? 12 * 60 : minutes) * 60_000), published_at: isoIn(-1000),
+    }), '긴급 점검을 시작했어요. 스튜디오에 바로 점검 화면이 떠요.');
+  };
+
+  const update = (w: AdminMaintenance, patch: Partial<MaintenanceInput>, done: string) => run(() => contentAdmin.update(token, 'maintenance', w.id, {
+    title: w.title, body: w.body, starts_at: w.starts_at, ends_at: w.ends_at, published_at: w.published_at,
+    kind: w.kind ?? 'scheduled', end_unknown: !!w.end_unknown, ...patch,
+  }), done);
+
+  const finish = async (w: AdminMaintenance) => {
+    const ok = await confirm({ title: '점검을 종료할까요?', message: '스튜디오가 바로 다시 열리고 API 요청도 통과돼요.', confirmLabel: '점검 종료' });
+    if (!ok) return;
+    const endAt = isoIn(0) > w.starts_at ? isoIn(0) : isoIn(60_000);
+    await update(w, { ends_at: endAt, end_unknown: false }, '점검을 종료했어요. 스튜디오가 다시 열려요.');
+  };
+
+  if (active) {
+    const base = Math.max(Date.parse(active.ends_at), Date.now());
+    return (
+      <section className="aq-cadmin-emergency is-active" aria-live="polite">
+        <div className="aq-cadmin-emergency-head">
+          <span className="aq-cadmin-pulse" aria-hidden="true" />
+          <strong>{active.kind === 'emergency' ? '긴급 점검 중' : '점검 중'}</strong>
+          <span>{minutesSince(active.starts_at)}분째 · {active.end_unknown ? '종료 시각 미정' : `${kstLabel(active.ends_at)} 종료 예정`}</span>
+        </div>
+        <p>스튜디오 전체에 점검 화면이 떠 있고, 백엔드 API 요청은 503으로 막혀 있어요.</p>
+        <div className="aq-cadmin-emergency-actions">
+          <button type="button" className="button secondary" disabled={busy}
+            onClick={() => void update(active, { ends_at: new Date(base + 30 * 60_000).toISOString().replace(/\.\d{3}Z$/, 'Z'), end_unknown: false }, '30분 연장했어요.')}>
+            30분 연장
+          </button>
+          <button type="button" className="button" disabled={busy} onClick={() => void finish(active)}>점검 종료</button>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="aq-cadmin-emergency">
+      <div className="aq-cadmin-emergency-head">
+        <span className="aq-cadmin-dot" aria-hidden="true" />
+        <strong>정상 운영 중</strong>
+        <span>진행 중인 점검이 없어요</span>
+      </div>
+      {!open ? (
+        <div className="aq-cadmin-emergency-actions">
+          <button type="button" className="button aq-cadmin-danger-fill" onClick={() => setOpen(true)}>긴급 점검 시작</button>
+        </div>
+      ) : (
+        <div className="aq-cadmin-emergency-form">
+          <div className="field">
+            <label htmlFor="caEmBody">사용자에게 보일 안내</label>
+            <textarea id="caEmBody" rows={3} maxLength={2000} value={body} onChange={e => setBody(e.target.value)} />
+          </div>
+          <div className="field">
+            <span className="aq-cadmin-label">예상 소요</span>
+            <div className="aq-cadmin-chips" role="radiogroup" aria-label="예상 소요">
+              {EMERGENCY_DURATIONS.map(d => (
+                <button key={d.label} type="button" role="radio" aria-checked={minutes === d.minutes}
+                  className={`aq-cadmin-chip${minutes === d.minutes ? ' is-on' : ''}`} onClick={() => setMinutes(d.minutes)}>
+                  {d.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="aq-cadmin-emergency-actions">
+            <button type="button" className="button secondary" disabled={busy} onClick={() => setOpen(false)}>취소</button>
+            <button type="button" className="button aq-cadmin-danger-fill" disabled={busy} onClick={() => void start()}>
+              {busy ? '시작하는 중' : '지금 시작'}
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -326,6 +460,9 @@ export function ContentAdmin() {
         />
       ) : (
         <>
+          {kind === 'maintenance' && rows && (
+            <EmergencyPanel token={token} rows={rows as AdminMaintenance[]} now={now} onChanged={load} />
+          )}
           <div className="aq-cadmin-bar">
             <p>{rows ? `${rows.filter(r => ['live', 'active'].includes(stateOf(r, now))).length}개 ${kind === 'maintenance' ? '예고·진행 중' : '게시 중'} · 전체 ${rows.length}개` : '불러오는 중'}</p>
             <button type="button" className="button secondary" onClick={() => void load()}>새로고침</button>
