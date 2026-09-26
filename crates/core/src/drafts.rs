@@ -247,7 +247,9 @@ pub async fn preflight(s: &AppState, a: &Actor, org: Uuid, release: Uuid) -> Res
     let tracks = sqlx::query("SELECT t.id,t.asset_id,a.state,a.qc_status FROM catalog.tracks t LEFT JOIN catalog.assets a ON a.org_id=t.org_id AND a.id=t.asset_id WHERE t.org_id=$1 AND t.release_id=$2 AND t.archived_at IS NULL ORDER BY t.disc_number,t.track_number")
         .bind(org).bind(release).fetch_all(&mut *tx).await?;
     let mut issues = Vec::new();
-    if r.get::<String, _>("status") != "DRAFT" {
+    // Same statuses submit accepts: a release returned for correction can be
+    // resubmitted, so it is not reported as NOT_DRAFT.
+    if !crate::submission::is_editable_status(&r.get::<String, _>("status")) {
         issues.push(json!({"code":"NOT_DRAFT","resource_id":release}));
     }
     if tracks.is_empty() {
