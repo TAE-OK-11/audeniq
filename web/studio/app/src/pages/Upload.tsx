@@ -44,6 +44,7 @@ interface Track {
   id: string;
   title: string; version: string; isrc: string;
   composers: string; lyricists: string; arrangers: string; performers: string;
+  lyrics: string;
   audioName: string; audioSize: number; explicit: boolean; duration: string;
 }
 
@@ -71,6 +72,7 @@ interface WizardForm {
 const newTrack = (): Track => ({
   id: 't' + Math.random().toString(36).slice(2, 9),
   title: '', version: '', isrc: '', composers: '', lyricists: '', arrangers: '', performers: '',
+  lyrics: '',
   audioName: '', audioSize: 0, explicit: false, duration: '',
 });
 
@@ -480,6 +482,7 @@ export function Upload() {
             id: t.id, title: t.title.trim(), isrc: t.isrc.trim(), duration: t.duration,
             version: t.version.trim(), composers: t.composers.trim(),
             lyricists: t.lyricists.trim(), audioName: t.audioName,
+            lyrics: t.lyrics.trim(),
           })),
           territories: form.territories,
           platforms: form.platforms,
@@ -739,6 +742,14 @@ export function Upload() {
                           <label htmlFor={`tr-${i}-performers`}>실연자 / 피처링</label>
                           <input id={`tr-${i}-performers`} value={t.performers} onChange={e => setTrack(t.id, 'performers', e.target.value)} placeholder="참여자 이름" maxLength={200} />
                         </div>
+                      </div>
+                      <div className="field">
+                        <label htmlFor={`tr-${i}-lyrics`}>가사 전문</label>
+                        <textarea
+                          id={`tr-${i}-lyrics`} value={t.lyrics}
+                          onChange={e => setTrack(t.id, 'lyrics', e.target.value)}
+                          rows={4} maxLength={10000} placeholder="가사 전체를 입력해 주세요"
+                        />
                       </div>
                       <label className="check-line">
                         <input
