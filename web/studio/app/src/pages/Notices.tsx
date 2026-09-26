@@ -79,6 +79,8 @@ function Body({ text }: { text: string }) {
   return <>{text.split('\n').map((line, i) => <p key={i}>{line || '\u00A0'}</p>)}</>;
 }
 
+const noticeHref = (n: Notice) => `/notices/${encodeURIComponent(n.id)}`;
+
 export function Notices() {
   const { data, loading, error, reload, ordered } = useNotices();
   const [params, setParams] = useSearchParams();
@@ -91,43 +93,44 @@ export function Notices() {
   const numbers = Array.from({ length: Math.min(5, pages) }, (_, i) => first + i);
   const go = (p: number) => {
     setParams(p > 1 ? { page: String(p) } : {});
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    document.getElementById('aqNoticeAll')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   return (
-    <div id="view-notices" className="view">
-      <div className="view-title">
-        <div>
-          <p className="eyebrow">NOTICES</p>
-          <h1>공지사항</h1>
-          <p>꼭 알아야 할 소식과 업데이트를 전해 드려요.</p>
-        </div>
-      </div>
+    <div id="view-notices" className="view aq-npage">
+      <section className="aq-nhero">
+        <p className="aq-nhero-eyebrow">AUDENIQ 소식</p>
+        <h1>
+          <span>새로운 소식을</span>
+          <span><em>가장 먼저</em> <br className="aq-br-narrow" />전해 드려요.</span>
+        </h1>
+        <p className="aq-nhero-desc">서비스 업데이트와 점검, 정산 일정처럼<br className="aq-br-wide" /> 꼭 알아야 할 이야기를 모았어요.</p>
+        {pinned.length > 0 && (
+          <ul className="aq-nhero-pins">
+            {pinned.map(n => (
+              <li key={n.id}>
+                <Link to={noticeHref(n)} className="aq-nhero-pin">
+                  <em className="aq-nboard-tag">중요</em>
+                  <span className="aq-nhero-pin-title">{n.title}</span>
+                  <span className="aq-nhero-pin-date">{dotted(n.date)}</span>
+                  <span className="aq-nhero-pin-arrow" aria-hidden="true">→</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <LoadState loading={loading && !data} error={error} reload={reload} empty={!!data && !ordered.length} />
 
-      {pinned.length > 0 && (
-        <div className="aq-notice-featured-list">
-          {pinned.map(n => (
-            <Link key={n.id} to={`/notices/${encodeURIComponent(n.id)}`} className="aq-notice-featured">
-              <span className="aq-pin-badge">중요</span>
-              <span className="aq-notice-featured-title">{n.title}</span>
-              <span className="aq-notice-featured-date">{dotted(n.date)}</span>
-            </Link>
-          ))}
-        </div>
-      )}
-
       {ordered.length > 0 && (
         <section className="aq-nboard" aria-labelledby="aqNoticeAll">
-          <div className="aq-nboard-top">
-            <h2 id="aqNoticeAll">전체 공지</h2>
-            <span className="aq-nboard-count">{ordered.length}건</span>
-          </div>
+          <p className="aq-nboard-eyebrow">전체 공지 <span>{ordered.length}</span></p>
+          <h2 id="aqNoticeAll">지난 소식도<br className="aq-br-narrow" /> 모두 모아 두었어요.</h2>
           <ul className="aq-nboard-list">
             {rows.map(n => (
               <li key={n.id}>
-                <Link to={`/notices/${encodeURIComponent(n.id)}`} className="aq-nboard-row">
+                <Link to={noticeHref(n)} className="aq-nboard-row">
                   <span className="aq-nboard-title">
                     {n.pinned && <em className="aq-nboard-tag">중요</em>}
                     {n.title}
@@ -165,8 +168,7 @@ export function NoticeDetail() {
   const older = idx >= 0 && idx < ordered.length - 1 ? ordered[idx + 1] : null;
 
   return (
-    <div id="view-notice-detail" className="view">
-      <Link to="/notices" className="aq-nboard-back">‹ 공지사항</Link>
+    <div id="view-notice-detail" className="view aq-npage">
       <LoadState loading={loading && !data} error={error} reload={reload} empty={false} />
       {data && !notice && (
         <div className="empty-page">
@@ -176,23 +178,26 @@ export function NoticeDetail() {
         </div>
       )}
       {notice && (
-        <article className="aq-nboard-article">
-          <header>
-            {notice.pinned && <em className="aq-nboard-tag">중요</em>}
+        <article className="aq-narticle">
+          <header className="aq-nhero aq-nhero-article">
+            <Link to="/notices" className="aq-nhero-eyebrow aq-nhero-back">← 공지사항</Link>
             <h1>{notice.title}</h1>
-            <time dateTime={notice.date}>{dotted(notice.date)}</time>
+            <p className="aq-nhero-meta">
+              {notice.pinned && <em className="aq-nboard-tag">중요</em>}
+              <time dateTime={notice.date}>{dotted(notice.date)}</time>
+            </p>
           </header>
-          <div className="aq-nboard-content"><Body text={notice.body} /></div>
-          <div className="aq-nboard-sibling" role="navigation" aria-label="다른 공지">
+          <div className="aq-narticle-content"><Body text={notice.body} /></div>
+          <div className="aq-narticle-sibling" role="navigation" aria-label="다른 공지">
             {newer && (
-              <Link to={`/notices/${encodeURIComponent(newer.id)}`}><span>다음 글</span><strong>{newer.title}</strong></Link>
+              <Link to={noticeHref(newer)}><span>다음 글</span><strong>{newer.title}</strong></Link>
             )}
             {older && (
-              <Link to={`/notices/${encodeURIComponent(older.id)}`}><span>이전 글</span><strong>{older.title}</strong></Link>
+              <Link to={noticeHref(older)}><span>이전 글</span><strong>{older.title}</strong></Link>
             )}
           </div>
-          <div className="aq-nboard-foot">
-            <Link to="/notices" className="button secondary">목록으로</Link>
+          <div className="aq-narticle-foot">
+            <Link to="/notices" className="button">목록으로</Link>
           </div>
         </article>
       )}
