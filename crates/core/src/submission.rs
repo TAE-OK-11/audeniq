@@ -1044,14 +1044,15 @@ fn qc_max_bytes() -> u64 {
 /// local-IO failures are returned as a detail string so the caller can record
 /// per-asset TECHNICAL_RETRY instead of aborting the whole Stage 1 run.
 ///
-/// Returns the check outcomes, the measured audio duration in seconds
+/// Returns the check outcomes, the measured audio technical metrics
 /// (`None` for images or when probing fails), and — for audio whose bytes
 /// passed QC — the perceptual fingerprint computation result. The caller
-/// persists the duration to `catalog.assets.duration_secs` (DDEX ERN needs
-/// it) and the fingerprint to `catalog.asset_fingerprints` (similarity
-/// detection). Fingerprinting the wrong bytes is meaningless, so audio
-/// blocked by SHA256_MISMATCH yields `None` here; its fingerprint codes
-/// are already covered by check_audio's NotApplicable tail.
+/// persists the metrics to `catalog.assets.{duration_secs,sample_rate,
+/// channels,bits_per_sample}` (DDEX ERN needs the duration and the real
+/// technical specs) and the fingerprint to `catalog.asset_fingerprints`
+/// (similarity detection). Fingerprinting the wrong bytes is meaningless,
+/// so audio blocked by SHA256_MISMATCH yields `None` here; its fingerprint
+/// codes are already covered by check_audio's NotApplicable tail.
 async fn analyze_asset(
     storage: &Arc<dyn ObjectStore>,
     key: &str,
@@ -1061,7 +1062,7 @@ async fn analyze_asset(
 ) -> std::result::Result<
     (
         Vec<qc::CheckOutcome>,
-        Option<f64>,
+        Option<qc::AudioMetrics>,
         Option<std::result::Result<fingerprint::Fingerprint, String>>,
     ),
     String,
@@ -1101,11 +1102,13 @@ async fn analyze_asset(
         "IMAGE" => qc::check_image(&tmp, Some(sha256)),
         _ => Vec::new(),
     };
-    // Duration is measured with a second ffprobe pass rather than parsed
-    // out of check outcomes: the check contract is fixed and must not grow
-    // a side channel. ~100ms on a local file, submit path only.
-    let duration_secs = match kind {
-        "AUDIO" => qc::probe_duration_secs(&tmp),
+    // Duration and technical specs are measured with a second ffprobe pass
+    // rather than parsed out of check outcomes: the check contract is fixed
+    // and must not grow a side channel. ~100ms on a local file, submit path
+    // only. One probe yields both the duration and the real sample
+    // rate/channels/bits-per-sample the DDEX ERN builder emits.
+    let metrics = match kind {
+        "AUDIO" => qc::probe_audio_metrics(&tmp),
         _ => None,
     };
     // Perceptual fingerprint for similarity detection. Only for audio whose
@@ -1127,7 +1130,7 @@ async fn analyze_asset(
         }
         _ => None,
     };
-    Ok((outcomes, duration_secs, fp))
+    Ok((outcomes, metrics, fp))
 }
 
 /// Produce the two DB-backed fingerprint check outcomes for an analyzed
@@ -1427,14 +1430,18 @@ async fn asset_checks(
         // Unique temp name: two workers must never share an analyzer file.
         let tmp_name = format!("audeniq-qc-{}", Uuid::new_v4());
         let outcomes = match analyze_asset(storage, &key, kind.as_str(), sha256, &tmp_name).await {
-            Ok((o, duration_secs, fp)) => {
-                // Persist measured audio duration for the DDEX builder.
-                // Only fills when unknown; never overwrites.
-                if let Some(secs) = duration_secs {
+            Ok((o, metrics, fp)) => {
+                // Persist measured audio duration + real technical specs for
+                // the DDEX builder. COALESCE fills only unknown columns;
+                // never overwrites measured values.
+                if let Some(m) = metrics {
                     let _ = sqlx::query(
-                        "UPDATE catalog.assets SET duration_secs=$1 WHERE org_id=$2 AND id=$3 AND duration_secs IS NULL",
+                        "UPDATE catalog.assets SET duration_secs=COALESCE(duration_secs,$1), sample_rate=COALESCE(sample_rate,$2), channels=COALESCE(channels,$3), bits_per_sample=COALESCE(bits_per_sample,$4) WHERE org_id=$5 AND id=$6",
                     )
-                    .bind(secs)
+                    .bind(m.duration_secs)
+                    .bind(i32::try_from(m.sample_rate).ok())
+                    .bind(i32::try_from(m.channels).ok())
+                    .bind(m.bits_per_sample.and_then(|b| i32::try_from(b).ok()))
                     .bind(org)
                     .bind(aid)
                     .execute(pool)

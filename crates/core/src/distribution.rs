@@ -100,8 +100,15 @@ impl CanonicalRelease {
     fn body(&self) -> Value {
         json!(self)
     }
+    /// Serialize once and hash the bytes: the callers that persist the body
+    /// need both, and hashing the same struct twice was pure waste.
+    fn body_and_hash(&self) -> (Value, String) {
+        let body = self.body();
+        let hash = sha256_hex(&serde_json::to_string(&body).expect("canonical serializes"));
+        (body, hash)
+    }
     pub fn canonical_hash(&self) -> String {
-        sha256_hex(&serde_json::to_string(&self.body()).expect("canonical serializes"))
+        self.body_and_hash().1
     }
 }
 
@@ -201,17 +208,33 @@ pub async fn build_canonical(
     .fetch_all(pool)
     .await?;
     let mut out_tracks = Vec::with_capacity(tracks.len());
+    // Credits for all tracks in one query (the old per-track loop was N+1),
+    // grouped by track id. Ordering matches the old per-track query
+    // (role, display_name).
+    let track_ids: Vec<Uuid> = tracks.iter().map(|t| t.get::<Uuid, _>("id")).collect();
+    let credit_rows = sqlx::query(
+        "SELECT c.track_id, c.party_id, p.display_name, c.role FROM catalog.credits c
+         JOIN identity.parties p ON p.org_id=c.org_id AND p.id=c.party_id
+         WHERE c.org_id=$1 AND c.track_id = ANY($2) ORDER BY c.track_id, c.role, p.display_name",
+    )
+    .bind(org)
+    .bind(&track_ids)
+    .fetch_all(pool)
+    .await?;
+    let mut credits_by_track: std::collections::HashMap<Uuid, Vec<CanonicalCredit>> =
+        std::collections::HashMap::with_capacity(tracks.len());
+    for c in &credit_rows {
+        credits_by_track
+            .entry(c.get("track_id"))
+            .or_default()
+            .push(CanonicalCredit {
+                party_id: c.get("party_id"),
+                party_name: c.get("display_name"),
+                role: c.get("role"),
+            });
+    }
     for t in &tracks {
         let track_id: Uuid = t.get("id");
-        let credits = sqlx::query(
-            "SELECT c.party_id, p.display_name, c.role FROM catalog.credits c
-             JOIN identity.parties p ON p.org_id=c.org_id AND p.id=c.party_id
-             WHERE c.org_id=$1 AND c.track_id=$2 ORDER BY c.role, p.display_name",
-        )
-        .bind(org)
-        .bind(track_id)
-        .fetch_all(pool)
-        .await?;
         out_tracks.push(CanonicalTrack {
             track_id,
             title: t.get("title"),
@@ -225,14 +248,7 @@ pub async fn build_canonical(
             asset_object_key: t.get("asset_object_key"),
             isrc: t.get("isrc"),
             parental_advisory: t.get("parental_advisory"),
-            credits: credits
-                .iter()
-                .map(|c| CanonicalCredit {
-                    party_id: c.get("party_id"),
-                    party_name: c.get("display_name"),
-                    role: c.get("role"),
-                })
-                .collect(),
+            credits: credits_by_track.remove(&track_id).unwrap_or_default(),
         });
     }
 
@@ -296,14 +312,15 @@ pub async fn store_canonical(tx: &mut PgConnection, canonical: &CanonicalRelease
         return Ok(id);
     }
     let id = Uuid::new_v4();
+    let (body, hash) = canonical.body_and_hash();
     sqlx::query("INSERT INTO distribution.canonical_releases(id, org_id, release_id, revision_id, verification_package_id, canonical_hash, body) VALUES($1,$2,$3,$4,$5,$6,$7)")
         .bind(id)
         .bind(canonical.org_id)
         .bind(canonical.release_id)
         .bind(canonical.revision_id)
         .bind(canonical.verification_package_id)
-        .bind(canonical.canonical_hash())
-        .bind(canonical.body())
+        .bind(hash)
+        .bind(body)
         .execute(&mut *tx)
         .await?;
     Ok(id)
@@ -312,28 +329,32 @@ pub async fn store_canonical(tx: &mut PgConnection, canonical: &CanonicalRelease
 /// Freeze a canonical snapshot into a content-addressed distribution package.
 /// Idempotent: the same canonical snapshot always resolves to the same
 /// package row. `status` starts at `PREPARED`; Astra's route/ERN stages
-/// extend it.
-pub async fn freeze_package(pool: &PgPool, canonical: &CanonicalRelease) -> Result<Uuid> {
+/// extend it. Returns the package id and its hash (the old extra round trip
+/// to re-read the hash is gone).
+pub async fn freeze_package(pool: &PgPool, canonical: &CanonicalRelease) -> Result<(Uuid, String)> {
     let canonical_id = {
         let mut tx = pool.begin().await?;
         let id = store_canonical(&mut tx, canonical).await?;
         tx.commit().await?;
         id
     };
-    if let Some(id) = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM distribution.distribution_packages WHERE canonical_release_id=$1",
+    if let Some(row) = sqlx::query(
+        "SELECT id, package_hash FROM distribution.distribution_packages WHERE canonical_release_id=$1",
     )
     .bind(canonical_id)
     .fetch_optional(pool)
     .await?
     {
-        return Ok(id);
+        let id: Uuid = row.get("id");
+        let package_hash: String = row.get("package_hash");
+        return Ok((id, package_hash));
     }
+    let canonical_hash = canonical.body_and_hash().1;
     let body = json!({
         "schema_version": 1,
         "rule_version": DISTRIBUTION_RULE_VERSION,
         "canonical_release_id": canonical_id,
-        "canonical_hash": canonical.canonical_hash(),
+        "canonical_hash": canonical_hash,
         "verification_package_hash": canonical.verification_package_hash,
         "approved_dsp_ids": canonical.approved_dsp_ids,
         // Astra's stages fill these in later; the frozen package ships with
@@ -349,8 +370,8 @@ pub async fn freeze_package(pool: &PgPool, canonical: &CanonicalRelease) -> Resu
     let id = Uuid::new_v4();
     // A concurrent freeze for the same snapshot cannot happen under one
     // lease, but tolerate the race: the UNIQUE constraint keeps one row.
-    let inserted: Option<Uuid> = sqlx::query_scalar(
-        "INSERT INTO distribution.distribution_packages(id, org_id, canonical_release_id, package_hash, body, status) VALUES($1,$2,$3,$4,$5,'PREPARED') ON CONFLICT(canonical_release_id) DO NOTHING RETURNING id",
+    let inserted: Option<(Uuid, String)> = sqlx::query_as(
+        "INSERT INTO distribution.distribution_packages(id, org_id, canonical_release_id, package_hash, body, status) VALUES($1,$2,$3,$4,$5,'PREPARED') ON CONFLICT(canonical_release_id) DO NOTHING RETURNING id, package_hash",
     )
     .bind(id)
     .bind(canonical.org_id)
@@ -360,14 +381,18 @@ pub async fn freeze_package(pool: &PgPool, canonical: &CanonicalRelease) -> Resu
     .fetch_optional(pool)
     .await?;
     match inserted {
-        Some(row_id) => Ok(row_id),
-        None => sqlx::query_scalar(
-            "SELECT id FROM distribution.distribution_packages WHERE canonical_release_id=$1",
-        )
-        .bind(canonical_id)
-        .fetch_one(pool)
-        .await
-        .map_err(Into::into),
+        Some(row) => Ok(row),
+        None => {
+            let row = sqlx::query(
+                "SELECT id, package_hash FROM distribution.distribution_packages WHERE canonical_release_id=$1",
+            )
+            .bind(canonical_id)
+            .fetch_one(pool)
+            .await?;
+            let id: Uuid = row.get("id");
+            let package_hash: String = row.get("package_hash");
+            Ok((id, package_hash))
+        }
     }
 }
 
@@ -454,28 +479,31 @@ async fn persist_ddex_messages(
         return Ok(0);
     };
     let created_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
-    let mut generated = 0usize;
-    for s in submissions {
-        let profile: Option<(String, Option<String>, serde_json::Value)> = sqlx::query_as(
-        "SELECT display_name, ddex_recipient_dpid, capabilities FROM execution.adapter_profiles WHERE dsp_id=$1",
+    // One query for every DSP in the route plan (the old per-DSP loop was
+    // N+1). DSPs without a recipient DPID get no row — preparation never
+    // invents party identifiers.
+    let dsp_ids: Vec<Uuid> = submissions.iter().map(|s| s.scope.dsp_id).collect();
+    let profiles: Vec<(Uuid, String, Option<String>, serde_json::Value)> = sqlx::query_as(
+        "SELECT dsp_id, display_name, ddex_recipient_dpid, capabilities FROM execution.adapter_profiles WHERE dsp_id = ANY($1)",
     )
-    .bind(s.scope.dsp_id)
-    .fetch_optional(&mut *tx)
+    .bind(&dsp_ids)
+    .fetch_all(&mut *tx)
     .await?;
-        let (recipient_name, recipient_dpid, capabilities) = match profile {
-            Some((name, Some(dpid), caps)) => (name, dpid, caps),
-            _ => continue,
+    let mut generated = 0usize;
+    for (dsp_id, recipient_name, recipient_dpid, capabilities) in &profiles {
+        let Some(recipient_dpid) = recipient_dpid else {
+            continue;
         };
         // Per-DSP message preset (ddex-suite presets / delivery-toolkit
         // PROFILES ideas, Rust from scratch). A malformed preset is an
         // operator config error: skip this DSP loudly, never take down
         // the other DSPs' messages with it.
         let preset =
-            match crate::ddex_preset::DspMessagePreset::resolve(&recipient_name, &capabilities) {
+            match crate::ddex_preset::DspMessagePreset::resolve(recipient_name, capabilities) {
                 Ok(p) => p,
                 Err(e) => {
                     tracing::warn!(
-                        dsp_id = %s.scope.dsp_id,
+                        dsp_id = %dsp_id,
                         error = ?e,
                         "invalid ddex_preset; skipping DSP"
                     );
@@ -486,7 +514,7 @@ async fn persist_ddex_messages(
             Ok(d) => d,
             Err(e) => {
                 tracing::warn!(
-                    dsp_id = %s.scope.dsp_id,
+                    dsp_id = %dsp_id,
                     error = ?e,
                     "preset deal_start_offset_days out of range; skipping DSP"
                 );
@@ -496,13 +524,13 @@ async fn persist_ddex_messages(
         let date_yyyymmdd = deal_start.format("%Y%m%d").to_string();
         let message_id = match preset.render_message_id(
             &package_id.to_string(),
-            &s.scope.dsp_id.to_string(),
+            &dsp_id.to_string(),
             &date_yyyymmdd,
         ) {
             Ok(id) => id,
             Err(e) => {
                 tracing::warn!(
-                    dsp_id = %s.scope.dsp_id,
+                    dsp_id = %dsp_id,
                     error = ?e,
                     "preset message_id_template invalid; skipping DSP"
                 );
@@ -527,10 +555,38 @@ async fn persist_ddex_messages(
         };
         // Pre-generation preflight (ddex-suite preflight categories,
         // adapted): the model and message config are validated before any
-        // XML is built. Errors fail closed; warnings are logged. The
-        // preset may escalate warnings to errors for this DSP.
-        let preflight = ddex_validate::preflight_release(prepared, &config, &preset);
-        ddex_validate::gate_findings(&preflight, "DDEX_PREFLIGHT", "ERN preflight")?;
+        // XML is built. Release-level findings are identical for every DSP,
+        // so their errors fail the whole batch closed. Message-config
+        // findings (message id, recipient, deal dates with the preset
+        // offset) belong to this DSP: their errors skip just this DSP
+        // loudly, the same way a malformed preset does above.
+        let pf = ddex_validate::preflight_release(prepared, &config);
+        ddex_validate::gate_findings(&pf.release, "DDEX_PREFLIGHT", "ERN preflight")?;
+        if ddex_validate::gate_findings(
+            &pf.message,
+            "DDEX_PREFLIGHT_DSP",
+            "ERN preflight (DSP message config)",
+        )
+        .is_err()
+        {
+            tracing::warn!(
+                dsp_id = %dsp_id,
+                "DSP message config failed preflight; skipping DSP"
+            );
+            continue;
+        }
+        let escalated = {
+            let all: Vec<ddex_validate::ErnFinding> = pf.all().cloned().collect();
+            ddex_validate::escalated_warnings(&all, &preset)
+        };
+        if !escalated.is_empty() {
+            tracing::warn!(
+                dsp_id = %dsp_id,
+                rules = ?escalated,
+                "preset escalates preflight warnings to errors; skipping DSP"
+            );
+            continue;
+        }
         let xml = ddex_ern::generate_ddex_ern_382(prepared, &config)?;
         // Contract-free F6 groundwork: every interchange message is proven
         // schema-valid before it is persisted. A message that fails XSD
@@ -554,11 +610,11 @@ async fn persist_ddex_messages(
     )
     .bind(package_id)
     .bind(org)
-    .bind(s.scope.dsp_id)
+    .bind(dsp_id)
     .bind(&sender_name)
     .bind(&sender_dpid)
-    .bind(&recipient_name)
-    .bind(&recipient_dpid)
+    .bind(recipient_name)
+    .bind(recipient_dpid)
     .bind(&xml)
     .bind(&sha)
     .execute(&mut *tx)
@@ -721,13 +777,9 @@ pub async fn run_prepare_release(
     let canonical_id = store_canonical(&mut tx, &canonical).await?;
     tx.commit().await?;
 
-    let package_id = freeze_package(pool, &canonical).await?;
-    let package_hash: String = sqlx::query_scalar(
-        "SELECT package_hash FROM distribution.distribution_packages WHERE id=$1",
-    )
-    .bind(package_id)
-    .fetch_one(pool)
-    .await?;
+    let (package_id, package_hash) = freeze_package(pool, &canonical).await?;
+    // The hash comes back from freeze_package with the id; the old
+    // re-read round trip here was pure waste.
 
     // Stage 3 preparation: supplements + synthetic ERN + four independent
     // preflight checks (XML / metadata / files / rights) + route plan, all
@@ -807,33 +859,33 @@ pub async fn run_prepare_release(
         .execute(&mut *tx2)
         .await?;
     // Record supplied identifiers in the append-only ledger, bound to this
-    // revision: the release UPC plus every track ISRC. Exact-target retries
-    // are idempotent; a cross-target conflict is a permanent integrity
-    // failure, never something a retry can fix.
-    let upc = ExistingAssignment {
+    // revision: the release UPC plus every track ISRC. One batch round trip
+    // instead of N+1; exact-target retries are idempotent, a cross-target
+    // conflict is a permanent integrity failure, never something a retry
+    // can fix.
+    let upc_value = prepared.upc.clone();
+    let mut assignments = Vec::with_capacity(prepared.tracks.len() + 1);
+    assignments.push(ExistingAssignment {
         org_id: org,
         release_id,
         track_id: None,
         revision_id,
         kind: IdentifierKind::Upc,
-        value: &prepared.upc,
-    };
-    identifiers::record_existing(&mut tx2, &upc)
-        .await
-        .map_err(map_ledger_error)?;
+        value: &upc_value,
+    });
     for t in &prepared.tracks {
-        let isrc = ExistingAssignment {
+        assignments.push(ExistingAssignment {
             org_id: org,
             release_id,
             track_id: Some(t.id),
             revision_id,
             kind: IdentifierKind::Isrc,
             value: &t.isrc,
-        };
-        identifiers::record_existing(&mut tx2, &isrc)
-            .await
-            .map_err(map_ledger_error)?;
+        });
     }
+    identifiers::record_existing_batch(&mut tx2, &assignments)
+        .await
+        .map_err(map_ledger_error)?;
 
     // Persist the preparation outputs append-only, keyed by frozen package.
     // The frozen body stays the immutable canonical snapshot; ERN hash,

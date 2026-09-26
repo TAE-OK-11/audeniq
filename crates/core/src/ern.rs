@@ -2,11 +2,12 @@
 //! No DB, clock, random IDs, external schema fetches, or partner endpoints.
 //! The private namespace prevents these fixtures being mistaken for production ERN.
 use crate::{
+    distribution::CanonicalCredit,
     error::{Error, Result},
     identifiers::{validate_isrc, validate_upc},
     preparation_model::{AssetRef, PreparedRelease, PreparedTrack},
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 pub const SYNTHETIC_PROFILE: &str = "audeniq-ern-synthetic-1";
 pub const SYNTHETIC_NAMESPACE: &str = "urn:audeniq:ern:synthetic:1";
@@ -36,6 +37,14 @@ fn asset_valid(a: &AssetRef) -> bool {
         && a.object_key
             .split('/')
             .all(|p| !matches!(p, "" | "." | ".."))
+        // Measured audio specs are optional, but when present they must be
+        // positive — matching the CHECK constraints on catalog.assets. A
+        // zero/negative sample rate or channel count is corrupt probe data,
+        // never a valid master.
+        && a.sample_rate.is_none_or(|v| v > 0)
+        && a.channels.is_none_or(|v| v > 0)
+        && a.bits_per_sample.is_none_or(|v| v > 0)
+        && a.duration_secs.is_none_or(|v| v.is_finite() && v > 0.0)
 }
 
 pub(crate) fn ordered_tracks(c: &PreparedRelease) -> Vec<&PreparedTrack> {
@@ -104,17 +113,40 @@ pub fn validate_metadata(c: &PreparedRelease) -> Result<()> {
     Ok(())
 }
 
-fn escaped(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;")
-        .replace('\r', "&#13;")
+/// Append `s` to `out`, escaping the five XML special chars plus CR in a
+/// single pass. Byte-identical to the old six-`replace` chain, but without
+/// the intermediate allocations — this is the hottest path in ERN
+/// generation (called once per element per track).
+pub(crate) fn push_escaped(out: &mut String, s: &str) {
+    // Fast path: the common case needs no escaping at all.
+    if !s
+        .bytes()
+        .any(|b| matches!(b, b'&' | b'<' | b'>' | b'"' | b'\'' | b'\r'))
+    {
+        out.push_str(s);
+        return;
+    }
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            '\r' => out.push_str("&#13;"),
+            _ => out.push(c),
+        }
+    }
 }
 
-fn element(out: &mut String, name: &str, value: impl std::fmt::Display) {
-    out.push_str(&format!("<{name}>{}</{name}>", escaped(&value.to_string())));
+pub(crate) fn element(out: &mut String, name: &str, value: impl std::fmt::Display) {
+    out.push('<');
+    out.push_str(name);
+    out.push('>');
+    push_escaped(out, &value.to_string());
+    out.push_str("</");
+    out.push_str(name);
+    out.push('>');
 }
 
 fn file(out: &mut String, a: &AssetRef) {
@@ -146,7 +178,17 @@ pub fn generate_prepared_ern(canonical: &PreparedRelease) -> Result<String> {
     element(&mut out, "CanonicalHash", c.canonical.canonical_hash());
     element(&mut out, "RightsEpoch", c.rights_epoch);
     out.push_str("</MessageHeader><ResourceList>");
-    for t in ordered_tracks(c) {
+    // Credits live on the canonical snapshot, keyed by track id. Index them
+    // once: the old per-track linear scan was O(tracks²).
+    let credit_by_track: HashMap<uuid::Uuid, &[CanonicalCredit]> = c
+        .canonical
+        .tracks
+        .iter()
+        .map(|t| (t.track_id, t.credits.as_slice()))
+        .collect();
+    // Sort once and reuse for both the resource list and the track list.
+    let tracks = ordered_tracks(c);
+    for t in &tracks {
         out.push_str("<SoundRecording>");
         element(&mut out, "ResourceReference", t.id);
         element(&mut out, "ISRC", &t.isrc);
@@ -155,13 +197,8 @@ pub fn generate_prepared_ern(canonical: &PreparedRelease) -> Result<String> {
             element(&mut out, "VersionTitle", &t.version);
         }
         element(&mut out, "DisplayArtist", &t.artist);
-        let pinned = c
-            .canonical
-            .tracks
-            .iter()
-            .find(|track| track.track_id == t.id)
-            .ok_or(Error::Invalid)?;
-        credits(&mut out, &pinned.credits);
+        let pinned_credits = credit_by_track.get(&t.id).ok_or(Error::Invalid)?;
+        credits(&mut out, pinned_credits);
         file(&mut out, &t.audio);
         out.push_str("</SoundRecording>");
     }
@@ -179,7 +216,7 @@ pub fn generate_prepared_ern(canonical: &PreparedRelease) -> Result<String> {
     element(&mut out, "PLine", &c.p_line);
     element(&mut out, "CLine", &c.c_line);
     out.push_str("<TrackList>");
-    for t in ordered_tracks(c) {
+    for t in &tracks {
         out.push_str("<Track>");
         element(&mut out, "ResourceReference", t.id);
         element(&mut out, "DiscNumber", t.disc_number);
@@ -338,6 +375,9 @@ fn validate_canonical(c: &crate::distribution::CanonicalRelease) -> Result<()> {
 fn validate_binding(p: &PreparedRelease) -> Result<()> {
     let c = &p.canonical;
     validate_canonical(c)?;
+    // Index once: the old per-track linear scan was O(tracks²).
+    let pinned_by_id: HashMap<uuid::Uuid, &crate::distribution::CanonicalTrack> =
+        c.tracks.iter().map(|t| (t.track_id, t)).collect();
     if p.org_id != c.org_id
         || p.release_id != c.release_id
         || p.revision_id != c.revision_id
@@ -357,11 +397,7 @@ fn validate_binding(p: &PreparedRelease) -> Result<()> {
         return Err(Error::Conflict);
     }
     for t in &p.tracks {
-        let pinned = c
-            .tracks
-            .iter()
-            .find(|x| x.track_id == t.id)
-            .ok_or(Error::Conflict)?;
+        let pinned = pinned_by_id.get(&t.id).ok_or(Error::Conflict)?;
         if t.title != pinned.title
             || t.artist != pinned.artist_name
             || Some(&t.isrc) != pinned.isrc.as_ref()

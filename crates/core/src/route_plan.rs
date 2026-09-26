@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use uuid::Uuid;
 
 /// Decode the actual F3 row format, checking its digest before trusting its DSP set.
-pub fn approved_dsps(v: &VerificationPackage) -> Result<BTreeSet<Uuid>> {
+fn approved_dsps(v: &VerificationPackage) -> Result<BTreeSet<Uuid>> {
     let b = &v.body;
     if crate::domain::digest(b) != v.package_hash
         || b["decision"] != "PASS"
@@ -39,7 +39,8 @@ pub fn approved_dsps(v: &VerificationPackage) -> Result<BTreeSet<Uuid>> {
 }
 
 /// Stage 3 never approves more DSPs than the pinned Stage 2 package.
-pub fn verify_scope(c: &PreparedRelease, v: &VerificationPackage) -> Result<()> {
+/// Returns the verified DSP set so callers don't recompute it.
+pub fn verify_scope(c: &PreparedRelease, v: &VerificationPackage) -> Result<BTreeSet<Uuid>> {
     if c.org_id != v.org_id
         || c.verification_package_id != v.id
         || c.revision_id != v.revision_id
@@ -54,7 +55,7 @@ pub fn verify_scope(c: &PreparedRelease, v: &VerificationPackage) -> Result<()> 
     if scope.len() != c.approved_scope.len() || scope != approved {
         return Err(Error::Conflict);
     }
-    Ok(())
+    Ok(approved)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -74,13 +75,13 @@ pub fn plan_submissions(
     c: &PreparedRelease,
     v: &VerificationPackage,
 ) -> Result<Vec<SubmissionItems>> {
-    verify_scope(c, v)?;
+    let approved = verify_scope(c, v)?;
     crate::ern::validate_metadata(c)?;
     let audio_asset_ids = crate::ern::ordered_tracks(c)
         .iter()
         .map(|t| t.audio.id)
         .collect::<Vec<_>>();
-    Ok(approved_dsps(v)?
+    Ok(approved
         .into_iter()
         .map(|dsp_id| SubmissionItems {
             scope: DspScope { dsp_id },

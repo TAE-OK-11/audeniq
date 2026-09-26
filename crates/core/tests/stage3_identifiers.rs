@@ -1,6 +1,6 @@
 use audeniq_core::{
     database,
-    identifiers::{ExistingAssignment, IdentifierKind, record_existing},
+    identifiers::{ExistingAssignment, IdentifierKind, record_existing, record_existing_batch},
 };
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
@@ -208,4 +208,50 @@ async fn ledger_sql_constraints_immutability_and_org_isolation(pool: PgPool) {
         .unwrap();
     assert_eq!(count, 1);
     tx.rollback().await.unwrap();
+}
+
+#[sqlx::test]
+async fn record_existing_batch_assigns_all_and_is_idempotent(pool: PgPool) {
+    use audeniq_core::error::Error;
+    database::MIGRATOR.run(&pool).await.unwrap();
+    let s = seed(&pool).await;
+    let mut c = pool.acquire().await.unwrap();
+    set_org_session(&mut c, s.org).await;
+    let upc = ExistingAssignment {
+        org_id: s.org,
+        release_id: s.release,
+        track_id: None,
+        revision_id: s.revision,
+        kind: IdentifierKind::Upc,
+        value: "012345678905",
+    };
+    let isrc = ExistingAssignment {
+        org_id: s.org,
+        release_id: s.release,
+        track_id: Some(s.track),
+        revision_id: s.revision,
+        kind: IdentifierKind::Isrc,
+        value: "USAAA2600001",
+    };
+    let ids = record_existing_batch(&mut c, &[upc, isrc]).await.unwrap();
+    assert_eq!(ids.len(), 2);
+    // Exact-target retry is idempotent: same row ids come back.
+    let again = record_existing_batch(&mut c, &[upc, isrc]).await.unwrap();
+    assert_eq!(ids, again);
+    // A cross-target conflict in the batch is a permanent integrity failure.
+    let other = seed(&pool).await;
+    let conflict = ExistingAssignment {
+        release_id: other.release,
+        revision_id: other.revision,
+        ..isrc
+    };
+    let err = record_existing_batch(&mut c, &[conflict])
+        .await
+        .unwrap_err();
+    assert!(matches!(err, Error::Conflict));
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM distribution.identifier_assignments")
+        .fetch_one(&mut *c)
+        .await
+        .unwrap();
+    assert_eq!(count, 2);
 }
