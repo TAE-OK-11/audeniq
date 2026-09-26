@@ -44,6 +44,7 @@ interface Track {
   id: string;
   title: string; version: string; isrc: string;
   composers: string; lyricists: string; arrangers: string; performers: string;
+  producer: string;
   lyrics: string;
   audioName: string; audioSize: number; explicit: boolean; duration: string;
 }
@@ -72,6 +73,7 @@ interface WizardForm {
 const newTrack = (): Track => ({
   id: 't' + Math.random().toString(36).slice(2, 9),
   title: '', version: '', isrc: '', composers: '', lyricists: '', arrangers: '', performers: '',
+  producer: '',
   lyrics: '',
   audioName: '', audioSize: 0, explicit: false, duration: '',
 });
@@ -482,6 +484,7 @@ export function Upload() {
             id: t.id, title: t.title.trim(), isrc: t.isrc.trim(), duration: t.duration,
             version: t.version.trim(), composers: t.composers.trim(),
             lyricists: t.lyricists.trim(), audioName: t.audioName,
+            producer: t.producer.trim(),
             lyrics: t.lyrics.trim(),
           })),
           territories: form.territories,
@@ -742,6 +745,10 @@ export function Upload() {
                           <label htmlFor={`tr-${i}-performers`}>실연자 / 피처링</label>
                           <input id={`tr-${i}-performers`} value={t.performers} onChange={e => setTrack(t.id, 'performers', e.target.value)} placeholder="참여자 이름" maxLength={200} />
                         </div>
+                        <div className="field">
+                          <label htmlFor={`tr-${i}-producer`}>프로듀서</label>
+                          <input id={`tr-${i}-producer`} value={t.producer} onChange={e => setTrack(t.id, 'producer', e.target.value)} placeholder="프로듀서 이름" maxLength={200} />
+                        </div>
                       </div>
                       <div className="field">
                         <label htmlFor={`tr-${i}-lyrics`}>가사 전문</label>
@@ -790,26 +797,26 @@ export function Upload() {
               />
               <p className="help">권장: 정사각형 고해상도 JPG/PNG 이미지. 파일 용량에 별도 제한을 두지 않으며, 최종 배급 규격은 플랫폼별로 확인해요.</p>
             </div>
-            <div id="coverInfo">
-              {form.coverData ? (
-                <div className="cover-preview">
-                  <img src={form.coverData} alt="등록한 커버 미리보기" />
-                  <div>
-                    <strong>{form.coverName}</strong>
-                    <p className="help">커버 원본을 보관하고 화면에는 최적화된 미리보기를 표시해요.</p>
-                    <button
-                      type="button" className="link-btn"
-                      onClick={() => {
-                        set('coverName', ''); set('coverData', '');
-                        if (coverInputRef.current) coverInputRef.current.value = '';
-                      }}
-                    >커버 삭제</button>
+            {form.coverData && (
+              <div className="cover-dist-preview">
+                <h2 className="subhead">배급 미리보기</h2>
+                <div className="dist-mock">
+                  <img src={form.coverData} alt="배급될 커버아트" />
+                  <div className="dist-mock-meta">
+                    <strong>{form.title.trim() || '발매 제목'}</strong>
+                    <span>{form.artist.trim() || '아티스트'}</span>
                   </div>
                 </div>
-              ) : (
-                <p className="muted small">아직 등록된 커버 이미지가 없어요.</p>
-              )}
-            </div>
+                <p className="help">실제 배급되면 각 플랫폼에 이 커버아트로 표시돼요.</p>
+                <button
+                  type="button" className="link-btn"
+                  onClick={() => {
+                    set('coverName', ''); set('coverData', '');
+                    if (coverInputRef.current) coverInputRef.current.value = '';
+                  }}
+                >커버 삭제</button>
+              </div>
+            )}
           </section>
         )}
 
