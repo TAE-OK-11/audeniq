@@ -13,20 +13,7 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
         if !matches!(request.method(), Method::Get | Method::Head) {
             return Response::error("Method not allowed", 405);
         }
-        let mut response = env.assets("ASSETS")?.fetch_request(request).await?;
-        response
-            .headers_mut()
-            .set("X-Content-Type-Options", "nosniff")?;
-        response
-            .headers_mut()
-            .set("Referrer-Policy", "no-referrer")?;
-        response.headers_mut().set("X-Frame-Options", "DENY")?;
-        response.headers_mut().set("Cache-Control", "no-cache")?;
-        response.headers_mut().set(
-            "Content-Security-Policy",
-            include_str!("../../../config/studio-csp.txt").trim(),
-        )?;
-        return Ok(response);
+        return serve_studio(request, &env, &origin).await;
     }
     if !matches!(request.method(), Method::Get | Method::Head)
         && request.headers().get("origin")?.as_deref() != Some(&origin)
@@ -98,5 +85,110 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
             Ok(response)
         }
         Err(_) => Response::error("Private API unavailable", 503),
+    }
+}
+
+/// React Studio build (`bun run build:edge` → web/studio/edge-dist/connected).
+/// Only the SPA shell and its hashed assets are exposed.
+const STUDIO_BASE: &str = "/connected/";
+
+enum StaticRoute {
+    Asset(&'static str),
+    Redirect,
+    NotFound,
+}
+
+fn static_route(path: &str) -> StaticRoute {
+    match path {
+        "/connected/" => StaticRoute::Asset("no-cache"),
+        _ if path.starts_with("/connected/assets/") => {
+            StaticRoute::Asset("public, max-age=31536000, immutable")
+        }
+        _ if path.starts_with("/connected/static/") => {
+            StaticRoute::Asset("public, max-age=86400, stale-while-revalidate=604800")
+        }
+        // Hash routing keeps every screen at /connected/, so any other path is
+        // an old bookmark or a typo: send it to the app shell.
+        _ if path.contains('.') => StaticRoute::NotFound,
+        _ => StaticRoute::Redirect,
+    }
+}
+
+async fn serve_studio(request: Request, env: &Env, origin: &str) -> Result<Response> {
+    let cache = match static_route(&request.path()) {
+        StaticRoute::Asset(cache) => cache,
+        StaticRoute::Redirect => {
+            let mut to = Url::parse(origin)?;
+            to.set_path(STUDIO_BASE);
+            return Response::redirect_with_status(to, 308);
+        }
+        StaticRoute::NotFound => return Response::error("Not found", 404),
+    };
+    let mut response = env.assets("ASSETS")?.fetch_request(request).await?;
+    let ok = response.status_code() == 200 || response.status_code() == 304;
+    let headers = response.headers_mut();
+    headers.set("X-Content-Type-Options", "nosniff")?;
+    headers.set("Referrer-Policy", "no-referrer")?;
+    headers.set("X-Frame-Options", "DENY")?;
+    headers.set("X-Robots-Tag", "noindex, nofollow, noarchive")?;
+    headers.set("Cross-Origin-Opener-Policy", "same-origin")?;
+    headers.set(
+        "Permissions-Policy",
+        "camera=(), microphone=(), geolocation=(), payment=()",
+    )?;
+    headers.set(
+        "Strict-Transport-Security",
+        "max-age=31536000; includeSubDomains",
+    )?;
+    headers.set("Cache-Control", if ok { cache } else { "no-store" })?;
+    headers.set(
+        "Content-Security-Policy",
+        include_str!("../../../config/studio-react-csp.txt").trim(),
+    )?;
+    Ok(response)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cache_of(path: &str) -> Option<&'static str> {
+        match static_route(path) {
+            StaticRoute::Asset(c) => Some(c),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn routes_only_the_react_build() {
+        assert_eq!(cache_of("/connected/"), Some("no-cache"));
+        assert!(
+            cache_of("/connected/assets/index-abc.js")
+                .unwrap()
+                .contains("immutable")
+        );
+        assert!(cache_of("/connected/static/logo.svg").is_some());
+        assert!(matches!(static_route("/"), StaticRoute::Redirect));
+        assert!(matches!(static_route("/connected"), StaticRoute::Redirect));
+        assert!(matches!(static_route("/studio/"), StaticRoute::Redirect));
+        // legacy prototype files in web/studio/public are never served
+        assert!(matches!(static_route("/index.html"), StaticRoute::NotFound));
+        assert!(matches!(
+            static_route("/connected/index.html"),
+            StaticRoute::NotFound
+        ));
+        assert!(matches!(
+            static_route("/assets/app.js"),
+            StaticRoute::NotFound
+        ));
+    }
+
+    #[test]
+    fn react_csp_allows_the_app_and_direct_uploads_only() {
+        let csp = include_str!("../../../config/studio-react-csp.txt");
+        assert!(csp.contains("script-src 'self';"));
+        assert!(!csp.contains("unsafe-eval"));
+        assert!(csp.contains("https://*.r2.cloudflarestorage.com"));
+        assert!(csp.contains("frame-ancestors 'none'"));
     }
 }

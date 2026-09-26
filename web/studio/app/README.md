@@ -16,15 +16,18 @@ bun install
 bun run dev      # http://localhost:5173/connected/
 bun run check    # 타입 검사
 bun run test     # 단위 테스트
-bun run build    # ../public/connected 로 출력
+bun run build    # 체험(목) 빌드 → ../public/connected
+bun run build:edge  # 서버 연결 빌드 → ../edge-dist/connected (엣지 Worker가 서빙)
+EDGE_SERVICE_SECRET=... bun run dev:api  # 로컬 API(127.0.0.1:8080)와 연결해 개발
 ```
 
 ## 데이터 모드
 - 기본(`VITE_MOCK` 미설정): 브라우저 저장소(`localStorage`, 키 `aq.studio.v2.*`)에 발매·서류·정산·문의가 저장돼 새로고침 후에도 유지됩니다. 아티스트 정보 화면 하단에서 초기화할 수 있습니다.
-- `VITE_MOCK=false VITE_API_BASE=https://api.example bun run build`: `api/client.ts`가 실제 API(`/api/auth/*`, `/api/orgs/{org}/releases*`)를 호출합니다. 서명·정산·문의 등은 아직 로컬 저장소 기반입니다.
+- 서버 연결(`--mode edge` 또는 `VITE_MOCK=false`): `api/remote.ts`가 같은 출처의 `/api/*`를 호출하고, 엣지 Worker(`crates/edge`)가 Workers VPC → Cloudflare Tunnel → 메인 서버로 전달합니다. 로그인·회원가입, 발매 임시 저장·수정·삭제, 트랙 동기화, 음원·커버 R2 직접 업로드, 사전 점검·동의·접수가 서버를 씁니다. 서명·정산·문의·서류 등은 아직 로컬 저장소 기반입니다. 배포 흐름은 `docs/STUDIO_DEPLOYMENT.md` 참고.
+- 서버 모드 제약: 비밀번호 12자 이상, 음원 WAV·FLAC(최대 512MB), 커버 JPG·PNG(최대 20MB), 미성년 발매 접수는 서버의 법정대리인 절차가 준비될 때까지 보류.
 
 ## 구조
-- `api/` — API 클라이언트, 목 서버(`mock.ts`), 인증 컨텍스트
+- `api/` — API 진입점(`client.ts`), 서버 어댑터(`remote.ts`, `http.ts`), 목 서버(`mock.ts`), 오류 문구(`errors.ts`), 인증 컨텍스트
 - `lib/` — 날짜(`date.ts`, 사파리 호환 파싱), 영속 스토어(`store.ts`), 저장소 래퍼, 카탈로그 상수
 - `store/` — 공유 상태(프로필, 수령 정보, 알림, 서류, 정산, 문의)
 - `components/` — 모달(퇴장 애니메이션·포커스 트랩), 확인 대화상자, 토스트 스택, 스켈레톤, 오류 경계

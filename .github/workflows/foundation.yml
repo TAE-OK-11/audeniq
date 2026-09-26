@@ -61,6 +61,15 @@ jobs:
       - run: cargo run --locked -p audeniq-studio --bin studio-pack
       - run: wasm-bindgen --target web --out-dir web/studio/dist/pkg target/wasm32-unknown-unknown/release/audeniq_studio.wasm
       - run: cargo install worker-build --version 0.1.12 --locked --force
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+      - name: Build React Studio for the edge Worker
+        working-directory: web/studio/app
+        run: |
+          bun install --frozen-lockfile
+          bun run test
+          bun run build:edge
       - name: Build Workers deployment bundle without publishing
         working-directory: crates/edge
         env:

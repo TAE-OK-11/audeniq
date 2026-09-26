@@ -8,7 +8,9 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:api": "vite --mode edge --port 5173 --strictPort",
     "build": "tsc --noEmit && vite build",
+    "build:edge": "tsc --noEmit && vite build --mode edge",
     "preview": "vite preview",
     "check": "tsc --noEmit",
     "test": "vitest run"
