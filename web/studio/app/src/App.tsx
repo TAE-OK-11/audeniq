@@ -7,12 +7,16 @@ import { Releases } from './pages/Releases';
 import { ReleaseDetail } from './pages/ReleaseDetail';
 import { Upload } from './pages/Upload';
 import { Login } from './pages/Login';
+import { Signup } from './pages/Signup';
+import { FindAccount } from './pages/FindAccount';
 import { Reports } from './pages/Reports';
 import { Settlement } from './pages/Settlement';
 import { Contracts } from './pages/Contracts';
 import { Rights } from './pages/Rights';
 import { Inquiries } from './pages/Inquiries';
 import { Notifications } from './pages/Notifications';
+import { Events } from './pages/Events';
+import { Notices } from './pages/Notices';
 import { Profile } from './pages/Profile';
 import './styles/design.css';
 import './styles/live.css';
@@ -31,6 +35,8 @@ export function App() {
         <ToastProvider>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
+          <Route path="/find-account" element={<FindAccount />} />
           <Route path="/*" element={
             <Protected>
               <Layout>
@@ -45,6 +51,8 @@ export function App() {
                   <Route path="/rights" element={<Rights />} />
                   <Route path="/inquiries" element={<Inquiries />} />
                   <Route path="/notifications" element={<Notifications />} />
+                  <Route path="/events" element={<Events />} />
+                  <Route path="/notices" element={<Notices />} />
                   <Route path="/support" element={<Navigate to="/inquiries" replace />} />
                   <Route path="/profile" element={<Profile />} />
                 </Routes>
