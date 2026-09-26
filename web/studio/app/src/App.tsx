@@ -1,4 +1,5 @@
 import { Suspense, lazy } from 'react';
+import { ChunkErrorBoundary } from './components/ChunkErrorBoundary';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './api/auth';
 import { Layout } from './components/Layout';
@@ -40,6 +41,7 @@ export function App() {
     <HashRouter>
       <AuthProvider>
         <ToastProvider>
+        <ChunkErrorBoundary>
         <Suspense fallback={<PageFallback />}>
         <Routes>
           <Route path="/login" element={<Login />} />
@@ -70,6 +72,7 @@ export function App() {
           } />
         </Routes>
         </Suspense>
+        </ChunkErrorBoundary>
         </ToastProvider>
       </AuthProvider>
     </HashRouter>
