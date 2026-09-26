@@ -12,7 +12,7 @@ const API_TARGET = process.env.AUDENIQ_API ?? 'http://127.0.0.1:8080';
 const SERVICE_SECRET = process.env.EDGE_SERVICE_SECRET;
 
 export default defineConfig(({ command, mode }) => ({
-  base: '/connected/',
+  base: '/',
   plugins: [react()],
   css: {
     postcss: {
@@ -23,7 +23,7 @@ export default defineConfig(({ command, mode }) => ({
     },
   },
   build: {
-    outDir: mode === 'edge' ? '../edge-dist/connected' : '../public/connected',
+    outDir: mode === 'edge' ? '../edge-dist' : '../public',
     emptyOutDir: true,
     target: 'baseline-widely-available',
     // Lightning CSS 압축기가 !important 규칙을 잘못 병합하므로 끄고 compactCss()로 안전하게 압축
