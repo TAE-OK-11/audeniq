@@ -1182,3 +1182,6 @@ body.aq-nav-locked #portalNav{
 /* 트랙 카드 간격 */
 #trackEditors{display:flex!important;flex-direction:column!important;gap:16px!important}
 .track-editor{margin:0!important}
+
+/* 트랙 삭제 버튼 넓게 */
+.track-editor .minor-actions .link-btn{padding:10px 24px!important;background:#fff!important;border-radius:12px!important;font-weight:700!important}
