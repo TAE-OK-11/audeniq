@@ -350,6 +350,22 @@ mod tests {
         assert!(started.elapsed() < std::time::Duration::from_secs(120));
     }
 
+    #[test]
+    fn segment_windows_cover_head_middle_tail() {
+        // 210 s track: 3 x 30 s at head, middle, tail.
+        assert_eq!(
+            segment_windows(210.0),
+            vec![(0.0, 30.0), (90.0, 30.0), (180.0, 30.0)]
+        );
+        // Shorter than the total coverage: one whole-track window.
+        assert_eq!(segment_windows(90.0), vec![(0.0, 90.0)]);
+        assert_eq!(segment_windows(60.0), vec![(0.0, 60.0)]);
+        // Degenerate durations: no windows.
+        assert!(segment_windows(0.0).is_empty());
+        assert!(segment_windows(-5.0).is_empty());
+        assert!(segment_windows(f64::NAN).is_empty());
+    }
+
     fn sine_frames(freq: f64, secs: f64, phase: f64) -> Fingerprint {
         // Build a fingerprint directly from synthetic PCM, bypassing ffmpeg.
         let n = (secs * SAMPLE_RATE as f64) as usize;
@@ -364,52 +380,6 @@ mod tests {
         fingerprint_from_samples(&samples).unwrap()
     }
 
-    fn fingerprint_from_samples(samples: &[f32]) -> Result<Fingerprint> {
-        // Test-only path mirroring compute_fingerprint without ffmpeg.
-        let window = hann_window();
-        let edges = band_edges();
-        let mut planner = FftPlanner::<f32>::new();
-        let fft = planner.plan_fft_forward(FRAME_SIZE);
-        let mut buf = vec![Complex::new(0.0f32, 0.0); FRAME_SIZE];
-        let mut energies: Vec<[f32; N_BANDS]> = Vec::new();
-        let mut pos = 0;
-        while pos + FRAME_SIZE <= samples.len() {
-            for (i, b) in buf.iter_mut().enumerate() {
-                b.re = samples[pos + i] * window[i];
-                b.im = 0.0;
-            }
-            fft.process(&mut buf);
-            let mut bands = [0f32; N_BANDS];
-            for m in 0..N_BANDS {
-                let lo = edges[m];
-                let hi = edges[m + 1].max(lo + 1);
-                let mut e = 0.0f32;
-                for value in buf.iter().take(hi.min(FRAME_SIZE / 2)).skip(lo) {
-                    let mag = value.norm();
-                    e += mag * mag;
-                }
-                bands[m] = (e + 1e-10).ln();
-            }
-            energies.push(bands);
-            pos += FRAME_HOP;
-        }
-        let mut frames = Vec::with_capacity(energies.len().saturating_sub(1));
-        for n in 0..energies.len().saturating_sub(1) {
-            let mut bits = 0u32;
-            for m in 0..(N_BANDS - 1) {
-                let d = (energies[n][m] - energies[n][m + 1])
-                    - (energies[n + 1][m] - energies[n + 1][m + 1]);
-                if d > 0.0 {
-                    bits |= 1 << m;
-                }
-            }
-            frames.push(bits);
-        }
-        Ok(Fingerprint {
-            frames,
-            duration_secs: samples.len() as f64 / SAMPLE_RATE as f64,
-        })
-    }
 
     #[test]
     fn identical_audio_has_zero_ber() {

@@ -1513,6 +1513,73 @@ mod tests {
         p
     }
 
+    #[test]
+    fn segmented_fingerprint_tap_matches_across_sample_rates() {
+        // The v2 fingerprint taps head/middle/tail segments out of the
+        // single decode pass (FpTap downmix + decimate). The same recording
+        // at 44.1 kHz and 48 kHz must still match as near-duplicates: this
+        // exercises the tap's non-integer decimation as well as the
+        // segmented comparison. A chord with slow tremolo gives the
+        // differential bits a time-varying spectrum to bite on.
+        fn write_chord_wav(path: &Path, rate: u32) {
+            let secs = 100u32;
+            let n = (secs * rate) as usize;
+            let mut data = Vec::with_capacity(44 + n * 2);
+            data.extend_from_slice(b"RIFF");
+            data.extend_from_slice(&((36 + n * 2) as u32).to_le_bytes());
+            data.extend_from_slice(b"WAVEfmt ");
+            data.extend_from_slice(&16u32.to_le_bytes());
+            data.extend_from_slice(&1u16.to_le_bytes());
+            data.extend_from_slice(&1u16.to_le_bytes());
+            data.extend_from_slice(&rate.to_le_bytes());
+            data.extend_from_slice(&(rate * 2).to_le_bytes());
+            data.extend_from_slice(&2u16.to_le_bytes());
+            data.extend_from_slice(&16u16.to_le_bytes());
+            data.extend_from_slice(b"data");
+            data.extend_from_slice(&((n * 2) as u32).to_le_bytes());
+            for i in 0..n {
+                let t = i as f64 / f64::from(rate);
+                let trem = 0.6 + 0.4 * (2.0 * std::f64::consts::PI * 2.0 * t).sin();
+                let s = ((2.0 * std::f64::consts::PI * 440.0 * t).sin()
+                    + 0.6 * (2.0 * std::f64::consts::PI * 660.0 * t).sin()
+                    + 0.4 * (2.0 * std::f64::consts::PI * 880.0 * t).sin())
+                    * 0.25
+                    * trem;
+                data.extend_from_slice(&((s.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes());
+            }
+            std::fs::write(path, &data).unwrap();
+        }
+        let pa = tmp(&format!("fp-tap-a-{}", std::process::id()));
+        let pb = tmp(&format!("fp-tap-b-{}", std::process::id()));
+        write_chord_wav(&pa, 44100);
+        write_chord_wav(&pb, 48000);
+        let (outcomes_a, sa) = check_audio_full(&pa, None, Some("audio/wav"));
+        let (outcomes_b, sb) = check_audio_full(&pb, None, Some("audio/wav"));
+        let _ = std::fs::remove_file(&pa);
+        let _ = std::fs::remove_file(&pb);
+        assert!(
+            outcomes_a.iter().all(|o| o.status == CheckStatus::Pass
+                || o.status == CheckStatus::ReviewRequired),
+            "44.1k checks"
+        );
+        assert!(
+            outcomes_b.iter().all(|o| o.status == CheckStatus::Pass
+                || o.status == CheckStatus::ReviewRequired),
+            "48k checks"
+        );
+        // 100 s > 90 s coverage: exactly the three 30 s segments.
+        let want = 90 * crate::fingerprint::FINGERPRINT_SAMPLE_RATE as usize;
+        assert_eq!(sa.len(), want, "44.1k tap samples");
+        assert_eq!(sb.len(), want, "48k tap samples");
+        let fa = crate::fingerprint::fingerprint_from_samples(&sa).unwrap();
+        let fb = crate::fingerprint::fingerprint_from_samples(&sb).unwrap();
+        let ber = crate::fingerprint::bit_error_rate(&fa.frames, &fb.frames).unwrap();
+        assert!(
+            ber < crate::fingerprint::NEAR_DUPLICATE_BER,
+            "cross-rate segmented fingerprints should match, got BER {ber}"
+        );
+    }
+
     fn make_wav(path: &Path, secs: u32, rate: u32) {
         let st = Command::new("ffmpeg")
             .args([
