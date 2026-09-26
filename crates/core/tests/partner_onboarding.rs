@@ -230,3 +230,45 @@ async fn missing_onboarding_row_reports_all_gaps(pool: PgPool) {
         ]
     );
 }
+
+#[sqlx::test]
+async fn operator_links_a_partner_to_its_dsp_id(pool: PgPool) {
+    migrated(&pool).await;
+    // The seeded test partner has no DSP id, so Stage 2 never lists it.
+    let dsp: Option<uuid::Uuid> = sqlx::query_scalar(
+        "SELECT dsp_id FROM execution.adapter_profiles WHERE partner_id='mockdsp'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(dsp.is_none());
+    assert!(
+        partner_onboarding::set_dsp(&pool, " ", "mockdsp", None)
+            .await
+            .is_err()
+    );
+    assert!(
+        partner_onboarding::set_dsp(&pool, "tester", "no-such-partner", None)
+            .await
+            .is_err()
+    );
+    let id = partner_onboarding::set_dsp(&pool, "tester", "mockdsp", None)
+        .await
+        .unwrap();
+    // Derived ids are stable per partner.
+    assert_eq!(
+        id,
+        partner_onboarding::set_dsp(&pool, "tester", "mockdsp", None)
+            .await
+            .unwrap()
+    );
+    let listed = partner_onboarding::list_profiles(&pool).await.unwrap();
+    let mock = listed
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["partner_id"] == "mockdsp")
+        .unwrap()
+        .clone();
+    assert_eq!(mock["dsp_id"], id.to_string());
+}

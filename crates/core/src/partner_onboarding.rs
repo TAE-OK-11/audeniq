@@ -13,6 +13,7 @@
 use crate::error::{Error, Result};
 use serde::Serialize;
 use sqlx::{PgPool, Row};
+use uuid::Uuid;
 
 /// One onboarding row plus the live readiness gaps.
 #[derive(Debug, Clone, Serialize)]
@@ -198,4 +199,62 @@ pub async fn set_stage(pool: &PgPool, partner_id: &str, stage: &str) -> Result<(
     .execute(pool)
     .await?;
     Ok(())
+}
+
+/// Adapter profiles as the operator sees them: which DSP id each partner
+/// delivers for, its transport, activation kind and kill-switch.
+pub async fn list_profiles(pool: &PgPool) -> Result<serde_json::Value> {
+    let rows: Vec<serde_json::Value> = sqlx::query_scalar(
+        "SELECT jsonb_build_object('partner_id',partner_id,'display_name',display_name,'dsp_id',dsp_id,
+                'transport',transport,'activation_kind',activation_kind,'delivery_enabled',delivery_enabled)
+         FROM execution.adapter_profiles ORDER BY partner_id",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(serde_json::Value::Array(rows))
+}
+
+/// Links a partner's adapter profile to a DSP id. Stage 2 eligibility and the
+/// route plan key on the DSP id, so a MOCK partner without one is never a
+/// delivery target; a CONTRACTED partner still needs its contract route on
+/// top. Without `dsp` a stable id is derived from the partner id.
+pub async fn set_dsp(
+    pool: &PgPool,
+    operator: &str,
+    partner_id: &str,
+    dsp: Option<Uuid>,
+) -> Result<Uuid> {
+    if operator.trim().is_empty() {
+        return Err(Error::Invalid);
+    }
+    let dsp = dsp.unwrap_or_else(|| {
+        Uuid::new_v5(
+            &Uuid::NAMESPACE_URL,
+            format!("audeniq:dsp:{partner_id}").as_bytes(),
+        )
+    });
+    let mut tx = pool.begin().await?;
+    let n = sqlx::query(
+        "UPDATE execution.adapter_profiles SET dsp_id=$2, updated_at=now() WHERE partner_id=$1",
+    )
+    .bind(partner_id)
+    .bind(dsp)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if n != 1 {
+        return Err(Error::NotFound);
+    }
+    crate::operations::audit(
+        &mut tx,
+        None,
+        None,
+        Some(dsp),
+        "adapter_profile.dsp_set",
+        &format!("OPERATOR:{} {partner_id}", operator.trim()),
+        Uuid::new_v4(),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(dsp)
 }

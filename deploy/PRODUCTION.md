@@ -91,3 +91,13 @@ docker exec -e DATABASE_URL="postgres://audeniq_owner:$POSTGRES_PASSWORD@postgre
 #  ... identifier-issuer register ISRC KR-A1B                               # ISRC 등록자 코드
 #  ... identifier-issuer list                                               # 범위와 사용량
 ```
+
+### 전송 파트너 연결
+
+Stage 2는 DSP id가 있는 파트너만 전송 대상으로 본다. 시드된 테스트 파트너 `mockdsp`는 DSP id가 비어 있어 한 번 연결해야 전송 작업이 만들어진다. 계약 파트너(CONTRACTED)는 DSP id가 있어도 계약 경로가 있어야 대상이 된다.
+
+```sh
+docker exec -e DATABASE_URL="postgres://audeniq_owner:$POSTGRES_PASSWORD@postgres/audeniq_prod" audeniq-production-api-1 \
+  audeniq-admin --operator 이름 partner set-dsp mockdsp     # DSP id를 주지 않으면 파트너 id로 고정 id를 만든다
+#  ... partner list
+```
