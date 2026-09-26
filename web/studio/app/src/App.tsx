@@ -46,6 +46,7 @@ const Notifications = lazyPage(pageLoaders.Notifications, m => m.Notifications);
 const Events = lazyPage(pageLoaders.Events, m => m.Events);
 const Notices = lazyPage(pageLoaders.Notices, m => m.Notices);
 const NoticeDetail = lazyPage(pageLoaders.Notices, m => m.NoticeDetail);
+const ContentAdmin = lazyPage(pageLoaders.ContentAdmin, m => m.ContentAdmin);
 const Profile = lazyPage(pageLoaders.Profile, m => m.Profile);
 
 function BootScreen() {
@@ -127,6 +128,8 @@ export function App() {
                   <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />
                   <Route path="/signup" element={<GuestOnly><Signup /></GuestOnly>} />
                   <Route path="/find-account" element={<GuestOnly><FindAccount /></GuestOnly>} />
+                  {/* 공지·이벤트 관리 — 로그인 대신 Worker 관리자 토큰으로 인증 */}
+                  <Route path="/content-admin" element={<ContentAdmin />} />
                   <Route path="/*" element={<Protected><PortalRoutes /></Protected>} />
                 </Routes>
               </Suspense>

@@ -28,17 +28,28 @@ Request path: browser → `crates/edge` Worker (same origin, serves the app at `
 
 Studio features that used to live in browser storage now have server APIs (docs/API.md "Portal"): artist profile, payout account (AES-256-GCM sealed with `PAYOUT_ACCOUNT_KEY`), inquiries with staff replies, notifications raised by pipeline triggers, agreement signing and rights proofs, the signed release application, settlement (ledger read-only + payout requests) and reports. In the server-connected build the stores start empty, are filled after login, keep nothing in localStorage and refresh notifications every minute and on focus. Identity verification (PASS/카카오 etc.) is not wired: in the connected build a drawn signature on an approved, read-confirmed agreement completes the contract.
 
-Notices and events are served by the edge Worker from D1 (binding `CONTENT_DB`, `crates/edge/migrations`), not by the private API:
+Notices and events live in D1 (`audeniq-content`, binding `CONTENT_DB`), not in the private API. Both Workers serve the same API from it: the static Studio Worker (`web/studio/worker.js`, what studio.audeniq.com runs today) and the Rust edge (`crates/edge`). The pages always read `/api/notices` and `/api/events`, also in the demo build; the built-in sample posts only appear when no Worker answers (plain `vite` dev).
+
+- Public: `GET /api/notices[/{id}]`, `GET /api/events[/{id}]`: published (`published_at` ≤ now), not removed.
+- Admin (`Authorization: Bearer <CONTENT_ADMIN_TOKEN>`): `GET|POST /api/content/{notices|events}`, `PUT|DELETE /api/content/{notices|events}/{id}`. The admin list includes scheduled and removed rows; `DELETE` only sets `deleted_at`, and saving a removed row publishes it again.
+- Writing UI: **https://studio.audeniq.com/content-admin** (no Studio login; asks for the admin token and keeps it in that tab only). New posts show up in Studio right away; a future `게시 시각` schedules them.
+
+One-time setup for the static Studio Worker:
 
 ```sh
-cd crates/edge
-npx wrangler d1 create audeniq-content            # put database_id into wrangler.toml
-npx wrangler d1 migrations apply audeniq-content --remote
-npx wrangler secret put CONTENT_ADMIN_TOKEN       # ≥ 32 random characters
-# publish a notice
+cd web/studio
+npx wrangler d1 migrations apply audeniq-content --remote   # creates the tables (safe to re-run)
+openssl rand -hex 32                                      # copy the output
+npx wrangler secret put CONTENT_ADMIN_TOKEN               # paste it (≥ 32 characters)
+npx wrangler deploy
+```
+
+For the Rust edge, run the same commands from `crates/edge`. `crates/edge/migrations/0002_seed.sql` holds the launch sample posts; apply it only if you want them live. Publishing from a script:
+
+```sh
 curl -X POST https://studio.audeniq.com/api/content/notices \
   -H "authorization: Bearer $CONTENT_ADMIN_TOKEN" -H 'content-type: application/json' \
-  -d '{"id":"maintenance-2026-10","title":"10월 점검 안내","body":"…","pinned":false,"published_at":"2026-10-01T00:00:00Z"}'
+  -d '{"title":"10월 점검 안내","body":"…","pinned":false,"published_at":"2026-10-01T00:00:00Z"}'
 ```
 
 The API server needs `PAYOUT_ACCOUNT_KEY` (`openssl rand -hex 32`); keep it outside the database backups it protects.
