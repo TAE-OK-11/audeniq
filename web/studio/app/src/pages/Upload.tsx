@@ -859,12 +859,7 @@ export function Upload() {
   }, []);
 
   const deleteTrack = useCallback((id: string) => {
-    setForm(f => (f.tracks.length > 1 ? {
-      ...f,
-      tracks: f.tracks.filter(x => x.id !== id),
-      // 삭제된 트랙의 커버곡 정보도 함께 제거 (잘못된 트랙 번호 표시 방지)
-      options: { ...f.options, coverTracks: f.options.coverTracks.filter(c => c.trackId !== id) },
-    } : f));
+    setForm(f => (f.tracks.length > 1 ? { ...f, tracks: f.tracks.filter(x => x.id !== id) } : f));
   }, []);
   const coverInputRef = useRef<HTMLInputElement>(null);
   // 커버 원본 File은 ref에 보관 (state에 수 MB base64를 들고 있으면 매 입력마다 전체 리렌더가 무거워짐)
@@ -964,15 +959,6 @@ export function Upload() {
   useEffect(() => {
     document.body.classList.add('wizard-mode');
     return () => document.body.classList.remove('wizard-mode');
-  }, []);
-
-  // 위자드 이탈 시 입력 손실 경고 (제출 완료 후에는 표시 안 함)
-  useEffect(() => {
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (!submittingRef.current) e.preventDefault();
-    };
-    window.addEventListener('beforeunload', onBeforeUnload);
-    return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, []);
 
   // 과거 발매 예정일이 저장돼 있으면 비움 (수정 모드에서는 기존 발매일 유지)
@@ -1103,42 +1089,22 @@ export function Upload() {
 
   // 자동 임시 저장 (조용히, 토스트 없음)
   // formRef로 최신 form을 참조해 stale closure 방지 (비동기 콜백에서 호출돼도 최신 값 저장)
-  // 저장 큐: 순차 실행으로 draft 중복 생성 race 방지
-  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const autoSave = useCallback(() => {
-    const run = saveQueueRef.current.then(async () => {
-      try {
-        const f = formRef.current;
-        // 전체 위자드 스냅샷 저장 (제목/발매일만이 아니라 트랙·옵션까지 복원 가능)
-        const data = {
-          title: f.title.trim() || '제목 없음',
-          release_date: f.releaseDate || '',
-          draft: {
-            type: f.type,
-            title: f.title,
-            artist: f.artist,
-            releaseDate: f.releaseDate,
-            genre: f.genre,
-            tracks: f.tracks.map(t => ({
-              title: t.title, version: t.version, isrc: t.isrc,
-              explicit: t.explicit, composers: t.composers,
-            })),
-            options: f.options,
-          },
-        };
-        if (draftIdRef.current) {
-          await mockApi.updateRelease(draftIdRef.current, data);
-        } else {
-          const r = await mockApi.createRelease(data);
-          draftIdRef.current = r.id;
-        }
-      } catch {
-        // 자동 저장 실패는 조용히 무시
+  const autoSave = useCallback(async () => {
+    try {
+      const f = formRef.current;
+      const data = {
+        title: f.title.trim() || '제목 없음',
+        release_date: f.releaseDate || '',
+      };
+      if (draftIdRef.current) {
+        await mockApi.updateRelease(draftIdRef.current, data);
+      } else {
+        const r = await mockApi.createRelease(data);
+        draftIdRef.current = r.id;
       }
-    });
-    // 큐가 깨지지 않도록 rejection 흡수
-    saveQueueRef.current = run.catch(() => {});
-    return saveQueueRef.current;
+    } catch {
+      // 자동 저장 실패는 조용히 무시
+    }
   }, []);
 
   const next = async () => {
