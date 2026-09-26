@@ -328,6 +328,7 @@ export function Upload() {
   const [form, setForm] = useState<WizardForm>(EMPTY);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [draftId, setDraftId] = useState<string | null>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
   const progressRef = useProgressFill(step);
 
@@ -345,11 +346,14 @@ export function Upload() {
 
   const fail = (msg: string, sel: string | null): boolean => {
     setError(msg);
-    if (sel) {
-      requestAnimationFrame(() => {
-        document.querySelector<HTMLElement>(sel)?.focus();
-      });
-    }
+    requestAnimationFrame(() => {
+      if (sel) {
+        const el = document.querySelector<HTMLElement>(sel);
+        if (el) { el.focus(); return; }
+      }
+      // 포커스 대상이 없으면 에러 메시지로 스크롤
+      document.getElementById('wizardError')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
     return false;
   };
 
@@ -437,10 +441,16 @@ export function Upload() {
 
   const saveDraft = async () => {
     try {
-      await mockApi.createRelease({
+      const data = {
         title: form.title.trim() || '제목 없음',
         release_date: form.releaseDate || '',
-      });
+      };
+      if (draftId) {
+        await mockApi.updateRelease(draftId, data);
+      } else {
+        const r = await mockApi.createRelease(data);
+        setDraftId(r.id);
+      }
       toast('임시 저장했어요.');
     } catch {
       toast('임시 저장에 실패했어요.');
@@ -497,9 +507,18 @@ export function Upload() {
   const onCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    // 커버 파일 타입 검증 (JPG/PNG/WEBP만 허용)
+    const okType = /^image\/(jpeg|png|webp)$/i.test(file.type);
+    const okExt = /\.(jpe?g|png|webp)$/i.test(file.name);
+    if (!okType && !okExt) {
+      toast('커버는 JPG, PNG, WEBP 파일만 등록할 수 있어요.');
+      e.target.value = '';
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       setForm(f => ({ ...f, coverName: file.name, coverData: String(reader.result) }));
+      toast('커버 이미지가 등록됐어요.');
     };
     reader.readAsDataURL(file);
   };
@@ -507,10 +526,28 @@ export function Upload() {
   const onTrackAudio = (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setForm(f => ({
-      ...f,
-      tracks: f.tracks.map(t => (t.id === id ? { ...t, audioName: file.name, audioSize: file.size } : t)),
-    }));
+    // 오디오 duration 자동 추출
+    const url = URL.createObjectURL(file);
+    const audio = new Audio();
+    audio.preload = 'metadata';
+    audio.onloadedmetadata = () => {
+      const secs = Math.round(audio.duration || 0);
+      const mm = String(Math.floor(secs / 60)).padStart(2, '0');
+      const ss = String(secs % 60).padStart(2, '0');
+      setForm(f => ({
+        ...f,
+        tracks: f.tracks.map(t => (t.id === id ? { ...t, audioName: file.name, audioSize: file.size, duration: `${mm}:${ss}` } : t)),
+      }));
+      URL.revokeObjectURL(url);
+    };
+    audio.onerror = () => {
+      setForm(f => ({
+        ...f,
+        tracks: f.tracks.map(t => (t.id === id ? { ...t, audioName: file.name, audioSize: file.size } : t)),
+      }));
+      URL.revokeObjectURL(url);
+    };
+    audio.src = url;
     toast('음원 파일이 등록됐어요.');
   };
 
@@ -583,7 +620,14 @@ export function Upload() {
                 <label htmlFor="f-genre">장르 <span className="required">*</span></label>
                 <select
                   id="f-genre" value={genreIsCustom ? '__other__' : form.genre}
-                  onChange={e => set('genre', e.target.value)}
+                  onChange={e => {
+                    set('genre', e.target.value);
+                    if (e.target.value === '__other__') {
+                      requestAnimationFrame(() => {
+                        document.getElementById('f-genre-custom')?.focus();
+                      });
+                    }
+                  }}
                   required aria-describedby="genreHelp"
                 >
                   {GENRES.map(([id, title]) => (

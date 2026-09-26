@@ -152,11 +152,11 @@ export function DocumentModal({
         <span className="doc-pill">{doc.kind === 'agreements' ? '계약·신청서' : '권리 증빙'}</span>
         <span className="doc-pill">{statusPill(doc)}</span>
       </div>
-      <div className="information">
+      <dl className="information">
         <div><dt>관련 발매</dt><dd>{doc.releaseTitle || '공통'}</dd></div>
         <div><dt>작성일</dt><dd>{localStamp(doc.created)}</dd></div>
         <div><dt>버전</dt><dd>v{doc.version || '1.0'}</dd></div>
-      </div>
+      </dl>
 
       <h3 className="doc-section-title">문서 내용</h3>
       <div className="aq-document-snapshot">{doc.content || '첨부된 문서의 원본을 확인해 주세요.'}</div>

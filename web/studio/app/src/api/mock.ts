@@ -83,6 +83,17 @@ export const mockApi = {
     mockDetails[r.id] = { ...r, tracks: [] };
     return r;
   },
+  /** 임시 저장 draft 갱신 — 같은 ID에 전체 위자드 상태 보존 */
+  updateRelease: async (id: string, data: { title: string; release_date: string }): Promise<Release> => {
+    await delay(300);
+    const r = mockReleases.find(x => x.id === id);
+    if (!r) throw new Error('임시 저장을 찾을 수 없음');
+    r.title = data.title;
+    r.release_date = data.release_date || null;
+    const d = mockDetails[id];
+    if (d) { d.title = r.title; d.release_date = r.release_date; }
+    return r;
+  },
   /** 발매 신청 접수 — 라이브 최종 제출(draft.status='review', 입력 전체 보존) 대응 */
   submitRelease: async (data: {
     title: string;
