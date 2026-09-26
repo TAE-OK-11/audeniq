@@ -49,7 +49,7 @@ export class ErrorBoundary extends Component<Props, State> {
         <p>{chunk ? '새 버전이 배포됐거나 네트워크가 불안정할 수 있어요.' : '입력한 내용은 저장돼 있어요. 다시 시도해 주세요.'}</p>
         <div className="row-actions">
           <button type="button" className="button" onClick={this.retry}>{chunk ? '새로고침' : '다시 시도'}</button>
-          <a className="button secondary" href={`${import.meta.env.BASE_URL}#/`}>홈으로</a>
+          <a className="button secondary" href={import.meta.env.BASE_URL}>홈으로</a>
         </div>
       </div>
     );
