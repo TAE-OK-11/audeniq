@@ -1,12 +1,13 @@
-# Connected Studio / Workers / rented server
+# Studio / Workers / rented server
 
 ## Implemented topology
 
-The deployment entry point is `crates/edge`: Rust Workers WASM serves **generated connected Studio assets** and proxies `/api/*` through `PRIVATE_API` (Workers VPC Service). The rented server runs Rust API, worker, PostgreSQL and cloudflared. Backend ports are not published by production Compose. Browser authentication remains a Rust API session; the edge adds a separate service secret. Browser files go directly to R2.
+Studio is a React + TypeScript app (`web/studio/app`). The old HTML prototype and the Rust/WASM shell (`crates/studio`, `studio-pack`, `audeniq-dev-web`) were removed; every screen is React. Two Workers can serve it:
 
-`web/studio/public` is preserved as the original visual prototype. **Do not deploy its old localStorage/IndexedDB business logic as a connected product.** The Rust `studio-pack` program extracts the existing CSS and logo, then packages `web/studio/connected/index.html` with the Rust/WASM application. The connected shell covers implemented Foundation operations and does not auto-create contract approvals or submission successes. Landing and survey are unchanged. This is not a conversion of all prototype screens: advanced wizard, rights, reports and settlement views remain future work.
+- `web/studio/worker.js` (what studio.audeniq.com runs today): static React build, notices/events/maintenance from D1, `/api/*` proxied to the rented-server API through the named tunnel with the service secret.
+- `crates/edge` (Rust Workers): the same build with `/api/*` through Workers VPC `PRIVATE_API`.
 
-New application code and browser automation are Rust. `wasm-bindgen` emits JavaScript loader glue, and Wrangler is a deployment tool. No Python runtime is used.
+The rented server runs Rust API, worker, PostgreSQL and cloudflared. Backend ports are not published by production Compose. Browser authentication is a Rust API session; the edge adds a separate service secret. Browser files go directly to R2.
 
 ## React Studio on the edge Worker
 
@@ -14,8 +15,9 @@ The user-facing Studio is the React app in `web/studio/app`. It has two builds:
 
 | Build | Command | Output | Data |
 |---|---|---|---|
-| Demo (committed) | `bun run build` | `web/studio/public` | browser storage mock |
-| Server-connected | `bun run build:edge` | `web/studio/edge-dist` (ignored) | real API through the edge |
+| Server-connected (committed, served by `web/studio/worker.js`) | `bun run build` | `web/studio/public` | real API through the Worker |
+| Server-connected for the Rust edge | `bun run build:edge` | `web/studio/edge-dist` | real API through `crates/edge` |
+| Demo (local only) | `bun run dev` / `bun run build:demo` | `web/studio/demo-dist` (ignored) | browser storage mock |
 
 Request path: browser → `crates/edge` Worker (same origin, serves the app at `/` and proxies `/api/*`) → Workers VPC service `PRIVATE_API` → Cloudflare Tunnel → rented-server Rust API → PostgreSQL / worker queues that run the actual distribution.
 
@@ -65,24 +67,18 @@ EDGE_SERVICE_SECRET=... bun run dev:api   # Vite on :5173, proxies /api and adds
 #   EDGE_CONTENT_URL=http://localhost:8787 EDGE_SERVICE_SECRET=... bun run dev:api
 ```
 
-## Build and local browser integration (Rust/WASM shell)
+## Browser smoke test (React Studio against a real API)
 
-From repository root, Rust toolchain from `rust-toolchain.toml`:
+CI (`Foundation` → *Browser smoke*) and local runs use the same TypeScript script, `web/studio/app/e2e/smoke.ts` (Playwright): signup, reload with the session (CSRF recovery), profile and release-draft writes, the 404 card and logout.
 
 ```sh
-rustup target add wasm32-unknown-unknown
-cargo build --locked -p audeniq-core --bins
-cargo build --locked -p audeniq-studio --lib --release --target wasm32-unknown-unknown
-cargo install wasm-bindgen-cli --version 0.2.128 --locked
-cargo run --locked -p audeniq-studio --bin studio-pack
-wasm-bindgen --target web --out-dir web/studio/dist/pkg target/wasm32-unknown-unknown/release/audeniq_studio.wasm
+# API on 127.0.0.1:8080 with APP_ENV=development, APP_ORIGIN=http://localhost:5173 and EDGE_SERVICE_SECRET=...
+cd web/studio/app
+bun run build:edge
+EDGE_SERVICE_SECRET=... bun run preview:api &   # :5173, proxies /api with the service header
+bunx playwright install chromium                 # once
+bun run e2e                                       # screenshots in test-results/
 ```
-
-Start the development Compose stack with `.env` following README. In another terminal export the same `EDGE_SERVICE_SECRET`, set `APP_ENV=development`, then run `cargo run --locked -p audeniq-core --bin audeniq-dev-web`. Open **http://localhost:5173** (not 127.0.0.1; exact Origin matters). The gateway listens only on loopback and proxies to loopback port 8080. It is excluded from the production image. It is a local integration substitute, not proof that the remote VPC works.
-
-The browser holds CSRF only in WASM memory; session cookie is HttpOnly. `POST /api/auth/csrf` requires an authenticated session and exact Origin, and returns a stable per-session HMAC token. Refresh and multiple tabs do not rotate each other's token. Responses are no-store. No session token, signed URL or catalog copy is persisted in localStorage.
-
-UI includes register/login/logout, organization switching, paginated catalog, artist/label/release creation and editing, archive, track addition/removal, optional WAV/FLAC direct upload, preflight blockers and session revocation. Label party IDs and track artist IDs currently require an explicit ID; selectors and richer metadata forms remain future UX work. A failed mutation is not automatically retried. Reload lists after uncertain network outcomes. Upload failures can leave unbound assets; cleanup is not implemented.
 
 ## Production server preparation (no automatic deployment)
 
