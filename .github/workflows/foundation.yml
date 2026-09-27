@@ -58,11 +58,33 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg libxml2-utils
+      # 서명을 실제로 검사하는 S3 서버 (R2처럼 SigV4 확인; moto는 서명을 보지 않는다).
+      # tests/s3_presign.rs가 서명 URL이 선언한 객체 하나만 올릴 수 있는지 확인한다
+      - name: Start S3 gateway for presigned upload tests
+        env:
+          AWS_ACCESS_KEY_ID: ci-s3-access
+          AWS_SECRET_ACCESS_KEY: ci-s3-secret-0123456789abcdef
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          mkdir -p /tmp/s3 && chmod 777 /tmp/s3
+          docker run -d --name s3 -p 127.0.0.1:7070:7070 -v /tmp/s3:/data \
+            -e ROOT_ACCESS_KEY="$AWS_ACCESS_KEY_ID" -e ROOT_SECRET_KEY="$AWS_SECRET_ACCESS_KEY" \
+            versity/versitygw:v1.8.0 --port :7070 posix /data
+          for _ in $(seq 1 30); do curl -s -o /dev/null http://127.0.0.1:7070/ && break; sleep 1; done
+          aws --endpoint-url http://127.0.0.1:7070 s3api create-bucket --bucket audeniq-test
       # nextest: 테스트 바이너리를 차례로가 아니라 한꺼번에 병렬로 돌린다 (각 테스트는 자기 DB를 쓴다)
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest@0.9.146
       - run: cargo nextest run --locked -p audeniq-core --test-threads 4
+        env:
+          S3_TEST_ENDPOINT: http://127.0.0.1:7070/
+          S3_TEST_BUCKET: audeniq-test
+          S3_TEST_ACCESS_KEY_ID: ci-s3-access
+          S3_TEST_SECRET_ACCESS_KEY: ci-s3-secret-0123456789abcdef
+      - name: S3 gateway logs
+        if: failure()
+        run: docker logs s3 2>&1 | tail -50 || true
       - run: cargo build --locked -p audeniq-edge --target wasm32-unknown-unknown
       # 캐시에 같은 버전이 있으면 다시 컴파일하지 않는다
       - run: worker-build --version 2>/dev/null | grep -q '0\.8\.7' || cargo install worker-build --version 0.8.7 --locked --force
