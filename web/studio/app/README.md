@@ -28,6 +28,12 @@ EDGE_SERVICE_SECRET=... bun run dev:api  # 로컬 API(127.0.0.1:8080)와 연결�
 - 서버 연결(`--mode edge` 또는 `VITE_MOCK=false`): `api/remote.ts`가 같은 출처의 `/api/*`를 호출하고, 엣지 Worker(`crates/edge`)가 Workers VPC → Cloudflare Tunnel → 메인 서버로 전달합니다. 로그인·회원가입, 발매 임시 저장·수정·삭제, 트랙 동기화, 음원·커버 R2 직접 업로드, 사전 점검·동의·접수·서명 신청서, 아티스트 정보, 수령 계좌, 문의(담당자 답변), 알림, 계약서 확인·서명, 권리 증빙 제출, 정산(원장)·지급 요청, 리포트가 모두 서버를 씁니다(`api/portal.ts`, `store/portalSync.ts`). 공지·이벤트는 엣지 Worker가 D1에서 서빙합니다. 실서버 모드의 스토어는 로그인 후 서버에서 채우고 브라우저 저장소에 남기지 않습니다. 배포 흐름은 `docs/STUDIO_DEPLOYMENT.md` 참고.
 - 서버 모드 제약: 비밀번호 12자 이상, 음원 WAV·FLAC(최대 512MB), 커버 JPG·PNG(최대 20MB), 미성년 발매 접수는 서버의 법정대리인 절차가 준비될 때까지 보류.
 
+## 관리자 화면 (`/admin`)
+스태프(`identity.staff_members`, `audeniq-admin staff grant EMAIL ROLE`로만 부여)가 같은 로그인 세션으로 `/admin`에 들어가 백엔드 `/api/staff/*`(docs/API.md "Staff portal")를 씁니다. 코드는 `src/admin/`, 스타일은 `styles/admin.css`(스튜디오 토큰 위 `adm-` 접두사).
+- 오늘의 업무(대기 건수, 1분마다 갱신) · 발매 심사(승인 / 보완 요청 / 거절, 항목별 안내, 권리 증빙 요청, 식별자 재발급) · 2차 승인(본인 요청은 승인 불가) · 서류 검토(승인 / 보완 요청) · 문의 답변(스레드·자주 쓰는 문구) · 배급 승인(ERN 확인 후 해시와 함께 승인, 음량 권고 확인, 보류, 재스테이징) · DSP 현황 · 지급 요청(ADMIN, 조회 전용)
+- 역할에 없는 업무는 조회만 되고 버튼이 비활성화됩니다. 스태프가 아니면 403 → 권한 안내 화면.
+- 체험(목) 빌드에서는 `src/admin/mock.ts`의 예시 데이터로 같은 흐름을 확인할 수 있습니다.
+
 ## 구조
 - `api/` — API 진입점(`client.ts`), 서버 어댑터(`remote.ts`, `http.ts`), 목 서버(`mock.ts`), 오류 문구(`errors.ts`), 인증 컨텍스트
 - `lib/` — 날짜(`date.ts`, 사파리 호환 파싱), 영속 스토어(`store.ts`), 저장소 래퍼, 카탈로그 상수
