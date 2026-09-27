@@ -11,8 +11,14 @@ pub fn behind_pooler() -> bool {
 }
 
 pub async fn connect(url: &str, max: u32) -> Result<PgPool, sqlx::Error> {
+    // Keep a couple of connections open even when idle: after a quiet spell
+    // the first request no longer pays connect + SCRAM auth (cold start).
+    // Connections are recycled every 30 min so server-side state (PgBouncer
+    // restarts, role setting changes) does not live forever.
     let options = PgPoolOptions::new()
         .max_connections(max)
+        .min_connections(max.min(2))
+        .max_lifetime(std::time::Duration::from_secs(30 * 60))
         .acquire_timeout(std::time::Duration::from_secs(5));
     if behind_pooler() {
         return options.connect(url).await;
