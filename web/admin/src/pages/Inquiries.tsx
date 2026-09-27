@@ -7,6 +7,7 @@ import { useAsync } from '../hooks/useAsync';
 import { staffApi } from '../api/staff';
 import { INQUIRY_STATUS, ago, pick, when } from '../labels';
 import { Empty, ErrorBox, Filters, NoDuty, PageHead, Skeleton, StatusChip, useStaff } from '../ui';
+import { Glyph } from '../components/Glyph';
 
 const STATUSES = ['OPEN', 'ANSWERED', 'CLOSED'] as const;
 const TEMPLATES: { label: string; text: string }[] = [
@@ -62,7 +63,7 @@ function Thread({ id, onReplied }: { id: string; onReplied: () => void }) {
         <h2 style={{ marginTop: 8 }}>{q.subject}</h2>
         <span className="adm-row-meta">
           <span>{q.org_name}</span><span>{q.category}</span>
-          {q.release_id && <span><Link to={`/reviews/${q.release_id}`}>관련 발매 ↗</Link></span>}
+          {q.release_id && <span><Link to={`/reviews/${q.release_id}`}>관련 발매 <Glyph name="arrow-right" size={13} className="aq-inline-glyph" /></Link></span>}
         </span>
       </div>
       <ol className="adm-thread" ref={listRef}>
@@ -121,7 +122,7 @@ export function Inquiries() {
       <div className="adm-split">
         <div className="adm-list">
           {loading && !data ? <Skeleton rows={4} /> : items.length === 0 ? (
-            <Empty icon="✉" title={status === 'OPEN' ? '답변 대기 중인 문의가 없어요' : '해당 상태의 문의가 없어요'} />
+            <Empty icon={<Glyph name="mail" size={22} />} title={status === 'OPEN' ? '답변 대기 중인 문의가 없어요' : '해당 상태의 문의가 없어요'} />
           ) : items.map(q => (
             <button key={q.id} type="button" className={`adm-row${q.id === id ? ' is-active' : ''}`} onClick={() => go(`/inquiries/${q.id}`)} style={{ gridTemplateColumns: 'minmax(0,1fr) auto' }}>
               <span className="adm-min">
@@ -139,7 +140,7 @@ export function Inquiries() {
           <Thread id={id} onReplied={() => { reload(); refreshCounts(); }} />
         ) : (
           <div className="adm-thread-pane" style={{ justifyContent: 'center' }}>
-            <Empty icon="✉" title="문의를 선택해 주세요">왼쪽 목록에서 문의를 누르면 대화와 답변 입력창이 열려요.</Empty>
+            <Empty icon={<Glyph name="mail" size={22} />} title="문의를 선택해 주세요">왼쪽 목록에서 문의를 누르면 대화와 답변 입력창이 열려요.</Empty>
           </div>
         )}
       </div>

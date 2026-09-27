@@ -14,6 +14,7 @@ import { api } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { stampNow } from '../lib/date';
 import { uid } from '../lib/store';
+import { Glyph } from '../components/Glyph';
 
 const REQUIRED_DOCS: [string, string, string][] = [
   ['master', '마스터 음원 권리 확인서', '본인은 해당 마스터 음원에 관한 배급 권한을 보유하거나 권리자로부터 적법한 이용 허락을 받았음을 확인합니다.'],
@@ -122,7 +123,7 @@ export function Rights() {
           <p>발매별 권리 증빙과 AUDENIQ의 보완 요청을 한곳에서 처리하세요.</p>
         </div>
         <button type="button" className="button secondary" onClick={() => setFormOpen(true)}>
-          권리 서류 제출 ↗
+          권리 서류 제출 <Glyph name="arrow-up-right" size={14} />
         </button>
       </div>
 

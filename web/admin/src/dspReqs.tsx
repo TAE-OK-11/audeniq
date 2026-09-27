@@ -2,6 +2,8 @@
 // 문제가 있으면 바로 빨간색: 콘텐츠 차단(BLOCKER)은 빨강, 권고(WARNING)는 주황, 연동 대기는 회색.
 import type { DspItem, StagingRow } from './api/staff';
 import { Chip } from './ui';
+import { Glyph } from './components/Glyph';
+import { CheckIcon } from './components/Check';
 
 export type ReqState = 'ok' | 'bad' | 'warn' | 'wait' | 'pending';
 interface Req { key: string; label: string; codes: string[]; spec: (d: DspItem) => string; partner?: boolean; krOnly?: boolean }
@@ -76,7 +78,7 @@ export function DspRequirements({ codes, dsps, staging }: { codes: string[]; dsp
             <ul>
               {results.map(({ r, state, detail }) => (
                 <li key={r.key} className={`is-${state}`} title={detail || undefined}>
-                  <span className="adm-dspreq-dot" aria-hidden="true">{state === 'ok' ? '✓' : state === 'bad' ? '!' : state === 'warn' ? '·' : ''}</span>
+                  <span className="adm-dspreq-dot" aria-hidden="true">{state === 'ok' ? <CheckIcon size={11} /> : state === 'bad' ? <Glyph name="alert" size={12} /> : null}</span>
                   <span className="adm-min">
                     <b>{r.label}</b>
                     <small>{r.spec(d)}</small>

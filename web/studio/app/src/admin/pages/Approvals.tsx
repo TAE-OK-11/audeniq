@@ -8,6 +8,7 @@ import { useAsync } from '../../hooks/useAsync';
 import { staffApi, type ApprovalItem } from '../api';
 import { ago, checkLabel, shortId, when } from '../labels';
 import { Chip, Empty, ErrorBox, NoDuty, PageHead, Skeleton, SubTabs, useStaff } from '../ui';
+import { Glyph } from '../../components/Glyph';
 
 export function Approvals() {
   const toast = useToast();
@@ -57,7 +58,7 @@ export function Approvals() {
               <div key={a.id} className="adm-card">
                 <div className="adm-check-top">
                   <span>
-                    <Link to={`/admin/reviews/${a.release_id}`} className="adm-row-title">{a.title} ↗</Link>
+                    <Link to={`/admin/reviews/${a.release_id}`} className="adm-row-title">{a.title} <Glyph name="arrow-right" size={13} className="aq-inline-glyph" /></Link>
                     <span className="adm-row-meta"><span>요청 {ago(a.at)}</span><span>만료 {when(a.expires_at)}</span><span>요청자 {mine ? '나' : shortId(a.requested_by)}</span></span>
                   </span>
                   <span className="adm-codes">{a.check_codes.map(c => <Chip key={c} tone="red">{checkLabel(c)}</Chip>)}</span>

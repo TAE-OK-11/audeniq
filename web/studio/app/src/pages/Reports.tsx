@@ -6,6 +6,7 @@ import { todayStr } from '../lib/date';
 import { useGrowOnView, type CSSVarStyle } from '../hooks/useAnimations';
 import { periodLabel as monthLabel, periods, type ReportRow } from '../data/reports';
 import { useReportRows } from '../hooks/useReportRows';
+import { Glyph } from '../components/Glyph';
 
 const PERIODS = [
   { value: 'all', label: '전체 기간' },
@@ -162,7 +163,7 @@ export function Reports() {
           <h1 id="reportsTitle">음악 리포트</h1>
           <p>플랫폼별 실적을 기간과 곡별로 확인해 보세요.</p>
         </div>
-        <button type="button" className="button secondary" onClick={exportCsv}>CSV 내보내기 ↗</button>
+        <button type="button" className="button secondary" onClick={exportCsv}><Glyph name="download" size={15} className="aq-glyph-lead" />CSV 내보내기</button>
       </div>
 
       <div className="report-tools">
@@ -198,14 +199,14 @@ export function Reports() {
                 <strong className={insight.revenueChange != null && insight.revenueChange >= 0 ? 'up' : 'down'}>
                   {insight.revenueChange == null ? '—' : `${insight.revenueChange >= 0 ? '+' : ''}${insight.revenueChange.toFixed(1)}%`}
                 </strong>
-                <span>{money(insight.prevRevenue)} → {money(insight.curRevenue)}</span>
+                <span>{money(insight.prevRevenue)} <Glyph name="arrow-right" size={12} /> {money(insight.curRevenue)}</span>
               </div>
               <div className="aq-insight-card">
                 <small>재생 변화</small>
                 <strong className={insight.playsChange != null && insight.playsChange >= 0 ? 'up' : 'down'}>
                   {insight.playsChange == null ? '—' : `${insight.playsChange >= 0 ? '+' : ''}${insight.playsChange.toFixed(1)}%`}
                 </strong>
-                <span>{num(insight.prevPlays)}회 → {num(insight.curPlays)}회</span>
+                <span>{num(insight.prevPlays)}회 <Glyph name="arrow-right" size={12} /> {num(insight.curPlays)}회</span>
               </div>
             </div>
             <ul className="aq-insight-list">

@@ -13,6 +13,7 @@ import { errorMessage } from '../api/errors';
 import { CorrectionList } from '../components/CorrectionList';
 import { fixPath } from '../lib/corrections';
 import { CheckIcon } from '../components/Check';
+import { Glyph } from '../components/Glyph';
 
 // 플랫폼별 배급 진행 단계 (서버 delivery_staging 기준)
 const DELIVERY_STAGE: Record<string, string> = {
@@ -184,7 +185,7 @@ export function ReleaseDetail() {
   return (
     <div id="view-release" className="view">
       <div className="spaced-actions">
-        <button type="button" className="link-btn aq-back-link" onClick={() => nav('/releases')}>← 발매 목록</button>
+        <button type="button" className="link-btn aq-back-link" onClick={() => nav('/releases')}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />발매 목록</button>
       </div>
 
       <div className="aq-detail-hero" aria-label="발매 정보">
@@ -245,7 +246,7 @@ export function ReleaseDetail() {
       {rejected && (
         <section className="aq-fix-card is-rejected" aria-labelledby="aqRejectHead">
           <div className="aq-fix-card-head">
-            <span className="aq-fix-icon" aria-hidden="true">✕</span>
+            <span className="aq-fix-icon" aria-hidden="true"><Glyph name="close" size={16} /></span>
             <div className="min-0">
               <h2 id="aqRejectHead">발매가 거절됐어요</h2>
               <p className="break" style={{ whiteSpace: 'pre-line' }}>{fixes.find(f => f.code === 'REVIEW_NOTE')?.message
@@ -259,7 +260,7 @@ export function ReleaseDetail() {
       {needsFix && (
         <section className="aq-fix-card" aria-labelledby="aqFixCardHead">
           <div className="aq-fix-card-head">
-            <span className="aq-fix-icon" aria-hidden="true">!</span>
+            <span className="aq-fix-icon" aria-hidden="true"><Glyph name="alert" size={18} /></span>
             <div className="min-0">
               <h2 id="aqFixCardHead">{fixes.length ? `보완 요청 ${fixes.length}건` : '보완이 필요해요'}</h2>
               <p>{fixes.length
@@ -343,7 +344,7 @@ export function ReleaseDetail() {
             ) : (
               <div className="empty-note">
                 등록된 트랙이 없어요.<br />
-                <button type="button" className="link-btn" onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}>트랙 등록하기 ↗</button>
+                <button type="button" className="link-btn" onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}>트랙 등록하기 <Glyph name="arrow-up-right" size={13} /></button>
               </div>
             )}
             <div className="notice" style={{ marginTop: 22 }}>
@@ -412,7 +413,7 @@ export function ReleaseDetail() {
               ) : (
                 <p className="small muted">발매를 접수하면 계약서와 권리 서류가 자동으로 준비돼요.</p>
               )}
-              <button className="button secondary" type="button" onClick={() => nav('/contracts')} style={{ marginTop: 14 }}>문서 관리 ↗</button>
+              <button className="button secondary" type="button" onClick={() => nav('/contracts')} style={{ marginTop: 14 }}>문서 관리 <Glyph name="arrow-up-right" size={14} /></button>
             </div>
           </div>
         )}

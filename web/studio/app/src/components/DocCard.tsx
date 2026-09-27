@@ -2,6 +2,7 @@
 import { docState, docTone, type DocRecord } from '../store/docs';
 import { niceDate, stripSampleSuffix } from '../lib/format';
 import { CheckIcon } from './Check';
+import { Glyph } from './Glyph';
 
 export function DocCard({ c, onOpen }: { c: DocRecord; onOpen: (id: string) => void }) {
   const btnLabel = c.kind === 'agreements'
@@ -9,7 +10,7 @@ export function DocCard({ c, onOpen }: { c: DocRecord; onOpen: (id: string) => v
     : (c.reviewStatus === 'needs' ? '보완하기' : '자세히 보기');
   return (
     <article className={`aq-doc-card ${docTone(c)}`}>
-      <span className="document-icon" aria-hidden="true">{c.reviewStatus === 'needs' ? '!' : c.kind === 'agreements' ? (c.localSignatureAt ? <CheckIcon size={16} /> : '✎') : '▤'}</span>
+      <span className="document-icon" aria-hidden="true">{c.reviewStatus === 'needs' ? <Glyph name="alert" size={18} /> : c.kind === 'agreements' ? (c.localSignatureAt ? <CheckIcon size={16} /> : <Glyph name="pencil" size={17} />) : <Glyph name="doc" size={17} />}</span>
       <div className="aq-doc-copy">
         <button type="button" className="row-name" onClick={() => onOpen(c.id)}>
           {stripSampleSuffix(c.title)}
