@@ -66,7 +66,7 @@ AUDENIQ은 국내 인디 아티스트·소형 레이블 대상 배급·권리·�
 | Edge | Cloudflare Workers Static Assets, 사용자 요청 BFF | 업무 원장은 Workers나 D1에서 작성하지 않음. |
 | 내부 연결 | 주경로 Workers VPC Service + Cloudflare Tunnel | 원본 Rust API의 일반 인터넷 인바운드 차단; 서비스 신원 확인 필수. |
 | 대체 연결 | 기본 OFF: Tunnel public hostname + Cloudflare Access service token 또는 검증된 mTLS | 장애 전환은 문서화된 운영 승인·설정으로만 수행. |
-| API | Rust / Axum / Tokio / SQLx / PostgreSQL 17 계열 | 최초에는 단일 `audeniq-api` 실행 파일·모듈형 모놀리스. |
+| API | Rust / Axum / Tokio / SQLx / PostgreSQL 18 (+ PgBouncer) | 최초에는 단일 `audeniq-api` 실행 파일·모듈형 모놀리스. |
 | 비동기 작업 | 동일 Rust 코드베이스의 `audeniq-worker`, PostgreSQL queues / outbox | 실행 파일 분리는 CPU/메모리·장애 격리를 위한 것. |
 | 내부 서버 간 | 서버를 실제로 분리할 때 gRPC / Protobuf / Tonic + Prost | 초기 동일 호스트·프로세스 작업 전달에 불필요한 gRPC 강제 금지. |
 | 공개 콘텐츠 | 관리자 PostgreSQL 원본 → 승인된 게시 job → D1 읽기 복제본 | D1은 FAQ·공지·이벤트 공개 조회에 한정, 정산·권리의 원본 DB 금지. |

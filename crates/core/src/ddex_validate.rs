@@ -700,8 +700,10 @@ fn attribute_value(xml: &str, name: &str) -> Option<String> {
     Some(xml[start..start + end].to_string())
 }
 
-fn local_name(raw: &[u8]) -> &str {
-    std::str::from_utf8(raw).unwrap_or("")
+/// quick-xml 0.42 hands out names as UTF-8 already (the reader rejects
+/// invalid UTF-8), so this is a plain borrow kept for call-site symmetry.
+fn local_name(raw: &str) -> &str {
+    raw
 }
 
 /// Streaming single-pass scan of the document. Returns the parse error
@@ -775,7 +777,8 @@ fn scan_document(xml: &str) -> Result<Scan, String> {
             }
             Ok(Event::Text(e)) => {
                 if let Some(top) = stack.last().cloned() {
-                    let text = e.decode().map(|c| c.into_owned()).unwrap_or_default();
+                    // Raw (not unescaped) text, exactly as before the upgrade.
+                    let text = e.into_inner().into_owned();
                     if !text.is_empty() {
                         pending_text = Some((top, text));
                     }
@@ -783,7 +786,7 @@ fn scan_document(xml: &str) -> Result<Scan, String> {
             }
             Ok(Event::CData(e)) => {
                 if let Some(top) = stack.last().cloned() {
-                    let text = String::from_utf8_lossy(&e.into_inner()).into_owned();
+                    let text = e.into_inner().into_owned();
                     if !text.trim().is_empty() {
                         pending_text = Some((top, text));
                     }
