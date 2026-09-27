@@ -23,6 +23,8 @@ export interface QueueRelease {
   id: string; org_id: string; org_name: string; title: string; release_type: string; status: string;
   revision_id: string | null; artist: string | null; release_date: string | null; submitted_at: string | null;
   platforms: string[];
+  /** 발매 신청서(배급 계약서) 상태 — REVIEW/PREPARED면 발매 심사 대기 */
+  agreement: string | null;
 }
 
 export interface Check { check_code: string; status: string; detail: string | null; rule_version?: string; at?: string }
