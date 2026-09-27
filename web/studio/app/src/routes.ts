@@ -19,6 +19,7 @@ export const pageLoaders = {
   Events: () => import('./pages/Events'),
   Notices: () => import('./pages/Notices'),
   ContentAdmin: () => import('./pages/ContentAdmin'),
+  NotFound: () => import('./pages/NotFound'),
   Profile: () => import('./pages/Profile'),
 };
 
