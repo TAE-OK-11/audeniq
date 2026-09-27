@@ -3706,3 +3706,159 @@ async fn virtual_codes_are_reissued_after_registration(pool: PgPool) {
     assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
     assert_eq!(v["error"]["code"], "STAGING_SUPERSEDED");
 }
+
+// ---------------------------------------------------------------------------
+// Release review queue holds the signed application (migration 0049)
+// ---------------------------------------------------------------------------
+
+async fn doc_status(pool: &PgPool, doc: Uuid) -> String {
+    sqlx::query_scalar("SELECT status FROM portal.documents WHERE id=$1")
+        .bind(doc)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+async fn in_pending_queue(app: &Router, staff: &User, release: Uuid) -> Option<Value> {
+    let (s, v) = call(app, "GET", "/api/staff/releases", Value::Null, Some(staff)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    v["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["id"] == release.to_string())
+        .cloned()
+}
+
+#[sqlx::test]
+async fn release_application_is_decided_in_release_review(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let doc = set_agreement(&pool, ctx.org, ctx.release, false).await;
+    let staff = staff_user(&ctx.app, &pool, "REVIEWER").await;
+
+    // A new request that passed the automatic checks waits in 발매 심사 ...
+    let row = in_pending_queue(&ctx.app, &staff, ctx.release)
+        .await
+        .expect("new release request in the review queue");
+    assert_eq!(row["status"], "READY_FOR_DELIVERY");
+    assert_eq!(row["agreement"], "REVIEW");
+    // ... and not in 서류 검토, which only holds requested rights proofs.
+    let (s, v) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/documents?status=REVIEW",
+        Value::Null,
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert!(
+        v["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|d| d["id"] != doc.to_string()),
+        "{v}"
+    );
+    let (_, v) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/overview",
+        Value::Null,
+        Some(&staff),
+    )
+    .await;
+    assert!(v["review"].as_i64().unwrap() >= 1, "{v}");
+    assert_eq!(v["documents"], 0, "{v}");
+    // The agreement can no longer be decided through the document queue.
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &format!("/api/staff/documents/{doc}/review"),
+        json!({"status":"APPROVED","note":"","row_version":1}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CONFLICT);
+
+    // Approve: the agreement is cleared for the artist's signature.
+    let rev = current_revision(&pool, ctx.release).await;
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &format!("/api/staff/releases/{}/decision", ctx.release),
+        json!({"action":"APPROVE","revision_id":rev,"reason":"application checked"}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["agreement"], "APPROVED");
+    assert_eq!(doc_status(&pool, doc).await, "APPROVED");
+    assert!(
+        in_pending_queue(&ctx.app, &staff, ctx.release)
+            .await
+            .is_none()
+    );
+    // Nothing is left to decide now.
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &format!("/api/staff/releases/{}/decision", ctx.release),
+        json!({"action":"APPROVE","revision_id":rev,"reason":"again"}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(v["error"]["code"], "RELEASE_NOT_IN_REVIEW");
+
+    // A new application goes back to review; a correction returns the
+    // release to the artist and marks the agreement NEEDS.
+    set_agreement(&pool, ctx.org, ctx.release, false).await;
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &format!("/api/staff/releases/{}/decision", ctx.release),
+        json!({"action":"REQUEST_CORRECTION","revision_id":rev,"reason":"cover art text is unreadable"}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["status"], "STAGE3_CORRECTION");
+    assert_eq!(
+        release_status(&pool, ctx.release).await,
+        "STAGE3_CORRECTION"
+    );
+    assert_eq!(doc_status(&pool, doc).await, "NEEDS");
+}
+
+#[sqlx::test]
+async fn rejected_release_application_closes_the_release(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let doc = set_agreement(&pool, ctx.org, ctx.release, false).await;
+    let staff = staff_user(&ctx.app, &pool, "REVIEWER").await;
+    let rev = current_revision(&pool, ctx.release).await;
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &format!("/api/staff/releases/{}/decision", ctx.release),
+        json!({"action":"REJECT","revision_id":rev,"reason":"rights holder could not be verified"}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["result"], "REJECTED");
+    assert_eq!(release_status(&pool, ctx.release).await, "WITHDRAWN");
+    assert_eq!(doc_status(&pool, doc).await, "REJECTED");
+    let notified: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM portal.notifications WHERE org_id=$1 AND title LIKE '%반려됐어요.')",
+    )
+    .bind(ctx.org)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(notified);
+    // Nothing is ever sent for it.
+    if let Ok((job_ids, _)) = execution::enqueue_delivery_jobs(&pool, ctx.package_id).await {
+        assert!(job_ids.is_empty());
+    }
+}

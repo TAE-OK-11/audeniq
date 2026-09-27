@@ -134,6 +134,10 @@
       "WITHDRAWN"
     ],
     [
+      "READY_FOR_DELIVERY",
+      "WITHDRAWN"
+    ],
+    [
       "STAGE3_CORRECTION",
       "SUBMITTED"
     ],

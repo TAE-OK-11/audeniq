@@ -13,12 +13,13 @@ export const DUTY_LABEL: Record<Duty, string> = {
 };
 
 export const RELEASE_STATUS: Record<string, [string, Tone]> = {
+  PENDING: ['심사 대기', 'violet'],
   SUBMITTED: ['접수됨', 'blue'],
   STAGE1_RUNNING: ['1차 검사 중', 'blue'],
   STAGE1_CORRECTION: ['1차 보완 요청', 'amber'],
   STAGE1_PASSED: ['1차 통과', 'blue'],
   STAGE2_RUNNING: ['2차 검사 중', 'blue'],
-  STAGE2_REVIEW: ['심사 대기', 'violet'],
+  STAGE2_REVIEW: ['검사 판단 필요', 'violet'],
   STAGE2_CORRECTION: ['2차 보완 요청', 'amber'],
   STAGE2_PASSED: ['2차 통과', 'blue'],
   STAGE3_PREPARING: ['배포 준비 중', 'blue'],
@@ -28,9 +29,10 @@ export const RELEASE_STATUS: Record<string, [string, Tone]> = {
   WITHDRAWN: ['거절·철회', 'gray'],
 };
 
-/** 심사 목록 필터 (백엔드 RELEASE_STATUSES 중 담당자가 자주 보는 순서) */
+/** 심사 목록 필터 (백엔드 RELEASE_STATUSES 중 담당자가 자주 보는 순서).
+ *  PENDING = 담당자 결정 대기: 새 발매 신청(자동 검사 통과, 신청서 검토 전) + 2차 검사에서 멈춘 발매 */
 export const QUEUE_FILTERS = [
-  'STAGE2_REVIEW', 'STAGE1_CORRECTION', 'STAGE2_CORRECTION', 'STAGE3_CORRECTION',
+  'PENDING', 'STAGE2_REVIEW', 'STAGE1_CORRECTION', 'STAGE2_CORRECTION', 'STAGE3_CORRECTION',
   'ON_HOLD_RIGHTS', 'READY_FOR_DELIVERY', 'SUBMITTED', 'STAGE3_PREPARING', 'WITHDRAWN',
 ];
 
@@ -51,7 +53,11 @@ export const DOC_STATUS: Record<string, [string, Tone]> = {
   NEEDS: ['보완 요청', 'amber'],
   APPROVED: ['승인', 'green'],
   SIGNED: ['서명 완료', 'green'],
+  REJECTED: ['반려', 'red'],
 };
+
+/** 발매 신청서(배급 계약서)가 담당자 결정을 기다리는 상태 */
+export const applicationPending = (agreement: string | null | undefined) => agreement === 'REVIEW' || agreement === 'PREPARED';
 
 export const INQUIRY_STATUS: Record<string, [string, Tone]> = {
   OPEN: ['답변 대기', 'violet'], ANSWERED: ['답변 완료', 'green'], CLOSED: ['종료', 'gray'],

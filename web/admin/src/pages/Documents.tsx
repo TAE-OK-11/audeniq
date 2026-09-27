@@ -1,4 +1,5 @@
-// 서류 검토 — 배급 계약서(서명본)와 권리 증빙을 승인하거나 보완 요청한다.
+// 서류 검토 — 담당자가 요청한 권리 증빙을 승인하거나 보완 요청한다.
+// 발매 신청서(배급 계약서)는 발매 심사에서 발매와 함께 결정한다.
 import { useState } from 'react';
 import { Link, useSearchParams } from '../lib/router';
 import { Modal, useModalClose } from '../components/Modal';
@@ -9,9 +10,8 @@ import { staffApi, type StaffDocument } from '../api/staff';
 import { DOC_KIND, DOC_STATUS, ago, pick, when } from '../labels';
 import { Empty, ErrorBox, Filters, Initial, NoDuty, PageHead, Skeleton, StatusChip, useStaff } from '../ui';
 
-const STATUSES = ['REVIEW', 'PREPARED', 'NEEDS', 'AWAITING_DOCUMENTS', 'APPROVED', 'SIGNED'];
-const decidable = (d: StaffDocument) =>
-  (d.kind === 'AGREEMENT' && (d.status === 'REVIEW' || d.status === 'PREPARED')) || (d.kind === 'RIGHTS_PROOF' && d.status === 'REVIEW');
+const STATUSES = ['REVIEW', 'AWAITING_DOCUMENTS', 'NEEDS', 'APPROVED'];
+const decidable = (d: StaffDocument) => d.kind === 'RIGHTS_PROOF' && d.status === 'REVIEW';
 
 function ReviewForm({ doc, status, onDone }: { doc: StaffDocument; status: 'APPROVED' | 'NEEDS'; onDone: () => void }) {
   const close = useModalClose();
@@ -68,7 +68,7 @@ export function Documents() {
       <PageHead
         eyebrow="DOCUMENTS"
         title="서류 검토"
-        sub="아티스트가 서명한 배급 계약서와 제출한 권리 증빙이에요. 승인하거나 보완을 요청하면 작업 공간에 알림이 가요."
+        sub="발매 심사 중 요청한 권리 증빙이에요. 승인하거나 보완을 요청하면 작업 공간에 알림이 가요. 새 발매 신청서는 발매 심사에서 결정해요."
         actions={<button type="button" className="adm-btn soft small" onClick={reload}>새로고침</button>}
       />
       {!can('DOCUMENTS') && <NoDuty duty="서류 검토" />}

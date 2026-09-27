@@ -1,4 +1,6 @@
 // 발매 심사 시트 — 검사 결과·신청 정보·서류·이력을 보고 승인 / 보완 요청 / 거절을 결정한다.
+// 두 경우를 결정한다: 2차 검사에서 멈춘 발매(STAGE2_REVIEW), 자동 검사를 통과했고 신청서(배급 계약서)가
+// 검토 전인 새 발매 신청(READY_FOR_DELIVERY). 신청서는 발매와 함께 결정되고 서류 검토에는 나오지 않는다.
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from '../lib/router';
 import { Modal, useModalClose } from '../components/Modal';
@@ -8,7 +10,7 @@ import { useAsync } from '../hooks/useAsync';
 import { staffApi, type Check, type DecisionAction, type ReleaseSheet } from '../api/staff';
 import {
   APPROVAL_STATUS, CHECK_STATUS, DECISION_LABEL, DOC_KIND, DOC_STATUS, MAX_REASON, READINESS, RELEASE_STATUS, RELEASE_TYPE,
-  checkLabel, day, needsSecond, pick, shortId, when,
+  applicationPending, checkLabel, day, needsSecond, pick, shortId, when,
 } from '../labels';
 import { Chip, Empty, ErrorBox, Initial, NoDuty, Section, Skeleton, StatusChip, useStaff } from '../ui';
 
@@ -49,7 +51,25 @@ function CheckCard({ c, open, note, onNote }: { c: Check; open?: boolean; note?:
   );
 }
 
-const ACTION_COPY: Record<DecisionAction, { title: string; lead: string; placeholder: string; submit: string; btn: string }> = {
+type Copy = { title: string; lead: string; placeholder: string; submit: string; btn: string };
+
+/** 자동 검사를 통과한 새 발매 신청을 결정할 때 */
+const APPLICATION_COPY: Record<DecisionAction, Copy> = {
+  APPROVE: {
+    title: '발매 신청 승인', lead: '신청서(배급 계약서)를 승인해요. 아티스트에게 계약서 서명 안내가 가고, 서명하면 배급이 시작돼요.',
+    placeholder: '승인 근거 (예: 신청 정보·음원·커버 확인 완료)', submit: '승인하기', btn: 'primary',
+  },
+  REQUEST_CORRECTION: {
+    title: '보완 요청', lead: '발매를 아티스트에게 돌려보내요(배포 보완 요청). 아티스트가 고쳐서 다시 접수하면 새 신청서가 이곳으로 와요. 요청 내용은 아티스트 화면에 그대로 보여요.',
+    placeholder: '무엇을 어떻게 고치면 되는지 적어 주세요', submit: '보완 요청 보내기', btn: 'primary',
+  },
+  REJECT: {
+    title: '발매 거절', lead: '발매 신청을 거절(WITHDRAWN)하고 작업 공간에 알려요. 되돌릴 수 없어요 — 아티스트는 새로 접수해야 해요.',
+    placeholder: '거절 사유 (아티스트에게 전달돼요)', submit: '거절 확정', btn: 'solid-danger',
+  },
+};
+
+const ACTION_COPY: Record<DecisionAction, Copy> = {
   APPROVE: {
     title: '심사 승인', lead: '미해결 검사 항목을 통과(PASS)로 처리하고 2차 재평가를 예약해요. 파이프라인이 다음 단계(배포 준비)로 넘겨요.',
     placeholder: '승인 근거 (예: 크레딧 표기는 동일인의 다른 활동명으로 확인)', submit: '승인하기', btn: 'primary',
@@ -64,10 +84,10 @@ const ACTION_COPY: Record<DecisionAction, { title: string; lead: string; placeho
   },
 };
 
-function DecisionForm({ sheet, action, onDone }: { sheet: ReleaseSheet; action: DecisionAction; onDone: (msg: string) => void }) {
+function DecisionForm({ sheet, action, application, onDone }: { sheet: ReleaseSheet; action: DecisionAction; application: boolean; onDone: (msg: string) => void }) {
   const close = useModalClose();
   const toast = useToast();
-  const copy = ACTION_COPY[action];
+  const copy = (application ? APPLICATION_COPY : ACTION_COPY)[action];
   const open = sheet.open_checks;
   const [reason, setReason] = useState('');
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -90,7 +110,8 @@ function DecisionForm({ sheet, action, onDone }: { sheet: ReleaseSheet; action: 
       const msg = res.result === 'PENDING_SECOND_APPROVAL'
         ? '민감 항목이 있어 2차 승인 요청을 올렸어요. 다른 심사 담당자가 승인하면 반영돼요.'
         : res.result === 'REJECTED' ? '발매를 거절했어요. 아티스트에게 알림이 갔어요.'
-          : action === 'APPROVE' ? '승인했어요. 2차 재평가 후 배포 준비로 넘어가요.' : '보완 요청을 보냈어요. 아티스트에게 알림이 갔어요.';
+          : action !== 'APPROVE' ? '보완 요청을 보냈어요. 아티스트에게 알림이 갔어요.'
+            : application ? '승인했어요. 아티스트에게 계약서 서명 안내가 갔어요.' : '승인했어요. 2차 재평가 후 배포 준비로 넘어가요.';
       onDone(msg);
       close();
     } catch (err) {
@@ -108,7 +129,7 @@ function DecisionForm({ sheet, action, onDone }: { sheet: ReleaseSheet; action: 
           권리·중복·보호명 등 <b>민감 항목</b>이 있어 바로 통과되지 않아요. 승인하면 <b>2차 승인 요청</b>이 만들어지고, 다른 심사 담당자가 승인해야 반영돼요.
         </div>
       )}
-      {action === 'REQUEST_CORRECTION' && open.length === 0 && (
+      {action === 'REQUEST_CORRECTION' && !application && open.length === 0 && (
         <div className="adm-alert is-error" style={{ marginTop: 14 }}>보완 요청할 미해결 검사 항목이 없어요.</div>
       )}
       <div className="adm-field" style={{ marginTop: 16 }}>
@@ -136,7 +157,7 @@ function DecisionForm({ sheet, action, onDone }: { sheet: ReleaseSheet; action: 
         <button type="button" className="adm-btn soft" onClick={close}>취소</button>
         <button
           type="submit" className={`adm-btn ${copy.btn}`}
-          disabled={busy || !reason.trim() || (action === 'REJECT' && !sure) || (action === 'REQUEST_CORRECTION' && open.length === 0)}
+          disabled={busy || !reason.trim() || (action === 'REJECT' && !sure) || (action === 'REQUEST_CORRECTION' && !application && open.length === 0)}
         >
           {busy ? '저장 중…' : copy.submit}
         </button>
@@ -237,6 +258,10 @@ export function ReviewDetail() {
   const r = sheet.release;
   const app = sheet.application;
   const inReview = r.status === 'STAGE2_REVIEW';
+  // 자동 검사를 통과했고 신청서(배급 계약서)가 검토 전인 새 발매 신청
+  const application = !inReview && r.status === 'READY_FOR_DELIVERY'
+    && sheet.documents.some(d => d.kind === 'AGREEMENT' && applicationPending(d.status));
+  const decidable = inReview || application;
   const pending = sheet.second_approvals.find(a => a.status === 'PENDING');
   const canReview = can('REVIEW');
   const tracks = app.tracks ?? [];
@@ -277,7 +302,7 @@ export function ReviewDetail() {
             {sheet.open_checks.length ? (
               <div className="adm-checks">{sheet.open_checks.map(c => <CheckCard key={c.check_code} c={c} open />)}</div>
             ) : (
-              <Empty title="담당자 판단이 필요한 항목이 없어요">{inReview ? '승인하면 바로 재평가돼요.' : '심사 대기 상태가 아니에요.'}</Empty>
+              <Empty title="담당자 판단이 필요한 항목이 없어요">{inReview ? '승인하면 바로 재평가돼요.' : application ? '자동 검사를 모두 통과했어요. 신청 정보를 확인하고 결정해 주세요.' : '심사 대기 상태가 아니에요.'}</Empty>
             )}
           </Section>
 
@@ -448,15 +473,19 @@ export function ReviewDetail() {
             <p>
               {inReview
                 ? `미해결 ${sheet.open_checks.length}건 · 수정본 ${shortId(r.revision_id)}`
-                : `지금은 ‘${pick(RELEASE_STATUS, r.status)[0]}’ 상태라 결정할 수 없어요.`}
+                : application
+                  ? `새 발매 신청 · 자동 검사 통과 · 수정본 ${shortId(r.revision_id)}`
+                  : `지금은 ‘${pick(RELEASE_STATUS, r.status)[0]}’ 상태라 결정할 수 없어요.`}
             </p>
             <div className="adm-decide-actions">
-              <button type="button" className="adm-btn primary" disabled={!inReview || !canReview || !!pending} onClick={() => setAction('APPROVE')}>승인</button>
-              <button type="button" className="adm-btn warn" disabled={!inReview || !canReview || sheet.open_checks.length === 0} onClick={() => setAction('REQUEST_CORRECTION')}>보완 요청</button>
-              <button type="button" className="adm-btn danger" disabled={!inReview || !canReview} onClick={() => setAction('REJECT')}>거절</button>
+              <button type="button" className="adm-btn primary" disabled={!decidable || !canReview || !!pending} onClick={() => setAction('APPROVE')}>승인</button>
+              <button type="button" className="adm-btn warn" disabled={!decidable || !canReview || (inReview && sheet.open_checks.length === 0)} onClick={() => setAction('REQUEST_CORRECTION')}>보완 요청</button>
+              <button type="button" className="adm-btn danger" disabled={!decidable || !canReview} onClick={() => setAction('REJECT')}>거절</button>
             </div>
             <div className="adm-decide-note">
-              승인은 검사 결과를 고치지 않고 통과 기록(override)을 남긴 뒤 파이프라인이 다시 평가해요. 권리·중복 등 민감 항목은 다른 담당자의 2차 승인이 필요해요.
+              {application
+                ? '승인하면 신청서(배급 계약서)가 승인되고 아티스트가 서명하면 배급이 시작돼요. 추가 서류가 필요하면 ‘권리 증빙 요청’으로 요청하세요 — 서류 검토에서 확인해요.'
+                : '승인은 검사 결과를 고치지 않고 통과 기록(override)을 남긴 뒤 파이프라인이 다시 평가해요. 권리·중복 등 민감 항목은 다른 담당자의 2차 승인이 필요해요.'}
             </div>
           </div>
           {!canReview && <NoDuty duty="발매 심사" />}
@@ -478,7 +507,7 @@ export function ReviewDetail() {
 
       {action && (
         <Modal title={ACTION_COPY[action].title} onClose={() => setAction(null)} dismissible={false}>
-          <DecisionForm sheet={sheet} action={action} onDone={after} />
+          <DecisionForm sheet={sheet} action={action} application={application} onDone={after} />
         </Modal>
       )}
       {modal === 'proof' && (

@@ -8,10 +8,10 @@ import type { Overview } from '../api';
 interface Tile { key: keyof Overview; label: string; hint: string; to: string; icon: string; alert?: boolean }
 
 const TILES: Tile[] = [
-  { key: 'review', label: '심사 대기', hint: '2차 검사에서 담당자 판단이 필요한 발매', to: '/admin/reviews', icon: 'review' },
+  { key: 'review', label: '심사 대기', hint: '새 발매 신청과 2차 검사에서 판단이 필요한 발매', to: '/admin/reviews', icon: 'review' },
   { key: 'second_approvals', label: '2차 승인', hint: '권리·중복 등 민감 항목의 두 번째 확인', to: '/admin/approvals', icon: 'approval' },
   { key: 'inquiries', label: '문의 답변 대기', hint: '아티스트가 남긴 답변 대기 문의', to: '/admin/inquiries', icon: 'inquiry' },
-  { key: 'documents', label: '서류 검토', hint: '계약서·권리 증빙 검토 대기', to: '/admin/documents', icon: 'doc' },
+  { key: 'documents', label: '서류 검토', hint: '요청한 권리 증빙 검토 대기', to: '/admin/documents', icon: 'doc' },
   { key: 'deliveries_to_approve', label: '배급 승인', hint: 'DSP별 전송 전 운영 승인', to: '/admin/deliveries', icon: 'delivery' },
   { key: 'deliveries_blocked', label: '배급 차단', hint: '콘텐츠 문제로 막힌 DSP 패키지', to: '/admin/deliveries', icon: 'delivery', alert: true },
   { key: 'correction', label: '보완 진행 중', hint: '아티스트가 수정 중인 발매', to: '/admin/reviews', icon: 'review' },

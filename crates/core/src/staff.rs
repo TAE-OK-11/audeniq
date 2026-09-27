@@ -12,6 +12,16 @@
 //! honours and queue a Stage 2 re-evaluation, so the pipeline (not this
 //! module) moves the release: PASS -> Stage 3, CORRECTION -> the artist.
 //! Only REJECT moves the status directly (STAGE2_REVIEW -> WITHDRAWN).
+//!
+//! The release review queue also holds every release whose signed
+//! application (the AGREEMENT document) still waits on staff: automatic
+//! checks can pass all the way to READY_FOR_DELIVERY, but delivery waits for
+//! the signed agreement (0048), and the agreement is decided here, with the
+//! release, not in the document queue. There APPROVE clears the agreement for
+//! signing, REQUEST_CORRECTION sends the release back to the artist
+//! (READY_FOR_DELIVERY -> STAGE3_CORRECTION) and REJECT closes it
+//! (READY_FOR_DELIVERY -> WITHDRAWN). The document queue keeps only the
+//! rights proofs staff asked for.
 use crate::{
     api::AppState,
     auth::{self, Actor},
@@ -164,26 +174,26 @@ pub async fn overview(s: &AppState, h: &HeaderMap) -> Result<Value> {
     staff(s, h, false).await?;
     let mut tx = s.pool.begin().await?;
     staff_scope(&mut tx).await?;
-    let row = sqlx::query(
+    let sql = format!(
         "SELECT
-           (SELECT count(*) FROM catalog.releases WHERE status='STAGE2_REVIEW' AND archived_at IS NULL) AS review,
+           (SELECT count(*) FROM catalog.releases r WHERE r.archived_at IS NULL AND {awaiting}) AS review,
            (SELECT count(*) FROM catalog.releases WHERE status LIKE '%\\_CORRECTION' AND archived_at IS NULL) AS correction,
            (SELECT count(*) FROM catalog.releases WHERE status IN ('SUBMITTED','STAGE1_RUNNING','STAGE1_PASSED','STAGE2_RUNNING','STAGE2_PASSED','STAGE3_PREPARING')) AS in_pipeline,
            (SELECT count(*) FROM rights.staff_approvals WHERE status='PENDING' AND expires_at>now()) AS second_approvals,
-           (SELECT count(*) FROM portal.documents WHERE status='REVIEW') AS documents,
+           (SELECT count(*) FROM portal.documents WHERE kind='RIGHTS_PROOF' AND status='REVIEW') AS documents,
            (SELECT count(*) FROM portal.inquiries WHERE status='OPEN') AS inquiries,
            (SELECT count(*) FROM distribution.delivery_staging s JOIN catalog.releases r ON r.id=s.release_id AND r.current_revision_id=s.revision_id
-              WHERE s.approval='PENDING' AND s.readiness<>'CONTENT_BLOCKED') AS deliveries_to_approve,
+              WHERE s.approval='PENDING' AND s.readiness<>'CONTENT_BLOCKED' AND r.status<>'WITHDRAWN') AS deliveries_to_approve,
            (SELECT count(*) FROM distribution.delivery_staging s JOIN catalog.releases r ON r.id=s.release_id AND r.current_revision_id=s.revision_id
-              WHERE s.readiness='CONTENT_BLOCKED') AS deliveries_blocked,
+              WHERE s.readiness='CONTENT_BLOCKED' AND r.status<>'WITHDRAWN') AS deliveries_blocked,
            (SELECT count(DISTINCT s.release_id) FROM distribution.delivery_staging s
               JOIN catalog.releases r ON r.id=s.release_id AND r.current_revision_id=s.revision_id
               WHERE s.approval='PENDING'
               AND EXISTS(SELECT 1 FROM jsonb_array_elements(s.checks) c WHERE c->>'code' IN ('DSP_LOUDNESS_ADVISORY','DSP_CLIPPING_ADVISORY'))) AS audio_advisories,
            (SELECT count(*) FROM portal.payout_requests WHERE status='REQUESTED') AS payout_requests",
-    )
-    .fetch_one(&mut *tx)
-    .await?;
+        awaiting = AWAITING_DECISION
+    );
+    let row = sqlx::query(&sql).fetch_one(&mut *tx).await?;
     tx.commit().await?;
     let n = |k: &str| row.get::<i64, _>(k);
     Ok(json!({
@@ -199,7 +209,20 @@ pub async fn overview(s: &AppState, h: &HeaderMap) -> Result<Value> {
 // Release review
 // ---------------------------------------------------------------------------
 
+/// `r` (catalog.releases) waits on a staff decision in 발매 심사: parked by
+/// Stage 2, or through the automatic checks with its signed application
+/// (AGREEMENT) not yet decided. Mid-pipeline releases show up once the
+/// pipeline settles, so the reviewer always sees final check results.
+const AWAITING_DECISION: &str =
+    "(r.status='STAGE2_REVIEW' OR (r.status='READY_FOR_DELIVERY' AND EXISTS(
+    SELECT 1 FROM portal.documents d WHERE d.org_id=r.org_id AND d.release_id=r.id
+     AND d.kind='AGREEMENT' AND d.status IN ('REVIEW','PREPARED'))))";
+
+/// Queue filter for [`AWAITING_DECISION`] (the default).
+const PENDING_FILTER: &str = "PENDING";
+
 const RELEASE_STATUSES: &[&str] = &[
+    PENDING_FILTER,
     "SUBMITTED",
     "STAGE1_RUNNING",
     "STAGE1_CORRECTION",
@@ -217,31 +240,39 @@ const RELEASE_STATUSES: &[&str] = &[
 
 pub async fn list_releases(s: &AppState, h: &HeaderMap, p: Page) -> Result<Value> {
     staff(s, h, false).await?;
-    let status = p.status.as_deref().unwrap_or("STAGE2_REVIEW");
+    let status = p.status.as_deref().unwrap_or(PENDING_FILTER);
     if !RELEASE_STATUSES.contains(&status) {
         return Err(Error::InvalidCode("STATUS_UNKNOWN"));
     }
     let (limit, offset) = p.bounds();
-    let items: Vec<Value> = sqlx::query_scalar(
+    let filter = if status == PENDING_FILTER {
+        AWAITING_DECISION
+    } else {
+        "r.status=$1"
+    };
+    let sql = format!(
         "SELECT jsonb_build_object(
            'id', r.id, 'org_id', r.org_id, 'org_name', o.name, 'title', r.title,
            'release_type', r.release_type, 'status', r.status, 'revision_id', r.current_revision_id,
-           'artist', ar.body #>> '{release,draft,artist}',
-           'release_date', ar.body #>> '{release,draft,release_date}',
+           'artist', ar.body #>> '{{release,draft,artist}}',
+           'release_date', ar.body #>> '{{release,draft,release_date}}',
            'submitted_at', ar.created_at,
-           'platforms', COALESCE(ar.body #> '{release,draft,platforms}', '[]'::jsonb))
+           'platforms', COALESCE(ar.body #> '{{release,draft,platforms}}', '[]'::jsonb),
+           'agreement', (SELECT d.status FROM portal.documents d
+                          WHERE d.org_id=r.org_id AND d.release_id=r.id AND d.kind='AGREEMENT'))
          FROM catalog.releases r
          JOIN identity.orgs o ON o.id=r.org_id
          LEFT JOIN catalog.application_revisions ar ON ar.org_id=r.org_id AND ar.id=r.current_revision_id
-         WHERE r.status=$1 AND r.archived_at IS NULL
+         WHERE $1::text IS NOT NULL AND {filter} AND r.archived_at IS NULL
          ORDER BY ar.created_at NULLS LAST, r.id
-         LIMIT $2 OFFSET $3",
-    )
-    .bind(status)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(&s.pool)
-    .await?;
+         LIMIT $2 OFFSET $3"
+    );
+    let items: Vec<Value> = sqlx::query_scalar(&sql)
+        .bind(status)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&s.pool)
+        .await?;
     let items: Vec<Value> = items
         .into_iter()
         .map(|mut v| {
@@ -499,7 +530,8 @@ fn sensitive(c: &OpenCheck) -> bool {
     c.status == "BLOCKED" || review::needs_second_approver(&c.code, "PASS")
 }
 
-async fn locked_review_release(
+/// Lock the release on the revision the reviewer looked at: (org, status).
+async fn locked_release(
     c: &mut PgConnection,
     release: Uuid,
     revision: Uuid,
@@ -514,11 +546,159 @@ async fn locked_review_release(
     if row.get::<Option<Uuid>, _>("current_revision_id") != Some(revision) {
         return Err(Error::Conflict);
     }
-    let status: String = row.get("status");
+    Ok((row.get("org_id"), row.get("status")))
+}
+
+async fn locked_review_release(
+    c: &mut PgConnection,
+    release: Uuid,
+    revision: Uuid,
+) -> Result<(Uuid, String)> {
+    let (org, status) = locked_release(c, release, revision).await?;
     if status != "STAGE2_REVIEW" {
         return Err(Error::PolicyGate("RELEASE_NOT_IN_REVIEW"));
     }
-    Ok((row.get("org_id"), status))
+    Ok((org, status))
+}
+
+/// The release's signed application (AGREEMENT) still waiting on staff.
+async fn pending_agreement(c: &mut PgConnection, org: Uuid, release: Uuid) -> Result<Option<Uuid>> {
+    Ok(sqlx::query_scalar(
+        "SELECT id FROM portal.documents
+         WHERE org_id=$1 AND release_id=$2 AND kind='AGREEMENT' AND status IN ('REVIEW','PREPARED')
+         FOR UPDATE",
+    )
+    .bind(org)
+    .bind(release)
+    .fetch_optional(&mut *c)
+    .await?)
+}
+
+/// Decide the release's agreement together with the release. `REJECTED`
+/// closes every unsigned agreement of the release so it can never be signed;
+/// the other outcomes only touch one still waiting on staff.
+async fn decide_agreement(
+    c: &mut PgConnection,
+    org: Uuid,
+    release: Uuid,
+    status: &str,
+    note: &str,
+    actor: &Actor,
+) -> Result<()> {
+    let note: String = note.chars().take(1000).collect();
+    let ids: Vec<Uuid> = sqlx::query_scalar(
+        "UPDATE portal.documents SET status=$3, review_note=$4, row_version=row_version+1, updated_at=now()
+         WHERE org_id=$1 AND release_id=$2 AND kind='AGREEMENT'
+           AND (status IN ('REVIEW','PREPARED') OR ($3='REJECTED' AND status NOT IN ('SIGNED','REJECTED')))
+         RETURNING id",
+    )
+    .bind(org)
+    .bind(release)
+    .bind(status)
+    .bind(&note)
+    .fetch_all(&mut *c)
+    .await?;
+    for id in ids {
+        operations::audit(
+            c,
+            Some(actor.user),
+            Some(org),
+            Some(id),
+            "staff.document_reviewed",
+            status,
+            actor.request,
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// A release through the automatic checks (READY_FOR_DELIVERY) whose signed
+/// application waits on staff. Nothing has been sent (delivery waits for the
+/// SIGNED agreement), so a correction or rejection only has to move the
+/// release: STAGE3_CORRECTION lets the artist fix and resubmit (the new
+/// application puts the agreement back in review), WITHDRAWN closes it.
+async fn decide_application(
+    c: &mut PgConnection,
+    org: Uuid,
+    release: Uuid,
+    i: &DecisionInput,
+    reason: &str,
+    actor: &Actor,
+) -> Result<Value> {
+    let (agreement, next, audit_action) = match i.action.as_str() {
+        "APPROVE" => ("APPROVED", None, "staff.approved"),
+        "REQUEST_CORRECTION" => (
+            "NEEDS",
+            Some("STAGE3_CORRECTION"),
+            "staff.correction_requested",
+        ),
+        "REJECT" => ("REJECTED", Some("WITHDRAWN"), "staff.rejected"),
+        _ => return Err(Error::InvalidCode("DECISION_ACTION_UNKNOWN")),
+    };
+    write_note(
+        c,
+        org,
+        release,
+        i.revision_id,
+        None,
+        &i.action,
+        reason,
+        actor.user,
+    )
+    .await?;
+    if next.is_some() {
+        for n in &i.notes {
+            write_note(
+                c,
+                org,
+                release,
+                i.revision_id,
+                Some(n.check_code.as_str()),
+                &i.action,
+                &n.note,
+                actor.user,
+            )
+            .await?;
+        }
+    }
+    // The approval reason is the reviewer's record; the artist only needs
+    // the correction / rejection reason.
+    let note = if next.is_some() { reason } else { "" };
+    decide_agreement(c, org, release, agreement, note, actor).await?;
+    let result = match next {
+        Some(next) => {
+            let moved = sqlx::query(
+                "UPDATE catalog.releases SET status=$2, row_version=row_version+1
+                 WHERE id=$1 AND status='READY_FOR_DELIVERY'",
+            )
+            .bind(release)
+            .bind(next)
+            .execute(&mut *c)
+            .await?
+            .rows_affected();
+            if moved == 0 {
+                return Err(Error::Conflict);
+            }
+            json!({"result": if next == "WITHDRAWN" { "REJECTED" } else { "APPLIED" }, "status": next})
+        }
+        None => json!({"result": "APPLIED", "agreement": "APPROVED"}),
+    };
+    let reason_code = match next {
+        Some(next) => format!("READY_FOR_DELIVERY->{next}"),
+        None => "APPLICATION:APPROVED".to_owned(),
+    };
+    operations::audit(
+        c,
+        Some(actor.user),
+        Some(org),
+        Some(release),
+        audit_action,
+        &reason_code,
+        actor.request,
+    )
+    .await?;
+    Ok(result)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -600,7 +780,16 @@ pub async fn decide(s: &AppState, h: &HeaderMap, release: Uuid, i: DecisionInput
         crate::text_policy::check(&n.check_code)?;
     }
     let mut tx = s.pool.begin().await?;
-    let (org, _) = locked_review_release(&mut tx, release, i.revision_id).await?;
+    let (org, status) = locked_release(&mut tx, release, i.revision_id).await?;
+    let agreement = pending_agreement(&mut tx, org, release).await?;
+    if status != "STAGE2_REVIEW" {
+        if status != "READY_FOR_DELIVERY" || agreement.is_none() {
+            return Err(Error::PolicyGate("RELEASE_NOT_IN_REVIEW"));
+        }
+        let out = decide_application(&mut tx, org, release, &i, reason, &st.actor).await?;
+        tx.commit().await?;
+        return Ok(out);
+    }
     let open = open_checks(&mut tx, i.revision_id).await?;
     let user = st.actor.user;
     let request = st.actor.request;
@@ -672,6 +861,7 @@ pub async fn decide(s: &AppState, h: &HeaderMap, release: Uuid, i: DecisionInput
                     request,
                 )
                 .await?;
+                decide_agreement(&mut tx, org, release, "APPROVED", "", &st.actor).await?;
                 json!({"result": "APPLIED", "reevaluation_queued": queued, "passed": open.iter().map(|c| &c.code).collect::<Vec<_>>()})
             }
         }
@@ -730,6 +920,7 @@ pub async fn decide(s: &AppState, h: &HeaderMap, release: Uuid, i: DecisionInput
                 request,
             )
             .await?;
+            decide_agreement(&mut tx, org, release, "NEEDS", reason, &st.actor).await?;
             json!({"result": "APPLIED", "reevaluation_queued": queued})
         }
         "REJECT" => {
@@ -773,6 +964,7 @@ pub async fn decide(s: &AppState, h: &HeaderMap, release: Uuid, i: DecisionInput
                 request,
             )
             .await?;
+            decide_agreement(&mut tx, org, release, "REJECTED", reason, &st.actor).await?;
             json!({"result": "REJECTED", "status": "WITHDRAWN"})
         }
         _ => return Err(Error::InvalidCode("DECISION_ACTION_UNKNOWN")),
@@ -870,6 +1062,7 @@ pub async fn decide_second_approval(
         st.actor.request,
     )
     .await?;
+    decide_agreement(&mut tx, org, release, "APPROVED", "", &st.actor).await?;
     tx.commit().await?;
     Ok(json!({"result": "APPLIED", "reevaluation_queued": queued}))
 }
@@ -1001,22 +1194,14 @@ pub async fn list_second_approvals(s: &AppState, h: &HeaderMap) -> Result<Value>
 }
 
 // ---------------------------------------------------------------------------
-// Documents (agreements, rights proofs)
+// Documents: the rights proofs staff asked for. Agreements (the signed
+// release application) are decided with the release in `decide`.
 // ---------------------------------------------------------------------------
 
 pub async fn list_documents(s: &AppState, h: &HeaderMap, p: Page) -> Result<Value> {
     staff(s, h, false).await?;
     let status = p.status.as_deref().unwrap_or("REVIEW");
-    if ![
-        "AWAITING_DOCUMENTS",
-        "REVIEW",
-        "PREPARED",
-        "APPROVED",
-        "NEEDS",
-        "SIGNED",
-    ]
-    .contains(&status)
-    {
+    if !["AWAITING_DOCUMENTS", "REVIEW", "APPROVED", "NEEDS"].contains(&status) {
         return Err(Error::InvalidCode("STATUS_UNKNOWN"));
     }
     let (limit, offset) = p.bounds();
@@ -1026,7 +1211,7 @@ pub async fn list_documents(s: &AppState, h: &HeaderMap, p: Page) -> Result<Valu
                 'file_name',d.file_name,'asset_id',d.asset_id,'row_version',d.row_version,'updated_at',d.updated_at)
          FROM portal.documents d JOIN identity.orgs o ON o.id=d.org_id
          LEFT JOIN catalog.releases r ON r.id=d.release_id
-         WHERE d.status=$1 ORDER BY d.updated_at LIMIT $2 OFFSET $3",
+         WHERE d.kind='RIGHTS_PROOF' AND d.status=$1 ORDER BY d.updated_at LIMIT $2 OFFSET $3",
     )
     .bind(status)
     .bind(limit)
@@ -1062,12 +1247,11 @@ pub async fn review_document(
     }
     note_ok(&i.note, 1000)?;
     let mut tx = s.pool.begin().await?;
-    // Only documents waiting on staff can be decided: agreements in
-    // REVIEW/PREPARED, rights proofs in REVIEW.
+    // Only submitted rights proofs are decided here; agreements go with the
+    // release through `decide`.
     let row = sqlx::query(
         "UPDATE portal.documents SET status=$2, review_note=$3, row_version=row_version+1, updated_at=now()
-         WHERE id=$1 AND row_version=$4
-           AND ((kind='AGREEMENT' AND status IN ('REVIEW','PREPARED')) OR (kind='RIGHTS_PROOF' AND status='REVIEW'))
+         WHERE id=$1 AND row_version=$4 AND kind='RIGHTS_PROOF' AND status='REVIEW'
          RETURNING org_id, row_version",
     )
     .bind(id)

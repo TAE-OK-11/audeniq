@@ -184,7 +184,8 @@ function toDoc(d: ServerDocument): DocRecord {
 
 export async function fetchDocuments(): Promise<DocRecord[]> {
   const r = await req<{ items: ServerDocument[] }>(orgPath('/documents'));
-  return r.items.map(toDoc);
+  // 반려된 발매의 신청서(REJECTED)는 서명할 수 없어 목록에서 뺀다. 반려는 발매 상태(종료)와 알림으로 안내된다.
+  return r.items.filter(d => d.status !== 'REJECTED').map(toDoc);
 }
 
 export async function checkDocument(id: string): Promise<number> {
