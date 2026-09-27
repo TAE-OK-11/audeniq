@@ -8,7 +8,7 @@
 // - 트랙은 아티스트 ID·자산 ID로 연결, 파일은 서명 URL로 R2에 직접 업로드
 // - 접수 = 동의(consent) 생성 → submit(동의 ID, 자기 선언)
 import type {
-  Correction,
+  Correction, WithdrawQuota,
   DeliveryItem,
   DraftTrack, Org, PreflightIssue, Release, ReleaseDetail, ReleaseDraft, ReleasePayload,
   SaveResult, Track, UploadKind, UploadResult, User,
@@ -63,8 +63,8 @@ export function uiStatus(server: string, live = false, agreement: string | null 
   if (live && agreement === 'SIGNED') return 'live';
   if (server === 'DRAFT') return 'draft';
   // 철회·반려(WITHDRAWN)와 대체(SUPERSEDED)는 더 수정할 수 없는 종료 상태
-  // 담당자 거절(WITHDRAWN)은 발매 거절, 대체(SUPERSEDED)는 더 수정할 수 없는 종료 상태
-  if (server === 'WITHDRAWN') return 'rejected';
+  // WITHDRAWN: 아티스트·담당자 취소(계약서 CANCELLED)는 신청 취소, 그 외는 담당자 거절
+  if (server === 'WITHDRAWN') return agreement === 'CANCELLED' ? 'cancelled' : 'rejected';
   if (server === 'SUPERSEDED') return 'closed';
   if (/CORRECTION$/.test(server) || server === 'ON_HOLD_RIGHTS') return 'needs';
   if (server === 'READY_FOR_DELIVERY') {
@@ -580,6 +580,13 @@ export const remoteApi = {
     }
     const fresh = await fetchRelease(rel.id);
     return { ...toSummary(fresh), updated_at: stampNow() };
+  },
+  async withdrawRelease(id: string): Promise<WithdrawQuota> {
+    const r = await req<{ quota: WithdrawQuota }>(`${detailPath(id)}/withdraw`, { method: 'POST', body: {} });
+    return r.quota;
+  },
+  async withdrawQuota(): Promise<WithdrawQuota> {
+    return req<WithdrawQuota>(orgPath('/withdrawals'));
   },
   async deleteRelease(id: string): Promise<void> {
     const rel = await fetchRelease(id);

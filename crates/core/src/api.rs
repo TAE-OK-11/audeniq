@@ -96,6 +96,11 @@ pub fn router(s: AppState) -> Router {
         )
         .route("/api/orgs/{org}/releases/{id}/submit", post(submit))
         .route(
+            "/api/orgs/{org}/releases/{id}/withdraw",
+            post(withdraw_release),
+        )
+        .route("/api/orgs/{org}/withdrawals", get(withdraw_quota))
+        .route(
             "/api/orgs/{org}/releases/{id}/submission",
             get(submission_status),
         )
@@ -481,6 +486,24 @@ async fn submit(
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, true).await?;
     Ok(Json(submission::submit(&s, &a, org, id, i).await?))
+}
+async fn withdraw_release(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, true).await?;
+    Ok(Json(
+        crate::withdraw::withdraw_by_artist(&s.pool, &a, org, id).await?,
+    ))
+}
+async fn withdraw_quota(
+    State(s): State<AppState>,
+    Path(org): Path<Uuid>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    Ok(Json(crate::withdraw::quota(&s.pool, &a, org).await?))
 }
 async fn presubmit(
     State(s): State<AppState>,

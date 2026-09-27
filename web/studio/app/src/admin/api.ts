@@ -157,6 +157,8 @@ const remote = {
   releases: (status: string, offset = 0) => req<Page<QueueRelease>>(`/api/staff/releases${qs({ status, limit: 50, offset })}`),
   release: (rid: string) => req<ReleaseSheet>(`/api/staff/releases/${id(rid)}`),
   decide: (rid: string, body: DecisionInput) => req<DecisionResult>(`/api/staff/releases/${id(rid)}/decision`, { method: 'POST', body }),
+  /** 아티스트 요청(문의)으로 발매 신청 취소 — 월 3회 직접 취소 한도와 무관 */
+  withdraw: (rid: string, reason: string) => req<{ status: string }>(`/api/staff/releases/${id(rid)}/withdraw`, { method: 'POST', body: { reason } }),
   reissue: (rid: string, reason: string) => req<{ status: string }>(`/api/staff/releases/${id(rid)}/reissue-identifiers`, { method: 'POST', body: { reason } }),
   approvals: () => req<Page<ApprovalItem>>('/api/staff/approvals'),
   approve: (aid: string) => req<{ result: string }>(`/api/staff/approvals/${id(aid)}/approve`, { method: 'POST' }),

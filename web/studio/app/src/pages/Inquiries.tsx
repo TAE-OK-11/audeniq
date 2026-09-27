@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from '../lib/router';
 import { Modal, useModalClose } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
@@ -81,14 +82,23 @@ function TicketThread({ ticket, onClosed }: { ticket: Ticket; onClosed: () => vo
 
 const CATEGORIES = ['발매·심사', '수정·테이크다운', '정산·지급', '계약·권리', '계정·기타'];
 
-function TicketForm({ onSave }: { onSave: (t: Omit<Ticket, 'id' | 'created' | 'status'>) => void }) {
+/** 발매 상세의 ‘문의로 취소 요청’ — 내용을 미리 채워 두어 누르기만 하면 되게 */
+interface TicketPreset { category: string; releaseId: string; subject: string; body: string }
+
+function TicketForm({ onSave, preset }: { onSave: (t: Omit<Ticket, 'id' | 'created' | 'status'>) => void; preset?: TicketPreset | null }) {
   const close = useModalClose();
   const toast = useToast();
   const { data: releases = [] } = useAsync(() => api.listReleases(), []);
-  const [category, setCategory] = useState(CATEGORIES[0]);
-  const [releaseId, setReleaseId] = useState('');
-  const [subject, setSubject] = useState('');
-  const [body, setBody] = useState('');
+  const [category, setCategory] = useState(preset?.category ?? CATEGORIES[0]);
+  const [releaseId, setReleaseId] = useState(preset?.releaseId ?? '');
+  const [subject, setSubject] = useState(preset?.subject ?? '');
+  const [body, setBody] = useState(preset?.body ?? '');
+  // 발매 목록을 받은 뒤 제목을 채운다
+  useEffect(() => {
+    if (!preset?.releaseId || subject !== preset.subject) return;
+    const title = releases.find(r => r.id === preset.releaseId)?.title;
+    if (title) setSubject(`[발매 취소 요청] ${title}`);
+  }, [releases]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -134,7 +144,14 @@ export function Inquiries() {
   const toast = useToast();
   const confirm = useConfirm();
   const tickets = ticketsStore.use();
-  const [showForm, setShowForm] = useState(false);
+  const [params, setParams] = useSearchParams();
+  const cancelFor = params.get('new') === 'cancel' ? params.get('release') ?? '' : '';
+  const [showForm, setShowForm] = useState(!!cancelFor);
+  const [preset] = useState<TicketPreset | null>(() => (cancelFor ? {
+    category: CATEGORIES[0], releaseId: cancelFor, subject: '[발매 취소 요청]',
+    body: '이 발매 신청을 취소해 주세요.\n\n취소 사유: ',
+  } : null));
+  useEffect(() => { if (cancelFor) setParams({}, { replace: true }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [openId, setOpenId] = useState<string | null>(null);
   const openTicket = tickets.find(t => t.id === openId) ?? null;
 
@@ -185,6 +202,7 @@ export function Inquiries() {
       {showForm && (
         <Modal title="새 문의 작성" onClose={() => setShowForm(false)} dismissible={false}>
           <TicketForm
+            preset={preset}
             onSave={async t => {
               if (!MOCK) {
                 try {

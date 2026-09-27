@@ -99,6 +99,9 @@ export interface CoverTrackData {
   trackId: string; originalTitle: string; originalArtist: string; originalWriters: string;
 }
 
+/** 이번 달 직접 취소할 수 있는 횟수 (조직 단위, 매월 1일 초기화) */
+export interface WithdrawQuota { limit: number; used: number; remaining: number }
+
 export interface ReleaseOptionsData {
   express: boolean; expressAck: boolean; expressReason: string;
   minor: boolean;
@@ -109,6 +112,7 @@ export interface ReleaseOptionsData {
   sample: boolean; sampleLicenseFile: string;
   featured: boolean; featuredConsentFile: string;
   ai: boolean; aiTool: string;
+  aiUses?: string[]; aiTools?: string[]; aiUseOther?: string; aiToolOther?: string;
   shared: boolean; sharedContractFile: string;
   rerelease: boolean; previousTitle: string; previousId: string;
 }

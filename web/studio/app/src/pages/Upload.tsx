@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, memo, useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from '../lib/router';
 import { useToast } from '../components/Toast';
 import { Modal } from '../components/Modal';
@@ -82,6 +82,8 @@ interface ReleaseOptions {
   sample: boolean; sampleLicenseFile: string;
   featured: boolean; featuredConsentFile: string;
   ai: boolean; aiTool: string;
+  /** 버튼으로 고른 AI 활용 방식·도구 (aiTool은 이걸 합친 문장) */
+  aiUses: string[]; aiTools: string[]; aiUseOther: string; aiToolOther: string;
   shared: boolean; sharedContractFile: string;
   rerelease: boolean; previousTitle: string; previousId: string;
 }
@@ -117,7 +119,7 @@ const EMPTY_OPTIONS: ReleaseOptions = {
   cover: false, coverTracks: [], coverRightsAck: false, coverLicenseFile: '',
   sample: false, sampleLicenseFile: '',
   featured: false, featuredConsentFile: '',
-  ai: false, aiTool: '',
+  ai: false, aiTool: '', aiUses: [], aiTools: [], aiUseOther: '', aiToolOther: '',
   shared: false, sharedContractFile: '',
   rerelease: false, previousTitle: '', previousId: '',
 };
@@ -318,146 +320,364 @@ function GuardianConsentModal({ guardianName, onClose, onComplete }: {
   );
 }
 
-function OptionsSection({ form, set }: {
+const DSP_DOMESTIC = ['melon', 'genie', 'flo', 'bugs'];
+/** 플랫폼 구분용 색 (로고 대신 첫 글자 배지) */
+const DSP_COLOR: Record<string, string> = {
+  melon: '#00c73c', genie: '#1d6bf3', flo: '#3f3fff', bugs: '#ff3a3a', spotify: '#1db954', apple: '#fa2d48',
+  youtube: '#ff0033', amazon: '#1ec8d6', tidal: '#111827', deezer: '#a238ff', qobuz: '#1f2a44',
+};
+
+const OTHER = '기타';
+const AI_USES = [
+  '전체를 AI로 제작했어요', '작곡(멜로디)에 AI 도움을 받았어요', '작사에 AI 도움을 받았어요', 'AI로 보컬(목소리)을 만들었어요',
+  '편곡·반주에 AI를 사용했어요', '믹싱·마스터링에 AI 도구를 썼어요', '커버아트를 AI로 만들었어요',
+];
+const AI_TOOLS = ['Suno', 'Udio', 'ChatGPT', 'Stable Audio', 'AIVA', 'Midjourney'];
+const EXPRESS_REASONS = ['공연 일정에 맞춰야 해요', '방송·광고 일정이 있어요', '이벤트·프로모션 일정이 있어요', '영상·드라마 공개일에 맞춰야 해요'];
+
+/** 버튼으로 고르는 선택지 — 직접 타이핑은 ‘기타’를 눌렀을 때만 */
+function ChipPicker({ id, options, value, onChange, other, onOther, otherPlaceholder, single }: {
+  id: string; options: string[]; value: string[]; onChange: (v: string[]) => void;
+  other?: string; onOther?: (v: string) => void; otherPlaceholder?: string; single?: boolean;
+}) {
+  const toggle = (opt: string) => {
+    const on = value.includes(opt);
+    onChange(single ? (on ? [] : [opt]) : on ? value.filter(v => v !== opt) : [...value, opt]);
+  };
+  const all = onOther ? [...options, OTHER] : options;
+  return (
+    <div className="aq-chip-picker" id={id}>
+      <div className="aq-chips" role="group">
+        {all.map(opt => (
+          <button key={opt} type="button" className={`aq-chip${value.includes(opt) ? ' is-on' : ''}`} aria-pressed={value.includes(opt)} onClick={() => toggle(opt)}>
+            {value.includes(opt) && <span aria-hidden="true">✓ </span>}{opt === OTHER ? '기타 (직접 입력)' : opt}
+          </button>
+        ))}
+      </div>
+      {onOther && value.includes(OTHER) && (
+        <input className="aq-chip-other" maxLength={300} value={other ?? ''} placeholder={otherPlaceholder} onChange={e => onOther(e.target.value)} autoFocus />
+      )}
+    </div>
+  );
+}
+
+/** 고른 버튼을 심사용 문장으로 합친다 */
+function aiSummary(o: Pick<ReleaseOptions, 'aiUses' | 'aiTools' | 'aiUseOther' | 'aiToolOther'>): string {
+  const uses = o.aiUses.map(u => (u === OTHER ? o.aiUseOther.trim() : u)).filter(Boolean);
+  const tools = o.aiTools.map(t => (t === OTHER ? o.aiToolOther.trim() : t)).filter(Boolean);
+  return [uses.join(' · '), tools.length ? `도구: ${tools.join(', ')}` : ''].filter(Boolean).join(' / ');
+}
+
+function OptionsSection({ form, set, group }: {
   form: WizardForm;
+  group: 'service' | 'rights';
   set: <K extends keyof WizardForm>(key: K, value: WizardForm[K]) => void;
 }) {
   const o = form.options;
   const setOpt = <K extends keyof ReleaseOptions>(key: K, value: ReleaseOptions[K]) =>
     set('options', { ...o, [key]: value });
   const [showGuardianModal, setShowGuardianModal] = useState(false);
+  const [expressOther, setExpressOther] = useState(false);
+  // 예전 신청서(직접 입력한 aiTool만 있음)는 ‘기타’로 보여 준다
+  const aiUses = o.aiUses?.length ? o.aiUses : o.aiTool ? [OTHER] : [];
+  const aiUseOther = o.aiUses?.length ? o.aiUseOther ?? '' : o.aiTool;
+  const setAi = (patch: Partial<ReleaseOptions>) => {
+    const next = { aiUses, aiTools: o.aiTools ?? [], aiUseOther, aiToolOther: o.aiToolOther ?? '', ...patch };
+    set('options', { ...o, ...next, aiTool: aiSummary(next) });
+  };
+  const expressPick = !o.expressReason ? (expressOther ? [OTHER] : []) : EXPRESS_REASONS.includes(o.expressReason) ? [o.expressReason] : [OTHER];
+
+  // 선택한 카드 바로 밑에 여는 입력 (목록 맨 아래가 아니라)
+  const detail: Partial<Record<keyof ReleaseOptions, React.ReactNode>> = {
+    express: (
+      <div className="aq-option-detail">
+        <h3>신속 발매 요청</h3>
+        <p className="aq-option-intro">신속 발매는 가능 여부와 조건을 확인한 뒤 진행해요. 특정 발매일이나 플랫폼 송출을 보장하지 않아요.</p>
+        <div className="field">
+          <label htmlFor="aqExpressReason">신속 발매가 필요한 이유 (선택)</label>
+          <ChipPicker
+            id="aqExpressReason" single options={EXPRESS_REASONS} value={expressPick}
+            onChange={v => { setExpressOther(v[0] === OTHER); setOpt('expressReason', v[0] && v[0] !== OTHER ? v[0] : ''); }}
+            other={EXPRESS_REASONS.includes(o.expressReason) ? '' : o.expressReason} onOther={v => setOpt('expressReason', v)}
+            otherPlaceholder="신속 발매가 필요한 이유"
+          />
+        </div>
+        <label className="check-line">
+          <input
+            type="checkbox" id="aqExpressAck"
+            checked={o.expressAck}
+            onChange={e => setOpt('expressAck', e.target.checked)}
+          />
+          <span>가능한 일정과 비용 등 별도 안내를 확인한 후 진행할게요.<small>신청 단계에서 추가 비용이 자동 결제되지는 않아요.</small></span>
+        </label>
+      </div>
+    ),
+    minor: (
+      <div className="aq-option-detail">
+        <h3>법정대리인 확인</h3>
+        <p className="aq-option-intro">본인 및 권리자의 동의 범위를 확인할 수 있도록 보호자 정보를 입력해 주세요. 법정대리인은 2명을 입력하는 것이 원칙이지만, 1명인 경우도 접수할 수 있어요.</p>
+        <h4 className="aq-guardian-head">법정대리인 1</h4>
+        <div className="field">
+          <label htmlFor="aqGuardian">법정대리인 성명 <span className="required">*</span></label>
+          <input
+            id="aqGuardian" autoComplete="name" maxLength={90} value={o.guardian}
+            onChange={e => setOpt('guardian', e.target.value)}
+            placeholder="법정대리인 성명"
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="aqGuardianRelation">아티스트와의 관계 <span className="required">*</span></label>
+          <select
+            id="aqGuardianRelation" value={o.guardianRelation}
+            onChange={e => setOpt('guardianRelation', e.target.value)}
+          >
+            <option value="">관계를 선택해 주세요.</option>
+            {['부', '모', '기타 법정대리인'].map(x => (
+              <option key={x} value={x}>{x}</option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="aqGuardianContact">법정대리인 연락처 또는 이메일 <span className="required">*</span></label>
+          <input
+            id="aqGuardianContact" maxLength={160} value={o.guardianContact}
+            onChange={e => setOpt('guardianContact', e.target.value)}
+            placeholder="확인이 가능한 연락처"
+          />
+        </div>
+        <h4 className="aq-guardian-head">법정대리인 2 <small>(해당하는 경우)</small></h4>
+        <div className="field">
+          <label htmlFor="aqGuardian2">법정대리인 성명</label>
+          <input
+            id="aqGuardian2" autoComplete="name" maxLength={90} value={o.guardian2}
+            onChange={e => setOpt('guardian2', e.target.value)}
+            placeholder="법정대리인 성명"
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="aqGuardian2Relation">아티스트와의 관계</label>
+          <select
+            id="aqGuardian2Relation" value={o.guardian2Relation}
+            onChange={e => setOpt('guardian2Relation', e.target.value)}
+          >
+            <option value="">관계를 선택해 주세요.</option>
+            {['부', '모', '기타 법정대리인'].map(x => (
+              <option key={x} value={x}>{x}</option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="aqGuardian2Contact">법정대리인 연락처 또는 이메일</label>
+          <input
+            id="aqGuardian2Contact" maxLength={160} value={o.guardian2Contact}
+            onChange={e => setOpt('guardian2Contact', e.target.value)}
+            placeholder="확인이 가능한 연락처"
+          />
+        </div>
+        <div className="field">
+          <label>법정대리인 동의</label>
+          <button
+            type="button" className="button secondary" style={{ width: '100%' }}
+            onClick={() => setShowGuardianModal(true)}
+          >
+            {o.guardianConsentDone ? '법정대리인 동의 완료 ✓ (다시 진행)' : '법정대리인 동의 진행하기'}
+          </button>
+          <p className="help">
+            {o.guardianConsentDone
+              ? `동의 완료${o.familyCertName ? ` · 가족관계증명서: ${o.familyCertName}` : ''}`
+              : '동의창에서 법정대리인 서명과 가족관계증명서를 제출해요.'}
+          </p>
+        </div>
+        <p className="aq-option-note">법정대리인 정보 입력만으로 본인 확인이나 동의 검증이 완료되지는 않아요. 담당자 확인 후 서명 단계를 안내해요.</p>
+      </div>
+    ),
+    cover: (
+      <div className="aq-option-detail">
+        <h3>커버곡 정보</h3>
+        <p className="aq-option-intro">커버한 트랙을 선택하고, 원곡 정보를 입력해 주세요.</p>
+        {form.tracks.map((t, i) => {
+          const info = o.coverTracks.find(c => c.trackId === t.id);
+          const toggleCover = (checked: boolean) => {
+            setOpt('coverTracks', checked
+              ? [...o.coverTracks, { trackId: t.id, originalTitle: '', originalArtist: '', originalWriters: '' }]
+              : o.coverTracks.filter(c => c.trackId !== t.id));
+          };
+          const setCoverInfo = (key: keyof Omit<CoverTrackInfo, 'trackId'>, value: string) => {
+            setOpt('coverTracks', o.coverTracks.map(c =>
+              c.trackId === t.id ? { ...c, [key]: value } : c));
+          };
+          return (
+            <div key={t.id} className="cover-track-item">
+              <label className="check-line">
+                <input
+                  type="checkbox" checked={!!info}
+                  onChange={e => toggleCover(e.target.checked)}
+                />
+                <span><strong>트랙 {i + 1} · {t.title.trim() || '(제목 없음)'}</strong></span>
+              </label>
+              {info && (
+                <div className="cover-track-fields">
+                  <div className="field">
+                    <label htmlFor={`cover-orig-title-${i}`}>원곡 제목 <span className="required">*</span></label>
+                    <input
+                      id={`cover-orig-title-${i}`} maxLength={200} value={info.originalTitle}
+                      onChange={e => setCoverInfo('originalTitle', e.target.value)}
+                      placeholder="원곡의 제목"
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor={`cover-orig-artist-${i}`}>원곡 아티스트 <span className="required">*</span></label>
+                    <input
+                      id={`cover-orig-artist-${i}`} maxLength={200} value={info.originalArtist}
+                      onChange={e => setCoverInfo('originalArtist', e.target.value)}
+                      placeholder="원곡자 또는 원 아티스트"
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor={`cover-orig-writers-${i}`}>원곡 작사 / 작곡</label>
+                    <input
+                      id={`cover-orig-writers-${i}`} maxLength={200} value={info.originalWriters}
+                      onChange={e => setCoverInfo('originalWriters', e.target.value)}
+                      placeholder="알고 있다면 입력"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+        <label className="check-line" style={{ marginTop: 12 }}>
+          <input
+            type="checkbox" id="aqCoverRightsAck"
+            checked={o.coverRightsAck}
+            onChange={e => setOpt('coverRightsAck', e.target.checked)}
+          />
+          <span>원곡 저작권자의 이용 허락을 받았거나, 정당한 라이선스 절차를 진행할 것을 확인해요.<small>허락 없는 커버곡 배급은 저작권 침해가 될 수 있어요.</small></span>
+        </label>
+        <DocAttach
+          id="aqCoverLicense" label="원곡 이용 허락서 (보유 시)"
+          fileName={o.coverLicenseFile}
+          onSelect={v => setOpt('coverLicenseFile', v)}
+          help="이용 허락서나 라이선스 계약서를 첨부해 주세요."
+        />
+      </div>
+    ),
+    sample: (
+      <div className="aq-option-detail">
+        <h3>샘플링·타인 음원 사용</h3>
+        <p className="aq-option-intro">사용한 원본 음원과 저작물의 출처를 확인해요.</p>
+        <DocAttach
+          id="aqSampleLicense" label="원본 이용 허락서"
+          fileName={o.sampleLicenseFile}
+          onSelect={v => setOpt('sampleLicenseFile', v)}
+          help="샘플링 원본의 이용 허락서나 라이선스 계약서를 첨부해 주세요."
+        />
+        <p className="aq-option-note">허락 없는 샘플링은 저작권 침해가 될 수 있어요.</p>
+      </div>
+    ),
+    featured: (
+      <div className="aq-option-detail">
+        <h3>피처링·공동 실연</h3>
+        <p className="aq-option-intro">참여자의 크레딧과 이용 허락을 확인해요.</p>
+        <DocAttach
+          id="aqFeaturedConsent" label="참여자 동의서 (보유 시)"
+          fileName={o.featuredConsentFile}
+          onSelect={v => setOpt('featuredConsentFile', v)}
+          help="피처링 참여자의 동의서나 계약서를 첨부해 주세요."
+        />
+      </div>
+    ),
+    shared: (
+      <div className="aq-option-detail">
+        <h3>공동 권리자·레이블 계약</h3>
+        <p className="aq-option-intro">각 권리자와의 배급 위임 범위를 확인해요.</p>
+        <DocAttach
+          id="aqSharedContract" label="공동 권리 계약서"
+          fileName={o.sharedContractFile}
+          onSelect={v => setOpt('sharedContractFile', v)}
+          help="배급 위임 범위가 명시된 계약서를 첨부해 주세요."
+        />
+      </div>
+    ),
+    rerelease: (
+      <div className="aq-option-detail">
+        <h3>기존 발매 정보</h3>
+        <div className="field">
+          <label htmlFor="aqPreviousTitle">기존 발매명</label>
+          <input
+            id="aqPreviousTitle" maxLength={180} value={o.previousTitle}
+            onChange={e => setOpt('previousTitle', e.target.value)}
+            placeholder="기존 앨범·싱글 제목"
+          />
+        </div>
+        <p className="help">기존 UPC / EAN이 있다면 위의 ‘UPC / EAN’ 칸에 입력해 주세요.</p>
+        <div className="field">
+          <label htmlFor="aqPreviousId">기존 ISRC (보유 시)</label>
+          <input
+            id="aqPreviousId" maxLength={100} value={o.previousId}
+            onChange={e => setOpt('previousId', e.target.value)}
+            placeholder="이전 식별자"
+          />
+        </div>
+        <KoreanDateField
+          id="aqOriginalDate" label="최초 발매일"
+          value={form.originalDate}
+          onChange={v => set('originalDate', v)}
+        />
+        <p className="help">기존 발매 중복과 스트리밍 매칭 여부를 별도로 확인해요.</p>
+      </div>
+    ),
+    ai: (
+      <div className="aq-option-detail">
+        <h3>AI 활용 내역</h3>
+        <div className="field">
+          <label htmlFor="aqAiTool">어떻게 활용했나요? <span className="required">*</span> <small className="muted">여러 개 고를 수 있어요</small></label>
+          <ChipPicker
+            id="aqAiTool" options={AI_USES} value={aiUses} onChange={v => setAi({ aiUses: v })}
+            other={aiUseOther} onOther={v => setAi({ aiUseOther: v })} otherPlaceholder="AI를 활용한 부분을 적어 주세요"
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="aqAiTools">사용한 도구 <small className="muted">(선택)</small></label>
+          <ChipPicker
+            id="aqAiTools" options={AI_TOOLS} value={o.aiTools ?? []} onChange={v => setAi({ aiTools: v })}
+            other={o.aiToolOther ?? ''} onOther={v => setAi({ aiToolOther: v })} otherPlaceholder="도구 이름"
+          />
+        </div>
+        <p className="help">이용 약관과 상업적 이용 허가 자료를 요청할 수 있어요. 모든 배급 플랫폼이 AI 음악을 받는 것은 아니에요.</p>
+      </div>
+    ),
+  };
+  const list = group === 'service' ? SERVICE_OPTIONS : RIGHTS_OPTIONS;
 
   return (
     <>
-      <h2 className="subhead" style={{ marginTop: 25 }}>부가서비스</h2>
-      <p className="aq-option-intro">필요한 서비스를 선택해 주세요.</p>
+      {group === 'service' ? (
+        <>
+          <h2 className="subhead" style={{ marginTop: 25 }}>부가서비스</h2>
+          <p className="aq-option-intro">필요한 서비스를 선택해 주세요.</p>
+        </>
+      ) : (
+        <>
+          <h2 className="subhead" style={{ marginTop: 25 }}>해당하는 항목</h2>
+          <p className="aq-option-intro">해당하는 항목을 모두 선택해 주세요. 누르면 바로 아래에 필요한 확인 사항이 열려요.</p>
+        </>
+      )}
       <div className="aq-options">
-        {SERVICE_OPTIONS.map(([id, title, sub]) => (
-          <label key={id} className="aq-option">
-            <span className="aq-option-text"><strong>{title}</strong><small>{sub}</small></span>
-            <input
-              type="checkbox" aria-label={title}
-              checked={!!o[id]}
-              onChange={e => setOpt(id, e.target.checked as ReleaseOptions[typeof id])}
-            />
-          </label>
+        {list.map(([id, title, sub]) => (
+          <Fragment key={id}>
+            <label className={`aq-option${o[id] ? ' is-on' : ''}`}>
+              <span className="aq-option-text"><strong>{title}</strong><small>{sub}</small></span>
+              <input
+                type="checkbox" aria-label={title}
+                checked={!!o[id]}
+                onChange={e => setOpt(id, e.target.checked as ReleaseOptions[typeof id])}
+              />
+            </label>
+            {!!o[id] && detail[id]}
+          </Fragment>
         ))}
       </div>
-      {o.express && (
-        <div className="aq-option-detail">
-          <h3>신속 발매 요청</h3>
-          <p className="aq-option-intro">신속 발매는 가능 여부와 조건을 확인한 뒤 진행해요. 특정 발매일이나 플랫폼 송출을 보장하지 않아요.</p>
-          <div className="field">
-            <label htmlFor="aqExpressReason">신속 발매가 필요한 이유 (선택)</label>
-            <input
-              id="aqExpressReason" maxLength={300} value={o.expressReason}
-              onChange={e => setOpt('expressReason', e.target.value)}
-              placeholder="예: 공연 일정에 맞춰 발매하고 싶어요."
-            />
-          </div>
-          <label className="check-line">
-            <input
-              type="checkbox" id="aqExpressAck"
-              checked={o.expressAck}
-              onChange={e => setOpt('expressAck', e.target.checked)}
-            />
-            <span>가능한 일정과 비용 등 별도 안내를 확인한 후 진행할게요.<small>신청 단계에서 추가 비용이 자동 결제되지는 않아요.</small></span>
-          </label>
-        </div>
-      )}
-      <h2 className="subhead" style={{ marginTop: 25 }}>권리 확인</h2>
-      <p className="aq-option-intro">해당하는 항목을 모두 선택해 주세요. 필요한 확인 사항과 서류가 자동으로 안내돼요.</p>
-      <div className="aq-options">
-        {RIGHTS_OPTIONS.map(([id, title, sub]) => (
-          <label key={id} className="aq-option">
-            <span className="aq-option-text"><strong>{title}</strong><small>{sub}</small></span>
-            <input
-              type="checkbox" aria-label={title}
-              checked={!!o[id]}
-              onChange={e => setOpt(id, e.target.checked as ReleaseOptions[typeof id])}
-            />
-          </label>
-        ))}
-      </div>
-      {o.minor && (
-        <div className="aq-option-detail">
-          <h3>법정대리인 확인</h3>
-          <p className="aq-option-intro">본인 및 권리자의 동의 범위를 확인할 수 있도록 보호자 정보를 입력해 주세요. 법정대리인은 2명을 입력하는 것이 원칙이지만, 1명인 경우도 접수할 수 있어요.</p>
-          <h4 className="aq-guardian-head">법정대리인 1</h4>
-          <div className="field">
-            <label htmlFor="aqGuardian">법정대리인 성명 <span className="required">*</span></label>
-            <input
-              id="aqGuardian" autoComplete="name" maxLength={90} value={o.guardian}
-              onChange={e => setOpt('guardian', e.target.value)}
-              placeholder="법정대리인 성명"
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="aqGuardianRelation">아티스트와의 관계 <span className="required">*</span></label>
-            <select
-              id="aqGuardianRelation" value={o.guardianRelation}
-              onChange={e => setOpt('guardianRelation', e.target.value)}
-            >
-              <option value="">관계를 선택해 주세요.</option>
-              {['부', '모', '기타 법정대리인'].map(x => (
-                <option key={x} value={x}>{x}</option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="aqGuardianContact">법정대리인 연락처 또는 이메일 <span className="required">*</span></label>
-            <input
-              id="aqGuardianContact" maxLength={160} value={o.guardianContact}
-              onChange={e => setOpt('guardianContact', e.target.value)}
-              placeholder="확인이 가능한 연락처"
-            />
-          </div>
-          <h4 className="aq-guardian-head">법정대리인 2 <small>(해당하는 경우)</small></h4>
-          <div className="field">
-            <label htmlFor="aqGuardian2">법정대리인 성명</label>
-            <input
-              id="aqGuardian2" autoComplete="name" maxLength={90} value={o.guardian2}
-              onChange={e => setOpt('guardian2', e.target.value)}
-              placeholder="법정대리인 성명"
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="aqGuardian2Relation">아티스트와의 관계</label>
-            <select
-              id="aqGuardian2Relation" value={o.guardian2Relation}
-              onChange={e => setOpt('guardian2Relation', e.target.value)}
-            >
-              <option value="">관계를 선택해 주세요.</option>
-              {['부', '모', '기타 법정대리인'].map(x => (
-                <option key={x} value={x}>{x}</option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="aqGuardian2Contact">법정대리인 연락처 또는 이메일</label>
-            <input
-              id="aqGuardian2Contact" maxLength={160} value={o.guardian2Contact}
-              onChange={e => setOpt('guardian2Contact', e.target.value)}
-              placeholder="확인이 가능한 연락처"
-            />
-          </div>
-          <div className="field">
-            <label>법정대리인 동의</label>
-            <button
-              type="button" className="button secondary" style={{ width: '100%' }}
-              onClick={() => setShowGuardianModal(true)}
-            >
-              {o.guardianConsentDone ? '법정대리인 동의 완료 ✓ (다시 진행)' : '법정대리인 동의 진행하기'}
-            </button>
-            <p className="help">
-              {o.guardianConsentDone
-                ? `동의 완료${o.familyCertName ? ` · 가족관계증명서: ${o.familyCertName}` : ''}`
-                : '동의창에서 법정대리인 서명과 가족관계증명서를 제출해요.'}
-            </p>
-          </div>
-          <p className="aq-option-note">법정대리인 정보 입력만으로 본인 확인이나 동의 검증이 완료되지는 않아요. 담당자 확인 후 서명 단계를 안내해요.</p>
-        </div>
-      )}
       {showGuardianModal && (
         <GuardianConsentModal
           guardianName={o.guardian}
@@ -469,157 +689,7 @@ function OptionsSection({ form, set }: {
           }}
         />
       )}
-      {o.cover && (
-        <div className="aq-option-detail">
-          <h3>커버곡 정보</h3>
-          <p className="aq-option-intro">커버한 트랙을 선택하고, 원곡 정보를 입력해 주세요.</p>
-          {form.tracks.map((t, i) => {
-            const info = o.coverTracks.find(c => c.trackId === t.id);
-            const toggleCover = (checked: boolean) => {
-              setOpt('coverTracks', checked
-                ? [...o.coverTracks, { trackId: t.id, originalTitle: '', originalArtist: '', originalWriters: '' }]
-                : o.coverTracks.filter(c => c.trackId !== t.id));
-            };
-            const setCoverInfo = (key: keyof Omit<CoverTrackInfo, 'trackId'>, value: string) => {
-              setOpt('coverTracks', o.coverTracks.map(c =>
-                c.trackId === t.id ? { ...c, [key]: value } : c));
-            };
-            return (
-              <div key={t.id} className="cover-track-item">
-                <label className="check-line">
-                  <input
-                    type="checkbox" checked={!!info}
-                    onChange={e => toggleCover(e.target.checked)}
-                  />
-                  <span><strong>트랙 {i + 1} · {t.title.trim() || '(제목 없음)'}</strong></span>
-                </label>
-                {info && (
-                  <div className="cover-track-fields">
-                    <div className="field">
-                      <label htmlFor={`cover-orig-title-${i}`}>원곡 제목 <span className="required">*</span></label>
-                      <input
-                        id={`cover-orig-title-${i}`} maxLength={200} value={info.originalTitle}
-                        onChange={e => setCoverInfo('originalTitle', e.target.value)}
-                        placeholder="원곡의 제목"
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor={`cover-orig-artist-${i}`}>원곡 아티스트 <span className="required">*</span></label>
-                      <input
-                        id={`cover-orig-artist-${i}`} maxLength={200} value={info.originalArtist}
-                        onChange={e => setCoverInfo('originalArtist', e.target.value)}
-                        placeholder="원곡자 또는 원 아티스트"
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor={`cover-orig-writers-${i}`}>원곡 작사 / 작곡</label>
-                      <input
-                        id={`cover-orig-writers-${i}`} maxLength={200} value={info.originalWriters}
-                        onChange={e => setCoverInfo('originalWriters', e.target.value)}
-                        placeholder="알고 있다면 입력"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          <label className="check-line" style={{ marginTop: 12 }}>
-            <input
-              type="checkbox" id="aqCoverRightsAck"
-              checked={o.coverRightsAck}
-              onChange={e => setOpt('coverRightsAck', e.target.checked)}
-            />
-            <span>원곡 저작권자의 이용 허락을 받았거나, 정당한 라이선스 절차를 진행할 것을 확인해요.<small>허락 없는 커버곡 배급은 저작권 침해가 될 수 있어요.</small></span>
-          </label>
-          <DocAttach
-            id="aqCoverLicense" label="원곡 이용 허락서 (보유 시)"
-            fileName={o.coverLicenseFile}
-            onSelect={v => setOpt('coverLicenseFile', v)}
-            help="이용 허락서나 라이선스 계약서를 첨부해 주세요."
-          />
-        </div>
-      )}
-      {o.sample && (
-        <div className="aq-option-detail">
-          <h3>샘플링·타인 음원 사용</h3>
-          <p className="aq-option-intro">사용한 원본 음원과 저작물의 출처를 확인해요.</p>
-          <DocAttach
-            id="aqSampleLicense" label="원본 이용 허락서"
-            fileName={o.sampleLicenseFile}
-            onSelect={v => setOpt('sampleLicenseFile', v)}
-            help="샘플링 원본의 이용 허락서나 라이선스 계약서를 첨부해 주세요."
-          />
-          <p className="aq-option-note">허락 없는 샘플링은 저작권 침해가 될 수 있어요.</p>
-        </div>
-      )}
-      {o.featured && (
-        <div className="aq-option-detail">
-          <h3>피처링·공동 실연</h3>
-          <p className="aq-option-intro">참여자의 크레딧과 이용 허락을 확인해요.</p>
-          <DocAttach
-            id="aqFeaturedConsent" label="참여자 동의서 (보유 시)"
-            fileName={o.featuredConsentFile}
-            onSelect={v => setOpt('featuredConsentFile', v)}
-            help="피처링 참여자의 동의서나 계약서를 첨부해 주세요."
-          />
-        </div>
-      )}
-      {o.shared && (
-        <div className="aq-option-detail">
-          <h3>공동 권리자·레이블 계약</h3>
-          <p className="aq-option-intro">각 권리자와의 배급 위임 범위를 확인해요.</p>
-          <DocAttach
-            id="aqSharedContract" label="공동 권리 계약서"
-            fileName={o.sharedContractFile}
-            onSelect={v => setOpt('sharedContractFile', v)}
-            help="배급 위임 범위가 명시된 계약서를 첨부해 주세요."
-          />
-        </div>
-      )}
-      {o.rerelease && (
-        <div className="aq-option-detail">
-          <h3>기존 발매 정보</h3>
-          <div className="field">
-            <label htmlFor="aqPreviousTitle">기존 발매명</label>
-            <input
-              id="aqPreviousTitle" maxLength={180} value={o.previousTitle}
-              onChange={e => setOpt('previousTitle', e.target.value)}
-              placeholder="기존 앨범·싱글 제목"
-            />
-          </div>
-          <p className="help">기존 UPC / EAN이 있다면 위의 ‘UPC / EAN’ 칸에 입력해 주세요.</p>
-          <div className="field">
-            <label htmlFor="aqPreviousId">기존 ISRC (보유 시)</label>
-            <input
-              id="aqPreviousId" maxLength={100} value={o.previousId}
-              onChange={e => setOpt('previousId', e.target.value)}
-              placeholder="이전 식별자"
-            />
-          </div>
-          <KoreanDateField
-            id="aqOriginalDate" label="최초 발매일"
-            value={form.originalDate}
-            onChange={v => set('originalDate', v)}
-          />
-          <p className="help">기존 발매 중복과 스트리밍 매칭 여부를 별도로 확인해요.</p>
-        </div>
-      )}
-      {o.ai && (
-        <div className="aq-option-detail">
-          <h3>AI 활용 내역</h3>
-          <div className="field">
-            <label htmlFor="aqAiTool">사용한 도구와 활용 방식 <span className="required">*</span></label>
-            <textarea
-              id="aqAiTool" maxLength={600} rows={2} value={o.aiTool}
-              onChange={e => setOpt('aiTool', e.target.value)}
-              placeholder="도구명, AI가 생성하거나 보조한 부분을 입력해 주세요."
-            />
-          </div>
-          <p className="help">이용 약관과 상업적 이용 허가 자료를 요청할 수 있어요. 모든 배급 플랫폼이 AI 음악을 받는 것은 아니에요.</p>
-        </div>
-      )}
-      <p className="aq-option-note">선택한 내용에 따라 권리·계약 서류가 별도로 준비돼요. 신속 발매와 미성년자 발매를 함께 선택할 수도 있어요.</p>
+      {group === 'rights' && <p className="aq-option-note">선택한 내용에 따라 권리·계약 서류가 별도로 준비돼요.</p>}
     </>
   );
 }
@@ -1279,6 +1349,9 @@ export function Upload() {
       if (form.upc.trim() && !/^0?\d{12}$/.test(form.upc.trim())) return fail('UPC는 12자리(UPC-A)만 받을 수 있어요. 13자리 EAN은 0으로 시작하는 번호만 쓸 수 있어요.', '#f-upc');
       const o = form.options;
       if (o.express && !o.expressAck) return fail('신속 발매 안내를 확인해 주세요.', '#aqExpressAck');
+    }
+    if (i === 4) {
+      const o = form.options;
       if (o.minor) {
         if (!o.guardian.trim()) return fail('법정대리인 성명을 입력해 주세요.', '#aqGuardian');
         if (!o.guardianRelation) return fail('법정대리인과의 관계를 선택해 주세요.', '#aqGuardianRelation');
@@ -1291,7 +1364,7 @@ export function Upload() {
         }
         if (!o.guardianConsentDone) return fail('법정대리인 동의를 진행해 주세요.', null);
       }
-      if (o.ai && !o.aiTool.trim()) return fail('AI 도구명과 활용 방식을 입력해 주세요.', '#aqAiTool');
+      if (o.ai && !o.aiTool.trim()) return fail('AI를 어떻게 활용했는지 골라 주세요.', '#aqAiTool');
       if (o.cover) {
         const valid = o.coverTracks.filter(c => form.tracks.some(t => t.id === c.trackId));
         if (!valid.length) return fail('커버곡에 해당하는 트랙을 하나 이상 선택해 주세요.', null);
@@ -1302,8 +1375,6 @@ export function Upload() {
         }
         if (!o.coverRightsAck) return fail('커버곡 권리 확인을 체크해 주세요.', '#aqCoverRightsAck');
       }
-    }
-    if (i === 4) {
       if (!form.ownership.trim()) return fail('음원 권리자를 입력해 주세요.', '#f-ownership');
       if (!form.phonogram.trim()) return fail('℗ 표기를 입력해 주세요.', '#f-phonogram');
       if (!form.copyright.trim()) return fail('© 표기를 입력해 주세요.', '#f-copyright');
@@ -1850,38 +1921,38 @@ export function Upload() {
               />
               <span><strong>전 세계 배급</strong><small>권리를 보유한 지역에만 배급할 수 있어요.</small></span>
             </label>
-            <div className="distribution-default">
+            <div className="aq-dsp-head">
               <div>
-                <strong>{allPlatforms ? '주요 음악 플랫폼에 모두 배급해요.' : `${form.platforms.length}개 플랫폼에 배급해요.`}</strong>
-                <p className="help">배급 가능한 플랫폼을 기본으로 선택했어요. 필요한 경우 선택을 변경할 수 있어요.</p>
+                <h2 className="subhead" style={{ margin: 0 }}>배급 플랫폼</h2>
+                <p className="help">{allPlatforms ? '주요 음악 플랫폼에 모두 배급해요.' : `${form.platforms.length}개 플랫폼을 골랐어요.`} 눌러서 빼거나 더할 수 있어요.</p>
               </div>
-              <label className="aq-switch">
-                <input
-                  type="checkbox" aria-label="플랫폼 모두 선택"
-                  checked={allPlatforms}
-                  onChange={e => set('platforms', e.target.checked ? DSP.map(d => d[0]) : [])}
-                />
-                <span />
-              </label>
+              <button type="button" className="aq-dsp-all" onClick={() => set('platforms', allPlatforms ? [] : DSP.map(d => d[0]))}>
+                {allPlatforms ? '모두 해제' : '모두 선택'}
+              </button>
             </div>
-            <details className="studio-expand" id="aqPlatforms" open={!allPlatforms}>
-              <summary>플랫폼 직접 선택 <span aria-hidden="true">＋</span></summary>
-              <div className="distribution-options">
-                {DSP.map(([key, label]) => (
-                  <label key={key} className="check-line">
-                    <input
-                      type="checkbox"
-                      checked={form.platforms.includes(key)}
-                      onChange={e => set('platforms', e.target.checked
-                        ? [...form.platforms, key]
-                        : form.platforms.filter(p => p !== key))}
-                    />
-                    <span>{label}</span>
-                  </label>
-                ))}
-              </div>
-            </details>
-            <div id="aqSpecialOptions" className="aq-fix-zone"><OptionsSection form={form} set={set} /></div>
+            <div id="aqPlatforms" className="aq-dsp-groups">
+              {([['국내', DSP.filter(d => DSP_DOMESTIC.includes(d[0]))], ['해외', DSP.filter(d => !DSP_DOMESTIC.includes(d[0]))]] as const).map(([region, list]) => (
+                <div key={region}>
+                  <p className="aq-dsp-region">{region}</p>
+                  <div className="aq-dsp-grid" role="group" aria-label={`${region} 플랫폼`}>
+                    {list.map(([key, label]) => {
+                      const on = form.platforms.includes(key);
+                      return (
+                        <button
+                          key={key} type="button" aria-pressed={on} className={`aq-dsp${on ? ' is-on' : ''}`}
+                          onClick={() => set('platforms', on ? form.platforms.filter(p => p !== key) : [...form.platforms, key])}
+                        >
+                          <span className="aq-dsp-mark" style={{ background: DSP_COLOR[key] ?? '#3B63F3' }} aria-hidden="true">{label.slice(0, 1)}</span>
+                          <span className="aq-dsp-name">{label}</span>
+                          <span className="aq-dsp-check" aria-hidden="true">✓</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="aq-fix-zone"><OptionsSection form={form} set={set} group="service" /></div>
           </section>
         )}
 
@@ -1930,6 +2001,7 @@ export function Upload() {
                 ‘{form.label.trim() || form.artist.trim()}’(으)로 권리자 정보 채우기
               </button>
             )}
+            <div id="aqSpecialOptions" className="aq-fix-zone"><OptionsSection form={form} set={set} group="rights" /></div>
             <h2 className="subhead">필수 확인 항목</h2>
             <div className="field-group">
               {RIGHTS_CHECKS.map(([k, label]) => (
@@ -2040,6 +2112,12 @@ export function Upload() {
         <button type="button" id="wizardBack" className="button secondary" onClick={back} disabled={submitting}>
           {step === 0 ? (editId ? '나가기' : '홈으로') : '이전'}
         </button>
+        {resubmit && step < STEPS.length - 1 && (
+          // 이미 접수한 발매를 고칠 때는 끝까지 가지 않고 여기서 바로 저장(다시 접수)할 수 있다
+          <button type="button" id="wizardSaveNow" className="button secondary" onClick={() => void submit()} disabled={submitting || loadingEdit}>
+            {submitting ? '저장하는 중' : '수정 완료'}
+          </button>
+        )}
         <button
           type="button" id="wizardNext"
           className={`button${submitting ? ' is-busy' : ''}`}

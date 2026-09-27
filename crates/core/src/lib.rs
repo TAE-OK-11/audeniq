@@ -40,6 +40,7 @@ pub mod storage;
 pub mod submission;
 pub mod text_policy;
 pub mod uploads;
+pub mod withdraw;
 pub mod states {
     include!(concat!(env!("OUT_DIR"), "/states.rs"));
 }

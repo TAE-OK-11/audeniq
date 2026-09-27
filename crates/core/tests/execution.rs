@@ -3872,3 +3872,66 @@ async fn rejected_release_application_closes_the_release(pool: PgPool) {
         assert!(job_ids.is_empty());
     }
 }
+
+// ---------------------------------------------------------------------------
+// Artist cancellation with a monthly limit (migration 0050)
+// ---------------------------------------------------------------------------
+
+#[sqlx::test]
+async fn artist_cancellation_is_limited_per_month(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let path = format!("/api/orgs/{}/releases/{}/withdraw", ctx.org, ctx.release);
+
+    // Signed: delivery may be under way, so cancelling goes through staff.
+    let (s, v) = call(&ctx.app, "POST", &path, json!({}), Some(&ctx.user)).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(v["error"]["code"], "RELEASE_ALREADY_DELIVERING");
+
+    // Unsigned, but this month's three self-service cancellations are used.
+    let doc = set_agreement(&pool, ctx.org, ctx.release, false).await;
+    for _ in 0..3 {
+        sqlx::query(
+            "INSERT INTO operations.audit_events(id,org_id,resource_id,action,reason_code,request_id,actor_service)
+             VALUES($1,$2,$3,'release.withdrawn','ARTIST',$4,'test')",
+        )
+        .bind(Uuid::new_v4())
+        .bind(ctx.org)
+        .bind(Uuid::new_v4())
+        .bind(Uuid::new_v4())
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let (s, v) = call(
+        &ctx.app,
+        "GET",
+        &format!("/api/orgs/{}/withdrawals", ctx.org),
+        Value::Null,
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["remaining"], 0);
+    let (s, v) = call(&ctx.app, "POST", &path, json!({}), Some(&ctx.user)).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(v["error"]["code"], "WITHDRAW_LIMIT_REACHED");
+    assert_eq!(
+        release_status(&pool, ctx.release).await,
+        "READY_FOR_DELIVERY"
+    );
+
+    // Staff cancel on request (an inquiry), not counted.
+    let staff = staff_user(&ctx.app, &pool, "REVIEWER").await;
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &format!("/api/staff/releases/{}/withdraw", ctx.release),
+        json!({"reason":"artist asked by inquiry"}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["quota"]["used"], 3);
+    assert_eq!(release_status(&pool, ctx.release).await, "WITHDRAWN");
+    assert_eq!(doc_status(&pool, doc).await, "CANCELLED");
+}

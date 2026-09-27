@@ -2,7 +2,7 @@
 // `bun run build:edge`(또는 VITE_MOCK=false)로 빌드하면 실제 서버
 // (엣지 Worker → Workers VPC → Cloudflare Tunnel → 메인 서버)를 호출하고,
 // 기본값은 브라우저 저장소 기반 체험(목) 모드다.
-import type { DeliveryItem, Org, PreflightIssue, Release, ReleaseDetail, ReleasePayload, SaveResult, UploadKind, UploadResult, User } from './types';
+import type { DeliveryItem, WithdrawQuota, Org, PreflightIssue, Release, ReleaseDetail, ReleasePayload, SaveResult, UploadKind, UploadResult, User } from './types';
 import { ApiError } from './errors';
 import { setOrgId } from './http';
 import { mockApi } from './mock';
@@ -38,6 +38,9 @@ export const api = {
   /** 발매 신청 접수 (새 발매 또는 기존 draft/보완 요청 발매) */
   submitRelease: (id: string | null, data: ReleasePayload): Promise<Release> => (MOCK ? mockApi.submitRelease(id, data) : remoteApi.submitRelease(id, data)),
   deleteRelease: (id: string): Promise<void> => (MOCK ? mockApi.deleteRelease(id) : remoteApi.deleteRelease(id)),
+  /** 접수한 발매 신청 취소 — 한 달에 3회까지 직접, 그 이상은 문의로 */
+  withdrawRelease: (id: string): Promise<WithdrawQuota> => (MOCK ? mockApi.withdrawRelease(id) : remoteApi.withdrawRelease(id)),
+  withdrawQuota: (): Promise<WithdrawQuota> => (MOCK ? mockApi.withdrawQuota() : remoteApi.withdrawQuota()),
   preflight: async (id: string): Promise<PreflightIssue[]> => (MOCK ? [] : remoteApi.preflight(id)),
   /** 플랫폼별 배급 진행 — 체험 모드에는 실제 배급이 없어 빈 목록 */
   getDelivery: async (id: string): Promise<DeliveryItem[]> => (MOCK ? [] : remoteApi.getDelivery(id)),

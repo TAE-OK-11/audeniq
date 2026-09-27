@@ -16,6 +16,7 @@ const FILTERS = [
   { value: 'scheduled', label: '배급 승인' },
   { value: 'live', label: '발매 완료' },
   { value: 'rejected', label: '발매 거절' },
+  { value: 'cancelled', label: '신청 취소' },
   { value: 'closed', label: '진행 종료' },
 ];
 

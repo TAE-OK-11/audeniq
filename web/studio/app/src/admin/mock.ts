@@ -198,6 +198,12 @@ export const mockStaff = {
     audit(r, 'staff.rejected', 'STAGE2_REVIEW->WITHDRAWN');
     return wait({ result: 'REJECTED', status: 'WITHDRAWN' });
   },
+  withdraw: async (rid: string) => {
+    const r = find(rid);
+    setStatus(r, 'WITHDRAWN');
+    audit(r, 'release.withdrawn', 'STAFF');
+    return wait({ status: 'WITHDRAWN' });
+  },
   reissue: async (rid: string) => {
     const r = find(rid);
     if (r.q.status !== 'READY_FOR_DELIVERY') fail('RELEASE_NOT_READY_FOR_DELIVERY');
