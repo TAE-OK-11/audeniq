@@ -11,10 +11,12 @@ export function Contracts() {
   const [signing, setSigning] = useState(false);
 
   const openDoc = openId ? docs.find(d => d.id === openId) ?? null : null;
+  // 발매 심사가 끝난 계약서만 — 서명할 것과 서명한 것. 심사 중·보완 중인 신청은 발매 화면에서 안내한다
   const agreements = docs
-    .filter(c => c.kind === 'agreements')
-    .slice()
-    .sort((a, b) => String(b.created || '').localeCompare(String(a.created || '')));
+    .filter(c => c.kind === 'agreements' && c.reviewStatus === 'approved')
+    // 서명할 것 먼저, 같은 묶음 안에서는 최신순
+    .sort((a, b) => Number(!!a.localSignatureAt) - Number(!!b.localSignatureAt)
+      || String(b.created || '').localeCompare(String(a.created || '')));
 
   const openSignature = () => {
     if (!openDoc) return;
@@ -58,13 +60,13 @@ export function Contracts() {
         ) : (
           <DocEmpty
             title="서명할 계약서가 없어요."
-            desc="발매를 신청하면 입력 내용이 정리된 계약서가 자동으로 준비돼요."
+            desc="발매 심사가 끝나면 서명할 계약서가 여기에 준비돼요. 심사 진행 상황은 발매 화면에서 볼 수 있어요."
           />
         )}
       </div>
 
       <div className="notice" style={{ marginTop: 25 }}>
-        발매 신청 정보는 계약서에 자동으로 정리돼요. 내용을 확인한 뒤 서명만 진행하면 돼요.
+        심사를 마친 발매만 여기에 보여요. 서명하면 바로 플랫폼으로 배급이 시작돼요.
       </div>
 
       {openDoc && !signing && (

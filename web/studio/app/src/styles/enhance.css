@@ -1171,3 +1171,12 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 .aq-pipeline li.is-warn .aq-pipeline-dot{background:#e9a45c!important;box-shadow:0 0 0 5px #e9a45c2e!important}
 .aq-pipeline li.is-error .aq-pipeline-dot{background:#d92d3b!important;box-shadow:0 0 0 5px #d92d3b24!important}
 .aq-pipeline li.is-done{color:var(--aq-e-blue,#3B63F3)}
+
+/* 보완 필요는 앱 전체에서 주황 한 가지 — 빨강은 ‘거절’에만 쓴다 */
+.aq-doc-card.is-needs{background:#fff6ec!important}
+.aq-doc-card.is-needs .document-icon{background:#ffe9d2!important;color:#c26a1e!important}
+.aq-doc-card.is-needs .aq-doc-state-pill{background:#FFF3E6!important;color:#A76525!important}
+.aq-action-card.is-warning .document-icon{background:#ffe9d2!important;color:#c26a1e!important}
+/* 서명할 계약서 — 파란색으로 눈에 띄게 */
+.aq-doc-card.is-to-sign .document-icon{background:#e6edff!important;color:#3B63F3!important}
+.aq-doc-card.is-to-sign .aq-doc-state-pill{background:#EAF0FF!important;color:#365cd4!important}

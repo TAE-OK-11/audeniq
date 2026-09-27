@@ -177,8 +177,9 @@ export function docsForRelease(list: DocRecord[], releaseId: string, releaseTitl
 
 /** 라이브 aqDocumentState */
 export function docState(c: DocRecord): string {
-  if (c.reviewStatus === 'approved') return '검토 완료';
-  if (c.reviewStatus === 'needs') return '보완 요청';
+  if (c.localSignatureAt) return '서명 완료';
+  if (c.reviewStatus === 'approved') return c.kind === 'agreements' ? '서명 필요' : '승인';
+  if (c.reviewStatus === 'needs') return '보완 필요';
   if (c.reviewStatus === 'review' || c.reviewStatus === 'prepared') return '검토 중';
   if (c.localSignatureAt) return '서명 완료';
   return c.kind === 'rights' ? '서류 제출 필요' : '서명 필요';
@@ -187,6 +188,7 @@ export function docState(c: DocRecord): string {
 /** 카드 톤 클래스 */
 export function docTone(c: DocRecord): string {
   if (c.reviewStatus === 'needs') return 'is-needs';
+  if (c.kind === 'agreements' && c.reviewStatus === 'approved' && !c.localSignatureAt) return 'is-to-sign';
   if (c.reviewStatus === 'approved') return 'is-approved';
   if (c.reviewStatus === 'review' || c.reviewStatus === 'prepared') return 'is-review';
   return '';

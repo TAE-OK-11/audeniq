@@ -8,7 +8,7 @@ export function DocCard({ c, onOpen }: { c: DocRecord; onOpen: (id: string) => v
     : (c.reviewStatus === 'needs' ? '보완하기' : '자세히 보기');
   return (
     <article className={`aq-doc-card ${docTone(c)}`}>
-      <span className="document-icon" aria-hidden="true">{c.kind === 'agreements' ? '✓' : '▤'}</span>
+      <span className="document-icon" aria-hidden="true">{c.reviewStatus === 'needs' ? '!' : c.kind === 'agreements' ? (c.localSignatureAt ? '✓' : '✎') : '▤'}</span>
       <div className="aq-doc-copy">
         <button type="button" className="row-name" onClick={() => onOpen(c.id)}>
           {stripSampleSuffix(c.title)}
