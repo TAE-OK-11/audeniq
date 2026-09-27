@@ -25,6 +25,8 @@ export interface QueueRelease {
   platforms: string[];
   /** 발매 신청서(배급 계약서) 상태 — REVIEW/PREPARED면 발매 심사 대기 */
   agreement: string | null;
+  /** 아티스트가 올린 커버 미리보기 (data URL) */
+  cover?: string | null;
 }
 
 export interface Check { check_code: string; status: string; detail: string | null; rule_version?: string; at?: string }
@@ -60,6 +62,7 @@ export interface ReleaseSheet {
   release: {
     id: string; org_id: string; org_name: string; title: string; release_type: string; status: string;
     upc: string | null; revision_id: string | null; submitted_at: string | null;
+    cover?: string | null;
   };
   application: {
     artist?: string; language?: string; genre?: string; release_date?: string; original_date?: string;

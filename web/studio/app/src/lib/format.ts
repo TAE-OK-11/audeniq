@@ -47,4 +47,5 @@ export const STATUS_LABEL: Record<string, string> = {
   scheduled: '배급 승인',
   live: '발매 완료',
   closed: '진행 종료',
+  rejected: '발매 거절',
 };

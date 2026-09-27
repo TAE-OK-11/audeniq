@@ -152,7 +152,8 @@ describe('서버 값 정리', () => {
     expect(uiStatus('STAGE1_REVIEW')).toBe('review');
     // 한 플랫폼이라도 공개되면 발매 완료, 철회·반려는 종료
     expect(uiStatus('READY_FOR_DELIVERY', true)).toBe('live');
-    expect(uiStatus('WITHDRAWN')).toBe('closed');
+    expect(uiStatus('WITHDRAWN')).toBe('rejected');
+    expect(uiStatus('SUPERSEDED')).toBe('closed');
     // 접수 후에는 검토 중, 담당자가 계약서를 승인하면 배급 승인, 서류 보완 요청이면 보완 필요
     expect(uiStatus('READY_FOR_DELIVERY', false, 'REVIEW')).toBe('review');
     expect(uiStatus('READY_FOR_DELIVERY', false, null)).toBe('review');

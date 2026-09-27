@@ -64,3 +64,21 @@ BEGIN
  END IF;
  RETURN NEW;
 END $$;
+
+-- A corrected release is resubmitted without a new application (only a new
+-- release signs one): its agreement goes back to staff review with it.
+CREATE FUNCTION portal.agreement_resubmitted() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog AS $$
+BEGIN
+ UPDATE portal.documents SET status = 'REVIEW', row_version = row_version + 1, updated_at = now()
+  WHERE org_id = NEW.org_id AND release_id = NEW.id AND kind = 'AGREEMENT' AND status = 'NEEDS';
+ RETURN NEW;
+END $$;
+CREATE TRIGGER releases_agreement_resubmitted AFTER UPDATE OF status ON catalog.releases
+ FOR EACH ROW WHEN (NEW.status = 'SUBMITTED' AND OLD.status LIKE '%\_CORRECTION')
+ EXECUTE FUNCTION portal.agreement_resubmitted();
+
+-- Releases staff already rejected keep no signable agreement.
+UPDATE portal.documents d SET status = 'REJECTED', row_version = d.row_version + 1, updated_at = now()
+  FROM catalog.releases r
+ WHERE r.id = d.release_id AND r.org_id = d.org_id AND r.status = 'WITHDRAWN'
+   AND d.kind = 'AGREEMENT' AND d.status NOT IN ('SIGNED','REJECTED');

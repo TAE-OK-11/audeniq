@@ -15,6 +15,7 @@ const FILTERS = [
   { value: 'needs', label: '보완 필요' },
   { value: 'scheduled', label: '배급 승인' },
   { value: 'live', label: '발매 완료' },
+  { value: 'rejected', label: '발매 거절' },
   { value: 'closed', label: '진행 종료' },
 ];
 

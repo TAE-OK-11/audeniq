@@ -964,6 +964,8 @@ export function Upload() {
   const submittingRef = useRef(false);
   const [loadingEdit, setLoadingEdit] = useState(!!editId);
   const [origStatus, setOrigStatus] = useState<string>('draft');
+  // 이미 신청서를 낸 발매를 보완·수정해 다시 접수할 때는 신청서(서명)를 새로 받지 않는다 — 신규 발매만 신청서를 쓴다
+  const [hasApplication, setHasApplication] = useState(false);
   const [origDate, setOrigDate] = useState('');
   const [expandedTracks, setExpandedTracks] = useState<Set<string>>(new Set());
   const [save, setSave] = useState<SaveState>({ kind: 'idle' });
@@ -1048,6 +1050,7 @@ export function Upload() {
       if (cancelled) return;
       const d = rel.draft;
       setOrigStatus(rel.status);
+      setHasApplication(rel.status !== 'draft' && !!rel.draft?.application);
       setOrigDate(rel.release_date || '');
       const tracks: Track[] = d?.draftTracks?.length
         ? d.draftTracks.map(t => ({
@@ -1310,7 +1313,7 @@ export function Upload() {
       if (cErr) return fail(`© 표기: ${cErr}`, '#f-copyright');
       if (!rightsOk(form)) return fail('권리 확인 항목을 모두 확인해 주세요.', null);
     }
-    if (i === 5) {
+    if (i === 5 && !resubmit) {
       if (!signerName.trim()) return fail('신청인 성명을 입력해 주세요.', '#f-signer');
       if (!signed || signRef.current?.isEmpty()) return fail('신청인 서명을 그려 주세요.', '#aqApplyPad');
       const missing = AGREEMENTS.find(a => !agreed[a.id]);
@@ -1339,9 +1342,8 @@ export function Upload() {
     try {
       await saveChain.current.catch(() => {});
       const payload = toPayload(form, step);
-      const signature = await compactSignature(signRef.current?.toDataURL() ?? '');
-      const application = await createApplication({
-        payload, signature, signerName, signerRole: signer.role,
+      const application = resubmit ? undefined : await createApplication({
+        payload, signature: await compactSignature(signRef.current?.toDataURL() ?? ''), signerName, signerRole: signer.role,
         agreements: AGREEMENTS.map(a => a.id),
       });
       const r = await api.submitRelease(draftIdRef.current, { ...payload, application });
@@ -1355,8 +1357,8 @@ export function Upload() {
         detail: '담당자 검토가 시작됐어요. 계약서와 권리 서류 메뉴에서 준비된 문서를 확인해 주세요.',
       });
       toast(editId && origStatus !== 'draft' ? '발매 정보가 수정됐어요.' : '발매 신청이 접수됐어요.', 'success');
-      // 서명한 신청서를 정식 서류로 바로 보여 준다
-      nav(`/releases/${r.id}/application?done=1`, { replace: true });
+      // 서명한 신청서를 정식 서류로 바로 보여 준다 (보완 재접수는 발매 상세로)
+      nav(resubmit ? `/releases/${r.id}` : `/releases/${r.id}/application?done=1`, { replace: true });
     } catch (e) {
       setError(errorMessage(e, '제출에 실패했어요. 잠시 후 다시 시도해 주세요.'));
       toast('제출에 실패했어요. 다시 시도해 주세요.');
@@ -1513,6 +1515,7 @@ export function Upload() {
 
   // 서명자 기본값: 권리자 → 아티스트 정보의 이름
   const signerName = signer.touched ? signer.name : (form.ownership || profile.name || '');
+  const resubmit = !!editId && origStatus !== 'draft' && hasApplication;
   const s = STEPS[step];
   const genreIsCustom = form.genre === '__other__';
   const allPlatforms = DSP.every(d => form.platforms.includes(d[0]));
@@ -1960,10 +1963,13 @@ export function Upload() {
               ))}
             </div>
             <div className="notice" style={{ marginTop: 24 }}>
-              아래에 서명하고 ‘{editId && origStatus !== 'draft' ? '서명하고 수정 완료' : '서명하고 접수하기'}’를 누르면 배급 신청서가 발급되고 권리 확인서가 준비돼요. 최종 승인과 배급일은 담당자 검토 후 확정돼요.
+              {resubmit
+                ? '‘다시 접수하기’를 누르면 고친 내용으로 다시 검토를 받아요. 처음 낸 배급 신청서는 그대로 유지돼요.'
+                : `아래에 서명하고 ‘${editId && origStatus !== 'draft' ? '서명하고 수정 완료' : '서명하고 접수하기'}’를 누르면 배급 신청서가 발급되고 권리 확인서가 준비돼요. 최종 승인과 배급일은 담당자 검토 후 확정돼요.`}
             </div>
             <FinalReviewBanner form={form} />
 
+            {!resubmit && (
             <section className="aq-apply-sign" aria-labelledby="aqApplySignHead">
               <h2 className="subhead" id="aqApplySignHead">신청인 서명</h2>
               <p className="help">서명하면 입력한 내용으로 배급 신청서가 만들어지고, 접수 후 바로 확인·저장할 수 있어요.</p>
@@ -2005,6 +2011,7 @@ export function Upload() {
                 ))}
               </div>
             </section>
+            )}
           </section>
         )}
       </div>
@@ -2022,7 +2029,7 @@ export function Upload() {
           className={`button${submitting ? ' is-busy' : ''}`}
           onClick={next} disabled={submitting || loadingEdit} aria-busy={submitting}
         >
-          {submitting ? '접수하는 중' : step === STEPS.length - 1 ? (editId && origStatus !== 'draft' ? '서명하고 수정 완료' : '서명하고 접수하기') : '다음으로'}
+          {submitting ? '접수하는 중' : step === STEPS.length - 1 ? (resubmit ? '다시 접수하기' : editId && origStatus !== 'draft' ? '서명하고 수정 완료' : '서명하고 접수하기') : '다음으로'}
         </button>
       </div>
     </div>
