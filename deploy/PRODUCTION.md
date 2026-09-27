@@ -118,6 +118,17 @@ R2 설정 (Cloudflare 대시보드):
 CI(Foundation)는 서명을 실제로 검사하는 S3 서버(Versity S3 Gateway)로 이 규칙을 확인한다
 (`crates/core/tests/s3_presign.rs`): 선언한 객체만 올라가고, 크기·형식·서명·경로를 바꾸거나 만료되면 403.
 
+### 응답 압축 (zstd · brotli · gzip)
+
+API는 1 KiB 넘는 JSON 응답을 호출자가 받는 형식으로 압축한다(zstd → br → gzip 순, 레벨 4).
+edge Worker가 브라우저의 `Accept-Encoding`을 API에 넘기므로 터널 구간에도 압축된 바이트가 흐르고,
+응답은 그대로 브라우저까지 간다. 목록처럼 반복이 많은 JSON은 보통 1/5 이하로 준다.
+
+- Cloudflare 대시보드 → Speed → *Content Optimization*(압축)에서 Zstandard를 켜 두면
+  Studio 정적 파일(JS·CSS)도 zstd로 나간다. 켜지 않아도 brotli로 나간다.
+- 배포 후 확인: `curl -s -o /dev/null -w '%{size_download}\n' -H 'Accept-Encoding: zstd' <studio>/api/...`
+  와 `-H 'Accept-Encoding: identity'`의 크기를 비교하고, 응답 헤더 `content-encoding`을 본다.
+
 ### DB 연결 풀 (PgBouncer)
 
 api·worker는 `pgbouncer:6432`(거래 단위 풀링)로 DB에 붙는다. 서버 연결 수가 줄고(기본 풀 10, DB 전체 30),
