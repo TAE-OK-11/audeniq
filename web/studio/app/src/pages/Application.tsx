@@ -12,6 +12,7 @@ import type { ApplicationRecord } from '../api/types';
 import { AGREEMENTS, OPTION_LABELS, displayCode, hashLabel, legacyApplication, snapshotFromRelease, verifyApplication } from '../lib/application';
 import { docsForRelease, useDocs } from '../store/docs';
 import { PROFILE_LINKS } from '../lib/dsp';
+import { CheckIcon } from '../components/Check';
 
 type Integrity = 'checking' | 'ok' | 'changed' | 'legacy';
 
@@ -208,7 +209,7 @@ export function Application() {
             {AGREEMENTS.map(a => (
               <li key={a.id} className={app.agreements.includes(a.id) ? 'is-on' : ''}>
                 <span className="aq-paper-check" aria-label={app.agreements.includes(a.id) ? '동의함' : '동의하지 않음'}>
-                  {app.agreements.includes(a.id) ? '✓' : ''}
+                  {app.agreements.includes(a.id) ? <CheckIcon size={12} /> : null}
                 </span>
                 {a.text}
               </li>

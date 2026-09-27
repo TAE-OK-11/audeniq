@@ -12,6 +12,7 @@ import { docState, docsForRelease, useDocs } from '../store/docs';
 import { errorMessage } from '../api/errors';
 import { CorrectionList } from '../components/CorrectionList';
 import { fixPath } from '../lib/corrections';
+import { CheckIcon } from '../components/Check';
 
 // 플랫폼별 배급 진행 단계 (서버 delivery_staging 기준)
 const DELIVERY_STAGE: Record<string, string> = {
@@ -392,7 +393,7 @@ export function ReleaseDetail() {
                 <div><dt>© 표기</dt><dd>{d?.copyright || '미입력'}</dd></div>
               </dl>
               <p className={`small ${rightsOk(d?.rightsChecks, d?.options) ? 'aq-ok-text' : 'muted'}`}>
-                {rightsOk(d?.rightsChecks, d?.options) ? '✓ 신청서 권리 확인 항목 작성 완료' : '권리 확인 항목을 보완해 주세요.'}
+                {rightsOk(d?.rightsChecks, d?.options) ? <><span className="aq-check-badge is-sm"><CheckIcon size={10} /></span> 신청서 권리 확인 항목 작성 완료</> : '권리 확인 항목을 보완해 주세요.'}
               </p>
             </div>
             <div className="surface">
