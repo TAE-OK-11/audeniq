@@ -96,15 +96,31 @@ REVOKE UPDATE,DELETE,TRUNCATE ON operations.audit_events FROM audeniq_api,audeni
 -- per-connection SET in database::connect cannot survive.
 -- Needs superuser or CREATEROLE + ADMIN on the roles (the compose owner is
 -- the image superuser); elsewhere it warns instead of aborting the grants.
+-- Roles are cluster-wide, so runs against different databases (parallel test
+-- binaries) can race on the same pg_db_role_setting row: ALTER ROLE then fails
+-- with "tuple concurrently updated" instead of waiting. Settings already in
+-- place are skipped, and a lost race is retried after the other run commits.
 DO $$
-DECLARE r text;
+DECLARE r text; s text; attempt int;
 BEGIN
  FOREACH r IN ARRAY ARRAY['audeniq_api','audeniq_worker'] LOOP
-  BEGIN
-   EXECUTE format('ALTER ROLE %I SET statement_timeout = %L', r, '15s');
-   EXECUTE format('ALTER ROLE %I SET lock_timeout = %L', r, '3s');
-  EXCEPTION WHEN insufficient_privilege THEN
-   RAISE WARNING 'cannot set timeouts on role % (run as superuser): required behind PgBouncer', r;
-  END;
+  FOREACH s IN ARRAY ARRAY['statement_timeout=15s','lock_timeout=3s'] LOOP
+   FOR attempt IN 1..20 LOOP
+    BEGIN
+     IF NOT EXISTS (SELECT 1 FROM pg_db_role_setting d JOIN pg_roles o ON o.oid = d.setrole
+                    WHERE d.setdatabase = 0 AND o.rolname = r AND s = ANY(d.setconfig)) THEN
+      EXECUTE format('ALTER ROLE %I SET %I = %L', r, split_part(s, '=', 1), split_part(s, '=', 2));
+     END IF;
+     EXIT;
+    EXCEPTION
+     WHEN insufficient_privilege THEN
+      RAISE WARNING 'cannot set % on role % (run as superuser): required behind PgBouncer', s, r;
+      EXIT;
+     WHEN internal_error THEN
+      IF SQLERRM <> 'tuple concurrently updated' OR attempt = 20 THEN RAISE; END IF;
+      PERFORM pg_sleep(0.05 * attempt);
+    END;
+   END LOOP;
+  END LOOP;
  END LOOP;
 END $$;
