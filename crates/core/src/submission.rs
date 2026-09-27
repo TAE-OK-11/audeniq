@@ -1336,8 +1336,13 @@ async fn cached_status(
     // to record only "cache_hit", so later readers (artist corrections, the
     // per-DSP cover check) lost e.g. "3000x3000" or the measured LUFS.
     let s: Option<(String, Option<String>)> = sqlx::query_as(
-        "SELECT status, detail FROM operations.check_results WHERE check_code=$1 AND rule_version=$2 AND result_hash=$3
-         ORDER BY (detail IS NULL OR detail LIKE 'cache_hit%'), created_at DESC LIMIT 1",
+        // operations.asset_qc_results holds the pre-submission analysis
+        // (asset.analyze, migration 0047) under the same key.
+        "SELECT status, detail FROM (
+           SELECT status, detail, created_at FROM operations.check_results WHERE check_code=$1 AND rule_version=$2 AND result_hash=$3
+           UNION ALL
+           SELECT status, detail, created_at FROM operations.asset_qc_results WHERE check_code=$1 AND rule_version=$2 AND result_hash=$3
+         ) r ORDER BY (detail IS NULL OR detail LIKE 'cache_hit%'), created_at DESC LIMIT 1",
     )
     .bind(check_code)
     .bind(rule_version)
@@ -1409,18 +1414,23 @@ fn qc_asset_parallelism() -> usize {
 /// (similarity detection). Fingerprinting the wrong bytes is meaningless,
 /// so audio blocked by SHA256_MISMATCH yields `None` here; its fingerprint
 /// codes are already covered by check_audio's NotApplicable tail.
+///
+/// `sha256` is the recorded content hash the bytes must match; `None` (the
+/// pre-submission `asset.analyze` job, before any hash is recorded) takes the
+/// hash computed while downloading. The last tuple element is that hash.
 async fn analyze_asset(
     storage: &Arc<dyn ObjectStore>,
     key: &str,
     kind: &str,
     content_type: &str,
-    sha256: &str,
+    sha256: Option<&str>,
     tmp_name: &str,
 ) -> std::result::Result<
     (
         Vec<qc::CheckOutcome>,
         Option<qc::AudioMetrics>,
         Option<std::result::Result<fingerprint::Fingerprint, String>>,
+        String,
     ),
     String,
 > {
@@ -1460,10 +1470,11 @@ async fn analyze_asset(
     // The analyzers are blocking (child processes + CPU-bound FFT). Running
     // them on the blocking pool keeps the worker's async runtime, and with it
     // the job-lease heartbeat, responsive during multi-minute analyses.
+    let downloaded_sha = downloaded.sha256.clone();
     let (kind, content_type, sha256) = (
         kind.to_string(),
         content_type.to_string(),
-        sha256.to_string(),
+        sha256.map_or_else(|| downloaded.sha256.clone(), str::to_string),
     );
     tokio::task::spawn_blocking(move || {
         let path = tmp.0.as_path();
@@ -1520,7 +1531,7 @@ async fn analyze_asset(
             _ => None,
         };
         drop(tmp);
-        (outcomes, metrics, fp)
+        (outcomes, metrics, fp, downloaded_sha)
     })
     .await
     .map_err(|_| "analyzer task failed".to_string())
@@ -1861,9 +1872,10 @@ async fn qc_single_asset(
     // compute and store it.
     // Unique temp name: two workers must never share an analyzer file.
     let tmp_name = format!("audeniq-qc-{}", Uuid::new_v4());
-    let outcomes = match analyze_asset(&storage, &key, kind, &content_type, sha256, &tmp_name).await
+    let outcomes = match analyze_asset(&storage, &key, kind, &content_type, Some(sha256), &tmp_name)
+        .await
     {
-        Ok((o, metrics, fp)) => {
+        Ok((o, metrics, fp, _)) => {
             // Persist measured audio duration + real technical specs for
             // the DDEX builder. COALESCE fills only unknown columns;
             // never overwrites measured values.
@@ -1914,6 +1926,154 @@ async fn qc_single_asset(
         }
     }
     Ok(out)
+}
+
+/// Pre-submission audio analysis: the `asset.analyze` job queued at upload
+/// completion. It is the only full download of a master before delivery:
+/// the object is hashed while it streams to disk (recording
+/// `catalog.assets.sha256`, which completion no longer computes), every
+/// byte-dependent Stage 1 check runs on that same file, the fingerprint and
+/// measured specs are stored, and the outcomes go to
+/// `operations.asset_qc_results` under the Stage 1 cache key. Stage 1 then
+/// finds them as cache hits and does not download the file again; only
+/// AUDIO_SIMILAR_TO_EXISTING is evaluated at submission (catalog-dependent),
+/// from the stored fingerprint.
+///
+/// Returns `true` when a transient failure (storage, analyzer) should be
+/// retried. A registered object that no longer matches its pinned size/ETag
+/// is a permanent `ASSET_OBJECT_DRIFT` error.
+pub async fn precheck_asset(
+    pool: &PgPool,
+    storage: &Arc<dyn ObjectStore>,
+    org: Uuid,
+    aid: Uuid,
+) -> Result<bool> {
+    let Some(row) = sqlx::query(
+        "SELECT object_key, state, kind, content_type, size_bytes, etag, sha256 FROM catalog.assets WHERE org_id=$1 AND id=$2",
+    )
+    .bind(org)
+    .bind(aid)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Ok(false);
+    };
+    let state: String = row.get("state");
+    let kind: String = row.get("kind");
+    if state != "REGISTERED" || kind != "AUDIO" {
+        return Ok(false);
+    }
+    let key: String = row.get("object_key");
+    let content_type: String = row.get("content_type");
+    let size: i64 = row.get("size_bytes");
+    let etag: Option<String> = row.get("etag");
+    let recorded: Option<String> = row.get("sha256");
+    // The registered copy must still be the one completion pinned.
+    match storage.head(&key).await {
+        Ok(Some(m)) if m.size == size && etag.as_deref().is_none_or(|e| e == m.etag) => {}
+        Ok(_) => return Err(Error::PolicyGate("ASSET_OBJECT_DRIFT")),
+        Err(_) => return Ok(true),
+    }
+    let tmp_name = format!("audeniq-precheck-{}", Uuid::new_v4());
+    let (outcomes, metrics, fp, downloaded_sha) = match analyze_asset(
+        storage,
+        &key,
+        &kind,
+        &content_type,
+        recorded.as_deref(),
+        &tmp_name,
+    )
+    .await
+    {
+        Ok(r) => r,
+        Err(detail) => {
+            tracing::warn!(%aid, detail, "asset precheck: analysis unavailable, retrying");
+            return Ok(true);
+        }
+    };
+    if recorded.is_none() {
+        sqlx::query(
+            "UPDATE catalog.assets SET sha256=$3 WHERE org_id=$1 AND id=$2 AND sha256 IS NULL",
+        )
+        .bind(org)
+        .bind(aid)
+        .bind(&downloaded_sha)
+        .execute(pool)
+        .await?;
+    }
+    let sha = recorded.unwrap_or(downloaded_sha);
+    if let Some(m) = metrics {
+        sqlx::query(
+            "UPDATE catalog.assets SET duration_secs=COALESCE(duration_secs,$1), sample_rate=COALESCE(sample_rate,$2), channels=COALESCE(channels,$3), bits_per_sample=COALESCE(bits_per_sample,$4) WHERE org_id=$5 AND id=$6",
+        )
+        .bind(m.duration_secs)
+        .bind(i32::try_from(m.sample_rate).ok())
+        .bind(i32::try_from(m.channels).ok())
+        .bind(m.bits_per_sample.and_then(|b| i32::try_from(b).ok()))
+        .bind(org)
+        .bind(aid)
+        .execute(pool)
+        .await?;
+    }
+    // Stores the fingerprint and emits AUDIO_FINGERPRINT_FAILED; similarity
+    // is left to Stage 1 (it depends on the catalog at submission time).
+    let mut out: Vec<StagedCheck> = Vec::new();
+    handle_fingerprint_checks(
+        pool,
+        org,
+        aid,
+        &sha,
+        &fp,
+        &["AUDIO_FINGERPRINT_FAILED"],
+        &mut out,
+    )
+    .await?;
+    for o in outcomes {
+        if o.check_code == "AUDIO_SIMILAR_TO_EXISTING"
+            || out.iter().any(|c| c.check_code == o.check_code)
+        {
+            continue;
+        }
+        out.push(StagedCheck {
+            check_code: o.check_code,
+            rule_version: qc::QC_RULE_VERSION,
+            status: o.status,
+            result_hash: asset_cache_key(o.check_code, &sha),
+            detail: o.detail,
+        });
+    }
+    let mut retry = false;
+    for c in &out {
+        if c.status == CheckStatus::TechnicalRetry {
+            retry = true;
+            continue;
+        }
+        sqlx::query(
+            "INSERT INTO operations.asset_qc_results(check_code, rule_version, result_hash, status, detail) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",
+        )
+        .bind(c.check_code)
+        .bind(c.rule_version)
+        .bind(&c.result_hash)
+        .bind(c.status.as_db())
+        .bind(&c.detail)
+        .execute(pool)
+        .await?;
+    }
+    // Early answer for the draft preflight (AUDIO_QC_PENDING_OR_BLOCKED):
+    // same rollup as Stage 1's update_asset_qc, which stays authoritative
+    // and overwrites it after submission (adding catalog similarity).
+    if !retry {
+        let clean = out
+            .iter()
+            .all(|c| matches!(c.status, CheckStatus::Pass | CheckStatus::NotApplicable));
+        sqlx::query("UPDATE catalog.assets SET qc_status=$3 WHERE org_id=$1 AND id=$2")
+            .bind(org)
+            .bind(aid)
+            .bind(if clean { "PASS" } else { "BLOCKED" })
+            .execute(pool)
+            .await?;
+    }
+    Ok(retry)
 }
 
 async fn asset_checks(

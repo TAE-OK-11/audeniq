@@ -529,14 +529,14 @@ async fn alac_upload_is_registered_as_flac_and_aac_is_refused(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let a = user(&app).await;
     let uploads = format!("/api/orgs/{}/uploads", a.org);
-    let send = |bytes: Vec<u8>| {
+    let send = |bytes: Vec<u8>, mime: &'static str| {
         let (app, store, a, uploads) = (app.clone(), store.clone(), a.clone(), uploads.clone());
         async move {
             let (s, _, up) = call(
                 &app,
                 "POST",
                 &uploads,
-                json!({"kind":"AUDIO","size_bytes":bytes.len(),"content_type":"audio/mp4"}),
+                json!({"kind":"AUDIO","size_bytes":bytes.len(),"content_type":mime}),
                 Some(&a),
             )
             .await;
@@ -546,7 +546,7 @@ async fn alac_upload_is_registered_as_flac_and_aac_is_refused(pool: PgPool) {
                 key.clone(),
                 ObjectMeta {
                     size: bytes.len() as i64,
-                    content_type: "audio/mp4".into(),
+                    content_type: mime.into(),
                     nonce: up["grant"]["headers"]["x-amz-meta-upload-nonce"]
                         .as_str()
                         .unwrap()
@@ -575,7 +575,11 @@ async fn alac_upload_is_registered_as_flac_and_aac_is_refused(pool: PgPool) {
         }
     };
 
-    let (s, v, asset) = send(m4a_bytes(&["-c:a", "alac", "-sample_fmt", "s16p"])).await;
+    let (s, v, asset) = send(
+        m4a_bytes(&["-c:a", "alac", "-sample_fmt", "s16p"]),
+        "audio/mp4",
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "{v}");
     assert_eq!(v["detected_container"], "FLAC");
     assert_eq!(v["converted_from"], "ALAC");
@@ -598,7 +602,46 @@ async fn alac_upload_is_registered_as_flac_and_aac_is_refused(pool: PgPool) {
         (size, "audio/flac")
     );
 
-    let (s, v, asset) = send(m4a_bytes(&["-c:a", "aac", "-b:a", "128k"])).await;
+    for (ext, codec, mime, container) in [
+        ("aiff", "pcm_s24be", "audio/aiff", "AIFF"),
+        ("wv", "wavpack", "audio/wavpack", "WAVPACK"),
+        ("tta", "tta", "audio/tta", "TTA"),
+    ] {
+        let path = std::env::temp_dir().join(format!("audeniq-extra-{}.{}", Uuid::new_v4(), ext));
+        assert!(
+            std::process::Command::new("ffmpeg")
+                .args([
+                    "-v",
+                    "error",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "sine=frequency=997:duration=2:sample_rate=48000",
+                    "-ac",
+                    "2",
+                    "-c:a",
+                    codec,
+                ])
+                .arg(&path)
+                .status()
+                .unwrap()
+                .success()
+        );
+        let bytes = std::fs::read(&path).unwrap();
+        std::fs::remove_file(path).unwrap();
+        let (status, value, asset) = send(bytes, mime).await;
+        assert_eq!(status, StatusCode::OK, "{container}: {value}");
+        assert_eq!(value["converted_from"], container);
+        let (ct, key, sha): (String, String, String) = sqlx::query_as(
+            "SELECT content_type, object_key, sha256 FROM catalog.assets WHERE id=$1 AND state='REGISTERED'",
+        ).bind(asset).fetch_one(&pool).await.unwrap();
+        let stored = store.get(&key).await.unwrap();
+        assert_eq!(ct, "audio/flac");
+        assert_eq!(&stored[..4], b"fLaC");
+        assert_eq!(sha, hex::encode(sha2::Sha256::digest(&stored)));
+    }
+
+    let (s, v, asset) = send(m4a_bytes(&["-c:a", "aac", "-b:a", "128k"]), "audio/mp4").await;
     assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
     assert_eq!(v["error"]["code"], "UPLOAD_LOSSY_NOT_ACCEPTED");
     let state: String = sqlx::query_scalar("SELECT state FROM catalog.assets WHERE id=$1")
@@ -655,11 +698,20 @@ async fn upload_binding_expiry_duplicate_and_freeze(pool: PgPool) {
     let (s, _, v) = call(&app, "POST", &path, body.clone(), Some(&a)).await;
     assert_eq!(s, StatusCode::OK, "{v}");
     assert_eq!(v["qc_status"], "PENDING");
-    // Regression (sandbox P0-1): completion must persist the content hash of
-    // the frozen bytes, otherwise Stage 1 never runs audio QC.
+    // Regression (sandbox P0-1): the content hash of the frozen bytes must be
+    // recorded, otherwise Stage 1 never runs audio QC. Completion only sniffs
+    // the first bytes of audio; the asset.analyze job it queues downloads the
+    // master once, records the hash and runs QC.
     let expected_sha = hex::encode(sha2::Sha256::digest(synth_body("audio/wav", 100)));
-    assert_eq!(v["sha256"], expected_sha.as_str());
+    assert!(v["sha256"].is_null(), "{v}");
     assert_eq!(v["detected_container"], "WAV");
+    let job = operations::claim(&pool, "qc", "analyzer", 60)
+        .await
+        .unwrap()
+        .expect("asset.analyze queued at completion");
+    assert_eq!(job.kind, "asset.analyze");
+    let analyzer: Arc<dyn ObjectStore> = store.clone();
+    operations::execute(&pool, &analyzer, &job).await.unwrap();
     let stored: Option<String> =
         sqlx::query_scalar("SELECT sha256 FROM catalog.assets WHERE id=$1")
             .bind(Uuid::parse_str(up["asset_id"].as_str().unwrap()).unwrap())

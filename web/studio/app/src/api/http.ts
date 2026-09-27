@@ -51,7 +51,9 @@ export async function req<T>(path: string, opts: ReqOptions = {}): Promise<T> {
   }
   const ctrl = new AbortController();
   const timer = window.setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 20000);
-  opts.signal?.addEventListener('abort', () => ctrl.abort());
+  const abort = () => ctrl.abort();
+  opts.signal?.addEventListener('abort', abort, { once: true });
+  if (opts.signal?.aborted) ctrl.abort();
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${path}`, { method, headers, body, credentials: 'include', signal: ctrl.signal, cache: 'no-store' });
@@ -62,6 +64,7 @@ export async function req<T>(path: string, opts: ReqOptions = {}): Promise<T> {
     throw new ApiError(aborted ? '서버 응답이 늦어요. 잠시 후 다시 시도해 주세요.' : '네트워크 연결을 확인해 주세요.', 0, aborted ? 'TIMEOUT' : 'NETWORK');
   } finally {
     window.clearTimeout(timer);
+    opts.signal?.removeEventListener('abort', abort);
   }
 
   const text = await res.text();
@@ -132,7 +135,11 @@ export function putToGrant(grant: UploadGrant, file: Blob, onProgress?: (ratio: 
     xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress?.(e.loaded / e.total); };
     xhr.onload = () => (xhr.status >= 200 && xhr.status < 300
       ? resolve()
-      : reject(new ApiError('파일을 저장소에 올리지 못했어요. 잠시 후 다시 시도해 주세요.', xhr.status, 'UPLOAD_PUT_FAILED')));
+      // 서명 URL은 한 번만 쓸 수 있다 (If-None-Match: *). 412면 이미 누군가 올린 링크라
+      // 등록하지 않고, 파일을 다시 골라 새 링크를 받게 한다.
+      : xhr.status === 412
+        ? reject(new ApiError('이미 사용된 업로드 링크예요. 파일을 다시 선택해 주세요.', 412, 'UPLOAD_GRANT_USED'))
+        : reject(new ApiError('파일을 저장소에 올리지 못했어요. 잠시 후 다시 시도해 주세요.', xhr.status, 'UPLOAD_PUT_FAILED')));
     xhr.onerror = () => reject(new ApiError('파일 업로드 중 연결이 끊겼어요. 네트워크를 확인해 주세요.', 0, 'NETWORK'));
     xhr.onabort = () => reject(new ApiError('업로드를 취소했어요.', 0, 'ABORTED'));
     signal?.addEventListener('abort', () => xhr.abort());
