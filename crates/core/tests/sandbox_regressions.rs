@@ -390,10 +390,12 @@ async fn upload(e: &Env, u: &User, kind: &str, content_type: &str, bytes: &[u8])
     .await;
     let sha = hex::encode(sha2::Sha256::digest(bytes));
     assert_eq!(done["sha256"], sha.as_str(), "{done}");
-    // Round 2: the quarantine copy is deleted once the upload is registered.
+    // The quarantine copy stays until the bucket lifecycle rule removes it:
+    // while it exists, the grant's signed If-None-Match: * makes the URL
+    // unusable for a second upload (single use), even before it expires.
     assert!(
-        e.store.objects.lock().await.get(key).is_none(),
-        "quarantine object removed after complete"
+        e.store.objects.lock().await.get(key).is_some(),
+        "quarantine object kept as the single-use lock"
     );
     let asset = Uuid::parse_str(v["asset_id"].as_str().unwrap()).unwrap();
     let stored: Option<String> =
