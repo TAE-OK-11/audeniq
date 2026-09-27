@@ -26,6 +26,8 @@ pub enum Error {
     PolicyGate(&'static str),
     #[error("storage unavailable")]
     Storage,
+    #[error("upload processing capacity reached")]
+    UploadBusy,
     #[error("database error")]
     Database(#[from] sqlx::Error),
     #[error("internal error")]
@@ -48,6 +50,7 @@ impl IntoResponse for Error {
             Self::Gated => (StatusCode::NOT_IMPLEMENTED, "NOT_IMPLEMENTED"),
             Self::PolicyGate(code) => (StatusCode::UNPROCESSABLE_ENTITY, *code),
             Self::Storage => (StatusCode::SERVICE_UNAVAILABLE, "STORAGE_UNAVAILABLE"),
+            Self::UploadBusy => (StatusCode::SERVICE_UNAVAILABLE, "UPLOAD_BUSY"),
             Self::HeadersTooLarge => (
                 StatusCode::REQUEST_HEADER_FIELDS_TOO_LARGE,
                 "REQUEST_HEADERS_TOO_LARGE",
@@ -115,6 +118,9 @@ pub fn message(code: &str) -> Option<&'static str> {
         "INVALID_INPUT" => "The request is missing required fields or contains invalid values.",
         "RATE_LIMITED" => "Too many attempts. Wait a few minutes and try again.",
         "STORAGE_UNAVAILABLE" => "File storage is temporarily unavailable. Try again shortly.",
+        "UPLOAD_BUSY" => {
+            "Uploads are being processed. Retry completion in a few seconds; do not re-upload the file."
+        }
         "INVARIANT_CONFLICT" => {
             "The change conflicts with the current state of the release. Reload and try again."
         }
@@ -154,6 +160,13 @@ pub fn message(code: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod unavailable_tests {
     use super::*;
+
+    #[test]
+    fn upload_capacity_is_retryable() {
+        let response = Error::UploadBusy.into_response();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(response.headers()["retry-after"], "5");
+    }
 
     #[test]
     fn database_outage_is_503_with_retry_after() {

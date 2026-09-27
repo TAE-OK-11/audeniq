@@ -752,7 +752,7 @@ const TrackEditor = memo(function TrackEditor({
         <label htmlFor={`trackFile-${i}`}>음원 파일 <span className="required">*</span></label>
         <input
           type="file" id={`trackFile-${i}`}
-          accept=".wav,.flac,.m4a,audio/wav,audio/x-wav,audio/flac,audio/mp4,audio/x-m4a"
+          accept=".wav,.flac,.m4a,.aif,.aiff,.aifc,.wv,.tta,audio/wav,audio/flac,audio/mp4,audio/aiff,audio/wavpack,audio/tta"
           onChange={e => onTrackAudio(t.id, e)}
         />
         <UploadStatus upload={upload} idle={t.audioName
@@ -878,7 +878,7 @@ function makeCoverThumbnail(file: File): Promise<{ data: string; width: number; 
   });
 }
 
-const AUDIO_RE = /\.(wav|flac)$/i;
+const AUDIO_RE = /\.(wav|flac|m4a|aif|aiff|aifc|wv|tta)$/i;
 
 /** 발매 신청 시 계약서·권리 서류를 준비 (같은 발매에 이미 있으면 다시 만들지 않음) */
 function ensureReleaseDocuments(f: WizardForm, releaseId: string) {
@@ -1432,8 +1432,8 @@ export function Upload() {
     const input = e.target;
     const file = input.files?.[0];
     if (!file) return;
-    if (!AUDIO_RE.test(file.name) && !/^audio\/(x-)?(wav|wave|flac)$/i.test(file.type)) {
-      toast('음원은 무손실 WAV 또는 FLAC 파일만 올릴 수 있어요.');
+    if (!AUDIO_RE.test(file.name) && !/^audio\/(x-)?(wav|wave|flac|mp4|m4a|aiff|wavpack|tta)$/i.test(file.type)) {
+      toast('음원은 무손실 WAV·FLAC·ALAC·AIFF·WavPack·TTA 파일만 올릴 수 있어요.');
       input.value = '';
       return;
     }
