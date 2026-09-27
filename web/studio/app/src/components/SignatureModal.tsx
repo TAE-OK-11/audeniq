@@ -15,6 +15,7 @@ import { refreshDocs } from '../store/portalSync';
 import { compactSignature } from '../lib/application';
 import { parseStamp } from '../lib/date';
 import { MOCK_REVIEW_SECONDS } from '../store/mockReviewer';
+import { CheckIcon } from './Check';
 
 const CERT_PROVIDERS = ['PASS', '카카오 인증서', '네이버 인증서', '토스 인증서'];
 
@@ -366,7 +367,7 @@ export function SignatureModal({
       case 'done':
         return (
           <div className="aq-cert-done">
-            <div className="aq-cert-done-icon">✓</div>
+            <div className="aq-cert-done-icon"><CheckIcon size={28} /></div>
             <strong>본인 인증이 완료됐어요</strong>
             <p>{certProvider} · {certName} · {phone}</p>
             <p className="help">계약서 서명 기록에 본인 인증 내역이 저장됐어요.</p>
@@ -430,14 +431,17 @@ export function SignatureModal({
     }
   };
 
-  const phaseLabel = phase === 'sign' ? '1단계 · 서명 진행' : phase === 'cert' ? '2단계 · 전자서명 진행' : '3단계 · 계약서 완성';
-  const phaseIndex = phase === 'sign' ? 0 : phase === 'cert' ? 1 : 2;
+  // 실서버는 휴대폰 본인 인증(인증 기관) 연동 전이라 ‘직접 서명 → 계약 완료’ 2단계로 안내한다.
+  // (체험 모드의 전자서명 화면은 흉내일 뿐 실제 인증이 아니므로 실서버에 보여 주지 않는다)
+  const phases = MOCK ? ['서명 진행', '전자서명 진행', '계약서 완성'] : ['서명 진행', '계약 완료'];
+  const phaseIndex = phase === 'sign' ? 0 : phase === 'cert' ? 1 : phases.length - 1;
+  const phaseLabel = `${phaseIndex + 1}단계 · ${phases[phaseIndex]}`;
 
   return (
     <Modal title="계약서 서명" onClose={onBack} modalClass="aq-signature-mode">
       <div className="aq-sign-body">
         <div className="aq-phase-steps" aria-label="서명 절차 단계">
-          {['서명 진행', '전자서명 진행', '계약서 완성'].map((label, i) => (
+          {phases.map((label, i) => (
             <span key={label} className={`aq-phase-step${i === phaseIndex ? ' active' : ''}${i < phaseIndex ? ' done' : ''}`}>
               <em>{i + 1}</em>{label}
             </span>
@@ -458,9 +462,9 @@ export function SignatureModal({
             <strong>계약서를 검토하고 있어요.</strong>
             <p>AUDENIQ 담당자가 신청 내용을 확인한 뒤 서명할 수 있어요. 검토가 끝나면 알림으로 알려드릴게요.</p>
             <ol className="aq-sign-wait-steps">
-              <li className="is-done"><span>✓</span>신청서 접수</li>
+              <li className="is-done"><span><CheckIcon size={11} /></span>신청서 접수</li>
               <li className="is-current"><span>2</span>담당자 검토</li>
-              <li><span>3</span>서명·본인 인증</li>
+              <li><span>3</span>{MOCK ? '서명·본인 인증' : '서명'}</li>
             </ol>
             {MOCK && (
               <p className="aq-sign-wait-demo">
@@ -505,7 +509,7 @@ export function SignatureModal({
               <input type="checkbox" id="aqSignAck" checked={ack} onChange={e => setAck(e.target.checked)} />
               <span>
                 서명할 문서의 내용을 확인했어요.
-                <small>서명을 저장하면 다음 단계에서 본인 인증(전자서명)을 진행해요.</small>
+                <small>{MOCK ? '서명을 저장하면 다음 단계에서 본인 인증(전자서명)을 진행해요.' : '서명하면 바로 계약이 체결되고, 문제 없는 플랫폼으로 배급이 시작돼요.'}</small>
               </span>
             </label>
           </section>
@@ -516,13 +520,13 @@ export function SignatureModal({
         ) : (
           <section id="aqCompletePane">
             <div className="aq-complete-hero">
-              <span className="aq-complete-check" aria-hidden="true">✓</span>
-              <h3>계약서 서명이 완성됐어요</h3>
-              <p>직접 서명과 전자서명(본인 인증)이 모두 완료됐어요.</p>
+              <span className="aq-complete-check" aria-hidden="true"><CheckIcon size={28} /></span>
+              <h3>{MOCK ? '계약서 서명이 완성됐어요' : '계약이 체결됐어요'}</h3>
+              <p>{MOCK ? '직접 서명과 전자서명(본인 인증)이 모두 완료됐어요.' : '직접 서명으로 계약이 체결됐어요. 이제 플랫폼으로 배급이 시작돼요.'}</p>
             </div>
             <div className="aq-complete-summary">
               <div><small>서명자</small><strong>{name || certName || doc.signerName || '-'}</strong></div>
-              <div><small>인증 수단</small><strong>{certProvider || '-'}</strong></div>
+              <div><small>인증 수단</small><strong>{certProvider || (MOCK ? '-' : '직접 서명')}</strong></div>
               <div><small>완성 시각</small><strong>{localStamp(doc.localSignatureAt || stampNow())}</strong></div>
             </div>
           </section>
