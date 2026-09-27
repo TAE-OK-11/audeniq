@@ -1099,3 +1099,8 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 .aq-fix-card.is-rejected h2{color:#a4212e}
 .aq-fix-card.is-rejected p{color:#8f4a51}
 .aq-fix-card.is-rejected .aq-fix-icon{background:#ffd9dd;color:#d92d3b}
+/* 트랙 카드 안 입력칸 포커스 — 카드 배경(#F5F8FF)과 거의 같은 색이라 칸이 사라져 보였다.
+   흰 칸을 유지하고 파란 안쪽 테두리로 지금 입력 중인 칸을 분명히 보여 준다. */
+:is(#root,#modal) :is(.track-editor,.aq-option-detail,.cover-track-item) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),select,textarea):focus{
+  background-color:#fff!important;box-shadow:inset 0 0 0 2px #3B63F3!important
+}

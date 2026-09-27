@@ -40,7 +40,7 @@ const TARGETS: Record<string, Target> = {
   AUDIO_NOT_VERIFIED: { ...AUDIO, hint: '음원 업로드가 끝나지 않았어요. 파일을 다시 올려 주세요.' },
   AUDIO_NOT_ADMITTED: { ...AUDIO, hint: '사용할 수 없는 음원 파일이에요. 원본 파일을 다시 올려 주세요.' },
   AUDIO_MAGIC_MISMATCH: { ...AUDIO, hint: '음원 파일 형식이 확장자와 달라요. WAV·FLAC 원본으로 다시 올려 주세요.' },
-  AUDIO_SAMPLE_FORMAT_UNSUPPORTED: { ...AUDIO, hint: '지원하지 않는 음원 형식이에요. 16bit 이상 PCM WAV 또는 FLAC으로 다시 올려 주세요.' },
+  AUDIO_SAMPLE_FORMAT_UNSUPPORTED: { ...AUDIO, hint: '지원하지 않는 음원 형식이에요. 16bit 이상 무손실(WAV·FLAC·ALAC·AIFF·WavPack·TTA)로 다시 올려 주세요.' },
   AUDIO_SAMPLE_RATE_LOW: { ...AUDIO, hint: '샘플레이트가 낮아요. 44.1kHz 이상으로 다시 올려 주세요.' },
   AUDIO_BIT_DEPTH_LOW: { ...AUDIO, hint: '비트 깊이가 낮아요. 16bit 이상으로 다시 올려 주세요.' },
   AUDIO_CHANNEL_INVALID: { ...AUDIO, hint: '모노 또는 스테레오 음원만 받을 수 있어요.' },
