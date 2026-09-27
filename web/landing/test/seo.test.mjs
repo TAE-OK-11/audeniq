@@ -37,12 +37,15 @@ test("public homepage is indexable only on the primary domain", async () => {
   assert.match(preview.headers.get("X-Robots-Tag"), /noindex/);
 });
 
-test("studio stays out of search on any hostname or preview path", async () => {
-  for (const hostPath of [["studio.audeniq.com", "/"], ["audeniq.com", "/studio/"], ["audeniq-web.example.workers.dev", "/?site=studio"]]) {
-    const response = await fetchPath(...hostPath);
-    assert.equal(response.status, 200);
-    assert.match(response.headers.get("X-Robots-Tag"), /noindex/);
-    assert.match(await response.text(), /<meta name="robots" content="noindex,nofollow,noarchive">/);
+test("studio requests leave the landing Worker for the React STUDIO", async () => {
+  for (const [host, path, to] of [
+    ["studio.audeniq.com", "/", "https://studio.audeniq.com/"],
+    ["audeniq.com", "/studio/", "https://studio.audeniq.com/"],
+    ["audeniq-web.example.workers.dev", "/?site=studio", "https://studio.audeniq.com/"],
+  ]) {
+    const response = await fetchPath(host, path);
+    assert.equal(response.status, 308);
+    assert.equal(response.headers.get("Location"), to);
   }
 });
 
@@ -54,10 +57,8 @@ test("robots and sitemap are public only on the canonical domain", async () => {
   assert.equal(sitemap.status, 200);
   assert.match(sitemap.headers.get("Content-Type"), /xml/);
   assert.match(await sitemap.text(), /<loc>https:\/\/audeniq\.com\/<\/loc>/);
-  assert.equal((await fetchPath("studio.audeniq.com", "/robots.txt")).status, 200);
-  assert.match(await (await fetchPath("studio.audeniq.com", "/robots.txt")).text(), /Disallow: \/\s*$/);
   assert.match(await (await fetchPath("audeniq-web.example.workers.dev", "/robots.txt")).text(), /Disallow: \/\s*$/);
-  assert.equal((await fetchPath("studio.audeniq.com", "/sitemap.xml")).status, 404);
+  assert.equal((await fetchPath("audeniq-web.example.workers.dev", "/sitemap.xml")).status, 404);
 });
 
 test("duplicate home URLs redirect and non-existent landing pages yield real 404", async () => {
@@ -84,7 +85,7 @@ test("social preview is a real 1200x630 PNG and shared assets return their own c
 });
 
 test("root files and Wrangler public assets are synchronized", () => {
-  for (const path of ["index.html", "studio/index.html", "robots.txt", "sitemap.xml", "assets/social-preview.png", "assets/favicon.svg", "favicon.ico"]) {
+  for (const path of ["index.html", "robots.txt", "sitemap.xml", "assets/social-preview.png", "assets/favicon.svg", "favicon.ico"]) {
     assert.deepEqual(readFileSync(join(projectRoot, path)), readFileSync(join(projectRoot, "public", path)), `mismatch: ${path}`);
   }
 });

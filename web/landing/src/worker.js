@@ -2,22 +2,28 @@
 // landing HTML / sitemap / robots together if AUDENIQ chooses another domain.
 export const PRIMARY_HOST = "audeniq.com";
 const PRIMARY_ORIGIN = `https://${PRIMARY_HOST}`;
+// AUDENIQ STUDIO is a separate React app on its own Worker (web/studio).
+export const STUDIO_ORIGIN = "https://studio.audeniq.com";
 
-export function resolveAssetPath(hostname, pathname, searchParams = new URLSearchParams()) {
+/**
+ * Old STUDIO entry points on this Worker (studio.* host routed here, /studio preview
+ * paths, ?site=studio) now go to the React STUDIO. Returns the destination or null.
+ */
+export function studioRedirect(hostname, pathname, searchParams = new URLSearchParams()) {
   const host = String(hostname || "").toLowerCase().replace(/\.$/, "");
   const path = pathname || "/";
+  if (host === "studio" || host.startsWith("studio.")) return STUDIO_ORIGIN + path;
+  const m = /^\/studio(\/.*)?$/.exec(path);
+  if (m) return STUDIO_ORIGIN + (m[1] && m[1] !== "/index.html" ? m[1] : "/");
+  if (searchParams.get("site") === "studio") return STUDIO_ORIGIN + "/";
+  return null;
+}
 
-  // Static files must bypass the host router, even on STUDIO.
+/** Asset for a landing request: shared files as-is, everything else is the single landing page. */
+export function resolveAssetPath(_hostname, pathname) {
+  const path = pathname || "/";
   if (path.startsWith("/assets/") || path === "/favicon.ico" || path === "/robots.txt" || path === "/sitemap.xml") {
     return path;
-  }
-
-  // Host-based routing for the dedicated STUDIO domain.
-  if (host === "studio" || host.startsWith("studio.")) return "/studio/index.html";
-
-  // Path-based STUDIO preview on workers.dev / localhost. Never indexed.
-  if (searchParams.get("site") === "studio" || /^\/studio(?:\/|$)/.test(path)) {
-    return "/studio/index.html";
   }
   return "/index.html";
 }
@@ -55,6 +61,10 @@ export default {
     const isCanonical = isPublicCanonicalHost(host);
     const isStudioHost = host === "studio" || host.startsWith("studio.");
 
+    // STUDIO lives on its own Worker now; keep old links working.
+    const toStudio = studioRedirect(host, path, url.searchParams);
+    if (toStudio) return Response.redirect(toStudio + (url.search && !url.searchParams.has("site") ? url.search : ""), 308);
+
     // Only the apex domain should be indexed. Preserve the path and query in redirects.
     if (host === `www.${PRIMARY_HOST}`) {
       const destination = new URL(url.pathname + url.search + url.hash, PRIMARY_ORIGIN);
@@ -74,12 +84,11 @@ export default {
 
     // The landing page is a single document with fragment sections, not a catch-all
     // that should answer 200 to every arbitrary URL (which causes soft-404 SEO issues).
-    const isStudioPreview = url.searchParams.get("site") === "studio" || /^\/studio(?:\/|$)/.test(path);
-    if (!isStudioHost && !isStudioPreview && path === "/index.html") {
+    if (path === "/index.html") {
       return Response.redirect(new URL("/", url), 308);
     }
     const sharedFile = path.startsWith("/assets/") || path === "/favicon.ico" || path === "/robots.txt" || path === "/sitemap.xml";
-    if (!isStudioHost && !isStudioPreview && !sharedFile && path !== "/") {
+    if (!sharedFile && path !== "/") {
       return withSecurityHeaders(plainText("Not found", "text/plain; charset=utf-8", 404), { isCanonical });
     }
 
@@ -87,7 +96,6 @@ export default {
     const assetUrl = new URL(assetPath, url);
     const assetRequest = new Request(assetUrl, request);
     const response = await env.ASSETS.fetch(assetRequest);
-    const isStudio = assetPath.startsWith("/studio/") || isStudioHost;
-    return withSecurityHeaders(response, { isStudio, isCanonical });
+    return withSecurityHeaders(response, { isStudio: false, isCanonical });
   }
 };
