@@ -86,6 +86,38 @@ cd /opt/audeniq
 postgres 이미지를 17로, 볼륨을 `pg_prod:/var/lib/postgresql/data`로 되돌리면 옛 데이터로 바로 돌아간다.
 확인이 끝나면 `docker volume rm audeniq-production_pg_prod`와 덤프 파일을 직접 지운다.
 
+### R2 업로드 (사용자에게 키를 주지 않는 구조)
+
+음원·커버·권리 서류는 사용자 기기에서 R2로 바로 올라가지만, R2 키는 서버(api·worker)에만 있다.
+
+1. Studio가 `POST /api/orgs/{org}/uploads`로 종류·크기·형식을 알린다.
+2. API가 자기 키로 **서명 URL** 하나를 만들어 준다. 키 자체는 응답에 들어가지 않는다.
+   - 쓸 수 있는 곳: `quarantine/{org}/{asset}/{nonce}` 한 경로, `PUT`만, 15분 동안.
+   - 서명에 묶인 것: 정확한 바이트 수(`Content-Length`), 형식(`Content-Type`), 일회용 nonce.
+     크기나 형식이 다르거나 URL을 고치면 R2가 403으로 거절한다. 다른 경로·읽기·삭제·목록은 불가.
+   - URL에 보이는 것은 액세스 키 **ID**와 계정 엔드포인트뿐이다. ID만으로는 아무것도 서명할 수 없다.
+3. 기기가 그 URL로 R2에 PUT한다. 파일은 우리 서버를 거치지 않는다.
+4. `POST …/uploads/{id}/complete`에서 API가 자기 키로 R2를 확인한다.
+   크기·형식·nonce를 대조하고 `registered/…`로 복사(etag 고정)한 뒤,
+   내용을 스트리밍으로 받아 SHA-256과 실제 파일 형식(WAV/FLAC/JPEG/PNG/PDF)을 확인해 등록한다.
+   격리본은 지운다.
+5. worker는 등록된 파일을 자기 키로 받아 QC·패키징한다.
+
+R2 설정 (Cloudflare 대시보드):
+
+- 버킷은 비공개. r2.dev 공개 접근과 커스텀 도메인 공개는 켜지 않는다.
+- API 토큰 두 개, 둘 다 **이 버킷 하나로 범위 제한**:
+  - api: *Object Read & Write* → `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY`
+  - worker: *Object Read* → `S3_WORKER_ACCESS_KEY_ID`/`S3_WORKER_SECRET_ACCESS_KEY`
+    (ffmpeg으로 사용자 파일을 여는 쪽이라 쓰기·삭제 권한을 주지 않는다. 비우면 api 토큰을 쓴다)
+- CORS: `r2-cors.json` (Studio 도메인에서 `PUT`만).
+- 수명 주기 규칙: `quarantine/` 접두사 1일 후 삭제 (완료·취소되지 않은 업로드 정리).
+- 키가 새면 Cloudflare에서 그 토큰만 폐기하고 새 토큰을 `production.env`에 넣은 뒤 `./deploy.sh`로 다시 올린다.
+  이미 발급된 서명 URL도 폐기된 토큰으로 서명됐으니 함께 무효가 된다.
+
+CI(Foundation)는 서명을 실제로 검사하는 S3 서버(Versity S3 Gateway)로 이 규칙을 확인한다
+(`crates/core/tests/s3_presign.rs`): 선언한 객체만 올라가고, 크기·형식·서명·경로를 바꾸거나 만료되면 403.
+
 ### DB 연결 풀 (PgBouncer)
 
 api·worker는 `pgbouncer:6432`(거래 단위 풀링)로 DB에 붙는다. 서버 연결 수가 줄고(기본 풀 10, DB 전체 30),
