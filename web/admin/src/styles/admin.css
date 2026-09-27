@@ -272,3 +272,56 @@ button.adm-row:hover,a.adm-row:hover{background:#edf2ff}
   .adm-skel span{animation:none}
 }
 .adm-min{min-width:0;display:block}
+
+/* ---------- 외곽선 없는 카드 (Studio와 같은 면 카드) ---------- */
+.adm-card.white{background:var(--adm-soft);border:0}
+.adm-check{background:var(--adm-soft);border:0}
+.adm-check.is-open{background:#f6f3ff;border:0}
+.adm-check.is-sensitive{background:#fff4f5;border:0}
+.adm-note{background:var(--adm-soft);border:0}
+.adm-thread-pane{background:var(--adm-soft);border:0}
+.adm-table td{border-top-color:#e9eef7}
+
+/* ---------- 앨범 커버 ---------- */
+.adm-row-icon.has-cover{padding:0;overflow:hidden;background:#eef2fa}
+.adm-row-icon.has-cover img{width:100%;height:100%;object-fit:cover;display:block}
+
+/* ---------- 상세 보기 (검사 코드·원문) ---------- */
+.adm-more{margin-top:8px}
+.adm-more summary{cursor:pointer;font-size:12px;font-weight:720;color:#7a86a0;list-style:none;display:inline-flex;align-items:center;gap:4px}
+.adm-more summary::-webkit-details-marker{display:none}
+.adm-more summary::after{content:"›";transition:transform .18s var(--adm-ease)}
+.adm-more[open] summary::after{transform:rotate(90deg)}
+.adm-more>div{margin-top:8px}
+.adm-raw{margin:6px 0 0;font-size:12px;line-height:1.55;color:#7a86a0;word-break:break-word}
+
+/* ---------- 시스템 검사 단계 ---------- */
+.adm-stages{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.adm-stages li{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:20px;background:var(--adm-soft)}
+.adm-stages small{display:block;font-size:11.5px;color:var(--adm-muted);margin-top:2px}
+.adm-stages b{font-size:13.5px}
+.adm-stage-dot{width:30px;height:30px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;font-size:12px;font-weight:800;background:#e8edf6;color:#8a95ab}
+.adm-stages li.is-done .adm-stage-dot{background:#21815B;color:#fff}
+.adm-stages li.is-done b{color:#1d6b4c}
+.adm-stages li.is-staff{background:#f4f0ff}
+.adm-stages li.is-staff .adm-stage-dot{background:#6852BA;color:#fff}
+.adm-stages li.is-fix{background:#fff6ec}
+.adm-stages li.is-fix .adm-stage-dot{background:#e9a45c;color:#fff}
+.adm-stages li.is-running .adm-stage-dot{background:var(--adm-blue);color:#fff}
+.adm-stages li.is-stopped{background:#fff1f2}
+.adm-stages li.is-stopped .adm-stage-dot{background:#d92d3b;color:#fff}
+
+/* ---------- 거절 사유 버튼 ---------- */
+.adm-reasons{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+.adm-reason{border:0;border-radius:12px;min-height:38px;padding:8px 13px;background:var(--adm-soft-2);color:#4a5670;font-size:13px;font-weight:720;cursor:pointer;transition:background-color .15s,color .15s}
+.adm-reason:hover{background:#e8edf6}
+.adm-reason.is-on{background:#ffe3e6;color:#b3232f}
+
+/* ---------- 보완 항목 ---------- */
+.adm-fixes{display:grid;gap:10px;margin-top:14px}
+.adm-fix{background:var(--adm-soft);border-radius:18px;padding:14px;display:grid;gap:10px}
+.adm-fix-top{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px}
+.adm-fix-pick{display:flex;flex-wrap:wrap;gap:8px}
+.adm-fix-pick .adm-select{flex:1 1 150px;min-width:0}
+
+@media(max-width:760px){.adm-stages{grid-template-columns:1fr}}

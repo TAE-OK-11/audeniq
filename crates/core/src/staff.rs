@@ -170,13 +170,28 @@ pub async fn me(s: &AppState, h: &HeaderMap) -> Result<Value> {
     Ok(json!({"user_id": st.actor.user, "role": st.role.as_str(), "duties": duties}))
 }
 
+/// `r` (catalog.releases) waits on a staff decision in 발매 심사: parked by
+/// Stage 2, or through the automatic checks with its signed application
+/// (AGREEMENT) not yet decided. Mid-pipeline releases show up once the
+/// pipeline settles, so the reviewer always sees final check results.
+/// (A macro so the SQL stays a compile-time constant.)
+macro_rules! awaiting_decision {
+    () => {
+        "(r.status='STAGE2_REVIEW' OR (r.status='READY_FOR_DELIVERY' AND EXISTS(
+          SELECT 1 FROM portal.documents d WHERE d.org_id=r.org_id AND d.release_id=r.id
+           AND d.kind='AGREEMENT' AND d.status IN ('REVIEW','PREPARED'))))"
+    };
+}
+
 pub async fn overview(s: &AppState, h: &HeaderMap) -> Result<Value> {
     staff(s, h, false).await?;
     let mut tx = s.pool.begin().await?;
     staff_scope(&mut tx).await?;
-    let sql = format!(
+    const SQL: &str = concat!(
         "SELECT
-           (SELECT count(*) FROM catalog.releases r WHERE r.archived_at IS NULL AND {awaiting}) AS review,
+           (SELECT count(*) FROM catalog.releases r WHERE r.archived_at IS NULL AND ",
+        awaiting_decision!(),
+        ") AS review,
            (SELECT count(*) FROM catalog.releases WHERE status LIKE '%\\_CORRECTION' AND archived_at IS NULL) AS correction,
            (SELECT count(*) FROM catalog.releases WHERE status IN ('SUBMITTED','STAGE1_RUNNING','STAGE1_PASSED','STAGE2_RUNNING','STAGE2_PASSED','STAGE3_PREPARING')) AS in_pipeline,
            (SELECT count(*) FROM rights.staff_approvals WHERE status='PENDING' AND expires_at>now()) AS second_approvals,
@@ -190,10 +205,9 @@ pub async fn overview(s: &AppState, h: &HeaderMap) -> Result<Value> {
               JOIN catalog.releases r ON r.id=s.release_id AND r.current_revision_id=s.revision_id
               WHERE s.approval='PENDING'
               AND EXISTS(SELECT 1 FROM jsonb_array_elements(s.checks) c WHERE c->>'code' IN ('DSP_LOUDNESS_ADVISORY','DSP_CLIPPING_ADVISORY'))) AS audio_advisories,
-           (SELECT count(*) FROM portal.payout_requests WHERE status='REQUESTED') AS payout_requests",
-        awaiting = AWAITING_DECISION
+           (SELECT count(*) FROM portal.payout_requests WHERE status='REQUESTED') AS payout_requests"
     );
-    let row = sqlx::query(&sql).fetch_one(&mut *tx).await?;
+    let row = sqlx::query(SQL).fetch_one(&mut *tx).await?;
     tx.commit().await?;
     let n = |k: &str| row.get::<i64, _>(k);
     Ok(json!({
@@ -209,16 +223,7 @@ pub async fn overview(s: &AppState, h: &HeaderMap) -> Result<Value> {
 // Release review
 // ---------------------------------------------------------------------------
 
-/// `r` (catalog.releases) waits on a staff decision in 발매 심사: parked by
-/// Stage 2, or through the automatic checks with its signed application
-/// (AGREEMENT) not yet decided. Mid-pipeline releases show up once the
-/// pipeline settles, so the reviewer always sees final check results.
-const AWAITING_DECISION: &str =
-    "(r.status='STAGE2_REVIEW' OR (r.status='READY_FOR_DELIVERY' AND EXISTS(
-    SELECT 1 FROM portal.documents d WHERE d.org_id=r.org_id AND d.release_id=r.id
-     AND d.kind='AGREEMENT' AND d.status IN ('REVIEW','PREPARED'))))";
-
-/// Queue filter for [`AWAITING_DECISION`] (the default).
+/// Queue filter for [`awaiting_decision!`] (the default).
 const PENDING_FILTER: &str = "PENDING";
 
 const RELEASE_STATUSES: &[&str] = &[
@@ -245,29 +250,28 @@ pub async fn list_releases(s: &AppState, h: &HeaderMap, p: Page) -> Result<Value
         return Err(Error::InvalidCode("STATUS_UNKNOWN"));
     }
     let (limit, offset) = p.bounds();
-    let filter = if status == PENDING_FILTER {
-        AWAITING_DECISION
-    } else {
-        "r.status=$1"
-    };
-    let sql = format!(
+    // `$1` is PENDING (awaiting a decision) or a release status.
+    const SQL: &str = concat!(
         "SELECT jsonb_build_object(
            'id', r.id, 'org_id', r.org_id, 'org_name', o.name, 'title', r.title,
            'release_type', r.release_type, 'status', r.status, 'revision_id', r.current_revision_id,
-           'artist', ar.body #>> '{{release,draft,artist}}',
-           'release_date', ar.body #>> '{{release,draft,release_date}}',
+           'artist', ar.body #>> '{release,draft,artist}',
+           'release_date', ar.body #>> '{release,draft,release_date}',
            'submitted_at', ar.created_at,
-           'platforms', COALESCE(ar.body #> '{{release,draft,platforms}}', '[]'::jsonb),
+           'platforms', COALESCE(ar.body #> '{release,draft,platforms}', '[]'::jsonb),
+           'cover', NULLIF(r.draft->>'coverData', ''),
            'agreement', (SELECT d.status FROM portal.documents d
                           WHERE d.org_id=r.org_id AND d.release_id=r.id AND d.kind='AGREEMENT'))
          FROM catalog.releases r
          JOIN identity.orgs o ON o.id=r.org_id
          LEFT JOIN catalog.application_revisions ar ON ar.org_id=r.org_id AND ar.id=r.current_revision_id
-         WHERE $1::text IS NOT NULL AND {filter} AND r.archived_at IS NULL
+         WHERE r.archived_at IS NULL AND (r.status=$1 OR ($1='PENDING' AND ",
+        awaiting_decision!(),
+        "))
          ORDER BY ar.created_at NULLS LAST, r.id
          LIMIT $2 OFFSET $3"
     );
-    let items: Vec<Value> = sqlx::query_scalar(&sql)
+    let items: Vec<Value> = sqlx::query_scalar(SQL)
         .bind(status)
         .bind(limit)
         .bind(offset)
@@ -359,7 +363,8 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
     staff_scope(&mut tx).await?;
     let r = sqlx::query(
         "SELECT r.id, r.org_id, o.name AS org_name, r.title, r.release_type, r.status, r.upc,
-                r.current_revision_id, ar.body AS revision, ar.created_at AS submitted_at
+                r.current_revision_id, ar.body AS revision, ar.created_at AS submitted_at,
+                NULLIF(r.draft->>'coverData', '') AS cover
          FROM catalog.releases r JOIN identity.orgs o ON o.id=r.org_id
          LEFT JOIN catalog.application_revisions ar ON ar.org_id=r.org_id AND ar.id=r.current_revision_id
          WHERE r.id=$1",
@@ -481,6 +486,7 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
             "title": r.get::<String,_>("title"), "release_type": r.get::<String,_>("release_type"),
             "status": r.get::<String,_>("status"), "upc": r.get::<Option<String>,_>("upc"),
             "revision_id": revision, "submitted_at": r.get::<Option<chrono::DateTime<chrono::Utc>>,_>("submitted_at"),
+            "cover": r.get::<Option<String>,_>("cover"),
         },
         "application": {
             "artist": draft["artist"], "language": draft["language"], "genre": draft["genre"],
@@ -508,6 +514,9 @@ pub struct CheckNote {
     pub check_code: String,
     pub note: String,
 }
+
+/// Recorded when a reviewer approves without writing a reason.
+const APPROVE_DEFAULT_REASON: &str = "담당자 승인";
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -767,10 +776,13 @@ async fn apply_overrides(
 pub async fn decide(s: &AppState, h: &HeaderMap, release: Uuid, i: DecisionInput) -> Result<Value> {
     let st = staff(s, h, true).await?;
     require(&st, Duty::Review)?;
-    let reason = i.reason.trim();
-    if reason.is_empty() {
-        return Err(Error::PolicyGate("DECISION_REASON_REQUIRED"));
-    }
+    // The approval reason is optional (the reviewer's own record); a
+    // correction or rejection always tells the artist why.
+    let reason = match i.reason.trim() {
+        "" if i.action == "APPROVE" => APPROVE_DEFAULT_REASON,
+        "" => return Err(Error::PolicyGate("DECISION_REASON_REQUIRED")),
+        r => r,
+    };
     note_ok(reason, review::MAX_OVERRIDE_REASON_CHARS)?;
     if i.notes.len() > 100 {
         return Err(Error::Invalid);

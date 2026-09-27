@@ -59,7 +59,7 @@ const PIPELINE = [
   { key: 'live', label: '발매 완료' },
 ];
 const pipelineIndex = (s: string) =>
-  s === 'draft' ? 0 : s === 'ready' || s === 'review' || s === 'needs' ? 1 : s === 'scheduled' ? 2 : s === 'live' ? 3 : 0;
+  s === 'draft' ? 0 : s === 'ready' || s === 'review' || s === 'needs' || s === 'rejected' ? 1 : s === 'scheduled' ? 2 : s === 'live' ? 3 : 0;
 
 function rightsOk(checks: Record<string, boolean> | undefined, options?: { sample?: boolean; featured?: boolean; ai?: boolean; shared?: boolean; rerelease?: boolean }): boolean {
   if (!RIGHTS_KEYS.every(k => checks?.[k])) return false;
@@ -114,6 +114,7 @@ export function ReleaseDetail() {
   const stage = pipelineIndex(rel.status);
   const genre = d?.genre ? genreLabel(d.genre) : '';
   const needsFix = rel.status === 'needs';
+  const rejected = rel.status === 'rejected';
   const fixes = rel.corrections ?? [];
 
   const handleDelete = async () => {
@@ -145,7 +146,7 @@ export function ReleaseDetail() {
               신청서 보기
             </button>
           )}
-          {rel.status !== 'closed' && (
+          {rel.status !== 'closed' && !rejected && (
             <button
               type="button" className={`button${needsFix ? '' : ' secondary'}`}
               onClick={() => nav(needsFix ? fixPath(rel.id, fixes[0]) : `/upload?edit=${encodeURIComponent(rel.id)}`)}
@@ -180,12 +181,26 @@ export function ReleaseDetail() {
 
       <ol className="aq-pipeline" aria-label="발매 진행 단계">
         {PIPELINE.map((p, i) => (
-          <li key={p.key} className={i < stage ? 'is-done' : i === stage ? (rel.status === 'needs' ? 'is-current is-warn' : 'is-current') : ''}>
-            <span className="aq-pipeline-dot" aria-hidden="true">{i < stage ? '✓' : i + 1}</span>
-            <span>{i === 1 && rel.status === 'needs' ? '보완 필요' : p.label}</span>
+          <li key={p.key} className={i < stage ? 'is-done' : i === stage ? (rejected ? 'is-current is-error' : rel.status === 'needs' ? 'is-current is-warn' : 'is-current') : ''}>
+            <span className="aq-pipeline-dot" aria-hidden="true">{i < stage ? '✓' : i === stage && rejected ? '✕' : i + 1}</span>
+            <span>{i === 1 && rejected ? '거절' : i === 1 && rel.status === 'needs' ? '보완 필요' : p.label}</span>
           </li>
         ))}
       </ol>
+
+      {rejected && (
+        <section className="aq-fix-card is-rejected" aria-labelledby="aqRejectHead">
+          <div className="aq-fix-card-head">
+            <span className="aq-fix-icon" aria-hidden="true">✕</span>
+            <div className="min-0">
+              <h2 id="aqRejectHead">발매가 거절됐어요</h2>
+              <p className="break">{fixes.find(f => f.code === 'REVIEW_NOTE')?.message
+                || '담당자 검토 결과 이 발매는 배급할 수 없어요. 궁금한 점은 문의로 남겨 주세요.'}</p>
+              <p className="small muted" style={{ marginTop: 8 }}>거절된 발매는 다시 접수할 수 없어요. 내용을 고쳐 새 발매로 신청해 주세요.</p>
+            </div>
+          </div>
+        </section>
+      )}
 
       {needsFix && (
         <section className="aq-fix-card" aria-labelledby="aqFixCardHead">

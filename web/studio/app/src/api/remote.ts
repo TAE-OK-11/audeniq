@@ -17,6 +17,7 @@ import { ApiError } from './errors';
 import { bootstrapCsrf, hasCsrf, listAll, orgPath, putToGrant, req, setCsrf, type UploadGrant } from './http';
 import { stampNow } from '../lib/date';
 import { normalizeIsrc } from '../lib/dsp';
+import { parseStaffFix } from '../lib/corrections';
 
 // ---------------------------------------------------------------------------
 // 서버 모델
@@ -62,7 +63,9 @@ export function uiStatus(server: string, live = false, agreement: string | null 
   if (live && agreement === 'SIGNED') return 'live';
   if (server === 'DRAFT') return 'draft';
   // 철회·반려(WITHDRAWN)와 대체(SUPERSEDED)는 더 수정할 수 없는 종료 상태
-  if (server === 'WITHDRAWN' || server === 'SUPERSEDED') return 'closed';
+  // 담당자 거절(WITHDRAWN)은 발매 거절, 대체(SUPERSEDED)는 더 수정할 수 없는 종료 상태
+  if (server === 'WITHDRAWN') return 'rejected';
+  if (server === 'SUPERSEDED') return 'closed';
   if (/CORRECTION$/.test(server) || server === 'ON_HOLD_RIGHTS') return 'needs';
   if (server === 'READY_FOR_DELIVERY') {
     // 담당자가 배급 계약서를 승인하면 배급 승인 (서명 후 전송), 그 전에는 검토 중
@@ -375,16 +378,20 @@ interface ServerNote { check_code: string | null; decision: string; note: string
 async function fetchCorrections(id: string): Promise<Correction[]> {
   try {
     const r = await req<{ checks?: ServerCheck[]; review_notes?: ServerNote[] }>(`${detailPath(id)}/submission`, { quiet401: true });
-    // 담당자가 남긴 검토 의견: 항목별 의견은 그 항목 안내 대신, 전체 의견은 별도 항목으로
+    // 담당자가 남긴 검토 의견: 항목별 의견은 그 항목 안내 대신, 담당자가 지정한 항목(FIX_…)은
+    // 그 입력칸으로 가는 보완 항목으로, 전체 의견은 별도 항목으로
     const notes = new Map<string, string>();
+    const staffFixes: Correction[] = [];
     let general = '';
     for (const n of r.review_notes ?? []) {
       if (!n.note?.trim()) continue;
-      if (n.check_code) notes.set(n.check_code, n.note.trim());
+      const fix = n.check_code ? parseStaffFix(n.check_code) : null;
+      if (fix) staffFixes.push({ ...fix, message: n.note.trim() });
+      else if (n.check_code) notes.set(n.check_code, n.note.trim());
       else general = n.note.trim();
     }
     const seen = new Set<string>();
-    const out: Correction[] = [];
+    const out: Correction[] = [...staffFixes];
     for (const c of r.checks ?? []) {
       if (c.severity !== 'CORRECTION' && c.status !== 'CORRECTION_REQUIRED') continue;
       // 트랙별 검사는 detail에 'track=<id>'가 있다 → 그 트랙 입력칸으로 안내
@@ -404,7 +411,8 @@ async function fetchCorrections(id: string): Promise<Correction[]> {
 }
 
 async function withCorrections<T extends Release>(r: T): Promise<T> {
-  if (r.status !== 'needs') return r;
+  // 보완 필요: 고칠 항목 / 발매 거절: 거절 사유(전체 의견)
+  if (r.status !== 'needs' && r.status !== 'rejected') return r;
   const corrections = await fetchCorrections(r.id);
   return corrections.length ? { ...r, corrections } : r;
 }

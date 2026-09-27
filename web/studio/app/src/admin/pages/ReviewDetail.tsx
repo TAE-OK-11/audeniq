@@ -7,10 +7,11 @@ import { Modal, useModalClose } from '../../components/Modal';
 import { useToast } from '../../components/Toast';
 import { errorMessage } from '../../api/errors';
 import { useAsync } from '../../hooks/useAsync';
-import { staffApi, type Check, type DecisionAction, type ReleaseSheet } from '../api';
+import { staffApi, type Check, type DecisionAction, type DecisionInput, type DecisionResult, type ReleaseSheet } from '../api';
+import { STAFF_FIX_OPTIONS, WIZ_STEP_NAMES, correctionTarget, isKnownCorrection, staffFixCode } from '../../lib/corrections';
 import {
   APPROVAL_STATUS, CHECK_STATUS, DECISION_LABEL, DOC_KIND, DOC_STATUS, MAX_REASON, READINESS, RELEASE_STATUS, RELEASE_TYPE,
-  applicationPending, checkLabel, day, needsSecond, pick, shortId, when,
+  REJECT_REASONS, applicationPending, checkLabel, checkSummary, day, needsSecond, pick, shortId, stageStateLabel, systemStages, when,
 } from '../labels';
 import { Chip, Empty, ErrorBox, Initial, NoDuty, Section, Skeleton, StatusChip, useStaff } from '../ui';
 
@@ -20,99 +21,49 @@ const DECL_LABEL: Record<string, string> = {
 };
 const ROLE_KO: Record<string, string> = { COMPOSER: '작곡', LYRICIST: '작사', ARRANGER: '편곡', PRODUCER: '프로듀서', PERFORMER: '연주', MAIN_ARTIST: '아티스트' };
 const ACTION_KO: Record<string, string> = {
-  'release.submitted': '발매 접수', 'stage1.decision': '1차 검사 결과', 'stage2.decision': '2차 검사 결과',
+  'release.submitted': '발매 접수', 'stage1.decision': '1차 검사 결과', 'stage1.completed': '1차 검사 완료', 'stage2.decision': '2차 검사 결과',
+  'stage2.pass': '2차 검사 통과', 'stage3.prepared': '배급 준비 완료', 'delivery.staged': '플랫폼별 패키지 준비',
+  'delivery.held': '배급 대기 (계약서 서명 전)', 'delivery.enqueued': '플랫폼 전송 예약', 'release.updated': '발매 정보 수정',
   'staff.approved': '담당자 승인', 'staff.correction_requested': '담당자 보완 요청', 'staff.rejected': '담당자 거절',
   'staff.approval_requested': '2차 승인 요청', 'staff.approval_granted': '2차 승인 완료', 'staff.approval_declined': '2차 승인 반려',
-  'staff.proof_requested': '권리 증빙 요청', 'staff.identifiers_reissue': '식별자 재발급 요청',
+  'staff.proof_requested': '권리 증빙 요청', 'staff.identifiers_reissue': '식별자 재발급 요청', 'staff.document_reviewed': '신청서 처리',
 };
 
-function CheckCard({ c, open, note, onNote }: { c: Check; open?: boolean; note?: string; onNote?: (v: string) => void }) {
+/** 검사 항목 — 쉬운 설명을 먼저, 검사 코드와 원문은 ‘상세 보기’에 */
+function CheckCard({ c, open }: { c: Check; open?: boolean }) {
   const sensitive = open && needsSecond(c);
   const cls = ['adm-check', open ? 'is-open' : '', sensitive ? 'is-sensitive' : ''].filter(Boolean).join(' ');
   return (
     <div className={cls}>
       <div className="adm-check-top">
-        <span><b>{checkLabel(c.check_code)}</b> <span className="adm-code">{c.check_code}</span></span>
+        <b>{checkLabel(c.check_code)}</b>
         <span className="adm-codes">
           {sensitive && <Chip tone="red">2인 승인 필요</Chip>}
           <StatusChip value={pick(CHECK_STATUS, c.status)} />
         </span>
       </div>
-      {c.detail && <p>{c.detail}</p>}
-      {onNote && (
-        <textarea
-          className="adm-textarea" rows={2} maxLength={2000} value={note ?? ''}
-          aria-label={`${checkLabel(c.check_code)} 항목 메모`}
-          placeholder="이 항목에 대해 아티스트에게 보여줄 안내 (보완 요청·거절 시 전달돼요)"
-          onChange={e => onNote(e.target.value)}
-        />
-      )}
+      <p>{checkSummary(c)}</p>
+      <details className="adm-more">
+        <summary>상세 보기</summary>
+        <div><span className="adm-code">{c.check_code}</span></div>
+        {c.detail && <p className="adm-raw">{c.detail}</p>}
+      </details>
     </div>
   );
 }
 
-type Copy = { title: string; lead: string; placeholder: string; submit: string; btn: string };
+const ACTION_TITLE: Record<DecisionAction, string> = { APPROVE: '발매 승인', REQUEST_CORRECTION: '보완 요청', REJECT: '발매 거절' };
 
-/** 자동 검사를 통과한 새 발매 신청을 결정할 때 */
-const APPLICATION_COPY: Record<DecisionAction, Copy> = {
-  APPROVE: {
-    title: '발매 신청 승인', lead: '신청서(배급 계약서)를 승인해요. 아티스트에게 계약서 서명 안내가 가고, 서명하면 배급이 시작돼요.',
-    placeholder: '승인 근거 (예: 신청 정보·음원·커버 확인 완료)', submit: '승인하기', btn: 'primary',
-  },
-  REQUEST_CORRECTION: {
-    title: '보완 요청', lead: '발매를 아티스트에게 돌려보내요(배포 보완 요청). 아티스트가 고쳐서 다시 접수하면 새 신청서가 이곳으로 와요. 요청 내용은 아티스트 화면에 그대로 보여요.',
-    placeholder: '무엇을 어떻게 고치면 되는지 적어 주세요', submit: '보완 요청 보내기', btn: 'primary',
-  },
-  REJECT: {
-    title: '발매 거절', lead: '발매 신청을 거절(WITHDRAWN)하고 작업 공간에 알려요. 되돌릴 수 없어요 — 아티스트는 새로 접수해야 해요.',
-    placeholder: '거절 사유 (아티스트에게 전달돼요)', submit: '거절 확정', btn: 'solid-danger',
-  },
-};
-
-const ACTION_COPY: Record<DecisionAction, Copy> = {
-  APPROVE: {
-    title: '심사 승인', lead: '미해결 검사 항목을 통과(PASS)로 처리하고 2차 재평가를 예약해요. 파이프라인이 다음 단계(배포 준비)로 넘겨요.',
-    placeholder: '승인 근거 (예: 크레딧 표기는 동일인의 다른 활동명으로 확인)', submit: '승인하기', btn: 'primary',
-  },
-  REQUEST_CORRECTION: {
-    title: '보완 요청', lead: '미해결 검사 항목을 모두 ‘보완 필요’로 바꾸고 아티스트에게 돌려보내요. 항목별 메모는 아티스트 화면에 그대로 보여요.',
-    placeholder: '아티스트에게 전달할 보완 요청 요약', submit: '보완 요청 보내기', btn: 'primary',
-  },
-  REJECT: {
-    title: '발매 거절', lead: '발매를 거절(WITHDRAWN)하고 작업 공간에 알려요. 되돌릴 수 없어요 — 아티스트는 새로 접수해야 해요.',
-    placeholder: '거절 사유 (아티스트에게 전달돼요)', submit: '거절 확정', btn: 'solid-danger',
-  },
-};
-
-function DecisionForm({ sheet, action, application, onDone }: { sheet: ReleaseSheet; action: DecisionAction; application: boolean; onDone: (msg: string) => void }) {
+function useDecide(sheet: ReleaseSheet, onDone: (msg: string) => void) {
   const close = useModalClose();
   const toast = useToast();
-  const copy = (application ? APPLICATION_COPY : ACTION_COPY)[action];
-  const open = sheet.open_checks;
-  const [reason, setReason] = useState('');
-  const [notes, setNotes] = useState<Record<string, string>>({});
-  const [sure, setSure] = useState(false);
   const [busy, setBusy] = useState(false);
-  const withNotes = action !== 'APPROVE' && open.length > 0;
-  const sensitive = action === 'APPROVE' && open.some(needsSecond);
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!reason.trim() || busy || !sheet.release.revision_id) return;
+  const run = async (input: Omit<DecisionInput, 'revision_id'>, msg: (r: DecisionResult) => string) => {
+    if (busy || !sheet.release.revision_id) return;
     setBusy(true);
     try {
-      const res = await staffApi.decide(sheet.release.id, {
-        action,
-        revision_id: sheet.release.revision_id,
-        reason: reason.trim(),
-        notes: withNotes ? Object.entries(notes).filter(([, v]) => v.trim()).map(([check_code, note]) => ({ check_code, note: note.trim() })) : [],
-      });
-      const msg = res.result === 'PENDING_SECOND_APPROVAL'
-        ? '민감 항목이 있어 2차 승인 요청을 올렸어요. 다른 심사 담당자가 승인하면 반영돼요.'
-        : res.result === 'REJECTED' ? '발매를 거절했어요. 아티스트에게 알림이 갔어요.'
-          : action !== 'APPROVE' ? '보완 요청을 보냈어요. 아티스트에게 알림이 갔어요.'
-            : application ? '승인했어요. 아티스트에게 계약서 서명 안내가 갔어요.' : '승인했어요. 2차 재평가 후 배포 준비로 넘어가요.';
-      onDone(msg);
+      const res = await staffApi.decide(sheet.release.id, { ...input, revision_id: sheet.release.revision_id });
+      onDone(msg(res));
       close();
     } catch (err) {
       toast(errorMessage(err, '결정을 저장하지 못했어요.'), 'error');
@@ -120,47 +71,164 @@ function DecisionForm({ sheet, action, application, onDone }: { sheet: ReleaseSh
       setBusy(false);
     }
   };
+  return { busy, run, close };
+}
 
+function ApproveForm({ sheet, application, onDone }: { sheet: ReleaseSheet; application: boolean; onDone: (msg: string) => void }) {
+  const { busy, run, close } = useDecide(sheet, onDone);
+  const [memo, setMemo] = useState('');
+  const sensitive = sheet.open_checks.some(needsSecond);
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    void run({ action: 'APPROVE', reason: memo.trim() }, res => res.result === 'PENDING_SECOND_APPROVAL'
+      ? '민감 항목이 있어 2차 승인 요청을 올렸어요. 다른 심사 담당자가 승인하면 반영돼요.'
+      : application ? '승인했어요. 아티스트에게 계약서 서명 안내가 갔어요.' : '승인했어요. 시스템이 나머지 검사와 배급 준비를 이어서 해요.');
+  };
   return (
     <form onSubmit={submit}>
-      <p className="small muted">{copy.lead}</p>
+      <p className="small muted">
+        {application
+          ? '발매 신청을 승인해요. 아티스트가 계약서에 서명하면 시스템이 배급을 시작해요.'
+          : '남은 검사 항목을 통과로 처리해요. 이후 배급 준비는 시스템이 자동으로 이어서 해요.'}
+      </p>
       {sensitive && (
         <div className="adm-alert is-warn" style={{ marginTop: 14 }}>
-          권리·중복·보호명 등 <b>민감 항목</b>이 있어 바로 통과되지 않아요. 승인하면 <b>2차 승인 요청</b>이 만들어지고, 다른 심사 담당자가 승인해야 반영돼요.
+          권리·중복·보호명 등 <b>민감 항목</b>이 있어 다른 심사 담당자의 <b>2차 승인</b> 후 반영돼요.
         </div>
-      )}
-      {action === 'REQUEST_CORRECTION' && !application && open.length === 0 && (
-        <div className="adm-alert is-error" style={{ marginTop: 14 }}>보완 요청할 미해결 검사 항목이 없어요.</div>
       )}
       <div className="adm-field" style={{ marginTop: 16 }}>
-        <label htmlFor="dReason">{action === 'APPROVE' ? '승인 근거' : action === 'REJECT' ? '거절 사유' : '요청 요약'} <span className="required">*</span></label>
-        <textarea id="dReason" data-autofocus className="adm-textarea" rows={4} maxLength={MAX_REASON} required value={reason} placeholder={copy.placeholder} onChange={e => setReason(e.target.value)} />
-        <small className="adm-counter">{reason.length} / {MAX_REASON} · 감사 기록에 담당자 이름과 함께 남아요</small>
+        <label htmlFor="aMemo">승인 메모 <span className="muted">(선택)</span></label>
+        <textarea id="aMemo" data-autofocus className="adm-textarea" rows={3} maxLength={MAX_REASON} value={memo} placeholder="남길 내용이 있으면 적어 주세요. 비워 두면 ‘담당자 승인’으로 기록돼요." onChange={e => setMemo(e.target.value)} />
       </div>
-      {withNotes && (
-        <div className="adm-field">
-          <span className="adm-field-label">항목별 안내 (선택)</span>
-          <div className="adm-checks">
-            {open.map(c => (
-              <CheckCard key={c.check_code} c={c} open note={notes[c.check_code]} onNote={v => setNotes(n => ({ ...n, [c.check_code]: v }))} />
-            ))}
-          </div>
-        </div>
-      )}
-      {action === 'REJECT' && (
-        <label className="adm-check-line">
-          <input type="checkbox" checked={sure} onChange={e => setSure(e.target.checked)} />
-          <span><b>{sheet.release.title}</b> 발매를 거절하면 되돌릴 수 없다는 것을 확인했어요.</span>
-        </label>
-      )}
       <div className="adm-form-actions">
         <button type="button" className="adm-btn soft" onClick={close}>취소</button>
-        <button
-          type="submit" className={`adm-btn ${copy.btn}`}
-          disabled={busy || !reason.trim() || (action === 'REJECT' && !sure) || (action === 'REQUEST_CORRECTION' && !application && open.length === 0)}
-        >
-          {busy ? '저장 중…' : copy.submit}
-        </button>
+        <button type="submit" className="adm-btn primary" disabled={busy}>{busy ? '저장 중…' : '승인하기'}</button>
+      </div>
+    </form>
+  );
+}
+
+function RejectForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: string) => void }) {
+  const { busy, run, close } = useDecide(sheet, onDone);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [other, setOther] = useState(false);
+  const [custom, setCustom] = useState('');
+  const [sure, setSure] = useState(false);
+  const toggle = (id: string) => setPicked(p => (p.includes(id) ? p.filter(x => x !== id) : [...p, id]));
+  const reason = [
+    ...REJECT_REASONS.filter(r => picked.includes(r.id)).map(r => `· ${r.label}: ${r.text}`),
+    ...(other && custom.trim() ? [`· 기타: ${custom.trim()}`] : []),
+  ].join('\n');
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reason || !sure) return;
+    void run({ action: 'REJECT', reason, notes: [] }, () => '발매를 거절했어요. 아티스트에게 거절 사유와 함께 알림이 갔어요.');
+  };
+  return (
+    <form onSubmit={submit}>
+      <p className="small muted">사유를 누르면 그대로 기록되고 아티스트에게 전달돼요. 여러 개 고를 수 있어요.</p>
+      <div className="adm-reasons" role="group" aria-label="거절 사유">
+        {REJECT_REASONS.map(r => (
+          <button key={r.id} type="button" className={`adm-reason${picked.includes(r.id) ? ' is-on' : ''}`} aria-pressed={picked.includes(r.id)} title={r.text} onClick={() => toggle(r.id)}>{r.label}</button>
+        ))}
+        <button type="button" className={`adm-reason${other ? ' is-on' : ''}`} aria-pressed={other} onClick={() => setOther(v => !v)}>기타 (직접 입력)</button>
+      </div>
+      {other && (
+        <div className="adm-field">
+          <label htmlFor="rCustom">기타 사유</label>
+          <textarea id="rCustom" data-autofocus className="adm-textarea" rows={3} maxLength={1000} value={custom} placeholder="아티스트에게 전달할 거절 사유" onChange={e => setCustom(e.target.value)} />
+        </div>
+      )}
+      {reason && <div className="adm-alert" style={{ whiteSpace: 'pre-line' }}>{reason}</div>}
+      <label className="adm-check-line">
+        <input type="checkbox" checked={sure} onChange={e => setSure(e.target.checked)} />
+        <span><b>{sheet.release.title}</b> 발매를 거절하면 되돌릴 수 없어요. 아티스트는 새로 접수해야 해요.</span>
+      </label>
+      <div className="adm-form-actions">
+        <button type="button" className="adm-btn soft" onClick={close}>취소</button>
+        <button type="submit" className="adm-btn solid-danger" disabled={busy || !reason || !sure}>{busy ? '저장 중…' : '거절 확정'}</button>
+      </div>
+    </form>
+  );
+}
+
+interface FixItem { key: string; code: string; trackId: string; note: string; system?: boolean }
+let fixSeq = 0;
+const newFix = (over: Partial<FixItem> = {}): FixItem => ({ key: `fx${++fixSeq}`, code: '', trackId: '', note: '', ...over });
+
+/** 보완 요청 — 페이지 → 항목(→ 트랙)을 고르고 문제를 적으면 아티스트는 그 입력칸으로 바로 가서 고친다 */
+function CorrectionForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: string) => void }) {
+  const { busy, run, close } = useDecide(sheet, onDone);
+  const tracks = sheet.application.tracks ?? [];
+  // 시스템이 찾은 문제(미해결 검사)는 미리 채워 둔다 — 담당자는 문구만 다듬으면 된다
+  const [items, setItems] = useState<FixItem[]>(() => {
+    const sys = sheet.open_checks.map(c => newFix({ code: c.check_code, note: isKnownCorrection(c.check_code) ? correctionTarget(c.check_code).hint : checkSummary(c), system: true }));
+    return sys.length ? sys : [newFix()];
+  });
+  const [summary, setSummary] = useState('');
+  const set = (key: string, patch: Partial<FixItem>) => setItems(list => list.map(i => (i.key === key ? { ...i, ...patch } : i)));
+  const opt = (code: string) => STAFF_FIX_OPTIONS.find(o => o.code === code);
+  const ready = items.filter(i => i.code && (!opt(i.code)?.track || i.trackId));
+  const incomplete = items.some(i => !i.system && (!i.code || (opt(i.code)?.track && !i.trackId) || !i.note.trim()));
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ready.length || incomplete) return;
+    const notes = ready.map(i => ({
+      check_code: i.system ? i.code : staffFixCode(i.code, opt(i.code)?.track ? i.trackId : undefined),
+      note: i.note.trim() || correctionTarget(i.code).hint,
+    }));
+    const reason = summary.trim() || '표시된 항목을 고친 뒤 다시 접수해 주세요.';
+    void run({ action: 'REQUEST_CORRECTION', reason, notes }, () => '보완 요청을 보냈어요. 아티스트는 표시된 칸으로 바로 가서 고칠 수 있어요.');
+  };
+  return (
+    <form onSubmit={submit}>
+      <p className="small muted">고칠 곳을 페이지와 항목으로 지정하고 무엇이 문제인지 적어 주세요. 아티스트 화면에서 그 입력칸으로 바로 이동해요.</p>
+      <div className="adm-fixes">
+        {items.map((i, n) => {
+          const o = opt(i.code);
+          const step = o ? o.step : i.system ? correctionTarget(i.code).step : -1;
+          return (
+            <div key={i.key} className="adm-fix">
+              <div className="adm-fix-top">
+                <b>{i.system ? `시스템이 찾은 문제 · ${checkLabel(i.code)}` : `보완 항목 ${n + 1}`}</b>
+                {!i.system && items.length > 1 && (
+                  <button type="button" className="adm-btn soft small" onClick={() => setItems(list => list.filter(x => x.key !== i.key))}>삭제</button>
+                )}
+              </div>
+              {!i.system && (
+                <div className="adm-fix-pick">
+                  <select className="adm-select" aria-label="페이지" value={step} onChange={e => set(i.key, { code: STAFF_FIX_OPTIONS.find(x => x.step === Number(e.target.value))?.code ?? '', trackId: '' })}>
+                    <option value={-1} disabled>페이지 선택</option>
+                    {WIZ_STEP_NAMES.map((name, s) => STAFF_FIX_OPTIONS.some(x => x.step === s) && <option key={name} value={s}>{name}</option>)}
+                  </select>
+                  <select className="adm-select" aria-label="항목" value={i.code} disabled={step < 0} onChange={e => set(i.key, { code: e.target.value, trackId: '' })}>
+                    {STAFF_FIX_OPTIONS.filter(x => x.step === step).map(x => <option key={x.code} value={x.code}>{x.label}</option>)}
+                  </select>
+                  {o?.track && (
+                    <select className="adm-select" aria-label="트랙" value={i.trackId} onChange={e => set(i.key, { trackId: e.target.value })}>
+                      <option value="" disabled>트랙 선택</option>
+                      {tracks.map(t => <option key={t.id} value={t.id}>{t.track_number}. {t.title}</option>)}
+                    </select>
+                  )}
+                </div>
+              )}
+              <textarea
+                className="adm-textarea" rows={2} maxLength={2000} value={i.note} aria-label="문제 내용"
+                placeholder={i.code ? correctionTarget(i.code).hint : '무엇이 문제이고 어떻게 고치면 되는지 적어 주세요.'}
+                onChange={e => set(i.key, { note: e.target.value })}
+              />
+            </div>
+          );
+        })}
+      </div>
+      <button type="button" className="adm-btn soft small" style={{ marginTop: 10 }} onClick={() => setItems(list => [...list, newFix()])}>+ 항목 추가</button>
+      <div className="adm-field" style={{ marginTop: 16 }}>
+        <label htmlFor="cSummary">전체 안내 <span className="muted">(선택)</span></label>
+        <textarea id="cSummary" className="adm-textarea" rows={2} maxLength={MAX_REASON} value={summary} placeholder="비워 두면 ‘표시된 항목을 고친 뒤 다시 접수해 주세요.’로 보내요." onChange={e => setSummary(e.target.value)} />
+      </div>
+      <div className="adm-form-actions">
+        <button type="button" className="adm-btn soft" onClick={close}>취소</button>
+        <button type="submit" className="adm-btn primary" disabled={busy || !ready.length || incomplete}>{busy ? '보내는 중…' : `보완 요청 보내기 (${ready.length}건)`}</button>
       </div>
     </form>
   );
@@ -262,6 +330,8 @@ export function ReviewDetail() {
   const application = !inReview && r.status === 'READY_FOR_DELIVERY'
     && sheet.documents.some(d => d.kind === 'AGREEMENT' && applicationPending(d.status));
   const decidable = inReview || application;
+  const stages = systemStages(r.status);
+  const passed = sheet.checks.filter(c => c.status === 'PASS' || c.status === 'NOT_APPLICABLE').length;
   const pending = sheet.second_approvals.find(a => a.status === 'PENDING');
   const canReview = can('REVIEW');
   const tracks = app.tracks ?? [];
@@ -275,7 +345,7 @@ export function ReviewDetail() {
       <div className="adm-detail">
         <div>
           <div className="adm-release-hero">
-            <Initial text={r.title} />
+            <Initial text={r.title} src={r.cover} />
             <div className="adm-min">
               <div className="adm-codes" style={{ marginBottom: 6 }}>
                 <StatusChip value={pick(RELEASE_STATUS, r.status)} />
@@ -298,16 +368,31 @@ export function ReviewDetail() {
             </div>
           )}
 
-          <Section title="미해결 검사 항목" meta={`${sheet.open_checks.length}건 · 2차 검사를 멈춘 항목`}>
-            {sheet.open_checks.length ? (
-              <div className="adm-checks">{sheet.open_checks.map(c => <CheckCard key={c.check_code} c={c} open />)}</div>
-            ) : (
-              <Empty title="담당자 판단이 필요한 항목이 없어요">{inReview ? '승인하면 바로 재평가돼요.' : application ? '자동 검사를 모두 통과했어요. 신청 정보를 확인하고 결정해 주세요.' : '심사 대기 상태가 아니에요.'}</Empty>
+          <Section title="시스템 검사" meta={`검사 ${sheet.checks.length}개 중 ${passed}개 자동 통과`}>
+            <ol className="adm-stages">
+              {stages.map((st, i) => (
+                <li key={st.key} className={`is-${st.state}`}>
+                  <span className="adm-stage-dot" aria-hidden="true">{st.state === 'done' ? '✓' : st.state === 'stopped' ? '✕' : i + 1}</span>
+                  <span className="adm-min">
+                    <b>{st.label} {stageStateLabel(st.state)}</b>
+                    <small>{st.hint}</small>
+                  </span>
+                </li>
+              ))}
+            </ol>
+            {decidable && sheet.open_checks.length === 0 && (
+              <div className="adm-alert is-ok" style={{ marginTop: 12 }}>시스템 검사를 모두 통과했어요. 신청 정보와 커버·음원만 확인하고 최종 결정해 주세요.</div>
             )}
           </Section>
 
+          {sheet.open_checks.length > 0 && (
+            <Section title="담당자 확인 필요" meta={`${sheet.open_checks.length}건 · 시스템이 판단을 넘긴 항목`}>
+              <div className="adm-checks">{sheet.open_checks.map(c => <CheckCard key={c.check_code} c={c} open />)}</div>
+            </Section>
+          )}
+
           {sheet.advisories.length > 0 && (
-            <Section title="오디오 권고" meta="차단하지 않지만 확인이 필요한 1차 경고">
+            <Section title="참고 사항" meta="발매를 막지 않는 음원 권고">
               <div className="adm-checks">{sheet.advisories.map(c => <CheckCard key={c.check_code} c={c} />)}</div>
             </Section>
           )}
@@ -458,7 +543,7 @@ export function ReviewDetail() {
                 <li key={`${t.at}-${i}`} className={t.action.startsWith('staff.') ? 'is-staff' : ''}>
                   <i aria-hidden="true" />
                   <div>
-                    <b>{ACTION_KO[t.action] ?? t.action}</b>{t.reason && <> <span className="adm-code">{t.reason}</span></>}
+                    <b title={t.reason ?? undefined}>{ACTION_KO[t.action] ?? t.action}</b>
                     <small>{when(t.at)} · {t.actor_service ?? shortId(t.actor_user_id)}</small>
                   </div>
                 </li>
@@ -472,14 +557,14 @@ export function ReviewDetail() {
             <h2>심사 결정</h2>
             <p>
               {inReview
-                ? `미해결 ${sheet.open_checks.length}건 · 수정본 ${shortId(r.revision_id)}`
+                ? `담당자 확인 필요 ${sheet.open_checks.length}건`
                 : application
-                  ? `새 발매 신청 · 자동 검사 통과 · 수정본 ${shortId(r.revision_id)}`
+                  ? '새 발매 신청 · 시스템 검사 모두 통과'
                   : `지금은 ‘${pick(RELEASE_STATUS, r.status)[0]}’ 상태라 결정할 수 없어요.`}
             </p>
             <div className="adm-decide-actions">
               <button type="button" className="adm-btn primary" disabled={!decidable || !canReview || !!pending} onClick={() => setAction('APPROVE')}>승인</button>
-              <button type="button" className="adm-btn warn" disabled={!decidable || !canReview || (inReview && sheet.open_checks.length === 0)} onClick={() => setAction('REQUEST_CORRECTION')}>보완 요청</button>
+              <button type="button" className="adm-btn warn" disabled={!decidable || !canReview} onClick={() => setAction('REQUEST_CORRECTION')}>보완 요청</button>
               <button type="button" className="adm-btn danger" disabled={!decidable || !canReview} onClick={() => setAction('REJECT')}>거절</button>
             </div>
             <div className="adm-decide-note">
@@ -506,8 +591,10 @@ export function ReviewDetail() {
       </div>
 
       {action && (
-        <Modal title={ACTION_COPY[action].title} onClose={() => setAction(null)} dismissible={false}>
-          <DecisionForm sheet={sheet} action={action} application={application} onDone={after} />
+        <Modal title={ACTION_TITLE[action]} onClose={() => setAction(null)} dismissible={false}>
+          {action === 'APPROVE' && <ApproveForm sheet={sheet} application={application} onDone={after} />}
+          {action === 'REJECT' && <RejectForm sheet={sheet} onDone={after} />}
+          {action === 'REQUEST_CORRECTION' && <CorrectionForm sheet={sheet} onDone={after} />}
         </Modal>
       )}
       {modal === 'proof' && (

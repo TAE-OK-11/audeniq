@@ -1091,3 +1091,11 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 }
 /* 홈 바로가기 카드: 설명은 한 줄로 맞춰 제목 높이를 가지런히 */
 #view-home .service-item p{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 발매 거절 — 진행 단계의 검토를 빨간 ‘거절’로, 상태 칩·안내 카드도 빨간 계열 */
+.status-chip.rejected{background:#ffedef!important;color:#c0303e!important}
+.aq-pipeline li.is-error{color:#d92d3b}
+.aq-pipeline li.is-error .aq-pipeline-dot{background:#d92d3b;color:#fff;box-shadow:0 0 0 2px #f4b7bd}
+.aq-fix-card.is-rejected{background:#fff1f2}
+.aq-fix-card.is-rejected h2{color:#a4212e}
+.aq-fix-card.is-rejected p{color:#8f4a51}
+.aq-fix-card.is-rejected .aq-fix-icon{background:#ffd9dd;color:#d92d3b}

@@ -86,6 +86,51 @@ const TARGETS: Record<string, Target> = {
   STAGE3_PREPARATION_FAILED: { step: WIZ_STEP.review, label: '배포 준비', hint: '배포 준비를 마치지 못했어요. 내용을 확인하고 다시 접수해 주세요. 같은 안내가 반복되면 문의로 알려 주세요.' },
 };
 
+/** 담당자가 보완 요청에서 직접 고르는 항목 (페이지 → 항목). `track`이면 트랙도 고른다.
+ *  서버에는 검토 의견의 check_code로 `FIX_…` 또는 `FIX_…@<트랙 id>`가 저장된다. */
+const STAFF_FIX: Record<string, Target & { track?: boolean }> = {
+  FIX_TITLE: { step: WIZ_STEP.info, field: 'f-title', label: '발매 제목', hint: '발매 제목을 확인해 주세요.' },
+  FIX_ARTIST: { step: WIZ_STEP.info, field: 'f-artist', label: '아티스트명', hint: '아티스트명을 확인해 주세요.' },
+  FIX_TYPE: { step: WIZ_STEP.info, field: 'f-type', label: '발매 유형', hint: '발매 유형을 확인해 주세요.' },
+  FIX_GENRE: { step: WIZ_STEP.info, field: 'f-genre', label: '장르', hint: '장르를 확인해 주세요.' },
+  FIX_LANGUAGE: { step: WIZ_STEP.info, field: 'f-language', label: '주요 언어', hint: '주요 언어를 확인해 주세요.' },
+  FIX_LABEL: { step: WIZ_STEP.info, field: 'f-label', label: '레이블', hint: '레이블 표기를 확인해 주세요.' },
+  FIX_NOTES: { step: WIZ_STEP.info, field: 'f-notes', label: '앨범 소개', hint: '앨범 소개를 확인해 주세요.' },
+  FIX_TRACK_TITLE: { step: WIZ_STEP.tracks, field: 'tr-{k}-title', label: '곡명', hint: '곡명을 확인해 주세요.', track: true },
+  FIX_TRACK_VERSION: { step: WIZ_STEP.tracks, field: 'tr-{k}-version', label: '곡 버전', hint: '버전 표기를 확인해 주세요.', track: true },
+  FIX_AUDIO: { step: WIZ_STEP.tracks, field: 'trackFile-{k}', label: '음원 파일', hint: '음원 파일을 다시 올려 주세요.', track: true },
+  FIX_COMPOSERS: { step: WIZ_STEP.tracks, field: 'tr-{k}-composers', label: '작곡', hint: '작곡가 정보를 확인해 주세요.', track: true },
+  FIX_LYRICISTS: { step: WIZ_STEP.tracks, field: 'tr-{k}-lyricists', label: '작사', hint: '작사가 정보를 확인해 주세요.', track: true },
+  FIX_ARRANGERS: { step: WIZ_STEP.tracks, field: 'tr-{k}-arrangers', label: '편곡', hint: '편곡자 정보를 확인해 주세요.', track: true },
+  FIX_PERFORMERS: { step: WIZ_STEP.tracks, field: 'tr-{k}-performers', label: '참여 아티스트', hint: '참여 아티스트 정보를 확인해 주세요.', track: true },
+  FIX_LYRICS: { step: WIZ_STEP.tracks, field: 'tr-{k}-lyrics', label: '가사', hint: '가사를 확인해 주세요.', track: true },
+  FIX_ISRC: { step: WIZ_STEP.tracks, field: 'tr-{k}-isrc', label: 'ISRC', hint: 'ISRC를 확인해 주세요.', track: true },
+  FIX_COVER: { ...COVER, hint: '커버아트를 다시 올려 주세요.' },
+  FIX_RELEASE_DATE: { step: WIZ_STEP.distribution, field: 'f-releaseDate', label: '발매일', hint: '발매 예정일을 확인해 주세요.' },
+  FIX_UPC: { step: WIZ_STEP.distribution, field: 'f-upc', label: 'UPC', hint: 'UPC를 확인해 주세요.' },
+  FIX_PLATFORMS: { step: WIZ_STEP.distribution, field: 'aqPlatforms', label: '배급 플랫폼', hint: '배급 플랫폼을 확인해 주세요.' },
+  FIX_SPECIAL: { step: WIZ_STEP.distribution, field: 'aqSpecialOptions', label: '특수 항목', hint: '커버곡·샘플·AI 활용 등 신고 항목을 확인해 주세요.' },
+  FIX_OWNERSHIP: { step: WIZ_STEP.rights, field: 'f-ownership', label: '음원 권리자', hint: '음원 권리자를 확인해 주세요.' },
+  FIX_PLINE: { step: WIZ_STEP.rights, field: 'f-phonogram', label: '℗ 표기', hint: '℗ 표기를 확인해 주세요.' },
+  FIX_CLINE: { step: WIZ_STEP.rights, field: 'f-copyright', label: '© 표기', hint: '© 표기를 확인해 주세요.' },
+  FIX_OTHER: { step: WIZ_STEP.review, label: '기타', hint: '담당자 요청 내용을 확인해 주세요.' },
+};
+Object.assign(TARGETS, STAFF_FIX);
+
+export interface StaffFixOption { code: string; step: number; label: string; track: boolean }
+/** 관리자 보완 요청 화면의 항목 목록 (위자드 단계 순) */
+export const STAFF_FIX_OPTIONS: StaffFixOption[] = Object.entries(STAFF_FIX)
+  .map(([code, t]) => ({ code, step: t.step, label: t.label, track: !!t.track }));
+
+/** 담당자 지정 항목 → 서버 check_code (`FIX_AUDIO@<트랙 id>`) */
+export const staffFixCode = (code: string, trackId?: string) => (trackId ? `${code}@${trackId}` : code);
+/** 서버 check_code → 담당자 지정 항목 (아니면 null) */
+export function parseStaffFix(checkCode: string): { code: string; trackId?: string } | null {
+  const [code, trackId] = checkCode.split('@');
+  if (!(code in STAFF_FIX)) return null;
+  return trackId ? { code, trackId } : { code };
+}
+
 const FALLBACK: Target = { step: WIZ_STEP.review, label: '기타', hint: '요청 내용을 확인하고 필요한 항목을 고쳐 주세요.' };
 
 export interface ResolvedCorrection extends Correction {

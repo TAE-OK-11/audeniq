@@ -132,3 +132,99 @@ export const needsSecond = (c: { check_code: string; status: string }) => c.stat
 
 /** review::MAX_OVERRIDE_REASON_CHARS */
 export const MAX_REASON = 2000;
+
+// ---------- 담당자가 읽기 쉬운 검사 설명 ----------
+const num = (detail: string | null | undefined, re: RegExp) => {
+  const m = re.exec(detail ?? '');
+  return m ? Number(m[1]) : null;
+};
+
+/** 검사 결과 → 담당자가 바로 이해할 한 줄 설명 (원문 detail은 ‘상세 보기’에서) */
+export function checkSummary(c: { check_code: string; detail: string | null }): string {
+  const d = c.detail ?? '';
+  switch (c.check_code) {
+    case 'AUDIO_SIMILAR_TO_EXISTING': {
+      const n = num(d, /similar to (\d+) asset/);
+      return `이미 등록된 음원${n ? ` ${n}개` : ''}와 거의 같은 소리예요. 같은 곡을 다시 낸 것인지, 권리가 있는지 확인해 주세요.`;
+    }
+    case 'AUDIO_LOUDNESS_OUT_OF_RANGE':
+    case 'DSP_LOUDNESS_ADVISORY': {
+      const lufs = num(d, /integrated_lufs=(-?[\d.]+)/);
+      const peak = num(d, /true_peak_dbtp=(-?[\d.]+)/);
+      const dir = lufs === null ? '기준과 달라요' : lufs > -14 ? '기준보다 커요' : '기준보다 작아요';
+      const measured = [lufs !== null && `측정 ${lufs} LUFS`, peak !== null && `피크 ${peak} dBTP`].filter(Boolean).join(', ');
+      return `음량이 스트리밍 ${dir}(권장 -14 LUFS, 피크 -1 dBTP 이하)${measured ? ` · ${measured}` : ''}. 플랫폼이 볼륨을 자동으로 맞추므로 발매는 가능해요.`;
+    }
+    case 'AUDIO_CLIPPING':
+    case 'DSP_CLIPPING_ADVISORY':
+      return '소리가 깨지는 구간(클리핑)이 있어요. 심하면 아티스트에게 마스터 파일 교체를 요청하세요.';
+    case 'AUDIO_CONTENT_SUSPECT': return '음원 내용이 의심스러워요(무음·잡음·테스트 음원 등). 직접 들어 보고 판단해 주세요.';
+    case 'S2_INTEGRITY_DUP': return '다른 발매와 같은 마스터 음원이 쓰였어요. 중복 발매인지 확인해 주세요.';
+    case 'S2_INTEGRITY_DISPUTES': return '권리 분쟁이 걸린 음원·아티스트와 관련 있어요.';
+    case 'S2_CATALOG_FINGERPRINT': return '카탈로그의 다른 곡과 음원 지문이 겹쳐요. 같은 곡인지 확인해 주세요.';
+    case 'S2_CATALOG_IDENTIFIERS': return 'UPC·ISRC가 다른 발매와 겹치거나 형식이 맞지 않아요.';
+    case 'S2_SPECIAL_FLAGS': return '19금·커버곡·샘플·AI 활용 같은 특수 항목이 있어요. 신고 내용과 증빙이 맞는지 확인해 주세요.';
+    case 'S2_UNDECLARED_CONTENT': return '신고하지 않은 커버곡·샘플·AI 활용 신호가 감지됐어요.';
+    case 'S2_CONTENT_SIGNALS': return '콘텐츠 신고 항목을 다시 확인해야 해요.';
+    case 'S2_RIGHTS_SCOPE': return '권리자 정보와 배급 범위가 맞는지 확인해 주세요.';
+    case 'S2_DOCS_ORIGIN': return '권리 증빙 서류의 출처를 확인할 수 없어요.';
+    case 'S2_META_CREDITS': return '작사·작곡 등 크레딧이 비어 있거나 형식이 맞지 않아요.';
+    case 'S2_DSP_ELIGIBILITY': return '선택한 플랫폼 중 배급할 수 없는 곳이 있어요.';
+    case 'S2_RELEASE_DATE_FAR_PAST': return '발매일이 너무 과거예요.';
+    case 'S2_RELEASE_DATE_FAR_FUTURE': return '발매일이 너무 먼 미래예요.';
+    case 'S2_PROTECTED_NAME':
+    case 'ARTIST_NAME_PROTECTED': return '보호된 유명 아티스트명과 겹쳐요. 본인 활동명인지 확인해 주세요.';
+    default:
+      return isKnownCorrection(c.check_code) ? correctionTarget(c.check_code).hint : checkLabel(c.check_code);
+  }
+}
+
+// ---------- 거절 사유 (누르면 그대로 기록, ‘기타’만 직접 입력) ----------
+export const REJECT_REASONS: { id: string; label: string; text: string }[] = [
+  { id: 'rights', label: '권리 확인 불가', text: '음원·작사·작곡 등 배급에 필요한 권리를 확인할 수 없어요.' },
+  { id: 'duplicate', label: '중복 음원', text: '이미 유통 중이거나 등록된 음원과 같거나 매우 비슷해요.' },
+  { id: 'plagiarism', label: '표절 의심', text: '다른 저작물을 표절한 것으로 판단돼요.' },
+  { id: 'unauthorized', label: '타인 콘텐츠 무단 사용', text: '다른 사람의 음원·샘플·이미지를 허락 없이 사용한 것으로 보여요.' },
+  { id: 'sexual', label: '선정적 콘텐츠', text: '선정적인 내용이 포함돼 배급할 수 없어요.' },
+  { id: 'harmful', label: '폭력·혐오·불법 콘텐츠', text: '폭력·혐오·차별·불법 행위를 담고 있어 배급할 수 없어요.' },
+  { id: 'cover', label: '앨범 커버 문제', text: '앨범 커버가 배급 기준에 맞지 않아요(선정성·무단 이미지·로고·텍스트 규정 등).' },
+  { id: 'quality', label: '음원 품질 미달', text: '음원 품질이 배급 기준에 미치지 못해요(잡음·손상·무음·저음질).' },
+  { id: 'metadata', label: '허위·오기재 정보', text: '아티스트명·곡명 등 발매 정보가 사실과 다르거나 오해를 줄 수 있어요.' },
+  { id: 'impersonation', label: '아티스트 사칭', text: '다른 아티스트를 사칭하거나 혼동을 줄 수 있는 표기예요.' },
+  { id: 'spam', label: '반복·스팸성 발매', text: '같은 내용을 반복하거나 검색 노출만을 노린 발매로 판단돼요.' },
+  { id: 'ai', label: 'AI 생성물 정책 위반', text: 'AI 생성물 관련 배급 정책에 맞지 않아요.' },
+  { id: 'policy', label: '내부 규정 위반', text: 'AUDENIQ 배급 운영 규정에 맞지 않아요.' },
+];
+
+// ---------- 시스템 검사 진행 (담당자가 볼 요약) ----------
+export type StageState = 'done' | 'running' | 'staff' | 'fix' | 'wait' | 'stopped';
+export interface Stage { key: string; label: string; hint: string; state: StageState }
+const STAGE_STATE: Record<StageState, string> = {
+  done: '통과', running: '진행 중', staff: '담당자 확인 필요', fix: '아티스트 보완 중', wait: '대기', stopped: '중단',
+};
+export const stageStateLabel = (s: StageState) => STAGE_STATE[s];
+
+/** 발매 상태 → 1차(파일·음원) / 2차(권리·정보) / 3차(배급 준비) 진행 */
+export function systemStages(status: string): Stage[] {
+  const at: Record<string, StageState[]> = {
+    SUBMITTED: ['running', 'wait', 'wait'],
+    STAGE1_RUNNING: ['running', 'wait', 'wait'],
+    STAGE1_CORRECTION: ['fix', 'wait', 'wait'],
+    STAGE1_PASSED: ['done', 'running', 'wait'],
+    STAGE2_RUNNING: ['done', 'running', 'wait'],
+    STAGE2_REVIEW: ['done', 'staff', 'wait'],
+    STAGE2_CORRECTION: ['done', 'fix', 'wait'],
+    STAGE2_PASSED: ['done', 'done', 'running'],
+    STAGE3_PREPARING: ['done', 'done', 'running'],
+    STAGE3_CORRECTION: ['done', 'done', 'fix'],
+    READY_FOR_DELIVERY: ['done', 'done', 'done'],
+    ON_HOLD_RIGHTS: ['done', 'staff', 'wait'],
+    WITHDRAWN: ['stopped', 'stopped', 'stopped'],
+  };
+  const s = at[status] ?? ['wait', 'wait', 'wait'];
+  return [
+    { key: 's1', label: '1차 검사', hint: '파일 형식·음질·음량·중복 음원', state: s[0] },
+    { key: 's2', label: '2차 검사', hint: '권리·메타데이터·콘텐츠 신고', state: s[1] },
+    { key: 's3', label: '3차 배급 준비', hint: 'UPC·ISRC 발급·플랫폼별 패키지', state: s[2] },
+  ];
+}

@@ -3787,7 +3787,7 @@ async fn release_application_is_decided_in_release_review(pool: PgPool) {
         &ctx.app,
         "POST",
         &format!("/api/staff/releases/{}/decision", ctx.release),
-        json!({"action":"APPROVE","revision_id":rev,"reason":"application checked"}),
+        json!({"action":"APPROVE","revision_id":rev,"reason":""}),
         Some(&staff),
     )
     .await;
@@ -3829,6 +3829,14 @@ async fn release_application_is_decided_in_release_review(pool: PgPool) {
         "STAGE3_CORRECTION"
     );
     assert_eq!(doc_status(&pool, doc).await, "NEEDS");
+    // Resubmitting the corrected release (no new application) puts the
+    // agreement back in review with it.
+    sqlx::query("UPDATE catalog.releases SET status='SUBMITTED' WHERE id=$1")
+        .bind(ctx.release)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(doc_status(&pool, doc).await, "REVIEW");
 }
 
 #[sqlx::test]

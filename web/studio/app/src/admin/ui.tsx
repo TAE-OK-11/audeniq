@@ -78,7 +78,9 @@ export function Section({ title, meta, action, children }: { title: string; meta
 }
 
 /** 이니셜 아이콘 (커버 대신) */
-export function Initial({ text, plain }: { text: string; plain?: boolean }) {
+/** 앨범 커버(있으면 실제 이미지) 또는 첫 글자 */
+export function Initial({ text, plain, src }: { text: string; plain?: boolean; src?: string | null }) {
+  if (src) return <span className="adm-row-icon has-cover" aria-hidden="true"><img src={src} alt="" loading="lazy" decoding="async" /></span>;
   return <span className={`adm-row-icon${plain ? ' plain' : ''}`} aria-hidden="true">{(text || '?').trim().slice(0, 1).toUpperCase()}</span>;
 }
 
