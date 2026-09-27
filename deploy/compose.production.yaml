@@ -109,7 +109,12 @@ services:
       S3_REGION: ${S3_REGION:-auto}
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      # ALAC uploads are converted to FLAC here (source + result on disk),
+      # never in the 16 MiB /tmp tmpfs.
+      TMPDIR: /var/tmp/audeniq
       RUST_LOG: info
+    volumes:
+      - api_tmp:/var/tmp/audeniq
     depends_on:
       pgbouncer: {condition: service_healthy}
     mem_limit: 512m
@@ -177,6 +182,7 @@ secrets:
 volumes:
   pg18_prod:
   worker_tmp:
+  api_tmp:
 networks:
   backend: {internal: true}
   egress: {}

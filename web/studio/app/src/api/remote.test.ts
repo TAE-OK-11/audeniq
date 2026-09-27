@@ -125,6 +125,9 @@ describe('서버 값 정리', () => {
     expect(uploadContentType(new File([''], 'a.WAV', { type: '' }), 'AUDIO')).toBe('audio/wav');
     expect(uploadContentType(new File([''], 'a.flac', { type: 'audio/flac' }), 'AUDIO')).toBe('audio/flac');
     expect(uploadContentType(new File([''], 'a.mp3', { type: 'audio/mpeg' }), 'AUDIO')).toBe('');
+    expect(uploadContentType(new File([''], 'a.m4a', { type: 'audio/x-m4a' }), 'AUDIO')).toBe('audio/mp4');
+    expect(uploadContentType(new File([''], 'a.M4A', { type: '' }), 'AUDIO')).toBe('audio/mp4');
+    expect(uploadContentType(new File([''], 'a.aac', { type: 'audio/aac' }), 'AUDIO')).toBe('');
     expect(uploadContentType(new File([''], 'c.jpeg', { type: '' }), 'IMAGE')).toBe('image/jpeg');
     expect(uploadContentType(new File([''], 'c.webp', { type: 'image/webp' }), 'IMAGE')).toBe('');
   });

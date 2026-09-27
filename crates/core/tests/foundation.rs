@@ -85,6 +85,26 @@ impl ObjectStore for MockStore {
         }
         Ok(())
     }
+    async fn put_file(
+        &self,
+        key: &str,
+        path: &std::path::Path,
+        mime: &str,
+        nonce: &str,
+    ) -> Result<()> {
+        let body = std::fs::read(path).map_err(|_| Error::Storage)?;
+        self.objects.lock().await.insert(
+            key.into(),
+            ObjectMeta {
+                size: body.len() as i64,
+                content_type: mime.into(),
+                nonce: nonce.into(),
+                etag: format!("put-{}", body.len()),
+            },
+        );
+        self.bodies.lock().await.insert(key.into(), body);
+        Ok(())
+    }
     async fn get(&self, key: &str) -> Result<Vec<u8>> {
         if let Some(b) = self.bodies.lock().await.get(key) {
             return Ok(b.clone());
@@ -482,6 +502,111 @@ async fn upload_errors_are_specific_and_content_is_sniffed(pool: PgPool) {
             .unwrap();
     assert_ne!(state, "REGISTERED");
     assert!(sha.is_none());
+}
+
+/// 2 s stereo tone as an .m4a with the given ffmpeg codec arguments.
+fn m4a_bytes(codec_args: &[&str]) -> Vec<u8> {
+    let p = std::env::temp_dir().join(format!("audeniq-m4a-{}.m4a", Uuid::new_v4()));
+    let st = std::process::Command::new("ffmpeg")
+        .args(["-v", "error", "-y", "-f", "lavfi", "-i"])
+        .arg("sine=frequency=997:duration=2:sample_rate=44100")
+        .args(["-ac", "2"])
+        .args(codec_args)
+        .args(["-f", "ipod"])
+        .arg(&p)
+        .status()
+        .expect("ffmpeg");
+    assert!(st.success());
+    let b = std::fs::read(&p).unwrap();
+    let _ = std::fs::remove_file(&p);
+    b
+}
+
+/// ALAC uploads are registered as a losslessly converted FLAC master; AAC in
+/// the same container is refused and never registered.
+#[sqlx::test]
+async fn alac_upload_is_registered_as_flac_and_aac_is_refused(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let a = user(&app).await;
+    let uploads = format!("/api/orgs/{}/uploads", a.org);
+    let send = |bytes: Vec<u8>| {
+        let (app, store, a, uploads) = (app.clone(), store.clone(), a.clone(), uploads.clone());
+        async move {
+            let (s, _, up) = call(
+                &app,
+                "POST",
+                &uploads,
+                json!({"kind":"AUDIO","size_bytes":bytes.len(),"content_type":"audio/mp4"}),
+                Some(&a),
+            )
+            .await;
+            assert_eq!(s, StatusCode::OK, "{up}");
+            let key = up["expected_key"].as_str().unwrap().to_string();
+            store.objects.lock().await.insert(
+                key.clone(),
+                ObjectMeta {
+                    size: bytes.len() as i64,
+                    content_type: "audio/mp4".into(),
+                    nonce: up["grant"]["headers"]["x-amz-meta-upload-nonce"]
+                        .as_str()
+                        .unwrap()
+                        .into(),
+                    etag: "m4a-etag".into(),
+                },
+            );
+            store.bodies.lock().await.insert(key.clone(), bytes);
+            let path = format!(
+                "{uploads}/{}/complete",
+                up["upload_session_id"].as_str().unwrap()
+            );
+            let (s, _, v) = call(
+                &app,
+                "POST",
+                &path,
+                json!({"asset_id":up["asset_id"],"expected_key":key}),
+                Some(&a),
+            )
+            .await;
+            (
+                s,
+                v,
+                Uuid::parse_str(up["asset_id"].as_str().unwrap()).unwrap(),
+            )
+        }
+    };
+
+    let (s, v, asset) = send(m4a_bytes(&["-c:a", "alac", "-sample_fmt", "s16p"])).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["detected_container"], "FLAC");
+    assert_eq!(v["converted_from"], "ALAC");
+    let (state, ct, key, size, sha): (String, String, String, i64, String) = sqlx::query_as(
+        "SELECT state,content_type,object_key,size_bytes,sha256 FROM catalog.assets WHERE id=$1",
+    )
+    .bind(asset)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!((state.as_str(), ct.as_str()), ("REGISTERED", "audio/flac"));
+    assert_eq!(v["sha256"], sha);
+    // The registered object is the FLAC the later stages verify.
+    let stored = store.get(&key).await.unwrap();
+    assert_eq!(&stored[..4], b"fLaC");
+    assert_eq!(stored.len() as i64, size);
+    let meta = store.head(&key).await.unwrap().unwrap();
+    assert_eq!(
+        (meta.size, meta.content_type.as_str()),
+        (size, "audio/flac")
+    );
+
+    let (s, v, asset) = send(m4a_bytes(&["-c:a", "aac", "-b:a", "128k"])).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(v["error"]["code"], "UPLOAD_LOSSY_NOT_ACCEPTED");
+    let state: String = sqlx::query_scalar("SELECT state FROM catalog.assets WHERE id=$1")
+        .bind(asset)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_ne!(state, "REGISTERED");
 }
 
 #[sqlx::test]

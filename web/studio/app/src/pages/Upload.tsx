@@ -752,7 +752,7 @@ const TrackEditor = memo(function TrackEditor({
         <label htmlFor={`trackFile-${i}`}>음원 파일 <span className="required">*</span></label>
         <input
           type="file" id={`trackFile-${i}`}
-          accept=".wav,.flac,audio/wav,audio/x-wav,audio/flac"
+          accept=".wav,.flac,.m4a,audio/wav,audio/x-wav,audio/flac,audio/mp4,audio/x-m4a"
           onChange={e => onTrackAudio(t.id, e)}
         />
         <UploadStatus upload={upload} idle={t.audioName

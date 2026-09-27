@@ -60,7 +60,7 @@ async fn presigned_put_accepts_only_the_declared_object() {
             body.len() as i64,
             "audio/wav",
             &nonce,
-            Utc::now() + Duration::minutes(15),
+            Utc::now() + Duration::minutes(10),
         )
         .await
         .unwrap();
@@ -113,6 +113,20 @@ async fn presigned_put_accepts_only_the_declared_object() {
     assert_eq!(s.get(&stable).await.unwrap(), body);
     let digest = s.digest(&stable, body.len() as u64).await.unwrap();
     assert_eq!(digest.size, body.len() as u64);
+    // A master the server derives (FLAC from ALAC) goes up with its own key.
+    let local = std::env::temp_dir().join(format!("audeniq-s3-put-{id}"));
+    std::fs::write(&local, &body).unwrap();
+    let derived = format!("registered/test/{id}-flac");
+    s.put_file(&derived, &local, "audio/flac", &nonce)
+        .await
+        .unwrap();
+    let _ = std::fs::remove_file(&local);
+    let put = s.head(&derived).await.unwrap().expect("derived stored");
+    assert_eq!(
+        (put.size, put.content_type.as_str(), put.nonce.as_str()),
+        (body.len() as i64, "audio/flac", nonce.as_str())
+    );
+    assert_eq!(s.get(&derived).await.unwrap(), body);
     s.delete(&key).await.unwrap();
     assert!(s.head(&key).await.unwrap().is_none());
 }

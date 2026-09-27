@@ -37,6 +37,18 @@ pub trait ObjectStore: Send + Sync {
     async fn delete(&self, _key: &str) -> Result<()> {
         Ok(())
     }
+    /// Store a local file under `key` with the server's own credentials
+    /// (a master the server derived, e.g. FLAC transcoded from ALAC). The
+    /// body streams from disk; the byte count is signed like a user upload.
+    async fn put_file(
+        &self,
+        _key: &str,
+        _path: &std::path::Path,
+        _mime: &str,
+        _nonce: &str,
+    ) -> Result<()> {
+        Err(Error::Storage)
+    }
     /// Download full object bytes. Small objects only (artwork, test
     /// fixtures); audio goes through [`ObjectStore::download_to`] or
     /// [`ObjectStore::digest`], which never hold the whole object in memory.
@@ -388,6 +400,37 @@ impl ObjectStore for S3Store {
         } else {
             Err(Error::Storage)
         }
+    }
+    async fn put_file(
+        &self,
+        key: &str,
+        path: &std::path::Path,
+        mime: &str,
+        nonce: &str,
+    ) -> Result<()> {
+        let file = tokio::fs::File::open(path)
+            .await
+            .map_err(|_| Error::Internal)?;
+        let size = file.metadata().await.map_err(|_| Error::Internal)?.len();
+        let headers = BTreeMap::from([
+            ("content-length".into(), size.to_string()),
+            ("content-type".into(), mime.into()),
+            ("x-amz-meta-upload-nonce".into(), nonce.into()),
+        ]);
+        let url = self.signed("PUT", key, &headers, Utc::now(), 900)?;
+        let mut req = self.download_client.put(url);
+        for (k, v) in &headers {
+            req = req.header(k, v);
+        }
+        let r = req
+            .body(reqwest::Body::from(file))
+            .send()
+            .await
+            .map_err(|_| Error::Storage)?;
+        if !r.status().is_success() {
+            return Err(Error::Storage);
+        }
+        Ok(())
     }
     async fn get(&self, key: &str) -> Result<Vec<u8>> {
         let url = self.signed("GET", key, &BTreeMap::new(), Utc::now(), 300)?;
