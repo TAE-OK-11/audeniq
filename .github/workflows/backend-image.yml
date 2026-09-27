@@ -1,6 +1,6 @@
 name: Backend image
 # main에 백엔드 변경이 푸시되면 바로 이미지를 만들어 GHCR에 올린다 (테스트는 Foundation이 따로 돈다).
-# 지금은 테스트 서버용이라 빠른 프로필(Cargo.toml [profile.fast], LTO 없음)로 빌드한다.
+# 지금은 테스트 서버용이라 빠른 프로필(Cargo.toml [profile.fast], thin LTO)로 빌드한다.
 #   ghcr.io/<owner>/audeniq:sha-<commit>, :main, :latest  (api·worker·migrate·admin 바이너리 포함)
 # 배포는 deploy/deploy.sh가 그 이미지를 digest로 고정해 docker compose로 올린다.
 # 서버 접속 정보가 production 환경에 있으면 이 워크플로에서 바로 배포까지 할 수 있다 (deploy 작업).
