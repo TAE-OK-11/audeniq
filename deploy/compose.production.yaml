@@ -54,6 +54,37 @@ services:
     networks: [backend]
     depends_on:
       migrate: {condition: service_completed_successfully}
+  # Transaction pooling in front of PostgreSQL for the api/worker roles.
+  # migrate, grants and the worker's LISTEN connect to postgres directly
+  # (they need a session). Built here from deploy/pgbouncer (Debian package).
+  pgbouncer:
+    restart: unless-stopped
+    build: ./pgbouncer
+    image: audeniq-pgbouncer:local
+    environment:
+      PGBOUNCER_DB: audeniq_prod
+      POSTGRES_HOST: postgres
+      API_DB_PASSWORD: ${API_DB_PASSWORD:?set production API password}
+      WORKER_DB_PASSWORD: ${WORKER_DB_PASSWORD:?set production worker password}
+      PGBOUNCER_POOL_SIZE: '${PGBOUNCER_POOL_SIZE:-10}'
+      PGBOUNCER_MAX_DB_CONN: '${PGBOUNCER_MAX_DB_CONN:-30}'
+    read_only: true
+    tmpfs: ['/run/pgbouncer:size=1m,mode=1777']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [backend]
+    depends_on:
+      grants: {condition: service_completed_successfully}
+    healthcheck:
+      test: ['CMD', 'bash', '-c', 'exec 3<>/dev/tcp/127.0.0.1/6432']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    mem_limit: 64m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: '3'}
   api:
     restart: unless-stopped
     <<: *runtime
@@ -64,7 +95,8 @@ services:
       API_BIND: 0.0.0.0:8080
       EDGE_SERVICE_SECRET: ${EDGE_SERVICE_SECRET:?set random service secret}
       PAYOUT_ACCOUNT_KEY: ${PAYOUT_ACCOUNT_KEY:?set 64-hex AES-256 key for payout account numbers}
-      DATABASE_URL: postgres://audeniq_api:${API_DB_PASSWORD}@postgres/audeniq_prod
+      DATABASE_URL: postgres://audeniq_api:${API_DB_PASSWORD}@pgbouncer:6432/audeniq_prod
+      DATABASE_POOLER: pgbouncer
       STORAGE_ENABLED: ${STORAGE_ENABLED:-false}
       S3_ENDPOINT: ${S3_ENDPOINT:-https://unconfigured.invalid}
       S3_BUCKET: ${S3_BUCKET:-unconfigured}
@@ -73,7 +105,7 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
       RUST_LOG: info
     depends_on:
-      grants: {condition: service_completed_successfully}
+      pgbouncer: {condition: service_healthy}
     mem_limit: 512m
     cpus: 1.0
   worker:
@@ -84,7 +116,10 @@ services:
     # unfinished leases; the grace period must exceed the drain window.
     stop_grace_period: 45s
     environment:
-      DATABASE_URL: postgres://audeniq_worker:${WORKER_DB_PASSWORD}@postgres/audeniq_prod
+      DATABASE_URL: postgres://audeniq_worker:${WORKER_DB_PASSWORD}@pgbouncer:6432/audeniq_prod
+      DATABASE_POOLER: pgbouncer
+      # LISTEN needs a session: direct to postgres, not through the pooler.
+      DATABASE_LISTEN_URL: postgres://audeniq_worker:${WORKER_DB_PASSWORD}@postgres/audeniq_prod
       WORKER_MAX_IN_FLIGHT: '${WORKER_MAX_IN_FLIGHT:-3}'
       DATABASE_MAX_CONNECTIONS: '${DATABASE_MAX_CONNECTIONS:-8}'
       JOB_LEASE_SECONDS: '${JOB_LEASE_SECONDS:-300}'
@@ -109,7 +144,7 @@ services:
     volumes:
       - worker_tmp:/var/tmp/audeniq
     depends_on:
-      grants: {condition: service_completed_successfully}
+      pgbouncer: {condition: service_healthy}
     mem_limit: 1536m
     cpus: 1.5
   tunnel:

@@ -6,7 +6,7 @@
 #   ./deploy.sh --rollback                              # 직전 이미지로 되돌리기
 #   ./deploy.sh --status                                # 지금 이미지·컨테이너 상태
 #
-# 같은 폴더에 compose.production.yaml, bootstrap.sql, grants.sql, production.env(비밀),
+# 같은 폴더에 compose.production.yaml, bootstrap.sql, grants.sql, pgbouncer/, production.env(비밀),
 # tunnel-token(비밀)이 있어야 한다. production.env의 AUDENIQ_IMAGE 줄을 이 스크립트가 바꾼다.
 # 비공개 패키지면 먼저 `docker login ghcr.io` (read:packages 토큰) 하거나,
 # GHCR_USER와 GHCR_TOKEN_STDIN=1을 주고 토큰을 표준입력으로 넘긴다 (GitHub Actions 배포가 이렇게 한다).
@@ -24,6 +24,7 @@ current_image() { sed -n 's/^AUDENIQ_IMAGE=//p' "$ENV_FILE" | tail -n 1; }
 
 [ -f "$ENV_FILE" ] || die "$ENV_FILE 이 없어요 (production.env.example 참고, chmod 600)"
 [ -f compose.production.yaml ] || die "compose.production.yaml 이 없어요"
+[ -f pgbouncer/Dockerfile ] || die "pgbouncer/ 폴더가 없어요 (저장소의 deploy/pgbouncer를 함께 복사)"
 
 case "${1:-}" in
   --status)
@@ -86,8 +87,9 @@ mv "$tmp" "$ENV_FILE"
 echo "deploy: $PREVIOUS"
 echo "     → $PINNED"
 # migrate → grants가 성공해야 api·worker가 새 이미지로 바뀐다 (compose depends_on)
-if ! "${COMPOSE[@]}" up -d --remove-orphans; then
-  "${COMPOSE[@]}" logs --tail 80 migrate grants api worker || true
+# --build: pgbouncer 이미지는 서버에서 deploy/pgbouncer로 만든다 (바뀐 게 없으면 캐시)
+if ! "${COMPOSE[@]}" up -d --build --remove-orphans; then
+  "${COMPOSE[@]}" logs --tail 80 migrate grants pgbouncer api worker || true
   die "compose up 실패 — 이전 이미지로 되돌리려면: ./deploy.sh --rollback"
 fi
 

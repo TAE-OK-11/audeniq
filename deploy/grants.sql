@@ -91,3 +91,20 @@ GRANT SELECT,INSERT,UPDATE ON operations.jobs,operations.outbox TO audeniq_worke
 GRANT SELECT,INSERT ON operations.event_receipts TO audeniq_worker;
 GRANT INSERT ON operations.audit_events TO audeniq_worker;
 REVOKE UPDATE,DELETE,TRUNCATE ON operations.audit_events FROM audeniq_api,audeniq_worker;
+-- Runtime timeouts as role defaults: they apply to every server connection,
+-- including the ones PgBouncer opens in transaction pooling mode, where the
+-- per-connection SET in database::connect cannot survive.
+-- Needs superuser or CREATEROLE + ADMIN on the roles (the compose owner is
+-- the image superuser); elsewhere it warns instead of aborting the grants.
+DO $$
+DECLARE r text;
+BEGIN
+ FOREACH r IN ARRAY ARRAY['audeniq_api','audeniq_worker'] LOOP
+  BEGIN
+   EXECUTE format('ALTER ROLE %I SET statement_timeout = %L', r, '15s');
+   EXECUTE format('ALTER ROLE %I SET lock_timeout = %L', r, '3s');
+  EXCEPTION WHEN insufficient_privilege THEN
+   RAISE WARNING 'cannot set timeouts on role % (run as superuser): required behind PgBouncer', r;
+  END;
+ END LOOP;
+END $$;

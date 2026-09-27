@@ -14,6 +14,8 @@ on:
       - config/**
       - migrations/**
       - deploy/Dockerfile
+      - deploy/pgbouncer/**
+      - deploy/compose.production.yaml
       - .dockerignore
       - .github/workflows/backend-image.yml
   workflow_dispatch:
@@ -171,6 +173,7 @@ jobs:
           ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
           scp -i ~/.ssh/deploy_key deploy/compose.production.yaml deploy/bootstrap.sql deploy/grants.sql deploy/deploy.sh \
             "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+          scp -r -i ~/.ssh/deploy_key deploy/pgbouncer "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
       - name: Deploy
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -134,6 +134,11 @@ jobs:
           # object store and non-zero QC/rights/distribution concurrency.
           jq -e '.services.worker.environment | has("STORAGE_ENABLED") and has("S3_BUCKET") and has("S3_ENDPOINT")' /tmp/production.json
           jq -e '.services.worker.environment | [.QUEUE_QC_CONCURRENCY, .QUEUE_RIGHTS_CONCURRENCY, .QUEUE_DISTRIBUTION_CONCURRENCY] | all(tonumber > 0)' /tmp/production.json
+          # api/worker go through PgBouncer (transaction pooling); the
+          # worker's LISTEN and migrate/grants stay on direct connections.
+          jq -e '(.services.api.environment.DATABASE_URL | test("@pgbouncer:6432/")) and .services.api.environment.DATABASE_POOLER == "pgbouncer"' /tmp/production.json
+          jq -e '(.services.worker.environment.DATABASE_URL | test("@pgbouncer:6432/")) and (.services.worker.environment.DATABASE_LISTEN_URL | test("@postgres/"))' /tmp/production.json
+          jq -e '(.services.migrate.environment.DATABASE_URL | test("@postgres/"))' /tmp/production.json
       - name: Deploy script lint
         run: shellcheck deploy/deploy.sh
       - run: docker compose up --build -d
@@ -147,7 +152,7 @@ jobs:
         if: always()
         run: |
           docker compose ps -a
-          docker compose logs api worker migrate grants
+          docker compose logs api worker migrate grants pgbouncer
       - name: Remove disposable CI environment
         if: always()
         run: docker compose down -v

@@ -36,7 +36,7 @@ Current configuration examples are not evidence of an established Tunnel, VPC Se
 
 ```sh
 sudo mkdir -p /opt/audeniq && sudo chown "$USER" /opt/audeniq && cd /opt/audeniq
-# 저장소의 deploy/ 에서 복사: compose.production.yaml bootstrap.sql grants.sql deploy.sh
+# 저장소의 deploy/ 에서 복사: compose.production.yaml bootstrap.sql grants.sql deploy.sh pgbouncer/
 cp production.env.example production.env && chmod 600 production.env   # 값 채우기
 printf '%s' '<cloudflared 터널 토큰>' > tunnel-token && chmod 600 tunnel-token
 # 패키지가 비공개면 read:packages 권한 토큰으로 로그인 (GitHub Actions 배포는 이 단계가 필요 없음)
@@ -68,6 +68,20 @@ cd /opt/audeniq
 | Variable (저장소) | `AUTO_DEPLOY` | `true`면 main에 이미지가 올라갈 때마다 자동 배포 |
 
 그러면 Actions → Backend image → *Run workflow*에서 `deploy`를 켜 수동 배포하거나, `AUTO_DEPLOY=true`로 자동 배포할 수 있다. 배포 작업은 같은 커밋의 `compose.production.yaml`·`grants.sql`·`bootstrap.sql`·`deploy.sh`를 서버에 복사하고, 그 작업 동안만 유효한 토큰으로 GHCR에 로그인해 `deploy.sh`를 실행한다. 비밀 파일(`production.env`, `tunnel-token`)은 서버에만 있다.
+
+### DB 연결 풀 (PgBouncer)
+
+api·worker는 `pgbouncer:6432`(거래 단위 풀링)로 DB에 붙는다. 서버 연결 수가 줄고(기본 풀 10, DB 전체 30),
+배포·재시작 때 연결 폭주가 PostgreSQL까지 가지 않는다. 이미지는 서버에서 `deploy/pgbouncer`(Debian 패키지)로
+만들며(`deploy.sh`가 `--build`로 올림), 비밀번호는 컨테이너 시작 때 tmpfs에만 쓴다.
+
+- 직접 연결이 필요한 것: `migrate`(세션 잠금), `grants`, worker의 `LISTEN`(`DATABASE_LISTEN_URL`).
+- 타임아웃(statement 15s, lock 3s)은 역할 기본값으로 둔다(`grants.sql`의 `ALTER ROLE`). 풀러를 거치면
+  연결별 `SET`이 유지되지 않기 때문. 이 단계는 슈퍼유저 권한이 필요하다(compose의 owner는 이미지 슈퍼유저).
+  관리형 DB에서 권한이 없으면 경고만 내고 넘어가므로, 그때는 관리자 계정으로 한 번 실행한다.
+- 조정: `production.env`의 `PGBOUNCER_POOL_SIZE`, `PGBOUNCER_MAX_DB_CONN`. PostgreSQL `max_connections`(40)보다
+  `PGBOUNCER_MAX_DB_CONN` + 직접 연결 수가 작아야 한다.
+- 풀러를 빼려면 api·worker의 `DATABASE_URL`을 `postgres`로 바꾸고 `DATABASE_POOLER`를 지운다.
 
 ### 서버 기본 설정 (한 번)
 
