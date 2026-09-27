@@ -1191,6 +1191,40 @@ pub async fn reissue_identifiers(
     Ok(json!({"release_id": release, "status": "STAGE3_CORRECTION"}))
 }
 
+/// Cancel a release on the artist's request (an inquiry once the monthly
+/// self-service limit is used up). Not counted against that limit.
+pub async fn withdraw_on_request(
+    s: &AppState,
+    h: &HeaderMap,
+    release: Uuid,
+    i: ReissueInput,
+) -> Result<Value> {
+    let st = staff(s, h, true).await?;
+    require(&st, Duty::Review)?;
+    let reason = i.reason.trim();
+    if reason.is_empty() {
+        return Err(Error::PolicyGate("DECISION_REASON_REQUIRED"));
+    }
+    note_ok(reason, 2000)?;
+    let mut tx = s.pool.begin().await?;
+    let org: Uuid = sqlx::query_scalar("SELECT org_id FROM catalog.releases WHERE id=$1")
+        .bind(release)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(Error::NotFound)?;
+    let out = crate::withdraw::withdraw(
+        &mut tx,
+        org,
+        release,
+        crate::withdraw::By::Staff,
+        st.actor.user,
+        st.actor.request,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(out)
+}
+
 pub async fn list_second_approvals(s: &AppState, h: &HeaderMap) -> Result<Value> {
     staff(s, h, false).await?;
     let items: Vec<Value> = sqlx::query_scalar(
@@ -1789,6 +1823,14 @@ async fn h_reissue(
 ) -> Result<Json<Value>> {
     Ok(Json(reissue_identifiers(&s, &h, id, i).await?))
 }
+async fn h_withdraw(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    h: HeaderMap,
+    Json(i): Json<ReissueInput>,
+) -> Result<Json<Value>> {
+    Ok(Json(withdraw_on_request(&s, &h, id, i).await?))
+}
 async fn h_approvals(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     Ok(Json(list_second_approvals(&s, &h).await?))
 }
@@ -1909,6 +1951,7 @@ pub fn routes() -> Router<AppState> {
             "/api/staff/releases/{id}/reissue-identifiers",
             post(h_reissue),
         )
+        .route("/api/staff/releases/{id}/withdraw", post(h_withdraw))
         .route("/api/staff/approvals", get(h_approvals))
         .route(
             "/api/staff/approvals/{id}/approve",

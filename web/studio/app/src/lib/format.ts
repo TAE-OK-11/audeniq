@@ -48,4 +48,5 @@ export const STATUS_LABEL: Record<string, string> = {
   live: '발매 완료',
   closed: '진행 종료',
   rejected: '발매 거절',
+  cancelled: '신청 취소',
 };

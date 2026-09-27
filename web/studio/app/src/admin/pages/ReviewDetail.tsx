@@ -26,7 +26,7 @@ const ACTION_KO: Record<string, string> = {
   'delivery.held': '배급 대기 (계약서 서명 전)', 'delivery.enqueued': '플랫폼 전송 예약', 'release.updated': '발매 정보 수정',
   'staff.approved': '담당자 승인', 'staff.correction_requested': '담당자 보완 요청', 'staff.rejected': '담당자 거절',
   'staff.approval_requested': '2차 승인 요청', 'staff.approval_granted': '2차 승인 완료', 'staff.approval_declined': '2차 승인 반려',
-  'staff.proof_requested': '권리 증빙 요청', 'staff.identifiers_reissue': '식별자 재발급 요청', 'staff.document_reviewed': '신청서 처리',
+  'staff.proof_requested': '권리 증빙 요청', 'release.withdrawn': '신청 취소', 'staff.identifiers_reissue': '식별자 재발급 요청', 'staff.document_reviewed': '신청서 처리',
 };
 
 /** 검사 항목 — 쉬운 설명을 먼저, 검사 코드와 원문은 ‘상세 보기’에 */
@@ -51,6 +51,9 @@ function CheckCard({ c, open }: { c: Check; open?: boolean }) {
     </div>
   );
 }
+
+/** withdraw::WITHDRAWABLE와 같게 유지 */
+const WITHDRAWABLE = ['STAGE1_CORRECTION', 'STAGE2_REVIEW', 'STAGE2_CORRECTION', 'STAGE3_CORRECTION', 'READY_FOR_DELIVERY', 'ON_HOLD_RIGHTS'];
 
 const ACTION_TITLE: Record<DecisionAction, string> = { APPROVE: '발매 승인', REQUEST_CORRECTION: '보완 요청', REJECT: '발매 거절' };
 
@@ -274,6 +277,41 @@ function ProofForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: () => void 
   );
 }
 
+function WithdrawForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: () => void }) {
+  const close = useModalClose();
+  const toast = useToast();
+  const [reason, setReason] = useState('아티스트 문의로 취소 요청');
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reason.trim() || busy) return;
+    setBusy(true);
+    try {
+      await staffApi.withdraw(sheet.release.id, reason.trim());
+      toast('발매 신청을 취소했어요. 아티스트에게 알림이 갔어요.', 'success');
+      onDone();
+      close();
+    } catch (err) {
+      toast(errorMessage(err, '취소하지 못했어요.'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form onSubmit={submit}>
+      <p className="small muted">아티스트가 문의로 요청한 취소를 처리해요. 아티스트의 월 3회 직접 취소 횟수에는 포함되지 않아요. 계약서 서명 후(배급 시작)에는 테이크다운으로 처리해야 해요.</p>
+      <div className="adm-field" style={{ marginTop: 16 }}>
+        <label htmlFor="wReason">처리 메모 <span className="required">*</span></label>
+        <input id="wReason" data-autofocus className="adm-input" maxLength={2000} required value={reason} onChange={e => setReason(e.target.value)} />
+      </div>
+      <div className="adm-form-actions">
+        <button type="button" className="adm-btn soft" onClick={close}>닫기</button>
+        <button type="submit" className="adm-btn solid-danger" disabled={busy || !reason.trim()}>{busy ? '처리 중…' : '신청 취소 처리'}</button>
+      </div>
+    </form>
+  );
+}
+
 function ReissueForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: () => void }) {
   const close = useModalClose();
   const toast = useToast();
@@ -315,7 +353,7 @@ export function ReviewDetail() {
   const { can, refreshCounts, me } = useStaff();
   const { data: sheet, loading, error, reload } = useAsync(() => staffApi.release(id), [id]);
   const [action, setAction] = useState<DecisionAction | null>(null);
-  const [modal, setModal] = useState<'proof' | 'reissue' | null>(null);
+  const [modal, setModal] = useState<'proof' | 'reissue' | 'withdraw' | null>(null);
   const [done, setDone] = useState('');
   const [showAll, setShowAll] = useState(false);
 
@@ -574,6 +612,13 @@ export function ReviewDetail() {
             </div>
           </div>
           {!canReview && <NoDuty duty="발매 심사" />}
+          {WITHDRAWABLE.includes(r.status) && canReview && !sheet.documents.some(d => d.kind === 'AGREEMENT' && d.status === 'SIGNED') && (
+            <div className="adm-card">
+              <b>취소 요청 처리</b>
+              <p className="small muted" style={{ margin: '6px 0 12px' }}>아티스트가 문의로 취소를 요청했을 때 써요.</p>
+              <button type="button" className="adm-btn soft small" onClick={() => setModal('withdraw')}>신청 취소 처리</button>
+            </div>
+          )}
           {r.status === 'READY_FOR_DELIVERY' && canReview && (
             <div className="adm-card">
               <b>식별자 재발급</b>
@@ -600,6 +645,11 @@ export function ReviewDetail() {
       {modal === 'proof' && (
         <Modal title="권리 증빙 요청" onClose={() => setModal(null)} dismissible={false}>
           <ProofForm sheet={sheet} onDone={() => after('권리 증빙을 요청했어요.')} />
+        </Modal>
+      )}
+      {modal === 'withdraw' && (
+        <Modal title="신청 취소 처리" onClose={() => setModal(null)} dismissible={false}>
+          <WithdrawForm sheet={sheet} onDone={() => after('발매 신청을 취소했어요.')} />
         </Modal>
       )}
       {modal === 'reissue' && (

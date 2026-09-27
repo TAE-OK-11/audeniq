@@ -40,6 +40,7 @@ mod drift_tests {
             include_str!("../../../migrations/0044_staff_portal.sql"),
             include_str!("../../../migrations/0046_identifier_reissue.sql"),
             include_str!("../../../migrations/0049_release_review_queue.sql"),
+            include_str!("../../../migrations/0050_release_withdraw.sql"),
         ]
         .concat();
         let edges = contract["transitions"].as_array().unwrap();
