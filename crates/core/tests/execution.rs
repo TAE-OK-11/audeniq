@@ -33,6 +33,7 @@ use uuid::Uuid;
 
 const SECRET: &str = "test-only-service-secret-32-characters";
 const ORIGIN: &str = "http://localhost:5173";
+const SIG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
 struct FileStore {
     dir: std::path::PathBuf,
@@ -571,6 +572,8 @@ async fn ready_package(pool: &PgPool) -> ReadyCtx {
     .await
     .unwrap();
     assert_eq!(plan_dsp, mock_dsp.to_string());
+    // Delivery waits for the signed distribution agreement (0048).
+    set_agreement(pool, u.org, release, true).await;
     ReadyCtx {
         org: u.org,
         release,
@@ -579,6 +582,29 @@ async fn ready_package(pool: &PgPool) -> ReadyCtx {
         app,
         user: u,
     }
+}
+
+/// Put the release's distribution agreement in SIGNED (or back in REVIEW).
+async fn set_agreement(pool: &PgPool, org: Uuid, release: Uuid, signed: bool) -> Uuid {
+    sqlx::query_scalar(
+        "INSERT INTO portal.documents(id,org_id,release_id,kind,title,status,signature,signed_at)
+         VALUES($1,$2,$3,'AGREEMENT','agreement',
+                CASE WHEN $4 THEN 'SIGNED' ELSE 'REVIEW' END,
+                CASE WHEN $4 THEN $5 ELSE '' END,
+                CASE WHEN $4 THEN now() END)
+         ON CONFLICT(org_id,release_id) WHERE kind='AGREEMENT' DO UPDATE
+           SET status=EXCLUDED.status, signature=EXCLUDED.signature, signed_at=EXCLUDED.signed_at,
+               checked_at=NULL, row_version=portal.documents.row_version+1
+         RETURNING id",
+    )
+    .bind(Uuid::new_v4())
+    .bind(org)
+    .bind(release)
+    .bind(signed)
+    .bind(SIG)
+    .fetch_one(pool)
+    .await
+    .unwrap()
 }
 
 /// Session-authorized connection for the RLS-protected execution tables.
@@ -651,6 +677,73 @@ async fn run_send(pool: &PgPool, ctx: &ReadyCtx, mock: &MockDsp) -> (Uuid, Strin
         .await
         .unwrap();
     (job.id, status)
+}
+
+#[sqlx::test]
+async fn dsp_00_delivery_waits_for_signed_agreement(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let doc = set_agreement(&pool, ctx.org, ctx.release, false).await;
+    // Unsigned (staff review pending, NEEDS, ...): E-0 sends nothing, mock included.
+    let (job_ids, _) = execution::enqueue_delivery_jobs(&pool, ctx.package_id)
+        .await
+        .unwrap();
+    assert!(
+        job_ids.is_empty(),
+        "no delivery before the agreement is signed"
+    );
+    let held: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM operations.audit_events WHERE action='delivery.held' AND reason_code='AGREEMENT_NOT_SIGNED')",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(held);
+    let (_, v) = call(
+        &ctx.app,
+        "GET",
+        &format!("/api/orgs/{}/releases/{}", ctx.org, ctx.release),
+        Value::Null,
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["agreement_status"], "REVIEW", "{v}");
+    // Staff approve, the artist confirms reading and signs: signing re-runs E-0.
+    sqlx::query("UPDATE portal.documents SET status='APPROVED' WHERE id=$1")
+        .bind(doc)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &format!("/api/orgs/{}/documents/{doc}/check", ctx.org),
+        json!({}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let rv = v["row_version"].as_i64().unwrap();
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &format!("/api/orgs/{}/documents/{doc}/sign", ctx.org),
+        json!({"signer_name":"서린","signature":SIG,"row_version":rv}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let queued: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM operations.jobs WHERE kind='delivery.enqueue' AND payload->>'package_id'=$1 AND idempotency_key LIKE '%:signed:%'",
+    )
+    .bind(ctx.package_id.to_string())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(queued, 1, "signing queues E-0 again");
+    let (job_ids, _) = execution::enqueue_delivery_jobs(&pool, ctx.package_id)
+        .await
+        .unwrap();
+    assert_eq!(job_ids.len(), 1, "signed: the mock DSP is enqueued");
 }
 
 #[sqlx::test]
