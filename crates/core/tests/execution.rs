@@ -2347,6 +2347,7 @@ async fn e2e_intake_to_mockdsp_live(pool: PgPool) {
     assert!(ern_len > 1000, "ERN XML generated ({ern_len} bytes)");
 
     // ---- 5. VIRTUAL DELIVERY via MockDSP ----
+    set_agreement(&pool, u.org, release, true).await;
     let ctx = ReadyCtx {
         org: u.org,
         release,
@@ -2556,6 +2557,7 @@ async fn e2e_timing_normal_vs_problematic(pool: PgPool) {
     .fetch_one(&pool)
     .await
     .unwrap();
+    set_agreement(&pool, u.org, normal_release, true).await;
     let ctx = ReadyCtx {
         org: u.org,
         release: normal_release,
