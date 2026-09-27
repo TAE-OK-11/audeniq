@@ -21,6 +21,7 @@ export const pageLoaders = {
   ContentAdmin: () => import('./pages/ContentAdmin'),
   NotFound: () => import('./pages/NotFound'),
   Profile: () => import('./pages/Profile'),
+  Admin: () => import('./admin/AdminApp'),
 };
 
 type PageName = keyof typeof pageLoaders;
@@ -41,6 +42,7 @@ const ROUTE_PAGES: [RegExp, PageName[]][] = [
   [/^\/events/, ['Events']],
   [/^\/notices/, ['Notices']],
   [/^\/profile/, ['Profile']],
+  [/^\/admin/, ['Admin']],
 ];
 
 const requested = new Set<PageName>();
