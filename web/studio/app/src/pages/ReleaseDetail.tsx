@@ -184,32 +184,6 @@ export function ReleaseDetail() {
     <div id="view-release" className="view">
       <div className="spaced-actions">
         <button type="button" className="link-btn aq-back-link" onClick={() => nav('/releases')}>← 발매 목록</button>
-        <div className="row-actions">
-          {(d?.application || !isDraft) && (
-            <button type="button" className="button secondary" onClick={() => nav(`/releases/${encodeURIComponent(rel.id)}/application`)}>
-              신청서 보기
-            </button>
-          )}
-          {/* 보완하기는 아래 보완 카드 안에 — 위 버튼 줄은 모두 같은 옅은 버튼으로 */}
-          {rel.status !== 'closed' && !rejected && !needsFix && (
-            <button
-              type="button" className="button secondary"
-              onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}
-            >
-              {editLabel}
-            </button>
-          )}
-          {canWithdraw && (
-            <button type="button" className="button secondary aq-withdraw-btn" onClick={handleWithdraw} disabled={withdrawing}>
-              {withdrawing ? '취소하는 중' : '신청 취소'}
-            </button>
-          )}
-          {isDraft && (
-            <button type="button" className="button danger" onClick={handleDelete} disabled={deleting}>
-              {deleting ? '삭제 중' : '삭제'}
-            </button>
-          )}
-        </div>
       </div>
 
       <div className="aq-detail-hero" aria-label="발매 정보">
@@ -227,6 +201,33 @@ export function ReleaseDetail() {
             <span>{rel.release_date || '발매일 미정'}</span>
           </div>
         </div>
+      </div>
+
+        <div className="row-actions aq-detail-actions">
+        {(d?.application || !isDraft) && (
+          <button type="button" className="button secondary" onClick={() => nav(`/releases/${encodeURIComponent(rel.id)}/application`)}>
+            신청서 보기
+          </button>
+        )}
+        {/* 보완하기는 아래 보완 카드 안에 — 위 버튼 줄은 모두 같은 옅은 버튼으로 */}
+        {rel.status !== 'closed' && !rejected && !needsFix && (
+          <button
+            type="button" className="button secondary"
+            onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}
+          >
+            {editLabel}
+          </button>
+        )}
+        {canWithdraw && (
+          <button type="button" className="button secondary aq-withdraw-btn" onClick={handleWithdraw} disabled={withdrawing}>
+            {withdrawing ? '취소하는 중' : '신청 취소'}
+          </button>
+        )}
+        {isDraft && (
+          <button type="button" className="button danger" onClick={handleDelete} disabled={deleting}>
+            {deleting ? '삭제 중' : '삭제'}
+          </button>
+        )}
       </div>
 
       {!settledLive && (

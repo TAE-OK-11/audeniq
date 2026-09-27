@@ -1943,7 +1943,7 @@ export function Upload() {
               </label>
             </div>
             {showPlatforms && (
-            <div id="aqPlatforms" className="aq-dsp-groups">
+            <div id="aqPlatforms" className="aq-dsp-groups aq-reveal">
               {([['국내', DSP.filter(d => DSP_DOMESTIC.includes(d[0]))], ['해외', DSP.filter(d => !DSP_DOMESTIC.includes(d[0]))]] as const).map(([region, list]) => (
                 <div key={region}>
                   <p className="aq-dsp-region">{region}</p>

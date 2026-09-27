@@ -1185,3 +1185,26 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 .aq-fix-go{flex:none;align-self:center;background:#e0892f!important;color:#fff!important;min-height:44px!important}
 .aq-fix-go:hover{background:#cf7a22!important}
 @media(max-width:560px){.aq-fix-card-head{flex-wrap:wrap}.aq-fix-go{width:100%}}
+
+/* ---------- 주황 보완 카드 안의 버튼은 주황으로 (파란 버튼이 튀지 않게) ---------- */
+:is(#root) :is(.aq-fix-card,.aq-fix-banner) .button.aq-fix-go,
+:is(#root) .button.aq-fix-go{background:#e0892f!important;color:#fff!important;border:0!important;box-shadow:none!important}
+:is(#root) .button.aq-fix-go:hover{background:#cf7a22!important}
+
+/* ---------- 보완 필요: 깜빡이는 등장 효과 없이 가만히 ---------- */
+.aq-fix-card,.aq-fix-banner{animation:none!important}
+.aq-pipeline li::before,.aq-pipeline li .aq-pipeline-dot{animation:none!important}
+
+/* ---------- 발매 상세: 목록 링크는 위, 할 일 버튼은 카드 아래 한 줄 ---------- */
+#view-release .spaced-actions{margin:4px 0 14px!important}
+.aq-detail-actions{display:flex;flex-wrap:wrap;gap:8px;margin:-8px 0 6px}
+.aq-detail-actions .button{min-height:40px!important;padding:8px 14px!important;font-size:13px!important;border-radius:13px!important}
+@media(max-width:560px){.aq-detail-actions .button{flex:1 1 0}}
+
+/* ---------- 펼쳐질 때 부드럽게 ---------- */
+@keyframes aq-reveal{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.aq-reveal{animation:aq-reveal .32s var(--aq-e-ease,cubic-bezier(.22,1,.36,1)) both;transform-origin:top}
+.aq-reveal .aq-dsp{animation:aq-reveal .32s var(--aq-e-ease,cubic-bezier(.22,1,.36,1)) both}
+.aq-reveal .aq-dsp:nth-child(2){animation-delay:.03s}.aq-reveal .aq-dsp:nth-child(3){animation-delay:.06s}.aq-reveal .aq-dsp:nth-child(4){animation-delay:.09s}
+.aq-reveal .aq-dsp:nth-child(5){animation-delay:.12s}.aq-reveal .aq-dsp:nth-child(6){animation-delay:.15s}.aq-reveal .aq-dsp:nth-child(7){animation-delay:.18s}
+@media(prefers-reduced-motion:reduce){.aq-reveal,.aq-reveal .aq-dsp{animation:none}}
