@@ -3831,11 +3831,13 @@ async fn release_application_is_decided_in_release_review(pool: PgPool) {
     assert_eq!(doc_status(&pool, doc).await, "NEEDS");
     // Resubmitting the corrected release (no new application) puts the
     // agreement back in review with it.
-    sqlx::query("UPDATE catalog.releases SET status='SUBMITTED' WHERE id=$1")
-        .bind(ctx.release)
-        .execute(&pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "UPDATE catalog.releases SET status='SUBMITTED', row_version=row_version+1 WHERE id=$1",
+    )
+    .bind(ctx.release)
+    .execute(&pool)
+    .await
+    .unwrap();
     assert_eq!(doc_status(&pool, doc).await, "REVIEW");
 }
 
