@@ -309,6 +309,9 @@ fn wav_bytes() -> &'static [u8] {
         std::fs::create_dir_all(&dir).unwrap();
         let out = dir.join("t32.wav");
         if !out.exists() {
+            // Nextest runs test binaries in separate processes. Never expose a
+            // partially written shared fixture to another process.
+            let tmp = dir.join(format!("t32.{}.tmp", std::process::id()));
             let st = std::process::Command::new("ffmpeg")
                 .args([
                     "-y",
@@ -324,11 +327,14 @@ fn wav_bytes() -> &'static [u8] {
                     "2",
                     "-c:a",
                     "pcm_s16le",
+                    "-f",
+                    "wav",
                 ])
-                .arg(&out)
+                .arg(&tmp)
                 .status()
                 .expect("ffmpeg runs");
             assert!(st.success());
+            std::fs::rename(&tmp, &out).unwrap();
         }
         std::fs::read(&out).unwrap()
     })
