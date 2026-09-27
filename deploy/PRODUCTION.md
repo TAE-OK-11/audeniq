@@ -25,7 +25,7 @@ Current configuration examples are not evidence of an established Tunnel, VPC Se
 
 ## GHCR 이미지 배포 (백엔드)
 
-`main`에 백엔드 변경(`crates/core`, `migrations`, `config`, `Cargo.*`, `deploy/Dockerfile`)이 푸시되면 **Backend image** 워크플로(`.github/workflows/backend-image.yml`)가 바로 `deploy/Dockerfile`로 이미지를 만들어 GHCR에 올린다. 테스트(Foundation)는 따로 돌고 이미지 빌드를 막지 않는다. 지금은 테스트 서버용이라 `CARGO_PROFILE=fast`(`Cargo.toml` `[profile.fast]`: LTO 없음, opt-level 1)로 빌드한다. 운영용으로 바꿀 때는 워크플로의 `build-args`를 지우면 기본값 `release`(thin LTO)로 빌드된다.
+`main`에 백엔드 변경(`crates/core`, `migrations`, `config`, `Cargo.*`, `deploy/Dockerfile`)이 푸시되면 **Backend image** 워크플로(`.github/workflows/backend-image.yml`)가 바로 `deploy/Dockerfile`로 이미지를 만들어 GHCR에 올린다. 테스트(Foundation)는 따로 돌고 이미지 빌드를 막지 않는다. 지금은 테스트 서버용이라 `CARGO_PROFILE=fast`(`Cargo.toml` `[profile.fast]`: thin LTO, opt-level 1, 코드젠 16)로 빌드한다. 운영용으로 바꿀 때는 워크플로의 `build-args`를 지우면 기본값 `release`(thin LTO, 코드젠 1)로 빌드된다.
 
 - 이미지: `ghcr.io/tae-ok-11/audeniq` — `audeniq-api`, `audeniq-worker`, `audeniq-migrate`, `audeniq-admin` + ffmpeg/ffprobe, UID 10001, `linux/amd64`
 - 태그: `sha-<커밋 전체 해시>`(커밋과 1:1), `main`, `latest`. 배포에는 항상 **digest**(`@sha256:…`)를 쓴다. 실행 요약(Summary)에 digest와 배포 명령이 나온다.
