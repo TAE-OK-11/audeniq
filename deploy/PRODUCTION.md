@@ -68,3 +68,11 @@ cd /opt/audeniq
 | Variable (저장소) | `AUTO_DEPLOY` | `true`면 main에 이미지가 올라갈 때마다 자동 배포 |
 
 그러면 Actions → Backend image → *Run workflow*에서 `deploy`를 켜 수동 배포하거나, `AUTO_DEPLOY=true`로 자동 배포할 수 있다. 배포 작업은 같은 커밋의 `compose.production.yaml`·`grants.sql`·`bootstrap.sql`·`deploy.sh`를 서버에 복사하고, 그 작업 동안만 유효한 토큰으로 GHCR에 로그인해 `deploy.sh`를 실행한다. 비밀 파일(`production.env`, `tunnel-token`)은 서버에만 있다.
+
+### 서버 기본 설정 (한 번)
+
+- **DB 백업**: `deploy/backup.sh`를 `/opt/audeniq`에 복사하고 cron에 등록 (`30 18 * * * /opt/audeniq/backup.sh >> /var/log/audeniq-backup.log 2>&1`, 매일 KST 03:30, 14일 보관). 덤프는 같은 서버에 남으므로 주기적으로 다른 곳에도 옮긴다. `production.env`(특히 `PAYOUT_ACCOUNT_KEY`)는 덤프와 따로 보관한다.
+- **방화벽**: `ufw allow OpenSSH && ufw enable`. compose는 호스트 포트를 열지 않으므로 SSH만 열려 있으면 된다.
+- **SSH**: fail2ban으로 비밀번호 대입을 막고, 가능하면 키 로그인으로 바꾼 뒤 `PasswordAuthentication no`.
+- **메모리**: 1GB 서버는 스왑 파일(2GB)을 추가해 큰 음원 QC 중 OOM을 피한다. vCPU 1개 서버는 `compose.override.yaml`에서 worker `cpus: 1.0`.
+- **이미지 정리**: 주 1회 `docker image prune -af --filter until=168h` (현재 이미지와 직전 이미지는 사용 중이거나 1주 이내라 남는다).
