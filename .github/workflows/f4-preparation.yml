@@ -2,7 +2,7 @@ name: F4 preparation acceptance
 on:
   push:
     branches: ['validation/f4-astra-*', 'foundation/f4-stage3-distribution']
-  pull_request:
+  # PR은 Foundation이 같은 테스트를 이미 돌린다
 permissions:
   contents: read
 jobs:

@@ -1,9 +1,13 @@
 name: Foundation
+# 같은 저장소 브랜치의 PR은 push 실행 결과가 PR 체크로 붙으므로 pull_request로 한 번 더 돌리지 않는다
 on:
   push:
-  pull_request:
 permissions:
   contents: read
+# 같은 브랜치에 새 커밋이 오면 이전 실행은 취소 (main은 커밋마다 끝까지 돌린다)
+concurrency:
+  group: foundation-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 jobs:
   rust-postgres:
     runs-on: ubuntu-latest
@@ -20,6 +24,10 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       DATABASE_URL: postgres://postgres:ephemeral-ci-only@localhost:5432/postgres
+      # CI는 매번 새로 빌드하므로 증분 빌드 파일이 쓸모없고, 디버그 정보는 줄 번호만 남겨
+      # target/ 캐시를 작게 (복원·저장 시간 단축)
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -36,8 +44,8 @@ jobs:
             ~/.cargo/bin/worker-build
             ~/.cargo/bin/worker-codegen
             target
-          key: rust-1.98.1-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
-          restore-keys: rust-1.98.1-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-
+          key: rust-v2-1.98.1-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
+          restore-keys: rust-v2-1.98.1-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-
       - name: Check Rust formatting
         id: formatting
         continue-on-error: true
@@ -50,9 +58,14 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg libxml2-utils
-      - run: cargo test --locked -p audeniq-core -- --test-threads=2
+      # nextest: 테스트 바이너리를 차례로가 아니라 한꺼번에 병렬로 돌린다 (각 테스트는 자기 DB를 쓴다)
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.146
+      - run: cargo nextest run --locked -p audeniq-core --test-threads 4
       - run: cargo build --locked -p audeniq-edge --target wasm32-unknown-unknown
-      - run: cargo install worker-build --version 0.8.7 --locked --force
+      # 캐시에 같은 버전이 있으면 다시 컴파일하지 않는다
+      - run: worker-build --version 2>/dev/null | grep -q '0\.8\.7' || cargo install worker-build --version 0.8.7 --locked --force
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
@@ -118,6 +131,8 @@ jobs:
       API_DB_PASSWORD: ephemeral-api-ci
       WORKER_DB_PASSWORD: ephemeral-worker-ci
       EDGE_SERVICE_SECRET: ephemeral-ci-service-secret-at-least-32-characters
+      # 스모크는 이미지가 뜨는지만 본다: 운영용 LTO 빌드 대신 dev 프로필로 빨리 빌드
+      CARGO_PROFILE: dev
     steps:
       - uses: actions/checkout@v7
       - name: Validate isolated production configuration
