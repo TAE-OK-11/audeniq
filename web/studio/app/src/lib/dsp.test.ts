@@ -110,7 +110,31 @@ describe('음원 규격 확인', () => {
     expect(f.spec).toMatchObject({ container: 'FLAC', sampleRate: 44100, bitDepth: 16, channels: 2 });
     expect(Math.round(f.spec!.duration)).toBe(200);
     const mp3 = new Uint8Array([0x49, 0x44, 0x33, 3, 0, 0, 0, 0, 0, 0, 0xff, 0xfb]).buffer;
-    expect(checkAudioHeader(mp3).error).toContain('WAV·FLAC 원본');
+    expect(checkAudioHeader(mp3).error).toContain('WAV·FLAC·ALAC 원본');
+  });
+
+  it('ALAC(.m4a) 규격을 읽고, AAC는 거절한다', () => {
+    // ftyp, then the 'alac' sample entry and its 'alac' config box (24-bit, 2ch, 96 kHz)
+    const m4a = (codec: 'alac' | 'mp4a', withCookie = true) => {
+      const b = new Uint8Array(200);
+      const put = (at: number, s: string) => [...s].forEach((c, i) => { b[at + i] = c.charCodeAt(0); });
+      put(4, 'ftypM4A ');
+      put(40, codec);
+      if (codec === 'alac' && withCookie) {
+        put(80, 'alac');
+        const v = new DataView(b.buffer);
+        v.setUint8(84 + 9, 24);
+        v.setUint8(84 + 13, 2);
+        v.setUint32(84 + 24, 96000);
+      }
+      return b.buffer;
+    };
+    const ok = checkAudioHeader(m4a('alac'));
+    expect(ok.error).toBe('');
+    expect(ok.spec).toMatchObject({ container: 'ALAC', sampleRate: 96000, bitDepth: 24, channels: 2 });
+    expect(checkAudioHeader(m4a('mp4a')).error).toContain('AAC');
+    // Config box beyond the header window: the server decides.
+    expect(checkAudioHeader(m4a('alac', false))).toMatchObject({ spec: null, error: '' });
   });
 });
 
