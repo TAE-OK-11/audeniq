@@ -13,7 +13,7 @@ const FILTERS = [
   { value: 'ready', label: '접수 대기' },
   { value: 'review', label: '검토 중' },
   { value: 'needs', label: '보완 필요' },
-  { value: 'scheduled', label: '발매 예정' },
+  { value: 'scheduled', label: '배급 승인' },
   { value: 'live', label: '발매 완료' },
   { value: 'closed', label: '진행 종료' },
 ];
