@@ -6,15 +6,23 @@ resolver = "2"
 edition = "2024"
 rust-version = "1.88"
 license = "UNLICENSED"
+# 테스트·로컬 실행: 의존성(argon2, rustfft, sha2 …)만 최적화한다. 디버그 빌드의 argon2 해시는
+# 요청마다 수 초가 걸려 테스트가 느려지고, 우리 코드는 그대로 빠르게 다시 컴파일된다.
+[profile.dev.package."*"]
+opt-level = 2
 [profile.release]
 lto = "thin"
 codegen-units = 1
 strip = true
+# worker 0.8's wasm-bindgen pass (catch wrappers / abort recovery) needs the
+# symbols a stripped .wasm loses; the backend binaries stay stripped.
+[profile.release.package.audeniq-edge]
+strip = false
 
-# 테스트 서버용 이미지 빌드 (GitHub Actions Backend image): LTO·단일 코드젠 없이 빨리 컴파일
+# 테스트 서버용 이미지 빌드 (GitHub Actions Backend image): thin LTO, 단일 코드젠 없이 빨리 컴파일
 [profile.fast]
 inherits = "release"
-lto = false
+lto = "thin"
 codegen-units = 16
 opt-level = 1
 strip = true

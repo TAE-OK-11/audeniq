@@ -280,6 +280,10 @@ pub fn detect_container(head: &[u8]) -> &'static str {
         && (&head[0..3] == b"ID3" || (head[0] == 0xFF && head[1] & 0xE0 == 0xE0))
     {
         "MP3"
+    } else if head.len() >= 8 && &head[4..8] == b"ftyp" {
+        // ISO-BMFF (.m4a/.mp4): holds ALAC or AAC; the codec is checked
+        // when the upload is converted (only ALAC is accepted).
+        "M4A"
     } else if head.len() >= 8 && &head[0..8] == b"\x89PNG\r\n\x1a\n" {
         "PNG"
     } else if head.len() >= 3 && &head[0..3] == b"\xFF\xD8\xFF" {
@@ -395,7 +399,7 @@ pub fn check_audio(
     registered_sha256: Option<&str>,
     declared_content_type: Option<&str>,
 ) -> Vec<CheckOutcome> {
-    check_audio_inner(path, registered_sha256, declared_content_type, false).0
+    check_audio_inner(path, registered_sha256, declared_content_type, None, false).0
 }
 
 /// Like [`check_audio`], but additionally returns the perceptual-fingerprint
@@ -404,18 +408,30 @@ pub fn check_audio(
 /// and the audio metrics from the probe.
 /// The caller slices the configured segment windows and runs
 /// [`crate::fingerprint::fingerprint_from_samples`].
+///
+/// `file_sha256` is the SHA-256 of the file at `path` when the caller already
+/// has it (the worker hashes the object while streaming it to disk), which
+/// saves re-reading a master of up to 512 MiB just to hash it again.
 pub fn check_audio_with_fp_tap(
     path: &Path,
     registered_sha256: Option<&str>,
     declared_content_type: Option<&str>,
+    file_sha256: Option<&str>,
 ) -> (Vec<CheckOutcome>, Option<Vec<f32>>, Option<AudioMetrics>) {
-    check_audio_inner(path, registered_sha256, declared_content_type, true)
+    check_audio_inner(
+        path,
+        registered_sha256,
+        declared_content_type,
+        file_sha256,
+        true,
+    )
 }
 
 fn check_audio_inner(
     path: &Path,
     registered_sha256: Option<&str>,
     declared_content_type: Option<&str>,
+    file_sha256: Option<&str>,
     want_fp_tap: bool,
 ) -> (Vec<CheckOutcome>, Option<Vec<f32>>, Option<AudioMetrics>) {
     /// Emit `AUDIO_CHECK_CODES[from..]` with a uniform status (short-circuit tail).
@@ -444,7 +460,8 @@ fn check_audio_inner(
             detail,
         }
     }
-    let actual = match sha256_file(path) {
+    let hashed = file_sha256.map(|h| Ok(h.to_string()));
+    let actual = match hashed.unwrap_or_else(|| sha256_file(path)) {
         Ok(h) => h,
         Err(_) => {
             return (
@@ -1329,6 +1346,103 @@ fn ffmpeg_bin() -> String {
     std::env::var("FFMPEG_BIN").unwrap_or_else(|_| "ffmpeg".into())
 }
 
+/// Run an ffmpeg command, killing it after `secs`. Returns its stdout.
+fn run_ffmpeg(args: &[&std::ffi::OsStr], secs: u64) -> std::result::Result<Vec<u8>, &'static str> {
+    use std::io::Read;
+    let mut child = std::process::Command::new(ffmpeg_bin())
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|_| "UPLOAD_CONVERSION_UNAVAILABLE")?;
+    let mut stdout = child.stdout.take().ok_or("UPLOAD_CONVERSION_UNAVAILABLE")?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut out = Vec::new();
+        let _ = stdout.read_to_end(&mut out);
+        let _ = tx.send(out);
+    });
+    let out = match rx.recv_timeout(std::time::Duration::from_secs(secs)) {
+        Ok(out) => out,
+        Err(_) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("UPLOAD_CONVERSION_TIMEOUT");
+        }
+    };
+    match child.wait() {
+        Ok(st) if st.success() => Ok(out),
+        _ => Err("UPLOAD_CONVERSION_FAILED"),
+    }
+}
+
+/// MD5 of the decoded audio as 32-bit PCM (bit-exact for 16/24-bit sources).
+fn pcm_md5(path: &Path) -> std::result::Result<String, &'static str> {
+    let args: Vec<&std::ffi::OsStr> = vec![
+        "-nostdin".as_ref(),
+        "-v".as_ref(),
+        "error".as_ref(),
+        "-i".as_ref(),
+        path.as_os_str(),
+        "-map".as_ref(),
+        "0:a:0".as_ref(),
+        "-c:a".as_ref(),
+        "pcm_s32le".as_ref(),
+        "-f".as_ref(),
+        "md5".as_ref(),
+        "-".as_ref(),
+    ];
+    let out = run_ffmpeg(&args, 600)?;
+    let text = String::from_utf8_lossy(&out);
+    text.trim()
+        .strip_prefix("MD5=")
+        .map(str::to_string)
+        .ok_or("UPLOAD_CONVERSION_FAILED")
+}
+
+/// Convert an ALAC master (.m4a) to FLAC at the same sample rate, channels and
+/// bit depth, then prove it lossless: both files must decode to identical
+/// PCM. AAC (lossy) or any other codec in the MP4 container is refused.
+pub fn alac_to_flac(src: &Path, dst: &Path) -> std::result::Result<(), &'static str> {
+    let m = probe_audio_metrics(src).ok_or("UPLOAD_CONTENT_MISMATCH")?;
+    if m.codec_name != "alac" {
+        return Err("UPLOAD_LOSSY_NOT_ACCEPTED");
+    }
+    let args: Vec<&std::ffi::OsStr> = vec![
+        "-nostdin".as_ref(),
+        "-v".as_ref(),
+        "error".as_ref(),
+        "-y".as_ref(),
+        "-i".as_ref(),
+        src.as_os_str(),
+        "-map".as_ref(),
+        "0:a:0".as_ref(),
+        "-map_metadata".as_ref(),
+        "0".as_ref(),
+        "-c:a".as_ref(),
+        "flac".as_ref(),
+        "-compression_level".as_ref(),
+        "5".as_ref(),
+        "-f".as_ref(),
+        "flac".as_ref(),
+        dst.as_os_str(),
+    ];
+    run_ffmpeg(&args, 600)?;
+    let out = probe_audio_metrics(dst).ok_or("UPLOAD_CONVERSION_FAILED")?;
+    if out.codec_name != "flac"
+        || out.sample_rate != m.sample_rate
+        || out.channels != m.channels
+        || (m.bits_per_sample.is_some() && out.bits_per_sample != m.bits_per_sample)
+    {
+        return Err("UPLOAD_CONVERSION_FAILED");
+    }
+    if pcm_md5(src)? != pcm_md5(dst)? {
+        return Err("UPLOAD_CONVERSION_NOT_LOSSLESS");
+    }
+    Ok(())
+}
+
 /// Spotify normalization target: -14 LUFS. ±1 LU is the practical tolerance
 /// band used across distributors; misses are review-only warnings.
 pub const LOUDNESS_TARGET_LUFS: f64 = -14.0;
@@ -1516,6 +1630,52 @@ mod tests {
         let p = std::env::temp_dir().join(format!("audeniq-qc-test-{name}"));
         let _ = std::fs::remove_file(&p);
         p
+    }
+
+    /// 2 s stereo tone encoded as `codec` into an .m4a (ffmpeg's own encoders).
+    fn m4a(name: &str, codec_args: &[&str]) -> std::path::PathBuf {
+        let p = tmp(name);
+        let st = Command::new("ffmpeg")
+            .args(["-v", "error", "-y", "-f", "lavfi", "-i"])
+            .arg("sine=frequency=997:duration=2:sample_rate=48000")
+            .args(["-ac", "2"])
+            .args(codec_args)
+            .args(["-f", "ipod"])
+            .arg(&p)
+            .status()
+            .expect("ffmpeg");
+        assert!(st.success());
+        p
+    }
+
+    #[test]
+    fn alac_converts_to_flac_losslessly_and_aac_is_refused() {
+        for (name, fmt, bits) in [("alac16.m4a", "s16p", 16), ("alac24.m4a", "s32p", 24)] {
+            let src = m4a(name, &["-c:a", "alac", "-sample_fmt", fmt]);
+            let mut head = [0u8; 64];
+            use std::io::Read;
+            std::fs::File::open(&src)
+                .unwrap()
+                .read_exact(&mut head)
+                .unwrap();
+            assert_eq!(detect_container(&head), "M4A");
+            let dst = tmp(&format!("{name}.flac"));
+            alac_to_flac(&src, &dst).expect("lossless conversion");
+            let out = probe_audio_metrics(&dst).unwrap();
+            assert_eq!(out.codec_name, "flac");
+            assert_eq!((out.sample_rate, out.channels), (48000, 2));
+            assert_eq!(out.bits_per_sample, Some(bits), "{name}");
+            assert_eq!(pcm_md5(&src).unwrap(), pcm_md5(&dst).unwrap());
+            // The result passes the same Stage 1 format policy as an uploaded FLAC.
+            assert!(sample_format_policy("FLAC", &out).0, "{name}");
+            let _ = std::fs::remove_file(&src);
+            let _ = std::fs::remove_file(&dst);
+        }
+        let aac = m4a("aac.m4a", &["-c:a", "aac", "-b:a", "128k"]);
+        let dst = tmp("aac.flac");
+        assert_eq!(alac_to_flac(&aac, &dst), Err("UPLOAD_LOSSY_NOT_ACCEPTED"));
+        assert!(!dst.exists());
+        let _ = std::fs::remove_file(&aac);
     }
 
     #[test]

@@ -9,6 +9,7 @@
 // - 접수 = 동의(consent) 생성 → submit(동의 ID, 자기 선언)
 import type {
   Correction,
+  DeliveryItem,
   DraftTrack, Org, PreflightIssue, Release, ReleaseDetail, ReleaseDraft, ReleasePayload,
   SaveResult, Track, UploadKind, UploadResult, User,
 } from './types';
@@ -29,6 +30,9 @@ interface ServerRelease {
   row_version: number;
   created_at?: string;
   tracks?: ServerTrack[];
+  /** 플랫폼(파트너)별 전송·공개 상태 — 최신 패키지 기준 */
+  delivery_status_by_dsp?: { partner_id: string; dsp: string | null; status: string }[];
+  live_status_by_dsp?: { partner_id: string; dsp: string | null; live_status: string }[];
 }
 interface ServerTrack {
   id: string;
@@ -49,8 +53,12 @@ interface ServerCredit { party_id: string; role: string }
 // 상태·유형 매핑
 // ---------------------------------------------------------------------------
 /** 서버 처리 단계(application_pipeline_status) → 화면 상태 칩 */
-export function uiStatus(server: string): string {
-  if (server === 'DRAFT' || server === 'WITHDRAWN' || server === 'SUPERSEDED') return 'draft';
+export function uiStatus(server: string, live = false): string {
+  // 한 곳이라도 플랫폼에 공개됐으면 발매 완료 (발매 행은 READY_FOR_DELIVERY로 남는다)
+  if (live) return 'live';
+  if (server === 'DRAFT') return 'draft';
+  // 철회·반려(WITHDRAWN)와 대체(SUPERSEDED)는 더 수정할 수 없는 종료 상태
+  if (server === 'WITHDRAWN' || server === 'SUPERSEDED') return 'closed';
   if (/CORRECTION$/.test(server) || server === 'ON_HOLD_RIGHTS') return 'needs';
   if (server === 'READY_FOR_DELIVERY') return 'scheduled';
   return 'review';
@@ -185,7 +193,8 @@ function toSummary(r: ServerRelease): Release {
   return {
     id: r.id,
     title: r.title,
-    status: uiStatus(r.status),
+    status: uiStatus(r.status, (r.live_status_by_dsp ?? []).some(l => l.live_status === 'LIVE')),
+    livePlatforms: (r.live_status_by_dsp ?? []).filter(l => l.live_status === 'LIVE').map(l => l.dsp ?? l.partner_id),
     release_date: (typeof r.draft?.release_date === 'string' && r.draft.release_date) || null,
     created_at: (r.created_at ?? '').slice(0, 10),
     updated_at: typeof r.draft?.saved_at === 'string' ? r.draft.saved_at : r.created_at,
@@ -350,11 +359,20 @@ async function syncTracks(release: ServerRelease, tracks: DraftTrack[], artistId
 function detailPath(id: string) { return orgPath(`/releases/${encodeURIComponent(id)}`); }
 
 interface ServerCheck { check_code: string; status: string; severity?: string; detail?: string | null }
+interface ServerNote { check_code: string | null; decision: string; note: string }
 
 /** 보완 필요 발매의 검사 결과 중 사용자가 고쳐야 하는 항목 (접수 이력의 check_results) */
 async function fetchCorrections(id: string): Promise<Correction[]> {
   try {
-    const r = await req<{ checks?: ServerCheck[] }>(`${detailPath(id)}/submission`, { quiet401: true });
+    const r = await req<{ checks?: ServerCheck[]; review_notes?: ServerNote[] }>(`${detailPath(id)}/submission`, { quiet401: true });
+    // 담당자가 남긴 검토 의견: 항목별 의견은 그 항목 안내 대신, 전체 의견은 별도 항목으로
+    const notes = new Map<string, string>();
+    let general = '';
+    for (const n of r.review_notes ?? []) {
+      if (!n.note?.trim()) continue;
+      if (n.check_code) notes.set(n.check_code, n.note.trim());
+      else general = n.note.trim();
+    }
     const seen = new Set<string>();
     const out: Correction[] = [];
     for (const c of r.checks ?? []) {
@@ -365,8 +383,10 @@ async function fetchCorrections(id: string): Promise<Correction[]> {
       if (seen.has(key)) continue;
       seen.add(key);
       // detail은 내부 기록용이라 화면에는 코드별 안내 문구를 쓴다
-      out.push(trackId ? { code: c.check_code, message: '', trackId } : { code: c.check_code, message: '' });
+      const message = notes.get(c.check_code) ?? '';
+      out.push(trackId ? { code: c.check_code, message, trackId } : { code: c.check_code, message });
     }
+    if (general) out.push({ code: 'REVIEW_NOTE', message: general });
     return out;
   } catch {
     return [];
@@ -477,6 +497,11 @@ export const remoteApi = {
   async getRelease(id: string): Promise<ReleaseDetail> {
     return withCorrections(toDetail(await fetchRelease(id)));
   },
+  /** 플랫폼별 배급 진행 (3단계 이후 준비된 패키지 기준, 없으면 빈 목록) */
+  async getDelivery(id: string): Promise<DeliveryItem[]> {
+    const r = await req<{ items: DeliveryItem[] }>(`${detailPath(id)}/delivery`, { quiet401: true });
+    return r.items ?? [];
+  },
   async saveDraft(id: string | null, data: ReleasePayload): Promise<SaveResult> {
     const rel = await persist(id, data, id ? null : '임시 저장 시작');
     return { ...toSummary(rel), trackServerIds: rel.trackServerIds };
@@ -547,7 +572,7 @@ export const remoteApi = {
   async uploadFile(file: File, kind: UploadKind, onProgress?: (r: number) => void, signal?: AbortSignal): Promise<UploadResult> {
     const contentType = uploadContentType(file, kind);
     if (!contentType) {
-      throw new ApiError(kind === 'AUDIO' ? '음원은 WAV 또는 FLAC 파일만 올릴 수 있어요.' : kind === 'DOCUMENT' ? '서류는 PDF, JPG, PNG 파일만 올릴 수 있어요.' : '커버는 JPG 또는 PNG 파일만 올릴 수 있어요.', 400, 'UPLOAD_TYPE_UNSUPPORTED');
+      throw new ApiError(kind === 'AUDIO' ? '음원은 WAV, FLAC 또는 ALAC(.m4a) 파일만 올릴 수 있어요.' : kind === 'DOCUMENT' ? '서류는 PDF, JPG, PNG 파일만 올릴 수 있어요.' : '커버는 JPG 또는 PNG 파일만 올릴 수 있어요.', 400, 'UPLOAD_TYPE_UNSUPPORTED');
     }
     const issued = await req<{ upload_session_id: string; asset_id: string; expected_key: string; grant: UploadGrant }>(orgPath('/uploads'), {
       method: 'POST', body: { kind, size_bytes: file.size, content_type: contentType },
@@ -560,7 +585,7 @@ export const remoteApi = {
       throw e;
     }
     const done = await req<{ asset_id: string; sha256?: string; detected_container?: string }>(orgPath(`/uploads/${issued.upload_session_id}/complete`), {
-      method: 'POST', body: { asset_id: issued.asset_id, expected_key: issued.expected_key }, timeoutMs: 120000,
+      method: 'POST', body: { asset_id: issued.asset_id, expected_key: issued.expected_key }, timeoutMs: 240000,
     });
     return { assetId: done.asset_id, sha256: done.sha256, container: done.detected_container };
   },
@@ -573,6 +598,8 @@ export function uploadContentType(file: File, kind: UploadKind): string {
   if (kind === 'AUDIO') {
     if (t === 'audio/wav' || t === 'audio/x-wav' || t === 'audio/wave' || name.endsWith('.wav')) return 'audio/wav';
     if (t === 'audio/flac' || t === 'audio/x-flac' || name.endsWith('.flac')) return 'audio/flac';
+    // ALAC(.m4a): 서버가 FLAC으로 무손실 변환한다 (AAC는 서버가 거절)
+    if (t === 'audio/mp4' || t === 'audio/x-m4a' || t === 'audio/m4a' || name.endsWith('.m4a')) return 'audio/mp4';
     return '';
   }
   if (kind === 'DOCUMENT' && (t === 'application/pdf' || name.endsWith('.pdf'))) return 'application/pdf';

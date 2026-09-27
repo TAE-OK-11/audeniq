@@ -4,12 +4,9 @@ use crate::{
     error::{Error, Result},
     operations,
 };
-use argon2::{
-    Argon2, PasswordHasher, PasswordVerifier,
-    password_hash::{PasswordHash, SaltString},
-};
+use argon2::{Argon2, PasswordHasher, PasswordVerifier, password_hash::phc::PasswordHash};
 use axum::{Json, http::HeaderMap};
-use rand::{RngCore, rngs::OsRng};
+use rand::{TryRng, rngs::SysRng};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -34,7 +31,9 @@ pub fn hash_token(s: &str) -> Vec<u8> {
 }
 pub fn random_token() -> String {
     let mut bytes = [0u8; 32];
-    OsRng.fill_bytes(&mut bytes);
+    SysRng
+        .try_fill_bytes(&mut bytes)
+        .expect("operating system RNG unavailable");
     hex::encode(bytes)
 }
 pub fn secret_eq(a: &str, b: &str) -> bool {
@@ -220,7 +219,8 @@ fn credentials(c: &Credentials) -> Result<String> {
 pub async fn password_hash(password: String) -> Result<String> {
     tokio::task::spawn_blocking(move || {
         Argon2::default()
-            .hash_password(password.as_bytes(), &SaltString::generate(&mut OsRng))
+            // Random 16-byte salt from the OS RNG (password-hash 0.6 default).
+            .hash_password(password.as_bytes())
             .map(|h| h.to_string())
             .map_err(|_| Error::Internal)
     })
@@ -395,7 +395,7 @@ pub fn cookie(c: &Config, token: &str, max_age: i64) -> String {
     )
 }
 fn session_csrf(secret: &str, session_hash: &[u8]) -> String {
-    use hmac::{Hmac, Mac};
+    use hmac::{Hmac, KeyInit, Mac};
     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).expect("HMAC key");
     mac.update(b"audeniq-session-csrf-v1:");
     mac.update(session_hash);

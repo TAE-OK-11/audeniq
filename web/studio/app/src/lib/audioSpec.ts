@@ -2,7 +2,7 @@
 // 파일 전체를 읽지 않고 앞부분만 본다 (수백 MB 원본도 즉시 확인).
 
 export interface AudioSpec {
-  container: 'WAV' | 'FLAC';
+  container: 'WAV' | 'FLAC' | 'ALAC';
   sampleRate: number;
   bitDepth: number;
   channels: number;
@@ -88,12 +88,51 @@ function parseFlac(v: DataView): AudioSpec | null {
   return { container: 'FLAC', sampleRate, bitDepth, channels, duration: sampleRate && totalSamples ? totalSamples / sampleRate : 0 };
 }
 
+function findTag(v: DataView, tag: string, from: number): number {
+  const c = [...tag].map(ch => ch.charCodeAt(0));
+  for (let i = from; i + 4 <= v.byteLength; i++) {
+    if (v.getUint8(i) === c[0] && v.getUint8(i + 1) === c[1] && v.getUint8(i + 2) === c[2] && v.getUint8(i + 3) === c[3]) return i;
+  }
+  return -1;
+}
+
+/**
+ * .m4a (MP4 컨테이너). ALAC이면 서버가 FLAC으로 무손실 변환하고, AAC(손실)는 받지 않는다.
+ * 규격은 ALAC 설정 상자(sample entry 'alac' 안의 'alac')에서 읽는다. 그 상자가 파일 끝에 있어
+ * 앞부분에서 못 찾으면 undefined (서버가 확인).
+ */
+function parseM4a(v: DataView): AudioSpec | 'LOSSY' | undefined | null {
+  if (v.byteLength < 12 || findTag(v, 'ftyp', 4) !== 4) return null;
+  const entry = findTag(v, 'alac', 8);
+  const cookie = entry < 0 ? -1 : findTag(v, 'alac', entry + 4);
+  if (cookie >= 0 && cookie + 32 <= v.byteLength) {
+    // 'alac' fullbox: version/flags(4), frameLength(4), compatibleVersion(1), bitDepth(1),
+    // pb, mb, kb, numChannels(1), maxRun(2), maxFrameBytes(4), avgBitRate(4), sampleRate(4)
+    const at = cookie + 4;
+    return {
+      container: 'ALAC',
+      bitDepth: v.getUint8(at + 9),
+      channels: v.getUint8(at + 13),
+      sampleRate: v.getUint32(at + 24),
+      duration: 0,
+    };
+  }
+  if (entry < 0 && findTag(v, 'mp4a', 8) >= 0) return 'LOSSY';
+  return undefined;
+}
+
 /** 헤더 바이트로 규격 판정 (테스트에서 직접 호출) */
 export function checkAudioHeader(buf: ArrayBuffer, fileSize = buf.byteLength): AudioCheck {
   const v = new DataView(buf);
-  const spec = parseWav(v, fileSize) ?? parseFlac(v);
+  const m4a = parseM4a(v);
+  if (m4a === 'LOSSY') {
+    return { spec: null, error: 'AAC(손실 압축) 파일이에요. 무손실 원본(WAV·FLAC·ALAC)으로 올려 주세요.', warnings: [] };
+  }
+  // 앞부분에 ALAC 설정이 없는 .m4a: 형식 확인은 서버 변환 단계에 맡긴다
+  if (m4a === undefined) return { spec: null, error: '', warnings: [] };
+  const spec = m4a ?? parseWav(v, fileSize) ?? parseFlac(v);
   if (!spec) {
-    return { spec: null, error: 'WAV·FLAC 원본 파일이 아니에요. 확장자만 바꾼 파일(MP3 등)은 배급할 수 없어요.', warnings: [] };
+    return { spec: null, error: 'WAV·FLAC·ALAC 원본 파일이 아니에요. MP3·AAC 같은 손실 압축 파일은 배급할 수 없어요.', warnings: [] };
   }
   if (spec.duration < 0) {
     return { spec: null, error: '압축된 WAV예요. 무손실 PCM WAV 또는 FLAC 원본으로 다시 내보내 주세요.', warnings: [] };

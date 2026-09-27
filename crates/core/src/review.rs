@@ -457,7 +457,7 @@ async fn decide(
             "special_flags": special_flags(ctx),
             "rule_version": REVIEW_RULE_VERSION,
         });
-        let pkg_hash = sha256_hex(&serde_json::to_string(&pkg).expect("json serializes"));
+        let pkg_hash = crate::domain::sha256_json(&pkg);
         let pkg_id = Uuid::new_v4();
         sqlx::query("INSERT INTO distribution.verification_packages(id, org_id, revision_id, body, package_hash, rights_epoch) VALUES($1,$2,$3,$4,$5,$6)")
             .bind(pkg_id).bind(ctx.org).bind(ctx.revision_id).bind(&pkg).bind(&pkg_hash).bind(epoch)
@@ -1006,8 +1006,14 @@ async fn module_policy_integrity(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec
     // 2-G: eligibility from real route data only. F1 schema keeps every route
     // disabled and every endpoint INTEGRATION_PENDING, so the honest answer
     // today is INELIGIBLE_NO_CONTRACT for all candidates.
+    // One query: the per-route contract lookup used to be N+1.
     let routes = sqlx::query(
-        "SELECT r.dsp_id, r.enabled, e.integration_status, r.contract_id FROM distribution.route_plans r JOIN distribution.dsp_endpoints e ON e.org_id=r.org_id AND e.dsp_id=r.dsp_id AND e.id=r.endpoint_id WHERE r.org_id=$1",
+        "SELECT r.dsp_id, r.enabled, e.integration_status,
+                EXISTS(SELECT 1 FROM rights.contract_revisions cr
+                       WHERE cr.org_id=r.org_id AND cr.contract_id=r.contract_id AND cr.policy_version<>'REVOKED') AS contract_live
+         FROM distribution.route_plans r
+         JOIN distribution.dsp_endpoints e ON e.org_id=r.org_id AND e.dsp_id=r.dsp_id AND e.id=r.endpoint_id
+         WHERE r.org_id=$1",
     )
     .bind(ctx.org)
     .fetch_all(&mut *tx)
@@ -1018,14 +1024,8 @@ async fn module_policy_integrity(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec
         let dsp: Uuid = r.get("dsp_id");
         let enabled: bool = r.get("enabled");
         let ist: String = r.get("integration_status");
-        let active_contract: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM rights.contract_revisions WHERE org_id=$1 AND contract_id=$2 AND policy_version<>'REVOKED'",
-        )
-        .bind(ctx.org)
-        .bind(r.get::<Uuid, _>("contract_id"))
-        .fetch_one(&mut *tx)
-        .await?;
-        if enabled && ist == "ACTIVE" && active_contract > 0 {
+        let contract_live: bool = r.get("contract_live");
+        if enabled && ist == "ACTIVE" && contract_live {
             eligible.push(dsp.to_string());
         } else {
             ineligible.push(format!("{dsp}=INELIGIBLE_NO_CONTRACT"));
@@ -1072,6 +1072,26 @@ async fn module_policy_integrity(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec
             ineligible.push(format!("{dsp}=INELIGIBLE_NO_CONTRACT"));
         }
     }
+    // The artist's platform choice (Studio `platforms`, frozen in the
+    // revision) narrows the scope: a registry DSP (D-n) the application did
+    // not ask for is never approved. Test partners outside the registry are
+    // unaffected; a legacy draft without `platforms` asks for every DSP.
+    let requested = ctx
+        .body
+        .pointer("/release/draft")
+        .and_then(crate::dsp_registry::requested);
+    if let Some(req) = &requested {
+        eligible.retain(|id| {
+            Uuid::parse_str(id)
+                .ok()
+                .and_then(crate::dsp_registry::Dsp::from_uuid)
+                .is_none_or(|d| req.contains(&d))
+        });
+    }
+    let requested_codes = match &requested {
+        Some(r) => r.iter().map(|d| d.code()).collect::<Vec<_>>().join(","),
+        None => "ALL".into(),
+    };
     let el = if eligible.is_empty() {
         "(none)".into()
     } else {
@@ -1080,7 +1100,10 @@ async fn module_policy_integrity(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec
     out.push(ReviewCheck {
         check_code: "S2_DSP_ELIGIBILITY",
         status: "PASS",
-        detail: format!("eligible: {el} | ineligible: {}", ineligible.join(",")),
+        detail: format!(
+            "eligible: {el} | ineligible: {} | requested: {requested_codes}",
+            ineligible.join(",")
+        ),
     });
     // 2-H: duplicate applications of the same bytes under another release.
     let dups: Vec<Uuid> = sqlx::query_scalar(
@@ -1185,7 +1208,8 @@ pub const MIN_APPROVER_TENURE_HOURS: i32 = 72;
 /// Upper bound on an override reason (the sandbox stored 300 x 60 KB).
 pub const MAX_OVERRIDE_REASON_CHARS: usize = 2000;
 const OVERRIDE_STATUSES: &[&str] = &["PASS", "CORRECTION_REQUIRED", "REVIEW_REQUIRED", "BLOCKED"];
-const RIGHTS_MONEY_CLASSES: &[&str] = &["S2_RIGHTS_SCOPE", "S2_DOCS_ORIGIN", "S2_SPECIAL_FLAGS"];
+pub(crate) const RIGHTS_MONEY_CLASSES: &[&str] =
+    &["S2_RIGHTS_SCOPE", "S2_DOCS_ORIGIN", "S2_SPECIAL_FLAGS"];
 
 /// True when forcing `proposed_status` on `check_code` needs a second person.
 pub fn needs_second_approver(check_code: &str, proposed_status: &str) -> bool {
@@ -1291,7 +1315,7 @@ async fn active_role(c: &mut PgConnection, org: Uuid, user: Uuid) -> Result<Stri
 
 /// Write one override row (append-only) in the caller's transaction.
 #[allow(clippy::too_many_arguments)]
-async fn insert_override(
+pub(crate) async fn insert_override(
     c: &mut PgConnection,
     org: Uuid,
     revision_id: Uuid,
