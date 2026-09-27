@@ -51,6 +51,26 @@ const CODE_MESSAGES: Record<string, string> = {
   NOT_IMPLEMENTED: '아직 준비 중인 기능이에요.',
   BACKEND_UNAVAILABLE: '서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.',
   MAINTENANCE: '지금은 서버 점검 중이에요. 점검이 끝나면 다시 이용할 수 있어요.',
+  // 관리자(스태프) API
+  STATUS_UNKNOWN: '알 수 없는 상태 필터예요.',
+  NOTE_TOO_LONG: '메모가 너무 길어요. 줄여서 다시 입력해 주세요.',
+  DECISION_REASON_REQUIRED: '결정 사유를 입력해 주세요.',
+  DECISION_ACTION_UNKNOWN: '알 수 없는 결정이에요.',
+  RELEASE_NOT_IN_REVIEW: '이미 심사 대기 상태가 아닌 발매예요. 새로고침해 최신 상태를 확인해 주세요.',
+  SECOND_APPROVAL_ALREADY_PENDING: '이 수정본에는 이미 2차 승인 요청이 올라가 있어요.',
+  NOTHING_TO_CORRECT: '보완 요청할 미해결 검사 항목이 없어요.',
+  APPROVAL_NOT_PENDING: '이미 처리됐거나 만료된 승인 요청이에요.',
+  SECOND_APPROVER_MUST_DIFFER: '요청한 본인은 승인할 수 없어요. 다른 심사 담당자가 승인해야 해요.',
+  REVIEW_NOTE_REQUIRED: '보완·보류 사유를 입력해 주세요.',
+  DOCUMENT_STATUS_INVALID: '서류 처리 상태가 올바르지 않아요.',
+  INQUIRY_CLOSED: '종료된 문의에는 답변할 수 없어요.',
+  STAGING_SUPERSEDED: '새 패키지로 교체된 배급 건이에요. 목록을 새로고침해 주세요.',
+  DELIVERY_CONTENT_BLOCKED: '콘텐츠 차단 항목이 있어 승인할 수 없어요.',
+  WARNINGS_NOT_ACKNOWLEDGED: '음량·클리핑 권고를 확인했다고 체크해 주세요.',
+  RELEASE_NOT_READY_FOR_DELIVERY: '배급 준비 완료 상태인 발매만 식별자를 재발급할 수 있어요.',
+  NO_VIRTUAL_IDENTIFIERS: '임시(테스트) 식별자가 없어 재발급할 필요가 없어요.',
+  REGISTERED_ISSUER_MISSING: '정식 UPC·ISRC 발급 범위가 아직 등록되지 않았어요.',
+  PACKAGE_ALREADY_WITH_PARTNER: '이미 계약 파트너에게 전송된 패키지예요.',
 };
 
 export function messageForCode(code: string, status = 0): string {
