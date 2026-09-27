@@ -5,37 +5,37 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 [dependencies]
-axum = "0.8"
-tokio = { version = "1", features = ["full"] }
-sqlx = { version = "0.9", features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "postgres", "uuid", "chrono", "json", "migrate", "rust_decimal"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-uuid = { version = "1", features = ["v4", "v5", "serde"] }
-chrono = { version = "0.4", features = ["serde"] }
-argon2 = "0.6"
-rand = "0.10"
-sha2 = "0.11"
-hmac = "0.13"
-hex = "0.4"
-subtle = "2"
-reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
-url = "2"
-async-trait = "0.1"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-thiserror = "2"
-anyhow = "1"
-jsonschema = { version = "0.58", default-features = false, features = ["idna"] }  # 내장 스키마만 — 원격 $ref 받기 끔
-rust_decimal = { version = "1", features = ["serde", "db-postgres"] }
-rustfft = "6"
-quick-xml = "0.42"
-unicode-normalization = "0.1"
-libc = "0.2"
+axum = "0.8.9"
+tokio = { version = "1.53.1", features = ["full"] }
+sqlx = { version = "0.9.0", features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "postgres", "uuid", "chrono", "json", "migrate", "rust_decimal"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+uuid = { version = "1.26.1", features = ["v4", "v5", "serde"] }
+chrono = { version = "0.4.45", features = ["serde"] }
+argon2 = "0.6.0"
+rand = "0.10.3"
+sha2 = "0.11.0"
+hmac = "0.13.0"
+hex = "0.4.3"
+subtle = "2.6.1"
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json"] }
+url = "2.5.8"
+async-trait = "0.1.92"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
+thiserror = "2.0.21"
+anyhow = "1.0.104"
+jsonschema = { version = "0.58.1", default-features = false, features = ["idna"] }  # 내장 스키마만 — 원격 $ref 받기 끔
+rust_decimal = { version = "1.43.0", features = ["serde", "db-postgres"] }
+rustfft = "6.4.1"
+quick-xml = "0.42.0"
+unicode-normalization = "0.1.25"
+libc = "0.2.189"
 unicode-security = "0.1.2"
-aes-gcm = "0.11"
+aes-gcm = "0.11.1"
 [dev-dependencies]
-tower = { version = "0.5", features = ["util"] }
-http-body-util = "0.1"
-unicode-normalization = "0.1"
+tower = { version = "0.5.3", features = ["util"] }
+http-body-util = "0.1.5"
+unicode-normalization = "0.1.25"
 [build-dependencies]
-serde_json = "1"
+serde_json = "1.0.151"
