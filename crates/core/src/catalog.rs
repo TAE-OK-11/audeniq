@@ -49,6 +49,52 @@ pub struct Input {
     pub label_id: Option<Uuid>,
     pub release_type: Option<String>,
     pub row_version: Option<i64>,
+    /// Release only: artist-supplied UPC-A (12 digits, check digit verified).
+    /// Absent or empty = none; Stage 3 issues one from the active issuer.
+    #[serde(default)]
+    pub upc: Option<String>,
+    /// Release only: registered IMAGE asset used as the cover art.
+    #[serde(default)]
+    pub artwork_asset_id: Option<Uuid>,
+}
+/// UPC and cover art of a release input, normalized (empty UPC = none).
+/// Other kinds must not carry them.
+fn release_fields(kind: Kind, i: &Input) -> Result<(Option<String>, Option<Uuid>)> {
+    let upc = i
+        .upc
+        .as_deref()
+        .map(str::trim)
+        .filter(|u| !u.is_empty())
+        .map(str::to_string);
+    if !matches!(kind, Kind::Release) {
+        return if upc.is_none() && i.artwork_asset_id.is_none() {
+            Ok((None, None))
+        } else {
+            Err(Error::Invalid)
+        };
+    }
+    if let Some(u) = &upc {
+        crate::identifiers::validate_upc(u)?;
+    }
+    Ok((upc, i.artwork_asset_id))
+}
+/// Cover art must be the caller's registered image in this org.
+async fn artwork_ref(
+    c: &mut PgConnection,
+    a: &Actor,
+    org: Uuid,
+    asset: Option<Uuid>,
+) -> Result<()> {
+    let Some(asset) = asset else { return Ok(()) };
+    auth::authorize(c, a, org, asset, "asset", false).await?;
+    let ok: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM catalog.assets WHERE org_id=$1 AND id=$2 AND kind='IMAGE' AND state='REGISTERED')",
+    )
+    .bind(org)
+    .bind(asset)
+    .fetch_one(&mut *c)
+    .await?;
+    if ok { Ok(()) } else { Err(Error::Invalid) }
 }
 fn validate(i: &Input) -> Result<()> {
     if i.name.trim().is_empty()
@@ -87,10 +133,12 @@ async fn refs(c: &mut PgConnection, a: &Actor, org: Uuid, i: &Input) -> Result<(
 }
 pub async fn create(s: &AppState, a: &Actor, org: Uuid, kind: Kind, i: Input) -> Result<Value> {
     validate(&i)?;
+    let (upc, artwork) = release_fields(kind, &i)?;
     let mut tx = s.pool.begin().await?;
     let id = Uuid::new_v4();
     auth::create_resource(&mut tx, a, org, id, kind.resource()).await?;
     refs(&mut tx, a, org, &i).await?;
+    artwork_ref(&mut tx, a, org, artwork).await?;
     protected(&mut tx, org, &i).await?;
     match kind {
         Kind::Artist => {
@@ -107,7 +155,7 @@ pub async fn create(s: &AppState, a: &Actor, org: Uuid, kind: Kind, i: Input) ->
             } else {
                 i.profile.clone()
             };
-            sqlx::query("INSERT INTO catalog.releases(id,org_id,title,draft,release_type) VALUES($1,$2,$3,$4,$5)").bind(id).bind(org).bind(i.name).bind(draft).bind(i.release_type.ok_or(Error::Invalid)?).execute(&mut *tx).await?;
+            sqlx::query("INSERT INTO catalog.releases(id,org_id,title,draft,release_type,upc,artwork_asset_id) VALUES($1,$2,$3,$4,$5,$6,$7)").bind(id).bind(org).bind(i.name).bind(draft).bind(i.release_type.ok_or(Error::Invalid)?).bind(upc).bind(artwork).execute(&mut *tx).await?;
         }
     }
     operations::audit(
@@ -197,15 +245,17 @@ pub async fn update(
     i: Input,
 ) -> Result<Value> {
     validate(&i)?;
+    let (upc, artwork) = release_fields(kind, &i)?;
     let expected = i.row_version.ok_or(Error::Invalid)?;
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, id, kind.resource(), true).await?;
     refs(&mut tx, a, org, &i).await?;
+    artwork_ref(&mut tx, a, org, artwork).await?;
     protected(&mut tx, org, &i).await?;
     let n=match kind{
  Kind::Artist=>sqlx::query("UPDATE catalog.artists SET name=$3,profile=$4,party_id=$6,label_id=$7,row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND row_version=$5 AND archived_at IS NULL").bind(org).bind(id).bind(i.name).bind(i.profile).bind(expected).bind(i.party_id).bind(i.label_id).execute(&mut *tx).await?.rows_affected(),
  Kind::Label=>sqlx::query("UPDATE catalog.labels SET name=$3,profile=$4,party_id=$6,row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND row_version=$5 AND archived_at IS NULL").bind(org).bind(id).bind(i.name).bind(i.profile).bind(expected).bind(i.party_id.ok_or(Error::Invalid)?).execute(&mut *tx).await?.rows_affected(),
- Kind::Release=>sqlx::query("UPDATE catalog.releases SET title=$3,draft=$4,release_type=$6,row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND row_version=$5 AND catalog.is_editable_status(status) AND archived_at IS NULL").bind(org).bind(id).bind(i.name).bind(i.profile).bind(expected).bind(i.release_type.ok_or(Error::Invalid)?).execute(&mut *tx).await?.rows_affected(),
+ Kind::Release=>sqlx::query("UPDATE catalog.releases SET title=$3,draft=$4,release_type=$6,upc=$7,artwork_asset_id=$8,row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND row_version=$5 AND catalog.is_editable_status(status) AND archived_at IS NULL").bind(org).bind(id).bind(i.name).bind(i.profile).bind(expected).bind(i.release_type.ok_or(Error::Invalid)?).bind(upc).bind(artwork).execute(&mut *tx).await?.rows_affected(),
  };
     if n != 1 {
         return Err(Error::Conflict);
@@ -301,6 +351,29 @@ pub struct TrackInput {
     /// Spotify Style Guide 8.2/8.4: version info belongs here, not in the
     /// title. Empty = no version; maps to DDEX SubTitle (ERN 3.8.2 has no VersionTitle element).
     pub version: Option<String>,
+    /// Artist-supplied ISRC. Dashes and case are normalized
+    /// ("kr-abc-26-00001" -> "KRABC2600001"). Absent or empty = none; Stage 3
+    /// issues one from the active issuer.
+    #[serde(default)]
+    pub isrc: Option<String>,
+}
+impl TrackInput {
+    /// Normalized, validated ISRC or none.
+    pub fn isrc(&self) -> Result<Option<String>> {
+        let Some(raw) = self.isrc.as_deref() else {
+            return Ok(None);
+        };
+        let v: String = raw
+            .chars()
+            .filter(|c| *c != '-' && !c.is_whitespace())
+            .collect::<String>()
+            .to_ascii_uppercase();
+        if v.is_empty() {
+            return Ok(None);
+        }
+        crate::identifiers::validate_isrc(&v)?;
+        Ok(Some(v))
+    }
 }
 pub async fn track(
     s: &AppState,
@@ -312,6 +385,7 @@ pub async fn track(
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, release, "release", true).await?;
     drafts::track_refs(&mut tx, a, org, &i).await?;
+    let isrc = i.isrc()?;
     drafts::bump(&mut tx, org, release, i.row_version).await?;
     let id = Uuid::new_v4();
     let lyrics = i.lyrics.as_deref().filter(|s| !s.trim().is_empty());
@@ -321,8 +395,8 @@ pub async fn track(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .unwrap_or("");
-    sqlx::query("INSERT INTO catalog.tracks(id,org_id,release_id,title,version,disc_number,track_number,artist_id,asset_id,lyrics,parental_advisory) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)")
- .bind(id).bind(org).bind(release).bind(i.title).bind(version).bind(i.disc_number).bind(i.track_number).bind(i.artist_id).bind(i.asset_id).bind(lyrics).bind(i.parental_advisory.unwrap_or(false)).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO catalog.tracks(id,org_id,release_id,title,version,disc_number,track_number,artist_id,asset_id,lyrics,parental_advisory,isrc) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)")
+ .bind(id).bind(org).bind(release).bind(i.title).bind(version).bind(i.disc_number).bind(i.track_number).bind(i.artist_id).bind(i.asset_id).bind(lyrics).bind(i.parental_advisory.unwrap_or(false)).bind(isrc).execute(&mut *tx).await?;
     operations::audit(
         &mut tx,
         Some(a.user),
