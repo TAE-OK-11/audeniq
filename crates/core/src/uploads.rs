@@ -207,6 +207,7 @@ pub async fn complete(
             a.request,
         )
         .await?;
+        queue_analysis(&mut tx, org, asset).await?;
         operations::event(
             &mut tx,
             org,
@@ -225,19 +226,29 @@ pub async fn complete(
             json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":false,"sha256":flac.sha256,"detected_container":"FLAC","converted_from":if container == "M4A" { "ALAC" } else { container }}),
         );
     }
-    // Content verification. The frozen copy is immutable, so hashing it here
-    // binds catalog.assets.sha256 to exactly the bytes every later stage
-    // reads (Stage 1 re-verifies the hash before analysis). Streaming keeps
-    // API memory constant even for 512 MiB masters.
-    let digest = match s.storage.digest(&stable, size as u64).await {
-        Ok(d) => d,
-        Err(Error::PolicyGate("OBJECT_TOO_LARGE")) => return Err(Error::Conflict),
-        Err(e) => return Err(e),
+    // Audio: completion reads only the first bytes (content sniff). The
+    // frozen copy is immutable (ETag pinned below), and the `asset.analyze`
+    // job downloads it once to hash it and run QC, so the master is not
+    // transferred twice. Covers and documents are small: hashed here.
+    let (head, sha256) = if kind == "AUDIO" {
+        (
+            s.storage
+                .read_prefix(&stable, crate::storage::HEAD_SNIFF_BYTES)
+                .await?,
+            None,
+        )
+    } else {
+        let digest = match s.storage.digest(&stable, size as u64).await {
+            Ok(d) => d,
+            Err(Error::PolicyGate("OBJECT_TOO_LARGE")) => return Err(Error::Conflict),
+            Err(e) => return Err(e),
+        };
+        if digest.size != size as u64 {
+            return Err(Error::Conflict);
+        }
+        (digest.head, Some(digest.sha256))
     };
-    if digest.size != size as u64 {
-        return Err(Error::Conflict);
-    }
-    let detected = crate::qc::detect_container(&digest.head);
+    let detected = crate::qc::detect_container(&head);
     if expected_container(&kind, &mime) != Some(detected) {
         // Nothing is registered: the transaction rolls back, the session
         // stays unusable for these bytes, and the user re-uploads the real
@@ -249,9 +260,12 @@ pub async fn complete(
     sqlx::query("UPDATE catalog.assets SET state='REGISTERED',etag=$2,sha256=$3 WHERE id=$1")
         .bind(asset)
         .bind(copy.etag)
-        .bind(&digest.sha256)
+        .bind(&sha256)
         .execute(&mut *tx)
         .await?;
+    if kind == "AUDIO" {
+        queue_analysis(&mut tx, org, asset).await?;
+    }
     operations::audit(
         &mut tx,
         Some(a.user),
@@ -275,7 +289,7 @@ pub async fn complete(
     // the upload URL (signed If-None-Match: *). The bucket lifecycle rule
     // removes quarantine/ objects after a day.
     Ok(
-        json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":false,"sha256":digest.sha256,"detected_container":detected}),
+        json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":false,"sha256":sha256,"detected_container":detected}),
     )
 }
 
@@ -366,6 +380,22 @@ async fn convert_lossless(
         etag: meta.etag,
         sha256,
     })
+}
+
+/// Queue the pre-submission analysis of a registered audio master
+/// (`submission::precheck_asset`): the single full download that hashes the
+/// bytes and runs QC before the artist submits.
+async fn queue_analysis(tx: &mut sqlx::PgConnection, org: Uuid, asset: Uuid) -> Result<()> {
+    operations::enqueue(
+        tx,
+        "qc",
+        "asset.analyze",
+        &json!({"org_id": org, "asset_id": asset}),
+        &format!("asset.analyze:{asset}"),
+        None,
+    )
+    .await?;
+    Ok(())
 }
 
 /// Best-effort removal of the quarantine object after complete/cancel
