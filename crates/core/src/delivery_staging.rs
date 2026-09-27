@@ -741,6 +741,24 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
         Uuid::new_v4(),
     )
     .await?;
+    // Staff approve the release once; approved packages (0051) go out as
+    // soon as the agreement is signed. Staged after the signature: run E-0 now.
+    let signed: bool = sqlx::query_scalar("SELECT execution.agreement_signed($1,$2)")
+        .bind(org)
+        .bind(release_id)
+        .fetch_one(&mut *tx)
+        .await?;
+    if signed {
+        crate::operations::enqueue(
+            &mut tx,
+            "delivery",
+            "delivery.enqueue",
+            &json!({"package_id": package_id}),
+            &format!("delivery.enqueue:{package_id}:staged:{}", Uuid::new_v4()),
+            None,
+        )
+        .await?;
+    }
     tx.commit().await?;
     Ok(summary)
 }

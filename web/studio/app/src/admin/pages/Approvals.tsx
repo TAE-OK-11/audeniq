@@ -7,26 +7,26 @@ import { errorMessage } from '../../api/errors';
 import { useAsync } from '../../hooks/useAsync';
 import { staffApi, type ApprovalItem } from '../api';
 import { ago, checkLabel, shortId, when } from '../labels';
-import { Chip, Empty, ErrorBox, NoDuty, PageHead, Skeleton, useStaff } from '../ui';
+import { Chip, Empty, ErrorBox, NoDuty, PageHead, Skeleton, SubTabs, useStaff } from '../ui';
 
 export function Approvals() {
   const toast = useToast();
   const confirm = useConfirm();
-  const { me, can, refreshCounts } = useStaff();
+  const { me, can, refreshCounts, counts } = useStaff();
   const { data, loading, error, reload } = useAsync(() => staffApi.approvals(), []);
   const [busy, setBusy] = useState('');
   const items = data?.items ?? [];
 
   const act = async (a: ApprovalItem, approve: boolean) => {
     const ok = await confirm(approve
-      ? { title: '2차 승인할까요?', message: <>‘{a.title}’의 {a.check_codes.map(checkLabel).join(', ')} 항목을 통과 처리하고 재평가를 예약해요. 요청 근거를 직접 확인했는지 다시 한번 봐 주세요.</>, confirmLabel: '승인' }
+      ? { title: '2차 승인할까요?', message: <>‘{a.title}’의 {a.check_codes.map(checkLabel).join(', ')} 항목을 통과 처리해요. 시스템이 다음 단계를 이어서 해요. 요청 근거를 직접 확인했는지 다시 한번 봐 주세요.</>, confirmLabel: '승인' }
       : { title: '2차 승인을 반려할까요?', message: '요청이 닫히고 발매는 심사 대기 상태로 남아요. 담당자는 보완 요청이나 거절로 다시 결정할 수 있어요.', confirmLabel: '반려', danger: true });
     if (!ok) return;
     setBusy(a.id);
     try {
       if (approve) await staffApi.approve(a.id);
       else await staffApi.decline(a.id);
-      toast(approve ? '2차 승인했어요. 재평가 후 다음 단계로 넘어가요.' : '2차 승인 요청을 반려했어요.', 'success');
+      toast(approve ? '2차 승인했어요. 시스템이 다음 단계로 넘겨요.' : '2차 승인 요청을 반려했어요.', 'success');
       reload();
       refreshCounts();
     } catch (e) {
@@ -44,6 +44,7 @@ export function Approvals() {
         sub="한 사람이 통과시킬 수 없는 민감 항목(중복 음원·지문 일치·보호 아티스트명·권리 범위, 차단 항목)에 대한 승인 요청이에요. 요청한 본인은 승인할 수 없고, 72시간이 지나면 만료돼요."
         actions={<button type="button" className="adm-btn soft small" onClick={reload}>새로고침</button>}
       />
+      <SubTabs tabs={[{ to: '/admin/reviews', label: '심사 목록', count: counts?.review }, { to: '/admin/approvals', label: '2차 승인', count: counts?.second_approvals }]} />
       {!can('REVIEW') && <NoDuty duty="발매 심사" />}
       {error && <ErrorBox message={error} onRetry={reload} />}
       {loading && !data ? <Skeleton rows={3} /> : items.length === 0 ? (

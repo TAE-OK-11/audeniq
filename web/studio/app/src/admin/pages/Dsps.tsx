@@ -1,37 +1,58 @@
-// DSP 현황 — D-1..D-11 레지스트리(사양)와 전송 경로·온보딩 진행 상태 (조회 전용).
+// DSP 현황 — D-1..D-11 사양(각 플랫폼이 요구하는 조건 전부)과 전송 경로·온보딩, 지금 막힌 발매.
+// 콘텐츠 문제로 막힌 패키지가 있거나 연동이 끊기면 카드가 바로 빨간색이 된다.
+import { Link } from '../../lib/router';
 import { useAsync } from '../../hooks/useAsync';
 import { staffApi } from '../api';
-import { Chip, Empty, ErrorBox, PageHead, Skeleton } from '../ui';
+import { reqsFor } from '../dspReqs';
+import { Chip, Empty, ErrorBox, PageHead, Skeleton, SubTabs } from '../ui';
 
 export function Dsps() {
   const { data, loading, error, reload } = useAsync(() => staffApi.dsps(), []);
+  const blocked = useAsync(() => staffApi.deliveries({ approval: 'PENDING', readiness: 'CONTENT_BLOCKED' }).catch(() => ({ items: [] })), []);
   const items = data?.items ?? [];
+  const blockedBy = (code: string) => (blocked.data?.items ?? []).filter(b => b.dsp === code);
   return (
     <div className="view-enter">
-      <PageHead eyebrow="DSP REGISTRY" title="DSP 현황" sub="플랫폼별 배급 사양과 전송 경로 연결 상태예요. 경로가 없거나 온보딩 중인 DSP는 배급 승인 후에도 연결될 때까지 대기해요." />
+      <PageHead
+        eyebrow="PLATFORMS" title="플랫폼별 조건"
+        sub="플랫폼마다 요구하는 조건과 연결 상태예요. 조건에 맞지 않는 발매가 막혀 있거나 연동에 문제가 있으면 빨간색으로 표시돼요."
+        actions={<button type="button" className="adm-btn soft small" onClick={() => { reload(); blocked.reload(); }}>새로고침</button>}
+      />
+      <SubTabs tabs={[{ to: '/admin/deliveries', label: '배급 현황' }, { to: '/admin/dsps', label: '플랫폼별 조건' }]} />
       {error && <ErrorBox message={error} onRetry={reload} />}
       {loading && !data ? <Skeleton rows={3} /> : items.length === 0 ? <Empty title="DSP 정보가 없어요" /> : (
         <div className="adm-dsp-grid">
           {items.map(d => {
+            const code = d.code ?? d.dsp;
             const r = d.route;
             const live = !!r?.delivery_enabled && !!r?.adapter_can_send;
+            const stuck = blockedBy(code);
+            const bad = stuck.length > 0 || (!!r && r.delivery_enabled && !r.adapter_can_send);
             return (
-              <div key={d.code ?? d.dsp} className="adm-dsp">
+              <div key={code} className={`adm-dsp${bad ? ' is-bad' : ''}`}>
                 <div className="adm-dsp-top">
                   <h3>{d.name}</h3>
-                  <Chip tone={live ? 'green' : r ? 'blue' : 'gray'}>{live ? '전송 가능' : r ? (r.onboarding_stage ?? '연동 중') : '경로 없음'}</Chip>
+                  {bad
+                    ? <Chip tone="red">{stuck.length ? `막힌 발매 ${stuck.length}건` : 'DSP 점검 필요'}</Chip>
+                    : <Chip tone={live ? 'green' : 'gray'}>{live ? '전송 가능' : 'DSP 연동 대기'}</Chip>}
                 </div>
-                <span className="adm-code">{d.code ?? d.dsp}</span>
+                <span className="small muted">{d.region === 'Kr' ? '국내' : '해외'} 플랫폼</span>
                 <ul>
-                  <li><span>지역 · 형식</span><b>{d.region === 'Kr' ? '국내' : '글로벌'} · {d.format === 'Ddex' ? 'DDEX' : '파트너 규격'}</b></li>
-                  <li><span>리드 타임</span><b>{d.lead_days}일</b></li>
-                  <li><span>커버 최소</span><b>{d.artwork_min_px}px</b></li>
-                  <li><span>음량 기준</span><b>{d.loudness_target_lufs} LUFS</b></li>
-                  {r && <li><span>전송 방식</span><b>{r.transport} · {r.activation_kind}</b></li>}
-                  {r && <li><span>수신 DPID</span><b>{r.recipient_dpid_registered ? '등록' : '미등록'}</b></li>}
+                  {reqsFor(d).filter(q => q.key !== 'route').map(q => (
+                    <li key={q.key}><span>{q.label}</span><b>{q.spec(d)}</b></li>
+                  ))}
+                  {r && <li><span>연동</span><b>{live ? '완료' : r.recipient_dpid_registered ? '테스트 중' : '연동 준비 중'}</b></li>}
                 </ul>
-                {r && r.onboarding_gaps.length > 0 && (
-                  <div className="adm-codes" style={{ marginTop: 12 }}>{r.onboarding_gaps.map(g => <Chip key={g} tone="amber">{g}</Chip>)}</div>
+                {stuck.length > 0 && (
+                  <div className="adm-alert is-error" style={{ marginTop: 12 }}>
+                    {stuck.slice(0, 3).map(b => (
+                      <div key={b.package_id}><Link to={`/admin/reviews/${b.release_id}`}>{b.title}</Link> · {b.blockers.join(', ')}</div>
+                    ))}
+                    {stuck.length > 3 && <div>외 {stuck.length - 3}건 — <Link to="/admin/deliveries">배급 현황에서 보기</Link></div>}
+                  </div>
+                )}
+                {r && !live && r.onboarding_gaps.length > 0 && (
+                  <p className="small muted" style={{ marginTop: 10 }}>연동을 마치려면 {r.onboarding_gaps.length}가지 준비가 더 필요해요.</p>
                 )}
               </div>
             );

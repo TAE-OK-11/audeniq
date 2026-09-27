@@ -148,7 +148,7 @@ const RIGHTS_OPTIONS: [keyof ReleaseOptions, string, string][] = [
   ['featured', '피처링·공동 실연', '참여자 크레딧 및 필요한 이용 허락을 확인해요.'],
   ['ai', 'AI 생성·보조 제작', '제작 방식과 각 플랫폼의 수용 기준을 검토해요.'],
   ['shared', '공동 권리자·레이블 계약', '각 권리자와 배급 위임 범위를 확인해요.'],
-  ['rerelease', '기존 발매 이전·재발매', '이전 발매의 식별자와 중복 송출 여부를 확인해요.'],
+  ['rerelease', '기존 발매 이전·재발매', '이전 발매의 음반·음원 코드와 중복 발매 여부를 확인해요.'],
 ];
 
 const OPTIONS_CATALOG: [keyof ReleaseOptions, string, string][] = [
@@ -610,13 +610,13 @@ function OptionsSection({ form, set, group }: {
             placeholder="기존 앨범·싱글 제목"
           />
         </div>
-        <p className="help">기존 UPC / EAN이 있다면 위의 ‘UPC / EAN’ 칸에 입력해 주세요.</p>
+        <p className="help">기존 음반 코드(UPC)가 있다면 배급 설정의 ‘음반 코드 UPC’ 칸에 입력해 주세요.</p>
         <div className="field">
-          <label htmlFor="aqPreviousId">기존 ISRC (보유 시)</label>
+          <label htmlFor="aqPreviousId">기존 음원 코드 ISRC (있을 때만)</label>
           <input
             id="aqPreviousId" maxLength={100} value={o.previousId}
             onChange={e => setOpt('previousId', e.target.value)}
-            placeholder="이전 식별자"
+            placeholder="예: KR-ABC-26-00001"
           />
         </div>
         <KoreanDateField
@@ -1908,7 +1908,7 @@ export function Upload() {
                 onChange={v => set('releaseDate', v)}
               />
               <div className="field">
-                <label htmlFor="f-upc">UPC / EAN (보유 시)</label>
+                <label htmlFor="f-upc">음반 코드 UPC (있을 때만)</label>
                 <input id="f-upc" inputMode="numeric" value={form.upc} onChange={e => set('upc', e.target.value.replace(/\D/g, '').slice(0, 13))} maxLength={13} placeholder="없으면 자동 발급돼요" />
               </div>
             </div>

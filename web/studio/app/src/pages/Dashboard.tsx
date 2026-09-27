@@ -1,7 +1,7 @@
 import { Link, useNavigate } from '../lib/router';
 import { fixPath, resolveCorrection } from '../lib/corrections';
 import { api } from '../api/client';
-import { STATUS_LABEL, money, num } from '../lib/format';
+import { STATUS_LABEL, money, num, NO_INCOME } from '../lib/format';
 import { useUnreadCount } from '../store/support';
 import { useProfile } from '../store/profile';
 import { useDocs } from '../store/docs';
@@ -228,7 +228,9 @@ export function Dashboard() {
       <section className="surface aq-report-card" aria-label="이번 달 리포트 요약">
         <div className="aq-report-total">
           <small>이번 달 수익</small>
-          <strong><CountUp value={report.revenue} format={money} /></strong>
+          {report.revenue > 0
+            ? <strong><CountUp value={report.revenue} format={money} /></strong>
+            : <strong className="aq-no-income">{NO_INCOME}</strong>}
           {report.change != null && (
             <span className={`aq-report-delta${report.change < 0 ? ' is-down' : ''}`}>
               전월 대비 {report.change >= 0 ? '+' : ''}{report.change.toFixed(1)}%
@@ -237,7 +239,7 @@ export function Dashboard() {
         </div>
         <MiniTrend data={report.trend} />
         <div className="aq-report-grid">
-          <div><small>총 재생</small><strong><CountUp value={report.plays} format={n => `${num(n)}회`} /></strong></div>
+          <div><small>총 재생</small><strong>{report.plays > 0 ? <CountUp value={report.plays} format={n => `${num(n)}회`} /> : '아직 없어요'}</strong></div>
           <div><small>Top 트랙</small><strong>{report.topTrack || '—'}</strong></div>
           <div><small>Top 플랫폼</small><strong>{report.topPlatform || '—'}</strong></div>
         </div>
