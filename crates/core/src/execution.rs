@@ -241,8 +241,9 @@ pub async fn enqueue_delivery_jobs(pool: &PgPool, package_id: Uuid) -> Result<(V
                 .and_then(|s| Uuid::parse_str(s).ok())
         })
         .collect();
-    // Registry DSPs (D-n) additionally need a staff-approved staging row:
-    // staff approve exactly the message that goes out (delivery_staging).
+    // Registry DSPs (D-n) additionally need an APPROVED staging row. Rows are
+    // approved by the system once staff finally approve the release (0051);
+    // a staff HOLD keeps a DSP out.
     let approved_codes: std::collections::HashSet<String> = sqlx::query_scalar(
         "SELECT dsp_code FROM distribution.delivery_staging
          WHERE package_id=$1 AND approval='APPROVED' AND readiness<>'CONTENT_BLOCKED'",
