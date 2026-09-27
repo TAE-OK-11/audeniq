@@ -235,8 +235,8 @@ pub async fn list(s: &AppState, a: &Actor, org: Uuid, kind: Kind, page: Page) ->
 /// tables are org-scoped by RLS, so this authorizes `org` on the caller's
 /// transaction. Registry partners carry their D-code as `dsp`.
 /// Distribution agreement status per release (REVIEW, APPROVED, NEEDS,
-/// SIGNED, ...). Delivery waits for SIGNED, so Studio shows the release as
-/// awaiting the contract (or needing documents) until then.
+/// SIGNED, ...). Delivery waits for SIGNED; Studio shows 검토 중 until staff
+/// approve it, 배급 승인 after, and 보완 필요 when staff asked for documents.
 async fn agreement_statuses(
     tx: &mut sqlx::PgConnection,
     org: Uuid,
@@ -277,12 +277,10 @@ pub(crate) async fn delivery_axes(
            WHERE cr.org_id=$1 AND cr.release_id = ANY($2)
            ORDER BY cr.release_id, dp.created_at DESC)
          SELECT l.release_id, j.partner_id, j.status, j.attempts, j.updated_at,
-                b.live_status, b.partner_release_id, b.last_checked_at,
-                COALESCE(p.activation_kind='MOCK', false) AS test
+                b.live_status, b.partner_release_id, b.last_checked_at
          FROM latest l
          JOIN execution.delivery_jobs j ON j.org_id=$1 AND j.package_id=l.package_id
          LEFT JOIN execution.live_bindings b ON b.org_id=$1 AND b.package_id=l.package_id AND b.partner_id=j.partner_id
-         LEFT JOIN execution.adapter_profiles p ON p.partner_id=j.partner_id
          ORDER BY l.release_id, j.partner_id",
     )
     .bind(org)
@@ -292,17 +290,15 @@ pub(crate) async fn delivery_axes(
     for r in rows {
         let partner: String = r.get("partner_id");
         let dsp = crate::dsp_registry::Dsp::from_code(&partner).map(|d| d.code());
-        // Test partners (MockDSP) are shown apart: going live there is not a release.
-        let test: bool = r.get("test");
         let entry = out.entry(r.get("release_id")).or_default();
         entry.0.push(json!({
-            "partner_id": partner, "dsp": dsp, "test": test, "status": r.get::<String,_>("status"),
+            "partner_id": partner, "dsp": dsp, "status": r.get::<String,_>("status"),
             "attempts": r.get::<i32,_>("attempts"),
             "updated_at": r.get::<chrono::DateTime<chrono::Utc>,_>("updated_at"),
         }));
         if let Some(live) = r.get::<Option<String>, _>("live_status") {
             entry.1.push(json!({
-                "partner_id": partner, "dsp": dsp, "test": test, "live_status": live,
+                "partner_id": partner, "dsp": dsp, "live_status": live,
                 "partner_release_id": r.get::<Option<String>,_>("partner_release_id"),
                 "last_checked_at": r.get::<Option<chrono::DateTime<chrono::Utc>>,_>("last_checked_at"),
             }));
