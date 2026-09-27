@@ -189,10 +189,15 @@ async fn authorize_org(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, org: Uuid
 /// is only the operator kill-switch, never the eligibility proof. This is
 /// defense in depth behind the Stage 2 eligibility module, which applies
 /// the same rule when freezing the route plan.
+///
+/// Nothing is sent (mock partners included) until the release's
+/// distribution agreement is SIGNED, which needs staff approval and the
+/// artist's signature. Until then E-0 succeeds with no jobs; signing the
+/// agreement queues E-0 again (`portal::sign_document`).
 pub async fn enqueue_delivery_jobs(pool: &PgPool, package_id: Uuid) -> Result<(Vec<Uuid>, Uuid)> {
     let mut tx = pool.begin().await?;
     let row = sqlx::query(
-        "SELECT dp.org_id, dp.id AS package_id, pa.route_plan
+        "SELECT dp.org_id, dp.id AS package_id, pa.route_plan, pa.release_id
          FROM distribution.distribution_packages dp
          JOIN distribution.preparation_artifacts pa ON pa.package_id = dp.id
          WHERE dp.id = $1",
@@ -203,6 +208,26 @@ pub async fn enqueue_delivery_jobs(pool: &PgPool, package_id: Uuid) -> Result<(V
     .ok_or(Error::NotFound)?;
     let org_id: Uuid = row.get("org_id");
     authorize_org(&mut tx, org_id).await?;
+    let release_id: Uuid = row.get("release_id");
+    let signed: bool = sqlx::query_scalar("SELECT execution.agreement_signed($1,$2)")
+        .bind(org_id)
+        .bind(release_id)
+        .fetch_one(&mut *tx)
+        .await?;
+    if !signed {
+        crate::operations::audit(
+            &mut tx,
+            None,
+            Some(org_id),
+            Some(package_id),
+            "delivery.held",
+            "AGREEMENT_NOT_SIGNED",
+            Uuid::new_v4(),
+        )
+        .await?;
+        tx.commit().await?;
+        return Ok((Vec::new(), org_id));
+    }
     let route_plan: Value = row.get("route_plan");
     // Borrow the plan items; the old `.cloned()` copied the whole array.
     let dsp_ids: Vec<Uuid> = route_plan

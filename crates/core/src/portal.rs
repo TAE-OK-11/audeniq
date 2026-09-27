@@ -592,7 +592,7 @@ pub async fn sign_document(
     let sig = signature(&i.signature)?;
     let mut tx = s.pool.begin().await?;
     member(&mut tx, a, org, true).await?;
-    let (kind, status, rv, _) = locked_doc(&mut tx, org, id).await?;
+    let (kind, status, rv, release) = locked_doc(&mut tx, org, id).await?;
     if rv != i.row_version {
         return Err(Error::Conflict);
     }
@@ -627,6 +627,35 @@ pub async fn sign_document(
         a.request,
     )
     .await?;
+    // Delivery waits for this signature (execution::enqueue_delivery_jobs):
+    // re-run E-0 for the release's latest package, if it is already prepared.
+    if let Some(release) = release {
+        sqlx::query("SELECT set_config('app.org_id',$1,true)")
+            .bind(org.to_string())
+            .execute(&mut *tx)
+            .await?;
+        let package: Option<Uuid> = sqlx::query_scalar(
+            "SELECT dp.id FROM distribution.canonical_releases cr
+             JOIN distribution.distribution_packages dp ON dp.canonical_release_id=cr.id
+             WHERE cr.org_id=$1 AND cr.release_id=$2
+             ORDER BY dp.created_at DESC LIMIT 1",
+        )
+        .bind(org)
+        .bind(release)
+        .fetch_optional(&mut *tx)
+        .await?;
+        if let Some(package) = package {
+            operations::enqueue(
+                &mut tx,
+                "delivery",
+                "delivery.enqueue",
+                &json!({"package_id": package}),
+                &format!("delivery.enqueue:{package}:signed:{id}"),
+                None,
+            )
+            .await?;
+        }
+    }
     tx.commit().await?;
     Ok(json!({"id":id,"status":"SIGNED","row_version":rv}))
 }

@@ -50,6 +50,7 @@ const NoticeDetail = lazyPage(pageLoaders.Notices, m => m.NoticeDetail);
 const NotFound = lazyPage(pageLoaders.NotFound, m => m.NotFound);
 const ContentAdmin = lazyPage(pageLoaders.ContentAdmin, m => m.ContentAdmin);
 const Profile = lazyPage(pageLoaders.Profile, m => m.Profile);
+const AdminApp = lazyPage(pageLoaders.Admin, m => m.AdminApp);
 
 function BootScreen() {
   return (
@@ -133,6 +134,8 @@ export function App() {
                     <Route path="/find-account" element={<GuestOnly><FindAccount /></GuestOnly>} />
                     {/* 공지·이벤트 관리 — 로그인 대신 Worker 관리자 토큰으로 인증 */}
                     <Route path="/content-admin" element={<ContentAdmin />} />
+                    {/* 스태프 관리자 — 같은 로그인 세션 + 서버의 스태프 역할(/api/staff/me)로 접근 */}
+                    <Route path="/admin/*" element={<Protected><AdminApp /></Protected>} />
                     <Route path="/*" element={<Protected><PortalRoutes /></Protected>} />
                   </Routes>
                 </Suspense>
