@@ -53,6 +53,14 @@ pub trait ObjectStore: Send + Sync {
     /// fixtures); audio goes through [`ObjectStore::download_to`] or
     /// [`ObjectStore::digest`], which never hold the whole object in memory.
     async fn get(&self, key: &str) -> Result<Vec<u8>>;
+    /// First `n` bytes of an object (content sniffing at upload completion)
+    /// without transferring the rest. The default reads the whole object;
+    /// the S3 store asks for a byte range.
+    async fn read_prefix(&self, key: &str, n: usize) -> Result<Vec<u8>> {
+        let mut b = self.get(key).await?;
+        b.truncate(n);
+        Ok(b)
+    }
     /// Stream an object into `dest`, hashing it on the way. Fails with
     /// [`Error::PolicyGate`]`("OBJECT_TOO_LARGE")` once more than `max_bytes`
     /// arrive, so a lying HEAD or a replaced object cannot fill the disk.
@@ -464,6 +472,38 @@ impl ObjectStore for S3Store {
                 return Err(Error::PolicyGate("OBJECT_TOO_LARGE"));
             }
             bytes.extend_from_slice(&chunk);
+        }
+        Ok(bytes)
+    }
+    async fn read_prefix(&self, key: &str, n: usize) -> Result<Vec<u8>> {
+        if n == 0 {
+            return Ok(Vec::new());
+        }
+        // Range is not signed (it need not be): the URL still grants only a
+        // GET of this key for 60 s.
+        let url = self.signed("GET", key, &BTreeMap::new(), Utc::now(), 60)?;
+        let mut r = self
+            .client
+            .get(url)
+            .header("range", format!("bytes=0-{}", n - 1))
+            .send()
+            .await
+            .map_err(|_| Error::Storage)?;
+        if !matches!(
+            r.status(),
+            reqwest::StatusCode::OK | reqwest::StatusCode::PARTIAL_CONTENT
+        ) {
+            return Err(Error::Storage);
+        }
+        let mut bytes = Vec::with_capacity(n);
+        while bytes.len() < n {
+            match r.chunk().await.map_err(|_| Error::Storage)? {
+                Some(chunk) => {
+                    let take = (n - bytes.len()).min(chunk.len());
+                    bytes.extend_from_slice(&chunk[..take]);
+                }
+                None => break,
+            }
         }
         Ok(bytes)
     }

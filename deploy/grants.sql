@@ -81,6 +81,7 @@ GRANT INSERT,UPDATE ON execution.delivery_jobs,execution.delivery_attempts,execu
 GRANT INSERT,UPDATE ON execution.route_decisions TO audeniq_worker;
 GRANT INSERT,UPDATE ON distribution.delivery_staging TO audeniq_worker;
 GRANT SELECT,INSERT ON operations.check_results TO audeniq_worker;
+GRANT SELECT,INSERT ON operations.asset_qc_results TO audeniq_worker;
 GRANT SELECT ON operations.allowed_transitions TO audeniq_worker;
 GRANT INSERT ON rights.review_overrides,rights.rights_epochs TO audeniq_worker;
 GRANT INSERT ON finance.ledger_transactions,finance.ledger_entries,finance.commercial_split_snapshots TO audeniq_worker;
