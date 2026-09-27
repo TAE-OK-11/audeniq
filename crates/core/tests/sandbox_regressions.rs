@@ -51,6 +51,8 @@ struct Obj {
 struct MemStore {
     objects: Mutex<BTreeMap<String, Obj>>,
     fail_get: AtomicBool,
+    /// Keys read in full (every download goes through `get`).
+    reads: std::sync::Mutex<Vec<String>>,
 }
 impl MemStore {
     async fn client_put(&self, grant: &Value, key: &str, bytes: &[u8]) {
@@ -112,10 +114,20 @@ impl ObjectStore for MemStore {
         self.objects.lock().await.remove(key);
         Ok(())
     }
+    /// A ranged GET: not a full read of the object.
+    async fn read_prefix(&self, key: &str, n: usize) -> Result<Vec<u8>> {
+        self.objects
+            .lock()
+            .await
+            .get(key)
+            .map(|o| o.bytes[..n.min(o.bytes.len())].to_vec())
+            .ok_or(Error::Storage)
+    }
     async fn get(&self, key: &str) -> Result<Vec<u8>> {
         if self.fail_get.load(Ordering::SeqCst) {
             return Err(Error::Storage);
         }
+        self.reads.lock().unwrap().push(key.to_string());
         self.objects
             .lock()
             .await
@@ -389,11 +401,21 @@ async fn upload(e: &Env, u: &User, kind: &str, content_type: &str, bytes: &[u8])
     )
     .await;
     let sha = hex::encode(sha2::Sha256::digest(bytes));
-    assert_eq!(done["sha256"], sha.as_str(), "{done}");
-    // Round 2: the quarantine copy is deleted once the upload is registered.
+    if kind == "AUDIO" {
+        // Completion only sniffs the first bytes; the queued asset.analyze
+        // job downloads the master once, records its hash and runs QC, so
+        // Stage 1 finds the results cached and never downloads it again.
+        assert!(done["sha256"].is_null(), "{done}");
+        assert_eq!(run_one(e, "qc", "asset.analyze").await, "SUCCEEDED");
+    } else {
+        assert_eq!(done["sha256"], sha.as_str(), "{done}");
+    }
+    // The quarantine copy stays until the bucket lifecycle rule removes it:
+    // while it exists, the grant's signed If-None-Match: * makes the URL
+    // unusable for a second upload (single use), even before it expires.
     assert!(
-        e.store.objects.lock().await.get(key).is_none(),
-        "quarantine object removed after complete"
+        e.store.objects.lock().await.get(key).is_some(),
+        "quarantine object kept as the single-use lock"
     );
     let asset = Uuid::parse_str(v["asset_id"].as_str().unwrap()).unwrap();
     let stored: Option<String> =
@@ -560,7 +582,33 @@ async fn real_upload_path_reaches_ready_for_delivery_under_split_roles(pool: PgP
     assert!(pre["ready_to_submit"].as_bool().unwrap(), "{pre}");
     let revision = consent_and_submit(&e, &u, release, "sbx-happy").await;
 
+    // The master was downloaded once, by asset.analyze after upload; Stage 1
+    // reuses those results and does not transfer the audio again.
+    let audio_key: String = sqlx::query_scalar("SELECT object_key FROM catalog.assets WHERE id=$1")
+        .bind(audio)
+        .fetch_one(&e.owner)
+        .await
+        .unwrap();
+    let audio_reads = |e: &Env| {
+        e.store
+            .reads
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|k| **k == audio_key)
+            .count()
+    };
+    assert_eq!(
+        audio_reads(&e),
+        1,
+        "one full read of the master before submission"
+    );
     assert_eq!(run_one(&e, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(
+        audio_reads(&e),
+        1,
+        "Stage 1 did not download the master again"
+    );
     assert_eq!(release_status(&e, release).await, "STAGE1_PASSED");
     // Audio QC really ran: every audio check has a PASS row for this revision.
     let audio_pass: i64 = sqlx::query_scalar(

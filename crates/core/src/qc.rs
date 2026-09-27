@@ -158,10 +158,13 @@ fn probe_with(
     timeout: Duration,
 ) -> std::result::Result<serde_json::Value, AnalyzerError> {
     use AnalyzerError::{Unavailable, Undecodable};
+    let deadline = std::time::Instant::now() + timeout;
     let mut child = std::process::Command::new(bin)
         .args([
             "-v",
             "error",
+            "-protocol_whitelist",
+            "file",
             "-show_format",
             "-show_streams",
             "-of",
@@ -185,7 +188,7 @@ fn probe_with(
             .map(|_| buf);
         let _ = tx.send(r);
     });
-    let buf = match rx.recv_timeout(timeout) {
+    let buf = match rx.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())) {
         Ok(Ok(buf)) => buf,
         _ => {
             let _ = child.kill();
@@ -198,7 +201,19 @@ fn probe_with(
         let _ = child.wait();
         return Err(Undecodable);
     }
-    let status = child.wait().map_err(|_| Unavailable)?;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(Unavailable);
+            }
+        }
+    };
     if !status.success() {
         return Err(Undecodable);
     }
@@ -259,7 +274,11 @@ pub fn probe_duration_secs(path: &Path) -> Option<f64> {
 /// fabricated constants.
 pub fn probe_audio_metrics(path: &Path) -> Option<AudioMetrics> {
     let v = probe(path).ok()?;
-    let m = parse_audio(&v).ok()?;
+    audio_metrics_from_report(&v)
+}
+
+pub(crate) fn audio_metrics_from_report(v: &serde_json::Value) -> Option<AudioMetrics> {
+    let m = parse_audio(v).ok()?;
     // A non-positive or non-finite duration is not a measurement; the DDEX
     // builder fails closed without one (DDEX_DURATION_UNKNOWN).
     (m.sample_rate > 0 && m.channels > 0 && m.duration_secs.is_finite() && m.duration_secs > 0.0)
@@ -274,6 +293,13 @@ pub fn detect_container(head: &[u8]) -> &'static str {
         && &head[8..12] == b"WAVE"
     {
         "WAV"
+    } else if head.len() >= 12 && &head[..4] == b"FORM" && matches!(&head[8..12], b"AIFF" | b"AIFC")
+    {
+        "AIFF"
+    } else if head.starts_with(b"wvpk") {
+        "WAVPACK"
+    } else if head.starts_with(b"TTA1") {
+        "TTA"
     } else if head.len() >= 4 && &head[0..4] == b"fLaC" {
         "FLAC"
     } else if head.len() >= 3
@@ -1095,22 +1121,29 @@ fn decode_analysis_inner(
         None
     };
     let mut cmd = std::process::Command::new(ffmpeg_bin());
-    cmd.args(["-nostdin", "-hide_banner", "-nostats", "-i"])
-        .arg(path)
-        .args([
-            "-map",
-            "0:a:0",
-            "-af",
-            // framelog=quiet: only the final summary prints.
-            "ebur128=peak=true:framelog=quiet",
-            "-ac",
-            &channels.to_string(),
-            "-f",
-            "f32le",
-            "-acodec",
-            "pcm_f32le",
-            "pipe:1",
-        ]);
+    cmd.args([
+        "-nostdin",
+        "-hide_banner",
+        "-nostats",
+        "-protocol_whitelist",
+        "file",
+        "-i",
+    ])
+    .arg(path)
+    .args([
+        "-map",
+        "0:a:0",
+        "-af",
+        // framelog=quiet: only the final summary prints.
+        "ebur128=peak=true:framelog=quiet",
+        "-ac",
+        &channels.to_string(),
+        "-f",
+        "f32le",
+        "-acodec",
+        "pcm_f32le",
+        "pipe:1",
+    ]);
     if let Some(t) = tap.as_ref().and_then(|t| t.0.as_ref()) {
         // Second output, same single decode: mono 11025 Hz, matching the
         // fingerprint segment decoder's `-ac 1 -ar 11025` exactly.
@@ -1346,101 +1379,10 @@ fn ffmpeg_bin() -> String {
     std::env::var("FFMPEG_BIN").unwrap_or_else(|_| "ffmpeg".into())
 }
 
-/// Run an ffmpeg command, killing it after `secs`. Returns its stdout.
-fn run_ffmpeg(args: &[&std::ffi::OsStr], secs: u64) -> std::result::Result<Vec<u8>, &'static str> {
-    use std::io::Read;
-    let mut child = std::process::Command::new(ffmpeg_bin())
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|_| "UPLOAD_CONVERSION_UNAVAILABLE")?;
-    let mut stdout = child.stdout.take().ok_or("UPLOAD_CONVERSION_UNAVAILABLE")?;
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let mut out = Vec::new();
-        let _ = stdout.read_to_end(&mut out);
-        let _ = tx.send(out);
-    });
-    let out = match rx.recv_timeout(std::time::Duration::from_secs(secs)) {
-        Ok(out) => out,
-        Err(_) => {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err("UPLOAD_CONVERSION_TIMEOUT");
-        }
-    };
-    match child.wait() {
-        Ok(st) if st.success() => Ok(out),
-        _ => Err("UPLOAD_CONVERSION_FAILED"),
-    }
-}
-
-/// MD5 of the decoded audio as 32-bit PCM (bit-exact for 16/24-bit sources).
-fn pcm_md5(path: &Path) -> std::result::Result<String, &'static str> {
-    let args: Vec<&std::ffi::OsStr> = vec![
-        "-nostdin".as_ref(),
-        "-v".as_ref(),
-        "error".as_ref(),
-        "-i".as_ref(),
-        path.as_os_str(),
-        "-map".as_ref(),
-        "0:a:0".as_ref(),
-        "-c:a".as_ref(),
-        "pcm_s32le".as_ref(),
-        "-f".as_ref(),
-        "md5".as_ref(),
-        "-".as_ref(),
-    ];
-    let out = run_ffmpeg(&args, 600)?;
-    let text = String::from_utf8_lossy(&out);
-    text.trim()
-        .strip_prefix("MD5=")
-        .map(str::to_string)
-        .ok_or("UPLOAD_CONVERSION_FAILED")
-}
-
-/// Convert an ALAC master (.m4a) to FLAC at the same sample rate, channels and
-/// bit depth, then prove it lossless: both files must decode to identical
-/// PCM. AAC (lossy) or any other codec in the MP4 container is refused.
+/// Compatibility entry point for ALAC callers; all conversions use the same
+/// bounded, lossless-only normalization pipeline.
 pub fn alac_to_flac(src: &Path, dst: &Path) -> std::result::Result<(), &'static str> {
-    let m = probe_audio_metrics(src).ok_or("UPLOAD_CONTENT_MISMATCH")?;
-    if m.codec_name != "alac" {
-        return Err("UPLOAD_LOSSY_NOT_ACCEPTED");
-    }
-    let args: Vec<&std::ffi::OsStr> = vec![
-        "-nostdin".as_ref(),
-        "-v".as_ref(),
-        "error".as_ref(),
-        "-y".as_ref(),
-        "-i".as_ref(),
-        src.as_os_str(),
-        "-map".as_ref(),
-        "0:a:0".as_ref(),
-        "-map_metadata".as_ref(),
-        "0".as_ref(),
-        "-c:a".as_ref(),
-        "flac".as_ref(),
-        "-compression_level".as_ref(),
-        "5".as_ref(),
-        "-f".as_ref(),
-        "flac".as_ref(),
-        dst.as_os_str(),
-    ];
-    run_ffmpeg(&args, 600)?;
-    let out = probe_audio_metrics(dst).ok_or("UPLOAD_CONVERSION_FAILED")?;
-    if out.codec_name != "flac"
-        || out.sample_rate != m.sample_rate
-        || out.channels != m.channels
-        || (m.bits_per_sample.is_some() && out.bits_per_sample != m.bits_per_sample)
-    {
-        return Err("UPLOAD_CONVERSION_FAILED");
-    }
-    if pcm_md5(src)? != pcm_md5(dst)? {
-        return Err("UPLOAD_CONVERSION_NOT_LOSSLESS");
-    }
-    Ok(())
+    crate::lossless::to_flac(src, dst, "M4A")
 }
 
 /// Spotify normalization target: -14 LUFS. ±1 LU is the practical tolerance
@@ -1665,7 +1607,10 @@ mod tests {
             assert_eq!(out.codec_name, "flac");
             assert_eq!((out.sample_rate, out.channels), (48000, 2));
             assert_eq!(out.bits_per_sample, Some(bits), "{name}");
-            assert_eq!(pcm_md5(&src).unwrap(), pcm_md5(&dst).unwrap());
+            assert_eq!(
+                crate::lossless::pcm_sha256(&src).unwrap(),
+                crate::lossless::pcm_sha256(&dst).unwrap()
+            );
             // The result passes the same Stage 1 format policy as an uploaded FLAC.
             assert!(sample_format_policy("FLAC", &out).0, "{name}");
             let _ = std::fs::remove_file(&src);
