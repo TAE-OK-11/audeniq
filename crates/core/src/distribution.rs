@@ -627,6 +627,44 @@ async fn persist_ddex_messages(
 /// 3-A/3-D/3-F durable entry point. Replaces the F3 `park()` for
 /// `prepare_release`. Returns `None` when the job lost its lease: the caller
 /// must neither succeed nor fail the job; the sweeper will reclaim it.
+/// Fills a missing release UPC and missing track ISRCs from the active
+/// issuers (VIRTUAL test ranges until real ones are registered, migration
+/// 0041). The codes are recorded in the ledger in the caller's transaction,
+/// so a release and its tracks keep them across retries and resubmissions.
+async fn issue_missing_identifiers(tx: &mut PgConnection, c: &mut CanonicalRelease) -> Result<()> {
+    if c.upc.is_some() && c.tracks.iter().all(|t| t.isrc.is_some()) {
+        return Ok(());
+    }
+    let (org, release, revision) = (c.org_id, c.release_id, c.revision_id);
+    // The identifier ledger is RLS-protected: authorize this transaction's org.
+    sqlx::query("SELECT set_config('app.org_id',$1,true)")
+        .bind(org.to_string())
+        .execute(&mut *tx)
+        .await?;
+    if c.upc.is_none() {
+        c.upc = Some(
+            identifiers::issue_or_reuse(tx, org, release, None, revision, IdentifierKind::Upc)
+                .await?,
+        );
+    }
+    for t in &mut c.tracks {
+        if t.isrc.is_none() {
+            t.isrc = Some(
+                identifiers::issue_or_reuse(
+                    tx,
+                    org,
+                    release,
+                    Some(t.track_id),
+                    revision,
+                    IdentifierKind::Isrc,
+                )
+                .await?,
+            );
+        }
+    }
+    Ok(())
+}
+
 pub async fn run_prepare_release(
     pool: &PgPool,
     storage: &Arc<dyn ObjectStore>,
@@ -773,7 +811,8 @@ pub async fn run_prepare_release(
         }));
     }
 
-    let canonical = build_canonical(pool, verification_package_id).await?;
+    let mut canonical = build_canonical(pool, verification_package_id).await?;
+    issue_missing_identifiers(&mut tx, &mut canonical).await?;
     let canonical_id = store_canonical(&mut tx, &canonical).await?;
     tx.commit().await?;
 

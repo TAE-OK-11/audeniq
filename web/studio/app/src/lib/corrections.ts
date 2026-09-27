@@ -80,6 +80,8 @@ const TARGETS: Record<string, Target> = {
   CLINE_MISSING: { step: WIZ_STEP.rights, field: 'f-copyright', label: '© 표기', hint: '저작권(©) 표기를 ‘2026 권리자명’처럼 입력해 주세요.' },
   S2_RIGHTS_SCOPE: { step: WIZ_STEP.rights, field: 'f-ownership', label: '권리 정보', hint: '권리자 정보와 배급 범위를 확인해 주세요.' },
   S2_DOCS_ORIGIN: { step: WIZ_STEP.rights, field: 'f-ownership', label: '권리 증빙', hint: '권리 증빙 서류의 출처를 확인할 수 없어요.' },
+  // 배포 준비 (3단계) — 아티스트 입력보다 시스템 쪽 문제일 때가 많다
+  STAGE3_PREPARATION_FAILED: { step: WIZ_STEP.review, label: '배포 준비', hint: '배포 준비를 마치지 못했어요. 내용을 확인하고 다시 접수해 주세요. 같은 안내가 반복되면 문의로 알려 주세요.' },
 };
 
 const FALLBACK: Target = { step: WIZ_STEP.review, label: '기타', hint: '요청 내용을 확인하고 필요한 항목을 고쳐 주세요.' };
