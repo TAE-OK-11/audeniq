@@ -51,7 +51,9 @@ export async function req<T>(path: string, opts: ReqOptions = {}): Promise<T> {
   }
   const ctrl = new AbortController();
   const timer = window.setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 20000);
-  opts.signal?.addEventListener('abort', () => ctrl.abort());
+  const abort = () => ctrl.abort();
+  opts.signal?.addEventListener('abort', abort, { once: true });
+  if (opts.signal?.aborted) ctrl.abort();
   let res: Response;
   try {
     res = await fetch(`${API_BASE}${path}`, { method, headers, body, credentials: 'include', signal: ctrl.signal, cache: 'no-store' });
@@ -62,6 +64,7 @@ export async function req<T>(path: string, opts: ReqOptions = {}): Promise<T> {
     throw new ApiError(aborted ? '서버 응답이 늦어요. 잠시 후 다시 시도해 주세요.' : '네트워크 연결을 확인해 주세요.', 0, aborted ? 'TIMEOUT' : 'NETWORK');
   } finally {
     window.clearTimeout(timer);
+    opts.signal?.removeEventListener('abort', abort);
   }
 
   const text = await res.text();

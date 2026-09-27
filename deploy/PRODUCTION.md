@@ -97,13 +97,21 @@ postgres 이미지를 17로, 볼륨을 `pg_prod:/var/lib/postgresql/data`로 되
      크기나 형식이 다르거나 URL을 고치면 R2가 403으로 거절한다. 다른 경로·읽기·삭제·목록은 불가.
    - URL에 보이는 것은 액세스 키 **ID**와 계정 엔드포인트뿐이다. ID만으로는 아무것도 서명할 수 없다.
 3. 기기가 그 URL로 R2에 PUT한다. 파일은 우리 서버를 거치지 않는다.
-   받는 음원: WAV·FLAC(16/24bit PCM)과 ALAC(.m4a). MP3·AAC 같은 손실 압축은 받지 않는다.
+   받는 음원: WAV·FLAC(16/24bit PCM), ALAC(.m4a), PCM AIFF(.aif/.aiff/.aifc),
+   WavPack(.wv, 순수 무손실 정수 PCM), TTA(.tta). MP3·AAC·WavPack 하이브리드/float/DSD는 받지 않는다.
 4. `POST …/uploads/{id}/complete`에서 API가 자기 키로 R2를 확인한다.
    크기·형식·nonce를 대조하고 `registered/…`로 복사(etag 고정)한 뒤,
    내용을 스트리밍으로 받아 SHA-256과 실제 파일 형식(WAV/FLAC/JPEG/PNG/PDF)을 확인해 등록한다.
    격리본은 지운다.
-   ALAC은 여기서 FLAC으로 변환한다: 같은 샘플레이트·채널·비트로 인코딩한 뒤 두 파일을 PCM으로
-   풀어 MD5가 같은지(완전한 무손실) 확인하고, FLAC을 등록 원본으로 저장한다(ALAC 원본은 지움).
+   ALAC·AIFF·WavPack·TTA는 FLAC으로 변환한다: 같은 샘플레이트·채널·비트를 보존하고
+   원본/결과를 32bit PCM으로 디코딩한 SHA-256이 같아야 FLAC을 등록한다. 원본 해시는
+   변환과 동시에 계산하므로 전체 디코딩은 2회다. 변환은 16/24bit, 44.1~192kHz, 1~2채널이며
+   디코딩 PCM 예상 크기도 512MiB 이하여야 한다. 변환용 원본은 성공 후 지운다.
+   API 프로세스당 완료 처리 4개, 변환 1개로 제한한다. 초과 시 `503 UPLOAD_BUSY`와
+   `Retry-After: 5`를 반환한다. Studio는 기존 업로드 세션의 완료 요청만 최대 47회 재시도한다.
+   변환의 프로세스/임시파일/세마포어는 HTTP 취소 후에도 실제 작업 종료까지 함께 유지된다.
+   R2 스트리밍은 30초 읽기 대기/900초 전체 제한과 바이트 상한을 적용하고, 메모리 일괄
+   읽기는 20MiB로 제한한다. 만료 검사는 해시·변환까지 끝난 뒤 트랜잭션 안에서 다시 한다.
    같은 컨테이너의 AAC는 `UPLOAD_LOSSY_NOT_ACCEPTED`로 거절. 변환은 API 프로세스당 한 번에 하나,
    임시 파일은 `api_tmp` 볼륨(`/var/tmp/audeniq`)에 둔다.
 5. worker는 등록된 파일을 자기 키로 받아 QC·패키징한다.

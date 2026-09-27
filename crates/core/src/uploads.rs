@@ -40,6 +40,9 @@ pub fn expected_container(kind: &str, content_type: &str) -> Option<&'static str
         // ALAC in an .m4a: converted to FLAC losslessly at completion; AAC
         // (lossy) in the same container is refused there.
         ("AUDIO", "audio/mp4" | "audio/x-m4a") => Some("M4A"),
+        ("AUDIO", "audio/aiff" | "audio/x-aiff") => Some("AIFF"),
+        ("AUDIO", "audio/wavpack" | "audio/x-wavpack") => Some("WAVPACK"),
+        ("AUDIO", "audio/tta" | "audio/x-tta") => Some("TTA"),
         ("IMAGE", "image/jpeg") => Some("JPEG"),
         ("IMAGE", "image/png") => Some("PNG"),
         // Rights proofs (licences, consent letters): PDF or a scan.
@@ -112,9 +115,15 @@ pub async fn complete(
     i: CompleteInput,
 ) -> Result<Value> {
     auth::rate(&s.pool, &format!("upload-complete:{}", a.user), 60).await?;
+    // Shed excess completions before they occupy DB connections/row locks.
+    // The client retries completion (503 + Retry-After), not the R2 upload.
+    let _upload_slot = s
+        .upload_slots
+        .try_acquire()
+        .map_err(|_| Error::UploadBusy)?;
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, i.asset_id, "asset", true).await?;
-    let r=sqlx::query("SELECT u.*,a.object_key,(u.expires_at>clock_timestamp()) AS valid FROM catalog.upload_sessions u JOIN catalog.assets a ON a.id=u.asset_id AND a.org_id=u.org_id WHERE u.id=$1 AND u.org_id=$2 FOR UPDATE OF u,a").bind(id).bind(org).fetch_optional(&mut *tx).await?.ok_or(Error::NotFound)?;
+    let r=sqlx::query("SELECT u.*,a.object_key,a.kind,(u.expires_at>clock_timestamp()) AS valid FROM catalog.upload_sessions u JOIN catalog.assets a ON a.id=u.asset_id AND a.org_id=u.org_id WHERE u.id=$1 AND u.org_id=$2 FOR UPDATE OF u,a").bind(id).bind(org).fetch_optional(&mut *tx).await?.ok_or(Error::NotFound)?;
     let asset: Uuid = r.get("asset_id");
     let key: String = r.get("expected_key");
     if asset != i.asset_id || key != i.expected_key {
@@ -128,9 +137,21 @@ pub async fn complete(
     if r.get::<String, _>("status") != "ISSUED" || !r.get::<bool, _>("valid") {
         return Err(Error::Conflict);
     }
+    let kind: String = r.get("kind");
+    let mime: String = r.get("content_type");
+    let container = expected_container(&kind, &mime).ok_or(Error::Invalid)?;
+    let conversion_slot = if matches!(container, "M4A" | "AIFF" | "WAVPACK" | "TTA") {
+        Some(
+            s.transcode_slots
+                .clone()
+                .try_acquire_owned()
+                .map_err(|_| Error::UploadBusy)?,
+        )
+    } else {
+        None
+    };
     let meta = s.storage.head(&key).await?.ok_or(Error::Conflict)?;
     let size: i64 = r.get("expected_bytes");
-    let mime: String = r.get("content_type");
     let nonce: Uuid = r.get("nonce");
     if meta.size != size || meta.content_type != mime || meta.nonce != nonce.to_string() {
         return Err(Error::Conflict);
@@ -155,17 +176,19 @@ pub async fn complete(
     {
         return Err(Error::Conflict);
     }
-    // Expiry is checked again after network IO using wall clock, not the transaction start time.
-    let n=sqlx::query("UPDATE catalog.upload_sessions SET status='COMPLETED',completed_at=clock_timestamp() WHERE id=$1 AND expires_at>clock_timestamp()").bind(id).execute(&mut *tx).await?.rows_affected();
-    if n != 1 {
-        return Err(Error::Conflict);
-    }
-    let kind: String = sqlx::query_scalar("SELECT kind FROM catalog.assets WHERE id=$1")
-        .bind(asset)
-        .fetch_one(&mut *tx)
+    if let Some(slot) = conversion_slot {
+        let flac = convert_lossless(
+            s,
+            org,
+            asset,
+            &stable,
+            size,
+            &nonce.to_string(),
+            container,
+            slot,
+        )
         .await?;
-    if expected_container(&kind, &mime) == Some("M4A") {
-        let flac = convert_alac(s, org, asset, &stable, size, &nonce.to_string()).await?;
+        finish_session(&mut tx, id).await?;
         sqlx::query("UPDATE catalog.assets SET state='REGISTERED',object_key=$2,content_type='audio/flac',size_bytes=$3,etag=$4,sha256=$5 WHERE id=$1")
             .bind(asset)
             .bind(&flac.key)
@@ -180,7 +203,7 @@ pub async fn complete(
             Some(org),
             Some(asset),
             "upload.completed",
-            "ALAC_CONVERTED_TO_FLAC_QC_PENDING",
+            "LOSSLESS_CONVERTED_TO_FLAC_QC_PENDING",
             a.request,
         )
         .await?;
@@ -194,10 +217,10 @@ pub async fn complete(
         .await?;
         tx.commit().await?;
         drop_quarantine(s, &key).await;
-        // The frozen ALAC was only the conversion source.
+        // The frozen upload was only the conversion source.
         drop_quarantine(s, &stable).await;
         return Ok(
-            json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":false,"sha256":flac.sha256,"detected_container":"FLAC","converted_from":"ALAC"}),
+            json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":false,"sha256":flac.sha256,"detected_container":"FLAC","converted_from":if container == "M4A" { "ALAC" } else { container }}),
         );
     }
     // Content verification. The frozen copy is immutable, so hashing it here
@@ -220,6 +243,7 @@ pub async fn complete(
         tracing::info!(%asset, detected, declared = %mime, "upload content mismatch");
         return Err(Error::PolicyGate("UPLOAD_CONTENT_MISMATCH"));
     }
+    finish_session(&mut tx, id).await?;
     sqlx::query("UPDATE catalog.assets SET state='REGISTERED',etag=$2,sha256=$3 WHERE id=$1")
         .bind(asset)
         .bind(copy.etag)
@@ -250,6 +274,16 @@ pub async fn complete(
         json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":false,"sha256":digest.sha256,"detected_container":detected}),
     )
 }
+
+async fn finish_session(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, id: Uuid) -> Result<()> {
+    // Check after ALL network IO and conversion, not before hashing/decoding.
+    let n = sqlx::query("UPDATE catalog.upload_sessions SET status='COMPLETED',completed_at=clock_timestamp() WHERE id=$1 AND status='ISSUED' AND expires_at>clock_timestamp()")
+        .bind(id).execute(&mut **tx).await?.rows_affected();
+    if n != 1 {
+        return Err(Error::Conflict);
+    }
+    Ok(())
+}
 struct ConvertedMaster {
     key: String,
     size: i64,
@@ -257,17 +291,20 @@ struct ConvertedMaster {
     sha256: String,
 }
 
-/// ALAC upload → FLAC master. Downloads the frozen (etag-pinned) ALAC,
-/// converts it losslessly (qc::alac_to_flac proves identical PCM), stores the
+/// Lossless upload → FLAC master. Downloads the frozen, etag-pinned source,
+/// verifies identical decoded PCM with SHA-256, and stores the
 /// FLAC under a new registered key with the server's key and returns what
 /// the asset row must record. One conversion at a time per API process.
-async fn convert_alac(
+#[allow(clippy::too_many_arguments)]
+async fn convert_lossless(
     s: &AppState,
     org: Uuid,
     asset: Uuid,
     frozen: &str,
     size: i64,
     nonce: &str,
+    container: &'static str,
+    slot: tokio::sync::OwnedSemaphorePermit,
 ) -> Result<ConvertedMaster> {
     struct Temp(std::path::PathBuf);
     impl Drop for Temp {
@@ -275,14 +312,10 @@ async fn convert_alac(
             let _ = std::fs::remove_file(&self.0);
         }
     }
-    let _slot = s
-        .transcode_slots
-        .acquire()
-        .await
-        .map_err(|_| Error::Internal)?;
     let dir = std::env::temp_dir();
-    let src = Temp(dir.join(format!("audeniq-alac-{asset}.m4a")));
-    let dst = Temp(dir.join(format!("audeniq-alac-{asset}.flac")));
+    let attempt = Uuid::new_v4();
+    let src = Temp(dir.join(format!("audeniq-lossless-{attempt}.source")));
+    let dst = Temp(dir.join(format!("audeniq-lossless-{attempt}.flac")));
     let digest = match s.storage.download_to(frozen, &src.0, size as u64).await {
         Ok(d) => d,
         Err(Error::PolicyGate("OBJECT_TOO_LARGE")) => return Err(Error::Conflict),
@@ -291,13 +324,20 @@ async fn convert_alac(
     if digest.size != size as u64 {
         return Err(Error::Conflict);
     }
-    if crate::qc::detect_container(&digest.head) != "M4A" {
+    if crate::qc::detect_container(&digest.head) != container {
         return Err(Error::PolicyGate("UPLOAD_CONTENT_MISMATCH"));
     }
-    let (from, to) = (src.0.clone(), dst.0.clone());
-    let sha256 = tokio::task::spawn_blocking(move || {
-        crate::qc::alac_to_flac(&from, &to).map_err(Error::PolicyGate)?;
-        crate::qc::sha256_file(&to)
+    let (sha256, dst, _slot) = tokio::task::spawn_blocking(move || {
+        // Blocking tasks outlive a cancelled HTTP future. Move the actual
+        // guards and permit in so cleanup cannot race the decoder or retry.
+        let _src = src;
+        let _slot = slot;
+        crate::lossless::to_flac(&_src.0, &dst.0, container).map_err(|code| match code {
+            "UPLOAD_CONVERSION_UNAVAILABLE" | "UPLOAD_CONVERSION_TIMEOUT" => Error::UploadBusy,
+            _ => Error::PolicyGate(code),
+        })?;
+        let sha = crate::qc::sha256_file(&dst.0)?;
+        Ok::<_, Error>((sha, dst, _slot))
     })
     .await
     .map_err(|_| Error::Internal)??;
@@ -313,7 +353,7 @@ async fn convert_alac(
         .put_file(&key, &dst.0, "audio/flac", nonce)
         .await?;
     let meta = s.storage.head(&key).await?.ok_or(Error::Storage)?;
-    if meta.size != flac_size || meta.content_type != "audio/flac" {
+    if meta.size != flac_size || meta.content_type != "audio/flac" || meta.nonce != nonce {
         return Err(Error::Storage);
     }
     Ok(ConvertedMaster {

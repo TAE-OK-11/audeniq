@@ -2,9 +2,49 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReleasePayload } from './types';
 import { ApiError } from './errors';
 import { setCsrf, setOrgId } from './http';
+import * as http from './http';
 import { cleanText, remoteApi, sanitizeProfile, serverUpc, uiStatus, uploadContentType } from './remote';
 
 const ORG = 'org-1';
+
+describe('upload completion backpressure', () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
+
+  it('retries a busy completion using the same session without another PUT', async () => {
+    vi.useFakeTimers();
+    setOrgId(ORG);
+    const put = vi.spyOn(http, 'putToGrant').mockResolvedValue();
+    let completions = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path.endsWith('/uploads')) return new Response(JSON.stringify({ upload_session_id: 's1', asset_id: 'a1', expected_key: 'quarantine/a1', grant: {} }));
+      expect(path).toContain('/uploads/s1/complete');
+      completions++;
+      return completions === 1
+        ? new Response(JSON.stringify({ error: { code: 'UPLOAD_BUSY' } }), { status: 503 })
+        : new Response(JSON.stringify({ asset_id: 'a1', detected_container: 'FLAC' }));
+    });
+    vi.stubGlobal('fetch', fetcher);
+    const result = remoteApi.uploadFile(new File(['test'], 'a.tta'), 'AUDIO');
+    const checked = expect(result).resolves.toMatchObject({ assetId: 'a1', container: 'FLAC' });
+    await vi.advanceTimersByTimeAsync(5100);
+    await checked;
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(completions).toBe(2);
+  });
+
+  it('does not retry a lossy-file rejection', async () => {
+    setOrgId(ORG);
+    vi.spyOn(http, 'putToGrant').mockResolvedValue();
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith('/uploads')
+      ? new Response(JSON.stringify({ upload_session_id: 's1', asset_id: 'a1', expected_key: 'quarantine/a1', grant: {} }))
+      : new Response(JSON.stringify({ error: { code: 'UPLOAD_LOSSY_NOT_ACCEPTED' } }), { status: 422 }));
+    vi.stubGlobal('fetch', fetcher);
+    await expect(remoteApi.uploadFile(new File(['test'], 'a.m4a'), 'AUDIO')).rejects.toMatchObject({ code: 'UPLOAD_LOSSY_NOT_ACCEPTED' });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+});
 
 const payload = (over: Partial<ReleasePayload> = {}): ReleasePayload => ({
   title: '원격 싱글', artist: '원격 아티스트', type: 'single', language: 'ko', genre: 'Pop', genreCustom: '', label: '',
@@ -127,6 +167,10 @@ describe('서버 값 정리', () => {
     expect(uploadContentType(new File([''], 'a.mp3', { type: 'audio/mpeg' }), 'AUDIO')).toBe('');
     expect(uploadContentType(new File([''], 'a.m4a', { type: 'audio/x-m4a' }), 'AUDIO')).toBe('audio/mp4');
     expect(uploadContentType(new File([''], 'a.M4A', { type: '' }), 'AUDIO')).toBe('audio/mp4');
+    expect(uploadContentType(new File([''], 'a.AIFF', { type: '' }), 'AUDIO')).toBe('audio/aiff');
+    expect(uploadContentType(new File([''], 'a.aifc', { type: '' }), 'AUDIO')).toBe('audio/aiff');
+    expect(uploadContentType(new File([''], 'a.wv', { type: '' }), 'AUDIO')).toBe('audio/wavpack');
+    expect(uploadContentType(new File([''], 'a.tta', { type: '' }), 'AUDIO')).toBe('audio/tta');
     expect(uploadContentType(new File([''], 'a.aac', { type: 'audio/aac' }), 'AUDIO')).toBe('');
     expect(uploadContentType(new File([''], 'c.jpeg', { type: '' }), 'IMAGE')).toBe('image/jpeg');
     expect(uploadContentType(new File([''], 'c.webp', { type: 'image/webp' }), 'IMAGE')).toBe('');

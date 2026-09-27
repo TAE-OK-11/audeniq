@@ -572,7 +572,7 @@ export const remoteApi = {
   async uploadFile(file: File, kind: UploadKind, onProgress?: (r: number) => void, signal?: AbortSignal): Promise<UploadResult> {
     const contentType = uploadContentType(file, kind);
     if (!contentType) {
-      throw new ApiError(kind === 'AUDIO' ? '음원은 WAV, FLAC 또는 ALAC(.m4a) 파일만 올릴 수 있어요.' : kind === 'DOCUMENT' ? '서류는 PDF, JPG, PNG 파일만 올릴 수 있어요.' : '커버는 JPG 또는 PNG 파일만 올릴 수 있어요.', 400, 'UPLOAD_TYPE_UNSUPPORTED');
+      throw new ApiError(kind === 'AUDIO' ? '음원은 WAV, FLAC, ALAC(.m4a), AIFF, WavPack, TTA 파일만 올릴 수 있어요.' : kind === 'DOCUMENT' ? '서류는 PDF, JPG, PNG 파일만 올릴 수 있어요.' : '커버는 JPG 또는 PNG 파일만 올릴 수 있어요.', 400, 'UPLOAD_TYPE_UNSUPPORTED');
     }
     const issued = await req<{ upload_session_id: string; asset_id: string; expected_key: string; grant: UploadGrant }>(orgPath('/uploads'), {
       method: 'POST', body: { kind, size_bytes: file.size, content_type: contentType },
@@ -584,10 +584,25 @@ export const remoteApi = {
       void req(orgPath(`/uploads/${issued.upload_session_id}/cancel`), { method: 'POST' }).catch(() => {});
       throw e;
     }
-    const done = await req<{ asset_id: string; sha256?: string; detected_container?: string }>(orgPath(`/uploads/${issued.upload_session_id}/complete`), {
-      method: 'POST', body: { asset_id: issued.asset_id, expected_key: issued.expected_key }, timeoutMs: 240000,
-    });
-    return { assetId: done.asset_id, sha256: done.sha256, container: done.detected_container };
+    for (let attempt = 0; ; attempt++) {
+      if (signal?.aborted) throw new ApiError('업로드를 취소했어요.', 0, 'ABORTED');
+      try {
+        const done = await req<{ asset_id: string; sha256?: string; detected_container?: string }>(orgPath(`/uploads/${issued.upload_session_id}/complete`), {
+          method: 'POST', body: { asset_id: issued.asset_id, expected_key: issued.expected_key }, timeoutMs: 240000, signal, quietServer: true,
+        });
+        return { assetId: done.asset_id, sha256: done.sha256, container: done.detected_container };
+      } catch (error) {
+        // Capacity retries reuse the uploaded object and session. Never PUT
+        // the audio again or retry permanent validation failures.
+        if (!(error instanceof ApiError) || error.code !== 'UPLOAD_BUSY' || attempt >= 47) throw error;
+        await new Promise<void>((resolve, reject) => {
+          const abort = () => { clearTimeout(timer); reject(new ApiError('업로드를 취소했어요.', 0, 'ABORTED')); };
+          const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, 5000);
+          signal?.addEventListener('abort', abort, { once: true });
+          if (signal?.aborted) abort();
+        });
+      }
+    }
   },
 };
 
@@ -600,6 +615,9 @@ export function uploadContentType(file: File, kind: UploadKind): string {
     if (t === 'audio/flac' || t === 'audio/x-flac' || name.endsWith('.flac')) return 'audio/flac';
     // ALAC(.m4a): 서버가 FLAC으로 무손실 변환한다 (AAC는 서버가 거절)
     if (t === 'audio/mp4' || t === 'audio/x-m4a' || t === 'audio/m4a' || name.endsWith('.m4a')) return 'audio/mp4';
+    if (t === 'audio/aiff' || t === 'audio/x-aiff' || /\.(aif|aiff|aifc)$/.test(name)) return 'audio/aiff';
+    if (t === 'audio/wavpack' || t === 'audio/x-wavpack' || name.endsWith('.wv')) return 'audio/wavpack';
+    if (t === 'audio/tta' || t === 'audio/x-tta' || name.endsWith('.tta')) return 'audio/tta';
     return '';
   }
   if (kind === 'DOCUMENT' && (t === 'application/pdf' || name.endsWith('.pdf'))) return 'application/pdf';

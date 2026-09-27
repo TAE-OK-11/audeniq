@@ -94,6 +94,8 @@ pub struct ObjectDigest {
 }
 /// Leading bytes kept for magic-number content sniffing.
 pub const HEAD_SNIFF_BYTES: usize = 64;
+/// Buffered reads are only for artwork/documents. Audio must stream.
+const MAX_BUFFERED_BYTES: u64 = 20 * 1024 * 1024;
 impl ObjectDigest {
     pub fn of(bytes: &[u8]) -> Self {
         Self {
@@ -120,10 +122,10 @@ impl DigestBuilder {
         }
     }
     fn update(&mut self, chunk: &[u8]) -> Result<()> {
-        self.size += chunk.len() as u64;
-        if self.size > self.max {
+        if chunk.len() as u64 > self.max.saturating_sub(self.size) {
             return Err(Error::PolicyGate("OBJECT_TOO_LARGE"));
         }
+        self.size += chunk.len() as u64;
         if self.head.len() < HEAD_SNIFF_BYTES {
             let take = (HEAD_SNIFF_BYTES - self.head.len()).min(chunk.len());
             self.head.extend_from_slice(&chunk[..take]);
@@ -208,6 +210,8 @@ impl S3Store {
             endpoint.username().is_empty()
                 && endpoint.password().is_none()
                 && endpoint.query().is_none()
+                && endpoint.fragment().is_none()
+                && endpoint.host_str().is_some()
                 && endpoint.path() == "/",
             "invalid S3 endpoint"
         );
@@ -229,6 +233,7 @@ impl S3Store {
                 .redirect(reqwest::redirect::Policy::none())
                 .build()?,
             download_client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(900))
                 .connect_timeout(std::time::Duration::from_secs(10))
                 .read_timeout(std::time::Duration::from_secs(30))
                 .redirect(reqwest::redirect::Policy::none())
@@ -243,7 +248,19 @@ impl S3Store {
         at: DateTime<Utc>,
         ttl: i64,
     ) -> Result<String> {
-        if !(1..=3600).contains(&ttl) || key.split('/').any(|p| p == ".." || p == ".") {
+        if !(1..=3600).contains(&ttl)
+            || key.is_empty()
+            || key.len() > 1024
+            || key.bytes().any(|b| b.is_ascii_control() || b == b'\\')
+            || key
+                .split('/')
+                .any(|p| p.is_empty() || p == ".." || p == ".")
+            || headers.iter().any(|(k, v)| {
+                reqwest::header::HeaderName::from_bytes(k.as_bytes()).is_err()
+                    || reqwest::header::HeaderValue::from_str(v).is_err()
+                    || k != &k.to_ascii_lowercase()
+            })
+        {
             return Err(Error::Invalid);
         }
         let path = format!(
@@ -312,7 +329,7 @@ impl ObjectStore for S3Store {
         // other size; browsers send it for a Blob body on their own (script
         // may not set it, so Studio skips it when copying the headers).
         // Completion still re-checks size, type, nonce and content.
-        if size < 1 {
+        if size < 1 || size > crate::uploads::MAX_AUDIO_BYTES || !key.starts_with("quarantine/") {
             return Err(Error::Invalid);
         }
         let headers = BTreeMap::from([
@@ -433,20 +450,15 @@ impl ObjectStore for S3Store {
         Ok(())
     }
     async fn get(&self, key: &str) -> Result<Vec<u8>> {
-        let url = self.signed("GET", key, &BTreeMap::new(), Utc::now(), 300)?;
-        let r = self
-            .client
-            .get(url)
-            .send()
-            .await
-            .map_err(|_| Error::Storage)?;
-        if !r.status().is_success() {
-            return Err(Error::Storage);
+        let mut r = self.open_download(key, MAX_BUFFERED_BYTES).await?;
+        let mut bytes = Vec::new();
+        while let Some(chunk) = r.chunk().await.map_err(|_| Error::Storage)? {
+            if chunk.len() as u64 > MAX_BUFFERED_BYTES - bytes.len() as u64 {
+                return Err(Error::PolicyGate("OBJECT_TOO_LARGE"));
+            }
+            bytes.extend_from_slice(&chunk);
         }
-        r.bytes()
-            .await
-            .map(|b| b.to_vec())
-            .map_err(|_| Error::Storage)
+        Ok(bytes)
     }
     async fn download_to(
         &self,
@@ -455,10 +467,13 @@ impl ObjectStore for S3Store {
         max_bytes: u64,
     ) -> Result<ObjectDigest> {
         use tokio::io::AsyncWriteExt;
-        let mut r = self.open_download(key).await?;
-        let mut file = tokio::fs::File::create(dest)
+        let mut r = self.open_download(key, max_bytes).await?;
+        let file = tokio::fs::File::create(dest)
             .await
             .map_err(|_| Error::Internal)?;
+        // Coalesce small network chunks instead of dispatching a blocking
+        // filesystem write for every HTTP frame.
+        let mut file = tokio::io::BufWriter::with_capacity(256 * 1024, file);
         let mut d = DigestBuilder::new(max_bytes);
         while let Some(chunk) = r.chunk().await.map_err(|_| Error::Storage)? {
             d.update(&chunk)?;
@@ -468,7 +483,7 @@ impl ObjectStore for S3Store {
         Ok(d.finish())
     }
     async fn digest(&self, key: &str, max_bytes: u64) -> Result<ObjectDigest> {
-        let mut r = self.open_download(key).await?;
+        let mut r = self.open_download(key, max_bytes).await?;
         let mut d = DigestBuilder::new(max_bytes);
         while let Some(chunk) = r.chunk().await.map_err(|_| Error::Storage)? {
             d.update(&chunk)?;
@@ -477,7 +492,7 @@ impl ObjectStore for S3Store {
     }
 }
 impl S3Store {
-    async fn open_download(&self, key: &str) -> Result<reqwest::Response> {
+    async fn open_download(&self, key: &str, max_bytes: u64) -> Result<reqwest::Response> {
         let url = self.signed("GET", key, &BTreeMap::new(), Utc::now(), 900)?;
         let r = self
             .download_client
@@ -485,8 +500,11 @@ impl S3Store {
             .send()
             .await
             .map_err(|_| Error::Storage)?;
-        if !r.status().is_success() {
+        if r.status() != reqwest::StatusCode::OK {
             return Err(Error::Storage);
+        }
+        if r.content_length().is_some_and(|size| size > max_bytes) {
+            return Err(Error::PolicyGate("OBJECT_TOO_LARGE"));
         }
         Ok(r)
     }
@@ -511,6 +529,107 @@ pub fn store_from_env(allow_http: bool) -> anyhow::Result<std::sync::Arc<dyn Obj
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn test_store(endpoint: &str) -> S3Store {
+        S3Store::new(
+            endpoint,
+            "test".into(),
+            "access".into(),
+            "secret".into(),
+            "auto".into(),
+            true,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn rejects_ambiguous_keys_headers_and_endpoint_fragments() {
+        let s = test_store("https://account.r2.cloudflarestorage.com");
+        for key in ["", "../a", "a/./b", "a//b", "/a", "a/", "a\\b", "a\nb"] {
+            assert!(
+                s.signed("GET", key, &BTreeMap::new(), Utc::now(), 60)
+                    .is_err(),
+                "{key:?}"
+            );
+        }
+        let h = BTreeMap::from([("content-type".into(), "audio/wav\r\nx-injected: yes".into())]);
+        assert!(
+            s.signed("PUT", "quarantine/test", &h, Utc::now(), 60)
+                .is_err()
+        );
+        assert!(
+            S3Store::new(
+                "https://example.com/#fragment",
+                "test".into(),
+                "a".into(),
+                "b".into(),
+                "auto".into(),
+                false
+            )
+            .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn client_grants_cannot_write_registered_objects() {
+        let s = test_store("https://account.r2.cloudflarestorage.com");
+        assert!(
+            s.presign_put(
+                "registered/org/asset",
+                16,
+                "audio/wav",
+                "nonce",
+                Utc::now() + chrono::Duration::minutes(10)
+            )
+            .await
+            .is_err()
+        );
+    }
+
+    async fn mock_response(response: &'static str) -> S3Store {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0; 4096];
+            let _ = stream.read(&mut request).await;
+            let _ = stream.write_all(response.as_bytes()).await;
+        });
+        test_store(&endpoint)
+    }
+
+    #[tokio::test]
+    async fn downloads_reject_oversized_headers_and_chunked_bodies() {
+        let s = mock_response(
+            "HTTP/1.1 200 OK\r\nContent-Length: 20971521\r\nConnection: close\r\n\r\n",
+        )
+        .await;
+        assert!(matches!(
+            s.get("registered/a").await,
+            Err(Error::PolicyGate("OBJECT_TOO_LARGE"))
+        ));
+        let s = mock_response("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n3\r\nabc\r\n3\r\ndef\r\n0\r\n\r\n").await;
+        assert!(matches!(
+            s.digest("registered/a", 5).await,
+            Err(Error::PolicyGate("OBJECT_TOO_LARGE"))
+        ));
+        let s = mock_response(
+            "HTTP/1.1 206 Partial Content\r\nContent-Length: 3\r\nConnection: close\r\n\r\nabc",
+        )
+        .await;
+        assert!(matches!(
+            s.digest("registered/a", 5).await,
+            Err(Error::Storage)
+        ));
+    }
+
+    #[test]
+    fn digest_limit_is_exact_and_overflow_safe() {
+        let mut d = DigestBuilder::new(3);
+        d.update(b"abc").unwrap();
+        assert!(d.update(b"d").is_err());
+        assert_eq!(d.finish(), ObjectDigest::of(b"abc"));
+    }
     #[test]
     fn signature_scopes_method_key_headers_and_expiry() {
         let s = S3Store::new(
