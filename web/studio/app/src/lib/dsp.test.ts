@@ -138,6 +138,15 @@ describe('음원 규격 확인', () => {
   });
 });
 
+describe('additional lossless upload headers', () => {
+  it('admits recognized containers for server codec validation', () => {
+    for (const header of ['FORM0000AIFF', 'FORM0000AIFC', 'wvpk', 'TTA1']) {
+      const bytes = Uint8Array.from(header, ch => ch.charCodeAt(0));
+      expect(checkAudioHeader(bytes.buffer)).toMatchObject({ spec: null, error: '' });
+    }
+  });
+});
+
 describe('DSP 코드', () => {
   it('스튜디오 플랫폼 키를 서버 레지스트리 코드로 바꾼다', async () => {
     const { dspCode } = await import('./catalog');
