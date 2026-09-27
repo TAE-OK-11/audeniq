@@ -31,7 +31,7 @@ const DELIVERY_ISSUE: Record<string, string> = {
   DSP_ARTWORK_NOT_SQUARE: '커버아트를 1:1 정사각형으로 바꿔 주세요.',
   DSP_ARTWORK_TOO_SMALL: '이 플랫폼 기준보다 커버아트 해상도가 낮아요.',
   DSP_ARTWORK_TOO_LARGE: '이 플랫폼이 받는 크기보다 커버아트가 커요. 해상도를 줄여 주세요.',
-  DSP_AUDIO_NOT_LOSSLESS: 'WAV·FLAC 무손실 음원이 필요해요.',
+  DSP_AUDIO_NOT_LOSSLESS: '무손실 음원(WAV·FLAC·ALAC·AIFF·WavPack·TTA)이 필요해요.',
   DSP_AUDIO_SAMPLE_RATE_LOW: '음원의 샘플레이트가 기준(44.1kHz)보다 낮아요.',
   DSP_AUDIO_BIT_DEPTH_LOW: '음원의 비트 심도가 기준(16bit)보다 낮아요.',
   DSP_CREDIT_COMPOSER_MISSING: '곡마다 작곡가 크레딧이 필요해요.',
@@ -194,7 +194,7 @@ export function ReleaseDetail() {
             <span className="aq-fix-icon" aria-hidden="true">✕</span>
             <div className="min-0">
               <h2 id="aqRejectHead">발매가 거절됐어요</h2>
-              <p className="break">{fixes.find(f => f.code === 'REVIEW_NOTE')?.message
+              <p className="break" style={{ whiteSpace: 'pre-line' }}>{fixes.find(f => f.code === 'REVIEW_NOTE')?.message
                 || '담당자 검토 결과 이 발매는 배급할 수 없어요. 궁금한 점은 문의로 남겨 주세요.'}</p>
               <p className="small muted" style={{ marginTop: 8 }}>거절된 발매는 다시 접수할 수 없어요. 내용을 고쳐 새 발매로 신청해 주세요.</p>
             </div>
