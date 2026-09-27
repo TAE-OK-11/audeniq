@@ -33,6 +33,8 @@ interface ServerRelease {
   /** 플랫폼(파트너)별 전송·공개 상태 — 최신 패키지 기준 */
   delivery_status_by_dsp?: { partner_id: string; dsp: string | null; status: string }[];
   live_status_by_dsp?: { partner_id: string; dsp: string | null; live_status: string }[];
+  /** 배급 계약서 상태 (REVIEW·APPROVED·NEEDS·SIGNED …). 서명 전에는 전송하지 않는다 */
+  agreement_status?: string | null;
 }
 interface ServerTrack {
   id: string;
@@ -53,14 +55,19 @@ interface ServerCredit { party_id: string; role: string }
 // 상태·유형 매핑
 // ---------------------------------------------------------------------------
 /** 서버 처리 단계(application_pipeline_status) → 화면 상태 칩 */
-export function uiStatus(server: string, live = false): string {
-  // 한 곳이라도 플랫폼에 공개됐으면 발매 완료 (발매 행은 READY_FOR_DELIVERY로 남는다)
-  if (live) return 'live';
+export function uiStatus(server: string, live = false, agreement: string | null = 'SIGNED'): string {
+  // 담당자가 서류 보완을 요청했으면 무엇보다 보완 필요
+  if (agreement === 'NEEDS') return 'needs';
+  // 계약서 서명 후 한 곳이라도 플랫폼에 공개됐으면 발매 완료 (발매 행은 READY_FOR_DELIVERY로 남는다)
+  if (live && agreement === 'SIGNED') return 'live';
   if (server === 'DRAFT') return 'draft';
   // 철회·반려(WITHDRAWN)와 대체(SUPERSEDED)는 더 수정할 수 없는 종료 상태
   if (server === 'WITHDRAWN' || server === 'SUPERSEDED') return 'closed';
   if (/CORRECTION$/.test(server) || server === 'ON_HOLD_RIGHTS') return 'needs';
-  if (server === 'READY_FOR_DELIVERY') return 'scheduled';
+  if (server === 'READY_FOR_DELIVERY') {
+    // 담당자가 배급 계약서를 승인하면 배급 승인 (서명 후 전송), 그 전에는 검토 중
+    return agreement === 'APPROVED' || agreement === 'SIGNED' ? 'scheduled' : 'review';
+  }
   return 'review';
 }
 const EDITABLE = new Set(['DRAFT', 'STAGE1_CORRECTION', 'STAGE2_CORRECTION', 'STAGE3_CORRECTION']);
@@ -188,13 +195,16 @@ function durationMs(mmss?: string): number | null {
   return m ? (+m[1] * 60 + +m[2]) * 1000 : null;
 }
 
+/** 플랫폼에 공개된 항목 */
+const realLive = (r: ServerRelease) => (r.live_status_by_dsp ?? []).filter(l => l.live_status === 'LIVE');
+
 function toSummary(r: ServerRelease): Release {
   const d = readDraft(r);
   return {
     id: r.id,
     title: r.title,
-    status: uiStatus(r.status, (r.live_status_by_dsp ?? []).some(l => l.live_status === 'LIVE')),
-    livePlatforms: (r.live_status_by_dsp ?? []).filter(l => l.live_status === 'LIVE').map(l => l.dsp ?? l.partner_id),
+    status: uiStatus(r.status, realLive(r).length > 0, r.agreement_status ?? null),
+    livePlatforms: realLive(r).map(l => l.dsp ?? l.partner_id),
     release_date: (typeof r.draft?.release_date === 'string' && r.draft.release_date) || null,
     created_at: (r.created_at ?? '').slice(0, 10),
     updated_at: typeof r.draft?.saved_at === 'string' ? r.draft.saved_at : r.created_at,

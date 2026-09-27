@@ -213,11 +213,13 @@ pub async fn list(s: &AppState, a: &Actor, org: Uuid, kind: Kind, page: Page) ->
             .filter_map(|v| v["id"].as_str().and_then(|s| Uuid::parse_str(s).ok()))
             .collect();
         let mut axes = delivery_axes(&mut tx, org, &ids).await?;
+        let mut agreements = agreement_statuses(&mut tx, org, &ids).await?;
         for v in &mut rows {
             let id = v["id"].as_str().and_then(|s| Uuid::parse_str(s).ok());
             let (delivery, live) = id.and_then(|i| axes.remove(&i)).unwrap_or_default();
             v["delivery_status_by_dsp"] = json!(delivery);
             v["live_status_by_dsp"] = json!(live);
+            v["agreement_status"] = json!(id.and_then(|i| agreements.remove(&i)));
         }
     }
     tx.commit().await?;
@@ -232,6 +234,27 @@ pub async fn list(s: &AppState, a: &Actor, org: Uuid, kind: Kind, page: Page) ->
 /// package (one batched read for any number of releases). The execution
 /// tables are org-scoped by RLS, so this authorizes `org` on the caller's
 /// transaction. Registry partners carry their D-code as `dsp`.
+/// Distribution agreement status per release (REVIEW, APPROVED, NEEDS,
+/// SIGNED, ...). Delivery waits for SIGNED; Studio shows 검토 중 until staff
+/// approve it, 배급 승인 after, and 보완 필요 when staff asked for documents.
+async fn agreement_statuses(
+    tx: &mut sqlx::PgConnection,
+    org: Uuid,
+    releases: &[Uuid],
+) -> Result<std::collections::HashMap<Uuid, String>> {
+    if releases.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let rows: Vec<(Uuid, String)> = sqlx::query_as(
+        "SELECT release_id, status FROM portal.documents
+         WHERE org_id=$1 AND kind='AGREEMENT' AND release_id = ANY($2)",
+    )
+    .bind(org)
+    .bind(releases)
+    .fetch_all(&mut *tx)
+    .await?;
+    Ok(rows.into_iter().collect())
+}
 pub(crate) async fn delivery_axes(
     tx: &mut sqlx::PgConnection,
     org: Uuid,
@@ -304,6 +327,7 @@ pub async fn get(s: &AppState, a: &Actor, org: Uuid, kind: Kind, id: Uuid) -> Re
         let (delivery, live) = axes.remove(&id).unwrap_or_default();
         v["delivery_status_by_dsp"] = json!(delivery);
         v["live_status_by_dsp"] = json!(live);
+        v["agreement_status"] = json!(agreement_statuses(&mut tx, org, &[id]).await?.remove(&id));
         v["submission_enabled"] = json!(false);
     }
     tx.commit().await?;
