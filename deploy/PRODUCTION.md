@@ -149,6 +149,11 @@ api·worker는 `pgbouncer:6432`(거래 단위 풀링)로 DB에 붙는다. 서버
 - **방화벽**: `ufw allow OpenSSH && ufw enable`. compose는 호스트 포트를 열지 않으므로 SSH만 열려 있으면 된다.
 - **SSH**: fail2ban으로 비밀번호 대입을 막고, 가능하면 키 로그인으로 바꾼 뒤 `PasswordAuthentication no`.
 - **메모리**: 1GB 서버는 스왑 파일(2GB)을 추가해 큰 음원 QC 중 OOM을 피한다. vCPU 1개 서버는 `compose.override.yaml`에서 worker `cpus: 1.0`.
+- **터널 전송 속도**: cloudflared는 QUIC(UDP)으로 Cloudflare에 붙는데, 리눅스 기본 UDP 버퍼(약 200KB)로는
+  처리량이 제한된다(로그: `failed to sufficiently increase receive buffer size`). 호스트에서 한 번:
+  `printf 'net.core.rmem_max=7500000\nnet.core.wmem_max=7500000\n' | sudo tee /etc/sysctl.d/90-cloudflared.conf && sudo sysctl --system`
+  후 `docker compose ... restart tunnel`. 컨테이너 안에서는 바꿀 수 없는 호스트 설정이다.
+  UDP 7844가 막힌 망이면 cloudflared가 HTTP/2(TCP)로 자동 전환한다.
 - **이미지 정리**: 주 1회 `docker image prune -af --filter until=168h` (현재 이미지와 직전 이미지는 사용 중이거나 1주 이내라 남는다).
 
 ### UPC/ISRC 발급
