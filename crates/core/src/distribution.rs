@@ -104,7 +104,7 @@ impl CanonicalRelease {
     /// need both, and hashing the same struct twice was pure waste.
     fn body_and_hash(&self) -> (Value, String) {
         let body = self.body();
-        let hash = sha256_hex(&serde_json::to_string(&body).expect("canonical serializes"));
+        let hash = crate::domain::sha256_json(&body);
         (body, hash)
     }
     pub fn canonical_hash(&self) -> String {
@@ -122,10 +122,6 @@ pub struct PrepareSummary {
     pub returned_to_s2: bool,
     /// Real DDEX ERN 3.8.2 messages persisted for DSPs with configured DPIDs.
     pub ddex_messages: usize,
-}
-
-fn sha256_hex(s: &str) -> String {
-    hex::encode(Sha256::digest(s.as_bytes()))
 }
 
 fn parse_dsp_ids(v: &Value) -> Result<Vec<Uuid>> {
@@ -366,7 +362,7 @@ pub async fn freeze_package(pool: &PgPool, canonical: &CanonicalRelease) -> Resu
         "preflight_ref": null,
         "queued_job_refs": [],
     });
-    let package_hash = sha256_hex(&serde_json::to_string(&body).expect("package serializes"));
+    let package_hash = crate::domain::sha256_json(&body);
     let id = Uuid::new_v4();
     // A concurrent freeze for the same snapshot cannot happen under one
     // lease, but tolerate the race: the UNIQUE constraint keeps one row.
@@ -966,6 +962,17 @@ pub async fn run_prepare_release(
     )
     .await?;
 
+    // Per-DSP delivery staging (spec checks, ERN per requested DSP, staff
+    // approval queue) runs as its own retryable job on the same commit.
+    operations::enqueue(
+        &mut tx2,
+        "distribution",
+        "delivery.stage",
+        &json!({"package_id": package_id}),
+        &format!("delivery.stage:{package_id}"),
+        Some(revision_id),
+    )
+    .await?;
     operations::audit(
         &mut tx2,
         None,
