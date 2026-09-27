@@ -153,6 +153,15 @@ describe('서버 값 정리', () => {
     // 한 플랫폼이라도 공개되면 발매 완료, 철회·반려는 종료
     expect(uiStatus('READY_FOR_DELIVERY', true)).toBe('live');
     expect(uiStatus('WITHDRAWN')).toBe('closed');
+    // 접수 후에는 검토 중, 담당자가 계약서를 승인하면 배급 승인, 서류 보완 요청이면 보완 필요
+    expect(uiStatus('READY_FOR_DELIVERY', false, 'REVIEW')).toBe('review');
+    expect(uiStatus('READY_FOR_DELIVERY', false, null)).toBe('review');
+    expect(uiStatus('READY_FOR_DELIVERY', false, 'APPROVED')).toBe('scheduled');
+    expect(uiStatus('READY_FOR_DELIVERY', false, 'SIGNED')).toBe('scheduled');
+    expect(uiStatus('READY_FOR_DELIVERY', false, 'NEEDS')).toBe('needs');
+    // 계약서 서명 전 공개 기록은 발매 완료로 보지 않는다
+    expect(uiStatus('READY_FOR_DELIVERY', true, 'APPROVED')).toBe('scheduled');
+    expect(uiStatus('READY_FOR_DELIVERY', true, 'NEEDS')).toBe('needs');
   });
 
   it('profile은 lyrics만 여러 줄을 허용하고 제어·방향 문자를 지운다', () => {

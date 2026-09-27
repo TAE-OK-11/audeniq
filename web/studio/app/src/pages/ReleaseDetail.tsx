@@ -55,7 +55,7 @@ const DETAIL_TABS = [
 const PIPELINE = [
   { key: 'draft', label: '작성' },
   { key: 'review', label: '검토' },
-  { key: 'scheduled', label: '발매 예정' },
+  { key: 'scheduled', label: '배급 승인' },
   { key: 'live', label: '발매 완료' },
 ];
 const pipelineIndex = (s: string) =>
