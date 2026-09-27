@@ -2059,6 +2059,20 @@ pub async fn precheck_asset(
         .execute(pool)
         .await?;
     }
+    // Early answer for the draft preflight (AUDIO_QC_PENDING_OR_BLOCKED):
+    // same rollup as Stage 1's update_asset_qc, which stays authoritative
+    // and overwrites it after submission (adding catalog similarity).
+    if !retry {
+        let clean = out
+            .iter()
+            .all(|c| matches!(c.status, CheckStatus::Pass | CheckStatus::NotApplicable));
+        sqlx::query("UPDATE catalog.assets SET qc_status=$3 WHERE org_id=$1 AND id=$2")
+            .bind(org)
+            .bind(aid)
+            .bind(if clean { "PASS" } else { "BLOCKED" })
+            .execute(pool)
+            .await?;
+    }
     Ok(retry)
 }
 
