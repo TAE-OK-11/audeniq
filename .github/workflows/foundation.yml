@@ -119,9 +119,9 @@ jobs:
           bunx playwright install --with-deps chromium
           (cd ../../.. && cargo run --locked -p audeniq-core --bin audeniq-migrate)
           ../../../target/debug/audeniq-api > /tmp/api.log 2>&1 &
-          curl --fail --retry 15 --retry-connrefused --retry-delay 2 -H "X-Audeniq-Service:$EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready
+          curl --fail --retry 15 --retry-all-errors --retry-delay 2 -H "X-Audeniq-Service:$EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready
           bun run preview:api > /tmp/web.log 2>&1 &
-          curl --fail --retry 15 --retry-connrefused --retry-delay 1 -o /dev/null http://localhost:5173/login
+          curl --fail --retry 15 --retry-all-errors --retry-delay 1 -o /dev/null http://localhost:5173/login
           bun run e2e
       - name: Browser diagnostics
         if: failure()
@@ -180,7 +180,7 @@ jobs:
         run: shellcheck deploy/deploy.sh
       - run: docker compose up --build -d
       - name: Check API readiness
-        run: curl --fail --retry 15 --retry-connrefused --retry-delay 2 -H "X-Audeniq-Service:$EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready
+        run: curl --fail --retry 15 --retry-all-errors --retry-delay 2 -H "X-Audeniq-Service:$EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready
       - name: Worker image ships the audio analyzers
         run: |
           docker compose run --rm --no-deps --entrypoint ffprobe worker -version
