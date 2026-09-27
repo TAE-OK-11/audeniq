@@ -21,6 +21,7 @@ import {
   profileLinkIssue, PROFILE_LINKS, releaseTypeIssue, rightsLineIssue, titleIssue, titleWarning, upcValid,
 } from '../lib/dsp';
 import { uid } from '../lib/store';
+import { CheckIcon } from '../components/Check';
 
 const STEPS = [
   { short: '발매 정보', kicker: '01 / 06 · 발매 정보', title: '어떤 음악을\n발매할까요?', sub: '발매 정보와 아티스트명을 입력해 주세요.' },
@@ -269,21 +270,21 @@ function GuardianConsentModal({ guardianName, onClose, onComplete }: {
 
         <ol className="aq-guardian-steps">
           <li className={ack ? 'is-done' : ''}>
-            <span className="aq-guardian-no" aria-hidden="true">{ack ? '✓' : 1}</span>
+            <span className="aq-guardian-no" aria-hidden="true">{ack ? <CheckIcon size={13} /> : 1}</span>
             <label className="aq-guardian-agree">
               <input type="checkbox" checked={ack} onChange={e => setAck(e.target.checked)} />
               <span>미성년자의 음원 발매와 배급에 법정대리인으로서 동의해요.<small>동의 내용은 발매 심사 때 확인돼요.</small></span>
             </label>
           </li>
           <li className={signed ? 'is-done' : ''}>
-            <span className="aq-guardian-no" aria-hidden="true">{signed ? '✓' : 2}</span>
+            <span className="aq-guardian-no" aria-hidden="true">{signed ? <CheckIcon size={13} /> : 2}</span>
             <div className="min-0">
               <strong className="aq-guardian-label">법정대리인 전자서명 <span className="required">*</span></strong>
               <SignaturePad ref={padRef} id="aqGuardianPad" label="법정대리인 서명 입력" height={170} onChange={setSigned} />
             </div>
           </li>
           <li className={certName ? 'is-done' : ''}>
-            <span className="aq-guardian-no" aria-hidden="true">{certName ? '✓' : 3}</span>
+            <span className="aq-guardian-no" aria-hidden="true">{certName ? <CheckIcon size={13} /> : 3}</span>
             <div className="min-0">
               <strong className="aq-guardian-label">가족관계증명서 <span className="required">*</span></strong>
               <div className="aq-cert-methods" role="radiogroup" aria-label="가족관계증명서 제출 방법">
@@ -303,7 +304,7 @@ function GuardianConsentModal({ guardianName, onClose, onComplete }: {
               <input ref={pdfRef} type="file" accept=".pdf,application/pdf" hidden onChange={onFile('pdf')} />
               {certName && (
                 <p className="aq-cert-picked">
-                  <span aria-hidden="true">✓</span> {certName}
+                  <span className="aq-check-badge is-sm"><CheckIcon size={10} /></span> {certName}
                   {certMethod === 'wallet' && <small>전자문서지갑 연동 후 원본을 가져와요. 지금은 선택 상태로 저장돼요.</small>}
                 </p>
               )}
@@ -350,7 +351,7 @@ function ChipPicker({ id, options, value, onChange, other, onOther, otherPlaceho
       <div className="aq-chips" role="group">
         {all.map(opt => (
           <button key={opt} type="button" className={`aq-chip${value.includes(opt) ? ' is-on' : ''}`} aria-pressed={value.includes(opt)} onClick={() => toggle(opt)}>
-            {value.includes(opt) && <span aria-hidden="true">✓ </span>}{opt === OTHER ? '기타 (직접 입력)' : opt}
+            {value.includes(opt) && <CheckIcon size={12} className="aq-chip-check" />}{opt === OTHER ? '기타 (직접 입력)' : opt}
           </button>
         ))}
       </div>
@@ -480,7 +481,7 @@ function OptionsSection({ form, set, group }: {
             type="button" className="button secondary" style={{ width: '100%' }}
             onClick={() => setShowGuardianModal(true)}
           >
-            {o.guardianConsentDone ? '법정대리인 동의 완료 ✓ (다시 진행)' : '법정대리인 동의 진행하기'}
+            {o.guardianConsentDone ? '법정대리인 동의 완료 · 다시 진행' : '법정대리인 동의 진행하기'}
           </button>
           <p className="help">
             {o.guardianConsentDone
@@ -1957,7 +1958,7 @@ export function Upload() {
                         >
                           <span className="aq-dsp-mark" style={{ background: DSP_COLOR[key] ?? '#3B63F3' }} aria-hidden="true">{label.slice(0, 1)}</span>
                           <span className="aq-dsp-name">{label}</span>
-                          <span className="aq-dsp-check" aria-hidden="true">✓</span>
+                          <span className="aq-dsp-check" aria-hidden="true"><CheckIcon size={11} /></span>
                         </button>
                       );
                     })}

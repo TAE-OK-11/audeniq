@@ -1219,3 +1219,20 @@ a.aq-home-hero{text-decoration:none;color:inherit}
   #view-new .step-actions{gap:10px!important}
 }
 @media(max-width:380px){#view-new .step-actions #wizardBack{padding-left:16px!important;padding-right:16px!important}}
+
+/* ==========================================================================
+   AUDENIQ 체크 — 어디서나 같은 파란 원 + 흰 SVG 체크 (초록·글자 ✓ 없이)
+   ========================================================================== */
+.aq-check-icon{display:block;flex:none}
+.aq-check-badge{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#3B63F3;color:#fff;vertical-align:-5px}
+.aq-check-badge.is-sm{width:18px;height:18px;vertical-align:-4px}
+.aq-complete-check,.aq-cert-done-icon{background:#3B63F3!important;color:#fff!important;width:64px;height:64px;border-radius:50%;display:inline-grid;place-items:center}
+.aq-cert-done-icon{display:grid}
+.aq-toast.is-success .aq-toast-icon{background:#3B63F3}
+.studio-account-check{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#3B63F3;color:#fff}
+.aq-paper-check{display:inline-grid;place-items:center}
+.aq-paper-agree li.is-on .aq-paper-check{background:#3B63F3;color:#fff}
+.aq-sign-wait-steps li.is-done>span{background:#3B63F3!important;color:#fff!important;display:inline-grid;place-items:center}
+.aq-all-done>span{margin-right:8px}
+.aq-chip .aq-chip-check{display:inline-block;margin-right:5px;vertical-align:-1px}
+.aq-guardian-no .aq-check-icon{margin:auto}

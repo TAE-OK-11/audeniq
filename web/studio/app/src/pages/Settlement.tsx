@@ -23,6 +23,7 @@ const PAYOUT_STATUS: Record<Payout['status'], [string, string]> = {
 import { money, niceDate, NO_INCOME } from '../lib/format';
 import { monthKey, todayStr } from '../lib/date';
 import { uid } from '../lib/store';
+import { CheckIcon } from '../components/Check';
 
 const PLATFORMS = ['Spotify', 'Apple Music', 'YouTube Music', '멜론', '지니', 'FLO', '벅스', 'Amazon Music', 'TIDAL', 'Deezer', '기타'];
 
@@ -299,7 +300,7 @@ export function Settlement() {
                     {payment?.recipient || '수령인 미등록'} · {payment?.last4 ? `•••• ${payment.last4}` : '계좌 미등록'}
                   </p>
                 </div>
-                <span className="studio-account-check" aria-label="선택된 수령 계좌">✓</span>
+                <span className="studio-account-check" aria-label="선택된 수령 계좌"><CheckIcon size={12} /></span>
               </div>
               {MOCK && <div className="field">
                 <label htmlFor="pNote">메모 (선택)</label>

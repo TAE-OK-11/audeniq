@@ -14,6 +14,7 @@ import { useReportRows } from '../hooks/useReportRows';
 import type { CSSVarStyle } from '../hooks/useAnimations';
 import { useGrowOnView } from '../hooks/useAnimations';
 import { prefetchRoute } from '../routes';
+import { CheckIcon } from '../components/Check';
 
 const GRID_ITEMS = [
   {
@@ -213,7 +214,7 @@ export function Dashboard() {
               </ul>
             ) : (
               <div className="empty-note aq-all-done">
-                <span aria-hidden="true">✓</span>
+                <span className="aq-check-badge"><CheckIcon size={12} /></span>
                 지금 확인할 작업이 없어요.
               </div>
             )}
