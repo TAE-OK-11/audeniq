@@ -185,7 +185,7 @@ fn ddex_ern_output_is_well_formed_xml() {
             match r.read_event().unwrap() {
                 Event::Start(e) => {
                     if depth == 0 {
-                        root = Some(String::from_utf8_lossy(e.name().as_ref()).into_owned());
+                        root = Some(e.name().as_ref().to_owned());
                     }
                     depth += 1;
                 }

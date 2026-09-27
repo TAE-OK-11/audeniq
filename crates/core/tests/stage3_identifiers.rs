@@ -173,28 +173,30 @@ async fn ledger_sql_constraints_immutability_and_org_isolation(pool: PgPool) {
     // Role is created and dropped transactionally; it has SELECT but cannot bypass RLS.
     let mut tx = pool.begin().await.unwrap();
     let role = format!("f4_test_{}", Uuid::new_v4().simple());
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE ROLE {role} NOLOGIN NOSUPERUSER NOBYPASSRLS"
-    ))
+    )))
     .execute(&mut *tx)
     .await
     .unwrap();
-    sqlx::query(&format!("GRANT USAGE ON SCHEMA distribution TO {role}"))
-        .execute(&mut *tx)
-        .await
-        .unwrap();
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "GRANT USAGE ON SCHEMA distribution TO {role}"
+    )))
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "GRANT SELECT ON distribution.identifier_assignments TO {role}"
-    ))
+    )))
     .execute(&mut *tx)
     .await
     .unwrap();
     // Non-superuser test roles cannot SET ROLE without membership.
-    sqlx::query(&format!("GRANT {role} TO CURRENT_USER"))
+    sqlx::query(sqlx::AssertSqlSafe(format!("GRANT {role} TO CURRENT_USER")))
         .execute(&mut *tx)
         .await
         .unwrap();
-    sqlx::query(&format!("SET LOCAL ROLE {role}"))
+    sqlx::query(sqlx::AssertSqlSafe(format!("SET LOCAL ROLE {role}")))
         .execute(&mut *tx)
         .await
         .unwrap();
