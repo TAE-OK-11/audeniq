@@ -1590,6 +1590,9 @@ export function Upload() {
   const s = STEPS[step];
   const genreIsCustom = form.genre === '__other__';
   const allPlatforms = DSP.every(d => form.platforms.includes(d[0]));
+  // 기본은 ‘모두 배급’ 스위치만. 끄면 아래에 플랫폼별 선택이 열린다 (일부만 고른 발매는 처음부터 열림)
+  const [pickPlatforms, setPickPlatforms] = useState(false);
+  const showPlatforms = pickPlatforms || !allPlatforms;
 
   const reviewSections: [string, string, number][] = [
     ['발매 정보', `${form.title || '제목 없음'} · ${form.artist || '아티스트 없음'} · ${kindLabel(form.type)}`, 0],
@@ -1921,15 +1924,25 @@ export function Upload() {
               />
               <span><strong>전 세계 배급</strong><small>권리를 보유한 지역에만 배급할 수 있어요.</small></span>
             </label>
-            <div className="aq-dsp-head">
+            <h2 className="subhead">배급 플랫폼</h2>
+            <div className="distribution-default">
               <div>
-                <h2 className="subhead" style={{ margin: 0 }}>배급 플랫폼</h2>
-                <p className="help">{allPlatforms ? '주요 음악 플랫폼에 모두 배급해요.' : `${form.platforms.length}개 플랫폼을 골랐어요.`} 눌러서 빼거나 더할 수 있어요.</p>
+                <strong>{allPlatforms ? '주요 음악 플랫폼에 모두 배급해요.' : `${form.platforms.length}개 플랫폼에 배급해요.`}</strong>
+                <p className="help">{showPlatforms ? '아래에서 배급할 플랫폼을 눌러 빼거나 더할 수 있어요.' : '특정 플랫폼만 고르려면 스위치를 꺼 주세요.'}</p>
               </div>
-              <button type="button" className="aq-dsp-all" onClick={() => set('platforms', allPlatforms ? [] : DSP.map(d => d[0]))}>
-                {allPlatforms ? '모두 해제' : '모두 선택'}
-              </button>
+              <label className="aq-switch">
+                <input
+                  type="checkbox" aria-label="모든 플랫폼에 배급"
+                  checked={allPlatforms && !pickPlatforms}
+                  onChange={e => {
+                    // 켜면 모두 선택하고 목록을 닫고, 끄면 지금 선택 그대로 목록을 연다
+                    if (e.target.checked) { set('platforms', DSP.map(d => d[0])); setPickPlatforms(false); } else setPickPlatforms(true);
+                  }}
+                />
+                <span />
+              </label>
             </div>
+            {showPlatforms && (
             <div id="aqPlatforms" className="aq-dsp-groups">
               {([['국내', DSP.filter(d => DSP_DOMESTIC.includes(d[0]))], ['해외', DSP.filter(d => !DSP_DOMESTIC.includes(d[0]))]] as const).map(([region, list]) => (
                 <div key={region}>
@@ -1952,6 +1965,7 @@ export function Upload() {
                 </div>
               ))}
             </div>
+            )}
             <div className="aq-fix-zone"><OptionsSection form={form} set={set} group="service" /></div>
           </section>
         )}
