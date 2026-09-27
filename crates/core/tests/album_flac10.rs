@@ -373,7 +373,7 @@ async fn album_10x_flac_330_distribution_timing(pool: PgPool) {
     // Cover artwork + UPC.
     let art_id = Uuid::new_v4();
     let art_key = format!("registered/{}/cover.png", u.org);
-    let art_bytes = b"\x89PNGfake";
+    let art_bytes = cover_png();
     store
         .files
         .lock()
@@ -535,4 +535,36 @@ async fn album_10x_flac_330_distribution_timing(pool: PgPool) {
     eprintln!("  ERN XML size: {ern_kb:.1} KB, XSD valid: {xsd_ok}");
     eprintln!("  revision: {revision_id}");
     eprintln!("============================================================\n");
+}
+
+/// A real 3000x3000 PNG cover: Stage 1 QCs the release artwork (size,
+/// square), so a fake header no longer passes. Generated once per binary.
+fn cover_png() -> &'static [u8] {
+    static ONCE: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    ONCE.get_or_init(|| {
+        let dir = std::env::temp_dir().join("audeniq-cover-fixture");
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("cover3000.png");
+        if !out.exists() {
+            let tmp = dir.join(format!("cover.{}.png", std::process::id()));
+            let st = std::process::Command::new("ffmpeg")
+                .args([
+                    "-y",
+                    "-v",
+                    "error",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "color=c=0x3355aa:s=3000x3000",
+                    "-frames:v",
+                    "1",
+                ])
+                .arg(&tmp)
+                .status()
+                .expect("ffmpeg runs");
+            assert!(st.success(), "ffmpeg generated the cover fixture");
+            std::fs::rename(&tmp, &out).unwrap();
+        }
+        std::fs::read(&out).unwrap()
+    })
 }

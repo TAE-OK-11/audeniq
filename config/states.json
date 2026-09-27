@@ -110,6 +110,10 @@
       "ON_HOLD_RIGHTS"
     ],
     [
+      "READY_FOR_DELIVERY",
+      "STAGE3_CORRECTION"
+    ],
+    [
       "STAGE2_RUNNING",
       "ON_HOLD_RIGHTS"
     ],
