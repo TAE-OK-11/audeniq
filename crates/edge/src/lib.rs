@@ -42,12 +42,16 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
         RequestInit::new().with_method(request.method()),
     )?;
     // Allowlist, never propagate browser-provided service identity or user-id headers.
+    // accept-encoding: the API compresses JSON (zstd > br > gzip) for what the
+    // browser accepts, so the tunnel hop carries compressed bytes and the
+    // response passes through to the browser unchanged.
     for name in [
         "cookie",
         "origin",
         "content-type",
         "x-csrf-token",
         "sec-fetch-site",
+        "accept-encoding",
     ] {
         if let Some(value) = request.headers().get(name)? {
             forwarded.headers_mut()?.set(name, &value)?;
