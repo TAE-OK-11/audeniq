@@ -128,7 +128,12 @@ export function Dashboard() {
           <h2>새로운 발매를 <span className="aq-accent">시작해 보세요.</span></h2>
           <p>음원과 커버아트, 크레딧을 등록하고 발매를 준비해요.</p>
         </div>
-        <span className="button aq-hero-cta">발매 등록하기 <span aria-hidden="true">→</span></span>
+        <span className="button aq-hero-cta">
+          발매 등록하기
+          <span className="aq-cta-arrow" aria-hidden="true">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10M9 4l4 4-4 4" /></svg>
+          </span>
+        </span>
       </Link>
 
       <div className="dashboard-grid aq-stagger" aria-label="주요 업무">

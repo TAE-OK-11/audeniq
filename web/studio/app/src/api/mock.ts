@@ -187,6 +187,9 @@ function sessionUser(s: Session): User {
   return { id: 'u_' + s.email.replace(/[^a-z0-9]/gi, '').slice(0, 16), email: s.email };
 }
 
+/** 체험 모드에서 이번 달 취소한 발매 */
+const mockWithdrawn = new Set<string>();
+
 export const mockApi = {
   login: async (email: string, password: string): Promise<User> => {
     await delay(250);
@@ -255,6 +258,15 @@ export const mockApi = {
     upsert(next);
     return summary(next);
   },
+  withdrawRelease: async (id: string) => {
+    await delay(120);
+    const used = mockWithdrawn.size;
+    if (used >= 3) throw new ApiError('이번 달 직접 취소할 수 있는 3회를 모두 썼어요. 문의로 취소를 요청해 주세요.', 422, 'WITHDRAW_LIMIT_REACHED');
+    mockWithdrawn.add(id);
+    db.set(list => list.map(r => (r.id === id ? { ...r, status: 'cancelled' } : r)));
+    return { limit: 3, used: used + 1, remaining: Math.max(0, 2 - used) };
+  },
+  withdrawQuota: async () => ({ limit: 3, used: mockWithdrawn.size, remaining: Math.max(0, 3 - mockWithdrawn.size) }),
   deleteRelease: async (id: string): Promise<void> => {
     await delay(80);
     db.set(list => list.filter(r => r.id !== id));

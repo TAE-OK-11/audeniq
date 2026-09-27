@@ -78,6 +78,7 @@ export function ReleaseDetail() {
   const allDocs = useDocs();
   const [tab, setTab] = useState('overview');
   const [deleting, setDeleting] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
   const { data: rel, error, loading, reload } = useAsync(() => api.getRelease(id), [id]);
   // 배급 탭을 열 때만 플랫폼별 진행을 불러온다 (준비 전이면 빈 목록)
   const delivery = useAsync<DeliveryItem[]>(
@@ -117,6 +118,46 @@ export function ReleaseDetail() {
   const rejected = rel.status === 'rejected';
   const fixes = rel.corrections ?? [];
 
+  // 접수한 신청 취소 — 한 달 3회까지 직접, 그 이상·배급 시작 후는 문의로
+  const canWithdraw = ['review', 'needs', 'scheduled'].includes(rel.status);
+  const askByInquiry = () => nav(`/inquiries?new=cancel&release=${encodeURIComponent(rel.id)}`);
+  const handleWithdraw = async () => {
+    let q;
+    try { q = await api.withdrawQuota(); } catch { q = null; }
+    if (q && q.remaining <= 0) {
+      const go = await confirm({
+        title: '이번 달 취소 횟수를 모두 썼어요',
+        message: `발매 신청은 한 달에 ${q.limit}번까지 직접 취소할 수 있어요. 더 취소하려면 문의로 요청해 주세요. 담당자가 확인 후 처리해요.`,
+        confirmLabel: '문의로 취소 요청',
+      });
+      if (go) askByInquiry();
+      return;
+    }
+    const ok = await confirm({
+      title: '발매 신청을 취소할까요?',
+      message: `‘${rel.title}’ 신청을 취소하면 되돌릴 수 없고, 다시 내려면 새 발매로 신청해야 해요.${q ? ` 이번 달 남은 직접 취소: ${q.remaining}회 (최대 ${q.limit}회)` : ''}`,
+      confirmLabel: '신청 취소',
+      danger: true,
+    });
+    if (!ok) return;
+    setWithdrawing(true);
+    try {
+      const left = await api.withdrawRelease(rel.id);
+      toast(`발매 신청을 취소했어요. 이번 달 남은 직접 취소 ${left.remaining}회`, 'success');
+      reload();
+    } catch (e) {
+      const code = (e as { code?: string }).code;
+      if (code === 'WITHDRAW_LIMIT_REACHED' || code === 'RELEASE_ALREADY_DELIVERING') {
+        const go = await confirm({ title: '문의로 취소를 요청해 주세요', message: errorMessage(e), confirmLabel: '문의로 취소 요청' });
+        if (go) askByInquiry();
+      } else {
+        toast(errorMessage(e, '취소하지 못했어요. 잠시 후 다시 시도해 주세요.'));
+      }
+    } finally {
+      setWithdrawing(false);
+    }
+  };
+
   const handleDelete = async () => {
     const ok = await confirm({
       title: '발매를 삭제할까요?',
@@ -152,6 +193,11 @@ export function ReleaseDetail() {
               onClick={() => nav(needsFix ? fixPath(rel.id, fixes[0]) : `/upload?edit=${encodeURIComponent(rel.id)}`)}
             >
               {editLabel}
+            </button>
+          )}
+          {canWithdraw && (
+            <button type="button" className="button secondary aq-withdraw-btn" onClick={handleWithdraw} disabled={withdrawing}>
+              {withdrawing ? '취소하는 중' : '신청 취소'}
             </button>
           )}
           {isDraft && (
