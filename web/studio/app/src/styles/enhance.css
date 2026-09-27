@@ -1208,3 +1208,14 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 .aq-reveal .aq-dsp:nth-child(2){animation-delay:.03s}.aq-reveal .aq-dsp:nth-child(3){animation-delay:.06s}.aq-reveal .aq-dsp:nth-child(4){animation-delay:.09s}
 .aq-reveal .aq-dsp:nth-child(5){animation-delay:.12s}.aq-reveal .aq-dsp:nth-child(6){animation-delay:.15s}.aq-reveal .aq-dsp:nth-child(7){animation-delay:.18s}
 @media(prefers-reduced-motion:reduce){.aq-reveal,.aq-reveal .aq-dsp{animation:none}}
+
+/* ---------- 신청서 아래 버튼 줄: 이전(작게) · 수정 완료(중간) · 다음으로(크게) ---------- */
+#view-new .step-actions #wizardBack{flex:0 0 auto!important;width:auto!important;padding-left:22px!important;padding-right:22px!important}
+#view-new .step-actions #wizardSaveNow{flex:1 1 0!important;width:auto!important;background:#eef3ff!important;color:#345fdf!important}
+#view-new .step-actions #wizardNext{flex:1.6 1 0!important;width:auto!important}
+@media(min-width:760px){
+  #view-new .step-actions #wizardSaveNow{flex:0 0 auto!important;min-width:150px;padding-left:24px!important;padding-right:24px!important}
+  #view-new .step-actions #wizardNext{flex:0 0 auto!important;min-width:220px;margin-left:auto}
+  #view-new .step-actions{gap:10px!important}
+}
+@media(max-width:380px){#view-new .step-actions #wizardBack{padding-left:16px!important;padding-right:16px!important}}
