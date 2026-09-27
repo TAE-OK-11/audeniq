@@ -10,11 +10,10 @@ import { useAsync } from '../hooks/useAsync';
 import { staffApi, type Check, type DecisionAction, type DecisionInput, type DecisionResult, type ReleaseSheet } from '../api/staff';
 import { STAFF_FIX_OPTIONS, WIZ_STEP_NAMES, correctionTarget, isKnownCorrection, staffFixCode } from '../lib/corrections';
 import {
-  APPROVAL_STATUS, CHECK_STATUS, DECISION_LABEL, DOC_KIND, DOC_STATUS, MAX_REASON, READINESS, RELEASE_STATUS, RELEASE_TYPE,
+  CHECK_STATUS, DECISION_LABEL, DOC_KIND, DOC_STATUS, MAX_REASON, RELEASE_STATUS, RELEASE_TYPE,
   REJECT_REASONS, applicationPending, checkLabel, checkSummary, day, needsSecond, pick, shortId, stageStateLabel, systemStages, when,
 } from '../labels';
 import { Chip, Empty, ErrorBox, Initial, NoDuty, Section, Skeleton, StatusChip, useStaff } from '../ui';
-import { DspRequirements } from '../dspReqs';
 
 const DECL_LABEL: Record<string, string> = {
   rights_confirmed: '권리 보유 확인', adult_confirmed: '성인 확인', is_cover: '커버곡', is_remix: '리믹스',
@@ -354,7 +353,6 @@ export function ReviewDetail() {
   const nav = useNavigate();
   const { can, refreshCounts, me } = useStaff();
   const { data: sheet, loading, error, reload } = useAsync(() => staffApi.release(id), [id]);
-  const dsps = useAsync(() => staffApi.dsps(), []);
   const [action, setAction] = useState<DecisionAction | null>(null);
   const [modal, setModal] = useState<'proof' | 'reissue' | 'withdraw' | null>(null);
   const [done, setDone] = useState('');
@@ -426,30 +424,6 @@ export function ReviewDetail() {
             )}
           </Section>
 
-          <Section title="플랫폼별 요구 조건" meta={app.platforms.length ? `${app.platforms.length}개 플랫폼 · 문제가 있으면 빨간색` : undefined}>
-            <DspRequirements codes={app.platforms} dsps={dsps.data?.items ?? []} staging={sheet.delivery_staging} />
-            {sheet.delivery_staging.length > 0 && (
-              <details className="adm-more" style={{ marginTop: 12 }}>
-                <summary>플랫폼별 전송 상세</summary>
-                <div className="adm-card white adm-table-wrap">
-                  <table className="adm-table">
-                    <thead><tr><th>플랫폼</th><th>준비</th><th>배급</th><th>연동</th><th>준비 시각</th></tr></thead>
-                    <tbody>
-                      {sheet.delivery_staging.map(st => (
-                        <tr key={`${st.package_id}-${st.dsp}`}>
-                          <td><b>{st.dsp}</b></td>
-                          <td><StatusChip value={pick(READINESS, st.readiness)} /></td>
-                          <td><StatusChip value={pick(APPROVAL_STATUS, st.approval)} /></td>
-                          <td className="small">{st.route_status ?? '—'}{st.route_reason ? ` · ${st.route_reason}` : ''}</td>
-                          <td className="small">{when(st.staged_at)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </details>
-            )}
-          </Section>
 
           {sheet.open_checks.length > 0 && (
             <Section title="담당자 확인 필요" meta={`${sheet.open_checks.length}건 · 시스템이 판단을 넘긴 항목`}>
