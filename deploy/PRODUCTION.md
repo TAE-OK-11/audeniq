@@ -104,7 +104,8 @@ postgres 이미지를 17로, 볼륨을 `pg_prod:/var/lib/postgresql/data`로 되
    WavPack(.wv, 순수 무손실 정수 PCM), TTA(.tta). MP3·AAC·WavPack 하이브리드/float/DSD는 받지 않는다.
 4. `POST …/uploads/{id}/complete`에서 API가 자기 키로 R2를 확인한다.
    크기·형식·nonce를 대조하고 `registered/…`로 복사(etag 고정)한 뒤,
-   내용을 스트리밍으로 받아 SHA-256과 실제 파일 형식(WAV/FLAC/JPEG/PNG/PDF)을 확인해 등록한다.
+   실제 파일 형식을 확인해 등록한다. 음원은 앞 64바이트만 범위 요청으로 읽고(전체를 받지 않는다),
+   커버·서류(20MB 이하)는 내용을 스트리밍으로 받아 SHA-256까지 계산한다.
    격리본은 바로 지우지 않는다: 그 객체가 일회용 잠금이다. 수명 주기 규칙(1일)이 지운다.
    ALAC·AIFF·WavPack·TTA는 FLAC으로 변환한다: 같은 샘플레이트·채널·비트를 보존하고
    원본/결과를 32bit PCM으로 디코딩한 SHA-256이 같아야 FLAC을 등록한다. 원본 해시는
@@ -117,7 +118,11 @@ postgres 이미지를 17로, 볼륨을 `pg_prod:/var/lib/postgresql/data`로 되
    읽기는 20MiB로 제한한다. 만료 검사는 해시·변환까지 끝난 뒤 트랜잭션 안에서 다시 한다.
    같은 컨테이너의 AAC는 `UPLOAD_LOSSY_NOT_ACCEPTED`로 거절. 변환은 API 프로세스당 한 번에 하나,
    임시 파일은 `api_tmp` 볼륨(`/var/tmp/audeniq`)에 둔다.
-5. worker는 등록된 파일을 자기 키로 받아 QC·패키징한다.
+5. 음원은 등록과 함께 `asset.analyze` 작업이 큐에 들어간다. worker가 원본을 **한 번만** 받아
+   받는 동안 SHA-256을 계산해 기록하고, 같은 파일로 Stage 1 QC(형식·음량·클리핑·잘림)와 지문을
+   미리 끝내 결과를 `operations.asset_qc_results`(내용 해시 기준 캐시)에 둔다. 아티스트가 신청서를
+   쓰는 동안 검사가 끝나고, 접수 후 Stage 1은 캐시를 써서 원본을 다시 받지 않는다(유사곡 비교만
+   접수 시점 카탈로그로 다시 한다). 검사가 끝나기 전에 접수하면 `AUDIO_NOT_VERIFIED`로 잠시 뒤 다시.
 
 R2 설정 (Cloudflare 대시보드):
 

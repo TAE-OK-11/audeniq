@@ -112,6 +112,8 @@ async fn presigned_put_accepts_only_the_declared_object() {
     assert_eq!(meta.size, body.len() as i64);
     assert_eq!(meta.content_type, "audio/wav");
     assert_eq!(meta.nonce, nonce);
+    // Upload completion sniffs audio with a ranged read, not a download.
+    assert_eq!(s.read_prefix(&key, 16).await.unwrap(), body[..16].to_vec());
 
     // The server copies it to its registered key and reads it back with its
     // own credentials (upload completion / Stage 1).

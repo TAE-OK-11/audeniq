@@ -698,11 +698,20 @@ async fn upload_binding_expiry_duplicate_and_freeze(pool: PgPool) {
     let (s, _, v) = call(&app, "POST", &path, body.clone(), Some(&a)).await;
     assert_eq!(s, StatusCode::OK, "{v}");
     assert_eq!(v["qc_status"], "PENDING");
-    // Regression (sandbox P0-1): completion must persist the content hash of
-    // the frozen bytes, otherwise Stage 1 never runs audio QC.
+    // Regression (sandbox P0-1): the content hash of the frozen bytes must be
+    // recorded, otherwise Stage 1 never runs audio QC. Completion only sniffs
+    // the first bytes of audio; the asset.analyze job it queues downloads the
+    // master once, records the hash and runs QC.
     let expected_sha = hex::encode(sha2::Sha256::digest(synth_body("audio/wav", 100)));
-    assert_eq!(v["sha256"], expected_sha.as_str());
+    assert!(v["sha256"].is_null(), "{v}");
     assert_eq!(v["detected_container"], "WAV");
+    let job = operations::claim(&pool, "qc", "analyzer", 60)
+        .await
+        .unwrap()
+        .expect("asset.analyze queued at completion");
+    assert_eq!(job.kind, "asset.analyze");
+    let analyzer: Arc<dyn ObjectStore> = store.clone();
+    operations::execute(&pool, &analyzer, &job).await.unwrap();
     let stored: Option<String> =
         sqlx::query_scalar("SELECT sha256 FROM catalog.assets WHERE id=$1")
             .bind(Uuid::parse_str(up["asset_id"].as_str().unwrap()).unwrap())
