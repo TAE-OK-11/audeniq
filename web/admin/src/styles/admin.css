@@ -325,3 +325,39 @@ button.adm-row:hover,a.adm-row:hover{background:#edf2ff}
 .adm-fix-pick .adm-select{flex:1 1 150px;min-width:0}
 
 @media(max-width:760px){.adm-stages{grid-template-columns:1fr}}
+
+/* ---------- 하위 탭 ---------- */
+.adm-subtabs{margin:0 0 14px}
+.adm-subtabs .adm-filter[aria-selected=true]{background:var(--adm-ink);color:#fff}
+
+/* ---------- 플랫폼별 요구 조건 ---------- */
+.adm-dspreq-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.adm-dspreq{background:var(--adm-soft);border-radius:22px;padding:16px}
+.adm-dspreq.is-bad{background:#fff1f2}
+.adm-dspreq.is-warn{background:#fff8ee}
+.adm-dspreq-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.adm-dspreq ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.adm-dspreq li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;font-size:12.5px}
+.adm-dspreq li b{display:block;font-size:13px}
+.adm-dspreq li small{display:block;color:var(--adm-muted);font-size:11.5px}
+.adm-dspreq-dot{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:900;background:#e3e8f1;color:#8a95ab}
+.adm-dspreq li.is-ok .adm-dspreq-dot{background:#21815B;color:#fff}
+.adm-dspreq li.is-bad .adm-dspreq-dot{background:#d92d3b;color:#fff}
+.adm-dspreq li.is-bad b{color:#b3232f}
+.adm-dspreq li.is-warn .adm-dspreq-dot{background:#e9a45c;color:#fff}
+.adm-dsp.is-bad{background:#fff1f2}
+
+/* ---------- 배급 현황 ---------- */
+.adm-deliv.is-bad{background:#fff6f7}
+.adm-deliv-rows{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:6px}
+.adm-deliv-rows li{display:grid;grid-template-columns:120px minmax(0,1fr) auto;align-items:center;gap:12px;padding:11px 14px;border-radius:16px;background:#fff}
+.adm-deliv-name{font-size:13.5px}
+.adm-deliv-head{display:block;font-size:13px;font-weight:720}
+.adm-deliv-rows li.is-green .adm-deliv-head{color:#1d6b4c}
+.adm-deliv-rows li.is-gray .adm-deliv-head{color:#5d6880}
+.adm-deliv-rows li.is-red .adm-deliv-head{color:#b3232f}
+.adm-deliv-problem{display:block;font-size:12.5px;color:#b3232f;margin-top:2px}
+.adm-deliv-note{display:block;font-size:12px;color:#a76525;margin-top:2px}
+.adm-link-btn{border:0;background:none;color:#7a86a0;font:inherit;font-size:12.5px;font-weight:720;cursor:pointer;padding:6px 8px;border-radius:10px}
+.adm-link-btn:hover{background:var(--adm-soft-2);color:var(--adm-ink)}
+@media(max-width:760px){.adm-deliv-rows li{grid-template-columns:minmax(0,1fr) auto}.adm-deliv-rows li .adm-min{grid-column:1/-1;grid-row:2}}

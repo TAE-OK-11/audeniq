@@ -3,7 +3,7 @@ import { Link, useSearchParams } from '../../lib/router';
 import { errorMessage } from '../../api/errors';
 import { staffApi, type QueueRelease } from '../api';
 import { QUEUE_FILTERS, RELEASE_STATUS, RELEASE_TYPE, ago, applicationPending, day, pick } from '../labels';
-import { Chip, Empty, ErrorBox, Filters, Initial, PageHead, Skeleton, StatusChip } from '../ui';
+import { Chip, Empty, ErrorBox, Filters, Initial, PageHead, Skeleton, StatusChip, SubTabs, useStaff } from '../ui';
 
 const PAGE = 50;
 
@@ -16,6 +16,7 @@ export function ReviewQueue() {
   const [more, setMore] = useState(false);
   const [tick, setTick] = useState(0);
   const [search, setSearch] = useState('');
+  const { counts } = useStaff();
 
   useEffect(() => {
     let alive = true;
@@ -51,6 +52,7 @@ export function ReviewQueue() {
         sub="새로 들어온 발매 신청과 2차 검사에서 담당자 판단이 필요한 발매예요. 오래 기다린 순서로 보여요. 발매를 열어 신청서와 검사 결과를 보고 승인·보완 요청·거절을 결정해 주세요."
         actions={<button type="button" className="adm-btn soft small" onClick={() => setTick(t => t + 1)}>새로고침</button>}
       />
+      <SubTabs tabs={[{ to: '/admin/reviews', label: '심사 목록', count: counts?.review }, { to: '/admin/approvals', label: '2차 승인', count: counts?.second_approvals }]} />
       <Filters
         label="발매 상태"
         value={status}

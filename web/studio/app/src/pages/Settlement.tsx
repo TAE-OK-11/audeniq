@@ -20,7 +20,7 @@ const PAYOUT_STATUS: Record<Payout['status'], [string, string]> = {
   sent: ['지급 완료', 'live'],
   failed: ['지급 실패', 'needs'],
 };
-import { money, niceDate } from '../lib/format';
+import { money, niceDate, NO_INCOME } from '../lib/format';
 import { monthKey, todayStr } from '../lib/date';
 import { uid } from '../lib/store';
 
@@ -171,7 +171,9 @@ export function Settlement() {
           <div>
             <span className="eyebrow">PAYOUT</span>
             <h2 id="settleHeroHeading">요청 전 잔액</h2>
-            <strong className="settle-hero-amount"><CountUp value={left} format={money} /></strong>
+            {left > 0 || total > 0
+              ? <strong className="settle-hero-amount"><CountUp value={left} format={money} /></strong>
+              : <strong className="settle-hero-amount aq-no-income">{NO_INCOME}</strong>}
             <p className="settle-hero-sub">
               {MOCK ? `기록한 정산액 ${money(total)} · 지급 요청 합계 ${money(used)}` : `확정 정산액 ${money(total)} · 처리 중인 지급 ${money(used)}`}
             </p>

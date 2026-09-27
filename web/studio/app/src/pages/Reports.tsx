@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useToast } from '../components/Toast';
 import { CountUp } from '../components/CountUp';
-import { money, num } from '../lib/format';
+import { money, num, NO_INCOME } from '../lib/format';
 import { todayStr } from '../lib/date';
 import { useGrowOnView, type CSSVarStyle } from '../hooks/useAnimations';
 import { periodLabel as monthLabel, periods, type ReportRow } from '../data/reports';
@@ -184,7 +184,7 @@ export function Reports() {
         </header>
 
         <div className="aq-report-doc-stats">
-          <div><small>집계 수익</small><strong><CountUp value={totalRevenue} format={money} /></strong></div>
+          <div><small>집계 수익</small><strong>{totalRevenue > 0 ? <CountUp value={totalRevenue} format={money} /> : <span className="aq-no-income">{NO_INCOME}</span>}</strong></div>
           <div><small>재생 수</small><strong><CountUp value={totalPlays} format={n => `${num(n)}회`} /></strong></div>
           <div><small>플랫폼</small><strong>{platforms}곳</strong></div>
         </div>

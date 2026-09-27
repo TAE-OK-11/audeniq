@@ -38,14 +38,14 @@ export function Icon({ name }: { name: string }) {
   return <svg viewBox="0 0 24 24" aria-hidden="true">{ICONS[name]}</svg>;
 }
 
-interface NavItem { to: string; label: string; icon: string; count?: (o: Overview) => number; hot?: boolean; adminOnly?: boolean }
+interface NavItem { to: string; label: string; icon: string; count?: (o: Overview) => number; hot?: boolean; adminOnly?: boolean; also?: string[] }
 const NAV: { group: string; items: NavItem[] }[] = [
   { group: 'OVERVIEW', items: [{ to: '/', label: '오늘의 업무', icon: 'home' }] },
   {
     group: 'REVIEW',
     items: [
-      { to: '/reviews', label: '발매 심사', icon: 'review', count: o => o.review, hot: true },
-      { to: '/approvals', label: '2차 승인', icon: 'approval', count: o => o.second_approvals, hot: true },
+      // 2차 승인은 발매 심사 안의 탭
+      { to: '/reviews', label: '발매 심사', icon: 'review', count: o => o.review + o.second_approvals, hot: true, also: ['/approvals'] },
       { to: '/documents', label: '서류 검토', icon: 'doc', count: o => o.documents },
     ],
   },
@@ -53,8 +53,8 @@ const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: 'DISTRIBUTION',
     items: [
-      { to: '/deliveries', label: '배급 승인', icon: 'delivery', count: o => o.deliveries_to_approve },
-      { to: '/dsps', label: 'DSP 현황', icon: 'dsp' },
+      // 배급은 최종 승인 + 아티스트 서명 후 자동 — 여기서는 현황과 문제만 본다 (플랫폼 조건은 탭)
+      { to: '/deliveries', label: '배급 현황', icon: 'delivery', count: o => o.deliveries_blocked, hot: true, also: ['/dsps'] },
       { to: '/payouts', label: '지급 요청', icon: 'payout', count: o => o.payout_requests, adminOnly: true },
     ],
   },
@@ -170,7 +170,7 @@ export function AdminApp() {
                 <div className="adm-side-label">{g.group}</div>
                 {g.items.filter(i => !i.adminOnly || me.role === 'ADMIN').map(i => {
                   const n = counts && i.count ? i.count(counts) : 0;
-                  const cur = active(loc.pathname, i.to);
+                  const cur = active(loc.pathname, i.to) || !!i.also?.some(a => active(loc.pathname, a));
                   return (
                     <Link key={i.to} to={i.to} aria-current={cur ? 'page' : undefined}>
                       <span><Icon name={i.icon} />{i.label}</span>
