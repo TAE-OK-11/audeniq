@@ -757,7 +757,7 @@ const TrackEditor = memo(function TrackEditor({
         />
         <UploadStatus upload={upload} idle={t.audioName
           ? `${t.audioName}${t.audioSpec ? ` · ${t.audioSpec}` : t.audioSize ? ` · ${fileSize(t.audioSize)}` : ''}${t.assetId ? ' · 업로드 완료' : MOCK ? '' : ' · 업로드되지 않았어요. 파일을 다시 선택해 주세요.'}`
-          : '무손실 WAV·FLAC 원본 · 44.1kHz 이상, 16bit 이상, 스테레오'} />
+          : '무손실 원본 WAV·FLAC·ALAC(.m4a)·AIFF·WavPack(.wv)·TTA · 44.1kHz 이상, 16bit 이상, 스테레오'} />
       </div>
       <div className="track-duration-label" aria-live="polite">
         {t.duration ? `곡 길이 · ${t.duration}` : '음원을 선택하면 곡 길이를 자동으로 확인해요.'}
@@ -1890,7 +1890,23 @@ export function Upload() {
             <div className="form-grid">
               <div className="field">
                 <label htmlFor="f-ownership">음원(마스터) 권리자 <span className="required">*</span></label>
-                <input id="f-ownership" value={form.ownership} onChange={e => set('ownership', e.target.value)} maxLength={160} placeholder="개인명 또는 법인명" />
+                <input
+                  id="f-ownership" value={form.ownership} maxLength={160} placeholder="개인명 또는 법인명"
+                  onChange={e => {
+                    // 권리자를 입력하면 ℗·© 표기를 ‘연도 권리자’로 바로 채운다 (직접 고친 표기는 건드리지 않음)
+                    const who = e.target.value;
+                    const y = (form.releaseDate || todayStr()).slice(0, 4);
+                    const auto = (v: string) => !v.trim() || v === `${y} ${form.ownership.trim()}`;
+                    const line = who.trim() ? `${y} ${who.trim()}` : '';
+                    setForm(f => ({
+                      ...f, ownership: who,
+                      phonogram: auto(f.phonogram) ? line : f.phonogram,
+                      copyright: auto(f.copyright) ? line : f.copyright,
+                    }));
+                    dirtyRef.current = true;
+                  }}
+                />
+                <small className="help">입력하면 아래 ℗·© 표기가 ‘{(form.releaseDate || todayStr()).slice(0, 4)} 권리자명’으로 자동으로 채워져요. 다르면 직접 고쳐 주세요.</small>
               </div>
               <div className="field">
                 <label htmlFor="f-phonogram">℗ 음반제작자 권리 표기 <span className="required">*</span></label>
