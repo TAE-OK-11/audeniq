@@ -8,14 +8,14 @@ New application logic and tests are Rust only. The three supplied frontend packa
 
 ## Local development
 
-Requires Rust 1.98.1, Docker Engine + Compose v2. PostgreSQL 17 is the target database.
+Requires Rust 1.98.1, Docker Engine + Compose v2. PostgreSQL 18 is the target database (API/worker connect through PgBouncer in Compose).
 
 1. Copy `.env.example` to `.env`. Set three different random URL-safe database passwords and a random `EDGE_SERVICE_SECRET` of at least 32 characters. Do not commit `.env`.
 2. `docker compose up --build -d` starts PostgreSQL, runs SQLx migrations using the owner, applies separate runtime grants, and starts API/worker. Storage is disabled until configured.
 3. `docker compose logs api worker migrate grants` shows startup results. No public host port is opened: dev ports bind loopback only.
 4. Access control-plane APIs through the BFF or a development HTTP client carrying the service secret. See `docs/API.md`.
 
-Native workflow: start an isolated PostgreSQL 17 instance, set `DATABASE_URL`, and run `cargo run -p audeniq-core --bin audeniq-migrate` with the migration owner. Apply `deploy/grants.sql` after creating the runtime roles. Switch `DATABASE_URL` to the API/worker login before `cargo run --bin audeniq-api` or `cargo run --bin audeniq-worker`. Native binaries read environment variables; they do not automatically load `.env`.
+Native workflow: start an isolated PostgreSQL 18 instance, set `DATABASE_URL`, and run `cargo run -p audeniq-core --bin audeniq-migrate` with the migration owner. Apply `deploy/grants.sql` after creating the runtime roles. Switch `DATABASE_URL` to the API/worker login before `cargo run --bin audeniq-api` or `cargo run --bin audeniq-worker`. Native binaries read environment variables; they do not automatically load `.env`.
 
 ## Validation
 

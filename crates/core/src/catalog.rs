@@ -196,7 +196,9 @@ pub async fn list(s: &AppState, a: &Actor, org: Uuid, kind: Kind, page: Page) ->
         "SELECT to_jsonb(t) AS body FROM {} t WHERE t.org_id=$1 AND t.archived_at IS NULL AND EXISTS(SELECT 1 FROM identity.resource_acl acl WHERE acl.org_id=t.org_id AND acl.resource_id=t.id AND acl.principal_party_id=$2 AND acl.action='read' AND acl.revoked_at IS NULL AND acl.starts_at<=now() AND (acl.ends_at IS NULL OR acl.ends_at>now())) AND ($3::uuid IS NULL OR t.id>$3) ORDER BY t.id LIMIT $4",
         kind.table()
     );
-    let mut rows: Vec<Value> = sqlx::query_scalar(&query)
+    // Audited: only `kind.table()` (a fixed enum -> static table name) is
+    // interpolated; every value is a bound parameter.
+    let mut rows: Vec<Value> = sqlx::query_scalar(sqlx::AssertSqlSafe(query))
         .bind(org)
         .bind(a.party)
         .bind(page.after)
@@ -288,7 +290,8 @@ pub async fn get(s: &AppState, a: &Actor, org: Uuid, kind: Kind, id: Uuid) -> Re
         "SELECT to_jsonb(t) FROM {} t WHERE org_id=$1 AND id=$2 AND archived_at IS NULL",
         kind.table()
     );
-    let mut v: Value = sqlx::query_scalar(&q)
+    // Audited: static table name from the Kind enum; values are bound.
+    let mut v: Value = sqlx::query_scalar(sqlx::AssertSqlSafe(q))
         .bind(org)
         .bind(id)
         .fetch_optional(&mut *tx)
@@ -370,7 +373,8 @@ pub async fn archive(
         "UPDATE {} SET archived_at=now(),row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND row_version=$3 AND archived_at IS NULL{extra}",
         kind.table()
     );
-    if sqlx::query(&q)
+    // Audited: static table name + static status filter; values are bound.
+    if sqlx::query(sqlx::AssertSqlSafe(q))
         .bind(org)
         .bind(id)
         .bind(version)

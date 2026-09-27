@@ -1,7 +1,7 @@
 use crate::error::{Error, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;

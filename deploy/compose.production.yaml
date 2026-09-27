@@ -13,7 +13,10 @@ x-runtime: &runtime
 services:
   postgres:
     restart: unless-stopped
-    image: postgres:17-bookworm
+    # PostgreSQL 18 keeps its data under /var/lib/postgresql/18/docker, so the
+    # volume mounts one level up. pg_prod (17) stays for rollback; move data
+    # with ./pg-upgrade.sh once (deploy.sh refuses to start until then).
+    image: postgres:18-trixie
     environment:
       POSTGRES_USER: audeniq_owner
       POSTGRES_DB: audeniq_prod
@@ -21,7 +24,7 @@ services:
       API_DB_PASSWORD: ${API_DB_PASSWORD:?set production API password}
       WORKER_DB_PASSWORD: ${WORKER_DB_PASSWORD:?set production worker password}
     volumes:
-      - pg_prod:/var/lib/postgresql/data
+      - pg18_prod:/var/lib/postgresql
       - ./bootstrap.sql:/docker-entrypoint-initdb.d/001-roles.sql:ro
       - ./grants.sql:/opt/audeniq/grants.sql:ro
     networks: [backend]
@@ -46,7 +49,7 @@ services:
     mem_limit: 256m
     cpus: 0.5
   grants:
-    image: postgres:17-bookworm
+    image: postgres:18-trixie
     command: [psql, -h, postgres, -U, audeniq_owner, -d, audeniq_prod, -v, ON_ERROR_STOP=1, -f, /opt/grants.sql]
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD}
@@ -166,7 +169,7 @@ secrets:
   tunnel_token:
     file: ./tunnel-token
 volumes:
-  pg_prod:
+  pg18_prod:
   worker_tmp:
 networks:
   backend: {internal: true}

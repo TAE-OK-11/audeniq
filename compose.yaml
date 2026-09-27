@@ -14,7 +14,7 @@ x-runtime: &runtime
     options: {max-size: 10m, max-file: '3'}
 services:
   postgres:
-    image: postgres:17-bookworm
+    image: postgres:18-trixie
     environment:
       POSTGRES_USER: audeniq_owner
       POSTGRES_DB: audeniq_dev
@@ -22,7 +22,7 @@ services:
       API_DB_PASSWORD: ${API_DB_PASSWORD:?set local API password}
       WORKER_DB_PASSWORD: ${WORKER_DB_PASSWORD:?set local worker password}
     volumes:
-      - pg_dev:/var/lib/postgresql/data
+      - pg18_dev:/var/lib/postgresql
       - ./deploy/bootstrap.sql:/docker-entrypoint-initdb.d/001-roles.sql:ro
       - ./deploy/grants.sql:/opt/audeniq/grants.sql:ro
     ports: ['127.0.0.1:5432:5432']
@@ -45,7 +45,7 @@ services:
     mem_limit: 256m
     cpus: 0.5
   grants:
-    image: postgres:17-bookworm
+    image: postgres:18-trixie
     command: [psql, -h, postgres, -U, audeniq_owner, -d, audeniq_dev, -v, ON_ERROR_STOP=1, -f, /opt/grants.sql]
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD}
@@ -137,7 +137,7 @@ services:
     mem_limit: 1536m
     cpus: 1.5
 volumes:
-  pg_dev:
+  pg18_dev:
   worker_tmp:
 networks:
   backend: {internal: true}

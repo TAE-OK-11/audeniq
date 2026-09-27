@@ -1184,7 +1184,7 @@ async fn dsp_routing_prefers_partner_ddex_message(pool: PgPool) {
     let ctx = ready_package(&pool).await;
     let mock_dsp = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
     let ddex_xml = "<ern:NewReleaseMessage xmlns:ern=\"http://ddex.net/xml/ern/382\">partner-ddex</ern:NewReleaseMessage>";
-    let ddex_sha = format!("{:x}", sha2::Sha256::digest(ddex_xml.as_bytes()));
+    let ddex_sha = hex::encode(sha2::Sha256::digest(ddex_xml.as_bytes()));
     let mut c = authed(&pool, ctx.org).await;
     sqlx::query("INSERT INTO distribution.ddex_messages(package_id,org_id,dsp_id,sender_name,sender_dpid,recipient_name,recipient_dpid,ern_xml,ern_sha256) VALUES($1,$2,$3,'s','SENDER-DPID-1','MockDSP','TESTDPID-MOCKDSP-0001',$4,$5)")
         .bind(ctx.package_id).bind(ctx.org).bind(mock_dsp).bind(ddex_xml).bind(&ddex_sha)

@@ -19,7 +19,7 @@ use crate::{
 };
 use aes_gcm::{
     Aes256Gcm, KeyInit, Nonce,
-    aead::{Aead, AeadCore, OsRng},
+    aead::{Aead, Generate},
 };
 use axum::{
     Json, Router,
@@ -187,7 +187,8 @@ fn account_key() -> Result<Aes256Gcm> {
 /// ciphertext copied to another organisation fails to open.
 pub fn seal_account(org: Uuid, number: &str) -> Result<Vec<u8>> {
     let cipher = account_key()?;
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+    // Fresh random 96-bit nonce from the OS RNG for every seal.
+    let nonce = Nonce::generate();
     let ct = cipher
         .encrypt(
             &nonce,
@@ -211,7 +212,7 @@ pub fn open_account(org: Uuid, sealed: &[u8]) -> Result<String> {
     let (nonce, ct) = sealed.split_at(12);
     let pt = cipher
         .decrypt(
-            Nonce::from_slice(nonce),
+            &Nonce::try_from(nonce).map_err(|_| Error::Internal)?,
             aes_gcm::aead::Payload {
                 msg: ct,
                 aad: org.as_bytes(),
@@ -514,6 +515,8 @@ pub async fn read_notifications(s: &AppState, a: &Actor, org: Uuid, i: ReadInput
 // ---------------------------------------------------------------------------
 // Documents (agreements to sign, rights proofs to submit)
 // ---------------------------------------------------------------------------
+// DOC_JSON / APP_JSON / the report `base` are compile-time SQL fragments
+// interpolated into queries (sqlx::AssertSqlSafe); every value is bound.
 const DOC_JSON: &str = "jsonb_build_object('id',d.id,'kind',d.kind,'release_id',d.release_id,'release_title',r.title,'title',d.title,'version',d.version,
   'body',d.body,'status',d.status,'review_note',d.review_note,'asset_id',d.asset_id,'file_name',d.file_name,'checked_at',d.checked_at,
   'signer_name',d.signer_name,'signature',d.signature,'signed_at',d.signed_at,'row_version',d.row_version,'created_at',d.created_at,'updated_at',d.updated_at)";
@@ -521,10 +524,10 @@ const DOC_JSON: &str = "jsonb_build_object('id',d.id,'kind',d.kind,'release_id',
 pub async fn list_documents(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
     member(&mut tx, a, org, false).await?;
-    let items: Vec<Value> = sqlx::query_scalar(&format!(
+    let items: Vec<Value> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT {DOC_JSON} FROM portal.documents d LEFT JOIN catalog.releases r ON r.id=d.release_id
          WHERE d.org_id=$1 ORDER BY d.created_at DESC LIMIT 200"
-    ))
+    )))
     .bind(org)
     .fetch_all(&mut *tx)
     .await?;
@@ -782,9 +785,9 @@ const APP_JSON: &str = "jsonb_build_object('application_no',application_no,'form
 pub async fn get_application(s: &AppState, a: &Actor, org: Uuid, release: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, release, "release", false).await?;
-    let v: Option<Value> = sqlx::query_scalar(&format!(
+    let v: Option<Value> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT {APP_JSON} FROM portal.release_applications WHERE org_id=$1 AND release_id=$2 ORDER BY received_at DESC LIMIT 1"
-    ))
+    )))
     .bind(org)
     .bind(release)
     .fetch_optional(&mut *tx)
@@ -1087,17 +1090,17 @@ pub async fn reports(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
     member(&mut tx, a, org, false).await?;
     let base = "FROM finance.report_lines l JOIN finance.royalty_reports rr ON rr.id=l.report_id
                 WHERE l.org_id=$1 AND l.match_status='AUTO' AND rr.period_start >= (date_trunc('month', now()) - interval '11 months')";
-    let by_month: Vec<Value> = sqlx::query_scalar(&format!(
+    let by_month: Vec<Value> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT jsonb_build_object('month',to_char(rr.period_start,'YYYY-MM'),'streams',COALESCE(SUM(l.quantity),0)::text,'revenue',COALESCE(SUM(l.gross_amount),0)::text)
          {base} GROUP BY to_char(rr.period_start,'YYYY-MM') ORDER BY 1"
-    ))
+    )))
     .bind(org)
     .fetch_all(&mut *tx)
     .await?;
-    let by_dsp: Vec<Value> = sqlx::query_scalar(&format!(
+    let by_dsp: Vec<Value> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT jsonb_build_object('dsp',rr.dsp_id,'streams',COALESCE(SUM(l.quantity),0)::text,'revenue',COALESCE(SUM(l.gross_amount),0)::text)
          {base} GROUP BY rr.dsp_id ORDER BY SUM(l.quantity) DESC NULLS LAST"
-    ))
+    )))
     .bind(org)
     .fetch_all(&mut *tx)
     .await?;

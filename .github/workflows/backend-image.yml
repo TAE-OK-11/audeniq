@@ -43,21 +43,21 @@ jobs:
       digest: ${{ steps.build.outputs.digest }}
       sha: ${{ steps.name.outputs.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: name
         name: Image name
         run: |
           # GHCR 이름은 소문자만 허용
           echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/audeniq" >> "$GITHUB_OUTPUT"
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ steps.name.outputs.image }}
           tags: |
@@ -69,7 +69,7 @@ jobs:
             org.opencontainers.image.description=AUDENIQ API, worker, migrate and admin binaries
             org.opencontainers.image.revision=${{ steps.name.outputs.sha }}
       - id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: deploy/Dockerfile
@@ -94,7 +94,7 @@ jobs:
       - name: Attest build provenance
         # 비공개 저장소의 attestation은 GitHub Enterprise Cloud에서만 지원된다
         if: ${{ !github.event.repository.private }}
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ steps.name.outputs.image }}
           subject-digest: ${{ steps.build.outputs.digest }}
@@ -142,7 +142,7 @@ jobs:
       DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
       DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/audeniq' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.image.outputs.sha }}
       - name: Check deploy settings
@@ -171,7 +171,7 @@ jobs:
         # compose·grants·bootstrap은 이미지(마이그레이션)와 같은 커밋이어야 한다. 비밀 파일은 서버에만 있다.
         run: |
           ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
-          scp -i ~/.ssh/deploy_key deploy/compose.production.yaml deploy/bootstrap.sql deploy/grants.sql deploy/deploy.sh \
+          scp -i ~/.ssh/deploy_key deploy/compose.production.yaml deploy/bootstrap.sql deploy/grants.sql deploy/deploy.sh deploy/pg-upgrade.sh \
             "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
           scp -r -i ~/.ssh/deploy_key deploy/pgbouncer "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
       - name: Deploy
@@ -181,7 +181,7 @@ jobs:
         run: |
           # 이 작업 동안만 유효한 토큰으로 GHCR에 로그인해 받고, 끝나면 로그아웃한다
           ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
-            "cd '$DEPLOY_PATH' && chmod +x deploy.sh && GHCR_USER='$ACTOR' GHCR_TOKEN_STDIN=1 ./deploy.sh '$REF'" <<< "$TOKEN"
+            "cd '$DEPLOY_PATH' && chmod +x deploy.sh pg-upgrade.sh && GHCR_USER='$ACTOR' GHCR_TOKEN_STDIN=1 ./deploy.sh '$REF'" <<< "$TOKEN"
       - name: Summary
         run: |
           echo "배포됨: \`$REF\` → \`$DEPLOY_HOST:$DEPLOY_PATH\`" >> "$GITHUB_STEP_SUMMARY"

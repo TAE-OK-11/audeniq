@@ -1630,7 +1630,7 @@ async fn immutable_contract_route_package_lineage(pool: PgPool) {
         "distribution.route_plans",
         "distribution.packages",
     ] {
-        let error = sqlx::query(&format!("DELETE FROM {table}"))
+        let error = sqlx::query(sqlx::AssertSqlSafe(format!("DELETE FROM {table}")))
             .execute(&pool)
             .await
             .unwrap_err();

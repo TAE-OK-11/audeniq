@@ -10,6 +10,10 @@ license = "UNLICENSED"
 lto = "thin"
 codegen-units = 1
 strip = true
+# worker 0.8's wasm-bindgen pass (catch wrappers / abort recovery) needs the
+# symbols a stripped .wasm loses; the backend binaries stay stripped.
+[profile.release.package.audeniq-edge]
+strip = false
 
 # 테스트 서버용 이미지 빌드 (GitHub Actions Backend image): LTO·단일 코드젠 없이 빨리 컴파일
 [profile.fast]
