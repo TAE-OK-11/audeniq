@@ -216,7 +216,9 @@ pub async fn complete(
         )
         .await?;
         tx.commit().await?;
-        drop_quarantine(s, &key).await;
+        // The quarantine object is not deleted: it is the single-use lock for
+        // the upload URL (signed If-None-Match: *). The bucket lifecycle rule
+        // removes quarantine/ objects after a day.
         // The frozen upload was only the conversion source.
         drop_quarantine(s, &stable).await;
         return Ok(
@@ -269,7 +271,9 @@ pub async fn complete(
     )
     .await?;
     tx.commit().await?;
-    drop_quarantine(s, &key).await;
+    // The quarantine object is not deleted: it is the single-use lock for
+    // the upload URL (signed If-None-Match: *). The bucket lifecycle rule
+    // removes quarantine/ objects after a day.
     Ok(
         json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":false,"sha256":digest.sha256,"detected_container":detected}),
     )
@@ -416,8 +420,8 @@ pub async fn cancel(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Valu
     .await?
     .ok_or(Error::NotFound)?;
     auth::authorize(&mut tx, a, org, asset, "asset", true).await?;
-    let (status, key): (String, String) = sqlx::query_as(
-        "SELECT status, expected_key FROM catalog.upload_sessions WHERE org_id=$1 AND id=$2 FOR UPDATE",
+    let status: String = sqlx::query_scalar(
+        "SELECT status FROM catalog.upload_sessions WHERE org_id=$1 AND id=$2 FOR UPDATE",
     )
     .bind(org)
     .bind(id)
@@ -455,6 +459,8 @@ pub async fn cancel(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Valu
     )
     .await?;
     tx.commit().await?;
-    drop_quarantine(s, &key).await;
+    // The quarantine object is not deleted: it is the single-use lock for
+    // the upload URL (signed If-None-Match: *). The bucket lifecycle rule
+    // removes quarantine/ objects after a day.
     Ok(json!({"cancelled":true,"duplicate":false}))
 }

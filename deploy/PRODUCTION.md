@@ -95,6 +95,9 @@ postgres 이미지를 17로, 볼륨을 `pg_prod:/var/lib/postgresql/data`로 되
    - 쓸 수 있는 곳: `quarantine/{org}/{asset}/{nonce}` 한 경로, `PUT`만, 10분 동안. 신청서에서 파일을 고를 때마다 서버가 그때 새로 만든다.
    - 서명에 묶인 것: 정확한 바이트 수(`Content-Length`), 형식(`Content-Type`), 일회용 nonce.
      크기나 형식이 다르거나 URL을 고치면 R2가 403으로 거절한다. 다른 경로·읽기·삭제·목록은 불가.
+   - **한 번만 사용**: `If-None-Match: *`도 서명에 묶여서, 그 경로가 비어 있을 때만 PUT이 된다.
+     한 번 올라가면 같은 URL은 만료 전이라도 412로 거절된다(유출돼도 덮어쓰기·반복 업로드 불가).
+     Studio는 412를 받으면 등록하지 않고 파일을 다시 고르게 한다(새 URL 발급).
    - URL에 보이는 것은 액세스 키 **ID**와 계정 엔드포인트뿐이다. ID만으로는 아무것도 서명할 수 없다.
 3. 기기가 그 URL로 R2에 PUT한다. 파일은 우리 서버를 거치지 않는다.
    받는 음원: WAV·FLAC(16/24bit PCM), ALAC(.m4a), PCM AIFF(.aif/.aiff/.aifc),
@@ -102,7 +105,7 @@ postgres 이미지를 17로, 볼륨을 `pg_prod:/var/lib/postgresql/data`로 되
 4. `POST …/uploads/{id}/complete`에서 API가 자기 키로 R2를 확인한다.
    크기·형식·nonce를 대조하고 `registered/…`로 복사(etag 고정)한 뒤,
    내용을 스트리밍으로 받아 SHA-256과 실제 파일 형식(WAV/FLAC/JPEG/PNG/PDF)을 확인해 등록한다.
-   격리본은 지운다.
+   격리본은 바로 지우지 않는다: 그 객체가 일회용 잠금이다. 수명 주기 규칙(1일)이 지운다.
    ALAC·AIFF·WavPack·TTA는 FLAC으로 변환한다: 같은 샘플레이트·채널·비트를 보존하고
    원본/결과를 32bit PCM으로 디코딩한 SHA-256이 같아야 FLAC을 등록한다. 원본 해시는
    변환과 동시에 계산하므로 전체 디코딩은 2회다. 변환은 16/24bit, 44.1~192kHz, 1~2채널이며
@@ -124,7 +127,8 @@ R2 설정 (Cloudflare 대시보드):
   - worker: *Object Read* → `S3_WORKER_ACCESS_KEY_ID`/`S3_WORKER_SECRET_ACCESS_KEY`
     (ffmpeg으로 사용자 파일을 여는 쪽이라 쓰기·삭제 권한을 주지 않는다. 비우면 api 토큰을 쓴다)
 - CORS: `r2-cors.json` (Studio 도메인에서 `PUT`만).
-- 수명 주기 규칙: `quarantine/` 접두사 1일 후 삭제 (완료·취소되지 않은 업로드 정리).
+- 수명 주기 규칙: `quarantine/` 접두사 1일 후 삭제 (격리본·완료되지 않은 업로드 정리). **필수**: 이 규칙이 없으면 격리본이 쌓인다.
+- CORS에 `If-None-Match` 헤더가 허용돼 있어야 한다(`r2-cors.json`).
 - 키가 새면 Cloudflare에서 그 토큰만 폐기하고 새 토큰을 `production.env`에 넣은 뒤 `./deploy.sh`로 다시 올린다.
   이미 발급된 서명 URL도 폐기된 토큰으로 서명됐으니 함께 무효가 된다.
 
