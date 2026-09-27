@@ -3,6 +3,9 @@ x-runtime: &runtime
   build:
     context: .
     dockerfile: deploy/Dockerfile
+    # CI 스모크는 CARGO_PROFILE=dev로 빨리 빌드한다 (기본은 운영과 같은 release)
+    args:
+      CARGO_PROFILE: ${CARGO_PROFILE:-release}
   init: true
   read_only: true
   cap_drop: [ALL]
