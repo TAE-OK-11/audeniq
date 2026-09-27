@@ -1,0 +1,43 @@
+name: Admin deploy
+# 관리자 콘솔(web/admin)이 바뀌면 어느 브랜치든 타입 검사 → 빌드를 돌리고,
+# main일 때만 Cloudflare Worker(audeniq-admin)로 배포한다.
+# 필요한 저장소 Secrets: CLOUDFLARE_API_TOKEN (Workers Scripts:Edit), CLOUDFLARE_ACCOUNT_ID
+# Worker 비밀(한 번만): npx wrangler secret put EDGE_SERVICE_SECRET  (web/admin에서)
+on:
+  push:
+    paths:
+      - web/admin/**
+      - .github/workflows/admin-deploy.yml
+  pull_request:
+    paths:
+      - web/admin/**
+      - .github/workflows/admin-deploy.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: admin-deploy-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: web/admin/.bun-version
+      - name: Type check and build
+        working-directory: web/admin
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+      - name: Deploy to Cloudflare Workers
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        working-directory: web/admin
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bunx wrangler deploy
