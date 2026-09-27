@@ -1,4 +1,5 @@
-FROM rust:1.98.1-trixie AS build
+FROM rust:1.98.1-slim-trixie AS build
+# 빌드·실행 모두 Debian 13(trixie) slim 기반: 빌드는 rust slim-trixie, 실행은 debian:13-slim
 # release(기본): LTO까지 한 운영 빌드. fast: 테스트 서버용으로 빨리 컴파일 (Cargo.toml [profile.fast])
 ARG CARGO_PROFILE=release
 WORKDIR /build
