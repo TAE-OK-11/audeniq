@@ -1,5 +1,6 @@
 // 관리자 화면 공통 조각 — 칩, 페이지 머리, 빈 상태, 로딩, 오류, 필터 레일.
 import { createContext, useContext, type ReactNode } from 'react';
+import { Link, useLocation } from '../lib/router';
 import type { Duty, Overview, StaffMe } from './api';
 import type { Tone } from './labels';
 
@@ -101,4 +102,18 @@ export function useStaff(): StaffCtx {
 /** 권한이 없는 작업 버튼 옆에 붙이는 안내 */
 export function NoDuty({ duty }: { duty: string }) {
   return <div className="adm-alert">현재 역할로는 <b>{duty}</b> 작업을 할 수 없어요. 조회만 가능해요.</div>;
+}
+
+/** 한 메뉴 안의 하위 화면 (발매 심사 | 2차 승인, 배급 현황 | DSP 사양) */
+export function SubTabs({ tabs }: { tabs: { to: string; label: string; count?: number }[] }) {
+  const loc = useLocation();
+  return (
+    <div className="adm-filters adm-subtabs" role="tablist">
+      {tabs.map(t => (
+        <Link key={t.to} to={t.to} role="tab" className="adm-filter" aria-selected={loc.pathname === t.to} aria-pressed={loc.pathname === t.to}>
+          {t.label}{t.count ? ` ${t.count}` : ''}
+        </Link>
+      ))}
+    </div>
+  );
 }

@@ -1162,3 +1162,12 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 @media(max-width:600px){.aq-dsp-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.aq-dsp{min-height:56px;padding:9px 10px;gap:9px}.aq-dsp-mark{width:30px;height:30px}.aq-dsp-name{font-size:12.5px}}
 @media(prefers-reduced-motion:reduce){.aq-chip,.aq-dsp,.aq-dsp-mark,.aq-dsp-check{transition:none}}
 .status-chip.cancelled{background:#EDEFF4!important;color:#6A7386!important}
+/* 수입이 아직 없을 때 — 큰 숫자 자리에 들어가는 안내 문장 */
+.aq-no-income{font-size:clamp(17px,2.4vw,22px)!important;font-weight:760;letter-spacing:-.03em;color:#5d6880}
+/* 진행 단계 — 체크 표시 없이 지나온 단계와 지금 단계를 파란색으로 채운다 */
+.aq-pipeline-dot{width:16px!important;height:16px!important;border:0!important;box-shadow:none!important;background:#e3e8f1!important;margin-top:7px}
+.aq-pipeline li.is-done .aq-pipeline-dot,.aq-pipeline li.is-current .aq-pipeline-dot{background:var(--aq-e-blue,#3B63F3)!important}
+.aq-pipeline li.is-current .aq-pipeline-dot{box-shadow:0 0 0 5px #3b63f326!important}
+.aq-pipeline li.is-warn .aq-pipeline-dot{background:#e9a45c!important;box-shadow:0 0 0 5px #e9a45c2e!important}
+.aq-pipeline li.is-error .aq-pipeline-dot{background:#d92d3b!important;box-shadow:0 0 0 5px #d92d3b24!important}
+.aq-pipeline li.is-done{color:var(--aq-e-blue,#3B63F3)}

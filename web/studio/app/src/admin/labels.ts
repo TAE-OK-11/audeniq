@@ -224,7 +224,7 @@ export function systemStages(status: string): Stage[] {
   const s = at[status] ?? ['wait', 'wait', 'wait'];
   return [
     { key: 's1', label: '1차 검사', hint: '파일 형식·음질·음량·중복 음원', state: s[0] },
-    { key: 's2', label: '2차 검사', hint: '권리·메타데이터·콘텐츠 신고', state: s[1] },
-    { key: 's3', label: '3차 배급 준비', hint: 'UPC·ISRC 발급·플랫폼별 패키지', state: s[2] },
+    { key: 's2', label: '2차 검사', hint: '권리·발매 정보·콘텐츠 신고', state: s[1] },
+    { key: 's3', label: '3차 배급 준비', hint: '음반·음원 코드 발급·플랫폼별 전송 파일', state: s[2] },
   ];
 }

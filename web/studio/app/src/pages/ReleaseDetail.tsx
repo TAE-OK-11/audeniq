@@ -32,8 +32,8 @@ const DELIVERY_ISSUE: Record<string, string> = {
   DSP_ARTWORK_TOO_SMALL: '이 플랫폼 기준보다 커버아트 해상도가 낮아요.',
   DSP_ARTWORK_TOO_LARGE: '이 플랫폼이 받는 크기보다 커버아트가 커요. 해상도를 줄여 주세요.',
   DSP_AUDIO_NOT_LOSSLESS: '무손실 음원(WAV·FLAC·ALAC·AIFF·WavPack·TTA)이 필요해요.',
-  DSP_AUDIO_SAMPLE_RATE_LOW: '음원의 샘플레이트가 기준(44.1kHz)보다 낮아요.',
-  DSP_AUDIO_BIT_DEPTH_LOW: '음원의 비트 심도가 기준(16bit)보다 낮아요.',
+  DSP_AUDIO_SAMPLE_RATE_LOW: '음원 음질(샘플레이트)이 기준 44.1kHz보다 낮아요. 원본으로 다시 올려 주세요.',
+  DSP_AUDIO_BIT_DEPTH_LOW: '음원 음질(비트)이 기준 16bit보다 낮아요. 원본으로 다시 올려 주세요.',
   DSP_CREDIT_COMPOSER_MISSING: '곡마다 작곡가 크레딧이 필요해요.',
   DSP_CREDIT_LYRICIST_MISSING: '가사가 있는 곡은 작사가 크레딧이 필요해요.',
   DSP_GENRE_MISSING: '장르를 선택해 주세요.',
@@ -116,6 +116,9 @@ export function ReleaseDetail() {
   const genre = d?.genre ? genreLabel(d.genre) : '';
   const needsFix = rel.status === 'needs';
   const rejected = rel.status === 'rejected';
+  // 발매 완료 후 3일이 지나면 진행 막대는 더 볼 필요가 없어 숨긴다
+  const settledLive = rel.status === 'live' && !!rel.release_date
+    && Date.now() - new Date(`${rel.release_date}T00:00:00`).getTime() >= 3 * 86_400_000;
   const fixes = rel.corrections ?? [];
 
   // 접수한 신청 취소 — 한 달 3회까지 직접, 그 이상·배급 시작 후는 문의로
@@ -225,14 +228,16 @@ export function ReleaseDetail() {
         </div>
       </div>
 
+      {!settledLive && (
       <ol className="aq-pipeline" aria-label="발매 진행 단계">
         {PIPELINE.map((p, i) => (
           <li key={p.key} className={i < stage ? 'is-done' : i === stage ? (rejected ? 'is-current is-error' : rel.status === 'needs' ? 'is-current is-warn' : 'is-current') : ''}>
-            <span className="aq-pipeline-dot" aria-hidden="true">{i < stage ? '✓' : i === stage && rejected ? '✕' : i + 1}</span>
+            <span className="aq-pipeline-dot" aria-hidden="true" />
             <span>{i === 1 && rejected ? '거절' : i === 1 && rel.status === 'needs' ? '보완 필요' : p.label}</span>
           </li>
         ))}
       </ol>
+      )}
 
       {rejected && (
         <section className="aq-fix-card is-rejected" aria-labelledby="aqRejectHead">

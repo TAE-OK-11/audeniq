@@ -48,7 +48,7 @@ export interface StaffDocument {
 }
 export interface StagingRow {
   package_id: string; dsp: string; readiness: string; approval: string;
-  checks: { code: string; severity?: string; message?: string }[];
+  checks: { code: string; severity?: string; class?: string; detail?: string; message?: string }[];
   route_status: string | null; route_reason: string | null; ern_message_id: string | null; ern_sha256: string | null;
   ern_is_preview: boolean; approval_by: string | null; approval_note: string | null; approval_at: string | null; staged_at: string;
 }
@@ -114,6 +114,8 @@ export interface DeliveryDecisionInput { action: 'APPROVE' | 'HOLD'; note?: stri
 export interface DspItem {
   code: string; dsp: string; slug: string; name: string; region: string; format: string; lead_days: number;
   artwork_min_px: number; loudness_target_lufs: number;
+  artwork_max_px?: number | null; audio_min_sample_rate?: number; audio_min_bits?: number; lossless_only?: boolean;
+  requires_composer?: boolean; requires_lyricist?: boolean;
   route: null | {
     transport: string; activation_kind: string; route_kind: string; delivery_enabled: boolean;
     recipient_dpid_registered: boolean; adapter_can_send: boolean; onboarding_stage: string | null; onboarding_gaps: string[];

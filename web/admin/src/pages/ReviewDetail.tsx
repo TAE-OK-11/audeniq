@@ -14,6 +14,7 @@ import {
   REJECT_REASONS, applicationPending, checkLabel, checkSummary, day, needsSecond, pick, shortId, stageStateLabel, systemStages, when,
 } from '../labels';
 import { Chip, Empty, ErrorBox, Initial, NoDuty, Section, Skeleton, StatusChip, useStaff } from '../ui';
+import { DspRequirements } from '../dspReqs';
 
 const DECL_LABEL: Record<string, string> = {
   rights_confirmed: '권리 보유 확인', adult_confirmed: '성인 확인', is_cover: '커버곡', is_remix: '리믹스',
@@ -22,7 +23,7 @@ const DECL_LABEL: Record<string, string> = {
 const ROLE_KO: Record<string, string> = { COMPOSER: '작곡', LYRICIST: '작사', ARRANGER: '편곡', PRODUCER: '프로듀서', PERFORMER: '연주', MAIN_ARTIST: '아티스트' };
 const ACTION_KO: Record<string, string> = {
   'release.submitted': '발매 접수', 'stage1.decision': '1차 검사 결과', 'stage1.completed': '1차 검사 완료', 'stage2.decision': '2차 검사 결과',
-  'stage2.pass': '2차 검사 통과', 'stage3.prepared': '배급 준비 완료', 'delivery.staged': '플랫폼별 패키지 준비',
+  'stage2.pass': '2차 검사 통과', 'stage3.prepared': '배급 준비 완료', 'delivery.staged': '플랫폼별 전송 준비',
   'delivery.held': '배급 대기 (계약서 서명 전)', 'delivery.enqueued': '플랫폼 전송 예약', 'release.updated': '발매 정보 수정',
   'staff.approved': '담당자 승인', 'staff.correction_requested': '담당자 보완 요청', 'staff.rejected': '담당자 거절',
   'staff.approval_requested': '2차 승인 요청', 'staff.approval_granted': '2차 승인 완료', 'staff.approval_declined': '2차 승인 반려',
@@ -83,15 +84,16 @@ function ApproveForm({ sheet, application, onDone }: { sheet: ReleaseSheet; appl
   const sensitive = sheet.open_checks.some(needsSecond);
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    void run({ action: 'APPROVE', reason: memo.trim() }, res => res.result === 'PENDING_SECOND_APPROVAL'
-      ? '민감 항목이 있어 2차 승인 요청을 올렸어요. 다른 심사 담당자가 승인하면 반영돼요.'
-      : application ? '승인했어요. 아티스트에게 계약서 서명 안내가 갔어요.' : '승인했어요. 시스템이 나머지 검사와 배급 준비를 이어서 해요.');
+    void run({ action: 'APPROVE', reason: memo.trim() }, res => {
+      if (res.result === 'PENDING_SECOND_APPROVAL') return '민감 항목이 있어 2차 승인 요청을 올렸어요. 다른 심사 담당자가 승인하면 반영돼요.';
+      return application ? '승인했어요. 아티스트가 계약서에 서명하면 문제 없는 플랫폼으로 자동 배급돼요.' : '승인했어요. 시스템이 나머지 검사와 배급 준비를 이어서 해요.';
+    });
   };
   return (
     <form onSubmit={submit}>
       <p className="small muted">
         {application
-          ? '발매 신청을 승인해요. 아티스트가 계약서에 서명하면 시스템이 배급을 시작해요.'
+          ? '최종 승인이에요. 아티스트가 계약서에 서명하면 문제 없는 플랫폼으로 시스템이 자동 배급해요. 따로 배급 승인할 필요 없어요.'
           : '남은 검사 항목을 통과로 처리해요. 이후 배급 준비는 시스템이 자동으로 이어서 해요.'}
       </p>
       {sensitive && (
@@ -334,7 +336,7 @@ function ReissueForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: () => voi
   };
   return (
     <form onSubmit={submit}>
-      <p className="small muted">테스트 범위(임시) UPC·ISRC로 만들어진 패키지를 정식 식별자로 다시 만들어요. 발매는 ‘배포 보완 요청’ 상태가 되고, 재접수 시 정식 코드가 발급돼요.</p>
+      <p className="small muted">테스트용 임시 UPC·ISRC로 준비된 배급을 정식 코드로 다시 만들어요. 발매는 ‘배포 보완 요청’ 상태가 되고, 재접수 시 정식 코드가 발급돼요.</p>
       <div className="adm-field" style={{ marginTop: 16 }}>
         <label htmlFor="rReason">사유 <span className="required">*</span></label>
         <textarea id="rReason" data-autofocus className="adm-textarea" rows={3} maxLength={2000} required value={reason} onChange={e => setReason(e.target.value)} placeholder="예: 정식 ISRC 발급 범위 등록 완료" />
@@ -352,6 +354,7 @@ export function ReviewDetail() {
   const nav = useNavigate();
   const { can, refreshCounts, me } = useStaff();
   const { data: sheet, loading, error, reload } = useAsync(() => staffApi.release(id), [id]);
+  const dsps = useAsync(() => staffApi.dsps(), []);
   const [action, setAction] = useState<DecisionAction | null>(null);
   const [modal, setModal] = useState<'proof' | 'reissue' | 'withdraw' | null>(null);
   const [done, setDone] = useState('');
@@ -420,6 +423,31 @@ export function ReviewDetail() {
             </ol>
             {decidable && sheet.open_checks.length === 0 && (
               <div className="adm-alert is-ok" style={{ marginTop: 12 }}>시스템 검사를 모두 통과했어요. 신청 정보와 커버·음원만 확인하고 최종 결정해 주세요.</div>
+            )}
+          </Section>
+
+          <Section title="플랫폼별 요구 조건" meta={app.platforms.length ? `${app.platforms.length}개 플랫폼 · 문제가 있으면 빨간색` : undefined}>
+            <DspRequirements codes={app.platforms} dsps={dsps.data?.items ?? []} staging={sheet.delivery_staging} />
+            {sheet.delivery_staging.length > 0 && (
+              <details className="adm-more" style={{ marginTop: 12 }}>
+                <summary>플랫폼별 전송 상세</summary>
+                <div className="adm-card white adm-table-wrap">
+                  <table className="adm-table">
+                    <thead><tr><th>플랫폼</th><th>준비</th><th>배급</th><th>연동</th><th>준비 시각</th></tr></thead>
+                    <tbody>
+                      {sheet.delivery_staging.map(st => (
+                        <tr key={`${st.package_id}-${st.dsp}`}>
+                          <td><b>{st.dsp}</b></td>
+                          <td><StatusChip value={pick(READINESS, st.readiness)} /></td>
+                          <td><StatusChip value={pick(APPROVAL_STATUS, st.approval)} /></td>
+                          <td className="small">{st.route_status ?? '—'}{st.route_reason ? ` · ${st.route_reason}` : ''}</td>
+                          <td className="small">{when(st.staged_at)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
             )}
           </Section>
 
@@ -509,26 +537,6 @@ export function ReviewDetail() {
             ) : <p className="small muted">연결된 서류가 없어요.</p>}
           </Section>
 
-          {sheet.delivery_staging.length > 0 && (
-            <Section title="배급 스테이징" meta="DSP별 패키지">
-              <div className="adm-card white adm-table-wrap">
-                <table className="adm-table">
-                  <thead><tr><th>DSP</th><th>준비</th><th>승인</th><th>경로</th><th>스테이징</th></tr></thead>
-                  <tbody>
-                    {sheet.delivery_staging.map(s => (
-                      <tr key={`${s.package_id}-${s.dsp}`}>
-                        <td><b>{s.dsp}</b></td>
-                        <td><StatusChip value={pick(READINESS, s.readiness)} /></td>
-                        <td><StatusChip value={pick(APPROVAL_STATUS, s.approval)} /></td>
-                        <td className="small">{s.route_status ?? '—'}{s.route_reason ? ` · ${s.route_reason}` : ''}</td>
-                        <td className="small">{when(s.staged_at)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Section>
-          )}
 
           {(sheet.notes.length > 0 || sheet.overrides.length > 0) && (
             <Section title="담당자 결정 기록">
@@ -608,7 +616,7 @@ export function ReviewDetail() {
             <div className="adm-decide-note">
               {application
                 ? '승인하면 신청서(배급 계약서)가 승인되고 아티스트가 서명하면 배급이 시작돼요. 추가 서류가 필요하면 ‘권리 증빙 요청’으로 요청하세요 — 서류 검토에서 확인해요.'
-                : '승인은 검사 결과를 고치지 않고 통과 기록(override)을 남긴 뒤 파이프라인이 다시 평가해요. 권리·중복 등 민감 항목은 다른 담당자의 2차 승인이 필요해요.'}
+                : '승인하면 시스템이 남은 검사와 배급 준비를 이어서 해요. 권리·중복 등 민감 항목은 다른 담당자의 2차 승인이 필요해요.'}
             </div>
           </div>
           {!canReview && <NoDuty duty="발매 심사" />}
@@ -622,7 +630,7 @@ export function ReviewDetail() {
           {r.status === 'READY_FOR_DELIVERY' && canReview && (
             <div className="adm-card">
               <b>식별자 재발급</b>
-              <p className="small muted" style={{ margin: '6px 0 12px' }}>임시(테스트) UPC·ISRC로 준비된 패키지를 정식 코드로 다시 만들어요.</p>
+              <p className="small muted" style={{ margin: '6px 0 12px' }}>테스트용 임시 UPC·ISRC로 준비된 배급을 정식 코드로 다시 만들어요.</p>
               <button type="button" className="adm-btn soft small" onClick={() => setModal('reissue')}>재발급 요청</button>
             </div>
           )}
