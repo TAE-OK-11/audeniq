@@ -28,7 +28,39 @@ services:
       - ./bootstrap.sql:/docker-entrypoint-initdb.d/001-roles.sql:ro
       - ./grants.sql:/opt/audeniq/grants.sql:ro
     networks: [backend]
-    command: ['postgres', '-c', 'max_connections=40', '-c', 'shared_buffers=128MB']
+    # 1 vCPU / 1 GB SSD 서버 기준. 메모리 상한(768m) 안에서 캐시를 넉넉히 쓰고,
+    # 병렬 쿼리·JIT는 끈다(코어 1개에서는 오히려 느리고 메모리를 먹는다).
+    command:
+      - postgres
+      - -c
+      - max_connections=40
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - effective_cache_size=384MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=64MB
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
+      - -c
+      - max_parallel_workers_per_gather=0
+      - -c
+      - jit=off
+      - -c
+      - wal_compression=on
+      - -c
+      - checkpoint_completion_target=0.9
+      - -c
+      - max_wal_size=1GB
+      - -c
+      - log_min_duration_statement=500ms
+      - -c
+      - log_lock_waits=on
+    shm_size: 128m
     mem_limit: 768m
     cpus: 1.0
     logging:
@@ -165,6 +197,9 @@ services:
     image: ${CLOUDFLARED_IMAGE:?set tested cloudflared image digest}
     restart: unless-stopped
     command: [tunnel, --no-autoupdate, run, --token-file, /run/secrets/tunnel_token]
+    # cloudflared는 종료 신호를 받으면 처리 중인 요청을 최대 30초 기다린다(기본 grace-period).
+    # Docker 기본 10초면 그 전에 강제 종료되므로 여유를 준다.
+    stop_grace_period: 35s
     secrets: [tunnel_token]
     read_only: true
     cap_drop: [ALL]
