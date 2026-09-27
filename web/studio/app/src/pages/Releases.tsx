@@ -180,9 +180,9 @@ export function Releases() {
                 </span>
               </div>
               {needsList.length === 1 ? (
-                <button type="button" className="button" onClick={() => nav(fixPath(needsList[0].id, needsList[0].corrections?.[0]))}>보완하기</button>
+                <button type="button" className="button aq-fix-go" onClick={() => nav(fixPath(needsList[0].id, needsList[0].corrections?.[0]))}>보완하기</button>
               ) : filter !== 'needs' ? (
-                <button type="button" className="button" onClick={() => setParam('status', 'needs', 'all')}>보완 필요만 보기</button>
+                <button type="button" className="button aq-fix-go" onClick={() => setParam('status', 'needs', 'all')}>보완 필요만 보기</button>
               ) : null}
             </div>
           )}
