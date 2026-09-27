@@ -1197,7 +1197,7 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 
 /* ---------- 발매 상세: 목록 링크는 위, 할 일 버튼은 카드 아래 한 줄 ---------- */
 #view-release .spaced-actions{margin:4px 0 14px!important}
-.aq-detail-actions{display:flex;flex-wrap:wrap;gap:8px;margin:-8px 0 6px}
+.aq-detail-actions{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 8px}
 .aq-detail-actions .button{min-height:40px!important;padding:8px 14px!important;font-size:13px!important;border-radius:13px!important}
 @media(max-width:560px){.aq-detail-actions .button{flex:1 1 0}}
 
