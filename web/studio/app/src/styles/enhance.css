@@ -1180,3 +1180,8 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 /* 서명할 계약서 — 파란색으로 눈에 띄게 */
 .aq-doc-card.is-to-sign .document-icon{background:#e6edff!important;color:#3B63F3!important}
 .aq-doc-card.is-to-sign .aq-doc-state-pill{background:#EAF0FF!important;color:#365cd4!important}
+/* 보완 카드 안의 ‘보완하기’ — 할 일을 설명 바로 옆에 (주황 톤) */
+.aq-fix-card-head .min-0{flex:1}
+.aq-fix-go{flex:none;align-self:center;background:#e0892f!important;color:#fff!important;min-height:44px!important}
+.aq-fix-go:hover{background:#cf7a22!important}
+@media(max-width:560px){.aq-fix-card-head{flex-wrap:wrap}.aq-fix-go{width:100%}}

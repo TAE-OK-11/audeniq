@@ -190,10 +190,11 @@ export function ReleaseDetail() {
               신청서 보기
             </button>
           )}
-          {rel.status !== 'closed' && !rejected && (
+          {/* 보완하기는 아래 보완 카드 안에 — 위 버튼 줄은 모두 같은 옅은 버튼으로 */}
+          {rel.status !== 'closed' && !rejected && !needsFix && (
             <button
-              type="button" className={`button${needsFix ? '' : ' secondary'}`}
-              onClick={() => nav(needsFix ? fixPath(rel.id, fixes[0]) : `/upload?edit=${encodeURIComponent(rel.id)}`)}
+              type="button" className="button secondary"
+              onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}
             >
               {editLabel}
             </button>
@@ -263,6 +264,7 @@ export function ReleaseDetail() {
                 ? '항목을 누르면 신청서에서 고쳐야 할 칸으로 바로 이동해요. 고친 뒤 마지막 단계에서 다시 접수해 주세요.'
                 : '알림과 권리·보완 서류에서 요청 내용을 확인한 뒤 ‘보완하기’로 다시 접수해 주세요.'}</p>
             </div>
+            <button type="button" className="button aq-fix-go" onClick={() => nav(fixPath(rel.id, fixes[0]))}>보완하기</button>
           </div>
           {fixes.length > 0 && (
             <CorrectionList
