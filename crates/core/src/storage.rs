@@ -1,7 +1,7 @@
 use crate::error::{Error, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -36,6 +36,18 @@ pub trait ObjectStore: Send + Sync {
     /// is a no-op for stores without deletion (test doubles).
     async fn delete(&self, _key: &str) -> Result<()> {
         Ok(())
+    }
+    /// Store a local file under `key` with the server's own credentials
+    /// (a master the server derived, e.g. FLAC transcoded from ALAC). The
+    /// body streams from disk; the byte count is signed like a user upload.
+    async fn put_file(
+        &self,
+        _key: &str,
+        _path: &std::path::Path,
+        _mime: &str,
+        _nonce: &str,
+    ) -> Result<()> {
+        Err(Error::Storage)
     }
     /// Download full object bytes. Small objects only (artwork, test
     /// fixtures); audio goes through [`ObjectStore::download_to`] or
@@ -289,14 +301,22 @@ impl ObjectStore for S3Store {
     async fn presign_put(
         &self,
         key: &str,
-        _size: i64,
+        size: i64,
         mime: &str,
         nonce: &str,
         expires: DateTime<Utc>,
     ) -> Result<UploadGrant> {
-        // Browsers cannot set Content-Length, so it is not signed; completion
-        // checks the stored object's size against the upload session instead.
+        // The user gets only this URL, never the key: it can PUT exactly one
+        // object (this key, type, nonce and byte count) until it expires.
+        // Content-Length is signed so the store itself refuses a body of any
+        // other size; browsers send it for a Blob body on their own (script
+        // may not set it, so Studio skips it when copying the headers).
+        // Completion still re-checks size, type, nonce and content.
+        if size < 1 {
+            return Err(Error::Invalid);
+        }
         let headers = BTreeMap::from([
+            ("content-length".into(), size.to_string()),
             ("content-type".into(), mime.into()),
             ("x-amz-meta-upload-nonce".into(), nonce.into()),
         ]);
@@ -380,6 +400,37 @@ impl ObjectStore for S3Store {
         } else {
             Err(Error::Storage)
         }
+    }
+    async fn put_file(
+        &self,
+        key: &str,
+        path: &std::path::Path,
+        mime: &str,
+        nonce: &str,
+    ) -> Result<()> {
+        let file = tokio::fs::File::open(path)
+            .await
+            .map_err(|_| Error::Internal)?;
+        let size = file.metadata().await.map_err(|_| Error::Internal)?.len();
+        let headers = BTreeMap::from([
+            ("content-length".into(), size.to_string()),
+            ("content-type".into(), mime.into()),
+            ("x-amz-meta-upload-nonce".into(), nonce.into()),
+        ]);
+        let url = self.signed("PUT", key, &headers, Utc::now(), 900)?;
+        let mut req = self.download_client.put(url);
+        for (k, v) in &headers {
+            req = req.header(k, v);
+        }
+        let r = req
+            .body(reqwest::Body::from(file))
+            .send()
+            .await
+            .map_err(|_| Error::Storage)?;
+        if !r.status().is_success() {
+            return Err(Error::Storage);
+        }
+        Ok(())
     }
     async fn get(&self, key: &str) -> Result<Vec<u8>> {
         let url = self.signed("GET", key, &BTreeMap::new(), Utc::now(), 300)?;

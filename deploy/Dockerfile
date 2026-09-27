@@ -1,7 +1,19 @@
-FROM rust:1.98.1-trixie AS build
-# release(기본): LTO까지 한 운영 빌드. fast: 테스트 서버용으로 빨리 컴파일 (Cargo.toml [profile.fast])
-ARG CARGO_PROFILE=release
+FROM rust:1.98.1-slim-trixie AS chef
+# 빌드·실행 모두 Debian 13(trixie) slim 기반: 빌드는 rust slim-trixie, 실행은 debian:13-slim
+# 의존성은 cargo-chef로 따로 한 층에 빌드해, 우리 코드만 바뀌면 그 층을 캐시에서 그대로 쓴다
+RUN cargo install cargo-chef --version 0.1.78 --locked
 WORKDIR /build
+
+FROM chef AS plan
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS build
+# release(기본): LTO까지 한 운영 빌드. fast: 테스트 서버용 (Cargo.toml [profile.fast]). dev: CI 스모크용
+ARG CARGO_PROFILE=release
+COPY --from=plan /build/recipe.json recipe.json
+RUN cargo chef cook --locked --profile "$CARGO_PROFILE" -p audeniq-core --recipe-path recipe.json
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY config ./config

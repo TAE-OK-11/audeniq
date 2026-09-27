@@ -14,6 +14,12 @@ export const DSP: [string, string][] = [
   ['amazon', 'Amazon Music'], ['tidal', 'TIDAL'], ['deezer', 'Deezer'], ['qobuz', 'Qobuz'],
 ];
 
+/** 서버 DSP 코드 — 백엔드 레지스트리(crates/core/src/dsp_registry.rs)와 같은 순서: DSP[i] = D-(i+1) */
+export const dspCode = (slug: string): string => {
+  const i = DSP.findIndex(d => d[0] === slug);
+  return i < 0 ? '' : `D-${i + 1}`;
+};
+
 export const GENRES: [string, string][] = [
   ['', '장르를 선택해 주세요'], ['Pop', '팝'], ['K-Pop', 'K-Pop'], ['Indie Pop', '인디 팝'],
   ['Rock', '록'], ['Indie Rock', '인디 록'], ['Alternative', '얼터너티브'], ['Hip-Hop', '힙합'],

@@ -2,7 +2,7 @@ name: F4 preparation acceptance
 on:
   push:
     branches: ['validation/f4-astra-*', 'foundation/f4-stage3-distribution']
-  pull_request:
+  # PR은 Foundation이 같은 테스트를 이미 돌린다
 permissions:
   contents: read
 jobs:
@@ -11,7 +11,7 @@ jobs:
     timeout-minutes: 30
     services:
       postgres:
-        image: postgres:17-bookworm
+        image: postgres:18-trixie
         env:
           POSTGRES_USER: f2test
           POSTGRES_PASSWORD: f2test-local-dev-only
@@ -24,12 +24,12 @@ jobs:
       DATABASE_URL: postgres://f2test:f2test-local-dev-only@localhost/audeniq_f2
       F4_FIXTURE_XML_DIR: /tmp/f4-fixtures
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.98.1
           components: rustfmt, clippy
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -58,7 +58,7 @@ jobs:
           xmllint --nonet --noout --schema config/contracts/ern-synthetic-v1.xsd /tmp/f4-fixtures/fixture-*.xml
       - name: Formatted source artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: f4-formatted-source
           path: |

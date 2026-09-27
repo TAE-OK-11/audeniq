@@ -316,8 +316,14 @@ async fn revision_body(
     minority_declared: bool,
     declarations: &DeclarationsInput,
 ) -> Result<Value> {
+    // The cover is part of what is reviewed: its id and hash freeze with the
+    // revision so Stage 1 QCs the exact bytes (size, square) like the audio.
     let r = sqlx::query(
-        "SELECT id, title, release_type, draft, upc FROM catalog.releases WHERE org_id=$1 AND id=$2",
+        "SELECT r.id, r.title, r.release_type, r.draft, r.upc, r.artwork_asset_id,
+                a.sha256 AS art_sha, a.kind AS art_kind
+         FROM catalog.releases r
+         LEFT JOIN catalog.assets a ON a.org_id=r.org_id AND a.id=r.artwork_asset_id
+         WHERE r.org_id=$1 AND r.id=$2",
     )
     .bind(org)
     .bind(release)
@@ -327,11 +333,21 @@ async fn revision_body(
         "SELECT t.id, t.title, t.version, t.disc_number, t.track_number, t.artist_id, t.isrc, t.asset_id, t.parental_advisory, a.sha256 AS asha, a.kind AS akind FROM catalog.tracks t LEFT JOIN catalog.assets a ON a.org_id=t.org_id AND a.id=t.asset_id WHERE t.org_id=$1 AND t.release_id=$2 AND t.archived_at IS NULL ORDER BY t.disc_number, t.track_number",
     )
     .bind(org).bind(release).fetch_all(&mut *c).await?;
+    // Credits for every track in one round trip (was one query per track).
+    let track_ids: Vec<Uuid> = tracks.iter().map(|t| t.get("id")).collect();
+    let credit_rows = sqlx::query("SELECT track_id, party_id, role FROM catalog.credits WHERE org_id=$1 AND track_id = ANY($2) ORDER BY track_id, party_id, role")
+        .bind(org).bind(&track_ids).fetch_all(&mut *c).await?;
+    let mut credits_by_track: BTreeMap<Uuid, Vec<&sqlx::postgres::PgRow>> = BTreeMap::new();
+    for cr in &credit_rows {
+        credits_by_track
+            .entry(cr.get("track_id"))
+            .or_default()
+            .push(cr);
+    }
     let mut tj = Vec::new();
     for t in &tracks {
         let tid: Uuid = t.get("id");
-        let credits = sqlx::query("SELECT party_id, role FROM catalog.credits WHERE org_id=$1 AND track_id=$2 ORDER BY party_id, role")
-            .bind(org).bind(tid).fetch_all(&mut *c).await?;
+        let credits = credits_by_track.remove(&tid).unwrap_or_default();
         tj.push(json!({
             "id": tid,
             "title": t.get::<String,_>("title"),
@@ -355,6 +371,11 @@ async fn revision_body(
             "release_type": r.get::<String,_>("release_type"),
             "draft": r.get::<Value,_>("draft"),
             "upc": r.get::<Option<String>,_>("upc"),
+            "artwork": r.get::<Option<Uuid>,_>("artwork_asset_id").map(|id| json!({
+                "asset_id": id,
+                "asset_sha256": r.get::<Option<String>,_>("art_sha"),
+                "asset_kind": r.get::<Option<String>,_>("art_kind"),
+            })),
         },
         "tracks": tj,
         "consent_package_hash": consent_package_hash,
@@ -601,34 +622,48 @@ pub async fn submission_status(s: &AppState, a: &Actor, org: Uuid, release: Uuid
         .bind(org).bind(release).fetch_optional(&mut *tx).await?.ok_or(Error::NotFound)?;
     let status: String = rel.get("status");
     let rev_id: Option<Uuid> = rel.get("current_revision_id");
+    let mut review_notes: Vec<Value> = Vec::new();
     let (revision, checks, package, verification) = match rev_id {
         Some(rid) => {
             let rev = sqlx::query("SELECT revision, body_hash FROM catalog.application_revisions WHERE org_id=$1 AND id=$2")
                 .bind(org).bind(rid).fetch_optional(&mut *tx).await?;
-            let checks = sqlx::query("SELECT check_code, rule_version, status, result_hash, detail, created_at FROM operations.check_results WHERE revision_id=$1 ORDER BY created_at, check_code")
-                .bind(rid).fetch_all(&mut *tx).await?;
+            // A reviewer override (staff or member) replaces the check's
+            // effective status; the recorded result itself never changes.
+            let checks = sqlx::query("SELECT c.check_code, c.rule_version, c.status, c.result_hash, c.detail, c.created_at,
+                    (SELECT o.proposed_status FROM rights.review_overrides o WHERE o.org_id=$2 AND o.revision_id=c.revision_id AND o.check_code=c.check_code AND (o.expires_at IS NULL OR o.expires_at>now()) ORDER BY o.created_at DESC, o.id DESC LIMIT 1) AS overridden
+                 FROM operations.check_results c WHERE c.revision_id=$1 ORDER BY c.created_at, c.check_code")
+                .bind(rid).bind(org).fetch_all(&mut *tx).await?;
+            // Approval reasons are internal; the artist sees what to fix and why a release was declined.
+            let notes: Vec<Value> = sqlx::query_scalar("SELECT jsonb_build_object('check_code',check_code,'decision',decision,'note',note,'at',created_at) FROM rights.review_notes WHERE org_id=$1 AND revision_id=$2 AND note<>'' AND decision<>'APPROVE' ORDER BY created_at")
+                .bind(org).bind(rid).fetch_all(&mut *tx).await?;
+            review_notes = notes;
             let pkg = sqlx::query("SELECT id, package_hash, rule_version FROM distribution.validation_packages WHERE org_id=$1 AND revision_id=$2")
                 .bind(org).bind(rid).fetch_optional(&mut *tx).await?;
             let ver = sqlx::query("SELECT id, package_hash, rights_epoch, body->>'decision' AS decision, body->'approved_scope' AS approved_scope FROM distribution.verification_packages WHERE org_id=$1 AND revision_id=$2")
                 .bind(org).bind(rid).fetch_optional(&mut *tx).await?;
             (
                 rev.map(|r| json!({"id": rid, "revision": r.get::<i32,_>("revision"), "body_hash": r.get::<String,_>("body_hash")})),
-                checks.iter().map(|c| json!({
-                    "check_code": c.get::<String,_>("check_code"),
-                    "rule_version": c.get::<String,_>("rule_version"),
-                    "status": c.get::<String,_>("status"),
-                    "result_hash": c.get::<String,_>("result_hash"),
-                    "detail": c.get::<Option<String>,_>("detail"),
-                    // REVIEW_REQUIRED is either an advisory WARNING or a HOLD
-                    // that keeps the release in review (docs/REVIEW_OVERRIDES.md).
-                    "severity": match c.get::<String,_>("status").as_str() {
-                        "PASS" | "NOT_APPLICABLE" => "NONE",
-                        "REVIEW_REQUIRED" => crate::review::stage1_review_severity(&c.get::<String,_>("check_code")),
-                        "CORRECTION_REQUIRED" => "CORRECTION",
-                        "BLOCKED" => "HOLD",
-                        _ => "OTHER",
-                    },
-                })).collect::<Vec<_>>(),
+                checks.iter().map(|c| {
+                    let status: String = c.get("status");
+                    let effective = c.get::<Option<String>,_>("overridden").unwrap_or_else(|| status.clone());
+                    json!({
+                        "check_code": c.get::<String,_>("check_code"),
+                        "rule_version": c.get::<String,_>("rule_version"),
+                        "status": status,
+                        "effective_status": effective,
+                        "result_hash": c.get::<String,_>("result_hash"),
+                        "detail": c.get::<Option<String>,_>("detail"),
+                        // REVIEW_REQUIRED is either an advisory WARNING or a HOLD
+                        // that keeps the release in review (docs/REVIEW_OVERRIDES.md).
+                        "severity": match effective.as_str() {
+                            "PASS" | "NOT_APPLICABLE" => "NONE",
+                            "REVIEW_REQUIRED" => crate::review::stage1_review_severity(&c.get::<String,_>("check_code")),
+                            "CORRECTION_REQUIRED" => "CORRECTION",
+                            "BLOCKED" => "HOLD",
+                            _ => "OTHER",
+                        },
+                    })
+                }).collect::<Vec<_>>(),
                 pkg.map(|p| json!({"id": p.get::<Uuid,_>("id"), "package_hash": p.get::<String,_>("package_hash"), "rule_version": p.get::<String,_>("rule_version")})),
                 ver.map(|v| json!({
                     "id": v.get::<Uuid,_>("id"),
@@ -649,6 +684,7 @@ pub async fn submission_status(s: &AppState, a: &Actor, org: Uuid, release: Uuid
         "checks": checks,
         "validation_package": package,
         "verification_package": verification,
+        "review_notes": review_notes,
     }))
 }
 
@@ -1295,23 +1331,35 @@ async fn cached_status(
     check_code: &str,
     rule_version: &str,
     result_hash: &str,
-) -> Result<Option<CheckStatus>> {
-    let s: Option<String> = sqlx::query_scalar(
-        "SELECT status FROM operations.check_results WHERE check_code=$1 AND rule_version=$2 AND result_hash=$3 ORDER BY created_at DESC LIMIT 1",
+) -> Result<Option<(CheckStatus, String)>> {
+    // Prefer the row that carries the original measurement: a cache hit used
+    // to record only "cache_hit", so later readers (artist corrections, the
+    // per-DSP cover check) lost e.g. "3000x3000" or the measured LUFS.
+    let s: Option<(String, Option<String>)> = sqlx::query_as(
+        "SELECT status, detail FROM operations.check_results WHERE check_code=$1 AND rule_version=$2 AND result_hash=$3
+         ORDER BY (detail IS NULL OR detail LIKE 'cache_hit%'), created_at DESC LIMIT 1",
     )
     .bind(check_code)
     .bind(rule_version)
     .bind(result_hash)
     .fetch_optional(pool)
     .await?;
-    Ok(s.and_then(|v| match v.as_str() {
-        "PASS" => Some(CheckStatus::Pass),
-        "CORRECTION_REQUIRED" => Some(CheckStatus::CorrectionRequired),
-        "REVIEW_REQUIRED" => Some(CheckStatus::ReviewRequired),
-        "BLOCKED" => Some(CheckStatus::Blocked),
-        "TECHNICAL_RETRY" => Some(CheckStatus::TechnicalRetry),
-        "NOT_APPLICABLE" => Some(CheckStatus::NotApplicable),
-        _ => None,
+    Ok(s.and_then(|(v, detail)| {
+        let st = match v.as_str() {
+            "PASS" => CheckStatus::Pass,
+            "CORRECTION_REQUIRED" => CheckStatus::CorrectionRequired,
+            "REVIEW_REQUIRED" => CheckStatus::ReviewRequired,
+            "BLOCKED" => CheckStatus::Blocked,
+            "TECHNICAL_RETRY" => CheckStatus::TechnicalRetry,
+            "NOT_APPLICABLE" => CheckStatus::NotApplicable,
+            _ => return None,
+        };
+        let original = detail
+            .unwrap_or_default()
+            .trim_start_matches("cache_hit")
+            .trim_start_matches(": ")
+            .to_string();
+        Some((st, original))
     }))
 }
 
@@ -1403,7 +1451,9 @@ async fn analyze_asset(
     let tmp = TempFile(std::env::temp_dir().join(tmp_name));
     // Streamed straight to disk: worker memory stays flat regardless of the
     // master's size (a 476 MB file previously pushed a worker to ~916 MB).
-    storage
+    // download_to hashes the bytes as it writes them; QC reuses that hash
+    // instead of reading the file a second time.
+    let downloaded = storage
         .download_to(key, &tmp.0, qc_max_bytes())
         .await
         .map_err(|e| format!("object download failed: {e}"))?;
@@ -1421,7 +1471,12 @@ async fn analyze_asset(
         // outcomes), tapping the fingerprint PCM out of the same decode, and
         // returns the probe metrics: no second ffprobe pass is needed.
         let (outcomes, tap_pcm, metrics) = match kind.as_str() {
-            "AUDIO" => qc::check_audio_with_fp_tap(path, Some(&sha256), Some(&content_type)),
+            "AUDIO" => qc::check_audio_with_fp_tap(
+                path,
+                Some(&sha256),
+                Some(&content_type),
+                Some(&downloaded.sha256),
+            ),
             "IMAGE" => (qc::check_image(path, Some(&sha256)), None, None),
             _ => (Vec::new(), None, None),
         };
@@ -1773,12 +1828,16 @@ async fn qc_single_asset(
         let rh = asset_cache_key(code, sha256);
         match cached_status(&pool, code, qc::QC_RULE_VERSION, &rh).await? {
             // A cached TECHNICAL_RETRY is transient: re-run instead of copying it.
-            Some(st) if st != CheckStatus::TechnicalRetry => out.push(StagedCheck {
+            Some((st, original)) if st != CheckStatus::TechnicalRetry => out.push(StagedCheck {
                 check_code: code,
                 rule_version: qc::QC_RULE_VERSION,
                 status: st,
                 result_hash: rh,
-                detail: "cache_hit".into(),
+                detail: if original.is_empty() {
+                    "cache_hit".into()
+                } else {
+                    format!("cache_hit: {original}")
+                },
             }),
             _ => to_run.push(code),
         }
@@ -1874,6 +1933,15 @@ async fn asset_checks(
                 assets.insert(aid.to_string(), (sha.to_string(), kind.to_string()));
             }
         }
+    }
+    // The release cover (frozen with the revision since 0046-era submits).
+    let art = &body["release"]["artwork"];
+    if let (Some(aid), Some(sha), Some(kind)) = (
+        art["asset_id"].as_str(),
+        art["asset_sha256"].as_str(),
+        art["asset_kind"].as_str(),
+    ) {
+        assets.insert(aid.to_string(), (sha.to_string(), kind.to_string()));
     }
     let mut out = Vec::new();
     // Defense in depth for revisions created before submit enforced

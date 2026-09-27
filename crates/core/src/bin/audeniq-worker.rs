@@ -142,8 +142,12 @@ async fn main() -> anyhow::Result<()> {
     let mut tasks = tokio::task::JoinSet::new();
 
     {
+        // LISTEN needs a session: behind PgBouncer (transaction pooling) it
+        // must use a direct connection, or notifications silently never
+        // arrive and the worker falls back to polling.
+        let listen_url = std::env::var("DATABASE_LISTEN_URL").unwrap_or(database_url);
         let wakeup = wakeup.clone();
-        tasks.spawn(listen_for_jobs(database_url, wakeup));
+        tasks.spawn(listen_for_jobs(listen_url, wakeup));
     }
 
     let mut configured_workers = 0usize;
