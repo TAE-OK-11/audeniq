@@ -28,7 +28,9 @@ pub struct AppState {
     pub config: Config,
     pub storage: Arc<dyn ObjectStore>,
     pub password_slots: Arc<Semaphore>,
-    /// ALAC → FLAC conversions at upload completion (CPU and temp disk).
+    /// Bound R2 completion IO before opening database transactions.
+    pub upload_slots: Arc<Semaphore>,
+    /// Lossless → FLAC conversions at upload completion (CPU and temp disk).
     pub transcode_slots: Arc<Semaphore>,
     pub dummy_hash: String,
 }
@@ -39,6 +41,7 @@ impl AppState {
             config,
             storage,
             password_slots: Arc::new(Semaphore::new(2)),
+            upload_slots: Arc::new(Semaphore::new(4)),
             transcode_slots: Arc::new(Semaphore::new(1)),
             dummy_hash: auth::password_hash(auth::random_token()).await?,
         })

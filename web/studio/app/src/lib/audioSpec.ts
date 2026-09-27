@@ -124,6 +124,11 @@ function parseM4a(v: DataView): AudioSpec | 'LOSSY' | undefined | null {
 /** 헤더 바이트로 규격 판정 (테스트에서 직접 호출) */
 export function checkAudioHeader(buf: ArrayBuffer, fileSize = buf.byteLength): AudioCheck {
   const v = new DataView(buf);
+  const magic = ascii(v, 0, 4);
+  // These formats are checked and normalized by the server before registration.
+  if ((magic === 'FORM' && ['AIFF', 'AIFC'].includes(ascii(v, 8, 4))) || magic === 'wvpk' || magic === 'TTA1') {
+    return { spec: null, error: '', warnings: [] };
+  }
   const m4a = parseM4a(v);
   if (m4a === 'LOSSY') {
     return { spec: null, error: 'AAC(손실 압축) 파일이에요. 무손실 원본(WAV·FLAC·ALAC)으로 올려 주세요.', warnings: [] };
