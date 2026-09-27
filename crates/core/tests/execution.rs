@@ -3498,7 +3498,8 @@ async fn registry_dsp_waits_for_staff_approval_before_send(pool: PgPool) {
         "SUCCEEDED"
     );
     assert_eq!(release_status(&pool, release).await, "READY_FOR_DELIVERY");
-    // First E-0 runs before any approval: the live route is not enough.
+    set_agreement(&pool, artist.org, release, true).await;
+    // First E-0 runs before staff approval: the live route is not enough.
     assert_eq!(
         run_one(&pool, &store, "delivery", "delivery.enqueue").await,
         "SUCCEEDED"
