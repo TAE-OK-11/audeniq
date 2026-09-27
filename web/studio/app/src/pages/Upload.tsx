@@ -22,6 +22,7 @@ import {
 } from '../lib/dsp';
 import { uid } from '../lib/store';
 import { CheckIcon } from '../components/Check';
+import { Glyph } from '../components/Glyph';
 
 const STEPS = [
   { short: '발매 정보', kicker: '01 / 06 · 발매 정보', title: '어떤 음악을\n발매할까요?', sub: '발매 정보와 아티스트명을 입력해 주세요.' },
@@ -1675,7 +1676,7 @@ export function Upload() {
         <div className="aq-wiz-summary">
           {form.coverData
             ? <img src={form.coverData} alt="" />
-            : <span className="aq-wiz-summary-cover" aria-hidden="true">♪</span>}
+            : <span className="aq-wiz-summary-cover" aria-hidden="true"><Glyph name="music" size={18} /></span>}
           <div className="min-0">
             <strong>{form.title.trim() || '제목 없는 발매'}</strong>
             <span>{form.artist.trim() || '아티스트 미입력'} · {kindLabel(form.type)}</span>
@@ -1835,7 +1836,7 @@ export function Upload() {
                   requestAnimationFrame(() => document.getElementById(`tr-${form.tracks.length}-title`)?.focus());
                 }}
               >
-                ＋ 트랙 추가
+                <Glyph name="plus" size={15} className="aq-glyph-lead" />트랙 추가
               </button>
               <span className="small muted">
                 {form.tracks.length}곡 · 파일 {form.tracks.filter(t => t.audioName).length}개 등록

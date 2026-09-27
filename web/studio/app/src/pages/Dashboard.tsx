@@ -15,36 +15,34 @@ import type { CSSVarStyle } from '../hooks/useAnimations';
 import { useGrowOnView } from '../hooks/useAnimations';
 import { prefetchRoute } from '../routes';
 import { CheckIcon } from '../components/Check';
+import { Glyph } from '../components/Glyph';
 
 const GRID_ITEMS = [
   {
     to: '/releases', title: '발매·곡 관리', desc: '발매 목록과 곡별 정보',
-    icon: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="15" rx="3"/><path d="M7 5V3m5 2V3m5 2V3M7 10h10M7 14h6"/></svg>,
+    icon: <Glyph name="release" size={22} />,
   },
   {
     to: '/reports', title: '음악 리포트', desc: '플랫폼별 재생과 수익 내역',
-    icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5M4 19h17M8 15v-4m5 4V7m5 8V4"/></svg>,
+    icon: <Glyph name="chart" size={22} />,
   },
   {
     to: '/settlement', title: '정산·지급', desc: '정산 내역과 지급 요청',
-    icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 5 4.5 14 4.5-11L16.5 19 21 5M2 11h20M2 15h20"/></svg>,
+    icon: <Glyph name="won" size={22} />,
   },
   {
     to: '/contracts', title: '계약서·권리', desc: '계약 상태와 증빙 서류',
-    icon: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h8l4 4v13a1 1 0 0 1-1 1H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M15 3v5h4M9 12h6M9 16h6"/></svg>,
+    icon: <Glyph name="doc" size={22} />,
   },
 ];
 
-const svg = (d: string) => (
-  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={d} /></svg>
-);
 const TASK_ICONS = {
-  alert: svg('M12 8v5m0 3.5v.01M10.3 3.9 2.6 17.3A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.7L13.7 3.9a2 2 0 0 0-3.4 0Z'),
-  doc: svg('M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Zm0 0v5h5M9 13h6M9 17h4'),
-  pen: svg('M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z'),
-  draft: svg('M4 20h4L18.5 9.5a2.8 2.8 0 0 0-4-4L4 16v4Zm9.5-13.5 4 4'),
-  user: svg('M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z'),
-  bell: svg('M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0'),
+  alert: <Glyph name="warning" size={20} />,
+  doc: <Glyph name="doc" size={20} />,
+  pen: <Glyph name="sign" size={20} />,
+  draft: <Glyph name="pencil" size={20} />,
+  user: <Glyph name="user" size={20} />,
+  bell: <Glyph name="bell" size={20} />,
 };
 
 /** 9월 26일 토요일 */
@@ -156,7 +154,7 @@ export function Dashboard() {
         <section className="surface" aria-labelledby="upcomingTitle">
           <div className="section-top">
             <h2 id="upcomingTitle">내 발매</h2>
-            <button type="button" className="link-btn" onClick={() => navigate('/releases')}>전체 보기 ↗</button>
+            <button type="button" className="link-btn" onClick={() => navigate('/releases')}>전체 보기 <Glyph name="arrow-up-right" size={13} /></button>
           </div>
           <div id="homeReleases" aria-live="polite">
             {loading ? (
@@ -184,7 +182,7 @@ export function Dashboard() {
             ) : (
               <div className="empty-note">
                 아직 등록한 발매가 없어요.<br />새 발매를 만들면 여기에서 확인할 수 있어요.<br />
-                <button className="link-btn" type="button" onClick={() => navigate('/upload')}>발매 등록하기 ↗</button>
+                <button className="link-btn" type="button" onClick={() => navigate('/upload')}>발매 등록하기 <Glyph name="arrow-up-right" size={13} /></button>
               </div>
             )}
           </div>
@@ -224,7 +222,7 @@ export function Dashboard() {
 
       <div className="section-top">
         <h2>{periodLabel(report.period)} 음악 리포트</h2>
-        <button className="link-btn" type="button" onClick={() => navigate('/reports')}>리포트 보기 ↗</button>
+        <button className="link-btn" type="button" onClick={() => navigate('/reports')}>리포트 보기 <Glyph name="arrow-up-right" size={13} /></button>
       </div>
       <section className="surface aq-report-card" aria-label="이번 달 리포트 요약">
         <div className="aq-report-total">

@@ -20,22 +20,18 @@ import { Deliveries } from './pages/Deliveries';
 import { Dsps } from './pages/Dsps';
 import { Payouts } from './pages/Payouts';
 import './styles/admin.css';
+import { Glyph } from './components/Glyph';
 
 const STUDIO_URL = import.meta.env.VITE_STUDIO_URL ?? 'https://studio.audeniq.com';
 
-const ICONS: Record<string, ReactNode> = {
-  home: <path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" />,
-  review: <><path d="M9 11l2 2 4-4" /><rect x="4" y="3" width="16" height="18" rx="3" /></>,
-  approval: <><circle cx="9" cy="7" r="3.5" /><path d="M3 21v-1a6 6 0 0 1 6-6h2" /><path d="m14 18 2.5 2.5L21 16" /></>,
-  doc: <><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5M9 13h6M9 17h4" /></>,
-  inquiry: <path d="M21 12a8 8 0 0 1-11.5 7.2L4 21l1.8-5.5A8 8 0 1 1 21 12z" />,
-  delivery: <><path d="M3 7h11v10H3zM14 10h4l3 3v4h-7" /><circle cx="7" cy="18" r="2" /><circle cx="17" cy="18" r="2" /></>,
-  dsp: <><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></>,
-  payout: <><rect x="3" y="6" width="18" height="13" rx="3" /><path d="M3 10h18M7 15h3" /></>,
+// 관리자 메뉴 아이콘 — 스튜디오와 같은 AUDENIQ 아이콘 세트(Glyph)
+const ICONS: Record<string, string> = {
+  home: 'home', review: 'review', approval: 'approval', doc: 'doc', inquiry: 'inquiry',
+  delivery: 'truck', dsp: 'globe', payout: 'card',
 };
 
 export function Icon({ name }: { name: string }) {
-  return <svg viewBox="0 0 24 24" aria-hidden="true">{ICONS[name]}</svg>;
+  return <Glyph name={ICONS[name] ?? name} size={18} />;
 }
 
 interface NavItem { to: string; label: string; icon: string; count?: (o: Overview) => number; hot?: boolean; adminOnly?: boolean; also?: string[] }
@@ -65,7 +61,7 @@ const active = (path: string, to: string) => (to === '/' ? path === '/' : path =
 function Gate({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
   return (
     <div className="adm-gate">
-      <div className="adm-empty-icon" aria-hidden="true">🔒</div>
+      <div className="adm-empty-icon" aria-hidden="true"><Glyph name="lock" size={26} /></div>
       <h1>{title}</h1>
       <p>{children}</p>
       {action}
@@ -157,7 +153,7 @@ export function AdminApp() {
                 <span className="adm-who-avatar" aria-hidden="true">{initial}</span>
                 <span className="adm-who-text"><b>{user?.email}</b><small>{ROLE_LABEL[me.role]}</small></span>
               </div>
-              <a href={STUDIO_URL} className="adm-ghost" target="_blank" rel="noopener noreferrer" aria-label="스튜디오 새 창으로 열기">↗<span className="adm-ghost-text">스튜디오</span></a>
+              <a href={STUDIO_URL} className="adm-ghost" target="_blank" rel="noopener noreferrer" aria-label="스튜디오 새 창으로 열기"><Glyph name="arrow-up-right" size={15} /><span className="adm-ghost-text">스튜디오</span></a>
               <button type="button" className="adm-ghost" onClick={doLogout}>로그아웃</button>
             </div>
           </div>

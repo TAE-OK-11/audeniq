@@ -5,6 +5,7 @@ import { useAsync } from '../../hooks/useAsync';
 import { staffApi } from '../api';
 import { PAYOUT_STATUS, ago, pick, shortId, when } from '../labels';
 import { Empty, ErrorBox, Filters, PageHead, Skeleton, StatusChip } from '../ui';
+import { Glyph } from '../../components/Glyph';
 
 const STATUSES = ['REQUESTED', 'ORDERED', 'REJECTED', 'CANCELLED'];
 
@@ -25,7 +26,7 @@ export function Payouts() {
       />
       <Filters label="지급 상태" value={status} onChange={v => setParams({ status: v }, { replace: true })} options={STATUSES.map(s => ({ value: s, label: PAYOUT_STATUS[s][0] }))} />
       {error && <ErrorBox message={error} onRetry={reload} />}
-      {loading && !data ? <Skeleton rows={3} /> : items.length === 0 ? <Empty icon="₩" title="해당 상태의 지급 요청이 없어요" /> : (
+      {loading && !data ? <Skeleton rows={3} /> : items.length === 0 ? <Empty icon={<Glyph name="won" size={22} />} title="해당 상태의 지급 요청이 없어요" /> : (
         <>
           <div className="adm-alert">{items.length}건 · 합계 <b>{money(total)}</b></div>
           <div className="adm-card white adm-table-wrap">

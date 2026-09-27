@@ -10,6 +10,7 @@ import { staffApi, type DeliveryItem } from '../api';
 import { ago } from '../labels';
 import { DSP_NAME, deliveryVerdict } from '../dspReqs';
 import { Chip, Empty, ErrorBox, Filters, NoDuty, PageHead, Skeleton, SubTabs, useStaff } from '../ui';
+import { Glyph } from '../../components/Glyph';
 
 const VIEWS = [
   { value: 'PENDING', label: '확인 필요' },
@@ -87,7 +88,7 @@ export function Deliveries() {
       <Filters label="보기" value={view} onChange={v => setParams({ approval: v }, { replace: true })} options={VIEWS.map(v => ({ value: v.value, label: v.label }))} />
       {error && <ErrorBox message={error} onRetry={reload} />}
       {loading && !data ? <Skeleton rows={4} /> : groups.size === 0 ? (
-        <Empty icon="🚚" title={view === 'PENDING' ? '확인할 배급이 없어요' : '해당하는 배급이 없어요'}>
+        <Empty icon={<Glyph name="truck" size={22} />} title={view === 'PENDING' ? '확인할 배급이 없어요' : '해당하는 배급이 없어요'}>
           {view === 'PENDING' ? '문제가 있거나 플랫폼 연동을 기다리는 배급이 여기에 모여요.' : undefined}
         </Empty>
       ) : (
@@ -100,7 +101,7 @@ export function Deliveries() {
               <div key={first.package_id} className={`adm-card adm-deliv${bad ? ' is-bad' : ''}`}>
                 <div className="adm-check-top">
                   <span className="adm-min">
-                    <Link to={`/admin/reviews/${first.release_id}`} className="adm-row-title">{first.title} ↗</Link>
+                    <Link to={`/admin/reviews/${first.release_id}`} className="adm-row-title">{first.title} <Glyph name="arrow-right" size={13} className="aq-inline-glyph" /></Link>
                     <span className="adm-row-meta"><span>{first.org_name}</span><span>배급 준비 {ago(first.staged_at)}</span></span>
                   </span>
                   <span className="adm-codes">

@@ -9,6 +9,7 @@ import { useAsync } from '../../hooks/useAsync';
 import { staffApi, type StaffDocument } from '../api';
 import { DOC_KIND, DOC_STATUS, ago, pick, when } from '../labels';
 import { Empty, ErrorBox, Filters, Initial, NoDuty, PageHead, Skeleton, StatusChip, useStaff } from '../ui';
+import { Glyph } from '../../components/Glyph';
 
 const STATUSES = ['REVIEW', 'AWAITING_DOCUMENTS', 'NEEDS', 'APPROVED'];
 const decidable = (d: StaffDocument) => d.kind === 'RIGHTS_PROOF' && d.status === 'REVIEW';
@@ -75,7 +76,7 @@ export function Documents() {
       <Filters label="서류 상태" value={status} onChange={v => setParams({ status: v }, { replace: true })} options={STATUSES.map(s => ({ value: s, label: DOC_STATUS[s][0] }))} />
       {error && <ErrorBox message={error} onRetry={reload} />}
       {loading && !data ? <Skeleton rows={3} /> : items.length === 0 ? (
-        <Empty icon="📄" title="해당 상태의 서류가 없어요" />
+        <Empty icon={<Glyph name="doc" size={22} />} title="해당 상태의 서류가 없어요" />
       ) : (
         <div className="adm-list">
           {items.map(d => (
@@ -86,7 +87,7 @@ export function Documents() {
                 <span className="adm-row-meta">
                   <span>{DOC_KIND[d.kind] ?? d.kind}</span>
                   <span>{d.org_name}</span>
-                  {d.release_id && <span><Link to={`/admin/reviews/${d.release_id}`}>{d.release_title ?? '발매'} ↗</Link></span>}
+                  {d.release_id && <span><Link to={`/admin/reviews/${d.release_id}`}>{d.release_title ?? '발매'} <Glyph name="arrow-right" size={13} className="aq-inline-glyph" /></Link></span>}
                   {d.file_name && <span>{d.file_name}</span>}
                   <span>{ago(d.updated_at) || when(d.updated_at)}</span>
                 </span>

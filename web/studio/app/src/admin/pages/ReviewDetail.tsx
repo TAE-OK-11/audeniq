@@ -14,6 +14,8 @@ import {
   REJECT_REASONS, applicationPending, checkLabel, checkSummary, day, needsSecond, pick, shortId, stageStateLabel, systemStages, when,
 } from '../labels';
 import { Chip, Empty, ErrorBox, Initial, NoDuty, Section, Skeleton, StatusChip, useStaff } from '../ui';
+import { Glyph } from '../../components/Glyph';
+import { CheckIcon } from '../../components/Check';
 
 const DECL_LABEL: Record<string, string> = {
   rights_confirmed: '권리 보유 확인', adult_confirmed: '성인 확인', is_cover: '커버곡', is_remix: '리믹스',
@@ -379,7 +381,7 @@ export function ReviewDetail() {
 
   return (
     <div className="view-enter">
-      <Link to="/admin/reviews" className="adm-back">← 심사 목록</Link>
+      <Link to="/admin/reviews" className="adm-back"><Glyph name="arrow-left" size={14} className="aq-inline-glyph" />심사 목록</Link>
 
       <div className="adm-detail">
         <div>
@@ -411,7 +413,7 @@ export function ReviewDetail() {
             <ol className="adm-stages">
               {stages.map((st, i) => (
                 <li key={st.key} className={`is-${st.state}`}>
-                  <span className="adm-stage-dot" aria-hidden="true">{st.state === 'done' ? '✓' : st.state === 'stopped' ? '✕' : i + 1}</span>
+                  <span className="adm-stage-dot" aria-hidden="true">{st.state === 'done' ? <CheckIcon size={13} /> : st.state === 'stopped' ? <Glyph name="close" size={13} /> : i + 1}</span>
                   <span className="adm-min">
                     <b>{st.label} {stageStateLabel(st.state)}</b>
                     <small>{st.hint}</small>
@@ -487,7 +489,7 @@ export function ReviewDetail() {
                   </tbody>
                 </table>
               </div>
-            ) : <Empty icon="♪" title="트랙 정보가 없어요" />}
+            ) : <Empty icon={<Glyph name="music" size={22} />} title="트랙 정보가 없어요" />}
           </Section>
 
           <Section

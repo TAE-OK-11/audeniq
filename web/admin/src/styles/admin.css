@@ -361,3 +361,8 @@ button.adm-row:hover,a.adm-row:hover{background:#edf2ff}
 .adm-link-btn{border:0;background:none;color:#7a86a0;font:inherit;font-size:12.5px;font-weight:720;cursor:pointer;padding:6px 8px;border-radius:10px}
 .adm-link-btn:hover{background:var(--adm-soft-2);color:var(--adm-ink)}
 @media(max-width:760px){.adm-deliv-rows li{grid-template-columns:minmax(0,1fr) auto}.adm-deliv-rows li .adm-min{grid-column:1/-1;grid-row:2}}
+
+/* ---------- AUDENIQ 아이콘(Glyph) ---------- */
+svg.aq-glyph{flex:none;fill:none!important;stroke:currentColor!important;stroke-width:2!important;stroke-linecap:round!important;stroke-linejoin:round!important}
+.aq-inline-glyph{display:inline-block;vertical-align:-2px;margin:0 3px}
+.adm-back .aq-inline-glyph{margin:0 4px 0 0}
