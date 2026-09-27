@@ -73,7 +73,7 @@ export function ReviewQueue() {
         <div className="adm-list">
           {shown.map(r => (
             <Link key={r.id} to={`/admin/reviews/${r.id}`} className="adm-row">
-              <Initial text={r.title} />
+              <Initial text={r.title} src={r.cover} />
               <span className="adm-min">
                 <span className="adm-row-title">{r.title}</span>
                 <span className="adm-row-meta">
