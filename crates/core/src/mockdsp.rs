@@ -92,6 +92,30 @@ struct Inner {
     by_key: HashMap<String, String>,               // idempotency_key -> partner_message_id
     live_polls: HashMap<String, u32>,              // partner_message_id -> polls so far
     events_emitted: u64,
+    /// Sandbox worker instance only: the mock keeps state in memory, so a
+    /// worker restart forgot every submission and their polls stayed
+    /// INGESTING forever. With this set, a status check for one of the mock's
+    /// own ids (`mock-msg-…`) it no longer knows re-creates it as accepted:
+    /// the ledger that recorded the ACCEPTED attempt is the source of truth.
+    recover_unknown: bool,
+}
+
+/// Re-create a forgotten sandbox submission (see `Inner::recover_unknown`).
+fn recover(inner: &mut Inner, pmid: &str) {
+    if inner.recover_unknown
+        && pmid.starts_with("mock-msg-")
+        && !inner.submissions.contains_key(pmid)
+    {
+        inner.submissions.insert(
+            pmid.to_string(),
+            SubmissionState {
+                partner_message_id: pmid.to_string(),
+                idempotency_key: String::new(),
+                accepted: true,
+                live: false,
+            },
+        );
+    }
 }
 
 /// Count one status check toward the DelayedLive go-live threshold. Other
@@ -136,6 +160,15 @@ impl MockDsp {
         )
     }
 
+    /// The worker's shared sandbox partner: like `new`, and it survives a
+    /// worker restart (forgotten `mock-msg-…` submissions are recovered as
+    /// accepted on the next status check).
+    pub fn sandbox(behavior: MockBehavior) -> Self {
+        let m = Self::new(behavior);
+        m.inner.lock().unwrap().recover_unknown = true;
+        m
+    }
+
     pub fn with_capabilities(behavior: MockBehavior, capabilities: Capabilities) -> Self {
         Self {
             inner: Arc::new(Mutex::new(Inner {
@@ -147,6 +180,7 @@ impl MockDsp {
                 by_key: HashMap::new(),
                 live_polls: HashMap::new(),
                 events_emitted: 0,
+                recover_unknown: false,
             })),
         }
     }
@@ -308,6 +342,7 @@ impl DspAdapter for MockDsp {
     async fn inquire_submission(&self, partner_message_id: &str) -> Result<InquiryOutcome> {
         self.require(self.capabilities().inquire_submission, "inquire_submission")?;
         let mut inner = self.inner.lock().unwrap();
+        recover(&mut inner, partner_message_id);
         // DelayedLive counts every status check — submission inquiry or
         // release-status poll — toward the go-live threshold, modelling a
         // partner whose release flips live after N checks on either endpoint.
@@ -378,6 +413,7 @@ impl DspAdapter for MockDsp {
         let pmid = partner_release_id
             .strip_prefix("mock-rel-")
             .unwrap_or(partner_release_id);
+        recover(&mut inner, pmid);
         advance_live_poll(&mut inner, pmid);
         if inner.submissions.get(pmid).map(|s| s.live).unwrap_or(false) {
             Ok(InquiryOutcome::Live {

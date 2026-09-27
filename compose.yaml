@@ -3,6 +3,9 @@ x-runtime: &runtime
   build:
     context: .
     dockerfile: deploy/Dockerfile
+    # CI 스모크는 CARGO_PROFILE=dev로 빨리 빌드한다 (기본은 운영과 같은 release)
+    args:
+      CARGO_PROFILE: ${CARGO_PROFILE:-release}
   init: true
   read_only: true
   cap_drop: [ALL]
@@ -14,7 +17,7 @@ x-runtime: &runtime
     options: {max-size: 10m, max-file: '3'}
 services:
   postgres:
-    image: postgres:17-bookworm
+    image: postgres:18-trixie
     environment:
       POSTGRES_USER: audeniq_owner
       POSTGRES_DB: audeniq_dev
@@ -22,7 +25,7 @@ services:
       API_DB_PASSWORD: ${API_DB_PASSWORD:?set local API password}
       WORKER_DB_PASSWORD: ${WORKER_DB_PASSWORD:?set local worker password}
     volumes:
-      - pg_dev:/var/lib/postgresql/data
+      - pg18_dev:/var/lib/postgresql
       - ./deploy/bootstrap.sql:/docker-entrypoint-initdb.d/001-roles.sql:ro
       - ./deploy/grants.sql:/opt/audeniq/grants.sql:ro
     ports: ['127.0.0.1:5432:5432']
@@ -45,7 +48,7 @@ services:
     mem_limit: 256m
     cpus: 0.5
   grants:
-    image: postgres:17-bookworm
+    image: postgres:18-trixie
     command: [psql, -h, postgres, -U, audeniq_owner, -d, audeniq_dev, -v, ON_ERROR_STOP=1, -f, /opt/grants.sql]
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD}
@@ -53,26 +56,58 @@ services:
     networks: [backend]
     depends_on:
       migrate: {condition: service_completed_successfully}
+  # Same pooling as production (deploy/compose.production.yaml).
+  pgbouncer:
+    build: ./deploy/pgbouncer
+    image: audeniq-pgbouncer:local
+    environment:
+      PGBOUNCER_DB: audeniq_dev
+      POSTGRES_HOST: postgres
+      API_DB_PASSWORD: ${API_DB_PASSWORD:?set local API password}
+      WORKER_DB_PASSWORD: ${WORKER_DB_PASSWORD:?set local worker password}
+    read_only: true
+    tmpfs: ['/run/pgbouncer:size=1m,mode=1777']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [backend]
+    depends_on:
+      grants: {condition: service_completed_successfully}
+    healthcheck:
+      test: ['CMD', 'bash', '-c', 'exec 3<>/dev/tcp/127.0.0.1/6432']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    mem_limit: 64m
+    cpus: 0.5
   api:
     <<: *runtime
     command: [audeniq-api]
+    # SIGTERM drains in-flight requests; upload completion hashes a master
+    # of up to 512 MiB, so allow more than the default 10 s.
+    stop_grace_period: 30s
     environment:
       APP_ENV: development
       APP_ORIGIN: ${APP_ORIGIN:-http://localhost:5173}
       API_BIND: 0.0.0.0:8080
       EDGE_SERVICE_SECRET: ${EDGE_SERVICE_SECRET:?set random service secret}
       PAYOUT_ACCOUNT_KEY: ${PAYOUT_ACCOUNT_KEY:-}
-      DATABASE_URL: postgres://audeniq_api:${API_DB_PASSWORD}@postgres/audeniq_dev
+      DATABASE_URL: postgres://audeniq_api:${API_DB_PASSWORD}@pgbouncer:6432/audeniq_dev
+      DATABASE_POOLER: pgbouncer
       STORAGE_ENABLED: ${STORAGE_ENABLED:-false}
       S3_ENDPOINT: ${S3_ENDPOINT:-https://unconfigured.invalid}
       S3_BUCKET: ${S3_BUCKET:-unconfigured}
       S3_REGION: ${S3_REGION:-auto}
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      # ALAC uploads are converted to FLAC here (source + result on disk),
+      # never in the 16 MiB /tmp tmpfs.
+      TMPDIR: /var/tmp/audeniq
       RUST_LOG: info
     ports: ['127.0.0.1:8080:8080']
+    volumes:
+      - api_tmp:/var/tmp/audeniq
     depends_on:
-      grants: {condition: service_completed_successfully}
+      pgbouncer: {condition: service_healthy}
     mem_limit: 512m
     cpus: 1.0
   worker:
@@ -82,7 +117,9 @@ services:
     # unfinished leases; the grace period must exceed the drain window.
     stop_grace_period: 45s
     environment:
-      DATABASE_URL: postgres://audeniq_worker:${WORKER_DB_PASSWORD}@postgres/audeniq_dev
+      DATABASE_URL: postgres://audeniq_worker:${WORKER_DB_PASSWORD}@pgbouncer:6432/audeniq_dev
+      DATABASE_POOLER: pgbouncer
+      DATABASE_LISTEN_URL: postgres://audeniq_worker:${WORKER_DB_PASSWORD}@postgres/audeniq_dev
       WORKER_MAX_IN_FLIGHT: '${WORKER_MAX_IN_FLIGHT:-2}'
       DATABASE_MAX_CONNECTIONS: '${DATABASE_MAX_CONNECTIONS:-6}'
       JOB_LEASE_SECONDS: '${JOB_LEASE_SECONDS:-300}'
@@ -107,12 +144,13 @@ services:
     volumes:
       - worker_tmp:/var/tmp/audeniq
     depends_on:
-      grants: {condition: service_completed_successfully}
+      pgbouncer: {condition: service_healthy}
     mem_limit: 1536m
     cpus: 1.5
 volumes:
-  pg_dev:
+  pg18_dev:
   worker_tmp:
+  api_tmp:
 networks:
   backend: {internal: true}
   egress: {}

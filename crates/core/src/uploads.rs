@@ -37,6 +37,9 @@ pub fn expected_container(kind: &str, content_type: &str) -> Option<&'static str
     match (kind, content_type) {
         ("AUDIO", "audio/wav" | "audio/x-wav") => Some("WAV"),
         ("AUDIO", "audio/flac") => Some("FLAC"),
+        // ALAC in an .m4a: converted to FLAC losslessly at completion; AAC
+        // (lossy) in the same container is refused there.
+        ("AUDIO", "audio/mp4" | "audio/x-m4a") => Some("M4A"),
         ("IMAGE", "image/jpeg") => Some("JPEG"),
         ("IMAGE", "image/png") => Some("PNG"),
         // Rights proofs (licences, consent letters): PDF or a scan.
@@ -70,7 +73,7 @@ pub async fn issue(s: &AppState, a: &Actor, org: Uuid, i: UploadInput) -> Result
     auth::create_resource(&mut tx, a, org, asset, "asset").await?;
     let key = format!("quarantine/{org}/{asset}/{nonce}");
     let stable = format!("registered/{org}/{asset}/{}", Uuid::new_v4());
-    let expires: DateTime<Utc> = sqlx::query_scalar("SELECT now()+interval '15 minutes'")
+    let expires: DateTime<Utc> = sqlx::query_scalar("SELECT now()+interval '10 minutes'")
         .fetch_one(&mut *tx)
         .await?;
     let grant = s
@@ -157,6 +160,46 @@ pub async fn complete(
     if n != 1 {
         return Err(Error::Conflict);
     }
+    let kind: String = sqlx::query_scalar("SELECT kind FROM catalog.assets WHERE id=$1")
+        .bind(asset)
+        .fetch_one(&mut *tx)
+        .await?;
+    if expected_container(&kind, &mime) == Some("M4A") {
+        let flac = convert_alac(s, org, asset, &stable, size, &nonce.to_string()).await?;
+        sqlx::query("UPDATE catalog.assets SET state='REGISTERED',object_key=$2,content_type='audio/flac',size_bytes=$3,etag=$4,sha256=$5 WHERE id=$1")
+            .bind(asset)
+            .bind(&flac.key)
+            .bind(flac.size)
+            .bind(&flac.etag)
+            .bind(&flac.sha256)
+            .execute(&mut *tx)
+            .await?;
+        operations::audit(
+            &mut tx,
+            Some(a.user),
+            Some(org),
+            Some(asset),
+            "upload.completed",
+            "ALAC_CONVERTED_TO_FLAC_QC_PENDING",
+            a.request,
+        )
+        .await?;
+        operations::event(
+            &mut tx,
+            org,
+            asset,
+            "asset.registered",
+            &format!("asset:{asset}"),
+        )
+        .await?;
+        tx.commit().await?;
+        drop_quarantine(s, &key).await;
+        // The frozen ALAC was only the conversion source.
+        drop_quarantine(s, &stable).await;
+        return Ok(
+            json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":false,"sha256":flac.sha256,"detected_container":"FLAC","converted_from":"ALAC"}),
+        );
+    }
     // Content verification. The frozen copy is immutable, so hashing it here
     // binds catalog.assets.sha256 to exactly the bytes every later stage
     // reads (Stage 1 re-verifies the hash before analysis). Streaming keeps
@@ -169,10 +212,6 @@ pub async fn complete(
     if digest.size != size as u64 {
         return Err(Error::Conflict);
     }
-    let kind: String = sqlx::query_scalar("SELECT kind FROM catalog.assets WHERE id=$1")
-        .bind(asset)
-        .fetch_one(&mut *tx)
-        .await?;
     let detected = crate::qc::detect_container(&digest.head);
     if expected_container(&kind, &mime) != Some(detected) {
         // Nothing is registered: the transaction rolls back, the session
@@ -211,6 +250,80 @@ pub async fn complete(
         json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":false,"sha256":digest.sha256,"detected_container":detected}),
     )
 }
+struct ConvertedMaster {
+    key: String,
+    size: i64,
+    etag: String,
+    sha256: String,
+}
+
+/// ALAC upload → FLAC master. Downloads the frozen (etag-pinned) ALAC,
+/// converts it losslessly (qc::alac_to_flac proves identical PCM), stores the
+/// FLAC under a new registered key with the server's key and returns what
+/// the asset row must record. One conversion at a time per API process.
+async fn convert_alac(
+    s: &AppState,
+    org: Uuid,
+    asset: Uuid,
+    frozen: &str,
+    size: i64,
+    nonce: &str,
+) -> Result<ConvertedMaster> {
+    struct Temp(std::path::PathBuf);
+    impl Drop for Temp {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+    let _slot = s
+        .transcode_slots
+        .acquire()
+        .await
+        .map_err(|_| Error::Internal)?;
+    let dir = std::env::temp_dir();
+    let src = Temp(dir.join(format!("audeniq-alac-{asset}.m4a")));
+    let dst = Temp(dir.join(format!("audeniq-alac-{asset}.flac")));
+    let digest = match s.storage.download_to(frozen, &src.0, size as u64).await {
+        Ok(d) => d,
+        Err(Error::PolicyGate("OBJECT_TOO_LARGE")) => return Err(Error::Conflict),
+        Err(e) => return Err(e),
+    };
+    if digest.size != size as u64 {
+        return Err(Error::Conflict);
+    }
+    if crate::qc::detect_container(&digest.head) != "M4A" {
+        return Err(Error::PolicyGate("UPLOAD_CONTENT_MISMATCH"));
+    }
+    let (from, to) = (src.0.clone(), dst.0.clone());
+    let sha256 = tokio::task::spawn_blocking(move || {
+        crate::qc::alac_to_flac(&from, &to).map_err(Error::PolicyGate)?;
+        crate::qc::sha256_file(&to)
+    })
+    .await
+    .map_err(|_| Error::Internal)??;
+    let flac_size = tokio::fs::metadata(&dst.0)
+        .await
+        .map_err(|_| Error::Internal)?
+        .len() as i64;
+    if flac_size > MAX_AUDIO_BYTES {
+        return Err(Error::InvalidCode("UPLOAD_AUDIO_TOO_LARGE"));
+    }
+    let key = format!("registered/{org}/{asset}/{}", Uuid::new_v4());
+    s.storage
+        .put_file(&key, &dst.0, "audio/flac", nonce)
+        .await?;
+    let meta = s.storage.head(&key).await?.ok_or(Error::Storage)?;
+    if meta.size != flac_size || meta.content_type != "audio/flac" {
+        return Err(Error::Storage);
+    }
+    Ok(ConvertedMaster {
+        key,
+        size: flac_size,
+        etag: meta.etag,
+        sha256,
+    })
+}
+
 /// Best-effort removal of the quarantine object after complete/cancel
 /// (sandbox round 2: quarantine copies were never deleted). A presigned PUT
 /// cannot be revoked, so a client may still write the key until the grant

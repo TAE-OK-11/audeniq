@@ -35,6 +35,23 @@ GRANT SELECT,INSERT ON portal.inquiry_messages,portal.notification_reads,portal.
 GRANT SELECT ON portal.notifications TO audeniq_api;
 GRANT USAGE ON SCHEMA finance TO audeniq_api;
 GRANT SELECT ON finance.ledger_transactions,finance.ledger_entries,finance.payout_orders,finance.royalty_reports,finance.report_lines,finance.finance_holds TO audeniq_api;
+-- DSP registry + delivery staging (0042/0043): artists read their release's
+-- per-DSP status; staff (/api/staff, identity.staff_members) approve or hold
+-- staged rows and read the DSP overview. Staging rows are written only by
+-- the worker; the API may change the approval columns (RLS: app.org_id, or
+-- app.staff after the staff role check).
+GRANT SELECT ON distribution.dsp_registry TO audeniq_api;
+GRANT SELECT,UPDATE ON distribution.delivery_staging TO audeniq_api;
+GRANT SELECT ON distribution.distribution_packages TO audeniq_api;
+GRANT USAGE ON SCHEMA execution TO audeniq_api;
+GRANT SELECT ON execution.adapter_profiles,execution.delivery_jobs,execution.live_bindings TO audeniq_api;
+GRANT SELECT ON distribution.canonical_releases,distribution.identifier_issuers TO audeniq_api;
+GRANT EXECUTE ON FUNCTION execution.partner_readiness(text) TO audeniq_api;
+-- Staff review (0044): second-person approvals and reviewer notes. The
+-- staff role table itself is read-only for the API (granted by the CLI).
+GRANT SELECT,INSERT,UPDATE ON rights.staff_approvals TO audeniq_api;
+GRANT SELECT,INSERT ON rights.review_notes TO audeniq_api;
+GRANT SELECT ON operations.audit_events TO audeniq_api;
 -- Distribution pipeline schemas (F2/F4/F5/F7). The worker runs the job
 -- queues; the API never writes here (the roles test asserts 42501 for api
 -- inserts into distribution). The reconciler enumerates identity.orgs,
@@ -57,8 +74,12 @@ GRANT INSERT ON distribution.canonical_releases,distribution.distribution_packag
 -- Stage 3 issues missing UPC/ISRC codes (migration 0041): the worker reads the
 -- active issuer (SELECT via the schema-wide grant) and advances its counter.
 GRANT INSERT,UPDATE ON distribution.identifier_counters TO audeniq_worker;
+-- 0046: a VIRTUAL code may be retired (trigger-guarded, one way) when the
+-- registered range replaces it.
+GRANT UPDATE(status,retired_at) ON distribution.identifier_assignments TO audeniq_worker;
 GRANT INSERT,UPDATE ON execution.delivery_jobs,execution.delivery_attempts,execution.live_bindings,execution.reconciliation_cases TO audeniq_worker;
 GRANT INSERT,UPDATE ON execution.route_decisions TO audeniq_worker;
+GRANT INSERT,UPDATE ON distribution.delivery_staging TO audeniq_worker;
 GRANT SELECT,INSERT ON operations.check_results TO audeniq_worker;
 GRANT SELECT ON operations.allowed_transitions TO audeniq_worker;
 GRANT INSERT ON rights.review_overrides,rights.rights_epochs TO audeniq_worker;
@@ -70,3 +91,36 @@ GRANT SELECT,INSERT,UPDATE ON operations.jobs,operations.outbox TO audeniq_worke
 GRANT SELECT,INSERT ON operations.event_receipts TO audeniq_worker;
 GRANT INSERT ON operations.audit_events TO audeniq_worker;
 REVOKE UPDATE,DELETE,TRUNCATE ON operations.audit_events FROM audeniq_api,audeniq_worker;
+-- Runtime timeouts as role defaults: they apply to every server connection,
+-- including the ones PgBouncer opens in transaction pooling mode, where the
+-- per-connection SET in database::connect cannot survive.
+-- Needs superuser or CREATEROLE + ADMIN on the roles (the compose owner is
+-- the image superuser); elsewhere it warns instead of aborting the grants.
+-- Roles are cluster-wide, so runs against different databases (parallel test
+-- binaries) can race on the same pg_db_role_setting row: ALTER ROLE then fails
+-- with "tuple concurrently updated" instead of waiting. Settings already in
+-- place are skipped, and a lost race is retried after the other run commits.
+DO $$
+DECLARE r text; s text; attempt int;
+BEGIN
+ FOREACH r IN ARRAY ARRAY['audeniq_api','audeniq_worker'] LOOP
+  FOREACH s IN ARRAY ARRAY['statement_timeout=15s','lock_timeout=3s'] LOOP
+   FOR attempt IN 1..20 LOOP
+    BEGIN
+     IF NOT EXISTS (SELECT 1 FROM pg_db_role_setting d JOIN pg_roles o ON o.oid = d.setrole
+                    WHERE d.setdatabase = 0 AND o.rolname = r AND s = ANY(d.setconfig)) THEN
+      EXECUTE format('ALTER ROLE %I SET %I = %L', r, split_part(s, '=', 1), split_part(s, '=', 2));
+     END IF;
+     EXIT;
+    EXCEPTION
+     WHEN insufficient_privilege THEN
+      RAISE WARNING 'cannot set % on role % (run as superuser): required behind PgBouncer', s, r;
+      EXIT;
+     WHEN internal_error THEN
+      IF SQLERRM <> 'tuple concurrently updated' OR attempt = 20 THEN RAISE; END IF;
+      PERFORM pg_sleep(0.05 * attempt);
+    END;
+   END LOOP;
+  END LOOP;
+ END LOOP;
+END $$;

@@ -206,14 +206,14 @@ async fn assigned(
 ) -> Result<Option<String>> {
     Ok(match track {
         Some(t) => sqlx::query_scalar(
-            "SELECT identifier FROM distribution.identifier_assignments WHERE org_id=$1 AND track_id=$2 AND kind='ISRC'",
+            "SELECT identifier FROM distribution.identifier_assignments WHERE org_id=$1 AND track_id=$2 AND kind='ISRC' AND status='ASSIGNED'",
         )
         .bind(org)
         .bind(t)
         .fetch_optional(&mut *c)
         .await?,
         None => sqlx::query_scalar(
-            "SELECT identifier FROM distribution.identifier_assignments WHERE org_id=$1 AND release_id=$2 AND kind='UPC'",
+            "SELECT identifier FROM distribution.identifier_assignments WHERE org_id=$1 AND release_id=$2 AND kind='UPC' AND status='ASSIGNED'",
         )
         .bind(org)
         .bind(release)
@@ -238,15 +238,32 @@ pub async fn issue_or_reuse(
     if matches!(kind, IdentifierKind::Isrc) != track.is_some() {
         return Err(Error::Invalid);
     }
-    if let Some(v) = assigned(c, org, release, track).await? {
-        return Ok(v);
-    }
     let issuer: Option<(Uuid, String, String)> = sqlx::query_as(
         "SELECT id, mode, prefix FROM distribution.identifier_issuers WHERE kind=$1 AND active",
     )
     .bind(kind.label())
     .fetch_optional(&mut *c)
     .await?;
+    if let Some(v) = assigned(c, org, release, track).await? {
+        // A test-range code gives way to the real range once one is
+        // registered (migration 0046): retire it and issue a real code.
+        // Anything else keeps its code forever.
+        let registered = issuer
+            .as_ref()
+            .is_some_and(|(_, mode, _)| mode != "VIRTUAL");
+        if !(registered && is_virtual(kind, &v)) {
+            return Ok(v);
+        }
+        sqlx::query(
+            "UPDATE distribution.identifier_assignments SET status='RETIRED', retired_at=now()
+             WHERE org_id=$1 AND kind=$2 AND identifier=$3 AND source='VIRTUAL' AND status='ASSIGNED'",
+        )
+        .bind(org)
+        .bind(kind.label())
+        .bind(&v)
+        .execute(&mut *c)
+        .await?;
+    }
     let (issuer_id, mode, prefix) = issuer.ok_or(Error::PolicyGate("IDENTIFIER_ISSUANCE_OFF"))?;
     let scope = match kind {
         IdentifierKind::Isrc => chrono::Utc::now().format("%y").to_string(),

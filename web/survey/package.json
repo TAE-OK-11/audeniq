@@ -14,6 +14,6 @@
     "build": "cd app && bun install --frozen-lockfile && bun run build"
   },
   "devDependencies": {
-    "wrangler": "^4.135.0"
+    "wrangler": "^4.141.0"
   }
 }

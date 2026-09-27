@@ -20,6 +20,8 @@ export interface Release {
   track_count: number;
   artist?: string;
   coverData?: string;
+  /** 공개(LIVE)된 플랫폼 — 서버 DSP 코드(D-n) 또는 파트너 ID */
+  livePlatforms?: string[];
   /** 검토 결과 보완이 필요한 항목 (status === 'needs'일 때) */
   corrections?: Correction[];
 }
@@ -31,6 +33,18 @@ export interface Correction {
   message: string;
   /** 특정 곡에 대한 요청이면 해당 트랙 ID */
   trackId?: string;
+}
+
+/** 플랫폼(DSP)별 배급 진행 — 서버 DSP 코드(D-1…D-11) 기준 */
+export interface DeliveryItem {
+  /** 내부 DSP 코드 (예: 'D-5') */
+  dsp: string;
+  /** 스튜디오 플랫폼 키 (예: 'spotify') */
+  slug: string;
+  /** NEEDS_CORRECTION · IN_REVIEW · PREPARING · SCHEDULED · ON_HOLD · SENDING · DELIVERED */
+  stage: string;
+  /** 이 플랫폼 기준으로 고쳐야 하는 항목 */
+  issues: { code: string; severity: 'BLOCKER' | 'WARNING'; detail: string }[];
 }
 
 export interface ReleaseDetail extends Release {

@@ -28,9 +28,16 @@ async fn main() -> anyhow::Result<()> {
     };
     let listener = tokio::net::TcpListener::bind(&config.bind).await?;
     let state = api::AppState::new(pool, config, storage).await?;
+    // docker stop / deploys send SIGTERM: stop accepting, finish in-flight
+    // requests (compose stop_grace_period: 30 s) instead of dropping them.
+    let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     axum::serve(listener, api::router(state))
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
+        .with_graceful_shutdown(async move {
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {},
+                _ = sigterm.recv() => {},
+            }
+            tracing::info!("shutdown signal: draining in-flight requests");
         })
         .await?;
     Ok(())

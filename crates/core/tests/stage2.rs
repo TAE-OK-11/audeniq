@@ -306,7 +306,7 @@ async fn build_submittable(
     // stage1 to reach STAGE1_PASSED.
     let art_id = Uuid::new_v4();
     let art_key = format!("registered/{}/cover.png", u.org);
-    let art_bytes = b"\x89PNGfake";
+    let art_bytes = cover_png();
     store
         .files
         .lock()
@@ -887,4 +887,36 @@ async fn stage2_contracted_profile_not_eligible_without_contract(pool: PgPool) {
         parts[1].contains(&format!("{contracted_dsp}=INELIGIBLE_NO_CONTRACT")),
         "contract bypass is explicitly refused in the audit trail: {detail}"
     );
+}
+
+/// A real 3000x3000 PNG cover: Stage 1 QCs the release artwork (size,
+/// square), so a fake header no longer passes. Generated once per binary.
+fn cover_png() -> &'static [u8] {
+    static ONCE: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    ONCE.get_or_init(|| {
+        let dir = std::env::temp_dir().join("audeniq-cover-fixture");
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("cover3000.png");
+        if !out.exists() {
+            let tmp = dir.join(format!("cover.{}.png", std::process::id()));
+            let st = std::process::Command::new("ffmpeg")
+                .args([
+                    "-y",
+                    "-v",
+                    "error",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "color=c=0x3355aa:s=3000x3000",
+                    "-frames:v",
+                    "1",
+                ])
+                .arg(&tmp)
+                .status()
+                .expect("ffmpeg runs");
+            assert!(st.success(), "ffmpeg generated the cover fixture");
+            std::fs::rename(&tmp, &out).unwrap();
+        }
+        std::fs::read(&out).unwrap()
+    })
 }

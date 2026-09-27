@@ -31,7 +31,7 @@ Request JSON rejects unknown top-level fields. Body limit 64 KiB. Errors have `{
 | POST/GET | `/api/orgs/{org}/labels` | Create `{name,party_id,profile?}` / authorized list |
 | GET/PUT/DELETE | `/api/orgs/{org}/labels/{id}` | Read / replace with row_version / archive `{row_version}` |
 | POST/GET | `/api/orgs/{org}/releases` | Create `{name,release_type:SINGLE or EP or ALBUM,profile?}` / authorized list |
-| GET/PUT/DELETE | `/api/orgs/{org}/releases/{id}` | Read with tracks and separate empty DSP axes / replace DRAFT with row_version / archive DRAFT. Create and replace also take optional `upc` (UPC-A, 12 digits, check digit verified; empty = Stage 3 issues one) and `artwork_asset_id` (a REGISTERED IMAGE asset of the org) |
+| GET/PUT/DELETE | `/api/orgs/{org}/releases/{id}` | Read with tracks and the latest package's per-partner `delivery_status_by_dsp` / `live_status_by_dsp` (also on each list item) / replace DRAFT with row_version / archive DRAFT. Create and replace also take optional `upc` (UPC-A, 12 digits, check digit verified; empty = Stage 3 issues one) and `artwork_asset_id` (a REGISTERED IMAGE asset of the org) |
 | POST | `/api/orgs/{org}/releases/{id}/tracks` | `{title,disc_number,track_number,artist_id,asset_id?,isrc?,row_version}` → track ID and new release version. `isrc` is normalized (dashes, case); empty = Stage 3 issues one |
 | PUT | `/api/orgs/{org}/releases/{id}/tracks/{track}` | Same fields as track creation; replaces metadata/file reference, increments release row_version |
 | DELETE | `/api/orgs/{org}/releases/{id}/tracks/{track}` | `{row_version}` → archive track, preserve its internal ID, increment release version |
@@ -39,7 +39,7 @@ Request JSON rejects unknown top-level fields. Body limit 64 KiB. Errors have `{
 | POST | `/api/orgs/{org}/parties` | `{display_name}` → party_id, created. A PERSON credit party (composer, lyricist, …) in the org; OWNER/EDITOR. The same name returns the existing party (`created:false`). A display name only: no rights, no verified identity |
 | GET | `/api/orgs/{org}/releases/{id}/preflight` | release_id, row_version, issues, explicit unmet gates, ready_to_submit=false |
 | POST | `/api/orgs/{org}/releases/{id}/submit` | Always authenticated/authorized **501 PRE_SUBMIT_NOT_IMPLEMENTED**; no revision/job created |
-| POST | `/api/orgs/{org}/uploads` | `{kind:AUDIO, IMAGE or DOCUMENT,size_bytes,content_type}` → upload_session_id, asset_id, expected_key, PUT grant. DOCUMENT (rights proofs) accepts application/pdf, image/jpeg, image/png up to 20 MiB (`UPLOAD_DOCUMENT_TOO_LARGE`) |
+| POST | `/api/orgs/{org}/uploads` | `{kind:AUDIO, IMAGE or DOCUMENT,size_bytes,content_type}` → upload_session_id, asset_id, expected_key, PUT grant (a presigned URL bound to this key, exact byte count, content type and nonce for 10 minutes, created when the Studio asks for it; the storage credentials never leave the server). AUDIO accepts audio/wav, audio/flac and audio/mp4 (ALAC in .m4a: completion converts it to FLAC, verifies identical PCM and registers the FLAC; AAC is refused with 422 `UPLOAD_LOSSY_NOT_ACCEPTED`). DOCUMENT (rights proofs) accepts application/pdf, image/jpeg, image/png up to 20 MiB (`UPLOAD_DOCUMENT_TOO_LARGE`) |
 | POST | `/api/orgs/{org}/uploads/{id}/complete` | `{asset_id,expected_key}` → REGISTERED, QC_PENDING, duplicate flag; server checks both against stored session |
 | GET | `/api/orgs/{org}/uploads/{id}` | asset_id, status (ISSUED/COMPLETED/CANCELLED), expires_at, completed_at, expired; no object key or grant |
 | POST | `/api/orgs/{org}/uploads/{id}/cancel` | `{}` → cancelled, duplicate; completed sessions return 409 |
@@ -93,7 +93,50 @@ The API never writes finance tables. Operations turns a `portal.payout_requests`
 
 Notifications are raised in the database by SECURITY DEFINER triggers, so the worker role needs no portal grants: release status (SUBMITTED, *_CORRECTION, ON_HOLD_RIGHTS, READY_FOR_DELIVERY, LIVE, TAKEN_DOWN), document status (agreement APPROVED, proof AWAITING_DOCUMENTS/NEEDS/APPROVED), staff inquiry replies and payout order SETTLED/FAILED/RETURNED. The API adds account-registered and payout-requested notices.
 
-Staff actions (no browser endpoint): `SELECT portal.staff_reply(inquiry_id, 'answer')`; `UPDATE portal.documents SET status='APPROVED'|'NEEDS', review_note=... WHERE id=...`; rights proof requests are `INSERT INTO portal.documents(... kind='RIGHTS_PROOF', status='AWAITING_DOCUMENTS')`.
+Staff actions (agreement/proof review, proof requests, inquiry replies) now go through the staff portal API below. The SQL functions remain for operations tooling.
+
+## Release delivery status (artist)
+
+| Method | Path | Body / response |
+|---|---|---|
+| GET | `/api/orgs/{org}/releases/{id}/delivery` | Per-DSP status of the release's latest staged package (release read ACL). `items[]`: `{dsp:"D-5", slug:"spotify", name, stage, readiness, approval, delivery_status, issues[], staged_at}`. `stage` is `NEEDS_CORRECTION` · `IN_REVIEW` · `PREPARING` (content fine, partner onboarding pending) · `SCHEDULED` (staff approved) · `ON_HOLD` · `SENDING` · `DELIVERED`. `issues` lists only CONTENT findings the artist can fix. Empty before Stage 3 |
+
+`GET .../submission` also returns `effective_status` per check (a reviewer override replaces the recorded status; `severity` follows it) and `review_notes[]` (`{check_code|null, decision, note, at}`) written by staff.
+
+## Staff portal (`/api/staff/*`)
+
+Implemented in `crates/core/src/staff.rs` (docs/DISTRIBUTION_STAGING.md). Same session, CSRF, Origin and service-secret rules. The caller needs an ACTIVE `identity.staff_members` row, granted only by `audeniq-admin staff grant EMAIL ROLE` (schema-owner login); non-staff get 403. Every write is audited with the staff user.
+
+| Role | Duties |
+|---|---|
+| ADMIN | everything, payout-request list |
+| REVIEWER | release decisions, second approvals, documents, inquiries |
+| OPERATOR | delivery staging decisions, re-stage |
+| SUPPORT | inquiries |
+
+All roles can read every list below.
+
+| Method | Path | Body / response |
+|---|---|---|
+| GET | `/api/staff/me` | `{user_id, role, duties[]}` |
+| GET | `/api/staff/overview` | Queue counts: review, correction, in_pipeline, second_approvals, documents, inquiries, deliveries_to_approve, deliveries_blocked, payout_requests |
+| GET | `/api/staff/releases?status=STAGE2_REVIEW&limit&offset` | Cross-org release queue with artist, release date, requested platforms as D-codes |
+| GET | `/api/staff/releases/{id}` | Review sheet: release, frozen application (tracks, credits, declarations, platforms), latest check per code, `open_checks` (what holds Stage 2), overrides, notes, second approvals, documents, signed application, delivery staging rows, audit timeline |
+| POST | `/api/staff/releases/{id}/decision` | `{action: APPROVE|REQUEST_CORRECTION|REJECT, revision_id, reason, notes?:[{check_code,note}]}`. Release must be STAGE2_REVIEW on `revision_id` (else 409/422 `RELEASE_NOT_IN_REVIEW`). APPROVE writes PASS overrides and queues Stage 2 when every open check is low-risk; otherwise (duplicates, fingerprints, protected names, rights/money classes, anything BLOCKED) it returns `PENDING_SECOND_APPROVAL` + `approval_id`. The sheet also lists `advisories` (loudness, clipping). REQUEST_CORRECTION turns every open check into CORRECTION_REQUIRED (one reviewer) and stores notes for the artist. REJECT moves the release to WITHDRAWN and notifies the org |
+| POST | `/api/staff/releases/{id}/reissue-identifiers` | `{reason}`: READY_FOR_DELIVERY release with VIRTUAL UPC/ISRC → STAGE3_CORRECTION once real ranges are registered (`NO_VIRTUAL_IDENTIFIERS`, `REGISTERED_ISSUER_MISSING`, `PACKAGE_ALREADY_WITH_PARTNER`) |
+| GET | `/api/staff/approvals` | Open second-person approvals |
+| POST | `/api/staff/approvals/{id}/approve` · `/decline` | `{}`. A different staff reviewer must approve (`SECOND_APPROVER_MUST_DIFFER`); approval writes the PASS overrides with `second_approver_user_id` and queues Stage 2 |
+| GET | `/api/staff/documents?status=REVIEW` | Agreements and rights proofs waiting on staff |
+| POST | `/api/staff/documents/{id}/review` | `{status: APPROVED|NEEDS, note, row_version}`; NEEDS requires a note. Agreements in REVIEW/PREPARED, proofs in REVIEW; the trigger notifies the org |
+| POST | `/api/staff/orgs/{org}/documents` | `{release_id,title,body?}` → rights-proof request (AWAITING_DOCUMENTS) |
+| GET | `/api/staff/inquiries?status=OPEN` · `/api/staff/inquiries/{id}` | Threads across orgs |
+| POST | `/api/staff/inquiries/{id}/reply` | `{body}` → STAFF message; thread becomes ANSWERED, author notified. CLOSED → 422 `INQUIRY_CLOSED` |
+| GET | `/api/staff/deliveries?approval=PENDING&readiness=&dsp=D-5` | Staging rows with blocker codes |
+| GET | `/api/staff/deliveries/{package}/{dsp}/ern` | The exact ERN 3.8.2 XML (or placeholder-DPID preview) staff approve, `application/xml` |
+| POST | `/api/staff/deliveries/{package}/{dsp}/decision` | `{action: APPROVE|HOLD, note?, ern_sha256?, acknowledge_warnings?}`. APPROVE refuses CONTENT_BLOCKED rows (`DELIVERY_CONTENT_BLOCKED`), a changed ERN (409) and unacknowledged audio advisories (`WARNINGS_NOT_ACKNOWLEDGED`), then queues E-0; HOLD needs a note. Rows of a superseded package: `STAGING_SUPERSEDED` |
+| POST | `/api/staff/deliveries/{package}/restage` | Re-run staging after onboarding or issuer changes |
+| GET | `/api/staff/dsps` | D-1..D-11 registry with spec, route profile and onboarding gaps |
+| GET | `/api/staff/payouts?status=REQUESTED` | ADMIN only; read-only (money still moves through operations tooling) |
 
 ## Notices and events (edge Worker + D1)
 

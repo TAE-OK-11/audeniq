@@ -28,6 +28,8 @@ pub struct AppState {
     pub config: Config,
     pub storage: Arc<dyn ObjectStore>,
     pub password_slots: Arc<Semaphore>,
+    /// ALAC → FLAC conversions at upload completion (CPU and temp disk).
+    pub transcode_slots: Arc<Semaphore>,
     pub dummy_hash: String,
 }
 impl AppState {
@@ -37,6 +39,7 @@ impl AppState {
             config,
             storage,
             password_slots: Arc::new(Semaphore::new(2)),
+            transcode_slots: Arc::new(Semaphore::new(1)),
             dummy_hash: auth::password_hash(auth::random_token()).await?,
         })
     }
@@ -79,6 +82,10 @@ pub fn router(s: AppState) -> Router {
             put(replace_credits),
         )
         .route("/api/orgs/{org}/releases/{id}/preflight", get(preflight))
+        .route(
+            "/api/orgs/{org}/releases/{id}/delivery",
+            get(delivery_status),
+        )
         .route("/api/orgs/{org}/releases/{id}/presubmit", get(presubmit))
         .route(
             "/api/orgs/{org}/releases/{id}/consents",
@@ -108,11 +115,25 @@ pub fn router(s: AppState) -> Router {
             get(detail).put(update).delete(archive),
         )
         .merge(crate::portal::routes())
+        .merge(crate::staff::routes())
         .fallback(|| async { Error::NotFound.into_response() })
         .layer(DefaultBodyLimit::max(64 * 1024))
         .layer(middleware::from_fn_with_state(s.clone(), boundary))
         .layer(middleware::from_fn(header_limit))
+        .layer(compression())
         .with_state(s)
+}
+/// JSON responses are compressed for whichever encoding the caller accepts
+/// (zstd, then brotli, then gzip; the edge forwards the browser's
+/// Accept-Encoding). Level 4: most of the size win of the maximum levels at
+/// a fraction of the CPU (brotli's default is 11, far too slow per request).
+/// Bodies under 1 KiB are sent as is: the framing costs more than it saves.
+fn compression()
+-> tower_http::compression::CompressionLayer<tower_http::compression::predicate::SizeAbove> {
+    use tower_http::compression::{CompressionLayer, CompressionLevel, predicate::SizeAbove};
+    CompressionLayer::new()
+        .quality(CompressionLevel::Precise(4))
+        .compress_when(SizeAbove::new(1024))
 }
 /// Total request-header budget. Browsers and the edge send a few KiB; hyper
 /// alone accepted a single 200 KB header (sandbox round 2).
@@ -411,6 +432,20 @@ async fn preflight(
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
     Ok(Json(drafts::preflight(&s, &a, org, release).await?))
 }
+/// Per-DSP delivery status of the release's latest staged package.
+async fn delivery_status(
+    State(s): State<AppState>,
+    Path((org, release)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    let mut tx = s.pool.begin().await?;
+    auth::authorize(&mut tx, &a, org, release, "release", false).await?;
+    tx.commit().await?;
+    Ok(Json(
+        crate::delivery_staging::release_delivery_view(&s.pool, org, release).await?,
+    ))
+}
 async fn sessions(
     State(s): State<AppState>,
     Query(page): Query<catalog::Page>,
@@ -617,5 +652,53 @@ mod tests {
         let response = app.oneshot(request).await.unwrap();
         assert_eq!(response.status(), axum::http::StatusCode::OK);
         assert_eq!(response.headers()["cache-control"], "no-store");
+    }
+    #[tokio::test]
+    async fn json_is_compressed_for_the_accepted_encoding() {
+        use http_body_util::BodyExt;
+        let big = json!({"items": (0..200).map(|i| json!({"id": i, "status": "READY_FOR_DELIVERY", "upc": null})).collect::<Vec<_>>()});
+        let raw_len = serde_json::to_vec(&big).unwrap().len();
+        let app = Router::new()
+            .route(
+                "/big",
+                get(move || {
+                    let big = big.clone();
+                    async move { Json(big) }
+                }),
+            )
+            .route("/small", get(|| async { Json(json!({"ok": true})) }))
+            .layer(compression());
+        let call = |path: &'static str, accept: &'static str| {
+            let app = app.clone();
+            async move {
+                let r = app
+                    .oneshot(
+                        axum::http::Request::builder()
+                            .uri(path)
+                            .header("accept-encoding", accept)
+                            .body(axum::body::Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                let enc = r
+                    .headers()
+                    .get("content-encoding")
+                    .map(|v| v.to_str().unwrap().to_string());
+                let len = r.into_body().collect().await.unwrap().to_bytes().len();
+                (enc, len)
+            }
+        };
+        // Browsers send all three; zstd wins, then brotli, then gzip.
+        let (enc, len) = call("/big", "gzip, deflate, br, zstd").await;
+        assert_eq!(enc.as_deref(), Some("zstd"));
+        assert!(len * 5 < raw_len, "zstd {len} vs {raw_len} bytes");
+        let (enc, len) = call("/big", "gzip, br").await;
+        assert_eq!(enc.as_deref(), Some("br"));
+        assert!(len * 5 < raw_len, "br {len} vs {raw_len} bytes");
+        assert_eq!(call("/big", "gzip").await.0.as_deref(), Some("gzip"));
+        // No Accept-Encoding, or a tiny body: sent as is.
+        assert_eq!(call("/big", "identity").await, (None, raw_len));
+        assert_eq!(call("/small", "zstd").await.0, None);
     }
 }

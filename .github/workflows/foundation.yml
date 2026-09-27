@@ -1,15 +1,19 @@
 name: Foundation
+# 같은 저장소 브랜치의 PR은 push 실행 결과가 PR 체크로 붙으므로 pull_request로 한 번 더 돌리지 않는다
 on:
   push:
-  pull_request:
 permissions:
   contents: read
+# 같은 브랜치에 새 커밋이 오면 이전 실행은 취소 (main은 커밋마다 끝까지 돌린다)
+concurrency:
+  group: foundation-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 jobs:
   rust-postgres:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:17-bookworm
+        image: postgres:18-trixie
         env:
           POSTGRES_PASSWORD: ephemeral-ci-only
           POSTGRES_USER: postgres
@@ -20,14 +24,18 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       DATABASE_URL: postgres://postgres:ephemeral-ci-only@localhost:5432/postgres
+      # CI는 매번 새로 빌드하므로 증분 빌드 파일이 쓸모없고, 디버그 정보는 줄 번호만 남겨
+      # target/ 캐시를 작게 (복원·저장 시간 단축)
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.98.1
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@v6
         id: rust-cache
         with:
           path: |
@@ -36,8 +44,8 @@ jobs:
             ~/.cargo/bin/worker-build
             ~/.cargo/bin/worker-codegen
             target
-          key: rust-1.98.1-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
-          restore-keys: rust-1.98.1-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-
+          key: rust-v2-1.98.1-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
+          restore-keys: rust-v2-1.98.1-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-
       - name: Check Rust formatting
         id: formatting
         continue-on-error: true
@@ -50,12 +58,39 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg libxml2-utils
-      - run: cargo test --locked -p audeniq-core -- --test-threads=2
+      # 서명을 실제로 검사하는 S3 서버 (R2처럼 SigV4 확인; moto는 서명을 보지 않는다).
+      # tests/s3_presign.rs가 서명 URL이 선언한 객체 하나만 올릴 수 있는지 확인한다
+      - name: Start S3 gateway for presigned upload tests
+        env:
+          AWS_ACCESS_KEY_ID: ci-s3-access
+          AWS_SECRET_ACCESS_KEY: ci-s3-secret-0123456789abcdef
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          mkdir -p /tmp/s3 && chmod 777 /tmp/s3
+          docker run -d --name s3 -p 127.0.0.1:7070:7070 -v /tmp/s3:/data \
+            -e ROOT_ACCESS_KEY="$AWS_ACCESS_KEY_ID" -e ROOT_SECRET_KEY="$AWS_SECRET_ACCESS_KEY" \
+            versity/versitygw:v1.8.0 --port :7070 posix /data
+          for _ in $(seq 1 30); do curl -s -o /dev/null http://127.0.0.1:7070/ && break; sleep 1; done
+          aws --endpoint-url http://127.0.0.1:7070 s3api create-bucket --bucket audeniq-test
+      # nextest: 테스트 바이너리를 차례로가 아니라 한꺼번에 병렬로 돌린다 (각 테스트는 자기 DB를 쓴다)
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.146
+      - run: cargo nextest run --locked -p audeniq-core --test-threads 4
+        env:
+          S3_TEST_ENDPOINT: http://127.0.0.1:7070/
+          S3_TEST_BUCKET: audeniq-test
+          S3_TEST_ACCESS_KEY_ID: ci-s3-access
+          S3_TEST_SECRET_ACCESS_KEY: ci-s3-secret-0123456789abcdef
+      - name: S3 gateway logs
+        if: failure()
+        run: docker logs s3 2>&1 | tail -50 || true
       - run: cargo build --locked -p audeniq-edge --target wasm32-unknown-unknown
-      - run: cargo install worker-build --version 0.1.12 --locked --force
+      # 캐시에 같은 버전이 있으면 다시 컴파일하지 않는다
+      - run: worker-build --version 2>/dev/null | grep -q '0\.8\.7' || cargo install worker-build --version 0.8.7 --locked --force
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.11
+          bun-version: 1.4.2
       - name: Build React Studio for the edge Worker
         working-directory: web/studio/app
         run: |
@@ -84,20 +119,20 @@ jobs:
           bunx playwright install --with-deps chromium
           (cd ../../.. && cargo run --locked -p audeniq-core --bin audeniq-migrate)
           ../../../target/debug/audeniq-api > /tmp/api.log 2>&1 &
-          curl --fail --retry 15 --retry-connrefused --retry-delay 2 -H "X-Audeniq-Service:$EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready
+          curl --fail --retry 15 --retry-all-errors --retry-delay 2 -H "X-Audeniq-Service:$EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready
           bun run preview:api > /tmp/web.log 2>&1 &
-          curl --fail --retry 15 --retry-connrefused --retry-delay 1 -o /dev/null http://localhost:5173/login
+          curl --fail --retry 15 --retry-all-errors --retry-delay 1 -o /dev/null http://localhost:5173/login
           bun run e2e
       - name: Browser diagnostics
         if: failure()
         run: cat /tmp/api.log /tmp/web.log 2>/dev/null || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: studio-browser-results
           path: web/studio/app/test-results
           if-no-files-found: ignore
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@v6
         if: always() && steps.rust-cache.outputs.cache-hit != 'true'
         with:
           path: |
@@ -118,8 +153,10 @@ jobs:
       API_DB_PASSWORD: ephemeral-api-ci
       WORKER_DB_PASSWORD: ephemeral-worker-ci
       EDGE_SERVICE_SECRET: ephemeral-ci-service-secret-at-least-32-characters
+      # 스모크는 이미지가 뜨는지만 본다: 운영용 LTO 빌드 대신 dev 프로필로 빨리 빌드
+      CARGO_PROFILE: dev
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate isolated production configuration
         env:
           AUDENIQ_IMAGE: audeniq:test
@@ -134,11 +171,16 @@ jobs:
           # object store and non-zero QC/rights/distribution concurrency.
           jq -e '.services.worker.environment | has("STORAGE_ENABLED") and has("S3_BUCKET") and has("S3_ENDPOINT")' /tmp/production.json
           jq -e '.services.worker.environment | [.QUEUE_QC_CONCURRENCY, .QUEUE_RIGHTS_CONCURRENCY, .QUEUE_DISTRIBUTION_CONCURRENCY] | all(tonumber > 0)' /tmp/production.json
+          # api/worker go through PgBouncer (transaction pooling); the
+          # worker's LISTEN and migrate/grants stay on direct connections.
+          jq -e '(.services.api.environment.DATABASE_URL | test("@pgbouncer:6432/")) and .services.api.environment.DATABASE_POOLER == "pgbouncer"' /tmp/production.json
+          jq -e '(.services.worker.environment.DATABASE_URL | test("@pgbouncer:6432/")) and (.services.worker.environment.DATABASE_LISTEN_URL | test("@postgres/"))' /tmp/production.json
+          jq -e '(.services.migrate.environment.DATABASE_URL | test("@postgres/"))' /tmp/production.json
       - name: Deploy script lint
         run: shellcheck deploy/deploy.sh
       - run: docker compose up --build -d
       - name: Check API readiness
-        run: curl --fail --retry 15 --retry-connrefused --retry-delay 2 -H "X-Audeniq-Service:$EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready
+        run: curl --fail --retry 15 --retry-all-errors --retry-delay 2 -H "X-Audeniq-Service:$EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready
       - name: Worker image ships the audio analyzers
         run: |
           docker compose run --rm --no-deps --entrypoint ffprobe worker -version
@@ -147,7 +189,7 @@ jobs:
         if: always()
         run: |
           docker compose ps -a
-          docker compose logs api worker migrate grants
+          docker compose logs api worker migrate grants pgbouncer
       - name: Remove disposable CI environment
         if: always()
         run: docker compose down -v

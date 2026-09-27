@@ -46,4 +46,5 @@ export const STATUS_LABEL: Record<string, string> = {
   review: '검토 중',
   scheduled: '발매 예정',
   live: '발매 완료',
+  closed: '진행 종료',
 };

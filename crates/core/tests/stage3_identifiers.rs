@@ -173,28 +173,30 @@ async fn ledger_sql_constraints_immutability_and_org_isolation(pool: PgPool) {
     // Role is created and dropped transactionally; it has SELECT but cannot bypass RLS.
     let mut tx = pool.begin().await.unwrap();
     let role = format!("f4_test_{}", Uuid::new_v4().simple());
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "CREATE ROLE {role} NOLOGIN NOSUPERUSER NOBYPASSRLS"
-    ))
+    )))
     .execute(&mut *tx)
     .await
     .unwrap();
-    sqlx::query(&format!("GRANT USAGE ON SCHEMA distribution TO {role}"))
-        .execute(&mut *tx)
-        .await
-        .unwrap();
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "GRANT USAGE ON SCHEMA distribution TO {role}"
+    )))
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "GRANT SELECT ON distribution.identifier_assignments TO {role}"
-    ))
+    )))
     .execute(&mut *tx)
     .await
     .unwrap();
     // Non-superuser test roles cannot SET ROLE without membership.
-    sqlx::query(&format!("GRANT {role} TO CURRENT_USER"))
+    sqlx::query(sqlx::AssertSqlSafe(format!("GRANT {role} TO CURRENT_USER")))
         .execute(&mut *tx)
         .await
         .unwrap();
-    sqlx::query(&format!("SET LOCAL ROLE {role}"))
+    sqlx::query(sqlx::AssertSqlSafe(format!("SET LOCAL ROLE {role}")))
         .execute(&mut *tx)
         .await
         .unwrap();
@@ -398,8 +400,30 @@ async fn missing_codes_are_issued_once_from_the_active_issuer(pool: PgPool) {
     assert_eq!(source, "ISSUED");
     tx.commit().await.unwrap();
 
-    // Codes already assigned never change.
+    // A VIRTUAL (test-range) code gives way to the registered range: it is
+    // retired (kept in the ledger, never re-issued) and a real code issued.
+    // Real codes never change after that (migration 0046).
     let mut tx = org_tx(&pool, s.org).await;
+    let replaced = issue_or_reuse(
+        &mut tx,
+        s.org,
+        s.release,
+        None,
+        s.revision,
+        IdentifierKind::Upc,
+    )
+    .await
+    .unwrap();
+    assert_ne!(replaced, upc);
+    assert!(replaced.starts_with("0812345"), "{replaced}");
+    let retired: String = sqlx::query_scalar(
+        "SELECT status FROM distribution.identifier_assignments WHERE identifier=$1",
+    )
+    .bind(&upc)
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    assert_eq!(retired, "RETIRED");
     assert_eq!(
         issue_or_reuse(
             &mut tx,
@@ -411,6 +435,7 @@ async fn missing_codes_are_issued_once_from_the_active_issuer(pool: PgPool) {
         )
         .await
         .unwrap(),
-        upc
+        replaced
     );
+    tx.commit().await.unwrap();
 }
