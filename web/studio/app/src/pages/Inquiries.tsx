@@ -13,6 +13,7 @@ import { MOCK } from '../lib/mode';
 import * as portal from '../api/portal';
 import { errorMessage } from '../api/errors';
 import { refreshTickets } from '../store/portalSync';
+import { Glyph } from '../components/Glyph';
 
 /** 실서버 문의 대화 — 담당자 답변을 보고 이어서 묻거나 문의를 닫는다 */
 function TicketThread({ ticket, onClosed }: { ticket: Ticket; onClosed: () => void }) {
@@ -174,7 +175,7 @@ export function Inquiries() {
           <p>발매 보완 요청과 정산·계약 관련 문의를 확인해 보세요.</p>
         </div>
         <button type="button" className="button" onClick={() => setShowForm(true)}>
-          새 문의 ↗
+          새 문의 <Glyph name="arrow-up-right" size={14} />
         </button>
       </div>
 
@@ -182,7 +183,7 @@ export function Inquiries() {
         <div className="aq-catalog-cards aq-stagger">
           {ordered.map(t => (
             <button key={t.id} type="button" className="aq-ticket-card" onClick={() => setOpenId(t.id)}>
-              <span className="aq-ticket-icon" aria-hidden="true">✉</span>
+              <span className="aq-ticket-icon" aria-hidden="true"><Glyph name="mail" size={18} /></span>
               <span className="min-0">
                 <span className="row-name">{t.subject}</span>
                 <span className="row-sub">{t.category} · {niceDate(t.created)} · {t.releaseTitle || '일반 문의'}</span>

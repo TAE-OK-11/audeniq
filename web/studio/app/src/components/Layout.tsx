@@ -7,6 +7,7 @@ import { useConfirm } from './Confirm';
 import { useToast } from './Toast';
 import { prefetchCommonRoutes, prefetchRoute } from '../routes';
 import { useScrollReveal } from '../hooks/useScrollReveal';
+import { Glyph } from './Glyph';
 
 // 라우트 변경 시 view 진입 애니메이션만 재시작 (children remount 없음 → useEffect/API 재실행 방지)
 function ViewEnter({ pathname, children }: { pathname: string; children: ReactNode }) {
@@ -163,9 +164,7 @@ export function Layout({ children }: { children: ReactNode }) {
               aria-label={unread ? `알림 ${unread}건 읽지 않음` : '알림'}
               onClick={() => go('/notifications')}
             >
-              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-              </svg>
+              <Glyph name="bell" size={20} />
               {unread > 0 && <span className="aq-badge" key={unread}>{unread > 9 ? '9+' : unread}</span>}
             </button>
             <button
@@ -216,7 +215,7 @@ export function Layout({ children }: { children: ReactNode }) {
                       {item.label}
                       {item.to === '/notifications' && unread > 0 && <b className="aq-nav-count">{unread}</b>}
                     </em>
-                    <span>↗</span>
+                    <span><Glyph name="arrow-up-right" size={14} /></span>
                   </button>
                 );
               })}

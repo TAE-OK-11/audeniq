@@ -1,4 +1,5 @@
 import { gradientFor } from '../lib/catalog';
+import { Glyph } from './Glyph';
 
 /** 발매 커버 — 등록한 커버 이미지가 있으면 이미지, 없으면 ID 기반 그라디언트 */
 export function ReleaseCover({ id, src, className = 'cover aq-cover', size }: {
@@ -16,6 +17,6 @@ export function ReleaseCover({ id, src, className = 'cover aq-cover', size }: {
     );
   }
   return (
-    <span className={className} aria-hidden="true" style={{ ...style, background: gradientFor(id) }}>♫</span>
+    <span className={className} aria-hidden="true" style={{ ...style, background: gradientFor(id) }}><Glyph name="music" className="aq-cover-glyph" /></span>
   );
 }

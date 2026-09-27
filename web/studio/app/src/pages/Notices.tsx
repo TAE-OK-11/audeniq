@@ -4,6 +4,7 @@ import { fetchNotices, loadContent } from '../api/content';
 import { useAsync } from '../hooks/useAsync';
 import { SkeletonRows } from '../components/Skeleton';
 import { toKstDate } from '../lib/date';
+import { Glyph } from '../components/Glyph';
 
 interface Notice {
   id: string;
@@ -114,7 +115,7 @@ export function Notices() {
                   <em className="aq-nboard-tag">중요</em>
                   <span className="aq-nhero-pin-title">{n.title}</span>
                   <span className="aq-nhero-pin-date">{dotted(n.date)}</span>
-                  <span className="aq-nhero-pin-arrow" aria-hidden="true">→</span>
+                  <span className="aq-nhero-pin-arrow" aria-hidden="true"><Glyph name="arrow-right" size={15} /></span>
                 </Link>
               </li>
             ))}
@@ -181,7 +182,7 @@ export function NoticeDetail() {
       {notice && (
         <article className="aq-narticle">
           <header className="aq-nhero aq-nhero-article">
-            <Link to="/notices" className="aq-nhero-eyebrow aq-nhero-back">← 공지사항</Link>
+            <Link to="/notices" className="aq-nhero-eyebrow aq-nhero-back"><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />공지사항</Link>
             <h1>{notice.title}</h1>
             <p className="aq-nhero-meta">
               {notice.pinned && <em className="aq-nboard-tag">중요</em>}

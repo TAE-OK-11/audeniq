@@ -24,6 +24,7 @@ import { money, niceDate, NO_INCOME } from '../lib/format';
 import { monthKey, todayStr } from '../lib/date';
 import { uid } from '../lib/store';
 import { CheckIcon } from '../components/Check';
+import { Glyph } from '../components/Glyph';
 
 const PLATFORMS = ['Spotify', 'Apple Music', 'YouTube Music', '멜론', '지니', 'FLO', '벅스', 'Amazon Music', 'TIDAL', 'Deezer', '기타'];
 
@@ -193,7 +194,7 @@ export function Settlement() {
             </>
           ) : (
             <>
-              <span className="aq-payment-badge is-empty" aria-hidden="true">₩</span>
+              <span className="aq-payment-badge is-empty" aria-hidden="true"><Glyph name="won" size={18} /></span>
               <span className="min-0">수익을 받을 계좌를 등록해 주세요.</span>
               <button type="button" className="link-btn" onClick={() => setShowPaymentSetup(true)}>등록하기</button>
             </>
@@ -224,14 +225,14 @@ export function Settlement() {
             <div className="aq-catalog-cards aq-stagger">
               {orderedStatements.map(s => (
                 <div key={s.id} className="aq-statement-card">
-                  <span className="aq-statement-icon" aria-hidden="true">₩</span>
+                  <span className="aq-statement-icon" aria-hidden="true"><Glyph name="won" size={17} /></span>
                   <div className="min-0">
                     <span className="row-name">{s.period} · {s.platform}</span>
                     <span className="row-sub">{s.note || (MOCK ? '수기 등록 정산 내역' : '플랫폼 정산')} · {niceDate(s.created)}</span>
                   </div>
                   <div className="aq-statement-end">
                     <strong>{money(s.amount)}</strong>
-                    {MOCK && <button type="button" className="link-btn" aria-label="정산 내역 삭제" onClick={() => deleteStatement(s.id)}>×</button>}
+                    {MOCK && <button type="button" className="link-btn" aria-label="정산 내역 삭제" onClick={() => deleteStatement(s.id)}><Glyph name="close" size={14} /></button>}
                   </div>
                 </div>
               ))}
@@ -252,14 +253,14 @@ export function Settlement() {
             <div className="aq-catalog-cards aq-stagger">
               {(MOCK ? [...payouts].reverse() : payouts).map(p => (
                 <div key={p.id} className="aq-statement-card">
-                  <span className="aq-statement-icon" aria-hidden="true">↗</span>
+                  <span className="aq-statement-icon" aria-hidden="true"><Glyph name="arrow-up-right" size={17} /></span>
                   <div className="min-0">
                     <span className="row-name">{money(p.amount)} · 지급 요청</span>
                     <span className="row-sub">{niceDate(p.created)} · {p.note || (MOCK ? '현재 작업 공간에만 기록됨' : '등록한 계좌로 지급')}</span>
                   </div>
                   <div className="aq-statement-end">
                     <span className={`status-chip ${PAYOUT_STATUS[p.status]?.[1] ?? 'review'}`}>{PAYOUT_STATUS[p.status]?.[0] ?? p.status}</span>
-                    {MOCK && <button type="button" className="link-btn" aria-label="요청 기록 삭제" onClick={() => deletePayout(p.id)}>×</button>}
+                    {MOCK && <button type="button" className="link-btn" aria-label="요청 기록 삭제" onClick={() => deletePayout(p.id)}><Glyph name="close" size={14} /></button>}
                   </div>
                 </div>
               ))}

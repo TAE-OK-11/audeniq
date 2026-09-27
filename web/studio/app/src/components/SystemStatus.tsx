@@ -12,6 +12,7 @@ import { useToast } from './Toast';
 import { useLocation } from '../lib/router';
 import { SERVER_ISSUE_EVENT, type ServerIssue } from '../lib/systemEvents';
 import { fetchStatus, type MaintenanceWindow } from '../api/content';
+import { Glyph } from './Glyph';
 
 // 긴급 점검을 1분 안에 알아차리도록 (Worker의 /api/status는 D1 한 번 읽기라 가볍다)
 const STATUS_EVERY_MS = 60_000;
@@ -263,7 +264,7 @@ export function SystemStatus({ children }: { children: ReactNode }) {
               <button
                 type="button" className="aq-sysbar-close" aria-label="점검 예고 닫기"
                 onClick={() => { safeSet('local', DISMISS_KEY, upcomingKey); setDismissed(upcomingKey); }}
-              >×</button>
+              ><Glyph name="close" size={14} /></button>
             </div>
           )}
         </div>

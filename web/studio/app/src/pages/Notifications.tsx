@@ -5,9 +5,10 @@ import { useToast } from '../components/Toast';
 import { localStamp } from '../lib/format';
 import { relativeTime } from '../lib/date';
 import { markAllNoticesRead, markNoticeRead, useNotices, useUnreadCount, type Notice } from '../store/support';
+import { Glyph } from '../components/Glyph';
 
-function noticeSymbol(kind: string): string {
-  return kind === '지급' ? '₩' : kind === '발매' ? '♫' : kind === '서류' ? '▤' : kind === '문의' ? '✉' : kind === '계정' ? '◎' : '•';
+function noticeSymbol(kind: string) {
+  return <Glyph size={17} name={kind === '지급' ? 'won' : kind === '발매' ? 'music' : kind === '서류' ? 'doc' : kind === '문의' ? 'mail' : kind === '계정' ? 'user' : 'bell'} />;
 }
 
 export function Notifications() {
@@ -92,7 +93,7 @@ export function Notifications() {
               <button
                 type="button" className="button studio-submit-wide" style={{ marginTop: 18 }}
                 onClick={() => { const to = openNotice.link!; setOpenNotice(null); nav(to); }}
-              >관련 화면으로 이동 ↗</button>
+              >관련 화면으로 이동 <Glyph name="arrow-up-right" size={13} /></button>
             ) : (
               <div className="doc-connection">관련 발매 또는 정산 내역은 각 관리 화면에서 확인할 수 있어요.</div>
             )}

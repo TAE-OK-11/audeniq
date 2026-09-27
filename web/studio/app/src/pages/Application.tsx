@@ -13,6 +13,7 @@ import { AGREEMENTS, OPTION_LABELS, displayCode, hashLabel, legacyApplication, s
 import { docsForRelease, useDocs } from '../store/docs';
 import { PROFILE_LINKS } from '../lib/dsp';
 import { CheckIcon } from '../components/Check';
+import { Glyph } from '../components/Glyph';
 
 type Integrity = 'checking' | 'ok' | 'changed' | 'legacy';
 
@@ -99,7 +100,7 @@ export function Application() {
       )}
 
       <div className="aq-doc-toolbar">
-        <button type="button" className="link-btn aq-back-link" onClick={() => nav(`/releases/${rel.id}`)}>← 발매 상세</button>
+        <button type="button" className="link-btn aq-back-link" onClick={() => nav(`/releases/${rel.id}`)}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />발매 상세</button>
         <div className="row-actions">
           <button type="button" className="button secondary" onClick={() => nav('/')}>홈으로</button>
           <button type="button" className="button" onClick={() => window.print()}>인쇄 · PDF 저장</button>

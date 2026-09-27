@@ -3,6 +3,7 @@ import { createContext, useContext, type ReactNode } from 'react';
 import { Link, useLocation } from '../lib/router';
 import type { Duty, Overview, StaffMe } from './api';
 import type { Tone } from './labels';
+import { CheckIcon } from '../components/Check';
 
 export function Chip({ tone = 'gray', children }: { tone?: Tone; children: ReactNode }) {
   return <span className={`adm-chip adm-t-${tone}`}>{children}</span>;
@@ -25,7 +26,7 @@ export function PageHead({ eyebrow, title, sub, actions }: { eyebrow: string; ti
   );
 }
 
-export function Empty({ icon = '✓', title, children }: { icon?: string; title: string; children?: ReactNode }) {
+export function Empty({ icon = <CheckIcon size={22} />, title, children }: { icon?: ReactNode; title: string; children?: ReactNode }) {
   return (
     <div className="adm-empty">
       <div className="adm-empty-icon" aria-hidden="true">{icon}</div>

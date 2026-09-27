@@ -1236,3 +1236,9 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 .aq-all-done>span{margin-right:8px}
 .aq-chip .aq-chip-check{display:inline-block;margin-right:5px;vertical-align:-1px}
 .aq-guardian-no .aq-check-icon{margin:auto}
+
+/* ---------- AUDENIQ 아이콘(Glyph) — 어디서나 같은 선 두께·모양 ---------- */
+svg.aq-glyph{flex:none;fill:none!important;stroke:currentColor!important;stroke-width:2!important;stroke-linecap:round!important;stroke-linejoin:round!important}
+.aq-inline-glyph{display:inline-block;vertical-align:-2px;margin:0 3px}
+.aq-back-link .aq-inline-glyph,.aq-nhero-back .aq-inline-glyph{margin:0 4px 0 0}
+.aq-cover-glyph{width:38%!important;height:38%!important;color:#fff;opacity:.95}
