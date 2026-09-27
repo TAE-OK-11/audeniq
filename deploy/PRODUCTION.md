@@ -92,15 +92,20 @@ postgres 이미지를 17로, 볼륨을 `pg_prod:/var/lib/postgresql/data`로 되
 
 1. Studio가 `POST /api/orgs/{org}/uploads`로 종류·크기·형식을 알린다.
 2. API가 자기 키로 **서명 URL** 하나를 만들어 준다. 키 자체는 응답에 들어가지 않는다.
-   - 쓸 수 있는 곳: `quarantine/{org}/{asset}/{nonce}` 한 경로, `PUT`만, 15분 동안.
+   - 쓸 수 있는 곳: `quarantine/{org}/{asset}/{nonce}` 한 경로, `PUT`만, 10분 동안. 신청서에서 파일을 고를 때마다 서버가 그때 새로 만든다.
    - 서명에 묶인 것: 정확한 바이트 수(`Content-Length`), 형식(`Content-Type`), 일회용 nonce.
      크기나 형식이 다르거나 URL을 고치면 R2가 403으로 거절한다. 다른 경로·읽기·삭제·목록은 불가.
    - URL에 보이는 것은 액세스 키 **ID**와 계정 엔드포인트뿐이다. ID만으로는 아무것도 서명할 수 없다.
 3. 기기가 그 URL로 R2에 PUT한다. 파일은 우리 서버를 거치지 않는다.
+   받는 음원: WAV·FLAC(16/24bit PCM)과 ALAC(.m4a). MP3·AAC 같은 손실 압축은 받지 않는다.
 4. `POST …/uploads/{id}/complete`에서 API가 자기 키로 R2를 확인한다.
    크기·형식·nonce를 대조하고 `registered/…`로 복사(etag 고정)한 뒤,
    내용을 스트리밍으로 받아 SHA-256과 실제 파일 형식(WAV/FLAC/JPEG/PNG/PDF)을 확인해 등록한다.
    격리본은 지운다.
+   ALAC은 여기서 FLAC으로 변환한다: 같은 샘플레이트·채널·비트로 인코딩한 뒤 두 파일을 PCM으로
+   풀어 MD5가 같은지(완전한 무손실) 확인하고, FLAC을 등록 원본으로 저장한다(ALAC 원본은 지움).
+   같은 컨테이너의 AAC는 `UPLOAD_LOSSY_NOT_ACCEPTED`로 거절. 변환은 API 프로세스당 한 번에 하나,
+   임시 파일은 `api_tmp` 볼륨(`/var/tmp/audeniq`)에 둔다.
 5. worker는 등록된 파일을 자기 키로 받아 QC·패키징한다.
 
 R2 설정 (Cloudflare 대시보드):

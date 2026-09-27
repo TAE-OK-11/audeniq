@@ -572,7 +572,7 @@ export const remoteApi = {
   async uploadFile(file: File, kind: UploadKind, onProgress?: (r: number) => void, signal?: AbortSignal): Promise<UploadResult> {
     const contentType = uploadContentType(file, kind);
     if (!contentType) {
-      throw new ApiError(kind === 'AUDIO' ? '음원은 WAV 또는 FLAC 파일만 올릴 수 있어요.' : kind === 'DOCUMENT' ? '서류는 PDF, JPG, PNG 파일만 올릴 수 있어요.' : '커버는 JPG 또는 PNG 파일만 올릴 수 있어요.', 400, 'UPLOAD_TYPE_UNSUPPORTED');
+      throw new ApiError(kind === 'AUDIO' ? '음원은 WAV, FLAC 또는 ALAC(.m4a) 파일만 올릴 수 있어요.' : kind === 'DOCUMENT' ? '서류는 PDF, JPG, PNG 파일만 올릴 수 있어요.' : '커버는 JPG 또는 PNG 파일만 올릴 수 있어요.', 400, 'UPLOAD_TYPE_UNSUPPORTED');
     }
     const issued = await req<{ upload_session_id: string; asset_id: string; expected_key: string; grant: UploadGrant }>(orgPath('/uploads'), {
       method: 'POST', body: { kind, size_bytes: file.size, content_type: contentType },
@@ -585,7 +585,7 @@ export const remoteApi = {
       throw e;
     }
     const done = await req<{ asset_id: string; sha256?: string; detected_container?: string }>(orgPath(`/uploads/${issued.upload_session_id}/complete`), {
-      method: 'POST', body: { asset_id: issued.asset_id, expected_key: issued.expected_key }, timeoutMs: 120000,
+      method: 'POST', body: { asset_id: issued.asset_id, expected_key: issued.expected_key }, timeoutMs: 240000,
     });
     return { assetId: done.asset_id, sha256: done.sha256, container: done.detected_container };
   },
@@ -598,6 +598,8 @@ export function uploadContentType(file: File, kind: UploadKind): string {
   if (kind === 'AUDIO') {
     if (t === 'audio/wav' || t === 'audio/x-wav' || t === 'audio/wave' || name.endsWith('.wav')) return 'audio/wav';
     if (t === 'audio/flac' || t === 'audio/x-flac' || name.endsWith('.flac')) return 'audio/flac';
+    // ALAC(.m4a): 서버가 FLAC으로 무손실 변환한다 (AAC는 서버가 거절)
+    if (t === 'audio/mp4' || t === 'audio/x-m4a' || t === 'audio/m4a' || name.endsWith('.m4a')) return 'audio/mp4';
     return '';
   }
   if (kind === 'DOCUMENT' && (t === 'application/pdf' || name.endsWith('.pdf'))) return 'application/pdf';
