@@ -25,6 +25,11 @@ current_image() { sed -n 's/^AUDENIQ_IMAGE=//p' "$ENV_FILE" | tail -n 1; }
 [ -f "$ENV_FILE" ] || die "$ENV_FILE 이 없어요 (production.env.example 참고, chmod 600)"
 [ -f compose.production.yaml ] || die "compose.production.yaml 이 없어요"
 [ -f pgbouncer/Dockerfile ] || die "pgbouncer/ 폴더가 없어요 (저장소의 deploy/pgbouncer를 함께 복사)"
+# PostgreSQL 18은 새 볼륨을 쓴다: 옛 17 데이터가 있는데 아직 옮기지 않았으면 빈 DB로 뜨지 않게 멈춘다
+if docker volume inspect audeniq-production_pg_prod >/dev/null 2>&1 \
+   && ! docker volume inspect audeniq-production_pg18_prod >/dev/null 2>&1; then
+  die "PostgreSQL 17 데이터가 있어요. 먼저 ./pg-upgrade.sh 로 18로 옮겨 주세요"
+fi
 
 case "${1:-}" in
   --status)

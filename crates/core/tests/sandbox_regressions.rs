@@ -137,7 +137,9 @@ async fn role_pool(owner: &PgPool, role: &'static str) -> PgPool {
         .max_connections(3)
         .after_connect(move |c, _| {
             Box::pin(async move {
-                sqlx::query(&format!("SET ROLE {role}")).execute(c).await?;
+                sqlx::query(sqlx::AssertSqlSafe(format!("SET ROLE {role}")))
+                    .execute(c)
+                    .await?;
                 Ok(())
             })
         })
@@ -152,10 +154,10 @@ async fn env(owner: PgPool) -> Env {
     database::MIGRATOR.run(&owner).await.unwrap();
     // Roles are cluster-wide and other test binaries create them too.
     for role in ["audeniq_api", "audeniq_worker"] {
-        sqlx::raw_sql(&format!(
+        sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
             "DO $$ BEGIN CREATE ROLE {role} NOLOGIN; \
              EXCEPTION WHEN duplicate_object OR unique_violation THEN NULL; END $$;"
-        ))
+        )))
         .execute(&owner)
         .await
         .unwrap();

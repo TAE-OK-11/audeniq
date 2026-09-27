@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:17-bookworm
+        image: postgres:18-trixie
         env:
           POSTGRES_PASSWORD: ephemeral-ci-only
           POSTGRES_USER: postgres
@@ -21,13 +21,13 @@ jobs:
     env:
       DATABASE_URL: postgres://postgres:ephemeral-ci-only@localhost:5432/postgres
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.98.1
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@v6
         id: rust-cache
         with:
           path: |
@@ -52,10 +52,10 @@ jobs:
           sudo apt-get install -y -qq ffmpeg libxml2-utils
       - run: cargo test --locked -p audeniq-core -- --test-threads=2
       - run: cargo build --locked -p audeniq-edge --target wasm32-unknown-unknown
-      - run: cargo install worker-build --version 0.1.12 --locked --force
+      - run: cargo install worker-build --version 0.8.7 --locked --force
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.11
+          bun-version: 1.4.2
       - name: Build React Studio for the edge Worker
         working-directory: web/studio/app
         run: |
@@ -91,13 +91,13 @@ jobs:
       - name: Browser diagnostics
         if: failure()
         run: cat /tmp/api.log /tmp/web.log 2>/dev/null || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: studio-browser-results
           path: web/studio/app/test-results
           if-no-files-found: ignore
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@v6
         if: always() && steps.rust-cache.outputs.cache-hit != 'true'
         with:
           path: |
@@ -119,7 +119,7 @@ jobs:
       WORKER_DB_PASSWORD: ephemeral-worker-ci
       EDGE_SERVICE_SECRET: ephemeral-ci-service-secret-at-least-32-characters
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate isolated production configuration
         env:
           AUDENIQ_IMAGE: audeniq:test
