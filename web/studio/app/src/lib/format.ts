@@ -44,7 +44,7 @@ export const STATUS_LABEL: Record<string, string> = {
   ready: '접수 대기',
   needs: '보완 필요',
   review: '검토 중',
-  scheduled: '발매 예정',
+  scheduled: '배급 승인',
   live: '발매 완료',
   closed: '진행 종료',
 };
