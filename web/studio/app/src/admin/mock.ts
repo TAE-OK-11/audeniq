@@ -1,7 +1,7 @@
 // 체험(목) 빌드용 스태프 API — 서버 없이 관리자 화면을 확인할 수 있게 메모리 예시 데이터로 동작한다.
 // 상태 전이 규칙은 crates/core/src/staff.rs와 같게 흉내 낸다 (민감 항목 승인 → 2차 승인, 거절 → WITHDRAWN 등).
 import { ApiError, messageForCode } from '../api/errors';
-import { needsSecond } from './labels';
+import { applicationPending, needsSecond } from './labels';
 import type {
   ApprovalItem, DecisionInput, DecisionResult, DeliveryDecisionInput, DeliveryItem, DspItem, InquiryMessage, InquiryItem,
   Overview, PayoutItem, QueueRelease, ReleaseSheet, StaffDocument, StaffMe,
@@ -61,7 +61,7 @@ function sheetFor(q: QueueRelease, open: [string, string, string][], extra: Part
 
 const q = (p: Partial<QueueRelease> & Pick<QueueRelease, 'id' | 'title' | 'artist' | 'org_name'>): QueueRelease => ({
   org_id: `org-${p.id}`, release_type: 'SINGLE', status: 'STAGE2_REVIEW', revision_id: `rev-${p.id}`,
-  release_date: '2026-10-17', submitted_at: iso(6), platforms: ['D-1', 'D-2', 'D-5', 'D-6'], ...p,
+  release_date: '2026-10-17', submitted_at: iso(6), platforms: ['D-1', 'D-2', 'D-5', 'D-6'], agreement: null, ...p,
 });
 
 const releases: MockRelease[] = [
@@ -71,7 +71,7 @@ const releases: MockRelease[] = [
     [['S2_INTEGRITY_DUP', 'REVIEW_REQUIRED', '기존 발매(ORG Moonlit)의 마스터와 지문 일치 92%'], ['S2_RIGHTS_SCOPE', 'REVIEW_REQUIRED', '권리 범위: 전 세계 배급 요청, 계약서는 대한민국 한정']]),
   sheetFor(q({ id: 'r3c4d5e6', title: '여름 끝에서', artist: '소월', org_name: '소월 프로젝트', submitted_at: iso(2) }),
     [['S2_UNDECLARED_CONTENT', 'REVIEW_REQUIRED', '샘플 사용 신호가 감지됐지만 신고 항목에 없어요.']]),
-  sheetFor(q({ id: 'r4d5e6f7', title: 'Paper Moon', artist: 'Lumi', org_name: 'Lumi Records', status: 'READY_FOR_DELIVERY', submitted_at: iso(70) }), []),
+  sheetFor(q({ id: 'r4d5e6f7', title: 'Paper Moon', artist: 'Lumi', org_name: 'Lumi Records', status: 'READY_FOR_DELIVERY', agreement: 'REVIEW', submitted_at: iso(70) }), []),
   sheetFor(q({ id: 'r5e6f7a8', title: '고요한 밤의 노래', artist: '이안', org_name: '이안', status: 'STAGE2_CORRECTION', submitted_at: iso(50) }), []),
 ];
 
@@ -82,7 +82,7 @@ const approvals: (ApprovalItem & { status: string })[] = [{
 }];
 
 const documents: StaffDocument[] = [
-  { id: 'doc-1', org_id: 'org-r1a2b3c4', org_name: '한결 뮤직', release_id: 'r1a2b3c4', release_title: '새벽의 온도', kind: 'AGREEMENT', title: '음원 유통 배급 계약서', status: 'REVIEW', review_note: null, file_name: null, asset_id: null, signed_at: iso(25), row_version: 3, updated_at: iso(25) },
+  { id: 'doc-1', org_id: 'org-r4d5e6f7', org_name: 'Lumi Records', release_id: 'r4d5e6f7', release_title: 'Paper Moon', kind: 'AGREEMENT', title: 'Paper Moon · AUDENIQ 디지털 음원 배급 신청·계약서', status: 'REVIEW', review_note: null, file_name: null, asset_id: null, signed_at: iso(25), row_version: 3, updated_at: iso(25) },
   { id: 'doc-2', org_id: 'org-r2b3c4d5', org_name: 'Nova Sound', release_id: 'r2b3c4d5', release_title: 'Blue Hour', kind: 'RIGHTS_PROOF', title: '샘플 사용 허락서', status: 'REVIEW', review_note: null, file_name: 'sample-license.pdf', asset_id: 'as-1', row_version: 2, updated_at: iso(8) },
   { id: 'doc-3', org_id: 'org-r3', org_name: '소월 프로젝트', release_id: 'r3c4d5e6', release_title: '여름 끝에서', kind: 'RIGHTS_PROOF', title: '공동 작곡 권리 확인서', status: 'NEEDS', review_note: '서명 페이지가 빠져 있어요.', file_name: 'co-writer.pdf', asset_id: 'as-2', row_version: 4, updated_at: iso(30) },
 ];
@@ -126,6 +126,10 @@ const payouts: PayoutItem[] = [
   { id: 'po-2', org_id: 'org-x', org_name: '이안', amount: '52300', currency: 'KRW', status: 'REQUESTED', payout_order_id: null, created_at: iso(40) },
 ];
 
+releases.find(r => r.q.id === 'r4d5e6f7')!.sheet.documents.push(documents[0]);
+/** 발매 심사 대기: 2차 검사에서 멈췄거나, 자동 검사를 통과했고 신청서가 검토 전 */
+const awaiting = (r: MockRelease) => r.q.status === 'STAGE2_REVIEW' || (r.q.status === 'READY_FOR_DELIVERY' && applicationPending(r.q.agreement));
+
 const find = (rid: string) => releases.find(r => r.q.id === rid) ?? fail('NOT_FOUND', 404);
 const setStatus = (r: MockRelease, status: string) => { r.q.status = status; r.sheet.release.status = status; };
 const audit = (r: MockRelease, action: string, reason: string) =>
@@ -134,23 +138,34 @@ const audit = (r: MockRelease, action: string, reason: string) =>
 export const mockStaff = {
   me: () => wait<StaffMe>({ user_id: ME, role: 'ADMIN', duties: ['REVIEW', 'DOCUMENTS', 'INQUIRIES', 'DELIVERY'] }),
   overview: () => wait<Overview>({
-    review: releases.filter(r => r.q.status === 'STAGE2_REVIEW').length,
+    review: releases.filter(awaiting).length,
     correction: releases.filter(r => r.q.status.endsWith('_CORRECTION')).length,
     in_pipeline: 3,
     second_approvals: approvals.filter(a => a.status === 'PENDING').length,
-    documents: documents.filter(d => d.status === 'REVIEW').length,
+    documents: documents.filter(d => d.kind === 'RIGHTS_PROOF' && d.status === 'REVIEW').length,
     inquiries: inquiries.filter(i => i.status === 'OPEN').length,
     deliveries_to_approve: deliveries.filter(d => d.approval === 'PENDING' && d.readiness !== 'CONTENT_BLOCKED').length,
     deliveries_blocked: deliveries.filter(d => d.readiness === 'CONTENT_BLOCKED').length,
     audio_advisories: deliveries.filter(d => d.approval === 'PENDING' && d.warnings.length).length,
     payout_requests: payouts.filter(p => p.status === 'REQUESTED').length,
   }),
-  releases: (status: string) => wait({ items: releases.filter(r => r.q.status === status).map(r => r.q) }),
+  releases: (status: string) => wait({ items: releases.filter(r => (status === 'PENDING' ? awaiting(r) : r.q.status === status)).map(r => r.q) }),
   release: (rid: string) => wait(find(rid).sheet),
   decide: async (rid: string, i: DecisionInput): Promise<DecisionResult> => {
     const r = find(rid);
-    if (r.q.status !== 'STAGE2_REVIEW') fail('RELEASE_NOT_IN_REVIEW');
+    if (!awaiting(r)) fail('RELEASE_NOT_IN_REVIEW');
     if (!i.reason.trim()) fail('DECISION_REASON_REQUIRED');
+    if (r.q.status === 'READY_FOR_DELIVERY') {
+      // 자동 검사를 통과한 새 발매 신청: 신청서(계약서)와 발매를 함께 결정
+      const next = i.action === 'APPROVE' ? null : i.action === 'REJECT' ? 'WITHDRAWN' : 'STAGE3_CORRECTION';
+      const agreement = i.action === 'APPROVE' ? 'APPROVED' : i.action === 'REJECT' ? 'REJECTED' : 'NEEDS';
+      r.q.agreement = agreement;
+      r.sheet.documents.filter(d => d.kind === 'AGREEMENT').forEach(d => Object.assign(d, { status: agreement, review_note: next ? i.reason : null }));
+      r.sheet.notes.push({ id: uid(), revision_id: i.revision_id, check_code: null, decision: i.action, note: i.reason, author_user_id: ME, at: new Date().toISOString() });
+      if (next) setStatus(r, next);
+      audit(r, i.action === 'APPROVE' ? 'staff.approved' : i.action === 'REJECT' ? 'staff.rejected' : 'staff.correction_requested', next ? `READY_FOR_DELIVERY->${next}` : 'APPLICATION:APPROVED');
+      return wait(next === 'WITHDRAWN' ? { result: 'REJECTED', status: 'WITHDRAWN' } : { result: 'APPLIED', reevaluation_queued: false });
+    }
     const open = r.sheet.open_checks;
     const note = (decision: string, text: string, code: string | null = null) =>
       r.sheet.notes.push({ id: uid(), revision_id: i.revision_id, check_code: code, decision, note: text, author_user_id: ME, at: new Date().toISOString() });
@@ -200,7 +215,7 @@ export const mockStaff = {
     a.status = 'DECLINED';
     return wait({ result: 'DECLINED' });
   },
-  documents: (status: string) => wait({ items: documents.filter(d => d.status === status) }),
+  documents: (status: string) => wait({ items: documents.filter(d => d.kind === 'RIGHTS_PROOF' && d.status === status) }),
   reviewDocument: async (did: string, i: { status: 'APPROVED' | 'NEEDS'; note: string; row_version: number }) => {
     const d = documents.find(x => x.id === did);
     if (!d || d.row_version !== i.row_version) return fail('CONFLICT', 409);

@@ -918,7 +918,7 @@ pub async fn record_application(
         "INSERT INTO portal.documents(id,org_id,release_id,kind,title,body,status) VALUES($1,$2,$3,'AGREEMENT',$4,$5,'REVIEW')
          ON CONFLICT(org_id,release_id) WHERE kind='AGREEMENT' DO UPDATE
            SET body=EXCLUDED.body,title=EXCLUDED.title,
-               status=CASE WHEN portal.documents.status='SIGNED' THEN 'SIGNED' ELSE 'REVIEW' END,
+               status=CASE WHEN portal.documents.status IN ('SIGNED','REJECTED') THEN portal.documents.status ELSE 'REVIEW' END,
                row_version=portal.documents.row_version+1,updated_at=now()",
     )
     .bind(Uuid::new_v4())
