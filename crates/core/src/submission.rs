@@ -1451,7 +1451,9 @@ async fn analyze_asset(
     let tmp = TempFile(std::env::temp_dir().join(tmp_name));
     // Streamed straight to disk: worker memory stays flat regardless of the
     // master's size (a 476 MB file previously pushed a worker to ~916 MB).
-    storage
+    // download_to hashes the bytes as it writes them; QC reuses that hash
+    // instead of reading the file a second time.
+    let downloaded = storage
         .download_to(key, &tmp.0, qc_max_bytes())
         .await
         .map_err(|e| format!("object download failed: {e}"))?;
@@ -1469,7 +1471,12 @@ async fn analyze_asset(
         // outcomes), tapping the fingerprint PCM out of the same decode, and
         // returns the probe metrics: no second ffprobe pass is needed.
         let (outcomes, tap_pcm, metrics) = match kind.as_str() {
-            "AUDIO" => qc::check_audio_with_fp_tap(path, Some(&sha256), Some(&content_type)),
+            "AUDIO" => qc::check_audio_with_fp_tap(
+                path,
+                Some(&sha256),
+                Some(&content_type),
+                Some(&downloaded.sha256),
+            ),
             "IMAGE" => (qc::check_image(path, Some(&sha256)), None, None),
             _ => (Vec::new(), None, None),
         };

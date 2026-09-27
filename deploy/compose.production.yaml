@@ -92,6 +92,9 @@ services:
     restart: unless-stopped
     <<: *runtime
     command: [audeniq-api]
+    # SIGTERM drains in-flight requests; upload completion hashes a master
+    # of up to 512 MiB, so allow more than the default 10 s.
+    stop_grace_period: 30s
     environment:
       APP_ENV: production
       APP_ORIGIN: ${APP_ORIGIN:?set exact HTTPS Studio origin}

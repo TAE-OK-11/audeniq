@@ -395,7 +395,7 @@ pub fn check_audio(
     registered_sha256: Option<&str>,
     declared_content_type: Option<&str>,
 ) -> Vec<CheckOutcome> {
-    check_audio_inner(path, registered_sha256, declared_content_type, false).0
+    check_audio_inner(path, registered_sha256, declared_content_type, None, false).0
 }
 
 /// Like [`check_audio`], but additionally returns the perceptual-fingerprint
@@ -404,18 +404,30 @@ pub fn check_audio(
 /// and the audio metrics from the probe.
 /// The caller slices the configured segment windows and runs
 /// [`crate::fingerprint::fingerprint_from_samples`].
+///
+/// `file_sha256` is the SHA-256 of the file at `path` when the caller already
+/// has it (the worker hashes the object while streaming it to disk), which
+/// saves re-reading a master of up to 512 MiB just to hash it again.
 pub fn check_audio_with_fp_tap(
     path: &Path,
     registered_sha256: Option<&str>,
     declared_content_type: Option<&str>,
+    file_sha256: Option<&str>,
 ) -> (Vec<CheckOutcome>, Option<Vec<f32>>, Option<AudioMetrics>) {
-    check_audio_inner(path, registered_sha256, declared_content_type, true)
+    check_audio_inner(
+        path,
+        registered_sha256,
+        declared_content_type,
+        file_sha256,
+        true,
+    )
 }
 
 fn check_audio_inner(
     path: &Path,
     registered_sha256: Option<&str>,
     declared_content_type: Option<&str>,
+    file_sha256: Option<&str>,
     want_fp_tap: bool,
 ) -> (Vec<CheckOutcome>, Option<Vec<f32>>, Option<AudioMetrics>) {
     /// Emit `AUDIO_CHECK_CODES[from..]` with a uniform status (short-circuit tail).
@@ -444,7 +456,8 @@ fn check_audio_inner(
             detail,
         }
     }
-    let actual = match sha256_file(path) {
+    let hashed = file_sha256.map(|h| Ok(h.to_string()));
+    let actual = match hashed.unwrap_or_else(|| sha256_file(path)) {
         Ok(h) => h,
         Err(_) => {
             return (
