@@ -329,12 +329,19 @@ impl ObjectStore for S3Store {
         // other size; browsers send it for a Blob body on their own (script
         // may not set it, so Studio skips it when copying the headers).
         // Completion still re-checks size, type, nonce and content.
-        if size < 1 || size > crate::uploads::MAX_AUDIO_BYTES || !key.starts_with("quarantine/") {
+        // Single use: If-None-Match: * is signed too, so R2 only accepts the
+        // PUT while the key is empty. After one successful upload (or a
+        // leaked copy of the URL racing it) every further PUT gets 412; the
+        // quarantine object is kept until the bucket lifecycle rule expires
+        // it, long after the 10-minute grant.
+        if !(1..=crate::uploads::MAX_AUDIO_BYTES).contains(&size) || !key.starts_with("quarantine/")
+        {
             return Err(Error::Invalid);
         }
         let headers = BTreeMap::from([
             ("content-length".into(), size.to_string()),
             ("content-type".into(), mime.into()),
+            ("if-none-match".into(), "*".into()),
             ("x-amz-meta-upload-nonce".into(), nonce.into()),
         ]);
         let now = Utc::now();
