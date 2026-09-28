@@ -11,7 +11,7 @@ use crate::{
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Path, Query, Request, State},
-    http::{HeaderMap, Method},
+    http::{HeaderMap, HeaderValue, Method},
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post, put},
@@ -169,8 +169,8 @@ async fn boundary(State(s): State<AppState>, mut req: Request, next: Next) -> Re
     if !auth::secret_eq(provided, &s.config.service_secret) {
         return Error::Forbidden.into_response();
     }
-    req.headers_mut()
-        .insert("x-request-id", id.to_string().parse().unwrap());
+    let request_id = HeaderValue::from_str(&id.to_string()).expect("uuid is a valid header");
+    req.headers_mut().insert("x-request-id", request_id.clone());
     // No user identity header is read. Writes require Origin even before login.
     // Partner webhooks carry no browser Origin; they are authenticated by
     // the partner's HMAC signature in the handler (crate::partner_hooks).
@@ -187,15 +187,13 @@ async fn boundary(State(s): State<AppState>, mut req: Request, next: Next) -> Re
     }
     let started = std::time::Instant::now();
     let mut response = next.run(req).await;
-    response
-        .headers_mut()
-        .insert("x-request-id", id.to_string().parse().unwrap());
-    response
-        .headers_mut()
-        .insert("cache-control", "no-store".parse().unwrap());
-    response
-        .headers_mut()
-        .insert("x-content-type-options", "nosniff".parse().unwrap());
+    let headers = response.headers_mut();
+    headers.insert("x-request-id", request_id);
+    headers.insert("cache-control", HeaderValue::from_static("no-store"));
+    headers.insert(
+        "x-content-type-options",
+        HeaderValue::from_static("nosniff"),
+    );
     tracing::info!(request_id=%id,status=response.status().as_u16(),elapsed_ms=started.elapsed().as_millis(),"http_request");
     response
 }
