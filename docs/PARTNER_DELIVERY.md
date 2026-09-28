@@ -17,6 +17,42 @@
 로컬 MockDSP 샌드박스, 파트너 웹훅 **수신**(외부로 나가는 요청이 아님). `/ready`에 `"live_transmission": false`로 표시된다.
 공식 오픈 때 `deploy/production.env`에 `DSP_LIVE_TRANSMISSION=enabled`를 넣고 worker·api를 재시작한다.
 
+## 0-1. DSP별 전송 프로파일 (`crates/core/src/dsp_registry.rs`)
+
+내부에서는 `D-1`…`D-11` 코드를 키로 쓰지만, 아티스트·담당자 화면과 검사 문구에는 항상 플랫폼 이름(`name_ko`)만 나간다.
+전송 방식은 업계 관행 기준이며 계약서의 기술 부속서가 우선한다(설정 파일로 맞춘다).
+
+| 플랫폼 | 형식 | 전송 | 방식 | 상업 모델(ERN Deal) | Merlin | 추가 정책 |
+|---|---|---|---|---|---|---|
+| 멜론·지니·FLO·벅스 | 전용 피드(JSON+CSV) | 계약 시 지정 | 피드 완료 마커 | 구독 | 불가 | 원작자 커버 동의서, 19금 표시, 작사·작곡 필수 |
+| Spotify | DDEX ERN 3.8.2 | SFTP | batch | 구독 + 무료(광고) | 가능 | AI 정책, 24bit/44.1k로 서비스 |
+| Apple Music | DDEX ERN 3.8.2* | Transporter* | release-by-release | 구독(스트리밍) | 가능 | AI 정책, 발매유형 불일치=차단, 작곡가 필수 |
+| YouTube Music | DDEX ERN 3.8.2 | SFTP | batch | 구독 + 무료(광고) | 가능 | Content ID(커버·샘플·리믹스 주의), 손실 압축 서비스 |
+| Amazon Music | DDEX ERN 3.8.2 | SFTP | batch | 구독 + 무료(광고) | 가능 | — |
+| TIDAL | DDEX ERN 3.8.2 | SFTP | batch | 구독 | 가능 | 커버곡 이용허락, AI 정책 |
+| Deezer | DDEX ERN 3.8.2 | SFTP | batch | 구독 + 무료(광고) | 가능 | 작사·작곡 필수, 커버 4096px 이하, 16bit/44.1k 서비스, 14일 전 |
+| Qobuz | DDEX ERN 3.8.2 | SFTP | release-by-release | 구독(주문형) | 불가(계약 확인 시 변경) | — |
+
+\* Apple은 보통 iTunes Package를 Transporter로 받는다. DDEX로 받는다는 계약이면 그대로, 아니면 전용 어댑터가 필요하다.
+다운로드 판매(PayAsYouGo)는 도매가 등급 데이터가 없어 아직 어떤 DSP에도 넣지 않는다.
+
+배급 준비(스테이징) 단계에서 DSP마다 위 조건을 검사한다: 커버 크기·정사각형, 무손실·샘플레이트·비트, 필수 크레딧, 장르,
+발매일 여유, 음량 기준, 19금 표시, 가상 코드, ERN 버전, 그리고 신고 항목(커버·샘플·리믹스·AI)에 따른 플랫폼별 정책
+(`DSP_CONTENT_ID_RISK`, `DSP_COVER_LICENSE_REQUIRED`, `DSP_KR_COVER_CONSENT`, `DSP_AI_POLICY`)과
+서비스 음질 안내(`DSP_AUDIO_SERVED_DOWNSAMPLED`). 정책 항목은 경고(담당자 확인)이며 단독으로 전송을 막지 않는다.
+
+## 0-2. 직계약 / Merlin 선택 (migration 0056)
+
+DSP마다 계약 경로를 고른다. 전송 자체는 같은 DSP 수신 서버로 가고, **계약 증빙만** 달라진다.
+
+- `DIRECT` (기본): 그 DSP와의 직접 계약 (`partner contract D-5 계약번호`)
+- `MERLIN`: Merlin 가입 계약이 DSP 계약을 대신 (`partner contract merlin 가입계약번호`). Merlin 딜이 있는 DSP만 선택 가능
+  (Spotify·Apple·YouTube·Amazon·TIDAL·Deezer). DPID·엔드포인트·테스트 ERN/ACK 등 기술 온보딩은 동일하게 필요.
+
+변경: `audeniq-admin --operator 이름 partner route D-5 MERLIN` 또는 스태프 ADMIN `POST /api/staff/dsps/{code}/route`
+`{"route":"MERLIN","note":"사유"}`. Merlin 딜 목록이 바뀌면 `partner merlin-eligible D-11 true`.
+어느 경로든 공식 오픈 전에는 잠금(0절) 때문에 실제로 라우팅되지 않는다.
+
 ## 1. 무엇이 구현됐나
 
 | 구성 | 파일 | 내용 |
