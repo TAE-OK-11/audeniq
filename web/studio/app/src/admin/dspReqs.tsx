@@ -46,7 +46,7 @@ export const DSP_REQS: Req[] = [
 ];
 
 const CHANNEL_LABEL: Record<string, string> = { SFTP: 'SFTP 전송', TRANSPORTER: 'Apple Transporter', PARTNER_FEED: '플랫폼 전용 피드' };
-const MODEL_LABEL: Record<string, string> = { SubscriptionModel: '구독', AdvertisementSupportedModel: '무료(광고)', PayAsYouGoModel: '다운로드', RightsClaimModel: '업로드 영상 수익(클레임)' };
+const MODEL_LABEL: Record<string, string> = { SubscriptionModel: '구독', AdvertisementSupportedModel: '무료(광고)', PayAsYouGoModel: '건별 결제', RightsClaimModel: '업로드 영상 수익(클레임)' };
 const dealLabel = (d: DspItem) => (d.deal?.commercial_models ?? []).map(m => MODEL_LABEL[m] ?? m).join('+');
 
 export const reqsFor = (d: DspItem) => DSP_REQS.filter(r => !r.krOnly || d.region === 'Kr');
@@ -115,6 +115,8 @@ export const DSP_NAME: Record<string, string> = {
   'D-22': 'Tencent Music', 'D-23': 'Napster', 'D-24': 'iHeartRadio', 'D-25': 'Instagram·Facebook (Meta)',
   'D-26': 'TikTok·CapCut', 'D-27': 'YouTube Content ID', 'D-28': 'Snapchat', 'D-29': 'Beatport',
   'D-30': 'iTunes Store', 'D-31': 'Claro Música', 'D-32': 'Pretzel', 'D-33': 'Triller', 'D-34': 'TouchTunes', 'D-35': 'Yandex Music',
+  'D-36': 'Kuaishou·Kwai', 'D-37': 'JOOX', 'D-38': 'TREBEL', 'D-39': 'Mixcloud', 'D-40': 'Twitch',
+  'D-41': 'Peloton', 'D-42': 'Canva', 'D-43': 'Lickd', 'D-44': 'Adaptr', 'D-45': 'STYNGR',
 };
 
 /** 발매 내용을 고쳐야 하는 문제 (아티스트 보완) */
