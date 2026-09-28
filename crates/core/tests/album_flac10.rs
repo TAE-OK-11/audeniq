@@ -5,84 +5,31 @@
 //!
 //! Run with:
 //!   cargo test -p audeniq-core --test album_flac10 -- --nocapture
-use async_trait::async_trait;
 use audeniq_core::{
     api::{AppState, router},
     config::Config,
-    database, ddex_xsd,
-    error::{Error, Result},
-    operations,
-    storage::{ObjectMeta, ObjectStore, UploadGrant},
+    database, ddex_xsd, operations,
+    storage::ObjectStore,
 };
-use axum::{
-    Router,
-    body::Body,
-    http::{Request, StatusCode},
-};
-use chrono::{DateTime, Utc};
-use serde_json::{Value, json};
-use sha2::Digest;
+use axum::{Router, http::StatusCode};
+use serde_json::json;
 use sqlx::PgPool;
 use std::{
-    collections::BTreeMap,
     path::{Path, PathBuf},
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    },
+    sync::Arc,
     time::Instant,
 };
-use tokio::sync::Mutex;
-use tower::ServiceExt;
 use uuid::Uuid;
 
-const SECRET: &str = "test-only-service-secret-32-characters";
-const ORIGIN: &str = "http://localhost:5173";
+mod support;
+use support::*;
+
 const TRACKS: usize = 10;
 const TRACK_SECS: u32 = 210; // 3:30
 
-#[derive(Default)]
-struct FileStore {
-    files: Mutex<BTreeMap<String, (Vec<u8>, String)>>,
-    get_calls: AtomicUsize,
-}
-#[async_trait]
-impl ObjectStore for FileStore {
-    async fn presign_put(
-        &self,
-        _key: &str,
-        _size: i64,
-        _mime: &str,
-        _nonce: &str,
-        _expires: DateTime<Utc>,
-    ) -> Result<UploadGrant> {
-        Err(Error::Storage)
-    }
-    async fn head(&self, key: &str) -> Result<Option<ObjectMeta>> {
-        Ok(self.files.lock().await.get(key).map(|(b, ct)| ObjectMeta {
-            size: b.len() as i64,
-            content_type: ct.clone(),
-            nonce: String::new(),
-            etag: String::new(),
-        }))
-    }
-    async fn freeze(&self, _source: &str, _target: &str, _etag: &str) -> Result<()> {
-        Err(Error::Storage)
-    }
-    async fn get(&self, key: &str) -> Result<Vec<u8>> {
-        self.get_calls.fetch_add(1, Ordering::SeqCst);
-        self.files
-            .lock()
-            .await
-            .get(key)
-            .map(|(b, _)| b.clone())
-            .ok_or(Error::Storage)
-    }
-}
-
-async fn app(pool: PgPool) -> (Router, Arc<FileStore>) {
+async fn app(pool: PgPool) -> (Router, Arc<MemStore>) {
     database::MIGRATOR.run(&pool).await.unwrap();
-    let store = Arc::new(FileStore::default());
+    let store = Arc::new(MemStore::default());
     let s = AppState::new(
         pool,
         Config {
@@ -99,85 +46,6 @@ async fn app(pool: PgPool) -> (Router, Arc<FileStore>) {
     .await
     .unwrap();
     (router(s), store)
-}
-
-#[derive(Clone)]
-struct User {
-    org: Uuid,
-    party: Uuid,
-    cookie: String,
-    csrf: String,
-}
-
-async fn call(
-    app: &Router,
-    method: &str,
-    path: &str,
-    body: Value,
-    user: Option<&User>,
-) -> (StatusCode, Value) {
-    let mut b = Request::builder()
-        .method(method)
-        .uri(path)
-        .header("x-audeniq-service", SECRET)
-        .header("origin", ORIGIN)
-        .header("content-type", "application/json");
-    if let Some(u) = user {
-        b = b
-            .header("cookie", &u.cookie)
-            .header("x-csrf-token", &u.csrf);
-    }
-    let r = app
-        .clone()
-        .oneshot(b.body(Body::from(body.to_string())).unwrap())
-        .await
-        .unwrap();
-    let status = r.status();
-    let bytes = axum::body::to_bytes(r.into_body(), 1024 * 1024)
-        .await
-        .unwrap();
-    (
-        status,
-        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
-    )
-}
-
-async fn user(app: &Router) -> User {
-    let email = format!("{}@example.test", Uuid::new_v4());
-    let credentials = json!({"email":email,"password":"Long-test-password-123!"});
-    let (s, r) = call(app, "POST", "/api/auth/register", credentials.clone(), None).await;
-    assert_eq!(s, StatusCode::OK, "{r}");
-    let req = Request::builder()
-        .method("POST")
-        .uri("/api/auth/login")
-        .header("x-audeniq-service", SECRET)
-        .header("origin", ORIGIN)
-        .header("content-type", "application/json")
-        .body(Body::from(credentials.to_string()))
-        .unwrap();
-    let resp = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let cookie = resp.headers()["set-cookie"]
-        .to_str()
-        .unwrap()
-        .split(';')
-        .next()
-        .unwrap()
-        .to_string();
-    let bytes = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
-        .await
-        .unwrap();
-    let l: Value = serde_json::from_slice(&bytes).unwrap();
-    User {
-        org: Uuid::parse_str(r["org_id"].as_str().unwrap()).unwrap(),
-        party: Uuid::parse_str(r["party_id"].as_str().unwrap()).unwrap(),
-        cookie,
-        csrf: l["csrf_token"].as_str().unwrap().into(),
-    }
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(sha2::Sha256::digest(bytes))
 }
 
 /// 3:30 stereo FLAC master, distinct pitch per track so every file differs.
@@ -211,7 +79,7 @@ fn make_flac(dir: &Path, idx: usize) -> Vec<u8> {
 
 async fn register_asset(
     pool: &PgPool,
-    store: &FileStore,
+    store: &MemStore,
     u: &User,
     name: &str,
     bytes: &[u8],
@@ -267,23 +135,7 @@ async fn create_artist(app: &Router, u: &User) -> Uuid {
     Uuid::parse_str(v["id"].as_str().unwrap()).unwrap()
 }
 
-async fn row_version(pool: &PgPool, release: Uuid) -> i64 {
-    sqlx::query_scalar("SELECT row_version FROM catalog.releases WHERE id=$1")
-        .bind(release)
-        .fetch_one(pool)
-        .await
-        .unwrap()
-}
-
-async fn release_status(pool: &PgPool, release: Uuid) -> String {
-    sqlx::query_scalar("SELECT status FROM catalog.releases WHERE id=$1")
-        .bind(release)
-        .fetch_one(pool)
-        .await
-        .unwrap()
-}
-
-async fn run_one(pool: &PgPool, store: &Arc<FileStore>, queue: &str, kind: &str) -> String {
+async fn run_one(pool: &PgPool, store: &Arc<MemStore>, queue: &str, kind: &str) -> String {
     let job = operations::claim(pool, queue, "test-worker", 600)
         .await
         .unwrap()
@@ -536,36 +388,4 @@ async fn album_10x_flac_330_distribution_timing(pool: PgPool) {
     eprintln!("  ERN XML size: {ern_kb:.1} KB, XSD valid: {xsd_ok}");
     eprintln!("  revision: {revision_id}");
     eprintln!("============================================================\n");
-}
-
-/// A real 3000x3000 PNG cover: Stage 1 QCs the release artwork (size,
-/// square), so a fake header no longer passes. Generated once per binary.
-fn cover_png() -> &'static [u8] {
-    static ONCE: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
-    ONCE.get_or_init(|| {
-        let dir = std::env::temp_dir().join("audeniq-cover-fixture");
-        std::fs::create_dir_all(&dir).unwrap();
-        let out = dir.join("cover3000.png");
-        if !out.exists() {
-            let tmp = dir.join(format!("cover.{}.png", std::process::id()));
-            let st = std::process::Command::new("ffmpeg")
-                .args([
-                    "-y",
-                    "-v",
-                    "error",
-                    "-f",
-                    "lavfi",
-                    "-i",
-                    "color=c=0x3355aa:s=3000x3000",
-                    "-frames:v",
-                    "1",
-                ])
-                .arg(&tmp)
-                .status()
-                .expect("ffmpeg runs");
-            assert!(st.success(), "ffmpeg generated the cover fixture");
-            std::fs::rename(&tmp, &out).unwrap();
-        }
-        std::fs::read(&out).unwrap()
-    })
 }

@@ -1,4 +1,4 @@
--- 0059: indexes for the cross-org catalog lookups.
+-- 0060: indexes for the cross-org catalog lookups.
 --
 -- Stage 2 (2-C.1/2-C.2) and Stage 1's UPC check look releases, tracks and
 -- assets up by identifier or content hash across every org. Without these
