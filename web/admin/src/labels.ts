@@ -4,6 +4,19 @@ import type { Duty, StaffRole } from './api/staff';
 
 export type Tone = 'blue' | 'violet' | 'amber' | 'green' | 'red' | 'gray';
 
+const DSP_NAMES: [string, string][] = [
+  ['melon', '멜론'], ['genie', '지니'], ['flo', 'FLO'], ['bugs', '벅스'],
+  ['spotify', 'Spotify'], ['apple', 'Apple Music / iTunes'], ['youtube', 'YouTube Music'],
+  ['amazon', 'Amazon Music'], ['tidal', 'TIDAL'], ['deezer', 'Deezer'], ['qobuz', 'Qobuz'],
+];
+
+export function dspLabel(value: string): string {
+  const bySlug = DSP_NAMES.find(([slug]) => slug === value);
+  if (bySlug) return bySlug[1];
+  const code = /^D-(\d+)$/.exec(value);
+  return code ? DSP_NAMES[Number(code[1]) - 1]?.[1] ?? '알 수 없는 플랫폼' : value;
+}
+
 export const ROLE_LABEL: Record<StaffRole, string> = {
   ADMIN: '관리자', REVIEWER: '심사 담당', OPERATOR: '배급 운영', SUPPORT: '고객 지원',
 };
@@ -87,6 +100,7 @@ export function checkLabel(code: string): string {
   const extra: Record<string, string> = {
     S2_INTEGRITY_DUP: '중복 음원', AUDIO_SIMILAR_TO_EXISTING: '기존 음원과 유사', S2_PROTECTED_NAME: '보호 아티스트명',
     DSP_LOUDNESS_ADVISORY: '음량(라우드니스) 권고', DSP_CLIPPING_ADVISORY: '클리핑 권고',
+    S2_EXPRESS_REQUEST: '신속 발매 요청', S2_ADDITIONAL_RIGHTS: '추가 권리 확인',
   };
   return extra[code] ?? code;
 }

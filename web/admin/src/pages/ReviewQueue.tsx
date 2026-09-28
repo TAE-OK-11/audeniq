@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from '../lib/router';
 import { errorMessage } from '../api/errors';
 import { staffApi, type QueueRelease } from '../api/staff';
-import { QUEUE_FILTERS, RELEASE_STATUS, RELEASE_TYPE, ago, applicationPending, day, pick } from '../labels';
+import { QUEUE_FILTERS, RELEASE_STATUS, RELEASE_TYPE, ago, applicationPending, day, dspLabel, pick } from '../labels';
 import { Chip, Empty, ErrorBox, Filters, Initial, PageHead, Skeleton, StatusChip, SubTabs, useStaff } from '../ui';
 
 const PAGE = 50;
@@ -84,7 +84,7 @@ export function ReviewQueue() {
                   <span>{RELEASE_TYPE[r.release_type] ?? r.release_type}</span>
                   <span>발매 예정 {day(r.release_date)}</span>
                 </span>
-                {r.platforms.length > 0 && <span className="adm-dsps">{r.platforms.map(p => <span key={p}>{p}</span>)}</span>}
+                {r.platforms.length > 0 && <span className="adm-dsps">{r.platforms.map(p => <span key={p}>{dspLabel(p)}</span>)}</span>}
               </span>
               <span className="adm-row-end">
                 {r.status === 'READY_FOR_DELIVERY' && applicationPending(r.agreement)

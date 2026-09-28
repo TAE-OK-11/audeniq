@@ -553,6 +553,65 @@ pub async fn submit(
         // In flight with a *changed* body: the user must wait or correct first.
         return Err(Error::PolicyGate("RELEASE_NOT_SUBMITTABLE"));
     }
+    let draft = &body["release"]["draft"];
+    if let Some(options) = draft.get("options") {
+        let enabled = |key: &str| options.get(key).and_then(Value::as_bool).unwrap_or(false);
+        let declared = &body["declarations"];
+        if (enabled("cover") && declared["is_cover"] != true)
+            || (enabled("sample") && declared["contains_samples"] != true)
+            || (enabled("ai") && declared["ai_involved"] != true)
+        {
+            return Err(Error::PolicyGate("SPECIAL_DECLARATION_MISMATCH"));
+        }
+        if enabled("express") && options["expressAck"] != true {
+            return Err(Error::PolicyGate("EXPRESS_ACK_REQUIRED"));
+        }
+        if enabled("ai")
+            && options["aiTool"]
+                .as_str()
+                .is_none_or(|s| s.trim().is_empty())
+        {
+            return Err(Error::PolicyGate("AI_DETAILS_REQUIRED"));
+        }
+        if enabled("cover") {
+            let tracks = options["coverTracks"]
+                .as_array()
+                .ok_or(Error::PolicyGate("COVER_DETAILS_REQUIRED"))?;
+            if tracks.is_empty()
+                || tracks.iter().any(|t| {
+                    t["originalTitle"]
+                        .as_str()
+                        .is_none_or(|s| s.trim().is_empty())
+                        || t["originalArtist"]
+                            .as_str()
+                            .is_none_or(|s| s.trim().is_empty())
+                })
+                || options["coverRightsAck"] != true
+            {
+                return Err(Error::PolicyGate("COVER_DETAILS_REQUIRED"));
+            }
+        }
+    }
+    let selected = draft
+        .get("platforms")
+        .and_then(Value::as_array)
+        .ok_or(Error::PolicyGate("DSP_SELECTION_REQUIRED"))?;
+    if selected.is_empty() || selected.len() > crate::dsp_registry::REGISTRY.len() {
+        return Err(Error::PolicyGate("DSP_SELECTION_REQUIRED"));
+    }
+    let dsps =
+        crate::dsp_registry::requested(draft).ok_or(Error::PolicyGate("DSP_SELECTION_REQUIRED"))?;
+    if dsps.len() != selected.len() {
+        return Err(Error::PolicyGate("DSP_SELECTION_INVALID"));
+    }
+    let ids: Vec<Uuid> = dsps.iter().map(|d| d.uuid()).collect();
+    if crate::routing::public_routes(&s.pool, org, &ids)
+        .await?
+        .iter()
+        .any(|route| !route.routable)
+    {
+        return Err(Error::PolicyGate("DSP_UNAVAILABLE"));
+    }
     // Re-check everything that will be published before a revision exists:
     // input-time checks can be bypassed by data written before they existed
     // (or by list changes), and a late failure would otherwise surface only

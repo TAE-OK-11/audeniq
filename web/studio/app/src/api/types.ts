@@ -47,6 +47,13 @@ export interface DeliveryItem {
   issues: { code: string; severity: 'BLOCKER' | 'WARNING'; detail: string }[];
 }
 
+export interface DspAvailability {
+  slug: string;
+  name: string;
+  region: 'KR' | 'GLOBAL';
+  available: boolean;
+}
+
 export interface ReleaseDetail extends Release {
   tracks: Track[];
   draft?: ReleaseDraft;
@@ -108,12 +115,12 @@ export interface ReleaseOptionsData {
   guardian: string; guardianRelation: string; guardianContact: string;
   guardian2: string; guardian2Relation: string; guardian2Contact: string;
   guardianConsentDone: boolean; familyCertName: string; familyCertMethod: string;
-  cover: boolean; coverTracks: CoverTrackData[]; coverRightsAck: boolean; coverLicenseFile: string;
-  sample: boolean; sampleLicenseFile: string;
-  featured: boolean; featuredConsentFile: string;
+  cover: boolean; coverTracks: CoverTrackData[]; coverRightsAck: boolean; coverLicenseFile: string; coverLicenseAssetId?: string;
+  sample: boolean; sampleLicenseFile: string; sampleLicenseAssetId?: string;
+  featured: boolean; featuredConsentFile: string; featuredConsentAssetId?: string;
   ai: boolean; aiTool: string;
   aiUses?: string[]; aiTools?: string[]; aiUseOther?: string; aiToolOther?: string;
-  shared: boolean; sharedContractFile: string;
+  shared: boolean; sharedContractFile: string; sharedContractAssetId?: string;
   rerelease: boolean; previousTitle: string; previousId: string;
 }
 

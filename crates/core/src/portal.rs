@@ -697,6 +697,14 @@ pub async fn create_document(
             return Err(Error::InvalidCode("DOCUMENT_ASSET_INVALID"));
         }
     }
+    if let Some(asset) = i.asset_id {
+        let existing: Option<Uuid> = sqlx::query_scalar("SELECT id FROM portal.documents WHERE org_id=$1 AND release_id=$2 AND kind='RIGHTS_PROOF' AND asset_id=$3 LIMIT 1")
+            .bind(org).bind(i.release_id).bind(asset).fetch_optional(&mut *tx).await?;
+        if let Some(id) = existing {
+            tx.commit().await?;
+            return Ok(json!({"id":id}));
+        }
+    }
     let id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO portal.documents(id,org_id,release_id,kind,title,body,status,asset_id,file_name) VALUES($1,$2,$3,'RIGHTS_PROOF',$4,$5,$6,$7,$8)",

@@ -7,6 +7,22 @@ import { cleanText, remoteApi, sanitizeProfile, serverUpc, uiStatus, uploadConte
 
 const ORG = 'org-1';
 
+describe('계정 정보', () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  it('다시 방문해도 이메일을 현재 로그인한 서버 계정에서 읽는다', async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({
+      user_id: 'user-2', party_id: 'party-2', email: 'second@example.com',
+    }), { headers: { 'content-type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetcher);
+    setCsrf('existing-token');
+    localStorage.setItem('aq.studio.v2.account', JSON.stringify({ email: 'first@example.com' }));
+    await expect(remoteApi.me()).resolves.toEqual({ id: 'user-2', email: 'second@example.com' });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    localStorage.removeItem('aq.studio.v2.account');
+  });
+});
+
 describe('upload completion backpressure', () => {
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
@@ -75,6 +91,10 @@ function fakeServer() {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     calls.push({ method, path: url.pathname, body, headers: (init?.headers ?? {}) as Record<string, string> });
     const p = url.pathname.replace(`/api/orgs/${ORG}`, '');
+    if (p === '/dsps') return json(200, { items: [
+      { slug: 'spotify', name: 'Spotify', region: 'GLOBAL', available: true },
+      { slug: 'apple', name: 'Apple Music', region: 'GLOBAL', available: false },
+    ] });
     if (p === '/artists' && method === 'GET') return json(200, { items: artists, limit: 100, next_cursor: null });
     if (p === '/artists' && method === 'POST') { const a = { id: `artist-${++seq}`, name: body.name }; artists.push(a); return json(200, { id: a.id, row_version: 0 }); }
     // 같은 이름이면 기존 파티를 돌려준다 (서버와 같은 동작)
@@ -197,6 +217,16 @@ describe('remoteApi (가짜 서버)', () => {
   });
   afterEach(() => { vi.unstubAllGlobals(); setCsrf(''); });
 
+  it('서버가 내려준 DSP만 선택 가능 상태로 쓰고, 배급 불가 선택은 저장 전에 막는다', async () => {
+    expect(await remoteApi.listDsps()).toEqual([
+      { slug: 'spotify', name: 'Spotify', region: 'GLOBAL', available: true },
+      { slug: 'apple', name: 'Apple Music', region: 'GLOBAL', available: false },
+    ]);
+    await expect(remoteApi.submitRelease(null, payload({ platforms: ['apple'] })))
+      .rejects.toMatchObject({ code: 'DSP_UNAVAILABLE' });
+    expect(server.calls.some(c => c.method === 'POST' && c.path.endsWith('/releases'))).toBe(false);
+  });
+
   it('임시 저장: 발매 생성 → 아티스트 → 트랙 → profile 저장, 변경 요청마다 CSRF를 붙인다', async () => {
     const r = await remoteApi.saveDraft(null, payload());
     expect(r.status).toBe('draft');
@@ -207,6 +237,8 @@ describe('remoteApi (가짜 서버)', () => {
     expect(rel.tracks[0]).toMatchObject({ title: '첫 곡', track_number: 1, asset_id: 'asset-1', lyrics: '가사\n둘째 줄' });
     const profile = rel.draft as Record<string, unknown>;
     expect(profile.notes_lines).toEqual(['첫 줄', '둘째 줄']);
+    expect(profile.platforms).toEqual(['spotify']);
+    expect(profile.options).toEqual({});
     expect(JSON.stringify(profile)).not.toMatch(/첫 줄\\n/);
 
     const mutations = server.calls.filter(c => c.method !== 'GET');

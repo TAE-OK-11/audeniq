@@ -45,6 +45,11 @@ GRANT SELECT,UPDATE ON distribution.delivery_staging TO audeniq_api;
 GRANT SELECT ON distribution.distribution_packages TO audeniq_api;
 GRANT USAGE ON SCHEMA execution TO audeniq_api;
 GRANT SELECT ON execution.adapter_profiles,execution.delivery_jobs,execution.live_bindings TO audeniq_api;
+-- Artist DSP availability and submit gate use the same contracted route verdict.
+GRANT SELECT ON execution.route_coverage TO audeniq_api;
+GRANT SELECT (org_id,dsp_id,route_kind,enabled,endpoint_id,contract_id,contract_revision_id) ON distribution.route_plans TO audeniq_api;
+GRANT SELECT (org_id,dsp_id,id,integration_status) ON distribution.dsp_endpoints TO audeniq_api;
+GRANT SELECT (id,org_id,contract_id,policy_version) ON rights.contract_revisions TO audeniq_api;
 GRANT SELECT ON distribution.canonical_releases,distribution.identifier_issuers TO audeniq_api;
 GRANT EXECUTE ON FUNCTION execution.partner_readiness(text) TO audeniq_api;
 -- Staff review (0044): second-person approvals and reviewer notes. The
