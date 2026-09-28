@@ -22,7 +22,7 @@ export const DSP_REQS: Req[] = [
     key: 'credits', label: '크레딧', codes: ['DSP_CREDIT_COMPOSER_MISSING', 'DSP_CREDIT_LYRICIST_MISSING'],
     spec: d => [d.requires_composer !== false && '작곡가 필수', d.requires_lyricist && '작사가 필수(보컬곡)'].filter(Boolean).join(' · ') || '필수 없음',
   },
-  { key: 'genre', label: '장르', codes: ['DSP_GENRE_MISSING'], spec: () => '장르 지정 필수' },
+  { key: 'genre', label: '장르', codes: ['DSP_GENRE_MISSING', 'DSP_GENRE_NOT_ACCEPTED'], spec: d => (d.accepted_genres?.length ? `${d.accepted_genres.join('·')}만` : '장르 지정 필수') },
   { key: 'marking', label: '청소년 유해 표시', codes: ['DSP_KR_YOUTH_HARMFUL_MARKING'], spec: () => '19금 곡은 유해 표시 필수', krOnly: true },
   { key: 'loudness', label: '음량', codes: ['DSP_LOUDNESS_ADVISORY', 'DSP_CLIPPING_ADVISORY'], spec: d => `${d.loudness_target_lufs} LUFS 기준 (권고)` },
   { key: 'ids', label: 'UPC·ISRC', codes: ['DSP_IDENTIFIER_VIRTUAL'], spec: () => '정식 음반·음원 코드' },
@@ -31,7 +31,7 @@ export const DSP_REQS: Req[] = [
     spec: d => [d.content_id && 'Content ID(커버·샘플 주의)', d.cover_license_required && '커버곡 이용허락', d.ai_policy && 'AI 활용 정책'].filter(Boolean).join(' · ') || '추가 정책 없음',
   },
   {
-    key: 'delivery', label: '전송 방식', codes: ['DSP_ERN_VERSION_UNSUPPORTED', 'DSP_AUDIO_SERVED_DOWNSAMPLED'],
+    key: 'delivery', label: '전송 방식', codes: ['DSP_ERN_VERSION_UNSUPPORTED', 'DSP_AUDIO_SERVED_DOWNSAMPLED', 'DSP_REGIONAL_CONTENT_REVIEW'],
     spec: d => [CHANNEL_LABEL[d.channel ?? ''] ?? '—', d.ern_version ? `DDEX ERN ${d.ern_version}` : '플랫폼 전용 형식', dealLabel(d)].filter(Boolean).join(' · '),
   },
   {
@@ -46,7 +46,7 @@ export const DSP_REQS: Req[] = [
 ];
 
 const CHANNEL_LABEL: Record<string, string> = { SFTP: 'SFTP 전송', TRANSPORTER: 'Apple Transporter', PARTNER_FEED: '플랫폼 전용 피드' };
-const MODEL_LABEL: Record<string, string> = { SubscriptionModel: '구독', AdvertisementSupportedModel: '무료(광고)', PayAsYouGoModel: '다운로드' };
+const MODEL_LABEL: Record<string, string> = { SubscriptionModel: '구독', AdvertisementSupportedModel: '무료(광고)', PayAsYouGoModel: '다운로드', RightsClaimModel: '업로드 영상 수익(클레임)' };
 const dealLabel = (d: DspItem) => (d.deal?.commercial_models ?? []).map(m => MODEL_LABEL[m] ?? m).join('+');
 
 export const reqsFor = (d: DspItem) => DSP_REQS.filter(r => !r.krOnly || d.region === 'Kr');
@@ -110,6 +110,10 @@ export function DspRequirements({ codes, dsps, staging }: { codes: string[]; dsp
 export const DSP_NAME: Record<string, string> = {
   'D-1': '멜론', 'D-2': '지니', 'D-3': 'FLO', 'D-4': '벅스', 'D-5': 'Spotify', 'D-6': 'Apple Music',
   'D-7': 'YouTube Music', 'D-8': 'Amazon Music', 'D-9': 'TIDAL', 'D-10': 'Deezer', 'D-11': 'Qobuz',
+  'D-12': 'Pandora', 'D-13': 'SoundCloud', 'D-14': 'Audiomack', 'D-15': 'Anghami', 'D-16': 'Boomplay',
+  'D-17': 'JioSaavn', 'D-18': 'KKBOX', 'D-19': 'LINE MUSIC', 'D-20': 'AWA', 'D-21': 'NetEase Cloud Music',
+  'D-22': 'Tencent Music', 'D-23': 'Napster', 'D-24': 'iHeartRadio', 'D-25': 'Meta (Facebook·Instagram)',
+  'D-26': 'TikTok·CapCut', 'D-27': 'YouTube Content ID', 'D-28': 'Snapchat', 'D-29': 'Beatport',
 };
 
 /** 발매 내용을 고쳐야 하는 문제 (아티스트 보완) */
@@ -127,6 +131,7 @@ const CONTENT_TEXT: Record<string, string> = {
   DSP_GENRE_MISSING: '장르가 없어요',
   DSP_LEAD_TIME_SHORT: '발매일까지 여유가 부족해요',
   DSP_KR_YOUTH_HARMFUL_MARKING: '청소년 유해 표시가 필요해요',
+  DSP_GENRE_NOT_ACCEPTED: '이 플랫폼이 받지 않는 장르예요',
 };
 const ERN_CODES = ['DSP_ERN_BUILD', 'DSP_ERN_XSD', 'DSP_ERN_PREFLIGHT', 'DSP_ERN_BUSINESS_RULE', 'DSP_ERN_PRESET_INVALID'];
 const LINK_CODES = ['DSP_ROUTE_NOT_LIVE', 'DSP_NOT_IN_APPROVED_SCOPE', 'DSP_SENDER_DPID_MISSING', 'DSP_RECIPIENT_DPID_MISSING', 'DSP_PARTNER_SPEC_PENDING'];

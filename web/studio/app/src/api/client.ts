@@ -33,7 +33,7 @@ export const api = {
   listOrgs: (): Promise<Org[]> => (MOCK ? mockApi.listOrgs() : remoteApi.listOrgs()),
 
   listReleases: (): Promise<Release[]> => (MOCK ? mockApi.listReleases() : remoteApi.listReleases()),
-  listDsps: (): Promise<DspAvailability[]> => (MOCK ? Promise.resolve(DSP.map(([slug, name], i) => ({ slug, name, region: i < 4 ? 'KR' : 'GLOBAL', available: true }))) : remoteApi.listDsps()),
+  listDsps: (): Promise<DspAvailability[]> => (MOCK ? Promise.resolve(DSP.map(([slug, name], i) => ({ slug, name, region: i < 4 ? 'KR' : 'GLOBAL', category: i >= 24 && i <= 27 ? 'SOCIAL' : i === 28 ? 'STORE' : 'STREAMING', available: true }))) : remoteApi.listDsps()),
   getRelease: (id: string): Promise<ReleaseDetail> => (MOCK ? mockApi.getRelease(id) : remoteApi.getRelease(id)),
   /** 임시 저장 — id가 없으면 새 draft를 만들고, 있으면 같은 draft를 갱신 */
   saveDraft: (id: string | null, data: ReleasePayload): Promise<SaveResult> => (MOCK ? mockApi.saveDraft(id, data) : remoteApi.saveDraft(id, data)),

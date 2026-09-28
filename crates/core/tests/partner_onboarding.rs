@@ -283,6 +283,10 @@ async fn fully_onboarded_dsp_is_not_routed_before_launch(pool: PgPool) {
         return; // an operator shell with the lock opened
     }
     let p = "D-5";
+    // Direct contract for this test (Merlin-licensed DSPs default to MERLIN).
+    audeniq_core::partner_admin::set_route(&pool, "ops", p, "DIRECT")
+        .await
+        .unwrap();
     sqlx::query(
         "UPDATE execution.adapter_profiles SET ddex_recipient_dpid='PADPIDA2011021601U',
                 capabilities = capabilities || '{\"send_or_publish\":true}' WHERE partner_id=$1",
@@ -358,6 +362,30 @@ async fn merlin_route_uses_the_merlin_agreement_as_contract_evidence(pool: PgPoo
     use audeniq_core::partner_admin as pa;
     migrated(&pool).await;
     let p = "D-5";
+    // Merlin-licensed DSPs start on the MERLIN route (0057).
+    let route: String =
+        sqlx::query_scalar("SELECT route FROM distribution.dsp_contract_routes WHERE code=$1")
+            .bind(p)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(route, "MERLIN");
+    for (code, want) in [
+        ("D-1", "DIRECT"),
+        ("D-11", "DIRECT"),
+        ("D-29", "DIRECT"),
+        ("D-25", "MERLIN"),
+        ("D-26", "MERLIN"),
+    ] {
+        let r: String =
+            sqlx::query_scalar("SELECT route FROM distribution.dsp_contract_routes WHERE code=$1")
+                .bind(code)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(r, want, "{code}");
+    }
+    pa::set_route(&pool, "ops", p, "DIRECT").await.unwrap();
     partner_onboarding::register_dpid(&pool, p).await.unwrap();
     partner_onboarding::register_endpoint(&pool, p, "sftp://sftp.partner.example/in")
         .await

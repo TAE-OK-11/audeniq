@@ -225,7 +225,10 @@ async fn available_dsps(
     let items: Vec<Value> = dsp_registry::REGISTRY
         .iter()
         .zip(decisions.iter())
-        .map(|(spec, route)| json!({"slug":spec.slug,"name":spec.name,"region":spec.region,"available":route.routable}))
+        .map(|(spec, route)| {
+            json!({"slug":spec.slug,"name":spec.name_ko,"region":spec.region,
+                                    "category":spec.category,"available":route.routable})
+        })
         .collect();
     Ok(Json(json!({"items":items})))
 }

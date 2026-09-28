@@ -31,7 +31,14 @@
 | Amazon Music | DDEX ERN 3.8.2 | SFTP | batch | 구독 + 무료(광고) | 가능 | — |
 | TIDAL | DDEX ERN 3.8.2 | SFTP | batch | 구독 | 가능 | 커버곡 이용허락, AI 정책 |
 | Deezer | DDEX ERN 3.8.2 | SFTP | batch | 구독 + 무료(광고) | 가능 | 작사·작곡 필수, 커버 4096px 이하, 16bit/44.1k 서비스, 14일 전 |
-| Qobuz | DDEX ERN 3.8.2 | SFTP | release-by-release | 구독(주문형) | 불가(계약 확인 시 변경) | — |
+| Qobuz | DDEX ERN 3.8.2 | SFTP | release-by-release | 구독(주문형) | 불가 → 직계약 | — |
+| Pandora (SiriusXM), SoundCloud, Audiomack, iHeartRadio | DDEX ERN 3.8.2 | SFTP | batch | 구독 + 무료(광고) | 가능 | SoundCloud는 지문 인식(Content ID식) |
+| Napster, KKBOX, LINE MUSIC | DDEX ERN 3.8.2 | SFTP | batch | 구독 | 가능 | — |
+| Anghami, Boomplay, JioSaavn, AWA | DDEX ERN 3.8.2 | SFTP | batch | 구독 + 무료(광고) | 가능 | 지역 서비스 |
+| NetEase Cloud Music, Tencent Music (QQ뮤직·쿠거우·쿠워) | DDEX ERN 3.8.2 | SFTP | batch | 구독 + 무료(광고) | 가능 | 중국 콘텐츠 심의, 발매 21일 전 |
+| Meta (Facebook·Instagram), TikTok·CapCut (ByteDance), Snapchat | DDEX ERN 3.8.2 | SFTP | batch | 무료(광고) + 업로드 영상 클레임 | 가능 | 음원 라이브러리 제공 + 사용자 영상 지문 클레임, 커버·샘플 주의 |
+| YouTube Content ID·Shorts | DDEX ERN 3.8.2 | SFTP | batch | 업로드 영상 클레임 | 가능 | YouTube Music(스트리밍)과 별도 선택 |
+| Beatport | DDEX ERN 3.8.2 | SFTP | batch | 구독(Beatport Streaming) | 불가 → 직계약 | 일렉트로닉 장르만(그 외는 차단) |
 
 \* Apple은 보통 iTunes Package를 Transporter로 받는다. DDEX로 받는다는 계약이면 그대로, 아니면 전용 어댑터가 필요하다.
 다운로드 판매(PayAsYouGo)는 도매가 등급 데이터가 없어 아직 어떤 DSP에도 넣지 않는다.
@@ -40,6 +47,12 @@
 발매일 여유, 음량 기준, 19금 표시, 가상 코드, ERN 버전, 그리고 신고 항목(커버·샘플·리믹스·AI)에 따른 플랫폼별 정책
 (`DSP_CONTENT_ID_RISK`, `DSP_COVER_LICENSE_REQUIRED`, `DSP_KR_COVER_CONSENT`, `DSP_AI_POLICY`)과
 서비스 음질 안내(`DSP_AUDIO_SERVED_DOWNSAMPLED`). 정책 항목은 경고(담당자 확인)이며 단독으로 전송을 막지 않는다.
+
+**계약 경로 기본값 (0057)**: Merlin이 라이선스하는 DSP는 전부 `MERLIN`으로 시작한다(Merlin 가입 계약 하나로 커버).
+Merlin 딜이 없는 곳 — 멜론·지니·FLO·벅스, Qobuz, Beatport — 은 `DIRECT`(직계약 대상). Merlin의 파트너 목록은 바뀌므로
+계약 시점에 Merlin이 준 목록과 대조해 `partner merlin-eligible`로 맞춘다. Spotify·Apple·YouTube·Amazon처럼 규모가 커지면
+직계약이 유리한 곳은 `partner route D-n DIRECT`로 언제든 바꿀 수 있다(관리자 화면의 `planned_route`가 현재 계획).
+NAVER VIBE는 2026-12-31 종료 발표로 넣지 않았다.
 
 ## 0-2. 직계약 / Merlin 선택 (migration 0056)
 
