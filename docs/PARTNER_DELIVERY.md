@@ -39,6 +39,15 @@
 | Meta (Facebook·Instagram), TikTok·CapCut (ByteDance), Snapchat | DDEX ERN 3.8.2 | SFTP | batch | 무료(광고) + 업로드 영상 클레임 | 가능 | 음원 라이브러리 제공 + 사용자 영상 지문 클레임, 커버·샘플 주의 |
 | YouTube Content ID·Shorts | DDEX ERN 3.8.2 | SFTP | batch | 업로드 영상 클레임 | 가능 | YouTube Music(스트리밍)과 별도 선택 |
 | Beatport | DDEX ERN 3.8.2 | SFTP | batch | 구독(Beatport Streaming) | 불가 → 직계약 | 일렉트로닉 장르만(그 외는 차단) |
+| iTunes Store | DDEX ERN 3.8.2* | Transporter* | release-by-release | 다운로드 판매(가격대 Normal) | 가능 | Apple Music과 별도 선택, 작곡가 필수 |
+| Claro Música (중남미) | DDEX ERN 3.8.2 | SFTP | batch | 구독 + 무료(광고) | 불가 → 직계약 | — |
+| Pretzel (스트리머용 음원) | DDEX ERN 3.8.2 | SFTP | batch | 구독 | 불가 → 직계약 | 방송(트위치 등)용 라이선스 |
+| Triller | DDEX ERN 3.8.2 | SFTP | batch | 무료(광고) + 업로드 영상 클레임 | 불가 → 직계약 | 로열티 미지급 분쟁 이력 — 선지급·보증 확인 |
+| TouchTunes (디지털 주크박스) | DDEX ERN 3.8.2 | SFTP | batch | 재생당 과금 | 불가 → 직계약 | 매장 공연(주크박스) |
+| Yandex Music (러시아·CIS) | DDEX ERN 3.8.2 | SFTP | batch | 구독 + 무료(광고) | 불가 → 직계약 | 제재·해외송금 제한 — 법무·정산 검토 후 |
+
+요청 목록 대조(2026-09-28): Instagram·Facebook은 Meta 한 피드, QQ Music·Kugou·Kuwo·WeSing은 Tencent Music 한 피드로 들어간다.
+**Resso**(TikTok Music으로 바뀐 뒤 2024-11 종료)와 **Soundtrack by Twitch**(2022 종료)는 서비스가 없어 추가하지 않았다.
 
 \* Apple은 보통 iTunes Package를 Transporter로 받는다. DDEX로 받는다는 계약이면 그대로, 아니면 전용 어댑터가 필요하다.
 다운로드 판매(PayAsYouGo)는 도매가 등급 데이터가 없어 아직 어떤 DSP에도 넣지 않는다.
@@ -49,7 +58,7 @@
 서비스 음질 안내(`DSP_AUDIO_SERVED_DOWNSAMPLED`). 정책 항목은 경고(담당자 확인)이며 단독으로 전송을 막지 않는다.
 
 **계약 경로 기본값 (0057)**: Merlin이 라이선스하는 DSP는 전부 `MERLIN`으로 시작한다(Merlin 가입 계약 하나로 커버).
-Merlin 딜이 없는 곳 — 멜론·지니·FLO·벅스, Qobuz, Beatport — 은 `DIRECT`(직계약 대상). Merlin의 파트너 목록은 바뀌므로
+Merlin 딜이 없는 곳 — 멜론·지니·FLO·벅스, Qobuz, Beatport, Claro Música, Pretzel, Triller, TouchTunes, Yandex Music — 은 `DIRECT`(직계약 대상). Merlin의 파트너 목록은 바뀌므로
 계약 시점에 Merlin이 준 목록과 대조해 `partner merlin-eligible`로 맞춘다. Spotify·Apple·YouTube·Amazon처럼 규모가 커지면
 직계약이 유리한 곳은 `partner route D-n DIRECT`로 언제든 바꿀 수 있다(관리자 화면의 `planned_route`가 현재 계획).
 NAVER VIBE는 2026-12-31 종료 발표로 넣지 않았다.

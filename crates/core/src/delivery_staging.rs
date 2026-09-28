@@ -346,6 +346,14 @@ pub fn evaluate(spec: &DspSpec, i: &StagingInput<'_>) -> Vec<DspCheck> {
             ),
         ));
     }
+    if let Some(risk) = spec.partner_risk {
+        out.push(DspCheck::new(
+            "DSP_PARTNER_RISK",
+            Partner,
+            Warning,
+            format!("{}: {risk}", spec.name_ko),
+        ));
+    }
     if spec.regional_review {
         out.push(DspCheck::new(
             "DSP_REGIONAL_CONTENT_REVIEW",
@@ -1103,12 +1111,21 @@ mod tests {
             // not spec findings.
             let c: Vec<DspCheck> = all
                 .iter()
-                .filter(|c| c.severity != Severity::Info)
+                .filter(|c| c.severity != Severity::Info && c.code != "DSP_PARTNER_RISK")
                 .cloned()
                 .collect();
             assert!(c.is_empty(), "{}: {:?}", d.code(), codes(&c));
             assert_eq!(Readiness::of(&all), Readiness::Ready);
         }
+        // Partner risks (payment history, sanctions) are flagged for staff.
+        for d in [Dsp::D33, Dsp::D35] {
+            assert!(
+                codes(&evaluate(d.spec(), &i)).contains(&"DSP_PARTNER_RISK"),
+                "{}",
+                d.code()
+            );
+        }
+        assert!(!codes(&evaluate(Dsp::D5.spec(), &i)).contains(&"DSP_PARTNER_RISK"));
         // Deezer/YouTube/Spotify serve below 24/48: noted, never blocking.
         let deezer = evaluate(Dsp::D10.spec(), &i);
         assert!(codes(&deezer).contains(&"DSP_AUDIO_SERVED_DOWNSAMPLED"));
