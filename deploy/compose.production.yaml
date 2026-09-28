@@ -148,6 +148,8 @@ services:
       # Partner configs (docs/PARTNER_DELIVERY.md): the API only reads the
       # webhook secrets to verify signed partner notifications.
       PARTNER_CONFIG_DIR: /etc/audeniq/partners
+      # Pre-launch lock: empty = no request ever reaches a real DSP.
+      DSP_LIVE_TRANSMISSION: ${DSP_LIVE_TRANSMISSION:-}
     volumes:
       - api_tmp:/var/tmp/audeniq
       - ./partners:/etc/audeniq/partners:ro
@@ -198,6 +200,8 @@ services:
       AUDENIQ_DELIVERY_TMP: /var/tmp/audeniq
       DDEX_SENDER_DPID: ${DDEX_SENDER_DPID:-}
       DDEX_SENDER_NAME: ${DDEX_SENDER_NAME:-AUDENIQ}
+      # Pre-launch lock: empty = no request ever reaches a real DSP.
+      DSP_LIVE_TRANSMISSION: ${DSP_LIVE_TRANSMISSION:-}
     volumes:
       - worker_tmp:/var/tmp/audeniq
       - ./partners:/etc/audeniq/partners:ro

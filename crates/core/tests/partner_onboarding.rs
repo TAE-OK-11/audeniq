@@ -272,3 +272,71 @@ async fn operator_links_a_partner_to_its_dsp_id(pool: PgPool) {
         .clone();
     assert_eq!(mock["dsp_id"], id.to_string());
 }
+
+/// Pre-launch lock: a DSP that is fully onboarded, contracted, enabled and
+/// staged LIVE is still never routed (so no delivery job and no request)
+/// until DSP_LIVE_TRANSMISSION=enabled opens it at the official launch.
+#[sqlx::test]
+async fn fully_onboarded_dsp_is_not_routed_before_launch(pool: PgPool) {
+    migrated(&pool).await;
+    if audeniq_core::launch::live_transmission_enabled() {
+        return; // an operator shell with the lock opened
+    }
+    let p = "D-5";
+    sqlx::query(
+        "UPDATE execution.adapter_profiles SET ddex_recipient_dpid='PADPIDA2011021601U',
+                capabilities = capabilities || '{\"send_or_publish\":true}' WHERE partner_id=$1",
+    )
+    .bind(p)
+    .execute(&pool)
+    .await
+    .unwrap();
+    partner_onboarding::register_dpid(&pool, p).await.unwrap();
+    partner_onboarding::register_endpoint(&pool, p, "sftp://sftp.partner.example:22/in")
+        .await
+        .unwrap();
+    partner_onboarding::record_credential_stored(&pool, p, "sftp_key")
+        .await
+        .unwrap();
+    partner_onboarding::record_test_ern_validated(&pool, p)
+        .await
+        .unwrap();
+    partner_onboarding::record_test_ack_parsed(&pool, p)
+        .await
+        .unwrap();
+    partner_onboarding::record_contract(&pool, p, "DSA-TEST-1")
+        .await
+        .unwrap();
+    partner_onboarding::set_stage(&pool, p, "LIVE")
+        .await
+        .unwrap();
+    sqlx::query("UPDATE execution.adapter_profiles SET delivery_enabled=true WHERE partner_id=$1")
+        .bind(p)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let contract_live: bool = sqlx::query_scalar("SELECT execution.platform_contract_live($1)")
+        .bind(p)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(
+        contract_live,
+        "everything but the launch switch is in place"
+    );
+    let d5 = audeniq_core::dsp_registry::Dsp::from_code(p)
+        .unwrap()
+        .uuid();
+    let org = uuid::Uuid::new_v4();
+    for d in [
+        audeniq_core::routing::decide_routes(&pool, org, &[d5])
+            .await
+            .unwrap(),
+        audeniq_core::routing::public_routes(&pool, org, &[d5])
+            .await
+            .unwrap(),
+    ] {
+        assert!(!d[0].routable, "{:?}", d[0]);
+        assert_eq!(d[0].reason, "PRE_LAUNCH_LOCKED");
+    }
+}

@@ -401,6 +401,9 @@ fn partner_env() -> &'static std::path::PathBuf {
             std::env::set_var("AUDENIQ_ALLOW_LOCAL_PARTNER_TRANSPORT", "true");
             std::env::set_var("PARTNER_CONFIG_DIR", &config);
             std::env::set_var("AUDENIQ_TEST_PARTNER_HOOK_SECRET", HOOK_SECRET);
+            // This binary exercises the post-launch path; the pre-launch
+            // lock itself is covered in tests/partner_onboarding.rs.
+            std::env::set_var("DSP_LIVE_TRANSMISSION", "enabled");
         }
         drop
     })

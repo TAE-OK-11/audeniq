@@ -152,6 +152,24 @@ pub async fn probe(pool: &PgPool, operator: &str, partner_id: &str) -> Result<Va
     profile_exists(pool, partner_id).await?;
     let c = load(partner_id)?;
     resolve_secrets(&c)?;
+    // Pre-launch lock: a probe is a real request to the DSP.
+    let host = match &c.transport {
+        TransportConfig::Sftp { host, .. } => host.clone(),
+        TransportConfig::S3 { endpoint, .. } => url::Url::parse(endpoint)
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_owned))
+            .unwrap_or_default(),
+        TransportConfig::Local { .. } => "localhost".into(),
+        TransportConfig::None => c
+            .http_api
+            .as_ref()
+            .and_then(|a| url::Url::parse(&a.base_url).ok())
+            .and_then(|u| u.host_str().map(str::to_owned))
+            .unwrap_or_default(),
+    };
+    if !crate::launch::wire_allowed(&host) {
+        return Err(Error::PolicyGate(crate::launch::LOCKED));
+    }
     let target = match c.adapter {
         AdapterKind::HttpApi => {
             let api = crate::partners::http::ApiClient::new(
@@ -366,7 +384,10 @@ pub async fn go_live(pool: &PgPool, operator: &str, partner_id: &str) -> Result<
         .fetch_one(pool)
         .await?;
     Ok(
-        json!({"partner_id": partner_id, "stage": "LIVE", "delivery_enabled": true, "platform_contract_live": live}),
+        json!({"partner_id": partner_id, "stage": "LIVE", "delivery_enabled": true,
+               "platform_contract_live": live,
+               // Before the official launch nothing is routed or sent even so.
+               "live_transmission": crate::launch::live_transmission_enabled()}),
     )
 }
 
