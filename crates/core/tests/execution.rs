@@ -698,7 +698,7 @@ async fn public_submit_requires_a_selected_routable_dsp(pool: PgPool) {
 
     for (selected, expected) in [(false, "DSP_SELECTION_REQUIRED"), (true, "DSP_UNAVAILABLE")] {
         if selected {
-            sqlx::query("UPDATE catalog.releases SET draft = COALESCE(draft,'{}'::jsonb) || '{\"platforms\":[\"spotify\"]}'::jsonb WHERE id=$1")
+            sqlx::query("UPDATE catalog.releases SET draft = COALESCE(draft,'{}'::jsonb) || '{\"platforms\":[\"spotify\"]}'::jsonb, row_version = row_version + 1 WHERE id=$1")
                 .bind(release)
                 .execute(&pool)
                 .await
