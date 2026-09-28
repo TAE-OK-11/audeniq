@@ -135,6 +135,7 @@ All roles can read every list below.
 | GET | `/api/staff/deliveries/{package}/{dsp}/ern` | The exact ERN 3.8.2 XML (or placeholder-DPID preview) staff approve, `application/xml` |
 | POST | `/api/staff/deliveries/{package}/{dsp}/decision` | `{action: APPROVE|HOLD, note?, ern_sha256?, acknowledge_warnings?}`. APPROVE refuses CONTENT_BLOCKED rows (`DELIVERY_CONTENT_BLOCKED`), a changed ERN (409) and unacknowledged audio advisories (`WARNINGS_NOT_ACKNOWLEDGED`), then queues E-0; HOLD needs a note. Rows of a superseded package: `STAGING_SUPERSEDED` |
 | POST | `/api/staff/deliveries/{package}/restage` | Re-run staging after onboarding or issuer changes |
+| POST | `/api/staff/dsps/{dsp}/route` | ADMIN: `{route: DIRECT|MERLIN, note}` — the DSP's contract route. MERLIN only for DSPs with a Merlin deal (`MERLIN_NOT_AVAILABLE_FOR_DSP`). `GET /api/staff/dsps` items carry `name_ko`, `ern_version`, `deal`, `channel`, `choreography`, policy flags and `contract_route`; delivery rows carry `dsp_name` |
 | POST | `/api/staff/deliveries/{package}/{dsp}/live` | `{partner_release_id?, note}` — record LIVE evidence for a platform that never reports it (DELIVERY duty; only DELIVERED jobs; applied by the worker job `delivery.mark_live`, audited) |
 | GET | `/api/staff/dsps` | D-1..D-11 registry with spec, route profile and onboarding gaps |
 | GET | `/api/staff/payouts?status=REQUESTED` | ADMIN only; read-only (money still moves through operations tooling) |
