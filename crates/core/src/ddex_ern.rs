@@ -120,6 +120,22 @@ pub const DEAL_SUBSCRIPTION_AND_FREE: DealProfile = DealProfile {
     commercial_models: &["SubscriptionModel", "AdvertisementSupportedModel"],
     use_types: &["OnDemandStream", "NonInteractiveStream"],
 };
+/// Social / short-form platforms (Meta, TikTok·CapCut, Snapchat): the
+/// catalogue is offered as a sound library for user videos
+/// (UserMakeAvailableLabelProvided / ...UserProvided), ad-funded, and
+/// matching user uploads are claimed (RightsClaimModel).
+pub const DEAL_SOCIAL: DealProfile = DealProfile {
+    commercial_models: &["AdvertisementSupportedModel", "RightsClaimModel"],
+    use_types: &[
+        "UserMakeAvailableLabelProvided",
+        "UserMakeAvailableUserProvided",
+    ],
+};
+/// YouTube Content ID: claims on user uploads that contain the recording.
+pub const DEAL_CONTENT_ID: DealProfile = DealProfile {
+    commercial_models: &["RightsClaimModel"],
+    use_types: &["UserMakeAvailableUserProvided"],
+};
 /// On-demand streaming subscription without radio-style use.
 pub const DEAL_ON_DEMAND_SUBSCRIPTION: DealProfile = DealProfile {
     commercial_models: &["SubscriptionModel"],

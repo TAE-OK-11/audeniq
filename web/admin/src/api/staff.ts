@@ -132,6 +132,8 @@ export interface DspItem {
   choreography?: 'batch' | 'release_by_release' | 'partner_feed';
   merlin_eligible?: boolean;
   content_id?: boolean; cover_license_required?: boolean; ai_policy?: boolean;
+  category?: 'STREAMING' | 'SOCIAL' | 'STORE'; planned_route?: 'DIRECT' | 'MERLIN';
+  regional_review?: boolean; accepted_genres?: string[] | null;
   contract_route?: null | {
     route: 'DIRECT' | 'MERLIN'; merlin_eligible: boolean; merlin_agreement_signed: boolean; contract_live: boolean;
     updated_by: string | null; updated_at: string;
