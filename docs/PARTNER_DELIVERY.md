@@ -24,7 +24,8 @@
 
 | 플랫폼 | 형식 | 전송 | 방식 | 상업 모델(ERN Deal) | Merlin | 추가 정책 |
 |---|---|---|---|---|---|---|
-| 멜론·지니·FLO·벅스 | 전용 피드(JSON+CSV) | 계약 시 지정 | 피드 완료 마커 | 구독 | 불가 | 원작자 커버 동의서, 19금 표시, 작사·작곡 필수 |
+| 멜론·지니·벅스 | 전용 피드(JSON+CSV) | 계약 시 지정 | 피드 완료 마커 | 구독 | 불가 | 원작자 커버 동의서, 19금 표시, 작사·작곡 필수 |
+| FLO | 전용 피드(JSON+CSV) | 계약 시 지정 | 피드 완료 마커 | 구독 | 가능 (Merlin의 국내 유일 파트너, 2022~) | 위와 같음 |
 | Spotify | DDEX ERN 3.8.2 | SFTP | batch | 구독 + 무료(광고) | 가능 | AI 정책, 24bit/44.1k로 서비스 |
 | Apple Music | DDEX ERN 3.8.2* | Transporter* | release-by-release | 구독(스트리밍) | 가능 | AI 정책, 발매유형 불일치=차단, 작곡가 필수 |
 | YouTube Music | DDEX ERN 3.8.2 | SFTP | batch | 구독 + 무료(광고) | 가능 | Content ID(커버·샘플·리믹스 주의), 손실 압축 서비스 |
@@ -44,21 +45,32 @@
 | Pretzel (스트리머용 음원) | DDEX ERN 3.8.2 | SFTP | batch | 구독 | 불가 → 직계약 | 방송(트위치 등)용 라이선스 |
 | Triller | DDEX ERN 3.8.2 | SFTP | batch | 무료(광고) + 업로드 영상 클레임 | 불가 → 직계약 | 로열티 미지급 분쟁 이력 — 선지급·보증 확인 |
 | TouchTunes (디지털 주크박스) | DDEX ERN 3.8.2 | SFTP | batch | 재생당 과금 | 불가 → 직계약 | 매장 공연(주크박스) |
-| Yandex Music (러시아·CIS) | DDEX ERN 3.8.2 | SFTP | batch | 구독 + 무료(광고) | 불가 → 직계약 | 제재·해외송금 제한 — 법무·정산 검토 후 |
+| Yandex Music (러시아·CIS) | DDEX ERN 3.8.2 | SFTP | batch | 구독 + 무료(광고) | 가능 | 제재·해외송금 제한 — 법무·정산 검토 후 |
+| Kuaishou·Kwai·SnackVideo | DDEX ERN 3.8.2 | SFTP | batch | 무료(광고) + 업로드 영상 클레임 | 가능 | 중국 콘텐츠 심의, 21일 전, 지문 클레임 |
+| JOOX (동남아·홍콩) | DDEX ERN 3.8.2 | SFTP | batch | 구독 + 무료(광고) | 가능 | — |
+| TREBEL | DDEX ERN 3.8.2 | SFTP | batch | 무료(광고) — 스트리밍 + 조건부 다운로드 | 가능 | — |
+| Mixcloud, Twitch (DJ) | DDEX ERN 3.8.2 | SFTP | batch | 무료(광고) + 구독 — 사용자 믹스·웹캐스트 | 가능 | 지문 인식 |
+| Peloton, Adaptr | DDEX ERN 3.8.2 | SFTP | batch | 구독 | 가능 | 피트니스·앱용 라이선스 (Peloton은 작곡가 필수) |
+| Canva, Lickd, STYNGR | DDEX ERN 3.8.2 | SFTP | batch | 구독 + 건별 — 고객 콘텐츠·게임에 사용 | 가능 | Canva·Lickd는 지문 인식, Lickd 작곡가 필수 |
 
 요청 목록 대조(2026-09-28): Instagram·Facebook은 Meta 한 피드, QQ Music·Kugou·Kuwo·WeSing은 Tencent Music 한 피드로 들어간다.
 **Resso**(TikTok Music으로 바뀐 뒤 2024-11 종료)와 **Soundtrack by Twitch**(2022 종료)는 서비스가 없어 추가하지 않았다.
 
 \* Apple은 보통 iTunes Package를 Transporter로 받는다. DDEX로 받는다는 계약이면 그대로, 아니면 전용 어댑터가 필요하다.
-다운로드 판매(PayAsYouGo)는 도매가 등급 데이터가 없어 아직 어떤 DSP에도 넣지 않는다.
+다운로드 판매 가격대는 기본 `Normal`이며 실제 도매가 등급은 계약서 값으로 바꾼다.
 
 배급 준비(스테이징) 단계에서 DSP마다 위 조건을 검사한다: 커버 크기·정사각형, 무손실·샘플레이트·비트, 필수 크레딧, 장르,
 발매일 여유, 음량 기준, 19금 표시, 가상 코드, ERN 버전, 그리고 신고 항목(커버·샘플·리믹스·AI)에 따른 플랫폼별 정책
 (`DSP_CONTENT_ID_RISK`, `DSP_COVER_LICENSE_REQUIRED`, `DSP_KR_COVER_CONSENT`, `DSP_AI_POLICY`)과
 서비스 음질 안내(`DSP_AUDIO_SERVED_DOWNSAMPLED`). 정책 항목은 경고(담당자 확인)이며 단독으로 전송을 막지 않는다.
 
-**계약 경로 기본값 (0057)**: Merlin이 라이선스하는 DSP는 전부 `MERLIN`으로 시작한다(Merlin 가입 계약 하나로 커버).
-Merlin 딜이 없는 곳 — 멜론·지니·FLO·벅스, Qobuz, Beatport, Claro Música, Pretzel, Triller, TouchTunes, Yandex Music — 은 `DIRECT`(직계약 대상). Merlin의 파트너 목록은 바뀌므로
+**계약 경로 기본값 (0057·0059)**: Merlin이 라이선스하는 DSP는 전부 `MERLIN`으로 시작한다(Merlin 가입 계약 하나로 커버).
+Merlin 파트너(2026-09 확인): Spotify, Apple Music·iTunes, YouTube(Music·Content ID), Amazon, TIDAL, Deezer, Pandora, SoundCloud,
+Audiomack, Anghami, Boomplay, JioSaavn, KKBOX, LINE MUSIC, AWA, NetEase, Tencent, Napster, iHeartRadio, Meta, TikTok, Snap,
+**FLO**, Yandex, Kuaishou, JOOX, TREBEL, Mixcloud, Twitch, Peloton, Canva, Lickd, Adaptr, STYNGR.
+Merlin 딜이 없는 곳 — 멜론·지니·벅스, Qobuz, Beatport, Claro Música, Pretzel, Triller, TouchTunes — 은 `DIRECT`(직계약 대상).
+넣지 않은 Merlin 관련: Triller(Merlin 계약이 미지급으로 끝남 → 직계약 대상 유지), Supernatural(새 회사로 재출시 중, 딜 재확인 필요),
+AI 학습 라이선스(ElevenLabs·Udio — 권리자별 동의(옵트인) 방식이라 발매 전송 대상이 아님), Nina(Merlin Connect API 라이선스). Merlin의 파트너 목록은 바뀌므로
 계약 시점에 Merlin이 준 목록과 대조해 `partner merlin-eligible`로 맞춘다. Spotify·Apple·YouTube·Amazon처럼 규모가 커지면
 직계약이 유리한 곳은 `partner route D-n DIRECT`로 언제든 바꿀 수 있다(관리자 화면의 `planned_route`가 현재 계획).
 NAVER VIBE는 2026-12-31 종료 발표로 넣지 않았다.
@@ -69,7 +81,7 @@ DSP마다 계약 경로를 고른다. 전송 자체는 같은 DSP 수신 서버�
 
 - `DIRECT` (기본): 그 DSP와의 직접 계약 (`partner contract D-5 계약번호`)
 - `MERLIN`: Merlin 가입 계약이 DSP 계약을 대신 (`partner contract merlin 가입계약번호`). Merlin 딜이 있는 DSP만 선택 가능
-  (Spotify·Apple·YouTube·Amazon·TIDAL·Deezer). DPID·엔드포인트·테스트 ERN/ACK 등 기술 온보딩은 동일하게 필요.
+  (위 Merlin 파트너 목록). DPID·엔드포인트·테스트 ERN/ACK 등 기술 온보딩은 동일하게 필요.
 
 변경: `audeniq-admin --operator 이름 partner route D-5 MERLIN` 또는 스태프 ADMIN `POST /api/staff/dsps/{code}/route`
 `{"route":"MERLIN","note":"사유"}`. Merlin 딜 목록이 바뀌면 `partner merlin-eligible D-11 true`.

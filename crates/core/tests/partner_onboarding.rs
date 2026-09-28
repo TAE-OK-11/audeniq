@@ -376,6 +376,13 @@ async fn merlin_route_uses_the_merlin_agreement_as_contract_evidence(pool: PgPoo
         ("D-29", "DIRECT"),
         ("D-25", "MERLIN"),
         ("D-26", "MERLIN"),
+        // FLO is Merlin's Korean partner; Yandex and D-36..D-45 (0059).
+        ("D-3", "MERLIN"),
+        ("D-2", "DIRECT"),
+        ("D-33", "DIRECT"),
+        ("D-35", "MERLIN"),
+        ("D-36", "MERLIN"),
+        ("D-45", "MERLIN"),
     ] {
         let r: String =
             sqlx::query_scalar("SELECT route FROM distribution.dsp_contract_routes WHERE code=$1")
