@@ -17,6 +17,7 @@ fn fixture(index: usize) -> PreparedRelease {
 
 fn config(sub: MessageSubType) -> DdexErnConfig {
     DdexErnConfig {
+        deal: &audeniq_core::ddex_ern::DEAL_SUBSCRIPTION,
         message_id: "MSG-2026-09-25-001".into(),
         message_thread_id: None,
         message_sub_type: sub,
@@ -332,4 +333,30 @@ fn ddex_ern_missing_sender_dpid_fails_closed() {
     cfg.sender_party_id = None;
     let err = generate_ddex_ern_382(&c, &cfg).unwrap_err();
     assert!(matches!(err, Error::PolicyGate("DDEX_SENDER_DPID_MISSING")));
+}
+
+/// Every registry DSP's own deal produces a schema-valid ERN 3.8.2 with
+/// exactly that DSP's commercial models and use types.
+#[test]
+fn per_dsp_deals_are_schema_valid() {
+    use audeniq_core::dsp_registry::{DeliveryFormat, REGISTRY};
+    for spec in REGISTRY.iter().filter(|s| s.format == DeliveryFormat::Ddex) {
+        let mut c = config(MessageSubType::Initial);
+        c.deal = spec.deal;
+        let xml = generate_ddex_ern_382(&fixture(0), &c).unwrap();
+        for m in spec.deal.commercial_models {
+            assert!(
+                xml.contains(&format!("<CommercialModelType>{m}</CommercialModelType>")),
+                "{}",
+                spec.code
+            );
+        }
+        assert_eq!(
+            count(&xml, "<CommercialModelType>"),
+            spec.deal.commercial_models.len()
+        );
+        assert_eq!(count(&xml, "<UseType>"), spec.deal.use_types.len());
+        audeniq_core::ddex_xsd::validate_ern_382_xml(&xml)
+            .unwrap_or_else(|e| panic!("{}: {e:?}", spec.code));
+    }
 }

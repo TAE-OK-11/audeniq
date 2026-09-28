@@ -135,8 +135,28 @@ All roles can read every list below.
 | GET | `/api/staff/deliveries/{package}/{dsp}/ern` | The exact ERN 3.8.2 XML (or placeholder-DPID preview) staff approve, `application/xml` |
 | POST | `/api/staff/deliveries/{package}/{dsp}/decision` | `{action: APPROVE|HOLD, note?, ern_sha256?, acknowledge_warnings?}`. APPROVE refuses CONTENT_BLOCKED rows (`DELIVERY_CONTENT_BLOCKED`), a changed ERN (409) and unacknowledged audio advisories (`WARNINGS_NOT_ACKNOWLEDGED`), then queues E-0; HOLD needs a note. Rows of a superseded package: `STAGING_SUPERSEDED` |
 | POST | `/api/staff/deliveries/{package}/restage` | Re-run staging after onboarding or issuer changes |
+| POST | `/api/staff/dsps/{dsp}/route` | ADMIN: `{route: DIRECT|MERLIN, note}` — the DSP's contract route. MERLIN only for DSPs with a Merlin deal (`MERLIN_NOT_AVAILABLE_FOR_DSP`). `GET /api/staff/dsps` items carry `name_ko`, `ern_version`, `deal`, `channel`, `choreography`, policy flags and `contract_route`; delivery rows carry `dsp_name` |
+| POST | `/api/staff/deliveries/{package}/{dsp}/live` | `{partner_release_id?, note}` — record LIVE evidence for a platform that never reports it (DELIVERY duty; only DELIVERED jobs; applied by the worker job `delivery.mark_live`, audited) |
 | GET | `/api/staff/dsps` | D-1..D-11 registry with spec, route profile and onboarding gaps |
 | GET | `/api/staff/payouts?status=REQUESTED` | ADMIN only; read-only (money still moves through operations tooling) |
+
+## Partner webhooks (`/api/partner-hooks/*`)
+
+`POST /api/partner-hooks/{partner_id}` receives a contracted partner's
+notifications (ingestion ACK, live, takedown confirmation). It reaches the API
+through the edge Worker like any other call but carries **no browser Origin**;
+the edge forwards the partner's `x-*` headers (never `x-audeniq-*`). The body
+(≤ 64 KiB) must be signed with the webhook secret from the partner's config
+file: `hex(HMAC-SHA256(secret, timestamp + "." + body))` in the configured
+signature header (default `X-Signature`, optional `sha256=` prefix) with the
+Unix timestamp in `X-Timestamp` (±300 s). Responses: `202 {"received":true}`
+filed; `200 {"duplicate":true}` same body already filed; `401` bad/missing
+signature or stale timestamp; `404` unknown partner or no webhook configured.
+Filed bodies are applied by the worker (`delivery.ack`): correlated to one
+delivery by `partner_message_id` (our submission id) or `partner_release_id`,
+deduplicated on `event_id`. Default JSON shape:
+`{"event_id","type":"accepted|rejected|live|takedown_confirmed","partner_message_id","partner_release_id","code"}`.
+See [PARTNER_DELIVERY.md](PARTNER_DELIVERY.md).
 
 ## Notices and events (edge Worker + D1)
 

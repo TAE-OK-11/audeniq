@@ -24,7 +24,11 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
         }
         return serve_studio(request, &env, &origin).await;
     }
+    // Partner webhooks (DSP ingestion ACKs) are server-to-server: no browser
+    // Origin. The API authenticates them by the partner's HMAC signature.
+    let partner_hook = is_partner_hook(&request.method(), &path);
     if !matches!(request.method(), Method::Get | Method::Head)
+        && !partner_hook
         && request.headers().get("origin")?.as_deref() != Some(&origin)
     {
         return Response::error("Forbidden origin", 403);
@@ -55,6 +59,15 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
     ] {
         if let Some(value) = request.headers().get(name)? {
             forwarded.headers_mut()?.set(name, &value)?;
+        }
+    }
+    if partner_hook {
+        // Signature/timestamp headers are partner-specific (x-signature,
+        // x-hub-signature-256, ...): forward x-* except our own namespace.
+        for (name, value) in request.headers().entries() {
+            if forward_partner_header(&name) {
+                forwarded.headers_mut()?.set(&name, &value)?;
+            }
         }
     }
     // End-user IP for per-source auth rate limits. CF-Connecting-IP is set by
@@ -99,6 +112,22 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
         }
         Err(_) => Response::error("Private API unavailable", 503),
     }
+}
+
+fn is_partner_hook(method: &Method, path: &str) -> bool {
+    *method == Method::Post
+        && path.starts_with("/api/partner-hooks/")
+        && path.len() > "/api/partner-hooks/".len()
+        && !path["/api/partner-hooks/".len()..].contains('/')
+}
+
+fn forward_partner_header(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    n.starts_with("x-")
+        && !n.starts_with("x-audeniq")
+        && !n.starts_with("x-forwarded")
+        && n != "x-real-ip"
+        && n != "x-csrf-token"
 }
 
 /// React Studio build (`bun run build:edge` → web/studio/edge-dist), served
@@ -228,6 +257,20 @@ mod tests {
             StaticRoute::Redirect
         ));
         assert!(matches!(static_route("/404.html"), StaticRoute::NotFound));
+    }
+
+    #[test]
+    fn partner_hooks_skip_origin_but_not_our_headers() {
+        assert!(is_partner_hook(&Method::Post, "/api/partner-hooks/D-5"));
+        assert!(!is_partner_hook(&Method::Get, "/api/partner-hooks/D-5"));
+        assert!(!is_partner_hook(&Method::Post, "/api/partner-hooks/"));
+        assert!(!is_partner_hook(&Method::Post, "/api/partner-hooks/D-5/x"));
+        assert!(!is_partner_hook(&Method::Post, "/api/orgs"));
+        assert!(forward_partner_header("X-Signature"));
+        assert!(forward_partner_header("x-hub-signature-256"));
+        assert!(!forward_partner_header("x-audeniq-service"));
+        assert!(!forward_partner_header("X-Audeniq-Client-Ip"));
+        assert!(!forward_partner_header("cookie"));
     }
 
     #[test]

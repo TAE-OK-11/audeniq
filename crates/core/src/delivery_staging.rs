@@ -83,6 +83,27 @@ pub struct TrackFacts {
 }
 
 /// Everything `evaluate` reads. Pure data: no DB, no clock.
+/// Special-content declarations of the frozen application.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Declared {
+    pub cover: bool,
+    pub samples: bool,
+    pub remix: bool,
+    pub ai: bool,
+}
+
+impl Declared {
+    pub fn from_body(v: &Value) -> Self {
+        let b = |k: &str| v.get(k).and_then(Value::as_bool).unwrap_or(false);
+        Self {
+            cover: b("is_cover"),
+            samples: b("contains_samples"),
+            remix: b("is_remix"),
+            ai: b("ai_involved"),
+        }
+    }
+}
+
 pub struct StagingInput<'a> {
     pub prepared: &'a PreparedRelease,
     pub genre: Option<&'a str>,
@@ -94,6 +115,7 @@ pub struct StagingInput<'a> {
     /// delivery target, short clip events. Never blocking; staff must see
     /// and acknowledge them before approving a delivery.
     pub audio_advisories: &'a [(String, String)],
+    pub declared: Declared,
 }
 
 /// Codes of advisory findings that need an explicit staff acknowledgement.
@@ -238,7 +260,7 @@ pub fn evaluate(spec: &DspSpec, i: &StagingInput<'_>) -> Vec<DspCheck> {
                 let what = match integrated_lufs(detail) {
                     Some(l) => format!(
                         "integrated {l:.1} LUFS vs {} target {:.0} LUFS: the platform will turn it {} by {:.1} dB",
-                        spec.code,
+                        spec.name_ko,
                         spec.loudness_target_lufs,
                         if l > spec.loudness_target_lufs {
                             "down"
@@ -264,6 +286,101 @@ pub fn evaluate(spec: &DspSpec, i: &StagingInput<'_>) -> Vec<DspCheck> {
             )),
             _ => {}
         }
+    }
+    // Per-DSP content policies (DSP_CONDITIONS_RESEARCH_2026-09-25.md §5).
+    let d = i.declared;
+    if spec.content_id && (d.cover || d.samples || d.remix) {
+        out.push(DspCheck::new(
+            "DSP_CONTENT_ID_RISK",
+            Content,
+            Warning,
+            format!(
+                "{}: Content ID needs exclusive rights to all audio; declared cover/sample/remix material is claimed or rejected",
+                spec.name_ko
+            ),
+        ));
+    }
+    if spec.cover_license_required && d.cover {
+        out.push(DspCheck::new(
+            if spec.region == Region::Kr {
+                "DSP_KR_COVER_CONSENT"
+            } else {
+                "DSP_COVER_LICENSE_REQUIRED"
+            },
+            Content,
+            Warning,
+            if spec.region == Region::Kr {
+                format!(
+                    "{}: 원작자 커버 동의서(또는 이용허락) 확인 필요",
+                    spec.name_ko
+                )
+            } else {
+                format!("{}: covers need a mechanical license on file", spec.name_ko)
+            },
+        ));
+    }
+    if spec.ai_policy && d.ai {
+        out.push(DspCheck::new(
+            "DSP_AI_POLICY",
+            Content,
+            Warning,
+            format!(
+                "{}: AI-assisted release — no impersonation of real artists, AI use disclosed",
+                spec.name_ko
+            ),
+        ));
+    }
+    if let (Some(accepted), Some(genre)) = (spec.accepted_genres, i.genre)
+        && !accepted
+            .iter()
+            .any(|g| g.eq_ignore_ascii_case(genre.trim()))
+    {
+        out.push(DspCheck::new(
+            "DSP_GENRE_NOT_ACCEPTED",
+            Content,
+            Blocker,
+            format!(
+                "{} only takes {}: genre '{genre}'",
+                spec.name_ko,
+                accepted.join(", ")
+            ),
+        ));
+    }
+    if let Some(risk) = spec.partner_risk {
+        out.push(DspCheck::new(
+            "DSP_PARTNER_RISK",
+            Partner,
+            Warning,
+            format!("{}: {risk}", spec.name_ko),
+        ));
+    }
+    if spec.regional_review {
+        out.push(DspCheck::new(
+            "DSP_REGIONAL_CONTENT_REVIEW",
+            Content,
+            Info,
+            format!(
+                "{}: content review before publication (lyrics, artwork, political/sensitive content); allow {} days",
+                spec.name_ko, spec.lead_days
+            ),
+        ));
+    }
+    let (max_rate, max_bits) = spec.served_max;
+    if p.tracks.iter().any(|t| {
+        t.audio.sample_rate.is_some_and(|r| r as u32 > max_rate)
+            || t.audio.bits_per_sample.is_some_and(|b| b as u32 > max_bits)
+    }) {
+        out.push(DspCheck::new(
+            "DSP_AUDIO_SERVED_DOWNSAMPLED",
+            Content,
+            Info,
+            format!(
+                "{} streams at most {}bit/{:.1}kHz: the hi-res master is delivered and served downsampled",
+                spec.name_ko,
+                max_bits,
+                f64::from(max_rate) / 1000.0
+            ),
+        ));
     }
     if spec.region == Region::Kr && p.explicit {
         out.push(DspCheck::new(
@@ -321,6 +438,19 @@ impl Readiness {
     }
 }
 
+/// A partner-spec DSP (Korean services) whose contract feed is configured:
+/// its partner config uses the partner-spec feed or a REST API, so the
+/// "spec pending" blocker no longer applies (crate::partners).
+fn partner_feed_configured(code: &str) -> bool {
+    matches!(
+        crate::partner_config::load(code),
+        Ok(Some(c)) if matches!(
+            c.adapter,
+            crate::partner_config::AdapterKind::PartnerSpec | crate::partner_config::AdapterKind::HttpApi
+        )
+    )
+}
+
 /// Placeholder party id for preview messages. Clearly not a DDEX DPID
 /// (those are `PADPIDA` + 13 chars), so it can never be mistaken for one.
 fn preview_dpid(code: &str) -> String {
@@ -349,6 +479,15 @@ fn build_ern(
     let fail = |code: &'static str, detail: String| {
         DspCheck::new(code, Class::Content, Severity::Blocker, detail)
     };
+    if spec.ern_version != "3.8.2" {
+        return Err(fail(
+            "DSP_ERN_VERSION_UNSUPPORTED",
+            format!(
+                "{} ingests ERN {}; the generator builds 3.8.2",
+                spec.name_ko, spec.ern_version
+            ),
+        ));
+    }
     let deal_start = preset
         .deal_start_date(prepared.release_date)
         .map_err(|_| fail("DSP_ERN_PRESET_INVALID", "deal start out of range".into()))?;
@@ -360,6 +499,8 @@ fn build_ern(
         )
         .map_err(|_| fail("DSP_ERN_PRESET_INVALID", "message id template".into()))?;
     let config = ddex_ern::DdexErnConfig {
+        // This DSP's own deal (free tier / subscription / on-demand only).
+        deal: spec.deal,
         message_id: message_id.clone(),
         message_thread_id: None,
         message_sub_type: ddex_ern::MessageSubType::Initial,
@@ -462,6 +603,7 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
     let row = sqlx::query(
         "SELECT dp.org_id, cr.id AS canonical_id, cr.body AS canonical, cr.release_id, cr.revision_id,
                 COALESCE(NULLIF(ar.body -> 'release' -> 'draft', 'null'::jsonb), rel.draft) AS draft,
+                ar.body -> 'declarations' AS declarations,
                 o.name AS org_name, o.ddex_sender_dpid
          FROM distribution.distribution_packages dp
          JOIN distribution.canonical_releases cr ON cr.id = dp.canonical_release_id
@@ -479,8 +621,15 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
     let release_id: Uuid = row.get("release_id");
     let revision_id: Uuid = row.get("revision_id");
     let draft: Value = row.get::<Option<Value>, _>("draft").unwrap_or(Value::Null);
-    let org_name: String = row.get("org_name");
-    let sender_dpid: Option<String> = row.get("ddex_sender_dpid");
+    // The message sender: the org's own DPID, else the distributor's.
+    let (org_name, sender_dpid) = {
+        let name: String = row.get("org_name");
+        let own: Option<String> = row.get("ddex_sender_dpid");
+        match crate::ddex_preset::message_sender(&name, own.as_deref()) {
+            Some((n, d)) => (n, Some(d)),
+            None => (name, None),
+        }
+    };
     let canonical: CanonicalRelease =
         serde_json::from_value(row.get("canonical")).map_err(|_| Error::Internal)?;
     let prepared =
@@ -534,7 +683,12 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
     .collect();
 
     let created_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let declared = Declared::from_body(
+        &row.get::<Option<Value>, _>("declarations")
+            .unwrap_or(Value::Null),
+    );
     let input = StagingInput {
+        declared,
         prepared: &prepared,
         genre: genre.as_deref(),
         artwork_px,
@@ -588,7 +742,7 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
                     "DSP_SENDER_DPID_MISSING",
                     Class::Partner,
                     Severity::Blocker,
-                    "register the org's DDEX sender DPID".into(),
+                    "set the distributor's DDEX_SENDER_DPID (or the org's own sender DPID)".into(),
                 ));
             }
             if recipient_dpid.is_none() {
@@ -637,7 +791,7 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
                     }
                 }
             }
-        } else {
+        } else if !partner_feed_configured(spec.code) {
             checks.push(DspCheck::new(
                 "DSP_PARTNER_SPEC_PENDING",
                 Class::Partner,
@@ -676,9 +830,9 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
         if let (Some(e), true) = (&s.ern, s.wire) {
             sqlx::query(
                 "INSERT INTO distribution.ddex_messages(package_id,org_id,dsp_id,sender_name,sender_dpid,recipient_name,recipient_dpid,ern_xml,ern_sha256)
-                 SELECT $1,$2,$3,$4,o.ddex_sender_dpid,$5,p.ddex_recipient_dpid,$6,$7
-                 FROM identity.orgs o, execution.adapter_profiles p
-                 WHERE o.id=$2 AND p.partner_id=$8
+                 SELECT $1,$2,$3,$4,$9,$5,p.ddex_recipient_dpid,$6,$7
+                 FROM execution.adapter_profiles p
+                 WHERE p.partner_id=$8
                  ON CONFLICT(package_id,dsp_id) DO NOTHING",
             )
             .bind(package_id)
@@ -689,6 +843,7 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
             .bind(&e.xml)
             .bind(&e.sha256)
             .bind(s.dsp.code())
+            .bind(sender_dpid.as_deref())
             .execute(&mut *tx)
             .await?;
         }
@@ -834,6 +989,7 @@ pub async fn release_delivery_view(pool: &PgPool, org: Uuid, release: Uuid) -> R
                 dsp,
                 json!({
                     "dsp": code, "slug": dsp.spec().slug, "name": dsp.spec().name,
+                    "display_name": dsp.display_name(),
                     "stage": stage, "readiness": readiness, "approval": approval,
                     "delivery_status": delivery, "live_status": live, "issues": issues,
                     "staged_at": r.get::<chrono::DateTime<chrono::Utc>, _>("staged_at"),
@@ -930,6 +1086,7 @@ mod tests {
         );
         let p = release(vec![t], false);
         let i = StagingInput {
+            declared: Declared::default(),
             prepared: &p,
             genre: Some("K-Pop"),
             artwork_px: Some((3000, 3000)),
@@ -937,11 +1094,106 @@ mod tests {
             today: NaiveDate::from_ymd_opt(2026, 10, 1).unwrap(),
             audio_advisories: &[],
         };
-        for d in Dsp::ALL {
-            let c = evaluate(d.spec(), &i);
+        // Beatport only takes electronic genres: a K-Pop release is blocked
+        // there and nowhere else.
+        assert_eq!(
+            codes(&evaluate(Dsp::D29.spec(), &i)),
+            vec!["DSP_GENRE_NOT_ACCEPTED"]
+        );
+        let electronic = StagingInput {
+            genre: Some("Electronic"),
+            ..i
+        };
+        assert!(evaluate(Dsp::D29.spec(), &electronic).is_empty());
+        for d in Dsp::ALL.into_iter().filter(|d| *d != Dsp::D29) {
+            let all = evaluate(d.spec(), &i);
+            // Info notes (e.g. a 24-bit/48k master served downsampled) are
+            // not spec findings.
+            let c: Vec<DspCheck> = all
+                .iter()
+                .filter(|c| c.severity != Severity::Info && c.code != "DSP_PARTNER_RISK")
+                .cloned()
+                .collect();
             assert!(c.is_empty(), "{}: {:?}", d.code(), codes(&c));
-            assert_eq!(Readiness::of(&c), Readiness::Ready);
+            assert_eq!(Readiness::of(&all), Readiness::Ready);
         }
+        // Partner risks (payment history, sanctions) are flagged for staff.
+        for d in [Dsp::D33, Dsp::D35] {
+            assert!(
+                codes(&evaluate(d.spec(), &i)).contains(&"DSP_PARTNER_RISK"),
+                "{}",
+                d.code()
+            );
+        }
+        assert!(!codes(&evaluate(Dsp::D5.spec(), &i)).contains(&"DSP_PARTNER_RISK"));
+        // Deezer/YouTube/Spotify serve below 24/48: noted, never blocking.
+        let deezer = evaluate(Dsp::D10.spec(), &i);
+        assert!(codes(&deezer).contains(&"DSP_AUDIO_SERVED_DOWNSAMPLED"));
+        assert!(!codes(&evaluate(Dsp::D11.spec(), &i)).contains(&"DSP_AUDIO_SERVED_DOWNSAMPLED"));
+    }
+
+    #[test]
+    fn per_dsp_content_policies_follow_declarations() {
+        let t = track(asset("audio/flac", Some(44_100), Some(16)));
+        let mut facts = HashMap::new();
+        facts.insert(
+            t.id,
+            TrackFacts {
+                has_composer: true,
+                has_lyricist: true,
+                instrumental: false,
+            },
+        );
+        let p = release(vec![t], false);
+        let i = StagingInput {
+            declared: Declared {
+                cover: true,
+                samples: false,
+                remix: false,
+                ai: true,
+            },
+            prepared: &p,
+            genre: Some("K-Pop"),
+            artwork_px: Some((3000, 3000)),
+            tracks: &facts,
+            today: NaiveDate::from_ymd_opt(2026, 10, 1).unwrap(),
+            audio_advisories: &[],
+        };
+        let c = |d: Dsp| codes(&evaluate(d.spec(), &i));
+        assert!(
+            c(Dsp::D7).contains(&"DSP_CONTENT_ID_RISK"),
+            "YouTube Content ID"
+        );
+        assert!(!c(Dsp::D5).contains(&"DSP_CONTENT_ID_RISK"));
+        assert!(
+            c(Dsp::D9).contains(&"DSP_COVER_LICENSE_REQUIRED"),
+            "TIDAL covers"
+        );
+        assert!(
+            c(Dsp::D1).contains(&"DSP_KR_COVER_CONSENT"),
+            "Melon cover consent"
+        );
+        assert!(!c(Dsp::D5).contains(&"DSP_COVER_LICENSE_REQUIRED"));
+        for d in [Dsp::D5, Dsp::D6, Dsp::D9] {
+            assert!(c(d).contains(&"DSP_AI_POLICY"), "{}", d.code());
+        }
+        // Advisories never block delivery on their own (Beatport's genre
+        // rule is a spec requirement, not an advisory).
+        for d in Dsp::ALL.into_iter().filter(|d| *d != Dsp::D29) {
+            assert_ne!(
+                Readiness::of(&evaluate(d.spec(), &i)),
+                Readiness::ContentBlocked
+            );
+        }
+        let msg = evaluate(Dsp::D1.spec(), &i)
+            .into_iter()
+            .find(|x| x.code == "DSP_KR_COVER_CONSENT")
+            .unwrap()
+            .detail;
+        assert!(
+            msg.starts_with("멜론"),
+            "platform name, never the internal code: {msg}"
+        );
     }
 
     #[test]
@@ -958,6 +1210,7 @@ mod tests {
         );
         let p = release(vec![t], true);
         let i = StagingInput {
+            declared: Declared::default(),
             prepared: &p,
             genre: Some("Pop"),
             artwork_px: Some((5000, 5000)),
@@ -993,6 +1246,7 @@ mod tests {
         );
         let p = release(vec![t], false);
         let i = StagingInput {
+            declared: Declared::default(),
             prepared: &p,
             genre: None,
             artwork_px: None,
@@ -1026,6 +1280,7 @@ mod tests {
             "integrated_lufs=-7.5 target=-14±1".to_string(),
         )];
         let i = StagingInput {
+            declared: Declared::default(),
             prepared: &p,
             genre: Some("Pop"),
             artwork_px: Some((3000, 3000)),

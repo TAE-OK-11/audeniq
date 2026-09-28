@@ -16,3 +16,6 @@ node_modules/
 
 # deploy.sh 배포 기록 (서버 전용)
 /deploy/deploy-history.log
+# Real partner configs and secrets never enter the repository.
+deploy/partners/*.json
+deploy/partners/secrets/

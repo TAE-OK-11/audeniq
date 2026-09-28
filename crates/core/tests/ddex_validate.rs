@@ -23,6 +23,7 @@ fn fixture(index: usize) -> PreparedRelease {
 
 fn config() -> DdexErnConfig {
     DdexErnConfig {
+        deal: &audeniq_core::ddex_ern::DEAL_SUBSCRIPTION,
         message_id: "MSG-2026-09-26-001".into(),
         message_thread_id: None,
         message_sub_type: MessageSubType::Initial,

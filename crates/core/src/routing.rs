@@ -5,8 +5,9 @@
 //! order is direct first, then aggregator (Merlin), then upstream (LIMBO).
 //! A profile is sendable when it is delivery_enabled, its capabilities declare
 //! send_or_publish=true, and it is MOCK — or CONTRACTED with a live contract
-//! route (enabled route plan + ACTIVE endpoint + non-revoked contract
-//! revision). Without contracts every real DSP resolves to NO_ROUTE and the
+//! route: the distributor-level contract (partner onboarding complete and
+//! staged LIVE, `execution.platform_contract_live`) or a per-org route plan
+//! (enabled route plan + ACTIVE endpoint + non-revoked contract revision). Without contracts every real DSP resolves to NO_ROUTE and the
 //! package waits for F6 instead of failing.
 //!
 //! The engine never transmits anything; it only records the decision so
@@ -71,6 +72,9 @@ struct Profile {
     /// put bytes on the wire. Undeclared or false = never sendable, even if
     /// someone flips delivery_enabled on a placeholder.
     cap_sendable: bool,
+    /// Distributor-level contract: onboarding complete and staged LIVE
+    /// (`execution.platform_contract_live`, migration 0054).
+    platform_contract: bool,
 }
 
 /// Decide the route for every DSP in `dsp_ids`, in preference order:
@@ -128,7 +132,8 @@ async fn decide_routes_inner(
     // upstream's downstream footprint.
     let rows = sqlx::query(
         "SELECT d.dsp_id, p.partner_id, p.activation_kind, p.route_kind, p.delivery_enabled,
-                COALESCE((p.capabilities->>'send_or_publish')::boolean, false) AS cap_sendable
+                COALESCE((p.capabilities->>'send_or_publish')::boolean, false) AS cap_sendable,
+                (p.activation_kind='CONTRACTED' AND execution.platform_contract_live(p.partner_id)) AS platform_contract
          FROM unnest($1::uuid[]) AS d(dsp_id)
          JOIN execution.adapter_profiles p
            ON (p.route_kind='direct' AND p.dsp_id=d.dsp_id)
@@ -153,6 +158,7 @@ async fn decide_routes_inner(
             route_kind,
             delivery_enabled: r.get("delivery_enabled"),
             cap_sendable: r.get("cap_sendable"),
+            platform_contract: r.get("platform_contract"),
         });
     }
     // A CONTRACTED profile is sendable only through a live contract route:
@@ -201,6 +207,7 @@ async fn decide_routes_inner(
             routable: false,
             reason: "NO_PROFILE",
         };
+        let mut saw_locked = false;
         let mut saw_disabled = false;
         let mut saw_uncontracted = false;
         let mut saw_unsendable_cap = false;
@@ -218,9 +225,18 @@ async fn decide_routes_inner(
                 saw_unsendable_cap = true;
                 continue;
             }
-            if p.activation_kind == "CONTRACTED" && !contract_live.contains(&(dsp_id, p.route_kind))
+            if p.activation_kind == "CONTRACTED"
+                && !p.platform_contract
+                && !contract_live.contains(&(dsp_id, p.route_kind))
             {
                 saw_uncontracted = true;
+                continue;
+            }
+            // Pre-launch lock (crate::launch): a real partner may be fully
+            // onboarded and contracted, but nothing is routed to it before
+            // the official launch opens DSP_LIVE_TRANSMISSION.
+            if p.activation_kind == "CONTRACTED" && !crate::launch::live_transmission_enabled() {
+                saw_locked = true;
                 continue;
             }
             decision.route_kind = Some(p.route_kind);
@@ -230,7 +246,9 @@ async fn decide_routes_inner(
             break;
         }
         if !decision.routable {
-            decision.reason = if saw_uncontracted {
+            decision.reason = if saw_locked {
+                "PRE_LAUNCH_LOCKED"
+            } else if saw_uncontracted {
                 "NO_CONTRACT_ROUTE"
             } else if saw_disabled {
                 "PROFILE_DISABLED"

@@ -287,6 +287,8 @@ pub const STAGE1_WARNING_CODES: &[&str] = &[
     "AUDIO_CLIPPING",
     "TRACK_TITLE_HAS_VERSION_INFO",
     "ADULT_MARKING_REVIEW",
+    "TRACK_TITLE_STYLE",
+    "RELEASE_TITLE_STYLE",
 ];
 
 /// Stage 1 codes that may be carried into Stage 2 as holds under their own
@@ -1080,6 +1082,30 @@ async fn module_policy_integrity(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec
     // CONTRACTED profiles with delivery_enabled but no contract route are
     // explicitly ineligible (not silently absent), so the audit trail shows
     // the contract bypass was refused.
+    // A CONTRACTED profile whose distributor-level contract is live
+    // (onboarding complete, stage LIVE: migration 0054) and whose adapter
+    // declares it can send makes its DSP eligible for every org: a direct
+    // profile for its own DSP, an aggregator/upstream for each DSP it has an
+    // explicit coverage row for.
+    let platform: Vec<String> = sqlx::query_scalar(
+        "SELECT DISTINCT d.dsp_id::text FROM execution.adapter_profiles p
+         CROSS JOIN LATERAL (
+           SELECT p.dsp_id WHERE p.route_kind='direct' AND p.dsp_id IS NOT NULL
+           UNION ALL
+           SELECT c.dsp_id FROM execution.route_coverage c
+            WHERE p.route_kind IN ('aggregator','upstream') AND c.partner_id=p.partner_id
+         ) d(dsp_id)
+         WHERE p.delivery_enabled AND p.activation_kind='CONTRACTED'
+           AND COALESCE((p.capabilities->>'send_or_publish')::boolean, false)
+           AND execution.platform_contract_live(p.partner_id)",
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    for dsp in platform {
+        if !eligible.contains(&dsp) {
+            eligible.push(dsp);
+        }
+    }
     let contracted: Vec<String> = sqlx::query_scalar(
         "SELECT dsp_id::text FROM execution.adapter_profiles WHERE delivery_enabled AND dsp_id IS NOT NULL AND activation_kind='CONTRACTED'",
     )

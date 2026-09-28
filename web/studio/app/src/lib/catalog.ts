@@ -10,8 +10,17 @@ export const LANGUAGES: [string, string][] = [
 
 export const DSP: [string, string][] = [
   ['melon', '멜론'], ['genie', '지니'], ['flo', 'FLO'], ['bugs', '벅스'],
-  ['spotify', 'Spotify'], ['apple', 'Apple Music / iTunes'], ['youtube', 'YouTube Music'],
+  ['spotify', 'Spotify'], ['apple', 'Apple Music'], ['youtube', 'YouTube Music'],
   ['amazon', 'Amazon Music'], ['tidal', 'TIDAL'], ['deezer', 'Deezer'], ['qobuz', 'Qobuz'],
+  ['pandora', 'Pandora (SiriusXM)'], ['soundcloud', 'SoundCloud'], ['audiomack', 'Audiomack'],
+  ['anghami', 'Anghami (중동·북아프리카)'], ['boomplay', 'Boomplay (아프리카)'], ['jiosaavn', 'JioSaavn (인도)'],
+  ['kkbox', 'KKBOX (대만·홍콩)'], ['line-music', 'LINE MUSIC (일본)'], ['awa', 'AWA (일본)'],
+  ['netease', 'NetEase Cloud Music (중국)'], ['tencent', 'Tencent Music (QQ뮤직·쿠거우·쿠워·WeSing)'],
+  ['napster', 'Napster'], ['iheart', 'iHeartRadio'],
+  ['meta', 'Instagram·Facebook (Meta)'], ['tiktok', 'TikTok·CapCut (ByteDance)'],
+  ['youtube-cid', 'YouTube Content ID·Shorts'], ['snapchat', 'Snapchat'], ['beatport', 'Beatport'],
+  ['itunes', 'iTunes Store (다운로드)'], ['claro-musica', 'Claro Música (중남미)'], ['pretzel', 'Pretzel (스트리머용 음원)'],
+  ['triller', 'Triller'], ['touchtunes', 'TouchTunes (디지털 주크박스)'], ['yandex', 'Yandex Music (러시아·CIS)'],
 ];
 
 /** 서버 DSP 코드 — 백엔드 레지스트리(crates/core/src/dsp_registry.rs)와 같은 순서: DSP[i] = D-(i+1) */

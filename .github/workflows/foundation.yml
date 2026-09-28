@@ -57,7 +57,7 @@ jobs:
       - name: Install FFmpeg (QC fixture generation + ffprobe) and xmllint (DDEX XSD validation)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg libxml2-utils
+          sudo apt-get install -y -qq ffmpeg libxml2-utils openssh-server openssh-client
       # 서명을 실제로 검사하는 S3 서버 (R2처럼 SigV4 확인; moto는 서명을 보지 않는다).
       # tests/s3_presign.rs가 서명 URL이 선언한 객체 하나만 올릴 수 있는지 확인한다
       - name: Start S3 gateway for presigned upload tests
@@ -72,6 +72,18 @@ jobs:
             versity/versitygw:v1.8.0 --port :7070 posix /data
           for _ in $(seq 1 30); do curl -s -o /dev/null http://127.0.0.1:7070/ && break; sleep 1; done
           aws --endpoint-url http://127.0.0.1:7070 s3api create-bucket --bucket audeniq-test
+      # 실제 SFTP 왕복 테스트용 임시 sshd (transport::sftp_tests). 키 인증만, 호스트키 고정.
+      - name: Start throwaway sshd for SFTP delivery tests
+        run: |
+          S=/tmp/sftp-test; mkdir -p $S/root
+          ssh-keygen -q -t ed25519 -N '' -f $S/hostkey
+          ssh-keygen -q -t ed25519 -N '' -f $S/client
+          cp $S/client.pub $S/authorized_keys && chmod 600 $S/authorized_keys
+          printf 'Port 2222\nListenAddress 127.0.0.1\nHostKey %s/hostkey\nAuthorizedKeysFile %s/authorized_keys\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nUsePAM yes\nPidFile %s/sshd.pid\nStrictModes no\nSubsystem sftp internal-sftp\n' $S $S $S > $S/sshd_config
+          sudo mkdir -p /run/sshd && sudo /usr/sbin/sshd -f $S/sshd_config -E $S/sshd.log
+          echo "[127.0.0.1]:2222 $(cat $S/hostkey.pub)" > $S/known_hosts
+          sudo chown -R "$USER" $S
+          printf 'ls -1 %s/root\n' $S | sftp -b - -q -P 2222 -i $S/client -o BatchMode=yes -o UserKnownHostsFile=$S/known_hosts -o StrictHostKeyChecking=yes "$USER@127.0.0.1"
       # nextest: 테스트 바이너리를 차례로가 아니라 한꺼번에 병렬로 돌린다 (각 테스트는 자기 DB를 쓴다)
       - uses: taiki-e/install-action@v2
         with:
@@ -82,6 +94,12 @@ jobs:
           S3_TEST_BUCKET: audeniq-test
           S3_TEST_ACCESS_KEY_ID: ci-s3-access
           S3_TEST_SECRET_ACCESS_KEY: ci-s3-secret-0123456789abcdef
+          SFTP_TEST_HOST: 127.0.0.1
+          SFTP_TEST_PORT: '2222'
+          SFTP_TEST_USER: runner
+          SFTP_TEST_KEY: /tmp/sftp-test/client
+          SFTP_TEST_KNOWN_HOSTS: /tmp/sftp-test/known_hosts
+          SFTP_TEST_ROOT: /tmp/sftp-test/root
       - name: S3 gateway logs
         if: failure()
         run: docker logs s3 2>&1 | tail -50 || true

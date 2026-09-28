@@ -149,8 +149,17 @@ recovers its own submissions after a worker restart.
 - ERN generation for staging runs on the blocking pool (`xmllint` is a child
   process), off the async workers.
 
-## 5. Still external (not done here)
+## 5. Real transmission (2026-09-28)
 
-Real DPIDs, contracts, endpoints, credentials and live transmission; the
-Korean services' feed formats; official DDEX certification. The staff web
-portal UI itself is not part of this change: the API above is what it calls.
+The adapters that put approved deliveries on a partner's wire now exist:
+DDEX ERN choreography over SFTP/S3, a JSON+CSV feed for the Korean
+services, and a REST API adapter, plus signed partner webhooks and a
+distributor-level contract route (onboarding complete + stage LIVE opens
+the route for every org). Turning a DSP on needs its config file and the
+`audeniq-admin partner …` onboarding commands, no code change:
+[PARTNER_DELIVERY.md](PARTNER_DELIVERY.md).
+
+Still external: the contracts themselves (DPIDs, hosts, accounts, keys),
+the Korean services' exact feed columns (mapped by configuration), Apple's
+Transporter channel if Apple does not take DDEX, and official DDEX
+certification.
