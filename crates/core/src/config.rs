@@ -7,6 +7,9 @@ pub struct Config {
     pub secure_cookie: bool,
     pub bind: String,
     pub session_seconds: i64,
+    /// Only in-process integration fixtures may bypass the public DSP submit gate.
+    /// Runtime configuration always sets this to false.
+    pub test_only_bypass_dsp_gate: bool,
 }
 impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
@@ -38,6 +41,7 @@ impl Config {
             secure_cookie: production,
             bind: env::var("API_BIND").unwrap_or_else(|_| "127.0.0.1:8080".into()),
             session_seconds: 43200,
+            test_only_bypass_dsp_gate: false,
         })
     }
     pub fn cookie_name(&self) -> &str {
