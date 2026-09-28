@@ -28,9 +28,6 @@ use sqlx::PgPool;
 use std::str::FromStr;
 use uuid::Uuid;
 
-/// Finance rule version pinned on checks written by this module.
-pub const FINANCE_RULE_VERSION: &str = "1";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntrySide {
     Debit,

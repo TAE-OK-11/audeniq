@@ -192,17 +192,8 @@ pub async fn replace_credits(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
-    let count: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM identity.parties WHERE org_id=$1 AND id=ANY($2)")
-            .bind(org)
-            .bind(&parties)
-            .fetch_one(&mut *tx)
-            .await?;
-    if count != parties.len() as i64 {
-        return Err(Error::Forbidden);
-    }
     // Credited contributors are published: their names get the same
-    // protected-artist block as artist names.
+    // protected-artist block as artist names. Every party must be this org's.
     let names: Vec<String> = sqlx::query_scalar(
         "SELECT display_name FROM identity.parties WHERE org_id=$1 AND id=ANY($2)",
     )
@@ -210,6 +201,9 @@ pub async fn replace_credits(
     .bind(&parties)
     .fetch_all(&mut *tx)
     .await?;
+    if names.len() != parties.len() {
+        return Err(Error::Forbidden);
+    }
     let refs: Vec<&str> = names.iter().map(String::as_str).collect();
     crate::protected_names::enforce(&mut tx, org, &refs).await?;
     sqlx::query("DELETE FROM catalog.credits WHERE org_id=$1 AND track_id=$2")
@@ -217,17 +211,18 @@ pub async fn replace_credits(
         .bind(track)
         .execute(&mut *tx)
         .await?;
-    for credit in i.credits {
-        sqlx::query(
-            "INSERT INTO catalog.credits(org_id,track_id,party_id,role) VALUES($1,$2,$3,$4)",
-        )
-        .bind(org)
-        .bind(track)
-        .bind(credit.party_id)
-        .bind(credit.role)
-        .execute(&mut *tx)
-        .await?;
-    }
+    let (party_ids, roles): (Vec<Uuid>, Vec<String>) =
+        i.credits.into_iter().map(|c| (c.party_id, c.role)).unzip();
+    sqlx::query(
+        "INSERT INTO catalog.credits(org_id,track_id,party_id,role)
+         SELECT $1,$2,p,r FROM unnest($3::uuid[],$4::text[]) AS c(p,r)",
+    )
+    .bind(org)
+    .bind(track)
+    .bind(party_ids)
+    .bind(roles)
+    .execute(&mut *tx)
+    .await?;
     changed(
         &mut tx,
         a,

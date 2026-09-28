@@ -10,7 +10,6 @@
 use crate::execution::AckEvent;
 use crate::transport::xml_values;
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AckStatus {
@@ -191,7 +190,7 @@ fn parse_json(v: &Value) -> AckDoc {
 
 /// Stable event id for a document without one (ACK files): its hash.
 pub fn content_event_id(bytes: &[u8]) -> String {
-    format!("doc:{}", &hex::encode(Sha256::digest(bytes))[..32])
+    format!("doc:{}", &crate::domain::sha256_hex(bytes)[..32])
 }
 
 /// Turn a parsed document into an execution event for `partner_message_id`.

@@ -16,6 +16,7 @@
 use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -143,8 +144,7 @@ async fn decide_routes_inner(
     .bind(&unique)
     .fetch_all(&mut *tx)
     .await?;
-    let mut by_dsp: std::collections::HashMap<Uuid, Vec<Profile>> =
-        std::collections::HashMap::with_capacity(unique.len());
+    let mut by_dsp: HashMap<Uuid, Vec<Profile>> = HashMap::with_capacity(unique.len());
     let mut any_contracted = false;
     for r in &rows {
         let Some(route_kind) = RouteKind::from_db(r.get("route_kind")) else {
@@ -263,36 +263,44 @@ async fn decide_routes_inner(
     Ok(out)
 }
 
-/// Persist one package's route decisions. Idempotent per (org, package, dsp):
-/// re-running the decision never duplicates rows.
+/// Persist one package's route decisions in one statement. Idempotent per
+/// (org, package, dsp): re-running the decision never duplicates rows; for a
+/// dsp listed twice the last decision wins.
 pub async fn record_route_decisions(
     pool: &PgPool,
     org_id: Uuid,
     package_id: Uuid,
     decisions: &[RouteDecision],
 ) -> Result<()> {
-    let mut tx = pool.begin().await?;
+    let mut last: HashMap<Uuid, &RouteDecision> = HashMap::with_capacity(decisions.len());
     for d in decisions {
-        let status = if d.routable { "ROUTABLE" } else { "NO_ROUTE" };
-        sqlx::query(
-            "INSERT INTO execution.route_decisions(id,org_id,package_id,dsp_id,route_kind,partner_id,status,reason)
-             VALUES($1,$2,$3,$4,$5,$6,$7,$8)
-             ON CONFLICT(org_id,package_id,dsp_id) DO UPDATE SET
-               route_kind=EXCLUDED.route_kind, partner_id=EXCLUDED.partner_id,
-               status=EXCLUDED.status, reason=EXCLUDED.reason, decided_at=now()",
-        )
-        .bind(Uuid::new_v4())
-        .bind(org_id)
-        .bind(package_id)
-        .bind(d.dsp_id)
-        .bind(d.route_kind.map(|k| k.as_db()))
-        .bind(d.partner_id.clone())
-        .bind(status)
-        .bind(d.reason)
-        .execute(&mut *tx)
-        .await?;
+        last.insert(d.dsp_id, d);
     }
-    tx.commit().await?;
+    let (mut dsp, mut kind, mut partner, mut status, mut reason) =
+        (vec![], vec![], vec![], vec![], vec![]);
+    for d in last.into_values() {
+        dsp.push(d.dsp_id);
+        kind.push(d.route_kind.map(|k| k.as_db()));
+        partner.push(d.partner_id.as_deref());
+        status.push(if d.routable { "ROUTABLE" } else { "NO_ROUTE" });
+        reason.push(d.reason);
+    }
+    sqlx::query(
+        "INSERT INTO execution.route_decisions(id,org_id,package_id,dsp_id,route_kind,partner_id,status,reason)
+         SELECT gen_random_uuid(),$1,$2,d.* FROM unnest($3::uuid[],$4::text[],$5::text[],$6::text[],$7::text[]) AS d
+         ON CONFLICT(org_id,package_id,dsp_id) DO UPDATE SET
+           route_kind=EXCLUDED.route_kind, partner_id=EXCLUDED.partner_id,
+           status=EXCLUDED.status, reason=EXCLUDED.reason, decided_at=now()",
+    )
+    .bind(org_id)
+    .bind(package_id)
+    .bind(dsp)
+    .bind(kind)
+    .bind(partner)
+    .bind(status)
+    .bind(reason)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
