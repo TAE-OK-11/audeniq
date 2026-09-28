@@ -28,7 +28,11 @@ fn env_usize(name: &str, default: usize, min: usize, max: usize) -> anyhow::Resu
     Ok(value)
 }
 
-async fn listen_for_jobs(database_url: String, wakeup: Arc<Notify>) {
+/// One wakeup per queue: a NOTIFY (payload = queue name) wakes only that
+/// queue's workers instead of every idle worker in the process.
+type Wakeups = Arc<std::collections::HashMap<&'static str, Arc<Notify>>>;
+
+async fn listen_for_jobs(database_url: String, wakeups: Wakeups) {
     let mut retry = Duration::from_secs(1);
     loop {
         match PgListener::connect(&database_url).await {
@@ -39,7 +43,10 @@ async fn listen_for_jobs(database_url: String, wakeup: Arc<Notify>) {
                     retry = Duration::from_secs(1);
                     loop {
                         match listener.recv().await {
-                            Ok(_) => wakeup.notify_waiters(),
+                            Ok(n) => match wakeups.get(n.payload()) {
+                                Some(w) => w.notify_waiters(),
+                                None => wakeups.values().for_each(|w| w.notify_waiters()),
+                            },
                             Err(error) => {
                                 tracing::warn!(%error, "job notification connection lost");
                                 break;
@@ -138,7 +145,7 @@ async fn main() -> anyhow::Result<()> {
     // anything still here after the drain window is released immediately.
     let in_flight: Arc<std::sync::Mutex<std::collections::HashMap<uuid::Uuid, uuid::Uuid>>> =
         Arc::default();
-    let wakeup = Arc::new(Notify::new());
+    let wakeups: Wakeups = Arc::new(QUEUES.map(|q| (q, Arc::new(Notify::new()))).into());
     let mut tasks = tokio::task::JoinSet::new();
 
     {
@@ -146,8 +153,7 @@ async fn main() -> anyhow::Result<()> {
         // must use a direct connection, or notifications silently never
         // arrive and the worker falls back to polling.
         let listen_url = std::env::var("DATABASE_LISTEN_URL").unwrap_or(database_url);
-        let wakeup = wakeup.clone();
-        tasks.spawn(listen_for_jobs(listen_url, wakeup));
+        tasks.spawn(listen_for_jobs(listen_url, wakeups.clone()));
     }
 
     let mut configured_workers = 0usize;
@@ -159,7 +165,7 @@ async fn main() -> anyhow::Result<()> {
             let pool = pool.clone();
             let store = store.clone();
             let limiter = limiter.clone();
-            let wakeup = wakeup.clone();
+            let wakeup = wakeups[queue].clone();
             let shutdown = shutdown.clone();
             let in_flight = in_flight.clone();
             let name = format!("{}:{queue}:{n}", uuid::Uuid::new_v4());

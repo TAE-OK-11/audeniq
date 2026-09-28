@@ -930,26 +930,34 @@ async fn policy_checks(
             conflicts.push(format!("UPC {upc}"));
         }
     }
-    for t in body["tracks"].as_array().into_iter().flatten() {
-        let (Some(isrc), Some(tid)) = (
-            t["isrc"].as_str().filter(|i| !i.is_empty()),
-            t["id"].as_str().and_then(|s| Uuid::parse_str(s).ok()),
-        ) else {
-            continue;
-        };
-        let used: bool = sqlx::query_scalar(
+    let (isrcs, tids): (Vec<&str>, Vec<Uuid>) = body["tracks"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|t| {
+            Some((
+                t["isrc"].as_str().filter(|i| !i.is_empty())?,
+                t["id"].as_str().and_then(|s| Uuid::parse_str(s).ok())?,
+            ))
+        })
+        .unzip();
+    if !isrcs.is_empty() {
+        let used: Vec<bool> = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM catalog.tracks t JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id
-                           WHERE t.org_id=$1 AND t.isrc=$2 AND t.release_id<>$3 AND t.archived_at IS NULL AND r.archived_at IS NULL)
-                 OR EXISTS(SELECT 1 FROM distribution.identifier_assignments WHERE kind='ISRC' AND identifier=$2 AND track_id<>$4)",
+                           WHERE t.org_id=$1 AND t.isrc=i.isrc AND t.release_id<>$3 AND t.archived_at IS NULL AND r.archived_at IS NULL)
+                 OR EXISTS(SELECT 1 FROM distribution.identifier_assignments WHERE kind='ISRC' AND identifier=i.isrc AND track_id<>i.tid)
+             FROM unnest($2::text[],$4::uuid[]) WITH ORDINALITY AS i(isrc,tid,n) ORDER BY i.n",
         )
         .bind(org)
-        .bind(isrc)
+        .bind(&isrcs)
         .bind(release)
-        .bind(tid)
-        .fetch_one(&mut *tx)
+        .bind(&tids)
+        .fetch_all(&mut *tx)
         .await?;
-        if used {
-            conflicts.push(format!("ISRC {isrc}"));
+        for (isrc, used) in isrcs.iter().zip(used) {
+            if used {
+                conflicts.push(format!("ISRC {isrc}"));
+            }
         }
     }
     push(
@@ -971,28 +979,39 @@ async fn policy_checks(
     // Reusing a recording on a single and then an album is legitimate when
     // both tracks carry the same ISRC, so only a reuse under a different or
     // missing ISRC goes to review.
-    let mut reused: Vec<String> = Vec::new();
-    for t in body["tracks"].as_array().into_iter().flatten() {
-        let Some(aid) = t["asset_id"].as_str().and_then(|s| Uuid::parse_str(s).ok()) else {
-            continue;
-        };
-        let isrc = t["isrc"].as_str().filter(|i| !i.is_empty());
-        let others: Vec<(Uuid, Option<String>)> = sqlx::query_as(
-            "SELECT t.release_id, t.isrc FROM catalog.tracks t JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id
-              WHERE t.org_id=$1 AND t.asset_id=$2 AND t.release_id<>$3 AND t.archived_at IS NULL
+    let (aids, track_isrcs): (Vec<Uuid>, Vec<Option<&str>>) = body["tracks"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|t| {
+            let aid = t["asset_id"]
+                .as_str()
+                .and_then(|s| Uuid::parse_str(s).ok())?;
+            Some((aid, t["isrc"].as_str().filter(|i| !i.is_empty())))
+        })
+        .unzip();
+    let others: Vec<(Uuid, Option<String>, Uuid, Option<String>)> = if aids.is_empty() {
+        Vec::new()
+    } else {
+        sqlx::query_as(
+            "SELECT a.aid, a.isrc, t.release_id, t.isrc FROM unnest($2::uuid[],$4::text[]) AS a(aid,isrc)
+              JOIN catalog.tracks t ON t.org_id=$1 AND t.asset_id=a.aid
+              JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id
+              WHERE t.release_id<>$3 AND t.archived_at IS NULL
                 AND r.archived_at IS NULL AND r.status NOT IN ('DRAFT','WITHDRAWN','SUPERSEDED')",
         )
         .bind(org)
-        .bind(aid)
+        .bind(&aids)
         .bind(release)
+        .bind(&track_isrcs)
         .fetch_all(&mut *tx)
-        .await?;
-        for (other, other_isrc) in others {
-            if isrc.is_none() || other_isrc.as_deref() != isrc {
-                reused.push(format!("asset {aid} (release {other})"));
-            }
-        }
-    }
+        .await?
+    };
+    let mut reused: Vec<String> = others
+        .into_iter()
+        .filter(|(_, isrc, _, other_isrc)| isrc.is_none() || other_isrc != isrc)
+        .map(|(aid, _, other, _)| format!("asset {aid} (release {other})"))
+        .collect();
     reused.sort();
     reused.dedup();
     out.push(review_check);
