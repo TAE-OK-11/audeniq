@@ -676,6 +676,7 @@ mod tests {
             secure_cookie: true,
             bind: String::new(),
             session_seconds: 60,
+            test_only_bypass_dsp_gate: false,
         };
         let s = AppState::new(
             pool,

@@ -128,6 +128,10 @@ impl ObjectStore for FileStore {
 }
 
 async fn app(pool: PgPool) -> (Router, Arc<FileStore>) {
+    app_with_dsp_gate(pool, true).await
+}
+
+async fn app_with_dsp_gate(pool: PgPool, bypass: bool) -> (Router, Arc<FileStore>) {
     database::MIGRATOR.run(&pool).await.unwrap();
     let store = Arc::new(FileStore::default());
     let s = AppState::new(
@@ -139,6 +143,7 @@ async fn app(pool: PgPool) -> (Router, Arc<FileStore>) {
             secure_cookie: false,
             bind: "127.0.0.1:0".into(),
             session_seconds: 3600,
+            test_only_bypass_dsp_gate: bypass,
         },
         store.clone(),
     )
@@ -683,6 +688,45 @@ async fn run_send(pool: &PgPool, ctx: &ReadyCtx, mock: &MockDsp) -> (Uuid, Strin
         .await
         .unwrap();
     (job.id, status)
+}
+
+#[sqlx::test]
+async fn public_submit_requires_a_selected_routable_dsp(pool: PgPool) {
+    let (app, _) = app_with_dsp_gate(pool.clone(), false).await;
+    let submitter = user(&app).await;
+    let release = create_release(&app, &submitter).await;
+
+    for (selected, expected) in [(false, "DSP_SELECTION_REQUIRED"), (true, "DSP_UNAVAILABLE")] {
+        if selected {
+            sqlx::query("UPDATE catalog.releases SET draft = COALESCE(draft,'{}'::jsonb) || '{\"platforms\":[\"spotify\"]}'::jsonb WHERE id=$1")
+                .bind(release)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        let (status, consent) = call(
+            &app,
+            "POST",
+            &format!("/api/orgs/{}/releases/{release}/consents", submitter.org),
+            json!({"parties":[{"party_id":submitter.party,"role":"ARTIST"}],"minority_declared":false}),
+            Some(&submitter),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{consent}");
+        let (status, result) = call(
+            &app,
+            "POST",
+            &format!("/api/orgs/{}/releases/{release}/submit", submitter.org),
+            json!({"consent_id":consent["consent_id"],"minority_declared":false,
+                "idempotency_key":format!("dsp-gate-{}", Uuid::new_v4()),
+                "declarations":{"rights_confirmed":true,"adult_confirmed":true,"is_cover":false,
+                    "is_remix":false,"contains_samples":false,"ai_involved":false,"explicit_content":false}}),
+            Some(&submitter),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{result}");
+        assert_eq!(result["error"]["code"], expected);
+    }
 }
 
 #[sqlx::test]
