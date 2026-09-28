@@ -1284,6 +1284,7 @@ async fn onboarding_complete_makes_contracted_dsp_routable_until_suspended(pool:
         async move { routing::decide_routes(&pool, org, &[d5]).await.unwrap()[0].clone() }
     };
     assert!(!route(u.org).await.routable);
+    pa::set_route(&pool, "ops", "D-5", "DIRECT").await.unwrap();
     let err = pa::go_live(&pool, "ops", "D-5").await.unwrap_err();
     assert!(
         matches!(err, Error::PolicyGate("PARTNER_CANNOT_SEND")),

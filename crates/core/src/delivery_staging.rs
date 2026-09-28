@@ -330,6 +330,33 @@ pub fn evaluate(spec: &DspSpec, i: &StagingInput<'_>) -> Vec<DspCheck> {
             ),
         ));
     }
+    if let (Some(accepted), Some(genre)) = (spec.accepted_genres, i.genre)
+        && !accepted
+            .iter()
+            .any(|g| g.eq_ignore_ascii_case(genre.trim()))
+    {
+        out.push(DspCheck::new(
+            "DSP_GENRE_NOT_ACCEPTED",
+            Content,
+            Blocker,
+            format!(
+                "{} only takes {}: genre '{genre}'",
+                spec.name_ko,
+                accepted.join(", ")
+            ),
+        ));
+    }
+    if spec.regional_review {
+        out.push(DspCheck::new(
+            "DSP_REGIONAL_CONTENT_REVIEW",
+            Content,
+            Info,
+            format!(
+                "{}: content review before publication (lyrics, artwork, political/sensitive content); allow {} days",
+                spec.name_ko, spec.lead_days
+            ),
+        ));
+    }
     let (max_rate, max_bits) = spec.served_max;
     if p.tracks.iter().any(|t| {
         t.audio.sample_rate.is_some_and(|r| r as u32 > max_rate)
@@ -1059,7 +1086,18 @@ mod tests {
             today: NaiveDate::from_ymd_opt(2026, 10, 1).unwrap(),
             audio_advisories: &[],
         };
-        for d in Dsp::ALL {
+        // Beatport only takes electronic genres: a K-Pop release is blocked
+        // there and nowhere else.
+        assert_eq!(
+            codes(&evaluate(Dsp::D29.spec(), &i)),
+            vec!["DSP_GENRE_NOT_ACCEPTED"]
+        );
+        let electronic = StagingInput {
+            genre: Some("Electronic"),
+            ..i
+        };
+        assert!(evaluate(Dsp::D29.spec(), &electronic).is_empty());
+        for d in Dsp::ALL.into_iter().filter(|d| *d != Dsp::D29) {
             let all = evaluate(d.spec(), &i);
             // Info notes (e.g. a 24-bit/48k master served downsampled) are
             // not spec findings.
@@ -1122,8 +1160,9 @@ mod tests {
         for d in [Dsp::D5, Dsp::D6, Dsp::D9] {
             assert!(c(d).contains(&"DSP_AI_POLICY"), "{}", d.code());
         }
-        // Advisories never block delivery on their own.
-        for d in Dsp::ALL {
+        // Advisories never block delivery on their own (Beatport's genre
+        // rule is a spec requirement, not an advisory).
+        for d in Dsp::ALL.into_iter().filter(|d| *d != Dsp::D29) {
             assert_ne!(
                 Readiness::of(&evaluate(d.spec(), &i)),
                 Readiness::ContentBlocked
