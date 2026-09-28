@@ -1,6 +1,7 @@
 // 관리자 화면 표기 — 서버 상태·검사 코드를 한국어 라벨과 칩 색(tone)으로.
 import { correctionTarget, isKnownCorrection } from '../lib/corrections';
 import type { Duty, StaffRole } from './api';
+export { dspLabel } from '../lib/catalog';
 
 export type Tone = 'blue' | 'violet' | 'amber' | 'green' | 'red' | 'gray';
 
@@ -87,6 +88,7 @@ export function checkLabel(code: string): string {
   const extra: Record<string, string> = {
     S2_INTEGRITY_DUP: '중복 음원', AUDIO_SIMILAR_TO_EXISTING: '기존 음원과 유사', S2_PROTECTED_NAME: '보호 아티스트명',
     DSP_LOUDNESS_ADVISORY: '음량(라우드니스) 권고', DSP_CLIPPING_ADVISORY: '클리핑 권고',
+    S2_EXPRESS_REQUEST: '신속 발매 요청', S2_ADDITIONAL_RIGHTS: '추가 권리 확인',
   };
   return extra[code] ?? code;
 }

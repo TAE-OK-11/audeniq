@@ -5,7 +5,7 @@ import { Modal } from '../components/Modal';
 import { SignaturePad, type SignaturePadHandle } from '../components/SignaturePad';
 import { useConfirm } from '../components/Confirm';
 import { useProgressFill } from '../hooks/useAnimations';
-import { MOCK, api, type ArtistProfileLinks, type ReleasePayload } from '../api/client';
+import { ApiError, MOCK, api, type ArtistProfileLinks, type DspAvailability, type ReleasePayload } from '../api/client';
 import { errorMessage } from '../api/errors';
 import { addDoc, docsForRelease, getDocsSnapshot, type DocRecord } from '../store/docs';
 import { pushNotice } from '../store/support';
@@ -80,13 +80,13 @@ interface ReleaseOptions {
   guardian: string; guardianRelation: string; guardianContact: string;
   guardian2: string; guardian2Relation: string; guardian2Contact: string;
   guardianConsentDone: boolean; familyCertName: string; familyCertMethod: string;
-  cover: boolean; coverTracks: CoverTrackInfo[]; coverRightsAck: boolean; coverLicenseFile: string;
-  sample: boolean; sampleLicenseFile: string;
-  featured: boolean; featuredConsentFile: string;
+  cover: boolean; coverTracks: CoverTrackInfo[]; coverRightsAck: boolean; coverLicenseFile: string; coverLicenseAssetId?: string;
+  sample: boolean; sampleLicenseFile: string; sampleLicenseAssetId?: string;
+  featured: boolean; featuredConsentFile: string; featuredConsentAssetId?: string;
   ai: boolean; aiTool: string;
   /** 버튼으로 고른 AI 활용 방식·도구 (aiTool은 이걸 합친 문장) */
   aiUses: string[]; aiTools: string[]; aiUseOther: string; aiToolOther: string;
-  shared: boolean; sharedContractFile: string;
+  shared: boolean; sharedContractFile: string; sharedContractAssetId?: string;
   rerelease: boolean; previousTitle: string; previousId: string;
 }
 
@@ -132,7 +132,7 @@ const EMPTY: WizardForm = {
   tracks: [newTrack()],
   coverName: '', coverData: '', coverAssetId: '',
   releaseDate: '', originalDate: '', upc: '',
-  territories: ['WORLD'], platforms: DSP.map(d => d[0]),
+  territories: ['WORLD'], platforms: MOCK ? DSP.map(d => d[0]) : [],
   ownership: '', phonogram: '', copyright: '',
   rightsChecks: {},
   options: EMPTY_OPTIONS,
@@ -204,23 +204,25 @@ function selectedOptions(o: ReleaseOptions): [keyof ReleaseOptions, string, stri
   return OPTIONS_CATALOG.filter(([id]) => !!o[id]);
 }
 
-function DocAttach({ id, label, fileName, onSelect, required, help }: {
+function DocAttach({ id, label, fileName, assetId, busy, onSelect, required, help }: {
   id: string; label: React.ReactNode; fileName: string;
-  onSelect: (name: string) => void; required?: boolean; help?: string;
+  assetId?: string; busy?: boolean;
+  onSelect: (file: File) => void; required?: boolean; help?: string;
 }) {
   return (
     <div className="field doc-attach">
       <label htmlFor={id}>{label}{required && <> <span className="required">*</span></>}</label>
       <input
         type="file" id={id}
-        accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/*"
+        accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
         onChange={e => {
           const f = e.target.files?.[0];
-          if (f) onSelect(f.name);
+          if (f) onSelect(f);
+          e.target.value = '';
         }}
       />
       <p className="help">
-        {fileName ? `선택한 서류 · ${fileName}` : (help || '서류를 첨부해 주세요.')}
+        {busy ? '서류를 서버에 올리는 중이에요…' : fileName ? (assetId ? `서버에 등록됨 · ${fileName}` : `재첨부 필요 · ${fileName}`) : (help || '서류를 첨부해 주세요.')}
       </p>
     </div>
   );
@@ -322,7 +324,6 @@ function GuardianConsentModal({ guardianName, onClose, onComplete }: {
   );
 }
 
-const DSP_DOMESTIC = ['melon', 'genie', 'flo', 'bugs'];
 /** 플랫폼 구분용 색 (로고 대신 첫 글자 배지) */
 const DSP_COLOR: Record<string, string> = {
   melon: '#00c73c', genie: '#1d6bf3', flo: '#3f3fff', bugs: '#ff3a3a', spotify: '#1db954', apple: '#fa2d48',
@@ -370,10 +371,12 @@ function aiSummary(o: Pick<ReleaseOptions, 'aiUses' | 'aiTools' | 'aiUseOther' |
   return [uses.join(' · '), tools.length ? `도구: ${tools.join(', ')}` : ''].filter(Boolean).join(' / ');
 }
 
-function OptionsSection({ form, set, group }: {
+function OptionsSection({ form, set, group, onDocument, uploads }: {
   form: WizardForm;
   group: 'service' | 'rights';
   set: <K extends keyof WizardForm>(key: K, value: WizardForm[K]) => void;
+  onDocument: (name: keyof ReleaseOptions, asset: keyof ReleaseOptions, file: File) => void;
+  uploads: Record<string, UploadState>;
 }) {
   const o = form.options;
   const setOpt = <K extends keyof ReleaseOptions>(key: K, value: ReleaseOptions[K]) =>
@@ -558,8 +561,8 @@ function OptionsSection({ form, set, group }: {
         </label>
         <DocAttach
           id="aqCoverLicense" label="원곡 이용 허락서 (보유 시)"
-          fileName={o.coverLicenseFile}
-          onSelect={v => setOpt('coverLicenseFile', v)}
+          fileName={o.coverLicenseFile} assetId={o.coverLicenseAssetId} busy={uploads.coverLicenseFile?.state === 'uploading'}
+          onSelect={file => onDocument('coverLicenseFile', 'coverLicenseAssetId', file)}
           help="이용 허락서나 라이선스 계약서를 첨부해 주세요."
         />
       </div>
@@ -570,8 +573,8 @@ function OptionsSection({ form, set, group }: {
         <p className="aq-option-intro">사용한 원본 음원과 저작물의 출처를 확인해요.</p>
         <DocAttach
           id="aqSampleLicense" label="원본 이용 허락서"
-          fileName={o.sampleLicenseFile}
-          onSelect={v => setOpt('sampleLicenseFile', v)}
+          fileName={o.sampleLicenseFile} assetId={o.sampleLicenseAssetId} busy={uploads.sampleLicenseFile?.state === 'uploading'}
+          onSelect={file => onDocument('sampleLicenseFile', 'sampleLicenseAssetId', file)}
           help="샘플링 원본의 이용 허락서나 라이선스 계약서를 첨부해 주세요."
         />
         <p className="aq-option-note">허락 없는 샘플링은 저작권 침해가 될 수 있어요.</p>
@@ -583,8 +586,8 @@ function OptionsSection({ form, set, group }: {
         <p className="aq-option-intro">참여자의 크레딧과 이용 허락을 확인해요.</p>
         <DocAttach
           id="aqFeaturedConsent" label="참여자 동의서 (보유 시)"
-          fileName={o.featuredConsentFile}
-          onSelect={v => setOpt('featuredConsentFile', v)}
+          fileName={o.featuredConsentFile} assetId={o.featuredConsentAssetId} busy={uploads.featuredConsentFile?.state === 'uploading'}
+          onSelect={file => onDocument('featuredConsentFile', 'featuredConsentAssetId', file)}
           help="피처링 참여자의 동의서나 계약서를 첨부해 주세요."
         />
       </div>
@@ -595,8 +598,8 @@ function OptionsSection({ form, set, group }: {
         <p className="aq-option-intro">각 권리자와의 배급 위임 범위를 확인해요.</p>
         <DocAttach
           id="aqSharedContract" label="공동 권리 계약서"
-          fileName={o.sharedContractFile}
-          onSelect={v => setOpt('sharedContractFile', v)}
+          fileName={o.sharedContractFile} assetId={o.sharedContractAssetId} busy={uploads.sharedContractFile?.state === 'uploading'}
+          onSelect={file => onDocument('sharedContractFile', 'sharedContractAssetId', file)}
           help="배급 위임 범위가 명시된 계약서를 첨부해 주세요."
         />
       </div>
@@ -668,11 +671,12 @@ function OptionsSection({ form, set, group }: {
       <div className="aq-options">
         {list.map(([id, title, sub]) => (
           <Fragment key={id}>
-            <label className={`aq-option${o[id] ? ' is-on' : ''}`}>
-              <span className="aq-option-text"><strong>{title}</strong><small>{sub}</small></span>
+            <label className={`aq-option${o[id] ? ' is-on' : ''}${!MOCK && id === 'minor' ? ' is-unavailable' : ''}`}>
+              <span className="aq-option-text"><strong>{title}</strong><small>{!MOCK && id === 'minor' ? '현재 온라인 접수가 준비되지 않았어요. 기존 선택은 해제할 수 있어요.' : sub}</small></span>
               <input
                 type="checkbox" aria-label={title}
                 checked={!!o[id]}
+                disabled={!MOCK && id === 'minor' && !o.minor}
                 onChange={e => setOpt(id, e.target.checked as ReleaseOptions[typeof id])}
               />
             </label>
@@ -1030,6 +1034,18 @@ export function Upload() {
   const [agreed, setAgreed] = useState<Record<string, boolean>>({});
   const [dir, setDir] = useState<'fwd' | 'back'>('fwd');
   const [form, setForm] = useState<WizardForm>(() => ({ ...EMPTY, artist: profile.name || '', tracks: [newTrack()] }));
+  const [dsps, setDsps] = useState<DspAvailability[] | null>(null);
+  const [dspError, setDspError] = useState('');
+  useEffect(() => {
+    let alive = true;
+    api.listDsps().then(items => {
+      if (!alive) return;
+      setDsps(items);
+      setDspError('');
+      if (!editId) setForm(f => f.platforms.length ? f : ({ ...f, platforms: items.filter(d => d.available).map(d => d.slug) }));
+    }).catch(e => { if (alive) { setDsps(null); setDspError(errorMessage(e, '플랫폼 상태를 확인하지 못했어요.')); } });
+    return () => { alive = false; };
+  }, [editId]);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   // 중복 제출 방지용 ref (비동기 경계에서도 동작)
@@ -1053,7 +1069,7 @@ export function Upload() {
     });
   }, []);
   // 파일을 고르면 바로 저장소에 올린다 (실서버: R2 서명 URL로 직접, 체험: 진행률만)
-  const startUpload = useCallback(async (key: string, file: File, kind: 'AUDIO' | 'IMAGE'): Promise<string | null> => {
+  const startUpload = useCallback(async (key: string, file: File, kind: 'AUDIO' | 'IMAGE' | 'DOCUMENT'): Promise<string | null> => {
     uploadAborts.current.get(key)?.abort();
     const ctrl = new AbortController();
     uploadAborts.current.set(key, ctrl);
@@ -1073,6 +1089,16 @@ export function Upload() {
       if (uploadAborts.current.get(key) === ctrl) uploadAborts.current.delete(key);
     }
   }, [setUpload]);
+  const attachOptionDocument = useCallback(async (name: keyof ReleaseOptions, asset: keyof ReleaseOptions, file: File) => {
+    if (!/\.(pdf|png|jpe?g)$/i.test(file.name) || file.size > 20 * 1024 * 1024) {
+      setError('서류는 20MB 이하 PDF, JPG, PNG 파일로 올려 주세요.');
+      return;
+    }
+    const assetId = await startUpload(name, file, 'DOCUMENT');
+    if (!assetId) return;
+    dirtyRef.current = true;
+    setForm(f => ({ ...f, options: { ...f.options, [name]: file.name, [asset]: assetId } }));
+  }, [startUpload]);
   useEffect(() => {
     const aborts = uploadAborts.current;
     return () => { aborts.forEach(c => c.abort()); aborts.clear(); };
@@ -1156,7 +1182,7 @@ export function Upload() {
         originalDate: d?.originalDate || '',
         upc: d?.upc || '',
         territories: d?.territories ?? ['WORLD'],
-        platforms: d?.platforms?.length ? d.platforms : f.platforms,
+        platforms: d?.platforms ?? f.platforms,
         ownership: d?.ownership || '',
         phonogram: d?.phonogram || '',
         copyright: d?.copyright || '',
@@ -1346,14 +1372,24 @@ export function Upload() {
           ? '신속 발매도 플랫폼 납품에 최소 3일이 필요해요. 3일 뒤 이후 날짜를 선택해 주세요.'
           : '플랫폼 납품·검수에 2주가 필요해요. 오늘부터 14일 뒤 이후로 선택하거나, 급하면 아래 ‘신속 발매 요청’을 선택해 주세요.', '#f-releaseDate');
       }
-      if (!form.platforms.length) return fail('배급할 플랫폼을 하나 이상 선택해 주세요.', null);
+      if (!dsps) return fail(dspError || '플랫폼 배급 가능 상태를 확인하는 중이에요.', '#aqPlatforms');
+      if (!form.platforms.length) return fail('배급할 플랫폼을 하나 이상 선택해 주세요.', '#aqPlatforms');
+      if (['coverLicenseFile', 'sampleLicenseFile', 'featuredConsentFile', 'sharedContractFile'].some(k => uploads[k]?.state === 'uploading')) return fail('첨부서류 업로드가 끝나면 계속할 수 있어요.', '#aqSpecialOptions');
+      if (form.platforms.some(p => !dsps.some(d => d.slug === p && d.available))) return fail('현재 배급할 수 없는 플랫폼이 선택되어 있어요. 해당 선택을 해제해 주세요.', '#aqPlatforms');
       if (form.upc.trim() && !upcValid(form.upc.trim())) return fail('UPC/EAN 번호가 올바르지 않아요. 숫자 12~13자리와 마지막 확인 숫자를 확인해 주세요.', '#f-upc');
       if (form.upc.trim() && !/^0?\d{12}$/.test(form.upc.trim())) return fail('UPC는 12자리(UPC-A)만 받을 수 있어요. 13자리 EAN은 0으로 시작하는 번호만 쓸 수 있어요.', '#f-upc');
       const o = form.options;
       if (o.express && !o.expressAck) return fail('신속 발매 안내를 확인해 주세요.', '#aqExpressAck');
     }
     if (i === 4) {
+      if (['coverLicenseFile', 'sampleLicenseFile', 'featuredConsentFile', 'sharedContractFile'].some(k => uploads[k]?.state === 'uploading')) return fail('첨부서류 업로드가 끝나면 계속할 수 있어요.', '#aqSpecialOptions');
       const o = form.options;
+      if ((o.cover && o.coverLicenseFile && !o.coverLicenseAssetId)
+        || (o.sample && o.sampleLicenseFile && !o.sampleLicenseAssetId)
+        || (o.featured && o.featuredConsentFile && !o.featuredConsentAssetId)
+        || (o.shared && o.sharedContractFile && !o.sharedContractAssetId)) {
+        return fail('이전에 선택한 권리 서류의 원본을 다시 첨부해 주세요.', '#aqSpecialOptions');
+      }
       if (o.minor) {
         if (!o.guardian.trim()) return fail('법정대리인 성명을 입력해 주세요.', '#aqGuardian');
         if (!o.guardianRelation) return fail('법정대리인과의 관계를 선택해 주세요.', '#aqGuardianRelation');
@@ -1433,6 +1469,10 @@ export function Upload() {
       // 서명한 신청서를 정식 서류로 바로 보여 준다 (보완 재접수는 발매 상세로)
       nav(resubmit ? `/releases/${r.id}` : `/releases/${r.id}/application?done=1`, { replace: true });
     } catch (e) {
+      if (e instanceof ApiError && e.code === 'DSP_UNAVAILABLE') {
+        goStep(3);
+        api.listDsps().then(setDsps).catch(err => { setDsps(null); setDspError(errorMessage(err)); });
+      }
       setError(errorMessage(e, '제출에 실패했어요. 잠시 후 다시 시도해 주세요.'));
       toast('제출에 실패했어요. 다시 시도해 주세요.');
     } finally {
@@ -1591,7 +1631,8 @@ export function Upload() {
   const resubmit = !!editId && origStatus !== 'draft' && hasApplication;
   const s = STEPS[step];
   const genreIsCustom = form.genre === '__other__';
-  const allPlatforms = DSP.every(d => form.platforms.includes(d[0]));
+  const availablePlatforms = dsps?.filter(d => d.available).map(d => d.slug) ?? [];
+  const allPlatforms = availablePlatforms.length > 0 && availablePlatforms.every(p => form.platforms.includes(p)) && form.platforms.every(p => availablePlatforms.includes(p));
   // 기본은 ‘모두 배급’ 스위치만. 끄면 아래에 플랫폼별 선택이 열린다 (일부만 고른 발매는 처음부터 열림)
   const [pickPlatforms, setPickPlatforms] = useState(false);
   const showPlatforms = pickPlatforms || !allPlatforms;
@@ -1930,15 +1971,16 @@ export function Upload() {
             <div className="distribution-default">
               <div>
                 <strong>{allPlatforms ? '주요 음악 플랫폼에 모두 배급해요.' : `${form.platforms.length}개 플랫폼에 배급해요.`}</strong>
-                <p className="help">{showPlatforms ? '아래에서 배급할 플랫폼을 눌러 빼거나 더할 수 있어요.' : '특정 플랫폼만 고르려면 스위치를 꺼 주세요.'}</p>
+                <p className="help">{dspError || (!dsps ? '서버에서 플랫폼 상태를 확인하는 중이에요.' : showPlatforms ? '현재 배급 가능한 플랫폼만 선택할 수 있어요.' : '특정 플랫폼만 고르려면 스위치를 꺼 주세요.')}</p>
               </div>
               <label className="aq-switch">
                 <input
                   type="checkbox" aria-label="모든 플랫폼에 배급"
                   checked={allPlatforms && !pickPlatforms}
+                  disabled={!dsps || availablePlatforms.length === 0}
                   onChange={e => {
                     // 켜면 모두 선택하고 목록을 닫고, 끄면 지금 선택 그대로 목록을 연다
-                    if (e.target.checked) { set('platforms', DSP.map(d => d[0])); setPickPlatforms(false); } else setPickPlatforms(true);
+                    if (e.target.checked) { set('platforms', availablePlatforms); setPickPlatforms(false); } else setPickPlatforms(true);
                   }}
                 />
                 <span />
@@ -1946,19 +1988,19 @@ export function Upload() {
             </div>
             {showPlatforms && (
             <div id="aqPlatforms" className="aq-dsp-groups aq-reveal">
-              {([['국내', DSP.filter(d => DSP_DOMESTIC.includes(d[0]))], ['해외', DSP.filter(d => !DSP_DOMESTIC.includes(d[0]))]] as const).map(([region, list]) => (
+              {([['국내', dsps?.filter(d => d.region === 'KR') ?? []], ['해외', dsps?.filter(d => d.region !== 'KR') ?? []]] as const).map(([region, list]) => (
                 <div key={region}>
                   <p className="aq-dsp-region">{region}</p>
                   <div className="aq-dsp-grid" role="group" aria-label={`${region} 플랫폼`}>
-                    {list.map(([key, label]) => {
+                    {list.map(({ slug: key, name: label, available }) => {
                       const on = form.platforms.includes(key);
                       return (
                         <button
-                          key={key} type="button" aria-pressed={on} className={`aq-dsp${on ? ' is-on' : ''}`}
+                          key={key} type="button" aria-pressed={on} disabled={!available && !on} className={`aq-dsp${on ? ' is-on' : ''}${!available ? ' is-unavailable' : ''}`}
                           onClick={() => set('platforms', on ? form.platforms.filter(p => p !== key) : [...form.platforms, key])}
                         >
                           <span className="aq-dsp-mark" style={{ background: DSP_COLOR[key] ?? '#3B63F3' }} aria-hidden="true">{label.slice(0, 1)}</span>
-                          <span className="aq-dsp-name">{label}</span>
+                          <span className="aq-dsp-name">{label}{!available && <small>현재 배급 불가</small>}</span>
                           <span className="aq-dsp-check" aria-hidden="true"><CheckIcon size={11} /></span>
                         </button>
                       );
@@ -1968,7 +2010,8 @@ export function Upload() {
               ))}
             </div>
             )}
-            <div className="aq-fix-zone"><OptionsSection form={form} set={set} group="service" /></div>
+            {!dsps && <p className="help" role="status">{dspError || '플랫폼 목록을 서버에서 불러오는 중이에요.'}</p>}
+            <div className="aq-fix-zone"><OptionsSection form={form} set={set} group="service" onDocument={attachOptionDocument} uploads={uploads} /></div>
           </section>
         )}
 
@@ -2017,7 +2060,7 @@ export function Upload() {
                 ‘{form.label.trim() || form.artist.trim()}’(으)로 권리자 정보 채우기
               </button>
             )}
-            <div id="aqSpecialOptions" className="aq-fix-zone"><OptionsSection form={form} set={set} group="rights" /></div>
+            <div id="aqSpecialOptions" className="aq-fix-zone"><OptionsSection form={form} set={set} group="rights" onDocument={attachOptionDocument} uploads={uploads} /></div>
             <h2 className="subhead">필수 확인 항목</h2>
             <div className="field-group">
               {RIGHTS_CHECKS.map(([k, label]) => (

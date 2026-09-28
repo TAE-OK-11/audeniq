@@ -579,6 +579,24 @@ async fn module_applicant_rights(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec
 
     // 2-A/2-B: grant chain for every track/release target in this org.
     let flags = special_flags(ctx);
+    let options = &ctx.body["release"]["draft"]["options"];
+    if options["express"] == true {
+        out.push(ReviewCheck {
+            check_code: "S2_EXPRESS_REQUEST",
+            status: "REVIEW_REQUIRED",
+            detail: "expedited release requested; schedule and terms require staff review".into(),
+        });
+    }
+    if ["featured", "shared", "rerelease"]
+        .iter()
+        .any(|key| options[*key] == true)
+    {
+        out.push(ReviewCheck {
+            check_code: "S2_ADDITIONAL_RIGHTS",
+            status: "REVIEW_REQUIRED",
+            detail: "featured artist, shared rights or prior release requires staff review".into(),
+        });
+    }
     let needs_extra_grant = flags.iter().any(|f| {
         matches!(
             f.as_str(),

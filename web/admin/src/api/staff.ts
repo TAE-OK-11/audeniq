@@ -68,6 +68,12 @@ export interface ReleaseSheet {
     artist?: string; language?: string; genre?: string; release_date?: string; original_date?: string;
     label?: string; p_line?: string; c_line?: string; territories?: unknown; platforms: string[];
     declarations?: Record<string, boolean> | null; tracks?: Track[] | null;
+    options?: {
+      express?: boolean; expressReason?: string; ai?: boolean; aiTool?: string;
+      cover?: boolean; coverTracks?: { trackId: string; originalTitle: string; originalArtist: string; originalWriters: string }[];
+      sample?: boolean; featured?: boolean; shared?: boolean; rerelease?: boolean;
+      previousTitle?: string; previousId?: string;
+    } | null;
   };
   signed_application: {
     application_no: string; content_hash: string; signer_name: string; signer_role: string; received_at: string;
