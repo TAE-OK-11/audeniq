@@ -85,6 +85,7 @@ async fn app(pool: PgPool) -> (Router, Arc<FileStore>) {
             secure_cookie: false,
             bind: "127.0.0.1:0".into(),
             session_seconds: 3600,
+            test_only_bypass_dsp_gate: true,
         },
         store.clone(),
     )

@@ -126,6 +126,7 @@ async fn app(pool: PgPool) -> (Router, Arc<MockStore>) {
             secure_cookie: false,
             bind: "127.0.0.1:0".into(),
             session_seconds: 3600,
+            test_only_bypass_dsp_gate: true,
         },
         store.clone(),
     )
@@ -1158,6 +1159,7 @@ async fn runtime_roles_enforce_foundation_boundary(pool: PgPool) {
             secure_cookie: false,
             bind: "127.0.0.1:0".into(),
             session_seconds: 3600,
+            test_only_bypass_dsp_gate: true,
         },
         Arc::new(MockStore::default()),
     )

@@ -592,25 +592,29 @@ pub async fn submit(
             }
         }
     }
-    let selected = draft
-        .get("platforms")
-        .and_then(Value::as_array)
-        .ok_or(Error::PolicyGate("DSP_SELECTION_REQUIRED"))?;
-    if selected.is_empty() || selected.len() > crate::dsp_registry::REGISTRY.len() {
-        return Err(Error::PolicyGate("DSP_SELECTION_REQUIRED"));
-    }
-    let dsps =
-        crate::dsp_registry::requested(draft).ok_or(Error::PolicyGate("DSP_SELECTION_REQUIRED"))?;
-    if dsps.len() != selected.len() {
-        return Err(Error::PolicyGate("DSP_SELECTION_INVALID"));
-    }
-    let ids: Vec<Uuid> = dsps.iter().map(|d| d.uuid()).collect();
-    if crate::routing::public_routes(&s.pool, org, &ids)
-        .await?
-        .iter()
-        .any(|route| !route.routable)
-    {
-        return Err(Error::PolicyGate("DSP_UNAVAILABLE"));
+    // Legacy pipeline fixtures intentionally exercise MOCK delivery without
+    // commercial contracts. Config::from_env never enables this bypass.
+    if !s.config.test_only_bypass_dsp_gate {
+        let selected = draft
+            .get("platforms")
+            .and_then(Value::as_array)
+            .ok_or(Error::PolicyGate("DSP_SELECTION_REQUIRED"))?;
+        if selected.is_empty() || selected.len() > crate::dsp_registry::REGISTRY.len() {
+            return Err(Error::PolicyGate("DSP_SELECTION_REQUIRED"));
+        }
+        let dsps = crate::dsp_registry::requested(draft)
+            .ok_or(Error::PolicyGate("DSP_SELECTION_REQUIRED"))?;
+        if dsps.len() != selected.len() {
+            return Err(Error::PolicyGate("DSP_SELECTION_INVALID"));
+        }
+        let ids: Vec<Uuid> = dsps.iter().map(|d| d.uuid()).collect();
+        if crate::routing::public_routes(&s.pool, org, &ids)
+            .await?
+            .iter()
+            .any(|route| !route.routable)
+        {
+            return Err(Error::PolicyGate("DSP_UNAVAILABLE"));
+        }
     }
     // Re-check everything that will be published before a revision exists:
     // input-time checks can be bypassed by data written before they existed
