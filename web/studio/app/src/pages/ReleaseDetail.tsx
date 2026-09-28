@@ -7,7 +7,7 @@ import { SkeletonBlock, SkeletonRows } from '../components/Skeleton';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { useAsync } from '../hooks/useAsync';
 import { STATUS_LABEL, localStamp } from '../lib/format';
-import { dspLabel, durationLabel, genreLabel, kindLabel, languageLabel } from '../lib/catalog';
+import { useDspLabel, durationLabel, genreLabel, kindLabel, languageLabel } from '../lib/catalog';
 import { docState, docsForRelease, useDocs } from '../store/docs';
 import { errorMessage } from '../api/errors';
 import { CorrectionList } from '../components/CorrectionList';
@@ -73,6 +73,7 @@ function rightsOk(checks: Record<string, boolean> | undefined, options?: { sampl
 }
 
 export function ReleaseDetail() {
+  const dspLabel = useDspLabel();
   const { id = '' } = useParams();
   const nav = useNavigate();
   const toast = useToast();

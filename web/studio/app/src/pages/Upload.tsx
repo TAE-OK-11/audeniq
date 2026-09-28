@@ -11,7 +11,7 @@ import { addDoc, docsForRelease, getDocsSnapshot, type DocRecord } from '../stor
 import { pushNotice } from '../store/support';
 import { useProfile } from '../store/profile';
 import { fileSize, localStamp } from '../lib/format';
-import { DSP, GENRES, KINDS, LANGUAGES, dspLabel, genreLabel, kindLabel } from '../lib/catalog';
+import { DSP, GENRES, KINDS, LANGUAGES, dspLabel, useDspLabel, genreLabel, kindLabel } from '../lib/catalog';
 import { formatKoreanDate, stampNow, todayStr } from '../lib/date';
 import { correctionWhere, resolveCorrection, type ResolvedCorrection } from '../lib/corrections';
 import { checkAudioFile, formatDuration, specLabel } from '../lib/audioSpec';
@@ -332,15 +332,16 @@ const DSP_COLOR: Record<string, string> = {
   jiosaavn: '#2bc5b4', kkbox: '#09cef6', 'line-music': '#06c755', awa: '#f05a28', netease: '#e60026',
   tencent: '#31c27c', napster: '#2259ff', iheart: '#c6002b', meta: '#0866ff', tiktok: '#111111',
   'youtube-cid': '#cc0000', snapchat: '#e6cf00', beatport: '#01ff95',
-  itunes: '#ea4cc0', 'claro-musica': '#da291c', pretzel: '#1a8cff', triller: '#ff0f63', touchtunes: '#003da5', yandex: '#fc3f1d',
+  itunes: '#ea4cc0', 'claro-musica': '#da291c', pretzel: '#1a8cff', triller: '#ff0f63', touchtunes: '#003da5', yandex: '#fc3f1d', mockdsp: '#51617e',
 };
 
 /** 플랫폼 선택 화면의 묶음 — 서버가 주는 region/category 기준 */
-const DSP_GROUPS: [string, (d: { region: string; category?: string }) => boolean][] = [
-  ['국내', d => d.region === 'KR'],
-  ['해외 스트리밍', d => d.region !== 'KR' && (d.category ?? 'STREAMING') === 'STREAMING'],
-  ['소셜·숏폼 영상', d => d.category === 'SOCIAL'],
-  ['스토어', d => d.category === 'STORE'],
+const DSP_GROUPS: [string, (d: DspAvailability) => boolean][] = [
+  ['테스트 플랫폼', d => !!d.test_only],
+  ['국내', d => !d.test_only && d.region === 'KR'],
+  ['해외 스트리밍', d => !d.test_only && d.region !== 'KR' && (d.category ?? 'STREAMING') === 'STREAMING'],
+  ['소셜·숏폼 영상', d => !d.test_only && d.category === 'SOCIAL'],
+  ['스토어', d => !d.test_only && d.category === 'STORE'],
 ];
 
 const OTHER = '기타';
@@ -1026,6 +1027,7 @@ function ensureReleaseDocuments(f: WizardForm, releaseId: string) {
 type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'saved'; at: string } | { kind: 'error' };
 
 export function Upload() {
+  const dspLabel = useDspLabel();
   const nav = useNavigate();
   const toast = useToast();
   const confirm = useConfirm();
@@ -1055,7 +1057,7 @@ export function Upload() {
       if (!alive) return;
       setDsps(items);
       setDspError('');
-      if (!editId) setForm(f => f.platforms.length ? f : ({ ...f, platforms: items.filter(d => d.available).map(d => d.slug) }));
+      if (!editId) setForm(f => f.platforms.length ? f : ({ ...f, platforms: items.filter(d => d.available && !d.test_only).map(d => d.slug) }));
     }).catch(e => { if (alive) { setDsps(null); setDspError(errorMessage(e, '플랫폼 상태를 확인하지 못했어요.')); } });
     return () => { alive = false; };
   }, [editId]);
@@ -1644,7 +1646,7 @@ export function Upload() {
   const resubmit = !!editId && origStatus !== 'draft' && hasApplication;
   const s = STEPS[step];
   const genreIsCustom = form.genre === '__other__';
-  const availablePlatforms = dsps?.filter(d => d.available).map(d => d.slug) ?? [];
+  const availablePlatforms = dsps?.filter(d => d.available && !d.test_only).map(d => d.slug) ?? [];
   const allPlatforms = availablePlatforms.length > 0 && availablePlatforms.every(p => form.platforms.includes(p)) && form.platforms.every(p => availablePlatforms.includes(p));
   // 기본은 ‘모두 배급’ 스위치만. 끄면 아래에 플랫폼별 선택이 열린다 (일부만 고른 발매는 처음부터 열림)
   const [pickPlatforms, setPickPlatforms] = useState(false);
@@ -1984,7 +1986,7 @@ export function Upload() {
             <div className="distribution-default">
               <div>
                 <strong>{allPlatforms ? '주요 음악 플랫폼에 모두 배급해요.' : `${form.platforms.length}개 플랫폼에 배급해요.`}</strong>
-                <p className="help">{dspError || (!dsps ? '서버에서 플랫폼 상태를 확인하는 중이에요.' : showPlatforms ? '현재 배급 가능한 플랫폼만 선택할 수 있어요.' : '특정 플랫폼만 고르려면 스위치를 꺼 주세요.')}</p>
+                <p className="help">{dspError || (!dsps ? '서버에서 플랫폼 상태를 확인하는 중이에요.' : availablePlatforms.length === 0 ? '현재는 MockDSP 테스트 플랫폼을 직접 선택해 신청할 수 있어요.' : showPlatforms ? '현재 배급 가능한 플랫폼만 선택할 수 있어요.' : '특정 플랫폼만 고르려면 스위치를 꺼 주세요.')}</p>
               </div>
               <label className="aq-switch">
                 <input
@@ -2005,7 +2007,7 @@ export function Upload() {
                 <div key={region}>
                   <p className="aq-dsp-region">{region}</p>
                   <div className="aq-dsp-grid" role="group" aria-label={`${region} 플랫폼`}>
-                    {list.map(({ slug: key, name: label, available }) => {
+                    {list.map(({ slug: key, name: label, available, test_only }) => {
                       const on = form.platforms.includes(key);
                       return (
                         <button
@@ -2013,7 +2015,7 @@ export function Upload() {
                           onClick={() => set('platforms', on ? form.platforms.filter(p => p !== key) : [...form.platforms, key])}
                         >
                           <span className="aq-dsp-mark" style={{ background: DSP_COLOR[key] ?? '#3B63F3' }} aria-hidden="true">{label.slice(0, 1)}</span>
-                          <span className="aq-dsp-name">{label}{!available && <small>현재 배급 불가</small>}</span>
+                          <span className="aq-dsp-name">{label}{test_only && <small>테스트 전용</small>}{!available && <small>현재 배급 불가</small>}</span>
                           <span className="aq-dsp-check" aria-hidden="true"><CheckIcon size={11} /></span>
                         </button>
                       );

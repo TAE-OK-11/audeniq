@@ -3,7 +3,6 @@
 // 서버 응답을 화면에서 쓰는 모양(스토어 타입)으로 바꿔서 돌려준다.
 import { orgPath, req } from './http';
 import { cleanText, remoteApi } from './remote';
-import { dspLabel } from '../lib/catalog';
 import type { ProfileInfo } from '../store/profile';
 import type { PaymentInfo } from '../store/payment';
 import type { Notice } from '../store/support';
@@ -235,7 +234,7 @@ export async function fetchFinance(): Promise<{ summary: FinanceSummary; stateme
     statements: st.items.map(t => ({
       id: t.id,
       period: typeof t.source?.period === 'string' ? t.source.period : stamp(t.created_at).slice(0, 7),
-      platform: typeof t.source?.dsp === 'string' ? dspLabel(t.source.dsp) : '정산',
+      platform: typeof t.source?.dsp === 'string' ? t.source.dsp : '정산',
       amount: Number(t.amount), note: t.description, created: stamp(t.created_at).slice(0, 10),
     })),
     payouts: po.items.map(p => ({

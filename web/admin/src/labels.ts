@@ -1,21 +1,9 @@
 // 관리자 화면 표기 — 서버 상태·검사 코드를 한국어 라벨과 칩 색(tone)으로.
 import { correctionTarget, isKnownCorrection } from './lib/corrections';
 import type { Duty, StaffRole } from './api/staff';
+export { dspLabel } from './lib/dspNames';
 
 export type Tone = 'blue' | 'violet' | 'amber' | 'green' | 'red' | 'gray';
-
-const DSP_NAMES: [string, string][] = [
-  ['melon', '멜론'], ['genie', '지니'], ['flo', 'FLO'], ['bugs', '벅스'],
-  ['spotify', 'Spotify'], ['apple', 'Apple Music / iTunes'], ['youtube', 'YouTube Music'],
-  ['amazon', 'Amazon Music'], ['tidal', 'TIDAL'], ['deezer', 'Deezer'], ['qobuz', 'Qobuz'],
-];
-
-export function dspLabel(value: string): string {
-  const bySlug = DSP_NAMES.find(([slug]) => slug === value);
-  if (bySlug) return bySlug[1];
-  const code = /^D-(\d+)$/.exec(value);
-  return code ? DSP_NAMES[Number(code[1]) - 1]?.[1] ?? '알 수 없는 플랫폼' : value;
-}
 
 export const ROLE_LABEL: Record<StaffRole, string> = {
   ADMIN: '관리자', REVIEWER: '심사 담당', OPERATOR: '배급 운영', SUPPORT: '고객 지원',

@@ -100,8 +100,8 @@ pub async fn decide_routes(
     decide_routes_inner(pool, org_id, dsp_ids, true).await
 }
 
-/// Artist-facing availability excludes MOCK routes, even when a test
-/// adapter can send. The same contract gate is used again at submit time.
+/// Artist-facing availability includes only contracted routes and the local
+/// MockDSP test destination. The same gate is used again at submit time.
 pub async fn public_routes(
     pool: &PgPool,
     org_id: Uuid,
@@ -212,7 +212,12 @@ async fn decide_routes_inner(
         let mut saw_uncontracted = false;
         let mut saw_unsendable_cap = false;
         for p in candidates {
-            if !include_mock && p.activation_kind != "CONTRACTED" {
+            if !include_mock
+                && p.activation_kind != "CONTRACTED"
+                && !(p.activation_kind == "MOCK"
+                    && p.partner_id == "mockdsp"
+                    && dsp_id == crate::dsp_registry::Dsp::D36.uuid())
+            {
                 continue;
             }
             if !p.delivery_enabled {

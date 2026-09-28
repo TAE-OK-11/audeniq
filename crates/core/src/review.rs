@@ -1119,19 +1119,22 @@ async fn module_policy_integrity(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec
     // The artist's platform choice (Studio `platforms`, frozen in the
     // revision) narrows the scope: a registry DSP (D-n) the application did
     // not ask for is never approved. Test partners outside the registry are
-    // unaffected; a legacy draft without `platforms` asks for every DSP.
+    // unaffected; a legacy draft without `platforms` asks for every real DSP
+    // but never implicitly selects MockDSP.
     let requested = ctx
         .body
         .pointer("/release/draft")
         .and_then(crate::dsp_registry::requested);
-    if let Some(req) = &requested {
-        eligible.retain(|id| {
-            Uuid::parse_str(id)
-                .ok()
-                .and_then(crate::dsp_registry::Dsp::from_uuid)
-                .is_none_or(|d| req.contains(&d))
-        });
-    }
+    eligible.retain(|id| {
+        let dsp = Uuid::parse_str(id)
+            .ok()
+            .and_then(crate::dsp_registry::Dsp::from_uuid);
+        match (&requested, dsp) {
+            (Some(req), Some(d)) => req.contains(&d),
+            (None, Some(d)) => !d.spec().test_only,
+            _ => true,
+        }
+    });
     let requested_codes = match &requested {
         Some(r) => r.iter().map(|d| d.code()).collect::<Vec<_>>().join(","),
         None => "ALL".into(),

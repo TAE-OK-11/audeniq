@@ -5,7 +5,7 @@
 //! what is missing. Runs as the table owner (platform operator); the API
 //! and worker roles hold no grants on this table.
 
-use audeniq_core::{database, partner_onboarding};
+use audeniq_core::{database, dsp_registry::Dsp, partner_onboarding, routing};
 use sqlx::PgPool;
 
 async fn migrated(pool: &PgPool) {
@@ -30,6 +30,38 @@ async fn mockdsp_seed_reports_only_contract_missing(pool: PgPool) {
             "test_ack_parsed".to_string(),
             "contract_signed".to_string()
         ]
+    );
+}
+
+#[sqlx::test]
+async fn mockdsp_is_selectable_without_unlocking_real_dsps(pool: PgPool) {
+    migrated(&pool).await;
+    let mock = Dsp::D36.uuid();
+    let profile_id: uuid::Uuid = sqlx::query_scalar(
+        "SELECT dsp_id FROM execution.adapter_profiles WHERE partner_id='mockdsp'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(profile_id, mock);
+    let routes = routing::public_routes(&pool, uuid::Uuid::new_v4(), &[mock, Dsp::D5.uuid()])
+        .await
+        .unwrap();
+    assert!(routes[0].routable);
+    assert_eq!(routes[0].partner_id.as_deref(), Some("mockdsp"));
+    assert!(!routes[1].routable);
+
+    sqlx::query(
+        "UPDATE execution.adapter_profiles SET delivery_enabled=false WHERE partner_id='mockdsp'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(
+        !routing::public_routes(&pool, uuid::Uuid::new_v4(), &[mock])
+            .await
+            .unwrap()[0]
+            .routable
     );
 }
 
@@ -234,14 +266,12 @@ async fn missing_onboarding_row_reports_all_gaps(pool: PgPool) {
 #[sqlx::test]
 async fn operator_links_a_partner_to_its_dsp_id(pool: PgPool) {
     migrated(&pool).await;
-    // The seeded test partner has no DSP id, so Stage 2 never lists it.
-    let dsp: Option<uuid::Uuid> = sqlx::query_scalar(
-        "SELECT dsp_id FROM execution.adapter_profiles WHERE partner_id='mockdsp'",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert!(dsp.is_none());
+    // Mimic an adapter without a DSP id to exercise the operator link action.
+    // The normal seed now links MockDSP to the D-36 test destination.
+    sqlx::query("UPDATE execution.adapter_profiles SET dsp_id=NULL WHERE partner_id='mockdsp'")
+        .execute(&pool)
+        .await
+        .unwrap();
     assert!(
         partner_onboarding::set_dsp(&pool, " ", "mockdsp", None)
             .await
