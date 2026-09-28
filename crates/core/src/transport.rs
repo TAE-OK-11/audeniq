@@ -338,17 +338,14 @@ impl SftpTransport {
             .chars()
             .take(400)
             .collect();
-        // ssh exits 255 when the connection itself failed (DNS, refused,
-        // host key, auth): nothing was transferred. Any other failure
-        // happened inside an established session.
-        if out.status.code() == Some(255)
-            || stderr.contains("Connection refused")
-            || stderr.contains("Could not resolve")
-            || stderr.contains("Permission denied")
-            || stderr.contains("Host key verification failed")
-            || stderr.contains("Connection closed")
-                && !stdout.lines().any(|l| l.starts_with("sftp>"))
-        {
+        // Batch mode echoes every command ("sftp> put …") before running
+        // it, so an echo proves the session was established and commands
+        // may have run. Only a run with no echo at all is "unreachable"
+        // (DNS, refused, auth, host key): nothing can have been written.
+        // The exit status alone is not enough — ssh also exits 255 when an
+        // established connection drops, possibly after a rename landed.
+        let started = stdout.lines().any(|l| l.starts_with("sftp>"));
+        if !started {
             Err(TransportError::Unreachable(stderr))
         } else if stderr.contains("No such file") || stderr.contains("not found") {
             Err(TransportError::NotFound)
