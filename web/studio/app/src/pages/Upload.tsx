@@ -333,6 +333,8 @@ const DSP_COLOR: Record<string, string> = {
   tencent: '#31c27c', napster: '#2259ff', iheart: '#c6002b', meta: '#0866ff', tiktok: '#111111',
   'youtube-cid': '#cc0000', snapchat: '#e6cf00', beatport: '#01ff95',
   itunes: '#ea4cc0', 'claro-musica': '#da291c', pretzel: '#1a8cff', triller: '#ff0f63', touchtunes: '#003da5', yandex: '#fc3f1d',
+  kuaishou: '#ff4906', joox: '#00d05a', trebel: '#6c2bd9', mixcloud: '#5000ff', twitch: '#9146ff', peloton: '#df1c2f',
+  canva: '#00c4cc', lickd: '#ff3d6e', adaptr: '#2d2d86', styngr: '#ff7a00',
 };
 
 /** 플랫폼 선택 화면의 묶음 — 서버가 주는 region/category 기준 */
@@ -341,6 +343,7 @@ const DSP_GROUPS: [string, (d: { region: string; category?: string }) => boolean
   ['해외 스트리밍', d => d.region !== 'KR' && (d.category ?? 'STREAMING') === 'STREAMING'],
   ['소셜·숏폼 영상', d => d.category === 'SOCIAL'],
   ['스토어', d => d.category === 'STORE'],
+  ['피트니스·크리에이터·게임 라이선스', d => d.category === 'LICENSING'],
 ];
 
 const OTHER = '기타';

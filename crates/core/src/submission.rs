@@ -5,6 +5,7 @@
 use crate::{
     api::AppState,
     auth::{self, Actor},
+    domain::{sha256_hex, sha256_json},
     error::{Error, Result},
     fingerprint,
     identifiers::{validate_isrc, validate_upc},
@@ -14,7 +15,6 @@ use crate::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use sqlx::{PgConnection, PgPool, Row};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -35,14 +35,6 @@ pub fn is_editable_status(status: &str) -> bool {
 pub const CONSENT_POLICY_VERSION: &str = "v1-self";
 /// Rule version for Stage 1 field checks (1-B).
 pub const FIELD_RULE_VERSION: &str = "1";
-
-fn sha256_hex(s: &str) -> String {
-    hex::encode(Sha256::digest(s.as_bytes()))
-}
-fn canonical(v: &Value) -> String {
-    // serde_json::Map is a BTreeMap by default: keys sort, output is stable.
-    serde_json::to_string(v).expect("json serializes")
-}
 
 /// Canonical scope a consent package covers: the release draft it was
 /// created against. Submit re-computes this and rejects on mismatch.
@@ -201,7 +193,7 @@ pub async fn create_consent(
         return Err(Error::Invalid);
     }
     let scope = scope_of(&mut tx, org, release).await?;
-    let scope_hash = sha256_hex(&canonical(&scope));
+    let scope_hash = sha256_json(&scope);
     let valid_days = input.valid_days.unwrap_or(365).clamp(1, 3650);
     let body = json!({
         "schema_version": 1,
@@ -216,7 +208,7 @@ pub async fn create_consent(
         "scope_hash": scope_hash,
         "valid_until": (chrono::Utc::now() + chrono::Duration::days(valid_days)).to_rfc3339(),
     });
-    let package_hash = sha256_hex(&canonical(&body));
+    let package_hash = sha256_json(&body);
     let id = Uuid::new_v4();
     sqlx::query("INSERT INTO catalog.consent_packages(id, org_id, revision_id, body, package_hash, policy_version) VALUES($1,$2,NULL,$3,$4,$5)")
         .bind(id).bind(org).bind(&body).bind(&package_hash).bind(CONSENT_POLICY_VERSION)
@@ -479,7 +471,7 @@ pub async fn submit(
     if expired {
         return Err(Error::PolicyGate("CONSENT_EXPIRED"));
     }
-    let scope_hash = sha256_hex(&canonical(&scope_of(&mut tx, org, release).await?));
+    let scope_hash = sha256_json(&scope_of(&mut tx, org, release).await?);
     let consent_scope = c
         .get::<Value, _>("body")
         .get("scope_hash")
@@ -508,7 +500,7 @@ pub async fn submit(
     }) {
         return Err(Error::PolicyGate("AUDIO_NOT_VERIFIED"));
     }
-    let body_hash = sha256_hex(&canonical(&body));
+    let body_hash = sha256_json(&body);
     let idem_key = input.idempotency_key.trim().to_string();
     // Idempotency key: the same key on this release always resolves to the
     // revision created by the first submit, so a retried request can never
@@ -938,26 +930,34 @@ async fn policy_checks(
             conflicts.push(format!("UPC {upc}"));
         }
     }
-    for t in body["tracks"].as_array().into_iter().flatten() {
-        let (Some(isrc), Some(tid)) = (
-            t["isrc"].as_str().filter(|i| !i.is_empty()),
-            t["id"].as_str().and_then(|s| Uuid::parse_str(s).ok()),
-        ) else {
-            continue;
-        };
-        let used: bool = sqlx::query_scalar(
+    let (isrcs, tids): (Vec<&str>, Vec<Uuid>) = body["tracks"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|t| {
+            Some((
+                t["isrc"].as_str().filter(|i| !i.is_empty())?,
+                t["id"].as_str().and_then(|s| Uuid::parse_str(s).ok())?,
+            ))
+        })
+        .unzip();
+    if !isrcs.is_empty() {
+        let used: Vec<bool> = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM catalog.tracks t JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id
-                           WHERE t.org_id=$1 AND t.isrc=$2 AND t.release_id<>$3 AND t.archived_at IS NULL AND r.archived_at IS NULL)
-                 OR EXISTS(SELECT 1 FROM distribution.identifier_assignments WHERE kind='ISRC' AND identifier=$2 AND track_id<>$4)",
+                           WHERE t.org_id=$1 AND t.isrc=i.isrc AND t.release_id<>$3 AND t.archived_at IS NULL AND r.archived_at IS NULL)
+                 OR EXISTS(SELECT 1 FROM distribution.identifier_assignments WHERE kind='ISRC' AND identifier=i.isrc AND track_id<>i.tid)
+             FROM unnest($2::text[],$4::uuid[]) WITH ORDINALITY AS i(isrc,tid,n) ORDER BY i.n",
         )
         .bind(org)
-        .bind(isrc)
+        .bind(&isrcs)
         .bind(release)
-        .bind(tid)
-        .fetch_one(&mut *tx)
+        .bind(&tids)
+        .fetch_all(&mut *tx)
         .await?;
-        if used {
-            conflicts.push(format!("ISRC {isrc}"));
+        for (isrc, used) in isrcs.iter().zip(used) {
+            if used {
+                conflicts.push(format!("ISRC {isrc}"));
+            }
         }
     }
     push(
@@ -979,28 +979,39 @@ async fn policy_checks(
     // Reusing a recording on a single and then an album is legitimate when
     // both tracks carry the same ISRC, so only a reuse under a different or
     // missing ISRC goes to review.
-    let mut reused: Vec<String> = Vec::new();
-    for t in body["tracks"].as_array().into_iter().flatten() {
-        let Some(aid) = t["asset_id"].as_str().and_then(|s| Uuid::parse_str(s).ok()) else {
-            continue;
-        };
-        let isrc = t["isrc"].as_str().filter(|i| !i.is_empty());
-        let others: Vec<(Uuid, Option<String>)> = sqlx::query_as(
-            "SELECT t.release_id, t.isrc FROM catalog.tracks t JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id
-              WHERE t.org_id=$1 AND t.asset_id=$2 AND t.release_id<>$3 AND t.archived_at IS NULL
+    let (aids, track_isrcs): (Vec<Uuid>, Vec<Option<&str>>) = body["tracks"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|t| {
+            let aid = t["asset_id"]
+                .as_str()
+                .and_then(|s| Uuid::parse_str(s).ok())?;
+            Some((aid, t["isrc"].as_str().filter(|i| !i.is_empty())))
+        })
+        .unzip();
+    let others: Vec<(Uuid, Option<String>, Uuid, Option<String>)> = if aids.is_empty() {
+        Vec::new()
+    } else {
+        sqlx::query_as(
+            "SELECT a.aid, a.isrc, t.release_id, t.isrc FROM unnest($2::uuid[],$4::text[]) AS a(aid,isrc)
+              JOIN catalog.tracks t ON t.org_id=$1 AND t.asset_id=a.aid
+              JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id
+              WHERE t.release_id<>$3 AND t.archived_at IS NULL
                 AND r.archived_at IS NULL AND r.status NOT IN ('DRAFT','WITHDRAWN','SUPERSEDED')",
         )
         .bind(org)
-        .bind(aid)
+        .bind(&aids)
         .bind(release)
+        .bind(&track_isrcs)
         .fetch_all(&mut *tx)
-        .await?;
-        for (other, other_isrc) in others {
-            if isrc.is_none() || other_isrc.as_deref() != isrc {
-                reused.push(format!("asset {aid} (release {other})"));
-            }
-        }
-    }
+        .await?
+    };
+    let mut reused: Vec<String> = others
+        .into_iter()
+        .filter(|(_, isrc, _, other_isrc)| isrc.is_none() || other_isrc != isrc)
+        .map(|(aid, _, other, _)| format!("asset {aid} (release {other})"))
+        .collect();
     reused.sort();
     reused.dedup();
     out.push(review_check);
@@ -2445,7 +2456,7 @@ fn validation_package(
                 validated_assets.push(json!({
                     "asset_id": aid,
                     "sha256": sha,
-                    "metric_hash": sha256_hex(&format!("{aid}:{sha}")),
+                    "metric_hash": sha256_hex(format!("{aid}:{sha}")),
                 }));
             }
             if t.get("parental_advisory")
@@ -2607,7 +2618,7 @@ pub async fn run_stage1(
             &body,
             &check_ids,
         );
-        let pkg_hash = sha256_hex(&canonical(&pkg));
+        let pkg_hash = sha256_json(&pkg);
         let pkg_id = Uuid::new_v4();
         sqlx::query("INSERT INTO distribution.validation_packages(id, org_id, revision_id, body, package_hash, rule_version) VALUES($1,$2,$3,$4,$5,$6)")
             .bind(pkg_id).bind(org).bind(revision_id).bind(&pkg).bind(&pkg_hash).bind(qc::QC_RULE_VERSION)

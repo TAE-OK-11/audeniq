@@ -30,7 +30,6 @@ use crate::execution::{AdapterRegistry, Capabilities, DspAdapter, TransferFile, 
 use crate::partner_config::{AdapterKind, PartnerConfig};
 use crate::storage::ObjectStore;
 use crate::transport::Upload;
-use sha2::Digest;
 use sqlx::PgPool;
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock, RwLock};
@@ -187,9 +186,7 @@ pub fn now_batch_id() -> String {
     chrono::Utc::now().format("%Y%m%d%H%M%S%3f").to_string()
 }
 
-pub fn sha256_hex(b: &[u8]) -> String {
-    hex::encode(sha2::Sha256::digest(b))
-}
+pub use crate::domain::sha256_hex;
 
 /// Build the adapter for one partner config. `profile_caps` is the
 /// profile row's capability JSON (what the contract documents).
