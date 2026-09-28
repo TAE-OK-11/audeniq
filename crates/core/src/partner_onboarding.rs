@@ -91,10 +91,14 @@ pub async fn register_dpid(pool: &PgPool, partner_id: &str) -> Result<()> {
     Ok(())
 }
 
-/// Register the delivery endpoint URL. Only https URLs are accepted
-/// (enforced again by the CHECK constraint).
+/// Register the delivery endpoint: an https API, an sftp:// drop or an
+/// s3:// bucket (enforced again by the CHECK constraint). Plain http/ftp
+/// are refused; credentials never appear in the URL.
 pub async fn register_endpoint(pool: &PgPool, partner_id: &str, url: &str) -> Result<()> {
-    if !url.starts_with("https://") {
+    let ok_scheme = ["https://", "sftp://", "s3://"]
+        .iter()
+        .any(|p| url.starts_with(p));
+    if !ok_scheme || url.contains('@') || url.chars().any(char::is_whitespace) {
         return Err(Error::Invalid);
     }
     ensure(pool, partner_id).await?;
@@ -112,7 +116,10 @@ pub async fn register_endpoint(pool: &PgPool, partner_id: &str, url: &str) -> Re
 /// Vault holds for this partner. The secret itself never touches this
 /// table — see the module docs.
 pub async fn record_credential_stored(pool: &PgPool, partner_id: &str, kind: &str) -> Result<()> {
-    if !matches!(kind, "oauth2" | "api_key" | "mtls" | "sftp_key") {
+    if !matches!(
+        kind,
+        "oauth2" | "api_key" | "mtls" | "sftp_key" | "s3_key" | "hmac"
+    ) {
         return Err(Error::Invalid);
     }
     ensure(pool, partner_id).await?;

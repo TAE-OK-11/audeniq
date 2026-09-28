@@ -1,0 +1,21 @@
+{
+  "partner_id": "D-5",
+  "adapter": "ddex",
+  "transport": {
+    "kind": "sftp",
+    "host": "REPLACE-with-partner-sftp-host",
+    "port": 22,
+    "username": "REPLACE-with-account",
+    "private_key": {"file": "/etc/audeniq/partners/secrets/D-5.id_ed25519"},
+    "known_hosts": {"file": "/etc/audeniq/partners/secrets/D-5.known_hosts"},
+    "remote_root": "/",
+    "connect_timeout_secs": 20,
+    "transfer_timeout_secs": 3600
+  },
+  "ddex": {
+    "choreography": "batch",
+    "inbox_dir": "incoming",
+    "ack_dir": "acknowledgements",
+    "live_policy": "explicit"
+  }
+}

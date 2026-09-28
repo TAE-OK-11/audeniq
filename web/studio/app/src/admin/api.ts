@@ -114,6 +114,8 @@ export interface DeliveryItem {
   package_id: string; dsp: string; org_id: string; org_name: string; release_id: string; title: string;
   readiness: string; approval: string; route_status: string | null; route_reason: string | null;
   ern_is_preview: boolean; blockers: string[]; warnings: string[]; staged_at: string;
+  /** 서버가 붙여 주는 플랫폼 이름 */
+  dsp_name?: string;
 }
 export interface DeliveryDecisionInput { action: 'APPROVE' | 'HOLD'; note?: string; ern_sha256?: string; acknowledge_warnings?: boolean }
 
@@ -122,6 +124,20 @@ export interface DspItem {
   artwork_min_px: number; loudness_target_lufs: number;
   artwork_max_px?: number | null; audio_min_sample_rate?: number; audio_min_bits?: number; lossless_only?: boolean;
   requires_composer?: boolean; requires_lyricist?: boolean;
+  /** 사용자·담당자에게 보이는 플랫폼 이름 (내부 코드는 화면에 쓰지 않는다) */
+  name_ko?: string;
+  ern_version?: string;
+  deal?: { commercial_models: string[]; use_types: string[] };
+  channel?: 'SFTP' | 'TRANSPORTER' | 'PARTNER_FEED';
+  choreography?: 'batch' | 'release_by_release' | 'partner_feed';
+  merlin_eligible?: boolean;
+  content_id?: boolean; cover_license_required?: boolean; ai_policy?: boolean;
+  category?: 'STREAMING' | 'SOCIAL' | 'STORE'; planned_route?: 'DIRECT' | 'MERLIN';
+  regional_review?: boolean; accepted_genres?: string[] | null;
+  contract_route?: null | {
+    route: 'DIRECT' | 'MERLIN'; merlin_eligible: boolean; merlin_agreement_signed: boolean; contract_live: boolean;
+    updated_by: string | null; updated_at: string;
+  };
   route: null | {
     transport: string; activation_kind: string; route_kind: string; delivery_enabled: boolean;
     recipient_dpid_registered: boolean; adapter_can_send: boolean; onboarding_stage: string | null; onboarding_gaps: string[];

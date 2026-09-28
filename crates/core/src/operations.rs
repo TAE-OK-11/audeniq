@@ -742,11 +742,13 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
                 };
             }
         };
-        let mut registry = crate::execution::AdapterRegistry::new();
-        registry.register(shared_mockdsp());
-        let adapter = registry
-            .get(&djob.partner_id)
-            .ok_or(Error::PolicyGate("EXECUTION_NO_ADAPTER"))?;
+        let registry = crate::partners::registry(pool, storage, shared_mockdsp()).await?;
+        let Some(adapter) = registry.get(&djob.partner_id) else {
+            // No adapter (config file missing or invalid): hand the delivery
+            // job back instead of leaving it LEASED, and stop this send job.
+            crate::execution::release_delivery_lease(pool, &djob, "EXECUTION_NO_ADAPTER").await?;
+            return fail(pool, j, true, "EXECUTION_NO_ADAPTER").await;
+        };
         return match crate::execution::run_delivery(pool, storage, adapter.as_ref(), &djob).await {
             Ok(status) => match status.as_str() {
                 "DELIVERED" => {
@@ -796,11 +798,10 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
                 .fetch_optional(pool)
                 .await?
                 .ok_or(Error::NotFound)?;
-        let mut registry = crate::execution::AdapterRegistry::new();
-        registry.register(shared_mockdsp());
-        let adapter = registry
-            .get(partner_id)
-            .ok_or(Error::PolicyGate("EXECUTION_NO_ADAPTER"))?;
+        let registry = crate::partners::registry(pool, storage, shared_mockdsp()).await?;
+        let Some(adapter) = registry.get(partner_id) else {
+            return fail(pool, j, true, "EXECUTION_NO_ADAPTER").await;
+        };
         return match crate::execution::poll_live(
             pool,
             org,
@@ -820,6 +821,36 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
             Err(e) => {
                 let short: String = format!("{e:?}").chars().take(500).collect();
                 fail(pool, j, false, &format!("DELIVERY_POLL_ERROR:{short}")).await
+            }
+        };
+    }
+    if j.kind == "delivery.ack" {
+        // A signed partner webhook filed by the API (execution.partner_inbox).
+        let inbox = j
+            .payload
+            .get("inbox_id")
+            .and_then(Value::as_str)
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .ok_or(Error::Internal)?;
+        let registry = crate::partners::registry(pool, storage, shared_mockdsp()).await?;
+        return match crate::partners::inbox::process(pool, &registry, inbox).await {
+            Ok(_) => succeed(pool, j).await,
+            Err(e) => {
+                let short: String = format!("{e:?}").chars().take(500).collect();
+                fail(pool, j, false, &format!("DELIVERY_ACK_ERROR:{short}")).await
+            }
+        };
+    }
+    if j.kind == "delivery.mark_live" {
+        // Staff-recorded LIVE evidence for partners that never report it.
+        return match crate::partners::inbox::mark_live(pool, &j.payload).await {
+            Ok(_) => succeed(pool, j).await,
+            Err(e @ (Error::NotFound | Error::Invalid | Error::PolicyGate(_))) => {
+                fail(pool, j, true, &format!("DELIVERY_MARK_LIVE:{e}")).await
+            }
+            Err(e) => {
+                let short: String = format!("{e:?}").chars().take(500).collect();
+                fail(pool, j, false, &format!("DELIVERY_MARK_LIVE_ERROR:{short}")).await
             }
         };
     }
@@ -851,11 +882,10 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
                 .fetch_optional(pool)
                 .await?
                 .ok_or(Error::NotFound)?;
-        let mut registry = crate::execution::AdapterRegistry::new();
-        registry.register(shared_mockdsp());
-        let adapter = registry
-            .get(partner_id)
-            .ok_or(Error::PolicyGate("EXECUTION_NO_ADAPTER"))?;
+        let registry = crate::partners::registry(pool, storage, shared_mockdsp()).await?;
+        let Some(adapter) = registry.get(partner_id) else {
+            return fail(pool, j, true, "EXECUTION_NO_ADAPTER").await;
+        };
         return match crate::execution::takedown_release(
             pool,
             org,

@@ -125,6 +125,7 @@ pub fn router(s: AppState) -> Router {
         )
         .merge(crate::portal::routes())
         .merge(crate::staff::routes())
+        .merge(crate::partner_hooks::routes())
         .fallback(|| async { Error::NotFound.into_response() })
         .layer(DefaultBodyLimit::max(64 * 1024))
         .layer(middleware::from_fn_with_state(s.clone(), boundary))
@@ -171,7 +172,15 @@ async fn boundary(State(s): State<AppState>, mut req: Request, next: Next) -> Re
     req.headers_mut()
         .insert("x-request-id", id.to_string().parse().unwrap());
     // No user identity header is read. Writes require Origin even before login.
+    // Partner webhooks carry no browser Origin; they are authenticated by
+    // the partner's HMAC signature in the handler (crate::partner_hooks).
+    let partner_hook = *req.method() == Method::POST
+        && req
+            .uri()
+            .path()
+            .starts_with(crate::partner_hooks::HOOK_PREFIX);
     if !matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS)
+        && !partner_hook
         && auth::origin(req.headers(), &s.config).is_err()
     {
         return Error::Forbidden.into_response();
@@ -191,10 +200,16 @@ async fn boundary(State(s): State<AppState>, mut req: Request, next: Next) -> Re
     response
 }
 async fn ready(State(s): State<AppState>) -> Result<Json<Value>> {
-    sqlx::query("SELECT 1").execute(&s.pool).await?;
-    Ok(Json(
-        json!({"database":true,"submission":false,"distribution":false,"payout":false}),
-    ))
+    // Doubles as the database check: contracted partners switched on.
+    let live_partners: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM execution.adapter_profiles WHERE delivery_enabled AND activation_kind='CONTRACTED'",
+    )
+    .fetch_one(&s.pool)
+    .await?;
+    Ok(Json(json!({"database":true,"submission":false,
+               "distribution":live_partners > 0 && crate::launch::live_transmission_enabled(),
+               "live_partners":live_partners,
+               "live_transmission":crate::launch::live_transmission_enabled(),"payout":false})))
 }
 async fn available_dsps(
     State(s): State<AppState>,
@@ -210,7 +225,10 @@ async fn available_dsps(
     let items: Vec<Value> = dsp_registry::REGISTRY
         .iter()
         .zip(decisions.iter())
-        .map(|(spec, route)| json!({"slug":spec.slug,"name":spec.name,"region":spec.region,"available":route.routable}))
+        .map(|(spec, route)| {
+            json!({"slug":spec.slug,"name":spec.name_ko,"region":spec.region,
+                                    "category":spec.category,"available":route.routable})
+        })
         .collect();
     Ok(Json(json!({"items":items})))
 }

@@ -66,6 +66,21 @@ pub struct TransferPackage {
     pub release_id: Uuid,
     pub ern_xml: Vec<u8>,
     pub files: Vec<TransferFile>,
+    /// Release UPC from the frozen snapshot (file-drop folder names).
+    pub upc: Option<String>,
+    /// Full release metadata for partner-specific feeds (Korean services,
+    /// REST APIs). None when it cannot be rebuilt (legacy fixtures); those
+    /// adapters then fail closed before any wire call.
+    pub prepared: Option<Arc<crate::preparation_model::PreparedRelease>>,
+    /// Genre and label from the frozen application (partner feeds).
+    pub genre: Option<String>,
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileRole {
+    Audio,
+    Artwork,
 }
 
 #[derive(Debug, Clone)]
@@ -74,6 +89,9 @@ pub struct TransferFile {
     pub sha256: String,
     pub size_bytes: i64,
     pub content_type: String,
+    /// Name the partner receives, exactly as the ERN references it.
+    pub delivery_name: String,
+    pub role: FileRole,
 }
 
 #[derive(Debug, Clone)]
@@ -82,6 +100,10 @@ pub struct SendContext {
     pub attempt_id: Uuid,
     pub attempt_no: i32,
     pub idempotency_key: String,
+    /// Partner-side id chosen before the wire call (a DDEX batch folder).
+    /// Recorded on the attempt row first, so a lost response can still be
+    /// reconciled by asking the partner about this exact id.
+    pub planned_message_id: Option<String>,
     pub package: TransferPackage,
 }
 
@@ -123,13 +145,18 @@ pub enum AckEvent {
     Live {
         event_id: String,
         partner_release_id: String,
+        /// Our submission the partner release came from, when the partner
+        /// says so (correlates the event to one delivery).
+        partner_message_id: Option<String>,
     },
     TakedownConfirmed {
         event_id: String,
+        partner_release_id: Option<String>,
+        partner_message_id: Option<String>,
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InquiryOutcome {
     Accepted { partner_message_id: String },
     Rejected { code: String },
@@ -148,6 +175,12 @@ pub trait DspAdapter: Send + Sync {
 
     fn require(&self, cap: bool, _name: &'static str) -> Result<()> {
         if cap { Ok(()) } else { Err(Error::Gated) }
+    }
+
+    /// The partner message id this send will use, when the adapter picks it
+    /// itself (file drops). Default: the partner assigns it (None).
+    fn plan_message_id(&self, _package: &TransferPackage) -> Option<String> {
+        None
     }
 
     async fn validate_package(&self, package: &TransferPackage) -> Result<()>;
@@ -485,6 +518,7 @@ async fn verify_file(
     org_id: Uuid,
     asset_id: Uuid,
     key: &str,
+    delivery: (String, FileRole),
 ) -> Result<TransferFile> {
     let pin = sqlx::query(
         "SELECT sha256, size_bytes, content_type FROM catalog.assets WHERE org_id=$1 AND id=$2",
@@ -519,12 +553,36 @@ async fn verify_file(
     if digest.size != size_bytes as u64 || digest.sha256 != sha256 {
         return Err(Error::PolicyGate("EXECUTION_FILE_TAMPERED"));
     }
+    let (mut delivery_name, role) = delivery;
+    if delivery_name.is_empty() {
+        delivery_name = key.rsplit('/').next().unwrap_or(key).to_string();
+    }
     Ok(TransferFile {
         object_key: key.to_string(),
         sha256,
         size_bytes,
+        delivery_name,
+        role,
         content_type,
     })
+}
+
+/// Delivery name the ERN gives a file, computed from the frozen snapshot
+/// once the pinned content type is known. Empty when the snapshot has no
+/// UPC (mock fixtures): the object key's last segment is used instead.
+fn delivery_name(
+    upc: Option<&str>,
+    role: FileRole,
+    disc_track: (u32, u32),
+    content_type: &str,
+) -> String {
+    match (upc, role) {
+        (Some(u), FileRole::Audio) => {
+            crate::ddex_ern::audio_file_name(u, disc_track.0, disc_track.1, content_type)
+        }
+        (Some(u), FileRole::Artwork) => crate::ddex_ern::image_file_name(u, content_type),
+        (None, _) => String::new(),
+    }
 }
 
 fn has_virtual_identifier(snapshot: &Value) -> bool {
@@ -544,12 +602,13 @@ fn has_virtual_identifier(snapshot: &Value) -> bool {
 }
 
 async fn materialize(
+    pool: &PgPool,
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     storage: &Arc<dyn ObjectStore>,
     job: &DeliveryJob,
 ) -> Result<TransferPackage> {
     let row = sqlx::query(
-        "SELECT dp.package_hash, dp.body, cr.org_id, cr.release_id, cr.body AS snapshot,
+        "SELECT dp.package_hash, dp.body, cr.id AS canonical_id, cr.org_id, cr.release_id, cr.body AS snapshot,
                 pa.ern_sha256, pa.ern_xml, pa.preflight_report
          FROM distribution.distribution_packages dp
          JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id
@@ -584,6 +643,12 @@ async fn materialize(
     // E-2 re-verifies because bytes may have changed between preparation
     // and send. Anything missing or mismatched fails closed.
     let org_id: Uuid = row.get("org_id");
+    let upc = snapshot
+        .get("upc")
+        .and_then(Value::as_str)
+        .filter(|u| !u.is_empty())
+        .map(str::to_owned);
+    let content_type_of = |f: &TransferFile| f.content_type.clone();
     if let Some(tracks) = snapshot.get("tracks").and_then(Value::as_array) {
         for t in tracks {
             let key = t
@@ -595,10 +660,29 @@ async fn materialize(
                 .and_then(Value::as_str)
                 .and_then(|s| Uuid::parse_str(s).ok())
                 .ok_or(Error::PolicyGate("EXECUTION_FILE_REF_MISSING"))?;
-            files.push(verify_file(tx, storage, org_id, asset_id, key).await?);
+            let n = |k: &str| t.get(k).and_then(Value::as_u64).unwrap_or(1) as u32;
+            let mut f = verify_file(
+                tx,
+                storage,
+                org_id,
+                asset_id,
+                key,
+                (String::new(), FileRole::Audio),
+            )
+            .await?;
+            let name = delivery_name(
+                upc.as_deref(),
+                FileRole::Audio,
+                (n("disc_number"), n("track_number")),
+                &content_type_of(&f),
+            );
+            if !name.is_empty() {
+                f.delivery_name = name;
+            }
+            files.push(f);
         }
     }
-    if let Some(art) = snapshot.get("artwork") {
+    if let Some(art) = snapshot.get("artwork").filter(|a| !a.is_null()) {
         let key = art
             .get("object_key")
             .and_then(Value::as_str)
@@ -608,7 +692,25 @@ async fn materialize(
             .and_then(Value::as_str)
             .and_then(|s| Uuid::parse_str(s).ok())
             .ok_or(Error::PolicyGate("EXECUTION_FILE_REF_MISSING"))?;
-        files.push(verify_file(tx, storage, org_id, asset_id, key).await?);
+        let mut f = verify_file(
+            tx,
+            storage,
+            org_id,
+            asset_id,
+            key,
+            (String::new(), FileRole::Artwork),
+        )
+        .await?;
+        let name = delivery_name(
+            upc.as_deref(),
+            FileRole::Artwork,
+            (0, 0),
+            &content_type_of(&f),
+        );
+        if !name.is_empty() {
+            f.delivery_name = name;
+        }
+        files.push(f);
     }
     // Transfer document routing. The partner-specific DDEX interchange
     // message persisted for this package+DSP is the real interchange
@@ -639,8 +741,17 @@ async fn materialize(
         .await?,
         None => None,
     };
+    // Partner-spec DSPs (the Korean services) take the partner feed, not
+    // DDEX: they get no ddex_messages row and send no ERN document.
+    let partner_feed = transport == "partner"
+        || dsp_id
+            .and_then(crate::dsp_registry::Dsp::from_uuid)
+            .is_some_and(|d| d.spec().format == crate::dsp_registry::DeliveryFormat::PartnerSpec);
     let (ern_xml, ern_sha256): (String, String) = match ddex {
         Some((xml, sha)) => (xml, sha),
+        None if partner_feed && (transport != "mock" || activation_kind == "CONTRACTED") => {
+            (String::new(), hex::encode(sha2::Sha256::digest(b"")))
+        }
         // A commercial partner never receives the synthetic preparation
         // envelope: without its own DDEX interchange message the send fails
         // closed before any wire call. The mock transport keeps the
@@ -663,6 +774,19 @@ async fn materialize(
         return Err(Error::PolicyGate("EXECUTION_ERN_TAMPERED"));
     }
     let ern_xml_bytes = ern_xml.into_bytes();
+    // Partner-specific feeds need the full release metadata. Rebuilt from
+    // the same frozen canonical snapshot the ERN came from; best effort
+    // (legacy fixtures without complete metadata simply have none, and the
+    // adapters that need it fail closed).
+    let canonical_id: Uuid = row.get("canonical_id");
+    let prepared = match serde_json::from_value::<crate::distribution::CanonicalRelease>(snapshot) {
+        Ok(c) => crate::preparation_model::PreparedRelease::from_canonical(pool, canonical_id, &c)
+            .await
+            .ok()
+            .map(Arc::new),
+        Err(_) => None,
+    };
+    let (genre, label) = release_extras(tx, &prepared).await;
     Ok(TransferPackage {
         package_id: job.package_id,
         package_hash,
@@ -670,6 +794,10 @@ async fn materialize(
         release_id: row.get("release_id"),
         ern_xml: ern_xml_bytes,
         files,
+        upc,
+        prepared,
+        genre,
+        label,
     })
 }
 
@@ -707,7 +835,7 @@ pub async fn run_delivery(
         return Err(e);
     }
     // E-2. Same poisoned-transaction rule as E-1.
-    let package = match materialize(&mut tx, storage, job).await {
+    let package = match materialize(pool, &mut tx, storage, job).await {
         Ok(p) => p,
         Err(e) => {
             let msg = format!("{e:?}");
@@ -717,8 +845,28 @@ pub async fn run_delivery(
         }
     };
     adapter.require(adapter.capabilities().send_or_publish, "send_or_publish")?;
-    adapter.validate_package(&package).await?;
-    let _prepared = adapter.prepare_transfer(&package).await?;
+    // Adapter-side validation (partner rules, file names, metadata the feed
+    // needs). A failure here is permanent for this package: record it on the
+    // job instead of leaving the job LEASED for the reconciler to requeue
+    // until its attempts run out.
+    let checked = match adapter.validate_package(&package).await {
+        Ok(()) => adapter.prepare_transfer(&package).await.map(|_| ()),
+        Err(e) => Err(e),
+    };
+    if let Err(e) = checked {
+        let msg = format!("{e:?}");
+        tx.rollback().await?;
+        fail_job(
+            pool,
+            job,
+            "FAILED",
+            &format!("ADAPTER_VALIDATION:{msg}"),
+            Some("PARTNER_REJECTED"),
+            Some(json!({"stage":"E-2","adapter_validation":msg})),
+        )
+        .await?;
+        return Err(e);
+    }
 
     // E-3. The attempt row (with its idempotency key) commits before the
     // wire call so a crash between call and record cannot double-send:
@@ -763,9 +911,13 @@ pub async fn run_delivery(
     .await?;
     let idempotency_key = format!("delivery:{}:{attempt_no}", job.id);
     let request_sha256 = hex::encode(sha2::Sha256::digest(&package.ern_xml));
+    // A partner id the adapter picks itself (DDEX batch folder) is part of
+    // the attempt record before the call: after a crash or lost response
+    // the inquiry asks about exactly this submission.
+    let planned_message_id = adapter.plan_message_id(&package);
     let inserted = sqlx::query_scalar::<_, i32>(
-        "INSERT INTO execution.delivery_attempts(id,org_id,job_id,attempt_no,idempotency_key,request_sha256,outcome)
-         VALUES($1,$2,$3,$4,$5,$6,'IN_FLIGHT') ON CONFLICT DO NOTHING RETURNING 1",
+        "INSERT INTO execution.delivery_attempts(id,org_id,job_id,attempt_no,idempotency_key,request_sha256,outcome,partner_message_id)
+         VALUES($1,$2,$3,$4,$5,$6,'IN_FLIGHT',$7) ON CONFLICT DO NOTHING RETURNING 1",
     )
     .bind(attempt_id)
     .bind(job.org_id)
@@ -773,6 +925,7 @@ pub async fn run_delivery(
     .bind(attempt_no)
     .bind(&idempotency_key)
     .bind(&request_sha256)
+    .bind(planned_message_id.as_deref())
     .fetch_optional(&mut *tx)
     .await?;
     if inserted.is_none() {
@@ -789,6 +942,7 @@ pub async fn run_delivery(
         attempt_id,
         attempt_no,
         idempotency_key: idempotency_key.clone(),
+        planned_message_id,
         package,
     };
     let outcome = adapter.send_or_publish(&ctx).await;
@@ -968,10 +1122,16 @@ async fn fail_job(
     Ok(())
 }
 
-/// Webhook ACK ingestion. Deduplicated on the partner event id: a duplicate
-/// delivery of the same event is acknowledged without re-applying state.
-/// The caller supplies the org: the webhook receiver resolves it from its
-/// per-org partner endpoint configuration (F6 wires the real mapping).
+/// Partner event ingestion (webhook body or ACK file). Deduplicated on
+/// (partner, event id) in `execution.ack_events`: a redelivered event is
+/// acknowledged without re-applying state. The caller supplies the org
+/// (`org_for_event` resolves it for webhooks).
+///
+/// Every event is correlated to ONE delivery: by the partner message id
+/// (our attempt), else by the partner's release id. A LIVE or takedown
+/// event that matches nothing is UNMATCHED — it never flips other
+/// releases of the same partner (it used to mark every INGESTING binding
+/// of the partner LIVE).
 pub async fn ingest_ack(
     pool: &PgPool,
     org: Uuid,
@@ -980,14 +1140,20 @@ pub async fn ingest_ack(
 ) -> Result<String> {
     adapter.require(adapter.capabilities().parse_ack, "parse_ack")?;
     let event = adapter.parse_ack(payload).await?;
-    let (event_id, outcome, partner_message_id, partner_release_id, extra) = match &event {
+    apply_ack_event(pool, org, adapter.partner_id(), &event).await
+}
+
+/// Ids an event carries for correlation: (event id, outcome, message id,
+/// release id, extra response fields).
+fn ack_parts(event: &AckEvent) -> (&str, &'static str, Option<&str>, Option<&str>, Value) {
+    match event {
         AckEvent::Accepted {
             event_id,
             partner_message_id,
         } => (
-            event_id.clone(),
+            event_id,
             "ACCEPTED",
-            Some(partner_message_id.clone()),
+            Some(partner_message_id.as_str()),
             None,
             json!({}),
         ),
@@ -996,100 +1162,209 @@ pub async fn ingest_ack(
             partner_message_id,
             code,
         } => (
-            event_id.clone(),
+            event_id,
             "REJECTED",
-            Some(partner_message_id.clone()),
+            Some(partner_message_id.as_str()),
             None,
             json!({"code": code}),
         ),
         AckEvent::Live {
             event_id,
             partner_release_id,
+            partner_message_id,
         } => (
-            event_id.clone(),
+            event_id,
             "LIVE",
-            None,
-            Some(partner_release_id.clone()),
+            partner_message_id.as_deref(),
+            Some(partner_release_id.as_str()),
             json!({}),
         ),
-        AckEvent::TakedownConfirmed { event_id } => {
-            (event_id.clone(), "TAKEN_DOWN", None, None, json!({}))
-        }
-    };
-    // Dedupe: the same partner event must never apply twice.
+        AckEvent::TakedownConfirmed {
+            event_id,
+            partner_release_id,
+            partner_message_id,
+        } => (
+            event_id,
+            "TAKEN_DOWN",
+            partner_message_id.as_deref(),
+            partner_release_id.as_deref(),
+            json!({}),
+        ),
+    }
+}
+
+/// Which org a partner event belongs to (webhooks carry partner ids only).
+pub async fn org_for_event(
+    pool: &PgPool,
+    partner_id: &str,
+    event: &AckEvent,
+) -> Result<Option<Uuid>> {
+    let (_, _, pmid, prid, _) = ack_parts(event);
+    Ok(
+        sqlx::query_scalar("SELECT execution.partner_event_org($1,$2,$3)")
+            .bind(partner_id)
+            .bind(pmid)
+            .bind(prid)
+            .fetch_one(pool)
+            .await?,
+    )
+}
+
+pub async fn apply_ack_event(
+    pool: &PgPool,
+    org: Uuid,
+    partner_id: &str,
+    event: &AckEvent,
+) -> Result<String> {
+    let (event_id, outcome, pmid, prid, extra) = ack_parts(event);
     let mut tx = pool.begin().await?;
     authorize_org(&mut tx, org).await?;
     let seen: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM execution.delivery_attempts WHERE response->>'ack_event_id' = $1)",
+        "SELECT EXISTS(SELECT 1 FROM execution.ack_events WHERE partner_id=$1 AND event_id=$2)",
     )
-    .bind(&event_id)
+    .bind(partner_id)
+    .bind(event_id)
     .fetch_one(&mut *tx)
     .await?;
     if seen {
         tx.rollback().await?;
         return Ok("DUPLICATE_IGNORED".to_string());
     }
-    // Correlate to the attempt by partner message id (or the live binding).
-    let mut applied = false;
-    if let Some(pmid) = &partner_message_id {
-        let n = sqlx::query(
-            "UPDATE execution.delivery_attempts SET response = response || $2 || $3 WHERE partner_message_id=$1",
-        )
-        .bind(pmid)
-        .bind(json!({"ack_event_id": event_id, "ack_outcome": outcome}))
-        .bind(&extra)
-        .execute(&mut *tx)
-        .await?
-        .rows_affected();
-        applied = n > 0;
-        if applied && outcome == "ACCEPTED" {
-            sqlx::query(
-                "UPDATE execution.delivery_jobs j SET status='DELIVERED', updated_at=now()
-                 FROM execution.delivery_attempts a
-                 WHERE a.partner_message_id=$1 AND a.job_id=j.id AND j.status IN ('SENDING','AWAITING_RECONCILIATION')",
+    // Correlate to exactly one delivery job of this partner.
+    let by_message: Option<(Uuid, Uuid)> = match pmid {
+        Some(m) => {
+            sqlx::query_as(
+                "SELECT j.id, j.package_id FROM execution.delivery_attempts a
+                 JOIN execution.delivery_jobs j ON j.id=a.job_id
+                 WHERE a.partner_message_id=$1 AND j.partner_id=$2
+                 ORDER BY a.attempt_no DESC LIMIT 1",
             )
+            .bind(m)
+            .bind(partner_id)
+            .fetch_optional(&mut *tx)
+            .await?
+        }
+        None => None,
+    };
+    let job: Option<(Uuid, Uuid)> = match (by_message, prid) {
+        (Some(j), _) => Some(j),
+        (None, Some(r)) => {
+            sqlx::query_as(
+                "SELECT j.id, j.package_id FROM execution.live_bindings b
+                 JOIN execution.delivery_jobs j ON j.package_id=b.package_id AND j.partner_id=b.partner_id
+                 WHERE b.partner_id=$1 AND b.partner_release_id=$2
+                 ORDER BY b.updated_at DESC LIMIT 1",
+            )
+            .bind(partner_id)
+            .bind(r)
+            .fetch_optional(&mut *tx)
+            .await?
+        }
+        (None, None) if outcome == "TAKEN_DOWN" => {
+            // Legacy partners confirm takedowns without ids: only an
+            // unambiguous single pending takedown may be confirmed.
+            let pending: Vec<(Uuid, Uuid)> = sqlx::query_as(
+                "SELECT j.id, j.package_id FROM execution.live_bindings b
+                 JOIN execution.delivery_jobs j ON j.package_id=b.package_id AND j.partner_id=b.partner_id
+                 WHERE b.partner_id=$1 AND b.live_status='TAKEDOWN_REQUESTED' LIMIT 2",
+            )
+            .bind(partner_id)
+            .fetch_all(&mut *tx)
+            .await?;
+            if pending.len() == 1 {
+                pending.into_iter().next()
+            } else {
+                None
+            }
+        }
+        (None, None) => None,
+    };
+    let Some((job_id, package_id)) = job else {
+        tx.rollback().await?;
+        return Ok("UNMATCHED".to_string());
+    };
+    let marker = json!({"ack_event_id": event_id, "ack_outcome": outcome});
+    match outcome {
+        "ACCEPTED" | "REJECTED" => {
+            sqlx::query(
+                "UPDATE execution.delivery_attempts SET response = response || $3 || $4
+                 WHERE job_id=$1 AND partner_message_id=$2",
+            )
+            .bind(job_id)
             .bind(pmid)
+            .bind(&marker)
+            .bind(&extra)
             .execute(&mut *tx)
             .await?;
+            if outcome == "ACCEPTED" {
+                sqlx::query(
+                    "UPDATE execution.delivery_jobs SET status='DELIVERED', updated_at=now()
+                     WHERE id=$1 AND status IN ('SENDING','AWAITING_RECONCILIATION')",
+                )
+                .bind(job_id)
+                .execute(&mut *tx)
+                .await?;
+            } else {
+                sqlx::query(
+                    "UPDATE execution.delivery_jobs SET status='FAILED', last_error='PARTNER_WEBHOOK_REJECTED', updated_at=now()
+                     WHERE id=$1",
+                )
+                .bind(job_id)
+                .execute(&mut *tx)
+                .await?;
+            }
         }
-        if applied && outcome == "REJECTED" {
+        "LIVE" => {
+            // A live signal is also proof of receipt for the reconciler.
             sqlx::query(
-                "UPDATE execution.delivery_jobs j SET status='FAILED', last_error='PARTNER_WEBHOOK_REJECTED', updated_at=now()
-                 FROM execution.delivery_attempts a
-                 WHERE a.partner_message_id=$1 AND a.job_id=j.id",
+                "UPDATE execution.delivery_attempts SET response = response || $2
+                 WHERE id = (SELECT id FROM execution.delivery_attempts WHERE job_id=$1
+                             AND partner_message_id IS NOT NULL ORDER BY attempt_no DESC LIMIT 1)
+                   AND NOT response ? 'ack_event_id'",
             )
-            .bind(pmid)
+            .bind(job_id)
+            .bind(&marker)
+            .execute(&mut *tx)
+            .await?;
+            let job = DeliveryJob {
+                id: job_id,
+                token: Uuid::nil(),
+                org_id: org,
+                package_id,
+                partner_id: partner_id.to_string(),
+                attempts: 0,
+            };
+            upsert_live_binding(&mut tx, &job, "LIVE", prid).await?;
+        }
+        _ => {
+            sqlx::query(
+                "UPDATE execution.live_bindings SET live_status='TAKEN_DOWN', last_checked_at=now(), updated_at=now()
+                 WHERE package_id=$1 AND partner_id=$2",
+            )
+            .bind(package_id)
+            .bind(partner_id)
             .execute(&mut *tx)
             .await?;
         }
     }
-    if let Some(prid) = &partner_release_id {
-        sqlx::query(
-            "UPDATE execution.live_bindings SET live_status='LIVE', partner_release_id=$1, last_checked_at=now(), updated_at=now()
-             WHERE partner_release_id=$1 OR (live_status IN ('UNKNOWN','INGESTING') AND partner_id=$2)",
-        )
-        .bind(prid)
-        .bind(adapter.partner_id())
-        .execute(&mut *tx)
-        .await?;
-        applied = true;
-    }
-    if outcome == "TAKEN_DOWN" {
-        sqlx::query(
-            "UPDATE execution.live_bindings SET live_status='TAKEN_DOWN', last_checked_at=now(), updated_at=now()
-             WHERE partner_id=$1 AND live_status='TAKEDOWN_REQUESTED'",
-        )
-        .bind(adapter.partner_id())
-        .execute(&mut *tx)
-        .await?;
-        applied = true;
+    let inserted = sqlx::query_scalar::<_, i32>(
+        "INSERT INTO execution.ack_events(partner_id,event_id,org_id,outcome,job_id,applied)
+         VALUES($1,$2,$3,$4,$5,true) ON CONFLICT DO NOTHING RETURNING 1",
+    )
+    .bind(partner_id)
+    .bind(event_id)
+    .bind(org)
+    .bind(outcome)
+    .bind(job_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if inserted.is_none() {
+        // A concurrent delivery of the same event won the race.
+        tx.rollback().await?;
+        return Ok("DUPLICATE_IGNORED".to_string());
     }
     tx.commit().await?;
-    Ok(if applied {
-        "APPLIED".to_string()
-    } else {
-        "UNMATCHED".to_string()
-    })
+    Ok("APPLIED".to_string())
 }
 
 /// E-4: poll the partner for ingest/live state and refresh live bindings.
@@ -1100,10 +1375,10 @@ pub async fn poll_live(
     package_id: Uuid,
     partner_id: &str,
 ) -> Result<String> {
-    adapter.require(
-        adapter.capabilities().get_release_status,
-        "get_release_status",
-    )?;
+    let caps = adapter.capabilities();
+    if !caps.get_release_status && !caps.inquire_submission {
+        return Err(Error::Gated);
+    }
     let mut tx = pool.begin().await?;
     authorize_org(&mut tx, org).await?;
     let binding = sqlx::query(
@@ -1120,9 +1395,13 @@ pub async fn poll_live(
     let partner_release_id: Option<String> = binding.get("partner_release_id");
     tx.commit().await?;
 
+    // Release status needs the partner's release id and the status
+    // capability; until then (or for partners that only answer submission
+    // inquiries, e.g. DDEX ACK files) the submission itself is asked about.
     let outcome = match &partner_release_id {
-        Some(prid) => adapter.get_release_status(prid).await?,
-        None => {
+        Some(prid) if caps.get_release_status => adapter.get_release_status(prid).await?,
+        _ if !caps.inquire_submission => return Ok("NO_STATUS_SOURCE".to_string()),
+        _ => {
             // No partner release id yet: ask about the latest accepted attempt.
             // RLS applies: this lookup needs the org authorized like the rest.
             let mut atx = pool.begin().await?;
@@ -1147,6 +1426,28 @@ pub async fn poll_live(
     };
     let mut tx = pool.begin().await?;
     authorize_org(&mut tx, org).await?;
+    // A definite partner answer from polling is receipt evidence, like an
+    // ACK webhook: file-drop partners never call back, so without this the
+    // reconciler opened MISSING_ACK for every polled delivery.
+    let polled = match &outcome {
+        InquiryOutcome::Accepted { .. } | InquiryOutcome::Live { .. } => Some("ACCEPTED"),
+        InquiryOutcome::Rejected { .. } => Some("REJECTED"),
+        _ => None,
+    };
+    if let Some(ack) = polled {
+        sqlx::query(
+            "UPDATE execution.delivery_attempts SET response = response || jsonb_build_object('ack_event_id', 'poll:' || id::text, 'ack_outcome', $3::text)
+             WHERE id = (SELECT a.id FROM execution.delivery_attempts a JOIN execution.delivery_jobs j ON j.id=a.job_id
+                         WHERE j.package_id=$1 AND j.partner_id=$2 AND a.partner_message_id IS NOT NULL
+                         ORDER BY a.attempt_no DESC LIMIT 1)
+               AND NOT response ? 'ack_event_id'",
+        )
+        .bind(package_id)
+        .bind(partner_id)
+        .bind(ack)
+        .execute(&mut *tx)
+        .await?;
+    }
     let status = match outcome {
         InquiryOutcome::Live { partner_release_id } => {
             sqlx::query(
@@ -1181,6 +1482,13 @@ pub async fn poll_live(
             .bind(format!("PARTNER_POLL_REJECTED:{code}"))
             .execute(&mut *tx)
             .await?;
+            // A partner rejection found by polling needs a human, like one
+            // returned by the send itself.
+            let job = DeliveryJobRef {
+                id: binding.get("job_id"),
+                org_id: binding.get("org_id"),
+            };
+            open_case_for(&mut tx, &job, "PARTNER_REJECTED").await?;
             "REJECTED"
         }
         InquiryOutcome::Accepted { .. } | InquiryOutcome::StillUnknown => {
@@ -1204,13 +1512,12 @@ pub async fn poll_live(
 /// Sweeps per org: the reconciler authorizes each org before touching its
 /// RLS-protected rows.
 pub async fn reconcile(pool: &PgPool, ack_deadline_secs: i64) -> Result<usize> {
-    // identity.orgs carries no RLS (tenant isolation there is by grant, not
-    // policy), so the sweeper lists orgs directly and authorizes each one
-    // before touching its RLS-protected execution rows in reconcile_org.
-    let orgs: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM identity.orgs")
+    // Only orgs with open delivery work (migration 0055): the sweep used to
+    // open a transaction for every organization on the platform. Each org
+    // is still authorized before its RLS-protected rows are touched.
+    let orgs: Vec<Uuid> = sqlx::query_scalar("SELECT execution.orgs_with_open_deliveries()")
         .fetch_all(pool)
-        .await
-        .unwrap_or_default();
+        .await?;
     let mut total = 0;
     for org in orgs {
         total += reconcile_org(pool, org, ack_deadline_secs).await?;
@@ -1228,7 +1535,10 @@ async fn reconcile_org(pool: &PgPool, org: Uuid, ack_deadline_secs: i64) -> Resu
            SELECT 1 FROM execution.delivery_attempts a
            WHERE a.job_id=j.id AND a.response ? 'ack_event_id'
          )
-         AND j.updated_at < now() - make_interval(secs=>$1)",
+         AND j.updated_at < now() - make_interval(secs=>$1)
+         -- Cases open on the first sweep past the deadline; there is no
+         -- need to rescan years of delivered history every 15 minutes.
+         AND j.updated_at > now() - interval '30 days'",
     )
     .bind(ack_deadline_secs as f64)
     .fetch_all(&mut *tx)
@@ -1430,6 +1740,161 @@ pub async fn resolve_unknown(
     Ok(status.to_string())
 }
 
+/// Follow-up DDEX message (metadata update or takedown) for a package that
+/// was already delivered to `partner_id`. Built from the same frozen
+/// canonical snapshot, addressed to the same sender/recipient pair, in the
+/// original message's thread so the partner correlates it. Partners without
+/// a stored DDEX message (the mock, partner-spec feeds) get an empty
+/// document and describe the change in their own format.
+async fn followup_package(
+    pool: &PgPool,
+    org: Uuid,
+    package_id: Uuid,
+    partner_id: &str,
+    sub_type: crate::ddex_ern::MessageSubType,
+) -> Result<TransferPackage> {
+    let mut tx = pool.begin().await?;
+    authorize_org(&mut tx, org).await?;
+    let row = sqlx::query(
+        "SELECT dp.package_hash, cr.id AS canonical_id, cr.body AS snapshot, cr.release_id,
+                m.ern_xml, m.sender_name, m.sender_dpid, m.recipient_name, m.recipient_dpid
+         FROM distribution.distribution_packages dp
+         JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id
+         LEFT JOIN execution.adapter_profiles p ON p.partner_id=$2
+         LEFT JOIN distribution.ddex_messages m ON m.package_id=dp.id AND m.dsp_id=p.dsp_id
+         WHERE dp.id=$1",
+    )
+    .bind(package_id)
+    .bind(partner_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(Error::NotFound)?;
+    tx.commit().await?;
+    let snapshot: Value = row.get("snapshot");
+    let upc = snapshot
+        .get("upc")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let canonical: Option<crate::distribution::CanonicalRelease> =
+        serde_json::from_value(snapshot).ok();
+    let prepared = match &canonical {
+        Some(c) => crate::preparation_model::PreparedRelease::from_canonical(
+            pool,
+            row.get("canonical_id"),
+            c,
+        )
+        .await
+        .ok()
+        .map(Arc::new),
+        None => None,
+    };
+    let mut ern_xml = Vec::new();
+    if let (Some(original), Some(p)) = (row.get::<Option<String>, _>("ern_xml"), &prepared) {
+        let first = |tag: &str| {
+            crate::transport::xml_values(&original, tag)
+                .into_iter()
+                .next()
+                .unwrap_or_default()
+        };
+        let original_id = first("MessageId");
+        let now = chrono::Utc::now();
+        let suffix = match sub_type {
+            crate::ddex_ern::MessageSubType::Takedown => "TD",
+            _ => "UPD",
+        };
+        let config = crate::ddex_ern::DdexErnConfig {
+            deal: crate::dsp_registry::Dsp::from_code(partner_id)
+                .map(|d| d.spec().deal)
+                .unwrap_or(&crate::ddex_ern::DEAL_SUBSCRIPTION),
+            message_id: format!("{original_id}-{suffix}{}", now.format("%Y%m%d%H%M%S")),
+            message_thread_id: Some(original_id),
+            message_sub_type: sub_type,
+            created_at: now.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+            sender_name: row.get("sender_name"),
+            sender_party_id: Some(row.get("sender_dpid")),
+            sent_on_behalf_of: None,
+            recipient_name: row.get("recipient_name"),
+            recipient_party_id: Some(row.get("recipient_dpid")),
+            deal_start_date: first("StartDate"),
+            takedown_date: (sub_type == crate::ddex_ern::MessageSubType::Takedown)
+                .then(|| now.format("%Y-%m-%d").to_string()),
+        };
+        let xml = crate::ddex_ern::generate_ddex_ern_382(p, &config)?;
+        ern_xml = xml.into_bytes();
+    }
+    let mut c = pool.acquire().await?;
+    let (genre, label) = release_extras(&mut c, &prepared).await;
+    Ok(TransferPackage {
+        package_id,
+        package_hash: row.get("package_hash"),
+        org_id: org,
+        release_id: row.get("release_id"),
+        ern_xml,
+        files: Vec::new(),
+        upc,
+        prepared,
+        genre,
+        label,
+    })
+}
+
+/// Genre and label of the frozen application (same draft the prepared
+/// release was built from). Best effort: None when unavailable.
+async fn release_extras(
+    c: &mut PgConnection,
+    prepared: &Option<Arc<crate::preparation_model::PreparedRelease>>,
+) -> (Option<String>, Option<String>) {
+    let Some(p) = prepared else {
+        return (None, None);
+    };
+    let draft: Option<Value> = sqlx::query_scalar(
+        "SELECT COALESCE(NULLIF(ar.body -> 'release' -> 'draft', 'null'::jsonb), r.draft)
+         FROM catalog.application_revisions ar
+         JOIN catalog.releases r ON r.org_id=ar.org_id AND r.id=ar.release_id
+         WHERE ar.org_id=$1 AND ar.id=$2",
+    )
+    .bind(p.org_id)
+    .bind(p.revision_id)
+    .fetch_optional(c)
+    .await
+    .ok()
+    .flatten();
+    let Some(d) = draft else {
+        return (None, None);
+    };
+    let text = |k: &str| {
+        d.get(k)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+    };
+    let genre = match text("genre").as_deref() {
+        Some("__other__") => text("genreCustom"),
+        _ => text("genre"),
+    };
+    let label = text("label").or_else(|| text("label_name"));
+    (genre, label)
+}
+
+/// The partner's id for the accepted submission of a job (API partners
+/// address updates and takedowns to it).
+async fn accepted_message_id(pool: &PgPool, org: Uuid, job_id: Uuid) -> Result<Option<String>> {
+    let mut tx = pool.begin().await?;
+    authorize_org(&mut tx, org).await?;
+    let id: Option<String> = sqlx::query_scalar(
+        "SELECT partner_message_id FROM execution.delivery_attempts
+         WHERE job_id=$1 AND outcome='ACCEPTED' AND partner_message_id IS NOT NULL
+         ORDER BY attempt_no DESC LIMIT 1",
+    )
+    .bind(job_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .flatten();
+    tx.commit().await?;
+    Ok(id)
+}
+
 /// Partner metadata update with capability gating. Recorded as its own
 /// wire call on the mock; real adapters map it to the partner's update
 /// choreography (F6).
@@ -1456,19 +1921,22 @@ pub async fn update_release(
     .ok_or(Error::NotFound)?;
     tx0.commit().await?;
     let job_id: Uuid = row.get("job_id");
+    let _: Uuid = row.get("org_id");
+    let package = followup_package(
+        pool,
+        org,
+        package_id,
+        partner_id,
+        crate::ddex_ern::MessageSubType::Update,
+    )
+    .await?;
     let ctx = SendContext {
         job_id,
         attempt_id: Uuid::new_v4(),
         attempt_no: 0,
-        idempotency_key: format!("update:{job_id}"),
-        package: TransferPackage {
-            package_id,
-            package_hash: String::new(),
-            org_id: row.get("org_id"),
-            release_id: Uuid::nil(),
-            ern_xml: Vec::new(),
-            files: Vec::new(),
-        },
+        idempotency_key: format!("update:{job_id}:{}", Uuid::new_v4().simple()),
+        planned_message_id: accepted_message_id(pool, org, job_id).await?,
+        package,
     };
     match adapter.update_release(&ctx, changes).await? {
         SendOutcome::Accepted { .. } => Ok("UPDATE_ACCEPTED".to_string()),
@@ -1505,19 +1973,21 @@ pub async fn takedown_release(
     .ok_or(Error::NotFound)?;
     tx0.commit().await?;
     let job_id: Uuid = row.get("job_id");
+    let package = followup_package(
+        pool,
+        org,
+        package_id,
+        partner_id,
+        crate::ddex_ern::MessageSubType::Takedown,
+    )
+    .await?;
     let ctx = SendContext {
         job_id,
         attempt_id: Uuid::new_v4(),
         attempt_no: 0,
         idempotency_key: format!("takedown:{job_id}"),
-        package: TransferPackage {
-            package_id,
-            package_hash: String::new(),
-            org_id: row.get("org_id"),
-            release_id: Uuid::nil(),
-            ern_xml: Vec::new(),
-            files: Vec::new(),
-        },
+        planned_message_id: accepted_message_id(pool, org, job_id).await?,
+        package,
     };
     let outcome = adapter.takedown(&ctx).await?;
     let mut tx = pool.begin().await?;
@@ -1589,6 +2059,81 @@ pub async fn lease_delivery_job(
     });
     tx.commit().await?;
     Ok(job)
+}
+
+/// Hand a leased delivery job back (QUEUED, lease cleared, attempt not
+/// counted as a send) when the worker cannot even start: e.g. no adapter
+/// is configured for the partner yet. The reconciler requeues it later.
+pub async fn release_delivery_lease(pool: &PgPool, job: &DeliveryJob, reason: &str) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    authorize_org(&mut tx, job.org_id).await?;
+    sqlx::query(
+        "UPDATE execution.delivery_jobs SET status='QUEUED', locked_by=NULL, lock_token=NULL,
+         lease_until=NULL, attempts=GREATEST(attempts-1,0), last_error=$3, updated_at=now()
+         WHERE id=$1 AND lock_token=$2",
+    )
+    .bind(job.id)
+    .bind(job.token)
+    .bind(reason)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Staff-recorded LIVE evidence (a partner that never reports live status,
+/// or a release confirmed in the partner's catalogue by hand). Only a
+/// DELIVERED job can be marked; the binding keeps the partner release id
+/// when one is given.
+pub async fn record_manual_live(
+    pool: &PgPool,
+    package_id: Uuid,
+    partner_id: &str,
+    partner_release_id: Option<&str>,
+    staff_user: Option<Uuid>,
+) -> Result<String> {
+    let org: Uuid =
+        sqlx::query_scalar("SELECT org_id FROM distribution.distribution_packages WHERE id=$1")
+            .bind(package_id)
+            .fetch_optional(pool)
+            .await?
+            .ok_or(Error::NotFound)?;
+    let mut tx = pool.begin().await?;
+    authorize_org(&mut tx, org).await?;
+    let job: Option<(Uuid, String)> = sqlx::query_as(
+        "SELECT id, status FROM execution.delivery_jobs WHERE package_id=$1 AND partner_id=$2",
+    )
+    .bind(package_id)
+    .bind(partner_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some((job_id, status)) = job else {
+        return Err(Error::NotFound);
+    };
+    if status != "DELIVERED" {
+        return Err(Error::PolicyGate("DELIVERY_NOT_DELIVERED"));
+    }
+    let job = DeliveryJob {
+        id: job_id,
+        token: Uuid::nil(),
+        org_id: org,
+        package_id,
+        partner_id: partner_id.to_string(),
+        attempts: 0,
+    };
+    upsert_live_binding(&mut tx, &job, "LIVE", partner_release_id).await?;
+    crate::operations::audit(
+        &mut tx,
+        staff_user,
+        Some(org),
+        Some(job_id),
+        "delivery.live_recorded",
+        "STAFF_EVIDENCE",
+        Uuid::new_v4(),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok("LIVE".to_string())
 }
 
 /// Why a delivery job could not be leased (sandbox round 2: a worker killed

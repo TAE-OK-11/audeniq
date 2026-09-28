@@ -52,6 +52,11 @@ GRANT SELECT (org_id,dsp_id,id,integration_status) ON distribution.dsp_endpoints
 GRANT SELECT (id,org_id,contract_id,policy_version) ON rights.contract_revisions TO audeniq_api;
 GRANT SELECT ON distribution.canonical_releases,distribution.identifier_issuers TO audeniq_api;
 GRANT EXECUTE ON FUNCTION execution.partner_readiness(text) TO audeniq_api;
+-- Signed partner webhooks (0053): the API only files them; the worker applies them.
+GRANT INSERT ON execution.partner_inbox TO audeniq_api;
+GRANT EXECUTE ON FUNCTION execution.platform_contract_live(text) TO audeniq_api;
+-- Staff ADMIN chooses each DSP's contract route (direct / Merlin, 0056).
+GRANT SELECT, UPDATE (route, updated_by, updated_at) ON distribution.dsp_contract_routes TO audeniq_api;
 -- Staff review (0044): second-person approvals and reviewer notes. The
 -- staff role table itself is read-only for the API (granted by the CLI).
 GRANT SELECT,INSERT,UPDATE ON rights.staff_approvals TO audeniq_api;
@@ -86,6 +91,14 @@ GRANT INSERT,UPDATE ON distribution.identifier_counters TO audeniq_worker;
 GRANT UPDATE(status,retired_at) ON distribution.identifier_assignments TO audeniq_worker;
 GRANT INSERT,UPDATE ON execution.delivery_jobs,execution.delivery_attempts,execution.live_bindings,execution.reconciliation_cases TO audeniq_worker;
 GRANT INSERT,UPDATE ON execution.route_decisions TO audeniq_worker;
+-- Partner ACK dedupe, webhook inbox and event-org resolution (0053).
+GRANT SELECT,INSERT ON execution.ack_events TO audeniq_worker;
+GRANT SELECT,UPDATE ON execution.partner_inbox TO audeniq_worker;
+GRANT EXECUTE ON FUNCTION execution.partner_event_org(text, text, text) TO audeniq_worker;
+-- Distributor-level DSP contract verdict (0054) for routing and Stage 2.
+GRANT EXECUTE ON FUNCTION execution.platform_contract_live(text) TO audeniq_worker;
+-- Reconciler scope: only orgs with open delivery work (0055).
+GRANT EXECUTE ON FUNCTION execution.orgs_with_open_deliveries() TO audeniq_worker;
 GRANT INSERT,UPDATE ON distribution.delivery_staging TO audeniq_worker;
 GRANT SELECT,INSERT ON operations.check_results TO audeniq_worker;
 GRANT SELECT,INSERT ON operations.asset_qc_results TO audeniq_worker;

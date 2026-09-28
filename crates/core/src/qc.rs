@@ -12,7 +12,7 @@ use std::process::Stdio;
 use std::time::Duration;
 
 /// Bump when any threshold, check set, or metric definition changes.
-pub const QC_RULE_VERSION: &str = "3";
+pub const QC_RULE_VERSION: &str = "4";
 
 /// Minimum audio duration in seconds before flagging as suspiciously short.
 pub const MIN_AUDIO_SECS: f64 = 30.0;
@@ -843,6 +843,11 @@ pub const NEAR_SILENT_LUFS: f64 = -45.0;
 /// this long, is flagged (padding a short clip out to a billable length).
 pub const SILENCE_SHARE_REVIEW: f64 = 0.5;
 pub const SILENCE_RUN_REVIEW_SECS: f64 = 30.0;
+/// Digital silence before the programme starts / after it ends. DSPs reject
+/// silence padding (Spotify content policy); a hidden track after a long
+/// gap is legitimate, so this only routes to review.
+pub const LEAD_SILENCE_REVIEW_SECS: f64 = 5.0;
+pub const TAIL_SILENCE_REVIEW_SECS: f64 = 15.0;
 /// A stereo channel this quiet while the other carries audio is "dead".
 pub const DEAD_CHANNEL_PEAK: f32 = 0.001;
 /// Zero-crossing rate typical of broadband noise (music is far lower).
@@ -869,6 +874,9 @@ pub fn content_suspicions(a: &DecodeAnalysis, m: &AudioMetrics) -> Vec<String> {
             "long silence ({:.0}% of the track silent, longest stretch {run_secs:.0}s)",
             share * 100.0
         ));
+    }
+    if let Some(msg) = edge_silence(a) {
+        out.push(msg);
     }
     if m.channels == 2 && a.channel_peaks.len() == 2 {
         let (l, r) = (a.channel_peaks[0], a.channel_peaks[1]);
@@ -908,6 +916,38 @@ pub fn content_suspicions(a: &DecodeAnalysis, m: &AudioMetrics) -> Vec<String> {
         }
     }
     out
+}
+
+/// Leading/trailing silence padding from the block envelope. The tail is
+/// only judged when the envelope covers the whole track (it is capped at
+/// MAX_ENERGY_BLOCKS).
+fn edge_silence(a: &DecodeAnalysis) -> Option<String> {
+    const SILENT_DB: f32 = -60.0;
+    let lead = a.block_db.iter().take_while(|d| **d < SILENT_DB).count();
+    if lead == a.block_db.len() {
+        return None; // all quiet: near-silent / silent checks cover it
+    }
+    let lead_secs = lead as f64 * BLOCK_SECS;
+    let tail_secs = if a.block_db.len() as u64 == a.blocks {
+        a.block_db
+            .iter()
+            .rev()
+            .take_while(|d| **d < SILENT_DB)
+            .count() as f64
+            * BLOCK_SECS
+    } else {
+        0.0
+    };
+    let mut parts = Vec::new();
+    if lead_secs >= LEAD_SILENCE_REVIEW_SECS {
+        parts.push(format!(
+            "{lead_secs:.0}s of silence before the audio starts"
+        ));
+    }
+    if tail_secs >= TAIL_SILENCE_REVIEW_SECS {
+        parts.push(format!("{tail_secs:.0}s of silence after it ends"));
+    }
+    (!parts.is_empty()).then(|| format!("silence padding ({})", parts.join(", ")))
 }
 
 /// Smallest lag (1-15 s) at which the block-energy envelope repeats almost
@@ -2019,6 +2059,12 @@ mod tests {
                 "sine=frequency=440:duration=10:sample_rate=48000",
                 &["-af", "volume=8dB,apad=whole_dur=50", "-c:a", "pcm_s16le"],
                 "long silence",
+            ),
+            (
+                "leadpad",
+                "sine=frequency=440:duration=40:sample_rate=48000",
+                &["-af", "volume=8dB,adelay=9000", "-c:a", "pcm_s16le"],
+                "silence padding (9s of silence before",
             ),
             (
                 "loop",

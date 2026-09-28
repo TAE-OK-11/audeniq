@@ -239,3 +239,70 @@ mod tests {
         assert!(p.render_message_id("a", "b", "c").is_err());
     }
 }
+
+/// The DDEX message sender for an org's releases: the org's own DPID when it
+/// delivers under its own party id (a label with a DDEX membership),
+/// otherwise the distributor's (`DDEX_SENDER_DPID` / `DDEX_SENDER_NAME`).
+/// In DDEX the MessageSender is the party that sends the feed — the
+/// distributor — so artist accounts need no DPID of their own. `None` when
+/// neither is configured: no wire message is generated.
+pub fn message_sender(org_name: &str, org_dpid: Option<&str>) -> Option<(String, String)> {
+    message_sender_from(
+        org_name,
+        org_dpid,
+        std::env::var("DDEX_SENDER_DPID").ok().as_deref(),
+        std::env::var("DDEX_SENDER_NAME").ok().as_deref(),
+    )
+}
+
+fn message_sender_from(
+    org_name: &str,
+    org_dpid: Option<&str>,
+    platform_dpid: Option<&str>,
+    platform_name: Option<&str>,
+) -> Option<(String, String)> {
+    if let Some(d) = org_dpid.map(str::trim).filter(|d| !d.is_empty()) {
+        return Some((org_name.to_string(), d.to_string()));
+    }
+    let dpid = platform_dpid
+        .map(str::trim)
+        .filter(|d| (1..=64).contains(&d.len()))?;
+    let name = platform_name
+        .map(str::trim)
+        .filter(|n| (1..=200).contains(&n.chars().count()))
+        .unwrap_or("AUDENIQ");
+    Some((name.to_string(), dpid.to_string()))
+}
+
+#[cfg(test)]
+mod sender_tests {
+    use super::message_sender_from;
+
+    #[test]
+    fn org_dpid_wins_then_distributor_then_none() {
+        assert_eq!(
+            message_sender_from(
+                "Label",
+                Some("PADPIDA2020010101L"),
+                Some("PADPIDA2026010101A"),
+                None
+            ),
+            Some(("Label".into(), "PADPIDA2020010101L".into()))
+        );
+        assert_eq!(
+            message_sender_from(
+                "Artist",
+                None,
+                Some("PADPIDA2026010101A"),
+                Some("AUDENIQ Inc.")
+            ),
+            Some(("AUDENIQ Inc.".into(), "PADPIDA2026010101A".into()))
+        );
+        assert_eq!(
+            message_sender_from("Artist", Some("  "), Some("PADPIDA2026010101A"), None),
+            Some(("AUDENIQ".into(), "PADPIDA2026010101A".into()))
+        );
+        assert_eq!(message_sender_from("Artist", None, Some(""), None), None);
+        assert_eq!(message_sender_from("Artist", None, None, None), None);
+    }
+}

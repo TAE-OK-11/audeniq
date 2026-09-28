@@ -16,6 +16,10 @@
 //! supplies theirs. Nothing here enables a send: every seeded profile is
 //! CONTRACTED + delivery_enabled=false + send_or_publish=false (migration
 //! 0042), and the onboarding gate still requires a signed contract.
+use crate::ddex_ern::{
+    DEAL_CONTENT_ID, DEAL_DOWNLOAD, DEAL_JUKEBOX, DEAL_ON_DEMAND_SUBSCRIPTION, DEAL_SOCIAL,
+    DEAL_SUBSCRIPTION, DEAL_SUBSCRIPTION_AND_FREE, DealProfile,
+};
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -32,6 +36,52 @@ pub enum Dsp {
     D9,
     D10,
     D11,
+    D12,
+    D13,
+    D14,
+    D15,
+    D16,
+    D17,
+    D18,
+    D19,
+    D20,
+    D21,
+    D22,
+    D23,
+    D24,
+    D25,
+    D26,
+    D27,
+    D28,
+    D29,
+    D30,
+    D31,
+    D32,
+    D33,
+    D34,
+    D35,
+}
+
+/// How Studio groups the platform picker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum Category {
+    /// Audio streaming services.
+    Streaming,
+    /// Social / short-form video: the catalogue becomes a sound library and
+    /// user uploads are fingerprinted and claimed (UGC).
+    Social,
+    /// Download / DJ stores.
+    Store,
+}
+
+/// Which contract route AUDENIQ plans for the DSP (strategy, shown to
+/// staff; the live choice is `distribution.dsp_contract_routes`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum PlannedRoute {
+    Direct,
+    Merlin,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -52,6 +102,31 @@ pub enum DeliveryFormat {
     PartnerSpec,
 }
 
+/// How the DSP normally ingests from distributors (industry practice;
+/// the contract's technical annex is authoritative and the partner config
+/// file follows it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum Channel {
+    /// DDEX ERN over SFTP (Aspera is offered by some as a faster lane).
+    Sftp,
+    /// iTunes Package via Apple Transporter; DDEX only where the contract
+    /// says so.
+    Transporter,
+    /// The partner's own metadata feed (file drop or API).
+    PartnerFeed,
+}
+
+/// DDEX ERN choreography profile the DSP expects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChoreographyProfile {
+    Batch,
+    ReleaseByRelease,
+    /// Not DDEX: the partner feed's own completion convention.
+    PartnerFeed,
+}
+
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct DspSpec {
     pub dsp: Dsp,
@@ -61,6 +136,19 @@ pub struct DspSpec {
     pub slug: &'static str,
     /// Display only (staff screens, audit readability). Never a key.
     pub name: &'static str,
+    /// What artists and staff see (Korean brand names for domestic DSPs).
+    /// Internal codes never appear in user- or staff-facing text.
+    pub name_ko: &'static str,
+    /// DDEX ERN version the DSP ingests; empty for partner feeds. The
+    /// generator builds 3.8.2; staging refuses a DSP set to anything else.
+    pub ern_version: &'static str,
+    /// Commercial models / use types the DSP licenses (the ERN deal).
+    pub deal: &'static DealProfile,
+    pub channel: Channel,
+    pub choreography: ChoreographyProfile,
+    /// The DSP has a Merlin deal, so the release may go under the Merlin
+    /// contract instead of a direct one (per-DSP choice, migration 0056).
+    pub merlin_eligible: bool,
     pub region: Region,
     pub format: DeliveryFormat,
     /// Minimum cover side in px (square required everywhere).
@@ -81,6 +169,28 @@ pub struct DspSpec {
     pub loudness_target_lufs: f32,
     /// DDEX preflight rule ids this DSP treats as deal-breakers.
     pub escalate: &'static [&'static str],
+    /// Audio fingerprint rights management (YouTube Content ID): covers,
+    /// samples and remixes get claimed or rejected.
+    pub content_id: bool,
+    /// Covers need proof of license / the original author's consent
+    /// (TIDAL; Korean services ask for 원작자 커버 동의서).
+    pub cover_license_required: bool,
+    /// Published AI-content policy (impersonation, labelling).
+    pub ai_policy: bool,
+    /// Best quality the DSP streams to listeners (sample rate, bits);
+    /// masters above it are delivered but served downsampled.
+    pub served_max: (u32, u32),
+    pub category: Category,
+    /// Planned contract route (Merlin where Merlin licenses the DSP,
+    /// direct where a direct deal is the way in or worth more).
+    pub planned_route: PlannedRoute,
+    /// Government/platform content review before publication (China).
+    pub regional_review: bool,
+    /// The store only takes these genres (Beatport: electronic music).
+    pub accepted_genres: Option<&'static [&'static str]>,
+    /// Commercial / compliance risk staff must clear before contracting
+    /// (payment history, sanctions). Shown as a partner warning.
+    pub partner_risk: Option<&'static str>,
 }
 
 const KR_BASE: DspSpec = DspSpec {
@@ -88,6 +198,12 @@ const KR_BASE: DspSpec = DspSpec {
     code: "",
     slug: "",
     name: "",
+    name_ko: "",
+    ern_version: "",
+    deal: &DEAL_SUBSCRIPTION,
+    channel: Channel::PartnerFeed,
+    choreography: ChoreographyProfile::PartnerFeed,
+    merlin_eligible: false,
     region: Region::Kr,
     format: DeliveryFormat::PartnerSpec,
     artwork_min_px: 3000,
@@ -100,21 +216,49 @@ const KR_BASE: DspSpec = DspSpec {
     requires_lyricist: true,
     loudness_target_lufs: -14.0,
     escalate: &[],
+    content_id: false,
+    cover_license_required: true,
+    ai_policy: false,
+    served_max: (192_000, 24),
+    category: Category::Streaming,
+    planned_route: PlannedRoute::Direct,
+    regional_review: false,
+    accepted_genres: None,
+    partner_risk: None,
 };
 
 const GLOBAL_BASE: DspSpec = DspSpec {
     region: Region::Global,
     format: DeliveryFormat::Ddex,
+    ern_version: "3.8.2",
+    channel: Channel::Sftp,
+    choreography: ChoreographyProfile::Batch,
+    merlin_eligible: true,
+    cover_license_required: false,
+    planned_route: PlannedRoute::Merlin,
     requires_lyricist: false,
     ..KR_BASE
 };
 
 /// The registry, in code order. `Dsp as usize` indexes it.
-pub const REGISTRY: [DspSpec; 11] = [
+/// Genres Beatport ingests (its catalogue is electronic / DJ music).
+pub const ELECTRONIC_GENRES: &[&str] = &[
+    "Electronic",
+    "Dance",
+    "House",
+    "Techno",
+    "Trance",
+    "Drum & Bass",
+    "Dubstep",
+    "EDM",
+];
+
+pub const REGISTRY: [DspSpec; 35] = [
     DspSpec {
         dsp: Dsp::D1,
         code: "D-1",
         slug: "melon",
+        name_ko: "멜론",
         name: "Melon",
         ..KR_BASE
     },
@@ -122,6 +266,7 @@ pub const REGISTRY: [DspSpec; 11] = [
         dsp: Dsp::D2,
         code: "D-2",
         slug: "genie",
+        name_ko: "지니",
         name: "Genie",
         ..KR_BASE
     },
@@ -129,6 +274,7 @@ pub const REGISTRY: [DspSpec; 11] = [
         dsp: Dsp::D3,
         code: "D-3",
         slug: "flo",
+        name_ko: "FLO",
         name: "FLO",
         ..KR_BASE
     },
@@ -136,6 +282,7 @@ pub const REGISTRY: [DspSpec; 11] = [
         dsp: Dsp::D4,
         code: "D-4",
         slug: "bugs",
+        name_ko: "벅스",
         name: "Bugs",
         ..KR_BASE
     },
@@ -143,6 +290,10 @@ pub const REGISTRY: [DspSpec; 11] = [
         dsp: Dsp::D5,
         code: "D-5",
         slug: "spotify",
+        ai_policy: true,
+        served_max: (44_100, 24),
+        name_ko: "Spotify",
+        deal: &DEAL_SUBSCRIPTION_AND_FREE,
         name: "Spotify",
         artwork_max_px: Some(10_000),
         lead_days: 7,
@@ -153,7 +304,12 @@ pub const REGISTRY: [DspSpec; 11] = [
         dsp: Dsp::D6,
         code: "D-6",
         slug: "apple",
-        name: "Apple Music / iTunes",
+        ai_policy: true,
+        name_ko: "Apple Music",
+        deal: &DEAL_SUBSCRIPTION,
+        channel: Channel::Transporter,
+        choreography: ChoreographyProfile::ReleaseByRelease,
+        name: "Apple Music",
         lead_days: 10,
         loudness_target_lufs: -16.0,
         // Apple rejects releases whose type contradicts the track layout.
@@ -164,6 +320,11 @@ pub const REGISTRY: [DspSpec; 11] = [
         dsp: Dsp::D7,
         code: "D-7",
         slug: "youtube",
+        content_id: true,
+        // YouTube Music streams lossy (AAC/Opus).
+        served_max: (44_100, 16),
+        name_ko: "YouTube Music",
+        deal: &DEAL_SUBSCRIPTION_AND_FREE,
         name: "YouTube Music",
         lead_days: 7,
         requires_composer: false,
@@ -173,6 +334,8 @@ pub const REGISTRY: [DspSpec; 11] = [
         dsp: Dsp::D8,
         code: "D-8",
         slug: "amazon",
+        name_ko: "Amazon Music",
+        deal: &DEAL_SUBSCRIPTION_AND_FREE,
         name: "Amazon Music",
         lead_days: 7,
         requires_composer: false,
@@ -182,6 +345,10 @@ pub const REGISTRY: [DspSpec; 11] = [
         dsp: Dsp::D9,
         code: "D-9",
         slug: "tidal",
+        cover_license_required: true,
+        ai_policy: true,
+        name_ko: "TIDAL",
+        deal: &DEAL_SUBSCRIPTION,
         name: "TIDAL",
         lead_days: 7,
         requires_composer: false,
@@ -191,6 +358,9 @@ pub const REGISTRY: [DspSpec; 11] = [
         dsp: Dsp::D10,
         code: "D-10",
         slug: "deezer",
+        served_max: (44_100, 16),
+        name_ko: "Deezer",
+        deal: &DEAL_SUBSCRIPTION_AND_FREE,
         name: "Deezer",
         artwork_max_px: Some(4096),
         // Deezer: composer + lyricist per track, delivery two weeks ahead.
@@ -202,14 +372,335 @@ pub const REGISTRY: [DspSpec; 11] = [
         dsp: Dsp::D11,
         code: "D-11",
         slug: "qobuz",
+        name_ko: "Qobuz",
+        deal: &DEAL_ON_DEMAND_SUBSCRIPTION,
+        choreography: ChoreographyProfile::ReleaseByRelease,
+        merlin_eligible: false,
+        planned_route: PlannedRoute::Direct,
         name: "Qobuz",
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D12,
+        code: "D-12",
+        slug: "pandora",
+        name: "Pandora",
+        name_ko: "Pandora (SiriusXM)",
+        deal: &DEAL_SUBSCRIPTION_AND_FREE,
+        served_max: (44_100, 16),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D13,
+        code: "D-13",
+        slug: "soundcloud",
+        name: "SoundCloud",
+        name_ko: "SoundCloud",
+        deal: &DEAL_SUBSCRIPTION_AND_FREE,
+        content_id: true,
+        served_max: (44_100, 16),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D14,
+        code: "D-14",
+        slug: "audiomack",
+        name: "Audiomack",
+        name_ko: "Audiomack",
+        deal: &DEAL_SUBSCRIPTION_AND_FREE,
+        served_max: (44_100, 16),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D15,
+        code: "D-15",
+        slug: "anghami",
+        name: "Anghami",
+        name_ko: "Anghami (중동·북아프리카)",
+        deal: &DEAL_SUBSCRIPTION_AND_FREE,
+        served_max: (44_100, 16),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D16,
+        code: "D-16",
+        slug: "boomplay",
+        name: "Boomplay",
+        name_ko: "Boomplay (아프리카)",
+        deal: &DEAL_SUBSCRIPTION_AND_FREE,
+        served_max: (44_100, 16),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D17,
+        code: "D-17",
+        slug: "jiosaavn",
+        name: "JioSaavn",
+        name_ko: "JioSaavn (인도)",
+        deal: &DEAL_SUBSCRIPTION_AND_FREE,
+        served_max: (44_100, 16),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D18,
+        code: "D-18",
+        slug: "kkbox",
+        name: "KKBOX",
+        name_ko: "KKBOX (대만·홍콩)",
+        deal: &DEAL_SUBSCRIPTION,
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D19,
+        code: "D-19",
+        slug: "line-music",
+        name: "LINE MUSIC",
+        name_ko: "LINE MUSIC (일본)",
+        deal: &DEAL_SUBSCRIPTION,
+        served_max: (44_100, 16),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D20,
+        code: "D-20",
+        slug: "awa",
+        name: "AWA",
+        name_ko: "AWA (일본)",
+        deal: &DEAL_SUBSCRIPTION_AND_FREE,
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D21,
+        code: "D-21",
+        slug: "netease",
+        name: "NetEase Cloud Music",
+        name_ko: "NetEase Cloud Music (중국)",
+        deal: &DEAL_SUBSCRIPTION_AND_FREE,
+        regional_review: true,
+        lead_days: 21,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D22,
+        code: "D-22",
+        slug: "tencent",
+        name: "Tencent Music",
+        name_ko: "Tencent Music (QQ뮤직·쿠거우·쿠워·WeSing)",
+        deal: &DEAL_SUBSCRIPTION_AND_FREE,
+        regional_review: true,
+        lead_days: 21,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D23,
+        code: "D-23",
+        slug: "napster",
+        name: "Napster",
+        name_ko: "Napster",
+        deal: &DEAL_SUBSCRIPTION,
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D24,
+        code: "D-24",
+        slug: "iheart",
+        name: "iHeartRadio",
+        name_ko: "iHeartRadio",
+        deal: &DEAL_SUBSCRIPTION_AND_FREE,
+        served_max: (44_100, 16),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D25,
+        code: "D-25",
+        slug: "meta",
+        name: "Meta",
+        name_ko: "Instagram·Facebook (Meta)",
+        deal: &DEAL_SOCIAL,
+        category: Category::Social,
+        content_id: true,
+        served_max: (44_100, 16),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D26,
+        code: "D-26",
+        slug: "tiktok",
+        name: "TikTok",
+        name_ko: "TikTok·CapCut (ByteDance)",
+        deal: &DEAL_SOCIAL,
+        category: Category::Social,
+        content_id: true,
+        ai_policy: true,
+        served_max: (44_100, 16),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D27,
+        code: "D-27",
+        slug: "youtube-cid",
+        name: "YouTube Content ID",
+        name_ko: "YouTube Content ID·Shorts",
+        deal: &DEAL_CONTENT_ID,
+        category: Category::Social,
+        content_id: true,
+        served_max: (44_100, 16),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D28,
+        code: "D-28",
+        slug: "snapchat",
+        name: "Snapchat",
+        name_ko: "Snapchat",
+        deal: &DEAL_SOCIAL,
+        category: Category::Social,
+        content_id: true,
+        served_max: (44_100, 16),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D29,
+        code: "D-29",
+        slug: "beatport",
+        name: "Beatport",
+        name_ko: "Beatport",
+        deal: &DEAL_SUBSCRIPTION,
+        category: Category::Store,
+        merlin_eligible: false,
+        planned_route: PlannedRoute::Direct,
+        accepted_genres: Some(ELECTRONIC_GENRES),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D30,
+        code: "D-30",
+        slug: "itunes",
+        name: "iTunes Store",
+        name_ko: "iTunes Store (다운로드)",
+        deal: &DEAL_DOWNLOAD,
+        channel: Channel::Transporter,
+        choreography: ChoreographyProfile::ReleaseByRelease,
+        category: Category::Store,
+        lead_days: 10,
+        requires_composer: true,
+        served_max: (44_100, 16),
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D31,
+        code: "D-31",
+        slug: "claro-musica",
+        name: "Claro Música",
+        name_ko: "Claro Música (중남미)",
+        deal: &DEAL_SUBSCRIPTION_AND_FREE,
+        merlin_eligible: false,
+        planned_route: PlannedRoute::Direct,
+        served_max: (44_100, 16),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D32,
+        code: "D-32",
+        slug: "pretzel",
+        name: "Pretzel",
+        name_ko: "Pretzel (스트리머용 음원)",
+        deal: &DEAL_SUBSCRIPTION,
+        category: Category::Social,
+        merlin_eligible: false,
+        planned_route: PlannedRoute::Direct,
+        served_max: (44_100, 16),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D33,
+        code: "D-33",
+        slug: "triller",
+        name: "Triller",
+        name_ko: "Triller",
+        deal: &DEAL_SOCIAL,
+        category: Category::Social,
+        content_id: true,
+        merlin_eligible: false,
+        planned_route: PlannedRoute::Direct,
+        served_max: (44_100, 16),
+        partner_risk: Some("로열티 미지급 분쟁 이력 — 계약 전 선지급·지급보증 조건 확인"),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D34,
+        code: "D-34",
+        slug: "touchtunes",
+        name: "TouchTunes",
+        name_ko: "TouchTunes (디지털 주크박스)",
+        deal: &DEAL_JUKEBOX,
+        category: Category::Store,
+        merlin_eligible: false,
+        planned_route: PlannedRoute::Direct,
+        served_max: (44_100, 16),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D35,
+        code: "D-35",
+        slug: "yandex",
+        name: "Yandex Music",
+        name_ko: "Yandex Music (러시아·CIS)",
+        deal: &DEAL_SUBSCRIPTION_AND_FREE,
+        merlin_eligible: false,
+        planned_route: PlannedRoute::Direct,
+        partner_risk: Some("러시아 제재·해외송금 제한 — 법무·정산 검토 후 계약"),
+        lead_days: 7,
         requires_composer: false,
         ..GLOBAL_BASE
     },
 ];
 
 impl Dsp {
-    pub const ALL: [Dsp; 11] = [
+    pub const ALL: [Dsp; 35] = [
         Dsp::D1,
         Dsp::D2,
         Dsp::D3,
@@ -221,6 +712,30 @@ impl Dsp {
         Dsp::D9,
         Dsp::D10,
         Dsp::D11,
+        Dsp::D12,
+        Dsp::D13,
+        Dsp::D14,
+        Dsp::D15,
+        Dsp::D16,
+        Dsp::D17,
+        Dsp::D18,
+        Dsp::D19,
+        Dsp::D20,
+        Dsp::D21,
+        Dsp::D22,
+        Dsp::D23,
+        Dsp::D24,
+        Dsp::D25,
+        Dsp::D26,
+        Dsp::D27,
+        Dsp::D28,
+        Dsp::D29,
+        Dsp::D30,
+        Dsp::D31,
+        Dsp::D32,
+        Dsp::D33,
+        Dsp::D34,
+        Dsp::D35,
     ];
 
     pub fn spec(self) -> &'static DspSpec {
@@ -229,6 +744,11 @@ impl Dsp {
 
     pub fn code(self) -> &'static str {
         self.spec().code
+    }
+
+    /// The name artists and staff see.
+    pub fn display_name(self) -> &'static str {
+        self.spec().name_ko
     }
 
     /// Internal DSP id used by Stage 2 scope, route plans and profiles.
@@ -308,6 +828,35 @@ mod tests {
     }
 
     #[test]
+    fn every_dsp_has_a_delivery_profile() {
+        for s in &REGISTRY {
+            assert!(!s.name_ko.is_empty(), "{}", s.code);
+            assert!(!s.name_ko.starts_with("D-"), "{}", s.code);
+            assert!(!s.deal.commercial_models.is_empty() && !s.deal.use_types.is_empty());
+            match s.format {
+                DeliveryFormat::Ddex => {
+                    assert_eq!(s.ern_version, "3.8.2", "{}", s.code);
+                    assert_ne!(s.choreography, ChoreographyProfile::PartnerFeed);
+                }
+                DeliveryFormat::PartnerSpec => {
+                    assert!(s.ern_version.is_empty());
+                    assert_eq!(s.channel, Channel::PartnerFeed);
+                    assert!(!s.merlin_eligible, "no Merlin deal with Korean services");
+                }
+            }
+        }
+        assert_eq!(Dsp::D1.display_name(), "멜론");
+        assert_eq!(Dsp::D6.spec().channel, Channel::Transporter);
+        assert!(
+            Dsp::D5
+                .spec()
+                .deal
+                .commercial_models
+                .contains(&"AdvertisementSupportedModel")
+        );
+    }
+
+    #[test]
     fn uuid_matches_set_dsp_derivation() {
         assert_eq!(
             Dsp::D5.uuid(),
@@ -326,7 +875,11 @@ mod tests {
     /// UUIDs), so SQL-side joins never drift from the Rust table.
     #[test]
     fn seed_migration_matches_registry() {
-        let sql = include_str!("../../../migrations/0042_dsp_registry.sql");
+        let sql = concat!(
+            include_str!("../../../migrations/0042_dsp_registry.sql"),
+            include_str!("../../../migrations/0057_dsp_expansion.sql"),
+            include_str!("../../../migrations/0058_dsp_expansion_2.sql")
+        );
         for s in &REGISTRY {
             let row = format!("('{}','{}','{}'", s.code, s.dsp.uuid(), s.slug);
             assert!(sql.contains(&row), "missing registry seed {row}");

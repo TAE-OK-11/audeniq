@@ -1536,6 +1536,16 @@ pub async fn list_deliveries(s: &AppState, h: &HeaderMap, p: DeliveryPage) -> Re
     .fetch_all(&mut *tx)
     .await?;
     tx.commit().await?;
+    // Staff see platform names; the internal code stays as the key.
+    let items: Vec<Value> = items
+        .into_iter()
+        .map(|mut v| {
+            if let Some(d) = v["dsp"].as_str().and_then(Dsp::from_code) {
+                v["dsp_name"] = json!(d.display_name());
+            }
+            v
+        })
+        .collect();
     Ok(json!({"items": items, "limit": limit, "offset": offset}))
 }
 
@@ -1671,6 +1681,77 @@ pub async fn decide_delivery(
     )
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LiveEvidence {
+    /// The partner's own id/URL for the release, when known.
+    #[serde(default)]
+    pub partner_release_id: Option<String>,
+    pub note: String,
+}
+
+/// Record that a delivered release is live on a platform that never
+/// reports it (evidence: the operator checked the partner catalogue). The
+/// worker applies it (`delivery.mark_live`); only DELIVERED jobs qualify.
+pub async fn record_live(
+    s: &AppState,
+    h: &HeaderMap,
+    package: Uuid,
+    code: &str,
+    i: LiveEvidence,
+) -> Result<Value> {
+    let st = staff(s, h, true).await?;
+    require(&st, Duty::Delivery)?;
+    Dsp::from_code(code).ok_or(Error::NotFound)?;
+    if i.note.trim().is_empty() {
+        return Err(Error::PolicyGate("REVIEW_NOTE_REQUIRED"));
+    }
+    note_ok(&i.note, 1000)?;
+    let prid = i
+        .partner_release_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty());
+    if let Some(p) = prid {
+        if p.chars().count() > 300 {
+            return Err(Error::InvalidCode("NOTE_TOO_LONG"));
+        }
+        crate::text_policy::check(p)?;
+    }
+    let mut tx = s.pool.begin().await?;
+    let org: Uuid =
+        sqlx::query_scalar("SELECT org_id FROM distribution.distribution_packages WHERE id=$1")
+            .bind(package)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(Error::NotFound)?;
+    let job = operations::enqueue(
+        &mut tx,
+        "delivery",
+        "delivery.mark_live",
+        &json!({"package_id": package, "partner_id": code, "partner_release_id": prid,
+                "staff_user_id": st.actor.user}),
+        &format!("delivery.mark_live:{package}:{code}:{}", Uuid::new_v4()),
+        None,
+    )
+    .await?;
+    operations::audit(
+        &mut tx,
+        Some(st.actor.user),
+        Some(org),
+        Some(package),
+        "staff.delivery_live_recorded",
+        &format!(
+            "{code}:{}",
+            i.note.trim().chars().take(200).collect::<String>()
+        ),
+        st.actor.request,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"package_id": package, "dsp": code, "job_id": job}))
+}
+
 /// Re-evaluate a package (after onboarding progress or an issuer change).
 pub async fn restage(s: &AppState, h: &HeaderMap, package: Uuid) -> Result<Value> {
     let st = staff(s, h, true).await?;
@@ -1742,6 +1823,30 @@ pub async fn dsps(s: &AppState, h: &HeaderMap) -> Result<Value> {
             )
         })
         .collect();
+    let mut contract: BTreeMap<String, Value> = sqlx::query(
+        "SELECT r.code, r.route, r.merlin_eligible, r.updated_by, r.updated_at,
+                (SELECT NOT ('contract_signed' = ANY(m.gaps)) FROM execution.partner_readiness('merlin') m) AS merlin_signed,
+                execution.platform_contract_live(r.code) AS contract_live
+         FROM distribution.dsp_contract_routes r",
+    )
+    .fetch_all(&s.pool)
+    .await?
+    .into_iter()
+    .map(|r| {
+        (
+            r.get::<String, _>("code"),
+            json!({
+                "route": r.get::<String, _>("route"),
+                "merlin_eligible": r.get::<bool, _>("merlin_eligible"),
+                "merlin_agreement_signed": r.get::<Option<bool>, _>("merlin_signed").unwrap_or(false),
+                "contract_live": r.get::<bool, _>("contract_live"),
+                "updated_by": r.get::<Option<String>, _>("updated_by"),
+                "updated_at": r.get::<chrono::DateTime<chrono::Utc>, _>("updated_at"),
+            }),
+        )
+    })
+    .collect();
+    let live_transmission = crate::launch::live_transmission_enabled();
     let items: Vec<Value> = dsp_registry::catalog()
         .as_array()
         .cloned()
@@ -1750,10 +1855,75 @@ pub async fn dsps(s: &AppState, h: &HeaderMap) -> Result<Value> {
         .map(|mut v| {
             let code = v["code"].as_str().unwrap_or("").to_owned();
             v["route"] = by_code.remove(&code).unwrap_or(Value::Null);
+            v["contract_route"] = contract.remove(&code).unwrap_or(Value::Null);
             v
         })
         .collect();
-    Ok(json!({"items": items}))
+    Ok(json!({"items": items, "live_transmission": live_transmission}))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RouteChoice {
+    /// DIRECT | MERLIN
+    pub route: String,
+    pub note: String,
+}
+
+/// ADMIN: choose a DSP's contract route (direct contract or Merlin).
+pub async fn set_contract_route(
+    s: &AppState,
+    h: &HeaderMap,
+    code: &str,
+    i: RouteChoice,
+) -> Result<Value> {
+    let st = staff(s, h, true).await?;
+    if st.role != StaffRole::Admin {
+        return Err(Error::Forbidden);
+    }
+    let dsp = Dsp::from_code(code).ok_or(Error::NotFound)?;
+    if i.note.trim().is_empty() {
+        return Err(Error::PolicyGate("REVIEW_NOTE_REQUIRED"));
+    }
+    note_ok(&i.note, 1000)?;
+    let route = i.route.trim().to_ascii_uppercase();
+    if !matches!(route.as_str(), "DIRECT" | "MERLIN") {
+        return Err(Error::InvalidCode("ROUTE_UNKNOWN"));
+    }
+    let mut tx = s.pool.begin().await?;
+    let eligible: bool = sqlx::query_scalar(
+        "SELECT merlin_eligible FROM distribution.dsp_contract_routes WHERE code=$1 FOR UPDATE",
+    )
+    .bind(code)
+    .fetch_one(&mut *tx)
+    .await?;
+    if route == "MERLIN" && !eligible {
+        return Err(Error::PolicyGate("MERLIN_NOT_AVAILABLE_FOR_DSP"));
+    }
+    let actor = st.actor.user.to_string();
+    sqlx::query(
+        "UPDATE distribution.dsp_contract_routes SET route=$2, updated_by=$3, updated_at=now() WHERE code=$1",
+    )
+    .bind(code)
+    .bind(&route)
+    .bind(&actor)
+    .execute(&mut *tx)
+    .await?;
+    operations::audit(
+        &mut tx,
+        Some(st.actor.user),
+        None,
+        None,
+        "staff.dsp_contract_route",
+        &format!(
+            "{code}:{route}:{}",
+            i.note.trim().chars().take(200).collect::<String>()
+        ),
+        st.actor.request,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"dsp": code, "platform": dsp.display_name(), "route": route}))
 }
 
 // ---------------------------------------------------------------------------
@@ -1923,12 +2093,28 @@ async fn h_delivery_decide(
 ) -> Result<Json<Value>> {
     Ok(Json(decide_delivery(&s, &h, package, &code, i).await?))
 }
+async fn h_live(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path((package, code)): Path<(Uuid, String)>,
+    Json(i): Json<LiveEvidence>,
+) -> Result<Json<Value>> {
+    Ok(Json(record_live(&s, &h, package, &code, i).await?))
+}
 async fn h_restage(
     State(s): State<AppState>,
     Path(package): Path<Uuid>,
     h: HeaderMap,
 ) -> Result<Json<Value>> {
     Ok(Json(restage(&s, &h, package).await?))
+}
+async fn h_dsp_route(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(code): Path<String>,
+    Json(i): Json<RouteChoice>,
+) -> Result<Json<Value>> {
+    Ok(Json(set_contract_route(&s, &h, &code, i).await?))
 }
 async fn h_dsps(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     Ok(Json(dsps(&s, &h).await?))
@@ -1978,7 +2164,9 @@ pub fn routes() -> Router<AppState> {
             "/api/staff/deliveries/{package}/{code}/decision",
             post(h_delivery_decide),
         )
+        .route("/api/staff/deliveries/{package}/{code}/live", post(h_live))
         .route("/api/staff/dsps", get(h_dsps))
+        .route("/api/staff/dsps/{code}/route", post(h_dsp_route))
         .route("/api/staff/payouts", get(h_payouts))
 }
 

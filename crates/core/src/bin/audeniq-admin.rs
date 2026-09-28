@@ -17,6 +17,19 @@
 //! audeniq-admin partner list
 //! audeniq-admin partner set-dsp PARTNER_ID [DSP_UUID]
 //!   (links the partner to the DSP id Stage 2 eligibility keys on)
+//! audeniq-admin partner status PARTNER_ID        (onboarding record + gaps)
+//! audeniq-admin partner config-check             (PARTNER_CONFIG_DIR files, secrets)
+//! audeniq-admin partner probe PARTNER_ID         (connect; records endpoint + credential kind)
+//! audeniq-admin partner dpid PARTNER_ID PADPIDA…  (recipient DDEX party id)
+//! audeniq-admin partner test-ern PARTNER_ID FILE (XSD + rules; interop proof)
+//! audeniq-admin partner test-ack PARTNER_ID FILE (partner's real ACK parses)
+//! audeniq-admin partner capabilities PARTNER_ID '{"send_or_publish":true,…}'
+//! audeniq-admin partner contract PARTNER_ID REF  (signed contract filing reference)
+//! audeniq-admin partner go-live PARTNER_ID       (stage LIVE + delivery_enabled; gaps refuse)
+//! audeniq-admin partner suspend PARTNER_ID --reason TEXT
+//! audeniq-admin partner route D-5 DIRECT|MERLIN     (contract route per DSP)
+//! audeniq-admin partner merlin-eligible D-11 true|false
+//!   (Merlin's own agreement: `partner contract merlin REF`)
 //! audeniq-admin staff list
 //! audeniq-admin staff grant EMAIL ADMIN|REVIEWER|OPERATOR|SUPPORT
 //! audeniq-admin staff revoke EMAIL
@@ -26,7 +39,7 @@
 use audeniq_core::protected_admin as admin;
 use audeniq_core::protected_names::{Action, Mode};
 
-const USAGE: &str = "usage: audeniq-admin [--operator NAME] protected <list|add|remove|activate|alias|remove-alias|grant-exception|revoke-exception> ...\n       audeniq-admin [--operator NAME] identifier-issuer <list|register UPC|ISRC PREFIX>\n       audeniq-admin [--operator NAME] partner <list|set-dsp PARTNER_ID [DSP_UUID]>\n       audeniq-admin [--operator NAME] staff <list|grant EMAIL ROLE|revoke EMAIL>\n       audeniq-admin dsp list";
+const USAGE: &str = "usage: audeniq-admin [--operator NAME] protected <list|add|remove|activate|alias|remove-alias|grant-exception|revoke-exception> ...\n       audeniq-admin [--operator NAME] identifier-issuer <list|register UPC|ISRC PREFIX>\n       audeniq-admin [--operator NAME] partner <list|config-check|status ID|set-dsp ID [DSP_UUID]|probe ID|dpid ID DPID|test-ern ID FILE|test-ack ID FILE|capabilities ID JSON|contract ID REF|go-live ID|suspend ID --reason TEXT|route D-n DIRECT|MERLIN|merlin-eligible D-n true|false>\n       audeniq-admin [--operator NAME] staff <list|grant EMAIL ROLE|revoke EMAIL>\n       audeniq-admin dsp list";
 
 fn take_opt(args: &mut Vec<String>, key: &str) -> Option<String> {
     let i = args.iter().position(|a| a == key)?;
@@ -108,6 +121,7 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
     if args.first().map(String::as_str) == Some("partner") {
+        use audeniq_core::partner_admin as pa;
         use audeniq_core::partner_onboarding::{list_profiles, set_dsp};
         let pool = audeniq_core::database::connect(&std::env::var("DATABASE_URL")?, 1).await?;
         match (args.get(1).map(String::as_str), args.get(2), args.get(3)) {
@@ -124,6 +138,62 @@ async fn main() -> anyhow::Result<()> {
                 let dsp = dsp.map(|d| uuid::Uuid::parse_str(d)).transpose()?;
                 let id = set_dsp(&pool, &operator, partner, dsp).await?;
                 println!("{partner} dsp_id={id}\nok");
+            }
+            (Some("config-check"), None, None) => {
+                println!("{}", serde_json::to_string_pretty(&pa::check_configs())?)
+            }
+            (Some("status"), Some(partner), None) => println!(
+                "{}",
+                serde_json::to_string_pretty(
+                    &audeniq_core::partner_onboarding::status(&pool, partner).await?
+                )?
+            ),
+            (Some(cmd), Some(partner), arg) => {
+                if operator.trim().is_empty() {
+                    anyhow::bail!("--operator NAME (or AUDENIQ_OPERATOR) is required for changes");
+                }
+                let need = || arg.cloned().ok_or_else(|| anyhow::anyhow!(USAGE));
+                let out: serde_json::Value = match cmd {
+                    "probe" => pa::probe(&pool, &operator, partner).await?,
+                    "dpid" => {
+                        pa::set_recipient_dpid(&pool, &operator, partner, &need()?).await?;
+                        serde_json::json!({"ok": true})
+                    }
+                    "test-ern" => {
+                        let xml = std::fs::read_to_string(need()?)?;
+                        pa::test_ern(&pool, &operator, partner, &xml).await?
+                    }
+                    "test-ack" => {
+                        let bytes = std::fs::read(need()?)?;
+                        pa::test_ack(&pool, &operator, partner, &bytes).await?
+                    }
+                    "capabilities" => {
+                        let flags: serde_json::Value = serde_json::from_str(&need()?)?;
+                        pa::set_capabilities(&pool, &operator, partner, &flags).await?
+                    }
+                    "contract" => {
+                        pa::contract(&pool, &operator, partner, &need()?).await?;
+                        serde_json::json!({"ok": true})
+                    }
+                    "go-live" => pa::go_live(&pool, &operator, partner).await?,
+                    "route" => pa::set_route(&pool, &operator, partner, &need()?).await?,
+                    "merlin-eligible" => {
+                        let on = match need()?.as_str() {
+                            "true" => true,
+                            "false" => false,
+                            _ => anyhow::bail!(USAGE),
+                        };
+                        pa::set_merlin_eligible(&pool, &operator, partner, on).await?;
+                        serde_json::json!({"ok": true})
+                    }
+                    "suspend" => {
+                        let why = reason.clone().unwrap_or_default();
+                        pa::suspend(&pool, &operator, partner, &why).await?;
+                        serde_json::json!({"ok": true})
+                    }
+                    _ => anyhow::bail!(USAGE),
+                };
+                println!("{}", serde_json::to_string_pretty(&out)?);
             }
             _ => anyhow::bail!(USAGE),
         }

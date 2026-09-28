@@ -72,6 +72,8 @@ impl MessageSubType {
 /// Caller-supplied envelope values. Everything that would otherwise need a
 /// clock or an id generator lives here so the builder stays pure.
 pub struct DdexErnConfig {
+    /// Commercial models and use types this DSP licenses (its deal).
+    pub deal: &'static DealProfile,
     pub message_id: String,
     /// Thread this message belongs to. `None` falls back to `message_id`
     /// (a new thread). Updates and takedowns MUST pass the original
@@ -95,6 +97,72 @@ pub struct DdexErnConfig {
     /// Deal end, `YYYY-MM-DD`. Required for `MessageSubType::Takedown`.
     pub takedown_date: Option<String>,
 }
+
+/// The deal a DSP takes: ERN `CommercialModelType`s and `UseType`s (AVS
+/// 2016-10-06 values). One Deal per release lists every model, so a DSP
+/// with a free tier (AdvertisementSupportedModel) and a paid tier
+/// (SubscriptionModel) gets both in one message. Downloads
+/// (PayAsYouGoModel / PermanentDownload) carry a price band
+/// (`price_range`); the iTunes Store profile uses the standard band.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct DealProfile {
+    pub commercial_models: &'static [&'static str],
+    pub use_types: &'static [&'static str],
+    /// Download price band (`PriceRangeType`: Normal / High / Low) in the
+    /// recipient's namespace; None for streaming deals.
+    pub price_range: Option<&'static str>,
+}
+
+/// Paid streaming only (the historic single deal).
+pub const DEAL_SUBSCRIPTION: DealProfile = DealProfile {
+    commercial_models: &["SubscriptionModel"],
+    use_types: &["OnDemandStream", "NonInteractiveStream"],
+    price_range: None,
+};
+/// Paid + ad-supported free tier streaming.
+pub const DEAL_SUBSCRIPTION_AND_FREE: DealProfile = DealProfile {
+    commercial_models: &["SubscriptionModel", "AdvertisementSupportedModel"],
+    use_types: &["OnDemandStream", "NonInteractiveStream"],
+    price_range: None,
+};
+/// Social / short-form platforms (Meta, TikTok·CapCut, Snapchat): the
+/// catalogue is offered as a sound library for user videos
+/// (UserMakeAvailableLabelProvided / ...UserProvided), ad-funded, and
+/// matching user uploads are claimed (RightsClaimModel).
+pub const DEAL_SOCIAL: DealProfile = DealProfile {
+    commercial_models: &["AdvertisementSupportedModel", "RightsClaimModel"],
+    use_types: &[
+        "UserMakeAvailableLabelProvided",
+        "UserMakeAvailableUserProvided",
+    ],
+    price_range: None,
+};
+/// YouTube Content ID: claims on user uploads that contain the recording.
+pub const DEAL_CONTENT_ID: DealProfile = DealProfile {
+    commercial_models: &["RightsClaimModel"],
+    use_types: &["UserMakeAvailableUserProvided"],
+    price_range: None,
+};
+/// Download store (iTunes): pay-per-download at the standard price band.
+/// The actual wholesale tier is the contract's; `Normal` is the default
+/// band until the release model carries a per-release tier.
+pub const DEAL_DOWNLOAD: DealProfile = DealProfile {
+    commercial_models: &["PayAsYouGoModel"],
+    use_types: &["PermanentDownload"],
+    price_range: Some("Normal"),
+};
+/// Digital jukebox (TouchTunes): paid on-demand plays in venues.
+pub const DEAL_JUKEBOX: DealProfile = DealProfile {
+    commercial_models: &["PayAsYouGoModel"],
+    use_types: &["OnDemandStream"],
+    price_range: None,
+};
+/// On-demand streaming subscription without radio-style use.
+pub const DEAL_ON_DEMAND_SUBSCRIPTION: DealProfile = DealProfile {
+    commercial_models: &["SubscriptionModel"],
+    use_types: &["OnDemandStream"],
+    price_range: None,
+};
 
 /// NFC-normalize the human-text fields of a release.
 ///
@@ -210,6 +278,19 @@ fn image_codec(content_type: &str) -> (&'static str, &'static str) {
         "image/png" => ("PNG", "png"),
         _ => ("Unknown", "bin"),
     }
+}
+
+/// Delivery file name of a track's audio as the ERN references it
+/// (`UPC_DD_TTT.ext`). File-drop adapters upload under exactly this name.
+pub fn audio_file_name(upc: &str, disc: u32, track: u32, content_type: &str) -> String {
+    let (_, ext) = audio_codec(content_type);
+    format!("{upc}_{disc:02}_{track:03}.{ext}")
+}
+
+/// Delivery file name of the front cover as the ERN references it.
+pub fn image_file_name(upc: &str, content_type: &str) -> String {
+    let (_, ext) = image_codec(content_type);
+    format!("{upc}.{ext}")
 }
 
 fn message_header(out: &mut String, c: &DdexErnConfig) {
@@ -347,10 +428,12 @@ fn resource_list(
     for (i, track) in tracks.iter().enumerate() {
         let resource_ref = format!("A{:03}", i + 1);
         let tech_ref = format!("T{resource_ref}");
-        let (codec, ext) = audio_codec(&track.audio.content_type);
-        let file_name = format!(
-            "{}_{:02}_{:03}.{ext}",
-            prepared.upc, track.disc_number, track.track_number
+        let (codec, _) = audio_codec(&track.audio.content_type);
+        let file_name = audio_file_name(
+            &prepared.upc,
+            track.disc_number,
+            track.track_number,
+            &track.audio.content_type,
         );
         // XSD order: SoundRecordingType?, IsArtistRelated?,
         // SoundRecordingId, ResourceReference, ReferenceTitle, ...,
@@ -463,7 +546,7 @@ fn image_resource(
     sender_dpid: &str,
 ) {
     let art: &AssetRef = &prepared.artwork;
-    let (codec, ext) = image_codec(&art.content_type);
+    let (codec, _) = image_codec(&art.content_type);
     // XSD order: ImageType?, IsArtistRelated?, ImageId, ResourceReference,
     // ..., ImageDetailsByTerritory.
     out.push_str("<Image>");
@@ -487,7 +570,11 @@ fn image_resource(
     out.push_str("<TechnicalImageDetails>");
     element(out, "TechnicalResourceDetailsReference", "TI001");
     element(out, "ImageCodecType", codec);
-    file_block(out, &format!("{}.{ext}", prepared.upc), &art.sha256);
+    file_block(
+        out,
+        &image_file_name(&prepared.upc, &art.content_type),
+        &art.sha256,
+    );
     out.push_str("</TechnicalImageDetails>");
     out.push_str("</ImageDetailsByTerritory>");
     out.push_str("</Image>");
@@ -575,17 +662,34 @@ fn deal_list(out: &mut String, c: &DdexErnConfig) {
     // XSD: ReleaseDeal = DealReleaseReference, Deal, EffectiveDate?.
     // Deal = DealReference?, DealTerms?, ... — there is no DealId element;
     // DealReference is optional and pattern-constrained, so it is omitted.
-    // DealTerms minimal valid set: CommercialModelType?, Usage+,
-    // TerritoryCode+, ValidityPeriod+.
+    // DealTerms minimal valid set: CommercialModelType*, Usage+,
+    // TerritoryCode+, ValidityPeriod+. The models and use types are the
+    // DSP's own deal (`DdexErnConfig::deal`, from the DSP registry).
     out.push_str("<DealList><ReleaseDeal>");
     element(out, "DealReleaseReference", "R001");
     out.push_str("<Deal><DealTerms>");
-    element(out, "CommercialModelType", "SubscriptionModel");
+    for model in c.deal.commercial_models {
+        element(out, "CommercialModelType", model);
+    }
     out.push_str("<Usage>");
-    element(out, "UseType", "OnDemandStream");
-    element(out, "UseType", "NonInteractiveStream");
+    for use_type in c.deal.use_types {
+        element(out, "UseType", use_type);
+    }
     out.push_str("</Usage>");
     element(out, "TerritoryCode", "Worldwide");
+    // XSD order: ... TerritoryCode, PriceInformation*, ..., ValidityPeriod.
+    if let Some(band) = c.deal.price_range {
+        let namespace = c
+            .recipient_party_id
+            .as_deref()
+            .map(|d| format!("DPID:{d}"))
+            .unwrap_or_else(|| "DDEX".into());
+        out.push_str("<PriceInformation><PriceRangeType");
+        out.push_str(&attr("Namespace", &namespace));
+        out.push('>');
+        push_escaped(out, band);
+        out.push_str("</PriceRangeType></PriceInformation>");
+    }
     out.push_str("<ValidityPeriod>");
     element(out, "StartDate", &c.deal_start_date);
     if c.message_sub_type == MessageSubType::Takedown
