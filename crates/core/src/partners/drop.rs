@@ -196,8 +196,10 @@ impl FileDropAdapter {
                 let map = &self.config.partner_spec.field_map;
                 let formats = &self.config.partner_spec.formats;
                 if formats.iter().any(|f| f == "json") {
-                    let m =
-                        manifest::release_json(p, &package.files, &extras, message_id, action, map);
+                    let m = manifest::with_platform(
+                        manifest::release_json(p, &package.files, &extras, message_id, action, map),
+                        &self.partner_id,
+                    );
                     docs.push((
                         "manifest.json".into(),
                         serde_json::to_vec_pretty(&m).map_err(|_| Error::Internal)?,

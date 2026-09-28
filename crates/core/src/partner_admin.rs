@@ -408,3 +408,68 @@ pub async fn suspend(pool: &PgPool, operator: &str, partner_id: &str, reason: &s
     crate::partners::invalidate();
     audit(pool, operator, partner_id, "partner.suspend", reason.trim()).await
 }
+
+/// Choose a DSP's contract route: `DIRECT` (AUDENIQ's own contract with the
+/// DSP) or `MERLIN` (the Merlin agreement; only for DSPs with a Merlin deal).
+/// The onboarding contract requirement follows the choice (migration 0056).
+pub async fn set_route(pool: &PgPool, operator: &str, code: &str, route: &str) -> Result<Value> {
+    need_operator(operator)?;
+    let dsp = crate::dsp_registry::Dsp::from_code(code).ok_or(Error::NotFound)?;
+    let route = route.trim().to_ascii_uppercase();
+    if !matches!(route.as_str(), "DIRECT" | "MERLIN") {
+        return Err(Error::InvalidCode("ROUTE_UNKNOWN"));
+    }
+    let eligible: bool = sqlx::query_scalar(
+        "SELECT merlin_eligible FROM distribution.dsp_contract_routes WHERE code=$1",
+    )
+    .bind(code)
+    .fetch_one(pool)
+    .await?;
+    if route == "MERLIN" && !eligible {
+        return Err(Error::PolicyGate("MERLIN_NOT_AVAILABLE_FOR_DSP"));
+    }
+    sqlx::query(
+        "UPDATE distribution.dsp_contract_routes SET route=$2, updated_by=$3, updated_at=now() WHERE code=$1",
+    )
+    .bind(code)
+    .bind(&route)
+    .bind(operator.trim())
+    .execute(pool)
+    .await?;
+    crate::partners::invalidate();
+    audit(pool, operator, code, "partner.route", &route).await?;
+    Ok(json!({"dsp": code, "platform": dsp.display_name(), "route": route}))
+}
+
+/// Mark whether a DSP has a Merlin deal (from Merlin's current deal list).
+/// Turning it off while the DSP is on the Merlin route is refused.
+pub async fn set_merlin_eligible(
+    pool: &PgPool,
+    operator: &str,
+    code: &str,
+    eligible: bool,
+) -> Result<()> {
+    need_operator(operator)?;
+    crate::dsp_registry::Dsp::from_code(code).ok_or(Error::NotFound)?;
+    let n = sqlx::query(
+        "UPDATE distribution.dsp_contract_routes SET merlin_eligible=$2, updated_by=$3, updated_at=now()
+         WHERE code=$1 AND ($2 OR route='DIRECT')",
+    )
+    .bind(code)
+    .bind(eligible)
+    .bind(operator.trim())
+    .execute(pool)
+    .await?
+    .rows_affected();
+    if n != 1 {
+        return Err(Error::PolicyGate("DSP_ON_MERLIN_ROUTE"));
+    }
+    audit(
+        pool,
+        operator,
+        code,
+        "partner.merlin_eligible",
+        &eligible.to_string(),
+    )
+    .await
+}
