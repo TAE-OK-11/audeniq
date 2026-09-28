@@ -206,9 +206,10 @@ async fn ready(State(s): State<AppState>) -> Result<Json<Value>> {
     )
     .fetch_one(&s.pool)
     .await?;
-    Ok(Json(
-        json!({"database":true,"submission":false,"distribution":live_partners > 0,"live_partners":live_partners,"payout":false}),
-    ))
+    Ok(Json(json!({"database":true,"submission":false,
+               "distribution":live_partners > 0 && crate::launch::live_transmission_enabled(),
+               "live_partners":live_partners,
+               "live_transmission":crate::launch::live_transmission_enabled(),"payout":false})))
 }
 async fn available_dsps(
     State(s): State<AppState>,

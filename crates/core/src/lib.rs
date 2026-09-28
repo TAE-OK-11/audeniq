@@ -50,4 +50,5 @@ pub mod states {
     include!(concat!(env!("OUT_DIR"), "/states.rs"));
 }
 
+pub mod launch;
 pub mod lossless;

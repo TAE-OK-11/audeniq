@@ -207,6 +207,7 @@ async fn decide_routes_inner(
             routable: false,
             reason: "NO_PROFILE",
         };
+        let mut saw_locked = false;
         let mut saw_disabled = false;
         let mut saw_uncontracted = false;
         let mut saw_unsendable_cap = false;
@@ -231,6 +232,13 @@ async fn decide_routes_inner(
                 saw_uncontracted = true;
                 continue;
             }
+            // Pre-launch lock (crate::launch): a real partner may be fully
+            // onboarded and contracted, but nothing is routed to it before
+            // the official launch opens DSP_LIVE_TRANSMISSION.
+            if p.activation_kind == "CONTRACTED" && !crate::launch::live_transmission_enabled() {
+                saw_locked = true;
+                continue;
+            }
             decision.route_kind = Some(p.route_kind);
             decision.partner_id = Some(p.partner_id);
             decision.routable = true;
@@ -238,7 +246,9 @@ async fn decide_routes_inner(
             break;
         }
         if !decision.routable {
-            decision.reason = if saw_uncontracted {
+            decision.reason = if saw_locked {
+                "PRE_LAUNCH_LOCKED"
+            } else if saw_uncontracted {
                 "NO_CONTRACT_ROUTE"
             } else if saw_disabled {
                 "PROFILE_DISABLED"

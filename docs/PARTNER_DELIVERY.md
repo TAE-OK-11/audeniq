@@ -4,6 +4,19 @@
 실제 전송이 시작되고, 코드는 수정하지 않아도 되는 상태. 계약서마다 다른 부분(주소, 계정, 폴더 이름,
 상태 값 이름, 국내 피드 컬럼명)은 전부 설정으로 뺐다.
 
+## 0. 공식 오픈 전 잠금 (현재 상태: 잠김)
+
+실DSP 코드는 전부 구현돼 있지만 **공식 오픈 전까지는 실제로 동작하지 않는다.** 스위치는 하나,
+`DSP_LIVE_TRANSMISSION=enabled` (worker·api 환경변수). 비어 있으면(기본) 잠김이며 두 겹으로 막는다:
+
+1. **라우팅 잠금** — 온보딩·계약·go-live까지 끝난 DSP라도 라우팅 결과가 `PRE_LAUNCH_LOCKED`라서 전송 작업 자체가 만들어지지 않는다.
+2. **전송선 잠금** — SFTP·S3·HTTP 클라이언트가 외부 호스트로는 DNS 조회·접속 전에 거부한다(`LIVE_TRANSMISSION_LOCKED`).
+   운영자의 `partner probe`도 막힌다. 루프백(127.0.0.1 등 테스트 서버)만 허용.
+
+잠긴 동안에도 되는 것: 설정 파일 점검(`config-check`), DPID/테스트 ERN·ACK/계약 기록, 스테이징(ERN 생성·검증),
+로컬 MockDSP 샌드박스, 파트너 웹훅 **수신**(외부로 나가는 요청이 아님). `/ready`에 `"live_transmission": false`로 표시된다.
+공식 오픈 때 `deploy/production.env`에 `DSP_LIVE_TRANSMISSION=enabled`를 넣고 worker·api를 재시작한다.
+
 ## 1. 무엇이 구현됐나
 
 | 구성 | 파일 | 내용 |
@@ -33,7 +46,7 @@
    계약서의 값으로 채운다. 비밀 파일은 `deploy/partners/secrets/`(권한 600). 둘 다 git에 올라가지 않는다(.gitignore).
    - SSH 호스트키: `ssh-keyscan -p 포트 호스트 > secrets/D-5.known_hosts` 후 **파트너가 알려준 지문과 대조**.
 2. `audeniq-admin partner config-check` — 파일 문법, 비밀 참조가 전부 읽히는지.
-3. `audeniq-admin --operator 이름 partner probe D-5` — 실제 접속·인증. 성공하면 엔드포인트(자격증명 없는 주소)와 자격증명 종류가 온보딩에 기록된다.
+3. `audeniq-admin --operator 이름 partner probe D-5` — 실제 접속·인증 (공식 오픈 전에는 잠금 때문에 `LIVE_TRANSMISSION_LOCKED`; 오픈 직후 실행). 성공하면 엔드포인트(자격증명 없는 주소)와 자격증명 종류가 온보딩에 기록된다.
 4. `audeniq-admin --operator 이름 partner dpid D-5 PADPIDA…` — 계약서의 수신자 DDEX Party ID.
 5. 유통사 송신 DPID: `deploy/production.env`의 `DDEX_SENDER_DPID` / `DDEX_SENDER_NAME` (DDEX에서 발급받은 AUDENIQ의
    Party ID). 모든 아티스트 조직의 메시지 송신자로 쓰인다. 자체 DPID로 보내는 레이블만 `identity.orgs.ddex_sender_dpid`를 따로 둔다.
