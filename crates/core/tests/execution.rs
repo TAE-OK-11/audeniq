@@ -3511,6 +3511,11 @@ async fn registry_dsp_waits_for_staff_approval_before_send(pool: PgPool) {
     let artist = user(&app).await;
     // Make D-5's direct route live as a test partner: evidence first (the
     // 0027 guard refuses delivery_enabled while onboarding gaps remain).
+    // D-5 defaults to the MERLIN route (0057); this test signs a direct one.
+    sqlx::query("UPDATE distribution.dsp_contract_routes SET route='DIRECT' WHERE code='D-5'")
+        .execute(&pool)
+        .await
+        .unwrap();
     sqlx::query(
         "UPDATE execution.partner_onboarding SET dpid_registered=true, endpoint_url='https://d5.example.test',
             credential_kind='api_key', credential_status='STORED', test_ern_validated_at=now(),
