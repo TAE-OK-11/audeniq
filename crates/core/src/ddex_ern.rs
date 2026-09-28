@@ -102,23 +102,28 @@ pub struct DdexErnConfig {
 /// 2016-10-06 values). One Deal per release lists every model, so a DSP
 /// with a free tier (AdvertisementSupportedModel) and a paid tier
 /// (SubscriptionModel) gets both in one message. Downloads
-/// (PayAsYouGoModel / PermanentDownload) need a wholesale price tier the
-/// release model does not carry yet, so no DSP profile offers them.
+/// (PayAsYouGoModel / PermanentDownload) carry a price band
+/// (`price_range`); the iTunes Store profile uses the standard band.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub struct DealProfile {
     pub commercial_models: &'static [&'static str],
     pub use_types: &'static [&'static str],
+    /// Download price band (`PriceRangeType`: Normal / High / Low) in the
+    /// recipient's namespace; None for streaming deals.
+    pub price_range: Option<&'static str>,
 }
 
 /// Paid streaming only (the historic single deal).
 pub const DEAL_SUBSCRIPTION: DealProfile = DealProfile {
     commercial_models: &["SubscriptionModel"],
     use_types: &["OnDemandStream", "NonInteractiveStream"],
+    price_range: None,
 };
 /// Paid + ad-supported free tier streaming.
 pub const DEAL_SUBSCRIPTION_AND_FREE: DealProfile = DealProfile {
     commercial_models: &["SubscriptionModel", "AdvertisementSupportedModel"],
     use_types: &["OnDemandStream", "NonInteractiveStream"],
+    price_range: None,
 };
 /// Social / short-form platforms (Meta, TikTok·CapCut, Snapchat): the
 /// catalogue is offered as a sound library for user videos
@@ -130,16 +135,33 @@ pub const DEAL_SOCIAL: DealProfile = DealProfile {
         "UserMakeAvailableLabelProvided",
         "UserMakeAvailableUserProvided",
     ],
+    price_range: None,
 };
 /// YouTube Content ID: claims on user uploads that contain the recording.
 pub const DEAL_CONTENT_ID: DealProfile = DealProfile {
     commercial_models: &["RightsClaimModel"],
     use_types: &["UserMakeAvailableUserProvided"],
+    price_range: None,
+};
+/// Download store (iTunes): pay-per-download at the standard price band.
+/// The actual wholesale tier is the contract's; `Normal` is the default
+/// band until the release model carries a per-release tier.
+pub const DEAL_DOWNLOAD: DealProfile = DealProfile {
+    commercial_models: &["PayAsYouGoModel"],
+    use_types: &["PermanentDownload"],
+    price_range: Some("Normal"),
+};
+/// Digital jukebox (TouchTunes): paid on-demand plays in venues.
+pub const DEAL_JUKEBOX: DealProfile = DealProfile {
+    commercial_models: &["PayAsYouGoModel"],
+    use_types: &["OnDemandStream"],
+    price_range: None,
 };
 /// On-demand streaming subscription without radio-style use.
 pub const DEAL_ON_DEMAND_SUBSCRIPTION: DealProfile = DealProfile {
     commercial_models: &["SubscriptionModel"],
     use_types: &["OnDemandStream"],
+    price_range: None,
 };
 
 /// NFC-normalize the human-text fields of a release.
@@ -655,6 +677,19 @@ fn deal_list(out: &mut String, c: &DdexErnConfig) {
     }
     out.push_str("</Usage>");
     element(out, "TerritoryCode", "Worldwide");
+    // XSD order: ... TerritoryCode, PriceInformation*, ..., ValidityPeriod.
+    if let Some(band) = c.deal.price_range {
+        let namespace = c
+            .recipient_party_id
+            .as_deref()
+            .map(|d| format!("DPID:{d}"))
+            .unwrap_or_else(|| "DDEX".into());
+        out.push_str("<PriceInformation><PriceRangeType");
+        out.push_str(&attr("Namespace", &namespace));
+        out.push('>');
+        push_escaped(out, band);
+        out.push_str("</PriceRangeType></PriceInformation>");
+    }
     out.push_str("<ValidityPeriod>");
     element(out, "StartDate", &c.deal_start_date);
     if c.message_sub_type == MessageSubType::Takedown

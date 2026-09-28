@@ -332,6 +332,7 @@ const DSP_COLOR: Record<string, string> = {
   jiosaavn: '#2bc5b4', kkbox: '#09cef6', 'line-music': '#06c755', awa: '#f05a28', netease: '#e60026',
   tencent: '#31c27c', napster: '#2259ff', iheart: '#c6002b', meta: '#0866ff', tiktok: '#111111',
   'youtube-cid': '#cc0000', snapchat: '#e6cf00', beatport: '#01ff95',
+  itunes: '#ea4cc0', 'claro-musica': '#da291c', pretzel: '#1a8cff', triller: '#ff0f63', touchtunes: '#003da5', yandex: '#fc3f1d',
 };
 
 /** 플랫폼 선택 화면의 묶음 — 서버가 주는 region/category 기준 */

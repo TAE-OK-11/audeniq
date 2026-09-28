@@ -17,8 +17,8 @@
 //! CONTRACTED + delivery_enabled=false + send_or_publish=false (migration
 //! 0042), and the onboarding gate still requires a signed contract.
 use crate::ddex_ern::{
-    DEAL_CONTENT_ID, DEAL_ON_DEMAND_SUBSCRIPTION, DEAL_SOCIAL, DEAL_SUBSCRIPTION,
-    DEAL_SUBSCRIPTION_AND_FREE, DealProfile,
+    DEAL_CONTENT_ID, DEAL_DOWNLOAD, DEAL_JUKEBOX, DEAL_ON_DEMAND_SUBSCRIPTION, DEAL_SOCIAL,
+    DEAL_SUBSCRIPTION, DEAL_SUBSCRIPTION_AND_FREE, DealProfile,
 };
 use serde::Serialize;
 use uuid::Uuid;
@@ -54,6 +54,12 @@ pub enum Dsp {
     D27,
     D28,
     D29,
+    D30,
+    D31,
+    D32,
+    D33,
+    D34,
+    D35,
 }
 
 /// How Studio groups the platform picker.
@@ -182,6 +188,9 @@ pub struct DspSpec {
     pub regional_review: bool,
     /// The store only takes these genres (Beatport: electronic music).
     pub accepted_genres: Option<&'static [&'static str]>,
+    /// Commercial / compliance risk staff must clear before contracting
+    /// (payment history, sanctions). Shown as a partner warning.
+    pub partner_risk: Option<&'static str>,
 }
 
 const KR_BASE: DspSpec = DspSpec {
@@ -215,6 +224,7 @@ const KR_BASE: DspSpec = DspSpec {
     planned_route: PlannedRoute::Direct,
     regional_review: false,
     accepted_genres: None,
+    partner_risk: None,
 };
 
 const GLOBAL_BASE: DspSpec = DspSpec {
@@ -243,7 +253,7 @@ pub const ELECTRONIC_GENRES: &[&str] = &[
     "EDM",
 ];
 
-pub const REGISTRY: [DspSpec; 29] = [
+pub const REGISTRY: [DspSpec; 35] = [
     DspSpec {
         dsp: Dsp::D1,
         code: "D-1",
@@ -299,7 +309,7 @@ pub const REGISTRY: [DspSpec; 29] = [
         deal: &DEAL_SUBSCRIPTION,
         channel: Channel::Transporter,
         choreography: ChoreographyProfile::ReleaseByRelease,
-        name: "Apple Music / iTunes",
+        name: "Apple Music",
         lead_days: 10,
         loudness_target_lufs: -16.0,
         // Apple rejects releases whose type contradicts the track layout.
@@ -495,7 +505,7 @@ pub const REGISTRY: [DspSpec; 29] = [
         code: "D-22",
         slug: "tencent",
         name: "Tencent Music",
-        name_ko: "Tencent Music (QQ뮤직·쿠거우·쿠워)",
+        name_ko: "Tencent Music (QQ뮤직·쿠거우·쿠워·WeSing)",
         deal: &DEAL_SUBSCRIPTION_AND_FREE,
         regional_review: true,
         lead_days: 21,
@@ -530,7 +540,7 @@ pub const REGISTRY: [DspSpec; 29] = [
         code: "D-25",
         slug: "meta",
         name: "Meta",
-        name_ko: "Meta (Facebook·Instagram)",
+        name_ko: "Instagram·Facebook (Meta)",
         deal: &DEAL_SOCIAL,
         category: Category::Social,
         content_id: true,
@@ -597,10 +607,100 @@ pub const REGISTRY: [DspSpec; 29] = [
         requires_composer: false,
         ..GLOBAL_BASE
     },
+    DspSpec {
+        dsp: Dsp::D30,
+        code: "D-30",
+        slug: "itunes",
+        name: "iTunes Store",
+        name_ko: "iTunes Store (다운로드)",
+        deal: &DEAL_DOWNLOAD,
+        channel: Channel::Transporter,
+        choreography: ChoreographyProfile::ReleaseByRelease,
+        category: Category::Store,
+        lead_days: 10,
+        requires_composer: true,
+        served_max: (44_100, 16),
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D31,
+        code: "D-31",
+        slug: "claro-musica",
+        name: "Claro Música",
+        name_ko: "Claro Música (중남미)",
+        deal: &DEAL_SUBSCRIPTION_AND_FREE,
+        merlin_eligible: false,
+        planned_route: PlannedRoute::Direct,
+        served_max: (44_100, 16),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D32,
+        code: "D-32",
+        slug: "pretzel",
+        name: "Pretzel",
+        name_ko: "Pretzel (스트리머용 음원)",
+        deal: &DEAL_SUBSCRIPTION,
+        category: Category::Social,
+        merlin_eligible: false,
+        planned_route: PlannedRoute::Direct,
+        served_max: (44_100, 16),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D33,
+        code: "D-33",
+        slug: "triller",
+        name: "Triller",
+        name_ko: "Triller",
+        deal: &DEAL_SOCIAL,
+        category: Category::Social,
+        content_id: true,
+        merlin_eligible: false,
+        planned_route: PlannedRoute::Direct,
+        served_max: (44_100, 16),
+        partner_risk: Some("로열티 미지급 분쟁 이력 — 계약 전 선지급·지급보증 조건 확인"),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D34,
+        code: "D-34",
+        slug: "touchtunes",
+        name: "TouchTunes",
+        name_ko: "TouchTunes (디지털 주크박스)",
+        deal: &DEAL_JUKEBOX,
+        category: Category::Store,
+        merlin_eligible: false,
+        planned_route: PlannedRoute::Direct,
+        served_max: (44_100, 16),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D35,
+        code: "D-35",
+        slug: "yandex",
+        name: "Yandex Music",
+        name_ko: "Yandex Music (러시아·CIS)",
+        deal: &DEAL_SUBSCRIPTION_AND_FREE,
+        merlin_eligible: false,
+        planned_route: PlannedRoute::Direct,
+        partner_risk: Some("러시아 제재·해외송금 제한 — 법무·정산 검토 후 계약"),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
 ];
 
 impl Dsp {
-    pub const ALL: [Dsp; 29] = [
+    pub const ALL: [Dsp; 35] = [
         Dsp::D1,
         Dsp::D2,
         Dsp::D3,
@@ -630,6 +730,12 @@ impl Dsp {
         Dsp::D27,
         Dsp::D28,
         Dsp::D29,
+        Dsp::D30,
+        Dsp::D31,
+        Dsp::D32,
+        Dsp::D33,
+        Dsp::D34,
+        Dsp::D35,
     ];
 
     pub fn spec(self) -> &'static DspSpec {
@@ -771,7 +877,8 @@ mod tests {
     fn seed_migration_matches_registry() {
         let sql = concat!(
             include_str!("../../../migrations/0042_dsp_registry.sql"),
-            include_str!("../../../migrations/0057_dsp_expansion.sql")
+            include_str!("../../../migrations/0057_dsp_expansion.sql"),
+            include_str!("../../../migrations/0058_dsp_expansion_2.sql")
         );
         for s in &REGISTRY {
             let row = format!("('{}','{}','{}'", s.code, s.dsp.uuid(), s.slug);

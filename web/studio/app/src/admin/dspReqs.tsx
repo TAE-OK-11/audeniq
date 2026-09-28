@@ -40,7 +40,7 @@ export const DSP_REQS: Req[] = [
   },
   {
     key: 'route', label: '플랫폼 연동', partner: true,
-    codes: ['DSP_ROUTE_NOT_LIVE', 'DSP_NOT_IN_APPROVED_SCOPE', 'DSP_SENDER_DPID_MISSING', 'DSP_RECIPIENT_DPID_MISSING', 'DSP_PARTNER_SPEC_PENDING'],
+    codes: ['DSP_PARTNER_RISK', 'DSP_ROUTE_NOT_LIVE', 'DSP_NOT_IN_APPROVED_SCOPE', 'DSP_SENDER_DPID_MISSING', 'DSP_RECIPIENT_DPID_MISSING', 'DSP_PARTNER_SPEC_PENDING'],
     spec: d => `${d.contract_route?.route === 'MERLIN' ? 'Merlin 계약' : '직계약'} · 계약·연동 완료`,
   },
 ];
@@ -112,8 +112,9 @@ export const DSP_NAME: Record<string, string> = {
   'D-7': 'YouTube Music', 'D-8': 'Amazon Music', 'D-9': 'TIDAL', 'D-10': 'Deezer', 'D-11': 'Qobuz',
   'D-12': 'Pandora', 'D-13': 'SoundCloud', 'D-14': 'Audiomack', 'D-15': 'Anghami', 'D-16': 'Boomplay',
   'D-17': 'JioSaavn', 'D-18': 'KKBOX', 'D-19': 'LINE MUSIC', 'D-20': 'AWA', 'D-21': 'NetEase Cloud Music',
-  'D-22': 'Tencent Music', 'D-23': 'Napster', 'D-24': 'iHeartRadio', 'D-25': 'Meta (Facebook·Instagram)',
+  'D-22': 'Tencent Music', 'D-23': 'Napster', 'D-24': 'iHeartRadio', 'D-25': 'Instagram·Facebook (Meta)',
   'D-26': 'TikTok·CapCut', 'D-27': 'YouTube Content ID', 'D-28': 'Snapchat', 'D-29': 'Beatport',
+  'D-30': 'iTunes Store', 'D-31': 'Claro Música', 'D-32': 'Pretzel', 'D-33': 'Triller', 'D-34': 'TouchTunes', 'D-35': 'Yandex Music',
 };
 
 /** 발매 내용을 고쳐야 하는 문제 (아티스트 보완) */
@@ -134,7 +135,7 @@ const CONTENT_TEXT: Record<string, string> = {
   DSP_GENRE_NOT_ACCEPTED: '이 플랫폼이 받지 않는 장르예요',
 };
 const ERN_CODES = ['DSP_ERN_BUILD', 'DSP_ERN_XSD', 'DSP_ERN_PREFLIGHT', 'DSP_ERN_BUSINESS_RULE', 'DSP_ERN_PRESET_INVALID'];
-const LINK_CODES = ['DSP_ROUTE_NOT_LIVE', 'DSP_NOT_IN_APPROVED_SCOPE', 'DSP_SENDER_DPID_MISSING', 'DSP_RECIPIENT_DPID_MISSING', 'DSP_PARTNER_SPEC_PENDING'];
+const LINK_CODES = ['DSP_PARTNER_RISK', 'DSP_ROUTE_NOT_LIVE', 'DSP_NOT_IN_APPROVED_SCOPE', 'DSP_SENDER_DPID_MISSING', 'DSP_RECIPIENT_DPID_MISSING', 'DSP_PARTNER_SPEC_PENDING'];
 const ADVISORY_TEXT: Record<string, string> = {
   DSP_LOUDNESS_ADVISORY: '음량 권고', DSP_CLIPPING_ADVISORY: '클리핑 권고',
   DSP_CONTENT_ID_RISK: 'Content ID 주의 (커버·샘플·리믹스)', DSP_COVER_LICENSE_REQUIRED: '커버곡 이용허락 확인',
