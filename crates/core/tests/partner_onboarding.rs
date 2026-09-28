@@ -266,14 +266,12 @@ async fn missing_onboarding_row_reports_all_gaps(pool: PgPool) {
 #[sqlx::test]
 async fn operator_links_a_partner_to_its_dsp_id(pool: PgPool) {
     migrated(&pool).await;
-    // The seeded test partner has no DSP id, so Stage 2 never lists it.
-    let dsp: Option<uuid::Uuid> = sqlx::query_scalar(
-        "SELECT dsp_id FROM execution.adapter_profiles WHERE partner_id='mockdsp'",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert!(dsp.is_none());
+    // Mimic an adapter without a DSP id to exercise the operator link action.
+    // The normal seed now links MockDSP to the D-36 test destination.
+    sqlx::query("UPDATE execution.adapter_profiles SET dsp_id=NULL WHERE partner_id='mockdsp'")
+        .execute(&pool)
+        .await
+        .unwrap();
     assert!(
         partner_onboarding::set_dsp(&pool, " ", "mockdsp", None)
             .await
