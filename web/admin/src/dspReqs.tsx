@@ -27,15 +27,27 @@ export const DSP_REQS: Req[] = [
   { key: 'loudness', label: '음량', codes: ['DSP_LOUDNESS_ADVISORY', 'DSP_CLIPPING_ADVISORY'], spec: d => `${d.loudness_target_lufs} LUFS 기준 (권고)` },
   { key: 'ids', label: 'UPC·ISRC', codes: ['DSP_IDENTIFIER_VIRTUAL'], spec: () => '정식 음반·음원 코드' },
   {
+    key: 'policy', label: '플랫폼 정책', codes: ['DSP_CONTENT_ID_RISK', 'DSP_COVER_LICENSE_REQUIRED', 'DSP_KR_COVER_CONSENT', 'DSP_AI_POLICY'],
+    spec: d => [d.content_id && 'Content ID(커버·샘플 주의)', d.cover_license_required && '커버곡 이용허락', d.ai_policy && 'AI 활용 정책'].filter(Boolean).join(' · ') || '추가 정책 없음',
+  },
+  {
+    key: 'delivery', label: '전송 방식', codes: ['DSP_ERN_VERSION_UNSUPPORTED', 'DSP_AUDIO_SERVED_DOWNSAMPLED'],
+    spec: d => [CHANNEL_LABEL[d.channel ?? ''] ?? '—', d.ern_version ? `DDEX ERN ${d.ern_version}` : '플랫폼 전용 형식', dealLabel(d)].filter(Boolean).join(' · '),
+  },
+  {
     key: 'package', label: '전송 파일', codes: ['DSP_ERN_BUILD', 'DSP_ERN_XSD', 'DSP_ERN_PREFLIGHT', 'DSP_ERN_BUSINESS_RULE', 'DSP_ERN_PRESET_INVALID'],
     spec: d => (d.format === 'Ddex' ? '국제 표준 형식 검사' : '플랫폼 전용 형식 검사'),
   },
   {
     key: 'route', label: '플랫폼 연동', partner: true,
     codes: ['DSP_ROUTE_NOT_LIVE', 'DSP_NOT_IN_APPROVED_SCOPE', 'DSP_SENDER_DPID_MISSING', 'DSP_RECIPIENT_DPID_MISSING', 'DSP_PARTNER_SPEC_PENDING'],
-    spec: () => '계약·연동 완료',
+    spec: d => `${d.contract_route?.route === 'MERLIN' ? 'Merlin 계약' : '직계약'} · 계약·연동 완료`,
   },
 ];
+
+const CHANNEL_LABEL: Record<string, string> = { SFTP: 'SFTP 전송', TRANSPORTER: 'Apple Transporter', PARTNER_FEED: '플랫폼 전용 피드' };
+const MODEL_LABEL: Record<string, string> = { SubscriptionModel: '구독', AdvertisementSupportedModel: '무료(광고)', PayAsYouGoModel: '다운로드' };
+const dealLabel = (d: DspItem) => (d.deal?.commercial_models ?? []).map(m => MODEL_LABEL[m] ?? m).join('+');
 
 export const reqsFor = (d: DspItem) => DSP_REQS.filter(r => !r.krOnly || d.region === 'Kr');
 
@@ -118,7 +130,11 @@ const CONTENT_TEXT: Record<string, string> = {
 };
 const ERN_CODES = ['DSP_ERN_BUILD', 'DSP_ERN_XSD', 'DSP_ERN_PREFLIGHT', 'DSP_ERN_BUSINESS_RULE', 'DSP_ERN_PRESET_INVALID'];
 const LINK_CODES = ['DSP_ROUTE_NOT_LIVE', 'DSP_NOT_IN_APPROVED_SCOPE', 'DSP_SENDER_DPID_MISSING', 'DSP_RECIPIENT_DPID_MISSING', 'DSP_PARTNER_SPEC_PENDING'];
-const ADVISORY_TEXT: Record<string, string> = { DSP_LOUDNESS_ADVISORY: '음량 권고', DSP_CLIPPING_ADVISORY: '클리핑 권고' };
+const ADVISORY_TEXT: Record<string, string> = {
+  DSP_LOUDNESS_ADVISORY: '음량 권고', DSP_CLIPPING_ADVISORY: '클리핑 권고',
+  DSP_CONTENT_ID_RISK: 'Content ID 주의 (커버·샘플·리믹스)', DSP_COVER_LICENSE_REQUIRED: '커버곡 이용허락 확인',
+  DSP_KR_COVER_CONSENT: '원작자 커버 동의서 확인', DSP_AI_POLICY: 'AI 활용 정책 확인',
+};
 
 export interface Verdict { tone: 'red' | 'gray' | 'green'; headline: string; problems: string[]; notes: string[]; approvable: boolean }
 

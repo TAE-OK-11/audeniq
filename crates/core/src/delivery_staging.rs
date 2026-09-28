@@ -83,6 +83,27 @@ pub struct TrackFacts {
 }
 
 /// Everything `evaluate` reads. Pure data: no DB, no clock.
+/// Special-content declarations of the frozen application.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Declared {
+    pub cover: bool,
+    pub samples: bool,
+    pub remix: bool,
+    pub ai: bool,
+}
+
+impl Declared {
+    pub fn from_body(v: &Value) -> Self {
+        let b = |k: &str| v.get(k).and_then(Value::as_bool).unwrap_or(false);
+        Self {
+            cover: b("is_cover"),
+            samples: b("contains_samples"),
+            remix: b("is_remix"),
+            ai: b("ai_involved"),
+        }
+    }
+}
+
 pub struct StagingInput<'a> {
     pub prepared: &'a PreparedRelease,
     pub genre: Option<&'a str>,
@@ -94,6 +115,7 @@ pub struct StagingInput<'a> {
     /// delivery target, short clip events. Never blocking; staff must see
     /// and acknowledge them before approving a delivery.
     pub audio_advisories: &'a [(String, String)],
+    pub declared: Declared,
 }
 
 /// Codes of advisory findings that need an explicit staff acknowledgement.
@@ -264,6 +286,66 @@ pub fn evaluate(spec: &DspSpec, i: &StagingInput<'_>) -> Vec<DspCheck> {
             )),
             _ => {}
         }
+    }
+    // Per-DSP content policies (DSP_CONDITIONS_RESEARCH_2026-09-25.md §5).
+    let d = i.declared;
+    if spec.content_id && (d.cover || d.samples || d.remix) {
+        out.push(DspCheck::new(
+            "DSP_CONTENT_ID_RISK",
+            Content,
+            Warning,
+            format!(
+                "{}: Content ID needs exclusive rights to all audio; declared cover/sample/remix material is claimed or rejected",
+                spec.name_ko
+            ),
+        ));
+    }
+    if spec.cover_license_required && d.cover {
+        out.push(DspCheck::new(
+            if spec.region == Region::Kr {
+                "DSP_KR_COVER_CONSENT"
+            } else {
+                "DSP_COVER_LICENSE_REQUIRED"
+            },
+            Content,
+            Warning,
+            if spec.region == Region::Kr {
+                format!(
+                    "{}: 원작자 커버 동의서(또는 이용허락) 확인 필요",
+                    spec.name_ko
+                )
+            } else {
+                format!("{}: covers need a mechanical license on file", spec.name_ko)
+            },
+        ));
+    }
+    if spec.ai_policy && d.ai {
+        out.push(DspCheck::new(
+            "DSP_AI_POLICY",
+            Content,
+            Warning,
+            format!(
+                "{}: AI-assisted release — no impersonation of real artists, AI use disclosed",
+                spec.name_ko
+            ),
+        ));
+    }
+    let (max_rate, max_bits) = spec.served_max;
+    if p.tracks.iter().any(|t| {
+        t.audio.sample_rate.is_some_and(|r| r as u32 > max_rate)
+            || t.audio.bits_per_sample.is_some_and(|b| b as u32 > max_bits)
+    }) {
+        out.push(DspCheck::new(
+            "DSP_AUDIO_SERVED_DOWNSAMPLED",
+            Content,
+            Info,
+            format!(
+                "{} streams at most {}bit/{:.1}kHz: the hi-res master is delivered and served downsampled",
+                spec.name_ko,
+                max_bits,
+                f64::from(max_rate) / 1000.0
+            ),
+        ));
     }
     if spec.region == Region::Kr && p.explicit {
         out.push(DspCheck::new(
@@ -486,6 +568,7 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
     let row = sqlx::query(
         "SELECT dp.org_id, cr.id AS canonical_id, cr.body AS canonical, cr.release_id, cr.revision_id,
                 COALESCE(NULLIF(ar.body -> 'release' -> 'draft', 'null'::jsonb), rel.draft) AS draft,
+                ar.body -> 'declarations' AS declarations,
                 o.name AS org_name, o.ddex_sender_dpid
          FROM distribution.distribution_packages dp
          JOIN distribution.canonical_releases cr ON cr.id = dp.canonical_release_id
@@ -565,7 +648,12 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
     .collect();
 
     let created_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let declared = Declared::from_body(
+        &row.get::<Option<Value>, _>("declarations")
+            .unwrap_or(Value::Null),
+    );
     let input = StagingInput {
+        declared,
         prepared: &prepared,
         genre: genre.as_deref(),
         artwork_px,
@@ -963,6 +1051,7 @@ mod tests {
         );
         let p = release(vec![t], false);
         let i = StagingInput {
+            declared: Declared::default(),
             prepared: &p,
             genre: Some("K-Pop"),
             artwork_px: Some((3000, 3000)),
@@ -971,10 +1060,84 @@ mod tests {
             audio_advisories: &[],
         };
         for d in Dsp::ALL {
-            let c = evaluate(d.spec(), &i);
+            let all = evaluate(d.spec(), &i);
+            // Info notes (e.g. a 24-bit/48k master served downsampled) are
+            // not spec findings.
+            let c: Vec<DspCheck> = all
+                .iter()
+                .filter(|c| c.severity != Severity::Info)
+                .cloned()
+                .collect();
             assert!(c.is_empty(), "{}: {:?}", d.code(), codes(&c));
-            assert_eq!(Readiness::of(&c), Readiness::Ready);
+            assert_eq!(Readiness::of(&all), Readiness::Ready);
         }
+        // Deezer/YouTube/Spotify serve below 24/48: noted, never blocking.
+        let deezer = evaluate(Dsp::D10.spec(), &i);
+        assert!(codes(&deezer).contains(&"DSP_AUDIO_SERVED_DOWNSAMPLED"));
+        assert!(!codes(&evaluate(Dsp::D11.spec(), &i)).contains(&"DSP_AUDIO_SERVED_DOWNSAMPLED"));
+    }
+
+    #[test]
+    fn per_dsp_content_policies_follow_declarations() {
+        let t = track(asset("audio/flac", Some(44_100), Some(16)));
+        let mut facts = HashMap::new();
+        facts.insert(
+            t.id,
+            TrackFacts {
+                has_composer: true,
+                has_lyricist: true,
+                instrumental: false,
+            },
+        );
+        let p = release(vec![t], false);
+        let i = StagingInput {
+            declared: Declared {
+                cover: true,
+                samples: false,
+                remix: false,
+                ai: true,
+            },
+            prepared: &p,
+            genre: Some("K-Pop"),
+            artwork_px: Some((3000, 3000)),
+            tracks: &facts,
+            today: NaiveDate::from_ymd_opt(2026, 10, 1).unwrap(),
+            audio_advisories: &[],
+        };
+        let c = |d: Dsp| codes(&evaluate(d.spec(), &i));
+        assert!(
+            c(Dsp::D7).contains(&"DSP_CONTENT_ID_RISK"),
+            "YouTube Content ID"
+        );
+        assert!(!c(Dsp::D5).contains(&"DSP_CONTENT_ID_RISK"));
+        assert!(
+            c(Dsp::D9).contains(&"DSP_COVER_LICENSE_REQUIRED"),
+            "TIDAL covers"
+        );
+        assert!(
+            c(Dsp::D1).contains(&"DSP_KR_COVER_CONSENT"),
+            "Melon cover consent"
+        );
+        assert!(!c(Dsp::D5).contains(&"DSP_COVER_LICENSE_REQUIRED"));
+        for d in [Dsp::D5, Dsp::D6, Dsp::D9] {
+            assert!(c(d).contains(&"DSP_AI_POLICY"), "{}", d.code());
+        }
+        // Advisories never block delivery on their own.
+        for d in Dsp::ALL {
+            assert_ne!(
+                Readiness::of(&evaluate(d.spec(), &i)),
+                Readiness::ContentBlocked
+            );
+        }
+        let msg = evaluate(Dsp::D1.spec(), &i)
+            .into_iter()
+            .find(|x| x.code == "DSP_KR_COVER_CONSENT")
+            .unwrap()
+            .detail;
+        assert!(
+            msg.starts_with("멜론"),
+            "platform name, never the internal code: {msg}"
+        );
     }
 
     #[test]
@@ -991,6 +1154,7 @@ mod tests {
         );
         let p = release(vec![t], true);
         let i = StagingInput {
+            declared: Declared::default(),
             prepared: &p,
             genre: Some("Pop"),
             artwork_px: Some((5000, 5000)),
@@ -1026,6 +1190,7 @@ mod tests {
         );
         let p = release(vec![t], false);
         let i = StagingInput {
+            declared: Declared::default(),
             prepared: &p,
             genre: None,
             artwork_px: None,
@@ -1059,6 +1224,7 @@ mod tests {
             "integrated_lufs=-7.5 target=-14±1".to_string(),
         )];
         let i = StagingInput {
+            declared: Declared::default(),
             prepared: &p,
             genre: Some("Pop"),
             artwork_px: Some((3000, 3000)),

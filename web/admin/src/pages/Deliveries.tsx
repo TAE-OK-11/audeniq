@@ -29,7 +29,7 @@ function HoldForm({ item, onDone }: { item: DeliveryItem; onDone: () => void }) 
     setBusy(true);
     try {
       await staffApi.decideDelivery(item.package_id, item.dsp, { action: 'HOLD', note: note.trim() });
-      toast(`${DSP_NAME[item.dsp] ?? item.dsp} 배급을 멈췄어요.`, 'success');
+      toast(`${item.dsp_name ?? DSP_NAME[item.dsp] ?? '플랫폼'} 배급을 멈췄어요.`, 'success');
       onDone();
       close();
     } catch (err) {
@@ -40,7 +40,7 @@ function HoldForm({ item, onDone }: { item: DeliveryItem; onDone: () => void }) 
   };
   return (
     <form onSubmit={submit}>
-      <p className="small muted">{item.title} · {DSP_NAME[item.dsp] ?? item.dsp} 배급을 멈춰요. 멈춘 플랫폼은 자동으로 보내지 않아요.</p>
+      <p className="small muted">{item.title} · {item.dsp_name ?? DSP_NAME[item.dsp] ?? '플랫폼'} 배급을 멈춰요. 멈춘 플랫폼은 자동으로 보내지 않아요.</p>
       <div className="adm-field" style={{ marginTop: 14 }}>
         <label htmlFor="holdNote">멈추는 이유 <span className="required">*</span></label>
         <input id="holdNote" data-autofocus className="adm-input" maxLength={1000} value={note} onChange={e => setNote(e.target.value)} placeholder="예: 권리 확인 중" />
@@ -112,7 +112,7 @@ export function Deliveries() {
                 <ul className="adm-deliv-rows">
                   {verdicts.map(({ d, v }) => (
                     <li key={d.dsp} className={`is-${v.tone}`}>
-                      <b className="adm-deliv-name">{DSP_NAME[d.dsp] ?? d.dsp}</b>
+                      <b className="adm-deliv-name">{d.dsp_name ?? DSP_NAME[d.dsp] ?? '플랫폼'}</b>
                       <span className="adm-min">
                         <span className="adm-deliv-head">{d.approval === 'HELD' ? '멈춤' : d.approval === 'APPROVED' && v.tone !== 'red' ? (v.tone === 'gray' ? 'DSP 연동 대기 · 연동되면 자동 전송' : '서명 후 자동 전송') : v.headline}</span>
                         {v.problems.map(p => <small key={p} className="adm-deliv-problem">{p}</small>)}

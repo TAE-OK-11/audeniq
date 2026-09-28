@@ -122,6 +122,17 @@ pub struct DspSpec {
     pub loudness_target_lufs: f32,
     /// DDEX preflight rule ids this DSP treats as deal-breakers.
     pub escalate: &'static [&'static str],
+    /// Audio fingerprint rights management (YouTube Content ID): covers,
+    /// samples and remixes get claimed or rejected.
+    pub content_id: bool,
+    /// Covers need proof of license / the original author's consent
+    /// (TIDAL; Korean services ask for 원작자 커버 동의서).
+    pub cover_license_required: bool,
+    /// Published AI-content policy (impersonation, labelling).
+    pub ai_policy: bool,
+    /// Best quality the DSP streams to listeners (sample rate, bits);
+    /// masters above it are delivered but served downsampled.
+    pub served_max: (u32, u32),
 }
 
 const KR_BASE: DspSpec = DspSpec {
@@ -147,6 +158,10 @@ const KR_BASE: DspSpec = DspSpec {
     requires_lyricist: true,
     loudness_target_lufs: -14.0,
     escalate: &[],
+    content_id: false,
+    cover_license_required: true,
+    ai_policy: false,
+    served_max: (192_000, 24),
 };
 
 const GLOBAL_BASE: DspSpec = DspSpec {
@@ -156,6 +171,7 @@ const GLOBAL_BASE: DspSpec = DspSpec {
     channel: Channel::Sftp,
     choreography: ChoreographyProfile::Batch,
     merlin_eligible: true,
+    cover_license_required: false,
     requires_lyricist: false,
     ..KR_BASE
 };
@@ -198,6 +214,8 @@ pub const REGISTRY: [DspSpec; 11] = [
         dsp: Dsp::D5,
         code: "D-5",
         slug: "spotify",
+        ai_policy: true,
+        served_max: (44_100, 24),
         name_ko: "Spotify",
         deal: &DEAL_SUBSCRIPTION_AND_FREE,
         name: "Spotify",
@@ -210,6 +228,7 @@ pub const REGISTRY: [DspSpec; 11] = [
         dsp: Dsp::D6,
         code: "D-6",
         slug: "apple",
+        ai_policy: true,
         name_ko: "Apple Music",
         deal: &DEAL_SUBSCRIPTION,
         channel: Channel::Transporter,
@@ -225,6 +244,9 @@ pub const REGISTRY: [DspSpec; 11] = [
         dsp: Dsp::D7,
         code: "D-7",
         slug: "youtube",
+        content_id: true,
+        // YouTube Music streams lossy (AAC/Opus).
+        served_max: (44_100, 16),
         name_ko: "YouTube Music",
         deal: &DEAL_SUBSCRIPTION_AND_FREE,
         name: "YouTube Music",
@@ -247,6 +269,8 @@ pub const REGISTRY: [DspSpec; 11] = [
         dsp: Dsp::D9,
         code: "D-9",
         slug: "tidal",
+        cover_license_required: true,
+        ai_policy: true,
         name_ko: "TIDAL",
         deal: &DEAL_SUBSCRIPTION,
         name: "TIDAL",
@@ -258,6 +282,7 @@ pub const REGISTRY: [DspSpec; 11] = [
         dsp: Dsp::D10,
         code: "D-10",
         slug: "deezer",
+        served_max: (44_100, 16),
         name_ko: "Deezer",
         deal: &DEAL_SUBSCRIPTION_AND_FREE,
         name: "Deezer",
