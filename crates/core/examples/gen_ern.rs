@@ -6,6 +6,7 @@ fn main() {
     let raw = include_str!("../tests/fixtures/ern/album.json");
     let p: PreparedRelease = serde_json::from_str(raw).unwrap();
     let c = DdexErnConfig {
+        deal: &audeniq_core::ddex_ern::DEAL_SUBSCRIPTION,
         message_id: "MSG-2026-09-25-001".into(),
         message_thread_id: None,
         message_sub_type: MessageSubType::Initial,

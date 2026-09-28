@@ -657,6 +657,7 @@ async fn ready_opts(
     .await
     .unwrap();
     let config = audeniq_core::ddex_ern::DdexErnConfig {
+        deal: &audeniq_core::ddex_ern::DEAL_SUBSCRIPTION,
         message_id: format!("AUDENIQ-{package_id}"),
         message_thread_id: None,
         message_sub_type: audeniq_core::ddex_ern::MessageSubType::Initial,

@@ -101,13 +101,16 @@ impl HttpApiAdapter {
             genre: package.genre.clone(),
             label: package.label.clone(),
         };
-        let m = manifest::release_json(
-            p,
-            &package.files,
-            &extras,
-            key,
-            action,
-            &self.config.partner_spec.field_map,
+        let m = manifest::with_platform(
+            manifest::release_json(
+                p,
+                &package.files,
+                &extras,
+                key,
+                action,
+                &self.config.partner_spec.field_map,
+            ),
+            &self.partner_id,
         );
         Ok((
             serde_json::to_vec(&m).map_err(|_| Error::Internal)?,
