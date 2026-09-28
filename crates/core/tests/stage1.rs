@@ -9,14 +9,9 @@ use audeniq_core::{
     operations,
     storage::{ObjectMeta, ObjectStore, UploadGrant},
 };
-use axum::{
-    Router,
-    body::Body,
-    http::{Request, StatusCode},
-};
+use axum::{Router, http::StatusCode};
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
-use sha2::Digest;
 use sqlx::PgPool;
 use std::{
     collections::BTreeMap,
@@ -27,11 +22,10 @@ use std::{
     },
 };
 use tokio::sync::Mutex;
-use tower::ServiceExt;
 use uuid::Uuid;
 
-const SECRET: &str = "test-only-service-secret-32-characters";
-const ORIGIN: &str = "http://localhost:5173";
+mod support;
+use support::*;
 
 /// In-memory object store that serves fixture bytes and counts downloads.
 #[derive(Default)]
@@ -92,115 +86,6 @@ async fn app(pool: PgPool) -> (Router, Arc<FileStore>) {
     .await
     .unwrap();
     (router(s), store)
-}
-
-#[derive(Clone)]
-#[allow(dead_code)]
-struct User {
-    user: Uuid,
-    org: Uuid,
-    party: Uuid,
-    cookie: String,
-    csrf: String,
-}
-
-async fn call(
-    app: &Router,
-    method: &str,
-    path: &str,
-    body: Value,
-    user: Option<&User>,
-) -> (StatusCode, Value) {
-    let mut b = Request::builder()
-        .method(method)
-        .uri(path)
-        .header("x-audeniq-service", SECRET)
-        .header("origin", ORIGIN)
-        .header("content-type", "application/json");
-    if let Some(u) = user {
-        b = b
-            .header("cookie", &u.cookie)
-            .header("x-csrf-token", &u.csrf);
-    }
-    let r = app
-        .clone()
-        .oneshot(b.body(Body::from(body.to_string())).unwrap())
-        .await
-        .unwrap();
-    let status = r.status();
-    let bytes = axum::body::to_bytes(r.into_body(), 1024 * 1024)
-        .await
-        .unwrap();
-    (
-        status,
-        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
-    )
-}
-
-async fn user(app: &Router) -> User {
-    let email = format!("{}@example.test", Uuid::new_v4());
-    let credentials = json!({"email":email,"password":"Long-test-password-123!"});
-    let (s, r) = call(app, "POST", "/api/auth/register", credentials.clone(), None).await;
-    assert_eq!(s, StatusCode::OK, "{r}");
-    // login via a raw request to capture both the session cookie and csrf token
-    let req = Request::builder()
-        .method("POST")
-        .uri("/api/auth/login")
-        .header("x-audeniq-service", SECRET)
-        .header("origin", ORIGIN)
-        .header("content-type", "application/json")
-        .body(Body::from(credentials.to_string()))
-        .unwrap();
-    let resp = app.clone().oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::OK);
-    let cookie = resp.headers()["set-cookie"]
-        .to_str()
-        .unwrap()
-        .split(';')
-        .next()
-        .unwrap()
-        .to_string();
-    let bytes = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
-        .await
-        .unwrap();
-    let l: Value = serde_json::from_slice(&bytes).unwrap();
-    User {
-        user: Uuid::parse_str(r["user_id"].as_str().unwrap()).unwrap(),
-        org: Uuid::parse_str(r["org_id"].as_str().unwrap()).unwrap(),
-        party: Uuid::parse_str(r["party_id"].as_str().unwrap()).unwrap(),
-        cookie,
-        csrf: l["csrf_token"].as_str().unwrap().into(),
-    }
-}
-
-async fn create_release(app: &Router, u: &User) -> Uuid {
-    let (s, v) = call(
-        app,
-        "POST",
-        &format!("/api/orgs/{}/releases", u.org),
-        json!({"name":"Draft","release_type":"SINGLE"}),
-        Some(u),
-    )
-    .await;
-    assert_eq!(s, StatusCode::OK, "{v}");
-    Uuid::parse_str(v["id"].as_str().unwrap()).unwrap()
-}
-
-async fn create_artist(app: &Router, u: &User) -> Uuid {
-    let (s, v) = call(
-        app,
-        "POST",
-        &format!("/api/orgs/{}/artists", u.org),
-        json!({"name":"Artist"}),
-        Some(u),
-    )
-    .await;
-    assert_eq!(s, StatusCode::OK, "{v}");
-    Uuid::parse_str(v["id"].as_str().unwrap()).unwrap()
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(sha2::Sha256::digest(bytes))
 }
 
 /// Generate a valid 32s stereo 48kHz WAV with ffmpeg, mastered into the
@@ -274,14 +159,6 @@ async fn register_asset(
         .await
         .unwrap();
     id
-}
-
-async fn row_version(pool: &PgPool, release: Uuid) -> i64 {
-    sqlx::query_scalar("SELECT row_version FROM catalog.releases WHERE id=$1")
-        .bind(release)
-        .fetch_one(pool)
-        .await
-        .unwrap()
 }
 
 /// Build a release that is fully submittable: date, track+asset, credit.

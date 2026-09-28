@@ -90,25 +90,35 @@ pub async fn revoke(pool: &PgPool, operator: &str, email: &str) -> Result<()> {
 /// Registry + each D-n direct route's onboarding state (owner login: reads
 /// the operator-owned onboarding table directly).
 pub async fn dsp_overview(pool: &PgPool) -> Result<Value> {
-    let mut out = Vec::new();
-    for d in crate::dsp_registry::Dsp::ALL {
-        let spec = d.spec();
-        let row = sqlx::query(
-            "SELECT p.delivery_enabled, p.transport, o.stage,
-                    ARRAY(SELECT g.requirement FROM execution.partner_onboarding_gaps(p.partner_id) g) AS gaps
-             FROM execution.adapter_profiles p LEFT JOIN execution.partner_onboarding o ON o.partner_id=p.partner_id
-             WHERE p.partner_id=$1",
-        )
-        .bind(spec.code)
-        .fetch_optional(pool)
-        .await?;
-        out.push(json!({
-            "dsp": spec.code, "name": spec.name, "dsp_id": d.uuid(),
-            "delivery_enabled": row.as_ref().map(|r| r.get::<bool,_>("delivery_enabled")),
-            "transport": row.as_ref().map(|r| r.get::<String,_>("transport")),
-            "stage": row.as_ref().and_then(|r| r.get::<Option<String>,_>("stage")),
-            "gaps": row.as_ref().map(|r| r.get::<Vec<String>,_>("gaps")),
-        }));
-    }
+    let codes: Vec<&str> = crate::dsp_registry::Dsp::ALL
+        .iter()
+        .map(|d| d.spec().code)
+        .collect();
+    let mut rows: std::collections::HashMap<String, sqlx::postgres::PgRow> = sqlx::query(
+        "SELECT p.partner_id, p.delivery_enabled, p.transport, o.stage,
+                ARRAY(SELECT g.requirement FROM execution.partner_onboarding_gaps(p.partner_id) g) AS gaps
+         FROM execution.adapter_profiles p LEFT JOIN execution.partner_onboarding o ON o.partner_id=p.partner_id
+         WHERE p.partner_id=ANY($1)",
+    )
+    .bind(&codes)
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .map(|r| (r.get("partner_id"), r))
+    .collect();
+    let out = crate::dsp_registry::Dsp::ALL
+        .iter()
+        .map(|d| {
+            let spec = d.spec();
+            let row = rows.remove(spec.code);
+            json!({
+                "dsp": spec.code, "name": spec.name, "dsp_id": d.uuid(),
+                "delivery_enabled": row.as_ref().map(|r| r.get::<bool,_>("delivery_enabled")),
+                "transport": row.as_ref().map(|r| r.get::<String,_>("transport")),
+                "stage": row.as_ref().and_then(|r| r.get::<Option<String>,_>("stage")),
+                "gaps": row.as_ref().map(|r| r.get::<Vec<String>,_>("gaps")),
+            })
+        })
+        .collect();
     Ok(Value::Array(out))
 }
