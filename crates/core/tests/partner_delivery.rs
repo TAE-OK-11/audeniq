@@ -605,6 +605,19 @@ async fn ready_with(
     u: &User,
     audio: &[u8],
 ) -> Ready {
+    ready_opts(app, pool, store, u, audio, true).await
+}
+
+/// `ddex = false`: a partner-feed partner (Korean services) — no DDEX
+/// message is stored and the profile uses the `partner` transport.
+async fn ready_opts(
+    app: &Router,
+    pool: &PgPool,
+    store: &Arc<FileStore>,
+    u: &User,
+    audio: &[u8],
+    ddex: bool,
+) -> Ready {
     let asset = register_asset(pool, store, u, audio).await;
     let release = build_submittable(app, pool, u, asset).await;
     let upc = add_supplements(pool, store, u, release).await;
@@ -654,6 +667,19 @@ async fn ready_with(
         takedown_date: None,
     };
     let xml = audeniq_core::ddex_ern::generate_ddex_ern_382(&prepared, &config).unwrap();
+    if !ddex {
+        sqlx::query(
+            "UPDATE execution.adapter_profiles SET transport='partner' WHERE partner_id='mockdsp'",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        return Ready {
+            org: u.org,
+            package_id,
+            upc,
+        };
+    }
     let mut c = authed(pool, u.org).await;
     sqlx::query("INSERT INTO distribution.ddex_messages(package_id,org_id,dsp_id,sender_name,sender_dpid,recipient_name,recipient_dpid,ern_xml,ern_sha256) VALUES($1,$2,$3,'Audeniq','TESTDPID-SENDER-0001','MockDSP','TESTDPID-MOCKDSP-0001',$4,$5)")
         .bind(package_id).bind(u.org).bind(Uuid::parse_str(MOCK_DSP).unwrap()).bind(&xml).bind(sha256_hex(xml.as_bytes()))
@@ -881,6 +907,14 @@ async fn ddex_ack_rejection_fails_the_job(pool: PgPool) {
     )
     .await;
     assert!(err.contains("ResourceCorrupt"), "{err}");
+    let cases = scalar_as_org(
+        &pool,
+        r.org,
+        "SELECT count(*)::text FROM execution.reconciliation_cases WHERE job_id=$1 AND kind='PARTNER_REJECTED' AND status='OPEN'",
+        job,
+    )
+    .await;
+    assert_eq!(cases, "1", "a polled rejection opens a case for staff");
 }
 
 fn signed(body: &str, ts: i64) -> String {
@@ -1021,7 +1055,9 @@ async fn claim(pool: &PgPool, r: &Ready) -> execution::DeliveryJob {
 async fn partner_spec_feed_writes_manifest_csv_and_reads_result(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
-    let r = ready_for(&app, &pool, &store, &u).await;
+    // No DDEX message exists for a partner-feed DSP: the send must not
+    // require one (it used to fail with EXECUTION_DDEX_MESSAGE_MISSING).
+    let r = ready_opts(&app, &pool, &store, &u, wav_bytes(), false).await;
     let root = std::env::temp_dir().join(format!("audeniq-kr-{}", Uuid::new_v4()));
     std::fs::create_dir_all(root.join("results")).unwrap();
     let cfg = audeniq_core::partner_config::PartnerConfig::parse(

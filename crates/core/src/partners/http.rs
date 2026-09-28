@@ -269,8 +269,11 @@ impl ApiClient {
         if let Some((b, _, _, _)) = body {
             req = req.body(b);
         }
+        // Only a failed connect (or a request that could not be built) is
+        // provably unsent; a reset or timeout after connecting may follow a
+        // request the partner already processed.
         let r = req.send().await.map_err(|e| {
-            if e.is_connect() || e.is_builder() || e.is_request() && !e.is_timeout() {
+            if e.is_connect() || e.is_builder() {
                 HttpFailure::NotReceived(e.to_string())
             } else {
                 HttpFailure::Unknown(e.to_string())

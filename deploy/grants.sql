@@ -95,6 +95,8 @@ GRANT SELECT,UPDATE ON execution.partner_inbox TO audeniq_worker;
 GRANT EXECUTE ON FUNCTION execution.partner_event_org(text, text, text) TO audeniq_worker;
 -- Distributor-level DSP contract verdict (0054) for routing and Stage 2.
 GRANT EXECUTE ON FUNCTION execution.platform_contract_live(text) TO audeniq_worker;
+-- Reconciler scope: only orgs with open delivery work (0055).
+GRANT EXECUTE ON FUNCTION execution.orgs_with_open_deliveries() TO audeniq_worker;
 GRANT INSERT,UPDATE ON distribution.delivery_staging TO audeniq_worker;
 GRANT SELECT,INSERT ON operations.check_results TO audeniq_worker;
 GRANT SELECT,INSERT ON operations.asset_qc_results TO audeniq_worker;

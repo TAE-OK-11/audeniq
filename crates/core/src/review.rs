@@ -287,6 +287,8 @@ pub const STAGE1_WARNING_CODES: &[&str] = &[
     "AUDIO_CLIPPING",
     "TRACK_TITLE_HAS_VERSION_INFO",
     "ADULT_MARKING_REVIEW",
+    "TRACK_TITLE_STYLE",
+    "RELEASE_TITLE_STYLE",
 ];
 
 /// Stage 1 codes that may be carried into Stage 2 as holds under their own

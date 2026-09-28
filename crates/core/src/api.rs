@@ -200,9 +200,14 @@ async fn boundary(State(s): State<AppState>, mut req: Request, next: Next) -> Re
     response
 }
 async fn ready(State(s): State<AppState>) -> Result<Json<Value>> {
-    sqlx::query("SELECT 1").execute(&s.pool).await?;
+    // Doubles as the database check: contracted partners switched on.
+    let live_partners: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM execution.adapter_profiles WHERE delivery_enabled AND activation_kind='CONTRACTED'",
+    )
+    .fetch_one(&s.pool)
+    .await?;
     Ok(Json(
-        json!({"database":true,"submission":false,"distribution":false,"payout":false}),
+        json!({"database":true,"submission":false,"distribution":live_partners > 0,"live_partners":live_partners,"payout":false}),
     ))
 }
 async fn available_dsps(

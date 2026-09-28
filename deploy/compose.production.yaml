@@ -196,6 +196,8 @@ services:
       # adapter = sends to that partner fail closed.
       PARTNER_CONFIG_DIR: /etc/audeniq/partners
       AUDENIQ_DELIVERY_TMP: /var/tmp/audeniq
+      DDEX_SENDER_DPID: ${DDEX_SENDER_DPID:-}
+      DDEX_SENDER_NAME: ${DDEX_SENDER_NAME:-AUDENIQ}
     volumes:
       - worker_tmp:/var/tmp/audeniq
       - ./partners:/etc/audeniq/partners:ro
