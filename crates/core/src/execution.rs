@@ -741,8 +741,17 @@ async fn materialize(
         .await?,
         None => None,
     };
+    // Partner-spec DSPs (the Korean services) take the partner feed, not
+    // DDEX: they get no ddex_messages row and send no ERN document.
+    let partner_feed = transport == "partner"
+        || dsp_id
+            .and_then(crate::dsp_registry::Dsp::from_uuid)
+            .is_some_and(|d| d.spec().format == crate::dsp_registry::DeliveryFormat::PartnerSpec);
     let (ern_xml, ern_sha256): (String, String) = match ddex {
         Some((xml, sha)) => (xml, sha),
+        None if partner_feed && (transport != "mock" || activation_kind == "CONTRACTED") => {
+            (String::new(), hex::encode(sha2::Sha256::digest(b"")))
+        }
         // A commercial partner never receives the synthetic preparation
         // envelope: without its own DDEX interchange message the send fails
         // closed before any wire call. The mock transport keeps the
@@ -1473,6 +1482,13 @@ pub async fn poll_live(
             .bind(format!("PARTNER_POLL_REJECTED:{code}"))
             .execute(&mut *tx)
             .await?;
+            // A partner rejection found by polling needs a human, like one
+            // returned by the send itself.
+            let job = DeliveryJobRef {
+                id: binding.get("job_id"),
+                org_id: binding.get("org_id"),
+            };
+            open_case_for(&mut tx, &job, "PARTNER_REJECTED").await?;
             "REJECTED"
         }
         InquiryOutcome::Accepted { .. } | InquiryOutcome::StillUnknown => {
@@ -1496,13 +1512,12 @@ pub async fn poll_live(
 /// Sweeps per org: the reconciler authorizes each org before touching its
 /// RLS-protected rows.
 pub async fn reconcile(pool: &PgPool, ack_deadline_secs: i64) -> Result<usize> {
-    // identity.orgs carries no RLS (tenant isolation there is by grant, not
-    // policy), so the sweeper lists orgs directly and authorizes each one
-    // before touching its RLS-protected execution rows in reconcile_org.
-    let orgs: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM identity.orgs")
+    // Only orgs with open delivery work (migration 0055): the sweep used to
+    // open a transaction for every organization on the platform. Each org
+    // is still authorized before its RLS-protected rows are touched.
+    let orgs: Vec<Uuid> = sqlx::query_scalar("SELECT execution.orgs_with_open_deliveries()")
         .fetch_all(pool)
-        .await
-        .unwrap_or_default();
+        .await?;
     let mut total = 0;
     for org in orgs {
         total += reconcile_org(pool, org, ack_deadline_secs).await?;
@@ -1520,7 +1535,10 @@ async fn reconcile_org(pool: &PgPool, org: Uuid, ack_deadline_secs: i64) -> Resu
            SELECT 1 FROM execution.delivery_attempts a
            WHERE a.job_id=j.id AND a.response ? 'ack_event_id'
          )
-         AND j.updated_at < now() - make_interval(secs=>$1)",
+         AND j.updated_at < now() - make_interval(secs=>$1)
+         -- Cases open on the first sweep past the deadline; there is no
+         -- need to rescan years of delivered history every 15 minutes.
+         AND j.updated_at > now() - interval '30 days'",
     )
     .bind(ack_deadline_secs as f64)
     .fetch_all(&mut *tx)

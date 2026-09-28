@@ -50,7 +50,9 @@ No remote deployment or cloud account change is performed by this repository's b
 
 ## Distribution staging and staff portal
 
-Every platform is addressed by an internal code (`D-1`…`D-11`). After Stage 3, each requested platform gets a staged delivery (spec checks, the exact DDEX ERN it would receive, partner blockers) that staff approve through `/api/staff/*` before E-0 may send. Real sends still require a signed, onboarded partner. See [distribution staging](docs/DISTRIBUTION_STAGING.md) and the staff section of the [API contract](docs/API.md). Grant staff roles with `audeniq-admin --operator NAME staff grant EMAIL REVIEWER`.
+Every platform is addressed by an internal code (`D-1`…`D-11`). After Stage 3, each requested platform gets a staged delivery (spec checks, the exact DDEX ERN it would receive, partner blockers) that staff approve through `/api/staff/*` before E-0 may send. See [distribution staging](docs/DISTRIBUTION_STAGING.md) and the staff section of the [API contract](docs/API.md). Grant staff roles with `audeniq-admin --operator NAME staff grant EMAIL REVIEWER`.
+
+Real transmission is implemented: DDEX ERN over SFTP/S3 (ERN choreography, completion marker last, ACK files), a JSON+CSV feed for the Korean services, a REST API adapter, and signed partner webhooks. A contracted DSP is turned on with its config file in `PARTNER_CONFIG_DIR` and `audeniq-admin partner probe|dpid|test-ern|test-ack|capabilities|contract|go-live`, without code changes: see [partner delivery](docs/PARTNER_DELIVERY.md).
 
 ## Connected Studio and rented-server deployment
 

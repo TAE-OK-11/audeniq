@@ -1215,6 +1215,68 @@ fn field_checks(body: &Value) -> Vec<StagedCheck> {
         &seo_titles.join(","),
         format!("titles with seo terms={}", seo_titles.join(",")),
     );
+    // Title style (Spotify Metadata Style Guide 8.x, Apple Music Style
+    // Guide): the explicit/clean state is a flag, never title text — a
+    // bracketed marker is a correction. All-caps, emoji, promotional text
+    // and "feat." in the title are rejection reasons the partner applies by
+    // hand, so they route to review as advisories with the reason named.
+    let (release_marker, release_style) = title_findings(title);
+    push(
+        "RELEASE_TITLE_STYLE",
+        if release_marker {
+            CheckStatus::CorrectionRequired
+        } else if release_style.is_empty() {
+            CheckStatus::Pass
+        } else {
+            CheckStatus::ReviewRequired
+        },
+        title,
+        if release_marker {
+            "release title carries an explicit/clean marker; use the explicit flag instead".into()
+        } else {
+            format!("release title style={}", release_style.join(","))
+        },
+    );
+    for t in &tracks {
+        let tid = t["id"].as_str().unwrap_or("?");
+        let ttitle = t["title"].as_str().unwrap_or("");
+        let (marker, style) = title_findings(ttitle);
+        push(
+            "TRACK_TITLE_EXPLICIT_MARKER",
+            if marker {
+                CheckStatus::CorrectionRequired
+            } else {
+                CheckStatus::Pass
+            },
+            &format!("{tid}:{ttitle}"),
+            format!("track={tid} explicit_marker_in_title={marker}"),
+        );
+        push(
+            "TRACK_TITLE_STYLE",
+            if style.is_empty() {
+                CheckStatus::Pass
+            } else {
+                CheckStatus::ReviewRequired
+            },
+            &format!("{tid}:{ttitle}"),
+            format!("track={tid} title style={}", style.join(",")),
+        );
+    }
+    // Metadata language (ISO 639-1/-2, optional BCP 47 region/script):
+    // Apple keys localisation on it and the ERN carries it verbatim; a free
+    // text value only fails later at preparation.
+    let language = draft.get("language").and_then(Value::as_str).unwrap_or("");
+    let language_ok = language.is_empty() || valid_language_tag(language);
+    push(
+        "FIELD_LANGUAGE_INVALID",
+        if language_ok {
+            CheckStatus::Pass
+        } else {
+            CheckStatus::CorrectionRequired
+        },
+        language,
+        format!("language code valid={language_ok}"),
+    );
     // DDEX ERN requires P-line and C-line on every release. Preparation
     // rejects a missing line; catching it here keeps the fix in the
     // artist's hands at submit time instead of failing at prepare time.
@@ -1387,6 +1449,82 @@ fn field_checks(body: &Value) -> Vec<StagedCheck> {
         );
     }
     out
+}
+
+/// Stage 1 title checks: (explicit marker in the title, style advisories) for one title.
+fn title_findings(title: &str) -> (bool, Vec<&'static str>) {
+    let lower = title.to_lowercase();
+    const MARKERS: &[&str] = &[
+        "(explicit)",
+        "[explicit]",
+        "(clean)",
+        "[clean]",
+        "(clean version)",
+        "[clean version]",
+        "(explicit version)",
+        "[explicit version]",
+        "[e]",
+        "(19금)",
+        "[19금]",
+        "(19)",
+        "[19]",
+    ];
+    let marker = MARKERS.iter().any(|m| lower.contains(m));
+    let mut style = Vec::new();
+    let letters: Vec<char> = title.chars().filter(|c| c.is_ascii_alphabetic()).collect();
+    if letters.len() >= 5 && letters.iter().all(|c| c.is_ascii_uppercase()) {
+        style.push("ALL_CAPS");
+    }
+    if title.chars().any(is_emoji) {
+        style.push("EMOJI");
+    }
+    const PROMO: &[&str] = &[
+        "out now",
+        "exclusive",
+        "free download",
+        "official video",
+        "official audio",
+        "official mv",
+        "new single",
+        "pre-save",
+        "presave",
+        "available now",
+        "link in bio",
+        "tiktok version",
+    ];
+    if PROMO.iter().any(|p| lower.contains(p)) {
+        style.push("PROMOTIONAL_TEXT");
+    }
+    let padded = format!(" {} ", lower.replace(['(', ')', '[', ']'], " "));
+    if [" feat. ", " feat ", " ft. ", " ft ", " featuring "]
+        .iter()
+        .any(|f| padded.contains(f))
+    {
+        style.push("FEATURING_IN_TITLE");
+    }
+    (marker, style)
+}
+
+fn is_emoji(c: char) -> bool {
+    matches!(u32::from(c),
+        0x1F000..=0x1FAFF | 0x2600..=0x27BF | 0x2B00..=0x2BFF | 0xFE0F)
+}
+
+/// ISO 639-1/-2 language code with an optional BCP 47 script/region
+/// (`ko`, `en`, `zh-Hant`, `pt-BR`, `kor`).
+fn valid_language_tag(tag: &str) -> bool {
+    let mut parts = tag.split('-');
+    let lang = parts.next().unwrap_or("");
+    if !(2..=3).contains(&lang.len()) || !lang.bytes().all(|b| b.is_ascii_lowercase()) {
+        return false;
+    }
+    parts.all(|p| {
+        (p.len() == 2 && p.bytes().all(|b| b.is_ascii_uppercase()))
+            || (p.len() == 4
+                && p.as_bytes()[0].is_ascii_uppercase()
+                && p.bytes().skip(1).all(|b| b.is_ascii_lowercase()))
+            || (p.len() == 3 && p.bytes().all(|b| b.is_ascii_digit()))
+    })
 }
 
 async fn cached_status(
@@ -2589,4 +2727,89 @@ pub async fn stage1_give_up(c: &mut PgConnection, revision_id: Uuid, reason: &st
     )
     .await?;
     Ok(true)
+}
+
+#[cfg(test)]
+mod title_tests {
+    use super::*;
+
+    #[test]
+    fn explicit_markers_are_corrections_not_style() {
+        assert!(title_findings("Night Drive (Explicit)").0);
+        assert!(title_findings("밤 [19금]").0);
+        assert!(
+            !title_findings("Explicit Love").0,
+            "the word alone is a title"
+        );
+        assert!(!title_findings("Clean Slate").0);
+    }
+
+    #[test]
+    fn style_advisories_name_the_reason() {
+        assert_eq!(title_findings("NIGHT DRIVE").1, vec!["ALL_CAPS"]);
+        assert!(
+            title_findings("SOS").1.is_empty(),
+            "short acronyms are fine"
+        );
+        assert!(title_findings("밤하늘 🌙").1.contains(&"EMOJI"));
+        assert!(
+            title_findings("Love (Out Now)")
+                .1
+                .contains(&"PROMOTIONAL_TEXT")
+        );
+        assert!(
+            title_findings("Love (feat. IU)")
+                .1
+                .contains(&"FEATURING_IN_TITLE")
+        );
+        assert!(
+            title_findings("Love ft. IU")
+                .1
+                .contains(&"FEATURING_IN_TITLE")
+        );
+        assert!(
+            title_findings("Left Turn").1.is_empty(),
+            "'ft' inside a word is not featuring"
+        );
+        assert!(title_findings("봄날").1.is_empty());
+    }
+
+    #[test]
+    fn language_tags() {
+        for ok in ["ko", "en", "kor", "zh-Hant", "pt-BR", "es-419"] {
+            assert!(valid_language_tag(ok), "{ok}");
+        }
+        for bad in ["Korean", "KO", "k", "ko_KR", "en-us", "", "한국어"] {
+            assert!(!valid_language_tag(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn field_checks_emit_track_scoped_title_results() {
+        let body = serde_json::json!({
+            "release": {"title": "ALBUM (EXPLICIT)", "release_type": "SINGLE",
+                        "draft": {"release_date": "2027-01-01", "language": "Korean"}},
+            "tracks": [{"id": "11111111-1111-4111-8111-111111111111", "title": "Song (Clean)",
+                        "disc_number": 1, "track_number": 1, "credits": []}],
+        });
+        let checks = field_checks(&body);
+        let status = |code: &str| {
+            checks
+                .iter()
+                .filter(|c| c.check_code == code)
+                .map(|c| (c.status, c.detail.clone()))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            status("RELEASE_TITLE_STYLE")[0].0,
+            CheckStatus::CorrectionRequired
+        );
+        let t = &status("TRACK_TITLE_EXPLICIT_MARKER")[0];
+        assert_eq!(t.0, CheckStatus::CorrectionRequired);
+        assert!(t.1.contains("track=11111111-1111-4111-8111-111111111111"));
+        assert_eq!(
+            status("FIELD_LANGUAGE_INVALID")[0].0,
+            CheckStatus::CorrectionRequired
+        );
+    }
 }

@@ -321,6 +321,19 @@ impl Readiness {
     }
 }
 
+/// A partner-spec DSP (Korean services) whose contract feed is configured:
+/// its partner config uses the partner-spec feed or a REST API, so the
+/// "spec pending" blocker no longer applies (crate::partners).
+fn partner_feed_configured(code: &str) -> bool {
+    matches!(
+        crate::partner_config::load(code),
+        Ok(Some(c)) if matches!(
+            c.adapter,
+            crate::partner_config::AdapterKind::PartnerSpec | crate::partner_config::AdapterKind::HttpApi
+        )
+    )
+}
+
 /// Placeholder party id for preview messages. Clearly not a DDEX DPID
 /// (those are `PADPIDA` + 13 chars), so it can never be mistaken for one.
 fn preview_dpid(code: &str) -> String {
@@ -479,8 +492,15 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
     let release_id: Uuid = row.get("release_id");
     let revision_id: Uuid = row.get("revision_id");
     let draft: Value = row.get::<Option<Value>, _>("draft").unwrap_or(Value::Null);
-    let org_name: String = row.get("org_name");
-    let sender_dpid: Option<String> = row.get("ddex_sender_dpid");
+    // The message sender: the org's own DPID, else the distributor's.
+    let (org_name, sender_dpid) = {
+        let name: String = row.get("org_name");
+        let own: Option<String> = row.get("ddex_sender_dpid");
+        match crate::ddex_preset::message_sender(&name, own.as_deref()) {
+            Some((n, d)) => (n, Some(d)),
+            None => (name, None),
+        }
+    };
     let canonical: CanonicalRelease =
         serde_json::from_value(row.get("canonical")).map_err(|_| Error::Internal)?;
     let prepared =
@@ -588,7 +608,7 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
                     "DSP_SENDER_DPID_MISSING",
                     Class::Partner,
                     Severity::Blocker,
-                    "register the org's DDEX sender DPID".into(),
+                    "set the distributor's DDEX_SENDER_DPID (or the org's own sender DPID)".into(),
                 ));
             }
             if recipient_dpid.is_none() {
@@ -637,7 +657,7 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
                     }
                 }
             }
-        } else {
+        } else if !partner_feed_configured(spec.code) {
             checks.push(DspCheck::new(
                 "DSP_PARTNER_SPEC_PENDING",
                 Class::Partner,
@@ -676,9 +696,9 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
         if let (Some(e), true) = (&s.ern, s.wire) {
             sqlx::query(
                 "INSERT INTO distribution.ddex_messages(package_id,org_id,dsp_id,sender_name,sender_dpid,recipient_name,recipient_dpid,ern_xml,ern_sha256)
-                 SELECT $1,$2,$3,$4,o.ddex_sender_dpid,$5,p.ddex_recipient_dpid,$6,$7
-                 FROM identity.orgs o, execution.adapter_profiles p
-                 WHERE o.id=$2 AND p.partner_id=$8
+                 SELECT $1,$2,$3,$4,$9,$5,p.ddex_recipient_dpid,$6,$7
+                 FROM execution.adapter_profiles p
+                 WHERE p.partner_id=$8
                  ON CONFLICT(package_id,dsp_id) DO NOTHING",
             )
             .bind(package_id)
@@ -689,6 +709,7 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
             .bind(&e.xml)
             .bind(&e.sha256)
             .bind(s.dsp.code())
+            .bind(sender_dpid.as_deref())
             .execute(&mut *tx)
             .await?;
         }

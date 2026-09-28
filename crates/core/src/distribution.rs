@@ -471,7 +471,9 @@ async fn persist_ddex_messages(
             .bind(org)
             .fetch_optional(&mut *tx)
             .await?;
-    let Some((sender_name, Some(sender_dpid))) = sender else {
+    let Some((sender_name, sender_dpid)) =
+        sender.and_then(|(name, dpid)| crate::ddex_preset::message_sender(&name, dpid.as_deref()))
+    else {
         return Ok(0);
     };
     let created_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
