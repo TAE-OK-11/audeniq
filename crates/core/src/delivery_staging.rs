@@ -238,7 +238,7 @@ pub fn evaluate(spec: &DspSpec, i: &StagingInput<'_>) -> Vec<DspCheck> {
                 let what = match integrated_lufs(detail) {
                     Some(l) => format!(
                         "integrated {l:.1} LUFS vs {} target {:.0} LUFS: the platform will turn it {} by {:.1} dB",
-                        spec.code,
+                        spec.name_ko,
                         spec.loudness_target_lufs,
                         if l > spec.loudness_target_lufs {
                             "down"
@@ -362,6 +362,15 @@ fn build_ern(
     let fail = |code: &'static str, detail: String| {
         DspCheck::new(code, Class::Content, Severity::Blocker, detail)
     };
+    if spec.ern_version != "3.8.2" {
+        return Err(fail(
+            "DSP_ERN_VERSION_UNSUPPORTED",
+            format!(
+                "{} ingests ERN {}; the generator builds 3.8.2",
+                spec.name_ko, spec.ern_version
+            ),
+        ));
+    }
     let deal_start = preset
         .deal_start_date(prepared.release_date)
         .map_err(|_| fail("DSP_ERN_PRESET_INVALID", "deal start out of range".into()))?;
@@ -373,6 +382,8 @@ fn build_ern(
         )
         .map_err(|_| fail("DSP_ERN_PRESET_INVALID", "message id template".into()))?;
     let config = ddex_ern::DdexErnConfig {
+        // This DSP's own deal (free tier / subscription / on-demand only).
+        deal: spec.deal,
         message_id: message_id.clone(),
         message_thread_id: None,
         message_sub_type: ddex_ern::MessageSubType::Initial,
@@ -855,6 +866,7 @@ pub async fn release_delivery_view(pool: &PgPool, org: Uuid, release: Uuid) -> R
                 dsp,
                 json!({
                     "dsp": code, "slug": dsp.spec().slug, "name": dsp.spec().name,
+                    "display_name": dsp.display_name(),
                     "stage": stage, "readiness": readiness, "approval": approval,
                     "delivery_status": delivery, "live_status": live, "issues": issues,
                     "staged_at": r.get::<chrono::DateTime<chrono::Utc>, _>("staged_at"),

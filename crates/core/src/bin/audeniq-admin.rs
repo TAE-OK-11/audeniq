@@ -27,6 +27,9 @@
 //! audeniq-admin partner contract PARTNER_ID REF  (signed contract filing reference)
 //! audeniq-admin partner go-live PARTNER_ID       (stage LIVE + delivery_enabled; gaps refuse)
 //! audeniq-admin partner suspend PARTNER_ID --reason TEXT
+//! audeniq-admin partner route D-5 DIRECT|MERLIN     (contract route per DSP)
+//! audeniq-admin partner merlin-eligible D-11 true|false
+//!   (Merlin's own agreement: `partner contract merlin REF`)
 //! audeniq-admin staff list
 //! audeniq-admin staff grant EMAIL ADMIN|REVIEWER|OPERATOR|SUPPORT
 //! audeniq-admin staff revoke EMAIL
@@ -36,7 +39,7 @@
 use audeniq_core::protected_admin as admin;
 use audeniq_core::protected_names::{Action, Mode};
 
-const USAGE: &str = "usage: audeniq-admin [--operator NAME] protected <list|add|remove|activate|alias|remove-alias|grant-exception|revoke-exception> ...\n       audeniq-admin [--operator NAME] identifier-issuer <list|register UPC|ISRC PREFIX>\n       audeniq-admin [--operator NAME] partner <list|config-check|status ID|set-dsp ID [DSP_UUID]|probe ID|dpid ID DPID|test-ern ID FILE|test-ack ID FILE|capabilities ID JSON|contract ID REF|go-live ID|suspend ID --reason TEXT>\n       audeniq-admin [--operator NAME] staff <list|grant EMAIL ROLE|revoke EMAIL>\n       audeniq-admin dsp list";
+const USAGE: &str = "usage: audeniq-admin [--operator NAME] protected <list|add|remove|activate|alias|remove-alias|grant-exception|revoke-exception> ...\n       audeniq-admin [--operator NAME] identifier-issuer <list|register UPC|ISRC PREFIX>\n       audeniq-admin [--operator NAME] partner <list|config-check|status ID|set-dsp ID [DSP_UUID]|probe ID|dpid ID DPID|test-ern ID FILE|test-ack ID FILE|capabilities ID JSON|contract ID REF|go-live ID|suspend ID --reason TEXT|route D-n DIRECT|MERLIN|merlin-eligible D-n true|false>\n       audeniq-admin [--operator NAME] staff <list|grant EMAIL ROLE|revoke EMAIL>\n       audeniq-admin dsp list";
 
 fn take_opt(args: &mut Vec<String>, key: &str) -> Option<String> {
     let i = args.iter().position(|a| a == key)?;
@@ -173,6 +176,16 @@ async fn main() -> anyhow::Result<()> {
                         serde_json::json!({"ok": true})
                     }
                     "go-live" => pa::go_live(&pool, &operator, partner).await?,
+                    "route" => pa::set_route(&pool, &operator, partner, &need()?).await?,
+                    "merlin-eligible" => {
+                        let on = match need()?.as_str() {
+                            "true" => true,
+                            "false" => false,
+                            _ => anyhow::bail!(USAGE),
+                        };
+                        pa::set_merlin_eligible(&pool, &operator, partner, on).await?;
+                        serde_json::json!({"ok": true})
+                    }
                     "suspend" => {
                         let why = reason.clone().unwrap_or_default();
                         pa::suspend(&pool, &operator, partner, &why).await?;

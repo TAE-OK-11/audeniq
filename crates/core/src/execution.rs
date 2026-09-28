@@ -1803,6 +1803,9 @@ async fn followup_package(
             _ => "UPD",
         };
         let config = crate::ddex_ern::DdexErnConfig {
+            deal: crate::dsp_registry::Dsp::from_code(partner_id)
+                .map(|d| d.spec().deal)
+                .unwrap_or(&crate::ddex_ern::DEAL_SUBSCRIPTION),
             message_id: format!("{original_id}-{suffix}{}", now.format("%Y%m%d%H%M%S")),
             message_thread_id: Some(original_id),
             message_sub_type: sub_type,

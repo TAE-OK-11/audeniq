@@ -72,6 +72,8 @@ impl MessageSubType {
 /// Caller-supplied envelope values. Everything that would otherwise need a
 /// clock or an id generator lives here so the builder stays pure.
 pub struct DdexErnConfig {
+    /// Commercial models and use types this DSP licenses (its deal).
+    pub deal: &'static DealProfile,
     pub message_id: String,
     /// Thread this message belongs to. `None` falls back to `message_id`
     /// (a new thread). Updates and takedowns MUST pass the original
@@ -95,6 +97,34 @@ pub struct DdexErnConfig {
     /// Deal end, `YYYY-MM-DD`. Required for `MessageSubType::Takedown`.
     pub takedown_date: Option<String>,
 }
+
+/// The deal a DSP takes: ERN `CommercialModelType`s and `UseType`s (AVS
+/// 2016-10-06 values). One Deal per release lists every model, so a DSP
+/// with a free tier (AdvertisementSupportedModel) and a paid tier
+/// (SubscriptionModel) gets both in one message. Downloads
+/// (PayAsYouGoModel / PermanentDownload) need a wholesale price tier the
+/// release model does not carry yet, so no DSP profile offers them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct DealProfile {
+    pub commercial_models: &'static [&'static str],
+    pub use_types: &'static [&'static str],
+}
+
+/// Paid streaming only (the historic single deal).
+pub const DEAL_SUBSCRIPTION: DealProfile = DealProfile {
+    commercial_models: &["SubscriptionModel"],
+    use_types: &["OnDemandStream", "NonInteractiveStream"],
+};
+/// Paid + ad-supported free tier streaming.
+pub const DEAL_SUBSCRIPTION_AND_FREE: DealProfile = DealProfile {
+    commercial_models: &["SubscriptionModel", "AdvertisementSupportedModel"],
+    use_types: &["OnDemandStream", "NonInteractiveStream"],
+};
+/// On-demand streaming subscription without radio-style use.
+pub const DEAL_ON_DEMAND_SUBSCRIPTION: DealProfile = DealProfile {
+    commercial_models: &["SubscriptionModel"],
+    use_types: &["OnDemandStream"],
+};
 
 /// NFC-normalize the human-text fields of a release.
 ///
@@ -594,15 +624,19 @@ fn deal_list(out: &mut String, c: &DdexErnConfig) {
     // XSD: ReleaseDeal = DealReleaseReference, Deal, EffectiveDate?.
     // Deal = DealReference?, DealTerms?, ... — there is no DealId element;
     // DealReference is optional and pattern-constrained, so it is omitted.
-    // DealTerms minimal valid set: CommercialModelType?, Usage+,
-    // TerritoryCode+, ValidityPeriod+.
+    // DealTerms minimal valid set: CommercialModelType*, Usage+,
+    // TerritoryCode+, ValidityPeriod+. The models and use types are the
+    // DSP's own deal (`DdexErnConfig::deal`, from the DSP registry).
     out.push_str("<DealList><ReleaseDeal>");
     element(out, "DealReleaseReference", "R001");
     out.push_str("<Deal><DealTerms>");
-    element(out, "CommercialModelType", "SubscriptionModel");
+    for model in c.deal.commercial_models {
+        element(out, "CommercialModelType", model);
+    }
     out.push_str("<Usage>");
-    element(out, "UseType", "OnDemandStream");
-    element(out, "UseType", "NonInteractiveStream");
+    for use_type in c.deal.use_types {
+        element(out, "UseType", use_type);
+    }
     out.push_str("</Usage>");
     element(out, "TerritoryCode", "Worldwide");
     out.push_str("<ValidityPeriod>");

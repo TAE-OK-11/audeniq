@@ -340,3 +340,98 @@ async fn fully_onboarded_dsp_is_not_routed_before_launch(pool: PgPool) {
         assert_eq!(d[0].reason, "PRE_LAUNCH_LOCKED");
     }
 }
+
+async fn gaps(pool: &PgPool, p: &str) -> Vec<(String, String)> {
+    sqlx::query_as("SELECT requirement, detail FROM execution.partner_onboarding_gaps($1)")
+        .bind(p)
+        .fetch_all(pool)
+        .await
+        .unwrap()
+}
+
+/// Direct contract or Merlin, per DSP: under MERLIN the Merlin agreement
+/// stands in for the DSP contract (technical onboarding still required);
+/// MERLIN is refused for DSPs without a Merlin deal; routing stays locked
+/// before launch either way.
+#[sqlx::test]
+async fn merlin_route_uses_the_merlin_agreement_as_contract_evidence(pool: PgPool) {
+    use audeniq_core::partner_admin as pa;
+    migrated(&pool).await;
+    let p = "D-5";
+    partner_onboarding::register_dpid(&pool, p).await.unwrap();
+    partner_onboarding::register_endpoint(&pool, p, "sftp://sftp.partner.example/in")
+        .await
+        .unwrap();
+    partner_onboarding::record_credential_stored(&pool, p, "sftp_key")
+        .await
+        .unwrap();
+    partner_onboarding::record_test_ern_validated(&pool, p)
+        .await
+        .unwrap();
+    partner_onboarding::record_test_ack_parsed(&pool, p)
+        .await
+        .unwrap();
+    assert_eq!(
+        gaps(&pool, p).await,
+        vec![(
+            "contract_signed".into(),
+            "no signed contract on file".into()
+        )]
+    );
+    assert!(matches!(
+        pa::set_route(&pool, "ops", "D-1", "MERLIN").await,
+        Err(audeniq_core::error::Error::PolicyGate(
+            "MERLIN_NOT_AVAILABLE_FOR_DSP"
+        ))
+    ));
+    assert!(pa::set_route(&pool, "", p, "MERLIN").await.is_err());
+    let v = pa::set_route(&pool, "ops", p, "merlin").await.unwrap();
+    assert_eq!(v["platform"], "Spotify");
+    assert_eq!(
+        gaps(&pool, p).await,
+        vec![(
+            "contract_signed".into(),
+            "no signed Merlin agreement on file (route MERLIN)".into()
+        )]
+    );
+    partner_onboarding::record_contract(&pool, "merlin", "MERLIN-MEMBER-2026")
+        .await
+        .unwrap();
+    assert!(gaps(&pool, p).await.is_empty());
+    partner_onboarding::set_stage(&pool, p, "LIVE")
+        .await
+        .unwrap();
+    let live: bool = sqlx::query_scalar("SELECT execution.platform_contract_live($1)")
+        .bind(p)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(live);
+    // Merlin eligibility cannot be withdrawn while the DSP uses the route.
+    assert!(
+        pa::set_merlin_eligible(&pool, "ops", p, false)
+            .await
+            .is_err()
+    );
+    // Back to DIRECT: the DSP's own contract is required again.
+    pa::set_route(&pool, "ops", p, "DIRECT").await.unwrap();
+    let live: bool = sqlx::query_scalar("SELECT execution.platform_contract_live($1)")
+        .bind(p)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(!live, "a Merlin agreement is not a direct contract");
+    if !audeniq_core::launch::live_transmission_enabled() {
+        let d5 = audeniq_core::dsp_registry::Dsp::D5.uuid();
+        pa::set_route(&pool, "ops", p, "MERLIN").await.unwrap();
+        sqlx::query("UPDATE execution.adapter_profiles SET delivery_enabled=true, capabilities=capabilities||'{\"send_or_publish\":true}' WHERE partner_id=$1")
+            .bind(p)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let d = audeniq_core::routing::decide_routes(&pool, uuid::Uuid::new_v4(), &[d5])
+            .await
+            .unwrap();
+        assert_eq!(d[0].reason, "PRE_LAUNCH_LOCKED");
+    }
+}

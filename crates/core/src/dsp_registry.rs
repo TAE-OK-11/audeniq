@@ -16,6 +16,9 @@
 //! supplies theirs. Nothing here enables a send: every seeded profile is
 //! CONTRACTED + delivery_enabled=false + send_or_publish=false (migration
 //! 0042), and the onboarding gate still requires a signed contract.
+use crate::ddex_ern::{
+    DEAL_ON_DEMAND_SUBSCRIPTION, DEAL_SUBSCRIPTION, DEAL_SUBSCRIPTION_AND_FREE, DealProfile,
+};
 use serde::Serialize;
 use uuid::Uuid;
 
@@ -52,6 +55,31 @@ pub enum DeliveryFormat {
     PartnerSpec,
 }
 
+/// How the DSP normally ingests from distributors (industry practice;
+/// the contract's technical annex is authoritative and the partner config
+/// file follows it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum Channel {
+    /// DDEX ERN over SFTP (Aspera is offered by some as a faster lane).
+    Sftp,
+    /// iTunes Package via Apple Transporter; DDEX only where the contract
+    /// says so.
+    Transporter,
+    /// The partner's own metadata feed (file drop or API).
+    PartnerFeed,
+}
+
+/// DDEX ERN choreography profile the DSP expects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChoreographyProfile {
+    Batch,
+    ReleaseByRelease,
+    /// Not DDEX: the partner feed's own completion convention.
+    PartnerFeed,
+}
+
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct DspSpec {
     pub dsp: Dsp,
@@ -61,6 +89,19 @@ pub struct DspSpec {
     pub slug: &'static str,
     /// Display only (staff screens, audit readability). Never a key.
     pub name: &'static str,
+    /// What artists and staff see (Korean brand names for domestic DSPs).
+    /// Internal codes never appear in user- or staff-facing text.
+    pub name_ko: &'static str,
+    /// DDEX ERN version the DSP ingests; empty for partner feeds. The
+    /// generator builds 3.8.2; staging refuses a DSP set to anything else.
+    pub ern_version: &'static str,
+    /// Commercial models / use types the DSP licenses (the ERN deal).
+    pub deal: &'static DealProfile,
+    pub channel: Channel,
+    pub choreography: ChoreographyProfile,
+    /// The DSP has a Merlin deal, so the release may go under the Merlin
+    /// contract instead of a direct one (per-DSP choice, migration 0056).
+    pub merlin_eligible: bool,
     pub region: Region,
     pub format: DeliveryFormat,
     /// Minimum cover side in px (square required everywhere).
@@ -88,6 +129,12 @@ const KR_BASE: DspSpec = DspSpec {
     code: "",
     slug: "",
     name: "",
+    name_ko: "",
+    ern_version: "",
+    deal: &DEAL_SUBSCRIPTION,
+    channel: Channel::PartnerFeed,
+    choreography: ChoreographyProfile::PartnerFeed,
+    merlin_eligible: false,
     region: Region::Kr,
     format: DeliveryFormat::PartnerSpec,
     artwork_min_px: 3000,
@@ -105,6 +152,10 @@ const KR_BASE: DspSpec = DspSpec {
 const GLOBAL_BASE: DspSpec = DspSpec {
     region: Region::Global,
     format: DeliveryFormat::Ddex,
+    ern_version: "3.8.2",
+    channel: Channel::Sftp,
+    choreography: ChoreographyProfile::Batch,
+    merlin_eligible: true,
     requires_lyricist: false,
     ..KR_BASE
 };
@@ -115,6 +166,7 @@ pub const REGISTRY: [DspSpec; 11] = [
         dsp: Dsp::D1,
         code: "D-1",
         slug: "melon",
+        name_ko: "멜론",
         name: "Melon",
         ..KR_BASE
     },
@@ -122,6 +174,7 @@ pub const REGISTRY: [DspSpec; 11] = [
         dsp: Dsp::D2,
         code: "D-2",
         slug: "genie",
+        name_ko: "지니",
         name: "Genie",
         ..KR_BASE
     },
@@ -129,6 +182,7 @@ pub const REGISTRY: [DspSpec; 11] = [
         dsp: Dsp::D3,
         code: "D-3",
         slug: "flo",
+        name_ko: "FLO",
         name: "FLO",
         ..KR_BASE
     },
@@ -136,6 +190,7 @@ pub const REGISTRY: [DspSpec; 11] = [
         dsp: Dsp::D4,
         code: "D-4",
         slug: "bugs",
+        name_ko: "벅스",
         name: "Bugs",
         ..KR_BASE
     },
@@ -143,6 +198,8 @@ pub const REGISTRY: [DspSpec; 11] = [
         dsp: Dsp::D5,
         code: "D-5",
         slug: "spotify",
+        name_ko: "Spotify",
+        deal: &DEAL_SUBSCRIPTION_AND_FREE,
         name: "Spotify",
         artwork_max_px: Some(10_000),
         lead_days: 7,
@@ -153,6 +210,10 @@ pub const REGISTRY: [DspSpec; 11] = [
         dsp: Dsp::D6,
         code: "D-6",
         slug: "apple",
+        name_ko: "Apple Music",
+        deal: &DEAL_SUBSCRIPTION,
+        channel: Channel::Transporter,
+        choreography: ChoreographyProfile::ReleaseByRelease,
         name: "Apple Music / iTunes",
         lead_days: 10,
         loudness_target_lufs: -16.0,
@@ -164,6 +225,8 @@ pub const REGISTRY: [DspSpec; 11] = [
         dsp: Dsp::D7,
         code: "D-7",
         slug: "youtube",
+        name_ko: "YouTube Music",
+        deal: &DEAL_SUBSCRIPTION_AND_FREE,
         name: "YouTube Music",
         lead_days: 7,
         requires_composer: false,
@@ -173,6 +236,8 @@ pub const REGISTRY: [DspSpec; 11] = [
         dsp: Dsp::D8,
         code: "D-8",
         slug: "amazon",
+        name_ko: "Amazon Music",
+        deal: &DEAL_SUBSCRIPTION_AND_FREE,
         name: "Amazon Music",
         lead_days: 7,
         requires_composer: false,
@@ -182,6 +247,8 @@ pub const REGISTRY: [DspSpec; 11] = [
         dsp: Dsp::D9,
         code: "D-9",
         slug: "tidal",
+        name_ko: "TIDAL",
+        deal: &DEAL_SUBSCRIPTION,
         name: "TIDAL",
         lead_days: 7,
         requires_composer: false,
@@ -191,6 +258,8 @@ pub const REGISTRY: [DspSpec; 11] = [
         dsp: Dsp::D10,
         code: "D-10",
         slug: "deezer",
+        name_ko: "Deezer",
+        deal: &DEAL_SUBSCRIPTION_AND_FREE,
         name: "Deezer",
         artwork_max_px: Some(4096),
         // Deezer: composer + lyricist per track, delivery two weeks ahead.
@@ -202,6 +271,10 @@ pub const REGISTRY: [DspSpec; 11] = [
         dsp: Dsp::D11,
         code: "D-11",
         slug: "qobuz",
+        name_ko: "Qobuz",
+        deal: &DEAL_ON_DEMAND_SUBSCRIPTION,
+        choreography: ChoreographyProfile::ReleaseByRelease,
+        merlin_eligible: false,
         name: "Qobuz",
         requires_composer: false,
         ..GLOBAL_BASE
@@ -229,6 +302,11 @@ impl Dsp {
 
     pub fn code(self) -> &'static str {
         self.spec().code
+    }
+
+    /// The name artists and staff see.
+    pub fn display_name(self) -> &'static str {
+        self.spec().name_ko
     }
 
     /// Internal DSP id used by Stage 2 scope, route plans and profiles.
@@ -305,6 +383,35 @@ mod tests {
         slugs.sort();
         slugs.dedup();
         assert_eq!(slugs.len(), REGISTRY.len());
+    }
+
+    #[test]
+    fn every_dsp_has_a_delivery_profile() {
+        for s in &REGISTRY {
+            assert!(!s.name_ko.is_empty(), "{}", s.code);
+            assert!(!s.name_ko.starts_with("D-"), "{}", s.code);
+            assert!(!s.deal.commercial_models.is_empty() && !s.deal.use_types.is_empty());
+            match s.format {
+                DeliveryFormat::Ddex => {
+                    assert_eq!(s.ern_version, "3.8.2", "{}", s.code);
+                    assert_ne!(s.choreography, ChoreographyProfile::PartnerFeed);
+                }
+                DeliveryFormat::PartnerSpec => {
+                    assert!(s.ern_version.is_empty());
+                    assert_eq!(s.channel, Channel::PartnerFeed);
+                    assert!(!s.merlin_eligible, "no Merlin deal with Korean services");
+                }
+            }
+        }
+        assert_eq!(Dsp::D1.display_name(), "멜론");
+        assert_eq!(Dsp::D6.spec().channel, Channel::Transporter);
+        assert!(
+            Dsp::D5
+                .spec()
+                .deal
+                .commercial_models
+                .contains(&"AdvertisementSupportedModel")
+        );
     }
 
     #[test]

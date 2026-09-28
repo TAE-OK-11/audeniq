@@ -536,6 +536,9 @@ async fn persist_ddex_messages(
             }
         };
         let config = ddex_ern::DdexErnConfig {
+            deal: crate::dsp_registry::Dsp::from_uuid(*dsp_id)
+                .map(|d| d.spec().deal)
+                .unwrap_or(&crate::ddex_ern::DEAL_SUBSCRIPTION),
             message_id,
             // Initial messages open a new thread keyed on the message id;
             // updates/takedowns (not yet generated here) must pass the

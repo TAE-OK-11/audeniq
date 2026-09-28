@@ -128,6 +128,23 @@ pub fn release_json(
     rename(v, field_map)
 }
 
+/// Stamp the target platform's name and deal on a manifest (registry DSPs).
+pub fn with_platform(mut v: Value, partner_id: &str) -> Value {
+    if let (Some(d), Some(o)) = (
+        crate::dsp_registry::Dsp::from_code(partner_id),
+        v.as_object_mut(),
+    ) {
+        let spec = d.spec();
+        o.insert("platform".into(), json!(spec.name_ko));
+        o.insert(
+            "commercial_models".into(),
+            json!(spec.deal.commercial_models),
+        );
+        o.insert("use_types".into(), json!(spec.deal.use_types));
+    }
+    v
+}
+
 pub const CSV_COLUMNS: &[&str] = &[
     "upc",
     "album_title",

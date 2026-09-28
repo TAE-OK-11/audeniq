@@ -55,6 +55,8 @@ GRANT EXECUTE ON FUNCTION execution.partner_readiness(text) TO audeniq_api;
 -- Signed partner webhooks (0053): the API only files them; the worker applies them.
 GRANT INSERT ON execution.partner_inbox TO audeniq_api;
 GRANT EXECUTE ON FUNCTION execution.platform_contract_live(text) TO audeniq_api;
+-- Staff ADMIN chooses each DSP's contract route (direct / Merlin, 0056).
+GRANT SELECT, UPDATE (route, updated_by, updated_at) ON distribution.dsp_contract_routes TO audeniq_api;
 -- Staff review (0044): second-person approvals and reviewer notes. The
 -- staff role table itself is read-only for the API (granted by the CLI).
 GRANT SELECT,INSERT,UPDATE ON rights.staff_approvals TO audeniq_api;
