@@ -25,9 +25,11 @@ RUN cargo build --locked --profile "$CARGO_PROFILE" -p audeniq-core --bins \
 FROM debian:13-slim
 # ffmpeg/ffprobe are runtime dependencies of the worker: Stage 1 audio QC
 # (probe, loudness, clipping, truncation) and fingerprinting shell out to them.
+# openssh-client: SFTP partner delivery (DDEX drops) runs `sftp -b -` with a
+# pinned known_hosts file (crate::transport::SftpTransport).
 # /var/tmp/audeniq is the worker TMPDIR. A new named volume copies this
 # ownership, so UID 10001 can write downloaded masters for QC.
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg && rm -rf /var/lib/apt/lists/* \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg openssh-client libxml2-utils && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 audeniq && useradd --uid 10001 --gid 10001 --no-create-home audeniq \
     && install -d -o 10001 -g 10001 -m 700 /var/tmp/audeniq
 COPY --from=build /out/ /usr/local/bin/

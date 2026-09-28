@@ -23,7 +23,11 @@ pub mod identifiers;
 pub mod mockdsp;
 pub mod operations;
 pub mod packages;
+pub mod partner_admin;
+pub mod partner_config;
+pub mod partner_hooks;
 pub mod partner_onboarding;
+pub mod partners;
 pub mod portal;
 pub mod preflight;
 pub mod preparation_model;
@@ -39,10 +43,12 @@ pub mod staff_admin;
 pub mod storage;
 pub mod submission;
 pub mod text_policy;
+pub mod transport;
 pub mod uploads;
 pub mod withdraw;
 pub mod states {
     include!(concat!(env!("OUT_DIR"), "/states.rs"));
 }
 
+pub mod launch;
 pub mod lossless;

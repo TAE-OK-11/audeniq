@@ -51,6 +51,8 @@ export interface DspAvailability {
   slug: string;
   name: string;
   region: 'KR' | 'GLOBAL';
+  /** 선택 화면 묶음: 스트리밍 / 소셜·숏폼(UGC) / 스토어 */
+  category?: 'STREAMING' | 'SOCIAL' | 'STORE';
   available: boolean;
 }
 

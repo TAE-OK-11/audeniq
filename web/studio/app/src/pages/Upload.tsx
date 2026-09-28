@@ -328,7 +328,20 @@ function GuardianConsentModal({ guardianName, onClose, onComplete }: {
 const DSP_COLOR: Record<string, string> = {
   melon: '#00c73c', genie: '#1d6bf3', flo: '#3f3fff', bugs: '#ff3a3a', spotify: '#1db954', apple: '#fa2d48',
   youtube: '#ff0033', amazon: '#1ec8d6', tidal: '#111827', deezer: '#a238ff', qobuz: '#1f2a44',
+  pandora: '#224099', soundcloud: '#ff5500', audiomack: '#ffa200', anghami: '#9b2cf5', boomplay: '#1e90ff',
+  jiosaavn: '#2bc5b4', kkbox: '#09cef6', 'line-music': '#06c755', awa: '#f05a28', netease: '#e60026',
+  tencent: '#31c27c', napster: '#2259ff', iheart: '#c6002b', meta: '#0866ff', tiktok: '#111111',
+  'youtube-cid': '#cc0000', snapchat: '#e6cf00', beatport: '#01ff95',
+  itunes: '#ea4cc0', 'claro-musica': '#da291c', pretzel: '#1a8cff', triller: '#ff0f63', touchtunes: '#003da5', yandex: '#fc3f1d',
 };
+
+/** 플랫폼 선택 화면의 묶음 — 서버가 주는 region/category 기준 */
+const DSP_GROUPS: [string, (d: { region: string; category?: string }) => boolean][] = [
+  ['국내', d => d.region === 'KR'],
+  ['해외 스트리밍', d => d.region !== 'KR' && (d.category ?? 'STREAMING') === 'STREAMING'],
+  ['소셜·숏폼 영상', d => d.category === 'SOCIAL'],
+  ['스토어', d => d.category === 'STORE'],
+];
 
 const OTHER = '기타';
 const AI_USES = [
@@ -1988,7 +2001,7 @@ export function Upload() {
             </div>
             {showPlatforms && (
             <div id="aqPlatforms" className="aq-dsp-groups aq-reveal">
-              {([['국내', dsps?.filter(d => d.region === 'KR') ?? []], ['해외', dsps?.filter(d => d.region !== 'KR') ?? []]] as const).map(([region, list]) => (
+              {DSP_GROUPS.map(([region, match]) => [region, dsps?.filter(match) ?? []] as const).filter(([, list]) => list.length > 0).map(([region, list]) => (
                 <div key={region}>
                   <p className="aq-dsp-region">{region}</p>
                   <div className="aq-dsp-grid" role="group" aria-label={`${region} 플랫폼`}>
