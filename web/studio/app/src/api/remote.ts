@@ -9,9 +9,9 @@
 // - 접수 = 동의(consent) 생성 → submit(동의 ID, 자기 선언)
 import type {
   Correction, WithdrawQuota,
-  DeliveryItem,
+  DeliveryItem, DspAvailability,
   DraftTrack, Org, PreflightIssue, Release, ReleaseDetail, ReleaseDraft, ReleasePayload,
-  SaveResult, Track, UploadKind, UploadResult, User,
+  ReleaseOptionsData, SaveResult, Track, UploadKind, UploadResult, User,
 } from './types';
 import { ApiError } from './errors';
 import { bootstrapCsrf, hasCsrf, listAll, orgPath, putToGrant, req, setCsrf, type UploadGrant } from './http';
@@ -161,6 +161,22 @@ function buildProfile(data: ReleasePayload, prev: Record<string, unknown> | null
   return clean;
 }
 
+async function attachOptionProofs(releaseId: string, options: ReleaseOptionsData): Promise<void> {
+  const proofs: [boolean, string, string, string][] = [
+    [options.cover, '원곡 이용 허락서', options.coverLicenseFile, options.coverLicenseAssetId ?? ''],
+    [options.sample, '샘플 원본 이용 허락서', options.sampleLicenseFile, options.sampleLicenseAssetId ?? ''],
+    [options.featured, '피처링 참여자 동의서', options.featuredConsentFile, options.featuredConsentAssetId ?? ''],
+    [options.shared, '공동 권리자 계약서', options.sharedContractFile, options.sharedContractAssetId ?? ''],
+  ];
+  for (const [active, title, fileName, assetId] of proofs) {
+    if (!active || !assetId) continue;
+    await req(orgPath('/documents'), {
+      method: 'POST',
+      body: { release_id: releaseId, title, body: `${title} · 발매 신청서에 첨부한 권리 증빙`, asset_id: assetId, file_name: cleanText(fileName).slice(0, 200) },
+    });
+  }
+}
+
 function readDraft(r: ServerRelease): ReleaseDraft {
   const p = (r.draft ?? {}) as Record<string, unknown>;
   const s = (k: string) => (typeof p[k] === 'string' ? p[k] as string : '');
@@ -241,15 +257,7 @@ function toDetail(r: ServerRelease): ReleaseDetail {
 // ---------------------------------------------------------------------------
 // 계정 상태
 // ---------------------------------------------------------------------------
-const ACCOUNT_KEY = 'aq.studio.v2.account';
 let partyId = '';
-
-function rememberEmail(email: string) {
-  try { localStorage.setItem(ACCOUNT_KEY, JSON.stringify({ email })); } catch { /* 저장소 없음 */ }
-}
-function recallEmail(): string {
-  try { return (JSON.parse(localStorage.getItem(ACCOUNT_KEY) || '{}') as { email?: string }).email ?? ''; } catch { return ''; }
-}
 
 // ---------------------------------------------------------------------------
 // 아티스트 — 트랙은 아티스트 ID가 필요하므로 이름으로 찾거나 만든다
@@ -376,7 +384,6 @@ interface ServerNote { check_code: string | null; decision: string; note: string
 
 /** 보완 필요 발매의 검사 결과 중 사용자가 고쳐야 하는 항목 (접수 이력의 check_results) */
 async function fetchCorrections(id: string): Promise<Correction[]> {
-  try {
     const r = await req<{ checks?: ServerCheck[]; review_notes?: ServerNote[] }>(`${detailPath(id)}/submission`, { quiet401: true });
     // 담당자가 남긴 검토 의견: 항목별 의견은 그 항목 안내 대신, 담당자가 지정한 항목(FIX_…)은
     // 그 입력칸으로 가는 보완 항목으로, 전체 의견은 별도 항목으로
@@ -405,9 +412,6 @@ async function fetchCorrections(id: string): Promise<Correction[]> {
     }
     if (general) out.push({ code: 'REVIEW_NOTE', message: general });
     return out;
-  } catch {
-    return [];
-  }
 }
 
 async function withCorrections<T extends Release>(r: T): Promise<T> {
@@ -481,10 +485,9 @@ export const remoteApi = {
       method: 'POST', body: { email: email.trim(), password }, quiet401: true,
     });
     setCsrf(r.csrf_token);
-    rememberEmail(email.trim());
-    const me = await req<{ user_id: string; party_id: string }>('/api/me', { quiet401: true });
+    const me = await req<{ user_id: string; party_id: string; email: string }>('/api/me', { quiet401: true });
     partyId = me.party_id;
-    return { id: r.user_id, email: email.trim() };
+    return { id: r.user_id, email: me.email };
   },
   async signup(email: string, password: string): Promise<User> {
     await req('/api/auth/register', { method: 'POST', body: { email: email.trim(), password }, quiet401: true });
@@ -494,10 +497,10 @@ export const remoteApi = {
     try { await req('/api/auth/logout', { method: 'POST', quiet401: true }); } finally { setCsrf(''); partyId = ''; artistCache.clear(); partyCache.clear(); }
   },
   async me(): Promise<User> {
-    const me = await req<{ user_id: string; party_id: string }>('/api/me', { quiet401: true });
+    const me = await req<{ user_id: string; party_id: string; email: string }>('/api/me', { quiet401: true });
     partyId = me.party_id;
     if (!hasCsrf()) await bootstrapCsrf();
-    return { id: me.user_id, email: recallEmail() };
+    return { id: me.user_id, email: me.email };
   },
   async listOrgs(): Promise<Org[]> {
     const r = await req<{ items: { id: string; name: string; role: string }[] }>('/api/orgs');
@@ -511,6 +514,10 @@ export const remoteApi = {
     const items = await listAll<ServerRelease>(orgPath('/releases'));
     const list = await Promise.all(items.map(toSummary).map(withCorrections));
     return list.sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+  },
+  async listDsps(): Promise<DspAvailability[]> {
+    const r = await req<{ items: DspAvailability[] }>(orgPath('/dsps'));
+    return r.items;
   },
   async getRelease(id: string): Promise<ReleaseDetail> {
     return withCorrections(toDetail(await fetchRelease(id)));
@@ -534,9 +541,14 @@ export const remoteApi = {
     return r.issues.map(i => ({ code: i.code, message: PREFLIGHT_TEXT[i.code] ?? i.code, trackTitle: titles.get(i.resource_id) }));
   },
   async submitRelease(id: string | null, data: ReleasePayload): Promise<Release> {
+    const available = await remoteApi.listDsps();
+    if (!data.platforms.length || data.platforms.some(p => !available.some(d => d.slug === p && d.available))) {
+      throw new ApiError('선택한 플랫폼의 배급 가능 상태가 바뀌었어요. 플랫폼 선택을 다시 확인해 주세요.', 422, 'DSP_UNAVAILABLE');
+    }
     const o = data.options;
     if (o.minor) throw new ApiError('미성년 아티스트 발매는 법정대리인 확인 절차가 서버에 준비되면 접수할 수 있어요. 지금은 임시 저장해 두고 문의로 알려 주세요.', 422, 'MINORITY_REVIEW_REQUIRED');
     const rel = await persist(id, data, null);
+    await attachOptionProofs(rel.id, o);
     // 1) 사전 점검
     const issues = (await remoteApi.preflight(rel.id)).filter(i => BLOCKING.has(i.code));
     if (issues.length) {
@@ -650,4 +662,3 @@ export function uploadContentType(file: File, kind: UploadKind): string {
   if (t === 'image/png' || name.endsWith('.png')) return 'image/png';
   return '';
 }
-

@@ -2,9 +2,9 @@ use crate::{
     auth,
     catalog::{self, Kind},
     config::Config,
-    drafts,
+    drafts, dsp_registry,
     error::{Error, Result},
-    review,
+    review, routing,
     storage::ObjectStore,
     submission, uploads,
 };
@@ -117,6 +117,7 @@ pub fn router(s: AppState) -> Router {
             post(decline_override),
         )
         .route("/api/orgs/{org}/parties", post(create_party))
+        .route("/api/orgs/{org}/dsps", get(available_dsps))
         .route("/api/orgs/{org}/{kind}", post(create).get(list))
         .route(
             "/api/orgs/{org}/{kind}/{id}",
@@ -195,6 +196,24 @@ async fn ready(State(s): State<AppState>) -> Result<Json<Value>> {
         json!({"database":true,"submission":false,"distribution":false,"payout":false}),
     ))
 }
+async fn available_dsps(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(org): Path<Uuid>,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    let mut tx = s.pool.begin().await?;
+    auth::membership(&mut tx, &a, org, false).await?;
+    tx.commit().await?;
+    let ids: Vec<Uuid> = dsp_registry::Dsp::ALL.iter().map(|d| d.uuid()).collect();
+    let decisions = routing::public_routes(&s.pool, org, &ids).await?;
+    let items: Vec<Value> = dsp_registry::REGISTRY
+        .iter()
+        .zip(decisions.iter())
+        .map(|(spec, route)| json!({"slug":spec.slug,"name":spec.name,"region":spec.region,"available":route.routable}))
+        .collect();
+    Ok(Json(json!({"items":items})))
+}
 async fn register(
     State(s): State<AppState>,
     h: HeaderMap,
@@ -217,7 +236,13 @@ async fn csrf(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
 }
 async fn me(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
-    Ok(Json(json!({"user_id":a.user,"party_id":a.party})))
+    let email: String = sqlx::query_scalar("SELECT email FROM identity.users WHERE id=$1")
+        .bind(a.user)
+        .fetch_one(&s.pool)
+        .await?;
+    Ok(Json(
+        json!({"user_id":a.user,"party_id":a.party,"email":email}),
+    ))
 }
 async fn orgs(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;

@@ -32,7 +32,12 @@ export const GENRES: [string, string][] = [
 ];
 
 export const kindLabel = (v?: string) => KINDS.find(k => k[0] === v)?.[1] || v || '';
-export const dspLabel = (v: string) => DSP.find(d => d[0] === v)?.[1] || v;
+export const dspLabel = (v: string) => {
+  const bySlug = DSP.find(d => d[0] === v);
+  if (bySlug) return bySlug[1];
+  const code = /^D-(\d+)$/.exec(v);
+  return code ? DSP[Number(code[1]) - 1]?.[1] ?? '알 수 없는 플랫폼' : v;
+};
 export const languageLabel = (v?: string) => LANGUAGES.find(l => l[0] === v)?.[1] || v || '';
 export const genreLabel = (v?: string) => {
   if (!v) return '';

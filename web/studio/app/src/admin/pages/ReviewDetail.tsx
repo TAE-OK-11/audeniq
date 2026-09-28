@@ -11,7 +11,7 @@ import { staffApi, type Check, type DecisionAction, type DecisionInput, type Dec
 import { STAFF_FIX_OPTIONS, WIZ_STEP_NAMES, correctionTarget, isKnownCorrection, staffFixCode } from '../../lib/corrections';
 import {
   CHECK_STATUS, DECISION_LABEL, DOC_KIND, DOC_STATUS, MAX_REASON, RELEASE_STATUS, RELEASE_TYPE,
-  REJECT_REASONS, applicationPending, checkLabel, checkSummary, day, needsSecond, pick, shortId, stageStateLabel, systemStages, when,
+  REJECT_REASONS, applicationPending, checkLabel, checkSummary, day, dspLabel, needsSecond, pick, shortId, stageStateLabel, systemStages, when,
 } from '../labels';
 import { Chip, Empty, ErrorBox, Initial, NoDuty, Section, Skeleton, StatusChip, useStaff } from '../ui';
 import { Glyph } from '../../components/Glyph';
@@ -450,7 +450,7 @@ export function ReviewDetail() {
                 <div><dt>UPC</dt><dd>{r.upc ?? '발급 전'}</dd></div>
                 <div style={{ gridColumn: '1 / -1' }}>
                   <dt>배급 플랫폼</dt>
-                  <dd className="adm-dsps">{app.platforms.length ? app.platforms.map(p => <span key={p}>{p}</span>) : '—'}</dd>
+                  <dd className="adm-dsps">{app.platforms.length ? app.platforms.map(p => <span key={p}>{dspLabel(p)}</span>) : '—'}</dd>
                 </div>
                 <div style={{ gridColumn: '1 / -1' }}>
                   <dt>신고 항목</dt>
@@ -470,6 +470,22 @@ export function ReviewDetail() {
               )}
             </div>
           </Section>
+
+          {app.options && (app.options.express || app.options.ai || app.options.cover || app.options.sample || app.options.featured || app.options.shared || app.options.rerelease) && (
+            <Section title="추가 요청·권리 정보">
+              <div className="adm-card">
+                <dl className="adm-kv">
+                  {app.options.express && <div><dt>신속 발매 요청</dt><dd>{app.options.expressReason || '사유 미기재'} · 일정과 가능 여부 검토 필요</dd></div>}
+                  {app.options.ai && <div><dt>AI 활용 내역</dt><dd>{app.options.aiTool || '활용 내역 미기재'}</dd></div>}
+                  {app.options.cover && <div style={{ gridColumn: '1 / -1' }}><dt>커버곡 원곡 정보</dt><dd>{app.options.coverTracks?.length ? app.options.coverTracks.map((c, i) => <p key={c.trackId}>{i + 1}. {c.originalTitle} · {c.originalArtist}{c.originalWriters ? ` · ${c.originalWriters}` : ''}</p>) : '원곡 정보 미기재'}</dd></div>}
+                  {app.options.sample && <div><dt>샘플링</dt><dd>원본 이용 허락 확인 필요</dd></div>}
+                  {app.options.featured && <div><dt>피처링</dt><dd>참여자 동의 확인 필요</dd></div>}
+                  {app.options.shared && <div><dt>공동 권리자</dt><dd>배급 위임 범위 확인 필요</dd></div>}
+                  {app.options.rerelease && <div><dt>재발매</dt><dd>{[app.options.previousTitle, app.options.previousId].filter(Boolean).join(' · ') || '기존 발매 정보 미기재'}</dd></div>}
+                </dl>
+              </div>
+            </Section>
+          )}
 
           <Section title="트랙" meta={`${tracks.length}곡`}>
             {tracks.length ? (

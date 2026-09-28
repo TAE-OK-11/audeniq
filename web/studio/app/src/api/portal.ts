@@ -2,7 +2,8 @@
 // 공지·이벤트는 엣지 Worker가 D1에서 바로 서빙한다 (/api/notices, /api/events).
 // 서버 응답을 화면에서 쓰는 모양(스토어 타입)으로 바꿔서 돌려준다.
 import { orgPath, req } from './http';
-import { remoteApi } from './remote';
+import { cleanText, remoteApi } from './remote';
+import { dspLabel } from '../lib/catalog';
 import type { ProfileInfo } from '../store/profile';
 import type { PaymentInfo } from '../store/payment';
 import type { Notice } from '../store/support';
@@ -203,7 +204,7 @@ export async function createDocument(releaseId: string, title: string, body: str
   const up = file ? await remoteApi.uploadFile(file, 'DOCUMENT') : null;
   const r = await req<{ id: string }>(orgPath('/documents'), {
     method: 'POST',
-    body: { release_id: releaseId, title, body, asset_id: up?.assetId ?? null, file_name: file ? file.name.slice(0, 200) : '' },
+    body: { release_id: releaseId, title, body, asset_id: up?.assetId ?? null, file_name: file ? cleanText(file.name).slice(0, 200) : '' },
   });
   return r.id;
 }
@@ -211,7 +212,7 @@ export async function createDocument(releaseId: string, title: string, body: str
 export async function submitProof(id: string, file: File, rowVersion: number, onProgress?: (r: number) => void): Promise<void> {
   const up = await remoteApi.uploadFile(file, 'DOCUMENT', onProgress);
   await req(orgPath(`/documents/${encodeURIComponent(id)}/proof`), {
-    method: 'POST', body: { asset_id: up.assetId, file_name: file.name.slice(0, 200), row_version: rowVersion },
+    method: 'POST', body: { asset_id: up.assetId, file_name: cleanText(file.name).slice(0, 200), row_version: rowVersion },
   });
 }
 
@@ -234,7 +235,7 @@ export async function fetchFinance(): Promise<{ summary: FinanceSummary; stateme
     statements: st.items.map(t => ({
       id: t.id,
       period: typeof t.source?.period === 'string' ? t.source.period : stamp(t.created_at).slice(0, 7),
-      platform: typeof t.source?.dsp === 'string' ? t.source.dsp : '정산',
+      platform: typeof t.source?.dsp === 'string' ? dspLabel(t.source.dsp) : '정산',
       amount: Number(t.amount), note: t.description, created: stamp(t.created_at).slice(0, 10),
     })),
     payouts: po.items.map(p => ({

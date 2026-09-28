@@ -2,7 +2,7 @@
 // `bun run build:edge`(또는 VITE_MOCK=false)로 빌드하면 실제 서버
 // (엣지 Worker → Workers VPC → Cloudflare Tunnel → 메인 서버)를 호출하고,
 // 기본값은 브라우저 저장소 기반 체험(목) 모드다.
-import type { DeliveryItem, WithdrawQuota, Org, PreflightIssue, Release, ReleaseDetail, ReleasePayload, SaveResult, UploadKind, UploadResult, User } from './types';
+import type { DeliveryItem, DspAvailability, WithdrawQuota, Org, PreflightIssue, Release, ReleaseDetail, ReleasePayload, SaveResult, UploadKind, UploadResult, User } from './types';
 import { ApiError } from './errors';
 import { setOrgId } from './http';
 import { mockApi } from './mock';
@@ -12,6 +12,7 @@ export * from './types';
 export { ApiError };
 
 import { MOCK } from '../lib/mode';
+import { DSP } from '../lib/catalog';
 export { MOCK };
 
 /** 체험 모드는 비밀번호 8자, 실서버는 12자 이상 (서버 정책) */
@@ -32,6 +33,7 @@ export const api = {
   listOrgs: (): Promise<Org[]> => (MOCK ? mockApi.listOrgs() : remoteApi.listOrgs()),
 
   listReleases: (): Promise<Release[]> => (MOCK ? mockApi.listReleases() : remoteApi.listReleases()),
+  listDsps: (): Promise<DspAvailability[]> => (MOCK ? Promise.resolve(DSP.map(([slug, name], i) => ({ slug, name, region: i < 4 ? 'KR' : 'GLOBAL', available: true }))) : remoteApi.listDsps()),
   getRelease: (id: string): Promise<ReleaseDetail> => (MOCK ? mockApi.getRelease(id) : remoteApi.getRelease(id)),
   /** 임시 저장 — id가 없으면 새 draft를 만들고, 있으면 같은 draft를 갱신 */
   saveDraft: (id: string | null, data: ReleasePayload): Promise<SaveResult> => (MOCK ? mockApi.saveDraft(id, data) : remoteApi.saveDraft(id, data)),

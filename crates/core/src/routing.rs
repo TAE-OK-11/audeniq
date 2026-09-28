@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RouteKind {
     Direct,
@@ -93,6 +93,25 @@ pub async fn decide_routes(
     org_id: Uuid,
     dsp_ids: &[Uuid],
 ) -> Result<Vec<RouteDecision>> {
+    decide_routes_inner(pool, org_id, dsp_ids, true).await
+}
+
+/// Artist-facing availability excludes MOCK routes, even when a test
+/// adapter can send. The same contract gate is used again at submit time.
+pub async fn public_routes(
+    pool: &PgPool,
+    org_id: Uuid,
+    dsp_ids: &[Uuid],
+) -> Result<Vec<RouteDecision>> {
+    decide_routes_inner(pool, org_id, dsp_ids, false).await
+}
+
+async fn decide_routes_inner(
+    pool: &PgPool,
+    org_id: Uuid,
+    dsp_ids: &[Uuid],
+    include_mock: bool,
+) -> Result<Vec<RouteDecision>> {
     let mut unique = Vec::with_capacity(dsp_ids.len());
     let mut seen = std::collections::HashSet::with_capacity(dsp_ids.len());
     for d in dsp_ids {
@@ -139,11 +158,11 @@ pub async fn decide_routes(
     // A CONTRACTED profile is sendable only through a live contract route:
     // an enabled route plan whose endpoint is ACTIVE and whose contract
     // revision is not revoked. MOCK profiles are always sendable (test only).
-    let contract_live: std::collections::HashSet<Uuid> = if any_contracted {
-        sqlx::query_scalar(
-            "SELECT DISTINCT r.dsp_id FROM distribution.route_plans r
+    let contract_live: std::collections::HashSet<(Uuid, RouteKind)> = if any_contracted {
+        sqlx::query(
+            "SELECT DISTINCT r.dsp_id, r.route_kind FROM distribution.route_plans r
              JOIN distribution.dsp_endpoints e ON e.org_id=r.org_id AND e.dsp_id=r.dsp_id AND e.id=r.endpoint_id
-             JOIN rights.contract_revisions cr ON cr.org_id=r.org_id AND cr.contract_id=r.contract_id
+             JOIN rights.contract_revisions cr ON cr.org_id=r.org_id AND cr.contract_id=r.contract_id AND cr.id=r.contract_revision_id
              WHERE r.org_id=$1 AND r.dsp_id = ANY($2) AND r.enabled
                AND e.integration_status='ACTIVE' AND cr.policy_version<>'REVOKED'",
         )
@@ -152,6 +171,15 @@ pub async fn decide_routes(
         .fetch_all(&mut *tx)
         .await?
         .into_iter()
+        .filter_map(|r| {
+            let kind = match r.get::<String, _>("route_kind").as_str() {
+                "DIRECT" => RouteKind::Direct,
+                "MERLIN" => RouteKind::Aggregator,
+                "LIMBO" => RouteKind::Upstream,
+                _ => return None,
+            };
+            Some((r.get("dsp_id"), kind))
+        })
         .collect()
     } else {
         std::collections::HashSet::new()
@@ -177,6 +205,9 @@ pub async fn decide_routes(
         let mut saw_uncontracted = false;
         let mut saw_unsendable_cap = false;
         for p in candidates {
+            if !include_mock && p.activation_kind != "CONTRACTED" {
+                continue;
+            }
             if !p.delivery_enabled {
                 saw_disabled = true;
                 continue;
@@ -187,7 +218,8 @@ pub async fn decide_routes(
                 saw_unsendable_cap = true;
                 continue;
             }
-            if p.activation_kind == "CONTRACTED" && !contract_live.contains(&dsp_id) {
+            if p.activation_kind == "CONTRACTED" && !contract_live.contains(&(dsp_id, p.route_kind))
+            {
                 saw_uncontracted = true;
                 continue;
             }

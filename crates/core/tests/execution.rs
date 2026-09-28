@@ -2141,6 +2141,11 @@ async fn route_decisions_without_contracts(pool: PgPool) {
     ];
     let decisions = routing::decide_routes(&pool, org, &dsps).await.unwrap();
     assert_eq!(decisions.len(), 8);
+    let public = routing::public_routes(&pool, org, &dsps).await.unwrap();
+    assert!(
+        public.iter().all(|d| !d.routable),
+        "MOCK test routes must stay hidden from artists"
+    );
     let by_dsp: std::collections::HashMap<_, _> = decisions.iter().map(|d| (d.dsp_id, d)).collect();
 
     let d = by_dsp[&dsp_no_profile];

@@ -493,6 +493,7 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
             "release_date": draft["release_date"], "original_date": draft["originalDate"],
             "label": draft["label"], "p_line": draft["p_line"], "c_line": draft["c_line"],
             "territories": draft["territories"], "platforms": platform_codes(&draft["platforms"]),
+            "options": draft["options"],
             "declarations": body["declarations"], "tracks": body["tracks"],
         },
         "signed_application": application,
