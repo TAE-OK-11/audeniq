@@ -2456,7 +2456,7 @@ fn validation_package(
                 validated_assets.push(json!({
                     "asset_id": aid,
                     "sha256": sha,
-                    "metric_hash": sha256_hex(&format!("{aid}:{sha}")),
+                    "metric_hash": sha256_hex(format!("{aid}:{sha}")),
                 }));
             }
             if t.get("parental_advisory")
