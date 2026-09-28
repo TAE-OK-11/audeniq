@@ -1,21 +1,21 @@
 //! DSP registry: every delivery target Studio offers, addressed by a stable
-//! internal code (`D-1` .. `D-11`) instead of its commercial name.
+//! internal code (`D-1` .. `D-36`) instead of its commercial name.
 //!
 //! Call sites use the [`Dsp`] enum (`Dsp::D5`), never a name string, so a
 //! typo is a compile error and renaming a platform touches one table. The
-//! code is also the adapter `partner_id` for the DSP's direct route and the
+//! code is also the adapter `partner_id` for real DSP direct routes and the
 //! seed of its internal UUID (`uuid_v5("audeniq:dsp:D-5")`, the same scheme
 //! `partner_onboarding::set_dsp` uses), so the registry, the adapter profile,
-//! Stage 2 eligibility and the route plan all agree without a lookup.
+//! Stage 2 eligibility and the route plan all agree without a lookup. MockDSP
+//! retains its existing adapter `partner_id` (`mockdsp`).
 //!
 //! `DspSpec` holds the delivery requirements AUDENIQ checks before a release
 //! may be sent. Sources: `DSP_CONDITIONS_RESEARCH_2026-09-25.md`. Only DSPs
 //! that publish a DDEX delivery profile are marked `Ddex`; the Korean DSPs
 //! publish no distributor spec (partner portals are private), so they carry
 //! the common industry baseline and `PartnerSpec` delivery until a contract
-//! supplies theirs. Nothing here enables a send: every seeded profile is
-//! CONTRACTED + delivery_enabled=false + send_or_publish=false (migration
-//! 0042), and the onboarding gate still requires a signed contract.
+//! supplies theirs. Real seeded profiles remain CONTRACTED with delivery
+//! disabled until onboarding. MockDSP is a local test adapter only.
 use crate::ddex_ern::{
     DEAL_CONTENT_ID, DEAL_DOWNLOAD, DEAL_JUKEBOX, DEAL_ON_DEMAND_SUBSCRIPTION, DEAL_SOCIAL,
     DEAL_SUBSCRIPTION, DEAL_SUBSCRIPTION_AND_FREE, DealProfile,
@@ -60,6 +60,7 @@ pub enum Dsp {
     D33,
     D34,
     D35,
+    D36,
 }
 
 /// How Studio groups the platform picker.
@@ -130,7 +131,7 @@ pub enum ChoreographyProfile {
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct DspSpec {
     pub dsp: Dsp,
-    /// `D-1` .. `D-11`: the only identifier internal call sites use.
+    /// `D-1` .. `D-36`: the only identifier internal call sites use.
     pub code: &'static str,
     /// Studio's platform key (`profile.platforms` values).
     pub slug: &'static str,
@@ -139,6 +140,8 @@ pub struct DspSpec {
     /// What artists and staff see (Korean brand names for domestic DSPs).
     /// Internal codes never appear in user- or staff-facing text.
     pub name_ko: &'static str,
+    /// Local test destination; it never contacts an external DSP.
+    pub test_only: bool,
     /// DDEX ERN version the DSP ingests; empty for partner feeds. The
     /// generator builds 3.8.2; staging refuses a DSP set to anything else.
     pub ern_version: &'static str,
@@ -199,6 +202,7 @@ const KR_BASE: DspSpec = DspSpec {
     slug: "",
     name: "",
     name_ko: "",
+    test_only: false,
     ern_version: "",
     deal: &DEAL_SUBSCRIPTION,
     channel: Channel::PartnerFeed,
@@ -253,7 +257,7 @@ pub const ELECTRONIC_GENRES: &[&str] = &[
     "EDM",
 ];
 
-pub const REGISTRY: [DspSpec; 35] = [
+pub const REGISTRY: [DspSpec; 36] = [
     DspSpec {
         dsp: Dsp::D1,
         code: "D-1",
@@ -386,7 +390,7 @@ pub const REGISTRY: [DspSpec; 35] = [
         code: "D-12",
         slug: "pandora",
         name: "Pandora",
-        name_ko: "Pandora (SiriusXM)",
+        name_ko: "Pandora",
         deal: &DEAL_SUBSCRIPTION_AND_FREE,
         served_max: (44_100, 16),
         lead_days: 7,
@@ -423,7 +427,7 @@ pub const REGISTRY: [DspSpec; 35] = [
         code: "D-15",
         slug: "anghami",
         name: "Anghami",
-        name_ko: "Anghami (중동·북아프리카)",
+        name_ko: "Anghami",
         deal: &DEAL_SUBSCRIPTION_AND_FREE,
         served_max: (44_100, 16),
         lead_days: 7,
@@ -435,7 +439,7 @@ pub const REGISTRY: [DspSpec; 35] = [
         code: "D-16",
         slug: "boomplay",
         name: "Boomplay",
-        name_ko: "Boomplay (아프리카)",
+        name_ko: "Boomplay",
         deal: &DEAL_SUBSCRIPTION_AND_FREE,
         served_max: (44_100, 16),
         lead_days: 7,
@@ -447,7 +451,7 @@ pub const REGISTRY: [DspSpec; 35] = [
         code: "D-17",
         slug: "jiosaavn",
         name: "JioSaavn",
-        name_ko: "JioSaavn (인도)",
+        name_ko: "JioSaavn",
         deal: &DEAL_SUBSCRIPTION_AND_FREE,
         served_max: (44_100, 16),
         lead_days: 7,
@@ -459,7 +463,7 @@ pub const REGISTRY: [DspSpec; 35] = [
         code: "D-18",
         slug: "kkbox",
         name: "KKBOX",
-        name_ko: "KKBOX (대만·홍콩)",
+        name_ko: "KKBOX",
         deal: &DEAL_SUBSCRIPTION,
         lead_days: 7,
         requires_composer: false,
@@ -470,7 +474,7 @@ pub const REGISTRY: [DspSpec; 35] = [
         code: "D-19",
         slug: "line-music",
         name: "LINE MUSIC",
-        name_ko: "LINE MUSIC (일본)",
+        name_ko: "LINE MUSIC",
         deal: &DEAL_SUBSCRIPTION,
         served_max: (44_100, 16),
         lead_days: 7,
@@ -482,7 +486,7 @@ pub const REGISTRY: [DspSpec; 35] = [
         code: "D-20",
         slug: "awa",
         name: "AWA",
-        name_ko: "AWA (일본)",
+        name_ko: "AWA",
         deal: &DEAL_SUBSCRIPTION_AND_FREE,
         lead_days: 7,
         requires_composer: false,
@@ -493,7 +497,7 @@ pub const REGISTRY: [DspSpec; 35] = [
         code: "D-21",
         slug: "netease",
         name: "NetEase Cloud Music",
-        name_ko: "NetEase Cloud Music (중국)",
+        name_ko: "NetEase Cloud Music",
         deal: &DEAL_SUBSCRIPTION_AND_FREE,
         regional_review: true,
         lead_days: 21,
@@ -505,7 +509,7 @@ pub const REGISTRY: [DspSpec; 35] = [
         code: "D-22",
         slug: "tencent",
         name: "Tencent Music",
-        name_ko: "Tencent Music (QQ뮤직·쿠거우·쿠워·WeSing)",
+        name_ko: "Tencent Music",
         deal: &DEAL_SUBSCRIPTION_AND_FREE,
         regional_review: true,
         lead_days: 21,
@@ -540,7 +544,7 @@ pub const REGISTRY: [DspSpec; 35] = [
         code: "D-25",
         slug: "meta",
         name: "Meta",
-        name_ko: "Instagram·Facebook (Meta)",
+        name_ko: "Meta",
         deal: &DEAL_SOCIAL,
         category: Category::Social,
         content_id: true,
@@ -554,7 +558,7 @@ pub const REGISTRY: [DspSpec; 35] = [
         code: "D-26",
         slug: "tiktok",
         name: "TikTok",
-        name_ko: "TikTok·CapCut (ByteDance)",
+        name_ko: "TikTok",
         deal: &DEAL_SOCIAL,
         category: Category::Social,
         content_id: true,
@@ -569,7 +573,7 @@ pub const REGISTRY: [DspSpec; 35] = [
         code: "D-27",
         slug: "youtube-cid",
         name: "YouTube Content ID",
-        name_ko: "YouTube Content ID·Shorts",
+        name_ko: "YouTube Content ID",
         deal: &DEAL_CONTENT_ID,
         category: Category::Social,
         content_id: true,
@@ -612,7 +616,7 @@ pub const REGISTRY: [DspSpec; 35] = [
         code: "D-30",
         slug: "itunes",
         name: "iTunes Store",
-        name_ko: "iTunes Store (다운로드)",
+        name_ko: "iTunes Store",
         deal: &DEAL_DOWNLOAD,
         channel: Channel::Transporter,
         choreography: ChoreographyProfile::ReleaseByRelease,
@@ -627,7 +631,7 @@ pub const REGISTRY: [DspSpec; 35] = [
         code: "D-31",
         slug: "claro-musica",
         name: "Claro Música",
-        name_ko: "Claro Música (중남미)",
+        name_ko: "Claro Música",
         deal: &DEAL_SUBSCRIPTION_AND_FREE,
         merlin_eligible: false,
         planned_route: PlannedRoute::Direct,
@@ -641,7 +645,7 @@ pub const REGISTRY: [DspSpec; 35] = [
         code: "D-32",
         slug: "pretzel",
         name: "Pretzel",
-        name_ko: "Pretzel (스트리머용 음원)",
+        name_ko: "Pretzel",
         deal: &DEAL_SUBSCRIPTION,
         category: Category::Social,
         merlin_eligible: false,
@@ -673,7 +677,7 @@ pub const REGISTRY: [DspSpec; 35] = [
         code: "D-34",
         slug: "touchtunes",
         name: "TouchTunes",
-        name_ko: "TouchTunes (디지털 주크박스)",
+        name_ko: "TouchTunes",
         deal: &DEAL_JUKEBOX,
         category: Category::Store,
         merlin_eligible: false,
@@ -688,7 +692,7 @@ pub const REGISTRY: [DspSpec; 35] = [
         code: "D-35",
         slug: "yandex",
         name: "Yandex Music",
-        name_ko: "Yandex Music (러시아·CIS)",
+        name_ko: "Yandex Music",
         deal: &DEAL_SUBSCRIPTION_AND_FREE,
         merlin_eligible: false,
         planned_route: PlannedRoute::Direct,
@@ -697,10 +701,23 @@ pub const REGISTRY: [DspSpec; 35] = [
         requires_composer: false,
         ..GLOBAL_BASE
     },
+    DspSpec {
+        dsp: Dsp::D36,
+        code: "D-36",
+        slug: "mockdsp",
+        name: "MockDSP",
+        name_ko: "MockDSP",
+        test_only: true,
+        deal: &DEAL_SUBSCRIPTION,
+        merlin_eligible: false,
+        planned_route: PlannedRoute::Direct,
+        lead_days: 0,
+        ..GLOBAL_BASE
+    },
 ];
 
 impl Dsp {
-    pub const ALL: [Dsp; 35] = [
+    pub const ALL: [Dsp; 36] = [
         Dsp::D1,
         Dsp::D2,
         Dsp::D3,
@@ -736,6 +753,7 @@ impl Dsp {
         Dsp::D33,
         Dsp::D34,
         Dsp::D35,
+        Dsp::D36,
     ];
 
     pub fn spec(self) -> &'static DspSpec {
@@ -744,6 +762,14 @@ impl Dsp {
 
     pub fn code(self) -> &'static str {
         self.spec().code
+    }
+
+    pub fn partner_id(self) -> &'static str {
+        if self == Dsp::D36 {
+            "mockdsp"
+        } else {
+            self.code()
+        }
     }
 
     /// The name artists and staff see.
@@ -832,6 +858,7 @@ mod tests {
         for s in &REGISTRY {
             assert!(!s.name_ko.is_empty(), "{}", s.code);
             assert!(!s.name_ko.starts_with("D-"), "{}", s.code);
+            assert!(!s.name_ko.contains('('), "{}", s.code);
             assert!(!s.deal.commercial_models.is_empty() && !s.deal.use_types.is_empty());
             match s.format {
                 DeliveryFormat::Ddex => {
@@ -846,6 +873,10 @@ mod tests {
             }
         }
         assert_eq!(Dsp::D1.display_name(), "멜론");
+        assert_eq!(Dsp::D25.display_name(), "Meta");
+        assert_eq!(Dsp::D36.display_name(), "MockDSP");
+        assert!(Dsp::D36.spec().test_only);
+        assert_eq!(Dsp::D36.partner_id(), "mockdsp");
         assert_eq!(Dsp::D6.spec().channel, Channel::Transporter);
         assert!(
             Dsp::D5
@@ -878,7 +909,8 @@ mod tests {
         let sql = concat!(
             include_str!("../../../migrations/0042_dsp_registry.sql"),
             include_str!("../../../migrations/0057_dsp_expansion.sql"),
-            include_str!("../../../migrations/0058_dsp_expansion_2.sql")
+            include_str!("../../../migrations/0058_dsp_expansion_2.sql"),
+            include_str!("../../../migrations/0059_mockdsp_public_test.sql")
         );
         for s in &REGISTRY {
             let row = format!("('{}','{}','{}'", s.code, s.dsp.uuid(), s.slug);

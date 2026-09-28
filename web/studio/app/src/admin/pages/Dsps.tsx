@@ -31,7 +31,8 @@ export function Dsps() {
             return (
               <div key={code} className={`adm-dsp${bad ? ' is-bad' : ''}`}>
                 <div className="adm-dsp-top">
-                  <h3>{d.name}</h3>
+                  <h3>{d.name_ko || d.name}</h3>
+                  {d.test_only && <Chip tone="blue">테스트 전용</Chip>}
                   {bad
                     ? <Chip tone="red">{stuck.length ? `막힌 발매 ${stuck.length}건` : 'DSP 점검 필요'}</Chip>
                     : <Chip tone={live ? 'green' : 'gray'}>{live ? '전송 가능' : 'DSP 연동 대기'}</Chip>}

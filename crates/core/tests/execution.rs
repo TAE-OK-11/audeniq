@@ -730,6 +730,47 @@ async fn public_submit_requires_a_selected_routable_dsp(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn mockdsp_is_listed_and_accepts_a_test_application(pool: PgPool) {
+    let (app, store) = app_with_dsp_gate(pool.clone(), false).await;
+    let submitter = user(&app).await;
+    let (status, list) = call(
+        &app,
+        "GET",
+        &format!("/api/orgs/{}/dsps", submitter.org),
+        Value::Null,
+        Some(&submitter),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    let dsps = list["items"].as_array().unwrap();
+    let mock = dsps.iter().find(|item| item["slug"] == "mockdsp").unwrap();
+    assert_eq!(mock["name"], "MockDSP");
+    assert_eq!(mock["test_only"], true);
+    assert_eq!(mock["available"], true);
+    let spotify = dsps.iter().find(|item| item["slug"] == "spotify").unwrap();
+    assert_eq!(spotify["available"], false);
+    let meta = dsps.iter().find(|item| item["slug"] == "meta").unwrap();
+    assert_eq!(meta["name"], "Meta");
+
+    let wav = wav_bytes();
+    let asset = register_asset(&pool, &store, &submitter, "mock-test.wav", wav).await;
+    let release = build_submittable(&app, &pool, &submitter, asset).await;
+    add_preparation_supplements(&pool, &store, &submitter, release).await;
+    sqlx::query("UPDATE catalog.releases SET draft = draft || '{\"platforms\":[\"mockdsp\"]}'::jsonb, row_version = row_version + 1 WHERE id=$1")
+        .bind(release)
+        .execute(&pool)
+        .await
+        .unwrap();
+    consent_and_submit(
+        &app,
+        &submitter,
+        release,
+        &format!("mock-test-{}", Uuid::new_v4()),
+    )
+    .await;
+}
+
+#[sqlx::test]
 async fn dsp_00_delivery_waits_for_signed_agreement(pool: PgPool) {
     let ctx = ready_package(&pool).await;
     let doc = set_agreement(&pool, ctx.org, ctx.release, false).await;
@@ -3509,8 +3550,13 @@ async fn staff_correction_and_rejection_reach_the_artist(pool: PgPool) {
 async fn registry_dsp_waits_for_staff_approval_before_send(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let artist = user(&app).await;
-    // Make D-5's direct route live as a test partner: evidence first (the
-    // 0027 guard refuses delivery_enabled while onboarding gaps remain).
+    // D-5 defaults to the Merlin route, so select the direct contract route
+    // before recording D-5's own contract as onboarding evidence.
+    sqlx::query("UPDATE distribution.dsp_contract_routes SET route='DIRECT' WHERE code='D-5'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    // The 0027 guard refuses delivery_enabled while onboarding gaps remain.
     sqlx::query(
         "UPDATE execution.partner_onboarding SET dpid_registered=true, endpoint_url='https://d5.example.test',
             credential_kind='api_key', credential_status='STORED', test_ern_validated_at=now(),

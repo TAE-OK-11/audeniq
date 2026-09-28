@@ -226,8 +226,8 @@ async fn available_dsps(
         .iter()
         .zip(decisions.iter())
         .map(|(spec, route)| {
-            json!({"slug":spec.slug,"name":spec.name_ko,"region":spec.region,
-                                    "category":spec.category,"available":route.routable})
+            json!({"code":spec.code,"slug":spec.slug,"name":spec.name_ko,"region":spec.region,
+                                    "category":spec.category,"test_only":spec.test_only,"available":route.routable})
         })
         .collect();
     Ok(Json(json!({"items":items})))

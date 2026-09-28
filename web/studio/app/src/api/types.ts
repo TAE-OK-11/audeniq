@@ -48,11 +48,14 @@ export interface DeliveryItem {
 }
 
 export interface DspAvailability {
+  /** 백엔드 레지스트리의 안정적인 DSP 코드 */
+  code?: string;
   slug: string;
   name: string;
   region: 'KR' | 'GLOBAL';
   /** 선택 화면 묶음: 스트리밍 / 소셜·숏폼(UGC) / 스토어 */
   category?: 'STREAMING' | 'SOCIAL' | 'STORE';
+  test_only?: boolean;
   available: boolean;
 }
 

@@ -12,7 +12,7 @@ export * from './types';
 export { ApiError };
 
 import { MOCK } from '../lib/mode';
-import { DSP } from '../lib/catalog';
+import { DSP, setDspNames } from '../lib/catalog';
 export { MOCK };
 
 /** 체험 모드는 비밀번호 8자, 실서버는 12자 이상 (서버 정책) */
@@ -33,7 +33,13 @@ export const api = {
   listOrgs: (): Promise<Org[]> => (MOCK ? mockApi.listOrgs() : remoteApi.listOrgs()),
 
   listReleases: (): Promise<Release[]> => (MOCK ? mockApi.listReleases() : remoteApi.listReleases()),
-  listDsps: (): Promise<DspAvailability[]> => (MOCK ? Promise.resolve(DSP.map(([slug, name], i) => ({ slug, name, region: i < 4 ? 'KR' : 'GLOBAL', category: [24, 25, 26, 27, 31, 32].includes(i) ? 'SOCIAL' : [28, 29, 33].includes(i) ? 'STORE' : 'STREAMING', available: true }))) : remoteApi.listDsps()),
+  listDsps: async (): Promise<DspAvailability[]> => {
+    const items: DspAvailability[] = MOCK
+      ? DSP.map(([slug, name], i) => ({ code: `D-${i + 1}`, slug, name, region: i < 4 ? 'KR' : 'GLOBAL', category: [24, 25, 26, 27, 31, 32].includes(i) ? 'SOCIAL' : [28, 29, 33].includes(i) ? 'STORE' : 'STREAMING', test_only: slug === 'mockdsp', available: true }))
+      : await remoteApi.listDsps();
+    setDspNames(items);
+    return items;
+  },
   getRelease: (id: string): Promise<ReleaseDetail> => (MOCK ? mockApi.getRelease(id) : remoteApi.getRelease(id)),
   /** 임시 저장 — id가 없으면 새 draft를 만들고, 있으면 같은 draft를 갱신 */
   saveDraft: (id: string | null, data: ReleasePayload): Promise<SaveResult> => (MOCK ? mockApi.saveDraft(id, data) : remoteApi.saveDraft(id, data)),

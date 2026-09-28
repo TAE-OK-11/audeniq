@@ -126,6 +126,7 @@ export interface DspItem {
   requires_composer?: boolean; requires_lyricist?: boolean;
   /** 사용자·담당자에게 보이는 플랫폼 이름 (내부 코드는 화면에 쓰지 않는다) */
   name_ko?: string;
+  test_only?: boolean;
   ern_version?: string;
   deal?: { commercial_models: string[]; use_types: string[] };
   channel?: 'SFTP' | 'TRANSPORTER' | 'PARTNER_FEED';

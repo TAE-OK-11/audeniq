@@ -99,7 +99,7 @@ pub async fn dsp_overview(pool: &PgPool) -> Result<Value> {
              FROM execution.adapter_profiles p LEFT JOIN execution.partner_onboarding o ON o.partner_id=p.partner_id
              WHERE p.partner_id=$1",
         )
-        .bind(spec.code)
+        .bind(d.partner_id())
         .fetch_optional(pool)
         .await?;
         out.push(json!({

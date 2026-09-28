@@ -21,6 +21,7 @@ import { Dsps } from './pages/Dsps';
 import { Payouts } from './pages/Payouts';
 import '../styles/admin.css';
 import { Glyph } from '../components/Glyph';
+import { clearDspNames, setDspNames } from '../lib/catalog';
 
 // 관리자 메뉴 아이콘 — 스튜디오와 같은 AUDENIQ 아이콘 세트(Glyph)
 const ICONS: Record<string, string> = {
@@ -84,6 +85,15 @@ export function AdminApp() {
       .catch(e => setGate(e instanceof ApiError && e.status === 403 ? 'forbidden' : 'error'));
   }, []);
   useEffect(loadMe, [loadMe]);
+
+  useEffect(() => {
+    if (gate !== 'ok') return;
+    let active = true;
+    void staffApi.dsps().then(r => {
+      if (active) setDspNames(r.items.map(d => ({ code: d.code, slug: d.slug, name: d.name_ko || d.name })));
+    }).catch(() => {});
+    return () => { active = false; clearDspNames(); };
+  }, [gate]);
 
   const refreshCounts = useCallback(() => {
     staffApi.overview().then(setCounts).catch(() => { /* 숫자는 보조 정보 — 실패해도 화면은 쓸 수 있다 */ });

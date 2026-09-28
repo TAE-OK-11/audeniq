@@ -100,6 +100,7 @@ Staff actions (agreement/proof review, proof requests, inquiry replies) now go t
 | Method | Path | Body / response |
 |---|---|---|
 | GET | `/api/orgs/{org}/releases/{id}/delivery` | Per-DSP status of the release's latest staged package (release read ACL). `items[]`: `{dsp:"D-5", slug:"spotify", name, stage, readiness, approval, delivery_status, issues[], staged_at}`. `stage` is `NEEDS_CORRECTION` · `IN_REVIEW` · `PREPARING` (content fine, partner onboarding pending) · `SCHEDULED` (staff approved) · `ON_HOLD` · `SENDING` · `DELIVERED`. `issues` lists only CONTENT findings the artist can fix. Empty before Stage 3 |
+| GET | `/api/orgs/{org}/dsps` | Backend-owned platform picker: `items[]` contains `{code, slug, name, region, category, test_only, available}`. `available` comes from the live routing decision and is rechecked on submission. `D-36` (`mockdsp`) is a selectable local test destination; other `MOCK` routes stay hidden |
 
 `GET .../submission` also returns `effective_status` per check (a reviewer override replaces the recorded status; `severity` follows it) and `review_notes[]` (`{check_code|null, decision, note, at}`) written by staff.
 
@@ -137,7 +138,7 @@ All roles can read every list below.
 | POST | `/api/staff/deliveries/{package}/restage` | Re-run staging after onboarding or issuer changes |
 | POST | `/api/staff/dsps/{dsp}/route` | ADMIN: `{route: DIRECT|MERLIN, note}` — the DSP's contract route. MERLIN only for DSPs with a Merlin deal (`MERLIN_NOT_AVAILABLE_FOR_DSP`). `GET /api/staff/dsps` items carry `name_ko`, `ern_version`, `deal`, `channel`, `choreography`, policy flags and `contract_route`; delivery rows carry `dsp_name` |
 | POST | `/api/staff/deliveries/{package}/{dsp}/live` | `{partner_release_id?, note}` — record LIVE evidence for a platform that never reports it (DELIVERY duty; only DELIVERED jobs; applied by the worker job `delivery.mark_live`, audited) |
-| GET | `/api/staff/dsps` | D-1..D-11 registry with spec, route profile and onboarding gaps |
+| GET | `/api/staff/dsps` | D-1..D-36 registry with spec, route profile, onboarding gaps and `test_only` |
 | GET | `/api/staff/payouts?status=REQUESTED` | ADMIN only; read-only (money still moves through operations tooling) |
 
 ## Partner webhooks (`/api/partner-hooks/*`)

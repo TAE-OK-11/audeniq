@@ -390,10 +390,11 @@ pub fn evaluate(spec: &DspSpec, i: &StagingInput<'_>) -> Vec<DspCheck> {
             "delivered with the '19세 미만 이용 불가' marking (청소년보호법)".into(),
         ));
     }
-    if is_virtual(IdentifierKind::Upc, &p.upc)
-        || p.tracks
-            .iter()
-            .any(|t| is_virtual(IdentifierKind::Isrc, &t.isrc))
+    if !spec.test_only
+        && (is_virtual(IdentifierKind::Upc, &p.upc)
+            || p.tracks
+                .iter()
+                .any(|t| is_virtual(IdentifierKind::Isrc, &t.isrc)))
     {
         out.push(DspCheck::new(
             "DSP_IDENTIFIER_VIRTUAL",
@@ -635,7 +636,12 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
     let prepared =
         std::sync::Arc::new(PreparedRelease::from_canonical(pool, canonical_id, &canonical).await?);
 
-    let requested = crate::dsp_registry::requested(&draft).unwrap_or_else(|| Dsp::ALL.to_vec());
+    let requested = crate::dsp_registry::requested(&draft).unwrap_or_else(|| {
+        Dsp::ALL
+            .into_iter()
+            .filter(|d| !d.spec().test_only)
+            .collect()
+    });
     let genre = draft
         .get("genreCustom")
         .and_then(Value::as_str)
@@ -675,7 +681,7 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
     let profiles: HashMap<String, (Option<String>, Value)> = sqlx::query(
         "SELECT partner_id, ddex_recipient_dpid, capabilities FROM execution.adapter_profiles WHERE partner_id = ANY($1)",
     )
-    .bind(requested.iter().map(|d| d.code()).collect::<Vec<_>>())
+    .bind(requested.iter().map(|d| d.partner_id()).collect::<Vec<_>>())
     .fetch_all(pool)
     .await?
     .into_iter()
@@ -701,12 +707,16 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
         checks: Vec<DspCheck>,
         ern: Option<Ern>,
         wire: bool,
+        sender_dpid: Option<String>,
         route_status: &'static str,
         route_reason: &'static str,
     }
     let mut staged = Vec::with_capacity(requested.len());
     for dsp in requested {
         let spec = dsp.spec();
+        let dsp_sender_dpid = sender_dpid
+            .clone()
+            .or_else(|| spec.test_only.then(|| "TESTDPID-AUDENIQ-0001".to_owned()));
         let mut checks = evaluate(spec, &input);
         if !approved.contains(&dsp.uuid()) {
             checks.push(DspCheck::new(
@@ -731,13 +741,13 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
             ));
         }
         let (recipient_dpid, caps) = profiles
-            .get(dsp.code())
+            .get(dsp.partner_id())
             .cloned()
             .unwrap_or((None, Value::Null));
         let mut ern = None;
         let mut wire = false;
         if spec.format == DeliveryFormat::Ddex {
-            if sender_dpid.is_none() {
+            if dsp_sender_dpid.is_none() {
                 checks.push(DspCheck::new(
                     "DSP_SENDER_DPID_MISSING",
                     Class::Partner,
@@ -753,8 +763,8 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
                     "register the DSP's recipient DPID during onboarding".into(),
                 ));
             }
-            wire = sender_dpid.is_some() && recipient_dpid.is_some();
-            match DspMessagePreset::resolve(spec.code, &caps) {
+            wire = dsp_sender_dpid.is_some() && recipient_dpid.is_some();
+            match DspMessagePreset::resolve(dsp.partner_id(), &caps) {
                 Err(_) => checks.push(DspCheck::new(
                     "DSP_ERN_PRESET_INVALID",
                     Class::Partner,
@@ -763,7 +773,7 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
                 )),
                 Ok(preset) => {
                     let (s, r) = (
-                        sender_dpid
+                        dsp_sender_dpid
                             .clone()
                             .unwrap_or_else(|| preview_dpid("AUDENIQ")),
                         recipient_dpid.unwrap_or_else(|| preview_dpid(spec.code)),
@@ -791,7 +801,7 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
                     }
                 }
             }
-        } else if !partner_feed_configured(spec.code) {
+        } else if !partner_feed_configured(dsp.partner_id()) {
             checks.push(DspCheck::new(
                 "DSP_PARTNER_SPEC_PENDING",
                 Class::Partner,
@@ -804,6 +814,7 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
             checks,
             ern,
             wire,
+            sender_dpid: dsp_sender_dpid,
             route_status,
             route_reason,
         });
@@ -842,8 +853,8 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
             .bind(s.dsp.spec().name)
             .bind(&e.xml)
             .bind(&e.sha256)
-            .bind(s.dsp.code())
-            .bind(sender_dpid.as_deref())
+            .bind(s.dsp.partner_id())
+            .bind(s.sender_dpid.as_deref())
             .execute(&mut *tx)
             .await?;
         }

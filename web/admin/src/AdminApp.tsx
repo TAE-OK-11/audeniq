@@ -21,6 +21,7 @@ import { Dsps } from './pages/Dsps';
 import { Payouts } from './pages/Payouts';
 import './styles/admin.css';
 import { Glyph } from './components/Glyph';
+import { setDspNames } from './lib/dspNames';
 
 const STUDIO_URL = import.meta.env.VITE_STUDIO_URL ?? 'https://studio.audeniq.com';
 
@@ -86,6 +87,15 @@ export function AdminApp() {
       .catch(e => setGate(e instanceof ApiError && e.status === 403 ? 'forbidden' : 'error'));
   }, []);
   useEffect(loadMe, [loadMe]);
+
+  useEffect(() => {
+    if (gate !== 'ok') return;
+    let active = true;
+    void staffApi.dsps().then(r => {
+      if (active) setDspNames(r.items.map(d => ({ code: d.code, slug: d.slug, name: d.name_ko || d.name })));
+    }).catch(() => {});
+    return () => { active = false; setDspNames([]); };
+  }, [gate]);
 
   const refreshCounts = useCallback(() => {
     staffApi.overview().then(setCounts).catch(() => { /* 숫자는 보조 정보 — 실패해도 화면은 쓸 수 있다 */ });

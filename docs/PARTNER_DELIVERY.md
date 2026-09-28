@@ -15,11 +15,12 @@
 
 잠긴 동안에도 되는 것: 설정 파일 점검(`config-check`), DPID/테스트 ERN·ACK/계약 기록, 스테이징(ERN 생성·검증),
 로컬 MockDSP 샌드박스, 파트너 웹훅 **수신**(외부로 나가는 요청이 아님). `/ready`에 `"live_transmission": false`로 표시된다.
+발매 신청 테스트에서는 배급 플랫폼 목록의 `MockDSP`를 직접 선택할 수 있다. 이 경로만 `MOCK` 프로파일로 열려 있고 외부 DSP로 전송하지 않는다. 플랫폼 이름과 선택 가능 여부는 백엔드의 `/api/orgs/{org}/dsps` 응답이 정한다.
 공식 오픈 때 `deploy/production.env`에 `DSP_LIVE_TRANSMISSION=enabled`를 넣고 worker·api를 재시작한다.
 
 ## 0-1. DSP별 전송 프로파일 (`crates/core/src/dsp_registry.rs`)
 
-내부에서는 `D-1`…`D-11` 코드를 키로 쓰지만, 아티스트·담당자 화면과 검사 문구에는 항상 플랫폼 이름(`name_ko`)만 나간다.
+내부에서는 `D-1`…`D-36` 코드를 키로 쓰지만, 아티스트·담당자 화면과 검사 문구에는 항상 플랫폼 이름(`name_ko`)만 나간다. `D-36`은 테스트 전용 MockDSP다.
 전송 방식은 업계 관행 기준이며 계약서의 기술 부속서가 우선한다(설정 파일로 맞춘다).
 
 | 플랫폼 | 형식 | 전송 | 방식 | 상업 모델(ERN Deal) | Merlin | 추가 정책 |

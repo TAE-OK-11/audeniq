@@ -1,6 +1,8 @@
-import { Suspense, lazy, type ComponentType, type ReactNode } from 'react';
+import { Suspense, lazy, useEffect, type ComponentType, type ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from './lib/router';
 import { AuthProvider, useAuth } from './api/auth';
+import { api } from './api/client';
+import { clearDspNames } from './lib/catalog';
 import { Layout } from './components/Layout';
 import { ToastProvider } from './components/Toast';
 import { ConfirmProvider } from './components/Confirm';
@@ -90,6 +92,12 @@ function UploadRoute() {
 
 function PortalRoutes() {
   const loc = useLocation();
+  const { org } = useAuth();
+  useEffect(() => {
+    clearDspNames();
+    if (org) void api.listDsps().catch(() => {});
+    return clearDspNames;
+  }, [org?.id]);
   return (
     <Layout>
       <ErrorBoundary resetKey={loc.pathname}>

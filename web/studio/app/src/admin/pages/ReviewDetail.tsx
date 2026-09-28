@@ -11,11 +11,12 @@ import { staffApi, type Check, type DecisionAction, type DecisionInput, type Dec
 import { STAFF_FIX_OPTIONS, WIZ_STEP_NAMES, correctionTarget, isKnownCorrection, staffFixCode } from '../../lib/corrections';
 import {
   CHECK_STATUS, DECISION_LABEL, DOC_KIND, DOC_STATUS, MAX_REASON, RELEASE_STATUS, RELEASE_TYPE,
-  REJECT_REASONS, applicationPending, checkLabel, checkSummary, day, dspLabel, needsSecond, pick, shortId, stageStateLabel, systemStages, when,
+  REJECT_REASONS, applicationPending, checkLabel, checkSummary, day, needsSecond, pick, shortId, stageStateLabel, systemStages, when,
 } from '../labels';
 import { Chip, Empty, ErrorBox, Initial, NoDuty, Section, Skeleton, StatusChip, useStaff } from '../ui';
 import { Glyph } from '../../components/Glyph';
 import { CheckIcon } from '../../components/Check';
+import { useDspLabel } from '../../lib/catalog';
 
 const DECL_LABEL: Record<string, string> = {
   rights_confirmed: '권리 보유 확인', adult_confirmed: '성인 확인', is_cover: '커버곡', is_remix: '리믹스',
@@ -351,6 +352,7 @@ function ReissueForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: () => voi
 }
 
 export function ReviewDetail() {
+  const dspLabel = useDspLabel();
   const { id = '' } = useParams<{ id: string }>();
   const nav = useNavigate();
   const { can, refreshCounts, me } = useStaff();
