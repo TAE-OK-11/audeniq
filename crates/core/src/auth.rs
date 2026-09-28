@@ -129,9 +129,7 @@ pub async fn create_resource(
         .bind(kind)
         .execute(&mut *c)
         .await?;
-    for action in ["read", "write"] {
-        sqlx::query("INSERT INTO identity.resource_acl(org_id,resource_id,principal_party_id,action) VALUES($1,$2,$3,$4)").bind(org).bind(id).bind(a.party).bind(action).execute(&mut *c).await?;
-    }
+    sqlx::query("INSERT INTO identity.resource_acl(org_id,resource_id,principal_party_id,action) VALUES($1,$2,$3,'read'),($1,$2,$3,'write')").bind(org).bind(id).bind(a.party).execute(&mut *c).await?;
     Ok(())
 }
 pub async fn rate(pool: &PgPool, key: &str, limit: i32) -> Result<()> {

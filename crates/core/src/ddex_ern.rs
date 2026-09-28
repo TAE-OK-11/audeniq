@@ -163,6 +163,27 @@ pub const DEAL_ON_DEMAND_SUBSCRIPTION: DealProfile = DealProfile {
     use_types: &["OnDemandStream"],
     price_range: None,
 };
+/// Ad-funded streaming with sponsored offline downloads (TREBEL).
+pub const DEAL_AD_SUPPORTED_DOWNLOAD: DealProfile = DealProfile {
+    commercial_models: &["AdvertisementSupportedModel"],
+    use_types: &["OnDemandStream", "ConditionalDownload"],
+    price_range: None,
+};
+/// DJ mixes and live DJ streams (Mixcloud, Twitch DJ): users play the
+/// catalogue in their own uploads / broadcasts; plays are fingerprinted.
+pub const DEAL_DJ_UGC: DealProfile = DealProfile {
+    commercial_models: &["AdvertisementSupportedModel", "SubscriptionModel"],
+    use_types: &["UserMakeAvailableUserProvided", "Webcast"],
+    price_range: None,
+};
+/// Creator / B2B licensing libraries (Canva, Lickd, STYNGR): the label's
+/// tracks are offered for use in the customer's own content or game,
+/// by subscription or per-use licence.
+pub const DEAL_CREATOR_LICENSE: DealProfile = DealProfile {
+    commercial_models: &["SubscriptionModel", "PayAsYouGoModel"],
+    use_types: &["UserMakeAvailableLabelProvided"],
+    price_range: None,
+};
 
 /// NFC-normalize the human-text fields of a release.
 ///

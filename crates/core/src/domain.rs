@@ -127,6 +127,12 @@ pub fn digest(value: &Value) -> String {
     sha256_json(value)
 }
 
+/// Hex SHA-256 of raw bytes.
+pub fn sha256_hex(bytes: impl AsRef<[u8]>) -> String {
+    use sha2::Digest;
+    hex::encode(sha2::Sha256::digest(bytes))
+}
+
 /// `io::Write` sink that feeds bytes straight into SHA-256.
 struct HashWriter(sha2::Sha256);
 impl std::io::Write for HashWriter {

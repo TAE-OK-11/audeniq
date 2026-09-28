@@ -17,8 +17,9 @@
 //! CONTRACTED + delivery_enabled=false + send_or_publish=false (migration
 //! 0042), and the onboarding gate still requires a signed contract.
 use crate::ddex_ern::{
-    DEAL_CONTENT_ID, DEAL_DOWNLOAD, DEAL_JUKEBOX, DEAL_ON_DEMAND_SUBSCRIPTION, DEAL_SOCIAL,
-    DEAL_SUBSCRIPTION, DEAL_SUBSCRIPTION_AND_FREE, DealProfile,
+    DEAL_AD_SUPPORTED_DOWNLOAD, DEAL_CONTENT_ID, DEAL_CREATOR_LICENSE, DEAL_DJ_UGC, DEAL_DOWNLOAD,
+    DEAL_JUKEBOX, DEAL_ON_DEMAND_SUBSCRIPTION, DEAL_SOCIAL, DEAL_SUBSCRIPTION,
+    DEAL_SUBSCRIPTION_AND_FREE, DealProfile,
 };
 use serde::Serialize;
 use uuid::Uuid;
@@ -60,6 +61,16 @@ pub enum Dsp {
     D33,
     D34,
     D35,
+    D36,
+    D37,
+    D38,
+    D39,
+    D40,
+    D41,
+    D42,
+    D43,
+    D44,
+    D45,
 }
 
 /// How Studio groups the platform picker.
@@ -73,6 +84,10 @@ pub enum Category {
     Social,
     /// Download / DJ stores.
     Store,
+    /// Licensing libraries outside consumer streaming: fitness, creator
+    /// tools, games, business apps (the catalogue is licensed for use in
+    /// someone else's product).
+    Licensing,
 }
 
 /// Which contract route AUDENIQ plans for the DSP (strategy, shown to
@@ -253,7 +268,7 @@ pub const ELECTRONIC_GENRES: &[&str] = &[
     "EDM",
 ];
 
-pub const REGISTRY: [DspSpec; 35] = [
+pub const REGISTRY: [DspSpec; 45] = [
     DspSpec {
         dsp: Dsp::D1,
         code: "D-1",
@@ -276,6 +291,10 @@ pub const REGISTRY: [DspSpec; 35] = [
         slug: "flo",
         name_ko: "FLO",
         name: "FLO",
+        // Merlin's first direct deal in Korea (2022-04): the only Korean
+        // service Merlin licenses. Delivery is still FLO's own feed.
+        merlin_eligible: true,
+        planned_route: PlannedRoute::Merlin,
         ..KR_BASE
     },
     DspSpec {
@@ -690,9 +709,142 @@ pub const REGISTRY: [DspSpec; 35] = [
         name: "Yandex Music",
         name_ko: "Yandex Music (러시아·CIS)",
         deal: &DEAL_SUBSCRIPTION_AND_FREE,
-        merlin_eligible: false,
-        planned_route: PlannedRoute::Direct,
+        // Listed among Merlin's partners; sanctions review still applies.
         partner_risk: Some("러시아 제재·해외송금 제한 — 법무·정산 검토 후 계약"),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D36,
+        code: "D-36",
+        slug: "kuaishou",
+        name: "Kuaishou",
+        name_ko: "Kuaishou·Kwai·SnackVideo",
+        deal: &DEAL_SOCIAL,
+        category: Category::Social,
+        content_id: true,
+        regional_review: true,
+        served_max: (44_100, 16),
+        lead_days: 21,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D37,
+        code: "D-37",
+        slug: "joox",
+        name: "JOOX",
+        name_ko: "JOOX (동남아·홍콩)",
+        deal: &DEAL_SUBSCRIPTION_AND_FREE,
+        served_max: (44_100, 16),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D38,
+        code: "D-38",
+        slug: "trebel",
+        name: "TREBEL",
+        name_ko: "TREBEL (광고형 무료 다운로드)",
+        deal: &DEAL_AD_SUPPORTED_DOWNLOAD,
+        served_max: (44_100, 16),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D39,
+        code: "D-39",
+        slug: "mixcloud",
+        name: "Mixcloud",
+        name_ko: "Mixcloud (DJ 믹스)",
+        deal: &DEAL_DJ_UGC,
+        category: Category::Social,
+        content_id: true,
+        served_max: (44_100, 16),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D40,
+        code: "D-40",
+        slug: "twitch",
+        name: "Twitch",
+        name_ko: "Twitch (DJ 방송)",
+        deal: &DEAL_DJ_UGC,
+        category: Category::Social,
+        content_id: true,
+        served_max: (44_100, 16),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D41,
+        code: "D-41",
+        slug: "peloton",
+        name: "Peloton",
+        name_ko: "Peloton (피트니스)",
+        deal: &DEAL_SUBSCRIPTION,
+        category: Category::Licensing,
+        served_max: (44_100, 16),
+        lead_days: 14,
+        requires_composer: true,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D42,
+        code: "D-42",
+        slug: "canva",
+        name: "Canva",
+        name_ko: "Canva (디자인·영상 음원)",
+        deal: &DEAL_CREATOR_LICENSE,
+        category: Category::Licensing,
+        content_id: true,
+        served_max: (44_100, 16),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D43,
+        code: "D-43",
+        slug: "lickd",
+        name: "Lickd",
+        name_ko: "Lickd (크리에이터 음원 라이선스)",
+        deal: &DEAL_CREATOR_LICENSE,
+        category: Category::Licensing,
+        content_id: true,
+        served_max: (44_100, 16),
+        lead_days: 7,
+        requires_composer: true,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D44,
+        code: "D-44",
+        slug: "adaptr",
+        name: "Adaptr",
+        name_ko: "Adaptr (앱·서비스용 음원)",
+        deal: &DEAL_SUBSCRIPTION,
+        category: Category::Licensing,
+        served_max: (44_100, 16),
+        lead_days: 7,
+        requires_composer: false,
+        ..GLOBAL_BASE
+    },
+    DspSpec {
+        dsp: Dsp::D45,
+        code: "D-45",
+        slug: "styngr",
+        name: "STYNGR",
+        name_ko: "STYNGR (게임 음원)",
+        deal: &DEAL_CREATOR_LICENSE,
+        category: Category::Licensing,
+        served_max: (44_100, 16),
         lead_days: 7,
         requires_composer: false,
         ..GLOBAL_BASE
@@ -700,7 +852,7 @@ pub const REGISTRY: [DspSpec; 35] = [
 ];
 
 impl Dsp {
-    pub const ALL: [Dsp; 35] = [
+    pub const ALL: [Dsp; 45] = [
         Dsp::D1,
         Dsp::D2,
         Dsp::D3,
@@ -736,6 +888,16 @@ impl Dsp {
         Dsp::D33,
         Dsp::D34,
         Dsp::D35,
+        Dsp::D36,
+        Dsp::D37,
+        Dsp::D38,
+        Dsp::D39,
+        Dsp::D40,
+        Dsp::D41,
+        Dsp::D42,
+        Dsp::D43,
+        Dsp::D44,
+        Dsp::D45,
     ];
 
     pub fn spec(self) -> &'static DspSpec {
@@ -833,6 +995,13 @@ mod tests {
             assert!(!s.name_ko.is_empty(), "{}", s.code);
             assert!(!s.name_ko.starts_with("D-"), "{}", s.code);
             assert!(!s.deal.commercial_models.is_empty() && !s.deal.use_types.is_empty());
+            // Every Merlin-licensed DSP is planned on the Merlin route.
+            assert_eq!(
+                s.merlin_eligible,
+                s.planned_route == PlannedRoute::Merlin,
+                "{}",
+                s.code
+            );
             match s.format {
                 DeliveryFormat::Ddex => {
                     assert_eq!(s.ern_version, "3.8.2", "{}", s.code);
@@ -841,7 +1010,8 @@ mod tests {
                 DeliveryFormat::PartnerSpec => {
                     assert!(s.ern_version.is_empty());
                     assert_eq!(s.channel, Channel::PartnerFeed);
-                    assert!(!s.merlin_eligible, "no Merlin deal with Korean services");
+                    // Merlin licenses FLO only among Korean services.
+                    assert_eq!(s.merlin_eligible, s.dsp == Dsp::D3, "{}", s.code);
                 }
             }
         }
@@ -878,7 +1048,8 @@ mod tests {
         let sql = concat!(
             include_str!("../../../migrations/0042_dsp_registry.sql"),
             include_str!("../../../migrations/0057_dsp_expansion.sql"),
-            include_str!("../../../migrations/0058_dsp_expansion_2.sql")
+            include_str!("../../../migrations/0058_dsp_expansion_2.sql"),
+            include_str!("../../../migrations/0059_merlin_partners.sql")
         );
         for s in &REGISTRY {
             let row = format!("('{}','{}','{}'", s.code, s.dsp.uuid(), s.slug);

@@ -258,14 +258,6 @@ fn parse_image(v: &serde_json::Value) -> Result<ImageMetrics> {
     })
 }
 
-/// Measured audio duration in seconds via ffprobe. Returns `None` when the
-/// file cannot be probed or has no parseable duration. Used by Stage 1 to
-/// persist `catalog.assets.duration_secs`, which the DDEX ERN builder needs
-/// for the schema-required `SoundRecording/Duration` element.
-pub fn probe_duration_secs(path: &Path) -> Option<f64> {
-    probe_audio_metrics(path).map(|m| m.duration_secs)
-}
-
 /// Measured audio technical metrics via ffprobe: duration plus the real
 /// sample rate / channel count / bits per sample. Returns `None` when the
 /// file cannot be probed or has no audio stream. Stage 1 persists these to
@@ -416,10 +408,12 @@ pub const SILENCE_PEAK: f32 = 1e-4;
 pub const TRUNCATION_TOLERANCE_SECS: f64 = 1.0;
 pub const TRUNCATION_TOLERANCE_RATIO: f64 = 0.01;
 
-/// Stage 1 basic QC for an audio asset file.
+/// Stage 1 basic QC for an audio asset file (test convenience; the worker
+/// calls [`check_audio_with_fp_tap`]).
 ///
 /// `declared_content_type` is the MIME type the upload was registered with;
 /// when given, the real container must match it.
+#[cfg(test)]
 pub fn check_audio(
     path: &Path,
     registered_sha256: Option<&str>,
@@ -428,7 +422,7 @@ pub fn check_audio(
     check_audio_inner(path, registered_sha256, declared_content_type, None, false).0
 }
 
-/// Like [`check_audio`], but additionally returns the perceptual-fingerprint
+/// Stage 1 basic QC for an audio asset file, also returning the perceptual-fingerprint
 /// PCM tapped from the single decode pass (mono 11025 Hz `f32`, full length;
 /// `None` when the file was rejected before decoding or the tap failed)
 /// and the audio metrics from the probe.
@@ -683,7 +677,7 @@ fn check_audio_inner(
         ));
         return (out, None, Some(metrics.clone()));
     }
-    let (analysis, fp_tap) = match decode_analysis_inner(path, &metrics, want_fp_tap) {
+    let (analysis, fp_tap) = match decode_analysis(path, &metrics, want_fp_tap) {
         Ok((a, t)) => (a, t),
         Err(e) => {
             let (status, detail) = match e {
@@ -1107,34 +1101,17 @@ fn decode_timeout(duration_secs: f64) -> Duration {
     scaled.max(probe_timeout())
 }
 
-/// Decode the file once with ffmpeg: interleaved f32 PCM on stdout feeds the
-/// peak / clipping / silence / length measurements (streamed, constant
-/// memory), while the ebur128 filter prints loudness and true peak on stderr.
-pub fn decode_analysis(
-    path: &Path,
-    m: &AudioMetrics,
-) -> std::result::Result<DecodeAnalysis, AnalyzerError> {
-    decode_analysis_inner(path, m, false).map(|(a, _)| a)
-}
-
-/// Like [`decode_analysis`], but additionally taps the perceptual-fingerprint
-/// PCM (mono 11025 Hz s16le) from the SAME single decode via a second ffmpeg
-/// output. The input is decoded once and fanned out to both filter chains,
-/// so this replaces the three separate fingerprint segment decodes without
-/// re-decoding the file. Returns the tap samples (`s16le` → `f32`, full
-/// length; the caller slices the configured segment windows), or `None`
-/// when the tap output could not be produced.
-pub fn decode_analysis_with_fp_tap(
-    path: &Path,
-    m: &AudioMetrics,
-) -> std::result::Result<(DecodeAnalysis, Option<Vec<f32>>), AnalyzerError> {
-    decode_analysis_inner(path, m, true)
-}
-
 /// Unique counter for fingerprint-tap temp files.
 static FP_TAP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-fn decode_analysis_inner(
+/// Decode the file once with ffmpeg: interleaved f32 PCM on stdout feeds the
+/// peak / clipping / silence / length measurements (streamed, constant
+/// memory), while the ebur128 filter prints loudness and true peak on stderr.
+/// With `want_tap`, the perceptual-fingerprint PCM (mono 11025 Hz s16le) is
+/// tapped from the SAME decode via a second ffmpeg output and returned as
+/// `f32` (full length; the caller slices the segment windows), or `None` when
+/// the tap output could not be produced.
+fn decode_analysis(
     path: &Path,
     m: &AudioMetrics,
     want_tap: bool,

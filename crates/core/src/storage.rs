@@ -108,7 +108,7 @@ impl ObjectDigest {
     pub fn of(bytes: &[u8]) -> Self {
         Self {
             size: bytes.len() as u64,
-            sha256: hex::encode(Sha256::digest(bytes)),
+            sha256: crate::domain::sha256_hex(bytes),
             head: bytes[..bytes.len().min(HEAD_SNIFF_BYTES)].to_vec(),
         }
     }
@@ -308,7 +308,7 @@ impl S3Store {
             format!("{method}\n{path}\n{query}\n{canonical_headers}\n{names}\nUNSIGNED-PAYLOAD");
         let to_sign = format!(
             "AWS4-HMAC-SHA256\n{datetime}\n{scope}\n{}",
-            hex::encode(Sha256::digest(canonical.as_bytes()))
+            crate::domain::sha256_hex(canonical)
         );
         let k_date = hmac(format!("AWS4{}", self.secret).as_bytes(), &date);
         let k_region = hmac(&k_date, &self.region);

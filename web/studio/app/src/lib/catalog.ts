@@ -21,6 +21,10 @@ export const DSP: [string, string][] = [
   ['youtube-cid', 'YouTube Content ID·Shorts'], ['snapchat', 'Snapchat'], ['beatport', 'Beatport'],
   ['itunes', 'iTunes Store (다운로드)'], ['claro-musica', 'Claro Música (중남미)'], ['pretzel', 'Pretzel (스트리머용 음원)'],
   ['triller', 'Triller'], ['touchtunes', 'TouchTunes (디지털 주크박스)'], ['yandex', 'Yandex Music (러시아·CIS)'],
+  ['kuaishou', 'Kuaishou·Kwai·SnackVideo'], ['joox', 'JOOX (동남아·홍콩)'], ['trebel', 'TREBEL (광고형 무료 다운로드)'],
+  ['mixcloud', 'Mixcloud (DJ 믹스)'], ['twitch', 'Twitch (DJ 방송)'], ['peloton', 'Peloton (피트니스)'],
+  ['canva', 'Canva (디자인·영상 음원)'], ['lickd', 'Lickd (크리에이터 음원 라이선스)'], ['adaptr', 'Adaptr (앱·서비스용 음원)'],
+  ['styngr', 'STYNGR (게임 음원)'],
 ];
 
 /** 서버 DSP 코드 — 백엔드 레지스트리(crates/core/src/dsp_registry.rs)와 같은 순서: DSP[i] = D-(i+1) */

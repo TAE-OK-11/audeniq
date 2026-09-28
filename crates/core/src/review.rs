@@ -17,6 +17,7 @@
 //! modules are never resumed from stale per-module state.
 //! All mutations run in one transaction fenced by the job's lock token: an
 //! expired worker cannot commit a decision.
+use crate::domain::sha256_hex;
 use crate::{
     api::AppState,
     auth::{self, Actor},
@@ -25,7 +26,6 @@ use crate::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use sqlx::{PgConnection, PgPool, Row};
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
@@ -49,7 +49,7 @@ struct ReviewCheck {
 
 impl ReviewCheck {
     fn result_hash(&self) -> String {
-        sha256_hex(&format!(
+        sha256_hex(format!(
             "{}:{}:{}",
             self.check_code, REVIEW_RULE_VERSION, self.detail
         ))
@@ -88,10 +88,6 @@ async fn record_check_result(
             .await
             .map_err(Error::from),
     }
-}
-
-fn sha256_hex(s: &str) -> String {
-    hex::encode(Sha256::digest(s.as_bytes()))
 }
 
 struct Ctx {
@@ -613,26 +609,21 @@ async fn module_applicant_rights(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec
     .await?;
     // Chain depth guard: unclear or overly deep chains go to REVIEW, never
     // auto-expanded (BLUEPRINT §5.2).
-    let mut max_depth = 0i32;
-    for g in &grants {
-        let mut depth = 0i32;
-        let mut parent: Option<Uuid> = g.get("parent_grant_id");
-        while let Some(pid) = parent {
-            depth += 1;
-            if depth > 8 {
-                break;
-            }
-            parent = sqlx::query_scalar(
-                "SELECT parent_grant_id FROM rights.grant_atoms WHERE org_id=$1 AND id=$2",
-            )
-            .bind(ctx.org)
-            .bind(pid)
-            .fetch_optional(&mut *tx)
-            .await?
-            .unwrap_or(None);
-        }
-        max_depth = max_depth.max(depth);
-    }
+    // One recursive walk up every chain: a hop counts once its parent id is
+    // set (even when that parent row is gone); walks stop past depth 8.
+    let grant_ids: Vec<Uuid> = grants.iter().map(|g| g.get("id")).collect();
+    let max_depth: i32 = sqlx::query_scalar(
+        "WITH RECURSIVE chain(parent, depth) AS (
+           SELECT parent_grant_id, 0 FROM rights.grant_atoms WHERE org_id=$1 AND id=ANY($2)
+           UNION ALL
+           SELECT g.parent_grant_id, c.depth+1 FROM chain c
+             JOIN rights.grant_atoms g ON g.org_id=$1 AND g.id=c.parent WHERE c.depth<9)
+         SELECT COALESCE(max(depth + (parent IS NOT NULL)::int), 0) FROM chain",
+    )
+    .bind(ctx.org)
+    .bind(&grant_ids)
+    .fetch_one(&mut *tx)
+    .await?;
     if max_depth > 8 {
         out.push(ReviewCheck {
             check_code: "S2_RIGHTS_SCOPE",
@@ -642,23 +633,19 @@ async fn module_applicant_rights(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec
         return Ok(out);
     }
     // Exclusive conflicts against another active grant for the same target.
-    let mut exclusive_conflict = false;
-    for g in &grants {
-        let tk: String = g.get("target_kind");
-        let tid: Uuid = g.get("target_id");
-        let rt: String = g.get("right_type");
-        if g.get::<bool, _>("exclusive") {
-            let other: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM rights.grant_atoms WHERE org_id=$1 AND target_kind=$2 AND target_id=$3 AND right_type=$4 AND exclusive AND revoked_at IS NULL AND id<>$5",
-            )
-            .bind(ctx.org).bind(&tk).bind(tid).bind(&rt).bind(g.get::<Uuid,_>("id"))
-            .fetch_one(&mut *tx)
-            .await?;
-            if other > 0 {
-                exclusive_conflict = true;
-            }
-        }
-    }
+    // `grants` already holds every active grant of the org.
+    let exclusive_key = |g: &sqlx::postgres::PgRow| {
+        (
+            g.get::<String, _>("target_kind"),
+            g.get::<Uuid, _>("target_id"),
+            g.get::<String, _>("right_type"),
+        )
+    };
+    let mut exclusive_seen = BTreeSet::new();
+    let exclusive_conflict = grants
+        .iter()
+        .filter(|g| g.get::<bool, _>("exclusive"))
+        .any(|g| !exclusive_seen.insert(exclusive_key(g)));
     if exclusive_conflict {
         out.push(ReviewCheck {
             check_code: "S2_RIGHTS_SCOPE",
@@ -739,20 +726,21 @@ async fn module_catalog_match(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec<Re
 
     // 2-C.1: ISRC/UPC matching only; Stage 2 never issues identifiers.
     let mut dup_isrc: BTreeSet<String> = BTreeSet::new();
-    for t in &tracks {
-        if let Some(isrc) = t.get("isrc").and_then(Value::as_str) {
-            let hits: Vec<(Uuid, Uuid)> = sqlx::query_as(
-                "SELECT t.release_id, t.org_id FROM catalog.tracks t JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id WHERE t.isrc=$1 AND t.release_id<>$2 AND r.status NOT IN ('WITHDRAWN','SUPERSEDED')",
-            )
-            .bind(isrc)
-            .bind(ctx.release)
-            .fetch_all(&mut *tx)
-            .await?;
-            for (rel, org) in hits {
-                if org != ctx.org {
-                    dup_isrc.insert(format!("{isrc} org={org} release={rel}"));
-                }
-            }
+    let isrcs: Vec<&str> = tracks
+        .iter()
+        .filter_map(|t| t.get("isrc").and_then(Value::as_str))
+        .collect();
+    if !isrcs.is_empty() {
+        let hits: Vec<(String, Uuid, Uuid)> = sqlx::query_as(
+            "SELECT t.isrc, t.release_id, t.org_id FROM catalog.tracks t JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id WHERE t.isrc=ANY($1) AND t.release_id<>$2 AND t.org_id<>$3 AND r.status NOT IN ('WITHDRAWN','SUPERSEDED')",
+        )
+        .bind(&isrcs)
+        .bind(ctx.release)
+        .bind(ctx.org)
+        .fetch_all(&mut *tx)
+        .await?;
+        for (isrc, rel, org) in hits {
+            dup_isrc.insert(format!("{isrc} org={org} release={rel}"));
         }
     }
     // 2-C.1b: UPC claimed by another org on a live release.
@@ -771,18 +759,20 @@ async fn module_catalog_match(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec<Re
     }
     // 2-C.2: SHA-256 against the active internal asset index.
     let mut dup_sha: BTreeSet<String> = BTreeSet::new();
-    for t in &tracks {
-        if let Some(sha) = t.get("asset_sha256").and_then(Value::as_str) {
-            let hits: Vec<Uuid> = sqlx::query_scalar(
-                "SELECT DISTINCT a.org_id FROM catalog.assets a JOIN catalog.tracks t ON t.org_id=a.org_id AND t.asset_id=a.id JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id WHERE a.sha256=$1 AND a.org_id<>$2 AND r.status NOT IN ('WITHDRAWN','SUPERSEDED')",
-            )
-            .bind(sha)
-            .bind(ctx.org)
-            .fetch_all(&mut *tx)
-            .await?;
-            for org in hits {
-                dup_sha.insert(format!("sha {org}"));
-            }
+    let shas: Vec<&str> = tracks
+        .iter()
+        .filter_map(|t| t.get("asset_sha256").and_then(Value::as_str))
+        .collect();
+    if !shas.is_empty() {
+        let hits: Vec<Uuid> = sqlx::query_scalar(
+            "SELECT DISTINCT a.org_id FROM catalog.assets a JOIN catalog.tracks t ON t.org_id=a.org_id AND t.asset_id=a.id JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id WHERE a.sha256=ANY($1) AND a.org_id<>$2 AND r.status NOT IN ('WITHDRAWN','SUPERSEDED')",
+        )
+        .bind(&shas)
+        .bind(ctx.org)
+        .fetch_all(&mut *tx)
+        .await?;
+        for org in hits {
+            dup_sha.insert(format!("sha {org}"));
         }
     }
     if dup_isrc.is_empty() && dup_sha.is_empty() {
