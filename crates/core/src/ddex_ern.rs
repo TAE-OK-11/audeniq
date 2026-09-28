@@ -212,6 +212,19 @@ fn image_codec(content_type: &str) -> (&'static str, &'static str) {
     }
 }
 
+/// Delivery file name of a track's audio as the ERN references it
+/// (`UPC_DD_TTT.ext`). File-drop adapters upload under exactly this name.
+pub fn audio_file_name(upc: &str, disc: u32, track: u32, content_type: &str) -> String {
+    let (_, ext) = audio_codec(content_type);
+    format!("{upc}_{disc:02}_{track:03}.{ext}")
+}
+
+/// Delivery file name of the front cover as the ERN references it.
+pub fn image_file_name(upc: &str, content_type: &str) -> String {
+    let (_, ext) = image_codec(content_type);
+    format!("{upc}.{ext}")
+}
+
 fn message_header(out: &mut String, c: &DdexErnConfig) {
     // XSD order: MessageThreadId?, MessageId, MessageFileName?,
     // MessageSender, SentOnBehalfOf?, MessageRecipient,
@@ -347,10 +360,12 @@ fn resource_list(
     for (i, track) in tracks.iter().enumerate() {
         let resource_ref = format!("A{:03}", i + 1);
         let tech_ref = format!("T{resource_ref}");
-        let (codec, ext) = audio_codec(&track.audio.content_type);
-        let file_name = format!(
-            "{}_{:02}_{:03}.{ext}",
-            prepared.upc, track.disc_number, track.track_number
+        let (codec, _) = audio_codec(&track.audio.content_type);
+        let file_name = audio_file_name(
+            &prepared.upc,
+            track.disc_number,
+            track.track_number,
+            &track.audio.content_type,
         );
         // XSD order: SoundRecordingType?, IsArtistRelated?,
         // SoundRecordingId, ResourceReference, ReferenceTitle, ...,
@@ -463,7 +478,7 @@ fn image_resource(
     sender_dpid: &str,
 ) {
     let art: &AssetRef = &prepared.artwork;
-    let (codec, ext) = image_codec(&art.content_type);
+    let (codec, _) = image_codec(&art.content_type);
     // XSD order: ImageType?, IsArtistRelated?, ImageId, ResourceReference,
     // ..., ImageDetailsByTerritory.
     out.push_str("<Image>");
@@ -487,7 +502,11 @@ fn image_resource(
     out.push_str("<TechnicalImageDetails>");
     element(out, "TechnicalResourceDetailsReference", "TI001");
     element(out, "ImageCodecType", codec);
-    file_block(out, &format!("{}.{ext}", prepared.upc), &art.sha256);
+    file_block(
+        out,
+        &image_file_name(&prepared.upc, &art.content_type),
+        &art.sha256,
+    );
     out.push_str("</TechnicalImageDetails>");
     out.push_str("</ImageDetailsByTerritory>");
     out.push_str("</Image>");
