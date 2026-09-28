@@ -9,7 +9,6 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::error::{Error, Result};
-use sha2::{Digest, Sha256};
 
 /// One parsed line from a royalty report CSV.
 #[derive(Debug, Clone)]
@@ -114,7 +113,7 @@ pub async fn ingest_report(
     if lines.is_empty() {
         return Err(Error::Invalid);
     }
-    let source_hash = hex::encode(Sha256::digest(content.as_bytes()));
+    let source_hash = crate::domain::sha256_hex(content);
     let report_id = Uuid::new_v4();
 
     let mut tx = pool.begin().await?;

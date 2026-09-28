@@ -16,7 +16,6 @@ use crate::storage::ObjectStore;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sha2::Digest;
 use sqlx::{PgConnection, PgPool, Row};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -750,7 +749,7 @@ async fn materialize(
     let (ern_xml, ern_sha256): (String, String) = match ddex {
         Some((xml, sha)) => (xml, sha),
         None if partner_feed && (transport != "mock" || activation_kind == "CONTRACTED") => {
-            (String::new(), hex::encode(sha2::Sha256::digest(b"")))
+            (String::new(), crate::domain::sha256_hex(b""))
         }
         // A commercial partner never receives the synthetic preparation
         // envelope: without its own DDEX interchange message the send fails
@@ -770,7 +769,7 @@ async fn materialize(
     // The transfer document is the ERN XML frozen at preparation time, not a
     // synthetic comment. Its bytes are verified against the stored hash;
     // a missing or tampered document fails closed before any wire call.
-    if hex::encode(sha2::Sha256::digest(ern_xml.as_bytes())) != ern_sha256 {
+    if crate::domain::sha256_hex(&ern_xml) != ern_sha256 {
         return Err(Error::PolicyGate("EXECUTION_ERN_TAMPERED"));
     }
     let ern_xml_bytes = ern_xml.into_bytes();
@@ -910,7 +909,7 @@ pub async fn run_delivery(
     .fetch_one(&mut *tx)
     .await?;
     let idempotency_key = format!("delivery:{}:{attempt_no}", job.id);
-    let request_sha256 = hex::encode(sha2::Sha256::digest(&package.ern_xml));
+    let request_sha256 = crate::domain::sha256_hex(&package.ern_xml);
     // A partner id the adapter picks itself (DDEX batch folder) is part of
     // the attempt record before the call: after a crash or lost response
     // the inquiry asks about exactly this submission.

@@ -17,7 +17,7 @@ use crate::error::{Error, Result};
 use crate::partner_config::{Secret, TransportConfig};
 use async_trait::async_trait;
 use hmac::{Hmac, KeyInit, Mac};
-use sha2::{Digest, Sha256};
+use sha2::Sha256;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -593,7 +593,7 @@ impl S3Transport {
             format!("{method}\n{path}\n{query}\n{canonical_headers}\n{names}\nUNSIGNED-PAYLOAD");
         let to_sign = format!(
             "AWS4-HMAC-SHA256\n{datetime}\n{scope}\n{}",
-            hex::encode(Sha256::digest(canonical.as_bytes()))
+            crate::domain::sha256_hex(canonical)
         );
         let h = |k: &[u8], s: &str| {
             let mut m = Hmac::<Sha256>::new_from_slice(k).expect("hmac key");

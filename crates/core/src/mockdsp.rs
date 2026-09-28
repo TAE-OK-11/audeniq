@@ -16,7 +16,6 @@ use crate::execution::{
 };
 use async_trait::async_trait;
 use serde_json::{Value, json};
-use sha2::Digest as _;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
@@ -185,10 +184,6 @@ impl MockDsp {
         }
     }
 
-    pub fn set_behavior(&self, behavior: MockBehavior) {
-        self.inner.lock().unwrap().behavior = behavior;
-    }
-
     /// Every wire call the mock has seen, in order.
     pub fn received(&self) -> Vec<ReceivedSend> {
         self.inner.lock().unwrap().received.clone()
@@ -281,7 +276,7 @@ impl DspAdapter for MockDsp {
             idempotency_key: ctx.idempotency_key.clone(),
             attempt_no: ctx.attempt_no,
             package_hash: ctx.package.package_hash.clone(),
-            ern_sha256: hex::encode(sha2::Sha256::digest(&ctx.package.ern_xml)),
+            ern_sha256: crate::domain::sha256_hex(&ctx.package.ern_xml),
         });
         let pmid = Self::fresh_message_id(&inner);
         let state = SubmissionState {
@@ -449,7 +444,7 @@ impl DspAdapter for MockDsp {
             idempotency_key: format!("{}:update", ctx.idempotency_key),
             attempt_no: ctx.attempt_no,
             package_hash: ctx.package.package_hash.clone(),
-            ern_sha256: hex::encode(sha2::Sha256::digest(&ctx.package.ern_xml)),
+            ern_sha256: crate::domain::sha256_hex(&ctx.package.ern_xml),
         });
         Ok(SendOutcome::Accepted {
             partner_message_id: format!("mock-update-{}", Uuid::new_v4().simple()),
@@ -463,7 +458,7 @@ impl DspAdapter for MockDsp {
             idempotency_key: format!("{}:takedown", ctx.idempotency_key),
             attempt_no: ctx.attempt_no,
             package_hash: ctx.package.package_hash.clone(),
-            ern_sha256: hex::encode(sha2::Sha256::digest(&ctx.package.ern_xml)),
+            ern_sha256: crate::domain::sha256_hex(&ctx.package.ern_xml),
         });
         // Mark every accepted submission taken down partner-side.
         for s in inner.submissions.values_mut() {

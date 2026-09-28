@@ -2,14 +2,12 @@
 //! DB freshness facts come from Muse's orchestrator; no state transition here.
 use crate::{
     domain::{FreshnessPin, freshness_guard},
-    ern::{generate_prepared_ern, validate_metadata, validate_xml},
-    error::Result,
+    ern::{validate_metadata, validate_xml},
     preparation_model::{AssetRef, PreparedRelease, VerificationPackage},
     route_plan::verify_scope,
     storage::ObjectStore,
 };
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 
 pub struct CurrentFacts {
     pub pin: FreshnessPin,
@@ -149,7 +147,7 @@ pub fn check_rights(
         && expected.verification_hash == c.verification_package_hash
         && i64::try_from(expected.rights_epoch).ok() == Some(c.rights_epoch)
         && !expected.route_contract_id.is_nil()
-        && expected.package_hash == hex::encode(Sha256::digest(xml.as_bytes()))
+        && expected.package_hash == crate::domain::sha256_hex(xml)
         && freshness_guard(
             expected,
             &current.pin,
@@ -173,10 +171,4 @@ pub async fn preflight(
         files: check_files(c, store).await,
         rights: status(check_rights(c, v, xml, expected, current)),
     }
-}
-
-/// Convenience for callers that want the canonical byte representation before
-/// pinning it. Does not persist, mark READY, or enqueue anything.
-pub fn preparation_bytes(c: &PreparedRelease) -> Result<Vec<u8>> {
-    Ok(generate_prepared_ern(c)?.into_bytes())
 }

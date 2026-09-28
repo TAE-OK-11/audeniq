@@ -17,6 +17,7 @@
 //! modules are never resumed from stale per-module state.
 //! All mutations run in one transaction fenced by the job's lock token: an
 //! expired worker cannot commit a decision.
+use crate::domain::sha256_hex;
 use crate::{
     api::AppState,
     auth::{self, Actor},
@@ -25,7 +26,6 @@ use crate::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use sqlx::{PgConnection, PgPool, Row};
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
@@ -88,10 +88,6 @@ async fn record_check_result(
             .await
             .map_err(Error::from),
     }
-}
-
-fn sha256_hex(s: &str) -> String {
-    hex::encode(Sha256::digest(s.as_bytes()))
 }
 
 struct Ctx {
@@ -739,20 +735,21 @@ async fn module_catalog_match(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec<Re
 
     // 2-C.1: ISRC/UPC matching only; Stage 2 never issues identifiers.
     let mut dup_isrc: BTreeSet<String> = BTreeSet::new();
-    for t in &tracks {
-        if let Some(isrc) = t.get("isrc").and_then(Value::as_str) {
-            let hits: Vec<(Uuid, Uuid)> = sqlx::query_as(
-                "SELECT t.release_id, t.org_id FROM catalog.tracks t JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id WHERE t.isrc=$1 AND t.release_id<>$2 AND r.status NOT IN ('WITHDRAWN','SUPERSEDED')",
-            )
-            .bind(isrc)
-            .bind(ctx.release)
-            .fetch_all(&mut *tx)
-            .await?;
-            for (rel, org) in hits {
-                if org != ctx.org {
-                    dup_isrc.insert(format!("{isrc} org={org} release={rel}"));
-                }
-            }
+    let isrcs: Vec<&str> = tracks
+        .iter()
+        .filter_map(|t| t.get("isrc").and_then(Value::as_str))
+        .collect();
+    if !isrcs.is_empty() {
+        let hits: Vec<(String, Uuid, Uuid)> = sqlx::query_as(
+            "SELECT t.isrc, t.release_id, t.org_id FROM catalog.tracks t JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id WHERE t.isrc=ANY($1) AND t.release_id<>$2 AND t.org_id<>$3 AND r.status NOT IN ('WITHDRAWN','SUPERSEDED')",
+        )
+        .bind(&isrcs)
+        .bind(ctx.release)
+        .bind(ctx.org)
+        .fetch_all(&mut *tx)
+        .await?;
+        for (isrc, rel, org) in hits {
+            dup_isrc.insert(format!("{isrc} org={org} release={rel}"));
         }
     }
     // 2-C.1b: UPC claimed by another org on a live release.
@@ -771,18 +768,20 @@ async fn module_catalog_match(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec<Re
     }
     // 2-C.2: SHA-256 against the active internal asset index.
     let mut dup_sha: BTreeSet<String> = BTreeSet::new();
-    for t in &tracks {
-        if let Some(sha) = t.get("asset_sha256").and_then(Value::as_str) {
-            let hits: Vec<Uuid> = sqlx::query_scalar(
-                "SELECT DISTINCT a.org_id FROM catalog.assets a JOIN catalog.tracks t ON t.org_id=a.org_id AND t.asset_id=a.id JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id WHERE a.sha256=$1 AND a.org_id<>$2 AND r.status NOT IN ('WITHDRAWN','SUPERSEDED')",
-            )
-            .bind(sha)
-            .bind(ctx.org)
-            .fetch_all(&mut *tx)
-            .await?;
-            for org in hits {
-                dup_sha.insert(format!("sha {org}"));
-            }
+    let shas: Vec<&str> = tracks
+        .iter()
+        .filter_map(|t| t.get("asset_sha256").and_then(Value::as_str))
+        .collect();
+    if !shas.is_empty() {
+        let hits: Vec<Uuid> = sqlx::query_scalar(
+            "SELECT DISTINCT a.org_id FROM catalog.assets a JOIN catalog.tracks t ON t.org_id=a.org_id AND t.asset_id=a.id JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id WHERE a.sha256=ANY($1) AND a.org_id<>$2 AND r.status NOT IN ('WITHDRAWN','SUPERSEDED')",
+        )
+        .bind(&shas)
+        .bind(ctx.org)
+        .fetch_all(&mut *tx)
+        .await?;
+        for org in hits {
+            dup_sha.insert(format!("sha {org}"));
         }
     }
     if dup_isrc.is_empty() && dup_sha.is_empty() {

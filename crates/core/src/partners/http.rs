@@ -3,7 +3,7 @@ use crate::error::{Error, Result};
 use crate::partner_config::{HttpApiConfig, HttpAuth, Secret};
 use hmac::{Hmac, KeyInit, Mac};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
+use sha2::Sha256;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
@@ -176,7 +176,7 @@ impl ApiClient {
     ) -> std::result::Result<(u16, Vec<u8>), HttpFailure> {
         match body {
             Some((bytes, ct)) => {
-                let sha = hex::encode(Sha256::digest(&bytes));
+                let sha = crate::domain::sha256_hex(&bytes);
                 let len = bytes.len() as u64;
                 self.exchange(
                     method,
@@ -243,7 +243,7 @@ impl ApiClient {
         let body_sha = body
             .as_ref()
             .map(|(_, _, sha, _)| sha.clone())
-            .unwrap_or_else(|| hex::encode(Sha256::digest(b"")));
+            .unwrap_or_else(|| crate::domain::sha256_hex(b""));
         if let Some((_, len, _, ct)) = &body {
             req = req
                 .header("content-type", *ct)

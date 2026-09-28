@@ -5,6 +5,7 @@
 use crate::{
     api::AppState,
     auth::{self, Actor},
+    domain::{sha256_hex, sha256_json},
     error::{Error, Result},
     fingerprint,
     identifiers::{validate_isrc, validate_upc},
@@ -14,7 +15,6 @@ use crate::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use sqlx::{PgConnection, PgPool, Row};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -35,14 +35,6 @@ pub fn is_editable_status(status: &str) -> bool {
 pub const CONSENT_POLICY_VERSION: &str = "v1-self";
 /// Rule version for Stage 1 field checks (1-B).
 pub const FIELD_RULE_VERSION: &str = "1";
-
-fn sha256_hex(s: &str) -> String {
-    hex::encode(Sha256::digest(s.as_bytes()))
-}
-fn canonical(v: &Value) -> String {
-    // serde_json::Map is a BTreeMap by default: keys sort, output is stable.
-    serde_json::to_string(v).expect("json serializes")
-}
 
 /// Canonical scope a consent package covers: the release draft it was
 /// created against. Submit re-computes this and rejects on mismatch.
@@ -201,7 +193,7 @@ pub async fn create_consent(
         return Err(Error::Invalid);
     }
     let scope = scope_of(&mut tx, org, release).await?;
-    let scope_hash = sha256_hex(&canonical(&scope));
+    let scope_hash = sha256_json(&scope);
     let valid_days = input.valid_days.unwrap_or(365).clamp(1, 3650);
     let body = json!({
         "schema_version": 1,
@@ -216,7 +208,7 @@ pub async fn create_consent(
         "scope_hash": scope_hash,
         "valid_until": (chrono::Utc::now() + chrono::Duration::days(valid_days)).to_rfc3339(),
     });
-    let package_hash = sha256_hex(&canonical(&body));
+    let package_hash = sha256_json(&body);
     let id = Uuid::new_v4();
     sqlx::query("INSERT INTO catalog.consent_packages(id, org_id, revision_id, body, package_hash, policy_version) VALUES($1,$2,NULL,$3,$4,$5)")
         .bind(id).bind(org).bind(&body).bind(&package_hash).bind(CONSENT_POLICY_VERSION)
@@ -479,7 +471,7 @@ pub async fn submit(
     if expired {
         return Err(Error::PolicyGate("CONSENT_EXPIRED"));
     }
-    let scope_hash = sha256_hex(&canonical(&scope_of(&mut tx, org, release).await?));
+    let scope_hash = sha256_json(&scope_of(&mut tx, org, release).await?);
     let consent_scope = c
         .get::<Value, _>("body")
         .get("scope_hash")
@@ -508,7 +500,7 @@ pub async fn submit(
     }) {
         return Err(Error::PolicyGate("AUDIO_NOT_VERIFIED"));
     }
-    let body_hash = sha256_hex(&canonical(&body));
+    let body_hash = sha256_json(&body);
     let idem_key = input.idempotency_key.trim().to_string();
     // Idempotency key: the same key on this release always resolves to the
     // revision created by the first submit, so a retried request can never
@@ -2607,7 +2599,7 @@ pub async fn run_stage1(
             &body,
             &check_ids,
         );
-        let pkg_hash = sha256_hex(&canonical(&pkg));
+        let pkg_hash = sha256_json(&pkg);
         let pkg_id = Uuid::new_v4();
         sqlx::query("INSERT INTO distribution.validation_packages(id, org_id, revision_id, body, package_hash, rule_version) VALUES($1,$2,$3,$4,$5,$6)")
             .bind(pkg_id).bind(org).bind(revision_id).bind(&pkg).bind(&pkg_hash).bind(qc::QC_RULE_VERSION)
