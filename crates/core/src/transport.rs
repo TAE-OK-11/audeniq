@@ -287,6 +287,10 @@ fn sftp_quote(s: &str) -> TResult<String> {
 impl SftpTransport {
     async fn run(&self, script: &str, timeout: Duration) -> TResult<String> {
         use tokio::io::AsyncWriteExt;
+        // Pre-launch lock (crate::launch): no connection to a real DSP.
+        if !crate::launch::wire_allowed(&self.host) {
+            return Err(TransportError::Unreachable(crate::launch::LOCKED.into()));
+        }
         let bin = std::env::var("SFTP_BIN").unwrap_or_else(|_| "sftp".into());
         let mut cmd = tokio::process::Command::new(bin);
         cmd.arg("-b")
@@ -607,6 +611,15 @@ impl S3Transport {
         )
     }
 
+    /// Pre-launch lock (crate::launch): no request to a real DSP bucket.
+    fn guard(&self) -> TResult<()> {
+        if crate::launch::wire_allowed(self.endpoint.host_str().unwrap_or("")) {
+            Ok(())
+        } else {
+            Err(TransportError::Unreachable(crate::launch::LOCKED.into()))
+        }
+    }
+
     fn classify(e: reqwest::Error) -> TransportError {
         if e.is_connect() || e.is_builder() {
             TransportError::Unreachable(e.to_string())
@@ -616,6 +629,7 @@ impl S3Transport {
     }
 
     async fn put_body(&self, key: &str, body: reqwest::Body, len: u64) -> TResult<()> {
+        self.guard()?;
         let headers = BTreeMap::from([("content-length".to_string(), len.to_string())]);
         let url = self.presign("PUT", key, &BTreeMap::new(), &headers, chrono::Utc::now());
         let r = self
@@ -663,6 +677,7 @@ impl FileTransport for S3Transport {
         Ok(())
     }
     async fn list(&self, dir: &str) -> TResult<Vec<String>> {
+        self.guard()?;
         let rel = dir.trim_matches('/');
         let prefix = if rel.is_empty() {
             if self.prefix.is_empty() {
@@ -715,6 +730,7 @@ impl FileTransport for S3Transport {
         Ok(names)
     }
     async fn get(&self, path: &str, max_bytes: u64) -> TResult<Vec<u8>> {
+        self.guard()?;
         let url = self.presign(
             "GET",
             &self.key(path),
@@ -743,6 +759,7 @@ impl FileTransport for S3Transport {
         Ok(out)
     }
     async fn probe(&self) -> TResult<()> {
+        self.guard()?;
         let q = BTreeMap::from([
             ("list-type".to_string(), "2".to_string()),
             ("max-keys".to_string(), "1".to_string()),
@@ -802,6 +819,9 @@ pub async fn probe_config(config: &TransportConfig) -> Result<String> {
     match build(config)? {
         Some(t) => match t.probe().await {
             Ok(()) => Ok(t.describe()),
+            Err(TransportError::Unreachable(d)) if d == crate::launch::LOCKED => {
+                Err(Error::PolicyGate(crate::launch::LOCKED))
+            }
             Err(e) => {
                 tracing::warn!(target = %t.describe(), error = %e, "partner transport probe failed");
                 Err(Error::PolicyGate("PARTNER_TRANSPORT_UNREACHABLE"))
@@ -870,6 +890,44 @@ mod tests {
         assert_eq!(t.get("b1/none", 10).await, Err(TransportError::NotFound));
         assert!(t.list("missing").await.unwrap().is_empty());
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn real_partner_hosts_are_not_contacted_before_launch() {
+        if crate::launch::live_transmission_enabled() {
+            return;
+        }
+        let sftp = SftpTransport {
+            host: "sftp.partner.example".into(),
+            port: 22,
+            username: "u".into(),
+            key: "/nonexistent".into(),
+            known_hosts: "/nonexistent".into(),
+            root: "/".into(),
+            connect_timeout: Duration::from_secs(1),
+            transfer_timeout: Duration::from_secs(1),
+        };
+        let locked = TransportError::Unreachable(crate::launch::LOCKED.into());
+        assert_eq!(sftp.probe().await, Err(locked.clone()));
+        assert_eq!(
+            sftp.put_all(&[Upload::Bytes {
+                bytes: vec![1],
+                remote: "a/b".into()
+            }])
+            .await,
+            Err(locked.clone())
+        );
+        let s3 = S3Transport::new(
+            "https://s3.partner.example",
+            "us-east-1",
+            "inbox",
+            "",
+            Secret::from_value("a"),
+            Secret::from_value("b"),
+        )
+        .unwrap();
+        assert_eq!(s3.probe().await, Err(locked.clone()));
+        assert_eq!(s3.list("x").await, Err(locked));
     }
 
     #[test]

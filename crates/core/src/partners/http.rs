@@ -113,6 +113,13 @@ impl ApiClient {
         else {
             return Err(HttpFailure::NotReceived("not oauth2".into()));
         };
+        let token_host = url::Url::parse(token_url)
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_owned))
+            .unwrap_or_default();
+        if !crate::launch::wire_allowed(&token_host) {
+            return Err(HttpFailure::NotReceived(crate::launch::LOCKED.into()));
+        }
         let mut cached = self.token.lock().await;
         if let Some((t, until)) = cached.as_ref()
             && Instant::now() < *until
@@ -224,6 +231,14 @@ impl ApiClient {
         idempotency_key: Option<&str>,
     ) -> std::result::Result<(u16, Vec<u8>), HttpFailure> {
         let url = self.url(path);
+        // Pre-launch lock (crate::launch): no request to a real DSP API.
+        let host = url::Url::parse(&url)
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_owned))
+            .unwrap_or_default();
+        if !crate::launch::wire_allowed(&host) {
+            return Err(HttpFailure::NotReceived(crate::launch::LOCKED.into()));
+        }
         let mut req = self.client.request(method.clone(), &url);
         let body_sha = body
             .as_ref()
@@ -441,6 +456,31 @@ mod tests {
         ));
         let plain = hmac_hex(b"s3cret", body);
         assert!(verify_webhook("s3cret", body, &plain, None, 300, 0));
+    }
+
+    #[tokio::test]
+    async fn real_partner_apis_are_not_called_before_launch() {
+        if crate::launch::live_transmission_enabled() {
+            return;
+        }
+        // SAFETY: unique variable read only by this test.
+        unsafe { std::env::set_var("AUDENIQ_TEST_LOCK_TOKEN", "t") };
+        let cfg: crate::partner_config::HttpApiConfig = serde_json::from_value(serde_json::json!({
+            "base_url": "https://api.partner.example",
+            "auth": {"kind": "bearer", "token": {"env": "AUDENIQ_TEST_LOCK_TOKEN"}}
+        }))
+        .unwrap();
+        let api = ApiClient::new(cfg).unwrap();
+        assert_eq!(
+            api.send(
+                reqwest::Method::POST,
+                "/v1/releases",
+                Some((b"{}".to_vec(), "application/json")),
+                None
+            )
+            .await,
+            Err(HttpFailure::NotReceived(crate::launch::LOCKED.into()))
+        );
     }
 
     #[test]
