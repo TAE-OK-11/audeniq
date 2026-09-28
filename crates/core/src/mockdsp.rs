@@ -217,10 +217,12 @@ impl MockDsp {
                 "event_id": event_id,
                 "type": "live",
                 "partner_release_id": format!("mock-rel-{partner_message_id}"),
+                "partner_message_id": partner_message_id,
             }),
             "takedown_confirmed" => json!({
                 "event_id": event_id,
                 "type": "takedown_confirmed",
+                "partner_message_id": partner_message_id,
             }),
             "rejected" => json!({
                 "event_id": event_id,
@@ -400,8 +402,22 @@ impl DspAdapter for MockDsp {
                     .and_then(Value::as_str)
                     .ok_or(Error::Invalid)?
                     .to_string(),
+                partner_message_id: v
+                    .get("partner_message_id")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
             }),
-            Some("takedown_confirmed") => Ok(AckEvent::TakedownConfirmed { event_id }),
+            Some("takedown_confirmed") => Ok(AckEvent::TakedownConfirmed {
+                event_id,
+                partner_release_id: v
+                    .get("partner_release_id")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                partner_message_id: v
+                    .get("partner_message_id")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+            }),
             _ => Err(Error::Invalid),
         }
     }

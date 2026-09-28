@@ -145,8 +145,12 @@ services:
       # never in the 16 MiB /tmp tmpfs.
       TMPDIR: /var/tmp/audeniq
       RUST_LOG: info
+      # Partner configs (docs/PARTNER_DELIVERY.md): the API only reads the
+      # webhook secrets to verify signed partner notifications.
+      PARTNER_CONFIG_DIR: /etc/audeniq/partners
     volumes:
       - api_tmp:/var/tmp/audeniq
+      - ./partners:/etc/audeniq/partners:ro
     depends_on:
       pgbouncer: {condition: service_healthy}
     mem_limit: 512m
@@ -187,8 +191,14 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_WORKER_SECRET_ACCESS_KEY:-${S3_SECRET_ACCESS_KEY:-}}
       TMPDIR: /var/tmp/audeniq
       RUST_LOG: info
+      # One <partner_id>.json per contracted DSP plus the secret files they
+      # reference (SSH keys, pinned known_hosts, API tokens). No file = no
+      # adapter = sends to that partner fail closed.
+      PARTNER_CONFIG_DIR: /etc/audeniq/partners
+      AUDENIQ_DELIVERY_TMP: /var/tmp/audeniq
     volumes:
       - worker_tmp:/var/tmp/audeniq
+      - ./partners:/etc/audeniq/partners:ro
     depends_on:
       pgbouncer: {condition: service_healthy}
     mem_limit: 1536m

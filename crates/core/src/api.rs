@@ -125,6 +125,7 @@ pub fn router(s: AppState) -> Router {
         )
         .merge(crate::portal::routes())
         .merge(crate::staff::routes())
+        .merge(crate::partner_hooks::routes())
         .fallback(|| async { Error::NotFound.into_response() })
         .layer(DefaultBodyLimit::max(64 * 1024))
         .layer(middleware::from_fn_with_state(s.clone(), boundary))
@@ -171,7 +172,15 @@ async fn boundary(State(s): State<AppState>, mut req: Request, next: Next) -> Re
     req.headers_mut()
         .insert("x-request-id", id.to_string().parse().unwrap());
     // No user identity header is read. Writes require Origin even before login.
+    // Partner webhooks carry no browser Origin; they are authenticated by
+    // the partner's HMAC signature in the handler (crate::partner_hooks).
+    let partner_hook = *req.method() == Method::POST
+        && req
+            .uri()
+            .path()
+            .starts_with(crate::partner_hooks::HOOK_PREFIX);
     if !matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS)
+        && !partner_hook
         && auth::origin(req.headers(), &s.config).is_err()
     {
         return Error::Forbidden.into_response();

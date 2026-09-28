@@ -1671,6 +1671,77 @@ pub async fn decide_delivery(
     )
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LiveEvidence {
+    /// The partner's own id/URL for the release, when known.
+    #[serde(default)]
+    pub partner_release_id: Option<String>,
+    pub note: String,
+}
+
+/// Record that a delivered release is live on a platform that never
+/// reports it (evidence: the operator checked the partner catalogue). The
+/// worker applies it (`delivery.mark_live`); only DELIVERED jobs qualify.
+pub async fn record_live(
+    s: &AppState,
+    h: &HeaderMap,
+    package: Uuid,
+    code: &str,
+    i: LiveEvidence,
+) -> Result<Value> {
+    let st = staff(s, h, true).await?;
+    require(&st, Duty::Delivery)?;
+    Dsp::from_code(code).ok_or(Error::NotFound)?;
+    if i.note.trim().is_empty() {
+        return Err(Error::PolicyGate("REVIEW_NOTE_REQUIRED"));
+    }
+    note_ok(&i.note, 1000)?;
+    let prid = i
+        .partner_release_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty());
+    if let Some(p) = prid {
+        if p.chars().count() > 300 {
+            return Err(Error::InvalidCode("NOTE_TOO_LONG"));
+        }
+        crate::text_policy::check(p)?;
+    }
+    let mut tx = s.pool.begin().await?;
+    let org: Uuid =
+        sqlx::query_scalar("SELECT org_id FROM distribution.distribution_packages WHERE id=$1")
+            .bind(package)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(Error::NotFound)?;
+    let job = operations::enqueue(
+        &mut tx,
+        "delivery",
+        "delivery.mark_live",
+        &json!({"package_id": package, "partner_id": code, "partner_release_id": prid,
+                "staff_user_id": st.actor.user}),
+        &format!("delivery.mark_live:{package}:{code}:{}", Uuid::new_v4()),
+        None,
+    )
+    .await?;
+    operations::audit(
+        &mut tx,
+        Some(st.actor.user),
+        Some(org),
+        Some(package),
+        "staff.delivery_live_recorded",
+        &format!(
+            "{code}:{}",
+            i.note.trim().chars().take(200).collect::<String>()
+        ),
+        st.actor.request,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"package_id": package, "dsp": code, "job_id": job}))
+}
+
 /// Re-evaluate a package (after onboarding progress or an issuer change).
 pub async fn restage(s: &AppState, h: &HeaderMap, package: Uuid) -> Result<Value> {
     let st = staff(s, h, true).await?;
@@ -1923,6 +1994,14 @@ async fn h_delivery_decide(
 ) -> Result<Json<Value>> {
     Ok(Json(decide_delivery(&s, &h, package, &code, i).await?))
 }
+async fn h_live(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path((package, code)): Path<(Uuid, String)>,
+    Json(i): Json<LiveEvidence>,
+) -> Result<Json<Value>> {
+    Ok(Json(record_live(&s, &h, package, &code, i).await?))
+}
 async fn h_restage(
     State(s): State<AppState>,
     Path(package): Path<Uuid>,
@@ -1978,6 +2057,7 @@ pub fn routes() -> Router<AppState> {
             "/api/staff/deliveries/{package}/{code}/decision",
             post(h_delivery_decide),
         )
+        .route("/api/staff/deliveries/{package}/{code}/live", post(h_live))
         .route("/api/staff/dsps", get(h_dsps))
         .route("/api/staff/payouts", get(h_payouts))
 }
