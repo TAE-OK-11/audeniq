@@ -33,7 +33,6 @@ use crate::{
 use chrono::NaiveDate;
 use serde::Serialize;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Row};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
@@ -539,7 +538,7 @@ fn build_ern(
     if !errors.is_empty() {
         return Err(fail("DSP_ERN_BUSINESS_RULE", errors.join("; ")));
     }
-    let sha256 = hex::encode(Sha256::digest(xml.as_bytes()));
+    let sha256 = crate::domain::sha256_hex(&xml);
     Ok(Ern {
         xml,
         sha256,

@@ -21,7 +21,6 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use sqlx::{PgConnection, PgPool, Row};
 use uuid::Uuid;
 
@@ -605,7 +604,7 @@ async fn persist_ddex_messages(
         };
         let report = ddex_validate::validate_ern_message(&xml, expected_profile);
         ddex_validate::gate_findings(&report.findings, "DDEX_BUSINESS_RULE", "ERN business-rule")?;
-        let sha = hex::encode(Sha256::digest(xml.as_bytes()));
+        let sha = crate::domain::sha256_hex(&xml);
         let res = sqlx::query(
         "INSERT INTO distribution.ddex_messages(package_id,org_id,dsp_id,sender_name,sender_dpid,recipient_name,recipient_dpid,ern_xml,ern_sha256) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(package_id,dsp_id) DO NOTHING",
     )
@@ -833,7 +832,7 @@ pub async fn run_prepare_release(
         preparation_model::PreparedRelease::from_canonical(pool, canonical_id, &canonical).await?;
     let vp = preparation_model::VerificationPackage::load(pool, verification_package_id).await?;
     let xml = ern::generate_prepared_ern(&prepared)?;
-    let xml_sha = hex::encode(Sha256::digest(xml.as_bytes()));
+    let xml_sha = crate::domain::sha256_hex(&xml);
     // Synthetic profile: no commercial route contract exists yet (F5+), so
     // the freshness pin uses a deterministic synthetic id. It still binds
     // expected vs current facts; it never authorizes a real route.
