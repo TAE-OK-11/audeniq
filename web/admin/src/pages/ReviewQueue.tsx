@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from '../lib/router';
 import { errorMessage } from '../api/errors';
 import { staffApi, type QueueRelease } from '../api/staff';
-import { QUEUE_FILTERS, RELEASE_STATUS, RELEASE_TYPE, ago, applicationPending, day, dspLabel, pick } from '../labels';
+import { QUEUE_FILTERS, RELEASE_STATUS, RELEASE_TYPE, ago, applicationPending, day, pick } from '../labels';
+import { useDspLabel } from '../lib/dspNames';
 import { Chip, Empty, ErrorBox, Filters, Initial, PageHead, Skeleton, StatusChip, SubTabs, useStaff } from '../ui';
 
 const PAGE = 50;
 
 export function ReviewQueue() {
+  const dspLabel = useDspLabel();
   const [params, setParams] = useSearchParams();
   const status = params.get('status') || 'PENDING';
   const [items, setItems] = useState<QueueRelease[]>([]);

@@ -5,7 +5,7 @@ import { api } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { SkeletonBlock } from '../components/Skeleton';
 import { useProfile } from '../store/profile';
-import { dspLabel, genreLabel, kindLabel, languageLabel } from '../lib/catalog';
+import { useDspLabel, genreLabel, kindLabel, languageLabel } from '../lib/catalog';
 import { formatKoreanDate, parseStamp } from '../lib/date';
 import { localStamp } from '../lib/format';
 import type { ApplicationRecord } from '../api/types';
@@ -25,6 +25,7 @@ function longDate(stamp: string): string {
 }
 
 export function Application() {
+  const dspLabel = useDspLabel();
   const { id = '' } = useParams();
   const [params] = useSearchParams();
   const done = params.get('done') === '1';

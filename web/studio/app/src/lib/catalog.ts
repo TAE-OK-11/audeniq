@@ -1,4 +1,7 @@
-// 발매 관련 공통 상수 — 위자드, 상세, 목록이 같은 라벨을 쓰도록 한 곳에서 관리한다.
+// 발매 관련 공통 상수. DSP 목록은 체험 모드에서만 쓰고 실서버 이름은 API가 정한다.
+import { createStore } from './store';
+import { MOCK } from './mode';
+import type { DspAvailability } from '../api/types';
 
 export const KINDS: [string, string][] = [
   ['single', '싱글'], ['ep', 'EP'], ['album', '정규 앨범'], ['compilation', '컴필레이션'],
@@ -12,16 +15,26 @@ export const DSP: [string, string][] = [
   ['melon', '멜론'], ['genie', '지니'], ['flo', 'FLO'], ['bugs', '벅스'],
   ['spotify', 'Spotify'], ['apple', 'Apple Music'], ['youtube', 'YouTube Music'],
   ['amazon', 'Amazon Music'], ['tidal', 'TIDAL'], ['deezer', 'Deezer'], ['qobuz', 'Qobuz'],
-  ['pandora', 'Pandora (SiriusXM)'], ['soundcloud', 'SoundCloud'], ['audiomack', 'Audiomack'],
-  ['anghami', 'Anghami (중동·북아프리카)'], ['boomplay', 'Boomplay (아프리카)'], ['jiosaavn', 'JioSaavn (인도)'],
-  ['kkbox', 'KKBOX (대만·홍콩)'], ['line-music', 'LINE MUSIC (일본)'], ['awa', 'AWA (일본)'],
-  ['netease', 'NetEase Cloud Music (중국)'], ['tencent', 'Tencent Music (QQ뮤직·쿠거우·쿠워·WeSing)'],
+  ['pandora', 'Pandora'], ['soundcloud', 'SoundCloud'], ['audiomack', 'Audiomack'],
+  ['anghami', 'Anghami'], ['boomplay', 'Boomplay'], ['jiosaavn', 'JioSaavn'],
+  ['kkbox', 'KKBOX'], ['line-music', 'LINE MUSIC'], ['awa', 'AWA'],
+  ['netease', 'NetEase Cloud Music'], ['tencent', 'Tencent Music'],
   ['napster', 'Napster'], ['iheart', 'iHeartRadio'],
-  ['meta', 'Instagram·Facebook (Meta)'], ['tiktok', 'TikTok·CapCut (ByteDance)'],
-  ['youtube-cid', 'YouTube Content ID·Shorts'], ['snapchat', 'Snapchat'], ['beatport', 'Beatport'],
-  ['itunes', 'iTunes Store (다운로드)'], ['claro-musica', 'Claro Música (중남미)'], ['pretzel', 'Pretzel (스트리머용 음원)'],
-  ['triller', 'Triller'], ['touchtunes', 'TouchTunes (디지털 주크박스)'], ['yandex', 'Yandex Music (러시아·CIS)'],
+  ['meta', 'Meta'], ['tiktok', 'TikTok'],
+  ['youtube-cid', 'YouTube Content ID'], ['snapchat', 'Snapchat'], ['beatport', 'Beatport'],
+  ['itunes', 'iTunes Store'], ['claro-musica', 'Claro Música'], ['pretzel', 'Pretzel'],
+  ['triller', 'Triller'], ['touchtunes', 'TouchTunes'], ['yandex', 'Yandex Music'], ['mockdsp', 'MockDSP'],
 ];
+
+type DspName = Pick<DspAvailability, 'slug' | 'name' | 'code'>;
+const dspNames = createStore<DspName[]>([]);
+export const setDspNames = (items: DspName[]) => dspNames.set(items);
+export const clearDspNames = () => dspNames.reset();
+/** 실제 서비스의 모든 DSP 표기는 마지막 백엔드 목록을 사용한다. */
+export function useDspLabel() {
+  dspNames.use();
+  return dspLabel;
+}
 
 /** 서버 DSP 코드 — 백엔드 레지스트리(crates/core/src/dsp_registry.rs)와 같은 순서: DSP[i] = D-(i+1) */
 export const dspCode = (slug: string): string => {
@@ -42,6 +55,11 @@ export const GENRES: [string, string][] = [
 
 export const kindLabel = (v?: string) => KINDS.find(k => k[0] === v)?.[1] || v || '';
 export const dspLabel = (v: string) => {
+  if (!MOCK) {
+    const code = /^D-(\d+)$/.exec(v);
+    const slug = code ? DSP[Number(code[1]) - 1]?.[0] : v;
+    return dspNames.get().find(d => d.code === v || d.slug === slug)?.name ?? v;
+  }
   const bySlug = DSP.find(d => d[0] === v);
   if (bySlug) return bySlug[1];
   const code = /^D-(\d+)$/.exec(v);

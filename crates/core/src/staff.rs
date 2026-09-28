@@ -1801,13 +1801,18 @@ pub async fn dsps(s: &AppState, h: &HeaderMap) -> Result<Value> {
          LEFT JOIN LATERAL execution.partner_readiness(p.partner_id) o ON true
          WHERE p.partner_id = ANY($1)",
     )
-    .bind(Dsp::ALL.iter().map(|d| d.code()).collect::<Vec<_>>())
+    .bind(Dsp::ALL.iter().map(|d| d.partner_id()).collect::<Vec<_>>())
     .fetch_all(&s.pool)
     .await?;
     let mut by_code: BTreeMap<String, Value> = rows
         .into_iter()
         .map(|r| {
-            let code: String = r.get("partner_id");
+            let partner_id: String = r.get("partner_id");
+            let code = if partner_id == "mockdsp" {
+                Dsp::D36.code().to_owned()
+            } else {
+                partner_id
+            };
             (
                 code,
                 json!({

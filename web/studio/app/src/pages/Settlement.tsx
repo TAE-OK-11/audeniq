@@ -12,6 +12,7 @@ import { MOCK } from '../lib/mode';
 import * as portal from '../api/portal';
 import { errorMessage } from '../api/errors';
 import { refreshFinance } from '../store/portalSync';
+import { useDspLabel } from '../lib/catalog';
 
 const PAYOUT_STATUS: Record<Payout['status'], [string, string]> = {
   recorded: ['전송 전', 'ready'],
@@ -75,6 +76,7 @@ function StatementForm({ onSave }: { onSave: (s: { period: string; platform: str
 }
 
 export function Settlement() {
+  const dspLabel = useDspLabel();
   const toast = useToast();
   const confirm = useConfirm();
   const payment = usePayment();
@@ -113,7 +115,7 @@ export function Settlement() {
       toast('지급 요청 합계보다 정산액이 적어져서 삭제할 수 없어요. 요청 기록을 먼저 정리해 주세요.');
       return;
     }
-    if (!(await confirm({ title: '정산 내역을 삭제할까요?', message: `${s.period} · ${s.platform} · ${money(s.amount)}`, confirmLabel: '삭제', danger: true }))) return;
+    if (!(await confirm({ title: '정산 내역을 삭제할까요?', message: `${s.period} · ${dspLabel(s.platform)} · ${money(s.amount)}`, confirmLabel: '삭제', danger: true }))) return;
     statementsStore.set(ss => ss.filter(x => x.id !== id));
     toast('정산 내역을 삭제했어요.');
   };
@@ -227,7 +229,7 @@ export function Settlement() {
                 <div key={s.id} className="aq-statement-card">
                   <span className="aq-statement-icon" aria-hidden="true"><Glyph name="won" size={17} /></span>
                   <div className="min-0">
-                    <span className="row-name">{s.period} · {s.platform}</span>
+                    <span className="row-name">{s.period} · {dspLabel(s.platform)}</span>
                     <span className="row-sub">{s.note || (MOCK ? '수기 등록 정산 내역' : '플랫폼 정산')} · {niceDate(s.created)}</span>
                   </div>
                   <div className="aq-statement-end">

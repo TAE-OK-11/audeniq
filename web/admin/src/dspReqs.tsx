@@ -107,16 +107,6 @@ export function DspRequirements({ codes, dsps, staging }: { codes: string[]; dsp
 }
 
 // ---------- 배급 승인 화면용: 코드 대신 한 줄 요약 ----------
-export const DSP_NAME: Record<string, string> = {
-  'D-1': '멜론', 'D-2': '지니', 'D-3': 'FLO', 'D-4': '벅스', 'D-5': 'Spotify', 'D-6': 'Apple Music',
-  'D-7': 'YouTube Music', 'D-8': 'Amazon Music', 'D-9': 'TIDAL', 'D-10': 'Deezer', 'D-11': 'Qobuz',
-  'D-12': 'Pandora', 'D-13': 'SoundCloud', 'D-14': 'Audiomack', 'D-15': 'Anghami', 'D-16': 'Boomplay',
-  'D-17': 'JioSaavn', 'D-18': 'KKBOX', 'D-19': 'LINE MUSIC', 'D-20': 'AWA', 'D-21': 'NetEase Cloud Music',
-  'D-22': 'Tencent Music', 'D-23': 'Napster', 'D-24': 'iHeartRadio', 'D-25': 'Instagram·Facebook (Meta)',
-  'D-26': 'TikTok·CapCut', 'D-27': 'YouTube Content ID', 'D-28': 'Snapchat', 'D-29': 'Beatport',
-  'D-30': 'iTunes Store', 'D-31': 'Claro Música', 'D-32': 'Pretzel', 'D-33': 'Triller', 'D-34': 'TouchTunes', 'D-35': 'Yandex Music',
-};
-
 /** 발매 내용을 고쳐야 하는 문제 (아티스트 보완) */
 const CONTENT_TEXT: Record<string, string> = {
   DSP_ARTWORK_NOT_SQUARE: '커버아트가 정사각형이 아니에요',

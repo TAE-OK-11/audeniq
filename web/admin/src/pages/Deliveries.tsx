@@ -8,7 +8,8 @@ import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
 import { staffApi, type DeliveryItem } from '../api/staff';
 import { ago } from '../labels';
-import { DSP_NAME, deliveryVerdict } from '../dspReqs';
+import { deliveryVerdict } from '../dspReqs';
+import { useDspLabel } from '../lib/dspNames';
 import { Chip, Empty, ErrorBox, Filters, NoDuty, PageHead, Skeleton, SubTabs, useStaff } from '../ui';
 import { Glyph } from '../components/Glyph';
 
@@ -19,6 +20,7 @@ const VIEWS = [
 ] as const;
 
 function HoldForm({ item, onDone }: { item: DeliveryItem; onDone: () => void }) {
+  const dspLabel = useDspLabel();
   const close = useModalClose();
   const toast = useToast();
   const [note, setNote] = useState('');
@@ -29,7 +31,7 @@ function HoldForm({ item, onDone }: { item: DeliveryItem; onDone: () => void }) 
     setBusy(true);
     try {
       await staffApi.decideDelivery(item.package_id, item.dsp, { action: 'HOLD', note: note.trim() });
-      toast(`${item.dsp_name ?? DSP_NAME[item.dsp] ?? '플랫폼'} 배급을 멈췄어요.`, 'success');
+      toast(`${item.dsp_name ?? dspLabel(item.dsp)} 배급을 멈췄어요.`, 'success');
       onDone();
       close();
     } catch (err) {
@@ -40,7 +42,7 @@ function HoldForm({ item, onDone }: { item: DeliveryItem; onDone: () => void }) 
   };
   return (
     <form onSubmit={submit}>
-      <p className="small muted">{item.title} · {item.dsp_name ?? DSP_NAME[item.dsp] ?? '플랫폼'} 배급을 멈춰요. 멈춘 플랫폼은 자동으로 보내지 않아요.</p>
+      <p className="small muted">{item.title} · {item.dsp_name ?? dspLabel(item.dsp)} 배급을 멈춰요. 멈춘 플랫폼은 자동으로 보내지 않아요.</p>
       <div className="adm-field" style={{ marginTop: 14 }}>
         <label htmlFor="holdNote">멈추는 이유 <span className="required">*</span></label>
         <input id="holdNote" data-autofocus className="adm-input" maxLength={1000} value={note} onChange={e => setNote(e.target.value)} placeholder="예: 권리 확인 중" />
@@ -54,6 +56,7 @@ function HoldForm({ item, onDone }: { item: DeliveryItem; onDone: () => void }) 
 }
 
 export function Deliveries() {
+  const dspLabel = useDspLabel();
   const toast = useToast();
   const [params, setParams] = useSearchParams();
   const view = params.get('approval') || 'PENDING';
@@ -112,7 +115,7 @@ export function Deliveries() {
                 <ul className="adm-deliv-rows">
                   {verdicts.map(({ d, v }) => (
                     <li key={d.dsp} className={`is-${v.tone}`}>
-                      <b className="adm-deliv-name">{d.dsp_name ?? DSP_NAME[d.dsp] ?? '플랫폼'}</b>
+                      <b className="adm-deliv-name">{d.dsp_name ?? dspLabel(d.dsp)}</b>
                       <span className="adm-min">
                         <span className="adm-deliv-head">{d.approval === 'HELD' ? '멈춤' : d.approval === 'APPROVED' && v.tone !== 'red' ? (v.tone === 'gray' ? 'DSP 연동 대기 · 연동되면 자동 전송' : '서명 후 자동 전송') : v.headline}</span>
                         {v.problems.map(p => <small key={p} className="adm-deliv-problem">{p}</small>)}
