@@ -129,7 +129,11 @@ export function SystemStatus({ children }: { children: ReactNode }) {
   const updateDismissedFor = useRef<string | null>(null);
 
   // --- 서버 점검 상태 ---
+  // 탭 전환·온라인 복귀가 겹쳐도 상태 확인은 5초에 한 번만
+  const lastStatusAt = useRef(0);
   const refreshStatus = useCallback(async () => {
+    if (Date.now() - lastStatusAt.current < 5_000) return;
+    lastStatusAt.current = Date.now();
     const st = await fetchStatus();
     if (!st) return;
     setActive(st.maintenance.active);

@@ -191,10 +191,9 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
   const allAgreed = agrees.every(Boolean);
   // 라이브: step2의 다음 버튼은 계좌번호·예금주가 모두 입력될 때까지 비활성화
   const step2Ready = !!draft.account.replace(/\D/g, '') && !!draft.recipient.trim();
-  const nextDisabled = saving || (step === 1 ? true : step === 2 ? !step2Ready : step === 3 ? !allAgreed : false);
+  const nextDisabled = saving || (step === 2 ? !step2Ready : step === 3 ? !allAgreed : false);
 
   const actionLabel = step === 0 ? '다음으로'
-    : step === 1 ? '금융기관을 선택해 주세요'
     : step === 2 ? '계좌 확인'
     : saving ? '등록하는 중'
     : '동의하고 등록';
@@ -203,13 +202,17 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
     <Modal title="수익 정산 정보 등록" onClose={onClose} modalClass="aq-payout-setup-mode">
       <div className="aq-pay-flow" ref={flowRef}>
         <header className="aq-pay-top">
-          <button type="button" aria-label="이전으로" onClick={back}>‹</button>
+          <button type="button" aria-label={step === 0 || step === 4 ? '닫기' : '이전으로'} onClick={step === 4 ? done : back}>
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d={step === 4 ? 'M6 6l12 12M18 6 6 18' : 'm15 5-7 7 7 7'} />
+            </svg>
+          </button>
           <div className="aq-pay-progress" aria-label={`수령 정보 등록 ${step + 1}단계`}>
             <span style={{ ['--pay-progress' as string]: `${Math.min(100, (step + 1) * 25)}%` }} />
           </div>
           <small>{Math.min(step + 1, 4)} / 4</small>
         </header>
-        <main className="aq-pay-main">
+        <main className="aq-pay-main" key={step}>
           {step === 0 && (
             <>
               <p className="eyebrow">PAYOUT PROFILE</p>
@@ -391,21 +394,23 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
                 </dl>
               </div>
               <p className="aq-pay-success-note">계좌번호는 뒤 4자리만 화면에 표시돼요. 계좌를 바꾸려면 정산·지급 또는 아티스트 정보에서 변경할 수 있어요.</p>
-              <button type="button" className="button" id="aqPayDone" onClick={done}>확인</button>
             </div>
           )}
         </main>
-        {step < 4 && (
-          <footer className="aq-pay-actions">
+        {/* 주 버튼은 모든 단계에서 화면 아래에 고정 — 완료 화면에서도 스크롤 없이 바로 누를 수 있게 */}
+        {step !== 1 && <footer className="aq-pay-actions">
+          {step < 4 ? (
             <button
-              type="button" className="button" id="aqPayNext"
+              type="button" className={`button${saving ? ' is-busy' : ''}`} id="aqPayNext"
               disabled={nextDisabled}
-              onClick={step === 0 ? nextFrom0 : step === 1 ? undefined : step === 2 ? nextFrom2 : nextFrom3}
+              onClick={step === 0 ? nextFrom0 : step === 2 ? nextFrom2 : nextFrom3}
             >
               {actionLabel}
             </button>
-          </footer>
-        )}
+          ) : (
+            <button type="button" className="button" id="aqPayDone" onClick={done}>확인</button>
+          )}
+        </footer>}
         {payError && (
           <div className="aq-pay-error-overlay" role="alertdialog" aria-modal="true" aria-labelledby="aqPayErrorTitle">
             <div className="aq-pay-error-dialog">

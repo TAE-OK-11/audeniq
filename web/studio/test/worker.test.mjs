@@ -247,3 +247,101 @@ test('emergency window from the admin API blocks the API until it ends', async (
     globalThis.fetch = real;
   }
 });
+
+test('proxy forwards only allowlisted headers and sets the real client IP', async () => {
+  const seen = [];
+  const real = globalThis.fetch;
+  try {
+    globalThis.fetch = async req => { seen.push(req); return new Response('{}', { headers: { Server: 'x' } }); };
+    const e = { ...env(), EDGE_SERVICE_SECRET: 's'.repeat(40) };
+    const r = await worker.fetch(new Request('https://studio.audeniq.com/api/auth/login', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json', cookie: 'sid=1', 'x-csrf-token': 't',
+        'x-audeniq-client-ip': '6.6.6.6', 'x-audeniq-service': 'forged', 'x-user-id': 'u', 'cf-connecting-ip': '1.2.3.4',
+      },
+      body: '{"a":1}',
+    }), e);
+    const h = seen[0].headers;
+    assert.equal(h.get('x-audeniq-client-ip'), '1.2.3.4');
+    assert.equal(h.get('x-audeniq-service'), 's'.repeat(40));
+    assert.equal(h.get('x-user-id'), null);
+    assert.equal(h.get('cookie'), 'sid=1');
+    assert.equal(h.get('x-csrf-token'), 't');
+    assert.equal(await seen[0].text(), '{"a":1}');
+    assert.equal(r.headers.get('server'), null);
+    assert.equal(r.headers.get('cache-control'), 'no-store');
+
+    // 서비스 비밀이 없어도 브라우저가 보낸 서비스 헤더는 넘기지 않는다
+    seen.length = 0;
+    await worker.fetch(new Request('https://studio.audeniq.com/api/me', { headers: { 'x-audeniq-service': 'forged' } }), env());
+    assert.equal(seen[0].headers.get('x-audeniq-service'), null);
+
+    // 파트너 웹훅은 서명 헤더(x-*)를 넘기되 우리 이름공간은 막는다
+    seen.length = 0;
+    await worker.fetch(new Request('https://studio.audeniq.com/api/partner-hooks/d1', {
+      method: 'POST', headers: { 'x-signature': 'sig', 'x-audeniq-service': 'forged', 'x-forwarded-for': '9.9.9.9' }, body: '{}',
+    }), e);
+    assert.equal(seen[0].headers.get('x-signature'), 'sig');
+    assert.equal(seen[0].headers.get('x-audeniq-service'), 's'.repeat(40));
+    assert.equal(seen[0].headers.get('x-forwarded-for'), null);
+  } finally {
+    globalThis.fetch = real;
+  }
+});
+
+test('maintenance rows are read from D1 at most once per 10 seconds per binding', async () => {
+  resetMaintenanceCache();
+  const e = env();
+  let reads = 0;
+  const prepare = e.CONTENT_DB.prepare.bind(e.CONTENT_DB);
+  e.CONTENT_DB.prepare = sql => { if (sql.includes('FROM maintenance')) reads++; return prepare(sql); };
+  const real = globalThis.fetch;
+  globalThis.fetch = async () => new Response('{}');
+  try {
+    await call(e, 'GET', '/api/status');
+    await call(e, 'GET', '/api/status');
+    await call(e, 'GET', '/api/me');
+    assert.equal(reads, 1);
+    // 관리 화면에서 점검을 바꾸면 바로 다시 읽는다
+    const iso = ms => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
+    await call(e, 'POST', '/api/content/maintenance', { id: 'm1', title: '점검', starts_at: iso(Date.now() - 1000), ends_at: iso(Date.now() + 60e3) });
+    assert.equal((await call(e, 'GET', '/api/me')).status, 503);
+  } finally {
+    globalThis.fetch = real;
+    resetMaintenanceCache();
+  }
+});
+
+test('public reads are served from the edge cache and purged by admin writes', async () => {
+  const store = new Map();
+  const fakeCache = {
+    async match(k) { const r = store.get(k); return r ? r.clone() : undefined; },
+    async put(k, r) { store.set(k, r); },
+    async delete(k) { return store.delete(k); },
+  };
+  const had = 'caches' in globalThis;
+  const prev = globalThis.caches;
+  globalThis.caches = { default: fakeCache };
+  try {
+    const e = env();
+    const waits = [];
+    const ctx = { waitUntil: p => waits.push(p) };
+    const get = path => worker.fetch(new Request(`https://studio.audeniq.com${path}`), e, ctx);
+    await call(e, 'POST', '/api/content/notices', { id: 'n1', title: '공지', body: '' });
+    let reads = 0;
+    const prepare = e.CONTENT_DB.prepare.bind(e.CONTENT_DB);
+    e.CONTENT_DB.prepare = sql => { if (sql.startsWith('SELECT')) reads++; return prepare(sql); };
+    assert.equal((await (await get('/api/notices')).json()).items.length, 1);
+    await Promise.all(waits);
+    assert.equal((await (await get('/api/notices?x=1')).json()).items.length, 1);
+    assert.equal(reads, 1);
+    await worker.fetch(new Request('https://studio.audeniq.com/api/content/notices/n1', {
+      method: 'DELETE', headers: { Authorization: `Bearer ${TOKEN}` },
+    }), e, ctx);
+    await Promise.all(waits);
+    assert.equal((await (await get('/api/notices')).json()).items.length, 0);
+  } finally {
+    if (had) globalThis.caches = prev; else delete globalThis.caches;
+  }
+});

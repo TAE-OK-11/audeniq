@@ -2,7 +2,7 @@ use worker::*;
 pub mod content;
 /// Rust/WASM edge BFF. The generated JS loader is toolchain glue, not application logic.
 #[event(fetch)]
-pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Response> {
+pub async fn main(mut request: Request, env: Env, ctx: Context) -> Result<Response> {
     let origin = env.var("APP_ORIGIN")?.to_string();
     if request.url()?.origin().ascii_serialization() != origin {
         return Response::error("Forbidden host", 403);
@@ -13,7 +13,7 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
     // Notices and events are served from D1 at the edge (no private API hop).
     let path = request.path();
     if let Some(r) = content::route(&request.method(), &path) {
-        return content::handle(request, &env, r).await;
+        return content_cached(request, &env, &ctx, r, &origin, &path).await;
     }
     if path.starts_with("/api/content/") {
         return Response::error("Not found", 404);
@@ -112,6 +112,51 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
         }
         Err(_) => Response::error("Private API unavailable", 503),
     }
+}
+
+/// Public notice/event reads are answered from the colo's Cache API (the
+/// response's own `max-age`), so repeat reads skip D1 and JSON encoding.
+/// Admin writes purge this colo's copies; other colos expire within max-age.
+async fn content_cached(
+    request: Request,
+    env: &Env,
+    ctx: &Context,
+    r: content::Route<'_>,
+    origin: &str,
+    path: &str,
+) -> Result<Response> {
+    let public_get = request.method() == Method::Get
+        && matches!(r, content::Route::List(_) | content::Route::Get(..));
+    let purge = match &r {
+        content::Route::Create(t) => Some(vec![format!("{origin}/api/{t}")]),
+        content::Route::Update(t, id) | content::Route::Delete(t, id) => Some(vec![
+            format!("{origin}/api/{t}"),
+            format!("{origin}/api/{t}/{id}"),
+        ]),
+        _ => None,
+    };
+    let key = format!("{origin}{path}");
+    if public_get && let Ok(Some(hit)) = Cache::default().get(key.as_str(), false).await {
+        return Ok(hit);
+    }
+    let mut response = content::handle(request, env, r).await?;
+    if public_get && response.status_code() == 200 {
+        let copy = response.cloned()?;
+        ctx.wait_until(async move {
+            let _ = Cache::default().put(key, copy).await;
+        });
+    }
+    if let Some(keys) = purge
+        && response.status_code() < 300
+    {
+        ctx.wait_until(async move {
+            let cache = Cache::default();
+            for k in keys {
+                let _ = cache.delete(k, false).await;
+            }
+        });
+    }
+    Ok(response)
 }
 
 fn is_partner_hook(method: &Method, path: &str) -> bool {

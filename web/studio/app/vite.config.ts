@@ -3,6 +3,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
 import { compactCss, purgeCss } from './build/purge-css';
+import { hoverGate } from './build/hover-gate';
 
 const src = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -19,9 +20,10 @@ export default defineConfig(({ command, mode }) => ({
   css: {
     postcss: {
       // 빌드에서만 미사용 CSS 제거 (개발 중에는 새 클래스를 바로 쓸 수 있도록 전체 유지)
+      // 호버 게이트는 개발·빌드 모두: 터치 기기에서 :hover가 눌린 색으로 남는 문제 방지
       plugins: command === 'build'
-        ? [purgeCss({ content: [src('./src'), src('./index.html')] }), compactCss()]
-        : [],
+        ? [purgeCss({ content: [src('./src'), src('./index.html')] }), hoverGate(), compactCss()]
+        : [hoverGate()],
     },
   },
   build: {

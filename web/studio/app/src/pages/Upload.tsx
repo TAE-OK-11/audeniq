@@ -23,6 +23,7 @@ import {
 import { uid } from '../lib/store';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
+import { FilePick } from '../components/FilePick';
 
 const STEPS = [
   { short: '발매 정보', kicker: '01 / 06 · 발매 정보', title: '어떤 음악을\n발매할까요?', sub: '발매 정보와 아티스트명을 입력해 주세요.' },
@@ -212,18 +213,18 @@ function DocAttach({ id, label, fileName, assetId, busy, onSelect, required, hel
   return (
     <div className="field doc-attach">
       <label htmlFor={id}>{label}{required && <> <span className="required">*</span></>}</label>
-      <input
-        type="file" id={id}
+      <FilePick
+        id={id} disabled={busy}
         accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
         onChange={e => {
           const f = e.target.files?.[0];
           if (f) onSelect(f);
           e.target.value = '';
         }}
+        fileName={fileName}
+        done={!!fileName && (!!assetId || MOCK) && !busy}
+        hint={busy ? '서류를 서버에 올리는 중이에요…' : fileName ? (assetId ? '서버에 등록됨' : MOCK ? 'PDF · JPG · PNG' : '재첨부 필요') : (help || 'PDF · JPG · PNG')}
       />
-      <p className="help">
-        {busy ? '서류를 서버에 올리는 중이에요…' : fileName ? (assetId ? `서버에 등록됨 · ${fileName}` : `재첨부 필요 · ${fileName}`) : (help || '서류를 첨부해 주세요.')}
-      </p>
     </div>
   );
 }
@@ -784,7 +785,7 @@ function FinalReviewBanner({ form }: { form: WizardForm }) {
 
 /** 업로드 진행 표시 */
 function UploadStatus({ upload, idle }: { upload?: UploadState; idle: string }) {
-  if (!upload || upload.state === 'done') return <p className="help">{idle}</p>;
+  if (!upload || upload.state === 'done') return idle ? <p className="help">{idle}</p> : null;
   if (upload.state === 'error') return <p className="help aq-help-error" role="alert">{upload.message || '업로드에 실패했어요. 파일을 다시 선택해 주세요.'}</p>;
   const pct = Math.round(upload.pct * 100);
   return (
@@ -842,18 +843,23 @@ const TrackEditor = memo(function TrackEditor({
       </label>
       <div className="field">
         <label htmlFor={`trackFile-${i}`}>음원 파일 <span className="required">*</span></label>
-        <input
-          type="file" id={`trackFile-${i}`}
+        <FilePick
+          id={`trackFile-${i}`} kind="audio"
           accept=".wav,.flac,.m4a,.aif,.aiff,.aifc,.wv,.tta,audio/wav,audio/flac,audio/mp4,audio/aiff,audio/wavpack,audio/tta"
           onChange={e => onTrackAudio(t.id, e)}
+          fileName={t.audioName}
+          done={!!t.audioName && (!!t.assetId || MOCK) && (!upload || upload.state === 'done')}
+          hint={t.audioName
+            ? [t.audioSpec || (t.audioSize ? fileSize(t.audioSize) : ''), t.duration ? `곡 길이 ${t.duration}` : '', t.assetId ? '업로드 완료' : ''].filter(Boolean).join(' · ')
+            : 'WAV · FLAC · ALAC · AIFF 무손실 원본'}
         />
         <UploadStatus upload={upload} idle={t.audioName
-          ? `${t.audioName}${t.audioSpec ? ` · ${t.audioSpec}` : t.audioSize ? ` · ${fileSize(t.audioSize)}` : ''}${t.assetId ? ' · 업로드 완료' : MOCK ? '' : ' · 업로드되지 않았어요. 파일을 다시 선택해 주세요.'}`
-          : '무손실 원본 WAV·FLAC·ALAC(.m4a)·AIFF·WavPack(.wv)·TTA · 44.1kHz 이상, 16bit 이상, 스테레오'} />
+          ? (t.assetId || MOCK ? '' : '업로드되지 않았어요. 파일을 다시 선택해 주세요.')
+          : 'WAV·FLAC·ALAC(.m4a)·AIFF·WavPack(.wv)·TTA · 44.1kHz·16bit 이상 스테레오'} />
       </div>
-      <div className="track-duration-label" aria-live="polite">
-        {t.duration ? `곡 길이 · ${t.duration}` : '음원을 선택하면 곡 길이를 자동으로 확인해요.'}
-      </div>
+      {!t.audioName && (
+        <div className="track-duration-label" aria-live="polite">음원을 선택하면 곡 길이를 자동으로 확인해요.</div>
+      )}
       <button
         type="button" className="track-detail-toggle"
         onClick={() => onToggleExpand(t.id)}

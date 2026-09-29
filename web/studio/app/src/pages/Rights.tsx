@@ -15,6 +15,8 @@ import { useAsync } from '../hooks/useAsync';
 import { stampNow } from '../lib/date';
 import { uid } from '../lib/store';
 import { Glyph } from '../components/Glyph';
+import { FilePick } from '../components/FilePick';
+import { fileSize } from '../lib/format';
 
 const REQUIRED_DOCS: [string, string, string][] = [
   ['master', '마스터 음원 권리 확인서', '본인은 해당 마스터 음원에 관한 배급 권한을 보유하거나 권리자로부터 적법한 이용 허락을 받았음을 확인합니다.'],
@@ -188,10 +190,12 @@ export function Rights() {
             </div>
             <div className="field">
               <label htmlFor="aqRequiredFile">증빙 원본 (필요 시)</label>
-              <input
-                type="file" id="aqRequiredFile"
+              <FilePick
+                id="aqRequiredFile"
                 accept=".pdf,.txt,image/png,image/jpeg,image/webp,application/pdf,text/plain"
                 onChange={e => setFile(e.target.files?.[0] || null)}
+                fileName={file?.name}
+                hint={file ? fileSize(file.size) : 'PDF · 이미지 · 텍스트'}
               />
               <p className="help">원본 첨부 전에는 ‘서류 접수 대기’로 표시돼요.</p>
             </div>

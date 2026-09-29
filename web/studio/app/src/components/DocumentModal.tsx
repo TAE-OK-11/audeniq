@@ -11,6 +11,7 @@ import { updateDoc, type DocRecord } from '../store/docs';
 import { fileSize, localStamp } from '../lib/format';
 import { stampNow } from '../lib/date';
 import { docState } from '../store/docs';
+import { FilePick } from './FilePick';
 
 const statusPill = docState;
 
@@ -266,10 +267,12 @@ export function DocumentModal({
       {(doc.reviewStatus === 'awaiting_documents' || doc.kind === 'rights') && (
         <div className="field">
           <label htmlFor="aqEvidenceFile">요청된 서류 첨부</label>
-          <input
-            type="file" id="aqEvidenceFile"
+          <FilePick
+            id="aqEvidenceFile"
             accept=".pdf,.txt,image/png,image/jpeg,image/webp,application/pdf,text/plain"
             onChange={e => setPendingFile(e.target.files?.[0] || null)}
+            fileName={pendingFile?.name}
+            hint={pendingFile ? fileSize(pendingFile.size) : 'PDF · 이미지 · 텍스트'}
           />
           <p className="help">
             {pendingFile ? `선택한 파일 · ${pendingFile.name} (${fileSize(pendingFile.size)}) — ‘검토 요청’을 누르면 제출돼요.` : '서류를 선택하면 원본과 발매 정보가 함께 보관돼요.'}
