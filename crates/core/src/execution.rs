@@ -292,6 +292,20 @@ pub async fn enqueue_delivery_jobs(pool: &PgPool, package_id: Uuid) -> Result<(V
     crate::routing::record_route_decisions(pool, org_id, package_id, &decisions).await?;
     let mut tx = pool.begin().await?;
     authorize_org(&mut tx, org_id).await?;
+    // Re-read approvals in the transaction that creates the jobs, locking
+    // the rows a staff decision updates: a HOLD that landed after the first
+    // read is honoured here (and every lease re-checks it, migration 0063).
+    let approved_codes: std::collections::HashSet<String> = sqlx::query_scalar(
+        "SELECT dsp_code FROM distribution.delivery_staging
+         WHERE package_id=$1 AND approval='APPROVED' AND readiness<>'CONTENT_BLOCKED'
+         FOR SHARE",
+    )
+    .bind(package_id)
+    .fetch_all(&mut *tx)
+    .await?
+    .into_iter()
+    .filter(|code| approved_codes.contains(code))
+    .collect();
     let mut job_ids = Vec::new();
     for d in &decisions {
         if !d.routable {
@@ -358,6 +372,7 @@ pub async fn claim_delivery_job(
         "WITH candidate AS (
            SELECT id FROM execution.delivery_jobs
            WHERE partner_id=$1 AND status='QUEUED' AND attempts<max_attempts
+             AND execution.delivery_gate_open(package_id, partner_id)
            ORDER BY created_at, id FOR UPDATE SKIP LOCKED LIMIT 1
          )
          UPDATE execution.delivery_jobs j
@@ -1597,6 +1612,8 @@ pub async fn repair_stalled_sends(
         "SELECT j.id, j.attempts FROM execution.delivery_jobs j
           WHERE j.org_id=$1 AND j.attempts < j.max_attempts
             AND (j.status='QUEUED' OR (j.status='LEASED' AND j.lease_until < now()))
+            -- Held by staff: stays parked until re-approved.
+            AND execution.delivery_gate_open(j.package_id, j.partner_id)
             AND NOT EXISTS (
               SELECT 1 FROM operations.jobs o
                WHERE o.kind='delivery.send' AND o.status IN ('QUEUED','RUNNING')
@@ -1619,7 +1636,12 @@ pub async fn repair_stalled_sends(
             "delivery",
             "delivery.send",
             &serde_json::json!({"delivery_job_id": id, "org_id": org}),
-            &format!("delivery.send:{id}:repair:{attempts}"),
+            // Unique per pass: a held job is never leased, so `attempts`
+            // does not move; with a fixed key a repair after re-approval
+            // would dedupe onto the earlier (held, finished) send and never
+            // run. Duplicates are prevented by the row lock and the "no
+            // live send job" check above, not by the key.
+            &format!("delivery.send:{id}:repair:{attempts}:{}", Uuid::new_v4()),
             None,
         )
         .await?;
@@ -2020,7 +2042,9 @@ pub async fn takedown_release(
 }
 
 /// Lease a specific delivery job by id (used by the operations dispatcher).
-/// Only QUEUED jobs (or jobs whose lease expired) can be leased.
+/// Only QUEUED jobs (or jobs whose lease expired) can be leased, and only
+/// while staff approval of the route holds (`execution.delivery_gate_open`,
+/// migration 0063): a HOLD parks the job instead of letting it send.
 pub async fn lease_delivery_job(
     pool: &PgPool,
     job_id: Uuid,
@@ -2040,6 +2064,7 @@ pub async fn lease_delivery_job(
              updated_at=now()
          WHERE id=$1 AND attempts<max_attempts
            AND (status='QUEUED' OR (status IN ('LEASED','SENDING') AND lease_until<=now()))
+           AND execution.delivery_gate_open(package_id, partner_id)
          RETURNING id, lock_token, org_id, package_id, partner_id, attempts",
     )
     .bind(job_id)
@@ -2147,6 +2172,9 @@ pub enum LeaseBlocked {
     Exhausted,
     /// Terminal or missing: nothing left to send.
     Gone,
+    /// Staff approval of the route does not hold (a HOLD, or not approved
+    /// yet): the job stays QUEUED, untouched, until it is approved again.
+    AwaitingApproval,
 }
 
 /// Explain a failed `lease_delivery_job`, dead-lettering the delivery job
@@ -2161,7 +2189,8 @@ pub async fn delivery_lease_blocked(
     authorize_org(&mut tx, org).await?;
     let row = sqlx::query(
         "SELECT status, attempts, max_attempts,
-                GREATEST(0, CEIL(EXTRACT(EPOCH FROM (lease_until - now()))))::bigint AS remaining
+                GREATEST(0, CEIL(EXTRACT(EPOCH FROM (lease_until - now()))))::bigint AS remaining,
+                execution.delivery_gate_open(package_id, partner_id) AS gate_open
          FROM execution.delivery_jobs WHERE id=$1 FOR UPDATE",
     )
     .bind(job_id)
@@ -2184,6 +2213,14 @@ pub async fn delivery_lease_blocked(
         .execute(&mut *tx)
         .await?;
         LeaseBlocked::Exhausted
+    } else if matches!(status.as_str(), "QUEUED")
+        || row.get::<Option<i64>, _>("remaining").unwrap_or(0) == 0
+    {
+        if row.get::<bool, _>("gate_open") {
+            LeaseBlocked::HeldFor(1)
+        } else {
+            LeaseBlocked::AwaitingApproval
+        }
     } else {
         LeaseBlocked::HeldFor(row.get::<Option<i64>, _>("remaining").unwrap_or(0).max(1))
     };
