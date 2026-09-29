@@ -1378,25 +1378,28 @@ body:has(#modal .aq-sticky-foot) .aq-toast-stack,body:has(.aq-form-actions.is-pi
 @media(prefers-reduced-motion:reduce){.aq-acct{transition:none}}
 
 /* ==========================================================================
-   발매 진행 단계 — 점과 선, AUDENIQ 스타일(연한 파랑 면 위, 번짐·그라데이션·반복 효과 없음)
-   · 선: 지나온 구간은 파랑으로 한 번만 채워진다. 지금 단계로 들어오는 구간은 그 단계 색(보완 주황·거절 빨강)
-   · 점: 지나온 단계는 작은 파랑 점, 지금 단계는 흰 테두리+얇은 선으로 또렷하게, 남은 단계는 회색
+   발매 진행 단계 — 원과 선, AUDENIQ 스타일(연한 파랑 면 위, 번짐·그라데이션·반복 효과 없음)
+   · 지나온 단계: 파랑 원 + 흰 체크 · 지금 단계: 조금 큰 원(파랑, 보완 주황, 거절 빨강) 안에 흰 점
+   · 남은 단계: 흰 바탕 빈 원 · 선은 원 가장자리에 틈 없이 닿고, 지나온 구간은 한 번만 채워진다
    ========================================================================== */
-.aq-stage{--stage-c:var(--aq-e-blue);list-style:none;margin:16px 0 24px;padding:18px 6px 14px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));background:#f5f8ff;border-radius:22px}
-.aq-stage li{position:relative;display:flex;flex-direction:column;align-items:center;gap:10px;min-width:0;text-align:center}
+.aq-stage{--stage-c:var(--aq-e-blue);--dot:22px;list-style:none;margin:16px 0 24px;padding:18px 6px 14px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));background:#f5f8ff;border-radius:22px}
+.aq-stage li{position:relative;display:flex;flex-direction:column;align-items:center;gap:9px;min-width:0;text-align:center}
 .aq-stage li.is-warn{--stage-c:#e0892f}
 .aq-stage li.is-error{--stage-c:#d92d3b}
-/* 앞 단계 점에서 이 단계 점까지 잇는 선 (점 가운데 높이) */
-.aq-stage li:not(:first-child)::before{content:"";position:absolute;top:8px;right:50%;width:100%;height:3px;margin-top:-1.5px;border-radius:3px;background:#e1e7f1}
-.aq-stage li:not(:first-child)::after{content:"";position:absolute;top:8px;right:50%;width:100%;height:3px;margin-top:-1.5px;border-radius:3px;background:var(--stage-c);transform:scaleX(0);transform-origin:left}
+/* 앞 원 가운데에서 이 원 가운데까지 — 원이 위에 그려져 선 끝이 원 가장자리에 붙어 보인다 */
+.aq-stage li:not(:first-child)::before,.aq-stage li:not(:first-child)::after{content:"";position:absolute;top:calc(var(--dot) / 2 - 1.5px);right:50%;width:100%;height:3px;background:#dfe6f1}
+.aq-stage li:not(:first-child)::after{background:var(--stage-c);transform:scaleX(0);transform-origin:left}
+.aq-stage li.is-done:not(:first-child)::after{background:var(--aq-e-blue)}
 .aq-stage li:is(.is-done,.is-current):not(:first-child)::after{transform:none;animation:aq-grow-x .45s var(--aq-e-ease) both}
 .aq-stage li:nth-child(2)::after{animation-delay:.05s}
 .aq-stage li:nth-child(3)::after{animation-delay:.15s}
 .aq-stage li:nth-child(4)::after{animation-delay:.25s}
-.aq-stage-dot{position:relative;z-index:1;display:block;width:16px;height:16px;border-radius:50%;background:#d7dfeb;border:3px solid #f5f8ff;box-sizing:border-box}
-.aq-stage li.is-done .aq-stage-dot{background:var(--aq-e-blue)}
-.aq-stage li.is-current .aq-stage-dot{width:18px;height:18px;margin-top:-1px;background:var(--stage-c);border-color:#fff;box-shadow:0 0 0 1.5px var(--stage-c);animation:aq-pop .4s var(--aq-e-spring) .3s both}
+.aq-stage-dot{position:relative;z-index:1;display:grid;place-items:center;width:var(--dot);height:var(--dot);border-radius:50%;box-sizing:border-box;background:#fff;border:2px solid #d7dfeb;color:#fff}
+.aq-stage li.is-done .aq-stage-dot{background:var(--aq-e-blue);border-color:var(--aq-e-blue)}
+.aq-stage li.is-current .aq-stage-dot{background:var(--stage-c);border-color:var(--stage-c);transform:scale(1.14);animation:aq-stage-in .4s var(--aq-e-spring) .3s both}
+.aq-stage li.is-current .aq-stage-dot::after{content:"";width:8px;height:8px;border-radius:50%;background:#fff}
+@keyframes aq-stage-in{from{transform:scale(.6)}to{transform:scale(1.14)}}
 .aq-stage-label{max-width:100%;font-size:12.5px;font-weight:650;letter-spacing:-.01em;color:#a0aabb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .aq-stage li.is-done .aq-stage-label{color:#4c5a74}
 .aq-stage li.is-current .aq-stage-label{color:var(--stage-c);font-weight:800}
-@media(max-width:560px){.aq-stage{padding:16px 2px 12px;border-radius:20px}.aq-stage-label{font-size:11.5px}}
+@media(max-width:560px){.aq-stage{--dot:20px;padding:16px 2px 12px;border-radius:20px}.aq-stage-label{font-size:11.5px}}
