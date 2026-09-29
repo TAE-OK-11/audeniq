@@ -1340,44 +1340,59 @@ body:has(#modal .aq-sticky-foot) .aq-toast-stack,body:has(.aq-form-actions.is-pi
    수령 계좌 카드 (아티스트 정보) — 은행과 계좌 끝자리가 먼저 눈에 들어오게
    ========================================================================== */
 .aq-acct{
-  position:relative;overflow:hidden;display:grid;gap:16px;width:100%;margin:0;padding:20px 20px 16px;
-  border:0;border-radius:24px;background:#fff;color:var(--aq-e-ink);text-align:left;font:inherit;cursor:pointer;
-  box-shadow:0 0 0 1px #e8eef9,0 18px 36px -28px rgba(27,51,104,.45);
-  transition:transform .25s var(--aq-e-ease),box-shadow .25s var(--aq-e-ease);
-  animation:aq-fade-up .45s var(--aq-e-ease) both
+  display:grid;gap:16px;width:100%;margin:0;padding:20px 20px 16px;
+  border:0;border-radius:22px;background:#fff;color:var(--aq-e-ink);text-align:left;font:inherit;cursor:pointer;
+  box-shadow:none;transition:background-color .2s ease,transform .2s var(--aq-e-ease)
 }
-/* 은은한 브랜드 빛 — 카드처럼 보이게 하는 장식 */
-.aq-acct:not(.aq-acct-empty)::before{content:"";position:absolute;right:-60px;top:-70px;width:200px;height:200px;border-radius:50%;background:radial-gradient(circle,rgba(59,99,243,.13),rgba(59,99,243,0) 70%);pointer-events:none}
-.aq-acct>*{position:relative}
 /* 제목 위 30px 여백(다른 카드용 규칙)이 카드 안쪽 여백과 겹쳐 빈 공간이 크던 문제 */
 .aq-payment-card>.section-top{margin-top:0!important;margin-bottom:14px!important}
-.aq-acct:hover{transform:translateY(-2px);box-shadow:0 0 0 1px #dbe4f7,0 22px 40px -26px rgba(27,51,104,.5)}
-.aq-acct:active{transform:scale(.985)}
+.aq-acct:hover{background:#fbfcff}
+.aq-acct:active{transform:scale(.985);background:#f7f9fd}
 .aq-acct:focus-visible{outline:3px solid #7892f9;outline-offset:3px}
 .aq-acct-head{display:flex;align-items:center;gap:12px;min-width:0}
-.aq-acct-head>.aq-bank-logo{width:46px;height:46px;flex:0 0 46px;border-radius:15px;background:#f4f7fd}
+.aq-acct-head>.aq-bank-logo{width:46px;height:46px;flex:0 0 46px;border-radius:15px;background:#f5f8ff;box-shadow:none}
 .aq-acct-bank{display:grid;gap:2px;min-width:0}
 .aq-acct-bank strong{font-size:16px;font-weight:800;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .aq-acct-bank small{font-size:12px;color:#8591a5}
-.aq-acct-status{margin-left:auto;flex:none;display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:var(--aq-e-green-soft);color:var(--aq-e-green);font-size:12px;font-weight:800}
-.aq-acct-status i{width:6px;height:6px;border-radius:50%;background:currentColor;box-shadow:0 0 0 3px rgba(33,129,91,.18)}
+.aq-acct-status{margin-left:auto;flex:none;padding:5px 9px;border-radius:9px;background:#E8F6F0;color:#21815B;font-size:11.5px;font-weight:800}
 .aq-acct-number{display:block;font-size:27px;font-weight:800;letter-spacing:.06em;line-height:1.1;font-variant-numeric:tabular-nums;color:#171b29}
 .aq-acct-dots{color:#b4bfd2;font-size:.78em;letter-spacing:.14em;vertical-align:.08em}
 .aq-acct-meta{display:flex;flex-wrap:wrap;gap:6px}
-.aq-acct-chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:6px 11px;border-radius:10px;background:#f2f5fb;color:#36425b;font-size:13px;font-weight:700;overflow-wrap:anywhere}
+.aq-acct-chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:6px 11px;border-radius:10px;background:#f5f8ff;color:#36425b;font-size:13px;font-weight:700;overflow-wrap:anywhere}
 .aq-acct-chip em{font-style:normal;font-weight:600;color:#8591a5}
 .aq-acct-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:14px;border-top:1px solid #eef2f8}
 .aq-acct-foot small{font-size:12px;color:#98a2b3}
 .aq-acct-edit{display:inline-flex;align-items:center;gap:2px;flex:none;color:var(--aq-e-blue);font-size:13.5px;font-weight:800}
 .aq-acct-edit svg{transition:transform .2s var(--aq-e-ease)}
-.aq-acct:hover .aq-acct-edit svg{transform:translateX(3px)}
+@media(hover:hover) and (pointer:fine){.aq-acct:hover .aq-acct-edit svg{transform:translateX(3px)}}
 /* 미등록 — 점선 카드로 등록을 바로 유도 */
-.aq-acct-empty{display:flex;align-items:center;gap:14px;padding:18px;background:#fff;box-shadow:none;border:1.5px dashed #c9d5f0}
-.aq-acct-empty:hover{border-color:var(--aq-e-blue);box-shadow:none}
+.aq-acct-empty{display:flex;align-items:center;gap:14px;padding:18px;background:#fff;border:0}
 .aq-acct-plus{display:grid;place-items:center;flex:0 0 44px;width:44px;height:44px;border-radius:14px;background:var(--aq-e-blue-soft);color:var(--aq-e-blue)}
 .aq-acct-empty-copy{display:grid;gap:3px;flex:1;min-width:0}
 .aq-acct-empty-copy strong{font-size:15px;font-weight:800}
 .aq-acct-empty-copy small{font-size:12.5px;line-height:1.5;color:#7b879b}
 .aq-acct-empty>svg{flex:none;color:#9aa6ba}
 @media(max-width:370px){.aq-acct{padding:18px 16px 14px}.aq-acct-number{font-size:23px}.aq-acct-status{padding:5px 8px;font-size:11px}}
-@media(prefers-reduced-motion:reduce){.aq-acct{animation:none;transition:none}}
+@media(prefers-reduced-motion:reduce){.aq-acct{transition:none}}
+
+/* ==========================================================================
+   발매 진행 단계 — 점·번지는 테두리 대신 납작한 막대 네 칸
+   지나온 단계와 지금 단계는 한 번만 채워지고(반복 깜빡임 없음), 보완 필요는 주황, 거절은 빨강.
+   ========================================================================== */
+.aq-stage{list-style:none;margin:18px 0 26px;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.aq-stage li{display:grid;gap:9px;min-width:0}
+.aq-stage-bar{position:relative;display:block;height:6px;border-radius:99px;background:#e9eef6;overflow:hidden}
+.aq-stage-bar::after{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--aq-e-blue);transform:scaleX(0);transform-origin:left}
+.aq-stage li:is(.is-done,.is-current) .aq-stage-bar::after{transform:none;animation:aq-grow-x .5s var(--aq-e-ease) both}
+.aq-stage li:nth-child(2) .aq-stage-bar::after{animation-delay:.08s}
+.aq-stage li:nth-child(3) .aq-stage-bar::after{animation-delay:.16s}
+.aq-stage li:nth-child(4) .aq-stage-bar::after{animation-delay:.24s}
+.aq-stage li.is-warn .aq-stage-bar::after{background:#e0892f}
+.aq-stage li.is-error .aq-stage-bar::after{background:#d92d3b}
+.aq-stage-label{font-size:12.5px;font-weight:700;color:#a3adbf;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.aq-stage li.is-done .aq-stage-label{color:#5d6880}
+.aq-stage li.is-current .aq-stage-label{color:var(--aq-e-blue);font-weight:800}
+.aq-stage li.is-warn .aq-stage-label{color:#c26a1e}
+.aq-stage li.is-error .aq-stage-label{color:#d92d3b}
+@media(max-width:560px){.aq-stage{gap:5px}.aq-stage-label{font-size:11.5px}}
+@media(prefers-reduced-motion:reduce){.aq-stage-bar::after{animation:none!important}}
