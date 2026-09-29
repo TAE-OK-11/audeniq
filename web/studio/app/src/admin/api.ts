@@ -1,6 +1,7 @@
 // 관리자(스태프) API — 백엔드 `/api/staff/*` (crates/core/src/staff.rs, docs/API.md "Staff portal").
 // 아티스트 포털과 같은 세션 쿠키·CSRF를 쓰고, 권한은 identity.staff_members 역할로 서버가 판단한다.
 // 체험(목) 빌드에서는 브라우저 메모리의 예시 데이터로 같은 화면을 확인할 수 있다.
+import type { StudioDraft } from './application';
 import { ApiError, messageForCode } from '../api/errors';
 import { req } from '../api/http';
 import { MOCK } from '../lib/mode';
@@ -75,8 +76,11 @@ export interface ReleaseSheet {
       previousTitle?: string; previousId?: string;
     } | null;
   };
+  /** 제출 리비전에 담긴 스튜디오 입력 전체 (크레딧·가사·부가서비스·권리 확인·서명 신청서) — 스튜디오 외 경로로 접수하면 없음 */
+  draft?: StudioDraft | null;
   signed_application: {
     application_no: string; content_hash: string; signer_name: string; signer_role: string; received_at: string;
+    form?: string; agreements?: string[];
   } | null;
   checks: Check[];
   open_checks: Check[];
