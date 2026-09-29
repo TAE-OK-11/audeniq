@@ -2,15 +2,14 @@
 import { useEffect, useState } from 'react';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
-import { BankLogo } from '../components/BankLogo';
 import { PaymentSetupModal } from '../components/PaymentSetupModal';
+import { PayoutAccountCard } from '../components/PayoutAccountCard';
 import { setProfile, useProfile, type ProfileInfo } from '../store/profile';
-import { isPaymentRegistered, TYPE_LABEL, usePayment } from '../store/payment';
+import { isPaymentRegistered, usePayment } from '../store/payment';
 import { MOCK } from '../api/client';
 import * as portal from '../api/portal';
 import { errorMessage } from '../api/errors';
 import { clearAll } from '../lib/storage';
-import { localStamp } from '../lib/format';
 
 const COUNTRY_LABEL: Record<string, string> = {
   KR: '대한민국', US: '미국', JP: '일본', OTHER: '기타',
@@ -140,19 +139,8 @@ export function Profile() {
       <section className="aq-profile-card aq-payment-card" aria-labelledby="payoutHead">
         <div className="section-top">
           <h2 id="payoutHead">수익을 받을 정보</h2>
-          <button type="button" className="link-btn" onClick={() => setShowPayment(true)}>{registered ? '변경' : '등록하기'}</button>
         </div>
-        {registered ? (
-          <div className="settle-hero-account">
-            <BankLogo name={payment.bank} />
-            <span className="min-0">
-              {payment.bank} · •••• {payment.last4} · {payment.recipient} ({TYPE_LABEL[payment.type]})
-              <small className="aq-sub-line">{payment.registeredAt ? `${localStamp(payment.registeredAt)} 등록` : ''}</small>
-            </span>
-          </div>
-        ) : (
-          <p className="small muted">정산금을 받을 계좌를 등록하면 정산·지급 화면에서 바로 수익을 받을 수 있어요.</p>
-        )}
+        <PayoutAccountCard payment={registered ? payment : null} onEdit={() => setShowPayment(true)} />
       </section>
 
       {MOCK && (
