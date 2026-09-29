@@ -419,11 +419,14 @@ async fn organization_acl_and_revocation(pool: PgPool) {
     );
 }
 async fn upload(app: &Router, u: &User) -> Value {
+    upload_as(app, u, "audio/wav").await
+}
+async fn upload_as(app: &Router, u: &User, content_type: &str) -> Value {
     let (s, _, v) = call(
         app,
         "POST",
         &format!("/api/orgs/{}/uploads", u.org),
-        json!({"kind":"AUDIO","size_bytes":100,"content_type":"audio/wav"}),
+        json!({"kind":"AUDIO","size_bytes":100,"content_type":content_type}),
         Some(u),
     )
     .await;
@@ -658,7 +661,9 @@ async fn upload_binding_expiry_duplicate_and_freeze(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let a = user(&app).await;
     let b = user(&app).await;
-    let up = upload(&app, &a).await;
+    // FLAC is stored as uploaded (sniff + freeze at completion, hash by the
+    // asset.analyze job); every other container is converted to FLAC first.
+    let up = upload_as(&app, &a, "audio/flac").await;
     let path = format!(
         "/api/orgs/{}/uploads/{}/complete",
         a.org,
@@ -676,7 +681,7 @@ async fn upload_binding_expiry_duplicate_and_freeze(pool: PgPool) {
     let key = up["expected_key"].as_str().unwrap();
     let meta = ObjectMeta {
         size: 100,
-        content_type: "audio/wav".into(),
+        content_type: "audio/flac".into(),
         nonce: up["grant"]["headers"]["x-amz-meta-upload-nonce"]
             .as_str()
             .unwrap()
@@ -703,9 +708,9 @@ async fn upload_binding_expiry_duplicate_and_freeze(pool: PgPool) {
     // recorded, otherwise Stage 1 never runs audio QC. Completion only sniffs
     // the first bytes of audio; the asset.analyze job it queues downloads the
     // master once, records the hash and runs QC.
-    let expected_sha = hex::encode(sha2::Sha256::digest(synth_body("audio/wav", 100)));
+    let expected_sha = hex::encode(sha2::Sha256::digest(synth_body("audio/flac", 100)));
     assert!(v["sha256"].is_null(), "{v}");
-    assert_eq!(v["detected_container"], "WAV");
+    assert_eq!(v["detected_container"], "FLAC");
     let job = operations::claim(&pool, "qc", "analyzer", 60)
         .await
         .unwrap()
