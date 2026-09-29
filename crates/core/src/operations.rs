@@ -234,6 +234,8 @@ pub struct Job {
     pub kind: String,
     pub payload: Value,
     pub attempts: i32,
+    /// The release this job works for (migration 0064), for tracing.
+    pub release_id: Option<Uuid>,
 }
 pub async fn claim(
     pool: &PgPool,
@@ -264,9 +266,9 @@ pub async fn claim_with(
     // insert rides in the same statement, so a claim is never unaudited.
     let q = sqlx::query(
         "WITH candidate AS (SELECT id FROM operations.jobs WHERE queue=$1 AND status='QUEUED' AND attempts<max_attempts AND run_at<=clock_timestamp() ORDER BY priority DESC,run_at,id FOR UPDATE SKIP LOCKED LIMIT 1),
-         claimed AS (UPDATE operations.jobs j SET status='RUNNING',attempts=attempts+1,locked_by=$2,lock_token=$3,lease_until=clock_timestamp()+make_interval(secs=>$4) FROM candidate WHERE j.id=candidate.id RETURNING j.id,j.lock_token,j.kind,j.payload,j.attempts),
+         claimed AS (UPDATE operations.jobs j SET status='RUNNING',attempts=attempts+1,locked_by=$2,lock_token=$3,lease_until=clock_timestamp()+make_interval(secs=>$4) FROM candidate WHERE j.id=candidate.id RETURNING j.id,j.lock_token,j.kind,j.payload,j.attempts,j.release_id),
          audited AS (INSERT INTO operations.audit_events(id,actor_service,resource_id,action,reason_code,request_id) SELECT $5,'audeniq-system',id,'job.claim','LEASE',$6 FROM claimed)
-         SELECT id,lock_token,kind,payload,attempts FROM claimed",
+         SELECT id,lock_token,kind,payload,attempts,release_id FROM claimed",
     )
     .bind(queue)
     .bind(worker)
@@ -289,6 +291,7 @@ pub async fn claim_with(
         kind: r.get("kind"),
         payload: r.get("payload"),
         attempts: r.get("attempts"),
+        release_id: r.get("release_id"),
     }))
 }
 pub async fn heartbeat(pool: &PgPool, j: &Job, seconds: i32) -> Result<()> {

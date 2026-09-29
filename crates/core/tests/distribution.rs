@@ -548,6 +548,7 @@ async fn prepare_release_retry_reports_ddex_count_under_rls(pool: PgPool) {
         kind: "prepare_release".to_string(),
         payload: json!({"revision_id": revision_id, "verification_package_id": verification_package_id}),
         attempts: 1,
+        release_id: None,
     };
     let dyn_store: Arc<dyn ObjectStore> = store.clone();
     let summary = distribution::run_prepare_release(&pool, &dyn_store, &retry_job)
