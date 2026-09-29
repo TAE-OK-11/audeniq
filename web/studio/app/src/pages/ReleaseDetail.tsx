@@ -270,7 +270,6 @@ export function ReleaseDetail() {
                 ? '항목을 누르면 신청서에서 고쳐야 할 칸으로 바로 이동해요. 고친 뒤 마지막 단계에서 다시 접수해 주세요.'
                 : '알림과 권리·보완 서류에서 요청 내용을 확인한 뒤 ‘보완하기’로 다시 접수해 주세요.'}</p>
             </div>
-            <button type="button" className="button aq-fix-go" onClick={() => nav(fixPath(rel.id, fixes[0]))}>보완하기</button>
           </div>
           {fixes.length > 0 && (
             <CorrectionList
@@ -279,6 +278,8 @@ export function ReleaseDetail() {
               trackTitles={Object.fromEntries((d?.draftTracks ?? rel.tracks).map(t => [t.id, t.title]))}
             />
           )}
+          {/* 무엇을 고칠지 먼저 읽고 나서 누르도록 목록 아래에 둔다 */}
+          <button type="button" className="button aq-fix-go aq-fix-go-foot" onClick={() => nav(fixPath(rel.id, fixes[0]))}>보완하기</button>
         </section>
       )}
 
