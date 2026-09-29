@@ -401,11 +401,22 @@ async fn upload(e: &Env, u: &User, kind: &str, content_type: &str, bytes: &[u8])
         u,
     )
     .await;
-    let sha = hex::encode(sha2::Sha256::digest(bytes));
-    if kind == "AUDIO" {
-        // Completion only sniffs the first bytes; the queued asset.analyze
-        // job downloads the master once, records its hash and runs QC, so
-        // Stage 1 finds the results cached and never downloads it again.
+    let mut sha = hex::encode(sha2::Sha256::digest(bytes));
+    if kind == "AUDIO" && content_type != "audio/flac" {
+        // Every other lossless upload (WAV included) is stored as a FLAC
+        // master at completion: the recorded hash is the FLAC's.
+        assert_eq!(done["detected_container"], "FLAC", "{done}");
+        assert!(done["converted_from"].is_string(), "{done}");
+        sha = done["sha256"]
+            .as_str()
+            .expect("converted master hash")
+            .into();
+        assert_eq!(run_one(e, "qc", "asset.analyze").await, "SUCCEEDED");
+    } else if kind == "AUDIO" {
+        // FLAC is stored as uploaded. Completion only sniffs the first
+        // bytes; the queued asset.analyze job downloads the master once,
+        // records its hash and runs QC, so Stage 1 finds the results cached
+        // and never downloads it again.
         assert!(done["sha256"].is_null(), "{done}");
         assert_eq!(run_one(e, "qc", "asset.analyze").await, "SUCCEEDED");
     } else {
@@ -814,7 +825,10 @@ async fn lease_expiry_dead_letter_surfaces_on_release(pool: PgPool) {
 /// P1-5: bad audio is stopped in Stage 1 with a correction the artist can
 /// act on (float WAV here; the other defects are unit-tested in qc.rs).
 #[sqlx::test]
-async fn float_wav_goes_to_correction(pool: PgPool) {
+async fn float_wav_is_refused_at_upload(pool: PgPool) {
+    // Sandbox: a 32-bit float WAV must never reach a DSP. WAV uploads are
+    // converted to FLAC at completion, and float PCM is not a deliverable
+    // format, so it is refused there (it used to be a Stage 1 correction).
     let e = env(pool).await;
     let u = user(&e.api).await;
     let dir = tmpdir();
@@ -833,22 +847,36 @@ async fn float_wav_goes_to_correction(pool: PgPool) {
             "pcm_f32le",
         ],
     );
-    let audio = upload(&e, &u, "AUDIO", "audio/wav", &float).await;
-    let cover = upload(&e, &u, "IMAGE", "image/png", &cover_png(&dir.0)).await;
-    let (release, _, _) = build_release(&e, &u, audio, cover).await;
-    consent_and_submit(&e, &u, release, "sbx-float").await;
-    assert_eq!(run_one(&e, "qc", "stage1").await, "SUCCEEDED");
-    assert_eq!(release_status(&e, release).await, "STAGE1_CORRECTION");
-    let s = submission(&e, &u, release).await;
-    assert!(
-        s["checks"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|c| c["check_code"] == "AUDIO_SAMPLE_FORMAT_UNSUPPORTED"
-                && c["status"] == "CORRECTION_REQUIRED"),
-        "{s}"
-    );
+    let v = ok(
+        &e.api,
+        "POST",
+        &format!("/api/orgs/{}/uploads", u.org),
+        json!({"kind":"AUDIO","size_bytes":float.len(),"content_type":"audio/wav"}),
+        &u,
+    )
+    .await;
+    let key = v["expected_key"].as_str().unwrap();
+    e.store.client_put(&v["grant"], key, &float).await;
+    let (status, body, _) = call(
+        &e.api,
+        "POST",
+        &format!(
+            "/api/orgs/{}/uploads/{}/complete",
+            u.org,
+            v["upload_session_id"].as_str().unwrap()
+        ),
+        json!({"asset_id":v["asset_id"],"expected_key":key}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(code(&body), "UPLOAD_AUDIO_FORMAT_UNSUPPORTED", "{body}");
+    let state: String = sqlx::query_scalar("SELECT state FROM catalog.assets WHERE id=$1")
+        .bind(Uuid::parse_str(v["asset_id"].as_str().unwrap()).unwrap())
+        .fetch_one(&e.owner)
+        .await
+        .unwrap();
+    assert_ne!(state, "REGISTERED");
 }
 
 /// Same for Stage 2: an exhausted rights job parks the release in
