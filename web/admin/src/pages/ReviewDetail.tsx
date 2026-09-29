@@ -11,17 +11,13 @@ import { staffApi, type Check, type DecisionAction, type DecisionInput, type Dec
 import { STAFF_FIX_OPTIONS, WIZ_STEP_NAMES, correctionTarget, isKnownCorrection, staffFixCode } from '../lib/corrections';
 import {
   CHECK_STATUS, DECISION_LABEL, DOC_KIND, DOC_STATUS, MAX_REASON, RELEASE_STATUS, RELEASE_TYPE,
-  REJECT_REASONS, applicationPending, checkLabel, checkSummary, day, dspLabel, needsSecond, pick, shortId, stageStateLabel, systemStages, when,
+  REJECT_REASONS, applicationPending, checkLabel, checkSummary, needsSecond, pick, shortId, stageStateLabel, systemStages, when,
 } from '../labels';
-import { Chip, Empty, ErrorBox, Initial, NoDuty, Section, Skeleton, StatusChip, useStaff } from '../ui';
+import { Chip, ErrorBox, Initial, NoDuty, Section, Skeleton, StatusChip, useStaff } from '../ui';
 import { Glyph } from '../components/Glyph';
 import { CheckIcon } from '../components/Check';
+import { ApplicationSection, EnteredInfoSection, OptionsSection, TracksSection } from '../components/Submission';
 
-const DECL_LABEL: Record<string, string> = {
-  rights_confirmed: '권리 보유 확인', adult_confirmed: '성인 확인', is_cover: '커버곡', is_remix: '리믹스',
-  contains_samples: '샘플 사용', ai_involved: 'AI 활용', explicit_content: '19금 표현',
-};
-const ROLE_KO: Record<string, string> = { COMPOSER: '작곡', LYRICIST: '작사', ARRANGER: '편곡', PRODUCER: '프로듀서', PERFORMER: '연주', MAIN_ARTIST: '아티스트' };
 const ACTION_KO: Record<string, string> = {
   'release.submitted': '발매 접수', 'stage1.decision': '1차 검사 결과', 'stage1.completed': '1차 검사 완료', 'stage2.decision': '2차 검사 결과',
   'stage2.pass': '2차 검사 통과', 'stage3.prepared': '배급 준비 완료', 'delivery.staged': '플랫폼별 전송 준비',
@@ -375,8 +371,6 @@ export function ReviewDetail() {
   const passed = sheet.checks.filter(c => c.status === 'PASS' || c.status === 'NOT_APPLICABLE').length;
   const pending = sheet.second_approvals.find(a => a.status === 'PENDING');
   const canReview = can('REVIEW');
-  const tracks = app.tracks ?? [];
-  const decl = app.declarations ?? {};
   const after = (msg: string) => { setDone(msg); reload(); refreshCounts(); };
 
   return (
@@ -439,74 +433,10 @@ export function ReviewDetail() {
             </Section>
           )}
 
-          <Section title="신청 정보">
-            <div className="adm-card">
-              <dl className="adm-kv">
-                <div><dt>아티스트</dt><dd>{app.artist || '—'}</dd></div>
-                <div><dt>장르 · 언어</dt><dd>{[app.genre, app.language].filter(Boolean).join(' · ') || '—'}</dd></div>
-                <div><dt>발매 예정일</dt><dd>{day(app.release_date)}</dd></div>
-                <div><dt>레이블</dt><dd>{app.label || '—'}</dd></div>
-                <div><dt>℗ / ©</dt><dd>{[app.p_line, app.c_line].filter(Boolean).join(' / ') || '—'}</dd></div>
-                <div><dt>UPC</dt><dd>{r.upc ?? '발급 전'}</dd></div>
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <dt>배급 플랫폼</dt>
-                  <dd className="adm-dsps">{app.platforms.length ? app.platforms.map(p => <span key={p}>{dspLabel(p)}</span>) : '—'}</dd>
-                </div>
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <dt>신고 항목</dt>
-                  <dd className="adm-decl">
-                    {Object.entries(DECL_LABEL).map(([k, label]) => {
-                      const v = (decl as Record<string, boolean>)[k];
-                      const warnWhenTrue = !['rights_confirmed', 'adult_confirmed'].includes(k);
-                      return <Chip key={k} tone={v ? (warnWhenTrue ? 'amber' : 'green') : 'gray'}>{label} {v ? '예' : '아니오'}</Chip>;
-                    })}
-                  </dd>
-                </div>
-              </dl>
-              {sheet.signed_application && (
-                <p className="small muted" style={{ marginTop: 16 }}>
-                  서명 신청서 <b>{sheet.signed_application.application_no}</b> · {sheet.signed_application.signer_name}({sheet.signed_application.signer_role}) · {when(sheet.signed_application.received_at)} · 문서 해시 <span className="adm-code">{sheet.signed_application.content_hash.slice(0, 16)}…</span>
-                </p>
-              )}
-            </div>
-          </Section>
-
-          {app.options && (app.options.express || app.options.ai || app.options.cover || app.options.sample || app.options.featured || app.options.shared || app.options.rerelease) && (
-            <Section title="추가 요청·권리 정보">
-              <div className="adm-card">
-                <dl className="adm-kv">
-                  {app.options.express && <div><dt>신속 발매 요청</dt><dd>{app.options.expressReason || '사유 미기재'} · 일정과 가능 여부 검토 필요</dd></div>}
-                  {app.options.ai && <div><dt>AI 활용 내역</dt><dd>{app.options.aiTool || '활용 내역 미기재'}</dd></div>}
-                  {app.options.cover && <div style={{ gridColumn: '1 / -1' }}><dt>커버곡 원곡 정보</dt><dd>{app.options.coverTracks?.length ? app.options.coverTracks.map((c, i) => <p key={c.trackId}>{i + 1}. {c.originalTitle} · {c.originalArtist}{c.originalWriters ? ` · ${c.originalWriters}` : ''}</p>) : '원곡 정보 미기재'}</dd></div>}
-                  {app.options.sample && <div><dt>샘플링</dt><dd>원본 이용 허락 확인 필요</dd></div>}
-                  {app.options.featured && <div><dt>피처링</dt><dd>참여자 동의 확인 필요</dd></div>}
-                  {app.options.shared && <div><dt>공동 권리자</dt><dd>배급 위임 범위 확인 필요</dd></div>}
-                  {app.options.rerelease && <div><dt>재발매</dt><dd>{[app.options.previousTitle, app.options.previousId].filter(Boolean).join(' · ') || '기존 발매 정보 미기재'}</dd></div>}
-                </dl>
-              </div>
-            </Section>
-          )}
-
-          <Section title="트랙" meta={`${tracks.length}곡`}>
-            {tracks.length ? (
-              <div className="adm-card white adm-table-wrap">
-                <table className="adm-table">
-                  <thead><tr><th>#</th><th>곡명</th><th>ISRC</th><th>크레딧</th><th>음원</th></tr></thead>
-                  <tbody>
-                    {tracks.map(t => (
-                      <tr key={t.id}>
-                        <td>{t.disc_number > 1 ? `${t.disc_number}-` : ''}{t.track_number}</td>
-                        <td><b>{t.title}</b>{t.version ? ` (${t.version})` : ''}{t.parental_advisory && <> <Chip tone="red">19</Chip></>}</td>
-                        <td>{t.isrc ? <span className="adm-code">{t.isrc}</span> : '발급 전'}</td>
-                        <td>{t.credits.map(c => ROLE_KO[c.role] ?? c.role).join(', ') || '—'}</td>
-                        <td>{t.asset_kind ?? '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : <Empty icon={<Glyph name="music" size={22} />} title="트랙 정보가 없어요" />}
-          </Section>
+          <ApplicationSection sheet={sheet} />
+          <EnteredInfoSection sheet={sheet} />
+          <OptionsSection sheet={sheet} />
+          <TracksSection sheet={sheet} />
 
           <Section
             title="서류" meta={`${sheet.documents.length}건`}
