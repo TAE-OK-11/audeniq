@@ -1210,6 +1210,8 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 .aq-fix-go{flex:none;align-self:center;background:#e0892f!important;color:#fff!important;min-height:44px!important}
 .aq-fix-go:hover{background:#cf7a22!important}
 @media(max-width:560px){.aq-fix-card-head{flex-wrap:wrap}.aq-fix-go{width:100%}}
+/* 발매 상세 보완 카드: 보완 항목 목록 아래 한 줄 전체 버튼 */
+.aq-fix-card>.aq-fix-go-foot{display:flex!important;width:100%;min-height:52px!important;margin-top:16px}
 
 /* ---------- 주황 보완 카드 안의 버튼은 주황으로 (파란 버튼이 튀지 않게) ---------- */
 :is(#root) :is(.aq-fix-card,.aq-fix-banner) .button.aq-fix-go,
