@@ -1429,3 +1429,22 @@ body:has(#modal .aq-sticky-foot) .aq-toast-stack,body:has(.aq-form-actions.is-pi
 .portal-nav button>span::after{content:none!important}
 .portal-nav button>span{color:#a3adbf}
 .portal-nav button.active>span,.portal-nav button[aria-current=page]>span{color:currentColor}
+
+/* ==========================================================================
+   파일 선택 (FilePicker) — 기본 파일 입력 대신 버튼 + 파일 이름 (iOS 미리보기 사각형 없이)
+   ========================================================================== */
+.aq-file{display:flex;align-items:center;gap:12px;min-height:60px;padding:9px 16px 9px 9px;border-radius:18px;background:#fff;min-width:0}
+:is(#root,#modal) .aq-file .aq-file-input{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;border:0!important;opacity:0!important}
+.aq-file-btn{flex:none;display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:0 16px;border-radius:13px;background:#eef3ff;color:#2f55d4;font-size:14px;font-weight:800;cursor:pointer;-webkit-user-select:none;user-select:none;transition:background-color .18s ease,transform .15s var(--aq-e-ease)}
+.aq-file-btn:hover{background:#e3eaff}
+.aq-file-btn:active{transform:scale(.96)}
+.aq-file.has-file .aq-file-btn{background:#f2f4f8;color:#4c5a74}
+.aq-file:has(.aq-file-input:focus-visible) .aq-file-btn{outline:3px solid #7892f9;outline-offset:2px}
+.aq-file-btn[aria-disabled=true]{opacity:.55;cursor:default;pointer-events:none}
+.aq-file-name{display:flex;align-items:center;gap:6px;flex:1;min-width:0;font-size:14px;font-weight:700;color:#202b40}
+.aq-file-name>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-file-name.is-empty{color:#a3adbf;font-weight:600}
+.aq-file-icon{flex:none;color:#8591a5}
+/* .field label 규칙(블록·아래 여백·글자색)이 버튼에 새지 않게 */
+:is(#root,#modal) .aq-file .aq-file-btn{display:inline-flex!important;align-items:center!important;margin:0!important;line-height:1!important;font-size:14px!important;font-weight:800!important;color:#2f55d4!important;letter-spacing:-.01em}
+:is(#root,#modal) .aq-file.has-file .aq-file-btn{color:#4c5a74!important}
