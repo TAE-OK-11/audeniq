@@ -1403,3 +1403,24 @@ body:has(#modal .aq-sticky-foot) .aq-toast-stack,body:has(.aq-form-actions.is-pi
 .aq-stage li.is-done .aq-stage-label{color:#4c5a74}
 .aq-stage li.is-current .aq-stage-label{color:var(--stage-c);font-weight:800}
 @media(max-width:560px){.aq-stage{--dot:20px;padding:16px 2px 12px;border-radius:20px}.aq-stage-label{font-size:11.5px}}
+
+/* ==========================================================================
+   목록형 선택지 — 문장처럼 긴 선택지는 한 줄에 하나씩, 고른 표시는 오른쪽 (신속 발매 사유 · AI 활용 내역 · 확인 동의)
+   ========================================================================== */
+.aq-pick-list{display:grid;gap:8px}
+.aq-pick{position:relative;display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;min-height:54px;margin:0;padding:14px 16px;border:0;border-radius:16px;background:#fff;color:#36425b;text-align:left;font:inherit;font-size:14.5px;font-weight:700;line-height:1.5;cursor:pointer;transition:background-color .18s ease,color .18s ease,transform .15s var(--aq-e-ease)}
+.aq-pick>span:first-of-type{flex:1;min-width:0}
+.aq-pick small{display:block;margin-top:3px;font-size:12px;font-weight:600;color:#8490a5}
+.aq-pick:hover{background:#f7f9fe}
+.aq-pick:active{transform:scale(.985)}
+.aq-pick:focus-visible,.aq-ack:has(.aq-ack-input:focus-visible){outline:3px solid #7892f9;outline-offset:2px}
+.aq-pick.is-on{background:#eef3ff;color:#2f55d4}
+.aq-pick-mark{display:grid;place-items:center;flex:none;width:22px;height:22px;border-radius:7px;background:#fff;box-shadow:inset 0 0 0 2px #d7dfeb;color:#fff;transition:background-color .18s ease,box-shadow .18s ease}
+.aq-pick-mark.is-radio{border-radius:50%}
+.aq-pick.is-on .aq-pick-mark{background:var(--aq-e-blue);box-shadow:none}
+.aq-pick.is-on .aq-pick-mark svg{animation:aq-pop .3s var(--aq-e-spring) both}
+/* 확인 동의 줄 — 사유 목록 아래 같은 모양으로 붙인다 */
+.aq-ack{margin-top:14px}
+:is(#root,#modal) .aq-ack .aq-ack-input{position:absolute!important;opacity:0!important;width:1px!important;height:1px!important;margin:0!important;pointer-events:none}
+.aq-ack.is-on{background:#eef3ff;color:#2f55d4}
+@media(prefers-reduced-motion:reduce){.aq-pick,.aq-pick-mark{transition:none}.aq-pick.is-on .aq-pick-mark svg{animation:none}}

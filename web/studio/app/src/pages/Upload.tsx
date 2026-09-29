@@ -355,15 +355,41 @@ const AI_TOOLS = ['Suno', 'Udio', 'ChatGPT', 'Stable Audio', 'AIVA', 'Midjourney
 const EXPRESS_REASONS = ['공연 일정에 맞춰야 해요', '방송·광고 일정이 있어요', '이벤트·프로모션 일정이 있어요', '영상·드라마 공개일에 맞춰야 해요'];
 
 /** 버튼으로 고르는 선택지 — 직접 타이핑은 ‘기타’를 눌렀을 때만 */
-function ChipPicker({ id, options, value, onChange, other, onOther, otherPlaceholder, single }: {
+function ChipPicker({ id, options, value, onChange, other, onOther, otherPlaceholder, single, list }: {
   id: string; options: string[]; value: string[]; onChange: (v: string[]) => void;
   other?: string; onOther?: (v: string) => void; otherPlaceholder?: string; single?: boolean;
+  /** 문장처럼 긴 선택지는 한 줄에 하나씩, 고른 표시는 오른쪽에 */
+  list?: boolean;
 }) {
   const toggle = (opt: string) => {
     const on = value.includes(opt);
     onChange(single ? (on ? [] : [opt]) : on ? value.filter(v => v !== opt) : [...value, opt]);
   };
   const all = onOther ? [...options, OTHER] : options;
+  if (list) {
+    return (
+      <div className="aq-chip-picker" id={id}>
+        <div className="aq-pick-list" role={single ? 'radiogroup' : 'group'}>
+          {all.map(opt => {
+            const on = value.includes(opt);
+            return (
+              <button
+                key={opt} type="button" className={`aq-pick${on ? ' is-on' : ''}`}
+                role={single ? 'radio' : undefined} aria-checked={single ? on : undefined} aria-pressed={single ? undefined : on}
+                onClick={() => toggle(opt)}
+              >
+                <span>{opt === OTHER ? '기타 (직접 입력)' : opt}</span>
+                <span className={`aq-pick-mark${single ? ' is-radio' : ''}`} aria-hidden="true">{on && <CheckIcon size={12} />}</span>
+              </button>
+            );
+          })}
+        </div>
+        {onOther && value.includes(OTHER) && (
+          <input className="aq-chip-other" maxLength={300} value={other ?? ''} placeholder={otherPlaceholder} onChange={e => onOther(e.target.value)} autoFocus />
+        )}
+      </div>
+    );
+  }
   return (
     <div className="aq-chip-picker" id={id}>
       <div className="aq-chips" role="group">
@@ -417,19 +443,21 @@ function OptionsSection({ form, set, group, onDocument, uploads }: {
         <div className="field">
           <label htmlFor="aqExpressReason">신속 발매가 필요한 이유 (선택)</label>
           <ChipPicker
-            id="aqExpressReason" single options={EXPRESS_REASONS} value={expressPick}
+            id="aqExpressReason" single list options={EXPRESS_REASONS} value={expressPick}
             onChange={v => { setExpressOther(v[0] === OTHER); setOpt('expressReason', v[0] && v[0] !== OTHER ? v[0] : ''); }}
             other={EXPRESS_REASONS.includes(o.expressReason) ? '' : o.expressReason} onOther={v => setOpt('expressReason', v)}
             otherPlaceholder="신속 발매가 필요한 이유"
           />
         </div>
-        <label className="check-line">
+        {/* 위 선택지와 같은 모양의 한 줄 — 확인 표시도 오른쪽 */}
+        <label className={`aq-pick aq-ack${o.expressAck ? ' is-on' : ''}`}>
           <input
-            type="checkbox" id="aqExpressAck"
+            type="checkbox" id="aqExpressAck" className="aq-ack-input"
             checked={o.expressAck}
             onChange={e => setOpt('expressAck', e.target.checked)}
           />
           <span>가능한 일정과 비용 등 별도 안내를 확인한 후 진행할게요.<small>신청 단계에서 추가 비용이 자동 결제되지는 않아요.</small></span>
+          <span className="aq-pick-mark" aria-hidden="true">{o.expressAck && <CheckIcon size={12} />}</span>
         </label>
       </div>
     ),
@@ -654,7 +682,7 @@ function OptionsSection({ form, set, group, onDocument, uploads }: {
         <div className="field">
           <label htmlFor="aqAiTool">어떻게 활용했나요? <span className="required">*</span> <small className="muted">여러 개 고를 수 있어요</small></label>
           <ChipPicker
-            id="aqAiTool" options={AI_USES} value={aiUses} onChange={v => setAi({ aiUses: v })}
+            id="aqAiTool" list options={AI_USES} value={aiUses} onChange={v => setAi({ aiUses: v })}
             other={aiUseOther} onOther={v => setAi({ aiUseOther: v })} otherPlaceholder="AI를 활용한 부분을 적어 주세요"
           />
         </div>
