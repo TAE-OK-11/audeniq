@@ -1,0 +1,30 @@
+name: Security audit
+# Rust 의존성의 알려진 취약점(RustSec advisory DB)을 검사한다.
+# - Cargo.lock/Cargo.toml이 바뀌는 푸시·PR마다
+# - 매주 월요일: 코드가 그대로여도 새로 공개된 취약점이 생길 수 있다
+# 취약점(vulnerability)이 하나라도 있으면 실패한다. 유지보수 중단·yanked 같은 경고는 표시만 한다.
+on:
+  push:
+    branches: [main]
+    paths: [Cargo.lock, Cargo.toml, 'crates/*/Cargo.toml', .github/workflows/security-audit.yml]
+  pull_request:
+    paths: [Cargo.lock, Cargo.toml, 'crates/*/Cargo.toml', .github/workflows/security-audit.yml]
+  schedule:
+    - cron: '17 0 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: security-audit-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  cargo-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: cargo audit
+        run: cargo audit --deny unsound
