@@ -1,6 +1,6 @@
 name: Backend image
 # main에 백엔드 변경이 푸시되면 바로 이미지를 만들어 GHCR에 올린다 (테스트는 Foundation이 따로 돈다).
-# 운영 프로필(Cargo.toml [profile.release]: thin LTO, opt-level 3, codegen-units 1)로,
+# 운영 프로필(Cargo.toml [profile.release]: fat LTO, opt-level 3, codegen-units 1)로,
 # 서버 CPU(AMD EPYC Zen3) 기준선 x86-64-v3(AVX2·BMI2·FMA)에 맞춰 빌드한다.
 # fast 프로필(opt-level 1) 대비 CPU 작업(QC 지문 비교·JSON·해시)이 2~3배 빠르다.
 # deploy.sh는 서버 CPU가 이 기준선을 지원하지 않으면 배포를 거부한다.

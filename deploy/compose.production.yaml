@@ -28,23 +28,21 @@ services:
       - ./bootstrap.sql:/docker-entrypoint-initdb.d/001-roles.sql:ro
       - ./grants.sql:/opt/audeniq/grants.sql:ro
     networks: [backend]
-    # 기본값은 2 vCPU / 4 GB 서버 기준 (api 512m + worker 1536m + postgres 1g + 나머지 ~0.4g).
-    # shared_buffers를 넉넉히 두어 조회가 디스크 대신 메모리에서 끝나게 한다. 서버가 더 작으면
-    # production.env에서 줄인다 (1 GB 서버: PG_SHARED_BUFFERS=128MB, PG_EFFECTIVE_CACHE_SIZE=384MB,
-    # PG_WORK_MEM=4MB, PG_MAINTENANCE_WORK_MEM=64MB, PG_MEM_LIMIT=768m).
+    # 기본값은 1 vCPU / 1 GB 서버 기준(+ 스왑 2 GB). 서버를 키우면 production.env만 바꾼다:
+    # 단계별 값은 deploy/PRODUCTION.md "서버 크기와 확장".
     # 병렬 쿼리·JIT는 끈다(작은 OLTP 쿼리에서는 오히려 느리고 메모리를 먹는다).
     command:
       - postgres
       - -c
       - max_connections=40
       - -c
-      - shared_buffers=${PG_SHARED_BUFFERS:-384MB}
+      - shared_buffers=${PG_SHARED_BUFFERS:-128MB}
       - -c
-      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-1GB}
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-384MB}
       - -c
-      - work_mem=${PG_WORK_MEM:-8MB}
+      - work_mem=${PG_WORK_MEM:-4MB}
       - -c
-      - maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-128MB}
+      - maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-64MB}
       - -c
       - random_page_cost=1.1
       - -c
@@ -64,8 +62,8 @@ services:
       - -c
       - log_lock_waits=on
     shm_size: 128m
-    mem_limit: ${PG_MEM_LIMIT:-1g}
-    cpus: 1.0
+    mem_limit: ${PG_MEM_LIMIT:-512m}
+    cpus: ${PG_CPUS:-1.0}
     logging:
       driver: json-file
       options: {max-size: 10m, max-file: '3'}
@@ -104,8 +102,8 @@ services:
       POSTGRES_HOST: postgres
       API_DB_PASSWORD: ${API_DB_PASSWORD:?set production API password}
       WORKER_DB_PASSWORD: ${WORKER_DB_PASSWORD:?set production worker password}
-      PGBOUNCER_POOL_SIZE: '${PGBOUNCER_POOL_SIZE:-10}'
-      PGBOUNCER_MAX_DB_CONN: '${PGBOUNCER_MAX_DB_CONN:-30}'
+      PGBOUNCER_POOL_SIZE: '${PGBOUNCER_POOL_SIZE:-8}'
+      PGBOUNCER_MAX_DB_CONN: '${PGBOUNCER_MAX_DB_CONN:-20}'
     read_only: true
     tmpfs: ['/run/pgbouncer:size=1m,mode=1777']
     cap_drop: [ALL]
@@ -158,8 +156,8 @@ services:
       - ./partners:/etc/audeniq/partners:ro
     depends_on:
       pgbouncer: {condition: service_healthy}
-    mem_limit: 512m
-    cpus: 1.0
+    mem_limit: ${API_MEM_LIMIT:-384m}
+    cpus: ${API_CPUS:-1.0}
     # CPU가 붐빌 때 API(1024)가 worker(512)의 두 배 몫을 받는다: 무거운 QC 중에도 응답이 밀리지 않는다.
     cpu_shares: 1024
   worker:
@@ -174,18 +172,19 @@ services:
       DATABASE_POOLER: pgbouncer
       # LISTEN needs a session: direct to postgres, not through the pooler.
       DATABASE_LISTEN_URL: postgres://audeniq_worker:${WORKER_DB_PASSWORD}@postgres/audeniq_prod
-      WORKER_MAX_IN_FLIGHT: '${WORKER_MAX_IN_FLIGHT:-3}'
-      DATABASE_MAX_CONNECTIONS: '${DATABASE_MAX_CONNECTIONS:-8}'
+      WORKER_MAX_IN_FLIGHT: '${WORKER_MAX_IN_FLIGHT:-2}'
+      DATABASE_MAX_CONNECTIONS: '${DATABASE_MAX_CONNECTIONS:-6}'
       JOB_LEASE_SECONDS: '${JOB_LEASE_SECONDS:-300}'
       WORKER_DRAIN_SECONDS: '${WORKER_DRAIN_SECONDS:-30}'
       QUEUE_INTERACTIVE_CONCURRENCY: '1'
-      # 곡마다 업로드 직후 사전 분석(ffmpeg 디코드)이 이 큐로 돈다. 2면 2 vCPU를 다 써서
-      # 앨범 업로드 분석이 거의 두 배 빨리 끝난다. API는 cpu_shares로 CPU 우선권을 가진다.
-      QUEUE_QC_CONCURRENCY: '${QUEUE_QC_CONCURRENCY:-2}'
+      # 곡마다 업로드 직후 사전 분석(ffmpeg 디코드)이 이 큐로 돈다. CPU 작업이라 vCPU 수만큼이
+      # 알맞다(1 vCPU: 1, 2 vCPU: 2). API는 cpu_shares로 CPU 우선권을 가진다.
+      QUEUE_QC_CONCURRENCY: '${QUEUE_QC_CONCURRENCY:-1}'
       QUEUE_RIGHTS_CONCURRENCY: '1'
       QUEUE_DISTRIBUTION_CONCURRENCY: '1'
       QUEUE_FINANCE_CONCURRENCY: '1'
-      QUEUE_DELIVERY_CONCURRENCY: '2'
+      # DSP 전송은 네트워크 대기(I/O)라 CPU와 따로 센다.
+      QUEUE_DELIVERY_CONCURRENCY: '${QUEUE_DELIVERY_CONCURRENCY:-2}'
       # Workers read the frozen masters for Stage 1 QC and packaging; they
       # need the same bucket as the API. Analysis temp files go to TMPDIR (a
       # volume), never the 16 MiB /tmp tmpfs.
@@ -214,8 +213,9 @@ services:
       - ./partners:/etc/audeniq/partners:ro
     depends_on:
       pgbouncer: {condition: service_healthy}
-    mem_limit: 1536m
-    cpus: 1.5
+    # cpus는 서버 vCPU 수를 넘을 수 없다(넘으면 Docker가 컨테이너를 만들지 않는다).
+    mem_limit: ${WORKER_MEM_LIMIT:-768m}
+    cpus: ${WORKER_CPUS:-1.0}
     cpu_shares: 512
   tunnel:
     image: ${CLOUDFLARED_IMAGE:?set tested cloudflared image digest}
