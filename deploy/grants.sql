@@ -79,6 +79,7 @@ GRANT SELECT,INSERT ON catalog.asset_fingerprints TO audeniq_worker;
 -- Cross-org similarity (REVIEW only) reads other orgs' fingerprints via one
 -- narrow SECURITY DEFINER function; the table itself stays org-scoped.
 GRANT EXECUTE ON FUNCTION catalog.fingerprints_outside_org(uuid, smallint) TO audeniq_worker;
+GRANT EXECUTE ON FUNCTION catalog.fingerprints_outside_org_page(uuid, smallint, uuid, integer) TO audeniq_worker;
 -- E-0 holds delivery until the release's agreement is signed (portal stays ungranted).
 GRANT EXECUTE ON FUNCTION execution.agreement_signed(uuid, uuid) TO audeniq_worker;
 GRANT INSERT ON catalog.application_revisions,catalog.consent_packages TO audeniq_worker;
