@@ -1,4 +1,5 @@
 import { Fragment, memo, useCallback, useEffect, useRef, useState } from 'react';
+import { ReviewNote } from '../components/CorrectionList';
 import { FilePicker } from '../components/FilePicker';
 import { useNavigate, useSearchParams } from '../lib/router';
 import { useToast } from '../components/Toast';
@@ -14,7 +15,7 @@ import { useProfile } from '../store/profile';
 import { fileSize, localStamp } from '../lib/format';
 import { DSP, GENRES, KINDS, LANGUAGES, dspLabel, genreLabel, kindLabel } from '../lib/catalog';
 import { formatKoreanDate, stampNow, todayStr } from '../lib/date';
-import { correctionWhere, resolveCorrection, type ResolvedCorrection } from '../lib/corrections';
+import { correctionWhere, resolveCorrection, splitCorrections, type ResolvedCorrection } from '../lib/corrections';
 import { checkAudioFile, formatDuration, specLabel } from '../lib/audioSpec';
 import { AGREEMENTS, SIGNER_ROLES, compactSignature, createApplication } from '../lib/application';
 import {
@@ -1071,6 +1072,8 @@ export function Upload() {
   const [reached, setReached] = useState(0);
   // 보완 요청 — 수정 모드에서 불러온 발매의 요청 항목과 신청서 위치
   const [fixes, setFixes] = useState<ResolvedCorrection[]>([]);
+  // 담당자 전체 의견 — 고칠 항목과 따로 보여 준다
+  const [reviewNote, setReviewNote] = useState('');
   const [focusField, setFocusField] = useState<{ id: string; n: number } | null>(null);
   // 신청인 서명 (마지막 단계)
   const signRef = useRef<SignaturePadHandle>(null);
@@ -1239,8 +1242,10 @@ export function Upload() {
       // 작성 중인 발매는 마지막으로 머문 단계에서 이어서 작성, 접수된 발매는 모든 단계를 바로 열 수 있게
       const last = Math.min(STEPS.length - 1, Math.max(0, d?.lastStep ?? 0));
       setReached(rel.status === 'draft' ? last : STEPS.length - 1);
-      const resolved = (rel.corrections ?? []).map(c => resolveCorrection(c, tracks.map(t => t.serverId || t.id)));
+      const split = splitCorrections(rel.corrections);
+      const resolved = split.items.map(c => resolveCorrection(c, tracks.map(t => t.serverId || t.id)));
       setFixes(resolved);
+      setReviewNote(split.note);
       // 보완하기로 들어왔으면 요청 항목의 단계·입력칸으로 바로 이동
       const target = fixCode
         ? resolved.find(c => c.code === fixCode && (!fixTrack || c.trackId === fixTrack)) ?? resolved[0]
@@ -1780,13 +1785,14 @@ export function Upload() {
         <p id="wizardSubtitle">{s.sub}</p>
       </div>
 
-      {fixes.length > 0 && (
+      {(fixes.length > 0 || reviewNote) && (
         <section className="aq-fix-panel" aria-labelledby="aqFixHead">
           <div className="aq-fix-head">
-            <strong id="aqFixHead">보완 요청 {fixes.length}건</strong>
-            <span>항목을 누르면 고쳐야 할 입력칸으로 이동해요.</span>
+            <strong id="aqFixHead">{fixes.length ? `보완 요청 ${fixes.length}건` : '담당자 의견'}</strong>
+            {fixes.length > 0 && <span>항목을 누르면 고쳐야 할 입력칸으로 이동해요.</span>}
           </div>
-          <ul>
+          {reviewNote && <ReviewNote text={reviewNote} />}
+          {fixes.length > 0 && <ul>
             {fixes.map((c, i) => (
               <li key={`${c.code}-${c.trackId ?? ''}-${i}`} className={c.step === step ? 'is-here' : ''}>
                 <button type="button" onClick={() => jumpToFix(c)}>
@@ -1796,7 +1802,7 @@ export function Upload() {
                 </button>
               </li>
             ))}
-          </ul>
+          </ul>}
         </section>
       )}
 

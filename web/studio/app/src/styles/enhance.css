@@ -1466,3 +1466,9 @@ body:has(#modal .aq-sticky-foot) .aq-toast-stack,body:has(.aq-form-actions.is-pi
 .aq-payment-card .aq-acct-head>.aq-bank-logo{background:#fff}
 .aq-payment-card .aq-acct-chip{background:#fff}
 .aq-payment-card .aq-acct-foot{border-top-color:#e3e9f4}
+
+/* 담당자 의견 — 고칠 항목이 아닌 참고 말이라 버튼 없이 인용처럼 */
+.aq-review-note{margin-top:14px;padding:13px 16px;border-radius:16px;background:rgba(255,255,255,.72)}
+.aq-review-note-label{display:block;margin-bottom:4px;font-size:12px;font-weight:800;color:#a76525}
+.aq-review-note p{margin:0;font-size:14px;line-height:1.65;color:#3f4b5e;white-space:pre-line;overflow-wrap:anywhere}
+.aq-fix-panel .aq-review-note{margin:10px 0 12px}

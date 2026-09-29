@@ -1,7 +1,7 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from '../lib/router';
 import { api, type Release, type Track } from '../api/client';
-import { fixPath, resolveCorrection } from '../lib/corrections';
+import { fixPath, resolveCorrection, splitCorrections } from '../lib/corrections';
 import { STATUS_LABEL } from '../lib/format';
 import { useAsync } from '../hooks/useAsync';
 import { SkeletonRows } from '../components/Skeleton';
@@ -30,8 +30,8 @@ type TrackWithRelease = Track & { releaseTitle: string; releaseId: string; artis
 
 /** 첫 보완 요청 한 줄 요약 */
 function firstFixText(r: Release): string {
-  const list = r.corrections ?? [];
-  if (!list.length) return '요청 내용을 확인하고 고쳐 주세요.';
+  const { items: list, note } = splitCorrections(r.corrections);
+  if (!list.length) return note ? `담당자 의견: ${note}` : '요청 내용을 확인하고 고쳐 주세요.';
   const first = resolveCorrection(list[0]);
   const text = first.message.startsWith(first.label) ? first.message : `${first.label}: ${first.message}`;
   return `${text}${list.length > 1 ? ` 외 ${list.length - 1}건` : ''}`;
@@ -188,12 +188,12 @@ export function Releases() {
                   {r.status === 'needs' && (
                     <div className="aq-release-fix">
                       <span className="min-0">
-                        <b>보완 요청{r.corrections?.length ? ` ${r.corrections.length}건` : ''}</b>
+                        <b>보완 요청{splitCorrections(r.corrections).items.length ? ` ${splitCorrections(r.corrections).items.length}건` : ''}</b>
                         {firstFixText(r)}
                       </span>
                       <button
                         type="button" className="aq-release-fix-btn"
-                        onClick={e => { e.stopPropagation(); nav(fixPath(r.id, r.corrections?.[0])); }}
+                        onClick={e => { e.stopPropagation(); nav(fixPath(r.id, splitCorrections(r.corrections).items[0])); }}
                         onKeyDown={e => e.stopPropagation()}
                       >보완하기 ›</button>
                     </div>
