@@ -114,6 +114,27 @@ impl ObjectStore for MemStore {
         self.objects.lock().await.remove(key);
         Ok(())
     }
+    /// Server-side upload of a converted master (lossless uploads are
+    /// stored as FLAC at completion): stored with its content type and
+    /// nonce, like a real PUT.
+    async fn put_file(
+        &self,
+        key: &str,
+        path: &std::path::Path,
+        mime: &str,
+        nonce: &str,
+    ) -> Result<()> {
+        let bytes = tokio::fs::read(path).await.map_err(|_| Error::Internal)?;
+        self.objects.lock().await.insert(
+            key.into(),
+            Obj {
+                bytes,
+                content_type: mime.into(),
+                nonce: nonce.into(),
+            },
+        );
+        Ok(())
+    }
     /// A ranged GET: not a full read of the object.
     async fn read_prefix(&self, key: &str, n: usize) -> Result<Vec<u8>> {
         self.objects
