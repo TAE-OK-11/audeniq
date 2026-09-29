@@ -25,7 +25,7 @@ Current configuration examples are not evidence of an established Tunnel, VPC Se
 
 ## GHCR 이미지 배포 (백엔드)
 
-`main`에 백엔드 변경(`crates/core`, `migrations`, `config`, `Cargo.*`, `deploy/Dockerfile`)이 푸시되면 **Backend image** 워크플로(`.github/workflows/backend-image.yml`)가 바로 `deploy/Dockerfile`로 이미지를 만들어 GHCR에 올린다. 테스트(Foundation)는 따로 돌고 이미지 빌드를 막지 않는다. 운영 프로필 `CARGO_PROFILE=release`(`Cargo.toml` `[profile.release]`: thin LTO, opt-level 3, 코드젠 1)로, 서버 CPU(AMD EPYC Zen3) 기준선 `TARGET_CPU=x86-64-v3`(AVX2·BMI2·FMA)에 맞춰 빌드한다. 예전 `fast` 프로필(opt-level 1)보다 CPU 작업(QC 지문 비교·JSON·해시)이 2~3배 빠르다. 기준선은 이미지의 `/usr/local/share/audeniq/target-cpu`에 기록되고, `deploy.sh`는 서버 CPU가 그 기준선을 지원하지 않으면 마이그레이션 전에 배포를 거부한다. AVX2가 없는 서버에 배포하려면 워크플로의 `TARGET_CPU`를 비운다(일반 x86-64).
+`main`에 백엔드 변경(`crates/core`, `migrations`, `config`, `Cargo.*`, `deploy/Dockerfile`)이 푸시되면 **Backend image** 워크플로(`.github/workflows/backend-image.yml`)가 바로 `deploy/Dockerfile`로 이미지를 만들어 GHCR에 올린다. 테스트(Foundation)는 따로 돌고 이미지 빌드를 막지 않는다. 운영 프로필 `CARGO_PROFILE=release`(`Cargo.toml` `[profile.release]`: fat LTO, opt-level 3, 코드젠 1)로, 서버 CPU(AMD EPYC Zen3) 기준선 `TARGET_CPU=x86-64-v3`(AVX2·BMI2·FMA)에 맞춰 빌드한다. 예전 `fast` 프로필(opt-level 1)보다 CPU 작업(QC 지문 비교·JSON·해시)이 2~3배 빠르다. 기준선은 이미지의 `/usr/local/share/audeniq/target-cpu`에 기록되고, `deploy.sh`는 서버 CPU가 그 기준선을 지원하지 않으면 마이그레이션 전에 배포를 거부한다. AVX2가 없는 서버에 배포하려면 워크플로의 `TARGET_CPU`를 비운다(일반 x86-64).
 
 - 이미지: `ghcr.io/tae-ok-11/audeniq` — `audeniq-api`, `audeniq-worker`, `audeniq-migrate`, `audeniq-admin` + ffmpeg/ffprobe, UID 10001, `linux/amd64`
 - 태그: `sha-<커밋 전체 해시>`(커밋과 1:1), `main`, `latest`. 배포에는 항상 **digest**(`@sha256:…`)를 쓴다. 실행 요약(Summary)에 digest와 배포 명령이 나온다.
@@ -151,6 +151,39 @@ edge Worker가 브라우저의 `Accept-Encoding`을 API에 넘기므로 터널 �
 - 배포 후 확인: `curl -s -o /dev/null -w '%{size_download}\n' -H 'Accept-Encoding: zstd' <studio>/api/...`
   와 `-H 'Accept-Encoding: identity'`의 크기를 비교하고, 응답 헤더 `content-encoding`을 본다.
 
+### 서버 크기와 확장
+
+`compose.production.yaml`의 모든 자원 값은 `production.env`에서 바꾼다. 비워 두면 1 vCPU / 1 GB 기본값이다.
+CPU 작업(QC 분석·FLAC 변환)은 vCPU 수에 맞추고, 네트워크 대기 작업(DSP 전송)은 따로 센다.
+API는 `cpu_shares`로 worker보다 CPU를 먼저 받으므로 무거운 QC 중에도 화면 응답이 밀리지 않는다.
+
+| 변수 | 1 vCPU / 1 GB (기본) | 2 vCPU / 4 GB | 4 vCPU / 8 GB |
+|---|---|---|---|
+| `PG_SHARED_BUFFERS` | 128MB | 1GB | 2GB |
+| `PG_EFFECTIVE_CACHE_SIZE` | 384MB | 2GB | 5GB |
+| `PG_WORK_MEM` | 4MB | 8MB | 16MB |
+| `PG_MAINTENANCE_WORK_MEM` | 64MB | 128MB | 256MB |
+| `PG_MEM_LIMIT` / `PG_CPUS` | 512m / 1.0 | 1536m / 1.0 | 3g / 2.0 |
+| `API_MEM_LIMIT` / `API_CPUS` | 384m / 1.0 | 512m / 1.0 | 768m / 2.0 |
+| `WORKER_MEM_LIMIT` / `WORKER_CPUS` | 768m / 1.0 | 1536m / 1.5 | 3g / 3.0 |
+| `QUEUE_QC_CONCURRENCY` | 1 | 2 | 3 |
+| `QUEUE_DELIVERY_CONCURRENCY` | 2 | 2 | 4 |
+| `WORKER_MAX_IN_FLIGHT` | 2 | 3 | 6 |
+| `DATABASE_MAX_CONNECTIONS` (worker) | 6 | 8 | 12 |
+| `PGBOUNCER_POOL_SIZE` / `PGBOUNCER_MAX_DB_CONN` | 8 / 20 | 10 / 30 | 15 / 35 |
+| 스왑 | 2 GB 필수 | 1 GB 권장 | 선택 |
+
+- `*_CPUS`는 서버 vCPU 수를 넘을 수 없다. 넘으면 Docker가 컨테이너를 만들지 않는다("Range of CPUs is from 0.01 to …").
+- `PGBOUNCER_MAX_DB_CONN` + 직접 연결(worker LISTEN, migrate)은 PostgreSQL `max_connections`(40)보다 작아야 한다.
+- 메모리 값(`*_MEM_LIMIT`)은 상한이다. 합이 RAM보다 커도 되지만(스왑이 받친다), 한 컨테이너가 폭주해도 서버 전체를 잡아먹지 못하게 막는다.
+
+**그 다음 단계(4 vCPU를 넘어설 때)**: 한 서버를 계속 키우는 것보다 역할을 나누는 편이 싸고 안전하다.
+1. **DB 분리**: PostgreSQL을 관리형 DB나 별도 서버로 옮기고 `DATABASE_URL`·`DATABASE_LISTEN_URL`만 바꾼다.
+2. **worker 수평 확장**: worker는 작업을 `FOR UPDATE SKIP LOCKED`로 가져가므로 여러 대를 띄워도 같은 작업을 두 번 하지 않는다.
+   DB를 분리한 뒤 다른 서버에 같은 이미지·같은 DB 접속 정보로 worker만 띄운다. 한 서버 안에서는 컨테이너를 늘리지 말고
+   위 표의 동시 처리 값(`QUEUE_*_CONCURRENCY`, `WORKER_MAX_IN_FLIGHT`)을 올린다(효과는 같고 `deploy.sh` 확인과도 맞는다).
+3. **API 수평 확장**: API는 상태를 DB에만 두므로 여러 대를 띄워 터널(cloudflared) 뒤에 둘 수 있다.
+
 ### DB 연결 풀 (PgBouncer)
 
 api·worker는 `pgbouncer:6432`(거래 단위 풀링)로 DB에 붙는다. 서버 연결 수가 줄고(기본 풀 10, DB 전체 30),
@@ -170,8 +203,9 @@ api·worker는 `pgbouncer:6432`(거래 단위 풀링)로 DB에 붙는다. 서버
 - **DB 백업**: `deploy/backup.sh`를 `/opt/audeniq`에 복사하고 cron에 등록 (`30 18 * * * /opt/audeniq/backup.sh >> /var/log/audeniq-backup.log 2>&1`, 매일 KST 03:30, 14일 보관). 덤프는 같은 서버에 남으므로 주기적으로 다른 곳에도 옮긴다. `production.env`(특히 `PAYOUT_ACCOUNT_KEY`)는 덤프와 따로 보관한다.
 - **방화벽**: `ufw allow OpenSSH && ufw enable`. compose는 호스트 포트를 열지 않으므로 SSH만 열려 있으면 된다.
 - **SSH**: fail2ban으로 비밀번호 대입을 막고, 가능하면 키 로그인으로 바꾼 뒤 `PasswordAuthentication no`.
-- **서버 크기**: `compose.production.yaml`의 기본값은 2 vCPU / 4 GB 기준이다 (postgres 1g: `shared_buffers` 384MB·`effective_cache_size` 1GB, api 512m, worker 1536m, QC 큐 동시 처리 2, CPU가 붐비면 api가 worker의 두 배 몫: `cpu_shares` 1024/512).
-  더 작은 서버는 `production.env`에서 줄인다. 1 GB·1 vCPU 서버: `PG_SHARED_BUFFERS=128MB`, `PG_EFFECTIVE_CACHE_SIZE=384MB`, `PG_WORK_MEM=4MB`, `PG_MAINTENANCE_WORK_MEM=64MB`, `PG_MEM_LIMIT=768m`, `QUEUE_QC_CONCURRENCY=1`, 스왑 파일(2GB) 추가, `compose.override.yaml`에서 worker `cpus: 1.0`.
+- **서버 크기**: 기본값은 **1 vCPU / 1 GB**다. 이 서버에서는 스왑 파일 2 GB를 꼭 추가한다(큰 음원 QC 때 OOM 방지):
+  `sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile && echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab && sudo sysctl -w vm.swappiness=10`
+  (swappiness 10: 평소에는 RAM을 쓰고 넘칠 때만 스왑). 서버를 키우면 코드·이미지는 그대로 두고 위 "서버 크기와 확장" 표의 값만 `production.env`에 넣은 뒤 `./deploy.sh`.
 - **터널 전송 속도**: cloudflared는 QUIC(UDP)으로 Cloudflare에 붙는데, 리눅스 기본 UDP 버퍼(약 200KB)로는
   처리량이 제한된다(로그: `failed to sufficiently increase receive buffer size`). 호스트에서 한 번:
   `printf 'net.core.rmem_max=7500000\nnet.core.wmem_max=7500000\n' | sudo tee /etc/sysctl.d/90-cloudflared.conf && sudo sysctl --system`
