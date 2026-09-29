@@ -424,7 +424,27 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
 .aq-pay-receipt dt{font-size:13px;color:#8591a5}
 .aq-pay-receipt dd{margin:0;font-size:14px;font-weight:700;color:#191f28;text-align:right;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
 .aq-pay-success-note{width:min(440px,100%);font-size:12px;line-height:1.65;color:#98a2b3;margin-bottom:22px}
-.aq-pay-success>.button{width:min(440px,100%)}
+.aq-pay-success{padding-bottom:8px!important}
+.aq-pay-success-note{margin-bottom:0}
+.aq-pay-actions.is-final .button{animation:aq-fade-up .45s var(--aq-e-ease) .4s both}
+/* 낮은 화면(휴대폰 브라우저 주소창·툴바 포함)에서도 완료 내용과 확인 버튼이 한 화면에 들어오게 */
+@media(max-height:820px){
+  .aq-pay-main:has(>.aq-pay-success){padding-top:18px;padding-bottom:10px}
+  .aq-pay-success{padding-top:0}
+  .aq-success-mark{width:68px;height:68px;margin-bottom:14px}
+  .aq-pay-success .eyebrow{margin-bottom:8px}
+  .aq-pay-success h1{font-size:clamp(24px,6vw,32px)!important}
+  .aq-pay-success-sub{margin-top:8px;font-size:13px}
+  .aq-pay-receipt{margin:18px 0 10px}
+  .aq-pay-receipt-head{padding:14px 16px 4px}
+  .aq-pay-receipt dl{padding:4px 16px 8px}
+  .aq-pay-receipt dl>div{padding:8px 0}
+}
+@media(max-height:680px){
+  .aq-success-mark{width:56px;height:56px;margin-bottom:10px}
+  .aq-pay-success-sub{display:none}
+  .aq-pay-success-note{font-size:11px}
+}
 @media(prefers-reduced-motion:reduce){.aq-success-ring,.aq-success-tick,.aq-pay-receipt,.aq-success-mark{animation:none!important;stroke-dashoffset:0!important}}
 
 /* 트랙 카드 안은 카드 배경과 구분되도록 흰 칸 */
@@ -1247,3 +1267,23 @@ svg.aq-glyph{flex:none;fill:none!important;stroke:currentColor!important;stroke-
 .aq-inline-glyph{display:inline-block;vertical-align:-2px;margin:0 3px}
 .aq-back-link .aq-inline-glyph,.aq-nhero-back .aq-inline-glyph{margin:0 4px 0 0}
 .aq-cover-glyph{width:38%!important;height:38%!important;color:#fff;opacity:.95}
+
+/* ==========================================================================
+   터치 누름 피드백 — 휴대폰에서 누르는 순간 바로 반응하고, 손을 떼거나 스크롤로 벗어나면
+   원래 모습으로 부드럽게 돌아온다. (:hover 규칙은 빌드의 hover-guard가 마우스 환경으로만 제한)
+   ========================================================================== */
+@media (hover:none),(pointer:coarse){
+  /* 누를 때는 빠르게(80ms), 뗄 때는 각 요소의 기본 전환 시간으로 복귀 */
+  :is(.button,.link-btn,.tab,.studio-filter,.studio-alert-filter,.service-item,.aq-release-card,.aq-track-row,.aq-doc-card,.aq-ticket-card,.aq-notice-card,.aq-event-card,.aq-task,.aq-action-card,.aq-bank,.aq-chip,.aq-dsp,.aq-row-link,.aq-header-bell,.header-profile,.menu-toggle,.aq-pay-type span,.aq-cert-method,.aq-sign-provider,.portal-nav button):active{transition-duration:.08s!important}
+  .dashboard-grid .service-item:active{transform:scale(.97)!important;background-color:#eceff5!important}
+  .aq-action-card:active,.aq-row-link:active{background-color:#f1f4fa!important}
+  .header-profile:active,.menu-toggle:active{transform:scale(.92)}
+  .aq-pay-type:active span{background:#edf1f7!important}
+  .link-btn{transition:background .2s,transform .2s var(--aq-e-ease)}
+  .link-btn:active{transform:scale(.97)}
+  /* 길게 눌렀을 때 뜨는 시스템 메뉴·텍스트 선택이 버튼 조작을 방해하지 않게 */
+  :is(.button,.link-btn,.tab,.service-item,.aq-bank,.aq-chip,.menu-toggle,.header-profile,.aq-header-bell){-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+}
+@media(prefers-reduced-motion:reduce){
+  :is(.button,.link-btn,.service-item,.aq-bank,.aq-chip,.aq-dsp,.header-profile,.menu-toggle):active{transform:none!important}
+}

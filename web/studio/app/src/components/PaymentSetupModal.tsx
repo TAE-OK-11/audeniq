@@ -92,6 +92,11 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
   }, [step, category]);
 
   const flowRef = useRef<HTMLDivElement>(null);
+  // 단계 이동 방향 — 다음은 오른쪽에서, 이전은 왼쪽에서 들어온다
+  // (단계가 바뀔 때만 갱신 — 입력으로 다시 렌더돼도 애니메이션이 다시 시작되지 않게)
+  const stepDir = useRef({ step, dir: 'fwd' });
+  if (stepDir.current.step !== step) stepDir.current = { step, dir: step > stepDir.current.step ? 'fwd' : 'back' };
+  const dir = stepDir.current.dir;
   const [registeredAt, setRegisteredAt] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -209,7 +214,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
           </div>
           <small>{Math.min(step + 1, 4)} / 4</small>
         </header>
-        <main className="aq-pay-main">
+        <main className={`aq-pay-main aq-step-anim is-${dir}`} key={step}>
           {step === 0 && (
             <>
               <p className="eyebrow">PAYOUT PROFILE</p>
@@ -391,11 +396,15 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
                 </dl>
               </div>
               <p className="aq-pay-success-note">계좌번호는 뒤 4자리만 화면에 표시돼요. 계좌를 바꾸려면 정산·지급 또는 아티스트 정보에서 변경할 수 있어요.</p>
-              <button type="button" className="button" id="aqPayDone" onClick={done}>확인</button>
             </div>
           )}
         </main>
-        {step < 4 && (
+        {step === 4 ? (
+          // 완료 화면도 확인 버튼을 하단에 고정 — 작은 화면에서 스크롤하지 않아도 바로 보이게
+          <footer className="aq-pay-actions is-final">
+            <button type="button" className="button" id="aqPayDone" onClick={done}>확인</button>
+          </footer>
+        ) : (
           <footer className="aq-pay-actions">
             <button
               type="button" className="button" id="aqPayNext"

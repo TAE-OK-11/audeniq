@@ -18,6 +18,9 @@ window.addEventListener('vite:preloadError', e => {
 // 정상적으로 10초 이상 동작하면 플래그를 지워 다음 배포 때 다시 자동 복구되게 한다
 window.setTimeout(() => sessionStorage.removeItem(RELOAD_FLAG), 10000);
 
+// iOS Safari는 터치 리스너가 없으면 :active를 적용하지 않는다 — 누르는 순간의 피드백을 켠다
+document.addEventListener('touchstart', () => {}, { passive: true });
+
 prefetchInitialRoute();
 
 // 체험 모드: 접수된 계약서 검토를 자동 완료 (별도 청크로 분리해 실제 모드 번들에는 포함되지 않음)
