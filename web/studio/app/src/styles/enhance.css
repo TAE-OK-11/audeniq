@@ -1318,3 +1318,20 @@ svg.aq-glyph{flex:none;fill:none!important;stroke:currentColor!important;stroke-
   animation:aq-fade-up .3s var(--aq-e-ease) both
 }
 @media(prefers-reduced-motion:reduce){.aq-form-actions.is-pinned{animation:none}}
+/* 알림(토스트)이 고정된 버튼을 가리지 않게 그 위로 올린다 */
+body:has(#modal .aq-sticky-foot) .aq-toast-stack,body:has(.aq-form-actions.is-pinned) .aq-toast-stack{bottom:calc(100px + env(safe-area-inset-bottom))}
+
+/* ==========================================================================
+   손가락으로 누르기 쉬운 영역 — 보이는 모양은 그대로 두고 누를 수 있는 범위만 넓힌다
+   (작은 글자 버튼·링크를 몇 번씩 다시 눌러야 하던 문제)
+   ========================================================================== */
+.aq-password-toggle,.auth-foot a,.auth-links a{position:relative}
+/* 제목 버튼은 overflow:hidden이라 가상 요소가 잘린다 — 여백을 늘리고 같은 만큼 당겨 자리는 그대로 */
+:is(#root,#modal) button.row-name{padding-block:11px;margin-block:-11px;position:relative;z-index:1}
+.aq-password-toggle::after{content:"";position:absolute;inset:-7px -6px}
+.auth-foot a::after,.auth-links a::after{content:"";position:absolute;inset:-12px -8px}
+.aq-password-toggle{min-height:32px}
+@media (hover:none),(pointer:coarse){
+  .check-row{padding-block:10px;margin-block:-4px}
+  .check-row input{margin-top:2px}
+}
