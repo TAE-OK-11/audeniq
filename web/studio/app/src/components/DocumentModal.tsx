@@ -285,7 +285,7 @@ export function DocumentModal({
         </div>
       )}
 
-      <div className="doc-actions">
+      <div className="doc-actions aq-sticky-foot">
         <button id="aqDocConfirm" type="button" className="button" onClick={confirmSave}>확인 및 저장</button>
         <button id="aqDocSubmit" type="button" className="button secondary" onClick={submitReview} disabled={sending}>{sending ? '제출하는 중' : '검토 요청'}</button>
         {doc.fileName && (
