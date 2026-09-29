@@ -21,6 +21,7 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
+use tracing::Instrument;
 use uuid::Uuid;
 #[derive(Clone)]
 pub struct AppState {
@@ -202,8 +203,21 @@ async fn boundary(State(s): State<AppState>, mut req: Request, next: Next) -> Re
     {
         return Error::Forbidden.into_response();
     }
+    // Correlation fields on every log line of this request; release-scoped
+    // routes also carry the release id (see docs/PIPELINE_ARCHITECTURE.md).
+    let span = tracing::info_span!(
+        "http",
+        request_id = %id,
+        method = %req.method(),
+        path = %req.uri().path(),
+        release_id = tracing::field::Empty,
+    );
+    if let Some(release) = release_in_path(req.uri().path()) {
+        span.record("release_id", tracing::field::display(release));
+    }
     let started = std::time::Instant::now();
-    let mut response = next.run(req).await;
+    let mut response = next.run(req).instrument(span.clone()).await;
+    let _entered = span.enter();
     let headers = response.headers_mut();
     headers.insert("x-request-id", request_id);
     headers.insert("cache-control", HeaderValue::from_static("no-store"));
@@ -213,6 +227,17 @@ async fn boundary(State(s): State<AppState>, mut req: Request, next: Next) -> Re
     );
     tracing::info!(request_id=%id,status=response.status().as_u16(),elapsed_ms=started.elapsed().as_millis(),"http_request");
     response
+}
+/// The release a request path is about: `/api/orgs/{org}/releases/{id}/...`
+/// and `/api/staff/releases/{id}/...`.
+fn release_in_path(path: &str) -> Option<Uuid> {
+    let mut parts = path.split('/');
+    while let Some(p) = parts.next() {
+        if p == "releases" {
+            return parts.next().and_then(|id| Uuid::parse_str(id).ok());
+        }
+    }
+    None
 }
 async fn ready(State(s): State<AppState>) -> Result<Json<Value>> {
     // Doubles as the database check: contracted partners switched on.

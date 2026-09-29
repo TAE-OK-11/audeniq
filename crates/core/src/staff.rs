@@ -357,6 +357,108 @@ async fn open_checks(c: &mut PgConnection, revision: Uuid) -> Result<Vec<OpenChe
         .collect())
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TimelinePage {
+    pub limit: Option<i64>,
+}
+
+/// Everything that happened to one release, in time order, from the tables
+/// that already record it: audit events (release, packages, delivery jobs,
+/// jobs, track assets), jobs (migration 0064 `release_id`, plus upload-time
+/// analysis of its audio), non-passing checks, staff delivery decisions,
+/// DSP send attempts and ACKs. Staff read it instead of interpreting
+/// internal tables; the same `release_id` finds the worker and API logs.
+pub async fn release_timeline(
+    s: &AppState,
+    h: &HeaderMap,
+    release: Uuid,
+    p: TimelinePage,
+) -> Result<Value> {
+    staff(s, h, false).await?;
+    let limit = p.limit.unwrap_or(500).clamp(1, 2000);
+    let mut tx = s.pool.begin().await?;
+    staff_scope(&mut tx).await?;
+    let org: Uuid = sqlx::query_scalar("SELECT org_id FROM catalog.releases WHERE id=$1")
+        .bind(release)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(Error::NotFound)?;
+    // Delivery tables are org-scoped (RLS): read them as the release's org.
+    sqlx::query("SELECT set_config('app.org_id',$1,true)")
+        .bind(org.to_string())
+        .execute(&mut *tx)
+        .await?;
+    let rows: Vec<(chrono::DateTime<chrono::Utc>, String, String, Value)> = sqlx::query_as(
+        "WITH pk AS (
+            SELECT dp.id FROM distribution.distribution_packages dp
+              JOIN distribution.canonical_releases cr ON cr.id = dp.canonical_release_id
+             WHERE cr.release_id = $1),
+          dj AS (SELECT id, partner_id FROM execution.delivery_jobs WHERE package_id IN (SELECT id FROM pk)),
+          ast AS (SELECT DISTINCT asset_id FROM catalog.tracks WHERE release_id = $1 AND asset_id IS NOT NULL),
+          jb AS (
+            SELECT id, kind, queue, status, attempts, last_error, created_at, run_at
+              FROM operations.jobs WHERE release_id = $1
+            UNION
+            SELECT id, kind, queue, status, attempts, last_error, created_at, run_at
+              FROM operations.jobs
+             WHERE kind = 'asset.analyze' AND payload->>'asset_id' IN (SELECT asset_id::text FROM ast))
+         SELECT at, source, kind, detail FROM (
+           SELECT a.occurred_at AS at, 'audit' AS source, a.action AS kind,
+                  jsonb_build_object('reason', a.reason_code, 'resource_id', a.resource_id,
+                                     'actor_user_id', a.actor_user_id, 'actor_service', a.actor_service,
+                                     'request_id', a.request_id) AS detail
+             FROM operations.audit_events a
+            WHERE a.resource_id = $1
+               OR a.resource_id IN (SELECT id FROM pk)
+               OR a.resource_id IN (SELECT id FROM dj)
+               OR a.resource_id IN (SELECT id FROM jb)
+               OR a.resource_id IN (SELECT asset_id FROM ast)
+           UNION ALL
+           SELECT created_at, 'job', kind,
+                  jsonb_build_object('job_id', id, 'queue', queue, 'status', status,
+                                     'attempts', attempts, 'last_error', last_error, 'run_at', run_at)
+             FROM jb
+           UNION ALL
+           SELECT c.created_at, 'check', c.check_code,
+                  jsonb_build_object('status', c.status, 'revision_id', c.revision_id, 'detail', c.detail)
+             FROM operations.check_results c
+             JOIN catalog.application_revisions r ON r.id = c.revision_id
+            WHERE r.release_id = $1 AND c.status NOT IN ('PASS', 'NOT_APPLICABLE')
+           UNION ALL
+           SELECT s.approval_at, 'staff_decision', s.dsp_code,
+                  jsonb_build_object('approval', s.approval, 'readiness', s.readiness,
+                                     'note', s.approval_note, 'package_id', s.package_id)
+             FROM distribution.delivery_staging s
+            WHERE s.release_id = $1 AND s.approval_at IS NOT NULL
+           UNION ALL
+           SELECT t.created_at, 'dsp_request', dj.partner_id,
+                  jsonb_build_object('attempt', t.attempt_no, 'outcome', t.outcome,
+                                     'partner_message_id', t.partner_message_id, 'delivery_job_id', t.job_id)
+             FROM execution.delivery_attempts t JOIN dj ON dj.id = t.job_id
+           UNION ALL
+           SELECT e.received_at, 'dsp_ack', e.partner_id,
+                  jsonb_build_object('outcome', e.outcome, 'event_id', e.event_id,
+                                     'applied', e.applied, 'delivery_job_id', e.job_id)
+             FROM execution.ack_events e JOIN dj ON dj.id = e.job_id
+         ) t
+         ORDER BY at, source, kind
+         LIMIT $2",
+    )
+    .bind(release)
+    .bind(limit + 1)
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    let truncated = rows.len() as i64 > limit;
+    let items: Vec<Value> = rows
+        .into_iter()
+        .take(limit as usize)
+        .map(|(at, source, kind, detail)| json!({"at": at, "source": source, "kind": kind, "detail": detail}))
+        .collect();
+    Ok(json!({"release_id": release, "org_id": org, "items": items, "truncated": truncated}))
+}
+
 pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Result<Value> {
     staff(s, h, false).await?;
     let mut tx = s.pool.begin().await?;
@@ -1978,6 +2080,14 @@ async fn h_release(
 ) -> Result<Json<Value>> {
     Ok(Json(release_detail(&s, &h, id).await?))
 }
+async fn h_timeline(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    Query(p): Query<TimelinePage>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    Ok(Json(release_timeline(&s, &h, id, p).await?))
+}
 async fn h_decide(
     State(s): State<AppState>,
     Path(id): Path<Uuid>,
@@ -2133,6 +2243,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/staff/overview", get(h_overview))
         .route("/api/staff/releases", get(h_releases))
         .route("/api/staff/releases/{id}", get(h_release))
+        .route("/api/staff/releases/{id}/timeline", get(h_timeline))
         .route("/api/staff/releases/{id}/decision", post(h_decide))
         .route(
             "/api/staff/releases/{id}/reissue-identifiers",
