@@ -1424,3 +1424,8 @@ body:has(#modal .aq-sticky-foot) .aq-toast-stack,body:has(.aq-form-actions.is-pi
 :is(#root,#modal) .aq-ack .aq-ack-input{position:absolute!important;opacity:0!important;width:1px!important;height:1px!important;margin:0!important;pointer-events:none}
 .aq-ack.is-on{background:#eef3ff;color:#2f55d4}
 @media(prefers-reduced-motion:reduce){.aq-pick,.aq-pick-mark{transition:none}.aq-pick.is-on .aq-pick-mark svg{animation:none}}
+
+/* 메뉴 항목 화살표는 아이콘 하나만 (예전 CSS 글자 ›와 겹쳐 두 개로 보이던 문제) */
+.portal-nav button>span::after{content:none!important}
+.portal-nav button>span{color:#a3adbf}
+.portal-nav button.active>span,.portal-nav button[aria-current=page]>span{color:currentColor}

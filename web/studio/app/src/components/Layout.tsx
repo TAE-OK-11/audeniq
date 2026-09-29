@@ -215,7 +215,7 @@ export function Layout({ children }: { children: ReactNode }) {
                       {item.label}
                       {item.to === '/notifications' && unread > 0 && <b className="aq-nav-count">{unread}</b>}
                     </em>
-                    <span><Glyph name="arrow-up-right" size={14} /></span>
+                    <span aria-hidden="true"><Glyph name="chevron-right" size={16} /></span>
                   </button>
                 );
               })}
