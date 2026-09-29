@@ -1448,3 +1448,12 @@ body:has(#modal .aq-sticky-foot) .aq-toast-stack,body:has(.aq-form-actions.is-pi
 /* .field label 규칙(블록·아래 여백·글자색)이 버튼에 새지 않게 */
 :is(#root,#modal) .aq-file .aq-file-btn{display:inline-flex!important;align-items:center!important;margin:0!important;line-height:1!important;font-size:14px!important;font-weight:800!important;color:#2f55d4!important;letter-spacing:-.01em}
 :is(#root,#modal) .aq-file.has-file .aq-file-btn{color:#4c5a74!important}
+
+/* 위자드 아래 ‘이전’ — 너무 작아 누르기 어렵던 문제. 다음 버튼보다는 항상 좁게(1:1 아님) */
+#view-new .step-actions #wizardBack{min-width:108px!important}
+#view-new .step-actions:has(#wizardSaveNow) #wizardBack{min-width:92px!important}
+@media(max-width:380px){
+  #view-new .step-actions #wizardBack{min-width:96px!important}
+  #view-new .step-actions:has(#wizardSaveNow) #wizardBack{min-width:80px!important}
+}
+@media(min-width:760px){#view-new .step-actions #wizardBack{min-width:128px!important}}
