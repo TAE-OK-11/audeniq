@@ -1335,3 +1335,49 @@ body:has(#modal .aq-sticky-foot) .aq-toast-stack,body:has(.aq-form-actions.is-pi
   .check-row{padding-block:10px;margin-block:-4px}
   .check-row input{margin-top:2px}
 }
+
+/* ==========================================================================
+   수령 계좌 카드 (아티스트 정보) — 은행과 계좌 끝자리가 먼저 눈에 들어오게
+   ========================================================================== */
+.aq-acct{
+  position:relative;overflow:hidden;display:grid;gap:16px;width:100%;margin:0;padding:20px 20px 16px;
+  border:0;border-radius:24px;background:#fff;color:var(--aq-e-ink);text-align:left;font:inherit;cursor:pointer;
+  box-shadow:0 0 0 1px #e8eef9,0 18px 36px -28px rgba(27,51,104,.45);
+  transition:transform .25s var(--aq-e-ease),box-shadow .25s var(--aq-e-ease);
+  animation:aq-fade-up .45s var(--aq-e-ease) both
+}
+/* 은은한 브랜드 빛 — 카드처럼 보이게 하는 장식 */
+.aq-acct:not(.aq-acct-empty)::before{content:"";position:absolute;right:-60px;top:-70px;width:200px;height:200px;border-radius:50%;background:radial-gradient(circle,rgba(59,99,243,.13),rgba(59,99,243,0) 70%);pointer-events:none}
+.aq-acct>*{position:relative}
+/* 제목 위 30px 여백(다른 카드용 규칙)이 카드 안쪽 여백과 겹쳐 빈 공간이 크던 문제 */
+.aq-payment-card>.section-top{margin-top:0!important;margin-bottom:14px!important}
+.aq-acct:hover{transform:translateY(-2px);box-shadow:0 0 0 1px #dbe4f7,0 22px 40px -26px rgba(27,51,104,.5)}
+.aq-acct:active{transform:scale(.985)}
+.aq-acct:focus-visible{outline:3px solid #7892f9;outline-offset:3px}
+.aq-acct-head{display:flex;align-items:center;gap:12px;min-width:0}
+.aq-acct-head>.aq-bank-logo{width:46px;height:46px;flex:0 0 46px;border-radius:15px;background:#f4f7fd}
+.aq-acct-bank{display:grid;gap:2px;min-width:0}
+.aq-acct-bank strong{font-size:16px;font-weight:800;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.aq-acct-bank small{font-size:12px;color:#8591a5}
+.aq-acct-status{margin-left:auto;flex:none;display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:var(--aq-e-green-soft);color:var(--aq-e-green);font-size:12px;font-weight:800}
+.aq-acct-status i{width:6px;height:6px;border-radius:50%;background:currentColor;box-shadow:0 0 0 3px rgba(33,129,91,.18)}
+.aq-acct-number{display:block;font-size:27px;font-weight:800;letter-spacing:.06em;line-height:1.1;font-variant-numeric:tabular-nums;color:#171b29}
+.aq-acct-dots{color:#b4bfd2;font-size:.78em;letter-spacing:.14em;vertical-align:.08em}
+.aq-acct-meta{display:flex;flex-wrap:wrap;gap:6px}
+.aq-acct-chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:6px 11px;border-radius:10px;background:#f2f5fb;color:#36425b;font-size:13px;font-weight:700;overflow-wrap:anywhere}
+.aq-acct-chip em{font-style:normal;font-weight:600;color:#8591a5}
+.aq-acct-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:14px;border-top:1px solid #eef2f8}
+.aq-acct-foot small{font-size:12px;color:#98a2b3}
+.aq-acct-edit{display:inline-flex;align-items:center;gap:2px;flex:none;color:var(--aq-e-blue);font-size:13.5px;font-weight:800}
+.aq-acct-edit svg{transition:transform .2s var(--aq-e-ease)}
+.aq-acct:hover .aq-acct-edit svg{transform:translateX(3px)}
+/* 미등록 — 점선 카드로 등록을 바로 유도 */
+.aq-acct-empty{display:flex;align-items:center;gap:14px;padding:18px;background:#fff;box-shadow:none;border:1.5px dashed #c9d5f0}
+.aq-acct-empty:hover{border-color:var(--aq-e-blue);box-shadow:none}
+.aq-acct-plus{display:grid;place-items:center;flex:0 0 44px;width:44px;height:44px;border-radius:14px;background:var(--aq-e-blue-soft);color:var(--aq-e-blue)}
+.aq-acct-empty-copy{display:grid;gap:3px;flex:1;min-width:0}
+.aq-acct-empty-copy strong{font-size:15px;font-weight:800}
+.aq-acct-empty-copy small{font-size:12.5px;line-height:1.5;color:#7b879b}
+.aq-acct-empty>svg{flex:none;color:#9aa6ba}
+@media(max-width:370px){.aq-acct{padding:18px 16px 14px}.aq-acct-number{font-size:23px}.aq-acct-status{padding:5px 8px;font-size:11px}}
+@media(prefers-reduced-motion:reduce){.aq-acct{animation:none;transition:none}}
