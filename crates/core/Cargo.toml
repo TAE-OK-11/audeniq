@@ -34,6 +34,9 @@ unicode-normalization = "0.1.25"
 libc = "0.2.189"
 unicode-security = "0.1.2"
 aes-gcm = "0.11.1"
+# Global allocator for the long-running api/worker binaries (see src/bin): lower RSS
+# than glibc malloc's per-thread arenas under tokio, and faster small allocs.
+mimalloc = { version = "0.1", default-features = false }
 [dev-dependencies]
 tower = { version = "0.5.3", features = ["util"] }
 http-body-util = "0.1.5"
