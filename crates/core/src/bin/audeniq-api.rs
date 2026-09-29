@@ -4,7 +4,11 @@ use audeniq_core::{
     database,
     storage::{DisabledStore, ObjectStore, S3Store},
 };
+use axum::serve::ListenerExt;
 use std::sync::Arc;
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -12,7 +16,7 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
     let config = Config::from_env()?;
-    let pool = database::connect(&config.database_url, 6).await?;
+    let pool = database::connect(&config.database_url, database::max_connections(6)?).await?;
     let storage: Arc<dyn ObjectStore> = if std::env::var("STORAGE_ENABLED").as_deref() == Ok("true")
     {
         Arc::new(S3Store::new(
@@ -26,7 +30,15 @@ async fn main() -> anyhow::Result<()> {
     } else {
         Arc::new(DisabledStore)
     };
-    let listener = tokio::net::TcpListener::bind(&config.bind).await?;
+    // TCP_NODELAY: responses are small JSON bodies on keep-alive connections
+    // from the tunnel; Nagle + delayed ACK can hold one back for ~40 ms.
+    let listener = tokio::net::TcpListener::bind(&config.bind)
+        .await?
+        .tap_io(|tcp| {
+            if let Err(error) = tcp.set_nodelay(true) {
+                tracing::debug!(%error, "TCP_NODELAY not set");
+            }
+        });
     let state = api::AppState::new(pool, config, storage).await?;
     // docker stop / deploys send SIGTERM: stop accepting, finish in-flight
     // requests (compose stop_grace_period: 30 s) instead of dropping them.

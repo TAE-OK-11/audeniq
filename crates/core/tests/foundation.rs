@@ -947,6 +947,54 @@ async fn outbox_atomic_rollback_and_idempotency(pool: PgPool) {
         1
     );
 }
+/// The worker's poll path (no lease sweep) claims and audits in one statement,
+/// and leaves expired leases to the timed sweep.
+#[sqlx::test]
+async fn queue_claim_without_sweep_audits_and_skips_expired(pool: PgPool) {
+    database::MIGRATOR.run(&pool).await.unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    let id = operations::enqueue(
+        &mut tx,
+        "interactive",
+        "outbox.record",
+        &json!({"event_id":Uuid::new_v4()}),
+        "poll-job",
+        None,
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    let job = operations::claim_with(&pool, "interactive", "poller", 60, false)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!((job.id, job.attempts), (id, 1));
+    let audited: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM operations.audit_events WHERE resource_id=$1 AND action='job.claim' AND actor_service='audeniq-system'",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(audited, 1);
+    sqlx::query("UPDATE operations.jobs SET lease_until=now()-interval '1 second' WHERE id=$1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        operations::claim_with(&pool, "interactive", "poller", 60, false)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let again = operations::claim_with(&pool, "interactive", "sweeper", 60, true)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!((again.id, again.attempts), (id, 2));
+    assert_ne!(again.token, job.token);
+}
 #[sqlx::test]
 async fn queue_claim_crash_fencing_retry_dead_letter(pool: PgPool) {
     database::MIGRATOR.run(&pool).await.unwrap();
