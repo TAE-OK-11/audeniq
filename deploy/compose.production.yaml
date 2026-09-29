@@ -28,20 +28,23 @@ services:
       - ./bootstrap.sql:/docker-entrypoint-initdb.d/001-roles.sql:ro
       - ./grants.sql:/opt/audeniq/grants.sql:ro
     networks: [backend]
-    # 1 vCPU / 1 GB SSD 서버 기준. 메모리 상한(768m) 안에서 캐시를 넉넉히 쓰고,
-    # 병렬 쿼리·JIT는 끈다(코어 1개에서는 오히려 느리고 메모리를 먹는다).
+    # 기본값은 2 vCPU / 4 GB 서버 기준 (api 512m + worker 1536m + postgres 1g + 나머지 ~0.4g).
+    # shared_buffers를 넉넉히 두어 조회가 디스크 대신 메모리에서 끝나게 한다. 서버가 더 작으면
+    # production.env에서 줄인다 (1 GB 서버: PG_SHARED_BUFFERS=128MB, PG_EFFECTIVE_CACHE_SIZE=384MB,
+    # PG_WORK_MEM=4MB, PG_MAINTENANCE_WORK_MEM=64MB, PG_MEM_LIMIT=768m).
+    # 병렬 쿼리·JIT는 끈다(작은 OLTP 쿼리에서는 오히려 느리고 메모리를 먹는다).
     command:
       - postgres
       - -c
       - max_connections=40
       - -c
-      - shared_buffers=128MB
+      - shared_buffers=${PG_SHARED_BUFFERS:-384MB}
       - -c
-      - effective_cache_size=384MB
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-1GB}
       - -c
-      - work_mem=4MB
+      - work_mem=${PG_WORK_MEM:-8MB}
       - -c
-      - maintenance_work_mem=64MB
+      - maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-128MB}
       - -c
       - random_page_cost=1.1
       - -c
@@ -61,7 +64,7 @@ services:
       - -c
       - log_lock_waits=on
     shm_size: 128m
-    mem_limit: 768m
+    mem_limit: ${PG_MEM_LIMIT:-1g}
     cpus: 1.0
     logging:
       driver: json-file
@@ -157,6 +160,8 @@ services:
       pgbouncer: {condition: service_healthy}
     mem_limit: 512m
     cpus: 1.0
+    # CPU가 붐빌 때 API(1024)가 worker(512)의 두 배 몫을 받는다: 무거운 QC 중에도 응답이 밀리지 않는다.
+    cpu_shares: 1024
   worker:
     restart: unless-stopped
     <<: *runtime
@@ -174,7 +179,9 @@ services:
       JOB_LEASE_SECONDS: '${JOB_LEASE_SECONDS:-300}'
       WORKER_DRAIN_SECONDS: '${WORKER_DRAIN_SECONDS:-30}'
       QUEUE_INTERACTIVE_CONCURRENCY: '1'
-      QUEUE_QC_CONCURRENCY: '1'
+      # 곡마다 업로드 직후 사전 분석(ffmpeg 디코드)이 이 큐로 돈다. 2면 2 vCPU를 다 써서
+      # 앨범 업로드 분석이 거의 두 배 빨리 끝난다. API는 cpu_shares로 CPU 우선권을 가진다.
+      QUEUE_QC_CONCURRENCY: '${QUEUE_QC_CONCURRENCY:-2}'
       QUEUE_RIGHTS_CONCURRENCY: '1'
       QUEUE_DISTRIBUTION_CONCURRENCY: '1'
       QUEUE_FINANCE_CONCURRENCY: '1'
@@ -209,6 +216,7 @@ services:
       pgbouncer: {condition: service_healthy}
     mem_limit: 1536m
     cpus: 1.5
+    cpu_shares: 512
   tunnel:
     image: ${CLOUDFLARED_IMAGE:?set tested cloudflared image digest}
     restart: unless-stopped

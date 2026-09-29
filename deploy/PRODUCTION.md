@@ -25,7 +25,7 @@ Current configuration examples are not evidence of an established Tunnel, VPC Se
 
 ## GHCR 이미지 배포 (백엔드)
 
-`main`에 백엔드 변경(`crates/core`, `migrations`, `config`, `Cargo.*`, `deploy/Dockerfile`)이 푸시되면 **Backend image** 워크플로(`.github/workflows/backend-image.yml`)가 바로 `deploy/Dockerfile`로 이미지를 만들어 GHCR에 올린다. 테스트(Foundation)는 따로 돌고 이미지 빌드를 막지 않는다. 지금은 테스트 서버용이라 `CARGO_PROFILE=fast`(`Cargo.toml` `[profile.fast]`: thin LTO, opt-level 1, 코드젠 16)로 빌드한다. 운영용으로 바꿀 때는 워크플로의 `build-args`를 지우면 기본값 `release`(thin LTO, 코드젠 1)로 빌드된다.
+`main`에 백엔드 변경(`crates/core`, `migrations`, `config`, `Cargo.*`, `deploy/Dockerfile`)이 푸시되면 **Backend image** 워크플로(`.github/workflows/backend-image.yml`)가 바로 `deploy/Dockerfile`로 이미지를 만들어 GHCR에 올린다. 테스트(Foundation)는 따로 돌고 이미지 빌드를 막지 않는다. 운영 프로필 `CARGO_PROFILE=release`(`Cargo.toml` `[profile.release]`: thin LTO, opt-level 3, 코드젠 1)로, 서버 CPU(AMD EPYC Zen3) 기준선 `TARGET_CPU=x86-64-v3`(AVX2·BMI2·FMA)에 맞춰 빌드한다. 예전 `fast` 프로필(opt-level 1)보다 CPU 작업(QC 지문 비교·JSON·해시)이 2~3배 빠르다. 기준선은 이미지의 `/usr/local/share/audeniq/target-cpu`에 기록되고, `deploy.sh`는 서버 CPU가 그 기준선을 지원하지 않으면 마이그레이션 전에 배포를 거부한다. AVX2가 없는 서버에 배포하려면 워크플로의 `TARGET_CPU`를 비운다(일반 x86-64).
 
 - 이미지: `ghcr.io/tae-ok-11/audeniq` — `audeniq-api`, `audeniq-worker`, `audeniq-migrate`, `audeniq-admin` + ffmpeg/ffprobe, UID 10001, `linux/amd64`
 - 태그: `sha-<커밋 전체 해시>`(커밋과 1:1), `main`, `latest`. 배포에는 항상 **digest**(`@sha256:…`)를 쓴다. 실행 요약(Summary)에 digest와 배포 명령이 나온다.
@@ -170,7 +170,8 @@ api·worker는 `pgbouncer:6432`(거래 단위 풀링)로 DB에 붙는다. 서버
 - **DB 백업**: `deploy/backup.sh`를 `/opt/audeniq`에 복사하고 cron에 등록 (`30 18 * * * /opt/audeniq/backup.sh >> /var/log/audeniq-backup.log 2>&1`, 매일 KST 03:30, 14일 보관). 덤프는 같은 서버에 남으므로 주기적으로 다른 곳에도 옮긴다. `production.env`(특히 `PAYOUT_ACCOUNT_KEY`)는 덤프와 따로 보관한다.
 - **방화벽**: `ufw allow OpenSSH && ufw enable`. compose는 호스트 포트를 열지 않으므로 SSH만 열려 있으면 된다.
 - **SSH**: fail2ban으로 비밀번호 대입을 막고, 가능하면 키 로그인으로 바꾼 뒤 `PasswordAuthentication no`.
-- **메모리**: 1GB 서버는 스왑 파일(2GB)을 추가해 큰 음원 QC 중 OOM을 피한다. vCPU 1개 서버는 `compose.override.yaml`에서 worker `cpus: 1.0`.
+- **서버 크기**: `compose.production.yaml`의 기본값은 2 vCPU / 4 GB 기준이다 (postgres 1g: `shared_buffers` 384MB·`effective_cache_size` 1GB, api 512m, worker 1536m, QC 큐 동시 처리 2, CPU가 붐비면 api가 worker의 두 배 몫: `cpu_shares` 1024/512).
+  더 작은 서버는 `production.env`에서 줄인다. 1 GB·1 vCPU 서버: `PG_SHARED_BUFFERS=128MB`, `PG_EFFECTIVE_CACHE_SIZE=384MB`, `PG_WORK_MEM=4MB`, `PG_MAINTENANCE_WORK_MEM=64MB`, `PG_MEM_LIMIT=768m`, `QUEUE_QC_CONCURRENCY=1`, 스왑 파일(2GB) 추가, `compose.override.yaml`에서 worker `cpus: 1.0`.
 - **터널 전송 속도**: cloudflared는 QUIC(UDP)으로 Cloudflare에 붙는데, 리눅스 기본 UDP 버퍼(약 200KB)로는
   처리량이 제한된다(로그: `failed to sufficiently increase receive buffer size`). 호스트에서 한 번:
   `printf 'net.core.rmem_max=7500000\nnet.core.wmem_max=7500000\n' | sudo tee /etc/sysctl.d/90-cloudflared.conf && sudo sysctl --system`
