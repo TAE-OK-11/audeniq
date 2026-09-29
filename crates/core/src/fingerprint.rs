@@ -373,6 +373,55 @@ pub fn bit_error_rate(a: &[u32], b: &[u32]) -> Option<f64> {
     best
 }
 
+/// [`bit_error_rate`] restricted to results at or below `limit`: the exact
+/// minimum BER when it is `<= limit`, else `None`. Identical answers for
+/// every match the similarity check reports, but an alignment is abandoned
+/// as soon as its running bit errors exceed the best BER found so far (or
+/// `limit`): unrelated audio sits near BER 0.5, so most alignments stop
+/// about halfway, and once a close match is found the rest stop far sooner.
+pub fn bit_error_rate_within(a: &[u32], b: &[u32], limit: f64) -> Option<f64> {
+    if a.len() < MIN_OVERLAP_FRAMES || b.len() < MIN_OVERLAP_FRAMES {
+        return None;
+    }
+    let mut bound = limit;
+    let mut best: Option<f64> = None;
+    let min_off = -((a.len() as isize) - MIN_OVERLAP_FRAMES as isize);
+    let max_off = b.len() as isize - MIN_OVERLAP_FRAMES as isize;
+    'offsets: for off in min_off..=max_off {
+        let (a_lo, b_lo) = if off >= 0 {
+            (off as usize, 0)
+        } else {
+            (0, (-off) as usize)
+        };
+        // Same alignments as `ber_at_offset`, including the ones it skips.
+        let overlap = (a.len().saturating_sub(a_lo)).min(b.len().saturating_sub(b_lo));
+        if overlap < MIN_OVERLAP_FRAMES {
+            continue;
+        }
+        let bits = overlap as f64 * 32.0;
+        // An alignment whose errors pass this count cannot beat `bound`.
+        let max_dist = bound * bits;
+        let (xs, ys) = (&a[a_lo..a_lo + overlap], &b[b_lo..b_lo + overlap]);
+        let mut dist = 0u64;
+        for (cx, cy) in xs.chunks(16).zip(ys.chunks(16)) {
+            dist += cx
+                .iter()
+                .zip(cy)
+                .map(|(x, y)| u64::from((x ^ y).count_ones()))
+                .sum::<u64>();
+            if dist as f64 > max_dist {
+                continue 'offsets;
+            }
+        }
+        let ber = dist as f64 / bits;
+        if ber <= bound {
+            bound = ber;
+            best = Some(ber);
+        }
+    }
+    best
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -465,6 +514,50 @@ mod tests {
             ber < NEAR_DUPLICATE_BER,
             "shifted identical audio should match, got {ber}"
         );
+    }
+
+    #[test]
+    fn bounded_ber_matches_exhaustive_search() {
+        // Deterministic pseudo-random frames, plus noisy copies of them at
+        // several shifts and error rates: the pruned search must return
+        // exactly the exhaustive minimum whenever it is within the limit.
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let mut next = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed as u32
+        };
+        let base: Vec<u32> = (0..400).map(|_| next()).collect();
+        for (shift, flip_every) in [(0usize, 0u32), (7, 9), (40, 3), (120, 2), (0, 1)] {
+            let other: Vec<u32> = base[shift..]
+                .iter()
+                .map(|&f| {
+                    let r = next();
+                    if flip_every > 0 && r % flip_every == 0 {
+                        f ^ r
+                    } else {
+                        f
+                    }
+                })
+                .collect();
+            let exact = bit_error_rate(&base, &other).unwrap();
+            for limit in [0.0, 0.1, SIMILAR_BER, 0.5, 1.0] {
+                let got = bit_error_rate_within(&base, &other, limit);
+                if exact <= limit {
+                    assert_eq!(got, Some(exact), "shift={shift} limit={limit}");
+                } else {
+                    assert_eq!(got, None, "shift={shift} limit={limit}");
+                }
+            }
+        }
+        let a = sine_frames(440.0, 10.0, 0.0);
+        let b = sine_frames(440.0, 12.0, 0.0);
+        assert_eq!(
+            bit_error_rate_within(&a.frames, &b.frames[21..], SIMILAR_BER),
+            bit_error_rate(&a.frames, &b.frames[21..])
+        );
+        assert!(bit_error_rate_within(&[0; 10], &[0; 10], 1.0).is_none());
     }
 
     #[test]
