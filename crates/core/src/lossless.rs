@@ -203,6 +203,15 @@ fn validate_wavpack(path: &Path) -> ConversionResult<()> {
 
 /// Decode once into FLAC and a source PCM SHA-256 concurrently, then decode
 /// FLAC once to verify it. This removes the old third full decoding pass.
+/// FLAC compression level for converted masters. Measured single-threaded
+/// on a 4-minute 24-bit/48 kHz stereo master (2026-09): level 0 66.3 % of
+/// the WAV in 2.9 s, 3 and 5 57.8 % in ~3 s, 6 56.6 % in 3.8 s, 8 56.2 % in
+/// 4.6 s, 12 55.6 % in 15 s. Level 5 (the FLAC default) is where extra CPU
+/// stops buying size: 8 costs ~50 % more encode time on a small shared
+/// 2-vCPU host for ~3 % smaller files, and decode cost is flat across
+/// levels. Size does not affect DSP ingestion; the bytes stay lossless.
+const FLAC_COMPRESSION_LEVEL: &str = "5";
+
 pub fn to_flac(src: &Path, dst: &Path, container: &str) -> ConversionResult<()> {
     let report = qc::probe_classified(src).map_err(|e| match e {
         qc::AnalyzerError::Unavailable => "UPLOAD_CONVERSION_UNAVAILABLE",
@@ -224,6 +233,11 @@ pub fn to_flac(src: &Path, dst: &Path, container: &str) -> ConversionResult<()> 
     }
     let m = qc::audio_metrics_from_report(&report).ok_or("UPLOAD_CONTENT_MISMATCH")?;
     let accepted = match container {
+        // Same integer PCM the Stage 1 WAV policy accepts at 16/24 bit
+        // (float, 32-bit and 8-bit WAVs were always rejected there).
+        "WAV" => {
+            m.format_name == "wav" && matches!(m.codec_name.as_str(), "pcm_s16le" | "pcm_s24le")
+        }
         "M4A" => m.format_name == "mov" && m.codec_name == "alac",
         "AIFF" => {
             m.format_name == "aiff"
@@ -237,6 +251,11 @@ pub fn to_flac(src: &Path, dst: &Path, container: &str) -> ConversionResult<()> 
         _ => false,
     };
     if !accepted {
+        // Float / 32-bit / 8-bit PCM in a WAV is lossless but not a
+        // deliverable format: say so, not "lossy".
+        if container == "WAV" && m.format_name == "wav" && m.codec_name.starts_with("pcm_") {
+            return Err("UPLOAD_AUDIO_FORMAT_UNSUPPORTED");
+        }
         return Err("UPLOAD_LOSSY_NOT_ACCEPTED");
     }
     if !matches!(m.bits_per_sample, Some(16 | 24))
@@ -247,6 +266,12 @@ pub fn to_flac(src: &Path, dst: &Path, container: &str) -> ConversionResult<()> 
     }
     if container == "WAVPACK" {
         validate_wavpack(src)?;
+    }
+    // A WAV whose data chunk promises more bytes than the file holds would
+    // otherwise convert "cleanly" to a shorter FLAC and lose the evidence
+    // Stage 1 used to report as AUDIO_TRUNCATED.
+    if container == "WAV" && qc::wav_data_truncation(src).is_some() {
+        return Err("UPLOAD_AUDIO_TRUNCATED");
     }
     // Bound expansion before launching the decoder, plus a file-size cap
     // below for forged duration headers. Never resample or downconvert.
@@ -279,7 +304,7 @@ pub fn to_flac(src: &Path, dst: &Path, container: &str) -> ConversionResult<()> 
         "-threads".as_ref(),
         "1".as_ref(),
         "-compression_level".as_ref(),
-        "5".as_ref(),
+        FLAC_COMPRESSION_LEVEL.as_ref(),
         "-fs".as_ref(),
         limit.as_ref(),
         "-f".as_ref(),
@@ -324,6 +349,8 @@ mod tests {
     #[test]
     fn additional_lossless_formats_preserve_pcm() {
         for (ext, codec, container, bits) in [
+            ("wav", "pcm_s16le", "WAV", 16),
+            ("wav", "pcm_s24le", "WAV", 24),
             ("aiff", "pcm_s16be", "AIFF", 16),
             ("aiff", "pcm_s24be", "AIFF", 24),
             ("wv", "wavpack", "WAVPACK", 16),
@@ -385,6 +412,52 @@ mod tests {
         std::fs::write(&p, &block(0)[..31]).unwrap();
         assert_eq!(validate_wavpack(&p), Err("UPLOAD_CONTENT_MISMATCH"));
         std::fs::remove_file(p).unwrap();
+    }
+
+    #[test]
+    fn wav_that_cannot_be_delivered_is_refused_before_conversion() {
+        let make = |codec: &str| {
+            let src =
+                std::env::temp_dir().join(format!("audeniq-wav-{}.wav", uuid::Uuid::new_v4()));
+            assert!(
+                std::process::Command::new("ffmpeg")
+                    .args([
+                        "-v",
+                        "error",
+                        "-f",
+                        "lavfi",
+                        "-i",
+                        "sine=duration=2:sample_rate=48000",
+                        "-c:a",
+                        codec,
+                    ])
+                    .arg(&src)
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+            src
+        };
+        for codec in ["pcm_f32le", "pcm_s32le", "pcm_u8"] {
+            let src = make(codec);
+            let dst = src.with_extension("flac");
+            assert_eq!(
+                to_flac(&src, &dst, "WAV"),
+                Err("UPLOAD_AUDIO_FORMAT_UNSUPPORTED"),
+                "{codec}"
+            );
+            assert!(!dst.exists());
+            std::fs::remove_file(src).unwrap();
+        }
+        // Truncated: the data chunk promises more bytes than the file has.
+        // Converting it would silently produce a shorter, valid FLAC.
+        let src = make("pcm_s24le");
+        let dst = src.with_extension("flac");
+        let bytes = std::fs::read(&src).unwrap();
+        std::fs::write(&src, &bytes[..bytes.len() - 48_000]).unwrap();
+        assert_eq!(to_flac(&src, &dst, "WAV"), Err("UPLOAD_AUDIO_TRUNCATED"));
+        assert!(!dst.exists());
+        std::fs::remove_file(src).unwrap();
     }
 
     #[test]
