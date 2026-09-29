@@ -287,9 +287,11 @@ export function Settlement() {
                 <label htmlFor="pAmount">받을 금액 (원)</label>
                 <div className="studio-amount-field">
                   <input
-                    id="pAmount" inputMode="numeric" type="number" min={1} max={left} step={1}
+                    // type=number는 마우스 휠·방향키로 금액이 몰래 바뀌고 쉼표 표시가 안 돼 숫자 전용 텍스트로 받는다
+                    id="pAmount" inputMode="numeric" type="text" autoComplete="off" enterKeyHint="done"
                     required placeholder="금액을 입력해 주세요"
-                    value={amount} onChange={e => setAmount(e.target.value)}
+                    value={amount ? Number(amount).toLocaleString('ko-KR') : ''}
+                    onChange={e => setAmount(e.target.value.replace(/\D/g, '').replace(/^0+/, '').slice(0, 15))}
                   />
                   <button type="button" id="payoutAll" className="link-btn" onClick={() => setAmount(String(left))}>전액</button>
                 </div>
