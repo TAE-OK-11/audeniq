@@ -1720,24 +1720,15 @@ async fn analyze_asset(
             )
         });
         // Perceptual fingerprint over the head/middle/tail segment windows.
-        // The window PCM is sliced from the mono 11025 Hz tap of the single
+        // The window PCM is read from the mono 11025 Hz tap of the single
         // decode pass above (ffmpeg's own resampler); the three separate
         // segment decodes are gone. Each segment is fingerprinted separately
         // to avoid fake boundary frames at the junctions.
         let duration_secs = metrics.as_ref().map(|m| m.duration_secs).unwrap_or(0.0);
         let fp = match kind.as_str() {
             "AUDIO" if !invalid && duration_secs > 0.0 => Some((|| {
-                let pcm = tap_pcm.ok_or_else(|| "fingerprint tap missing".to_string())?;
-                let sr = fingerprint::FINGERPRINT_SAMPLE_RATE as f64;
-                let mut segments: Vec<&[f32]> = Vec::new();
-                for (start, len) in fingerprint::segment_windows(duration_secs) {
-                    let lo = (start * sr) as usize;
-                    let hi = ((start + len) * sr).ceil() as usize;
-                    let hi = hi.min(pcm.len());
-                    if lo < hi {
-                        segments.push(&pcm[lo..hi]);
-                    }
-                }
+                let windows = tap_pcm.ok_or_else(|| "fingerprint tap missing".to_string())?;
+                let segments: Vec<&[f32]> = windows.iter().map(Vec::as_slice).collect();
                 fingerprint::fingerprint_from_segments(&segments).map_err(|e| format!("{e:?}"))
             })()),
             _ => None,
@@ -1848,7 +1839,8 @@ async fn handle_fingerprint_checks(
     }
     // Idempotent store: one row per asset; a re-run reuses the row.
     // asset_fingerprints is FORCE RLS: authorize this write's org in a
-    // short transaction, same pattern as distribution.rs.
+    // short transaction, same pattern as distribution.rs. Committed before
+    // the scan, so the scan holds no transaction open while it compares.
     let mut ftx = pool.begin().await?;
     sqlx::query("SELECT set_config('app.org_id',$1,true)")
         .bind(org.to_string())
@@ -1866,8 +1858,9 @@ async fn handle_fingerprint_checks(
     .bind(fp.to_bytes())
     .execute(&mut *ftx)
     .await?;
+    ftx.commit().await?;
     if want_similar {
-        let hits = find_similar_assets(&mut ftx, org, aid, &fp.frames).await?;
+        let hits = find_similar_assets(pool, org, aid, &fp.frames).await?;
         let (status, detail) = if hits.is_empty() {
             (CheckStatus::Pass, "no similar audio in catalog".to_string())
         } else {
@@ -1899,7 +1892,6 @@ async fn handle_fingerprint_checks(
             detail,
         });
     }
-    ftx.commit().await?;
     Ok(())
 }
 
@@ -1936,52 +1928,85 @@ async fn load_stored_fingerprint(
     }
 }
 
-/// Best-similarity matches for `frames` among the org's stored
-/// fingerprints at the current algorithm version, excluding `aid`
+/// Fingerprints read per page by the similarity scan (~4 KB each).
+const SIMILARITY_PAGE: i64 = 1000;
+
+/// Best-similarity matches for `frames` among stored fingerprints at the
+/// current algorithm version, in the org and in other orgs, excluding `aid`
 /// itself. Sorted by BER ascending, capped at 3 for the check detail.
+///
+/// Read in keyset pages (bounded memory, short statements, no transaction
+/// held across the scan); each page is compared on the blocking pool so a
+/// large catalog never stalls the worker runtime and its lease heartbeats.
 async fn find_similar_assets(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    pool: &PgPool,
     org: Uuid,
     aid: Uuid,
     frames: &[u32],
 ) -> Result<Vec<SimilarHit>> {
-    let rows: Vec<(Uuid, Vec<u8>)> = sqlx::query_as(
-        "SELECT asset_id, hash FROM catalog.asset_fingerprints
-          WHERE org_id=$1 AND asset_id<>$2 AND version=$3",
-    )
-    .bind(org)
-    .bind(aid)
-    .bind(fingerprint::FINGERPRINT_VERSION)
-    .fetch_all(&mut **tx)
-    .await?;
+    let frames: Arc<[u32]> = frames.into();
+    let mut hits = Vec::new();
+    let mut after = Uuid::nil();
+    loop {
+        let mut tx = pool.begin().await?;
+        sqlx::query("SELECT set_config('app.org_id',$1,true)")
+            .bind(org.to_string())
+            .execute(&mut *tx)
+            .await?;
+        let rows: Vec<(Uuid, Vec<u8>)> = sqlx::query_as(
+            "SELECT asset_id, hash FROM catalog.asset_fingerprints
+              WHERE org_id=$1 AND version=$2 AND asset_id>$3
+              ORDER BY asset_id LIMIT $4",
+        )
+        .bind(org)
+        .bind(fingerprint::FINGERPRINT_VERSION)
+        .bind(after)
+        .bind(SIMILARITY_PAGE)
+        .fetch_all(&mut *tx)
+        .await?;
+        tx.rollback().await?;
+        let Some(last) = rows.last().map(|r| r.0) else {
+            break;
+        };
+        after = last;
+        let full = rows.len() as i64 == SIMILARITY_PAGE;
+        let page = rows
+            .into_iter()
+            .filter(|(id, _)| *id != aid)
+            .map(|(id, hash)| (id, false, hash))
+            .collect();
+        hits.extend(compare_page(frames.clone(), page).await?);
+        if !full {
+            break;
+        }
+    }
     // Sandbox round 2: re-encoded copies of another account's audio were
     // delivered because only the own org was compared. Other orgs'
-    // fingerprints come through a narrow SECURITY DEFINER read (migration
-    // 0034); matches are REVIEW only, exactly like same-org matches.
-    let foreign: Vec<(Uuid, Uuid, Vec<u8>)> = sqlx::query_as(
-        "SELECT asset_id, org_id, hash FROM catalog.fingerprints_outside_org($1,$2)",
-    )
-    .bind(org)
-    .bind(fingerprint::FINGERPRINT_VERSION)
-    .fetch_all(&mut **tx)
-    .await?;
-    let candidates = rows
-        .into_iter()
-        .map(|(id, hash)| (id, false, hash))
-        .chain(foreign.into_iter().map(|(id, _, hash)| (id, true, hash)));
-    let mut hits = Vec::new();
-    for (other_id, other_org, hash) in candidates {
-        let Ok(other) = fingerprint::Fingerprint::from_bytes(&hash) else {
-            continue;
+    // fingerprints come through a narrow SECURITY DEFINER read (migrations
+    // 0034, 0061); matches are REVIEW only, exactly like same-org matches.
+    let mut after = Uuid::nil();
+    loop {
+        let rows: Vec<(Uuid, Uuid, Vec<u8>)> = sqlx::query_as(
+            "SELECT asset_id, org_id, hash FROM catalog.fingerprints_outside_org_page($1,$2,$3,$4)",
+        )
+        .bind(org)
+        .bind(fingerprint::FINGERPRINT_VERSION)
+        .bind(after)
+        .bind(SIMILARITY_PAGE as i32)
+        .fetch_all(pool)
+        .await?;
+        let Some(last) = rows.last().map(|r| r.0) else {
+            break;
         };
-        if let Some(ber) = fingerprint::bit_error_rate(frames, &other.frames)
-            && ber <= fingerprint::SIMILAR_BER
-        {
-            hits.push(SimilarHit {
-                asset_id: other_id,
-                other_org,
-                ber,
-            });
+        after = last;
+        let full = rows.len() as i64 == SIMILARITY_PAGE;
+        let page = rows
+            .into_iter()
+            .map(|(id, _, hash)| (id, true, hash))
+            .collect();
+        hits.extend(compare_page(frames.clone(), page).await?);
+        if !full {
+            break;
         }
     }
     hits.sort_by(|a, b| {
@@ -1991,6 +2016,34 @@ async fn find_similar_assets(
     });
     hits.truncate(3);
     Ok(hits)
+}
+
+/// Compare one page of stored fingerprints `(asset_id, other_org, hash)`
+/// against `frames` on the blocking pool; returns the matches at or below
+/// [`fingerprint::SIMILAR_BER`].
+async fn compare_page(
+    frames: Arc<[u32]>,
+    page: Vec<(Uuid, bool, Vec<u8>)>,
+) -> Result<Vec<SimilarHit>> {
+    tokio::task::spawn_blocking(move || {
+        page.into_iter()
+            .filter_map(|(asset_id, other_org, hash)| {
+                let other = fingerprint::Fingerprint::from_bytes(&hash).ok()?;
+                let ber = fingerprint::bit_error_rate_within(
+                    &frames,
+                    &other.frames,
+                    fingerprint::SIMILAR_BER,
+                )?;
+                Some(SimilarHit {
+                    asset_id,
+                    other_org,
+                    ber,
+                })
+            })
+            .collect()
+    })
+    .await
+    .map_err(|_| Error::Internal)
 }
 
 struct SimilarHit {
