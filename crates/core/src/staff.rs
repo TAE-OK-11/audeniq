@@ -459,6 +459,44 @@ pub async fn release_timeline(
     Ok(json!({"release_id": release, "org_id": org, "items": items, "truncated": truncated}))
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DeadLetterPage {
+    pub limit: Option<i64>,
+}
+
+/// The dead-letter queue: jobs that exhausted their attempts or failed
+/// permanently, newest first, with the release they belong to and whether
+/// staff may requeue them (pipeline kinds recover by resubmission/review).
+pub async fn dead_letters(s: &AppState, h: &HeaderMap, p: DeadLetterPage) -> Result<Value> {
+    staff(s, h, false).await?;
+    let limit = p.limit.unwrap_or(100).clamp(1, 500);
+    let items: Vec<Value> = sqlx::query_scalar(
+        "SELECT jsonb_build_object('job_id', id, 'kind', kind, 'queue', queue, 'release_id', release_id,
+                'attempts', attempts, 'max_attempts', max_attempts, 'last_error', left(last_error, 500),
+                'dead_lettered_at', dead_lettered_at, 'retried_at', retried_at,
+                'retryable', kind <> ALL($2))
+           FROM operations.jobs WHERE status='DEAD_LETTER'
+          ORDER BY dead_lettered_at DESC NULLS LAST, id LIMIT $1",
+    )
+    .bind(limit)
+    .bind(operations::SURFACED_KINDS.map(String::from).to_vec())
+    .fetch_all(&s.pool)
+    .await?;
+    Ok(json!({"items": items, "limit": limit}))
+}
+
+/// Requeue one dead-lettered job after its cause is fixed (delivery duty).
+pub async fn retry_job(s: &AppState, h: &HeaderMap, job: Uuid) -> Result<Value> {
+    let st = staff(s, h, true).await?;
+    require(&st, Duty::Delivery)?;
+    let mut tx = s.pool.begin().await?;
+    let kind =
+        operations::requeue_dead_letter(&mut tx, job, st.actor.user, st.actor.request).await?;
+    tx.commit().await?;
+    Ok(json!({"job_id": job, "kind": kind, "status": "QUEUED"}))
+}
+
 pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Result<Value> {
     staff(s, h, false).await?;
     let mut tx = s.pool.begin().await?;
@@ -2211,6 +2249,20 @@ async fn h_live(
 ) -> Result<Json<Value>> {
     Ok(Json(record_live(&s, &h, package, &code, i).await?))
 }
+async fn h_dead_letters(
+    State(s): State<AppState>,
+    Query(p): Query<DeadLetterPage>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    Ok(Json(dead_letters(&s, &h, p).await?))
+}
+async fn h_job_retry(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    Ok(Json(retry_job(&s, &h, id).await?))
+}
 async fn h_restage(
     State(s): State<AppState>,
     Path(package): Path<Uuid>,
@@ -2265,6 +2317,8 @@ pub fn routes() -> Router<AppState> {
         .route("/api/staff/inquiries", get(h_inquiries))
         .route("/api/staff/inquiries/{id}", get(h_inquiry))
         .route("/api/staff/inquiries/{id}/reply", post(h_reply))
+        .route("/api/staff/jobs/dead-letters", get(h_dead_letters))
+        .route("/api/staff/jobs/{id}/retry", post(h_job_retry))
         .route("/api/staff/deliveries", get(h_deliveries))
         .route("/api/staff/deliveries/{package}/restage", post(h_restage))
         .route(

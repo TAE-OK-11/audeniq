@@ -236,6 +236,9 @@ pub struct Job {
     pub attempts: i32,
     /// The release this job works for (migration 0064), for tracing.
     pub release_id: Option<Uuid>,
+    /// Execution time limit from `operations.job_policies` (migration 0065);
+    /// `None`: bounded by the handler itself.
+    pub timeout_secs: Option<i32>,
 }
 pub async fn claim(
     pool: &PgPool,
@@ -266,9 +269,9 @@ pub async fn claim_with(
     // insert rides in the same statement, so a claim is never unaudited.
     let q = sqlx::query(
         "WITH candidate AS (SELECT id FROM operations.jobs WHERE queue=$1 AND status='QUEUED' AND attempts<max_attempts AND run_at<=clock_timestamp() ORDER BY priority DESC,run_at,id FOR UPDATE SKIP LOCKED LIMIT 1),
-         claimed AS (UPDATE operations.jobs j SET status='RUNNING',attempts=attempts+1,locked_by=$2,lock_token=$3,lease_until=clock_timestamp()+make_interval(secs=>$4) FROM candidate WHERE j.id=candidate.id RETURNING j.id,j.lock_token,j.kind,j.payload,j.attempts,j.release_id),
+         claimed AS (UPDATE operations.jobs j SET status='RUNNING',attempts=attempts+1,locked_by=$2,lock_token=$3,lease_until=clock_timestamp()+make_interval(secs=>$4) FROM candidate WHERE j.id=candidate.id RETURNING j.id,j.lock_token,j.kind,j.payload,j.attempts,j.release_id,(SELECT p.timeout_secs FROM operations.job_policies p WHERE p.kind=j.kind) AS timeout_secs),
          audited AS (INSERT INTO operations.audit_events(id,actor_service,resource_id,action,reason_code,request_id) SELECT $5,'audeniq-system',id,'job.claim','LEASE',$6 FROM claimed)
-         SELECT id,lock_token,kind,payload,attempts,release_id FROM claimed",
+         SELECT id,lock_token,kind,payload,attempts,release_id,timeout_secs FROM claimed",
     )
     .bind(queue)
     .bind(worker)
@@ -292,6 +295,7 @@ pub async fn claim_with(
         payload: r.get("payload"),
         attempts: r.get("attempts"),
         release_id: r.get("release_id"),
+        timeout_secs: r.get("timeout_secs"),
     }))
 }
 pub async fn heartbeat(pool: &PgPool, j: &Job, seconds: i32) -> Result<()> {
@@ -330,7 +334,9 @@ pub async fn park(pool: &PgPool, j: &Job, code: &str, delay_secs: i64) -> Result
 }
 pub async fn fail(pool: &PgPool, j: &Job, permanent: bool, code: &str) -> Result<()> {
     let mut tx = pool.begin().await?;
-    let r=sqlx::query("UPDATE operations.jobs SET status=CASE WHEN $3 OR attempts>=max_attempts THEN 'DEAD_LETTER' ELSE 'QUEUED' END,dead_lettered_at=CASE WHEN $3 OR attempts>=max_attempts THEN now() END,last_error=$4,run_at=now()+make_interval(secs=>least(3600,power(2,attempts)*5)::double precision),lock_token=NULL,lease_until=NULL WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp() RETURNING status")
+    // Backoff from the kind's policy (0065): min(max, base·2^attempts) with
+    // ±20% jitter so jobs failed by one outage do not retry in lockstep.
+    let r=sqlx::query("UPDATE operations.jobs j SET status=CASE WHEN $3 OR attempts>=max_attempts THEN 'DEAD_LETTER' ELSE 'QUEUED' END,dead_lettered_at=CASE WHEN $3 OR attempts>=max_attempts THEN now() END,last_error=$4,run_at=now()+make_interval(secs=>(SELECT least(COALESCE(max(p.backoff_max_secs),3600),power(2,j.attempts)*COALESCE(max(p.backoff_base_secs),5))*(0.8+random()*0.4) FROM operations.job_policies p WHERE p.kind=j.kind)::double precision),lock_token=NULL,lease_until=NULL WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp() RETURNING status")
  .bind(j.id).bind(j.token).bind(permanent).bind(code).fetch_optional(&mut *tx).await?.ok_or(Error::Conflict)?;
     audit(
         &mut tx,
@@ -350,7 +356,7 @@ pub async fn fail(pool: &PgPool, j: &Job, permanent: bool, code: &str) -> Result
     Ok(())
 }
 /// Pipeline job kinds whose dead-letter must be surfaced on the release.
-const SURFACED_KINDS: [&str; 3] = ["stage1", "stage2", "prepare_release"];
+pub const SURFACED_KINDS: [&str; 3] = ["stage1", "stage2", "prepare_release"];
 
 /// A pipeline job is being dead-lettered: move its release out of the
 /// running state so the outcome is visible and recoverable instead of a
@@ -510,6 +516,22 @@ pub async fn stage3_give_up(c: &mut PgConnection, revision_id: Uuid, reason: &st
     Ok(true)
 }
 
+/// Whether a handler error can never succeed on retry: invalid input stays
+/// invalid. Everything else (database, storage, partner, internal) may be
+/// transient and keeps its remaining attempts.
+pub fn is_permanent(e: &Error) -> bool {
+    matches!(e, Error::Invalid | Error::InvalidCode(_))
+}
+
+/// A handler returned an error, or ran past its policy timeout: retry with
+/// backoff, or dead-letter it — permanent errors at once — and, for pipeline
+/// kinds, move the release out of its running state in the same
+/// transaction. (Plain [`fail`] left a stage job's release in STAGE*_RUNNING
+/// when its last attempt errored.)
+pub async fn fail_handler(pool: &PgPool, j: &Job, code: &str, permanent: bool) -> Result<()> {
+    retry_or_surface_with(pool, j, code, permanent).await
+}
+
 /// Retry a failed pipeline job, or — when this was its last attempt —
 /// dead-letter it and surface the failure on the release in one transaction.
 async fn retry_or_surface(pool: &PgPool, j: &Job, code: &str) -> Result<()> {
@@ -554,6 +576,49 @@ async fn retry_or_surface_with(pool: &PgPool, j: &Job, code: &str, permanent: bo
     tx.commit().await?;
     Ok(())
 }
+/// Staff requeue a dead-lettered job after fixing its cause (credentials,
+/// partner outage, config): fresh attempts, runs now, audited. Pipeline
+/// kinds are refused: their dead letter already moved the release to
+/// correction or review, and resubmission / review is their recovery.
+/// Returns the job's kind.
+pub async fn requeue_dead_letter(
+    c: &mut PgConnection,
+    job: Uuid,
+    staff_user: Uuid,
+    request: Uuid,
+) -> Result<String> {
+    let kind: String = sqlx::query_scalar(
+        "SELECT kind FROM operations.jobs WHERE id=$1 AND status='DEAD_LETTER' FOR UPDATE",
+    )
+    .bind(job)
+    .fetch_optional(&mut *c)
+    .await?
+    .ok_or(Error::NotFound)?;
+    if SURFACED_KINDS.contains(&kind.as_str()) {
+        return Err(Error::PolicyGate("JOB_RETRY_NOT_APPLICABLE"));
+    }
+    sqlx::query(
+        "UPDATE operations.jobs SET status='QUEUED', attempts=0, run_at=now(), dead_lettered_at=NULL,
+                lock_token=NULL, lease_until=NULL, retried_by=$2, retried_at=now()
+          WHERE id=$1",
+    )
+    .bind(job)
+    .bind(staff_user)
+    .execute(&mut *c)
+    .await?;
+    audit(
+        c,
+        Some(staff_user),
+        None,
+        Some(job),
+        "staff.job_requeued",
+        &kind,
+        request,
+    )
+    .await?;
+    Ok(kind)
+}
+
 /// Mark a claimed job SUCCEEDED. The lock_token/lease guard keeps a crashed
 /// worker's replacement from double-completing the same job.
 pub async fn succeed(pool: &PgPool, j: &Job) -> Result<()> {
