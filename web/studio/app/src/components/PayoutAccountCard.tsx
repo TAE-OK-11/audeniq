@@ -1,4 +1,4 @@
-// 등록된 수령 계좌를 한눈에 보이는 카드로 — 은행·계좌 끝자리를 크게, 예금주·유형·등록일은 작게.
+// 등록된 수령 계좌를 한눈에 보이는 카드로 (AUDENIQ 기본 스타일: 흰 바탕·연한 파랑 면, 그림자·그라데이션 없음) — 은행·계좌 끝자리를 크게, 예금주·유형·등록일은 작게.
 // 카드 전체를 누르면 계좌 변경(등록) 창이 열린다.
 import { BankLogo } from './BankLogo';
 import { Glyph } from './Glyph';
@@ -26,7 +26,7 @@ export function PayoutAccountCard({ payment, onEdit }: { payment: PaymentInfo | 
           <strong>{payment.bank}</strong>
           <small>수익 정산 계좌</small>
         </span>
-        <span className="aq-acct-status"><i aria-hidden="true" />등록 완료</span>
+        <span className="aq-acct-status">등록 완료</span>
       </span>
       <span className="aq-acct-number" aria-hidden="true">
         <span className="aq-acct-dots">•••• ••••</span> {payment.last4}
