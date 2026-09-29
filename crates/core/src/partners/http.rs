@@ -391,8 +391,10 @@ pub fn verify_webhook(
             let Ok(t) = ts.trim().parse::<i64>() else {
                 return false;
             };
-            if (now - t).abs() > max_skew_secs {
-                return false;
+            // Checked: an extreme timestamp must not wrap into the window.
+            match now.checked_sub(t) {
+                Some(d) if d.unsigned_abs() <= max_skew_secs.unsigned_abs() => {}
+                _ => return false,
             }
             let mut msg = format!("{}.", ts.trim()).into_bytes();
             msg.extend_from_slice(body);
@@ -406,6 +408,21 @@ pub fn verify_webhook(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn webhook_timestamp_extremes_are_outside_the_window() {
+        let body = b"{}";
+        for ts in [i64::MIN, i64::MIN + 1, i64::MAX] {
+            let ts = ts.to_string();
+            let mut msg = format!("{ts}.").into_bytes();
+            msg.extend_from_slice(body);
+            let sig = hmac_hex(b"s3cret", &msg);
+            assert!(
+                !verify_webhook("s3cret", body, &sig, Some(&ts), 300, 1_790_000_000),
+                "{ts}"
+            );
+        }
+    }
 
     #[test]
     fn webhook_signature_checks_body_timestamp_and_window() {
