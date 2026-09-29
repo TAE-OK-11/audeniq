@@ -65,6 +65,7 @@ const CODE_MESSAGES: Record<string, string> = {
   DOCUMENT_STATUS_INVALID: '서류 처리 상태가 올바르지 않아요.',
   INQUIRY_CLOSED: '종료된 문의에는 답변할 수 없어요.',
   STAGING_SUPERSEDED: '새 패키지로 교체된 배급 건이에요. 목록을 새로고침해 주세요.',
+  JOB_RETRY_NOT_APPLICABLE: '심사 단계 작업은 재시도 대신 재제출이나 검토로 처리해 주세요.',
   DELIVERY_CONTENT_BLOCKED: '콘텐츠 차단 항목이 있어 승인할 수 없어요.',
   WARNINGS_NOT_ACKNOWLEDGED: '음량·클리핑 권고를 확인했다고 체크해 주세요.',
   RELEASE_NOT_READY_FOR_DELIVERY: '배급 준비 완료 상태인 발매만 식별자를 재발급할 수 있어요.',

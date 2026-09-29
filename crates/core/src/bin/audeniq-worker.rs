@@ -74,6 +74,10 @@ async fn listen_for_jobs(database_url: String, wakeups: Wakeups) {
 enum RunResult {
     Finished(audeniq_core::error::Result<()>),
     LeaseLost,
+    /// Ran past the kind's `timeout_secs` (job_policies): the handler was
+    /// dropped, which closes its partner connections and rolls back its
+    /// open transaction, and the job is retried.
+    TimedOut,
 }
 
 async fn execute_with_heartbeat(
@@ -89,9 +93,18 @@ async fn execute_with_heartbeat(
 
     let execution = operations::execute(pool, store, job);
     tokio::pin!(execution);
+    // No policy timeout: the heartbeat below keeps the lease alive for as
+    // long as the handler runs (CPU analyzers bound themselves).
+    let limit = job
+        .timeout_secs
+        .map(|s| Duration::from_secs(s.max(1) as u64))
+        .unwrap_or(Duration::MAX);
+    let deadline = tokio::time::sleep(limit.min(Duration::from_secs(100 * 365 * 86_400)));
+    tokio::pin!(deadline);
     loop {
         tokio::select! {
             result = &mut execution => return RunResult::Finished(result),
+            _ = &mut deadline => return RunResult::TimedOut,
             _ = ticker.tick() => {
                 if let Err(error) = operations::heartbeat(pool, job, lease_seconds).await {
                     tracing::warn!(job_id=%job.id, %error, "job lease lost; cancelling stale handler");
@@ -246,24 +259,31 @@ async fn main() -> anyhow::Result<()> {
                                 RunResult::Finished(Err(error)) => {
                                     tracing::warn!(elapsed_ms, %error, "job handler error")
                                 }
+                                RunResult::TimedOut => {
+                                    tracing::warn!(elapsed_ms, "job timed out")
+                                }
                             }
                             drop(_entered);
-                            match outcome {
-                                RunResult::Finished(Ok(())) | RunResult::LeaseLost => {}
+                            // Retry, or dead-letter and surface on the release
+                            // (pipeline kinds): a failed last attempt must not
+                            // leave the release in a running state.
+                            let failed = match outcome {
+                                RunResult::Finished(Ok(())) | RunResult::LeaseLost => None,
                                 RunResult::Finished(Err(error)) => {
                                     let short: String =
                                         format!("{error:?}").chars().take(500).collect();
-                                    if let Err(fail_error) = operations::fail(
-                                        &pool,
-                                        &job,
-                                        false,
-                                        &format!("INTERNAL_HANDLER_ERROR:{short}"),
-                                    )
-                                    .await
-                                    {
-                                        tracing::warn!(job_id=%job.id, queue, %error, %fail_error, "job handler failed");
-                                    }
+                                    Some((
+                                        format!("INTERNAL_HANDLER_ERROR:{short}"),
+                                        operations::is_permanent(&error),
+                                    ))
                                 }
+                                RunResult::TimedOut => Some(("JOB_TIMEOUT".to_string(), false)),
+                            };
+                            if let Some((code, permanent)) = failed
+                                && let Err(fail_error) =
+                                    operations::fail_handler(&pool, &job, &code, permanent).await
+                            {
+                                tracing::warn!(job_id=%job.id, queue, code, %fail_error, "recording the job failure failed");
                             }
                             drop(permit);
                         }
