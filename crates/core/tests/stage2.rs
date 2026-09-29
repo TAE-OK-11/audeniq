@@ -279,6 +279,7 @@ async fn stage2_lease_loss_returns_none(pool: PgPool) {
         kind: job.kind.clone(),
         payload: job.payload.clone(),
         attempts: job.attempts,
+        release_id: None,
     };
     let out = review::run_stage2(&pool, &forged).await.unwrap();
     assert!(out.is_none());
