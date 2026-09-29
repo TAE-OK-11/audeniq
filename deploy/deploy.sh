@@ -79,6 +79,23 @@ docker run --rm --entrypoint sh "$PINNED" -c \
   'for b in audeniq-api audeniq-worker audeniq-migrate ffprobe; do command -v "$b" >/dev/null || { echo "missing $b"; exit 1; }; done' \
   || die "이미지 확인 실패: $PINNED"
 
+# 이미지가 빌드된 CPU 기준선을 이 서버가 지원하는지 확인한다. x86-64-v3 이미지를 AVX2가 없는
+# CPU에서 돌리면 시작하자마자 SIGILL로 죽는다 (마이그레이션 전에 막는다). 기록이 없는 예전
+# 이미지는 일반 x86-64다.
+target_cpu=$(docker run --rm --entrypoint cat "$PINNED" /usr/local/share/audeniq/target-cpu 2>/dev/null || echo x86-64)
+case "$target_cpu" in
+  x86-64) need="" ;;
+  x86-64-v2) need="cx16 lahf_lm popcnt sse4_1 sse4_2 ssse3" ;;
+  x86-64-v3) need="cx16 lahf_lm popcnt sse4_1 sse4_2 ssse3 avx avx2 bmi1 bmi2 f16c fma abm movbe xsave" ;;
+  *) die "알 수 없는 CPU 기준선: $target_cpu" ;;
+esac
+flags=" $(grep -m1 '^flags' /proc/cpuinfo | cut -d: -f2) "
+missing=""
+for f in $need; do
+  [[ "$flags" == *" $f "* ]] || missing="$missing $f"
+done
+[ -z "$missing" ] || die "이 서버 CPU는 이미지 기준선 $target_cpu 를 지원하지 않아요 (없는 기능:$missing). TARGET_CPU를 비워 다시 빌드하세요"
+
 PREVIOUS=$(current_image)
 tmp=$(mktemp "$ENV_FILE.XXXXXX")
 chmod 600 "$tmp"
