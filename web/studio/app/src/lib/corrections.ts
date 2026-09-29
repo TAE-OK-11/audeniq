@@ -178,6 +178,15 @@ export function fixPath(releaseId: string, c?: Correction): string {
   return `/upload?${q.toString()}`;
 }
 
+/** 담당자의 전체 의견(REVIEW_NOTE)은 고칠 항목이 아니다 — 항목 목록·건수에서 빼고 따로 보여 준다 */
+export function splitCorrections<T extends Correction>(list: T[] | undefined): { items: T[]; note: string } {
+  const all = list ?? [];
+  return {
+    items: all.filter(c => c.code !== 'REVIEW_NOTE'),
+    note: all.filter(c => c.code === 'REVIEW_NOTE').map(c => c.message.trim()).filter(Boolean).join('\n\n'),
+  };
+}
+
 /** '단계 · 항목' 표기 (같은 이름이면 한 번만) */
 export function correctionWhere(r: ResolvedCorrection): string {
   const stepName = WIZ_STEP_NAMES[r.step];

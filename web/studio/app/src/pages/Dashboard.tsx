@@ -1,5 +1,5 @@
 import { Link, useNavigate } from '../lib/router';
-import { fixPath, resolveCorrection } from '../lib/corrections';
+import { fixPath, resolveCorrection, splitCorrections } from '../lib/corrections';
 import { api } from '../api/client';
 import { STATUS_LABEL, money, num, NO_INCOME } from '../lib/format';
 import { useUnreadCount } from '../store/support';
@@ -98,7 +98,7 @@ export function Dashboard() {
   if (needs) {
     // 한 건이면 신청서의 보완할 입력칸으로 바로
     const only = needs === 1 ? releases.find(r => r.status === 'needs') : undefined;
-    const first = only?.corrections?.[0];
+    const first = splitCorrections(only?.corrections).items[0];
     tasks.push({
       icon: 'alert', name: `보완이 필요한 발매 ${needs}건`,
       sub: only ? `‘${only.title}’ · ${first ? resolveCorrection(first).label : '요청 내용'}을 고쳐 주세요.` : '요청 항목을 고쳐서 다시 접수해 주세요.',
