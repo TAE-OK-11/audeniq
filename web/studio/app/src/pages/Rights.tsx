@@ -1,4 +1,5 @@
 // 권리·보완 서류 — 라이브 view-rights / renderRights / openRequiredDocForm 대응
+import { FilePicker } from '../components/FilePicker';
 import { useState } from 'react';
 import { addDoc, useDocs, type DocRecord } from '../store/docs';
 import { MOCK } from '../lib/mode';
@@ -188,8 +189,8 @@ export function Rights() {
             </div>
             <div className="field">
               <label htmlFor="aqRequiredFile">증빙 원본 (필요 시)</label>
-              <input
-                type="file" id="aqRequiredFile"
+              <FilePicker
+                id="aqRequiredFile" fileName={file?.name}
                 accept=".pdf,.txt,image/png,image/jpeg,image/webp,application/pdf,text/plain"
                 onChange={e => setFile(e.target.files?.[0] || null)}
               />
