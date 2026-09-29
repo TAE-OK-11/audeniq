@@ -11,7 +11,9 @@ license = "UNLICENSED"
 [profile.dev.package."*"]
 opt-level = 2
 [profile.release]
-lto = "thin"
+# fat LTO: whole-program optimization across all crates (slower build, faster
+# and smaller binaries). The build runs once in CI; every request benefits.
+lto = "fat"
 codegen-units = 1
 strip = true
 # worker 0.8's wasm-bindgen pass (catch wrappers / abort recovery) needs the
