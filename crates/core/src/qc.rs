@@ -423,11 +423,11 @@ pub fn check_audio(
 }
 
 /// Stage 1 basic QC for an audio asset file, also returning the perceptual-fingerprint
-/// PCM tapped from the single decode pass (mono 11025 Hz `f32`, full length;
-/// `None` when the file was rejected before decoding or the tap failed)
-/// and the audio metrics from the probe.
-/// The caller slices the configured segment windows and runs
-/// [`crate::fingerprint::fingerprint_from_samples`].
+/// PCM tapped from the single decode pass (mono 11025 Hz `f32`, one vector
+/// per [`crate::fingerprint::segment_windows`] window; `None` when the file
+/// was rejected before decoding or the tap failed) and the audio metrics
+/// from the probe. The caller runs
+/// [`crate::fingerprint::fingerprint_from_segments`] on the windows.
 ///
 /// `file_sha256` is the SHA-256 of the file at `path` when the caller already
 /// has it (the worker hashes the object while streaming it to disk), which
@@ -437,7 +437,7 @@ pub fn check_audio_with_fp_tap(
     registered_sha256: Option<&str>,
     declared_content_type: Option<&str>,
     file_sha256: Option<&str>,
-) -> (Vec<CheckOutcome>, Option<Vec<f32>>, Option<AudioMetrics>) {
+) -> (Vec<CheckOutcome>, Option<TapWindows>, Option<AudioMetrics>) {
     check_audio_inner(
         path,
         registered_sha256,
@@ -453,7 +453,7 @@ fn check_audio_inner(
     declared_content_type: Option<&str>,
     file_sha256: Option<&str>,
     want_fp_tap: bool,
-) -> (Vec<CheckOutcome>, Option<Vec<f32>>, Option<AudioMetrics>) {
+) -> (Vec<CheckOutcome>, Option<TapWindows>, Option<AudioMetrics>) {
     /// Emit `AUDIO_CHECK_CODES[from..]` with a uniform status (short-circuit tail).
     fn tail(from: &str, status: CheckStatus, input_hash: &str, detail: &str) -> Vec<CheckOutcome> {
         AUDIO_CHECK_CODES[audio_code_index(from)..]
@@ -1104,18 +1104,57 @@ fn decode_timeout(duration_secs: f64) -> Duration {
 /// Unique counter for fingerprint-tap temp files.
 static FP_TAP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// Fingerprint PCM, one mono 11025 Hz `f32` vector per segment window.
+pub type TapWindows = Vec<Vec<f32>>;
+
+/// Fingerprint PCM of the [`crate::fingerprint::segment_windows`] of a
+/// `duration_secs` track, read from the s16le mono 11025 Hz tap file.
+/// Only the windows are loaded (3 x 30 s, ~4 MB as f32) instead of the
+/// whole track: a 100-minute master held ~400 MB here before. Windows past
+/// the end of the tap are cut short or dropped, as slicing did before.
+fn read_tap_windows(tap: &Path, duration_secs: f64) -> Option<TapWindows> {
+    use std::io::{Seek, SeekFrom};
+    let mut f = std::fs::File::open(tap).ok()?;
+    let len = f.metadata().ok()?.len();
+    if len == 0 || len % 2 != 0 {
+        return None;
+    }
+    let total = (len / 2) as usize;
+    let sr = f64::from(crate::fingerprint::FINGERPRINT_SAMPLE_RATE);
+    let mut segments = Vec::new();
+    let mut bytes = Vec::new();
+    for (start, window) in crate::fingerprint::segment_windows(duration_secs) {
+        let lo = (start * sr) as usize;
+        let hi = (((start + window) * sr).ceil() as usize).min(total);
+        if lo >= hi {
+            continue;
+        }
+        bytes.resize((hi - lo) * 2, 0);
+        f.seek(SeekFrom::Start(lo as u64 * 2)).ok()?;
+        f.read_exact(&mut bytes).ok()?;
+        let (chunks, _) = bytes.as_chunks::<2>();
+        segments.push(
+            chunks
+                .iter()
+                .map(|c| i16::from_le_bytes(*c) as f32 / 32768.0)
+                .collect(),
+        );
+    }
+    Some(segments)
+}
+
 /// Decode the file once with ffmpeg: interleaved f32 PCM on stdout feeds the
 /// peak / clipping / silence / length measurements (streamed, constant
 /// memory), while the ebur128 filter prints loudness and true peak on stderr.
 /// With `want_tap`, the perceptual-fingerprint PCM (mono 11025 Hz s16le) is
-/// tapped from the SAME decode via a second ffmpeg output and returned as
-/// `f32` (full length; the caller slices the segment windows), or `None` when
-/// the tap output could not be produced.
+/// tapped from the SAME decode via a second ffmpeg output; only the
+/// fingerprint segment windows are returned (see [`read_tap_windows`]), or
+/// `None` when the tap output could not be produced.
 fn decode_analysis(
     path: &Path,
     m: &AudioMetrics,
     want_tap: bool,
-) -> std::result::Result<(DecodeAnalysis, Option<Vec<f32>>), AnalyzerError> {
+) -> std::result::Result<(DecodeAnalysis, Option<TapWindows>), AnalyzerError> {
     use AnalyzerError::{Unavailable, Undecodable};
     let channels = m.channels.max(1) as usize;
     // Tap file: removed on drop, even if the decode fails half way.
@@ -1262,9 +1301,7 @@ fn decode_analysis(
         a.zero_crossing_rate = st.crossings as f64 / st.samples.max(1) as f64;
         let _ = tx.send(Some(a));
     });
-    /// Downmix + decimate tap feeding the perceptual fingerprint from the
-    /// single decode pass. Only samples inside the configured segment
-    /// windows are retained (~4 MB for 3 x 30 s at 11025 Hz mono).
+    /// Running per-sample state of the streaming measurements.
     struct Meter {
         runs: Vec<u32>,
         last_sign: Vec<i8>,
@@ -1364,23 +1401,13 @@ fn decode_analysis(
     }
     let (integrated, true_peak) =
         parse_ebur128(&String::from_utf8_lossy(&err_text)).ok_or(Undecodable)?;
-    // Fingerprint tap: s16le mono 11025 Hz → f32, same scaling as the
-    // segment decoder. Read before the TapFile guard drops (deletes) it.
-    // A missing or malformed tap is not a QC failure: the caller maps it
-    // to a fingerprint TECHNICAL_RETRY.
-    let tap_samples: Option<Vec<f32>> = tap.as_ref().and_then(|t| {
-        let bytes = std::fs::read(t.0.as_ref()?).ok()?;
-        let (chunks, rest) = bytes.as_chunks::<2>();
-        if !rest.is_empty() || chunks.is_empty() {
-            return None;
-        }
-        Some(
-            chunks
-                .iter()
-                .map(|c| i16::from_le_bytes(*c) as f32 / 32768.0)
-                .collect(),
-        )
-    });
+    // Fingerprint tap: read only the segment windows (s16le mono 11025 Hz
+    // → f32, same scaling as the segment decoder). Read before the TapFile
+    // guard drops (deletes) it. A missing or malformed tap is not a QC
+    // failure: the caller maps it to a fingerprint TECHNICAL_RETRY.
+    let tap_samples = tap
+        .as_ref()
+        .and_then(|t| read_tap_windows(t.0.as_ref()?, m.duration_secs));
     Ok((
         DecodeAnalysis {
             sample_rate: m.sample_rate,
