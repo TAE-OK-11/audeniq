@@ -108,7 +108,8 @@ export function normalizeRelease(raw: unknown): ReleaseDetail | null {
   };
 }
 
-const db = createStore<ReleaseDetail[]>(() => structuredClone(SEED), {
+// 서버 모드 빌드에서는 쓰이지 않으므로 통째로 빠지도록 순수 호출로 표시
+const db = /* @__PURE__ */ createStore<ReleaseDetail[]>(() => structuredClone(SEED), {
   persist: 'mock.releases',
   revive: (raw, fallback) => (Array.isArray(raw)
     ? raw.map(normalizeRelease).filter((r): r is ReleaseDetail => !!r)
@@ -188,7 +189,7 @@ function sessionUser(s: Session): User {
 }
 
 /** 체험 모드에서 이번 달 취소한 발매 */
-const mockWithdrawn = new Set<string>();
+const mockWithdrawn = /* @__PURE__ */ new Set<string>();
 
 export const mockApi = {
   login: async (email: string, password: string): Promise<User> => {

@@ -180,12 +180,31 @@ test('other /api/* calls go to the backend with the service header; a dead backe
   const seen = [];
   const real = globalThis.fetch;
   try {
-    globalThis.fetch = async req => { seen.push(req); return new Response('{"ok":true}', { status: 200 }); };
+    globalThis.fetch = async (url, init) => { seen.push(new Request(url, init)); return new Response('{"ok":true}', { status: 200 }); };
     const e = { ...env(), EDGE_SERVICE_SECRET: 's'.repeat(40) };
     const r = await call(e, 'GET', '/api/me?x=1');
     assert.equal(r.status, 200);
+    assert.equal(r.headers.get('Cache-Control'), 'no-store');
     assert.match(seen[0].url, /\/api\/me\?x=1$/);
     assert.equal(seen[0].headers.get('x-audeniq-service'), 's'.repeat(40));
+    // 브라우저가 보낸 서비스 헤더·IP 위조는 버리고, Cloudflare가 준 IP만 전달한다
+    seen.length = 0;
+    await worker.fetch(new Request('https://studio.audeniq.com/api/auth/login', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json', 'x-csrf-token': 't', origin: 'https://studio.audeniq.com',
+        'x-audeniq-service': 'forged', 'x-audeniq-client-ip': '1.1.1.1', 'x-forwarded-for': '2.2.2.2',
+        'cf-connecting-ip': '203.0.113.9', 'accept-encoding': 'zstd, br, gzip', 'user-agent': 'ua',
+      },
+      body: '{"email":"a"}',
+    }), e);
+    const h = seen[0].headers;
+    assert.equal(h.get('x-audeniq-service'), 's'.repeat(40));
+    assert.equal(h.get('x-audeniq-client-ip'), '203.0.113.9');
+    assert.equal(h.get('x-forwarded-for'), null);
+    assert.equal(h.get('x-csrf-token'), 't');
+    assert.equal(h.get('accept-encoding'), 'br, gzip');
+    assert.equal(await seen[0].text(), '{"email":"a"}');
     globalThis.fetch = async () => { throw new Error('down'); };
     const down = await call(e, 'GET', '/api/me');
     assert.equal(down.status, 502);
