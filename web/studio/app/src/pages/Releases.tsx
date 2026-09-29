@@ -96,6 +96,8 @@ export function Releases() {
     else if (sort === 'date') out.sort((a, b) => String(b.release_date || '').localeCompare(String(a.release_date || '')));
     return out;
   }, [list, filter, dq, sort]);
+  // 지금 목록에 안 보이는 보완 필요 발매 수
+  const hiddenNeeds = needsList.length - filtered.filter(r => r.status === 'needs').length;
 
   const filteredTracks = useMemo(() => {
     const q = norm(dtq);
@@ -168,22 +170,20 @@ export function Releases() {
               );
             })}
           </div>
-          {needsList.length > 0 && (
+          {/* 보완 필요 발매가 목록에 보이면 카드마다 ‘보완하기’가 있으니 알림을 띄우지 않는다(버튼 중복 방지).
+              필터·검색으로 가려져 있을 때만 알리고, 버튼은 그 발매들을 보여 주는 필터로 이동한다. */}
+          {hiddenNeeds > 0 && (
             <div className="aq-fix-banner" role="status">
               <span className="aq-fix-icon" aria-hidden="true">!</span>
               <div className="min-0">
                 <strong>보완이 필요한 발매가 {needsList.length}건 있어요.</strong>
                 <span>
                   {needsList.length === 1
-                    ? `‘${needsList[0].title}’ · ${firstFixText(needsList[0])}`
+                    ? `‘${needsList[0].title || '제목 없는 발매'}’ · ${firstFixText(needsList[0])}`
                     : '요청 항목을 고쳐서 다시 접수하면 검토가 이어져요.'}
                 </span>
               </div>
-              {needsList.length === 1 ? (
-                <button type="button" className="button aq-fix-go" onClick={() => nav(fixPath(needsList[0].id, needsList[0].corrections?.[0]))}>보완하기</button>
-              ) : filter !== 'needs' ? (
-                <button type="button" className="button aq-fix-go" onClick={() => setParam('status', 'needs', 'all')}>보완 필요만 보기</button>
-              ) : null}
+              <button type="button" className="button aq-fix-go" onClick={() => { setQuery(''); setParam('status', 'needs', 'all'); }}>보완 필요 발매 보기</button>
             </div>
           )}
           <div className="studio-result-count" id="catalogCount" aria-live="polite">{filtered.length}개의 발매</div>
