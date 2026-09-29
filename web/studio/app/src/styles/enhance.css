@@ -1376,23 +1376,20 @@ body:has(#modal .aq-sticky-foot) .aq-toast-stack,body:has(.aq-form-actions.is-pi
 @media(prefers-reduced-motion:reduce){.aq-acct{transition:none}}
 
 /* ==========================================================================
-   발매 진행 단계 — 점·번지는 테두리 대신 납작한 막대 네 칸
-   지나온 단계와 지금 단계는 한 번만 채워지고(반복 깜빡임 없음), 보완 필요는 주황, 거절은 빨강.
+   발매 진행 단계 — 신청서(새 발매) 단계 목록과 같은 모양: 번호 원 + 이름, 지금 단계는 연한 알약
+   지나온 단계는 연파랑 번호, 지금은 진한 파랑(보완 필요는 주황, 거절은 빨강), 남은 단계는 회색.
    ========================================================================== */
 .aq-stage{list-style:none;margin:18px 0 26px;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
-.aq-stage li{display:grid;gap:9px;min-width:0}
-.aq-stage-bar{position:relative;display:block;height:6px;border-radius:99px;background:#e9eef6;overflow:hidden}
-.aq-stage-bar::after{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--aq-e-blue);transform:scaleX(0);transform-origin:left}
-.aq-stage li:is(.is-done,.is-current) .aq-stage-bar::after{transform:none;animation:aq-grow-x .5s var(--aq-e-ease) both}
-.aq-stage li:nth-child(2) .aq-stage-bar::after{animation-delay:.08s}
-.aq-stage li:nth-child(3) .aq-stage-bar::after{animation-delay:.16s}
-.aq-stage li:nth-child(4) .aq-stage-bar::after{animation-delay:.24s}
-.aq-stage li.is-warn .aq-stage-bar::after{background:#e0892f}
-.aq-stage li.is-error .aq-stage-bar::after{background:#d92d3b}
-.aq-stage-label{font-size:12.5px;font-weight:700;color:#a3adbf;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.aq-stage li.is-done .aq-stage-label{color:#5d6880}
-.aq-stage li.is-current .aq-stage-label{color:var(--aq-e-blue);font-weight:800}
-.aq-stage li.is-warn .aq-stage-label{color:#c26a1e}
-.aq-stage li.is-error .aq-stage-label{color:#d92d3b}
-@media(max-width:560px){.aq-stage{gap:5px}.aq-stage-label{font-size:11.5px}}
-@media(prefers-reduced-motion:reduce){.aq-stage-bar::after{animation:none!important}}
+.aq-stage li{display:flex;flex-direction:column;align-items:center;gap:7px;min-width:0;padding:11px 4px 10px;border-radius:16px;color:#98a1b3;text-align:center;transition:background-color .25s var(--aq-e-ease),color .25s var(--aq-e-ease)}
+.aq-stage-no{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#eef1f6;color:#98a1b3;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;transition:background-color .25s var(--aq-e-ease),color .25s var(--aq-e-ease)}
+.aq-stage-label{max-width:100%;font-size:12.5px;font-weight:650;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.aq-stage li.is-done{color:#3a4458}
+.aq-stage li.is-done .aq-stage-no{background:#e3eafc;color:var(--aq-e-blue)}
+.aq-stage li.is-current{background:var(--aq-e-blue-soft);color:var(--aq-e-blue)}
+.aq-stage li.is-current .aq-stage-label{font-weight:780}
+.aq-stage li.is-current .aq-stage-no{background:var(--aq-e-blue);color:#fff}
+.aq-stage li.is-warn{background:var(--aq-e-amber-soft);color:#a76525}
+.aq-stage li.is-warn .aq-stage-no{background:#e0892f}
+.aq-stage li.is-error{background:#fff0f0;color:#c23b3b}
+.aq-stage li.is-error .aq-stage-no{background:#d92d3b}
+@media(max-width:560px){.aq-stage{gap:4px}.aq-stage li{padding:10px 2px 9px}.aq-stage-label{font-size:11.5px}}
