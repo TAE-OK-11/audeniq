@@ -126,7 +126,7 @@ export function Profile() {
               <option value="OTHER">기타</option>
             </select>
           </div>
-          <div className="aq-form-actions">
+          <div className={`aq-form-actions${dirty ? ' is-pinned' : ''}`}>
             {dirty && (
               <button type="button" className="button secondary" onClick={() => setDraft(profile)}>되돌리기</button>
             )}

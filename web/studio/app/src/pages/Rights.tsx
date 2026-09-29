@@ -195,9 +195,11 @@ export function Rights() {
               />
               <p className="help">원본 첨부 전에는 ‘서류 접수 대기’로 표시돼요.</p>
             </div>
-            <button type="submit" className="button studio-submit-wide" disabled={submitting}>
-              서류 접수하기
-            </button>
+            <div className="aq-sticky-foot">
+              <button type="submit" className="button studio-submit-wide" disabled={submitting}>
+                서류 접수하기
+              </button>
+            </div>
           </form>
         </Modal>
       )}

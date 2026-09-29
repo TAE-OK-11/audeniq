@@ -1287,3 +1287,34 @@ svg.aq-glyph{flex:none;fill:none!important;stroke:currentColor!important;stroke-
 @media(prefers-reduced-motion:reduce){
   :is(.button,.link-btn,.service-item,.aq-bank,.aq-chip,.aq-dsp,.header-profile,.menu-toggle):active{transform:none!important}
 }
+
+/* ==========================================================================
+   하단 고정 버튼 — 긴 창·폼에서도 주요 버튼이 스크롤 없이 항상 보이게
+   모달: 스크롤되는 창(.modal-inner)의 아래 가장자리에 붙고, 창 안쪽 여백까지 흰 바탕으로 채운다.
+   ========================================================================== */
+#modal .modal-inner{--aq-foot-x:28px;--aq-foot-b:28px}
+@media(max-width:760px){
+  #modal .modal-inner{--aq-foot-x:20px;--aq-foot-b:calc(24px + env(safe-area-inset-bottom))}
+}
+#modal .aq-sticky-foot{
+  /* 스크롤 영역은 창의 안쪽 여백만큼 위에서 끝나므로 그만큼 내려 창 가장자리에 딱 붙인다 */
+  position:sticky;bottom:calc(-1 * var(--aq-foot-b));z-index:6;
+  margin:18px calc(-1 * var(--aq-foot-x)) calc(-1 * var(--aq-foot-b));
+  padding:12px var(--aq-foot-x) var(--aq-foot-b);
+  background:#fff;border-top:0
+}
+/* 내용이 버튼 뒤로 지나갈 때 잘린 느낌 대신 부드럽게 사라지게 */
+#modal .aq-sticky-foot::before{content:"";position:absolute;left:0;right:0;bottom:100%;height:20px;background:linear-gradient(to top,#fff,rgba(255,255,255,0));pointer-events:none}
+#modal .aq-sticky-foot>.button:only-child{width:100%}
+#modal .aq-sticky-foot.aq-guardian-foot{padding-bottom:var(--aq-foot-b)}
+#modal .aq-sticky-foot.aq-thread-reply{margin-top:16px;padding-top:10px}
+
+/* 페이지: 아티스트 정보처럼 긴 폼은 고친 내용이 있을 때 저장 버튼을 화면 아래에 고정 */
+.aq-form-actions.is-pinned{
+  position:sticky;bottom:0;z-index:20;
+  margin-inline:-12px;padding:12px 12px max(12px,env(safe-area-inset-bottom));
+  background:rgba(255,255,255,.94);-webkit-backdrop-filter:saturate(1.4) blur(10px);backdrop-filter:saturate(1.4) blur(10px);
+  border-radius:18px 18px 0 0;box-shadow:0 -10px 24px -18px rgba(27,51,104,.35);
+  animation:aq-fade-up .3s var(--aq-e-ease) both
+}
+@media(prefers-reduced-motion:reduce){.aq-form-actions.is-pinned{animation:none}}
