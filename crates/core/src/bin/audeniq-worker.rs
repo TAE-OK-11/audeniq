@@ -8,6 +8,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::{Notify, Semaphore};
+use tracing::Instrument;
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -99,6 +100,23 @@ async fn execute_with_heartbeat(
             }
         }
     }
+}
+
+/// Tracing span for one job run: the correlation fields every log line of
+/// the run carries.
+fn job_span(job: &operations::Job, queue: &'static str) -> tracing::Span {
+    let span = tracing::info_span!(
+        "job",
+        job_id = %job.id,
+        kind = %job.kind,
+        queue,
+        attempt = job.attempts,
+        release_id = tracing::field::Empty,
+    );
+    if let Some(release) = job.release_id {
+        span.record("release_id", tracing::field::display(release));
+    }
+    span
 }
 
 async fn wait_for_work(wakeup: &Notify, idle: Duration) {
@@ -207,9 +225,29 @@ async fn main() -> anyhow::Result<()> {
                                 .lock()
                                 .expect("in-flight registry")
                                 .insert(job.id, job.token);
-                            let outcome =
-                                execute_with_heartbeat(&pool, &store, &job, lease_seconds).await;
+                            // Every log line of this job (handlers, DSP calls,
+                            // analyzers) carries these fields: one release_id
+                            // search finds the whole run (migration 0064).
+                            let span = job_span(&job, queue);
+                            let started = std::time::Instant::now();
+                            let outcome = execute_with_heartbeat(&pool, &store, &job, lease_seconds)
+                                .instrument(span.clone())
+                                .await;
                             in_flight.lock().expect("in-flight registry").remove(&job.id);
+                            let _entered = span.enter();
+                            let elapsed_ms = started.elapsed().as_millis() as u64;
+                            match &outcome {
+                                RunResult::Finished(Ok(())) => {
+                                    tracing::info!(elapsed_ms, "job finished")
+                                }
+                                RunResult::LeaseLost => {
+                                    tracing::warn!(elapsed_ms, "job lease lost")
+                                }
+                                RunResult::Finished(Err(error)) => {
+                                    tracing::warn!(elapsed_ms, %error, "job handler error")
+                                }
+                            }
+                            drop(_entered);
                             match outcome {
                                 RunResult::Finished(Ok(())) | RunResult::LeaseLost => {}
                                 RunResult::Finished(Err(error)) => {

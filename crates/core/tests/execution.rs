@@ -3308,6 +3308,67 @@ async fn registry_dsp_waits_for_staff_approval_before_send(pool: PgPool) {
             .is_some(),
         "re-approval makes the parked job leasable again"
     );
+
+    // P1 tracing: every pipeline job records its release (migration 0064),
+    // and the staff timeline shows the run in time order from one id.
+    let traced: Vec<String> = sqlx::query_scalar(
+        "SELECT DISTINCT kind FROM operations.jobs WHERE release_id=$1 ORDER BY kind",
+    )
+    .bind(release)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    for kind in [
+        "delivery.enqueue",
+        "delivery.stage",
+        "prepare_release",
+        "stage1",
+        "stage2",
+    ] {
+        assert!(
+            traced.iter().any(|k| k == kind),
+            "{kind} not traced: {traced:?}"
+        );
+    }
+    let (s, v) = call(
+        &app,
+        "GET",
+        &format!("/api/staff/releases/{release}/timeline"),
+        json!({}),
+        Some(&operator),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let items = v["items"].as_array().unwrap();
+    let has = |source: &str, kind: &str| {
+        items
+            .iter()
+            .any(|i| i["source"] == source && i["kind"] == kind)
+    };
+    assert!(has("job", "stage1"), "{v}");
+    assert!(has("job", "prepare_release"), "{v}");
+    assert!(has("staff_decision", "D-5"), "{v}");
+    assert!(has("audit", "staff.delivery_decided"), "{v}");
+    let times: Vec<chrono::DateTime<chrono::FixedOffset>> = items
+        .iter()
+        .map(|i| chrono::DateTime::parse_from_rfc3339(i["at"].as_str().unwrap()).unwrap())
+        .collect();
+    let mut sorted = times.clone();
+    sorted.sort();
+    assert_eq!(times, sorted, "timeline is in time order");
+    let (s, _) = call(
+        &app,
+        "GET",
+        &format!("/api/staff/releases/{release}/timeline"),
+        json!({}),
+        Some(&artist),
+    )
+    .await;
+    assert_eq!(
+        s,
+        StatusCode::FORBIDDEN,
+        "artists cannot read the staff timeline"
+    );
 }
 
 /// A package frozen with VIRTUAL codes: staff send it back once real ranges
