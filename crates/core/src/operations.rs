@@ -758,6 +758,24 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
                         fail(pool, j, true, "DELIVERY_ATTEMPTS_EXHAUSTED").await
                     }
                     crate::execution::LeaseBlocked::Gone => succeed(pool, j).await,
+                    // Staff HOLD (or not approved): nothing is sent. The
+                    // delivery job stays QUEUED; re-approval lets the
+                    // reconcile pass (or the approval's E-0) send it.
+                    crate::execution::LeaseBlocked::AwaitingApproval => {
+                        let mut tx = pool.begin().await?;
+                        audit(
+                            &mut tx,
+                            None,
+                            Some(org),
+                            Some(job_id),
+                            "delivery.held",
+                            "AWAITING_APPROVAL",
+                            Uuid::new_v4(),
+                        )
+                        .await?;
+                        tx.commit().await?;
+                        succeed(pool, j).await
+                    }
                 };
             }
         };
