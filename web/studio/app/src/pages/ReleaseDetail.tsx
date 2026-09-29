@@ -238,7 +238,7 @@ export function ReleaseDetail() {
           const tone = i < stage ? 'is-done' : i === stage ? (rejected ? 'is-current is-error' : rel.status === 'needs' ? 'is-current is-warn' : 'is-current') : '';
           return (
             <li key={p.key} className={tone} aria-current={i === stage ? 'step' : undefined}>
-              <span className="aq-stage-dot" aria-hidden="true" />
+              <span className="aq-stage-dot" aria-hidden="true">{i < stage && <CheckIcon size={12} />}</span>
               <span className="aq-stage-label">{i === 1 && rejected ? '거절' : i === 1 && rel.status === 'needs' ? '보완 필요' : p.label}</span>
             </li>
           );
