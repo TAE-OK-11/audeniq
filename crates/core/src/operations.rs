@@ -241,36 +241,55 @@ pub async fn claim(
     worker: &str,
     lease_seconds: i32,
 ) -> Result<Option<Job>> {
+    claim_with(pool, queue, worker, lease_seconds, true).await
+}
+
+/// Claim the next ready job. With `reclaim`, expired leases on the queue are
+/// requeued first (one transaction). Without it the claim and its audit row
+/// are a single statement: one database round trip, which is what an idle
+/// worker pays on every poll. The worker reclaims on a timer instead of on
+/// every poll (leases are at least 30 s, so a few seconds' delay is noise).
+pub async fn claim_with(
+    pool: &PgPool,
+    queue: &str,
+    worker: &str,
+    lease_seconds: i32,
+    reclaim: bool,
+) -> Result<Option<Job>> {
     if !(1..=3600).contains(&lease_seconds) {
         return Err(Error::Invalid);
     }
-    let mut tx = pool.begin().await?;
-    reclaim_expired(&mut tx, queue).await?;
     // SKIP LOCKED lets multiple worker processes drain the same durable list
-    // without blocking each other or claiming the same album twice.
-    let r=sqlx::query("WITH candidate AS (SELECT id FROM operations.jobs WHERE queue=$1 AND status='QUEUED' AND attempts<max_attempts AND run_at<=clock_timestamp() ORDER BY priority DESC,run_at,id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE operations.jobs j SET status='RUNNING',attempts=attempts+1,locked_by=$2,lock_token=$3,lease_until=clock_timestamp()+make_interval(secs=>$4) FROM candidate WHERE j.id=candidate.id RETURNING j.id,j.lock_token,j.kind,j.payload,j.attempts")
- .bind(queue).bind(worker).bind(Uuid::new_v4()).bind(lease_seconds as f64).fetch_optional(&mut *tx).await?;
-    let job = r.map(|r| Job {
+    // without blocking each other or claiming the same album twice. The audit
+    // insert rides in the same statement, so a claim is never unaudited.
+    let q = sqlx::query(
+        "WITH candidate AS (SELECT id FROM operations.jobs WHERE queue=$1 AND status='QUEUED' AND attempts<max_attempts AND run_at<=clock_timestamp() ORDER BY priority DESC,run_at,id FOR UPDATE SKIP LOCKED LIMIT 1),
+         claimed AS (UPDATE operations.jobs j SET status='RUNNING',attempts=attempts+1,locked_by=$2,lock_token=$3,lease_until=clock_timestamp()+make_interval(secs=>$4) FROM candidate WHERE j.id=candidate.id RETURNING j.id,j.lock_token,j.kind,j.payload,j.attempts),
+         audited AS (INSERT INTO operations.audit_events(id,actor_service,resource_id,action,reason_code,request_id) SELECT $5,'audeniq-system',id,'job.claim','LEASE',$6 FROM claimed)
+         SELECT id,lock_token,kind,payload,attempts FROM claimed",
+    )
+    .bind(queue)
+    .bind(worker)
+    .bind(Uuid::new_v4())
+    .bind(lease_seconds as f64)
+    .bind(Uuid::new_v4())
+    .bind(Uuid::new_v4());
+    let r = if reclaim {
+        let mut tx = pool.begin().await?;
+        reclaim_expired(&mut tx, queue).await?;
+        let r = q.fetch_optional(&mut *tx).await?;
+        tx.commit().await?;
+        r
+    } else {
+        q.fetch_optional(pool).await?
+    };
+    Ok(r.map(|r| Job {
         id: r.get("id"),
         token: r.get("lock_token"),
         kind: r.get("kind"),
         payload: r.get("payload"),
         attempts: r.get("attempts"),
-    });
-    if let Some(j) = &job {
-        audit(
-            &mut tx,
-            None,
-            None,
-            Some(j.id),
-            "job.claim",
-            "LEASE",
-            Uuid::new_v4(),
-        )
-        .await?;
-    }
-    tx.commit().await?;
-    Ok(job)
+    }))
 }
 pub async fn heartbeat(pool: &PgPool, j: &Job, seconds: i32) -> Result<()> {
     if !(1..=3600).contains(&seconds) {
