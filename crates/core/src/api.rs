@@ -127,11 +127,28 @@ pub fn router(s: AppState) -> Router {
         .merge(crate::staff::routes())
         .merge(crate::partner_hooks::routes())
         .fallback(|| async { Error::NotFound.into_response() })
+        // Innermost: the boundary middleware still stamps the request id,
+        // no-store and the access log on a panic's 500.
+        .layer(tower_http::catch_panic::CatchPanicLayer::custom(
+            panic_response,
+        ))
         .layer(DefaultBodyLimit::max(64 * 1024))
         .layer(middleware::from_fn_with_state(s.clone(), boundary))
         .layer(middleware::from_fn(header_limit))
         .layer(compression())
         .with_state(s)
+}
+/// A handler bug that panics answers like any other server error (500 with
+/// the standard error body) and is logged, instead of dropping the
+/// connection, which the edge reports as "Private API unavailable".
+fn panic_response(err: Box<dyn std::any::Any + Send + 'static>) -> Response {
+    let detail = err
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| err.downcast_ref::<&str>().copied())
+        .unwrap_or("non-string panic");
+    tracing::error!(panic = detail, "request handler panicked");
+    Error::Internal.into_response()
 }
 /// JSON responses are compressed for whichever encoding the caller accepts
 /// (zstd, then brotli, then gzip; the edge forwards the browser's
@@ -768,5 +785,36 @@ mod tests {
         // No Accept-Encoding, or a tiny body: sent as is.
         assert_eq!(call("/big", "identity").await, (None, raw_len));
         assert_eq!(call("/small", "zstd").await.0, None);
+    }
+
+    #[tokio::test]
+    async fn a_panicking_handler_answers_500_with_the_error_body() {
+        let app: Router = Router::new()
+            .route(
+                "/boom",
+                get(|| async {
+                    panic!("handler bug");
+                    #[allow(unreachable_code)]
+                    ""
+                }),
+            )
+            .layer(tower_http::catch_panic::CatchPanicLayer::custom(
+                panic_response,
+            ));
+        let res = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/boom")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+        let body = axum::body::to_bytes(res.into_body(), 1 << 16)
+            .await
+            .unwrap();
+        let v: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["error"]["code"], "INTERNAL_ERROR");
     }
 }
