@@ -1,4 +1,5 @@
 // 문서 상세 모달 — 라이브 openDocument(오버라이드) 대응
+import { FilePicker } from './FilePicker';
 import { useEffect, useRef, useState } from 'react';
 import { Modal } from './Modal';
 import { useNavigate } from '../lib/router';
@@ -266,8 +267,8 @@ export function DocumentModal({
       {(doc.reviewStatus === 'awaiting_documents' || doc.kind === 'rights') && (
         <div className="field">
           <label htmlFor="aqEvidenceFile">요청된 서류 첨부</label>
-          <input
-            type="file" id="aqEvidenceFile"
+          <FilePicker
+            id="aqEvidenceFile" fileName={pendingFile?.name}
             accept=".pdf,.txt,image/png,image/jpeg,image/webp,application/pdf,text/plain"
             onChange={e => setPendingFile(e.target.files?.[0] || null)}
           />

@@ -1,4 +1,5 @@
 import { Fragment, memo, useCallback, useEffect, useRef, useState } from 'react';
+import { FilePicker } from '../components/FilePicker';
 import { useNavigate, useSearchParams } from '../lib/router';
 import { useToast } from '../components/Toast';
 import { Modal } from '../components/Modal';
@@ -212,8 +213,8 @@ function DocAttach({ id, label, fileName, assetId, busy, onSelect, required, hel
   return (
     <div className="field doc-attach">
       <label htmlFor={id}>{label}{required && <> <span className="required">*</span></>}</label>
-      <input
-        type="file" id={id}
+      <FilePicker
+        id={id} fileName={fileName} busy={busy}
         accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
         onChange={e => {
           const f = e.target.files?.[0];
@@ -870,10 +871,10 @@ const TrackEditor = memo(function TrackEditor({
       </label>
       <div className="field">
         <label htmlFor={`trackFile-${i}`}>음원 파일 <span className="required">*</span></label>
-        <input
-          type="file" id={`trackFile-${i}`}
+        <FilePicker
+          id={`trackFile-${i}`} fileName={t.audioName}
           accept=".wav,.flac,.m4a,.aif,.aiff,.aifc,.wv,.tta,audio/wav,audio/flac,audio/mp4,audio/aiff,audio/wavpack,audio/tta"
-          onChange={e => onTrackAudio(t.id, e)}
+          onChange={e => onTrackAudio(t.id, e)} placeholder="음원 파일을 선택해 주세요"
         />
         <UploadStatus upload={upload} idle={t.audioName
           ? `${t.audioName}${t.audioSpec ? ` · ${t.audioSpec}` : t.audioSize ? ` · ${fileSize(t.audioSize)}` : ''}${t.assetId ? ' · 업로드 완료' : MOCK ? '' : ' · 업로드되지 않았어요. 파일을 다시 선택해 주세요.'}`
