@@ -23,8 +23,8 @@
 //!   (`audio/wav` -> PCM/WAV, `audio/flac` -> FLAC, `audio/mpeg` -> MP3).
 //!   The PCM spec fields (BitRate/NumberOfChannels/SamplingRate/
 //!   BitsPerSample) carry the ffprobe-measured values persisted on
-//!   `catalog.assets` by Stage 1 QC, for WAV only; they are omitted when
-//!   unknown, never fabricated.
+//!   `catalog.assets` by Stage 1 QC, for WAV and FLAC (BitRate for PCM
+//!   only); they are omitted when unknown, never fabricated.
 //! - Duration is required by the schema: emitted as `PT{secs}S` from
 //!   `AssetRef::duration_secs` (Stage 1 persists it from ffprobe); missing
 //!   duration fails closed with `DDEX_DURATION_UNKNOWN`.
@@ -517,27 +517,35 @@ fn resource_list(
         out.push_str("<TechnicalSoundRecordingDetails>");
         element(out, "TechnicalResourceDetailsReference", &tech_ref);
         element(out, "AudioCodecType", codec);
-        // Real measured specs for WAV, from Stage 1 ffprobe via
-        // `AssetRef`. All four elements are optional per the XSD; when the
-        // asset predates spec persistence (or probing failed) they are
-        // omitted — never fabricated. The old code emitted
-        // 1411/44100/16/2 for every WAV, which is false for e.g. 48kHz
-        // 24-bit masters. BitRate's default unit is kbps, SamplingRate's
-        // is Hz, so no UnitOfMeasure attributes are needed.
-        if matches!(
+        // Real measured specs, from Stage 1 ffprobe via `AssetRef`. All four
+        // elements are optional per the XSD; when the asset predates spec
+        // persistence (or probing failed) they are omitted — never
+        // fabricated. The old code emitted 1411/44100/16/2 for every WAV,
+        // which is false for e.g. 48kHz 24-bit masters. BitRate's default
+        // unit is kbps, SamplingRate's is Hz, so no UnitOfMeasure attributes
+        // are needed. Lossless uploads are stored as FLAC masters, so FLAC
+        // carries the same channel / rate / depth facts; BitRate is only
+        // stated for PCM, where it is exact (FLAC's is variable).
+        let pcm = matches!(
             track.audio.content_type.as_str(),
             "audio/wav" | "audio/x-wav"
-        ) && let (Some(sample_rate), Some(channels), Some(bits_per_sample)) = (
-            track.audio.sample_rate,
-            track.audio.channels,
-            track.audio.bits_per_sample,
-        ) {
+        );
+        if (pcm || track.audio.content_type == "audio/flac")
+            && let (Some(sample_rate), Some(channels), Some(bits_per_sample)) = (
+                track.audio.sample_rate,
+                track.audio.channels,
+                track.audio.bits_per_sample,
+            )
+        {
             // XSD order: BitRate, NumberOfChannels, SamplingRate,
             // BitsPerSample.
-            let kbps = (i64::from(sample_rate) * i64::from(channels) * i64::from(bits_per_sample)
-                + 500)
-                / 1000;
-            element(out, "BitRate", kbps);
+            if pcm {
+                let kbps =
+                    (i64::from(sample_rate) * i64::from(channels) * i64::from(bits_per_sample)
+                        + 500)
+                        / 1000;
+                element(out, "BitRate", kbps);
+            }
             element(out, "NumberOfChannels", channels);
             element(out, "SamplingRate", sample_rate);
             element(out, "BitsPerSample", bits_per_sample);

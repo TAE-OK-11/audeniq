@@ -40,6 +40,7 @@ const CODE_MESSAGES: Record<string, string> = {
   UPLOAD_CONVERSION_TIMEOUT: '음원 변환이 너무 오래 걸렸어요. 잠시 후 다시 시도하거나 WAV·FLAC으로 올려 주세요.',
   UPLOAD_CONVERSION_UNAVAILABLE: '지금은 음원 변환을 할 수 없어요. 잠시 후 다시 시도해 주세요.',
   UPLOAD_BUSY: '다른 음원을 처리 중이에요. 잠시 후 등록을 다시 시도해 주세요.',
+  UPLOAD_AUDIO_TRUNCATED: 'WAV 파일이 끝까지 저장되지 않았어요. 마스터를 다시 내보내 전체 파일을 올려 주세요.',
   UPLOAD_AUDIO_FORMAT_UNSUPPORTED: '16·24bit, 44.1~192kHz, 모노·스테레오 무손실 음원으로 올려 주세요.',
   AUDIO_NOT_VERIFIED: '음원 품질 검사가 아직 끝나지 않았어요. 잠시 후 다시 접수해 주세요.',
   RELEASE_NOT_SUBMITTABLE: '지금 상태에서는 접수할 수 없는 발매예요.',
