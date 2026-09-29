@@ -52,6 +52,12 @@ npx wrangler secret delete MAINTENANCE_MODE                  # 끄기
 
 API 규칙과 curl 예시는 `docs/STUDIO_DEPLOYMENT.md`를 참고하세요.
 
+## 성능 (Worker CPU)
+
+- `/api/status`와 점검 중 API 차단 검사는 점검 일정 행을 인스턴스에서 10초 기억해 요청마다 D1을 읽지 않아요(판정은 항상 현재 시각으로).
+- 공개 공지·이벤트(`GET /api/notices|events[/:id]`)는 데이터센터 캐시에 30초 둬요. 관리 화면에서 글을 바꾸면 해당 캐시를 바로 지워요(다른 데이터센터는 최대 30초 뒤 반영).
+- 백엔드 프록시는 필요한 헤더만 전달하고(`x-audeniq-*` 위조 차단, `CF-Connecting-IP` → `x-audeniq-client-ip`), 본문을 읽지 않고 스트림으로 넘겨 압축된 응답이 다시 풀리거나 재압축되지 않아요.
+
 ## 확인
 
 ```sh
