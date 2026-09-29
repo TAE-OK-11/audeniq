@@ -598,6 +598,10 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
             "options": draft["options"],
             "declarations": body["declarations"], "tracks": body["tracks"],
         },
+        // Everything the artist entered in the Studio wizard for this submitted
+        // revision (credits, lyrics, add-on services, rights confirmations and the
+        // signed application record), so reviewers see the application as signed.
+        "draft": draft,
         "signed_application": application,
         "checks": checks,
         "open_checks": open,

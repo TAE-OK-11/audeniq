@@ -6,6 +6,11 @@ import type {
   ApprovalItem, DecisionInput, DecisionResult, DeliveryDecisionInput, DeliveryItem, DspItem, InquiryMessage, InquiryItem,
   Overview, PayoutItem, QueueRelease, ReleaseSheet, StaffDocument, StaffMe,
 } from './api';
+import { applicationHash, type StudioDraft } from './application';
+
+// 체험용 손글씨 서명 (작은 SVG)
+const MOCK_SIGNATURE = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 60"><path d="M10 42c14-20 22-30 28-24s-10 26 2 22 18-30 26-28-6 26 6 24 16-18 24-20 4 16 14 14 20-14 30-16 12 10 22 8 20-6 38-10" fill="none" stroke="#1d2433" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+
 
 const ME = 'staff-me-0001';
 const OTHER = 'staff-kim-0002';
@@ -17,6 +22,36 @@ const uid = () => Math.random().toString(16).slice(2, 10) + '-mock';
 
 
 interface MockRelease { q: QueueRelease; sheet: ReleaseSheet }
+
+/** 스튜디오 위자드에서 입력한 것처럼 보이는 제출 내용 (체험용) */
+function draftFor(q: QueueRelease, n: number, extra: Partial<StudioDraft> = {}): StudioDraft {
+  const artist = q.artist ?? '아티스트';
+  return {
+    artist, type: q.release_type === 'EP' ? 'ep' : 'single', language: 'ko', genre: 'Indie Pop', label: q.org_name, upc: '',
+    notes_lines: [`${artist}의 ${q.release_type === 'EP' ? '첫 EP' : '새 싱글'}이에요.`, '새벽 공기와 계절의 온도를 담았어요.'],
+    release_date: q.release_date ?? '2026-10-20', territories: ['WORLD'], platforms: ['melon', 'genie', 'flo', 'spotify', 'apple', 'youtube'],
+    ownership: q.org_name, phonogram: `2026 ${q.org_name}`, copyright: `2026 ${q.org_name}`,
+    rightsChecks: { rightsMaster: true, rightsComposition: true, rightsArtwork: true, rightsConsent: true, rightsAi: true },
+    artistProfile: { isNew: false, spotify: 'https://open.spotify.com/artist/4Z8W4fKeB5YxbusRsdQVPb', apple: '', melon: 'https://www.melon.com/artist/detail.htm?artistId=123456' },
+    options: {
+      express: true, expressAck: true, expressReason: '공연 일정에 맞춰야 해요',
+      ai: true, aiUses: ['편곡·반주에 AI를 사용했어요', '커버아트를 AI로 만들었어요'], aiTools: ['Suno', 'Midjourney'],
+      cover: false, sample: false, featured: n > 1, featuredConsentFile: n > 1 ? '피처링_동의서.pdf' : '', shared: false, rerelease: false, minor: false,
+    },
+    draftTracks: Array.from({ length: n }, (_, i) => ({
+      id: `${q.id}-d${i + 1}`, serverId: `${q.id}-t${i + 1}`, title: i === 0 ? q.title : `${q.title} (Track ${i + 1})`, version: '',
+      composers: `${artist}, 김도윤`, lyricists: i === n - 1 && n > 1 ? '' : artist, arrangers: '김도윤', performers: `${artist} (보컬)`, producer: '김도윤',
+      featuring: i === 1 ? 'RAY' : '', explicit: false, instrumental: i === n - 1 && n > 1, duration: `03:${String(12 + i * 7).padStart(2, '0')}`,
+      audioName: `${String(i + 1).padStart(2, '0')}_master.wav`, audioSpec: 'WAV · 24bit · 48kHz · 스테레오',
+      lyrics: i === n - 1 && n > 1 ? '' : '창밖에 번지는 새벽의 온도\n아직 말하지 못한 이야기\n\n천천히, 조금 더 천천히\n우리의 계절이 지나가도록',
+    })),
+    application: {
+      no: `AUD-20260926-${q.id.slice(0, 6).toUpperCase()}`, form: 'AUD-DIST-APP 1.0', submittedAt: '2026-09-26 14:05',
+      signerName: artist, signerRole: '아티스트 본인', signature: '', hash: '', agreements: ['truth', 'terms', 'privacy', 'esign'],
+    },
+    ...extra,
+  };
+}
 
 function sheetFor(q: QueueRelease, open: [string, string, string][], extra: Partial<ReleaseSheet> = {}): MockRelease {
   const tracks = q.release_type === 'SINGLE' ? 1 : 4;
@@ -40,7 +75,8 @@ function sheetFor(q: QueueRelease, open: [string, string, string][], extra: Part
           credits: [{ party_id: 'p1', role: 'COMPOSER' }, { party_id: 'p2', role: 'LYRICIST' }],
         })),
       },
-      signed_application: { application_no: `AUD-20260926-${q.id.slice(0, 6).toUpperCase()}`, content_hash: 'a3f1c9e2'.repeat(8), signer_name: q.artist ?? '', signer_role: '본인', received_at: q.submitted_at ?? iso(5) },
+      draft: draftFor(q, tracks),
+      signed_application: { application_no: `AUD-20260926-${q.id.slice(0, 6).toUpperCase()}`, content_hash: '', signer_name: q.artist ?? '', signer_role: '아티스트 본인', received_at: q.submitted_at ?? iso(5), form: 'AUD-DIST-APP 1.0', agreements: ['truth', 'terms', 'privacy', 'esign'] },
       checks,
       open_checks: open.map(([code, status, detail]) => ({ check_code: code, status, detail })),
       advisories: [],
@@ -150,7 +186,17 @@ export const mockStaff = {
     payout_requests: payouts.filter(p => p.status === 'REQUESTED').length,
   }),
   releases: (status: string) => wait({ items: releases.filter(r => (status === 'PENDING' ? awaiting(r) : r.q.status === status)).map(r => r.q) }),
-  release: (rid: string) => wait(find(rid).sheet),
+  release: async (rid: string) => {
+    const sheet = find(rid).sheet;
+    // 체험용 신청서에 서명 이미지와 문서 확인 코드를 붙인다 (실서버는 스튜디오가 서명할 때 계산)
+    const d = sheet.draft;
+    if (d?.application && !d.application.hash) {
+      d.application.signature = MOCK_SIGNATURE;
+      d.application.hash = await applicationHash(d, sheet.release.title, d.application);
+      if (sheet.signed_application) sheet.signed_application.content_hash = d.application.hash;
+    }
+    return wait(sheet);
+  },
   decide: async (rid: string, i: DecisionInput): Promise<DecisionResult> => {
     const r = find(rid);
     if (!awaiting(r)) fail('RELEASE_NOT_IN_REVIEW');
