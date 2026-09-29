@@ -69,7 +69,9 @@ function StatementForm({ onSave }: { onSave: (s: { period: string; platform: str
         <label htmlFor="stNote">메모 (선택)</label>
         <input id="stNote" maxLength={200} value={note} onChange={e => setNote(e.target.value)} placeholder="정산서 번호 등" />
       </div>
-      <button className="button studio-submit-wide" type="submit">정산 내역 기록</button>
+      <div className="aq-sticky-foot">
+        <button className="button studio-submit-wide" type="submit">정산 내역 기록</button>
+      </div>
     </form>
   );
 }
@@ -315,9 +317,11 @@ export function Settlement() {
                   ? '신청 내용은 현재 작업 공간에 저장돼요. 지급 서비스가 연결되기 전에는 실제 송금이 진행되지 않아요.'
                   : `담당자가 확인한 뒤 등록한 계좌로 보내 드려요. ${money(minimum)} 이상부터 요청할 수 있어요.`}
               </div>
-              <button className={`button studio-submit-wide${requesting ? ' is-busy' : ''}`} type="submit" disabled={requesting}>
-                {MOCK ? '지급 요청 내용 저장' : requesting ? '요청하는 중' : '지급 요청하기'}
-              </button>
+              <div className="aq-sticky-foot">
+                <button className={`button studio-submit-wide${requesting ? ' is-busy' : ''}`} type="submit" disabled={requesting}>
+                  {MOCK ? '지급 요청 내용 저장' : requesting ? '요청하는 중' : '지급 요청하기'}
+                </button>
+              </div>
             </form>
           </div>
         </Modal>
