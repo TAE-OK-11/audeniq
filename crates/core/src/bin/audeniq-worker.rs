@@ -9,6 +9,9 @@ use std::{
 };
 use tokio::sync::{Notify, Semaphore};
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 const QUEUES: [&str; 6] = [
     "interactive",
     "qc",
@@ -17,6 +20,11 @@ const QUEUES: [&str; 6] = [
     "finance",
     "delivery",
 ];
+
+/// How often each queue loop sweeps expired leases back to QUEUED. Leases are
+/// at least 30 s (JOB_LEASE_SECONDS), so this adds at most a few seconds to
+/// the recovery of a crashed worker's job.
+const RECLAIM_EVERY: Duration = Duration::from_secs(5);
 
 fn env_usize(name: &str, default: usize, min: usize, max: usize) -> anyhow::Result<usize> {
     let value = match std::env::var(name) {
@@ -171,6 +179,9 @@ async fn main() -> anyhow::Result<()> {
             let name = format!("{}:{queue}:{n}", uuid::Uuid::new_v4());
             tasks.spawn(async move {
                 let mut idle = Duration::from_millis(50);
+                // Expired-lease sweeps run on a timer, not on every poll: an
+                // idle poll is then a single round trip.
+                let mut last_reclaim: Option<std::time::Instant> = None;
                 loop {
                     // Capacity is acquired before claiming, so a queued album
                     // never burns its lease while waiting for CPU or memory.
@@ -183,7 +194,13 @@ async fn main() -> anyhow::Result<()> {
                         drop(permit);
                         return;
                     }
-                    match operations::claim(&pool, queue, &name, lease_seconds).await {
+                    let reclaim = last_reclaim.is_none_or(|t| t.elapsed() >= RECLAIM_EVERY);
+                    let claimed =
+                        operations::claim_with(&pool, queue, &name, lease_seconds, reclaim).await;
+                    if reclaim && claimed.is_ok() {
+                        last_reclaim = Some(std::time::Instant::now());
+                    }
+                    match claimed {
                         Ok(Some(job)) => {
                             idle = Duration::from_millis(50);
                             in_flight
