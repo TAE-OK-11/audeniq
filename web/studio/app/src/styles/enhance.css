@@ -1457,3 +1457,12 @@ body:has(#modal .aq-sticky-foot) .aq-toast-stack,body:has(.aq-form-actions.is-pi
   #view-new .step-actions:has(#wizardSaveNow) #wizardBack{min-width:80px!important}
 }
 @media(min-width:760px){#view-new .step-actions #wizardBack{min-width:128px!important}}
+
+/* 수령 계좌 — 카드 안 카드가 답답해 보여 안쪽 카드 면을 없애고 섹션 위에 바로 놓는다 */
+.aq-payment-card .aq-acct:not(.aq-acct-empty){padding:4px 0 0;border-radius:0;background:transparent;gap:18px}
+.aq-payment-card .aq-acct:not(.aq-acct-empty):hover{background:transparent}
+.aq-payment-card .aq-acct:not(.aq-acct-empty):active{transform:none;opacity:.7}
+.aq-payment-card .aq-acct:not(.aq-acct-empty):focus-visible{outline-offset:6px;border-radius:12px}
+.aq-payment-card .aq-acct-head>.aq-bank-logo{background:#fff}
+.aq-payment-card .aq-acct-chip{background:#fff}
+.aq-payment-card .aq-acct-foot{border-top-color:#e3e9f4}
