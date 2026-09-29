@@ -3252,6 +3252,62 @@ async fn registry_dsp_waits_for_staff_approval_before_send(pool: PgPool) {
         "SUCCEEDED"
     );
     assert_eq!(jobs(pool.clone()).await, 1);
+
+    // Regression: a HOLD after the job was queued must stop the send. The
+    // approval gate is checked at lease time in the database (0063): the
+    // job stays QUEUED and cannot be leased until staff approve again.
+    let job_id: Uuid = {
+        let mut c = authed(&pool, artist.org).await;
+        sqlx::query_scalar("SELECT id FROM execution.delivery_jobs WHERE partner_id='D-5'")
+            .fetch_one(&mut *c)
+            .await
+            .unwrap()
+    };
+    let decide = |action: &'static str| {
+        let (app, operator) = (app.clone(), operator.clone());
+        async move {
+            let (s, v) = call(
+                &app,
+                "POST",
+                &format!("/api/staff/deliveries/{package}/D-5/decision"),
+                json!({"action":action,"note":"hold for label check","acknowledge_warnings":true}),
+                Some(&operator),
+            )
+            .await;
+            assert_eq!(s, StatusCode::OK, "{action}: {v}");
+        }
+    };
+    decide("HOLD").await;
+    assert!(
+        execution::lease_delivery_job(&pool, job_id, artist.org, "held-worker", 60)
+            .await
+            .unwrap()
+            .is_none(),
+        "a held route must not be leased"
+    );
+    assert!(matches!(
+        execution::delivery_lease_blocked(&pool, artist.org, job_id)
+            .await
+            .unwrap(),
+        execution::LeaseBlocked::AwaitingApproval
+    ));
+    let status: String = {
+        let mut c = authed(&pool, artist.org).await;
+        sqlx::query_scalar("SELECT status FROM execution.delivery_jobs WHERE id=$1")
+            .bind(job_id)
+            .fetch_one(&mut *c)
+            .await
+            .unwrap()
+    };
+    assert_eq!(status, "QUEUED", "held jobs are parked, not failed");
+    decide("APPROVE").await;
+    assert!(
+        execution::lease_delivery_job(&pool, job_id, artist.org, "approved-worker", 60)
+            .await
+            .unwrap()
+            .is_some(),
+        "re-approval makes the parked job leasable again"
+    );
 }
 
 /// A package frozen with VIRTUAL codes: staff send it back once real ranges
