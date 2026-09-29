@@ -15,6 +15,7 @@ const SEED_CORRECTIONS: Record<string, Correction[]> = {
   r3: [
     { code: 'IMAGE_TOO_SMALL', message: '커버아트 해상도가 1000×1000이에요. 3000×3000 이상 정사각형 이미지로 다시 올려 주세요.' },
     { code: 'S2_META_CREDITS', message: '‘데모 트랙’의 작곡가 정보가 비어 있어요. 실제 작곡가 이름을 입력해 주세요.', trackId: 't7' },
+    { code: 'REVIEW_NOTE', message: '두 항목만 고쳐 주시면 바로 다시 검토할게요.' },
   ],
 };
 
