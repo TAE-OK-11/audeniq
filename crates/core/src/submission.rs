@@ -1538,46 +1538,58 @@ fn valid_language_tag(tag: &str) -> bool {
     })
 }
 
-async fn cached_status(
+/// Cached results for `(check_code, result_hash)` pairs at `rule_version`,
+/// keyed by check code: one round trip for all of an asset's checks instead
+/// of one per check.
+async fn cached_statuses(
     pool: &PgPool,
-    check_code: &str,
+    keys: &[(&str, String)],
     rule_version: &str,
-    result_hash: &str,
-) -> Result<Option<(CheckStatus, String)>> {
+) -> Result<std::collections::HashMap<String, (CheckStatus, String)>> {
+    let (codes, hashes): (Vec<&str>, Vec<&str>) =
+        keys.iter().map(|(c, h)| (*c, h.as_str())).unzip();
     // Prefer the row that carries the original measurement: a cache hit used
     // to record only "cache_hit", so later readers (artist corrections, the
     // per-DSP cover check) lost e.g. "3000x3000" or the measured LUFS.
-    let s: Option<(String, Option<String>)> = sqlx::query_as(
+    let rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
         // operations.asset_qc_results holds the pre-submission analysis
         // (asset.analyze, migration 0047) under the same key.
-        "SELECT status, detail FROM (
-           SELECT status, detail, created_at FROM operations.check_results WHERE check_code=$1 AND rule_version=$2 AND result_hash=$3
-           UNION ALL
-           SELECT status, detail, created_at FROM operations.asset_qc_results WHERE check_code=$1 AND rule_version=$2 AND result_hash=$3
-         ) r ORDER BY (detail IS NULL OR detail LIKE 'cache_hit%'), created_at DESC LIMIT 1",
+        "SELECT DISTINCT ON (k.check_code) k.check_code, r.status, r.detail
+           FROM unnest($1::text[], $2::text[]) AS k(check_code, result_hash)
+           CROSS JOIN LATERAL (
+             SELECT status, detail, created_at FROM operations.check_results
+              WHERE check_code=k.check_code AND rule_version=$3 AND result_hash=k.result_hash
+             UNION ALL
+             SELECT status, detail, created_at FROM operations.asset_qc_results
+              WHERE check_code=k.check_code AND rule_version=$3 AND result_hash=k.result_hash
+           ) r
+          ORDER BY k.check_code, (r.detail IS NULL OR r.detail LIKE 'cache_hit%'), r.created_at DESC",
     )
-    .bind(check_code)
+    .bind(&codes)
+    .bind(&hashes)
     .bind(rule_version)
-    .bind(result_hash)
-    .fetch_optional(pool)
+    .fetch_all(pool)
     .await?;
-    Ok(s.and_then(|(v, detail)| {
-        let st = match v.as_str() {
-            "PASS" => CheckStatus::Pass,
-            "CORRECTION_REQUIRED" => CheckStatus::CorrectionRequired,
-            "REVIEW_REQUIRED" => CheckStatus::ReviewRequired,
-            "BLOCKED" => CheckStatus::Blocked,
-            "TECHNICAL_RETRY" => CheckStatus::TechnicalRetry,
-            "NOT_APPLICABLE" => CheckStatus::NotApplicable,
-            _ => return None,
-        };
-        let original = detail
-            .unwrap_or_default()
-            .trim_start_matches("cache_hit")
-            .trim_start_matches(": ")
-            .to_string();
-        Some((st, original))
-    }))
+    Ok(rows
+        .into_iter()
+        .filter_map(|(code, v, detail)| {
+            let st = match v.as_str() {
+                "PASS" => CheckStatus::Pass,
+                "CORRECTION_REQUIRED" => CheckStatus::CorrectionRequired,
+                "REVIEW_REQUIRED" => CheckStatus::ReviewRequired,
+                "BLOCKED" => CheckStatus::Blocked,
+                "TECHNICAL_RETRY" => CheckStatus::TechnicalRetry,
+                "NOT_APPLICABLE" => CheckStatus::NotApplicable,
+                _ => return None,
+            };
+            let original = detail
+                .unwrap_or_default()
+                .trim_start_matches("cache_hit")
+                .trim_start_matches(": ")
+                .to_string();
+            Some((code, (st, original)))
+        })
+        .collect())
 }
 
 /// 1-C: file QC over the revision's assets. Bytes-unchanged assets hit the
@@ -2091,24 +2103,29 @@ async fn qc_single_asset(
         "IMAGE" => qc::IMAGE_CHECK_CODES,
         _ => &[],
     };
+    // AUDIO_SIMILAR_TO_EXISTING is never cached: the result depends on
+    // what else is in the catalog at check time, not just the bytes. A
+    // byte-identical re-upload must be flagged as similar to the original,
+    // even though the SHA-256 matches a cached PASS.
+    let keys: Vec<(&str, String)> = expected
+        .iter()
+        .filter(|code| **code != "AUDIO_SIMILAR_TO_EXISTING")
+        .map(|code| (*code, asset_cache_key(code, sha256)))
+        .collect();
+    let mut cached = cached_statuses(&pool, &keys, qc::QC_RULE_VERSION).await?;
     let mut to_run: Vec<&str> = Vec::new();
     for code in expected {
-        // AUDIO_SIMILAR_TO_EXISTING is never cached: the result depends
-        // on what else is in the catalog at check time, not just the
-        // bytes. A byte-identical re-upload must be flagged as similar
-        // to the original, even though the SHA-256 matches a cached PASS.
         if *code == "AUDIO_SIMILAR_TO_EXISTING" {
             to_run.push(code);
             continue;
         }
-        let rh = asset_cache_key(code, sha256);
-        match cached_status(&pool, code, qc::QC_RULE_VERSION, &rh).await? {
+        match cached.remove(*code) {
             // A cached TECHNICAL_RETRY is transient: re-run instead of copying it.
             Some((st, original)) if st != CheckStatus::TechnicalRetry => out.push(StagedCheck {
                 check_code: code,
                 rule_version: qc::QC_RULE_VERSION,
                 status: st,
-                result_hash: rh,
+                result_hash: asset_cache_key(code, sha256),
                 detail: if original.is_empty() {
                     "cache_hit".into()
                 } else {
@@ -2307,20 +2324,27 @@ pub async fn precheck_asset(
             detail: o.detail,
         });
     }
-    let mut retry = false;
-    for c in &out {
-        if c.status == CheckStatus::TechnicalRetry {
-            retry = true;
-            continue;
-        }
+    let retry = out.iter().any(|c| c.status == CheckStatus::TechnicalRetry);
+    let kept: Vec<&StagedCheck> = out
+        .iter()
+        .filter(|c| c.status != CheckStatus::TechnicalRetry)
+        .collect();
+    if !kept.is_empty() {
+        let codes: Vec<&str> = kept.iter().map(|c| c.check_code).collect();
+        let versions: Vec<&str> = kept.iter().map(|c| c.rule_version).collect();
+        let hashes: Vec<&str> = kept.iter().map(|c| c.result_hash.as_str()).collect();
+        let statuses: Vec<&str> = kept.iter().map(|c| c.status.as_db()).collect();
+        let details: Vec<&str> = kept.iter().map(|c| c.detail.as_str()).collect();
         sqlx::query(
-            "INSERT INTO operations.asset_qc_results(check_code, rule_version, result_hash, status, detail) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",
+            "INSERT INTO operations.asset_qc_results(check_code, rule_version, result_hash, status, detail)
+             SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[])
+             ON CONFLICT DO NOTHING",
         )
-        .bind(c.check_code)
-        .bind(c.rule_version)
-        .bind(&c.result_hash)
-        .bind(c.status.as_db())
-        .bind(&c.detail)
+        .bind(&codes)
+        .bind(&versions)
+        .bind(&hashes)
+        .bind(&statuses)
+        .bind(&details)
         .execute(pool)
         .await?;
     }
@@ -2594,33 +2618,57 @@ pub async fn run_stage1(
         .bind(release)
         .execute(&mut *tx)
         .await?;
-    let mut check_ids = Vec::new();
+    // Reuse this revision's rows from an earlier attempt, insert the rest in
+    // one statement: two round trips instead of one or two per check.
+    let existing: Vec<(String, String, Uuid)> = sqlx::query_as(
+        "SELECT DISTINCT ON (check_code, result_hash) check_code, result_hash, id
+           FROM operations.check_results WHERE revision_id=$1
+          ORDER BY check_code, result_hash, created_at, id",
+    )
+    .bind(revision_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let mut ids: std::collections::HashMap<(String, String), Uuid> = existing
+        .into_iter()
+        .map(|(code, hash, id)| ((code, hash), id))
+        .collect();
+    let mut fresh: Vec<&StagedCheck> = Vec::new();
+    let mut fresh_ids: Vec<Uuid> = Vec::new();
     for c in &checks {
-        let existing: Option<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM operations.check_results WHERE revision_id=$1 AND check_code=$2 AND result_hash=$3",
-        )
-        .bind(revision_id)
-        .bind(c.check_code)
-        .bind(&c.result_hash)
-        .fetch_optional(&mut *tx)
-        .await?;
-        let id = match existing {
-            Some(id) => id,
-            None => {
-                sqlx::query_scalar("INSERT INTO operations.check_results(id, revision_id, check_code, rule_version, status, result_hash, detail) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id")
-                    .bind(Uuid::new_v4())
-                    .bind(revision_id)
-                    .bind(c.check_code)
-                    .bind(c.rule_version)
-                    .bind(c.status.as_db())
-                    .bind(&c.result_hash)
-                    .bind(&c.detail)
-                    .fetch_one(&mut *tx)
-                    .await?
-            }
-        };
-        check_ids.push(id);
+        let key = (c.check_code.to_string(), c.result_hash.clone());
+        if let std::collections::hash_map::Entry::Vacant(e) = ids.entry(key) {
+            let id = Uuid::new_v4();
+            e.insert(id);
+            fresh.push(c);
+            fresh_ids.push(id);
+        }
     }
+    if !fresh.is_empty() {
+        let codes: Vec<&str> = fresh.iter().map(|c| c.check_code).collect();
+        let versions: Vec<&str> = fresh.iter().map(|c| c.rule_version).collect();
+        let statuses: Vec<&str> = fresh.iter().map(|c| c.status.as_db()).collect();
+        let hashes: Vec<&str> = fresh.iter().map(|c| c.result_hash.as_str()).collect();
+        let details: Vec<&str> = fresh.iter().map(|c| c.detail.as_str()).collect();
+        sqlx::query(
+            "INSERT INTO operations.check_results(id, revision_id, check_code, rule_version, status, result_hash, detail)
+             SELECT id, $2, code, version, status, hash, detail
+               FROM unnest($1::uuid[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[])
+                    AS t(id, code, version, status, hash, detail)",
+        )
+        .bind(&fresh_ids)
+        .bind(revision_id)
+        .bind(&codes)
+        .bind(&versions)
+        .bind(&statuses)
+        .bind(&hashes)
+        .bind(&details)
+        .execute(&mut *tx)
+        .await?;
+    }
+    let check_ids: Vec<Uuid> = checks
+        .iter()
+        .map(|c| ids[&(c.check_code.to_string(), c.result_hash.clone())])
+        .collect();
 
     let mut counts: BTreeMap<&'static str, i64> = BTreeMap::new();
     for c in &checks {
