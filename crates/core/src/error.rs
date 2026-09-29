@@ -133,6 +133,9 @@ pub fn message(code: &str) -> Option<&'static str> {
             "The audio file is too large. The maximum is 512 MB; export a 16- or 24-bit WAV/FLAC (FLAC is about half the size)."
         }
         "UPLOAD_IMAGE_TOO_LARGE" => "The cover image is too large. The maximum is 20 MB.",
+        "UPLOAD_AUDIO_TRUNCATED" => {
+            "The WAV file is incomplete: its header promises more audio than the file contains. Export the master again and upload the complete file."
+        }
         "UPLOAD_CONTENT_MISMATCH" => {
             "The file's contents do not match its declared type (for example an MP3 or FLAC renamed to .wav). Upload the original WAV or FLAC master with its real type."
         }

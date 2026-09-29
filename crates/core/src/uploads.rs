@@ -35,6 +35,8 @@ pub const MAX_DOCUMENT_BYTES: i64 = 20 * 1024 * 1024;
 /// FLAC renamed to `.wav` never becomes a registered master.
 pub fn expected_container(kind: &str, content_type: &str) -> Option<&'static str> {
     match (kind, content_type) {
+        // WAV (like ALAC/AIFF/WavPack/TTA below) is converted to a FLAC
+        // master at completion; FLAC is stored as uploaded.
         ("AUDIO", "audio/wav" | "audio/x-wav") => Some("WAV"),
         ("AUDIO", "audio/flac") => Some("FLAC"),
         // ALAC in an .m4a: converted to FLAC losslessly at completion; AAC
@@ -140,7 +142,10 @@ pub async fn complete(
     let kind: String = r.get("kind");
     let mime: String = r.get("content_type");
     let container = expected_container(&kind, &mime).ok_or(Error::Invalid)?;
-    let conversion_slot = if matches!(container, "M4A" | "AIFF" | "WAVPACK" | "TTA") {
+    // Every lossless upload that is not already FLAC (WAV included) is
+    // stored as a FLAC master: one delivery format, about 40 % less storage
+    // and transfer than PCM, with the decoded PCM proven identical.
+    let conversion_slot = if matches!(container, "WAV" | "M4A" | "AIFF" | "WAVPACK" | "TTA") {
         Some(
             s.transcode_slots
                 .clone()
