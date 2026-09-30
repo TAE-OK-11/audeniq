@@ -255,6 +255,18 @@ pub async fn run_stage2(pool: &PgPool, job: &operations::Job) -> Result<Option<S
         check_ids.push(record_check_result(&mut tx, revision_id, c).await?);
     }
 
+    // Pin every run, including held/retried runs. Cached result rows can be
+    // older than a superseded run, so created_at cannot identify its results.
+    operations::audit(
+        &mut tx,
+        None,
+        Some(ctx.org),
+        Some(revision_id),
+        "stage2.checks_recorded",
+        &serde_json::to_string(&check_ids).map_err(|_| Error::Internal)?,
+        Uuid::new_v4(),
+    )
+    .await?;
     let summary = decide(&mut tx, &ctx, &checks, &check_ids).await?;
     tx.commit().await?;
     Ok(Some(summary))

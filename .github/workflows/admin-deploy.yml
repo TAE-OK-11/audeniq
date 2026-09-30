@@ -33,6 +33,7 @@ jobs:
         working-directory: web/admin
         run: |
           bun install --frozen-lockfile
+          bun run test
           bun run build
       - name: Deploy to Cloudflare Workers
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'

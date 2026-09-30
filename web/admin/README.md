@@ -27,3 +27,9 @@ bun install
 bun run dev:demo   # 체험 데이터로 화면 확인
 bun run build      # dist/
 ```
+
+심사 화면은 서버의 `review_context.allowed_actions`와 `requires_second_approval`을 사용한다.
+같은 검사 코드라도 여러 트랙의 결과를 모두 보여 주며, 시스템 원결과와 담당자 결정 후 상태를 구분한다.
+현재 제출본의 플랫폼별 배급 준비/승인 상태와 `/releases/{id}/timeline`의 검사·작업·전송·응답 이력을 표시한다.
+진행 중인 심사는 화면이 보일 때 15초마다 갱신하고, 결정 입력 중에는 자동 갱신을 멈춘다.
+`bun run test`의 화면 회귀 테스트는 Admin deploy CI에서 타입 검사/빌드와 함께 실행된다.
