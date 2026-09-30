@@ -67,3 +67,8 @@ test('track technical specs reuse real measurements and preserve unknowns', () =
   expect(audioSpecs(undefined)).toBe('분석 정보 없음');
   expect(audioSpecs({ duration_secs: Infinity, sample_rate: 0, channels: null, bits_per_sample: null })).toBe('분석 정보 없음');
 });
+
+test('a dead-letter job is reported as a processing failure', () => {
+  const html = render(createElement(TimelineRow, { item: { at: '2026-09-30T00:00:00Z', source: 'job', kind: 'stage2', detail: { status: 'DEAD_LETTER', attempts: 5 } } }));
+  expect(html).toContain('현재 상태: 처리 실패');
+});
