@@ -27,6 +27,8 @@ jobs:
       WRANGLER_SEND_METRICS: 'false'
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: 643f41fe3ea99f34dc3657742caea5b2bb4b31a4
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: web/studio/.bun-version
@@ -39,6 +41,19 @@ jobs:
       - name: Worker and D1 content tests
         working-directory: web/studio
         run: bun test test/
+      - name: Record immutable release source
+        run: git rev-parse HEAD > web/studio/RELEASE_COMMIT
+      - name: Package CI-tested Studio release
+        uses: actions/upload-artifact@v7
+        with:
+          name: studio-release-643f41fe3ea99f34dc3657742caea5b2bb4b31a4
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            web/studio/public/
+            web/studio/worker.js
+            web/studio/wrangler.jsonc
+            web/studio/RELEASE_COMMIT
       - name: Apply D1 migrations (content)
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         working-directory: web/studio
