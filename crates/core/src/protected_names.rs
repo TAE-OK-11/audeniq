@@ -156,7 +156,17 @@ fn leet(c: char) -> &'static [&'static str] {
 
 /// Folded form of a whole needle (list entry): letters/digits only.
 pub fn fold(s: &str) -> String {
-    s.chars().map(fold_char).collect()
+    normalized_text(s).chars().map(fold_char).collect()
+}
+
+// Normalize the complete string so decomposed Hangul composes into the same
+// syllables as the list entries. Invisible characters cannot split a name.
+fn normalized_text(text: &str) -> String {
+    text.nfkc()
+        .filter(|c| !invisible(*c))
+        .collect::<String>()
+        .nfc()
+        .collect()
 }
 
 /// One visible source character: its possible folded readings.
@@ -171,10 +181,7 @@ struct Unit {
 
 fn units(text: &str, with_leet: bool) -> Vec<Unit> {
     let mut out = Vec::new();
-    for c in text.chars() {
-        if c.to_string().nfkc().all(invisible) {
-            continue; // invisible chars neither split nor join words
-        }
+    for c in normalized_text(text).chars() {
         let plain = fold_char(c);
         let sep = plain.is_empty();
         let mut opts = vec![plain.clone()];
@@ -210,15 +217,20 @@ fn ends_ok(u: &[Unit], j: usize, needle: &str) -> bool {
 }
 
 /// CONTAINS match with leet alternatives on word boundaries.
-fn contains_match(u: &[Unit], needle: &str) -> bool {
-    let pat: Vec<char> = needle.chars().collect();
+fn contains_match(u: &[Unit], needle: &str, pat: &[char]) -> bool {
     let m = pat.len();
     if m == 0 {
         return false;
     }
     let fits = |p: usize, opt: &str| -> Option<usize> {
-        let oc: Vec<char> = opt.chars().collect();
-        (p + oc.len() <= m && pat[p..p + oc.len()] == oc[..]).then_some(p + oc.len())
+        let mut q = p;
+        for c in opt.chars() {
+            if pat.get(q) != Some(&c) {
+                return None;
+            }
+            q += 1;
+        }
+        Some(q)
     };
     for i in 0..u.len() {
         // Word start: text start or after a separator-capable unit.
@@ -303,6 +315,7 @@ fn token_match(text_tokens: &[String], needle_tokens: &[String]) -> bool {
 #[derive(Debug, Clone)]
 struct Needle {
     folded: String,
+    pattern: Vec<char>,
     tokens: Vec<String>,
     mode: Mode,
     action: Action,
@@ -313,6 +326,19 @@ struct Needle {
 pub struct Entry {
     pub name: String,
     needles: Vec<Needle>,
+}
+
+struct PreparedText {
+    units: Vec<Unit>,
+    tokens: Vec<String>,
+}
+
+impl PreparedText {
+    fn new(text: &str) -> Self {
+        let units = units(text, true);
+        let tokens = tokens(&units);
+        Self { units, tokens }
+    }
 }
 
 /// One name or alias with its policy.
@@ -362,6 +388,7 @@ impl Entry {
             }
             needles.push(Needle {
                 tokens: tokens(&units(&s.text, false)),
+                pattern: folded.chars().collect(),
                 folded,
                 mode: s.mode,
                 action: s.action,
@@ -375,13 +402,15 @@ impl Entry {
 
     /// Strongest action any of this entry's names triggers on `text`.
     pub fn hit(&self, text: &str) -> Option<Action> {
-        let leet_units = units(text, true);
-        let text_tokens = tokens(&leet_units);
+        self.hit_prepared(&PreparedText::new(text))
+    }
+
+    fn hit_prepared(&self, text: &PreparedText) -> Option<Action> {
         self.needles
             .iter()
             .filter(|n| match n.mode {
-                Mode::Contains => contains_match(&leet_units, &n.folded),
-                Mode::Token => token_match(&text_tokens, &n.tokens),
+                Mode::Contains => contains_match(&text.units, &n.folded, &n.pattern),
+                Mode::Token => token_match(&text.tokens, &n.tokens),
             })
             .map(|n| n.action)
             .max()
@@ -395,14 +424,28 @@ impl Entry {
 
 /// First protected entry that BLOCKs any of `texts`.
 pub fn find<'a>(entries: &'a [Entry], texts: &[&str]) -> Option<&'a Entry> {
-    entries.iter().find(|e| texts.iter().any(|t| e.matches(t)))
+    if entries.is_empty() {
+        return None;
+    }
+    let texts: Vec<_> = texts.iter().map(|t| PreparedText::new(t)).collect();
+    entries.iter().find(|e| {
+        texts
+            .iter()
+            .any(|t| e.hit_prepared(t) == Some(Action::Block))
+    })
 }
 
 /// First entry with a REVIEW-level (but no BLOCK) hit on any of `texts`.
 pub fn find_review<'a>(entries: &'a [Entry], texts: &[&str]) -> Option<&'a Entry> {
-    entries
-        .iter()
-        .find(|e| texts.iter().any(|t| e.hit(t) == Some(Action::Review)))
+    if entries.is_empty() {
+        return None;
+    }
+    let texts: Vec<_> = texts.iter().map(|t| PreparedText::new(t)).collect();
+    entries.iter().find(|e| {
+        texts
+            .iter()
+            .any(|t| e.hit_prepared(t) == Some(Action::Review))
+    })
 }
 
 /// Active protected entries that apply to `org` (entries for which the org
@@ -479,6 +522,85 @@ pub fn json_strings(v: &serde_json::Value) -> Vec<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decomposed_hangul_matches_composed_names_and_particles() {
+        let mut e = seeded();
+        e.extend(ts());
+        for text in ["아이유", "아이유의 노래", "테일러 스위프트"] {
+            let decomposed: String = text.nfd().collect();
+            assert!(find(&e, &[&decomposed]).is_some(), "{text}");
+            let split: String = decomposed.chars().flat_map(|c| [c, '\u{200b}']).collect();
+            assert!(
+                find(&e, &[&split]).is_some(),
+                "invisible separators: {text}"
+            );
+        }
+        let unrelated: String = "아이유니버스".nfd().collect();
+        assert!(find(&e, &[&unrelated]).is_none());
+    }
+
+    #[test]
+    fn prepared_matching_preserves_entry_order_and_actions() {
+        let mut entries = seeded();
+        entries.extend(ts());
+        for texts in [
+            vec!["Midnight", "Original Artist"],
+            vec!["Song (feat. BTS)", "테일러 스위프트"],
+            vec!["Love (T4ylor's Version)", "Iuliana"],
+            vec!["아이유의 노래", "Song (feat. Adele)"],
+        ] {
+            let block = entries.iter().find(|e| texts.iter().any(|t| e.matches(t)));
+            let review = entries
+                .iter()
+                .find(|e| texts.iter().any(|t| e.hit(t) == Some(Action::Review)));
+            assert_eq!(
+                find(&entries, &texts).map(|e| &e.name),
+                block.map(|e| &e.name)
+            );
+            assert_eq!(
+                find_review(&entries, &texts).map(|e| &e.name),
+                review.map(|e| &e.name)
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "manual synthetic throughput measurement"]
+    fn benchmark_prepared_matching() {
+        use std::{hint::black_box, time::Instant};
+        let mut entries = seeded();
+        entries.extend(ts());
+        // Synthetic catalog size close to the production seed list.
+        for n in 0..20 {
+            entries.push(Entry::new(&format!("Protected Artist {n}"), &[]));
+        }
+        let texts = [
+            "Midnight over the ocean",
+            "Original Independent Artist",
+            "봄날의 작은 노래",
+        ];
+        let n = 200;
+        let start = Instant::now();
+        for _ in 0..n {
+            black_box(
+                entries
+                    .iter()
+                    .find(|e| texts.iter().any(|t| e.matches(black_box(t)))),
+            );
+        }
+        let repeated = start.elapsed();
+        let start = Instant::now();
+        for _ in 0..n {
+            black_box(find(black_box(&entries), black_box(&texts)));
+        }
+        let prepared = start.elapsed();
+        eprintln!(
+            "name matching ({n} iterations, {} entries): repeated={repeated:?} prepared={prepared:?} speedup={:.2}x",
+            entries.len(),
+            repeated.as_secs_f64() / prepared.as_secs_f64()
+        );
+    }
 
     fn ts() -> Vec<Entry> {
         vec![Entry::new(
