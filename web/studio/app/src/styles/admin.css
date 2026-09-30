@@ -447,12 +447,36 @@ button.adm-row:hover,a.adm-row:hover{background:#edf2ff}
 .adm-pick:hover{background:#eef3ff}
 .adm-pick:active{transform:scale(.96)}
 .adm-pick.is-on{background:var(--adm-blue);color:#fff}
-.adm-pick:focus-visible,.adm-reason:focus-visible{outline:3px solid #7892f9;outline-offset:2px}
-.adm-reasons{display:grid;gap:6px}
-.adm-reason{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:44px;padding:10px 12px 10px 14px;border:0;border-radius:13px;background:#fff;color:#36425b;font:inherit;font-size:13px;font-weight:650;line-height:1.5;text-align:left;cursor:pointer;transition:background-color .15s ease,color .15s ease}
-.adm-reason:hover{background:#f7f9fe}
-.adm-reason.is-on{background:#eef3ff;color:#2f55d4;font-weight:760}
-.adm-reason>span:first-child{flex:1;min-width:0}
-.adm-reason-mark{display:grid;place-items:center;flex:none;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:inset 0 0 0 2px #d7dfeb;color:#fff}
-.adm-reason.is-on .adm-reason-mark{background:var(--adm-blue);box-shadow:none}
+.adm-pick:focus-visible,.adm-fix .adm-reason:focus-visible{outline:3px solid #7892f9;outline-offset:2px}
+.adm-fix .adm-reasons{display:grid;gap:6px}
+.adm-fix .adm-reason{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:44px;padding:10px 12px 10px 14px;border:0;border-radius:13px;background:#fff;color:#36425b;font:inherit;font-size:13px;font-weight:650;line-height:1.5;text-align:left;cursor:pointer;transition:background-color .15s ease,color .15s ease}
+.adm-fix .adm-reason:hover{background:#f7f9fe}
+.adm-fix .adm-reason.is-on{background:#eef3ff;color:#2f55d4;font-weight:760}
+.adm-fix .adm-reason>span:first-child{flex:1;min-width:0}
+.adm-fix .adm-reason-mark{display:grid;place-items:center;flex:none;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:inset 0 0 0 2px #d7dfeb;color:#fff}
+.adm-fix .adm-reason.is-on .adm-reason-mark{background:var(--adm-blue);box-shadow:none}
 .adm-fix .adm-picks,.adm-fix .adm-reasons{margin:0}
+
+/* ==========================================================================
+   결정 창 ‘확인할 것’ · 보완 요청의 ‘지금 입력된 내용’
+   ========================================================================== */
+.adm-brief{margin:4px 0 0;padding:14px;border-radius:18px;background:var(--adm-soft)}
+.adm-brief-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 2px 10px}
+.adm-brief-top b{font-size:14px;font-weight:800}
+.adm-brief-top small{font-size:12px;font-weight:700;color:var(--adm-muted)}
+.adm-brief ul{list-style:none;margin:0;padding:0;display:grid;gap:6px;max-height:320px;overflow:auto;overscroll-behavior:contain}
+.adm-brief li{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:13px;background:#fff}
+.adm-brief-mark{display:grid;place-items:center;flex:none;width:20px;height:20px;border-radius:50%;color:#fff}
+.adm-brief li.is-ok .adm-brief-mark{background:#21815B}
+.adm-brief li.is-warn .adm-brief-mark{background:#e0892f}
+.adm-brief li.is-bad .adm-brief-mark{background:#d92d3b}
+.adm-brief-text{flex:1;min-width:0;display:grid;gap:2px}
+.adm-brief-text b{font-size:13px;font-weight:760;line-height:1.45;overflow-wrap:anywhere}
+.adm-brief li.is-ok .adm-brief-text b{font-weight:650;color:#4c5a74}
+.adm-brief-text small{font-size:12px;line-height:1.5;color:var(--adm-muted);overflow-wrap:anywhere}
+.adm-brief li .adm-btn{flex:none;min-height:34px;padding:6px 11px;font-size:12px}
+.adm-now{display:grid;gap:6px}
+.adm-now-body{padding:10px 12px;border-radius:12px;background:#fff;font-size:13px;font-weight:700;color:#202b40;line-height:1.55;overflow-wrap:anywhere}
+.adm-now-body pre{margin:0;max-height:160px;overflow:auto;font:inherit;font-weight:600;white-space:pre-wrap}
+.adm-now-cover{display:block;width:120px;height:120px;object-fit:cover;border-radius:10px}
+@media(max-width:560px){.adm-brief li{flex-wrap:wrap}.adm-brief li .adm-btn{margin-left:30px}}

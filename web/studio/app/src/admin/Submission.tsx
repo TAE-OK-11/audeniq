@@ -20,7 +20,7 @@ import { CheckIcon } from '../components/Check';
 const dash = (v?: string | null) => (v && String(v).trim() ? v : '—');
 const INTEGRITY_TONE: Record<Integrity, 'green' | 'red' | 'gray'> = { ok: 'green', changed: 'red', unsigned: 'gray', checking: 'gray' };
 
-function useIntegrity(sheet: ReleaseSheet): Integrity {
+export function useIntegrity(sheet: ReleaseSheet): Integrity {
   const [state, setState] = useState<Integrity>('checking');
   const draft = sheet.draft;
   useEffect(() => {
