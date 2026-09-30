@@ -68,7 +68,11 @@ export interface Track {
   asset_kind: string | null; parental_advisory: boolean; credits: { party_id: string; role: string }[];
 }
 
+export interface MeasuredAudio {
+  duration_secs: number | null; sample_rate: number | null; channels: number | null; bits_per_sample: number | null;
+}
 export interface ReleaseSheet {
+  track_audio: Record<string, MeasuredAudio>;
   review_context: ReviewContext;
   release: {
     id: string; org_id: string; org_name: string; title: string; release_type: string; status: string;

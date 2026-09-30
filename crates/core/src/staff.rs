@@ -514,7 +514,13 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
     let r = sqlx::query(
         "SELECT r.id, r.org_id, o.name AS org_name, r.title, r.release_type, r.status, r.upc,
                 r.current_revision_id, ar.body AS revision, ar.created_at AS submitted_at,
-                NULLIF(r.draft->>'coverData', '') AS cover
+                NULLIF(r.draft->>'coverData', '') AS cover,
+                (SELECT coalesce(jsonb_object_agg(t->>'id', jsonb_build_object(
+                    'duration_secs',a.duration_secs,'sample_rate',a.sample_rate,
+                    'channels',a.channels,'bits_per_sample',a.bits_per_sample)), '{}'::jsonb)
+                 FROM jsonb_array_elements(coalesce(ar.body->'tracks','[]'::jsonb)) t
+                 JOIN catalog.assets a ON a.id=(t->>'asset_id')::uuid AND a.org_id=r.org_id
+                   AND a.sha256=t->>'asset_sha256') AS track_audio
          FROM catalog.releases r JOIN identity.orgs o ON o.id=r.org_id
          LEFT JOIN catalog.application_revisions ar ON ar.org_id=r.org_id AND ar.id=r.current_revision_id
          WHERE r.id=$1",
@@ -676,6 +682,7 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
             "declarations": body["declarations"], "tracks": body["tracks"],
         },
         "signed_application": application,
+        "track_audio": r.get::<Value,_>("track_audio"),
         "checks": checks,
         "open_checks": open,
         "advisories": advisories,
