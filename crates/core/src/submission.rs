@@ -756,6 +756,70 @@ struct StagedCheck {
     detail: String,
 }
 
+// The byte-dependent cache key identifies the inputs, not a particular
+// verdict. A retry or catalog change can produce a new immutable result.
+type CheckIdentity = (String, String, String, String);
+
+fn check_identity(code: &str, hash: &str, status: &str, detail: &str) -> CheckIdentity {
+    (
+        code.into(),
+        hash.into(),
+        status.into(),
+        detail
+            .trim_start_matches("cache_hit")
+            .trim_start_matches(": ")
+            .into(),
+    )
+}
+
+async fn record_stage1_checks(
+    tx: &mut PgConnection,
+    revision_id: Uuid,
+    checks: &[StagedCheck],
+) -> Result<Vec<Uuid>> {
+    type ExistingCheck = (String, String, String, String, Uuid);
+    let existing: Vec<ExistingCheck> = sqlx::query_as(
+        "SELECT check_code, result_hash, status, COALESCE(detail,''), id
+           FROM operations.check_results WHERE revision_id=$1
+          ORDER BY created_at DESC, id DESC",
+    )
+    .bind(revision_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let mut ids = std::collections::HashMap::new();
+    for (code, hash, status, detail, id) in existing {
+        ids.entry(check_identity(&code, &hash, &status, &detail))
+            .or_insert(id);
+    }
+    let key =
+        |c: &StagedCheck| check_identity(c.check_code, &c.result_hash, c.status.as_db(), &c.detail);
+    let mut fresh = Vec::new();
+    let mut fresh_ids = Vec::new();
+    for c in checks {
+        if let std::collections::hash_map::Entry::Vacant(e) = ids.entry(key(c)) {
+            let id = Uuid::new_v4();
+            e.insert(id);
+            fresh.push(c);
+            fresh_ids.push(id);
+        }
+    }
+    if !fresh.is_empty() {
+        let codes: Vec<_> = fresh.iter().map(|c| c.check_code).collect();
+        let versions: Vec<_> = fresh.iter().map(|c| c.rule_version).collect();
+        let statuses: Vec<_> = fresh.iter().map(|c| c.status.as_db()).collect();
+        let hashes: Vec<_> = fresh.iter().map(|c| c.result_hash.as_str()).collect();
+        let details: Vec<_> = fresh.iter().map(|c| c.detail.as_str()).collect();
+        sqlx::query(
+            "INSERT INTO operations.check_results(id, revision_id, check_code, rule_version, status, result_hash, detail)
+             SELECT id, $2, code, version, status, hash, detail
+               FROM unnest($1::uuid[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[])
+                    AS t(id, code, version, status, hash, detail)",
+        ).bind(&fresh_ids).bind(revision_id).bind(&codes).bind(&versions)
+            .bind(&statuses).bind(&hashes).bind(&details).execute(&mut *tx).await?;
+    }
+    Ok(checks.iter().map(|c| ids[&key(c)]).collect())
+}
+
 pub struct Stage1Summary {
     pub revision_id: Uuid,
     pub status_counts: BTreeMap<&'static str, i64>,
@@ -1563,6 +1627,7 @@ async fn cached_statuses(
              SELECT status, detail, created_at FROM operations.asset_qc_results
               WHERE check_code=k.check_code AND rule_version=$3 AND result_hash=k.result_hash
            ) r
+          WHERE r.status <> 'TECHNICAL_RETRY'
           ORDER BY k.check_code, (r.detail IS NULL OR r.detail LIKE 'cache_hit%'), r.created_at DESC",
     )
     .bind(&codes)
@@ -1987,7 +2052,7 @@ async fn find_similar_assets(
             .filter(|(id, _)| *id != aid)
             .map(|(id, hash)| (id, false, hash))
             .collect();
-        hits.extend(compare_page(frames.clone(), page).await?);
+        merge_similar_hits(&mut hits, compare_page(frames.clone(), page).await?);
         if !full {
             break;
         }
@@ -2016,17 +2081,11 @@ async fn find_similar_assets(
             .into_iter()
             .map(|(id, _, hash)| (id, true, hash))
             .collect();
-        hits.extend(compare_page(frames.clone(), page).await?);
+        merge_similar_hits(&mut hits, compare_page(frames.clone(), page).await?);
         if !full {
             break;
         }
     }
-    hits.sort_by(|a, b| {
-        a.ber
-            .partial_cmp(&b.ber)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    hits.truncate(3);
     Ok(hits)
 }
 
@@ -2038,21 +2097,30 @@ async fn compare_page(
     page: Vec<(Uuid, bool, Vec<u8>)>,
 ) -> Result<Vec<SimilarHit>> {
     tokio::task::spawn_blocking(move || {
-        page.into_iter()
-            .filter_map(|(asset_id, other_org, hash)| {
-                let other = fingerprint::Fingerprint::from_bytes(&hash).ok()?;
-                let ber = fingerprint::bit_error_rate_within(
-                    &frames,
-                    &other.frames,
-                    fingerprint::SIMILAR_BER,
-                )?;
-                Some(SimilarHit {
+        let mut hits: Vec<SimilarHit> = Vec::new();
+        for (asset_id, other_org, hash) in page {
+            let Ok(other) = fingerprint::Fingerprint::from_bytes(&hash) else {
+                continue;
+            };
+            let limit = if hits.len() == 3 {
+                hits[2].ber
+            } else {
+                fingerprint::SIMILAR_BER
+            };
+            let Some(ber) = fingerprint::bit_error_rate_within(&frames, &other.frames, limit)
+            else {
+                continue;
+            };
+            merge_similar_hits(
+                &mut hits,
+                vec![SimilarHit {
                     asset_id,
                     other_org,
                     ber,
-                })
-            })
-            .collect()
+                }],
+            );
+        }
+        hits
     })
     .await
     .map_err(|_| Error::Internal)
@@ -2062,6 +2130,12 @@ struct SimilarHit {
     asset_id: Uuid,
     other_org: bool,
     ber: f64,
+}
+
+fn merge_similar_hits(hits: &mut Vec<SimilarHit>, page: Vec<SimilarHit>) {
+    hits.extend(page);
+    hits.sort_by(|a, b| a.ber.total_cmp(&b.ber).then(a.asset_id.cmp(&b.asset_id)));
+    hits.truncate(3);
 }
 
 /// Run the Stage 1 check contract for a single asset: cache lookup, then
@@ -2352,9 +2426,7 @@ pub async fn precheck_asset(
     // same rollup as Stage 1's update_asset_qc, which stays authoritative
     // and overwrites it after submission (adding catalog similarity).
     if !retry {
-        let clean = out
-            .iter()
-            .all(|c| matches!(c.status, CheckStatus::Pass | CheckStatus::NotApplicable));
+        let clean = out.iter().all(asset_check_allows_progress);
         sqlx::query("UPDATE catalog.assets SET qc_status=$3 WHERE org_id=$1 AND id=$2")
             .bind(org)
             .bind(aid)
@@ -2482,7 +2554,12 @@ async fn update_asset_qc(
         for (aid, sha) in &sha_of {
             if ch.result_hash == asset_cache_key(ch.check_code, sha) {
                 let e = worst.entry(aid.clone()).or_insert(CheckStatus::Pass);
-                if rank(ch.status) > rank(*e) {
+                let check_rank = if asset_check_allows_progress(ch) {
+                    0
+                } else {
+                    rank(ch.status)
+                };
+                if check_rank > rank(*e) {
                     *e = ch.status;
                 }
             }
@@ -2502,6 +2579,12 @@ async fn update_asset_qc(
             .await?;
     }
     Ok(())
+}
+
+fn asset_check_allows_progress(c: &StagedCheck) -> bool {
+    matches!(c.status, CheckStatus::Pass | CheckStatus::NotApplicable)
+        || (c.status == CheckStatus::ReviewRequired
+            && crate::review::stage1_review_severity(c.check_code) == "WARNING")
 }
 
 fn validation_package(
@@ -2618,57 +2701,8 @@ pub async fn run_stage1(
         .bind(release)
         .execute(&mut *tx)
         .await?;
-    // Reuse this revision's rows from an earlier attempt, insert the rest in
-    // one statement: two round trips instead of one or two per check.
-    let existing: Vec<(String, String, Uuid)> = sqlx::query_as(
-        "SELECT DISTINCT ON (check_code, result_hash) check_code, result_hash, id
-           FROM operations.check_results WHERE revision_id=$1
-          ORDER BY check_code, result_hash, created_at, id",
-    )
-    .bind(revision_id)
-    .fetch_all(&mut *tx)
-    .await?;
-    let mut ids: std::collections::HashMap<(String, String), Uuid> = existing
-        .into_iter()
-        .map(|(code, hash, id)| ((code, hash), id))
-        .collect();
-    let mut fresh: Vec<&StagedCheck> = Vec::new();
-    let mut fresh_ids: Vec<Uuid> = Vec::new();
-    for c in &checks {
-        let key = (c.check_code.to_string(), c.result_hash.clone());
-        if let std::collections::hash_map::Entry::Vacant(e) = ids.entry(key) {
-            let id = Uuid::new_v4();
-            e.insert(id);
-            fresh.push(c);
-            fresh_ids.push(id);
-        }
-    }
-    if !fresh.is_empty() {
-        let codes: Vec<&str> = fresh.iter().map(|c| c.check_code).collect();
-        let versions: Vec<&str> = fresh.iter().map(|c| c.rule_version).collect();
-        let statuses: Vec<&str> = fresh.iter().map(|c| c.status.as_db()).collect();
-        let hashes: Vec<&str> = fresh.iter().map(|c| c.result_hash.as_str()).collect();
-        let details: Vec<&str> = fresh.iter().map(|c| c.detail.as_str()).collect();
-        sqlx::query(
-            "INSERT INTO operations.check_results(id, revision_id, check_code, rule_version, status, result_hash, detail)
-             SELECT id, $2, code, version, status, hash, detail
-               FROM unnest($1::uuid[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[])
-                    AS t(id, code, version, status, hash, detail)",
-        )
-        .bind(&fresh_ids)
-        .bind(revision_id)
-        .bind(&codes)
-        .bind(&versions)
-        .bind(&statuses)
-        .bind(&hashes)
-        .bind(&details)
-        .execute(&mut *tx)
-        .await?;
-    }
-    let check_ids: Vec<Uuid> = checks
-        .iter()
-        .map(|c| ids[&(c.check_code.to_string(), c.result_hash.clone())])
-        .collect();
+    // Batch persistence preserves the exact verdicts pinned by this attempt.
+    let check_ids = record_stage1_checks(&mut tx, revision_id, &checks).await?;
 
     let mut counts: BTreeMap<&'static str, i64> = BTreeMap::new();
     for c in &checks {
@@ -2844,6 +2878,56 @@ pub async fn stage1_give_up(c: &mut PgConnection, revision_id: Uuid, reason: &st
 #[cfg(test)]
 mod title_tests {
     use super::*;
+
+    #[test]
+    fn advisory_qc_allows_progress_but_content_holds_and_failures_do_not() {
+        let check = |code, status| StagedCheck {
+            check_code: code,
+            rule_version: qc::QC_RULE_VERSION,
+            status,
+            result_hash: "a".repeat(64),
+            detail: String::new(),
+        };
+        assert!(asset_check_allows_progress(&check(
+            "AUDIO_LOUDNESS_OUT_OF_RANGE",
+            CheckStatus::ReviewRequired
+        )));
+        for (code, status) in [
+            ("AUDIO_CONTENT_SUSPECT", CheckStatus::ReviewRequired),
+            ("AUDIO_SIMILAR_TO_EXISTING", CheckStatus::ReviewRequired),
+            ("AUDIO_CLIPPING", CheckStatus::CorrectionRequired),
+            ("AUDIO_PROBE_FAILED", CheckStatus::TechnicalRetry),
+        ] {
+            assert!(!asset_check_allows_progress(&check(code, status)), "{code}");
+        }
+    }
+
+    #[test]
+    fn similarity_pages_keep_exact_best_three_with_stable_ties() {
+        let mut hits = Vec::new();
+        for page in [
+            [(4, 0.2), (5, 0.1), (3, 0.1)],
+            [(2, 0.1), (1, 0.1), (6, 0.0)],
+        ] {
+            merge_similar_hits(
+                &mut hits,
+                page.into_iter()
+                    .map(|(id, ber)| SimilarHit {
+                        asset_id: Uuid::from_u128(id),
+                        other_org: id % 2 == 0,
+                        ber,
+                    })
+                    .collect(),
+            );
+            assert!(hits.len() <= 3);
+        }
+        assert_eq!(
+            hits.iter()
+                .map(|h| h.asset_id.as_u128())
+                .collect::<Vec<_>>(),
+            vec![6, 1, 2]
+        );
+    }
 
     #[test]
     fn explicit_markers_are_corrections_not_style() {
