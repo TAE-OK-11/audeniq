@@ -1429,6 +1429,109 @@ pub async fn review_document(
     Ok(json!({"id": id, "status": i.status, "row_version": row.get::<i64,_>("row_version")}))
 }
 
+/// A document's original file as submitted by the artist (rights proof or
+/// agreement attachment), for reviewers to open. Staff with the documents or
+/// review duty only; only registered uploads within the document size limit;
+/// only the document types an upload may have (PDF / JPEG / PNG) keep their
+/// type, anything else is served as a download. Every view is audited.
+pub struct DocumentFile {
+    pub bytes: Vec<u8>,
+    pub content_type: &'static str,
+    pub disposition: String,
+}
+
+/// Upload-allowed document types keep their type (opened inline); anything
+/// else becomes an opaque download.
+pub fn document_content_type(stored: &str) -> &'static str {
+    match stored
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "application/pdf" => "application/pdf",
+        "image/jpeg" => "image/jpeg",
+        "image/png" => "image/png",
+        _ => "application/octet-stream",
+    }
+}
+
+/// `inline` (or `attachment` for unknown types) with an RFC 6266 UTF-8 name,
+/// so Korean file names survive and header injection is impossible.
+pub fn document_disposition(file_name: &str, content_type: &str) -> String {
+    let kind = if content_type == "application/octet-stream" {
+        "attachment"
+    } else {
+        "inline"
+    };
+    let name: String = file_name
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(200)
+        .collect();
+    let name = if name.trim().is_empty() {
+        "document".to_string()
+    } else {
+        name
+    };
+    let mut enc = String::new();
+    for b in name.as_bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'.' | b'-' | b'_' | b'~' => {
+                enc.push(*b as char)
+            }
+            _ => enc.push_str(&format!("%{b:02X}")),
+        }
+    }
+    format!("{kind}; filename=\"document\"; filename*=UTF-8''{enc}")
+}
+
+pub async fn document_file(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<DocumentFile> {
+    let st = staff(s, h, false).await?;
+    if require(&st, Duty::Documents).is_err() {
+        require(&st, Duty::Review)?;
+    }
+    let mut tx = s.pool.begin().await?;
+    staff_scope(&mut tx).await?;
+    let row = sqlx::query(
+        "SELECT d.org_id, d.file_name, a.object_key, a.content_type, a.size_bytes
+         FROM portal.documents d
+         JOIN catalog.assets a ON a.id=d.asset_id AND a.org_id=d.org_id
+         WHERE d.id=$1 AND a.state='REGISTERED'",
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(Error::NotFound)?;
+    let size: i64 = row.get("size_bytes");
+    if size > crate::uploads::MAX_DOCUMENT_BYTES {
+        return Err(Error::InvalidCode("DOCUMENT_TOO_LARGE"));
+    }
+    let org: Uuid = row.get("org_id");
+    let key: String = row.get("object_key");
+    let content_type = document_content_type(&row.get::<String, _>("content_type"));
+    let file_name: Option<String> = row.get("file_name");
+    operations::audit(
+        &mut tx,
+        Some(st.actor.user),
+        Some(org),
+        Some(id),
+        "staff.document_viewed",
+        content_type,
+        st.actor.request,
+    )
+    .await?;
+    tx.commit().await?;
+    let bytes = s.storage.get(&key).await?;
+    Ok(DocumentFile {
+        bytes,
+        content_type,
+        disposition: document_disposition(file_name.as_deref().unwrap_or(""), content_type),
+    })
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProofRequest {
@@ -2148,6 +2251,39 @@ async fn h_document_review(
 ) -> Result<Json<Value>> {
     Ok(Json(review_document(&s, &h, id, i).await?))
 }
+async fn h_document_file(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    h: HeaderMap,
+) -> Result<axum::response::Response> {
+    use axum::http::{HeaderValue, header};
+    use axum::response::IntoResponse;
+    let f = document_file(&s, &h, id).await?;
+    let mut res = f.bytes.into_response();
+    let hd = res.headers_mut();
+    hd.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static(f.content_type),
+    );
+    hd.insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_str(&f.disposition).map_err(|_| Error::Invalid)?,
+    );
+    hd.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("private, no-store"),
+    );
+    hd.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    // The file needs no scripts or outside requests (PDF viewer / image only).
+    hd.insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static("default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; frame-ancestors 'self'"),
+    );
+    Ok(res)
+}
 async fn h_request_proof(
     State(s): State<AppState>,
     Path(org): Path<Uuid>,
@@ -2265,6 +2401,7 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/api/staff/documents", get(h_documents))
         .route("/api/staff/documents/{id}/review", post(h_document_review))
+        .route("/api/staff/documents/{id}/file", get(h_document_file))
         .route("/api/staff/orgs/{org}/documents", post(h_request_proof))
         .route("/api/staff/inquiries", get(h_inquiries))
         .route("/api/staff/inquiries/{id}", get(h_inquiry))
@@ -2287,6 +2424,35 @@ pub fn routes() -> Router<AppState> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn document_file_type_and_name() {
+        assert_eq!(document_content_type("application/pdf"), "application/pdf");
+        assert_eq!(document_content_type("IMAGE/PNG"), "image/png");
+        assert_eq!(
+            document_content_type("image/jpeg; charset=binary"),
+            "image/jpeg"
+        );
+        // anything an upload could not have been is only a download
+        assert_eq!(
+            document_content_type("text/html"),
+            "application/octet-stream"
+        );
+        assert_eq!(
+            document_content_type("image/svg+xml"),
+            "application/octet-stream"
+        );
+        let d = document_disposition("샘플 허락서.pdf", "application/pdf");
+        assert!(d.starts_with("inline; "));
+        assert!(
+            d.ends_with("filename*=UTF-8''%EC%83%98%ED%94%8C%20%ED%97%88%EB%9D%BD%EC%84%9C.pdf")
+        );
+        // no header injection through the stored name
+        let d = document_disposition("a\r\nX-Evil: 1.pdf", "application/octet-stream");
+        assert!(d.starts_with("attachment; "));
+        assert!(!d.contains('\r') && !d.contains('\n'));
+        assert!(document_disposition("", "image/png").ends_with("UTF-8''document"));
+    }
+
     use super::*;
 
     #[test]

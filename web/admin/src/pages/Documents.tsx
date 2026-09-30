@@ -1,5 +1,6 @@
 // 서류 검토 — 담당자가 요청한 권리 증빙을 승인하거나 보완 요청한다.
 // 발매 신청서(배급 계약서)는 발매 심사에서 발매와 함께 결정한다.
+import { DocFileLink } from '../components/DocFileLink';
 import { useState } from 'react';
 import { Link, useSearchParams } from '../lib/router';
 import { Modal, useModalClose } from '../components/Modal';
@@ -95,6 +96,7 @@ export function Documents() {
               </span>
               <span className="adm-row-end">
                 <StatusChip value={pick(DOC_STATUS, d.status)} />
+                <DocFileLink id={d.id} assetId={d.asset_id} />
                 {decidable(d) && can('DOCUMENTS') && (
                   <span className="adm-codes">
                     <button type="button" className="adm-btn warn small" onClick={() => setPending({ doc: d, status: 'NEEDS' })}>보완 요청</button>

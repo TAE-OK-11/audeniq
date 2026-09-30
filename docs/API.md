@@ -129,6 +129,7 @@ All roles can read every list below.
 | POST | `/api/staff/approvals/{id}/approve` · `/decline` | `{}`. A different staff reviewer must approve (`SECOND_APPROVER_MUST_DIFFER`); approval writes the PASS overrides with `second_approver_user_id` and queues Stage 2 |
 | GET | `/api/staff/documents?status=REVIEW` | Rights proofs staff requested (AWAITING_DOCUMENTS, REVIEW, NEEDS, APPROVED). Agreements are decided with the release |
 | POST | `/api/staff/documents/{id}/review` | `{status: APPROVED|NEEDS, note, row_version}`; NEEDS requires a note. Rights proofs in REVIEW only; the trigger notifies the org |
+| GET | `/api/staff/documents/{id}/file` | The document's uploaded original (rights proof or agreement attachment) for reviewers to open. DOCUMENTS or REVIEW duty; registered uploads within the 20 MB document limit only (404 otherwise). PDF / JPEG / PNG are served `inline` with that type, anything else as an `application/octet-stream` attachment; `Content-Disposition` carries an RFC 6266 UTF-8 file name; `Cache-Control: private, no-store`, `nosniff` and a no-script CSP. Each view is audited as `staff.document_viewed` |
 | POST | `/api/staff/orgs/{org}/documents` | `{release_id,title,body?}` → rights-proof request (AWAITING_DOCUMENTS) |
 | GET | `/api/staff/inquiries?status=OPEN` · `/api/staff/inquiries/{id}` | Threads across orgs |
 | POST | `/api/staff/inquiries/{id}/reply` | `{body}` → STAFF message; thread becomes ANSWERED, author notified. CLOSED → 422 `INQUIRY_CLOSED` |
