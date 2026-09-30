@@ -8,6 +8,7 @@ import { useToast } from '../../components/Toast';
 import { errorMessage } from '../../api/errors';
 import { useAsync } from '../../hooks/useAsync';
 import { staffApi, type Check, type DecisionAction, type DecisionInput, type DecisionResult, type ReleaseSheet } from '../api';
+import { FIX_PRESETS } from '../fixPresets';
 import { STAFF_FIX_OPTIONS, WIZ_STEP_NAMES, correctionTarget, isKnownCorrection, staffFixCode } from '../../lib/corrections';
 import {
   CHECK_STATUS, DECISION_LABEL, DOC_KIND, DOC_STATUS, MAX_REASON, RELEASE_STATUS, RELEASE_TYPE,
@@ -154,9 +155,9 @@ function RejectForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: stri
   );
 }
 
-interface FixItem { key: string; code: string; trackId: string; note: string; system?: boolean }
+interface FixItem { key: string; step: number; code: string; trackId: string; note: string; custom?: boolean; system?: boolean }
 let fixSeq = 0;
-const newFix = (over: Partial<FixItem> = {}): FixItem => ({ key: `fx${++fixSeq}`, code: '', trackId: '', note: '', ...over });
+const newFix = (over: Partial<FixItem> = {}): FixItem => ({ key: `fx${++fixSeq}`, step: -1, code: '', trackId: '', note: '', ...over });
 
 /** 보완 요청 — 페이지 → 항목(→ 트랙)을 고르고 문제를 적으면 아티스트는 그 입력칸으로 바로 가서 고친다 */
 function CorrectionForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: string) => void }) {
@@ -188,7 +189,7 @@ function CorrectionForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: 
       <div className="adm-fixes">
         {items.map((i, n) => {
           const o = opt(i.code);
-          const step = o ? o.step : i.system ? correctionTarget(i.code).step : -1;
+          const step = o ? o.step : i.system ? correctionTarget(i.code).step : i.step;
           return (
             <div key={i.key} className="adm-fix">
               <div className="adm-fix-top">
@@ -199,26 +200,80 @@ function CorrectionForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: 
               </div>
               {!i.system && (
                 <div className="adm-fix-pick">
-                  <select className="adm-select" aria-label="페이지" value={step} onChange={e => set(i.key, { code: STAFF_FIX_OPTIONS.find(x => x.step === Number(e.target.value))?.code ?? '', trackId: '' })}>
-                    <option value={-1} disabled>페이지 선택</option>
-                    {WIZ_STEP_NAMES.map((name, s) => STAFF_FIX_OPTIONS.some(x => x.step === s) && <option key={name} value={s}>{name}</option>)}
-                  </select>
-                  <select className="adm-select" aria-label="항목" value={i.code} disabled={step < 0} onChange={e => set(i.key, { code: e.target.value, trackId: '' })}>
-                    {STAFF_FIX_OPTIONS.filter(x => x.step === step).map(x => <option key={x.code} value={x.code}>{x.label}</option>)}
-                  </select>
+                  {/* 1. 페이지 → 2. 고칠 부분 (→ 트랙) — 눌러서 고른다 */}
+                  <span className="adm-fix-label">페이지</span>
+                  <div className="adm-picks" role="radiogroup" aria-label="페이지">
+                    {WIZ_STEP_NAMES.map((name, s2) => STAFF_FIX_OPTIONS.some(x => x.step === s2) && (
+                      <button
+                        key={name} type="button" role="radio" aria-checked={step === s2}
+                        className={`adm-pick${step === s2 ? ' is-on' : ''}`}
+                        onClick={() => set(i.key, { step: s2, code: '', trackId: '', note: '', custom: false })}
+                      >{name}</button>
+                    ))}
+                  </div>
+                  {step >= 0 && (
+                    <>
+                      <span className="adm-fix-label">보완할 부분</span>
+                      <div className="adm-picks" role="radiogroup" aria-label="보완할 부분">
+                        {STAFF_FIX_OPTIONS.filter(x => x.step === step).map(x => (
+                          <button
+                            key={x.code} type="button" role="radio" aria-checked={i.code === x.code}
+                            className={`adm-pick${i.code === x.code ? ' is-on' : ''}`}
+                            onClick={() => set(i.key, { code: x.code, trackId: '', note: '', custom: !FIX_PRESETS[x.code]?.length })}
+                          >{x.label}</button>
+                        ))}
+                      </div>
+                    </>
+                  )}
                   {o?.track && (
-                    <select className="adm-select" aria-label="트랙" value={i.trackId} onChange={e => set(i.key, { trackId: e.target.value })}>
-                      <option value="" disabled>트랙 선택</option>
-                      {tracks.map(t => <option key={t.id} value={t.id}>{t.track_number}. {t.title}</option>)}
-                    </select>
+                    <>
+                      <span className="adm-fix-label">트랙</span>
+                      <div className="adm-picks" role="radiogroup" aria-label="트랙">
+                        {tracks.map(t => (
+                          <button
+                            key={t.id} type="button" role="radio" aria-checked={i.trackId === t.id}
+                            className={`adm-pick${i.trackId === t.id ? ' is-on' : ''}`}
+                            onClick={() => set(i.key, { trackId: t.id })}
+                          >{t.track_number}. {t.title}</button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  {i.code && (
+                    <>
+                      <span className="adm-fix-label">안내 문구</span>
+                      <div className="adm-reasons" role="radiogroup" aria-label="안내 문구">
+                        {(FIX_PRESETS[i.code] ?? []).map(text => (
+                          <button
+                            key={text} type="button" role="radio" aria-checked={!i.custom && i.note === text}
+                            className={`adm-reason${!i.custom && i.note === text ? ' is-on' : ''}`}
+                            onClick={() => set(i.key, { note: text, custom: false })}
+                          >
+                            <span>{text}</span>
+                            <span className="adm-reason-mark" aria-hidden="true">{!i.custom && i.note === text && <CheckIcon size={11} />}</span>
+                          </button>
+                        ))}
+                        <button
+                          type="button" role="radio" aria-checked={!!i.custom}
+                          className={`adm-reason${i.custom ? ' is-on' : ''}`}
+                          onClick={() => set(i.key, { custom: true, note: i.custom ? i.note : '' })}
+                        >
+                          <span>직접 입력</span>
+                          <span className="adm-reason-mark" aria-hidden="true">{i.custom && <CheckIcon size={11} />}</span>
+                        </button>
+                      </div>
+                    </>
                   )}
                 </div>
               )}
-              <textarea
-                className="adm-textarea" rows={2} maxLength={2000} value={i.note} aria-label="문제 내용"
-                placeholder={i.code ? correctionTarget(i.code).hint : '무엇이 문제이고 어떻게 고치면 되는지 적어 주세요.'}
-                onChange={e => set(i.key, { note: e.target.value })}
-              />
+              {(i.system || i.custom) && (
+                <textarea
+                  className="adm-textarea" rows={2} maxLength={2000} value={i.note} aria-label="문제 내용"
+                  autoFocus={!i.system}
+                  placeholder={i.code ? correctionTarget(i.code).hint : '무엇이 문제이고 어떻게 고치면 되는지 적어 주세요.'}
+                  onChange={e => set(i.key, { note: e.target.value })}
+                />
+              )}
             </div>
           );
         })}
