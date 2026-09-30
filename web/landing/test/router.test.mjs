@@ -30,3 +30,14 @@ test("the Worker redirects STUDIO requests with 308", async () => {
   const home = await worker.fetch(new Request("https://audeniq.com/"), env);
   assert.equal(await home.text(), "landing");
 });
+
+test("www redirects preserve paths and queries under the fixed apex authority", async () => {
+  for (const path of ["/about?x=1", "//evil.example/login?x=1", "///evil.example/login", "/%2f%2fevil.example/login"]) {
+    const response = await worker.fetch(new Request(`https://www.audeniq.com${path}`), {});
+    const destination = new URL(response.headers.get("location"));
+    assert.equal(response.status, 308);
+    assert.equal(destination.origin, "https://audeniq.com");
+    assert.equal(destination.pathname, new URL(`https://www.audeniq.com${path}`).pathname);
+    assert.equal(destination.search, new URL(`https://www.audeniq.com${path}`).search);
+  }
+});

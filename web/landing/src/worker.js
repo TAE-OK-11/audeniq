@@ -67,7 +67,10 @@ export default {
 
     // Only the apex domain should be indexed. Preserve the path and query in redirects.
     if (host === `www.${PRIMARY_HOST}`) {
-      const destination = new URL(url.pathname + url.search + url.hash, PRIMARY_ORIGIN);
+      const destination = new URL(PRIMARY_ORIGIN);
+      destination.pathname = url.pathname;
+      destination.search = url.search;
+      destination.hash = url.hash;
       return Response.redirect(destination, 308);
     }
 
