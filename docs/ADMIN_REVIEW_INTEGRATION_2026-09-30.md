@@ -41,5 +41,6 @@
 
 - Foundation: PostgreSQL 기반 전체 Rust 테스트, Clippy, WASM/Workers/Studio 브라우저/Compose 검증.
 - 새 DB 회귀 시나리오: 같은 코드의 여러 트랙 경고, 실제 결과 참조와 최신 임의 PASS 분리, 읽기 전용 역할, 만료 요청 갱신, 보완 후 요청 종료, override 유효 상태, revision 감사 이력, 콘텐츠 해시가 일치하는 분석 수치.
-- Admin deploy: 8개 렌더링/표시 회귀 테스트와 TypeScript 검사 및 Vite 빌드. 작업 브랜치에서는 배포 단계가 실행되지 않는다.
+- Admin deploy: 9개 렌더링/표시 회귀 테스트와 TypeScript 검사 및 Vite 빌드. 작업 브랜치에서는 배포 단계가 실행되지 않는다.
+- 배포 순서가 엇갈려 예전 API가 응답하면 화면 조회는 유지하고 결정 버튼은 비활성화한다. 새 서버 메타데이터가 있어야 결정을 활성화한다.
 - 최종 실행 ID와 결과는 PR #27의 검증 기록에서 확인한다.

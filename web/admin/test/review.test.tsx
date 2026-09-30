@@ -7,7 +7,7 @@ import type { ReviewContext } from '../src/api/staff';
 mock.module('../src/lib/router', () => ({ Link: () => null, useLocation: () => ({ pathname: '/' }) }));
 mock.module('../src/api/staff', () => ({ staffApi: {} }));
 const { CheckCard } = await import('../src/components/ReviewCheck');
-const { ReviewActions } = await import('../src/components/ReviewActions');
+const { contextOrReadOnly, ReviewActions } = await import('../src/components/ReviewActions');
 const { TimelineRow } = await import('../src/components/ReviewTimeline');
 const render = renderToStaticMarkup;
 const context = (actions: ReviewContext['allowed_actions']): ReviewContext => ({
@@ -71,4 +71,11 @@ test('track technical specs reuse real measurements and preserve unknowns', () =
 test('a dead-letter job is reported as a processing failure', () => {
   const html = render(createElement(TimelineRow, { item: { at: '2026-09-30T00:00:00Z', source: 'job', kind: 'stage2', detail: { status: 'DEAD_LETTER', attempts: 5 } } }));
   expect(html).toContain('현재 상태: 처리 실패');
+});
+
+test('an older backend response stays readable with all decisions disabled', () => {
+  const context = contextOrReadOnly(undefined);
+  const html = render(createElement(ReviewActions, { context, loading: false, onAction: () => {} }));
+  expect((html.match(/disabled=""/g) ?? []).length).toBe(3);
+  expect(context.decision_kind).toBeNull();
 });

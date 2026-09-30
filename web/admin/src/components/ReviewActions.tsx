@@ -1,5 +1,11 @@
 import type { DecisionAction, ReviewContext } from '../api/staff';
 
+// An older API may be visible during a rollout. Keep reads usable and wait
+// for authoritative action metadata before enabling any decision.
+export function contextOrReadOnly(context: ReviewContext | undefined): ReviewContext {
+  return context ?? { decision_kind: null, allowed_actions: [], requires_second_approval: false, pending_second_approval_id: null, check_counts: {} };
+}
+
 export function ReviewActions({ context, loading, onAction }: { context: ReviewContext; loading: boolean; onAction: (action: DecisionAction) => void }) {
   return <div className="adm-decide-actions">
     <button type="button" className="adm-btn primary" disabled={loading || !context.allowed_actions.includes('APPROVE')} onClick={() => onAction('APPROVE')}>승인</button>

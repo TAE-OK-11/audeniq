@@ -18,7 +18,7 @@ import { Glyph } from '../components/Glyph';
 import { CheckIcon } from '../components/Check';
 import { CheckCard } from '../components/ReviewCheck';
 import { ReviewTimeline } from '../components/ReviewTimeline';
-import { ReviewActions } from '../components/ReviewActions';
+import { contextOrReadOnly, ReviewActions } from '../components/ReviewActions';
 import { audioSpecs } from '../lib/audio';
 
 const DECL_LABEL: Record<string, string> = {
@@ -56,7 +56,7 @@ function useDecide(sheet: ReleaseSheet, onDone: (msg: string) => void) {
 function ApproveForm({ sheet, application, onDone }: { sheet: ReleaseSheet; application: boolean; onDone: (msg: string) => void }) {
   const { busy, run, close } = useDecide(sheet, onDone);
   const [memo, setMemo] = useState('');
-  const sensitive = sheet.review_context.requires_second_approval;
+  const sensitive = sheet.review_context?.requires_second_approval ?? true;
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     void run({ action: 'APPROVE', reason: memo.trim() }, res => {
@@ -353,7 +353,7 @@ function ReviewSheet({ id }: { id: string }) {
 
   const r = sheet.release;
   const app = sheet.application;
-  const context = sheet.review_context;
+  const context = contextOrReadOnly(sheet.review_context);
   const inReview = context.decision_kind === 'CHECKS';
   const application = context.decision_kind === 'APPLICATION';
   const decidable = context.decision_kind !== null;
@@ -387,6 +387,7 @@ function ReviewSheet({ id }: { id: string }) {
           </div>
 
           <button type="button" className="adm-btn soft small" disabled={loading} onClick={refresh}>{loading ? '갱신 중…' : '심사 정보 새로고침'}</button>
+          {!sheet.review_context && <ErrorBox message="심사 가능 여부를 확인할 수 없어요. 새로고침 후 다시 확인해 주세요." onRetry={refresh} />}
           {error && <ErrorBox message={error} onRetry={refresh} />}
           {done && <div className="adm-alert is-ok" role="status">{done}</div>}
           {pending && (
@@ -486,7 +487,7 @@ function ReviewSheet({ id }: { id: string }) {
                         <td><b>{t.title}</b>{t.version ? ` (${t.version})` : ''}{t.parental_advisory && <> <Chip tone="red">19</Chip></>}</td>
                         <td>{t.isrc ? <span className="adm-code">{t.isrc}</span> : '발급 전'}</td>
                         <td>{t.credits.map(c => ROLE_KO[c.role] ?? c.role).join(', ') || '—'}</td>
-                        <td>{t.asset_kind ?? '—'}<br /><small className="muted">{audioSpecs(sheet.track_audio[t.id])}</small></td>
+                        <td>{t.asset_kind ?? '—'}<br /><small className="muted">{audioSpecs(sheet.track_audio?.[t.id])}</small></td>
                       </tr>
                     ))}
                   </tbody>
