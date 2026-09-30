@@ -3787,6 +3787,15 @@ async fn staff_sheet_keeps_all_frozen_track_advisories(pool: PgPool) {
     sqlx::query("INSERT INTO distribution.validation_packages(id,org_id,revision_id,body,package_hash,rule_version) VALUES($1,$2,$3,$4,$5,'1')")
         .bind(Uuid::new_v4()).bind(artist.org).bind(revision).bind(&body)
         .bind(audeniq_core::domain::sha256_json(&body)).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE catalog.assets SET duration_secs=30,sample_rate=48000,channels=2,bits_per_sample=24 WHERE id=$1")
+        .bind(asset).execute(&pool).await.unwrap();
+    let track: String = sqlx::query_scalar(
+        "SELECT body->'tracks'->0->>'id' FROM catalog.application_revisions WHERE id=$1",
+    )
+    .bind(revision)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     let reviewer = staff_user(&app, &pool, "REVIEWER").await;
     let (status, sheet) = call(
         &app,
@@ -3801,6 +3810,8 @@ async fn staff_sheet_keeps_all_frozen_track_advisories(pool: PgPool) {
     let checks = sheet["checks"].as_array().unwrap();
     assert_eq!(checks.len(), 3, "{sheet}");
     assert!(!checks.iter().any(|c| c["id"] == stale.to_string()));
+    assert_eq!(sheet["track_audio"][&track]["duration_secs"], 30);
+    assert_eq!(sheet["track_audio"][&track]["sample_rate"], 48000);
     assert_eq!(sheet["review_context"]["check_counts"]["PASS"], 1);
     assert_eq!(sheet["review_context"]["allowed_actions"], json!([]));
 }

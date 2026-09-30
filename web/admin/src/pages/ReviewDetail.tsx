@@ -19,6 +19,7 @@ import { CheckIcon } from '../components/Check';
 import { CheckCard } from '../components/ReviewCheck';
 import { ReviewTimeline } from '../components/ReviewTimeline';
 import { ReviewActions } from '../components/ReviewActions';
+import { audioSpecs } from '../lib/audio';
 
 const DECL_LABEL: Record<string, string> = {
   rights_confirmed: '권리 보유 확인', adult_confirmed: '성인 확인', is_cover: '커버곡', is_remix: '리믹스',
@@ -485,7 +486,7 @@ function ReviewSheet({ id }: { id: string }) {
                         <td><b>{t.title}</b>{t.version ? ` (${t.version})` : ''}{t.parental_advisory && <> <Chip tone="red">19</Chip></>}</td>
                         <td>{t.isrc ? <span className="adm-code">{t.isrc}</span> : '발급 전'}</td>
                         <td>{t.credits.map(c => ROLE_KO[c.role] ?? c.role).join(', ') || '—'}</td>
-                        <td>{t.asset_kind ?? '—'}</td>
+                        <td>{t.asset_kind ?? '—'}<br /><small className="muted">{audioSpecs(sheet.track_audio[t.id])}</small></td>
                       </tr>
                     ))}
                   </tbody>
