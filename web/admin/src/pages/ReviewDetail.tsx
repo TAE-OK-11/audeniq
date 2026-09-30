@@ -17,6 +17,7 @@ import {
 import { Chip, ErrorBox, Initial, NoDuty, Section, Skeleton, StatusChip, useStaff } from '../ui';
 import { Glyph } from '../components/Glyph';
 import { CheckIcon } from '../components/Check';
+import { QUEUE_ORDER_KEY } from './ReviewQueue';
 import { ApplicationSection, EnteredInfoSection, OptionsSection, TracksSection, useIntegrity } from '../components/Submission';
 import { CurrentValue, ReviewBrief, type BriefFix } from '../components/ReviewBrief';
 
@@ -444,10 +445,21 @@ export function ReviewDetail() {
   const pending = sheet.second_approvals.find(a => a.status === 'PENDING');
   const canReview = can('REVIEW');
   const after = (msg: string) => { setDone(msg); reload(); refreshCounts(); };
+  // 심사 목록에서 보던 순서의 다음 건 (목록을 거치지 않고 이어서 심사)
+  const nextId = (() => {
+    try {
+      const order = JSON.parse(sessionStorage.getItem(QUEUE_ORDER_KEY) || '[]') as string[];
+      const i = order.indexOf(r.id);
+      return i >= 0 ? order[i + 1] ?? null : null;
+    } catch { return null; }
+  })();
 
   return (
     <div className="view-enter">
-      <Link to="/reviews" className="adm-back"><Glyph name="arrow-left" size={14} className="aq-inline-glyph" />심사 목록</Link>
+      <div className="adm-detail-nav">
+        <Link to="/reviews" className="adm-back"><Glyph name="arrow-left" size={14} className="aq-inline-glyph" />심사 목록</Link>
+        {nextId && <Link to={`/reviews/${nextId}`} className="adm-back adm-next">다음 심사 건<Glyph name="chevron-right" size={14} className="aq-inline-glyph" /></Link>}
+      </div>
 
       <div className="adm-detail">
         <div>
@@ -467,7 +479,12 @@ export function ReviewDetail() {
             </div>
           </div>
 
-          {done && <div className="adm-alert is-ok" role="status">{done}</div>}
+          {done && (
+            <div className="adm-alert is-ok adm-alert-row" role="status">
+              <span>{done}</span>
+              {nextId && <button type="button" className="adm-btn soft small" onClick={() => nav(`/reviews/${nextId}`)}>다음 심사 건 열기</button>}
+            </div>
+          )}
           {pending && (
             <div className="adm-alert is-warn adm-alert-row">
               <span>2차 승인 대기 중 — {pending.check_codes.map(checkLabel).join(', ')} · 요청 {when(pending.at)}{pending.requested_by === me.user_id ? ' (내 요청)' : ''}</span>
@@ -637,6 +654,14 @@ export function ReviewDetail() {
         </aside>
       </div>
 
+      {/* 휴대폰·좁은 화면: 내용을 읽다가 바로 결정하도록 아래에 고정 */}
+      {decidable && canReview && !action && (
+        <div className="adm-decide-bar" role="group" aria-label="심사 결정">
+          <button type="button" className="adm-btn primary" disabled={!!pending} onClick={() => setAction('APPROVE')}>승인</button>
+          <button type="button" className="adm-btn warn" onClick={() => setAction('REQUEST_CORRECTION')}>보완 요청</button>
+          <button type="button" className="adm-btn danger" onClick={() => setAction('REJECT')}>거절</button>
+        </div>
+      )}
       {action && (
         <Modal title={ACTION_TITLE[action]} onClose={() => setAction(null)} dismissible={false}>
           {action === 'APPROVE' && <ApproveForm sheet={sheet} application={application} onDone={after} />}
