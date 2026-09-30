@@ -76,7 +76,7 @@ function sheetFor(q: QueueRelease, open: [string, string, string][], extra: Part
         })),
       },
       draft: draftFor(q, tracks),
-      signed_application: { application_no: `AUD-20260926-${q.id.slice(0, 6).toUpperCase()}`, content_hash: '', signer_name: q.artist ?? '', signer_role: '아티스트 본인', received_at: q.submitted_at ?? iso(5), form: 'AUD-DIST-APP 1.0', agreements: ['truth', 'terms', 'privacy', 'esign'] },
+      signed_application: { application_no: `AUD-20260926-${q.id.slice(0, 6).toUpperCase()}`, content_hash: '', signer_name: q.artist ?? '', signer_role: '아티스트 본인', received_at: q.submitted_at ?? iso(5), form: 'AUD-DIST-APP 1.0', agreements: ['truth', 'terms', 'privacy', 'esign'], contact_email: `contact@${q.org_id.replace(/^org-/, '')}.example` },
       checks,
       open_checks: open.map(([code, status, detail]) => ({ check_code: code, status, detail })),
       advisories: [],
@@ -193,7 +193,10 @@ export const mockStaff = {
     if (d?.application && !d.application.hash) {
       d.application.signature = MOCK_SIGNATURE;
       d.application.hash = await applicationHash(d, sheet.release.title, d.application);
-      if (sheet.signed_application) sheet.signed_application.content_hash = d.application.hash;
+      if (sheet.signed_application) {
+        sheet.signed_application.content_hash = d.application.hash;
+        sheet.signed_application.signature = MOCK_SIGNATURE;
+      }
     }
     return wait(sheet);
   },

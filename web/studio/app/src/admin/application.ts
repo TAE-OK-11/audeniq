@@ -159,3 +159,34 @@ export async function verifyDraft(d: StudioDraft, title: string, recorded?: stri
   const h = await applicationHash(d, title, a);
   return h === a.hash && (!recorded || recorded === a.hash) ? 'ok' : 'changed';
 }
+
+/**
+ * 스튜디오 입력 기록(draft)이 없는 접수(스튜디오 밖에서 접수·예전 접수)도 신청서를 볼 수 있게
+ * 서버 신청 정보로 같은 모양을 채운다.
+ */
+export function draftFromSheet(sheet: {
+  release: { release_type: string };
+  application: {
+    artist?: string; genre?: string; release_date?: string; original_date?: string; label?: string;
+    p_line?: string; c_line?: string; platforms: string[]; options?: object | null;
+    tracks?: { id: string; title: string; version: string; isrc: string | null; parental_advisory: boolean }[] | null;
+  };
+}): StudioDraft {
+  const a = sheet.application;
+  const strip = (v?: string) => (v ?? '').replace(/^\s*[℗©]\s*/, '');
+  return {
+    artist: a.artist,
+    type: ({ SINGLE: 'single', EP: 'ep', ALBUM: 'album' } as Record<string, string>)[sheet.release.release_type],
+    genre: a.genre,
+    label: a.label,
+    release_date: a.release_date,
+    originalDate: a.original_date,
+    platforms: a.platforms,
+    phonogram: strip(a.p_line),
+    copyright: strip(a.c_line),
+    options: (a.options ?? null) as StudioOptions | null,
+    draftTracks: (a.tracks ?? []).map(t => ({
+      id: t.id, serverId: t.id, title: t.title, version: t.version, isrc: t.isrc ?? '', explicit: t.parental_advisory,
+    })),
+  };
+}
