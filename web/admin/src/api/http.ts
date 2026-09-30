@@ -4,7 +4,7 @@
 import { ApiError, messageForCode } from './errors';
 import { currentPath, toHref } from '../lib/router';
 
-const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
+export const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
 
 let csrfToken = '';
 

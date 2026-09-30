@@ -17,6 +17,7 @@ import {
 import { Chip, ErrorBox, Initial, NoDuty, Section, Skeleton, StatusChip, useStaff } from '../ui';
 import { Glyph } from '../components/Glyph';
 import { CheckIcon } from '../components/Check';
+import { DocFileLink } from '../components/DocFileLink';
 import { QUEUE_ORDER_KEY } from './ReviewQueue';
 import { ApplicationSection, EnteredInfoSection, OptionsSection, TracksSection, useIntegrity } from '../components/Submission';
 import { CurrentValue, ReviewBrief, type BriefFix } from '../components/ReviewBrief';
@@ -541,7 +542,7 @@ export function ReviewDetail() {
                       <span className="adm-row-meta"><span>{DOC_KIND[d.kind] ?? d.kind}</span>{d.file_name && <span>{d.file_name}</span>}<span>{when(d.updated_at)}</span></span>
                       {d.review_note && <span className="adm-row-meta"><span>메모: {d.review_note}</span></span>}
                     </span>
-                    <span className="adm-row-end"><StatusChip value={pick(DOC_STATUS, d.status)} /></span>
+                    <span className="adm-row-end"><StatusChip value={pick(DOC_STATUS, d.status)} /><DocFileLink id={d.id} assetId={d.asset_id} /></span>
                   </div>
                 ))}
               </div>
