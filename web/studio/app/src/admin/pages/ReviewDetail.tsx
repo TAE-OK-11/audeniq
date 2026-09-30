@@ -17,7 +17,8 @@ import {
 import { Chip, ErrorBox, Initial, NoDuty, Section, Skeleton, StatusChip, useStaff } from '../ui';
 import { Glyph } from '../../components/Glyph';
 import { CheckIcon } from '../../components/Check';
-import { ApplicationSection, EnteredInfoSection, OptionsSection, TracksSection } from '../Submission';
+import { ApplicationSection, EnteredInfoSection, OptionsSection, TracksSection, useIntegrity } from '../Submission';
+import { CurrentValue, ReviewBrief, type BriefFix } from '../ReviewBrief';
 
 const ACTION_KO: Record<string, string> = {
   'release.submitted': '발매 접수', 'stage1.decision': '1차 검사 결과', 'stage1.completed': '1차 검사 완료', 'stage2.decision': '2차 검사 결과',
@@ -79,6 +80,7 @@ function useDecide(sheet: ReleaseSheet, onDone: (msg: string) => void) {
 function ApproveForm({ sheet, application, onDone }: { sheet: ReleaseSheet; application: boolean; onDone: (msg: string) => void }) {
   const { busy, run, close } = useDecide(sheet, onDone);
   const [memo, setMemo] = useState('');
+  const integrity = useIntegrity(sheet);
   const sensitive = sheet.open_checks.some(needsSecond);
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,6 +96,7 @@ function ApproveForm({ sheet, application, onDone }: { sheet: ReleaseSheet; appl
           ? '최종 승인이에요. 아티스트가 계약서에 서명하면 문제 없는 플랫폼으로 시스템이 자동 배급해요. 따로 배급 승인할 필요 없어요.'
           : '남은 검사 항목을 통과로 처리해요. 이후 배급 준비는 시스템이 자동으로 이어서 해요.'}
       </p>
+      <ReviewBrief sheet={sheet} integrity={integrity} title="승인 전 확인할 것" />
       {sensitive && (
         <div className="adm-alert is-warn" style={{ marginTop: 14 }}>
           권리·중복·보호명 등 <b>민감 항목</b>이 있어 다른 심사 담당자의 <b>2차 승인</b> 후 반영돼요.
@@ -117,6 +120,7 @@ function RejectForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: stri
   const [other, setOther] = useState(false);
   const [custom, setCustom] = useState('');
   const [sure, setSure] = useState(false);
+  const integrity = useIntegrity(sheet);
   const toggle = (id: string) => setPicked(p => (p.includes(id) ? p.filter(x => x !== id) : [...p, id]));
   const reason = [
     ...REJECT_REASONS.filter(r => picked.includes(r.id)).map(r => `· ${r.label}: ${r.text}`),
@@ -129,7 +133,8 @@ function RejectForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: stri
   };
   return (
     <form onSubmit={submit}>
-      <p className="small muted">사유를 누르면 그대로 기록되고 아티스트에게 전달돼요. 여러 개 고를 수 있어요.</p>
+      <ReviewBrief sheet={sheet} integrity={integrity} title="거절 전 확인할 것" />
+      <p className="small muted" style={{ marginTop: 14 }}>사유를 누르면 그대로 기록되고 아티스트에게 전달돼요. 여러 개 고를 수 있어요. 고칠 수 있는 문제면 거절 대신 보완 요청을 보내 주세요.</p>
       <div className="adm-reasons" role="group" aria-label="거절 사유">
         {REJECT_REASONS.map(r => (
           <button key={r.id} type="button" className={`adm-reason${picked.includes(r.id) ? ' is-on' : ''}`} aria-pressed={picked.includes(r.id)} title={r.text} onClick={() => toggle(r.id)}>{r.label}</button>
@@ -169,6 +174,13 @@ function CorrectionForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: 
     return sys.length ? sys : [newFix()];
   });
   const [summary, setSummary] = useState('');
+  const integrity = useIntegrity(sheet);
+  // ‘확인할 것’에서 누른 문제를 보완 항목으로 (빈 첫 항목이 있으면 그 자리에)
+  const addFromBrief = (f: BriefFix) => setItems(list => {
+    const item = newFix({ step: correctionTarget(f.code).step, code: f.code, trackId: f.trackId ?? '', note: f.note, custom: !FIX_PRESETS[f.code]?.includes(f.note) });
+    const blank = list.findIndex(x => !x.system && !x.code);
+    return blank >= 0 ? list.map((x, n) => (n === blank ? { ...item, key: x.key } : x)) : [...list, item];
+  });
   const set = (key: string, patch: Partial<FixItem>) => setItems(list => list.map(i => (i.key === key ? { ...i, ...patch } : i)));
   const opt = (code: string) => STAFF_FIX_OPTIONS.find(o => o.code === code);
   const ready = items.filter(i => i.code && (!opt(i.code)?.track || i.trackId));
@@ -185,7 +197,11 @@ function CorrectionForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: 
   };
   return (
     <form onSubmit={submit}>
-      <p className="small muted">고칠 곳을 페이지와 항목으로 지정하고 무엇이 문제인지 적어 주세요. 아티스트 화면에서 그 입력칸으로 바로 이동해요.</p>
+      <ReviewBrief
+        sheet={sheet} integrity={integrity} title="찾은 문제" onAddFix={addFromBrief}
+        added={items.filter(i => i.code).map(i => `${i.code}@${i.trackId || ''}`)}
+      />
+      <p className="small muted" style={{ marginTop: 14 }}>고칠 곳을 페이지와 항목으로 지정하고 무엇이 문제인지 적어 주세요. 아티스트 화면에서 그 입력칸으로 바로 이동해요.</p>
       <div className="adm-fixes">
         {items.map((i, n) => {
           const o = opt(i.code);
@@ -239,6 +255,7 @@ function CorrectionForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: 
                       </div>
                     </>
                   )}
+                  {i.code && (!o?.track || i.trackId) && <CurrentValue sheet={sheet} code={i.code} trackId={i.trackId || undefined} />}
                   {i.code && (
                     <>
                       <span className="adm-fix-label">안내 문구</span>
