@@ -275,8 +275,10 @@ pub async fn issue_or_reuse(
         "ISSUED"
     };
     // A number can already be taken by a code an artist supplied (the ledger
-    // is globally unique per code): skip it and take the next one.
-    for _ in 0..20 {
+    // is globally unique per code): skip it and take the next one. Only
+    // compose's actual range bound means exhaustion. An arbitrary collision
+    // limit would roll back the counter and stall every org on the same codes.
+    loop {
         let n: i64 = sqlx::query_scalar(
             "INSERT INTO distribution.identifier_counters(issuer_id,scope,last_value) VALUES($1,$2,1)
              ON CONFLICT(issuer_id,scope) DO UPDATE SET last_value=identifier_counters.last_value+1
@@ -309,7 +311,6 @@ pub async fn issue_or_reuse(
             return Ok(v);
         }
     }
-    Err(Error::PolicyGate("IDENTIFIER_RANGE_EXHAUSTED"))
 }
 
 #[derive(Debug, Clone, Copy)]

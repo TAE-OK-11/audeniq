@@ -339,9 +339,14 @@ pub async fn list_inquiries(s: &AppState, a: &Actor, org: Uuid) -> Result<Value>
            'status',i.status,'created_at',i.created_at,'updated_at',i.updated_at,
            'messages',(SELECT count(*) FROM portal.inquiry_messages m WHERE m.inquiry_id=i.id))
          FROM portal.inquiries i LEFT JOIN catalog.releases r ON r.id=i.release_id
-         WHERE i.org_id=$1 ORDER BY i.created_at DESC LIMIT 200",
+         WHERE i.org_id=$1 AND (i.release_id IS NULL OR EXISTS(
+           SELECT 1 FROM identity.resource_acl acl WHERE acl.org_id=i.org_id AND acl.resource_id=i.release_id
+             AND acl.principal_party_id=$2 AND acl.action='read' AND acl.revoked_at IS NULL
+             AND acl.starts_at<=now() AND (acl.ends_at IS NULL OR acl.ends_at>now())))
+         ORDER BY i.created_at DESC LIMIT 200",
     )
     .bind(org)
+    .bind(a.party)
     .fetch_all(&mut *tx)
     .await?;
     tx.rollback().await?;
@@ -351,6 +356,7 @@ pub async fn list_inquiries(s: &AppState, a: &Actor, org: Uuid) -> Result<Value>
 pub async fn get_inquiry(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
     member(&mut tx, a, org, false).await?;
+    authorize_inquiry(&mut tx, a, org, id).await?;
     let v: Value = sqlx::query_scalar(
         "SELECT jsonb_build_object('id',i.id,'category',i.category,'release_id',i.release_id,'release_title',r.title,'subject',i.subject,
            'status',i.status,'created_at',i.created_at,'updated_at',i.updated_at,
@@ -365,6 +371,22 @@ pub async fn get_inquiry(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result
     .ok_or(Error::NotFound)?;
     tx.rollback().await?;
     Ok(v)
+}
+
+async fn authorize_inquiry(c: &mut PgConnection, a: &Actor, org: Uuid, id: Uuid) -> Result<String> {
+    let (status, release): (String, Option<Uuid>) = sqlx::query_as(
+        "SELECT status,release_id FROM portal.inquiries WHERE org_id=$1 AND id=$2 FOR UPDATE",
+    )
+    .bind(org)
+    .bind(id)
+    .fetch_optional(&mut *c)
+    .await?
+    .ok_or(Error::NotFound)?;
+    if let Some(release) = release {
+        // Inquiry creation also requires read access to the linked release.
+        auth::authorize(c, a, org, release, "release", false).await?;
+    }
+    Ok(status)
 }
 
 pub async fn create_inquiry(s: &AppState, a: &Actor, org: Uuid, i: InquiryInput) -> Result<Value> {
@@ -419,14 +441,7 @@ pub async fn add_message(
     let body = multiline(&i.body, 1, 4000)?;
     let mut tx = s.pool.begin().await?;
     member(&mut tx, a, org, true).await?;
-    let status: String = sqlx::query_scalar(
-        "SELECT status FROM portal.inquiries WHERE org_id=$1 AND id=$2 FOR UPDATE",
-    )
-    .bind(org)
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or(Error::NotFound)?;
+    let status = authorize_inquiry(&mut tx, a, org, id).await?;
     if status == "CLOSED" {
         return Err(Error::PolicyGate("INQUIRY_CLOSED"));
     }
@@ -444,6 +459,7 @@ pub async fn add_message(
 pub async fn close_inquiry(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
     member(&mut tx, a, org, true).await?;
+    authorize_inquiry(&mut tx, a, org, id).await?;
     let n = sqlx::query(
         "UPDATE portal.inquiries SET status='CLOSED',updated_at=now() WHERE org_id=$1 AND id=$2",
     )
@@ -526,9 +542,14 @@ pub async fn list_documents(s: &AppState, a: &Actor, org: Uuid) -> Result<Value>
     member(&mut tx, a, org, false).await?;
     let items: Vec<Value> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT {DOC_JSON} FROM portal.documents d LEFT JOIN catalog.releases r ON r.id=d.release_id
-         WHERE d.org_id=$1 ORDER BY d.created_at DESC LIMIT 200"
+         WHERE d.org_id=$1 AND (d.release_id IS NULL OR EXISTS(
+           SELECT 1 FROM identity.resource_acl acl WHERE acl.org_id=d.org_id AND acl.resource_id=d.release_id
+             AND acl.principal_party_id=$2 AND acl.action='read' AND acl.revoked_at IS NULL
+             AND acl.starts_at<=now() AND (acl.ends_at IS NULL OR acl.ends_at>now())))
+         ORDER BY d.created_at DESC LIMIT 200"
     )))
     .bind(org)
+    .bind(a.party)
     .fetch_all(&mut *tx)
     .await?;
     tx.rollback().await?;
@@ -537,6 +558,7 @@ pub async fn list_documents(s: &AppState, a: &Actor, org: Uuid) -> Result<Value>
 
 async fn locked_doc(
     c: &mut PgConnection,
+    a: &Actor,
     org: Uuid,
     id: Uuid,
 ) -> Result<(String, String, i64, Option<Uuid>)> {
@@ -547,6 +569,10 @@ async fn locked_doc(
         .await?
         .ok_or(Error::NotFound)?;
     let checked: bool = row.get("checked");
+    let release: Option<Uuid> = row.get("release_id");
+    if let Some(release) = release {
+        auth::authorize(c, a, org, release, "release", true).await?;
+    }
     Ok((
         row.get("kind"),
         if checked {
@@ -555,14 +581,14 @@ async fn locked_doc(
             row.get("status")
         },
         row.get("row_version"),
-        row.get("release_id"),
+        release,
     ))
 }
 
 pub async fn check_document(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
     member(&mut tx, a, org, true).await?;
-    locked_doc(&mut tx, org, id).await?;
+    locked_doc(&mut tx, a, org, id).await?;
     let rv: i64 = sqlx::query_scalar(
         "UPDATE portal.documents SET checked_at=COALESCE(checked_at,now()),row_version=row_version+1,updated_at=now() WHERE id=$1 RETURNING row_version",
     )
@@ -592,7 +618,7 @@ pub async fn sign_document(
     let sig = signature(&i.signature)?;
     let mut tx = s.pool.begin().await?;
     member(&mut tx, a, org, true).await?;
-    let (kind, status, rv, release) = locked_doc(&mut tx, org, id).await?;
+    let (kind, status, rv, release) = locked_doc(&mut tx, a, org, id).await?;
     if rv != i.row_version {
         return Err(Error::Conflict);
     }
@@ -751,7 +777,7 @@ pub async fn attach_proof(
     let file = text(&i.file_name, 1, 200)?;
     let mut tx = s.pool.begin().await?;
     member(&mut tx, a, org, true).await?;
-    let (kind, status, rv, _) = locked_doc(&mut tx, org, id).await?;
+    let (kind, status, rv, _) = locked_doc(&mut tx, a, org, id).await?;
     if rv != i.row_version {
         return Err(Error::Conflict);
     }
@@ -866,27 +892,42 @@ pub async fn record_application(
     let sig = signature(&i.signature)?;
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, release, "release", true).await?;
-    let title: String =
-        sqlx::query_scalar("SELECT title FROM catalog.releases WHERE org_id=$1 AND id=$2")
-            .bind(org)
-            .bind(release)
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or(Error::NotFound)?;
+    let (title, release_status): (String, String) = sqlx::query_as(
+        "SELECT title,status FROM catalog.releases WHERE org_id=$1 AND id=$2 FOR UPDATE",
+    )
+    .bind(org)
+    .bind(release)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(Error::NotFound)?;
     // Same number again = the client retried: return the stored record.
-    let existing: Option<(Uuid, String)> = sqlx::query_as(
-        "SELECT release_id,content_hash FROM portal.release_applications WHERE application_no=$1",
+    let existing: Option<bool> = sqlx::query_scalar(
+        "SELECT release_id=$2 AND org_id=$3 AND content_hash=$4 AND form=$5 AND signer_name=$6
+            AND signer_role=$7 AND agreements=$8 AND signature=$9 AND client_submitted_at=$10
+         FROM portal.release_applications WHERE application_no=$1",
     )
     .bind(&i.application_no)
+    .bind(release)
+    .bind(org)
+    .bind(&i.content_hash)
+    .bind(&form)
+    .bind(&signer)
+    .bind(&role)
+    .bind(&i.agreements)
+    .bind(&sig)
+    .bind(&submitted)
     .fetch_optional(&mut *tx)
     .await?;
-    if let Some((rel, hash)) = existing {
-        if rel != release || hash != i.content_hash {
+    if let Some(matches) = existing {
+        if !matches {
             return Err(Error::Conflict);
         }
         tx.rollback().await?;
         return Ok(json!({"application_no":i.application_no,"recorded":true}));
     } else {
+        if release_status == "WITHDRAWN" {
+            return Err(Error::PolicyGate("APPLICATION_DOCUMENT_FINAL"));
+        }
         sqlx::query(
             "INSERT INTO portal.release_applications(id,org_id,release_id,application_no,form,content_hash,signer_name,signer_role,agreements,signature,client_submitted_at,submitted_by)
              VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
@@ -922,12 +963,13 @@ pub async fn record_application(
         no = i.application_no,
         hash = i.content_hash
     );
-    sqlx::query(
+    let updated = sqlx::query(
         "INSERT INTO portal.documents(id,org_id,release_id,kind,title,body,status) VALUES($1,$2,$3,'AGREEMENT',$4,$5,'REVIEW')
          ON CONFLICT(org_id,release_id) WHERE kind='AGREEMENT' DO UPDATE
            SET body=EXCLUDED.body,title=EXCLUDED.title,
-               status=CASE WHEN portal.documents.status IN ('SIGNED','REJECTED') THEN portal.documents.status ELSE 'REVIEW' END,
-               row_version=portal.documents.row_version+1,updated_at=now()",
+               status='REVIEW',checked_at=NULL,review_note='',signer_name='',signature='',signed_by=NULL,signed_at=NULL,
+               row_version=portal.documents.row_version+1,updated_at=now()
+         WHERE portal.documents.status NOT IN ('SIGNED','REJECTED','CANCELLED')",
     )
     .bind(Uuid::new_v4())
     .bind(org)
@@ -935,7 +977,10 @@ pub async fn record_application(
     .bind(format!("{} · AUDENIQ 디지털 음원 배급 신청·계약서", title.chars().take(120).collect::<String>()))
     .bind(&body)
     .execute(&mut *tx)
-    .await?;
+    .await?.rows_affected();
+    if updated != 1 {
+        return Err(Error::PolicyGate("APPLICATION_DOCUMENT_FINAL"));
+    }
     tx.commit().await?;
     Ok(json!({"application_no":i.application_no,"recorded":true}))
 }
