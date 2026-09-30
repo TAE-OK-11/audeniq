@@ -485,3 +485,37 @@ svg.aq-glyph{flex:none;fill:none!important;stroke:currentColor!important;stroke-
 .adm-now-body pre{margin:0;max-height:160px;overflow:auto;font:inherit;font-weight:600;white-space:pre-wrap}
 .adm-now-cover{display:block;width:120px;height:120px;object-fit:cover;border-radius:10px}
 @media(max-width:560px){.adm-brief li{flex-wrap:wrap}.adm-brief li .adm-btn{margin-left:30px}}
+
+/* ==========================================================================
+   관리자 편의 — 심사 목록 도구 · 급한 발매 표시 · 다음 건 · 휴대폰 결정 바 · 좁은 화면 정리
+   ========================================================================== */
+.adm-queue-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 10px}
+.adm-queue-tools .adm-input{flex:1 1 260px;min-width:0}
+.adm-seg{display:inline-flex;padding:4px;border-radius:14px;background:var(--adm-soft-2)}
+.adm-seg button{min-height:36px;padding:6px 12px;border:0;border-radius:11px;background:transparent;color:#5d6880;font:inherit;font-size:13px;font-weight:760;cursor:pointer}
+.adm-seg button.is-on{background:#fff;color:var(--adm-ink);box-shadow:0 1px 3px rgba(23,27,41,.08)}
+.adm-queue-count{margin:0 0 10px 4px;font-size:12px;font-weight:700;color:var(--adm-muted)}
+.adm-row-end small.is-late{color:#a76525;font-weight:800}
+
+.adm-detail-nav{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.adm-next{margin-left:auto}
+
+/* 결정 바 — 오른쪽 결정 칸이 고정되지 않는 폭(≤1180px)에서만 화면 아래에 */
+.adm-decide-bar{display:none}
+@media (max-width:1180px){
+  .adm-decide-bar{position:fixed;left:0;right:0;bottom:0;z-index:60;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:10px max(16px,env(safe-area-inset-left)) max(12px,env(safe-area-inset-bottom));background:rgba(255,255,255,.94);-webkit-backdrop-filter:saturate(1.4) blur(12px);backdrop-filter:saturate(1.4) blur(12px);border-top:1px solid var(--adm-line)}
+  .adm-decide-bar .adm-btn{min-height:48px;padding:10px 8px}
+  .adm-body:has(.adm-decide-bar) .adm-main{padding-bottom:92px}
+  .adm-body:has(.adm-decide-bar) .aq-toast-stack{bottom:calc(84px + env(safe-area-inset-bottom))}
+}
+
+@media (max-width:640px){
+  /* 로고·ADMIN·계정 아이콘이 겹치던 헤더 — 계정 아이콘은 빼고(로그아웃에 계정 표시) 간격을 줄인다 */
+  .adm-header-right{gap:4px}
+  .adm-header-right>.adm-who{display:none}
+  .adm-brand{min-width:0;flex-shrink:1}
+}
+/* 문의: 목록과 대화가 위아래로 쌓이는 폭에서는 고르기 전 빈 안내 칸이 자리만 차지한다 */
+@media (max-width:960px){.adm-thread-empty{display:none!important}}
+/* 아래 결정 바가 있는 폭에서는 위 결정 칸의 같은 버튼 세 개를 숨긴다 (상태 안내만) */
+@media (max-width:1180px){.adm-detail-side .adm-decide-actions{display:none}}
