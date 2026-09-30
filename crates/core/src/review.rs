@@ -50,8 +50,8 @@ struct ReviewCheck {
 impl ReviewCheck {
     fn result_hash(&self) -> String {
         sha256_hex(format!(
-            "{}:{}:{}",
-            self.check_code, REVIEW_RULE_VERSION, self.detail
+            "{}:{}:{}:{}",
+            self.check_code, REVIEW_RULE_VERSION, self.status, self.detail
         ))
     }
 }
@@ -316,17 +316,30 @@ fn static_stage1_code(code: &str) -> &'static str {
 
 /// Stage 1 HOLD results on this revision, as Stage 2 review checks.
 async fn module_stage1_holds(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec<ReviewCheck>> {
+    // Use the Stage 1 package's exact results. "Latest per check code" can
+    // hide a held track behind another track's PASS, or pick up a stale retry.
+    let check_ids: Vec<Uuid> = ctx.validation_body["stage1_check_refs"]
+        .as_array()
+        .ok_or(Error::Internal)?
+        .iter()
+        .map(|id| {
+            id.as_str()
+                .and_then(|id| Uuid::parse_str(id).ok())
+                .ok_or(Error::Internal)
+        })
+        .collect::<Result<_>>()?;
     let rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
-        "SELECT DISTINCT ON (check_code) check_code, status, detail
+        "SELECT check_code, status, detail
            FROM operations.check_results
-          WHERE revision_id=$1 AND check_code NOT LIKE 'S2\\_%'
-          ORDER BY check_code, created_at DESC",
+          WHERE revision_id=$1 AND id=ANY($2)
+          ORDER BY check_code, id",
     )
     .bind(ctx.revision_id)
+    .bind(&check_ids)
     .fetch_all(&mut *tx)
     .await?;
-    let mut out = Vec::new();
-    let mut other: Vec<String> = Vec::new();
+    let mut held: BTreeMap<&'static str, BTreeSet<String>> = BTreeMap::new();
+    let mut other = BTreeSet::new();
     for (code, status, detail) in rows {
         if !matches!(status.as_str(), "REVIEW_REQUIRED" | "BLOCKED")
             || stage1_review_severity(&code) == "WARNING"
@@ -335,23 +348,32 @@ async fn module_stage1_holds(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec<Rev
         }
         let stat = static_stage1_code(&code);
         if stat == "S1_REVIEW_HOLD" {
-            other.push(code);
+            other.insert(code);
             continue;
         }
-        out.push(ReviewCheck {
+        held.entry(stat)
+            .or_default()
+            .insert(detail.unwrap_or_default());
+    }
+    let mut out: Vec<_> = held
+        .into_iter()
+        .map(|(stat, details)| ReviewCheck {
             check_code: stat,
             status: "REVIEW_REQUIRED",
             detail: format!(
                 "held from Stage 1 until a reviewer clears it: {}",
-                detail.unwrap_or_default()
+                details.into_iter().collect::<Vec<_>>().join("; ")
             ),
-        });
-    }
+        })
+        .collect();
     if !other.is_empty() {
         out.push(ReviewCheck {
             check_code: "S1_REVIEW_HOLD",
             status: "REVIEW_REQUIRED",
-            detail: format!("held from Stage 1: {}", other.join(", ")),
+            detail: format!(
+                "held from Stage 1: {}",
+                other.into_iter().collect::<Vec<_>>().join(", ")
+            ),
         });
     }
     Ok(out)
@@ -1772,7 +1794,7 @@ mod tests {
     }
 
     #[sqlx::test]
-    async fn checkpoint_dedupes_identical_results(pool: sqlx::PgPool) {
+    async fn checkpoints_and_stage1_holds_preserve_actual_results(pool: sqlx::PgPool) {
         database::MIGRATOR.run(&pool).await.unwrap();
         let org = Uuid::new_v4();
         let release = Uuid::new_v4();
@@ -1836,6 +1858,61 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(n, 2);
+
+        // Status changes with unchanged detail are also distinct decisions.
+        let changed_status = check("S2_RIGHTS_SCOPE", "REVIEW_REQUIRED", "ok-changed");
+        let fourth = record_check_result(&mut tx, revision_id, &changed_status)
+            .await
+            .unwrap();
+        assert_ne!(third, fourth);
+
+        // An album has two held recordings and a clean third recording.
+        // All current refs are pinned, while an older unrelated hold is not.
+        let mut refs = Vec::new();
+        for c in [
+            check(
+                "AUDIO_SIMILAR_TO_EXISTING",
+                "REVIEW_REQUIRED",
+                "asset A matches",
+            ),
+            check(
+                "AUDIO_SIMILAR_TO_EXISTING",
+                "REVIEW_REQUIRED",
+                "asset B matches",
+            ),
+            check("AUDIO_SIMILAR_TO_EXISTING", "PASS", "asset C is original"),
+            check(
+                "AUDIO_LOUDNESS_OUT_OF_RANGE",
+                "REVIEW_REQUIRED",
+                "advisory loudness",
+            ),
+        ] {
+            refs.push(record_check_result(&mut tx, revision_id, &c).await.unwrap());
+        }
+        record_check_result(
+            &mut tx,
+            revision_id,
+            &check("AUDIO_CONTENT_SUSPECT", "REVIEW_REQUIRED", "stale attempt"),
+        )
+        .await
+        .unwrap();
+        let ctx = Ctx {
+            org,
+            release,
+            revision_id,
+            body: Value::Null,
+            body_hash: hash,
+            validation_package_id: Uuid::new_v4(),
+            validation_body: json!({"stage1_check_refs": refs}),
+            consent_path: "self".into(),
+            applicant_party: None,
+        };
+        let holds = module_stage1_holds(&mut tx, &ctx).await.unwrap();
+        assert_eq!(holds.len(), 1, "warnings and unpinned attempts do not hold");
+        assert_eq!(holds[0].check_code, "AUDIO_SIMILAR_TO_EXISTING");
+        assert!(holds[0].detail.contains("asset A matches"));
+        assert!(holds[0].detail.contains("asset B matches"));
+        assert!(!holds[0].detail.contains("asset C"));
         tx.commit().await.unwrap();
     }
 }
