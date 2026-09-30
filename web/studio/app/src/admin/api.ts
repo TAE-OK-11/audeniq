@@ -81,6 +81,8 @@ export interface ReleaseSheet {
   signed_application: {
     application_no: string; content_hash: string; signer_name: string; signer_role: string; received_at: string;
     form?: string; agreements?: string[];
+    /** 서명 이미지 (PNG data URL) · 신청인 연락 이메일 (아티스트 정보, 없으면 계정 이메일) */
+    signature?: string; contact_email?: string;
   } | null;
   checks: Check[];
   open_checks: Check[];

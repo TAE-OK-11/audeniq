@@ -9,7 +9,7 @@ import type { ReleaseSheet, Track } from '../api/staff';
 import { day, dspLabel, when } from '../labels';
 import { Chip, Empty, Section } from '../ui';
 import {
-  PROFILE_LINKS, RIGHTS_OPTIONS, SERVICE_OPTIONS, displayCode, draftNotes, genreLabel, kindLabel, languageLabel,
+  PROFILE_LINKS, RIGHTS_OPTIONS, SERVICE_OPTIONS, draftFromSheet, displayCode, draftNotes, genreLabel, kindLabel, languageLabel,
   rightsChecksFor, verifyDraft, type Integrity, type StudioDraftTrack, type StudioOptions,
 } from '../lib/application';
 import { ApplicationPaper, INTEGRITY_LABEL } from './ApplicationPaper';
@@ -44,24 +44,27 @@ export function ApplicationSection({ sheet }: { sheet: ReleaseSheet }) {
   const app = draft?.application;
   const integrity = useIntegrity(sheet);
   const [open, setOpen] = useState(false);
-  if (!signed && !app) return null;
   const no = app?.no ?? signed?.application_no ?? '';
+  // 스튜디오 입력 기록이 없으면(스튜디오 밖·예전 접수) 서버 신청 정보로 같은 신청서를 만든다
+  const paperDraft = draft ?? draftFromSheet(sheet);
+  const signature = app?.signature || signed?.signature || '';
 
   return (
     <Section
       title="배급 신청서"
-      meta={no ? displayCode(no) : undefined}
-      action={draft && <button type="button" className="adm-btn soft small" onClick={() => setOpen(true)}>신청서 전체 보기</button>}
+      meta={no ? displayCode(no) : '전자서명 기록 없음'}
+      action={<button type="button" className="adm-btn soft small" onClick={() => setOpen(true)}>신청서 보기</button>}
     >
       <div className="adm-card adm-appdoc">
         <dl className="adm-kv">
           <div><dt>신청인</dt><dd>{dash(app?.signerName ?? signed?.signer_name)}</dd></div>
           <div><dt>구분</dt><dd>{dash(app?.signerRole ?? signed?.signer_role)}</dd></div>
           <div><dt>접수</dt><dd>{when(signed?.received_at) || dash(app?.submittedAt)}</dd></div>
+          <div><dt>연락 이메일</dt><dd>{dash(signed?.contact_email)}</dd></div>
         </dl>
         <div className="adm-appdoc-foot">
-          {app?.signature
-            ? <span className="adm-sig"><img src={app.signature} alt={`${app.signerName} 서명`} /></span>
+          {signature
+            ? <span className="adm-sig"><img src={signature} alt={`${app?.signerName ?? signed?.signer_name ?? ''} 서명`} /></span>
             : <span className="adm-sig is-empty">서명 이미지 없음</span>}
           <span className="adm-appdoc-state">
             <Chip tone={INTEGRITY_TONE[integrity]}>{INTEGRITY_LABEL[integrity]}</Chip>
@@ -72,12 +75,12 @@ export function ApplicationSection({ sheet }: { sheet: ReleaseSheet }) {
           <p className="adm-appdoc-warn">제출 내용으로 다시 계산한 문서 확인 코드가 서명 때와 달라요. 신청서 전체를 열어 입력 내용과 대조해 주세요.</p>
         )}
       </div>
-      {open && draft && (
+      {open && (
         <Modal title="배급 신청서" onClose={() => setOpen(false)} modalClass="adm-paper-modal">
           <div className="adm-paper-tools">
             <button type="button" className="adm-btn soft small" onClick={() => window.print()}>인쇄 · PDF 저장</button>
           </div>
-          <ApplicationPaper sheet={sheet} draft={draft} integrity={integrity} />
+          <ApplicationPaper sheet={sheet} draft={paperDraft} integrity={integrity} />
         </Modal>
       )}
     </Section>
