@@ -29,6 +29,7 @@ function sheetFor(q: QueueRelease, open: [string, string, string][], extra: Part
   return {
     q,
     sheet: {
+      track_audio: {},
       review_context: { decision_kind: null, allowed_actions: [], requires_second_approval: false, pending_second_approval_id: null, check_counts: {} },
       release: { id: q.id, org_id: q.org_id, org_name: q.org_name, title: q.title, release_type: q.release_type, status: q.status, upc: null, revision_id: q.revision_id, submitted_at: q.submitted_at },
       application: {

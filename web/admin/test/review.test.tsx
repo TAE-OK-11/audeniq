@@ -58,3 +58,12 @@ describe('backend processing timeline', () => {
     expect(ack).toContain('LIVE');
   });
 });
+
+
+const { audioSpecs } = await import('../src/lib/audio');
+test('track technical specs reuse real measurements and preserve unknowns', () => {
+  expect(audioSpecs({ duration_secs: 195.4, sample_rate: 44100, channels: 2, bits_per_sample: 24 })).toBe('3:15 · 44.1 kHz · 24 bit · 2채널');
+  expect(audioSpecs({ duration_secs: 60, sample_rate: null, channels: null, bits_per_sample: null })).toBe('1:00');
+  expect(audioSpecs(undefined)).toBe('분석 정보 없음');
+  expect(audioSpecs({ duration_secs: Infinity, sample_rate: 0, channels: null, bits_per_sample: null })).toBe('분석 정보 없음');
+});
