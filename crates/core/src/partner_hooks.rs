@@ -26,6 +26,8 @@ use uuid::Uuid;
 pub const HOOK_PREFIX: &str = "/api/partner-hooks/";
 
 type ConfigCache = Mutex<HashMap<String, (Instant, Option<PartnerConfig>)>>;
+const CONFIG_CACHE_TTL: Duration = Duration::from_secs(60);
+const MAX_CONFIG_CACHE_ENTRIES: usize = 256;
 
 fn config_cache() -> &'static ConfigCache {
     static C: OnceLock<ConfigCache> = OnceLock::new();
@@ -33,15 +35,31 @@ fn config_cache() -> &'static ConfigCache {
 }
 
 fn partner_config(partner_id: &str) -> Option<PartnerConfig> {
-    if let Ok(c) = config_cache().lock()
+    cached_partner_config(config_cache(), partner_id, || {
+        crate::partner_config::load(partner_id).ok().flatten()
+    })
+}
+
+fn cached_partner_config(
+    cache: &ConfigCache,
+    partner_id: &str,
+    load: impl FnOnce() -> Option<PartnerConfig>,
+) -> Option<PartnerConfig> {
+    if let Ok(c) = cache.lock()
         && let Some((at, cfg)) = c.get(partner_id)
-        && at.elapsed() < Duration::from_secs(60)
+        && at.elapsed() < CONFIG_CACHE_TTL
     {
         return cfg.clone();
     }
-    let cfg = crate::partner_config::load(partner_id).ok().flatten();
-    if let Ok(mut c) = config_cache().lock() {
-        c.insert(partner_id.to_string(), (Instant::now(), cfg.clone()));
+    let cfg = load();
+    if let Ok(mut c) = cache.lock() {
+        c.retain(|_, (at, _)| at.elapsed() < CONFIG_CACHE_TTL);
+        // Public callers choose these IDs before HMAC verification. Missing
+        // configurations must not leave entries behind; valid configurations
+        // still work when the performance cache is full.
+        if cfg.is_some() && c.len() < MAX_CONFIG_CACHE_ENTRIES {
+            c.insert(partner_id.to_string(), (Instant::now(), cfg.clone()));
+        }
     }
     cfg
 }
@@ -111,4 +129,74 @@ async fn receive(
 
 pub fn routes() -> Router<AppState> {
     Router::new().route("/api/partner-hooks/{partner_id}", post(receive))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn valid_configs_work_beyond_cache_capacity_and_refresh_after_expiry() {
+        let dir = std::env::temp_dir().join(format!("audeniq-hook-cache-{}", Uuid::new_v4()));
+        std::fs::create_dir(&dir).unwrap();
+        struct RemoveDir(std::path::PathBuf);
+        impl Drop for RemoveDir {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let _remove = RemoveDir(dir.clone());
+        let cache = Mutex::new(HashMap::new());
+        let lookup = |id: &str| {
+            cached_partner_config(&cache, id, || {
+                crate::partner_config::load_from(&dir, id).unwrap()
+            })
+        };
+        let write = |id: &str, base_url: &str| {
+            let cfg = json!({"partner_id":id,"adapter":"http_api",
+                "http_api":{"base_url":base_url,"auth":{"kind":"bearer","token":{"env":"TEST_UNUSED_CONFIG_TOKEN"}}}});
+            std::fs::write(dir.join(format!("{id}.json")), cfg.to_string()).unwrap();
+        };
+        for i in 0..=MAX_CONFIG_CACHE_ENTRIES {
+            let id = format!("cache-control-{i}");
+            write(&id, "https://partner.example/initial");
+            assert_eq!(lookup(&id).unwrap().partner_id, id);
+        }
+        assert_eq!(cache.lock().unwrap().len(), MAX_CONFIG_CACHE_ENTRIES);
+        let overflow = format!("cache-control-{MAX_CONFIG_CACHE_ENTRIES}");
+        assert!(lookup(&overflow).is_some());
+        write("cache-control-0", "https://partner.example/rotated");
+        assert_eq!(
+            lookup("cache-control-0")
+                .unwrap()
+                .http_api
+                .unwrap()
+                .base_url,
+            "https://partner.example/initial"
+        );
+        for (at, _) in cache.lock().unwrap().values_mut() {
+            *at = Instant::now() - CONFIG_CACHE_TTL - Duration::from_secs(1);
+        }
+        assert_eq!(
+            lookup("cache-control-0")
+                .unwrap()
+                .http_api
+                .unwrap()
+                .base_url,
+            "https://partner.example/rotated"
+        );
+        assert_eq!(cache.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn unknown_partner_requests_do_not_accumulate_cache_entries() {
+        let prefix = format!("missing-hook-{}-", Uuid::new_v4().simple());
+        for i in 0..1024 {
+            let id = format!("{prefix}{i}");
+            assert!(valid_partner_id(&id));
+            assert!(partner_config(&id).is_none());
+        }
+        let cache = config_cache().lock().unwrap();
+        assert!(!cache.keys().any(|id| id.starts_with(&prefix)));
+    }
 }
