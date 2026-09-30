@@ -203,6 +203,280 @@ fn org_path(u: &User, p: &str) -> String {
 const SIG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
 #[sqlx::test]
+async fn release_documents_and_inquiries_enforce_active_resource_acl(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    let owner = user(&app).await;
+    let editor = user(&app).await;
+    let release = create(&app, &owner, "releases").await;
+    sqlx::query("INSERT INTO identity.memberships(org_id,user_id,role) VALUES($1,$2,'EDITOR')")
+        .bind(owner.org)
+        .bind(editor.user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let doc = Uuid::new_v4();
+    let proof = Uuid::new_v4();
+    let global_doc = Uuid::new_v4();
+    for (id, linked, kind) in [
+        (doc, Some(release), "AGREEMENT"),
+        (proof, Some(release), "RIGHTS_PROOF"),
+        (global_doc, None, "RIGHTS_PROOF"),
+    ] {
+        sqlx::query("INSERT INTO portal.documents(id,org_id,release_id,kind,title,status,checked_at) VALUES($1,$2,$3,$4,'Private document','APPROVED',now())")
+            .bind(id).bind(owner.org).bind(linked).bind(kind).execute(&pool).await.unwrap();
+    }
+    let thread = Uuid::new_v4();
+    let global_thread = Uuid::new_v4();
+    for (id, linked) in [(thread, Some(release)), (global_thread, None)] {
+        sqlx::query("INSERT INTO portal.inquiries(id,org_id,created_by,category,release_id,subject) VALUES($1,$2,$3,'RELEASE',$4,'Private inquiry')")
+            .bind(id).bind(owner.org).bind(owner.user).bind(linked).execute(&pool).await.unwrap();
+    }
+    for state in ["absent", "revoked", "expired", "future"] {
+        sqlx::query("DELETE FROM identity.resource_acl WHERE org_id=$1 AND resource_id=$2 AND principal_party_id=$3")
+            .bind(owner.org).bind(release).bind(editor.party).execute(&pool).await.unwrap();
+        if state != "absent" {
+            sqlx::query("INSERT INTO identity.resource_acl(org_id,resource_id,principal_party_id,action,starts_at,ends_at,revoked_at)
+                SELECT $1,$2,$3,action,CASE WHEN $4='future' THEN now()+interval '1 day' ELSE now()-interval '2 days' END,
+                    CASE WHEN $4='expired' THEN now()-interval '1 day' ELSE NULL END,
+                    CASE WHEN $4='revoked' THEN now() ELSE NULL END FROM unnest(ARRAY['read','write']) action")
+                .bind(owner.org).bind(release).bind(editor.party).bind(state).execute(&pool).await.unwrap();
+        }
+        for (path, global) in [("/documents", global_doc), ("/inquiries", global_thread)] {
+            let (s, _, v) = call(
+                &app,
+                "GET",
+                &org_path(&owner, path),
+                Value::Null,
+                Some(&editor),
+            )
+            .await;
+            assert_eq!(s, StatusCode::OK, "{state}: {v}");
+            assert_eq!(v["items"].as_array().unwrap().len(), 1, "{state}: {v}");
+            assert_eq!(v["items"][0]["id"], global.to_string());
+        }
+        for (method, path, body) in [
+            ("GET", format!("/inquiries/{thread}"), Value::Null),
+            (
+                "POST",
+                format!("/inquiries/{thread}/messages"),
+                json!({"body":"unauthorized"}),
+            ),
+            ("POST", format!("/inquiries/{thread}/close"), json!({})),
+            ("POST", format!("/documents/{doc}/check"), json!({})),
+            (
+                "POST",
+                format!("/documents/{doc}/sign"),
+                json!({"signer_name":"Editor","signature":SIG,"row_version":0}),
+            ),
+            (
+                "POST",
+                format!("/documents/{proof}/proof"),
+                json!({"asset_id":Uuid::new_v4(),"file_name":"proof.pdf","row_version":0}),
+            ),
+        ] {
+            let (s, _, v) = call(&app, method, &org_path(&owner, &path), body, Some(&editor)).await;
+            assert_eq!(s, StatusCode::FORBIDDEN, "{state} {path}: {v}");
+        }
+    }
+    // Null-linked records retain their organization-wide behavior.
+    let (s, _, _) = call(
+        &app,
+        "POST",
+        &org_path(&owner, &format!("/documents/{global_doc}/check")),
+        json!({}),
+        Some(&editor),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    sqlx::query("DELETE FROM identity.resource_acl WHERE resource_id=$1 AND principal_party_id=$2")
+        .bind(release)
+        .bind(editor.party)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO identity.resource_acl(org_id,resource_id,principal_party_id,action) VALUES($1,$2,$3,'read')")
+        .bind(owner.org).bind(release).bind(editor.party).execute(&pool).await.unwrap();
+    // Inquiry write operations deliberately require release read, as creation does.
+    for (path, body) in [
+        (
+            format!("/inquiries/{thread}/messages"),
+            json!({"body":"authorized reader"}),
+        ),
+        (format!("/inquiries/{thread}/close"), json!({})),
+    ] {
+        let (s, _, v) = call(&app, "POST", &org_path(&owner, &path), body, Some(&editor)).await;
+        assert_eq!(s, StatusCode::OK, "{v}");
+    }
+    let (s, _, _) = call(
+        &app,
+        "POST",
+        &org_path(&owner, &format!("/documents/{doc}/check")),
+        json!({}),
+        Some(&editor),
+    )
+    .await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    sqlx::query("UPDATE identity.resource_acl SET action='write' WHERE resource_id=$1 AND principal_party_id=$2")
+        .bind(release).bind(editor.party).execute(&pool).await.unwrap();
+    let (s, _, v) = call(
+        &app,
+        "POST",
+        &org_path(&owner, &format!("/documents/{doc}/check")),
+        json!({}),
+        Some(&editor),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let rv = v["row_version"].as_i64().unwrap();
+    let (s, _, v) = call(
+        &app,
+        "POST",
+        &org_path(&owner, &format!("/documents/{doc}/sign")),
+        json!({"signer_name":"Editor","signature":SIG,"row_version":rv}),
+        Some(&editor),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    // A write grant does not imply read, and VIEWER remains unable to write.
+    let (s, _, _) = call(
+        &app,
+        "GET",
+        &org_path(&owner, &format!("/inquiries/{thread}")),
+        Value::Null,
+        Some(&editor),
+    )
+    .await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    sqlx::query("UPDATE identity.memberships SET role='VIEWER' WHERE org_id=$1 AND user_id=$2")
+        .bind(owner.org)
+        .bind(editor.user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (s, _, _) = call(
+        &app,
+        "POST",
+        &org_path(&owner, &format!("/documents/{doc}/check")),
+        json!({}),
+        Some(&editor),
+    )
+    .await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+}
+
+#[sqlx::test]
+async fn replacement_applications_preserve_terminal_agreements_and_require_reread(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let release = create(&app, &u, "releases").await;
+    let path = org_path(&u, &format!("/releases/{release}/application"));
+    let body = |suffix: &str| json!({"application_no":format!("AUD-20260930-{suffix}"),"form":"AUD-DIST-APP 1.0","content_hash":"ab".repeat(32),"signer_name":"Artist","signer_role":"Owner","agreements":["truth","terms"],"signature":SIG,"submitted_at":"2026-09-30 10:00"});
+    let (s, _, v) = call(&app, "POST", &path, body("AAAAAA"), Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    sqlx::query("UPDATE portal.documents SET status='APPROVED',checked_at=now(),review_note='Old review' WHERE release_id=$1")
+        .bind(release).execute(&pool).await.unwrap();
+    let (s, _, v) = call(&app, "POST", &path, body("BBBBBB"), Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (status, checked, note): (String, bool, String) = sqlx::query_as("SELECT status,checked_at IS NOT NULL,review_note FROM portal.documents WHERE release_id=$1")
+        .bind(release).fetch_one(&pool).await.unwrap();
+    assert_eq!(status, "REVIEW");
+    assert!(!checked);
+    assert!(note.is_empty());
+    for terminal in ["SIGNED", "REJECTED", "CANCELLED"] {
+        sqlx::query("UPDATE portal.documents SET status=$2,signature=$3,signed_by=$4,signed_at=now(),signer_name='Original signer' WHERE release_id=$1")
+            .bind(release).bind(terminal).bind(SIG).bind(u.user).execute(&pool).await.unwrap();
+        let before: Value =
+            sqlx::query_scalar("SELECT to_jsonb(d) FROM portal.documents d WHERE release_id=$1")
+                .bind(release)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let (s, _, v) = call(&app, "POST", &path, body("CCCCCC"), Some(&u)).await;
+        assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{terminal}: {v}");
+        let after: Value =
+            sqlx::query_scalar("SELECT to_jsonb(d) FROM portal.documents d WHERE release_id=$1")
+                .bind(release)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(before, after);
+        let count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM portal.release_applications WHERE release_id=$1",
+        )
+        .bind(release)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(count, 2);
+        assert_eq!(
+            call(&app, "POST", &path, body("BBBBBB"), Some(&u)).await.0,
+            StatusCode::OK
+        );
+    }
+    let mut changed_retry = body("BBBBBB");
+    changed_retry["signer_name"] = json!("Different signer");
+    assert_eq!(
+        call(&app, "POST", &path, changed_retry, Some(&u)).await.0,
+        StatusCode::CONFLICT
+    );
+}
+
+#[sqlx::test]
+async fn concurrent_signing_and_replacement_never_bind_an_old_signature_to_new_content(
+    pool: PgPool,
+) {
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let release = create(&app, &u, "releases").await;
+    let path = org_path(&u, &format!("/releases/{release}/application"));
+    let body = |suffix: &str| json!({"application_no":format!("AUD-20260930-{suffix}"),"form":"AUD-DIST-APP 1.0","content_hash":"ab".repeat(32),"signer_name":"Artist","signer_role":"Owner","agreements":["truth"],"signature":SIG,"submitted_at":"2026-09-30 10:00"});
+    assert_eq!(
+        call(&app, "POST", &path, body("AAAAAA"), Some(&u)).await.0,
+        StatusCode::OK
+    );
+    let (id, old_body): (Uuid, String) =
+        sqlx::query_as("SELECT id,body FROM portal.documents WHERE release_id=$1")
+            .bind(release)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    sqlx::query("UPDATE portal.documents SET status='APPROVED',checked_at=now() WHERE id=$1")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let sign_path = org_path(&u, &format!("/documents/{id}/sign"));
+    let (replacement, signing) = tokio::join!(
+        call(&app, "POST", &path, body("BBBBBB"), Some(&u)),
+        call(
+            &app,
+            "POST",
+            &sign_path,
+            json!({"signer_name":"Artist","signature":SIG,"row_version":0}),
+            Some(&u)
+        ),
+    );
+    let (status, content, sig): (String, String, String) =
+        sqlx::query_as("SELECT status,body,signature FROM portal.documents WHERE id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    if status == "SIGNED" {
+        assert_eq!(signing.0, StatusCode::OK);
+        assert_eq!(replacement.0, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(content, old_body);
+        assert_eq!(sig, SIG);
+    } else {
+        assert_eq!(status, "REVIEW");
+        assert_eq!(replacement.0, StatusCode::OK);
+        assert_ne!(signing.0, StatusCode::OK);
+        assert!(content.contains("AUD-20260930-BBBBBB"));
+        assert!(sig.is_empty());
+    }
+}
+
+#[sqlx::test]
 async fn profile_is_per_user_with_optimistic_versions(pool: PgPool) {
     let (app, _) = app(pool).await;
     let u = user(&app).await;

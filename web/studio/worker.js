@@ -360,10 +360,26 @@ export default {
       }
       const backend = 'https://api-origin.audeniq.com';
       const backendUrl = backend + url.pathname + url.search;
-      const proxyHeaders = new Headers(request.headers);
-      if (env.EDGE_SERVICE_SECRET) {
-        proxyHeaders.set('x-audeniq-service', env.EDGE_SERVICE_SECRET);
+      if (!env.EDGE_SERVICE_SECRET) return error(503, 'BACKEND_UNAVAILABLE');
+      const proxyHeaders = new Headers();
+      for (const name of ['cookie', 'content-type', 'accept', 'accept-encoding', 'origin', 'sec-fetch-site', 'x-csrf-token', 'x-request-id']) {
+        const value = request.headers.get(name);
+        if (value) proxyHeaders.set(name, value);
       }
+      if (url.pathname.startsWith('/api/partner-hooks/')) {
+        // Partner configs can name custom signature/timestamp headers.
+        // Internal service/source identity remains ours to set.
+        for (const [name, value] of request.headers) {
+          if (!name.startsWith('x-audeniq-') && !['x-forwarded-for', 'x-real-ip', 'host', 'connection'].includes(name)) {
+            proxyHeaders.set(name, value);
+          }
+        }
+      }
+      // Cloudflare supplies this header; public clients cannot choose the
+      // internal identity used by the backend's authentication rate limits.
+      const ip = request.headers.get('cf-connecting-ip');
+      if (ip) proxyHeaders.set('x-audeniq-client-ip', ip);
+      proxyHeaders.set('x-audeniq-service', env.EDGE_SERVICE_SECRET);
       const proxyReq = new Request(backendUrl, {
         method: request.method,
         headers: proxyHeaders,
