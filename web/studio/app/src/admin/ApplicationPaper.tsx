@@ -1,5 +1,6 @@
-// 배급 신청서 — 아티스트가 스튜디오에서 서명해 접수한 신청서를 스튜디오와 같은 정식 서류 모양으로 보여 준다.
-// (web/studio/app/src/pages/Application.tsx와 같은 구성·클래스 aq-paper-*)
+// 배급 신청서 — 아티스트가 스튜디오에서 보는 신청서와 같은 내용·문구·모양으로 보여 준다.
+// (web/studio/app/src/pages/Application.tsx와 같은 구성·클래스 aq-paper-*, 날짜 표기·확인 문구까지 같게)
+// 한쪽을 바꾸면 다른 쪽도 같이 맞춰 주세요.
 import type { ReleaseSheet } from './api';
 import { dspLabel } from './labels';
 import {
@@ -10,19 +11,34 @@ import { CheckIcon } from '../components/Check';
 
 const dash = (v?: string | null) => (v && v.trim() ? v : '—');
 
-/** '2026-09-29 22:37' · ISO 모두 받는다 */
-function stamp(v?: string | null): string {
-  if (!v) return '—';
-  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(v);
-  return m ? `${m[1]}.${m[2]}.${m[3]} ${m[4]}:${m[5]}` : v;
+// 스튜디오 lib/date.ts parseStamp · lib/format.ts localStamp와 같은 표기
+const STAMP_RE = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/;
+function parseStamp(v?: string | null): Date | null {
+  if (!v) return null;
+  if (/[zZ]|[+-]\d{2}:?\d{2}$/.test(v) && v.includes('T')) {
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const m = STAMP_RE.exec(v);
+  if (!m) return null;
+  const d = new Date(+m[1], +m[2] - 1, +m[3], +(m[4] ?? 0), +(m[5] ?? 0), +(m[6] ?? 0));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+const stampFmt = new Intl.DateTimeFormat('ko-KR', { dateStyle: 'long', timeStyle: 'short' });
+const dayFmt = new Intl.DateTimeFormat('ko-KR', { dateStyle: 'long' });
+function localStamp(v?: string | null): string {
+  const d = parseStamp(v);
+  if (!d) return '기록 없음';
+  return /\d{2}:\d{2}/.test(String(v)) ? stampFmt.format(d) : dayFmt.format(d);
 }
 function longDate(v?: string | null): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(v ?? '');
-  return m ? `${+m[1]}년 ${+m[2]}월 ${+m[3]}일` : dash(v);
+  const d = parseStamp(v);
+  return d ? `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일` : dash(v);
 }
 
+/** 아티스트 신청서와 같은 확인 문구 */
 export const INTEGRITY_LABEL: Record<Integrity, string> = {
-  ok: '서명한 원본과 일치', changed: '서명 후 내용이 달라졌어요', unsigned: '전자서명 기록 없음', checking: '원본 확인 중',
+  ok: '접수 원본과 일치', changed: '접수 후 내용이 바뀌었어요', unsigned: '기존 접수 건 · 현재 내용 기준', checking: '원본 확인 중',
 };
 
 export function ApplicationPaper({ sheet, draft, integrity }: { sheet: ReleaseSheet; draft: StudioDraft; integrity: Integrity }) {
@@ -36,6 +52,9 @@ export function ApplicationPaper({ sheet, draft, integrity }: { sheet: ReleaseSh
   const no = app?.no ?? signed?.application_no ?? '';
   const signerName = app?.signerName ?? signed?.signer_name ?? '';
   const agreements = app?.agreements ?? signed?.agreements ?? [];
+  const signature = app?.signature || signed?.signature || '';
+  // 전자서명 신청서가 있는 접수인지 (없으면 스튜디오처럼 ‘기존 접수 건’ 안내)
+  const issued = !!(app || signed);
 
   return (
     <article className="aq-paper adm-paper" aria-label="디지털 음원 배급 신청서">
@@ -44,7 +63,7 @@ export function ApplicationPaper({ sheet, draft, integrity }: { sheet: ReleaseSh
           <img src="/static/AUDENIQ_Logo_Light.svg" alt="AUDENIQ" />
           <dl className="aq-paper-meta">
             <div><dt>신청서 번호</dt><dd>{no ? displayCode(no) : '—'}</dd></div>
-            <div><dt>접수 일시</dt><dd>{stamp(app?.submittedAt ?? signed?.received_at)}</dd></div>
+            <div><dt>접수 일시</dt><dd>{localStamp(app?.submittedAt ?? signed?.received_at)}</dd></div>
             <div><dt>서식</dt><dd>{displayCode(app?.form ?? signed?.form ?? '—')}</dd></div>
           </dl>
         </div>
@@ -57,7 +76,7 @@ export function ApplicationPaper({ sheet, draft, integrity }: { sheet: ReleaseSh
         <table className="aq-paper-kv">
           <tbody>
             <tr><th>성명</th><td>{dash(signerName)}</td><th>구분</th><td>{dash(app?.signerRole ?? signed?.signer_role)}</td></tr>
-            <tr><th>대표 아티스트</th><td>{dash(draft.artist)}</td><th>조직</th><td>{sheet.release.org_name}</td></tr>
+            <tr><th>대표 아티스트</th><td>{dash(draft.artist)}</td><th>연락 이메일</th><td className="break">{dash(signed?.contact_email)}</td></tr>
           </tbody>
         </table>
       </section>
@@ -130,7 +149,10 @@ export function ApplicationPaper({ sheet, draft, integrity }: { sheet: ReleaseSh
 
       <section className="aq-paper-sec">
         <h2><span>5</span>신청인 확인 및 동의</h2>
-        <ol className="aq-paper-agree">
+        {!issued && (
+          <p className="aq-paper-note">전자서명 신청 기능 도입 전에 접수된 발매예요. 접수 당시 동의 내용은 AUDENIQ 계약서 서명으로 확인해요.</p>
+        )}
+        {issued && <ol className="aq-paper-agree">
           {AGREEMENTS.map(a => {
             const on = agreements.includes(a.id);
             return (
@@ -140,7 +162,7 @@ export function ApplicationPaper({ sheet, draft, integrity }: { sheet: ReleaseSh
               </li>
             );
           })}
-        </ol>
+        </ol>}
       </section>
 
       <section className="aq-paper-signoff">
@@ -149,7 +171,7 @@ export function ApplicationPaper({ sheet, draft, integrity }: { sheet: ReleaseSh
         <div className="aq-paper-signer">
           <span>신청인</span>
           <strong>{dash(signerName)}</strong>
-          <span className="aq-paper-sig">{app?.signature ? <img src={app.signature} alt={`${signerName} 서명`} /> : <em>(서명)</em>}</span>
+          <span className="aq-paper-sig">{signature ? <img src={signature} alt={`${signerName} 서명`} /> : <em>{issued ? '(서명)' : '(계약서 서명 전)'}</em>}</span>
         </div>
         <p className="aq-paper-to">AUDENIQ 귀중</p>
       </section>
@@ -160,7 +182,9 @@ export function ApplicationPaper({ sheet, draft, integrity }: { sheet: ReleaseSh
           <code>{hashLabel(app?.hash ?? signed?.content_hash ?? '')}</code>
         </div>
         <span className={`aq-paper-integrity is-${integrity === 'unsigned' ? 'legacy' : integrity}`}>{INTEGRITY_LABEL[integrity]}</span>
-        <p>문서 확인 코드는 신청 내용과 서명으로 계산돼요. 심사 화면이 받은 제출 내용으로 다시 계산해 접수 때 기록된 코드와 비교했어요.</p>
+        <p>{issued
+          ? '이 신청서는 AUDENIQ STUDIO에서 전자서명으로 작성됐어요. 문서 확인 코드는 신청 내용과 서명으로 계산돼, 내용이 바뀌면 달라져요.'
+          : '이 신청서는 기존 접수 기록으로 다시 발급됐어요. 문서 확인 코드는 현재 발매 정보 기준이에요.'}</p>
       </footer>
     </article>
   );

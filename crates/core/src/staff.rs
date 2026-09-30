@@ -550,9 +550,14 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
     .fetch_all(&mut *tx)
     .await?;
     let application: Option<Value> = sqlx::query_scalar(
-        "SELECT jsonb_build_object('application_no',application_no,'form',form,'content_hash',content_hash,
-                'signer_name',signer_name,'signer_role',signer_role,'agreements',agreements,'received_at',received_at)
-         FROM portal.release_applications WHERE org_id=$1 AND release_id=$2 ORDER BY received_at DESC LIMIT 1",
+        "SELECT jsonb_build_object('application_no',ra.application_no,'form',ra.form,'content_hash',ra.content_hash,
+                'signer_name',ra.signer_name,'signer_role',ra.signer_role,'agreements',ra.agreements,'received_at',ra.received_at,
+                'signature',ra.signature,
+                'contact_email',COALESCE(NULLIF(ap.contact_email,''),u.email))
+         FROM portal.release_applications ra
+         JOIN identity.users u ON u.id=ra.submitted_by
+         LEFT JOIN portal.artist_profiles ap ON ap.user_id=ra.submitted_by
+         WHERE ra.org_id=$1 AND ra.release_id=$2 ORDER BY ra.received_at DESC LIMIT 1",
     )
     .bind(org)
     .bind(release)
