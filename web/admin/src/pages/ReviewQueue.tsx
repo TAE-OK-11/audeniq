@@ -6,6 +6,16 @@ import { QUEUE_FILTERS, RELEASE_STATUS, RELEASE_TYPE, ago, applicationPending, d
 import { Chip, Empty, ErrorBox, Filters, Initial, PageHead, Skeleton, StatusChip, SubTabs, useStaff } from '../ui';
 
 const PAGE = 50;
+/** 심사 상세의 ‘다음 건’이 이 목록 순서를 따른다 */
+export const QUEUE_ORDER_KEY = 'adm.queue.order';
+
+const DAY = 86_400_000;
+function daysLeft(d?: string | null): number | null {
+  if (!d || !/^\d{4}-\d{2}-\d{2}/.test(d)) return null;
+  const today = new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
+  return Math.round((Date.parse(d.slice(0, 10)) - Date.parse(today)) / DAY);
+}
+const waitedHours = (iso?: string | null) => (iso ? (Date.now() - Date.parse(iso)) / 3_600_000 : 0);
 
 export function ReviewQueue() {
   const [params, setParams] = useSearchParams();
@@ -16,6 +26,7 @@ export function ReviewQueue() {
   const [more, setMore] = useState(false);
   const [tick, setTick] = useState(0);
   const [search, setSearch] = useState('');
+  const [sort, setSort] = useState<'wait' | 'date'>('wait');
   const { counts } = useStaff();
 
   useEffect(() => {
@@ -40,9 +51,18 @@ export function ReviewQueue() {
   };
 
   const term = search.trim().toLowerCase();
-  const shown = term
+  const filtered = term
     ? items.filter(r => [r.title, r.artist, r.org_name].some(v => v?.toLowerCase().includes(term)))
     : items;
+  // 기본은 서버 순서(오래 기다린 순), ‘발매일 빠른 순’이면 급한 발매부터
+  const shown = sort === 'date'
+    ? [...filtered].sort((a, b) => String(a.release_date || '9999').localeCompare(String(b.release_date || '9999')))
+    : filtered;
+
+  // 상세 화면에서 ‘다음 심사 건’으로 이어서 보도록 지금 보이는 순서를 기억한다
+  useEffect(() => {
+    try { sessionStorage.setItem(QUEUE_ORDER_KEY, JSON.stringify(shown.map(r => r.id))); } catch { /* 저장소 차단 */ }
+  }, [shown]);
 
   return (
     <div className="view-enter">
@@ -59,12 +79,15 @@ export function ReviewQueue() {
         onChange={v => setParams({ status: v }, { replace: true })}
         options={QUEUE_FILTERS.map(s => ({ value: s, label: RELEASE_STATUS[s][0] }))}
       />
-      {items.length > 8 && (
-        <div className="adm-field">
-          <label htmlFor="qSearch" className="sr-only">검색</label>
-          <input id="qSearch" className="adm-input" placeholder="제목·아티스트·작업 공간으로 찾기" value={search} onChange={e => setSearch(e.target.value)} />
+      <div className="adm-queue-tools">
+        <label htmlFor="qSearch" className="sr-only">검색</label>
+        <input id="qSearch" type="search" className="adm-input" placeholder="제목·아티스트·작업 공간으로 찾기" value={search} onChange={e => setSearch(e.target.value)} />
+        <div className="adm-seg" role="radiogroup" aria-label="정렬">
+          <button type="button" role="radio" aria-checked={sort === 'wait'} className={sort === 'wait' ? 'is-on' : ''} onClick={() => setSort('wait')}>오래 기다린 순</button>
+          <button type="button" role="radio" aria-checked={sort === 'date'} className={sort === 'date' ? 'is-on' : ''} onClick={() => setSort('date')}>발매일 빠른 순</button>
         </div>
-      )}
+      </div>
+      {!loading && items.length > 0 && <p className="adm-queue-count">{term ? `‘${search.trim()}’ 검색 결과 ${shown.length}건` : `${shown.length}건`}</p>}
 
       {error && <ErrorBox message={error} onRetry={() => setTick(t => t + 1)} />}
       {loading ? <Skeleton /> : shown.length === 0 ? (
@@ -87,10 +110,16 @@ export function ReviewQueue() {
                 {r.platforms.length > 0 && <span className="adm-dsps">{r.platforms.map(p => <span key={p}>{dspLabel(p)}</span>)}</span>}
               </span>
               <span className="adm-row-end">
+                {(() => {
+                  const left = daysLeft(r.release_date);
+                  return left != null && left < 21
+                    ? <Chip tone={left < 14 ? 'red' : 'amber'}>{left < 0 ? '발매일 지남' : left === 0 ? '오늘 발매' : `발매 D-${left}`}</Chip>
+                    : null;
+                })()}
                 {r.status === 'READY_FOR_DELIVERY' && applicationPending(r.agreement)
                   ? <Chip tone="violet">새 발매 신청</Chip>
                   : <StatusChip value={pick(RELEASE_STATUS, r.status)} />}
-                <small>접수 {ago(r.submitted_at) || '—'}</small>
+                <small className={waitedHours(r.submitted_at) >= 48 ? 'is-late' : undefined}>접수 {ago(r.submitted_at) || '—'}</small>
               </span>
             </Link>
           ))}
