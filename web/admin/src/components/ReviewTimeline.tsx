@@ -16,9 +16,11 @@ export const ACTION_KO: Record<string, string> = {
 const JOB_LABEL: Record<string, string> = {
   'asset.analyze': '음원 분석', stage1: '1차 검사', stage2: '2차 검사',
   prepare_release: '배급 준비', 'delivery.stage': '플랫폼별 배급 준비', 'delivery.send': '플랫폼 전송',
+  'delivery.enqueue': '플랫폼 전송 예약', 'delivery.poll': '배급 상태 확인', 'delivery.ack': '플랫폼 응답 처리',
+  'delivery.reconcile': '배급 결과 확인', 'delivery.takedown': '배급 중단',
 };
 const JOB_STATUS: Record<string, string> = {
-  QUEUED: '대기', RUNNING: '진행 중', SUCCEEDED: '완료', FAILED: '실패', DEAD: '처리 실패', RETRY: '재시도 대기',
+  QUEUED: '대기', RUNNING: '진행 중', SUCCEEDED: '완료', FAILED: '실패', DEAD: '처리 실패', DEAD_LETTER: '처리 실패', RETRY: '재시도 대기',
 };
 
 export function TimelineRow({ item: t }: { item: ReleaseTimelineItem }) {

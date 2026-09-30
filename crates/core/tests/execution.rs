@@ -3744,7 +3744,7 @@ async fn staff_fixture_check(
     let id = Uuid::new_v4();
     sqlx::query("INSERT INTO operations.check_results(id,revision_id,check_code,rule_version,status,result_hash,detail) VALUES($1,$2,$3,'1',$4,$5,$6)")
         .bind(id).bind(rev).bind(code).bind(status)
-        .bind(format!("{:x}", sha2::Sha256::digest(id.as_bytes())))
+        .bind(audeniq_core::domain::sha256_hex(id.as_bytes()))
         .bind(detail).execute(pool).await.unwrap();
     id
 }
@@ -3810,7 +3810,10 @@ async fn staff_sheet_keeps_all_frozen_track_advisories(pool: PgPool) {
     let checks = sheet["checks"].as_array().unwrap();
     assert_eq!(checks.len(), 3, "{sheet}");
     assert!(!checks.iter().any(|c| c["id"] == stale.to_string()));
-    assert_eq!(sheet["track_audio"][&track]["duration_secs"], 30);
+    assert_eq!(
+        sheet["track_audio"][&track]["duration_secs"].as_f64(),
+        Some(30.0)
+    );
     assert_eq!(sheet["track_audio"][&track]["sample_rate"], 48000);
     assert_eq!(sheet["review_context"]["check_counts"]["PASS"], 1);
     assert_eq!(sheet["review_context"]["allowed_actions"], json!([]));
