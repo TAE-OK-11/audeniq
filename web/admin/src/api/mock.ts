@@ -29,6 +29,8 @@ function sheetFor(q: QueueRelease, open: [string, string, string][], extra: Part
   return {
     q,
     sheet: {
+      track_audio: {},
+      review_context: { decision_kind: null, allowed_actions: [], requires_second_approval: false, pending_second_approval_id: null, check_counts: {} },
       release: { id: q.id, org_id: q.org_id, org_name: q.org_name, title: q.title, release_type: q.release_type, status: q.status, upc: null, revision_id: q.revision_id, submitted_at: q.submitted_at },
       application: {
         artist: q.artist ?? '', language: 'KOR', genre: 'K-Pop', release_date: q.release_date ?? '', label: q.org_name,
@@ -42,7 +44,7 @@ function sheetFor(q: QueueRelease, open: [string, string, string][], extra: Part
       },
       signed_application: { application_no: `AUD-20260926-${q.id.slice(0, 6).toUpperCase()}`, content_hash: 'a3f1c9e2'.repeat(8), signer_name: q.artist ?? '', signer_role: '본인', received_at: q.submitted_at ?? iso(5) },
       checks,
-      open_checks: open.map(([code, status, detail]) => ({ check_code: code, status, detail })),
+      open_checks: open.map(([code, status, detail]) => ({ check_code: code, status, detail, needs_second_approval: needsSecond({ check_code: code, status }) })),
       advisories: [],
       overrides: [],
       notes: [],
@@ -150,7 +152,28 @@ export const mockStaff = {
     payout_requests: payouts.filter(p => p.status === 'REQUESTED').length,
   }),
   releases: (status: string) => wait({ items: releases.filter(r => (status === 'PENDING' ? awaiting(r) : r.q.status === status)).map(r => r.q) }),
-  release: (rid: string) => wait(find(rid).sheet),
+  release: (rid: string) => {
+    const r = find(rid);
+    const sheet = r.sheet;
+    const pending = approvals.find(a => a.release_id === rid && a.status === 'PENDING' && Date.parse(a.expires_at) > Date.now());
+    const kind = r.q.status === 'STAGE2_REVIEW' ? 'CHECKS' : awaiting(r) ? 'APPLICATION' : null;
+    sheet.second_approvals.forEach(a => { a.active = a.status === 'PENDING' && Date.parse(a.expires_at) > Date.now(); });
+    sheet.review_context = {
+      decision_kind: kind,
+      allowed_actions: kind ? [...(pending ? [] : ['APPROVE' as const]), ...(kind === 'APPLICATION' || sheet.open_checks.length ? ['REQUEST_CORRECTION' as const] : []), 'REJECT'] : [],
+      requires_second_approval: sheet.open_checks.some(needsSecond),
+      pending_second_approval_id: pending?.id ?? null,
+      check_counts: sheet.checks.reduce<Record<string, number>>((m, c) => { m[c.status] = (m[c.status] ?? 0) + 1; return m; }, {}),
+    };
+    return wait(sheet);
+  },
+  timeline: (rid: string, limit = 100) => wait({
+    release_id: rid, truncated: find(rid).sheet.timeline.length > limit,
+    items: find(rid).sheet.timeline.slice(0, limit).reverse().map(t => ({
+      at: t.at, source: 'audit' as const, kind: t.action,
+      detail: { reason: t.reason, actor_user_id: t.actor_user_id, actor_service: t.actor_service },
+    })),
+  }),
   decide: async (rid: string, i: DecisionInput): Promise<DecisionResult> => {
     const r = find(rid);
     if (!awaiting(r)) fail('RELEASE_NOT_IN_REVIEW');
@@ -174,7 +197,7 @@ export const mockStaff = {
         if (approvals.some(a => a.release_id === rid && a.status === 'PENDING')) fail('SECOND_APPROVAL_ALREADY_PENDING');
         const a = { id: `ap-${uid()}`, org_id: r.q.org_id, release_id: rid, revision_id: i.revision_id, title: r.q.title, check_codes: open.map(c => c.check_code), reason: i.reason, requested_by: ME, expires_at: new Date(Date.now() + 72 * 3_600_000).toISOString(), at: new Date().toISOString(), status: 'PENDING' };
         approvals.push(a);
-        r.sheet.second_approvals.unshift({ id: a.id, check_codes: a.check_codes, reason: a.reason, requested_by: ME, status: 'PENDING', decided_by: null, expires_at: a.expires_at, at: a.at });
+        r.sheet.second_approvals.unshift({ id: a.id, check_codes: a.check_codes, reason: a.reason, requested_by: ME, status: 'PENDING', decided_by: null, expires_at: a.expires_at, at: a.at, active: true });
         audit(r, 'staff.approval_requested', a.check_codes.join(','));
         return wait({ result: 'PENDING_SECOND_APPROVAL', approval_id: a.id, check_codes: a.check_codes });
       }

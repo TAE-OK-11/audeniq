@@ -3732,3 +3732,219 @@ async fn artist_cancellation_is_limited_per_month(pool: PgPool) {
     assert_eq!(release_status(&pool, ctx.release).await, "WITHDRAWN");
     assert_eq!(doc_status(&pool, doc).await, "CANCELLED");
 }
+
+/// Add a deliberately superseded/cached result without modifying immutable rows.
+async fn staff_fixture_check(
+    pool: &PgPool,
+    rev: Uuid,
+    code: &str,
+    status: &str,
+    detail: &str,
+) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query("INSERT INTO operations.check_results(id,revision_id,check_code,rule_version,status,result_hash,detail) VALUES($1,$2,$3,'1',$4,$5,$6)")
+        .bind(id).bind(rev).bind(code).bind(status)
+        .bind(audeniq_core::domain::sha256_hex(id.as_bytes()))
+        .bind(detail).execute(pool).await.unwrap();
+    id
+}
+
+#[sqlx::test(migrations = false)]
+async fn staff_sheet_keeps_all_frozen_track_advisories(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let artist = user(&app).await;
+    let asset = register_asset(&pool, &store, &artist, "t.wav", wav_bytes()).await;
+    let release = build_submittable(&app, &pool, &artist, asset).await;
+    consent_and_submit(&app, &artist, release, "staff-track-results").await;
+    let revision = current_revision(&pool, release).await;
+    let warning1 = staff_fixture_check(
+        &pool,
+        revision,
+        "AUDIO_CLIPPING",
+        "REVIEW_REQUIRED",
+        "track A clipping",
+    )
+    .await;
+    let warning2 = staff_fixture_check(
+        &pool,
+        revision,
+        "AUDIO_CLIPPING",
+        "REVIEW_REQUIRED",
+        "track B clipping",
+    )
+    .await;
+    let pass =
+        staff_fixture_check(&pool, revision, "AUDIO_CLIPPING", "PASS", "track C clean").await;
+    let stale = staff_fixture_check(
+        &pool,
+        revision,
+        "AUDIO_CLIPPING",
+        "PASS",
+        "superseded retry",
+    )
+    .await;
+    let body = json!({"stage1_check_refs": [warning1, warning2, pass]});
+    sqlx::query("INSERT INTO distribution.validation_packages(id,org_id,revision_id,body,package_hash,rule_version) VALUES($1,$2,$3,$4,$5,'1')")
+        .bind(Uuid::new_v4()).bind(artist.org).bind(revision).bind(&body)
+        .bind(audeniq_core::domain::sha256_json(&body)).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE catalog.assets SET duration_secs=30,sample_rate=48000,channels=2,bits_per_sample=24 WHERE id=$1")
+        .bind(asset).execute(&pool).await.unwrap();
+    let track: String = sqlx::query_scalar(
+        "SELECT body->'tracks'->0->>'id' FROM catalog.application_revisions WHERE id=$1",
+    )
+    .bind(revision)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let reviewer = staff_user(&app, &pool, "REVIEWER").await;
+    let (status, sheet) = call(
+        &app,
+        "GET",
+        &format!("/api/staff/releases/{release}"),
+        Value::Null,
+        Some(&reviewer),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{sheet}");
+    assert_eq!(sheet["advisories"].as_array().unwrap().len(), 2, "{sheet}");
+    let checks = sheet["checks"].as_array().unwrap();
+    assert_eq!(checks.len(), 3, "{sheet}");
+    assert!(!checks.iter().any(|c| c["id"] == stale.to_string()));
+    assert_eq!(
+        sheet["track_audio"][&track]["duration_secs"].as_f64(),
+        Some(30.0)
+    );
+    assert_eq!(sheet["track_audio"][&track]["sample_rate"], 48000);
+    assert_eq!(sheet["review_context"]["check_counts"]["PASS"], 1);
+    assert_eq!(sheet["review_context"]["allowed_actions"], json!([]));
+}
+
+#[sqlx::test(migrations = false)]
+async fn staff_uses_run_refs_and_renews_expired_second_approval(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let artist = user(&app).await;
+    let release = explicit_release_in_review(&app, &pool, &store, &artist).await;
+    let revision = current_revision(&pool, release).await;
+    let reviewer = staff_user(&app, &pool, "REVIEWER").await;
+    let support = staff_user(&app, &pool, "SUPPORT").await;
+    // Newer stray PASS rows must not erase the result used by Stage 2.
+    let stale = staff_fixture_check(
+        &pool,
+        revision,
+        "S2_SPECIAL_FLAGS",
+        "PASS",
+        "stray result from another run",
+    )
+    .await;
+    let path = format!("/api/staff/releases/{release}");
+    let (status, sheet) = call(&app, "GET", &path, Value::Null, Some(&reviewer)).await;
+    assert_eq!(status, StatusCode::OK, "{sheet}");
+    assert_eq!(sheet["review_context"]["decision_kind"], "CHECKS");
+    assert_eq!(sheet["review_context"]["requires_second_approval"], true);
+    assert!(
+        sheet["open_checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["check_code"] == "S2_SPECIAL_FLAGS" && c["needs_second_approval"] == true)
+    );
+    assert!(
+        !sheet["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["id"] == stale.to_string())
+    );
+    let (_, read_only) = call(&app, "GET", &path, Value::Null, Some(&support)).await;
+    assert_eq!(read_only["review_context"]["allowed_actions"], json!([]));
+    let input = json!({"action":"APPROVE","revision_id":revision,"reason":"verified by reviewer"});
+    let (status, first) = call(
+        &app,
+        "POST",
+        &format!("{path}/decision"),
+        input.clone(),
+        Some(&reviewer),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{first}");
+    let old: Uuid = first["approval_id"].as_str().unwrap().parse().unwrap();
+    let (_, pending) = call(&app, "GET", &path, Value::Null, Some(&reviewer)).await;
+    assert!(
+        !pending["review_context"]["allowed_actions"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("APPROVE"))
+    );
+    sqlx::query(
+        "UPDATE rights.staff_approvals SET expires_at=now()-interval '1 second' WHERE id=$1",
+    )
+    .bind(old)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (_, expired) = call(&app, "GET", &path, Value::Null, Some(&reviewer)).await;
+    assert!(expired["review_context"]["pending_second_approval_id"].is_null());
+    assert!(
+        expired["review_context"]["allowed_actions"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("APPROVE"))
+    );
+    let (status, renewed) = call(
+        &app,
+        "POST",
+        &format!("{path}/decision"),
+        input,
+        Some(&reviewer),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{renewed}");
+    assert_ne!(renewed["approval_id"], first["approval_id"]);
+    let old_status: String =
+        sqlx::query_scalar("SELECT status FROM rights.staff_approvals WHERE id=$1")
+            .bind(old)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(old_status, "DECLINED");
+    let (status, correction) = call(&app, "POST", &format!("{path}/decision"), json!({"action":"REQUEST_CORRECTION","revision_id":revision,"reason":"please correct marking"}), Some(&reviewer)).await;
+    assert_eq!(status, StatusCode::OK, "{correction}");
+    let (_, approvals) = call(
+        &app,
+        "GET",
+        "/api/staff/approvals",
+        Value::Null,
+        Some(&reviewer),
+    )
+    .await;
+    assert_eq!(approvals["items"], json!([]));
+    let (_, counts) = call(
+        &app,
+        "GET",
+        "/api/staff/overview",
+        Value::Null,
+        Some(&reviewer),
+    )
+    .await;
+    assert_eq!(counts["second_approvals"], 0);
+    let (_, sheet) = call(&app, "GET", &path, Value::Null, Some(&reviewer)).await;
+    let effective = sheet["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["check_code"] == "S2_SPECIAL_FLAGS" && c["stage"] == 2)
+        .unwrap();
+    assert_eq!(effective["status"], "CORRECTION_REQUIRED");
+    assert_eq!(effective["original_status"], "REVIEW_REQUIRED");
+    let (_, timeline) = call(
+        &app,
+        "GET",
+        &format!("{path}/timeline"),
+        Value::Null,
+        Some(&reviewer),
+    )
+    .await;
+    let items = timeline["items"].as_array().unwrap();
+    assert!(items.iter().any(|e| e["kind"] == "stage2.decision"));
+    assert!(!items.iter().any(|e| e["kind"] == "stage2.checks_recorded"));
+}

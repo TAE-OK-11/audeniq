@@ -12,7 +12,8 @@
     "check": "tsc --noEmit",
     "build": "tsc --noEmit && vite build",
     "build:demo": "tsc --noEmit && VITE_MOCK=true vite build --outDir demo-dist",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "test": "bun test test/"
   },
   "dependencies": {
     "react": "^19.3.0",

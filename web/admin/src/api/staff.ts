@@ -29,7 +29,7 @@ export interface QueueRelease {
   cover?: string | null;
 }
 
-export interface Check { check_code: string; status: string; detail: string | null; rule_version?: string; at?: string }
+export interface Check { id?: string; stage?: number; original_status?: string; needs_second_approval?: boolean; check_code: string; status: string; detail: string | null; rule_version?: string; at?: string }
 export interface Override {
   id: string; check_code: string; original_status: string; proposed_status: string; reason: string;
   actor_user_id: string; second_approver_user_id: string | null; at: string;
@@ -39,7 +39,7 @@ export interface ReviewNote {
 }
 export interface SecondApproval {
   id: string; check_codes: string[]; reason: string; requested_by: string; status: string;
-  decided_by: string | null; expires_at: string; at: string;
+  decided_by: string | null; expires_at: string; at: string; revision_id?: string; active: boolean;
 }
 export interface StaffDocument {
   id: string; org_id?: string; org_name?: string; release_id?: string | null; release_title?: string | null;
@@ -53,12 +53,27 @@ export interface StagingRow {
   ern_is_preview: boolean; approval_by: string | null; approval_note: string | null; approval_at: string | null; staged_at: string;
 }
 export interface TimelineEvent { action: string; reason: string | null; actor_user_id: string | null; actor_service: string | null; at: string }
+export interface ReleaseTimelineItem {
+  at: string; source: 'audit' | 'job' | 'check' | 'staff_decision' | 'dsp_request' | 'dsp_ack';
+  kind: string; detail: Record<string, unknown>;
+}
+export interface ReleaseTimeline { release_id: string; items: ReleaseTimelineItem[]; truncated: boolean }
+export interface ReviewContext {
+  decision_kind: 'CHECKS' | 'APPLICATION' | null; allowed_actions: DecisionAction[];
+  requires_second_approval: boolean; pending_second_approval_id: string | null;
+  check_counts: Record<string, number>;
+}
 export interface Track {
   id: string; title: string; version: string; disc_number: number; track_number: number; isrc: string | null;
   asset_kind: string | null; parental_advisory: boolean; credits: { party_id: string; role: string }[];
 }
 
+export interface MeasuredAudio {
+  duration_secs: number | null; sample_rate: number | null; channels: number | null; bits_per_sample: number | null;
+}
 export interface ReleaseSheet {
+  track_audio?: Record<string, MeasuredAudio>;
+  review_context?: ReviewContext;
   release: {
     id: string; org_id: string; org_name: string; title: string; release_type: string; status: string;
     upc: string | null; revision_id: string | null; submitted_at: string | null;
@@ -180,6 +195,7 @@ const remote = {
   overview: () => req<Overview>('/api/staff/overview'),
   releases: (status: string, offset = 0) => req<Page<QueueRelease>>(`/api/staff/releases${qs({ status, limit: 50, offset })}`),
   release: (rid: string) => req<ReleaseSheet>(`/api/staff/releases/${id(rid)}`),
+  timeline: (rid: string, limit = 100) => req<ReleaseTimeline>(`/api/staff/releases/${id(rid)}/timeline${qs({ limit })}`),
   decide: (rid: string, body: DecisionInput) => req<DecisionResult>(`/api/staff/releases/${id(rid)}/decision`, { method: 'POST', body }),
   /** 아티스트 요청(문의)으로 발매 신청 취소 — 월 3회 직접 취소 한도와 무관 */
   withdraw: (rid: string, reason: string) => req<{ status: string }>(`/api/staff/releases/${id(rid)}/withdraw`, { method: 'POST', body: { reason } }),

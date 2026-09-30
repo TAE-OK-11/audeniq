@@ -194,7 +194,9 @@ pub async fn overview(s: &AppState, h: &HeaderMap) -> Result<Value> {
         ") AS review,
            (SELECT count(*) FROM catalog.releases WHERE status LIKE '%\\_CORRECTION' AND archived_at IS NULL) AS correction,
            (SELECT count(*) FROM catalog.releases WHERE status IN ('SUBMITTED','STAGE1_RUNNING','STAGE1_PASSED','STAGE2_RUNNING','STAGE2_PASSED','STAGE3_PREPARING')) AS in_pipeline,
-           (SELECT count(*) FROM rights.staff_approvals WHERE status='PENDING' AND expires_at>now()) AS second_approvals,
+           (SELECT count(*) FROM rights.staff_approvals a JOIN catalog.releases r ON r.id=a.release_id
+              WHERE a.status='PENDING' AND a.expires_at>now() AND a.revision_id=r.current_revision_id
+                AND r.status='STAGE2_REVIEW' AND r.archived_at IS NULL) AS second_approvals,
            (SELECT count(*) FROM portal.documents WHERE kind='RIGHTS_PROOF' AND status='REVIEW') AS documents,
            (SELECT count(*) FROM portal.inquiries WHERE status='OPEN') AS inquiries,
            (SELECT count(*) FROM distribution.delivery_staging s JOIN catalog.releases r ON r.id=s.release_id AND r.current_revision_id=s.revision_id
@@ -303,10 +305,70 @@ struct OpenCheck {
     detail: String,
 }
 
+/// Exact Stage 1 package and latest Stage 2 run, keeping every track result.
+/// Before the snapshot audit was introduced, Stage 2's own codes and carried
+/// holds are the compatibility fallback; unrelated raw Stage 1 rows never
+/// replace a Stage 2 hold. Before Stage 1 finishes, show its provisional rows.
+async fn review_checks(c: &mut PgConnection, revision: Uuid) -> Result<Vec<Value>> {
+    let snapshot: Option<String> = sqlx::query_scalar(
+        "SELECT reason_code FROM operations.audit_events
+         WHERE resource_id=$1 AND action='stage2.checks_recorded'
+         ORDER BY occurred_at DESC, id DESC LIMIT 1",
+    )
+    .bind(revision)
+    .fetch_optional(&mut *c)
+    .await?;
+    let stage2_ids: Option<Vec<Uuid>> = snapshot
+        .map(|s| serde_json::from_str(&s).map_err(|_| Error::Internal))
+        .transpose()?;
+    Ok(sqlx::query_scalar(
+        "WITH s1 AS (
+           SELECT cr.* FROM operations.check_results cr
+           WHERE cr.revision_id=$1 AND (
+             cr.id IN (SELECT ref::uuid FROM distribution.validation_packages vp,
+               LATERAL jsonb_array_elements_text(vp.body->'stage1_check_refs') ref
+               WHERE vp.revision_id=$1)
+             OR (NOT EXISTS(SELECT 1 FROM distribution.validation_packages WHERE revision_id=$1)
+                 AND cr.check_code NOT LIKE 'S2_%' AND coalesce(cr.detail,'') NOT LIKE 'held from Stage 1%'))),
+         s2 AS (
+           SELECT cr.* FROM operations.check_results cr
+           WHERE cr.revision_id=$1 AND cr.id=ANY($2)
+           UNION ALL
+           SELECT legacy.* FROM (
+             SELECT DISTINCT ON (cr.check_code) cr.* FROM operations.check_results cr
+             WHERE cr.revision_id=$1 AND $2::uuid[] IS NULL
+               AND (cr.check_code LIKE 'S2_%' OR cr.detail LIKE 'held from Stage 1%')
+             ORDER BY cr.check_code, cr.created_at DESC, cr.id DESC) legacy),
+         all_checks AS (SELECT s1.*, 1 AS stage FROM s1 UNION ALL SELECT s2.*, 2 AS stage FROM s2)
+         SELECT jsonb_build_object('id',cr.id,'check_code',cr.check_code,
+           'status',coalesce(o.proposed_status,cr.status),'original_status',cr.status,
+           'detail',cr.detail,'rule_version',cr.rule_version,'at',cr.created_at,'stage',cr.stage)
+         FROM all_checks cr LEFT JOIN LATERAL (
+           SELECT proposed_status FROM rights.review_overrides
+           WHERE revision_id=$1 AND check_code=cr.check_code AND cr.stage=2
+             AND (expires_at IS NULL OR expires_at>now())
+           ORDER BY created_at DESC,id DESC LIMIT 1) o ON true
+         ORDER BY cr.stage, cr.check_code, cr.id",
+    )
+    .bind(revision)
+    .bind(stage2_ids)
+    .fetch_all(&mut *c)
+    .await?)
+}
+
 /// The checks the last Stage 2 decision left open on `revision`, with their
 /// current effective status (latest override wins, as in `review::decide`).
 /// The `stage2.decision` audit row names exactly the codes that held it.
 async fn open_checks(c: &mut PgConnection, revision: Uuid) -> Result<Vec<OpenCheck>> {
+    let checks = review_checks(c, revision).await?;
+    open_checks_from(c, revision, &checks).await
+}
+
+async fn open_checks_from(
+    c: &mut PgConnection,
+    revision: Uuid,
+    checks: &[Value],
+) -> Result<Vec<OpenCheck>> {
     let reason: Option<String> = sqlx::query_scalar(
         "SELECT reason_code FROM operations.audit_events
          WHERE action='stage2.decision' AND resource_id=$1 ORDER BY occurred_at DESC, id DESC LIMIT 1",
@@ -329,29 +391,13 @@ async fn open_checks(c: &mut PgConnection, revision: Uuid) -> Result<Vec<OpenChe
     if codes.is_empty() {
         return Ok(Vec::new());
     }
-    let rows = sqlx::query(
-        "SELECT DISTINCT ON (cr.check_code) cr.check_code, cr.status, cr.detail,
-                (SELECT o.proposed_status FROM rights.review_overrides o
-                  WHERE o.revision_id=cr.revision_id AND o.check_code=cr.check_code
-                    AND (o.expires_at IS NULL OR o.expires_at>now())
-                  ORDER BY o.created_at DESC, o.id DESC LIMIT 1) AS overridden
-         FROM operations.check_results cr
-         WHERE cr.revision_id=$1 AND cr.check_code = ANY($2)
-         ORDER BY cr.check_code, cr.created_at DESC",
-    )
-    .bind(revision)
-    .bind(&codes)
-    .fetch_all(&mut *c)
-    .await?;
-    Ok(rows
-        .into_iter()
-        .map(|r| {
-            let base: String = r.get("status");
-            OpenCheck {
-                code: r.get("check_code"),
-                status: r.get::<Option<String>, _>("overridden").unwrap_or(base),
-                detail: r.get::<Option<String>, _>("detail").unwrap_or_default(),
-            }
+    Ok(checks
+        .iter()
+        .filter(|r| r["stage"] == 2 && codes.iter().any(|code| r["check_code"] == *code))
+        .map(|r| OpenCheck {
+            code: r["check_code"].as_str().unwrap_or_default().to_owned(),
+            status: r["status"].as_str().unwrap_or_default().to_owned(),
+            detail: r["detail"].as_str().unwrap_or_default().to_owned(),
         })
         .filter(|c| c.status != "PASS" && c.status != "NOT_APPLICABLE")
         .collect())
@@ -409,11 +455,13 @@ pub async fn release_timeline(
                                      'actor_user_id', a.actor_user_id, 'actor_service', a.actor_service,
                                      'request_id', a.request_id) AS detail
              FROM operations.audit_events a
-            WHERE a.resource_id = $1
+            WHERE (a.resource_id = $1
+               OR a.resource_id IN (SELECT id FROM catalog.application_revisions WHERE release_id=$1)
                OR a.resource_id IN (SELECT id FROM pk)
                OR a.resource_id IN (SELECT id FROM dj)
                OR a.resource_id IN (SELECT id FROM jb)
-               OR a.resource_id IN (SELECT asset_id FROM ast)
+               OR a.resource_id IN (SELECT asset_id FROM ast))
+              AND a.action <> 'stage2.checks_recorded'
            UNION ALL
            SELECT created_at, 'job', kind,
                   jsonb_build_object('job_id', id, 'queue', queue, 'status', status,
@@ -460,13 +508,19 @@ pub async fn release_timeline(
 }
 
 pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Result<Value> {
-    staff(s, h, false).await?;
+    let st = staff(s, h, false).await?;
     let mut tx = s.pool.begin().await?;
     staff_scope(&mut tx).await?;
     let r = sqlx::query(
         "SELECT r.id, r.org_id, o.name AS org_name, r.title, r.release_type, r.status, r.upc,
                 r.current_revision_id, ar.body AS revision, ar.created_at AS submitted_at,
-                NULLIF(r.draft->>'coverData', '') AS cover
+                NULLIF(r.draft->>'coverData', '') AS cover,
+                (SELECT coalesce(jsonb_object_agg(t->>'id', jsonb_build_object(
+                    'duration_secs',a.duration_secs,'sample_rate',a.sample_rate,
+                    'channels',a.channels,'bits_per_sample',a.bits_per_sample)), '{}'::jsonb)
+                 FROM jsonb_array_elements(coalesce(ar.body->'tracks','[]'::jsonb)) t
+                 JOIN catalog.assets a ON a.id=(t->>'asset_id')::uuid AND a.org_id=r.org_id
+                   AND a.sha256=t->>'asset_sha256') AS track_audio
          FROM catalog.releases r JOIN identity.orgs o ON o.id=r.org_id
          LEFT JOIN catalog.application_revisions ar ON ar.org_id=r.org_id AND ar.id=r.current_revision_id
          WHERE r.id=$1",
@@ -480,15 +534,7 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
     let body: Value = r.get::<Option<Value>, _>("revision").unwrap_or(Value::Null);
     let draft = &body["release"]["draft"];
     let checks: Vec<Value> = match revision {
-        Some(rev) => sqlx::query_scalar(
-            "SELECT jsonb_build_object('check_code',check_code,'status',status,'detail',detail,'rule_version',rule_version,'at',created_at)
-             FROM (SELECT DISTINCT ON (check_code) * FROM operations.check_results
-                   WHERE revision_id=$1 ORDER BY check_code, created_at DESC) c
-             ORDER BY check_code",
-        )
-        .bind(rev)
-        .fetch_all(&mut *tx)
-        .await?,
+        Some(rev) => review_checks(&mut tx, rev).await?,
         None => Vec::new(),
     };
     // Advisory Stage 1 findings (never blocking) the reviewer should see:
@@ -504,10 +550,10 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
         .cloned()
         .collect();
     let open: Vec<Value> = match revision {
-        Some(rev) => open_checks(&mut tx, rev)
+        Some(rev) => open_checks_from(&mut tx, rev, &checks)
             .await?
             .into_iter()
-            .map(|c| json!({"check_code": c.code, "status": c.status, "detail": c.detail}))
+            .map(|c| json!({"check_code": c.code, "status": c.status, "detail": c.detail, "needs_second_approval": sensitive(&c)}))
             .collect(),
         None => Vec::new(),
     };
@@ -533,11 +579,13 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
     .await?;
     let approvals: Vec<Value> = sqlx::query_scalar(
         "SELECT jsonb_build_object('id',id,'check_codes',check_codes,'reason',reason,'requested_by',requested_by,
-                'status',status,'decided_by',decided_by,'expires_at',expires_at,'at',created_at)
+                'status',status,'decided_by',decided_by,'expires_at',expires_at,'at',created_at,
+                'revision_id',revision_id,'active',status='PENDING' AND expires_at>now() AND revision_id=$3)
          FROM rights.staff_approvals WHERE org_id=$1 AND release_id=$2 ORDER BY created_at DESC LIMIT 20",
     )
     .bind(org)
     .bind(release)
+    .bind(rev)
     .fetch_all(&mut *tx)
     .await?;
     let documents: Vec<Value> = sqlx::query_scalar(
@@ -563,10 +611,11 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
                 'checks',checks,'route_status',route_status,'route_reason',route_reason,
                 'ern_message_id',ern_message_id,'ern_sha256',ern_sha256,'ern_is_preview',ern_is_preview,
                 'approval_by',approval_by,'approval_note',approval_note,'approval_at',approval_at,'staged_at',staged_at)
-         FROM distribution.delivery_staging WHERE org_id=$1 AND release_id=$2 ORDER BY staged_at DESC, dsp_code",
+         FROM distribution.delivery_staging WHERE org_id=$1 AND release_id=$2 AND revision_id=$3 ORDER BY staged_at DESC, dsp_code",
     )
     .bind(org)
     .bind(release)
+    .bind(rev)
     .fetch_all(&mut *tx)
     .await?;
     let timeline: Vec<Value> = sqlx::query_scalar(
@@ -581,8 +630,42 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
     .bind(rev)
     .fetch_all(&mut *tx)
     .await?;
+    let status: String = r.get("status");
+    let agreement_pending = documents.iter().any(|d| {
+        d["kind"] == "AGREEMENT" && matches!(d["status"].as_str(), Some("REVIEW" | "PREPARED"))
+    });
+    let pending = approvals
+        .iter()
+        .find(|a| a["active"] == true && status == "STAGE2_REVIEW");
+    let kind = match status.as_str() {
+        "STAGE2_REVIEW" if revision.is_some() => Some("CHECKS"),
+        "READY_FOR_DELIVERY" if revision.is_some() && agreement_pending => Some("APPLICATION"),
+        _ => None,
+    };
+    let mut allowed = Vec::new();
+    if st.role.may(Duty::Review) && kind.is_some() {
+        if pending.is_none() {
+            allowed.push("APPROVE");
+        }
+        if kind == Some("APPLICATION") || !open.is_empty() {
+            allowed.push("REQUEST_CORRECTION");
+        }
+        allowed.push("REJECT");
+    }
+    let mut check_counts: BTreeMap<&str, usize> = BTreeMap::new();
+    for c in &checks {
+        *check_counts
+            .entry(c["status"].as_str().unwrap_or("UNKNOWN"))
+            .or_default() += 1;
+    }
     tx.commit().await?;
     Ok(json!({
+        "review_context": {
+            "decision_kind": kind, "allowed_actions": allowed,
+            "requires_second_approval": open.iter().any(|c| c["needs_second_approval"] == true),
+            "pending_second_approval_id": pending.map(|a| &a["id"]),
+            "check_counts": check_counts,
+        },
         "release": {
             "id": release, "org_id": org, "org_name": r.get::<String,_>("org_name"),
             "title": r.get::<String,_>("title"), "release_type": r.get::<String,_>("release_type"),
@@ -599,6 +682,7 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
             "declarations": body["declarations"], "tracks": body["tracks"],
         },
         "signed_application": application,
+        "track_audio": r.get::<Value,_>("track_audio"),
         "checks": checks,
         "open_checks": open,
         "advisories": advisories,
@@ -876,6 +960,43 @@ async fn apply_overrides(
     }
 }
 
+/// Retain closed requests as history, while freeing the one-pending slot.
+async fn close_pending_approvals(
+    c: &mut PgConnection,
+    org: Uuid,
+    release: Uuid,
+    revision: Uuid,
+    expired_only: bool,
+    actor: &Actor,
+) -> Result<()> {
+    let ids: Vec<Uuid> = sqlx::query_scalar(
+        "UPDATE rights.staff_approvals SET status='DECLINED', decided_at=now(), decided_by=$3
+         WHERE revision_id=$1 AND status='PENDING' AND (NOT $2 OR expires_at<=now()) RETURNING id",
+    )
+    .bind(revision)
+    .bind(expired_only)
+    .bind(actor.user)
+    .fetch_all(&mut *c)
+    .await?;
+    for id in ids {
+        operations::audit(
+            c,
+            Some(actor.user),
+            Some(org),
+            Some(release),
+            if expired_only {
+                "staff.approval_expired"
+            } else {
+                "staff.approval_cancelled"
+            },
+            &id.to_string(),
+            actor.request,
+        )
+        .await?;
+    }
+    Ok(())
+}
+
 pub async fn decide(s: &AppState, h: &HeaderMap, release: Uuid, i: DecisionInput) -> Result<Value> {
     let st = staff(s, h, true).await?;
     require(&st, Duty::Review)?;
@@ -913,6 +1034,8 @@ pub async fn decide(s: &AppState, h: &HeaderMap, release: Uuid, i: DecisionInput
             if open.iter().any(sensitive) {
                 // Rights/money classes and BLOCKED findings need a second
                 // staff reviewer: file one request per revision.
+                close_pending_approvals(&mut tx, org, release, i.revision_id, true, &st.actor)
+                    .await?;
                 let codes: Vec<String> = open.iter().map(|c| c.code.clone()).collect();
                 let id = Uuid::new_v4();
                 let n = sqlx::query(
@@ -955,6 +1078,12 @@ pub async fn decide(s: &AppState, h: &HeaderMap, release: Uuid, i: DecisionInput
                     None,
                 )
                 .await?;
+                let queued = if open.is_empty() {
+                    review::enqueue_reevaluation(&mut tx, org, i.revision_id, Uuid::new_v4())
+                        .await?
+                } else {
+                    queued
+                };
                 write_note(
                     &mut tx,
                     org,
@@ -1084,6 +1213,9 @@ pub async fn decide(s: &AppState, h: &HeaderMap, release: Uuid, i: DecisionInput
         }
         _ => return Err(Error::InvalidCode("DECISION_ACTION_UNKNOWN")),
     };
+    if matches!(i.action.as_str(), "REQUEST_CORRECTION" | "REJECT") {
+        close_pending_approvals(&mut tx, org, release, i.revision_id, false, &st.actor).await?;
+    }
     tx.commit().await?;
     Ok(out)
 }
@@ -1097,6 +1229,18 @@ pub async fn decide_second_approval(
     let st = staff(s, h, true).await?;
     require(&st, Duty::Review)?;
     let mut tx = s.pool.begin().await?;
+    if approve {
+        // Same lock order as decide: release, then approval. Otherwise an
+        // expiry renewal/correction can deadlock with the second approver.
+        let (release, revision): (Uuid, Uuid) = sqlx::query_as(
+            "SELECT release_id, revision_id FROM rights.staff_approvals WHERE id=$1",
+        )
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(Error::NotFound)?;
+        locked_review_release(&mut tx, release, revision).await?;
+    }
     let a = sqlx::query(
         "SELECT org_id, release_id, revision_id, check_codes, reason, requested_by, status, expires_at>now() AS live
          FROM rights.staff_approvals WHERE id=$1 FOR UPDATE",
@@ -1136,7 +1280,6 @@ pub async fn decide_second_approval(
     if requester == user {
         return Err(Error::PolicyGate("SECOND_APPROVER_MUST_DIFFER"));
     }
-    locked_review_release(&mut tx, release, revision).await?;
     let reason: String = a.get("reason");
     let wanted: Vec<String> = a.get("check_codes");
     // Approve exactly what was requested and is still open.
@@ -1335,7 +1478,8 @@ pub async fn list_second_approvals(s: &AppState, h: &HeaderMap) -> Result<Value>
                 'title',r.title,'check_codes',a.check_codes,'reason',a.reason,'requested_by',a.requested_by,
                 'expires_at',a.expires_at,'at',a.created_at)
          FROM rights.staff_approvals a JOIN catalog.releases r ON r.id=a.release_id
-         WHERE a.status='PENDING' AND a.expires_at>now() ORDER BY a.created_at LIMIT 200",
+         WHERE a.status='PENDING' AND a.expires_at>now() AND a.revision_id=r.current_revision_id
+           AND r.status='STAGE2_REVIEW' AND r.archived_at IS NULL ORDER BY a.created_at LIMIT 200",
     )
     .fetch_all(&s.pool)
     .await?;
