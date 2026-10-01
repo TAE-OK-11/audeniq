@@ -475,7 +475,14 @@ async fn persist_ddex_messages(
     else {
         return Ok(0);
     };
-    let created_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let package_created_at: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
+        "SELECT created_at FROM distribution.distribution_packages WHERE id=$1 AND org_id=$2",
+    )
+    .bind(package_id)
+    .bind(org)
+    .fetch_one(&mut *tx)
+    .await?;
+    let created_at = package_created_at.format("%Y-%m-%dT%H:%M:%SZ").to_string();
     // One query for every DSP in the route plan (the old per-DSP loop was
     // N+1). DSPs without a recipient DPID get no row — preparation never
     // invents party identifiers.

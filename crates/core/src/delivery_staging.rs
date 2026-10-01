@@ -493,7 +493,7 @@ fn build_ern(
     let message_id = preset
         .render_message_id(
             &package_id.to_string(),
-            spec.code,
+            &spec.dsp.uuid().to_string(),
             &deal_start.format("%Y%m%d").to_string(),
         )
         .map_err(|_| fail("DSP_ERN_PRESET_INVALID", "message id template".into()))?;
