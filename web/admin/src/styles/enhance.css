@@ -194,8 +194,9 @@ img{max-width:100%}
 #modal.is-leaving{animation:aq-overlay-out .18s ease forwards!important;pointer-events:none}
 #modal.is-leaving>.modal-inner{animation:aq-modal-out .18s ease forwards!important}
 #modal .modal-inner:focus{outline:none}
-#modal .icon-button{transition:background-color .2s,transform .25s var(--aq-e-spring)!important;color:#5d6a82}
-#modal .icon-button:hover{transform:rotate(90deg);background:#e9edf5!important}
+#modal .modal-top>.icon-button{display:grid;place-items:center;width:40px;height:40px;min-width:40px;min-height:40px;max-width:40px;max-height:40px;aspect-ratio:1;flex:0 0 40px;padding:0;line-height:1;transform:none!important;transition:background-color .18s ease!important;color:#5d6a82}
+#modal .modal-top>.icon-button svg{display:block;width:20px;height:20px;flex:none;transform:none}
+#modal .modal-top>.icon-button:hover{transform:none!important;background:#e9edf5!important}
 .aq-confirm-mode .modal-inner{width:min(420px,100%)!important;min-height:0!important}
 @media(max-width:760px){#modal.aq-confirm-mode{place-items:center!important}.aq-confirm-mode .modal-inner{min-height:0!important;max-height:none!important}}
 .aq-confirm-message{color:#5f6b80;font-size:14px;line-height:1.7;margin:-6px 0 22px;white-space:pre-line}

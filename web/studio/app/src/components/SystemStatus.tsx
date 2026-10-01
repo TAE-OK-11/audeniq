@@ -114,7 +114,9 @@ function DialogBody({ kind, title, body, meta, actions }: {
 export function SystemStatus({ children }: { children: ReactNode }) {
   const toast = useToast();
   const loc = useLocation();
-  const adminPage = loc.pathname.startsWith('/content-admin');
+  const loginFrom = (loc.state as { from?: string } | null)?.from;
+  const adminPage = loc.pathname.startsWith('/admin') || loc.pathname.startsWith('/content-admin')
+    || (loc.pathname === '/login' && !!loginFrom?.startsWith('/admin'));
 
   const [online, setOnline] = useState(() => navigator.onLine);
   const [active, setActive] = useState<MaintenanceWindow | null>(null);

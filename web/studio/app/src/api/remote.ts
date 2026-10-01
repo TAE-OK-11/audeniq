@@ -167,6 +167,7 @@ async function attachOptionProofs(releaseId: string, options: ReleaseOptionsData
     [options.sample, '샘플 원본 이용 허락서', options.sampleLicenseFile, options.sampleLicenseAssetId ?? ''],
     [options.featured, '피처링 참여자 동의서', options.featuredConsentFile, options.featuredConsentAssetId ?? ''],
     [options.shared, '공동 권리자 계약서', options.sharedContractFile, options.sharedContractAssetId ?? ''],
+    [options.rerelease, '재발매 배급 이용 허락서', options.rereleasePermissionFile ?? '', options.rereleasePermissionAssetId ?? ''],
   ];
   for (const [active, title, fileName, assetId] of proofs) {
     if (!active || !assetId) continue;
