@@ -50,7 +50,7 @@ export interface StagingRow {
   package_id: string; dsp: string; readiness: string; approval: string;
   checks: { code: string; severity?: string; class?: string; detail?: string; message?: string }[];
   route_status: string | null; route_reason: string | null; ern_message_id: string | null; ern_sha256: string | null;
-  ern_is_preview: boolean; approval_by: string | null; approval_note: string | null; approval_at: string | null; staged_at: string;
+  ern_is_preview: boolean; approval_by: string | null; approval_rule_version?: string | null; approval_note: string | null; approval_at: string | null; staged_at: string;
 }
 export interface TimelineEvent { action: string; reason: string | null; actor_user_id: string | null; actor_service: string | null; at: string }
 export interface ReleaseTimelineItem {

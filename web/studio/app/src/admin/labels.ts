@@ -86,6 +86,7 @@ export const RELEASE_TYPE: Record<string, string> = { SINGLE: '싱글', EP: 'EP'
 export function checkLabel(code: string): string {
   if (isKnownCorrection(code)) return correctionTarget(code).label;
   const extra: Record<string, string> = {
+    IMAGE_COLOR_PROFILE: '커버 색상·프로필', IMAGE_TEXT_SCAN: '커버 문자 검사', IMAGE_QR_SCAN: '커버 QR 검사',
     S2_INTEGRITY_DUP: '중복 음원', AUDIO_SIMILAR_TO_EXISTING: '기존 음원과 유사', S2_PROTECTED_NAME: '보호 아티스트명',
     DSP_LOUDNESS_ADVISORY: '음량(라우드니스) 권고', DSP_CLIPPING_ADVISORY: '클리핑 권고',
     S2_EXPRESS_REQUEST: '신속 발매 요청', S2_ADDITIONAL_RIGHTS: '추가 권리 확인',
@@ -144,7 +145,18 @@ const num = (detail: string | null | undefined, re: RegExp) => {
 /** 검사 결과 → 담당자가 바로 이해할 한 줄 설명 (원문 detail은 ‘상세 보기’에서) */
 export function checkSummary(c: { check_code: string; detail: string | null }): string {
   const d = c.detail ?? '';
+  if (c.check_code.startsWith('S2_DSP_') && isKnownCorrection(c.check_code)) return correctionTarget(c.check_code).hint;
   switch (c.check_code) {
+    case 'AUDIO_AI_PROVENANCE':
+    case 'IMAGE_AI_PROVENANCE':
+    case 'S2_AI_LYRICS_PROVENANCE':
+      if (d.includes('AI_METADATA_SIGNAL') || d.includes('AI_DISCLOSURE_SIGNAL')) {
+        return 'AI 생성 도구 메타데이터 또는 명시적 작성 문구가 있어요. 생성 경위·AI 신고·이용 권리를 확인해 주세요. 조작 가능한 근거여서 AI 작성을 확정하지 않아요. SynthID는 검사하지 않았어요.';
+      }
+      if (d.includes('FAILED') || d.includes('metadata reader')) {
+        return '출처 검사를 완료하지 못했어요. 시스템 재시도가 필요하며 AI 여부를 판정할 수 없어요.';
+      }
+      return '지원하는 AI 출처 근거가 없어서 판정할 수 없어요. 사람이 만들었다는 증거가 아니며 SynthID는 검사하지 않았어요.';
     case 'AUDIO_SIMILAR_TO_EXISTING': {
       const n = num(d, /similar to (\d+) asset/);
       return `이미 등록된 음원${n ? ` ${n}개` : ''}와 거의 같은 소리예요. 같은 곡을 다시 낸 것인지, 권리가 있는지 확인해 주세요.`;
@@ -163,6 +175,7 @@ export function checkSummary(c: { check_code: string; detail: string | null }): 
     case 'AUDIO_CONTENT_SUSPECT': return '음원 내용이 의심스러워요(무음·잡음·테스트 음원 등). 직접 들어 보고 판단해 주세요.';
     case 'S2_INTEGRITY_DUP': return '다른 발매와 같은 마스터 음원이 쓰였어요. 중복 발매인지 확인해 주세요.';
     case 'S2_INTEGRITY_DISPUTES': return '권리 분쟁이 걸린 음원·아티스트와 관련 있어요.';
+    case 'S2_EXTERNAL_RECORDING_COMPARISON': return '외부 발매곡 참조 목록과 비교한 결과예요. 일치 후보의 원곡·아티스트·ISRC·출처 또는 누락 사유를 확인하고 재발매·사용 권리를 검토해 주세요. 일치만으로 침해를 확정하지 않아요.';
     case 'S2_CATALOG_FINGERPRINT': return '카탈로그의 다른 곡과 음원 지문이 겹쳐요. 같은 곡인지 확인해 주세요.';
     case 'S2_CATALOG_IDENTIFIERS': return 'UPC·ISRC가 다른 발매와 겹치거나 형식이 맞지 않아요.';
     case 'S2_SPECIAL_FLAGS': return '19금·커버곡·샘플·AI 활용 같은 특수 항목이 있어요. 신고 내용과 증빙이 맞는지 확인해 주세요.';

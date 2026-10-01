@@ -84,6 +84,7 @@ interface ReleaseOptions {
   sample: boolean; sampleLicenseFile: string; sampleLicenseAssetId?: string;
   featured: boolean; featuredConsentFile: string; featuredConsentAssetId?: string;
   ai: boolean; aiTool: string;
+  contentIdExclusiveRightsAck?: boolean; contentIdOriginalRecordingAck?: boolean;
   /** 버튼으로 고른 AI 활용 방식·도구 (aiTool은 이걸 합친 문장) */
   aiUses: string[]; aiTools: string[]; aiUseOther: string; aiToolOther: string;
   shared: boolean; sharedContractFile: string; sharedContractAssetId?: string;
@@ -700,6 +701,21 @@ function OptionsSection({ form, set, group, onDocument, uploads }: {
           </Fragment>
         ))}
       </div>
+      {group === 'rights' && form.platforms.some(p => p === 'youtube-cid' || p === 'D-27') && (
+        <div className="aq-option-detail" id="aqContentIdRights">
+          <h3>YouTube Content ID 권리 확인</h3>
+          <p>다른 이용자의 영상에 권리 주장을 하는 서비스예요. 일반 YouTube Music 배급과 별도로, 참조 음원의 독점 권리와 고유성을 확인해 주세요.</p>
+          <label className="check-line">
+            <input type="checkbox" checked={!!o.contentIdExclusiveRightsAck} onChange={e => setOpt('contentIdExclusiveRightsAck', e.target.checked)} />
+            <span>신청한 모든 지역에서 참조 음원 전체에 대한 독점 권리가 있어요.</span>
+          </label>
+          <label className="check-line">
+            <input type="checkbox" checked={!!o.contentIdOriginalRecordingAck} onChange={e => setOpt('contentIdOriginalRecordingAck', e.target.checked)} />
+            <span>직접 제작한 고유한 녹음이며, 비독점 루프·무료 이용 음원·공공저작물 등을 포함하지 않아요.</span>
+          </label>
+          <p className="hint">해당하지 않으면 Content ID 선택을 해제해 주세요. 커버·샘플·리믹스는 권리와 참조 제외 구간을 추가 확인합니다.</p>
+        </div>
+      )}
       {showGuardianModal && (
         <GuardianConsentModal
           guardianName={o.guardian}
@@ -1419,6 +1435,9 @@ export function Upload() {
         if (!o.guardianConsentDone) return fail('법정대리인 동의를 진행해 주세요.', null);
       }
       if (o.ai && !o.aiTool.trim()) return fail('AI를 어떻게 활용했는지 골라 주세요.', '#aqAiTool');
+      if (form.platforms.some(p => p === 'youtube-cid' || p === 'D-27') && (!o.contentIdExclusiveRightsAck || !o.contentIdOriginalRecordingAck)) {
+        return fail('YouTube Content ID의 독점 권리와 원본 녹음 확인을 체크하거나 Content ID 선택을 해제해 주세요.', '#aqContentIdRights');
+      }
       if (o.cover) {
         const valid = o.coverTracks.filter(c => form.tracks.some(t => t.id === c.trackId));
         if (!valid.length) return fail('커버곡에 해당하는 트랙을 하나 이상 선택해 주세요.', null);
