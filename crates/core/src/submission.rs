@@ -1867,7 +1867,9 @@ async fn analyze_asset(
                         } else {
                             CheckStatus::NotApplicable
                         },
-                        input_hash: qc::metric_hash(&[&sha256, "image_not_admitted"]),
+                        input_hash: crate::domain::sha256_json(
+                            &json!({"sha256":sha256,"inspection":"image_not_admitted"}),
+                        ),
                         detail: "image was not admitted for content inspection".into(),
                     });
                 }

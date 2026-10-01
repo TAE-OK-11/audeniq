@@ -413,7 +413,7 @@ pub fn evaluate(body: &Value, dsp: Dsp, art: &ArtworkEvidence) -> Vec<Finding> {
             let label = normalized(p["ColorSpace"].as_str().unwrap_or(""));
             let color_type = p["ColorType"].as_i64();
             if label.contains("cmyk")
-                || p["ColorComponents"] == 4
+                || matches!(p["ColorComponents"].as_i64(), Some(1 | 4))
                 || matches!(color_type, Some(0 | 3 | 4 | 6))
                 || p["PhotometricInterpretation"] == 5
             {
@@ -421,6 +421,11 @@ pub fn evaluate(body: &Value, dsp: Dsp, art: &ArtworkEvidence) -> Vec<Finding> {
                     "cover is CMYK, grayscale, indexed or includes alpha; export 24-bit sRGB RGB"
                         .into(),
                 );
+            }
+            if p["BitDepth"].as_u64().is_some_and(|bits| bits != 8)
+                || p["BitsPerSample"].as_u64().is_some_and(|bits| bits != 8)
+            {
+                invalid.push("export 8 bits per RGB channel (24 bits per pixel)".into());
             }
             if p.get("ProfileDescription").is_some() || p.get("ProfileID").is_some() {
                 invalid.push("embedded ICC profile: apply conversion to sRGB pixels and export without the embedded profile".into());
