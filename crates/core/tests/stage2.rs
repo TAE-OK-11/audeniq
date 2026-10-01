@@ -127,6 +127,16 @@ async fn external_reencoded_recording_is_held_without_another_org_catalog(pool: 
         sha256_hex(&std::fs::read(&original).unwrap())
     );
     let asset = register_asset(&pool, &store, &u, "submitted.flac", &bytes).await;
+    // The shared helper registers WAV fixtures. Declare this FLAC accurately
+    // so Stage 1 tests the recording rather than rejecting a MIME mismatch.
+    let key: String = sqlx::query_scalar(
+        "UPDATE catalog.assets SET content_type='audio/flac' WHERE id=$1 RETURNING object_key",
+    )
+    .bind(asset)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    store.files.lock().await.get_mut(&key).unwrap().1 = "audio/flac".into();
     let release = build_submittable(&app, &pool, &store, &u, asset).await;
     let revision = consent_and_submit(&app, &u, release, "external-reference-copy").await;
     assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
@@ -925,15 +935,6 @@ async fn clean_delivery_is_auto_approved_but_staff_hold_and_signature_still_gate
         error.as_database_error().unwrap().code().as_deref(),
         Some("23514")
     );
-    set_agreement(&pool, u.org, release, true).await;
-    assert_eq!(
-        audeniq_core::execution::enqueue_delivery_jobs(&pool, package)
-            .await
-            .unwrap()
-            .0
-            .len(),
-        1
-    );
     // New external evidence makes the frozen comparison stale for a new
     // automatic approval. Staff decisions below still retain their authority.
     sqlx::query("UPDATE catalog.external_recording_epoch SET epoch=epoch+1 WHERE singleton")
@@ -952,6 +953,15 @@ async fn clean_delivery_is_auto_approved_but_staff_hold_and_signature_still_gate
     .await
     .unwrap();
     assert_eq!(stale_approval, "PENDING");
+    set_agreement(&pool, u.org, release, true).await;
+    assert_eq!(
+        audeniq_core::execution::enqueue_delivery_jobs(&pool, package)
+            .await
+            .unwrap()
+            .0
+            .len(),
+        1
+    );
     sqlx::query(
         "INSERT INTO identity.staff_members(user_id,role,granted_by) VALUES($1,'OPERATOR','test')",
     )
