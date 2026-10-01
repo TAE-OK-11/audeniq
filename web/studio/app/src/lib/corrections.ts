@@ -46,6 +46,7 @@ const TARGETS: Record<string, Target> = {
   AUDIO_AI_PROVENANCE: { step: WIZ_STEP.rights, field: 'aqSpecialOptions', label: '음원 출처', hint: '음원 메타데이터에 AI 생성 도구 정보가 있어요. AI 활용 여부와 권리 자료를 확인해 주세요.' },
   IMAGE_AI_PROVENANCE: { ...COVER, hint: '커버 메타데이터에 AI 생성 도구 정보가 있어요. 생성 경위와 이용 권리를 확인해 주세요.' },
   S2_ASSET_INTEGRITY: { ...AUDIO, hint: '제출 당시 파일과 등록 파일의 정보가 달라요. 파일을 확인하고 다시 제출해 주세요.' },
+  S2_ARTWORK_INTEGRITY: { ...COVER, hint: '심사한 커버와 등록 파일의 정보가 달라요. 커버를 확인하고 다시 제출해 주세요.' },
   AUDIO_REQUIRED: { ...AUDIO, hint: '음원 파일이 없는 트랙이 있어요. 음원을 올려 주세요.' },
   ASSET_MISSING: { ...AUDIO, hint: '음원 파일을 찾을 수 없어요. 다시 올려 주세요.' },
   AUDIO_NOT_VERIFIED: { ...AUDIO, hint: '음원 업로드가 끝나지 않았어요. 파일을 다시 올려 주세요.' },

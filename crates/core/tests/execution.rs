@@ -2232,7 +2232,7 @@ async fn e2e_timing_normal_vs_problematic(pool: PgPool) {
     assert!(
         normal_checks
             .iter()
-            .all(|(_, s)| s == "PASS" || s == "REVIEW_REQUIRED"),
+            .all(|(_, s)| matches!(s.as_str(), "PASS" | "REVIEW_REQUIRED" | "NOT_APPLICABLE")),
         "normal song: no blockers: {normal_checks:?}"
     );
 

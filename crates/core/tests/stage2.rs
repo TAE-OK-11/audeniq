@@ -193,6 +193,36 @@ async fn cover_generator_metadata_is_review_only_and_reaches_stage2(pool: PgPool
 }
 
 #[sqlx::test]
+async fn reviewed_cover_drift_is_blocked_without_pinning_verification(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let asset = register_asset(&pool, &store, &u, "cover-drift.wav", &make_good_wav(&dir)).await;
+    let release = build_submittable(&app, &pool, &store, &u, asset).await;
+    let revision = consent_and_submit(&app, &u, release, "cover-drift").await;
+    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    sqlx::query("UPDATE catalog.assets SET sha256=$2 WHERE id=(SELECT artwork_asset_id FROM catalog.releases WHERE id=$1)")
+        .bind(release).bind("a".repeat(64)).execute(&pool).await.unwrap();
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(release_status(&pool, release).await, "STAGE2_REVIEW");
+    let status:String=sqlx::query_scalar("SELECT status FROM operations.check_results WHERE revision_id=$1 AND check_code='S2_ARTWORK_INTEGRITY'")
+        .bind(revision).fetch_one(&pool).await.unwrap();
+    assert_eq!(status, "BLOCKED");
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM distribution.verification_packages WHERE revision_id=$1",
+    )
+    .bind(revision)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(count, 0);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[sqlx::test]
 async fn original_audio_provenance_is_preserved_and_not_shared_between_identical_masters(
     pool: PgPool,
 ) {
