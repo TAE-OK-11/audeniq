@@ -481,7 +481,15 @@ export function ReviewDetail() {
                   {app.options.sample && <div><dt>샘플링</dt><dd>원본 이용 허락 확인 필요</dd></div>}
                   {app.options.featured && <div><dt>피처링</dt><dd>참여자 동의 확인 필요</dd></div>}
                   {app.options.shared && <div><dt>공동 권리자</dt><dd>배급 위임 범위 확인 필요</dd></div>}
-                  {app.options.rerelease && <div><dt>재발매</dt><dd>{[app.options.previousTitle, app.options.previousId].filter(Boolean).join(' · ') || '기존 발매 정보 미기재'}</dd></div>}
+                  {app.options.rerelease && <div style={{ gridColumn: '1 / -1' }}><dt>기존 발매 이전·재발매</dt><dd>
+                    <p>{app.options.previousTitle || '기존 발매명 미기재'} · {app.options.rereleaseKind === 'transfer' ? '유통사 이전' : app.options.rereleaseKind === 'redistribute' ? '서비스 종료 음원 재발매' : app.options.rereleaseKind === 'new_version' ? '새 녹음·변경 버전' : '상황 미기재'}</p>
+                    <p>이전 유통사: {app.options.previousDistributor || '미기재'} · 서비스: {app.options.previousAvailability === 'live' ? '서비스 중' : app.options.previousAvailability === 'removed' ? '종료됨' : app.options.previousAvailability === 'takedown_requested' ? '종료 요청' : '확인 필요'}</p>
+                    <p>녹음: {app.options.rereleaseAudio === 'same' ? '기존 녹음 유지' : app.options.rereleaseAudio === 'changed' ? '음악 내용 변경' : '확인 필요'} · 권한: {app.options.rereleaseRights === 'owned' ? '권리자 본인' : app.options.rereleaseRights === 'permission' ? '배급 허락 확보' : '확인 필요'}</p>
+                    {app.options.previousUpc && <p>기존 UPC: {app.options.previousUpc}</p>}
+                    {app.options.rereleaseTracks?.map(t => <p key={t.trackId}>기존 ISRC: {t.previousIsrc || '미기재'}</p>)}
+                    {app.options.previousUrl && <p className="break">기존 링크: {app.options.previousUrl}</p>}
+                    {app.options.rereleaseNotes && <p>{app.options.rereleaseNotes}</p>}
+                  </dd></div>}
                 </dl>
               </div>
             </Section>

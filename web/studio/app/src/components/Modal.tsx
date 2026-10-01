@@ -9,6 +9,7 @@ interface ModalProps {
   modalClass?: string;
   /** 배경 클릭으로 닫기 (입력 중 실수로 닫히는 것을 막고 싶으면 false) */
   dismissible?: boolean;
+  closeDisabled?: boolean;
 }
 
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -42,15 +43,18 @@ export const useModalClose = () => useContext(ModalCloseContext);
 // 가장 위의 모달만 Esc/Tab에 반응하도록 스택 관리
 const stack: symbol[] = [];
 
-export function Modal({ title, onClose, children, modalClass, dismissible = true }: ModalProps) {
+export function Modal({ title, onClose, children, modalClass, dismissible = true, closeDisabled = false }: ModalProps) {
   const innerRef = useRef<HTMLElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const closeDisabledRef = useRef(closeDisabled);
+  closeDisabledRef.current = closeDisabled;
   const [leaving, setLeaving] = useState(false);
   const leavingRef = useRef(false);
   const titleId = useId();
 
   const requestClose = useCallback(() => {
+    if (closeDisabledRef.current) return;
     if (leavingRef.current) return;
     leavingRef.current = true;
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
@@ -126,7 +130,7 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
       >
         <div className="modal-top">
           <h2 id={titleId}>{title}</h2>
-          <button className="icon-button" type="button" aria-label="닫기" onClick={requestClose}>
+          <button className="icon-button" type="button" aria-label="닫기" onClick={requestClose} disabled={closeDisabled}>
             <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M6 6l12 12M18 6 6 18" /></svg>
           </button>
         </div>

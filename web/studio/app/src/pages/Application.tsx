@@ -14,6 +14,7 @@ import { docsForRelease, useDocs } from '../store/docs';
 import { PROFILE_LINKS } from '../lib/dsp';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
+import { rereleaseSummary } from '../lib/rerelease';
 
 type Integrity = 'checking' | 'ok' | 'changed' | 'legacy';
 
@@ -195,6 +196,10 @@ export function Application() {
               <tr><th>마스터 권리자</th><td colSpan={3}>{dash(snap.ownership)}</td></tr>
               <tr><th>℗ 표기</th><td>℗ {dash(snap.phonogram)}</td><th>© 표기</th><td>© {dash(snap.copyright)}</td></tr>
               <tr><th>신고 항목</th><td colSpan={3}>{snap.options.map(k => OPTION_LABELS[k] ?? k).join(', ') || '해당 없음 (일반 발매)'}</td></tr>
+              {snap.rerelease && <>
+                <tr><th>이전·재발매</th><td colSpan={3}>{rereleaseSummary(snap.rerelease)}</td></tr>
+                <tr><th>기존 발매 정보</th><td colSpan={3}>{[snap.rerelease.previousReleaseDate && `이전 최초 발매일 ${snap.rerelease.previousReleaseDate}`, snap.rerelease.previousUpc && `UPC ${snap.rerelease.previousUpc}`, snap.rerelease.previousUrl, snap.rerelease.rereleaseNotes].filter(Boolean).join(' / ') || '—'}</td></tr>
+              </>}
             </tbody>
           </table>
         </section>

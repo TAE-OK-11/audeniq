@@ -195,8 +195,9 @@ img{max-width:100%}
 #modal.is-leaving{animation:aq-overlay-out .18s ease forwards!important;pointer-events:none}
 #modal.is-leaving>.modal-inner{animation:aq-modal-out .18s ease forwards!important}
 #modal .modal-inner:focus{outline:none}
-#modal .icon-button{transition:background-color .2s,transform .25s var(--aq-e-spring)!important;color:#5d6a82}
-#modal .icon-button:hover{transform:rotate(90deg);background:#e9edf5!important}
+#modal .modal-top>.icon-button{display:grid;place-items:center;width:40px;height:40px;min-width:40px;min-height:40px;max-width:40px;max-height:40px;aspect-ratio:1;flex:0 0 40px;padding:0;line-height:1;transform:none!important;transition:background-color .18s ease!important;color:#5d6a82}
+#modal .modal-top>.icon-button svg{display:block;width:20px;height:20px;flex:none;transform:none}
+#modal .modal-top>.icon-button:hover{transform:none!important;background:#e9edf5!important}
 .aq-confirm-mode .modal-inner{width:min(420px,100%)!important;min-height:0!important}
 @media(max-width:760px){#modal.aq-confirm-mode{place-items:center!important}.aq-confirm-mode .modal-inner{min-height:0!important;max-height:none!important}}
 .aq-confirm-message{color:#5f6b80;font-size:14px;line-height:1.7;margin:-6px 0 22px;white-space:pre-line}
@@ -1106,6 +1107,17 @@ a.aq-home-hero{text-decoration:none;color:inherit}
   background-color:#fff!important;box-shadow:inset 0 0 0 2px #3B63F3!important
 }
 
+/* 신청서: 트랙·권리자·식별자·전자 문서가 같은 면 색과 속도로 반응한다. */
+:is(#root #view-new,#modal.aq-rights-document-mode) :is(.field,.aq-chip-picker) :is(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]),select,textarea){
+  border:0!important;outline:0!important;box-shadow:none!important;transform:none!important;
+  transition:background-color .18s var(--aq-e-ease)!important
+}
+:is(#root #view-new,#modal.aq-rights-document-mode) :is(.field,.aq-chip-picker) :is(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]),select,textarea):is(:focus,:focus-visible){
+  background-color:#e4ecff!important;box-shadow:none!important;outline:0!important
+}
+:is(#root #view-new,#modal.aq-rights-document-mode) :is(input,select,textarea):is([aria-invalid=true],.aq-invalid){background-color:#fff1f1!important}
+@media(prefers-reduced-motion:reduce){:is(#root #view-new,#modal.aq-rights-document-mode) :is(input,select,textarea){transition:none!important}}
+
 /* ==========================================================================
    AUDENIQ 체크박스·라디오 — OS마다 다르게 그려지던 기본 모양 대신 한 가지 디자인
    (스위치·선택 카드처럼 입력을 숨겨 쓰는 곳은 제외)
@@ -1129,7 +1141,18 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 :is(#root,#modal) input:is([type=checkbox],[type=radio]):not(:is(.aq-switch,.aq-choice,.aq-pay-type) input):disabled{opacity:.45;cursor:not-allowed}
 
 /* ---------- 선택한 옵션 카드 ---------- */
-.aq-option.is-on{background:#eaf0ff}
+.aq-option.is-on,.aq-option:has(input:checked){background:#3B63F3;color:#fff;outline:none;box-shadow:none}
+.aq-option.is-on .aq-option-text strong,.aq-option.is-on .aq-option-text small{color:#fff}
+.aq-option:focus-within{outline:none!important;box-shadow:none!important}
+.aq-option:has(input:focus-visible){outline:3px solid #7892f9!important;outline-offset:3px}
+.aq-option.is-on input[type=checkbox]:checked{background-color:#fff!important;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.4 6.6 11.5 12.6 4.8' fill='none' stroke='%233B63F3' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")!important}
+.aq-rights-evidence{margin-top:22px;padding-top:18px}
+.aq-rights-evidence>strong{display:block;font-size:14px;margin-bottom:12px}
+.aq-rights-receipt{display:flex;align-items:center;gap:10px;width:100%;margin-top:12px;padding:14px;border:0;border-radius:14px;background:#e7f4ed;color:#236347;text-align:left;font:inherit;cursor:pointer}
+.aq-rights-receipt small{display:block;margin-top:3px;font-size:12px}
+.aq-rights-error{padding:12px 15px;border-radius:14px;background:#fff1f1;color:#a4212e;font-size:14px}
+.aq-rights-pad.is-busy{pointer-events:none;opacity:.6}
+.aq-rights-paper-body{white-space:pre-wrap;line-height:1.9;font-size:14px;overflow-wrap:anywhere}
 
 /* ---------- 버튼으로 고르는 선택지 ---------- */
 .aq-chips{display:flex;flex-wrap:wrap;gap:8px}
