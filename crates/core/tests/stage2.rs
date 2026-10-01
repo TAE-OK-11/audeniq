@@ -178,6 +178,54 @@ async fn external_reencoded_recording_is_held_without_another_org_catalog(pool: 
     .await
     .unwrap();
     assert_eq!(packages, 0);
+    // Also cover a common copy-upload path: lossy MP3 encoded back into a
+    // technically accepted WAV. The master SHA differs; the recording holds.
+    let mp3 = dir.join("copied.mp3");
+    let restored = dir.join("restored.wav");
+    assert!(
+        std::process::Command::new("ffmpeg")
+            .args(["-y", "-v", "error", "-i"])
+            .arg(&original)
+            .args(["-c:a", "libmp3lame", "-b:a", "192k"])
+            .arg(&mp3)
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(
+        std::process::Command::new("ffmpeg")
+            .args(["-y", "-v", "error", "-i"])
+            .arg(&mp3)
+            .args(["-ar", "48000", "-c:a", "pcm_s16le"])
+            .arg(&restored)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let asset = register_asset(
+        &pool,
+        &store,
+        &u,
+        "restored.wav",
+        &std::fs::read(&restored).unwrap(),
+    )
+    .await;
+    let release = build_submittable(&app, &pool, &store, &u, asset).await;
+    let revision = consent_and_submit(&app, &u, release, "external-reference-lossy-copy").await;
+    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        check_status(
+            &pool,
+            revision,
+            audeniq_core::external_recordings::CHECK_CODE
+        )
+        .await,
+        "REVIEW_REQUIRED"
+    );
     std::fs::remove_dir_all(dir).unwrap();
 }
 
@@ -194,6 +242,21 @@ async fn external_reference_isrc_claim_and_missing_audio_are_distinct(pool: PgPo
     )
     .await
     .unwrap();
+    let repeated = audeniq_core::external_recordings::import(
+        &pool,
+        "ci-operator",
+        external_metadata(),
+        &original,
+    )
+    .await
+    .unwrap();
+    assert_eq!(repeated, id, "repeat import preserves immutable evidence");
+    let mut incorrect = external_metadata();
+    incorrect.artist = "Different attribution".into();
+    assert!(matches!(
+        audeniq_core::external_recordings::import(&pool, "ci-operator", incorrect, &original).await,
+        Err(Error::InvalidCode("REFERENCE_ATTRIBUTION_CONFLICT"))
+    ));
     let tracks = [json!({"id":Uuid::new_v4(),"asset_id":Uuid::new_v4(),"isrc":"GBABC2600123"})];
     let scan = audeniq_core::external_recordings::scan(&pool, Uuid::new_v4(), &tracks)
         .await
@@ -871,6 +934,24 @@ async fn clean_delivery_is_auto_approved_but_staff_hold_and_signature_still_gate
             .len(),
         1
     );
+    // New external evidence makes the frozen comparison stale for a new
+    // automatic approval. Staff decisions below still retain their authority.
+    sqlx::query("UPDATE catalog.external_recording_epoch SET epoch=epoch+1 WHERE singleton")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let stale = audeniq_core::delivery_staging::stage_package(&pool, package)
+        .await
+        .unwrap();
+    assert_eq!(stale.automatically_approved, 0);
+    let stale_approval: String = sqlx::query_scalar(
+        "SELECT approval FROM distribution.delivery_staging WHERE package_id=$1",
+    )
+    .bind(package)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(stale_approval, "PENDING");
     sqlx::query(
         "INSERT INTO identity.staff_members(user_id,role,granted_by) VALUES($1,'OPERATOR','test')",
     )
