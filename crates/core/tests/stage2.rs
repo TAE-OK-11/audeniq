@@ -193,6 +193,54 @@ async fn cover_generator_metadata_is_review_only_and_reaches_stage2(pool: PgPool
 }
 
 #[sqlx::test]
+async fn original_audio_provenance_is_preserved_and_not_shared_between_identical_masters(
+    pool: PgPool,
+) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let bytes = make_good_wav(&dir);
+    let hash = sha256_hex(&bytes);
+    let storage: Arc<dyn audeniq_core::storage::ObjectStore> = store.clone();
+    for (name, ai_source) in [
+        ("plain.wav", false),
+        ("generated.wav", true),
+        ("plain-again.wav", false),
+    ] {
+        let asset = register_asset(&pool, &store, &u, name, &bytes).await;
+        if ai_source {
+            let report = audeniq_core::provenance::from_metadata(&json!({"Software":"Suno"}));
+            sqlx::query("INSERT INTO catalog.asset_provenance(asset_id,org_id,source_sha256,master_sha256,rule_version,body) VALUES($1,$2,$3,$4,$5,$6)")
+                .bind(asset).bind(u.org).bind("e".repeat(64)).bind(&hash)
+                .bind(audeniq_core::provenance::RULE_VERSION).bind(report)
+                .execute(&pool).await.unwrap();
+        }
+        assert!(
+            !audeniq_core::submission::precheck_asset(&pool, &storage, u.org, asset)
+                .await
+                .unwrap()
+        );
+        let release = build_submittable(&app, &pool, &store, &u, asset).await;
+        let revision = consent_and_submit(&app, &u, release, name).await;
+        assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+        let (status,detail):(String,String)=sqlx::query_as("SELECT status,detail FROM operations.check_results WHERE revision_id=$1 AND check_code='AUDIO_AI_PROVENANCE'")
+            .bind(revision).fetch_one(&pool).await.unwrap();
+        if ai_source {
+            assert_eq!(status, "REVIEW_REQUIRED");
+            assert!(detail.contains("AI_METADATA_SIGNAL") && detail.contains("suno"));
+        } else {
+            assert_eq!(status, "NOT_APPLICABLE");
+            assert!(detail.contains("UNKNOWN"));
+        }
+        assert!(
+            detail.starts_with("cache_hit:"),
+            "upload analysis must be reused: {detail}"
+        );
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[sqlx::test]
 async fn clean_delivery_is_auto_approved_but_staff_hold_and_signature_still_gate(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;

@@ -10,7 +10,7 @@ use crate::{
     fingerprint,
     identifiers::{validate_isrc, validate_upc},
     operations,
-    qc::{self, CheckStatus},
+    qc::{self, CheckOutcome, CheckStatus},
     storage::ObjectStore,
 };
 use serde::Deserialize;
@@ -840,6 +840,38 @@ fn field_cache_key(check_code: &str, inputs: &str) -> String {
 }
 fn asset_cache_key(check_code: &str, asset_sha256: &str) -> String {
     qc::result_hash(check_code, qc::QC_RULE_VERSION, asset_sha256, asset_sha256)
+}
+fn asset_check_cache_key(check_code: &str, asset_id: &str, sha256: &str) -> String {
+    if check_code == "AUDIO_AI_PROVENANCE" {
+        // Normalization can produce identical masters from sources with
+        // different metadata. Original provenance belongs to this asset.
+        asset_cache_key(check_code, &format!("{asset_id}:{sha256}"))
+    } else {
+        asset_cache_key(check_code, sha256)
+    }
+}
+
+async fn preserve_audio_provenance(
+    pool: &PgPool,
+    org: Uuid,
+    asset: Uuid,
+    sha256: &str,
+    outcomes: &mut Vec<CheckOutcome>,
+) -> Result<()> {
+    let original: Option<Value> = sqlx::query_scalar(
+        "SELECT body FROM catalog.asset_provenance WHERE org_id=$1 AND asset_id=$2 AND master_sha256=$3 AND rule_version=$4",
+    ).bind(org).bind(asset).bind(sha256).bind(crate::provenance::RULE_VERSION)
+        .fetch_optional(pool).await?;
+    if let Some(original) = original
+        && original["outcome"] == "AI_METADATA_SIGNAL"
+        && !outcomes
+            .iter()
+            .any(|c| c.check_code == "SHA256_MISMATCH" && c.status == CheckStatus::Blocked)
+    {
+        outcomes.retain(|c| c.check_code != "AUDIO_AI_PROVENANCE");
+        outcomes.push(crate::provenance::outcome("AUDIO_AI_PROVENANCE", &original));
+    }
+    Ok(())
 }
 /// Every name and title of a revision that ends up in delivery messages:
 /// release title/version fields, profile strings, track titles/versions,
@@ -2199,7 +2231,7 @@ async fn qc_single_asset(
     let keys: Vec<(&str, String)> = expected
         .iter()
         .filter(|code| **code != "AUDIO_SIMILAR_TO_EXISTING")
-        .map(|code| (*code, asset_cache_key(code, sha256)))
+        .map(|code| (*code, asset_check_cache_key(code, aid_str, sha256)))
         .collect();
     let mut cached = cached_statuses(&pool, &keys, qc::QC_RULE_VERSION).await?;
     let mut to_run: Vec<&str> = Vec::new();
@@ -2214,7 +2246,7 @@ async fn qc_single_asset(
                 check_code: code,
                 rule_version: qc::QC_RULE_VERSION,
                 status: st,
-                result_hash: asset_cache_key(code, sha256),
+                result_hash: asset_check_cache_key(code, aid_str, sha256),
                 detail: if original.is_empty() {
                     "cache_hit".into()
                 } else {
@@ -2248,19 +2280,7 @@ async fn qc_single_asset(
     {
         Ok((mut o, metrics, fp, _)) => {
             if kind == "AUDIO" && to_run.contains(&"AUDIO_AI_PROVENANCE") {
-                let original: Option<Value> = sqlx::query_scalar(
-                    "SELECT body FROM catalog.asset_provenance WHERE org_id=$1 AND asset_id=$2 AND master_sha256=$3 AND rule_version=$4",
-                ).bind(org).bind(aid).bind(sha256).bind(crate::provenance::RULE_VERSION)
-                    .fetch_optional(&pool).await?;
-                if let Some(original) = original
-                    && original["outcome"] == "AI_METADATA_SIGNAL"
-                    && !o.iter().any(|c| {
-                        c.check_code == "SHA256_MISMATCH" && c.status == CheckStatus::Blocked
-                    })
-                {
-                    o.retain(|c| c.check_code != "AUDIO_AI_PROVENANCE");
-                    o.push(crate::provenance::outcome("AUDIO_AI_PROVENANCE", &original));
-                }
+                preserve_audio_provenance(&pool, org, aid, sha256, &mut o).await?;
             }
             // Persist measured audio duration + real technical specs for
             // the DDEX builder. COALESCE fills only unknown columns;
@@ -2293,7 +2313,7 @@ async fn qc_single_asset(
                     check_code: code,
                     rule_version: qc::QC_RULE_VERSION,
                     status: CheckStatus::TechnicalRetry,
-                    result_hash: asset_cache_key(code, sha256),
+                    result_hash: asset_check_cache_key(code, aid_str, sha256),
                     detail: detail.clone(),
                 });
             }
@@ -2306,7 +2326,7 @@ async fn qc_single_asset(
                 check_code: o.check_code,
                 rule_version: qc::QC_RULE_VERSION,
                 status: o.status,
-                result_hash: asset_cache_key(o.check_code, sha256),
+                result_hash: asset_check_cache_key(o.check_code, aid_str, sha256),
                 detail: o.detail,
             });
         }
@@ -2361,7 +2381,7 @@ pub async fn precheck_asset(
         Err(_) => return Ok(true),
     }
     let tmp_name = format!("audeniq-precheck-{}", Uuid::new_v4());
-    let (outcomes, metrics, fp, downloaded_sha) = match analyze_asset(
+    let (mut outcomes, metrics, fp, downloaded_sha) = match analyze_asset(
         storage,
         &key,
         &kind,
@@ -2388,6 +2408,7 @@ pub async fn precheck_asset(
         .await?;
     }
     let sha = recorded.unwrap_or(downloaded_sha);
+    preserve_audio_provenance(pool, org, aid, &sha, &mut outcomes).await?;
     if let Some(m) = metrics {
         sqlx::query(
             "UPDATE catalog.assets SET duration_secs=COALESCE(duration_secs,$1), sample_rate=COALESCE(sample_rate,$2), channels=COALESCE(channels,$3), bits_per_sample=COALESCE(bits_per_sample,$4) WHERE org_id=$5 AND id=$6",
@@ -2424,7 +2445,7 @@ pub async fn precheck_asset(
             check_code: o.check_code,
             rule_version: qc::QC_RULE_VERSION,
             status: o.status,
-            result_hash: asset_cache_key(o.check_code, &sha),
+            result_hash: asset_check_cache_key(o.check_code, &aid.to_string(), &sha),
             detail: o.detail,
         });
     }
@@ -2582,7 +2603,7 @@ async fn update_asset_qc(
             continue;
         }
         for (aid, sha) in &sha_of {
-            if ch.result_hash == asset_cache_key(ch.check_code, sha) {
+            if ch.result_hash == asset_check_cache_key(ch.check_code, aid, sha) {
                 let e = worst.entry(aid.clone()).or_insert(CheckStatus::Pass);
                 let check_rank = if asset_check_allows_progress(ch) {
                     0
