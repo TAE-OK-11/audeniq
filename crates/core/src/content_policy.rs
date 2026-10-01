@@ -182,7 +182,7 @@ pub fn evaluate(body: &Value, dsp: Dsp, art: &ArtworkEvidence) -> Vec<Finding> {
     add(
         "S2_DSP_METADATA_CONTACT",
         true,
-        DISTRIBUTOR_ART,
+        APPLE,
         metadata
             .iter()
             .filter(|(_, text)| contact(text))
@@ -403,8 +403,9 @@ pub fn evaluate(body: &Value, dsp: Dsp, art: &ArtworkEvidence) -> Vec<Finding> {
                 .collect();
             let hits:Vec<_>=lines.iter().enumerate().filter(|(_,line)|contact(line)||promotional(line)
                 || (["$","€","₩"].iter().any(|currency|line.contains(currency)) && line.chars().any(|c|c.is_ascii_digit()))
+                || ["spotify","itunes","apple music","youtube music","amazon music","deezer","qobuz","instagram","tiktok"].iter().any(|term|phrase(line,term))
                 || (apple && ["dolby atmos","high resolution audio","24 bit","192 khz"].iter().any(|term|phrase(line,term))))
-                .map(|(i,_)|format!("OCR line {}: potential contact/promotion/format claim; confirm against the original image",i+1)).collect();
+                .map(|(i,_)|format!("OCR line {}: potential contact/promotion/store/social/format reference; confirm against the original image",i+1)).collect();
             add("S2_DSP_ARTWORK_TEXT_REVIEW", false, DISTRIBUTOR_ART, hits);
         }
         if spotify && let Some(color) = &art.color {
@@ -594,5 +595,23 @@ mod tests {
                 .any(|f| f.code == "S2_DSP_SPOTIFY_ARTWORK_ENCODING")
         );
         assert!(evaluate(&b, Dsp::D6, &evidence).is_empty());
+    }
+
+    #[test]
+    fn ocr_store_references_require_review_without_substring_matches() {
+        let mut b = body();
+        b["release"]["artwork"] = json!({"asset_id":"x"});
+        let mut evidence = ArtworkEvidence {
+            color: Some(json!({"properties":{"ColorType":2}})),
+            text: Some(json!({"lines":["Listen on Spotify"]})),
+            qr: Some(json!({"qr_count":0})),
+        };
+        assert!(
+            evaluate(&b, Dsp::D5, &evidence)
+                .iter()
+                .any(|f| f.code == "S2_DSP_ARTWORK_TEXT_REVIEW" && !f.correction)
+        );
+        evidence.text = Some(json!({"lines":["Spotifyish World"]}));
+        assert!(evaluate(&b, Dsp::D5, &evidence).is_empty());
     }
 }
