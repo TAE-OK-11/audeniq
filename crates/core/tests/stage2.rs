@@ -236,6 +236,19 @@ async fn external_reencoded_recording_is_held_without_another_org_catalog(pool: 
     )
     .await;
     let release = build_submittable(&app, &pool, &store, &u, asset).await;
+    // Both copy-upload paths belong to the same account. The helper assigns
+    // fixed identifiers, so the second release needs unique codes to reach
+    // audio matching instead of the existing identifier-reuse correction.
+    sqlx::query("UPDATE catalog.releases SET upc='042100005264' WHERE id=$1")
+        .bind(release)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE catalog.tracks SET isrc='USABC2600002' WHERE release_id=$1")
+        .bind(release)
+        .execute(&pool)
+        .await
+        .unwrap();
     let revision = consent_and_submit(&app, &u, release, "external-reference-lossy-copy").await;
     assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
     assert_stage1_passed(&pool, release, revision, "MP3 restored to WAV").await;
