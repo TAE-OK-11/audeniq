@@ -212,10 +212,11 @@ jobs:
       - run: docker compose up --build -d
       - name: Check API readiness
         run: curl --fail --retry 15 --retry-all-errors --retry-delay 2 -H "X-Audeniq-Service:$EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready
-      - name: Worker image ships the audio analyzers
+      - name: Worker image ships the audio and provenance analyzers
         run: |
           docker compose run --rm --no-deps --entrypoint ffprobe worker -version
           docker compose run --rm --no-deps --entrypoint ffmpeg worker -version
+          docker compose run --rm --no-deps --entrypoint exiftool worker -ver
       - name: Runtime logs
         if: always()
         run: |
