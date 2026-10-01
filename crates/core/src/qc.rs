@@ -12,7 +12,7 @@ use std::process::Stdio;
 use std::time::Duration;
 
 /// Bump when any threshold, check set, or metric definition changes.
-pub const QC_RULE_VERSION: &str = "4";
+pub const QC_RULE_VERSION: &str = "5";
 
 /// Minimum audio duration in seconds before flagging as suspiciously short.
 pub const MIN_AUDIO_SECS: f64 = 30.0;
@@ -382,6 +382,7 @@ pub const AUDIO_CHECK_CODES: &[&str] = &[
     // submission::handle_fingerprint_checks.
     "AUDIO_FINGERPRINT_FAILED",
     "AUDIO_SIMILAR_TO_EXISTING",
+    "AUDIO_AI_PROVENANCE",
 ];
 
 fn audio_code_index(code: &str) -> usize {
@@ -1519,6 +1520,7 @@ pub const IMAGE_CHECK_CODES: &[&str] = &[
     "IMAGE_PROBE_FAILED",
     "IMAGE_TOO_SMALL",
     "IMAGE_NOT_SQUARE",
+    "IMAGE_AI_PROVENANCE",
 ];
 
 /// Stage 1 basic QC for a cover-art image file.
@@ -2019,7 +2021,7 @@ mod tests {
         assert_eq!(sha.status, CheckStatus::Blocked);
         // Blocked short-circuits: the remaining checks are NOT_APPLICABLE,
         // but the full contract still holds (13 QC + 2 fingerprint).
-        assert_eq!(out.len(), 15);
+        assert_eq!(out.len(), AUDIO_CHECK_CODES.len());
         assert!(
             out[1..]
                 .iter()

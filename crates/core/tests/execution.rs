@@ -1524,7 +1524,7 @@ async fn sandbox_adversarial_submissions() {
         "Explicit Song",
     )
     .await;
-    sqlx::query("UPDATE catalog.tracks SET lyrics='explicit lyrics here', parental_advisory=true WHERE release_id=$1")
+    sqlx::query("UPDATE catalog.tracks SET parental_advisory=true WHERE release_id=$1")
         .bind(r6)
         .execute(&pool)
         .await

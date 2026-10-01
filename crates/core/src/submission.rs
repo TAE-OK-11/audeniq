@@ -322,7 +322,7 @@ async fn revision_body(
     .fetch_one(&mut *c)
     .await?;
     let tracks = sqlx::query(
-        "SELECT t.id, t.title, t.version, t.disc_number, t.track_number, t.artist_id, t.isrc, t.asset_id, t.parental_advisory, a.sha256 AS asha, a.kind AS akind FROM catalog.tracks t LEFT JOIN catalog.assets a ON a.org_id=t.org_id AND a.id=t.asset_id WHERE t.org_id=$1 AND t.release_id=$2 AND t.archived_at IS NULL ORDER BY t.disc_number, t.track_number",
+        "SELECT t.id, t.title, t.version, t.lyrics, t.disc_number, t.track_number, t.artist_id, t.isrc, t.asset_id, t.parental_advisory, a.sha256 AS asha, a.kind AS akind FROM catalog.tracks t LEFT JOIN catalog.assets a ON a.org_id=t.org_id AND a.id=t.asset_id WHERE t.org_id=$1 AND t.release_id=$2 AND t.archived_at IS NULL ORDER BY t.disc_number, t.track_number",
     )
     .bind(org).bind(release).fetch_all(&mut *c).await?;
     // Credits for every track in one round trip (was one query per track).
@@ -344,6 +344,7 @@ async fn revision_body(
             "id": tid,
             "title": t.get::<String,_>("title"),
             "version": t.get::<String,_>("version"),
+            "lyrics": t.get::<Option<String>,_>("lyrics"),
             "disc_number": t.get::<i32,_>("disc_number"),
             "track_number": t.get::<i32,_>("track_number"),
             "artist_id": t.get::<Uuid,_>("artist_id"),
@@ -1770,7 +1771,7 @@ async fn analyze_asset(
         // check_audio runs the single decode pass (full analysis + ebur128 +
         // outcomes), tapping the fingerprint PCM out of the same decode, and
         // returns the probe metrics: no second ffprobe pass is needed.
-        let (outcomes, tap_pcm, metrics) = match kind.as_str() {
+        let (mut outcomes, tap_pcm, metrics) = match kind.as_str() {
             "AUDIO" => qc::check_audio_with_fp_tap(
                 path,
                 Some(&sha256),
@@ -1796,6 +1797,20 @@ async fn analyze_asset(
                     | CheckStatus::TechnicalRetry
             )
         });
+        let provenance_code = match kind.as_str() {
+            "AUDIO" => Some("AUDIO_AI_PROVENANCE"),
+            "IMAGE" => Some("IMAGE_AI_PROVENANCE"),
+            _ => None,
+        };
+        if let Some(code) = provenance_code
+            && !invalid
+            && !outcomes.iter().any(|o| o.check_code == code)
+        {
+            outcomes.push(crate::provenance::outcome(
+                code,
+                &crate::provenance::inspect(path),
+            ));
+        }
         // Perceptual fingerprint over the head/middle/tail segment windows.
         // The window PCM is read from the mono 11025 Hz tap of the single
         // decode pass above (ffmpeg's own resampler); the three separate
@@ -2231,7 +2246,22 @@ async fn qc_single_asset(
     let outcomes = match analyze_asset(&storage, &key, kind, &content_type, Some(sha256), &tmp_name)
         .await
     {
-        Ok((o, metrics, fp, _)) => {
+        Ok((mut o, metrics, fp, _)) => {
+            if kind == "AUDIO" && to_run.contains(&"AUDIO_AI_PROVENANCE") {
+                let original: Option<Value> = sqlx::query_scalar(
+                    "SELECT body FROM catalog.asset_provenance WHERE org_id=$1 AND asset_id=$2 AND master_sha256=$3 AND rule_version=$4",
+                ).bind(org).bind(aid).bind(sha256).bind(crate::provenance::RULE_VERSION)
+                    .fetch_optional(&pool).await?;
+                if let Some(original) = original
+                    && original["outcome"] == "AI_METADATA_SIGNAL"
+                    && !o.iter().any(|c| {
+                        c.check_code == "SHA256_MISMATCH" && c.status == CheckStatus::Blocked
+                    })
+                {
+                    o.retain(|c| c.check_code != "AUDIO_AI_PROVENANCE");
+                    o.push(crate::provenance::outcome("AUDIO_AI_PROVENANCE", &original));
+                }
+            }
             // Persist measured audio duration + real technical specs for
             // the DDEX builder. COALESCE fills only unknown columns;
             // never overwrites measured values.

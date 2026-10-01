@@ -8,7 +8,7 @@ New application logic and tests are Rust only. The three supplied frontend packa
 
 ## Local development
 
-Requires Rust 1.98.1, Docker Engine + Compose v2. PostgreSQL 18 is the target database (API/worker connect through PgBouncer in Compose).
+Requires Rust 1.98.1, Docker Engine + Compose v2. PostgreSQL 18 is the target database (API/worker connect through PgBouncer in Compose). Native file analysis also requires FFmpeg, xmllint and ExifTool (`libimage-exiftool-perl` on Debian); the Docker image includes them.
 
 1. Copy `.env.example` to `.env`. Set three different random URL-safe database passwords and a random `EDGE_SERVICE_SECRET` of at least 32 characters. Do not commit `.env`.
 2. `docker compose up --build -d` starts PostgreSQL, runs SQLx migrations using the owner, applies separate runtime grants, and starts API/worker. Storage is disabled until configured.
@@ -49,6 +49,8 @@ Migrations are forward-only. Re-running `audeniq-migrate` is idempotent via SQLx
 No remote deployment or cloud account change is performed by this repository's build/test commands. GitHub Actions runs only after an authorized push. It runs tests against disposable PostgreSQL, not real customer infrastructure.
 
 ## Distribution staging and staff portal
+
+Ordinary releases that pass every automatic check can now receive automatic delivery approval. Warnings, rights exceptions and staff holds retain review gates. See [automated review and free local provenance checks](docs/AUTOMATED_REVIEW.md) for the exact rules and AI/SynthID limitations.
 
 Every platform is addressed by an internal code (`D-1`…`D-11`). After Stage 3, each requested platform gets a staged delivery (spec checks, the exact DDEX ERN it would receive, partner blockers) that staff approve through `/api/staff/*` before E-0 may send. See [distribution staging](docs/DISTRIBUTION_STAGING.md) and the staff section of the [API contract](docs/API.md). Grant staff roles with `audeniq-admin --operator NAME staff grant EMAIL REVIEWER`.
 

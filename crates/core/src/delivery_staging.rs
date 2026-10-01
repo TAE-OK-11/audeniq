@@ -593,6 +593,7 @@ pub struct StageSummary {
     pub ready: usize,
     pub awaiting_partner: usize,
     pub content_blocked: usize,
+    pub automatically_approved: usize,
 }
 
 /// `delivery.stage` job body: (re)evaluate a frozen package for every
@@ -600,7 +601,7 @@ pub struct StageSummary {
 /// the partner findings and produces the wire ERN once real DPIDs exist.
 pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSummary> {
     let row = sqlx::query(
-        "SELECT dp.org_id, cr.id AS canonical_id, cr.body AS canonical, cr.release_id, cr.revision_id,
+        "SELECT dp.org_id, dp.created_at AS package_created_at, cr.id AS canonical_id, cr.body AS canonical, cr.release_id, cr.revision_id,
                 COALESCE(NULLIF(ar.body -> 'release' -> 'draft', 'null'::jsonb), rel.draft) AS draft,
                 ar.body -> 'declarations' AS declarations,
                 o.name AS org_name, o.ddex_sender_dpid
@@ -644,20 +645,29 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
         .or_else(|| draft.get("genre").and_then(Value::as_str))
         .filter(|g| *g != "__other__")
         .map(str::to_owned);
+    let stage1_refs: Value = sqlx::query_scalar(
+        "SELECT v.body->'stage1_check_refs' FROM distribution.verification_packages vp
+         JOIN distribution.validation_packages v ON v.id=(vp.body->>'stage1_validation_package_id')::uuid
+         WHERE vp.id=$1 AND vp.org_id=$2 AND v.revision_id=$3 AND v.org_id=$2",
+    ).bind(canonical.verification_package_id).bind(org).bind(revision_id).fetch_one(pool).await?;
+    let stage1_refs: Vec<Uuid> =
+        serde_json::from_value(stage1_refs).map_err(|_| Error::Internal)?;
     let artwork_px: Option<(u32, u32)> = sqlx::query_scalar::<_, String>(
-        "SELECT detail FROM operations.check_results WHERE revision_id=$1 AND check_code='IMAGE_TOO_SMALL' ORDER BY created_at DESC LIMIT 1",
+        "SELECT detail FROM operations.check_results WHERE revision_id=$1 AND id=ANY($2) AND check_code='IMAGE_TOO_SMALL' ORDER BY id LIMIT 1",
     )
     .bind(revision_id)
+    .bind(&stage1_refs)
     .fetch_optional(pool)
     .await?
     .as_deref()
     .and_then(parse_px);
     let audio_advisories: Vec<(String, String)> = sqlx::query_as(
         "SELECT DISTINCT check_code, COALESCE(detail,'') FROM operations.check_results
-         WHERE revision_id=$1 AND status='REVIEW_REQUIRED'
+         WHERE revision_id=$1 AND id=ANY($2) AND status='REVIEW_REQUIRED'
            AND check_code IN ('AUDIO_LOUDNESS_OUT_OF_RANGE','AUDIO_CLIPPING')",
     )
     .bind(revision_id)
+    .bind(&stage1_refs)
     .fetch_all(pool)
     .await?;
     let facts = credit_facts(&canonical, &draft);
@@ -681,7 +691,11 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
     .map(|r| (r.get("partner_id"), (r.get("ddex_recipient_dpid"), r.get("capabilities"))))
     .collect();
 
-    let created_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    // Fixed for this immutable package, so a retry builds the same bytes.
+    let created_at = row
+        .get::<chrono::DateTime<chrono::Utc>, _>("package_created_at")
+        .format("%Y-%m-%dT%H:%M:%SZ")
+        .to_string();
     let declared = Declared::from_body(
         &row.get::<Option<Value>, _>("declarations")
             .unwrap_or(Value::Null),
@@ -818,6 +832,7 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
         ready: 0,
         awaiting_partner: 0,
         content_blocked: 0,
+        automatically_approved: 0,
     };
     for s in &staged {
         let readiness = Readiness::of(&s.checks);
@@ -859,9 +874,18 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
                route_status=EXCLUDED.route_status, route_reason=EXCLUDED.route_reason,
                ern_message_id=EXCLUDED.ern_message_id, ern_sha256=EXCLUDED.ern_sha256,
                ern_xml=EXCLUDED.ern_xml, ern_is_preview=EXCLUDED.ern_is_preview,
-               approval = CASE WHEN delivery_staging.ern_sha256 IS NOT DISTINCT FROM EXCLUDED.ern_sha256
+               approval = CASE WHEN delivery_staging.approval='HELD' THEN 'HELD'
+                               WHEN delivery_staging.ern_sha256 IS NOT DISTINCT FROM EXCLUDED.ern_sha256
                                AND EXCLUDED.readiness <> 'CONTENT_BLOCKED'
+                               AND (delivery_staging.approval_rule_version IS NULL OR
+                                 (EXCLUDED.readiness='READY' AND NOT EXCLUDED.ern_is_preview
+                                  AND distribution.automatic_checks_clear(EXCLUDED.checks)))
                                THEN delivery_staging.approval ELSE 'PENDING' END,
+               approval_rule_version = CASE
+                 WHEN delivery_staging.ern_sha256 IS NOT DISTINCT FROM EXCLUDED.ern_sha256
+                   AND EXCLUDED.readiness='READY' AND NOT EXCLUDED.ern_is_preview
+                   AND distribution.automatic_checks_clear(EXCLUDED.checks)
+                 THEN delivery_staging.approval_rule_version ELSE NULL END,
                staged_at=now()",
         )
         .bind(package_id)
@@ -877,11 +901,13 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
         .bind(s.ern.as_ref().map(|e| e.message_id.as_str()))
         .bind(s.ern.as_ref().map(|e| e.sha256.as_str()))
         .bind(s.ern.as_ref().map(|e| e.xml.as_str()))
-        .bind(!s.wire)
+        .bind(s.dsp.spec().format == DeliveryFormat::Ddex && !s.wire)
         .execute(&mut *tx)
         .await?;
         summary.staged += 1;
     }
+    summary.automatically_approved =
+        auto_approve(&mut tx, org, release_id, revision_id, package_id).await?;
     crate::operations::audit(
         &mut tx,
         None,
@@ -889,8 +915,8 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
         Some(release_id),
         "delivery.staged",
         &format!(
-            "package={package_id} staged={} ready={} awaiting_partner={} content_blocked={}",
-            summary.staged, summary.ready, summary.awaiting_partner, summary.content_blocked
+            "package={package_id} staged={} ready={} awaiting_partner={} content_blocked={} automatically_approved={}",
+            summary.staged, summary.ready, summary.awaiting_partner, summary.content_blocked, summary.automatically_approved
         ),
         Uuid::new_v4(),
     )
@@ -915,6 +941,67 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
     }
     tx.commit().await?;
     Ok(summary)
+}
+
+/// Approve only ordinary releases under the new evidence rules, with no
+/// override, rights exception, warning, missing partner or stale revision.
+/// A staff decision (including HOLD) always wins. Agreement signing and
+/// E-0's contract/route/epoch checks still gate the actual send.
+async fn auto_approve(
+    tx: &mut sqlx::PgConnection,
+    org: Uuid,
+    release: Uuid,
+    revision: Uuid,
+    package: Uuid,
+) -> Result<usize> {
+    let suitable: bool = sqlx::query_scalar(
+        "SELECT COALESCE(r.status='READY_FOR_DELIVERY' AND r.current_revision_id=$3
+          AND vp.rights_epoch=e.epoch AND vp.body->>'rule_version'='2'
+          AND vp.body->>'decision'='PASS' AND vp.body->'overrides_applied'='[]'::jsonb
+          AND vp.body->'special_flags'='[]'::jsonb
+          AND cp.body->>'policy_version'='v1-self'
+          AND (cp.body->>'valid_until')::timestamptz>now(),false)
+         FROM catalog.releases r
+         JOIN distribution.distribution_packages dp ON dp.id=$4 AND dp.org_id=r.org_id
+         JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id AND cr.release_id=r.id AND cr.revision_id=$3
+         JOIN distribution.verification_packages vp ON vp.id=cr.verification_package_id AND vp.org_id=r.org_id
+         JOIN rights.rights_epochs e ON e.org_id=r.org_id AND e.release_id=r.id
+         JOIN catalog.application_revisions ar ON ar.id=$3 AND ar.org_id=r.org_id
+         JOIN catalog.consent_packages cp ON cp.package_hash=ar.consent_package_hash AND cp.org_id=r.org_id
+         WHERE r.org_id=$1 AND r.id=$2 FOR SHARE OF r,e",
+    ).bind(org).bind(release).bind(revision).bind(package).fetch_optional(&mut *tx).await?.unwrap_or(false);
+    if !suitable {
+        sqlx::query("UPDATE distribution.delivery_staging SET approval='PENDING',approval_rule_version=NULL,approval_at=NULL,approval_note='' WHERE package_id=$1 AND org_id=$2 AND approval_rule_version='1'")
+            .bind(package).bind(org).execute(&mut *tx).await?;
+        return Ok(0);
+    }
+    let codes: Vec<String> = sqlx::query_scalar(
+        "UPDATE distribution.delivery_staging s
+         SET approval='APPROVED',approval_by=NULL,approval_rule_version='1',approval_at=now(),
+             approval_note='Automatic approval: evidence rule 2, delivery rule 1; no warnings or overrides'
+         WHERE s.package_id=$1 AND s.org_id=$2 AND s.approval='PENDING' AND s.approval_by IS NULL
+           AND s.readiness='READY' AND s.route_status='ROUTABLE' AND NOT s.ern_is_preview
+           AND distribution.automatic_checks_clear(s.checks)
+           AND (s.ern_sha256 IS NULL OR EXISTS (SELECT 1 FROM distribution.ddex_messages m
+                WHERE m.package_id=s.package_id AND m.dsp_id=s.dsp_id AND m.org_id=s.org_id AND m.ern_sha256=s.ern_sha256))
+         RETURNING dsp_code",
+    ).bind(package).bind(org).fetch_all(&mut *tx).await?;
+    if !codes.is_empty() {
+        crate::operations::audit(
+            tx,
+            None,
+            Some(org),
+            Some(release),
+            "delivery.auto_approved",
+            &format!(
+                "package={package} revision={revision} rule=1 dsps={}",
+                codes.join(",")
+            ),
+            Uuid::new_v4(),
+        )
+        .await?;
+    }
+    Ok(codes.len())
 }
 
 /// Artist-facing view of the latest staged package of a release. Internal

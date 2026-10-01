@@ -39,6 +39,13 @@ const TARGETS: Record<string, Target> = {
   CREDIT_MISSING: { step: WIZ_STEP.tracks, field: 'tr-{k}-composers', label: '크레딧', hint: '크레딧이 비어 있어요. 작곡·작사 참여자를 입력해 주세요.' },
   TRACK_WRITER_CREDIT_MISSING: { step: WIZ_STEP.tracks, field: 'tr-{k}-composers', label: '작곡·작사', hint: '작곡가 또는 작사가를 한 명 이상 입력해 주세요.' },
   S2_META_CREDITS: { step: WIZ_STEP.tracks, field: 'tr-{k}-composers', label: '크레딧', hint: '작사·작곡 등 크레딧 정보가 비어 있거나 형식이 맞지 않아요.' },
+  S2_LYRICS_CREDITS: { step: WIZ_STEP.tracks, field: 'tr-{k}-lyricists', label: '작사 크레딧', hint: '가사가 있는 곡의 작사가를 입력해 주세요.' },
+  S2_LYRICS_INSTRUMENTAL: { step: WIZ_STEP.tracks, field: 'tr-{k}-lyrics', label: '가사·연주곡 표시', hint: '가사가 입력된 곡은 연주곡 표시를 해제하거나 가사를 확인해 주세요.' },
+  S2_CREDIT_PARTIES: { step: WIZ_STEP.tracks, field: 'tr-{k}-performers', label: '참여자', hint: '크레딧 참여자를 확인하고 다시 등록해 주세요.' },
+  S2_AI_LYRICS_PROVENANCE: { step: WIZ_STEP.tracks, field: 'tr-{k}-lyrics', label: '가사 출처', hint: '가사에 AI 생성 문구가 있어요. AI 활용 여부와 출처를 확인해 주세요. 문구만으로 AI 작성을 확정하지 않아요.' },
+  AUDIO_AI_PROVENANCE: { step: WIZ_STEP.rights, field: 'aqSpecialOptions', label: '음원 출처', hint: '음원 메타데이터에 AI 생성 도구 정보가 있어요. AI 활용 여부와 권리 자료를 확인해 주세요.' },
+  IMAGE_AI_PROVENANCE: { ...COVER, hint: '커버 메타데이터에 AI 생성 도구 정보가 있어요. 생성 경위와 이용 권리를 확인해 주세요.' },
+  S2_ASSET_INTEGRITY: { ...AUDIO, hint: '제출 당시 파일과 등록 파일의 정보가 달라요. 파일을 확인하고 다시 제출해 주세요.' },
   AUDIO_REQUIRED: { ...AUDIO, hint: '음원 파일이 없는 트랙이 있어요. 음원을 올려 주세요.' },
   ASSET_MISSING: { ...AUDIO, hint: '음원 파일을 찾을 수 없어요. 다시 올려 주세요.' },
   AUDIO_NOT_VERIFIED: { ...AUDIO, hint: '음원 업로드가 끝나지 않았어요. 파일을 다시 올려 주세요.' },
@@ -84,6 +91,8 @@ const TARGETS: Record<string, Target> = {
   CLINE_MISSING: { step: WIZ_STEP.rights, field: 'f-copyright', label: '© 표기', hint: '저작권(©) 표기를 ‘2026 권리자명’처럼 입력해 주세요.' },
   S2_RIGHTS_SCOPE: { step: WIZ_STEP.rights, field: 'f-ownership', label: '권리 정보', hint: '권리자 정보와 배급 범위를 확인해 주세요.' },
   S2_DOCS_ORIGIN: { step: WIZ_STEP.rights, field: 'f-ownership', label: '권리 증빙', hint: '권리 증빙 서류의 출처를 확인할 수 없어요.' },
+  S2_CONSENT_VALIDITY: { step: WIZ_STEP.review, label: '동의 갱신', hint: '동의 유효기간 또는 제출 자료가 일치하지 않아요. 동의를 다시 진행하고 제출해 주세요.' },
+  S2_RIGHTS_DECLARATIONS: { step: WIZ_STEP.rights, field: 'f-ownership', label: '배급 권리·성인 확인', hint: '배급에 필요한 권리와 성인 여부 확인을 완료해 주세요.' },
   // 담당자 검토 의견 (특정 항목이 아닌 발매 전체에 대한 의견)
   REVIEW_NOTE: { step: WIZ_STEP.review, label: '담당자 의견', hint: '담당자 검토 의견을 확인해 주세요.' },
   // 배포 준비 (3단계) — 아티스트 입력보다 시스템 쪽 문제일 때가 많다
