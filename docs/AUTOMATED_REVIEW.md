@@ -32,6 +32,8 @@
 - `UNKNOWN`: 지원하는 근거가 없다. 사람이 만들었다는 뜻이 아니다.
 - `synthid=NOT_CHECKED`: 이 구현은 SynthID 검출을 수행하지 않는다. 일반 문체 점수나 문자열 탐색을 SynthID 결과로 표시하지 않는다.
 
+도구명·IPTC 선언 외에도 [Stable Diffusion WebUI 생성 설정](https://github.com/AUTOMATIC1111/stable-diffusion-webui/blob/master/modules/processing.py)의 Steps·Sampler·CFG scale·Seed 조합과 [ComfyUI PNG 저장 코드](https://github.com/Comfy-Org/ComfyUI/blob/master/nodes.py)의 생성 작업 그래프를 확인한다. 샘플러와 모델·텍스트 인코더 노드가 함께 있는 구조를 검사하며, 일반 이미지 설명이나 ‘고품질’ 같은 문체는 AI 근거로 삼지 않는다. 이 메타데이터도 조작 가능해 수동 확인 신호다.
+
 [Google SynthID](https://deepmind.google/models/synthid/)는 삽입된 워터마크를 검증한다. 이미지·음원 검증은 Gemini 및 검증 포털로 안내되지만, 이번 조사에서 비용 없는 공개 서버 API를 확인하지 못했다. [SynthID Text 공식 문서](https://ai.google.dev/responsible/docs/safeguards/synthid)는 생성 시 설정한 워터마크와 이에 맞는 검출기를 다룬다. 임의의 기존 가사 전체를 판독하는 범용 검출기는 아니다.
 
 [OpenAI Content Provenance API](https://developers.openai.com/api/docs/guides/content-provenance)는 지원하는 OpenAI 이미지·오디오의 SynthID/C2PA 신호를 검사한다. 일반 가사 판독을 제공하지 않으며, 공식 가이드만으로 무료 이용을 보장할 수 없어 연동하지 않았다. 실제 계정 권한이나 요금을 확인하지 않은 상태에서 호출하지 않는다.

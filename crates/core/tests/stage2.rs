@@ -222,6 +222,40 @@ async fn reviewed_cover_drift_is_blocked_without_pinning_verification(pool: PgPo
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+#[test]
+fn cover_generation_settings_and_workflows_are_extracted_from_png_chunks() {
+    let dir = tmpdir();
+    for (key, value) in [
+        ("parameters", "A landscape\nSteps: 20, Sampler: Euler, CFG scale: 7, Seed: 123".to_string()),
+        ("prompt", json!({"1":{"class_type":"KSampler","inputs":{}},"2":{"class_type":"CheckpointLoaderSimple","inputs":{}}}).to_string()),
+    ] {
+        let mut payload = key.as_bytes().to_vec();
+        payload.push(0);
+        payload.extend_from_slice(value.as_bytes());
+        let mut chunk = b"tEXt".to_vec();
+        chunk.extend_from_slice(&payload);
+        let mut crc = u32::MAX;
+        for byte in &chunk {
+            crc ^= u32::from(*byte);
+            for _ in 0..8 { crc = (crc >> 1) ^ (0xedb88320 & 0_u32.wrapping_sub(crc & 1)); }
+        }
+        let png = cover_png();
+        let iend = png.len() - 12;
+        let mut bytes = png[..iend].to_vec();
+        bytes.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(&chunk);
+        bytes.extend_from_slice(&(!crc).to_be_bytes());
+        bytes.extend_from_slice(&png[iend..]);
+        let path = dir.join(format!("{key}.png"));
+        std::fs::write(&path, bytes).unwrap();
+        let report = audeniq_core::provenance::inspect(&path);
+        assert_eq!(report["inspection_status"], "COMPLETED", "{report}");
+        assert_eq!(report["outcome"], "AI_METADATA_SIGNAL", "{report}");
+        assert_eq!(report["synthid"], "NOT_CHECKED");
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 #[sqlx::test]
 async fn original_audio_provenance_is_preserved_and_not_shared_between_identical_masters(
     pool: PgPool,
