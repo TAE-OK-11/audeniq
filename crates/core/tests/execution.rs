@@ -1408,7 +1408,7 @@ async fn wait_release_status(
 ///   S3: minor who declares minority at consent (must be hard-blocked)
 ///   S4: minor who lies (minority_declared=false) (age-verification gap probe)
 ///   S5: cover song, "(Cover)" in title but undeclared (tripwire probe)
-///   S6: explicit lyrics + parental advisory (special-flag probe)
+///   S6: parental advisory (special-flag probe)
 ///   S7: declared cover via is_cover=true (special-flag probe)
 ///   S8: submit without rights/adult declarations (must be rejected)
 ///   S9: UPC already claimed by another org's live release (duplicate probe)
@@ -1515,7 +1515,7 @@ async fn sandbox_adversarial_submissions() {
         "undeclared cover title must trip review"
     );
 
-    // S6: explicit lyrics + parental advisory -> special-flag review.
+    // S6: parental advisory -> special-flag review.
     let (u6, r6) = adversarial_seed(
         &app,
         &pool,
@@ -2814,7 +2814,7 @@ async fn explicit_release_in_review(
         .execute(pool)
         .await
         .unwrap();
-    sqlx::query("UPDATE catalog.tracks SET lyrics='explicit lyrics here', parental_advisory=true WHERE release_id=$1")
+    sqlx::query("UPDATE catalog.tracks SET parental_advisory=true WHERE release_id=$1")
         .bind(release)
         .execute(pool)
         .await
