@@ -36,6 +36,7 @@ Notices and events live in D1 (`audeniq-content`, binding `CONTENT_DB`), not in 
 - Admin (active ADMIN session, mutations require CSRF): `GET|POST /api/content/{notices|events}`, `PUT|DELETE /api/content/{notices|events}/{id}`. Workers check `/api/staff/content-access` before touching D1. The admin list includes scheduled and removed rows; `DELETE` only sets `deleted_at`, and saving a removed row publishes it again.
 - Writing UI: **https://studio.audeniq.com/admin/content**, also available in the standalone Admin console. `/content-admin` redirects here. It uses the regular ADMIN account without a separate token. New posts publish immediately; a future `게시 시각` schedules them. Content approval is not required at this stage.
 - The static Studio Worker keeps authentication and staff identity checks available during maintenance so ADMIN can manage D1 content; release and review mutations remain blocked. If the backend is unavailable, session-authorized publishing fails closed. The optional operational `CONTENT_ADMIN_TOKEN` remains available for emergency scripts.
+- During the JS Worker rollout, a missing `/api/staff/content-access` falls back to the existing active staff-role check and, for mutations, constant-time comparison against the backend's stable session CSRF token. Other failures do not bypass authorization. Electronic document submission stays disabled with an attachment guidance until the new API route is available.
 
 One-time setup for the static Studio Worker:
 
@@ -55,7 +56,7 @@ curl -X POST https://studio.audeniq.com/api/content/notices \
 
 The API server needs `PAYOUT_ACCOUNT_KEY` (`openssl rand -hex 32`); keep it outside the database backups it protects.
 
-For electronic rights documents and session-authorized content, apply PostgreSQL migration `0065_electronic_rights_documents.sql` and deploy the core API first, then deploy the Studio/Admin Workers and their connected React builds. Both JS Workers need the existing `EDGE_SERVICE_SECRET` and the same `CONTENT_DB` binding; `web/admin/wrangler.jsonc` binds the existing content database. Electronic documents store a signed immutable original without an R2 upload and enter staff review. Corrections create another signed document.
+For electronic rights documents and session-authorized content, apply PostgreSQL migration `0069_electronic_rights_documents.sql` and deploy the core API first, then deploy the Studio/Admin Workers and their connected React builds. Both JS Workers need the existing `EDGE_SERVICE_SECRET` and the same `CONTENT_DB` binding; `web/admin/wrangler.jsonc` binds the existing content database. Electronic documents store a signed immutable original without an R2 upload and enter staff review. Corrections create another signed document.
 
 Local run against a real API, without the Worker:
 

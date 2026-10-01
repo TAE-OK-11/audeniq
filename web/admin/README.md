@@ -23,7 +23,7 @@ ADMIN(전부) · REVIEWER(심사·2차 승인·서류·문의) · OPERATOR(배�
 ## 배포
 `.github/workflows/admin-deploy.yml` — 모든 브랜치에서 타입 검사·빌드, `main`에서만 `wrangler deploy`.
 처음 한 번: `npx wrangler secret put EDGE_SERVICE_SECRET`, 그리고 Cloudflare에서 도메인(예: admin.audeniq.com) 연결.
-콘텐츠 관리 배포 전에는 core API의 `/api/staff/content-access`와 PostgreSQL `0065` 마이그레이션을 먼저 반영합니다. `CONTENT_DB`는 스튜디오가 사용하는 기존 D1 데이터베이스에 연결합니다.
+콘텐츠 관리 배포 전에는 core API의 `/api/staff/content-access`와 PostgreSQL `0069` 마이그레이션을 먼저 반영합니다. `CONTENT_DB`는 스튜디오가 사용하는 기존 D1 데이터베이스에 연결합니다.
 
 ```sh
 bun install

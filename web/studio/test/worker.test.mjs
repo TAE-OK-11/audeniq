@@ -94,6 +94,41 @@ test('Studio and Admin publish content using a current ADMIN session, without a 
   } finally { globalThis.fetch = previousFetch; }
 });
 
+test('API rollout fallback keeps ADMIN role and session-bound CSRF mandatory', async () => {
+  const previousFetch = globalThis.fetch;
+  const csrf = 'c'.repeat(64);
+  globalThis.fetch = async (url, init) => {
+    if (url.endsWith('/api/staff/content-access')) return Response.json({ error: { code: 'NOT_FOUND' } }, { status: 404 });
+    const cookie = init.headers.get('cookie');
+    if (url.endsWith('/api/staff/me')) {
+      if (cookie === 'session=expired') return Response.json({ error: { code: 'UNAUTHENTICATED' } }, { status: 401 });
+      return Response.json({ role: cookie === 'session=admin' ? 'ADMIN' : 'SUPPORT' });
+    }
+    assert.ok(url.endsWith('/api/auth/csrf'));
+    assert.equal(init.method, 'POST');
+    return Response.json({ csrf_token: csrf });
+  };
+  try {
+    for (const [handler, origin] of [[worker, 'https://studio.audeniq.com'], [adminWorker, 'https://admin.audeniq.com']]) {
+      const e = { ...env(), CONTENT_ADMIN_TOKEN: undefined, EDGE_SERVICE_SECRET: 'service', BACKEND_APP_ORIGIN: 'https://studio.audeniq.com' };
+      const submit = (cookie, token, source = origin) => handler.fetch(new Request(`${origin}/api/content/notices`, {
+        method: 'POST', headers: { cookie, origin: source, 'x-csrf-token': token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: '호환 게시', body: '검증된 관리자' }),
+      }), e);
+      assert.equal((await submit('session=admin', 'x'.repeat(64))).status, 403);
+      assert.equal((await submit('session=admin', '')).status, 403);
+      assert.equal((await submit('session=support', csrf)).status, 403);
+      assert.equal((await submit('session=expired', csrf)).status, 401);
+      assert.equal((await submit('session=admin', csrf, 'https://other.test')).status, 403);
+      assert.equal(e.CONTENT_DB.rows.notices.length, 0);
+      assert.equal((await submit('session=admin', csrf)).status, 201);
+      const list = await handler.fetch(new Request(`${origin}/api/content/notices`, { headers: { cookie: 'session=admin' } }), e);
+      assert.equal(list.status, 200);
+      assert.equal(e.CONTENT_DB.rows.notices.length, 1);
+    }
+  } finally { globalThis.fetch = previousFetch; }
+});
+
 test('routes: public reads, admin writes under /api/content', () => {
   assert.deepEqual(route('GET', '/api/notices'), { kind: 'list', table: 'notices' });
   assert.deepEqual(route('GET', '/api/events/a-1'), { kind: 'get', table: 'events', id: 'a-1' });

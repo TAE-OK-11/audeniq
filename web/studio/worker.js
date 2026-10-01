@@ -6,7 +6,7 @@
  * 공개 (로그인 없이 읽기)
  *   GET  /api/notices, /api/notices/:id
  *   GET  /api/events,  /api/events/:id
- * 관리 (Authorization: Bearer <CONTENT_ADMIN_TOKEN>, wrangler secret)
+ * 관리 (ADMIN 세션 + CSRF; 비상 스크립트는 CONTENT_ADMIN_TOKEN)
  *   GET    /api/content/notices|events        예약·숨김 글까지 전체 목록
  *   POST   /api/content/notices|events        새 글
  *   PUT    /api/content/notices|events/:id    수정
@@ -285,10 +285,30 @@ export async function authorizeContent(request, env) {
     if (value) headers.set(key, value);
   }
   try {
-    const res = await fetch((env.BACKEND_URL || 'https://api-origin.audeniq.com').replace(/\/$/, '') + '/api/staff/content-access', {
+    const backend = (env.BACKEND_URL || 'https://api-origin.audeniq.com').replace(/\/$/, '');
+    let res = await fetch(backend + '/api/staff/content-access', {
       method: read ? 'GET' : 'POST', headers, redirect: 'manual',
     });
     if (res.status === 200) return null;
+    // During the API rollout, the existing staff endpoint still checks the
+    // active role. Mutations also compare the supplied CSRF against the
+    // backend's stable, session-bound token; this never authorizes on role alone.
+    if (res.status === 404) {
+      res = await fetch(backend + '/api/staff/me', { headers, redirect: 'manual' });
+      if (res.status === 200) {
+        const staff = await res.json();
+        if (staff?.role !== 'ADMIN') return error(403, 'FORBIDDEN');
+        if (read) return null;
+        if (!request.headers.get('x-csrf-token')) return error(403, 'FORBIDDEN');
+        res = await fetch(backend + '/api/auth/csrf', { method: 'POST', headers, redirect: 'manual' });
+        if (res.status === 200) {
+          const csrf = await res.json();
+          return typeof csrf?.csrf_token === 'string'
+            && bearerOk(`Bearer ${request.headers.get('x-csrf-token')}`, csrf.csrf_token)
+            ? null : error(403, 'FORBIDDEN');
+        }
+      }
+    }
     const data = await res.json().catch(() => null);
     return error(res.status >= 400 && res.status < 600 ? res.status : 502, data?.error?.code || 'FORBIDDEN');
   } catch { return error(502, 'BACKEND_UNAVAILABLE'); }
