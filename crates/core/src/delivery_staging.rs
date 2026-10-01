@@ -877,11 +877,15 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
                approval = CASE WHEN delivery_staging.approval='HELD' THEN 'HELD'
                                WHEN delivery_staging.ern_sha256 IS NOT DISTINCT FROM EXCLUDED.ern_sha256
                                AND EXCLUDED.readiness <> 'CONTENT_BLOCKED'
-                               AND (delivery_staging.approval_rule_version IS NULL OR
+                               AND (delivery_staging.approval_rule_version IS DISTINCT FROM '1' OR
                                  (EXCLUDED.readiness='READY' AND NOT EXCLUDED.ern_is_preview
                                   AND distribution.automatic_checks_clear(EXCLUDED.checks)))
                                THEN delivery_staging.approval ELSE 'PENDING' END,
                approval_rule_version = CASE
+                 WHEN delivery_staging.approval_rule_version='STAFF_FINAL'
+                   AND delivery_staging.ern_sha256 IS NOT DISTINCT FROM EXCLUDED.ern_sha256
+                   AND EXCLUDED.readiness <> 'CONTENT_BLOCKED'
+                 THEN delivery_staging.approval_rule_version
                  WHEN delivery_staging.ern_sha256 IS NOT DISTINCT FROM EXCLUDED.ern_sha256
                    AND EXCLUDED.readiness='READY' AND NOT EXCLUDED.ern_is_preview
                    AND distribution.automatic_checks_clear(EXCLUDED.checks)
@@ -959,12 +963,15 @@ async fn auto_approve(
           AND vp.rights_epoch=e.epoch AND vp.body->>'rule_version'='2'
           AND vp.body->>'decision'='PASS' AND vp.body->'overrides_applied'='[]'::jsonb
           AND vp.body->'special_flags'='[]'::jsonb
+          AND v.body->>'rule_version'='5'
+          AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(ar.body->'tracks') t WHERE NOT t ? 'lyrics')
           AND cp.body->>'policy_version'='v1-self'
           AND (cp.body->>'valid_until')::timestamptz>now(),false)
          FROM catalog.releases r
          JOIN distribution.distribution_packages dp ON dp.id=$4 AND dp.org_id=r.org_id
          JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id AND cr.release_id=r.id AND cr.revision_id=$3
          JOIN distribution.verification_packages vp ON vp.id=cr.verification_package_id AND vp.org_id=r.org_id
+         JOIN distribution.validation_packages v ON v.id=(vp.body->>'stage1_validation_package_id')::uuid AND v.org_id=r.org_id
          JOIN rights.rights_epochs e ON e.org_id=r.org_id AND e.release_id=r.id
          JOIN catalog.application_revisions ar ON ar.id=$3 AND ar.org_id=r.org_id
          JOIN catalog.consent_packages cp ON cp.package_hash=ar.consent_package_hash AND cp.org_id=r.org_id

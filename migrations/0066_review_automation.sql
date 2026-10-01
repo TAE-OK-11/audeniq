@@ -23,17 +23,30 @@ RETURNS boolean LANGUAGE sql IMMUTABLE STRICT SET search_path=pg_catalog AS $$
           AND c->>'code'='DSP_AUDIO_SERVED_DOWNSAMPLED',false))
 $$;
 ALTER TABLE distribution.delivery_staging ADD COLUMN approval_rule_version text;
-DO $$ DECLARE name text; BEGIN
- SELECT conname INTO STRICT name FROM pg_constraint
-  WHERE conrelid='distribution.delivery_staging'::regclass AND contype='c'
-    AND pg_get_constraintdef(oid) LIKE '%approval_by IS NOT NULL%';
- EXECUTE format('ALTER TABLE distribution.delivery_staging DROP CONSTRAINT %I',name);
+ALTER TABLE distribution.delivery_staging DROP CONSTRAINT delivery_staging_approved_not_blocked;
+-- 0051 already supports automatic staging after a STAFF final release
+-- approval. Preserve that distinct authority and existing approved rows.
+UPDATE distribution.delivery_staging SET approval_rule_version='STAFF_FINAL'
+ WHERE approval='APPROVED' AND approval_by IS NULL;
+CREATE OR REPLACE FUNCTION distribution.auto_approve_staging() RETURNS trigger
+ LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $$
+BEGIN
+ IF NEW.approval='PENDING' AND NEW.readiness <> 'CONTENT_BLOCKED'
+    AND distribution.release_finally_approved(NEW.org_id,NEW.release_id) THEN
+  NEW.approval := 'APPROVED';
+  NEW.approval_by := NULL;
+  NEW.approval_rule_version := 'STAFF_FINAL';
+  NEW.approval_note := '발매 최종 승인에 따른 자동 승인';
+  NEW.approval_at := now();
+ END IF;
+ RETURN NEW;
 END $$;
 ALTER TABLE distribution.delivery_staging ADD CONSTRAINT delivery_approval_provenance CHECK (
- (approval_rule_version IS NULL OR approval_rule_version='1') AND
+ (approval_rule_version IS NULL OR approval_rule_version IN ('1','STAFF_FINAL')) AND
  (approval_rule_version IS NULL OR approval='APPROVED') AND
  (approval <> 'APPROVED' OR
    (readiness <> 'CONTENT_BLOCKED' AND approval_by IS NOT NULL AND approval_rule_version IS NULL) OR
+   COALESCE((readiness <> 'CONTENT_BLOCKED' AND approval_by IS NULL AND approval_rule_version='STAFF_FINAL'),false) OR
    COALESCE((approval_by IS NULL AND approval_rule_version='1' AND approval_at IS NOT NULL
     AND readiness='READY' AND route_status='ROUTABLE' AND NOT ern_is_preview
     AND distribution.automatic_checks_clear(checks)),false))
