@@ -1316,6 +1316,8 @@ async fn worker_pipeline_grants_cover_handoff_and_reconciler(pool: PgPool) {
         ("rights.rights_epochs", "SELECT"),
         ("catalog.releases", "SELECT,UPDATE"),
         ("catalog.assets", "SELECT,UPDATE"),
+        ("catalog.external_recordings", "SELECT"),
+        ("catalog.external_recording_epoch", "SELECT"),
         ("distribution.preparation_artifacts", "SELECT,INSERT"),
         ("distribution.identifier_assignments", "SELECT,INSERT"),
         ("distribution.ddex_messages", "SELECT,INSERT"),
@@ -1336,6 +1338,23 @@ async fn worker_pipeline_grants_cover_handoff_and_reconciler(pool: PgPool) {
                     .await
                     .unwrap();
             assert!(ok, "audeniq_worker missing {priv_name} on {table}");
+        }
+    }
+    for role in ["audeniq_api", "audeniq_worker"] {
+        for table in [
+            "catalog.external_recordings",
+            "catalog.external_recording_epoch",
+        ] {
+            for privilege in ["INSERT", "UPDATE", "DELETE"] {
+                let allowed: bool = sqlx::query_scalar("SELECT has_table_privilege($1,$2,$3)")
+                    .bind(role)
+                    .bind(table)
+                    .bind(privilege)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+                assert!(!allowed, "{role} must not have {privilege} on {table}");
+            }
         }
     }
     // The API role must still be denied writes on the pipeline schemas.

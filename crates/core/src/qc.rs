@@ -12,7 +12,7 @@ use std::process::Stdio;
 use std::time::Duration;
 
 /// Bump when any threshold, check set, or metric definition changes.
-pub const QC_RULE_VERSION: &str = "4";
+pub const QC_RULE_VERSION: &str = "6";
 
 /// Minimum audio duration in seconds before flagging as suspiciously short.
 pub const MIN_AUDIO_SECS: f64 = 30.0;
@@ -382,6 +382,7 @@ pub const AUDIO_CHECK_CODES: &[&str] = &[
     // submission::handle_fingerprint_checks.
     "AUDIO_FINGERPRINT_FAILED",
     "AUDIO_SIMILAR_TO_EXISTING",
+    "AUDIO_AI_PROVENANCE",
 ];
 
 fn audio_code_index(code: &str) -> usize {
@@ -1512,13 +1513,17 @@ fn parse_ebur128_value(line: &str) -> Option<Option<f64>> {
 }
 
 /// Fixed Stage 1 image check contract: every analyzed cover-art asset yields
-/// exactly these five outcomes, in order.
+/// these outcomes in order, including provenance appended by the submission analyzer.
 pub const IMAGE_CHECK_CODES: &[&str] = &[
     "SHA256_MISMATCH",
     "IMAGE_MAGIC_MISMATCH",
     "IMAGE_PROBE_FAILED",
     "IMAGE_TOO_SMALL",
     "IMAGE_NOT_SQUARE",
+    "IMAGE_AI_PROVENANCE",
+    "IMAGE_COLOR_PROFILE",
+    "IMAGE_TEXT_SCAN",
+    "IMAGE_QR_SCAN",
 ];
 
 /// Stage 1 basic QC for a cover-art image file.
@@ -2019,7 +2024,7 @@ mod tests {
         assert_eq!(sha.status, CheckStatus::Blocked);
         // Blocked short-circuits: the remaining checks are NOT_APPLICABLE,
         // but the full contract still holds (13 QC + 2 fingerprint).
-        assert_eq!(out.len(), 15);
+        assert_eq!(out.len(), AUDIO_CHECK_CODES.len());
         assert!(
             out[1..]
                 .iter()
