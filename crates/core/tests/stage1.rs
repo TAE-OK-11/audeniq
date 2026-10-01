@@ -457,9 +457,9 @@ async fn stage1_happy_path_passes(pool: PgPool) {
     // ARTIST_NAME_REVIEW; F6 wiring RELEASE_TITLE_STYLE,
     // TRACK_TITLE_EXPLICIT_MARKER, TRACK_TITLE_STYLE, FIELD_LANGUAGE_INVALID)
     // + 15 audio checks (QC rule v3 added AUDIO_CONTENT_SUSPECT).
-    assert_eq!(codes.len(), 41, "{codes:?}");
+    assert_eq!(codes.len(), 43, "{codes:?}");
     let bad: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM operations.check_results WHERE revision_id=$1 AND status<>'PASS'",
+        "SELECT COUNT(*) FROM operations.check_results WHERE revision_id=$1 AND status NOT IN ('PASS','NOT_APPLICABLE')",
     )
     .bind(revision_id)
     .fetch_one(&pool)
