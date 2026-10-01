@@ -1513,7 +1513,7 @@ fn parse_ebur128_value(line: &str) -> Option<Option<f64>> {
 }
 
 /// Fixed Stage 1 image check contract: every analyzed cover-art asset yields
-/// exactly these five outcomes, in order.
+/// these outcomes in order, including provenance appended by the submission analyzer.
 pub const IMAGE_CHECK_CODES: &[&str] = &[
     "SHA256_MISMATCH",
     "IMAGE_MAGIC_MISMATCH",

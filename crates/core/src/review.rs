@@ -71,6 +71,8 @@ async fn record_check_result(
 
 /// Two database round trips for the whole run, independent of check count.
 /// Keep append-only checkpoints and return IDs in the original check order.
+/// The caller holds the release row lock; the shared audit table intentionally
+/// permits repeated Stage 1 results and has no unique checkpoint constraint.
 async fn record_check_results(
     tx: &mut PgConnection,
     revision_id: Uuid,
@@ -84,10 +86,13 @@ async fn record_check_results(
     sqlx::query(
         "INSERT INTO operations.check_results
            (id, revision_id, check_code, rule_version, status, result_hash, detail)
-         SELECT id,$1,code,$2,status,hash,detail
+         SELECT DISTINCT ON (c.code,c.hash) c.id,$1,c.code,$2,c.status,c.hash,c.detail
            FROM unnest($3::uuid[],$4::text[],$5::text[],$6::text[],$7::text[])
              AS c(id,code,status,hash,detail)
-         ON CONFLICT(revision_id,check_code,result_hash) DO NOTHING",
+          WHERE NOT EXISTS (SELECT 1 FROM operations.check_results existing
+                 WHERE existing.revision_id=$1 AND existing.check_code=c.code
+                   AND existing.result_hash=c.hash)
+          ORDER BY c.code,c.hash",
     )
     .bind(revision_id)
     .bind(REVIEW_RULE_VERSION)
