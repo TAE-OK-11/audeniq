@@ -979,12 +979,16 @@ async fn auto_approve(
     revision: Uuid,
     package: Uuid,
 ) -> Result<usize> {
+    sqlx::query("SELECT pg_advisory_xact_lock_shared(64481168068)")
+        .execute(&mut *tx)
+        .await?;
     let suitable: bool = sqlx::query_scalar(
         "SELECT COALESCE(r.status='READY_FOR_DELIVERY' AND r.current_revision_id=$3
           AND vp.rights_epoch=e.epoch AND vp.body->>'rule_version'=$5
           AND vp.body->>'decision'='PASS' AND vp.body->'overrides_applied'='[]'::jsonb
           AND vp.body->'special_flags'='[]'::jsonb
           AND v.body->>'rule_version'=$6 AND vp.body->>'content_policy_rule_version'=$7
+          AND vp.body->>'external_reference_catalog_epoch'=(SELECT epoch::text FROM catalog.external_recording_epoch WHERE singleton)
           AND jsonb_typeof(ar.body->'release'->'draft'->'platforms')='array'
           AND ar.body->'release'->'draft'->'platforms'<>'[]'::jsonb
           AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(ar.body->'tracks') t WHERE NOT t ? 'lyrics')
@@ -1010,7 +1014,7 @@ async fn auto_approve(
     let codes: Vec<String> = sqlx::query_scalar(
         "UPDATE distribution.delivery_staging s
          SET approval='APPROVED',approval_by=NULL,approval_rule_version='2',approval_at=now(),
-             approval_note='Automatic approval: evidence rule 3, QC rule 6, content policy 1; no warnings or overrides'
+             approval_note='Automatic approval: evidence rule 4, QC rule 6, content policy 1; no warnings or overrides'
          WHERE s.package_id=$1 AND s.org_id=$2 AND s.approval='PENDING' AND s.approval_by IS NULL
            AND s.readiness='READY' AND s.route_status='ROUTABLE' AND NOT s.ern_is_preview
            AND distribution.automatic_checks_clear(s.checks)
