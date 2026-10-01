@@ -1840,7 +1840,11 @@ async fn analyze_asset(
         {
             outcomes.push(crate::provenance::outcome(
                 code,
-                &crate::provenance::inspect(path),
+                &if kind == "AUDIO" {
+                    crate::provenance::inspect_audio(path)
+                } else {
+                    crate::provenance::inspect(path)
+                },
             ));
         }
         // Perceptual fingerprint over the head/middle/tail segment windows.

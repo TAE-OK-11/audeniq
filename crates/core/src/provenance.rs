@@ -19,7 +19,8 @@ const OUTPUT_LIMIT: u64 = 256 * 1024;
 /// Read provenance fields locally, with bounded output and runtime.
 pub fn inspect(path: &Path) -> Value {
     let executable = std::env::var("EXIFTOOL_BIN").unwrap_or_else(|_| "exiftool".into());
-    let child = Command::new(executable)
+    let mut command = Command::new(executable);
+    command
         .args([
             "-j",
             "-n",
@@ -38,18 +39,79 @@ pub fn inspect(path: &Path) -> Value {
             "-Workflow",
             "--",
         ])
-        .arg(path)
+        .arg(path);
+    let bytes = match read_metadata(&mut command) {
+        Ok(bytes) => bytes,
+        Err(reason) => return unknown(reason),
+    };
+    match serde_json::from_slice::<Value>(&bytes) {
+        Ok(Value::Array(rows)) if rows.len() == 1 => from_metadata(&rows[0]),
+        _ => unknown("metadata reader returned an invalid report"),
+    }
+}
+
+/// FFprobe reads audio tags in containers ExifTool cannot inspect (e.g. TTA).
+/// Both readers remain local and share the same output and execution limits.
+pub fn inspect_audio(path: &Path) -> Value {
+    let report = inspect(path);
+    if report["inspection_status"] == "COMPLETED" {
+        return report;
+    }
+    let executable = std::env::var("FFPROBE_BIN").unwrap_or_else(|_| "ffprobe".into());
+    let mut command = Command::new(executable);
+    command
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "format_tags",
+            "-of",
+            "json",
+            "-i",
+        ])
+        .arg(path);
+    let bytes = match read_metadata(&mut command) {
+        Ok(bytes) => bytes,
+        Err(reason) => return unknown(reason),
+    };
+    let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
+        return unknown("audio metadata reader returned an invalid report");
+    };
+    if !value["format"].is_object() {
+        return unknown("audio metadata reader returned an invalid report");
+    }
+    let mut metadata = serde_json::Map::new();
+    if let Some(tags) = value["format"]["tags"].as_object() {
+        for (key, value) in tags {
+            let field = match key.to_ascii_lowercase().as_str() {
+                "encoder" | "encoded_by" => "Encoder",
+                "software" | "writing_library" => "Software",
+                "creator_tool" => "CreatorTool",
+                "comment" => "Comment",
+                "description" => "Description",
+                _ => continue,
+            };
+            metadata.insert(field.into(), value.clone());
+        }
+    }
+    let mut report = from_metadata(&Value::Object(metadata));
+    report["reader"] = json!("FFPROBE_FALLBACK");
+    report
+}
+
+fn read_metadata(command: &mut Command) -> Result<Vec<u8>, &'static str> {
+    let child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn();
     let Ok(mut child) = child else {
-        return unknown("metadata reader unavailable");
+        return Err("metadata reader unavailable");
     };
     let Some(stdout) = child.stdout.take() else {
         let _ = child.kill();
         let _ = child.wait();
-        return unknown("metadata reader output unavailable");
+        return Err("metadata reader output unavailable");
     };
     let reader = std::thread::spawn(move || {
         let mut output = Vec::new();
@@ -71,15 +133,12 @@ pub fn inspect(path: &Path) -> Value {
         }
     };
     let Ok(Ok(bytes)) = reader.join() else {
-        return unknown("metadata reader failed");
+        return Err("metadata reader failed");
     };
     if !success || bytes.len() as u64 > OUTPUT_LIMIT {
-        return unknown("metadata reader failed or exceeded limits");
+        return Err("metadata reader failed or exceeded limits");
     }
-    match serde_json::from_slice::<Value>(&bytes) {
-        Ok(Value::Array(rows)) if rows.len() == 1 => from_metadata(&rows[0]),
-        _ => unknown("metadata reader returned an invalid report"),
-    }
+    Ok(bytes)
 }
 
 fn unknown(reason: &str) -> Value {
