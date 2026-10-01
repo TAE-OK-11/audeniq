@@ -106,6 +106,20 @@ fn external_metadata() -> audeniq_core::external_recordings::ReferenceMetadata {
 
 #[sqlx::test]
 async fn external_reencoded_recording_is_held_without_another_org_catalog(pool: PgPool) {
+    async fn assert_stage1_passed(pool: &PgPool, release: Uuid, revision: Uuid, encoding: &str) {
+        let failures: Vec<(String, String, Option<String>)> = sqlx::query_as(
+            "SELECT check_code,status,detail FROM operations.check_results WHERE revision_id=$1 AND status IN ('BLOCKED','CORRECTION_REQUIRED','TECHNICAL_RETRY') ORDER BY check_code",
+        )
+        .bind(revision)
+        .fetch_all(pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            release_status(pool, release).await,
+            "STAGE1_PASSED",
+            "{encoding} must reach recording comparison; checks: {failures:?}"
+        );
+    }
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let dir = tmpdir();
@@ -140,6 +154,7 @@ async fn external_reencoded_recording_is_held_without_another_org_catalog(pool: 
     let release = build_submittable(&app, &pool, &store, &u, asset).await;
     let revision = consent_and_submit(&app, &u, release, "external-reference-copy").await;
     assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    assert_stage1_passed(&pool, release, revision, "FLAC").await;
     // The external recording becomes known AFTER Stage 1. Stage 2 must
     // compare freshly, with no new submitted-file download or other org.
     audeniq_core::external_recordings::import(&pool, "ci-operator", external_metadata(), &original)
@@ -223,6 +238,7 @@ async fn external_reencoded_recording_is_held_without_another_org_catalog(pool: 
     let release = build_submittable(&app, &pool, &store, &u, asset).await;
     let revision = consent_and_submit(&app, &u, release, "external-reference-lossy-copy").await;
     assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    assert_stage1_passed(&pool, release, revision, "MP3 restored to WAV").await;
     assert_eq!(
         run_one(&pool, &store, "rights", "stage2").await,
         "SUCCEEDED"
