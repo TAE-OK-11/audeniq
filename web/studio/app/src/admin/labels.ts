@@ -86,6 +86,7 @@ export const RELEASE_TYPE: Record<string, string> = { SINGLE: '싱글', EP: 'EP'
 export function checkLabel(code: string): string {
   if (isKnownCorrection(code)) return correctionTarget(code).label;
   const extra: Record<string, string> = {
+    IMAGE_COLOR_PROFILE: '커버 색상·프로필', IMAGE_TEXT_SCAN: '커버 문자 검사', IMAGE_QR_SCAN: '커버 QR 검사',
     S2_INTEGRITY_DUP: '중복 음원', AUDIO_SIMILAR_TO_EXISTING: '기존 음원과 유사', S2_PROTECTED_NAME: '보호 아티스트명',
     DSP_LOUDNESS_ADVISORY: '음량(라우드니스) 권고', DSP_CLIPPING_ADVISORY: '클리핑 권고',
     S2_EXPRESS_REQUEST: '신속 발매 요청', S2_ADDITIONAL_RIGHTS: '추가 권리 확인',
@@ -144,6 +145,7 @@ const num = (detail: string | null | undefined, re: RegExp) => {
 /** 검사 결과 → 담당자가 바로 이해할 한 줄 설명 (원문 detail은 ‘상세 보기’에서) */
 export function checkSummary(c: { check_code: string; detail: string | null }): string {
   const d = c.detail ?? '';
+  if (c.check_code.startsWith('S2_DSP_') && isKnownCorrection(c.check_code)) return correctionTarget(c.check_code).hint;
   switch (c.check_code) {
     case 'AUDIO_AI_PROVENANCE':
     case 'IMAGE_AI_PROVENANCE':

@@ -57,7 +57,7 @@ jobs:
       - name: Install FFmpeg (QC fixture generation + ffprobe) and xmllint (DDEX XSD validation)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg libxml2-utils openssh-server openssh-client libimage-exiftool-perl
+          sudo apt-get install -y -qq ffmpeg libxml2-utils openssh-server openssh-client libimage-exiftool-perl tesseract-ocr tesseract-ocr-eng tesseract-ocr-kor zbar-tools qrencode fonts-dejavu-core
       # 서명을 실제로 검사하는 S3 서버 (R2처럼 SigV4 확인; moto는 서명을 보지 않는다).
       # tests/s3_presign.rs가 서명 URL이 선언한 객체 하나만 올릴 수 있는지 확인한다
       - name: Start S3 gateway for presigned upload tests
@@ -217,6 +217,8 @@ jobs:
           docker compose run --rm --no-deps --entrypoint ffprobe worker -version
           docker compose run --rm --no-deps --entrypoint ffmpeg worker -version
           docker compose run --rm --no-deps --entrypoint exiftool worker -ver
+          docker compose run --rm --no-deps --entrypoint tesseract worker --list-langs
+          docker compose run --rm --no-deps --entrypoint zbarimg worker --version
       - name: Runtime logs
         if: always()
         run: |

@@ -85,6 +85,238 @@ fn tmpdir() -> PathBuf {
     d
 }
 
+fn qr_png(dir: &std::path::Path) -> Vec<u8> {
+    let small = dir.join("qr.png");
+    assert!(
+        std::process::Command::new("qrencode")
+            .args(["-s", "40", "-o"])
+            .arg(&small)
+            .arg("https://example.invalid/private-payload")
+            .status()
+            .unwrap()
+            .success()
+    );
+    let cover = dir.join("qr-cover.png");
+    assert!(
+        std::process::Command::new("ffmpeg")
+            .args(["-y", "-v", "error", "-i"])
+            .arg(&small)
+            .args([
+                "-vf",
+                "pad=3000:3000:(ow-iw)/2:(oh-ih)/2:color=white",
+                "-frames:v",
+                "1",
+                "-pix_fmt",
+                "rgb24"
+            ])
+            .arg(&cover)
+            .status()
+            .unwrap()
+            .success()
+    );
+    std::fs::read(cover).unwrap()
+}
+
+#[test]
+fn free_artwork_readers_detect_text_and_qr_without_storing_qr_payloads() {
+    let dir = tmpdir();
+    let text = dir.join("text.png");
+    assert!(std::process::Command::new("ffmpeg").args(["-y","-v","error","-f","lavfi","-i","color=c=white:s=3000x3000",
+        "-vf","drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf:text='www.example.com':fontsize=130:fontcolor=black:x=150:y=600",
+        "-frames:v","1","-pix_fmt","rgb24"]).arg(&text).status().unwrap().success());
+    let measurements = audeniq_core::artwork_policy::inspect(&text);
+    assert!(
+        measurements
+            .iter()
+            .all(|m| m.status == audeniq_core::qc::CheckStatus::Pass),
+        "{measurements:?}"
+    );
+    let ocr: Value = serde_json::from_str(
+        &measurements
+            .iter()
+            .find(|m| m.check_code == "IMAGE_TEXT_SCAN")
+            .unwrap()
+            .detail,
+    )
+    .unwrap();
+    assert!(
+        ocr["report"]["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|line| line.as_str().unwrap().contains("www.example.com")),
+        "{ocr}"
+    );
+    let qr_bytes = qr_png(&dir);
+    let qr_path = dir.join("qr-cover.png");
+    let results = audeniq_core::artwork_policy::inspect(&qr_path);
+    let qr = results
+        .iter()
+        .find(|m| m.check_code == "IMAGE_QR_SCAN")
+        .unwrap();
+    assert_eq!(qr.status, audeniq_core::qc::CheckStatus::Pass, "{qr:?}");
+    let report: Value = serde_json::from_str(&qr.detail).unwrap();
+    assert_eq!(report["report"]["qr_count"], 1, "{report}");
+    assert!(!qr.detail.contains("private-payload"));
+    assert!(!qr_bytes.is_empty());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+async fn requested_release(
+    pool: &PgPool,
+    platform: &str,
+    lyrics: Option<&str>,
+) -> (Router, Arc<MemStore>, User, PathBuf, Uuid) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let asset = register_asset(pool, &store, &u, "policy.wav", &make_good_wav(&dir)).await;
+    let release = build_submittable(&app, pool, &store, &u, asset).await;
+    sqlx::query("UPDATE catalog.releases SET draft=draft || $2::jsonb WHERE id=$1")
+        .bind(release)
+        .bind(json!({"platforms":[platform]}))
+        .execute(pool)
+        .await
+        .unwrap();
+    if let Some(lyrics) = lyrics {
+        sqlx::query("UPDATE catalog.tracks SET lyrics=$2 WHERE release_id=$1")
+            .bind(release)
+            .bind(lyrics)
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO catalog.credits(org_id,track_id,party_id,role) SELECT org_id,id,$2,'LYRICIST' FROM catalog.tracks WHERE release_id=$1")
+            .bind(release).bind(u.party).execute(pool).await.unwrap();
+    }
+    (app, store, u, dir, release)
+}
+
+async fn check_status(pool: &PgPool, revision: Uuid, code: &str) -> String {
+    sqlx::query_scalar("SELECT status FROM operations.check_results WHERE revision_id=$1 AND check_code=$2 ORDER BY created_at DESC LIMIT 1")
+        .bind(revision).bind(code).fetch_one(pool).await.unwrap()
+}
+
+#[sqlx::test]
+async fn apple_lyrics_format_is_a_server_correction_before_verification(pool: PgPool) {
+    let (app, store, u, dir, release) =
+        requested_release(&pool, "apple", Some("[Chorus]\nHello again\n(Repeat x3)")).await;
+    let revision = consent_and_submit(&app, &u, release, "apple-policy").await;
+    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(release_status(&pool, release).await, "STAGE2_CORRECTION");
+    assert_eq!(
+        check_status(&pool, revision, "S2_DSP_LYRICS_FORMAT").await,
+        "CORRECTION_REQUIRED"
+    );
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM distribution.verification_packages WHERE revision_id=$1",
+    )
+    .bind(revision)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(count, 0);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[sqlx::test]
+async fn explicit_lyrics_signal_requests_review_without_changing_the_tag(pool: PgPool) {
+    let (app, store, u, dir, release) =
+        requested_release(&pool, "spotify", Some("Fuck this\nHello again")).await;
+    let revision = consent_and_submit(&app, &u, release, "explicit-policy").await;
+    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(release_status(&pool, release).await, "STAGE2_REVIEW");
+    assert_eq!(
+        check_status(&pool, revision, "S2_DSP_EXPLICIT_TAG_REVIEW").await,
+        "REVIEW_REQUIRED"
+    );
+    let explicit: bool =
+        sqlx::query_scalar("SELECT parental_advisory FROM catalog.tracks WHERE release_id=$1")
+            .bind(release)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(!explicit);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[sqlx::test]
+async fn content_id_exclusive_rights_acknowledgments_are_required_by_the_server(pool: PgPool) {
+    let (app, store, u, dir, release) = requested_release(&pool, "youtube-cid", None).await;
+    let revision = consent_and_submit(&app, &u, release, "cid-policy").await;
+    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(release_status(&pool, release).await, "STAGE2_CORRECTION");
+    assert_eq!(
+        check_status(&pool, revision, "S2_DSP_CONTENT_ID_DECLARATION").await,
+        "CORRECTION_REQUIRED"
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[sqlx::test]
+async fn qr_cover_is_a_correction_and_the_payload_is_not_retained(pool: PgPool) {
+    let (app, store, u, dir, release) = requested_release(&pool, "spotify", None).await;
+    let bytes = qr_png(&dir);
+    let key:String=sqlx::query_scalar("SELECT a.object_key FROM catalog.releases r JOIN catalog.assets a ON a.id=r.artwork_asset_id WHERE r.id=$1").bind(release).fetch_one(&pool).await.unwrap();
+    store
+        .files
+        .lock()
+        .await
+        .insert(key.clone(), (bytes.clone(), "image/png".into()));
+    sqlx::query("UPDATE catalog.assets SET sha256=$2,size_bytes=$3 WHERE object_key=$1")
+        .bind(key)
+        .bind(sha256_hex(&bytes))
+        .bind(bytes.len() as i64)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let revision = consent_and_submit(&app, &u, release, "qr-policy").await;
+    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(release_status(&pool, release).await, "STAGE2_CORRECTION");
+    assert_eq!(
+        check_status(&pool, revision, "S2_DSP_ARTWORK_QR").await,
+        "CORRECTION_REQUIRED"
+    );
+    let detail:String=sqlx::query_scalar("SELECT detail FROM operations.check_results WHERE revision_id=$1 AND check_code='IMAGE_QR_SCAN'").bind(revision).fetch_one(&pool).await.unwrap();
+    assert!(!detail.contains("private-payload"));
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[sqlx::test]
+async fn unreferenced_artwork_results_do_not_replace_pinned_measurements(pool: PgPool) {
+    let (app, store, u, dir, release) = requested_release(&pool, "spotify", None).await;
+    let revision = consent_and_submit(&app, &u, release, "pinned-art-policy").await;
+    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    let misleading =
+        json!({"rule_version":"1","report":{"inspection_status":"COMPLETED","qr_count":9}})
+            .to_string();
+    sqlx::query("INSERT INTO operations.check_results(id,revision_id,check_code,rule_version,status,result_hash,detail) VALUES($1,$2,'IMAGE_QR_SCAN',$3,'PASS',$4,$5)")
+        .bind(Uuid::new_v4()).bind(revision).bind(audeniq_core::qc::QC_RULE_VERSION).bind("f".repeat(64)).bind(misleading).execute(&pool).await.unwrap();
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(release_status(&pool, release).await, "STAGE2_PASSED");
+    let count:i64=sqlx::query_scalar("SELECT count(*) FROM operations.check_results WHERE revision_id=$1 AND check_code='S2_DSP_ARTWORK_QR'").bind(revision).fetch_one(&pool).await.unwrap();
+    assert_eq!(count, 0);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 #[sqlx::test]
 async fn lyrics_are_frozen_and_corrections_precede_manual_review(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
@@ -384,7 +616,7 @@ async fn clean_delivery_is_auto_approved_but_staff_hold_and_signature_still_gate
         .bind(package).fetch_one(&pool).await.unwrap();
     assert_eq!(approval, "APPROVED");
     assert!(by.is_none());
-    assert_eq!(rule.as_deref(), Some("1"));
+    assert_eq!(rule.as_deref(), Some("2"));
     assert!(
         audeniq_core::execution::enqueue_delivery_jobs(&pool, package)
             .await

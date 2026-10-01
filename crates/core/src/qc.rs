@@ -12,7 +12,7 @@ use std::process::Stdio;
 use std::time::Duration;
 
 /// Bump when any threshold, check set, or metric definition changes.
-pub const QC_RULE_VERSION: &str = "5";
+pub const QC_RULE_VERSION: &str = "6";
 
 /// Minimum audio duration in seconds before flagging as suspiciously short.
 pub const MIN_AUDIO_SECS: f64 = 30.0;
@@ -1521,6 +1521,9 @@ pub const IMAGE_CHECK_CODES: &[&str] = &[
     "IMAGE_TOO_SMALL",
     "IMAGE_NOT_SQUARE",
     "IMAGE_AI_PROVENANCE",
+    "IMAGE_COLOR_PROFILE",
+    "IMAGE_TEXT_SCAN",
+    "IMAGE_QR_SCAN",
 ];
 
 /// Stage 1 basic QC for a cover-art image file.
