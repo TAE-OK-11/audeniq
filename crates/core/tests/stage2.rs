@@ -935,6 +935,9 @@ async fn clean_delivery_is_auto_approved_but_staff_hold_and_signature_still_gate
         error.as_database_error().unwrap().code().as_deref(),
         Some("23514")
     );
+    // Reproduce the real review-to-signature transition (the fixture helper
+    // otherwise inserts an already-signed agreement without its update hook).
+    set_agreement(&pool, u.org, release, false).await;
     // New external evidence makes the frozen comparison stale for a new
     // automatic approval. Staff decisions below still retain their authority.
     sqlx::query("UPDATE catalog.external_recording_epoch SET epoch=epoch+1 WHERE singleton")
