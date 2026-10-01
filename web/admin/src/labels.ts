@@ -157,6 +157,16 @@ const num = (detail: string | null | undefined, re: RegExp) => {
 export function checkSummary(c: { check_code: string; detail: string | null }): string {
   const d = c.detail ?? '';
   switch (c.check_code) {
+    case 'AUDIO_AI_PROVENANCE':
+    case 'IMAGE_AI_PROVENANCE':
+    case 'S2_AI_LYRICS_PROVENANCE':
+      if (d.includes('AI_METADATA_SIGNAL') || d.includes('AI_DISCLOSURE_SIGNAL')) {
+        return 'AI 생성 도구 메타데이터 또는 명시적 작성 문구가 있어요. 생성 경위·AI 신고·이용 권리를 확인해 주세요. 조작 가능한 근거여서 AI 작성을 확정하지 않아요. SynthID는 검사하지 않았어요.';
+      }
+      if (d.includes('FAILED') || d.includes('metadata reader')) {
+        return '출처 검사를 완료하지 못했어요. 시스템 재시도가 필요하며 AI 여부를 판정할 수 없어요.';
+      }
+      return '지원하는 AI 출처 근거가 없어서 판정할 수 없어요. 사람이 만들었다는 증거가 아니며 SynthID는 검사하지 않았어요.';
     case 'AUDIO_SIMILAR_TO_EXISTING': {
       const n = num(d, /similar to (\d+) asset/);
       return `이미 등록된 음원${n ? ` ${n}개` : ''}와 거의 같은 소리예요. 같은 곡을 다시 낸 것인지, 권리가 있는지 확인해 주세요.`;

@@ -380,10 +380,17 @@ async fn module_evidence(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec<ReviewC
             .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
             .is_some_and(|end| end > chrono::Utc::now());
     let tracks = ctx.body["tracks"].as_array().ok_or(Error::Internal)?;
-    let asset_ids: Vec<_> = tracks
+    let mut asset_ids: Vec<_> = tracks
         .iter()
         .filter_map(|t| t["asset_id"].as_str().and_then(|s| Uuid::parse_str(s).ok()))
         .collect();
+    let artwork = &ctx.body["release"]["artwork"];
+    let artwork_id = artwork["asset_id"]
+        .as_str()
+        .and_then(|s| Uuid::parse_str(s).ok());
+    if let Some(id) = artwork_id {
+        asset_ids.push(id);
+    }
     let assets: Vec<(Uuid, String, String)> = sqlx::query_as(
         "SELECT id,COALESCE(sha256,''),state FROM catalog.assets WHERE org_id=$1 AND id=ANY($2)",
     )
@@ -395,6 +402,9 @@ async fn module_evidence(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec<ReviewC
         .into_iter()
         .map(|(id, hash, state)| (id, (hash, state)))
         .collect();
+    let artwork_matches = artwork_id
+        .and_then(|id| assets.get(&id))
+        .is_some_and(|(hash, state)| artwork["asset_sha256"] == *hash && state == "REGISTERED");
     let drift: Vec<_> = tracks
         .iter()
         .filter(|t| {
@@ -449,6 +459,21 @@ async fn module_evidence(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec<ReviewC
                     "registered asset drift on tracks: {}; re-upload and revalidate",
                     drift.join(",")
                 )
+            },
+        },
+        ReviewCheck {
+            check_code: "S2_ARTWORK_INTEGRITY",
+            status: if artwork.is_null() {
+                "NOT_APPLICABLE"
+            } else if artwork_matches {
+                "PASS"
+            } else {
+                "BLOCKED"
+            },
+            detail: if artwork_matches {
+                "reviewed cover hash still matches the registered asset".into()
+            } else {
+                "reviewed cover is missing or its registered hash/state changed; re-upload and revalidate".into()
             },
         },
         ReviewCheck {
