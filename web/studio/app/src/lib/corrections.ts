@@ -54,7 +54,7 @@ const TARGETS: Record<string, Target> = {
   S2_DSP_TRACK_COUNT_LIMIT: { step: WIZ_STEP.tracks, field: 'aqTracks', label: '트랙 수', hint: 'Apple의 앨범당 최대 500곡 제한에 맞게 발매를 나눠 주세요.' },
   S2_DSP_ARTWORK_INSPECTION_REQUIRED: { ...COVER, hint: '커버의 색상·문자·QR 검사를 완료해야 해요. 이전 심사 결과만으로 자동 승인할 수 없어요.' },
   S2_DSP_ARTWORK_QR: { ...COVER, hint: '커버에서 QR 코드가 확인됐어요. QR 코드를 제거한 커버를 올려 주세요.' },
-  S2_DSP_ARTWORK_TEXT_REVIEW: { ...COVER, hint: 'OCR에서 연락처·홍보·가격·음질 표기 가능성이 확인됐어요. 원본 커버에서 실제 문구를 확인해 주세요.' },
+  S2_DSP_ARTWORK_TEXT_REVIEW: { ...COVER, hint: 'OCR에서 연락처·홍보·가격·스토어·SNS·음질 표기 가능성이 확인됐어요. 원본 커버에서 실제 문구를 확인해 주세요.' },
   S2_DSP_SPOTIFY_ARTWORK_ENCODING: { ...COVER, hint: 'Spotify 커버는 24bit sRGB RGB로 내보내 주세요. 색 변환은 실제 픽셀에 적용하고 ICC 프로필·회전 정보는 제거해 주세요.' },
   S2_DSP_CONTENT_ID_DECLARATION: { step: WIZ_STEP.rights, field: 'aqContentIdRights', label: 'Content ID 권리 확인', hint: '신청 지역의 독점 권리와 원본 녹음을 확인하거나 Content ID 선택을 해제해 주세요.' },
   S2_DSP_CONTENT_ID_ELIGIBILITY: { step: WIZ_STEP.rights, field: 'aqContentIdRights', label: 'Content ID 적격성', hint: '커버·샘플·리믹스·공공저작물 등의 참조 등록 가능 여부와 제외 구간을 확인해 주세요.' },

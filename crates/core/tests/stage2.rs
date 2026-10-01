@@ -172,7 +172,7 @@ async fn requested_release(
     let dir = tmpdir();
     let asset = register_asset(pool, &store, &u, "policy.wav", &make_good_wav(&dir)).await;
     let release = build_submittable(&app, pool, &store, &u, asset).await;
-    sqlx::query("UPDATE catalog.releases SET draft=draft || $2::jsonb WHERE id=$1")
+    sqlx::query("UPDATE catalog.releases SET draft=draft || $2::jsonb,row_version=row_version+1 WHERE id=$1")
         .bind(release)
         .bind(json!({"platforms":[platform]}))
         .execute(pool)
