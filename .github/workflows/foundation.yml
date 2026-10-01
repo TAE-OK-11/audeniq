@@ -88,7 +88,7 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest@0.9.146
-      - run: cargo nextest run --locked -p audeniq-core --test-threads 4
+      - run: cargo nextest run --locked -p audeniq-core --test-threads 4 --no-fail-fast
         env:
           S3_TEST_ENDPOINT: http://127.0.0.1:7070/
           S3_TEST_BUCKET: audeniq-test
