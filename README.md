@@ -8,7 +8,7 @@ New application logic and tests are Rust only. The three supplied frontend packa
 
 ## Local development
 
-Requires Rust 1.98.1, Docker Engine + Compose v2. PostgreSQL 18 is the target database (API/worker connect through PgBouncer in Compose). Native file analysis also requires FFmpeg, xmllint and ExifTool (`libimage-exiftool-perl` on Debian); the Docker image includes them.
+Requires Rust 1.98.1, Docker Engine + Compose v2. PostgreSQL 18 is the target database (API/worker connect through PgBouncer in Compose). Native file analysis also requires FFmpeg, xmllint, ExifTool (`libimage-exiftool-perl` on Debian), Tesseract with English/Korean language data, and ZBar (`zbar-tools`); the Docker image includes them.
 
 1. Copy `.env.example` to `.env`. Set three different random URL-safe database passwords and a random `EDGE_SERVICE_SECRET` of at least 32 characters. Do not commit `.env`.
 2. `docker compose up --build -d` starts PostgreSQL, runs SQLx migrations using the owner, applies separate runtime grants, and starts API/worker. Storage is disabled until configured.

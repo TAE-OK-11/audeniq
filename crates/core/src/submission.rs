@@ -322,7 +322,7 @@ async fn revision_body(
     .fetch_one(&mut *c)
     .await?;
     let tracks = sqlx::query(
-        "SELECT t.id, t.title, t.version, t.lyrics, t.disc_number, t.track_number, t.artist_id, t.isrc, t.asset_id, t.parental_advisory, a.sha256 AS asha, a.kind AS akind FROM catalog.tracks t LEFT JOIN catalog.assets a ON a.org_id=t.org_id AND a.id=t.asset_id WHERE t.org_id=$1 AND t.release_id=$2 AND t.archived_at IS NULL ORDER BY t.disc_number, t.track_number",
+        "SELECT t.id, t.title, t.version, t.lyrics, t.disc_number, t.track_number, t.artist_id, artist.name AS artist_name, t.isrc, t.asset_id, t.parental_advisory, a.sha256 AS asha, a.kind AS akind FROM catalog.tracks t LEFT JOIN catalog.assets a ON a.org_id=t.org_id AND a.id=t.asset_id JOIN catalog.artists artist ON artist.org_id=t.org_id AND artist.id=t.artist_id WHERE t.org_id=$1 AND t.release_id=$2 AND t.archived_at IS NULL ORDER BY t.disc_number, t.track_number",
     )
     .bind(org).bind(release).fetch_all(&mut *c).await?;
     // Credits for every track in one round trip (was one query per track).
@@ -348,6 +348,7 @@ async fn revision_body(
             "disc_number": t.get::<i32,_>("disc_number"),
             "track_number": t.get::<i32,_>("track_number"),
             "artist_id": t.get::<Uuid,_>("artist_id"),
+            "artist_name": t.get::<String,_>("artist_name"),
             "isrc": t.get::<Option<String>,_>("isrc"),
             "asset_id": t.get::<Option<Uuid>,_>("asset_id"),
             "asset_sha256": t.get::<Option<String>,_>("asha"),
@@ -1613,7 +1614,7 @@ fn title_findings(title: &str) -> (bool, Vec<&'static str>) {
     (marker, style)
 }
 
-fn is_emoji(c: char) -> bool {
+pub(crate) fn is_emoji(c: char) -> bool {
     matches!(u32::from(c),
         0x1F000..=0x1FAFF | 0x2600..=0x27BF | 0x2B00..=0x2BFF | 0xFE0F)
 }
@@ -1848,6 +1849,31 @@ async fn analyze_asset(
             ));
         }
         // Perceptual fingerprint over the head/middle/tail segment windows.
+        if kind == "IMAGE" {
+            if !invalid {
+                outcomes.extend(crate::artwork_policy::inspect(path));
+            }
+            // Invalid images still carry the complete named contract. Never
+            // pretend an omitted OCR/QR/provenance inspection was completed.
+            for code in qc::IMAGE_CHECK_CODES {
+                if !outcomes.iter().any(|o| o.check_code == *code) {
+                    outcomes.push(qc::CheckOutcome {
+                        check_code: code,
+                        status: if outcomes
+                            .iter()
+                            .any(|o| o.status == CheckStatus::TechnicalRetry)
+                        {
+                            CheckStatus::TechnicalRetry
+                        } else {
+                            CheckStatus::NotApplicable
+                        },
+                        input_hash: qc::metric_hash(&[&sha256, "image_not_admitted"]),
+                        detail: "image was not admitted for content inspection".into(),
+                    });
+                }
+            }
+        }
+
         // The window PCM is read from the mono 11025 Hz tap of the single
         // decode pass above (ffmpeg's own resampler); the three separate
         // segment decodes are gone. Each segment is fingerprinted separately

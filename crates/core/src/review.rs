@@ -31,7 +31,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
 /// Rule version for Stage 2 review checks.
-pub const REVIEW_RULE_VERSION: &str = "2";
+pub const REVIEW_RULE_VERSION: &str = "3";
 
 pub struct Stage2Summary {
     pub revision_id: Uuid,
@@ -303,6 +303,7 @@ pub async fn run_stage2(pool: &PgPool, job: &operations::Job) -> Result<Option<S
     checks.extend(module_applicant_rights(&mut tx, &ctx).await?);
     checks.extend(module_catalog_match(&mut tx, &ctx).await?);
     checks.extend(module_metadata_content(&ctx).await?);
+    checks.extend(module_dsp_content_policy(&mut tx, &ctx).await?);
     checks.extend(module_policy_integrity(&mut tx, &ctx).await?);
     checks.extend(module_stage1_holds(&mut tx, &ctx).await?);
 
@@ -716,6 +717,7 @@ async fn decide(
             "overrides_applied": ov.keys().collect::<Vec<_>>(),
             "special_flags": special_flags(ctx),
             "rule_version": REVIEW_RULE_VERSION,
+            "content_policy_rule_version": crate::content_policy::RULE_VERSION,
         });
         let pkg_hash = crate::domain::sha256_json(&pkg);
         let pkg_id = Uuid::new_v4();
@@ -1220,6 +1222,34 @@ async fn module_metadata_content(ctx: &Ctx) -> Result<Vec<ReviewCheck>> {
         });
     }
     Ok(out)
+}
+
+async fn module_dsp_content_policy(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec<ReviewCheck>> {
+    let refs: Vec<Uuid> = serde_json::from_value(ctx.validation_body["stage1_check_refs"].clone())
+        .map_err(|_| Error::Internal)?;
+    let artwork = crate::content_policy::artwork_evidence(tx, ctx.revision_id, &refs).await?;
+    let selected =
+        crate::dsp_registry::requested(&ctx.body["release"]["draft"]).unwrap_or_default();
+    let mut findings: BTreeMap<&'static str, (bool, Vec<String>)> = BTreeMap::new();
+    for dsp in selected {
+        for finding in crate::content_policy::evaluate(&ctx.body, dsp, &artwork) {
+            let entry = findings.entry(finding.code).or_default();
+            entry.0 |= finding.correction;
+            entry.1.push(finding.detail);
+        }
+    }
+    Ok(findings
+        .into_iter()
+        .map(|(check_code, (correction, details))| ReviewCheck {
+            check_code,
+            status: if correction {
+                "CORRECTION_REQUIRED"
+            } else {
+                "REVIEW_REQUIRED"
+            },
+            detail: format!("[{}]", details.join(",")),
+        })
+        .collect())
 }
 
 fn lyrics_checks(ctx: &Ctx, tracks: &[Value]) -> Vec<ReviewCheck> {

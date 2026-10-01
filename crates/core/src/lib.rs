@@ -1,8 +1,10 @@
 pub mod api;
 pub mod artifacts;
+pub mod artwork_policy;
 pub mod auth;
 pub mod catalog;
 pub mod config;
+pub mod content_policy;
 pub mod contracts;
 pub mod database;
 pub mod ddex_ern;
@@ -52,4 +54,5 @@ pub mod states {
 }
 
 pub mod launch;
+mod local_analyzer;
 pub mod lossless;

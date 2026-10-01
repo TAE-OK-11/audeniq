@@ -603,7 +603,7 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
     let row = sqlx::query(
         "SELECT dp.org_id, dp.created_at AS package_created_at, cr.id AS canonical_id, cr.body AS canonical, cr.release_id, cr.revision_id,
                 COALESCE(NULLIF(ar.body -> 'release' -> 'draft', 'null'::jsonb), rel.draft) AS draft,
-                ar.body -> 'declarations' AS declarations,
+                ar.body -> 'declarations' AS declarations, ar.body AS application_body,
                 o.name AS org_name, o.ddex_sender_dpid
          FROM distribution.distribution_packages dp
          JOIN distribution.canonical_releases cr ON cr.id = dp.canonical_release_id
@@ -652,6 +652,11 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
     ).bind(canonical.verification_package_id).bind(org).bind(revision_id).fetch_one(pool).await?;
     let stage1_refs: Vec<Uuid> =
         serde_json::from_value(stage1_refs).map_err(|_| Error::Internal)?;
+    let artwork_evidence = {
+        let mut connection = pool.acquire().await?;
+        crate::content_policy::artwork_evidence(&mut connection, revision_id, &stage1_refs).await?
+    };
+    let application_body: Value = row.get("application_body");
     let artwork_px: Option<(u32, u32)> = sqlx::query_scalar::<_, String>(
         "SELECT detail FROM operations.check_results WHERE revision_id=$1 AND id=ANY($2) AND check_code='IMAGE_TOO_SMALL' ORDER BY id LIMIT 1",
     )
@@ -721,6 +726,22 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
     for dsp in requested {
         let spec = dsp.spec();
         let mut checks = evaluate(spec, &input);
+        checks.extend(
+            crate::content_policy::evaluate(&application_body, dsp, &artwork_evidence)
+                .into_iter()
+                .map(|finding| {
+                    DspCheck::new(
+                        finding.code,
+                        Class::Content,
+                        if finding.correction {
+                            Severity::Blocker
+                        } else {
+                            Severity::Warning
+                        },
+                        finding.detail,
+                    )
+                }),
+        );
         if !approved.contains(&dsp.uuid()) {
             checks.push(DspCheck::new(
                 "DSP_NOT_IN_APPROVED_SCOPE",
@@ -877,8 +898,8 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
                approval = CASE WHEN delivery_staging.approval='HELD' THEN 'HELD'
                                WHEN delivery_staging.ern_sha256 IS NOT DISTINCT FROM EXCLUDED.ern_sha256
                                AND EXCLUDED.readiness <> 'CONTENT_BLOCKED'
-                               AND (delivery_staging.approval_rule_version IS DISTINCT FROM '1' OR
-                                 (EXCLUDED.readiness='READY' AND NOT EXCLUDED.ern_is_preview
+                               AND (delivery_staging.approval_rule_version IS NULL OR delivery_staging.approval_rule_version='STAFF_FINAL' OR
+                                 (delivery_staging.approval_rule_version='2' AND EXCLUDED.readiness='READY' AND EXCLUDED.route_status='ROUTABLE' AND NOT EXCLUDED.ern_is_preview
                                   AND distribution.automatic_checks_clear(EXCLUDED.checks)))
                                THEN delivery_staging.approval ELSE 'PENDING' END,
                approval_rule_version = CASE
@@ -886,8 +907,8 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
                    AND delivery_staging.ern_sha256 IS NOT DISTINCT FROM EXCLUDED.ern_sha256
                    AND EXCLUDED.readiness <> 'CONTENT_BLOCKED'
                  THEN delivery_staging.approval_rule_version
-                 WHEN delivery_staging.ern_sha256 IS NOT DISTINCT FROM EXCLUDED.ern_sha256
-                   AND EXCLUDED.readiness='READY' AND NOT EXCLUDED.ern_is_preview
+                 WHEN delivery_staging.approval_rule_version='2' AND delivery_staging.ern_sha256 IS NOT DISTINCT FROM EXCLUDED.ern_sha256
+                   AND EXCLUDED.readiness='READY' AND EXCLUDED.route_status='ROUTABLE' AND NOT EXCLUDED.ern_is_preview
                    AND distribution.automatic_checks_clear(EXCLUDED.checks)
                  THEN delivery_staging.approval_rule_version ELSE NULL END,
                staged_at=now()",
@@ -960,10 +981,12 @@ async fn auto_approve(
 ) -> Result<usize> {
     let suitable: bool = sqlx::query_scalar(
         "SELECT COALESCE(r.status='READY_FOR_DELIVERY' AND r.current_revision_id=$3
-          AND vp.rights_epoch=e.epoch AND vp.body->>'rule_version'='2'
+          AND vp.rights_epoch=e.epoch AND vp.body->>'rule_version'=$5
           AND vp.body->>'decision'='PASS' AND vp.body->'overrides_applied'='[]'::jsonb
           AND vp.body->'special_flags'='[]'::jsonb
-          AND v.body->>'rule_version'='5'
+          AND v.body->>'rule_version'=$6 AND vp.body->>'content_policy_rule_version'=$7
+          AND jsonb_typeof(ar.body->'release'->'draft'->'platforms')='array'
+          AND ar.body->'release'->'draft'->'platforms'<>'[]'::jsonb
           AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(ar.body->'tracks') t WHERE NOT t ? 'lyrics')
           AND cp.body->>'policy_version'='v1-self'
           AND (cp.body->>'valid_until')::timestamptz>now(),false)
@@ -976,16 +999,18 @@ async fn auto_approve(
          JOIN catalog.application_revisions ar ON ar.id=$3 AND ar.org_id=r.org_id
          JOIN catalog.consent_packages cp ON cp.package_hash=ar.consent_package_hash AND cp.org_id=r.org_id
          WHERE r.org_id=$1 AND r.id=$2 FOR SHARE OF r,e",
-    ).bind(org).bind(release).bind(revision).bind(package).fetch_optional(&mut *tx).await?.unwrap_or(false);
+    ).bind(org).bind(release).bind(revision).bind(package)
+      .bind(crate::review::REVIEW_RULE_VERSION).bind(crate::qc::QC_RULE_VERSION).bind(crate::content_policy::RULE_VERSION)
+      .fetch_optional(&mut *tx).await?.unwrap_or(false);
     if !suitable {
-        sqlx::query("UPDATE distribution.delivery_staging SET approval='PENDING',approval_rule_version=NULL,approval_at=NULL,approval_note='' WHERE package_id=$1 AND org_id=$2 AND approval_rule_version='1'")
+        sqlx::query("UPDATE distribution.delivery_staging SET approval='PENDING',approval_rule_version=NULL,approval_at=NULL,approval_note='' WHERE package_id=$1 AND org_id=$2 AND approval_rule_version IN ('1','2')")
             .bind(package).bind(org).execute(&mut *tx).await?;
         return Ok(0);
     }
     let codes: Vec<String> = sqlx::query_scalar(
         "UPDATE distribution.delivery_staging s
-         SET approval='APPROVED',approval_by=NULL,approval_rule_version='1',approval_at=now(),
-             approval_note='Automatic approval: evidence rule 2, delivery rule 1; no warnings or overrides'
+         SET approval='APPROVED',approval_by=NULL,approval_rule_version='2',approval_at=now(),
+             approval_note='Automatic approval: evidence rule 3, QC rule 6, content policy 1; no warnings or overrides'
          WHERE s.package_id=$1 AND s.org_id=$2 AND s.approval='PENDING' AND s.approval_by IS NULL
            AND s.readiness='READY' AND s.route_status='ROUTABLE' AND NOT s.ern_is_preview
            AND distribution.automatic_checks_clear(s.checks)
@@ -1001,7 +1026,7 @@ async fn auto_approve(
             Some(release),
             "delivery.auto_approved",
             &format!(
-                "package={package} revision={revision} rule=1 dsps={}",
+                "package={package} revision={revision} rule=2 content_policy=1 dsps={}",
                 codes.join(",")
             ),
             Uuid::new_v4(),

@@ -171,7 +171,7 @@ pub async fn build_canonical(
     let approved_dsp_ids = parse_dsp_ids(&body)?;
 
     let rev = sqlx::query(
-        "SELECT release_id FROM catalog.application_revisions WHERE org_id=$1 AND id=$2",
+        "SELECT release_id, body FROM catalog.application_revisions WHERE org_id=$1 AND id=$2",
     )
     .bind(org)
     .bind(revision_id)
@@ -179,6 +179,18 @@ pub async fn build_canonical(
     .await?
     .ok_or(Error::NotFound)?;
     let release_id: Uuid = rev.get("release_id");
+    let submitted: Value = rev.get("body");
+    let reviewed_names: std::collections::HashMap<Uuid, String> = submitted["tracks"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|t| {
+            Some((
+                t["id"].as_str()?.parse().ok()?,
+                t["artist_name"].as_str()?.to_owned(),
+            ))
+        })
+        .collect();
 
     let rel =
         sqlx::query("SELECT title, release_type, upc, artwork_asset_id FROM catalog.releases WHERE org_id=$1 AND id=$2")
@@ -237,7 +249,10 @@ pub async fn build_canonical(
             disc_number: t.get("disc_number"),
             track_number: t.get("track_number"),
             artist_id: t.get("artist_id"),
-            artist_name: t.get("artist_name"),
+            artist_name: reviewed_names
+                .get(&track_id)
+                .cloned()
+                .unwrap_or_else(|| t.get("artist_name")),
             asset_id: t.get("asset_id"),
             asset_sha256: t.get("asset_sha256"),
             asset_object_key: t.get("asset_object_key"),
