@@ -19,9 +19,9 @@
 
 ## 정상 건의 자동 진행
 
-현재 제출본이 READY_FOR_DELIVERY이고, Stage 2 v2가 PASS이며, 권리 epoch가 일치하고, 동의가 아직 유효하며, 예외 승인과 특수 콘텐츠 선언이 없는 경우에만 자동 배급 승인을 시도한다. 각 DSP는 READY·ROUTABLE이어야 하며, 전송 문서가 미리보기가 아니어야 한다. 모든 경고와 미지의 검사 항목은 자동 승인 대상에서 제외한다. 안내 항목 중 `DSP_AUDIO_SERVED_DOWNSAMPLED`만 허용한다. DDEX 문서는 저장된 실제 전송 문서와 해시가 같아야 한다.
+현재 제출본이 READY_FOR_DELIVERY이고, Stage 2 v2와 파일 QC v5가 PASS이며, 가사가 제출본에 고정되어 있고, 권리 epoch가 일치하고, 동의가 아직 유효하며, 예외 승인과 특수 콘텐츠 선언이 없는 경우에만 자동 배급 승인을 시도한다. 각 DSP는 READY·ROUTABLE이어야 하며, 전송 문서가 미리보기가 아니어야 한다. 모든 경고와 미지의 검사 항목은 자동 승인 대상에서 제외한다. 안내 항목 중 `DSP_AUDIO_SERVED_DOWNSAMPAMPLED`만 허용한다. DDEX 문서는 저장된 실제 전송 문서와 해시가 같아야 한다.
 
-승인에는 `approval_rule_version=1`, 승인 시간, 근거, `delivery.auto_approved` 감사 기록을 남긴다. 직원 보류는 문서가 바뀌어도 유지한다. 직원의 결정은 자동 승인 출처를 지운다. 동의·계약서 서명·실제 계약 및 라우팅·권리 epoch·전송 직전 승인 게이트는 계속 적용한다.
+승인에는 `approval_rule_version=1`, 승인 시간, 근거, `delivery.auto_approved` 감사 기록을 남긴다. 기존 직원 최종 승인에 따른 배급 승인은 `STAFF_FINAL`로 구별해 보존한다. 직원 보류는 문서가 바뀌어도 유지한다. 직원의 결정은 자동 승인 출처를 지운다. 동의·계약서 서명·실제 계약 및 라우팅·권리 epoch·전송 직전 승인 게이트는 계속 적용한다.
 
 ## 무료 AI 검사 범위와 SynthID
 

@@ -132,6 +132,67 @@ async fn lyrics_are_frozen_and_corrections_precede_manual_review(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn cover_generator_metadata_is_review_only_and_reaches_stage2(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let asset = register_asset(
+        &pool,
+        &store,
+        &u,
+        "cover-metadata.wav",
+        &make_good_wav(&dir),
+    )
+    .await;
+    let release = build_submittable(&app, &pool, &store, &u, asset).await;
+    let cover_path = dir.join("cover.png");
+    std::fs::write(&cover_path, cover_png()).unwrap();
+    let status = std::process::Command::new("exiftool")
+        .args([
+            "-overwrite_original",
+            "-XMP-xmp:CreatorTool=Stable Diffusion",
+        ])
+        .arg(&cover_path)
+        .stdout(std::process::Stdio::null())
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let (cover,key):(Uuid,String)=sqlx::query_as("SELECT a.id,a.object_key FROM catalog.releases r JOIN catalog.assets a ON a.id=r.artwork_asset_id WHERE r.id=$1")
+        .bind(release).fetch_one(&pool).await.unwrap();
+    let bytes = std::fs::read(cover_path).unwrap();
+    sqlx::query("UPDATE catalog.assets SET sha256=$2,size_bytes=$3 WHERE id=$1")
+        .bind(cover)
+        .bind(sha256_hex(&bytes))
+        .bind(bytes.len() as i64)
+        .execute(&pool)
+        .await
+        .unwrap();
+    store
+        .files
+        .lock()
+        .await
+        .insert(key, (bytes, "image/png".into()));
+    let revision = consent_and_submit(&app, &u, release, "cover-ai-signal").await;
+    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(release_status(&pool, release).await, "STAGE2_REVIEW");
+    let details:Vec<(String,String)>=sqlx::query_as("SELECT status,detail FROM operations.check_results WHERE revision_id=$1 AND check_code='IMAGE_AI_PROVENANCE'")
+        .bind(revision).fetch_all(&pool).await.unwrap();
+    assert_eq!(
+        details.len(),
+        2,
+        "Stage 1 evidence and Stage 2 hold are both recorded"
+    );
+    assert!(details.iter().all(|(s, d)| s == "REVIEW_REQUIRED"
+        && d.contains("AI_METADATA_SIGNAL")
+        && d.contains("NOT_CHECKED")));
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[sqlx::test]
 async fn clean_delivery_is_auto_approved_but_staff_hold_and_signature_still_gate(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;

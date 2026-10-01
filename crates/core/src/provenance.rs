@@ -212,6 +212,10 @@ mod tests {
         assert_eq!(r["outcome"], "AI_METADATA_SIGNAL");
         assert_eq!(r["synthid"], "NOT_CHECKED");
         assert_eq!(
+            outcome("IMAGE_AI_PROVENANCE", &unknown("metadata reader failed")).status,
+            CheckStatus::TechnicalRetry
+        );
+        assert_eq!(
             outcome("IMAGE_AI_PROVENANCE", &r).status,
             CheckStatus::ReviewRequired
         );
