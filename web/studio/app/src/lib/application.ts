@@ -2,6 +2,7 @@
 import type { ApplicationRecord, DraftTrack, ReleaseDetail, ReleasePayload } from '../api/types';
 import { cleanText } from '../api/remote';
 import { stampNow } from './date';
+import type { RereleaseData } from './rerelease';
 
 export const APPLICATION_FORM = 'AUD-DIST-APP 1.0';
 /** 신청서 번호·서식 앞자리 */
@@ -86,6 +87,7 @@ export interface ApplicationSnapshot {
   territories: string[]; platforms: string[];
   ownership: string; phonogram: string; copyright: string;
   options: string[];
+  rerelease?: RereleaseData & { previousTitle: string };
   artistProfile: { isNew: boolean; spotify: string; apple: string; melon: string };
   tracks: {
     title: string; version: string; featuring: string; isrc: string; composers: string; lyricists: string;
@@ -120,6 +122,15 @@ function snapBase(p: {
     territories: [...(p.territories ?? [])], platforms: [...(p.platforms ?? [])],
     ownership: c(p.ownership), phonogram: c(p.phonogram), copyright: c(p.copyright),
     options: OPTION_KEYS.filter(k => o[k] === true),
+    ...(o.rerelease === true && o.rereleaseKind ? { rerelease: {
+      rereleaseKind: o.rereleaseKind as RereleaseData['rereleaseKind'], previousTitle: c(o.previousTitle),
+      previousDistributor: c(o.previousDistributor), previousUrl: c(o.previousUrl), previousUpc: c(o.previousUpc),
+      previousReleaseDate: c(o.previousReleaseDate),
+      previousAvailability: o.previousAvailability as RereleaseData['previousAvailability'],
+      rereleaseAudio: o.rereleaseAudio as RereleaseData['rereleaseAudio'], rereleaseRights: o.rereleaseRights as RereleaseData['rereleaseRights'],
+      rereleaseNotes: c(o.rereleaseNotes), rereleaseAck: !!o.rereleaseAck,
+      rereleaseTracks: (Array.isArray(o.rereleaseTracks) ? o.rereleaseTracks : []).map(t => ({ trackId: c(t.trackId), previousIsrc: c(t.previousIsrc) })),
+    } } : {}),
     artistProfile: ap && !ap.isNew
       ? { isNew: false, spotify: c(ap.spotify), apple: c(ap.apple), melon: c(ap.melon) }
       : { isNew: true, spotify: '', apple: '', melon: '' },
