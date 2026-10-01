@@ -161,6 +161,7 @@ interface ServerDocument {
   id: string; kind: 'AGREEMENT' | 'RIGHTS_PROOF'; release_id: string | null; release_title: string | null; title: string; version: string;
   body: string; status: string; review_note: string; asset_id: string | null; file_name: string; checked_at: string | null;
   signer_name: string; signature: string; signed_at: string | null; row_version: number; created_at: string; updated_at: string;
+  electronic_record?: import('../lib/rightsDocument').ElectronicRightsRecord | null;
 }
 
 const DOC_STATUS: Record<string, DocRecord['reviewStatus']> = {
@@ -180,6 +181,7 @@ function toDoc(d: ServerDocument): DocRecord {
     reviewHistory: history, reviewStatus: DOC_STATUS[d.status] ?? 'review', reviewNote: d.review_note,
     signerName: d.signer_name, localSignatureData: d.signature, localSignatureAt: stamp(d.signed_at),
     rowVersion: d.row_version,
+    electronic: d.electronic_record,
   };
 }
 
@@ -205,6 +207,13 @@ export async function createDocument(releaseId: string, title: string, body: str
   const r = await req<{ id: string }>(orgPath('/documents'), {
     method: 'POST',
     body: { release_id: releaseId, title, body, asset_id: up?.assetId ?? null, file_name: file ? cleanText(file.name).slice(0, 200) : '' },
+  });
+  return r.id;
+}
+
+export async function createElectronicDocument(releaseId: string, title: string, body: string, electronic: import('../lib/rightsDocument').ElectronicRightsInput): Promise<string> {
+  const r = await req<{ id: string }>(orgPath('/documents'), {
+    method: 'POST', body: { release_id: releaseId, title, body, asset_id: null, file_name: '', electronic },
   });
   return r.id;
 }

@@ -33,16 +33,15 @@ Studio features that used to live in browser storage now have server APIs (docs/
 Notices and events live in D1 (`audeniq-content`, binding `CONTENT_DB`), not in the private API. Both Workers serve the same API from it: the static Studio Worker (`web/studio/worker.js`, what studio.audeniq.com runs today) and the Rust edge (`crates/edge`). The pages always read `/api/notices` and `/api/events`, also in the demo build; the built-in sample posts only appear when no Worker answers (plain `vite` dev).
 
 - Public: `GET /api/notices[/{id}]`, `GET /api/events[/{id}]`: published (`published_at` ≤ now), not removed.
-- Admin (`Authorization: Bearer <CONTENT_ADMIN_TOKEN>`): `GET|POST /api/content/{notices|events}`, `PUT|DELETE /api/content/{notices|events}/{id}`. The admin list includes scheduled and removed rows; `DELETE` only sets `deleted_at`, and saving a removed row publishes it again.
-- Writing UI: **https://studio.audeniq.com/content-admin** (no Studio login; asks for the admin token and keeps it in that tab only). New posts show up in Studio right away; a future `게시 시각` schedules them.
+- Admin (active ADMIN session, mutations require CSRF): `GET|POST /api/content/{notices|events}`, `PUT|DELETE /api/content/{notices|events}/{id}`. Workers check `/api/staff/content-access` before touching D1. The admin list includes scheduled and removed rows; `DELETE` only sets `deleted_at`, and saving a removed row publishes it again.
+- Writing UI: **https://studio.audeniq.com/admin/content**, also available in the standalone Admin console. `/content-admin` redirects here. It uses the regular ADMIN account without a separate token. New posts publish immediately; a future `게시 시각` schedules them. Content approval is not required at this stage.
+- The static Studio Worker keeps authentication and staff identity checks available during maintenance so ADMIN can manage D1 content; release and review mutations remain blocked. If the backend is unavailable, session-authorized publishing fails closed. The optional operational `CONTENT_ADMIN_TOKEN` remains available for emergency scripts.
 
 One-time setup for the static Studio Worker:
 
 ```sh
 cd web/studio
 npx wrangler d1 migrations apply audeniq-content --remote   # creates the tables (safe to re-run)
-openssl rand -hex 32                                      # copy the output
-npx wrangler secret put CONTENT_ADMIN_TOKEN               # paste it (≥ 32 characters)
 npx wrangler deploy
 ```
 
@@ -55,6 +54,8 @@ curl -X POST https://studio.audeniq.com/api/content/notices \
 ```
 
 The API server needs `PAYOUT_ACCOUNT_KEY` (`openssl rand -hex 32`); keep it outside the database backups it protects.
+
+For electronic rights documents and session-authorized content, apply PostgreSQL migration `0065_electronic_rights_documents.sql` and deploy the core API first, then deploy the Studio/Admin Workers and their connected React builds. Both JS Workers need the existing `EDGE_SERVICE_SECRET` and the same `CONTENT_DB` binding; `web/admin/wrangler.jsonc` binds the existing content database. Electronic documents store a signed immutable original without an R2 upload and enter staff review. Corrections create another signed document.
 
 Local run against a real API, without the Worker:
 
@@ -79,6 +80,8 @@ EDGE_SERVICE_SECRET=... bun run preview:api &   # :5173, proxies /api with the s
 bunx playwright install chromium                 # once
 bun run e2e                                       # screenshots in test-results/
 ```
+
+The application interaction regression script runs against the local mock Studio (`bun run dev --host 127.0.0.1 --port 5190`, then `bun run e2e:application`). It covers desktop/mobile field focus, selected options, square modal close buttons, direct signing, document persistence/integrity, existing ISRC mapping and the integrated notice/event editor. Backend PostgreSQL and Worker tests separately verify document storage, retry conflicts, role checks and CSRF.
 
 ## Production server preparation (no automatic deployment)
 

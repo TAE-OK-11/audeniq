@@ -45,6 +45,8 @@ export interface StaffDocument {
   id: string; org_id?: string; org_name?: string; release_id?: string | null; release_title?: string | null;
   kind: 'AGREEMENT' | 'RIGHTS_PROOF' | string; title: string; status: string; review_note: string | null;
   file_name: string | null; asset_id: string | null; signed_at?: string | null; row_version: number; updated_at: string;
+  body?: string; signature?: string; signer_name?: string;
+  electronic_record?: { document_no: string; rights_holder: string; signer_role: string; content_hash: string } | null;
 }
 export interface StagingRow {
   package_id: string; dsp: string; readiness: string; approval: string;
@@ -73,6 +75,9 @@ export interface ReleaseSheet {
       cover?: boolean; coverTracks?: { trackId: string; originalTitle: string; originalArtist: string; originalWriters: string }[];
       sample?: boolean; featured?: boolean; shared?: boolean; rerelease?: boolean;
       previousTitle?: string; previousId?: string;
+      rereleaseKind?: string; previousDistributor?: string; previousUrl?: string; previousUpc?: string;
+      previousAvailability?: string; rereleaseAudio?: string; rereleaseRights?: string; rereleaseNotes?: string;
+      rereleaseTracks?: { trackId: string; previousIsrc: string }[];
     } | null;
   };
   signed_application: {

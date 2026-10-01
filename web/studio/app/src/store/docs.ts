@@ -2,6 +2,7 @@
 // Contracts(계약서)와 Rights(권리·보완 서류)가 같은 문서를 공유한다.
 import { createStore } from '../lib/store';
 import { MOCK } from '../lib/mode';
+import type { ElectronicRightsRecord } from '../lib/rightsDocument';
 
 export interface ConsentRecord { time: string; action: string; version: string }
 export interface ReviewRecord { status: string; time: string; detail: string }
@@ -32,6 +33,7 @@ export interface DocRecord {
   localSignatureAt: string;
   /** 실서버 낙관적 잠금 버전 */
   rowVersion?: number;
+  electronic?: ElectronicRightsRecord | null;
 }
 
 const AGREEMENT_CONTENT = [
@@ -177,6 +179,7 @@ export function docsForRelease(list: DocRecord[], releaseId: string, releaseTitl
 
 /** 라이브 aqDocumentState */
 export function docState(c: DocRecord): string {
+  if (c.electronic) return c.reviewStatus === 'needs' ? '보완 필요' : c.reviewStatus === 'approved' ? '서명 완료 · 검토 승인' : '서명 완료 · 검토 중';
   if (c.localSignatureAt) return '서명 완료';
   if (c.reviewStatus === 'approved') return c.kind === 'agreements' ? '서명 필요' : '승인';
   if (c.reviewStatus === 'needs') return '보완 필요';

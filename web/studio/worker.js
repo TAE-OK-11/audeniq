@@ -15,7 +15,7 @@
  * 상태
  *   GET  /api/status   진행 중·예정된 서버 점검 (스튜디오의 점검 화면·예고 배너)
  * 점검 중 차단
- *   점검이 진행 중이면 백엔드로 가는 /api/* 요청은 503 MAINTENANCE로 막는다 (스튜디오는 즉시 점검 화면).
+ *   점검 중에는 일반 백엔드 API를 503 MAINTENANCE로 막는다. 관리 세션 확인·로그인은 유지한다.
  * 비상 스위치 (D1·관리 화면이 안 될 때)
  *   켜기: echo on | npx wrangler secret put MAINTENANCE_MODE   (선택: MAINTENANCE_MESSAGE, MAINTENANCE_UNTIL=ISO 시각)
  *   끄기: npx wrangler secret delete MAINTENANCE_MODE
@@ -265,6 +265,35 @@ async function activeMaintenance(env) {
   return st.maintenance.active;
 }
 
+/** D1 writes are authorized by the backend's current ADMIN session and CSRF.
+ * The legacy operational token remains available for emergency tooling. */
+export async function authorizeContent(request, env) {
+  if (request.headers.has('Authorization')) {
+    if (!env.CONTENT_ADMIN_TOKEN) return error(503, 'CONTENT_ADMIN_DISABLED');
+    return bearerOk(request.headers.get('Authorization'), env.CONTENT_ADMIN_TOKEN) ? null : error(401, 'UNAUTHENTICATED');
+  }
+  const url = new URL(request.url);
+  const read = request.method === 'GET' || request.method === 'HEAD';
+  if (!read && (request.headers.get('origin') !== url.origin
+    || (request.headers.get('sec-fetch-site') && request.headers.get('sec-fetch-site') !== 'same-origin'))) return error(403, 'FORBIDDEN');
+  if (!request.headers.get('cookie')) return error(401, 'UNAUTHENTICATED');
+  if (!env.EDGE_SERVICE_SECRET) return error(503, 'BACKEND_UNAVAILABLE');
+  const headers = new Headers({ Accept: 'application/json', 'x-audeniq-service': env.EDGE_SERVICE_SECRET,
+    origin: env.BACKEND_APP_ORIGIN || url.origin, 'sec-fetch-site': 'same-origin' });
+  for (const key of ['cookie', 'x-csrf-token']) {
+    const value = request.headers.get(key);
+    if (value) headers.set(key, value);
+  }
+  try {
+    const res = await fetch((env.BACKEND_URL || 'https://api-origin.audeniq.com').replace(/\/$/, '') + '/api/staff/content-access', {
+      method: read ? 'GET' : 'POST', headers, redirect: 'manual',
+    });
+    if (res.status === 200) return null;
+    const data = await res.json().catch(() => null);
+    return error(res.status >= 400 && res.status < 600 ? res.status : 502, data?.error?.code || 'FORBIDDEN');
+  } catch { return error(502, 'BACKEND_UNAVAILABLE'); }
+}
+
 export async function handleContent(request, env, r) {
   if (r.kind === 'notfound') return error(404, 'NOT_FOUND');
   if (r.kind === 'method') return error(405, 'METHOD_NOT_ALLOWED');
@@ -292,8 +321,8 @@ export async function handleContent(request, env, r) {
     }
 
     // ---- 관리 ----
-    if (!env.CONTENT_ADMIN_TOKEN) return error(503, 'CONTENT_ADMIN_DISABLED');
-    if (!bearerOk(request.headers.get('Authorization'), env.CONTENT_ADMIN_TOKEN)) return error(401, 'UNAUTHENTICATED');
+    const denied = await authorizeContent(request, env);
+    if (denied) return denied;
     // 점검 일정을 바꾸면 이 인스턴스의 API 차단 캐시를 바로 비운다
     if (table === 'maintenance' && r.kind !== 'adminList') resetMaintenanceCache();
 
@@ -350,8 +379,10 @@ export default {
     if (r) return handleContent(request, env, r);
     // /api/* 중 D1 콘텐츠가 아니면 백엔드로 프록시 (named tunnel audeniq-backend → compose api:8080)
     if (url.pathname.startsWith('/api/') || url.pathname === '/ready') {
-      // 점검 중에는 백엔드로 보내지 않는다 (DB 작업 중 쓰기 방지, 스튜디오는 이 응답을 받자마자 점검 화면)
-      const maint = url.pathname === '/ready' ? null : await activeMaintenance(env);
+      // 콘텐츠 관리에 필요한 인증만 유지한다. 발매·심사 등 업무 데이터 변경은 점검 중 차단한다.
+      const sessionAccess = (request.method === 'GET' && ['/api/me', '/api/staff/me'].includes(url.pathname))
+        || (request.method === 'POST' && ['/api/auth/login', '/api/auth/logout', '/api/auth/csrf'].includes(url.pathname));
+      const maint = url.pathname === '/ready' || sessionAccess ? null : await activeMaintenance(env);
       if (maint) {
         return Response.json(
           { error: { code: 'MAINTENANCE', message: maint.title }, maintenance: maint },
