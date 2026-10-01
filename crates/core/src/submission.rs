@@ -10,7 +10,7 @@ use crate::{
     fingerprint,
     identifiers::{validate_isrc, validate_upc},
     operations,
-    qc::{self, CheckStatus},
+    qc::{self, CheckOutcome, CheckStatus},
     storage::ObjectStore,
 };
 use serde::Deserialize;
@@ -322,7 +322,7 @@ async fn revision_body(
     .fetch_one(&mut *c)
     .await?;
     let tracks = sqlx::query(
-        "SELECT t.id, t.title, t.version, t.disc_number, t.track_number, t.artist_id, t.isrc, t.asset_id, t.parental_advisory, a.sha256 AS asha, a.kind AS akind FROM catalog.tracks t LEFT JOIN catalog.assets a ON a.org_id=t.org_id AND a.id=t.asset_id WHERE t.org_id=$1 AND t.release_id=$2 AND t.archived_at IS NULL ORDER BY t.disc_number, t.track_number",
+        "SELECT t.id, t.title, t.version, t.lyrics, t.disc_number, t.track_number, t.artist_id, artist.name AS artist_name, t.isrc, t.asset_id, t.parental_advisory, a.sha256 AS asha, a.kind AS akind FROM catalog.tracks t LEFT JOIN catalog.assets a ON a.org_id=t.org_id AND a.id=t.asset_id JOIN catalog.artists artist ON artist.org_id=t.org_id AND artist.id=t.artist_id WHERE t.org_id=$1 AND t.release_id=$2 AND t.archived_at IS NULL ORDER BY t.disc_number, t.track_number",
     )
     .bind(org).bind(release).fetch_all(&mut *c).await?;
     // Credits for every track in one round trip (was one query per track).
@@ -344,9 +344,11 @@ async fn revision_body(
             "id": tid,
             "title": t.get::<String,_>("title"),
             "version": t.get::<String,_>("version"),
+            "lyrics": t.get::<Option<String>,_>("lyrics"),
             "disc_number": t.get::<i32,_>("disc_number"),
             "track_number": t.get::<i32,_>("track_number"),
             "artist_id": t.get::<Uuid,_>("artist_id"),
+            "artist_name": t.get::<String,_>("artist_name"),
             "isrc": t.get::<Option<String>,_>("isrc"),
             "asset_id": t.get::<Option<Uuid>,_>("asset_id"),
             "asset_sha256": t.get::<Option<String>,_>("asha"),
@@ -839,6 +841,38 @@ fn field_cache_key(check_code: &str, inputs: &str) -> String {
 }
 fn asset_cache_key(check_code: &str, asset_sha256: &str) -> String {
     qc::result_hash(check_code, qc::QC_RULE_VERSION, asset_sha256, asset_sha256)
+}
+fn asset_check_cache_key(check_code: &str, asset_id: &str, sha256: &str) -> String {
+    if check_code == "AUDIO_AI_PROVENANCE" {
+        // Normalization can produce identical masters from sources with
+        // different metadata. Original provenance belongs to this asset.
+        asset_cache_key(check_code, &format!("{asset_id}:{sha256}"))
+    } else {
+        asset_cache_key(check_code, sha256)
+    }
+}
+
+async fn preserve_audio_provenance(
+    pool: &PgPool,
+    org: Uuid,
+    asset: Uuid,
+    sha256: &str,
+    outcomes: &mut Vec<CheckOutcome>,
+) -> Result<()> {
+    let original: Option<Value> = sqlx::query_scalar(
+        "SELECT body FROM catalog.asset_provenance WHERE org_id=$1 AND asset_id=$2 AND master_sha256=$3 AND rule_version=$4",
+    ).bind(org).bind(asset).bind(sha256).bind(crate::provenance::RULE_VERSION)
+        .fetch_optional(pool).await?;
+    if let Some(original) = original
+        && original["outcome"] == "AI_METADATA_SIGNAL"
+        && !outcomes
+            .iter()
+            .any(|c| c.check_code == "SHA256_MISMATCH" && c.status == CheckStatus::Blocked)
+    {
+        outcomes.retain(|c| c.check_code != "AUDIO_AI_PROVENANCE");
+        outcomes.push(crate::provenance::outcome("AUDIO_AI_PROVENANCE", &original));
+    }
+    Ok(())
 }
 /// Every name and title of a revision that ends up in delivery messages:
 /// release title/version fields, profile strings, track titles/versions,
@@ -1580,7 +1614,7 @@ fn title_findings(title: &str) -> (bool, Vec<&'static str>) {
     (marker, style)
 }
 
-fn is_emoji(c: char) -> bool {
+pub(crate) fn is_emoji(c: char) -> bool {
     matches!(u32::from(c),
         0x1F000..=0x1FAFF | 0x2600..=0x27BF | 0x2B00..=0x2BFF | 0xFE0F)
 }
@@ -1770,7 +1804,7 @@ async fn analyze_asset(
         // check_audio runs the single decode pass (full analysis + ebur128 +
         // outcomes), tapping the fingerprint PCM out of the same decode, and
         // returns the probe metrics: no second ffprobe pass is needed.
-        let (outcomes, tap_pcm, metrics) = match kind.as_str() {
+        let (mut outcomes, tap_pcm, metrics) = match kind.as_str() {
             "AUDIO" => qc::check_audio_with_fp_tap(
                 path,
                 Some(&sha256),
@@ -1796,7 +1830,52 @@ async fn analyze_asset(
                     | CheckStatus::TechnicalRetry
             )
         });
+        let provenance_code = match kind.as_str() {
+            "AUDIO" => Some("AUDIO_AI_PROVENANCE"),
+            "IMAGE" => Some("IMAGE_AI_PROVENANCE"),
+            _ => None,
+        };
+        if let Some(code) = provenance_code
+            && !invalid
+            && !outcomes.iter().any(|o| o.check_code == code)
+        {
+            outcomes.push(crate::provenance::outcome(
+                code,
+                &if kind == "AUDIO" {
+                    crate::provenance::inspect_audio(path)
+                } else {
+                    crate::provenance::inspect(path)
+                },
+            ));
+        }
         // Perceptual fingerprint over the head/middle/tail segment windows.
+        if kind == "IMAGE" {
+            if !invalid {
+                outcomes.extend(crate::artwork_policy::inspect(path));
+            }
+            // Invalid images still carry the complete named contract. Never
+            // pretend an omitted OCR/QR/provenance inspection was completed.
+            for code in qc::IMAGE_CHECK_CODES {
+                if !outcomes.iter().any(|o| o.check_code == *code) {
+                    outcomes.push(qc::CheckOutcome {
+                        check_code: code,
+                        status: if outcomes
+                            .iter()
+                            .any(|o| o.status == CheckStatus::TechnicalRetry)
+                        {
+                            CheckStatus::TechnicalRetry
+                        } else {
+                            CheckStatus::NotApplicable
+                        },
+                        input_hash: crate::domain::sha256_json(
+                            &json!({"sha256":sha256,"inspection":"image_not_admitted"}),
+                        ),
+                        detail: "image was not admitted for content inspection".into(),
+                    });
+                }
+            }
+        }
+
         // The window PCM is read from the mono 11025 Hz tap of the single
         // decode pass above (ffmpeg's own resampler); the three separate
         // segment decodes are gone. Each segment is fingerprinted separately
@@ -2184,7 +2263,7 @@ async fn qc_single_asset(
     let keys: Vec<(&str, String)> = expected
         .iter()
         .filter(|code| **code != "AUDIO_SIMILAR_TO_EXISTING")
-        .map(|code| (*code, asset_cache_key(code, sha256)))
+        .map(|code| (*code, asset_check_cache_key(code, aid_str, sha256)))
         .collect();
     let mut cached = cached_statuses(&pool, &keys, qc::QC_RULE_VERSION).await?;
     let mut to_run: Vec<&str> = Vec::new();
@@ -2199,7 +2278,7 @@ async fn qc_single_asset(
                 check_code: code,
                 rule_version: qc::QC_RULE_VERSION,
                 status: st,
-                result_hash: asset_cache_key(code, sha256),
+                result_hash: asset_check_cache_key(code, aid_str, sha256),
                 detail: if original.is_empty() {
                     "cache_hit".into()
                 } else {
@@ -2231,7 +2310,10 @@ async fn qc_single_asset(
     let outcomes = match analyze_asset(&storage, &key, kind, &content_type, Some(sha256), &tmp_name)
         .await
     {
-        Ok((o, metrics, fp, _)) => {
+        Ok((mut o, metrics, fp, _)) => {
+            if kind == "AUDIO" && to_run.contains(&"AUDIO_AI_PROVENANCE") {
+                preserve_audio_provenance(&pool, org, aid, sha256, &mut o).await?;
+            }
             // Persist measured audio duration + real technical specs for
             // the DDEX builder. COALESCE fills only unknown columns;
             // never overwrites measured values.
@@ -2263,7 +2345,7 @@ async fn qc_single_asset(
                     check_code: code,
                     rule_version: qc::QC_RULE_VERSION,
                     status: CheckStatus::TechnicalRetry,
-                    result_hash: asset_cache_key(code, sha256),
+                    result_hash: asset_check_cache_key(code, aid_str, sha256),
                     detail: detail.clone(),
                 });
             }
@@ -2276,7 +2358,7 @@ async fn qc_single_asset(
                 check_code: o.check_code,
                 rule_version: qc::QC_RULE_VERSION,
                 status: o.status,
-                result_hash: asset_cache_key(o.check_code, sha256),
+                result_hash: asset_check_cache_key(o.check_code, aid_str, sha256),
                 detail: o.detail,
             });
         }
@@ -2331,7 +2413,7 @@ pub async fn precheck_asset(
         Err(_) => return Ok(true),
     }
     let tmp_name = format!("audeniq-precheck-{}", Uuid::new_v4());
-    let (outcomes, metrics, fp, downloaded_sha) = match analyze_asset(
+    let (mut outcomes, metrics, fp, downloaded_sha) = match analyze_asset(
         storage,
         &key,
         &kind,
@@ -2358,6 +2440,7 @@ pub async fn precheck_asset(
         .await?;
     }
     let sha = recorded.unwrap_or(downloaded_sha);
+    preserve_audio_provenance(pool, org, aid, &sha, &mut outcomes).await?;
     if let Some(m) = metrics {
         sqlx::query(
             "UPDATE catalog.assets SET duration_secs=COALESCE(duration_secs,$1), sample_rate=COALESCE(sample_rate,$2), channels=COALESCE(channels,$3), bits_per_sample=COALESCE(bits_per_sample,$4) WHERE org_id=$5 AND id=$6",
@@ -2394,7 +2477,7 @@ pub async fn precheck_asset(
             check_code: o.check_code,
             rule_version: qc::QC_RULE_VERSION,
             status: o.status,
-            result_hash: asset_cache_key(o.check_code, &sha),
+            result_hash: asset_check_cache_key(o.check_code, &aid.to_string(), &sha),
             detail: o.detail,
         });
     }
@@ -2552,7 +2635,7 @@ async fn update_asset_qc(
             continue;
         }
         for (aid, sha) in &sha_of {
-            if ch.result_hash == asset_cache_key(ch.check_code, sha) {
+            if ch.result_hash == asset_check_cache_key(ch.check_code, aid, sha) {
                 let e = worst.entry(aid.clone()).or_insert(CheckStatus::Pass);
                 let check_rank = if asset_check_allows_progress(ch) {
                     0

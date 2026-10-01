@@ -643,9 +643,10 @@ async fn real_upload_path_reaches_ready_for_delivery_under_split_roles(pool: PgP
         "Stage 1 did not download the master again"
     );
     assert_eq!(release_status(&e, release).await, "STAGE1_PASSED");
-    // Audio QC really ran: every audio check has a PASS row for this revision.
+    // Audio QC ran: every audio outcome allows progress. Missing AI metadata
+    // is UNKNOWN/NOT_APPLICABLE, never a PASS proving human authorship.
     let audio_pass: i64 = sqlx::query_scalar(
-        "SELECT count(DISTINCT check_code) FROM operations.check_results WHERE revision_id=$1 AND status='PASS' AND check_code = ANY($2)",
+        "SELECT count(DISTINCT check_code) FROM operations.check_results WHERE revision_id=$1 AND status IN ('PASS','NOT_APPLICABLE') AND check_code = ANY($2)",
     )
     .bind(revision)
     .bind(audeniq_core::qc::AUDIO_CHECK_CODES.iter().map(|s| s.to_string()).collect::<Vec<_>>())

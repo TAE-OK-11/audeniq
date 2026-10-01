@@ -31,7 +31,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
 /// Rule version for Stage 2 review checks.
-pub const REVIEW_RULE_VERSION: &str = "1";
+pub const REVIEW_RULE_VERSION: &str = "4";
 
 pub struct Stage2Summary {
     pub revision_id: Uuid,
@@ -60,34 +60,57 @@ impl ReviewCheck {
 /// returns the existing row instead of inserting a duplicate; a changed
 /// detail (new result_hash) records a new row so retries never serve stale
 /// results. Visible for tests.
+#[cfg(test)]
 async fn record_check_result(
     tx: &mut PgConnection,
     revision_id: Uuid,
     c: &ReviewCheck,
 ) -> Result<Uuid> {
-    let rh = c.result_hash();
-    let existing: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM operations.check_results WHERE revision_id=$1 AND check_code=$2 AND result_hash=$3",
+    Ok(record_check_results(tx, revision_id, std::slice::from_ref(c)).await?[0])
+}
+
+/// Two database round trips for the whole run, independent of check count.
+/// Keep append-only checkpoints and return IDs in the original check order.
+/// The caller holds the release row lock; the shared audit table intentionally
+/// permits repeated Stage 1 results and has no unique checkpoint constraint.
+async fn record_check_results(
+    tx: &mut PgConnection,
+    revision_id: Uuid,
+    checks: &[ReviewCheck],
+) -> Result<Vec<Uuid>> {
+    let ids: Vec<_> = checks.iter().map(|_| Uuid::new_v4()).collect();
+    let codes: Vec<_> = checks.iter().map(|c| c.check_code).collect();
+    let statuses: Vec<_> = checks.iter().map(|c| c.status).collect();
+    let hashes: Vec<_> = checks.iter().map(ReviewCheck::result_hash).collect();
+    let details: Vec<_> = checks.iter().map(|c| c.detail.as_str()).collect();
+    sqlx::query(
+        "INSERT INTO operations.check_results
+           (id, revision_id, check_code, rule_version, status, result_hash, detail)
+         SELECT DISTINCT ON (c.code,c.hash) c.id,$1,c.code,$2,c.status,c.hash,c.detail
+           FROM unnest($3::uuid[],$4::text[],$5::text[],$6::text[],$7::text[])
+             AS c(id,code,status,hash,detail)
+          WHERE NOT EXISTS (SELECT 1 FROM operations.check_results existing
+                 WHERE existing.revision_id=$1 AND existing.check_code=c.code
+                   AND existing.result_hash=c.hash)
+          ORDER BY c.code,c.hash",
     )
     .bind(revision_id)
-    .bind(c.check_code)
-    .bind(&rh)
-    .fetch_optional(&mut *tx)
+    .bind(REVIEW_RULE_VERSION)
+    .bind(&ids)
+    .bind(&codes)
+    .bind(&statuses)
+    .bind(&hashes)
+    .bind(&details)
+    .execute(&mut *tx)
     .await?;
-    match existing {
-        Some(id) => Ok(id),
-        None => sqlx::query_scalar("INSERT INTO operations.check_results(id, revision_id, check_code, rule_version, status, result_hash, detail) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id")
-            .bind(Uuid::new_v4())
-            .bind(revision_id)
-            .bind(c.check_code)
-            .bind(REVIEW_RULE_VERSION)
-            .bind(c.status)
-            .bind(&rh)
-            .bind(&c.detail)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(Error::from),
-    }
+    let rows: Vec<(String, Uuid)> = sqlx::query_as(
+        "SELECT result_hash,id FROM operations.check_results WHERE revision_id=$1 AND result_hash=ANY($2)",
+    ).bind(revision_id).bind(&hashes).fetch_all(&mut *tx).await?;
+    let by_hash: BTreeMap<_, _> = rows.into_iter().collect();
+    hashes
+        .iter()
+        .map(|h| by_hash.get(h).copied().ok_or(Error::Internal))
+        .collect()
 }
 
 struct Ctx {
@@ -100,6 +123,7 @@ struct Ctx {
     validation_body: Value,
     consent_path: String,
     applicant_party: Option<Uuid>,
+    consent_body: Value,
 }
 
 async fn load_ctx(pool: &PgPool, revision_id: Uuid) -> Result<Ctx> {
@@ -115,11 +139,14 @@ async fn load_ctx(pool: &PgPool, revision_id: Uuid) -> Result<Ctx> {
     let body: Value = rev.get("body");
     let body_hash: String = rev.get("body_hash");
     let consent_hash: String = rev.get("consent_package_hash");
-    let cp = sqlx::query("SELECT body FROM catalog.consent_packages WHERE package_hash=$1")
-        .bind(&consent_hash)
-        .fetch_optional(pool)
-        .await?
-        .ok_or(Error::NotFound)?;
+    let cp = sqlx::query(
+        "SELECT body FROM catalog.consent_packages WHERE package_hash=$1 AND org_id=$2",
+    )
+    .bind(&consent_hash)
+    .bind(org)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(Error::NotFound)?;
     let cp_body: Value = cp.get("body");
     let consent_path = cp_body
         .get("path")
@@ -148,6 +175,7 @@ async fn load_ctx(pool: &PgPool, revision_id: Uuid) -> Result<Ctx> {
         validation_body: Value::Null,
         consent_path,
         applicant_party,
+        consent_body: cp_body,
     })
 }
 
@@ -169,12 +197,19 @@ pub async fn run_stage2(pool: &PgPool, job: &operations::Job) -> Result<Option<S
         .and_then(|s| Uuid::parse_str(s).ok())
         .ok_or(Error::Internal)?;
     ctx.validation_package_id = vp_id;
-    let vp = sqlx::query("SELECT body FROM distribution.validation_packages WHERE id=$1")
+    let vp = sqlx::query("SELECT body, package_hash FROM distribution.validation_packages WHERE id=$1 AND org_id=$2 AND revision_id=$3")
         .bind(vp_id)
+        .bind(ctx.org)
+        .bind(revision_id)
         .fetch_optional(pool)
         .await?
         .ok_or(Error::NotFound)?;
     ctx.validation_body = vp.get("body");
+    if crate::domain::sha256_json(&ctx.validation_body) != vp.get::<String, _>("package_hash")
+        || !validation_matches_revision(&ctx)
+    {
+        return Err(Error::InvalidCode("STAGE2_EVIDENCE_MISMATCH"));
+    }
 
     // Idempotent completion: a previous attempt already pinned the
     // verification package (worker crashed between commit and completion).
@@ -198,7 +233,25 @@ pub async fn run_stage2(pool: &PgPool, job: &operations::Job) -> Result<Option<S
         }));
     }
 
+    let external_scan = crate::external_recordings::scan(
+        pool,
+        ctx.org,
+        ctx.body["tracks"].as_array().ok_or(Error::Internal)?,
+    )
+    .await?;
     let mut tx = pool.begin().await?;
+    // Operator imports/deactivations cannot change the reference set between
+    // this fresh comparison and the committed review decision.
+    sqlx::query("SELECT pg_advisory_xact_lock_shared(64481168068)")
+        .execute(&mut *tx)
+        .await?;
+    let external_epoch: i64 =
+        sqlx::query_scalar("SELECT epoch FROM catalog.external_recording_epoch WHERE singleton")
+            .fetch_one(&mut *tx)
+            .await?;
+    if external_epoch != external_scan.epoch {
+        return Err(Error::Internal);
+    }
     // Fence every mutation on the job's live lease: an expired worker's
     // decision must never commit.
     let held: Option<Uuid> = sqlx::query_scalar(
@@ -214,17 +267,37 @@ pub async fn run_stage2(pool: &PgPool, job: &operations::Job) -> Result<Option<S
     // Only a release still waiting on this Stage 2 run may be decided. A
     // re-evaluation (queued after a reviewer override) can race a withdrawal
     // or resubmission; then there is nothing to decide.
-    let status: String = sqlx::query_scalar(
-        "SELECT status FROM catalog.releases WHERE org_id=$1 AND id=$2 FOR UPDATE",
+    let (status, current_revision): (String, Option<Uuid>) = sqlx::query_as(
+        "SELECT status,current_revision_id FROM catalog.releases WHERE org_id=$1 AND id=$2 FOR UPDATE",
     )
     .bind(ctx.org)
     .bind(ctx.release)
     .fetch_one(&mut *tx)
     .await?;
-    if !matches!(
-        status.as_str(),
-        "STAGE1_PASSED" | "STAGE2_RUNNING" | "STAGE2_REVIEW"
-    ) {
+    // Recheck after the release lock: two re-evaluation jobs can both have
+    // observed no package before one of them acquired the lock.
+    if let Some(pkg_id) = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM distribution.verification_packages WHERE revision_id=$1",
+    )
+    .bind(revision_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    {
+        tx.commit().await?;
+        return Ok(Some(Stage2Summary {
+            revision_id,
+            decision: "PASS",
+            verification_package_id: Some(pkg_id),
+            release_status: status,
+            needs_retry: false,
+        }));
+    }
+    if current_revision != Some(revision_id)
+        || !matches!(
+            status.as_str(),
+            "STAGE1_PASSED" | "STAGE2_RUNNING" | "STAGE2_REVIEW"
+        )
+    {
         tx.commit().await?;
         return Ok(Some(Stage2Summary {
             revision_id,
@@ -244,16 +317,20 @@ pub async fn run_stage2(pool: &PgPool, job: &operations::Job) -> Result<Option<S
         .await?;
 
     let mut checks = Vec::new();
+    checks.extend(module_evidence(&mut tx, &ctx).await?);
     checks.extend(module_applicant_rights(&mut tx, &ctx).await?);
     checks.extend(module_catalog_match(&mut tx, &ctx).await?);
+    checks.push(ReviewCheck {
+        check_code: crate::external_recordings::CHECK_CODE,
+        status: external_scan.status,
+        detail: external_scan.detail,
+    });
     checks.extend(module_metadata_content(&ctx).await?);
+    checks.extend(module_dsp_content_policy(&mut tx, &ctx).await?);
     checks.extend(module_policy_integrity(&mut tx, &ctx).await?);
     checks.extend(module_stage1_holds(&mut tx, &ctx).await?);
 
-    let mut check_ids = Vec::new();
-    for c in &checks {
-        check_ids.push(record_check_result(&mut tx, revision_id, c).await?);
-    }
+    let check_ids = record_check_results(&mut tx, revision_id, &checks).await?;
 
     // Pin every run, including held/retried runs. Cached result rows can be
     // older than a superseded run, so created_at cannot identify its results.
@@ -268,8 +345,174 @@ pub async fn run_stage2(pool: &PgPool, job: &operations::Job) -> Result<Option<S
     )
     .await?;
     let summary = decide(&mut tx, &ctx, &checks, &check_ids).await?;
+    let lease_live: bool = sqlx::query_scalar(
+        "SELECT lease_until>clock_timestamp() FROM operations.jobs WHERE id=$1 AND lock_token=$2 AND status='RUNNING'",
+    ).bind(job.id).bind(job.token).fetch_one(&mut *tx).await?;
+    if !lease_live {
+        return Ok(None); // Dropping tx rolls back the decision and handoff.
+    }
     tx.commit().await?;
     Ok(Some(summary))
+}
+
+/// Verify the evidence refers to every exact audio asset in this revision.
+/// A non-empty package alone is not proof that all tracks were inspected.
+fn validation_matches_revision(ctx: &Ctx) -> bool {
+    let v = &ctx.validation_body;
+    if v["revision_id"] != ctx.revision_id.to_string()
+        || v["revision_hash"] != ctx.body_hash
+        || v["consent_package_hash"] != ctx.body["consent_package_hash"]
+        || crate::domain::sha256_json(&ctx.body) != ctx.body_hash
+    {
+        return false;
+    }
+    let Some(tracks) = ctx.body["tracks"].as_array() else {
+        return false;
+    };
+    let Some(assets) = v["validated_assets"].as_array() else {
+        return false;
+    };
+    if tracks.is_empty() || assets.len() != tracks.len() {
+        return false;
+    }
+    let pairs = |items: &[Value], id_key: &str, hash_key: &str| {
+        let mut pairs = Vec::new();
+        for item in items {
+            let id = item[id_key].as_str()?;
+            let hash = item[hash_key].as_str()?;
+            Uuid::parse_str(id).ok()?;
+            if hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return None;
+            }
+            pairs.push((id.to_owned(), hash.to_owned()));
+        }
+        pairs.sort();
+        Some(pairs)
+    };
+    matches!((pairs(tracks,"asset_id","asset_sha256"), pairs(assets,"asset_id","sha256")),
+        (Some(a),Some(b)) if a==b)
+}
+
+async fn module_evidence(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec<ReviewCheck>> {
+    let c = &ctx.consent_body;
+    let valid = crate::domain::sha256_json(c)
+        == ctx.body["consent_package_hash"].as_str().unwrap_or("")
+        && c["release_id"] == ctx.release.to_string()
+        && c["policy_version"] == crate::submission::CONSENT_POLICY_VERSION
+        && c["valid_until"]
+            .as_str()
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+            .is_some_and(|end| end > chrono::Utc::now());
+    let tracks = ctx.body["tracks"].as_array().ok_or(Error::Internal)?;
+    let mut asset_ids: Vec<_> = tracks
+        .iter()
+        .filter_map(|t| t["asset_id"].as_str().and_then(|s| Uuid::parse_str(s).ok()))
+        .collect();
+    let artwork = &ctx.body["release"]["artwork"];
+    let artwork_id = artwork["asset_id"]
+        .as_str()
+        .and_then(|s| Uuid::parse_str(s).ok());
+    if let Some(id) = artwork_id {
+        asset_ids.push(id);
+    }
+    let assets: Vec<(Uuid, String, String)> = sqlx::query_as(
+        "SELECT id,COALESCE(sha256,''),state FROM catalog.assets WHERE org_id=$1 AND id=ANY($2)",
+    )
+    .bind(ctx.org)
+    .bind(&asset_ids)
+    .fetch_all(&mut *tx)
+    .await?;
+    let assets: BTreeMap<_, _> = assets
+        .into_iter()
+        .map(|(id, hash, state)| (id, (hash, state)))
+        .collect();
+    let artwork_matches = artwork_id
+        .and_then(|id| assets.get(&id))
+        .is_some_and(|(hash, state)| artwork["asset_sha256"] == *hash && state == "REGISTERED");
+    let drift: Vec<_> = tracks
+        .iter()
+        .filter(|t| {
+            t["asset_id"]
+                .as_str()
+                .and_then(|s| Uuid::parse_str(s).ok())
+                .and_then(|id| assets.get(&id))
+                .is_none_or(|(hash, state)| t["asset_sha256"] != *hash || state != "REGISTERED")
+        })
+        .map(|t| t["id"].as_str().unwrap_or("unknown"))
+        .collect();
+    let parties: BTreeSet<Uuid> = tracks
+        .iter()
+        .filter_map(|t| t["credits"].as_array())
+        .flatten()
+        .filter_map(|c| c["party_id"].as_str().and_then(|s| Uuid::parse_str(s).ok()))
+        .collect();
+    let existing: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM identity.parties WHERE org_id=$1 AND id=ANY($2)")
+            .bind(ctx.org)
+            .bind(parties.iter().copied().collect::<Vec<_>>())
+            .fetch_one(&mut *tx)
+            .await?;
+    let confirmed = ctx.body["declarations"]["rights_confirmed"] == true
+        && ctx.body["declarations"]["adult_confirmed"] == true;
+    Ok(vec![
+        ReviewCheck {
+            check_code: "S2_CONSENT_VALIDITY",
+            status: if valid { "PASS" } else { "CORRECTION_REQUIRED" },
+            detail: if valid {
+                "consent hash, release, policy and expiry verified".into()
+            } else {
+                "consent expired or does not match this release; renew consent and resubmit".into()
+            },
+        },
+        ReviewCheck {
+            check_code: "S2_RIGHTS_DECLARATIONS",
+            status: if confirmed {
+                "PASS"
+            } else {
+                "CORRECTION_REQUIRED"
+            },
+            detail: format!("adult and distribution-rights declarations confirmed={confirmed}"),
+        },
+        ReviewCheck {
+            check_code: "S2_ASSET_INTEGRITY",
+            status: if drift.is_empty() { "PASS" } else { "BLOCKED" },
+            detail: if drift.is_empty() {
+                "all reviewed audio hashes still match registered assets".into()
+            } else {
+                format!(
+                    "registered asset drift on tracks: {}; re-upload and revalidate",
+                    drift.join(",")
+                )
+            },
+        },
+        ReviewCheck {
+            check_code: "S2_ARTWORK_INTEGRITY",
+            status: if artwork.is_null() {
+                "NOT_APPLICABLE"
+            } else if artwork_matches {
+                "PASS"
+            } else {
+                "BLOCKED"
+            },
+            detail: if artwork_matches {
+                "reviewed cover hash still matches the registered asset".into()
+            } else {
+                "reviewed cover is missing or its registered hash/state changed; re-upload and revalidate".into()
+            },
+        },
+        ReviewCheck {
+            check_code: "S2_CREDIT_PARTIES",
+            status: if existing == parties.len() as i64 {
+                "PASS"
+            } else {
+                "CORRECTION_REQUIRED"
+            },
+            detail: format!(
+                "credit parties in applicant organization: {existing}/{}",
+                parties.len()
+            ),
+        },
+    ])
 }
 
 // ---------------------------------------------------------------------------
@@ -320,6 +563,7 @@ pub fn stage1_review_severity(code: &str) -> &'static str {
 fn static_stage1_code(code: &str) -> &'static str {
     crate::qc::AUDIO_CHECK_CODES
         .iter()
+        .chain(crate::qc::IMAGE_CHECK_CODES.iter())
         .chain(STAGE1_HOLD_CODES.iter())
         .find(|c| **c == code)
         .copied()
@@ -350,11 +594,19 @@ async fn module_stage1_holds(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec<Rev
     .bind(&check_ids)
     .fetch_all(&mut *tx)
     .await?;
+    if rows.len() != check_ids.iter().collect::<BTreeSet<_>>().len()
+        || check_ids.is_empty()
+        || rows
+            .iter()
+            .any(|(code, status, _)| code.starts_with("S2_") || status == "TECHNICAL_RETRY")
+    {
+        return Err(Error::InvalidCode("STAGE2_CHECK_REFERENCES_INVALID"));
+    }
     let mut held: BTreeMap<&'static str, BTreeSet<String>> = BTreeMap::new();
     let mut other = BTreeSet::new();
     for (code, status, detail) in rows {
         if !matches!(status.as_str(), "REVIEW_REQUIRED" | "BLOCKED")
-            || stage1_review_severity(&code) == "WARNING"
+            || (status == "REVIEW_REQUIRED" && stage1_review_severity(&code) == "WARNING")
         {
             continue;
         }
@@ -425,10 +677,10 @@ async fn decide(
     let n = |s: &str| counts.get(s).copied().unwrap_or(0);
     let decision: &'static str = if n("TECHNICAL_RETRY") > 0 {
         "TECHNICAL_RETRY"
-    } else if n("REVIEW_REQUIRED") > 0 || n("BLOCKED") > 0 {
-        "REVIEW_REQUIRED"
     } else if n("CORRECTION_REQUIRED") > 0 {
         "CORRECTION_REQUIRED"
+    } else if n("REVIEW_REQUIRED") > 0 || n("BLOCKED") > 0 {
+        "REVIEW_REQUIRED"
     } else {
         "PASS"
     };
@@ -474,6 +726,11 @@ async fn decide(
         .await?;
         let approved_scope = approved_scope(checks);
         let split = commercial_split_snapshot(tx, ctx).await?;
+        let external_reference_epoch = checks
+            .iter()
+            .find(|c| c.check_code == crate::external_recordings::CHECK_CODE)
+            .and_then(|c| serde_json::from_str::<Value>(&c.detail).ok())
+            .and_then(|v| v["reference_catalog_epoch"].as_i64());
         let pkg = json!({
             "schema_version": 1,
             "revision_id": ctx.revision_id,
@@ -488,6 +745,8 @@ async fn decide(
             "overrides_applied": ov.keys().collect::<Vec<_>>(),
             "special_flags": special_flags(ctx),
             "rule_version": REVIEW_RULE_VERSION,
+            "content_policy_rule_version": crate::content_policy::RULE_VERSION,
+            "external_reference_catalog_epoch": external_reference_epoch,
         });
         let pkg_hash = crate::domain::sha256_json(&pkg);
         let pkg_id = Uuid::new_v4();
@@ -600,6 +859,15 @@ async fn module_applicant_rights(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec
         });
         return Ok(out);
     }
+    if !matches!(path.as_str(), "self" | "label") || ctx.applicant_party.is_none() {
+        out.push(ReviewCheck {
+            check_code: "S2_ROUTER_PATH",
+            status: "REVIEW_REQUIRED",
+            detail: "applicant identity or consent path is not supported by automatic review"
+                .into(),
+        });
+        return Ok(out);
+    }
     out.push(ReviewCheck {
         check_code: "S2_ROUTER_PATH",
         status: "PASS",
@@ -635,10 +903,18 @@ async fn module_applicant_rights(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec
             "COVER" | "REMIX" | "SAMPLE" | "AI" | "MIGRATION" | "EXPLICIT"
         )
     });
+    let track_ids: Vec<Uuid> = ctx.body["tracks"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|t| t["id"].as_str().and_then(|s| Uuid::parse_str(s).ok()))
+        .collect();
     let grants = sqlx::query(
-        "SELECT id, target_kind, target_id, right_type, territory_set, use_set, start_at, end_exclusive, exclusive, sublicensable, parent_grant_id, revoked_at FROM rights.grant_atoms WHERE org_id=$1 AND revoked_at IS NULL",
+        "SELECT id, target_kind, target_id, right_type, territory_set, use_set, start_at, end_exclusive, exclusive, sublicensable, parent_grant_id, revoked_at FROM rights.grant_atoms
+         WHERE org_id=$1 AND revoked_at IS NULL
+           AND ((target_kind='RELEASE' AND target_id=$2) OR (target_kind='TRACK' AND target_id=ANY($3)))",
     )
-    .bind(ctx.org)
+    .bind(ctx.org).bind(ctx.release).bind(&track_ids)
     .fetch_all(&mut *tx)
     .await?;
     // Chain depth guard: unclear or overly deep chains go to REVIEW, never
@@ -646,28 +922,32 @@ async fn module_applicant_rights(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec
     // One recursive walk up every chain: a hop counts once its parent id is
     // set (even when that parent row is gone); walks stop past depth 8.
     let grant_ids: Vec<Uuid> = grants.iter().map(|g| g.get("id")).collect();
-    let max_depth: i32 = sqlx::query_scalar(
+    let (max_depth, broken_chain): (i32, bool) = sqlx::query_as(
         "WITH RECURSIVE chain(parent, depth) AS (
            SELECT parent_grant_id, 0 FROM rights.grant_atoms WHERE org_id=$1 AND id=ANY($2)
            UNION ALL
            SELECT g.parent_grant_id, c.depth+1 FROM chain c
              JOIN rights.grant_atoms g ON g.org_id=$1 AND g.id=c.parent WHERE c.depth<9)
-         SELECT COALESCE(max(depth + (parent IS NOT NULL)::int), 0) FROM chain",
+         SELECT COALESCE(max(depth + (parent IS NOT NULL)::int), 0),
+                COALESCE(bool_or(parent IS NOT NULL AND NOT EXISTS
+                  (SELECT 1 FROM rights.grant_atoms p WHERE p.org_id=$1 AND p.id=chain.parent AND p.revoked_at IS NULL)),false)
+           FROM chain",
     )
     .bind(ctx.org)
     .bind(&grant_ids)
     .fetch_one(&mut *tx)
     .await?;
-    if max_depth > 8 {
+    if max_depth > 8 || broken_chain {
         out.push(ReviewCheck {
             check_code: "S2_RIGHTS_SCOPE",
             status: "REVIEW_REQUIRED",
-            detail: "grant chain exceeds automatic inspection depth; not auto-expanded".into(),
+            detail: "grant chain exceeds automatic inspection depth or has a missing, revoked or foreign parent".into(),
         });
         return Ok(out);
     }
     // Exclusive conflicts against another active grant for the same target.
-    // `grants` already holds every active grant of the org.
+    // Only this release's grants participate. Disjoint territories, uses,
+    // and half-open time ranges are not conflicts.
     let exclusive_key = |g: &sqlx::postgres::PgRow| {
         (
             g.get::<String, _>("target_kind"),
@@ -675,11 +955,15 @@ async fn module_applicant_rights(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec
             g.get::<String, _>("right_type"),
         )
     };
-    let mut exclusive_seen = BTreeSet::new();
-    let exclusive_conflict = grants
+    let exclusive: Vec<_> = grants
         .iter()
         .filter(|g| g.get::<bool, _>("exclusive"))
-        .any(|g| !exclusive_seen.insert(exclusive_key(g)));
+        .collect();
+    let exclusive_conflict = exclusive.iter().enumerate().any(|(i, a)| {
+        exclusive[i + 1..]
+            .iter()
+            .any(|b| exclusive_key(a) == exclusive_key(b) && grant_ranges_overlap(a, b))
+    });
     if exclusive_conflict {
         out.push(ReviewCheck {
             check_code: "S2_RIGHTS_SCOPE",
@@ -701,32 +985,13 @@ async fn module_applicant_rights(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec
             ),
         });
     } else if path == "label" {
-        // (b) verified label contract within scope.
-        let active: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM rights.contracts c JOIN rights.contract_revisions r ON r.org_id=c.org_id AND r.contract_id=c.id WHERE c.org_id=$1 AND r.policy_version<>'REVOKED'",
-        )
-        .bind(ctx.org)
-        .fetch_one(&mut *tx)
-        .await?;
-        let covered: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM rights.grant_atoms WHERE org_id=$1 AND contract_revision_id IS NOT NULL AND revoked_at IS NULL",
-        )
-        .bind(ctx.org)
-        .fetch_one(&mut *tx)
-        .await?;
-        if active > 0 && covered > 0 {
-            out.push(ReviewCheck {
-                check_code: "S2_RIGHTS_SCOPE",
-                status: "PASS",
-                detail: "allowlist(b): verified label contract scope".into(),
-            });
-        } else {
-            out.push(ReviewCheck {
-                check_code: "S2_RIGHTS_SCOPE",
-                status: "REVIEW_REQUIRED",
-                detail: "label path without verifiable active contract scope".into(),
-            });
-        }
+        // Presence of an arbitrary contract and grant elsewhere in the org
+        // cannot establish this release's authority. There is no verified
+        // external-document contract in this schema yet.
+        out.push(ReviewCheck {
+            check_code: "S2_RIGHTS_SCOPE", status: "REVIEW_REQUIRED",
+            detail: format!("label authority needs verified document scope; {} release-specific grant(s) available for staff inspection", grants.len()),
+        });
     } else {
         // (a) self rights-holder, general release, no conflicts.
         out.push(ReviewCheck {
@@ -743,6 +1008,26 @@ async fn module_applicant_rights(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec
         detail: "allowlist(c): AUDENIQ-generated consent package hash verified at submit; external PDFs/scans never auto-passed".into(),
     });
     Ok(out)
+}
+
+fn grant_ranges_overlap(a: &sqlx::postgres::PgRow, b: &sqlx::postgres::PgRow) -> bool {
+    let set_overlap = |key: &str| {
+        let a: Vec<String> = a.get(key);
+        let b: Vec<String> = b.get(key);
+        a.is_empty()
+            || b.is_empty()
+            || a.iter()
+                .any(|x| x == "WORLD" || x == "ALL" || b.contains(x))
+            || b.iter().any(|x| x == "WORLD" || x == "ALL")
+    };
+    let start_a: Option<chrono::DateTime<chrono::Utc>> = a.get("start_at");
+    let end_a: Option<chrono::DateTime<chrono::Utc>> = a.get("end_exclusive");
+    let start_b: Option<chrono::DateTime<chrono::Utc>> = b.get("start_at");
+    let end_b: Option<chrono::DateTime<chrono::Utc>> = b.get("end_exclusive");
+    !matches!((end_a,start_b), (Some(e),Some(s)) if e<=s)
+        && !matches!((end_b,start_a), (Some(e),Some(s)) if e<=s)
+        && set_overlap("territory_set")
+        && set_overlap("use_set")
 }
 
 // ---------------------------------------------------------------------------
@@ -827,11 +1112,12 @@ async fn module_catalog_match(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec<Re
             ),
         });
     }
-    // 2-C.3: fingerprint is REVIEW_ONLY policy; not computed in F3.
+    // Internal comparisons are computed by Stage 1 and its pinned holds are
+    // carried below. External references are freshly compared before locks.
     out.push(ReviewCheck {
         check_code: "S2_CATALOG_FINGERPRINT",
         status: "NOT_APPLICABLE",
-        detail: "fingerprint policy recorded as REVIEW_ONLY; comparison engine is F4+".into(),
+        detail: "internal fingerprint comparison is pinned in Stage 1; holds remain active; external references have a separate fresh comparison".into(),
     });
     Ok(out)
 }
@@ -851,6 +1137,7 @@ async fn module_metadata_content(ctx: &Ctx) -> Result<Vec<ReviewCheck>> {
         .cloned()
         .unwrap_or_default();
     let mut empty_credit_tracks = 0;
+    out.extend(lyrics_checks(ctx, &tracks));
     for t in &tracks {
         let n = t
             .get("credits")
@@ -967,9 +1254,119 @@ async fn module_metadata_content(ctx: &Ctx) -> Result<Vec<ReviewCheck>> {
     Ok(out)
 }
 
+async fn module_dsp_content_policy(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec<ReviewCheck>> {
+    let refs: Vec<Uuid> = serde_json::from_value(ctx.validation_body["stage1_check_refs"].clone())
+        .map_err(|_| Error::Internal)?;
+    let artwork = crate::content_policy::artwork_evidence(tx, ctx.revision_id, &refs).await?;
+    let selected =
+        crate::dsp_registry::requested(&ctx.body["release"]["draft"]).unwrap_or_default();
+    let mut findings: BTreeMap<&'static str, (bool, Vec<String>)> = BTreeMap::new();
+    for dsp in selected {
+        for finding in crate::content_policy::evaluate(&ctx.body, dsp, &artwork) {
+            let entry = findings.entry(finding.code).or_default();
+            entry.0 |= finding.correction;
+            entry.1.push(finding.detail);
+        }
+    }
+    Ok(findings
+        .into_iter()
+        .map(|(check_code, (correction, details))| ReviewCheck {
+            check_code,
+            status: if correction {
+                "CORRECTION_REQUIRED"
+            } else {
+                "REVIEW_REQUIRED"
+            },
+            detail: format!("[{}]", details.join(",")),
+        })
+        .collect())
+}
+
+fn lyrics_checks(ctx: &Ctx, tracks: &[Value]) -> Vec<ReviewCheck> {
+    let instrumental: BTreeSet<_> = ctx
+        .body
+        .pointer("/release/draft/draftTracks")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|t| t["instrumental"] == true)
+        .filter_map(|t| t["serverId"].as_str())
+        .collect();
+    let mut missing = Vec::new();
+    let mut conflicting = Vec::new();
+    let mut signals = Vec::new();
+    for track in tracks {
+        let id = track["id"].as_str().unwrap_or("unknown");
+        let Some(lyrics) = track["lyrics"].as_str().filter(|l| !l.trim().is_empty()) else {
+            continue;
+        };
+        let has_lyricist = track["credits"].as_array().into_iter().flatten().any(|c| {
+            matches!(
+                c["role"].as_str().unwrap_or("").to_lowercase().as_str(),
+                "lyricist" | "songwriter" | "writer" | "author" | "작사" | "작사가"
+            )
+        });
+        if !has_lyricist {
+            missing.push(id);
+        }
+        if instrumental.contains(id) {
+            conflicting.push(id);
+        }
+        let markers = crate::provenance::lyrics_signals(lyrics);
+        if !markers.is_empty() {
+            signals.push(format!("track={id} markers={}", markers.join(",")));
+        }
+    }
+    vec![
+        ReviewCheck {
+            check_code: "S2_LYRICS_CREDITS",
+            status: if missing.is_empty() {
+                "PASS"
+            } else {
+                "CORRECTION_REQUIRED"
+            },
+            detail: if missing.is_empty() {
+                "lyric-bearing tracks have declared writing credits".into()
+            } else {
+                format!("add lyricist credits to tracks: {}", missing.join(","))
+            },
+        },
+        ReviewCheck {
+            check_code: "S2_LYRICS_INSTRUMENTAL",
+            status: if conflicting.is_empty() {
+                "PASS"
+            } else {
+                "CORRECTION_REQUIRED"
+            },
+            detail: if conflicting.is_empty() {
+                "no instrumental/lyrics contradiction".into()
+            } else {
+                format!(
+                    "instrumental tracks contain lyrics; correct the flag or lyrics: {}",
+                    conflicting.join(",")
+                )
+            },
+        },
+        ReviewCheck {
+            check_code: "S2_AI_LYRICS_PROVENANCE",
+            status: if signals.is_empty() {
+                "NOT_APPLICABLE"
+            } else {
+                "REVIEW_REQUIRED"
+            },
+            detail:
+                json!({"outcome":if signals.is_empty() {"UNKNOWN"} else {"AI_DISCLOSURE_SIGNAL"},
+                "method":"LOCAL_LITERAL_DISCLOSURE","synthid":"NOT_CHECKED","signals":signals,
+                "limitation":"text style cannot establish AI authorship; no remote calls"})
+                .to_string(),
+        },
+    ]
+}
+
 /// Scan release + track titles for special-content indicators that lack the
 /// matching submit-time declaration. Returns human-readable hit strings.
 fn undeclared_content_hits(ctx: &Ctx) -> Vec<String> {
+    use unicode_normalization::UnicodeNormalization;
     let Some(decl) = ctx.body.get("declarations") else {
         return Vec::new();
     };
@@ -978,6 +1375,11 @@ fn undeclared_content_hits(ctx: &Ctx) -> Vec<String> {
     const RULES: &[(&[&str], &str, &str)] = &[
         (&["cover", "커버"], "is_cover", "COVER"),
         (&["remix", "리믹스"], "is_remix", "REMIX"),
+        (
+            &["sampled", "sampling", "샘플링"],
+            "contains_samples",
+            "SAMPLE",
+        ),
         (
             &["suno", "udio", "aicover", "aigenerated", "aivoice"],
             "ai_involved",
@@ -997,22 +1399,26 @@ fn undeclared_content_hits(ctx: &Ctx) -> Vec<String> {
     }
     let mut hits = Vec::new();
     for title in &titles {
-        let tokens: Vec<String> = title
+        let normalized: String = title.nfkc().collect();
+        let tokens: Vec<String> = normalized
             .split(|c: char| !c.is_alphanumeric())
             .filter(|s| !s.is_empty())
             .map(|s| s.to_lowercase())
             .collect();
         // "ai cover" / "ai generated" arrive as separate tokens.
-        let joined = tokens.join(" ");
         for (indicators, decl_key, label) in RULES {
             if declared(decl_key) {
                 continue;
             }
-            let hit = indicators.iter().any(|ind| {
-                tokens.iter().any(|t| t == ind)
-                    || joined.contains(&format!("ai {ind}"))
-                    || joined.contains(&format!("ai-{ind}"))
-            });
+            let hit = indicators.iter().any(|ind| tokens.iter().any(|t| t == ind))
+                || (*label == "AI"
+                    && tokens.windows(2).any(|t| {
+                        t[0] == "ai"
+                            && matches!(
+                                t[1].as_str(),
+                                "cover" | "generated" | "voice" | "커버" | "생성" | "보이스"
+                            )
+                    }));
             if hit {
                 hits.push(format!("{label} in title {title:?}"));
             }
@@ -1797,6 +2203,62 @@ mod tests {
     use super::*;
     use crate::database;
 
+    fn context(body: Value) -> Ctx {
+        Ctx {
+            org: Uuid::new_v4(),
+            release: Uuid::new_v4(),
+            revision_id: Uuid::new_v4(),
+            body_hash: crate::domain::sha256_json(&body),
+            body,
+            validation_package_id: Uuid::new_v4(),
+            validation_body: Value::Null,
+            consent_path: "self".into(),
+            applicant_party: Some(Uuid::new_v4()),
+            consent_body: Value::Null,
+        }
+    }
+
+    #[test]
+    fn validation_must_cover_exactly_every_submitted_asset() {
+        let a = Uuid::new_v4();
+        let b = Uuid::new_v4();
+        let mut ctx = context(json!({"consent_package_hash":"consent","tracks":[
+            {"asset_id":a,"asset_sha256":"a".repeat(64)},
+            {"asset_id":b,"asset_sha256":"b".repeat(64)}]}));
+        ctx.validation_body = json!({"revision_id":ctx.revision_id,"revision_hash":ctx.body_hash,
+            "consent_package_hash":"consent","validated_assets":[
+                {"asset_id":b,"sha256":"b".repeat(64)}, {"asset_id":a,"sha256":"a".repeat(64)}]});
+        assert!(validation_matches_revision(&ctx));
+        ctx.validation_body["validated_assets"][0]["sha256"] = json!("c".repeat(64));
+        assert!(!validation_matches_revision(&ctx));
+        ctx.validation_body["validated_assets"][0] =
+            ctx.validation_body["validated_assets"][1].clone();
+        assert!(
+            !validation_matches_revision(&ctx),
+            "duplicate evidence cannot cover a missing track"
+        );
+        ctx.validation_body["revision_id"] = json!(Uuid::new_v4());
+        assert!(!validation_matches_revision(&ctx));
+    }
+
+    #[test]
+    fn lyrics_checks_and_content_disclosures_are_precise() {
+        let ctx = context(
+            json!({"release":{"title":"Discovery","draft":{"draftTracks":[{"serverId":"track","instrumental":true}]}},
+            "declarations":{},"tracks":[{"id":"track","title":"ＡＩ Ｇｅｎｅｒａｔｅｄ","lyrics":"lyrics generated by AI",
+                "credits":[{"role":"COMPOSER"}]}]}),
+        );
+        let checks = lyrics_checks(&ctx, ctx.body["tracks"].as_array().unwrap());
+        assert_eq!(checks[0].status, "CORRECTION_REQUIRED");
+        assert_eq!(checks[1].status, "CORRECTION_REQUIRED");
+        assert_eq!(checks[2].status, "REVIEW_REQUIRED");
+        let hits = undeclared_content_hits(&ctx);
+        assert_eq!(hits.len(), 1, "discovery is not a cover declaration");
+        assert!(hits[0].starts_with("AI"));
+        let ctx = context(json!({"release":{"title":"Discovery"},"declarations":{},"tracks":[]}));
+        assert!(undeclared_content_hits(&ctx).is_empty());
+    }
+
     fn check(code: &'static str, status: &'static str, detail: &str) -> ReviewCheck {
         ReviewCheck {
             check_code: code,
@@ -1877,6 +2339,22 @@ mod tests {
             .await
             .unwrap();
         assert_ne!(third, fourth);
+        let batch = [
+            check("S2_META_CREDITS", "PASS", "one"),
+            check("S2_META_CREDITS", "PASS", "two"),
+            check("S2_META_CREDITS", "PASS", "one"),
+        ];
+        let batch_ids = record_check_results(&mut tx, revision_id, &batch)
+            .await
+            .unwrap();
+        assert_eq!(batch_ids[0], batch_ids[2]);
+        assert_ne!(batch_ids[0], batch_ids[1]);
+        assert_eq!(
+            batch_ids,
+            record_check_results(&mut tx, revision_id, &batch)
+                .await
+                .unwrap()
+        );
 
         // An album has two held recordings and a clean third recording.
         // All current refs are pinned, while an older unrelated hold is not.
@@ -1908,7 +2386,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let ctx = Ctx {
+        let mut ctx = Ctx {
             org,
             release,
             revision_id,
@@ -1918,6 +2396,7 @@ mod tests {
             validation_body: json!({"stage1_check_refs": refs}),
             consent_path: "self".into(),
             applicant_party: None,
+            consent_body: Value::Null,
         };
         let holds = module_stage1_holds(&mut tx, &ctx).await.unwrap();
         assert_eq!(holds.len(), 1, "warnings and unpinned attempts do not hold");
@@ -1925,6 +2404,11 @@ mod tests {
         assert!(holds[0].detail.contains("asset A matches"));
         assert!(holds[0].detail.contains("asset B matches"));
         assert!(!holds[0].detail.contains("asset C"));
+        ctx.validation_body["stage1_check_refs"][0] = json!(Uuid::new_v4());
+        assert!(matches!(
+            module_stage1_holds(&mut tx, &ctx).await,
+            Err(Error::InvalidCode("STAGE2_CHECK_REFERENCES_INVALID"))
+        ));
         tx.commit().await.unwrap();
     }
 }

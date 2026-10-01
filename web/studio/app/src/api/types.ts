@@ -122,6 +122,7 @@ export interface ReleaseOptionsData extends RereleaseData {
   sample: boolean; sampleLicenseFile: string; sampleLicenseAssetId?: string;
   featured: boolean; featuredConsentFile: string; featuredConsentAssetId?: string;
   ai: boolean; aiTool: string;
+  contentIdExclusiveRightsAck?: boolean; contentIdOriginalRecordingAck?: boolean;
   aiUses?: string[]; aiTools?: string[]; aiUseOther?: string; aiToolOther?: string;
   shared: boolean; sharedContractFile: string; sharedContractAssetId?: string;
   rerelease: boolean; previousTitle: string; previousId: string;

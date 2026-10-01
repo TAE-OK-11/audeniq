@@ -452,14 +452,15 @@ async fn stage1_happy_path_passes(pool: PgPool) {
     .fetch_all(&pool)
     .await
     .unwrap();
-    // 22 metadata/policy checks (round 2 added TEXT_INVALID_CHARACTERS,
-    // ARTIST_NAME_PROTECTED, IDENTIFIER_IN_USE, ASSET_REUSED; round 3
-    // ARTIST_NAME_REVIEW; F6 wiring RELEASE_TITLE_STYLE,
-    // TRACK_TITLE_EXPLICIT_MARKER, TRACK_TITLE_STYLE, FIELD_LANGUAGE_INVALID)
-    // + 15 audio checks (QC rule v3 added AUDIO_CONTENT_SUSPECT).
-    assert_eq!(codes.len(), 41, "{codes:?}");
+    // 26 metadata/policy checks plus the complete audio contract. This
+    // fixture has no cover attached, so image outcomes are not expected.
+    assert_eq!(
+        codes.len(),
+        26 + audeniq_core::qc::AUDIO_CHECK_CODES.len(),
+        "{codes:?}"
+    );
     let bad: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM operations.check_results WHERE revision_id=$1 AND status<>'PASS'",
+        "SELECT COUNT(*) FROM operations.check_results WHERE revision_id=$1 AND status NOT IN ('PASS','NOT_APPLICABLE')",
     )
     .bind(revision_id)
     .fetch_one(&pool)

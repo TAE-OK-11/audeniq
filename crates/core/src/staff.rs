@@ -610,7 +610,7 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
         "SELECT jsonb_build_object('package_id',package_id,'dsp',dsp_code,'readiness',readiness,'approval',approval,
                 'checks',checks,'route_status',route_status,'route_reason',route_reason,
                 'ern_message_id',ern_message_id,'ern_sha256',ern_sha256,'ern_is_preview',ern_is_preview,
-                'approval_by',approval_by,'approval_note',approval_note,'approval_at',approval_at,'staged_at',staged_at)
+                'approval_by',approval_by,'approval_rule_version',approval_rule_version,'approval_note',approval_note,'approval_at',approval_at,'staged_at',staged_at)
          FROM distribution.delivery_staging WHERE org_id=$1 AND release_id=$2 AND revision_id=$3 ORDER BY staged_at DESC, dsp_code",
     )
     .bind(org)
@@ -1887,7 +1887,7 @@ pub async fn decide_delivery(
         }
     }
     sqlx::query(
-        "UPDATE distribution.delivery_staging SET approval=$3, approval_by=$4, approval_note=$5, approval_at=now()
+        "UPDATE distribution.delivery_staging SET approval=$3, approval_by=$4, approval_note=$5, approval_at=now(), approval_rule_version=NULL
          WHERE package_id=$1 AND dsp_code=$2",
     )
     .bind(package)
