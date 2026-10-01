@@ -187,6 +187,7 @@ export function checkSummary(c: { check_code: string; detail: string | null }): 
     case 'AUDIO_CONTENT_SUSPECT': return '음원 내용이 의심스러워요(무음·잡음·테스트 음원 등). 직접 들어 보고 판단해 주세요.';
     case 'S2_INTEGRITY_DUP': return '다른 발매와 같은 마스터 음원이 쓰였어요. 중복 발매인지 확인해 주세요.';
     case 'S2_INTEGRITY_DISPUTES': return '권리 분쟁이 걸린 음원·아티스트와 관련 있어요.';
+    case 'S2_EXTERNAL_RECORDING_COMPARISON': return '외부 발매곡 참조 목록과 비교한 결과예요. 일치 후보의 원곡·아티스트·ISRC·출처 또는 누락 사유를 확인하고 재발매·사용 권리를 검토해 주세요. 일치만으로 침해를 확정하지 않아요.';
     case 'S2_CATALOG_FINGERPRINT': return '카탈로그의 다른 곡과 음원 지문이 겹쳐요. 같은 곡인지 확인해 주세요.';
     case 'S2_CATALOG_IDENTIFIERS': return 'UPC·ISRC가 다른 발매와 겹치거나 형식이 맞지 않아요.';
     case 'S2_SPECIAL_FLAGS': return '19금·커버곡·샘플·AI 활용 같은 특수 항목이 있어요. 신고 내용과 증빙이 맞는지 확인해 주세요.';

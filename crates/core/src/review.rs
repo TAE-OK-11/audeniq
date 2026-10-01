@@ -31,7 +31,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
 /// Rule version for Stage 2 review checks.
-pub const REVIEW_RULE_VERSION: &str = "3";
+pub const REVIEW_RULE_VERSION: &str = "4";
 
 pub struct Stage2Summary {
     pub revision_id: Uuid,
@@ -233,7 +233,25 @@ pub async fn run_stage2(pool: &PgPool, job: &operations::Job) -> Result<Option<S
         }));
     }
 
+    let external_scan = crate::external_recordings::scan(
+        pool,
+        ctx.org,
+        ctx.body["tracks"].as_array().ok_or(Error::Internal)?,
+    )
+    .await?;
     let mut tx = pool.begin().await?;
+    // Operator imports/deactivations cannot change the reference set between
+    // this fresh comparison and the committed review decision.
+    sqlx::query("SELECT pg_advisory_xact_lock_shared(64481168068)")
+        .execute(&mut *tx)
+        .await?;
+    let external_epoch: i64 =
+        sqlx::query_scalar("SELECT epoch FROM catalog.external_recording_epoch WHERE singleton")
+            .fetch_one(&mut *tx)
+            .await?;
+    if external_epoch != external_scan.epoch {
+        return Err(Error::Internal);
+    }
     // Fence every mutation on the job's live lease: an expired worker's
     // decision must never commit.
     let held: Option<Uuid> = sqlx::query_scalar(
@@ -302,6 +320,11 @@ pub async fn run_stage2(pool: &PgPool, job: &operations::Job) -> Result<Option<S
     checks.extend(module_evidence(&mut tx, &ctx).await?);
     checks.extend(module_applicant_rights(&mut tx, &ctx).await?);
     checks.extend(module_catalog_match(&mut tx, &ctx).await?);
+    checks.push(ReviewCheck {
+        check_code: crate::external_recordings::CHECK_CODE,
+        status: external_scan.status,
+        detail: external_scan.detail,
+    });
     checks.extend(module_metadata_content(&ctx).await?);
     checks.extend(module_dsp_content_policy(&mut tx, &ctx).await?);
     checks.extend(module_policy_integrity(&mut tx, &ctx).await?);
@@ -703,6 +726,11 @@ async fn decide(
         .await?;
         let approved_scope = approved_scope(checks);
         let split = commercial_split_snapshot(tx, ctx).await?;
+        let external_reference_epoch = checks
+            .iter()
+            .find(|c| c.check_code == crate::external_recordings::CHECK_CODE)
+            .and_then(|c| serde_json::from_str::<Value>(&c.detail).ok())
+            .and_then(|v| v["reference_catalog_epoch"].as_i64());
         let pkg = json!({
             "schema_version": 1,
             "revision_id": ctx.revision_id,
@@ -718,6 +746,7 @@ async fn decide(
             "special_flags": special_flags(ctx),
             "rule_version": REVIEW_RULE_VERSION,
             "content_policy_rule_version": crate::content_policy::RULE_VERSION,
+            "external_reference_catalog_epoch": external_reference_epoch,
         });
         let pkg_hash = crate::domain::sha256_json(&pkg);
         let pkg_id = Uuid::new_v4();
@@ -1083,11 +1112,12 @@ async fn module_catalog_match(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec<Re
             ),
         });
     }
-    // 2-C.3: fingerprint is REVIEW_ONLY policy; not computed in F3.
+    // Internal comparisons are computed by Stage 1 and its pinned holds are
+    // carried below. External references are freshly compared before locks.
     out.push(ReviewCheck {
         check_code: "S2_CATALOG_FINGERPRINT",
         status: "NOT_APPLICABLE",
-        detail: "fingerprint policy recorded as REVIEW_ONLY; comparison engine is F4+".into(),
+        detail: "internal fingerprint comparison is pinned in Stage 1; holds remain active; external references have a separate fresh comparison".into(),
     });
     Ok(out)
 }

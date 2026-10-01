@@ -85,6 +85,221 @@ fn tmpdir() -> PathBuf {
     d
 }
 
+fn varied_reference_wav(dir: &std::path::Path) -> PathBuf {
+    let path = dir.join("external.wav");
+    assert!(std::process::Command::new("ffmpeg").args([
+        "-y","-v","error","-f","lavfi","-i",
+        "aevalsrc=0.22*sin(2*PI*(210*t+12*t*t))+0.08*sin(2*PI*731*t)+0.07*sin(2*PI*(913*t+6*t*t)):s=48000:d=48",
+        "-ac","2","-c:a","pcm_s16le"]).arg(&path).status().unwrap().success());
+    path
+}
+
+fn external_metadata() -> audeniq_core::external_recordings::ReferenceMetadata {
+    audeniq_core::external_recordings::ReferenceMetadata {
+        title: "External original recording".into(),
+        artist: "External original artist".into(),
+        isrc: Some("GBABC2600123".into()),
+        source_url: "https://example.org/artist/original".into(),
+        permission_basis: "Synthetic CI fixture; testing only".into(),
+    }
+}
+
+#[sqlx::test]
+async fn external_reencoded_recording_is_held_without_another_org_catalog(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let original = varied_reference_wav(&dir);
+    let copy = dir.join("submitted.flac");
+    assert!(
+        std::process::Command::new("ffmpeg")
+            .args(["-y", "-v", "error", "-i"])
+            .arg(&original)
+            .args(["-c:a", "flac"])
+            .arg(&copy)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let bytes = std::fs::read(&copy).unwrap();
+    assert_ne!(
+        sha256_hex(&bytes),
+        sha256_hex(&std::fs::read(&original).unwrap())
+    );
+    let asset = register_asset(&pool, &store, &u, "submitted.flac", &bytes).await;
+    let release = build_submittable(&app, &pool, &store, &u, asset).await;
+    let revision = consent_and_submit(&app, &u, release, "external-reference-copy").await;
+    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    // The external recording becomes known AFTER Stage 1. Stage 2 must
+    // compare freshly, with no new submitted-file download or other org.
+    audeniq_core::external_recordings::import(&pool, "ci-operator", external_metadata(), &original)
+        .await
+        .unwrap();
+    let before = store.get_calls.load(std::sync::atomic::Ordering::SeqCst);
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        store.get_calls.load(std::sync::atomic::Ordering::SeqCst),
+        before
+    );
+    assert_eq!(release_status(&pool, release).await, "STAGE2_REVIEW");
+    assert_eq!(
+        check_status(
+            &pool,
+            revision,
+            audeniq_core::external_recordings::CHECK_CODE
+        )
+        .await,
+        "REVIEW_REQUIRED"
+    );
+    let detail: String = sqlx::query_scalar(
+        "SELECT detail FROM operations.check_results WHERE revision_id=$1 AND check_code=$2",
+    )
+    .bind(revision)
+    .bind(audeniq_core::external_recordings::CHECK_CODE)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let report: Value = serde_json::from_str(&detail).unwrap();
+    assert_eq!(
+        report["matches"][0]["signal"], "AUDIO_FINGERPRINT",
+        "{report}"
+    );
+    assert_eq!(report["matches"][0]["artist"], "External original artist");
+    assert_eq!(report["copyright_verdict"], "NOT_DETERMINED");
+    assert_eq!(report["global_catalog_checked"], false);
+    let packages: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM distribution.verification_packages WHERE revision_id=$1",
+    )
+    .bind(revision)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(packages, 0);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[sqlx::test]
+async fn external_reference_isrc_claim_and_missing_audio_are_distinct(pool: PgPool) {
+    audeniq_core::database::MIGRATOR.run(&pool).await.unwrap();
+    let dir = tmpdir();
+    let original = varied_reference_wav(&dir);
+    let id = audeniq_core::external_recordings::import(
+        &pool,
+        "ci-operator",
+        external_metadata(),
+        &original,
+    )
+    .await
+    .unwrap();
+    let tracks = [json!({"id":Uuid::new_v4(),"asset_id":Uuid::new_v4(),"isrc":"GBABC2600123"})];
+    let scan = audeniq_core::external_recordings::scan(&pool, Uuid::new_v4(), &tracks)
+        .await
+        .unwrap();
+    assert_eq!(scan.status, "REVIEW_REQUIRED");
+    let detail: Value = serde_json::from_str(&scan.detail).unwrap();
+    assert_eq!(detail["matches"][0]["signal"], "ISRC_CLAIM");
+    assert_eq!(
+        detail["missing_fingerprint_assets"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let changed = sqlx::query(
+        "UPDATE catalog.external_recordings SET artist='Reassigned artist' WHERE id=$1",
+    )
+    .bind(id)
+    .execute(&pool)
+    .await
+    .unwrap_err();
+    assert_eq!(
+        changed.as_database_error().unwrap().code().as_deref(),
+        Some("23514")
+    );
+    audeniq_core::external_recordings::set_active(&pool, "ci-operator", id, false)
+        .await
+        .unwrap();
+    let after = audeniq_core::external_recordings::scan(&pool, Uuid::new_v4(), &tracks)
+        .await
+        .unwrap();
+    assert_eq!(after.status, "NOT_APPLICABLE");
+    assert!(after.epoch > scan.epoch);
+    let report: Value = serde_json::from_str(&after.detail).unwrap();
+    assert_eq!(report["inspection_status"], "NOT_CHECKED");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[sqlx::test]
+async fn populated_external_catalog_without_submitted_fingerprint_requires_review(pool: PgPool) {
+    audeniq_core::database::MIGRATOR.run(&pool).await.unwrap();
+    let dir = tmpdir();
+    let original = varied_reference_wav(&dir);
+    audeniq_core::external_recordings::import(&pool, "ci-operator", external_metadata(), &original)
+        .await
+        .unwrap();
+    let scan = audeniq_core::external_recordings::scan(
+        &pool,
+        Uuid::new_v4(),
+        &[json!({"asset_id":Uuid::new_v4()})],
+    )
+    .await
+    .unwrap();
+    assert_eq!(scan.status, "REVIEW_REQUIRED");
+    let detail: Value = serde_json::from_str(&scan.detail).unwrap();
+    assert_eq!(detail["inspection_status"], "INCOMPLETE");
+    assert!(detail["matches"].as_array().unwrap().is_empty());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[sqlx::test]
+async fn unrelated_audio_passes_only_the_imported_external_reference_scope(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let reference = varied_reference_wav(&dir);
+    audeniq_core::external_recordings::import(
+        &pool,
+        "ci-operator",
+        external_metadata(),
+        &reference,
+    )
+    .await
+    .unwrap();
+    let asset = register_asset(&pool, &store, &u, "unrelated.wav", &make_good_wav(&dir)).await;
+    let release = build_submittable(&app, &pool, &store, &u, asset).await;
+    let revision = consent_and_submit(&app, &u, release, "external-reference-unrelated").await;
+    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        check_status(
+            &pool,
+            revision,
+            audeniq_core::external_recordings::CHECK_CODE
+        )
+        .await,
+        "PASS"
+    );
+    let detail: String = sqlx::query_scalar(
+        "SELECT detail FROM operations.check_results WHERE revision_id=$1 AND check_code=$2",
+    )
+    .bind(revision)
+    .bind(audeniq_core::external_recordings::CHECK_CODE)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let report: Value = serde_json::from_str(&detail).unwrap();
+    assert_eq!(report["inspection_status"], "COMPLETED");
+    assert_eq!(report["global_catalog_checked"], false);
+    assert!(report["matches"].as_array().unwrap().is_empty());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 fn qr_png(dir: &std::path::Path) -> Vec<u8> {
     let small = dir.join("qr.png");
     assert!(

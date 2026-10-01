@@ -79,6 +79,7 @@ const TARGETS: Record<string, Target> = {
   AUDIO_CLIPPING: { ...AUDIO, hint: '음원에 클리핑(소리 깨짐)이 감지됐어요. 마스터 파일을 다시 올려 주세요.' },
   AUDIO_PROBE_FAILED: { ...AUDIO, hint: '음원 파일을 읽을 수 없어요. 원본 WAV·FLAC 파일을 다시 올려 주세요.' },
   AUDIO_FINGERPRINT_FAILED: { ...AUDIO, hint: '음원 분석을 마치지 못했어요. 파일을 다시 올려 주세요.' },
+  S2_EXTERNAL_RECORDING_COMPARISON: { ...AUDIO, label: '외부 발매곡 확인', hint: '외부 참조 음원과의 일치 후보 또는 검사 누락이 있어요. 원곡 정보와 재발매·사용 권리 증빙을 담당자와 확인해 주세요.' },
   AUDIO_SIMILAR_TO_EXISTING: { ...AUDIO, hint: '이미 등록된 음원과 매우 비슷해요. 권리 관계를 확인하거나 다른 파일을 올려 주세요.' },
   SHA256_MISMATCH: { ...AUDIO, hint: '업로드한 파일이 손상됐어요. 파일을 다시 올려 주세요.' },
   ASSET_NOT_VERIFIED: { ...AUDIO, hint: '파일 확인이 끝나지 않았어요. 파일을 다시 올려 주세요.' },
