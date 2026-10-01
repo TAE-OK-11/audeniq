@@ -153,13 +153,13 @@ fn qr(path: &Path) -> Result<Value, &'static str> {
         use quick_xml::events::Event;
         match reader.read_event() {
             Ok(Event::Start(e) | Event::Empty(e)) => {
-                if e.name().as_ref() == b"barcodes" {
+                if e.name().as_ref() == "barcodes" {
                     root = true;
                 }
-                if e.name().as_ref() == b"symbol" {
+                if e.name().as_ref() == "symbol" {
                     for attribute in e.attributes() {
                         let a = attribute.map_err(|_| "invalid QR report")?;
-                        if a.key.as_ref() == b"type" && a.value.as_ref() == b"QR-Code" {
+                        if a.key.as_ref() == "type" && a.value.as_ref() == "QR-Code" {
                             count += 1;
                         }
                     }
