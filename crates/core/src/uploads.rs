@@ -362,14 +362,16 @@ async fn convert_lossless(
         // guards and permit in so cleanup cannot race the decoder or retry.
         let _src = src;
         let _slot = slot;
-        let provenance = crate::provenance::inspect(&_src.0);
-        if provenance["inspection_status"] != "COMPLETED" {
-            return Err(Error::UploadBusy);
-        }
+        let provenance = crate::provenance::inspect_audio(&_src.0);
         crate::lossless::to_flac(&_src.0, &dst.0, container).map_err(|code| match code {
             "UPLOAD_CONVERSION_UNAVAILABLE" | "UPLOAD_CONVERSION_TIMEOUT" => Error::UploadBusy,
             _ => Error::PolicyGate(code),
         })?;
+        // Preserve the conversion's objective invalid/lossy-file response
+        // even when neither metadata reader could inspect those bytes.
+        if provenance["inspection_status"] != "COMPLETED" {
+            return Err(Error::UploadBusy);
+        }
         let sha = crate::qc::sha256_file(&dst.0)?;
         Ok::<_, Error>((sha, provenance, dst, _slot))
     })
