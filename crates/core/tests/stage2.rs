@@ -49,7 +49,7 @@ async fn build_submittable(
     // UPC, cover artwork, ISRC and release metadata. All stage2 tests need
     // stage1 to reach STAGE1_PASSED.
     let art_id = Uuid::new_v4();
-    let art_key = format!("registered/{}/cover.png", u.org);
+    let art_key = format!("registered/{}/{art_id}/cover.png", u.org);
     let art_bytes = cover_png();
     store
         .files
@@ -372,7 +372,14 @@ async fn clean_delivery_is_auto_approved_but_staff_hold_and_signature_still_gate
     let staged = audeniq_core::delivery_staging::stage_package(&pool, package)
         .await
         .unwrap();
-    assert_eq!(staged.automatically_approved, 1);
+    let staging: Value = sqlx::query_scalar(
+        "SELECT to_jsonb(s) FROM distribution.delivery_staging s WHERE package_id=$1",
+    )
+    .bind(package)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(staged.automatically_approved, 1, "{staging}");
     let (approval,by,rule,hash):(String,Option<Uuid>,Option<String>,String)=sqlx::query_as("SELECT approval,approval_by,approval_rule_version,ern_sha256 FROM distribution.delivery_staging WHERE package_id=$1")
         .bind(package).fetch_one(&pool).await.unwrap();
     assert_eq!(approval, "APPROVED");
