@@ -1,5 +1,7 @@
 # 1차 부가서비스 구현 보고서
 
+후속 오류 수정과 migration 0070 내용은 [백엔드 안정화 보고서](ADDON_STABILIZATION.md)에 기록한다.
+
 최신 원격 main `b16a52b` 기준. Rust/Axum/SQLx modular monolith를 확장했다. REST와 기존 `/api/orgs/{org}` 규약을 유지한다. 기존 인증·CSRF·Worker 프록시를 그대로 쓸 수 있어 별도 gRPC 시스템을 추가하지 않는다.
 
 ## 기존 구조 재사용
