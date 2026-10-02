@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { correctionWhere, fixPath, resolveCorrection, WIZ_STEP } from './corrections';
+import { correctionWhere, fixPath, resolveCorrection, splitCorrections, WIZ_STEP } from './corrections';
 
 describe('보완 요청 → 신청서 위치', () => {
   it('커버·크레딧·발매일 요청을 해당 단계와 입력칸으로 연결한다', () => {
@@ -21,5 +21,18 @@ describe('보완 요청 → 신청서 위치', () => {
     expect(fixPath('r3')).toBe('/upload?edit=r3&fix=1');
     expect(correctionWhere(resolveCorrection({ code: 'IMAGE_NOT_SQUARE', message: '' }))).toBe('커버아트');
     expect(correctionWhere(resolveCorrection({ code: 'S2_META_CREDITS', message: '' }))).toBe('트랙 등록 · 크레딧');
+  });
+});
+
+describe('splitCorrections', () => {
+  it('담당자 전체 의견은 고칠 항목에서 빼고 따로 모은다', () => {
+    const { items, note } = splitCorrections([
+      { code: 'IMAGE_TOO_SMALL', message: '커버' },
+      { code: 'REVIEW_NOTE', message: '  두 항목만 고쳐 주세요. ' },
+      { code: 'S2_META_CREDITS', message: '작곡' },
+    ]);
+    expect(items.map(c => c.code)).toEqual(['IMAGE_TOO_SMALL', 'S2_META_CREDITS']);
+    expect(note).toBe('두 항목만 고쳐 주세요.');
+    expect(splitCorrections(undefined)).toEqual({ items: [], note: '' });
   });
 });

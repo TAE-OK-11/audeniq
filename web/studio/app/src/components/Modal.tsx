@@ -25,12 +25,15 @@ function lockScroll() {
     savedPadding = document.body.style.paddingRight;
     if (gap > 0) document.body.style.paddingRight = `${gap}px`;
     document.body.style.overflow = 'hidden';
+    // iOS Safari는 body만 잠그면 뒤 화면이 끌려 스크롤되는 경우가 있어 html도 함께 잠근다
+    document.documentElement.style.overflow = 'hidden';
   }
 }
 function unlockScroll() {
   lockCount = Math.max(0, lockCount - 1);
   if (lockCount === 0) {
     document.body.style.overflow = '';
+    document.documentElement.style.overflow = '';
     document.body.style.paddingRight = savedPadding;
   }
 }

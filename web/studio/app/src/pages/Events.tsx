@@ -137,9 +137,11 @@ export function Events() {
             ))}
           </div>
           {selected.link && /^https:\/\//.test(selected.link) && (
-            <a className="button" href={selected.link} target="_blank" rel="noopener noreferrer" style={{ marginTop: 20, width: '100%' }}>
-              이벤트 페이지 열기
-            </a>
+            <div className="aq-sticky-foot">
+              <a className="button" href={selected.link} target="_blank" rel="noopener noreferrer" style={{ width: '100%' }}>
+                이벤트 페이지 열기
+              </a>
+            </div>
           )}
         </Modal>
       )}

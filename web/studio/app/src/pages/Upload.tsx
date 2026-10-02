@@ -1,4 +1,6 @@
 import { Fragment, memo, useCallback, useEffect, useRef, useState } from 'react';
+import { ReviewNote } from '../components/CorrectionList';
+import { FilePicker } from '../components/FilePicker';
 import { useNavigate, useSearchParams } from '../lib/router';
 import { useToast } from '../components/Toast';
 import { Modal } from '../components/Modal';
@@ -13,7 +15,7 @@ import { useProfile } from '../store/profile';
 import { fileSize, localStamp } from '../lib/format';
 import { DSP, GENRES, KINDS, LANGUAGES, dspLabel, genreLabel, kindLabel } from '../lib/catalog';
 import { formatKoreanDate, stampNow, todayStr } from '../lib/date';
-import { correctionWhere, resolveCorrection, type ResolvedCorrection } from '../lib/corrections';
+import { correctionWhere, resolveCorrection, splitCorrections, type ResolvedCorrection } from '../lib/corrections';
 import { checkAudioFile, formatDuration, specLabel } from '../lib/audioSpec';
 import { AGREEMENTS, SIGNER_ROLES, compactSignature, createApplication } from '../lib/application';
 import {
@@ -213,8 +215,8 @@ function DocAttach({ id, label, fileName, assetId, busy, onSelect, required, hel
   return (
     <div className="field doc-attach">
       <label htmlFor={id}>{label}{required && <> <span className="required">*</span></>}</label>
-      <input
-        type="file" id={id}
+      <FilePicker
+        id={id} fileName={fileName} busy={busy}
         accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
         onChange={e => {
           const f = e.target.files?.[0];
@@ -316,7 +318,7 @@ function GuardianConsentModal({ guardianName, onClose, onComplete }: {
           </li>
         </ol>
       </div>
-      <div className="aq-modal-foot aq-guardian-foot">
+      <div className="aq-modal-foot aq-guardian-foot aq-sticky-foot">
         <p className="aq-guardian-missing" aria-live="polite">{missing}</p>
         <button type="button" className="button secondary" onClick={onClose}>취소</button>
         <button type="button" className="button" disabled={!!missing} onClick={() => onComplete(certName, certMethod)}>동의 완료</button>
@@ -356,15 +358,41 @@ const AI_TOOLS = ['Suno', 'Udio', 'ChatGPT', 'Stable Audio', 'AIVA', 'Midjourney
 const EXPRESS_REASONS = ['공연 일정에 맞춰야 해요', '방송·광고 일정이 있어요', '이벤트·프로모션 일정이 있어요', '영상·드라마 공개일에 맞춰야 해요'];
 
 /** 버튼으로 고르는 선택지 — 직접 타이핑은 ‘기타’를 눌렀을 때만 */
-function ChipPicker({ id, options, value, onChange, other, onOther, otherPlaceholder, single }: {
+function ChipPicker({ id, options, value, onChange, other, onOther, otherPlaceholder, single, list }: {
   id: string; options: string[]; value: string[]; onChange: (v: string[]) => void;
   other?: string; onOther?: (v: string) => void; otherPlaceholder?: string; single?: boolean;
+  /** 문장처럼 긴 선택지는 한 줄에 하나씩, 고른 표시는 오른쪽에 */
+  list?: boolean;
 }) {
   const toggle = (opt: string) => {
     const on = value.includes(opt);
     onChange(single ? (on ? [] : [opt]) : on ? value.filter(v => v !== opt) : [...value, opt]);
   };
   const all = onOther ? [...options, OTHER] : options;
+  if (list) {
+    return (
+      <div className="aq-chip-picker" id={id}>
+        <div className="aq-pick-list" role={single ? 'radiogroup' : 'group'}>
+          {all.map(opt => {
+            const on = value.includes(opt);
+            return (
+              <button
+                key={opt} type="button" className={`aq-pick${on ? ' is-on' : ''}`}
+                role={single ? 'radio' : undefined} aria-checked={single ? on : undefined} aria-pressed={single ? undefined : on}
+                onClick={() => toggle(opt)}
+              >
+                <span>{opt === OTHER ? '기타 (직접 입력)' : opt}</span>
+                <span className={`aq-pick-mark${single ? ' is-radio' : ''}`} aria-hidden="true">{on && <CheckIcon size={12} />}</span>
+              </button>
+            );
+          })}
+        </div>
+        {onOther && value.includes(OTHER) && (
+          <input className="aq-chip-other" maxLength={300} value={other ?? ''} placeholder={otherPlaceholder} onChange={e => onOther(e.target.value)} autoFocus />
+        )}
+      </div>
+    );
+  }
   return (
     <div className="aq-chip-picker" id={id}>
       <div className="aq-chips" role="group">
@@ -418,19 +446,21 @@ function OptionsSection({ form, set, group, onDocument, uploads }: {
         <div className="field">
           <label htmlFor="aqExpressReason">신속 발매가 필요한 이유 (선택)</label>
           <ChipPicker
-            id="aqExpressReason" single options={EXPRESS_REASONS} value={expressPick}
+            id="aqExpressReason" single list options={EXPRESS_REASONS} value={expressPick}
             onChange={v => { setExpressOther(v[0] === OTHER); setOpt('expressReason', v[0] && v[0] !== OTHER ? v[0] : ''); }}
             other={EXPRESS_REASONS.includes(o.expressReason) ? '' : o.expressReason} onOther={v => setOpt('expressReason', v)}
             otherPlaceholder="신속 발매가 필요한 이유"
           />
         </div>
-        <label className="check-line">
+        {/* 위 선택지와 같은 모양의 한 줄 — 확인 표시도 오른쪽 */}
+        <label className={`aq-pick aq-ack${o.expressAck ? ' is-on' : ''}`}>
           <input
-            type="checkbox" id="aqExpressAck"
+            type="checkbox" id="aqExpressAck" className="aq-ack-input"
             checked={o.expressAck}
             onChange={e => setOpt('expressAck', e.target.checked)}
           />
           <span>가능한 일정과 비용 등 별도 안내를 확인한 후 진행할게요.<small>신청 단계에서 추가 비용이 자동 결제되지는 않아요.</small></span>
+          <span className="aq-pick-mark" aria-hidden="true">{o.expressAck && <CheckIcon size={12} />}</span>
         </label>
       </div>
     ),
@@ -655,7 +685,7 @@ function OptionsSection({ form, set, group, onDocument, uploads }: {
         <div className="field">
           <label htmlFor="aqAiTool">어떻게 활용했나요? <span className="required">*</span> <small className="muted">여러 개 고를 수 있어요</small></label>
           <ChipPicker
-            id="aqAiTool" options={AI_USES} value={aiUses} onChange={v => setAi({ aiUses: v })}
+            id="aqAiTool" list options={AI_USES} value={aiUses} onChange={v => setAi({ aiUses: v })}
             other={aiUseOther} onOther={v => setAi({ aiUseOther: v })} otherPlaceholder="AI를 활용한 부분을 적어 주세요"
           />
         </div>
@@ -858,10 +888,10 @@ const TrackEditor = memo(function TrackEditor({
       </label>
       <div className="field">
         <label htmlFor={`trackFile-${i}`}>음원 파일 <span className="required">*</span></label>
-        <input
-          type="file" id={`trackFile-${i}`}
+        <FilePicker
+          id={`trackFile-${i}`} fileName={t.audioName}
           accept=".wav,.flac,.m4a,.aif,.aiff,.aifc,.wv,.tta,audio/wav,audio/flac,audio/mp4,audio/aiff,audio/wavpack,audio/tta"
-          onChange={e => onTrackAudio(t.id, e)}
+          onChange={e => onTrackAudio(t.id, e)} placeholder="음원 파일을 선택해 주세요"
         />
         <UploadStatus upload={upload} idle={t.audioName
           ? `${t.audioName}${t.audioSpec ? ` · ${t.audioSpec}` : t.audioSize ? ` · ${fileSize(t.audioSize)}` : ''}${t.assetId ? ' · 업로드 완료' : MOCK ? '' : ' · 업로드되지 않았어요. 파일을 다시 선택해 주세요.'}`
@@ -1058,6 +1088,8 @@ export function Upload() {
   const [reached, setReached] = useState(0);
   // 보완 요청 — 수정 모드에서 불러온 발매의 요청 항목과 신청서 위치
   const [fixes, setFixes] = useState<ResolvedCorrection[]>([]);
+  // 담당자 전체 의견 — 고칠 항목과 따로 보여 준다
+  const [reviewNote, setReviewNote] = useState('');
   const [focusField, setFocusField] = useState<{ id: string; n: number } | null>(null);
   // 신청인 서명 (마지막 단계)
   const signRef = useRef<SignaturePadHandle>(null);
@@ -1226,8 +1258,10 @@ export function Upload() {
       // 작성 중인 발매는 마지막으로 머문 단계에서 이어서 작성, 접수된 발매는 모든 단계를 바로 열 수 있게
       const last = Math.min(STEPS.length - 1, Math.max(0, d?.lastStep ?? 0));
       setReached(rel.status === 'draft' ? last : STEPS.length - 1);
-      const resolved = (rel.corrections ?? []).map(c => resolveCorrection(c, tracks.map(t => t.serverId || t.id)));
+      const split = splitCorrections(rel.corrections);
+      const resolved = split.items.map(c => resolveCorrection(c, tracks.map(t => t.serverId || t.id)));
       setFixes(resolved);
+      setReviewNote(split.note);
       // 보완하기로 들어왔으면 요청 항목의 단계·입력칸으로 바로 이동
       const target = fixCode
         ? resolved.find(c => c.code === fixCode && (!fixTrack || c.trackId === fixTrack)) ?? resolved[0]
@@ -1770,13 +1804,14 @@ export function Upload() {
         <p id="wizardSubtitle">{s.sub}</p>
       </div>
 
-      {fixes.length > 0 && (
+      {(fixes.length > 0 || reviewNote) && (
         <section className="aq-fix-panel" aria-labelledby="aqFixHead">
           <div className="aq-fix-head">
-            <strong id="aqFixHead">보완 요청 {fixes.length}건</strong>
-            <span>항목을 누르면 고쳐야 할 입력칸으로 이동해요.</span>
+            <strong id="aqFixHead">{fixes.length ? `보완 요청 ${fixes.length}건` : '담당자 의견'}</strong>
+            {fixes.length > 0 && <span>항목을 누르면 고쳐야 할 입력칸으로 이동해요.</span>}
           </div>
-          <ul>
+          {reviewNote && <ReviewNote text={reviewNote} />}
+          {fixes.length > 0 && <ul>
             {fixes.map((c, i) => (
               <li key={`${c.code}-${c.trackId ?? ''}-${i}`} className={c.step === step ? 'is-here' : ''}>
                 <button type="button" onClick={() => jumpToFix(c)}>
@@ -1786,7 +1821,7 @@ export function Upload() {
                 </button>
               </li>
             ))}
-          </ul>
+          </ul>}
         </section>
       )}
 

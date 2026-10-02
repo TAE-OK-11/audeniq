@@ -1,58 +1,30 @@
 // 발매 심사 시트 — 검사 결과·신청 정보·서류·이력을 보고 승인 / 보완 요청 / 거절을 결정한다.
 // 두 경우를 결정한다: 2차 검사에서 멈춘 발매(STAGE2_REVIEW), 자동 검사를 통과했고 신청서(배급 계약서)가
 // 검토 전인 새 발매 신청(READY_FOR_DELIVERY). 신청서는 발매와 함께 결정되고 서류 검토에는 나오지 않는다.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from '../../lib/router';
 import { Modal, useModalClose } from '../../components/Modal';
 import { useToast } from '../../components/Toast';
 import { errorMessage } from '../../api/errors';
 import { useAsync } from '../../hooks/useAsync';
-import { staffApi, type Check, type DecisionAction, type DecisionInput, type DecisionResult, type ReleaseSheet } from '../api';
+import { staffApi, type DecisionAction, type DecisionInput, type DecisionResult, type ReleaseSheet } from '../api';
+import { FIX_PRESETS } from '../fixPresets';
 import { STAFF_FIX_OPTIONS, WIZ_STEP_NAMES, correctionTarget, isKnownCorrection, staffFixCode } from '../../lib/corrections';
 import {
   CHECK_STATUS, DECISION_LABEL, DOC_KIND, DOC_STATUS, MAX_REASON, RELEASE_STATUS, RELEASE_TYPE,
-  REJECT_REASONS, applicationPending, checkLabel, checkSummary, day, dspLabel, needsSecond, pick, shortId, stageStateLabel, systemStages, when,
+  REJECT_REASONS, checkLabel, checkSummary, pick, shortId, stageStateLabel, systemStages, when,
 } from '../labels';
-import { Chip, Empty, ErrorBox, Initial, NoDuty, Section, Skeleton, StatusChip, useStaff } from '../ui';
+import { Chip, ErrorBox, Initial, NoDuty, Section, Skeleton, StatusChip, useStaff } from '../ui';
 import { Glyph } from '../../components/Glyph';
 import { CheckIcon } from '../../components/Check';
-
-const DECL_LABEL: Record<string, string> = {
-  rights_confirmed: '권리 보유 확인', adult_confirmed: '성인 확인', is_cover: '커버곡', is_remix: '리믹스',
-  contains_samples: '샘플 사용', ai_involved: 'AI 활용', explicit_content: '19금 표현',
-};
-const ROLE_KO: Record<string, string> = { COMPOSER: '작곡', LYRICIST: '작사', ARRANGER: '편곡', PRODUCER: '프로듀서', PERFORMER: '연주', MAIN_ARTIST: '아티스트' };
-const ACTION_KO: Record<string, string> = {
-  'release.submitted': '발매 접수', 'stage1.decision': '1차 검사 결과', 'stage1.completed': '1차 검사 완료', 'stage2.decision': '2차 검사 결과',
-  'stage2.pass': '2차 검사 통과', 'stage3.prepared': '배급 준비 완료', 'delivery.staged': '플랫폼별 전송 준비',
-  'delivery.held': '배급 대기 (계약서 서명 전)', 'delivery.enqueued': '플랫폼 전송 예약', 'release.updated': '발매 정보 수정',
-  'staff.approved': '담당자 승인', 'staff.correction_requested': '담당자 보완 요청', 'staff.rejected': '담당자 거절',
-  'staff.approval_requested': '2차 승인 요청', 'staff.approval_granted': '2차 승인 완료', 'staff.approval_declined': '2차 승인 반려',
-  'staff.proof_requested': '권리 증빙 요청', 'release.withdrawn': '신청 취소', 'staff.identifiers_reissue': '식별자 재발급 요청', 'staff.document_reviewed': '신청서 처리',
-};
-
-/** 검사 항목 — 쉬운 설명을 먼저, 검사 코드와 원문은 ‘상세 보기’에 */
-function CheckCard({ c, open }: { c: Check; open?: boolean }) {
-  const sensitive = open && needsSecond(c);
-  const cls = ['adm-check', open ? 'is-open' : '', sensitive ? 'is-sensitive' : ''].filter(Boolean).join(' ');
-  return (
-    <div className={cls}>
-      <div className="adm-check-top">
-        <b>{checkLabel(c.check_code)}</b>
-        <span className="adm-codes">
-          {sensitive && <Chip tone="red">2인 승인 필요</Chip>}
-          <StatusChip value={pick(CHECK_STATUS, c.status)} />
-        </span>
-      </div>
-      <p>{checkSummary(c)}</p>
-      <details className="adm-more">
-        <summary>상세 보기</summary>
-        <div><span className="adm-code">{c.check_code}</span></div>
-        {c.detail && <p className="adm-raw">{c.detail}</p>}
-      </details>
-    </div>
-  );
-}
+import { DocFileLink } from '../DocFileLink';
+import { QUEUE_ORDER_KEY } from './ReviewQueue';
+import { ApplicationSection, EnteredInfoSection, OptionsSection, TracksSection, useIntegrity } from '../Submission';
+import { CurrentValue, ReviewBrief, type BriefFix } from '../ReviewBrief';
+import { CheckCard } from '../ReviewCheck';
+import { DeliveryStatus } from '../DeliveryStatus';
+import { ReviewTimeline } from '../ReviewTimeline';
+import { contextOrReadOnly, ReviewActions } from '../ReviewActions';
 
 /** withdraw::WITHDRAWABLE와 같게 유지 */
 const WITHDRAWABLE = ['STAGE1_CORRECTION', 'STAGE2_REVIEW', 'STAGE2_CORRECTION', 'STAGE3_CORRECTION', 'READY_FOR_DELIVERY', 'ON_HOLD_RIGHTS'];
@@ -82,7 +54,8 @@ function useDecide(sheet: ReleaseSheet, onDone: (msg: string) => void) {
 function ApproveForm({ sheet, application, onDone }: { sheet: ReleaseSheet; application: boolean; onDone: (msg: string) => void }) {
   const { busy, run, close } = useDecide(sheet, onDone);
   const [memo, setMemo] = useState('');
-  const sensitive = sheet.open_checks.some(needsSecond);
+  const integrity = useIntegrity(sheet);
+  const sensitive = sheet.review_context?.requires_second_approval ?? true;
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     void run({ action: 'APPROVE', reason: memo.trim() }, res => {
@@ -97,6 +70,7 @@ function ApproveForm({ sheet, application, onDone }: { sheet: ReleaseSheet; appl
           ? '최종 승인이에요. 아티스트가 계약서에 서명하면 문제 없는 플랫폼으로 시스템이 자동 배급해요. 따로 배급 승인할 필요 없어요.'
           : '남은 검사 항목을 통과로 처리해요. 이후 배급 준비는 시스템이 자동으로 이어서 해요.'}
       </p>
+      <ReviewBrief sheet={sheet} integrity={integrity} title="승인 전 확인할 것" />
       {sensitive && (
         <div className="adm-alert is-warn" style={{ marginTop: 14 }}>
           권리·중복·보호명 등 <b>민감 항목</b>이 있어 다른 심사 담당자의 <b>2차 승인</b> 후 반영돼요.
@@ -120,6 +94,7 @@ function RejectForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: stri
   const [other, setOther] = useState(false);
   const [custom, setCustom] = useState('');
   const [sure, setSure] = useState(false);
+  const integrity = useIntegrity(sheet);
   const toggle = (id: string) => setPicked(p => (p.includes(id) ? p.filter(x => x !== id) : [...p, id]));
   const reason = [
     ...REJECT_REASONS.filter(r => picked.includes(r.id)).map(r => `· ${r.label}: ${r.text}`),
@@ -132,7 +107,8 @@ function RejectForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: stri
   };
   return (
     <form onSubmit={submit}>
-      <p className="small muted">사유를 누르면 그대로 기록되고 아티스트에게 전달돼요. 여러 개 고를 수 있어요.</p>
+      <ReviewBrief sheet={sheet} integrity={integrity} title="거절 전 확인할 것" />
+      <p className="small muted" style={{ marginTop: 14 }}>사유를 누르면 그대로 기록되고 아티스트에게 전달돼요. 여러 개 고를 수 있어요. 고칠 수 있는 문제면 거절 대신 보완 요청을 보내 주세요.</p>
       <div className="adm-reasons" role="group" aria-label="거절 사유">
         {REJECT_REASONS.map(r => (
           <button key={r.id} type="button" className={`adm-reason${picked.includes(r.id) ? ' is-on' : ''}`} aria-pressed={picked.includes(r.id)} title={r.text} onClick={() => toggle(r.id)}>{r.label}</button>
@@ -158,9 +134,9 @@ function RejectForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: stri
   );
 }
 
-interface FixItem { key: string; code: string; trackId: string; note: string; system?: boolean }
+interface FixItem { key: string; step: number; code: string; trackId: string; note: string; custom?: boolean; system?: boolean }
 let fixSeq = 0;
-const newFix = (over: Partial<FixItem> = {}): FixItem => ({ key: `fx${++fixSeq}`, code: '', trackId: '', note: '', ...over });
+const newFix = (over: Partial<FixItem> = {}): FixItem => ({ key: `fx${++fixSeq}`, step: -1, code: '', trackId: '', note: '', ...over });
 
 /** 보완 요청 — 페이지 → 항목(→ 트랙)을 고르고 문제를 적으면 아티스트는 그 입력칸으로 바로 가서 고친다 */
 function CorrectionForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: string) => void }) {
@@ -172,6 +148,13 @@ function CorrectionForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: 
     return sys.length ? sys : [newFix()];
   });
   const [summary, setSummary] = useState('');
+  const integrity = useIntegrity(sheet);
+  // ‘확인할 것’에서 누른 문제를 보완 항목으로 (빈 첫 항목이 있으면 그 자리에)
+  const addFromBrief = (f: BriefFix) => setItems(list => {
+    const item = newFix({ step: correctionTarget(f.code).step, code: f.code, trackId: f.trackId ?? '', note: f.note, custom: !FIX_PRESETS[f.code]?.includes(f.note) });
+    const blank = list.findIndex(x => !x.system && !x.code);
+    return blank >= 0 ? list.map((x, n) => (n === blank ? { ...item, key: x.key } : x)) : [...list, item];
+  });
   const set = (key: string, patch: Partial<FixItem>) => setItems(list => list.map(i => (i.key === key ? { ...i, ...patch } : i)));
   const opt = (code: string) => STAFF_FIX_OPTIONS.find(o => o.code === code);
   const ready = items.filter(i => i.code && (!opt(i.code)?.track || i.trackId));
@@ -188,11 +171,15 @@ function CorrectionForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: 
   };
   return (
     <form onSubmit={submit}>
-      <p className="small muted">고칠 곳을 페이지와 항목으로 지정하고 무엇이 문제인지 적어 주세요. 아티스트 화면에서 그 입력칸으로 바로 이동해요.</p>
+      <ReviewBrief
+        sheet={sheet} integrity={integrity} title="찾은 문제" onAddFix={addFromBrief}
+        added={items.filter(i => i.code).map(i => `${i.code}@${i.trackId || ''}`)}
+      />
+      <p className="small muted" style={{ marginTop: 14 }}>고칠 곳을 페이지와 항목으로 지정하고 무엇이 문제인지 적어 주세요. 아티스트 화면에서 그 입력칸으로 바로 이동해요.</p>
       <div className="adm-fixes">
         {items.map((i, n) => {
           const o = opt(i.code);
-          const step = o ? o.step : i.system ? correctionTarget(i.code).step : -1;
+          const step = o ? o.step : i.system ? correctionTarget(i.code).step : i.step;
           return (
             <div key={i.key} className="adm-fix">
               <div className="adm-fix-top">
@@ -203,26 +190,81 @@ function CorrectionForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: 
               </div>
               {!i.system && (
                 <div className="adm-fix-pick">
-                  <select className="adm-select" aria-label="페이지" value={step} onChange={e => set(i.key, { code: STAFF_FIX_OPTIONS.find(x => x.step === Number(e.target.value))?.code ?? '', trackId: '' })}>
-                    <option value={-1} disabled>페이지 선택</option>
-                    {WIZ_STEP_NAMES.map((name, s) => STAFF_FIX_OPTIONS.some(x => x.step === s) && <option key={name} value={s}>{name}</option>)}
-                  </select>
-                  <select className="adm-select" aria-label="항목" value={i.code} disabled={step < 0} onChange={e => set(i.key, { code: e.target.value, trackId: '' })}>
-                    {STAFF_FIX_OPTIONS.filter(x => x.step === step).map(x => <option key={x.code} value={x.code}>{x.label}</option>)}
-                  </select>
+                  {/* 1. 페이지 → 2. 고칠 부분 (→ 트랙) — 눌러서 고른다 */}
+                  <span className="adm-fix-label">페이지</span>
+                  <div className="adm-picks" role="radiogroup" aria-label="페이지">
+                    {WIZ_STEP_NAMES.map((name, s2) => STAFF_FIX_OPTIONS.some(x => x.step === s2) && (
+                      <button
+                        key={name} type="button" role="radio" aria-checked={step === s2}
+                        className={`adm-pick${step === s2 ? ' is-on' : ''}`}
+                        onClick={() => set(i.key, { step: s2, code: '', trackId: '', note: '', custom: false })}
+                      >{name}</button>
+                    ))}
+                  </div>
+                  {step >= 0 && (
+                    <>
+                      <span className="adm-fix-label">보완할 부분</span>
+                      <div className="adm-picks" role="radiogroup" aria-label="보완할 부분">
+                        {STAFF_FIX_OPTIONS.filter(x => x.step === step).map(x => (
+                          <button
+                            key={x.code} type="button" role="radio" aria-checked={i.code === x.code}
+                            className={`adm-pick${i.code === x.code ? ' is-on' : ''}`}
+                            onClick={() => set(i.key, { code: x.code, trackId: '', note: '', custom: !FIX_PRESETS[x.code]?.length })}
+                          >{x.label}</button>
+                        ))}
+                      </div>
+                    </>
+                  )}
                   {o?.track && (
-                    <select className="adm-select" aria-label="트랙" value={i.trackId} onChange={e => set(i.key, { trackId: e.target.value })}>
-                      <option value="" disabled>트랙 선택</option>
-                      {tracks.map(t => <option key={t.id} value={t.id}>{t.track_number}. {t.title}</option>)}
-                    </select>
+                    <>
+                      <span className="adm-fix-label">트랙</span>
+                      <div className="adm-picks" role="radiogroup" aria-label="트랙">
+                        {tracks.map(t => (
+                          <button
+                            key={t.id} type="button" role="radio" aria-checked={i.trackId === t.id}
+                            className={`adm-pick${i.trackId === t.id ? ' is-on' : ''}`}
+                            onClick={() => set(i.key, { trackId: t.id })}
+                          >{t.track_number}. {t.title}</button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  {i.code && (!o?.track || i.trackId) && <CurrentValue sheet={sheet} code={i.code} trackId={i.trackId || undefined} />}
+                  {i.code && (
+                    <>
+                      <span className="adm-fix-label">안내 문구</span>
+                      <div className="adm-reasons" role="radiogroup" aria-label="안내 문구">
+                        {(FIX_PRESETS[i.code] ?? []).map(text => (
+                          <button
+                            key={text} type="button" role="radio" aria-checked={!i.custom && i.note === text}
+                            className={`adm-reason${!i.custom && i.note === text ? ' is-on' : ''}`}
+                            onClick={() => set(i.key, { note: text, custom: false })}
+                          >
+                            <span>{text}</span>
+                            <span className="adm-reason-mark" aria-hidden="true">{!i.custom && i.note === text && <CheckIcon size={11} />}</span>
+                          </button>
+                        ))}
+                        <button
+                          type="button" role="radio" aria-checked={!!i.custom}
+                          className={`adm-reason${i.custom ? ' is-on' : ''}`}
+                          onClick={() => set(i.key, { custom: true, note: i.custom ? i.note : '' })}
+                        >
+                          <span>직접 입력</span>
+                          <span className="adm-reason-mark" aria-hidden="true">{i.custom && <CheckIcon size={11} />}</span>
+                        </button>
+                      </div>
+                    </>
                   )}
                 </div>
               )}
-              <textarea
-                className="adm-textarea" rows={2} maxLength={2000} value={i.note} aria-label="문제 내용"
-                placeholder={i.code ? correctionTarget(i.code).hint : '무엇이 문제이고 어떻게 고치면 되는지 적어 주세요.'}
-                onChange={e => set(i.key, { note: e.target.value })}
-              />
+              {(i.system || i.custom) && (
+                <textarea
+                  className="adm-textarea" rows={2} maxLength={2000} value={i.note} aria-label="문제 내용"
+                  autoFocus={!i.system}
+                  placeholder={i.code ? correctionTarget(i.code).hint : '무엇이 문제이고 어떻게 고치면 되는지 적어 주세요.'}
+                  onChange={e => set(i.key, { note: e.target.value })}
+                />
+              )}
             </div>
           );
         })}
@@ -352,6 +394,10 @@ function ReissueForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: () => voi
 
 export function ReviewDetail() {
   const { id = '' } = useParams<{ id: string }>();
+  return <ReviewSheet key={id} id={id} />;
+}
+
+function ReviewSheet({ id }: { id: string }) {
   const nav = useNavigate();
   const { can, refreshCounts, me } = useStaff();
   const { data: sheet, loading, error, reload } = useAsync(() => staffApi.release(id), [id]);
@@ -359,6 +405,15 @@ export function ReviewDetail() {
   const [modal, setModal] = useState<'proof' | 'reissue' | 'withdraw' | null>(null);
   const [done, setDone] = useState('');
   const [showAll, setShowAll] = useState(false);
+  const [timelineTick, setTimelineTick] = useState(0);
+  const refresh = () => { reload(); setTimelineTick(t => t + 1); };
+  useEffect(() => {
+    const update = () => { if (!action && !modal && document.visibilityState === 'visible') { reload(); setTimelineTick(t => t + 1); } };
+    const active = !action && !modal && sheet && (['SUBMITTED', 'STAGE1_RUNNING', 'STAGE1_PASSED', 'STAGE2_RUNNING', 'STAGE2_PASSED', 'STAGE3_PREPARING', 'STAGE2_REVIEW'].includes(sheet.release.status));
+    const timer = active ? window.setInterval(update, 15000) : undefined;
+    document.addEventListener('visibilitychange', update);
+    return () => { if (timer !== undefined) window.clearInterval(timer); document.removeEventListener('visibilitychange', update); };
+  }, [sheet?.release.status, action, modal, reload]);
 
   if (loading && !sheet) return <Skeleton rows={6} />;
   if (error && !sheet) return <ErrorBox message={error} onRetry={reload} />;
@@ -366,22 +421,31 @@ export function ReviewDetail() {
 
   const r = sheet.release;
   const app = sheet.application;
-  const inReview = r.status === 'STAGE2_REVIEW';
-  // 자동 검사를 통과했고 신청서(배급 계약서)가 검토 전인 새 발매 신청
-  const application = !inReview && r.status === 'READY_FOR_DELIVERY'
-    && sheet.documents.some(d => d.kind === 'AGREEMENT' && applicationPending(d.status));
-  const decidable = inReview || application;
+  // 결정 가능 여부·버튼은 서버(review_context)가 정한다. 예전 API면 읽기 전용
+  const context = contextOrReadOnly(sheet.review_context);
+  const inReview = context.decision_kind === 'CHECKS';
+  const application = context.decision_kind === 'APPLICATION';
+  const decidable = context.decision_kind !== null;
   const stages = systemStages(r.status);
-  const passed = sheet.checks.filter(c => c.status === 'PASS' || c.status === 'NOT_APPLICABLE').length;
-  const pending = sheet.second_approvals.find(a => a.status === 'PENDING');
+  const pending = sheet.second_approvals.find(a => a.id === context.pending_second_approval_id);
   const canReview = can('REVIEW');
-  const tracks = app.tracks ?? [];
-  const decl = app.declarations ?? {};
-  const after = (msg: string) => { setDone(msg); reload(); refreshCounts(); };
+  const after = (msg: string) => { setDone(msg); refresh(); refreshCounts(); };
+  // 심사 목록에서 보던 순서의 다음 건 (목록을 거치지 않고 이어서 심사)
+  const nextId = (() => {
+    try {
+      const order = JSON.parse(sessionStorage.getItem(QUEUE_ORDER_KEY) || '[]') as string[];
+      const i = order.indexOf(r.id);
+      return i >= 0 ? order[i + 1] ?? null : null;
+    } catch { return null; }
+  })();
 
   return (
     <div className="view-enter">
-      <Link to="/admin/reviews" className="adm-back"><Glyph name="arrow-left" size={14} className="aq-inline-glyph" />심사 목록</Link>
+      <div className="adm-detail-nav">
+        <Link to="/admin/reviews" className="adm-back"><Glyph name="arrow-left" size={14} className="aq-inline-glyph" />심사 목록</Link>
+        {nextId && <Link to={`/admin/reviews/${nextId}`} className="adm-back adm-next">다음 심사 건<Glyph name="chevron-right" size={14} className="aq-inline-glyph" /></Link>}
+        <button type="button" className="adm-btn soft small adm-refresh" disabled={loading} onClick={refresh}>{loading ? '갱신 중…' : '새로고침'}</button>
+      </div>
 
       <div className="adm-detail">
         <div>
@@ -401,7 +465,14 @@ export function ReviewDetail() {
             </div>
           </div>
 
-          {done && <div className="adm-alert is-ok" role="status">{done}</div>}
+          {!sheet.review_context && <ErrorBox message="심사 가능 여부를 확인할 수 없어요. 새로고침 후 다시 확인해 주세요." onRetry={refresh} />}
+          {error && <ErrorBox message={error} onRetry={refresh} />}
+          {done && (
+            <div className="adm-alert is-ok adm-alert-row" role="status">
+              <span>{done}</span>
+              {nextId && <button type="button" className="adm-btn soft small" onClick={() => nav(`/admin/reviews/${nextId}`)}>다음 심사 건 열기</button>}
+            </div>
+          )}
           {pending && (
             <div className="adm-alert is-warn adm-alert-row">
               <span>2차 승인 대기 중 — {pending.check_codes.map(checkLabel).join(', ')} · 요청 {when(pending.at)}{pending.requested_by === me.user_id ? ' (내 요청)' : ''}</span>
@@ -409,7 +480,7 @@ export function ReviewDetail() {
             </div>
           )}
 
-          <Section title="시스템 검사" meta={`검사 ${sheet.checks.length}개 중 ${passed}개 자동 통과`}>
+          <Section title="시스템 검사" meta={`검사 ${sheet.checks.length}개 · 통과 ${context.check_counts.PASS ?? 0}개 (담당자 결정 포함)`}>
             <ol className="adm-stages">
               {stages.map((st, i) => (
                 <li key={st.key} className={`is-${st.state}`}>
@@ -429,84 +500,20 @@ export function ReviewDetail() {
 
           {sheet.open_checks.length > 0 && (
             <Section title="담당자 확인 필요" meta={`${sheet.open_checks.length}건 · 시스템이 판단을 넘긴 항목`}>
-              <div className="adm-checks">{sheet.open_checks.map(c => <CheckCard key={c.check_code} c={c} open />)}</div>
+              <div className="adm-checks">{sheet.open_checks.map(c => <CheckCard key={c.id ?? c.check_code} c={c} open />)}</div>
             </Section>
           )}
 
           {sheet.advisories.length > 0 && (
             <Section title="참고 사항" meta="발매를 막지 않는 음원 권고">
-              <div className="adm-checks">{sheet.advisories.map(c => <CheckCard key={c.check_code} c={c} />)}</div>
+              <div className="adm-checks">{sheet.advisories.map(c => <CheckCard key={c.id ?? c.check_code} c={c} />)}</div>
             </Section>
           )}
 
-          <Section title="신청 정보">
-            <div className="adm-card">
-              <dl className="adm-kv">
-                <div><dt>아티스트</dt><dd>{app.artist || '—'}</dd></div>
-                <div><dt>장르 · 언어</dt><dd>{[app.genre, app.language].filter(Boolean).join(' · ') || '—'}</dd></div>
-                <div><dt>발매 예정일</dt><dd>{day(app.release_date)}</dd></div>
-                <div><dt>레이블</dt><dd>{app.label || '—'}</dd></div>
-                <div><dt>℗ / ©</dt><dd>{[app.p_line, app.c_line].filter(Boolean).join(' / ') || '—'}</dd></div>
-                <div><dt>UPC</dt><dd>{r.upc ?? '발급 전'}</dd></div>
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <dt>배급 플랫폼</dt>
-                  <dd className="adm-dsps">{app.platforms.length ? app.platforms.map(p => <span key={p}>{dspLabel(p)}</span>) : '—'}</dd>
-                </div>
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <dt>신고 항목</dt>
-                  <dd className="adm-decl">
-                    {Object.entries(DECL_LABEL).map(([k, label]) => {
-                      const v = (decl as Record<string, boolean>)[k];
-                      const warnWhenTrue = !['rights_confirmed', 'adult_confirmed'].includes(k);
-                      return <Chip key={k} tone={v ? (warnWhenTrue ? 'amber' : 'green') : 'gray'}>{label} {v ? '예' : '아니오'}</Chip>;
-                    })}
-                  </dd>
-                </div>
-              </dl>
-              {sheet.signed_application && (
-                <p className="small muted" style={{ marginTop: 16 }}>
-                  서명 신청서 <b>{sheet.signed_application.application_no}</b> · {sheet.signed_application.signer_name}({sheet.signed_application.signer_role}) · {when(sheet.signed_application.received_at)} · 문서 해시 <span className="adm-code">{sheet.signed_application.content_hash.slice(0, 16)}…</span>
-                </p>
-              )}
-            </div>
-          </Section>
-
-          {app.options && (app.options.express || app.options.ai || app.options.cover || app.options.sample || app.options.featured || app.options.shared || app.options.rerelease) && (
-            <Section title="추가 요청·권리 정보">
-              <div className="adm-card">
-                <dl className="adm-kv">
-                  {app.options.express && <div><dt>신속 발매 요청</dt><dd>{app.options.expressReason || '사유 미기재'} · 일정과 가능 여부 검토 필요</dd></div>}
-                  {app.options.ai && <div><dt>AI 활용 내역</dt><dd>{app.options.aiTool || '활용 내역 미기재'}</dd></div>}
-                  {app.options.cover && <div style={{ gridColumn: '1 / -1' }}><dt>커버곡 원곡 정보</dt><dd>{app.options.coverTracks?.length ? app.options.coverTracks.map((c, i) => <p key={c.trackId}>{i + 1}. {c.originalTitle} · {c.originalArtist}{c.originalWriters ? ` · ${c.originalWriters}` : ''}</p>) : '원곡 정보 미기재'}</dd></div>}
-                  {app.options.sample && <div><dt>샘플링</dt><dd>원본 이용 허락 확인 필요</dd></div>}
-                  {app.options.featured && <div><dt>피처링</dt><dd>참여자 동의 확인 필요</dd></div>}
-                  {app.options.shared && <div><dt>공동 권리자</dt><dd>배급 위임 범위 확인 필요</dd></div>}
-                  {app.options.rerelease && <div><dt>재발매</dt><dd>{[app.options.previousTitle, app.options.previousId].filter(Boolean).join(' · ') || '기존 발매 정보 미기재'}</dd></div>}
-                </dl>
-              </div>
-            </Section>
-          )}
-
-          <Section title="트랙" meta={`${tracks.length}곡`}>
-            {tracks.length ? (
-              <div className="adm-card white adm-table-wrap">
-                <table className="adm-table">
-                  <thead><tr><th>#</th><th>곡명</th><th>ISRC</th><th>크레딧</th><th>음원</th></tr></thead>
-                  <tbody>
-                    {tracks.map(t => (
-                      <tr key={t.id}>
-                        <td>{t.disc_number > 1 ? `${t.disc_number}-` : ''}{t.track_number}</td>
-                        <td><b>{t.title}</b>{t.version ? ` (${t.version})` : ''}{t.parental_advisory && <> <Chip tone="red">19</Chip></>}</td>
-                        <td>{t.isrc ? <span className="adm-code">{t.isrc}</span> : '발급 전'}</td>
-                        <td>{t.credits.map(c => ROLE_KO[c.role] ?? c.role).join(', ') || '—'}</td>
-                        <td>{t.asset_kind ?? '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : <Empty icon={<Glyph name="music" size={22} />} title="트랙 정보가 없어요" />}
-          </Section>
+          <ApplicationSection sheet={sheet} />
+          <EnteredInfoSection sheet={sheet} />
+          <OptionsSection sheet={sheet} />
+          <TracksSection sheet={sheet} />
 
           <Section
             title="서류" meta={`${sheet.documents.length}건`}
@@ -522,13 +529,15 @@ export function ReviewDetail() {
                       <span className="adm-row-meta"><span>{DOC_KIND[d.kind] ?? d.kind}</span>{d.file_name && <span>{d.file_name}</span>}<span>{when(d.updated_at)}</span></span>
                       {d.review_note && <span className="adm-row-meta"><span>메모: {d.review_note}</span></span>}
                     </span>
-                    <span className="adm-row-end"><StatusChip value={pick(DOC_STATUS, d.status)} /></span>
+                    <span className="adm-row-end"><StatusChip value={pick(DOC_STATUS, d.status)} /><DocFileLink id={d.id} assetId={d.asset_id} /></span>
                   </div>
                 ))}
               </div>
             ) : <p className="small muted">연결된 서류가 없어요.</p>}
           </Section>
 
+
+          <DeliveryStatus rows={sheet.delivery_staging} />
 
           {(sheet.notes.length > 0 || sheet.overrides.length > 0) && (
             <Section title="담당자 결정 기록">
@@ -566,28 +575,16 @@ export function ReviewDetail() {
             action={<button type="button" className="adm-btn soft small" onClick={() => setShowAll(v => !v)}>{showAll ? '접기' : '펼치기'}</button>}
           >
             {showAll ? (
-              <div className="adm-checks">{sheet.checks.map(c => <CheckCard key={c.check_code} c={c} />)}</div>
+              <div className="adm-checks">{sheet.checks.map(c => <CheckCard key={c.id ?? c.check_code} c={c} />)}</div>
             ) : (
               <div className="adm-codes">
-                {Object.entries(sheet.checks.reduce<Record<string, number>>((m, c) => ({ ...m, [c.status]: (m[c.status] ?? 0) + 1 }), {}))
+                {Object.entries(context.check_counts)
                   .map(([s, n]) => <Chip key={s} tone={pick(CHECK_STATUS, s)[1]}>{pick(CHECK_STATUS, s)[0]} {n}</Chip>)}
               </div>
             )}
           </Section>
 
-          <Section title="처리 이력" meta="최근 100건">
-            <ol className="adm-timeline">
-              {sheet.timeline.map((t, i) => (
-                <li key={`${t.at}-${i}`} className={t.action.startsWith('staff.') ? 'is-staff' : ''}>
-                  <i aria-hidden="true" />
-                  <div>
-                    <b title={t.reason ?? undefined}>{ACTION_KO[t.action] ?? t.action}</b>
-                    <small>{when(t.at)} · {t.actor_service ?? shortId(t.actor_user_id)}</small>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          </Section>
+          <ReviewTimeline releaseId={id} revisionId={r.revision_id} refreshTick={timelineTick} />
         </div>
 
         <aside className="adm-detail-side">
@@ -600,11 +597,7 @@ export function ReviewDetail() {
                   ? '새 발매 신청 · 시스템 검사 모두 통과'
                   : `지금은 ‘${pick(RELEASE_STATUS, r.status)[0]}’ 상태라 결정할 수 없어요.`}
             </p>
-            <div className="adm-decide-actions">
-              <button type="button" className="adm-btn primary" disabled={!decidable || !canReview || !!pending} onClick={() => setAction('APPROVE')}>승인</button>
-              <button type="button" className="adm-btn warn" disabled={!decidable || !canReview} onClick={() => setAction('REQUEST_CORRECTION')}>보완 요청</button>
-              <button type="button" className="adm-btn danger" disabled={!decidable || !canReview} onClick={() => setAction('REJECT')}>거절</button>
-            </div>
+            <ReviewActions context={context} loading={loading} onAction={setAction} />
             <div className="adm-decide-note">
               {application
                 ? '승인하면 신청서(배급 계약서)가 승인되고 아티스트가 서명하면 배급이 시작돼요. 추가 서류가 필요하면 ‘권리 증빙 요청’으로 요청하세요 — 서류 검토에서 확인해요.'
@@ -635,8 +628,14 @@ export function ReviewDetail() {
         </aside>
       </div>
 
+      {/* 휴대폰·좁은 화면: 내용을 읽다가 바로 결정하도록 아래에 고정 */}
+      {decidable && canReview && !action && (
+        <div className="adm-decide-bar" role="group" aria-label="심사 결정">
+          <ReviewActions context={context} loading={loading} onAction={setAction} />
+        </div>
+      )}
       {action && (
-        <Modal title={ACTION_TITLE[action]} onClose={() => setAction(null)} dismissible={false}>
+        <Modal key={`${r.revision_id}-${action}`} title={ACTION_TITLE[action]} onClose={() => setAction(null)} dismissible={false}>
           {action === 'APPROVE' && <ApproveForm sheet={sheet} application={application} onDone={after} />}
           {action === 'REJECT' && <RejectForm sheet={sheet} onDone={after} />}
           {action === 'REQUEST_CORRECTION' && <CorrectionForm sheet={sheet} onDone={after} />}
