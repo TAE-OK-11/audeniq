@@ -14,6 +14,17 @@ export const ACTION_KO: Record<string, string> = {
   'staff.approval_requested': '2차 승인 요청', 'staff.approval_granted': '2차 승인 완료', 'staff.approval_declined': '2차 승인 반려',
   'staff.approval_expired': '2차 승인 만료', 'staff.approval_cancelled': '2차 승인 요청 종료',
   'staff.proof_requested': '권리 증빙 요청', 'release.withdrawn': '신청 취소', 'staff.identifiers_reissue': '식별자 재발급 요청', 'staff.document_reviewed': '신청서 처리',
+  'staff.document_viewed': '서류 원본 열람', 'staff.delivery_decided': '플랫폼 배급 결정', 'staff.delivery_restaged': '플랫폼 배급 다시 준비',
+  'staff.delivery_live_recorded': '서비스 시작 기록', 'staff.dsp_contract_route': '계약 경로 지정',
+  'stage1.gave_up': '1차 검사 중단', 'stage2.gave_up': '2차 검사 중단', 'stage3.gave_up': '배급 준비 중단',
+  'stage2.checks_recorded': '2차 검사 결과 저장', 'stage2.technical_retry': '2차 검사 다시 시도', 'stage3.return_to_s2': '2차 검사로 되돌림',
+'release.title': '발매 제목 수정', 'release.artist': '아티스트 수정',
+  'release.track_added': '트랙 추가', 'release.track_updated': '트랙 수정', 'release.track_archived': '트랙 삭제', 'release.credits_replaced': '크레딧 수정',
+  'asset.registered': '파일 등록', 'asset.upload_cancelled': '업로드 취소', 'consent.created': '배급 동의',
+  'job.succeeded': '처리 작업 완료', 'job.retry': '처리 작업 다시 시도', 'job.park': '처리 작업 대기', 'job.dead_letter': '처리 작업 실패',
+  'delivery.auto_approved': '플랫폼 자동 승인', 'delivery.live_recorded': '서비스 시작', 'delivery.takedown': '배급 중단',
+  'portal.application.signed': '신청서 서명', 'portal.document.created': '서류 생성', 'portal.document.signed': '서류 서명',
+  'portal.document.proof_submitted': '증빙 제출', 'portal.rights_document.signed': '권리 서류 서명',
 };
 const JOB_LABEL: Record<string, string> = {
   'asset.analyze': '음원 분석', stage1: '1차 검사', stage2: '2차 검사',
@@ -66,7 +77,13 @@ export function reasonSummary(action: string, reason: unknown): string {
   return '';
 }
 
-export function TimelineRow({ item: t }: { item: ReleaseTimelineItem }) {
+/** 합쳐도 되는 반복: 상태·결과가 같은 기록 (검사 결과가 바뀌었으면 따로 보여 준다) */
+function sameDetail(a: ReleaseTimelineItem, b: ReleaseTimelineItem): boolean {
+  const k = (t: ReleaseTimelineItem) => [t.detail.status, t.detail.outcome, t.detail.approval, t.detail.reason].map(v => String(v ?? '')).join('|');
+  return k(a) === k(b);
+}
+
+export function TimelineRow({ item: t, repeat = 1 }: { item: ReleaseTimelineItem; repeat?: number }) {
   const kind = timelineKind(t);
   let title: string;
   let summary = '';
@@ -95,6 +112,7 @@ export function TimelineRow({ item: t }: { item: ReleaseTimelineItem }) {
     <div className="adm-min">
       <div className="adm-tl-top">
         <b>{title}</b>
+        {repeat > 1 && <span className="adm-tl-repeat">×{repeat}</span>}
         {t.source === 'check' && <StatusChip value={pick(CHECK_STATUS, String(t.detail.status))} />}
         {t.source === 'staff_decision' && <StatusChip value={pick(APPROVAL_STATUS, String(t.detail.approval))} />}
       </div>
@@ -116,12 +134,15 @@ export function ReviewTimeline({ releaseId, revisionId, refreshTick }: { release
   // 최근 것부터 몇 건만 — 나머지는 ‘더 보기’로 (긴 이력이 시트를 밀어내지 않게)
   const PREVIEW = 6;
   const shown = expanded || filtered.length <= PREVIEW + 2 ? filtered : filtered.slice(0, PREVIEW);
-  // 날짜별 묶음 (최신 날짜부터)
-  const groups: { day: string; items: ReleaseTimelineItem[] }[] = [];
+  // 날짜별 묶음 (최신 날짜부터). 바로 이어지는 같은 기록(같은 작업 반복 등)은 한 줄로 합쳐 개수만 보인다
+  const groups: { day: string; items: { item: ReleaseTimelineItem; repeat: number }[] }[] = [];
   for (const t of shown) {
     const d = fmt(dayFmt, t.at);
-    const last = groups[groups.length - 1];
-    if (last?.day === d) last.items.push(t); else groups.push({ day: d, items: [t] });
+    let last = groups[groups.length - 1];
+    if (last?.day !== d) { last = { day: d, items: [] }; groups.push(last); }
+    const prev = last.items[last.items.length - 1];
+    if (prev && prev.item.source === t.source && prev.item.kind === t.kind && sameDetail(prev.item, t)) prev.repeat += 1;
+    else last.items.push({ item: t, repeat: 1 });
   }
   return <Section title="처리 이력" meta={data ? `${items.length}건${data.truncated ? ` · 최근 ${limit}건` : ''}` : '검사·담당자 결정·배급 작업·플랫폼 응답'}>
     {error && <ErrorBox message={error} onRetry={reload} />}
@@ -138,7 +159,7 @@ export function ReviewTimeline({ releaseId, revisionId, refreshTick }: { release
       {groups.map(g => (
         <div key={g.day} className="adm-tl-day">
           <h3>{g.day}</h3>
-          <ol className="adm-timeline">{g.items.map((t, i) => <TimelineRow key={`${t.at}-${t.source}-${t.kind}-${i}`} item={t} />)}</ol>
+          <ol className="adm-timeline">{g.items.map(({ item: t, repeat }, i) => <TimelineRow key={`${t.at}-${t.source}-${t.kind}-${i}`} item={t} repeat={repeat} />)}</ol>
         </div>
       ))}
       {shown.length < filtered.length && (

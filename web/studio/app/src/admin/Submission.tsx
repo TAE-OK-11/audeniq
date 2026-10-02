@@ -49,6 +49,7 @@ export function ApplicationSection({ sheet }: { sheet: ReleaseSheet }) {
   // 스튜디오 입력 기록이 없으면(스튜디오 밖·예전 접수) 서버 신청 정보로 같은 신청서를 만든다
   const paperDraft = draft ?? draftFromSheet(sheet);
   const signature = app?.signature || signed?.signature || '';
+  const [sigBroken, setSigBroken] = useState(false);
 
   return (
     <Section
@@ -64,9 +65,9 @@ export function ApplicationSection({ sheet }: { sheet: ReleaseSheet }) {
           <div><dt>연락 이메일</dt><dd>{dash(signed?.contact_email)}</dd></div>
         </dl>
         <div className="adm-appdoc-foot">
-          {signature
-            ? <span className="adm-sig"><img src={signature} alt={`${app?.signerName ?? signed?.signer_name ?? ''} 서명`} /></span>
-            : <span className="adm-sig is-empty">서명 이미지 없음</span>}
+          {signature && !sigBroken
+            ? <span className="adm-sig"><img src={signature} alt={`${app?.signerName ?? signed?.signer_name ?? ''} 서명`} onError={() => setSigBroken(true)} /></span>
+            : <span className="adm-sig is-empty">{signature ? '서명 이미지를 불러오지 못했어요' : '서명 이미지 없음'}</span>}
           <span className="adm-appdoc-state">
             <Chip tone={INTEGRITY_TONE[integrity]}>{INTEGRITY_LABEL[integrity]}</Chip>
             <small>동의 {(app?.agreements ?? signed?.agreements ?? []).length} / 4 항목</small>
@@ -130,6 +131,8 @@ export function EnteredInfoSection({ sheet }: { sheet: ReleaseSheet }) {
   const territories = d?.territories ?? [];
   const notes = d ? draftNotes(d) : '';
   const ap = d?.artistProfile;
+  // 넓은 화면은 처음부터 펼치고, 휴대폰·태블릿은 핵심만 보이고 나머지는 접어 둔다
+  const [moreOpen, setMoreOpen] = useState(() => typeof window === 'undefined' || !window.matchMedia || window.matchMedia('(min-width: 1181px)').matches);
   return (
     <Section title="입력 내용" meta={d ? '아티스트가 신청서에 적은 그대로' : '서버 신청 정보'}>
       <div className="adm-card">
@@ -141,6 +144,14 @@ export function EnteredInfoSection({ sheet }: { sheet: ReleaseSheet }) {
           {(d?.originalDate || app.original_date) && <div><dt>최초 발매일</dt><dd>{day(d?.originalDate ?? app.original_date)}</dd></div>}
           <div><dt>레이블</dt><dd>{dash(d?.label ?? app.label)}</dd></div>
           <div><dt>UPC</dt><dd>{d?.upc || r.upc || '발급 전'}</dd></div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <dt>배급 플랫폼 <small className="muted">{platforms.length}곳</small></dt>
+            <dd className="adm-dsps">{platforms.length ? platforms.map(p => <span key={p}>{dspLabel(p)}</span>) : '—'}</dd>
+          </div>
+        </dl>
+        <details className="adm-info-more" open={moreOpen} onToggle={e => setMoreOpen((e.currentTarget as HTMLDetailsElement).open)}>
+          <summary>권리자·표기·프로필·신고 항목{notes ? '·앨범 소개' : ''}{d?.rightsChecks ? '·권리 확인' : ''}<Glyph name="chevron-right" size={12} /></summary>
+        <dl className="adm-kv">
           {d && <div><dt>마스터 권리자</dt><dd>{dash(d.ownership)}</dd></div>}
           <div><dt>℗ / ©</dt><dd>{[d?.phonogram ?? app.p_line, d?.copyright ?? app.c_line].filter(Boolean).join(' / ') || '—'}</dd></div>
           {d && (
@@ -159,10 +170,6 @@ export function EnteredInfoSection({ sheet }: { sheet: ReleaseSheet }) {
           )}
           {d && <div style={{ gridColumn: '1 / -1' }}><dt>배급 지역</dt><dd>{territories.includes('WORLD') ? '전 세계' : dash(territories.join(', '))}</dd></div>}
           <div style={{ gridColumn: '1 / -1' }}>
-            <dt>배급 플랫폼 <small className="muted">{platforms.length}곳</small></dt>
-            <dd className="adm-dsps">{platforms.length ? platforms.map(p => <span key={p}>{dspLabel(p)}</span>) : '—'}</dd>
-          </div>
-          <div style={{ gridColumn: '1 / -1' }}>
             <dt>신고 항목</dt>
             <dd className="adm-decl">
               {Object.entries(DECL_LABEL).map(([k, label]) => {
@@ -180,6 +187,7 @@ export function EnteredInfoSection({ sheet }: { sheet: ReleaseSheet }) {
           </div>
         )}
         {d?.rightsChecks && <RightsChecks d={d} />}
+        </details>
       </div>
     </Section>
   );
