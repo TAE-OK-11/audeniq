@@ -72,6 +72,7 @@ pub struct Order {
     pub target_type: String,
     pub target_id: Uuid,
     pub release_id: Option<Uuid>,
+    pub priority: i32,
     pub revision_count: i32,
     pub max_revisions_snapshot: Option<i32>,
     pub row_version: i64,

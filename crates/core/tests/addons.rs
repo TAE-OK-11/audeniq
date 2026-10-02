@@ -633,6 +633,7 @@ async fn priority_updates_queued_and_future_jobs_and_ages_normal_work(pool: PgPo
     .await;
     assert_eq!(s, StatusCode::OK, "{cancelled}");
     assert_eq!(cancelled["refund_status"], "REQUESTED");
+    assert_eq!(cancelled["priority"], 0);
     let p: i32 = sqlx::query_scalar("SELECT priority FROM operations.jobs WHERE id=$1")
         .bind(future)
         .fetch_one(&pool)
@@ -1029,6 +1030,361 @@ async fn runtime_roles_keep_tenant_rls_and_can_run_addon_outbox(pool: PgPool) {
         get_order(&app, &u, id(&v)).await["status"],
         "EXTERNAL_PENDING"
     );
+    runtime.close().await;
+}
+
+#[sqlx::test]
+async fn free_profile_plus_keeps_calendar_entitlement_and_follow_ups(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let a = admin_user(&app, &pool).await;
+    let (s, c) = call(&app, "PUT", "/api/admin/addons/catalog/PROFILE_PLUS",
+        json!({"expected_version":1,"price_krw":0,"active":true,"display_name":"Profile Plus","description":"Sponsored annual service","validity_days":365,"max_revisions":null,"reason":"Sponsored purchase"}), Some(&a)).await;
+    assert_eq!(s, StatusCode::OK, "{c}");
+    let ar = create_artist(&app, &u).await;
+    let v = create_ok(&app, &u, profile(ar, true)).await;
+    assert_eq!(v["payment_status"], "NOT_REQUIRED");
+    assert!(v["paid_at"].is_null());
+    let valid: bool = sqlx::query_scalar("SELECT valid_until=submitted_at+interval '12 months' FROM catalog.addon_orders WHERE id=$1")
+        .bind(id(&v)).fetch_one(&pool).await.unwrap();
+    assert!(valid);
+    let v = start(&app, &a, v).await;
+    drain(&pool, store).await;
+    let v = get_order(&app, &u, id(&v)).await;
+    let v = action(
+        &app,
+        &a,
+        &v,
+        "results",
+        json!({"external_reference":"sponsored-profile-case"}),
+    )
+    .await;
+    let completed = action(&app, &a, &v, "complete", json!({})).await;
+    let (s, e) = create_call(&app, &u, "sponsored-duplicate", profile(ar, true)).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(e["error"]["code"], "ADDON_ACTIVE_ORDER_EXISTS");
+    let (s, reopened) = call(&app, "POST", &format!("/api/orgs/{}/addons/orders/{}/follow-ups",u.org,id(&completed)),
+        json!({"row_version":completed["row_version"],"reason":"DSP follow up","details":profile(ar,true)["details"]}),Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{reopened}");
+    assert_eq!(reopened["status"], "UNDER_REVIEW");
+    assert_eq!(reopened["valid_until"], completed["valid_until"]);
+    assert_eq!(reopened["amount"], 0);
+}
+
+#[sqlx::test]
+async fn priority_retries_restore_cancelled_boost_and_preserve_operator_priority(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let a = admin_user(&app, &pool).await;
+    let release = create_release(&app, &u).await;
+    let mut c = pool.acquire().await.unwrap();
+    operations::enqueue(
+        &mut c,
+        "rights",
+        "test.retry",
+        &json!({"release_id":release}),
+        "priority-retry",
+        None,
+    )
+    .await
+    .unwrap();
+    drop(c);
+    let first = operations::claim(&pool, "rights", "priority-retry", 300)
+        .await
+        .unwrap()
+        .unwrap();
+    let v = create_ok(&app, &u, release_order("PRIORITY_DELIVERY", release)).await;
+    let v = pay_queue(&app, &a, v).await;
+    drain(&pool, store).await;
+    operations::fail(&pool, &first, false, "TRANSIENT")
+        .await
+        .unwrap();
+    let (priority, previous): (i32, Option<i32>) =
+        sqlx::query_as("SELECT priority,addon_priority_previous FROM operations.jobs WHERE id=$1")
+            .bind(first.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!((priority, previous), (10, Some(0)));
+    sqlx::query("UPDATE operations.jobs SET run_at=now() WHERE id=$1")
+        .bind(first.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let held = operations::claim(&pool, "rights", "priority-retry", 300)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut c = pool.acquire().await.unwrap();
+    let urgent = operations::enqueue(
+        &mut c,
+        "qc",
+        "test.urgent",
+        &json!({"release_id":release}),
+        "priority-urgent",
+        None,
+    )
+    .await
+    .unwrap();
+    let replay = operations::enqueue(
+        &mut c,
+        "qc",
+        "test.urgent",
+        &json!({"release_id":release}),
+        "priority-urgent",
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(urgent, replay);
+    drop(c);
+    let audited: i64 = sqlx::query_scalar("SELECT count(*) FROM operations.audit_events WHERE action='addon.queue.priority' AND reason_code='QUEUE_PRIORITY_RECONCILED' AND after_value->>'release_id'=$1")
+        .bind(release.to_string()).fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        audited, 2,
+        "one requeue and one actual insert; replay must not append"
+    );
+    sqlx::query("UPDATE operations.jobs SET priority=20 WHERE id=$1")
+        .bind(urgent)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // Applying again must not claim a second NORMAL -> HIGH change.
+    let mut tx = pool.begin().await.unwrap();
+    let order = workflow::load(&mut tx, u.org, id(&v)).await.unwrap();
+    jobs::apply_priority(&mut tx, None, &order).await.unwrap();
+    tx.commit().await.unwrap();
+    let applied: i64 = sqlx::query_scalar("SELECT count(*) FROM operations.audit_events WHERE resource_id=$1 AND action='addon.priority.applied'")
+        .bind(id(&v)).fetch_one(&pool).await.unwrap();
+    assert_eq!(applied, 1);
+    let v = get_order(&app, &u, id(&v)).await;
+    let cancelled = action(&app, &a, &v, "status", json!({"status":"CANCELLED"})).await;
+    assert_eq!(cancelled["priority"], 0);
+    let running: (i32, String) =
+        sqlx::query_as("SELECT priority,status FROM operations.jobs WHERE id=$1")
+            .bind(held.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(running, (10, "RUNNING".into()));
+    let urgent_priority: (i32, Option<i32>) =
+        sqlx::query_as("SELECT priority,addon_priority_previous FROM operations.jobs WHERE id=$1")
+            .bind(urgent)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(urgent_priority, (20, None));
+    operations::fail(&pool, &held, false, "TRANSIENT")
+        .await
+        .unwrap();
+    let restored: (i32, Option<i32>) =
+        sqlx::query_as("SELECT priority,addon_priority_previous FROM operations.jobs WHERE id=$1")
+            .bind(held.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(restored, (0, None));
+    let (s, filtered) = call(
+        &app,
+        "GET",
+        "/api/admin/addons/orders?priority=true",
+        Value::Null,
+        Some(&a),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert!(filtered["items"].as_array().unwrap().is_empty());
+}
+
+#[sqlx::test]
+async fn revoked_order_write_acl_stops_work_with_target_acl_intact(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let a = admin_user(&app, &pool).await;
+    let ar = create_artist(&app, &u).await;
+    let v = create_ok(&app, &u, profile(ar, false)).await;
+    let v = start(&app, &a, v).await;
+    sqlx::query(
+        "UPDATE identity.resource_acl SET revoked_at=now() WHERE resource_id=$1 AND action='write'",
+    )
+    .bind(id(&v))
+    .execute(&pool)
+    .await
+    .unwrap();
+    drain(&pool, store).await;
+    let blocked = get_order(&app, &u, id(&v)).await;
+    assert_eq!(blocked["status"], "NEEDS_INFO");
+    assert!(blocked["provider_tasks"].as_array().unwrap().is_empty());
+    assert_eq!(
+        blocked["information_request"]["message"],
+        "ADDON_REQUESTER_ACCESS_REVOKED"
+    );
+}
+
+#[sqlx::test]
+async fn lyrics_worker_rechecks_rejected_attachment(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let a = admin_user(&app, &pool).await;
+    let t = track(&app, &pool, &u, false).await;
+    let lrc = asset(&pool, &u, "LRC").await;
+    let v = create_ok(&app, &u, json!({"service_code":"LYRICS_BASIC","target_type":"track","target_id":t,"details":{"type":"lyrics","lrc_asset_id":lrc}})).await;
+    let v = start(&app, &a, v).await;
+    sqlx::query("UPDATE catalog.assets SET state='REJECTED' WHERE id=$1")
+        .bind(lrc)
+        .execute(&pool)
+        .await
+        .unwrap();
+    drain(&pool, store).await;
+    let blocked = get_order(&app, &u, id(&v)).await;
+    assert_eq!(blocked["status"], "NEEDS_INFO");
+    assert!(blocked["provider_tasks"].as_array().unwrap().is_empty());
+}
+
+#[sqlx::test]
+async fn removing_basic_video_request_clears_details_and_rejects_video_results(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let a = admin_user(&app, &pool).await;
+    let t = track(&app, &pool, &u, false).await;
+    let v = create_ok(&app, &u, json!({"service_code":"LYRICS_BASIC","target_type":"track","target_id":t,"details":{"type":"lyrics","lyrics_text":"Test lyrics","basic_video_requested":true}})).await;
+    assert!(v["details"]["lyric_video"].is_object());
+    let v = action(&app, &a, &v, "request-info", json!({})).await;
+    let (s, v) = call(&app, "PUT", &format!("/api/orgs/{}/addons/orders/{}/details",u.org,id(&v)),
+        json!({"row_version":v["row_version"],"reason":"Lyrics only","details":{"type":"lyrics","lyrics_text":"Updated lyrics","basic_video_requested":false}}), Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert!(v["details"]["lyric_video"].is_null());
+    let v = start(&app, &a, v).await;
+    drain(&pool, store).await;
+    let v = get_order(&app, &u, id(&v)).await;
+    assert_eq!(v["provider_tasks"].as_array().unwrap().len(), 1);
+    let video = asset(&pool, &u, "VIDEO").await;
+    let (s, _) = call(&app, "POST", &format!("/api/admin/addons/orders/{}/results",id(&v)),
+        json!({"row_version":v["row_version"],"reason":"Unexpected video","external_reference":"manual-video","output_asset_id":video}), Some(&a)).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    let unchanged = get_order(&app, &u, id(&v)).await;
+    assert_eq!(unchanged["row_version"], v["row_version"]);
+    assert_eq!(unchanged["provider_tasks"][0]["status"], "EXTERNAL_PENDING");
+    let v = action(
+        &app,
+        &a,
+        &v,
+        "results",
+        json!({"external_reference":"manual-lyrics"}),
+    )
+    .await;
+    let v = action(&app, &a, &v, "complete", json!({})).await;
+    assert_eq!(v["status"], "COMPLETED");
+}
+
+#[sqlx::test]
+async fn runtime_api_can_operate_admin_workflow_without_staff_update_privilege(pool: PgPool) {
+    let (owner_app, store) = app(pool.clone()).await;
+    let u = user(&owner_app).await;
+    let a = admin_user(&owner_app, &pool).await;
+    let ar = create_artist(&owner_app, &u).await;
+    let t = track(&owner_app, &pool, &u, false).await;
+    sqlx::raw_sql("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='audeniq_api') THEN CREATE ROLE audeniq_api NOLOGIN; END IF; IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='audeniq_worker') THEN CREATE ROLE audeniq_worker NOLOGIN; END IF; END $$").execute(&pool).await.unwrap();
+    sqlx::raw_sql(include_str!("../../../deploy/grants.sql"))
+        .execute(&pool)
+        .await
+        .unwrap();
+    let runtime = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .after_connect(|c, _| {
+            Box::pin(async move {
+                sqlx::query("SET ROLE audeniq_api").execute(c).await?;
+                Ok(())
+            })
+        })
+        .connect_with((*pool.connect_options()).clone())
+        .await
+        .unwrap();
+    let state = audeniq_core::api::AppState::new(
+        runtime.clone(),
+        audeniq_core::config::Config {
+            database_url: "unused".into(),
+            origin: ORIGIN.into(),
+            service_secret: SECRET.into(),
+            secure_cookie: false,
+            bind: "127.0.0.1:0".into(),
+            session_seconds: 3600,
+            test_only_bypass_dsp_gate: true,
+        },
+        store,
+    )
+    .await
+    .unwrap();
+    let app = audeniq_core::api::router(state);
+    let v = create_ok(&app, &u, profile(ar, true)).await;
+    let v = pay_queue(&app, &a, v).await;
+    let v = start(&app, &a, v).await;
+    assert_eq!(v["status"], "IN_PROGRESS");
+    let (s, _) = call(
+        &app,
+        "GET",
+        "/api/admin/addons/orders",
+        Value::Null,
+        Some(&a),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let basic = create_ok(&app,&u,json!({"service_code":"LYRICS_BASIC","target_type":"track","target_id":t,"details":{"type":"lyrics","lyrics_text":"Runtime lyrics","basic_video_requested":true}})).await;
+    let basic = action(&app, &a, &basic, "request-info", json!({})).await;
+    let (s, basic) = call(&app,"PUT",&format!("/api/orgs/{}/addons/orders/{}/details",u.org,id(&basic)),
+        json!({"row_version":basic["row_version"],"reason":"Remove video","details":{"type":"lyrics","lyrics_text":"Runtime lyrics","basic_video_requested":false}}),Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{basic}");
+    assert!(basic["details"]["lyric_video"].is_null());
+    let denied = sqlx::query("UPDATE identity.staff_members SET role='ADMIN' WHERE user_id=$1")
+        .bind(u.user)
+        .execute(&runtime)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        denied.as_database_error().unwrap().code().as_deref(),
+        Some("42501")
+    );
+    let mut protected = runtime.begin().await.unwrap();
+    let role: Option<String> = sqlx::query_scalar("SELECT identity.lock_active_staff_role($1)")
+        .bind(a.user)
+        .fetch_one(&mut *protected)
+        .await
+        .unwrap();
+    assert_eq!(role.as_deref(), Some("ADMIN"));
+    let mut revoke = pool.begin().await.unwrap();
+    sqlx::query("SET LOCAL lock_timeout='200ms'")
+        .execute(&mut *revoke)
+        .await
+        .unwrap();
+    let blocked = sqlx::query(
+        "UPDATE identity.staff_members SET status='REVOKED',revoked_at=now() WHERE user_id=$1",
+    )
+    .bind(a.user)
+    .execute(&mut *revoke)
+    .await
+    .unwrap_err();
+    assert_eq!(
+        blocked.as_database_error().unwrap().code().as_deref(),
+        Some("55P03")
+    );
+    revoke.rollback().await.unwrap();
+    protected.commit().await.unwrap();
+    sqlx::query(
+        "UPDATE identity.staff_members SET status='REVOKED',revoked_at=now() WHERE user_id=$1",
+    )
+    .bind(a.user)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (s, _) = call(
+        &app,
+        "GET",
+        "/api/admin/addons/orders",
+        Value::Null,
+        Some(&a),
+    )
+    .await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
     runtime.close().await;
 }
 

@@ -130,7 +130,10 @@ async fn revise(
 /// Recheck and lock the existing staff ACL in the write transaction. Revocation
 /// cannot race an authenticated admin request or cross-tenant query.
 async fn admin(c: &mut PgConnection, a: &Actor) -> Result<()> {
-    let role:Option<String>=sqlx::query_scalar("SELECT sm.role FROM identity.staff_members sm JOIN identity.users u ON u.id=sm.user_id WHERE sm.user_id=$1 AND sm.status='ACTIVE' AND u.status='ACTIVE' FOR SHARE OF sm,u").bind(a.user).fetch_optional(&mut *c).await?;
+    let role: Option<String> = sqlx::query_scalar("SELECT identity.lock_active_staff_role($1)")
+        .bind(a.user)
+        .fetch_one(&mut *c)
+        .await?;
     if role.as_deref() != Some("ADMIN") {
         return Err(Error::Forbidden);
     }
