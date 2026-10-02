@@ -1526,3 +1526,12 @@ body:has(#modal .aq-sticky-foot) .aq-toast-stack,body:has(.aq-form-actions.is-pi
 .aq-method .aq-chip.is-on{background:#fff!important;color:#2C56E0!important;box-shadow:0 1px 3px rgba(23,27,41,.08)!important}
 .aq-rights-evidence .aq-chips.aq-method{margin-bottom:14px}
 .field>.aq-chips.aq-method{margin-bottom:0}
+
+/* 서류 첨부 카드 (커버아트 카드와 같은 모양) */
+button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
+.aq-filecard .aq-dropzone-icon{width:52px;height:52px;border-radius:16px}
+.aq-filecard.has-file{background:#eef3ff}
+.aq-filecard.has-file .aq-dropzone-icon{background:#3B63F3;color:#fff}
+.aq-filecard.is-busy{opacity:.7;pointer-events:none}
+.aq-filecard .aq-dropzone-text small{line-height:1.5}
+.aq-rights-evidence .aq-filecard{margin-top:2px!important}

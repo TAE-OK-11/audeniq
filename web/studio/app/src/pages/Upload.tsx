@@ -1,6 +1,7 @@
 import { Fragment, memo, useCallback, useEffect, useRef, useState } from 'react';
 import { ReviewNote } from '../components/CorrectionList';
 import { FilePicker } from '../components/FilePicker';
+import { FileCard } from '../components/FileCard';
 import { useNavigate, useSearchParams } from '../lib/router';
 import { useToast } from '../components/Toast';
 import { Modal } from '../components/Modal';
@@ -226,21 +227,21 @@ function DocAttach({ id, label, fileName, assetId, busy, onSelect, required, hel
         <button type="button" className={`aq-chip${method === 'electronic' ? ' is-on' : ''}`} aria-pressed={method === 'electronic'} onClick={() => setMethod('electronic')}>AUDENIQ에서 작성</button>
         <button type="button" className={`aq-chip${method === 'upload' ? ' is-on' : ''}`} aria-pressed={method === 'upload'} onClick={() => setMethod('upload')}>보유한 서류 첨부</button>
       </div>
-      {method === 'electronic' ? <>
-        <p className="help">발매 정보로 {RIGHTS_DOCUMENTS[kind].title}를 만들고 권리자가 직접 서명하면 문서가 완성돼요.</p>
-        <button type="button" className="button secondary" onClick={() => onElectronic(kind)}>전자 문서 작성{docs.length ? ' · 권리자 추가' : '하기'}</button>
-      </> : <><label className="sr-only" htmlFor={id}>{label}</label><FilePicker
+      {method === 'electronic' ? (
+        <button type="button" className="aq-dropzone aq-filecard" onClick={() => onElectronic(kind)}>
+          <span className="aq-dropzone-icon" aria-hidden="true"><Glyph name="sign" size={26} /></span>
+          <span className="aq-dropzone-text">
+            <strong>{docs.length ? '권리자 추가로 서명받기' : `${RIGHTS_DOCUMENTS[kind].title} 작성하기`}</strong>
+            <small>발매 정보로 문서를 만들고 권리자가 직접 서명해요</small>
+          </span>
+        </button>
+      ) : <><label className="sr-only" htmlFor={id}>{label}</label><FileCard
         id={id} fileName={fileName} busy={busy}
         accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
-        onChange={e => {
-          const f = e.target.files?.[0];
-          if (f) onSelect(f);
-          e.target.value = '';
-        }}
-      />
-      <p className="help">
-        {busy ? '서류를 서버에 올리는 중이에요…' : fileName ? (assetId ? `서버에 등록됨 · ${fileName}` : `재첨부 필요 · ${fileName}`) : (help || '서류를 첨부해 주세요.')}
-      </p></>}
+        hint={help || 'PDF · JPG · PNG'}
+        status={fileName ? (assetId ? '서버에 등록됨 · 다시 누르면 바꿀 수 있어요' : '다시 첨부해 주세요 (서버 등록 기록 없음)') : undefined}
+        onFile={f => onSelect(f)}
+      /></>}
       {docs.map(d => <button key={d.id} type="button" className="aq-rights-receipt" onClick={() => onOpenDoc(d.id)}><CheckIcon size={16} /><span>{d.electronic?.rights_holder} · {d.reviewStatus === 'needs' ? '보완 요청' : '서명 완료'}<small>{d.reviewStatus === 'approved' ? 'AUDENIQ 검토 승인' : d.reviewStatus === 'needs' ? d.reviewNote : 'AUDENIQ 검토 중'} · 문서 보기</small></span></button>)}
     </div>
   );
