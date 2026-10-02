@@ -1,18 +1,18 @@
 // 발매 심사 시트 — 검사 결과·신청 정보·서류·이력을 보고 승인 / 보완 요청 / 거절을 결정한다.
 // 두 경우를 결정한다: 2차 검사에서 멈춘 발매(STAGE2_REVIEW), 자동 검사를 통과했고 신청서(배급 계약서)가
 // 검토 전인 새 발매 신청(READY_FOR_DELIVERY). 신청서는 발매와 함께 결정되고 서류 검토에는 나오지 않는다.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from '../../lib/router';
 import { Modal, useModalClose } from '../../components/Modal';
 import { useToast } from '../../components/Toast';
 import { errorMessage } from '../../api/errors';
 import { useAsync } from '../../hooks/useAsync';
-import { staffApi, type Check, type DecisionAction, type DecisionInput, type DecisionResult, type ReleaseSheet } from '../api';
+import { staffApi, type DecisionAction, type DecisionInput, type DecisionResult, type ReleaseSheet } from '../api';
 import { FIX_PRESETS } from '../fixPresets';
 import { STAFF_FIX_OPTIONS, WIZ_STEP_NAMES, correctionTarget, isKnownCorrection, staffFixCode } from '../../lib/corrections';
 import {
   CHECK_STATUS, DECISION_LABEL, DOC_KIND, DOC_STATUS, MAX_REASON, RELEASE_STATUS, RELEASE_TYPE,
-  REJECT_REASONS, applicationPending, checkLabel, checkSummary, needsSecond, pick, shortId, stageStateLabel, systemStages, when,
+  REJECT_REASONS, checkLabel, checkSummary, pick, shortId, stageStateLabel, systemStages, when,
 } from '../labels';
 import { Chip, ErrorBox, Initial, NoDuty, Section, Skeleton, StatusChip, useStaff } from '../ui';
 import { Glyph } from '../../components/Glyph';
@@ -21,38 +21,10 @@ import { DocFileLink } from '../DocFileLink';
 import { QUEUE_ORDER_KEY } from './ReviewQueue';
 import { ApplicationSection, EnteredInfoSection, OptionsSection, TracksSection, useIntegrity } from '../Submission';
 import { CurrentValue, ReviewBrief, type BriefFix } from '../ReviewBrief';
-
-const ACTION_KO: Record<string, string> = {
-  'release.submitted': '발매 접수', 'stage1.decision': '1차 검사 결과', 'stage1.completed': '1차 검사 완료', 'stage2.decision': '2차 검사 결과',
-  'stage2.pass': '2차 검사 통과', 'stage3.prepared': '배급 준비 완료', 'delivery.staged': '플랫폼별 전송 준비',
-  'delivery.held': '배급 대기 (계약서 서명 전)', 'delivery.enqueued': '플랫폼 전송 예약', 'release.updated': '발매 정보 수정',
-  'staff.approved': '담당자 승인', 'staff.correction_requested': '담당자 보완 요청', 'staff.rejected': '담당자 거절',
-  'staff.approval_requested': '2차 승인 요청', 'staff.approval_granted': '2차 승인 완료', 'staff.approval_declined': '2차 승인 반려',
-  'staff.proof_requested': '권리 증빙 요청', 'release.withdrawn': '신청 취소', 'staff.identifiers_reissue': '식별자 재발급 요청', 'staff.document_reviewed': '신청서 처리',
-};
-
-/** 검사 항목 — 쉬운 설명을 먼저, 검사 코드와 원문은 ‘상세 보기’에 */
-function CheckCard({ c, open }: { c: Check; open?: boolean }) {
-  const sensitive = open && needsSecond(c);
-  const cls = ['adm-check', open ? 'is-open' : '', sensitive ? 'is-sensitive' : ''].filter(Boolean).join(' ');
-  return (
-    <div className={cls}>
-      <div className="adm-check-top">
-        <b>{checkLabel(c.check_code)}</b>
-        <span className="adm-codes">
-          {sensitive && <Chip tone="red">2인 승인 필요</Chip>}
-          <StatusChip value={pick(CHECK_STATUS, c.status)} />
-        </span>
-      </div>
-      <p>{checkSummary(c)}</p>
-      <details className="adm-more">
-        <summary>상세 보기</summary>
-        <div><span className="adm-code">{c.check_code}</span></div>
-        {c.detail && <p className="adm-raw">{c.detail}</p>}
-      </details>
-    </div>
-  );
-}
+import { CheckCard } from '../ReviewCheck';
+import { DeliveryStatus } from '../DeliveryStatus';
+import { ReviewTimeline } from '../ReviewTimeline';
+import { contextOrReadOnly, ReviewActions } from '../ReviewActions';
 
 /** withdraw::WITHDRAWABLE와 같게 유지 */
 const WITHDRAWABLE = ['STAGE1_CORRECTION', 'STAGE2_REVIEW', 'STAGE2_CORRECTION', 'STAGE3_CORRECTION', 'READY_FOR_DELIVERY', 'ON_HOLD_RIGHTS'];
@@ -83,7 +55,7 @@ function ApproveForm({ sheet, application, onDone }: { sheet: ReleaseSheet; appl
   const { busy, run, close } = useDecide(sheet, onDone);
   const [memo, setMemo] = useState('');
   const integrity = useIntegrity(sheet);
-  const sensitive = sheet.open_checks.some(needsSecond);
+  const sensitive = sheet.review_context?.requires_second_approval ?? true;
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     void run({ action: 'APPROVE', reason: memo.trim() }, res => {
@@ -422,6 +394,10 @@ function ReissueForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: () => voi
 
 export function ReviewDetail() {
   const { id = '' } = useParams<{ id: string }>();
+  return <ReviewSheet key={id} id={id} />;
+}
+
+function ReviewSheet({ id }: { id: string }) {
   const nav = useNavigate();
   const { can, refreshCounts, me } = useStaff();
   const { data: sheet, loading, error, reload } = useAsync(() => staffApi.release(id), [id]);
@@ -429,6 +405,15 @@ export function ReviewDetail() {
   const [modal, setModal] = useState<'proof' | 'reissue' | 'withdraw' | null>(null);
   const [done, setDone] = useState('');
   const [showAll, setShowAll] = useState(false);
+  const [timelineTick, setTimelineTick] = useState(0);
+  const refresh = () => { reload(); setTimelineTick(t => t + 1); };
+  useEffect(() => {
+    const update = () => { if (!action && !modal && document.visibilityState === 'visible') { reload(); setTimelineTick(t => t + 1); } };
+    const active = !action && !modal && sheet && (['SUBMITTED', 'STAGE1_RUNNING', 'STAGE1_PASSED', 'STAGE2_RUNNING', 'STAGE2_PASSED', 'STAGE3_PREPARING', 'STAGE2_REVIEW'].includes(sheet.release.status));
+    const timer = active ? window.setInterval(update, 15000) : undefined;
+    document.addEventListener('visibilitychange', update);
+    return () => { if (timer !== undefined) window.clearInterval(timer); document.removeEventListener('visibilitychange', update); };
+  }, [sheet?.release.status, action, modal, reload]);
 
   if (loading && !sheet) return <Skeleton rows={6} />;
   if (error && !sheet) return <ErrorBox message={error} onRetry={reload} />;
@@ -436,16 +421,15 @@ export function ReviewDetail() {
 
   const r = sheet.release;
   const app = sheet.application;
-  const inReview = r.status === 'STAGE2_REVIEW';
-  // 자동 검사를 통과했고 신청서(배급 계약서)가 검토 전인 새 발매 신청
-  const application = !inReview && r.status === 'READY_FOR_DELIVERY'
-    && sheet.documents.some(d => d.kind === 'AGREEMENT' && applicationPending(d.status));
-  const decidable = inReview || application;
+  // 결정 가능 여부·버튼은 서버(review_context)가 정한다. 예전 API면 읽기 전용
+  const context = contextOrReadOnly(sheet.review_context);
+  const inReview = context.decision_kind === 'CHECKS';
+  const application = context.decision_kind === 'APPLICATION';
+  const decidable = context.decision_kind !== null;
   const stages = systemStages(r.status);
-  const passed = sheet.checks.filter(c => c.status === 'PASS' || c.status === 'NOT_APPLICABLE').length;
-  const pending = sheet.second_approvals.find(a => a.status === 'PENDING');
+  const pending = sheet.second_approvals.find(a => a.id === context.pending_second_approval_id);
   const canReview = can('REVIEW');
-  const after = (msg: string) => { setDone(msg); reload(); refreshCounts(); };
+  const after = (msg: string) => { setDone(msg); refresh(); refreshCounts(); };
   // 심사 목록에서 보던 순서의 다음 건 (목록을 거치지 않고 이어서 심사)
   const nextId = (() => {
     try {
@@ -458,8 +442,9 @@ export function ReviewDetail() {
   return (
     <div className="view-enter">
       <div className="adm-detail-nav">
-        <Link to="/reviews" className="adm-back"><Glyph name="arrow-left" size={14} className="aq-inline-glyph" />심사 목록</Link>
+        <Link to="/admin/reviews" className="adm-back"><Glyph name="arrow-left" size={14} className="aq-inline-glyph" />심사 목록</Link>
         {nextId && <Link to={`/admin/reviews/${nextId}`} className="adm-back adm-next">다음 심사 건<Glyph name="chevron-right" size={14} className="aq-inline-glyph" /></Link>}
+        <button type="button" className="adm-btn soft small adm-refresh" disabled={loading} onClick={refresh}>{loading ? '갱신 중…' : '새로고침'}</button>
       </div>
 
       <div className="adm-detail">
@@ -480,6 +465,8 @@ export function ReviewDetail() {
             </div>
           </div>
 
+          {!sheet.review_context && <ErrorBox message="심사 가능 여부를 확인할 수 없어요. 새로고침 후 다시 확인해 주세요." onRetry={refresh} />}
+          {error && <ErrorBox message={error} onRetry={refresh} />}
           {done && (
             <div className="adm-alert is-ok adm-alert-row" role="status">
               <span>{done}</span>
@@ -493,7 +480,7 @@ export function ReviewDetail() {
             </div>
           )}
 
-          <Section title="시스템 검사" meta={`검사 ${sheet.checks.length}개 중 ${passed}개 자동 통과`}>
+          <Section title="시스템 검사" meta={`검사 ${sheet.checks.length}개 · 통과 ${context.check_counts.PASS ?? 0}개 (담당자 결정 포함)`}>
             <ol className="adm-stages">
               {stages.map((st, i) => (
                 <li key={st.key} className={`is-${st.state}`}>
@@ -513,13 +500,13 @@ export function ReviewDetail() {
 
           {sheet.open_checks.length > 0 && (
             <Section title="담당자 확인 필요" meta={`${sheet.open_checks.length}건 · 시스템이 판단을 넘긴 항목`}>
-              <div className="adm-checks">{sheet.open_checks.map(c => <CheckCard key={c.check_code} c={c} open />)}</div>
+              <div className="adm-checks">{sheet.open_checks.map(c => <CheckCard key={c.id ?? c.check_code} c={c} open />)}</div>
             </Section>
           )}
 
           {sheet.advisories.length > 0 && (
             <Section title="참고 사항" meta="발매를 막지 않는 음원 권고">
-              <div className="adm-checks">{sheet.advisories.map(c => <CheckCard key={c.check_code} c={c} />)}</div>
+              <div className="adm-checks">{sheet.advisories.map(c => <CheckCard key={c.id ?? c.check_code} c={c} />)}</div>
             </Section>
           )}
 
@@ -549,6 +536,8 @@ export function ReviewDetail() {
             ) : <p className="small muted">연결된 서류가 없어요.</p>}
           </Section>
 
+
+          <DeliveryStatus rows={sheet.delivery_staging} />
 
           {(sheet.notes.length > 0 || sheet.overrides.length > 0) && (
             <Section title="담당자 결정 기록">
@@ -586,28 +575,16 @@ export function ReviewDetail() {
             action={<button type="button" className="adm-btn soft small" onClick={() => setShowAll(v => !v)}>{showAll ? '접기' : '펼치기'}</button>}
           >
             {showAll ? (
-              <div className="adm-checks">{sheet.checks.map(c => <CheckCard key={c.check_code} c={c} />)}</div>
+              <div className="adm-checks">{sheet.checks.map(c => <CheckCard key={c.id ?? c.check_code} c={c} />)}</div>
             ) : (
               <div className="adm-codes">
-                {Object.entries(sheet.checks.reduce<Record<string, number>>((m, c) => ({ ...m, [c.status]: (m[c.status] ?? 0) + 1 }), {}))
+                {Object.entries(context.check_counts)
                   .map(([s, n]) => <Chip key={s} tone={pick(CHECK_STATUS, s)[1]}>{pick(CHECK_STATUS, s)[0]} {n}</Chip>)}
               </div>
             )}
           </Section>
 
-          <Section title="처리 이력" meta="최근 100건">
-            <ol className="adm-timeline">
-              {sheet.timeline.map((t, i) => (
-                <li key={`${t.at}-${i}`} className={t.action.startsWith('staff.') ? 'is-staff' : ''}>
-                  <i aria-hidden="true" />
-                  <div>
-                    <b title={t.reason ?? undefined}>{ACTION_KO[t.action] ?? t.action}</b>
-                    <small>{when(t.at)} · {t.actor_service ?? shortId(t.actor_user_id)}</small>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          </Section>
+          <ReviewTimeline releaseId={id} revisionId={r.revision_id} refreshTick={timelineTick} />
         </div>
 
         <aside className="adm-detail-side">
@@ -620,11 +597,7 @@ export function ReviewDetail() {
                   ? '새 발매 신청 · 시스템 검사 모두 통과'
                   : `지금은 ‘${pick(RELEASE_STATUS, r.status)[0]}’ 상태라 결정할 수 없어요.`}
             </p>
-            <div className="adm-decide-actions">
-              <button type="button" className="adm-btn primary" disabled={!decidable || !canReview || !!pending} onClick={() => setAction('APPROVE')}>승인</button>
-              <button type="button" className="adm-btn warn" disabled={!decidable || !canReview} onClick={() => setAction('REQUEST_CORRECTION')}>보완 요청</button>
-              <button type="button" className="adm-btn danger" disabled={!decidable || !canReview} onClick={() => setAction('REJECT')}>거절</button>
-            </div>
+            <ReviewActions context={context} loading={loading} onAction={setAction} />
             <div className="adm-decide-note">
               {application
                 ? '승인하면 신청서(배급 계약서)가 승인되고 아티스트가 서명하면 배급이 시작돼요. 추가 서류가 필요하면 ‘권리 증빙 요청’으로 요청하세요 — 서류 검토에서 확인해요.'
@@ -658,13 +631,11 @@ export function ReviewDetail() {
       {/* 휴대폰·좁은 화면: 내용을 읽다가 바로 결정하도록 아래에 고정 */}
       {decidable && canReview && !action && (
         <div className="adm-decide-bar" role="group" aria-label="심사 결정">
-          <button type="button" className="adm-btn primary" disabled={!!pending} onClick={() => setAction('APPROVE')}>승인</button>
-          <button type="button" className="adm-btn warn" onClick={() => setAction('REQUEST_CORRECTION')}>보완 요청</button>
-          <button type="button" className="adm-btn danger" onClick={() => setAction('REJECT')}>거절</button>
+          <ReviewActions context={context} loading={loading} onAction={setAction} />
         </div>
       )}
       {action && (
-        <Modal title={ACTION_TITLE[action]} onClose={() => setAction(null)} dismissible={false}>
+        <Modal key={`${r.revision_id}-${action}`} title={ACTION_TITLE[action]} onClose={() => setAction(null)} dismissible={false}>
           {action === 'APPROVE' && <ApproveForm sheet={sheet} application={application} onDone={after} />}
           {action === 'REJECT' && <RejectForm sheet={sheet} onDone={after} />}
           {action === 'REQUEST_CORRECTION' && <CorrectionForm sheet={sheet} onDone={after} />}

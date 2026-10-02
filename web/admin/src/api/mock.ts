@@ -4,7 +4,7 @@ import { ApiError, messageForCode } from './errors';
 import { applicationPending, needsSecond } from '../labels';
 import type {
   ApprovalItem, DecisionInput, DecisionResult, DeliveryDecisionInput, DeliveryItem, DspItem, InquiryMessage, InquiryItem,
-  Overview, PayoutItem, QueueRelease, ReleaseSheet, StaffDocument, StaffMe,
+  Overview, PayoutItem, QueueRelease, ReleaseSheet, ReleaseTimelineItem, StagingRow, StaffDocument, StaffMe,
 } from './staff';
 import { applicationHash, type StudioDraft } from '../lib/application';
 
@@ -164,6 +164,33 @@ const payouts: PayoutItem[] = [
 ];
 
 releases.find(r => r.q.id === 'r4d5e6f7')!.sheet.documents.push(documents[0]);
+
+// 체험: Blue Hour는 YouTube Content ID도 신청했는데 원본 녹음 확인을 체크하지 않았다
+{
+  const blue = releases.find(r => r.q.id === 'r2b3c4d5')!.sheet;
+  blue.application.platforms.push('D-27');
+  blue.draft!.platforms = [...(blue.draft!.platforms ?? []), 'youtube-cid'];
+  Object.assign(blue.draft!.options!, { contentIdExclusiveRightsAck: true, contentIdOriginalRecordingAck: false });
+}
+// 체험: Paper Moon은 배급 준비까지 끝나 플랫폼별 상태가 있다
+{
+  const paper = releases.find(r => r.q.id === 'r4d5e6f7')!.sheet;
+  const row = (dsp: string, readiness: string, checks: StagingRow['checks'] = [], extra: Partial<StagingRow> = {}): StagingRow => ({
+    package_id: 'pk-r4', dsp, readiness, approval: readiness === 'READY' ? 'APPROVED' : 'PENDING', checks,
+    route_status: null, route_reason: null, ern_message_id: null, ern_sha256: null, ern_is_preview: false,
+    approval_by: null, approval_note: null, approval_at: null, staged_at: iso(20), ...extra,
+  });
+  paper.delivery_staging = [
+    row('D-5', 'CONTENT_BLOCKED', [
+      { code: 'S2_DSP_TITLE_FEATURED_ARTIST', severity: 'BLOCKER', class: 'CONTENT', message: '곡명에 feat. 표기가 있어요. Spotify는 참여 아티스트 칸으로 받아요.' },
+      { code: 'S2_DSP_SPOTIFY_ARTWORK_ENCODING', severity: 'WARNING', class: 'CONTENT', message: '커버에 ICC 프로필이 들어 있어요. sRGB로 다시 내보내면 좋아요.' },
+    ]),
+    row('D-6', 'AWAITING_PARTNER', [{ code: 'PARTNER_FEED', severity: 'INFO', message: 'Apple Music 전송 계정 연결을 기다리고 있어요.' }], { route_reason: '파트너 연동 전 — 연결되면 자동 전송' }),
+    row('D-1', 'READY', [{ code: 'DSP_LOUDNESS_ADVISORY', severity: 'INFO', message: '음량 -9.8 LUFS — 플랫폼에서 자동 조정돼요.' }]),
+    row('D-2', 'READY'),
+    row('D-3', 'READY', [], { ern_is_preview: true }),
+  ];
+}
 /** 발매 심사 대기: 2차 검사에서 멈췄거나, 자동 검사를 통과했고 신청서가 검토 전 */
 const awaiting = (r: MockRelease) => r.q.status === 'STAGE2_REVIEW' || (r.q.status === 'READY_FOR_DELIVERY' && applicationPending(r.q.agreement));
 
@@ -212,13 +239,28 @@ export const mockStaff = {
     };
     return wait(sheet);
   },
-  timeline: (rid: string, limit = 100) => wait({
-    release_id: rid, truncated: find(rid).sheet.timeline.length > limit,
-    items: find(rid).sheet.timeline.slice(0, limit).reverse().map(t => ({
+  timeline: (rid: string, limit = 100) => {
+    const r = find(rid);
+    const items: ReleaseTimelineItem[] = r.sheet.timeline.map(t => ({
       at: t.at, source: 'audit' as const, kind: t.action,
       detail: { reason: t.reason, actor_user_id: t.actor_user_id, actor_service: t.actor_service },
-    })),
-  }),
+    }));
+    // 체험: 처리 작업·검사·플랫폼 기록도 섞어 보여 준다
+    const sub = r.q.submitted_at ?? iso(5);
+    const after = (min: number) => new Date(Date.parse(sub) + min * 60_000).toISOString();
+    items.push(
+      { at: after(1), source: 'job', kind: 'asset.analyze', detail: { status: 'SUCCEEDED', attempts: 1 } },
+      { at: after(2), source: 'job', kind: 'stage1', detail: { status: 'SUCCEEDED', attempts: 1 } },
+      { at: after(6), source: 'job', kind: 'stage2', detail: { status: 'SUCCEEDED', attempts: 2, last_error: 'fingerprint service timeout (retried)' } },
+      ...r.sheet.open_checks.map(c => ({ at: after(7), source: 'check' as const, kind: c.check_code, detail: { status: c.status, detail: c.detail, stage: 2 } })),
+    );
+    for (const d of r.sheet.delivery_staging) {
+      items.push({ at: d.staged_at, source: 'staff_decision', kind: d.dsp, detail: { approval: d.approval, note: d.readiness === 'CONTENT_BLOCKED' ? '콘텐츠 문제로 전송 보류' : null } });
+      if (d.readiness === 'READY') items.push({ at: after(30), source: 'dsp_request', kind: d.dsp, detail: { outcome: 'SENT' } });
+    }
+    items.sort((a, b) => a.at.localeCompare(b.at));
+    return wait({ release_id: rid, truncated: items.length > limit, items: items.slice(-limit) });
+  },
   decide: async (rid: string, i: DecisionInput): Promise<DecisionResult> => {
     const r = find(rid);
     if (!awaiting(r)) fail('RELEASE_NOT_IN_REVIEW');
