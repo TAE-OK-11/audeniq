@@ -9,8 +9,8 @@ import type { ReleaseSheet, Track } from '../api/staff';
 import { day, dspLabel, when } from '../labels';
 import { Chip, Empty, Section } from '../ui';
 import {
-  PROFILE_LINKS, RIGHTS_OPTIONS, SERVICE_OPTIONS, draftFromSheet, displayCode, draftNotes, genreLabel, kindLabel, languageLabel,
-  rightsChecksFor, verifyDraft, type Integrity, type StudioDraftTrack, type StudioOptions,
+  CONTENT_ID_ACKS, PROFILE_LINKS, RIGHTS_OPTIONS, SERVICE_OPTIONS, draftFromSheet, displayCode, draftNotes, genreLabel, kindLabel, languageLabel,
+  rightsChecksFor, verifyDraft, wantsContentId, type Integrity, type StudioDraftTrack, type StudioOptions,
 } from '../lib/application';
 import { ApplicationPaper, INTEGRITY_LABEL } from './ApplicationPaper';
 import { Modal } from './Modal';
@@ -248,11 +248,25 @@ export function OptionsSection({ sheet }: { sheet: ReleaseSheet }) {
   if (!o) return null;
   const tracks = sheet.draft?.draftTracks ?? [];
   const picked = [...SERVICE_OPTIONS, ...RIGHTS_OPTIONS].filter(([k]) => o[k] === true).length;
+  const contentId = wantsContentId(sheet.draft?.platforms ?? sheet.application.platforms);
+  const acked = CONTENT_ID_ACKS.filter(([k]) => o[k] === true).length;
   return (
     <Section title="부가서비스 · 해당 항목" meta={picked ? `${picked}개 선택` : '일반 발매'}>
       <div className="adm-card adm-opts">
         <OptionGroup title="부가서비스" list={SERVICE_OPTIONS} o={o} tracks={tracks} />
         <OptionGroup title="해당 항목" list={RIGHTS_OPTIONS} o={o} tracks={tracks} />
+        {contentId && (
+          <div className="adm-opt-group">
+            <h3>YouTube Content ID 권리 확인 <small>{acked}/{CONTENT_ID_ACKS.length} 확인</small></h3>
+            {CONTENT_ID_ACKS.map(([k, label]) => (
+              <div key={k} className={`adm-opt-ack${o[k] === true ? ' is-on' : ''}`}>
+                <span className="adm-opt-mark" aria-hidden="true">{o[k] === true ? <CheckIcon size={11} /> : <Glyph name="close" size={10} />}</span>
+                <span>{label}</span>
+                <small>{o[k] === true ? '확인함' : '체크 안 함'}</small>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </Section>
   );

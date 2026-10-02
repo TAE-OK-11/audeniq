@@ -1,12 +1,12 @@
 // 결정 창(승인 · 보완 요청 · 거절) 안에서 바로 보는 ‘확인할 것’ — 심사 시트를 오르내리지 않고 판단하도록
 // 신청서 원본 일치, 담당자 확인 검사, 아티스트가 체크하지 않은 권리 확인, 첨부가 빠진 해당 항목,
-// 대기 중인 서류, 발매일까지 남은 기간, 음원·크레딧·가사가 빠진 트랙을 한 목록으로 모은다.
+// 대기 중인 서류, 2차 승인, 막힌 플랫폼, Content ID 권리 확인, 발매일까지 남은 기간, 음원·크레딧·가사가 빠진 트랙을 한 목록으로 모은다.
 // 보완 요청 창에서는 문제마다 ‘항목으로 추가’를 눌러 바로 보완 항목으로 만든다.
 import type { ReactNode } from 'react';
 import type { ReleaseSheet } from '../api/staff';
 import { checkLabel, checkSummary, dspLabel } from '../labels';
-import { OPTION_LABELS, draftNotes, genreLabel, kindLabel, languageLabel, rightsChecksFor, type Integrity, type StudioDraft, type StudioOptions } from '../lib/application';
-import { correctionTarget } from '../lib/corrections';
+import { CONTENT_ID_ACKS, OPTION_LABELS, draftNotes, genreLabel, kindLabel, languageLabel, rightsChecksFor, wantsContentId, type Integrity, type StudioDraft, type StudioOptions } from '../lib/application';
+import { correctionTarget, isKnownCorrection } from '../lib/corrections';
 import { CheckIcon } from './Check';
 import { Glyph } from './Glyph';
 
@@ -34,6 +34,36 @@ export function reviewBrief(sheet: ReleaseSheet, integrity: Integrity): BriefIte
   // 시스템이 넘긴 검사
   for (const c of sheet.open_checks) {
     out.push({ key: `chk-${c.check_code}`, tone: 'bad', title: checkLabel(c.check_code), detail: checkSummary(c), fix: { code: c.check_code, note: correctionTarget(c.check_code).hint, system: true } });
+  }
+
+  // 2차 승인 — 승인 버튼은 서버가 막고, 보완 요청·거절은 그대로 가능
+  if (sheet.review_context?.pending_second_approval_id) {
+    out.push({ key: 'second', tone: 'warn', title: '2차 승인 대기 중', detail: '다른 담당자가 승인하기 전에는 승인할 수 없어요. 보완 요청·거절은 할 수 있어요.' });
+  } else if (sheet.review_context?.requires_second_approval) {
+    out.push({ key: 'second', tone: 'warn', title: '승인하면 2차 승인 요청이 올라가요', detail: '민감 항목이 있어 다른 담당자의 확인이 필요해요.' });
+  }
+
+  // 플랫폼별 배급 준비 — 콘텐츠 차단·파트너 대기
+  for (const row of sheet.delivery_staging ?? []) {
+    if (row.readiness === 'CONTENT_BLOCKED') {
+      const first = row.checks.find(c => c.severity === 'BLOCKER') ?? row.checks.find(c => c.severity === 'WARNING');
+      out.push({
+        key: `dsp-${row.dsp}`, tone: 'bad', title: `${dspLabel(row.dsp)} 배급이 막혀 있어요`,
+        detail: first ? (first.message ?? first.detail ?? checkLabel(first.code)) : row.route_reason ?? undefined,
+        fix: first && isKnownCorrection(first.code) ? { code: first.code, note: correctionTarget(first.code).hint, system: true } : undefined,
+      });
+    }
+  }
+
+  // YouTube Content ID — 독점 권리·원본 녹음 확인
+  const platforms = d?.platforms ?? sheet.application.platforms;
+  if (wantsContentId(platforms)) {
+    const missingAck = CONTENT_ID_ACKS.filter(([k]) => o?.[k] !== true);
+    if (missingAck.length) {
+      out.push({ key: 'cid', tone: 'bad', title: 'Content ID 권리 확인이 빠졌어요', detail: missingAck.map(([, l]) => l).join(' · '), fix: { code: 'FIX_CONTENT_ID', note: 'YouTube Content ID의 독점 권리와 원본 녹음 확인을 체크하거나 Content ID 선택을 해제해 주세요.' } });
+    } else {
+      out.push({ key: 'cid', tone: 'ok', title: 'Content ID 권리 확인 완료' });
+    }
   }
 
   if (d) {
@@ -161,6 +191,14 @@ export function CurrentValue({ sheet, code, trackId }: { sheet: ReleaseSheet; co
     case 'FIX_SPECIAL': {
       const o = (d?.options ?? app.options ?? {}) as Record<string, unknown>;
       body = Object.keys(OPTION_LABELS).filter(k => o[k] === true).map(k => OPTION_LABELS[k]).join(', ') || '해당 항목 없음';
+      break;
+    }
+    case 'FIX_CONTENT_ID': {
+      const o = (d?.options ?? app.options ?? {}) as StudioOptions;
+      body = wantsContentId(d?.platforms ?? app.platforms)
+        ? CONTENT_ID_ACKS.map(([k, l]) => `${o[k] === true ? '확인함' : '체크 안 함'} · ${l}`).join('\n')
+        : 'Content ID를 신청하지 않았어요';
+      body = <pre>{body}</pre>;
       break;
     }
     case 'FIX_OWNERSHIP': body = txt(d?.ownership); break;

@@ -1,9 +1,9 @@
 // 처리 이력 — 접수·검사·담당자 결정·처리 작업·플랫폼 전송/응답을 시간순으로. 종류별로 걸러 보고, 날짜별로 묶는다.
 import { useState } from 'react';
-import { staffApi, type ReleaseTimelineItem } from '../api/staff';
+import { staffApi, type ReleaseTimelineItem } from './api';
 import { useAsync } from '../hooks/useAsync';
-import { APPROVAL_STATUS, CHECK_STATUS, checkLabel, checkSummary, dspLabel, pick, shortId } from '../labels';
-import { ErrorBox, Section, Skeleton, StatusChip } from '../ui';
+import { APPROVAL_STATUS, CHECK_STATUS, checkLabel, checkSummary, dspLabel, pick, shortId } from './labels';
+import { ErrorBox, Section, Skeleton, StatusChip } from './ui';
 
 export const ACTION_KO: Record<string, string> = {
   'release.submitted': '발매 접수', 'stage1.decision': '1차 검사 결과', 'stage1.completed': '1차 검사 완료', 'stage2.decision': '2차 검사 결과',

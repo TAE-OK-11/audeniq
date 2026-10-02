@@ -42,7 +42,7 @@ export function Approvals() {
       <PageHead
         eyebrow="SECOND APPROVAL"
         title="2차 승인"
-        sub="한 사람이 통과시킬 수 없는 민감 항목(중복 음원·지문 일치·보호 아티스트명·권리 범위, 차단 항목)에 대한 승인 요청이에요. 요청한 본인은 승인할 수 없고, 72시간이 지나면 만료돼요."
+        sub="한 사람이 통과시킬 수 없는 민감 항목(중복 음원·지문 일치·보호 아티스트명·권리 범위, 차단 항목)에 대한 승인 요청이에요. 요청한 본인은 승인할 수 없고, 각 요청에 표시된 만료 시각까지 처리해 주세요."
         actions={<button type="button" className="adm-btn soft small" onClick={reload}>새로고침</button>}
       />
       <SubTabs tabs={[{ to: '/admin/reviews', label: '심사 목록', count: counts?.review }, { to: '/admin/approvals', label: '2차 승인', count: counts?.second_approvals }]} />

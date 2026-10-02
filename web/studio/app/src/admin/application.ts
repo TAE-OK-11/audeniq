@@ -21,6 +21,7 @@ export interface StudioOptions {
   ai?: boolean; aiTool?: string; aiUses?: string[]; aiTools?: string[]; aiUseOther?: string; aiToolOther?: string;
   shared?: boolean; sharedContractFile?: string;
   rerelease?: boolean; previousTitle?: string; previousId?: string;
+  contentIdExclusiveRightsAck?: boolean; contentIdOriginalRecordingAck?: boolean;
 }
 
 export interface StudioApplication {
@@ -85,6 +86,14 @@ export const RIGHTS_CHECKS: [string, string][] = [
   ['rightsRerelease', '기존 발매와의 중복 송출 여부를 확인했어요.'],
 ];
 /** 조건부 확인은 해당 항목을 골랐을 때만 필요 */
+/** YouTube Content ID — 일반 배급과 별도로 참조 음원의 독점 권리·고유성을 아티스트가 확인한다 (스튜디오 Upload와 같은 기준) */
+export const CONTENT_ID_DSPS = ['youtube-cid', 'D-27'];
+export const wantsContentId = (platforms?: string[] | null) => !!platforms?.some(p => CONTENT_ID_DSPS.includes(p));
+export const CONTENT_ID_ACKS: [keyof StudioOptions, string][] = [
+  ['contentIdExclusiveRightsAck', '신청한 모든 지역에서 참조 음원 전체에 대한 독점 권리'],
+  ['contentIdOriginalRecordingAck', '직접 제작한 고유한 녹음 (비독점 루프·무료 음원·공공저작물 미포함)'],
+];
+
 export function rightsChecksFor(o: StudioOptions | null | undefined): [string, string][] {
   const need: Record<string, boolean> = {
     rightsSamples: !!(o?.sample || o?.featured), rightsAi: !!o?.ai, rightsShared: !!o?.shared, rightsRerelease: !!o?.rerelease,
