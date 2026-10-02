@@ -90,6 +90,8 @@ details PUT은 NEEDS_INFO 자료 보완이다. revisions POST는 Lyric Video 수
 
 원본 상태 계약은 config/states.json의 addon_order_status이다. 기존 enum 생성기, DB allowed_transitions 및 guard를 사용한다. 모든 전이는 중앙 workflow 함수로 처리하고 수납 확인의 PAID 전이도 같은 모듈에 모은다.
 
+공통 상태: DRAFT, SUBMITTED, PAYMENT_REQUIRED, PAID, QUEUED, UNDER_REVIEW, NEEDS_INFO, APPROVED, IN_PROGRESS, EXTERNAL_PENDING, COMPLETED, REJECTED, CANCELLED, FAILED.
+
 ```mermaid
 flowchart LR
  DRAFT --> SUBMITTED
