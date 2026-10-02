@@ -1,6 +1,6 @@
 // AUDENIQ ADMIN — 스태프 전용 화면 (/admin/*). 스튜디오와 같은 로그인 세션을 쓰고,
 // 스태프 역할(ADMIN·REVIEWER·OPERATOR·SUPPORT)은 서버 `/api/staff/me`가 알려준다.
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react';
 import { Link, Navigate, Route, Routes, useLocation, useNavigate } from '../lib/router';
 import { useAuth } from '../api/auth';
 import { ApiError } from '../api/errors';
@@ -9,17 +9,38 @@ import { useConfirm } from '../components/Confirm';
 import { useToast } from '../components/Toast';
 import { staffApi, type Duty, type Overview, type StaffMe } from './api';
 import { ROLE_LABEL } from './labels';
-import { StaffContext } from './ui';
+import { Skeleton, StaffContext } from './ui';
 import { OverviewPage } from './pages/Overview';
-import { ReviewQueue } from './pages/ReviewQueue';
-import { ReviewDetail } from './pages/ReviewDetail';
-import { Approvals } from './pages/Approvals';
-import { Documents } from './pages/Documents';
-import { Inquiries } from './pages/Inquiries';
-import { Deliveries } from './pages/Deliveries';
-import { Dsps } from './pages/Dsps';
-import { Payouts } from './pages/Payouts';
-import { ContentAdmin } from '../pages/ContentAdmin';
+
+// 첫 화면(오늘의 업무) 말고는 열 때 불러온다 — 첫 로딩 JS를 줄이고, 로그인 뒤 한가할 때 미리 받아 둔다
+type PageModule = Record<string, ComponentType>;
+const PAGE_LOADERS = {
+  ReviewQueue: () => import('./pages/ReviewQueue'),
+  ReviewDetail: () => import('./pages/ReviewDetail'),
+  Approvals: () => import('./pages/Approvals'),
+  Documents: () => import('./pages/Documents'),
+  Inquiries: () => import('./pages/Inquiries'),
+  Deliveries: () => import('./pages/Deliveries'),
+  Dsps: () => import('./pages/Dsps'),
+  Payouts: () => import('./pages/Payouts'),
+  ContentAdmin: () => import('../pages/ContentAdmin'),
+} satisfies Record<string, () => Promise<unknown>>;
+const page = (name: keyof typeof PAGE_LOADERS) =>
+  lazy(() => PAGE_LOADERS[name]().then(m => ({ default: (m as unknown as PageModule)[name] })));
+const ReviewQueue = page('ReviewQueue');
+const ReviewDetail = page('ReviewDetail');
+const Approvals = page('Approvals');
+const Documents = page('Documents');
+const Inquiries = page('Inquiries');
+const Deliveries = page('Deliveries');
+const Dsps = page('Dsps');
+const Payouts = page('Payouts');
+const ContentAdmin = page('ContentAdmin');
+function prefetchPages() {
+  const run = () => { for (const load of Object.values(PAGE_LOADERS)) void load().catch(() => {}); };
+  if ('requestIdleCallback' in window) window.requestIdleCallback(run, { timeout: 4000 });
+  else setTimeout(run, 1500);
+}
 import '../styles/admin.css';
 import { Glyph } from '../components/Glyph';
 
@@ -82,7 +103,7 @@ export function AdminApp() {
   const loadMe = useCallback(() => {
     setGate('loading');
     staffApi.me()
-      .then(m => { setMe(m); setGate('ok'); })
+      .then(m => { setMe(m); setGate('ok'); prefetchPages(); })
       .catch(e => setGate(e instanceof ApiError && e.status === 403 ? 'forbidden' : 'error'));
   }, []);
   useEffect(loadMe, [loadMe]);
@@ -182,6 +203,7 @@ export function AdminApp() {
           </nav>
 
           <main className="adm-main" id="main" tabIndex={-1}>
+            <Suspense fallback={<Skeleton rows={6} />}>
             <Routes>
               <Route path="/admin" element={<OverviewPage />} />
               <Route path="/admin/reviews" element={<ReviewQueue />} />
@@ -197,6 +219,7 @@ export function AdminApp() {
               <Route path="/content-admin" element={<Navigate to="/admin/content" replace />} />
               <Route path="*" element={<Navigate to="/admin" replace />} />
             </Routes>
+            </Suspense>
           </main>
         </div>
       </div>
