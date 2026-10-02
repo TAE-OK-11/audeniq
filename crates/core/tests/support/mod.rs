@@ -142,7 +142,28 @@ pub struct User {
     pub cookie: String,
     pub csrf: String,
 }
+/// Like `send`, but a staff release decision first claims the review for the
+/// deciding reviewer when nobody holds it (decisions are claimer-only; the
+/// claim rules themselves are tested with `send`).
 pub async fn call(
+    app: &Router,
+    method: &str,
+    path: &str,
+    body: Value,
+    user: Option<&User>,
+) -> (StatusCode, Value) {
+    if method == "POST"
+        && path.starts_with("/api/staff/releases/")
+        && path.ends_with("/decision")
+        && user.is_some()
+    {
+        let claim = path.trim_end_matches("/decision").to_string() + "/claim";
+        let _ = send(app, "POST", &claim, json!({}), user).await;
+    }
+    send(app, method, path, body, user).await
+}
+
+pub async fn send(
     app: &Router,
     method: &str,
     path: &str,
