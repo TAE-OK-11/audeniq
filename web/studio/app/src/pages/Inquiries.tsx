@@ -66,7 +66,7 @@ function TicketThread({ ticket, onClosed }: { ticket: Ticket; onClosed: () => vo
         ))}
       </ol>
       {status !== '종료' ? (
-        <form onSubmit={send} className="aq-thread-reply">
+        <form onSubmit={send} className="aq-thread-reply aq-sticky-foot">
           <label htmlFor="tReply" className="sr-only">추가 메시지</label>
           <textarea id="tReply" rows={3} maxLength={4000} value={reply} onChange={e => setReply(e.target.value)} placeholder="추가로 전할 내용을 입력해 주세요" />
           <div className="row-actions">
@@ -136,7 +136,9 @@ function TicketForm({ onSave, preset }: { onSave: (t: Omit<Ticket, 'id' | 'creat
         <textarea id="tBody" maxLength={4000} rows={6} required placeholder="상황과 확인이 필요한 내용을 자세히 입력해 주세요." value={body} onChange={e => setBody(e.target.value)} />
         <p className="help aq-counter">{body.length} / 4000</p>
       </div>
-      <button className="button studio-submit-wide" type="submit">문의 저장</button>
+      <div className="aq-sticky-foot">
+        <button className="button studio-submit-wide" type="submit">문의 저장</button>
+      </div>
     </form>
   );
 }

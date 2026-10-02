@@ -2,7 +2,7 @@
 // 브라우저는 세션 쿠키(HttpOnly)와 CSRF 토큰만 다루고, 서비스 비밀값은 엣지만 가진다.
 import { ApiError, messageForCode } from './errors';
 
-const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
+export const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
 
 let csrfToken = '';
 

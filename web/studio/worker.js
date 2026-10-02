@@ -237,44 +237,84 @@ async function readJson(request) {
   try { return JSON.parse(raw); } catch { throw new InputError('INVALID_INPUT'); }
 }
 
+// 점검 일정 행은 인스턴스 단위로 잠깐(10초) 기억한다. /api/status는 모든 탭이 1분마다 부르고,
+// 점검 중 API 차단 검사는 모든 /api/* 요청마다 돌기 때문에 매번 D1을 읽으면 지연·CPU가 커진다.
+// 판정(진행 중·예고)은 항상 현재 시각으로 다시 계산하므로 캐시가 시각을 늦추지 않는다.
+const STATUS_TTL_MS = 10_000;
+let rowsCache = new WeakMap();
+export function resetMaintenanceCache() { rowsCache = new WeakMap(); }
+
+async function maintenanceRows(db, now) {
+  const hit = rowsCache.get(db);
+  if (hit && Date.now() - hit.at < STATUS_TTL_MS) return hit.rows;
+  // 캐시하는 동안 끝난 점검은 pickStatus가 현재 시각으로 걸러 낸다
+  let rows = [];
+  try {
+    const { results } = await db.prepare(
+      `SELECT ${MAINTENANCE_COLUMNS} FROM maintenance WHERE deleted_at IS NULL AND ends_at > ?1 ORDER BY starts_at LIMIT 20`,
+    ).bind(now).all();
+    rows = (results ?? []).map(row => present('maintenance', row));
+  } catch (e) {
+    // 표가 없거나 D1 장애여도 요청마다 다시 두드리지 않도록 빈 결과를 같은 시간 동안 기억한다
+    console.error('status error', e);
+  }
+  rowsCache.set(db, { at: Date.now(), rows });
+  return rows;
+}
+
 /** 비상 스위치 + D1 점검 일정. D1을 못 읽어도(마이그레이션 전 등) 스튜디오는 정상 동작하게 빈 상태로 답한다 */
 export async function serviceStatus(env, now = nowUtc()) {
+  const forced = envMaintenance(env, now);
   let status = { now, maintenance: { active: null, upcoming: null } };
   try {
     if (!env.CONTENT_DB) throw new Error('CONTENT_DB binding missing');
-    const { results } = await env.CONTENT_DB.prepare(
-      `SELECT ${MAINTENANCE_COLUMNS} FROM maintenance WHERE deleted_at IS NULL AND ends_at > ?1 ORDER BY starts_at LIMIT 20`,
-    ).bind(now).all();
-    status = pickStatus((results ?? []).map(row => present('maintenance', row)), now);
+    status = pickStatus(await maintenanceRows(env.CONTENT_DB, now), now);
   } catch (e) {
     console.error('status error', e);
   }
-  const forced = envMaintenance(env, now);
   if (forced) status.maintenance.active = forced;
   return status;
 }
 
-// 점검 중 API 차단용 — 요청마다 D1을 읽지 않도록 15초 캐시 (Worker 인스턴스 단위)
-let activeCache = { at: 0, value: null };
-export function resetMaintenanceCache() { activeCache = { at: 0, value: null }; }
+/** 점검 중 API 차단용 — 비상 스위치가 켜져 있으면 D1을 읽지 않는다 */
 async function activeMaintenance(env) {
-  if (envMaintenance(env, nowUtc())) return envMaintenance(env, nowUtc());
-  if (Date.now() - activeCache.at < 15_000) return activeCache.value;
-  const st = await serviceStatus(env);
-  activeCache = { at: Date.now(), value: st.maintenance.active };
-  return st.maintenance.active;
+  const now = nowUtc();
+  return envMaintenance(env, now) ?? (await serviceStatus(env, now)).maintenance.active;
 }
 
-export async function handleContent(request, env, r) {
-  if (r.kind === 'notfound') return error(404, 'NOT_FOUND');
-  if (r.kind === 'method') return error(405, 'METHOD_NOT_ALLOWED');
-  const db = env.CONTENT_DB;
+// ---- 공개 공지·이벤트 엣지 캐시 ----
+// 로그인 없이 누구나 같은 응답을 받으므로 데이터센터 캐시(caches.default)에 30초 둔다.
+// D1 조회와 JSON 직렬화를 건너뛰어 Worker CPU 시간을 줄인다. 관리자가 글을 바꾸면 이 데이터센터의 캐시는 바로 지운다.
+const EDGE_TTL = 30;
+const edgeCache = () => (typeof caches !== 'undefined' && caches.default) || null;
+const cacheKey = (origin, path) => new Request(origin + path, { method: 'GET' });
+
+async function cachedPublic(request, url, ctx, build) {
+  const cache = edgeCache();
+  if (!cache || request.method !== 'GET') return build();
+  const key = cacheKey(url.origin, url.pathname);
+  const hit = await cache.match(key);
+  if (hit) return hit;
+  const res = await build();
+  if (res.status === 200) {
+    const copy = res.clone();
+    copy.headers.set('Cache-Control', `public, max-age=${EDGE_TTL}`);
+    const put = cache.put(key, copy);
+    if (ctx?.waitUntil) ctx.waitUntil(put); else await put;
+  }
+  return res;
+}
+
+async function purgePublic(url, table, id) {
+  const cache = edgeCache();
+  if (!cache || !PUBLIC_TABLES.has(table)) return;
+  const paths = [`/api/${table}`];
+  if (id) paths.push(`/api/${table}/${id}`);
+  await Promise.all(paths.map(p => cache.delete(cacheKey(url.origin, p)).catch(() => false)));
+}
+
+async function readPublic(db, r, now) {
   const { table } = r;
-  const now = nowUtc();
-
-  if (r.kind === 'status') return json(await serviceStatus(env, now), 200, 'no-store');
-  if (!db) return error(503, 'CONTENT_UNAVAILABLE');
-
   try {
     if (r.kind === 'list') {
       const { results } = await db.prepare(
@@ -284,19 +324,44 @@ export async function handleContent(request, env, r) {
       const today = todayKst();
       return json({ items: (results ?? []).map(row => present(table, row, today)) }, 200, PUBLIC_CACHE);
     }
-    if (r.kind === 'get') {
-      const row = await db.prepare(
-        `SELECT ${columnsOf(table)} FROM ${table} WHERE id = ?1 AND deleted_at IS NULL AND published_at <= ?2`,
-      ).bind(r.id, now).first();
-      return row ? json(present(table, row), 200, PUBLIC_CACHE) : error(404, 'NOT_FOUND');
-    }
+    const row = await db.prepare(
+      `SELECT ${columnsOf(table)} FROM ${table} WHERE id = ?1 AND deleted_at IS NULL AND published_at <= ?2`,
+    ).bind(r.id, now).first();
+    return row ? json(present(table, row), 200, PUBLIC_CACHE) : error(404, 'NOT_FOUND');
+  } catch (e) {
+    console.error('content error', e);
+    return error(500, 'CONTENT_ERROR');
+  }
+}
 
-    // ---- 관리 ----
-    if (!env.CONTENT_ADMIN_TOKEN) return error(503, 'CONTENT_ADMIN_DISABLED');
-    if (!bearerOk(request.headers.get('Authorization'), env.CONTENT_ADMIN_TOKEN)) return error(401, 'UNAUTHENTICATED');
-    // 점검 일정을 바꾸면 이 인스턴스의 API 차단 캐시를 바로 비운다
-    if (table === 'maintenance' && r.kind !== 'adminList') resetMaintenanceCache();
+export async function handleContent(request, env, r, ctx) {
+  if (r.kind === 'notfound') return error(404, 'NOT_FOUND');
+  if (r.kind === 'method') return error(405, 'METHOD_NOT_ALLOWED');
+  const db = env.CONTENT_DB;
+  const { table } = r;
+  const now = nowUtc();
 
+  if (r.kind === 'status') return json(await serviceStatus(env, now), 200, 'no-store');
+  if (!db) return error(503, 'CONTENT_UNAVAILABLE');
+
+  if (r.kind === 'list' || r.kind === 'get') {
+    return cachedPublic(request, new URL(request.url), ctx, () => readPublic(db, r, now));
+  }
+  // ---- 관리 ----
+  if (!env.CONTENT_ADMIN_TOKEN) return error(503, 'CONTENT_ADMIN_DISABLED');
+  if (!bearerOk(request.headers.get('Authorization'), env.CONTENT_ADMIN_TOKEN)) return error(401, 'UNAUTHENTICATED');
+  const res = await handleAdmin(request, db, r, now);
+  // 쓰기가 끝난 뒤 — 점검 일정은 이 인스턴스의 API 차단 캐시를, 공지·이벤트는 이 데이터센터의 공개 캐시를 비운다
+  if (r.kind !== 'adminList' && res.status < 500) {
+    if (table === 'maintenance') resetMaintenanceCache();
+    else await purgePublic(new URL(request.url), table, r.id);
+  }
+  return res;
+}
+
+async function handleAdmin(request, db, r, now) {
+  const { table } = r;
+  try {
     if (r.kind === 'adminList') {
       const { results } = await db.prepare(
         `SELECT ${columnsOf(table)}, created_at, deleted_at FROM ${table} ORDER BY ${orderOf(table)} LIMIT 500`,
@@ -343,60 +408,83 @@ export async function handleContent(request, env, r) {
   }
 }
 
+// ---- 백엔드 프록시 ----
+// 브라우저 헤더는 필요한 것만 골라 보낸다(crates/edge와 같은 허용 목록). 브라우저가 보낸
+// x-audeniq-service·x-audeniq-client-ip 같은 서비스 헤더는 절대 전달하지 않는다.
+const BACKEND = 'https://api-origin.audeniq.com';
+const FORWARD_HEADERS = ['cookie', 'origin', 'content-type', 'accept', 'x-csrf-token', 'sec-fetch-site', 'x-request-id'];
+const PARTNER_HOOK = /^\/api\/partner-hooks\//;
+const PARTNER_DROP = new Set(['x-forwarded-for', 'x-real-ip', 'host', 'connection', 'accept-encoding']);
+
+/** Workers가 풀지 않고 그대로 넘길 수 있는 인코딩만 요청 — 백엔드가 압축한 바이트가 그대로 브라우저로 간다 */
+export function passThroughEncoding(accept) {
+  const a = String(accept ?? '').toLowerCase();
+  const out = [];
+  if (/\bbr\b/.test(a)) out.push('br');
+  if (/\bgzip\b/.test(a)) out.push('gzip');
+  return out.join(', ');
+}
+
+export function backendHeaders(request, env, pathname) {
+  const src = request.headers;
+  const headers = new Headers();
+  for (const name of FORWARD_HEADERS) {
+    const v = src.get(name);
+    if (v) headers.set(name, v);
+  }
+  const enc = passThroughEncoding(src.get('accept-encoding'));
+  if (enc) headers.set('accept-encoding', enc);
+  if (PARTNER_HOOK.test(pathname)) {
+    // 파트너 설정이 정한 서명·시각 헤더(이름 자유)는 전달하되 우리 이름공간·전달 IP 헤더는 제외
+    for (const [name, value] of src) {
+      if (!name.startsWith('x-audeniq-') && !PARTNER_DROP.has(name)) headers.set(name, value);
+    }
+  }
+  // 로그인 시도 제한은 사용자 IP 기준 — Cloudflare가 매 요청 덮어쓰는 CF-Connecting-IP만 믿는다
+  const ip = src.get('cf-connecting-ip');
+  if (ip) headers.set('x-audeniq-client-ip', ip);
+  headers.set('x-audeniq-service', env.EDGE_SERVICE_SECRET);
+  return headers;
+}
+
+const MAINTENANCE_HEADERS = { 'Cache-Control': 'no-store', 'Retry-After': '60', 'X-Content-Type-Options': 'nosniff' };
+
+async function proxy(request, env, url) {
+  // 점검 중에는 백엔드로 보내지 않는다 (DB 작업 중 쓰기 방지, 스튜디오는 이 응답을 받자마자 점검 화면)
+  const maint = url.pathname === '/ready' ? null : await activeMaintenance(env);
+  if (maint) {
+    return Response.json({ error: { code: 'MAINTENANCE', message: maint.title }, maintenance: maint }, { status: 503, headers: MAINTENANCE_HEADERS });
+  }
+  if (!env.EDGE_SERVICE_SECRET) return error(503, 'BACKEND_UNAVAILABLE');
+  const read = request.method === 'GET' || request.method === 'HEAD';
+  let res;
+  try {
+    res = await fetch(new Request(BACKEND + url.pathname + url.search, {
+      method: request.method,
+      headers: backendHeaders(request, env, url.pathname),
+      // 본문은 읽지 않고 스트림으로 넘긴다 (Worker 메모리·CPU 절약)
+      body: read ? null : request.body,
+      redirect: 'manual',
+      duplex: 'half',
+    }));
+  } catch {
+    return error(502, 'BACKEND_UNAVAILABLE');
+  }
+  // 본문을 건드리지 않고 헤더만 바꿔 돌려준다 — 압축된 응답이 다시 풀리거나 재압축되지 않는다
+  const out = new Response(res.body, res);
+  out.headers.set('Access-Control-Allow-Origin', 'https://studio.audeniq.com');
+  out.headers.set('Access-Control-Allow-Credentials', 'true');
+  if (!out.headers.has('Cache-Control')) out.headers.set('Cache-Control', 'no-store');
+  return out;
+}
+
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const r = route(request.method, url.pathname);
-    if (r) return handleContent(request, env, r);
+    if (r) return handleContent(request, env, r, ctx);
     // /api/* 중 D1 콘텐츠가 아니면 백엔드로 프록시 (named tunnel audeniq-backend → compose api:8080)
-    if (url.pathname.startsWith('/api/') || url.pathname === '/ready') {
-      // 점검 중에는 백엔드로 보내지 않는다 (DB 작업 중 쓰기 방지, 스튜디오는 이 응답을 받자마자 점검 화면)
-      const maint = url.pathname === '/ready' ? null : await activeMaintenance(env);
-      if (maint) {
-        return Response.json(
-          { error: { code: 'MAINTENANCE', message: maint.title }, maintenance: maint },
-          { status: 503, headers: { 'Cache-Control': 'no-store', 'Retry-After': '60', 'X-Content-Type-Options': 'nosniff' } },
-        );
-      }
-      const backend = 'https://api-origin.audeniq.com';
-      const backendUrl = backend + url.pathname + url.search;
-      if (!env.EDGE_SERVICE_SECRET) return error(503, 'BACKEND_UNAVAILABLE');
-      const proxyHeaders = new Headers();
-      for (const name of ['cookie', 'content-type', 'accept', 'accept-encoding', 'origin', 'sec-fetch-site', 'x-csrf-token', 'x-request-id']) {
-        const value = request.headers.get(name);
-        if (value) proxyHeaders.set(name, value);
-      }
-      if (url.pathname.startsWith('/api/partner-hooks/')) {
-        // Partner configs can name custom signature/timestamp headers.
-        // Internal service/source identity remains ours to set.
-        for (const [name, value] of request.headers) {
-          if (!name.startsWith('x-audeniq-') && !['x-forwarded-for', 'x-real-ip', 'host', 'connection'].includes(name)) {
-            proxyHeaders.set(name, value);
-          }
-        }
-      }
-      // Cloudflare supplies this header; public clients cannot choose the
-      // internal identity used by the backend's authentication rate limits.
-      const ip = request.headers.get('cf-connecting-ip');
-      if (ip) proxyHeaders.set('x-audeniq-client-ip', ip);
-      proxyHeaders.set('x-audeniq-service', env.EDGE_SERVICE_SECRET);
-      const proxyReq = new Request(backendUrl, {
-        method: request.method,
-        headers: proxyHeaders,
-        body: request.body,
-        redirect: 'manual',
-      });
-      try {
-        const res = await fetch(proxyReq);
-        // CORS 헤더 추가 (프론트에서 직접 호출 대비)
-        const headers = new Headers(res.headers);
-        headers.set('Access-Control-Allow-Origin', 'https://studio.audeniq.com');
-        headers.set('Access-Control-Allow-Credentials', 'true');
-        return new Response(res.body, { status: res.status, headers });
-      } catch (e) {
-        return error(502, 'BACKEND_UNAVAILABLE');
-      }
-    }
+    if (url.pathname.startsWith('/api/') || url.pathname === '/ready') return proxy(request, env, url);
     // 그 외는 정적 에셋 (없는 화면 경로는 index.html로 SPA 폴백)
     const assetRes = await env.ASSETS.fetch(request);
     if (assetRes.status === 404) {

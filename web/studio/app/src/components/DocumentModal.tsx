@@ -1,4 +1,5 @@
 // 문서 상세 모달 — 라이브 openDocument(오버라이드) 대응
+import { FilePicker } from './FilePicker';
 import { useEffect, useRef, useState } from 'react';
 import { Modal } from './Modal';
 import { useNavigate } from '../lib/router';
@@ -266,8 +267,8 @@ export function DocumentModal({
       {(doc.reviewStatus === 'awaiting_documents' || doc.kind === 'rights') && (
         <div className="field">
           <label htmlFor="aqEvidenceFile">요청된 서류 첨부</label>
-          <input
-            type="file" id="aqEvidenceFile"
+          <FilePicker
+            id="aqEvidenceFile" fileName={pendingFile?.name}
             accept=".pdf,.txt,image/png,image/jpeg,image/webp,application/pdf,text/plain"
             onChange={e => setPendingFile(e.target.files?.[0] || null)}
           />
@@ -285,9 +286,12 @@ export function DocumentModal({
         </div>
       )}
 
-      <div className="doc-actions">
+      <div className="doc-actions aq-sticky-foot">
         <button id="aqDocConfirm" type="button" className="button" onClick={confirmSave}>확인 및 저장</button>
-        <button id="aqDocSubmit" type="button" className="button secondary" onClick={submitReview} disabled={sending}>{sending ? '제출하는 중' : '검토 요청'}</button>
+        {/* 검토가 끝났거나 이미 검토 중인 서류에는 다시 요청할 일이 없다 — 제출 대기·보완 요청일 때만 */}
+        {(doc.reviewStatus === 'awaiting_documents' || doc.reviewStatus === 'needs') && (
+          <button id="aqDocSubmit" type="button" className="button secondary" onClick={submitReview} disabled={sending}>{sending ? '제출하는 중' : '검토 요청'}</button>
+        )}
         {doc.fileName && (
           <button id="aqDocDownload" type="button" className="button secondary" onClick={download}>원본 열기</button>
         )}
