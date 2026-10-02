@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
+import { retainAssets } from '../studio/app/build/retain-assets';
 import { compactCss, purgeCss } from './build/purge-css';
 
 const src = (p: string) => fileURLToPath(new URL(p, import.meta.url));
@@ -12,7 +13,7 @@ const SERVICE_SECRET = process.env.EDGE_SERVICE_SECRET;
 
 export default defineConfig(({ command }) => ({
   base: '/',
-  plugins: [react()],
+  plugins: [react(), retainAssets()],
   css: {
     postcss: {
       // 스튜디오와 같은 디자인 CSS를 그대로 가져오므로, 빌드 때 이 앱이 안 쓰는 규칙은 걷어낸다

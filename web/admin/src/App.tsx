@@ -1,3 +1,4 @@
+import { loginRedirect } from './lib/loginRedirect';
 import type { ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from './lib/router';
 import { AuthProvider, useAuth } from './auth';
@@ -32,8 +33,8 @@ function GuestOnly({ children }: { children: ReactNode }) {
   const loc = useLocation();
   if (loading) return <BootScreen />;
   if (user) {
-    const from = (loc.state as { from?: string } | null)?.from;
-    return <Navigate to={from && !from.startsWith('/login') ? from : '/'} replace />;
+    const from = loginRedirect(loc.state);
+    return <Navigate to={from ?? '/'} replace />;
   }
   return <>{children}</>;
 }
