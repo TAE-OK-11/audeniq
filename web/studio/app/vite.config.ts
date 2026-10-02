@@ -2,6 +2,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
+import { retainAssets } from './build/retain-assets';
 import { compactCss, purgeCss } from './build/purge-css';
 import { hoverGuard } from './build/hover-guard';
 
@@ -16,7 +17,7 @@ const CONTENT_TARGET = process.env.EDGE_CONTENT_URL;
 
 export default defineConfig(({ command, mode }) => ({
   base: '/',
-  plugins: [react()],
+  plugins: [react(), retainAssets()],
   css: {
     postcss: {
       // :hover는 마우스 환경에서만 (휴대폰 sticky hover 방지) — 개발·빌드 모두 적용해 화면이 같게 한다

@@ -79,10 +79,10 @@ Implemented in `crates/core/src/portal.rs`, schema `portal` (migration 0039). Sa
 | POST | `/api/orgs/{org}/inquiries/{id}/close` | `{}` |
 | GET | `/api/orgs/{org}/notifications` | Latest 100 for the org or the user, with per-user `read`, plus `unread` |
 | POST | `/api/orgs/{org}/notifications/read` | `{ids:[...]}` or `{all:true}` |
-| GET/POST | `/api/orgs/{org}/documents` | Agreements and rights proofs. POST `{release_id,title,body?,asset_id?,file_name?}` adds a rights proof (with a file → REVIEW, without → AWAITING_DOCUMENTS) |
+| GET/POST | `/api/orgs/{org}/documents` | Agreements and rights proofs. POST `{release_id,title,body?,asset_id?,file_name?,electronic?}` adds a rights proof (file or signed electronic document → REVIEW, otherwise → AWAITING_DOCUMENTS). Electronic documents return `electronic_record`, signing fields and the stored body |
 | POST | `/api/orgs/{org}/documents/{id}/check` | `{}` read confirmation → row_version |
 | POST | `/api/orgs/{org}/documents/{id}/sign` | `{signer_name,signature(PNG data URL ≤60000),row_version}`; only APPROVED + checked agreements (`DOCUMENT_NOT_APPROVED` / `DOCUMENT_NOT_CHECKED`) |
-| POST | `/api/orgs/{org}/documents/{id}/proof` | `{asset_id(DOCUMENT/IMAGE, registered),file_name,row_version}` → REVIEW |
+| POST | `/api/orgs/{org}/documents/{id}/proof` | `{asset_id(DOCUMENT/IMAGE, registered),file_name,row_version}` → REVIEW. Signed electronic originals are immutable (`DOCUMENT_NOT_EDITABLE`); create a new document to correct them |
 | GET/POST | `/api/orgs/{org}/releases/{id}/application` | Signed studio application `{application_no:AUD-YYYYMMDD-XXXXXX,form,content_hash(sha256 hex),signer_name,signer_role,agreements[],signature,submitted_at}`. Same number + same hash is idempotent, same number + other hash → 409. Recording opens (or re-opens) the release's AGREEMENT document for staff review |
 | GET | `/api/orgs/{org}/finance/summary` | KRW `payable` (ROYALTY_PAYABLE credits − debits), `pending` (REQUESTED portal requests + unsettled payout orders), `available`, `minimum_payout`, `account_registered` |
 | GET | `/api/orgs/{org}/finance/statements` | Ledger transactions touching ROYALTY_PAYABLE (description, source_ref, signed amount) |
@@ -94,6 +94,8 @@ The API never writes finance tables. Operations turns a `portal.payout_requests`
 Notifications are raised in the database by SECURITY DEFINER triggers, so the worker role needs no portal grants: release status (SUBMITTED, *_CORRECTION, ON_HOLD_RIGHTS, READY_FOR_DELIVERY, LIVE, TAKEN_DOWN), document status (agreement APPROVED, proof AWAITING_DOCUMENTS/NEEDS/APPROVED), staff inquiry replies and payout order SETTLED/FAILED/RETURNED. The API adds account-registered and payout-requested notices.
 
 Staff actions (agreement/proof review, proof requests, inquiry replies) now go through the staff portal API below. The SQL functions remain for operations tooling.
+
+Electronic rights documents use `electronic:{document_no(UUID),form:"AUD-RIGHTS 1.0",document_kind:master|artwork|composition|sample|performer|shared,rights_holder,signer_name,signer_role:"권리자 본인"|"권리자의 위임을 받은 대리인",signature(PNG data URL),consent:true}` with a nonempty body and no uploaded asset. The backend records the current submitter, server signing time and a SHA-256 of the title, body, form, receipt, document type, rights holder, signer role/name and signature. An identical retry with the same receipt returns the existing ID; changed content returns 409. Signing completes the document, while its rights review remains pending. This flow records a direct signature in the tool; it does not send an external signing invitation or verify the signer's identity independently.
 
 ## Release delivery status (artist)
 
@@ -119,6 +121,7 @@ All roles can read every list below.
 | Method | Path | Body / response |
 |---|---|---|
 | GET | `/api/staff/me` | `{user_id, role, duties[]}` |
+| GET/POST | `/api/staff/content-access` | ADMIN only: `{user_id,role}`. D1 content Workers verify the current session here; POST additionally enforces Origin and CSRF before a content mutation. Inactive staff and other roles are denied |
 | GET | `/api/staff/overview` | Queue counts: review, correction, in_pipeline, second_approvals, documents, inquiries, deliveries_to_approve, deliveries_blocked, payout_requests |
 | GET | `/api/staff/releases?status=PENDING&limit&offset` | Cross-org release queue with artist, release date, requested platforms as D-codes and `agreement` (the signed application's status). `PENDING` (default) = waiting on a staff decision: STAGE2_REVIEW, or READY_FOR_DELIVERY with the application (AGREEMENT) in REVIEW/PREPARED. Any release status also filters |
 | GET | `/api/staff/releases/{id}` | Review sheet: release, frozen application (tracks, credits, declarations, platforms), exact Stage 1 package refs (all tracks) and latest Stage 2 run refs, `open_checks` (what holds Stage 2, with server `needs_second_approval`), overrides, notes, second approvals, documents, `signed_application` (the latest signed record: number, form, content_hash, signer, agreements, `signature` image, `received_at`, and `contact_email` = the artist profile's contact email or the submitting account's email), `draft` (everything the artist entered in the Studio wizard for this submitted revision: credits, lyrics, add-on services, rights confirmations and the signed application record with its signature), current-revision delivery staging rows, audit timeline. `review_context`: `decision_kind` (CHECKS/APPLICATION/null), role-aware `allowed_actions`, `requires_second_approval`, live current-revision `pending_second_approval_id`, effective `check_counts`. Checks include `id`, `stage`, `original_status`; Stage 2 `status` includes live overrides. `track_audio` maps frozen track IDs to persisted duration/sample rate/channels/bit depth for the matching asset content hash |
@@ -127,7 +130,7 @@ All roles can read every list below.
 | POST | `/api/staff/releases/{id}/reissue-identifiers` | `{reason}`: READY_FOR_DELIVERY release with VIRTUAL UPC/ISRC → STAGE3_CORRECTION once real ranges are registered (`NO_VIRTUAL_IDENTIFIERS`, `REGISTERED_ISSUER_MISSING`, `PACKAGE_ALREADY_WITH_PARTNER`) |
 | GET | `/api/staff/approvals` | Open second-person approvals |
 | POST | `/api/staff/approvals/{id}/approve` · `/decline` | `{}`. A different staff reviewer must approve (`SECOND_APPROVER_MUST_DIFFER`); approval writes the PASS overrides with `second_approver_user_id` and queues Stage 2 |
-| GET | `/api/staff/documents?status=REVIEW` | Rights proofs staff requested (AWAITING_DOCUMENTS, REVIEW, NEEDS, APPROVED). Agreements are decided with the release |
+| GET | `/api/staff/documents?status=REVIEW` | Rights proofs (AWAITING_DOCUMENTS, REVIEW, NEEDS, APPROVED), including signed electronic body/signature/receipt/hash for review. Agreements are decided with the release |
 | POST | `/api/staff/documents/{id}/review` | `{status: APPROVED|NEEDS, note, row_version}`; NEEDS requires a note. Rights proofs in REVIEW only; the trigger notifies the org |
 | GET | `/api/staff/documents/{id}/file` | The document's uploaded original (rights proof or agreement attachment) for reviewers to open. DOCUMENTS or REVIEW duty; registered uploads within the 20 MB document limit only (404 otherwise). PDF / JPEG / PNG are served `inline` with that type, anything else as an `application/octet-stream` attachment; `Content-Disposition` carries an RFC 6266 UTF-8 file name; `Cache-Control: private, no-store`, `nosniff` and a no-script CSP. Each view is audited as `staff.document_viewed` |
 | POST | `/api/staff/orgs/{org}/documents` | `{release_id,title,body?}` → rights-proof request (AWAITING_DOCUMENTS) |

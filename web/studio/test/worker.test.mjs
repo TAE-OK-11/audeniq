@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker, { bearerOk, eventStatus, pickStatus, resetMaintenanceCache, route, validate } from '../worker.js';
+import adminWorker from '../../admin/worker.js';
 
 const TOKEN = 'x'.repeat(40);
 
@@ -60,6 +61,73 @@ const call = (e, method, path, body, token = TOKEN) => worker.fetch(new Request(
   headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
   body: body ? JSON.stringify(body) : undefined,
 }), e);
+
+test('Studio and Admin publish content using a current ADMIN session, without a separate token', async () => {
+  const previousFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    assert.equal(url, 'https://api-origin.audeniq.com/api/staff/content-access');
+    calls.push(init);
+    const authorized = init.headers.get('cookie') === 'session=admin'
+      && (init.method === 'GET' || init.headers.get('x-csrf-token') === 'valid');
+    return Response.json(authorized ? { role: 'ADMIN' } : { error: { code: 'FORBIDDEN' } }, { status: authorized ? 200 : 403 });
+  };
+  try {
+    for (const [handler, origin] of [[worker, 'https://studio.audeniq.com'], [adminWorker, 'https://admin.audeniq.com']]) {
+      const e = { ...env(), CONTENT_ADMIN_TOKEN: undefined, EDGE_SERVICE_SECRET: 'service', BACKEND_APP_ORIGIN: 'https://studio.audeniq.com' };
+      const submit = (cookie, csrf, requestOrigin = origin) => handler.fetch(new Request(`${origin}/api/content/notices`, {
+        method: 'POST', headers: { cookie, origin: requestOrigin, 'x-csrf-token': csrf, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: '화면에서 올린 공지', body: '바로 공개' }),
+      }), e);
+      assert.equal((await submit('session=artist', 'valid')).status, 403);
+      assert.equal((await submit('session=admin', 'wrong')).status, 403);
+      const before = calls.length;
+      assert.equal((await submit('session=admin', 'valid', 'https://other.test')).status, 403);
+      assert.equal(calls.length, before);
+      assert.equal(e.CONTENT_DB.rows.notices.length, 0);
+      assert.equal((await submit('session=admin', 'valid')).status, 201);
+      const publicList = await handler.fetch(new Request(`${origin}/api/notices`), e);
+      assert.equal((await publicList.json()).items[0].title, '화면에서 올린 공지');
+      const list = await handler.fetch(new Request(`${origin}/api/content/notices`, { headers: { cookie: 'session=admin' } }), e);
+      assert.equal(list.status, 200);
+    }
+  } finally { globalThis.fetch = previousFetch; }
+});
+
+test('API rollout fallback keeps ADMIN role and session-bound CSRF mandatory', async () => {
+  const previousFetch = globalThis.fetch;
+  const csrf = 'c'.repeat(64);
+  globalThis.fetch = async (url, init) => {
+    if (url.endsWith('/api/staff/content-access')) return Response.json({ error: { code: 'NOT_FOUND' } }, { status: 404 });
+    const cookie = init.headers.get('cookie');
+    if (url.endsWith('/api/staff/me')) {
+      if (cookie === 'session=expired') return Response.json({ error: { code: 'UNAUTHENTICATED' } }, { status: 401 });
+      return Response.json({ role: cookie === 'session=admin' ? 'ADMIN' : 'SUPPORT' });
+    }
+    assert.ok(url.endsWith('/api/auth/csrf'));
+    assert.equal(init.method, 'POST');
+    return Response.json({ csrf_token: csrf });
+  };
+  try {
+    for (const [handler, origin] of [[worker, 'https://studio.audeniq.com'], [adminWorker, 'https://admin.audeniq.com']]) {
+      const e = { ...env(), CONTENT_ADMIN_TOKEN: undefined, EDGE_SERVICE_SECRET: 'service', BACKEND_APP_ORIGIN: 'https://studio.audeniq.com' };
+      const submit = (cookie, token, source = origin) => handler.fetch(new Request(`${origin}/api/content/notices`, {
+        method: 'POST', headers: { cookie, origin: source, 'x-csrf-token': token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: '호환 게시', body: '검증된 관리자' }),
+      }), e);
+      assert.equal((await submit('session=admin', 'x'.repeat(64))).status, 403);
+      assert.equal((await submit('session=admin', '')).status, 403);
+      assert.equal((await submit('session=support', csrf)).status, 403);
+      assert.equal((await submit('session=expired', csrf)).status, 401);
+      assert.equal((await submit('session=admin', csrf, 'https://other.test')).status, 403);
+      assert.equal(e.CONTENT_DB.rows.notices.length, 0);
+      assert.equal((await submit('session=admin', csrf)).status, 201);
+      const list = await handler.fetch(new Request(`${origin}/api/content/notices`, { headers: { cookie: 'session=admin' } }), e);
+      assert.equal(list.status, 200);
+      assert.equal(e.CONTENT_DB.rows.notices.length, 1);
+    }
+  } finally { globalThis.fetch = previousFetch; }
+});
 
 test('routes: public reads, admin writes under /api/content', () => {
   assert.deepEqual(route('GET', '/api/notices'), { kind: 'list', table: 'notices' });
@@ -272,13 +340,19 @@ test('emergency: env switch forces maintenance and API calls get 503 MAINTENANCE
     assert.equal(blocked.status, 503);
     assert.equal((await blocked.json()).error.code, 'MAINTENANCE');
     assert.equal(proxied, 0);
-    // 공지·관리 API와 화면은 그대로
+    // 공지·관리 API와 관리자 로그인은 유지하고 업무 데이터는 차단
     assert.equal((await call(e, 'GET', '/api/notices')).status, 200);
+    assert.equal((await call(e, 'GET', '/api/me')).status, 200);
+    assert.equal((await call(e, 'GET', '/api/staff/me')).status, 200);
+    assert.equal((await call(e, 'POST', '/api/auth/login', { email: 'admin@example.test' })).status, 200);
+    assert.equal((await call(e, 'POST', '/api/auth/csrf', {})).status, 200);
+    assert.equal((await call(e, 'POST', '/api/staff/releases/r1/decision', {})).status, 503);
+    assert.equal(proxied, 4);
     // 끄면 다시 통과
     const off = { ...e, MAINTENANCE_MODE: 'off' };
     resetMaintenanceCache();
     assert.equal((await call(off, 'GET', '/api/me')).status, 200);
-    assert.equal(proxied, 1);
+    assert.equal(proxied, 5);
   } finally {
     globalThis.fetch = real;
   }
@@ -297,7 +371,7 @@ test('emergency window from the admin API blocks the API until it ends', async (
     })).json();
     assert.equal(created.kind, 'emergency');
     assert.equal(created.end_unknown, true);
-    assert.equal((await call(e, 'GET', '/api/me')).status, 503);
+    assert.equal((await call(e, 'GET', '/api/orgs')).status, 503);
     // 종료: ends_at을 지금으로
     const res = await call(e, 'PUT', '/api/content/maintenance/urgent', {
       title: '긴급 점검', kind: 'emergency', starts_at: created.starts_at, ends_at: iso(Date.now()),

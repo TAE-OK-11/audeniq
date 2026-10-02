@@ -1,6 +1,6 @@
 // 공지·이벤트 관리 — D1(CONTENT_DB)에 글을 쓰고 고치고 내린다.
-// 로그인 대신 Worker 시크릿 CONTENT_ADMIN_TOKEN으로 인증한다 (토큰은 이 탭의 sessionStorage에만 보관).
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+// /admin의 관리자 로그인 세션으로 작성하고 즉시 게시한다.
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from '../lib/router';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
@@ -9,10 +9,6 @@ import {
   contentAdmin, type AdminEvent, type AdminMaintenance, type AdminNotice, type ContentKind, type EventInput,
   type MaintenanceInput, type NoticeInput,
 } from '../api/content';
-
-const TOKEN_KEY = 'aq.content-admin-token';
-const readToken = () => { try { return sessionStorage.getItem(TOKEN_KEY) ?? ''; } catch { return ''; } };
-const writeToken = (t: string) => { try { if (t) sessionStorage.setItem(TOKEN_KEY, t); else sessionStorage.removeItem(TOKEN_KEY); } catch { /* 저장 불가 환경 */ } };
 
 const KST = 9 * 3_600_000;
 /** UTC ISO → datetime-local 값 (KST) */
@@ -95,42 +91,6 @@ function inputOf(kind: ContentKind, d: Draft): NoticeInput | EventInput | Mainte
     title: d.title, summary: d.summary, body: d.body, place: d.place,
     starts_on: d.startsOn, ends_on: d.endsOn || null, link_url: d.linkUrl.trim() || null, published_at,
   };
-}
-
-function TokenGate({ onReady }: { onReady: (token: string) => void }) {
-  const [value, setValue] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    const t = value.trim();
-    if (!t) { setErr('관리자 토큰을 입력해 주세요.'); return; }
-    setBusy(true); setErr('');
-    try {
-      await contentAdmin.list(t, 'notices');
-      writeToken(t);
-      onReady(t);
-    } catch (e2) {
-      setErr(errorMessage(e2, '확인하지 못했어요.'));
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <form className="aq-cadmin-gate" onSubmit={submit}>
-      <h1>콘텐츠 관리</h1>
-      <p>공지사항·이벤트를 올리려면 Worker에 설정한 관리자 토큰(CONTENT_ADMIN_TOKEN)을 입력해 주세요.</p>
-      <div className="field">
-        <label htmlFor="cadminToken">관리자 토큰</label>
-        <input
-          id="cadminToken" type="password" autoComplete="off" spellCheck={false}
-          value={value} onChange={e => setValue(e.target.value)} aria-invalid={!!err}
-        />
-        {err && <p className="help aq-help-error" role="alert">{err}</p>}
-      </div>
-      <button type="submit" className="button" disabled={busy}>{busy ? '확인하는 중' : '확인'}</button>
-    </form>
-  );
 }
 
 function Editor({ kind, draft, saving, onChange, onSave, onCancel, onDelete }: {
@@ -244,8 +204,8 @@ const isoIn = (ms: number) => new Date(Date.now() + ms).toISOString().replace(/\
 const minutesSince = (iso: string) => Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60_000));
 
 /** 서버 점검 탭 맨 위: 지금 상태 + 긴급 점검 시작·연장·종료 */
-function EmergencyPanel({ token, rows, now, onChanged }: {
-  token: string; rows: AdminMaintenance[]; now: string; onChanged: () => Promise<void>;
+function EmergencyPanel({ rows, now, onChanged }: {
+  rows: AdminMaintenance[]; now: string; onChanged: () => Promise<void>;
 }) {
   const toast = useToast();
   const confirm = useConfirm();
@@ -278,13 +238,13 @@ function EmergencyPanel({ token, rows, now, onChanged }: {
     });
     if (!ok) return;
     const unknown = minutes === null;
-    await run(() => contentAdmin.create(token, 'maintenance', {
+    await run(() => contentAdmin.create('maintenance', {
       title: '긴급 서버 점검', body: body.trim(), kind: 'emergency', end_unknown: unknown,
       starts_at: isoIn(-1000), ends_at: isoIn((unknown ? 12 * 60 : minutes) * 60_000), published_at: isoIn(-1000),
     }), '긴급 점검을 시작했어요. 스튜디오에 바로 점검 화면이 떠요.');
   };
 
-  const update = (w: AdminMaintenance, patch: Partial<MaintenanceInput>, done: string) => run(() => contentAdmin.update(token, 'maintenance', w.id, {
+  const update = (w: AdminMaintenance, patch: Partial<MaintenanceInput>, done: string) => run(() => contentAdmin.update('maintenance', w.id, {
     title: w.title, body: w.body, starts_at: w.starts_at, ends_at: w.ends_at, published_at: w.published_at,
     kind: w.kind ?? 'scheduled', end_unknown: !!w.end_unknown, ...patch,
   }), done);
@@ -360,7 +320,6 @@ function EmergencyPanel({ token, rows, now, onChanged }: {
 export function ContentAdmin() {
   const toast = useToast();
   const confirm = useConfirm();
-  const [token, setToken] = useState(readToken);
   const [kind, setKind] = useState<ContentKind>('notices');
   const [rows, setRows] = useState<Row[] | null>(null);
   const [now, setNow] = useState('');
@@ -370,24 +329,20 @@ export function ContentAdmin() {
 
   useEffect(() => { document.title = '콘텐츠 관리 | AUDENIQ STUDIO'; }, []);
 
-  const lock = useCallback(() => { writeToken(''); setToken(''); setRows(null); setDraft(null); }, []);
 
   const load = useCallback(async () => {
-    if (!token) return;
     setLoadError('');
     try {
-      const r = await contentAdmin.list(token, kind);
+      const r = await contentAdmin.list(kind);
       setRows(r.items);
       setNow(r.now);
     } catch (e) {
-      if ((e as { status?: number }).status === 401) { lock(); toast('관리자 토큰을 다시 입력해 주세요.', 'error'); return; }
       setLoadError(errorMessage(e, '목록을 불러오지 못했어요.'));
     }
-  }, [token, kind, lock, toast]);
+  }, [kind]);
 
   useEffect(() => { setRows(null); void load(); }, [load]);
 
-  if (!token) return <div className="aq-cadmin"><TokenGate onReady={setToken} /></div>;
 
   const save = async () => {
     if (!draft) return;
@@ -400,8 +355,8 @@ export function ContentAdmin() {
     }
     setSaving(true);
     try {
-      if (draft.id) await contentAdmin.update(token, kind, draft.id, input);
-      else await contentAdmin.create(token, kind, input);
+      if (draft.id) await contentAdmin.update(kind, draft.id, input);
+      else await contentAdmin.create(kind, input);
       toast(draft.id ? '저장했어요.' : '게시했어요.', 'success');
       setDraft(null);
       await load();
@@ -423,7 +378,7 @@ export function ContentAdmin() {
     if (!ok) return;
     setSaving(true);
     try {
-      await contentAdmin.remove(token, kind, draft.id);
+      await contentAdmin.remove(kind, draft.id);
       toast('글을 내렸어요.', 'success');
       setDraft(null);
       await load();
@@ -439,13 +394,7 @@ export function ContentAdmin() {
 
   return (
     <div className="aq-cadmin">
-      <header className="aq-cadmin-top">
-        <Link to="/" className="aq-cadmin-brand" aria-label="AUDENIQ STUDIO">
-          <img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" />
-        </Link>
-        <span className="aq-cadmin-title">콘텐츠 관리</span>
-        <button type="button" className="button ghost" onClick={lock}>잠그기</button>
-      </header>
+      <div className="adm-head"><div><p className="eyebrow">CONTENT</p><h1>공지·이벤트 관리</h1><p className="adm-sub">관리자 계정으로 작성하고 게시하면 바로 공개돼요. 예약 시각을 지정하면 그때 공개돼요.</p></div></div>
 
       <div className="tabs aq-tabs" role="tablist" aria-label="콘텐츠 종류">
         <button type="button" role="tab" className="tab" aria-selected={kind === 'notices'} onClick={() => switchKind('notices')}>공지사항</button>
@@ -461,7 +410,7 @@ export function ContentAdmin() {
       ) : (
         <>
           {kind === 'maintenance' && rows && (
-            <EmergencyPanel token={token} rows={rows as AdminMaintenance[]} now={now} onChanged={load} />
+            <EmergencyPanel rows={rows as AdminMaintenance[]} now={now} onChanged={load} />
           )}
           <div className="aq-cadmin-bar">
             <p>{rows ? `${rows.filter(r => ['live', 'active'].includes(stateOf(r, now))).length}개 ${kind === 'maintenance' ? '예고·진행 중' : '게시 중'} · 전체 ${rows.length}개` : '불러오는 중'}</p>

@@ -11,7 +11,9 @@
 //!   Same contract as the static Studio Worker (web/studio/worker.js).
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use worker::{D1Database, Env, Method, Request, Response, Result, wasm_bindgen::JsValue};
+use worker::{
+    D1Database, Env, Headers, Method, Request, RequestInit, Response, Result, wasm_bindgen::JsValue,
+};
 
 const NOTICE_COLUMNS: &str = "id, title, body, pinned, published_at, updated_at";
 const EVENT_COLUMNS: &str =
@@ -284,6 +286,55 @@ fn with_status(e: EventRow, today: &str) -> Value {
     v
 }
 
+async fn authorize_content(req: &Request, env: &Env) -> Result<Option<Response>> {
+    if let Some(header) = req.headers().get("authorization")? {
+        let secret = env
+            .secret("CONTENT_ADMIN_TOKEN")
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+        return if bearer_ok(Some(&header), &secret) {
+            Ok(None)
+        } else {
+            Ok(Some(error(401, "UNAUTHENTICATED")?))
+        };
+    }
+    let read = matches!(req.method(), Method::Get | Method::Head);
+    let origin = req.url()?.origin().ascii_serialization();
+    if !read
+        && (req.headers().get("origin")?.as_deref() != Some(&origin)
+            || req
+                .headers()
+                .get("sec-fetch-site")?
+                .is_some_and(|s| s != "same-origin"))
+    {
+        return Ok(Some(error(403, "FORBIDDEN")?));
+    }
+    let headers = Headers::new();
+    for key in ["cookie", "x-csrf-token"] {
+        if let Some(value) = req.headers().get(key)? {
+            headers.set(key, &value)?;
+        }
+    }
+    headers.set("origin", &origin)?;
+    headers.set("sec-fetch-site", "same-origin")?;
+    headers.set(
+        "x-audeniq-service",
+        &env.secret("EDGE_SERVICE_SECRET")?.to_string(),
+    )?;
+    let check = Request::new_with_init(
+        "http://audeniq-api.internal/api/staff/content-access",
+        RequestInit::new()
+            .with_method(if read { Method::Get } else { Method::Post })
+            .with_headers(headers),
+    )?;
+    let response = env.service("PRIVATE_API")?.fetch_request(check).await?;
+    if response.status_code() == 200 {
+        Ok(None)
+    } else {
+        Ok(Some(response))
+    }
+}
+
 pub async fn handle(mut req: Request, env: &Env, r: Route<'_>) -> Result<Response> {
     let db: D1Database = match env.d1("CONTENT_DB") {
         Ok(db) => db,
@@ -348,12 +399,8 @@ pub async fn handle(mut req: Request, env: &Env, r: Route<'_>) -> Result<Respons
             }
         }
         admin => {
-            let secret = env
-                .secret("CONTENT_ADMIN_TOKEN")
-                .map(|s| s.to_string())
-                .unwrap_or_default();
-            if !bearer_ok(req.headers().get("authorization")?.as_deref(), &secret) {
-                return error(401, "UNAUTHENTICATED");
+            if let Some(denied) = authorize_content(&req, env).await? {
+                return Ok(denied);
             }
             if let Route::AdminList(table) = admin {
                 let today = today_kst();

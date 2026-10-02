@@ -1,8 +1,8 @@
 // 공지·이벤트 — 엣지 Worker가 D1(CONTENT_DB)에서 바로 서빙한다.
 // 읽기: /api/notices, /api/events (로그인 불필요)
-// 관리: /api/content/{notices|events} (Authorization: Bearer <CONTENT_ADMIN_TOKEN>)
+// 관리: /api/content/{notices|events} (관리자 세션 + CSRF)
 import { req } from './http';
-import { ApiError, messageForCode } from './errors';
+import { ApiError } from './errors';
 import { MOCK } from '../lib/mode';
 
 // ---------------------------------------------------------------------------
@@ -56,7 +56,7 @@ export async function loadContent<T, U>(fetcher: () => Promise<T[]>, map: (row: 
 }
 
 // ---------------------------------------------------------------------------
-// 관리 (콘텐츠 관리자 토큰)
+// 관리 (ADMIN 세션 + CSRF)
 // ---------------------------------------------------------------------------
 export type ContentKind = 'notices' | 'events' | 'maintenance';
 
@@ -73,52 +73,13 @@ export type EventInput = {
   starts_on: string; ends_on: string | null; link_url: string | null; published_at: string;
 };
 
-const ADMIN_MESSAGES: Record<string, string> = {
-  UNAUTHENTICATED: '관리자 토큰이 맞지 않아요.',
-  CONTENT_ADMIN_DISABLED: 'Worker에 CONTENT_ADMIN_TOKEN이 설정되지 않았어요.',
-  CONTENT_UNAVAILABLE: 'D1(CONTENT_DB)에 연결하지 못했어요.',
-  TITLE_REQUIRED: '제목을 입력해 주세요.',
-  TOO_LONG: '입력한 내용이 너무 길어요.',
-  TEXT_INVALID_CHARACTERS: '쓸 수 없는 문자가 들어 있어요.',
-  PUBLISHED_AT_INVALID: '게시 시각을 확인해 주세요.',
-  DATES_INVALID: '기간을 확인해 주세요. (종료는 시작 이후)',
-  LINK_URL_INVALID: '링크는 https://로 시작해야 해요.',
-  ID_TAKEN: '같은 ID의 글이 이미 있어요.',
-  NOT_FOUND: '글을 찾을 수 없어요. 목록을 새로 불러와 주세요.',
-  PAYLOAD_TOO_LARGE: '본문이 너무 길어요.',
-};
-
-async function admin<T>(token: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
-  let res: Response;
-  try {
-    res = await fetch(path, {
-      method,
-      headers: { Accept: 'application/json', Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
-      body: body ? JSON.stringify(body) : undefined,
-      cache: 'no-store',
-      credentials: 'omit',
-    });
-  } catch {
-    throw new ApiError('네트워크 연결을 확인해 주세요.', 0, 'NETWORK');
-  }
-  const data = await res.json().catch(() => null) as { error?: { code?: string } } | null;
-  if (!res.ok || !data) {
-    const code = data?.error?.code ?? (res.status === 404 || res.status === 405 ? 'CONTENT_API_MISSING' : '');
-    const msg = code === 'CONTENT_API_MISSING'
-      ? '콘텐츠 관리 API를 찾을 수 없어요. Worker가 배포됐는지 확인해 주세요.'
-      : ADMIN_MESSAGES[code] ?? messageForCode(code, res.status);
-    throw new ApiError(msg, res.status, code);
-  }
-  return data as T;
-}
-
 export const contentAdmin = {
-  list: <K extends ContentKind>(token: string, kind: K) =>
-    admin<{ items: (K extends 'notices' ? AdminNotice : K extends 'events' ? AdminEvent : AdminMaintenance)[]; now: string }>(token, 'GET', `/api/content/${kind}`),
-  create: (token: string, kind: ContentKind, input: NoticeInput | EventInput | MaintenanceInput) =>
-    admin<{ id: string }>(token, 'POST', `/api/content/${kind}`, input),
-  update: (token: string, kind: ContentKind, id: string, input: NoticeInput | EventInput | MaintenanceInput) =>
-    admin<{ id: string }>(token, 'PUT', `/api/content/${kind}/${encodeURIComponent(id)}`, input),
-  remove: (token: string, kind: ContentKind, id: string) =>
-    admin<{ id: string }>(token, 'DELETE', `/api/content/${kind}/${encodeURIComponent(id)}`),
+  list: <K extends ContentKind>(kind: K) =>
+    req<{ items: (K extends 'notices' ? AdminNotice : K extends 'events' ? AdminEvent : AdminMaintenance)[]; now: string }>(`/api/content/${kind}`, { quietServer: true }),
+  create: (kind: ContentKind, input: NoticeInput | EventInput | MaintenanceInput) =>
+    req<{ id: string }>(`/api/content/${kind}`, { method: 'POST', body: input, quietServer: true }),
+  update: (kind: ContentKind, id: string, input: NoticeInput | EventInput | MaintenanceInput) =>
+    req<{ id: string }>(`/api/content/${kind}/${encodeURIComponent(id)}`, { method: 'PUT', body: input, quietServer: true }),
+  remove: (kind: ContentKind, id: string) =>
+    req<{ id: string }>(`/api/content/${kind}/${encodeURIComponent(id)}`, { method: 'DELETE', quietServer: true }),
 };
