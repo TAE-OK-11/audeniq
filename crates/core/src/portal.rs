@@ -535,7 +535,7 @@ pub async fn read_notifications(s: &AppState, a: &Actor, org: Uuid, i: ReadInput
 // interpolated into queries (sqlx::AssertSqlSafe); every value is bound.
 const DOC_JSON: &str = "jsonb_build_object('id',d.id,'kind',d.kind,'release_id',d.release_id,'release_title',r.title,'title',d.title,'version',d.version,
   'body',d.body,'status',d.status,'review_note',d.review_note,'asset_id',d.asset_id,'file_name',d.file_name,'checked_at',d.checked_at,
-  'signer_name',d.signer_name,'signature',d.signature,'signed_at',d.signed_at,'row_version',d.row_version,'created_at',d.created_at,'updated_at',d.updated_at)";
+  'signer_name',d.signer_name,'signature',d.signature,'signed_at',d.signed_at,'electronic_record',d.electronic_record,'row_version',d.row_version,'created_at',d.created_at,'updated_at',d.updated_at)";
 
 pub async fn list_documents(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
@@ -696,6 +696,21 @@ pub struct DocumentInput {
     pub asset_id: Option<Uuid>,
     #[serde(default)]
     pub file_name: String,
+    #[serde(default)]
+    pub electronic: Option<ElectronicRightsInput>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ElectronicRightsInput {
+    pub document_no: Uuid,
+    pub form: String,
+    pub document_kind: String,
+    pub rights_holder: String,
+    pub signer_name: String,
+    pub signer_role: String,
+    pub signature: String,
+    pub consent: bool,
 }
 
 /// Artist-initiated rights proof for one of their releases (licence, consent
@@ -707,11 +722,83 @@ pub async fn create_document(
     i: DocumentInput,
 ) -> Result<Value> {
     let title = text(&i.title, 1, 200)?;
-    let body = multiline(&i.body, 0, 5000)?;
+    let body = multiline(
+        &i.body,
+        usize::from(i.electronic.is_some()),
+        if i.electronic.is_some() { 20000 } else { 5000 },
+    )?;
     let file = text(&i.file_name, 0, 200)?;
     let mut tx = s.pool.begin().await?;
     member(&mut tx, a, org, true).await?;
     auth::authorize(&mut tx, a, org, i.release_id, "release", true).await?;
+    if let Some(e) = &i.electronic {
+        if i.asset_id.is_some()
+            || !file.is_empty()
+            || !e.consent
+            || e.form != "AUD-RIGHTS 1.0"
+            || ![
+                "master",
+                "artwork",
+                "composition",
+                "sample",
+                "performer",
+                "shared",
+            ]
+            .contains(&e.document_kind.as_str())
+            || !["권리자 본인", "권리자의 위임을 받은 대리인"].contains(&e.signer_role.as_str())
+        {
+            return Err(Error::Invalid);
+        }
+        let holder = text(&e.rights_holder, 1, 120)?;
+        let name = text(&e.signer_name, 1, 120)?;
+        let sig = signature(&e.signature)?;
+        // The server hashes the exact saved text and signature; the client
+        // cannot supply its own integrity claim or staff approval status.
+        let hash = crate::domain::digest(&json!({
+            "title": title, "body": body, "document_no": e.document_no,
+            "form": e.form, "document_kind": e.document_kind,
+            "rights_holder": holder, "signer_name": name,
+            "signer_role": e.signer_role, "signature": sig,
+        }));
+        let record = json!({"document_no": e.document_no, "form": e.form,
+            "document_kind": e.document_kind, "rights_holder": holder,
+            "signer_name": name, "signer_role": e.signer_role, "content_hash": hash});
+        let id = Uuid::new_v4();
+        let inserted: Option<Uuid> = sqlx::query_scalar(
+            "INSERT INTO portal.documents(id,org_id,release_id,kind,title,body,status,checked_at,signer_name,signature,signed_by,signed_at,electronic_record)
+             VALUES($1,$2,$3,'RIGHTS_PROOF',$4,$5,'REVIEW',now(),$6,$7,$8,now(),$9)
+             ON CONFLICT DO NOTHING RETURNING id",
+        ).bind(id).bind(org).bind(i.release_id).bind(&title).bind(&body)
+            .bind(&name).bind(&sig).bind(a.user).bind(&record)
+            .fetch_optional(&mut *tx).await?;
+        if inserted.is_none() {
+            let (existing, release, saved_hash): (Uuid, Uuid, String) = sqlx::query_as(
+                "SELECT id,release_id,electronic_record->>'content_hash' FROM portal.documents
+                 WHERE org_id=$1 AND electronic_record->>'document_no'=$2",
+            )
+            .bind(org)
+            .bind(e.document_no.to_string())
+            .fetch_one(&mut *tx)
+            .await?;
+            if release != i.release_id || saved_hash != hash {
+                return Err(Error::Conflict);
+            }
+            tx.commit().await?;
+            return Ok(json!({"id":existing}));
+        }
+        operations::audit(
+            &mut tx,
+            Some(a.user),
+            Some(org),
+            Some(id),
+            "portal.rights_document.signed",
+            "RIGHTS_HOLDER_SIGNATURE",
+            a.request,
+        )
+        .await?;
+        tx.commit().await?;
+        return Ok(json!({"id":id}));
+    }
     if let Some(asset) = i.asset_id {
         auth::authorize(&mut tx, a, org, asset, "asset", false).await?;
         let ok: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM catalog.assets WHERE org_id=$1 AND id=$2 AND state='REGISTERED' AND kind IN ('DOCUMENT','IMAGE'))")
@@ -781,7 +868,13 @@ pub async fn attach_proof(
     if rv != i.row_version {
         return Err(Error::Conflict);
     }
-    if kind != "RIGHTS_PROOF" || status.starts_with("APPROVED") {
+    let electronic: bool = sqlx::query_scalar(
+        "SELECT electronic_record IS NOT NULL FROM portal.documents WHERE id=$1",
+    )
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if kind != "RIGHTS_PROOF" || status.starts_with("APPROVED") || electronic {
         return Err(Error::PolicyGate("DOCUMENT_NOT_EDITABLE"));
     }
     auth::authorize(&mut tx, a, org, i.asset_id, "asset", false).await?;

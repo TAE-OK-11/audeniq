@@ -205,6 +205,7 @@ export function DocumentModal({
 
       <h3 className="doc-section-title">문서 내용</h3>
       <div className="aq-document-snapshot">{doc.content || '첨부된 문서의 원본을 확인해 주세요.'}</div>
+      {doc.electronic && <button type="button" className="button secondary aq-doc-open-app" onClick={() => { onClose(); nav(`/rights/${encodeURIComponent(doc.id)}`); }}>완성된 전자 문서 보기 · PDF 저장</button>}
       {doc.kind === 'agreements' && doc.releaseId && (
         <button type="button" className="button secondary aq-doc-open-app" onClick={() => nav(`/releases/${encodeURIComponent(doc.releaseId!)}/application`)}>
           배급 신청서 보기
@@ -253,18 +254,18 @@ export function DocumentModal({
 
       {doc.localSignatureData && (
         <div className="aq-sign-record">
-          <strong>직접 서명 입력 기록</strong>
+          <strong>{doc.electronic ? '권리자 서명 완료' : '직접 서명 입력 기록'}</strong>
           <img src={doc.localSignatureData} alt="직접 입력한 서명" />
           <small>{doc.signerName || '서명자'} · {localStamp(doc.localSignatureAt)}</small>
-          <small>본인 확인 및 법적 전자서명 처리는 별도 절차에서 진행돼요.</small>
+          <small>{doc.electronic ? `서명자 구분: ${doc.electronic.signer_role} · 문서 번호: ${doc.electronic.document_no}` : '본인 확인 및 법적 전자서명 처리는 별도 절차에서 진행돼요.'}</small>
         </div>
       )}
 
       {doc.reviewStatus === 'needs' && (
-        <div className="notice error">{doc.reviewNote || '보완을 요청한 서류를 첨부해 주세요.'}</div>
+        <div className="notice error">{doc.reviewNote || (doc.electronic ? '보완 내용을 반영한 전자 문서를 새로 작성해 주세요.' : '보완을 요청한 서류를 첨부해 주세요.')}</div>
       )}
 
-      {(doc.reviewStatus === 'awaiting_documents' || doc.kind === 'rights') && (
+      {!doc.electronic && (doc.reviewStatus === 'awaiting_documents' || doc.kind === 'rights') && (
         <div className="field">
           <label htmlFor="aqEvidenceFile">요청된 서류 첨부</label>
           <FilePicker
@@ -288,8 +289,8 @@ export function DocumentModal({
 
       <div className="doc-actions aq-sticky-foot">
         <button id="aqDocConfirm" type="button" className="button" onClick={confirmSave}>확인 및 저장</button>
-        {/* 검토가 끝났거나 이미 검토 중인 서류에는 다시 요청할 일이 없다 — 제출 대기·보완 요청일 때만 */}
-        {(doc.reviewStatus === 'awaiting_documents' || doc.reviewStatus === 'needs') && (
+        {/* 검토가 끝났거나 이미 검토 중인 서류에는 다시 요청할 일이 없다 — 제출 대기·보완 요청일 때만. 전자 문서는 서명으로 접수된다 */}
+        {!doc.electronic && (doc.reviewStatus === 'awaiting_documents' || doc.reviewStatus === 'needs') && (
           <button id="aqDocSubmit" type="button" className="button secondary" onClick={submitReview} disabled={sending}>{sending ? '제출하는 중' : '검토 요청'}</button>
         )}
         {doc.fileName && (

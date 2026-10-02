@@ -96,6 +96,31 @@ const DECL_LABEL: Record<string, string> = {
   contains_samples: '샘플 사용', ai_involved: 'AI 활용', explicit_content: '19금 표현',
 };
 
+/** 아티스트 권리 확인 — 체크하지 않은 항목만 펼쳐 두고, 확인한 항목은 접는다 */
+function RightsChecks({ d }: { d: NonNullable<ReleaseSheet['draft']> }) {
+  const list = rightsChecksFor(d.options);
+  const off = list.filter(([k]) => !d.rightsChecks?.[k]);
+  const on = list.filter(([k]) => d.rightsChecks?.[k]);
+  const row = ([k, label]: [string, string], ok: boolean) => (
+    <li key={k} className={ok ? 'is-on' : 'is-off'}>
+      <span aria-label={ok ? '확인함' : '확인 안 함'}>{ok ? <CheckIcon size={11} /> : <Glyph name="close" size={11} />}</span>
+      {label}
+    </li>
+  );
+  return (
+    <div className="adm-rights">
+      <dt>권리 확인 (아티스트 체크) <small className={off.length ? 'is-bad' : ''}>{off.length ? `${off.length}개 체크 안 함` : `${list.length}개 모두 확인`}</small></dt>
+      {off.length > 0 && <ul>{off.map(c => row(c, false))}</ul>}
+      {on.length > 0 && (
+        <details className="adm-rights-more">
+          <summary>확인한 항목 {on.length}개<Glyph name="chevron-right" size={12} /></summary>
+          <ul>{on.map(c => row(c, true))}</ul>
+        </details>
+      )}
+    </div>
+  );
+}
+
 export function EnteredInfoSection({ sheet }: { sheet: ReleaseSheet }) {
   const r = sheet.release;
   const app = sheet.application;
@@ -154,22 +179,7 @@ export function EnteredInfoSection({ sheet }: { sheet: ReleaseSheet }) {
             <p>{notes}</p>
           </div>
         )}
-        {d?.rightsChecks && (
-          <div className="adm-rights">
-            <dt>권리 확인 (아티스트 체크)</dt>
-            <ul>
-              {rightsChecksFor(d.options).map(([k, label]) => {
-                const on = !!d.rightsChecks?.[k];
-                return (
-                  <li key={k} className={on ? 'is-on' : 'is-off'}>
-                    <span aria-label={on ? '확인함' : '확인 안 함'}>{on ? <CheckIcon size={11} /> : <Glyph name="close" size={11} />}</span>
-                    {label}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
+        {d?.rightsChecks && <RightsChecks d={d} />}
       </div>
     </Section>
   );
@@ -210,8 +220,24 @@ function optionDetail(key: keyof StudioOptions, o: StudioOptions, tracks: Studio
     case 'sample': return <Row label="원본 이용 허락서">{file(o.sampleLicenseFile)}</Row>;
     case 'featured': return <Row label="참여자 동의서">{file(o.featuredConsentFile)}</Row>;
     case 'shared': return <Row label="공동 권리 계약서">{file(o.sharedContractFile)}</Row>;
-    case 'rerelease':
-      return <Row label="기존 발매">{[o.previousTitle && `제목 ${o.previousTitle}`, o.previousId && `ISRC ${o.previousId}`].filter(Boolean).join(' · ') || '기존 발매 정보 미기재'}</Row>;
+    case 'rerelease': {
+      const pick = (map: Record<string, string>, v?: string) => (v && map[v]) || '확인 필요';
+      const isrcs = (o.rereleaseTracks ?? []).filter(t => t.previousIsrc?.trim());
+      return (
+        <>
+          <Row label="상황">{pick(RERELEASE_KIND, o.rereleaseKind)}</Row>
+          <Row label="기존 발매">{[o.previousTitle, o.previousReleaseDate && `최초 ${o.previousReleaseDate}`].filter(Boolean).join(' · ') || '기존 발매명 미기재'}</Row>
+          <Row label="이전 유통사">{dash(o.previousDistributor)} · {pick(RERELEASE_AVAILABILITY, o.previousAvailability)}</Row>
+          <Row label="녹음 · 권한">{pick(RERELEASE_AUDIO, o.rereleaseAudio)} · {pick(RERELEASE_RIGHTS, o.rereleaseRights)}</Row>
+          {(o.previousUpc || isrcs.length > 0 || o.previousId) && (
+            <Row label="기존 코드">{[o.previousUpc && `UPC ${o.previousUpc}`, ...(isrcs.length ? isrcs.map(t => `ISRC ${t.previousIsrc}`) : o.previousId ? [`ISRC ${o.previousId}`] : [])].filter(Boolean).join(' · ')}</Row>
+          )}
+          {o.rereleasePermissionFile && <Row label="배급 허락서">{file(o.rereleasePermissionFile)}</Row>}
+          {o.previousUrl && <Row label="기존 링크"><a href={o.previousUrl} target="_blank" rel="noopener noreferrer">{o.previousUrl}</a></Row>}
+          {o.rereleaseNotes && <Row label="메모">{o.rereleaseNotes}</Row>}
+        </>
+      );
+    }
     case 'ai': {
       const uses = [...(o.aiUses ?? []), o.aiUseOther].filter(Boolean);
       const tools = [...(o.aiTools ?? []), o.aiToolOther].filter(Boolean);
@@ -225,6 +251,11 @@ function optionDetail(key: keyof StudioOptions, o: StudioOptions, tracks: Studio
     default: return null;
   }
 }
+
+const RERELEASE_KIND: Record<string, string> = { transfer: '유통사를 AUDENIQ로 이전', redistribute: '서비스 종료된 음원 재발매', new_version: '새 녹음·변경 버전 발매' };
+const RERELEASE_AVAILABILITY: Record<string, string> = { live: '현재 서비스 중', takedown_requested: '이전 유통사에 종료 요청', removed: '서비스 종료됨', unknown: '서비스 상태 확인 필요' };
+const RERELEASE_AUDIO: Record<string, string> = { same: '기존 녹음 그대로 (기존 ISRC 유지)', changed: '음악 내용 변경 (새 ISRC)', unknown: '녹음 동일 여부 확인 필요' };
+const RERELEASE_RIGHTS: Record<string, string> = { owned: '권리자 본인', permission: '배급 허락 확보', pending: '권한 확인 중' };
 
 function OptionGroup({ title, list, o, tracks }: { title: string; list: [keyof StudioOptions, string][]; o: StudioOptions; tracks: StudioDraftTrack[] }) {
   const on = list.filter(([k]) => o[k] === true);

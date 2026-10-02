@@ -34,6 +34,7 @@
 .adm-count.is-hot{background:var(--adm-blue);color:#fff}
 .adm-side-foot{border-top:1px solid var(--adm-line);padding-top:16px;font-size:11.5px;color:var(--adm-muted);line-height:1.6}
 .adm-main{min-width:0;outline:0}
+.adm-main>.aq-cadmin{max-width:none;min-height:0;margin:0;padding:0}
 
 /* ---------- 페이지 머리 ---------- */
 .adm-head{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin:0 0 24px;flex-wrap:wrap}
@@ -171,7 +172,7 @@ button.adm-row:hover,a.adm-row:hover{background:#edf2ff}
 .adm-tl-day+.adm-tl-day{margin-top:6px}
 .adm-tl-day h3{margin:0 0 10px;font-size:12px;font-weight:800;color:var(--adm-muted);letter-spacing:-.01em}
 /* 플랫폼별 배급 상태 */
-.adm-dsps{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.adm-dsp-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .adm-dsp{display:grid;grid-template-columns:20px minmax(0,1fr);gap:10px;padding:13px 15px;border-radius:16px;background:#fff;border:1px solid var(--adm-line)}
 .adm-dsp-mark{display:grid;place-items:center;width:20px;height:20px;margin-top:1px;border-radius:50%;background:#eef1f7;color:#7a849b}
 .adm-dsp.is-ok .adm-dsp-mark{background:#e3f4ea;color:#1f8a4c}
@@ -193,7 +194,7 @@ button.adm-row:hover,a.adm-row:hover{background:#edf2ff}
 .adm-dsp-more>summary::-webkit-details-marker{display:none}
 .adm-dsp-more>summary svg{transition:transform .2s}
 .adm-dsp-more[open]>summary svg{transform:rotate(90deg)}
-.adm-dsp-more .adm-dsps{margin-top:6px}
+.adm-dsp-more .adm-dsp-list{margin-top:6px}
 .adm-note{background:#fff;border-radius:16px;padding:12px 14px;border:1px solid var(--adm-line)}
 .adm-note + .adm-note{margin-top:8px}
 .adm-note p{font-size:13px;color:#3d4760;margin-top:5px;white-space:pre-wrap}
@@ -567,3 +568,77 @@ svg.aq-glyph{flex:none;fill:none!important;stroke:currentColor!important;stroke-
 @media (max-width:960px){.adm-thread-empty{display:none!important}}
 /* 아래 결정 바가 있는 폭에서는 위 결정 칸의 같은 버튼 세 개를 숨긴다 (상태 안내만) */
 @media (max-width:1180px){.adm-detail-side .adm-decide-actions{display:none}}
+
+/* ---------- 심사 시트: 모바일 정리 ---------- */
+.adm-anchor{scroll-margin-top:24px}
+.adm-anchor:empty{display:none}
+.adm-kv .adm-dsps{gap:6px;margin-top:2px}
+.adm-kv .adm-dsps span{font-size:12px;padding:4px 9px;border-radius:9px;background:#fff;color:#36425b}
+/* 맨 위 요약 */
+.adm-brief.is-compact{margin:0 0 26px;padding:16px}
+.adm-brief.is-compact ul{max-height:none;overflow:visible}
+.adm-brief-lead{margin:-4px 2px 12px;font-size:13px;font-weight:700;color:#3d4760}
+.adm-brief-ok{margin-top:6px}
+.adm-brief-ok>summary{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 12px;border-radius:13px;background:#fff;font-size:13px;font-weight:700;color:#4c5a74;cursor:pointer;list-style:none}
+.adm-brief-ok>summary::-webkit-details-marker{display:none}
+.adm-brief-ok>summary .adm-brief-mark{background:#21815B}
+.adm-brief-ok>summary svg:last-child{margin-left:auto;transition:transform .2s var(--adm-ease)}
+.adm-brief-ok[open]>summary svg:last-child{transform:rotate(90deg)}
+.adm-brief-ok ul{margin-top:6px}
+.adm-brief.is-compact ul:empty{display:none}
+/* 권리 확인 접기 */
+.adm-rights dt small{margin-left:6px;font-size:11.5px;font-weight:750;color:#1f8a4c}
+.adm-rights dt small.is-bad{color:#c2413b}
+.adm-rights-more{margin-top:8px}
+.adm-rights-more>summary{display:inline-flex;align-items:center;gap:4px;min-height:32px;font-size:12.5px;font-weight:750;color:#3B63F3;cursor:pointer;list-style:none}
+.adm-rights-more>summary::-webkit-details-marker{display:none}
+.adm-rights-more>summary svg{transition:transform .2s var(--adm-ease)}
+.adm-rights-more[open]>summary svg{transform:rotate(90deg)}
+.adm-rights-more ul{margin-top:6px}
+/* 처리 이력 더 보기 */
+.adm-tl-more{display:inline-flex;align-items:center;gap:4px;min-height:40px;margin:2px 0 0 26px;padding:0 4px;border:0;background:none;font:inherit;font-size:13px;font-weight:750;color:#3B63F3;cursor:pointer}
+/* 바로가기 바 — 결정 칸이 옆에 붙지 않는 폭에서만 */
+.adm-jump{display:none}
+@media (max-width:1180px){
+  .adm-jump{position:sticky;top:70px;z-index:30;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -24px 16px;padding:10px 24px;background:rgba(255,255,255,.94);-webkit-backdrop-filter:saturate(1.4) blur(12px);backdrop-filter:saturate(1.4) blur(12px);border-bottom:1px solid var(--adm-line)}
+  .adm-jump::-webkit-scrollbar{display:none}
+  .adm-jump button{flex:none;display:inline-flex;align-items:center;gap:5px;min-height:36px;padding:0 13px;border:0;border-radius:999px;background:#f2f5fb;color:#4a5570;font:inherit;font-size:13px;font-weight:760;cursor:pointer;transition:background-color .15s,color .15s}
+  .adm-jump button span{min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#fff;font-size:11px;font-weight:800;line-height:18px;text-align:center;color:#5d6880}
+  .adm-jump button span.is-bad{background:#fde8e7;color:#c2413b}
+  .adm-jump button.is-on{background:#16192a;color:#fff}
+  .adm-jump button.is-on span{background:rgba(255,255,255,.16);color:#fff}
+  .adm-anchor{scroll-margin-top:136px}
+  /* 결정은 아래 고정 바에서 — 위쪽 어두운 결정 칸·취소/재발급 카드는 시트 맨 아래로 */
+  .adm-detail-side{order:1}
+  .adm-detail-side .adm-decide{display:none}
+}
+@media (max-width:960px){
+  /* 심사 시트에서는 메뉴 줄을 고정하지 않는다 (헤더 + 바로가기만 위에 남긴다) */
+  .adm-body:has(.adm-jump) .adm-side{position:static}
+}
+@media (max-width:760px){
+  /* 검사 단계: 세 칸 카드 대신 한 줄 단계 표시 */
+  .adm-stages{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+  .adm-stages li{flex-direction:column;align-items:center;text-align:center;gap:6px;padding:12px 6px}
+  .adm-stages li small{display:none}
+  .adm-stages li b{font-size:12px;line-height:1.35;word-break:keep-all}
+  .adm-section{margin-bottom:24px}
+  .adm-section-top h2{font-size:17px}
+  .adm-check{padding:13px 14px}
+}
+@media (max-width:640px){
+  .adm-jump{margin:0 -16px 14px;padding:10px 16px}
+  .adm-timeline .adm-more{display:none}
+  .adm-release-hero{margin-bottom:12px}
+}
+.adm-check .adm-more{justify-content:flex-start;margin-top:6px}
+.adm-check .adm-more summary{min-height:30px}
+.adm-section-top>.adm-btn,.adm-section-top>a.adm-btn{flex:none;white-space:nowrap}
+@media (max-width:640px){
+  .adm-section-top{align-items:flex-start}
+  .adm-section-top h2 small{display:block;margin:4px 0 0;line-height:1.4}
+}
+.adm-dsps span.is-more{background:transparent;color:var(--adm-muted)}
+@media (max-width:640px){
+  .adm-head .adm-sub{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+}

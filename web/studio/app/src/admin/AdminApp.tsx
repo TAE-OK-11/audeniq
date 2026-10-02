@@ -19,6 +19,7 @@ import { Inquiries } from './pages/Inquiries';
 import { Deliveries } from './pages/Deliveries';
 import { Dsps } from './pages/Dsps';
 import { Payouts } from './pages/Payouts';
+import { ContentAdmin } from '../pages/ContentAdmin';
 import '../styles/admin.css';
 import { Glyph } from '../components/Glyph';
 
@@ -44,6 +45,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
     ],
   },
   { group: 'SUPPORT', items: [{ to: '/admin/inquiries', label: '문의 답변', icon: 'inquiry', count: o => o.inquiries, hot: true }] },
+  { group: 'CONTENT', items: [{ to: '/admin/content', label: '공지·이벤트 관리', icon: 'doc', adminOnly: true }] },
   {
     group: 'DISTRIBUTION',
     items: [
@@ -191,6 +193,8 @@ export function AdminApp() {
               <Route path="/admin/deliveries" element={<Deliveries />} />
               <Route path="/admin/dsps" element={<Dsps />} />
               <Route path="/admin/payouts" element={me.role === 'ADMIN' ? <Payouts /> : <Navigate to="/admin" replace />} />
+              <Route path="/admin/content" element={me.role === 'ADMIN' ? <ContentAdmin /> : <Navigate to="/admin" replace />} />
+              <Route path="/content-admin" element={<Navigate to="/admin/content" replace />} />
               <Route path="*" element={<Navigate to="/admin" replace />} />
             </Routes>
           </main>

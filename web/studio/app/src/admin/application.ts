@@ -21,6 +21,9 @@ export interface StudioOptions {
   ai?: boolean; aiTool?: string; aiUses?: string[]; aiTools?: string[]; aiUseOther?: string; aiToolOther?: string;
   shared?: boolean; sharedContractFile?: string;
   rerelease?: boolean; previousTitle?: string; previousId?: string;
+  rereleaseKind?: string; previousDistributor?: string; previousUrl?: string; previousUpc?: string; previousReleaseDate?: string;
+  previousAvailability?: string; rereleaseAudio?: string; rereleaseRights?: string; rereleaseNotes?: string;
+  rereleasePermissionFile?: string; rereleaseTracks?: { trackId: string; previousIsrc: string }[];
   contentIdExclusiveRightsAck?: boolean; contentIdOriginalRecordingAck?: boolean;
 }
 

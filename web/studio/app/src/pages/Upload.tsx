@@ -9,7 +9,11 @@ import { useConfirm } from '../components/Confirm';
 import { useProgressFill } from '../hooks/useAnimations';
 import { ApiError, MOCK, api, type ArtistProfileLinks, type DspAvailability, type ReleasePayload } from '../api/client';
 import { errorMessage } from '../api/errors';
-import { addDoc, docsForRelease, getDocsSnapshot, type DocRecord } from '../store/docs';
+import { addDoc, docsForRelease, getDocsSnapshot, useDocs, type DocRecord } from '../store/docs';
+import { RightsDocumentModal } from '../components/RightsDocumentModal';
+import { DocumentModal } from '../components/DocumentModal';
+import { RIGHTS_DOCUMENTS, type RightsDocumentContext, type RightsDocumentKind } from '../lib/rightsDocument';
+import { RERELEASE_KINDS, RERELEASE_AVAILABILITY, rereleaseIssue, rereleaseSummary, type RereleaseData } from '../lib/rerelease';
 import { pushNotice } from '../store/support';
 import { useProfile } from '../store/profile';
 import { fileSize, localStamp } from '../lib/format';
@@ -76,7 +80,7 @@ interface CoverTrackInfo {
   originalWriters: string;
 }
 
-interface ReleaseOptions {
+interface ReleaseOptions extends RereleaseData {
   express: boolean; expressAck: boolean; expressReason: string;
   minor: boolean;
   guardian: string; guardianRelation: string; guardianContact: string;
@@ -207,15 +211,25 @@ function selectedOptions(o: ReleaseOptions): [keyof ReleaseOptions, string, stri
   return OPTIONS_CATALOG.filter(([id]) => !!o[id]);
 }
 
-function DocAttach({ id, label, fileName, assetId, busy, onSelect, required, help }: {
+function DocAttach({ id, label, fileName, assetId, busy, onSelect, required, help, kind, releaseId, onElectronic, onOpenDoc }: {
   id: string; label: React.ReactNode; fileName: string;
   assetId?: string; busy?: boolean;
   onSelect: (file: File) => void; required?: boolean; help?: string;
+  kind: RightsDocumentKind; releaseId?: string; onElectronic: (kind: RightsDocumentKind) => void; onOpenDoc: (id: string) => void;
 }) {
+  const [method, setMethod] = useState<'electronic' | 'upload'>(fileName ? 'upload' : 'electronic');
+  const docs = useDocs().filter(d => d.releaseId === releaseId && d.electronic?.document_kind === kind);
   return (
-    <div className="field doc-attach">
-      <label htmlFor={id}>{label}{required && <> <span className="required">*</span></>}</label>
-      <FilePicker
+    <div className="field doc-attach aq-rights-evidence">
+      <strong>{label}{required && <> <span className="required">*</span></>}</strong>
+      <div className="aq-chips" role="group" aria-label="서류 준비 방법">
+        <button type="button" className={`aq-chip${method === 'electronic' ? ' is-on' : ''}`} aria-pressed={method === 'electronic'} onClick={() => setMethod('electronic')}>AUDENIQ에서 작성</button>
+        <button type="button" className={`aq-chip${method === 'upload' ? ' is-on' : ''}`} aria-pressed={method === 'upload'} onClick={() => setMethod('upload')}>보유한 서류 첨부</button>
+      </div>
+      {method === 'electronic' ? <>
+        <p className="help">발매 정보로 {RIGHTS_DOCUMENTS[kind].title}를 만들고 권리자가 직접 서명하면 문서가 완성돼요.</p>
+        <button type="button" className="button secondary" onClick={() => onElectronic(kind)}>전자 문서 작성{docs.length ? ' · 권리자 추가' : '하기'}</button>
+      </> : <><label className="sr-only" htmlFor={id}>{label}</label><FilePicker
         id={id} fileName={fileName} busy={busy}
         accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
         onChange={e => {
@@ -226,7 +240,8 @@ function DocAttach({ id, label, fileName, assetId, busy, onSelect, required, hel
       />
       <p className="help">
         {busy ? '서류를 서버에 올리는 중이에요…' : fileName ? (assetId ? `서버에 등록됨 · ${fileName}` : `재첨부 필요 · ${fileName}`) : (help || '서류를 첨부해 주세요.')}
-      </p>
+      </p></>}
+      {docs.map(d => <button key={d.id} type="button" className="aq-rights-receipt" onClick={() => onOpenDoc(d.id)}><CheckIcon size={16} /><span>{d.electronic?.rights_holder} · {d.reviewStatus === 'needs' ? '보완 요청' : '서명 완료'}<small>{d.reviewStatus === 'approved' ? 'AUDENIQ 검토 승인' : d.reviewStatus === 'needs' ? d.reviewNote : 'AUDENIQ 검토 중'} · 문서 보기</small></span></button>)}
     </div>
   );
 }
@@ -416,12 +431,13 @@ function aiSummary(o: Pick<ReleaseOptions, 'aiUses' | 'aiTools' | 'aiUseOther' |
   return [uses.join(' · '), tools.length ? `도구: ${tools.join(', ')}` : ''].filter(Boolean).join(' / ');
 }
 
-function OptionsSection({ form, set, group, onDocument, uploads }: {
+function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, onOpenDoc, releaseId }: {
   form: WizardForm;
   group: 'service' | 'rights';
   set: <K extends keyof WizardForm>(key: K, value: WizardForm[K]) => void;
   onDocument: (name: keyof ReleaseOptions, asset: keyof ReleaseOptions, file: File) => void;
   uploads: Record<string, UploadState>;
+  onElectronic: (kind: RightsDocumentKind) => void; onOpenDoc: (id: string) => void; releaseId?: string;
 }) {
   const o = form.options;
   const setOpt = <K extends keyof ReleaseOptions>(key: K, value: ReleaseOptions[K]) =>
@@ -607,7 +623,8 @@ function OptionsSection({ form, set, group, onDocument, uploads }: {
           <span>원곡 저작권자의 이용 허락을 받았거나, 정당한 라이선스 절차를 진행할 것을 확인해요.<small>허락 없는 커버곡 배급은 저작권 침해가 될 수 있어요.</small></span>
         </label>
         <DocAttach
-          id="aqCoverLicense" label="원곡 이용 허락서 (보유 시)"
+          kind="composition" releaseId={releaseId} onElectronic={onElectronic} onOpenDoc={onOpenDoc}
+          id="aqCoverLicense" label="원곡 이용 허락서"
           fileName={o.coverLicenseFile} assetId={o.coverLicenseAssetId} busy={uploads.coverLicenseFile?.state === 'uploading'}
           onSelect={file => onDocument('coverLicenseFile', 'coverLicenseAssetId', file)}
           help="이용 허락서나 라이선스 계약서를 첨부해 주세요."
@@ -619,6 +636,7 @@ function OptionsSection({ form, set, group, onDocument, uploads }: {
         <h3>샘플링·타인 음원 사용</h3>
         <p className="aq-option-intro">사용한 원본 음원과 저작물의 출처를 확인해요.</p>
         <DocAttach
+          kind="sample" releaseId={releaseId} onElectronic={onElectronic} onOpenDoc={onOpenDoc}
           id="aqSampleLicense" label="원본 이용 허락서"
           fileName={o.sampleLicenseFile} assetId={o.sampleLicenseAssetId} busy={uploads.sampleLicenseFile?.state === 'uploading'}
           onSelect={file => onDocument('sampleLicenseFile', 'sampleLicenseAssetId', file)}
@@ -632,6 +650,7 @@ function OptionsSection({ form, set, group, onDocument, uploads }: {
         <h3>피처링·공동 실연</h3>
         <p className="aq-option-intro">참여자의 크레딧과 이용 허락을 확인해요.</p>
         <DocAttach
+          kind="performer" releaseId={releaseId} onElectronic={onElectronic} onOpenDoc={onOpenDoc}
           id="aqFeaturedConsent" label="참여자 동의서 (보유 시)"
           fileName={o.featuredConsentFile} assetId={o.featuredConsentAssetId} busy={uploads.featuredConsentFile?.state === 'uploading'}
           onSelect={file => onDocument('featuredConsentFile', 'featuredConsentAssetId', file)}
@@ -644,6 +663,7 @@ function OptionsSection({ form, set, group, onDocument, uploads }: {
         <h3>공동 권리자·레이블 계약</h3>
         <p className="aq-option-intro">각 권리자와의 배급 위임 범위를 확인해요.</p>
         <DocAttach
+          kind="shared" releaseId={releaseId} onElectronic={onElectronic} onOpenDoc={onOpenDoc}
           id="aqSharedContract" label="공동 권리 계약서"
           fileName={o.sharedContractFile} assetId={o.sharedContractAssetId} busy={uploads.sharedContractFile?.state === 'uploading'}
           onSelect={file => onDocument('sharedContractFile', 'sharedContractAssetId', file)}
@@ -653,30 +673,76 @@ function OptionsSection({ form, set, group, onDocument, uploads }: {
     ),
     rerelease: (
       <div className="aq-option-detail">
-        <h3>기존 발매 정보</h3>
+        <h3>기존 발매 이전·재발매</h3>
+        <p className="aq-option-intro">현재 상황을 고르면 기존 코드와 서비스 이전에 필요한 내용을 안내해 드려요.</p>
         <div className="field">
-          <label htmlFor="aqPreviousTitle">기존 발매명</label>
+          <label>어떤 상황인가요? <span className="required">*</span></label>
+          <ChipPicker id="aqRereleaseKind" single options={Object.values(RERELEASE_KINDS)} value={o.rereleaseKind ? [RERELEASE_KINDS[o.rereleaseKind]] : []}
+            onChange={v => set('options', { ...o, rereleaseKind: (Object.entries(RERELEASE_KINDS).find(([, label]) => label === v[0])?.[0] ?? '') as RereleaseData['rereleaseKind'], rereleaseAck: false })} />
+        </div>
+        <div className="field">
+          <label htmlFor="aqPreviousTitle">기존 발매명 <span className="required">*</span></label>
           <input
             id="aqPreviousTitle" maxLength={180} value={o.previousTitle}
             onChange={e => setOpt('previousTitle', e.target.value)}
             placeholder="기존 앨범·싱글 제목"
           />
         </div>
-        <p className="help">기존 음반 코드(UPC)가 있다면 배급 설정의 ‘음반 코드 UPC’ 칸에 입력해 주세요.</p>
         <div className="field">
-          <label htmlFor="aqPreviousId">기존 음원 코드 ISRC (있을 때만)</label>
-          <input
-            id="aqPreviousId" maxLength={100} value={o.previousId}
-            onChange={e => setOpt('previousId', e.target.value)}
-            placeholder="예: KR-ABC-26-00001"
-          />
+          <label htmlFor="aqPreviousDistributor">이전 유통사·레이블 (알고 있다면)</label>
+          <input id="aqPreviousDistributor" maxLength={160} value={o.previousDistributor ?? ''} onChange={e => setOpt('previousDistributor', e.target.value)} placeholder="기존 배급을 맡은 곳" />
+        </div>
+        <div className="field">
+          <label htmlFor="aqPreviousUrl">기존 발매 링크 (보유 시)</label>
+          <input id="aqPreviousUrl" type="url" maxLength={500} value={o.previousUrl ?? ''} onChange={e => setOpt('previousUrl', e.target.value)} placeholder="https://…" />
         </div>
         <KoreanDateField
-          id="aqOriginalDate" label="최초 발매일"
+          id="aqOriginalDate" label={o.rereleaseKind === 'new_version' ? '이전 버전의 최초 발매일' : '최초 발매일'} required
           value={form.originalDate}
           onChange={v => set('originalDate', v)}
         />
-        <p className="help">기존 발매 중복과 스트리밍 매칭 여부를 별도로 확인해요.</p>
+        <div className="field"><label>기존 음원은 지금 서비스 중인가요? <span className="required">*</span></label>
+          <ChipPicker id="aqPreviousAvailability" single options={Object.values(RERELEASE_AVAILABILITY)} value={o.previousAvailability ? [RERELEASE_AVAILABILITY[o.previousAvailability]] : []}
+            onChange={v => set('options', { ...o, previousAvailability: (Object.entries(RERELEASE_AVAILABILITY).find(([, label]) => label === v[0])?.[0] ?? '') as RereleaseData['previousAvailability'], rereleaseAck: false })} />
+        </div>
+        <div className="field"><label htmlFor="aqRereleaseAudio">이번 음원은 기존 녹음과 같은가요? <span className="required">*</span></label>
+          <select id="aqRereleaseAudio" value={o.rereleaseAudio ?? ''} onChange={e => set('options', { ...o, rereleaseAudio: e.target.value as RereleaseData['rereleaseAudio'], rereleaseAck: false })}>
+            <option value="">선택해 주세요</option><option value="same">같은 녹음 · 음원 내용 변경 없음</option><option value="changed">새 녹음·리믹스 등 음악 내용 변경</option><option value="unknown">리마스터 등 변경 여부 확인 필요</option>
+          </select>
+        </div>
+        {o.rereleaseAudio && <div className="aq-option-note" role="status">
+          {o.rereleaseAudio === 'same' ? '같은 녹음은 기존 ISRC를 유지해요. 제목·아티스트·길이 등 기존 정보를 맞춰 주세요. 스트리밍 수와 플레이리스트 연결 결과는 플랫폼에서 결정해요.'
+            : o.rereleaseAudio === 'changed' ? '새 녹음·리믹스처럼 음악 내용이 달라지면 새로운 ISRC가 필요해요. 기존 코드는 비교용으로 보관하고 새 음원에 적용하지 않아요.'
+              : '단순 음량 조정과 음악 내용 변경은 코드 처리 방식이 달라요. 변경 내용을 아래에 적고 문의 메뉴에서 확인해 주세요. 확인 전에는 임시 저장해 둘 수 있어요.'}
+        </div>}
+        <div className="field"><label htmlFor="aqPreviousUpc">기존 음반 코드 UPC (보유 시)</label>
+          <input id="aqPreviousUpc" inputMode="numeric" maxLength={14} value={o.previousUpc ?? ''} onChange={e => setOpt('previousUpc', e.target.value)} placeholder="기존 앨범·싱글의 UPC" />
+          {o.rereleaseKind === 'transfer' && o.rereleaseAudio === 'same' && o.previousUpc && <button type="button" className="link-btn" onClick={() => set('upc', o.previousUpc ?? '')}>동일한 음반의 UPC를 배급 설정에 적용</button>}
+          <p className="help">트랙 구성이나 버전이 다른 음반은 새 UPC를 사용해요. 기존 UPC는 이전 유통사에서 확인할 수 있어요.</p>
+        </div>
+        <h4>트랙별 기존 ISRC</h4>
+        {form.tracks.map((t, i) => <div key={t.id} className="field">
+          <label htmlFor={`aqPreviousIsrc-${i}`}>{i + 1}. {t.title || '제목 없는 트랙'} · 기존 ISRC{o.rereleaseAudio === 'same' && <> <span className="required">*</span></>}</label>
+          <input id={`aqPreviousIsrc-${i}`} maxLength={15} value={o.rereleaseTracks?.find(x => x.trackId === t.id)?.previousIsrc ?? (i === 0 ? o.previousId : '')}
+            onChange={e => setOpt('rereleaseTracks', form.tracks.map((track, k) => ({ trackId: track.id, previousIsrc: track.id === t.id ? e.target.value : o.rereleaseTracks?.find(x => x.trackId === track.id)?.previousIsrc ?? (k === 0 ? o.previousId : '') })))} placeholder="예: KR-ABC-26-00001" />
+        </div>)}
+        {o.rereleaseAudio === 'same' && <button type="button" className="button secondary" onClick={() => {
+          const previous = form.tracks.map((t, i) => ({ trackId: t.id, previousIsrc: o.rereleaseTracks?.find(x => x.trackId === t.id)?.previousIsrc ?? (i === 0 ? o.previousId : '') }));
+          set('tracks', form.tracks.map(t => ({ ...t, isrc: previous.find(x => x.trackId === t.id)?.previousIsrc || t.isrc })));
+          setOpt('rereleaseTracks', previous);
+        }}>기존 ISRC를 트랙 등록에 적용</button>}
+        <p className="help">ISRC를 모르면 이전 유통사의 발매 내역에서 확인해 주세요. 같은 녹음에 새 코드를 발급하지 않도록 확인 후 접수해요.</p>
+        <div className="field"><label htmlFor="aqRereleaseRights">기존 계약과 이번 배급 권한 <span className="required">*</span></label>
+          <select id="aqRereleaseRights" value={o.rereleaseRights ?? ''} onChange={e => setOpt('rereleaseRights', e.target.value as RereleaseData['rereleaseRights'])}>
+            <option value="">선택해 주세요</option><option value="owned">내가 권리자이며 이전 계약의 제한을 확인했어요</option><option value="permission">권리자·레이블로부터 이번 배급 허락을 받았어요</option><option value="pending">계약 또는 이전 허락을 확인 중이에요</option>
+          </select>
+        </div>
+        {o.rereleaseRights === 'permission' && <DocAttach kind="master" releaseId={releaseId} onElectronic={onElectronic} onOpenDoc={onOpenDoc}
+          id="aqRereleasePermission" label="이번 배급 이용 허락서" fileName={o.rereleasePermissionFile ?? ''} assetId={o.rereleasePermissionAssetId} busy={uploads.rereleasePermissionFile?.state === 'uploading'} onSelect={file => onDocument('rereleasePermissionFile', 'rereleasePermissionAssetId', file)} />}
+        <div className="field"><label htmlFor="aqRereleaseNotes">변경 사항·이전 일정·확인이 필요한 내용</label><textarea id="aqRereleaseNotes" maxLength={1200} rows={3} value={o.rereleaseNotes ?? ''} onChange={e => setOpt('rereleaseNotes', e.target.value)} placeholder="예: 기존 서비스 종료 요청일, 리마스터 변경 내용, 이전 계약 확인 상황" /></div>
+        {(o.previousAvailability === 'live' || o.previousAvailability === 'takedown_requested') && <p className="aq-option-note">기존 서비스가 남아 있어요. 이전 유통사와 종료·이전 일정을 조율하고, 새 서비스 연결을 확인한 뒤 중복 송출을 정리해 주세요. AUDENIQ 신청만으로 기존 서비스가 내려가지는 않아요.</p>}
+        <label className="check-line"><input id="aqRereleaseAck" type="checkbox" checked={!!o.rereleaseAck} onChange={e => setOpt('rereleaseAck', e.target.checked)} /><span>기존 계약·음원 코드·서비스 상태를 확인했고, 서비스 이전 일정과 플랫폼 연결 결과는 별도로 확인할게요.</span></label>
+        <p className="help">코드 안내 기준: <a href="https://isrc.ifpi.org/why-use-isrc/when-to-assign" target="_blank" rel="noreferrer">IFPI ISRC</a> · <a href="https://support.spotify.com/sc-en/artists/article/re-uploading-music/" target="_blank" rel="noreferrer">Spotify 재업로드 안내</a></p>
       </div>
     ),
     ai: (
@@ -768,7 +834,7 @@ function OptionDocsBanner({ options }: { options: ReleaseOptions }) {
   return (
     <div className="aq-req-banner">
       <h3>추가 확인이 필요한 항목</h3>
-      <p>선택하신 발매 조건에 맞는 서류가 권리 증빙 메뉴에 준비돼요. 원본 확인과 검토는 별도로 진행돼요.</p>
+      <p>허락서·동의서는 신청 화면에서 자동 작성하고 권리자가 직접 서명할 수 있어요. 완성된 문서는 권리·보완 서류에 보관돼요.</p>
       <div>{chosen.map(([id, title]) => <span key={id} className="aq-req-tag">{title}</span>)}</div>
       {options.minor && (
         <p style={{ marginTop: 13 }}>법정대리인 동의서는 아티스트 본인의 확인과 별도로 관리돼요.</p>
@@ -784,7 +850,8 @@ function FinalReviewBanner({ form }: { form: WizardForm }) {
   if (o.express) warnings.push('신속 발매: 희망일 및 이용 조건 확인 후 진행');
   if (o.minor) warnings.push('미성년: 법정대리인 동의서 및 자격 확인 필요');
   if (o.ai) warnings.push('AI 음원: 이용 권한과 플랫폼별 허용 기준 확인 필요');
-  if (chosen.length) warnings.push('선택한 추가 옵션의 관련 서류는 권리 증빙에서 제출');
+  if (chosen.length) warnings.push('필요한 허락서·동의서는 AUDENIQ 전자 문서 작성 또는 보유 서류 첨부로 준비');
+  if (o.rerelease) warnings.push(rereleaseSummary(o));
   // 배급은 되지만 플랫폼 검수에서 걸릴 수 있는 표기
   const named = form.tracks.filter(t => t.title.trim());
   for (const w of [titleWarning(form.title), artistWarning(form.artist)]) if (w) warnings.push(w);
@@ -968,7 +1035,7 @@ function toPayload(form: WizardForm, step: number): ReleasePayload {
     coverName: form.coverName,
     coverData: form.coverData,
     coverAssetId: form.coverAssetId || undefined,
-    originalDate: form.originalDate,
+    originalDate: form.options.rerelease && form.options.rereleaseKind === 'new_version' ? form.releaseDate : form.originalDate,
     release_date: form.releaseDate || '',
     tracks: form.tracks.map(t => ({
       id: t.id, title: t.title.trim(), isrc: t.isrc.trim(), duration: t.duration,
@@ -986,7 +1053,7 @@ function toPayload(form: WizardForm, step: number): ReleasePayload {
     phonogram: form.phonogram.trim(),
     copyright: form.copyright.trim(),
     rightsChecks: form.rightsChecks,
-    options: { ...form.options },
+    options: { ...form.options, ...(form.options.rerelease ? { previousReleaseDate: form.originalDate } : {}) },
     lastStep: step,
     artistProfile: form.artistProfile.isNew
       ? { isNew: true, spotify: '', apple: '', melon: '' }
@@ -1021,7 +1088,8 @@ const AUDIO_RE = /\.(wav|flac|m4a|aif|aiff|aifc|wv|tta)$/i;
 /** 발매 신청 시 계약서·권리 서류를 준비 (같은 발매에 이미 있으면 다시 만들지 않음) */
 function ensureReleaseDocuments(f: WizardForm, releaseId: string) {
   const title = f.title.trim() || '제목 없는 발매';
-  if (docsForRelease(getDocsSnapshot(), releaseId).length) return;
+  const existing = docsForRelease(getDocsSnapshot(), releaseId);
+  if (existing.some(d => d.kind === 'agreements')) return;
   const genreVal = f.genre === '__other__' ? f.genreCustom.trim() : genreLabel(f.genre);
   const at = stampNow();
   const lines = [
@@ -1068,7 +1136,7 @@ function ensureReleaseDocuments(f: WizardForm, releaseId: string) {
     reviewHistory: [{ status: '접수 요청', time: at, detail: '신청서가 작성됐어요. 담당자 검토 후 서명을 진행할 수 있어요.' }],
     reviewStatus: 'prepared',
   };
-  addDoc(rights);
+  if (!existing.some(d => d.kind === 'rights')) addDoc(rights);
   addDoc(agreement);
 }
 
@@ -1079,6 +1147,10 @@ export function Upload() {
   const toast = useToast();
   const confirm = useConfirm();
   const profile = useProfile();
+  const allDocs = useDocs();
+  const [electronic, setElectronic] = useState<{ kind: RightsDocumentKind; context: RightsDocumentContext } | null>(null);
+  const [openDocId, setOpenDocId] = useState<string | null>(null);
+  const openDoc = allDocs.find(d => d.id === openDocId);
   const [searchParams] = useSearchParams();
   const editId = searchParams.get('edit');
   const fixCode = searchParams.get('fix');
@@ -1243,7 +1315,7 @@ export function Upload() {
         coverData: d?.coverData || '',
         coverAssetId: d?.coverAssetId || '',
         releaseDate: rel.release_date || '',
-        originalDate: d?.originalDate || '',
+        originalDate: d?.options?.rerelease && d.options.previousReleaseDate ? d.options.previousReleaseDate : d?.originalDate || '',
         upc: d?.upc || '',
         territories: d?.territories ?? ['WORLD'],
         platforms: d?.platforms ?? f.platforms,
@@ -1341,6 +1413,21 @@ export function Upload() {
     saveChain.current = p;
     return p;
   }, [canAutoSave]);
+
+  const openElectronic = async (kind: RightsDocumentKind) => {
+    await autoSave();
+    const f = formRef.current;
+    if (!draftIdRef.current || !f.title.trim() || !f.artist.trim()) {
+      toast('발매명과 아티스트를 입력하고 임시 저장한 뒤 전자 문서를 작성해 주세요.'); return;
+    }
+    const tracks = kind === 'composition' && f.options.cover
+      ? f.tracks.filter(t => f.options.coverTracks.some(c => c.trackId === t.id)) : f.tracks;
+    const source = kind === 'composition' && f.options.cover
+      ? f.options.coverTracks.map(c => `${f.tracks.find(t => t.id === c.trackId)?.title || '커버 트랙'} / 원곡: ${c.originalTitle} / 원 아티스트: ${c.originalArtist}${c.originalWriters ? ` / 작사·작곡: ${c.originalWriters}` : ''}`).join('\n')
+      : kind === 'sample' ? '' : kind === 'performer' ? tracks.map(t => `${t.title} / 참여자: ${[t.featuring, t.performers].filter(Boolean).join(', ')}`).join('\n') : undefined;
+    setElectronic({ kind, context: { releaseId: draftIdRef.current, title: f.title, artist: f.artist,
+      tracks: tracks.map(t => ({ title: t.title, isrc: t.isrc })), territories: [...f.territories], platforms: [...f.platforms], source } });
+  };
 
   // 화면을 떠날 때(뒤로 가기·메뉴 이동 등) 아직 저장 안 된 입력을 마지막으로 저장
   const autoSaveRef = useRef(autoSave);
@@ -1481,6 +1568,10 @@ export function Upload() {
           if (!c.originalArtist.trim()) return fail(`트랙 ${idx + 1}의 원곡 아티스트를 입력해 주세요.`, `#cover-orig-artist-${idx}`);
         }
         if (!o.coverRightsAck) return fail('커버곡 권리 확인을 체크해 주세요.', '#aqCoverRightsAck');
+      }
+      if (o.rerelease) {
+        const issue = rereleaseIssue(o, form.tracks, form.originalDate, form.releaseDate);
+        if (issue) return fail(issue.message, `#${issue.field}`);
       }
       if (!form.ownership.trim()) return fail('음원 권리자를 입력해 주세요.', '#f-ownership');
       if (!form.phonogram.trim()) return fail('℗ 표기를 입력해 주세요.', '#f-phonogram');
@@ -2081,7 +2172,7 @@ export function Upload() {
             </div>
             )}
             {!dsps && <p className="help" role="status">{dspError || '플랫폼 목록을 서버에서 불러오는 중이에요.'}</p>}
-            <div className="aq-fix-zone"><OptionsSection form={form} set={set} group="service" onDocument={attachOptionDocument} uploads={uploads} /></div>
+            <div className="aq-fix-zone"><OptionsSection form={form} set={set} group="service" onDocument={attachOptionDocument} uploads={uploads} onElectronic={kind => void openElectronic(kind)} onOpenDoc={setOpenDocId} releaseId={draftIdRef.current ?? undefined} /></div>
           </section>
         )}
 
@@ -2130,7 +2221,7 @@ export function Upload() {
                 ‘{form.label.trim() || form.artist.trim()}’(으)로 권리자 정보 채우기
               </button>
             )}
-            <div id="aqSpecialOptions" className="aq-fix-zone"><OptionsSection form={form} set={set} group="rights" onDocument={attachOptionDocument} uploads={uploads} /></div>
+            <div id="aqSpecialOptions" className="aq-fix-zone"><OptionsSection form={form} set={set} group="rights" onDocument={attachOptionDocument} uploads={uploads} onElectronic={kind => void openElectronic(kind)} onOpenDoc={setOpenDocId} releaseId={draftIdRef.current ?? undefined} /></div>
             <h2 className="subhead">필수 확인 항목</h2>
             <div className="field-group">
               {RIGHTS_CHECKS.map(([k, label]) => (
@@ -2162,7 +2253,7 @@ export function Upload() {
               </>
             )}
             <div className="notice">
-              권리 확인 체크는 실제 계약 체결이나 저작권 확인을 대신하지 않아요. 권리 관련 증빙은 ‘계약서·권리’ 메뉴에서 발매별로 등록해 주세요.
+              허락서·동의서는 위의 AUDENIQ 전자 문서 도구에서 작성하고 권리자가 직접 서명할 수 있어요. 완성된 서류는 ‘권리·보완 서류’에도 보관돼요.
             </div>
             <OptionDocsBanner options={form.options} />
           </section>
@@ -2255,6 +2346,8 @@ export function Upload() {
           {submitting ? '접수하는 중' : step === STEPS.length - 1 ? (resubmit ? '다시 접수하기' : editId && origStatus !== 'draft' ? '서명하고 수정 완료' : '서명하고 접수하기') : '다음으로'}
         </button>
       </div>
+      {electronic && <RightsDocumentModal kind={electronic.kind} context={electronic.context} onClose={() => setElectronic(null)} onComplete={doc => { setElectronic(null); setOpenDocId(doc.id); toast('권리자 서명 문서가 완성됐어요. AUDENIQ 검토가 이어져요.', 'success'); }} />}
+      {openDoc && <DocumentModal doc={openDoc} onClose={() => setOpenDocId(null)} onOpenSignature={() => {}} />}
     </div>
     </section>
   );
