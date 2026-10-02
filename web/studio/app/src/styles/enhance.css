@@ -1495,3 +1495,26 @@ body:has(#modal .aq-sticky-foot) .aq-toast-stack,body:has(.aq-form-actions.is-pi
 .aq-review-note-label{display:block;margin-bottom:4px;font-size:12px;font-weight:800;color:#a76525}
 .aq-review-note p{margin:0;font-size:14px;line-height:1.65;color:#3f4b5e;white-space:pre-line;overflow-wrap:anywhere}
 .aq-fix-panel .aq-review-note{margin:10px 0 12px}
+
+/* ---------- 보완 요청 목록: 번호 · 위치 · 내용 · 화살표 ---------- */
+.aq-correction-list button{grid-template-columns:24px minmax(0,1fr) 20px!important;gap:2px 12px!important;align-items:center;padding:14px 14px 14px 12px!important;background:#fff!important;border-radius:16px!important}
+.aq-correction-no{grid-column:1;grid-row:1/3;align-self:start;margin-top:1px;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:#fde3c6;color:#a65a12;font-size:12px;font-weight:850}
+.aq-correction-list .aq-correction-where{grid-column:2}
+.aq-correction-list .aq-correction-msg{grid-column:2;font-size:13.5px;color:#2f3646}
+.aq-correction-list .aq-correction-go{grid-column:3;grid-row:1/3;display:grid;place-items:center;color:#d08a45}
+.aq-fix-card .aq-correction-list{gap:8px}
+/* 담당자 의견: 고칠 항목이 아니라 참고 말 — 왼쪽 선 인용 */
+.aq-fix-card .aq-review-note{margin-top:12px;padding:12px 14px 12px 16px;border-radius:0 14px 14px 0;background:rgba(255,255,255,.5);border-left:3px solid #e9b27a}
+.aq-fix-card .aq-review-note p{font-size:13.5px}
+/* 보완 카드 머리: 아이콘을 작게, 설명은 한 줄 톤 */
+.aq-fix-card .aq-fix-icon{width:30px;height:30px;border-radius:10px}
+.aq-fix-card h2{margin-top:3px}
+/* 커버아트 옆 정보 */
+.aq-detail-cover-empty{display:grid;place-items:center;width:100%;max-width:220px;aspect-ratio:1;border-radius:18px;background:#e9eef8;color:#8792a8;font-size:13px;font-weight:700;margin:4px 0 10px}
+.aq-cover-meta{display:grid;gap:8px;margin:6px 0 0}
+.aq-cover-meta div{display:grid;grid-template-columns:64px minmax(0,1fr);gap:8px;font-size:13px}
+.aq-cover-meta dt{color:#8792a8;font-weight:700}
+.aq-cover-meta dd{margin:0;color:#3a4256;font-weight:650}
+/* 서류 상세: 아래 버튼이 하나면 꽉 차게, 서명 기록은 흰 바탕 안에 */
+.doc-actions>.button:only-child{grid-column:1/-1}
+.aq-sign-record img{display:block;width:100%;max-height:150px;object-fit:contain;background:#fff;border-radius:14px;padding:10px;margin:10px 0}
