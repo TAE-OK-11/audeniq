@@ -205,10 +205,10 @@ export function Rights() {
                 value={docName} onChange={e => setDocName(e.target.value)}
               />
             </div>
-            {kind in RIGHTS_DOCUMENTS && <div className="aq-chips" role="group" aria-label="권리 서류 준비 방법">
+            {kind in RIGHTS_DOCUMENTS && <div className="field"><span className="aq-method-label" id="aqMethodLabel">서류 준비 방법</span><div className="aq-chips aq-method" role="group" aria-labelledby="aqMethodLabel">
               <button type="button" className={`aq-chip${method === 'electronic' ? ' is-on' : ''}`} aria-pressed={method === 'electronic'} onClick={() => setMethod('electronic')}>AUDENIQ에서 작성</button>
               <button type="button" className={`aq-chip${method === 'upload' ? ' is-on' : ''}`} aria-pressed={method === 'upload'} onClick={() => setMethod('upload')}>보유한 서류 첨부</button>
-            </div>}
+            </div></div>}
             {(method === 'upload' || !(kind in RIGHTS_DOCUMENTS)) && <div className="field">
               <label htmlFor="aqRequiredFile">증빙 원본 (필요 시)</label>
               <FilePicker

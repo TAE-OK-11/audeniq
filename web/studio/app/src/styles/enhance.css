@@ -1518,3 +1518,11 @@ body:has(#modal .aq-sticky-foot) .aq-toast-stack,body:has(.aq-form-actions.is-pi
 /* 서류 상세: 아래 버튼이 하나면 꽉 차게, 서명 기록은 흰 바탕 안에 */
 .doc-actions>.button:only-child{grid-column:1/-1}
 .aq-sign-record img{display:block;width:100%;max-height:150px;object-fit:contain;background:#fff;border-radius:14px;padding:10px;margin:10px 0}
+
+/* 서류 준비 방법 — 두 가지 중 하나를 고르는 칸 (선택 안 된 쪽도 버튼으로 보이게, 아래 입력칸과 간격) */
+.aq-method-label{display:block;margin:0 0 8px;font-size:14px;font-weight:750;color:var(--portal-ink,#171B29)}
+.aq-chips.aq-method{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;border-radius:16px;background:#eef2fa;margin:0 0 20px}
+.aq-method .aq-chip{min-height:44px;justify-content:center;text-align:center;background:transparent!important;color:#5d6880!important;border-radius:12px;font-weight:720}
+.aq-method .aq-chip.is-on{background:#fff!important;color:#2C56E0!important;box-shadow:0 1px 3px rgba(23,27,41,.08)!important}
+.aq-rights-evidence .aq-chips.aq-method{margin-bottom:14px}
+.field>.aq-chips.aq-method{margin-bottom:0}
