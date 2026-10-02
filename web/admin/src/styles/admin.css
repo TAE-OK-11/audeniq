@@ -525,7 +525,7 @@ svg.aq-glyph{flex:none;fill:none!important;stroke:currentColor!important;stroke-
 .adm-brief-text{flex:1;min-width:0;display:grid;gap:2px}
 .adm-brief-text b{font-size:13px;font-weight:760;line-height:1.45;overflow-wrap:anywhere}
 .adm-brief li.is-ok .adm-brief-text b{font-weight:650;color:#4c5a74}
-.adm-brief-text small{font-size:12px;line-height:1.5;color:var(--adm-muted);overflow-wrap:anywhere}
+.adm-brief-text small{font-size:12px;line-height:1.5;color:var(--adm-muted);overflow-wrap:anywhere;white-space:pre-line}
 .adm-brief li .adm-btn{flex:none;min-height:34px;padding:6px 11px;font-size:12px}
 .adm-now{display:grid;gap:6px}
 .adm-now-body{padding:10px 12px;border-radius:12px;background:#fff;font-size:13px;font-weight:700;color:#202b40;line-height:1.55;overflow-wrap:anywhere}
@@ -642,3 +642,10 @@ svg.aq-glyph{flex:none;fill:none!important;stroke:currentColor!important;stroke-
 @media (max-width:640px){
   .adm-head .adm-sub{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 }
+.adm-tl-repeat{padding:1px 7px;border-radius:8px;background:#eef1f7;font-size:11px;font-weight:800;color:#5d6880}
+.adm-info-more{margin-top:14px;padding-top:12px;border-top:1px solid #e6ebf5}
+.adm-info-more>summary{display:flex;align-items:center;gap:6px;min-height:36px;font-size:13px;font-weight:750;color:#3B63F3;cursor:pointer;list-style:none}
+.adm-info-more>summary::-webkit-details-marker{display:none}
+.adm-info-more>summary svg{margin-left:auto;transition:transform .2s var(--adm-ease)}
+.adm-info-more[open]>summary svg{transform:rotate(90deg)}
+.adm-info-more[open]>summary{margin-bottom:10px}
