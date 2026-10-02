@@ -40,6 +40,13 @@ pub struct FileStore {
     pub dir: std::path::PathBuf,
     pub get_calls: AtomicUsize,
 }
+impl Drop for FileStore {
+    fn drop(&mut self) {
+        // Each instance owns a unique disposable directory. Retaining every
+        // master across suites otherwise fills the test host's disk.
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
 impl FileStore {
     pub fn path_for(&self, key: &str) -> std::path::PathBuf {
         // Sanitize key to a safe filename.

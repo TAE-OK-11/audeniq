@@ -16,6 +16,7 @@ import { ApplicationPaper, INTEGRITY_LABEL } from './ApplicationPaper';
 import { Modal } from './Modal';
 import { Glyph } from './Glyph';
 import { CheckIcon } from './Check';
+import { audioSpecs } from '../lib/audio';
 
 const dash = (v?: string | null) => (v && String(v).trim() ? v : '—');
 const INTEGRITY_TONE: Record<Integrity, 'green' | 'red' | 'gray'> = { ok: 'green', changed: 'red', unsigned: 'gray', checking: 'gray' };
@@ -305,11 +306,13 @@ export function TracksSection({ sheet }: { sheet: ReleaseSheet }) {
                       <div><dt>프로듀서</dt><dd>{dash(d.producer)}</dd></div>
                       <div><dt>피처링</dt><dd>{dash(d.featuring)}</dd></div>
                       <div style={{ gridColumn: '1 / -1' }}><dt>음원 파일</dt><dd>{[d.audioName, d.audioSpec].filter(Boolean).join(' · ') || s?.asset_kind || '—'}</dd></div>
+                      {s && <div style={{ gridColumn: '1 / -1' }}><dt>서버 측정</dt><dd>{audioSpecs(sheet.track_audio?.[s.id])}</dd></div>}
                     </dl>
                   ) : (
                     <dl className="adm-kv">
                       <div><dt>크레딧</dt><dd>{s?.credits.map(c => ROLE_KO[c.role] ?? c.role).join(', ') || '—'}</dd></div>
                       <div><dt>음원</dt><dd>{s?.asset_kind ?? '—'}</dd></div>
+                      {s && <div><dt>서버 측정</dt><dd>{audioSpecs(sheet.track_audio?.[s.id])}</dd></div>}
                     </dl>
                   )}
                   {d && !d.instrumental && (

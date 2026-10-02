@@ -12,7 +12,7 @@ use std::process::Stdio;
 use std::time::Duration;
 
 /// Bump when any threshold, check set, or metric definition changes.
-pub const QC_RULE_VERSION: &str = "4";
+pub const QC_RULE_VERSION: &str = "6";
 
 /// Minimum audio duration in seconds before flagging as suspiciously short.
 pub const MIN_AUDIO_SECS: f64 = 30.0;
@@ -382,6 +382,7 @@ pub const AUDIO_CHECK_CODES: &[&str] = &[
     // submission::handle_fingerprint_checks.
     "AUDIO_FINGERPRINT_FAILED",
     "AUDIO_SIMILAR_TO_EXISTING",
+    "AUDIO_AI_PROVENANCE",
 ];
 
 fn audio_code_index(code: &str) -> usize {
@@ -1101,46 +1102,69 @@ fn decode_timeout(duration_secs: f64) -> Duration {
     scaled.max(probe_timeout())
 }
 
-/// Unique counter for fingerprint-tap temp files.
-static FP_TAP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
 /// Fingerprint PCM, one mono 11025 Hz `f32` vector per segment window.
 pub type TapWindows = Vec<Vec<f32>>;
 
 /// Fingerprint PCM of the [`crate::fingerprint::segment_windows`] of a
-/// `duration_secs` track, read from the s16le mono 11025 Hz tap file.
-/// Only the windows are loaded (3 x 30 s, ~4 MB as f32) instead of the
-/// whole track: a 100-minute master held ~400 MB here before. Windows past
-/// the end of the tap are cut short or dropped, as slicing did before.
-fn read_tap_windows(tap: &Path, duration_secs: f64) -> Option<TapWindows> {
-    use std::io::{Seek, SeekFrom};
-    let mut f = std::fs::File::open(tap).ok()?;
-    let len = f.metadata().ok()?.len();
-    if len == 0 || len % 2 != 0 {
+/// `duration_secs` track, retained while draining the continuous s16le tap.
+/// Discarded samples never occupy a scratch file or a duration-sized buffer.
+/// Resampling still sees the entire recording, preserving existing hashes.
+fn read_tap_windows(mut tap: impl Read, duration_secs: f64) -> Option<TapWindows> {
+    let sr = f64::from(crate::fingerprint::FINGERPRINT_SAMPLE_RATE);
+    let windows: Vec<_> = crate::fingerprint::segment_windows(duration_secs)
+        .into_iter()
+        .map(|(start, len)| ((start * sr) as u64, ((start + len) * sr).ceil() as u64))
+        .collect();
+    let max_samples = (crate::fingerprint::FINGERPRINT_SEGMENTS as f64
+        * crate::fingerprint::FINGERPRINT_SEGMENT_SECS
+        * sr)
+        .ceil() as u64
+        + crate::fingerprint::FINGERPRINT_SEGMENTS as u64;
+    let mut retained = 0u64;
+    let mut segments = Vec::with_capacity(windows.len());
+    for &(lo, hi) in &windows {
+        let count = hi.checked_sub(lo)?;
+        retained = retained.checked_add(count)?;
+        if retained > max_samples {
+            return None;
+        }
+        segments.push(Vec::with_capacity(usize::try_from(count).ok()?));
+    }
+    let mut buf = [0u8; 16_384];
+    let mut low_byte = None;
+    let mut sample = 0u64;
+    loop {
+        let n = match tap.read(&mut buf) {
+            Ok(n) => n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => return None,
+        };
+        if n == 0 {
+            break;
+        }
+        for &byte in &buf[..n] {
+            if let Some(low) = low_byte.take() {
+                let value = i16::from_le_bytes([low, byte]) as f32 / 32768.0;
+                for ((lo, hi), segment) in windows.iter().zip(&mut segments) {
+                    if sample >= *lo && sample < *hi {
+                        segment.push(value);
+                    }
+                }
+                sample = sample.checked_add(1)?;
+            } else {
+                low_byte = Some(byte);
+            }
+        }
+    }
+    if sample == 0 || low_byte.is_some() {
         return None;
     }
-    let total = (len / 2) as usize;
-    let sr = f64::from(crate::fingerprint::FINGERPRINT_SAMPLE_RATE);
-    let mut segments = Vec::new();
-    let mut bytes = Vec::new();
-    for (start, window) in crate::fingerprint::segment_windows(duration_secs) {
-        let lo = (start * sr) as usize;
-        let hi = (((start + window) * sr).ceil() as usize).min(total);
-        if lo >= hi {
-            continue;
-        }
-        bytes.resize((hi - lo) * 2, 0);
-        f.seek(SeekFrom::Start(lo as u64 * 2)).ok()?;
-        f.read_exact(&mut bytes).ok()?;
-        let (chunks, _) = bytes.as_chunks::<2>();
-        segments.push(
-            chunks
-                .iter()
-                .map(|c| i16::from_le_bytes(*c) as f32 / 32768.0)
-                .collect(),
-        );
-    }
-    Some(segments)
+    Some(
+        segments
+            .into_iter()
+            .filter(|segment| !segment.is_empty())
+            .collect(),
+    )
 }
 
 /// Decode the file once with ffmpeg: interleaved f32 PCM on stdout feeds the
@@ -1156,26 +1180,14 @@ fn decode_analysis(
     want_tap: bool,
 ) -> std::result::Result<(DecodeAnalysis, Option<TapWindows>), AnalyzerError> {
     use AnalyzerError::{Unavailable, Undecodable};
+    use std::os::fd::AsRawFd;
+    use std::os::unix::{net::UnixStream, process::CommandExt};
     let channels = m.channels.max(1) as usize;
-    // Tap file: removed on drop, even if the decode fails half way.
-    struct TapFile(Option<std::path::PathBuf>);
-    impl Drop for TapFile {
-        fn drop(&mut self) {
-            if let Some(p) = self.0.take() {
-                let _ = std::fs::remove_file(p);
-            }
-        }
-    }
-    let tap = if want_tap {
-        let p = std::env::temp_dir().join(format!(
-            "audeniq-fptap-{}-{}",
-            std::process::id(),
-            FP_TAP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-        ));
-        Some(TapFile(Some(p)))
-    } else {
-        None
-    };
+    let deadline = std::time::Instant::now() + decode_timeout(m.duration_secs);
+    let tap = want_tap
+        .then(UnixStream::pair)
+        .transpose()
+        .map_err(|_| Unavailable)?;
     let mut cmd = std::process::Command::new(ffmpeg_bin());
     cmd.args([
         "-nostdin",
@@ -1200,7 +1212,7 @@ fn decode_analysis(
         "pcm_f32le",
         "pipe:1",
     ]);
-    if let Some(t) = tap.as_ref().and_then(|t| t.0.as_ref()) {
+    if let Some((_, writer)) = &tap {
         // Second output, same single decode: mono 11025 Hz, matching the
         // fingerprint segment decoder's `-ac 1 -ar 11025` exactly.
         cmd.args([
@@ -1215,7 +1227,18 @@ fn decode_analysis(
             "-acodec",
             "pcm_s16le",
         ])
-        .arg(t);
+        .arg(format!("pipe:{}", writer.as_raw_fd()));
+        let fd = writer.as_raw_fd();
+        // SAFETY: only the child clears CLOEXEC on its existing descriptor.
+        // fcntl is async-signal-safe; no allocation or locks run after fork.
+        unsafe {
+            cmd.pre_exec(move || {
+                if libc::fcntl(fd, libc::F_SETFD, 0) == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
     }
     let mut child = cmd
         .stdin(Stdio::null())
@@ -1223,11 +1246,21 @@ fn decode_analysis(
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|_| Unavailable)?;
+    let tap_rx = tap.map(|(reader, writer)| {
+        drop(writer); // Only ffmpeg owns the writer; its exit delivers EOF.
+        let (tx, rx) = std::sync::mpsc::channel();
+        let duration = m.duration_secs;
+        std::thread::spawn(move || {
+            let _ = tx.send(read_tap_windows(reader, duration));
+        });
+        rx
+    });
     let mut stdout = child.stdout.take().ok_or(Unavailable)?;
     let stderr = child.stderr.take().ok_or(Unavailable)?;
     // stderr: keep only the tail. A damaged file can make ffmpeg log an error
     // per frame; the summary we need is always at the end.
-    let err_thread = std::thread::spawn(move || {
+    let (err_tx, err_rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
         let mut tail: std::collections::VecDeque<u8> = std::collections::VecDeque::new();
         let mut r = stderr;
         let mut buf = [0u8; 8192];
@@ -1242,7 +1275,7 @@ fn decode_analysis(
                 }
             }
         }
-        tail.into_iter().collect::<Vec<u8>>()
+        let _ = err_tx.send(tail.into_iter().collect::<Vec<u8>>());
     });
     let (tx, rx) = std::sync::mpsc::channel();
     let block_frames = ((f64::from(m.sample_rate.max(1)) * BLOCK_SECS) as u64).max(1);
@@ -1381,33 +1414,47 @@ fn decode_analysis(
             }
         }
     }
-    let analysis = match rx.recv_timeout(decode_timeout(m.duration_secs)) {
-        Ok(Some(a)) => a,
-        Ok(None) => {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(Unavailable);
-        }
-        Err(_) => {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(Unavailable);
+    let analysis =
+        match rx.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())) {
+            Ok(Some(a)) => a,
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(Unavailable);
+            }
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(Unavailable);
+            }
+        };
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(10))
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(Unavailable);
+            }
         }
     };
-    let status = child.wait().map_err(|_| Unavailable)?;
-    let err_text = err_thread.join().unwrap_or_default();
+    let err_text = err_rx
+        .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+        .map_err(|_| Unavailable)?;
     if !status.success() {
         return Err(Undecodable);
     }
     let (integrated, true_peak) =
         parse_ebur128(&String::from_utf8_lossy(&err_text)).ok_or(Undecodable)?;
-    // Fingerprint tap: read only the segment windows (s16le mono 11025 Hz
-    // → f32, same scaling as the segment decoder). Read before the TapFile
-    // guard drops (deletes) it. A missing or malformed tap is not a QC
-    // failure: the caller maps it to a fingerprint TECHNICAL_RETRY.
-    let tap_samples = tap
-        .as_ref()
-        .and_then(|t| read_tap_windows(t.0.as_ref()?, m.duration_secs));
+    // A malformed tap remains a fingerprint retry, as before.
+    let tap_samples = tap_rx.and_then(|rx| {
+        rx.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+            .ok()
+            .flatten()
+    });
     Ok((
         DecodeAnalysis {
             sample_rate: m.sample_rate,
@@ -1466,13 +1513,17 @@ fn parse_ebur128_value(line: &str) -> Option<Option<f64>> {
 }
 
 /// Fixed Stage 1 image check contract: every analyzed cover-art asset yields
-/// exactly these five outcomes, in order.
+/// these outcomes in order, including provenance appended by the submission analyzer.
 pub const IMAGE_CHECK_CODES: &[&str] = &[
     "SHA256_MISMATCH",
     "IMAGE_MAGIC_MISMATCH",
     "IMAGE_PROBE_FAILED",
     "IMAGE_TOO_SMALL",
     "IMAGE_NOT_SQUARE",
+    "IMAGE_AI_PROVENANCE",
+    "IMAGE_COLOR_PROFILE",
+    "IMAGE_TEXT_SCAN",
+    "IMAGE_QR_SCAN",
 ];
 
 /// Stage 1 basic QC for a cover-art image file.
@@ -1610,6 +1661,117 @@ pub fn check_image(path: &Path, registered_sha256: Option<&str>) -> Vec<CheckOut
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn streaming_tap_preserves_windows_with_partial_reads_and_truncated_eof() {
+        struct SmallReads(std::io::Cursor<Vec<u8>>);
+        impl Read for SmallReads {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                let len = buf.len().min(3);
+                self.0.read(&mut buf[..len])
+            }
+        }
+        let sr = f64::from(crate::fingerprint::FINGERPRINT_SAMPLE_RATE);
+        for (duration, actual) in [
+            (90.0, 90.0),
+            (90.001, 90.001),
+            (121.235, 121.235),
+            (180.75, 45.0),
+        ] {
+            let pcm: Vec<i16> = (0..(actual * sr) as usize)
+                .map(|i| (i % 32768) as i16)
+                .collect();
+            let bytes: Vec<u8> = pcm.iter().flat_map(|sample| sample.to_le_bytes()).collect();
+            let expected: TapWindows = crate::fingerprint::segment_windows(duration)
+                .into_iter()
+                .filter_map(|(start, len)| {
+                    let lo = (start * sr) as usize;
+                    let hi = (((start + len) * sr).ceil() as usize).min(pcm.len());
+                    (lo < hi).then(|| pcm[lo..hi].iter().map(|s| *s as f32 / 32768.0).collect())
+                })
+                .collect();
+            assert_eq!(
+                read_tap_windows(SmallReads(std::io::Cursor::new(bytes)), duration).unwrap(),
+                expected
+            );
+        }
+        assert!(read_tap_windows(&[1u8][..], 120.0).is_none());
+        assert!(read_tap_windows(std::io::empty(), 120.0).is_none());
+    }
+
+    #[test]
+    fn streaming_tap_bounds_retention_for_long_compressed_input() {
+        // A one-hour decode is drained with a fixed source buffer, without
+        // allocating the 79 MB tap that the old file output wrote to disk.
+        let bytes = std::io::repeat(0).take(3600 * 11025 * 2);
+        let segments = read_tap_windows(bytes, 3600.0).unwrap();
+        assert_eq!(segments.len(), 3);
+        assert_eq!(segments.iter().map(Vec::len).sum::<usize>(), 90 * 11025);
+        assert!(segments.iter().all(|s| s.len() == 30 * 11025));
+    }
+
+    #[test]
+    fn pipe_tap_matches_continuous_ffmpeg_pcm() {
+        for (rate, channels, duration, format) in [
+            (44100, 1, 90.0, "wav"),
+            (48000, 2, 90.001, "flac"),
+            (96000, 2, 121.235, "wav"),
+        ] {
+            let path = tmp(&format!("pipe-tap-{}-{rate}.{format}", std::process::id()));
+            let status = Command::new("ffmpeg")
+                .args(["-y", "-v", "error", "-f", "lavfi", "-i"])
+                .arg(format!(
+                    "sine=frequency=437:duration={duration}:sample_rate={rate}"
+                ))
+                .args([
+                    "-ac",
+                    &channels.to_string(),
+                    "-c:a",
+                    if format == "flac" {
+                        "flac"
+                    } else {
+                        "pcm_s16le"
+                    },
+                ])
+                .arg(&path)
+                .status()
+                .expect("ffmpeg missing");
+            assert!(status.success());
+            let reference = Command::new("ffmpeg")
+                .args(["-nostdin", "-v", "error", "-i"])
+                .arg(&path)
+                .args([
+                    "-map",
+                    "0:a:0",
+                    "-ac",
+                    "1",
+                    "-ar",
+                    "11025",
+                    "-f",
+                    "s16le",
+                    "-acodec",
+                    "pcm_s16le",
+                    "pipe:1",
+                ])
+                .output()
+                .unwrap();
+            assert!(reference.status.success());
+            let metrics = probe_audio_metrics(&path).unwrap();
+            let (analysis, segments) = decode_analysis(&path, &metrics, true).unwrap();
+            let expected = read_tap_windows(
+                std::io::Cursor::new(reference.stdout),
+                metrics.duration_secs,
+            )
+            .unwrap();
+            assert_eq!(
+                segments.unwrap(),
+                expected,
+                "{rate} Hz {channels} channels {format}"
+            );
+            assert!((analysis.decoded_secs() - duration).abs() < 0.01);
+            std::fs::remove_file(path).unwrap();
+        }
+    }
     use std::process::Command;
 
     fn tmp(name: &str) -> std::path::PathBuf {
@@ -1862,7 +2024,7 @@ mod tests {
         assert_eq!(sha.status, CheckStatus::Blocked);
         // Blocked short-circuits: the remaining checks are NOT_APPLICABLE,
         // but the full contract still holds (13 QC + 2 fingerprint).
-        assert_eq!(out.len(), 15);
+        assert_eq!(out.len(), AUDIO_CHECK_CODES.len());
         assert!(
             out[1..]
                 .iter()

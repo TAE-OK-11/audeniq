@@ -15,6 +15,66 @@ struct Seed {
     track: Uuid,
 }
 
+#[sqlx::test]
+async fn supplied_codes_cannot_stall_another_organizations_issuer(pool: PgPool) {
+    database::MIGRATOR.run(&pool).await.unwrap();
+    register_issuer(&pool, "security-test", IdentifierKind::Isrc, "KRA1B")
+        .await
+        .unwrap();
+    let year = chrono::Utc::now().format("%y").to_string();
+    // Artist-supplied codes occupy the issuer's next 25 numbers, under
+    // other organizations' RLS scopes. They remain legitimate assignments.
+    for n in 1..=25 {
+        let supplied = seed(&pool).await;
+        let value =
+            audeniq_core::identifiers::compose(IdentifierKind::Isrc, "KRA1B", &year, n).unwrap();
+        let mut tx = org_tx(&pool, supplied.org).await;
+        record_existing(
+            &mut tx,
+            &ExistingAssignment {
+                org_id: supplied.org,
+                release_id: supplied.release,
+                track_id: Some(supplied.track),
+                revision_id: supplied.revision,
+                kind: IdentifierKind::Isrc,
+                value: &value,
+            },
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+    }
+    let target = seed(&pool).await;
+    let mut tx = org_tx(&pool, target.org).await;
+    let code = issue_or_reuse(
+        &mut tx,
+        target.org,
+        target.release,
+        Some(target.track),
+        target.revision,
+        IdentifierKind::Isrc,
+    )
+    .await
+    .unwrap();
+    assert_eq!(code, format!("KRA1B{year}00026"));
+    tx.commit().await.unwrap();
+    let mut retry = org_tx(&pool, target.org).await;
+    assert_eq!(
+        issue_or_reuse(
+            &mut retry,
+            target.org,
+            target.release,
+            Some(target.track),
+            target.revision,
+            IdentifierKind::Isrc
+        )
+        .await
+        .unwrap(),
+        code
+    );
+    retry.commit().await.unwrap();
+}
+
 async fn seed(pool: &PgPool) -> Seed {
     let s = Seed {
         org: Uuid::new_v4(),

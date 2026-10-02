@@ -5,6 +5,7 @@ GRANT SELECT ON ALL TABLES IN SCHEMA identity,catalog TO audeniq_api;
 GRANT INSERT,UPDATE ON identity.orgs,identity.parties,identity.users,identity.memberships,identity.sessions,identity.auth_limits,identity.resources,identity.resource_acl TO audeniq_api;
 GRANT INSERT,UPDATE ON catalog.artists,catalog.labels,catalog.releases,catalog.tracks,catalog.credits,catalog.assets,catalog.upload_sessions TO audeniq_api;
 GRANT SELECT ON catalog.asset_fingerprints TO audeniq_api;
+GRANT SELECT,INSERT ON catalog.asset_provenance TO audeniq_api;
 GRANT DELETE ON catalog.credits TO audeniq_api;
 GRANT SELECT,INSERT,UPDATE ON operations.jobs,operations.outbox TO audeniq_api;
 GRANT INSERT ON operations.audit_events TO audeniq_api;
@@ -71,6 +72,8 @@ GRANT SELECT ON execution.delivery_attempts,execution.ack_events TO audeniq_api;
 GRANT USAGE ON SCHEMA distribution,finance,execution,rights,identity,catalog TO audeniq_worker;
 GRANT SELECT ON ALL TABLES IN SCHEMA distribution,finance,execution,rights TO audeniq_worker;
 GRANT SELECT ON catalog.application_revisions,catalog.artists,catalog.labels,catalog.tracks,catalog.credits,catalog.assets,catalog.consent_packages,catalog.upload_sessions TO audeniq_worker;
+GRANT SELECT ON catalog.asset_provenance TO audeniq_worker;
+GRANT SELECT ON catalog.external_recordings,catalog.external_recording_epoch TO audeniq_worker;
 GRANT SELECT ON identity.orgs,identity.memberships,identity.parties TO audeniq_worker;
 -- Stage 1 re-checks protected artist names (list is operator-managed; no runtime writes).
 GRANT SELECT ON catalog.protected_artists,catalog.protected_artist_aliases,catalog.protected_artist_exceptions TO audeniq_worker;

@@ -2,6 +2,9 @@
 //! role). Every change is logged with the operator name
 //! (`--operator NAME` or `AUDENIQ_OPERATOR`).
 //!
+//! audeniq-admin external-recording import METADATA_JSON AUDIO_FILE
+//! audeniq-admin external-recording list
+//! audeniq-admin external-recording activate|deactivate REFERENCE_UUID
 //! audeniq-admin protected list
 //! audeniq-admin protected add NAME [--mode CONTAINS|TOKEN] [--action BLOCK|REVIEW] [--note TEXT]
 //! audeniq-admin protected remove NAME              (deactivate; history kept)
@@ -83,6 +86,47 @@ async fn main() -> anyhow::Result<()> {
     let note = take_opt(&mut args, "--note");
     let reason = take_opt(&mut args, "--reason");
     let phrase = take_flag(&mut args, "--phrase");
+    if args.first().map(String::as_str) == Some("external-recording") {
+        use audeniq_core::external_recordings;
+        let pool = audeniq_core::database::connect(&std::env::var("DATABASE_URL")?, 2).await?;
+        match (args.get(1).map(String::as_str), args.get(2), args.get(3)) {
+            (Some("list"), None, None) => {
+                let rows: Vec<serde_json::Value> = sqlx::query_scalar("SELECT jsonb_build_object('id',id,'title',title,'artist',artist,'isrc',isrc,'source_url',source_url,'active',active,'imported_by',imported_by,'imported_at',imported_at) FROM catalog.external_recordings ORDER BY imported_at DESC LIMIT 1000")
+                    .fetch_all(&pool).await?;
+                println!("{}", serde_json::to_string_pretty(&rows)?);
+            }
+            (Some("import"), Some(metadata), Some(audio)) if args.len() == 4 => {
+                let file = std::fs::File::open(metadata)?;
+                if file.metadata()?.len() > 16384 {
+                    anyhow::bail!("reference metadata exceeds 16 KiB");
+                }
+                let metadata: external_recordings::ReferenceMetadata =
+                    serde_json::from_reader(file)?;
+                let id = external_recordings::import(
+                    &pool,
+                    &operator,
+                    metadata,
+                    std::path::Path::new(audio),
+                )
+                .await?;
+                println!("{id}");
+            }
+            (Some(cmd @ ("activate" | "deactivate")), Some(id), None) if args.len() == 3 => {
+                external_recordings::set_active(
+                    &pool,
+                    &operator,
+                    uuid::Uuid::parse_str(id)?,
+                    cmd == "activate",
+                )
+                .await?;
+                println!("ok");
+            }
+            _ => anyhow::bail!(
+                "usage: audeniq-admin [--operator NAME] external-recording <list|import METADATA_JSON AUDIO_FILE|activate ID|deactivate ID>"
+            ),
+        }
+        return Ok(());
+    }
     if args.first().map(String::as_str) == Some("staff") {
         use audeniq_core::staff_admin;
         let pool = audeniq_core::database::connect(&std::env::var("DATABASE_URL")?, 1).await?;
