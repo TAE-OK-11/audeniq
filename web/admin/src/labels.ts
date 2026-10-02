@@ -4,10 +4,24 @@ import type { Duty, StaffRole } from './api/staff';
 
 export type Tone = 'blue' | 'violet' | 'amber' | 'green' | 'red' | 'gray';
 
+/** 스튜디오 lib/catalog.ts DSP와 같은 순서 — DSP_NAMES[i] = 서버 코드 D-(i+1) */
 const DSP_NAMES: [string, string][] = [
   ['melon', '멜론'], ['genie', '지니'], ['flo', 'FLO'], ['bugs', '벅스'],
   ['spotify', 'Spotify'], ['apple', 'Apple Music / iTunes'], ['youtube', 'YouTube Music'],
   ['amazon', 'Amazon Music'], ['tidal', 'TIDAL'], ['deezer', 'Deezer'], ['qobuz', 'Qobuz'],
+  ['pandora', 'Pandora (SiriusXM)'], ['soundcloud', 'SoundCloud'], ['audiomack', 'Audiomack'],
+  ['anghami', 'Anghami (중동·북아프리카)'], ['boomplay', 'Boomplay (아프리카)'], ['jiosaavn', 'JioSaavn (인도)'],
+  ['kkbox', 'KKBOX (대만·홍콩)'], ['line-music', 'LINE MUSIC (일본)'], ['awa', 'AWA (일본)'],
+  ['netease', 'NetEase Cloud Music (중국)'], ['tencent', 'Tencent Music (QQ뮤직·쿠거우·쿠워·WeSing)'],
+  ['napster', 'Napster'], ['iheart', 'iHeartRadio'],
+  ['meta', 'Instagram·Facebook (Meta)'], ['tiktok', 'TikTok·CapCut (ByteDance)'],
+  ['youtube-cid', 'YouTube Content ID·Shorts'], ['snapchat', 'Snapchat'], ['beatport', 'Beatport'],
+  ['itunes', 'iTunes Store (다운로드)'], ['claro-musica', 'Claro Música (중남미)'], ['pretzel', 'Pretzel (스트리머용 음원)'],
+  ['triller', 'Triller'], ['touchtunes', 'TouchTunes (디지털 주크박스)'], ['yandex', 'Yandex Music (러시아·CIS)'],
+  ['kuaishou', 'Kuaishou·Kwai·SnackVideo'], ['joox', 'JOOX (동남아·홍콩)'], ['trebel', 'TREBEL (광고형 무료 다운로드)'],
+  ['mixcloud', 'Mixcloud (DJ 믹스)'], ['twitch', 'Twitch (DJ 방송)'], ['peloton', 'Peloton (피트니스)'],
+  ['canva', 'Canva (디자인·영상 음원)'], ['lickd', 'Lickd (크리에이터 음원 라이선스)'], ['adaptr', 'Adaptr (앱·서비스용 음원)'],
+  ['styngr', 'STYNGR (게임 음원)'],
 ];
 
 export function dspLabel(value: string): string {

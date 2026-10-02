@@ -1,3 +1,4 @@
+import { loginRedirect } from '../lib/loginRedirect';
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from '../lib/router';
 import { useAuth } from '../api/auth';
@@ -8,7 +9,7 @@ export function Login() {
   const { login } = useAuth();
   const nav = useNavigate();
   const loc = useLocation();
-  const from = (loc.state as { from?: string } | null)?.from;
+  const from = loginRedirect(loc.state);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
@@ -22,7 +23,7 @@ export function Login() {
     setBusy(true);
     try {
       await login(email.trim(), password);
-      nav(from && from !== '/login' ? from : '/', { replace: true });
+      nav(from ?? '/', { replace: true });
     } catch (err) {
       setError(errorMessage(err, '로그인에 실패했어요.'));
       setBusy(false);
