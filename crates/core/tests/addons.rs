@@ -1388,6 +1388,80 @@ async fn runtime_api_can_operate_admin_workflow_without_staff_update_privilege(p
     runtime.close().await;
 }
 
+#[sqlx::test(migrations = false)]
+async fn forward_migration_repairs_existing_orders_under_forced_rls(pool: PgPool) {
+    let before = sqlx::migrate::Migrator::with_migrations(
+        audeniq_core::database::MIGRATOR
+            .iter()
+            .filter(|m| m.version <= 69)
+            .cloned()
+            .collect(),
+    );
+    before.run(&pool).await.unwrap();
+    sqlx::raw_sql(include_str!("fixtures/addon_0069_upgrade.sql"))
+        .execute(&pool)
+        .await
+        .unwrap();
+    // This owner can perform DDL but cannot bypass FORCE RLS, just like a
+    // non-superuser deployment's schema owner. All ownership is DB-local.
+    sqlx::raw_sql(r#"DO $$ DECLARE obj record; BEGIN
+      IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='addon_stabilization_schema_owner') THEN
+        CREATE ROLE addon_stabilization_schema_owner NOLOGIN NOSUPERUSER NOBYPASSRLS;
+      END IF;
+      FOR obj IN SELECT nspname FROM pg_namespace WHERE nspname IN ('identity','catalog','operations','rights','distribution','execution','finance','portal') LOOP
+        EXECUTE format('ALTER SCHEMA %I OWNER TO addon_stabilization_schema_owner',obj.nspname);
+      END LOOP;
+      FOR obj IN SELECT n.nspname,c.relname,c.relkind FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname IN ('identity','catalog','operations','rights','distribution','execution','finance','portal') AND c.relkind IN ('r','p','S','v','m') LOOP
+        EXECUTE format('ALTER %s %I.%I OWNER TO addon_stabilization_schema_owner',CASE obj.relkind WHEN 'S' THEN 'SEQUENCE' WHEN 'v' THEN 'VIEW' WHEN 'm' THEN 'MATERIALIZED VIEW' ELSE 'TABLE' END,obj.nspname,obj.relname);
+      END LOOP;
+      FOR obj IN SELECT n.nspname,p.proname,pg_get_function_identity_arguments(p.oid) AS args FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN ('identity','catalog','operations','rights','distribution','execution','finance','portal') LOOP
+        EXECUTE format('ALTER FUNCTION %I.%I(%s) OWNER TO addon_stabilization_schema_owner',obj.nspname,obj.proname,obj.args);
+      END LOOP;
+    END $$;"#).execute(&pool).await.unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query("SET LOCAL ROLE addon_stabilization_schema_owner")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    let hidden: i64 = sqlx::query_scalar("SELECT count(*) FROM catalog.addon_orders")
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+    assert_eq!(hidden, 0);
+    sqlx::raw_sql(include_str!(
+        "../../../migrations/0070_addon_stabilization.sql"
+    ))
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    let scope: String = sqlx::query_scalar("SELECT current_setting('app.staff',true)")
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+    assert!(
+        scope.is_empty(),
+        "migration must restore the caller's scope"
+    );
+    tx.commit().await.unwrap();
+    let repaired: (bool, bool) = sqlx::query_as("SELECT (SELECT valid_until=submitted_at+interval '12 months' FROM catalog.addon_orders WHERE service_code='PROFILE_PLUS'),(SELECT priority=0 FROM catalog.addon_orders WHERE service_code='PRIORITY_DELIVERY')")
+        .fetch_one(&pool).await.unwrap();
+    assert_eq!(repaired, (true, true));
+    let audits: i64 = sqlx::query_scalar("SELECT count(*) FROM operations.audit_events WHERE reason_code='ADDON_STABILIZATION' AND before_value IS NOT NULL AND after_value IS NOT NULL")
+        .fetch_one(&pool).await.unwrap();
+    assert_eq!(audits, 2);
+    let running: (i32, String) = sqlx::query_as(
+        "SELECT priority,status FROM operations.jobs WHERE idempotency_key='upgrade-running'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(running, (10, "RUNNING".into()));
+    sqlx::query("UPDATE operations.jobs SET status='QUEUED',lock_token=NULL,lease_until=NULL WHERE idempotency_key='upgrade-running'").execute(&pool).await.unwrap();
+    let restored: (i32, Option<i32>) = sqlx::query_as("SELECT priority,addon_priority_previous FROM operations.jobs WHERE idempotency_key='upgrade-running'")
+        .fetch_one(&pool).await.unwrap();
+    assert_eq!(restored, (0, None));
+}
+
 type UploadedFiles = std::collections::BTreeMap<String, (Vec<u8>, String, String)>;
 #[derive(Default)]
 struct UploadStore {

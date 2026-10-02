@@ -22,13 +22,14 @@
 - 무료 기간제 주문의 누락된 만료일을 **기존 submitted_at**과 기간 snapshot으로 보정한다. 재배포일을 기준으로 기간을 연장하지 않는다.
 - 취소·거절·실패한 PRIORITY_DELIVERY 주문의 남은 priority를 초기화한다.
 - 데이터 보정도 기존 append-only audit에 이전/이후 값을 기록한다.
+- FORCE RLS가 적용되는 일반 schema owner도 조직 간 보정을 수행하도록 migration 내부에서 staff scope를 설정하고 복원한다.
 - 관리자 ACL 잠금 함수를 추가한다. schema owner로 migration 후 `deploy/grants.sql`을 적용한다. 새 권한은 해당 함수 EXECUTE와 선택 취소 시 필요한 lyric_video_requests DELETE뿐이다.
 
 로컬 PostgreSQL 18의 빈 DB에 전체 migration 적용을 확인했다. 별도 0069 DB에 무료 완료 주문·취소된 우선권 주문·RUNNING 및 URGENT 작업을 생성해 0070을 적용했고, 기간·priority 보정, audit, 재대기 복원, URGENT 보존을 확인했다. 실제 API 역할에서 관리자 역할 조회가 성공하고 직원 테이블 UPDATE 권한은 false인 것도 확인했다.
 
 ## 회귀 테스트
 
-`crates/core/tests/addons.rs`에 6개를 추가했다.
+`crates/core/tests/addons.rs`에 7개를 추가했다.
 
 - `free_profile_plus_keeps_calendar_entitlement_and_follow_ups`
 - `priority_retries_restore_cancelled_boost_and_preserve_operator_priority`
@@ -36,5 +37,6 @@
 - `lyrics_worker_rechecks_rejected_attachment`
 - `removing_basic_video_request_clears_details_and_rejects_video_results`
 - `runtime_api_can_operate_admin_workflow_without_staff_update_privilege`
+- `forward_migration_repairs_existing_orders_under_forced_rls`
 
 운영 역할 테스트는 관리자 목록·결제·승인·진행·가사 영상 선택 취소를 실제 API 역할로 실행한다. 직원 권한 변경 거절, 관리자 권한 회수 후 접근 차단, 진행 중인 권한 검사와 회수의 동시 실행도 확인한다. 전체 CI 결과는 검증 완료 후 기록한다.
