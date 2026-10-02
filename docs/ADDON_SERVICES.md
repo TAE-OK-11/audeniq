@@ -110,7 +110,7 @@ flowchart LR
  FAILED --> QUEUED
 ```
 
-취소는 완료/거절 후에는 불가능하다. 완료 주문 재개는 LYRIC_VIDEO_PLUS 수정 및 유효기간 내 PROFILE_PLUS follow-up만 허용한다. PROFILE_PLUS는 재결제 없이 기존 주문에 재요청을 기록하고 관리자 재검토로 이동한다. 1~2회는 새 render generation, 초과는 UNDER_REVIEW에서 관리자 판단을 기다린다. 추가 edge는 상태 contract에 있다. 무료 amount=0/NOT_REQUIRED, 유료 PENDING→PAID, 실제 환불 기록 시 REFUNDED이다. 최초 snapshot은 변경할 수 없다.
+취소는 완료/거절 후에는 불가능하다. 완료 주문 재개는 LYRIC_VIDEO_PLUS 수정 및 유효기간 내 PROFILE_PLUS follow-up만 허용한다. PROFILE_PLUS는 재결제 없이 기존 주문에 재요청을 기록하고 관리자 재검토로 이동한다. Lyric Video의 포함 수정 1~2회는 새 render generation, 초과는 UNDER_REVIEW에서 관리자 판단을 기다린다. 추가 edge는 상태 contract에 있다. 무료 amount=0/NOT_REQUIRED, 유료 PENDING→PAID, 실제 환불 기록 시 REFUNDED이다. 최초 snapshot은 변경할 수 없다.
 
 ## Queue/outbox/audit
 
@@ -144,8 +144,8 @@ ManualAdapter는 외부 task만 만들고 EXTERNAL_PENDING으로 유지한다. �
 
 추가: crates/core/src/addons/{mod,model,workflow,api,jobs}.rs, crates/core/tests/addons.rs, migrations/0069_addon_services.sql, docs/ADDON_SERVICES.md, docs/ADDON_VALIDATION.md.
 
-수정: config/states.json, crates/core/src/{api,domain,error,lib,operations,uploads}.rs, crates/edge/src/lib.rs, deploy/grants.sql, docs/API.md, crates/core/tests/stage2.rs(기존 fixture의 UPC 수정 시 row_version 증가).
+수정: config/states.json, crates/core/src/{api,domain,error,lib,operations,uploads}.rs, crates/edge/src/lib.rs, deploy/grants.sql, docs/API.md, crates/core/tests/stage2.rs(기존 fixture의 UPC 수정 시 row_version 증가 및 재인코딩 비교용 seeded 오디오).
 
-무료/유료/결제/잘못된 전이/ACL/가격 snapshot/동시 idempotency/PROFILE_PLUS 중복/MV 증빙 및 만료/수정 2회/기존·미래 priority/aging/취소 후 작업/outbox replay/audit/환불/retry·DLQ/이전 순서/전체 서비스/manual 결과/실제 LRC·MV 업로드/런타임 RLS를 테스트한다. 최종 검증 결과는 ADDON_VALIDATION.md에 기록한다.
+무료/유료/결제/잘못된 전이/ACL/가격 snapshot/동시 idempotency/PROFILE_PLUS 중복/MV 증빙 및 만료/수정 2회/기존·미래 priority/aging/취소 후 작업/outbox replay/audit/환불/retry·DLQ/이전 순서/전체 서비스/manual 결과/실제 LRC·MV 업로드/런타임 RLS를 테스트한다. 최종 검증 결과는 [ADDON_VALIDATION.md](ADDON_VALIDATION.md)에 기록한다.
 
 기존 release pipeline 상태, frozen revision/package, 권리·계약·DSP 승인 로직은 변경하지 않는다. 영향은 resource kind 및 upload 종류 확장, nullable audit 열, addon outbox/worker 분기, 기존 queue priority/aging이다. release/distribution 회귀 suite를 함께 실행한다.
