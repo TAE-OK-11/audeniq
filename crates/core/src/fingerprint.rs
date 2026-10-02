@@ -18,7 +18,7 @@
 //!   human judgement, not a verifiable violation.
 
 use crate::error::{Error, Result};
-use rustfft::{FftPlanner, num_complex::Complex};
+use rustfft::{Fft, FftPlanner, num_complex::Complex};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -211,6 +211,11 @@ fn hann_window() -> &'static [f32] {
     })
 }
 
+fn fft_plan() -> &'static std::sync::Arc<dyn Fft<f32>> {
+    static FFT: std::sync::OnceLock<std::sync::Arc<dyn Fft<f32>>> = std::sync::OnceLock::new();
+    FFT.get_or_init(|| FftPlanner::<f32>::new().plan_fft_forward(FRAME_SIZE))
+}
+
 /// Compute the perceptual fingerprint of an audio file.
 /// Perceptual fingerprint over the configured [`segment_windows`]
 /// (head/middle/tail), decoded with ffmpeg's own resampler to mono
@@ -271,46 +276,46 @@ pub fn fingerprint_from_samples(samples: &[f32]) -> Result<Fingerprint> {
         .min(n_frames.max(1));
     let chunk = n_frames.div_ceil(n_threads);
 
-    // The FFT plan is expensive to create (~22ms); share one Arc across
-    // all threads instead of planning per-thread.
-    let fft = {
-        let mut planner = FftPlanner::<f32>::new();
-        planner.plan_fft_forward(FRAME_SIZE)
-    };
+    // Reuse the immutable plan across segments and assets. Scratch belongs
+    // to each chunk, so concurrent QC jobs cannot share mutable buffers.
+    let fft = fft_plan();
 
     // Log band energies per frame.
     let mut energies: Vec<[f32; N_BANDS]> = vec![[0.0; N_BANDS]; n_frames];
-    let (window_r, edges_r, samples_r, fft_r) = (&window, &edges, samples, &fft);
-    std::thread::scope(|s| {
-        for (ci, e_chunk) in energies.chunks_mut(chunk).enumerate() {
-            let start_frame = ci * chunk;
-            // `samples`, `window`, `edges`, `fft` are shared read-only; each
-            // thread owns its scratch buffer and writes a disjoint slice.
-            s.spawn(move || {
-                let mut buf = vec![Complex::new(0.0f32, 0.0); FRAME_SIZE];
-                for (i, bands) in e_chunk.iter_mut().enumerate() {
-                    let pos = (start_frame + i) * FRAME_HOP;
-                    for (j, b) in buf.iter_mut().enumerate() {
-                        b.re = samples_r[pos + j] * window_r[j];
-                        b.im = 0.0;
-                    }
-                    fft_r.process(&mut buf);
-                    for m in 0..N_BANDS {
-                        let lo = edges_r[m];
-                        let hi = edges_r[m + 1].max(lo + 1);
-                        let mut e = 0.0f32;
-                        for value in buf.iter().take(hi.min(FRAME_SIZE / 2)).skip(lo) {
-                            // norm_sqr == norm()² without the sqrt.
-                            e += value.norm_sqr();
-                        }
-                        // Log energy with floor: Philips uses log energies; the floor
-                        // keeps silence from producing unstable differentials.
-                        bands[m] = (e + 1e-10).ln();
-                    }
+    let process_chunk = |start_frame: usize, e_chunk: &mut [[f32; N_BANDS]]| {
+        let mut buf = vec![Complex::new(0.0f32, 0.0); FRAME_SIZE];
+        let mut scratch = vec![Complex::new(0.0f32, 0.0); fft.get_inplace_scratch_len()];
+        for (i, bands) in e_chunk.iter_mut().enumerate() {
+            let pos = (start_frame + i) * FRAME_HOP;
+            for (j, b) in buf.iter_mut().enumerate() {
+                b.re = samples[pos + j] * window[j];
+                b.im = 0.0;
+            }
+            fft.process_with_scratch(&mut buf, &mut scratch);
+            for m in 0..N_BANDS {
+                let lo = edges[m];
+                let hi = edges[m + 1].max(lo + 1);
+                let mut e = 0.0f32;
+                for value in buf.iter().take(hi.min(FRAME_SIZE / 2)).skip(lo) {
+                    // norm_sqr == norm()² without the sqrt.
+                    e += value.norm_sqr();
                 }
-            });
+                // Log energy with floor: Philips uses log energies; the floor
+                // keeps silence from producing unstable differentials.
+                bands[m] = (e + 1e-10).ln();
+            }
         }
-    });
+    };
+    if n_threads == 1 {
+        process_chunk(0, &mut energies);
+    } else {
+        std::thread::scope(|s| {
+            for (ci, e_chunk) in energies.chunks_mut(chunk).enumerate() {
+                let process_chunk = &process_chunk;
+                s.spawn(move || process_chunk(ci * chunk, e_chunk));
+            }
+        });
+    }
     if energies.len() < MIN_OVERLAP_FRAMES + 1 {
         return Err(Error::PolicyGate(TOO_SHORT_CODE));
     }
@@ -363,8 +368,8 @@ pub fn bit_error_rate(a: &[u32], b: &[u32]) -> Option<f64> {
     }
     let mut best: Option<f64> = None;
     // Offsets where at least MIN_OVERLAP_FRAMES overlap.
-    let min_off = -((a.len() as isize) - MIN_OVERLAP_FRAMES as isize);
-    let max_off = b.len() as isize - MIN_OVERLAP_FRAMES as isize;
+    let min_off = -((b.len() as isize) - MIN_OVERLAP_FRAMES as isize);
+    let max_off = a.len() as isize - MIN_OVERLAP_FRAMES as isize;
     for off in min_off..=max_off {
         if let Some(ber) = ber_at_offset(a, b, off) {
             best = Some(best.map_or(ber, |v: f64| v.min(ber)));
@@ -380,14 +385,29 @@ pub fn bit_error_rate(a: &[u32], b: &[u32]) -> Option<f64> {
 /// `limit`): unrelated audio sits near BER 0.5, so most alignments stop
 /// about halfway, and once a close match is found the rest stop far sooner.
 pub fn bit_error_rate_within(a: &[u32], b: &[u32], limit: f64) -> Option<f64> {
-    if a.len() < MIN_OVERLAP_FRAMES || b.len() < MIN_OVERLAP_FRAMES {
+    if a.len() < MIN_OVERLAP_FRAMES
+        || b.len() < MIN_OVERLAP_FRAMES
+        || !limit.is_finite()
+        || !(0.0..=1.0).contains(&limit)
+    {
         return None;
     }
     let mut bound = limit;
     let mut best: Option<f64> = None;
-    let min_off = -((a.len() as isize) - MIN_OVERLAP_FRAMES as isize);
-    let max_off = b.len() as isize - MIN_OVERLAP_FRAMES as isize;
-    'offsets: for off in min_off..=max_off {
+    let max_negative = b.len() - MIN_OVERLAP_FRAMES;
+    let max_positive = a.len() - MIN_OVERLAP_FRAMES;
+    // Most copies align at or near zero. Establish a tight error bound
+    // there first, then visit every remaining valid offset symmetrically.
+    let offsets =
+        std::iter::once(0).chain((1..=max_negative.max(max_positive)).flat_map(|shift| {
+            [
+                (shift <= max_positive).then_some(shift as isize),
+                (shift <= max_negative).then_some(-(shift as isize)),
+            ]
+            .into_iter()
+            .flatten()
+        }));
+    'offsets: for off in offsets {
         let (a_lo, b_lo) = if off >= 0 {
             (off as usize, 0)
         } else {
@@ -417,6 +437,9 @@ pub fn bit_error_rate_within(a: &[u32], b: &[u32], limit: f64) -> Option<f64> {
         if ber <= bound {
             bound = ber;
             best = Some(ber);
+            if ber == 0.0 {
+                return best;
+            }
         }
     }
     best
@@ -565,6 +588,33 @@ mod tests {
         let a = vec![0u32; 10];
         let b = vec![0u32; 10];
         assert!(bit_error_rate(&a, &b).is_none());
+    }
+
+    #[test]
+    fn trimmed_copy_matches_at_both_unequal_length_extremes() {
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let original: Vec<u32> = (0..400)
+            .map(|_| {
+                seed ^= seed << 13;
+                seed ^= seed >> 7;
+                seed ^= seed << 17;
+                seed as u32
+            })
+            .collect();
+        // The matching offset is outside the old, reversed search bounds.
+        for copy in [&original[300..], &original[368..]] {
+            assert_eq!(bit_error_rate(&original, copy), Some(0.0));
+            assert_eq!(bit_error_rate(copy, &original), Some(0.0));
+            assert_eq!(bit_error_rate_within(&original, copy, 0.0), Some(0.0));
+            assert_eq!(bit_error_rate_within(copy, &original, 0.0), Some(0.0));
+        }
+    }
+
+    #[test]
+    fn bounded_comparison_rejects_invalid_thresholds() {
+        for limit in [f64::NAN, f64::INFINITY, -0.1, 1.1] {
+            assert_eq!(bit_error_rate_within(&[0; 40], &[0; 40], limit), None);
+        }
     }
 
     #[test]

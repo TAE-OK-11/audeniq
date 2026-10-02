@@ -452,14 +452,15 @@ async fn stage1_happy_path_passes(pool: PgPool) {
     .fetch_all(&pool)
     .await
     .unwrap();
-    // 22 metadata/policy checks (round 2 added TEXT_INVALID_CHARACTERS,
-    // ARTIST_NAME_PROTECTED, IDENTIFIER_IN_USE, ASSET_REUSED; round 3
-    // ARTIST_NAME_REVIEW; F6 wiring RELEASE_TITLE_STYLE,
-    // TRACK_TITLE_EXPLICIT_MARKER, TRACK_TITLE_STYLE, FIELD_LANGUAGE_INVALID)
-    // + 15 audio checks (QC rule v3 added AUDIO_CONTENT_SUSPECT).
-    assert_eq!(codes.len(), 41, "{codes:?}");
+    // 26 metadata/policy checks plus the complete audio contract. This
+    // fixture has no cover attached, so image outcomes are not expected.
+    assert_eq!(
+        codes.len(),
+        26 + audeniq_core::qc::AUDIO_CHECK_CODES.len(),
+        "{codes:?}"
+    );
     let bad: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM operations.check_results WHERE revision_id=$1 AND status<>'PASS'",
+        "SELECT COUNT(*) FROM operations.check_results WHERE revision_id=$1 AND status NOT IN ('PASS','NOT_APPLICABLE')",
     )
     .bind(revision_id)
     .fetch_one(&pool)
@@ -784,6 +785,14 @@ async fn unchanged_audio_is_not_reanalyzed(pool: PgPool) {
     let downloads_after_a = store.get_calls.load(Ordering::SeqCst);
     assert_eq!(downloads_after_a, 1, "one asset downloaded for analysis");
 
+    // A later transient result for identical input bytes must not poison
+    // the successful content-addressed cache from another attempt.
+    sqlx::query(
+        "INSERT INTO operations.check_results(id, revision_id, check_code, rule_version, status, result_hash, detail)
+         SELECT $2, revision_id, check_code, rule_version, 'TECHNICAL_RETRY', result_hash, 'temporary analyzer outage'
+           FROM operations.check_results WHERE revision_id=$1 AND check_code='AUDIO_PROBE_FAILED' LIMIT 1",
+    ).bind(rev_a).bind(Uuid::new_v4()).execute(&pool).await.unwrap();
+
     // Second release, same bytes. Its asset checks must come from cache.
     let (release_b, _) = build_submittable(&app, &pool, &store, &u, asset).await;
     let (s, v) = consent(&app, &u, release_b, false).await;
@@ -929,6 +938,32 @@ async fn oversized_asset_is_technical_retry(pool: PgPool) {
         status, "STAGE1_RUNNING",
         "release stays in-flight for the retry"
     );
+
+    // The same input cache keys now produce PASS. The validation package
+    // must pin the recovered results while retaining the retry audit rows.
+    let normal: Arc<dyn ObjectStore> = store.clone();
+    let recovered = audeniq_core::submission::run_stage1(&pool, &normal, revision_id)
+        .await
+        .unwrap();
+    assert_eq!(recovered.release_status, "STAGE1_PASSED");
+    let pinned_retry: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM distribution.validation_packages p
+         CROSS JOIN LATERAL jsonb_array_elements_text(p.body->'stage1_check_refs') ref
+         JOIN operations.check_results c ON c.id=ref.value::uuid
+         WHERE p.revision_id=$1 AND c.status='TECHNICAL_RETRY'",
+    )
+    .bind(revision_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        pinned_retry, 0,
+        "recovered package must not reference stale retries"
+    );
+    let retained_retry: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM operations.check_results WHERE revision_id=$1 AND status='TECHNICAL_RETRY'",
+    ).bind(revision_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(retained_retry, retry, "the audit remains immutable");
 }
 
 #[sqlx::test]
@@ -1007,6 +1042,52 @@ async fn fingerprint_flags_byte_identical_reupload_for_review(pool: PgPool) {
         .unwrap();
     rtx.rollback().await.unwrap();
     assert_eq!(n, 3, "one fingerprint row per analyzed asset");
+}
+
+#[sqlx::test]
+async fn precheck_advisory_loudness_keeps_audio_ready(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let dir = tmpdir();
+    let path = dir.path().join("quiet.wav");
+    assert!(
+        std::process::Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=32:sample_rate=48000",
+                "-ac",
+                "2",
+                "-c:a",
+                "pcm_s16le",
+            ])
+            .arg(&path)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let bytes = std::fs::read(path).unwrap();
+    let asset = register_asset(&pool, &store, &u, "quiet.wav", &bytes).await;
+    let storage: Arc<dyn ObjectStore> = store;
+    assert!(
+        !audeniq_core::submission::precheck_asset(&pool, &storage, u.org, asset)
+            .await
+            .unwrap()
+    );
+    let warning: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM operations.asset_qc_results WHERE check_code='AUDIO_LOUDNESS_OUT_OF_RANGE' AND status='REVIEW_REQUIRED')",
+    ).fetch_one(&pool).await.unwrap();
+    assert!(warning);
+    let status: String = sqlx::query_scalar("SELECT qc_status FROM catalog.assets WHERE id=$1")
+        .bind(asset)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "PASS", "advisories must not block upload readiness");
 }
 
 #[sqlx::test]

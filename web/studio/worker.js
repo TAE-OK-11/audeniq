@@ -412,8 +412,9 @@ async function handleAdmin(request, db, r, now) {
 // 브라우저 헤더는 필요한 것만 골라 보낸다(crates/edge와 같은 허용 목록). 브라우저가 보낸
 // x-audeniq-service·x-audeniq-client-ip 같은 서비스 헤더는 절대 전달하지 않는다.
 const BACKEND = 'https://api-origin.audeniq.com';
-const FORWARD_HEADERS = ['cookie', 'origin', 'content-type', 'accept', 'x-csrf-token', 'sec-fetch-site'];
-const PARTNER_HOOK = /^\/api\/partner-hooks\/[^/]+$/;
+const FORWARD_HEADERS = ['cookie', 'origin', 'content-type', 'accept', 'x-csrf-token', 'sec-fetch-site', 'x-request-id'];
+const PARTNER_HOOK = /^\/api\/partner-hooks\//;
+const PARTNER_DROP = new Set(['x-forwarded-for', 'x-real-ip', 'host', 'connection', 'accept-encoding']);
 
 /** Workers가 풀지 않고 그대로 넘길 수 있는 인코딩만 요청 — 백엔드가 압축한 바이트가 그대로 브라우저로 간다 */
 export function passThroughEncoding(accept) {
@@ -433,17 +434,16 @@ export function backendHeaders(request, env, pathname) {
   }
   const enc = passThroughEncoding(src.get('accept-encoding'));
   if (enc) headers.set('accept-encoding', enc);
-  if (request.method === 'POST' && PARTNER_HOOK.test(pathname)) {
-    // 파트너 서명 헤더(x-signature 등)는 전달하되 우리 이름공간·전달 IP 헤더는 제외
+  if (PARTNER_HOOK.test(pathname)) {
+    // 파트너 설정이 정한 서명·시각 헤더(이름 자유)는 전달하되 우리 이름공간·전달 IP 헤더는 제외
     for (const [name, value] of src) {
-      if (name.startsWith('x-') && !name.startsWith('x-audeniq') && !name.startsWith('x-forwarded')
-        && name !== 'x-real-ip' && name !== 'x-csrf-token') headers.set(name, value);
+      if (!name.startsWith('x-audeniq-') && !PARTNER_DROP.has(name)) headers.set(name, value);
     }
   }
   // 로그인 시도 제한은 사용자 IP 기준 — Cloudflare가 매 요청 덮어쓰는 CF-Connecting-IP만 믿는다
   const ip = src.get('cf-connecting-ip');
   if (ip) headers.set('x-audeniq-client-ip', ip);
-  if (env.EDGE_SERVICE_SECRET) headers.set('x-audeniq-service', env.EDGE_SERVICE_SECRET);
+  headers.set('x-audeniq-service', env.EDGE_SERVICE_SECRET);
   return headers;
 }
 
@@ -455,16 +455,18 @@ async function proxy(request, env, url) {
   if (maint) {
     return Response.json({ error: { code: 'MAINTENANCE', message: maint.title }, maintenance: maint }, { status: 503, headers: MAINTENANCE_HEADERS });
   }
+  if (!env.EDGE_SERVICE_SECRET) return error(503, 'BACKEND_UNAVAILABLE');
   const read = request.method === 'GET' || request.method === 'HEAD';
   let res;
   try {
-    res = await fetch(BACKEND + url.pathname + url.search, {
+    res = await fetch(new Request(BACKEND + url.pathname + url.search, {
       method: request.method,
       headers: backendHeaders(request, env, url.pathname),
       // 본문은 읽지 않고 스트림으로 넘긴다 (Worker 메모리·CPU 절약)
       body: read ? null : request.body,
       redirect: 'manual',
-    });
+      duplex: 'half',
+    }));
   } catch {
     return error(502, 'BACKEND_UNAVAILABLE');
   }

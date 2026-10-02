@@ -1,8 +1,10 @@
 pub mod api;
 pub mod artifacts;
+pub mod artwork_policy;
 pub mod auth;
 pub mod catalog;
 pub mod config;
+pub mod content_policy;
 pub mod contracts;
 pub mod database;
 pub mod ddex_ern;
@@ -17,6 +19,7 @@ pub mod dsp_registry;
 pub mod ern;
 pub mod error;
 pub mod execution;
+pub mod external_recordings;
 pub mod finance;
 pub mod fingerprint;
 pub mod identifiers;
@@ -33,6 +36,7 @@ pub mod preflight;
 pub mod preparation_model;
 pub mod protected_admin;
 pub mod protected_names;
+pub mod provenance;
 pub mod qc;
 pub mod review;
 pub mod route_plan;
@@ -51,4 +55,5 @@ pub mod states {
 }
 
 pub mod launch;
+mod local_analyzer;
 pub mod lossless;

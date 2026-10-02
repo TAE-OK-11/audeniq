@@ -63,6 +63,8 @@ function sheetFor(q: QueueRelease, open: [string, string, string][], extra: Part
   return {
     q,
     sheet: {
+      track_audio: {},
+      review_context: { decision_kind: null, allowed_actions: [], requires_second_approval: false, pending_second_approval_id: null, check_counts: {} },
       release: { id: q.id, org_id: q.org_id, org_name: q.org_name, title: q.title, release_type: q.release_type, status: q.status, upc: null, revision_id: q.revision_id, submitted_at: q.submitted_at },
       application: {
         artist: q.artist ?? '', language: 'KOR', genre: 'K-Pop', release_date: q.release_date ?? '', label: q.org_name,
@@ -77,7 +79,7 @@ function sheetFor(q: QueueRelease, open: [string, string, string][], extra: Part
       draft: draftFor(q, tracks),
       signed_application: { application_no: `AUD-20260926-${q.id.slice(0, 6).toUpperCase()}`, content_hash: '', signer_name: q.artist ?? '', signer_role: '아티스트 본인', received_at: q.submitted_at ?? iso(5), form: 'AUD-DIST-APP 1.0', agreements: ['truth', 'terms', 'privacy', 'esign'], contact_email: `contact@${q.org_id.replace(/^org-/, '')}.example` },
       checks,
-      open_checks: open.map(([code, status, detail]) => ({ check_code: code, status, detail })),
+      open_checks: open.map(([code, status, detail]) => ({ check_code: code, status, detail, needs_second_approval: needsSecond({ check_code: code, status }) })),
       advisories: [],
       overrides: [],
       notes: [],
@@ -186,7 +188,8 @@ export const mockStaff = {
   }),
   releases: (status: string) => wait({ items: releases.filter(r => (status === 'PENDING' ? awaiting(r) : r.q.status === status)).map(r => r.q) }),
   release: async (rid: string) => {
-    const sheet = find(rid).sheet;
+    const r = find(rid);
+    const sheet = r.sheet;
     // 체험용 신청서에 서명 이미지와 문서 확인 코드를 붙인다 (실서버는 스튜디오가 서명할 때 계산)
     const d = sheet.draft;
     if (d?.application && !d.application.hash) {
@@ -197,8 +200,25 @@ export const mockStaff = {
         sheet.signed_application.signature = MOCK_SIGNATURE;
       }
     }
+    const pending = approvals.find(a => a.release_id === rid && a.status === 'PENDING' && Date.parse(a.expires_at) > Date.now());
+    const kind = r.q.status === 'STAGE2_REVIEW' ? 'CHECKS' : awaiting(r) ? 'APPLICATION' : null;
+    sheet.second_approvals.forEach(a => { a.active = a.status === 'PENDING' && Date.parse(a.expires_at) > Date.now(); });
+    sheet.review_context = {
+      decision_kind: kind,
+      allowed_actions: kind ? [...(pending ? [] : ['APPROVE' as const]), ...(kind === 'APPLICATION' || sheet.open_checks.length ? ['REQUEST_CORRECTION' as const] : []), 'REJECT'] : [],
+      requires_second_approval: sheet.open_checks.some(needsSecond),
+      pending_second_approval_id: pending?.id ?? null,
+      check_counts: sheet.checks.reduce<Record<string, number>>((m, c) => { m[c.status] = (m[c.status] ?? 0) + 1; return m; }, {}),
+    };
     return wait(sheet);
   },
+  timeline: (rid: string, limit = 100) => wait({
+    release_id: rid, truncated: find(rid).sheet.timeline.length > limit,
+    items: find(rid).sheet.timeline.slice(0, limit).reverse().map(t => ({
+      at: t.at, source: 'audit' as const, kind: t.action,
+      detail: { reason: t.reason, actor_user_id: t.actor_user_id, actor_service: t.actor_service },
+    })),
+  }),
   decide: async (rid: string, i: DecisionInput): Promise<DecisionResult> => {
     const r = find(rid);
     if (!awaiting(r)) fail('RELEASE_NOT_IN_REVIEW');
@@ -222,7 +242,7 @@ export const mockStaff = {
         if (approvals.some(a => a.release_id === rid && a.status === 'PENDING')) fail('SECOND_APPROVAL_ALREADY_PENDING');
         const a = { id: `ap-${uid()}`, org_id: r.q.org_id, release_id: rid, revision_id: i.revision_id, title: r.q.title, check_codes: open.map(c => c.check_code), reason: i.reason, requested_by: ME, expires_at: new Date(Date.now() + 72 * 3_600_000).toISOString(), at: new Date().toISOString(), status: 'PENDING' };
         approvals.push(a);
-        r.sheet.second_approvals.unshift({ id: a.id, check_codes: a.check_codes, reason: a.reason, requested_by: ME, status: 'PENDING', decided_by: null, expires_at: a.expires_at, at: a.at });
+        r.sheet.second_approvals.unshift({ id: a.id, check_codes: a.check_codes, reason: a.reason, requested_by: ME, status: 'PENDING', decided_by: null, expires_at: a.expires_at, at: a.at, active: true });
         audit(r, 'staff.approval_requested', a.check_codes.join(','));
         return wait({ result: 'PENDING_SECOND_APPROVAL', approval_id: a.id, check_codes: a.check_codes });
       }

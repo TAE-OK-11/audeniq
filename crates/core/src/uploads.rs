@@ -202,6 +202,10 @@ pub async fn complete(
             .bind(&flac.sha256)
             .execute(&mut *tx)
             .await?;
+        sqlx::query("INSERT INTO catalog.asset_provenance(asset_id,org_id,source_sha256,master_sha256,rule_version,body) VALUES($1,$2,$3,$4,$5,$6)")
+            .bind(asset).bind(org).bind(&flac.source_sha256).bind(&flac.sha256)
+            .bind(crate::provenance::RULE_VERSION).bind(&flac.provenance)
+            .execute(&mut *tx).await?;
         operations::audit(
             &mut tx,
             Some(a.user),
@@ -312,6 +316,8 @@ struct ConvertedMaster {
     size: i64,
     etag: String,
     sha256: String,
+    source_sha256: String,
+    provenance: serde_json::Value,
 }
 
 /// Lossless upload → FLAC master. Downloads the frozen, etag-pinned source,
@@ -350,17 +356,24 @@ async fn convert_lossless(
     if crate::qc::detect_container(&digest.head) != container {
         return Err(Error::PolicyGate("UPLOAD_CONTENT_MISMATCH"));
     }
-    let (sha256, dst, _slot) = tokio::task::spawn_blocking(move || {
+    let source_sha256 = digest.sha256;
+    let (sha256, provenance, dst, _slot) = tokio::task::spawn_blocking(move || {
         // Blocking tasks outlive a cancelled HTTP future. Move the actual
         // guards and permit in so cleanup cannot race the decoder or retry.
         let _src = src;
         let _slot = slot;
+        let provenance = crate::provenance::inspect_audio(&_src.0);
         crate::lossless::to_flac(&_src.0, &dst.0, container).map_err(|code| match code {
             "UPLOAD_CONVERSION_UNAVAILABLE" | "UPLOAD_CONVERSION_TIMEOUT" => Error::UploadBusy,
             _ => Error::PolicyGate(code),
         })?;
+        // Preserve the conversion's objective invalid/lossy-file response
+        // even when neither metadata reader could inspect those bytes.
+        if provenance["inspection_status"] != "COMPLETED" {
+            return Err(Error::UploadBusy);
+        }
         let sha = crate::qc::sha256_file(&dst.0)?;
-        Ok::<_, Error>((sha, dst, _slot))
+        Ok::<_, Error>((sha, provenance, dst, _slot))
     })
     .await
     .map_err(|_| Error::Internal)??;
@@ -384,6 +397,8 @@ async fn convert_lossless(
         size: flac_size,
         etag: meta.etag,
         sha256,
+        source_sha256,
+        provenance,
     })
 }
 

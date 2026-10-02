@@ -1,0 +1,363 @@
+//! Free local provenance signals. Metadata is untrusted; absence is UNKNOWN.
+//! This is neither an AI classifier nor a SynthID verifier.
+use crate::{
+    domain::sha256_json,
+    qc::{CheckOutcome, CheckStatus},
+};
+use serde_json::{Value, json};
+use std::{
+    collections::BTreeSet,
+    io::Read,
+    path::Path,
+    process::{Command, Stdio},
+    time::{Duration, Instant},
+};
+
+pub const RULE_VERSION: &str = "1";
+const OUTPUT_LIMIT: u64 = 256 * 1024;
+
+/// Read provenance fields locally, with bounded output and runtime.
+pub fn inspect(path: &Path) -> Value {
+    let executable = std::env::var("EXIFTOOL_BIN").unwrap_or_else(|_| "exiftool".into());
+    let mut command = Command::new(executable);
+    command
+        .args([
+            "-j",
+            "-n",
+            "-G1",
+            "-s",
+            "-Software",
+            "-CreatorTool",
+            "-DigitalSourceType",
+            "-Description",
+            "-Comment",
+            "-Encoder",
+            "-UserComment",
+            "-Parameters",
+            "-GenerationParameters",
+            "-Prompt",
+            "-Workflow",
+            "--",
+        ])
+        .arg(path);
+    let bytes = match read_metadata(&mut command) {
+        Ok(bytes) => bytes,
+        Err(reason) => return unknown(reason),
+    };
+    match serde_json::from_slice::<Value>(&bytes) {
+        Ok(Value::Array(rows)) if rows.len() == 1 => from_metadata(&rows[0]),
+        _ => unknown("metadata reader returned an invalid report"),
+    }
+}
+
+/// FFprobe reads audio tags in containers ExifTool cannot inspect (e.g. TTA).
+/// Both readers remain local and share the same output and execution limits.
+pub fn inspect_audio(path: &Path) -> Value {
+    let report = inspect(path);
+    if report["inspection_status"] == "COMPLETED" {
+        return report;
+    }
+    let executable = std::env::var("FFPROBE_BIN").unwrap_or_else(|_| "ffprobe".into());
+    let mut command = Command::new(executable);
+    command
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "format_tags",
+            "-of",
+            "json",
+            "-i",
+        ])
+        .arg(path);
+    let bytes = match read_metadata(&mut command) {
+        Ok(bytes) => bytes,
+        Err(reason) => return unknown(reason),
+    };
+    let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
+        return unknown("audio metadata reader returned an invalid report");
+    };
+    if !value["format"].is_object() {
+        return unknown("audio metadata reader returned an invalid report");
+    }
+    let mut metadata = serde_json::Map::new();
+    if let Some(tags) = value["format"]["tags"].as_object() {
+        for (key, value) in tags {
+            let field = match key.to_ascii_lowercase().as_str() {
+                "encoder" | "encoded_by" => "Encoder",
+                "software" | "writing_library" => "Software",
+                "creator_tool" => "CreatorTool",
+                "comment" => "Comment",
+                "description" => "Description",
+                _ => continue,
+            };
+            metadata.insert(field.into(), value.clone());
+        }
+    }
+    let mut report = from_metadata(&Value::Object(metadata));
+    report["reader"] = json!("FFPROBE_FALLBACK");
+    report
+}
+
+fn read_metadata(command: &mut Command) -> Result<Vec<u8>, &'static str> {
+    let child = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn();
+    let Ok(mut child) = child else {
+        return Err("metadata reader unavailable");
+    };
+    let Some(stdout) = child.stdout.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err("metadata reader output unavailable");
+    };
+    let reader = std::thread::spawn(move || {
+        let mut output = Vec::new();
+        stdout
+            .take(OUTPUT_LIMIT + 1)
+            .read_to_end(&mut output)
+            .map(|_| output)
+    });
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let success = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status.success(),
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break false;
+            }
+        }
+    };
+    let Ok(Ok(bytes)) = reader.join() else {
+        return Err("metadata reader failed");
+    };
+    if !success || bytes.len() as u64 > OUTPUT_LIMIT {
+        return Err("metadata reader failed or exceeded limits");
+    }
+    Ok(bytes)
+}
+
+fn unknown(reason: &str) -> Value {
+    let inspection_status = if reason.starts_with("no supported AI metadata signal") {
+        "COMPLETED"
+    } else {
+        "FAILED"
+    };
+    json!({"rule_version":RULE_VERSION,"outcome":"UNKNOWN","signals":[],"inspection_status":inspection_status,
+        "method":"LOCAL_UNVERIFIED_METADATA","synthid":"NOT_CHECKED","reason":reason})
+}
+
+pub fn from_metadata(metadata: &Value) -> Value {
+    use unicode_normalization::UnicodeNormalization;
+    let mut signals = BTreeSet::new();
+    if let Some(fields) = metadata.as_object() {
+        for (key, value) in fields {
+            let field = key.rsplit(':').next().unwrap_or(key);
+            let Some(value) = value.as_str() else {
+                continue;
+            };
+            let normalized: String = value.nfkc().flat_map(char::to_lowercase).collect();
+            if matches!(field, "Parameters" | "GenerationParameters")
+                && ["steps:", "sampler:", "cfg scale:", "seed:"]
+                    .iter()
+                    .all(|key| normalized.contains(key))
+            {
+                signals.insert(format!(
+                    "{field}: diffusion generation settings (unverified)"
+                ));
+            }
+            if matches!(field, "Prompt" | "Workflow") && diffusion_workflow(value) {
+                signals.insert(format!("{field}: ComfyUI diffusion workflow (unverified)"));
+            }
+            if field == "DigitalSourceType"
+                && [
+                    "trainedalgorithmicmedia",
+                    "compositewithtrainedalgorithmicmedia",
+                ]
+                .iter()
+                .any(|s| normalized.ends_with(s))
+            {
+                signals.insert(format!(
+                    "{field}: algorithmic media declaration (unverified)"
+                ));
+            }
+            let generator_field = matches!(
+                field,
+                "Software" | "CreatorTool" | "Encoder" | "Parameters" | "GenerationParameters"
+            );
+            let declared_generated = [
+                "generated by ",
+                "generated with ",
+                "created with ",
+                "ai-generated",
+                "ai generated",
+            ]
+            .iter()
+            .any(|p| normalized.contains(p));
+            if !generator_field && !declared_generated {
+                continue;
+            }
+            let tokens: Vec<_> = normalized
+                .split(|c: char| !c.is_alphanumeric())
+                .filter(|s| !s.is_empty())
+                .collect();
+            for generator in [
+                "suno",
+                "udio",
+                "midjourney",
+                "chatgpt",
+                "firefly",
+                "lyria",
+                "comfyui",
+                "automatic1111",
+            ] {
+                if tokens.contains(&generator) {
+                    signals.insert(format!(
+                        "{field}: {generator} generator metadata (unverified)"
+                    ));
+                }
+            }
+            for pair in [["stable", "diffusion"], ["dall", "e"]] {
+                if tokens.windows(2).any(|t| t == pair) {
+                    signals.insert(format!(
+                        "{field}: {} {} generator metadata (unverified)",
+                        pair[0], pair[1]
+                    ));
+                }
+            }
+            if normalized.contains("ai-generated") || normalized.contains("ai generated") {
+                signals.insert(format!("{field}: AI generation statement (unverified)"));
+            }
+        }
+    }
+    if signals.is_empty() {
+        return unknown("no supported AI metadata signal; this is not proof of human authorship");
+    }
+    json!({"rule_version":RULE_VERSION,"outcome":"AI_METADATA_SIGNAL","signals":signals,"inspection_status":"COMPLETED",
+        "method":"LOCAL_UNVERIFIED_METADATA","synthid":"NOT_CHECKED"})
+}
+
+pub fn outcome(code: &'static str, report: &Value) -> CheckOutcome {
+    CheckOutcome {
+        check_code: code,
+        status: if report["inspection_status"] != "COMPLETED" {
+            CheckStatus::TechnicalRetry
+        } else if report["outcome"] == "AI_METADATA_SIGNAL" {
+            CheckStatus::ReviewRequired
+        } else {
+            CheckStatus::NotApplicable
+        },
+        input_hash: sha256_json(report),
+        detail: report.to_string(),
+    }
+}
+
+fn diffusion_workflow(text: &str) -> bool {
+    let Ok(graph) = serde_json::from_str::<Value>(text) else {
+        return false;
+    };
+    let kinds: Vec<_> = if let Some(nodes) = graph["nodes"].as_array() {
+        nodes
+            .iter()
+            .filter_map(|node| node["type"].as_str())
+            .collect()
+    } else if let Some(nodes) = graph.as_object() {
+        nodes
+            .values()
+            .filter(|node| node["inputs"].is_object())
+            .filter_map(|node| node["class_type"].as_str())
+            .collect()
+    } else {
+        return false;
+    };
+    kinds.iter().any(|kind| {
+        matches!(
+            *kind,
+            "KSampler" | "KSamplerAdvanced" | "SamplerCustom" | "SamplerCustomAdvanced"
+        )
+    }) && kinds.iter().any(|kind| {
+        matches!(
+            *kind,
+            "CLIPTextEncode" | "CheckpointLoaderSimple" | "UNETLoader" | "DiffusionModelLoader"
+        )
+    })
+}
+
+/// Literal generation disclosures or copied chatbot boilerplate, never style.
+pub fn lyrics_signals(lyrics: &str) -> Vec<&'static str> {
+    use unicode_normalization::UnicodeNormalization;
+    let text: String = lyrics.nfkc().flat_map(char::to_lowercase).collect();
+    [
+        "generated by chatgpt",
+        "generated with chatgpt",
+        "written by chatgpt",
+        "lyrics by chatgpt",
+        "lyrics generated by ai",
+        "as an ai language model",
+        "chatgpt로 생성",
+        "chatgpt가 작성",
+        "챗지피티로 생성",
+        "챗지피티가 작성",
+        "ai로 생성한 가사",
+        "ai가 작성한 가사",
+        "인공지능으로 생성한 가사",
+    ]
+    .into_iter()
+    .filter(|marker| text.contains(marker))
+    .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn absence_is_unknown_and_signals_are_review_only() {
+        let r = from_metadata(
+            &json!({"XMP:CreatorTool":"Stable Diffusion", "XMP:DigitalSourceType":"http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia"}),
+        );
+        assert_eq!(r["outcome"], "AI_METADATA_SIGNAL");
+        assert_eq!(r["synthid"], "NOT_CHECKED");
+        assert_eq!(
+            outcome("IMAGE_AI_PROVENANCE", &unknown("metadata reader failed")).status,
+            CheckStatus::TechnicalRetry
+        );
+        assert_eq!(
+            outcome("IMAGE_AI_PROVENANCE", &r).status,
+            CheckStatus::ReviewRequired
+        );
+        for metadata in [
+            json!({}),
+            json!({"SourceFile":"suno-song.wav","EXIF:Software":"Adobe Photoshop","XMP:Description":"A song about Suno"}),
+        ] {
+            assert_eq!(from_metadata(&metadata)["outcome"], "UNKNOWN");
+        }
+    }
+    #[test]
+    fn lyrics_style_does_not_prove_ai_authorship() {
+        assert!(lyrics_signals("Verse 1\nLove under the moon\nLove under the moon").is_empty());
+        assert!(!lyrics_signals("Lyrics generated by AI").is_empty());
+        assert!(!lyrics_signals("Ｇｅｎｅｒａｔｅｄ ｂｙ ＣｈａｔＧＰＴ").is_empty());
+        assert!(!lyrics_signals("챗지피티가 작성한 가사입니다").is_empty());
+    }
+    #[test]
+    fn generation_settings_and_workflow_are_signals_but_plain_prompts_are_unknown() {
+        for metadata in [
+            json!({"PNG:Parameters":"A landscape\nSteps: 20, Sampler: Euler, CFG scale: 7, Seed: 123"}),
+            json!({"PNG:Prompt":json!({"1":{"class_type":"KSampler","inputs":{}},"2":{"class_type":"CheckpointLoaderSimple","inputs":{}}}).to_string()}),
+            json!({"PNG:Workflow":json!({"nodes":[{"type":"KSampler"},{"type":"CLIPTextEncode"}]}).to_string()}),
+        ] {
+            assert_eq!(from_metadata(&metadata)["outcome"], "AI_METADATA_SIGNAL");
+        }
+        for metadata in [
+            json!({"PNG:Prompt":"A beautiful landscape, high quality"}),
+            json!({"PNG:Workflow":"not json"}),
+            json!({"PNG:Workflow":json!({"nodes":[{"type":"ResizeImage"}]}).to_string()}),
+        ] {
+            assert_eq!(from_metadata(&metadata)["outcome"], "UNKNOWN");
+        }
+    }
+}

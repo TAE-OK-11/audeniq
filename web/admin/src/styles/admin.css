@@ -498,13 +498,15 @@ svg.aq-glyph{flex:none;fill:none!important;stroke:currentColor!important;stroke-
 .adm-row-end small.is-late{color:#a76525;font-weight:800}
 
 .adm-detail-nav{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.adm-next{margin-left:auto}
+.adm-next,.adm-refresh{margin-left:auto}
+.adm-next+.adm-refresh{margin-left:0}
 
 /* 결정 바 — 오른쪽 결정 칸이 고정되지 않는 폭(≤1180px)에서만 화면 아래에 */
 .adm-decide-bar{display:none}
 @media (max-width:1180px){
   .adm-decide-bar{position:fixed;left:0;right:0;bottom:0;z-index:60;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:10px max(16px,env(safe-area-inset-left)) max(12px,env(safe-area-inset-bottom));background:rgba(255,255,255,.94);-webkit-backdrop-filter:saturate(1.4) blur(12px);backdrop-filter:saturate(1.4) blur(12px);border-top:1px solid var(--adm-line)}
   .adm-decide-bar .adm-btn{min-height:48px;padding:10px 8px}
+  .adm-decide-bar .adm-decide-actions{display:contents}
   .adm-body:has(.adm-decide-bar) .adm-main{padding-bottom:92px}
   .adm-body:has(.adm-decide-bar) .aq-toast-stack{bottom:calc(84px + env(safe-area-inset-bottom))}
 }
