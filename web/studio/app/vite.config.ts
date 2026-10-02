@@ -2,6 +2,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
+import { retainAssets } from './build/retain-assets';
 import { compactCss, purgeCss } from './build/purge-css';
 
 const src = (p: string) => fileURLToPath(new URL(p, import.meta.url));
@@ -15,7 +16,7 @@ const CONTENT_TARGET = process.env.EDGE_CONTENT_URL;
 
 export default defineConfig(({ command, mode }) => ({
   base: '/',
-  plugins: [react()],
+  plugins: [react(), retainAssets()],
   css: {
     postcss: {
       // 빌드에서만 미사용 CSS 제거 (개발 중에는 새 클래스를 바로 쓸 수 있도록 전체 유지)

@@ -7,12 +7,14 @@ on:
   push:
     paths:
       - web/admin/**
+      - web/studio/app/build/retain-assets.ts
       - web/studio/worker.js
       - web/studio/test/worker.test.mjs
       - .github/workflows/admin-deploy.yml
   pull_request:
     paths:
       - web/admin/**
+      - web/studio/app/build/retain-assets.ts
       - web/studio/worker.js
       - web/studio/test/worker.test.mjs
       - .github/workflows/admin-deploy.yml
