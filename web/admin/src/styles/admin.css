@@ -663,7 +663,7 @@ svg.aq-glyph{flex:none;fill:none!important;stroke:currentColor!important;stroke-
 :is(#root,#modal) :is(.adm-textarea,.adm-input,.adm-select):not(#_){background:#fff!important;border:0!important;outline:none!important;box-shadow:none!important;transition:background-color .2s ease!important}
 :is(#root,#modal) :is(.adm-textarea,.adm-input,.adm-select):not(#_):focus{background:#edf2ff!important;box-shadow:none!important;outline:none!important}
 /* 흰 화면 위(카드 밖)의 입력칸은 연한 면으로 */
-:is(#root,#modal) :is(.adm-modal,.adm-sheet,.adm-filters,.adm-card.white,.adm-thread-pane,.adm-check,.adm-note,.adm-dsp) :is(.adm-textarea,.adm-input,.adm-select):not(#_):not(:focus){background:#f5f8ff!important}
+:is(#root,#modal) :is(.adm-modal,.adm-sheet,.adm-filters,.adm-card.white,.adm-thread-pane,.adm-check,.adm-note,.adm-dsp) :is(.adm-textarea,.adm-input,.adm-select):not(#_):not(:focus){background:#eef2fb!important}
 :is(#root,#modal) :is(.adm-textarea,.adm-input)::placeholder{color:#a3adbf}
 .adm-fix{gap:12px}
 /* 문의 답변 보내기 줄: 버튼은 한 줄·보통 크기, 휴대폰에서는 키보드 단축키 안내 숨김 */
@@ -671,17 +671,20 @@ svg.aq-glyph{flex:none;fill:none!important;stroke:currentColor!important;stroke-
 .adm-reply-foot small{min-width:0}
 .adm-reply .adm-textarea{min-height:120px}
 @media (hover:none),(max-width:640px){.adm-kbd-hint{display:none}}
-.adm-templates button{background:#fff!important;border:0!important;color:#3d4760}
+.adm-templates button{background:#e2e9ff!important;border:0!important;color:#2f55d4!important}
+.adm-templates button:hover{background:#d5dfff!important}
 
-/* ---------- 색이 묻히는 버튼: 옅은 색 카드·알림 위의 옅은 버튼은 윤곽선 없이 흰 면으로 ---------- */
-:is(.adm-card,.adm-alert,.adm-brief,.adm-fix,.adm-release-hero,.adm-check,.adm-opt,.adm-note) .adm-btn:is(.soft,.warn,.danger){background:#fff;border:0}
-:is(.adm-card,.adm-alert,.adm-brief,.adm-fix,.adm-release-hero,.adm-check,.adm-opt,.adm-note) .adm-btn.soft:not(:disabled):hover{background:#f6f8ff}
+/* ---------- 색이 묻히는 버튼: 옅은 색 카드·알림 위에서는 윤곽선 없이 한 단계 진한 색 면으로 ---------- */
+:is(.adm-card,.adm-alert,.adm-brief,.adm-fix,.adm-release-hero,.adm-opt) .adm-btn.soft{background:#e2e9ff;color:#2f55d4;border:0}
+:is(.adm-card,.adm-alert,.adm-brief,.adm-fix,.adm-release-hero,.adm-opt) .adm-btn.soft:not(:disabled):hover{background:#d5dfff}
+:is(.adm-card,.adm-alert,.adm-brief,.adm-fix,.adm-release-hero,.adm-opt) .adm-btn.warn{background:#ffe4c4;color:#8a4f12;border:0}
+:is(.adm-card,.adm-alert,.adm-brief,.adm-fix,.adm-release-hero,.adm-opt) .adm-btn.warn:not(:disabled):hover{background:#ffd9ad}
+:is(.adm-card,.adm-alert,.adm-brief,.adm-fix,.adm-release-hero,.adm-opt) .adm-btn.danger{background:#ffdcdc;color:#b0393b;border:0}
+:is(.adm-card,.adm-alert,.adm-brief,.adm-fix,.adm-release-hero,.adm-opt) .adm-btn.danger:not(:disabled):hover{background:#ffcfcf}
 /* 흰 카드 안의 옅은 버튼은 원래 색 면 그대로 */
-:is(.adm-card.white,.adm-check,.adm-note,.adm-thread-pane,.adm-dsp) .adm-btn.soft{background:#F1F4FF}
-:is(.adm-card.white,.adm-check,.adm-note,.adm-thread-pane,.adm-dsp) .adm-btn.warn{background:#FFF3E6}
-:is(.adm-card.white,.adm-check,.adm-note,.adm-thread-pane,.adm-dsp) .adm-btn.danger{background:#FFF1F1}
-.adm-alert.is-warn .adm-btn.warn{background:#fff;color:#8f5a22}
-.adm-alert.is-warn .adm-btn.warn:not(:disabled):hover{background:#fffaf3}
+:is(.adm-card.white,.adm-check,.adm-note,.adm-thread-pane,.adm-dsp) .adm-btn.soft{background:#F1F4FF;color:#385dd7}
+:is(.adm-card.white,.adm-check,.adm-note,.adm-thread-pane,.adm-dsp) .adm-btn.warn{background:#FFF3E6;color:#9a5b1f}
+:is(.adm-card.white,.adm-check,.adm-note,.adm-thread-pane,.adm-dsp) .adm-btn.danger{background:#FFF1F1;color:#B64A4A}
 
 /* ---------- 심사 담당 ---------- */
 .adm-claim{display:grid;gap:10px;margin-top:14px}
@@ -705,3 +708,9 @@ svg.aq-glyph{flex:none;fill:none!important;stroke:currentColor!important;stroke-
 .adm-decide-bar .adm-claim{margin:0}
 .adm-decide-bar .adm-claim.is-other{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:48px;padding:0 4px;color:#3d4760}
 .adm-decide-bar .adm-claim.is-other .adm-btn{min-height:44px}
+
+/* ---------- 공지·이벤트·점검 작성(관리자 화면): 흰 화면 위 입력칸은 윤곽선 없이 연한 파란 면 ---------- */
+:is(#root,#modal) .adm-main .aq-cadmin .field :is(input:not([type=checkbox]):not([type=radio]):not([type=file]),textarea,select):not(#_){background:#eef2fb!important;border:0!important;box-shadow:none!important;outline:none!important}
+:is(#root,#modal) .adm-main .aq-cadmin .field :is(input,textarea,select):not(#_):focus{background:#e9efff!important}
+.adm-main .aq-cadmin .aq-cadmin-chip:not(.is-on){background:#f1f4ff;color:#4a5670;border:0}
+.adm-main .aq-cadmin .aq-cadmin-chip.is-on{background:#3B63F3;color:#fff;border:0}
