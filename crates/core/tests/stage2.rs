@@ -239,11 +239,13 @@ async fn external_reencoded_recording_is_held_without_another_org_catalog(pool: 
     // Both copy-upload paths belong to the same account. The helper assigns
     // fixed identifiers, so the second release needs unique codes to reach
     // audio matching instead of the existing identifier-reuse correction.
-    sqlx::query("UPDATE catalog.releases SET upc='042100005264' WHERE id=$1")
-        .bind(release)
-        .execute(&pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "UPDATE catalog.releases SET upc='042100005264', row_version=row_version+1 WHERE id=$1",
+    )
+    .bind(release)
+    .execute(&pool)
+    .await
+    .unwrap();
     sqlx::query("UPDATE catalog.tracks SET isrc='USABC2600002' WHERE release_id=$1")
         .bind(release)
         .execute(&pool)
