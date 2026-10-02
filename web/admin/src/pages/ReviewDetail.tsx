@@ -490,12 +490,9 @@ function ReviewSheet({ id }: { id: string }) {
             </div>
           </div>
 
-          <JumpNav items={jump} />
-          <div id="rv-summary" className="adm-anchor"><SheetSummary sheet={sheet} lead={statusLine} /></div>
-
           {!sheet.review_context && <ErrorBox message="심사 가능 여부를 확인할 수 없어요. 새로고침 후 다시 확인해 주세요." onRetry={refresh} />}
           {error && <ErrorBox message={error} onRetry={refresh} />}
-          {done && (
+          {done && !pending && (
             <div className="adm-alert is-ok adm-alert-row" role="status">
               <span>{done}</span>
               {nextId && <button type="button" className="adm-btn soft small" onClick={() => nav(`/reviews/${nextId}`)}>다음 심사 건 열기</button>}
@@ -507,6 +504,10 @@ function ReviewSheet({ id }: { id: string }) {
               <button type="button" className="adm-btn warn small" onClick={() => nav('/approvals')}>2차 승인으로</button>
             </div>
           )}
+
+          <JumpNav items={jump} />
+          <div id="rv-summary" className="adm-anchor"><SheetSummary sheet={sheet} lead={statusLine} /></div>
+
 
           <Section title="시스템 검사" meta={`검사 ${sheet.checks.length}개 · 통과 ${context.check_counts.PASS ?? 0}개 (담당자 결정 포함)`}>
             <ol className="adm-stages">

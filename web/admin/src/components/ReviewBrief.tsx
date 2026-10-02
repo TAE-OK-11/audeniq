@@ -68,9 +68,17 @@ export function reviewBrief(sheet: ReleaseSheet, integrity: Integrity): BriefIte
 
   if (d) {
     // 권리 확인 체크
+    // 여러 개여도 한 줄로 — 같은 제목이 줄줄이 반복되지 않게
     const missing = rightsChecksFor(o).filter(([k]) => !d.rightsChecks?.[k]);
-    for (const [k, label] of missing) {
+    if (missing.length === 1) {
+      const [k, label] = missing[0];
       out.push({ key: `rc-${k}`, tone: 'bad', title: '권리 확인을 체크하지 않았어요', detail: label, fix: { code: 'FIX_SPECIAL', note: `권리 확인 ‘${label}’을 확인하고 체크해 주세요.` } });
+    } else if (missing.length > 1) {
+      out.push({
+        key: 'rc', tone: 'bad', title: `권리 확인 ${missing.length}개를 체크하지 않았어요`,
+        detail: missing.map(([, label]) => `· ${label}`).join('\n'),
+        fix: { code: 'FIX_SPECIAL', note: `권리 확인 항목(${missing.length}개)을 확인하고 체크해 주세요.` },
+      });
     }
     // 해당 항목 — 첨부·내용 누락
     if (o?.cover && !o.coverLicenseFile) out.push({ key: 'opt-cover', tone: 'warn', title: '커버곡인데 원곡 이용 허락서가 없어요', fix: { code: 'FIX_SPECIAL', note: '커버곡 원곡 이용 허락서를 첨부해 주세요.' } });
@@ -132,7 +140,9 @@ export function ReviewBrief({ sheet, integrity, title = '결정 전 확인할 �
   /** 제목 아래 한 줄 (지금 심사 상태) */
   lead?: ReactNode;
 }) {
-  const all = reviewBrief(sheet, integrity).filter(i => !(compact && i.key.startsWith('chk-')));
+  // 맨 위 요약에서는 바로 아래 ‘담당자 확인 필요’ 카드와 2차 승인 알림이 따로 보여 주는 내용을 빼서 겹치지 않게
+  const pendingShown = compact && !!sheet.review_context?.pending_second_approval_id;
+  const all = reviewBrief(sheet, integrity).filter(i => !(compact && i.key.startsWith('chk-')) && !(pendingShown && i.key === 'second'));
   const bad = all.filter(i => i.tone === 'bad').length + (compact ? sheet.open_checks.length : 0);
   const warn = all.filter(i => i.tone === 'warn').length;
   const ok = compact ? all.filter(i => i.tone === 'ok') : [];
