@@ -10,8 +10,8 @@ import { STATUS_LABEL, localStamp } from '../lib/format';
 import { dspLabel, durationLabel, genreLabel, kindLabel, languageLabel } from '../lib/catalog';
 import { docState, docsForRelease, useDocs } from '../store/docs';
 import { errorMessage } from '../api/errors';
-import { CorrectionList } from '../components/CorrectionList';
-import { fixPath } from '../lib/corrections';
+import { CorrectionList, ReviewNote } from '../components/CorrectionList';
+import { fixPath, splitCorrections } from '../lib/corrections';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
 
@@ -121,7 +121,9 @@ export function ReleaseDetail() {
   // 발매 완료 후 3일이 지나면 진행 막대는 더 볼 필요가 없어 숨긴다
   const settledLive = rel.status === 'live' && !!rel.release_date
     && Date.now() - new Date(`${rel.release_date}T00:00:00`).getTime() >= 3 * 86_400_000;
-  const fixes = rel.corrections ?? [];
+  const allFixes = rel.corrections ?? [];
+  // 담당자 전체 의견은 고칠 항목이 아니라 따로 보여 준다
+  const { items: fixes, note: reviewNote } = splitCorrections(allFixes);
 
   // 접수한 신청 취소 — 한 달 3회까지 직접, 그 이상·배급 시작 후는 문의로
   const canWithdraw = ['review', 'needs', 'scheduled'].includes(rel.status);
@@ -233,13 +235,16 @@ export function ReleaseDetail() {
       </div>
 
       {!settledLive && (
-      <ol className="aq-pipeline" aria-label="발매 진행 단계">
-        {PIPELINE.map((p, i) => (
-          <li key={p.key} className={i < stage ? 'is-done' : i === stage ? (rejected ? 'is-current is-error' : rel.status === 'needs' ? 'is-current is-warn' : 'is-current') : ''}>
-            <span className="aq-pipeline-dot" aria-hidden="true" />
-            <span>{i === 1 && rejected ? '거절' : i === 1 && rel.status === 'needs' ? '보완 필요' : p.label}</span>
-          </li>
-        ))}
+      <ol className="aq-stage" aria-label="발매 진행 단계">
+        {PIPELINE.map((p, i) => {
+          const tone = i < stage ? 'is-done' : i === stage ? (rejected ? 'is-current is-error' : rel.status === 'needs' ? 'is-current is-warn' : 'is-current') : '';
+          return (
+            <li key={p.key} className={tone} aria-current={i === stage ? 'step' : undefined}>
+              <span className="aq-stage-dot" aria-hidden="true">{i < stage && <CheckIcon size={12} />}</span>
+              <span className="aq-stage-label">{i === 1 && rejected ? '거절' : i === 1 && rel.status === 'needs' ? '보완 필요' : p.label}</span>
+            </li>
+          );
+        })}
       </ol>
       )}
 
@@ -249,7 +254,7 @@ export function ReleaseDetail() {
             <span className="aq-fix-icon" aria-hidden="true"><Glyph name="close" size={16} /></span>
             <div className="min-0">
               <h2 id="aqRejectHead">발매가 거절됐어요</h2>
-              <p className="break" style={{ whiteSpace: 'pre-line' }}>{fixes.find(f => f.code === 'REVIEW_NOTE')?.message
+              <p className="break" style={{ whiteSpace: 'pre-line' }}>{reviewNote
                 || '담당자 검토 결과 이 발매는 배급할 수 없어요. 궁금한 점은 문의로 남겨 주세요.'}</p>
               <p className="small muted" style={{ marginTop: 8 }}>거절된 발매는 다시 접수할 수 없어요. 내용을 고쳐 새 발매로 신청해 주세요.</p>
             </div>
@@ -265,10 +270,12 @@ export function ReleaseDetail() {
               <h2 id="aqFixCardHead">{fixes.length ? `보완 요청 ${fixes.length}건` : '보완이 필요해요'}</h2>
               <p>{fixes.length
                 ? '항목을 누르면 신청서에서 고쳐야 할 칸으로 바로 이동해요. 고친 뒤 마지막 단계에서 다시 접수해 주세요.'
-                : '알림과 권리·보완 서류에서 요청 내용을 확인한 뒤 ‘보완하기’로 다시 접수해 주세요.'}</p>
+                : reviewNote
+                  ? '담당자 의견을 확인하고 신청서를 고친 뒤 마지막 단계에서 다시 접수해 주세요.'
+                  : '알림과 권리·보완 서류에서 요청 내용을 확인한 뒤 ‘보완하기’로 다시 접수해 주세요.'}</p>
             </div>
-            <button type="button" className="button aq-fix-go" onClick={() => nav(fixPath(rel.id, fixes[0]))}>보완하기</button>
           </div>
+          {reviewNote && <ReviewNote text={reviewNote} />}
           {fixes.length > 0 && (
             <CorrectionList
               releaseId={rel.id} corrections={fixes}
@@ -276,6 +283,8 @@ export function ReleaseDetail() {
               trackTitles={Object.fromEntries((d?.draftTracks ?? rel.tracks).map(t => [t.id, t.title]))}
             />
           )}
+          {/* 무엇을 고칠지 먼저 읽고 나서 누르도록 목록 아래에 둔다 */}
+          <button type="button" className="button aq-fix-go aq-fix-go-foot" onClick={() => nav(fixPath(rel.id, fixes[0]))}>보완하기</button>
         </section>
       )}
 

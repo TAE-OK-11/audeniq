@@ -1,7 +1,8 @@
+// 처리 이력 — 접수·검사·담당자 결정·처리 작업·플랫폼 전송/응답을 시간순으로. 종류별로 걸러 보고, 날짜별로 묶는다.
 import { useState } from 'react';
 import { staffApi, type ReleaseTimelineItem } from '../api/staff';
 import { useAsync } from '../hooks/useAsync';
-import { APPROVAL_STATUS, CHECK_STATUS, checkLabel, checkSummary, dspLabel, pick, when } from '../labels';
+import { APPROVAL_STATUS, CHECK_STATUS, checkLabel, checkSummary, dspLabel, pick, shortId } from '../labels';
 import { ErrorBox, Section, Skeleton, StatusChip } from '../ui';
 
 export const ACTION_KO: Record<string, string> = {
@@ -23,11 +24,54 @@ const JOB_STATUS: Record<string, string> = {
   QUEUED: '대기', RUNNING: '진행 중', SUCCEEDED: '완료', FAILED: '실패', DEAD: '처리 실패', DEAD_LETTER: '처리 실패', RETRY: '재시도 대기',
 };
 
+const OUTCOME: Record<string, string> = {
+  SENT: '전송함', DELIVERED: '전달 완료', ACCEPTED: '플랫폼 접수', PROCESSING: '플랫폼 처리 중', LIVE: '서비스 중 (LIVE)',
+  REJECTED: '플랫폼 반려', ERROR: '전송 오류', FAILED: '전송 실패', TAKEN_DOWN: '서비스 중단',
+};
+
+type Kind = 'staff' | 'check' | 'job' | 'dsp' | 'release';
+const KIND_LABEL: Record<Kind, string> = { staff: '담당자', check: '검사', job: '처리 작업', dsp: '플랫폼', release: '발매' };
+const KINDS: Kind[] = ['staff', 'check', 'job', 'dsp', 'release'];
+
+export function timelineKind(t: ReleaseTimelineItem): Kind {
+  if (t.source === 'staff_decision' || t.kind.startsWith('staff.')) return 'staff';
+  if (t.source === 'check' || (t.source === 'audit' && t.kind.startsWith('stage'))) return 'check';
+  if (t.source === 'job') return 'job';
+  if (t.source === 'dsp_request' || t.source === 'dsp_ack' || t.kind.startsWith('delivery.')) return 'dsp';
+  return 'release';
+}
+
+/** 점 색 — 실패·차단은 빨강, 확인 필요·재시도는 주황 */
+function tone(t: ReleaseTimelineItem): 'bad' | 'warn' | '' {
+  const s = String(t.detail.status ?? t.detail.outcome ?? '');
+  if (/FAIL|DEAD|BLOCK|REJECT|ERROR|CORRECTION/.test(s)) return 'bad';
+  if (/REVIEW|RETRY|HOLD/.test(s)) return 'warn';
+  return '';
+}
+
+const timeFmt = new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Seoul' });
+const dayFmt = new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', weekday: 'short', timeZone: 'Asia/Seoul' });
+const fmt = (f: Intl.DateTimeFormat, iso: string) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? iso : f.format(d); };
+
+/** 감사 기록의 사유 코드 → 한 줄 설명 (‘PASS:2’, ‘REVIEW:S2_META_CREDITS,…’, 보완 항목 코드 목록) */
+export function reasonSummary(action: string, reason: unknown): string {
+  if (typeof reason !== 'string' || !reason) return '';
+  const labels = (codes: string) => [...new Set(codes.split(',').map(c => c.trim()).filter(Boolean).map(c => checkLabel(c.split('@')[0])))].join(', ');
+  const [head, rest] = reason.includes(':') ? [reason.slice(0, reason.indexOf(':')), reason.slice(reason.indexOf(':') + 1)] : [reason, ''];
+  if (action === 'staff.correction_requested') return `보완 항목: ${labels(reason)}`;
+  if (head === 'PASS' && /^\d+$/.test(rest)) return `확인 필요 ${rest}건 통과 처리`;
+  if (head === 'REVIEW' && rest) return `확인 필요: ${labels(rest)}`;
+  if ((head === 'CORRECTION' || head === 'BLOCKED' || head === 'FAIL') && rest) return `문제: ${labels(rest)}`;
+  return '';
+}
+
 export function TimelineRow({ item: t }: { item: ReleaseTimelineItem }) {
+  const kind = timelineKind(t);
   let title: string;
   let summary = '';
   if (t.source === 'audit') {
     title = ACTION_KO[t.kind] ?? '처리 기록';
+    summary = reasonSummary(t.kind, t.detail.reason);
   } else if (t.source === 'job') {
     title = `${JOB_LABEL[t.kind] ?? '처리 작업'} 등록`;
     summary = `현재 상태: ${JOB_STATUS[String(t.detail.status)] ?? '확인 중'} · 실행 ${t.detail.attempts ?? 0}회`;
@@ -40,30 +84,58 @@ export function TimelineRow({ item: t }: { item: ReleaseTimelineItem }) {
     summary = typeof t.detail.note === 'string' ? t.detail.note : '';
   } else {
     title = `${dspLabel(t.kind)} ${t.source === 'dsp_request' ? '전송 기록' : '응답 수신'}`;
-    summary = typeof t.detail.outcome === 'string' ? t.detail.outcome : '';
+    summary = typeof t.detail.outcome === 'string' ? OUTCOME[t.detail.outcome] ?? t.detail.outcome : '';
   }
-  return <li className={t.source === 'staff_decision' || t.kind.startsWith('staff.') ? 'is-staff' : ''}>
+  const actor = t.source === 'audit'
+    ? (typeof t.detail.actor_service === 'string' ? '시스템' : typeof t.detail.actor_user_id === 'string' ? (kind === 'staff' ? `담당자 ${shortId(t.detail.actor_user_id)}` : '아티스트') : '')
+    : '';
+  return <li className={['is-' + kind, tone(t) && `is-${tone(t)}`].filter(Boolean).join(' ')}>
     <i aria-hidden="true" />
-    <div>
-      <b>{title}</b>
-      {t.source === 'check' && <StatusChip value={pick(CHECK_STATUS, String(t.detail.status))} />}
-      {t.source === 'staff_decision' && <StatusChip value={pick(APPROVAL_STATUS, String(t.detail.approval))} />}
-      <small>{when(t.at)}</small>
-      {summary && <p className="small">{summary}</p>}
-      <details className="adm-more"><summary>상세 보기</summary><span className="adm-code">{t.kind}</span><pre className="adm-raw">{JSON.stringify(t.detail, null, 2)}</pre></details>
+    <div className="adm-min">
+      <div className="adm-tl-top">
+        <b>{title}</b>
+        {t.source === 'check' && <StatusChip value={pick(CHECK_STATUS, String(t.detail.status))} />}
+        {t.source === 'staff_decision' && <StatusChip value={pick(APPROVAL_STATUS, String(t.detail.approval))} />}
+      </div>
+      <small>{fmt(timeFmt, t.at)} · {KIND_LABEL[kind]}{actor && ` · ${actor}`}</small>
+      {summary && <p className="adm-tl-summary">{summary}</p>}
+      <details className="adm-more"><summary>기록 원문</summary><span className="adm-code">{t.kind}</span><pre className="adm-raw">{JSON.stringify(t.detail, null, 2)}</pre></details>
     </div>
   </li>;
 }
 
 export function ReviewTimeline({ releaseId, revisionId, refreshTick }: { releaseId: string; revisionId: string | null; refreshTick: number }) {
   const [limit, setLimit] = useState(100);
+  const [filter, setFilter] = useState<Kind | 'all'>('all');
   const { data, error, loading, reload } = useAsync(() => staffApi.timeline(releaseId, limit), [releaseId, revisionId, refreshTick, limit]);
-  return <Section title="처리 이력" meta="검사·담당자 결정·배급 작업·플랫폼 응답">
+  const items = data?.items.slice().reverse() ?? [];
+  const counts = items.reduce<Partial<Record<Kind, number>>>((m, t) => { const k = timelineKind(t); m[k] = (m[k] ?? 0) + 1; return m; }, {});
+  const shown = filter === 'all' ? items : items.filter(t => timelineKind(t) === filter);
+  // 날짜별 묶음 (최신 날짜부터)
+  const groups: { day: string; items: ReleaseTimelineItem[] }[] = [];
+  for (const t of shown) {
+    const d = fmt(dayFmt, t.at);
+    const last = groups[groups.length - 1];
+    if (last?.day === d) last.items.push(t); else groups.push({ day: d, items: [t] });
+  }
+  return <Section title="처리 이력" meta={data ? `${items.length}건${data.truncated ? ` · 최근 ${limit}건` : ''}` : '검사·담당자 결정·배급 작업·플랫폼 응답'}>
     {error && <ErrorBox message={error} onRetry={reload} />}
     {loading && !data ? <Skeleton rows={3} /> : <>
-      {!data?.items.length && <p className="small muted">기록된 처리 이력이 없어요.</p>}
-      <ol className="adm-timeline">{data?.items.slice().reverse().map((t, i) => <TimelineRow key={`${t.at}-${i}`} item={t} />)}</ol>
-      {data?.truncated && <p className="small muted">최근 {limit}건을 표시하고 있어요.</p>}
+      {items.length > 0 && (
+        <div className="adm-tl-filter" role="group" aria-label="이력 종류">
+          <button type="button" className={filter === 'all' ? 'is-on' : ''} aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>전체 <span>{items.length}</span></button>
+          {KINDS.filter(k => counts[k]).map(k => (
+            <button key={k} type="button" className={filter === k ? 'is-on' : ''} aria-pressed={filter === k} onClick={() => setFilter(k)}>{KIND_LABEL[k]} <span>{counts[k]}</span></button>
+          ))}
+        </div>
+      )}
+      {!items.length && <p className="small muted">기록된 처리 이력이 없어요.</p>}
+      {groups.map(g => (
+        <div key={g.day} className="adm-tl-day">
+          <h3>{g.day}</h3>
+          <ol className="adm-timeline">{g.items.map((t, i) => <TimelineRow key={`${t.at}-${t.source}-${t.kind}-${i}`} item={t} />)}</ol>
+        </div>
+      ))}
       {data?.truncated && limit < 2000 && <button type="button" className="adm-btn soft small" disabled={loading} onClick={() => setLimit(n => Math.min(n * 5, 2000))}>이전 기록 더 보기</button>}
     </>}
   </Section>;

@@ -25,7 +25,14 @@ function Thread({ id, onReplied }: { id: string; onReplied: () => void }) {
   const [busy, setBusy] = useState(false);
   const listRef = useRef<HTMLOListElement>(null);
 
+  const paneRef = useRef<HTMLElement>(null);
   useEffect(() => { setBody(''); }, [id]);
+  // 목록 아래에 대화가 쌓이는 좁은 화면에서는 문의를 누르면 대화로 내려간다
+  const loaded = !!data;
+  useEffect(() => {
+    if (!loaded || !window.matchMedia?.('(max-width: 960px)').matches) return;
+    paneRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }, [id, loaded]);
   useEffect(() => {
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
@@ -54,7 +61,7 @@ function Thread({ id, onReplied }: { id: string; onReplied: () => void }) {
   const closed = q.status === 'CLOSED';
 
   return (
-    <section className="adm-thread-pane" aria-label="문의 대화">
+    <section className="adm-thread-pane" aria-label="문의 대화" ref={paneRef}>
       <div className="adm-thread-head">
         <div className="adm-check-top">
           <StatusChip value={pick(INQUIRY_STATUS, q.status)} />
@@ -139,7 +146,7 @@ export function Inquiries() {
         {id ? (
           <Thread id={id} onReplied={() => { reload(); refreshCounts(); }} />
         ) : (
-          <div className="adm-thread-pane" style={{ justifyContent: 'center' }}>
+          <div className="adm-thread-pane adm-thread-empty" style={{ justifyContent: 'center' }}>
             <Empty icon={<Glyph name="mail" size={22} />} title="문의를 선택해 주세요">왼쪽 목록에서 문의를 누르면 대화와 답변 입력창이 열려요.</Empty>
           </div>
         )}

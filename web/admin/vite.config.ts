@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
 import { compactCss, purgeCss } from './build/purge-css';
+import { hoverGuard } from './build/hover-guard';
 
 const src = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -16,9 +17,10 @@ export default defineConfig(({ command }) => ({
   css: {
     postcss: {
       // 스튜디오와 같은 디자인 CSS를 그대로 가져오므로, 빌드 때 이 앱이 안 쓰는 규칙은 걷어낸다
+      // :hover는 마우스 환경에서만 (휴대폰에서 누른 색이 남지 않게, 스튜디오와 같은 규칙)
       plugins: command === 'build'
-        ? [purgeCss({ content: [src('./src'), src('./index.html')] }), compactCss()]
-        : [],
+        ? [hoverGuard(), purgeCss({ content: [src('./src'), src('./index.html')] }), compactCss()]
+        : [hoverGuard()],
     },
   },
   build: {

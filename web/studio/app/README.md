@@ -50,4 +50,5 @@ EDGE_SERVICE_SECRET=... bun run dev:api  # 로컬 API(127.0.0.1:8080)와 연결�
 - **CSS 정리**: 빌드 때만 `build/purge-css.ts`가 소스 문자열에 없는 클래스·ID 규칙과 안 쓰는 `@keyframes`를 제거하고, 주석·공백만 지우는 안전한 압축을 합니다(183KB → 154KB, gzip 36KB → 30KB). Lightning CSS 압축기는 같은 선택자가 뒤에 다시 나오면 앞 규칙의 `!important`를 잘못 지우는 문제가 있어 `cssMinify: false`로 꺼 두었습니다. 다시 켜지 마세요. 클래스 이름을 문자열 조합으로 만든다면 `is-${x}`처럼 접두사를 문자열 안에 남겨 주세요.
 - **청크 프리페치**: 시작 시 현재 경로 청크를 인증 확인과 병렬로 받고, 유휴 시간에 홈·발매 목록·상세를, 메뉴 호버 시 해당 화면을 미리 받습니다(데이터 절약 모드·2G에서는 생략).
 - **캐시**: `/assets/*`(해시 파일)는 1년 immutable, `index.html`은 no-cache, 고정 이름 파일은 `/static/`.
+- **터치 기기 hover**: `build/hover-guard.ts`가 개발·빌드 모두에서 모든 `:hover` 규칙을 `@media (hover:hover) and (pointer:fine)` 안으로 옮긴다. 휴대폰에서 누르다 만 버튼·카드가 눌린 색으로 남지 않고, 터치 피드백은 손을 떼면 풀리는 `:active`(enhance.css '터치 누름 피드백')가 맡는다. 새 CSS에 `:hover`를 그냥 써도 된다.
 - **배포 후 청크 404**: 동적 import/프리로드 실패 시 한 번만 자동 새로고침합니다.

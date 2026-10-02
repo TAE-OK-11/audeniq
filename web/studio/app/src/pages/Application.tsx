@@ -138,7 +138,7 @@ export function Application() {
             <table className="aq-paper-kv">
               <tbody>
                 <tr><th>발매 제목</th><td colSpan={3}><strong>{snap.title}</strong></td></tr>
-                <tr><th>발매 유형</th><td>{kindLabel(snap.type)}</td><th>장르</th><td>{genreLabel(snap.genre) || dash(snap.genre)}</td></tr>
+                <tr><th>발매 유형</th><td>{kindLabel(snap.type)}</td><th>장르</th><td>{snap.genre === '__other__' ? dash(d?.genreCustom || '기타') : genreLabel(snap.genre) || dash(snap.genre)}</td></tr>
                 <tr><th>주요 언어</th><td>{languageLabel(snap.language) || dash(snap.language)}</td><th>레이블 표기</th><td>{dash(snap.label)}</td></tr>
                 <tr><th>발매 예정일</th><td>{snap.releaseDate ? formatKoreanDate(snap.releaseDate) : '—'}</td><th>UPC / EAN</th><td>{snap.upc || '발급 예정'}</td></tr>
                 {snap.originalDate && <tr><th>최초 발매일</th><td colSpan={3}>{formatKoreanDate(snap.originalDate)}</td></tr>}

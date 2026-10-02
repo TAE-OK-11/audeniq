@@ -967,6 +967,61 @@ async fn signed_application_creates_agreement_that_signs_after_review(pool: PgPo
 }
 
 #[sqlx::test]
+async fn staff_sheet_shows_the_signed_application_with_signature_and_contact(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let release = create(&app, &u, "releases").await;
+    let path = org_path(&u, &format!("/releases/{release}/application"));
+    let (s, _, v) = call(
+        &app,
+        "POST",
+        &path,
+        json!({
+            "application_no":"AUD-20260930-QWERTY","form":"AUD-DIST-APP 1.0","content_hash":"ef".repeat(32),
+            "signer_name":"서린","signer_role":"아티스트 본인","agreements":["truth","terms","privacy","esign"],
+            "signature":SIG,"submitted_at":"2026-09-30 09:00"
+        }),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    // No profile yet: the account email is the contact.
+    let staff = user(&app).await;
+    sqlx::query("INSERT INTO identity.staff_members(user_id,role,granted_by) VALUES($1,'REVIEWER','test-operator')")
+        .bind(staff.user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let sheet = format!("/api/staff/releases/{release}");
+    let (s, _, v) = call(&app, "GET", &sheet, Value::Null, Some(&staff)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let a = &v["signed_application"];
+    assert_eq!(a["application_no"], "AUD-20260930-QWERTY");
+    assert_eq!(a["signature"], SIG);
+    assert_eq!(
+        a["agreements"],
+        json!(["truth", "terms", "privacy", "esign"])
+    );
+    let account: String = sqlx::query_scalar("SELECT email FROM identity.users WHERE id=$1")
+        .bind(u.user)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(a["contact_email"], account);
+    // With a profile contact email, that one is shown.
+    sqlx::query("INSERT INTO portal.artist_profiles(user_id,display_name,contact_email) VALUES($1,'서린','contact@example.test')")
+        .bind(u.user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (_, _, v) = call(&app, "GET", &sheet, Value::Null, Some(&staff)).await;
+    assert_eq!(
+        v["signed_application"]["contact_email"],
+        "contact@example.test"
+    );
+}
+
+#[sqlx::test]
 async fn settlement_balance_payout_requests_and_reports(pool: PgPool) {
     key();
     let (app, _) = app(pool.clone()).await;

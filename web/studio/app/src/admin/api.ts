@@ -1,6 +1,7 @@
 // 관리자(스태프) API — 백엔드 `/api/staff/*` (crates/core/src/staff.rs, docs/API.md "Staff portal").
 // 아티스트 포털과 같은 세션 쿠키·CSRF를 쓰고, 권한은 identity.staff_members 역할로 서버가 판단한다.
 // 체험(목) 빌드에서는 브라우저 메모리의 예시 데이터로 같은 화면을 확인할 수 있다.
+import type { StudioDraft } from './application';
 import { ApiError, messageForCode } from '../api/errors';
 import { req } from '../api/http';
 import { MOCK } from '../lib/mode';
@@ -29,7 +30,7 @@ export interface QueueRelease {
   cover?: string | null;
 }
 
-export interface Check { check_code: string; status: string; detail: string | null; rule_version?: string; at?: string }
+export interface Check { id?: string; stage?: number; original_status?: string; needs_second_approval?: boolean; check_code: string; status: string; detail: string | null; rule_version?: string; at?: string }
 export interface Override {
   id: string; check_code: string; original_status: string; proposed_status: string; reason: string;
   actor_user_id: string; second_approver_user_id: string | null; at: string;
@@ -39,7 +40,7 @@ export interface ReviewNote {
 }
 export interface SecondApproval {
   id: string; check_codes: string[]; reason: string; requested_by: string; status: string;
-  decided_by: string | null; expires_at: string; at: string;
+  decided_by: string | null; expires_at: string; at: string; revision_id?: string; active: boolean;
 }
 export interface StaffDocument {
   id: string; org_id?: string; org_name?: string; release_id?: string | null; release_title?: string | null;
@@ -53,12 +54,27 @@ export interface StagingRow {
   ern_is_preview: boolean; approval_by: string | null; approval_rule_version?: string | null; approval_note: string | null; approval_at: string | null; staged_at: string;
 }
 export interface TimelineEvent { action: string; reason: string | null; actor_user_id: string | null; actor_service: string | null; at: string }
+export interface ReleaseTimelineItem {
+  at: string; source: 'audit' | 'job' | 'check' | 'staff_decision' | 'dsp_request' | 'dsp_ack';
+  kind: string; detail: Record<string, unknown>;
+}
+export interface ReleaseTimeline { release_id: string; items: ReleaseTimelineItem[]; truncated: boolean }
+export interface ReviewContext {
+  decision_kind: 'CHECKS' | 'APPLICATION' | null; allowed_actions: DecisionAction[];
+  requires_second_approval: boolean; pending_second_approval_id: string | null;
+  check_counts: Record<string, number>;
+}
 export interface Track {
   id: string; title: string; version: string; disc_number: number; track_number: number; isrc: string | null;
   asset_kind: string | null; parental_advisory: boolean; credits: { party_id: string; role: string }[];
 }
 
+export interface MeasuredAudio {
+  duration_secs: number | null; sample_rate: number | null; channels: number | null; bits_per_sample: number | null;
+}
 export interface ReleaseSheet {
+  track_audio?: Record<string, MeasuredAudio>;
+  review_context?: ReviewContext;
   release: {
     id: string; org_id: string; org_name: string; title: string; release_type: string; status: string;
     upc: string | null; revision_id: string | null; submitted_at: string | null;
@@ -75,8 +91,13 @@ export interface ReleaseSheet {
       previousTitle?: string; previousId?: string;
     } | null;
   };
+  /** 제출 리비전에 담긴 스튜디오 입력 전체 (크레딧·가사·부가서비스·권리 확인·서명 신청서) — 스튜디오 외 경로로 접수하면 없음 */
+  draft?: StudioDraft | null;
   signed_application: {
     application_no: string; content_hash: string; signer_name: string; signer_role: string; received_at: string;
+    form?: string; agreements?: string[];
+    /** 서명 이미지 (PNG data URL) · 신청인 연락 이메일 (아티스트 정보, 없으면 계정 이메일) */
+    signature?: string; contact_email?: string;
   } | null;
   checks: Check[];
   open_checks: Check[];
@@ -180,6 +201,7 @@ const remote = {
   overview: () => req<Overview>('/api/staff/overview'),
   releases: (status: string, offset = 0) => req<Page<QueueRelease>>(`/api/staff/releases${qs({ status, limit: 50, offset })}`),
   release: (rid: string) => req<ReleaseSheet>(`/api/staff/releases/${id(rid)}`),
+  timeline: (rid: string, limit = 100) => req<ReleaseTimeline>(`/api/staff/releases/${id(rid)}/timeline${qs({ limit })}`),
   decide: (rid: string, body: DecisionInput) => req<DecisionResult>(`/api/staff/releases/${id(rid)}/decision`, { method: 'POST', body }),
   /** 아티스트 요청(문의)으로 발매 신청 취소 — 월 3회 직접 취소 한도와 무관 */
   withdraw: (rid: string, reason: string) => req<{ status: string }>(`/api/staff/releases/${id(rid)}/withdraw`, { method: 'POST', body: { reason } }),

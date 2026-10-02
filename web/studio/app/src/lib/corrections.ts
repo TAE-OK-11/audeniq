@@ -142,6 +142,7 @@ const STAFF_FIX: Record<string, Target & { track?: boolean }> = {
   FIX_UPC: { step: WIZ_STEP.distribution, field: 'f-upc', label: 'UPC', hint: 'UPC를 확인해 주세요.' },
   FIX_PLATFORMS: { step: WIZ_STEP.distribution, field: 'aqPlatforms', label: '배급 플랫폼', hint: '배급 플랫폼을 확인해 주세요.' },
   FIX_SPECIAL: { step: WIZ_STEP.rights, field: 'aqSpecialOptions', label: '특수 항목', hint: '커버곡·샘플·AI 활용 등 신고 항목을 확인해 주세요.' },
+  FIX_CONTENT_ID: { step: WIZ_STEP.rights, field: 'aqContentIdRights', label: 'Content ID 권리 확인', hint: 'YouTube Content ID의 독점 권리와 원본 녹음을 확인하거나 Content ID 선택을 해제해 주세요.' },
   FIX_OWNERSHIP: { step: WIZ_STEP.rights, field: 'f-ownership', label: '음원 권리자', hint: '음원 권리자를 확인해 주세요.' },
   FIX_PLINE: { step: WIZ_STEP.rights, field: 'f-phonogram', label: '℗ 표기', hint: '℗ 표기를 확인해 주세요.' },
   FIX_CLINE: { step: WIZ_STEP.rights, field: 'f-copyright', label: '© 표기', hint: '© 표기를 확인해 주세요.' },
@@ -204,6 +205,15 @@ export function fixPath(releaseId: string, c?: Correction): string {
     q.set('fix', '1');
   }
   return `/upload?${q.toString()}`;
+}
+
+/** 담당자의 전체 의견(REVIEW_NOTE)은 고칠 항목이 아니다 — 항목 목록·건수에서 빼고 따로 보여 준다 */
+export function splitCorrections<T extends Correction>(list: T[] | undefined): { items: T[]; note: string } {
+  const all = list ?? [];
+  return {
+    items: all.filter(c => c.code !== 'REVIEW_NOTE'),
+    note: all.filter(c => c.code === 'REVIEW_NOTE').map(c => c.message.trim()).filter(Boolean).join('\n\n'),
+  };
 }
 
 /** '단계 · 항목' 표기 (같은 이름이면 한 번만) */

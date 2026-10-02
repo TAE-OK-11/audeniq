@@ -90,10 +90,12 @@ export function Notifications() {
             <span className="eyebrow">{openNotice.kind || '알림'} · {localStamp(openNotice.time)}</span>
             <p>{openNotice.detail || '상세 내용이 없어요.'}</p>
             {openNotice.link ? (
-              <button
-                type="button" className="button studio-submit-wide" style={{ marginTop: 18 }}
-                onClick={() => { const to = openNotice.link!; setOpenNotice(null); nav(to); }}
-              >관련 화면으로 이동 <Glyph name="arrow-up-right" size={13} /></button>
+              <div className="aq-sticky-foot">
+                <button
+                  type="button" className="button studio-submit-wide"
+                  onClick={() => { const to = openNotice.link!; setOpenNotice(null); nav(to); }}
+                >관련 화면으로 이동 <Glyph name="arrow-up-right" size={13} /></button>
+              </div>
             ) : (
               <div className="doc-connection">관련 발매 또는 정산 내역은 각 관리 화면에서 확인할 수 있어요.</div>
             )}

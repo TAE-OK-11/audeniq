@@ -4,8 +4,12 @@ import { ApiError, messageForCode } from './errors';
 import { applicationPending, needsSecond } from '../labels';
 import type {
   ApprovalItem, DecisionInput, DecisionResult, DeliveryDecisionInput, DeliveryItem, DspItem, InquiryMessage, InquiryItem,
-  Overview, PayoutItem, QueueRelease, ReleaseSheet, StaffDocument, StaffMe,
+  Overview, PayoutItem, QueueRelease, ReleaseSheet, ReleaseTimelineItem, StagingRow, StaffDocument, StaffMe,
 } from './staff';
+import { applicationHash, type StudioDraft } from '../lib/application';
+
+// 체험용 손글씨 서명 (작은 SVG)
+const MOCK_SIGNATURE = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 60"><path d="M10 42c14-20 22-30 28-24s-10 26 2 22 18-30 26-28-6 26 6 24 16-18 24-20 4 16 14 14 20-14 30-16 12 10 22 8 20-6 38-10" fill="none" stroke="#1d2433" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>');
 
 const ME = 'staff-me-0001';
 const OTHER = 'staff-kim-0002';
@@ -17,6 +21,36 @@ const uid = () => Math.random().toString(16).slice(2, 10) + '-mock';
 
 
 interface MockRelease { q: QueueRelease; sheet: ReleaseSheet }
+
+/** 스튜디오 위자드에서 입력한 것처럼 보이는 제출 내용 (체험용) */
+function draftFor(q: QueueRelease, n: number, extra: Partial<StudioDraft> = {}): StudioDraft {
+  const artist = q.artist ?? '아티스트';
+  return {
+    artist, type: q.release_type === 'EP' ? 'ep' : 'single', language: 'ko', genre: 'Indie Pop', label: q.org_name, upc: '',
+    notes_lines: [`${artist}의 ${q.release_type === 'EP' ? '첫 EP' : '새 싱글'}이에요.`, '새벽 공기와 계절의 온도를 담았어요.'],
+    release_date: q.release_date ?? '2026-10-20', territories: ['WORLD'], platforms: ['melon', 'genie', 'flo', 'spotify', 'apple', 'youtube'],
+    ownership: q.org_name, phonogram: `2026 ${q.org_name}`, copyright: `2026 ${q.org_name}`,
+    rightsChecks: { rightsMaster: true, rightsComposition: true, rightsArtwork: true, rightsConsent: true, rightsAi: true },
+    artistProfile: { isNew: false, spotify: 'https://open.spotify.com/artist/4Z8W4fKeB5YxbusRsdQVPb', apple: '', melon: 'https://www.melon.com/artist/detail.htm?artistId=123456' },
+    options: {
+      express: true, expressAck: true, expressReason: '공연 일정에 맞춰야 해요',
+      ai: true, aiUses: ['편곡·반주에 AI를 사용했어요', '커버아트를 AI로 만들었어요'], aiTools: ['Suno', 'Midjourney'],
+      cover: false, sample: false, featured: n > 1, featuredConsentFile: n > 1 ? '피처링_동의서.pdf' : '', shared: false, rerelease: false, minor: false,
+    },
+    draftTracks: Array.from({ length: n }, (_, i) => ({
+      id: `${q.id}-d${i + 1}`, serverId: `${q.id}-t${i + 1}`, title: i === 0 ? q.title : `${q.title} (Track ${i + 1})`, version: '',
+      composers: `${artist}, 김도윤`, lyricists: i === n - 1 && n > 1 ? '' : artist, arrangers: '김도윤', performers: `${artist} (보컬)`, producer: '김도윤',
+      featuring: i === 1 ? 'RAY' : '', explicit: false, instrumental: i === n - 1 && n > 1, duration: `03:${String(12 + i * 7).padStart(2, '0')}`,
+      audioName: `${String(i + 1).padStart(2, '0')}_master.wav`, audioSpec: 'WAV · 24bit · 48kHz · 스테레오',
+      lyrics: i === n - 1 && n > 1 ? '' : '창밖에 번지는 새벽의 온도\n아직 말하지 못한 이야기\n\n천천히, 조금 더 천천히\n우리의 계절이 지나가도록',
+    })),
+    application: {
+      no: `AUD-20260926-${q.id.slice(0, 6).toUpperCase()}`, form: 'AUD-DIST-APP 1.0', submittedAt: '2026-09-26 14:05',
+      signerName: artist, signerRole: '아티스트 본인', signature: '', hash: '', agreements: ['truth', 'terms', 'privacy', 'esign'],
+    },
+    ...extra,
+  };
+}
 
 function sheetFor(q: QueueRelease, open: [string, string, string][], extra: Partial<ReleaseSheet> = {}): MockRelease {
   const tracks = q.release_type === 'SINGLE' ? 1 : 4;
@@ -42,7 +76,8 @@ function sheetFor(q: QueueRelease, open: [string, string, string][], extra: Part
           credits: [{ party_id: 'p1', role: 'COMPOSER' }, { party_id: 'p2', role: 'LYRICIST' }],
         })),
       },
-      signed_application: { application_no: `AUD-20260926-${q.id.slice(0, 6).toUpperCase()}`, content_hash: 'a3f1c9e2'.repeat(8), signer_name: q.artist ?? '', signer_role: '본인', received_at: q.submitted_at ?? iso(5) },
+      draft: draftFor(q, tracks),
+      signed_application: { application_no: `AUD-20260926-${q.id.slice(0, 6).toUpperCase()}`, content_hash: '', signer_name: q.artist ?? '', signer_role: '아티스트 본인', received_at: q.submitted_at ?? iso(5), form: 'AUD-DIST-APP 1.0', agreements: ['truth', 'terms', 'privacy', 'esign'], contact_email: `contact@${q.org_id.replace(/^org-/, '')}.example` },
       checks,
       open_checks: open.map(([code, status, detail]) => ({ check_code: code, status, detail, needs_second_approval: needsSecond({ check_code: code, status }) })),
       advisories: [],
@@ -129,6 +164,33 @@ const payouts: PayoutItem[] = [
 ];
 
 releases.find(r => r.q.id === 'r4d5e6f7')!.sheet.documents.push(documents[0]);
+
+// 체험: Blue Hour는 YouTube Content ID도 신청했는데 원본 녹음 확인을 체크하지 않았다
+{
+  const blue = releases.find(r => r.q.id === 'r2b3c4d5')!.sheet;
+  blue.application.platforms.push('D-27');
+  blue.draft!.platforms = [...(blue.draft!.platforms ?? []), 'youtube-cid'];
+  Object.assign(blue.draft!.options!, { contentIdExclusiveRightsAck: true, contentIdOriginalRecordingAck: false });
+}
+// 체험: Paper Moon은 배급 준비까지 끝나 플랫폼별 상태가 있다
+{
+  const paper = releases.find(r => r.q.id === 'r4d5e6f7')!.sheet;
+  const row = (dsp: string, readiness: string, checks: StagingRow['checks'] = [], extra: Partial<StagingRow> = {}): StagingRow => ({
+    package_id: 'pk-r4', dsp, readiness, approval: readiness === 'READY' ? 'APPROVED' : 'PENDING', checks,
+    route_status: null, route_reason: null, ern_message_id: null, ern_sha256: null, ern_is_preview: false,
+    approval_by: null, approval_note: null, approval_at: null, staged_at: iso(20), ...extra,
+  });
+  paper.delivery_staging = [
+    row('D-5', 'CONTENT_BLOCKED', [
+      { code: 'S2_DSP_TITLE_FEATURED_ARTIST', severity: 'BLOCKER', class: 'CONTENT', message: '곡명에 feat. 표기가 있어요. Spotify는 참여 아티스트 칸으로 받아요.' },
+      { code: 'S2_DSP_SPOTIFY_ARTWORK_ENCODING', severity: 'WARNING', class: 'CONTENT', message: '커버에 ICC 프로필이 들어 있어요. sRGB로 다시 내보내면 좋아요.' },
+    ]),
+    row('D-6', 'AWAITING_PARTNER', [{ code: 'PARTNER_FEED', severity: 'INFO', message: 'Apple Music 전송 계정 연결을 기다리고 있어요.' }], { route_reason: '파트너 연동 전 — 연결되면 자동 전송' }),
+    row('D-1', 'READY', [{ code: 'DSP_LOUDNESS_ADVISORY', severity: 'INFO', message: '음량 -9.8 LUFS — 플랫폼에서 자동 조정돼요.' }]),
+    row('D-2', 'READY'),
+    row('D-3', 'READY', [], { ern_is_preview: true }),
+  ];
+}
 /** 발매 심사 대기: 2차 검사에서 멈췄거나, 자동 검사를 통과했고 신청서가 검토 전 */
 const awaiting = (r: MockRelease) => r.q.status === 'STAGE2_REVIEW' || (r.q.status === 'READY_FOR_DELIVERY' && applicationPending(r.q.agreement));
 
@@ -152,9 +214,19 @@ export const mockStaff = {
     payout_requests: payouts.filter(p => p.status === 'REQUESTED').length,
   }),
   releases: (status: string) => wait({ items: releases.filter(r => (status === 'PENDING' ? awaiting(r) : r.q.status === status)).map(r => r.q) }),
-  release: (rid: string) => {
+  release: async (rid: string) => {
     const r = find(rid);
     const sheet = r.sheet;
+    // 체험용 신청서에 서명 이미지와 문서 확인 코드를 붙인다 (실서버는 스튜디오가 서명할 때 계산)
+    const d = sheet.draft;
+    if (d?.application && !d.application.hash) {
+      d.application.signature = MOCK_SIGNATURE;
+      d.application.hash = await applicationHash(d, sheet.release.title, d.application);
+      if (sheet.signed_application) {
+        sheet.signed_application.content_hash = d.application.hash;
+        sheet.signed_application.signature = MOCK_SIGNATURE;
+      }
+    }
     const pending = approvals.find(a => a.release_id === rid && a.status === 'PENDING' && Date.parse(a.expires_at) > Date.now());
     const kind = r.q.status === 'STAGE2_REVIEW' ? 'CHECKS' : awaiting(r) ? 'APPLICATION' : null;
     sheet.second_approvals.forEach(a => { a.active = a.status === 'PENDING' && Date.parse(a.expires_at) > Date.now(); });
@@ -167,13 +239,28 @@ export const mockStaff = {
     };
     return wait(sheet);
   },
-  timeline: (rid: string, limit = 100) => wait({
-    release_id: rid, truncated: find(rid).sheet.timeline.length > limit,
-    items: find(rid).sheet.timeline.slice(0, limit).reverse().map(t => ({
+  timeline: (rid: string, limit = 100) => {
+    const r = find(rid);
+    const items: ReleaseTimelineItem[] = r.sheet.timeline.map(t => ({
       at: t.at, source: 'audit' as const, kind: t.action,
       detail: { reason: t.reason, actor_user_id: t.actor_user_id, actor_service: t.actor_service },
-    })),
-  }),
+    }));
+    // 체험: 처리 작업·검사·플랫폼 기록도 섞어 보여 준다
+    const sub = r.q.submitted_at ?? iso(5);
+    const after = (min: number) => new Date(Date.parse(sub) + min * 60_000).toISOString();
+    items.push(
+      { at: after(1), source: 'job', kind: 'asset.analyze', detail: { status: 'SUCCEEDED', attempts: 1 } },
+      { at: after(2), source: 'job', kind: 'stage1', detail: { status: 'SUCCEEDED', attempts: 1 } },
+      { at: after(6), source: 'job', kind: 'stage2', detail: { status: 'SUCCEEDED', attempts: 2, last_error: 'fingerprint service timeout (retried)' } },
+      ...r.sheet.open_checks.map(c => ({ at: after(7), source: 'check' as const, kind: c.check_code, detail: { status: c.status, detail: c.detail, stage: 2 } })),
+    );
+    for (const d of r.sheet.delivery_staging) {
+      items.push({ at: d.staged_at, source: 'staff_decision', kind: d.dsp, detail: { approval: d.approval, note: d.readiness === 'CONTENT_BLOCKED' ? '콘텐츠 문제로 전송 보류' : null } });
+      if (d.readiness === 'READY') items.push({ at: after(30), source: 'dsp_request', kind: d.dsp, detail: { outcome: 'SENT' } });
+    }
+    items.sort((a, b) => a.at.localeCompare(b.at));
+    return wait({ release_id: rid, truncated: items.length > limit, items: items.slice(-limit) });
+  },
   decide: async (rid: string, i: DecisionInput): Promise<DecisionResult> => {
     const r = find(rid);
     if (!awaiting(r)) fail('RELEASE_NOT_IN_REVIEW');
