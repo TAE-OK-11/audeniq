@@ -1553,3 +1553,12 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-cadmin-emergency-actions .button{width:100%}
 @media (prefers-reduced-motion:reduce){.aq-cadmin-emergency-form{animation:none}}
 .aq-cadmin-emergency-actions>.button:only-child{grid-column:1/-1}
+
+/* 알림(토스트): 아래로 번지는 그림자 없이 평평하게 */
+.aq-toast,.toast{box-shadow:none!important;filter:none!important}
+/* 날짜·시간 입력: iPhone에서 값이 가운데로 몰리지 않게 왼쪽 정렬, 칸 높이 고정 */
+:is(#root,#modal) .aq-cadmin .field input:is([type=datetime-local],[type=date],[type=time]){display:block;width:100%;min-height:52px;text-align:left;-webkit-appearance:none;appearance:none}
+.aq-cadmin .field input::-webkit-date-and-time-value{text-align:left}
+:is(#root,#modal) .aq-cadmin .field :is(input:not([type=checkbox]):not([type=radio]):not([type=file]),textarea,select){padding:13px 16px!important;min-height:52px}
+:is(#root,#modal) .aq-cadmin .field textarea{padding:14px 16px!important;line-height:1.65!important}
+.aq-cadmin .aq-cadmin-check{margin:4px 0 18px}
