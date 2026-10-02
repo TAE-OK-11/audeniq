@@ -1,3 +1,5 @@
+import { claimChunkReload } from './lib/chunkRecovery';
+import { loginRedirect } from './lib/loginRedirect';
 import { Suspense, lazy, type ComponentType, type ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from './lib/router';
 import { AuthProvider, useAuth } from './api/auth';
@@ -13,15 +15,13 @@ import './styles/live.css';
 import './styles/enhance.css';
 
 // 배포 직후 옛 청크가 사라져 동적 import가 실패하면 한 번만 새로고침해 새 버전을 받는다
-const RELOAD_FLAG = 'aq.chunk-reload';
 function lazyPage<M>(load: () => Promise<M>, pick: (m: M) => ComponentType) {
   return lazy(async () => {
     try {
       const mod = await load();
       return { default: pick(mod) };
     } catch (e) {
-      if (!sessionStorage.getItem(RELOAD_FLAG)) {
-        sessionStorage.setItem(RELOAD_FLAG, '1');
+      if (claimChunkReload()) {
         window.location.reload();
         await new Promise(() => {}); // 새로고침될 때까지 대기 (오류 화면 깜빡임 방지)
       }
@@ -76,8 +76,8 @@ function GuestOnly({ children }: { children: ReactNode }) {
   const loc = useLocation();
   if (loading) return <BootScreen />;
   if (user) {
-    const from = (loc.state as { from?: string } | null)?.from;
-    return <Navigate to={from && !/^\/(login|signup|find-account)/.test(from) ? from : '/'} replace />;
+    const from = loginRedirect(loc.state);
+    return <Navigate to={from ?? '/'} replace />;
   }
   return <>{children}</>;
 }

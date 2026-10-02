@@ -1,3 +1,4 @@
+import { loginRedirect } from '../lib/loginRedirect';
 // 서비스·기기 상태 알림
 // - 서버 점검: /api/status(D1·비상 스위치)에 진행 중인 점검이 있거나 API가 503 MAINTENANCE로 답하면
 //   점검 화면을 앱 위에 덮는다 (앱은 그대로 두어 작성 중인 내용이 남는다). 72시간 안의 점검은 상단 예고
@@ -114,7 +115,7 @@ function DialogBody({ kind, title, body, meta, actions }: {
 export function SystemStatus({ children }: { children: ReactNode }) {
   const toast = useToast();
   const loc = useLocation();
-  const loginFrom = (loc.state as { from?: string } | null)?.from;
+  const loginFrom = loginRedirect(loc.state);
   const adminPage = loc.pathname.startsWith('/admin') || loc.pathname.startsWith('/content-admin')
     || (loc.pathname === '/login' && !!loginFrom?.startsWith('/admin'));
 
