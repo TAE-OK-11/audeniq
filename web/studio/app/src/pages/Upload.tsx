@@ -222,7 +222,7 @@ function DocAttach({ id, label, fileName, assetId, busy, onSelect, required, hel
   return (
     <div className="field doc-attach aq-rights-evidence">
       <strong>{label}{required && <> <span className="required">*</span></>}</strong>
-      <div className="aq-chips" role="group" aria-label="서류 준비 방법">
+      <div className="aq-chips aq-method" role="group" aria-label="서류 준비 방법">
         <button type="button" className={`aq-chip${method === 'electronic' ? ' is-on' : ''}`} aria-pressed={method === 'electronic'} onClick={() => setMethod('electronic')}>AUDENIQ에서 작성</button>
         <button type="button" className={`aq-chip${method === 'upload' ? ' is-on' : ''}`} aria-pressed={method === 'upload'} onClick={() => setMethod('upload')}>보유한 서류 첨부</button>
       </div>
