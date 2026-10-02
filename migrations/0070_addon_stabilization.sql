@@ -32,6 +32,8 @@ CREATE FUNCTION operations.audit_addon_priority_inheritance() RETURNS trigger
 LANGUAGE plpgsql SET search_path=pg_catalog AS $$
 DECLARE previous integer; audit_org uuid; addon_order uuid;
 BEGIN
+ IF NEW.queue NOT IN ('qc','rights','distribution','delivery') THEN RETURN NEW; END IF;
+ IF TG_OP='UPDATE' AND OLD.addon_priority_previous IS NULL AND NEW.addon_priority_previous IS NULL THEN RETURN NEW; END IF;
  IF TG_OP='INSERT' THEN previous:=NEW.addon_priority_previous;
  ELSE previous:=OLD.priority;
  END IF;
