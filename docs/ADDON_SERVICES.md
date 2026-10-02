@@ -82,7 +82,7 @@
 
 details PUT은 NEEDS_INFO 자료 보완이다. revisions POST는 Lyric Video 수정 요청이다. evidence는 `{approved,valid_until}`을 추가하며 미래 유효기간이 필수다. results는 external_reference와 해당 서비스의 검증된 lrc/output/qr/card/evidence asset ID, dsp_links, migration_step, mv_distribution_status를 받는다. Migration 단계: UPC_APPROVED/UPC_NOT_AVAILABLE → DELIVERED → MATCH_CONFIRMED → TAKEDOWN_REQUESTED → TAKEDOWN_COMPLETED. MV 전달은 PREPARED → DELIVERED만 가능하다.
 
-필터: service_code, paid(유료 여부), status, assigned_admin_user_id, submitted_from/to, artist_id, release_id, priority, needs_info, external_pending, failed, unprocessed_hours, before_created_at/before_id, limit. 관리자 상세에 최근 200건 audit를 포함한다.
+필터: service_code, paid(유료 여부), status, assigned_admin_user_id, submitted_from/to, artist_id, release_id, priority, needs_info, external_pending, failed, unprocessed_hours, before_created_at/before_id, limit. 관리자 상세에 최근 200건 audit를 포함한다. NEEDS_INFO 상세 응답의 information_request에는 신청자에게 전달할 보완 메시지와 요청 시간을 포함한다. 기존 audit에서 해당 요청만 읽으며 전체 관리자 audit를 사용자에게 노출하지 않는다. 재제출 후에는 null이다.
 
 ## 파일과 상태 머신
 

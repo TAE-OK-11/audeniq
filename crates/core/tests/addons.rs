@@ -195,6 +195,53 @@ async fn free_order_catalog_and_admin_acl(pool: PgPool) {
     assert_eq!(s, StatusCode::FORBIDDEN);
 }
 #[sqlx::test]
+async fn information_request_is_visible_to_requester_and_cleared_after_resubmission(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let a = admin_user(&app, &pool).await;
+    let ar = create_artist(&app, &u).await;
+    let v = create_ok(&app, &u, profile(ar, false)).await;
+    let (s, requested) = call(
+        &app,
+        "POST",
+        &format!("/api/admin/addons/orders/{}/request-info", id(&v)),
+        json!({"row_version":v["row_version"],"reason":"Please provide the existing DSP profile URL"}),
+        Some(&a),
+    ).await;
+    assert_eq!(s, StatusCode::OK, "{requested}");
+    let visible = get_order(&app, &u, id(&v)).await;
+    assert_eq!(visible["status"], "NEEDS_INFO");
+    assert_eq!(
+        visible["information_request"]["message"],
+        "Please provide the existing DSP profile URL"
+    );
+    assert!(visible["information_request"]["requested_at"].is_string());
+    assert!(visible.get("audit_events").is_none());
+    let (s, filtered) = call(
+        &app,
+        "GET",
+        "/api/admin/addons/orders?needs_info=true",
+        Value::Null,
+        Some(&a),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(filtered["items"].as_array().unwrap().len(), 1);
+    let mut supplied = profile(ar, false)["details"].clone();
+    supplied["notes"] = json!("Existing profile: https://example.org/artist");
+    let (s, resubmitted) = call(
+        &app, "PUT", &format!("/api/orgs/{}/addons/orders/{}/details", u.org, id(&v)),
+        json!({"row_version":visible["row_version"],"reason":"Profile URL supplied","details":supplied}), Some(&u)
+    ).await;
+    assert_eq!(s, StatusCode::OK, "{resubmitted}");
+    assert_eq!(resubmitted["status"], "QUEUED");
+    assert!(resubmitted["information_request"].is_null());
+    assert_eq!(
+        resubmitted["details"]["artist_profile"]["notes"],
+        supplied["notes"]
+    );
+}
+#[sqlx::test]
 async fn paid_order_requires_payment_and_cannot_be_approved(pool: PgPool) {
     let (app, _) = app(pool.clone()).await;
     let u = user(&app).await;
