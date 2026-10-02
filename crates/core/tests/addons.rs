@@ -1259,9 +1259,12 @@ async fn removing_basic_video_request_clears_details_and_rejects_video_results(p
     let v = get_order(&app, &u, id(&v)).await;
     assert_eq!(v["provider_tasks"].as_array().unwrap().len(), 1);
     let video = asset(&pool, &u, "VIDEO").await;
+    // Old 0069 deployments could leave this row after deselecting video.
+    sqlx::query("INSERT INTO catalog.lyric_video_requests(org_id,addon_order_id,template_id) VALUES($1,$2,'basic')")
+        .bind(u.org).bind(id(&v)).execute(&pool).await.unwrap();
     let (s, _) = call(&app, "POST", &format!("/api/admin/addons/orders/{}/results",id(&v)),
         json!({"row_version":v["row_version"],"reason":"Unexpected video","external_reference":"manual-video","output_asset_id":video}), Some(&a)).await;
-    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(s, StatusCode::BAD_REQUEST);
     let unchanged = get_order(&app, &u, id(&v)).await;
     assert_eq!(unchanged["row_version"], v["row_version"]);
     assert_eq!(unchanged["provider_tasks"][0]["status"], "EXTERNAL_PENDING");
@@ -1448,7 +1451,12 @@ async fn forward_migration_repairs_existing_orders_under_forced_rls(pool: PgPool
     assert_eq!(repaired, (true, true));
     let audits: i64 = sqlx::query_scalar("SELECT count(*) FROM operations.audit_events WHERE reason_code='ADDON_STABILIZATION' AND before_value IS NOT NULL AND after_value IS NOT NULL")
         .fetch_one(&pool).await.unwrap();
-    assert_eq!(audits, 2);
+    assert_eq!(audits, 3);
+    let stale_videos: i64 = sqlx::query_scalar("SELECT count(*) FROM catalog.lyric_video_requests")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(stale_videos, 0);
     let running: (i32, String) = sqlx::query_as(
         "SELECT priority,status FROM operations.jobs WHERE idempotency_key='upgrade-running'",
     )

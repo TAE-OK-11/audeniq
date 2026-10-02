@@ -808,6 +808,13 @@ async fn record_results_inner(
         if !matches!(o.service_code.as_str(), "LYRIC_VIDEO_PLUS" | "LYRICS_BASIC") {
             return Err(Error::Invalid);
         }
+        if o.service_code == "LYRICS_BASIC" {
+            let requested: bool = sqlx::query_scalar("SELECT basic_video_requested FROM catalog.lyrics_requests WHERE org_id=$1 AND addon_order_id=$2")
+                .bind(o.org_id).bind(o.id).fetch_one(&mut *c).await?;
+            if !requested {
+                return Err(Error::Invalid);
+            }
+        }
         asset_ready(c, o.org_id, id, "VIDEO").await?;
         if sqlx::query("UPDATE catalog.lyric_video_requests SET output_asset_id=$3,render_status='READY' WHERE org_id=$1 AND addon_order_id=$2").bind(o.org_id).bind(o.id).bind(id).execute(&mut *c).await?.rows_affected()!=1 {
             return Err(Error::Invalid);

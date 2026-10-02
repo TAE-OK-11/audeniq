@@ -83,6 +83,22 @@ WITH previous AS (
 INSERT INTO operations.audit_events(id,actor_service,org_id,resource_id,action,reason_code,request_id,before_value,after_value)
 SELECT gen_random_uuid(),'audeniq-migration',org_id,id,'addon.priority.removed','ADDON_STABILIZATION',gen_random_uuid(),
  jsonb_build_object('priority',priority),jsonb_build_object('priority',0) FROM repaired;
+
+-- 0069 also left an optional video detail behind when its request was removed.
+-- Keep source/output assets and the prior detail in audit, only remove the
+-- inactive request and advance the order version for concurrent clients.
+WITH removed AS (
+ DELETE FROM catalog.lyric_video_requests v USING catalog.lyrics_requests l,catalog.addon_orders o
+ WHERE v.addon_order_id=l.addon_order_id AND o.id=l.addon_order_id
+ AND o.service_code='LYRICS_BASIC' AND NOT l.basic_video_requested
+ RETURNING v.org_id,v.addon_order_id,to_jsonb(v) AS before_detail
+), bumped AS (
+ UPDATE catalog.addon_orders o SET row_version=row_version+1 FROM removed r
+ WHERE o.org_id=r.org_id AND o.id=r.addon_order_id RETURNING o.id,o.org_id,r.before_detail
+)
+INSERT INTO operations.audit_events(id,actor_service,org_id,resource_id,action,reason_code,request_id,before_value,after_value)
+SELECT gen_random_uuid(),'audeniq-migration',org_id,id,'addon.details.updated','ADDON_STABILIZATION',gen_random_uuid(),
+ jsonb_build_object('lyric_video',before_detail),jsonb_build_object('lyric_video',NULL) FROM bumped;
 PERFORM set_config('app.staff',coalesce(previous_staff,''),true);
 END $$;
 
