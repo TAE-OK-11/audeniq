@@ -21,6 +21,7 @@
 - 기존 priority trigger를 재대기/실행 시작에도 적용하고 자동 priority 변경 audit trigger를 추가한다.
 - 무료 기간제 주문의 누락된 만료일을 **기존 submitted_at**과 기간 snapshot으로 보정한다. 재배포일을 기준으로 기간을 연장하지 않는다.
 - 취소·거절·실패한 PRIORITY_DELIVERY 주문의 남은 priority를 초기화한다.
+- 기존에 Basic Video 선택을 취소하고도 남은 상세를 정리하며 source/output asset은 보존한다.
 - 데이터 보정도 기존 append-only audit에 이전/이후 값을 기록한다.
 - FORCE RLS가 적용되는 일반 schema owner도 조직 간 보정을 수행하도록 migration 내부에서 staff scope를 설정하고 복원한다.
 - 관리자 ACL 잠금 함수를 추가한다. schema owner로 migration 후 `deploy/grants.sql`을 적용한다. 새 권한은 해당 함수 EXECUTE와 선택 취소 시 필요한 lyric_video_requests DELETE뿐이다.
