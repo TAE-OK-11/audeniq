@@ -122,21 +122,28 @@ const ICON: Record<BriefTone, ReactNode> = {
   bad: <Glyph name="close" size={11} />,
 };
 
-export function ReviewBrief({ sheet, integrity, title = '결정 전 확인할 것', onAddFix, added = [] }: {
+export function ReviewBrief({ sheet, integrity, title = '결정 전 확인할 것', onAddFix, added = [], compact = false, lead }: {
   sheet: ReleaseSheet; integrity: Integrity; title?: string;
   /** 보완 요청 창: 문제를 보완 항목으로 추가 */
   onAddFix?: (fix: BriefFix) => void;
   added?: string[];
+  /** 심사 시트 맨 위 요약: 바로 아래 ‘담당자 확인 필요’와 겹치는 검사 항목은 빼고, 이상 없는 항목은 접는다 */
+  compact?: boolean;
+  /** 제목 아래 한 줄 (지금 심사 상태) */
+  lead?: ReactNode;
 }) {
-  const items = reviewBrief(sheet, integrity);
-  const bad = items.filter(i => i.tone === 'bad').length;
-  const warn = items.filter(i => i.tone === 'warn').length;
+  const all = reviewBrief(sheet, integrity).filter(i => !(compact && i.key.startsWith('chk-')));
+  const bad = all.filter(i => i.tone === 'bad').length + (compact ? sheet.open_checks.length : 0);
+  const warn = all.filter(i => i.tone === 'warn').length;
+  const ok = compact ? all.filter(i => i.tone === 'ok') : [];
+  const items = compact ? all.filter(i => i.tone !== 'ok') : all;
   return (
-    <section className="adm-brief" aria-label={title}>
+    <section className={`adm-brief${compact ? ' is-compact' : ''}`} aria-label={title}>
       <div className="adm-brief-top">
         <b>{title}</b>
         <small>{bad ? `문제 ${bad}` : '문제 없음'}{warn ? ` · 주의 ${warn}` : ''}</small>
       </div>
+      {lead && <p className="adm-brief-lead">{lead}</p>}
       <ul>
         {items.map(i => {
           const fixKey = i.fix ? `${i.fix.code}@${i.fix.trackId ?? ''}` : '';
@@ -155,6 +162,12 @@ export function ReviewBrief({ sheet, integrity, title = '결정 전 확인할 �
           );
         })}
       </ul>
+      {ok.length > 0 && (
+        <details className="adm-brief-ok">
+          <summary><span className="adm-brief-mark" aria-hidden="true">{ICON.ok}</span>이상 없는 항목 {ok.length}개<Glyph name="chevron-right" size={12} /></summary>
+          <ul>{ok.map(i => <li key={i.key} className="is-ok"><span className="adm-brief-mark" aria-hidden="true">{ICON.ok}</span><span className="adm-brief-text"><b>{i.title}</b>{i.detail && <small>{i.detail}</small>}</span></li>)}</ul>
+        </details>
+      )}
     </section>
   );
 }
