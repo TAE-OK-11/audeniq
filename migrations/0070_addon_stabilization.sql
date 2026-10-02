@@ -54,6 +54,10 @@ FOR EACH ROW EXECUTE FUNCTION operations.audit_addon_priority_inheritance();
 
 -- Forward-only repair for deployments that already applied 0069. Preserve
 -- the original submission date and snapshot; do not restart an entitlement.
+-- FORCE RLS also applies to a non-superuser schema owner. Scope this trusted
+-- migration's repair across tenants, then restore the caller's setting.
+DO $$ DECLARE previous_staff text:=current_setting('app.staff',true); BEGIN
+PERFORM set_config('app.staff','on',true);
 WITH previous AS (
  SELECT id FROM catalog.addon_orders WHERE payment_status='NOT_REQUIRED'
  AND valid_until IS NULL AND submitted_at IS NOT NULL
@@ -79,6 +83,9 @@ WITH previous AS (
 INSERT INTO operations.audit_events(id,actor_service,org_id,resource_id,action,reason_code,request_id,before_value,after_value)
 SELECT gen_random_uuid(),'audeniq-migration',org_id,id,'addon.priority.removed','ADDON_STABILIZATION',gen_random_uuid(),
  jsonb_build_object('priority',priority),jsonb_build_object('priority',0) FROM repaired;
+PERFORM set_config('app.staff',coalesce(previous_staff,''),true);
+END $$;
+
 -- SELECT ... FOR SHARE requires UPDATE privileges. Keep staff grants read-only
 -- for the API while allowing this narrow, read-only authorization lock.
 CREATE FUNCTION identity.lock_active_staff_role(requested_user uuid) RETURNS text
