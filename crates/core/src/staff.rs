@@ -263,7 +263,10 @@ pub async fn list_releases(s: &AppState, h: &HeaderMap, p: Page) -> Result<Value
            'platforms', COALESCE(ar.body #> '{release,draft,platforms}', '[]'::jsonb),
            'cover', NULLIF(r.draft->>'coverData', ''),
            'agreement', (SELECT d.status FROM portal.documents d
-                          WHERE d.org_id=r.org_id AND d.release_id=r.id AND d.kind='AGREEMENT'))
+                          WHERE d.org_id=r.org_id AND d.release_id=r.id AND d.kind='AGREEMENT'),
+           'claim', (SELECT jsonb_build_object('user_id', c.claimed_by, 'email', u.email, 'at', c.claimed_at)
+                       FROM rights.review_claims c JOIN identity.users u ON u.id=c.claimed_by
+                      WHERE c.release_id=r.id))
          FROM catalog.releases r
          JOIN identity.orgs o ON o.id=r.org_id
          LEFT JOIN catalog.application_revisions ar ON ar.org_id=r.org_id AND ar.id=r.current_revision_id
@@ -647,8 +650,11 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
         "READY_FOR_DELIVERY" if revision.is_some() && agreement_pending => Some("APPLICATION"),
         _ => None,
     };
+    let claim = review_claim(&mut tx, release).await?;
+    let mine = claim.as_ref().is_some_and(|c| c.user == st.actor.user);
     let mut allowed = Vec::new();
-    if st.role.may(Duty::Review) && kind.is_some() {
+    // 담당자만 결정할 수 있다 — 아직 아무도 맡지 않았거나 다른 담당자가 맡은 건은 읽기 전용
+    if st.role.may(Duty::Review) && kind.is_some() && mine {
         if pending.is_none() {
             allowed.push("APPROVE");
         }
@@ -670,6 +676,9 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
             "requires_second_approval": open.iter().any(|c| c["needs_second_approval"] == true),
             "pending_second_approval_id": pending.map(|a| &a["id"]),
             "check_counts": check_counts,
+            "claim": claim.as_ref().map(|c| json!({"user_id": c.user, "email": c.email, "at": c.at, "mine": c.user == st.actor.user})),
+            "can_claim": st.role.may(Duty::Review) && kind.is_some() && claim.is_none(),
+            "can_take_over": st.role == StaffRole::Admin && kind.is_some() && claim.as_ref().is_some_and(|c| c.user != st.actor.user),
         },
         "release": {
             "id": release, "org_id": org, "org_name": r.get::<String,_>("org_name"),
@@ -736,6 +745,163 @@ fn sensitive(c: &OpenCheck) -> bool {
 }
 
 /// Lock the release on the revision the reviewer looked at: (org, status).
+/// 발매 심사 담당 (rights.review_claims).
+struct ReviewClaim {
+    user: Uuid,
+    email: String,
+    at: chrono::DateTime<chrono::Utc>,
+}
+
+async fn review_claim(c: &mut PgConnection, release: Uuid) -> Result<Option<ReviewClaim>> {
+    let row = sqlx::query(
+        "SELECT c.claimed_by, u.email, c.claimed_at FROM rights.review_claims c
+           JOIN identity.users u ON u.id=c.claimed_by WHERE c.release_id=$1",
+    )
+    .bind(release)
+    .fetch_optional(&mut *c)
+    .await?;
+    Ok(row.map(|r| ReviewClaim {
+        user: r.get("claimed_by"),
+        email: r.get("email"),
+        at: r.get("claimed_at"),
+    }))
+}
+
+/// Only the reviewer who claimed the release may decide it.
+async fn require_claim(c: &mut PgConnection, release: Uuid, user: Uuid) -> Result<()> {
+    let by: Option<Uuid> =
+        sqlx::query_scalar("SELECT claimed_by FROM rights.review_claims WHERE release_id=$1")
+            .bind(release)
+            .fetch_optional(&mut *c)
+            .await?;
+    match by {
+        Some(u) if u == user => Ok(()),
+        Some(_) => Err(Error::PolicyGate("REVIEW_CLAIMED_BY_OTHER")),
+        None => Err(Error::PolicyGate("REVIEW_CLAIM_REQUIRED")),
+    }
+}
+
+#[derive(Deserialize, Default)]
+pub struct ClaimInput {
+    /// ADMIN only: take over a review another reviewer claimed.
+    #[serde(default)]
+    pub take_over: bool,
+}
+
+/// Claim a release under review. Claiming your own claim again is a no-op;
+/// another reviewer's claim needs ADMIN `take_over`.
+pub async fn claim_review(
+    s: &AppState,
+    h: &HeaderMap,
+    release: Uuid,
+    i: ClaimInput,
+) -> Result<Value> {
+    let st = staff(s, h, true).await?;
+    require(&st, Duty::Review)?;
+    let mut tx = s.pool.begin().await?;
+    let row = sqlx::query("SELECT org_id, status FROM catalog.releases WHERE id=$1 FOR UPDATE")
+        .bind(release)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(Error::NotFound)?;
+    let org: Uuid = row.get("org_id");
+    let status: String = row.get("status");
+    let in_review = status == "STAGE2_REVIEW"
+        || (status == "READY_FOR_DELIVERY"
+            && pending_agreement(&mut tx, org, release).await?.is_some());
+    if !in_review {
+        return Err(Error::PolicyGate("RELEASE_NOT_IN_REVIEW"));
+    }
+    let me = st.actor.user;
+    let current: Option<Uuid> = sqlx::query_scalar(
+        "SELECT claimed_by FROM rights.review_claims WHERE release_id=$1 FOR UPDATE",
+    )
+    .bind(release)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let action = match current {
+        Some(u) if u == me => None,
+        Some(_) if !(i.take_over && st.role == StaffRole::Admin) => {
+            return Err(Error::PolicyGate("REVIEW_CLAIMED_BY_OTHER"));
+        }
+        Some(prev) => {
+            sqlx::query("UPDATE rights.review_claims SET claimed_by=$2, claimed_at=now() WHERE release_id=$1")
+                .bind(release)
+                .bind(me)
+                .execute(&mut *tx)
+                .await?;
+            Some(("staff.review_taken_over", prev.to_string()))
+        }
+        None => {
+            sqlx::query(
+                "INSERT INTO rights.review_claims(release_id, org_id, claimed_by) VALUES($1,$2,$3)",
+            )
+            .bind(release)
+            .bind(org)
+            .bind(me)
+            .execute(&mut *tx)
+            .await?;
+            Some(("staff.review_claimed", String::new()))
+        }
+    };
+    if let Some((what, reason)) = action {
+        operations::audit(
+            &mut tx,
+            Some(me),
+            Some(org),
+            Some(release),
+            what,
+            &reason,
+            st.actor.request,
+        )
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(json!({"release_id": release, "claimed_by": me}))
+}
+
+/// Give up a claim (the claimer, or ADMIN for anyone's).
+pub async fn release_review_claim(s: &AppState, h: &HeaderMap, release: Uuid) -> Result<Value> {
+    let st = staff(s, h, true).await?;
+    require(&st, Duty::Review)?;
+    let mut tx = s.pool.begin().await?;
+    let row = sqlx::query(
+        "DELETE FROM rights.review_claims WHERE release_id=$1 AND (claimed_by=$2 OR $3)
+         RETURNING org_id, claimed_by",
+    )
+    .bind(release)
+    .bind(st.actor.user)
+    .bind(st.role == StaffRole::Admin)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(row) = row else {
+        let held: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM rights.review_claims WHERE release_id=$1)",
+        )
+        .bind(release)
+        .fetch_one(&mut *tx)
+        .await?;
+        return if held {
+            Err(Error::PolicyGate("REVIEW_CLAIMED_BY_OTHER"))
+        } else {
+            Ok(json!({"release_id": release, "claimed_by": null}))
+        };
+    };
+    let prev: Uuid = row.get("claimed_by");
+    operations::audit(
+        &mut tx,
+        Some(st.actor.user),
+        Some(row.get("org_id")),
+        Some(release),
+        "staff.review_released",
+        &prev.to_string(),
+        st.actor.request,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"release_id": release, "claimed_by": null}))
+}
+
 async fn locked_release(
     c: &mut PgConnection,
     release: Uuid,
@@ -1026,6 +1192,7 @@ pub async fn decide(s: &AppState, h: &HeaderMap, release: Uuid, i: DecisionInput
     }
     let mut tx = s.pool.begin().await?;
     let (org, status) = locked_release(&mut tx, release, i.revision_id).await?;
+    require_claim(&mut tx, release, st.actor.user).await?;
     let agreement = pending_agreement(&mut tx, org, release).await?;
     if status != "STAGE2_REVIEW" {
         if status != "READY_FOR_DELIVERY" || agreement.is_none() {
@@ -2370,6 +2537,23 @@ async fn h_decide(
 ) -> Result<Json<Value>> {
     Ok(Json(decide(&s, &h, id, i).await?))
 }
+async fn h_claim(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    h: HeaderMap,
+    body: Option<Json<ClaimInput>>,
+) -> Result<Json<Value>> {
+    Ok(Json(
+        claim_review(&s, &h, id, body.map(|b| b.0).unwrap_or_default()).await?,
+    ))
+}
+async fn h_unclaim(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    Ok(Json(release_review_claim(&s, &h, id).await?))
+}
 async fn h_reissue(
     State(s): State<AppState>,
     Path(id): Path<Uuid>,
@@ -2556,6 +2740,10 @@ pub fn routes() -> Router<AppState> {
         .route("/api/staff/releases/{id}", get(h_release))
         .route("/api/staff/releases/{id}/timeline", get(h_timeline))
         .route("/api/staff/releases/{id}/decision", post(h_decide))
+        .route(
+            "/api/staff/releases/{id}/claim",
+            post(h_claim).delete(h_unclaim),
+        )
         .route(
             "/api/staff/releases/{id}/reissue-identifiers",
             post(h_reissue),
