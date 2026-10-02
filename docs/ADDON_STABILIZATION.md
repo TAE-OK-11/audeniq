@@ -2,6 +2,13 @@
 
 기존 phase 1 구현을 이어서 점검했다. 기본 release/distribution 상태 머신과 외부 adapter 방식은 유지한다.
 
+## 변경 파일
+
+- `crates/core/src/addons/api.rs`, `jobs.rs`, `model.rs`, `workflow.rs`: 관리자 권한·worker 검증·우선권·기간·영상 상세 및 결과 처리.
+- `migrations/0070_addon_stabilization.sql`, `deploy/grants.sql`: 후속 보정·priority trigger·제한된 관리자 권한 조회 함수와 runtime 권한.
+- `crates/core/tests/addons.rs`, `crates/core/tests/fixtures/addon_0069_upgrade.sql`: 신규 7개 회귀 테스트 및 기존 데이터 업그레이드 fixture.
+- `docs/ADDON_SERVICES.md`, `docs/ADDON_STABILIZATION.md`, `docs/ADDON_VALIDATION.md`: 변경 내용과 검증 결과.
+
 ## 수정한 오류
 
 | 문제 | 수정 |
@@ -40,4 +47,16 @@
 - `runtime_api_can_operate_admin_workflow_without_staff_update_privilege`
 - `forward_migration_repairs_existing_orders_under_forced_rls`
 
-운영 역할 테스트는 관리자 목록·결제·승인·진행·가사 영상 선택 취소를 실제 API 역할로 실행한다. 직원 권한 변경 거절, 관리자 권한 회수 후 접근 차단, 진행 중인 권한 검사와 회수의 동시 실행도 확인한다. 전체 CI 결과는 검증 완료 후 기록한다.
+운영 역할 테스트는 관리자 목록·결제·승인·진행·가사 영상 선택 취소를 실제 API 역할로 실행한다. 직원 권한 변경 거절, 관리자 권한 회수 후 접근 차단, 진행 중인 권한 검사와 회수의 동시 실행도 확인한다.
+
+## 검증 결과
+
+최종 코드 `1be9154619e526fceeba43921c7ef7508755e32d`의 [Foundation CI](https://github.com/TAE-OK-11/audeniq/actions/runs/37007311088)가 모두 성공했다. 이후 변경은 결과 기록 문서뿐이다.
+
+- PostgreSQL 백엔드 446/446 통과(기존 ignored 3개 제외), 부가서비스 31/31 및 신규 안정화 7/7 통과.
+- 기존 release/distribution 회귀와 300건 혼합 발매 처리 통과.
+- workspace fmt/clippy `-D warnings`, backend build, Compose 설정·기동·readiness 통과.
+- backend benchmark, edge WASM 및 Workers dry-run bundle 통과.
+- React 61개, Worker/D1 16개, 브라우저 smoke 통과.
+
+운영 적용 순서는 schema owner migration → `deploy/grants.sql` → API/worker 코드 배포이다. 외부 provider와 PG는 기존 manual/준비 상태를 유지한다. 상태 전이·권리·승인·배급 처리 로직을 교체하지 않았으며, 기존 queue에 대한 영향은 priority 상속/복원과 해당 audit에 한정된다.
