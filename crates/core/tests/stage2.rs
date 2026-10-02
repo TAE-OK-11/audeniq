@@ -87,9 +87,14 @@ fn tmpdir() -> PathBuf {
 
 fn varied_reference_wav(dir: &std::path::Path) -> PathBuf {
     let path = dir.join("external.wav");
+    // Seeded broadband texture gives every fingerprint band meaningful
+    // energy. Bare sine waves leave near-empty bands whose differential
+    // bits change under MP3 quantization, unlike this recording fixture.
     assert!(std::process::Command::new("ffmpeg").args([
         "-y","-v","error","-f","lavfi","-i",
         "aevalsrc=0.22*sin(2*PI*(210*t+12*t*t))+0.08*sin(2*PI*731*t)+0.07*sin(2*PI*(913*t+6*t*t)):s=48000:d=48",
+        "-f","lavfi","-i","anoisesrc=color=pink:seed=1234:amplitude=0.06:sample_rate=48000:duration=48",
+        "-filter_complex","[0:a][1:a]amix=inputs=2:normalize=0",
         "-ac","2","-c:a","pcm_s16le"]).arg(&path).status().unwrap().success());
     path
 }
@@ -239,11 +244,13 @@ async fn external_reencoded_recording_is_held_without_another_org_catalog(pool: 
     // Both copy-upload paths belong to the same account. The helper assigns
     // fixed identifiers, so the second release needs unique codes to reach
     // audio matching instead of the existing identifier-reuse correction.
-    sqlx::query("UPDATE catalog.releases SET upc='042100005264' WHERE id=$1")
-        .bind(release)
-        .execute(&pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "UPDATE catalog.releases SET upc='042100005264', row_version=row_version+1 WHERE id=$1",
+    )
+    .bind(release)
+    .execute(&pool)
+    .await
+    .unwrap();
     sqlx::query("UPDATE catalog.tracks SET isrc='USABC2600002' WHERE release_id=$1")
         .bind(release)
         .execute(&pool)
