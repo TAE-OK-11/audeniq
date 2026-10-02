@@ -54,6 +54,7 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
         "origin",
         "content-type",
         "x-csrf-token",
+        "idempotency-key",
         "sec-fetch-site",
         "accept-encoding",
     ] {

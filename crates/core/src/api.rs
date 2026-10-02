@@ -124,6 +124,7 @@ pub fn router(s: AppState) -> Router {
             "/api/orgs/{org}/{kind}/{id}",
             get(detail).put(update).delete(archive),
         )
+        .merge(crate::addons::routes())
         .merge(crate::portal::routes())
         .merge(crate::staff::routes())
         .merge(crate::partner_hooks::routes())

@@ -265,7 +265,7 @@ pub async fn claim_with(
     // without blocking each other or claiming the same album twice. The audit
     // insert rides in the same statement, so a claim is never unaudited.
     let q = sqlx::query(
-        "WITH candidate AS (SELECT id FROM operations.jobs WHERE queue=$1 AND status='QUEUED' AND attempts<max_attempts AND run_at<=clock_timestamp() ORDER BY priority DESC,run_at,id FOR UPDATE SKIP LOCKED LIMIT 1),
+        "WITH candidate AS (SELECT id FROM operations.jobs WHERE queue=$1 AND status='QUEUED' AND attempts<max_attempts AND run_at<=clock_timestamp() ORDER BY (priority + floor(extract(epoch FROM (clock_timestamp()-created_at))/300)) DESC,run_at,id FOR UPDATE SKIP LOCKED LIMIT 1),
          claimed AS (UPDATE operations.jobs j SET status='RUNNING',attempts=attempts+1,locked_by=$2,lock_token=$3,lease_until=clock_timestamp()+make_interval(secs=>$4) FROM candidate WHERE j.id=candidate.id RETURNING j.id,j.lock_token,j.kind,j.payload,j.attempts,j.release_id),
          audited AS (INSERT INTO operations.audit_events(id,actor_service,resource_id,action,reason_code,request_id) SELECT $5,'audeniq-system',id,'job.claim','LEASE',$6 FROM claimed)
          SELECT id,lock_token,kind,payload,attempts,release_id FROM claimed",
@@ -332,6 +332,9 @@ pub async fn fail(pool: &PgPool, j: &Job, permanent: bool, code: &str) -> Result
     let mut tx = pool.begin().await?;
     let r=sqlx::query("UPDATE operations.jobs SET status=CASE WHEN $3 OR attempts>=max_attempts THEN 'DEAD_LETTER' ELSE 'QUEUED' END,dead_lettered_at=CASE WHEN $3 OR attempts>=max_attempts THEN now() END,last_error=$4,run_at=now()+make_interval(secs=>least(3600,power(2,attempts)*5)::double precision),lock_token=NULL,lease_until=NULL WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp() RETURNING status")
  .bind(j.id).bind(j.token).bind(permanent).bind(code).fetch_optional(&mut *tx).await?.ok_or(Error::Conflict)?;
+    if r.get::<String, _>("status") == "DEAD_LETTER" && j.kind.starts_with("addon.") {
+        crate::addons::jobs::dead_letter(&mut tx, &j.kind, &j.payload, code).await?;
+    }
     audit(
         &mut tx,
         None,
@@ -366,6 +369,9 @@ pub async fn surface_dead_letter(
     payload: &Value,
     reason: &str,
 ) -> Result<()> {
+    if kind.starts_with("addon.") {
+        return crate::addons::jobs::dead_letter(c, kind, payload, reason).await;
+    }
     let Some(revision_id) = payload
         .get("revision_id")
         .and_then(Value::as_str)
@@ -577,6 +583,9 @@ pub async fn succeed(pool: &PgPool, j: &Job) -> Result<()> {
     Ok(())
 }
 pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> Result<()> {
+    if j.kind.starts_with("addon.") {
+        return crate::addons::jobs::execute(pool, j).await;
+    }
     if j.kind == "stage1" {
         let revision_id = j
             .payload
@@ -965,13 +974,22 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
  .bind(j.id).bind(j.token).fetch_optional(&mut *tx).await?;
     current.ok_or(Error::Conflict)?;
     let row =
-        sqlx::query("SELECT org_id,aggregate_id FROM operations.outbox WHERE id=$1 FOR UPDATE")
+        sqlx::query("SELECT org_id,aggregate_id,event_type,payload FROM operations.outbox WHERE id=$1 FOR UPDATE")
             .bind(event)
             .fetch_optional(&mut *tx)
             .await?
             .ok_or(Error::NotFound)?;
     let n=sqlx::query("INSERT INTO operations.event_receipts(event_id,consumer) VALUES($1,'foundation.internal') ON CONFLICT DO NOTHING").bind(event).execute(&mut *tx).await?.rows_affected();
     if n == 1 {
+        if row.get::<String, _>("event_type") == "addon.dispatch" {
+            crate::addons::jobs::consume_event(
+                &mut tx,
+                row.get("org_id"),
+                event,
+                &row.get::<Value, _>("payload"),
+            )
+            .await?;
+        }
         audit(
             &mut tx,
             None,
