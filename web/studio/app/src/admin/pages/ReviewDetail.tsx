@@ -468,8 +468,12 @@ function ReviewSheet({ id }: { id: string }) {
     <div className="view-enter">
       <div className="adm-detail-nav">
         <Link to="/admin/reviews" className="adm-back"><Glyph name="arrow-left" size={14} className="aq-inline-glyph" />심사 목록</Link>
-        {nextId && <Link to={`/admin/reviews/${nextId}`} className="adm-back adm-next">다음 심사 건<Glyph name="chevron-right" size={14} className="aq-inline-glyph" /></Link>}
-        <button type="button" className="adm-btn soft small adm-refresh" disabled={loading} onClick={refresh}>{loading ? '갱신 중…' : '새로고침'}</button>
+        <div className="adm-detail-nav-end">
+          <button type="button" className={`adm-icon-btn${loading ? ' is-spinning' : ''}`} disabled={loading} onClick={refresh} aria-label={loading ? '갱신 중' : '심사 정보 새로고침'} title="새로고침">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7" /><path d="M20 4v7h-7" /></svg>
+          </button>
+          {nextId && <Link to={`/admin/reviews/${nextId}`} className="adm-next-btn">다음 건<Glyph name="chevron-right" size={14} /></Link>}
+        </div>
       </div>
 
       <div className="adm-detail">
@@ -485,8 +489,8 @@ function ReviewSheet({ id }: { id: string }) {
               <span className="adm-row-meta">
                 <span>{app.artist || '아티스트 미기재'}</span>
                 <span>{r.org_name}</span>
-                <span>접수 {when(r.submitted_at)}</span>
               </span>
+              <span className="adm-hero-when">접수 {when(r.submitted_at)}</span>
             </div>
           </div>
 
