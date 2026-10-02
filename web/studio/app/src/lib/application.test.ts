@@ -49,4 +49,16 @@ describe('배급 신청서', () => {
     expect(displayCode('AQ-20260926-ABCDEF')).toBe('AUD-20260926-ABCDEF');
     expect(displayCode('AQ-DIST-APP 1.0')).toBe('AUD-DIST-APP 1.0');
   });
+
+  it('서명 후 기존 음원 이전 조건이나 최초 발매일이 바뀌면 감지한다', async () => {
+    const p: ReleasePayload = { ...payload, originalDate: '2028-01-01', options: { ...payload.options,
+      rerelease: true, rereleaseKind: 'transfer', previousTitle: '기존 발매', previousReleaseDate: '2028-01-01',
+      previousAvailability: 'live', rereleaseAudio: 'same', rereleaseRights: 'owned', rereleaseAck: true,
+      rereleaseTracks: [{ trackId: 't1', previousIsrc: 'KRABC2800001' }],
+    } };
+    const app = await createApplication({ payload: p, signerName: '서린', signerRole: '아티스트 본인', signature: 'data:image/png;base64,AA', agreements: ['truth'] });
+    expect(await verifyApplication(app, saved(p))).toBe(true);
+    expect(await verifyApplication(app, saved({ ...p, options: { ...p.options, rereleaseRights: 'pending' } }))).toBe(false);
+    expect(await verifyApplication(app, saved({ ...p, options: { ...p.options, previousReleaseDate: '2029-01-01' } }))).toBe(false);
+  });
 });

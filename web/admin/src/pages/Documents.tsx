@@ -63,6 +63,7 @@ export function Documents() {
   const { can, refreshCounts } = useStaff();
   const { data, loading, error, reload } = useAsync(() => staffApi.documents(status), [status]);
   const [pending, setPending] = useState<{ doc: StaffDocument; status: 'APPROVED' | 'NEEDS' } | null>(null);
+  const [viewing, setViewing] = useState<StaffDocument | null>(null);
   const items = data?.items ?? [];
 
   return (
@@ -97,6 +98,7 @@ export function Documents() {
               <span className="adm-row-end">
                 <StatusChip value={pick(DOC_STATUS, d.status)} />
                 <DocFileLink id={d.id} assetId={d.asset_id} />
+                {d.electronic_record && <button type="button" className="adm-btn soft small" onClick={() => setViewing(d)}>서명 문서 보기</button>}
                 {decidable(d) && can('DOCUMENTS') && (
                   <span className="adm-codes">
                     <button type="button" className="adm-btn warn small" onClick={() => setPending({ doc: d, status: 'NEEDS' })}>보완 요청</button>
@@ -108,6 +110,12 @@ export function Documents() {
           ))}
         </div>
       )}
+      {viewing && <Modal title={viewing.title} onClose={() => setViewing(null)}>
+        <p className="small muted">권리자: {viewing.electronic_record?.rights_holder} · 서명자: {viewing.signer_name} ({viewing.electronic_record?.signer_role}) · {when(viewing.signed_at)}</p>
+        <div className="aq-document-snapshot">{viewing.body}</div>
+        {viewing.signature && <div className="aq-sign-record"><img src={viewing.signature} alt={`${viewing.signer_name} 서명`} /></div>}
+        <p className="small break">문서 확인 코드: {viewing.electronic_record?.content_hash}</p>
+      </Modal>}
       {pending && (
         <Modal title={pending.status === 'APPROVED' ? `‘${pending.doc.title}’ 승인` : `‘${pending.doc.title}’ 보완 요청`} onClose={() => setPending(null)} dismissible={false}>
           <ReviewForm doc={pending.doc} status={pending.status} onDone={() => { reload(); refreshCounts(); }} />

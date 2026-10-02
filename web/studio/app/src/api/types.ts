@@ -1,4 +1,5 @@
 // 화면에서 쓰는 데이터 모델 (목 API와 실제 API 어댑터가 같은 모양으로 돌려준다)
+import type { RereleaseData } from '../lib/rerelease';
 
 export interface User {
   id: string;
@@ -111,7 +112,7 @@ export interface CoverTrackData {
 /** 이번 달 직접 취소할 수 있는 횟수 (조직 단위, 매월 1일 초기화) */
 export interface WithdrawQuota { limit: number; used: number; remaining: number }
 
-export interface ReleaseOptionsData {
+export interface ReleaseOptionsData extends RereleaseData {
   express: boolean; expressAck: boolean; expressReason: string;
   minor: boolean;
   guardian: string; guardianRelation: string; guardianContact: string;

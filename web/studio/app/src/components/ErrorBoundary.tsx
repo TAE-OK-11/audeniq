@@ -1,3 +1,4 @@
+import { isChunkError } from '../lib/chunkRecovery';
 import { Component, type ReactNode } from 'react';
 import { ErrorScreen, incidentMeta } from './ErrorScreen';
 
@@ -13,9 +14,6 @@ interface State {
   error: Error | null;
   meta: string[];
 }
-
-const isChunkError = (e: Error) =>
-  /Loading chunk|dynamically imported module|Importing a module script failed|Failed to fetch/i.test(e.message);
 
 /**
  * 렌더 오류·lazy 청크 로드 실패(배포 후 구 청크 404 등) 시 흰 화면 대신 복구 안내를 보여준다.

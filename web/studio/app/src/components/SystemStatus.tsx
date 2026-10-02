@@ -1,3 +1,4 @@
+import { loginRedirect } from '../lib/loginRedirect';
 // 서비스·기기 상태 알림
 // - 서버 점검: /api/status(D1·비상 스위치)에 진행 중인 점검이 있거나 API가 503 MAINTENANCE로 답하면
 //   점검 화면을 앱 위에 덮는다 (앱은 그대로 두어 작성 중인 내용이 남는다). 72시간 안의 점검은 상단 예고
@@ -114,7 +115,9 @@ function DialogBody({ kind, title, body, meta, actions }: {
 export function SystemStatus({ children }: { children: ReactNode }) {
   const toast = useToast();
   const loc = useLocation();
-  const adminPage = loc.pathname.startsWith('/content-admin');
+  const loginFrom = loginRedirect(loc.state);
+  const adminPage = loc.pathname.startsWith('/admin') || loc.pathname.startsWith('/content-admin')
+    || (loc.pathname === '/login' && !!loginFrom?.startsWith('/admin'));
 
   const [online, setOnline] = useState(() => navigator.onLine);
   const [active, setActive] = useState<MaintenanceWindow | null>(null);
@@ -129,7 +132,11 @@ export function SystemStatus({ children }: { children: ReactNode }) {
   const updateDismissedFor = useRef<string | null>(null);
 
   // --- 서버 점검 상태 ---
+  // 탭 전환·온라인 복귀가 겹쳐도 상태 확인은 5초에 한 번만
+  const lastStatusAt = useRef(0);
   const refreshStatus = useCallback(async () => {
+    if (Date.now() - lastStatusAt.current < 5_000) return;
+    lastStatusAt.current = Date.now();
     const st = await fetchStatus();
     if (!st) return;
     setActive(st.maintenance.active);
