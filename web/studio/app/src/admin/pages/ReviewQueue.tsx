@@ -27,7 +27,9 @@ export function ReviewQueue() {
   const [tick, setTick] = useState(0);
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<'wait' | 'date'>('wait');
-  const { counts } = useStaff();
+  // 담당 필터: 전체 · 내 담당 · 담당자 없음
+  const [who, setWho] = useState<'all' | 'mine' | 'free'>('all');
+  const { counts, me } = useStaff();
 
   useEffect(() => {
     let alive = true;
@@ -51,9 +53,9 @@ export function ReviewQueue() {
   };
 
   const term = search.trim().toLowerCase();
-  const filtered = term
-    ? items.filter(r => [r.title, r.artist, r.org_name].some(v => v?.toLowerCase().includes(term)))
-    : items;
+  const filtered = items
+    .filter(r => !term || [r.title, r.artist, r.org_name].some(v => v?.toLowerCase().includes(term)))
+    .filter(r => who === 'all' || (who === 'mine' ? r.claim?.user_id === me.user_id : !r.claim));
   // 기본은 서버 순서(오래 기다린 순), ‘발매일 빠른 순’이면 급한 발매부터
   const shown = sort === 'date'
     ? [...filtered].sort((a, b) => String(a.release_date || '9999').localeCompare(String(b.release_date || '9999')))
@@ -82,6 +84,11 @@ export function ReviewQueue() {
       <div className="adm-queue-tools">
         <label htmlFor="qSearch" className="sr-only">검색</label>
         <input id="qSearch" type="search" className="adm-input" placeholder="제목·아티스트·작업 공간으로 찾기" value={search} onChange={e => setSearch(e.target.value)} />
+        <div className="adm-seg" role="radiogroup" aria-label="담당">
+          {([['all', '전체'], ['mine', '내 담당'], ['free', '담당자 없음']] as const).map(([k, l]) => (
+            <button key={k} type="button" role="radio" aria-checked={who === k} className={who === k ? 'is-on' : ''} onClick={() => setWho(k)}>{l}</button>
+          ))}
+        </div>
         <div className="adm-seg" role="radiogroup" aria-label="정렬">
           <button type="button" role="radio" aria-checked={sort === 'wait'} className={sort === 'wait' ? 'is-on' : ''} onClick={() => setSort('wait')}>오래 기다린 순</button>
           <button type="button" role="radio" aria-checked={sort === 'date'} className={sort === 'date' ? 'is-on' : ''} onClick={() => setSort('date')}>발매일 빠른 순</button>
@@ -121,6 +128,7 @@ export function ReviewQueue() {
                     ? <Chip tone={left < 14 ? 'red' : 'amber'}>{left < 0 ? '발매일 지남' : left === 0 ? '오늘 발매' : `발매 D-${left}`}</Chip>
                     : null;
                 })()}
+                {r.claim && <Chip tone={r.claim.user_id === me.user_id ? 'blue' : 'gray'}>{r.claim.user_id === me.user_id ? '내 담당' : `담당 ${r.claim.email.split('@')[0]}`}</Chip>}
                 {r.status === 'READY_FOR_DELIVERY' && applicationPending(r.agreement)
                   ? <Chip tone="violet">새 발매 신청</Chip>
                   : <StatusChip value={pick(RELEASE_STATUS, r.status)} />}

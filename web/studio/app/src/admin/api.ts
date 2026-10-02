@@ -27,6 +27,8 @@ export interface QueueRelease {
   agreement: string | null;
   /** 아티스트가 올린 커버 미리보기 (data URL) */
   cover?: string | null;
+  /** 심사 담당자 */
+  claim?: ReviewClaim | null;
 }
 
 export interface Check { id?: string; stage?: number; original_status?: string; needs_second_approval?: boolean; check_code: string; status: string; detail: string | null; rule_version?: string; at?: string }
@@ -64,7 +66,13 @@ export interface ReviewContext {
   decision_kind: 'CHECKS' | 'APPLICATION' | null; allowed_actions: DecisionAction[];
   requires_second_approval: boolean; pending_second_approval_id: string | null;
   check_counts: Record<string, number>;
+  /** 이 발매를 맡은 심사 담당자 — 담당자만 결정할 수 있다 */
+  claim?: ReviewClaim | null;
+  can_claim?: boolean;
+  /** ADMIN: 다른 담당자가 맡은 건을 넘겨받을 수 있음 */
+  can_take_over?: boolean;
 }
+export interface ReviewClaim { user_id: string; email: string; at: string; mine?: boolean }
 export interface Track {
   id: string; title: string; version: string; disc_number: number; track_number: number; isrc: string | null;
   asset_kind: string | null; parental_advisory: boolean; credits: { party_id: string; role: string }[];
@@ -207,6 +215,9 @@ const remote = {
   release: (rid: string) => req<ReleaseSheet>(`/api/staff/releases/${id(rid)}`),
   timeline: (rid: string, limit = 100) => req<ReleaseTimeline>(`/api/staff/releases/${id(rid)}/timeline${qs({ limit })}`),
   decide: (rid: string, body: DecisionInput) => req<DecisionResult>(`/api/staff/releases/${id(rid)}/decision`, { method: 'POST', body }),
+  /** 심사 담당하기 (ADMIN은 takeOver로 다른 담당자 건을 넘겨받기) / 담당 내려놓기 */
+  claim: (rid: string, takeOver = false) => req<{ release_id: string; claimed_by: string }>(`/api/staff/releases/${id(rid)}/claim`, { method: 'POST', body: { take_over: takeOver } }),
+  unclaim: (rid: string) => req<{ release_id: string; claimed_by: null }>(`/api/staff/releases/${id(rid)}/claim`, { method: 'DELETE' }),
   /** 아티스트 요청(문의)으로 발매 신청 취소 — 월 3회 직접 취소 한도와 무관 */
   withdraw: (rid: string, reason: string) => req<{ status: string }>(`/api/staff/releases/${id(rid)}/withdraw`, { method: 'POST', body: { reason } }),
   reissue: (rid: string, reason: string) => req<{ status: string }>(`/api/staff/releases/${id(rid)}/reissue-identifiers`, { method: 'POST', body: { reason } }),
