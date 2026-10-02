@@ -62,7 +62,11 @@ pub async fn load(c: &mut PgConnection, org: Uuid, id: Uuid) -> Result<Order> {
 }
 pub async fn view(c: &mut PgConnection, org: Uuid, id: Uuid) -> Result<Value> {
     sqlx::query_scalar("SELECT to_jsonb(o) || jsonb_build_object(
-        'organization_id',o.org_id,'details',jsonb_build_object(
+        'organization_id',o.org_id,
+        'information_request',(SELECT jsonb_build_object('message',e.reason_code,'requested_at',e.occurred_at)
+          FROM operations.audit_events e WHERE o.status='NEEDS_INFO' AND e.org_id=o.org_id AND e.resource_id=o.id
+          AND e.action='addon.status' AND e.after_value->>'status'='NEEDS_INFO' ORDER BY e.occurred_at DESC,e.id DESC LIMIT 1),
+        'details',jsonb_build_object(
         'artist_profile',(SELECT to_jsonb(d)-'org_id'-'addon_order_id' FROM catalog.artist_profile_requests d WHERE d.addon_order_id=o.id),
         'migration',(SELECT to_jsonb(d)-'org_id'-'addon_order_id' FROM catalog.migration_requests d WHERE d.addon_order_id=o.id),
         'lyrics',(SELECT to_jsonb(d)-'org_id'-'addon_order_id' FROM catalog.lyrics_requests d WHERE d.addon_order_id=o.id),
