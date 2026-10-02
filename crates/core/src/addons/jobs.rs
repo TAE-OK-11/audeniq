@@ -60,7 +60,9 @@ impl ProviderAdapter for ManualAdapter {
 async fn preflight(c: &mut PgConnection, o: &Order) -> Result<()> {
     let owner:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM catalog.addon_orders x JOIN identity.users u ON u.id=x.requester_user_id JOIN identity.memberships m ON m.org_id=x.org_id AND m.user_id=u.id
         JOIN identity.resource_acl acl ON acl.org_id=x.org_id AND acl.resource_id=CASE WHEN x.target_type='track' THEN x.release_id ELSE x.target_id END AND acl.principal_party_id=u.party_id
-        WHERE x.id=$1 AND u.status='ACTIVE' AND m.status='ACTIVE' AND m.role<>'VIEWER' AND acl.action='write' AND acl.revoked_at IS NULL AND acl.starts_at<=now() AND (acl.ends_at IS NULL OR acl.ends_at>now()))").bind(o.id).fetch_one(&mut *c).await?;
+        JOIN identity.resource_acl order_acl ON order_acl.org_id=x.org_id AND order_acl.resource_id=x.id AND order_acl.principal_party_id=u.party_id
+        WHERE x.id=$1 AND u.status='ACTIVE' AND m.status='ACTIVE' AND m.role<>'VIEWER' AND acl.action='write' AND acl.revoked_at IS NULL AND acl.starts_at<=now() AND (acl.ends_at IS NULL OR acl.ends_at>now())
+        AND order_acl.action='write' AND order_acl.revoked_at IS NULL AND order_acl.starts_at<=now() AND (order_acl.ends_at IS NULL OR order_acl.ends_at>now()))").bind(o.id).fetch_one(&mut *c).await?;
     if !owner {
         return Err(Error::PolicyGate("ADDON_REQUESTER_ACCESS_REVOKED"));
     }
@@ -86,6 +88,18 @@ async fn preflight(c: &mut PgConnection, o: &Order) -> Result<()> {
                 kind,
             )
             .await?;
+        }
+    }
+    if matches!(
+        o.service_code.as_str(),
+        "LYRICS_BASIC" | "AI_SYNC_LYRICS" | "LYRIC_VIDEO_PLUS"
+    ) {
+        let attachments = sqlx::query("SELECT l.lrc_asset_id,v.source_asset_id FROM catalog.lyrics_requests l LEFT JOIN catalog.lyric_video_requests v USING(addon_order_id) WHERE l.org_id=$1 AND l.addon_order_id=$2")
+            .bind(o.org_id).bind(o.id).fetch_one(&mut *c).await?;
+        for (field, kind) in [("lrc_asset_id", "LRC"), ("source_asset_id", "VIDEO")] {
+            if let Some(id) = attachments.get::<Option<Uuid>, _>(field) {
+                workflow::asset_ready(c, o.org_id, id, kind).await?;
+            }
         }
     }
     Ok(())
@@ -194,7 +208,7 @@ pub async fn apply_priority(c: &mut PgConnection, a: Option<&Actor>, o: &Order) 
     // No running job is touched; pipeline correctness/leases stay intact.
     sqlx::query("INSERT INTO catalog.addon_release_priorities(org_id,release_id,addon_order_id,priority) VALUES($1,$2,$3,10) ON CONFLICT(release_id) DO UPDATE SET addon_order_id=$3,priority=10 WHERE addon_release_priorities.org_id=$1")
         .bind(o.org_id).bind(release).bind(o.id).execute(&mut *c).await?;
-    sqlx::query("UPDATE catalog.addon_orders SET priority=10,row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND priority<>10").bind(o.org_id).bind(o.id).execute(&mut *c).await?;
+    let priority_changed = sqlx::query("UPDATE catalog.addon_orders SET priority=10,row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND priority<>10").bind(o.org_id).bind(o.id).execute(&mut *c).await?.rows_affected()==1;
     let changed=sqlx::query("UPDATE operations.jobs SET addon_priority_previous=coalesce(addon_priority_previous,priority),priority=greatest(priority,10) WHERE release_id=$1 AND queue IN ('qc','rights','distribution','delivery') AND status='QUEUED' AND priority<10 RETURNING id,addon_priority_previous,priority").bind(release).fetch_all(&mut *c).await?;
     for j in changed {
         workflow::audit(
@@ -209,17 +223,19 @@ pub async fn apply_priority(c: &mut PgConnection, a: Option<&Actor>, o: &Order) 
         )
         .await?;
     }
-    workflow::audit(
-        c,
-        a,
-        o.org_id,
-        o.id,
-        "addon.priority.applied",
-        "INTERNAL_PRIORITY",
-        json!({"priority":"NORMAL"}),
-        json!({"priority":"HIGH","release_id":release}),
-    )
-    .await?;
+    if priority_changed {
+        workflow::audit(
+            c,
+            a,
+            o.org_id,
+            o.id,
+            "addon.priority.applied",
+            "INTERNAL_PRIORITY",
+            json!({"priority":o.priority}),
+            json!({"priority":10,"release_id":release}),
+        )
+        .await?;
+    }
     Ok(())
 }
 pub async fn remove_priority(
@@ -234,7 +250,7 @@ pub async fn remove_priority(
     let r = o.release_id.ok_or(Error::Invalid)?;
     let n=sqlx::query("DELETE FROM catalog.addon_release_priorities WHERE org_id=$1 AND release_id=$2 AND addon_order_id=$3").bind(o.org_id).bind(r).bind(o.id).execute(&mut *c).await?.rows_affected();
     if n == 1 {
-        let rows=sqlx::query("UPDATE operations.jobs SET priority=addon_priority_previous,addon_priority_previous=NULL WHERE release_id=$1 AND status='QUEUED' AND addon_priority_previous IS NOT NULL AND priority=10 RETURNING id,priority").bind(r).fetch_all(&mut *c).await?;
+        let rows=sqlx::query("WITH previous AS (SELECT id,priority AS old_priority FROM operations.jobs WHERE release_id=$1 AND status='QUEUED' AND addon_priority_previous IS NOT NULL FOR UPDATE), changed AS (UPDATE operations.jobs j SET priority=CASE WHEN j.priority=10 THEN j.addon_priority_previous ELSE j.priority END,addon_priority_previous=NULL FROM previous p WHERE j.id=p.id RETURNING j.id,j.priority,p.old_priority) SELECT * FROM changed WHERE priority<>old_priority").bind(r).fetch_all(&mut *c).await?;
         for row in rows {
             workflow::audit(
                 c,
@@ -243,11 +259,14 @@ pub async fn remove_priority(
                 row.get("id"),
                 "addon.queue.priority",
                 reason,
-                json!({"priority":10}),
+                json!({"priority":row.get::<i32,_>("old_priority")}),
                 json!({"priority":row.get::<i32,_>("priority")}),
             )
             .await?;
         }
+    }
+    if sqlx::query("UPDATE catalog.addon_orders SET priority=0,row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND priority<>0")
+        .bind(o.org_id).bind(o.id).execute(&mut *c).await?.rows_affected()==1 {
         workflow::audit(
             c,
             a,
@@ -255,8 +274,8 @@ pub async fn remove_priority(
             o.id,
             "addon.priority.removed",
             reason,
-            json!({"priority":"HIGH"}),
-            json!({"priority":"NORMAL"}),
+            json!({"priority":o.priority}),
+            json!({"priority":0}),
         )
         .await?;
     }

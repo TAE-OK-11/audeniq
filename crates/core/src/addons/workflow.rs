@@ -339,6 +339,9 @@ async fn store_details_inner(c: &mut PgConnection, org: Uuid, id: Uuid, d: &Deta
             .await?;
             if *basic_video_requested {
                 sqlx::query("INSERT INTO catalog.lyric_video_requests(org_id,addon_order_id,template_id) VALUES($1,$2,'basic') ON CONFLICT(addon_order_id) DO UPDATE SET render_status='PENDING',output_asset_id=NULL").bind(org).bind(id).execute(&mut *c).await?;
+            } else {
+                sqlx::query("DELETE FROM catalog.lyric_video_requests WHERE org_id=$1 AND addon_order_id=$2")
+                    .bind(org).bind(id).execute(&mut *c).await?;
             }
         }
         Details::LyricVideo {
@@ -550,6 +553,7 @@ async fn transition_inner(
     let next_s = serde_json::to_value(next).map_err(|_| Error::Internal)?;
     sqlx::query("UPDATE catalog.addon_orders SET status=$3,row_version=row_version+1,
         submitted_at=CASE WHEN $3='SUBMITTED' THEN coalesce(submitted_at,now()) ELSE submitted_at END,
+        valid_until=CASE WHEN $3='SUBMITTED' AND payment_status='NOT_REQUIRED' AND valid_until IS NULL THEN now()+CASE WHEN validity_months_snapshot IS NOT NULL THEN make_interval(months=>validity_months_snapshot) WHEN validity_days_snapshot IS NOT NULL THEN make_interval(days=>validity_days_snapshot) END ELSE valid_until END,
         accepted_at=CASE WHEN $3='APPROVED' THEN coalesce(accepted_at,now()) ELSE accepted_at END,
         first_reviewed_at=CASE WHEN $3 IN ('UNDER_REVIEW','NEEDS_INFO','APPROVED','REJECTED') THEN coalesce(first_reviewed_at,now()) ELSE first_reviewed_at END,
         processing_at=CASE WHEN $3='IN_PROGRESS' THEN coalesce(processing_at,now()) ELSE processing_at END,
@@ -805,7 +809,9 @@ async fn record_results_inner(
             return Err(Error::Invalid);
         }
         asset_ready(c, o.org_id, id, "VIDEO").await?;
-        sqlx::query("UPDATE catalog.lyric_video_requests SET output_asset_id=$3,render_status='READY' WHERE org_id=$1 AND addon_order_id=$2").bind(o.org_id).bind(o.id).bind(id).execute(&mut *c).await?;
+        if sqlx::query("UPDATE catalog.lyric_video_requests SET output_asset_id=$3,render_status='READY' WHERE org_id=$1 AND addon_order_id=$2").bind(o.org_id).bind(o.id).bind(id).execute(&mut *c).await?.rows_affected()!=1 {
+            return Err(Error::Invalid);
+        }
     }
     if i.qr_asset_id.is_some() || i.promo_card_asset_id.is_some() || i.dsp_links.is_some() {
         if o.service_code != "PROMO_BASIC" {
