@@ -62,6 +62,7 @@ GRANT SELECT, UPDATE (route, updated_by, updated_at) ON distribution.dsp_contrac
 -- staff role table itself is read-only for the API (granted by the CLI).
 GRANT SELECT,INSERT,UPDATE ON rights.staff_approvals TO audeniq_api;
 GRANT SELECT,INSERT ON rights.review_notes TO audeniq_api;
+GRANT SELECT,INSERT,UPDATE,DELETE ON rights.review_claims TO audeniq_api;
 GRANT SELECT ON operations.audit_events TO audeniq_api;
 -- 0064: the staff release timeline shows DSP send attempts and ACKs (read-only).
 GRANT SELECT ON execution.delivery_attempts,execution.ack_events TO audeniq_api;

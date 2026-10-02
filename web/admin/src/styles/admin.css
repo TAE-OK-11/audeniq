@@ -670,3 +670,34 @@ svg.aq-glyph{flex:none;fill:none!important;stroke:currentColor!important;stroke-
 .adm-reply .adm-textarea{min-height:120px}
 @media (hover:none),(max-width:640px){.adm-kbd-hint{display:none}}
 .adm-templates button{background:#fff!important;border:1.5px solid #e1e7f2!important;color:#3d4760}
+
+/* ---------- 색이 묻히는 버튼: 옅은 색 카드·알림 위의 옅은 버튼은 흰 바탕 + 테두리로 ---------- */
+:is(.adm-card,.adm-alert,.adm-brief,.adm-fix,.adm-release-hero,.adm-check,.adm-opt,.adm-note) .adm-btn:is(.soft,.warn,.danger){background:#fff;border:1.5px solid rgba(23,27,41,.07)}
+:is(.adm-card,.adm-alert,.adm-brief,.adm-fix,.adm-release-hero,.adm-check,.adm-opt,.adm-note) .adm-btn.soft:not(:disabled):hover{background:#f6f8ff}
+.adm-alert.is-warn .adm-btn.warn{background:#fff;color:#8f5a22;border-color:#f3dcc0}
+.adm-alert.is-warn .adm-btn.warn:not(:disabled):hover{background:#fffaf3}
+.adm-alert.is-error .adm-btn{border-color:#f6d3d2}
+.adm-alert.is-ok .adm-btn{border-color:#cdeedb}
+
+/* ---------- 심사 담당 ---------- */
+.adm-claim{display:grid;gap:10px;margin-top:14px}
+.adm-claim p{margin:0;font-size:12.5px;line-height:1.6}
+.adm-claim-who{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:13.5px;font-weight:750}
+.adm-claim-who i{width:8px;height:8px;border-radius:50%;background:#7a849b;flex:none}
+.adm-claim.is-mine .adm-claim-who i{background:#4ade80;box-shadow:0 0 0 3px rgba(74,222,128,.18)}
+.adm-claim.is-other .adm-claim-who i{background:#f0a531}
+.adm-claim-who small{font-weight:600;opacity:.75}
+.adm-claim-link{justify-self:start;border:0;background:none;padding:2px 0;font:inherit;font-size:12.5px;font-weight:750;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.adm-claim-go{width:100%}
+/* 어두운 결정 칸 안 */
+.adm-decide .adm-claim{color:#dfe5f2}
+.adm-decide .adm-claim p{color:#aab3c5}
+.adm-decide .adm-claim-link{color:#c9d3ea}
+.adm-decide .adm-claim .adm-btn.primary{background:#fff;color:var(--adm-ink)}
+.adm-decide .adm-claim .adm-btn.soft{background:#ffffff14;color:#fff;border:0}
+.adm-decide .adm-claim.is-mine{padding:10px 12px;border-radius:14px;background:#ffffff0f}
+/* 아래 고정 바: 담당 전·다른 담당자일 때는 한 줄 */
+.adm-decide-bar.is-claim{grid-template-columns:1fr}
+.adm-decide-bar .adm-claim{margin:0}
+.adm-decide-bar .adm-claim.is-other{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:48px;padding:0 4px;color:#3d4760}
+.adm-decide-bar .adm-claim.is-other .adm-btn{min-height:44px}

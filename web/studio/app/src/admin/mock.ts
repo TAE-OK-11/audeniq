@@ -13,6 +13,10 @@ const MOCK_SIGNATURE = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xml
 
 const ME = 'staff-me-0001';
 const OTHER = 'staff-kim-0002';
+/** 심사 담당 — 체험: '새벽의 온도'는 다른 담당자(김)가 맡고 있다 */
+const EMAIL: Record<string, string> = { [ME]: 'staff@audeniq.com', [OTHER]: 'kim@audeniq.com' };
+const claims: Record<string, { user_id: string; email: string; at: string }> = {};
+const claimOf = (rid: string) => claims[rid] ? { ...claims[rid], mine: claims[rid].user_id === ME } : null;
 const now = Date.now();
 const iso = (hoursAgo: number) => new Date(now - hoursAgo * 3_600_000).toISOString();
 const wait = <T>(v: T) => new Promise<T>(r => setTimeout(() => r(structuredClone(v)), 180));
@@ -165,6 +169,7 @@ const payouts: PayoutItem[] = [
 
 releases.find(r => r.q.id === 'r4d5e6f7')!.sheet.documents.push(documents[0]);
 
+claims.r1a2b3c4 = { user_id: OTHER, email: EMAIL[OTHER], at: iso(3) };
 // 체험: Blue Hour는 YouTube Content ID도 신청했는데 원본 녹음 확인을 체크하지 않았다
 {
   const blue = releases.find(r => r.q.id === 'r2b3c4d5')!.sheet;
@@ -215,7 +220,7 @@ export const mockStaff = {
     audio_advisories: deliveries.filter(d => d.approval === 'PENDING' && d.warnings.length).length,
     payout_requests: payouts.filter(p => p.status === 'REQUESTED').length,
   }),
-  releases: (status: string) => wait({ items: releases.filter(r => (status === 'PENDING' ? awaiting(r) : r.q.status === status)).map(r => r.q) }),
+  releases: (status: string) => wait({ items: releases.filter(r => (status === 'PENDING' ? awaiting(r) : r.q.status === status)).map(r => ({ ...r.q, claim: claimOf(r.q.id) })) }),
   release: async (rid: string) => {
     const r = find(rid);
     const sheet = r.sheet;
@@ -232,9 +237,11 @@ export const mockStaff = {
     const pending = approvals.find(a => a.release_id === rid && a.status === 'PENDING' && Date.parse(a.expires_at) > Date.now());
     const kind = r.q.status === 'STAGE2_REVIEW' ? 'CHECKS' : awaiting(r) ? 'APPLICATION' : null;
     sheet.second_approvals.forEach(a => { a.active = a.status === 'PENDING' && Date.parse(a.expires_at) > Date.now(); });
+    const claim = claimOf(rid);
     sheet.review_context = {
       decision_kind: kind,
-      allowed_actions: kind ? [...(pending ? [] : ['APPROVE' as const]), ...(kind === 'APPLICATION' || sheet.open_checks.length ? ['REQUEST_CORRECTION' as const] : []), 'REJECT'] : [],
+      claim, can_claim: !!kind && !claim, can_take_over: !!kind && !!claim && !claim.mine,
+      allowed_actions: kind && claim?.mine ? [...(pending ? [] : ['APPROVE' as const]), ...(kind === 'APPLICATION' || sheet.open_checks.length ? ['REQUEST_CORRECTION' as const] : []), 'REJECT'] : [],
       requires_second_approval: sheet.open_checks.some(needsSecond),
       pending_second_approval_id: pending?.id ?? null,
       check_counts: sheet.checks.reduce<Record<string, number>>((m, c) => { m[c.status] = (m[c.status] ?? 0) + 1; return m; }, {}),
@@ -263,9 +270,27 @@ export const mockStaff = {
     items.sort((a, b) => a.at.localeCompare(b.at));
     return wait({ release_id: rid, truncated: items.length > limit, items: items.slice(-limit) });
   },
+  claim: (rid: string, takeOver = false) => {
+    const r = find(rid);
+    if (!awaiting(r)) fail('RELEASE_NOT_IN_REVIEW');
+    const cur = claims[rid];
+    if (cur && cur.user_id !== ME && !takeOver) fail('REVIEW_CLAIMED_BY_OTHER');
+    if (!cur || cur.user_id !== ME) {
+      claims[rid] = { user_id: ME, email: EMAIL[ME], at: new Date().toISOString() };
+      audit(r, cur ? 'staff.review_taken_over' : 'staff.review_claimed', cur?.user_id ?? '');
+    }
+    return wait({ release_id: rid, claimed_by: ME });
+  },
+  unclaim: (rid: string) => {
+    const r = find(rid);
+    if (claims[rid]) { delete claims[rid]; audit(r, 'staff.review_released', ME); }
+    return wait({ release_id: rid, claimed_by: null });
+  },
   decide: async (rid: string, i: DecisionInput): Promise<DecisionResult> => {
     const r = find(rid);
     if (!awaiting(r)) fail('RELEASE_NOT_IN_REVIEW');
+    if (!claims[rid]) fail('REVIEW_CLAIM_REQUIRED');
+    if (claims[rid].user_id !== ME) fail('REVIEW_CLAIMED_BY_OTHER');
     // 백엔드와 같게: 승인 메모는 선택(비우면 '담당자 승인'), 보완 요청·거절은 사유 필수
     if (!i.reason.trim() && i.action !== 'APPROVE') fail('DECISION_REASON_REQUIRED');
     if (!i.reason.trim()) i = { ...i, reason: '담당자 승인' };
