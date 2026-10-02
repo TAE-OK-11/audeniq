@@ -539,9 +539,17 @@ button.adm-row:hover,a.adm-row:hover{background:#edf2ff}
 .adm-queue-count{margin:0 0 10px 4px;font-size:12px;font-weight:700;color:var(--adm-muted)}
 .adm-row-end small.is-late{color:#a76525;font-weight:800}
 
-.adm-detail-nav{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.adm-next,.adm-refresh{margin-left:auto}
-.adm-next+.adm-refresh{margin-left:0}
+.adm-detail-nav{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
+.adm-detail-nav .adm-back{margin-bottom:0;min-height:40px}
+.adm-detail-nav-end{display:flex;align-items:center;gap:8px;margin-left:auto}
+.adm-icon-btn{display:grid;place-items:center;width:40px;height:40px;border:0;border-radius:50%;background:var(--adm-soft-2);color:#4a5570;cursor:pointer;transition:background-color .15s,color .15s}
+.adm-icon-btn:hover{background:#e6ebf4;color:var(--adm-ink)}
+.adm-icon-btn:disabled{cursor:default;opacity:.7}
+.adm-icon-btn.is-spinning svg{animation:adm-spin .9s linear infinite}
+@keyframes adm-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.adm-icon-btn.is-spinning svg{animation:none}}
+.adm-next-btn{display:inline-flex;align-items:center;gap:4px;min-height:40px;padding:0 12px 0 16px;border-radius:999px;background:var(--adm-blue-soft);color:var(--adm-blue);font-size:13px;font-weight:760;text-decoration:none;transition:background-color .15s}
+.adm-next-btn:hover{background:#e2eaff}
 
 /* 결정 바 — 오른쪽 결정 칸이 고정되지 않는 폭(≤1180px)에서만 화면 아래에 */
 .adm-decide-bar{display:none}
@@ -644,3 +652,4 @@ button.adm-row:hover,a.adm-row:hover{background:#edf2ff}
 .adm-info-more>summary svg{margin-left:auto;transition:transform .2s var(--adm-ease)}
 .adm-info-more[open]>summary svg{transform:rotate(90deg)}
 .adm-info-more[open]>summary{margin-bottom:10px}
+.adm-hero-when{display:block;margin-top:4px;font-size:12.5px;color:var(--adm-muted);font-variant-numeric:tabular-nums}
