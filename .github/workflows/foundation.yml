@@ -57,7 +57,7 @@ jobs:
       - name: Install FFmpeg (QC fixture generation + ffprobe) and xmllint (DDEX XSD validation)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg libxml2-utils openssh-server openssh-client
+          sudo apt-get install -y -qq ffmpeg libxml2-utils openssh-server openssh-client libimage-exiftool-perl tesseract-ocr tesseract-ocr-eng tesseract-ocr-kor zbar-tools qrencode fonts-dejavu-core
       # 서명을 실제로 검사하는 S3 서버 (R2처럼 SigV4 확인; moto는 서명을 보지 않는다).
       # tests/s3_presign.rs가 서명 URL이 선언한 객체 하나만 올릴 수 있는지 확인한다
       - name: Start S3 gateway for presigned upload tests
@@ -88,7 +88,7 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest@0.9.146
-      - run: cargo nextest run --locked -p audeniq-core --test-threads 4
+      - run: cargo nextest run --locked -p audeniq-core --test-threads 4 --no-fail-fast
         env:
           S3_TEST_ENDPOINT: http://127.0.0.1:7070/
           S3_TEST_BUCKET: audeniq-test
@@ -103,6 +103,19 @@ jobs:
       - name: S3 gateway logs
         if: failure()
         run: docker logs s3 2>&1 | tail -50 || true
+      - name: Measure backend review hot paths
+        run: |
+          git fetch --no-tags --depth=1 origin 400c6c963e71034303039dd374bde4f0f5f99ab1
+          bash scripts/benchmark-fingerprint-review.sh 2>&1 | tee /tmp/backend-fingerprint-benchmark.log
+          cargo test --locked -p audeniq-core --lib benchmark_prepared_matching -- --ignored --nocapture 2>&1 | tee /tmp/backend-name-benchmark.log
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: backend-review-benchmarks
+          path: |
+            /tmp/backend-fingerprint-benchmark.log
+            /tmp/backend-name-benchmark.log
+          if-no-files-found: ignore
       - run: cargo build --locked -p audeniq-edge --target wasm32-unknown-unknown
       # 캐시에 같은 버전이 있으면 다시 컴파일하지 않는다
       - run: worker-build --version 2>/dev/null | grep -q '0\.8\.7' || cargo install worker-build --version 0.8.7 --locked --force
@@ -199,10 +212,13 @@ jobs:
       - run: docker compose up --build -d
       - name: Check API readiness
         run: curl --fail --retry 15 --retry-all-errors --retry-delay 2 -H "X-Audeniq-Service:$EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready
-      - name: Worker image ships the audio analyzers
+      - name: Worker image ships the audio and provenance analyzers
         run: |
           docker compose run --rm --no-deps --entrypoint ffprobe worker -version
           docker compose run --rm --no-deps --entrypoint ffmpeg worker -version
+          docker compose run --rm --no-deps --entrypoint exiftool worker -ver
+          docker compose run --rm --no-deps --entrypoint tesseract worker --list-langs
+          docker compose run --rm --no-deps --entrypoint zbarimg worker --version
       - name: Runtime logs
         if: always()
         run: |

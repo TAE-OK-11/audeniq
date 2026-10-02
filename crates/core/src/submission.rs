@@ -10,7 +10,7 @@ use crate::{
     fingerprint,
     identifiers::{validate_isrc, validate_upc},
     operations,
-    qc::{self, CheckStatus},
+    qc::{self, CheckOutcome, CheckStatus},
     storage::ObjectStore,
 };
 use serde::Deserialize;
@@ -322,7 +322,7 @@ async fn revision_body(
     .fetch_one(&mut *c)
     .await?;
     let tracks = sqlx::query(
-        "SELECT t.id, t.title, t.version, t.disc_number, t.track_number, t.artist_id, t.isrc, t.asset_id, t.parental_advisory, a.sha256 AS asha, a.kind AS akind FROM catalog.tracks t LEFT JOIN catalog.assets a ON a.org_id=t.org_id AND a.id=t.asset_id WHERE t.org_id=$1 AND t.release_id=$2 AND t.archived_at IS NULL ORDER BY t.disc_number, t.track_number",
+        "SELECT t.id, t.title, t.version, t.lyrics, t.disc_number, t.track_number, t.artist_id, artist.name AS artist_name, t.isrc, t.asset_id, t.parental_advisory, a.sha256 AS asha, a.kind AS akind FROM catalog.tracks t LEFT JOIN catalog.assets a ON a.org_id=t.org_id AND a.id=t.asset_id JOIN catalog.artists artist ON artist.org_id=t.org_id AND artist.id=t.artist_id WHERE t.org_id=$1 AND t.release_id=$2 AND t.archived_at IS NULL ORDER BY t.disc_number, t.track_number",
     )
     .bind(org).bind(release).fetch_all(&mut *c).await?;
     // Credits for every track in one round trip (was one query per track).
@@ -344,9 +344,11 @@ async fn revision_body(
             "id": tid,
             "title": t.get::<String,_>("title"),
             "version": t.get::<String,_>("version"),
+            "lyrics": t.get::<Option<String>,_>("lyrics"),
             "disc_number": t.get::<i32,_>("disc_number"),
             "track_number": t.get::<i32,_>("track_number"),
             "artist_id": t.get::<Uuid,_>("artist_id"),
+            "artist_name": t.get::<String,_>("artist_name"),
             "isrc": t.get::<Option<String>,_>("isrc"),
             "asset_id": t.get::<Option<Uuid>,_>("asset_id"),
             "asset_sha256": t.get::<Option<String>,_>("asha"),
@@ -756,6 +758,70 @@ struct StagedCheck {
     detail: String,
 }
 
+// The byte-dependent cache key identifies the inputs, not a particular
+// verdict. A retry or catalog change can produce a new immutable result.
+type CheckIdentity = (String, String, String, String);
+
+fn check_identity(code: &str, hash: &str, status: &str, detail: &str) -> CheckIdentity {
+    (
+        code.into(),
+        hash.into(),
+        status.into(),
+        detail
+            .trim_start_matches("cache_hit")
+            .trim_start_matches(": ")
+            .into(),
+    )
+}
+
+async fn record_stage1_checks(
+    tx: &mut PgConnection,
+    revision_id: Uuid,
+    checks: &[StagedCheck],
+) -> Result<Vec<Uuid>> {
+    type ExistingCheck = (String, String, String, String, Uuid);
+    let existing: Vec<ExistingCheck> = sqlx::query_as(
+        "SELECT check_code, result_hash, status, COALESCE(detail,''), id
+           FROM operations.check_results WHERE revision_id=$1
+          ORDER BY created_at DESC, id DESC",
+    )
+    .bind(revision_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let mut ids = std::collections::HashMap::new();
+    for (code, hash, status, detail, id) in existing {
+        ids.entry(check_identity(&code, &hash, &status, &detail))
+            .or_insert(id);
+    }
+    let key =
+        |c: &StagedCheck| check_identity(c.check_code, &c.result_hash, c.status.as_db(), &c.detail);
+    let mut fresh = Vec::new();
+    let mut fresh_ids = Vec::new();
+    for c in checks {
+        if let std::collections::hash_map::Entry::Vacant(e) = ids.entry(key(c)) {
+            let id = Uuid::new_v4();
+            e.insert(id);
+            fresh.push(c);
+            fresh_ids.push(id);
+        }
+    }
+    if !fresh.is_empty() {
+        let codes: Vec<_> = fresh.iter().map(|c| c.check_code).collect();
+        let versions: Vec<_> = fresh.iter().map(|c| c.rule_version).collect();
+        let statuses: Vec<_> = fresh.iter().map(|c| c.status.as_db()).collect();
+        let hashes: Vec<_> = fresh.iter().map(|c| c.result_hash.as_str()).collect();
+        let details: Vec<_> = fresh.iter().map(|c| c.detail.as_str()).collect();
+        sqlx::query(
+            "INSERT INTO operations.check_results(id, revision_id, check_code, rule_version, status, result_hash, detail)
+             SELECT id, $2, code, version, status, hash, detail
+               FROM unnest($1::uuid[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[])
+                    AS t(id, code, version, status, hash, detail)",
+        ).bind(&fresh_ids).bind(revision_id).bind(&codes).bind(&versions)
+            .bind(&statuses).bind(&hashes).bind(&details).execute(&mut *tx).await?;
+    }
+    Ok(checks.iter().map(|c| ids[&key(c)]).collect())
+}
+
 pub struct Stage1Summary {
     pub revision_id: Uuid,
     pub status_counts: BTreeMap<&'static str, i64>,
@@ -775,6 +841,38 @@ fn field_cache_key(check_code: &str, inputs: &str) -> String {
 }
 fn asset_cache_key(check_code: &str, asset_sha256: &str) -> String {
     qc::result_hash(check_code, qc::QC_RULE_VERSION, asset_sha256, asset_sha256)
+}
+fn asset_check_cache_key(check_code: &str, asset_id: &str, sha256: &str) -> String {
+    if check_code == "AUDIO_AI_PROVENANCE" {
+        // Normalization can produce identical masters from sources with
+        // different metadata. Original provenance belongs to this asset.
+        asset_cache_key(check_code, &format!("{asset_id}:{sha256}"))
+    } else {
+        asset_cache_key(check_code, sha256)
+    }
+}
+
+async fn preserve_audio_provenance(
+    pool: &PgPool,
+    org: Uuid,
+    asset: Uuid,
+    sha256: &str,
+    outcomes: &mut Vec<CheckOutcome>,
+) -> Result<()> {
+    let original: Option<Value> = sqlx::query_scalar(
+        "SELECT body FROM catalog.asset_provenance WHERE org_id=$1 AND asset_id=$2 AND master_sha256=$3 AND rule_version=$4",
+    ).bind(org).bind(asset).bind(sha256).bind(crate::provenance::RULE_VERSION)
+        .fetch_optional(pool).await?;
+    if let Some(original) = original
+        && original["outcome"] == "AI_METADATA_SIGNAL"
+        && !outcomes
+            .iter()
+            .any(|c| c.check_code == "SHA256_MISMATCH" && c.status == CheckStatus::Blocked)
+    {
+        outcomes.retain(|c| c.check_code != "AUDIO_AI_PROVENANCE");
+        outcomes.push(crate::provenance::outcome("AUDIO_AI_PROVENANCE", &original));
+    }
+    Ok(())
 }
 /// Every name and title of a revision that ends up in delivery messages:
 /// release title/version fields, profile strings, track titles/versions,
@@ -1516,7 +1614,7 @@ fn title_findings(title: &str) -> (bool, Vec<&'static str>) {
     (marker, style)
 }
 
-fn is_emoji(c: char) -> bool {
+pub(crate) fn is_emoji(c: char) -> bool {
     matches!(u32::from(c),
         0x1F000..=0x1FAFF | 0x2600..=0x27BF | 0x2B00..=0x2BFF | 0xFE0F)
 }
@@ -1563,6 +1661,7 @@ async fn cached_statuses(
              SELECT status, detail, created_at FROM operations.asset_qc_results
               WHERE check_code=k.check_code AND rule_version=$3 AND result_hash=k.result_hash
            ) r
+          WHERE r.status <> 'TECHNICAL_RETRY'
           ORDER BY k.check_code, (r.detail IS NULL OR r.detail LIKE 'cache_hit%'), r.created_at DESC",
     )
     .bind(&codes)
@@ -1705,7 +1804,7 @@ async fn analyze_asset(
         // check_audio runs the single decode pass (full analysis + ebur128 +
         // outcomes), tapping the fingerprint PCM out of the same decode, and
         // returns the probe metrics: no second ffprobe pass is needed.
-        let (outcomes, tap_pcm, metrics) = match kind.as_str() {
+        let (mut outcomes, tap_pcm, metrics) = match kind.as_str() {
             "AUDIO" => qc::check_audio_with_fp_tap(
                 path,
                 Some(&sha256),
@@ -1731,7 +1830,52 @@ async fn analyze_asset(
                     | CheckStatus::TechnicalRetry
             )
         });
+        let provenance_code = match kind.as_str() {
+            "AUDIO" => Some("AUDIO_AI_PROVENANCE"),
+            "IMAGE" => Some("IMAGE_AI_PROVENANCE"),
+            _ => None,
+        };
+        if let Some(code) = provenance_code
+            && !invalid
+            && !outcomes.iter().any(|o| o.check_code == code)
+        {
+            outcomes.push(crate::provenance::outcome(
+                code,
+                &if kind == "AUDIO" {
+                    crate::provenance::inspect_audio(path)
+                } else {
+                    crate::provenance::inspect(path)
+                },
+            ));
+        }
         // Perceptual fingerprint over the head/middle/tail segment windows.
+        if kind == "IMAGE" {
+            if !invalid {
+                outcomes.extend(crate::artwork_policy::inspect(path));
+            }
+            // Invalid images still carry the complete named contract. Never
+            // pretend an omitted OCR/QR/provenance inspection was completed.
+            for code in qc::IMAGE_CHECK_CODES {
+                if !outcomes.iter().any(|o| o.check_code == *code) {
+                    outcomes.push(qc::CheckOutcome {
+                        check_code: code,
+                        status: if outcomes
+                            .iter()
+                            .any(|o| o.status == CheckStatus::TechnicalRetry)
+                        {
+                            CheckStatus::TechnicalRetry
+                        } else {
+                            CheckStatus::NotApplicable
+                        },
+                        input_hash: crate::domain::sha256_json(
+                            &json!({"sha256":sha256,"inspection":"image_not_admitted"}),
+                        ),
+                        detail: "image was not admitted for content inspection".into(),
+                    });
+                }
+            }
+        }
+
         // The window PCM is read from the mono 11025 Hz tap of the single
         // decode pass above (ffmpeg's own resampler); the three separate
         // segment decodes are gone. Each segment is fingerprinted separately
@@ -1987,7 +2131,7 @@ async fn find_similar_assets(
             .filter(|(id, _)| *id != aid)
             .map(|(id, hash)| (id, false, hash))
             .collect();
-        hits.extend(compare_page(frames.clone(), page).await?);
+        merge_similar_hits(&mut hits, compare_page(frames.clone(), page).await?);
         if !full {
             break;
         }
@@ -2016,17 +2160,11 @@ async fn find_similar_assets(
             .into_iter()
             .map(|(id, _, hash)| (id, true, hash))
             .collect();
-        hits.extend(compare_page(frames.clone(), page).await?);
+        merge_similar_hits(&mut hits, compare_page(frames.clone(), page).await?);
         if !full {
             break;
         }
     }
-    hits.sort_by(|a, b| {
-        a.ber
-            .partial_cmp(&b.ber)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    hits.truncate(3);
     Ok(hits)
 }
 
@@ -2038,21 +2176,30 @@ async fn compare_page(
     page: Vec<(Uuid, bool, Vec<u8>)>,
 ) -> Result<Vec<SimilarHit>> {
     tokio::task::spawn_blocking(move || {
-        page.into_iter()
-            .filter_map(|(asset_id, other_org, hash)| {
-                let other = fingerprint::Fingerprint::from_bytes(&hash).ok()?;
-                let ber = fingerprint::bit_error_rate_within(
-                    &frames,
-                    &other.frames,
-                    fingerprint::SIMILAR_BER,
-                )?;
-                Some(SimilarHit {
+        let mut hits: Vec<SimilarHit> = Vec::new();
+        for (asset_id, other_org, hash) in page {
+            let Ok(other) = fingerprint::Fingerprint::from_bytes(&hash) else {
+                continue;
+            };
+            let limit = if hits.len() == 3 {
+                hits[2].ber
+            } else {
+                fingerprint::SIMILAR_BER
+            };
+            let Some(ber) = fingerprint::bit_error_rate_within(&frames, &other.frames, limit)
+            else {
+                continue;
+            };
+            merge_similar_hits(
+                &mut hits,
+                vec![SimilarHit {
                     asset_id,
                     other_org,
                     ber,
-                })
-            })
-            .collect()
+                }],
+            );
+        }
+        hits
     })
     .await
     .map_err(|_| Error::Internal)
@@ -2062,6 +2209,12 @@ struct SimilarHit {
     asset_id: Uuid,
     other_org: bool,
     ber: f64,
+}
+
+fn merge_similar_hits(hits: &mut Vec<SimilarHit>, page: Vec<SimilarHit>) {
+    hits.extend(page);
+    hits.sort_by(|a, b| a.ber.total_cmp(&b.ber).then(a.asset_id.cmp(&b.asset_id)));
+    hits.truncate(3);
 }
 
 /// Run the Stage 1 check contract for a single asset: cache lookup, then
@@ -2110,7 +2263,7 @@ async fn qc_single_asset(
     let keys: Vec<(&str, String)> = expected
         .iter()
         .filter(|code| **code != "AUDIO_SIMILAR_TO_EXISTING")
-        .map(|code| (*code, asset_cache_key(code, sha256)))
+        .map(|code| (*code, asset_check_cache_key(code, aid_str, sha256)))
         .collect();
     let mut cached = cached_statuses(&pool, &keys, qc::QC_RULE_VERSION).await?;
     let mut to_run: Vec<&str> = Vec::new();
@@ -2125,7 +2278,7 @@ async fn qc_single_asset(
                 check_code: code,
                 rule_version: qc::QC_RULE_VERSION,
                 status: st,
-                result_hash: asset_cache_key(code, sha256),
+                result_hash: asset_check_cache_key(code, aid_str, sha256),
                 detail: if original.is_empty() {
                     "cache_hit".into()
                 } else {
@@ -2157,7 +2310,10 @@ async fn qc_single_asset(
     let outcomes = match analyze_asset(&storage, &key, kind, &content_type, Some(sha256), &tmp_name)
         .await
     {
-        Ok((o, metrics, fp, _)) => {
+        Ok((mut o, metrics, fp, _)) => {
+            if kind == "AUDIO" && to_run.contains(&"AUDIO_AI_PROVENANCE") {
+                preserve_audio_provenance(&pool, org, aid, sha256, &mut o).await?;
+            }
             // Persist measured audio duration + real technical specs for
             // the DDEX builder. COALESCE fills only unknown columns;
             // never overwrites measured values.
@@ -2189,7 +2345,7 @@ async fn qc_single_asset(
                     check_code: code,
                     rule_version: qc::QC_RULE_VERSION,
                     status: CheckStatus::TechnicalRetry,
-                    result_hash: asset_cache_key(code, sha256),
+                    result_hash: asset_check_cache_key(code, aid_str, sha256),
                     detail: detail.clone(),
                 });
             }
@@ -2202,7 +2358,7 @@ async fn qc_single_asset(
                 check_code: o.check_code,
                 rule_version: qc::QC_RULE_VERSION,
                 status: o.status,
-                result_hash: asset_cache_key(o.check_code, sha256),
+                result_hash: asset_check_cache_key(o.check_code, aid_str, sha256),
                 detail: o.detail,
             });
         }
@@ -2257,7 +2413,7 @@ pub async fn precheck_asset(
         Err(_) => return Ok(true),
     }
     let tmp_name = format!("audeniq-precheck-{}", Uuid::new_v4());
-    let (outcomes, metrics, fp, downloaded_sha) = match analyze_asset(
+    let (mut outcomes, metrics, fp, downloaded_sha) = match analyze_asset(
         storage,
         &key,
         &kind,
@@ -2284,6 +2440,7 @@ pub async fn precheck_asset(
         .await?;
     }
     let sha = recorded.unwrap_or(downloaded_sha);
+    preserve_audio_provenance(pool, org, aid, &sha, &mut outcomes).await?;
     if let Some(m) = metrics {
         sqlx::query(
             "UPDATE catalog.assets SET duration_secs=COALESCE(duration_secs,$1), sample_rate=COALESCE(sample_rate,$2), channels=COALESCE(channels,$3), bits_per_sample=COALESCE(bits_per_sample,$4) WHERE org_id=$5 AND id=$6",
@@ -2320,7 +2477,7 @@ pub async fn precheck_asset(
             check_code: o.check_code,
             rule_version: qc::QC_RULE_VERSION,
             status: o.status,
-            result_hash: asset_cache_key(o.check_code, &sha),
+            result_hash: asset_check_cache_key(o.check_code, &aid.to_string(), &sha),
             detail: o.detail,
         });
     }
@@ -2352,9 +2509,7 @@ pub async fn precheck_asset(
     // same rollup as Stage 1's update_asset_qc, which stays authoritative
     // and overwrites it after submission (adding catalog similarity).
     if !retry {
-        let clean = out
-            .iter()
-            .all(|c| matches!(c.status, CheckStatus::Pass | CheckStatus::NotApplicable));
+        let clean = out.iter().all(asset_check_allows_progress);
         sqlx::query("UPDATE catalog.assets SET qc_status=$3 WHERE org_id=$1 AND id=$2")
             .bind(org)
             .bind(aid)
@@ -2480,9 +2635,14 @@ async fn update_asset_qc(
             continue;
         }
         for (aid, sha) in &sha_of {
-            if ch.result_hash == asset_cache_key(ch.check_code, sha) {
+            if ch.result_hash == asset_check_cache_key(ch.check_code, aid, sha) {
                 let e = worst.entry(aid.clone()).or_insert(CheckStatus::Pass);
-                if rank(ch.status) > rank(*e) {
+                let check_rank = if asset_check_allows_progress(ch) {
+                    0
+                } else {
+                    rank(ch.status)
+                };
+                if check_rank > rank(*e) {
                     *e = ch.status;
                 }
             }
@@ -2502,6 +2662,12 @@ async fn update_asset_qc(
             .await?;
     }
     Ok(())
+}
+
+fn asset_check_allows_progress(c: &StagedCheck) -> bool {
+    matches!(c.status, CheckStatus::Pass | CheckStatus::NotApplicable)
+        || (c.status == CheckStatus::ReviewRequired
+            && crate::review::stage1_review_severity(c.check_code) == "WARNING")
 }
 
 fn validation_package(
@@ -2618,57 +2784,8 @@ pub async fn run_stage1(
         .bind(release)
         .execute(&mut *tx)
         .await?;
-    // Reuse this revision's rows from an earlier attempt, insert the rest in
-    // one statement: two round trips instead of one or two per check.
-    let existing: Vec<(String, String, Uuid)> = sqlx::query_as(
-        "SELECT DISTINCT ON (check_code, result_hash) check_code, result_hash, id
-           FROM operations.check_results WHERE revision_id=$1
-          ORDER BY check_code, result_hash, created_at, id",
-    )
-    .bind(revision_id)
-    .fetch_all(&mut *tx)
-    .await?;
-    let mut ids: std::collections::HashMap<(String, String), Uuid> = existing
-        .into_iter()
-        .map(|(code, hash, id)| ((code, hash), id))
-        .collect();
-    let mut fresh: Vec<&StagedCheck> = Vec::new();
-    let mut fresh_ids: Vec<Uuid> = Vec::new();
-    for c in &checks {
-        let key = (c.check_code.to_string(), c.result_hash.clone());
-        if let std::collections::hash_map::Entry::Vacant(e) = ids.entry(key) {
-            let id = Uuid::new_v4();
-            e.insert(id);
-            fresh.push(c);
-            fresh_ids.push(id);
-        }
-    }
-    if !fresh.is_empty() {
-        let codes: Vec<&str> = fresh.iter().map(|c| c.check_code).collect();
-        let versions: Vec<&str> = fresh.iter().map(|c| c.rule_version).collect();
-        let statuses: Vec<&str> = fresh.iter().map(|c| c.status.as_db()).collect();
-        let hashes: Vec<&str> = fresh.iter().map(|c| c.result_hash.as_str()).collect();
-        let details: Vec<&str> = fresh.iter().map(|c| c.detail.as_str()).collect();
-        sqlx::query(
-            "INSERT INTO operations.check_results(id, revision_id, check_code, rule_version, status, result_hash, detail)
-             SELECT id, $2, code, version, status, hash, detail
-               FROM unnest($1::uuid[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[])
-                    AS t(id, code, version, status, hash, detail)",
-        )
-        .bind(&fresh_ids)
-        .bind(revision_id)
-        .bind(&codes)
-        .bind(&versions)
-        .bind(&statuses)
-        .bind(&hashes)
-        .bind(&details)
-        .execute(&mut *tx)
-        .await?;
-    }
-    let check_ids: Vec<Uuid> = checks
-        .iter()
-        .map(|c| ids[&(c.check_code.to_string(), c.result_hash.clone())])
-        .collect();
+    // Batch persistence preserves the exact verdicts pinned by this attempt.
+    let check_ids = record_stage1_checks(&mut tx, revision_id, &checks).await?;
 
     let mut counts: BTreeMap<&'static str, i64> = BTreeMap::new();
     for c in &checks {
@@ -2844,6 +2961,56 @@ pub async fn stage1_give_up(c: &mut PgConnection, revision_id: Uuid, reason: &st
 #[cfg(test)]
 mod title_tests {
     use super::*;
+
+    #[test]
+    fn advisory_qc_allows_progress_but_content_holds_and_failures_do_not() {
+        let check = |code, status| StagedCheck {
+            check_code: code,
+            rule_version: qc::QC_RULE_VERSION,
+            status,
+            result_hash: "a".repeat(64),
+            detail: String::new(),
+        };
+        assert!(asset_check_allows_progress(&check(
+            "AUDIO_LOUDNESS_OUT_OF_RANGE",
+            CheckStatus::ReviewRequired
+        )));
+        for (code, status) in [
+            ("AUDIO_CONTENT_SUSPECT", CheckStatus::ReviewRequired),
+            ("AUDIO_SIMILAR_TO_EXISTING", CheckStatus::ReviewRequired),
+            ("AUDIO_CLIPPING", CheckStatus::CorrectionRequired),
+            ("AUDIO_PROBE_FAILED", CheckStatus::TechnicalRetry),
+        ] {
+            assert!(!asset_check_allows_progress(&check(code, status)), "{code}");
+        }
+    }
+
+    #[test]
+    fn similarity_pages_keep_exact_best_three_with_stable_ties() {
+        let mut hits = Vec::new();
+        for page in [
+            [(4, 0.2), (5, 0.1), (3, 0.1)],
+            [(2, 0.1), (1, 0.1), (6, 0.0)],
+        ] {
+            merge_similar_hits(
+                &mut hits,
+                page.into_iter()
+                    .map(|(id, ber)| SimilarHit {
+                        asset_id: Uuid::from_u128(id),
+                        other_org: id % 2 == 0,
+                        ber,
+                    })
+                    .collect(),
+            );
+            assert!(hits.len() <= 3);
+        }
+        assert_eq!(
+            hits.iter()
+                .map(|h| h.asset_id.as_u128())
+                .collect::<Vec<_>>(),
+            vec![6, 1, 2]
+        );
+    }
 
     #[test]
     fn explicit_markers_are_corrections_not_style() {

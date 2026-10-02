@@ -214,13 +214,56 @@ test('other /api/* calls go to the backend with the service header; a dead backe
   }
 });
 
+test('backend proxy derives source identity from Cloudflare and fails closed without its secret', async () => {
+  const real = globalThis.fetch;
+  const seen = [];
+  globalThis.fetch = async req => { seen.push(req); return new Response('{}'); };
+  try {
+    const headers = {
+      'cf-connecting-ip': '2001:db8::42', 'x-audeniq-client-ip': '192.0.2.99',
+      'x-forwarded-for': '192.0.2.98', 'x-audeniq-service': 'attacker',
+      cookie: 'session=value', 'x-csrf-token': 'csrf', origin: 'https://studio.audeniq.com',
+      'sec-fetch-site': 'same-origin', 'accept-encoding': 'gzip', 'content-type': 'application/json',
+    };
+    const request = () => new Request('https://studio.audeniq.com/api/auth/login?x=1', {
+      method: 'POST', headers, body: '{}',
+    });
+    const e = { ...env(), EDGE_SERVICE_SECRET: 's'.repeat(40) };
+    assert.equal((await worker.fetch(request(), e)).status, 200);
+    assert.equal(seen[0].headers.get('x-audeniq-client-ip'), '2001:db8::42');
+    assert.equal(seen[0].headers.get('x-audeniq-service'), e.EDGE_SERVICE_SECRET);
+    assert.equal(seen[0].headers.get('x-forwarded-for'), null);
+    for (const name of ['cookie', 'x-csrf-token', 'origin', 'sec-fetch-site', 'accept-encoding', 'content-type']) {
+      assert.equal(seen[0].headers.get(name), headers[name]);
+    }
+    assert.equal(await seen[0].text(), '{}');
+    delete headers['cf-connecting-ip'];
+    assert.equal((await worker.fetch(request(), e)).status, 200);
+    assert.equal(seen[1].headers.get('x-audeniq-client-ip'), null);
+    headers['x-hub-signature-256'] = 'sha256=partner-signature';
+    headers['x-timestamp'] = '12345';
+    headers.signature = 'custom-partner-signature';
+    const hook = new Request('https://studio.audeniq.com/api/partner-hooks/D-1', { method: 'POST', headers, body: '{"ack":true}' });
+    assert.equal((await worker.fetch(hook, e)).status, 200);
+    assert.equal(seen[2].headers.get('x-hub-signature-256'), headers['x-hub-signature-256']);
+    assert.equal(seen[2].headers.get('x-timestamp'), '12345');
+    assert.equal(seen[2].headers.get('signature'), 'custom-partner-signature');
+    assert.equal(seen[2].headers.get('x-audeniq-client-ip'), null);
+    assert.equal(seen[2].headers.get('x-audeniq-service'), e.EDGE_SERVICE_SECRET);
+    assert.equal(seen[2].headers.get('x-forwarded-for'), null);
+    assert.equal(await seen[2].text(), '{"ack":true}');
+    assert.equal((await worker.fetch(request(), env())).status, 503);
+    assert.equal(seen.length, 3);
+  } finally { globalThis.fetch = real; }
+});
+
 test('emergency: env switch forces maintenance and API calls get 503 MAINTENANCE', async () => {
   resetMaintenanceCache();
   const real = globalThis.fetch;
   let proxied = 0;
   globalThis.fetch = async () => { proxied++; return new Response('{}'); };
   try {
-    const e = { ...env(), MAINTENANCE_MODE: 'on', MAINTENANCE_MESSAGE: 'DB 복구 중이에요.' };
+    const e = { ...env(), EDGE_SERVICE_SECRET: 's'.repeat(40), MAINTENANCE_MODE: 'on', MAINTENANCE_MESSAGE: 'DB 복구 중이에요.' };
     const st = await (await call(e, 'GET', '/api/status')).json();
     assert.equal(st.maintenance.active.kind, 'emergency');
     assert.equal(st.maintenance.active.end_unknown, true);
@@ -246,7 +289,7 @@ test('emergency window from the admin API blocks the API until it ends', async (
   const real = globalThis.fetch;
   globalThis.fetch = async () => new Response('{}');
   try {
-    const e = env();
+    const e = { ...env(), EDGE_SERVICE_SECRET: 's'.repeat(40) };
     const iso = ms => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
     const created = await (await call(e, 'POST', '/api/content/maintenance', {
       id: 'urgent', title: '긴급 점검', kind: 'emergency', end_unknown: true,
