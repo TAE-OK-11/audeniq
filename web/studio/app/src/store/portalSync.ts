@@ -61,8 +61,15 @@ export function clearPortal() {
 
 export function startPortalSync(): () => void {
   void hydratePortal();
-  const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void refreshNotifications(); }, 60_000);
-  const onFocus = () => { void refreshNotifications(); };
+  // 탭·앱을 자주 오가도 알림 요청은 15초에 한 번만 (Worker·API 호출 절약)
+  let last = Date.now();
+  const refresh = () => {
+    if (Date.now() - last < 15_000) return;
+    last = Date.now();
+    void refreshNotifications();
+  };
+  const timer = window.setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, 60_000);
+  const onFocus = refresh;
   const onRefresh = () => { void Promise.all([refreshNotifications(), refreshDocs(), refreshFinance(), refreshTickets()]); };
   window.addEventListener('focus', onFocus);
   window.addEventListener(PORTAL_REFRESH_EVENT, onRefresh);
