@@ -23,6 +23,7 @@ import { ApplicationSection, EnteredInfoSection, OptionsSection, TracksSection, 
 import { CurrentValue, ReviewBrief, type BriefFix } from '../ReviewBrief';
 import { CheckCard } from '../ReviewCheck';
 import { DeliveryStatus } from '../DeliveryStatus';
+import { JumpNav, type JumpItem } from '../JumpNav';
 import { ReviewTimeline } from '../ReviewTimeline';
 import { contextOrReadOnly, ReviewActions } from '../ReviewActions';
 
@@ -392,6 +393,12 @@ function ReissueForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: () => voi
   );
 }
 
+/** 시트 맨 위 요약 — 결정에 필요한 문제·주의만 먼저, 이상 없는 항목은 접어서 */
+function SheetSummary({ sheet, lead }: { sheet: ReleaseSheet; lead: string }) {
+  const integrity = useIntegrity(sheet);
+  return <ReviewBrief sheet={sheet} integrity={integrity} title="확인할 것" lead={lead} compact />;
+}
+
 export function ReviewDetail() {
   const { id = '' } = useParams<{ id: string }>();
   return <ReviewSheet key={id} id={id} />;
@@ -430,6 +437,24 @@ function ReviewSheet({ id }: { id: string }) {
   const pending = sheet.second_approvals.find(a => a.id === context.pending_second_approval_id);
   const canReview = can('REVIEW');
   const after = (msg: string) => { setDone(msg); refresh(); refreshCounts(); };
+  const statusLine = inReview
+    ? `담당자 확인 필요 ${sheet.open_checks.length}건`
+    : application
+      ? '새 발매 신청 · 시스템 검사 모두 통과'
+      : `지금은 ‘${pick(RELEASE_STATUS, r.status)[0]}’ 상태라 결정할 수 없어요.`;
+  const trackCount = (app.tracks ?? []).length || (sheet.draft?.draftTracks ?? []).filter(t => t.title?.trim()).length;
+  const blocked = sheet.delivery_staging.filter(d => d.readiness === 'CONTENT_BLOCKED').length;
+  const jump: JumpItem[] = [
+    { id: 'rv-summary', label: '요약' },
+    ...(sheet.open_checks.length ? [{ id: 'rv-open', label: '확인 필요', count: sheet.open_checks.length, tone: 'bad' as const }] : []),
+    { id: 'rv-app', label: '신청서' },
+    { id: 'rv-info', label: '입력 내용' },
+    ...(sheet.draft?.options ?? app.options ? [{ id: 'rv-opts', label: '부가서비스' }] : []),
+    { id: 'rv-tracks', label: '트랙', count: trackCount },
+    { id: 'rv-docs', label: '서류', count: sheet.documents.length },
+    ...(sheet.delivery_staging.length ? [{ id: 'rv-dsp', label: '배급', ...(blocked ? { count: blocked, tone: 'bad' as const } : {}) }] : []),
+    { id: 'rv-history', label: '이력' },
+  ];
   // 심사 목록에서 보던 순서의 다음 건 (목록을 거치지 않고 이어서 심사)
   const nextId = (() => {
     try {
@@ -465,6 +490,9 @@ function ReviewSheet({ id }: { id: string }) {
             </div>
           </div>
 
+          <JumpNav items={jump} />
+          <div id="rv-summary" className="adm-anchor"><SheetSummary sheet={sheet} lead={statusLine} /></div>
+
           {!sheet.review_context && <ErrorBox message="심사 가능 여부를 확인할 수 없어요. 새로고침 후 다시 확인해 주세요." onRetry={refresh} />}
           {error && <ErrorBox message={error} onRetry={refresh} />}
           {done && (
@@ -499,9 +527,9 @@ function ReviewSheet({ id }: { id: string }) {
 
 
           {sheet.open_checks.length > 0 && (
-            <Section title="담당자 확인 필요" meta={`${sheet.open_checks.length}건 · 시스템이 판단을 넘긴 항목`}>
+            <div id="rv-open" className="adm-anchor"><Section title="담당자 확인 필요" meta={`${sheet.open_checks.length}건 · 시스템이 판단을 넘긴 항목`}>
               <div className="adm-checks">{sheet.open_checks.map(c => <CheckCard key={c.id ?? c.check_code} c={c} open />)}</div>
-            </Section>
+            </Section></div>
           )}
 
           {sheet.advisories.length > 0 && (
@@ -510,12 +538,12 @@ function ReviewSheet({ id }: { id: string }) {
             </Section>
           )}
 
-          <ApplicationSection sheet={sheet} />
-          <EnteredInfoSection sheet={sheet} />
-          <OptionsSection sheet={sheet} />
-          <TracksSection sheet={sheet} />
+          <div id="rv-app" className="adm-anchor"><ApplicationSection sheet={sheet} /></div>
+          <div id="rv-info" className="adm-anchor"><EnteredInfoSection sheet={sheet} /></div>
+          <div id="rv-opts" className="adm-anchor"><OptionsSection sheet={sheet} /></div>
+          <div id="rv-tracks" className="adm-anchor"><TracksSection sheet={sheet} /></div>
 
-          <Section
+          <div id="rv-docs" className="adm-anchor"><Section
             title="서류" meta={`${sheet.documents.length}건`}
             action={can('DOCUMENTS') && <button type="button" className="adm-btn soft small" onClick={() => setModal('proof')}>권리 증빙 요청</button>}
           >
@@ -534,10 +562,10 @@ function ReviewSheet({ id }: { id: string }) {
                 ))}
               </div>
             ) : <p className="small muted">연결된 서류가 없어요.</p>}
-          </Section>
+          </Section></div>
 
 
-          <DeliveryStatus rows={sheet.delivery_staging} />
+          <div id="rv-dsp" className="adm-anchor"><DeliveryStatus rows={sheet.delivery_staging} /></div>
 
           {(sheet.notes.length > 0 || sheet.overrides.length > 0) && (
             <Section title="담당자 결정 기록">
@@ -584,19 +612,13 @@ function ReviewSheet({ id }: { id: string }) {
             )}
           </Section>
 
-          <ReviewTimeline releaseId={id} revisionId={r.revision_id} refreshTick={timelineTick} />
+          <div id="rv-history" className="adm-anchor"><ReviewTimeline releaseId={id} revisionId={r.revision_id} refreshTick={timelineTick} /></div>
         </div>
 
         <aside className="adm-detail-side">
           <div className="adm-decide">
             <h2>심사 결정</h2>
-            <p>
-              {inReview
-                ? `담당자 확인 필요 ${sheet.open_checks.length}건`
-                : application
-                  ? '새 발매 신청 · 시스템 검사 모두 통과'
-                  : `지금은 ‘${pick(RELEASE_STATUS, r.status)[0]}’ 상태라 결정할 수 없어요.`}
-            </p>
+            <p>{statusLine}</p>
             <ReviewActions context={context} loading={loading} onAction={setAction} />
             <div className="adm-decide-note">
               {application

@@ -96,6 +96,31 @@ const DECL_LABEL: Record<string, string> = {
   contains_samples: '샘플 사용', ai_involved: 'AI 활용', explicit_content: '19금 표현',
 };
 
+/** 아티스트 권리 확인 — 체크하지 않은 항목만 펼쳐 두고, 확인한 항목은 접는다 */
+function RightsChecks({ d }: { d: NonNullable<ReleaseSheet['draft']> }) {
+  const list = rightsChecksFor(d.options);
+  const off = list.filter(([k]) => !d.rightsChecks?.[k]);
+  const on = list.filter(([k]) => d.rightsChecks?.[k]);
+  const row = ([k, label]: [string, string], ok: boolean) => (
+    <li key={k} className={ok ? 'is-on' : 'is-off'}>
+      <span aria-label={ok ? '확인함' : '확인 안 함'}>{ok ? <CheckIcon size={11} /> : <Glyph name="close" size={11} />}</span>
+      {label}
+    </li>
+  );
+  return (
+    <div className="adm-rights">
+      <dt>권리 확인 (아티스트 체크) <small className={off.length ? 'is-bad' : ''}>{off.length ? `${off.length}개 체크 안 함` : `${list.length}개 모두 확인`}</small></dt>
+      {off.length > 0 && <ul>{off.map(c => row(c, false))}</ul>}
+      {on.length > 0 && (
+        <details className="adm-rights-more">
+          <summary>확인한 항목 {on.length}개<Glyph name="chevron-right" size={12} /></summary>
+          <ul>{on.map(c => row(c, true))}</ul>
+        </details>
+      )}
+    </div>
+  );
+}
+
 export function EnteredInfoSection({ sheet }: { sheet: ReleaseSheet }) {
   const r = sheet.release;
   const app = sheet.application;
@@ -154,22 +179,7 @@ export function EnteredInfoSection({ sheet }: { sheet: ReleaseSheet }) {
             <p>{notes}</p>
           </div>
         )}
-        {d?.rightsChecks && (
-          <div className="adm-rights">
-            <dt>권리 확인 (아티스트 체크)</dt>
-            <ul>
-              {rightsChecksFor(d.options).map(([k, label]) => {
-                const on = !!d.rightsChecks?.[k];
-                return (
-                  <li key={k} className={on ? 'is-on' : 'is-off'}>
-                    <span aria-label={on ? '확인함' : '확인 안 함'}>{on ? <CheckIcon size={11} /> : <Glyph name="close" size={11} />}</span>
-                    {label}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
+        {d?.rightsChecks && <RightsChecks d={d} />}
       </div>
     </Section>
   );

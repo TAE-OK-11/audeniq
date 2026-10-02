@@ -4,6 +4,7 @@ import { staffApi, type ReleaseTimelineItem } from '../api/staff';
 import { useAsync } from '../hooks/useAsync';
 import { APPROVAL_STATUS, CHECK_STATUS, checkLabel, checkSummary, dspLabel, pick, shortId } from '../labels';
 import { ErrorBox, Section, Skeleton, StatusChip } from '../ui';
+import { Glyph } from './Glyph';
 
 export const ACTION_KO: Record<string, string> = {
   'release.submitted': '발매 접수', 'stage1.decision': '1차 검사 결과', 'stage1.completed': '1차 검사 완료', 'stage2.decision': '2차 검사 결과',
@@ -107,10 +108,14 @@ export function TimelineRow({ item: t }: { item: ReleaseTimelineItem }) {
 export function ReviewTimeline({ releaseId, revisionId, refreshTick }: { releaseId: string; revisionId: string | null; refreshTick: number }) {
   const [limit, setLimit] = useState(100);
   const [filter, setFilter] = useState<Kind | 'all'>('all');
+  const [expanded, setExpanded] = useState(false);
   const { data, error, loading, reload } = useAsync(() => staffApi.timeline(releaseId, limit), [releaseId, revisionId, refreshTick, limit]);
   const items = data?.items.slice().reverse() ?? [];
   const counts = items.reduce<Partial<Record<Kind, number>>>((m, t) => { const k = timelineKind(t); m[k] = (m[k] ?? 0) + 1; return m; }, {});
-  const shown = filter === 'all' ? items : items.filter(t => timelineKind(t) === filter);
+  const filtered = filter === 'all' ? items : items.filter(t => timelineKind(t) === filter);
+  // 최근 것부터 몇 건만 — 나머지는 ‘더 보기’로 (긴 이력이 시트를 밀어내지 않게)
+  const PREVIEW = 6;
+  const shown = expanded || filtered.length <= PREVIEW + 2 ? filtered : filtered.slice(0, PREVIEW);
   // 날짜별 묶음 (최신 날짜부터)
   const groups: { day: string; items: ReleaseTimelineItem[] }[] = [];
   for (const t of shown) {
@@ -123,9 +128,9 @@ export function ReviewTimeline({ releaseId, revisionId, refreshTick }: { release
     {loading && !data ? <Skeleton rows={3} /> : <>
       {items.length > 0 && (
         <div className="adm-tl-filter" role="group" aria-label="이력 종류">
-          <button type="button" className={filter === 'all' ? 'is-on' : ''} aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>전체 <span>{items.length}</span></button>
+          <button type="button" className={filter === 'all' ? 'is-on' : ''} aria-pressed={filter === 'all'} onClick={() => { setFilter('all'); setExpanded(false); }}>전체 <span>{items.length}</span></button>
           {KINDS.filter(k => counts[k]).map(k => (
-            <button key={k} type="button" className={filter === k ? 'is-on' : ''} aria-pressed={filter === k} onClick={() => setFilter(k)}>{KIND_LABEL[k]} <span>{counts[k]}</span></button>
+            <button key={k} type="button" className={filter === k ? 'is-on' : ''} aria-pressed={filter === k} onClick={() => { setFilter(k); setExpanded(false); }}>{KIND_LABEL[k]} <span>{counts[k]}</span></button>
           ))}
         </div>
       )}
@@ -136,7 +141,10 @@ export function ReviewTimeline({ releaseId, revisionId, refreshTick }: { release
           <ol className="adm-timeline">{g.items.map((t, i) => <TimelineRow key={`${t.at}-${t.source}-${t.kind}-${i}`} item={t} />)}</ol>
         </div>
       ))}
-      {data?.truncated && limit < 2000 && <button type="button" className="adm-btn soft small" disabled={loading} onClick={() => setLimit(n => Math.min(n * 5, 2000))}>이전 기록 더 보기</button>}
+      {shown.length < filtered.length && (
+        <button type="button" className="adm-tl-more" onClick={() => setExpanded(true)}>이전 기록 {filtered.length - shown.length}건 더 보기<Glyph name="chevron-right" size={12} /></button>
+      )}
+      {(expanded || filtered.length <= PREVIEW + 2) && data?.truncated && limit < 2000 && <button type="button" className="adm-btn soft small" disabled={loading} onClick={() => setLimit(n => Math.min(n * 5, 2000))}>이전 기록 더 보기</button>}
     </>}
   </Section>;
 }
