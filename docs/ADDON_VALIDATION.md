@@ -1,8 +1,8 @@
 # Add-on validation
 
 Base: origin/main `b16a52b` (2026-10-02 fetch). Branch: `feat/addon-services-phase1`.
-검증 대상 코드: `6c4efe57afc3d02b3fc5e72c9cec27a20c190bc5`.
-CI: [Foundation 36999241941](https://github.com/TAE-OK-11/audeniq/actions/runs/36999241941).
+검증 대상 코드: `1be9154619e526fceeba43921c7ef7508755e32d` (안정화 포함).
+CI: [Foundation 37007311088](https://github.com/TAE-OK-11/audeniq/actions/runs/37007311088).
 전체 workflow와 rust-postgres / compose-smoke job 모두 성공했다. 이후 검증 결과를 기록하는 문서 변경은 실행 코드와 테스트를 변경하지 않는다.
 
 | 검사 | 결과 |
@@ -11,13 +11,13 @@ CI: [Foundation 36999241941](https://github.com/TAE-OK-11/audeniq/actions/runs/3
 | cargo fmt --all / git diff --exit-code | 통과 |
 | cargo clippy --workspace --all-targets --locked -- -D warnings | 통과 |
 | cargo build --locked -p audeniq-core --bins | 통과 |
-| cargo nextest run --locked -p audeniq-core --test-threads 4 --no-fail-fast | 439 / 439 통과, 기존 ignored 3개 제외; 25개 test binary, 546.448초 |
+| cargo nextest run --locked -p audeniq-core --test-threads 4 --no-fail-fast | 446 / 446 통과, 기존 ignored 3개 제외; 25개 test binary, 556.830초 |
 | Compose 설정·기동·readiness 및 분석기 확인 | 통과 |
 | backend review benchmarks | 통과; 별도 benchmark 테스트 1개 통과 |
 | edge WASM·Workers bundle | 통과; bundle은 dry-run으로 검증 |
 | React Studio / Worker·D1 / 브라우저 검사 | 61개 / 16개 통과 및 signup·reload·profile·release draft·404·logout smoke 통과 |
 
-부가서비스 테스트 24개(23개 PostgreSQL 통합 테스트 + LRC/업로드 규칙 단위 테스트 1개)를 추가했고 전부 통과했다.
+부가서비스 테스트 31개(30개 PostgreSQL 통합 테스트 + LRC/업로드 규칙 단위 테스트 1개)가 전부 통과했다. 최초 구현의 24개에 안정화 회귀 7개를 추가했다. 수정·migration·추가 테스트의 대응표는 [안정화 보고서](ADDON_STABILIZATION.md)에 기록한다.
 
 | 필수 시나리오 | crates/core/tests/addons.rs의 대응 테스트 |
 |---|---|
@@ -38,6 +38,8 @@ CI: [Foundation 36999241941](https://github.com/TAE-OK-11/audeniq/actions/runs/3
 | 15. 관리자 override audit | manual_payment_assignment_override_and_refund_have_audit |
 
 추가 검증은 보완 메시지·재제출, MV 증빙 만료·ACL 회수, AUDENIQ 심의→증빙→전달, 일시적 실패와 DLQ, migration 순서, 모든 서비스의 manual 결과·완료, 실제 signed LRC/MV 업로드, runtime role의 RLS를 포함한다.
+
+안정화 검증은 실제 API 역할의 관리자 업무·권한 회수와 행 잠금, 우선권 취소/재시도/URGENT 보존 및 enqueue audit 멱등성, 무료 PROFILE_PLUS 기간과 후속 요청, 주문 ACL 회수, 거절된 첨부, Basic Video 선택 취소·잘못된 결과 거절, 일반 schema owner의 FORCE RLS가 적용된 0069 → 0070 데이터 보정을 포함한다. 기존 데이터의 만료일·priority·남은 상세 보정과 audit는 별도 로컬 PostgreSQL 18에서도 확인했다.
 
 기존 release/distribution 회귀 suite는 전체 nextest 실행에 포함한다. S3 서명, SFTP 왕복, 권리·승인·freshness, delivery/reconciliation, 300건 혼합 release 처리도 함께 검증한다. 기본 실행에서 제외되는 기존 ignored 테스트 3개는 `sandbox_full_distribution_run`, `sandbox_adversarial_submissions`, `benchmark_prepared_matching`이다. 앞의 2개는 별도 sandbox 연결을 요구하며, benchmark는 CI 후속 단계에서 별도 실행한다.
 
