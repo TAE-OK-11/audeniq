@@ -3080,6 +3080,185 @@ async fn staff_two_person_approval_then_per_dsp_staging(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = false)]
+async fn only_the_claiming_reviewer_decides_and_admin_can_take_over(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let artist = user(&app).await;
+    let first = staff_user(&app, &pool, "REVIEWER").await;
+    let second = staff_user(&app, &pool, "REVIEWER").await;
+    let admin = staff_user(&app, &pool, "ADMIN").await;
+    let release = explicit_release_in_review(&app, &pool, &store, &artist).await;
+    let rev = current_revision(&pool, release).await;
+    let path = format!("/api/staff/releases/{release}");
+    let correction =
+        json!({"action":"REQUEST_CORRECTION","revision_id":rev,"reason":"mark the explicit track"});
+
+    // Nobody has taken it: read-only for everyone, a decision is refused.
+    let (_, sheet) = send(&app, "GET", &path, Value::Null, Some(&first)).await;
+    assert_eq!(
+        sheet["review_context"]["allowed_actions"],
+        json!([]),
+        "{sheet}"
+    );
+    assert_eq!(sheet["review_context"]["can_claim"], true);
+    let (s, v) = send(
+        &app,
+        "POST",
+        &format!("{path}/decision"),
+        correction.clone(),
+        Some(&first),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(v["error"]["code"], "REVIEW_CLAIM_REQUIRED");
+
+    // The first reviewer claims it; the queue and the sheet show who.
+    let (s, v) = send(
+        &app,
+        "POST",
+        &format!("{path}/claim"),
+        json!({}),
+        Some(&first),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (_, queue) = send(
+        &app,
+        "GET",
+        "/api/staff/releases",
+        Value::Null,
+        Some(&second),
+    )
+    .await;
+    let row = queue["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["id"] == release.to_string())
+        .unwrap();
+    assert_eq!(row["claim"]["user_id"], first_id(&app, &first).await);
+    let (_, sheet) = send(&app, "GET", &path, Value::Null, Some(&second)).await;
+    assert_eq!(sheet["review_context"]["allowed_actions"], json!([]));
+    assert_eq!(sheet["review_context"]["claim"]["mine"], false);
+    assert_eq!(sheet["review_context"]["can_claim"], false);
+
+    // Another reviewer can neither claim nor decide; only ADMIN may take over.
+    let (s, v) = send(
+        &app,
+        "POST",
+        &format!("{path}/claim"),
+        json!({"take_over":true}),
+        Some(&second),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "REVIEW_CLAIMED_BY_OTHER", "{s} {v}");
+    let (s, v) = send(
+        &app,
+        "POST",
+        &format!("{path}/decision"),
+        correction.clone(),
+        Some(&second),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "REVIEW_CLAIMED_BY_OTHER", "{s} {v}");
+    let (s, v) = send(
+        &app,
+        "DELETE",
+        &format!("{path}/claim"),
+        Value::Null,
+        Some(&second),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "REVIEW_CLAIMED_BY_OTHER", "{s} {v}");
+    let (_, sheet) = send(&app, "GET", &path, Value::Null, Some(&admin)).await;
+    assert_eq!(sheet["review_context"]["can_take_over"], true);
+    let (s, v) = send(
+        &app,
+        "POST",
+        &format!("{path}/claim"),
+        json!({"take_over":true}),
+        Some(&admin),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (s, v) = send(
+        &app,
+        "POST",
+        &format!("{path}/decision"),
+        correction.clone(),
+        Some(&first),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "REVIEW_CLAIMED_BY_OTHER", "{s} {v}");
+
+    // ADMIN hands it back by releasing; the second reviewer claims and decides.
+    let (s, v) = send(
+        &app,
+        "DELETE",
+        &format!("{path}/claim"),
+        Value::Null,
+        Some(&admin),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (s, v) = send(
+        &app,
+        "POST",
+        &format!("{path}/claim"),
+        json!({}),
+        Some(&second),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (_, sheet) = send(&app, "GET", &path, Value::Null, Some(&second)).await;
+    assert!(
+        sheet["review_context"]["allowed_actions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|a| a == "REQUEST_CORRECTION"),
+        "{sheet}"
+    );
+    let (s, v) = send(
+        &app,
+        "POST",
+        &format!("{path}/decision"),
+        correction,
+        Some(&second),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+
+    let actions: Vec<String> = sqlx::query_scalar(
+        "SELECT action FROM operations.audit_events WHERE resource_id=$1 AND action LIKE 'staff.review_%' ORDER BY occurred_at, id",
+    )
+    .bind(release)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        actions
+            .iter()
+            .filter(|a| *a == "staff.review_claimed")
+            .count(),
+        2,
+        "{actions:?}"
+    );
+    assert!(
+        actions.contains(&"staff.review_taken_over".to_string()),
+        "{actions:?}"
+    );
+    assert!(
+        actions.contains(&"staff.review_released".to_string()),
+        "{actions:?}"
+    );
+}
+
+async fn first_id(app: &Router, u: &User) -> Value {
+    let (_, me) = send(app, "GET", "/api/me", Value::Null, Some(u)).await;
+    me["user_id"].clone()
+}
+
+#[sqlx::test(migrations = false)]
 async fn staff_correction_and_rejection_reach_the_artist(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let artist = user(&app).await;
