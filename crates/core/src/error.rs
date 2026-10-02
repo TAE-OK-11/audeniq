@@ -126,13 +126,39 @@ pub fn message(code: &str) -> Option<&'static str> {
         }
         "INTERNAL_ERROR" => "Something went wrong on our side. Try again later.",
         "UPLOAD_TYPE_UNSUPPORTED" => {
-            "Unsupported file type. Audio must be WAV (audio/wav) or FLAC (audio/flac); cover art must be JPEG or PNG."
+            "Unsupported file type. Use supported lossless audio, JPEG/PNG artwork, PDF/scanned proof, MP4 video or a UTF-8 timed LRC file."
         }
         "UPLOAD_EMPTY" => "The file is empty.",
         "UPLOAD_AUDIO_TOO_LARGE" => {
             "The audio file is too large. The maximum is 512 MB; export a 16- or 24-bit WAV/FLAC (FLAC is about half the size)."
         }
         "UPLOAD_IMAGE_TOO_LARGE" => "The cover image is too large. The maximum is 20 MB.",
+        "UPLOAD_VIDEO_TOO_LARGE" => "The video file is too large. The maximum is 2 GiB.",
+        "UPLOAD_LRC_TOO_LARGE" => "The LRC file is too large. The maximum is 1 MiB.",
+        "UPLOAD_VIDEO_INVALID" => {
+            "The file must contain a valid video stream. Upload an MP4 music video."
+        }
+        "UPLOAD_LRC_INVALID" => "Use a UTF-8 LRC file with valid timestamps in ascending order.",
+        "IDEMPOTENCY_KEY_REQUIRED" => {
+            "Provide an Idempotency-Key of 8 to 128 visible ASCII characters."
+        }
+        "ADDON_ACTIVE_ORDER_EXISTS" => {
+            "An active order or valid Profile Plus subscription already exists for this target."
+        }
+        "ADDON_PAYMENT_REQUIRED" => "Payment must be confirmed before this order can proceed.",
+        "ADDON_ASSET_NOT_VERIFIED" => {
+            "Complete and verify the attachment upload before using it in this order."
+        }
+        "MV_REVIEW_EVIDENCE_REQUIRED" => "Attach verified review evidence for this music video.",
+        "MV_EVIDENCE_NOT_APPROVED" => {
+            "Review evidence must be approved and valid before video distribution can proceed."
+        }
+        "ADDON_RESULTS_REQUIRED" => {
+            "Record verified results and finish the required provider tasks before completing this order."
+        }
+        "PROFILE_PLUS_EXPIRED" => {
+            "The Profile Plus validity period has ended. Submit a new order to renew."
+        }
         "UPLOAD_AUDIO_TRUNCATED" => {
             "The WAV file is incomplete: its header promises more audio than the file contains. Export the master again and upload the complete file."
         }

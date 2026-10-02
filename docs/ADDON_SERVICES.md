@@ -61,6 +61,7 @@
 | POST | /api/orgs/{org}/addons/orders/{id}/cancel |
 | PUT | /api/orgs/{org}/addons/orders/{id}/details |
 | POST | /api/orgs/{org}/addons/orders/{id}/revisions |
+| POST | /api/orgs/{org}/addons/orders/{id}/follow-ups |
 | GET | /api/admin/addons/orders |
 | GET | /api/admin/addons/orders/{id} |
 | POST | /api/admin/addons/orders/{id}/assign |
@@ -109,7 +110,7 @@ flowchart LR
  FAILED --> QUEUED
 ```
 
-취소는 완료/거절 후에는 불가능하다. 완료 주문 재개는 LYRIC_VIDEO_PLUS 수정만 허용한다. 1~2회는 새 render generation, 초과는 UNDER_REVIEW에서 관리자 판단을 기다린다. 추가 edge는 상태 contract에 있다. 무료 amount=0/NOT_REQUIRED, 유료 PENDING→PAID, 실제 환불 기록 시 REFUNDED이다. 최초 snapshot은 변경할 수 없다.
+취소는 완료/거절 후에는 불가능하다. 완료 주문 재개는 LYRIC_VIDEO_PLUS 수정 및 유효기간 내 PROFILE_PLUS follow-up만 허용한다. PROFILE_PLUS는 재결제 없이 기존 주문에 재요청을 기록하고 관리자 재검토로 이동한다. 1~2회는 새 render generation, 초과는 UNDER_REVIEW에서 관리자 판단을 기다린다. 추가 edge는 상태 contract에 있다. 무료 amount=0/NOT_REQUIRED, 유료 PENDING→PAID, 실제 환불 기록 시 REFUNDED이다. 최초 snapshot은 변경할 수 없다.
 
 ## Queue/outbox/audit
 
@@ -143,7 +144,7 @@ ManualAdapter는 외부 task만 만들고 EXTERNAL_PENDING으로 유지한다. �
 
 추가: crates/core/src/addons/{mod,model,workflow,api,jobs}.rs, crates/core/tests/addons.rs, migrations/0069_addon_services.sql, docs/ADDON_SERVICES.md, docs/ADDON_VALIDATION.md.
 
-수정: config/states.json, crates/core/src/{api,domain,lib,operations,uploads}.rs, crates/edge/src/lib.rs, deploy/grants.sql, docs/API.md.
+수정: config/states.json, crates/core/src/{api,domain,error,lib,operations,uploads}.rs, crates/edge/src/lib.rs, deploy/grants.sql, docs/API.md, crates/core/tests/stage2.rs(기존 fixture의 UPC 수정 시 row_version 증가).
 
 무료/유료/결제/잘못된 전이/ACL/가격 snapshot/동시 idempotency/PROFILE_PLUS 중복/MV 증빙 및 만료/수정 2회/기존·미래 priority/aging/취소 후 작업/outbox replay/audit/환불/retry·DLQ/이전 순서/전체 서비스/manual 결과/실제 LRC·MV 업로드/런타임 RLS를 테스트한다. 최종 검증 결과는 ADDON_VALIDATION.md에 기록한다.
 
