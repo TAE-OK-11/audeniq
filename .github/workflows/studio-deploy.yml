@@ -2,6 +2,8 @@ name: Studio deploy
 # Studio(web/studio)가 바뀌면 어느 브랜치든 테스트 → 빌드를 돌리고,
 # main일 때만 D1 마이그레이션 적용 → Cloudflare Worker(audeniq-studio) 배포까지 한다.
 # 필요한 저장소 Secrets: CLOUDFLARE_API_TOKEN (Workers Scripts:Edit, D1:Edit), CLOUDFLARE_ACCOUNT_ID
+# D1 마이그레이션은 web/studio/migrations가 바뀐 푸시(또는 수동 실행에서 선택했을 때)에만 적용한다.
+# 이미 적용된 마이그레이션 때문에 매 배포가 D1 권한에 묶이지 않게 하기 위해서다.
 # 수동 실행: Actions → Studio deploy → Run workflow (main에서 실행하면 배포)
 on:
   push:
@@ -13,6 +15,11 @@ on:
       - web/studio/**
       - .github/workflows/studio-deploy.yml
   workflow_dispatch:
+    inputs:
+      apply_migrations:
+        description: D1 마이그레이션도 적용
+        type: boolean
+        default: false
 permissions:
   contents: read
 # main 배포는 겹치지 않게 하나씩(취소 없음), 다른 브랜치는 새 푸시가 이전 실행을 취소
@@ -27,6 +34,8 @@ jobs:
       WRANGLER_SEND_METRICS: 'false'
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: web/studio/.bun-version
@@ -39,8 +48,25 @@ jobs:
       - name: Worker and D1 content tests
         working-directory: web/studio
         run: bun test test/
-      - name: Apply D1 migrations (content)
+      - name: Check D1 migration changes
+        id: migrations
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          BEFORE: ${{ github.event.before }}
+          MANUAL: ${{ inputs.apply_migrations }}
+        run: |
+          changed=false
+          if [ "$MANUAL" = "true" ]; then
+            changed=true
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            base="$BEFORE"
+            if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then base=HEAD~1; fi
+            if ! git diff --quiet "$base" HEAD -- web/studio/migrations; then changed=true; fi
+          fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          echo "D1 migrations to apply: $changed"
+      - name: Apply D1 migrations (content)
+        if: steps.migrations.outputs.changed == 'true'
         working-directory: web/studio
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
