@@ -133,3 +133,23 @@ test('review brief flags missing Content ID confirmations and blocked platforms'
   expect(items.find(i => i.key === 'dsp-D-5')?.detail).toBe('QR 코드 발견');
   expect(items.find(i => i.key === 'second')?.title).toBe('2차 승인 대기 중');
 });
+
+describe('review claim', () => {
+  const ctx = (claim: ReviewContext['claim'], extra: Partial<ReviewContext> = {}): ReviewContext => ({
+    decision_kind: 'CHECKS', allowed_actions: [], requires_second_approval: false, pending_second_approval_id: null, check_counts: {}, claim, ...extra,
+  });
+  test('unclaimed review offers to take it; another reviewer is shown and only ADMIN can take over', async () => {
+    const { ReviewClaimPanel } = await import('../src/components/ReviewClaim');
+    const noop = async () => {};
+    const free = render(createElement(ReviewClaimPanel, { context: ctx(null, { can_claim: true }), canReview: true, onClaim: noop, onRelease: noop }));
+    expect(free).toContain('이 심사 담당하기');
+    const other = render(createElement(ReviewClaimPanel, { context: ctx({ user_id: 'u2', email: 'kim@audeniq.com', at: '2026-10-02T00:00:00Z', mine: false }), canReview: true, onClaim: noop, onRelease: noop }));
+    expect(other).toContain('kim@audeniq.com');
+    expect(other).not.toContain('넘겨받기');
+    const admin = render(createElement(ReviewClaimPanel, { context: ctx({ user_id: 'u2', email: 'kim@audeniq.com', at: '2026-10-02T00:00:00Z', mine: false }, { can_take_over: true }), canReview: true, onClaim: noop, onRelease: noop }));
+    expect(admin).toContain('넘겨받기');
+    const mine = render(createElement(ReviewClaimPanel, { context: ctx({ user_id: 'u1', email: 'me@audeniq.com', at: '2026-10-02T00:00:00Z', mine: true }), canReview: true, onClaim: noop, onRelease: noop }));
+    expect(mine).toContain('내 담당');
+    expect(mine).toContain('담당 해제');
+  });
+});

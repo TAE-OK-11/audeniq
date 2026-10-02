@@ -26,6 +26,8 @@ import { DeliveryStatus } from '../DeliveryStatus';
 import { JumpNav, type JumpItem } from '../JumpNav';
 import { ReviewTimeline } from '../ReviewTimeline';
 import { contextOrReadOnly, ReviewActions } from '../ReviewActions';
+import { ReviewClaimPanel, claimLabel } from '../ReviewClaim';
+import { useConfirm } from '../../components/Confirm';
 
 /** withdraw::WITHDRAWABLE와 같게 유지 */
 const WITHDRAWABLE = ['STAGE1_CORRECTION', 'STAGE2_REVIEW', 'STAGE2_CORRECTION', 'STAGE3_CORRECTION', 'READY_FOR_DELIVERY', 'ON_HOLD_RIGHTS'];
@@ -406,6 +408,8 @@ export function ReviewDetail() {
 
 function ReviewSheet({ id }: { id: string }) {
   const nav = useNavigate();
+  const toast = useToast();
+  const confirm = useConfirm();
   const { can, refreshCounts, me } = useStaff();
   const { data: sheet, loading, error, reload } = useAsync(() => staffApi.release(id), [id]);
   const [action, setAction] = useState<DecisionAction | null>(null);
@@ -437,6 +441,23 @@ function ReviewSheet({ id }: { id: string }) {
   const pending = sheet.second_approvals.find(a => a.id === context.pending_second_approval_id);
   const canReview = can('REVIEW');
   const after = (msg: string) => { setDone(msg); refresh(); refreshCounts(); };
+  const mine = !!context.claim?.mine;
+  const claim = async (takeOver: boolean) => {
+    if (takeOver && !(await confirm({ title: '심사 넘겨받기', message: `${context.claim?.email ?? '다른 담당자'}님이 맡은 심사를 넘겨받아요. 이후 결정은 나만 할 수 있어요.`, confirmLabel: '넘겨받기' }))) return;
+    try {
+      await staffApi.claim(r.id, takeOver);
+      toast(takeOver ? '심사를 넘겨받았어요.' : '이 심사를 담당했어요. 이제 결정할 수 있어요.', 'success');
+      refresh(); refreshCounts();
+    } catch (err) { toast(errorMessage(err, '담당하지 못했어요.'), 'error'); refresh(); }
+  };
+  const unclaim = async () => {
+    if (!(await confirm({ title: '담당 해제', message: '담당을 내려놓으면 다른 담당자가 이 심사를 맡을 수 있어요.', confirmLabel: '담당 해제' }))) return;
+    try {
+      await staffApi.unclaim(r.id);
+      toast('담당을 내려놓았어요.', 'success');
+      refresh(); refreshCounts();
+    } catch (err) { toast(errorMessage(err, '담당을 해제하지 못했어요.'), 'error'); }
+  };
   const statusLine = inReview
     ? `담당자 확인 필요 ${sheet.open_checks.length}건`
     : application
@@ -484,6 +505,7 @@ function ReviewSheet({ id }: { id: string }) {
               <div className="adm-codes" style={{ marginBottom: 6 }}>
                 <StatusChip value={pick(RELEASE_STATUS, r.status)} />
                 <Chip tone="gray">{RELEASE_TYPE[r.release_type] ?? r.release_type}</Chip>
+                {decidable && <Chip tone={mine ? 'blue' : context.claim ? 'amber' : 'gray'}>{claimLabel(context)}</Chip>}
               </div>
               <h1>{r.title}</h1>
               <span className="adm-row-meta">
@@ -624,7 +646,8 @@ function ReviewSheet({ id }: { id: string }) {
           <div className="adm-decide">
             <h2>심사 결정</h2>
             <p>{statusLine}</p>
-            <ReviewActions context={context} loading={loading} onAction={setAction} />
+            <ReviewClaimPanel context={context} canReview={canReview} onClaim={claim} onRelease={unclaim} />
+            {mine && <ReviewActions context={context} loading={loading} onAction={setAction} />}
             <div className="adm-decide-note">
               {application
                 ? '승인하면 신청서(배급 계약서)가 승인되고 아티스트가 서명하면 배급이 시작돼요. 추가 서류가 필요하면 ‘권리 증빙 요청’으로 요청하세요 — 서류 검토에서 확인해요.'
@@ -657,8 +680,10 @@ function ReviewSheet({ id }: { id: string }) {
 
       {/* 휴대폰·좁은 화면: 내용을 읽다가 바로 결정하도록 아래에 고정 */}
       {decidable && canReview && !action && (
-        <div className="adm-decide-bar" role="group" aria-label="심사 결정">
-          <ReviewActions context={context} loading={loading} onAction={setAction} />
+        <div className={`adm-decide-bar${mine ? '' : ' is-claim'}`} role="group" aria-label="심사 결정">
+          {mine
+            ? <ReviewActions context={context} loading={loading} onAction={setAction} />
+            : <ReviewClaimPanel context={context} canReview={canReview} onClaim={claim} onRelease={unclaim} compact />}
         </div>
       )}
       {action && (

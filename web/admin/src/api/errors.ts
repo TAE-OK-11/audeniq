@@ -56,6 +56,8 @@ const CODE_MESSAGES: Record<string, string> = {
   NOTE_TOO_LONG: '메모가 너무 길어요. 줄여서 다시 입력해 주세요.',
   DECISION_REASON_REQUIRED: '결정 사유를 입력해 주세요.',
   DECISION_ACTION_UNKNOWN: '알 수 없는 결정이에요.',
+  REVIEW_CLAIM_REQUIRED: '먼저 이 심사를 담당해 주세요. 담당자만 결정할 수 있어요.',
+  REVIEW_CLAIMED_BY_OTHER: '다른 담당자가 맡은 심사예요. 담당자만 결정할 수 있어요.',
   RELEASE_NOT_IN_REVIEW: '이미 심사 대기 상태가 아닌 발매예요. 새로고침해 최신 상태를 확인해 주세요.',
   SECOND_APPROVAL_ALREADY_PENDING: '이 수정본에는 이미 2차 승인 요청이 올라가 있어요.',
   NOTHING_TO_CORRECT: '보완 요청할 미해결 검사 항목이 없어요.',
