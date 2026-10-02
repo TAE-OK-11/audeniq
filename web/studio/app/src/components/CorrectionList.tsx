@@ -1,5 +1,6 @@
 import { useNavigate } from '../lib/router';
 import type { Correction } from '../api/types';
+import { Glyph } from './Glyph';
 import { correctionWhere, fixPath, resolveCorrection } from '../lib/corrections';
 
 /** 담당자의 전체 의견 — 고칠 항목이 아니라 참고할 말이라 버튼 없이 인용처럼 보여 준다 */
@@ -28,11 +29,12 @@ export function CorrectionList({ releaseId, corrections, trackIds = [], trackTit
         return (
           <li key={`${c.code}-${c.trackId ?? ''}-${i}`}>
             <button type="button" onClick={() => nav(fixPath(releaseId, c))}>
+              <span className="aq-correction-no" aria-hidden="true">{i + 1}</span>
               <span className="aq-correction-where">
                 {correctionWhere(r)}{track ? ` · ${track}` : ''}
               </span>
               <span className="aq-correction-msg">{r.message}</span>
-              <span className="aq-correction-go" aria-hidden="true">바로 보완 ›</span>
+              <span className="aq-correction-go"><span className="sr-only">바로 보완</span><Glyph name="chevron-right" size={16} /></span>
             </button>
           </li>
         );

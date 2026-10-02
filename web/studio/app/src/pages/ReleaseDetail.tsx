@@ -269,13 +269,12 @@ export function ReleaseDetail() {
             <div className="min-0">
               <h2 id="aqFixCardHead">{fixes.length ? `보완 요청 ${fixes.length}건` : '보완이 필요해요'}</h2>
               <p>{fixes.length
-                ? '항목을 누르면 신청서에서 고쳐야 할 칸으로 바로 이동해요. 고친 뒤 마지막 단계에서 다시 접수해 주세요.'
+                ? '항목을 누르면 고칠 칸으로 바로 이동해요. 다 고친 뒤 마지막 단계에서 다시 접수해 주세요.'
                 : reviewNote
                   ? '담당자 의견을 확인하고 신청서를 고친 뒤 마지막 단계에서 다시 접수해 주세요.'
                   : '알림과 권리·보완 서류에서 요청 내용을 확인한 뒤 ‘보완하기’로 다시 접수해 주세요.'}</p>
             </div>
           </div>
-          {reviewNote && <ReviewNote text={reviewNote} />}
           {fixes.length > 0 && (
             <CorrectionList
               releaseId={rel.id} corrections={fixes}
@@ -283,6 +282,7 @@ export function ReleaseDetail() {
               trackTitles={Object.fromEntries((d?.draftTracks ?? rel.tracks).map(t => [t.id, t.title]))}
             />
           )}
+          {reviewNote && <ReviewNote text={reviewNote} />}
           {/* 무엇을 고칠지 먼저 읽고 나서 누르도록 목록 아래에 둔다 */}
           <button type="button" className="button aq-fix-go aq-fix-go-foot" onClick={() => nav(fixPath(rel.id, fixes[0]))}>보완하기</button>
         </section>
@@ -317,12 +317,13 @@ export function ReleaseDetail() {
             </div>
             <div className="studio-album-aside">
               <h2 className="subhead">커버아트</h2>
-              {d?.coverData ? (
-                <img className="aq-detail-cover-large" src={d.coverData} alt={`${rel.title} 커버아트`} />
-              ) : null}
-              <p className="small muted break">{d?.coverName || '커버아트 없음'}</p>
-              <h2 className="subhead">최근 수정</h2>
-              <p className="small muted">{rel.updated_at ? localStamp(rel.updated_at) : localStamp(rel.created_at)}</p>
+              {d?.coverData
+                ? <img className="aq-detail-cover-large" src={d.coverData} alt={`${rel.title} 커버아트`} />
+                : <div className="aq-detail-cover-empty">{d?.coverName ? '미리보기 없음' : '커버아트 없음'}</div>}
+              <dl className="aq-cover-meta">
+                {d?.coverName && <div><dt>파일</dt><dd className="break">{d.coverName}</dd></div>}
+                <div><dt>최근 수정</dt><dd>{rel.updated_at ? localStamp(rel.updated_at) : localStamp(rel.created_at)}</dd></div>
+              </dl>
             </div>
           </div>
         )}
