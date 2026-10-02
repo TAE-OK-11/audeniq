@@ -7,10 +7,16 @@ on:
   push:
     paths:
       - web/admin/**
+      - web/studio/app/build/retain-assets.ts
+      - web/studio/worker.js
+      - web/studio/test/worker.test.mjs
       - .github/workflows/admin-deploy.yml
   pull_request:
     paths:
       - web/admin/**
+      - web/studio/app/build/retain-assets.ts
+      - web/studio/worker.js
+      - web/studio/test/worker.test.mjs
       - .github/workflows/admin-deploy.yml
   workflow_dispatch:
 permissions:
@@ -35,6 +41,8 @@ jobs:
           bun install --frozen-lockfile
           bun run test
           bun run build
+      - name: Shared content Worker tests
+        run: bun test web/studio/test/worker.test.mjs
       - name: Deploy to Cloudflare Workers
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         working-directory: web/admin

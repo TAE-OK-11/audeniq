@@ -16,6 +16,8 @@
  *   EDGE_SERVICE_SECRET 백엔드 서비스 비밀 (wrangler secret put EDGE_SERVICE_SECRET)
  */
 
+import { route as contentRoute, handleContent } from '../studio/worker.js';
+
 const ALLOWED = [/^\/api\/auth\/(login|logout|csrf)$/, /^\/api\/me$/, /^\/api\/staff(\/.*)?$/];
 const FORWARD_HEADERS = ['cookie', 'content-type', 'accept', 'accept-encoding', 'x-csrf-token'];
 const MAX_BODY = 64 * 1024;
@@ -71,6 +73,8 @@ export async function proxy(request, env, url) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    const content = contentRoute(request.method, url.pathname);
+    if (content) return handleContent(request, env, content);
     if (url.pathname.startsWith('/api/')) return proxy(request, env, url);
     return env.ASSETS.fetch(request);
   },

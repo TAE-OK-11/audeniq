@@ -1,3 +1,4 @@
+import { loginRedirect } from './lib/loginRedirect';
 // 로그인 — 스튜디오 로그인 화면(AuthLayout)과 같은 카드·입력창·버튼. 계정도 스튜디오와 같다.
 import { useState } from 'react';
 import { useLocation, useNavigate } from './lib/router';
@@ -21,7 +22,7 @@ export function Login() {
   const { login } = useAuth();
   const nav = useNavigate();
   const loc = useLocation();
-  const from = (loc.state as { from?: string } | null)?.from;
+  const from = loginRedirect(loc.state);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
@@ -35,7 +36,7 @@ export function Login() {
     setBusy(true);
     try {
       await login(email, password);
-      nav(from && from !== '/login' ? from : '/', { replace: true });
+      nav(from ?? '/', { replace: true });
     } catch (err) {
       setError(errorMessage(err, '로그인에 실패했어요.'));
       setBusy(false);

@@ -203,6 +203,115 @@ fn org_path(u: &User, p: &str) -> String {
 const SIG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
 #[sqlx::test]
+async fn electronic_rights_are_signed_without_upload_and_remain_separate_from_approval(
+    pool: PgPool,
+) {
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let release = create(&app, &u, "releases").await;
+    let receipt = Uuid::new_v4();
+    let input = json!({"release_id": release, "title": "Cover permission", "body": "Original / digital distribution / Writer",
+        "asset_id": null, "file_name": "", "electronic": {"document_no": receipt, "form": "AUD-RIGHTS 1.0",
+        "document_kind": "composition", "rights_holder": "Writer", "signer_name": "Writer", "signer_role": "권리자 본인", "signature": SIG, "consent": true}});
+    let path = org_path(&u, "/documents");
+    let (a, b) = tokio::join!(
+        call(&app, "POST", &path, input.clone(), Some(&u)),
+        call(&app, "POST", &path, input.clone(), Some(&u))
+    );
+    assert_eq!(a.0, StatusCode::OK, "{}", a.2);
+    assert_eq!(b.0, StatusCode::OK, "{}", b.2);
+    assert_eq!(a.2["id"], b.2["id"]);
+    let id = a.2["id"].as_str().unwrap();
+    let (_, _, listed) = call(&app, "GET", &path, Value::Null, Some(&u)).await;
+    let doc = &listed["items"][0];
+    assert_eq!(doc["status"], "REVIEW");
+    assert!(doc["asset_id"].is_null());
+    assert_eq!(doc["signature"], SIG);
+    assert!(doc["signed_at"].is_string());
+    assert!(doc["checked_at"].is_string());
+    let hash = audeniq_core::domain::digest(
+        &json!({"title":"Cover permission","body":"Original / digital distribution / Writer",
+        "document_no":receipt,"form":"AUD-RIGHTS 1.0","document_kind":"composition","rights_holder":"Writer",
+        "signer_name":"Writer","signer_role":"권리자 본인","signature":SIG}),
+    );
+    assert_eq!(doc["electronic_record"]["content_hash"], hash);
+    let mut changed = input.clone();
+    changed["body"] = json!("Changed scope");
+    assert_eq!(
+        call(&app, "POST", &path, changed, Some(&u)).await.0,
+        StatusCode::CONFLICT
+    );
+    let mut no_consent = input.clone();
+    no_consent["electronic"]["consent"] = json!(false);
+    assert_eq!(
+        call(&app, "POST", &path, no_consent, Some(&u)).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    let other = user(&app).await;
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            &org_path(&other, "/documents"),
+            input,
+            Some(&other)
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    let (_, _, denied) = call(
+        &app,
+        "POST",
+        &org_path(&u, &format!("/documents/{id}/proof")),
+        json!({"asset_id":Uuid::new_v4(),"file_name":"replace.pdf","row_version":0}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(denied["error"]["code"], "DOCUMENT_NOT_EDITABLE");
+}
+
+#[sqlx::test]
+async fn content_access_requires_active_admin_session_and_csrf_for_writes(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    let mut u = user(&app).await;
+    let path = "/api/staff/content-access";
+    assert_eq!(
+        call(&app, "GET", path, Value::Null, Some(&u)).await.0,
+        StatusCode::FORBIDDEN
+    );
+    sqlx::query("INSERT INTO identity.staff_members(user_id,role,status,granted_by) VALUES($1,'ADMIN','ACTIVE','test')")
+        .bind(u.user).execute(&pool).await.unwrap();
+    assert_eq!(
+        call(&app, "GET", path, Value::Null, Some(&u)).await.0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        call(&app, "POST", path, json!({}), Some(&u)).await.0,
+        StatusCode::OK
+    );
+    u.csrf = "wrong".into();
+    assert_eq!(
+        call(&app, "POST", path, json!({}), Some(&u)).await.0,
+        StatusCode::FORBIDDEN
+    );
+    sqlx::query("UPDATE identity.staff_members SET role='SUPPORT' WHERE user_id=$1")
+        .bind(u.user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        call(&app, "GET", path, Value::Null, Some(&u)).await.0,
+        StatusCode::FORBIDDEN
+    );
+    sqlx::query("UPDATE identity.staff_members SET role='ADMIN',status='REVOKED',revoked_at=now() WHERE user_id=$1").bind(u.user).execute(&pool).await.unwrap();
+    assert_eq!(
+        call(&app, "GET", path, Value::Null, Some(&u)).await.0,
+        StatusCode::FORBIDDEN
+    );
+}
+
+#[sqlx::test]
 async fn release_documents_and_inquiries_enforce_active_resource_acl(pool: PgPool) {
     let (app, _) = app(pool.clone()).await;
     let owner = user(&app).await;

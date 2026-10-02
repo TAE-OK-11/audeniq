@@ -1510,7 +1510,9 @@ pub async fn list_documents(s: &AppState, h: &HeaderMap, p: Page) -> Result<Valu
     let items: Vec<Value> = sqlx::query_scalar(
         "SELECT jsonb_build_object('id',d.id,'org_id',d.org_id,'org_name',o.name,'release_id',d.release_id,
                 'release_title',r.title,'kind',d.kind,'title',d.title,'status',d.status,'review_note',d.review_note,
-                'file_name',d.file_name,'asset_id',d.asset_id,'row_version',d.row_version,'updated_at',d.updated_at)
+                'file_name',d.file_name,'asset_id',d.asset_id,'body',d.body,'signature',d.signature,
+                'signer_name',d.signer_name,'signed_at',d.signed_at,'electronic_record',d.electronic_record,
+                'row_version',d.row_version,'updated_at',d.updated_at)
          FROM portal.documents d JOIN identity.orgs o ON o.id=d.org_id
          LEFT JOIN catalog.releases r ON r.id=d.release_id
          WHERE d.kind='RIGHTS_PROOF' AND d.status=$1 ORDER BY d.updated_at LIMIT $2 OFFSET $3",
@@ -2319,6 +2321,22 @@ pub async fn payout_requests(s: &AppState, h: &HeaderMap, p: Page) -> Result<Val
 async fn h_me(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     Ok(Json(me(&s, &h).await?))
 }
+
+/// Edge D1 content administration uses the same staff session as /admin.
+/// POST checks CSRF/Origin before an edge write; GET only authorizes a read.
+async fn h_content_access(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    method: axum::http::Method,
+) -> Result<Json<Value>> {
+    let st = staff(&s, &h, method != axum::http::Method::GET).await?;
+    if st.role != StaffRole::Admin {
+        return Err(Error::Forbidden);
+    }
+    Ok(Json(
+        json!({"user_id": st.actor.user, "role": st.role.as_str()}),
+    ))
+}
 async fn h_overview(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     Ok(Json(overview(&s, &h).await?))
 }
@@ -2529,6 +2547,10 @@ async fn h_payouts(
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/staff/me", get(h_me))
+        .route(
+            "/api/staff/content-access",
+            get(h_content_access).post(h_content_access),
+        )
         .route("/api/staff/overview", get(h_overview))
         .route("/api/staff/releases", get(h_releases))
         .route("/api/staff/releases/{id}", get(h_release))
