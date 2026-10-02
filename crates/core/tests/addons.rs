@@ -57,7 +57,11 @@ async fn create_call(app: &Router, u: &User, key: &str, body: Value) -> (StatusC
     let b = axum::body::to_bytes(r.into_body(), 1024 * 1024)
         .await
         .unwrap();
-    (status, serde_json::from_slice(&b).unwrap())
+    (
+        status,
+        serde_json::from_slice(&b)
+            .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&b).into_owned())),
+    )
 }
 async fn create_ok(app: &Router, u: &User, body: Value) -> Value {
     let (s, v) = create_call(app, u, &Uuid::new_v4().to_string(), body).await;
@@ -214,6 +218,14 @@ async fn paid_order_requires_payment_and_cannot_be_approved(pool: PgPool) {
     assert_eq!(started["status"], "IN_PROGRESS");
     assert!(started["first_reviewed_at"].is_string());
     assert!(started["valid_until"].is_string());
+    let calendar: bool = sqlx::query_scalar(
+        "SELECT valid_until=paid_at+interval '12 months' FROM catalog.addon_orders WHERE id=$1",
+    )
+    .bind(id(&started))
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(calendar, "PROFILE_PLUS validity must use calendar months");
 }
 #[sqlx::test]
 async fn illegal_transition_is_rejected_by_api_and_database(pool: PgPool) {
@@ -342,6 +354,13 @@ async fn profile_plus_active_and_completed_valid_period_prevent_duplicates(pool:
     assert_eq!(completed["status"], "COMPLETED");
     let (s, _) = create_call(&app, &u, "third-profile-key", profile(ar, true)).await;
     assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    let mut next = profile(ar, true)["details"].clone();
+    next["request_type"] = json!("RETRY");
+    let(s,reopened)=call(&app,"POST",&format!("/api/orgs/{}/addons/orders/{}/follow-ups",u.org,id(&completed)),json!({"row_version":completed["row_version"],"reason":"Follow up with DSP","details":next}),Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{reopened}");
+    assert_eq!(reopened["status"], "UNDER_REVIEW");
+    assert_eq!(reopened["payment_status"], "PAID");
+    assert_eq!(reopened["amount"], 19000);
 }
 #[sqlx::test]
 async fn mv_global_only_needs_verified_evidence(pool: PgPool) {

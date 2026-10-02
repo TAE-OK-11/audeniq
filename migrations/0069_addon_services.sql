@@ -70,6 +70,7 @@ CREATE TABLE catalog.addon_orders (
 );
 CREATE UNIQUE INDEX addon_active_target ON catalog.addon_orders(org_id,service_code,target_id) WHERE status NOT IN ('COMPLETED','REJECTED','CANCELLED');
 CREATE INDEX addon_org_page ON catalog.addon_orders(org_id,created_at DESC,id DESC);
+CREATE INDEX addon_admin_page ON catalog.addon_orders(created_at DESC,id DESC);
 CREATE INDEX addon_staff_page ON catalog.addon_orders(status,submitted_at,id);
 CREATE INDEX addon_assigned ON catalog.addon_orders(assigned_admin_user_id,status,created_at);
 CREATE INDEX addon_service_page ON catalog.addon_orders(service_code,created_at DESC,id DESC);
@@ -163,9 +164,9 @@ CREATE TABLE catalog.addon_release_priorities (
 CREATE FUNCTION operations.apply_addon_priority() RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog AS $$
 BEGIN
  IF NEW.status='QUEUED' AND NEW.queue IN ('qc','rights','distribution','delivery') THEN
-  IF EXISTS(SELECT 1 FROM catalog.addon_release_priorities WHERE release_id=NEW.release_id) THEN
+ IF EXISTS(SELECT 1 FROM catalog.addon_release_priorities WHERE release_id=NEW.release_id AND priority>NEW.priority) THEN
    NEW.addon_priority_previous := NEW.priority;
-   NEW.priority := greatest(NEW.priority,(SELECT priority FROM catalog.addon_release_priorities WHERE release_id=NEW.release_id));
+   NEW.priority := (SELECT priority FROM catalog.addon_release_priorities WHERE release_id=NEW.release_id);
   END IF;
  END IF;
  RETURN NEW;

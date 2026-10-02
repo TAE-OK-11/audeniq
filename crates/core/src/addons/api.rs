@@ -23,6 +23,10 @@ pub fn routes() -> Router<AppState> {
         .route("/api/orgs/{org}/addons/orders/{id}/cancel", post(cancel))
         .route("/api/orgs/{org}/addons/orders/{id}/details", put(revise))
         .route("/api/orgs/{org}/addons/orders/{id}/revisions", post(revise))
+        .route(
+            "/api/orgs/{org}/addons/orders/{id}/follow-ups",
+            post(revise),
+        )
         .route("/api/admin/addons/catalog/{code}", put(update_catalog))
         .route("/api/admin/addons/orders", get(admin_list))
         .route("/api/admin/addons/orders/{id}", get(admin_detail))

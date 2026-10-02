@@ -234,7 +234,7 @@ pub async fn remove_priority(
     let r = o.release_id.ok_or(Error::Invalid)?;
     let n=sqlx::query("DELETE FROM catalog.addon_release_priorities WHERE org_id=$1 AND release_id=$2 AND addon_order_id=$3").bind(o.org_id).bind(r).bind(o.id).execute(&mut *c).await?.rows_affected();
     if n == 1 {
-        let rows=sqlx::query("UPDATE operations.jobs SET priority=addon_priority_previous,addon_priority_previous=NULL WHERE release_id=$1 AND status='QUEUED' AND addon_priority_previous IS NOT NULL RETURNING id,priority").bind(r).fetch_all(&mut *c).await?;
+        let rows=sqlx::query("UPDATE operations.jobs SET priority=addon_priority_previous,addon_priority_previous=NULL WHERE release_id=$1 AND status='QUEUED' AND addon_priority_previous IS NOT NULL AND priority=10 RETURNING id,priority").bind(r).fetch_all(&mut *c).await?;
         for row in rows {
             workflow::audit(
                 c,

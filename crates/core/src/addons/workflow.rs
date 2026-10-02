@@ -533,8 +533,15 @@ async fn transition_inner(
     if next == COMPLETED {
         completion_gate(c, &o).await?;
     }
-    if o.state()? == COMPLETED && next == UNDER_REVIEW && o.service_code != "LYRIC_VIDEO_PLUS" {
-        return Err(Error::Conflict);
+    if o.state()? == COMPLETED && next == UNDER_REVIEW {
+        if o.service_code == "PROFILE_PLUS" {
+            let valid:bool=sqlx::query_scalar("SELECT coalesce(valid_until>clock_timestamp(),false) FROM catalog.addon_orders WHERE id=$1").bind(o.id).fetch_one(&mut *c).await?;
+            if !valid {
+                return Err(Error::PolicyGate("PROFILE_PLUS_EXPIRED"));
+            }
+        } else if o.service_code != "LYRIC_VIDEO_PLUS" {
+            return Err(Error::Conflict);
+        }
     }
     let next_s = serde_json::to_value(next).map_err(|_| Error::Internal)?;
     sqlx::query("UPDATE catalog.addon_orders SET status=$3,row_version=row_version+1,
@@ -683,10 +690,15 @@ pub async fn revise(c: &mut PgConnection, a: &Actor, o: &Order, i: &Revise) -> R
             o.status.as_str(),
             "IN_PROGRESS" | "EXTERNAL_PENDING" | "COMPLETED"
         );
-    if o.status != "NEEDS_INFO" && !video {
+    let follow_up = o.service_code == "PROFILE_PLUS" && o.status == "COMPLETED";
+    if follow_up && i.details.is_none() {
+        return Err(Error::Invalid);
+    }
+    if o.status != "NEEDS_INFO" && !video && !follow_up {
         return Err(Error::Conflict);
     }
     if let Some(d) = &i.details {
+        let before = view(c, o.org_id, o.id).await?["details"].clone();
         validate_details(
             c,
             a,
@@ -710,12 +722,14 @@ pub async fn revise(c: &mut PgConnection, a: &Actor, o: &Order, i: &Revise) -> R
             o.id,
             "addon.details.updated",
             &i.reason,
-            json!({"row_version":o.row_version}),
+            before,
             serde_json::to_value(d).map_err(|_| Error::Internal)?,
         )
         .await?;
     }
-    if video {
+    if follow_up {
+        transition(c, Some(a), o.org_id, o.id, Status::UNDER_REVIEW, &i.reason).await?;
+    } else if video {
         let count = o.revision_count + 1;
         sqlx::query("UPDATE catalog.addon_orders SET revision_count=$3,row_version=row_version+1 WHERE org_id=$1 AND id=$2").bind(o.org_id).bind(o.id).bind(count).execute(&mut *c).await?;
         sqlx::query("UPDATE catalog.lyric_video_requests SET render_status='PENDING',output_asset_id=NULL WHERE org_id=$1 AND addon_order_id=$2").bind(o.org_id).bind(o.id).execute(&mut *c).await?;
