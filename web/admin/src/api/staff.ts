@@ -5,7 +5,6 @@ import type { StudioDraft } from '../lib/application';
 import { ApiError, messageForCode } from './errors';
 import { req } from './http';
 import { MOCK } from '../lib/mode';
-import { mockStaff } from './mock';
 
 export type StaffRole = 'ADMIN' | 'REVIEWER' | 'OPERATOR' | 'SUPPORT';
 export type Duty = 'REVIEW' | 'DOCUMENTS' | 'INQUIRIES' | 'DELIVERY';
@@ -234,7 +233,16 @@ const remote = {
 
 export type StaffApi = typeof remote;
 
-export const staffApi: StaffApi = MOCK ? mockStaff : remote;
+/** 체험 모드에서만 예시 데이터를 불러온다 — 실서버 빌드에는 mock.ts가 아예 들어가지 않는다 (MOCK은 빌드 때 정해지는 상수) */
+function lazyMock(): StaffApi {
+  let mod: Promise<StaffApi> | null = null;
+  const load = () => (mod ??= import('./mock').then(m => m.mockStaff as StaffApi));
+  return new Proxy({} as StaffApi, {
+    get: (_, key) => (...args: unknown[]) => load().then(api => (api[key as keyof StaffApi] as (...a: unknown[]) => unknown)(...args)),
+  });
+}
+
+export const staffApi: StaffApi = MOCK ? lazyMock() : remote;
 
 /** SHA-256 (hex) — 승인 직전 ERN이 바뀌지 않았는지 서버에 함께 보낸다 */
 export async function sha256Hex(text: string): Promise<string> {
