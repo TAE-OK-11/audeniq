@@ -659,3 +659,9 @@ button.adm-row:hover,a.adm-row:hover{background:#edf2ff}
 :is(#root,#modal) :is(.adm-textarea,.adm-input,.adm-select):not(#_):focus{border-color:#3B63F3!important;box-shadow:0 0 0 4px rgba(59,99,243,.12)!important;outline:none}
 :is(#root,#modal) :is(.adm-textarea,.adm-input)::placeholder{color:#a3adbf}
 .adm-fix{gap:12px}
+/* 문의 답변 보내기 줄: 버튼은 한 줄·보통 크기, 휴대폰에서는 키보드 단축키 안내 숨김 */
+.adm-reply-foot .adm-btn{flex:none;white-space:nowrap;min-height:44px;padding:0 20px}
+.adm-reply-foot small{min-width:0}
+.adm-reply .adm-textarea{min-height:120px}
+@media (hover:none),(max-width:640px){.adm-kbd-hint{display:none}}
+.adm-templates button{background:#fff!important;border:1.5px solid #e1e7f2!important;color:#3d4760}
