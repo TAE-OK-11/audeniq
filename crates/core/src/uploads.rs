@@ -28,6 +28,8 @@ pub const MAX_AUDIO_BYTES: i64 = 512 * 1024 * 1024;
 pub const MAX_IMAGE_BYTES: i64 = 20 * 1024 * 1024;
 /// Rights proof documents (PDF or scanned image).
 pub const MAX_DOCUMENT_BYTES: i64 = 20 * 1024 * 1024;
+pub const MAX_VIDEO_BYTES: i64 = 2 * 1024 * 1024 * 1024;
+pub const MAX_LRC_BYTES: i64 = 1024 * 1024;
 
 /// Container the declared (kind, content type) pair promises, or `None` when
 /// the pair is not accepted at all. Upload completion sniffs the real bytes
@@ -51,8 +53,95 @@ pub fn expected_container(kind: &str, content_type: &str) -> Option<&'static str
         ("DOCUMENT", "application/pdf") => Some("PDF"),
         ("DOCUMENT", "image/jpeg") => Some("JPEG"),
         ("DOCUMENT", "image/png") => Some("PNG"),
+        ("VIDEO", "video/mp4") => Some("M4A"),
+        ("LRC", "text/plain" | "application/x-lrc") => Some("LRC"),
         _ => None,
     }
+}
+
+/// UTF-8 timed lyrics, with bounded, nondecreasing timestamps. LRC is
+/// validated before the same immutable-key registration as other uploads.
+pub fn validate_lrc(body: &str) -> Result<()> {
+    let body = body.trim_start_matches('\u{feff}');
+    crate::text_policy::check_multiline(body)?;
+    let mut last = 0.0;
+    let mut timed = false;
+    for line in body.lines().filter(|s| !s.trim().is_empty()) {
+        let mut rest = line.trim();
+        let mut line_timed = false;
+        while let Some(tail) = rest.strip_prefix('[') {
+            let (tag, end) = tail
+                .split_once(']')
+                .ok_or(Error::PolicyGate("UPLOAD_LRC_INVALID"))?;
+            if let Some((minutes, seconds)) = tag.split_once(':') {
+                if minutes.bytes().all(|b| b.is_ascii_digit()) && !minutes.is_empty() {
+                    let m: f64 = minutes
+                        .parse()
+                        .map_err(|_| Error::PolicyGate("UPLOAD_LRC_INVALID"))?;
+                    let s: f64 = seconds
+                        .parse()
+                        .map_err(|_| Error::PolicyGate("UPLOAD_LRC_INVALID"))?;
+                    let at = m * 60.0 + s;
+                    if !at.is_finite() || !(0.0..60.0).contains(&s) || at < last || at > 86400.0 {
+                        return Err(Error::PolicyGate("UPLOAD_LRC_INVALID"));
+                    }
+                    last = at;
+                    timed = true;
+                    line_timed = true;
+                } else if !matches!(
+                    minutes,
+                    "ti" | "ar" | "al" | "by" | "offset" | "re" | "ve" | "length"
+                ) {
+                    return Err(Error::PolicyGate("UPLOAD_LRC_INVALID"));
+                }
+            } else {
+                return Err(Error::PolicyGate("UPLOAD_LRC_INVALID"));
+            }
+            rest = end;
+        }
+        if !line_timed && !rest.trim().is_empty() {
+            return Err(Error::PolicyGate("UPLOAD_LRC_INVALID"));
+        }
+    }
+    if !timed {
+        return Err(Error::PolicyGate("UPLOAD_LRC_INVALID"));
+    }
+    Ok(())
+}
+async fn verify_video(s: &AppState, key: &str, size: i64) -> Result<crate::storage::ObjectDigest> {
+    struct Temp(std::path::PathBuf);
+    impl Drop for Temp {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+    let file = Temp(std::env::temp_dir().join(format!("audeniq-video-{}.mp4", Uuid::new_v4())));
+    let digest = s.storage.download_to(key, &file.0, size as u64).await?;
+    if digest.size != size as u64 || crate::qc::detect_container(&digest.head) != "M4A" {
+        return Err(Error::PolicyGate("UPLOAD_CONTENT_MISMATCH"));
+    }
+    tokio::task::spawn_blocking(move || {
+        let _file = file;
+        let probe = crate::qc::probe_classified(&_file.0).map_err(|e| match e {
+            crate::qc::AnalyzerError::Unavailable => Error::UploadBusy,
+            crate::qc::AnalyzerError::Undecodable => Error::PolicyGate("UPLOAD_VIDEO_INVALID"),
+        })?;
+        let valid = probe["streams"].as_array().is_some_and(|streams| {
+            streams.iter().any(|s| {
+                s["codec_type"] == "video"
+                    && s["width"].as_u64().unwrap_or(0) > 0
+                    && s["height"].as_u64().unwrap_or(0) > 0
+                    && s["disposition"]["attached_pic"].as_i64().unwrap_or(0) == 0
+            })
+        });
+        if !valid {
+            return Err(Error::PolicyGate("UPLOAD_VIDEO_INVALID"));
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|_| Error::Internal)??;
+    Ok(digest)
 }
 
 pub async fn issue(s: &AppState, a: &Actor, org: Uuid, i: UploadInput) -> Result<Value> {
@@ -65,6 +154,8 @@ pub async fn issue(s: &AppState, a: &Actor, org: Uuid, i: UploadInput) -> Result
     let (max, too_large) = match i.kind.as_str() {
         "IMAGE" => (MAX_IMAGE_BYTES, "UPLOAD_IMAGE_TOO_LARGE"),
         "DOCUMENT" => (MAX_DOCUMENT_BYTES, "UPLOAD_DOCUMENT_TOO_LARGE"),
+        "VIDEO" => (MAX_VIDEO_BYTES, "UPLOAD_VIDEO_TOO_LARGE"),
+        "LRC" => (MAX_LRC_BYTES, "UPLOAD_LRC_TOO_LARGE"),
         _ => (MAX_AUDIO_BYTES, "UPLOAD_AUDIO_TOO_LARGE"),
     };
     if i.size_bytes > max {
@@ -145,16 +236,17 @@ pub async fn complete(
     // Every lossless upload that is not already FLAC (WAV included) is
     // stored as a FLAC master: one delivery format, about 40 % less storage
     // and transfer than PCM, with the decoded PCM proven identical.
-    let conversion_slot = if matches!(container, "WAV" | "M4A" | "AIFF" | "WAVPACK" | "TTA") {
-        Some(
-            s.transcode_slots
-                .clone()
-                .try_acquire_owned()
-                .map_err(|_| Error::UploadBusy)?,
-        )
-    } else {
-        None
-    };
+    let conversion_slot =
+        if kind == "AUDIO" && matches!(container, "WAV" | "M4A" | "AIFF" | "WAVPACK" | "TTA") {
+            Some(
+                s.transcode_slots
+                    .clone()
+                    .try_acquire_owned()
+                    .map_err(|_| Error::UploadBusy)?,
+            )
+        } else {
+            None
+        };
     let meta = s.storage.head(&key).await?.ok_or(Error::Conflict)?;
     let size: i64 = r.get("expected_bytes");
     let nonce: Uuid = r.get("nonce");
@@ -239,7 +331,20 @@ pub async fn complete(
     // frozen copy is immutable (ETag pinned below), and the `asset.analyze`
     // job downloads it once to hash it and run QC, so the master is not
     // transferred twice. Covers and documents are small: hashed here.
-    let (head, sha256) = if kind == "AUDIO" {
+    let (head, sha256) = if kind == "VIDEO" {
+        let d = verify_video(s, &stable, size).await?;
+        (d.head, Some(d.sha256))
+    } else if kind == "LRC" {
+        let bytes = s.storage.get(&stable).await?;
+        if bytes.len() as i64 != size || size > MAX_LRC_BYTES {
+            return Err(Error::Conflict);
+        }
+        validate_lrc(
+            std::str::from_utf8(&bytes).map_err(|_| Error::PolicyGate("UPLOAD_LRC_INVALID"))?,
+        )?;
+        let d = crate::storage::ObjectDigest::of(&bytes);
+        (d.head, Some(d.sha256))
+    } else if kind == "AUDIO" {
         (
             s.storage
                 .read_prefix(&stable, crate::storage::HEAD_SNIFF_BYTES)
@@ -257,7 +362,11 @@ pub async fn complete(
         }
         (digest.head, Some(digest.sha256))
     };
-    let detected = crate::qc::detect_container(&head);
+    let detected = if kind == "LRC" {
+        "LRC"
+    } else {
+        crate::qc::detect_container(&head)
+    };
     if expected_container(&kind, &mime) != Some(detected) {
         // Nothing is registered: the transaction rolls back, the session
         // stays unusable for these bytes, and the user re-uploads the real

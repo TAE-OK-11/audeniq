@@ -41,6 +41,7 @@ mod drift_tests {
             include_str!("../../../migrations/0046_identifier_reissue.sql"),
             include_str!("../../../migrations/0049_release_review_queue.sql"),
             include_str!("../../../migrations/0050_release_withdraw.sql"),
+            include_str!("../../../migrations/0069_addon_services.sql"),
         ]
         .concat();
         let edges = contract["transitions"].as_array().unwrap();
@@ -52,14 +53,19 @@ mod drift_tests {
         for pair in edges {
             let old = pair[0].as_str().unwrap();
             let next = pair[1].as_str().unwrap();
-            let (axis, _) = contract["axes"]
-                .as_object()
-                .unwrap()
-                .iter()
-                .find(|(_, values)| values.as_array().unwrap().iter().any(|v| v == old))
-                .unwrap();
-            let expected = format!("VALUES ('{axis}','{old}','{next}')");
-            assert!(ddl.contains(&expected), "missing DB edge: {expected}");
+            assert!(
+                contract["axes"]
+                    .as_object()
+                    .unwrap()
+                    .iter()
+                    .any(|(axis, values)| {
+                        let values = values.as_array().unwrap();
+                        values.iter().any(|v| v == old)
+                            && values.iter().any(|v| v == next)
+                            && ddl.contains(&format!("VALUES ('{axis}','{old}','{next}')"))
+                    }),
+                "missing DB edge: {old} -> {next}"
+            );
         }
     }
 }

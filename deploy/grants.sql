@@ -153,3 +153,14 @@ BEGIN
   END LOOP;
  END LOOP;
 END $$;
+
+-- Add-ons share catalog/operations and the existing staff ACL. Catalog pricing
+-- writes only create a new version; immutable snapshots and RLS guard orders.
+GRANT SELECT,INSERT,UPDATE ON catalog.addon_service_catalog TO audeniq_api;
+GRANT SELECT ON catalog.addon_service_catalog TO audeniq_worker;
+GRANT SELECT,INSERT,UPDATE ON catalog.addon_orders,catalog.artist_profile_requests,catalog.migration_requests,catalog.lyrics_requests,catalog.lyric_video_requests,catalog.mv_requests,catalog.promo_requests,catalog.addon_provider_tasks,catalog.addon_dsp_links TO audeniq_api,audeniq_worker;
+GRANT SELECT,INSERT ON catalog.addon_idempotency TO audeniq_api;
+GRANT SELECT,INSERT,UPDATE,DELETE ON catalog.addon_release_priorities TO audeniq_api,audeniq_worker;
+-- Add-on worker rechecks the requesting user's active tenant/target authority.
+GRANT SELECT (id,status,party_id) ON identity.users TO audeniq_worker;
+GRANT SELECT ON identity.resource_acl TO audeniq_worker;
