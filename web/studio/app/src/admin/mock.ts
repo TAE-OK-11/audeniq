@@ -4,13 +4,12 @@ import { ApiError, messageForCode } from '../api/errors';
 import { applicationPending, needsSecond } from './labels';
 import type {
   ApprovalItem, DecisionInput, DecisionResult, DeliveryDecisionInput, DeliveryItem, DspItem, InquiryMessage, InquiryItem,
-  Overview, PayoutItem, QueueRelease, ReleaseSheet, StaffDocument, StaffMe,
+  Overview, PayoutItem, QueueRelease, ReleaseSheet, ReleaseTimelineItem, StagingRow, StaffDocument, StaffMe,
 } from './api';
 import { applicationHash, type StudioDraft } from './application';
 
 // 체험용 손글씨 서명 (작은 SVG)
 const MOCK_SIGNATURE = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 60"><path d="M10 42c14-20 22-30 28-24s-10 26 2 22 18-30 26-28-6 26 6 24 16-18 24-20 4 16 14 14 20-14 30-16 12 10 22 8 20-6 38-10" fill="none" stroke="#1d2433" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>');
-
 
 const ME = 'staff-me-0001';
 const OTHER = 'staff-kim-0002';
@@ -64,6 +63,8 @@ function sheetFor(q: QueueRelease, open: [string, string, string][], extra: Part
   return {
     q,
     sheet: {
+      track_audio: {},
+      review_context: { decision_kind: null, allowed_actions: [], requires_second_approval: false, pending_second_approval_id: null, check_counts: {} },
       release: { id: q.id, org_id: q.org_id, org_name: q.org_name, title: q.title, release_type: q.release_type, status: q.status, upc: null, revision_id: q.revision_id, submitted_at: q.submitted_at },
       application: {
         artist: q.artist ?? '', language: 'KOR', genre: 'K-Pop', release_date: q.release_date ?? '', label: q.org_name,
@@ -78,7 +79,7 @@ function sheetFor(q: QueueRelease, open: [string, string, string][], extra: Part
       draft: draftFor(q, tracks),
       signed_application: { application_no: `AUD-20260926-${q.id.slice(0, 6).toUpperCase()}`, content_hash: '', signer_name: q.artist ?? '', signer_role: '아티스트 본인', received_at: q.submitted_at ?? iso(5), form: 'AUD-DIST-APP 1.0', agreements: ['truth', 'terms', 'privacy', 'esign'], contact_email: `contact@${q.org_id.replace(/^org-/, '')}.example` },
       checks,
-      open_checks: open.map(([code, status, detail]) => ({ check_code: code, status, detail })),
+      open_checks: open.map(([code, status, detail]) => ({ check_code: code, status, detail, needs_second_approval: needsSecond({ check_code: code, status }) })),
       advisories: [],
       overrides: [],
       notes: [],
@@ -163,6 +164,33 @@ const payouts: PayoutItem[] = [
 ];
 
 releases.find(r => r.q.id === 'r4d5e6f7')!.sheet.documents.push(documents[0]);
+
+// 체험: Blue Hour는 YouTube Content ID도 신청했는데 원본 녹음 확인을 체크하지 않았다
+{
+  const blue = releases.find(r => r.q.id === 'r2b3c4d5')!.sheet;
+  blue.application.platforms.push('D-27');
+  blue.draft!.platforms = [...(blue.draft!.platforms ?? []), 'youtube-cid'];
+  Object.assign(blue.draft!.options!, { contentIdExclusiveRightsAck: true, contentIdOriginalRecordingAck: false });
+}
+// 체험: Paper Moon은 배급 준비까지 끝나 플랫폼별 상태가 있다
+{
+  const paper = releases.find(r => r.q.id === 'r4d5e6f7')!.sheet;
+  const row = (dsp: string, readiness: string, checks: StagingRow['checks'] = [], extra: Partial<StagingRow> = {}): StagingRow => ({
+    package_id: 'pk-r4', dsp, readiness, approval: readiness === 'READY' ? 'APPROVED' : 'PENDING', checks,
+    route_status: null, route_reason: null, ern_message_id: null, ern_sha256: null, ern_is_preview: false,
+    approval_by: null, approval_note: null, approval_at: null, staged_at: iso(20), ...extra,
+  });
+  paper.delivery_staging = [
+    row('D-5', 'CONTENT_BLOCKED', [
+      { code: 'S2_DSP_TITLE_FEATURED_ARTIST', severity: 'BLOCKER', class: 'CONTENT', message: '곡명에 feat. 표기가 있어요. Spotify는 참여 아티스트 칸으로 받아요.' },
+      { code: 'S2_DSP_SPOTIFY_ARTWORK_ENCODING', severity: 'WARNING', class: 'CONTENT', message: '커버에 ICC 프로필이 들어 있어요. sRGB로 다시 내보내면 좋아요.' },
+    ]),
+    row('D-6', 'AWAITING_PARTNER', [{ code: 'PARTNER_FEED', severity: 'INFO', message: 'Apple Music 전송 계정 연결을 기다리고 있어요.' }], { route_reason: '파트너 연동 전 — 연결되면 자동 전송' }),
+    row('D-1', 'READY', [{ code: 'DSP_LOUDNESS_ADVISORY', severity: 'INFO', message: '음량 -9.8 LUFS — 플랫폼에서 자동 조정돼요.' }]),
+    row('D-2', 'READY'),
+    row('D-3', 'READY', [], { ern_is_preview: true }),
+  ];
+}
 /** 발매 심사 대기: 2차 검사에서 멈췄거나, 자동 검사를 통과했고 신청서가 검토 전 */
 const awaiting = (r: MockRelease) => r.q.status === 'STAGE2_REVIEW' || (r.q.status === 'READY_FOR_DELIVERY' && applicationPending(r.q.agreement));
 
@@ -187,7 +215,8 @@ export const mockStaff = {
   }),
   releases: (status: string) => wait({ items: releases.filter(r => (status === 'PENDING' ? awaiting(r) : r.q.status === status)).map(r => r.q) }),
   release: async (rid: string) => {
-    const sheet = find(rid).sheet;
+    const r = find(rid);
+    const sheet = r.sheet;
     // 체험용 신청서에 서명 이미지와 문서 확인 코드를 붙인다 (실서버는 스튜디오가 서명할 때 계산)
     const d = sheet.draft;
     if (d?.application && !d.application.hash) {
@@ -198,7 +227,39 @@ export const mockStaff = {
         sheet.signed_application.signature = MOCK_SIGNATURE;
       }
     }
+    const pending = approvals.find(a => a.release_id === rid && a.status === 'PENDING' && Date.parse(a.expires_at) > Date.now());
+    const kind = r.q.status === 'STAGE2_REVIEW' ? 'CHECKS' : awaiting(r) ? 'APPLICATION' : null;
+    sheet.second_approvals.forEach(a => { a.active = a.status === 'PENDING' && Date.parse(a.expires_at) > Date.now(); });
+    sheet.review_context = {
+      decision_kind: kind,
+      allowed_actions: kind ? [...(pending ? [] : ['APPROVE' as const]), ...(kind === 'APPLICATION' || sheet.open_checks.length ? ['REQUEST_CORRECTION' as const] : []), 'REJECT'] : [],
+      requires_second_approval: sheet.open_checks.some(needsSecond),
+      pending_second_approval_id: pending?.id ?? null,
+      check_counts: sheet.checks.reduce<Record<string, number>>((m, c) => { m[c.status] = (m[c.status] ?? 0) + 1; return m; }, {}),
+    };
     return wait(sheet);
+  },
+  timeline: (rid: string, limit = 100) => {
+    const r = find(rid);
+    const items: ReleaseTimelineItem[] = r.sheet.timeline.map(t => ({
+      at: t.at, source: 'audit' as const, kind: t.action,
+      detail: { reason: t.reason, actor_user_id: t.actor_user_id, actor_service: t.actor_service },
+    }));
+    // 체험: 처리 작업·검사·플랫폼 기록도 섞어 보여 준다
+    const sub = r.q.submitted_at ?? iso(5);
+    const after = (min: number) => new Date(Date.parse(sub) + min * 60_000).toISOString();
+    items.push(
+      { at: after(1), source: 'job', kind: 'asset.analyze', detail: { status: 'SUCCEEDED', attempts: 1 } },
+      { at: after(2), source: 'job', kind: 'stage1', detail: { status: 'SUCCEEDED', attempts: 1 } },
+      { at: after(6), source: 'job', kind: 'stage2', detail: { status: 'SUCCEEDED', attempts: 2, last_error: 'fingerprint service timeout (retried)' } },
+      ...r.sheet.open_checks.map(c => ({ at: after(7), source: 'check' as const, kind: c.check_code, detail: { status: c.status, detail: c.detail, stage: 2 } })),
+    );
+    for (const d of r.sheet.delivery_staging) {
+      items.push({ at: d.staged_at, source: 'staff_decision', kind: d.dsp, detail: { approval: d.approval, note: d.readiness === 'CONTENT_BLOCKED' ? '콘텐츠 문제로 전송 보류' : null } });
+      if (d.readiness === 'READY') items.push({ at: after(30), source: 'dsp_request', kind: d.dsp, detail: { outcome: 'SENT' } });
+    }
+    items.sort((a, b) => a.at.localeCompare(b.at));
+    return wait({ release_id: rid, truncated: items.length > limit, items: items.slice(-limit) });
   },
   decide: async (rid: string, i: DecisionInput): Promise<DecisionResult> => {
     const r = find(rid);
@@ -223,7 +284,7 @@ export const mockStaff = {
         if (approvals.some(a => a.release_id === rid && a.status === 'PENDING')) fail('SECOND_APPROVAL_ALREADY_PENDING');
         const a = { id: `ap-${uid()}`, org_id: r.q.org_id, release_id: rid, revision_id: i.revision_id, title: r.q.title, check_codes: open.map(c => c.check_code), reason: i.reason, requested_by: ME, expires_at: new Date(Date.now() + 72 * 3_600_000).toISOString(), at: new Date().toISOString(), status: 'PENDING' };
         approvals.push(a);
-        r.sheet.second_approvals.unshift({ id: a.id, check_codes: a.check_codes, reason: a.reason, requested_by: ME, status: 'PENDING', decided_by: null, expires_at: a.expires_at, at: a.at });
+        r.sheet.second_approvals.unshift({ id: a.id, check_codes: a.check_codes, reason: a.reason, requested_by: ME, status: 'PENDING', decided_by: null, expires_at: a.expires_at, at: a.at, active: true });
         audit(r, 'staff.approval_requested', a.check_codes.join(','));
         return wait({ result: 'PENDING_SECOND_APPROVAL', approval_id: a.id, check_codes: a.check_codes });
       }

@@ -87,6 +87,11 @@ export const FIX_PRESETS: Record<string, string[]> = {
     '원곡 이용 허락서를 첨부해 주세요.',
     'AI 활용 내역을 구체적으로 알려 주세요.',
   ],
+  FIX_CONTENT_ID: [
+    'YouTube Content ID의 독점 권리와 원본 녹음 확인을 체크하거나 Content ID 선택을 해제해 주세요.',
+    '비독점 루프·무료 음원·공공저작물이 들어 있으면 Content ID에 등록할 수 없어요. Content ID 선택을 해제해 주세요.',
+    '커버·샘플·리믹스는 참조에서 뺄 구간과 권리 자료를 알려 주세요.',
+  ],
   FIX_OWNERSHIP: [
     '음원 권리자(마스터 소유자)를 정확히 입력해 주세요.',
     '권리자와 신청인이 달라요. 배급 위임 증빙을 제출해 주세요.',

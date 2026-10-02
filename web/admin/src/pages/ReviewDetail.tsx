@@ -12,7 +12,7 @@ import { FIX_PRESETS } from '../lib/fixPresets';
 import { STAFF_FIX_OPTIONS, WIZ_STEP_NAMES, correctionTarget, isKnownCorrection, staffFixCode } from '../lib/corrections';
 import {
   CHECK_STATUS, DECISION_LABEL, DOC_KIND, DOC_STATUS, MAX_REASON, RELEASE_STATUS, RELEASE_TYPE,
-  REJECT_REASONS, APPROVAL_STATUS, READINESS, checkLabel, checkSummary, dspLabel, pick, shortId, stageStateLabel, systemStages, when,
+  REJECT_REASONS, checkLabel, checkSummary, pick, shortId, stageStateLabel, systemStages, when,
 } from '../labels';
 import { Chip, ErrorBox, Initial, NoDuty, Section, Skeleton, StatusChip, useStaff } from '../ui';
 import { Glyph } from '../components/Glyph';
@@ -22,6 +22,7 @@ import { QUEUE_ORDER_KEY } from './ReviewQueue';
 import { ApplicationSection, EnteredInfoSection, OptionsSection, TracksSection, useIntegrity } from '../components/Submission';
 import { CurrentValue, ReviewBrief, type BriefFix } from '../components/ReviewBrief';
 import { CheckCard } from '../components/ReviewCheck';
+import { DeliveryStatus } from '../components/DeliveryStatus';
 import { ReviewTimeline } from '../components/ReviewTimeline';
 import { contextOrReadOnly, ReviewActions } from '../components/ReviewActions';
 
@@ -536,19 +537,7 @@ function ReviewSheet({ id }: { id: string }) {
           </Section>
 
 
-          {sheet.delivery_staging.length > 0 && (
-            <Section title="플랫폼별 배급 상태" meta="현재 제출본 기준">
-              <div className="adm-list">{sheet.delivery_staging.map(d => (
-                <div key={`${d.package_id}-${d.dsp}`} className="adm-card">
-                  <div className="adm-check-top"><b>{dspLabel(d.dsp)}</b><span className="adm-codes"><StatusChip value={pick(READINESS, d.readiness)} /><StatusChip value={pick(APPROVAL_STATUS, d.approval)} /></span></div>
-                  {d.route_reason && <p className="small muted">{d.route_reason}</p>}
-                  {d.checks.filter(c => c.severity !== 'PASS').map((c, i) => <p key={i} className="small">{c.message ?? c.detail ?? checkLabel(c.code)}</p>)}
-                  {d.approval_note && <p className="small muted">담당자 메모: {d.approval_note}</p>}
-                </div>
-              ))}</div>
-              <Link to="/deliveries" className="adm-btn soft small">배급 관리 열기</Link>
-            </Section>
-          )}
+          <DeliveryStatus rows={sheet.delivery_staging} />
 
           {(sheet.notes.length > 0 || sheet.overrides.length > 0) && (
             <Section title="담당자 결정 기록">

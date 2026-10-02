@@ -9,13 +9,14 @@ import type { ReleaseSheet, Track } from './api';
 import { day, dspLabel, when } from './labels';
 import { Chip, Empty, Section } from './ui';
 import {
-  PROFILE_LINKS, RIGHTS_OPTIONS, SERVICE_OPTIONS, draftFromSheet, displayCode, draftNotes, genreLabel, kindLabel, languageLabel,
-  rightsChecksFor, verifyDraft, type Integrity, type StudioDraftTrack, type StudioOptions,
+  CONTENT_ID_ACKS, PROFILE_LINKS, RIGHTS_OPTIONS, SERVICE_OPTIONS, draftFromSheet, displayCode, draftNotes, genreLabel, kindLabel, languageLabel,
+  rightsChecksFor, verifyDraft, wantsContentId, type Integrity, type StudioDraftTrack, type StudioOptions,
 } from './application';
 import { ApplicationPaper, INTEGRITY_LABEL } from './ApplicationPaper';
 import { Modal } from '../components/Modal';
 import { Glyph } from '../components/Glyph';
 import { CheckIcon } from '../components/Check';
+import { audioSpecs } from './audio';
 
 const dash = (v?: string | null) => (v && String(v).trim() ? v : '—');
 const INTEGRITY_TONE: Record<Integrity, 'green' | 'red' | 'gray'> = { ok: 'green', changed: 'red', unsigned: 'gray', checking: 'gray' };
@@ -247,11 +248,25 @@ export function OptionsSection({ sheet }: { sheet: ReleaseSheet }) {
   if (!o) return null;
   const tracks = sheet.draft?.draftTracks ?? [];
   const picked = [...SERVICE_OPTIONS, ...RIGHTS_OPTIONS].filter(([k]) => o[k] === true).length;
+  const contentId = wantsContentId(sheet.draft?.platforms ?? sheet.application.platforms);
+  const acked = CONTENT_ID_ACKS.filter(([k]) => o[k] === true).length;
   return (
     <Section title="부가서비스 · 해당 항목" meta={picked ? `${picked}개 선택` : '일반 발매'}>
       <div className="adm-card adm-opts">
         <OptionGroup title="부가서비스" list={SERVICE_OPTIONS} o={o} tracks={tracks} />
         <OptionGroup title="해당 항목" list={RIGHTS_OPTIONS} o={o} tracks={tracks} />
+        {contentId && (
+          <div className="adm-opt-group">
+            <h3>YouTube Content ID 권리 확인 <small>{acked}/{CONTENT_ID_ACKS.length} 확인</small></h3>
+            {CONTENT_ID_ACKS.map(([k, label]) => (
+              <div key={k} className={`adm-opt-ack${o[k] === true ? ' is-on' : ''}`}>
+                <span className="adm-opt-mark" aria-hidden="true">{o[k] === true ? <CheckIcon size={11} /> : <Glyph name="close" size={10} />}</span>
+                <span>{label}</span>
+                <small>{o[k] === true ? '확인함' : '체크 안 함'}</small>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </Section>
   );
@@ -305,11 +320,13 @@ export function TracksSection({ sheet }: { sheet: ReleaseSheet }) {
                       <div><dt>프로듀서</dt><dd>{dash(d.producer)}</dd></div>
                       <div><dt>피처링</dt><dd>{dash(d.featuring)}</dd></div>
                       <div style={{ gridColumn: '1 / -1' }}><dt>음원 파일</dt><dd>{[d.audioName, d.audioSpec].filter(Boolean).join(' · ') || s?.asset_kind || '—'}</dd></div>
+                      {s && <div style={{ gridColumn: '1 / -1' }}><dt>서버 측정</dt><dd>{audioSpecs(sheet.track_audio?.[s.id])}</dd></div>}
                     </dl>
                   ) : (
                     <dl className="adm-kv">
                       <div><dt>크레딧</dt><dd>{s?.credits.map(c => ROLE_KO[c.role] ?? c.role).join(', ') || '—'}</dd></div>
                       <div><dt>음원</dt><dd>{s?.asset_kind ?? '—'}</dd></div>
+                      {s && <div><dt>서버 측정</dt><dd>{audioSpecs(sheet.track_audio?.[s.id])}</dd></div>}
                     </dl>
                   )}
                   {d && !d.instrumental && (
