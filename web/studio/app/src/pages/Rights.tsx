@@ -1,5 +1,5 @@
 // 권리·보완 서류 — 라이브 view-rights / renderRights / openRequiredDocForm 대응
-import { FilePicker } from '../components/FilePicker';
+import { FileCard } from '../components/FileCard';
 import { useState } from 'react';
 import { addDoc, useDocs, type DocRecord } from '../store/docs';
 import { MOCK } from '../lib/mode';
@@ -210,13 +210,13 @@ export function Rights() {
               <button type="button" className={`aq-chip${method === 'upload' ? ' is-on' : ''}`} aria-pressed={method === 'upload'} onClick={() => setMethod('upload')}>보유한 서류 첨부</button>
             </div></div>}
             {(method === 'upload' || !(kind in RIGHTS_DOCUMENTS)) && <div className="field">
-              <label htmlFor="aqRequiredFile">증빙 원본 (필요 시)</label>
-              <FilePicker
+              <label htmlFor="aqRequiredFile">증빙 원본 <span className="muted">(필요 시)</span></label>
+              <FileCard
                 id="aqRequiredFile" fileName={file?.name}
                 accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
-                onChange={e => setFile(e.target.files?.[0] || null)}
+                hint="PDF · JPG · PNG · 첨부 전에는 ‘서류 접수 대기’로 표시돼요"
+                onFile={f => setFile(f)}
               />
-              <p className="help">원본 첨부 전에는 ‘서류 접수 대기’로 표시돼요.</p>
             </div>}
             <div className="aq-sticky-foot">
               <button type="submit" className="button studio-submit-wide" disabled={submitting}>
