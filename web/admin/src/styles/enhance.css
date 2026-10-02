@@ -1092,3 +1092,21 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 }
 /* 홈 바로가기 카드: 설명은 한 줄로 맞춰 제목 높이를 가지런히 */
 #view-home .service-item p{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ---------- 콘텐츠 관리(공지·이벤트·점검): 입력칸이 카드 색에 묻히지 않게, 칸 사이는 여유 있게 ---------- */
+.aq-cadmin .field{margin-bottom:20px}
+.aq-cadmin .field>label,.aq-cadmin .aq-cadmin-label{display:block;margin:0 0 8px;font-size:14px;font-weight:750}
+:is(#root,#modal) .aq-cadmin .field :is(input:not([type=checkbox]):not([type=radio]):not([type=file]),textarea,select){
+  background:#fff!important;border:1.5px solid #e1e7f2!important;border-radius:14px!important;
+  transition:border-color .15s ease,box-shadow .15s ease!important}
+:is(#root,#modal) .aq-cadmin .field :is(input,textarea,select):focus{border-color:#3B63F3!important;box-shadow:0 0 0 4px rgba(59,99,243,.12)!important;outline:none}
+.aq-cadmin .field :is(input,textarea)::placeholder{color:#a3adbf}
+/* 긴급 점검 입력: 카드 안에서 단계적으로 */
+.aq-cadmin-emergency-form{margin-top:18px;padding-top:18px;border-top:1px solid rgba(23,27,41,.06);animation:aq-fade-up .28s ease both}
+.aq-cadmin-emergency-form .field:last-of-type{margin-bottom:0}
+.aq-cadmin-chips{gap:8px}
+.aq-cadmin-chip{min-height:42px;padding:0 16px;border:1.5px solid #e1e7f2;background:#fff;transition:border-color .15s ease,background-color .15s ease,color .15s ease}
+.aq-cadmin-emergency-actions{display:grid;grid-template-columns:1fr 1.6fr;gap:10px;margin-top:22px}
+.aq-cadmin-emergency-actions .button{width:100%}
+@media (prefers-reduced-motion:reduce){.aq-cadmin-emergency-form{animation:none}}
+.aq-cadmin-emergency-actions>.button:only-child{grid-column:1/-1}
