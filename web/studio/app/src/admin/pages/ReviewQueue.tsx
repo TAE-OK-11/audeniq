@@ -107,7 +107,12 @@ export function ReviewQueue() {
                   <span>{RELEASE_TYPE[r.release_type] ?? r.release_type}</span>
                   <span>발매 예정 {day(r.release_date)}</span>
                 </span>
-                {r.platforms.length > 0 && <span className="adm-dsps">{r.platforms.map(p => <span key={p}>{dspLabel(p)}</span>)}</span>}
+                {r.platforms.length > 0 && (
+                  <span className="adm-dsps" title={r.platforms.map(dspLabel).join(', ')}>
+                    {r.platforms.slice(0, 4).map(p => <span key={p}>{dspLabel(p)}</span>)}
+                    {r.platforms.length > 4 && <span className="is-more">+{r.platforms.length - 4}</span>}
+                  </span>
+                )}
               </span>
               <span className="adm-row-end">
                 {(() => {
