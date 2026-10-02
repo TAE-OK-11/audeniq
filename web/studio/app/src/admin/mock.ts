@@ -171,6 +171,8 @@ releases.find(r => r.q.id === 'r4d5e6f7')!.sheet.documents.push(documents[0]);
   blue.application.platforms.push('D-27');
   blue.draft!.platforms = [...(blue.draft!.platforms ?? []), 'youtube-cid'];
   Object.assign(blue.draft!.options!, { contentIdExclusiveRightsAck: true, contentIdOriginalRecordingAck: false });
+  // 권리 확인 몇 개를 체크하지 않았다 (요약에서 한 줄로 묶이는지 확인)
+  blue.draft!.rightsChecks = { rightsMaster: true, rightsComposition: false, rightsArtwork: false, rightsConsent: true };
 }
 // 체험: Paper Moon은 배급 준비까지 끝나 플랫폼별 상태가 있다
 {
@@ -264,7 +266,9 @@ export const mockStaff = {
   decide: async (rid: string, i: DecisionInput): Promise<DecisionResult> => {
     const r = find(rid);
     if (!awaiting(r)) fail('RELEASE_NOT_IN_REVIEW');
-    if (!i.reason.trim()) fail('DECISION_REASON_REQUIRED');
+    // 백엔드와 같게: 승인 메모는 선택(비우면 '담당자 승인'), 보완 요청·거절은 사유 필수
+    if (!i.reason.trim() && i.action !== 'APPROVE') fail('DECISION_REASON_REQUIRED');
+    if (!i.reason.trim()) i = { ...i, reason: '담당자 승인' };
     if (r.q.status === 'READY_FOR_DELIVERY') {
       // 자동 검사를 통과한 새 발매 신청: 신청서(계약서)와 발매를 함께 결정
       const next = i.action === 'APPROVE' ? null : i.action === 'REJECT' ? 'WITHDRAWN' : 'STAGE3_CORRECTION';
