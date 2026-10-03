@@ -554,7 +554,7 @@ function ReviewSheet({ id }: { id: string }) {
 
 
           {sheet.open_checks.length > 0 && (
-            <div id="rv-open" className="adm-anchor"><Section title="담당자 확인 필요" meta={`${sheet.open_checks.length}건 · 시스템이 판단을 넘긴 항목`}>
+            <div id="rv-open" className="adm-anchor"><Section title="담당자 확인 필요" meta={`${sheet.open_checks.length}건${sheet.open_checks.some(c => c.needs_second_approval) ? ` · ${sheet.open_checks.every(c => c.needs_second_approval) ? '모두' : '일부'} 2인 승인` : ''}`}>
               <div className="adm-checks">{sheet.open_checks.map(c => <CheckCard key={c.id ?? c.check_code} c={c} open />)}</div>
             </Section></div>
           )}
