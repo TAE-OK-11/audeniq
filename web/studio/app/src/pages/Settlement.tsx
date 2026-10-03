@@ -3,7 +3,6 @@ import { useState } from 'react';
 import { Modal, useModalClose } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
-import { CountUp } from '../components/CountUp';
 import { BankLogo } from '../components/BankLogo';
 import { PaymentSetupModal } from '../components/PaymentSetupModal';
 import { isPaymentRegistered, usePayment } from '../store/payment';
@@ -25,6 +24,7 @@ import { monthKey, todayStr } from '../lib/date';
 import { uid } from '../lib/store';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
+import { Money } from '../components/Money';
 
 const PLATFORMS = ['Spotify', 'Apple Music', 'YouTube Music', '멜론', '지니', 'FLO', '벅스', 'Amazon Music', 'TIDAL', 'Deezer', '기타'];
 
@@ -176,7 +176,7 @@ export function Settlement() {
             <span className="eyebrow">PAYOUT</span>
             <h2 id="settleHeroHeading">요청 전 잔액</h2>
             {left > 0 || total > 0
-              ? <strong className="settle-hero-amount"><CountUp value={left} format={money} /></strong>
+              ? <strong className="settle-hero-amount"><Money value={left} mark animate /></strong>
               : <strong className="settle-hero-amount aq-no-income">{NO_INCOME}</strong>}
             <p className="settle-hero-sub">
               {MOCK ? `기록한 정산액 ${money(total)} · 지급 요청 합계 ${money(used)}` : `확정 정산액 ${money(total)} · 처리 중인 지급 ${money(used)}`}
@@ -227,13 +227,13 @@ export function Settlement() {
             <div className="aq-catalog-cards aq-stagger">
               {orderedStatements.map(s => (
                 <div key={s.id} className="aq-statement-card">
-                  <span className="aq-statement-icon" aria-hidden="true"><Glyph name="won" size={17} /></span>
+                  <span className="aq-statement-icon" aria-hidden="true"><Glyph name="krw" size={17} /></span>
                   <div className="min-0">
                     <span className="row-name">{s.period} · {s.platform}</span>
                     <span className="row-sub">{s.note || (MOCK ? '수기 등록 정산 내역' : '플랫폼 정산')} · {niceDate(s.created)}</span>
                   </div>
                   <div className="aq-statement-end">
-                    <strong>{money(s.amount)}</strong>
+                    <strong><Money value={s.amount} /></strong>
                     {MOCK && <button type="button" className="link-btn" aria-label="정산 내역 삭제" onClick={() => deleteStatement(s.id)}><Glyph name="close" size={14} /></button>}
                   </div>
                 </div>
@@ -257,7 +257,7 @@ export function Settlement() {
                 <div key={p.id} className="aq-statement-card">
                   <span className="aq-statement-icon" aria-hidden="true"><Glyph name="arrow-up-right" size={17} /></span>
                   <div className="min-0">
-                    <span className="row-name">{money(p.amount)} · 지급 요청</span>
+                    <span className="row-name"><Money value={p.amount} /> · 지급 요청</span>
                     <span className="row-sub">{niceDate(p.created)} · {p.note || (MOCK ? '현재 작업 공간에만 기록됨' : '등록한 계좌로 지급')}</span>
                   </div>
                   <div className="aq-statement-end">
@@ -280,7 +280,7 @@ export function Settlement() {
         <Modal title="수익 지급 요청" onClose={() => setShowPayout(false)}>
           <div className="studio-payout-form">
             <p className="eyebrow">지급 요청 가능 금액</p>
-            <strong className="studio-payout-number">{money(left)}</strong>
+            <strong className="studio-payout-number"><Money value={left} mark /></strong>
             <p className="small muted">원하는 금액을 입력하고 받으실 계좌를 확인해 주세요.</p>
             <form id="payoutForm" onSubmit={submitPayout}>
               <div className="field">
