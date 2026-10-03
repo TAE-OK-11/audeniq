@@ -48,12 +48,26 @@ export interface StaffDocument {
   kind: 'AGREEMENT' | 'RIGHTS_PROOF' | string; title: string; status: string; review_note: string | null;
   file_name: string | null; asset_id: string | null; signed_at?: string | null; row_version: number; updated_at: string;
   body?: string; signature?: string; signer_name?: string;
+  /** AUD-DIST 2.0 배급 계약서: 담당자가 입력한 거래 조건 · 서명 때 아티스트가 체크한 확인 항목 */
+  agreement_terms?: AgreementTerms | null;
+  confirmations?: { items: { id: string; text: string; required: boolean; checked: boolean }[]; content_hash: string } | null;
   electronic_record?: {
     document_no: string; rights_holder: string; signer_role: string; content_hash: string;
     /** AUD-RIGHTS 2.0: 권리자가 본인확인 후 직접 서명 */
     form?: string; channel?: 'LINK' | 'IN_PERSON'; certificate_hash?: string;
     identity?: { provider: string; method: string; name: string; verified_at: string };
   } | null;
+}
+export interface AgreementTermsInput {
+  exclusivity: 'NON_EXCLUSIVE' | 'EXCLUSIVE';
+  /** AUDENIQ 몫 (bp, 800 = 8%) */
+  fee_bps: number;
+  rate_note: string; territory_note: string; min_payout_note: string; special_terms: string;
+}
+export interface AgreementTerms extends AgreementTermsInput {
+  form: string; terms_version: string; user_bps: number; currency: string;
+  confirmations: { id: string; text: string; required: boolean }[];
+  required: string[]; set_by?: string; set_at?: string;
 }
 export interface StagingRow {
   package_id: string; dsp: string; readiness: string; approval: string;
@@ -220,6 +234,9 @@ const remote = {
   release: (rid: string) => req<ReleaseSheet>(`/api/staff/releases/${id(rid)}`),
   timeline: (rid: string, limit = 100) => req<ReleaseTimeline>(`/api/staff/releases/${id(rid)}/timeline${qs({ limit })}`),
   decide: (rid: string, body: DecisionInput) => req<DecisionResult>(`/api/staff/releases/${id(rid)}/decision`, { method: 'POST', body }),
+  /** 배급 계약 조건 입력 (승인 전에) — 서버가 계약서 본문을 다시 만든다 */
+  agreementTerms: (rid: string, body: AgreementTermsInput) =>
+    req<{ id: string; row_version: number; terms: AgreementTerms; body: string }>(`/api/staff/releases/${id(rid)}/agreement-terms`, { method: 'PUT', body }),
   /** 심사 담당하기 (ADMIN은 takeOver로 다른 담당자 건을 넘겨받기) / 담당 내려놓기 */
   claim: (rid: string, takeOver = false) => req<{ release_id: string; claimed_by: string }>(`/api/staff/releases/${id(rid)}/claim`, { method: 'POST', body: { take_over: takeOver } }),
   unclaim: (rid: string) => req<{ release_id: string; claimed_by: null }>(`/api/staff/releases/${id(rid)}/claim`, { method: 'DELETE' }),

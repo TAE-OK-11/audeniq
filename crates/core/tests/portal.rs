@@ -1534,3 +1534,162 @@ async fn portal_writes_need_csrf_and_document_uploads_accept_pdf(pool: PgPool) {
     .await;
     assert_eq!(s, StatusCode::FORBIDDEN);
 }
+
+#[sqlx::test]
+async fn distribution_agreement_needs_staff_terms_and_artist_confirmations(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let release = create(&app, &u, "releases").await;
+    sqlx::query("UPDATE catalog.releases SET draft = draft || $2, row_version = row_version + 1 WHERE id=$1")
+        .bind(release)
+        .bind(json!({"artist": "서린", "platforms": ["spotify"], "territories": ["WORLD"], "options": {"shared": true}}))
+        .execute(&pool)
+        .await
+        .unwrap();
+    let app_body = json!({
+        "application_no":"AUD-20261003-ABCDEF","form":"AUD-DIST-APP 1.0","content_hash":"ab".repeat(32),"signer_name":"서린",
+        "signer_role":"아티스트 본인","agreements":["truth","terms","privacy","esign"],"signature":SIG,"submitted_at":"2026-10-03 09:00"
+    });
+    let (s, _, v) = call(
+        &app,
+        "POST",
+        &org_path(&u, &format!("/releases/{release}/application")),
+        app_body,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+
+    // Only staff with the review duty set the commercial terms.
+    let terms_path = format!("/api/staff/releases/{release}/agreement-terms");
+    let terms = json!({"exclusivity":"NON_EXCLUSIVE","fee_bps":800,"rate_note":"프로모션 요율","territory_note":"","min_payout_note":"","special_terms":""});
+    assert_eq!(
+        call(&app, "PUT", &terms_path, terms.clone(), Some(&u))
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    let staff = user(&app).await;
+    sqlx::query("INSERT INTO identity.staff_members(user_id,role,status,granted_by) VALUES($1,'REVIEWER','ACTIVE','test')")
+        .bind(staff.user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut bad = terms.clone();
+    bad["fee_bps"] = json!(10_001);
+    assert_eq!(
+        call(&app, "PUT", &terms_path, bad, Some(&staff)).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    let (s, _, set) = call(&app, "PUT", &terms_path, terms, Some(&staff)).await;
+    assert_eq!(s, StatusCode::OK, "{set}");
+    let body = set["body"].as_str().unwrap();
+    assert!(
+        body.contains("서식 AUD-DIST 2.0")
+            && body.contains("회사 8% / 이용자 92%")
+            && body.contains("Spotify"),
+        "{body}"
+    );
+    assert!(
+        body.contains("(대표권리자)"),
+        "co-owned release gets the representative article"
+    );
+    let required: Vec<String> = set["terms"]["required"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x.as_str().unwrap().to_string())
+        .collect();
+    assert!(required.contains(&"representative".to_string()));
+    assert!(!required.contains(&"settlement_authority".to_string()));
+
+    // Staff approve (the decision path is covered elsewhere), the artist reads.
+    let (_, _, docs) = call(
+        &app,
+        "GET",
+        &org_path(&u, "/documents"),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    let doc = docs["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["kind"] == "AGREEMENT")
+        .unwrap()
+        .clone();
+    assert_eq!(doc["agreement_terms"]["fee_bps"], 800);
+    let id = doc["id"].as_str().unwrap().to_string();
+    sqlx::query("UPDATE portal.documents SET status='APPROVED' WHERE id=$1::uuid")
+        .bind(&id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (_, _, v) = call(
+        &app,
+        "POST",
+        &org_path(&u, &format!("/documents/{id}/check")),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    let rv = v["row_version"].as_i64().unwrap();
+    let sign_path = org_path(&u, &format!("/documents/{id}/sign"));
+    // Without every required confirmation there is no signature.
+    let (s, _, v) = call(&app, "POST", &sign_path, json!({"signer_name":"서린","signature":SIG,"row_version":rv,"confirmations":required[1..]}), Some(&u)).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(v["error"]["code"], "AGREEMENT_CONFIRMATION_REQUIRED");
+    let (s, _, v) = call(
+        &app,
+        "POST",
+        &sign_path,
+        json!({"signer_name":"서린","signature":SIG,"row_version":rv,"confirmations":["ai_voice"]}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST, "{v}");
+    let (s, _, v) = call(
+        &app,
+        "POST",
+        &sign_path,
+        json!({"signer_name":"서린","signature":SIG,"row_version":rv,"confirmations":required}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (_, _, docs) = call(
+        &app,
+        "GET",
+        &org_path(&u, "/documents"),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    let doc = docs["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["id"] == id.as_str())
+        .unwrap();
+    assert_eq!(doc["status"], "SIGNED");
+    let items = doc["confirmations"]["items"].as_array().unwrap();
+    assert!(
+        items
+            .iter()
+            .find(|i| i["id"] == "settlement_authority")
+            .unwrap()["checked"]
+            == false
+    );
+    assert!(doc["confirmations"]["content_hash"].as_str().unwrap().len() == 64);
+    // A signed agreement's terms can no longer be changed.
+    let (_, _, v) = call(
+        &app,
+        "PUT",
+        &terms_path,
+        json!({"exclusivity":"EXCLUSIVE","fee_bps":2000}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "AGREEMENT_NOT_IN_REVIEW");
+}

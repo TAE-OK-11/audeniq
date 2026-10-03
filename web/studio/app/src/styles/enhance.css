@@ -1696,3 +1696,29 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-sign-page .field input:focus,.aq-sign-page .field textarea:focus{outline:2px solid var(--aq-e-blue);outline-offset:-2px}
 .aq-sign-page .aq-rights-pad{margin:0 0 14px}
 .aq-sign-page .aq-pad,.aq-sign-page .aq-pad canvas{background:#fff!important;border-radius:20px}
+
+/* 이용약관 (/terms) */
+.aq-terms-page{min-height:100dvh;background:#fff;max-width:760px;margin:0 auto;padding:20px 16px 64px;box-sizing:border-box}
+.aq-terms{background:#f5f8ff;border-radius:28px;padding:26px 22px 30px;line-height:1.75;color:#2f3646}
+.aq-terms h1{margin:4px 0 6px;font-size:24px;letter-spacing:-.04em;color:var(--aq-e-ink)}
+.aq-terms-meta{margin:0 0 16px;font-size:13px;color:#66738a}
+.aq-terms-toc{position:sticky;top:8px;z-index:2;display:flex;gap:8px;margin:0 0 18px}
+.aq-terms-toc select{flex:1;min-width:0;min-height:46px;padding:0 14px;border:0;border-radius:14px;background:#fff;font:inherit;font-size:14px;color:var(--aq-e-ink);box-shadow:0 6px 18px -12px rgba(24,39,75,.3)}
+.aq-terms-toc .button{flex:none;min-height:46px!important}
+.aq-terms h2{margin:30px 0 8px;padding-top:6px;font-size:18px;font-weight:820;letter-spacing:-.03em;color:var(--aq-e-blue);scroll-margin-top:72px}
+.aq-terms h3{margin:20px 0 4px;font-size:15px;font-weight:800;color:var(--aq-e-ink);scroll-margin-top:72px}
+.aq-terms p{margin:6px 0;font-size:14px}
+.aq-terms ol{margin:6px 0 10px;padding-left:22px;font-size:14px}
+.aq-terms li{margin:2px 0}
+.aq-terms-back{text-align:center;margin-top:18px}
+.aq-inline-link{color:var(--aq-e-blue);font-weight:750;text-decoration:underline;text-underline-offset:3px}
+@media print{.aq-terms-toc,.aq-terms-back,.aq-sign-top span{display:none!important}.aq-terms{background:#fff;padding:0}}
+
+/* 배급 계약서 서명: 권리·배급 권한 확인 체크 */
+.aq-confirm-boxes{display:grid;gap:10px;margin:4px 0 16px;padding:16px;border:0;border-radius:20px;background:#f5f8ff}
+.aq-confirm-boxes legend{float:left;width:100%;margin:0 0 4px;padding:0;font-size:14px;font-weight:800;color:var(--aq-e-ink)}
+.aq-confirm-boxes legend small{display:block;margin-top:2px;font-size:12px;font-weight:650;color:#8792a8}
+.aq-confirm-boxes .check-line span{font-size:13px;line-height:1.6}
+.aq-confirm-boxes b{color:var(--aq-e-blue);font-weight:800}
+.aq-confirm-all{padding-bottom:10px;border-bottom:1px solid #e3e9f4}
+.aq-confirm-all span{font-weight:800}

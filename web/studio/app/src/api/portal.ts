@@ -162,6 +162,8 @@ interface ServerDocument {
   body: string; status: string; review_note: string; asset_id: string | null; file_name: string; checked_at: string | null;
   signer_name: string; signature: string; signed_at: string | null; row_version: number; created_at: string; updated_at: string;
   electronic_record?: import('../lib/rightsDocument').ElectronicRightsRecord | null;
+  agreement_terms?: DocRecord['agreementTerms'];
+  confirmations?: DocRecord['confirmations'];
 }
 
 const DOC_STATUS: Record<string, DocRecord['reviewStatus']> = {
@@ -182,6 +184,8 @@ function toDoc(d: ServerDocument): DocRecord {
     signerName: d.signer_name, localSignatureData: d.signature, localSignatureAt: stamp(d.signed_at),
     rowVersion: d.row_version,
     electronic: d.electronic_record,
+    agreementTerms: d.agreement_terms ?? null,
+    confirmations: d.confirmations ?? null,
   };
 }
 
@@ -196,9 +200,9 @@ export async function checkDocument(id: string): Promise<number> {
   return r.row_version;
 }
 
-export async function signDocument(id: string, signerName: string, signature: string, rowVersion: number): Promise<void> {
+export async function signDocument(id: string, signerName: string, signature: string, rowVersion: number, confirmations: string[] = []): Promise<void> {
   await req(orgPath(`/documents/${encodeURIComponent(id)}/sign`), {
-    method: 'POST', body: { signer_name: signerName, signature, row_version: rowVersion },
+    method: 'POST', body: { signer_name: signerName, signature, row_version: rowVersion, confirmations },
   });
 }
 

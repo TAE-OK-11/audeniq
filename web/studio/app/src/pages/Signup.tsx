@@ -104,7 +104,7 @@ export function Signup() {
           </label>
           <label className="check-row">
             <input type="checkbox" checked={agreeTerms} onChange={e => setAgreeTerms(e.target.checked)} />
-            <span>이용약관에 동의합니다. (필수)</span>
+            <span><a href="/terms" target="_blank" rel="noopener" className="aq-inline-link">AUDENIQ 음원 배급 서비스 이용약관</a>에 동의합니다. (필수)</span>
           </label>
           <label className="check-row">
             <input type="checkbox" checked={agreePrivacy} onChange={e => setAgreePrivacy(e.target.checked)} />
