@@ -105,7 +105,7 @@ export function TimelineRow({ item: t, repeat = 1 }: { item: ReleaseTimelineItem
     summary = typeof t.detail.outcome === 'string' ? OUTCOME[t.detail.outcome] ?? t.detail.outcome : '';
   }
   const actor = t.source === 'audit'
-    ? (typeof t.detail.actor_service === 'string' ? '시스템' : typeof t.detail.actor_user_id === 'string' ? (kind === 'staff' ? `담당자 ${shortId(t.detail.actor_user_id)}` : '아티스트') : '')
+    ? (typeof t.detail.actor_service === 'string' ? '시스템' : typeof t.detail.actor_user_id === 'string' ? (kind === 'staff' ? shortId(t.detail.actor_user_id) : '아티스트') : '')
     : '';
   return <li className={['is-' + kind, tone(t) && `is-${tone(t)}`].filter(Boolean).join(' ')}>
     <i aria-hidden="true" />
