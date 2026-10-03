@@ -62,7 +62,7 @@ export function ApplicationSection({ sheet }: { sheet: ReleaseSheet }) {
           <div><dt>신청인</dt><dd>{dash(app?.signerName ?? signed?.signer_name)}</dd></div>
           <div><dt>구분</dt><dd>{dash(app?.signerRole ?? signed?.signer_role)}</dd></div>
           <div><dt>접수</dt><dd>{when(signed?.received_at) || dash(app?.submittedAt)}</dd></div>
-          <div><dt>연락 이메일</dt><dd>{dash(signed?.contact_email)}</dd></div>
+          <div className="adm-kv-wide"><dt>연락 이메일</dt><dd>{dash(signed?.contact_email)}</dd></div>
         </dl>
         <div className="adm-appdoc-foot">
           {signature && !sigBroken
