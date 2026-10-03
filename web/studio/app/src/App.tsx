@@ -44,6 +44,7 @@ const Upload = lazyPage(pageLoaders.Upload, m => m.Upload);
 const Reports = lazyPage(pageLoaders.Reports, m => m.Reports);
 const Settlement = lazyPage(pageLoaders.Settlement, m => m.Settlement);
 const Contracts = lazyPage(pageLoaders.Contracts, m => m.Contracts);
+const Agreement = lazyPage(pageLoaders.Agreement, m => m.Agreement);
 const Rights = lazyPage(pageLoaders.Rights, m => m.Rights);
 const RightsDocument = lazyPage(pageLoaders.RightsDocument, m => m.RightsDocument);
 const Inquiries = lazyPage(pageLoaders.Inquiries, m => m.Inquiries);
@@ -106,6 +107,7 @@ function PortalRoutes() {
             <Route path="/reports" element={<Reports />} />
             <Route path="/settlement" element={<Settlement />} />
             <Route path="/contracts" element={<Contracts />} />
+            <Route path="/contracts/:id" element={<Agreement />} />
             <Route path="/rights" element={<Rights />} />
             <Route path="/rights/:id" element={<RightsDocument />} />
             <Route path="/inquiries" element={<Inquiries />} />
