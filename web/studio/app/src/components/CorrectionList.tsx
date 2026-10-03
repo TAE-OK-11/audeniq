@@ -3,13 +3,17 @@ import type { Correction } from '../api/types';
 import { Glyph } from './Glyph';
 import { correctionWhere, fixPath, resolveCorrection } from '../lib/corrections';
 
-/** 담당자의 전체 의견 — 고칠 항목이 아니라 참고할 말이라 버튼 없이 인용처럼 보여 준다 */
+/** 담당자의 전체 의견 — 고칠 항목이 아니라 참고할 말이라 버튼 없이 말풍선 카드로 보여 준다 */
 export function ReviewNote({ text }: { text: string }) {
   return (
-    <div className="aq-review-note">
-      <span className="aq-review-note-label">담당자 의견</span>
-      <p>{text}</p>
-    </div>
+    <figure className="aq-review-note">
+      <figcaption className="aq-review-note-head">
+        <span className="aq-review-note-mark" aria-hidden="true"><Glyph name="inquiry" size={15} /></span>
+        <span className="aq-review-note-label">담당자 의견</span>
+        <span className="aq-review-note-by">AUDENIQ 검토팀</span>
+      </figcaption>
+      <blockquote><p>{text}</p></blockquote>
+    </figure>
   );
 }
 
