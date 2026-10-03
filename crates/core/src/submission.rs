@@ -2410,7 +2410,7 @@ pub async fn precheck_asset(
     if state != "REGISTERED" || kind != "AUDIO" {
         return Ok(false);
     }
-    crate::upload_safety::require_verified(&pool, org, aid).await?;
+    crate::upload_safety::require_verified(pool, org, aid).await?;
     let key: String = row.get("object_key");
     let content_type: String = row.get("content_type");
     let size: i64 = row.get("size_bytes");

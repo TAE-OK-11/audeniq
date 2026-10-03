@@ -69,10 +69,13 @@ async fn reply(stream: &mut tokio::net::UnixStream) -> Result<String> {
 }
 
 pub async fn scan(path: &Path, expected_size: u64) -> Result<()> {
+    scan_on(path, expected_size, &socket()).await
+}
+
+async fn scan_on(path: &Path, expected_size: u64, socket: &Path) -> Result<()> {
     tokio::time::timeout(Duration::from_secs(120), async {
-        let socket = socket();
-        fresh(&socket).await?;
-        let mut stream = tokio::net::UnixStream::connect(&socket)
+        fresh(socket).await?;
+        let mut stream = tokio::net::UnixStream::connect(socket)
             .await
             .map_err(|_| Error::UploadBusy)?;
         stream
@@ -162,4 +165,116 @@ pub async fn require_verified(
         return Err(Error::PolicyGate("UPLOAD_REINSPECTION_REQUIRED"));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn fake_scan(verdict: &str) -> ErrorOrSuccess {
+        let workspace = Workspace::new().unwrap();
+        let socket = workspace.0.join("scan.sock");
+        let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+        let source = workspace.0.join("source");
+        let bytes = b"the exact frozen bytes";
+        tokio::fs::write(&source, bytes).await.unwrap();
+        let verdict = verdict.to_string();
+        let daemon = tokio::spawn(async move {
+            let (mut version, _) = listener.accept().await.unwrap();
+            let mut command = [0; 9];
+            version.read_exact(&mut command).await.unwrap();
+            assert_eq!(&command, b"zVERSION\0");
+            let timestamp = chrono::Utc::now();
+            let date = timestamp.format("%a %b %e %H:%M:%S %Y");
+            version
+                .write_all(format!("ClamAV test/1/{date}\0").as_bytes())
+                .await
+                .unwrap();
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut command = [0; 10];
+            stream.read_exact(&mut command).await.unwrap();
+            assert_eq!(&command, b"zINSTREAM\0");
+            let mut actual = Vec::new();
+            loop {
+                let n = stream.read_u32().await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                assert!(n <= 65536);
+                let mut chunk = vec![0; n as usize];
+                stream.read_exact(&mut chunk).await.unwrap();
+                actual.extend_from_slice(&chunk);
+            }
+            assert_eq!(actual, bytes);
+            stream
+                .write_all(format!("{verdict}\0").as_bytes())
+                .await
+                .unwrap();
+        });
+        let result = scan_on(&source, bytes.len() as u64, &socket).await;
+        daemon.await.unwrap();
+        match result {
+            Ok(()) => ErrorOrSuccess::Ok,
+            Err(Error::PolicyGate(code)) => ErrorOrSuccess::Rejected(code),
+            Err(Error::UploadBusy) => ErrorOrSuccess::Unavailable,
+            Err(_) => panic!("unexpected scan error"),
+        }
+    }
+    #[derive(Debug, PartialEq)]
+    enum ErrorOrSuccess {
+        Ok,
+        Rejected(&'static str),
+        Unavailable,
+    }
+
+    #[tokio::test]
+    async fn scanner_streams_exact_bytes_and_accepts_only_explicit_clean_verdict() {
+        assert_eq!(fake_scan("stream: OK").await, ErrorOrSuccess::Ok);
+        assert_eq!(
+            fake_scan("stream: Eicar-Test-Signature FOUND").await,
+            ErrorOrSuccess::Rejected("UPLOAD_UNSAFE_FILE")
+        );
+        for reply in [
+            "stream: size limit exceeded ERROR",
+            "stream: unknown",
+            "OK",
+            "stream: OK\n",
+        ] {
+            assert_eq!(fake_scan(reply).await, ErrorOrSuccess::Unavailable);
+        }
+    }
+
+    #[tokio::test]
+    async fn absent_or_stale_scanner_is_fail_closed() {
+        let workspace = Workspace::new().unwrap();
+        assert!(matches!(
+            scan_on(
+                &workspace.0.join("source"),
+                1,
+                &workspace.0.join("missing.sock")
+            )
+            .await,
+            Err(Error::UploadBusy)
+        ));
+        for age in [chrono::Duration::days(4), chrono::Duration::days(-1)] {
+            let socket = workspace.0.join(format!("{}.sock", uuid::Uuid::new_v4()));
+            let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+            let task = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut buf = [0; 9];
+                stream.read_exact(&mut buf).await.unwrap();
+                let timestamp = chrono::Utc::now() - age;
+                let date = timestamp.format("%a %b %e %H:%M:%S %Y");
+                stream
+                    .write_all(format!("ClamAV test/1/{date}\0").as_bytes())
+                    .await
+                    .unwrap();
+            });
+            assert!(matches!(
+                scan_on(&workspace.0.join("source"), 1, &socket).await,
+                Err(Error::UploadBusy)
+            ));
+            task.await.unwrap();
+        }
+    }
 }
