@@ -48,7 +48,12 @@ export interface StaffDocument {
   kind: 'AGREEMENT' | 'RIGHTS_PROOF' | string; title: string; status: string; review_note: string | null;
   file_name: string | null; asset_id: string | null; signed_at?: string | null; row_version: number; updated_at: string;
   body?: string; signature?: string; signer_name?: string;
-  electronic_record?: { document_no: string; rights_holder: string; signer_role: string; content_hash: string } | null;
+  electronic_record?: {
+    document_no: string; rights_holder: string; signer_role: string; content_hash: string;
+    /** AUD-RIGHTS 2.0: 권리자가 본인확인 후 직접 서명 */
+    form?: string; channel?: 'LINK' | 'IN_PERSON'; certificate_hash?: string;
+    identity?: { provider: string; method: string; name: string; verified_at: string };
+  } | null;
 }
 export interface StagingRow {
   package_id: string; dsp: string; readiness: string; approval: string;

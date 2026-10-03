@@ -713,6 +713,12 @@ pub struct ElectronicRightsInput {
     pub consent: bool,
 }
 
+/// Legacy direct signing (form 1.0) stays readable but is closed for new
+/// documents unless an operator explicitly reopens it (`LEGACY_DIRECT_SIGNING=1`).
+fn legacy_electronic_allowed() -> bool {
+    std::env::var("LEGACY_DIRECT_SIGNING").as_deref() == Ok("1")
+}
+
 /// Artist-initiated rights proof for one of their releases (licence, consent
 /// letter). With a file it goes straight to review; without one it waits.
 pub async fn create_document(
@@ -732,6 +738,12 @@ pub async fn create_document(
     member(&mut tx, a, org, true).await?;
     auth::authorize(&mut tx, a, org, i.release_id, "release", true).await?;
     if let Some(e) = &i.electronic {
+        // Form 1.0 was signed on the submitter's device without verifying who
+        // signed. New signed documents come only from a verified signing
+        // request (crate::signing, form 2.0).
+        if e.form != "AUD-RIGHTS 1.0" || !legacy_electronic_allowed() {
+            return Err(Error::InvalidCode("SIGNING_REQUEST_REQUIRED"));
+        }
         if i.asset_id.is_some()
             || !file.is_empty()
             || !e.consent

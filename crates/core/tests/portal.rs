@@ -203,72 +203,266 @@ fn org_path(u: &User, p: &str) -> String {
 const SIG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
 #[sqlx::test]
-async fn electronic_rights_are_signed_without_upload_and_remain_separate_from_approval(
-    pool: PgPool,
-) {
+async fn legacy_direct_electronic_rights_are_refused(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let release = create(&app, &u, "releases").await;
+    let input = json!({"release_id": release, "title": "Cover permission", "body": "Original / digital distribution / Writer",
+        "asset_id": null, "file_name": "", "electronic": {"document_no": Uuid::new_v4(), "form": "AUD-RIGHTS 1.0",
+        "document_kind": "composition", "rights_holder": "Writer", "signer_name": "Writer", "signer_role": "권리자 본인", "signature": SIG, "consent": true}});
+    let (status, _, body) = call(&app, "POST", &org_path(&u, "/documents"), input, Some(&u)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"]["code"], "SIGNING_REQUEST_REQUIRED");
+}
+
+fn signing_input(release: Uuid, receipt: Uuid, channel: &str) -> Value {
+    json!({"release_id": release, "document_no": receipt, "document_kind": "composition",
+        "title": "Draft · 작사·작곡 및 커버곡 이용 허락서", "body": "허락서 본문\n1. 이용 허락",
+        "rights_holder": "홍길동", "signer_name": "홍길동", "signer_role": "권리자 본인", "channel": channel})
+}
+
+#[sqlx::test]
+async fn rights_holder_signs_after_identity_verification(pool: PgPool) {
     let (app, _) = app(pool.clone()).await;
     let u = user(&app).await;
     let release = create(&app, &u, "releases").await;
     let receipt = Uuid::new_v4();
-    let input = json!({"release_id": release, "title": "Cover permission", "body": "Original / digital distribution / Writer",
-        "asset_id": null, "file_name": "", "electronic": {"document_no": receipt, "form": "AUD-RIGHTS 1.0",
-        "document_kind": "composition", "rights_holder": "Writer", "signer_name": "Writer", "signer_role": "권리자 본인", "signature": SIG, "consent": true}});
-    let path = org_path(&u, "/documents");
-    let (a, b) = tokio::join!(
-        call(&app, "POST", &path, input.clone(), Some(&u)),
-        call(&app, "POST", &path, input.clone(), Some(&u))
+    let path = org_path(&u, "/signing-requests");
+    let (s, _, created) = call(
+        &app,
+        "POST",
+        &path,
+        signing_input(release, receipt, "LINK"),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{created}");
+    let token = created["token"].as_str().unwrap().to_string();
+    assert_eq!(token.len(), 64);
+    // Same receipt + same text: the open request gets a fresh link, the old one stops.
+    let (s, _, again) = call(
+        &app,
+        "POST",
+        &path,
+        signing_input(release, receipt, "LINK"),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{again}");
+    assert_eq!(again["id"], created["id"]);
+    let old = token;
+    let token = again["token"].as_str().unwrap().to_string();
+    assert_eq!(
+        call(&app, "GET", &format!("/api/sign/{old}"), Value::Null, None)
+            .await
+            .0,
+        StatusCode::NOT_FOUND
     );
-    assert_eq!(a.0, StatusCode::OK, "{}", a.2);
-    assert_eq!(b.0, StatusCode::OK, "{}", b.2);
-    assert_eq!(a.2["id"], b.2["id"]);
-    let id = a.2["id"].as_str().unwrap();
-    let (_, _, listed) = call(&app, "GET", &path, Value::Null, Some(&u)).await;
-    let doc = &listed["items"][0];
-    assert_eq!(doc["status"], "REVIEW");
-    assert!(doc["asset_id"].is_null());
-    assert_eq!(doc["signature"], SIG);
-    assert!(doc["signed_at"].is_string());
-    assert!(doc["checked_at"].is_string());
-    let hash = audeniq_core::domain::digest(
-        &json!({"title":"Cover permission","body":"Original / digital distribution / Writer",
-        "document_no":receipt,"form":"AUD-RIGHTS 1.0","document_kind":"composition","rights_holder":"Writer",
-        "signer_name":"Writer","signer_role":"권리자 본인","signature":SIG}),
-    );
-    assert_eq!(doc["electronic_record"]["content_hash"], hash);
-    let mut changed = input.clone();
-    changed["body"] = json!("Changed scope");
+    let mut changed = signing_input(release, receipt, "LINK");
+    changed["body"] = json!("다른 본문");
     assert_eq!(
         call(&app, "POST", &path, changed, Some(&u)).await.0,
         StatusCode::CONFLICT
     );
-    let mut no_consent = input.clone();
-    no_consent["electronic"]["consent"] = json!(false);
-    assert_eq!(
-        call(&app, "POST", &path, no_consent, Some(&u)).await.0,
-        StatusCode::BAD_REQUEST
-    );
+    // Another org cannot open requests on this release.
     let other = user(&app).await;
     assert_eq!(
         call(
             &app,
             "POST",
-            &org_path(&other, "/documents"),
-            input,
+            &org_path(&other, "/signing-requests"),
+            signing_input(release, Uuid::new_v4(), "LINK"),
             Some(&other)
         )
         .await
         .0,
         StatusCode::FORBIDDEN
     );
-    let (_, _, denied) = call(
+
+    // The signer reads it without an account.
+    let sign = format!("/api/sign/{token}");
+    let (s, _, view) = call(&app, "GET", &sign, Value::Null, None).await;
+    assert_eq!(s, StatusCode::OK, "{view}");
+    assert_eq!(view["status"], "PENDING");
+    assert_eq!(view["signer_name"], "홍길동");
+    assert!(view["signature"].is_null());
+
+    // No provider configured: nobody can verify, so nobody can sign.
+    // SAFETY: the provider variable is only read by the signing endpoints of this test.
+    unsafe { std::env::remove_var("IDENTITY_PROVIDER") };
+    let (s, _, e) = call(
         &app,
         "POST",
-        &org_path(&u, &format!("/documents/{id}/proof")),
-        json!({"asset_id":Uuid::new_v4(),"file_name":"replace.pdf","row_version":0}),
+        &format!("{sign}/identity"),
+        json!({"transaction_id": "test:홍길동:1990-01-01"}),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(e["error"]["code"], "IDENTITY_PROVIDER_NOT_CONFIGURED");
+    let consents = json!({"document": true, "electronic_signature": true, "privacy": true});
+    let (_, _, e) = call(
+        &app,
+        "POST",
+        &format!("{sign}/sign"),
+        json!({"signature": SIG, "consents": consents}),
+        None,
+    )
+    .await;
+    assert_eq!(e["error"]["code"], "IDENTITY_NOT_VERIFIED");
+
+    unsafe { std::env::set_var("IDENTITY_PROVIDER", "test") };
+    // A different person cannot verify as the named signer.
+    let (_, _, e) = call(
+        &app,
+        "POST",
+        &format!("{sign}/identity"),
+        json!({"transaction_id": "test:김철수:1990-01-01"}),
+        None,
+    )
+    .await;
+    assert_eq!(e["error"]["code"], "IDENTITY_NAME_MISMATCH");
+    let (s, _, v) = call(
+        &app,
+        "POST",
+        &format!("{sign}/identity"),
+        json!({"transaction_id": "test:홍 길동:1990-01-01"}),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["status"], "VERIFIED");
+    // All three consents are required.
+    let (_, _, e) = call(&app, "POST", &format!("{sign}/sign"),
+        json!({"signature": SIG, "consents": {"document": true, "electronic_signature": true, "privacy": false}}), None).await;
+    assert_eq!(e["error"]["code"], "SIGNING_CONSENT_REQUIRED");
+    let (s, _, signed) = call(
+        &app,
+        "POST",
+        &format!("{sign}/sign"),
+        json!({"signature": SIG, "consents": consents}),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{signed}");
+    assert_eq!(signed["status"], "SIGNED");
+    // Signing twice is refused; the signed copy stays readable with its evidence.
+    let (_, _, e) = call(
+        &app,
+        "POST",
+        &format!("{sign}/sign"),
+        json!({"signature": SIG, "consents": consents}),
+        None,
+    )
+    .await;
+    assert_eq!(e["error"]["code"], "SIGNING_REQUEST_CLOSED");
+    let (_, _, copy) = call(&app, "GET", &sign, Value::Null, None).await;
+    assert_eq!(copy["status"], "SIGNED");
+    assert_eq!(copy["signature"], SIG);
+    assert_eq!(copy["certificate_hash"], signed["certificate_hash"]);
+    let events: Vec<&str> = copy["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["event"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        events,
+        [
+            "CREATED",
+            "LINK_REISSUED",
+            "VIEWED",
+            "IDENTITY_FAILED",
+            "IDENTITY_VERIFIED",
+            "SIGNED"
+        ]
+    );
+
+    // The document waits for AUDENIQ review, linked to the verified signer.
+    let (_, _, listed) = call(
+        &app,
+        "GET",
+        &org_path(&u, "/documents"),
+        Value::Null,
         Some(&u),
     )
     .await;
-    assert_eq!(denied["error"]["code"], "DOCUMENT_NOT_EDITABLE");
+    let doc = listed["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["id"] == signed["document_id"])
+        .unwrap();
+    assert_eq!(doc["status"], "REVIEW");
+    assert_eq!(doc["signature"], SIG);
+    let record = &doc["electronic_record"];
+    assert_eq!(record["form"], "AUD-RIGHTS 2.0");
+    assert_eq!(record["certificate_hash"], signed["certificate_hash"]);
+    assert_eq!(record["identity"]["name"], "홍 길동");
+    assert!(
+        record["identity"]["birth_date"].is_null(),
+        "birth date stays out of the document"
+    );
+    let (_, _, requests) = call(&app, "GET", &path, Value::Null, Some(&u)).await;
+    assert_eq!(requests["items"][0]["status"], "SIGNED");
+    assert!(requests["items"][0]["identity"]["verified_at"].is_string());
+
+    // Evidence rows cannot be rewritten.
+    let edited = sqlx::query("UPDATE portal.signing_events SET event='VIEWED'")
+        .execute(&pool)
+        .await;
+    assert!(edited.is_err());
+
+    // Decline and cancel close a request.
+    let (_, _, second) = call(
+        &app,
+        "POST",
+        &path,
+        signing_input(release, Uuid::new_v4(), "IN_PERSON"),
+        Some(&u),
+    )
+    .await;
+    let t2 = second["token"].as_str().unwrap();
+    let (s, _, d) = call(
+        &app,
+        "POST",
+        &format!("/api/sign/{t2}/decline"),
+        json!({"reason": "지분 비율이 달라요"}),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{d}");
+    let (_, _, e) = call(
+        &app,
+        "POST",
+        &format!("/api/sign/{t2}/identity"),
+        json!({"transaction_id": "test:홍길동:1990-01-01"}),
+        None,
+    )
+    .await;
+    assert_eq!(e["error"]["code"], "SIGNING_REQUEST_CLOSED");
+    let (_, _, third) = call(
+        &app,
+        "POST",
+        &path,
+        signing_input(release, Uuid::new_v4(), "LINK"),
+        Some(&u),
+    )
+    .await;
+    let id3 = third["id"].as_str().unwrap();
+    let (s, _, c) = call(
+        &app,
+        "POST",
+        &org_path(&u, &format!("/signing-requests/{id3}/cancel")),
+        json!({}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{c}");
+    let t3 = third["token"].as_str().unwrap();
+    let (_, _, v3) = call(&app, "GET", &format!("/api/sign/{t3}"), Value::Null, None).await;
+    assert_eq!(v3["status"], "CANCELLED");
+    unsafe { std::env::remove_var("IDENTITY_PROVIDER") };
 }
 
 #[sqlx::test]

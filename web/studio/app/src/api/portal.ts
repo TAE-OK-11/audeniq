@@ -213,22 +213,6 @@ export async function createDocument(releaseId: string, title: string, body: str
 
 /** The route arrives with the signed-document API. 401/403 indicate that it
  * exists even when the caller is an artist rather than content ADMIN. */
-export async function electronicRightsAvailable(): Promise<boolean> {
-  try {
-    const response = await fetch('/api/staff/content-access', {
-      credentials: 'include', cache: 'no-store', signal: AbortSignal.timeout(8000),
-    });
-    return [200, 401, 403].includes(response.status);
-  } catch { return false; }
-}
-
-export async function createElectronicDocument(releaseId: string, title: string, body: string, electronic: import('../lib/rightsDocument').ElectronicRightsInput): Promise<string> {
-  const r = await req<{ id: string }>(orgPath('/documents'), {
-    method: 'POST', body: { release_id: releaseId, title, body, asset_id: null, file_name: '', electronic },
-  });
-  return r.id;
-}
-
 export async function submitProof(id: string, file: File, rowVersion: number, onProgress?: (r: number) => void): Promise<void> {
   const up = await remoteApi.uploadFile(file, 'DOCUMENT', onProgress);
   await req(orgPath(`/documents/${encodeURIComponent(id)}/proof`), {
