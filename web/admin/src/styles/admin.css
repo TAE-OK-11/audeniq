@@ -662,8 +662,6 @@ svg.aq-glyph{flex:none;fill:none!important;stroke:currentColor!important;stroke-
 /* 관리자 입력칸 — 스튜디오와 같은 면 스타일: 윤곽선 없이 흰 면(옅은 카드 위), 누르면 연한 파란 면 */
 :is(#root,#modal) :is(.adm-textarea,.adm-input,.adm-select):not(#_){background:#fff!important;border:0!important;outline:none!important;box-shadow:none!important;transition:background-color .2s ease!important}
 :is(#root,#modal) :is(.adm-textarea,.adm-input,.adm-select):not(#_):focus{background:#edf2ff!important;box-shadow:none!important;outline:none!important}
-/* 흰 화면 위(카드 밖)의 입력칸은 연한 면으로 */
-:is(#root,#modal) :is(.adm-modal,.adm-sheet,.adm-filters,.adm-card.white,.adm-thread-pane,.adm-check,.adm-note,.adm-dsp) :is(.adm-textarea,.adm-input,.adm-select):not(#_):not(:focus){background:#eef2fb!important}
 :is(#root,#modal) :is(.adm-textarea,.adm-input)::placeholder{color:#a3adbf}
 .adm-fix{gap:12px}
 /* 문의 답변 보내기 줄: 버튼은 한 줄·보통 크기, 휴대폰에서는 키보드 단축키 안내 숨김 */
@@ -737,3 +735,110 @@ svg.aq-glyph{flex:none;fill:none!important;stroke:currentColor!important;stroke-
 .adm-section-top h2{display:flex;align-items:baseline;flex-wrap:wrap;column-gap:8px}
 .adm-section-top h2 small{margin-left:0;font-size:12.5px}
 .adm-section + .adm-section{margin-top:30px}
+
+/* ==========================================================================
+   스튜디오와 같은 카드·버튼 — 관리자 화면 전체 통일 (맨 마지막에 둬서 위 규칙을 덮는다)
+   - 카드: 윤곽선·그림자 없는 연파랑 면(#f5f8ff), 큰 라운드(32 · 휴대폰 28)
+   - 카드 안 항목: 흰 면, 라운드 20
+   - 상태는 카드 색이 아니라 칩·점으로 (분홍·보라·주황 카드 없이 한 가지 면)
+   - 버튼: 높이 48 · 라운드 17 (작은 버튼 40 · 14), 선택된 칩·탭은 파란 면
+   ========================================================================== */
+:root{--adm-card:#f5f8ff;--adm-r-card:32px;--adm-r-item:20px;--adm-r-btn:17px}
+@media (max-width:640px){:root{--adm-r-card:28px;--adm-r-item:18px}}
+
+/* 카드 */
+.adm-card,.adm-card.white,.adm-release-hero,.adm-empty,.adm-thread-pane,.adm-dspreq,.adm-dsp-grid>.adm-dsp,.adm-deliv,.adm-hero,
+.adm-brief.is-compact,.adm-check,.adm-stat,.adm-track,.adm-row{background:var(--adm-card);border:0!important;box-shadow:none}
+.adm-card,.adm-card.white,.adm-release-hero,.adm-empty,.adm-thread-pane,.adm-dspreq,.adm-dsp-grid>.adm-dsp,.adm-deliv,.adm-hero,.adm-brief.is-compact{border-radius:var(--adm-r-card)}
+.adm-card,.adm-card.white,.adm-dspreq,.adm-dsp-grid>.adm-dsp,.adm-deliv{padding:26px 28px}
+.adm-brief.is-compact{padding:22px}
+.adm-check,.adm-row,.adm-track,.adm-stat{border-radius:26px}
+.adm-check{padding:18px 20px}
+.adm-track summary{border-radius:26px;padding:16px 18px}
+.adm-row{padding:16px 18px}
+.adm-card + .adm-card{margin-top:14px}
+.adm-checks,.adm-list,.adm-tracks{gap:10px}
+@media (max-width:640px){
+  .adm-card,.adm-card.white,.adm-dspreq,.adm-dsp-grid>.adm-dsp,.adm-deliv{padding:22px 20px}
+  .adm-brief.is-compact{padding:20px 18px}
+  .adm-release-hero{padding:20px;border-radius:var(--adm-r-card)}
+  .adm-check,.adm-row,.adm-track,.adm-stat{border-radius:24px}
+  .adm-check{padding:18px}
+  .adm-track summary{border-radius:24px;padding:15px 16px}
+  .adm-row{padding:16px}
+}
+/* 상태별 색 카드 → 한 가지 면 (상태는 안의 칩·점이 알려 준다) */
+.adm-check.is-open,.adm-check.is-sensitive,.adm-dspreq.is-bad,.adm-dspreq.is-warn,.adm-dsp.is-bad,.adm-deliv.is-bad,
+.adm-stages li,.adm-stages li.is-staff,.adm-stages li.is-fix,.adm-stages li.is-stopped{background:var(--adm-card)}
+.adm-stages li{border-radius:24px}
+/* 지금 단계는 파란 테 없이 흰 점 대신 진한 글씨로 */
+.adm-stages li:is(.is-staff,.is-fix,.is-running,.is-stopped) b{color:var(--adm-ink)}
+
+/* 카드 안 항목: 흰 면 */
+.adm-brief li,.adm-brief-ok>summary,.adm-opt,.adm-opt-ack,.adm-deliv-rows li,.adm-note,.adm-now-body,.adm-sig,.adm-lyrics pre,.adm-fix .adm-reason{background:#fff;border:0}
+.adm-brief li,.adm-brief-ok>summary,.adm-opt,.adm-deliv-rows li,.adm-note{border-radius:var(--adm-r-item)}
+.adm-brief li{padding:14px 16px}
+.adm-brief-ok>summary{min-height:48px;padding:0 16px}
+.adm-brief ul{gap:8px}
+.adm-opt{padding:16px 18px}
+.adm-opt-ack{border-radius:16px;padding:13px 16px}
+.adm-note{padding:14px 16px}
+.adm-fix{border-radius:var(--adm-r-item);padding:18px}
+.adm-alert{border-radius:22px;padding:16px 18px}
+.adm-appdoc-warn{border-radius:16px}
+
+/* 버튼 */
+.adm-btn{min-height:48px;padding:12px 18px;border-radius:var(--adm-r-btn);font-size:14px;font-weight:730;letter-spacing:-.012em}
+.adm-btn.small{min-height:40px;padding:0 14px;border-radius:14px;font-size:13px;font-weight:740}
+.adm-brief li .adm-btn{min-height:36px;padding:0 12px;border-radius:12px;font-size:12.5px}
+.adm-decide-bar .adm-btn{border-radius:var(--adm-r-btn)}
+.adm-reply-foot .adm-btn{min-height:48px;border-radius:var(--adm-r-btn)}
+/* 연한 면 카드 위의 보조 버튼은 한 단계 진한 색 (스튜디오 카드 위 보조 버튼과 같은 대비) */
+:is(.adm-card,.adm-card.white,.adm-check,.adm-note,.adm-thread-pane,.adm-dsp,.adm-dspreq,.adm-deliv,.adm-track,.adm-row) .adm-btn.soft{background:#e2e9ff;color:#2f55d4}
+:is(.adm-card,.adm-card.white,.adm-check,.adm-note,.adm-thread-pane,.adm-dsp,.adm-dspreq,.adm-deliv,.adm-track,.adm-row) .adm-btn.soft:not(:disabled):hover{background:#d5dfff}
+:is(.adm-card,.adm-card.white,.adm-check,.adm-note,.adm-thread-pane,.adm-dsp,.adm-dspreq,.adm-deliv) .adm-btn.warn{background:#ffe4c4;color:#8a4f12}
+:is(.adm-card,.adm-card.white,.adm-check,.adm-note,.adm-thread-pane,.adm-dsp,.adm-dspreq,.adm-deliv) .adm-btn.danger{background:#ffdcdc;color:#b0393b}
+/* 둥근 아이콘·다음 건 버튼: 스튜디오 헤더 버튼처럼 둥근 사각 */
+.adm-icon-btn{width:44px;height:44px;border-radius:15px;background:var(--adm-card)}
+.adm-icon-btn:hover{background:#eaf0ff;color:var(--adm-blue)}
+.adm-next-btn{min-height:44px;padding:0 14px 0 18px;border-radius:15px;background:var(--adm-blue-soft)}
+.adm-back{min-height:44px;border-radius:14px}
+
+/* 선택 칩·탭: 스튜디오 필터와 같은 모양 — 높이 40 · 라운드 16, 선택되면 파란 면 */
+.adm-filter,.adm-tl-filter button,.adm-reason,.adm-pick{min-height:40px;border-radius:16px;padding:0 15px;font-size:13px;font-weight:740;background:#f3f6fb;color:#5d6880}
+.adm-filter[aria-pressed=true],.adm-subtabs .adm-filter[aria-selected=true],.adm-tl-filter button.is-on,.adm-pick.is-on{background:var(--adm-blue);color:#fff}
+.adm-tl-filter button.is-on span{color:rgba(255,255,255,.75)}
+.adm-fix .adm-pick{background:#fff}
+.adm-fix .adm-pick.is-on{background:var(--adm-blue);color:#fff}
+.adm-seg{padding:4px;border-radius:16px;background:#f3f6fb}
+.adm-seg button{min-height:36px;border-radius:13px}
+.adm-seg button.is-on{background:var(--adm-blue);color:#fff;box-shadow:none}
+@media (max-width:1180px){
+  .adm-jump button{min-height:40px;padding:0 15px;border-radius:16px;background:#f3f6fb}
+  .adm-jump button.is-on{background:var(--adm-blue);color:#fff}
+  .adm-jump button.is-on span{background:rgba(255,255,255,.22);color:#fff}
+}
+
+/* 칩: 스튜디오 상태 칩과 같은 알약 */
+.adm-chip{padding:6px 11px;font-size:11.5px;font-weight:740}
+.adm-dsps span,.adm-kv .adm-dsps span,.adm-tags span{border-radius:10px}
+/* 입력칸: 흰 화면 위에서는 연한 면, 연파랑 카드 안에서는 흰 면 (스튜디오 검색칸·카드 안 입력칸과 같게) */
+:is(#root,#modal) :is(.adm-textarea,.adm-input,.adm-select):not(#_):not(:focus){background:#f3f6fb!important}
+:is(#root,#modal) :is(.adm-card,.adm-check,.adm-thread-pane,.adm-note,.adm-fix,.adm-brief,.adm-opt,.adm-dsp,.adm-release-hero,.adm-deliv) :is(.adm-textarea,.adm-input,.adm-select):not(#_):not(:focus){background:#fff!important}
+:is(#root,#modal) :is(.adm-textarea,.adm-input,.adm-select):not(#_){border-radius:18px!important}
+.adm-input,.adm-select{min-height:50px}
+/* 문의 대화: 연파랑 카드 안 아티스트 말풍선은 흰 면 */
+.adm-thread-pane .adm-msg:not(.is-staff){background:#fff}
+/* 칩은 옆 버튼 높이에 늘어나지 않게 */
+.adm-chip{align-self:center}
+/* 칩·필터 글자 가운데 */
+.adm-filter{display:inline-flex;align-items:center;justify-content:center;gap:6px}
+/* 화면 안 하위 탭: 스튜디오 ‘발매 목록 · 전체 트랙’처럼 밑줄 탭 */
+.adm-subtabs{display:flex;gap:22px;overflow-x:auto;padding:0;margin:0 0 20px;border-bottom:1px solid var(--adm-line)}
+.adm-subtabs .adm-filter,.adm-subtabs .adm-filter[aria-selected=true]{position:relative;min-height:46px;padding:0 2px;border-radius:0;background:transparent;color:#5d6880;font-size:15px;font-weight:760}
+.adm-subtabs .adm-filter[aria-selected=true]{color:var(--adm-blue)}
+.adm-subtabs .adm-filter[aria-selected=true]::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:3px;border-radius:3px;background:var(--adm-blue)}
+.adm-subtabs .adm-filter:hover{background:transparent;color:var(--adm-blue)}
+.adm-subtab-count{display:inline-grid;place-items:center;min-width:24px;height:24px;padding:0 7px;border-radius:12px;background:#eef1f7;color:#5d6880;font-size:12px;font-weight:800}
+.adm-subtabs .adm-filter[aria-selected=true] .adm-subtab-count{background:var(--adm-blue-soft);color:var(--adm-blue)}
+@media (max-width:560px){.adm-brief li .adm-brief-text{flex-basis:calc(100% - 40px)}.adm-brief li .adm-btn{margin-left:30px}}
