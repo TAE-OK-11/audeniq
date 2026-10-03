@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useNavigate } from '../lib/router';
 import { Icon } from '../AdminApp';
 import { DUTY_LABEL, ROLE_LABEL } from '../labels';
-import { PageHead, useStaff } from '../ui';
+import { CountUp, PageHead, useStaff } from '../ui';
 import type { Overview } from '../api/staff';
 
 interface Tile { key: keyof Overview; label: string; hint: string; to: string; icon: string; alert?: boolean }
@@ -39,7 +39,7 @@ export function OverviewPage() {
           <h2>{greet}.<br />{counts ? (urgent ? `처리할 일이 ${urgent}건 있어요.` : '밀린 일이 없어요.') : '대기열을 확인하는 중이에요.'}</h2>
           <p>카드를 누르면 바로 이동해요. 숫자는 1분마다 새로 고쳐져요.</p>
         </div>
-        <div className="adm-hero-num" aria-hidden="true">{counts ? urgent : '–'}<small>처리 대기</small></div>
+        <div className="adm-hero-num" aria-hidden="true">{counts ? <CountUp value={urgent} /> : '–'}<small>처리 대기</small></div>
       </div>
 
       <div className="adm-stats">
@@ -53,7 +53,7 @@ export function OverviewPage() {
                 
               </span>
               <span>
-                <strong>{n ?? '–'}</strong>
+                <strong>{n == null ? '–' : <CountUp value={n} />}</strong>
                 <span className="adm-stat-label">{t.label}</span>
                 <span className="small muted adm-stat-hint">{t.hint}</span>
               </span>
