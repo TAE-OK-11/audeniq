@@ -875,3 +875,47 @@ button.adm-row:hover,a.adm-row:hover{background:#edf2ff}
 .adm-opt-group h3{font-size:15px}
 .adm-opt dl{gap:10px}
 .adm-opt-row dt{font-size:12.5px}
+
+/* ==========================================================================
+   마무리 디테일
+   ========================================================================== */
+/* 메타 줄: 줄이 바뀌어도 줄 맨 앞에 ‘·’가 남지 않게 (왼쪽 끝 구분점은 잘라 낸다) */
+.adm-row-meta{column-gap:0;margin-left:-14px;clip-path:inset(-4px -4px -4px 14px)}
+.adm-row-meta>span{position:relative;margin-left:14px}
+.adm-row-meta>span+span:before{content:"·";position:absolute;left:-9px;margin:0;color:#c2c9d6}
+.adm-row-meta>span:first-child:before{content:none}
+/* 긴 이메일은 휴대폰에서 한 줄 전체를 쓰게 */
+@media (max-width:640px){.adm-kv .adm-kv-wide{grid-column:1/-1}}
+/* 숫자는 자리 맞춤 */
+.adm-row-end small,.adm-tl-day h3,.adm-timeline small,.adm-track-meta,.adm-hero-when,.adm-kv dd{font-variant-numeric:tabular-nums}
+/* 누를 때 반응: 회색 탭 하이라이트 대신 살짝 눌림 (스튜디오와 같게) */
+.adm-body{-webkit-tap-highlight-color:transparent}
+a.adm-row,button.adm-row,.adm-stat,.adm-track summary,.adm-filter,.adm-pick,.adm-reason,.adm-tl-filter button,.adm-icon-btn,.adm-next-btn,.adm-jump button{transition:background-color .18s var(--adm-ease),color .18s var(--adm-ease),transform .16s var(--adm-ease)}
+:is(a.adm-row,button.adm-row,.adm-stat):active{transform:scale(.99)}
+:is(.adm-filter,.adm-pick,.adm-reason,.adm-tl-filter button,.adm-icon-btn,.adm-next-btn,.adm-jump button):active{transform:scale(.96)}
+.adm-track summary:active{background:#edf2ff}
+/* 키보드 이동 때만 보이는 파란 테 */
+:is(.adm-btn,.adm-filter,.adm-pick,.adm-reason,.adm-tl-filter button,.adm-icon-btn,.adm-next-btn,.adm-jump button,a.adm-row,button.adm-row,.adm-stat,.adm-back):focus-visible{outline:3px solid #9db1fb;outline-offset:2px}
+/* 불러오는 중 자리도 카드와 같은 둥글기 */
+.adm-skel span{border-radius:26px;background:linear-gradient(90deg,#f5f8ff 25%,#ebf0fb 37%,#f5f8ff 63%);background-size:400% 100%}
+/* 구역 안 ‘없어요’ 안내는 연한 면 카드로 */
+.adm-section>p.small.muted{margin:0;padding:18px 20px;border-radius:22px;background:var(--adm-card);font-size:13.5px}
+/* 결정 바: 위 가는 선 대신 부드러운 흰 그라데이션, 버튼 글자 굵게 */
+@media (max-width:1180px){
+  .adm-decide-bar{border-top:0!important;background:linear-gradient(to bottom,rgba(255,255,255,.72),#fff 38%)!important;box-shadow:none!important}
+  .adm-decide-bar .adm-btn{font-size:15px;font-weight:780}
+}
+/* 상단 바로가기 아래 선 대신 흐림만 */
+@media (max-width:1180px){.adm-jump{border-bottom:0!important;box-shadow:0 1px 0 rgba(23,27,41,.05)}}
+/* 칩 글자 줄바꿈 방지, 제목 줄 정렬 */
+.adm-chip{white-space:nowrap;line-height:1.2}
+.adm-section-top h2{line-height:1.3}
+/* 문의 답변 칸: 누르면 파란 면 대신 흰 면 위 연파랑 테두리 없이 살짝 진하게 */
+:is(#root,#modal) .adm-thread-pane .adm-textarea:not(#_):focus{background:#fff!important;box-shadow:0 0 0 2px #dbe4ff!important}
+/* 이력 필터 개수: 위로 뜨지 않게 작은 알약으로 */
+.adm-tl-filter button{gap:7px}
+.adm-tl-filter button span{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:#fff;font-size:11px;line-height:1;color:#5d6880}
+.adm-tl-filter button.is-on span{background:rgba(255,255,255,.22);color:#fff}
+/* 구역 제목과 오른쪽 버튼은 가운데 맞춤 */
+.adm-section-top,.adm-section-top:not(#_){align-items:center}
+.adm-decide{border-radius:var(--adm-r-card);padding:26px}
