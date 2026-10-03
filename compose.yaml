@@ -81,6 +81,7 @@ services:
     mem_limit: 64m
     cpus: 0.5
   antivirus:
+    profiles: [antivirus]
     build:
       context: .
       dockerfile: deploy/Dockerfile
@@ -101,6 +102,7 @@ services:
     mem_limit: ${AV_MEM_LIMIT:-3g}
     cpus: ${AV_CPUS:-0.75}
   antivirus-update:
+    profiles: [antivirus]
     <<: *runtime
     command: [python3, /usr/local/lib/audeniq/update-antivirus.py]
     restart: unless-stopped
@@ -121,6 +123,8 @@ services:
       API_BIND: 0.0.0.0:8080
       EDGE_SERVICE_SECRET: ${EDGE_SERVICE_SECRET:?set random service secret}
       PAYOUT_ACCOUNT_KEY: ${PAYOUT_ACCOUNT_KEY:-}
+      PAYOUT_KMS_ENABLED: '${PAYOUT_KMS_ENABLED:-false}'
+      UPLOAD_AV_ENABLED: '${UPLOAD_AV_ENABLED:-false}'
       DATABASE_URL: postgres://audeniq_api:${API_DB_PASSWORD}@pgbouncer:6432/audeniq_dev
       DATABASE_POOLER: pgbouncer
       STORAGE_ENABLED: ${STORAGE_ENABLED:-false}
@@ -148,6 +152,7 @@ services:
     # unfinished leases; the grace period must exceed the drain window.
     stop_grace_period: 45s
     environment:
+      UPLOAD_AV_ENABLED: '${UPLOAD_AV_ENABLED:-false}'
       DATABASE_URL: postgres://audeniq_worker:${WORKER_DB_PASSWORD}@pgbouncer:6432/audeniq_dev
       DATABASE_POOLER: pgbouncer
       DATABASE_LISTEN_URL: postgres://audeniq_worker:${WORKER_DB_PASSWORD}@postgres/audeniq_dev

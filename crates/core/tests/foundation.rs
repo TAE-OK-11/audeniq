@@ -115,9 +115,12 @@ impl ObjectStore for MockStore {
     }
 }
 async fn app(pool: PgPool) -> (Router, Arc<MockStore>) {
+    app_with_antivirus(pool, audeniq_core::config::antivirus_enabled().unwrap()).await
+}
+async fn app_with_antivirus(pool: PgPool, enabled: bool) -> (Router, Arc<MockStore>) {
     database::MIGRATOR.run(&pool).await.unwrap();
     let store = Arc::new(MockStore::default());
-    let s = AppState::new(
+    let mut s = AppState::new(
         pool,
         Config {
             database_url: "unused".into(),
@@ -132,6 +135,7 @@ async fn app(pool: PgPool) -> (Router, Arc<MockStore>) {
     )
     .await
     .unwrap();
+    s.antivirus_enabled = enabled;
     (router(s), store)
 }
 async fn noop_store() -> std::sync::Arc<dyn ObjectStore> {
@@ -766,6 +770,74 @@ async fn alac_upload_is_registered_as_flac_and_aac_is_refused(pool: PgPool) {
         .await
         .unwrap();
     assert_ne!(state, "REGISTERED");
+}
+
+#[sqlx::test]
+async fn disabled_antivirus_keeps_normalization_and_requires_rescan_after_enable(pool: PgPool) {
+    let (app, store) = app_with_antivirus(pool.clone(), false).await;
+    let user = user(&app).await;
+    let bytes = m4a_bytes(&["-c:a", "alac"]);
+    let (_, _, upload) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{}/uploads", user.org),
+        json!({"kind":"AUDIO","size_bytes":bytes.len(),"content_type":"audio/mp4"}),
+        Some(&user),
+    )
+    .await;
+    let key = upload["expected_key"].as_str().unwrap();
+    store.objects.lock().await.insert(
+        key.into(),
+        ObjectMeta {
+            size: bytes.len() as i64,
+            content_type: "audio/mp4".into(),
+            nonce: upload["grant"]["headers"]["x-amz-meta-upload-nonce"]
+                .as_str()
+                .unwrap()
+                .into(),
+            etag: "disabled-av-original".into(),
+        },
+    );
+    store.bodies.lock().await.insert(key.into(), bytes);
+    let path = format!(
+        "/api/orgs/{}/uploads/{}/complete",
+        user.org,
+        upload["upload_session_id"].as_str().unwrap()
+    );
+    let input = json!({"asset_id":upload["asset_id"],"expected_key":key});
+    let (status, _, result) = call(&app, "POST", &path, input.clone(), Some(&user)).await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    assert_eq!(result["safety_status"], "SANITIZED");
+    assert_eq!(result["detected_container"], "FLAC");
+    let asset = Uuid::parse_str(upload["asset_id"].as_str().unwrap()).unwrap();
+    let receipt: String =
+        sqlx::query_scalar("SELECT antivirus_status FROM catalog.asset_safety WHERE asset_id=$1")
+            .bind(asset)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(receipt, "SKIPPED");
+    audeniq_core::upload_safety::require_policy(&pool, user.org, asset, false)
+        .await
+        .unwrap();
+    assert!(matches!(
+        audeniq_core::upload_safety::require_policy(&pool, user.org, asset, true).await,
+        Err(Error::PolicyGate("UPLOAD_REINSPECTION_REQUIRED"))
+    ));
+    let (status, _, duplicate) = call(&app, "POST", &path, input, Some(&user)).await;
+    assert_eq!(status, StatusCode::OK, "{duplicate}");
+    assert_eq!(duplicate["safety_status"], "SANITIZED");
+    assert_eq!(duplicate["duplicate"], true);
+    let (mime, safe_key, hash): (String, String, String) =
+        sqlx::query_as("SELECT content_type,object_key,sha256 FROM catalog.assets WHERE id=$1")
+            .bind(asset)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(mime, "audio/flac");
+    assert!(safe_key.starts_with("registered/"));
+    assert_ne!(safe_key, key);
+    assert_eq!(hash, result["sha256"].as_str().unwrap());
 }
 
 #[sqlx::test]

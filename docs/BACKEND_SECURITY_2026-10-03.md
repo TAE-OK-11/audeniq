@@ -27,6 +27,10 @@ R2의 기본 서버 측 저장 암호화는 [공식 데이터 보안 문서](htt
 
 ## KMS 키 준비와 회전
 
+현재 기본값은 `PAYOUT_KMS_ENABLED=false`다. AWS/GCP 도구는 구현한 상태로 유지하며 배포가 클라우드 키 준비를 요구하거나 자동 호출하지 않는다. 로컬 AES 암호화는 유지한다. `PAYOUT_ACCOUNT_KEY`(64 hex) 또는 권한이 제한된 `PAYOUT_KEYRING_FILE`을 지정할 수 있고, 키가 없으면 API는 기동하되 계좌 저장/복호화를 거절한다. 계좌번호를 평문으로 저장하는 경로는 없다. 기존 계좌가 있으면 원래 키와 버전을 그대로 유지해야 한다.
+
+아래 KMS 준비를 완료한 뒤 `PAYOUT_KMS_ENABLED=true`, `PAYOUT_KEYRING_FILE=/run/audeniq-keys/payout-keyring.json`을 설정한다. 이 모드에서는 환경변수 단일 키로 대체하지 않으며 tmpfs·소유권·권한 검증을 다시 강제한다. 로컬 키를 환경변수로 운영할 경우 `production.env`와 호스트/컨테이너 관리 권한을 제한하고 키를 로그에 출력하지 않는다.
+
 운영자는 **AWS KMS 또는 GCP Cloud KMS**를 선택한다. AWS는 기존 대칭 키 ARN과 AWS CLI 자격, GCP는 기존 `ENCRYPT_DECRYPT` CryptoKey 전체 리소스 이름과 `gcloud` ADC 자격이 필요하다. 공급자·리전·IAM 설정은 운영자가 준비하며 이 도구가 클라우드 키·유료 자원·계정을 생성하지 않는다. Akamai 서버는 그대로 두고 선택한 KMS를 HTTPS로 호출한다.
 
 `deploy/kms-keyring.py`의 AWS 경로는 공식 CLI로 TLS·인증서 검증·SigV4를 처리한다. GCP 경로는 `gcloud auth application-default print-access-token`의 출력을 내부에서 읽고 `https://cloudkms.googleapis.com` REST API에 TLS 1.2 이상과 인증서 검증을 적용한다. redirect는 거절한다. 디스크에는 KMS로 감싼 키만 두고, API용 평문 키 파일은 host tmpfs에 쓴다. API 컨테이너와 worker는 AWS/GCP 자격을 받지 않는다.

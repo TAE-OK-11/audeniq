@@ -28,6 +28,8 @@ jobs:
       # target/ 캐시를 작게 (복원·저장 시간 단축)
       CARGO_INCREMENTAL: '0'
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      # Default runtime is off; CI still verifies the enabled implementation.
+      UPLOAD_AV_ENABLED: 'true'
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -214,9 +216,12 @@ jobs:
           APP_ORIGIN: https://studio.audeniq.test
           PAYOUT_ACCOUNT_KEY: 0000000000000000000000000000000000000000000000000000000000000000
         run: |
-          docker compose -f deploy/compose.production.yaml config --format json > /tmp/production.json
+          docker compose -f deploy/compose.production.yaml --profile antivirus config --format json > /tmp/production.json
           jq -e '[.services[] | .ports // [] | length] | all(. == 0)' /tmp/production.json
           jq -e '.services.api.environment.APP_ENV == "production" and .name == "audeniq-production"' /tmp/production.json
+          jq -e '.services.api.environment.PAYOUT_KMS_ENABLED == "false" and .services.api.environment.UPLOAD_AV_ENABLED == "false" and .services.worker.environment.UPLOAD_AV_ENABLED == "false"' /tmp/production.json
+          docker compose -f deploy/compose.production.yaml config --services > /tmp/default-services
+          ! grep -Eq '^antivirus(-update)?$' /tmp/default-services
           # Workers analyze and package the stored masters: they need the
           # object store and non-zero QC/rights/distribution concurrency.
           jq -e '.services.worker.environment | has("STORAGE_ENABLED") and has("S3_BUCKET") and has("S3_ENDPOINT")' /tmp/production.json
@@ -233,6 +238,31 @@ jobs:
       - run: docker compose up --build -d postgres migrate grants pgbouncer api worker
       - name: Check API readiness
         run: curl --fail --retry 15 --retry-all-errors --retry-delay 2 -H "X-Audeniq-Service:$EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready
+      - name: Production boots without cloud KMS or an antivirus engine
+        run: |
+          docker compose run --no-deps -d --name audeniq-ci-optional-security -e APP_ENV=production -e APP_ORIGIN=https://studio.audeniq.test api
+          docker exec -i audeniq-ci-optional-security python3 - <<'PY'
+          import os, time, urllib.request
+          assert os.environ['PAYOUT_KMS_ENABLED'] == 'false'
+          assert os.environ['UPLOAD_AV_ENABLED'] == 'false'
+          assert not os.environ.get('PAYOUT_KEYRING_FILE')
+          request = urllib.request.Request('http://127.0.0.1:8080/ready', headers={'X-Audeniq-Service': os.environ['EDGE_SERVICE_SECRET']})
+          for attempt in range(30):
+              try:
+                  with urllib.request.urlopen(request, timeout=2) as response:
+                      assert response.status == 200
+                  break
+              except Exception:
+                  if attempt == 29:
+                      raise
+                  time.sleep(1)
+          PY
+          docker rm -f audeniq-ci-optional-security
+          if docker compose run --rm --no-deps -e PAYOUT_KMS_ENABLED=true api > /tmp/kms-required.log 2>&1; then
+            echo 'Enabled KMS accepted a missing keyring'
+            exit 1
+          fi
+          grep -q PAYOUT_KEYRING_REQUIRED /tmp/kms-required.log
       - name: Verify parser isolation inside actual runtime containers
         run: |
           docker compose exec -T api audeniq-admin upload-sandbox-check
@@ -251,4 +281,6 @@ jobs:
           docker compose logs api worker migrate grants pgbouncer
       - name: Remove disposable CI environment
         if: always()
-        run: docker compose down -v
+        run: |
+          docker rm -f audeniq-ci-optional-security 2>/dev/null || true
+          docker compose down -v

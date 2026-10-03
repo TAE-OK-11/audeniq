@@ -54,7 +54,7 @@ pub async fn purge_transient(pool: &PgPool, operator: &str) -> Result<Value> {
 /// retained backups have been migrated or expired. No clear numbers leave here.
 pub async fn reencrypt_accounts(pool: &PgPool, operator: &str) -> Result<Value> {
     owner(pool, operator).await?;
-    let keys = KeyRing::from_env(true)?;
+    let keys = KeyRing::from_env(crate::config::kms_enabled()?)?;
     let mut tx = pool.begin().await?;
     let rows=sqlx::query("SELECT org_id,account_cipher FROM portal.payout_accounts WHERE key_version<>$1 OR substring(account_cipher FROM 1 FOR 6)<>$2 ORDER BY org_id LIMIT 100 FOR UPDATE SKIP LOCKED")
         .bind(keys.active_version()).bind(crate::payout_keys::TAG).fetch_all(&mut *tx).await?;
