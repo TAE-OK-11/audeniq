@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from './api/auth';
 import { Layout } from './components/Layout';
 import { ToastProvider } from './components/Toast';
 import { ConfirmProvider } from './components/Confirm';
+import { AlertProvider } from './components/Alert';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { SystemStatus } from './components/SystemStatus';
 import { PageSkeleton } from './components/Skeleton';
@@ -127,6 +128,7 @@ export function App() {
       <AuthProvider>
         <ToastProvider>
           <ConfirmProvider>
+          <AlertProvider>
             <ErrorBoundary fullPage>
               <SystemStatus>
                 <Suspense fallback={<BootScreen />}>
@@ -142,6 +144,7 @@ export function App() {
                 </Suspense>
               </SystemStatus>
             </ErrorBoundary>
+          </AlertProvider>
           </ConfirmProvider>
         </ToastProvider>
       </AuthProvider>
