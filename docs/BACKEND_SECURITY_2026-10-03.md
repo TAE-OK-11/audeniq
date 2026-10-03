@@ -10,7 +10,7 @@
 | 이메일·프로필·조직·권리자 이름·전자 문서·정산 | 세션/CSRF/회원·직원 권한 검사, 테넌트별 접근 검사, API/worker/owner DB 역할 분리 | 일반 DB 로그인에 PUBLIC CONNECT/TEMP 권한 제거, SCRAM 명시, 유휴 트랜잭션 제한 |
 | 계좌번호 | AES-256-GCM, 조직 UUID를 AAD로 결합, 마지막 네 자리만 응답 | 키 버전과 필드·조직·헤더 AAD, 키 회전/이전 데이터 재암호화, 환경변수 키의 운영 사용 금지, tmpfs 키 파일, 키 버퍼 zeroize |
 | 서명 본인확인 | 실제 제공자 미설정 시 거절, CI 원문 대신 비밀값을 결합한 해시 | 유지. 로그에서 서명 URL 토큰을 제거하고 경로 템플릿만 기록 |
-| 직원 개인정보 접근 | 직원 역할 검사, 기존 작업 변경 audit | 조회도 계정·시각·IP·경로·작업·대상 UUID를 별도 DB에 기록. 기록 실패 시 데이터 응답 거절 |
+| 직원 개인정보 접근 | 직원 역할 검사, 기존 작업 변경 audit | 조회도 계정·시각·IP·경로·작업·대상 UUID를 전용 접근 로그 테이블에 기록. 기록 실패 시 데이터 응답 거절 |
 | 세션·인증 제한 | 세션 토큰/CSRF 값과 인증 제한 식별자의 해시 | 만료·철회 후 24시간 지난 세션과 오래된 인증 제한 창을 owner만 제한된 묶음으로 파기 |
 | 음원·커버·업로드 증명 서류 | 비공개 R2, 객체별 짧은 서명 URL, 버킷 제한 토큰 | 외부 HTTPS 강제, 객체 응답 자동 압축 해제 금지 |
 | DB 전체 백업 | 기존 custom pg_dump는 파일에 평문 저장 | age 공개키 암호화 스트림, 오류 시 미완료 파일 제거, 별도 복원 검증 도구 |
@@ -77,8 +77,8 @@ Studio/관리자 정적 파일은 빌드할 때 Brotli sidecar를 만들고 요�
 ## 검증과 적용 상태
 
 - 로컬 Worker/전송 회귀 37개, Survey 25개, Studio 86개, Admin 14개 통과. Studio/Admin 타입 검사와 실제 빌드 통과.
-- KMS 명령의 HTTPS 고정·개인키 인자 노출 방지·원자적 교체·파일 권한과 실제 age 암복호화·오류 시 잔여 파일 방지 테스트 7개 통과. KMS 네트워크 호출은 테스트 대역을 사용했다. 실제 IAM/KMS 연결 성공을 뜻하지 않는다.
-- Rust 계좌 암복호화·회전·조직/헤더 변조·legacy 호환과 외부 평문 연결 거절은 원본 모듈을 별도 harness에서 검사해 5개 테스트가 통과했다. 전체 백엔드/실제 PostgreSQL 통합 검사는 Foundation CI 결과로 확인한다.
-- 이 환경의 전체 Rust 빌드는 1 GB 메모리 제한으로 SIGKILL이 발생했다. 이 실패를 통과로 기록하지 않는다.
+- [GitHub Actions Foundation](https://github.com/TAE-OK-11/audeniq/actions/runs/37110993569)에서 Rust 형식·Clippy·전체 바이너리 빌드, PostgreSQL 통합 테스트를 포함한 439개 테스트 통과(3개 skipped). Docker API/worker 기동·Workers 번들·Studio 브라우저 검사도 통과했다.
+- 같은 Actions에서 KMS 명령의 HTTPS 고정·개인키 인자 노출 방지·원자적 교체·파일 권한과 실제 age 암복호화·오류 시 잔여 파일 방지 테스트 8개 통과. KMS 네트워크 호출은 테스트 대역을 사용했다. 실제 IAM/KMS 연결 성공을 뜻하지 않는다.
+- Studio/Admin Actions와 Rust 의존성 보안 검사도 통과했다. 로컬 Studio/Admin Wrangler 배포 dry-run을 확인했다.
 - 운영 서버·Cloudflare zone에는 아직 적용하지 않았다. KMS ARN/자격·기존 키 이전·재부팅 준비·age 수신자와 Cloudflare 규칙 권한이 실제로 준비돼야 운영 적용을 완료할 수 있다.
 - 일본 보관 및 기타 Cloudflare 처리 위치는 [개인정보 보호법 제28조의8](https://www.law.go.kr/LSW/lsSideInfoP.do?docCls=jo&joBrNo=08&joNo=0028&lsiSeq=283839&urlMode=lsScJoRltInfoR)의 국외 이전 검토 대상이다. 암호화 구현만으로 법적 근거·위탁 계약·실제 공급자 국가를 확인할 수 없다. 약관 작성 범위와 구분하되 이 운영 의무를 충족했다고 단정하지 않는다.
