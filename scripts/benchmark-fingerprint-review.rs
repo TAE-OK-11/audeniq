@@ -7,6 +7,8 @@ mod error {
     }
     pub type Result<T> = std::result::Result<T, Error>;
 }
+#[path = "parser_sandbox.rs"]
+mod parser_sandbox;
 #[path = "baseline-fingerprint.rs"]
 mod baseline;
 #[path = "updated-fingerprint.rs"]
