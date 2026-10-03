@@ -107,6 +107,28 @@ pub async fn staff(s: &AppState, h: &HeaderMap, write: bool) -> Result<Staff> {
         .as_deref()
         .and_then(StaffRole::parse)
         .ok_or(Error::Forbidden)?;
+    // Fail closed if the durable access record cannot be written. This includes
+    // reads; the existing operations audit only records business mutations.
+    let route = h
+        .get("x-audeniq-audit-route")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("internal");
+    let method = h
+        .get("x-audeniq-audit-method")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("INTERNAL");
+    let resource = h
+        .get("x-audeniq-audit-resource")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| Uuid::parse_str(v).ok());
+    let source = h
+        .get(auth::CLIENT_IP_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<std::net::IpAddr>().ok())
+        .map(|v| v.to_string());
+    sqlx::query("INSERT INTO privacy.staff_access_logs(id,actor_user_id,request_id,source_ip,route,method,resource_id) VALUES($1,$2,$3,$4::text::inet,$5,$6,$7) ON CONFLICT(actor_user_id,request_id,route) DO NOTHING")
+        .bind(Uuid::new_v4()).bind(actor.user).bind(actor.request).bind(source).bind(route).bind(method).bind(resource)
+        .execute(&s.pool).await?;
     Ok(Staff { actor, role })
 }
 

@@ -86,6 +86,25 @@ async fn main() -> anyhow::Result<()> {
     let note = take_opt(&mut args, "--note");
     let reason = take_opt(&mut args, "--reason");
     let phrase = take_flag(&mut args, "--phrase");
+    if args.first().map(String::as_str) == Some("privacy") {
+        if operator.trim().is_empty() {
+            anyhow::bail!("--operator NAME is required");
+        }
+        let pool = audeniq_core::database::connect(&std::env::var("DATABASE_URL")?, 1).await?;
+        let result = match args.get(1).map(String::as_str) {
+            Some("purge-transient") if args.len() == 2 => {
+                audeniq_core::privacy_maintenance::purge_transient(&pool, &operator).await?
+            }
+            Some("reencrypt-accounts") if args.len() == 2 => {
+                audeniq_core::privacy_maintenance::reencrypt_accounts(&pool, &operator).await?
+            }
+            _ => anyhow::bail!(
+                "usage: audeniq-admin --operator NAME privacy <purge-transient|reencrypt-accounts>"
+            ),
+        };
+        println!("{}", serde_json::to_string(&result)?);
+        return Ok(());
+    }
     if args.first().map(String::as_str) == Some("external-recording") {
         use audeniq_core::external_recordings;
         let pool = audeniq_core::database::connect(&std::env::var("DATABASE_URL")?, 2).await?;

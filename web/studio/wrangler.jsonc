@@ -5,11 +5,10 @@
     "directory": "./public",
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "single-page-application",
-    "run_worker_first": [
-      "/api/*"
-    ]
+    "run_worker_first": true
   },
   "compatibility_date": "2026-09-21",
+  "compatibility_flags": ["brotli_content_encoding"],
   "d1_databases": [
     {
       "binding": "CONTENT_DB",

@@ -20,6 +20,7 @@ pub mod dsp_registry;
 pub mod ern;
 pub mod error;
 pub mod execution;
+pub mod external_http;
 pub mod external_recordings;
 pub mod finance;
 pub mod fingerprint;
@@ -59,3 +60,6 @@ pub mod states {
 pub mod launch;
 mod local_analyzer;
 pub mod lossless;
+
+pub mod payout_keys;
+pub mod privacy_maintenance;

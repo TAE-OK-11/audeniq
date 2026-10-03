@@ -50,6 +50,13 @@ case "${1:-}" in
     ;;
 esac
 
+# Require a materialized keyring before changing production services. The
+# runtime also validates ownership, permissions, versions and AES key sizes.
+keydir=$(sed -n 's/^PAYOUT_KEYRING_DIR=//p' "$ENV_FILE" | tail -n 1)
+keydir=${keydir:-/dev/shm/audeniq-secrets}
+[ -f "$keydir/payout-keyring.json" ] || die "KMS 키를 먼저 tmpfs에 준비해 주세요 (kms-keyring.py materialize)"
+[ "$(stat -f -c %T "$keydir")" = tmpfs ] || die "키 폴더는 tmpfs여야 해요"
+
 REF=$1
 REGISTRY=${DEPLOY_REGISTRY:-ghcr.io}
 case "$REF" in

@@ -3,6 +3,7 @@
   "name": "audeniq-admin",
   "main": "./worker.js",
   "compatibility_date": "2026-09-21",
+  "compatibility_flags": ["brotli_content_encoding"],
   "d1_databases": [{
     "binding": "CONTENT_DB",
     "database_id": "401ad401-0a13-4059-8e9d-23298de21761",
@@ -13,7 +14,7 @@
     "binding": "ASSETS",
     "directory": "./dist",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": true
   },
   // 백엔드 비밀은 secret으로: npx wrangler secret put EDGE_SERVICE_SECRET
   // 도메인(예: admin.audeniq.com)은 Cloudflare 대시보드 또는 "routes"로 연결
