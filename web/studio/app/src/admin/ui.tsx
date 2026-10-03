@@ -112,7 +112,7 @@ export function SubTabs({ tabs }: { tabs: { to: string; label: string; count?: n
     <div className="adm-filters adm-subtabs" role="tablist">
       {tabs.map(t => (
         <Link key={t.to} to={t.to} role="tab" className="adm-filter" aria-selected={loc.pathname === t.to} aria-pressed={loc.pathname === t.to}>
-          {t.label}{t.count ? ` ${t.count}` : ''}
+          {t.label}{t.count ? <span className="adm-subtab-count">{t.count}</span> : null}
         </Link>
       ))}
     </div>
