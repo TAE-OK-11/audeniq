@@ -60,6 +60,16 @@ const PIPELINE = [
   { key: 'scheduled', label: '배급 승인' },
   { key: 'live', label: '발매 완료' },
 ];
+// 진행 카드 머리에 쓰는 지금 단계 안내
+const STAGE_NOTE: Record<string, string> = {
+  draft: '신청서를 끝까지 작성한 뒤 접수해 주세요.',
+  ready: '접수됐어요. 곧 담당자가 검토를 시작해요.',
+  review: '담당자가 신청서를 검토하고 있어요. 결과는 알림으로 알려 드려요.',
+  needs: '아래 요청을 고쳐 다시 접수하면 검토가 이어져요.',
+  rejected: '검토 결과 이 발매는 배급할 수 없어요.',
+  scheduled: '배급이 승인됐어요. 발매일에 맞춰 플랫폼으로 보내요.',
+  live: '발매가 끝났어요. 플랫폼에서 들을 수 있어요.',
+};
 const pipelineIndex = (s: string) =>
   s === 'draft' ? 0 : s === 'ready' || s === 'review' || s === 'needs' || s === 'rejected' ? 1 : s === 'scheduled' ? 2 : s === 'live' ? 3 : 0;
 
@@ -121,6 +131,9 @@ export function ReleaseDetail() {
   // 발매 완료 후 3일이 지나면 진행 막대는 더 볼 필요가 없어 숨긴다
   const settledLive = rel.status === 'live' && !!rel.release_date
     && Date.now() - new Date(`${rel.release_date}T00:00:00`).getTime() >= 3 * 86_400_000;
+  const stageTone = rejected ? 'is-error' : needsFix ? 'is-warn' : '';
+  const stageLabel = (i: number) => (i === 1 && rejected ? '거절' : i === 1 && needsFix ? '보완 필요' : PIPELINE[i].label);
+  const coverSrc = d?.coverData || rel.coverData;
   const allFixes = rel.corrections ?? [];
   // 담당자 전체 의견은 고칠 항목이 아니라 따로 보여 준다
   const { items: fixes, note: reviewNote } = splitCorrections(allFixes);
@@ -191,7 +204,7 @@ export function ReleaseDetail() {
       </div>
 
       <div className="aq-detail-hero" aria-label="발매 정보">
-        <ReleaseCover id={rel.id} src={d?.coverData || rel.coverData} className="cover aq-detail-cover" />
+        <ReleaseCover id={rel.id} src={coverSrc} className="cover aq-detail-cover" />
         <div className="aq-detail-info">
           <div className="aq-detail-top">
             <span className="eyebrow">{kindLabel(d?.type) || '발매'}</span>
@@ -235,17 +248,32 @@ export function ReleaseDetail() {
       </div>
 
       {!settledLive && (
-      <ol className="aq-stage" aria-label="발매 진행 단계">
-        {PIPELINE.map((p, i) => {
-          const tone = i < stage ? 'is-done' : i === stage ? (rejected ? 'is-current is-error' : rel.status === 'needs' ? 'is-current is-warn' : 'is-current') : '';
-          return (
-            <li key={p.key} className={tone} aria-current={i === stage ? 'step' : undefined}>
-              <span className="aq-stage-dot" aria-hidden="true">{i < stage && <CheckIcon size={12} />}</span>
-              <span className="aq-stage-label">{i === 1 && rejected ? '거절' : i === 1 && rel.status === 'needs' ? '보완 필요' : p.label}</span>
-            </li>
-          );
-        })}
-      </ol>
+        <section className={`aq-stage${stageTone ? ` ${stageTone}` : ''}`} aria-label="발매 진행 단계">
+          <div className="aq-stage-head">
+            <div className="min-0">
+              <span className="aq-stage-kicker">진행 단계</span>
+              <strong className="aq-stage-now">{stageLabel(stage)}</strong>
+            </div>
+            <span className="aq-stage-count" aria-label={`${PIPELINE.length}단계 중 ${stage + 1}단계`}>
+              {stage + 1}<small>/ {PIPELINE.length}</small>
+            </span>
+          </div>
+          {STAGE_NOTE[rel.status] && <p className="aq-stage-note">{STAGE_NOTE[rel.status]}</p>}
+          <ol className="aq-stage-track">
+            {PIPELINE.map((p, i) => {
+              const done = i < stage || (i === stage && rel.status === 'live');
+              return (
+                <li key={p.key} className={done ? 'is-done' : i === stage ? 'is-current' : ''} aria-current={i === stage ? 'step' : undefined}>
+                  <span className="aq-stage-bar" aria-hidden="true" />
+                  <span className="aq-stage-label">
+                    {done && <CheckIcon size={10} />}
+                    {stageLabel(i)}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+        </section>
       )}
 
       {rejected && (
@@ -315,11 +343,22 @@ export function ReleaseDetail() {
               <h2 className="subhead">앨범 소개</h2>
               <p className="muted small break">{d?.notes || '등록된 소개가 없어요.'}</p>
             </div>
-            <div className="studio-album-aside">
+            <div className="studio-album-aside aq-cover-card">
               <h2 className="subhead">커버아트</h2>
-              {d?.coverData
-                ? <img className="aq-detail-cover-large" src={d.coverData} alt={`${rel.title} 커버아트`} />
-                : <div className="aq-detail-cover-empty">{d?.coverName ? '미리보기 없음' : '커버아트 없음'}</div>}
+              <div className={`aq-cover-stage${coverSrc ? '' : ' is-empty'}`}>
+                {coverSrc ? (
+                  <>
+                    {/* 커버 색이 카드 바탕으로 번지게 — 같은 이미지를 흐리게 깐다 */}
+                    <img className="aq-cover-glow" src={coverSrc} alt="" aria-hidden="true" decoding="async" />
+                    <img className="aq-detail-cover-large" src={coverSrc} alt={`${rel.title} 커버아트`} decoding="async" />
+                  </>
+                ) : (
+                  <div className="aq-detail-cover-empty">
+                    <Glyph name="music" size={22} />
+                    <span>{d?.coverName ? '미리보기 없음' : '커버아트 없음'}</span>
+                  </div>
+                )}
+              </div>
               <dl className="aq-cover-meta">
                 {d?.coverName && <div><dt>파일</dt><dd className="break">{d.coverName}</dd></div>}
                 <div><dt>최근 수정</dt><dd>{rel.updated_at ? localStamp(rel.updated_at) : localStamp(rel.created_at)}</dd></div>
@@ -423,7 +462,7 @@ export function ReleaseDetail() {
               ) : (
                 <p className="small muted">발매를 접수하면 계약서와 권리 서류가 자동으로 준비돼요.</p>
               )}
-              <button className="button secondary" type="button" onClick={() => nav('/contracts')} style={{ marginTop: 14 }}>문서 관리 <Glyph name="arrow-up-right" size={14} /></button>
+              <button className="button secondary aq-doc-manage" type="button" onClick={() => nav('/contracts')}>문서 관리 <Glyph name="arrow-up-right" size={14} /></button>
             </div>
           </div>
         )}
