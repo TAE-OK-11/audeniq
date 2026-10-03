@@ -5,7 +5,7 @@ use std::{io, path::Path, process::Command};
 /// Deployment check: exercise the actual enforced policy inside its container.
 pub fn self_test() -> io::Result<()> {
     let mut command = Command::new("python3");
-    command.args(["-c", "import os,socket\nassert 'DATABASE_URL' not in os.environ\nfor path in ['/proc/self/environ', '/etc/shadow']:\n try: open(path).read()\n except PermissionError: pass\n else: raise Exception('filesystem isolation failed')\ntry: socket.socket()\nexcept PermissionError: pass\nelse: raise Exception('network isolation failed')"]);
+    command.args(["-c", "import os,socket\nassert 'DATABASE_URL' not in os.environ\nfor path in ['/proc/self/environ', '/etc/shadow']:\n try: open(path).read()\n except PermissionError: pass\n else: raise Exception('filesystem isolation failed')\ntry: socket.socket()\nexcept PermissionError: pass\nelse: raise Exception('network isolation failed')\ntry: os.pidfd_open(os.getppid())\nexcept PermissionError: pass\nelse: raise Exception('cross-process isolation failed')"]);
     restrict(&mut command, &[], &[])?;
     if !command.status()?.success() {
         return Err(io::Error::from_raw_os_error(libc::EPERM));
@@ -174,6 +174,13 @@ mod linux {
             libc::SYS_kill,
             libc::SYS_tkill,
             libc::SYS_tgkill,
+            libc::SYS_rt_sigqueueinfo,
+            libc::SYS_rt_tgsigqueueinfo,
+            libc::SYS_pidfd_open,
+            libc::SYS_pidfd_getfd,
+            libc::SYS_pidfd_send_signal,
+            libc::SYS_process_madvise,
+            libc::SYS_process_mrelease,
             libc::SYS_mount,
             libc::SYS_umount2,
             libc::SYS_pivot_root,
