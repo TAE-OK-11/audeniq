@@ -166,6 +166,9 @@ pub async fn complete(
     if !valid {
         return Err(Error::Conflict);
     }
+    // Never keep a DB transaction idle during scans or decoding. Cancellation
+    // and concurrent completion are checked again under a fresh row lock.
+    tx.commit().await?;
     s.storage.freeze(&key, &frozen, &meta.etag).await?;
     let copy = s.storage.head(&frozen).await?.ok_or(Error::Storage)?;
     if copy.size != size
@@ -188,6 +191,25 @@ pub async fn complete(
         slot,
     )
     .await?;
+    let mut tx = s.pool.begin().await?;
+    auth::authorize(&mut tx, a, org, asset, "asset", true).await?;
+    let status: String = sqlx::query_scalar(
+        "SELECT status FROM catalog.upload_sessions WHERE id=$1 AND org_id=$2 FOR UPDATE",
+    )
+    .bind(id)
+    .bind(org)
+    .fetch_one(&mut *tx)
+    .await?;
+    if status == "COMPLETED" {
+        tx.commit().await?;
+        let _ = s.storage.delete(&prepared.key).await;
+        return Ok(
+            json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":true,"safety_status":"VERIFIED"}),
+        );
+    }
+    if status != "ISSUED" {
+        return Err(Error::Conflict);
+    }
     finish_session(&mut tx, id).await?;
     sqlx::query("INSERT INTO catalog.asset_safety(asset_id,org_id,source_key,source_sha256,safe_key,safe_sha256,rule_version) VALUES($1,$2,$3,$4,$5,$6,$7)")
         .bind(asset).bind(org).bind(&frozen).bind(&prepared.source_sha256).bind(&prepared.key)

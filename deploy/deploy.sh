@@ -86,6 +86,9 @@ docker run --rm --entrypoint sh "$PINNED" -c \
   'for b in audeniq-api audeniq-worker audeniq-migrate ffprobe; do command -v "$b" >/dev/null || { echo "missing $b"; exit 1; }; done' \
   || die "이미지 확인 실패: $PINNED"
 
+# Refuse a kernel/container profile that would leave upload parsers unconfined.
+docker run --rm --network none --cap-drop ALL --read-only   --security-opt no-new-privileges --entrypoint audeniq-admin "$PINNED" upload-sandbox-check   || die "업로드 샌드박스 실행 실패: Landlock ABI 3 이상과 seccomp 허용을 확인해 주세요"
+
 # 이미지가 빌드된 CPU 기준선을 이 서버가 지원하는지 확인한다. x86-64-v3 이미지를 AVX2가 없는
 # CPU에서 돌리면 시작하자마자 SIGILL로 죽는다 (마이그레이션 전에 막는다). 기록이 없는 예전
 # 이미지는 일반 x86-64다.
