@@ -252,7 +252,7 @@ function optionDetail(key: keyof StudioOptions, o: StudioOptions, tracks: Studio
       return (
         <>
           <Row label="활용 내역">{uses.length ? <span className="adm-tags">{uses.map(u => <span key={u}>{u}</span>)}</span> : dash(o.aiTool)}</Row>
-          <Row label="사용한 도구">{tools.length ? <span className="adm-tags">{tools.map(u => <span key={u}>{u}</span>)}</span> : '—'}</Row>
+          <Row label="사용한 도구">{tools.length ? <span className="adm-tags">{tools.map(u => <span key={u}>{u}</span>)}</span> : <span className="adm-none">적지 않음</span>}</Row>
         </>
       );
     }
@@ -277,7 +277,13 @@ function OptionGroup({ title, list, o, tracks }: { title: string; list: [keyof S
           <dl>{optionDetail(k, o, tracks)}</dl>
         </div>
       ))}
-      {off.length > 0 && <p className="adm-opt-off">선택 안 함 · {off.map(([, label]) => label).join(', ')}</p>}
+      {/* 고르지 않은 항목은 접어 둔다 — 고른 항목이 먼저 눈에 들어오게 */}
+      {off.length > 0 && (
+        <details className="adm-opt-off">
+          <summary>선택 안 한 항목 {off.length}개<Glyph name="chevron-right" size={12} /></summary>
+          <span className="adm-tags">{off.map(([k, label]) => <span key={k}>{label}</span>)}</span>
+        </details>
+      )}
     </div>
   );
 }
