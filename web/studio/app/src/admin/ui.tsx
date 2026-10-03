@@ -1,5 +1,5 @@
 // 관리자 화면 공통 조각 — 칩, 페이지 머리, 빈 상태, 로딩, 오류, 필터 레일.
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation } from '../lib/router';
 import type { Duty, Overview, StaffMe } from './api';
 import type { Tone } from './labels';
@@ -117,4 +117,27 @@ export function SubTabs({ tabs }: { tabs: { to: string; label: string; count?: n
       ))}
     </div>
   );
+}
+
+/** 숫자가 바뀔 때 0(또는 이전 값)에서 부드럽게 세어 올라간다 — 움직임 줄이기 설정이면 바로 표시 */
+export function CountUp({ value, ms = 700 }: { value: number; ms?: number }) {
+  const [shown, setShown] = useState(value);
+  const from = useRef(0);
+  useEffect(() => {
+    const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const start = from.current;
+    from.current = value;
+    if (reduce || start === value) { setShown(value); return; }
+    let raf = 0;
+    const t0 = performance.now();
+    const tick = (t: number) => {
+      const k = Math.min(1, (t - t0) / ms);
+      const ease = 1 - Math.pow(1 - k, 3);
+      setShown(Math.round(start + (value - start) * ease));
+      if (k < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value, ms]);
+  return <>{shown}</>;
 }
