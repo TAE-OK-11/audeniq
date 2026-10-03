@@ -112,8 +112,12 @@ impl KeyRing {
             return Err(Error::PolicyGate("PAYOUT_KEYRING_REQUIRED"));
         }
         // Existing local fixtures remain usable. There is no production fallback.
-        let keys = match std::env::var("PAYOUT_ACCOUNT_KEY") {
-            Ok(key) => {
+        Self::development_key(std::env::var("PAYOUT_ACCOUNT_KEY").ok())
+    }
+
+    fn development_key(key: Option<String>) -> Result<Self> {
+        let keys = match key {
+            Some(key) if !key.trim().is_empty() => {
                 let key = Zeroizing::new(key);
                 let decoded = Zeroizing::new(
                     hex::decode(key.trim())
@@ -124,7 +128,7 @@ impl KeyRing {
                 }
                 BTreeMap::from([(1, decoded)])
             }
-            Err(_) => BTreeMap::new(),
+            _ => BTreeMap::new(),
         };
         Ok(Self { active: 1, keys })
     }
@@ -200,6 +204,18 @@ impl KeyRing {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn development_can_disable_payouts_with_an_absent_or_empty_key() {
+        let org = Uuid::new_v4();
+        for key in [None, Some(String::new()), Some("  ".to_owned())] {
+            let disabled = KeyRing::development_key(key).unwrap();
+            assert!(disabled.seal(org, "11012345678901").is_err());
+        }
+        let enabled = KeyRing::development_key(Some("11".repeat(32))).unwrap();
+        let sealed = enabled.seal(org, "11012345678901").unwrap();
+        assert_eq!(&*enabled.open(org, &sealed).unwrap(), "11012345678901");
+        assert!(KeyRing::development_key(Some("invalid".to_owned())).is_err());
+    }
     fn ring(active: i16) -> KeyRing {
         KeyRing::parse(
             format!(
