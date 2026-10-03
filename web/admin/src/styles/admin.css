@@ -590,8 +590,8 @@ svg.aq-glyph{flex:none;fill:none!important;stroke:currentColor!important;stroke-
 .adm-brief-ok>summary{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 12px;border-radius:13px;background:#fff;font-size:13px;font-weight:700;color:#4c5a74;cursor:pointer;list-style:none}
 .adm-brief-ok>summary::-webkit-details-marker{display:none}
 .adm-brief-ok>summary .adm-brief-mark{background:#21815B}
-.adm-brief-ok>summary svg:last-child{margin-left:auto;transition:transform .2s var(--adm-ease)}
-.adm-brief-ok[open]>summary svg:last-child{transform:rotate(90deg)}
+.adm-brief-ok>summary>svg:last-child{margin-left:auto;transition:transform .2s var(--adm-ease)}
+.adm-brief-ok[open]>summary>svg:last-child{transform:rotate(90deg)}
 .adm-brief-ok ul{margin-top:6px}
 .adm-brief.is-compact ul:empty{display:none}
 /* 권리 확인 접기 */
@@ -924,3 +924,18 @@ a.adm-row,button.adm-row,.adm-stat,.adm-track summary,.adm-filter,.adm-pick,.adm
 /* 구역 제목과 오른쪽 버튼은 가운데 맞춤 */
 .adm-section-top,.adm-section-top:not(#_){align-items:center}
 .adm-decide{border-radius:var(--adm-r-card);padding:26px}
+
+/* 동그라미 안 체크·표시: 정확히 가운데 (svg 기준선 여백 없이) */
+:is(.adm-brief-mark,.adm-opt-mark,.adm-stage-dot,.adm-check-mark,.adm-dsp-mark,.adm-dspreq-dot,.adm-rights li>span,.adm-reason-mark) svg{display:block;margin:0}
+.adm-brief-mark svg.aq-check-icon,.adm-opt-mark svg.aq-check-icon{width:12px;height:12px;transform:translate(.3px,.3px)}
+.adm-stage-dot svg.aq-check-icon{width:15px;height:15px}
+/* 새로고침: 다음 건 버튼과 같은 높이·면, 누르면 한 바퀴 돌고 끝나면 초록 체크 */
+.adm-refresh{width:44px;height:44px;border-radius:15px;background:var(--adm-blue-soft);color:var(--adm-blue)}
+.adm-refresh:hover{background:#e2eaff;color:var(--adm-blue)}
+.adm-refresh:disabled{opacity:1;cursor:progress}
+.adm-refresh svg{display:block}
+.adm-refresh.is-spinning svg{animation:adm-spin .7s cubic-bezier(.45,.05,.35,1) infinite}
+.adm-refresh.is-done{background:#e8f6f0;color:#21815B}
+.adm-refresh.is-done svg{animation:adm-pop .32s cubic-bezier(.34,1.56,.64,1) both}
+@keyframes adm-pop{from{transform:scale(.4);opacity:0}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){.adm-refresh svg{animation:none!important}}
