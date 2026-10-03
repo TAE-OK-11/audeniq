@@ -7,7 +7,9 @@ import { Glyph } from '../components/Glyph';
 import { CheckIcon } from '../components/Check';
 
 const ORDER: Record<string, number> = { CONTENT_BLOCKED: 0, AWAITING_PARTNER: 1, READY: 2 };
-const issueText = (c: StagingRow['checks'][number]) => c.message ?? c.detail ?? checkLabel(c.code);
+// 서버 문구가 한국어면 그대로, 영어 원문이면 검사 이름으로
+const ko = (v?: string | null) => (v && /[가-힣]/.test(v) ? v : null);
+const issueText = (c: StagingRow['checks'][number]) => ko(c.message) ?? ko(c.detail) ?? checkLabel(c.code);
 /** 배급 준비 검사 등급 (delivery_staging::Severity) — BLOCKER·WARNING만 문제로 센다, INFO는 참고 */
 const SEV_TONE: Record<string, string> = { BLOCKER: 'bad', WARNING: 'warn', INFO: 'info' };
 const SEV_ORDER: Record<string, number> = { BLOCKER: 0, WARNING: 1, INFO: 2 };
