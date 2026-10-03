@@ -34,42 +34,59 @@ export interface DocRecord {
   /** 실서버 낙관적 잠금 버전 */
   rowVersion?: number;
   electronic?: ElectronicRightsRecord | null;
+  /** 배급 계약서(AUD-DIST 2.0): 담당자가 정한 거래 조건과 서명 때 체크할 확인 항목 */
+  agreementTerms?: AgreementTermsRecord | null;
+  /** 서명할 때 체크한 확인 항목 */
+  confirmations?: { items: { id: string; text: string; required: boolean; checked: boolean }[]; content_hash: string } | null;
 }
 
+export interface AgreementTermsRecord {
+  form: string; terms_version: string; exclusivity: 'NON_EXCLUSIVE' | 'EXCLUSIVE'; fee_bps: number; user_bps: number;
+  confirmations: { id: string; text: string; required: boolean }[];
+}
+
+// 체험용 계약서 — 서버(crates/core/src/agreement.rs)가 만드는 AUD-DIST 2.0 본문과 같은 모양
+const AGREEMENT_BOXES: AgreementTermsRecord['confirmations'] = [
+  { id: 'grant', required: true, text: '이 계약의 대상 콘텐츠를 저장·복제·전송하고, DSP에 전달하며, DSP와 배급 파트너가 배급에 필요한 범위에서 이용하게 하고, 메타데이터·앨범아트를 전달하고, 배급 관련 행정업무를 수행할 권한을 회사에 부여합니다.' },
+  { id: 'rights_own', required: true, text: '배급에 필요한 권리를 직접 보유하거나, 권리자로부터 필요한 허락을 받았습니다.' },
+  { id: 'rights_scope', required: true, text: '저작권(작사·작곡), 저작인접권, 실연자의 권리, 마스터(음반제작자)의 권리를 확인했습니다.' },
+  { id: 'third_party', required: true, text: '샘플·비트·앨범아트·사진·이미지·영상 등 제3자 자료를 쓸 권리를 확보했습니다.' },
+  { id: 'coauthors', required: true, text: '다른 사람과 함께 만든 콘텐츠라면 필요한 동의와 위임을 받았습니다.' },
+  { id: 'documents_true', required: true, text: '제출한 위임서·계약서·라이선스 등 자료는 모두 진실합니다.' },
+  { id: 'no_misuse', required: true, text: '타인의 명의나 콘텐츠를 허락 없이 사용하지 않았습니다.' },
+  { id: 'terms', required: true, text: 'AUDENIQ 음원 배급 서비스 이용약관을 확인했고, 이 계약에서 정하지 않은 사항에 약관이 적용되는 데 동의합니다.' },
+];
+const AGREEMENT_TERMS: AgreementTermsRecord = {
+  form: 'AUD-DIST 2.0', terms_version: 'AUD-TERMS 2026.10', exclusivity: 'NON_EXCLUSIVE', fee_bps: 800, user_bps: 9200, confirmations: AGREEMENT_BOXES,
+};
 const AGREEMENT_CONTENT = [
-  'AUDENIQ 디지털 음원 배급 신청·계약서',
-  '',
-  '1. 신청인 및 발매 정보',
-  '아티스트: 서린',
-  '발매명: 첫 번째 싱글',
-  '발매 유형: 싱글',
-  '발매 희망일: 2026-10-01',
-  '레이블 표기: AUDENIQ',
-  '수록곡: 1. 첫 번째 싱글 / 2. 첫 번째 싱글 (Inst.)',
-  '',
-  '2. 권리자 및 배급 범위',
-  '마스터 권리자: 서린',
-  '℗ 표기: 2026 서린',
-  '© 표기: 2026 서린',
-  '배급 지역: 전 세계',
-  '배급 플랫폼: Spotify, Apple Music, YouTube Music',
-  '추가 확인 항목: 일반 발매',
-  '',
-  '3. 신청인의 확인',
-  '신청인은 제출한 음원, 가사, 커버아트, 크레딧 및 메타데이터를 배급할 적법한 권한을 보유하고 있으며, 제3자의 권리가 포함된 경우 필요한 허락을 확보했음을 확인합니다.',
-  '',
-  '4. AUDENIQ 배급 계약',
-  '신청인은 위 발매 정보를 기준으로 AUDENIQ에 디지털 음원 배급을 신청하고, 계약서에 안내된 배급 범위·정산·수정·테이크다운 및 권리 보증 조항에 동의합니다. 보완이 필요한 경우 AUDENIQ는 관련 자료를 요청할 수 있습니다.',
-  '',
-  '위 신청 정보는 자동으로 작성됐습니다. 내용을 확인한 뒤 신청인 서명만 진행해 주세요.',
+  'AUDENIQ 음원 배급 계약서', '',
+  '서식 AUD-DIST 2.0 · 적용 약관 AUDENIQ 음원 배급 서비스 이용약관 (AUD-TERMS 2026.10)',
+  '신청서 번호 AUD-20260920-ABCDEF', '',
+  '주식회사 AUDENIQ(이하 “회사”)와 아래 이용자는 아래 릴리즈의 디지털 음원 배급에 관하여 다음과 같이 계약합니다.', '',
+  '제1조 (계약 당사자)', '회사: 주식회사 AUDENIQ', '이용자: 서린 (개인) · 아티스트 서린', '서명자: 서린 (아티스트 본인)', '',
+  '제2조 (계약 대상)', '이 계약은 아래 릴리즈 한 건에 적용합니다. 트랙 목록은 별첨 1과 같습니다.', '발매명: 첫 번째 싱글 (싱글)', '아티스트: 서린', 'UPC/EAN: 8800000000011', '발매 예정일: 2026-10-01', '',
+  '제3조 (배급 형태와 지역)', '배급 형태: 비독점 — 이용자는 대상 콘텐츠를 다른 경로로도 배급할 수 있습니다. 다만 같은 DSP에 중복 배급해 생긴 문제는 이용자가 해결합니다.', '배급 지역: 전 세계', '',
+  '제4조 (대상 DSP와 서비스 범위)', '대상 DSP: Spotify, Apple Music, YouTube Music', '서비스 범위: 기본 음원 배급. UGC 권리관리(YouTube Content ID, TikTok·Meta 등)와 그 밖의 부가서비스는 이 계약에 포함하지 않으며, 신청하는 경우 별도로 정합니다.', '',
+  '제5조 (계약기간)', '이용자가 서명한 날부터 이용자가 해지를 요청할 때까지로 합니다. 해지 요청과 그 후의 처리는 약관 제18장(계약 종료)에 따릅니다.', '',
+  '제6조 (배급수수료)', '배급수수료: 회사가 DSP와 배급 파트너로부터 실제로 받은 대상 콘텐츠의 수익 중 회사 8% / 이용자 92%', '',
+  '제7조 (정산)', '정산 수령인: 서린 (개인)', '지급 통화: 대한민국 원(KRW)', '정산 주기, 공제·조정, 환수, 지급 보류와 최소지급액의 일반 기준은 약관 제15장(정산)에 따릅니다.', '',
+  '제8조 (개별 특약)', '없음', '',
+  '제9조 (배급 권한의 부여)', '이용자는 대상 콘텐츠에 관하여 약관 제11조부터 제13조까지에서 정한 범위의 이용허락과 업무 수행 권한을 회사에 부여하며, 서명할 때 별첨 2의 해당 항목에 직접 체크하여 다시 확인합니다. 이 계약으로 저작권 등 권리 자체가 회사에 양도되지 않습니다.', '',
+  '제10조 (권리의 최종 확인)', '이용자는 서명할 때 별첨 2의 권리 확인 항목에 직접 체크합니다. 확인한 내용이 사실과 달라 생긴 손해는 약관 제93조에 따라 이용자가 책임집니다.', '',
+  '제11조 (약관의 적용)', '이 계약에서 정하지 않은 사항은 AUDENIQ 음원 배급 서비스 이용약관(AUD-TERMS 2026.10)에 따릅니다. 이 계약과 약관의 내용이 서로 다르면 이 계약을 우선합니다.', '',
+  '제12조 (전자계약)', '이 계약은 전자문서로 작성하고 전자서명으로 체결합니다. 체결일은 이용자가 서명한 날이며, 회사는 담당자 승인으로 계약 내용을 확정한 뒤 이용자의 서명을 받습니다. 계약서 번호·버전·서명 기록은 함께 보관됩니다.', '',
+  '별첨 1 · 트랙 목록', '1. 첫 번째 싱글 (ISRC KRA262600001)', '2. 첫 번째 싱글 (Inst.) (ISRC KRA262600002)', '',
+  '별첨 2 · 서명 시 확인 항목',
+  ...AGREEMENT_BOXES.map(b => `□ (필수) ${b.text}`),
 ].join('\n');
 
 const INITIAL_DOCS: DocRecord[] = [
   {
     id: 'doc1', kind: 'agreements',
-    title: '첫 번째 싱글 · AUDENIQ 디지털 음원 배급 신청·계약서',
-    releaseId: 'r1', releaseTitle: '첫 번째 싱글', version: '1.0', created: '2026-09-20',
-    content: AGREEMENT_CONTENT, fileName: '', checked: true, checkedAt: '2026-09-20 14:32',
+    title: '첫 번째 싱글 · AUDENIQ 음원 배급 계약서',
+    releaseId: 'r1', releaseTitle: '첫 번째 싱글', version: '2.0', created: '2026-09-20',
+    content: AGREEMENT_CONTENT, agreementTerms: AGREEMENT_TERMS, fileName: '', checked: true, checkedAt: '2026-09-20 14:32',
     consentHistory: [{ time: '2026-09-20 14:32', action: '내용 확인', version: '1.0' }],
     reviewHistory: [{ status: '검토 완료', time: '2026-09-21 10:05', detail: 'AUDENIQ 담당자 검토 완료' }],
     reviewStatus: 'approved', reviewNote: '', signerName: '', localSignatureData: '', localSignatureAt: '',

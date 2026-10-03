@@ -56,6 +56,8 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
         "x-csrf-token",
         "sec-fetch-site",
         "accept-encoding",
+        // Kept (trimmed) as evidence in the rights signing event log.
+        "user-agent",
     ] {
         if let Some(value) = request.headers().get(name)? {
             forwarded.headers_mut()?.set(name, &value)?;

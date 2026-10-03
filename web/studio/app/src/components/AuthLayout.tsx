@@ -20,6 +20,8 @@ export function AuthLayout({ title, sub, children }: { title: string; sub: strin
         <span>© AUDENIQ</span>
         <span aria-hidden="true">·</span>
         <Link to="/find-account">도움이 필요하신가요?</Link>
+        <span aria-hidden="true">·</span>
+        <Link to="/terms">이용약관</Link>
       </p>
     </div>
   );

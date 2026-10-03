@@ -125,6 +125,7 @@ pub fn router(s: AppState) -> Router {
             get(detail).put(update).delete(archive),
         )
         .merge(crate::portal::routes())
+        .merge(crate::signing::routes())
         .merge(crate::staff::routes())
         .merge(crate::partner_hooks::routes())
         .fallback(|| async { Error::NotFound.into_response() })

@@ -1,3 +1,4 @@
+pub mod agreement;
 pub mod api;
 pub mod artifacts;
 pub mod artwork_policy;
@@ -42,6 +43,7 @@ pub mod review;
 pub mod route_plan;
 pub mod routing;
 pub mod royalty;
+pub mod signing;
 pub mod staff;
 pub mod staff_admin;
 pub mod storage;

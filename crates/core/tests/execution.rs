@@ -3757,8 +3757,30 @@ async fn release_application_is_decided_in_release_review(pool: PgPool) {
     .await;
     assert_eq!(s, StatusCode::CONFLICT);
 
-    // Approve: the agreement is cleared for the artist's signature.
+    // Approve needs the commercial terms first (fee, exclusivity).
     let rev = current_revision(&pool, ctx.release).await;
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &format!("/api/staff/releases/{}/decision", ctx.release),
+        json!({"action":"APPROVE","revision_id":rev,"reason":""}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(v["error"]["code"], "AGREEMENT_TERMS_REQUIRED");
+    assert_eq!(doc_status(&pool, doc).await, "REVIEW");
+    let (s, v) = call(
+        &ctx.app,
+        "PUT",
+        &format!("/api/staff/releases/{}/agreement-terms", ctx.release),
+        json!({"exclusivity":"NON_EXCLUSIVE","fee_bps":800}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+
+    // Approve: the agreement is cleared for the artist's signature.
     let (s, v) = call(
         &ctx.app,
         "POST",

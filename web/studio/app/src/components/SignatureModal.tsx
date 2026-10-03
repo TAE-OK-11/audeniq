@@ -41,6 +41,9 @@ export function SignatureModal({
   const [phase, setPhase] = useState<'sign' | 'cert' | 'complete'>('sign');
   const [name, setName] = useState(doc.signerName || getProfileSnapshot().name || '');
   const [ack, setAck] = useState(false);
+  // 배급 계약서(AUD-DIST 2.0): 계약서 별첨 2의 확인 항목 — 필수 항목을 모두 체크해야 서명할 수 있다
+  const boxes = doc.agreementTerms?.confirmations ?? [];
+  const [ticked, setTicked] = useState<Record<string, boolean>>({});
   const [signing, setSigning] = useState(false);
   const [strokes, setStrokes] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -154,6 +157,7 @@ export function SignatureModal({
     if (!name.trim()) { toast('서명자 이름을 입력해 주세요.'); return; }
     if (!strokes) { toast('서명을 직접 그려 주세요.'); return; }
     if (!ack) { toast('문서 내용을 확인해 주세요.'); return; }
+    if (boxes.some(b => b.required && !ticked[b.id])) { toast('계약서의 필수 확인 항목에 모두 체크해 주세요.'); return; }
     const data = canvasRef.current!.toDataURL('image/png');
     if (!MOCK) {
       // 실서버: 확인 기록 후 서명을 서버에 저장하면 계약이 체결된다.
@@ -164,7 +168,7 @@ export function SignatureModal({
         let rv = doc.rowVersion ?? 0;
         if (!doc.checkedAt) rv = await portal.checkDocument(doc.id);
         const compact = await compactSignature(data);
-        await portal.signDocument(doc.id, name.trim(), compact || data, rv);
+        await portal.signDocument(doc.id, name.trim(), compact || data, rv, boxes.filter(b => ticked[b.id]).map(b => b.id));
         await refreshDocs();
         onSaved?.();
         setPhase('complete');
@@ -177,6 +181,7 @@ export function SignatureModal({
     }
     const at = stampNow();
     updateDoc(doc.id, {
+      ...(boxes.length ? { confirmations: { items: boxes.map(b => ({ ...b, checked: !!ticked[b.id] })), content_hash: '' } } : {}),
       signerName: name.trim(),
       localSignatureData: data,
       localSignatureAt: at,
@@ -505,6 +510,22 @@ export function SignatureModal({
                 )}
               </div>
             </div>
+            {boxes.length > 0 && (
+              <fieldset className="aq-confirm-boxes">
+                <legend>권리·배급 권한 확인 <small>계약서 별첨 2 · 직접 체크해 주세요</small></legend>
+                <label className="check-line aq-confirm-all">
+                  <input type="checkbox" checked={boxes.every(b => ticked[b.id])}
+                    onChange={e => setTicked(Object.fromEntries(boxes.map(b => [b.id, e.target.checked])))} />
+                  <span>모두 확인했어요</span>
+                </label>
+                {boxes.map(b => (
+                  <label key={b.id} className="check-line">
+                    <input type="checkbox" checked={!!ticked[b.id]} onChange={e => setTicked(t => ({ ...t, [b.id]: e.target.checked }))} />
+                    <span><b>{b.required ? '(필수)' : '(해당 시)'}</b> {b.text}</span>
+                  </label>
+                ))}
+              </fieldset>
+            )}
             <label className="aq-sign-check">
               <input type="checkbox" id="aqSignAck" checked={ack} onChange={e => setAck(e.target.checked)} />
               <span>

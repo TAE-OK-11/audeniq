@@ -110,7 +110,7 @@ pub async fn staff(s: &AppState, h: &HeaderMap, write: bool) -> Result<Staff> {
     Ok(Staff { actor, role })
 }
 
-fn require(st: &Staff, duty: Duty) -> Result<()> {
+pub(crate) fn require(st: &Staff, duty: Duty) -> Result<()> {
     if st.role.may(duty) {
         Ok(())
     } else {
@@ -593,7 +593,9 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
     .await?;
     let documents: Vec<Value> = sqlx::query_scalar(
         "SELECT jsonb_build_object('id',id,'kind',kind,'title',title,'status',status,'review_note',review_note,
-                'file_name',file_name,'asset_id',asset_id,'signed_at',signed_at,'row_version',row_version,'updated_at',updated_at)
+                'file_name',file_name,'asset_id',asset_id,'signed_at',signed_at,'row_version',row_version,'updated_at',updated_at,
+                'agreement_terms',agreement_terms,'confirmations',confirmations,
+                'body',CASE WHEN kind='AGREEMENT' THEN body END)
          FROM portal.documents WHERE org_id=$1 AND release_id=$2 ORDER BY created_at",
     )
     .bind(org)
@@ -957,6 +959,21 @@ async fn decide_agreement(
     actor: &Actor,
 ) -> Result<()> {
     let note: String = note.chars().take(1000).collect();
+    // An approved agreement goes to the artist for signature, so its
+    // commercial terms (fee, exclusivity …) must be entered first.
+    if status == "APPROVED" {
+        let missing: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM portal.documents WHERE org_id=$1 AND release_id=$2 AND kind='AGREEMENT'
+               AND status IN ('REVIEW','PREPARED') AND agreement_terms IS NULL)",
+        )
+        .bind(org)
+        .bind(release)
+        .fetch_one(&mut *c)
+        .await?;
+        if missing {
+            return Err(Error::PolicyGate("AGREEMENT_TERMS_REQUIRED"));
+        }
+    }
     let ids: Vec<Uuid> = sqlx::query_scalar(
         "UPDATE portal.documents SET status=$3, review_note=$4, row_version=row_version+1, updated_at=now()
          WHERE org_id=$1 AND release_id=$2 AND kind='AGREEMENT'
@@ -2709,6 +2726,14 @@ async fn h_restage(
 ) -> Result<Json<Value>> {
     Ok(Json(restage(&s, &h, package).await?))
 }
+async fn h_agreement_terms(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    h: HeaderMap,
+    Json(i): Json<crate::agreement::TermsInput>,
+) -> Result<Json<Value>> {
+    Ok(Json(crate::agreement::set_terms(&s, &h, id, i).await?))
+}
 async fn h_dsp_route(
     State(s): State<AppState>,
     h: HeaderMap,
@@ -2740,6 +2765,10 @@ pub fn routes() -> Router<AppState> {
         .route("/api/staff/releases/{id}", get(h_release))
         .route("/api/staff/releases/{id}/timeline", get(h_timeline))
         .route("/api/staff/releases/{id}/decision", post(h_decide))
+        .route(
+            "/api/staff/releases/{id}/agreement-terms",
+            axum::routing::put(h_agreement_terms),
+        )
         .route(
             "/api/staff/releases/{id}/claim",
             post(h_claim).delete(h_unclaim),

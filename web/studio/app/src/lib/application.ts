@@ -21,7 +21,7 @@ export const SIGNER_ROLES = ['아티스트 본인', '소속사·레이블 대표
 
 export const AGREEMENTS: { id: string; text: string }[] = [
   { id: 'truth', text: '신청 내용이 사실이며, 음원·가사·커버아트·크레딧을 배급할 적법한 권리를 가지고 있음을 확인합니다.' },
-  { id: 'terms', text: 'AUDENIQ 디지털 음원 배급 약관과 정산·수정·테이크다운 조건에 동의합니다.' },
+  { id: 'terms', text: 'AUDENIQ 음원 배급 서비스 이용약관(정산·수정·테이크다운 조건 포함)에 동의합니다.' },
   { id: 'privacy', text: '배급·정산을 위한 개인정보 수집·이용 및 음원 플랫폼 제공에 동의합니다.' },
   { id: 'esign', text: '이 전자서명이 자필 서명과 같은 효력을 가진다는 데 동의합니다.' },
 ];

@@ -26,6 +26,7 @@ import { DeliveryStatus } from '../components/DeliveryStatus';
 import { JumpNav, type JumpItem } from '../components/JumpNav';
 import { ReviewTimeline } from '../components/ReviewTimeline';
 import { contextOrReadOnly, ReviewActions } from '../components/ReviewActions';
+import { AgreementTermsSection } from '../components/AgreementTerms';
 import { ReviewClaimPanel, claimLabel } from '../components/ReviewClaim';
 import { useConfirm } from '../components/Confirm';
 
@@ -447,6 +448,7 @@ function ReviewSheet({ id }: { id: string }) {
   const stages = systemStages(r.status);
   const pending = sheet.second_approvals.find(a => a.id === context.pending_second_approval_id);
   const canReview = can('REVIEW');
+  const agreementDoc = sheet.documents.find(d => d.kind === 'AGREEMENT');
   const after = (msg: string) => { setDone(msg); refresh(); refreshCounts(); };
   const mine = !!context.claim?.mine;
   const claim = async (takeOver: boolean) => {
@@ -578,6 +580,11 @@ function ReviewSheet({ id }: { id: string }) {
           <div id="rv-info" className="adm-anchor"><EnteredInfoSection sheet={sheet} /></div>
           <div id="rv-opts" className="adm-anchor"><OptionsSection sheet={sheet} /></div>
           <div id="rv-tracks" className="adm-anchor"><TracksSection sheet={sheet} /></div>
+
+          {agreementDoc && <div id="rv-terms" className="adm-anchor"><AgreementTermsSection
+            releaseId={r.id} doc={agreementDoc} onSaved={refresh}
+            editable={canReview && mine && ['REVIEW', 'PREPARED'].includes(agreementDoc.status)}
+          /></div>}
 
           <div id="rv-docs" className="adm-anchor"><Section
             title="서류" meta={`${sheet.documents.length}건`}
