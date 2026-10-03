@@ -16,7 +16,6 @@ import { compactSignature } from '../lib/application';
 import { parseStamp } from '../lib/date';
 import { MOCK_REVIEW_SECONDS } from '../store/mockReviewer';
 import { CheckIcon } from './Check';
-import { useAlert } from './Alert';
 
 const CERT_PROVIDERS = ['PASS', '카카오 인증서', '네이버 인증서', '토스 인증서'];
 
@@ -37,7 +36,6 @@ export function SignatureModal({
   onDone?: () => void;
 }) {
   const toast = useToast();
-  const alert = useAlert();
   const readOnly = doc.reviewStatus !== 'approved';
   // 순차 단계: 1) 서명 진행 → 2) 전자서명 진행 → 3) 계약서 완성
   const [phase, setPhase] = useState<'sign' | 'cert' | 'complete'>('sign');
@@ -210,7 +208,7 @@ export function SignatureModal({
   const submitPhone = () => {
     const digits = phone.replace(/\D/g, '');
     if (digits.length < 10 || digits.length > 11) {
-      alert('휴대폰 번호를 다시 확인해 주세요.', '숫자 10~11자리로 입력했는지 확인해 주세요.');
+      toast('휴대폰 번호를 정확히 입력해 주세요.');
       return;
     }
     if (!certName.trim()) {
@@ -222,11 +220,11 @@ export function SignatureModal({
 
   const submitRrn = () => {
     if (rrnFront.length !== 6 || !/^\d{6}$/.test(rrnFront)) {
-      alert('주민등록번호를 다시 확인해 주세요.', '생년월일 6자리를 숫자로 입력해 주세요.');
+      toast('주민등록번호 앞 6자리를 입력해 주세요.');
       return;
     }
     if (rrnBack.length !== 1 || !/^[1-4]$/.test(rrnBack)) {
-      alert('주민등록번호를 다시 확인해 주세요.', '뒷자리 첫 번째 숫자(1~4)를 입력해 주세요.');
+      toast('주민등록번호 뒷자리 첫 번째 숫자를 입력해 주세요.');
       return;
     }
     setCertStep('verify');
@@ -235,7 +233,7 @@ export function SignatureModal({
 
   const submitVerify = () => {
     if (verifyCode.length !== 6 || !/^\d{6}$/.test(verifyCode)) {
-      alert('인증번호를 다시 확인해 주세요.', '문자로 받은 숫자 6자리를 입력해 주세요.');
+      toast('인증번호 6자리를 입력해 주세요.');
       return;
     }
     const at = stampNow();
