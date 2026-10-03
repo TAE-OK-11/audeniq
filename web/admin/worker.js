@@ -17,9 +17,10 @@
  */
 
 import { route as contentRoute, handleContent } from '../studio/worker.js';
+import { backendOrigin, clientEncoding, passThroughEncoding, readLimitedBody, requireHttps, secureResponse, serveAssets } from '../shared/transport.js';
 
 const ALLOWED = [/^\/api\/auth\/(login|logout|csrf)$/, /^\/api\/me$/, /^\/api\/staff(\/.*)?$/];
-const FORWARD_HEADERS = ['cookie', 'content-type', 'accept', 'accept-encoding', 'x-csrf-token'];
+const FORWARD_HEADERS = ['cookie', 'content-type', 'accept', 'x-csrf-token'];
 const MAX_BODY = 64 * 1024;
 
 const error = (status, code) => Response.json(
@@ -28,6 +29,8 @@ const error = (status, code) => Response.json(
 );
 
 export async function proxy(request, env, url) {
+  const refused = requireHttps(request);
+  if (refused) return refused;
   if (!ALLOWED.some(re => re.test(url.pathname))) return error(404, 'NOT_FOUND');
   const read = request.method === 'GET' || request.method === 'HEAD';
   if (!read && request.method !== 'POST') return error(405, 'METHOD_NOT_ALLOWED');
@@ -43,6 +46,7 @@ export async function proxy(request, env, url) {
     const v = request.headers.get(name);
     if (v) headers.set(name, v);
   }
+  headers.set('accept-encoding', passThroughEncoding(clientEncoding(request)));
   headers.set('origin', env.BACKEND_APP_ORIGIN || 'https://studio.audeniq.com');
   headers.set('sec-fetch-site', 'same-origin');
   const ip = request.headers.get('cf-connecting-ip');
@@ -51,14 +55,12 @@ export async function proxy(request, env, url) {
 
   let body;
   if (!read) {
-    body = await request.arrayBuffer();
-    if (body.byteLength > MAX_BODY) return error(413, 'PAYLOAD_TOO_LARGE');
+    try { body = await readLimitedBody(request, MAX_BODY); }
+    catch (e) { return error(e instanceof RangeError ? 413 : 400, 'PAYLOAD_TOO_LARGE'); }
   }
-
-  const backend = (env.BACKEND_URL || 'https://api-origin.audeniq.com').replace(/\/$/, '');
   let res;
   try {
-    res = await fetch(backend + url.pathname + url.search, { method: request.method, headers, body, redirect: 'manual' });
+    res = await fetch(backendOrigin(env) + url.pathname + url.search, { method: request.method, headers, body, redirect: 'manual' });
   } catch {
     return error(502, 'BACKEND_UNAVAILABLE');
   }
@@ -67,15 +69,18 @@ export async function proxy(request, env, url) {
   out.set('X-Content-Type-Options', 'nosniff');
   out.delete('Access-Control-Allow-Origin');
   out.delete('Access-Control-Allow-Credentials');
-  return new Response(res.body, { status: res.status, headers: out });
+  return new Response(res.body, { status: res.status, headers: out,
+    ...(out.has('content-encoding') ? { encodeBody: 'manual' } : {}) });
 }
 
 export default {
   async fetch(request, env) {
+    const refused = requireHttps(request);
+    if (refused) return refused;
     const url = new URL(request.url);
     const content = contentRoute(request.method, url.pathname);
-    if (content) return handleContent(request, env, content);
-    if (url.pathname.startsWith('/api/')) return proxy(request, env, url);
-    return env.ASSETS.fetch(request);
+    if (content) return secureResponse(await handleContent(request, env, content));
+    if (url.pathname.startsWith('/api/')) return secureResponse(await proxy(request, env, url));
+    return secureResponse(await serveAssets(request, env));
   },
 };

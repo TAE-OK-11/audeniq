@@ -58,6 +58,10 @@ pub fn fill(template: &str, id: &str, name: &str, key: &str) -> String {
 
 impl ApiClient {
     pub fn new(config: HttpApiConfig) -> Result<Self> {
+        config.validate_urls()?;
+        let allow_local_http = crate::external_http::local_http_enabled(
+            std::env::var("AUDENIQ_ALLOW_LOCAL_PARTNER_TRANSPORT").as_deref() == Ok("true"),
+        );
         let auth = match &config.auth {
             HttpAuth::Bearer { token } => ResolvedAuth::Bearer(token.resolve()?),
             HttpAuth::ApiKey { header, key } => {
@@ -84,7 +88,7 @@ impl ApiClient {
                 header: header.clone(),
             },
         };
-        let client = reqwest::Client::builder()
+        let client = crate::external_http::client_builder(allow_local_http)
             .connect_timeout(Duration::from_secs(15))
             .timeout(Duration::from_secs(config.timeout_secs.clamp(5, 3600)))
             .redirect(reqwest::redirect::Policy::none())

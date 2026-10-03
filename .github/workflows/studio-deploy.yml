@@ -9,10 +9,12 @@ on:
   push:
     paths:
       - web/studio/**
+      - web/shared/**
       - .github/workflows/studio-deploy.yml
   pull_request:
     paths:
       - web/studio/**
+      - web/shared/**
       - .github/workflows/studio-deploy.yml
   workflow_dispatch:
     inputs:

@@ -1,4 +1,25 @@
 use std::env;
+
+fn optional_feature(value: Option<&str>) -> crate::error::Result<bool> {
+    match value {
+        None | Some("false") => Ok(false),
+        Some("true") => Ok(true),
+        _ => Err(crate::error::Error::PolicyGate("FEATURE_FLAG_INVALID")),
+    }
+}
+fn read_feature(name: &str) -> crate::error::Result<bool> {
+    match env::var(name) {
+        Ok(value) => optional_feature(Some(&value)),
+        Err(env::VarError::NotPresent) => optional_feature(None),
+        Err(_) => Err(crate::error::Error::PolicyGate("FEATURE_FLAG_INVALID")),
+    }
+}
+pub fn kms_enabled() -> crate::error::Result<bool> {
+    read_feature("PAYOUT_KMS_ENABLED")
+}
+pub fn antivirus_enabled() -> crate::error::Result<bool> {
+    read_feature("UPLOAD_AV_ENABLED")
+}
 #[derive(Clone)]
 pub struct Config {
     pub database_url: String,
@@ -13,6 +34,8 @@ pub struct Config {
 }
 impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
+        kms_enabled()?;
+        antivirus_enabled()?;
         let mode = env::var("APP_ENV").unwrap_or_else(|_| "development".into());
         anyhow::ensure!(
             matches!(mode.as_str(), "development" | "test" | "production"),
@@ -49,6 +72,19 @@ impl Config {
             "__Host-audeniq_session"
         } else {
             "audeniq_session"
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn external_security_services_require_explicit_enablement() {
+        assert!(!super::optional_feature(None).unwrap());
+        assert!(!super::optional_feature(Some("false")).unwrap());
+        assert!(super::optional_feature(Some("true")).unwrap());
+        for invalid in ["", "1", "FALSE", "disabled", "true "] {
+            assert!(super::optional_feature(Some(invalid)).is_err());
         }
     }
 }

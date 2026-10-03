@@ -7,6 +7,7 @@ on:
   push:
     paths:
       - web/admin/**
+      - web/shared/**
       - web/studio/app/build/retain-assets.ts
       - web/studio/worker.js
       - web/studio/test/worker.test.mjs
@@ -14,6 +15,7 @@ on:
   pull_request:
     paths:
       - web/admin/**
+      - web/shared/**
       - web/studio/app/build/retain-assets.ts
       - web/studio/worker.js
       - web/studio/test/worker.test.mjs

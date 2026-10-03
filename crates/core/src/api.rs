@@ -10,7 +10,7 @@ use crate::{
 };
 use axum::{
     Json, Router,
-    extract::{DefaultBodyLimit, Path, Query, Request, State},
+    extract::{DefaultBodyLimit, MatchedPath, Path, Query, Request, State},
     http::{HeaderMap, HeaderValue, Method},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -34,6 +34,8 @@ pub struct AppState {
     /// Lossless → FLAC conversions at upload completion (CPU and temp disk).
     pub transcode_slots: Arc<Semaphore>,
     pub dummy_hash: String,
+    pub payout_keys: Arc<crate::payout_keys::KeyRing>,
+    pub antivirus_enabled: bool,
 }
 impl AppState {
     pub async fn new(pool: PgPool, config: Config, storage: Arc<dyn ObjectStore>) -> Result<Self> {
@@ -44,6 +46,8 @@ impl AppState {
             password_slots: Arc::new(Semaphore::new(2)),
             upload_slots: Arc::new(Semaphore::new(4)),
             transcode_slots: Arc::new(Semaphore::new(1)),
+            payout_keys: Arc::new(crate::payout_keys::KeyRing::from_env(false)?),
+            antivirus_enabled: crate::config::antivirus_enabled()?,
             dummy_hash: auth::password_hash(auth::random_token()).await?,
         })
     }
@@ -157,12 +161,19 @@ fn panic_response(err: Box<dyn std::any::Any + Send + 'static>) -> Response {
 /// Accept-Encoding). Level 4: most of the size win of the maximum levels at
 /// a fraction of the CPU (brotli's default is 11, far too slow per request).
 /// Bodies under 1 KiB are sent as is: the framing costs more than it saves.
-fn compression()
--> tower_http::compression::CompressionLayer<tower_http::compression::predicate::SizeAbove> {
-    use tower_http::compression::{CompressionLayer, CompressionLevel, predicate::SizeAbove};
+fn compression() -> tower_http::compression::CompressionLayer<
+    tower_http::compression::predicate::And<
+        tower_http::compression::predicate::DefaultPredicate,
+        tower_http::compression::predicate::SizeAbove,
+    >,
+> {
+    use tower_http::compression::{
+        CompressionLayer, CompressionLevel,
+        predicate::{DefaultPredicate, Predicate, SizeAbove},
+    };
     CompressionLayer::new()
         .quality(CompressionLevel::Precise(4))
-        .compress_when(SizeAbove::new(1024))
+        .compress_when(DefaultPredicate::new().and(SizeAbove::new(1024)))
 }
 /// Total request-header budget. Browsers and the edge send a few KiB; hyper
 /// alone accepted a single 200 KB header (sandbox round 2).
@@ -204,13 +215,47 @@ async fn boundary(State(s): State<AppState>, mut req: Request, next: Next) -> Re
     {
         return Error::Forbidden.into_response();
     }
+    // Derive audit metadata here, after service authentication. Never trust
+    // browser supplied copies and never persist bearer tokens from raw paths.
+    let route = req
+        .extensions()
+        .get::<MatchedPath>()
+        .map(|v| v.as_str().to_owned())
+        .unwrap_or_else(|| "unmatched".into());
+    let method = req.method().as_str().to_owned();
+    let resource = req
+        .uri()
+        .path()
+        .split('/')
+        .filter_map(|v| Uuid::parse_str(v).ok())
+        .next_back();
+    for name in [
+        "x-audeniq-audit-route",
+        "x-audeniq-audit-method",
+        "x-audeniq-audit-resource",
+    ] {
+        req.headers_mut().remove(name);
+    }
+    if let Ok(value) = HeaderValue::from_str(&route) {
+        req.headers_mut().insert("x-audeniq-audit-route", value);
+    }
+    req.headers_mut().insert(
+        "x-audeniq-audit-method",
+        HeaderValue::from_str(&method).expect("valid method"),
+    );
+    if let Some(resource) = resource {
+        req.headers_mut().insert(
+            "x-audeniq-audit-resource",
+            HeaderValue::from_str(&resource.to_string()).expect("uuid"),
+        );
+    }
     // Correlation fields on every log line of this request; release-scoped
     // routes also carry the release id (see docs/PIPELINE_ARCHITECTURE.md).
     let span = tracing::info_span!(
         "http",
         request_id = %id,
         method = %req.method(),
-        path = %req.uri().path(),
+        path = %route,
         release_id = tracing::field::Empty,
     );
     if let Some(release) = release_in_path(req.uri().path()) {
@@ -808,9 +853,70 @@ mod tests {
         assert_eq!(enc.as_deref(), Some("br"));
         assert!(len * 5 < raw_len, "br {len} vs {raw_len} bytes");
         assert_eq!(call("/big", "gzip").await.0.as_deref(), Some("gzip"));
+        assert_eq!(
+            call("/big", "zstd;q=0, br;q=0, gzip").await.0.as_deref(),
+            Some("gzip")
+        );
+        assert_eq!(
+            call("/big", "zstd;q=0.2, br;q=1").await.0.as_deref(),
+            Some("br")
+        );
         // No Accept-Encoding, or a tiny body: sent as is.
         assert_eq!(call("/big", "identity").await, (None, raw_len));
         assert_eq!(call("/small", "zstd").await.0, None);
+
+        // Exercise actual decoding, not only headers or compressed size.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = reqwest::Client::new();
+        for encoding in ["zstd", "br", "gzip"] {
+            let decoded: Value = client
+                .get(format!("http://{address}/big"))
+                .header("accept-encoding", encoding)
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            assert_eq!(serde_json::to_vec(&decoded).unwrap().len(), raw_len);
+            assert_eq!(decoded["items"][199]["status"], "READY_FOR_DELIVERY");
+        }
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn compression_preserves_streaming_and_already_compressed_media() {
+        let app = Router::new()
+            .route(
+                "/sse",
+                get(|| async {
+                    (
+                        [("content-type", "text/event-stream")],
+                        "data: ready\n\n".repeat(200),
+                    )
+                }),
+            )
+            .route(
+                "/image",
+                get(|| async { ([("content-type", "image/png")], vec![0_u8; 4096]) }),
+            )
+            .layer(compression());
+        for path in ["/sse", "/image"] {
+            let response = app
+                .clone()
+                .oneshot(
+                    axum::http::Request::builder()
+                        .uri(path)
+                        .header("accept-encoding", "zstd, br, gzip")
+                        .body(axum::body::Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert!(!response.headers().contains_key("content-encoding"));
+        }
     }
 
     #[tokio::test]

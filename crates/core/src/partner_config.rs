@@ -346,6 +346,21 @@ pub struct HttpApiConfig {
 fn p_create() -> String {
     "/v1/releases".into()
 }
+
+impl HttpApiConfig {
+    pub fn validate_urls(&self) -> Result<()> {
+        let allow_local = crate::external_http::local_http_enabled(
+            std::env::var("AUDENIQ_ALLOW_LOCAL_PARTNER_TRANSPORT").as_deref() == Ok("true"),
+        );
+        crate::external_http::validate_url(&self.base_url, allow_local)
+            .map_err(|_| Error::InvalidCode("PARTNER_URL_INVALID"))?;
+        if let HttpAuth::Oauth2 { token_url, .. } = &self.auth {
+            crate::external_http::validate_url(token_url, allow_local)
+                .map_err(|_| Error::InvalidCode("PARTNER_URL_INVALID"))?;
+        }
+        Ok(())
+    }
+}
 fn p_file() -> String {
     "/v1/releases/{id}/files/{name}".into()
 }
@@ -480,14 +495,7 @@ impl PartnerConfig {
             _ => Ok(()),
         }?;
         for api in [&self.http_api, &self.status_api].into_iter().flatten() {
-            let u = url::Url::parse(&api.base_url)
-                .map_err(|_| Error::InvalidCode("PARTNER_URL_INVALID"))?;
-            let local_http = u.scheme() == "http"
-                && matches!(u.host_str(), Some("127.0.0.1" | "localhost"))
-                && std::env::var("AUDENIQ_ALLOW_LOCAL_PARTNER_TRANSPORT").as_deref() == Ok("true");
-            if u.scheme() != "https" && !local_http {
-                return Err(Error::InvalidCode("PARTNER_URL_INVALID"));
-            }
+            api.validate_urls()?;
         }
         Ok(())
     }

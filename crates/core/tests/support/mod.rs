@@ -35,7 +35,7 @@ use uuid::Uuid;
 
 pub const SECRET: &str = "test-only-service-secret-32-characters";
 pub const ORIGIN: &str = "http://localhost:5173";
-pub const SIG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+pub const SIG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC";
 pub struct FileStore {
     pub dir: std::path::PathBuf,
     pub get_calls: AtomicUsize,

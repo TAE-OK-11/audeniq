@@ -510,13 +510,12 @@ impl S3Transport {
         access: Secret,
         secret: Secret,
     ) -> Result<Self> {
-        let endpoint =
-            url::Url::parse(endpoint).map_err(|_| Error::InvalidCode("PARTNER_URL_INVALID"))?;
-        let local = std::env::var("AUDENIQ_ALLOW_LOCAL_PARTNER_TRANSPORT").as_deref() == Ok("true")
-            && endpoint.scheme() == "http";
-        if (endpoint.scheme() != "https" && !local)
-            || endpoint.host_str().is_none()
-            || bucket.is_empty()
+        let allow_local = crate::external_http::local_http_enabled(
+            std::env::var("AUDENIQ_ALLOW_LOCAL_PARTNER_TRANSPORT").as_deref() == Ok("true"),
+        );
+        let endpoint = crate::external_http::validate_url(endpoint, allow_local)
+            .map_err(|_| Error::InvalidCode("PARTNER_URL_INVALID"))?;
+        if bucket.is_empty()
             || !bucket
                 .bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b".-".contains(&b))
@@ -531,11 +530,14 @@ impl S3Transport {
             prefix: prefix.trim_matches('/').to_string(),
             access,
             secret,
-            client: reqwest::Client::builder()
+            client: crate::external_http::client_builder(allow_local)
+                .no_gzip()
+                .no_brotli()
+                .no_zstd()
+                .no_deflate()
                 .connect_timeout(Duration::from_secs(15))
                 .read_timeout(Duration::from_secs(60))
                 .timeout(Duration::from_secs(3600))
-                .redirect(reqwest::redirect::Policy::none())
                 .build()
                 .map_err(|_| Error::Internal)?,
         })
