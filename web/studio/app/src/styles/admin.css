@@ -848,3 +848,30 @@ button.adm-row:hover,a.adm-row:hover{background:#edf2ff}
 }
 .adm-row .adm-btn.warn{background:#ffe4c4;color:#8a4f12}
 .adm-row .adm-btn.danger{background:#ffdcdc;color:#b0393b}
+
+/* ---------- 담당자 확인 필요 카드: 왼쪽 표시 + 제목·설명, 2인 승인만 작은 칩 ---------- */
+.adm-check{display:flex;align-items:flex-start;gap:12px}
+.adm-check-body{flex:1;min-width:0}
+.adm-check-mark{display:grid;place-items:center;flex:none;width:26px;height:26px;margin-top:-1px;border-radius:50%;background:#f0a531;color:#fff}
+.adm-check.is-sensitive .adm-check-mark{background:#e5484d}
+.adm-check-top{flex-wrap:nowrap;align-items:flex-start}
+.adm-check-top b{font-size:15px;font-weight:800;line-height:1.45}
+.adm-check-top .adm-codes{flex:none}
+.adm-check p{margin-top:4px;font-size:13.5px;line-height:1.6;color:#3d4760}
+.adm-check .adm-more{margin-top:6px}
+.adm-check .adm-more summary{min-height:28px;font-size:12.5px;color:#3B63F3}
+.adm-check .adm-chip{padding:4px 9px;font-size:11px}
+@media (max-width:640px){.adm-check{padding:16px 16px 14px;gap:10px}}
+
+/* ---------- 부가서비스: 고르지 않은 항목은 접기, 빈 값은 옅게 ---------- */
+.adm-opt-off{margin-top:10px}
+.adm-opt-off>summary{display:inline-flex;align-items:center;gap:4px;min-height:34px;font-size:12.5px;font-weight:750;color:var(--adm-muted);cursor:pointer;list-style:none}
+.adm-opt-off>summary::-webkit-details-marker{display:none}
+.adm-opt-off>summary svg{transition:transform .2s var(--adm-ease)}
+.adm-opt-off[open]>summary svg{transform:rotate(90deg)}
+.adm-opt-off .adm-tags{margin-top:4px}
+.adm-opt-off .adm-tags span{background:#fff;color:#5d6880;font-weight:650}
+.adm-none{color:#a3adbf;font-weight:650}
+.adm-opt-group h3{font-size:15px}
+.adm-opt dl{gap:10px}
+.adm-opt-row dt{font-size:12.5px}
