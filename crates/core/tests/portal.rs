@@ -94,9 +94,12 @@ impl ObjectStore for MockStore {
     }
 }
 async fn app(pool: PgPool) -> (Router, Arc<MockStore>) {
+    app_with_parser_slots(pool, 1).await
+}
+async fn app_with_parser_slots(pool: PgPool, parser_slots: usize) -> (Router, Arc<MockStore>) {
     database::MIGRATOR.run(&pool).await.unwrap();
     let store = Arc::new(MockStore::default());
-    let s = AppState::new(
+    let mut s = AppState::new(
         pool,
         Config {
             database_url: "unused".into(),
@@ -111,6 +114,7 @@ async fn app(pool: PgPool) -> (Router, Arc<MockStore>) {
     )
     .await
     .unwrap();
+    s.transcode_slots = Arc::new(tokio::sync::Semaphore::new(parser_slots));
     (router(s), store)
 }
 
@@ -728,7 +732,9 @@ async fn replacement_applications_preserve_terminal_agreements_and_require_rerea
 async fn concurrent_signing_and_replacement_never_bind_an_old_signature_to_new_content(
     pool: PgPool,
 ) {
-    let (app, _) = app(pool.clone()).await;
+    // Let both requests reach the document row lock; the runtime's single
+    // parser slot can otherwise reject one with UPLOAD_BUSY before the race.
+    let (app, _) = app_with_parser_slots(pool.clone(), 2).await;
     let u = user(&app).await;
     let release = create(&app, &u, "releases").await;
     let path = org_path(&u, &format!("/releases/{release}/application"));
