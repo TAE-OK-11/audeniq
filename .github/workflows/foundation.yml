@@ -137,10 +137,6 @@ jobs:
           npx --yes wrangler@4.137.0 deploy --dry-run --outdir /tmp/audeniq-edge-bundle
       - name: Shared HTTPS and compression tests
         run: node --test web/shared/transport.test.mjs
-      - name: Backend key management and backup tests
-        run: |
-          sudo apt-get install --no-install-recommends -y age
-          python3 -m unittest discover -s deploy/tests -v
       - name: Studio Worker and D1 content tests
         working-directory: web/studio
         run: bun test test/
@@ -182,6 +178,16 @@ jobs:
       - name: Enforce formatting result
         if: always() && steps.formatting.outcome == 'failure'
         run: exit 1
+  kms-backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: AWS and GCP KMS compatibility, transport and encrypted backup tests
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install --no-install-recommends -y age
+          python3 -m unittest discover -s deploy/tests -v
   compose-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 35
