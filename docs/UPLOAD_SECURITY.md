@@ -15,7 +15,7 @@
 
 FFmpeg/FFprobe, ExifTool, OCR, QR 검사기, 이미지/PDF 변환기 모두 Linux Landlock ABI 3 이상과 seccomp를 적용한 자식 프로세스에서 실행한다. 사용한 입력 파일과 운영체제 프로그램/라이브러리만 읽고 지정한 결과 파일 또는 고유한 0700 작업 폴더만 쓴다. DB·스토리지·KMS·파트너 환경변수를 전달하지 않는다. `/proc`, 키링, 파트너 인증 파일, 다른 업로드 파일을 허용하지 않는다. 네트워크 소켓, ptrace/process_vm, 프로세스 신호 전송, 마운트/네임스페이스 변경, io_uring 우회도 차단한다. 메모리·CPU·출력 파일·FD 한도와 기존 벽시계 제한을 함께 적용한다. 샌드박스가 지원되지 않으면 파서를 실행하지 않는다.
 
-ClamAV 엔진은 별도 `antivirus` 컨테이너다. `network_mode: none`, 읽기 전용 루트, 비루트 UID, 모든 capability 제거, PID/메모리/CPU/tmpfs 한도를 적용한다. API와 공유하는 Unix 소켓으로 바이트만 받는다. DB·R2·KMS·파트너 비밀이나 원본 저장 볼륨을 마운트하지 않는다. 정의 파일 갱신 컨테이너 `antivirus-update`에만 외부 통신과 정의 파일 볼륨 쓰기를 허용한다. 검사 엔진은 갱신 파일을 읽기 전용으로 로드한다. 엔진을 상주시키므로 업로드마다 전체 백신 DB를 다시 로드하지 않는다.
+ClamAV 엔진은 별도 `antivirus` 컨테이너다. `network_mode: none`, 읽기 전용 루트, 비루트 UID, 모든 capability 제거, PID/메모리/CPU/tmpfs 한도를 적용한다. API와 공유하는 Unix 소켓으로 바이트만 받는다. DB·R2·KMS·파트너 비밀이나 원본 저장 볼륨을 마운트하지 않는다. 정의 파일 갱신 컨테이너 `antivirus-update`에만 외부 통신과 정의 파일 볼륨 쓰기를 허용한다. 검사 엔진은 갱신 파일을 읽기 전용으로 로드한다. 엔진을 상주시키므로 업로드마다 전체 백신 DB를 다시 로드하지 않는다. 갱신은 공식 HTTPS 주소와 로컬 CONNECT 프록시를 사용한다. 프록시는 `database.clamav.net:443` 터널만 열며 평문 HTTP 요청/다른 호스트·포트/HTTP로 바뀌는 redirect는 외부 접속 전에 거부한다. FreshClam의 인증서 검증과 TLS는 터널 끝까지 유지하며 외부 proxy 우회 환경변수를 제거한다.
 
 ## 제공·기존 파일·운영 적용
 
@@ -27,6 +27,6 @@ ClamAV 엔진은 별도 `antivirus` 컨테이너다. `network_mode: none`, 읽�
 - 기본 백신 메모리 한도는 1.5GiB다. 기존 1GiB 서버 설정으로 전체 서비스를 운용하지 않는다. 우선 4GiB 이상 서버에서 실제 정의 파일 로드, 최대 파일 스캔, 커버/PDF 변환을 부하 테스트하고 API/worker/백신 한도를 조정한다. `AV_MEM_LIMIT`, `AV_CPUS`로 조절한다. 메모리가 부족하면 등록을 열어두는 대신 서비스 확장으로 해결한다.
 - `deploy.sh`는 이미지 적용 전에 실제 Docker 보안 옵션 아래 `audeniq-admin upload-sandbox-check`를 실행한다. 배포 후에도 API/worker 컨테이너에서 동일 명령을 실행할 수 있다. 커널/LSM 또는 seccomp 설정이 Landlock을 막으면 배포를 거부한다. 운영 이미지·마이그레이션·설정은 함께 배포해야 한다.
 
-GitHub Actions는 실제 ClamAV 엔진에 무해한 EICAR 패턴을 넣어 음원/커버/PDF의 등록 및 후속 작업 차단을 확인한다. CI에는 작은 테스트 서명 DB를 사용하고 VERSION 날짜만 테스트 어댑터가 제공한다. 테스트 어댑터는 운영 이미지에 포함하지 않는다. 정상 파일 변환, 악성 PDF 기능 제거, 백신 비정상 응답/만료/부재, 런타임 컨테이너의 실제 파일·환경변수·통신 격리를 함께 검증한다. 공식 전체 정의 파일의 운영 초기화와 실서비스 부하 검증은 CI 테스트의 대체물이 아니다.
+GitHub Actions는 실제 ClamAV 엔진에 무해한 EICAR 패턴을 넣어 음원/커버/PDF의 등록 및 후속 작업 차단을 확인한다. CI에는 작은 테스트 서명 DB를 사용하고 VERSION 날짜만 테스트 어댑터가 제공한다. 테스트 어댑터는 운영 이미지에 포함하지 않는다. 정상 파일 변환, 악성 PDF 기능 제거, 백신 비정상 응답/만료/부재, 런타임 컨테이너의 실제 파일·환경변수·통신 격리를 함께 검증한다. 갱신 프록시는 실제 TLS 인증서 검증과 HTTPS→HTTP redirect의 외부 접속 차단을 별도로 테스트한다. 공식 전체 정의 파일의 운영 초기화와 실서비스 부하 검증은 CI 테스트의 대체물이 아니다.
 
 설계 근거: [ClamAV 스캔/INSTREAM](https://docs.clamav.net/manual/Usage/Scanning.html), [Linux Landlock](https://www.kernel.org/doc/html/latest/userspace-api/landlock.html), [pdftoppm 옵션](https://manpages.debian.org/trixie/poppler-utils/pdftoppm.1.en.html), [Pillow 이미지 제한](https://pillow.readthedocs.io/en/stable/reference/Image.html).

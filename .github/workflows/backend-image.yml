@@ -20,6 +20,7 @@ on:
       - deploy/sanitize-upload.py
       - deploy/clamd.conf
       - deploy/freshclam.conf
+      - deploy/update-antivirus.py
       - deploy/pgbouncer/**
       - deploy/compose.production.yaml
       - .dockerignore

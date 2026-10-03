@@ -43,6 +43,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 COPY --from=build /out/ /usr/local/bin/
 COPY --from=build /meta/ /usr/local/share/audeniq/
 COPY deploy/sanitize-upload.py /usr/local/lib/audeniq/sanitize-upload.py
+COPY deploy/update-antivirus.py /usr/local/lib/audeniq/update-antivirus.py
 COPY deploy/clamd.conf deploy/freshclam.conf /usr/local/share/audeniq/
 USER 10001:10001
 ENV RUST_LOG=info

@@ -35,8 +35,8 @@ pub const MAX_DOCUMENT_BYTES: i64 = 20 * 1024 * 1024;
 /// FLAC renamed to `.wav` never becomes a registered master.
 pub fn expected_container(kind: &str, content_type: &str) -> Option<&'static str> {
     match (kind, content_type) {
-        // WAV (like ALAC/AIFF/WavPack/TTA below) is converted to a FLAC
-        // master at completion; FLAC is stored as uploaded.
+        // Every lossless input, including FLAC, is normalized to a FLAC
+        // master at completion to remove source metadata and attached files.
         ("AUDIO", "audio/wav" | "audio/x-wav") => Some("WAV"),
         ("AUDIO", "audio/flac") => Some("FLAC"),
         // ALAC in an .m4a: converted to FLAC losslessly at completion; AAC
