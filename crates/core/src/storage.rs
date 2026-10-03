@@ -209,7 +209,8 @@ impl S3Store {
         region: String,
         allow_http: bool,
     ) -> anyhow::Result<Self> {
-        let endpoint = url::Url::parse(endpoint)?;
+        let allow_http = crate::external_http::local_http_enabled(allow_http);
+        let endpoint = crate::external_http::validate_url(endpoint, allow_http)?;
         anyhow::ensure!(
             endpoint.scheme() == "https" || (allow_http && endpoint.scheme() == "http"),
             "S3 requires HTTPS"
@@ -236,11 +237,19 @@ impl S3Store {
             access,
             secret,
             region,
-            client: reqwest::Client::builder()
+            client: crate::external_http::client_builder(allow_http)
+                .no_gzip()
+                .no_brotli()
+                .no_zstd()
+                .no_deflate()
                 .timeout(std::time::Duration::from_secs(10))
                 .redirect(reqwest::redirect::Policy::none())
                 .build()?,
-            download_client: reqwest::Client::builder()
+            download_client: crate::external_http::client_builder(allow_http)
+                .no_gzip()
+                .no_brotli()
+                .no_zstd()
+                .no_deflate()
                 .timeout(std::time::Duration::from_secs(900))
                 .connect_timeout(std::time::Duration::from_secs(10))
                 .read_timeout(std::time::Duration::from_secs(30))

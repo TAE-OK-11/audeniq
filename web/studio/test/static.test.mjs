@@ -10,7 +10,7 @@ test('studio Worker serves the React build and D1 content',()=>{
  assert.equal(cfg.assets.directory,'./public');
  // /login 같은 화면 경로는 index.html, /api/*는 항상 Worker가 처리
  assert.equal(cfg.assets.not_found_handling,'single-page-application');
- assert.deepEqual(cfg.assets.run_worker_first,['/api/*']);
+ assert.equal(cfg.assets.run_worker_first,true);
  const db=cfg.d1_databases.find(d=>d.binding==='CONTENT_DB');
  assert.ok(db,'CONTENT_DB binding');
  assert.equal(db.migrations_dir,'migrations');

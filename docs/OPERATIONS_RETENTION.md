@@ -4,10 +4,11 @@ This responds to `TECH_REVIEW_F0F1.md`. These are engineering rules and release 
 
 | Data | Foundation behavior | Required before operational retention is enabled |
 | --- | --- | --- |
-| auth_limits | Rows retained; limits reset their 15-minute window | A least-privilege maintenance task may remove windows older than 24 hours in bounded batches. Monitor row count until implemented. Do not delete a current rate window. |
-| sessions | Revoked/expired rows retained; no bearer tokens stored | Define security investigation window; purge only expired/revoked rows after it. No active sessions. |
+| auth_limits | Limits reset their 15-minute window | Owner-only `audeniq-admin privacy purge-transient` removes windows older than 24 hours, up to 10,000 per transaction. Schedule it and monitor failures. Current windows stay. |
+| sessions | No bearer tokens stored | The same owner task purges only sessions expired/revoked over 24 hours ago, in bounded batches. Live sessions stay. 24 hours is an operational recovery grace, not a statutory period. |
 | jobs | QUEUED/RUNNING/DEAD_LETTER and terminal rows retained | Archive only terminal jobs whose outbox/business dependencies are complete. Never remove DLQ/unknown external outcomes without operator resolution. |
 | outbox / event_receipts | Events and consumer receipts retained | Receipt deduplication must outlive all replay/recovery paths. Archiving payloads must preserve unique idempotency keys and receipts. Never purge pending events. |
+| staff_access_logs | Runtime INSERT only; UPDATE/TRUNCATE rejected, DELETE refused until retain_until | Default 2 years; owner task retires expired rows. Keep independently protected copies and access-log review evidence. |
 | audit_events | Append-only; runtime roles cannot mutate/delete | Legal/security review determines retention. Export to access-controlled immutable archive, verify row ranges, digest and restore/query procedure. Only a separately authorized maintenance role can retire approved partitions. |
 | submitted revisions / rights / packages | Immutable; retained | Preserve referenced lineage and dispute/legal holds. No automatic age-based deletion. |
 | quarantine / unbound registered R2 objects | No deletion worker yet | Reconcile DB and object inventory. Quarantine is eligible only after URL expiry plus recovery grace; registered objects require proof of no active session, asset/revision/package reference or hold. A HEAD/copy race may leave an orphan; never infer eligibility from prefix alone. |

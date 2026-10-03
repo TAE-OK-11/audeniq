@@ -9,17 +9,13 @@
 //! - Finance is read-only here. A payout request is a portal row that
 //!   operations turns into a `finance.payout_orders` row (manual approval).
 //! - The full payout account number never leaves this module in clear text:
-//!   it is sealed with AES-256-GCM using `PAYOUT_ACCOUNT_KEY` (64 hex chars),
+//!   it is sealed with versioned AES-256-GCM keys outside the database,
 //!   and only bank, holder and the last digits are returned.
 use crate::{
     api::AppState,
     auth::{self, Actor},
     error::{Error, Result},
     operations, text_policy,
-};
-use aes_gcm::{
-    Aes256Gcm, KeyInit, Nonce,
-    aead::{Aead, Generate},
 };
 use axum::{
     Json, Router,
@@ -175,51 +171,15 @@ pub async fn put_profile(s: &AppState, a: &Actor, i: ProfileInput) -> Result<Val
 // ---------------------------------------------------------------------------
 const PAYEE_TYPES: [&str; 3] = ["INDIVIDUAL", "SOLE_PROPRIETOR", "CORPORATION"];
 
-fn account_key() -> Result<Aes256Gcm> {
-    let hexkey = std::env::var("PAYOUT_ACCOUNT_KEY")
-        .map_err(|_| Error::PolicyGate("PAYOUT_ACCOUNT_KEY_MISSING"))?;
-    let bytes =
-        hex::decode(hexkey.trim()).map_err(|_| Error::PolicyGate("PAYOUT_ACCOUNT_KEY_MISSING"))?;
-    Aes256Gcm::new_from_slice(&bytes).map_err(|_| Error::PolicyGate("PAYOUT_ACCOUNT_KEY_MISSING"))
-}
-
-/// nonce(12) || ciphertext+tag. The org id is bound as associated data so a
-/// ciphertext copied to another organisation fails to open.
+/// For operations tooling; production uses the read-only KMS-materialized keyring.
 pub fn seal_account(org: Uuid, number: &str) -> Result<Vec<u8>> {
-    let cipher = account_key()?;
-    // Fresh random 96-bit nonce from the OS RNG for every seal.
-    let nonce = Nonce::generate();
-    let ct = cipher
-        .encrypt(
-            &nonce,
-            aes_gcm::aead::Payload {
-                msg: number.as_bytes(),
-                aad: org.as_bytes(),
-            },
-        )
-        .map_err(|_| Error::Internal)?;
-    let mut out = nonce.to_vec();
-    out.extend_from_slice(&ct);
-    Ok(out)
+    crate::payout_keys::KeyRing::from_env(false)?.seal(org, number)
 }
-
-/// For operations tooling that executes payouts (never exposed over HTTP).
+/// Never exposed over HTTP.
 pub fn open_account(org: Uuid, sealed: &[u8]) -> Result<String> {
-    if sealed.len() < 13 {
-        return Err(Error::Internal);
-    }
-    let cipher = account_key()?;
-    let (nonce, ct) = sealed.split_at(12);
-    let pt = cipher
-        .decrypt(
-            &Nonce::try_from(nonce).map_err(|_| Error::Internal)?,
-            aes_gcm::aead::Payload {
-                msg: ct,
-                aad: org.as_bytes(),
-            },
-        )
-        .map_err(|_| Error::Internal)?;
-    String::from_utf8(pt).map_err(|_| Error::Internal)
+    Ok(crate::payout_keys::KeyRing::from_env(false)?
+        .open(org, sealed)?
+        .to_string())
 }
 
 #[derive(Deserialize)]
@@ -229,6 +189,12 @@ pub struct PayoutAccountInput {
     pub holder_name: String,
     pub bank_name: String,
     pub account_number: String,
+}
+
+impl Drop for PayoutAccountInput {
+    fn drop(&mut self) {
+        zeroize::Zeroize::zeroize(&mut self.account_number);
+    }
 }
 
 pub async fn get_payout_account(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
@@ -270,14 +236,15 @@ pub async fn put_payout_account(
         return Err(Error::InvalidCode("ACCOUNT_NUMBER_INVALID"));
     }
     let last4 = digits[digits.len() - 4..].to_string();
-    let sealed = seal_account(org, &digits)?;
+    let digits = zeroize::Zeroizing::new(digits);
+    let sealed = s.payout_keys.seal(org, &digits)?;
     let mut tx = s.pool.begin().await?;
     owner(&mut tx, a, org).await?;
     sqlx::query(
-        "INSERT INTO portal.payout_accounts(org_id,payee_type,holder_name,bank_name,account_last4,account_cipher,registered_by)
-         VALUES($1,$2,$3,$4,$5,$6,$7)
+        "INSERT INTO portal.payout_accounts(org_id,payee_type,holder_name,bank_name,account_last4,account_cipher,registered_by,key_version)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8)
          ON CONFLICT(org_id) DO UPDATE SET payee_type=EXCLUDED.payee_type,holder_name=EXCLUDED.holder_name,bank_name=EXCLUDED.bank_name,
-           account_last4=EXCLUDED.account_last4,account_cipher=EXCLUDED.account_cipher,registered_by=EXCLUDED.registered_by,
+           account_last4=EXCLUDED.account_last4,account_cipher=EXCLUDED.account_cipher,registered_by=EXCLUDED.registered_by,key_version=EXCLUDED.key_version,
            registered_at=now(),row_version=portal.payout_accounts.row_version+1",
     )
     .bind(org)
@@ -287,6 +254,7 @@ pub async fn put_payout_account(
     .bind(&last4)
     .bind(&sealed)
     .bind(a.user)
+    .bind(s.payout_keys.active_version())
     .execute(&mut *tx)
     .await?;
     operations::audit(

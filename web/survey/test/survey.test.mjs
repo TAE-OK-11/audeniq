@@ -98,8 +98,8 @@ test('config cannot accept submissions without credentials; invalid Origin forbi
  response=await worker.fetch(new Request('https://survey.audeniq.com/api/responses',{method:'POST',headers:{Origin:'https://survey.audeniq.com','Content-Type':'application/json'},body:JSON.stringify(valid())}),{});
  assert.equal(response.status,503);
 });
-test('unknown URL is 404; static files bypass Worker, with security headers',async()=>{
- const r=await worker.fetch(new Request('https://survey.audeniq.com/invalid'),{});
+test('unknown URL uses the static 404 page, with security headers',async()=>{
+ const r=await worker.fetch(new Request('https://survey.audeniq.com/invalid'),{ASSETS:{fetch:async()=>new Response('Not found',{status:404})}});
  assert.equal(r.status,404);
  const headers=fs.readFileSync(new URL('../app/public/_headers',import.meta.url),'utf8');
  assert.equal(fs.readFileSync(new URL('../public/_headers',import.meta.url),'utf8'),headers,'build copies _headers');
@@ -164,9 +164,9 @@ test('retention runs only in scheduled Worker handler, never from browser route'
 });
 
 
-test('static HTML/JS bypass Worker CPU and /api responses retain private server-only DB',()=>{
+test('all requests pass the HTTPS guard and /api responses retain private server-only DB',()=>{
  const cfg=JSON.parse(fs.readFileSync(new URL('../wrangler.jsonc',import.meta.url),'utf8'));
- assert.deepEqual(cfg.assets.run_worker_first,['/api/*','/health']);
+ assert.equal(cfg.assets.run_worker_first,true);
  assert.equal(cfg.assets.html_handling,'auto-trailing-slash');
  assert.equal(cfg.assets.not_found_handling,'404-page');
  assert.match(html,/name="turnstile-site-key"/);

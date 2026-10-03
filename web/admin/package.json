@@ -10,7 +10,7 @@
     "dev": "vite",
     "dev:demo": "VITE_MOCK=true vite",
     "check": "tsc --noEmit",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node ../shared/compress-assets.mjs dist",
     "build:demo": "tsc --noEmit && VITE_MOCK=true vite build --outDir demo-dist",
     "deploy": "wrangler deploy",
     "test": "bun test test/"
