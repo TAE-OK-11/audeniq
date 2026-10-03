@@ -145,7 +145,7 @@ services:
       - av_socket:/run/audeniq-av
       - av_database:/var/lib/clamav:ro
     pids_limit: 32
-    mem_limit: ${AV_MEM_LIMIT:-768m}
+    mem_limit: ${AV_MEM_LIMIT:-1536m}
     cpus: ${AV_CPUS:-0.75}
   antivirus-update:
     <<: *runtime

@@ -236,3 +236,7 @@ docker exec -e DATABASE_URL="postgres://audeniq_owner:$POSTGRES_PASSWORD@postgre
   audeniq-admin --operator 이름 partner set-dsp mockdsp     # DSP id를 주지 않으면 파트너 id로 고정 id를 만든다
 #  ... partner list
 ```
+
+## 업로드 검사 배포
+
+[UPLOAD_SECURITY.md](../docs/UPLOAD_SECURITY.md)의 기존 파일 교체, 비공개 R2, Landlock 커널, 백신 초기화·감시 및 서버 메모리 조건을 먼저 확인한다. API와 worker 외에 `antivirus`/`antivirus-update`가 같은 이미지에서 실행된다. 첫 공식 정의 파일 다운로드가 끝나기 전에는 업로드 완료와 전자서명 PNG 검사가 503으로 닫힌다.

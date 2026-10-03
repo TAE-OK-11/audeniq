@@ -8,6 +8,54 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub const RULE_VERSION: &str = "1";
 
+pub(crate) fn signature_bytes(value: &str) -> Result<Vec<u8>> {
+    use base64::Engine;
+    let encoded = value
+        .strip_prefix("data:image/png;base64,")
+        .filter(|v| (32..=59_978).contains(&v.len()))
+        .ok_or(Error::InvalidCode("SIGNATURE_INVALID"))?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .map_err(|_| Error::InvalidCode("SIGNATURE_INVALID"))?;
+    if bytes.len() < 45 || !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Err(Error::InvalidCode("SIGNATURE_INVALID"));
+    }
+    Ok(bytes)
+}
+
+/// Electronic signatures are hashed as exact bytes. Preserve that evidence,
+/// accepting only CRC-checked, metadata-free PNGs with a complete bounded
+/// pixel stream. Neither arbitrary data URLs nor appended bytes can be saved.
+pub async fn signature(state: &crate::api::AppState, value: &str) -> Result<String> {
+    let bytes = signature_bytes(value)?;
+    let slot = state
+        .transcode_slots
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| Error::UploadBusy)?;
+    let workspace = Workspace::new()?;
+    let source = workspace.0.join("signature.png");
+    let target = workspace.0.join("validated.png");
+    tokio::fs::write(&source, &bytes)
+        .await
+        .map_err(|_| Error::Storage)?;
+    scan(&source, bytes.len() as u64).await?;
+    tokio::task::spawn_blocking(move || {
+        let _slot = slot;
+        let _workspace = workspace;
+        sanitize(
+            &source,
+            &target,
+            "application/x-audeniq-signature",
+            &_workspace.0,
+        )
+        .map_err(|_| Error::InvalidCode("SIGNATURE_INVALID"))
+    })
+    .await
+    .map_err(|_| Error::Internal)??;
+    Ok(value.to_string())
+}
+
 pub struct Workspace(pub PathBuf);
 impl Workspace {
     pub fn new() -> Result<Self> {

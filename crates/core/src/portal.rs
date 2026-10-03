@@ -54,19 +54,8 @@ fn multiline(s: &str, min: usize, max: usize) -> Result<String> {
 }
 
 /// Small PNG signature from the studio signature pad (data URL, ≤ 60 000 chars).
-fn signature(s: &str) -> Result<String> {
-    let body = s
-        .strip_prefix("data:image/png;base64,")
-        .ok_or(Error::InvalidCode("SIGNATURE_INVALID"))?;
-    if s.len() > 60_000
-        || body.len() < 16
-        || !body
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/' || b == b'=')
-    {
-        return Err(Error::InvalidCode("SIGNATURE_INVALID"));
-    }
-    Ok(s.to_string())
+async fn signature(state: &AppState, value: &str) -> Result<String> {
+    crate::upload_safety::signature(state, value).await
 }
 
 async fn member(c: &mut PgConnection, a: &Actor, org: Uuid, write: bool) -> Result<String> {
@@ -589,7 +578,7 @@ pub async fn sign_document(
     i: SignInput,
 ) -> Result<Value> {
     let name = text(&i.signer_name, 1, 120)?;
-    let sig = signature(&i.signature)?;
+    let sig = signature(s, &i.signature).await?;
     let mut tx = s.pool.begin().await?;
     member(&mut tx, a, org, true).await?;
     let (kind, status, rv, release) = locked_doc(&mut tx, a, org, id).await?;
@@ -758,7 +747,7 @@ pub async fn create_document(
         }
         let holder = text(&e.rights_holder, 1, 120)?;
         let name = text(&e.signer_name, 1, 120)?;
-        let sig = signature(&e.signature)?;
+        let sig = signature(s, &e.signature).await?;
         // The server hashes the exact saved text and signature; the client
         // cannot supply its own integrity claim or staff approval status.
         let hash = crate::domain::digest(&json!({
@@ -989,7 +978,7 @@ pub async fn record_application(
     let signer = text(&i.signer_name, 1, 120)?;
     let role = text(&i.signer_role, 1, 60)?;
     let submitted = text(&i.submitted_at, 1, 40)?;
-    let sig = signature(&i.signature)?;
+    let sig = signature(s, &i.signature).await?;
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, release, "release", true).await?;
     let (title, release_status): (String, String) = sqlx::query_as(
@@ -1491,10 +1480,23 @@ mod tests {
     }
 
     #[test]
-    fn signatures() {
-        assert!(signature("data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==").is_ok());
-        assert!(signature("data:image/jpeg;base64,iVBORw0KGgoAAAANSUhEUg==").is_err());
-        assert!(signature("data:image/png;base64,<script>alert(1)</script>").is_err());
+    fn signature_encoding_requires_complete_png_bytes() {
+        assert!(
+            crate::upload_safety::signature_bytes("data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==")
+                .is_err()
+        );
+        assert!(
+            crate::upload_safety::signature_bytes(
+                "data:image/jpeg;base64,iVBORw0KGgoAAAANSUhEUg=="
+            )
+            .is_err()
+        );
+        assert!(
+            crate::upload_safety::signature_bytes(
+                "data:image/png;base64,<script>alert(1)</script>"
+            )
+            .is_err()
+        );
     }
 
     #[test]

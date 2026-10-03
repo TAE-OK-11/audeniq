@@ -83,6 +83,7 @@ GRANT USAGE ON SCHEMA distribution,finance,execution,rights,identity,catalog TO 
 GRANT SELECT ON ALL TABLES IN SCHEMA distribution,finance,execution,rights TO audeniq_worker;
 GRANT SELECT ON catalog.application_revisions,catalog.artists,catalog.labels,catalog.tracks,catalog.credits,catalog.assets,catalog.consent_packages,catalog.upload_sessions TO audeniq_worker;
 GRANT SELECT ON catalog.asset_provenance TO audeniq_worker;
+GRANT SELECT ON catalog.asset_safety TO audeniq_worker;
 GRANT SELECT ON catalog.external_recordings,catalog.external_recording_epoch TO audeniq_worker;
 GRANT SELECT ON identity.orgs,identity.memberships,identity.parties TO audeniq_worker;
 -- Stage 1 re-checks protected artist names (list is operator-managed; no runtime writes).
