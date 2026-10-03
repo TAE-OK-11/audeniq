@@ -8,13 +8,13 @@ import type { Overview } from '../api/staff';
 interface Tile { key: keyof Overview; label: string; hint: string; to: string; icon: string; alert?: boolean }
 
 const TILES: Tile[] = [
-  { key: 'review', label: '심사 대기', hint: '새 발매 신청과 2차 검사에서 판단이 필요한 발매', to: '/reviews', icon: 'review' },
-  { key: 'second_approvals', label: '2차 승인', hint: '권리·중복 등 민감 항목의 두 번째 확인', to: '/approvals', icon: 'approval' },
-  { key: 'inquiries', label: '문의 답변 대기', hint: '아티스트가 남긴 답변 대기 문의', to: '/inquiries', icon: 'inquiry' },
-  { key: 'documents', label: '서류 검토', hint: '요청한 권리 증빙 검토 대기', to: '/documents', icon: 'doc' },
-  { key: 'deliveries_blocked', label: '배급 문제', hint: '발매 내용 문제로 막힌 플랫폼 배급', to: '/deliveries', icon: 'delivery', alert: true },
-  { key: 'correction', label: '보완 진행 중', hint: '아티스트가 수정 중인 발매', to: '/reviews', icon: 'review' },
-  { key: 'in_pipeline', label: '자동 검사 중', hint: '접수부터 배급 준비까지 시스템이 처리 중', to: '/reviews', icon: 'dsp' },
+  { key: 'review', label: '심사 대기', hint: '판단이 필요한 발매', to: '/reviews', icon: 'review' },
+  { key: 'second_approvals', label: '2차 승인', hint: '민감 항목 한 번 더 확인', to: '/approvals', icon: 'approval' },
+  { key: 'inquiries', label: '문의 답변 대기', hint: '답을 기다리는 문의', to: '/inquiries', icon: 'inquiry' },
+  { key: 'documents', label: '서류 검토', hint: '확인할 권리 증빙', to: '/documents', icon: 'doc' },
+  { key: 'deliveries_blocked', label: '배급 문제', hint: '전송이 막힌 플랫폼', to: '/deliveries', icon: 'delivery', alert: true },
+  { key: 'correction', label: '보완 진행 중', hint: '아티스트가 고치는 중', to: '/reviews', icon: 'review' },
+  { key: 'in_pipeline', label: '자동 검사 중', hint: '시스템이 자동으로 처리 중', to: '/reviews', icon: 'dsp' },
 ];
 
 export function OverviewPage() {
@@ -29,7 +29,7 @@ export function OverviewPage() {
   return (
     <div className="view-enter">
       <PageHead
-        eyebrow="AUDENIQ ADMIN"
+        eyebrow="관리자"
         title="오늘의 업무"
         sub={<>역할 <b>{ROLE_LABEL[me.role]}</b> · 담당 업무 {me.duties.map(d => DUTY_LABEL[d]).join(', ') || '조회 전용'}</>}
       />
@@ -37,7 +37,7 @@ export function OverviewPage() {
       <div className="adm-hero">
         <div>
           <h2>{greet}.<br />{counts ? (urgent ? `처리할 일이 ${urgent}건 있어요.` : '밀린 일이 없어요.') : '대기열을 확인하는 중이에요.'}</h2>
-          <p>심사·2차 승인·서류·문의 대기 건수예요. 카드를 누르면 해당 대기열로 이동해요. 숫자는 1분마다 새로 고쳐져요.</p>
+          <p>카드를 누르면 바로 이동해요. 숫자는 1분마다 새로 고쳐져요.</p>
         </div>
         <div className="adm-hero-num" aria-hidden="true">{counts ? urgent : '–'}<small>처리 대기</small></div>
       </div>
