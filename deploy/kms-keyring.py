@@ -51,13 +51,14 @@ def private_read(path):
         os.close(fd)
 
 
-def atomic_write(path, data, gid=0):
+def atomic_write(path, data, gid=None):
     path = Path(path)
     with tempfile.NamedTemporaryFile(dir=path.parent, prefix='.keyring-', delete=False) as file:
         tmp = Path(file.name)
         try:
             os.fchmod(file.fileno(), 0o640 if gid else 0o600)
-            os.fchown(file.fileno(), os.geteuid(), gid)
+            if gid is not None:
+                os.fchown(file.fileno(), os.geteuid(), gid)
             file.write(json.dumps(data).encode())
             file.flush()
             os.fsync(file.fileno())

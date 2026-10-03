@@ -17,6 +17,14 @@ ARN = 'arn:aws:kms:ap-northeast-1:123456789012:key/12345678-1234-1234-1234-12345
 
 
 class KeyringTests(unittest.TestCase):
+    def test_private_bundle_write_keeps_the_current_users_group(self):
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / 'wrapped.json'
+            kms.atomic_write(destination, {'ciphertext': 'YQ=='})
+            self.assertEqual(destination.stat().st_uid, os.geteuid())
+            self.assertEqual(destination.stat().st_gid, os.getegid())
+            self.assertEqual(destination.stat().st_mode & 0o777, 0o600)
+
     def test_private_inputs_and_tls_pinned_sdk_request(self):
         with tempfile.TemporaryDirectory(dir='/dev/shm') as directory:
             path = Path(directory) / 'legacy'
@@ -51,12 +59,13 @@ class KeyringTests(unittest.TestCase):
                     raise ValueError('unavailable KMS')
                 return {'Plaintext': base64.b64encode(b'1' * 32).decode()}
             with patch.object(kms, 'aws_kms', side_effect=sdk), self.assertRaises(ValueError):
-                kms.materialize(bundle, directory, destination, 0)
+                kms.materialize(bundle, directory, destination, os.getegid())
             self.assertEqual(destination.read_text(), 'previous usable keyring')
             with patch.object(kms, 'aws_kms', return_value={'Plaintext': base64.b64encode(b'2' * 32).decode()}):
-                kms.materialize(bundle, directory, destination, 0)
+                kms.materialize(bundle, directory, destination, os.getegid())
             self.assertEqual(json.loads(destination.read_text())['active_version'], 2)
-            self.assertEqual(destination.stat().st_mode & 0o077, 0)
+            self.assertEqual(destination.stat().st_gid, os.getegid())
+            self.assertEqual(destination.stat().st_mode & 0o777, 0o640 if os.getegid() else 0o600)
 
     def test_rejects_aliases_plaintext_bundles_and_non_tmpfs(self):
         for invalid in ['alias/audeniq', 'http://kms.example', ARN.replace(':key/', ':alias/')]:
