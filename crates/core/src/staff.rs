@@ -107,6 +107,28 @@ pub async fn staff(s: &AppState, h: &HeaderMap, write: bool) -> Result<Staff> {
         .as_deref()
         .and_then(StaffRole::parse)
         .ok_or(Error::Forbidden)?;
+    // Fail closed if the durable access record cannot be written. This includes
+    // reads; the existing operations audit only records business mutations.
+    let route = h
+        .get("x-audeniq-audit-route")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("internal");
+    let method = h
+        .get("x-audeniq-audit-method")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("INTERNAL");
+    let resource = h
+        .get("x-audeniq-audit-resource")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| Uuid::parse_str(v).ok());
+    let source = h
+        .get(auth::CLIENT_IP_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<std::net::IpAddr>().ok())
+        .map(|v| v.to_string());
+    sqlx::query("INSERT INTO privacy.staff_access_logs(id,actor_user_id,request_id,source_ip,route,method,resource_id) VALUES($1,$2,$3,$4::text::inet,$5,$6,$7) ON CONFLICT(actor_user_id,request_id,route) DO NOTHING")
+        .bind(Uuid::new_v4()).bind(actor.user).bind(actor.request).bind(source).bind(route).bind(method).bind(resource)
+        .execute(&s.pool).await?;
     Ok(Staff { actor, role })
 }
 
@@ -672,7 +694,7 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
             .or_default() += 1;
     }
     tx.commit().await?;
-    Ok(json!({
+    crate::upload_safety::visible_inline_files(&s.pool, json!({
         "review_context": {
             "decision_kind": kind, "allowed_actions": allowed,
             "requires_second_approval": open.iter().any(|c| c["needs_second_approval"] == true),
@@ -712,7 +734,7 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
         "documents": documents,
         "delivery_staging": staging,
         "timeline": timeline,
-    }))
+    })).await
 }
 
 #[derive(Deserialize)]
@@ -1706,7 +1728,11 @@ pub async fn list_documents(s: &AppState, h: &HeaderMap, p: Page) -> Result<Valu
     .bind(offset)
     .fetch_all(&s.pool)
     .await?;
-    Ok(json!({"items": items, "limit": limit, "offset": offset}))
+    crate::upload_safety::visible_inline_files(
+        &s.pool,
+        json!({"items": items, "limit": limit, "offset": offset}),
+    )
+    .await
 }
 
 #[derive(Deserialize)]
@@ -1831,12 +1857,14 @@ pub async fn document_file(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<Docu
     let mut tx = s.pool.begin().await?;
     staff_scope(&mut tx).await?;
     let row = sqlx::query(
-        "SELECT d.org_id, d.file_name, a.object_key, a.content_type, a.size_bytes
+        "SELECT d.org_id, d.file_name, a.object_key, a.content_type, a.size_bytes, a.sha256
          FROM portal.documents d
          JOIN catalog.assets a ON a.id=d.asset_id AND a.org_id=d.org_id
-         WHERE d.id=$1 AND a.state='REGISTERED'",
+         JOIN catalog.asset_safety s ON s.asset_id=a.id AND s.org_id=a.org_id AND s.safe_key=a.object_key AND s.safe_sha256=a.sha256 AND s.rule_version='1'
+         WHERE d.id=$1 AND a.state='REGISTERED' AND a.content_type IN ('application/pdf','image/png','image/jpeg') AND (NOT $2 OR s.antivirus_status='SCANNED')",
     )
     .bind(id)
+    .bind(s.antivirus_enabled)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(Error::NotFound)?;
@@ -1860,6 +1888,12 @@ pub async fn document_file(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<Docu
     .await?;
     tx.commit().await?;
     let bytes = s.storage.get(&key).await?;
+    use sha2::Digest;
+    if bytes.len() != size as usize
+        || hex::encode(sha2::Sha256::digest(&bytes)) != row.get::<String, _>("sha256")
+    {
+        return Err(Error::PolicyGate("ASSET_OBJECT_DRIFT"));
+    }
     Ok(DocumentFile {
         bytes,
         content_type,
@@ -2648,7 +2682,7 @@ async fn h_document_file(
     // The file needs no scripts or outside requests (PDF viewer / image only).
     hd.insert(
         header::CONTENT_SECURITY_POLICY,
-        HeaderValue::from_static("default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; frame-ancestors 'self'"),
+        HeaderValue::from_static("sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'; frame-ancestors 'self'"),
     );
     Ok(res)
 }

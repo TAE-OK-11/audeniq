@@ -3,6 +3,9 @@ pub mod content;
 /// Rust/WASM edge BFF. The generated JS loader is toolchain glue, not application logic.
 #[event(fetch)]
 pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Response> {
+    if request.url()?.scheme() != "https" {
+        return Response::error("HTTPS required", 403);
+    }
     let origin = env.var("APP_ORIGIN")?.to_string();
     if request.url()?.origin().ascii_serialization() != origin {
         return Response::error("Forbidden host", 403);

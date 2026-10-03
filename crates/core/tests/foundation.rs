@@ -115,9 +115,12 @@ impl ObjectStore for MockStore {
     }
 }
 async fn app(pool: PgPool) -> (Router, Arc<MockStore>) {
+    app_with_antivirus(pool, audeniq_core::config::antivirus_enabled().unwrap()).await
+}
+async fn app_with_antivirus(pool: PgPool, enabled: bool) -> (Router, Arc<MockStore>) {
     database::MIGRATOR.run(&pool).await.unwrap();
     let store = Arc::new(MockStore::default());
-    let s = AppState::new(
+    let mut s = AppState::new(
         pool,
         Config {
             database_url: "unused".into(),
@@ -132,6 +135,7 @@ async fn app(pool: PgPool) -> (Router, Arc<MockStore>) {
     )
     .await
     .unwrap();
+    s.antivirus_enabled = enabled;
     (router(s), store)
 }
 async fn noop_store() -> std::sync::Arc<dyn ObjectStore> {
@@ -526,6 +530,118 @@ fn m4a_bytes(codec_args: &[&str]) -> Vec<u8> {
     b
 }
 
+#[sqlx::test]
+async fn malicious_bytes_in_every_upload_kind_never_register_or_queue(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let actor = user(&app).await;
+    for (kind, mime, header) in [
+        ("AUDIO", "audio/flac", b"fLaC".as_slice()),
+        ("IMAGE", "image/png", b"\x89PNG\r\n\x1a\n".as_slice()),
+        ("DOCUMENT", "application/pdf", b"%PDF-1.4\n".as_slice()),
+    ] {
+        let mut bytes = header.to_vec();
+        bytes.extend_from_slice(
+            concat!(
+                "X5O!P%@AP[4",
+                "\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
+            )
+            .as_bytes(),
+        );
+        let (_, _, issued) = call(
+            &app,
+            "POST",
+            &format!("/api/orgs/{}/uploads", actor.org),
+            json!({"kind":kind,"content_type":mime,"size_bytes":bytes.len()}),
+            Some(&actor),
+        )
+        .await;
+        let key = issued["expected_key"].as_str().unwrap();
+        store.objects.lock().await.insert(
+            key.into(),
+            ObjectMeta {
+                size: bytes.len() as i64,
+                content_type: mime.into(),
+                etag: "malicious-source".into(),
+                nonce: issued["grant"]["headers"]["x-amz-meta-upload-nonce"]
+                    .as_str()
+                    .unwrap()
+                    .into(),
+            },
+        );
+        store.bodies.lock().await.insert(key.into(), bytes);
+        let (status, _, value) = call(
+            &app,
+            "POST",
+            &format!(
+                "/api/orgs/{}/uploads/{}/complete",
+                actor.org,
+                issued["upload_session_id"].as_str().unwrap()
+            ),
+            json!({"asset_id":issued["asset_id"],"expected_key":key}),
+            Some(&actor),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{value}");
+        assert_eq!(value["error"]["code"], "UPLOAD_UNSAFE_FILE", "{value}");
+        let asset = Uuid::parse_str(issued["asset_id"].as_str().unwrap()).unwrap();
+        let state: String = sqlx::query_scalar("SELECT state FROM catalog.assets WHERE id=$1")
+            .bind(asset)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(state, "UPLOADING");
+        let admitted: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM catalog.asset_safety WHERE asset_id=$1")
+                .bind(asset)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(admitted, 0);
+        assert!(
+            store
+                .objects
+                .lock()
+                .await
+                .keys()
+                .all(|k| k.starts_with("quarantine/"))
+        );
+    }
+    let queued: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM operations.jobs WHERE kind='asset.analyze'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(queued, 0);
+}
+
+#[sqlx::test]
+async fn catalog_json_cannot_bypass_inline_file_inspection_and_legacy_images_are_hidden(
+    pool: PgPool,
+) {
+    let (app, _) = app(pool.clone()).await;
+    let actor = user(&app).await;
+    let path = format!("/api/orgs/{}/releases", actor.org);
+    for image in [
+        "data:image/svg+xml;base64,PHN2Zz4=",
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==",
+        "https://external.invalid/image",
+    ] {
+        let (status, _, body) = call(&app, "POST", &path,
+            json!({"name":"unsafe inline","release_type":"SINGLE","profile":{"application":{"signature":image}}}), Some(&actor)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert_eq!(body["error"]["code"], "SIGNATURE_INVALID");
+    }
+    let image = "data:image/png;base64,legacy-uninspected";
+    let body = json!({"draft":{"application":{"signature":image}},"signed_application":{"signature":image},"title":"unchanged"});
+    let visible = audeniq_core::upload_safety::visible_inline_files(&pool, body.clone())
+        .await
+        .unwrap();
+    assert_eq!(visible["draft"]["application"]["signature"], "");
+    assert_eq!(visible["signed_application"]["signature"], "");
+    assert_eq!(visible["title"], "unchanged");
+    assert_eq!(body["draft"]["application"]["signature"], image);
+}
+
 /// ALAC uploads are registered as a losslessly converted FLAC master; AAC in
 /// the same container is refused and never registered.
 #[sqlx::test]
@@ -657,13 +773,87 @@ async fn alac_upload_is_registered_as_flac_and_aac_is_refused(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn disabled_antivirus_keeps_normalization_and_requires_rescan_after_enable(pool: PgPool) {
+    let (app, store) = app_with_antivirus(pool.clone(), false).await;
+    let user = user(&app).await;
+    let bytes = m4a_bytes(&["-c:a", "alac"]);
+    let (_, _, upload) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{}/uploads", user.org),
+        json!({"kind":"AUDIO","size_bytes":bytes.len(),"content_type":"audio/mp4"}),
+        Some(&user),
+    )
+    .await;
+    let key = upload["expected_key"].as_str().unwrap();
+    store.objects.lock().await.insert(
+        key.into(),
+        ObjectMeta {
+            size: bytes.len() as i64,
+            content_type: "audio/mp4".into(),
+            nonce: upload["grant"]["headers"]["x-amz-meta-upload-nonce"]
+                .as_str()
+                .unwrap()
+                .into(),
+            etag: "disabled-av-original".into(),
+        },
+    );
+    store.bodies.lock().await.insert(key.into(), bytes);
+    let path = format!(
+        "/api/orgs/{}/uploads/{}/complete",
+        user.org,
+        upload["upload_session_id"].as_str().unwrap()
+    );
+    let input = json!({"asset_id":upload["asset_id"],"expected_key":key});
+    let (status, _, result) = call(&app, "POST", &path, input.clone(), Some(&user)).await;
+    assert_eq!(status, StatusCode::OK, "{result}");
+    assert_eq!(result["safety_status"], "SANITIZED");
+    assert_eq!(result["detected_container"], "FLAC");
+    let asset = Uuid::parse_str(upload["asset_id"].as_str().unwrap()).unwrap();
+    let receipt: String =
+        sqlx::query_scalar("SELECT antivirus_status FROM catalog.asset_safety WHERE asset_id=$1")
+            .bind(asset)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(receipt, "SKIPPED");
+    audeniq_core::upload_safety::require_policy(&pool, user.org, asset, false)
+        .await
+        .unwrap();
+    assert!(matches!(
+        audeniq_core::upload_safety::require_policy(&pool, user.org, asset, true).await,
+        Err(Error::PolicyGate("UPLOAD_REINSPECTION_REQUIRED"))
+    ));
+    let (status, _, duplicate) = call(&app, "POST", &path, input, Some(&user)).await;
+    assert_eq!(status, StatusCode::OK, "{duplicate}");
+    assert_eq!(duplicate["safety_status"], "SANITIZED");
+    assert_eq!(duplicate["duplicate"], true);
+    let (mime, safe_key, hash): (String, String, String) =
+        sqlx::query_as("SELECT content_type,object_key,sha256 FROM catalog.assets WHERE id=$1")
+            .bind(asset)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(mime, "audio/flac");
+    assert!(safe_key.starts_with("registered/"));
+    assert_ne!(safe_key, key);
+    assert_eq!(hash, result["sha256"].as_str().unwrap());
+}
+
+#[sqlx::test]
 async fn upload_binding_expiry_duplicate_and_freeze(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let a = user(&app).await;
     let b = user(&app).await;
-    // FLAC is stored as uploaded (sniff + freeze at completion, hash by the
-    // asset.analyze job); every other container is converted to FLAC first.
-    let up = upload_as(&app, &a, "audio/flac").await;
+    let bytes = m4a_bytes(&["-c:a", "alac"]);
+    let (_, _, up) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{}/uploads", a.org),
+        json!({"kind":"AUDIO","size_bytes":bytes.len(),"content_type":"audio/mp4"}),
+        Some(&a),
+    )
+    .await;
     let path = format!(
         "/api/orgs/{}/uploads/{}/complete",
         a.org,
@@ -680,8 +870,8 @@ async fn upload_binding_expiry_duplicate_and_freeze(pool: PgPool) {
     );
     let key = up["expected_key"].as_str().unwrap();
     let meta = ObjectMeta {
-        size: 100,
-        content_type: "audio/flac".into(),
+        size: bytes.len() as i64,
+        content_type: "audio/mp4".into(),
         nonce: up["grant"]["headers"]["x-amz-meta-upload-nonce"]
             .as_str()
             .unwrap()
@@ -689,6 +879,7 @@ async fn upload_binding_expiry_duplicate_and_freeze(pool: PgPool) {
         etag: "opaque-multipart-etag-3".into(),
     };
     store.objects.lock().await.insert(key.into(), meta);
+    store.bodies.lock().await.insert(key.into(), bytes);
     assert_eq!(
         call(
             &app,
@@ -704,12 +895,11 @@ async fn upload_binding_expiry_duplicate_and_freeze(pool: PgPool) {
     let (s, _, v) = call(&app, "POST", &path, body.clone(), Some(&a)).await;
     assert_eq!(s, StatusCode::OK, "{v}");
     assert_eq!(v["qc_status"], "PENDING");
-    // Regression (sandbox P0-1): the content hash of the frozen bytes must be
-    // recorded, otherwise Stage 1 never runs audio QC. Completion only sniffs
-    // the first bytes of audio; the asset.analyze job it queues downloads the
-    // master once, records the hash and runs QC.
-    let expected_sha = hex::encode(sha2::Sha256::digest(synth_body("audio/flac", 100)));
-    assert!(v["sha256"].is_null(), "{v}");
+    let expected_sha = v["sha256"]
+        .as_str()
+        .expect("scanned and normalized FLAC hash")
+        .to_string();
+    assert_eq!(v["safety_status"], "VERIFIED");
     assert_eq!(v["detected_container"], "FLAC");
     let job = operations::claim(&pool, "qc", "analyzer", 60)
         .await
@@ -735,9 +925,9 @@ async fn upload_binding_expiry_duplicate_and_freeze(pool: PgPool) {
         .unwrap();
     assert_ne!(stable, key);
     store.objects.lock().await.get_mut(key).unwrap().etag = "overwritten".into();
-    assert_eq!(
+    assert_ne!(
         store.head(&stable).await.unwrap().unwrap().etag,
-        "opaque-multipart-etag-3"
+        "overwritten"
     );
     let before = store.calls.load(std::sync::atomic::Ordering::SeqCst);
     let expired = upload(&app, &a).await;

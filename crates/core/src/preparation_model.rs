@@ -124,6 +124,7 @@ async fn asset_refs(
     let mut out = std::collections::HashMap::with_capacity(asset_ids.len());
     for row in &rows {
         let id: Uuid = row.get("id");
+        crate::upload_safety::require_verified(pool, org_id, id).await?;
         let content_type: String = row.get("content_type");
         if let Some(kind) = expected_kinds.get(&id)
             && !content_type.starts_with(*kind)

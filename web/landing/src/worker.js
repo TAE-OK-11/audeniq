@@ -1,5 +1,6 @@
 // SEO uses one primary hostname. Change this and the absolute URLs in the
 // landing HTML / sitemap / robots together if AUDENIQ chooses another domain.
+import { requireHttps, secureResponse } from '../../shared/transport.js';
 export const PRIMARY_HOST = "audeniq.com";
 const PRIMARY_ORIGIN = `https://${PRIMARY_HOST}`;
 // AUDENIQ STUDIO is a separate React app on its own Worker (web/studio).
@@ -53,7 +54,7 @@ function plainText(body, contentType = "text/plain; charset=utf-8", status = 200
   return new Response(body, { status, headers: { "Content-Type": contentType } });
 }
 
-export default {
+const landingWorker = {
   async fetch(request, env) {
     const url = new URL(request.url);
     const path = url.pathname;
@@ -101,4 +102,12 @@ export default {
     const response = await env.ASSETS.fetch(assetRequest);
     return withSecurityHeaders(response, { isStudio: false, isCanonical });
   }
+};
+
+export default {
+  async fetch(request, env) {
+    const refused = requireHttps(request);
+    if (refused) return refused;
+    return secureResponse(await landingWorker.fetch(request, env));
+  },
 };

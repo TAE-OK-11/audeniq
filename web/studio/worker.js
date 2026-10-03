@@ -23,6 +23,9 @@
  * 경로·입력 규칙은 crates/edge/src/content.rs(Rust 엣지)와 같다.
  */
 
+import { backendOrigin, clientEncoding, passThroughEncoding, readLimitedBody, requireHttps, secureResponse, serveAssets } from '../shared/transport.js';
+export { passThroughEncoding } from '../shared/transport.js';
+
 const TABLES = new Set(['notices', 'events', 'maintenance']);
 // 공개 목록·상세가 있는 표 (maintenance는 /api/status로만 공개)
 const PUBLIC_TABLES = new Set(['notices', 'events']);
@@ -232,9 +235,12 @@ export function pickStatus(rows, now) {
 }
 
 async function readJson(request) {
-  const raw = await request.text();
-  if (raw.length > MAX_BODY) throw new InputError('PAYLOAD_TOO_LARGE');
-  try { return JSON.parse(raw); } catch { throw new InputError('INVALID_INPUT'); }
+  try {
+    const bytes = await readLimitedBody(request, MAX_BODY);
+    return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+  } catch (e) {
+    throw new InputError(e instanceof RangeError ? 'PAYLOAD_TOO_LARGE' : 'INVALID_INPUT');
+  }
 }
 
 // 점검 일정 행은 인스턴스 단위로 잠깐(10초) 기억한다. /api/status는 모든 탭이 1분마다 부르고,
@@ -248,18 +254,20 @@ async function maintenanceRows(db, now) {
   const hit = rowsCache.get(db);
   if (hit && Date.now() - hit.at < STATUS_TTL_MS) return hit.rows;
   // 캐시하는 동안 끝난 점검은 pickStatus가 현재 시각으로 걸러 낸다
-  let rows = [];
-  try {
-    const { results } = await db.prepare(
-      `SELECT ${MAINTENANCE_COLUMNS} FROM maintenance WHERE deleted_at IS NULL AND ends_at > ?1 ORDER BY starts_at LIMIT 20`,
-    ).bind(now).all();
-    rows = (results ?? []).map(row => present('maintenance', row));
-  } catch (e) {
-    // 표가 없거나 D1 장애여도 요청마다 다시 두드리지 않도록 빈 결과를 같은 시간 동안 기억한다
-    console.error('status error', e);
-  }
-  rowsCache.set(db, { at: Date.now(), rows });
-  return rows;
+  const pending = (async () => {
+    try {
+      const { results } = await db.prepare(
+        `SELECT ${MAINTENANCE_COLUMNS} FROM maintenance WHERE deleted_at IS NULL AND ends_at > ?1 ORDER BY starts_at LIMIT 20`,
+      ).bind(now).all();
+      return (results ?? []).map(row => present('maintenance', row));
+    } catch (e) {
+      console.error('status error', e);
+      return [];
+    }
+  })();
+  // Concurrent API calls share the in-flight D1 read as well as its result.
+  rowsCache.set(db, { at: Date.now(), rows: pending });
+  return pending;
 }
 
 /** 비상 스위치 + D1 점검 일정. D1을 못 읽어도(마이그레이션 전 등) 스튜디오는 정상 동작하게 빈 상태로 답한다 */
@@ -354,7 +362,7 @@ export async function authorizeContent(request, env) {
     if (value) headers.set(key, value);
   }
   try {
-    const backend = (env.BACKEND_URL || 'https://api-origin.audeniq.com').replace(/\/$/, '');
+    const backend = backendOrigin(env);
     let res = await fetch(backend + '/api/staff/content-access', {
       method: read ? 'GET' : 'POST', headers, redirect: 'manual',
     });
@@ -460,20 +468,10 @@ async function handleAdmin(request, db, r, now) {
 // ---- 백엔드 프록시 ----
 // 브라우저 헤더는 필요한 것만 골라 보낸다(crates/edge와 같은 허용 목록). 브라우저가 보낸
 // x-audeniq-service·x-audeniq-client-ip 같은 서비스 헤더는 절대 전달하지 않는다.
-const BACKEND = 'https://api-origin.audeniq.com';
 // user-agent: 권리 서류 서명 기록(증거)에 남긴다
 const FORWARD_HEADERS = ['cookie', 'origin', 'content-type', 'accept', 'x-csrf-token', 'sec-fetch-site', 'x-request-id', 'user-agent'];
 const PARTNER_HOOK = /^\/api\/partner-hooks\//;
 const PARTNER_DROP = new Set(['x-forwarded-for', 'x-real-ip', 'host', 'connection', 'accept-encoding']);
-
-/** Workers가 풀지 않고 그대로 넘길 수 있는 인코딩만 요청 — 백엔드가 압축한 바이트가 그대로 브라우저로 간다 */
-export function passThroughEncoding(accept) {
-  const a = String(accept ?? '').toLowerCase();
-  const out = [];
-  if (/\bbr\b/.test(a)) out.push('br');
-  if (/\bgzip\b/.test(a)) out.push('gzip');
-  return out.join(', ');
-}
 
 export function backendHeaders(request, env, pathname) {
   const src = request.headers;
@@ -482,8 +480,7 @@ export function backendHeaders(request, env, pathname) {
     const v = src.get(name);
     if (v) headers.set(name, v);
   }
-  const enc = passThroughEncoding(src.get('accept-encoding'));
-  if (enc) headers.set('accept-encoding', enc);
+  headers.set('accept-encoding', passThroughEncoding(clientEncoding(request)));
   if (PARTNER_HOOK.test(pathname)) {
     // 파트너 설정이 정한 서명·시각 헤더(이름 자유)는 전달하되 우리 이름공간·전달 IP 헤더는 제외
     for (const [name, value] of src) {
@@ -512,7 +509,7 @@ async function proxy(request, env, url) {
   const read = request.method === 'GET' || request.method === 'HEAD';
   let res;
   try {
-    res = await fetch(new Request(BACKEND + url.pathname + url.search, {
+    res = await fetch(new Request(backendOrigin(env) + url.pathname + url.search, {
       method: request.method,
       headers: backendHeaders(request, env, url.pathname),
       // 본문은 읽지 않고 스트림으로 넘긴다 (Worker 메모리·CPU 절약)
@@ -524,14 +521,15 @@ async function proxy(request, env, url) {
     return error(502, 'BACKEND_UNAVAILABLE');
   }
   // 본문을 건드리지 않고 헤더만 바꿔 돌려준다 — 압축된 응답이 다시 풀리거나 재압축되지 않는다
-  const out = new Response(res.body, res);
+  const out = new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers,
+    ...(res.headers.has('content-encoding') ? { encodeBody: 'manual' } : {}) });
   out.headers.set('Access-Control-Allow-Origin', 'https://studio.audeniq.com');
   out.headers.set('Access-Control-Allow-Credentials', 'true');
   if (!out.headers.has('Cache-Control')) out.headers.set('Cache-Control', 'no-store');
   return out;
 }
 
-export default {
+const studioWorker = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const r = route(request.method, url.pathname);
@@ -539,11 +537,11 @@ export default {
     // /api/* 중 D1 콘텐츠가 아니면 백엔드로 프록시 (named tunnel audeniq-backend → compose api:8080)
     if (url.pathname.startsWith('/api/') || url.pathname === '/ready') return proxy(request, env, url);
     // 그 외는 정적 에셋 (없는 화면 경로는 index.html로 SPA 폴백)
-    const assetRes = await env.ASSETS.fetch(request);
+    const assetRes = await serveAssets(request, env);
     if (assetRes.status === 404) {
       const isAsset = /\.[a-z0-9]+$/i.test(url.pathname);
       if (!isAsset) {
-        const indexRes = await env.ASSETS.fetch(new Request(new URL('/', request.url), request));
+        const indexRes = await serveAssets(new Request(new URL('/', request.url), request), env);
         if (indexRes.ok) {
           // 에셋 응답의 보안 헤더(_headers의 CSP 등)는 그대로 두고 캐시만 끈다
           const headers = new Headers(indexRes.headers);
@@ -553,5 +551,13 @@ export default {
       }
     }
     return assetRes;
+  },
+};
+
+export default {
+  async fetch(request, env, ctx) {
+    const refused = requireHttps(request);
+    if (refused) return refused;
+    return secureResponse(await studioWorker.fetch(request, env, ctx));
   },
 };

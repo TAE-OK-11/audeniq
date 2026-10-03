@@ -542,6 +542,21 @@ async fn verify_file(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(Error::PolicyGate("EXECUTION_FILE_PIN_MISSING"))?;
+    let production = std::env::var("APP_ENV").as_deref() == Ok("production");
+    let uploaded: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM catalog.upload_sessions WHERE org_id=$1 AND asset_id=$2)",
+    )
+    .bind(org_id)
+    .bind(asset_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if production || uploaded {
+        let verified: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM catalog.asset_safety s WHERE s.org_id=$1 AND s.asset_id=$2 AND s.safe_key=$3 AND s.safe_sha256=$4 AND s.rule_version='1' AND (NOT $5 OR s.antivirus_status='SCANNED'))")
+            .bind(org_id).bind(asset_id).bind(key).bind(pin.get::<Option<String>, _>("sha256")).bind(crate::config::antivirus_enabled()?).fetch_one(&mut *tx).await?;
+        if !verified {
+            return Err(Error::PolicyGate("UPLOAD_REINSPECTION_REQUIRED"));
+        }
+    }
     let sha256: String = pin
         .get::<Option<String>, _>("sha256")
         .ok_or(Error::PolicyGate("EXECUTION_FILE_PIN_MISSING"))?;

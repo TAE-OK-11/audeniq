@@ -159,18 +159,20 @@ fn probe_with(
 ) -> std::result::Result<serde_json::Value, AnalyzerError> {
     use AnalyzerError::{Unavailable, Undecodable};
     let deadline = std::time::Instant::now() + timeout;
-    let mut child = std::process::Command::new(bin)
-        .args([
-            "-v",
-            "error",
-            "-protocol_whitelist",
-            "file",
-            "-show_format",
-            "-show_streams",
-            "-of",
-            "json",
-            &path.to_string_lossy(),
-        ])
+    let mut command = std::process::Command::new(bin);
+    command.args([
+        "-v",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-show_format",
+        "-show_streams",
+        "-of",
+        "json",
+        &path.to_string_lossy(),
+    ]);
+    crate::parser_sandbox::restrict(&mut command, &[path], &[]).map_err(|_| Unavailable)?;
+    let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -1240,6 +1242,7 @@ fn decode_analysis(
             });
         }
     }
+    crate::parser_sandbox::restrict(&mut cmd, &[path], &[]).map_err(|_| Unavailable)?;
     let mut child = cmd
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

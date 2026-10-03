@@ -16,6 +16,9 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
     let config = Config::from_env()?;
+    if audeniq_core::config::kms_enabled()? {
+        audeniq_core::payout_keys::KeyRing::from_env(true)?;
+    }
     let pool = database::connect(&config.database_url, database::max_connections(6)?).await?;
     let storage: Arc<dyn ObjectStore> = if std::env::var("STORAGE_ENABLED").as_deref() == Ok("true")
     {

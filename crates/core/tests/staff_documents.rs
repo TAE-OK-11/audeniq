@@ -1,4 +1,4 @@
-//! Staff can open the original file of a submitted document
+//! Staff can open only the inspected derivative of a submitted document
 //! (`GET /api/staff/documents/{id}/file`): reviewers get the bytes with a
 //! safe type and file name, the view is audited, and people without the
 //! documents or review duty are refused.
@@ -37,7 +37,7 @@ async fn document_with_file(
     bytes: &[u8],
 ) -> Uuid {
     let asset = Uuid::new_v4();
-    let key = format!("orgs/{org}/documents/{asset}");
+    let key = format!("registered/{org}/{asset}/file");
     sqlx::query("INSERT INTO identity.resources(org_id,id,kind) VALUES($1,$2,'asset')")
         .bind(org)
         .bind(asset)
@@ -56,6 +56,18 @@ async fn document_with_file(
     .execute(pool)
     .await
     .unwrap();
+    if matches!(content_type, "application/pdf" | "image/jpeg" | "image/png") {
+        use sha2::Digest;
+        let sha = hex::encode(sha2::Sha256::digest(bytes));
+        sqlx::query("UPDATE catalog.assets SET sha256=$2 WHERE id=$1")
+            .bind(asset)
+            .bind(&sha)
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO catalog.asset_safety(asset_id,org_id,source_key,source_sha256,safe_key,safe_sha256,rule_version) VALUES($1,$2,$3,$4,$5,$4,'1')")
+            .bind(asset).bind(org).bind(format!("quarantine/{org}/{asset}/source")).bind(&sha).bind(&key).execute(pool).await.unwrap();
+    }
     let doc = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO portal.documents(id,org_id,kind,title,status,asset_id,file_name)
@@ -147,7 +159,7 @@ async fn reviewer_opens_the_submitted_file_and_the_view_is_audited(pool: PgPool)
 }
 
 #[sqlx::test]
-async fn unexpected_stored_types_are_only_downloads(pool: PgPool) {
+async fn unexpected_or_uninspected_files_are_never_served(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let artist = user(&app).await;
     let doc = document_with_file(
@@ -160,13 +172,6 @@ async fn unexpected_stored_types_are_only_downloads(pool: PgPool) {
     )
     .await;
     let admin = staff_user(&app, &pool, "ADMIN").await;
-    let (s, h, _) = get_file(&app, doc, &admin).await;
-    assert_eq!(s, StatusCode::OK);
-    assert_eq!(h["content-type"], "application/octet-stream");
-    assert!(
-        h["content-disposition"]
-            .to_str()
-            .unwrap()
-            .starts_with("attachment; ")
-    );
+    let (s, _, _) = get_file(&app, doc, &admin).await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
 }

@@ -50,6 +50,25 @@ case "${1:-}" in
     ;;
 esac
 
+# Only enabled KMS requires the cloud-materialized tmpfs keyring.
+read_feature() {
+  local value
+  value=$(sed -n "s/^$1=//p" "$ENV_FILE" | tail -n 1)
+  value=${value:-false}
+  case "$value" in true|false) printf '%s' "$value" ;; *) die "$1 은 true 또는 false여야 해요" ;; esac
+}
+kms_enabled=$(read_feature PAYOUT_KMS_ENABLED)
+av_enabled=$(read_feature UPLOAD_AV_ENABLED)
+if [ "$av_enabled" = true ]; then COMPOSE+=(--profile antivirus); fi
+keydir=$(sed -n 's/^PAYOUT_KEYRING_DIR=//p' "$ENV_FILE" | tail -n 1)
+keydir=${keydir:-/dev/shm/audeniq-secrets}
+if [ "$kms_enabled" = true ]; then
+  keyfile=$(sed -n 's/^PAYOUT_KEYRING_FILE=//p' "$ENV_FILE" | tail -n 1)
+  [ "$keyfile" = /run/audeniq-keys/payout-keyring.json ] || die "PAYOUT_KEYRING_FILE=/run/audeniq-keys/payout-keyring.json 을 설정해 주세요"
+  [ -f "$keydir/payout-keyring.json" ] || die "KMS 키를 먼저 tmpfs에 준비해 주세요 (kms-keyring.py materialize)"
+  [ "$(stat -f -c %T "$keydir")" = tmpfs ] || die "키 폴더는 tmpfs여야 해요"
+fi
+
 REF=$1
 REGISTRY=${DEPLOY_REGISTRY:-ghcr.io}
 case "$REF" in
@@ -78,6 +97,9 @@ fi
 docker run --rm --entrypoint sh "$PINNED" -c \
   'for b in audeniq-api audeniq-worker audeniq-migrate ffprobe; do command -v "$b" >/dev/null || { echo "missing $b"; exit 1; }; done' \
   || die "이미지 확인 실패: $PINNED"
+
+# Refuse a kernel/container profile that would leave upload parsers unconfined.
+docker run --rm --network none --cap-drop ALL --read-only   --security-opt no-new-privileges --entrypoint audeniq-admin "$PINNED" upload-sandbox-check   || die "업로드 샌드박스 실행 실패: Landlock ABI 3 이상과 seccomp 허용을 확인해 주세요"
 
 # 이미지가 빌드된 CPU 기준선을 이 서버가 지원하는지 확인한다. x86-64-v3 이미지를 AVX2가 없는
 # CPU에서 돌리면 시작하자마자 SIGILL로 죽는다 (마이그레이션 전에 막는다). 기록이 없는 예전
@@ -113,6 +135,10 @@ echo "     → $PINNED"
 if ! "${COMPOSE[@]}" up -d --build --remove-orphans; then
   "${COMPOSE[@]}" logs --tail 80 migrate grants pgbouncer api worker || true
   die "compose up 실패 — 이전 이미지로 되돌리려면: ./deploy.sh --rollback"
+fi
+if [ "$av_enabled" = false ]; then
+  # Also stop engines left by an earlier enabled deployment.
+  "${COMPOSE[@]}" --profile antivirus stop antivirus antivirus-update
 fi
 
 # api·worker가 새 이미지로 재시작 없이 30초 동안 떠 있는지 지켜본다

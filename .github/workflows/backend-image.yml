@@ -17,6 +17,10 @@ on:
       - config/**
       - migrations/**
       - deploy/Dockerfile
+      - deploy/sanitize-upload.py
+      - deploy/clamd.conf
+      - deploy/freshclam.conf
+      - deploy/update-antivirus.py
       - deploy/pgbouncer/**
       - deploy/compose.production.yaml
       - .dockerignore
@@ -177,7 +181,7 @@ jobs:
         # compose·grants·bootstrap은 이미지(마이그레이션)와 같은 커밋이어야 한다. 비밀 파일은 서버에만 있다.
         run: |
           ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
-          scp -i ~/.ssh/deploy_key deploy/compose.production.yaml deploy/bootstrap.sql deploy/grants.sql deploy/deploy.sh deploy/pg-upgrade.sh \
+          scp -i ~/.ssh/deploy_key deploy/compose.production.yaml deploy/bootstrap.sql deploy/grants.sql deploy/deploy.sh deploy/pg-upgrade.sh deploy/kms-keyring.py deploy/backup.sh deploy/restore-backup.sh \
             "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
           scp -r -i ~/.ssh/deploy_key deploy/pgbouncer "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
       - name: Deploy

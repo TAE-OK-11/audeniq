@@ -4,6 +4,7 @@ x-runtime: &runtime
   init: true
   read_only: true
   cap_drop: [ALL]
+  pids_limit: 128
   security_opt: [no-new-privileges:true]
   tmpfs: [/tmp:size=16m]
   networks: [backend, egress]
@@ -33,6 +34,14 @@ services:
     # 병렬 쿼리·JIT는 끈다(작은 OLTP 쿼리에서는 오히려 느리고 메모리를 먹는다).
     command:
       - postgres
+      - -c
+      - password_encryption=scram-sha-256
+      - -c
+      - log_parameter_max_length=0
+      - -c
+      - log_parameter_max_length_on_error=0
+      - -c
+      - log_min_error_statement=panic
       - -c
       - max_connections=40
       - -c
@@ -121,6 +130,34 @@ services:
     logging:
       driver: json-file
       options: {max-size: 10m, max-file: '3'}
+  antivirus:
+    profiles: [antivirus]
+    image: ${AUDENIQ_IMAGE:?set verified immutable API image}
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command: [clamd, --foreground, --config-file=/usr/local/share/audeniq/clamd.conf]
+    restart: unless-stopped
+    # Only INSTREAM over a shared Unix socket: no object-store, DB, KMS or network.
+    network_mode: none
+    tmpfs: [/tmp:size=1200m,mode=1777,noexec,nosuid,nodev]
+    volumes:
+      - av_socket:/run/audeniq-av
+      - av_database:/var/lib/clamav:ro
+    pids_limit: 32
+    mem_limit: ${AV_MEM_LIMIT:-3g}
+    cpus: ${AV_CPUS:-0.75}
+  antivirus-update:
+    profiles: [antivirus]
+    <<: *runtime
+    command: [python3, /usr/local/lib/audeniq/update-antivirus.py]
+    restart: unless-stopped
+    networks: [egress]
+    volumes: [av_database:/var/lib/clamav]
+    mem_limit: ${AV_UPDATE_MEM_LIMIT:-1536m}
+    cpus: 0.5
+    pids_limit: 16
   api:
     restart: unless-stopped
     <<: *runtime
@@ -133,7 +170,10 @@ services:
       APP_ORIGIN: ${APP_ORIGIN:?set exact HTTPS Studio origin}
       API_BIND: 0.0.0.0:8080
       EDGE_SERVICE_SECRET: ${EDGE_SERVICE_SECRET:?set random service secret}
-      PAYOUT_ACCOUNT_KEY: ${PAYOUT_ACCOUNT_KEY:?set 64-hex AES-256 key for payout account numbers}
+      PAYOUT_KMS_ENABLED: '${PAYOUT_KMS_ENABLED:-false}'
+      PAYOUT_KEYRING_FILE: ${PAYOUT_KEYRING_FILE:-}
+      PAYOUT_ACCOUNT_KEY: ${PAYOUT_ACCOUNT_KEY:-}
+      UPLOAD_AV_ENABLED: '${UPLOAD_AV_ENABLED:-false}'
       DATABASE_URL: postgres://audeniq_api:${API_DB_PASSWORD}@pgbouncer:6432/audeniq_prod
       DATABASE_POOLER: pgbouncer
       STORAGE_ENABLED: ${STORAGE_ENABLED:-false}
@@ -152,6 +192,8 @@ services:
       # Pre-launch lock: empty = no request ever reaches a real DSP.
       DSP_LIVE_TRANSMISSION: ${DSP_LIVE_TRANSMISSION:-}
     volumes:
+      - av_socket:/run/audeniq-av:ro
+      - ${PAYOUT_KEYRING_DIR:-/dev/shm/audeniq-secrets}:/run/audeniq-keys:ro
       - api_tmp:/var/tmp/audeniq
       - ./partners:/etc/audeniq/partners:ro
     depends_on:
@@ -168,6 +210,8 @@ services:
     # unfinished leases; the grace period must exceed the drain window.
     stop_grace_period: 45s
     environment:
+      UPLOAD_AV_ENABLED: '${UPLOAD_AV_ENABLED:-false}'
+      APP_ENV: production
       DATABASE_URL: postgres://audeniq_worker:${WORKER_DB_PASSWORD}@pgbouncer:6432/audeniq_prod
       DATABASE_POOLER: pgbouncer
       # LISTEN needs a session: direct to postgres, not through the pooler.
@@ -242,6 +286,8 @@ volumes:
   pg18_prod:
   worker_tmp:
   api_tmp:
+  av_socket:
+  av_database:
 networks:
   backend: {internal: true}
   egress: {}

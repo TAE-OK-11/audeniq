@@ -38,7 +38,7 @@ pub fn inspect(path: &Path) -> Vec<CheckOutcome> {
 
 fn color(path: &Path) -> Result<Value, &'static str> {
     let executable = std::env::var("EXIFTOOL_BIN").unwrap_or_else(|_| "exiftool".into());
-    let bytes = crate::local_analyzer::run(
+    let bytes = crate::local_analyzer::run_file(
         Command::new(executable)
             .args([
                 "-j",
@@ -57,6 +57,7 @@ fn color(path: &Path) -> Result<Value, &'static str> {
                 "--",
             ])
             .arg(path),
+        path,
         &[0],
     )?;
     let Value::Array(rows) =
@@ -76,11 +77,12 @@ fn color(path: &Path) -> Result<Value, &'static str> {
 
 fn text(path: &Path) -> Result<Value, &'static str> {
     let executable = std::env::var("TESSERACT_BIN").unwrap_or_else(|_| "tesseract".into());
-    let bytes = crate::local_analyzer::run(
+    let bytes = crate::local_analyzer::run_file(
         Command::new(executable)
             .arg(path)
             .args(["stdout", "-l", "eng+kor", "--psm", "11", "tsv"])
             .env("OMP_THREAD_LIMIT", "1"),
+        path,
         &[0],
     )?;
     parse_tsv(std::str::from_utf8(&bytes).map_err(|_| "invalid OCR report")?)
@@ -133,7 +135,7 @@ fn parse_tsv(tsv: &str) -> Result<Value, &'static str> {
 
 fn qr(path: &Path) -> Result<Value, &'static str> {
     let executable = std::env::var("ZBARIMG_BIN").unwrap_or_else(|_| "zbarimg".into());
-    let bytes = crate::local_analyzer::run(
+    let bytes = crate::local_analyzer::run_file(
         Command::new(executable)
             .args([
                 "--quiet",
@@ -144,6 +146,7 @@ fn qr(path: &Path) -> Result<Value, &'static str> {
                 "--",
             ])
             .arg(path),
+        path,
         &[0, 4],
     )?;
     let mut reader = quick_xml::Reader::from_reader(bytes.as_slice());

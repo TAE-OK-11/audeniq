@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 node_modules/
+*.br
 .wrangler/
 *.log
 /test-results/
@@ -10,7 +11,7 @@ node_modules/
 /crates/edge/build/
 /crates/edge/wrangler.toml
 /deploy/production.env
-/deploy/tunnel-token
+//deploy/tunnel-token
 !/deploy/production.env.example
 /web/studio/edge-dist/
 
@@ -19,3 +20,11 @@ node_modules/
 # Real partner configs and secrets never enter the repository.
 deploy/partners/*.json
 deploy/partners/secrets/
+
+# Key material and encrypted keyring configuration are deployment secrets.
+deploy/*keyring*.json
+deploy/backup-recipients.txt
+*.dump.age
+
+__pycache__/
+*.pyc

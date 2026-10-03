@@ -1,4 +1,5 @@
 import questions from '../questions.json' with { type: 'json' };
+import { requireHttps, secureResponse } from '../../shared/transport.js';
 const MAX_BYTES=32*1024;
 const IS_CONFIGURED_SITEKEY = key => typeof key === 'string' && key.length > 5 && !key.includes('REPLACE_WITH');
 const ready = env => Boolean(env.DB && env.TURNSTILE_SECRET_KEY && IS_CONFIGURED_SITEKEY(env.TURNSTILE_SITE_KEY));
@@ -77,7 +78,7 @@ async function verifyTurnstile(token,secret,hostname){
  const result=await resp.json();
  return result.success===true && result.hostname===hostname && result.action==='audeniq_survey';
 }
-export default {
+const surveyWorker = {
  async fetch(request,env){
   const url=new URL(request.url);const path=url.pathname;
   if(path.startsWith('/api/')){
@@ -104,12 +105,19 @@ export default {
    }catch(error){console.error('survey submission error',error instanceof Error?error.name:'unknown');return err('일시적인 오류가 발생했어요. 다시 시도해 주세요.',500);}
   }
   if(path==='/health' && request.method==='GET')return json({ok:true,service:'AUDENIQ Survey'});
-  // Asset-first routing serves HTML/CSS/JS/images, redirects and 404.html without
-  // running this script. Unknown non-asset requests may fall through here.
-  return err('페이지를 찾을 수 없어요.',404);
+  return env.ASSETS ? env.ASSETS.fetch(request) : err('페이지를 찾을 수 없어요.',404);
  },
  async scheduled(_controller,env){
   if(!env.DB)return;
   await env.DB.prepare("DELETE FROM survey_responses WHERE datetime(created_at) < datetime('now','-12 months')").run();
  }
+};
+
+export default {
+ async fetch(request,env){
+  const refused=requireHttps(request);
+  if(refused)return refused;
+  return secureResponse(await surveyWorker.fetch(request,env));
+ },
+ scheduled:surveyWorker.scheduled,
 };

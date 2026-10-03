@@ -28,6 +28,8 @@ jobs:
       # target/ 캐시를 작게 (복원·저장 시간 단축)
       CARGO_INCREMENTAL: '0'
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      # Default runtime is off; CI still verifies the enabled implementation.
+      UPLOAD_AV_ENABLED: 'true'
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -45,7 +47,9 @@ jobs:
             ~/.cargo/bin/worker-codegen
             target
           key: rust-v2-1.98.1-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
-          restore-keys: rust-v2-1.98.1-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-
+          restore-keys: |
+            rust-v2-1.98.1-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-
+            rust-v2-1.98.1-${{ runner.os }}-
       - name: Check Rust formatting
         id: formatting
         continue-on-error: true
@@ -57,7 +61,9 @@ jobs:
       - name: Install FFmpeg (QC fixture generation + ffprobe) and xmllint (DDEX XSD validation)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg libxml2-utils openssh-server openssh-client libimage-exiftool-perl tesseract-ocr tesseract-ocr-eng tesseract-ocr-kor zbar-tools qrencode fonts-dejavu-core
+          sudo apt-get install -y -qq ffmpeg libxml2-utils openssh-server openssh-client libimage-exiftool-perl tesseract-ocr tesseract-ocr-eng tesseract-ocr-kor zbar-tools qrencode fonts-dejavu-core python3-pil poppler-utils clamav-daemon
+      - name: Start real antivirus with disposable CI signatures
+        run: bash deploy/tests/start-test-antivirus.sh
       # 서명을 실제로 검사하는 S3 서버 (R2처럼 SigV4 확인; moto는 서명을 보지 않는다).
       # tests/s3_presign.rs가 서명 URL이 선언한 객체 하나만 올릴 수 있는지 확인한다
       - name: Start S3 gateway for presigned upload tests
@@ -90,6 +96,8 @@ jobs:
           tool: cargo-nextest@0.9.146
       - run: cargo nextest run --locked -p audeniq-core --test-threads 4 --no-fail-fast
         env:
+          UPLOAD_SCANNER_SOCKET: /tmp/audeniq-ci-av.sock
+          UPLOAD_SANITIZER: ${{ github.workspace }}/deploy/sanitize-upload.py
           S3_TEST_ENDPOINT: http://127.0.0.1:7070/
           S3_TEST_BUCKET: audeniq-test
           S3_TEST_ACCESS_KEY_ID: ci-s3-access
@@ -105,7 +113,8 @@ jobs:
         run: docker logs s3 2>&1 | tail -50 || true
       - name: Measure backend review hot paths
         run: |
-          git fetch --no-tags --depth=1 origin 400c6c963e71034303039dd374bde4f0f5f99ab1
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin bfa80c8594bb2892d727fdd28df618015027cf2c
           bash scripts/benchmark-fingerprint-review.sh 2>&1 | tee /tmp/backend-fingerprint-benchmark.log
           cargo test --locked -p audeniq-core --lib benchmark_prepared_matching -- --ignored --nocapture 2>&1 | tee /tmp/backend-name-benchmark.log
       - uses: actions/upload-artifact@v7
@@ -135,6 +144,8 @@ jobs:
         run: |
           cp wrangler.toml.example wrangler.toml
           npx --yes wrangler@4.137.0 deploy --dry-run --outdir /tmp/audeniq-edge-bundle
+      - name: Shared HTTPS and compression tests
+        run: node --test web/shared/transport.test.mjs
       - name: Studio Worker and D1 content tests
         working-directory: web/studio
         run: bun test test/
@@ -176,6 +187,16 @@ jobs:
       - name: Enforce formatting result
         if: always() && steps.formatting.outcome == 'failure'
         run: exit 1
+  kms-backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: KMS, backup, upload sanitization and HTTPS-only antivirus update tests
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install --no-install-recommends -y age python3-pil poppler-utils curl openssl
+          python3 -m unittest discover -s deploy/tests -v
   compose-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -195,9 +216,12 @@ jobs:
           APP_ORIGIN: https://studio.audeniq.test
           PAYOUT_ACCOUNT_KEY: 0000000000000000000000000000000000000000000000000000000000000000
         run: |
-          docker compose -f deploy/compose.production.yaml config --format json > /tmp/production.json
+          docker compose -f deploy/compose.production.yaml --profile antivirus config --format json > /tmp/production.json
           jq -e '[.services[] | .ports // [] | length] | all(. == 0)' /tmp/production.json
           jq -e '.services.api.environment.APP_ENV == "production" and .name == "audeniq-production"' /tmp/production.json
+          jq -e '.services.api.environment.PAYOUT_KMS_ENABLED == "false" and .services.api.environment.UPLOAD_AV_ENABLED == "false" and .services.worker.environment.UPLOAD_AV_ENABLED == "false"' /tmp/production.json
+          docker compose -f deploy/compose.production.yaml config --services > /tmp/default-services
+          ! grep -Eq '^antivirus(-update)?$' /tmp/default-services
           # Workers analyze and package the stored masters: they need the
           # object store and non-zero QC/rights/distribution concurrency.
           jq -e '.services.worker.environment | has("STORAGE_ENABLED") and has("S3_BUCKET") and has("S3_ENDPOINT")' /tmp/production.json
@@ -206,12 +230,43 @@ jobs:
           # worker's LISTEN and migrate/grants stay on direct connections.
           jq -e '(.services.api.environment.DATABASE_URL | test("@pgbouncer:6432/")) and .services.api.environment.DATABASE_POOLER == "pgbouncer"' /tmp/production.json
           jq -e '(.services.worker.environment.DATABASE_URL | test("@pgbouncer:6432/")) and (.services.worker.environment.DATABASE_LISTEN_URL | test("@postgres/"))' /tmp/production.json
+          jq -e '.services.antivirus.network_mode == "none" and .services.antivirus.read_only == true and .services.antivirus.pids_limit == 32' /tmp/production.json
+          jq -e '[.services.antivirus.environment // {} | keys[]] | all(test("DATABASE|S3_|PAYOUT|PARTNER") | not)' /tmp/production.json
           jq -e '(.services.migrate.environment.DATABASE_URL | test("@postgres/"))' /tmp/production.json
       - name: Deploy script lint
         run: shellcheck deploy/deploy.sh
-      - run: docker compose up --build -d
+      - run: docker compose up --build -d postgres migrate grants pgbouncer api worker
       - name: Check API readiness
         run: curl --fail --retry 15 --retry-all-errors --retry-delay 2 -H "X-Audeniq-Service:$EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready
+      - name: Production boots without cloud KMS or an antivirus engine
+        run: |
+          docker compose run --no-deps -d --name audeniq-ci-optional-security -e APP_ENV=production -e APP_ORIGIN=https://studio.audeniq.test api
+          docker exec -i audeniq-ci-optional-security python3 - <<'PY'
+          import os, time, urllib.request
+          assert os.environ['PAYOUT_KMS_ENABLED'] == 'false'
+          assert os.environ['UPLOAD_AV_ENABLED'] == 'false'
+          assert not os.environ.get('PAYOUT_KEYRING_FILE')
+          request = urllib.request.Request('http://127.0.0.1:8080/ready', headers={'X-Audeniq-Service': os.environ['EDGE_SERVICE_SECRET']})
+          for attempt in range(30):
+              try:
+                  with urllib.request.urlopen(request, timeout=2) as response:
+                      assert response.status == 200
+                  break
+              except Exception:
+                  if attempt == 29:
+                      raise
+                  time.sleep(1)
+          PY
+          docker rm -f audeniq-ci-optional-security
+          if docker compose run --rm --no-deps -e PAYOUT_KMS_ENABLED=true api > /tmp/kms-required.log 2>&1; then
+            echo 'Enabled KMS accepted a missing keyring'
+            exit 1
+          fi
+          grep -q PAYOUT_KEYRING_REQUIRED /tmp/kms-required.log
+      - name: Verify parser isolation inside actual runtime containers
+        run: |
+          docker compose exec -T api audeniq-admin upload-sandbox-check
+          docker compose exec -T worker audeniq-admin upload-sandbox-check
       - name: Worker image ships the audio and provenance analyzers
         run: |
           docker compose run --rm --no-deps --entrypoint ffprobe worker -version
@@ -226,4 +281,6 @@ jobs:
           docker compose logs api worker migrate grants pgbouncer
       - name: Remove disposable CI environment
         if: always()
-        run: docker compose down -v
+        run: |
+          docker rm -f audeniq-ci-optional-security 2>/dev/null || true
+          docker compose down -v

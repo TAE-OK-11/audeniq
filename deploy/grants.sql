@@ -6,9 +6,16 @@ GRANT INSERT,UPDATE ON identity.orgs,identity.parties,identity.users,identity.me
 GRANT INSERT,UPDATE ON catalog.artists,catalog.labels,catalog.releases,catalog.tracks,catalog.credits,catalog.assets,catalog.upload_sessions TO audeniq_api;
 GRANT SELECT ON catalog.asset_fingerprints TO audeniq_api;
 GRANT SELECT,INSERT ON catalog.asset_provenance TO audeniq_api;
+GRANT SELECT,INSERT ON catalog.asset_safety TO audeniq_api;
+GRANT SELECT,INSERT ON catalog.inline_file_safety TO audeniq_api;
+REVOKE UPDATE,DELETE,TRUNCATE ON catalog.inline_file_safety FROM audeniq_api,audeniq_worker;
+REVOKE UPDATE,DELETE,TRUNCATE ON catalog.asset_safety FROM audeniq_api,audeniq_worker;
 GRANT DELETE ON catalog.credits TO audeniq_api;
 GRANT SELECT,INSERT,UPDATE ON operations.jobs,operations.outbox TO audeniq_api;
 GRANT INSERT ON operations.audit_events TO audeniq_api;
+GRANT USAGE ON SCHEMA privacy TO audeniq_api;
+GRANT INSERT ON privacy.staff_access_logs TO audeniq_api;
+REVOKE UPDATE,DELETE,TRUNCATE ON privacy.staff_access_logs FROM audeniq_api;
 GRANT SELECT ON operations.allowed_transitions TO audeniq_api;
 -- Consent + submit run in the API request: it signs the consent package and
 -- freezes the submitted application revision (both append-only; no UPDATE or
@@ -78,6 +85,7 @@ GRANT USAGE ON SCHEMA distribution,finance,execution,rights,identity,catalog TO 
 GRANT SELECT ON ALL TABLES IN SCHEMA distribution,finance,execution,rights TO audeniq_worker;
 GRANT SELECT ON catalog.application_revisions,catalog.artists,catalog.labels,catalog.tracks,catalog.credits,catalog.assets,catalog.consent_packages,catalog.upload_sessions TO audeniq_worker;
 GRANT SELECT ON catalog.asset_provenance TO audeniq_worker;
+GRANT SELECT ON catalog.asset_safety TO audeniq_worker;
 GRANT SELECT ON catalog.external_recordings,catalog.external_recording_epoch TO audeniq_worker;
 GRANT SELECT ON identity.orgs,identity.memberships,identity.parties TO audeniq_worker;
 -- Stage 1 re-checks protected artist names (list is operator-managed; no runtime writes).
@@ -138,7 +146,7 @@ DO $$
 DECLARE r text; s text; attempt int;
 BEGIN
  FOREACH r IN ARRAY ARRAY['audeniq_api','audeniq_worker'] LOOP
-  FOREACH s IN ARRAY ARRAY['statement_timeout=15s','lock_timeout=3s'] LOOP
+  FOREACH s IN ARRAY ARRAY['statement_timeout=15s','lock_timeout=3s','idle_in_transaction_session_timeout=30s'] LOOP
    FOR attempt IN 1..20 LOOP
     BEGIN
      IF NOT EXISTS (SELECT 1 FROM pg_db_role_setting d JOIN pg_roles o ON o.oid = d.setrole
@@ -157,4 +165,11 @@ BEGIN
    END LOOP;
   END LOOP;
  END LOOP;
+END $$;
+
+-- No ambient CONNECT or temporary-table privileges for arbitrary login roles.
+-- Owner/migrator remains separate; the two runtime logins get CONNECT only.
+DO $$ BEGIN
+ EXECUTE format('REVOKE CONNECT,TEMPORARY ON DATABASE %I FROM PUBLIC', current_database());
+ EXECUTE format('GRANT CONNECT ON DATABASE %I TO audeniq_api,audeniq_worker', current_database());
 END $$;
