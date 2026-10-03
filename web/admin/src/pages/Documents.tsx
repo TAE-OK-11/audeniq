@@ -82,7 +82,7 @@ export function Documents() {
       ) : (
         <div className="adm-list">
           {items.map(d => (
-            <div key={d.id} className="adm-row">
+            <div key={d.id} className="adm-row adm-doc-row">
               <Initial text={DOC_KIND[d.kind] ?? d.kind} plain />
               <span className="adm-min">
                 <span className="adm-row-title">{d.title}</span>
@@ -97,15 +97,16 @@ export function Documents() {
               </span>
               <span className="adm-row-end">
                 <StatusChip value={pick(DOC_STATUS, d.status)} />
+              </span>
+              {/* 버튼은 카드 아래 한 줄로 — 휴대폰에서 오른쪽에 몰리지 않게 */}
+              <div className="adm-doc-actions">
                 <DocFileLink id={d.id} assetId={d.asset_id} />
                 {d.electronic_record && <button type="button" className="adm-btn soft small" onClick={() => setViewing(d)}>서명 문서 보기</button>}
-                {decidable(d) && can('DOCUMENTS') && (
-                  <span className="adm-codes">
-                    <button type="button" className="adm-btn warn small" onClick={() => setPending({ doc: d, status: 'NEEDS' })}>보완 요청</button>
-                    <button type="button" className="adm-btn primary small" onClick={() => setPending({ doc: d, status: 'APPROVED' })}>승인</button>
-                  </span>
-                )}
-              </span>
+                {decidable(d) && can('DOCUMENTS') && <>
+                  <button type="button" className="adm-btn warn small" onClick={() => setPending({ doc: d, status: 'NEEDS' })}>보완 요청</button>
+                  <button type="button" className="adm-btn primary small" onClick={() => setPending({ doc: d, status: 'APPROVED' })}>승인</button>
+                </>}
+              </div>
             </div>
           ))}
         </div>
