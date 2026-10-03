@@ -1,6 +1,6 @@
 // 계약서 — 라이브 view-contracts / renderContracts(오버라이드) 대응
 import { useEffect, useState } from 'react';
-import { useSearchParams } from '../lib/router';
+import { useNavigate, useSearchParams } from '../lib/router';
 import { useDocs } from '../store/docs';
 import { DocEmpty } from '../components/DocCard';
 import { ContractBundle, bundleStage, type BundleStage } from '../components/ContractBundle';
@@ -13,6 +13,7 @@ export function Contracts() {
   const [signing, setSigning] = useState(false);
 
   const [params, setParams] = useSearchParams();
+  const nav = useNavigate();
   const openDoc = openId ? docs.find(d => d.id === openId) ?? null : null;
   // 발매마다 신청서 + 계약서를 한 묶음으로 — 서명할 것, 검토·보완 중, 체결 완료 순, 같은 묶음 안에서는 최신순
   const ORDER: Record<BundleStage, number> = { 'to-sign': 0, needs: 1, review: 2, waiting: 3, signed: 4 };
@@ -91,7 +92,7 @@ export function Contracts() {
         <SignatureModal
           doc={openDoc}
           onBack={() => setSigning(false)}
-          onDone={() => { setSigning(false); setOpenId(null); }}
+          onDone={() => { const done = openDoc; setSigning(false); setOpenId(null); if (done) nav(`/contracts/${encodeURIComponent(done.id)}`); }}
           onSaved={() => {}}
         />
       )}

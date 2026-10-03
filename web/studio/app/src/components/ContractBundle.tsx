@@ -73,8 +73,8 @@ export function ContractBundle({ releaseId, releaseTitle, agreement, hasApplicat
               : '신청서를 접수하면 준비돼요'}</span>
           </div>
           {canOpen && (
-            <button type="button" className={stage === 'to-sign' ? 'button aq-bundle-sign' : 'link-btn'} onClick={() => onOpenAgreement(agreement!.id)}>
-              {stage === 'to-sign' ? '확인하고 서명' : '계약서 보기'}
+            <button type="button" className={stage === 'to-sign' ? 'button aq-bundle-sign' : 'link-btn'} onClick={() => (stage === 'signed' ? nav(`/contracts/${encodeURIComponent(agreement!.id)}`) : onOpenAgreement(agreement!.id))}>
+              {stage === 'to-sign' ? '확인하고 서명' : '계약서 최종본'}
             </button>
           )}
         </li>
