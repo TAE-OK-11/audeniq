@@ -28,3 +28,13 @@ BEGIN
 END $$;
 CREATE TRIGGER safety_gate BEFORE INSERT OR UPDATE OF state,object_key,sha256
  ON catalog.assets FOR EACH ROW EXECUTE FUNCTION catalog.require_asset_safety();
+
+-- A content-bound admission receipt for small inline PNGs. No raw signature
+-- or personal data is stored here; response readers suppress uninspected data URLs.
+CREATE TABLE catalog.inline_file_safety (
+ source_sha256 text PRIMARY KEY CHECK(source_sha256 ~ '^[a-f0-9]{64}$'),
+ rule_version text NOT NULL CHECK(rule_version='1'),
+ inspected_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+CREATE TRIGGER immutable BEFORE UPDATE OR DELETE ON catalog.inline_file_safety
+ FOR EACH ROW EXECUTE FUNCTION operations.reject_mutation();

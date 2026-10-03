@@ -53,7 +53,101 @@ pub async fn signature(state: &crate::api::AppState, value: &str) -> Result<Stri
     })
     .await
     .map_err(|_| Error::Internal)??;
+    sqlx::query("INSERT INTO catalog.inline_file_safety(source_sha256,rule_version) VALUES($1,$2) ON CONFLICT DO NOTHING")
+        .bind(crate::domain::sha256_hex(value)).bind(RULE_VERSION).execute(&state.pool).await?;
     Ok(value.to_string())
+}
+
+fn visit_inline<'a>(value: &'a serde_json::Value, key: &str, found: &mut Vec<&'a str>) {
+    match value {
+        serde_json::Value::String(s)
+            if !s.is_empty()
+                && (key == "signature" || s.starts_with("data:") || s.starts_with("blob:")) =>
+        {
+            found.push(s)
+        }
+        serde_json::Value::Array(a) => {
+            for v in a {
+                visit_inline(v, key, found);
+            }
+        }
+        serde_json::Value::Object(o) => {
+            for (k, v) in o {
+                visit_inline(v, k, found);
+            }
+        }
+        _ => (),
+    }
+}
+
+/// Catalog JSON can contain the same image as the explicit signing endpoint.
+/// Validate those images at intake too; a draft cannot bypass file admission.
+pub async fn check_inline_files(
+    state: &crate::api::AppState,
+    value: &serde_json::Value,
+) -> Result<()> {
+    let mut images = Vec::new();
+    visit_inline(value, "", &mut images);
+    let unique: std::collections::BTreeSet<_> = images.into_iter().collect();
+    if unique.len() > 8 {
+        return Err(Error::InvalidCode("SIGNATURE_INVALID"));
+    }
+    for image in unique {
+        signature(state, image).await?;
+    }
+    Ok(())
+}
+
+/// Reads make no parser/AV calls. One batched receipt lookup removes old,
+/// uninspected embedded images from the response, preserving the DB evidence.
+pub async fn visible_inline_files(
+    pool: &sqlx::PgPool,
+    mut value: serde_json::Value,
+) -> Result<serde_json::Value> {
+    let mut images = Vec::new();
+    visit_inline(&value, "", &mut images);
+    if images.is_empty() {
+        return Ok(value);
+    }
+    let hashes: Vec<String> = images
+        .into_iter()
+        .map(crate::domain::sha256_hex)
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .take(512)
+        .collect();
+    let admitted: Vec<String> = sqlx::query_scalar("SELECT source_sha256 FROM catalog.inline_file_safety WHERE source_sha256=ANY($1) AND rule_version=$2")
+        .bind(hashes).bind(RULE_VERSION).fetch_all(pool).await?;
+    let admitted: std::collections::BTreeSet<_> = admitted.into_iter().collect();
+    fn hide(
+        value: &mut serde_json::Value,
+        key: &str,
+        admitted: &std::collections::BTreeSet<String>,
+    ) {
+        match value {
+            serde_json::Value::String(s)
+                if !s.is_empty()
+                    && (key == "signature" || s.starts_with("data:") || s.starts_with("blob:")) =>
+            {
+                if !admitted.contains(&crate::domain::sha256_hex(&*s)) {
+                    s.clear();
+                }
+            }
+            serde_json::Value::Array(a) => {
+                for v in a {
+                    hide(v, key, admitted);
+                }
+            }
+            serde_json::Value::Object(o) => {
+                for (k, v) in o {
+                    hide(v, k, admitted);
+                }
+            }
+            _ => (),
+        }
+    }
+    hide(&mut value, "", &admitted);
+    Ok(value)
 }
 
 pub struct Workspace(pub PathBuf);

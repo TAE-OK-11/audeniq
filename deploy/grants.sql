@@ -7,6 +7,8 @@ GRANT INSERT,UPDATE ON catalog.artists,catalog.labels,catalog.releases,catalog.t
 GRANT SELECT ON catalog.asset_fingerprints TO audeniq_api;
 GRANT SELECT,INSERT ON catalog.asset_provenance TO audeniq_api;
 GRANT SELECT,INSERT ON catalog.asset_safety TO audeniq_api;
+GRANT SELECT,INSERT ON catalog.inline_file_safety TO audeniq_api;
+REVOKE UPDATE,DELETE,TRUNCATE ON catalog.inline_file_safety FROM audeniq_api,audeniq_worker;
 REVOKE UPDATE,DELETE,TRUNCATE ON catalog.asset_safety FROM audeniq_api,audeniq_worker;
 GRANT DELETE ON catalog.credits TO audeniq_api;
 GRANT SELECT,INSERT,UPDATE ON operations.jobs,operations.outbox TO audeniq_api;

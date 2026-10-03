@@ -610,6 +610,34 @@ async fn malicious_bytes_in_every_upload_kind_never_register_or_queue(pool: PgPo
     assert_eq!(queued, 0);
 }
 
+#[sqlx::test]
+async fn catalog_json_cannot_bypass_inline_file_inspection_and_legacy_images_are_hidden(
+    pool: PgPool,
+) {
+    let (app, _) = app(pool.clone()).await;
+    let actor = user(&app).await;
+    let path = format!("/api/orgs/{}/releases", actor.org);
+    for image in [
+        "data:image/svg+xml;base64,PHN2Zz4=",
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==",
+        "https://external.invalid/image",
+    ] {
+        let (status, _, body) = call(&app, "POST", &path,
+            json!({"name":"unsafe inline","release_type":"SINGLE","profile":{"application":{"signature":image}}}), Some(&actor)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert_eq!(body["error"]["code"], "SIGNATURE_INVALID");
+    }
+    let image = "data:image/png;base64,legacy-uninspected";
+    let body = json!({"draft":{"application":{"signature":image}},"signed_application":{"signature":image},"title":"unchanged"});
+    let visible = audeniq_core::upload_safety::visible_inline_files(&pool, body.clone())
+        .await
+        .unwrap();
+    assert_eq!(visible["draft"]["application"]["signature"], "");
+    assert_eq!(visible["signed_application"]["signature"], "");
+    assert_eq!(visible["title"], "unchanged");
+    assert_eq!(body["draft"]["application"]["signature"], image);
+}
+
 /// ALAC uploads are registered as a losslessly converted FLAC master; AAC in
 /// the same container is refused and never registered.
 #[sqlx::test]
