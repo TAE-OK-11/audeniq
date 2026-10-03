@@ -34,6 +34,7 @@ function lazyPage<M>(load: () => Promise<M>, pick: (m: M) => ComponentType) {
 const Login = lazyPage(pageLoaders.Login, m => m.Login);
 const Signup = lazyPage(pageLoaders.Signup, m => m.Signup);
 const FindAccount = lazyPage(pageLoaders.FindAccount, m => m.FindAccount);
+const Sign = lazyPage(pageLoaders.Sign, m => m.Sign);
 const Dashboard = lazyPage(pageLoaders.Dashboard, m => m.Dashboard);
 const Releases = lazyPage(pageLoaders.Releases, m => m.Releases);
 const ReleaseDetail = lazyPage(pageLoaders.ReleaseDetail, m => m.ReleaseDetail);
@@ -134,6 +135,8 @@ export function App() {
                     <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />
                     <Route path="/signup" element={<GuestOnly><Signup /></GuestOnly>} />
                     <Route path="/find-account" element={<GuestOnly><FindAccount /></GuestOnly>} />
+                    {/* 권리자 서명 — 로그인 없이 받은 링크로 (본인확인 후 직접 서명) */}
+                    <Route path="/sign/:token" element={<Sign />} />
                     <Route path="/content-admin" element={<Navigate to="/admin/content" replace />} />
                     {/* 스태프 관리자 — 같은 로그인 세션 + 서버의 스태프 역할(/api/staff/me)로 접근 */}
                     <Route path="/admin/*" element={<Protected><AdminApp /></Protected>} />

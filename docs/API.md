@@ -95,7 +95,22 @@ Notifications are raised in the database by SECURITY DEFINER triggers, so the wo
 
 Staff actions (agreement/proof review, proof requests, inquiry replies) now go through the staff portal API below. The SQL functions remain for operations tooling.
 
-Electronic rights documents use `electronic:{document_no(UUID),form:"AUD-RIGHTS 1.0",document_kind:master|artwork|composition|sample|performer|shared,rights_holder,signer_name,signer_role:"권리자 본인"|"권리자의 위임을 받은 대리인",signature(PNG data URL),consent:true}` with a nonempty body and no uploaded asset. The backend records the current submitter, server signing time and a SHA-256 of the title, body, form, receipt, document type, rights holder, signer role/name and signature. An identical retry with the same receipt returns the existing ID; changed content returns 409. Signing completes the document, while its rights review remains pending. This flow records a direct signature in the tool; it does not send an external signing invitation or verify the signer's identity independently.
+Electronic rights documents (form `AUD-RIGHTS 2.0`) are signed by the rights holder themselves through a signing request (below). The old direct path — `POST /documents` with `electronic:{form:"AUD-RIGHTS 1.0",…}`, signed on the submitter's device without verifying the signer — now returns 400 `SIGNING_REQUEST_REQUIRED` (an operator can reopen it with `LEGACY_DIRECT_SIGNING=1`); existing 1.0 documents stay readable.
+
+### Rights signing (권리자 본인확인 + 직접 서명)
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/orgs/{org}/signing-requests` | `{release_id,document_no(UUID),document_kind:master\|artwork\|composition\|sample\|performer\|shared,title,body,rights_holder,signer_name,signer_role:"권리자 본인"\|"권리자의 위임을 받은 대리인"\|"법인 대표자",channel:LINK\|IN_PERSON}` (release write ACL) → `{id,token,expires_at,status}`. The 64-hex token is returned once and only its SHA-256 is stored. LINK lives 7 days, IN_PERSON 1 hour. Same `document_no` + same text while PENDING → the same request with a fresh token (old one stops); changed text → 409 |
+| GET | `/api/orgs/{org}/signing-requests?release_id` | Requests on releases the caller can read: status (`PENDING`, `VERIFIED`, `SIGNED`, `DECLINED`, `CANCELLED`, or `EXPIRED` past the deadline), signer, channel, `document_id` once signed, `certificate_hash`, identity summary (provider, method, verified_at). Never the token, birth date or CI hash |
+| POST | `/api/orgs/{org}/signing-requests/{id}/reissue` | `{channel}` → new token + deadline, only while nobody has verified (`SIGNING_REQUEST_CLOSED`) |
+| POST | `/api/orgs/{org}/signing-requests/{id}/cancel` | PENDING/VERIFIED → CANCELLED |
+| GET | `/api/sign/{token}` | No session. The document for the signer: title, body, body_hash, holder/signer, release, requester, deadline, `identity_provider:{ready,name}`; once SIGNED also the signature, `certificate_hash` and the event log (readable 90 days after signing). The first open records `VIEWED` |
+| POST | `/api/sign/{token}/identity` | `{transaction_id}` from the identity provider. 422 `IDENTITY_PROVIDER_NOT_CONFIGURED` until a provider is set (`IDENTITY_PROVIDER`; `test` is accepted only outside production). The verified name must equal the signer name ignoring spaces/case (`IDENTITY_NAME_MISMATCH`); a provider transaction verifies one request only. Stores name, birth date, method, transaction id and a peppered hash of the CI (never the CI or phone number). 10 tries per token per 15 minutes |
+| POST | `/api/sign/{token}/sign` | `{signature(PNG data URL),consents:{document,electronic_signature,privacy}}` — all three `true` (`SIGNING_CONSENT_REQUIRED`), identity verified within 30 minutes (`IDENTITY_EXPIRED`). Creates the RIGHTS_PROOF document in REVIEW with `electronic_record` = `{form:"AUD-RIGHTS 2.0",document_no,document_kind,rights_holder,signer_name,signer_role,content_hash,signing_request_id,channel,identity:{provider,method,name,verified_at},consents,certificate_hash}` and returns `{document_id,signed_at,certificate_hash}`. `content_hash` has the 1.0 shape; `certificate_hash` covers the body hash, content hash, signature hash, full identity record, consents, signing time and the event chain head |
+| POST | `/api/sign/{token}/decline` | `{reason?}` → DECLINED |
+
+Every step is an append-only `portal.signing_events` row (`CREATED`, `LINK_REISSUED`, `VIEWED`, `IDENTITY_VERIFIED`, `IDENTITY_FAILED`, `SIGNED`, `DECLINED`, `CANCELLED`) with time, peppered IP hash, user agent, and a hash over the previous row's hash; a trigger refuses UPDATE/DELETE. Signing writes go through the edge with the site Origin like any other write.
 
 ## Release delivery status (artist)
 

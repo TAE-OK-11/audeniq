@@ -17,6 +17,7 @@ import { stampNow } from '../lib/date';
 import { uid } from '../lib/store';
 import { Glyph } from '../components/Glyph';
 import { RightsDocumentModal } from '../components/RightsDocumentModal';
+import { SigningRequests } from '../components/SigningRequests';
 import { RIGHTS_DOCUMENTS, type RightsDocumentContext, type RightsDocumentKind } from '../lib/rightsDocument';
 import { Segmented } from '../components/Segmented';
 
@@ -43,6 +44,7 @@ export function Rights() {
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [method, setMethod] = useState<'electronic' | 'upload'>('electronic');
+  const [signingTick, setSigningTick] = useState(0);
   const [electronic, setElectronic] = useState<{ kind: RightsDocumentKind; context: RightsDocumentContext } | null>(null);
 
   const openDoc = openId ? docs.find(d => d.id === openId) ?? null : null;
@@ -153,6 +155,8 @@ export function Rights() {
         <div><span>보완 요청</span><strong id="rightsFixCount">{fix}</strong></div>
       </div>
 
+      <SigningRequests releases={releases} tick={signingTick} onOpenDoc={setOpenId} />
+
       <div id="rightsList">
         {rights.length ? (
           <div className="aq-doc-grid aq-stagger">
@@ -225,7 +229,7 @@ export function Rights() {
         </Modal>
       )}
 
-      {electronic && <RightsDocumentModal kind={electronic.kind} context={electronic.context} onClose={() => setElectronic(null)} onComplete={doc => { setElectronic(null); setOpenId(doc.id); toast('서명 문서가 완성됐어요. AUDENIQ 검토가 이어져요.', 'success'); }} />}
+      {electronic && <RightsDocumentModal kind={electronic.kind} context={electronic.context} onClose={() => setElectronic(null)} onRequested={() => { setSigningTick(t => t + 1); toast('서명 요청을 만들었어요. 권리자가 서명하면 여기에 문서가 생겨요.', 'success'); }} />}
 
       {openDoc && !signing && (
         <DocumentModal
