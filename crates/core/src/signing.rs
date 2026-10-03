@@ -631,7 +631,7 @@ pub async fn view(s: &AppState, h: &HeaderMap, token: &str) -> Result<Value> {
     tx.commit().await?;
     let identity: Option<Value> = r.get("identity");
     let provider = Provider::from_env();
-    Ok(json!({
+    crate::upload_safety::visible_inline_files(&s.pool, json!({
         "status": status,
         "form": r.get::<String, _>("form"),
         "document_no": r.get::<Uuid, _>("document_no"),
@@ -653,7 +653,7 @@ pub async fn view(s: &AppState, h: &HeaderMap, token: &str) -> Result<Value> {
         "signed_at": signed_at,
         "certificate_hash": r.get::<Option<String>, _>("certificate_hash"),
         "events": events,
-    }))
+    })).await
 }
 
 #[derive(Deserialize)]

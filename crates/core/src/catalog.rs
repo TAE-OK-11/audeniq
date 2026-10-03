@@ -133,6 +133,7 @@ async fn refs(c: &mut PgConnection, a: &Actor, org: Uuid, i: &Input) -> Result<(
 }
 pub async fn create(s: &AppState, a: &Actor, org: Uuid, kind: Kind, i: Input) -> Result<Value> {
     validate(&i)?;
+    crate::upload_safety::check_inline_files(s, &i.profile).await?;
     let (upc, artwork) = release_fields(kind, &i)?;
     let mut tx = s.pool.begin().await?;
     let id = Uuid::new_v4();
@@ -228,7 +229,11 @@ pub async fn list(s: &AppState, a: &Actor, org: Uuid, kind: Kind, page: Page) ->
     } else {
         None
     };
-    Ok(json!({"items":rows,"limit":limit,"next_cursor":next_cursor}))
+    crate::upload_safety::visible_inline_files(
+        &s.pool,
+        json!({"items":rows,"limit":limit,"next_cursor":next_cursor}),
+    )
+    .await
 }
 /// Per-DSP delivery job and live state of each release's latest frozen
 /// package (one batched read for any number of releases). The execution
@@ -331,7 +336,7 @@ pub async fn get(s: &AppState, a: &Actor, org: Uuid, kind: Kind, id: Uuid) -> Re
         v["submission_enabled"] = json!(false);
     }
     tx.commit().await?;
-    Ok(v)
+    crate::upload_safety::visible_inline_files(&s.pool, v).await
 }
 pub async fn update(
     s: &AppState,
@@ -342,6 +347,7 @@ pub async fn update(
     i: Input,
 ) -> Result<Value> {
     validate(&i)?;
+    crate::upload_safety::check_inline_files(s, &i.profile).await?;
     let (upc, artwork) = release_fields(kind, &i)?;
     let expected = i.row_version.ok_or(Error::Invalid)?;
     let mut tx = s.pool.begin().await?;

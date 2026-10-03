@@ -694,7 +694,7 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
             .or_default() += 1;
     }
     tx.commit().await?;
-    Ok(json!({
+    crate::upload_safety::visible_inline_files(&s.pool, json!({
         "review_context": {
             "decision_kind": kind, "allowed_actions": allowed,
             "requires_second_approval": open.iter().any(|c| c["needs_second_approval"] == true),
@@ -734,7 +734,7 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
         "documents": documents,
         "delivery_staging": staging,
         "timeline": timeline,
-    }))
+    })).await
 }
 
 #[derive(Deserialize)]
@@ -1728,7 +1728,11 @@ pub async fn list_documents(s: &AppState, h: &HeaderMap, p: Page) -> Result<Valu
     .bind(offset)
     .fetch_all(&s.pool)
     .await?;
-    Ok(json!({"items": items, "limit": limit, "offset": offset}))
+    crate::upload_safety::visible_inline_files(
+        &s.pool,
+        json!({"items": items, "limit": limit, "offset": offset}),
+    )
+    .await
 }
 
 #[derive(Deserialize)]

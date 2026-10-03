@@ -513,7 +513,7 @@ pub async fn list_documents(s: &AppState, a: &Actor, org: Uuid) -> Result<Value>
     .fetch_all(&mut *tx)
     .await?;
     tx.rollback().await?;
-    Ok(json!({"items":items}))
+    crate::upload_safety::visible_inline_files(&s.pool, json!({"items":items})).await
 }
 
 async fn locked_doc(
@@ -945,7 +945,7 @@ pub async fn get_application(s: &AppState, a: &Actor, org: Uuid, release: Uuid) 
     .fetch_optional(&mut *tx)
     .await?;
     tx.rollback().await?;
-    v.ok_or(Error::NotFound)
+    crate::upload_safety::visible_inline_files(&s.pool, v.ok_or(Error::NotFound)?).await
 }
 
 pub async fn record_application(
