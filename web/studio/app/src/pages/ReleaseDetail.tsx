@@ -14,6 +14,7 @@ import { CorrectionList, ReviewNote } from '../components/CorrectionList';
 import { fixPath, splitCorrections } from '../lib/corrections';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
+import { ContractBundle } from '../components/ContractBundle';
 
 // 플랫폼별 배급 진행 단계 (서버 delivery_staging 기준)
 const DELIVERY_STAGE: Record<string, string> = {
@@ -448,20 +449,25 @@ export function ReleaseDetail() {
             </div>
             <div className="surface">
               <h2 className="subhead">계약·증빙</h2>
-              {docs.length ? (
+              <ContractBundle
+                compact releaseId={rel.id} releaseTitle={rel.title}
+                agreement={docs.find(x => x.kind === 'agreements')}
+                hasApplication={!!d?.application || !isDraft}
+                onOpenAgreement={docId => nav(`/contracts?doc=${encodeURIComponent(docId)}`)}
+              />
+              {docs.some(x => x.kind === 'rights') && <>
+                <h3 className="aq-bundle-sub">권리 서류</h3>
                 <ul className="aq-linked-docs">
-                  {docs.map(doc => (
+                  {docs.filter(x => x.kind === 'rights').map(doc => (
                     <li key={doc.id}>
-                      <Link to={doc.kind === 'agreements' ? '/contracts' : '/rights'}>
+                      <Link to="/rights">
                         <span className="min-0">{doc.title.replace(`${rel.title} · `, '')}</span>
                         <em>{docState(doc)}</em>
                       </Link>
                     </li>
                   ))}
                 </ul>
-              ) : (
-                <p className="small muted">발매를 접수하면 계약서와 권리 서류가 자동으로 준비돼요.</p>
-              )}
+              </>}
               <button className="button secondary aq-doc-manage" type="button" onClick={() => nav('/contracts')}>문서 관리 <Glyph name="arrow-up-right" size={14} /></button>
             </div>
           </div>
