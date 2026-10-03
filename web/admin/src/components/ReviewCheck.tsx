@@ -1,6 +1,7 @@
 import type { Check } from '../api/staff';
 import { CHECK_STATUS, checkLabel, checkSummary, pick } from '../labels';
 import { Chip, StatusChip } from '../ui';
+import { CheckDetail } from './RecordDetail';
 
 /** 검사 항목 — 쉬운 설명을 먼저, 검사 코드와 원문은 ‘자세히’에.
  *  담당자 확인 항목(open)은 구역 제목이 이미 ‘확인 필요’라 상태 칩은 빼고, 2인 승인만 작은 칩으로 */
@@ -21,9 +22,7 @@ export function CheckCard({ c, open }: { c: Check; open?: boolean }) {
         <p>{checkSummary(c)}</p>
         <details className="adm-more">
           <summary>자세히</summary>
-          <div><span className="adm-code">{c.check_code}</span></div>
-          {c.original_status && c.original_status !== c.status && <p>시스템 결과: {pick(CHECK_STATUS, c.original_status)[0]} · 담당자 결정 반영</p>}
-          {c.detail && <p className="adm-raw">{c.detail}</p>}
+          <CheckDetail c={c} />
         </details>
       </div>
     </div>

@@ -20,9 +20,9 @@ export function Payouts() {
   return (
     <div className="view-enter">
       <PageHead
-        eyebrow="PAYOUTS"
+        eyebrow="정산"
         title="지급 요청"
-        sub="아티스트의 정산 지급 요청이에요. 이 화면은 조회 전용이고, 지급 지시·반려는 운영 도구에서만 할 수 있어요."
+        sub="아티스트 정산 지급 요청이에요. 여기서는 확인만 하고, 지급은 운영 도구에서 처리해요."
         actions={<button type="button" className="adm-btn soft small" onClick={reload}>새로고침</button>}
       />
       <Filters label="지급 상태" value={status} onChange={v => setParams({ status: v }, { replace: true })} options={STATUSES.map(s => ({ value: s, label: PAYOUT_STATUS[s][0] }))} />

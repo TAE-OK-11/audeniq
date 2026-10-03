@@ -54,7 +54,7 @@ export function Login() {
           </span>
           <h1>관리자 콘솔</h1>
           <p className="auth-sub">
-            {MOCK ? '체험 모드예요. 아무 이메일로나 들어가 예시 데이터를 볼 수 있어요.' : 'AUDENIQ 스태프 계정으로 로그인하세요. 스튜디오와 같은 계정이에요.'}
+            {MOCK ? '체험 모드예요. 아무 이메일로나 들어가 예시 데이터를 볼 수 있어요.' : '스튜디오와 같은 계정으로 로그인해요.'}
           </p>
           {error && <div className="feedback feedback-error aq-shake" role="alert" key={error}>{error}</div>}
           <form onSubmit={submit}>
@@ -84,7 +84,7 @@ export function Login() {
       <p className="auth-foot">
         <span>© AUDENIQ</span>
         <span aria-hidden="true">·</span>
-        <span>스태프 권한은 운영 도구로만 부여돼요</span>
+        <span>관리자 권한은 운영 책임자가 부여해요</span>
       </p>
     </div>
   );
