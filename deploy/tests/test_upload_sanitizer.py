@@ -50,6 +50,24 @@ class SanitizerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 helper.sanitize(source, self.root / "safe", mime)
 
+    def test_signature_crc_and_exact_pixels_and_no_hidden_metadata(self):
+        source, target = self.root / "signature.png", self.root / "verified.png"
+        Image.new("RGB", (32, 10), "white").save(source)
+        helper.sanitize(source, target, "application/x-audeniq-signature")
+        original = source.read_bytes()
+        with source.open("ab") as file:
+            file.write(b"hidden executable")
+        with self.assertRaises(ValueError):
+            helper.sanitize(source, target, "application/x-audeniq-signature")
+        source.write_bytes(original[:-1] + bytes([original[-1] ^ 1]))
+        with self.assertRaises(ValueError):
+            helper.sanitize(source, target, "application/x-audeniq-signature")
+        info = PngImagePlugin.PngInfo()
+        info.add_text("Script", "MALICIOUS_MARKER")
+        Image.new("RGB", (32, 10), "white").save(source, pnginfo=info)
+        with self.assertRaises(ValueError):
+            helper.sanitize(source, target, "application/x-audeniq-signature")
+
     def test_pdf_javascript_and_embedded_files_do_not_reach_derivative(self):
         source, target = self.root / "source.pdf", self.root / "safe.pdf"
         objects = [

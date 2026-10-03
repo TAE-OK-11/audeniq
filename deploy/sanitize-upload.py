@@ -5,12 +5,64 @@ import pathlib
 import subprocess
 import sys
 import warnings
+import struct
+import zlib
 
 from PIL import Image, ImageCms, ImageOps
 
 Image.MAX_IMAGE_PIXELS = 40_000_000
 warnings.simplefilter("error", Image.DecompressionBombWarning)
 MAX_BYTES = 20 * 1024 * 1024
+
+
+def signature_png(path):
+    data = path.read_bytes()
+    if not 45 <= len(data) <= 45_000 or data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError("invalid signature")
+    pos, chunks, encoded, width, height, colors = 8, [], bytearray(), 0, 0, 0
+    while pos < len(data):
+        if len(data) - pos < 12:
+            raise ValueError("incomplete signature chunk")
+        length, kind = struct.unpack(">I4s", data[pos:pos+8])
+        end = pos + length + 12
+        if end > len(data) or kind not in {b"IHDR", b"IDAT", b"IEND", b"pHYs", b"sRGB", b"gAMA", b"cHRM"}:
+            raise ValueError("signature metadata or invalid chunk")
+        body = data[pos+8:pos+8+length]
+        crc = struct.unpack(">I", data[pos+8+length:end])[0]
+        if zlib.crc32(kind + body) != crc:
+            raise ValueError("signature CRC mismatch")
+        if kind == b"IHDR":
+            if chunks or length != 13:
+                raise ValueError("invalid signature header")
+            width, height, depth, colors, compression, filtering, interlace = struct.unpack(">IIBBBBB", body)
+            if not (1 <= width <= 2048 and 1 <= height <= 1024 and width*height <= 1_048_576):
+                raise ValueError("signature dimensions exceeded")
+            if depth != 8 or colors not in {0, 2, 4, 6} or compression or filtering or interlace:
+                raise ValueError("signature pixel format unsupported")
+        elif kind == b"IDAT":
+            if not chunks or chunks[-1] == b"IEND":
+                raise ValueError("invalid signature chunk order")
+            encoded += body
+        elif kind == b"IEND":
+            if length or not chunks or chunks[-1] != b"IDAT" or end != len(data):
+                raise ValueError("signature has trailing data")
+        else:
+            if not chunks or b"IDAT" in chunks or kind in chunks:
+                raise ValueError("invalid signature metadata order")
+            limits = {b"pHYs": 9, b"sRGB": 1, b"gAMA": 4, b"cHRM": 32}
+            if length != limits[kind] or (kind == b"sRGB" and body[0] > 3):
+                raise ValueError("invalid static signature properties")
+        chunks.append(kind)
+        pos = end
+    if chunks[-1] != b"IEND":
+        raise ValueError("incomplete signature")
+    channels = {0: 1, 2: 3, 4: 2, 6: 4}[colors]
+    expected = height * (width * channels + 1)
+    stream = zlib.decompressobj()
+    decoded = stream.decompress(encoded, expected + 1)
+    if len(decoded) != expected or not stream.eof or stream.unused_data or stream.unconsumed_tail:
+        raise ValueError("signature pixel stream mismatch")
+    return pixels(path)
 
 
 def pixels(path):
@@ -79,9 +131,9 @@ def image_only_pdf(paths, dst):
 
 
 def sanitize(src, dst, mime):
-    if mime in {"image/png", "image/jpeg"}:
-        clean = pixels(src)
-        if mime == "image/png":
+    if mime in {"image/png", "image/jpeg", "application/x-audeniq-signature"}:
+        clean = signature_png(src) if mime == "application/x-audeniq-signature" else pixels(src)
+        if mime != "image/jpeg":
             clean.save(dst, "PNG", optimize=False)
         else:
             clean.save(dst, "JPEG", quality=95, subsampling=0)

@@ -45,7 +45,9 @@ jobs:
             ~/.cargo/bin/worker-codegen
             target
           key: rust-v2-1.98.1-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
-          restore-keys: rust-v2-1.98.1-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-
+          restore-keys: |
+            rust-v2-1.98.1-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}-
+            rust-v2-1.98.1-${{ runner.os }}-
       - name: Check Rust formatting
         id: formatting
         continue-on-error: true

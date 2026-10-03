@@ -146,19 +146,8 @@ fn text(s: &str, min: usize, max: usize) -> Result<String> {
     Ok(t.to_string())
 }
 
-fn signature(s: &str) -> Result<String> {
-    let body = s
-        .strip_prefix("data:image/png;base64,")
-        .ok_or(Error::InvalidCode("SIGNATURE_INVALID"))?;
-    if s.len() > 60_000
-        || body.len() < 16
-        || !body
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/' || b == b'=')
-    {
-        return Err(Error::InvalidCode("SIGNATURE_INVALID"));
-    }
-    Ok(s.to_string())
+async fn signature(state: &AppState, value: &str) -> Result<String> {
+    crate::upload_safety::signature(state, value).await
 }
 
 /// Peppered hash so stored evidence can be matched later without keeping the
@@ -792,7 +781,7 @@ pub async fn sign(s: &AppState, h: &HeaderMap, token: &str, i: SignInput) -> Res
     if !(i.consents.document && i.consents.electronic_signature && i.consents.privacy) {
         return Err(Error::InvalidCode("SIGNING_CONSENT_REQUIRED"));
     }
-    let sig = signature(&i.signature)?;
+    crate::upload_safety::signature_bytes(&i.signature)?;
     let mut tx = s.pool.begin().await?;
     let r = by_token(&mut tx, token, true).await?;
     open(&r)?;
@@ -805,6 +794,7 @@ pub async fn sign(s: &AppState, h: &HeaderMap, token: &str, i: SignInput) -> Res
     if verified_at + Duration::minutes(IDENTITY_FRESH_MINUTES) < Utc::now() {
         return Err(Error::InvalidCode("IDENTITY_EXPIRED"));
     }
+    let sig = signature(s, &i.signature).await?;
     let id: Uuid = r.get("id");
     let org: Uuid = r.get("org_id");
     let release: Uuid = r.get("release_id");
