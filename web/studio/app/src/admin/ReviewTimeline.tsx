@@ -5,6 +5,7 @@ import { useAsync } from '../hooks/useAsync';
 import { APPROVAL_STATUS, CHECK_STATUS, checkLabel, checkSummary, dspLabel, pick, shortId } from './labels';
 import { ErrorBox, Section, Skeleton, StatusChip } from './ui';
 import { Glyph } from '../components/Glyph';
+import { RecordDetail, recordRows } from './RecordDetail';
 
 export const ACTION_KO: Record<string, string> = {
   'release.submitted': '발매 접수', 'stage1.decision': '1차 검사 결과', 'stage1.completed': '1차 검사 완료', 'stage2.decision': '2차 검사 결과',
@@ -107,6 +108,8 @@ export function TimelineRow({ item: t, repeat = 1 }: { item: ReleaseTimelineItem
   const actor = t.source === 'audit'
     ? (typeof t.detail.actor_service === 'string' ? '시스템' : typeof t.detail.actor_user_id === 'string' ? (kind === 'staff' ? shortId(t.detail.actor_user_id) : '아티스트') : '')
     : '';
+  // 줄에 이미 보이는 상태·결과·횟수는 ‘자세히’에서 빼고, 남는 게 없으면 ‘자세히’도 숨긴다
+  const rows = recordRows(t.detail, t.source === 'job' ? ['status', 'attempts', 'last_error'] : ['status', 'approval', 'outcome']);
   return <li className={['is-' + kind, tone(t) && `is-${tone(t)}`].filter(Boolean).join(' ')}>
     <i aria-hidden="true" />
     <div className="adm-min">
@@ -118,7 +121,7 @@ export function TimelineRow({ item: t, repeat = 1 }: { item: ReleaseTimelineItem
       </div>
       <small>{fmt(timeFmt, t.at)} · {KIND_LABEL[kind]}{actor && ` · ${actor}`}</small>
       {summary && <p className="adm-tl-summary">{summary}</p>}
-      <details className="adm-more"><summary>기록 원문</summary><span className="adm-code">{t.kind}</span><pre className="adm-raw">{JSON.stringify(t.detail, null, 2)}</pre></details>
+      {rows.length > 0 && <details className="adm-more"><summary>자세히</summary><RecordDetail rows={rows} /></details>}
     </div>
   </li>;
 }
