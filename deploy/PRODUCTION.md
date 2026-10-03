@@ -152,11 +152,11 @@ Workers Fetch가 지원하는 Brotli·gzip만 백엔드로 전달하고, 압축�
 
 ### 서버 크기와 확장
 
-`compose.production.yaml`의 모든 자원 값은 `production.env`에서 바꾼다. 비워 두면 1 vCPU / 1 GB 기본값이다.
+`compose.production.yaml`의 자원 한도는 `production.env`에서 바꾼다. 업로드 검사 구성은 백신 3GiB와 정의 갱신 1.5GiB를 별도로 사용한다. 전체 서비스는 8GiB 이상 서버를 보수적 시작 용량으로 잡고 실제 정의 파일 로드·갱신 및 최대 업로드 부하를 측정한다. 아래 값은 컨테이너 한도이며 운영 서버에 이미 적용한 설정은 아니다.
 CPU 작업(QC 분석·FLAC 변환)은 vCPU 수에 맞추고, 네트워크 대기 작업(DSP 전송)은 따로 센다.
 API는 `cpu_shares`로 worker보다 CPU를 먼저 받으므로 무거운 QC 중에도 화면 응답이 밀리지 않는다.
 
-| 변수 | 1 vCPU / 1 GB (기본) | 2 vCPU / 4 GB | 4 vCPU / 8 GB |
+| 변수 | 기본 제한 (서버 8GiB 이상) | 확장 예시 (16GiB) | 확장 예시 (32GiB) |
 |---|---|---|---|
 | `PG_SHARED_BUFFERS` | 128MB | 1GB | 2GB |
 | `PG_EFFECTIVE_CACHE_SIZE` | 384MB | 2GB | 5GB |
@@ -170,11 +170,12 @@ API는 `cpu_shares`로 worker보다 CPU를 먼저 받으므로 무거운 QC 중�
 | `WORKER_MAX_IN_FLIGHT` | 2 | 3 | 6 |
 | `DATABASE_MAX_CONNECTIONS` (worker) | 6 | 8 | 12 |
 | `PGBOUNCER_POOL_SIZE` / `PGBOUNCER_MAX_DB_CONN` | 8 / 20 | 10 / 30 | 15 / 35 |
-| 스왑 | 2 GB 필수 | 1 GB 권장 | 선택 |
+| `AV_MEM_LIMIT` / `AV_CPUS` | 3g / 0.75 | 3g / 0.75 | 3g / 0.75 |
+| `AV_UPDATE_MEM_LIMIT` | 1536m | 1536m | 1536m |
 
 - `*_CPUS`는 서버 vCPU 수를 넘을 수 없다. 넘으면 Docker가 컨테이너를 만들지 않는다("Range of CPUs is from 0.01 to …").
 - `PGBOUNCER_MAX_DB_CONN` + 직접 연결(worker LISTEN, migrate)은 PostgreSQL `max_connections`(40)보다 작아야 한다.
-- 메모리 값(`*_MEM_LIMIT`)은 상한이다. 합이 RAM보다 커도 되지만(스왑이 받친다), 한 컨테이너가 폭주해도 서버 전체를 잡아먹지 못하게 막는다.
+- 메모리 값(`*_MEM_LIMIT`)은 상한이다. 백신 검사와 정의 갱신이 동시에 실행될 수 있으므로 OS·DB·API·worker와 tmpfs까지 함께 용량을 계산한다. 정의 갱신의 `TestDatabases yes` 검사를 유지하며 메모리 부족은 검사 생략으로 해결하지 않는다.
 
 **그 다음 단계(4 vCPU를 넘어설 때)**: 한 서버를 계속 키우는 것보다 역할을 나누는 편이 싸고 안전하다.
 1. **DB 분리**: PostgreSQL을 관리형 DB나 별도 서버로 옮기고 `DATABASE_URL`·`DATABASE_LISTEN_URL`만 바꾼다.
