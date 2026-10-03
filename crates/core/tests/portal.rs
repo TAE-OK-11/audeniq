@@ -1693,3 +1693,60 @@ async fn distribution_agreement_needs_staff_terms_and_artist_confirmations(pool:
     .await;
     assert_eq!(v["error"]["code"], "AGREEMENT_NOT_IN_REVIEW");
 }
+
+#[sqlx::test]
+async fn documents_of_deleted_releases_are_not_listed(pool: PgPool) {
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let release = create(&app, &u, "releases").await;
+    let app_body = json!({
+        "application_no":"AUD-20261003-QWERTY","form":"AUD-DIST-APP 1.0","content_hash":"ab".repeat(32),"signer_name":"서린",
+        "signer_role":"아티스트 본인","agreements":["truth","terms","privacy","esign"],"signature":SIG,"submitted_at":"2026-10-03 09:00"
+    });
+    let (s, _, v) = call(
+        &app,
+        "POST",
+        &org_path(&u, &format!("/releases/{release}/application")),
+        app_body,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let count = |v: &Value| {
+        v["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|d| d["release_id"] == release.to_string())
+            .count()
+    };
+    let (_, _, listed) = call(
+        &app,
+        "GET",
+        &org_path(&u, "/documents"),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(count(&listed), 1);
+    sqlx::query(
+        "UPDATE catalog.releases SET archived_at=now(), row_version=row_version+1 WHERE id=$1",
+    )
+    .bind(release)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (_, _, listed) = call(
+        &app,
+        "GET",
+        &org_path(&u, "/documents"),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        count(&listed),
+        0,
+        "a deleted release's agreement stays out of 계약서"
+    );
+}

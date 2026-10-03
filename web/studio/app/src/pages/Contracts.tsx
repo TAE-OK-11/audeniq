@@ -4,6 +4,8 @@ import { useNavigate, useSearchParams } from '../lib/router';
 import { useDocs } from '../store/docs';
 import { DocEmpty } from '../components/DocCard';
 import { ContractBundle, bundleStage, type BundleStage } from '../components/ContractBundle';
+import { api } from '../api/client';
+import { useAsync } from '../hooks/useAsync';
 import { DocumentModal } from '../components/DocumentModal';
 import { SignatureModal } from '../components/SignatureModal';
 
@@ -17,8 +19,11 @@ export function Contracts() {
   const openDoc = openId ? docs.find(d => d.id === openId) ?? null : null;
   // 발매마다 신청서 + 계약서를 한 묶음으로 — 서명할 것, 검토·보완 중, 체결 완료 순, 같은 묶음 안에서는 최신순
   const ORDER: Record<BundleStage, number> = { 'to-sign': 0, needs: 1, review: 2, waiting: 3, signed: 4 };
+  // 내 발매 목록에 있는 발매의 계약서만 — 삭제한 발매 등 목록에 없는 발매의 계약서는 보이지 않게
+  const { data: releases } = useAsync(() => api.listReleases(), []);
+  const mine = releases ? new Set(releases.map(r => r.id)) : null;
   const agreements = docs
-    .filter(c => c.kind === 'agreements')
+    .filter(c => c.kind === 'agreements' && (!mine || !c.releaseId || mine.has(c.releaseId)))
     .sort((a, b) => ORDER[bundleStage(a)] - ORDER[bundleStage(b)]
       || String(b.created || '').localeCompare(String(a.created || '')));
   // 발매 상세에서 ‘확인하고 서명’으로 들어오면 바로 연다 (?doc=)

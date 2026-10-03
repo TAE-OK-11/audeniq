@@ -542,7 +542,10 @@ pub async fn list_documents(s: &AppState, a: &Actor, org: Uuid) -> Result<Value>
     member(&mut tx, a, org, false).await?;
     let items: Vec<Value> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT {DOC_JSON} FROM portal.documents d LEFT JOIN catalog.releases r ON r.id=d.release_id
-         WHERE d.org_id=$1 AND (d.release_id IS NULL OR EXISTS(
+         WHERE d.org_id=$1
+           -- A deleted (archived) release is gone from the catalog; so are its documents.
+           AND (d.release_id IS NULL OR r.archived_at IS NULL)
+           AND (d.release_id IS NULL OR EXISTS(
            SELECT 1 FROM identity.resource_acl acl WHERE acl.org_id=d.org_id AND acl.resource_id=d.release_id
              AND acl.principal_party_id=$2 AND acl.action='read' AND acl.revoked_at IS NULL
              AND acl.starts_at<=now() AND (acl.ends_at IS NULL OR acl.ends_at>now())))
