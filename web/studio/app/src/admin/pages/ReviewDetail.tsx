@@ -417,7 +417,14 @@ function ReviewSheet({ id }: { id: string }) {
   const [done, setDone] = useState('');
   const [showAll, setShowAll] = useState(false);
   const [timelineTick, setTimelineTick] = useState(0);
-  const refresh = () => { reload(); setTimelineTick(t => t + 1); };
+  // 눌렀다는 게 보이게 — 금방 끝나도 한 바퀴는 돌고, 끝나면 잠깐 체크 표시
+  const [spin, setSpin] = useState<'idle' | 'spin' | 'done'>('idle');
+  const refresh = () => {
+    if (spin === 'spin') return;
+    setSpin('spin');
+    reload(); setTimelineTick(t => t + 1);
+    window.setTimeout(() => { setSpin('done'); window.setTimeout(() => setSpin('idle'), 1100); }, 700);
+  };
   useEffect(() => {
     const update = () => { if (!action && !modal && document.visibilityState === 'visible') { reload(); setTimelineTick(t => t + 1); } };
     const active = !action && !modal && sheet && (['SUBMITTED', 'STAGE1_RUNNING', 'STAGE1_PASSED', 'STAGE2_RUNNING', 'STAGE2_PASSED', 'STAGE3_PREPARING', 'STAGE2_REVIEW'].includes(sheet.release.status));
@@ -490,8 +497,10 @@ function ReviewSheet({ id }: { id: string }) {
       <div className="adm-detail-nav">
         <Link to="/admin/reviews" className="adm-back"><Glyph name="arrow-left" size={14} className="aq-inline-glyph" />심사 목록</Link>
         <div className="adm-detail-nav-end">
-          <button type="button" className={`adm-icon-btn${loading ? ' is-spinning' : ''}`} disabled={loading} onClick={refresh} aria-label={loading ? '갱신 중' : '심사 정보 새로고침'} title="새로고침">
-            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7" /><path d="M20 4v7h-7" /></svg>
+          <button type="button" className={`adm-icon-btn adm-refresh${loading || spin === 'spin' ? ' is-spinning' : ''}${spin === 'done' && !loading ? ' is-done' : ''}`} disabled={loading || spin === 'spin'} onClick={refresh} aria-label={loading || spin === 'spin' ? '갱신 중' : spin === 'done' ? '갱신됨' : '심사 정보 새로고침'} title="새로고침">
+            {spin === 'done' && !loading
+              ? <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m5.5 12.5 4.2 4.2 8.8-9.4" /></svg>
+              : <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1" /><path d="M20.5 3.8v4.6h-4.6" /></svg>}
           </button>
           {nextId && <Link to={`/admin/reviews/${nextId}`} className="adm-next-btn">다음 건<Glyph name="chevron-right" size={14} /></Link>}
         </div>
