@@ -105,7 +105,7 @@ jobs:
         run: docker logs s3 2>&1 | tail -50 || true
       - name: Measure backend review hot paths
         run: |
-          git fetch --no-tags --depth=1 origin 400c6c963e71034303039dd374bde4f0f5f99ab1
+          git fetch --no-tags --depth=1 origin bfa80c8594bb2892d727fdd28df618015027cf2c
           bash scripts/benchmark-fingerprint-review.sh 2>&1 | tee /tmp/backend-fingerprint-benchmark.log
           cargo test --locked -p audeniq-core --lib benchmark_prepared_matching -- --ignored --nocapture 2>&1 | tee /tmp/backend-name-benchmark.log
       - uses: actions/upload-artifact@v7

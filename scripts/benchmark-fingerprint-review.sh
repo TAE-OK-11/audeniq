@@ -4,7 +4,7 @@ set -euo pipefail
 # Run after building audeniq-core. Uses the same RustFFT dependency for both
 # source versions and verifies identical outputs before timing comparisons.
 task_repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-task_base=${1:-400c6c963e71034303039dd374bde4f0f5f99ab1}
+task_base=${1:-bfa80c8594bb2892d727fdd28df618015027cf2c}
 task_target_dir=${CARGO_TARGET_DIR:-"$task_repo_root/target"}
 task_fft_rlib=$(find "$task_target_dir/debug/deps" -maxdepth 1 -name 'librustfft-*.rlib' -print -quit)
 if [[ -z "$task_fft_rlib" ]]; then
