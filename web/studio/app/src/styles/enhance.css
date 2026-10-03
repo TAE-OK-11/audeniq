@@ -1722,3 +1722,26 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-confirm-boxes b{color:var(--aq-e-blue);font-weight:800}
 .aq-confirm-all{padding-bottom:10px;border-bottom:1px solid #e3e9f4}
 .aq-confirm-all span{font-weight:800}
+
+/* 계약 서류 묶음 — 배급 신청서 + 배급 계약서 */
+.aq-bundle-list{display:grid;gap:12px}
+.aq-bundle{padding:18px;border-radius:24px;background:#f5f8ff}
+.aq-bundle.is-compact{padding:0;background:transparent}
+.aq-bundle-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin:0 0 12px}
+.aq-bundle-head strong{display:block;font-size:16px;font-weight:820;letter-spacing:-.03em;color:var(--aq-e-ink)}
+.aq-bundle-head span{display:block;margin-top:2px;font-size:12.5px;color:#8792a8}
+.aq-bundle-head em{flex:none;font-style:normal;font-size:12px;font-weight:780;padding:5px 10px;border-radius:9px;background:#e9eef8;color:#5d6880}
+.aq-bundle.is-to-sign .aq-bundle-head em{background:var(--aq-e-blue);color:#fff}
+.aq-bundle.is-needs .aq-bundle-head em{background:var(--aq-e-amber-soft);color:var(--aq-e-amber)}
+.aq-bundle.is-signed .aq-bundle-head em{background:var(--aq-e-green-soft);color:var(--aq-e-green)}
+.aq-bundle-docs{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.aq-bundle-docs li{display:grid;grid-template-columns:28px minmax(0,1fr) auto;align-items:center;gap:4px 12px;padding:13px 14px;border-radius:18px;background:#fff}
+.aq-bundle-docs strong{display:block;font-size:14px;font-weight:780;color:var(--aq-e-ink)}
+.aq-bundle-docs span:not(.aq-bundle-no){display:block;margin-top:2px;font-size:12.5px;line-height:1.5;color:#66738a}
+.aq-bundle-no{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#e9eef8;color:#8792a8;font-size:12px;font-weight:850}
+.aq-bundle-docs li.is-done .aq-bundle-no{background:var(--aq-e-blue);color:#fff}
+.aq-bundle-docs li.is-current .aq-bundle-no{background:var(--aq-e-blue-soft);color:var(--aq-e-blue)}
+.aq-bundle-docs .link-btn{font-size:13px;white-space:nowrap}
+:is(#root) .aq-bundle-sign{min-height:38px!important;padding:8px 14px!important;font-size:13px!important;border-radius:12px!important;white-space:nowrap}
+@media(max-width:480px){.aq-bundle-docs li{grid-template-columns:28px minmax(0,1fr)}.aq-bundle-docs li>button{grid-column:2;justify-self:start;margin-top:6px}.aq-bundle-docs li>.link-btn{padding-inline:0!important;min-height:0!important}}
+.aq-bundle-sub{margin:18px 0 8px;font-size:14px;font-weight:800;color:var(--aq-e-ink)}
