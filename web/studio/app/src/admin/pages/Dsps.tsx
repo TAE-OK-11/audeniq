@@ -14,13 +14,13 @@ export function Dsps() {
   return (
     <div className="view-enter">
       <PageHead
-        eyebrow="PLATFORMS" title="플랫폼별 조건"
-        sub="플랫폼마다 요구하는 조건과 연결 상태예요. 조건에 맞지 않는 발매가 막혀 있거나 연동에 문제가 있으면 빨간색으로 표시돼요."
+        eyebrow="배급" title="플랫폼별 조건"
+        sub="플랫폼별 요구 조건과 연결 상태예요. 문제가 있으면 빨간색으로 표시돼요."
         actions={<button type="button" className="adm-btn soft small" onClick={() => { reload(); blocked.reload(); }}>새로고침</button>}
       />
       <SubTabs tabs={[{ to: '/admin/deliveries', label: '배급 현황' }, { to: '/admin/dsps', label: '플랫폼별 조건' }]} />
       {error && <ErrorBox message={error} onRetry={reload} />}
-      {loading && !data ? <Skeleton rows={3} /> : items.length === 0 ? <Empty title="DSP 정보가 없어요" /> : (
+      {loading && !data ? <Skeleton rows={3} /> : items.length === 0 ? <Empty title="플랫폼 정보가 없어요" /> : (
         <div className="adm-dsp-grid">
           {items.map(d => {
             const code = d.code ?? d.dsp;
@@ -33,8 +33,8 @@ export function Dsps() {
                 <div className="adm-dsp-top">
                   <h3>{d.name}</h3>
                   {bad
-                    ? <Chip tone="red">{stuck.length ? `막힌 발매 ${stuck.length}건` : 'DSP 점검 필요'}</Chip>
-                    : <Chip tone={live ? 'green' : 'gray'}>{live ? '전송 가능' : 'DSP 연동 대기'}</Chip>}
+                    ? <Chip tone="red">{stuck.length ? `막힌 발매 ${stuck.length}건` : '플랫폼 점검 필요'}</Chip>
+                    : <Chip tone={live ? 'green' : 'gray'}>{live ? '전송 가능' : '플랫폼 연동 대기'}</Chip>}
                 </div>
                 <span className="small muted">{d.region === 'Kr' ? '국내' : '해외'} 플랫폼</span>
                 <ul>

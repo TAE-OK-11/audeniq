@@ -144,13 +144,13 @@ export function AdminApp() {
   if (gate === 'forbidden') {
     return (
       <Gate title="관리자 권한이 필요해요" action={<Link to="/" className="adm-btn primary">스튜디오로 돌아가기</Link>}>
-        {user?.email ?? '이 계정'}은 AUDENIQ 스태프로 등록돼 있지 않아요. 권한은 운영 도구(<span className="adm-code">audeniq-admin staff grant</span>)로만 부여돼요.
+        {user?.email ?? '이 계정'}은 아직 관리자로 등록되지 않았어요. 운영 책임자에게 권한을 요청해 주세요.
       </Gate>
     );
   }
   if (gate === 'error' || !ctx || !me) {
     return (
-      <Gate title="스태프 정보를 불러오지 못했어요" action={<button type="button" className="adm-btn primary" onClick={loadMe}>다시 시도</button>}>
+      <Gate title="관리자 정보를 불러오지 못했어요" action={<button type="button" className="adm-btn primary" onClick={loadMe}>다시 시도</button>}>
         서버 연결을 확인한 뒤 다시 시도해 주세요.
       </Gate>
     );

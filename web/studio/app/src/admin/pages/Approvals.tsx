@@ -40,16 +40,16 @@ export function Approvals() {
   return (
     <div className="view-enter">
       <PageHead
-        eyebrow="SECOND APPROVAL"
+        eyebrow="발매 심사"
         title="2차 승인"
-        sub="한 사람이 통과시킬 수 없는 민감 항목(중복 음원·지문 일치·보호 아티스트명·권리 범위, 차단 항목)에 대한 승인 요청이에요. 요청한 본인은 승인할 수 없고, 각 요청에 표시된 만료 시각까지 처리해 주세요."
+        sub="중복 음원·권리 같은 민감 항목은 두 사람이 확인해요. 내가 올린 요청은 다른 담당자가 처리해요."
         actions={<button type="button" className="adm-btn soft small" onClick={reload}>새로고침</button>}
       />
       <SubTabs tabs={[{ to: '/admin/reviews', label: '심사 목록', count: counts?.review }, { to: '/admin/approvals', label: '2차 승인', count: counts?.second_approvals }]} />
       {!can('REVIEW') && <NoDuty duty="발매 심사" />}
       {error && <ErrorBox message={error} onRetry={reload} />}
       {loading && !data ? <Skeleton rows={3} /> : items.length === 0 ? (
-        <Empty title="대기 중인 2차 승인이 없어요">심사 담당자가 민감 항목을 승인하면 이곳에 요청이 올라와요.</Empty>
+        <Empty title="대기 중인 2차 승인이 없어요">민감 항목이 승인되면 이곳에 확인 요청이 올라와요.</Empty>
       ) : (
         <div className="adm-list">
           {items.map(a => {

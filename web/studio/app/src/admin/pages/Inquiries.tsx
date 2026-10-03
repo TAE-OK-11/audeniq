@@ -119,9 +119,9 @@ export function Inquiries() {
   return (
     <div className="view-enter">
       <PageHead
-        eyebrow="INQUIRIES"
+        eyebrow="고객 지원"
         title="문의 답변"
-        sub="모든 작업 공간의 문의예요. 답변을 보내면 ‘답변 완료’로 바뀌고 작성자에게 알림이 가요. 오래 기다린 문의부터 보여요."
+        sub="아티스트 문의에 답해요. 오래 기다린 문의부터 보여요."
         actions={<button type="button" className="adm-btn soft small" onClick={reload}>새로고침</button>}
       />
       <Filters label="문의 상태" value={status} onChange={v => nav(`/admin/inquiries?status=${v}`, { replace: true })} options={STATUSES.map(s => ({ value: s, label: INQUIRY_STATUS[s][0] }))} />
@@ -147,7 +147,7 @@ export function Inquiries() {
           <Thread id={id} onReplied={() => { reload(); refreshCounts(); }} />
         ) : (
           <div className="adm-thread-pane adm-thread-empty" style={{ justifyContent: 'center' }}>
-            <Empty icon={<Glyph name="mail" size={22} />} title="문의를 선택해 주세요">왼쪽 목록에서 문의를 누르면 대화와 답변 입력창이 열려요.</Empty>
+            <Empty icon={<Glyph name="mail" size={22} />} title="문의를 선택해 주세요">목록에서 문의를 누르면 대화가 열려요.</Empty>
           </div>
         )}
       </div>

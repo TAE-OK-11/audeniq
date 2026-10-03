@@ -608,7 +608,7 @@ function ReviewSheet({ id }: { id: string }) {
               {sheet.notes.map(n => (
                 <div key={n.id} className="adm-note">
                   <div className="adm-check-top">
-                    <span><Chip tone={n.decision === 'REJECT' ? 'red' : n.decision === 'APPROVE' ? 'green' : 'amber'}>{DECISION_LABEL[n.decision] ?? n.decision}</Chip>{n.check_code && <> <span className="adm-code">{n.check_code}</span></>}</span>
+                    <span><Chip tone={n.decision === 'REJECT' ? 'red' : n.decision === 'APPROVE' ? 'green' : 'amber'}>{DECISION_LABEL[n.decision] ?? n.decision}</Chip>{n.check_code && <> <span className="adm-note-target">{checkLabel(n.check_code)}</span></>}</span>
                     <small className="muted">{when(n.at)} · {shortId(n.author_user_id)}</small>
                   </div>
                   <p>{n.note}</p>
@@ -621,7 +621,7 @@ function ReviewSheet({ id }: { id: string }) {
                     <tbody>
                       {sheet.overrides.map(o => (
                         <tr key={o.id}>
-                          <td><span className="adm-code">{o.check_code}</span></td>
+                          <td>{checkLabel(o.check_code)}</td>
                           <td>{pick(CHECK_STATUS, o.original_status)[0]} → <b>{pick(CHECK_STATUS, o.proposed_status)[0]}</b></td>
                           <td className="small">{shortId(o.actor_user_id)}{o.second_approver_user_id ? ` / ${shortId(o.second_approver_user_id)}` : ''}</td>
                           <td className="small">{when(o.at)}</td>
@@ -659,8 +659,8 @@ function ReviewSheet({ id }: { id: string }) {
             {mine && <ReviewActions context={context} loading={loading} onAction={setAction} />}
             <div className="adm-decide-note">
               {application
-                ? '승인하면 신청서(배급 계약서)가 승인되고 아티스트가 서명하면 배급이 시작돼요. 추가 서류가 필요하면 ‘권리 증빙 요청’으로 요청하세요 — 서류 검토에서 확인해요.'
-                : '승인하면 시스템이 남은 검사와 배급 준비를 이어서 해요. 권리·중복 등 민감 항목은 다른 담당자의 2차 승인이 필요해요.'}
+                ? '승인하면 아티스트 서명 후 배급이 시작돼요. 서류가 더 필요하면 ‘권리 증빙 요청’을 보내 주세요.'
+                : '승인하면 남은 검사와 배급 준비가 자동으로 이어져요. 민감 항목은 다른 담당자가 한 번 더 확인해요.'}
             </div>
           </div>
           {!canReview && <NoDuty duty="발매 심사" />}

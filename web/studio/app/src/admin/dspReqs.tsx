@@ -2,6 +2,7 @@
 // 문제가 있으면 바로 빨간색: 콘텐츠 차단(BLOCKER)은 빨강, 권고(WARNING)는 주황, 연동 대기는 회색.
 import type { DspItem, StagingRow } from './api';
 import { Chip } from './ui';
+import { checkLabel } from './labels';
 import { Glyph } from '../components/Glyph';
 import { CheckIcon } from '../components/Check';
 
@@ -56,13 +57,13 @@ function reqState(r: Req, row: StagingRow | undefined): { state: ReqState; detai
   const hits = row.checks.filter(c => r.codes.includes(c.code));
   const worst = hits.find(c => c.severity === 'BLOCKER') ?? hits.find(c => c.severity === 'WARNING');
   if (!worst) return { state: 'ok', detail: '' };
-  const detail = worst.detail ?? worst.message ?? '';
+  const detail = [worst.detail, worst.message].find(v => v && /[가-힣]/.test(v)) ?? checkLabel(worst.code);
   if (worst.severity === 'BLOCKER') return { state: r.partner ? 'wait' : 'bad', detail };
   return { state: worst.severity === 'WARNING' ? 'warn' : 'ok', detail };
 }
 
 const STATE_LABEL: Record<ReqState, [string, 'green' | 'red' | 'amber' | 'gray' | 'blue']> = {
-  ok: ['충족', 'green'], bad: ['문제', 'red'], warn: ['확인 권고', 'amber'], wait: ['DSP 연동 대기', 'gray'], pending: ['검사 전', 'gray'],
+  ok: ['충족', 'green'], bad: ['문제', 'red'], warn: ['확인 권고', 'amber'], wait: ['플랫폼 연동 대기', 'gray'], pending: ['검사 전', 'gray'],
 };
 
 /** 요청한 플랫폼마다: 요구 조건 × 이 발매의 충족 여부. 콘텐츠 문제가 하나라도 있으면 카드 전체가 빨간색 */
@@ -157,7 +158,7 @@ export function deliveryVerdict(d: { readiness: string; blockers: string[]; warn
     ...(virtual ? ['테스트용 UPC·ISRC — 정식 코드 등록 후 재발급 필요'] : []),
   ];
   if (content.length) return { tone: 'red', headline: '발매 내용 문제', problems: content, notes, approvable: false };
-  if (ern) return { tone: 'red', headline: 'DSP 점검 필요', problems: ['플랫폼으로 보낼 파일을 만들지 못했어요 — ‘다시 검사’를 눌러 보고, 계속되면 개발팀에 알려 주세요'], notes, approvable: false };
-  if (link) return { tone: 'gray', headline: 'DSP 연동 대기', problems: [], notes, approvable: d.readiness !== 'CONTENT_BLOCKED' };
+  if (ern) return { tone: 'red', headline: '플랫폼 점검 필요', problems: ['플랫폼으로 보낼 파일을 만들지 못했어요 — ‘다시 검사’를 눌러 보고, 계속되면 개발팀에 알려 주세요'], notes, approvable: false };
+  if (link) return { tone: 'gray', headline: '플랫폼 연동 대기', problems: [], notes, approvable: d.readiness !== 'CONTENT_BLOCKED' };
   return { tone: 'green', headline: '전송 가능', problems: [], notes, approvable: d.readiness !== 'CONTENT_BLOCKED' };
 }

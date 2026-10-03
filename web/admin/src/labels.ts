@@ -117,7 +117,8 @@ export function checkLabel(code: string): string {
     DSP_LOUDNESS_ADVISORY: '음량(라우드니스) 권고', DSP_CLIPPING_ADVISORY: '클리핑 권고',
     S2_EXPRESS_REQUEST: '신속 발매 요청', S2_ADDITIONAL_RIGHTS: '추가 권리 확인',
   };
-  return extra[code] ?? code;
+  // 처음 보는 검사 코드도 영어 그대로 보이지 않게
+  return extra[code] ?? (/[가-힣]/.test(code) ? code : '새 검사 항목');
 }
 
 export const pick = (map: Record<string, [string, Tone]>, key: string | null | undefined): [string, Tone] =>
@@ -216,7 +217,7 @@ export function checkSummary(c: { check_code: string; detail: string | null }): 
     case 'S2_PROTECTED_NAME':
     case 'ARTIST_NAME_PROTECTED': return '보호된 유명 아티스트명과 겹쳐요. 본인 활동명인지 확인해 주세요.';
     default:
-      return isKnownCorrection(c.check_code) ? correctionTarget(c.check_code).hint : checkLabel(c.check_code);
+      return isKnownCorrection(c.check_code) ? correctionTarget(c.check_code).hint : '시스템이 담당자 확인을 요청한 항목이에요. 신청 내용을 보고 판단해 주세요.';
   }
 }
 

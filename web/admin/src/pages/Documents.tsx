@@ -69,9 +69,9 @@ export function Documents() {
   return (
     <div className="view-enter">
       <PageHead
-        eyebrow="DOCUMENTS"
+        eyebrow="발매 심사"
         title="서류 검토"
-        sub="발매 심사 중 요청한 권리 증빙이에요. 승인하거나 보완을 요청하면 작업 공간에 알림이 가요. 새 발매 신청서는 발매 심사에서 결정해요."
+        sub="심사 중 요청한 권리 증빙을 확인해요. 결과는 아티스트에게 바로 알려져요."
         actions={<button type="button" className="adm-btn soft small" onClick={reload}>새로고침</button>}
       />
       {!can('DOCUMENTS') && <NoDuty duty="서류 검토" />}

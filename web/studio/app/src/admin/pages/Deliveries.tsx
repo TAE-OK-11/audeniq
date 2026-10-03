@@ -78,9 +78,9 @@ export function Deliveries() {
   return (
     <div className="view-enter">
       <PageHead
-        eyebrow="DELIVERY"
+        eyebrow="배급"
         title="배급 현황"
-        sub="발매 심사에서 최종 승인하고 아티스트가 계약서에 서명하면 시스템이 플랫폼마다 자동으로 보내요. 여기서는 진행 상황과 문제만 확인하면 돼요."
+        sub="승인과 서명이 끝난 발매는 플랫폼마다 자동으로 전송돼요. 여기서는 문제만 확인하면 돼요."
         actions={<button type="button" className="adm-btn soft small" onClick={reload}>새로고침</button>}
       />
       <SubTabs tabs={[{ to: '/admin/deliveries', label: '배급 현황' }, { to: '/admin/dsps', label: '플랫폼별 조건' }]} />
@@ -114,7 +114,7 @@ export function Deliveries() {
                     <li key={d.dsp} className={`is-${v.tone}`}>
                       <b className="adm-deliv-name">{d.dsp_name ?? DSP_NAME[d.dsp] ?? '플랫폼'}</b>
                       <span className="adm-min">
-                        <span className="adm-deliv-head">{d.approval === 'HELD' ? '멈춤' : d.approval === 'APPROVED' && v.tone !== 'red' ? (v.tone === 'gray' ? 'DSP 연동 대기 · 연동되면 자동 전송' : '서명 후 자동 전송') : v.headline}</span>
+                        <span className="adm-deliv-head">{d.approval === 'HELD' ? '멈춤' : d.approval === 'APPROVED' && v.tone !== 'red' ? (v.tone === 'gray' ? '플랫폼 연동 대기 · 연동되면 자동 전송' : '서명 후 자동 전송') : v.headline}</span>
                         {v.problems.map(p => <small key={p} className="adm-deliv-problem">{p}</small>)}
                         {v.notes.length > 0 && <small className="adm-deliv-note">{v.notes.join(' · ')}</small>}
                       </span>

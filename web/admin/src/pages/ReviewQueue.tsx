@@ -69,9 +69,9 @@ export function ReviewQueue() {
   return (
     <div className="view-enter">
       <PageHead
-        eyebrow="RELEASE REVIEW"
+        eyebrow="발매 심사"
         title="발매 심사"
-        sub="새로 들어온 발매 신청과 2차 검사에서 담당자 판단이 필요한 발매예요. 오래 기다린 순서로 보여요. 발매를 열어 신청서와 검사 결과를 보고 승인·보완 요청·거절을 결정해 주세요."
+        sub="새 발매 신청과 담당자 판단이 필요한 발매예요. 오래 기다린 순서로 보여요."
         actions={<button type="button" className="adm-btn soft small" onClick={() => setTick(t => t + 1)}>새로고침</button>}
       />
       <SubTabs tabs={[{ to: '/reviews', label: '심사 목록', count: counts?.review }, { to: '/approvals', label: '2차 승인', count: counts?.second_approvals }]} />
