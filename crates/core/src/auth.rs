@@ -435,7 +435,7 @@ pub async fn logout(s: &AppState, h: &HeaderMap) -> Result<(HeaderMap, Json<Valu
     headers.insert("set-cookie", cookie(&s.config, "", 0).parse().unwrap());
     Ok((headers, Json(json!({"revoked":true}))))
 }
-fn request_id(headers: &HeaderMap) -> Uuid {
+pub fn request_id(headers: &HeaderMap) -> Uuid {
     headers
         .get("x-request-id")
         .and_then(|v| v.to_str().ok())

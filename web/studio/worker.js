@@ -461,7 +461,8 @@ async function handleAdmin(request, db, r, now) {
 // 브라우저 헤더는 필요한 것만 골라 보낸다(crates/edge와 같은 허용 목록). 브라우저가 보낸
 // x-audeniq-service·x-audeniq-client-ip 같은 서비스 헤더는 절대 전달하지 않는다.
 const BACKEND = 'https://api-origin.audeniq.com';
-const FORWARD_HEADERS = ['cookie', 'origin', 'content-type', 'accept', 'x-csrf-token', 'sec-fetch-site', 'x-request-id'];
+// user-agent: 권리 서류 서명 기록(증거)에 남긴다
+const FORWARD_HEADERS = ['cookie', 'origin', 'content-type', 'accept', 'x-csrf-token', 'sec-fetch-site', 'x-request-id', 'user-agent'];
 const PARTNER_HOOK = /^\/api\/partner-hooks\//;
 const PARTNER_DROP = new Set(['x-forwarded-for', 'x-real-ip', 'host', 'connection', 'accept-encoding']);
 

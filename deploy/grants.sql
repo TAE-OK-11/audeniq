@@ -34,6 +34,10 @@ GRANT USAGE ON SCHEMA portal TO audeniq_api;
 GRANT SELECT,INSERT,UPDATE ON portal.artist_profiles,portal.payout_accounts,portal.inquiries,portal.documents TO audeniq_api;
 GRANT SELECT,INSERT ON portal.inquiry_messages,portal.notification_reads,portal.release_applications,portal.payout_requests TO audeniq_api;
 GRANT SELECT ON portal.notifications TO audeniq_api;
+-- 권리 서류 서명 요청 (0071): 이벤트는 추가만
+GRANT SELECT,INSERT,UPDATE ON portal.signing_requests TO audeniq_api;
+GRANT SELECT,INSERT ON portal.signing_events TO audeniq_api;
+GRANT USAGE ON SEQUENCE portal.signing_events_id_seq TO audeniq_api;
 GRANT USAGE ON SCHEMA finance TO audeniq_api;
 GRANT SELECT ON finance.ledger_transactions,finance.ledger_entries,finance.payout_orders,finance.royalty_reports,finance.report_lines,finance.finance_holds TO audeniq_api;
 -- DSP registry + delivery staging (0042/0043): artists read their release's

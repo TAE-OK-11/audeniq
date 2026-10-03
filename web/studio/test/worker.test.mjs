@@ -272,6 +272,7 @@ test('other /api/* calls go to the backend with the service header; a dead backe
     assert.equal(h.get('x-forwarded-for'), null);
     assert.equal(h.get('x-csrf-token'), 't');
     assert.equal(h.get('accept-encoding'), 'br, gzip');
+    assert.equal(h.get('user-agent'), 'ua');
     assert.equal(await seen[0].text(), '{"email":"a"}');
     globalThis.fetch = async () => { throw new Error('down'); };
     const down = await call(e, 'GET', '/api/me');

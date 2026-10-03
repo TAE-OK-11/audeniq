@@ -115,7 +115,11 @@ export function Documents() {
         <p className="small muted">권리자: {viewing.electronic_record?.rights_holder} · 서명자: {viewing.signer_name} ({viewing.electronic_record?.signer_role}) · {when(viewing.signed_at)}</p>
         <div className="aq-document-snapshot">{viewing.body}</div>
         {viewing.signature && <div className="aq-sign-record"><img src={viewing.signature} alt={`${viewing.signer_name} 서명`} /></div>}
+        {viewing.electronic_record?.identity
+          ? <p className="small break">본인확인: {viewing.electronic_record.identity.name} · {when(viewing.electronic_record.identity.verified_at)} · {viewing.electronic_record.channel === 'IN_PERSON' ? '대면(같은 기기)' : '서명 링크'}로 권리자 직접 서명</p>
+          : <p className="small break">본인확인 없이 제출자 기기에서 서명한 이전 서식(1.0) 문서예요.</p>}
         <p className="small break">문서 확인 코드: {viewing.electronic_record?.content_hash}</p>
+        {viewing.electronic_record?.certificate_hash && <p className="small break">서명 증명 해시: {viewing.electronic_record.certificate_hash}</p>}
       </Modal>}
       {pending && (
         <Modal title={pending.status === 'APPROVED' ? `‘${pending.doc.title}’ 승인` : `‘${pending.doc.title}’ 보완 요청`} onClose={() => setPending(null)} dismissible={false}>

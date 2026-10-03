@@ -2313,7 +2313,7 @@ export function Upload() {
                       type="checkbox" id={`agree-${a.id}`} checked={!!agreed[a.id]}
                       onChange={e => setAgreed(v => ({ ...v, [a.id]: e.target.checked }))}
                     />
-                    <span>{a.text}</span>
+                    <span>{a.text}{a.id === 'terms' && <> <a href="/terms" target="_blank" rel="noopener" className="aq-inline-link">약관 보기</a></>}</span>
                   </label>
                 ))}
               </div>
@@ -2345,7 +2345,7 @@ export function Upload() {
           {submitting ? '접수하는 중' : step === STEPS.length - 1 ? (resubmit ? '다시 접수하기' : editId && origStatus !== 'draft' ? '서명하고 수정 완료' : '서명하고 접수하기') : '다음으로'}
         </button>
       </div>
-      {electronic && <RightsDocumentModal kind={electronic.kind} context={electronic.context} onClose={() => setElectronic(null)} onComplete={doc => { setElectronic(null); setOpenDocId(doc.id); toast('권리자 서명 문서가 완성됐어요. AUDENIQ 검토가 이어져요.', 'success'); }} />}
+      {electronic && <RightsDocumentModal kind={electronic.kind} context={electronic.context} onClose={() => setElectronic(null)} onRequested={() => toast('서명 요청을 만들었어요. 권리자가 서명하면 권리·보완 서류에 문서가 생겨요.', 'success')} />}
       {openDoc && <DocumentModal doc={openDoc} onClose={() => setOpenDocId(null)} onOpenSignature={() => {}} />}
     </div>
     </section>
