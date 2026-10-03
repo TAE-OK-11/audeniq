@@ -102,7 +102,7 @@ services:
     cpus: ${AV_CPUS:-0.75}
   antivirus-update:
     <<: *runtime
-    command: [freshclam, --daemon, --foreground, --config-file=/usr/local/share/audeniq/freshclam.conf]
+    command: [python3, /usr/local/lib/audeniq/update-antivirus.py]
     restart: unless-stopped
     networks: [egress]
     volumes: [av_database:/var/lib/clamav]
