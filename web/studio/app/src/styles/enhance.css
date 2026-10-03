@@ -296,7 +296,6 @@ input[aria-invalid=true]{box-shadow:0 0 0 2px #f2a3a3 inset!important}
 /* ---------- 발매 상세 ---------- */
 .aq-detail-hero{animation:aq-fade-up .45s var(--aq-e-ease) both}
 .aq-detail-cover{animation:aq-pop .55s var(--aq-e-spring) both}
-.aq-detail-cover-large{display:block;width:100%;max-width:220px;aspect-ratio:1;object-fit:cover;border-radius:18px;margin:4px 0 10px;box-shadow:0 18px 30px -22px rgba(27,51,104,.5)}
 .aq-pipeline{list-style:none;margin:22px 0 26px;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));position:relative}
 .aq-pipeline li{position:relative;display:flex;flex-direction:column;align-items:center;gap:7px;font-size:12px;font-weight:700;color:#9aa4b6;text-align:center}
 .aq-pipeline li::before{content:"";position:absolute;top:14px;right:50%;width:100%;height:2px;background:#e7ecf5;z-index:0}
@@ -1406,27 +1405,8 @@ body:has(#modal .aq-sticky-foot) .aq-toast-stack,body:has(.aq-form-actions.is-pi
    · 지나온 단계: 파랑 원 + 흰 체크 · 지금 단계: 조금 더 큰 원을 단계 색(파랑, 보완 주황, 거절 빨강)으로 가득
    · 남은 단계: 연회색 원 (윤곽선 없음) · 선은 원 가장자리에 틈 없이 닿고, 지나온 구간은 한 번만 채워진다
    ========================================================================== */
-.aq-stage{--stage-c:var(--aq-e-blue);--dot:22px;list-style:none;margin:16px 0 24px;padding:18px 6px 14px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));background:#f5f8ff;border-radius:22px}
-.aq-stage li{position:relative;display:flex;flex-direction:column;align-items:center;gap:9px;min-width:0;text-align:center}
-.aq-stage li.is-warn{--stage-c:#e0892f}
-.aq-stage li.is-error{--stage-c:#d92d3b}
 /* 앞 원 가운데에서 이 원 가운데까지 — 원이 위에 그려져 선 끝이 원 가장자리에 붙어 보인다 */
-.aq-stage li:not(:first-child)::before,.aq-stage li:not(:first-child)::after{content:"";position:absolute;top:calc(var(--dot) / 2 - 1.5px);right:50%;width:100%;height:3px;background:#dfe6f1}
-.aq-stage li:not(:first-child)::after{background:var(--stage-c);transform:scaleX(0);transform-origin:left}
-.aq-stage li.is-done:not(:first-child)::after{background:var(--aq-e-blue)}
-.aq-stage li:is(.is-done,.is-current):not(:first-child)::after{transform:none;animation:aq-grow-x .45s var(--aq-e-ease) both}
-.aq-stage li:nth-child(2)::after{animation-delay:.05s}
-.aq-stage li:nth-child(3)::after{animation-delay:.15s}
-.aq-stage li:nth-child(4)::after{animation-delay:.25s}
 /* 윤곽선 없이 면으로만: 남은 단계는 연회색, 지나온 단계는 파랑+체크, 지금 단계는 조금 더 큰 원을 단계 색으로 가득 채움 */
-.aq-stage-dot{position:relative;z-index:1;display:grid;place-items:center;width:var(--dot);height:var(--dot);border-radius:50%;box-sizing:border-box;background:#dfe6f1;border:0;color:#fff}
-.aq-stage li.is-done .aq-stage-dot{background:var(--aq-e-blue)}
-.aq-stage li.is-current .aq-stage-dot{background:var(--stage-c);transform:scale(1.27);animation:aq-stage-in .4s var(--aq-e-spring) .3s both}
-@keyframes aq-stage-in{from{transform:scale(.6)}to{transform:scale(1.27)}}
-.aq-stage-label{max-width:100%;font-size:12.5px;font-weight:650;letter-spacing:-.01em;color:#a0aabb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.aq-stage li.is-done .aq-stage-label{color:#4c5a74}
-.aq-stage li.is-current .aq-stage-label{color:var(--stage-c);font-weight:800}
-@media(max-width:560px){.aq-stage{--dot:20px;padding:16px 2px 12px;border-radius:20px}.aq-stage-label{font-size:11.5px}}
 
 /* ==========================================================================
    목록형 선택지 — 문장처럼 긴 선택지는 한 줄에 하나씩, 고른 표시는 오른쪽 (신속 발매 사유 · AI 활용 내역 · 확인 동의)
@@ -1492,10 +1472,6 @@ body:has(#modal .aq-sticky-foot) .aq-toast-stack,body:has(.aq-form-actions.is-pi
 .aq-payment-card .aq-acct-foot{border-top-color:#e3e9f4}
 
 /* 담당자 의견 — 고칠 항목이 아닌 참고 말이라 버튼 없이 인용처럼 */
-.aq-review-note{margin-top:14px;padding:13px 16px;border-radius:16px;background:rgba(255,255,255,.72)}
-.aq-review-note-label{display:block;margin-bottom:4px;font-size:12px;font-weight:800;color:#a76525}
-.aq-review-note p{margin:0;font-size:14px;line-height:1.65;color:#3f4b5e;white-space:pre-line;overflow-wrap:anywhere}
-.aq-fix-panel .aq-review-note{margin:10px 0 12px}
 
 /* ---------- 보완 요청 목록: 번호 · 위치 · 내용 · 화살표 ---------- */
 .aq-correction-list button{grid-template-columns:24px minmax(0,1fr) 20px!important;gap:2px 12px!important;align-items:center;padding:14px 14px 14px 12px!important;background:#fff!important;border-radius:16px!important}
@@ -1505,17 +1481,10 @@ body:has(#modal .aq-sticky-foot) .aq-toast-stack,body:has(.aq-form-actions.is-pi
 .aq-correction-list .aq-correction-go{grid-column:3;grid-row:1/3;display:grid;place-items:center;color:#d08a45}
 .aq-fix-card .aq-correction-list{gap:8px}
 /* 담당자 의견: 고칠 항목이 아니라 참고 말 — 왼쪽 선 인용 */
-.aq-fix-card .aq-review-note{margin-top:12px;padding:12px 14px 12px 16px;border-radius:0 14px 14px 0;background:rgba(255,255,255,.5);border-left:3px solid #e9b27a}
-.aq-fix-card .aq-review-note p{font-size:13.5px}
 /* 보완 카드 머리: 아이콘을 작게, 설명은 한 줄 톤 */
 .aq-fix-card .aq-fix-icon{width:30px;height:30px;border-radius:10px}
 .aq-fix-card h2{margin-top:3px}
 /* 커버아트 옆 정보 */
-.aq-detail-cover-empty{display:grid;place-items:center;width:100%;max-width:220px;aspect-ratio:1;border-radius:18px;background:#e9eef8;color:#8792a8;font-size:13px;font-weight:700;margin:4px 0 10px}
-.aq-cover-meta{display:grid;gap:8px;margin:6px 0 0}
-.aq-cover-meta div{display:grid;grid-template-columns:64px minmax(0,1fr);gap:8px;font-size:13px}
-.aq-cover-meta dt{color:#8792a8;font-weight:700}
-.aq-cover-meta dd{margin:0;color:#3a4256;font-weight:650}
 /* 서류 상세: 아래 버튼이 하나면 꽉 차게, 서명 기록은 흰 바탕 안에 */
 .doc-actions>.button:only-child{grid-column:1/-1}
 .aq-sign-record img{display:block;width:100%;max-height:150px;object-fit:contain;background:#fff;border-radius:14px;padding:10px;margin:10px 0}
@@ -1563,3 +1532,68 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 :is(#root,#modal) .aq-cadmin .field :is(input:not([type=checkbox]):not([type=radio]):not([type=file]),textarea,select){padding:13px 16px!important;min-height:52px}
 :is(#root,#modal) .aq-cadmin .field textarea{padding:14px 16px!important;line-height:1.65!important}
 .aq-cadmin .aq-cadmin-check{margin:4px 0 18px}
+
+/* ==========================================================================
+   발매 상세 다듬기 — 진행 단계 카드 · 담당자 의견 · 커버아트 · 문서 관리 버튼
+   ========================================================================== */
+
+/* 진행 단계: 지금 단계 이름·안내를 머리에, 아래는 4칸 막대 */
+.aq-stage{--stage-c:var(--aq-e-blue);--stage-ink:var(--aq-e-blue);--stage-soft:#dfe7ff;margin:16px 0 24px;padding:18px 20px 18px;background:#f5f8ff;border-radius:24px;animation:aq-fade-up .4s var(--aq-e-ease) both}
+.aq-stage.is-warn{--stage-c:#e0892f;--stage-ink:#b8661a;--stage-soft:#fde3c6}
+.aq-stage.is-error{--stage-c:#d92d3b;--stage-ink:#c42a37;--stage-soft:#ffd9dd}
+.aq-stage-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+.aq-stage-kicker{display:block;font-size:12px;font-weight:750;color:#8792a8;letter-spacing:-.01em}
+.aq-stage-now{display:block;margin-top:3px;font-size:18px;font-weight:820;letter-spacing:-.035em;color:var(--stage-ink)}
+.aq-stage-count{flex:none;font-size:22px;font-weight:850;letter-spacing:-.04em;color:var(--aq-e-ink);font-variant-numeric:tabular-nums;line-height:1.1}
+.aq-stage-count small{margin-left:3px;font-size:13px;font-weight:700;color:#a0aabb;letter-spacing:0}
+.aq-stage-note{margin:6px 0 0;font-size:13px;line-height:1.55;color:#66738a}
+.aq-stage-track{list-style:none;margin:16px 0 0;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.aq-stage-track li{display:flex;flex-direction:column;gap:9px;min-width:0}
+.aq-stage-bar{position:relative;display:block;height:6px;border-radius:99px;background:#e1e7f1;overflow:hidden}
+.aq-stage-bar::after{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--aq-e-blue);transform:scaleX(0);transform-origin:left}
+.aq-stage-track li.is-done .aq-stage-bar::after{transform:none;animation:aq-grow-x .45s var(--aq-e-ease) both}
+.aq-stage-track li.is-current .aq-stage-bar{background:var(--stage-soft)}
+.aq-stage-track li.is-current .aq-stage-bar::after{background:var(--stage-c);transform:scaleX(.55);animation:aq-stage-fill .7s var(--aq-e-ease) .2s both}
+.aq-stage-track li:nth-child(2) .aq-stage-bar::after{animation-delay:.08s}
+.aq-stage-track li:nth-child(3) .aq-stage-bar::after{animation-delay:.16s}
+.aq-stage-track li:nth-child(4) .aq-stage-bar::after{animation-delay:.24s}
+@keyframes aq-stage-fill{from{transform:scaleX(0)}to{transform:scaleX(.55)}}
+.aq-stage-label{display:flex;align-items:center;gap:4px;min-width:0;font-size:12.5px;font-weight:650;letter-spacing:-.01em;color:#a0aabb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.aq-stage-label svg{flex:none;color:var(--aq-e-blue)}
+.aq-stage-track li.is-done .aq-stage-label{color:#4c5a74;font-weight:700}
+.aq-stage-track li.is-current .aq-stage-label{color:var(--stage-ink);font-weight:800}
+@media(max-width:560px){.aq-stage{padding:16px 16px 16px;border-radius:22px}.aq-stage-now{font-size:17px}.aq-stage-track{gap:5px}.aq-stage-label{font-size:11.5px}}
+
+/* 담당자 의견: 인용선 대신 AUDENIQ 카드 — 파란 말풍선 표시 + 보낸 곳 */
+.aq-review-note{margin:12px 0 0;padding:14px 16px 15px;border-radius:18px;background:#fff}
+.aq-review-note-head{display:flex;align-items:center;gap:8px;min-width:0}
+.aq-review-note-mark{flex:none;display:grid;place-items:center;width:26px;height:26px;border-radius:9px;background:var(--aq-e-blue-soft);color:var(--aq-e-blue)}
+.aq-review-note-label{font-size:13px;font-weight:800;letter-spacing:-.02em;color:var(--aq-e-ink)}
+.aq-review-note-by{margin-left:auto;font-size:11.5px;font-weight:700;color:#98a2b3;white-space:nowrap}
+.aq-review-note blockquote{margin:10px 0 0;padding:0}
+.aq-review-note p{margin:0;font-size:14px;line-height:1.65;color:#2f3646;white-space:pre-line;overflow-wrap:anywhere}
+.aq-fix-card .aq-review-note p{font-size:13.5px;color:#2f3646}
+.aq-fix-panel .aq-review-note{margin:10px 0 12px}
+
+/* 커버아트: 커버 색이 바탕에 번지는 무대 + 같은 폭의 정보 카드 */
+#view-release .studio-album-aside.aq-cover-card{background:#f5f8ff!important;padding:22px!important}
+.aq-cover-card .subhead{margin:0 0 14px!important}
+.aq-cover-stage{position:relative;isolation:isolate;overflow:hidden;max-width:420px;padding:18px;border-radius:24px;background:#e9eef8}
+.aq-cover-glow{position:absolute;z-index:-1;left:-20%;top:-20%;width:140%!important;max-width:none!important;height:140%;object-fit:cover;filter:blur(40px) saturate(1.5);opacity:.7;pointer-events:none}
+.aq-cover-stage::after{content:"";position:absolute;inset:0;z-index:-1;background:rgba(255,255,255,.18)}
+.aq-detail-cover-large{display:block;width:100%;aspect-ratio:1;object-fit:cover;margin:0;border-radius:16px;box-shadow:0 24px 40px -24px rgba(17,28,61,.6);animation:aq-fade-up .45s var(--aq-e-ease) both}
+.aq-cover-stage.is-empty{padding:0}
+.aq-cover-stage.is-empty::after{content:none}
+.aq-detail-cover-empty{display:grid;place-items:center;align-content:center;gap:8px;aspect-ratio:1;color:#8792a8;font-size:13px;font-weight:700}
+.aq-cover-meta{max-width:420px;margin:12px 0 0;padding:2px 16px;background:#fff;border-radius:18px}
+.aq-cover-meta div{display:flex;align-items:baseline;justify-content:space-between;gap:16px;padding:12px 0;font-size:13px}
+.aq-cover-meta div+div{border-top:1px solid #eef1f6}
+.aq-cover-meta dt{flex:none;color:#8792a8;font-weight:700}
+.aq-cover-meta dd{min-width:0;margin:0;text-align:right;color:#2f3646;font-weight:700;font-variant-numeric:tabular-nums}
+@media(max-width:560px){#view-release .studio-album-aside.aq-cover-card{padding:18px!important}.aq-cover-stage{padding:16px;border-radius:22px}}
+
+/* 문서 관리: 옅은 파란 카드 위에서 묻히지 않게 흰 바탕, 카드 폭 그대로 */
+:is(#root) .surface .button.secondary.aq-doc-manage{display:flex;width:100%;justify-content:center;align-items:center;gap:6px;margin-top:14px;min-height:50px;border-radius:16px;background:#fff!important;border:1.5px solid #dfe7ff!important;color:var(--aq-e-blue)!important;font-weight:780}
+:is(#root) .surface .button.secondary.aq-doc-manage:not(:disabled):hover{background:var(--aq-e-blue-soft)!important}
+
+@media(prefers-reduced-motion:reduce){.aq-stage,.aq-detail-cover-large{animation:none}.aq-stage-bar::after{animation:none!important}}
