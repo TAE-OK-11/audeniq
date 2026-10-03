@@ -1016,3 +1016,19 @@ a.adm-row,button.adm-row,.adm-stat,.adm-track summary,.adm-filter,.adm-pick,.adm
 .adm-subtabs .adm-seg-pill{top:auto;bottom:0;height:3px;transform:translate3d(var(--pill-x),0,0);border-radius:3px;box-shadow:none}
 .adm-subtabs .adm-filter[aria-selected=true]::after{content:none!important}
 @media (prefers-reduced-motion:reduce){:is(.adm-seg,.adm-subtabs).is-live .adm-seg-pill{transition:none}}
+
+/* ---------- 배급 계약 조건 (AUD-DIST 2.0) ---------- */
+.adm-terms-form{display:grid;gap:4px}
+.adm-terms-label{display:block;margin:0 0 6px;font-size:13px;font-weight:760;color:var(--adm-ink)}
+.adm-terms-fee{display:flex;align-items:center;gap:12px}
+.adm-terms-fee .adm-input{max-width:140px}
+.adm-terms-fee span{font-size:13px;font-weight:720;color:var(--adm-muted)}
+.adm-terms-form .adm-btn{justify-self:start;margin-top:6px}
+.adm-terms-body{margin-top:14px}
+.adm-terms-body summary{cursor:pointer;font-size:13px;font-weight:760;color:var(--adm-blue)}
+.adm-terms-body pre{margin:10px 0 0;padding:16px;border-radius:16px;background:#fff;white-space:pre-wrap;font:inherit;font-size:12.5px;line-height:1.7;max-height:420px;overflow:auto}
+.adm-terms-checks{margin-top:14px;font-size:12.5px}
+.adm-terms-checks ul{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:4px}
+.adm-terms-checks li{display:flex;gap:6px;color:var(--adm-muted)}
+.adm-terms-checks li.is-on{color:var(--adm-ink)}
+.adm-terms-checks li span{flex:none;width:12px;color:var(--adm-blue)}

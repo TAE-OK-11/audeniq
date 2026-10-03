@@ -22,6 +22,8 @@ export const pageLoaders = {
   ContentAdmin: () => import('./pages/ContentAdmin'),
   NotFound: () => import('./pages/NotFound'),
   Profile: () => import('./pages/Profile'),
+  Sign: () => import('./pages/Sign'),
+  Terms: () => import('./pages/Terms'),
   Admin: () => import('./admin/AdminApp'),
 };
 
@@ -45,6 +47,8 @@ const ROUTE_PAGES: [RegExp, PageName[]][] = [
   [/^\/notices/, ['Notices']],
   [/^\/profile/, ['Profile']],
   [/^\/admin/, ['Admin']],
+  [/^\/sign\//, ['Sign']],
+  [/^\/terms/, ['Terms']],
 ];
 
 const requested = new Set<PageName>();

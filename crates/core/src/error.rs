@@ -125,6 +125,24 @@ pub fn message(code: &str) -> Option<&'static str> {
             "The change conflicts with the current state of the release. Reload and try again."
         }
         "INTERNAL_ERROR" => "Something went wrong on our side. Try again later.",
+        "SIGNING_REQUEST_REQUIRED" => {
+            "Rights documents are signed by the rights holder through a signing request with identity verification."
+        }
+        "SIGNING_REQUEST_CLOSED" => {
+            "This signing request is already signed, declined or cancelled."
+        }
+        "SIGNING_LINK_EXPIRED" => "This signing link has expired. Ask the sender for a new link.",
+        "SIGNING_CONSENT_REQUIRED" => {
+            "Confirm the document, the electronic signature and the use of identity data before signing."
+        }
+        "IDENTITY_PROVIDER_NOT_CONFIGURED" => {
+            "Identity verification is not available yet, so documents cannot be signed."
+        }
+        "IDENTITY_NOT_VERIFIED" => "Identity verification did not complete. Try again.",
+        "IDENTITY_NAME_MISMATCH" => {
+            "The verified name does not match the signer named in the document."
+        }
+        "IDENTITY_EXPIRED" => "Identity verification expired. Verify again, then sign.",
         "UPLOAD_TYPE_UNSUPPORTED" => {
             "Unsupported file type. Audio must be WAV (audio/wav) or FLAC (audio/flac); cover art must be JPEG or PNG."
         }

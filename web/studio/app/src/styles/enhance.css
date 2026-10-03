@@ -1617,3 +1617,108 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-cadmin-chip{background:#F1F4FF;color:#385dd7}
 .aq-cadmin-chip:not(.is-on):hover{background:#e6ecff}
 .aq-cadmin-chip.is-on{background:var(--aq-e-blue,#3B63F3);color:#fff}
+
+/* ==========================================================================
+   권리자 서명 (/sign/:token) · 서명 요청 목록
+   ========================================================================== */
+.aq-sign-page{min-height:100dvh;background:#fff;max-width:720px;margin:0 auto;padding:20px 16px 64px;box-sizing:border-box}
+.aq-sign-top{display:flex;align-items:center;gap:10px;padding:6px 2px 18px}
+.aq-sign-top img{height:22px;width:auto}
+.aq-sign-top span{font-size:12px;font-weight:800;letter-spacing:.02em;color:var(--aq-e-blue);background:var(--aq-e-blue-soft);padding:5px 9px;border-radius:9px}
+.aq-sign-card{background:#f5f8ff;border-radius:26px;padding:22px 20px;margin:0 0 14px;animation:aq-fade-up .4s var(--aq-e-ease) both}
+.aq-sign-card h1{margin:4px 0 8px;font-size:23px;line-height:1.35;letter-spacing:-.04em}
+.aq-sign-card h2{display:flex;align-items:center;gap:9px;margin:0 0 14px;font-size:17px;font-weight:800;letter-spacing:-.03em}
+.aq-sign-no{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--aq-e-blue);color:#fff;font-size:12px;font-weight:850;flex:none}
+.aq-sign-lead{margin:0 0 16px;font-size:14px;line-height:1.65;color:#4c5a74}
+.aq-sign-facts{display:grid;gap:0;margin:0;padding:2px 16px;background:#fff;border-radius:18px}
+.aq-sign-facts div{display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:11px 0;font-size:13px}
+.aq-sign-facts div+div{border-top:1px solid #eef1f6}
+.aq-sign-facts dt{flex:none;color:#8792a8;font-weight:700}
+.aq-sign-facts dd{margin:0;min-width:0;text-align:right;color:#2f3646;font-weight:700;overflow-wrap:anywhere}
+.aq-sign-mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;font-weight:600!important}
+.aq-sign-steps{list-style:none;margin:16px 0 0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.aq-sign-steps li{display:flex;align-items:center;gap:6px;min-width:0;padding:10px;border-radius:14px;background:#e9eef8;color:#8792a8;font-size:12.5px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.aq-sign-steps li span{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:#fff;font-size:11px;flex:none}
+.aq-sign-steps li.is-current{background:#fff;color:var(--aq-e-blue)}
+.aq-sign-steps li.is-current span{background:var(--aq-e-blue);color:#fff}
+.aq-sign-steps li.is-done{background:#fff;color:#4c5a74}
+.aq-sign-steps li.is-done span{background:var(--aq-e-blue);color:#fff}
+.aq-sign-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+@media(max-width:480px){.aq-sign-grid{grid-template-columns:1fr}}
+.aq-sign-ok{display:flex;align-items:center;gap:8px;margin:0;font-size:14px;font-weight:750;color:var(--aq-e-green)}
+.aq-sign-doc{max-height:52vh;overflow:auto;background:#fff!important;outline:0}
+.aq-sign-doc:focus-visible{box-shadow:0 0 0 3px #c7d4ff}
+.aq-sign-signature{display:grid;justify-items:start;gap:6px;margin-top:22px;padding-top:16px;border-top:1px solid #eef1f6;white-space:normal}
+.aq-sign-signature img{max-width:240px;height:auto;background:#fff}
+.aq-sign-signature span{font-size:12.5px;color:#66738a}
+.aq-sign-consents{display:grid;gap:10px;margin-top:16px}
+.aq-sign-consents .check-line span{font-size:13.5px;line-height:1.6}
+.aq-sign-consents b{color:var(--aq-e-blue);font-weight:800}
+.aq-sign-privacy{background:#fff;border-radius:16px;padding:12px 16px;font-size:12.5px;color:#4c5a74}
+.aq-sign-privacy summary{cursor:pointer;font-weight:750;color:#2f3646}
+.aq-sign-privacy ul{margin:10px 0 2px;padding-left:18px;display:grid;gap:6px;line-height:1.6}
+.aq-sign-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.aq-sign-actions .button{flex:1 1 160px}
+.aq-sign-done{text-align:center;background:var(--aq-e-green-soft)}
+.aq-sign-done h2{justify-content:center;color:var(--aq-e-green);margin:10px 0 6px}
+.aq-sign-done p{margin:0;font-size:13.5px;line-height:1.65;color:#3f6b57}
+.aq-sign-done-mark{display:inline-grid;place-items:center;width:46px;height:46px;border-radius:50%;background:var(--aq-e-green);color:#fff;animation:aq-pop .5s var(--aq-e-spring) both}
+.aq-sign-closed{text-align:center;padding:36px 22px}
+.aq-sign-closed p{color:#66738a;line-height:1.65}
+.aq-sign-log{list-style:none;margin:14px 0 8px;padding:0;display:grid;gap:6px}
+.aq-sign-log li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;padding:10px 14px;background:#fff;border-radius:14px;font-size:12.5px}
+.aq-sign-log strong{color:#2f3646}
+.aq-sign-log span{color:#66738a;text-align:right}
+.aq-sign-log code{grid-column:1/-1;color:#98a2b3;font-size:11px}
+.aq-sign-decline{text-align:center;margin-top:6px}
+.aq-sign-decline .aq-sign-card{text-align:left}
+.aq-sign-error{margin:0 0 14px}
+.aq-sign-link{padding:14px 16px;border-radius:16px;background:#f5f8ff;margin:12px 0;overflow-wrap:anywhere}
+.aq-sign-link code{font-size:12.5px;color:#2f3646}
+.aq-paper-identity{margin-top:14px}
+.aq-signreq{margin:0 0 22px}
+.aq-signreq-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.aq-signreq-list li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:14px 16px;border-radius:18px;background:#f5f8ff}
+.aq-signreq-list strong{display:block;font-size:14px;font-weight:780;color:var(--aq-e-ink)}
+.aq-signreq-list span{display:block;font-size:12.5px;color:#66738a;margin-top:2px}
+.aq-signreq-when{color:#8792a8!important}
+.aq-signreq-list em{font-style:normal;font-size:11.5px;font-weight:780;padding:5px 9px;border-radius:9px;background:var(--aq-e-blue-soft);color:var(--aq-e-blue);white-space:nowrap}
+.aq-signreq-list em.is-ok{background:var(--aq-e-green-soft);color:var(--aq-e-green)}
+.aq-signreq-list em.is-bad{background:var(--aq-e-red-soft);color:var(--aq-e-red)}
+.aq-signreq-list em.is-off{background:#eef1f6;color:#8792a8}
+.aq-signreq-actions{grid-column:1/-1;display:flex;gap:14px}
+.aq-signreq-actions .link-btn{font-size:13px}
+@media print{.aq-sign-decline,.aq-sign-actions,.aq-sign-steps,.aq-sign-top span{display:none!important}.aq-sign-doc{max-height:none;overflow:visible}.aq-sign-card{animation:none;break-inside:avoid}}
+@media(prefers-reduced-motion:reduce){.aq-sign-card,.aq-sign-done-mark{animation:none}}
+.aq-sign-card h1{color:var(--aq-e-ink)}
+.aq-sign-doc.is-signed{max-height:none;overflow:visible}
+.aq-sign-page .field input,.aq-sign-page .field textarea{width:100%;box-sizing:border-box;min-height:50px;padding:12px 16px;border:0;border-radius:16px;background:#fff;font:inherit;font-size:15px;color:var(--aq-e-ink)}
+.aq-sign-page .field input:focus,.aq-sign-page .field textarea:focus{outline:2px solid var(--aq-e-blue);outline-offset:-2px}
+.aq-sign-page .aq-rights-pad{margin:0 0 14px}
+.aq-sign-page .aq-pad,.aq-sign-page .aq-pad canvas{background:#fff!important;border-radius:20px}
+
+/* 이용약관 (/terms) */
+.aq-terms-page{min-height:100dvh;background:#fff;max-width:760px;margin:0 auto;padding:20px 16px 64px;box-sizing:border-box}
+.aq-terms{background:#f5f8ff;border-radius:28px;padding:26px 22px 30px;line-height:1.75;color:#2f3646}
+.aq-terms h1{margin:4px 0 6px;font-size:24px;letter-spacing:-.04em;color:var(--aq-e-ink)}
+.aq-terms-meta{margin:0 0 16px;font-size:13px;color:#66738a}
+.aq-terms-toc{position:sticky;top:8px;z-index:2;display:flex;gap:8px;margin:0 0 18px}
+.aq-terms-toc select{flex:1;min-width:0;min-height:46px;padding:0 14px;border:0;border-radius:14px;background:#fff;font:inherit;font-size:14px;color:var(--aq-e-ink);box-shadow:0 6px 18px -12px rgba(24,39,75,.3)}
+.aq-terms-toc .button{flex:none;min-height:46px!important}
+.aq-terms h2{margin:30px 0 8px;padding-top:6px;font-size:18px;font-weight:820;letter-spacing:-.03em;color:var(--aq-e-blue);scroll-margin-top:72px}
+.aq-terms h3{margin:20px 0 4px;font-size:15px;font-weight:800;color:var(--aq-e-ink);scroll-margin-top:72px}
+.aq-terms p{margin:6px 0;font-size:14px}
+.aq-terms ol{margin:6px 0 10px;padding-left:22px;font-size:14px}
+.aq-terms li{margin:2px 0}
+.aq-terms-back{text-align:center;margin-top:18px}
+.aq-inline-link{color:var(--aq-e-blue);font-weight:750;text-decoration:underline;text-underline-offset:3px}
+@media print{.aq-terms-toc,.aq-terms-back,.aq-sign-top span{display:none!important}.aq-terms{background:#fff;padding:0}}
+
+/* 배급 계약서 서명: 권리·배급 권한 확인 체크 */
+.aq-confirm-boxes{display:grid;gap:10px;margin:4px 0 16px;padding:16px;border:0;border-radius:20px;background:#f5f8ff}
+.aq-confirm-boxes legend{float:left;width:100%;margin:0 0 4px;padding:0;font-size:14px;font-weight:800;color:var(--aq-e-ink)}
+.aq-confirm-boxes legend small{display:block;margin-top:2px;font-size:12px;font-weight:650;color:#8792a8}
+.aq-confirm-boxes .check-line span{font-size:13px;line-height:1.6}
+.aq-confirm-boxes b{color:var(--aq-e-blue);font-weight:800}
+.aq-confirm-all{padding-bottom:10px;border-bottom:1px solid #e3e9f4}
+.aq-confirm-all span{font-weight:800}
