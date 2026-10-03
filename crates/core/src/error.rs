@@ -147,6 +147,15 @@ pub fn message(code: &str) -> Option<&'static str> {
             "Unsupported file type. Audio must be WAV (audio/wav) or FLAC (audio/flac); cover art must be JPEG or PNG."
         }
         "UPLOAD_EMPTY" => "The file is empty.",
+        "UPLOAD_UNSAFE_FILE" => {
+            "The file failed the security scan and cannot be used. Export a new file from a trusted source."
+        }
+        "UPLOAD_SANITIZATION_FAILED" => {
+            "The file could not be safely processed. Use a static JPEG/PNG or an unencrypted PDF of at most 32 pages."
+        }
+        "UPLOAD_REINSPECTION_REQUIRED" => {
+            "This older file must be uploaded again to pass the current security checks."
+        }
         "UPLOAD_AUDIO_TOO_LARGE" => {
             "The audio file is too large. The maximum is 512 MB; export a 16- or 24-bit WAV/FLAC (FLAC is about half the size)."
         }

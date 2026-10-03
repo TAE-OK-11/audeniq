@@ -142,27 +142,21 @@ pub async fn complete(
     let kind: String = r.get("kind");
     let mime: String = r.get("content_type");
     let container = expected_container(&kind, &mime).ok_or(Error::Invalid)?;
-    // Every lossless upload that is not already FLAC (WAV included) is
-    // stored as a FLAC master: one delivery format, about 40 % less storage
-    // and transfer than PCM, with the decoded PCM proven identical.
-    let conversion_slot = if matches!(container, "WAV" | "M4A" | "AIFF" | "WAVPACK" | "TTA") {
-        Some(
-            s.transcode_slots
-                .clone()
-                .try_acquire_owned()
-                .map_err(|_| Error::UploadBusy)?,
-        )
-    } else {
-        None
-    };
+    // Scanning and normalization are bounded for every kind, including FLAC.
+    let slot = s
+        .transcode_slots
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| Error::UploadBusy)?;
     let meta = s.storage.head(&key).await?.ok_or(Error::Conflict)?;
     let size: i64 = r.get("expected_bytes");
     let nonce: Uuid = r.get("nonce");
     if meta.size != size || meta.content_type != mime || meta.nonce != nonce.to_string() {
         return Err(Error::Conflict);
     }
-    let stable: String = r.get("object_key");
-    // Recheck wall clock after HEAD and lock waits, before incurring a copy.
+    // Freeze into quarantine, never the registered namespace. A cancelled or
+    // failed completion leaves no object that any reader can serve or analyze.
+    let frozen = format!("quarantine/{org}/{asset}/frozen-{}", Uuid::new_v4());
     let valid: bool = sqlx::query_scalar(
         "SELECT expires_at>clock_timestamp() FROM catalog.upload_sessions WHERE id=$1",
     )
@@ -172,8 +166,8 @@ pub async fn complete(
     if !valid {
         return Err(Error::Conflict);
     }
-    s.storage.freeze(&key, &stable, &meta.etag).await?;
-    let copy = s.storage.head(&stable).await?.ok_or(Error::Storage)?;
+    s.storage.freeze(&key, &frozen, &meta.etag).await?;
+    let copy = s.storage.head(&frozen).await?.ok_or(Error::Storage)?;
     if copy.size != size
         || copy.content_type != mime
         || copy.nonce != nonce.to_string()
@@ -181,97 +175,31 @@ pub async fn complete(
     {
         return Err(Error::Conflict);
     }
-    if let Some(slot) = conversion_slot {
-        let flac = convert_lossless(
-            s,
-            org,
-            asset,
-            &stable,
-            size,
-            &nonce.to_string(),
-            container,
-            slot,
-        )
-        .await?;
-        finish_session(&mut tx, id).await?;
-        sqlx::query("UPDATE catalog.assets SET state='REGISTERED',object_key=$2,content_type='audio/flac',size_bytes=$3,etag=$4,sha256=$5 WHERE id=$1")
-            .bind(asset)
-            .bind(&flac.key)
-            .bind(flac.size)
-            .bind(&flac.etag)
-            .bind(&flac.sha256)
-            .execute(&mut *tx)
-            .await?;
-        sqlx::query("INSERT INTO catalog.asset_provenance(asset_id,org_id,source_sha256,master_sha256,rule_version,body) VALUES($1,$2,$3,$4,$5,$6)")
-            .bind(asset).bind(org).bind(&flac.source_sha256).bind(&flac.sha256)
-            .bind(crate::provenance::RULE_VERSION).bind(&flac.provenance)
-            .execute(&mut *tx).await?;
-        operations::audit(
-            &mut tx,
-            Some(a.user),
-            Some(org),
-            Some(asset),
-            "upload.completed",
-            "LOSSLESS_CONVERTED_TO_FLAC_QC_PENDING",
-            a.request,
-        )
-        .await?;
-        queue_analysis(&mut tx, org, asset).await?;
-        operations::event(
-            &mut tx,
-            org,
-            asset,
-            "asset.registered",
-            &format!("asset:{asset}"),
-        )
-        .await?;
-        tx.commit().await?;
-        // The quarantine object is not deleted: it is the single-use lock for
-        // the upload URL (signed If-None-Match: *). The bucket lifecycle rule
-        // removes quarantine/ objects after a day.
-        // The frozen upload was only the conversion source.
-        drop_quarantine(s, &stable).await;
-        return Ok(
-            json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":false,"sha256":flac.sha256,"detected_container":"FLAC","converted_from":if container == "M4A" { "ALAC" } else { container }}),
-        );
-    }
-    // Audio: completion reads only the first bytes (content sniff). The
-    // frozen copy is immutable (ETag pinned below), and the `asset.analyze`
-    // job downloads it once to hash it and run QC, so the master is not
-    // transferred twice. Covers and documents are small: hashed here.
-    let (head, sha256) = if kind == "AUDIO" {
-        (
-            s.storage
-                .read_prefix(&stable, crate::storage::HEAD_SNIFF_BYTES)
-                .await?,
-            None,
-        )
-    } else {
-        let digest = match s.storage.digest(&stable, size as u64).await {
-            Ok(d) => d,
-            Err(Error::PolicyGate("OBJECT_TOO_LARGE")) => return Err(Error::Conflict),
-            Err(e) => return Err(e),
-        };
-        if digest.size != size as u64 {
-            return Err(Error::Conflict);
-        }
-        (digest.head, Some(digest.sha256))
-    };
-    let detected = crate::qc::detect_container(&head);
-    if expected_container(&kind, &mime) != Some(detected) {
-        // Nothing is registered: the transaction rolls back, the session
-        // stays unusable for these bytes, and the user re-uploads the real
-        // master with its real type.
-        tracing::info!(%asset, detected, declared = %mime, "upload content mismatch");
-        return Err(Error::PolicyGate("UPLOAD_CONTENT_MISMATCH"));
-    }
+    let prepared = prepare(
+        s,
+        org,
+        asset,
+        &frozen,
+        size,
+        &nonce.to_string(),
+        &kind,
+        &mime,
+        container,
+        slot,
+    )
+    .await?;
     finish_session(&mut tx, id).await?;
-    sqlx::query("UPDATE catalog.assets SET state='REGISTERED',etag=$2,sha256=$3 WHERE id=$1")
-        .bind(asset)
-        .bind(copy.etag)
-        .bind(&sha256)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query("INSERT INTO catalog.asset_safety(asset_id,org_id,source_key,source_sha256,safe_key,safe_sha256,rule_version) VALUES($1,$2,$3,$4,$5,$6,$7)")
+        .bind(asset).bind(org).bind(&frozen).bind(&prepared.source_sha256).bind(&prepared.key)
+        .bind(&prepared.sha256).bind(crate::upload_safety::RULE_VERSION).execute(&mut *tx).await?;
+    sqlx::query("UPDATE catalog.assets SET state='REGISTERED',object_key=$2,content_type=$3,size_bytes=$4,etag=$5,sha256=$6 WHERE id=$1")
+        .bind(asset).bind(&prepared.key).bind(&prepared.mime).bind(prepared.size)
+        .bind(&prepared.etag).bind(&prepared.sha256).execute(&mut *tx).await?;
+    if let Some(provenance) = &prepared.provenance {
+        sqlx::query("INSERT INTO catalog.asset_provenance(asset_id,org_id,source_sha256,master_sha256,rule_version,body) VALUES($1,$2,$3,$4,$5,$6)")
+            .bind(asset).bind(org).bind(&prepared.source_sha256).bind(&prepared.sha256)
+            .bind(crate::provenance::RULE_VERSION).bind(provenance).execute(&mut *tx).await?;
+    }
     if kind == "AUDIO" {
         queue_analysis(&mut tx, org, asset).await?;
     }
@@ -281,7 +209,7 @@ pub async fn complete(
         Some(org),
         Some(asset),
         "upload.completed",
-        "OBJECT_VERIFIED_QC_PENDING",
+        "MALWARE_CHECKED_AND_NORMALIZED",
         a.request,
     )
     .await?;
@@ -294,11 +222,13 @@ pub async fn complete(
     )
     .await?;
     tx.commit().await?;
-    // The quarantine object is not deleted: it is the single-use lock for
-    // the upload URL (signed If-None-Match: *). The bucket lifecycle rule
-    // removes quarantine/ objects after a day.
+    // The original signed PUT stays as a single-use lock until lifecycle
+    // expiry. The frozen evidence remains private and is never downloadable.
     Ok(
-        json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":false,"sha256":sha256,"detected_container":detected}),
+        json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":false,
+        "sha256":prepared.sha256,"detected_container":if kind=="AUDIO" { "FLAC" } else { container },
+        "converted_from":if kind=="AUDIO" { Some(if container=="M4A" { "ALAC" } else { container }) } else { None },
+        "safety_status":"VERIFIED"}),
     )
 }
 
@@ -311,95 +241,120 @@ async fn finish_session(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, id: Uuid
     }
     Ok(())
 }
-struct ConvertedMaster {
+struct Prepared {
     key: String,
     size: i64,
     etag: String,
+    mime: String,
     sha256: String,
     source_sha256: String,
-    provenance: serde_json::Value,
+    provenance: Option<serde_json::Value>,
 }
 
-/// Lossless upload → FLAC master. Downloads the frozen, etag-pinned source,
-/// verifies identical decoded PCM with SHA-256, and stores the
-/// FLAC under a new registered key with the server's key and returns what
-/// the asset row must record. One conversion at a time per API process.
 #[allow(clippy::too_many_arguments)]
-async fn convert_lossless(
+async fn prepare(
     s: &AppState,
     org: Uuid,
     asset: Uuid,
     frozen: &str,
     size: i64,
     nonce: &str,
+    kind: &str,
+    mime: &str,
     container: &'static str,
     slot: tokio::sync::OwnedSemaphorePermit,
-) -> Result<ConvertedMaster> {
-    struct Temp(std::path::PathBuf);
-    impl Drop for Temp {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_file(&self.0);
-        }
-    }
-    let dir = std::env::temp_dir();
-    let attempt = Uuid::new_v4();
-    let src = Temp(dir.join(format!("audeniq-lossless-{attempt}.source")));
-    let dst = Temp(dir.join(format!("audeniq-lossless-{attempt}.flac")));
-    let digest = match s.storage.download_to(frozen, &src.0, size as u64).await {
-        Ok(d) => d,
-        Err(Error::PolicyGate("OBJECT_TOO_LARGE")) => return Err(Error::Conflict),
-        Err(e) => return Err(e),
-    };
+) -> Result<Prepared> {
+    let workspace = crate::upload_safety::Workspace::new()?;
+    let src = workspace.0.join("source");
+    let dst = workspace.0.join(if kind == "AUDIO" {
+        "safe.flac"
+    } else if mime == "application/pdf" {
+        "safe.pdf"
+    } else {
+        "safe.image"
+    });
+    let digest = s.storage.download_to(frozen, &src, size as u64).await?;
     if digest.size != size as u64 {
         return Err(Error::Conflict);
     }
     if crate::qc::detect_container(&digest.head) != container {
         return Err(Error::PolicyGate("UPLOAD_CONTENT_MISMATCH"));
     }
-    let source_sha256 = digest.sha256;
-    let (sha256, provenance, dst, _slot) = tokio::task::spawn_blocking(move || {
-        // Blocking tasks outlive a cancelled HTTP future. Move the actual
-        // guards and permit in so cleanup cannot race the decoder or retry.
-        let _src = src;
-        let _slot = slot;
-        let provenance = crate::provenance::inspect_audio(&_src.0);
-        crate::lossless::to_flac(&_src.0, &dst.0, container).map_err(|code| match code {
-            "UPLOAD_CONVERSION_UNAVAILABLE" | "UPLOAD_CONVERSION_TIMEOUT" => Error::UploadBusy,
-            _ => Error::PolicyGate(code),
-        })?;
-        // Preserve the conversion's objective invalid/lossy-file response
-        // even when neither metadata reader could inspect those bytes.
-        if provenance["inspection_status"] != "COMPLETED" {
+    // No decoder / metadata reader runs before the whole source is scanned.
+    crate::upload_safety::scan(&src, digest.size).await?;
+    let (kind, mime) = (kind.to_string(), mime.to_string());
+    let (workspace, dst, provenance, slot) = tokio::task::spawn_blocking(move || {
+        // Guards outlive a cancelled HTTP future, including each decoder.
+        let provenance = if kind == "AUDIO" {
+            Some(crate::provenance::inspect_audio(&src))
+        } else if kind == "IMAGE" {
+            Some(crate::provenance::inspect(&src))
+        } else {
+            None
+        };
+        if provenance
+            .as_ref()
+            .is_some_and(|p| p["inspection_status"] != "COMPLETED")
+        {
             return Err(Error::UploadBusy);
         }
-        let sha = crate::qc::sha256_file(&dst.0)?;
-        Ok::<_, Error>((sha, provenance, dst, _slot))
+        if kind == "AUDIO" {
+            crate::lossless::to_flac(&src, &dst, container).map_err(|code| match code {
+                "UPLOAD_CONVERSION_UNAVAILABLE" | "UPLOAD_CONVERSION_TIMEOUT" => Error::UploadBusy,
+                _ => Error::PolicyGate(code),
+            })?;
+        } else {
+            crate::upload_safety::sanitize(&src, &dst, &mime, &workspace.0)?;
+        }
+        Ok::<_, Error>((workspace, dst, provenance, slot))
     })
     .await
     .map_err(|_| Error::Internal)??;
-    let flac_size = tokio::fs::metadata(&dst.0)
+    let safe_size = tokio::fs::metadata(&dst)
         .await
-        .map_err(|_| Error::Internal)?
-        .len() as i64;
-    if flac_size > MAX_AUDIO_BYTES {
-        return Err(Error::InvalidCode("UPLOAD_AUDIO_TOO_LARGE"));
+        .map_err(|_| Error::Storage)?
+        .len();
+    if safe_size == 0 || safe_size > MAX_AUDIO_BYTES as u64 {
+        return Err(Error::PolicyGate("UPLOAD_AUDIO_TOO_LARGE"));
     }
+    crate::upload_safety::scan(&dst, safe_size).await?;
+    let sha256 = crate::qc::sha256_file(&dst)?;
+    let safe_mime = if kind_is_audio(container) {
+        "audio/flac"
+    } else {
+        mime_from_container(container)
+    };
     let key = format!("registered/{org}/{asset}/{}", Uuid::new_v4());
-    s.storage
-        .put_file(&key, &dst.0, "audio/flac", nonce)
-        .await?;
+    s.storage.put_file(&key, &dst, safe_mime, nonce).await?;
     let meta = s.storage.head(&key).await?.ok_or(Error::Storage)?;
-    if meta.size != flac_size || meta.content_type != "audio/flac" || meta.nonce != nonce {
+    if meta.size != safe_size as i64 || meta.content_type != safe_mime || meta.nonce != nonce {
         return Err(Error::Storage);
     }
-    Ok(ConvertedMaster {
+    drop((workspace, slot));
+    Ok(Prepared {
         key,
-        size: flac_size,
+        size: safe_size as i64,
         etag: meta.etag,
+        mime: safe_mime.into(),
         sha256,
-        source_sha256,
+        source_sha256: digest.sha256,
         provenance,
     })
+}
+
+fn kind_is_audio(container: &str) -> bool {
+    matches!(
+        container,
+        "WAV" | "FLAC" | "M4A" | "AIFF" | "WAVPACK" | "TTA"
+    )
+}
+fn mime_from_container(container: &str) -> &'static str {
+    match container {
+        "JPEG" => "image/jpeg",
+        "PNG" => "image/png",
+        "PDF" => "application/pdf",
+        _ => "application/octet-stream",
+    }
 }
 
 /// Queue the pre-submission analysis of a registered audio master
@@ -418,21 +373,6 @@ async fn queue_analysis(tx: &mut sqlx::PgConnection, org: Uuid, asset: Uuid) -> 
     Ok(())
 }
 
-/// Best-effort removal of the quarantine object after complete/cancel
-/// (sandbox round 2: quarantine copies were never deleted). A presigned PUT
-/// cannot be revoked, so a client may still write the key until the grant
-/// expires; the bucket's `quarantine/` lifecycle rule (docs/API.md) removes
-/// such leftovers. Failure never fails the request: the registered copy and
-/// the session state are already committed.
-async fn drop_quarantine(s: &AppState, key: &str) {
-    if let Err(error) = s.storage.delete(key).await {
-        tracing::warn!(
-            key,
-            ?error,
-            "quarantine object delete failed; lifecycle rule will expire it"
-        );
-    }
-}
 pub async fn get(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, id, "asset", false).await?;

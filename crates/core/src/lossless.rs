@@ -14,14 +14,29 @@ const MAX_OUTPUT: u64 = 4096;
 
 fn run(args: &[&OsStr], timeout: Duration) -> ConversionResult<Vec<u8>> {
     let deadline = Instant::now() + timeout;
-    let mut child =
-        std::process::Command::new(std::env::var("FFMPEG_BIN").unwrap_or_else(|_| "ffmpeg".into()))
-            .args(args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|_| "UPLOAD_CONVERSION_UNAVAILABLE")?;
+    let mut command =
+        std::process::Command::new(std::env::var("FFMPEG_BIN").unwrap_or_else(|_| "ffmpeg".into()));
+    command.args(args);
+    // Only real input files are readable. The one FLAC output is granted
+    // separately; no access to neighboring uploads, keyrings or credentials.
+    let inputs: Vec<_> = args
+        .iter()
+        .map(Path::new)
+        .filter(|p| p.is_absolute() && p.is_file())
+        .collect();
+    let outputs: Vec<_> = args
+        .windows(3)
+        .filter(|a| a[0] == OsStr::new("-f") && a[1] == OsStr::new("flac"))
+        .map(|a| Path::new(a[2]))
+        .collect();
+    crate::parser_sandbox::restrict(&mut command, &inputs, &outputs)
+        .map_err(|_| "UPLOAD_CONVERSION_UNAVAILABLE")?;
+    let mut child = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|_| "UPLOAD_CONVERSION_UNAVAILABLE")?;
     let stdout = child.stdout.take().ok_or("UPLOAD_CONVERSION_UNAVAILABLE")?;
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
@@ -248,6 +263,7 @@ pub fn to_flac(src: &Path, dst: &Path, container: &str) -> ConversionResult<()> 
         }
         "WAVPACK" => m.format_name == "wv" && m.codec_name == "wavpack",
         "TTA" => m.format_name == "tta" && m.codec_name == "tta",
+        "FLAC" => m.format_name == "flac" && m.codec_name == "flac",
         _ => false,
     };
     if !accepted {

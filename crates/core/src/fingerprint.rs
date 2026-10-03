@@ -121,26 +121,28 @@ impl Fingerprint {
 /// as `qc::probe_with` so a hung decoder cannot wedge the worker.
 fn decode_window(path: &Path, start_secs: f64, len_secs: f64) -> Result<Vec<f32>> {
     use std::io::Read;
-    let mut child = Command::new("ffmpeg")
-        .args([
-            "-v",
-            "error",
-            "-ss",
-            &start_secs.to_string(),
-            "-t",
-            &len_secs.to_string(),
-            "-i",
-            path.to_str().ok_or(Error::Internal)?,
-            "-ac",
-            "1",
-            "-ar",
-            &SAMPLE_RATE.to_string(),
-            "-f",
-            "s16le",
-            "-acodec",
-            "pcm_s16le",
-            "-",
-        ])
+    let mut command = Command::new("ffmpeg");
+    command.args([
+        "-v",
+        "error",
+        "-ss",
+        &start_secs.to_string(),
+        "-t",
+        &len_secs.to_string(),
+        "-i",
+        path.to_str().ok_or(Error::Internal)?,
+        "-ac",
+        "1",
+        "-ar",
+        &SAMPLE_RATE.to_string(),
+        "-f",
+        "s16le",
+        "-acodec",
+        "pcm_s16le",
+        "-",
+    ]);
+    crate::parser_sandbox::restrict(&mut command, &[path], &[]).map_err(|_| Error::Internal)?;
+    let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())

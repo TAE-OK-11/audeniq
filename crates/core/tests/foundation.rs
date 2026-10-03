@@ -526,6 +526,90 @@ fn m4a_bytes(codec_args: &[&str]) -> Vec<u8> {
     b
 }
 
+#[sqlx::test]
+async fn malicious_bytes_in_every_upload_kind_never_register_or_queue(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let actor = user(&app).await;
+    for (kind, mime, header) in [
+        ("AUDIO", "audio/flac", b"fLaC".as_slice()),
+        ("IMAGE", "image/png", b"\x89PNG\r\n\x1a\n".as_slice()),
+        ("DOCUMENT", "application/pdf", b"%PDF-1.4\n".as_slice()),
+    ] {
+        let mut bytes = header.to_vec();
+        bytes.extend_from_slice(
+            concat!(
+                "X5O!P%@AP[4",
+                "\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
+            )
+            .as_bytes(),
+        );
+        let (_, _, issued) = call(
+            &app,
+            "POST",
+            &format!("/api/orgs/{}/uploads", actor.org),
+            json!({"kind":kind,"content_type":mime,"size_bytes":bytes.len()}),
+            Some(&actor),
+        )
+        .await;
+        let key = issued["expected_key"].as_str().unwrap();
+        store.objects.lock().await.insert(
+            key.into(),
+            ObjectMeta {
+                size: bytes.len() as i64,
+                content_type: mime.into(),
+                etag: "malicious-source".into(),
+                nonce: issued["grant"]["headers"]["x-amz-meta-upload-nonce"]
+                    .as_str()
+                    .unwrap()
+                    .into(),
+            },
+        );
+        store.bodies.lock().await.insert(key.into(), bytes);
+        let (status, _, value) = call(
+            &app,
+            "POST",
+            &format!(
+                "/api/orgs/{}/uploads/{}/complete",
+                actor.org,
+                issued["upload_session_id"].as_str().unwrap()
+            ),
+            json!({"asset_id":issued["asset_id"],"expected_key":key}),
+            Some(&actor),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{value}");
+        assert_eq!(value["error"]["code"], "UPLOAD_UNSAFE_FILE", "{value}");
+        let asset = Uuid::parse_str(issued["asset_id"].as_str().unwrap()).unwrap();
+        let state: String = sqlx::query_scalar("SELECT state FROM catalog.assets WHERE id=$1")
+            .bind(asset)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(state, "UPLOADING");
+        let admitted: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM catalog.asset_safety WHERE asset_id=$1")
+                .bind(asset)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(admitted, 0);
+        assert!(
+            store
+                .objects
+                .lock()
+                .await
+                .keys()
+                .all(|k| k.starts_with("quarantine/"))
+        );
+    }
+    let queued: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM operations.jobs WHERE kind='asset.analyze'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(queued, 0);
+}
+
 /// ALAC uploads are registered as a losslessly converted FLAC master; AAC in
 /// the same container is refused and never registered.
 #[sqlx::test]
@@ -661,9 +745,15 @@ async fn upload_binding_expiry_duplicate_and_freeze(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let a = user(&app).await;
     let b = user(&app).await;
-    // FLAC is stored as uploaded (sniff + freeze at completion, hash by the
-    // asset.analyze job); every other container is converted to FLAC first.
-    let up = upload_as(&app, &a, "audio/flac").await;
+    let bytes = m4a_bytes(&["-c:a", "alac"]);
+    let (_, _, up) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{}/uploads", a.org),
+        json!({"kind":"AUDIO","size_bytes":bytes.len(),"content_type":"audio/mp4"}),
+        Some(&a),
+    )
+    .await;
     let path = format!(
         "/api/orgs/{}/uploads/{}/complete",
         a.org,
@@ -680,8 +770,8 @@ async fn upload_binding_expiry_duplicate_and_freeze(pool: PgPool) {
     );
     let key = up["expected_key"].as_str().unwrap();
     let meta = ObjectMeta {
-        size: 100,
-        content_type: "audio/flac".into(),
+        size: bytes.len() as i64,
+        content_type: "audio/mp4".into(),
         nonce: up["grant"]["headers"]["x-amz-meta-upload-nonce"]
             .as_str()
             .unwrap()
@@ -689,6 +779,7 @@ async fn upload_binding_expiry_duplicate_and_freeze(pool: PgPool) {
         etag: "opaque-multipart-etag-3".into(),
     };
     store.objects.lock().await.insert(key.into(), meta);
+    store.bodies.lock().await.insert(key.into(), bytes);
     assert_eq!(
         call(
             &app,
@@ -704,12 +795,11 @@ async fn upload_binding_expiry_duplicate_and_freeze(pool: PgPool) {
     let (s, _, v) = call(&app, "POST", &path, body.clone(), Some(&a)).await;
     assert_eq!(s, StatusCode::OK, "{v}");
     assert_eq!(v["qc_status"], "PENDING");
-    // Regression (sandbox P0-1): the content hash of the frozen bytes must be
-    // recorded, otherwise Stage 1 never runs audio QC. Completion only sniffs
-    // the first bytes of audio; the asset.analyze job it queues downloads the
-    // master once, records the hash and runs QC.
-    let expected_sha = hex::encode(sha2::Sha256::digest(synth_body("audio/flac", 100)));
-    assert!(v["sha256"].is_null(), "{v}");
+    let expected_sha = v["sha256"]
+        .as_str()
+        .expect("scanned and normalized FLAC hash")
+        .to_string();
+    assert_eq!(v["safety_status"], "VERIFIED");
     assert_eq!(v["detected_container"], "FLAC");
     let job = operations::claim(&pool, "qc", "analyzer", 60)
         .await
@@ -735,9 +825,9 @@ async fn upload_binding_expiry_duplicate_and_freeze(pool: PgPool) {
         .unwrap();
     assert_ne!(stable, key);
     store.objects.lock().await.get_mut(key).unwrap().etag = "overwritten".into();
-    assert_eq!(
+    assert_ne!(
         store.head(&stable).await.unwrap().unwrap().etag,
-        "opaque-multipart-etag-3"
+        "overwritten"
     );
     let before = store.calls.load(std::sync::atomic::Ordering::SeqCst);
     let expired = upload(&app, &a).await;

@@ -36,11 +36,14 @@ FROM debian:13-slim
 # pinned known_hosts file (crate::transport::SftpTransport).
 # /var/tmp/audeniq is the worker TMPDIR. A new named volume copies this
 # ownership, so UID 10001 can write downloaded masters for QC.
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg openssh-client libxml2-utils libimage-exiftool-perl tesseract-ocr tesseract-ocr-eng tesseract-ocr-kor zbar-tools && rm -rf /var/lib/apt/lists/* \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg openssh-client libxml2-utils libimage-exiftool-perl tesseract-ocr tesseract-ocr-eng tesseract-ocr-kor zbar-tools python3-pil poppler-utils clamav-daemon clamav-freshclam && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 audeniq && useradd --uid 10001 --gid 10001 --no-create-home audeniq \
-    && install -d -o 10001 -g 10001 -m 700 /var/tmp/audeniq
+    && install -d -o 10001 -g 10001 -m 700 /var/tmp/audeniq \
+    && install -d -o 10001 -g 10001 -m 755 /var/lib/clamav /run/audeniq-av
 COPY --from=build /out/ /usr/local/bin/
 COPY --from=build /meta/ /usr/local/share/audeniq/
+COPY deploy/sanitize-upload.py /usr/local/lib/audeniq/sanitize-upload.py
+COPY deploy/clamd.conf deploy/freshclam.conf /usr/local/share/audeniq/
 USER 10001:10001
 ENV RUST_LOG=info
 CMD ["audeniq-api"]

@@ -1853,10 +1853,11 @@ pub async fn document_file(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<Docu
     let mut tx = s.pool.begin().await?;
     staff_scope(&mut tx).await?;
     let row = sqlx::query(
-        "SELECT d.org_id, d.file_name, a.object_key, a.content_type, a.size_bytes
+        "SELECT d.org_id, d.file_name, a.object_key, a.content_type, a.size_bytes, a.sha256
          FROM portal.documents d
          JOIN catalog.assets a ON a.id=d.asset_id AND a.org_id=d.org_id
-         WHERE d.id=$1 AND a.state='REGISTERED'",
+         JOIN catalog.asset_safety s ON s.asset_id=a.id AND s.org_id=a.org_id AND s.safe_key=a.object_key AND s.safe_sha256=a.sha256 AND s.rule_version='1'
+         WHERE d.id=$1 AND a.state='REGISTERED' AND a.content_type IN ('application/pdf','image/png','image/jpeg')",
     )
     .bind(id)
     .fetch_optional(&mut *tx)
@@ -1882,6 +1883,12 @@ pub async fn document_file(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<Docu
     .await?;
     tx.commit().await?;
     let bytes = s.storage.get(&key).await?;
+    use sha2::Digest;
+    if bytes.len() != size as usize
+        || hex::encode(sha2::Sha256::digest(&bytes)) != row.get::<String, _>("sha256")
+    {
+        return Err(Error::PolicyGate("ASSET_OBJECT_DRIFT"));
+    }
     Ok(DocumentFile {
         bytes,
         content_type,
@@ -2670,7 +2677,7 @@ async fn h_document_file(
     // The file needs no scripts or outside requests (PDF viewer / image only).
     hd.insert(
         header::CONTENT_SECURITY_POLICY,
-        HeaderValue::from_static("default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; frame-ancestors 'self'"),
+        HeaderValue::from_static("sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'; frame-ancestors 'self'"),
     );
     Ok(res)
 }

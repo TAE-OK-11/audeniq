@@ -422,26 +422,15 @@ async fn upload(e: &Env, u: &User, kind: &str, content_type: &str, bytes: &[u8])
         u,
     )
     .await;
-    let mut sha = hex::encode(sha2::Sha256::digest(bytes));
-    if kind == "AUDIO" && content_type != "audio/flac" {
-        // Every other lossless upload (WAV included) is stored as a FLAC
-        // master at completion: the recorded hash is the FLAC's.
+    let sha = done["sha256"]
+        .as_str()
+        .expect("normalized object hash")
+        .to_string();
+    assert_eq!(done["safety_status"], "VERIFIED");
+    if kind == "AUDIO" {
         assert_eq!(done["detected_container"], "FLAC", "{done}");
         assert!(done["converted_from"].is_string(), "{done}");
-        sha = done["sha256"]
-            .as_str()
-            .expect("converted master hash")
-            .into();
         assert_eq!(run_one(e, "qc", "asset.analyze").await, "SUCCEEDED");
-    } else if kind == "AUDIO" {
-        // FLAC is stored as uploaded. Completion only sniffs the first
-        // bytes; the queued asset.analyze job downloads the master once,
-        // records its hash and runs QC, so Stage 1 finds the results cached
-        // and never downloads it again.
-        assert!(done["sha256"].is_null(), "{done}");
-        assert_eq!(run_one(e, "qc", "asset.analyze").await, "SUCCEEDED");
-    } else {
-        assert_eq!(done["sha256"], sha.as_str(), "{done}");
     }
     // The quarantine copy stays until the bucket lifecycle rule removes it:
     // while it exists, the grant's signed If-None-Match: * makes the URL
