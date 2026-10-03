@@ -4,7 +4,7 @@
 #   ./backup.sh              # /var/backups/audeniq 에 덤프, KEEP_DAYS(기본 14)일 지난 것 삭제
 #   BACKUP_DIR=/mnt/x ./backup.sh
 #
-# cron 예: 30 18 * * * /opt/audeniq/backup.sh >> /var/log/audeniq-backup.log 2>&1  (UTC 18:30 = KST 03:30)
+# cron 예: 30 18 * * * BACKUP_RECIPIENTS_FILE=/opt/audeniq/backup-recipients.txt /opt/audeniq/backup.sh >> /var/log/audeniq-backup.log 2>&1  (UTC 18:30 = KST 03:30)
 # BACKUP_RECIPIENTS_FILE: age 공개키만 있는 파일. 복호화 개인키는 서버 밖에 보관.
 # 복원 검증: BACKUP_IDENTITY_FILE=/secure/identity ./restore-backup.sh FILE.dump.age --verify
 set -euo pipefail

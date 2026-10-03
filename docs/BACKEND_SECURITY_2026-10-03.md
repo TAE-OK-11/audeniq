@@ -54,7 +54,7 @@ R2의 기본 서버 측 저장 암호화는 [공식 데이터 보안 문서](htt
 
 ## 백업과 제한된 파기
 
-백업 host에는 `age`가 필요하다. 별도 안전한 관리 환경에서 생성한 age 공개키를 `BACKUP_RECIPIENTS_FILE`에 넣는다. 복호화 개인키는 백업 host 밖에 보관한다. `backup.sh`는 `pg_dump | age`의 두 프로세스 성공을 확인하고 `.dump.age`만 완성본으로 남긴다. 오류 후 보유 백업을 지우지 않는다. 기본 보유 14일은 운영 선택이다. 기존 평문 `.dump`, 기존 서버 스냅샷, 이미 복사된 백업은 이 코드가 자동으로 암호화하지 않는다.
+백업 host에는 `age`가 필요하다. 별도 안전한 관리 환경에서 생성한 age 공개키를 `BACKUP_RECIPIENTS_FILE`에 넣는다. cron 또는 systemd 작업에도 이 환경변수를 명시한다. Compose의 `production.env`는 host의 cron에 자동 전달되지 않는다. 복호화 개인키는 백업 host 밖에 보관한다. `backup.sh`는 `pg_dump | age`의 두 프로세스 성공을 확인하고 `.dump.age`만 완성본으로 남긴다. 오류 후 보유 백업을 지우지 않는다. 기본 보유 14일은 운영 선택이다. 기존 평문 `.dump`, 기존 서버 스냅샷, 이미 복사된 백업은 이 코드가 자동으로 암호화하지 않는다.
 
 `BACKUP_IDENTITY_FILE=/secure/identity ./restore-backup.sh FILE.dump.age --verify`는 복호화 스트림과 archive 목차를 검사하며 DB를 수정하지 않는다. `--restore-empty`는 운영 DB 이름을 거절하고 운영자가 만든 빈 별도 DB만 허용한다. 실제 복원 데이터·API 회귀 검사는 격리된 DB에서 추가로 수행한다.
 
