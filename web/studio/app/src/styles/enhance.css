@@ -1211,7 +1211,6 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 @media(prefers-reduced-motion:reduce){.aq-chip,.aq-dsp,.aq-dsp-mark,.aq-dsp-check{transition:none}}
 .status-chip.cancelled{background:#EDEFF4!important;color:#6A7386!important}
 /* 수입이 아직 없을 때 — 큰 숫자 자리에 들어가는 안내 문장 */
-.aq-no-income{font-size:clamp(17px,2.4vw,22px)!important;font-weight:760;letter-spacing:-.03em;color:#5d6880}
 /* 진행 단계 — 체크 표시 없이 지나온 단계와 지금 단계를 파란색으로 채운다 */
 .aq-pipeline-dot{width:16px!important;height:16px!important;border:0!important;box-shadow:none!important;background:#e3e8f1!important;margin-top:7px}
 .aq-pipeline li.is-done .aq-pipeline-dot,.aq-pipeline li.is-current .aq-pipeline-dot{background:var(--aq-e-blue,#3B63F3)!important}
@@ -1491,10 +1490,6 @@ body:has(#modal .aq-sticky-foot) .aq-toast-stack,body:has(.aq-form-actions.is-pi
 
 /* 서류 준비 방법 — 두 가지 중 하나를 고르는 칸 (선택 안 된 쪽도 버튼으로 보이게, 아래 입력칸과 간격) */
 .aq-method-label{display:block;margin:0 0 8px;font-size:14px;font-weight:750;color:var(--portal-ink,#171B29)}
-.aq-chips.aq-method{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;border-radius:16px;background:#eef2fa;margin:0 0 20px}
-.aq-method .aq-chip{min-height:44px;justify-content:center;text-align:center;background:transparent!important;color:#5d6880!important;border-radius:12px;font-weight:720}
-.aq-method .aq-chip.is-on{background:#fff!important;color:#2C56E0!important;box-shadow:0 1px 3px rgba(23,27,41,.08)!important}
-.aq-rights-evidence .aq-chips.aq-method{margin-bottom:14px}
 .field>.aq-chips.aq-method{margin-bottom:0}
 
 /* 서류 첨부 카드 (커버아트 카드와 같은 모양) */
@@ -1592,8 +1587,33 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-cover-meta dd{min-width:0;margin:0;text-align:right;color:#2f3646;font-weight:700;font-variant-numeric:tabular-nums}
 @media(max-width:560px){#view-release .studio-album-aside.aq-cover-card{padding:18px!important}.aq-cover-stage{padding:16px;border-radius:22px}}
 
-/* 문서 관리: 옅은 파란 카드 위에서 묻히지 않게 흰 바탕, 카드 폭 그대로 */
-:is(#root) .surface .button.secondary.aq-doc-manage{display:flex;width:100%;justify-content:center;align-items:center;gap:6px;margin-top:14px;min-height:50px;border-radius:16px;background:#fff!important;border:1.5px solid #dfe7ff!important;color:var(--aq-e-blue)!important;font-weight:780}
-:is(#root) .surface .button.secondary.aq-doc-manage:not(:disabled):hover{background:var(--aq-e-blue-soft)!important}
+/* 문서 관리: 옅은 파란 카드 위에서 묻히지 않게 파란 바탕·흰 글자 (윤곽선 없이 색으로 구분), 카드 폭 그대로 */
+:is(#root) .surface .button.secondary.aq-doc-manage{display:flex;width:100%;justify-content:center;align-items:center;gap:6px;margin-top:14px;min-height:50px;border-radius:16px;background:var(--aq-e-blue)!important;border:0!important;color:#fff!important;font-weight:780}
+:is(#root) .surface .button.secondary.aq-doc-manage:not(:disabled):hover{background:var(--studio-action-hover,#3156de)!important}
 
 @media(prefers-reduced-motion:reduce){.aq-stage,.aq-detail-cover-large{animation:none}.aq-stage-bar::after{animation:none!important}}
+
+/* ==========================================================================
+   고르기 토글 (Segmented) — 옅은 바탕 + 미끄러지는 흰 알약
+   서류 준비 방법 · 정산 내역 구분 · 계정 찾기 구분
+   ========================================================================== */
+.aq-seg{position:relative;isolation:isolate;display:grid;gap:4px;padding:4px;border-radius:16px;background:#eef2fa}
+.aq-seg-pill{position:absolute;left:0;top:0;z-index:0;width:var(--pill-w);height:var(--pill-h);transform:translate3d(var(--pill-x),var(--pill-y),0);border-radius:12px;background:#fff;box-shadow:0 1px 3px rgba(23,27,41,.08),0 6px 16px -8px rgba(24,39,75,.16);pointer-events:none}
+.aq-seg.is-live .aq-seg-pill{transition:transform .36s cubic-bezier(.32,.72,.28,1),width .36s cubic-bezier(.32,.72,.28,1),height .36s cubic-bezier(.32,.72,.28,1),opacity .2s}
+:is(#root,#modal) .aq-seg>button{position:relative;z-index:1;min-width:0;min-height:44px;margin:0;padding:8px 10px;border:0;border-radius:12px;background:transparent!important;box-shadow:none!important;color:#5d6880;font:inherit;font-size:14px;font-weight:720;letter-spacing:-.02em;text-align:center;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color .25s var(--aq-e-ease),transform .16s var(--aq-e-ease)}
+:is(#root,#modal) .aq-seg>button:is([aria-checked=true],[aria-selected=true]){color:#2C56E0;font-weight:780}
+:is(#root,#modal) .aq-seg>button:not(:is([aria-checked=true],[aria-selected=true])):hover{color:#33405a}
+:is(#root,#modal) .aq-seg>button:active{transform:scale(.97)}
+:is(#root,#modal) .aq-seg>button:focus-visible{outline:3px solid #7892f9;outline-offset:-1px}
+.aq-seg.aq-method{margin:0 0 20px}
+.aq-rights-evidence .aq-seg.aq-method{margin-bottom:14px}
+.aq-seg.aq-seg-tabs{max-width:420px;margin:0 0 22px}
+.aq-seg.aq-seg-tabs>button{min-height:46px}
+@media(max-width:560px){.aq-seg.aq-seg-tabs{max-width:none}}
+@media(prefers-reduced-motion:reduce){.aq-seg.is-live .aq-seg-pill{transition:none}}
+
+/* 버튼은 윤곽선 없이 색으로만 구분 — 이미 쓰는 두 색: 옅은 파랑(안 고름) · AUDENIQ 파랑(고름) */
+.aq-cadmin-chip,.aq-cadmin-chip.is-on{border:0!important}
+.aq-cadmin-chip{background:#F1F4FF;color:#385dd7}
+.aq-cadmin-chip:not(.is-on):hover{background:#e6ecff}
+.aq-cadmin-chip.is-on{background:var(--aq-e-blue,#3B63F3);color:#fff}
