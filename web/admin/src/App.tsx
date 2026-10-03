@@ -10,6 +10,7 @@ import { AdminApp } from './AdminApp';
 import './styles/design.css';
 import './styles/live.css';
 import './styles/enhance.css';
+import './styles/controls.css';
 
 function BootScreen() {
   return (
