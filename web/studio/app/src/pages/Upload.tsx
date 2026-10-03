@@ -30,6 +30,7 @@ import {
 import { uid } from '../lib/store';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
+import { Segmented } from '../components/Segmented';
 
 const STEPS = [
   { short: '발매 정보', kicker: '01 / 06 · 발매 정보', title: '어떤 음악을\n발매할까요?', sub: '발매 정보와 아티스트명을 입력해 주세요.' },
@@ -223,10 +224,7 @@ function DocAttach({ id, label, fileName, assetId, busy, onSelect, required, hel
   return (
     <div className="field doc-attach aq-rights-evidence">
       <strong>{label}{required && <> <span className="required">*</span></>}</strong>
-      <div className="aq-chips aq-method" role="group" aria-label="서류 준비 방법">
-        <button type="button" className={`aq-chip${method === 'electronic' ? ' is-on' : ''}`} aria-pressed={method === 'electronic'} onClick={() => setMethod('electronic')}>AUDENIQ에서 작성</button>
-        <button type="button" className={`aq-chip${method === 'upload' ? ' is-on' : ''}`} aria-pressed={method === 'upload'} onClick={() => setMethod('upload')}>보유한 서류 첨부</button>
-      </div>
+      <Segmented className="aq-method" label="서류 준비 방법" value={method} onChange={setMethod} options={[{ value: 'electronic', label: 'AUDENIQ에서 작성' }, { value: 'upload', label: '보유한 서류 첨부' }] as const} />
       {method === 'electronic' ? (
         <button type="button" className="aq-dropzone aq-filecard" onClick={() => onElectronic(kind)}>
           <span className="aq-dropzone-icon" aria-hidden="true"><Glyph name="sign" size={26} /></span>

@@ -3,7 +3,7 @@ import { Link, useSearchParams } from '../../lib/router';
 import { errorMessage } from '../../api/errors';
 import { staffApi, type QueueRelease } from '../api';
 import { QUEUE_FILTERS, RELEASE_STATUS, RELEASE_TYPE, ago, applicationPending, day, dspLabel, pick } from '../labels';
-import { Chip, Empty, ErrorBox, Filters, Initial, PageHead, Skeleton, StatusChip, SubTabs, useStaff } from '../ui';
+import { Chip, Empty, ErrorBox, Filters, Initial, PageHead, Skeleton, StatusChip, Seg, SubTabs, useStaff } from '../ui';
 
 const PAGE = 50;
 /** 심사 상세의 ‘다음 건’이 이 목록 순서를 따른다 */
@@ -84,15 +84,8 @@ export function ReviewQueue() {
       <div className="adm-queue-tools">
         <label htmlFor="qSearch" className="sr-only">검색</label>
         <input id="qSearch" type="search" className="adm-input" placeholder="제목·아티스트·작업 공간으로 찾기" value={search} onChange={e => setSearch(e.target.value)} />
-        <div className="adm-seg" role="radiogroup" aria-label="담당">
-          {([['all', '전체'], ['mine', '내 담당'], ['free', '담당자 없음']] as const).map(([k, l]) => (
-            <button key={k} type="button" role="radio" aria-checked={who === k} className={who === k ? 'is-on' : ''} onClick={() => setWho(k)}>{l}</button>
-          ))}
-        </div>
-        <div className="adm-seg" role="radiogroup" aria-label="정렬">
-          <button type="button" role="radio" aria-checked={sort === 'wait'} className={sort === 'wait' ? 'is-on' : ''} onClick={() => setSort('wait')}>오래 기다린 순</button>
-          <button type="button" role="radio" aria-checked={sort === 'date'} className={sort === 'date' ? 'is-on' : ''} onClick={() => setSort('date')}>발매일 빠른 순</button>
-        </div>
+        <Seg label="담당" value={who} onChange={setWho} options={[['all', '전체'], ['mine', '내 담당'], ['free', '담당자 없음']] as const} />
+        <Seg label="정렬" value={sort} onChange={setSort} options={[['wait', '오래 기다린 순'], ['date', '발매일 빠른 순']] as const} />
       </div>
       {!loading && items.length > 0 && <p className="adm-queue-count">{term ? `‘${search.trim()}’ 검색 결과 ${shown.length}건` : `${shown.length}건`}</p>}
 

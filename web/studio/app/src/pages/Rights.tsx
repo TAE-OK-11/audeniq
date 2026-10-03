@@ -18,6 +18,7 @@ import { uid } from '../lib/store';
 import { Glyph } from '../components/Glyph';
 import { RightsDocumentModal } from '../components/RightsDocumentModal';
 import { RIGHTS_DOCUMENTS, type RightsDocumentContext, type RightsDocumentKind } from '../lib/rightsDocument';
+import { Segmented } from '../components/Segmented';
 
 const REQUIRED_DOCS: [string, string, string][] = [
   ['master', '마스터 음원 권리 확인서', '본인은 해당 마스터 음원에 관한 배급 권한을 보유하거나 권리자로부터 적법한 이용 허락을 받았음을 확인합니다.'],
@@ -205,10 +206,7 @@ export function Rights() {
                 value={docName} onChange={e => setDocName(e.target.value)}
               />
             </div>
-            {kind in RIGHTS_DOCUMENTS && <div className="field"><span className="aq-method-label" id="aqMethodLabel">서류 준비 방법</span><div className="aq-chips aq-method" role="group" aria-labelledby="aqMethodLabel">
-              <button type="button" className={`aq-chip${method === 'electronic' ? ' is-on' : ''}`} aria-pressed={method === 'electronic'} onClick={() => setMethod('electronic')}>AUDENIQ에서 작성</button>
-              <button type="button" className={`aq-chip${method === 'upload' ? ' is-on' : ''}`} aria-pressed={method === 'upload'} onClick={() => setMethod('upload')}>보유한 서류 첨부</button>
-            </div></div>}
+            {kind in RIGHTS_DOCUMENTS && <div className="field"><span className="aq-method-label" id="aqMethodLabel">서류 준비 방법</span><Segmented className="aq-method" labelledBy="aqMethodLabel" value={method} onChange={setMethod} options={[{ value: 'electronic', label: 'AUDENIQ에서 작성' }, { value: 'upload', label: '보유한 서류 첨부' }] as const} /></div>}
             {(method === 'upload' || !(kind in RIGHTS_DOCUMENTS)) && <div className="field">
               <label htmlFor="aqRequiredFile">증빙 원본 <span className="muted">(필요 시)</span></label>
               <FileCard

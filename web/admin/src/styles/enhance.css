@@ -1120,3 +1120,9 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 :is(#root,#modal) .aq-cadmin .field :is(input:not([type=checkbox]):not([type=radio]):not([type=file]),textarea,select){padding:13px 16px!important;min-height:52px}
 :is(#root,#modal) .aq-cadmin .field textarea{padding:14px 16px!important;line-height:1.65!important}
 .aq-cadmin .aq-cadmin-check{margin:4px 0 18px}
+
+/* 버튼은 윤곽선 없이 색으로만 구분 — 이미 쓰는 두 색: 옅은 파랑(안 고름) · AUDENIQ 파랑(고름) */
+.aq-cadmin-chip,.aq-cadmin-chip.is-on{border:0!important}
+.aq-cadmin-chip{background:#F1F4FF;color:#385dd7}
+.aq-cadmin-chip:not(.is-on):hover{background:#e6ecff}
+.aq-cadmin-chip.is-on{background:var(--aq-e-blue,#3B63F3);color:#fff}

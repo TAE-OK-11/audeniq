@@ -19,12 +19,13 @@ const PAYOUT_STATUS: Record<Payout['status'], [string, string]> = {
   sent: ['지급 완료', 'live'],
   failed: ['지급 실패', 'needs'],
 };
-import { money, niceDate, NO_INCOME } from '../lib/format';
+import { money, niceDate } from '../lib/format';
 import { monthKey, todayStr } from '../lib/date';
 import { uid } from '../lib/store';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
 import { Money } from '../components/Money';
+import { Segmented } from '../components/Segmented';
 
 const PLATFORMS = ['Spotify', 'Apple Music', 'YouTube Music', '멜론', '지니', 'FLO', '벅스', 'Amazon Music', 'TIDAL', 'Deezer', '기타'];
 
@@ -175,9 +176,7 @@ export function Settlement() {
           <div>
             <span className="eyebrow">PAYOUT</span>
             <h2 id="settleHeroHeading">요청 전 잔액</h2>
-            {left > 0 || total > 0
-              ? <strong className="settle-hero-amount"><Money value={left} mark animate /></strong>
-              : <strong className="settle-hero-amount aq-no-income">{NO_INCOME}</strong>}
+            <strong className="settle-hero-amount"><Money value={left} mark animate /></strong>
             <p className="settle-hero-sub">
               {MOCK ? `기록한 정산액 ${money(total)} · 지급 요청 합계 ${money(used)}` : `확정 정산액 ${money(total)} · 처리 중인 지급 ${money(used)}`}
             </p>
@@ -204,22 +203,10 @@ export function Settlement() {
         </div>
       </section>
 
-      <div className="tabs aq-tabs" role="tablist" aria-label="정산 내역 구분">
-        <button
-          type="button" role="tab" className="tab"
-          aria-selected={tab === 'statements'}
-          onClick={() => setTab('statements')}
-        >
-          정산 내역
-        </button>
-        <button
-          type="button" role="tab" className="tab"
-          aria-selected={tab === 'payouts'}
-          onClick={() => setTab('payouts')}
-        >
-          지급 요청 기록
-        </button>
-      </div>
+      <Segmented
+        tabs className="aq-seg-tabs" label="정산 내역 구분" value={tab} onChange={setTab}
+        options={[{ value: 'statements', label: '정산 내역' }, { value: 'payouts', label: '지급 요청 기록' }] as const}
+      />
 
       {tab === 'statements' ? (
         <div id="statementList" className="aq-tab-panel" key="st">

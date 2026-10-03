@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { Link, useLocation } from './lib/router';
 import type { Duty, Overview, StaffMe } from './api/staff';
 import type { Tone } from './labels';
+import { useSegPill } from './hooks/useSegPill';
 import { CheckIcon } from './components/Check';
 
 export function Chip({ tone = 'gray', children }: { tone?: Tone; children: ReactNode }) {
@@ -105,15 +106,36 @@ export function NoDuty({ duty }: { duty: string }) {
   return <div className="adm-alert">현재 역할로는 <b>{duty}</b> 작업을 할 수 없어요. 조회만 가능해요.</div>;
 }
 
-/** 한 메뉴 안의 하위 화면 (발매 심사 | 2차 승인, 배급 현황 | DSP 사양) */
+/** 한 메뉴 안의 하위 화면 (발매 심사 | 2차 승인, 배급 현황 | DSP 사양) — 밑줄이 고른 탭으로 미끄러진다 */
 export function SubTabs({ tabs }: { tabs: { to: string; label: string; count?: number }[] }) {
   const loc = useLocation();
+  // 탭마다 화면이 새로 그려지므로 이전 탭 자리를 기억해 거기서 출발
+  const { ref, live, pillStyle } = useSegPill(loc.pathname, `sub:${tabs.map(t => t.to).join('|')}`);
   return (
-    <div className="adm-filters adm-subtabs" role="tablist">
+    <div ref={ref} className={`adm-filters adm-subtabs${live ? ' is-live' : ''}`} role="tablist">
+      <span className="adm-seg-pill" aria-hidden="true" style={pillStyle} />
       {tabs.map(t => (
         <Link key={t.to} to={t.to} role="tab" className="adm-filter" aria-selected={loc.pathname === t.to} aria-pressed={loc.pathname === t.to}>
           {t.label}{t.count ? <span className="adm-subtab-count">{t.count}</span> : null}
         </Link>
+      ))}
+    </div>
+  );
+}
+
+/** 고르기 토글 — 고른 칸으로 파란 알약이 미끄러진다 (담당 · 정렬) */
+export function Seg<T extends string>({ value, options, onChange, label }: {
+  value: T;
+  options: readonly (readonly [T, string])[];
+  onChange: (v: T) => void;
+  label: string;
+}) {
+  const { ref, live, pillStyle } = useSegPill(value);
+  return (
+    <div ref={ref} className={`adm-seg${live ? ' is-live' : ''}`} role="radiogroup" aria-label={label}>
+      <span className="adm-seg-pill" aria-hidden="true" style={pillStyle} />
+      {options.map(([k, l]) => (
+        <button key={k} type="button" role="radio" aria-checked={value === k} className={value === k ? 'is-on' : ''} onClick={() => onChange(k)}>{l}</button>
       ))}
     </div>
   );

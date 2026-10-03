@@ -25,9 +25,6 @@ export function money(n: number, currency = 'KRW'): string {
   return `${numFmt.format(Math.round(v))}원`;
 }
 
-/** 수입이 아직 없을 때 ‘0원’ 대신 보여 줄 말 */
-export const NO_INCOME = '아직 수입이 발생하지 않았어요';
-
 export function num(n: number): string {
   return numFmt.format(Number.isFinite(n) ? n : 0);
 }

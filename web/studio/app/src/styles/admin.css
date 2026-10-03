@@ -1003,3 +1003,16 @@ a.adm-row,button.adm-row,.adm-stat,.adm-track summary,.adm-filter,.adm-pick,.adm
   .adm-next-btn:hover svg{transform:translateX(3px)}
   .adm-back:hover svg{transform:translateX(-3px)}
 }
+
+/* ---------- 고르기 토글 · 하위 탭: 고른 칸으로 미끄러지는 알약/밑줄 (스튜디오 정산 금융기관 탭처럼) ---------- */
+.adm-seg{position:relative;isolation:isolate}
+.adm-seg-pill{position:absolute;left:0;top:0;z-index:0;width:var(--pill-w);height:var(--pill-h);transform:translate3d(var(--pill-x),var(--pill-y),0);border-radius:13px;background:var(--adm-blue);box-shadow:0 6px 14px -8px rgba(59,99,243,.55);pointer-events:none}
+:is(.adm-seg,.adm-subtabs).is-live .adm-seg-pill{transition:transform .36s cubic-bezier(.32,.72,.28,1),width .36s cubic-bezier(.32,.72,.28,1),height .36s cubic-bezier(.32,.72,.28,1),opacity .2s}
+.adm-seg button{position:relative;z-index:1;transition:color .25s var(--adm-ease),transform .16s var(--adm-ease)!important}
+.adm-seg button.is-on{background:transparent!important;box-shadow:none!important;color:#fff}
+.adm-seg button:not(.is-on):hover{color:var(--adm-ink)}
+.adm-seg button:active{transform:scale(.97)}
+.adm-subtabs{position:relative}
+.adm-subtabs .adm-seg-pill{top:auto;bottom:0;height:3px;transform:translate3d(var(--pill-x),0,0);border-radius:3px;box-shadow:none}
+.adm-subtabs .adm-filter[aria-selected=true]::after{content:none!important}
+@media (prefers-reduced-motion:reduce){:is(.adm-seg,.adm-subtabs).is-live .adm-seg-pill{transition:none}}
