@@ -35,6 +35,7 @@ pub struct AppState {
     pub transcode_slots: Arc<Semaphore>,
     pub dummy_hash: String,
     pub payout_keys: Arc<crate::payout_keys::KeyRing>,
+    pub antivirus_enabled: bool,
 }
 impl AppState {
     pub async fn new(pool: PgPool, config: Config, storage: Arc<dyn ObjectStore>) -> Result<Self> {
@@ -46,6 +47,7 @@ impl AppState {
             upload_slots: Arc::new(Semaphore::new(4)),
             transcode_slots: Arc::new(Semaphore::new(1)),
             payout_keys: Arc::new(crate::payout_keys::KeyRing::from_env(false)?),
+            antivirus_enabled: crate::config::antivirus_enabled()?,
             dummy_hash: auth::password_hash(auth::random_token()).await?,
         })
     }

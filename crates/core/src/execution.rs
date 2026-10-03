@@ -551,8 +551,8 @@ async fn verify_file(
     .fetch_one(&mut *tx)
     .await?;
     if production || uploaded {
-        let verified: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM catalog.asset_safety s WHERE s.org_id=$1 AND s.asset_id=$2 AND s.safe_key=$3 AND s.safe_sha256=$4 AND s.rule_version='1')")
-            .bind(org_id).bind(asset_id).bind(key).bind(pin.get::<Option<String>, _>("sha256")).fetch_one(&mut *tx).await?;
+        let verified: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM catalog.asset_safety s WHERE s.org_id=$1 AND s.asset_id=$2 AND s.safe_key=$3 AND s.safe_sha256=$4 AND s.rule_version='1' AND (NOT $5 OR s.antivirus_status='SCANNED'))")
+            .bind(org_id).bind(asset_id).bind(key).bind(pin.get::<Option<String>, _>("sha256")).bind(crate::config::antivirus_enabled()?).fetch_one(&mut *tx).await?;
         if !verified {
             return Err(Error::PolicyGate("UPLOAD_REINSPECTION_REQUIRED"));
         }

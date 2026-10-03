@@ -39,7 +39,7 @@ pub async fn signature(state: &crate::api::AppState, value: &str) -> Result<Stri
     tokio::fs::write(&source, &bytes)
         .await
         .map_err(|_| Error::Storage)?;
-    scan(&source, bytes.len() as u64).await?;
+    scan(&source, bytes.len() as u64, state.antivirus_enabled).await?;
     tokio::task::spawn_blocking(move || {
         let _slot = slot;
         let _workspace = workspace;
@@ -53,8 +53,9 @@ pub async fn signature(state: &crate::api::AppState, value: &str) -> Result<Stri
     })
     .await
     .map_err(|_| Error::Internal)??;
-    sqlx::query("INSERT INTO catalog.inline_file_safety(source_sha256,rule_version) VALUES($1,$2) ON CONFLICT DO NOTHING")
-        .bind(crate::domain::sha256_hex(value)).bind(RULE_VERSION).execute(&state.pool).await?;
+    sqlx::query("INSERT INTO catalog.inline_file_safety(source_sha256,rule_version,antivirus_status) VALUES($1,$2,$3) ON CONFLICT DO NOTHING")
+        .bind(crate::domain::sha256_hex(value)).bind(RULE_VERSION)
+        .bind(antivirus_status(state.antivirus_enabled)).execute(&state.pool).await?;
     Ok(value.to_string())
 }
 
@@ -116,8 +117,8 @@ pub async fn visible_inline_files(
         .into_iter()
         .take(512)
         .collect();
-    let admitted: Vec<String> = sqlx::query_scalar("SELECT source_sha256 FROM catalog.inline_file_safety WHERE source_sha256=ANY($1) AND rule_version=$2")
-        .bind(hashes).bind(RULE_VERSION).fetch_all(pool).await?;
+    let admitted: Vec<String> = sqlx::query_scalar("SELECT source_sha256 FROM catalog.inline_file_safety WHERE source_sha256=ANY($1) AND rule_version=$2 AND (NOT $3 OR antivirus_status='SCANNED')")
+        .bind(hashes).bind(RULE_VERSION).bind(crate::config::antivirus_enabled()?).fetch_all(pool).await?;
     let admitted: std::collections::BTreeSet<_> = admitted.into_iter().collect();
     fn hide(
         value: &mut serde_json::Value,
@@ -210,8 +211,22 @@ async fn reply(stream: &mut tokio::net::UnixStream) -> Result<String> {
     String::from_utf8(bytes).map_err(|_| Error::UploadBusy)
 }
 
-pub async fn scan(path: &Path, expected_size: u64) -> Result<()> {
-    scan_on(path, expected_size, &socket()).await
+pub fn antivirus_status(enabled: bool) -> &'static str {
+    if enabled { "SCANNED" } else { "SKIPPED" }
+}
+pub fn safety_status(antivirus_status: &str) -> &'static str {
+    if antivirus_status == "SCANNED" {
+        "VERIFIED"
+    } else {
+        "SANITIZED"
+    }
+}
+pub async fn scan(path: &Path, expected_size: u64, enabled: bool) -> Result<()> {
+    if enabled {
+        scan_on(path, expected_size, &socket()).await
+    } else {
+        Ok(())
+    }
 }
 
 async fn scan_on(path: &Path, expected_size: u64, socket: &Path) -> Result<()> {
@@ -289,6 +304,15 @@ pub async fn require_verified(
     org: uuid::Uuid,
     asset: uuid::Uuid,
 ) -> Result<()> {
+    require_policy(pool, org, asset, crate::config::antivirus_enabled()?).await
+}
+
+pub async fn require_policy(
+    pool: &sqlx::PgPool,
+    org: uuid::Uuid,
+    asset: uuid::Uuid,
+    antivirus: bool,
+) -> Result<()> {
     if std::env::var("APP_ENV").as_deref() != Ok("production") {
         let uploaded: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM catalog.upload_sessions WHERE org_id=$1 AND asset_id=$2)",
@@ -301,8 +325,8 @@ pub async fn require_verified(
             return Ok(());
         }
     }
-    let verified: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM catalog.asset_safety s JOIN catalog.assets a ON a.id=s.asset_id AND a.org_id=s.org_id WHERE s.org_id=$1 AND s.asset_id=$2 AND s.safe_sha256=a.sha256 AND s.safe_key=a.object_key AND s.rule_version=$3)")
-        .bind(org).bind(asset).bind(RULE_VERSION).fetch_one(pool).await?;
+    let verified: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM catalog.asset_safety s JOIN catalog.assets a ON a.id=s.asset_id AND a.org_id=s.org_id WHERE s.org_id=$1 AND s.asset_id=$2 AND s.safe_sha256=a.sha256 AND s.safe_key=a.object_key AND s.rule_version=$3 AND (NOT $4 OR s.antivirus_status='SCANNED'))")
+        .bind(org).bind(asset).bind(RULE_VERSION).bind(antivirus).fetch_one(pool).await?;
     if !verified {
         return Err(Error::PolicyGate("UPLOAD_REINSPECTION_REQUIRED"));
     }
@@ -312,6 +336,18 @@ pub async fn require_verified(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn disabled_antivirus_performs_no_file_or_socket_io() {
+        assert!(
+            scan(Path::new("/nonexistent/upload"), 100, false)
+                .await
+                .is_ok()
+        );
+        assert_eq!(antivirus_status(false), "SKIPPED");
+        assert_eq!(safety_status("SKIPPED"), "SANITIZED");
+        assert_eq!(safety_status("SCANNED"), "VERIFIED");
+    }
 
     async fn fake_scan(verdict: &str) -> ErrorOrSuccess {
         let workspace = Workspace::new().unwrap();

@@ -125,15 +125,21 @@ pub async fn complete(
         .map_err(|_| Error::UploadBusy)?;
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, i.asset_id, "asset", true).await?;
-    let r=sqlx::query("SELECT u.*,a.object_key,a.kind,(u.expires_at>clock_timestamp()) AS valid FROM catalog.upload_sessions u JOIN catalog.assets a ON a.id=u.asset_id AND a.org_id=u.org_id WHERE u.id=$1 AND u.org_id=$2 FOR UPDATE OF u,a").bind(id).bind(org).fetch_optional(&mut *tx).await?.ok_or(Error::NotFound)?;
+    let r=sqlx::query("SELECT u.*,a.object_key,a.kind,s.antivirus_status,(u.expires_at>clock_timestamp()) AS valid FROM catalog.upload_sessions u JOIN catalog.assets a ON a.id=u.asset_id AND a.org_id=u.org_id LEFT JOIN catalog.asset_safety s ON s.asset_id=a.id AND s.org_id=a.org_id AND s.safe_key=a.object_key AND s.safe_sha256=a.sha256 WHERE u.id=$1 AND u.org_id=$2 FOR UPDATE OF u,a").bind(id).bind(org).fetch_optional(&mut *tx).await?.ok_or(Error::NotFound)?;
     let asset: Uuid = r.get("asset_id");
     let key: String = r.get("expected_key");
     if asset != i.asset_id || key != i.expected_key {
         return Err(Error::Forbidden);
     }
     if r.get::<String, _>("status") == "COMPLETED" {
+        let status = r
+            .get::<Option<String>, _>("antivirus_status")
+            .ok_or(Error::PolicyGate("UPLOAD_REINSPECTION_REQUIRED"))?;
+        if s.antivirus_enabled && status != "SCANNED" {
+            return Err(Error::PolicyGate("UPLOAD_REINSPECTION_REQUIRED"));
+        }
         return Ok(
-            json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":true}),
+            json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":true,"safety_status":crate::upload_safety::safety_status(&status)}),
         );
     }
     if r.get::<String, _>("status") != "ISSUED" || !r.get::<bool, _>("valid") {
@@ -203,17 +209,26 @@ pub async fn complete(
     if status == "COMPLETED" {
         tx.commit().await?;
         let _ = s.storage.delete(&prepared.key).await;
+        crate::upload_safety::require_policy(&s.pool, org, asset, s.antivirus_enabled).await?;
+        let recorded: String = sqlx::query_scalar(
+            "SELECT antivirus_status FROM catalog.asset_safety WHERE asset_id=$1 AND org_id=$2",
+        )
+        .bind(asset)
+        .bind(org)
+        .fetch_one(&s.pool)
+        .await?;
         return Ok(
-            json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":true,"safety_status":"VERIFIED"}),
+            json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":true,"safety_status":crate::upload_safety::safety_status(&recorded)}),
         );
     }
     if status != "ISSUED" {
         return Err(Error::Conflict);
     }
     finish_session(&mut tx, id).await?;
-    sqlx::query("INSERT INTO catalog.asset_safety(asset_id,org_id,source_key,source_sha256,safe_key,safe_sha256,rule_version) VALUES($1,$2,$3,$4,$5,$6,$7)")
+    let antivirus_status = crate::upload_safety::antivirus_status(s.antivirus_enabled);
+    sqlx::query("INSERT INTO catalog.asset_safety(asset_id,org_id,source_key,source_sha256,safe_key,safe_sha256,rule_version,antivirus_status) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
         .bind(asset).bind(org).bind(&frozen).bind(&prepared.source_sha256).bind(&prepared.key)
-        .bind(&prepared.sha256).bind(crate::upload_safety::RULE_VERSION).execute(&mut *tx).await?;
+        .bind(&prepared.sha256).bind(crate::upload_safety::RULE_VERSION).bind(antivirus_status).execute(&mut *tx).await?;
     sqlx::query("UPDATE catalog.assets SET state='REGISTERED',object_key=$2,content_type=$3,size_bytes=$4,etag=$5,sha256=$6 WHERE id=$1")
         .bind(asset).bind(&prepared.key).bind(&prepared.mime).bind(prepared.size)
         .bind(&prepared.etag).bind(&prepared.sha256).execute(&mut *tx).await?;
@@ -231,7 +246,11 @@ pub async fn complete(
         Some(org),
         Some(asset),
         "upload.completed",
-        "MALWARE_CHECKED_AND_NORMALIZED",
+        if s.antivirus_enabled {
+            "MALWARE_CHECKED_AND_NORMALIZED"
+        } else {
+            "NORMALIZED_AV_DISABLED"
+        },
         a.request,
     )
     .await?;
@@ -250,7 +269,7 @@ pub async fn complete(
         json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":false,
         "sha256":prepared.sha256,"detected_container":if kind=="AUDIO" { "FLAC" } else { container },
         "converted_from":if kind=="AUDIO" { Some(if container=="M4A" { "ALAC" } else { container }) } else { None },
-        "safety_status":"VERIFIED"}),
+        "safety_status":crate::upload_safety::safety_status(antivirus_status)}),
     )
 }
 
@@ -302,8 +321,8 @@ async fn prepare(
     if crate::qc::detect_container(&digest.head) != container {
         return Err(Error::PolicyGate("UPLOAD_CONTENT_MISMATCH"));
     }
-    // No decoder / metadata reader runs before the whole source is scanned.
-    crate::upload_safety::scan(&src, digest.size).await?;
+    // When enabled, scan the whole source before any decoder / metadata reader.
+    crate::upload_safety::scan(&src, digest.size, s.antivirus_enabled).await?;
     let (kind, mime) = (kind.to_string(), mime.to_string());
     let (workspace, dst, provenance, slot) = tokio::task::spawn_blocking(move || {
         // Guards outlive a cancelled HTTP future, including each decoder.
@@ -339,7 +358,7 @@ async fn prepare(
     if safe_size == 0 || safe_size > MAX_AUDIO_BYTES as u64 {
         return Err(Error::PolicyGate("UPLOAD_AUDIO_TOO_LARGE"));
     }
-    crate::upload_safety::scan(&dst, safe_size).await?;
+    crate::upload_safety::scan(&dst, safe_size, s.antivirus_enabled).await?;
     let sha256 = crate::qc::sha256_file(&dst)?;
     let safe_mime = if kind_is_audio(container) {
         "audio/flac"

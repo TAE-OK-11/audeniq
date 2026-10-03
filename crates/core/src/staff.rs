@@ -1861,9 +1861,10 @@ pub async fn document_file(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<Docu
          FROM portal.documents d
          JOIN catalog.assets a ON a.id=d.asset_id AND a.org_id=d.org_id
          JOIN catalog.asset_safety s ON s.asset_id=a.id AND s.org_id=a.org_id AND s.safe_key=a.object_key AND s.safe_sha256=a.sha256 AND s.rule_version='1'
-         WHERE d.id=$1 AND a.state='REGISTERED' AND a.content_type IN ('application/pdf','image/png','image/jpeg')",
+         WHERE d.id=$1 AND a.state='REGISTERED' AND a.content_type IN ('application/pdf','image/png','image/jpeg') AND (NOT $2 OR s.antivirus_status='SCANNED')",
     )
     .bind(id)
+    .bind(s.antivirus_enabled)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(Error::NotFound)?;

@@ -50,12 +50,24 @@ case "${1:-}" in
     ;;
 esac
 
-# Require a materialized keyring before changing production services. The
-# runtime also validates ownership, permissions, versions and AES key sizes.
+# Only enabled KMS requires the cloud-materialized tmpfs keyring.
+read_feature() {
+  local value
+  value=$(sed -n "s/^$1=//p" "$ENV_FILE" | tail -n 1)
+  value=${value:-false}
+  case "$value" in true|false) printf '%s' "$value" ;; *) die "$1 은 true 또는 false여야 해요" ;; esac
+}
+kms_enabled=$(read_feature PAYOUT_KMS_ENABLED)
+av_enabled=$(read_feature UPLOAD_AV_ENABLED)
+if [ "$av_enabled" = true ]; then COMPOSE+=(--profile antivirus); fi
 keydir=$(sed -n 's/^PAYOUT_KEYRING_DIR=//p' "$ENV_FILE" | tail -n 1)
 keydir=${keydir:-/dev/shm/audeniq-secrets}
-[ -f "$keydir/payout-keyring.json" ] || die "KMS 키를 먼저 tmpfs에 준비해 주세요 (kms-keyring.py materialize)"
-[ "$(stat -f -c %T "$keydir")" = tmpfs ] || die "키 폴더는 tmpfs여야 해요"
+if [ "$kms_enabled" = true ]; then
+  keyfile=$(sed -n 's/^PAYOUT_KEYRING_FILE=//p' "$ENV_FILE" | tail -n 1)
+  [ "$keyfile" = /run/audeniq-keys/payout-keyring.json ] || die "PAYOUT_KEYRING_FILE=/run/audeniq-keys/payout-keyring.json 을 설정해 주세요"
+  [ -f "$keydir/payout-keyring.json" ] || die "KMS 키를 먼저 tmpfs에 준비해 주세요 (kms-keyring.py materialize)"
+  [ "$(stat -f -c %T "$keydir")" = tmpfs ] || die "키 폴더는 tmpfs여야 해요"
+fi
 
 REF=$1
 REGISTRY=${DEPLOY_REGISTRY:-ghcr.io}
@@ -123,6 +135,10 @@ echo "     → $PINNED"
 if ! "${COMPOSE[@]}" up -d --build --remove-orphans; then
   "${COMPOSE[@]}" logs --tail 80 migrate grants pgbouncer api worker || true
   die "compose up 실패 — 이전 이미지로 되돌리려면: ./deploy.sh --rollback"
+fi
+if [ "$av_enabled" = false ]; then
+  # Also stop engines left by an earlier enabled deployment.
+  "${COMPOSE[@]}" --profile antivirus stop antivirus antivirus-update
 fi
 
 # api·worker가 새 이미지로 재시작 없이 30초 동안 떠 있는지 지켜본다

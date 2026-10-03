@@ -1,5 +1,5 @@
 //! Versioned AES-256-GCM keys, separated from the database and API environment.
-//! Production loads a read-only keyring materialized in tmpfs by the KMS helper.
+//! Optional KMS mode requires a read-only keyring materialized in tmpfs.
 use crate::error::{Error, Result};
 use aes_gcm::{
     Aes256Gcm, KeyInit, Nonce,
@@ -63,7 +63,11 @@ impl KeyRing {
     }
 
     pub fn from_env(require_file: bool) -> Result<Self> {
-        if let Ok(path) = std::env::var("PAYOUT_KEYRING_FILE") {
+        let require_file = require_file || crate::config::kms_enabled()?;
+        if let Some(path) = std::env::var("PAYOUT_KEYRING_FILE")
+            .ok()
+            .filter(|path| !path.is_empty())
+        {
             #[cfg(unix)]
             let mut file = {
                 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
@@ -84,7 +88,7 @@ impl KeyRing {
                     return Err(Error::PolicyGate("PAYOUT_KEYRING_PERMISSIONS"));
                 }
                 #[cfg(target_os = "linux")]
-                if require_file || std::env::var("APP_ENV").as_deref() == Ok("production") {
+                if require_file {
                     use std::os::fd::AsRawFd;
                     let mut fs = std::mem::MaybeUninit::<libc::statfs>::uninit();
                     if unsafe { libc::fstatfs(file.as_raw_fd(), fs.as_mut_ptr()) } != 0
@@ -108,10 +112,11 @@ impl KeyRing {
             }
             return Self::parse(&bytes);
         }
-        if require_file || std::env::var("APP_ENV").as_deref() == Ok("production") {
+        if require_file {
             return Err(Error::PolicyGate("PAYOUT_KEYRING_REQUIRED"));
         }
-        // Existing local fixtures remain usable. There is no production fallback.
+        // KMS-off mode may use a local AES key. An absent key disables account
+        // encryption operations, never storing account numbers as plaintext.
         Self::development_key(std::env::var("PAYOUT_ACCOUNT_KEY").ok())
     }
 

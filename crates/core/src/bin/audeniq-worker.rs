@@ -128,6 +128,7 @@ async fn wait_for_work(wakeup: &Notify, idle: Duration) {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    audeniq_core::config::antivirus_enabled()?;
     tracing_subscriber::fmt()
         .json()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
