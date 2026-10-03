@@ -130,6 +130,18 @@ const ICON: Record<BriefTone, ReactNode> = {
   bad: <Glyph name="close" size={11} />,
 };
 
+/** 여러 줄 설명(예: 체크 안 한 권리 확인 목록)은 맨 위 요약에서 접어 둔다 — 첫 줄과 개수만, 누르면 펼침 */
+function BriefDetail({ text, fold }: { text: string; fold: boolean }) {
+  const lines = text.split('\n');
+  if (!fold || lines.length < 3) return <small>{text}</small>;
+  return (
+    <details className="adm-brief-fold">
+      <summary><small>{lines[0]}</small><span>외 {lines.length - 1}개 보기<Glyph name="chevron-right" size={11} /></span></summary>
+      <small>{lines.slice(1).join('\n')}</small>
+    </details>
+  );
+}
+
 export function ReviewBrief({ sheet, integrity, title = '결정 전 확인할 것', onAddFix, added = [], compact = false, lead }: {
   sheet: ReleaseSheet; integrity: Integrity; title?: string;
   /** 보완 요청 창: 문제를 보완 항목으로 추가 */
@@ -163,7 +175,7 @@ export function ReviewBrief({ sheet, integrity, title = '결정 전 확인할 �
               <span className="adm-brief-mark" aria-hidden="true">{ICON[i.tone]}</span>
               <span className="adm-brief-text">
                 <b>{i.title}</b>
-                {i.detail && <small>{i.detail}</small>}
+                {i.detail && <BriefDetail text={i.detail} fold={compact} />}
               </span>
               {onAddFix && i.fix && !i.fix.system && (
                 <button type="button" className="adm-btn soft small" disabled={isAdded} onClick={() => onAddFix(i.fix!)}>{isAdded ? '추가됨' : '항목으로 추가'}</button>
