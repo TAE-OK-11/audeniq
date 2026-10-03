@@ -1745,3 +1745,25 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 :is(#root) .aq-bundle-sign{min-height:38px!important;padding:8px 14px!important;font-size:13px!important;border-radius:12px!important;white-space:nowrap}
 @media(max-width:480px){.aq-bundle-docs li{grid-template-columns:28px minmax(0,1fr)}.aq-bundle-docs li>button{grid-column:2;justify-self:start;margin-top:6px}.aq-bundle-docs li>.link-btn{padding-inline:0!important;min-height:0!important}}
 .aq-bundle-sub{margin:18px 0 8px;font-size:14px;font-weight:800;color:var(--aq-e-ink)}
+
+/* 배급 계약서 최종본 (/contracts/:id) — 신청서와 같은 서류 스타일에 계약서 조항만 더한다 */
+.aq-paper-lead{margin:0 0 24px;font-size:14px;line-height:1.75;color:#1d2433}
+.aq-paper-sec .aq-paper-kv+.aq-paper-p,.aq-paper-sec .aq-paper-p+.aq-paper-kv{margin-top:8px}
+.aq-paper-p{margin:6px 0 0;font-size:13px;line-height:1.75;color:#2f3646}
+.aq-paper-sec .aq-paper-kv th{width:120px}
+.aq-paper-tracks{margin:0;padding:0;list-style:none;border:1px solid #dfe4ec;counter-reset:trk;font-size:13px}
+.aq-paper-tracks li{counter-increment:trk;display:flex;gap:12px;padding:9px 14px}
+.aq-paper-tracks li+li{border-top:1px solid #eef1f6}
+.aq-paper-tracks li::before{content:counter(trk);min-width:18px;color:#8a93a6;font-weight:700;font-variant-numeric:tabular-nums}
+.aq-paper-req{display:inline-block;margin-right:4px;padding:1px 6px;border-radius:5px;background:#eef1f6;color:#5a6477;font-size:11px;font-weight:800}
+.aq-paper-agree li.is-on .aq-paper-req{background:#1d2433;color:#fff}
+.aq-paper-annex h2 em{font-style:normal;font-size:12px;font-weight:800;padding:3px 8px;border-radius:6px;background:#1d2433;color:#fff}
+.aq-paper-parties{display:grid;gap:4px;margin-top:10px}
+.aq-paper-parties .aq-paper-signer{margin-top:18px}
+.aq-paper-parties .aq-paper-signer strong{min-width:160px;text-align:right}
+.aq-doc-done.is-pending{background:var(--aq-e-blue-soft)}
+.aq-doc-done.is-pending .aq-doc-done-mark{background:var(--aq-e-blue)}
+.aq-doc-done.is-pending strong{color:var(--aq-e-ink)}
+.aq-doc-done .button{flex:none;margin-left:auto}
+@media(max-width:640px){.aq-paper-parties .aq-paper-signer strong{min-width:0;text-align:center}.aq-doc-done{flex-wrap:wrap}.aq-doc-done .button{width:100%}}
+@media print{.aq-doc-done.is-pending{display:none!important}}
