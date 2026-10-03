@@ -12,7 +12,6 @@ import { updateDoc, type DocRecord } from '../store/docs';
 import { fileSize, localStamp } from '../lib/format';
 import { stampNow } from '../lib/date';
 import { docState } from '../store/docs';
-import { useAlert } from './Alert';
 
 const statusPill = docState;
 
@@ -72,7 +71,6 @@ export function DocumentModal({
   onOpenSignature: () => void;
 }) {
   const toast = useToast();
-  const alert = useAlert();
   const nav = useNavigate();
   const [sending, setSending] = useState(false);
   const [confirmed, setConfirmed] = useState(!!doc.checkedAt);
@@ -121,7 +119,7 @@ export function DocumentModal({
       // 실서버: 확인 기록 → (권리 서류) 원본 업로드 후 검토 요청. 계약서는 담당자 검토가 자동으로 시작된다.
       if (!doc.checkedAt && !confirmed) { toast('문서 내용을 확인했다고 체크해 주세요.'); return; }
       if (doc.kind === 'rights' && !pendingFile && !doc.fileName) { toast('요청된 증빙 서류를 첨부해 주세요.'); return; }
-      if (pendingFile && !/\.(pdf|jpe?g|png)$/i.test(pendingFile.name)) { alert('서류 파일 형식을 확인해 주세요.', 'PDF, JPG, PNG 파일만 올릴 수 있어요.'); return; }
+      if (pendingFile && !/\.(pdf|jpe?g|png)$/i.test(pendingFile.name)) { toast('서류는 PDF, JPG, PNG 파일로 올려 주세요.'); return; }
       if (['review', 'prepared', 'approved'].includes(doc.reviewStatus) && !pendingFile) { toast('이미 검토 요청된 문서예요.', 'info'); return; }
       setSending(true);
       try {
@@ -153,7 +151,7 @@ export function DocumentModal({
     if (pendingFile) {
       const okType = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'text/plain'].includes(pendingFile.type)
         || /\.(pdf|txt)$/i.test(pendingFile.name);
-      if (!okType) { alert('서류 파일 형식을 확인해 주세요.', 'PDF, 이미지(JPG·PNG·WEBP) 또는 TXT 파일만 첨부할 수 있어요.'); return; }
+      if (!okType) { toast('PDF, 이미지 또는 TXT 형식의 서류를 첨부해 주세요.'); return; }
       const at = stampNow();
       fileName = pendingFile.name;
       history = [...history, { status: '서류 등록', time: at, detail: pendingFile.name + ' 원본 첨부' }];

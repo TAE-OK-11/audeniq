@@ -26,7 +26,6 @@ import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
 import { Money } from '../components/Money';
 import { Segmented } from '../components/Segmented';
-import { useAlert } from '../components/Alert';
 
 const PLATFORMS = ['Spotify', 'Apple Music', 'YouTube Music', '멜론', '지니', 'FLO', '벅스', 'Amazon Music', 'TIDAL', 'Deezer', '기타'];
 
@@ -94,7 +93,6 @@ export function Settlement() {
   const paymentRegistered = isPaymentRegistered(payment);
 
   const { total, used, left, minimum } = useBalance();
-  const alert = useAlert();
   const [requesting, setRequesting] = useState(false);
 
   const openPayoutModal = () => {
@@ -103,8 +101,8 @@ export function Settlement() {
       setShowPaymentSetup(true);
       return;
     }
-    if (!left) { alert('지급을 요청할 수 있는 잔액이 없어요.', '정산이 반영되면 요청 전 잔액이 늘어나고, 그때 지급을 요청할 수 있어요.'); return; }
-    if (left < minimum) { alert('아직 지급을 요청할 수 없어요.', `요청 전 잔액이 ${money(left)}이에요. ${money(minimum)} 이상 모이면 지급을 요청할 수 있어요.`); return; }
+    if (!left) { toast('지급을 요청할 수 있는 잔액이 없어요.'); return; }
+    if (left < minimum) { toast(`${money(minimum)} 이상부터 지급을 요청할 수 있어요.`); return; }
     setAmount('');
     setPayoutNote('');
     setShowPayout(true);
@@ -115,7 +113,7 @@ export function Settlement() {
     if (!s) return;
     const remaining = balance(statements.filter(x => x.id !== id), payouts);
     if (remaining.total < remaining.used) {
-      alert('이 정산 내역은 삭제할 수 없어요.', '삭제하면 정산액이 지급 요청 합계보다 적어져요. 지급 요청 기록을 먼저 정리해 주세요.');
+      toast('지급 요청 합계보다 정산액이 적어져서 삭제할 수 없어요. 요청 기록을 먼저 정리해 주세요.');
       return;
     }
     if (!(await confirm({ title: '정산 내역을 삭제할까요?', message: `${s.period} · ${s.platform} · ${money(s.amount)}`, confirmLabel: '삭제', danger: true }))) return;
@@ -135,10 +133,10 @@ export function Settlement() {
     e.preventDefault();
     const amt = Number(amount);
     if (!Number.isInteger(amt) || amt <= 0 || amt > left) {
-      alert('요청 금액을 다시 확인해 주세요.', `1원 단위 숫자로, 요청 가능 금액 ${money(left)} 안에서 입력해 주세요.`);
+      toast('요청 가능 금액 안에서 입력해 주세요.');
       return;
     }
-    if (amt < minimum) { alert('요청 금액을 다시 확인해 주세요.', `지급은 ${money(minimum)} 이상부터 요청할 수 있어요.`); return; }
+    if (amt < minimum) { toast(`${money(minimum)} 이상부터 요청할 수 있어요.`); return; }
     if (!MOCK) {
       if (requesting) return;
       setRequesting(true);

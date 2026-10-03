@@ -19,7 +19,6 @@ import { Glyph } from '../components/Glyph';
 import { RightsDocumentModal } from '../components/RightsDocumentModal';
 import { RIGHTS_DOCUMENTS, type RightsDocumentContext, type RightsDocumentKind } from '../lib/rightsDocument';
 import { Segmented } from '../components/Segmented';
-import { useAlert } from '../components/Alert';
 
 const REQUIRED_DOCS: [string, string, string][] = [
   ['master', '마스터 음원 권리 확인서', '본인은 해당 마스터 음원에 관한 배급 권한을 보유하거나 권리자로부터 적법한 이용 허락을 받았음을 확인합니다.'],
@@ -33,7 +32,6 @@ const REQUIRED_DOCS: [string, string, string][] = [
 
 export function Rights() {
   const toast = useToast();
-  const alert = useAlert();
   const docs = useDocs();
   const { data: releases = [] } = useAsync(() => api.listReleases(), []);
   const [formOpen, setFormOpen] = useState(false);
@@ -116,7 +114,7 @@ export function Rights() {
         localSignatureAt: '',
       };
       if (!MOCK) {
-        if (file && !/\.(pdf|jpe?g|png)$/i.test(file.name)) { alert('서류 파일 형식을 확인해 주세요.', 'PDF, JPG, PNG 파일만 올릴 수 있어요.'); return; }
+        if (file && !/\.(pdf|jpe?g|png)$/i.test(file.name)) { toast('서류는 PDF, JPG, PNG 파일로 올려 주세요.'); return; }
         c.id = await portal.createDocument(r.id, c.title, c.content, file);
         await refreshDocs();
       } else {

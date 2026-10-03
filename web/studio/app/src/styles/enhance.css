@@ -1617,7 +1617,3 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-cadmin-chip{background:#F1F4FF;color:#385dd7}
 .aq-cadmin-chip:not(.is-on):hover{background:#e6ecff}
 .aq-cadmin-chip.is-on{background:var(--aq-e-blue,#3B63F3);color:#fff}
-
-/* 공용 확인 대화상자 (useAlert) — 모달 위에도 뜨도록 */
-.aq-alert-overlay{z-index:1150}
-.aq-alert-overlay .aq-pay-error-dialog p:empty{margin:0 0 18px}
