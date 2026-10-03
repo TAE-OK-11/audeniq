@@ -5,10 +5,9 @@ import { staffApi } from '../api/staff';
 import { PAYOUT_STATUS, ago, pick, shortId, when } from '../labels';
 import { Empty, ErrorBox, Filters, PageHead, Skeleton, StatusChip } from '../ui';
 import { Glyph } from '../components/Glyph';
+import { Money } from '../components/Money';
 
 const STATUSES = ['REQUESTED', 'ORDERED', 'REJECTED', 'CANCELLED'];
-const krw = new Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW', maximumFractionDigits: 0 });
-const money = (n: number) => krw.format(Number.isFinite(n) ? n : 0);
 
 export function Payouts() {
   const [params, setParams] = useSearchParams();
@@ -29,7 +28,7 @@ export function Payouts() {
       {error && <ErrorBox message={error} onRetry={reload} />}
       {loading && !data ? <Skeleton rows={3} /> : items.length === 0 ? <Empty icon={<Glyph name="won" size={22} />} title="해당 상태의 지급 요청이 없어요" /> : (
         <>
-          <div className="adm-alert">{items.length}건 · 합계 <b>{money(total)}</b></div>
+          <div className="adm-alert">{items.length}건 · 합계 <b><Money value={total} mark /></b></div>
           <div className="adm-card white adm-table-wrap">
             <table className="adm-table">
               <thead><tr><th>작업 공간</th><th>금액</th><th>상태</th><th>지급 지시</th><th>요청</th></tr></thead>
@@ -37,7 +36,7 @@ export function Payouts() {
                 {items.map(p => (
                   <tr key={p.id}>
                     <td><b>{p.org_name}</b></td>
-                    <td>{p.currency === 'KRW' ? money(Number(p.amount)) : `${p.amount} ${p.currency}`}</td>
+                    <td><Money value={p.amount} currency={p.currency} /></td>
                     <td><StatusChip value={pick(PAYOUT_STATUS, p.status)} /></td>
                     <td>{p.payout_order_id ? <span className="adm-code">{shortId(p.payout_order_id)}</span> : '—'}</td>
                     <td className="small" title={when(p.created_at)}>{ago(p.created_at)}</td>
