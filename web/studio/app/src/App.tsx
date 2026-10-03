@@ -13,6 +13,7 @@ import { pageLoaders } from './routes';
 import './styles/design.css';
 import './styles/live.css';
 import './styles/enhance.css';
+import './styles/controls.css';
 
 // 배포 직후 옛 청크가 사라져 동적 import가 실패하면 한 번만 새로고침해 새 버전을 받는다
 function lazyPage<M>(load: () => Promise<M>, pick: (m: M) => ComponentType) {

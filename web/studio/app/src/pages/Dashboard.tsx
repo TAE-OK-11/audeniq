@@ -8,6 +8,7 @@ import { useDocs } from '../store/docs';
 import { useAsync } from '../hooks/useAsync';
 import { SkeletonRows } from '../components/Skeleton';
 import { CountUp } from '../components/CountUp';
+import { Money } from '../components/Money';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { latestSummary, periodLabel } from '../data/reports';
 import { useReportRows } from '../hooks/useReportRows';
@@ -228,7 +229,7 @@ export function Dashboard() {
         <div className="aq-report-total">
           <small>이번 달 수익</small>
           {report.revenue > 0
-            ? <strong><CountUp value={report.revenue} format={money} /></strong>
+            ? <strong><Money value={report.revenue} animate /></strong>
             : <strong className="aq-no-income">{NO_INCOME}</strong>}
           {report.change != null && (
             <span className={`aq-report-delta${report.change < 0 ? ' is-down' : ''}`}>

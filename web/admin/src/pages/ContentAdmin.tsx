@@ -423,8 +423,8 @@ export function ContentAdmin() {
           {rows && !rows.length && !loadError && (
             <div className="empty-page"><h2>아직 올린 글이 없어요.</h2><p>첫 글을 써 보세요. 저장하면 바로 스튜디오에 보여요.</p></div>
           )}
-          <ul className="aq-cadmin-list">
-            {rows?.map(r => {
+          {!!rows?.length && <ul className="aq-cadmin-list">
+            {rows.map(r => {
               const st = stateOf(r, now);
               const ev = kind === 'events' ? r as AdminEvent : null;
               const mt = isMaint(r) ? r : null;
@@ -446,7 +446,7 @@ export function ContentAdmin() {
                 </li>
               );
             })}
-          </ul>
+          </ul>}
         </>
       )}
     </div>

@@ -1,0 +1,114 @@
+/* ==========================================================================
+   AUDENIQ 공통 입력 요소 — OS·브라우저마다 다르게 그려지는 기본 모양 대신 한 가지 디자인
+   스튜디오·관리자·설문이 같은 파일을 쓴다 (web/studio/app/src/styles/controls.css 가 원본,
+   web/admin/src/styles/controls.css · web/survey/app/src/controls.css 는 같은 내용 복사본).
+   :where() 로 우선순위를 0으로 두어, 화면별 크기·여백 규칙은 그대로 이긴다.
+   ========================================================================== */
+:root{
+  --aqc-blue:#3B63F3;--aqc-blue-press:#2C56E0;--aqc-ink:#171B29;--aqc-muted:#8a95ab;
+  --aqc-box:#e6ebf4;--aqc-box-hover:#dde4f1;--aqc-ring:#d3dbe8;--aqc-focus:#9db1fb;
+  --aqc-check:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.6 8.3 6.6 11.3 12.4 4.9' fill='none' stroke='%23fff' stroke-width='2.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --aqc-dash:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 8h7' fill='none' stroke='%23fff' stroke-width='2.3' stroke-linecap='round'/%3E%3C/svg%3E");
+  --aqc-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='m6.5 9.5 5.5 5.5 5.5-5.5' fill='none' stroke='%235d6880' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --aqc-calendar:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233B63F3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.5' y='5' width='17' height='15.5' rx='3.5'/%3E%3Cpath d='M3.5 10h17M8 3v4M16 3v4'/%3E%3C/svg%3E");
+  --aqc-clock:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233B63F3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='8.5'/%3E%3Cpath d='M12 7.5V12l3 2'/%3E%3C/svg%3E");
+}
+
+/* ---------- 체크박스·라디오 ---------- */
+:where(input[type=checkbox],input[type=radio]){
+  -webkit-appearance:none;appearance:none;flex:none;width:22px;height:22px;margin:0;padding:0;border:0;
+  border-radius:7px;background:var(--aqc-box) center/14px 14px no-repeat;box-shadow:inset 0 0 0 1.5px var(--aqc-ring);
+  cursor:pointer;vertical-align:middle;color:var(--aqc-blue);
+  transition:background-color .18s ease,box-shadow .18s ease,transform .12s ease
+}
+:where(input[type=radio]){border-radius:50%}
+:where(input[type=checkbox],input[type=radio]):hover{background-color:var(--aqc-box-hover)}
+:where(input[type=checkbox],input[type=radio]):active{transform:scale(.92)}
+:where(input[type=checkbox]):checked{background-color:var(--aqc-blue);background-image:var(--aqc-check);box-shadow:none}
+:where(input[type=checkbox]):indeterminate{background-color:var(--aqc-blue);background-image:var(--aqc-dash);box-shadow:none}
+:where(input[type=radio]):checked{background-color:var(--aqc-blue);box-shadow:none;background-image:radial-gradient(circle,#fff 0 4px,transparent 4.5px);background-size:100% 100%}
+:where(input[type=checkbox],input[type=radio]):focus-visible{outline:3px solid var(--aqc-focus);outline-offset:2px}
+:where(input[type=checkbox],input[type=radio]):disabled{opacity:.45;cursor:not-allowed}
+@media (prefers-reduced-motion:no-preference){
+  :where(input[type=checkbox]):checked{animation:aqc-check-pop .26s cubic-bezier(.34,1.56,.64,1)}
+  @keyframes aqc-check-pop{0%{background-size:4px 4px}100%{background-size:14px 14px}}
+}
+
+/* ---------- 선택 상자: 기기 화살표 대신 AUDENIQ 화살표 ---------- */
+:where(select:not([multiple]):not([size])){
+  -webkit-appearance:none;appearance:none;padding-right:46px;cursor:pointer;
+  background-image:var(--aqc-chevron);background-repeat:no-repeat;background-position:right 16px center;background-size:18px 18px
+}
+/* 화면별 배경 줄임말(background:… !important)이 화살표를 지우지 않게 */
+:is(#root,#modal,body) select:not([multiple]):not([size]):not(#_){
+  background-image:var(--aqc-chevron)!important;background-repeat:no-repeat!important;background-position:right 16px center!important;background-size:18px 18px!important;
+  -webkit-appearance:none!important;appearance:none!important
+}
+:where(select)::-ms-expand{display:none}
+
+/* ---------- 날짜·시간: 기기마다 다른 달력 아이콘 대신 같은 아이콘 ---------- */
+:where(input[type=date],input[type=month],input[type=week],input[type=datetime-local])::-webkit-calendar-picker-indicator{
+  width:20px;height:20px;padding:0;margin:0 0 0 8px;opacity:1;cursor:pointer;color:transparent;
+  background:var(--aqc-calendar) center/20px 20px no-repeat
+}
+:where(input[type=time])::-webkit-calendar-picker-indicator{
+  width:20px;height:20px;padding:0;margin:0 0 0 8px;opacity:1;cursor:pointer;color:transparent;
+  background:var(--aqc-clock) center/20px 20px no-repeat
+}
+:is(#root,#modal) input:is([type=date],[type=month])::-webkit-calendar-picker-indicator{opacity:1}
+
+/* ---------- 숫자·검색: 기기 증감 버튼·지우기 표시 없이 ---------- */
+:where(input[type=number]){-moz-appearance:textfield;appearance:textfield}
+:where(input[type=number])::-webkit-inner-spin-button,:where(input[type=number])::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+:where(input[type=search]){-webkit-appearance:none;appearance:none}
+:where(input[type=search])::-webkit-search-decoration,:where(input[type=search])::-webkit-search-cancel-button,
+:where(input[type=search])::-webkit-search-results-button,:where(input[type=search])::-webkit-search-results-decoration{-webkit-appearance:none;display:none}
+
+/* ---------- 파일 선택 버튼 ---------- */
+:where(input[type=file])::file-selector-button{
+  -webkit-appearance:none;appearance:none;border:0;border-radius:12px;margin-right:12px;padding:9px 14px;
+  background:#eaf0ff;color:var(--aqc-blue);font:inherit;font-size:13px;font-weight:750;cursor:pointer;transition:background-color .18s ease
+}
+:where(input[type=file])::file-selector-button:hover{background:#dfe7ff}
+
+/* ---------- 슬라이더·진행 막대 ---------- */
+:where(input[type=range]){-webkit-appearance:none;appearance:none;height:22px;background:transparent;cursor:pointer}
+:where(input[type=range])::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:var(--aqc-box)}
+:where(input[type=range])::-moz-range-track{height:6px;border-radius:3px;background:var(--aqc-box)}
+:where(input[type=range])::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;margin-top:-7px;border-radius:50%;background:#fff;box-shadow:0 0 0 2px var(--aqc-blue),0 2px 6px rgba(23,27,41,.18)}
+:where(input[type=range])::-moz-range-thumb{width:20px;height:20px;border:0;border-radius:50%;background:#fff;box-shadow:0 0 0 2px var(--aqc-blue),0 2px 6px rgba(23,27,41,.18)}
+:where(progress){-webkit-appearance:none;appearance:none;height:8px;border:0;border-radius:4px;background:var(--aqc-box);overflow:hidden;color:var(--aqc-blue)}
+:where(progress)::-webkit-progress-bar{background:var(--aqc-box);border-radius:4px}
+:where(progress)::-webkit-progress-value{background:var(--aqc-blue);border-radius:4px}
+:where(progress)::-moz-progress-bar{background:var(--aqc-blue);border-radius:4px}
+
+/* ---------- 자동 완성: 노란·파란 배경 없이 원래 칸 색 그대로 ---------- */
+:where(input,textarea,select):-webkit-autofill,:where(input,textarea,select):-webkit-autofill:hover,:where(input,textarea,select):-webkit-autofill:focus{
+  -webkit-text-fill-color:var(--aqc-ink);caret-color:var(--aqc-ink);transition:background-color 100000s 0s,color 100000s 0s
+}
+
+/* ---------- 글자 입력: 커서·안내 글자 색 통일 ---------- */
+:where(input,textarea){caret-color:var(--aqc-blue)}
+:where(input,textarea)::placeholder{color:#a3adbf;opacity:1}
+
+/* ---------- 스크롤 막대: 얇고 둥글게 ---------- */
+html{scrollbar-color:#cfd7e6 transparent}
+:where(*){scrollbar-width:thin}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{border:3px solid transparent;border-radius:10px;background:#cfd7e6 padding-box}
+::-webkit-scrollbar-thumb:hover{background:#b6c1d6 padding-box}
+::-webkit-scrollbar-corner{background:transparent}
+
+/* ---------- 선택 영역·탭 하이라이트 ---------- */
+::selection{background:#dfe7ff;color:var(--aqc-ink)}
+html{-webkit-tap-highlight-color:transparent}
+
+/* ---------- 금액 표시 (Money) — 숫자는 자리 맞춤, 단위는 작고 옅게, 화폐 기호는 AUDENIQ 아이콘 ---------- */
+.aq-money{display:inline-flex;align-items:baseline;gap:.14em;font-variant-numeric:tabular-nums;letter-spacing:-.02em;white-space:nowrap}
+.aq-money-num{font-weight:inherit}
+.aq-money-unit{font-size:.72em;font-weight:700;opacity:.62;letter-spacing:0}
+.aq-money.is-mark{gap:.12em}
+.aq-money-mark{display:inline-grid;place-items:center;flex:none;align-self:center;margin-right:.24em;width:1.25em;height:1.25em;border-radius:.42em;background:#eaf0ff;color:var(--aqc-blue)}
+.aq-money-mark svg{width:72%;height:72%;display:block}
+.aq-money.is-minus .aq-money-num{color:#c23b3b}

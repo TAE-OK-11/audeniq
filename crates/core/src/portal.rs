@@ -1155,7 +1155,7 @@ pub async fn list_payouts(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
 
 pub const MIN_PAYOUT: i64 = 10_000;
 
-/// "₩30,000" for user-facing notices.
+/// "30,000원" for user-facing notices (no ₩ glyph — it renders differently per font/OS).
 fn won(amount: Decimal) -> String {
     let digits = amount.trunc().abs().to_string();
     let mut out = String::new();
@@ -1165,7 +1165,7 @@ fn won(amount: Decimal) -> String {
         }
         out.push(c);
     }
-    format!("₩{out}")
+    format!("{out}원")
 }
 
 #[derive(Deserialize)]
@@ -1477,9 +1477,9 @@ mod tests {
 
     #[test]
     fn won_formatting() {
-        assert_eq!(won(Decimal::from(30000)), "₩30,000");
-        assert_eq!(won(Decimal::from(1234567)), "₩1,234,567");
-        assert_eq!(won(Decimal::from(999)), "₩999");
+        assert_eq!(won(Decimal::from(30000)), "30,000원");
+        assert_eq!(won(Decimal::from(1234567)), "1,234,567원");
+        assert_eq!(won(Decimal::from(999)), "999원");
     }
 
     #[test]

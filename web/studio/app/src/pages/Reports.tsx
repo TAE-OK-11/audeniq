@@ -7,6 +7,7 @@ import { useGrowOnView, type CSSVarStyle } from '../hooks/useAnimations';
 import { periodLabel as monthLabel, periods, type ReportRow } from '../data/reports';
 import { useReportRows } from '../hooks/useReportRows';
 import { Glyph } from '../components/Glyph';
+import { Money } from '../components/Money';
 
 const PERIODS = [
   { value: 'all', label: '전체 기간' },
@@ -185,7 +186,7 @@ export function Reports() {
         </header>
 
         <div className="aq-report-doc-stats">
-          <div><small>집계 수익</small><strong>{totalRevenue > 0 ? <CountUp value={totalRevenue} format={money} /> : <span className="aq-no-income">{NO_INCOME}</span>}</strong></div>
+          <div><small>집계 수익</small><strong>{totalRevenue > 0 ? <Money value={totalRevenue} animate /> : <span className="aq-no-income">{NO_INCOME}</span>}</strong></div>
           <div><small>재생 수</small><strong><CountUp value={totalPlays} format={n => `${num(n)}회`} /></strong></div>
           <div><small>플랫폼</small><strong>{platforms}곳</strong></div>
         </div>
@@ -199,7 +200,7 @@ export function Reports() {
                 <strong className={insight.revenueChange != null && insight.revenueChange >= 0 ? 'up' : 'down'}>
                   {insight.revenueChange == null ? '—' : `${insight.revenueChange >= 0 ? '+' : ''}${insight.revenueChange.toFixed(1)}%`}
                 </strong>
-                <span>{money(insight.prevRevenue)} <Glyph name="arrow-right" size={12} /> {money(insight.curRevenue)}</span>
+                <span><Money value={insight.prevRevenue} /> <Glyph name="arrow-right" size={12} /> <Money value={insight.curRevenue} /></span>
               </div>
               <div className="aq-insight-card">
                 <small>재생 변화</small>
@@ -242,7 +243,7 @@ export function Reports() {
                 <li key={name}>
                   <div className="aq-platform-row">
                     <span>{name}</span>
-                    <strong>{money(v.revenue)}</strong>
+                    <strong><Money value={v.revenue} /></strong>
                   </div>
                   <div className="aq-platform-track">
                     <span
@@ -270,7 +271,7 @@ export function Reports() {
                 <li key={i}>
                   <div className="aq-detail-top">
                     <strong>{r.platform}</strong>
-                    <span>{money(r.revenue)}</span>
+                    <span><Money value={r.revenue} /></span>
                   </div>
                   <div className="aq-detail-sub">
                     {r.release || '—'} / {r.track || '전체'} · {r.period} · {num(r.plays)}회 재생
