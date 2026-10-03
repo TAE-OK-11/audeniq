@@ -18,9 +18,9 @@ const context = (actions: ReviewContext['allowed_actions']): ReviewContext => ({
 describe('server review policy in the admin UI', () => {
   test('second approval badge follows the server, including a new code', () => {
     const html = render(createElement(CheckCard, { open: true, c: { check_code: 'NEW_POLICY_HOLD', status: 'REVIEW_REQUIRED', detail: '', needs_second_approval: true } }));
-    expect(html).toContain('2인 승인 필요');
+    expect(html).toContain('2인 승인<');
     const allowed = render(createElement(CheckCard, { open: true, c: { check_code: 'NEW_POLICY_HOLD', status: 'REVIEW_REQUIRED', detail: '', needs_second_approval: false } }));
-    expect(allowed).not.toContain('2인 승인 필요');
+    expect(allowed).not.toContain('2인 승인<');
   });
   test('pending second approval blocks approval while allowing correction/rejection', () => {
     const html = render(createElement(ReviewActions, { context: context(['REQUEST_CORRECTION', 'REJECT']), loading: false, onAction: () => {} }));
