@@ -19,12 +19,14 @@ const PAYOUT_STATUS: Record<Payout['status'], [string, string]> = {
   sent: ['지급 완료', 'live'],
   failed: ['지급 실패', 'needs'],
 };
-import { money, niceDate, NO_INCOME } from '../lib/format';
+import { money, niceDate } from '../lib/format';
 import { monthKey, todayStr } from '../lib/date';
 import { uid } from '../lib/store';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
 import { Money } from '../components/Money';
+import { Segmented } from '../components/Segmented';
+import { useAlert } from '../components/Alert';
 
 const PLATFORMS = ['Spotify', 'Apple Music', 'YouTube Music', '멜론', '지니', 'FLO', '벅스', 'Amazon Music', 'TIDAL', 'Deezer', '기타'];
 
@@ -92,6 +94,7 @@ export function Settlement() {
   const paymentRegistered = isPaymentRegistered(payment);
 
   const { total, used, left, minimum } = useBalance();
+  const alert = useAlert();
   const [requesting, setRequesting] = useState(false);
 
   const openPayoutModal = () => {
@@ -100,8 +103,8 @@ export function Settlement() {
       setShowPaymentSetup(true);
       return;
     }
-    if (!left) { toast('지급을 요청할 수 있는 잔액이 없어요.'); return; }
-    if (left < minimum) { toast(`${money(minimum)} 이상부터 지급을 요청할 수 있어요.`); return; }
+    if (!left) { alert('지급을 요청할 수 있는 잔액이 없어요.', '정산이 반영되면 요청 전 잔액이 늘어나고, 그때 지급을 요청할 수 있어요.'); return; }
+    if (left < minimum) { alert('아직 지급을 요청할 수 없어요.', `요청 전 잔액이 ${money(left)}이에요. ${money(minimum)} 이상 모이면 지급을 요청할 수 있어요.`); return; }
     setAmount('');
     setPayoutNote('');
     setShowPayout(true);
@@ -112,7 +115,7 @@ export function Settlement() {
     if (!s) return;
     const remaining = balance(statements.filter(x => x.id !== id), payouts);
     if (remaining.total < remaining.used) {
-      toast('지급 요청 합계보다 정산액이 적어져서 삭제할 수 없어요. 요청 기록을 먼저 정리해 주세요.');
+      alert('이 정산 내역은 삭제할 수 없어요.', '삭제하면 정산액이 지급 요청 합계보다 적어져요. 지급 요청 기록을 먼저 정리해 주세요.');
       return;
     }
     if (!(await confirm({ title: '정산 내역을 삭제할까요?', message: `${s.period} · ${s.platform} · ${money(s.amount)}`, confirmLabel: '삭제', danger: true }))) return;
@@ -132,10 +135,10 @@ export function Settlement() {
     e.preventDefault();
     const amt = Number(amount);
     if (!Number.isInteger(amt) || amt <= 0 || amt > left) {
-      toast('요청 가능 금액 안에서 입력해 주세요.');
+      alert('요청 금액을 다시 확인해 주세요.', `1원 단위 숫자로, 요청 가능 금액 ${money(left)} 안에서 입력해 주세요.`);
       return;
     }
-    if (amt < minimum) { toast(`${money(minimum)} 이상부터 요청할 수 있어요.`); return; }
+    if (amt < minimum) { alert('요청 금액을 다시 확인해 주세요.', `지급은 ${money(minimum)} 이상부터 요청할 수 있어요.`); return; }
     if (!MOCK) {
       if (requesting) return;
       setRequesting(true);
@@ -175,9 +178,7 @@ export function Settlement() {
           <div>
             <span className="eyebrow">PAYOUT</span>
             <h2 id="settleHeroHeading">요청 전 잔액</h2>
-            {left > 0 || total > 0
-              ? <strong className="settle-hero-amount"><Money value={left} mark animate /></strong>
-              : <strong className="settle-hero-amount aq-no-income">{NO_INCOME}</strong>}
+            <strong className="settle-hero-amount"><Money value={left} mark animate /></strong>
             <p className="settle-hero-sub">
               {MOCK ? `기록한 정산액 ${money(total)} · 지급 요청 합계 ${money(used)}` : `확정 정산액 ${money(total)} · 처리 중인 지급 ${money(used)}`}
             </p>
@@ -204,22 +205,10 @@ export function Settlement() {
         </div>
       </section>
 
-      <div className="tabs aq-tabs" role="tablist" aria-label="정산 내역 구분">
-        <button
-          type="button" role="tab" className="tab"
-          aria-selected={tab === 'statements'}
-          onClick={() => setTab('statements')}
-        >
-          정산 내역
-        </button>
-        <button
-          type="button" role="tab" className="tab"
-          aria-selected={tab === 'payouts'}
-          onClick={() => setTab('payouts')}
-        >
-          지급 요청 기록
-        </button>
-      </div>
+      <Segmented
+        tabs className="aq-seg-tabs" label="정산 내역 구분" value={tab} onChange={setTab}
+        options={[{ value: 'statements', label: '정산 내역' }, { value: 'payouts', label: '지급 요청 기록' }] as const}
+      />
 
       {tab === 'statements' ? (
         <div id="statementList" className="aq-tab-panel" key="st">

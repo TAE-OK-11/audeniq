@@ -30,6 +30,8 @@ import {
 import { uid } from '../lib/store';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
+import { Segmented } from '../components/Segmented';
+import { useAlert } from '../components/Alert';
 
 const STEPS = [
   { short: '발매 정보', kicker: '01 / 06 · 발매 정보', title: '어떤 음악을\n발매할까요?', sub: '발매 정보와 아티스트명을 입력해 주세요.' },
@@ -223,10 +225,7 @@ function DocAttach({ id, label, fileName, assetId, busy, onSelect, required, hel
   return (
     <div className="field doc-attach aq-rights-evidence">
       <strong>{label}{required && <> <span className="required">*</span></>}</strong>
-      <div className="aq-chips aq-method" role="group" aria-label="서류 준비 방법">
-        <button type="button" className={`aq-chip${method === 'electronic' ? ' is-on' : ''}`} aria-pressed={method === 'electronic'} onClick={() => setMethod('electronic')}>AUDENIQ에서 작성</button>
-        <button type="button" className={`aq-chip${method === 'upload' ? ' is-on' : ''}`} aria-pressed={method === 'upload'} onClick={() => setMethod('upload')}>보유한 서류 첨부</button>
-      </div>
+      <Segmented className="aq-method" label="서류 준비 방법" value={method} onChange={setMethod} options={[{ value: 'electronic', label: 'AUDENIQ에서 작성' }, { value: 'upload', label: '보유한 서류 첨부' }] as const} />
       {method === 'electronic' ? (
         <button type="button" className="aq-dropzone aq-filecard" onClick={() => onElectronic(kind)}>
           <span className="aq-dropzone-icon" aria-hidden="true"><Glyph name="sign" size={26} /></span>
@@ -1146,6 +1145,7 @@ type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'saved'; at: st
 export function Upload() {
   const nav = useNavigate();
   const toast = useToast();
+  const alert = useAlert();
   const confirm = useConfirm();
   const profile = useProfile();
   const allDocs = useDocs();
@@ -1670,12 +1670,12 @@ export function Upload() {
     if (!file) return;
     const okType = /^image\/(jpeg|png)$/i.test(file.type) || /\.(jpe?g|png)$/i.test(file.name);
     if (!okType) {
-      toast('커버는 JPG 또는 PNG 파일만 등록할 수 있어요.');
+      alert('커버 파일 형식을 확인해 주세요.', 'JPG 또는 PNG 파일만 커버아트로 등록할 수 있어요.');
       if (input) input.value = '';
       return;
     }
     if (file.size > 20 * 1024 * 1024) {
-      toast('커버 이미지는 20MB 이하로 올려 주세요.');
+      alert('커버 파일이 너무 커요.', '커버 이미지는 20MB 이하로 올려 주세요.');
       if (input) input.value = '';
       return;
     }
@@ -1685,7 +1685,7 @@ export function Upload() {
       const issue = coverIssue(thumb.width, thumb.height);
       if (issue) {
         setCoverWarn(issue);
-        toast('커버아트 규격을 확인해 주세요.');
+        alert('커버아트 규격을 확인해 주세요.', issue);
         if (input) input.value = '';
         return;
       }
@@ -1709,12 +1709,12 @@ export function Upload() {
     const file = input.files?.[0];
     if (!file) return;
     if (!AUDIO_RE.test(file.name) && !/^audio\/(x-)?(wav|wave|flac|mp4|m4a|aiff|wavpack|tta)$/i.test(file.type)) {
-      toast('음원은 무손실 WAV·FLAC·ALAC·AIFF·WavPack·TTA 파일만 올릴 수 있어요.');
+      alert('음원 파일 형식을 확인해 주세요.', '무손실 WAV·FLAC·ALAC·AIFF·WavPack·TTA 파일만 올릴 수 있어요.');
       input.value = '';
       return;
     }
     if (file.size > 512 * 1024 * 1024) {
-      toast('음원 파일은 512MB 이하로 올려 주세요.');
+      alert('음원 파일이 너무 커요.', '음원 파일은 512MB 이하로 올려 주세요.');
       input.value = '';
       return;
     }
@@ -1728,7 +1728,7 @@ export function Upload() {
       if (check.warnings.length) toast(check.warnings[0], 'info');
       acceptAudio(id, file, check.spec ? specLabel(check.spec) : '', check.spec?.duration ? formatDuration(check.spec.duration) : '');
     }).catch(() => acceptAudio(id, file, '', ''));
-  }, [startUpload, setUpload, toast]); // eslint-disable-line react-hooks/exhaustive-deps -- acceptAudio는 매 렌더 새로 만들어지지만 상태 setter만 쓴다
+  }, [startUpload, setUpload, toast, alert]); // eslint-disable-line react-hooks/exhaustive-deps -- acceptAudio는 매 렌더 새로 만들어지지만 상태 setter만 쓴다
 
   const acceptAudio = (id: string, file: File, spec: string, headerDuration: string) => {
     dirtyRef.current = true;

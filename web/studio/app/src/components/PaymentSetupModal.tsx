@@ -126,7 +126,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
 
   const nextFrom0 = () => {
     if (!draft.recipient.trim() || !draft.type) {
-      toast('수령인 이름과 유형을 확인해 주세요.');
+      setPayError({ title: '수령인 정보를 확인해 주세요.', detail: '수령인 이름을 입력하고 유형을 골라 주세요.' });
       return;
     }
     setDraft(d => ({ ...d, recipient: d.recipient.trim() }));
@@ -156,7 +156,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
 
   const nextFrom3 = async () => {
     if (!agrees.every(Boolean)) {
-      toast('필수 약관을 모두 확인해 주세요.');
+      setPayError({ title: '필수 약관을 확인해 주세요.', detail: '수익 정산 정보를 등록하려면 필수 약관에 모두 동의해야 해요.' });
       return;
     }
     if (saving) return;
