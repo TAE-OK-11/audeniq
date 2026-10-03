@@ -4,7 +4,7 @@ import { ApiError, messageForCode } from '../api/errors';
 import { applicationPending, needsSecond } from './labels';
 import type {
   ApprovalItem, DecisionInput, DecisionResult, DeliveryDecisionInput, DeliveryItem, DspItem, InquiryMessage, InquiryItem,
-  Overview, PayoutItem, QueueRelease, ReleaseSheet, ReleaseTimelineItem, StagingRow, StaffDocument, StaffMe,
+  Overview, PayoutItem, QueueRelease, ReleaseSheet, ReleaseTimelineItem, StagingRow, StaffDocument, StaffMe, AgreementTerms, AgreementTermsInput
 } from './api';
 import { applicationHash, type StudioDraft } from './application';
 
@@ -286,6 +286,16 @@ export const mockStaff = {
     if (claims[rid]) { delete claims[rid]; audit(r, 'staff.review_released', ME); }
     return wait({ release_id: rid, claimed_by: null });
   },
+  agreementTerms: async (rid: string, i: AgreementTermsInput) => {
+    const r = find(rid);
+    const d = r.sheet.documents.find(x => x.kind === 'AGREEMENT' && ['REVIEW', 'PREPARED'].includes(x.status));
+    if (!d) fail('AGREEMENT_NOT_IN_REVIEW');
+    const terms: AgreementTerms = { ...i, form: 'AUD-DIST 2.0', terms_version: 'AUD-TERMS 2026.10', user_bps: 10000 - i.fee_bps, currency: 'KRW',
+      confirmations: [], required: [], set_at: new Date().toISOString() };
+    const body = `AUDENIQ 음원 배급 계약서 (체험)\n\n배급 형태: ${i.exclusivity === 'EXCLUSIVE' ? '독점' : '비독점'}\n배급수수료: 회사 ${i.fee_bps / 100}% / 이용자 ${(10000 - i.fee_bps) / 100}%${i.rate_note ? `\n특별 요율: ${i.rate_note}` : ''}\n개별 특약: ${i.special_terms || '없음'}`;
+    Object.assign(d!, { agreement_terms: terms, body, row_version: d!.row_version + 1 });
+    return wait({ id: d!.id, row_version: d!.row_version, terms, body });
+  },
   decide: async (rid: string, i: DecisionInput): Promise<DecisionResult> => {
     const r = find(rid);
     if (!awaiting(r)) fail('RELEASE_NOT_IN_REVIEW');
@@ -298,6 +308,7 @@ export const mockStaff = {
       // 자동 검사를 통과한 새 발매 신청: 신청서(계약서)와 발매를 함께 결정
       const next = i.action === 'APPROVE' ? null : i.action === 'REJECT' ? 'WITHDRAWN' : 'STAGE3_CORRECTION';
       const agreement = i.action === 'APPROVE' ? 'APPROVED' : i.action === 'REJECT' ? 'REJECTED' : 'NEEDS';
+      if (i.action === 'APPROVE' && r.sheet.documents.some(d => d.kind === 'AGREEMENT' && ['REVIEW', 'PREPARED'].includes(d.status) && !d.agreement_terms)) fail('AGREEMENT_TERMS_REQUIRED');
       r.q.agreement = agreement;
       r.sheet.documents.filter(d => d.kind === 'AGREEMENT').forEach(d => Object.assign(d, { status: agreement, review_note: next ? i.reason : null }));
       r.sheet.notes.push({ id: uid(), revision_id: i.revision_id, check_code: null, decision: i.action, note: i.reason, author_user_id: ME, at: new Date().toISOString() });

@@ -535,7 +535,7 @@ pub async fn read_notifications(s: &AppState, a: &Actor, org: Uuid, i: ReadInput
 // interpolated into queries (sqlx::AssertSqlSafe); every value is bound.
 const DOC_JSON: &str = "jsonb_build_object('id',d.id,'kind',d.kind,'release_id',d.release_id,'release_title',r.title,'title',d.title,'version',d.version,
   'body',d.body,'status',d.status,'review_note',d.review_note,'asset_id',d.asset_id,'file_name',d.file_name,'checked_at',d.checked_at,
-  'signer_name',d.signer_name,'signature',d.signature,'signed_at',d.signed_at,'electronic_record',d.electronic_record,'row_version',d.row_version,'created_at',d.created_at,'updated_at',d.updated_at)";
+  'signer_name',d.signer_name,'signature',d.signature,'signed_at',d.signed_at,'electronic_record',d.electronic_record,'agreement_terms',d.agreement_terms,'confirmations',d.confirmations,'row_version',d.row_version,'created_at',d.created_at,'updated_at',d.updated_at)";
 
 pub async fn list_documents(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
@@ -605,6 +605,9 @@ pub struct SignInput {
     pub signer_name: String,
     pub signature: String,
     pub row_version: i64,
+    /// Ticked rights confirmations (AUD-DIST 2.0 agreements).
+    #[serde(default)]
+    pub confirmations: Vec<String>,
 }
 
 pub async fn sign_document(
@@ -633,14 +636,35 @@ pub async fn sign_document(
             "DOCUMENT_NOT_APPROVED"
         }));
     }
+    // A 2.0 distribution agreement is signed only with every required rights
+    // confirmation ticked; the ticks are kept with a hash over body + terms.
+    let (body, terms): (String, Option<Value>) =
+        sqlx::query_as("SELECT body, agreement_terms FROM portal.documents WHERE id=$1")
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await?;
+    let confirmations = match &terms {
+        Some(t) => {
+            let mut ticks = crate::agreement::check_confirmations(t, &i.confirmations)?;
+            ticks["content_hash"] = json!(crate::agreement::content_hash(
+                &body,
+                t,
+                &ticks["items"],
+                &sig
+            ));
+            Some(ticks)
+        }
+        None => None,
+    };
     let rv: i64 = sqlx::query_scalar(
-        "UPDATE portal.documents SET status='SIGNED',signer_name=$2,signature=$3,signed_by=$4,signed_at=now(),row_version=row_version+1,updated_at=now()
+        "UPDATE portal.documents SET status='SIGNED',signer_name=$2,signature=$3,signed_by=$4,signed_at=now(),confirmations=$5,row_version=row_version+1,updated_at=now()
          WHERE id=$1 RETURNING row_version",
     )
     .bind(id)
     .bind(&name)
     .bind(&sig)
     .bind(a.user)
+    .bind(&confirmations)
     .fetch_one(&mut *tx)
     .await?;
     operations::audit(
@@ -1073,6 +1097,7 @@ pub async fn record_application(
          ON CONFLICT(org_id,release_id) WHERE kind='AGREEMENT' DO UPDATE
            SET body=EXCLUDED.body,title=EXCLUDED.title,
                status='REVIEW',checked_at=NULL,review_note='',signer_name='',signature='',signed_by=NULL,signed_at=NULL,
+               agreement_terms=NULL,confirmations=NULL,
                row_version=portal.documents.row_version+1,updated_at=now()
          WHERE portal.documents.status NOT IN ('SIGNED','REJECTED','CANCELLED')",
     )

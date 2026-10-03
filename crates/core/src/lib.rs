@@ -1,3 +1,4 @@
+pub mod agreement;
 pub mod api;
 pub mod artifacts;
 pub mod artwork_policy;

@@ -2313,7 +2313,7 @@ export function Upload() {
                       type="checkbox" id={`agree-${a.id}`} checked={!!agreed[a.id]}
                       onChange={e => setAgreed(v => ({ ...v, [a.id]: e.target.checked }))}
                     />
-                    <span>{a.text}</span>
+                    <span>{a.text}{a.id === 'terms' && <> <a href="/terms" target="_blank" rel="noopener" className="aq-inline-link">약관 보기</a></>}</span>
                   </label>
                 ))}
               </div>
