@@ -48,7 +48,7 @@ describe('backend processing timeline', () => {
     expect(html).toContain('음원 분석 등록');
     expect(html).toContain('현재 상태: 대기 · 실행 2회');
     expect(html).toContain('처리 오류 기록 있음');
-    expect(html).toContain('temporary decoder error');
+    expect(html).not.toContain('temporary decoder error');
   });
   test('revision decisions and DSP acknowledgements get readable titles', () => {
     const audit = render(createElement(TimelineRow, { item: { at: '2026-09-30T00:00:00Z', source: 'audit', kind: 'stage2.decision', detail: {} } }));

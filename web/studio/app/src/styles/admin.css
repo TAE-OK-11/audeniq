@@ -937,3 +937,17 @@ a.adm-row,button.adm-row,.adm-stat,.adm-track summary,.adm-filter,.adm-pick,.adm
 /* 스튜디오 공통 규칙(details[open] > summary span 45° 회전)이 관리자 접기 줄의 체크 표시·글자까지 돌려 ‘ㄴ’처럼 보이던 문제 */
 :is(.adm-body,#modal) details[open]>summary span{transform:none}
 .adm-brief-ok[open]>summary{color:#4c5a74}
+
+/* ---------- ‘자세히’: 영어 원문 대신 한국어 항목 목록 ---------- */
+.adm-detail-list{margin:8px 0 0;padding:12px 14px;border-radius:16px;background:#fff;display:grid;gap:8px}
+.adm-detail-list>div{display:grid;grid-template-columns:96px minmax(0,1fr);gap:10px;font-size:12.5px;line-height:1.5}
+.adm-detail-list dt{color:var(--adm-muted);font-weight:700}
+.adm-detail-list dd{margin:0;color:#202b40;font-weight:650;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.adm-check .adm-detail-list{background:#fff}
+.adm-timeline .adm-detail-list{background:var(--adm-card)}
+.adm-detail-empty{margin:6px 0 0;font-size:12.5px;color:var(--adm-muted)}
+.adm-id{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#5d6880;letter-spacing:.02em}
+.adm-note-target{font-size:12.5px;font-weight:750;color:#3d4760;margin-left:4px}
+@media (max-width:640px){.adm-timeline .adm-more{display:block}.adm-detail-list>div{grid-template-columns:84px minmax(0,1fr)}}
+.adm-timeline .adm-more summary{color:#3B63F3;font-size:12px}
+.adm-check .adm-more,.adm-timeline .adm-more{display:block}
