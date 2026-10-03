@@ -27,22 +27,26 @@ R2의 기본 서버 측 저장 암호화는 [공식 데이터 보안 문서](htt
 
 ## KMS 키 준비와 회전
 
-운영자는 기존 **대칭 AWS KMS 키 ARN**과 AWS CLI 자격을 별도로 준비한다. AWS는 구현한 선택지이며 Akamai 서버에 AWS 서비스를 자동 가입하거나 KMS를 생성하지 않는다. 공급자 선택·IAM·권한 부여는 실제 운영 설정이 필요하다. 다른 KMS 사용 시 같은 안전성·회전 요구를 만족하는 materializer로 교체할 수 있다.
+운영자는 **AWS KMS 또는 GCP Cloud KMS**를 선택한다. AWS는 기존 대칭 키 ARN과 AWS CLI 자격, GCP는 기존 `ENCRYPT_DECRYPT` CryptoKey 전체 리소스 이름과 `gcloud` ADC 자격이 필요하다. 공급자·리전·IAM 설정은 운영자가 준비하며 이 도구가 클라우드 키·유료 자원·계정을 생성하지 않는다. Akamai 서버는 그대로 두고 선택한 KMS를 HTTPS로 호출한다.
 
-`deploy/kms-keyring.py`는 공식 AWS CLI로 TLS·인증서 검증·SigV4를 처리한다. 디스크에는 KMS로 감싼 키만 두고, API용 평문 키는 host tmpfs에만 쓴다. API 컨테이너는 파일을 읽기 전용으로 받고 AWS 자격은 받지 않는다. worker에도 키와 KMS 자격을 주지 않는다. [KMS Decrypt](https://docs.aws.amazon.com/kms/latest/APIReference/API_Decrypt.html)의 KeyId를 고정하고 [EncryptionContext](https://docs.aws.amazon.com/kms/latest/developerguide/encrypt_context.html)에 서비스·용도·버전만 넣어 감사 로그에 개인정보를 보내지 않는다.
+`deploy/kms-keyring.py`의 AWS 경로는 공식 CLI로 TLS·인증서 검증·SigV4를 처리한다. GCP 경로는 `gcloud auth application-default print-access-token`의 출력을 내부에서 읽고 `https://cloudkms.googleapis.com` REST API에 TLS 1.2 이상과 인증서 검증을 적용한다. redirect는 거절한다. 디스크에는 KMS로 감싼 키만 두고, API용 평문 키 파일은 host tmpfs에 쓴다. API 컨테이너와 worker는 AWS/GCP 자격을 받지 않는다.
+
+AWS [KeyId](https://docs.aws.amazon.com/kms/latest/APIReference/API_Decrypt.html)와 GCP CryptoKey 이름을 고정한다. [GCP Encrypt 응답](https://cloud.google.com/kms/docs/reference/rest/v1/projects.locations.keyRings.cryptoKeys/encrypt)의 버전 리소스가 지정한 CryptoKey에 속하는지 확인하고, 요청 검증 플래그와 암복호화 응답 CRC32C를 확인한다. [무결성 지침](https://cloud.google.com/kms/docs/data-integrity-guidelines)에 따라 평문 checksum은 저장하지 않는다. AWS [EncryptionContext](https://docs.aws.amazon.com/kms/latest/developerguide/encrypt_context.html)와 GCP AAD에는 서비스·용도·계좌 키 버전만 넣는다.
+
+새 감싼 키 묶음은 `version: 2`이며 각 키에 `provider: aws|gcp`를 저장한다. 기존 `version: 1` AWS 묶음도 그대로 읽고, 다음 변경 때 공급자를 명시한 형식으로 전환한다. 한 묶음에 과거 AWS 버전과 새 GCP 버전이 함께 있을 수 있다. `materialize`는 각 키의 공급자를 읽으므로 양쪽 자격이 필요하며 장애 시 다른 공급자를 임의로 대신 호출하지 않는다. API가 읽는 복호화 키 파일의 형식은 기존과 동일하다.
 
 1. 기존 계좌가 있으면 기존 `PAYOUT_ACCOUNT_KEY`를 정확히 버전 1로 보존한다. 안전한 관리 절차로 `/dev/shm/legacy-payout-key`에 64 hex 값을 작성하고 mode 0600을 설정한다. 값을 명령 인자·셸 기록·출력에 넣지 않는다.
-2. 기존 KMS ARN으로 가져온다:
+2. 선택한 공급자로 가져온다. `AUDENIQ_KMS_PROVIDER=aws|gcp`, `AUDENIQ_KMS_KEY_ID`는 AWS ARN 또는 GCP의 `projects/PROJECT/locations/LOCATION/keyRings/RING/cryptoKeys/KEY`이다. 두 변수는 host의 키 준비 작업에만 전달한다:
 
    ```bash
-   python3 deploy/kms-keyring.py wrap-legacy --bundle /opt/audeniq/payout-wrapped-keyring.json --key-id "$AUDENIQ_KMS_KEY_ARN" --legacy-key-file /dev/shm/legacy-payout-key
+   python3 deploy/kms-keyring.py wrap-legacy --provider "$AUDENIQ_KMS_PROVIDER" --bundle /opt/audeniq/payout-wrapped-keyring.json --key-id "$AUDENIQ_KMS_KEY_ID" --legacy-key-file /dev/shm/legacy-payout-key
    ```
 
    기존 계좌가 없는 신규 설치는 아래 `generate`부터 시작한다.
 3. 새 버전을 생성하고 복호화 키 파일을 준비한다:
 
    ```bash
-   python3 deploy/kms-keyring.py generate --bundle /opt/audeniq/payout-wrapped-keyring.json --key-id "$AUDENIQ_KMS_KEY_ARN"
+   python3 deploy/kms-keyring.py generate --provider "$AUDENIQ_KMS_PROVIDER" --bundle /opt/audeniq/payout-wrapped-keyring.json --key-id "$AUDENIQ_KMS_KEY_ID"
    python3 deploy/kms-keyring.py materialize --bundle /opt/audeniq/payout-wrapped-keyring.json
    ```
 
@@ -50,7 +54,18 @@ R2의 기본 서버 측 저장 암호화는 [공식 데이터 보안 문서](htt
 5. owner DB 연결과 해당 키 파일을 제공한 운영 CLI로 `audeniq-admin --operator NAME privacy reencrypt-accounts`를 반복 실행한다. 한 번에 100개를 트랜잭션으로 재암호화하며 숫자를 출력하지 않는다. `reencrypted: 0`이 될 때까지 실행한다. API 계정에는 이 작업 권한이 없다.
 6. 기존 데이터·암호화된 이전 백업이 모두 만료/전환됐는지 확인하기 전에는 과거 키 버전을 제거하지 않는다. 키 분실은 복구 불능이므로 감싼 키 묶음과 KMS 복구·IAM 절차를 DB 백업과 별도로 관리한다. 전환과 복원 검증 후 기존 환경변수 키와 임시 legacy 파일을 정리한다.
 
-재부팅 시 tmpfs는 사라진다. 운영 host의 systemd 등에서 `materialize` 성공 후 Compose를 시작하도록 순서를 설정해야 한다. KMS 장애·IAM 실패·예상과 다른 ARN 응답이면 키 파일을 새 내용으로 교체하지 않는다. 배포 스크립트가 준비되지 않은 키 때문에 API를 교체하지 않도록 사전 검사한다. KMS runtime 주체는 해당 ARN의 `kms:Decrypt`와 정확한 context만, 키 준비 주체는 별도 `kms:Encrypt`/`kms:GenerateDataKeyWithoutPlaintext` 권한만 사용한다. 전체 계정의 키 관리·삭제 권한을 runtime에 주지 않는다.
+재부팅 시 tmpfs는 사라진다. 운영 host의 systemd 등에서 `materialize` 성공 후 Compose를 시작하도록 순서를 설정해야 한다. KMS 장애·IAM 실패·다른 키 응답·CRC 오류이면 키 파일을 교체하지 않는다. 배포 스크립트가 준비되지 않은 키 때문에 API를 교체하지 않도록 사전 검사한다. AWS runtime 주체는 해당 ARN의 `kms:Decrypt`와 정확한 context만, 키 준비 주체는 별도 `kms:Encrypt`/`kms:GenerateDataKeyWithoutPlaintext` 권한만 사용한다. GCP runtime 주체는 해당 CryptoKey의 `cloudkms.cryptoKeyVersions.useToDecrypt`, 키 준비 주체는 `cloudkms.cryptoKeyVersions.useToEncrypt`가 필요하다. 전체 계정의 키 관리·삭제 권한을 runtime에 주지 않는다.
+
+GCP ADC는 host에만 준비한다. 운영에서는 서비스 계정 또는 Workload Identity Federation 자격을 사용할 수 있다. [ADC 토큰 명령](https://cloud.google.com/sdk/gcloud/reference/auth/application-default/print-access-token)에 설명된 quota project가 필요한 자격은 host에 `GOOGLE_CLOUD_QUOTA_PROJECT`를 지정한다. 해당 프로젝트의 `serviceusage.services.use` 권한도 필요하다. 토큰을 직접 명령 인자·셸 기록·환경 파일에 복사하지 않는다.
+
+이미 사용 중인 계좌 AES 키를 **AWS ↔ GCP로 옮기는 경우**에는 다음을 실행한다:
+
+```bash
+python3 deploy/kms-keyring.py rewrap --provider "$AUDENIQ_KMS_PROVIDER" --key-id "$AUDENIQ_KMS_KEY_ID" --bundle /opt/audeniq/payout-wrapped-keyring.json
+python3 deploy/kms-keyring.py materialize --bundle /opt/audeniq/payout-wrapped-keyring.json
+```
+
+`rewrap`은 키 버전·AES 키 값·active 버전을 그대로 두고 KMS 포장만 바꾸므로 DB 재암호화가 필요하지 않다. 모든 원본 키를 복호화하고 새 KMS로 감싸는 작업이 성공한 뒤에만 묶음을 원자적으로 교체한다. 이전 묶음·백업 복구에 필요한 과거 공급자의 키와 권한은 전환/복원 검증 전까지 유지한다. 계좌용 AES 키 자체를 새로 만드는 `generate`는 위 재암호화 CLI 절차를 따르는 별도 회전이다. GCP의 기존 KMS 버전도 과거 묶음·백업이 사용하는 동안 유지한다.
 
 ## 백업과 제한된 파기
 
@@ -78,7 +93,7 @@ Studio/관리자 정적 파일은 빌드할 때 Brotli sidecar를 만들고 요�
 
 - 로컬 Worker/전송 회귀 37개, Survey 25개, Studio 86개, Admin 14개 통과. Studio/Admin 타입 검사와 실제 빌드 통과.
 - [GitHub Actions Foundation](https://github.com/TAE-OK-11/audeniq/actions/runs/37110993569)에서 Rust 형식·Clippy·전체 바이너리 빌드, PostgreSQL 통합 테스트를 포함한 439개 테스트 통과(3개 skipped). Docker API/worker 기동·Workers 번들·Studio 브라우저 검사도 통과했다.
-- 같은 Actions에서 KMS 명령의 HTTPS 고정·개인키 인자 노출 방지·원자적 교체·파일 권한과 실제 age 암복호화·오류 시 잔여 파일 방지 테스트 8개 통과. KMS 네트워크 호출은 테스트 대역을 사용했다. 실제 IAM/KMS 연결 성공을 뜻하지 않는다.
+- AWS/GCP 선택·기존 AWS 묶음 호환·혼합 공급자·양방향 rewrap·키 버전 AAD·GCP TLS/CRC32C/ADC·원자적 교체·파일 권한과 실제 age 암복호화 테스트 22개가 로컬에서 통과했다. Foundation의 독립 `kms-backup` 작업에서도 실행한다. KMS/인증 네트워크 호출은 테스트 대역을 사용하며 실제 IAM/KMS 연결 성공을 뜻하지 않는다.
 - Studio/Admin Actions와 Rust 의존성 보안 검사도 통과했다. 로컬 Studio/Admin Wrangler 배포 dry-run을 확인했다.
 - 운영 서버·Cloudflare zone에는 아직 적용하지 않았다. KMS ARN/자격·기존 키 이전·재부팅 준비·age 수신자와 Cloudflare 규칙 권한이 실제로 준비돼야 운영 적용을 완료할 수 있다.
 - 일본 보관 및 기타 Cloudflare 처리 위치는 [개인정보 보호법 제28조의8](https://www.law.go.kr/LSW/lsSideInfoP.do?docCls=jo&joBrNo=08&joNo=0028&lsiSeq=283839&urlMode=lsScJoRltInfoR)의 국외 이전 검토 대상이다. 암호화 구현만으로 법적 근거·위탁 계약·실제 공급자 국가를 확인할 수 없다. 약관 작성 범위와 구분하되 이 운영 의무를 충족했다고 단정하지 않는다.
