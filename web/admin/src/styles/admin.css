@@ -1,6 +1,6 @@
 /* AUDENIQ ADMIN — 스튜디오 디자인(design.css·enhance.css 토큰) 위의 관리자 레이아웃.
    클래스는 모두 adm- 접두사로 두어 아티스트 화면 규칙과 섞이지 않게 한다. */
-:root{--adm-ink:#171B29;--adm-muted:#78849b;--adm-line:#e8edf5;--adm-soft:#F5F8FF;--adm-soft-2:#F2F4F8;--adm-blue:#3B63F3;--adm-blue-soft:#eef3ff;--adm-ease:cubic-bezier(.22,1,.36,1)}
+:root{--adm-ink:#171B29;--adm-muted:#67738a;--adm-line:#e8edf5;--adm-soft:#F5F8FF;--adm-soft-2:#F2F4F8;--adm-blue:#3B63F3;--adm-blue-soft:#eef3ff;--adm-ease:cubic-bezier(.22,1,.36,1)}
 
 .adm-body{min-height:100dvh;background:#fff}
 
@@ -714,3 +714,26 @@ svg.aq-glyph{flex:none;fill:none!important;stroke:currentColor!important;stroke-
 :is(#root,#modal) .adm-main .aq-cadmin .field :is(input,textarea,select):not(#_):focus{background:#e9efff!important}
 .adm-main .aq-cadmin .aq-cadmin-chip:not(.is-on){background:#f1f4ff;color:#4a5670;border:0}
 .adm-main .aq-cadmin .aq-cadmin-chip.is-on{background:#3B63F3;color:#fff;border:0}
+
+/* ---------- 심사 시트 읽기 편하게 ---------- */
+/* 확인할 것: 표시는 제목 줄에 맞춰 위로, 여러 줄 설명은 접기 */
+.adm-brief li{align-items:flex-start}
+.adm-brief li .adm-brief-mark{margin-top:1px}
+.adm-brief li.is-ok,.adm-brief-ok>summary{align-items:center}
+.adm-brief li.is-ok .adm-brief-mark,.adm-brief-ok>summary .adm-brief-mark{margin-top:0}
+.adm-brief-text b{font-size:13.5px;color:var(--adm-ink)}
+.adm-brief-text small{color:#5d6980}
+.adm-brief-fold>summary{display:grid;gap:4px;list-style:none;cursor:pointer}
+.adm-brief-fold>summary::-webkit-details-marker{display:none}
+.adm-brief-fold>summary>span{display:inline-flex;align-items:center;gap:3px;font-size:12px;font-weight:750;color:#3B63F3}
+.adm-brief-fold>summary>span svg{transition:transform .2s var(--adm-ease)}
+.adm-brief-fold[open]>summary>span svg{transform:rotate(90deg)}
+.adm-brief-fold>small{display:block;margin-top:2px}
+/* 이력 필터: 한 줄로, 넘치면 옆으로 밀기 */
+.adm-tl-filter{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-left:-2px;margin-right:-2px;padding:0 2px}
+.adm-tl-filter::-webkit-scrollbar{display:none}
+.adm-tl-filter button{flex:none;white-space:nowrap}
+/* 구역 제목 옆 개수는 한 줄에, 제목과 구역 사이 여유 */
+.adm-section-top h2{display:flex;align-items:baseline;flex-wrap:wrap;column-gap:8px}
+.adm-section-top h2 small{margin-left:0;font-size:12.5px}
+.adm-section + .adm-section{margin-top:30px}
