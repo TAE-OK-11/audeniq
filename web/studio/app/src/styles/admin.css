@@ -837,3 +837,14 @@ button.adm-row:hover,a.adm-row:hover{background:#edf2ff}
 .adm-subtab-count{display:inline-grid;place-items:center;min-width:24px;height:24px;padding:0 7px;border-radius:12px;background:#eef1f7;color:#5d6880;font-size:12px;font-weight:800}
 .adm-subtabs .adm-filter[aria-selected=true] .adm-subtab-count{background:var(--adm-blue-soft);color:var(--adm-blue)}
 @media (max-width:560px){.adm-brief li .adm-brief-text{flex-basis:calc(100% - 40px)}.adm-brief li .adm-btn{margin-left:30px}}
+/* 서류 검토 카드: 상태 칩은 오른쪽 위, 버튼은 카드 아래 한 줄 */
+.adm-doc-row{align-items:start}
+.adm-doc-row .adm-row-end{align-self:start}
+.adm-doc-actions{grid-column:2/-1;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}
+.adm-doc-actions:empty{display:none}
+@media (max-width:640px){
+  .adm-doc-actions{grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));justify-content:stretch;margin-top:4px}
+  .adm-doc-actions .adm-btn{width:100%;min-height:44px;padding:0 10px;white-space:nowrap}
+}
+.adm-row .adm-btn.warn{background:#ffe4c4;color:#8a4f12}
+.adm-row .adm-btn.danger{background:#ffdcdc;color:#b0393b}
