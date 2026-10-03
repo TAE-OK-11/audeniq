@@ -939,3 +939,6 @@ a.adm-row,button.adm-row,.adm-stat,.adm-track summary,.adm-filter,.adm-pick,.adm
 .adm-refresh.is-done svg{animation:adm-pop .32s cubic-bezier(.34,1.56,.64,1) both}
 @keyframes adm-pop{from{transform:scale(.4);opacity:0}to{transform:none;opacity:1}}
 @media (prefers-reduced-motion:reduce){.adm-refresh svg{animation:none!important}}
+/* 스튜디오 공통 규칙(details[open] > summary span 45° 회전)이 관리자 접기 줄의 체크 표시·글자까지 돌려 ‘ㄴ’처럼 보이던 문제 */
+:is(.adm-body,#modal) details[open]>summary span{transform:none}
+.adm-brief-ok[open]>summary{color:#4c5a74}
