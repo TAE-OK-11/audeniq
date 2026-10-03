@@ -17,6 +17,9 @@ on:
       - config/**
       - migrations/**
       - deploy/Dockerfile
+      - deploy/sanitize-upload.py
+      - deploy/clamd.conf
+      - deploy/freshclam.conf
       - deploy/pgbouncer/**
       - deploy/compose.production.yaml
       - .dockerignore

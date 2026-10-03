@@ -4,6 +4,7 @@ x-runtime: &runtime
   init: true
   read_only: true
   cap_drop: [ALL]
+  pids_limit: 128
   security_opt: [no-new-privileges:true]
   tmpfs: [/tmp:size=16m]
   networks: [backend, egress]
@@ -129,6 +130,32 @@ services:
     logging:
       driver: json-file
       options: {max-size: 10m, max-file: '3'}
+  antivirus:
+    image: ${AUDENIQ_IMAGE:?set verified immutable API image}
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command: [clamd, --foreground, --config-file=/usr/local/share/audeniq/clamd.conf]
+    restart: unless-stopped
+    # Only INSTREAM over a shared Unix socket: no object-store, DB, KMS or network.
+    network_mode: none
+    tmpfs: [/tmp:size=1200m,mode=1777,noexec,nosuid,nodev]
+    volumes:
+      - av_socket:/run/audeniq-av
+      - av_database:/var/lib/clamav:ro
+    pids_limit: 32
+    mem_limit: ${AV_MEM_LIMIT:-768m}
+    cpus: ${AV_CPUS:-0.75}
+  antivirus-update:
+    <<: *runtime
+    command: [freshclam, --daemon, --foreground, --config-file=/usr/local/share/audeniq/freshclam.conf]
+    restart: unless-stopped
+    networks: [egress]
+    volumes: [av_database:/var/lib/clamav]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 16
   api:
     restart: unless-stopped
     <<: *runtime
@@ -160,6 +187,7 @@ services:
       # Pre-launch lock: empty = no request ever reaches a real DSP.
       DSP_LIVE_TRANSMISSION: ${DSP_LIVE_TRANSMISSION:-}
     volumes:
+      - av_socket:/run/audeniq-av:ro
       - ${PAYOUT_KEYRING_DIR:-/dev/shm/audeniq-secrets}:/run/audeniq-keys:ro
       - api_tmp:/var/tmp/audeniq
       - ./partners:/etc/audeniq/partners:ro
@@ -252,6 +280,8 @@ volumes:
   pg18_prod:
   worker_tmp:
   api_tmp:
+  av_socket:
+  av_database:
 networks:
   backend: {internal: true}
   egress: {}

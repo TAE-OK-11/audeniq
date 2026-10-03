@@ -5,9 +5,27 @@ use std::{
     time::{Duration, Instant},
 };
 
+pub(crate) fn run_file(
+    command: &mut Command,
+    path: &std::path::Path,
+    accepted: &[i32],
+) -> Result<Vec<u8>, &'static str> {
+    crate::parser_sandbox::restrict(command, &[path], &[])
+        .map_err(|_| "local analyzer sandbox unavailable")?;
+    run(command, accepted)
+}
+
 pub(crate) fn run(command: &mut Command, accepted: &[i32]) -> Result<Vec<u8>, &'static str> {
+    run_timeout(command, accepted, Duration::from_secs(15))
+}
+
+pub(crate) fn run_timeout(
+    command: &mut Command,
+    accepted: &[i32],
+    timeout: Duration,
+) -> Result<Vec<u8>, &'static str> {
     const LIMIT: u64 = 512 * 1024;
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + timeout;
     let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

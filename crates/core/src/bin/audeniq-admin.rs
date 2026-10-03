@@ -66,6 +66,11 @@ fn take_flag(args: &mut Vec<String>, key: &str) -> bool {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
+    if args == ["upload-sandbox-check"] {
+        audeniq_core::parser_sandbox::self_test()?;
+        println!("upload parser isolation verified");
+        return Ok(());
+    }
     let operator = take_opt(&mut args, "--operator")
         .or_else(|| std::env::var("AUDENIQ_OPERATOR").ok())
         .unwrap_or_default();

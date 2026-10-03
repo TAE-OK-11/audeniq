@@ -40,6 +40,9 @@ pub fn inspect(path: &Path) -> Value {
             "--",
         ])
         .arg(path);
+    if crate::parser_sandbox::restrict(&mut command, &[path], &[]).is_err() {
+        return unknown("metadata sandbox unavailable");
+    }
     let bytes = match read_metadata(&mut command) {
         Ok(bytes) => bytes,
         Err(reason) => return unknown(reason),
@@ -70,6 +73,9 @@ pub fn inspect_audio(path: &Path) -> Value {
             "-i",
         ])
         .arg(path);
+    if crate::parser_sandbox::restrict(&mut command, &[path], &[]).is_err() {
+        return unknown("metadata sandbox unavailable");
+    }
     let bytes = match read_metadata(&mut command) {
         Ok(bytes) => bytes,
         Err(reason) => return unknown(reason),

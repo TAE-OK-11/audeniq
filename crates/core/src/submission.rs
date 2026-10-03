@@ -869,8 +869,16 @@ async fn preserve_audio_provenance(
             .iter()
             .any(|c| c.check_code == "SHA256_MISMATCH" && c.status == CheckStatus::Blocked)
     {
-        outcomes.retain(|c| c.check_code != "AUDIO_AI_PROVENANCE");
-        outcomes.push(crate::provenance::outcome("AUDIO_AI_PROVENANCE", &original));
+        let code = if outcomes
+            .iter()
+            .any(|c| c.check_code == "IMAGE_AI_PROVENANCE")
+        {
+            "IMAGE_AI_PROVENANCE"
+        } else {
+            "AUDIO_AI_PROVENANCE"
+        };
+        outcomes.retain(|c| c.check_code != code);
+        outcomes.push(crate::provenance::outcome(code, &original));
     }
     Ok(())
 }
@@ -2239,6 +2247,7 @@ async fn qc_single_asset(
     .await?
     .ok_or(Error::Internal)?;
     let state: String = row.get("state");
+    crate::upload_safety::require_verified(&pool, org, aid).await?;
     let key: String = row.get("object_key");
     let content_type: String = row.get("content_type");
     if state != "REGISTERED" {
@@ -2311,7 +2320,7 @@ async fn qc_single_asset(
         .await
     {
         Ok((mut o, metrics, fp, _)) => {
-            if kind == "AUDIO" && to_run.contains(&"AUDIO_AI_PROVENANCE") {
+            if to_run.contains(&"AUDIO_AI_PROVENANCE") || to_run.contains(&"IMAGE_AI_PROVENANCE") {
                 preserve_audio_provenance(&pool, org, aid, sha256, &mut o).await?;
             }
             // Persist measured audio duration + real technical specs for
@@ -2401,6 +2410,7 @@ pub async fn precheck_asset(
     if state != "REGISTERED" || kind != "AUDIO" {
         return Ok(false);
     }
+    crate::upload_safety::require_verified(&pool, org, aid).await?;
     let key: String = row.get("object_key");
     let content_type: String = row.get("content_type");
     let size: i64 = row.get("size_bytes");
