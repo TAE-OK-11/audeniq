@@ -125,6 +125,10 @@ fn decode_window(path: &Path, start_secs: f64, len_secs: f64) -> Result<Vec<f32>
     command.args([
         "-v",
         "error",
+        "-filter_threads",
+        "1",
+        "-threads",
+        "1",
         "-ss",
         &start_secs.to_string(),
         "-t",
@@ -139,27 +143,35 @@ fn decode_window(path: &Path, start_secs: f64, len_secs: f64) -> Result<Vec<f32>
         "s16le",
         "-acodec",
         "pcm_s16le",
+        "-threads",
+        "1",
         "-",
     ]);
-    crate::parser_sandbox::restrict(&mut command, &[path], &[]).map_err(|_| Error::Internal)?;
-    let mut child = command
+    crate::parser_sandbox::restrict_audio(&mut command, &[path], &[])
+        .map_err(|_| Error::Internal)?;
+    let deadline = std::time::Instant::now() + Duration::from_secs(120);
+    command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
+        .stderr(Stdio::null());
+    let mut child = crate::analyzer_process::AnalyzerProcess::spawn(&mut command, deadline)
         .map_err(|_| Error::Internal)?;
     let stdout = child.stdout.take().ok_or(Error::Internal)?;
+    let stdout = child.reader(stdout).map_err(|_| Error::Internal)?;
     let max_bytes = ((len_secs * SAMPLE_RATE as f64).ceil() as usize + 1) * 2;
     let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let r = stdout
-            .take(max_bytes as u64 + 1)
-            .read_to_end(&mut buf)
-            .map(|_| buf);
-        let _ = tx.send(r);
-    });
-    let bytes = match rx.recv_timeout(Duration::from_secs(120)) {
+    child
+        .spawn_reader("fingerprint-decode", move || {
+            let mut buf = Vec::new();
+            let r = stdout
+                .take(max_bytes as u64 + 1)
+                .read_to_end(&mut buf)
+                .map(|_| buf);
+            let _ = tx.send(r);
+        })
+        .map_err(|_| Error::Internal)?;
+    let bytes = match rx.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+    {
         Ok(Ok(buf)) => buf,
         _ => {
             let _ = child.kill();
@@ -174,7 +186,15 @@ fn decode_window(path: &Path, start_secs: f64, len_secs: f64) -> Result<Vec<f32>
         let _ = child.wait();
         return Err(Error::Internal);
     }
-    let status = child.wait().map_err(|_| Error::Internal)?;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(10))
+            }
+            _ => return Err(Error::Internal),
+        }
+    };
     let (sample_chunks, remainder) = bytes.as_chunks::<2>();
     if !status.success() || !remainder.is_empty() {
         return Err(Error::Internal);
@@ -237,15 +257,21 @@ pub fn compute_fingerprint(path: &Path, duration_secs: f64) -> Result<Fingerprin
 /// frame vectors are concatenated in order. The segments are &[f32] slices
 /// of mono 11025 Hz PCM.
 pub fn fingerprint_from_segments(segments: &[&[f32]]) -> Result<Fingerprint> {
-    let mut frames = Vec::new();
+    let capacity = segments
+        .iter()
+        .map(|seg| seg.len().saturating_sub(FRAME_SIZE) / FRAME_HOP)
+        .sum();
+    let mut frames = Vec::with_capacity(capacity);
+    let mut workspace = FingerprintWorkspace::new();
     let mut total_secs = 0.0;
     for seg in segments {
         if seg.is_empty() {
             continue;
         }
-        let fp = fingerprint_from_samples(seg)?;
-        frames.extend(fp.frames);
-        total_secs += fp.duration_secs;
+        // Reset the energy history at every segment boundary, while reusing
+        // FFT buffers across all windows of this asset.
+        workspace.append_frames(seg, &mut frames)?;
+        total_secs += seg.len() as f64 / SAMPLE_RATE as f64;
     }
     if frames.len() < MIN_OVERLAP_FRAMES + 1 {
         return Err(Error::PolicyGate(TOO_SHORT_CODE));
@@ -262,84 +288,138 @@ pub fn fingerprint_from_segments(segments: &[&[f32]]) -> Result<Fingerprint> {
 /// and the QC fast path, where the segment samples are tapped out of the
 /// single `decode_analysis` pass instead of a second ffmpeg decode.
 pub fn fingerprint_from_samples(samples: &[f32]) -> Result<Fingerprint> {
-    if samples.len() < FRAME_SIZE + FRAME_HOP * MIN_OVERLAP_FRAMES {
-        return Err(Error::PolicyGate(TOO_SHORT_CODE));
-    }
-    let window = hann_window();
-    let edges = band_edges();
-    // Frame count of the sequential loop below (`while pos + FRAME_SIZE <=
-    // len`). Frames are independent: FFT + band energies parallelize over
-    // cores, then concatenate in order (bit-identical to sequential).
-    let n_frames = (samples.len() - FRAME_SIZE) / FRAME_HOP + 1;
-    let n_threads = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(2)
-        .clamp(1, 4)
-        .min(n_frames.max(1));
-    let chunk = n_frames.div_ceil(n_threads);
-
-    // Reuse the immutable plan across segments and assets. Scratch belongs
-    // to each chunk, so concurrent QC jobs cannot share mutable buffers.
-    let fft = fft_plan();
-
-    // Log band energies per frame.
-    let mut energies: Vec<[f32; N_BANDS]> = vec![[0.0; N_BANDS]; n_frames];
-    let process_chunk = |start_frame: usize, e_chunk: &mut [[f32; N_BANDS]]| {
-        let mut buf = vec![Complex::new(0.0f32, 0.0); FRAME_SIZE];
-        let mut scratch = vec![Complex::new(0.0f32, 0.0); fft.get_inplace_scratch_len()];
-        for (i, bands) in e_chunk.iter_mut().enumerate() {
-            let pos = (start_frame + i) * FRAME_HOP;
-            for (j, b) in buf.iter_mut().enumerate() {
-                b.re = samples[pos + j] * window[j];
-                b.im = 0.0;
-            }
-            fft.process_with_scratch(&mut buf, &mut scratch);
-            for m in 0..N_BANDS {
-                let lo = edges[m];
-                let hi = edges[m + 1].max(lo + 1);
-                let mut e = 0.0f32;
-                for value in buf.iter().take(hi.min(FRAME_SIZE / 2)).skip(lo) {
-                    // norm_sqr == norm()² without the sqrt.
-                    e += value.norm_sqr();
-                }
-                // Log energy with floor: Philips uses log energies; the floor
-                // keeps silence from producing unstable differentials.
-                bands[m] = (e + 1e-10).ln();
-            }
-        }
-    };
-    if n_threads == 1 {
-        process_chunk(0, &mut energies);
-    } else {
-        std::thread::scope(|s| {
-            for (ci, e_chunk) in energies.chunks_mut(chunk).enumerate() {
-                let process_chunk = &process_chunk;
-                s.spawn(move || process_chunk(ci * chunk, e_chunk));
-            }
-        });
-    }
-    if energies.len() < MIN_OVERLAP_FRAMES + 1 {
-        return Err(Error::PolicyGate(TOO_SHORT_CODE));
-    }
-
-    // Philips differential: bit m of frame n is 1 when
-    // (E[n][m] - E[n][m+1]) - (E[n+1][m] - E[n+1][m+1]) > 0.
-    let mut frames = Vec::with_capacity(energies.len() - 1);
-    for n in 0..energies.len() - 1 {
-        let mut bits = 0u32;
-        for m in 0..(N_BANDS - 1) {
-            let d = (energies[n][m] - energies[n][m + 1])
-                - (energies[n + 1][m] - energies[n + 1][m + 1]);
-            if d > 0.0 {
-                bits |= 1 << m;
-            }
-        }
-        frames.push(bits);
-    }
+    let mut frames = Vec::with_capacity(samples.len().saturating_sub(FRAME_SIZE) / FRAME_HOP);
+    FingerprintWorkspace::new().append_frames(samples, &mut frames)?;
     Ok(Fingerprint {
         frames,
         duration_secs: samples.len() as f64 / SAMPLE_RATE as f64,
     })
+}
+
+/// Each differential needs only the current and previous band energies.
+/// Keep FFT scratch per asset instead of a duration-sized energy matrix and
+/// a fresh thread pool for every segment. The worker already runs assets in
+/// parallel; the immutable FFT plan remains shared across those assets.
+struct FingerprintWorkspace {
+    buf: Vec<Complex<f32>>,
+    scratch: Vec<Complex<f32>>,
+}
+
+impl FingerprintWorkspace {
+    fn new() -> Self {
+        Self {
+            buf: vec![Complex::new(0.0, 0.0); FRAME_SIZE],
+            scratch: vec![Complex::new(0.0, 0.0); fft_plan().get_inplace_scratch_len()],
+        }
+    }
+
+    fn append_frames(&mut self, samples: &[f32], frames: &mut Vec<u32>) -> Result<()> {
+        if samples.len() < FRAME_SIZE + FRAME_HOP * MIN_OVERLAP_FRAMES {
+            return Err(Error::PolicyGate(TOO_SHORT_CODE));
+        }
+        let n_frames = (samples.len() - FRAME_SIZE) / FRAME_HOP + 1;
+        let mut previous = [0.0f32; N_BANDS];
+        for i in 0..n_frames {
+            let pos = i * FRAME_HOP;
+            let bands = self.band_energies(&samples[pos..pos + FRAME_SIZE]);
+            if i > 0 {
+                frames.push(differential(&previous, &bands));
+            }
+            previous = bands;
+        }
+        Ok(())
+    }
+
+    fn band_energies(&mut self, samples: &[f32]) -> [f32; N_BANDS] {
+        let window = hann_window();
+        let edges = band_edges();
+        for (j, b) in self.buf.iter_mut().enumerate() {
+            b.re = samples[j] * window[j];
+            b.im = 0.0;
+        }
+        fft_plan().process_with_scratch(&mut self.buf, &mut self.scratch);
+        let mut bands = [0.0f32; N_BANDS];
+        for m in 0..N_BANDS {
+            let lo = edges[m];
+            let hi = edges[m + 1].max(lo + 1);
+            let mut e = 0.0f32;
+            for value in self.buf.iter().take(hi.min(FRAME_SIZE / 2)).skip(lo) {
+                e += value.norm_sqr();
+            }
+            // Preserve the f32 summation and floor used by stored v2 hashes.
+            bands[m] = (e + 1e-10).ln();
+        }
+        bands
+    }
+}
+
+fn differential(previous: &[f32; N_BANDS], bands: &[f32; N_BANDS]) -> u32 {
+    let mut bits = 0u32;
+    for m in 0..N_BANDS - 1 {
+        let d = (previous[m] - previous[m + 1]) - (bands[m] - bands[m + 1]);
+        if d > 0.0 {
+            bits |= 1 << m;
+        }
+    }
+    bits
+}
+
+/// Fingerprint one tapped window with only one overlapping PCM frame in
+/// memory. A separate builder per window keeps segment boundaries intact.
+pub(crate) struct FingerprintBuilder {
+    workspace: FingerprintWorkspace,
+    pending: Vec<f32>,
+    previous: Option<[f32; N_BANDS]>,
+    frames: Vec<u32>,
+    samples: usize,
+}
+
+impl FingerprintBuilder {
+    pub(crate) fn new() -> Self {
+        Self {
+            workspace: FingerprintWorkspace::new(),
+            pending: Vec::with_capacity(FRAME_SIZE),
+            previous: None,
+            frames: Vec::new(),
+            samples: 0,
+        }
+    }
+
+    pub(crate) fn push_s16le(&mut self, mut pcm: &[[u8; 2]]) {
+        self.samples += pcm.len();
+        while !pcm.is_empty() {
+            let take = pcm.len().min(FRAME_SIZE - self.pending.len());
+            self.pending.extend(
+                pcm[..take]
+                    .iter()
+                    .map(|s| i16::from_le_bytes(*s) as f32 / 32768.0),
+            );
+            pcm = &pcm[take..];
+            if self.pending.len() == FRAME_SIZE {
+                let bands = self.workspace.band_energies(&self.pending);
+                if let Some(previous) = &self.previous {
+                    self.frames.push(differential(previous, &bands));
+                }
+                self.previous = Some(bands);
+                self.pending.copy_within(FRAME_HOP.., 0);
+                self.pending.truncate(FRAME_SIZE - FRAME_HOP);
+            }
+        }
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.samples == 0
+    }
+
+    pub(crate) fn finish(self) -> Result<Fingerprint> {
+        if self.samples < FRAME_SIZE + FRAME_HOP * MIN_OVERLAP_FRAMES {
+            return Err(Error::PolicyGate(TOO_SHORT_CODE));
+        }
+        Ok(Fingerprint {
+            frames: self.frames,
+            duration_secs: self.samples as f64 / SAMPLE_RATE as f64,
+        })
+    }
 }
 
 /// Bit error rate between two sub-fingerprint sequences at a fixed offset.
@@ -450,6 +530,40 @@ pub fn bit_error_rate_within(a: &[u32], b: &[u32], limit: f64) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn streaming_fingerprint_matches_batch_at_frame_boundaries() {
+        let minimum = FRAME_SIZE + FRAME_HOP * MIN_OVERLAP_FRAMES;
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let pcm: Vec<[u8; 2]> = (0..30 * SAMPLE_RATE as usize + 13)
+            .map(|_| {
+                seed ^= seed << 13;
+                seed ^= seed >> 7;
+                seed ^= seed << 17;
+                (seed as i16).to_le_bytes()
+            })
+            .collect();
+        for len in [minimum - 1, minimum, minimum + FRAME_HOP, pcm.len()] {
+            let samples: Vec<f32> = pcm[..len]
+                .iter()
+                .map(|s| i16::from_le_bytes(*s) as f32 / 32768.0)
+                .collect();
+            for chunk in [1, 2, FRAME_HOP - 1, FRAME_SIZE * 2 + 1] {
+                let mut builder = FingerprintBuilder::new();
+                for part in pcm[..len].chunks(chunk) {
+                    builder.push_s16le(part);
+                }
+                match (fingerprint_from_samples(&samples), builder.finish()) {
+                    (Ok(batch), Ok(stream)) => {
+                        assert_eq!(stream.frames, batch.frames, "len={len} chunk={chunk}");
+                        assert_eq!(stream.duration_secs, batch.duration_secs);
+                    }
+                    (Err(Error::PolicyGate(a)), Err(Error::PolicyGate(b))) => assert_eq!(a, b),
+                    _ => panic!("stream and batch disagreed at len={len} chunk={chunk}"),
+                }
+            }
+        }
+    }
 
     #[test]
     fn long_tracks_fingerprint_a_bounded_segment() {

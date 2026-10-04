@@ -36,9 +36,11 @@ pub struct AppState {
     pub dummy_hash: String,
     pub payout_keys: Arc<crate::payout_keys::KeyRing>,
     pub antivirus_enabled: bool,
+    service_secret_digest: [u8; 32],
 }
 impl AppState {
     pub async fn new(pool: PgPool, config: Config, storage: Arc<dyn ObjectStore>) -> Result<Self> {
+        let service_secret_digest = auth::token_digest(&config.service_secret);
         Ok(Self {
             pool,
             config,
@@ -49,6 +51,7 @@ impl AppState {
             payout_keys: Arc::new(crate::payout_keys::KeyRing::from_env(false)?),
             antivirus_enabled: crate::config::antivirus_enabled()?,
             dummy_hash: auth::password_hash(auth::random_token()).await?,
+            service_secret_digest,
         })
     }
 }
@@ -196,7 +199,7 @@ async fn boundary(State(s): State<AppState>, mut req: Request, next: Next) -> Re
         .get("x-audeniq-service")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    if !auth::secret_eq(provided, &s.config.service_secret) {
+    if !auth::secret_matches_digest(provided, &s.service_secret_digest) {
         return Error::Forbidden.into_response();
     }
     let request_id = HeaderValue::from_str(&id.to_string()).expect("uuid is a valid header");

@@ -10,6 +10,9 @@ use std::{
 use tokio::sync::{Notify, Semaphore};
 use tracing::Instrument;
 
+#[path = "worker/poll.rs"]
+mod poll;
+
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
@@ -119,13 +122,6 @@ fn job_span(job: &operations::Job, queue: &'static str) -> tracing::Span {
     span
 }
 
-async fn wait_for_work(wakeup: &Notify, idle: Duration) {
-    tokio::select! {
-        _ = wakeup.notified() => {}
-        _ = tokio::time::sleep(idle) => {}
-    }
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     audeniq_core::config::antivirus_enabled()?;
@@ -202,6 +198,10 @@ async fn main() -> anyhow::Result<()> {
                 // idle poll is then a single round trip.
                 let mut last_reclaim: Option<std::time::Instant> = None;
                 loop {
+                    // notify_waiters reaches even an unpolled Notified future.
+                    // Subscribe before awaiting capacity/SQL so an enqueue
+                    // during an empty claim cannot be lost before sleeping.
+                    let notified = wakeup.notified();
                     // Capacity is acquired before claiming, so a queued album
                     // never burns its lease while waiting for CPU or memory.
                     let permit = limiter
@@ -270,13 +270,13 @@ async fn main() -> anyhow::Result<()> {
                         }
                         Ok(None) => {
                             drop(permit);
-                            wait_for_work(&wakeup, idle).await;
-                            idle = (idle * 2).min(Duration::from_secs(2));
+                            poll::wait_for_work(notified, idle).await;
+                            idle = (idle * 2).min(poll::MAX_IDLE);
                         }
                         Err(error) => {
                             drop(permit);
                             tracing::warn!(queue, %error, "queue polling failed");
-                            wait_for_work(&wakeup, Duration::from_secs(3)).await;
+                            poll::wait_for_work(notified, Duration::from_secs(3)).await;
                         }
                     }
                 }

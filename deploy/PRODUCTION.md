@@ -25,18 +25,22 @@ Current configuration examples are not evidence of an established Tunnel, VPC Se
 
 ## GHCR 이미지 배포 (백엔드)
 
-`main`에 백엔드 변경(`crates/core`, `migrations`, `config`, `Cargo.*`, `deploy/Dockerfile`)이 푸시되면 **Backend image** 워크플로(`.github/workflows/backend-image.yml`)가 바로 `deploy/Dockerfile`로 이미지를 만들어 GHCR에 올린다. 테스트(Foundation)는 따로 돌고 이미지 빌드를 막지 않는다. 운영 프로필 `CARGO_PROFILE=release`(`Cargo.toml` `[profile.release]`: fat LTO, opt-level 3, 코드젠 1)로, 서버 CPU(AMD EPYC Zen3) 기준선 `TARGET_CPU=x86-64-v3`(AVX2·BMI2·FMA)에 맞춰 빌드한다. 예전 `fast` 프로필(opt-level 1)보다 CPU 작업(QC 지문 비교·JSON·해시)이 2~3배 빠르다. 기준선은 이미지의 `/usr/local/share/audeniq/target-cpu`에 기록되고, `deploy.sh`는 서버 CPU가 그 기준선을 지원하지 않으면 마이그레이션 전에 배포를 거부한다. AVX2가 없는 서버에 배포하려면 워크플로의 `TARGET_CPU`를 비운다(일반 x86-64).
+`main`에 백엔드 변경이 푸시되면 **Backend image** 워크플로가 `deploy/Dockerfile`로 이미지를 만들어 GHCR에 올린다. 운영 프로필은 `CARGO_PROFILE=release`(`Cargo.toml` `[profile.release]`: fat LTO, opt-level 3, 코드젠 1)이다. 공용 이미지는 **Linux x86-64와 ARM64**를 함께 제공하며 Docker가 서버에 맞는 아키텍처를 선택한다. CPU 최적화 이미지는 별도 태그로 제공한다. Rust와 C/C++ 의존성에 같은 CPU 기준선을 적용하고 `/usr/local/share/audeniq/target-cpu`·`target-arch`에 기록한다. `deploy.sh`는 AUDENIQ 바이너리를 실행하기 전에 아키텍처와 CPU를 확인한다.
 
-- 이미지: `ghcr.io/tae-ok-11/audeniq` — `audeniq-api`, `audeniq-worker`, `audeniq-migrate`, `audeniq-admin` + ffmpeg/ffprobe, UID 10001, `linux/amd64`
-- 태그: `sha-<커밋 전체 해시>`(커밋과 1:1), `main`, `latest`. 배포에는 항상 **digest**(`@sha256:…`)를 쓴다. 실행 요약(Summary)에 digest와 배포 명령이 나온다.
+- 이미지: `ghcr.io/tae-ok-11/audeniq` — `audeniq-api`, `audeniq-worker`, `audeniq-migrate`, `audeniq-admin` + ffmpeg/ffprobe, UID 10001.
+- 공용 태그: `sha-<커밋 전체 해시>`, `main`, `latest` — `linux/amd64` (`x86-64`) + `linux/arm64` (`generic`, ARMv8-A).
+- CPU 최적화 태그: 위 태그 뒤에 `-x86-64-v3`(AMD/Intel AVX2 서버) 또는 `-graviton4`(ARM64 `neoverse-v2`, AWS Graviton4)를 붙인다. Graviton2/3와 일반 ARM 서버는 공용 태그를 사용한다.
+- 배포에는 항상 **digest**(`@sha256:…`)를 쓴다. 공용 manifest digest도 두 아키텍처를 유지한다. 실행 요약(Summary)에 태그와 선택한 배포 digest가 나온다.
 - PR과 다른 브랜치는 이미지를 만들지 않는다. Actions → Backend image → *Run workflow*로 수동 빌드도 된다.
-- 올린 뒤 바이너리·ffmpeg·UID를 확인하는 스모크 테스트를 돈다. SBOM과 provenance가 함께 올라가고, 공개 저장소면 GitHub attestation도 붙는다 (`gh attestation verify oci://ghcr.io/tae-ok-11/audeniq@sha256:… --owner TAE-OK-11`).
+- x86와 ARM 네이티브 러너에서 각각 빌드하고 캐시도 아키텍처·CPU별로 분리한다. 공용 이미지의 바이너리 실행·샌드박스와 각 이미지의 ffmpeg·UID·CPU 메타데이터를 검사한 뒤 태그를 게시한다. CPU 최적화 바이너리는 QEMU의 `max` CPU로 CLI 실행을 검사한다. 이는 Graviton4의 실제 성능 측정이 아니다. SBOM과 provenance가 함께 올라가며 공개 저장소의 각 빌드 digest에는 GitHub attestation도 붙는다.
+
+Graviton4 빌드와 서버 자원 조정은 [GRAVITON4.md](GRAVITON4.md)를 참고한다. **Foundation**의 Compose 스모크와 **Backend portability**의 QC·지문·무손실 변환·샌드박스 회귀 테스트도 x86/ARM 네이티브 러너에서 실행한다. 테스트 워크플로는 이미지 빌드와 별도로 실행되므로 배포 전에 같은 커밋의 결과를 확인한다.
 
 ### 서버 준비 (한 번)
 
 ```sh
 sudo mkdir -p /opt/audeniq && sudo chown "$USER" /opt/audeniq && cd /opt/audeniq
-# 저장소의 deploy/ 에서 복사: compose.production.yaml bootstrap.sql grants.sql deploy.sh pg-upgrade.sh pgbouncer/
+# 저장소의 deploy/ 에서 복사: compose.production.yaml bootstrap.sql grants.sql deploy.sh check-cpu.sh pg-upgrade.sh pgbouncer/
 cp production.env.example production.env && chmod 600 production.env   # 값 채우기
 printf '%s' '<cloudflared 터널 토큰>' > tunnel-token && chmod 600 tunnel-token
 # 패키지가 비공개면 read:packages 권한 토큰으로 로그인 (GitHub Actions 배포는 이 단계가 필요 없음)
@@ -66,8 +70,9 @@ cd /opt/audeniq
 | Secret | `DEPLOY_KNOWN_HOSTS` | `ssh-keyscan <서버>` 결과 (호스트 키 고정) |
 | Variable | `DEPLOY_PATH` | 기본 `/opt/audeniq` |
 | Variable (저장소) | `AUTO_DEPLOY` | `true`면 main에 이미지가 올라갈 때마다 자동 배포 |
+| Variable (저장소) | `BACKEND_CPU_VARIANT` | 자동 배포 이미지: `portable`(기본), `x86-64-v3`, `graviton4` |
 
-그러면 Actions → Backend image → *Run workflow*에서 `deploy`를 켜 수동 배포하거나, `AUTO_DEPLOY=true`로 자동 배포할 수 있다. 배포 작업은 같은 커밋의 `compose.production.yaml`·`grants.sql`·`bootstrap.sql`·`deploy.sh`·`pg-upgrade.sh`·`pgbouncer/`를 서버에 복사하고, 그 작업 동안만 유효한 토큰으로 GHCR에 로그인해 `deploy.sh`를 실행한다. 비밀 파일(`production.env`, `tunnel-token`)은 서버에만 있다.
+Actions → Backend image → *Run workflow*에서 `deploy`와 `cpu_variant`를 선택하거나, `AUTO_DEPLOY=true`와 `BACKEND_CPU_VARIANT`로 자동 배포한다. 배포 작업은 같은 커밋의 `compose.production.yaml`·`grants.sql`·`bootstrap.sql`·`deploy.sh`·`check-cpu.sh`·`pg-upgrade.sh`·`pgbouncer/`를 서버에 복사하고, 그 작업 동안만 유효한 토큰으로 GHCR에 로그인해 `deploy.sh`를 실행한다. 비밀 파일(`production.env`, `tunnel-token`)은 서버에만 있다.
 
 ### PostgreSQL 17 → 18 (한 번)
 

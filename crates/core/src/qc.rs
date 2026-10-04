@@ -124,7 +124,7 @@ fn probe_timeout() -> Duration {
         .ok()
         .and_then(|s| s.parse::<u64>().ok())
         .filter(|s| *s > 0)
-        .map(Duration::from_secs)
+        .map(|s| Duration::from_secs(s.min(300)))
         .unwrap_or(Duration::from_secs(30))
 }
 
@@ -158,7 +158,9 @@ fn probe_with(
     timeout: Duration,
 ) -> std::result::Result<serde_json::Value, AnalyzerError> {
     use AnalyzerError::{Unavailable, Undecodable};
-    let deadline = std::time::Instant::now() + timeout;
+    let deadline = std::time::Instant::now()
+        .checked_add(timeout)
+        .ok_or(Unavailable)?;
     let mut command = std::process::Command::new(bin);
     command.args([
         "-v",
@@ -171,25 +173,28 @@ fn probe_with(
         "json",
         &path.to_string_lossy(),
     ]);
-    crate::parser_sandbox::restrict(&mut command, &[path], &[]).map_err(|_| Unavailable)?;
-    let mut child = command
+    crate::parser_sandbox::restrict_audio(&mut command, &[path], &[]).map_err(|_| Unavailable)?;
+    command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
+        .stderr(Stdio::null());
+    let mut child = crate::analyzer_process::AnalyzerProcess::spawn(&mut command, deadline)
         .map_err(|_| Unavailable)?;
     let stdout = child.stdout.take().ok_or(Unavailable)?;
+    let stdout = child.reader(stdout).map_err(|_| Unavailable)?;
     // Bounded read in a helper thread; the main thread enforces the timeout
     // and kills a hung analyzer so one corrupt file cannot wedge the worker.
     let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let r = stdout
-            .take(PROBE_OUTPUT_MAX + 1)
-            .read_to_end(&mut buf)
-            .map(|_| buf);
-        let _ = tx.send(r);
-    });
+    child
+        .spawn_reader("qc-probe", move || {
+            let mut buf = Vec::new();
+            let r = stdout
+                .take(PROBE_OUTPUT_MAX + 1)
+                .read_to_end(&mut buf)
+                .map(|_| buf);
+            let _ = tx.send(r);
+        })
+        .map_err(|_| Unavailable)?;
     let buf = match rx.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())) {
         Ok(Ok(buf)) => buf,
         _ => {
@@ -217,7 +222,13 @@ fn probe_with(
         }
     };
     if !status.success() {
-        return Err(Undecodable);
+        return Err(
+            if status.code().is_none() || matches!(status.code(), Some(126 | 127)) {
+                Unavailable
+            } else {
+                Undecodable
+            },
+        );
     }
     serde_json::from_slice(&buf).map_err(|_| Undecodable)
 }
@@ -412,7 +423,7 @@ pub const TRUNCATION_TOLERANCE_SECS: f64 = 1.0;
 pub const TRUNCATION_TOLERANCE_RATIO: f64 = 0.01;
 
 /// Stage 1 basic QC for an audio asset file (test convenience; the worker
-/// calls [`check_audio_with_fp_tap`]).
+/// calls [`check_audio_with_fingerprint`]).
 ///
 /// `declared_content_type` is the MIME type the upload was registered with;
 /// when given, the real container must match it.
@@ -422,7 +433,14 @@ pub fn check_audio(
     registered_sha256: Option<&str>,
     declared_content_type: Option<&str>,
 ) -> Vec<CheckOutcome> {
-    check_audio_inner(path, registered_sha256, declared_content_type, None, false).0
+    check_audio_inner(
+        path,
+        registered_sha256,
+        declared_content_type,
+        None,
+        TapMode::None,
+    )
+    .0
 }
 
 /// Stage 1 basic QC for an audio asset file, also returning the perceptual-fingerprint
@@ -441,13 +459,45 @@ pub fn check_audio_with_fp_tap(
     declared_content_type: Option<&str>,
     file_sha256: Option<&str>,
 ) -> (Vec<CheckOutcome>, Option<TapWindows>, Option<AudioMetrics>) {
-    check_audio_inner(
+    let (checks, tap, metrics) = check_audio_inner(
         path,
         registered_sha256,
         declared_content_type,
         file_sha256,
-        true,
-    )
+        TapMode::Windows,
+    );
+    let windows = match tap {
+        Some(TapOutput::Windows(windows)) => Some(windows),
+        _ => None,
+    };
+    (checks, windows, metrics)
+}
+
+/// Worker path: compute the fingerprint while draining the same decode's
+/// tap, without retaining the 90 seconds of PCM. Integrity checks, probe
+/// metrics and QC outcomes match [`check_audio_with_fp_tap`].
+pub fn check_audio_with_fingerprint(
+    path: &Path,
+    registered_sha256: Option<&str>,
+    declared_content_type: Option<&str>,
+    file_sha256: Option<&str>,
+) -> (
+    Vec<CheckOutcome>,
+    Option<Result<crate::fingerprint::Fingerprint>>,
+    Option<AudioMetrics>,
+) {
+    let (checks, tap, metrics) = check_audio_inner(
+        path,
+        registered_sha256,
+        declared_content_type,
+        file_sha256,
+        TapMode::Fingerprint,
+    );
+    let fingerprint = match tap {
+        Some(TapOutput::Fingerprint(fp)) => Some(fp),
+        _ => None,
+    };
+    (checks, fingerprint, metrics)
 }
 
 fn check_audio_inner(
@@ -455,8 +505,8 @@ fn check_audio_inner(
     registered_sha256: Option<&str>,
     declared_content_type: Option<&str>,
     file_sha256: Option<&str>,
-    want_fp_tap: bool,
-) -> (Vec<CheckOutcome>, Option<TapWindows>, Option<AudioMetrics>) {
+    tap_mode: TapMode,
+) -> (Vec<CheckOutcome>, Option<TapOutput>, Option<AudioMetrics>) {
     /// Emit `AUDIO_CHECK_CODES[from..]` with a uniform status (short-circuit tail).
     fn tail(from: &str, status: CheckStatus, input_hash: &str, detail: &str) -> Vec<CheckOutcome> {
         AUDIO_CHECK_CODES[audio_code_index(from)..]
@@ -563,9 +613,9 @@ fn check_audio_inner(
         ));
         return (out, None, None);
     }
-    let metrics = match probe_classified(path)
-        .and_then(|v| parse_audio(&v).map_err(|_| AnalyzerError::Undecodable))
-    {
+    let metrics = match crate::audio_header::probe(path).map(Ok).unwrap_or_else(|| {
+        probe_classified(path).and_then(|v| parse_audio(&v).map_err(|_| AnalyzerError::Undecodable))
+    }) {
         Ok(m) => m,
         Err(e) => {
             let (status, detail) = match e {
@@ -604,7 +654,7 @@ fn check_audio_inner(
         check_code: "AUDIO_PROBE_FAILED",
         status: CheckStatus::Pass,
         input_hash: metric_hash(&[&actual]),
-        detail: "ffprobe ok".into(),
+        detail: "audio probe ok".into(),
     });
     let mh = metric_hash(&[
         &metrics.format_name,
@@ -680,7 +730,7 @@ fn check_audio_inner(
         ));
         return (out, None, Some(metrics.clone()));
     }
-    let (analysis, fp_tap) = match decode_analysis(path, &metrics, want_fp_tap) {
+    let (analysis, fp_tap) = match decode_analysis(path, &metrics, tap_mode) {
         Ok((a, t)) => (a, t),
         Err(e) => {
             let (status, detail) = match e {
@@ -889,15 +939,12 @@ pub fn content_suspicions(a: &DecodeAnalysis, m: &AudioMetrics) -> Vec<String> {
             ));
         }
     }
-    let loud: Vec<f32> = a.block_db.iter().copied().filter(|d| *d > -60.0).collect();
-    if loud.len() >= 100 {
-        let mean = loud.iter().map(|d| f64::from(*d)).sum::<f64>() / loud.len() as f64;
-        let std = (loud
-            .iter()
-            .map(|d| (f64::from(*d) - mean).powi(2))
-            .sum::<f64>()
-            / loud.len() as f64)
-            .sqrt();
+    let loud = || a.block_db.iter().copied().filter(|d| *d > -60.0);
+    let (count, sum) = loud().fold((0usize, 0.0), |(n, sum), d| (n + 1, sum + f64::from(d)));
+    if count >= 100 {
+        let mean = sum / count as f64;
+        let std =
+            (loud().map(|d| (f64::from(d) - mean).powi(2)).sum::<f64>() / count as f64).sqrt();
         if a.zero_crossing_rate >= NOISE_ZCR && std < 1.5 {
             out.push(format!(
                 "steady broadband noise (zero-crossing rate {:.2}, level variation {std:.1} dB)",
@@ -957,11 +1004,17 @@ fn loop_period(db: &[f32]) -> Option<usize> {
         .filter(|lag| db.len() >= lag * 4)
         .find(|&lag| {
             let n = db.len() - lag;
-            let diff = (0..n)
-                .map(|i| f64::from((db[i] - db[i + lag]).abs()))
-                .sum::<f64>()
-                / n as f64;
-            diff < 0.75
+            let limit = 0.75 * n as f64;
+            let mut diff = 0.0;
+            for i in 0..n {
+                diff += f64::from((db[i] - db[i + lag]).abs());
+                // Absolute differences cannot fall again. Reject this lag
+                // once it is already over the whole-track error budget.
+                if diff >= limit {
+                    return false;
+                }
+            }
+            diff / (n as f64) < 0.75
         })
 }
 
@@ -1100,18 +1153,61 @@ impl DecodeAnalysis {
 /// Time budget for one full decode: generous for long masters (a 45-minute
 /// file decodes in well under a minute), and never below the probe timeout.
 fn decode_timeout(duration_secs: f64) -> Duration {
-    let scaled = Duration::from_secs_f64((60.0 + duration_secs.max(0.0) / 2.0).min(3600.0));
-    scaled.max(probe_timeout())
+    let seconds = if duration_secs.is_finite() {
+        duration_secs.max(0.0)
+    } else {
+        0.0
+    };
+    let scaled = Duration::from_secs_f64((60.0 + seconds / 2.0).min(3600.0));
+    scaled.max(probe_timeout().min(Duration::from_secs(3600)))
 }
 
 /// Fingerprint PCM, one mono 11025 Hz `f32` vector per segment window.
 pub type TapWindows = Vec<Vec<f32>>;
 
+#[derive(Clone, Copy)]
+enum TapMode {
+    // The QC-only convenience entry point is compiled for tests.
+    #[cfg_attr(not(test), allow(dead_code))]
+    None,
+    Windows,
+    Fingerprint,
+}
+
+enum TapOutput {
+    Windows(TapWindows),
+    Fingerprint(Result<crate::fingerprint::Fingerprint>),
+}
+
+enum TapSegment {
+    Pcm(Vec<f32>),
+    Fingerprint(Box<crate::fingerprint::FingerprintBuilder>),
+}
+
+impl TapSegment {
+    fn push(&mut self, pcm: &[[u8; 2]]) {
+        match self {
+            Self::Pcm(samples) => {
+                samples.extend(pcm.iter().map(|s| i16::from_le_bytes(*s) as f32 / 32768.0))
+            }
+            Self::Fingerprint(builder) => builder.push_s16le(pcm),
+        }
+    }
+}
+
 /// Fingerprint PCM of the [`crate::fingerprint::segment_windows`] of a
 /// `duration_secs` track, retained while draining the continuous s16le tap.
 /// Discarded samples never occupy a scratch file or a duration-sized buffer.
 /// Resampling still sees the entire recording, preserving existing hashes.
-fn read_tap_windows(mut tap: impl Read, duration_secs: f64) -> Option<TapWindows> {
+#[cfg(test)]
+fn read_tap_windows(tap: impl Read, duration_secs: f64) -> Option<TapWindows> {
+    match read_tap(tap, duration_secs, TapMode::Windows)? {
+        TapOutput::Windows(windows) => Some(windows),
+        _ => None,
+    }
+}
+
+fn read_tap(mut tap: impl Read, duration_secs: f64, mode: TapMode) -> Option<TapOutput> {
     let sr = f64::from(crate::fingerprint::FINGERPRINT_SAMPLE_RATE);
     let windows: Vec<_> = crate::fingerprint::segment_windows(duration_secs)
         .into_iter()
@@ -1130,13 +1226,22 @@ fn read_tap_windows(mut tap: impl Read, duration_secs: f64) -> Option<TapWindows
         if retained > max_samples {
             return None;
         }
-        segments.push(Vec::with_capacity(usize::try_from(count).ok()?));
+        segments.push(match mode {
+            TapMode::Windows => TapSegment::Pcm(Vec::with_capacity(usize::try_from(count).ok()?)),
+            TapMode::Fingerprint => {
+                TapSegment::Fingerprint(Box::new(crate::fingerprint::FingerprintBuilder::new()))
+            }
+            TapMode::None => return None,
+        });
     }
-    let mut buf = [0u8; 16_384];
-    let mut low_byte = None;
+    // Keep at most one incomplete s16le sample between reads. Intersect
+    // each buffer with the windows before converting: the gaps between
+    // head/middle/tail need no per-sample work.
+    let mut buf = [0u8; 16_385];
+    let mut carry = 0;
     let mut sample = 0u64;
     loop {
-        let n = match tap.read(&mut buf) {
+        let n = match tap.read(&mut buf[carry..]) {
             Ok(n) => n,
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
             Err(_) => return None,
@@ -1144,49 +1249,100 @@ fn read_tap_windows(mut tap: impl Read, duration_secs: f64) -> Option<TapWindows
         if n == 0 {
             break;
         }
-        for &byte in &buf[..n] {
-            if let Some(low) = low_byte.take() {
-                let value = i16::from_le_bytes([low, byte]) as f32 / 32768.0;
-                for ((lo, hi), segment) in windows.iter().zip(&mut segments) {
-                    if sample >= *lo && sample < *hi {
-                        segment.push(value);
-                    }
-                }
-                sample = sample.checked_add(1)?;
-            } else {
-                low_byte = Some(byte);
+        let bytes = carry + n;
+        let complete = bytes & !1;
+        let end = sample.checked_add((complete / 2) as u64)?;
+        for (&(lo, hi), segment) in windows.iter().zip(&mut segments) {
+            let start = lo.max(sample);
+            let stop = hi.min(end);
+            if start < stop {
+                let from = ((start - sample) * 2) as usize;
+                let to = ((stop - sample) * 2) as usize;
+                let (pcm, _) = buf[from..to].as_chunks::<2>();
+                segment.push(pcm);
             }
         }
+        sample = end;
+        carry = bytes - complete;
+        if carry != 0 {
+            buf[0] = buf[complete];
+        }
     }
-    if sample == 0 || low_byte.is_some() {
+    if sample == 0 || carry != 0 {
         return None;
     }
-    Some(
-        segments
-            .into_iter()
-            .filter(|segment| !segment.is_empty())
-            .collect(),
-    )
+    match mode {
+        TapMode::Windows => Some(TapOutput::Windows(
+            segments
+                .into_iter()
+                .filter_map(|segment| match segment {
+                    TapSegment::Pcm(samples) if !samples.is_empty() => Some(samples),
+                    _ => None,
+                })
+                .collect(),
+        )),
+        TapMode::Fingerprint => Some(TapOutput::Fingerprint((|| {
+            let mut frames = Vec::new();
+            let mut duration_secs = 0.0;
+            for segment in segments {
+                if let TapSegment::Fingerprint(builder) = segment
+                    && !builder.is_empty()
+                {
+                    let fp = builder.finish()?;
+                    frames.extend(fp.frames);
+                    duration_secs += fp.duration_secs;
+                }
+            }
+            let fp = crate::fingerprint::Fingerprint {
+                frames,
+                duration_secs,
+            };
+            if fp.is_empty() {
+                return Err(Error::PolicyGate(crate::fingerprint::TOO_SHORT_CODE));
+            }
+            Ok(fp)
+        })())),
+        TapMode::None => None,
+    }
 }
 
 /// Decode the file once with ffmpeg: interleaved f32 PCM on stdout feeds the
 /// peak / clipping / silence / length measurements (streamed, constant
 /// memory), while the ebur128 filter prints loudness and true peak on stderr.
-/// With `want_tap`, the perceptual-fingerprint PCM (mono 11025 Hz s16le) is
+/// With a tap enabled, the perceptual-fingerprint PCM (mono 11025 Hz s16le) is
 /// tapped from the SAME decode via a second ffmpeg output; only the
-/// fingerprint segment windows are returned (see [`read_tap_windows`]), or
-/// `None` when the tap output could not be produced.
+/// fingerprint or segment windows are returned, or `None` when the tap
+/// output could not be produced.
 fn decode_analysis(
     path: &Path,
     m: &AudioMetrics,
-    want_tap: bool,
-) -> std::result::Result<(DecodeAnalysis, Option<TapWindows>), AnalyzerError> {
+    tap_mode: TapMode,
+) -> std::result::Result<(DecodeAnalysis, Option<TapOutput>), AnalyzerError> {
     use AnalyzerError::{Unavailable, Undecodable};
     use std::os::fd::AsRawFd;
     use std::os::unix::{net::UnixStream, process::CommandExt};
-    let channels = m.channels.max(1) as usize;
+    if !m.duration_secs.is_finite()
+        || m.duration_secs <= 0.0
+        || m.sample_rate == 0
+        || m.sample_rate > MAX_SAMPLE_RATE
+        || !matches!(m.channels, 1 | 2)
+    {
+        return Err(Undecodable);
+    }
+    // A compressed master cannot turn tiny input into unlimited PCM work.
+    // Four hours remains well beyond ordinary releases, with no allocation
+    // based on its declared duration.
+    const MAX_DECODE_SECS: f64 = 4.0 * 3600.0;
+    if m.duration_secs > MAX_DECODE_SECS {
+        return Err(Unavailable);
+    }
+    let max_frames = ((m.duration_secs + (m.duration_secs * 0.01).max(1.0)).min(MAX_DECODE_SECS)
+        * f64::from(m.sample_rate))
+    .ceil() as u64;
+    let max_samples = max_frames * u64::from(m.channels);
+    let channels = m.channels as usize;
     let deadline = std::time::Instant::now() + decode_timeout(m.duration_secs);
-    let tap = want_tap
+    let tap = (!matches!(tap_mode, TapMode::None))
         .then(UnixStream::pair)
         .transpose()
         .map_err(|_| Unavailable)?;
@@ -1195,8 +1351,14 @@ fn decode_analysis(
         "-nostdin",
         "-hide_banner",
         "-nostats",
+        // Parallelism is managed per asset by the worker. Auto-sized filter
+        // pools add threads and memory to every concurrent decode.
+        "-filter_threads",
+        "1",
         "-protocol_whitelist",
         "file",
+        "-threads",
+        "1",
         "-i",
     ])
     .arg(path)
@@ -1212,6 +1374,8 @@ fn decode_analysis(
         "f32le",
         "-acodec",
         "pcm_f32le",
+        "-threads",
+        "1",
         "pipe:1",
     ]);
     if let Some((_, writer)) = &tap {
@@ -1228,6 +1392,8 @@ fn decode_analysis(
             "s16le",
             "-acodec",
             "pcm_s16le",
+            "-threads",
+            "1",
         ])
         .arg(format!("pipe:{}", writer.as_raw_fd()));
         let fd = writer.as_raw_fd();
@@ -1242,101 +1408,121 @@ fn decode_analysis(
             });
         }
     }
-    crate::parser_sandbox::restrict(&mut cmd, &[path], &[]).map_err(|_| Unavailable)?;
-    let mut child = cmd
-        .stdin(Stdio::null())
+    crate::parser_sandbox::restrict_audio(&mut cmd, &[path], &[]).map_err(|_| Unavailable)?;
+    cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+        .stderr(Stdio::piped());
+    let mut child = crate::analyzer_process::AnalyzerProcess::spawn(&mut cmd, deadline)
         .map_err(|_| Unavailable)?;
-    let tap_rx = tap.map(|(reader, writer)| {
-        drop(writer); // Only ffmpeg owns the writer; its exit delivers EOF.
-        let (tx, rx) = std::sync::mpsc::channel();
-        let duration = m.duration_secs;
-        std::thread::spawn(move || {
-            let _ = tx.send(read_tap_windows(reader, duration));
-        });
-        rx
-    });
-    let mut stdout = child.stdout.take().ok_or(Unavailable)?;
+    let tap_rx = tap
+        .map(
+            |(reader, writer)| -> std::result::Result<_, AnalyzerError> {
+                drop(writer); // Only ffmpeg owns the writer; its exit delivers EOF.
+                let reader = child.reader(reader).map_err(|_| Unavailable)?;
+                let (tx, rx) = std::sync::mpsc::channel();
+                let duration = m.duration_secs;
+                child
+                    .spawn_reader("qc-fingerprint", move || {
+                        let _ = tx.send(read_tap(reader, duration, tap_mode));
+                    })
+                    .map_err(|_| Unavailable)?;
+                Ok(rx)
+            },
+        )
+        .transpose()?;
+    let stdout = child.stdout.take().ok_or(Unavailable)?;
+    let mut stdout = child.reader(stdout).map_err(|_| Unavailable)?;
     let stderr = child.stderr.take().ok_or(Unavailable)?;
+    let stderr = child.reader(stderr).map_err(|_| Unavailable)?;
     // stderr: keep only the tail. A damaged file can make ffmpeg log an error
     // per frame; the summary we need is always at the end.
     let (err_tx, err_rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let mut tail: std::collections::VecDeque<u8> = std::collections::VecDeque::new();
-        let mut r = stderr;
-        let mut buf = [0u8; 8192];
-        loop {
-            match r.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => {
-                    tail.extend(&buf[..n]);
-                    while tail.len() > 65_536 {
-                        tail.pop_front();
+    child
+        .spawn_reader("qc-report", move || {
+            let mut tail: std::collections::VecDeque<u8> = std::collections::VecDeque::new();
+            let mut r = stderr;
+            let mut buf = [0u8; 8192];
+            loop {
+                match r.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        tail.extend(&buf[..n]);
+                        while tail.len() > 65_536 {
+                            tail.pop_front();
+                        }
                     }
                 }
             }
-        }
-        let _ = err_tx.send(tail.into_iter().collect::<Vec<u8>>());
-    });
+            let _ = err_tx.send(tail.into_iter().collect::<Vec<u8>>());
+        })
+        .map_err(|_| Unavailable)?;
     let (tx, rx) = std::sync::mpsc::channel();
     let block_frames = ((f64::from(m.sample_rate.max(1)) * BLOCK_SECS) as u64).max(1);
-    std::thread::spawn(move || {
-        let mut a = DecodeAnalysis {
-            channel_peaks: vec![0.0; channels],
-            ..DecodeAnalysis::default()
-        };
-        let mut st = Meter {
-            runs: vec![0u32; channels],
-            last_sign: vec![0i8; channels],
-            ch: 0,
-            samples: 0,
-            channels,
-            block_frames,
-            block_frame: 0,
-            block_peak: 0.0,
-            block_sq: 0.0,
-            silent_run: 0,
-            crossings: 0,
-        };
-        let mut buf = vec![0u8; 1 << 16];
-        let mut carry: Vec<u8> = Vec::with_capacity(4);
-        loop {
-            let n = match stdout.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => n,
-                Err(_) => {
-                    let _ = tx.send(None);
+    child
+        .spawn_reader("qc-meter", move || {
+            let mut a = DecodeAnalysis {
+                channel_peaks: vec![0.0; channels],
+                ..DecodeAnalysis::default()
+            };
+            let mut st = Meter {
+                runs: vec![0u32; channels],
+                last_sign: vec![0i8; channels],
+                ch: 0,
+                samples: 0,
+                channels,
+                block_frames,
+                block_frame: 0,
+                block_peak: 0.0,
+                block_sq: 0.0,
+                silent_run: 0,
+                crossings: 0,
+            };
+            let mut buf = vec![0u8; 1 << 16];
+            let mut carry: Vec<u8> = Vec::with_capacity(4);
+            loop {
+                let n = match stdout.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => n,
+                    Err(_) => {
+                        let _ = tx.send(Err(Unavailable));
+                        return;
+                    }
+                };
+                let mut data = &buf[..n];
+                if !carry.is_empty() {
+                    let need = 4 - carry.len();
+                    let take = need.min(data.len());
+                    carry.extend_from_slice(&data[..take]);
+                    data = &data[take..];
+                    if carry.len() < 4 {
+                        continue;
+                    }
+                    let v = f32::from_le_bytes([carry[0], carry[1], carry[2], carry[3]]);
+                    carry.clear();
+                    measure(v, &mut a, &mut st);
+                }
+                let (chunks, rest) = data.as_chunks::<4>();
+                for c in chunks {
+                    measure(f32::from_le_bytes(*c), &mut a, &mut st);
+                }
+                carry.extend_from_slice(rest);
+                if st.samples > max_samples {
+                    let _ = tx.send(Err(Unavailable));
                     return;
                 }
-            };
-            let mut data = &buf[..n];
-            if !carry.is_empty() {
-                let need = 4 - carry.len();
-                let take = need.min(data.len());
-                carry.extend_from_slice(&data[..take]);
-                data = &data[take..];
-                if carry.len() < 4 {
-                    continue;
-                }
-                let v = f32::from_le_bytes([carry[0], carry[1], carry[2], carry[3]]);
-                carry.clear();
-                measure(v, &mut a, &mut st);
             }
-            let (chunks, rest) = data.as_chunks::<4>();
-            for c in chunks {
-                measure(f32::from_le_bytes(*c), &mut a, &mut st);
+            if !carry.is_empty() || st.ch != 0 || st.samples == 0 {
+                let _ = tx.send(Err(Undecodable));
+                return;
             }
-            carry.extend_from_slice(rest);
-        }
-        if st.block_frame > 0 {
-            close_block(&mut a, &mut st);
-        }
-        a.samples_per_channel = st.samples / channels as u64;
-        a.zero_crossing_rate = st.crossings as f64 / st.samples.max(1) as f64;
-        let _ = tx.send(Some(a));
-    });
+            if st.block_frame > 0 {
+                close_block(&mut a, &mut st);
+            }
+            a.samples_per_channel = st.samples / channels as u64;
+            a.zero_crossing_rate = st.crossings as f64 / st.samples.max(1) as f64;
+            let _ = tx.send(Ok(a));
+        })
+        .map_err(|_| Unavailable)?;
     /// Running per-sample state of the streaming measurements.
     struct Meter {
         runs: Vec<u32>,
@@ -1408,9 +1594,10 @@ fn decode_analysis(
         } else {
             *run = 0;
         }
-        st.ch = (ch + 1) % st.channels;
+        st.ch = ch + 1;
         st.samples += 1;
-        if st.ch == 0 {
+        if st.ch == st.channels {
+            st.ch = 0;
             st.block_frame += 1;
             if st.block_frame == st.block_frames {
                 close_block(a, st);
@@ -1419,12 +1606,12 @@ fn decode_analysis(
     }
     let analysis =
         match rx.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())) {
-            Ok(Some(a)) => a,
-            Ok(None) => {
+            Ok(Err(AnalyzerError::Unavailable)) => {
                 let _ = child.kill();
                 let _ = child.wait();
                 return Err(Unavailable);
             }
+            Ok(result) => result,
             Err(_) => {
                 let _ = child.kill();
                 let _ = child.wait();
@@ -1448,8 +1635,24 @@ fn decode_analysis(
         .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
         .map_err(|_| Unavailable)?;
     if !status.success() {
-        return Err(Undecodable);
+        let report = String::from_utf8_lossy(&err_text);
+        let exhausted = [
+            "Cannot allocate memory",
+            "Resource temporarily unavailable",
+            "pthread_create failed",
+            "failed to map segment from shared object",
+        ]
+        .iter()
+        .any(|message| report.contains(message));
+        return Err(
+            if status.code().is_none() || matches!(status.code(), Some(126 | 127)) || exhausted {
+                Unavailable
+            } else {
+                Undecodable
+            },
+        );
     }
+    let analysis = analysis?;
     let (integrated, true_peak) =
         parse_ebur128(&String::from_utf8_lossy(&err_text)).ok_or(Undecodable)?;
     // A malformed tap remains a fingerprint retry, as before.
@@ -1666,12 +1869,78 @@ mod tests {
     use super::*;
 
     #[test]
+    fn invalid_metrics_fail_without_allocating_or_spawning() {
+        for duration_secs in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 0.0, -1.0] {
+            assert!(decode_timeout(duration_secs) <= Duration::from_secs(3600));
+            let metrics = AudioMetrics {
+                duration_secs,
+                sample_rate: 48_000,
+                channels: 2,
+                ..Default::default()
+            };
+            assert_eq!(
+                decode_analysis(Path::new("/nonexistent"), &metrics, TapMode::Fingerprint).err(),
+                Some(AnalyzerError::Undecodable)
+            );
+        }
+        for (sample_rate, channels) in [(0, 2), (48_000, 0), (48_000, u32::MAX), (u32::MAX, 2)] {
+            let metrics = AudioMetrics {
+                duration_secs: 60.0,
+                sample_rate,
+                channels,
+                ..Default::default()
+            };
+            assert_eq!(
+                decode_analysis(Path::new("/nonexistent"), &metrics, TapMode::Fingerprint).err(),
+                Some(AnalyzerError::Undecodable)
+            );
+        }
+    }
+
+    #[test]
+    fn native_header_metrics_match_ffprobe_for_pcm_and_flac() {
+        for (rate, channels, codec, format) in [
+            (44100, 1, "pcm_s16le", "wav"),
+            (48000, 2, "flac", "flac"),
+            (192000, 2, "flac", "flac"),
+        ] {
+            let path = tmp(&format!("native-probe-{rate}-{channels}.{format}"));
+            let status = Command::new("ffmpeg")
+                .args(["-y", "-v", "error", "-f", "lavfi", "-i"])
+                .arg(format!(
+                    "sine=frequency=437:duration=32.12345:sample_rate={rate}"
+                ))
+                .args(["-ac", &channels.to_string(), "-c:a", codec])
+                .arg(&path)
+                .status()
+                .unwrap();
+            assert!(status.success());
+            let native = crate::audio_header::probe(&path).unwrap();
+            let reference = parse_audio(&probe_classified(&path).unwrap()).unwrap();
+            assert_eq!(native.format_name, reference.format_name);
+            assert_eq!(native.codec_name, reference.codec_name);
+            assert_eq!(native.duration_secs, reference.duration_secs);
+            assert_eq!(native.channels, reference.channels);
+            assert_eq!(native.sample_rate, reference.sample_rate);
+            assert_eq!(native.bits_per_sample, reference.bits_per_sample);
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[test]
     fn streaming_tap_preserves_windows_with_partial_reads_and_truncated_eof() {
-        struct SmallReads(std::io::Cursor<Vec<u8>>);
+        struct SmallReads {
+            bytes: std::io::Cursor<Vec<u8>>,
+            reads: usize,
+        }
         impl Read for SmallReads {
             fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-                let len = buf.len().min(3);
-                self.0.read(&mut buf[..len])
+                self.reads += 1;
+                if self.reads.is_multiple_of(7) {
+                    return Err(std::io::ErrorKind::Interrupted.into());
+                }
+                let len = buf.len().min([1, 2, 3, 16_383][self.reads % 4]);
+                self.bytes.read(&mut buf[..len])
             }
         }
         let sr = f64::from(crate::fingerprint::FINGERPRINT_SAMPLE_RATE);
@@ -1694,12 +1963,95 @@ mod tests {
                 })
                 .collect();
             assert_eq!(
-                read_tap_windows(SmallReads(std::io::Cursor::new(bytes)), duration).unwrap(),
+                read_tap_windows(
+                    SmallReads {
+                        bytes: std::io::Cursor::new(bytes),
+                        reads: 0,
+                    },
+                    duration,
+                )
+                .unwrap(),
                 expected
             );
         }
         assert!(read_tap_windows(&[1u8][..], 120.0).is_none());
         assert!(read_tap_windows(std::io::empty(), 120.0).is_none());
+        assert!(read_tap(&[1u8][..], 120.0, TapMode::Fingerprint).is_none());
+        assert!(read_tap(std::io::empty(), 120.0, TapMode::Fingerprint).is_none());
+    }
+
+    #[test]
+    fn streaming_tap_fingerprint_preserves_overlap_and_short_window_errors() {
+        let sr = f64::from(crate::fingerprint::FINGERPRINT_SAMPLE_RATE);
+        for (duration, actual) in [(90.001, 90.001), (180.75, 45.0), (180.75, 95.0), (2.0, 2.0)] {
+            let mut seed = 0x2545_f491_4f6c_dd1du64;
+            let bytes: Vec<u8> = (0..(actual * sr) as usize)
+                .flat_map(|_| {
+                    seed ^= seed << 13;
+                    seed ^= seed >> 7;
+                    seed ^= seed << 17;
+                    (seed as i16).to_le_bytes()
+                })
+                .collect();
+            let windows = read_tap_windows(std::io::Cursor::new(&bytes), duration).unwrap();
+            let expected = crate::fingerprint::fingerprint_from_segments(
+                &windows.iter().map(Vec::as_slice).collect::<Vec<_>>(),
+            );
+            let Some(TapOutput::Fingerprint(actual)) =
+                read_tap(std::io::Cursor::new(&bytes), duration, TapMode::Fingerprint)
+            else {
+                panic!("tap unavailable");
+            };
+            match (expected, actual) {
+                (Ok(expected), Ok(actual)) => {
+                    assert_eq!(actual.frames, expected.frames);
+                    assert_eq!(actual.duration_secs, expected.duration_secs);
+                }
+                (Err(Error::PolicyGate(a)), Err(Error::PolicyGate(b))) => assert_eq!(a, b),
+                _ => panic!("stream and windows disagreed"),
+            }
+        }
+    }
+
+    #[test]
+    fn loop_period_pruning_matches_full_envelope_comparison() {
+        fn reference(db: &[f32]) -> Option<usize> {
+            ((1.0 / BLOCK_SECS) as usize..=(15.0 / BLOCK_SECS) as usize)
+                .filter(|lag| db.len() >= lag * 4)
+                .find(|&lag| {
+                    let n = db.len() - lag;
+                    (0..n)
+                        .map(|i| f64::from((db[i] - db[i + lag]).abs()))
+                        .sum::<f64>()
+                        / (n as f64)
+                        < 0.75
+                })
+        }
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let random: Vec<f32> = (0..2400)
+            .map(|_| {
+                seed ^= seed << 13;
+                seed ^= seed >> 7;
+                seed ^= seed << 17;
+                -50.0 + (seed as u32 as f64 / u32::MAX as f64 * 40.0) as f32
+            })
+            .collect();
+        for len in [79, 80, 400, random.len()] {
+            assert_eq!(loop_period(&random[..len]), reference(&random[..len]));
+        }
+        for period in [20, 100, 300] {
+            let envelope: Vec<f32> = random[..period]
+                .iter()
+                .copied()
+                .cycle()
+                .take(2400)
+                .collect();
+            assert_eq!(loop_period(&envelope), reference(&envelope));
+        }
+        for scale in [0.02, 0.04, 0.1] {
+            let envelope: Vec<f32> = random.iter().map(|d| d * scale).collect();
+            assert_eq!(loop_period(&envelope), reference(&envelope));
+        }
     }
 
     #[test]
@@ -1760,17 +2112,27 @@ mod tests {
                 .unwrap();
             assert!(reference.status.success());
             let metrics = probe_audio_metrics(&path).unwrap();
-            let (analysis, segments) = decode_analysis(&path, &metrics, true).unwrap();
+            let (analysis, segments) = decode_analysis(&path, &metrics, TapMode::Windows).unwrap();
             let expected = read_tap_windows(
                 std::io::Cursor::new(reference.stdout),
                 metrics.duration_secs,
             )
             .unwrap();
-            assert_eq!(
-                segments.unwrap(),
-                expected,
-                "{rate} Hz {channels} channels {format}"
-            );
+            let Some(TapOutput::Windows(segments)) = segments else {
+                panic!("missing PCM windows");
+            };
+            assert_eq!(segments, expected, "{rate} Hz {channels} channels {format}");
+            let (_, fp) = decode_analysis(&path, &metrics, TapMode::Fingerprint).unwrap();
+            let Some(TapOutput::Fingerprint(fp)) = fp else {
+                panic!("missing streaming fingerprint");
+            };
+            let expected_fp = crate::fingerprint::fingerprint_from_segments(
+                &expected.iter().map(Vec::as_slice).collect::<Vec<_>>(),
+            )
+            .unwrap();
+            let fp = fp.unwrap();
+            assert_eq!(fp.frames, expected_fp.frames);
+            assert_eq!(fp.duration_secs, expected_fp.duration_secs);
             assert!((analysis.decoded_secs() - duration).abs() < 0.01);
             std::fs::remove_file(path).unwrap();
         }
