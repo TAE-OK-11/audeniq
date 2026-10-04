@@ -429,6 +429,15 @@ async fn kanban_boards_columns_and_moves(pool: PgPool) {
     )
     .await;
     assert_eq!(s, StatusCode::NOT_FOUND);
+    let found = ok(
+        &app,
+        "GET",
+        "/api/staff/work/entities/search?kind=task&q=%EA%B0%9C%EC%9D%B8",
+        json!({}),
+        &op,
+    )
+    .await;
+    assert!(found["items"].as_array().unwrap().is_empty(), "{found}");
     let list = ok(&app, "GET", "/api/staff/work/tasks", json!({}), &op).await;
     assert!(
         !list["items"]
@@ -805,6 +814,12 @@ async fn docs_access_content_versions_and_tree(pool: PgPool) {
     )
     .await;
     assert_eq!(e["items"][format!("doc:{id}")]["missing"], true);
+    // entity search (link pickers, @doc): hidden for others, found by a granted viewer
+    let path = format!("/api/staff/work/entities/search?kind=doc&q={id}");
+    let found = ok(&app, "GET", &path, json!({}), &other).await;
+    assert!(found["items"].as_array().unwrap().is_empty(), "{found}");
+    let found = ok(&app, "GET", &path, json!({}), &kim).await;
+    assert_eq!(found["items"].as_array().unwrap().len(), 1);
     // a viewer reads but cannot edit; ADMIN can
     ok(
         &app,
