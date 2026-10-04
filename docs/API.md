@@ -220,6 +220,71 @@ sources. Inbox category `CONTACT_DUE`: relationships the caller owns whose next 
 | `POST /relationships/{id}/links` · `POST /relationships/{id}/links/{link}/archive` | Link / unlink related records. Notes (`target_kind=relationship`) and tasks link to relationships like any entity |
 | `GET /dsp-ops?dsp=` | Per DSP: registry, contract route and onboarding (same as `/api/staff/dsps`), last 30 days of delivery jobs (total, delivered, failed, in flight, failure rate, partner rejections, average minutes), staging pending/blocked, open exceptions, the CRM relationship and DSP-scoped SLA policies; with `dsp`, that DSP's recent failures and open exceptions |
 
+Team channels (migration `0080`). Messages are internal notes with `target_kind=channel` (same mentions → inbox,
+attachments, edit history, archive); only the channel and each person's read position are stored.
+
+| Method & path | Purpose |
+|---|---|
+| `GET /channels?archived=` · `POST /channels {name, topic}` | Channels with the caller's `unread`, `mentions`, `last_message_at` · create (any staff; unique name: `CHANNEL_EXISTS`) |
+| `POST /channels/{id}` · `POST /channels/{id}/archive` | Rename / archive — creator or ADMIN (system channels: ADMIN). Posting to an archived channel: `CHANNEL_ARCHIVED` |
+| `POST /channels/{id}/read` | Mark read up to now |
+| `GET /notes?target_kind=channel&target_id=&latest=&before=` · `POST /notes` | Newest `latest` messages (≤ 200) older than `before`, shown oldest-first, with `has_more` · post a message |
+
+`GET /summary` also returns `chat.unread`.
+
+### Kanban boards (migration `0081`)
+
+Cards are tasks (`work.tasks` + `board_id`, `column_id`, `position`, `source`); columns map to a task status, so
+inbox, SLA and review rules apply unchanged. Board kinds: `PERSONAL` (owner only — other staff get 404 for the
+board, its cards, their notes and embeds), `TEAM` (written by its `team_role` and ADMIN, read by all staff),
+`OPERATIONS` (all staff). Every change is audited (`work.board_*`, `work.task_moved`, `work.task_reordered`).
+
+| Method & path | Purpose |
+|---|---|
+| `GET /boards` · `POST /boards {name, description, kind, team_role}` | Boards the caller can see (`access.write/manage`, `open_cards`) · create (PERSONAL: anyone; TEAM/OPERATIONS: ADMIN), seeded with Inbox/To Do/In Progress/Review/Waiting/Blocked/Done |
+| `GET /boards/{id}?assignee=&priority=&column=&tag=&type=&due=&creator=&source=&entity_kind=&q=&done_days=` | `{board, columns[count, wip_limit], cards, tags, truncated}`; `assignee` = uuid · `me` · `none`; `source` = `manual` · `auto` · a source; `q` matches title, description, key and linked entity names |
+| `POST /boards/{id}` · `POST /boards/{id}/archive` | Rename (with `row_version`) · archive (the general board cannot be archived; its rules stop) |
+| `POST /boards/{id}/columns {name, status, wip_limit}` · `POST /boards/{id}/columns/order {ids}` | Add (≤ 20) · reorder (full id list). Board managers only |
+| `POST /board-columns/{id} {name?, status?, wip_limit?}` · `POST /board-columns/{id}/archive {move_to}` | Edit (a status change moves its cards' status, with events) · archive (`MOVE_TO_REQUIRED` when not empty; one column must remain) |
+| `POST /tasks/{id}/move {row_version, column_id, before_id, after_id}` | Move/reorder; `before_id` = card directly above, `after_id` = directly below. Stale `row_version` → 409. Status follows the column through the task rules (`TASK_NO_REVIEWER` 422 for a review column without reviewer; a review redirect lands in the review column, `redirected: true`) |
+| `GET /board-rules` · `POST /board-rules {trigger, board_id, column_id, enabled}` (ADMIN) | Which board/column receives automatic cards per trigger |
+| `POST /automation/run` (ADMIN) | Run the automatic-card sweep now (it also runs at most once a minute from staff reads) |
+
+Automatic cards (`source` ≠ `manual`, `created_by` null, tag `자동`) come from the exception queue (QC failure,
+metadata conflict, missing rights document, DSP rejection, delivery failure, settlement mismatch, automation
+failure), new customer inquiries, pending second approvals and overdue release reviews. Each has a unique
+`source_key` (event identity), so repeated or concurrent sweeps never create a second card.
+
+### AUDENIQ Docs (migration `0081`)
+
+Block documents stored as validated block JSON (Tiptap/ProseMirror shape — never HTML). The server accepts only
+known nodes/marks/attributes (`DOC_CONTENT_INVALID`, `DOC_ATTR_INVALID`, `DOC_MARK_INVALID`), links must be
+`http(s)`/`mailto` (`DOC_LINK_INVALID`), embeds must name a known kind and id (`DOC_EMBED_INVALID`); 2 MB / 60k nodes.
+Access is `work.doc_level`: owner (creator) 4, ADMIN 3, else the higher of the staff-wide access
+(`staff_access` `EDITOR`/`VIEWER`/null = restricted) and per-role/per-user grants (`VIEWER`/`EDITOR`/`MANAGER`).
+A document the caller cannot see is a **404 everywhere** (detail, tree, search, entity search, comments, file
+downloads, embeds, inbox mentions); a visible one without enough level is a 403.
+
+| Method & path | Purpose |
+|---|---|
+| `GET /docs?parent=&archived=` | One tree level (lazy), `has_children`; visible children of hidden parents appear at the top |
+| `GET /docs/search?q=&status=&author=&entity_kind=&entity_id=&limit=` | Full-text (title + body, PostgreSQL FTS) and title match; plain-text `snippet` |
+| `POST /docs {parent_id, title, icon, template_id, link}` | Create (parent needs EDITOR; depth ≤ 4: `DOC_TOO_DEEP`); inherits the parent's access and grants; `link` connects a card (`task`) or record |
+| `GET /docs/{id}` | `{doc (+content, level), breadcrumb, related, cards, backlinks, open_comments}` |
+| `POST /docs/{id} {base_version, title?, icon?, content?}` | Save (EDITOR). `base_version` ≠ current → 409 (never a silent overwrite). Returns `{version, status, saved_at}`; editing an approved/in-review document returns it to `DRAFT` |
+| `POST /docs/{id}/move {parent_id, before_id, after_id}` · `/duplicate` · `/archive` · `/restore` · `/delete` | Tree move (MANAGER; `DOC_MOVE_CYCLE`, depth) · duplicate · archive / restore (with the subtree) · delete = tombstone, archived documents only, owner or ADMIN |
+| `POST /docs/{id}/status {action, reason}` | `REQUEST_REVIEW` (EDITOR) · `APPROVE` / `REJECT` (MANAGER; requester cannot approve own request except ADMIN: `DOC_SELF_APPROVAL`; reject needs `reason`) · `REOPEN` |
+| `GET /docs/{id}/versions` · `GET /docs/{id}/versions/{v}` · `POST /docs/{id}/versions {label}` · `POST /docs/{id}/restore-version {version, base_version}` | Version list (snapshots per editing session — another editor or 10 quiet minutes —, status changes, restores, manual saves; immutable) · one version · save a labelled version · restore as a new version |
+| `GET /docs/{id}/permissions` · `POST /docs/{id}/permissions {staff_access, grants, apply_to_children}` | Sharing (MANAGER); replaces the grant list |
+| `GET /doc-templates` · `POST /doc-templates {from_doc, name, description}` · `POST /doc-templates/{id}/archive` | Templates (8 built in; ADMIN saves a document without files as a template) |
+| `GET /embeds?refs=kind:id[:view],…` | Live values of embedded blocks, one batched query per kind (≤ 60 refs): release (`summary`/`qc`/`rights`/`distribution`), track, artist, dsp, inquiry, task (card), approval, doc, `audit` (resource audit trail; REVIEWER/ADMIN — others get `restricted`), other kinds by label. Hidden or missing → `{missing:true}` |
+
+Comments are notes on `target_kind=doc` with `parent_id` (one reply level: `NOTE_PARENT_INVALID`) and an optional
+`anchor {block, from, to, quote}`. Document files use the note attachment upload; a file is bound to the
+document on save and downloads (`GET /attachments/{id}`, `?inline=true` for PNG/JPEG/WebP only, sandboxed CSP,
+`nosniff`, `private`) follow the document's access — or the note target's for note attachments; an unattached
+upload only for its uploader. Link-preview blocks are written by the author: the server never fetches URLs.
+
 Phase 4 (analytics) is specified in the plan and not yet served.
 
 ## Partner webhooks (`/api/partner-hooks/*`)

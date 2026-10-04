@@ -162,12 +162,12 @@ export function EntityPicker({ onPick, kinds = LINK_KINDS, exclude = [] }: { onP
 }
 
 // ---------- 내부 메모 ----------
-const MAX_FILES = 5;
-const MAX_FILE = 20 * 1024 * 1024;
-const sizeLabel = (n: number) => (n < 1024 ? `${n}B` : n < 1024 * 1024 ? `${Math.round(n / 1024)}KB` : `${(n / 1024 / 1024).toFixed(1)}MB`);
+export const MAX_FILES = 5;
+export const MAX_FILE = 20 * 1024 * 1024;
+export const sizeLabel = (n: number) => (n < 1024 ? `${n}B` : n < 1024 * 1024 ? `${Math.round(n / 1024)}KB` : `${(n / 1024 / 1024).toFixed(1)}MB`);
 
 /** 본문 속 @이름 강조 */
-function NoteBody({ text, people }: { text: string; people: People }) {
+export function NoteBody({ text, people }: { text: string; people: People }) {
   const names = people.list.map(p => p.name).filter(Boolean).sort((a, b) => b.length - a.length);
   if (names.length === 0) return <p>{text}</p>;
   const esc = names.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
@@ -175,11 +175,13 @@ function NoteBody({ text, people }: { text: string; people: People }) {
   return <p>{parts.map((s, i) => (s.startsWith('@') && names.includes(s.slice(1)) ? <b key={i} className="adm-w-mention">{s}</b> : s))}</p>;
 }
 
-const mentionsIn = (body: string, people: People) => people.list.filter(p => body.includes(`@${p.name}`)).map(p => p.user_id);
+export const mentionsIn = (body: string, people: People) => people.list.filter(p => body.includes(`@${p.name}`)).map(p => p.user_id);
 
 /** @ 입력 시 동료 추천이 뜨는 메모 입력칸 */
-function MentionArea({ id, value, onChange, people, onSubmit, placeholder, rows = 3 }: {
+export function MentionArea({ id, value, onChange, people, onSubmit, placeholder, rows = 3, enterSends = false }: {
   id: string; value: string; onChange: (v: string) => void; people: People; onSubmit?: () => void; placeholder: string; rows?: number;
+  /** 채팅: Enter로 보내고 Shift+Enter로 줄 바꿈 (메모는 Ctrl/⌘+Enter) */
+  enterSends?: boolean;
 }) {
   const { me } = useStaff();
   const area = useRef<HTMLTextAreaElement>(null);
@@ -207,7 +209,7 @@ function MentionArea({ id, value, onChange, people, onSubmit, placeholder, rows 
         onKeyDown={e => {
           if (suggestions.length && (e.key === 'Enter' || e.key === 'Tab')) { e.preventDefault(); pick(suggestions[0]); return; }
           if (e.key === 'Escape') setAt(null);
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onSubmit?.(); }
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || (enterSends && !e.shiftKey && !e.nativeEvent.isComposing))) { e.preventDefault(); onSubmit?.(); }
         }}
       />
       {suggestions.length > 0 && (

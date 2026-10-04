@@ -108,7 +108,8 @@ pub async fn overview(s: &AppState, h: &HeaderMap, q: OpsQuery) -> Result<Value>
                     'updated_at',j.updated_at,'release_id',r.id,'title',r.title,'org_name',o.name)
                FROM execution.delivery_jobs j JOIN identity.orgs o ON o.id=j.org_id
                LEFT JOIN distribution.distribution_packages p ON p.id=j.package_id
-               LEFT JOIN catalog.releases r ON r.id=p.canonical_release_id
+               LEFT JOIN distribution.canonical_releases cr ON cr.id=p.canonical_release_id
+               LEFT JOIN catalog.releases r ON r.id=cr.release_id
               WHERE j.partner_id=$1 AND j.status IN ('FAILED','DEAD_LETTER') ORDER BY j.updated_at DESC LIMIT 20",
         )
         .bind(d)

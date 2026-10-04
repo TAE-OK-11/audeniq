@@ -51,9 +51,13 @@ export const ENTITY_KIND: Record<EntityKind, { label: string; icon: string }> = 
   settlement_report: { label: '정산 리포트', icon: 'won' },
   task: { label: '업무', icon: 'task' },
   relationship: { label: '관계(CRM)', icon: 'users' },
+  channel: { label: '팀 대화', icon: 'inquiry' },
+  doc: { label: '문서', icon: 'doc' },
+  track: { label: '트랙', icon: 'music' },
+  approval: { label: '2차 승인', icon: 'approval' },
 };
 /** 연결할 때 고르는 순서 */
-export const LINK_KINDS: EntityKind[] = ['release', 'artist', 'label', 'org', 'document', 'dsp', 'inquiry', 'settlement_report', 'payout', 'task', 'relationship'];
+export const LINK_KINDS: EntityKind[] = ['release', 'track', 'artist', 'label', 'org', 'document', 'dsp', 'inquiry', 'approval', 'settlement_report', 'payout', 'task', 'doc', 'relationship'];
 
 /** Entity가 열리는 관리자 주소 (화면이 없는 종류는 null) */
 export function entityLink(kind: EntityKind, id: string): string | null {
@@ -65,6 +69,9 @@ export function entityLink(kind: EntityKind, id: string): string | null {
     case 'payout': return '/admin/payouts';
     case 'task': return `/admin/tasks/${id}`;
     case 'relationship': return `/admin/crm/${id}`;
+    case 'channel': return `/admin/chat/${id}`;
+    case 'doc': return `/admin/docs/${id}`;
+    case 'approval': return '/admin/approvals';
     default: return null;
   }
 }
@@ -76,7 +83,7 @@ export const EVENT_LABEL: Record<string, string> = {
   PRIORITY: '우선순위를 바꿨어요', TYPE: '업무 유형을 바꿨어요', DUE: '마감일을 바꿨어요', RECURRENCE: '반복 설정을 바꿨어요',
   REVIEW_REQUESTED: '검토를 요청했어요', APPROVED: '검토를 승인했어요', CHANGES_REQUESTED: '보완을 요청했어요',
   RECURRED: '반복 업무로 다음 건이 만들어졌어요', EDITED: '내용을 고쳤어요', NOTE: '메모를 남겼어요',
-  SLA_ESCALATED: 'SLA를 넘겨 상향됐어요', LINKED: '연결했어요', UNLINKED: '연결을 해제했어요', SUBTASK_ADDED: '하위 업무를 추가했어요', ARCHIVED: '보관했어요',
+  SLA_ESCALATED: 'SLA를 넘겨 상향됐어요', MOVED: '열을 옮겼어요', LINKED: '연결했어요', UNLINKED: '연결을 해제했어요', SUBTASK_ADDED: '하위 업무를 추가했어요', ARCHIVED: '보관했어요',
 };
 
 /** 사람이 읽는 남은 시간 — '2시간 남음', '35분 지남' */
@@ -175,3 +182,23 @@ export const ACTIVITY_KINDS = Object.keys(ACTIVITY_KIND) as ActivityKind[];
 /** 관계 종류 → 원천 Entity 종류 (파트너는 원천 없음) */
 export const REL_ENTITY: Partial<Record<RelKind, EntityKind>> = { ARTIST: 'artist', LABEL: 'label', DSP: 'dsp', ORG: 'org' };
 export const pct = (v: number) => `${Math.round(v * 1000) / 10}%`;
+
+// ---------- 칸반 ----------
+/** 우선순위는 색만이 아니라 P0–P3 글자로도 보여 준다 */
+export const PRIORITY_CODE: Record<Priority, string> = { URGENT: 'P0', HIGH: 'P1', NORMAL: 'P2', LOW: 'P3' };
+export const PRIORITY_NAME: Record<Priority, string> = { URGENT: 'Critical', HIGH: 'High', NORMAL: 'Normal', LOW: 'Low' };
+export const CARD_SOURCE: Record<string, string> = {
+  manual: '직접 등록', system: '시스템', qc: 'QC', distribution: '배급', support: '고객 지원', rights: '권리', finance: '정산', sla: 'SLA',
+};
+export const BOARD_KIND: Record<string, string> = { PERSONAL: '개인', TEAM: '팀', OPERATIONS: '운영' };
+export const AUTO_TRIGGER: Record<string, string> = {
+  QC_FAILURE: 'QC 실패', METADATA_CONFLICT: '메타데이터 충돌', MISSING_RIGHTS_DOCUMENT: '권리 서류 누락', DSP_REJECTION: 'DSP 반려',
+  DISTRIBUTION_FAILURE: '배급(전송) 실패', SETTLEMENT_MISMATCH: '정산 불일치', AUTOMATION_FAILURE: '자동화 실패',
+  SUPPORT_INQUIRY: '새 고객 문의', APPROVAL_REQUIRED: '2차 승인 필요', RELEASE_REVIEW_OVERDUE: '발매 심사 기한 초과',
+};
+
+// ---------- 문서 ----------
+export const DOC_STATUS: Record<string, [string, Tone]> = {
+  DRAFT: ['초안', 'gray'], IN_REVIEW: ['검토 중', 'violet'], APPROVED: ['승인됨', 'green'],
+};
+export const DOC_LEVEL: Record<string, string> = { OWNER: '소유자', MANAGER: '관리', EDITOR: '편집', VIEWER: '보기', NONE: '없음' };

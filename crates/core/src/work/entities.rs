@@ -31,6 +31,10 @@ pub const KINDS: &[&str] = &[
     "settlement_report",
     "task",
     "relationship",
+    "channel",
+    "doc",
+    "track",
+    "approval",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -148,6 +152,45 @@ async fn fetch(
             .fetch_all(&mut *c)
             .await?
         }
+        // A restricted document never shows its title through a link or embed:
+        // only its readers see it (docs.rs checks the level).
+        "doc" => {
+            sqlx::query(
+                "SELECT d.id::text AS id,
+                        CASE WHEN d.staff_access IS NULL THEN '제한된 문서' ELSE COALESCE(NULLIF(d.title,''),'제목 없음') END AS label,
+                        d.status AS sub
+                   FROM work.docs d WHERE d.id = ANY($1) AND d.deleted_at IS NULL",
+            )
+            .bind(uuids(ids))
+            .fetch_all(&mut *c)
+            .await?
+        }
+        "track" => {
+            sqlx::query(
+                "SELECT t.id::text AS id, t.title AS label, r.title AS sub FROM catalog.tracks t
+                   JOIN catalog.releases r ON r.id=t.release_id WHERE t.id = ANY($1)",
+            )
+            .bind(uuids(ids))
+            .fetch_all(&mut *c)
+            .await?
+        }
+        "approval" => {
+            sqlx::query(
+                "SELECT a.id::text AS id, '2차 승인 · ' || r.title AS label, a.status AS sub FROM rights.staff_approvals a
+                   JOIN catalog.releases r ON r.id=a.release_id WHERE a.id = ANY($1)",
+            )
+            .bind(uuids(ids))
+            .fetch_all(&mut *c)
+            .await?
+        }
+        "channel" => {
+            sqlx::query(
+                "SELECT c.id::text AS id, '#' || c.name AS label, c.topic AS sub FROM work.channels c WHERE c.id = ANY($1)",
+            )
+            .bind(uuids(ids))
+            .fetch_all(&mut *c)
+            .await?
+        }
         "relationship" => {
             sqlx::query(concat!(
                 "SELECT r.id::text AS id, COALESCE(",
@@ -222,7 +265,7 @@ pub struct SearchQuery {
 
 /// Find an entity to link (title / name contains `q`, or the exact id).
 pub async fn search(s: &AppState, h: &HeaderMap, q: SearchQuery) -> Result<Value> {
-    staff::staff(s, h, false).await?;
+    let st = staff::staff(s, h, false).await?;
     super::one_of(&q.kind, KINDS, "ENTITY_KIND_UNKNOWN")?;
     let term = super::line(&q.q, 80)?;
     let like = format!(
@@ -242,18 +285,49 @@ pub async fn search(s: &AppState, h: &HeaderMap, q: SearchQuery) -> Result<Value
         "document" => sqlx::query_scalar("SELECT id::text FROM portal.documents WHERE title ILIKE $1 OR id::text=$2 ORDER BY updated_at DESC LIMIT 20"),
         "payout" => sqlx::query_scalar("SELECT p.id::text FROM portal.payout_requests p JOIN identity.orgs o ON o.id=p.org_id WHERE o.name ILIKE $1 OR p.id::text=$2 ORDER BY p.created_at DESC LIMIT 20"),
         "settlement_report" => sqlx::query_scalar("SELECT id::text FROM finance.royalty_reports WHERE dsp_id ILIKE $1 OR source_filename ILIKE $1 OR id::text=$2 ORDER BY received_at DESC LIMIT 20"),
+        "doc" => sqlx::query_scalar("SELECT id::text FROM work.docs WHERE deleted_at IS NULL AND archived_at IS NULL AND (title ILIKE $1 OR id::text=$2) ORDER BY updated_at DESC LIMIT 60"),
+        "track" => sqlx::query_scalar("SELECT id::text FROM catalog.tracks WHERE archived_at IS NULL AND (title ILIKE $1 OR isrc=upper($2) OR id::text=$2) ORDER BY title LIMIT 20"),
+        "approval" => sqlx::query_scalar("SELECT a.id::text FROM rights.staff_approvals a JOIN catalog.releases r ON r.id=a.release_id WHERE r.title ILIKE $1 OR a.id::text=$2 ORDER BY a.created_at DESC LIMIT 20"),
+        "channel" => sqlx::query_scalar("SELECT id::text FROM work.channels WHERE archived_at IS NULL AND (name ILIKE $1 OR id::text=$2) ORDER BY name LIMIT 20"),
         "relationship" => sqlx::query_scalar(concat!(
             "SELECT r.id::text FROM work.relationships r WHERE r.archived_at IS NULL AND (",
             super::crm::source_name!(),
             " ILIKE $1 OR r.id::text=$2) ORDER BY r.updated_at DESC LIMIT 20"
         )),
-        "task" => sqlx::query_scalar("SELECT id::text FROM work.tasks WHERE archived_at IS NULL AND (title ILIKE $1 OR 'WRK-'||seq=upper($2)) ORDER BY created_at DESC LIMIT 20"),
+        "task" => sqlx::query_scalar("SELECT id::text FROM work.tasks WHERE archived_at IS NULL AND (title ILIKE $1 OR 'WRK-'||seq=upper($2)) ORDER BY created_at DESC LIMIT 60"),
         _ => return Err(Error::InvalidCode("ENTITY_KIND_UNKNOWN")),
     }
     .bind(&like)
     .bind(&term)
     .fetch_all(&mut *c)
     .await?;
+    // documents and cards: only what the caller may open (restricted documents,
+    // other people's personal boards)
+    let visible: Option<Vec<String>> = match q.kind.as_str() {
+        "doc" => Some(
+            sqlx::query_scalar("SELECT id FROM unnest($1::text[]) AS x(id) WHERE work.doc_level(id::uuid, $2, $3) > 0")
+                .bind(&ids)
+                .bind(st.actor.user)
+                .bind(st.role.as_str())
+                .fetch_all(&mut *c)
+                .await?,
+        ),
+        "task" => Some(
+            sqlx::query_scalar(concat!(
+                "SELECT t.id::text FROM work.tasks t WHERE t.id::text = ANY($1) AND ",
+                crate::work_card_visible!("$2")
+            ))
+            .bind(&ids)
+            .bind(st.actor.user)
+            .fetch_all(&mut *c)
+            .await?,
+        ),
+        _ => None,
+    };
+    let ids: Vec<String> = match visible {
+        Some(v) => ids.into_iter().filter(|i| v.contains(i)).take(20).collect(),
+        None => ids,
+    };
     let refs: Vec<Ref> = ids
         .iter()
         .map(|id| Ref {
