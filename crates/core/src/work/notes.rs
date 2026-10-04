@@ -92,12 +92,33 @@ pub struct ListQuery {
     pub target_id: String,
     #[serde(default)]
     pub archived: bool,
+    /// only the newest `latest` notes (chat), optionally older than `before`
+    pub latest: Option<i64>,
+    pub before: Option<DateTime<Utc>>,
 }
 
 pub async fn list(s: &AppState, h: &HeaderMap, q: ListQuery) -> Result<Value> {
     staff::staff(s, h, false).await?;
     let target = entities::parse(&q.target_kind, &q.target_id)?;
     let mut c = s.pool.acquire().await?;
+    if let Some(n) = q.latest {
+        // newest first, then shown oldest-first; `has_more` pages further back
+        let n = n.clamp(1, 200);
+        let mut ids: Vec<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM work.notes WHERE target_kind=$1 AND target_id=$2 AND ($3 OR archived_at IS NULL)
+               AND ($4::timestamptz IS NULL OR created_at < $4) ORDER BY created_at DESC, id DESC LIMIT $5",
+        )
+        .bind(&target.kind)
+        .bind(&target.id)
+        .bind(q.archived)
+        .bind(q.before)
+        .bind(n + 1)
+        .fetch_all(&mut *c)
+        .await?;
+        let has_more = ids.len() as i64 > n;
+        ids.truncate(n as usize);
+        return Ok(json!({ "items": notes_json(&mut c, &ids).await?, "has_more": has_more }));
+    }
     let ids: Vec<Uuid> = sqlx::query_scalar(
         "SELECT id FROM work.notes WHERE target_kind=$1 AND target_id=$2 AND ($3 OR archived_at IS NULL) ORDER BY created_at LIMIT 500",
     )
@@ -134,6 +155,9 @@ pub async fn create(s: &AppState, h: &HeaderMap, i: CreateInput) -> Result<Value
     }
     let mut tx = s.pool.begin().await?;
     entities::require(&mut tx, &target).await?;
+    if target.kind == "channel" {
+        super::channels::require_open(&mut tx, &target.id).await?;
+    }
     let mentions = mentions_ok(&mut tx, &i.mentions).await?;
     let id = Uuid::new_v4();
     sqlx::query("INSERT INTO work.notes(id,target_kind,target_id,author_id,body,mentions) VALUES($1,$2,$3,$4,$5,$6)")

@@ -220,6 +220,18 @@ sources. Inbox category `CONTACT_DUE`: relationships the caller owns whose next 
 | `POST /relationships/{id}/links` · `POST /relationships/{id}/links/{link}/archive` | Link / unlink related records. Notes (`target_kind=relationship`) and tasks link to relationships like any entity |
 | `GET /dsp-ops?dsp=` | Per DSP: registry, contract route and onboarding (same as `/api/staff/dsps`), last 30 days of delivery jobs (total, delivered, failed, in flight, failure rate, partner rejections, average minutes), staging pending/blocked, open exceptions, the CRM relationship and DSP-scoped SLA policies; with `dsp`, that DSP's recent failures and open exceptions |
 
+Team channels (migration `0080`). Messages are internal notes with `target_kind=channel` (same mentions → inbox,
+attachments, edit history, archive); only the channel and each person's read position are stored.
+
+| Method & path | Purpose |
+|---|---|
+| `GET /channels?archived=` · `POST /channels {name, topic}` | Channels with the caller's `unread`, `mentions`, `last_message_at` · create (any staff; unique name: `CHANNEL_EXISTS`) |
+| `POST /channels/{id}` · `POST /channels/{id}/archive` | Rename / archive — creator or ADMIN (system channels: ADMIN). Posting to an archived channel: `CHANNEL_ARCHIVED` |
+| `POST /channels/{id}/read` | Mark read up to now |
+| `GET /notes?target_kind=channel&target_id=&latest=&before=` · `POST /notes` | Newest `latest` messages (≤ 200) older than `before`, shown oldest-first, with `has_more` · post a message |
+
+`GET /summary` also returns `chat.unread`. The Kanban board (`/admin/board`) uses `GET /tasks` and `POST /tasks/{id}` (status changes follow the same review rules).
+
 Phase 4 (analytics) is specified in the plan and not yet served.
 
 ## Partner webhooks (`/api/partner-hooks/*`)

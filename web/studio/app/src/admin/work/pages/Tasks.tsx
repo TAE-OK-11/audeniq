@@ -7,8 +7,9 @@ import { useAsync } from '../../../hooks/useAsync';
 import { Glyph } from '../../../components/Glyph';
 import { Empty, ErrorBox, Filters, PageHead, Seg, Skeleton, WorkTabs } from '../../ui';
 import { workApi } from '../api';
-import { ENTITY_KIND, OPEN_STATUSES, PRIORITIES, PRIORITY, TASK_STATUS, WORK_TYPE, WORK_TYPES, recurLabel } from '../labels';
+import { ENTITY_KIND, PRIORITIES, PRIORITY, WORK_TYPE, WORK_TYPES, recurLabel } from '../labels';
 import { TaskForm } from '../TaskForm';
+import { Kanban } from '../Kanban';
 import { DueChip, EntityChips, Person, PersonSelect, PriorityChip, TaskStatusChip, usePeople, type People } from '../ui';
 import type { EntityKind, Priority, TaskQuery, WorkTask, WorkType } from '../types';
 
@@ -39,32 +40,8 @@ function TaskRow({ t, people }: { t: WorkTask; people: People }) {
   );
 }
 
-function Board({ items, people }: { items: WorkTask[]; people: People }) {
-  return (
-    <div className="adm-w-board">
-      {OPEN_STATUSES.map(s => {
-        const col = items.filter(t => t.status === s);
-        return (
-          <section key={s} className="adm-w-col" aria-label={TASK_STATUS[s][0]}>
-            <h3>{TASK_STATUS[s][0]}<b className="adm-count">{col.length}</b></h3>
-            {col.length === 0 ? <p className="adm-w-col-empty">없음</p> : col.map(t => (
-              <Link key={t.id} to={`/admin/tasks/${t.id}`} className={`adm-w-card${t.overdue || t.sla_state === 'BREACHED' ? ' is-late' : ''}`}>
-                <span className="adm-w-card-top"><span className="adm-w-key">{t.key}</span><PriorityChip value={t.priority} /></span>
-                <b>{t.title}</b>
-                <span className="adm-w-card-foot">
-                  <Person id={t.assignee_id} people={people} />
-                  <DueChip due={t.deadline ?? t.due_at} />
-                </span>
-              </Link>
-            ))}
-          </section>
-        );
-      })}
-    </div>
-  );
-}
-
-export function Tasks() {
+/** `board` = 칸반 보드(/admin/board), 아니면 목록(/admin/tasks) */
+export function Tasks({ board = false }: { board?: boolean }) {
   const nav = useNavigate();
   const [params, setParams] = useSearchParams();
   const view = (params.get('view') as View) || 'mine';
@@ -76,12 +53,13 @@ export function Tasks() {
   const [due, setDue] = useState<NonNullable<TaskQuery['due']>>('');
   const [assignee, setAssignee] = useState<string | null>(null);
   const [q, setQ] = useState('');
-  const [layout, setLayout] = useState<'list' | 'board'>('list');
+  const layout = board ? 'board' : 'list';
+  const setLayout = (v: 'list' | 'board') => nav(`${v === 'board' ? '/admin/board' : '/admin/tasks'}${params.toString() ? `?${params}` : ''}`);
   const [creating, setCreating] = useState(false);
   const people = usePeople();
   const { data, loading, error, reload } = useAsync(
     () => workApi.tasks({
-      view, status: layout === 'board' ? 'open' : status, type, priority, due, q: q.trim() || undefined,
+      view, status: layout === 'board' ? 'all' : status, type, priority, due, q: q.trim() || undefined,
       assignee: view === 'all' ? assignee ?? undefined : undefined, entity_kind: entityKind, entity_id: entityId,
     }),
     [view, status, type, priority, due, assignee, layout, entityKind, entityId, q],
@@ -138,7 +116,7 @@ export function Tasks() {
         <Empty icon={<Glyph name="task" size={22} />} title={status === 'archived' ? '보관한 업무가 없어요' : status === 'done' ? '완료한 업무가 없어요' : '진행 중인 업무가 없어요'}>
           <button type="button" className="adm-btn soft small" style={{ marginTop: 14 }} onClick={() => setCreating(true)}>새 업무 만들기</button>
         </Empty>
-      ) : layout === 'board' ? <Board items={items} people={people} /> : (
+      ) : layout === 'board' ? <Kanban items={items} people={people} onReload={reload} /> : (
         <div className="adm-list">{items.map(t => <TaskRow key={t.id} t={t} people={people} />)}</div>
       )}
       {creating && (
@@ -148,4 +126,9 @@ export function Tasks() {
       )}
     </div>
   );
+}
+
+/** 칸반 보드 (/admin/board) — 같은 목록·필터를 상태 열로 */
+export function Board() {
+  return <Tasks board />;
 }

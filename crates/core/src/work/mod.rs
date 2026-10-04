@@ -21,6 +21,7 @@ use serde_json::{Value, json};
 use sqlx::{PgConnection, Row};
 use uuid::Uuid;
 
+pub mod channels;
 pub mod crm;
 pub mod dsp_ops;
 pub mod entities;
@@ -43,6 +44,8 @@ pub(crate) enum Act {
     EditNote { author: Uuid },
     /// Archive a note: its author or ADMIN.
     ArchiveNote { author: Uuid },
+    /// Rename or archive a channel: its creator or ADMIN (system channels: ADMIN).
+    ManageChannel { created_by: Option<Uuid> },
 }
 
 pub(crate) fn permit(st: &Staff, act: Act) -> Result<()> {
@@ -56,6 +59,7 @@ pub(crate) fn permit(st: &Staff, act: Act) -> Result<()> {
         Act::DecideReview { reviewer } => admin || reviewer == Some(me),
         Act::EditNote { author } => author == me,
         Act::ArchiveNote { author } => admin || author == me,
+        Act::ManageChannel { created_by } => admin || created_by == Some(me),
     };
     if ok { Ok(()) } else { Err(Error::Forbidden) }
 }
@@ -158,5 +162,6 @@ pub fn routes() -> Router<AppState> {
         .merge(exceptions::routes())
         .merge(inbox::routes())
         .merge(crm::routes())
+        .merge(channels::routes())
         .merge(dsp_ops::routes())
 }

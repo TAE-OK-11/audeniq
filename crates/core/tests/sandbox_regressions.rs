@@ -2221,4 +2221,47 @@ async fn staff_endpoints_work_under_split_roles(pool: PgPool) {
         &u,
     )
     .await;
+    // Team channels: messages are notes, read marks, unread badge.
+    let ch = ok(
+        &e.api,
+        "POST",
+        "/api/staff/work/channels",
+        json!({"name": "분할 역할"}),
+        &u,
+    )
+    .await;
+    let cid = ch["id"].as_str().unwrap().to_string();
+    ok(
+        &e.api,
+        "POST",
+        "/api/staff/work/notes",
+        json!({"target_kind": "channel", "target_id": cid, "body": "안녕하세요"}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "GET",
+        &format!("/api/staff/work/notes?target_kind=channel&target_id={cid}&latest=50"),
+        json!({}),
+        &u,
+    )
+    .await;
+    ok(&e.api, "GET", "/api/staff/work/channels", json!({}), &u).await;
+    ok(
+        &e.api,
+        "POST",
+        &format!("/api/staff/work/channels/{cid}/read"),
+        json!({}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "POST",
+        &format!("/api/staff/work/channels/{cid}/archive"),
+        json!({}),
+        &u,
+    )
+    .await;
 }

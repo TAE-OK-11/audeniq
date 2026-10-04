@@ -244,6 +244,7 @@ async fn build(s: &AppState, st: &Staff) -> Result<Vec<Item>> {
             "release" => format!("/admin/reviews/{target}"),
             "inquiry" => format!("/admin/inquiries/{target}"),
             "document" => "/admin/documents".into(),
+            "channel" => format!("/admin/chat/{target}"),
             _ => "/admin".into(),
         };
         out.push(Item {
@@ -469,9 +470,11 @@ pub async fn summary(s: &AppState, h: &HeaderMap) -> Result<Value> {
     let read = reads(s, st.actor.user, &ids).await?;
     let mut tx = s.pool.begin().await?;
     let excs = exceptions::collect(&mut tx, None, None).await?;
+    let chat = super::channels::unread_total(&mut tx, st.actor.user).await?;
     tx.commit().await?;
     let open: Vec<&exceptions::Item> = excs.iter().filter(|e| !e.closed()).collect();
     Ok(json!({
+        "chat": {"unread": chat},
         "inbox": {"total": all.len(), "unread": all.iter().filter(|i| !read.contains(&i.id)).count()},
         "overdue": all.iter().filter(|i| i.category == "OVERDUE").count(),
         "sla_warning": all.iter().filter(|i| i.category == "SLA_WARNING").count(),

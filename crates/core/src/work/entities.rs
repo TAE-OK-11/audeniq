@@ -31,6 +31,7 @@ pub const KINDS: &[&str] = &[
     "settlement_report",
     "task",
     "relationship",
+    "channel",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -148,6 +149,14 @@ async fn fetch(
             .fetch_all(&mut *c)
             .await?
         }
+        "channel" => {
+            sqlx::query(
+                "SELECT c.id::text AS id, '#' || c.name AS label, c.topic AS sub FROM work.channels c WHERE c.id = ANY($1)",
+            )
+            .bind(uuids(ids))
+            .fetch_all(&mut *c)
+            .await?
+        }
         "relationship" => {
             sqlx::query(concat!(
                 "SELECT r.id::text AS id, COALESCE(",
@@ -242,6 +251,7 @@ pub async fn search(s: &AppState, h: &HeaderMap, q: SearchQuery) -> Result<Value
         "document" => sqlx::query_scalar("SELECT id::text FROM portal.documents WHERE title ILIKE $1 OR id::text=$2 ORDER BY updated_at DESC LIMIT 20"),
         "payout" => sqlx::query_scalar("SELECT p.id::text FROM portal.payout_requests p JOIN identity.orgs o ON o.id=p.org_id WHERE o.name ILIKE $1 OR p.id::text=$2 ORDER BY p.created_at DESC LIMIT 20"),
         "settlement_report" => sqlx::query_scalar("SELECT id::text FROM finance.royalty_reports WHERE dsp_id ILIKE $1 OR source_filename ILIKE $1 OR id::text=$2 ORDER BY received_at DESC LIMIT 20"),
+        "channel" => sqlx::query_scalar("SELECT id::text FROM work.channels WHERE archived_at IS NULL AND (name ILIKE $1 OR id::text=$2) ORDER BY name LIMIT 20"),
         "relationship" => sqlx::query_scalar(concat!(
             "SELECT r.id::text FROM work.relationships r WHERE r.archived_at IS NULL AND (",
             super::crm::source_name!(),
