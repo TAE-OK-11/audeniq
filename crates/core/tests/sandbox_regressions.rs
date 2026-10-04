@@ -2092,4 +2092,133 @@ async fn staff_endpoints_work_under_split_roles(pool: PgPool) {
     )
     .await;
     ok(&e.api, "GET", "/api/staff/work/mentions", json!({}), &u).await;
+
+    // Phase 2 reads every exception source, the SLA queues and the inbox
+    // across workspaces under the same role.
+    let job = Uuid::new_v4();
+    sqlx::query("INSERT INTO operations.jobs(id,queue,kind,payload,status,idempotency_key,last_error,dead_lettered_at)
+                 VALUES($1,'qc','stage1','{}','DEAD_LETTER',$2,'boom',now())")
+        .bind(job)
+        .bind(format!("t:{job}"))
+        .execute(&e.owner)
+        .await
+        .unwrap();
+    let ex = ok(&e.api, "GET", "/api/staff/work/exceptions", json!({}), &u).await;
+    assert!(ex["total"].as_u64().unwrap() >= 1, "{ex}");
+    ok(
+        &e.api,
+        "POST",
+        &format!("/api/staff/work/exceptions/job/{job}"),
+        json!({"action": "ACK"}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "POST",
+        &format!("/api/staff/work/exceptions/job/{job}"),
+        json!({"action": "TO_TASK"}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "POST",
+        "/api/staff/work/exceptions/reports",
+        json!({"kind": "SETTLEMENT_MISMATCH", "severity": "LOW", "title": "수동 보고", "detail": ""}),
+        &u,
+    )
+    .await;
+    let inbox = ok(&e.api, "GET", "/api/staff/work/inbox", json!({}), &u).await;
+    let first = inbox["items"][0]["id"].clone();
+    ok(
+        &e.api,
+        "POST",
+        "/api/staff/work/inbox/read",
+        json!({"ids": [first]}),
+        &u,
+    )
+    .await;
+    ok(&e.api, "GET", "/api/staff/work/summary", json!({}), &u).await;
+    let sla = ok(&e.api, "GET", "/api/staff/work/sla", json!({}), &u).await;
+    let pid = sla["policies"][0]["id"].clone();
+    let mut p = sla["policies"][0].clone();
+    p.as_object_mut().unwrap().remove("updated_at");
+    p["id"] = pid;
+    ok(&e.api, "POST", "/api/staff/work/sla/policies", p, &u).await;
+    ok(
+        &e.api,
+        "POST",
+        "/api/staff/work/calendars/KR_BUSINESS/holidays",
+        json!({"day": "2099-05-05", "name": "어린이날"}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "POST",
+        "/api/staff/work/calendars/KR_BUSINESS/holidays",
+        json!({"day": "2099-05-05"}),
+        &u,
+    )
+    .await;
+
+    // Phase 3: CRM over source records and the DSP operations board.
+    let rel = ok(
+        &e.api,
+        "POST",
+        "/api/staff/work/relationships",
+        json!({"kind": "ORG", "entity_kind": "org", "entity_id": u.org.to_string(), "owner_id": u.user}),
+        &u,
+    )
+    .await;
+    let rid = rel["relationship"]["id"].as_str().unwrap().to_string();
+    ok(
+        &e.api,
+        "POST",
+        &format!("/api/staff/work/relationships/{rid}/contacts"),
+        json!({"name": "담당자"}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "POST",
+        &format!("/api/staff/work/relationships/{rid}/activities"),
+        json!({"kind": "CALL", "summary": "통화"}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "POST",
+        "/api/staff/work/relationships",
+        json!({"kind": "DSP", "entity_kind": "dsp", "entity_id": "D-5"}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "GET",
+        "/api/staff/work/relationships",
+        json!({}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "GET",
+        "/api/staff/work/dsp-ops?dsp=D-5",
+        json!({}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "POST",
+        &format!("/api/staff/work/relationships/{rid}/archive"),
+        json!({}),
+        &u,
+    )
+    .await;
 }

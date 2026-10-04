@@ -1,5 +1,6 @@
 // 관리자 화면 공통 조각 — 칩, 페이지 머리, 빈 상태, 로딩, 오류, 필터 레일.
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import type { WorkSummary } from './work/types';
 import { Link, useLocation } from '../lib/router';
 import type { Duty, Overview, StaffMe } from './api';
 import type { Tone } from './labels';
@@ -91,6 +92,8 @@ export function Initial({ text, plain, src }: { text: string; plain?: boolean; s
 interface StaffCtx {
   me: StaffMe;
   counts: Overview | null;
+  /** 업무함·예외 숫자 (Phase 2) */
+  work: WorkSummary | null;
   refreshCounts: () => void;
   can: (d: Duty) => boolean;
 }
@@ -105,6 +108,13 @@ export function useStaff(): StaffCtx {
 export function NoDuty({ duty }: { duty: string }) {
   return <div className="adm-alert">현재 역할로는 <b>{duty}</b> 작업을 할 수 없어요. 조회만 가능해요.</div>;
 }
+
+/** 배급 메뉴의 하위 화면 */
+export const DELIVERY_TABS = [
+  { to: '/admin/deliveries', label: '배급 현황' },
+  { to: '/admin/dsps', label: '플랫폼별 조건' },
+  { to: '/admin/dsp-ops', label: 'DSP 운영' },
+];
 
 /** 한 메뉴 안의 하위 화면 (발매 심사 | 2차 승인, 배급 현황 | DSP 사양) — 밑줄이 고른 탭으로 미끄러진다 */
 export function SubTabs({ tabs }: { tabs: { to: string; label: string; count?: number }[] }) {

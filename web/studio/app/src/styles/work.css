@@ -183,3 +183,88 @@ button.adm-w-stat:active{transform:scale(.985)}
 }
 .adm-w-filter-row .adm-select{min-width:132px;padding-right:36px}
 .adm-w-filter-row .adm-select.adm-w-select{width:auto;min-width:210px;height:40px;border-radius:13px}
+
+/* ---------- Phase 2: 업무함 · 예외 처리 · SLA ---------- */
+.adm-w-inbox-row{grid-template-columns:auto minmax(0,1fr) auto;cursor:pointer;font:inherit}
+.adm-w-inbox-row:hover{background:#edf2ff}
+.adm-w-inbox-row.is-read .adm-row-title{color:#5d6880;font-weight:700}
+.adm-w-inbox-icon{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;flex:0 0 auto}
+.adm-w-unread-dot{display:inline-block;width:7px;height:7px;margin-right:7px;border-radius:50%;background:var(--adm-blue);vertical-align:2px}
+.adm-w-ellipsis{max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.adm-w-exc-list{display:grid;gap:10px}
+.adm-w-exc{display:grid;gap:10px;padding:16px 18px;border-radius:22px;background:var(--adm-soft);transition:box-shadow .2s var(--adm-ease)}
+.adm-w-exc.is-focus{box-shadow:inset 0 0 0 2px #cfdbff}
+.adm-w-exc.is-closed{background:#fafbfd}
+.adm-w-exc-top{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center}
+.adm-w-exc-title{display:block;font-size:14.5px;font-weight:800;letter-spacing:-.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.adm-w-exc-detail{margin:0;padding:10px 12px;border-radius:14px;background:#fff;font:600 12.5px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#3d4760;overflow-wrap:anywhere}
+.adm-w-exc-meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.adm-w-exc-actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.adm-w-exc-actions .adm-select{height:36px;min-width:150px;border-radius:12px;background:#fff}
+.adm-w-exc-note{margin:0}
+
+.adm-w-sla-board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.adm-w-policy{grid-template-columns:minmax(0,1fr) auto}
+.adm-w-policy .adm-row-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.adm-w-policy.is-closed{opacity:.7}
+.adm-w-holidays{display:grid;gap:12px}
+.adm-w-holidays .adm-w-inline{display:flex;gap:8px;flex-wrap:wrap}
+.adm-w-holidays .adm-w-inline .adm-input{flex:1 1 160px;max-width:240px}
+
+@media (max-width:960px){
+  .adm-w-sla-board{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:640px){
+  .adm-w-inbox-row{grid-template-columns:minmax(0,1fr) auto}
+  .adm-w-inbox-row>.adm-w-inbox-icon{display:none}
+  .adm-w-exc-top{grid-template-columns:minmax(0,1fr)}
+  .adm-w-exc-top>.adm-w-inbox-icon{display:none}
+  .adm-w-ellipsis{max-width:200px}
+}
+.adm-w-exc-actions .adm-select.adm-w-select{width:auto;flex:0 1 230px;height:36px;min-height:36px;border-radius:12px;background:#fff}
+.adm-w-inbox-icon.adm-t-blue{background:#EAF0FF;color:#365cd4}
+.adm-w-inbox-icon.adm-t-violet{background:#F0EDFF;color:#6852BA}
+.adm-w-inbox-icon.adm-t-amber{background:#FFF3E6;color:#A76525}
+.adm-w-inbox-icon.adm-t-green{background:#E8F6F0;color:#21815B}
+.adm-w-inbox-icon.adm-t-red{background:#FFEDEF;color:#B33744}
+.adm-w-inbox-icon.adm-t-gray{background:#EDEFF4;color:#6A7386}
+.adm-w-btns{display:inline-flex;gap:6px;align-items:center}
+.adm-w-policy .adm-row-end{flex-direction:row;align-items:center;gap:8px}
+.adm-w-holidays .adm-w-inline .adm-input{width:auto}
+
+/* ---------- Phase 3: 관계 관리 · DSP 운영 ---------- */
+.adm-w-check{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:720;color:#3d4760}
+.adm-w-activity-form .adm-textarea{background:#fff}
+.adm-w-activity-form .adm-w-inline{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.adm-w-activity-form .adm-w-inline .adm-select,.adm-w-activity-form .adm-w-inline .adm-input{flex:0 1 200px;height:38px;min-height:38px;background:#fff}
+.adm-w-inline-label{font-size:12.5px;font-weight:720;color:var(--adm-muted)}
+.adm-w-timeline{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:10px}
+.adm-w-timeline li{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;padding:12px 14px;border-radius:18px;background:var(--adm-soft)}
+.adm-w-timeline b{font-size:13px;font-weight:800}
+.adm-w-timeline p{margin:4px 0;font-size:13.5px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
+.adm-w-timeline small{font-size:11.5px;color:var(--adm-muted);font-weight:650}
+.adm-w-subhead{margin:6px 0 8px;font-size:12.5px;font-weight:800;color:#5d6880}
+.adm-w-subhead+.adm-list{margin-bottom:12px}
+.adm-w-contacts{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.adm-w-contacts li{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;padding:12px 14px;border-radius:16px;background:var(--adm-soft)}
+.adm-w-contacts .adm-min{display:grid;gap:2px;font-size:12.5px}
+.adm-w-contacts b{display:flex;align-items:center;gap:6px;font-size:13.5px;font-weight:800}
+.adm-w-contacts small{color:var(--adm-muted);font-weight:650}
+.adm-w-contacts a{color:var(--adm-blue);font-weight:700;overflow-wrap:anywhere}
+
+.adm-w-dsp-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;margin:14px 0 22px}
+.adm-w-dsp{display:grid;gap:10px;padding:16px;border:0;border-radius:22px;background:var(--adm-soft);text-align:left;font:inherit;color:var(--adm-ink);cursor:pointer;transition:background-color .18s var(--adm-ease),transform .18s var(--adm-ease)}
+.adm-w-dsp:hover{background:#edf2ff}
+.adm-w-dsp:active{transform:scale(.985)}
+.adm-w-dsp.is-active{background:var(--adm-blue-soft);box-shadow:inset 0 0 0 2px #cfdbff}
+.adm-w-dsp-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.adm-w-dsp-top b{font-size:14.5px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.adm-w-dsp-nums{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.adm-w-dsp-nums span{display:grid;font-size:11.5px;font-weight:700;color:var(--adm-muted)}
+.adm-w-dsp-nums strong{font-size:18px;font-weight:800;color:var(--adm-ink);letter-spacing:-.03em}
+.adm-w-dsp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 18px}
+.adm-w-dsp-grid .adm-w-fields dd{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+@media (max-width:960px){.adm-w-dsp-grid{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:640px){.adm-w-dsp-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.adm-w-block{margin-bottom:26px}

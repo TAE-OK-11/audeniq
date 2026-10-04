@@ -21,8 +21,13 @@ use serde_json::{Value, json};
 use sqlx::{PgConnection, Row};
 use uuid::Uuid;
 
+pub mod crm;
+pub mod dsp_ops;
 pub mod entities;
+pub mod exceptions;
+pub mod inbox;
 pub mod notes;
+pub mod sla;
 pub mod tasks;
 
 /// Sensitive work actions and who may take them.
@@ -149,4 +154,9 @@ pub fn routes() -> Router<AppState> {
         .merge(entities::routes())
         .merge(tasks::routes())
         .merge(notes::routes())
+        .merge(sla::routes())
+        .merge(exceptions::routes())
+        .merge(inbox::routes())
+        .merge(crm::routes())
+        .merge(dsp_ops::routes())
 }
