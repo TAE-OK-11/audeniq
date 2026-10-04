@@ -1,8 +1,14 @@
 import { useEffect } from 'react';
+import { Link } from '../../lib/router';
+import { useAsync } from '../../hooks/useAsync';
+import { Glyph } from '../../components/Glyph';
+import { workApi } from '../work/api';
+import { ENTITY_KIND } from '../work/labels';
+import { ago } from '../labels';
 import { useNavigate } from '../../lib/router';
 import { Icon } from '../AdminApp';
 import { DUTY_LABEL, ROLE_LABEL } from '../labels';
-import { CountUp, PageHead, useStaff } from '../ui';
+import { CountUp, PageHead, Section, useStaff } from '../ui';
 import type { Overview } from '../api';
 
 interface Tile { key: keyof Overview; label: string; hint: string; to: string; icon: string; alert?: boolean }
@@ -42,6 +48,8 @@ export function OverviewPage() {
         <div className="adm-hero-num" aria-hidden="true">{counts ? <CountUp value={urgent} /> : '–'}<small>처리 대기</small></div>
       </div>
 
+      <MentionsPeek />
+
       <div className="adm-stats">
         {TILES.map(t => {
           const n = counts ? Number(counts[t.key] ?? 0) : null;
@@ -69,5 +77,33 @@ export function OverviewPage() {
         </div>
       )}
     </div>
+  );
+}
+
+/** 나를 언급한 내부 메모 (해결 전) — 업무함(Phase 2)이 생기기 전까지 오늘의 업무에서 바로 본다 */
+function MentionsPeek() {
+  const { data } = useAsync(() => workApi.mentions(), []);
+  const items = (data?.items ?? []).slice(0, 5);
+  if (!data || items.length === 0) return null;
+  const link = (kind: string, id: string) => (kind === 'task' ? `/admin/tasks/${id}` : kind === 'release' ? `/admin/reviews/${id}` : kind === 'inquiry' ? `/admin/inquiries/${id}` : null);
+  return (
+    <Section title="나를 언급한 메모" meta={`해결 전 ${data.items.length}건`}>
+      <div className="adm-list">
+        {items.map(n => {
+          const to = link(n.target_kind, n.target_id);
+          const inner = (
+            <>
+              <span className="adm-row-icon plain" aria-hidden="true"><Glyph name="at" size={20} /></span>
+              <span className="adm-min">
+                <span className="adm-row-title">{n.body || '첨부파일'}</span>
+                <span className="adm-row-meta"><span>{ENTITY_KIND[n.target_kind].label}</span>{n.target?.label && <span>{n.target.label}</span>}</span>
+              </span>
+              <span className="adm-row-end"><small>{ago(n.created_at)}</small></span>
+            </>
+          );
+          return to ? <Link key={n.id} to={to} className="adm-row">{inner}</Link> : <div key={n.id} className="adm-row">{inner}</div>;
+        })}
+      </div>
+    </Section>
   );
 }

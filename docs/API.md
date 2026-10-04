@@ -162,6 +162,33 @@ All roles can read every list below.
 | GET | `/api/staff/dsps` | D-1..D-11 registry with spec, route profile and onboarding gaps |
 | GET | `/api/staff/payouts?status=REQUESTED` | ADMIN only; read-only (money still moves through operations tooling) |
 
+## Staff work module (`/api/staff/work/*`)
+
+Internal work management for staff (`/admin/tasks`). Design, duplicate check and phases: `docs/WORK_MANAGEMENT_PLAN.md`.
+Code: `crates/core/src/work/`, schema `work` (migration `0076`). Same session, Origin, CSRF and staff-role checks as the
+staff portal (every request also lands in `privacy.staff_access_logs`); every mutation is audited as `work.*`. Nothing is
+deleted — tasks, links, notes and attachments are archived. Customers have no route to any of it.
+
+Phase 1 (task engine, notes, mentions):
+
+| Method & path | Purpose |
+|---|---|
+| `GET /people` | Active staff (assignee / reviewer pickers, @mentions) |
+| `GET /entities/search?kind=&q=` | Find an entity to link. Kinds: `release, org, artist, label, dsp, inquiry, document, payout, settlement_report, task`. Labels come from the source tables |
+| `GET /tasks?view=mine\|review\|created\|all&status=open\|done\|all\|archived&type=&priority=&assignee=&due=overdue\|today\|week&entity_kind=&entity_id=&q=&subtasks=` | Task list (top-level unless `subtasks` or an entity filter) with subtask counts and resolved links |
+| `POST /tasks` | Create (`parent_id` for a subtask — one level; `links[]`; `recurrence {freq,interval}`) |
+| `GET /tasks/{id}` | Task, parent, subtasks, event log |
+| `POST /tasks/{id}` | Update with `row_version` (409 when stale): fields, `status`, or `review: APPROVE\|REQUEST_CHANGES` (+ `review_note`, required for changes). With a reviewer other than the caller, `DONE` becomes `IN_REVIEW`; only the reviewer or ADMIN decides; open subtasks block `DONE` (`TASK_SUBTASKS_OPEN`); a done recurring task creates the next one with the same people and links |
+| `POST /tasks/{id}/archive` | Archive with its subtasks (creator, assignee or ADMIN) |
+| `POST /tasks/{id}/links` · `POST /links/{id}/archive` | Link an existing entity (must exist) · unlink (archived) |
+| `GET /notes?target_kind=&target_id=&archived=` · `POST /notes` | Internal notes on any entity; `mentions` must be active staff; `attachments` are ready uploads of the author |
+| `POST /notes/{id}` · `GET /notes/{id}/revisions` | Author-only edit; the previous text is kept |
+| `POST /notes/{id}/resolve {resolved}` · `POST /notes/{id}/archive` | Resolve / reopen · archive (author or ADMIN) |
+| `GET /mentions?resolved=` | Notes mentioning the caller, with the target's label |
+| `POST /attachments {name,content_type,size_bytes}` → `{id, grant}` · `POST /attachments/{id}/complete` · `GET /attachments/{id}` | Same path as studio uploads: presigned PUT to quarantine, completion checks size/type/nonce, freezes, hashes and runs the antivirus scan when enabled. ≤ 20 MiB, documents/images/spreadsheets/zip. Downloads are `attachment` only and audited |
+
+Phases 2–4 (inbox, SLA, exception queue, CRM Lite, DSP operations, analytics) are specified in the plan and not yet served.
+
 ## Partner webhooks (`/api/partner-hooks/*`)
 
 `POST /api/partner-hooks/{partner_id}` receives a contracted partner's
