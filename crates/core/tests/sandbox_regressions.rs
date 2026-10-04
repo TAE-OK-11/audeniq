@@ -2030,3 +2030,66 @@ async fn stage1_hold_parks_release_until_override_but_warning_does_not(pool: PgP
     assert_eq!(run_one(&e, "rights", "stage2").await, "SUCCEEDED");
     assert_eq!(release_status(&e, second).await, "STAGE2_PASSED");
 }
+
+/// Production 2026-10: every staff call writes `privacy.staff_access_logs`
+/// with `ON CONFLICT(...) DO NOTHING`, which needs SELECT on the conflict
+/// columns. With INSERT alone every staff endpoint was a 500 under the real
+/// `audeniq_api` role (the owner-connected suites never saw it). Also covers
+/// the internal work module, whose tables are granted in deploy/grants.sql.
+#[sqlx::test]
+async fn staff_endpoints_work_under_split_roles(pool: PgPool) {
+    let e = env(pool).await;
+    let u = user(&e.api).await;
+    sqlx::query(
+        "INSERT INTO identity.staff_members(user_id,role,granted_by) VALUES($1,'ADMIN','test-operator')",
+    )
+    .bind(u.user)
+    .execute(&e.owner)
+    .await
+    .unwrap();
+    let me = ok(&e.api, "GET", "/api/staff/me", json!({}), &u).await;
+    assert_eq!(me["role"], "ADMIN");
+    ok(&e.api, "GET", "/api/staff/overview", json!({}), &u).await;
+    ok(&e.api, "GET", "/api/staff/inquiries", json!({}), &u).await;
+    // the access log row is there, and the API role still cannot read its content
+    let n: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM privacy.staff_access_logs WHERE actor_user_id=$1")
+            .bind(u.user)
+            .fetch_one(&e.owner)
+            .await
+            .unwrap();
+    assert!(n >= 3);
+    let mut c = e.owner.acquire().await.unwrap();
+    sqlx::query("SET ROLE audeniq_api")
+        .execute(&mut *c)
+        .await
+        .unwrap();
+    assert!(
+        sqlx::query("SELECT occurred_at FROM privacy.staff_access_logs LIMIT 1")
+            .execute(&mut *c)
+            .await
+            .is_err()
+    );
+    sqlx::query("RESET ROLE").execute(&mut *c).await.unwrap();
+    drop(c);
+
+    let t = ok(
+        &e.api,
+        "POST",
+        "/api/staff/work/tasks",
+        json!({"title": "분할 권한 확인", "type": "GENERAL", "priority": "NORMAL", "assignee_id": u.user}),
+        &u,
+    )
+    .await;
+    let id = t["task"]["id"].as_str().unwrap().to_string();
+    ok(&e.api, "GET", "/api/staff/work/tasks", json!({}), &u).await;
+    ok(
+        &e.api,
+        "POST",
+        "/api/staff/work/notes",
+        json!({"target_kind": "task", "target_id": id, "body": "메모"}),
+        &u,
+    )
+    .await;
+    ok(&e.api, "GET", "/api/staff/work/mentions", json!({}), &u).await;
+}

@@ -15,6 +15,10 @@ GRANT SELECT,INSERT,UPDATE ON operations.jobs,operations.outbox TO audeniq_api;
 GRANT INSERT ON operations.audit_events TO audeniq_api;
 GRANT USAGE ON SCHEMA privacy TO audeniq_api;
 GRANT INSERT ON privacy.staff_access_logs TO audeniq_api;
+-- The access log insert is `ON CONFLICT(actor_user_id,request_id,route) DO
+-- NOTHING`, which needs SELECT on the conflict columns. Only those three: the
+-- API still cannot read who looked at what, or when.
+GRANT SELECT(actor_user_id,request_id,route) ON privacy.staff_access_logs TO audeniq_api;
 REVOKE UPDATE,DELETE,TRUNCATE ON privacy.staff_access_logs FROM audeniq_api;
 GRANT SELECT ON operations.allowed_transitions TO audeniq_api;
 -- Consent + submit run in the API request: it signs the consent package and
@@ -133,6 +137,13 @@ GRANT SELECT,INSERT,UPDATE ON operations.jobs,operations.outbox TO audeniq_worke
 GRANT SELECT,INSERT ON operations.event_receipts TO audeniq_worker;
 GRANT INSERT ON operations.audit_events TO audeniq_worker;
 REVOKE UPDATE,DELETE,TRUNCATE ON operations.audit_events FROM audeniq_api,audeniq_worker;
+-- Internal work module (0076, /api/staff/work/*): tasks, events, links, notes,
+-- revisions and attachments are archived, never deleted. Same grants as the
+-- migration gives when the role already exists, so a role created later is
+-- covered too.
+GRANT USAGE ON SCHEMA work TO audeniq_api;
+GRANT SELECT,INSERT,UPDATE ON ALL TABLES IN SCHEMA work TO audeniq_api;
+GRANT USAGE,SELECT ON SEQUENCE work.task_seq TO audeniq_api;
 -- Runtime timeouts as role defaults: they apply to every server connection,
 -- including the ones PgBouncer opens in transaction pooling mode, where the
 -- per-connection SET in database::connect cannot survive.
