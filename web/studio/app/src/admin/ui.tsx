@@ -141,7 +141,7 @@ export function SubTabs({ tabs }: { tabs: { to: string; label: string; count?: n
     <div ref={ref} className={`adm-filters adm-subtabs${live ? ' is-live' : ''}`} role="tablist">
       <span className="adm-seg-pill" aria-hidden="true" style={pillStyle} />
       {tabs.map(t => (
-        <Link key={t.to} to={t.to} role="tab" className="adm-filter" aria-selected={loc.pathname === t.to} aria-pressed={loc.pathname === t.to}>
+        <Link key={t.to} to={t.to} role="tab" className="adm-filter" aria-selected={loc.pathname === t.to || loc.pathname.startsWith(`${t.to}/`)} aria-pressed={loc.pathname === t.to || loc.pathname.startsWith(`${t.to}/`)}>
           {t.label}{t.count ? <span className="adm-subtab-count">{t.count}</span> : null}
         </Link>
       ))}

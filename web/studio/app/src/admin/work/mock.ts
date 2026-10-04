@@ -205,6 +205,7 @@ export const mockWork: WorkApi = {
       title: body.title.trim(), description: body.description ?? '', type: body.type, priority: body.priority, parent_id: body.parent_id ?? null,
       assignee_id: body.assignee_id ?? null, reviewer_id: body.reviewer_id ?? null, due_at: body.due_at ?? null, tags: body.tags ?? [],
       created_by: ME, created_at: at, updated_at: at, assigned_at: body.assignee_id ? at : null,
+      ...(body.board_id ? { board_id: body.board_id, column_id: body.column_id ?? null } : {}),
       recurrence: body.recurrence ? { ...body.recurrence, next_at: nextAt(body.recurrence.freq, body.recurrence.interval, Date.now()) } : null,
     });
     events[t.id] = [{ at, actor_id: ME, action: 'CREATED', detail: null }];

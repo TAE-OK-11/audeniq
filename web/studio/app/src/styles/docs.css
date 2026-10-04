@@ -244,3 +244,10 @@ a.adm-doc-embed-title:hover{color:var(--adm-blue)}
 @media (prefers-reduced-motion:reduce){
   .adm-doc-tree-row,.adm-doc-tool,.adm-doc-template{transition:none}
 }
+
+/* 전역 문단·포커스 규칙보다 앞서게 */
+.adm-docs .adm-doc-prose :is(p,li,td,th,blockquote){color:inherit}
+.adm-docs .adm-doc-prose:focus,.adm-docs .adm-doc-prose:focus-visible,.adm-docs .ProseMirror:focus{outline:none}
+.adm-docs .adm-doc-editor:focus-within .adm-doc-toolbar{box-shadow:0 0 0 1px #cfdbff}
+.adm-doc-embed{overflow-x:auto}
+.adm-docs .adm-doc-prose .adm-doc-err{color:#9a2c38}
