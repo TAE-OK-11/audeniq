@@ -66,6 +66,8 @@ impl Reference {
     }
 }
 
+// Retain the previous pair of heap allocations for an honest baseline.
+#[allow(clippy::unnecessary_to_owned)]
 fn reference_secret_eq(a: &str, b: &str) -> bool {
     Sha256::digest(a.as_bytes())
         .to_vec()
