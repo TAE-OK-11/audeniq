@@ -164,34 +164,30 @@ All roles can read every list below.
 
 ## Staff work module (`/api/staff/work/*`)
 
-Staff-only work management for the admin console (`/admin/inbox`, `/admin/tasks`, …). Same session, CSRF and staff-role
-checks as the staff portal; every mutation is audited as `work.*`. Code: `crates/core/src/work.rs`, schema `work`
-(migration `0076`).
+Internal work management for staff (`/admin/tasks`). Design, duplicate check and phases: `docs/WORK_MANAGEMENT_PLAN.md`.
+Code: `crates/core/src/work/`, schema `work` (migration `0076`). Same session, Origin, CSRF and staff-role checks as the
+staff portal (every request also lands in `privacy.staff_access_logs`); every mutation is audited as `work.*`. Nothing is
+deleted — tasks, links, notes and attachments are archived. Customers have no route to any of it.
+
+Phase 1 (task engine, notes, mentions):
 
 | Method & path | Purpose |
 |---|---|
-| `GET /summary` | Menu badges: unread inbox, my open tasks, due soon, overdue, open exceptions, follow-ups due, unread by kind |
 | `GET /people` | Active staff (assignee / reviewer pickers, @mentions) |
-| `GET /inbox?kind=&unread=` · `POST /inbox/read {ids}` | Unified inbox: `ASSIGNED`, `REVIEW_REQUEST`, `CORRECTION`, `MENTION`, `AUTOMATION_FAILED`, `SLA_BREACH`, `INQUIRY`, `RIGHTS` |
-| `GET /tasks?view=mine\|review\|created\|all&status=open\|done\|all&type=&assignee=&q=&related_kind=&related_id=` | Task list |
-| `POST /tasks` · `GET /tasks/{id}` · `POST /tasks/{id}` | Create · detail with event log · update (`row_version` required; `status`, or `review: APPROVE\|REQUEST_CHANGES` + `review_note`) |
-| `GET /notes?target_kind=&target_id=` · `POST /notes` · `POST /notes/{id}/resolve` | Internal notes on tasks, releases, contacts, DSPs …; `mentions` notify via the inbox |
-| `POST /uploads` · `POST /uploads/{id}/parts {index,data}` · `GET /attachments/{id}` | Note attachments (≤ 2 MiB, ≤ 3 per note) uploaded as ordered base64 parts of ≤ 48 KiB (the edge forwards JSON bodies up to 64 KiB); size and SHA-256 are verified; downloads are `attachment` only |
-| `GET /exceptions?kind=&status=active\|RESOLVED\|IGNORED` · `POST /exceptions` · `POST /exceptions/{id}` | Exception queue; actions `ASSIGN`, `RESOLVE`, `IGNORE` (resolution required), `REOPEN`, `TO_TASK` |
-| `GET /sla` · `PUT /sla/{type}` | SLA policy per task type (ADMIN to edit); changing one re-derives open task deadlines |
-| `GET /contacts?kind=&q=&due=` · `POST /contacts` · `GET/POST /contacts/{id}` · `POST /contacts/{id}/activities` | CRM Lite |
-| `GET /dsp-ops` · `POST /dsp-ops/{code}` | DSP operations (metrics from `execution.*`; owner, contract, renewal, SLA, health override editable by ADMIN/OPERATOR) |
-| `GET /analytics?days=7..90` | Audit-log based workload: daily manual vs automatic actions, per person, cycle time, stage dwell, reject rate, SLA met rate, DSP failure rate |
+| `GET /entities/search?kind=&q=` | Find an entity to link. Kinds: `release, org, artist, label, dsp, inquiry, document, payout, settlement_report, task`. Labels come from the source tables |
+| `GET /tasks?view=mine\|review\|created\|all&status=open\|done\|all\|archived&type=&priority=&assignee=&due=overdue\|today\|week&entity_kind=&entity_id=&q=&subtasks=` | Task list (top-level unless `subtasks` or an entity filter) with subtask counts and resolved links |
+| `POST /tasks` | Create (`parent_id` for a subtask — one level; `links[]`; `recurrence {freq,interval}`) |
+| `GET /tasks/{id}` | Task, parent, subtasks, event log |
+| `POST /tasks/{id}` | Update with `row_version` (409 when stale): fields, `status`, or `review: APPROVE\|REQUEST_CHANGES` (+ `review_note`, required for changes). With a reviewer other than the caller, `DONE` becomes `IN_REVIEW`; only the reviewer or ADMIN decides; open subtasks block `DONE` (`TASK_SUBTASKS_OPEN`); a done recurring task creates the next one with the same people and links |
+| `POST /tasks/{id}/archive` | Archive with its subtasks (creator, assignee or ADMIN) |
+| `POST /tasks/{id}/links` · `POST /links/{id}/archive` | Link an existing entity (must exist) · unlink (archived) |
+| `GET /notes?target_kind=&target_id=&archived=` · `POST /notes` | Internal notes on any entity; `mentions` must be active staff; `attachments` are ready uploads of the author |
+| `POST /notes/{id}` · `GET /notes/{id}/revisions` | Author-only edit; the previous text is kept |
+| `POST /notes/{id}/resolve {resolved}` · `POST /notes/{id}/archive` | Resolve / reopen · archive (author or ADMIN) |
+| `GET /mentions?resolved=` | Notes mentioning the caller, with the target's label |
+| `POST /attachments {name,content_type,size_bytes}` → `{id, grant}` · `POST /attachments/{id}/complete` · `GET /attachments/{id}` | Same path as studio uploads: presigned PUT to quarantine, completion checks size/type/nonce, freezes, hashes and runs the antivirus scan when enabled. ≤ 20 MiB, documents/images/spreadsheets/zip. Downloads are `attachment` only and audited |
 
-SLA: deadline = task creation + `target_minutes` (business hours = weekdays 09–18 KST when `business_hours`). The earlier of
-the due date and the SLA deadline counts. Due Soon when the remaining time ≤ `warn_ratio` of the total; then the priority
-rises one step (escalation level 1). Overdue makes it `URGENT` and escalates to `escalate_to` (level 2, shown in that
-role's inbox). A person choosing a priority clears the automatic raise.
-
-Exceptions are opened by the automation through `work.report_exception(...)`: delivery jobs `FAILED`/`DEAD_LETTER`
-(`DELIVERY_FAILURE`), partner acks `REJECTED` (`DSP_REJECTION`), delivery staging `CONTENT_BLOCKED` (`METADATA_CONFLICT`)
-and rights proofs sent back (`RIGHTS_DOCS`). A repeat bumps `occurrences`; the matching success (delivered, accepted,
-re-checked, approved) resolves it; a resolved problem that recurs reopens.
+Phases 2–4 (inbox, SLA, exception queue, CRM Lite, DSP operations, analytics) are specified in the plan and not yet served.
 
 ## Partner webhooks (`/api/partner-hooks/*`)
 

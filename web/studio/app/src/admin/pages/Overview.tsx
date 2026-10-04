@@ -3,14 +3,12 @@ import { Link } from '../../lib/router';
 import { useAsync } from '../../hooks/useAsync';
 import { Glyph } from '../../components/Glyph';
 import { workApi } from '../work/api';
-import { INBOX_KIND, INBOX_KINDS } from '../work/labels';
-import { PriorityChip } from '../work/ui';
-import { remaining } from '../work/sla';
+import { ENTITY_KIND } from '../work/labels';
 import { ago } from '../labels';
 import { useNavigate } from '../../lib/router';
 import { Icon } from '../AdminApp';
 import { DUTY_LABEL, ROLE_LABEL } from '../labels';
-import { Chip, CountUp, PageHead, Section, useStaff } from '../ui';
+import { CountUp, PageHead, Section, useStaff } from '../ui';
 import type { Overview } from '../api';
 
 interface Tile { key: keyof Overview; label: string; hint: string; to: string; icon: string; alert?: boolean }
@@ -50,7 +48,7 @@ export function OverviewPage() {
         <div className="adm-hero-num" aria-hidden="true">{counts ? <CountUp value={urgent} /> : '–'}<small>처리 대기</small></div>
       </div>
 
-      <InboxPeek />
+      <MentionsPeek />
 
       <div className="adm-stats">
         {TILES.map(t => {
@@ -82,39 +80,30 @@ export function OverviewPage() {
   );
 }
 
-/** 업무함 미리 보기 — 안 읽은 일 다섯 건과 종류별 숫자 */
-function InboxPeek() {
-  const nav = useNavigate();
-  const { work } = useStaff();
-  const { data } = useAsync(() => workApi.inbox('', true), [work?.inbox_unread]);
+/** 나를 언급한 내부 메모 (해결 전) — 업무함(Phase 2)이 생기기 전까지 오늘의 업무에서 바로 본다 */
+function MentionsPeek() {
+  const { data } = useAsync(() => workApi.mentions(), []);
   const items = (data?.items ?? []).slice(0, 5);
-  const kinds = INBOX_KINDS.filter(k => (work?.by_kind[k] ?? 0) > 0);
+  if (!data || items.length === 0) return null;
+  const link = (kind: string, id: string) => (kind === 'task' ? `/admin/tasks/${id}` : kind === 'release' ? `/admin/reviews/${id}` : kind === 'inquiry' ? `/admin/inquiries/${id}` : null);
   return (
-    <Section
-      title="업무함" meta={work ? `안 읽은 일 ${work.inbox_unread}건` : undefined}
-      action={<Link to="/admin/inbox" className="adm-btn soft small">업무함 열기</Link>}
-    >
-      {kinds.length > 0 && (
-        <div className="adm-codes adm-w-peek-kinds">
-          {kinds.map(k => <button key={k} type="button" className="adm-w-chip-btn" onClick={() => nav(`/admin/inbox?kind=${k}`)}><Chip tone={INBOX_KIND[k].tone}>{INBOX_KIND[k].label} {work?.by_kind[k]}</Chip></button>)}
-        </div>
-      )}
-      {items.length === 0 ? (
-        <div className="adm-alert">새로 처리할 일이 없어요. 배정·멘션·자동화 실패가 생기면 업무함에 모여요.</div>
-      ) : (
-        <div className="adm-list">
-          {items.map(i => (
-            <Link key={i.id} to={i.link} className="adm-row adm-w-inbox-row" onClick={() => { void workApi.readInbox([i.id]).catch(() => {}); }}>
-              <span className={`adm-row-icon plain adm-w-kind is-${INBOX_KIND[i.kind].tone}`} aria-hidden="true"><Glyph name={INBOX_KIND[i.kind].icon} size={20} /></span>
+    <Section title="나를 언급한 메모" meta={`해결 전 ${data.items.length}건`}>
+      <div className="adm-list">
+        {items.map(n => {
+          const to = link(n.target_kind, n.target_id);
+          const inner = (
+            <>
+              <span className="adm-row-icon plain" aria-hidden="true"><Glyph name="at" size={20} /></span>
               <span className="adm-min">
-                <span className="adm-row-title">{i.title}</span>
-                <span className="adm-row-meta"><span>{INBOX_KIND[i.kind].label}</span><span>{i.summary}</span></span>
+                <span className="adm-row-title">{n.body || '첨부파일'}</span>
+                <span className="adm-row-meta"><span>{ENTITY_KIND[n.target_kind].label}</span>{n.target?.label && <span>{n.target.label}</span>}</span>
               </span>
-              <span className="adm-row-end"><PriorityChip value={i.priority} /><small>{i.due_at ? remaining(i.due_at) : ago(i.at)}</small></span>
-            </Link>
-          ))}
-        </div>
-      )}
+              <span className="adm-row-end"><small>{ago(n.created_at)}</small></span>
+            </>
+          );
+          return to ? <Link key={n.id} to={to} className="adm-row">{inner}</Link> : <div key={n.id} className="adm-row">{inner}</div>;
+        })}
+      </div>
     </Section>
   );
 }

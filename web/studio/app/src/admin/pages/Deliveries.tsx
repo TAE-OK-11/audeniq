@@ -10,7 +10,6 @@ import { staffApi, type DeliveryItem } from '../api';
 import { ago } from '../labels';
 import { DSP_NAME, deliveryVerdict } from '../dspReqs';
 import { Chip, Empty, ErrorBox, Filters, NoDuty, PageHead, Skeleton, SubTabs, useStaff } from '../ui';
-import { DSP_TABS } from '../work/labels';
 import { Glyph } from '../../components/Glyph';
 
 const VIEWS = [
@@ -84,7 +83,7 @@ export function Deliveries() {
         sub="승인과 서명이 끝난 발매는 플랫폼마다 자동으로 전송돼요. 여기서는 문제만 확인하면 돼요."
         actions={<button type="button" className="adm-btn soft small" onClick={reload}>새로고침</button>}
       />
-      <SubTabs tabs={DSP_TABS} />
+      <SubTabs tabs={[{ to: '/admin/deliveries', label: '배급 현황' }, { to: '/admin/dsps', label: '플랫폼별 조건' }]} />
       {!can('DELIVERY') && <NoDuty duty="배급 관리" />}
       <Filters label="보기" value={view} onChange={v => setParams({ approval: v }, { replace: true })} options={VIEWS.map(v => ({ value: v.value, label: v.label }))} />
       {error && <ErrorBox message={error} onRetry={reload} />}

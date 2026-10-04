@@ -1,4 +1,4 @@
-/* AUDENIQ ADMIN — 업무(Work) 모듈: 업무함 · 업무 · 예외 처리 · SLA · 거래처 · DSP 운영 · 업무 분석.
+/* AUDENIQ ADMIN — 업무(Work) 모듈 (Phase 1: 업무 · 하위 업무 · 연결 · 내부 메모).
    admin.css의 토큰(--adm-*)과 면 카드(윤곽선 없이 옅은 면), 버튼·칩·입력칸을 그대로 쓰고
    업무 화면에만 필요한 배치만 adm-w- 접두사로 더한다. */
 
@@ -28,21 +28,6 @@ button.adm-w-stat:active{transform:scale(.985)}
 .adm-w-stat.is-alert{background:#fff4f5}
 .adm-w-stat.is-alert strong{color:#B33744}
 .adm-w-stat.is-active{background:var(--adm-blue-soft);box-shadow:inset 0 0 0 2px #cfdbff}
-
-/* ---------- 업무함 ---------- */
-.adm-w-kind.is-blue{background:#e6edff;color:var(--adm-blue)}
-.adm-w-kind.is-violet{background:#F0EDFF;color:#6852BA}
-.adm-w-kind.is-amber{background:#FFF3E6;color:#A76525}
-.adm-w-kind.is-red{background:#FFEDEF;color:#B33744}
-.adm-w-kind.is-green{background:#E8F6F0;color:#21815B}
-.adm-w-kind.is-gray{background:#EDEFF4;color:#6A7386}
-.adm-w-unread{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--adm-blue);margin-right:8px;vertical-align:middle;transform:translateY(-1px)}
-.adm-w-inbox-row.is-read{background:#fafbfd}
-.adm-w-inbox-row.is-read .adm-row-title{font-weight:680;color:#4a5670}
-.adm-w-inbox-row.is-read .adm-w-kind{opacity:.65}
-.adm-w-peek-kinds{margin:0 0 10px}
-.adm-w-chip-btn{border:0;background:none;padding:0;cursor:pointer;border-radius:999px}
-.adm-w-chip-btn:hover .adm-chip{filter:brightness(.97)}
 
 /* ---------- 업무 목록 ---------- */
 .adm-w-task-row{grid-template-columns:auto minmax(0,1fr) auto}
@@ -115,7 +100,6 @@ button.adm-w-stat:active{transform:scale(.985)}
 .adm-w-fields .adm-seg{display:flex;width:100%}
 .adm-w-fields .adm-seg button{flex:1 1 0;padding:6px 4px}
 .adm-w-fields .adm-input{height:44px}
-.adm-w-sla-line small{display:block;margin-top:2px;font-size:11.5px;color:var(--adm-muted);font-weight:650}
 .adm-w-side-foot{padding:0 6px}
 
 /* ---------- 내부 메모 ---------- */
@@ -150,136 +134,52 @@ button.adm-w-stat:active{transform:scale(.985)}
 .adm-w-suggest small{font-size:11px;color:var(--adm-muted)}
 .adm-card .adm-w-note-form .adm-textarea{background:#fff}
 
-/* ---------- 예외 처리 ---------- */
-.adm-w-ex{position:relative;overflow:hidden}
-.adm-w-ex:before{content:"";position:absolute;left:0;top:18px;bottom:18px;width:4px;border-radius:0 4px 4px 0;background:#c9d6f5}
-.adm-w-ex.is-critical:before{background:#e5484d}
-.adm-w-ex.is-high:before{background:#f0a531}
-.adm-w-ex.is-low:before{background:#dfe6f4}
-.adm-w-ex.is-critical{background:#fff6f7}
-.adm-w-ex.is-focus{box-shadow:inset 0 0 0 2px #cfdbff}
-.adm-w-ex.is-closed{opacity:.75}
-.adm-w-ex-title{display:flex;align-items:center;gap:12px;min-width:0}
-.adm-w-ex-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:1px solid #e6ebf5}
-.adm-w-ex-owner{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
-.adm-w-ex-owner .adm-w-select{width:220px;height:36px;font-size:12.5px;border-radius:12px}
-.adm-w-ex .adm-row-icon{background:#fff}
-
-/* ---------- SLA ---------- */
-.adm-w-policy-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
-.adm-w-policy+.adm-w-policy{margin-top:0}
-.adm-w-policy h3{font-size:16px;font-weight:790;letter-spacing:-.035em}
-.adm-w-policy.is-off{opacity:.7}
-.adm-w-policy-target{font-size:20px;font-weight:800;letter-spacing:-.04em;color:var(--adm-blue)}
-.adm-w-policy.is-off .adm-w-policy-target{color:#9aa3b2}
-.adm-w-policy-body{border:0;margin:14px 0 0;padding:0;display:grid;gap:12px;min-width:0}
-.adm-w-policy-body:disabled{opacity:.85}
-.adm-w-inline-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
-.adm-w-inline-row .adm-select{height:40px}
-.adm-w-policy .adm-w-inline .adm-input{background:#fff}
-
-/* ---------- 거래처 ---------- */
-.adm-thread-pane.adm-w-contact{display:block;overflow-y:auto}
-.adm-w-contact-head{display:flex;gap:14px;align-items:flex-start}
-.adm-w-contact-head h2{font-size:22px;letter-spacing:-.045em;margin:8px 0 2px}
-.adm-w-contact-kv{margin-top:18px;grid-template-columns:repeat(2,minmax(0,1fr))}
-.adm-w-contact-kv .adm-input,.adm-w-contact-kv .adm-select{height:40px;font-size:13px}
-.adm-w-contact-memo{margin-top:14px;padding:12px 14px;border-radius:16px;background:#fff;font-size:13px}
-.adm-w-activity-form{display:grid;gap:8px}
-.adm-w-activity-form .adm-reply-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
-.adm-w-activity-form .adm-w-inline .adm-input{height:40px}
-
-/* ---------- 차트 ---------- */
-.adm-w-spark path{stroke:var(--adm-blue)}
-.adm-w-spark-dot{fill:var(--adm-blue);stroke:#fff;stroke-width:2}
-.adm-w-spark.is-bad path{stroke:#d64545}
-.adm-w-spark.is-bad .adm-w-spark-dot{fill:#d64545}
-.adm-w-bars{list-style:none;margin:0;padding:0;display:grid;gap:10px}
-.adm-w-bars li{display:grid;grid-template-columns:minmax(110px,38%) minmax(0,1fr) auto;align-items:center;gap:12px;font-size:13px}
-.adm-w-bars-label{font-weight:720;color:#36425b;min-width:0;overflow-wrap:anywhere}
-.adm-w-bars-sub{display:block;font-size:11px;color:var(--adm-muted);font-weight:650;margin-top:1px}
-.adm-w-bars-track{display:block;height:10px;border-radius:4px;background:#e9eef8}
-.adm-w-bars-track span{display:block;height:100%;border-radius:4px;background:var(--adm-blue);transition:width .6s var(--adm-ease)}
-.adm-w-bars-track span.is-bad{background:#d64545}
-.adm-w-bars b{font-size:13px;font-weight:780;font-variant-numeric:tabular-nums;color:var(--adm-ink);min-width:48px;text-align:right}
-.adm-w-chart-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
-.adm-w-legend{display:flex;gap:14px;font-size:12.5px;font-weight:720;color:#4a5670}
-.adm-w-legend span,.adm-w-tip span{display:inline-flex;align-items:center;gap:6px}
-.adm-w-legend i,.adm-w-tip i{width:10px;height:10px;border-radius:3px;display:inline-block}
-i.is-manual{background:#3B63F3}
-i.is-auto{background:#9AB0FA}
-.adm-w-chart-box{position:relative}
-.adm-w-chart-box svg{display:block;width:100%;height:220px;overflow:visible}
-.adm-w-grid{stroke:#e3e9f4;stroke-width:1;vector-effect:non-scaling-stroke}
-.adm-w-axis{font-size:10px;fill:#8c97ab;font-weight:650}
-.adm-w-bar-manual{fill:#3B63F3}
-.adm-w-bar-auto{fill:#9AB0FA}
-.adm-w-chart-box g.is-dim{opacity:.45}
-.adm-w-tip{position:absolute;top:0;transform:translateX(-50%);display:grid;gap:3px;min-width:132px;padding:10px 12px;border-radius:14px;background:var(--adm-ink);color:#fff;font-size:12px;font-weight:700;pointer-events:none;box-shadow:0 10px 24px rgba(23,27,41,.2)}
-.adm-w-tip small{color:#aab3c5;font-weight:650}
-.adm-w-analytics{gap:0 18px;align-items:start}
-.adm-w-people td{vertical-align:middle}
-.adm-w-people tr.is-me td{background:#f5f8ff}
-.adm-w-people-bar{width:30%}
-.adm-w-people-bar span{display:block;height:8px;border-radius:4px;background:var(--adm-blue)}
-
-/* ---------- DSP 운영 ---------- */
-button.adm-dsp.adm-w-dsp{display:block;width:100%;border:0;text-align:left;font:inherit;color:var(--adm-ink);cursor:pointer;transition:background-color .18s var(--adm-ease),transform .18s var(--adm-ease)}
-button.adm-dsp.adm-w-dsp:hover{background:#edf2ff}
-button.adm-dsp.adm-w-dsp:active{transform:scale(.985)}
-.adm-w-dsp.is-bad{background:#fff4f5;border:0}
-.adm-w-dsp.is-warn{background:#fff9f1}
-.adm-w-dsp.is-active{box-shadow:inset 0 0 0 2px #cfdbff;background:var(--adm-blue-soft)}
-.adm-w-dsp ul li{display:flex;justify-content:space-between;gap:10px}
-.adm-w-dsp ul li b{color:var(--adm-ink);text-align:right;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.adm-w-dsp-row{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-top:12px}
-.adm-w-dsp-row small{display:block;font-size:11.5px;color:var(--adm-muted);font-weight:700}
-.adm-w-dsp-row b{font-size:24px;font-weight:800;letter-spacing:-.04em}
-.adm-w-dsp-row b.is-bad,.adm-w-dsp-metrics strong.is-bad{color:#B33744}
-.adm-w-dsp-grid{margin-top:4px}
-.adm-w-dsp-detail{margin-bottom:16px}
-.adm-w-dsp-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:18px 0}
-.adm-w-dsp-metrics>div{display:grid;gap:3px;align-content:start;padding:14px 16px;border-radius:18px;background:#fff}
-.adm-w-dsp-metrics small{font-size:11.5px;color:var(--adm-muted);font-weight:700}
-.adm-w-dsp-metrics strong{font-size:24px;font-weight:800;letter-spacing:-.04em}
-.adm-w-dsp-metrics span{font-size:11.5px;color:#7c879b;font-weight:650}
-.adm-w-dsp-cols{gap:0 22px}
-.adm-w-mini-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}
-.adm-w-mini-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-radius:14px;background:#fff}
-.adm-w-mini-list b{display:block;font-size:13px;font-weight:740;overflow-wrap:anywhere}
-.adm-w-mini-list small{font-size:11.5px;color:var(--adm-muted)}
-.adm-w-dsp-detail .adm-kv .adm-input,.adm-w-dsp-detail .adm-kv .adm-select{height:40px;font-size:13px}
-
 /* ---------- 반응형 ---------- */
 @media (max-width:1180px){
-  .adm-w-dsp-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
   .adm-detail-side .adm-w-side{order:-1}
 }
 @media (max-width:960px){
   .adm-w-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .adm-w-analytics,.adm-w-dsp-cols{grid-template-columns:minmax(0,1fr)}
 }
 @media (max-width:640px){
   .adm-w-stats{gap:8px}
   .adm-w-stat{padding:14px;border-radius:20px}
   .adm-w-stat strong{font-size:22px}
-  .adm-w-grid2,.adm-w-contact-kv{grid-template-columns:minmax(0,1fr)}
   .adm-w-task-row{grid-template-columns:minmax(0,1fr) auto}
   .adm-w-task-row>.adm-w-person{display:none}
-  .adm-w-bars li{grid-template-columns:minmax(0,1fr) auto;gap:4px 10px}
-  .adm-w-bars-track{grid-column:1/-1;grid-row:2}
-  .adm-w-ex-owner .adm-w-select{width:100%}
-  .adm-w-ex-foot>.adm-codes{width:100%}
-  .adm-w-ex-foot>.adm-codes .adm-btn{flex:1 1 auto}
-  .adm-w-policy-grid{grid-template-columns:minmax(0,1fr)}
-  .adm-w-dsp-metrics{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
-  .adm-w-people-bar{display:none}
-}
-@media (prefers-reduced-motion:reduce){
-  .adm-w-bars-track span{transition:none}
+  .adm-w-grid2{grid-template-columns:minmax(0,1fr)}
 }
 .adm-w-grid2>.adm-field{align-content:start}
 .adm-w-fields dd>small{display:block;margin-top:6px;font-size:11.5px;color:var(--adm-muted);font-weight:650}
 .adm-w-inline>span{white-space:nowrap}
 @media (max-width:1180px){.adm-detail:has(.adm-w-side) .adm-detail-side{order:-1;position:static}}
-@media (max-width:640px){.adm-w-ex-owner{width:100%}.adm-w-ex-owner .adm-next-btn{flex:none}}
+
+/* ---------- Phase 1 추가: Entity 고르기 · 메모 수정 · 보조 줄 ---------- */
+.adm-w-picker{display:grid;gap:8px;margin-top:8px;padding:12px;border-radius:18px;background:var(--adm-soft)}
+.adm-w-picker-top{display:flex;gap:8px;flex-wrap:wrap}
+.adm-w-picker-top .adm-select{flex:0 0 auto;min-width:120px;height:40px}
+.adm-w-picker-top .adm-input{flex:1 1 180px;min-width:0;height:40px;padding:8px 12px}
+.adm-w-picker-list{display:grid;gap:4px}
+.adm-w-picker-list>span{padding:6px 4px}
+.adm-w-picker-list button{display:flex;align-items:center;gap:10px;width:100%;padding:9px 11px;border:0;border-radius:13px;background:#fff;font:inherit;text-align:left;color:var(--adm-ink);cursor:pointer;transition:background-color .15s}
+.adm-w-picker-list button:hover{background:var(--adm-blue-soft)}
+.adm-w-picker-list b{display:block;font-size:13px;font-weight:740;overflow-wrap:anywhere}
+.adm-w-picker-list small{display:block;font-size:11.5px;color:var(--adm-muted)}
+.adm-w-picker-list button>.aq-glyph:last-child{margin-left:auto;color:var(--adm-blue)}
+:is(#root,#modal) .adm-w-picker :is(.adm-input,.adm-select):not(#_){background:#fff!important}
+.adm-w-add{margin-top:8px;justify-self:start}
+.adm-w-mention-area{position:relative}
+.adm-w-mention-area .adm-w-suggest{top:auto;bottom:-4px;transform:translateY(100%)}
+.adm-w-note-actions{display:inline-flex;align-items:center;gap:2px;margin-left:auto;flex-wrap:wrap;justify-content:flex-end}
+.adm-w-note-top .adm-w-note-actions .adm-w-resolve{margin-left:4px}
+.adm-w-note-edit{margin-top:8px}
+.adm-w-note-edit .adm-form-actions{margin-top:8px}
+.adm-w-side-links{display:flex;gap:4px;margin-top:10px}
+.adm-w-filter-row .adm-select{height:40px}
+.adm-w-thread-tools{margin-top:10px}
+@media (max-width:640px){
+  .adm-w-filter-row .adm-select{flex:1 1 calc(50% - 10px);min-width:0}
+  .adm-w-note-top{flex-wrap:wrap}
+}
+.adm-w-filter-row .adm-select{min-width:132px;padding-right:36px}
+.adm-w-filter-row .adm-select.adm-w-select{width:auto;min-width:210px;height:40px;border-radius:13px}
