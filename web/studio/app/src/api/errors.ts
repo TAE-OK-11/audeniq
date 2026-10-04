@@ -16,6 +16,9 @@ const CODE_MESSAGES: Record<string, string> = {
   NOT_FOUND: '요청한 정보를 찾을 수 없어요. 삭제됐거나 주소가 잘못됐을 수 있어요.',
   CONFLICT: '다른 곳에서 먼저 수정됐어요. 새로고침한 뒤 다시 저장해 주세요.',
   // 칸반 보드
+  TASK_NO_REVIEWER: '검토 열로 옮기려면 먼저 검토자를 정해 주세요.',
+  TASK_SUBTASKS_OPEN: '끝나지 않은 하위 업무가 있어 완료할 수 없어요.',
+  TASK_ARCHIVED: '보관된 업무예요.',
   TASK_NOT_ON_BOARD: '보드에 없는 업무예요. 하위 업무는 상위 업무 카드에서 다뤄요.',
   COLUMN_NOT_ON_BOARD: '이 보드의 열이 아니에요.',
   NEIGHBOUR_INVALID: '옮길 위치를 찾지 못했어요. 새로고침한 뒤 다시 시도해 주세요.',

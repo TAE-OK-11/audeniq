@@ -31,6 +31,7 @@ const PAGE_LOADERS = {
   Sla: () => import('./work/pages/Sla'),
   Crm: () => import('./work/pages/Crm'),
   Chat: () => import('./work/pages/Chat'),
+  Docs: () => import('./work/pages/Docs'),
   Board: () => import('./work/pages/Board'),
   CrmDetail: () => import('./work/pages/Crm'),
   DspOps: () => import('./work/pages/DspOps'),
@@ -53,6 +54,7 @@ const Exceptions = page('Exceptions');
 const Sla = page('Sla');
 const Crm = page('Crm');
 const Chat = page('Chat');
+const Docs = page('Docs');
 const Board = page('Board');
 const CrmDetail = page('CrmDetail');
 const DspOps = page('DspOps');
@@ -90,6 +92,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
       // 업무함 · 업무 · 예외 처리 · 관계 관리 · SLA는 한 메뉴(업무) 안의 탭
       { to: '/admin/inbox', label: '업무', icon: 'task', count: (_, w) => w?.inbox.unread ?? 0, hot: true, also: WORK_PATHS },
       { to: '/admin/chat', label: '팀 대화', icon: 'chat', count: (_, w) => w?.chat?.unread ?? 0 },
+      { to: '/admin/docs', label: '문서', icon: 'doc' },
     ],
   },
   {
@@ -299,6 +302,8 @@ export function AdminApp() {
               <Route path="/admin/board/:id" element={<Board />} />
               <Route path="/admin/chat" element={<Chat />} />
               <Route path="/admin/chat/:id" element={<Chat />} />
+              <Route path="/admin/docs" element={<Docs />} />
+              <Route path="/admin/docs/:id" element={<Docs />} />
               <Route path="/admin/tasks/:id" element={<TaskDetail />} />
               <Route path="/admin/payouts" element={me.role === 'ADMIN' ? <Payouts /> : <Navigate to="/admin" replace />} />
               <Route path="/admin/content" element={me.role === 'ADMIN' ? <ContentAdmin /> : <Navigate to="/admin" replace />} />

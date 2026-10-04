@@ -81,6 +81,8 @@ function DocView({ id, people, onTreeChange, onAncestors }: { id: string; people
   const iconRef = useRef<string | null>(null);
   const getContent = useRef<(() => DocNode) | null>(null);
   const ctrlRef = useRef<Autosave<() => DocSaveInput> | null>(null);
+  const statusRef = useRef<string | null>(null);
+  statusRef.current = detail?.doc.status ?? statusRef.current;
 
   const load = useCallback(async () => {
     try {
@@ -108,6 +110,8 @@ function DocView({ id, people, onTreeChange, onAncestors }: { id: string; people
       version,
       save: async (build, base) => {
         const r = await workApi.saveDoc(id, { ...build(), base_version: base });
+        // 승인·검토 중 문서를 고치면 초안이 된다 — 트리의 상태 표시도 바꾼다
+        if (r.status !== statusRef.current) { statusRef.current = r.status; onTreeChange(); }
         setDetail(d => (d ? { ...d, doc: { ...d.doc, version: r.version, status: r.status, title: titleRef.current, icon: iconRef.current, updated_at: r.saved_at, updated_by: me.user_id } } : d));
         return r;
       },
@@ -241,7 +245,7 @@ function DocView({ id, people, onTreeChange, onAncestors }: { id: string; people
               </button>
             ))}
             <span className="adm-doc-more">
-              <button type="button" className="adm-btn soft small" aria-haspopup="menu" aria-expanded={menu} aria-label="더 보기" onClick={() => setMenu(m => !m)}>⋯</button>
+              <button type="button" className="adm-btn soft small" aria-haspopup="menu" aria-expanded={menu} aria-label="더 보기" onClick={() => setMenu(m => !m)}>더 보기</button>
               {menu && (
                 <MoreMenu onClose={() => setMenu(false)} items={[
                   { label: '복제', hidden: archived, run: () => void act(async () => { await settle(); const c = await workApi.duplicateDoc(id); onTreeChange(); nav(`/admin/docs/${c.doc.id}`); }, '복제했어요.') },
