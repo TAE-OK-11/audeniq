@@ -24,6 +24,8 @@ const PAGE_LOADERS = {
   Dsps: () => import('./pages/Dsps'),
   Payouts: () => import('./pages/Payouts'),
   ContentAdmin: () => import('../pages/ContentAdmin'),
+  Tasks: () => import('./work/pages/Tasks'),
+  TaskDetail: () => import('./work/pages/TaskDetail'),
 } satisfies Record<string, () => Promise<unknown>>;
 const page = (name: keyof typeof PAGE_LOADERS) =>
   lazy(() => PAGE_LOADERS[name]().then(m => ({ default: (m as unknown as PageModule)[name] })));
@@ -36,18 +38,22 @@ const Deliveries = page('Deliveries');
 const Dsps = page('Dsps');
 const Payouts = page('Payouts');
 const ContentAdmin = page('ContentAdmin');
+const Tasks = page('Tasks');
+const TaskDetail = page('TaskDetail');
 function prefetchPages() {
   const run = () => { for (const load of Object.values(PAGE_LOADERS)) void load().catch(() => {}); };
   if ('requestIdleCallback' in window) window.requestIdleCallback(run, { timeout: 4000 });
   else setTimeout(run, 1500);
 }
 import '../styles/admin.css';
+import '../styles/work.css';
 import { Glyph } from '../components/Glyph';
 
 // 관리자 메뉴 아이콘 — 스튜디오와 같은 AUDENIQ 아이콘 세트(Glyph)
 const ICONS: Record<string, string> = {
   home: 'home', review: 'review', approval: 'approval', doc: 'doc', inquiry: 'inquiry',
   delivery: 'truck', dsp: 'globe', payout: 'card',
+  task: 'task',
 };
 
 export function Icon({ name }: { name: string }) {
@@ -57,6 +63,11 @@ export function Icon({ name }: { name: string }) {
 interface NavItem { to: string; label: string; icon: string; count?: (o: Overview) => number; hot?: boolean; adminOnly?: boolean; also?: string[] }
 const NAV: { group: string; items: NavItem[] }[] = [
   { group: 'OVERVIEW', items: [{ to: '/admin', label: '오늘의 업무', icon: 'home' }] },
+  {
+    group: 'WORK',
+    // 범용 업무 — 릴리즈 외 계약·DSP·정산·고객 지원까지 (업무함·SLA·예외는 Phase 2)
+    items: [{ to: '/admin/tasks', label: '업무', icon: 'task' }],
+  },
   {
     group: 'REVIEW',
     items: [
@@ -214,6 +225,8 @@ export function AdminApp() {
               <Route path="/admin/inquiries/:id" element={<Inquiries />} />
               <Route path="/admin/deliveries" element={<Deliveries />} />
               <Route path="/admin/dsps" element={<Dsps />} />
+              <Route path="/admin/tasks" element={<Tasks />} />
+              <Route path="/admin/tasks/:id" element={<TaskDetail />} />
               <Route path="/admin/payouts" element={me.role === 'ADMIN' ? <Payouts /> : <Navigate to="/admin" replace />} />
               <Route path="/admin/content" element={me.role === 'ADMIN' ? <ContentAdmin /> : <Navigate to="/admin" replace />} />
               <Route path="/content-admin" element={<Navigate to="/admin/content" replace />} />

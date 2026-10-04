@@ -134,6 +134,7 @@ pub fn router(s: AppState) -> Router {
         .merge(crate::portal::routes())
         .merge(crate::signing::routes())
         .merge(crate::staff::routes())
+        .merge(crate::work::routes())
         .merge(crate::partner_hooks::routes())
         .fallback(|| async { Error::NotFound.into_response() })
         // Innermost: the boundary middleware still stamps the request id,

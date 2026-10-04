@@ -1,0 +1,185 @@
+/* AUDENIQ ADMIN — 업무(Work) 모듈 (Phase 1: 업무 · 하위 업무 · 연결 · 내부 메모).
+   admin.css의 토큰(--adm-*)과 면 카드(윤곽선 없이 옅은 면), 버튼·칩·입력칸을 그대로 쓰고
+   업무 화면에만 필요한 배치만 adm-w- 접두사로 더한다. */
+
+/* ---------- 담당자 ---------- */
+.adm-w-person{display:inline-flex;align-items:center;gap:7px;min-width:0;font-size:12.5px;font-weight:720;color:#3d4760}
+.adm-w-person.is-empty{color:var(--adm-muted)}
+.adm-w-avatar{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;flex:0 0 auto;background:#e4eaff;color:var(--adm-blue);font-size:12px;font-weight:800}
+.adm-w-avatar.is-me{background:var(--adm-blue);color:#fff;font-size:11px}
+.adm-w-person.is-empty .adm-w-avatar{background:#eef1f7;color:#9aa3b2}
+.adm-w-person-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.adm-select.adm-w-select{width:100%;min-width:0;height:44px;border-radius:15px}
+
+/* 우선순위 점 */
+.adm-w-pri{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.85}
+
+/* ---------- 작은 숫자 카드 (개요 adm-stat과 같은 면, 높이만 낮게) ---------- */
+.adm-w-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 20px}
+.adm-w-stat{display:flex;flex-direction:column;gap:4px;padding:16px 18px;border-radius:22px;background:var(--adm-soft);border:0;text-align:left;color:var(--adm-ink);font:inherit;transition:background-color .18s var(--adm-ease),transform .18s var(--adm-ease)}
+button.adm-w-stat{cursor:pointer}
+button.adm-w-stat:hover{background:#edf2ff}
+button.adm-w-stat:active{transform:scale(.985)}
+.adm-w-stat strong{font-size:26px;font-weight:800;letter-spacing:-.05em;line-height:1.1}
+.adm-w-stat span{font-size:12.5px;font-weight:740;color:#4a5670}
+.adm-w-stat small{font-size:11.5px;color:var(--adm-muted);font-weight:650}
+.adm-w-stat.is-muted strong{color:#9aa3b2}
+.adm-w-stat.is-warn strong{color:#A76525}
+.adm-w-stat.is-alert{background:#fff4f5}
+.adm-w-stat.is-alert strong{color:#B33744}
+.adm-w-stat.is-active{background:var(--adm-blue-soft);box-shadow:inset 0 0 0 2px #cfdbff}
+
+/* ---------- 업무 목록 ---------- */
+.adm-w-task-row{grid-template-columns:auto minmax(0,1fr) auto}
+.adm-w-task-row.is-closed{background:#fafbfd}
+.adm-w-task-row.is-closed .adm-row-title{color:#7c879b;text-decoration:line-through;text-decoration-color:#c2c9d6}
+.adm-w-task-row.is-compact{padding:12px 14px;background:#fff}
+.adm-w-key{display:inline-block;margin-right:8px;padding:1px 7px;border-radius:7px;background:#fff;color:#5d6880;font:700 11px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;vertical-align:1px}
+.adm-w-key.is-big{font-size:12px;padding:3px 9px;margin:0;background:var(--adm-soft-2)}
+.adm-w-meta-icon{display:inline-flex;align-items:center;gap:4px}
+.adm-row-meta .is-late-text,.is-late-text{color:#a76525;font-weight:760}
+
+/* 연결 항목 */
+.adm-w-related{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.adm-w-ref{display:inline-flex;align-items:center;gap:2px;border-radius:10px;background:#fff;font-size:12px;font-weight:720;color:#36425b;max-width:100%}
+.adm-w-ref>a,.adm-w-ref>span{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-radius:10px;color:inherit}
+.adm-w-ref>a:hover{background:#edf2ff;color:var(--adm-blue)}
+.adm-w-ref button{border:0;background:none;display:grid;place-items:center;width:24px;height:24px;border-radius:8px;color:#8c97ab;cursor:pointer}
+.adm-w-ref button:hover{background:#f2f4f8;color:var(--adm-ink)}
+.adm-w-related-kind{color:var(--adm-muted);font-weight:700}
+:is(.adm-card,.adm-w-box) .adm-w-ref{background:#fff}
+
+/* 보드 */
+.adm-w-board{display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:12px;overflow-x:auto;padding-bottom:6px}
+.adm-w-col{background:var(--adm-soft);border-radius:24px;padding:14px;display:grid;gap:8px;align-content:start;min-height:200px}
+.adm-w-col h3{display:flex;align-items:center;justify-content:space-between;font-size:13.5px;font-weight:780;letter-spacing:-.02em;padding:2px 4px 6px}
+.adm-w-col-empty{font-size:12px;color:#9aa3b2;padding:10px 4px}
+.adm-w-card{display:grid;gap:8px;padding:13px 14px;border-radius:18px;background:#fff;color:var(--adm-ink);transition:transform .18s var(--adm-ease),background-color .18s var(--adm-ease)}
+.adm-w-card:hover{background:#f8faff}
+.adm-w-card:active{transform:scale(.985)}
+.adm-w-card.is-late{background:#fff8f8}
+.adm-w-card b{font-size:13.5px;font-weight:760;line-height:1.4;letter-spacing:-.02em;overflow-wrap:anywhere}
+.adm-w-card-top,.adm-w-card-foot{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap}
+.adm-w-card .adm-w-key{background:var(--adm-soft-2);margin:0}
+
+/* ---------- 업무 폼 ---------- */
+#modal.adm-w-modal .modal-inner{max-width:720px}
+.adm-w-grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 14px}
+.adm-w-form .adm-seg{flex-wrap:wrap}
+.adm-w-picker{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
+.adm-w-picker .adm-select{flex:0 0 auto;min-width:110px}
+.adm-w-picker .adm-select+.adm-select,.adm-w-picker .adm-input{flex:1 1 160px;min-width:0;width:auto}
+.adm-w-picker .adm-input{height:40px;padding:8px 12px}
+.adm-w-box{background:var(--adm-soft);border-radius:20px;padding:14px 16px;display:grid;gap:12px}
+.adm-w-recur{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.adm-w-inline{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#4a5670}
+.adm-w-inline .adm-input{width:92px;height:40px;padding:8px 12px}
+.adm-w-inline input[type=datetime-local].adm-input{width:auto}
+#modal .adm-w-box .adm-input,#modal .adm-w-box .adm-select{background:#fff!important}
+:is(#root,#modal) .adm-w-box :is(.adm-input,.adm-select):not(#_){background:#fff!important}
+
+/* 스위치 줄 (스튜디오 aq-switch) */
+.adm-w-switch-row{display:flex;align-items:center;justify-content:space-between;gap:14px}
+.adm-w-switch-row b{display:block;font-size:13.5px;font-weight:760}
+.adm-w-switch-row small{display:block;margin-top:2px;font-size:11.5px;color:var(--adm-muted);line-height:1.5}
+.aq-switch input:disabled+span{opacity:.5}
+.aq-switch input:focus-visible+span{outline:3px solid #7892f9;outline-offset:2px}
+
+/* ---------- 업무 상세 ---------- */
+.adm-w-task-head{margin:0 0 18px}
+.adm-w-task-head h1{font-size:clamp(22px,2.3vw,30px);line-height:1.3;letter-spacing:-.05em;font-weight:780;margin:10px 0 6px;overflow-wrap:anywhere}
+.adm-w-desc{margin:0;font-size:14px;line-height:1.75;color:#36425b;white-space:pre-wrap;overflow-wrap:anywhere}
+.adm-alert.adm-w-alert-warn{background:#FFF6EC;color:#8a4f12}
+.adm-w-side h3{font-size:15px;font-weight:790;letter-spacing:-.03em;margin:0 0 12px}
+.adm-w-actions{display:grid;gap:8px}
+.adm-w-actions .adm-btn{width:100%}
+.adm-w-cancel{margin-top:10px}
+.adm-w-fields{display:grid;gap:14px;margin:0}
+.adm-w-fields dt{font-size:11.5px;color:var(--adm-muted);font-weight:700;margin-bottom:6px}
+.adm-w-fields dd{margin:0;font-size:13.5px;font-weight:700}
+.adm-w-fields .adm-seg{display:flex;width:100%}
+.adm-w-fields .adm-seg button{flex:1 1 0;padding:6px 4px}
+.adm-w-fields .adm-input{height:44px}
+.adm-w-side-foot{padding:0 6px}
+
+/* ---------- 내부 메모 ---------- */
+.adm-w-notes .adm-section-top h2 small{display:inline-flex;align-items:center;gap:4px}
+.adm-w-notes-empty{margin:0 0 12px;font-size:13px;color:var(--adm-muted)}
+.adm-w-note-list{list-style:none;margin:0 0 12px;padding:0;display:grid;gap:8px}
+.adm-w-note{background:#fff;border-radius:18px;padding:13px 15px}
+.adm-w-note.is-resolved{opacity:.62}
+.adm-w-note-top{display:flex;align-items:center;gap:10px}
+.adm-w-note-top .adm-w-resolve{margin-left:auto}
+.adm-w-note p{margin:8px 0 0;font-size:13.5px;line-height:1.7;color:#36425b;white-space:pre-wrap;overflow-wrap:anywhere}
+.adm-w-mention{color:var(--adm-blue);font-weight:780;background:var(--adm-blue-soft);border-radius:6px;padding:0 3px}
+.adm-w-resolve{display:inline-flex;align-items:center;gap:5px;min-height:30px;padding:0 10px;border:0;border-radius:10px;background:var(--adm-soft-2);color:#5d6880;font:inherit;font-size:12px;font-weight:740;cursor:pointer;transition:background-color .15s,color .15s}
+.adm-w-resolve:hover{background:#e6ebf4;color:var(--adm-ink)}
+.adm-w-resolve.is-on{background:#E8F6F0;color:#21815B}
+.adm-w-resolve .aq-check-icon{opacity:.5}
+.adm-w-resolve.is-on .aq-check-icon{opacity:1}
+.adm-w-files{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+.adm-w-files li{display:inline-flex;align-items:center;gap:2px;border-radius:11px;background:var(--adm-soft);font-size:12px;font-weight:720;color:#36425b}
+.adm-w-files li>a,.adm-w-files li>span{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;color:inherit;border-radius:11px}
+.adm-w-files li>a:hover{background:#edf2ff;color:var(--adm-blue)}
+.adm-w-files small{color:var(--adm-muted);font-weight:650}
+.adm-w-files button{border:0;background:none;width:26px;height:26px;display:grid;place-items:center;border-radius:8px;color:#8c97ab;cursor:pointer}
+.adm-w-files.is-pending{margin:8px 0 0}
+.adm-w-files.is-pending li{background:#fff}
+.adm-w-note-form{position:relative;display:grid;gap:8px}
+.adm-w-note-form .adm-reply-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.adm-w-note-tools{display:flex;gap:6px;flex-wrap:wrap}
+.adm-w-suggest{position:absolute;left:10px;top:calc(100% - 46px);z-index:5;display:grid;gap:2px;min-width:240px;padding:6px;border-radius:16px;background:#fff;box-shadow:0 12px 32px rgba(23,27,41,.14)}
+.adm-w-suggest button{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 9px;border:0;border-radius:11px;background:none;font:inherit;text-align:left;cursor:pointer}
+.adm-w-suggest button:hover,.adm-w-suggest button:first-child{background:var(--adm-blue-soft)}
+.adm-w-suggest small{font-size:11px;color:var(--adm-muted)}
+.adm-card .adm-w-note-form .adm-textarea{background:#fff}
+
+/* ---------- 반응형 ---------- */
+@media (max-width:1180px){
+  .adm-detail-side .adm-w-side{order:-1}
+}
+@media (max-width:960px){
+  .adm-w-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:640px){
+  .adm-w-stats{gap:8px}
+  .adm-w-stat{padding:14px;border-radius:20px}
+  .adm-w-stat strong{font-size:22px}
+  .adm-w-task-row{grid-template-columns:minmax(0,1fr) auto}
+  .adm-w-task-row>.adm-w-person{display:none}
+  .adm-w-grid2{grid-template-columns:minmax(0,1fr)}
+}
+.adm-w-grid2>.adm-field{align-content:start}
+.adm-w-fields dd>small{display:block;margin-top:6px;font-size:11.5px;color:var(--adm-muted);font-weight:650}
+.adm-w-inline>span{white-space:nowrap}
+@media (max-width:1180px){.adm-detail:has(.adm-w-side) .adm-detail-side{order:-1;position:static}}
+
+/* ---------- Phase 1 추가: Entity 고르기 · 메모 수정 · 보조 줄 ---------- */
+.adm-w-picker{display:grid;gap:8px;margin-top:8px;padding:12px;border-radius:18px;background:var(--adm-soft)}
+.adm-w-picker-top{display:flex;gap:8px;flex-wrap:wrap}
+.adm-w-picker-top .adm-select{flex:0 0 auto;min-width:120px;height:40px}
+.adm-w-picker-top .adm-input{flex:1 1 180px;min-width:0;height:40px;padding:8px 12px}
+.adm-w-picker-list{display:grid;gap:4px}
+.adm-w-picker-list>span{padding:6px 4px}
+.adm-w-picker-list button{display:flex;align-items:center;gap:10px;width:100%;padding:9px 11px;border:0;border-radius:13px;background:#fff;font:inherit;text-align:left;color:var(--adm-ink);cursor:pointer;transition:background-color .15s}
+.adm-w-picker-list button:hover{background:var(--adm-blue-soft)}
+.adm-w-picker-list b{display:block;font-size:13px;font-weight:740;overflow-wrap:anywhere}
+.adm-w-picker-list small{display:block;font-size:11.5px;color:var(--adm-muted)}
+.adm-w-picker-list button>.aq-glyph:last-child{margin-left:auto;color:var(--adm-blue)}
+:is(#root,#modal) .adm-w-picker :is(.adm-input,.adm-select):not(#_){background:#fff!important}
+.adm-w-add{margin-top:8px;justify-self:start}
+.adm-w-mention-area{position:relative}
+.adm-w-mention-area .adm-w-suggest{top:auto;bottom:-4px;transform:translateY(100%)}
+.adm-w-note-actions{display:inline-flex;align-items:center;gap:2px;margin-left:auto;flex-wrap:wrap;justify-content:flex-end}
+.adm-w-note-top .adm-w-note-actions .adm-w-resolve{margin-left:4px}
+.adm-w-note-edit{margin-top:8px}
+.adm-w-note-edit .adm-form-actions{margin-top:8px}
+.adm-w-side-links{display:flex;gap:4px;margin-top:10px}
+.adm-w-filter-row .adm-select{height:40px}
+.adm-w-thread-tools{margin-top:10px}
+@media (max-width:640px){
+  .adm-w-filter-row .adm-select{flex:1 1 calc(50% - 10px);min-width:0}
+  .adm-w-note-top{flex-wrap:wrap}
+}
+.adm-w-filter-row .adm-select{min-width:132px;padding-right:36px}
+.adm-w-filter-row .adm-select.adm-w-select{width:auto;min-width:210px;height:40px;border-radius:13px}
