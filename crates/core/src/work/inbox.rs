@@ -227,9 +227,11 @@ async fn build(s: &AppState, st: &Staff) -> Result<Vec<Item>> {
         "SELECT n.id, n.target_kind, n.target_id, left(n.body, 160) AS body, n.created_at, n.edited_at, u.email
            FROM work.notes n JOIN identity.users u ON u.id=n.author_id
           WHERE $1 = ANY(n.mentions) AND n.author_id<>$1 AND n.archived_at IS NULL AND n.resolved_at IS NULL
+            AND (n.target_kind<>'doc' OR work.doc_level(n.target_id::uuid,$1,$2) > 0)
           ORDER BY n.created_at DESC LIMIT 200",
     )
     .bind(me)
+    .bind(st.role.as_str())
     .fetch_all(&mut *tx)
     .await?;
     for n in notes {
@@ -244,6 +246,8 @@ async fn build(s: &AppState, st: &Staff) -> Result<Vec<Item>> {
             "release" => format!("/admin/reviews/{target}"),
             "inquiry" => format!("/admin/inquiries/{target}"),
             "document" => "/admin/documents".into(),
+            "channel" => format!("/admin/chat/{target}"),
+            "doc" => format!("/admin/docs/{target}"),
             _ => "/admin".into(),
         };
         out.push(Item {
@@ -464,14 +468,20 @@ pub async fn inbox(s: &AppState, h: &HeaderMap, q: InboxQuery) -> Result<Value> 
 /// Badges for the admin navigation.
 pub async fn summary(s: &AppState, h: &HeaderMap) -> Result<Value> {
     let st = staff::staff(s, h, false).await?;
+    // automatic Kanban cards from AUDENIQ events (throttled, idempotent)
+    if let Err(e) = super::automation::sweep(&s.pool, false).await {
+        tracing::warn!(error = %e, "work automation sweep failed");
+    }
     let all = build(s, &st).await?;
     let ids: Vec<String> = all.iter().map(|i| i.id.clone()).collect();
     let read = reads(s, st.actor.user, &ids).await?;
     let mut tx = s.pool.begin().await?;
     let excs = exceptions::collect(&mut tx, None, None).await?;
+    let chat = super::channels::unread_total(&mut tx, st.actor.user).await?;
     tx.commit().await?;
     let open: Vec<&exceptions::Item> = excs.iter().filter(|e| !e.closed()).collect();
     Ok(json!({
+        "chat": {"unread": chat},
         "inbox": {"total": all.len(), "unread": all.iter().filter(|i| !read.contains(&i.id)).count()},
         "overdue": all.iter().filter(|i| i.category == "OVERDUE").count(),
         "sla_warning": all.iter().filter(|i| i.category == "SLA_WARNING").count(),

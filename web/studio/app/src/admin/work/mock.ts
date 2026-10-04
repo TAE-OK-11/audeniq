@@ -3,12 +3,14 @@
 import { ApiError, messageForCode } from '../../api/errors';
 import { DSP_NAME } from '../dspReqs';
 import type {
-  EntityKind, EntityRef, LinkInput, NoteInput, NoteRevision, StaffPerson, TaskDetail, TaskEvent, TaskInput, TaskPatch,
+  Channel, EntityKind, EntityRef, LinkInput, NoteInput, NoteRevision, StaffPerson, TaskDetail, TaskEvent, TaskInput, TaskPatch,
   TaskQuery, WorkNote, WorkTask,
 } from './types';
 import type { WorkApi } from './api';
 import { makeOps, mockExceptions } from './mockOps';
 import { makeCrm } from './mockCrm';
+import { makeBoards } from './mockBoards';
+import { makeDocs } from './mockDocs';
 
 const ME = 'staff-me-0001';
 const KIM = 'staff-kim-0002';
@@ -48,7 +50,18 @@ const events: Record<string, TaskEvent[]> = {};
 interface Link { id: string; task: string; kind: EntityKind; entity: string; archived: boolean }
 const links: Link[] = [];
 
+// ---------- 팀 대화 채널 (메시지는 메모와 같은 저장소) ----------
+const channels: Channel[] = [
+  ['ch-all', '전체', '모든 직원 공지와 일반 대화'], ['ch-review', '발매 심사', '심사 기준·판단이 애매한 발매 논의'],
+  ['ch-dist', '배급', 'DSP 전송·반려·장애 공유'], ['ch-support', '고객 지원', '문의 응대 방법과 에스컬레이션'], ['ch-settle', '정산', '리포트 대사·지급 일정'],
+].map(([id, name, topic]) => ({ id, name, topic, created_by: null, created_at: iso(800), archived_at: null }));
+const channelReads: Record<string, string> = { 'ch-all': iso(0.5) };
+
 function resolve(kind: EntityKind, id: string): EntityRef {
+  if (kind === 'channel') {
+    const c = channels.find(x => x.id === id);
+    return c ? { kind, id, label: `#${c.name}`, sub: c.topic } : { kind, id, label: null, sub: null, missing: true };
+  }
   if (kind === 'task') {
     const t = tasks.find(x => x.id === id);
     return t ? { kind, id, label: `${t.key} ${t.title}`, sub: t.status } : { kind, id, label: null, sub: null, missing: true };
@@ -109,6 +122,12 @@ function note(kind: EntityKind, target: string, author: string, body: string, me
 }
 note('task', tasks[4].id, KIM, '@staff 수수료 조정 폭은 지난 분기 다른 레이블 조건이랑 맞춰 주세요. 비교표 첨부해요.', [ME], 5, { attachments: [{ id: 'att-1', name: '레이블_수수료_비교.xlsx', size: 48_211, content_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }] });
 note('release', 'r2b3c4d5', TAE, '@staff 이 발매 Spotify에서 피처링 표기 때문에 한 번 반려됐던 이력 있어요. 심사 때 같이 봐 주세요.', [ME], 3);
+note('channel', 'ch-all', KIM, '이번 주 금요일 오후 4시에 심사 기준 개편 공유 세션 있어요. 다들 참석 부탁해요!', [], 26);
+note('channel', 'ch-all', TAE, '참석할게요. 배급 반려 사례도 몇 개 가져갈게요.', [], 25.5);
+note('channel', 'ch-dist', TAE, '멜론 SFTP 연결 거부가 계속돼요. 방화벽 쪽 확인 요청 넣었고, 재전송은 오후에 다시 시도할게요.', [], 4);
+note('channel', 'ch-dist', PARK, '@staff Paper Moon 아티스트가 오늘 노출 여부 문의했어요. 예상 시간 공유 가능할까요?', [ME], 1.2);
+note('channel', 'ch-dist', TAE, '재전송 큐에 넣었어요. 30분 안에 결과 나올 거예요.', [], 0.4);
+note('channel', 'ch-review', KIM, 'AI 생성 커버 정책 질문 — 생성 도구 메타데이터만 있고 사람이 수정한 흔적이 있으면 보완 요청이 맞을까요?', [], 9);
 note('org', 'org-r4', ME, '담당자 연락은 오후 2시 이후 선호.', [], 40, { resolved: true, resolved_at: iso(30), resolved_by: ME });
 
 const visible = (t: WorkTask, q: TaskQuery) => {
@@ -186,6 +205,7 @@ export const mockWork: WorkApi = {
       title: body.title.trim(), description: body.description ?? '', type: body.type, priority: body.priority, parent_id: body.parent_id ?? null,
       assignee_id: body.assignee_id ?? null, reviewer_id: body.reviewer_id ?? null, due_at: body.due_at ?? null, tags: body.tags ?? [],
       created_by: ME, created_at: at, updated_at: at, assigned_at: body.assignee_id ? at : null,
+      ...(body.board_id ? { board_id: body.board_id, column_id: body.column_id ?? null } : {}),
       recurrence: body.recurrence ? { ...body.recurrence, next_at: nextAt(body.recurrence.freq, body.recurrence.interval, Date.now()) } : null,
     });
     events[t.id] = [{ at, actor_id: ME, action: 'CREATED', detail: null }];
@@ -254,6 +274,34 @@ export const mockWork: WorkApi = {
     return wait(detail(l.task));
   },
 
+  channels: (archived = false) => wait({
+    items: channels.filter(c => (archived ? !!c.archived_at : !c.archived_at)).map(c => {
+      const msgs = notes.filter(n => n.target_kind === 'channel' && n.target_id === c.id && !n.archived_at);
+      const read = channelReads[c.id] ?? '';
+      const unread = msgs.filter(n => n.author_id !== ME && n.created_at > read);
+      return { ...c, last_read_at: read || null, last_message_at: msgs.map(n => n.created_at).sort().at(-1) ?? null, unread: unread.length, mentions: unread.filter(n => n.mentions.includes(ME)).length };
+    }),
+  }),
+  createChannel: (body: { name: string; topic: string }) => {
+    const name = body.name.replace(/^#/, '').trim();
+    if (!name) fail('NAME_REQUIRED', 400);
+    if (channels.some(c => !c.archived_at && c.name.toLowerCase() === name.toLowerCase())) fail('CHANNEL_EXISTS', 400);
+    const c: Channel = { id: `ch-${uid()}`, name, topic: body.topic.trim(), created_by: ME, created_at: new Date().toISOString(), archived_at: null };
+    channels.push(c);
+    return wait(c);
+  },
+  updateChannel: (id: string, body: { name: string; topic: string }) => {
+    const c = channels.find(x => x.id === id) ?? fail('NOT_FOUND', 404);
+    Object.assign(c, { name: body.name.replace(/^#/, '').trim(), topic: body.topic.trim() });
+    return wait(c);
+  },
+  archiveChannel: (id: string) => { const c = channels.find(x => x.id === id) ?? fail('NOT_FOUND', 404); c.archived_at = new Date().toISOString(); return wait(c); },
+  readChannel: (id: string) => { channelReads[id] = new Date().toISOString(); return wait({ read: id }); },
+  messages: (id: string, before?: string, latest = 60) => {
+    const all = notes.filter(n => n.target_kind === 'channel' && n.target_id === id && !n.archived_at && (!before || n.created_at < before))
+      .sort((a, b) => a.created_at.localeCompare(b.created_at)).map(n => ({ ...n, revisions: revisions[n.id]?.length ?? 0 }));
+    return wait({ items: all.slice(-latest), has_more: all.length > latest });
+  },
   notes: (kind: EntityKind, target: string, archived = false) =>
     wait({ items: notes.filter(n => n.target_kind === kind && n.target_id === target && (archived || !n.archived_at)).map(n => ({ ...n, revisions: revisions[n.id]?.length ?? 0 })) }),
   addNote: (body: NoteInput) => {
@@ -304,4 +352,6 @@ export const mockWork: WorkApi = {
   attachmentUrl: () => '',
   ...makeOps({ me: ME, tasks, notes, createTask: i => mockWork.createTask(i) }),
   ...makeCrm({ me: ME, others: [KIM, TAE], resolve, exceptions: mockExceptions }),
+  ...makeBoards({ me: ME, tasks, notes, resolve, createTask: i => mockWork.createTask(i), updateTask: (id, p) => mockWork.updateTask(id, p) }),
+  ...makeDocs({ me: ME, tasks, notes, resolve }),
 };

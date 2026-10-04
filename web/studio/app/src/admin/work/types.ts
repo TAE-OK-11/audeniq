@@ -9,7 +9,8 @@ export type WorkType =
 
 /** 업무·메모가 가리킬 수 있는 AUDENIQ Entity. 이름은 서버가 원천 테이블에서 읽어 준다(저장하지 않음). */
 export type EntityKind =
-  | 'release' | 'org' | 'artist' | 'label' | 'dsp' | 'inquiry' | 'document' | 'payout' | 'settlement_report' | 'task' | 'relationship';
+  | 'release' | 'org' | 'artist' | 'label' | 'dsp' | 'inquiry' | 'document' | 'payout' | 'settlement_report' | 'task' | 'relationship' | 'channel'
+  | 'doc' | 'track' | 'approval';
 
 export interface EntityRef {
   kind: EntityKind;
@@ -42,7 +43,8 @@ export interface WorkTask {
   recurrence: Recurrence | null;
   recurred_from: string | null;
   tags: string[];
-  created_by: string;
+  /** 자동 카드는 null (시스템이 만듦) */
+  created_by: string | null;
   created_at: string;
   updated_at: string;
   assigned_at: string | null;
@@ -59,6 +61,12 @@ export interface WorkTask {
   sla_state?: SlaState | null;
   escalation_level?: number;
   priority_raised?: Priority | null;
+  /** 칸반 배치 (하위 업무는 보드에 없음) */
+  board_id?: string | null;
+  column_id?: string | null;
+  column_name?: string | null;
+  position?: number | null;
+  source?: CardSource;
 }
 
 export interface TaskEvent { at: string; actor_id: string | null; action: string; detail: string | null }
@@ -83,6 +91,9 @@ export interface TaskInput {
   recurrence?: Recurrence | null;
   links?: LinkInput[];
   tags?: string[];
+  /** 칸반 배치 — 없으면 일반 보드의 첫 '할 일' 열 */
+  board_id?: string | null;
+  column_id?: string | null;
 }
 
 export interface TaskPatch {
@@ -209,6 +220,7 @@ export interface InboxPage {
   unread: number;
 }
 export interface WorkSummary {
+  chat?: { unread: number };
   inbox: { total: number; unread: number };
   overdue: number;
   sla_warning: number;
@@ -353,3 +365,103 @@ export interface DspOpsItem {
   [k: string]: unknown;
 }
 export interface DspOps { items: DspOpsItem[]; window_days: number; live_transmission: boolean }
+
+// ---------- 팀 대화 (채널) — 메시지는 내부 메모(work.notes, target_kind='channel') ----------
+export interface Channel {
+  id: string;
+  name: string;
+  topic: string;
+  created_by: string | null;
+  created_at: string;
+  archived_at: string | null;
+  last_read_at?: string | null;
+  last_message_at?: string | null;
+  unread?: number;
+  mentions?: number;
+}
+
+// ---------- 칸반 보드 ----------
+export type CardSource = 'manual' | 'system' | 'qc' | 'distribution' | 'support' | 'rights' | 'finance' | 'sla';
+export type BoardKind = 'PERSONAL' | 'TEAM' | 'OPERATIONS';
+export type StaffRoleKey = 'ADMIN' | 'REVIEWER' | 'OPERATOR' | 'SUPPORT';
+export interface Board {
+  id: string;
+  key: string | null;
+  name: string;
+  description: string;
+  kind: BoardKind;
+  owner_id: string | null;
+  team_role: StaffRoleKey | null;
+  created_by: string | null;
+  row_version: number;
+  archived: boolean;
+  access: { write: boolean; manage: boolean };
+  open_cards?: number;
+}
+export interface BoardColumn { id: string; name: string; status: TaskStatus; position: number; wip_limit: number | null; count: number }
+export interface BoardView { board: Board; columns: BoardColumn[]; cards: WorkTask[]; tags: string[]; truncated: boolean }
+export interface BoardQuery {
+  assignee?: string; priority?: Priority | ''; column?: string; tag?: string; type?: WorkType | '';
+  due?: 'overdue' | 'today' | 'week' | 'none' | ''; creator?: string; source?: 'manual' | 'auto' | CardSource | '';
+  entity_kind?: EntityKind | ''; q?: string; done_days?: number;
+}
+export interface BoardInput { name: string; description?: string; kind?: BoardKind; team_role?: StaffRoleKey | null; row_version?: number }
+export interface ColumnInput { name?: string; status?: TaskStatus; wip_limit?: number | null }
+export interface MoveInput { row_version: number; column_id: string; before_id?: string | null; after_id?: string | null }
+export type AutoTrigger =
+  | 'QC_FAILURE' | 'METADATA_CONFLICT' | 'MISSING_RIGHTS_DOCUMENT' | 'DSP_REJECTION' | 'DISTRIBUTION_FAILURE'
+  | 'SETTLEMENT_MISMATCH' | 'AUTOMATION_FAILURE' | 'SUPPORT_INQUIRY' | 'APPROVAL_REQUIRED' | 'RELEASE_REVIEW_OVERDUE';
+export interface BoardRule {
+  id: string; trigger: AutoTrigger; board_id: string; board_name: string; column_id: string; column_name: string;
+  enabled: boolean; active_since: string; cards: number;
+}
+export interface RuleInput { trigger: AutoTrigger; board_id: string; column_id: string; enabled: boolean }
+
+// ---------- AUDENIQ Docs ----------
+export type DocStatus = 'DRAFT' | 'IN_REVIEW' | 'APPROVED';
+export type DocLevel = 'NONE' | 'VIEWER' | 'EDITOR' | 'MANAGER' | 'OWNER';
+export type DocAccess = 'VIEWER' | 'EDITOR';
+/** Tiptap(ProseMirror) JSON — 서버가 허용 노드·마크만 받는다 */
+export interface DocNode { type: string; attrs?: Record<string, unknown>; content?: DocNode[]; text?: string; marks?: { type: string; attrs?: Record<string, unknown> }[] }
+export interface DocSummary {
+  id: string; parent_id: string | null; depth: number; title: string; icon: string | null; status: DocStatus;
+  staff_access: DocAccess | null; version: number; position: number; template_id: string | null;
+  created_by: string; updated_by: string; created_at: string; updated_at: string; archived_at: string | null;
+  review: {
+    requested_by: string | null; requested_at: string | null; approved_by: string | null; approved_at: string | null;
+    rejected_by: string | null; rejected_at: string | null; rejection_reason: string | null;
+  };
+  level: DocLevel;
+  has_children?: boolean;
+  snippet?: string | null;
+}
+export interface DocCard { id: string; key: string; title: string; status: TaskStatus; priority: Priority; assignee_id: string | null; due_at: string | null; column_name: string | null; board_id: string | null }
+export interface DocDetail {
+  doc: DocSummary & { content: DocNode };
+  breadcrumb: { id: string; title: string; icon: string | null }[];
+  related: (EntityRef & { origin: 'manual' | 'embed' })[];
+  cards: DocCard[];
+  backlinks: { id: string; title: string; icon: string | null }[];
+  open_comments: number;
+}
+export interface DocCreateInput { parent_id?: string | null; title?: string; icon?: string | null; template_id?: string | null; link?: LinkInput | null }
+export interface DocSaveInput { base_version: number; title?: string; icon?: string | null; content?: DocNode }
+export interface DocSaved { id: string; version: number; status: DocStatus; saved_at: string }
+export interface DocSearchQuery { q?: string; status?: DocStatus | ''; author?: string; entity_kind?: EntityKind | ''; entity_id?: string; limit?: number }
+export interface DocVersion { version: number; title: string; reason: 'AUTOSAVE' | 'MANUAL' | 'RESTORE' | 'STATUS' | 'CREATE'; label: string | null; created_by: string; created_at: string; chars: number }
+export interface DocVersions { current: { version: number; updated_by: string; updated_at: string }; items: DocVersion[] }
+export interface DocVersionBody { version: number; title: string; content: DocNode; content_text: string; created_by?: string; created_at?: string; reason?: string; current: boolean }
+export type DocStatusAction = 'REQUEST_REVIEW' | 'APPROVE' | 'REJECT' | 'REOPEN';
+export interface DocGrant { principal_kind: 'ROLE' | 'USER'; principal_id: string; level: 'VIEWER' | 'EDITOR' | 'MANAGER'; email?: string | null }
+export interface DocPermissions { owner_id: string; staff_access: DocAccess | null; grants: DocGrant[] }
+export interface DocTemplate { id: string; key: string | null; name: string; description: string; icon: string | null; system: boolean }
+
+/** 문서 댓글 = 메모(target_kind 'doc')에 답글·앵커 */
+export interface DocComment extends WorkNote { parent_id: string | null; anchor: { block?: string; from?: number; to?: number; quote?: string } | null }
+
+// ---------- 임베드 (문서 속 AUDENIQ 블록의 실시간 값) ----------
+export type EmbedKind = 'release' | 'track' | 'artist' | 'label' | 'dsp' | 'inquiry' | 'task' | 'doc' | 'approval' | 'audit'
+  | 'relationship' | 'document' | 'settlement_report' | 'payout' | 'org';
+export type EmbedView = 'summary' | 'qc' | 'rights' | 'distribution';
+/** 서버가 kind별로 채워 주는 값 — 종류마다 모양이 달라 화면에서 좁혀 읽는다 */
+export type EmbedData = Record<string, unknown> & { kind: string; id: string; view: EmbedView; missing?: boolean };

@@ -6,7 +6,10 @@ import type {
   EntityKind, EntityRef, NoteInput, NoteRevision, StaffPerson, TaskDetail, TaskInput, TaskPatch, TaskQuery,
   WorkNote, WorkTask, LinkInput, InboxPage, InboxQuery, WorkSummary, ExceptionPage, ExceptionQuery,
   ExceptionActInput, ExceptionItem, ExceptionReportInput, SlaOverview, SlaPolicyInput,
-  ActivityInput, ContactInput, DspOps, RelInput, RelPatch, RelQuery, Relationship, RelationshipDetail,
+  Channel, ActivityInput, ContactInput, DspOps, RelInput, RelPatch, RelQuery, Relationship, RelationshipDetail,
+  Board, BoardInput, BoardQuery, BoardRule, BoardView, ColumnInput, MoveInput, RuleInput, AutoTrigger,
+  DocComment, DocCreateInput, DocDetail, DocPermissions, DocSaveInput, DocSaved, DocSearchQuery, DocStatusAction, DocSummary,
+  DocTemplate, DocVersionBody, DocVersions, DocGrant, DocAccess, EmbedData,
 } from './types';
 
 interface Page<T> { items: T[] }
@@ -76,6 +79,64 @@ const remote = {
   unlinkRelationship: (relId: string, linkId: string) => req<RelationshipDetail>(`${B}/relationships/${id(relId)}/links/${id(linkId)}/archive`, { method: 'POST' }),
   dspOps: (dsp?: string) => req<DspOps>(`${B}/dsp-ops${qs({ dsp })}`),
 
+  // 팀 대화
+  channels: (archived = false) => req<Page<Channel>>(`${B}/channels${qs({ archived })}`),
+  createChannel: (body: { name: string; topic: string }) => req<Channel>(`${B}/channels`, { method: 'POST', body }),
+  updateChannel: (chId: string, body: { name: string; topic: string }) => req<Channel>(`${B}/channels/${id(chId)}`, { method: 'POST', body }),
+  archiveChannel: (chId: string) => req<Channel>(`${B}/channels/${id(chId)}/archive`, { method: 'POST' }),
+  readChannel: (chId: string) => req<{ read: string }>(`${B}/channels/${id(chId)}/read`, { method: 'POST' }),
+  /** 최근 메시지부터 (화면에는 오래된 순) — before로 더 이전 */
+  messages: (chId: string, before?: string, latest = 60) =>
+    req<{ items: WorkNote[]; has_more: boolean }>(`${B}/notes${qs({ target_kind: 'channel', target_id: chId, latest, before })}`),
+
+  // 칸반 보드 — 카드는 업무(work.tasks), 열은 상태와 짝
+  boards: () => req<Page<Board>>(`${B}/boards`),
+  board: (boardId: string, q: BoardQuery = {}) => req<BoardView>(`${B}/boards/${id(boardId)}${qs({ ...q })}`),
+  createBoard: (body: BoardInput) => req<BoardView>(`${B}/boards`, { method: 'POST', body }),
+  updateBoard: (boardId: string, body: BoardInput) => req<BoardView>(`${B}/boards/${id(boardId)}`, { method: 'POST', body }),
+  archiveBoard: (boardId: string) => req<{ archived: string }>(`${B}/boards/${id(boardId)}/archive`, { method: 'POST' }),
+  addColumn: (boardId: string, body: ColumnInput) => req<BoardView>(`${B}/boards/${id(boardId)}/columns`, { method: 'POST', body }),
+  updateColumn: (colId: string, body: ColumnInput) => req<BoardView>(`${B}/board-columns/${id(colId)}`, { method: 'POST', body }),
+  archiveColumn: (colId: string, moveTo?: string | null) => req<BoardView>(`${B}/board-columns/${id(colId)}/archive`, { method: 'POST', body: { move_to: moveTo ?? null } }),
+  orderColumns: (boardId: string, ids: string[]) => req<BoardView>(`${B}/boards/${id(boardId)}/columns/order`, { method: 'POST', body: { ids } }),
+  moveCard: (taskId: string, body: MoveInput) => req<{ card: WorkTask; redirected: boolean }>(`${B}/tasks/${id(taskId)}/move`, { method: 'POST', body }),
+  rules: () => req<{ items: BoardRule[]; triggers: AutoTrigger[] }>(`${B}/board-rules`),
+  saveRule: (body: RuleInput) => req<{ items: BoardRule[]; triggers: AutoTrigger[] }>(`${B}/board-rules`, { method: 'POST', body }),
+  runAutomation: () => req<{ created: number; at: string }>(`${B}/automation/run`, { method: 'POST' }),
+
+  // AUDENIQ Docs — 블록 JSON 문서, 서버가 접근 수준·버전 충돌을 판단
+  docTree: (parent?: string | null, archived = false) => req<Page<DocSummary>>(`${B}/docs${qs({ parent, archived })}`),
+  searchDocs: (q: DocSearchQuery) => req<Page<DocSummary>>(`${B}/docs/search${qs({ ...q })}`),
+  doc: (docId: string) => req<DocDetail>(`${B}/docs/${id(docId)}`),
+  createDoc: (body: DocCreateInput) => req<DocDetail>(`${B}/docs`, { method: 'POST', body }),
+  saveDoc: (docId: string, body: DocSaveInput) => req<DocSaved>(`${B}/docs/${id(docId)}`, { method: 'POST', body }),
+  moveDoc: (docId: string, body: { parent_id: string | null; before_id?: string | null; after_id?: string | null }) =>
+    req<DocDetail>(`${B}/docs/${id(docId)}/move`, { method: 'POST', body }),
+  duplicateDoc: (docId: string) => req<DocDetail>(`${B}/docs/${id(docId)}/duplicate`, { method: 'POST' }),
+  archiveDoc: (docId: string) => req<{ archived: string[] }>(`${B}/docs/${id(docId)}/archive`, { method: 'POST' }),
+  restoreDoc: (docId: string) => req<DocDetail>(`${B}/docs/${id(docId)}/restore`, { method: 'POST' }),
+  deleteDoc: (docId: string) => req<{ deleted: string[] }>(`${B}/docs/${id(docId)}/delete`, { method: 'POST' }),
+  docStatus: (docId: string, action: DocStatusAction, reason?: string) => req<DocDetail>(`${B}/docs/${id(docId)}/status`, { method: 'POST', body: { action, reason: reason ?? null } }),
+  docVersions: (docId: string) => req<DocVersions>(`${B}/docs/${id(docId)}/versions`),
+  docVersion: (docId: string, v: number) => req<DocVersionBody>(`${B}/docs/${id(docId)}/versions/${v}`),
+  saveDocVersion: (docId: string, label?: string) => req<DocVersions>(`${B}/docs/${id(docId)}/versions`, { method: 'POST', body: { label: label ?? null } }),
+  restoreDocVersion: (docId: string, version: number, baseVersion: number) =>
+    req<DocDetail>(`${B}/docs/${id(docId)}/restore-version`, { method: 'POST', body: { version, base_version: baseVersion } }),
+  docPermissions: (docId: string) => req<DocPermissions>(`${B}/docs/${id(docId)}/permissions`),
+  setDocPermissions: (docId: string, body: { staff_access: DocAccess | null; grants: DocGrant[]; apply_to_children: boolean }) =>
+    req<DocPermissions>(`${B}/docs/${id(docId)}/permissions`, { method: 'POST', body }),
+  docTemplates: () => req<Page<DocTemplate>>(`${B}/doc-templates`),
+  saveDocTemplate: (body: { from_doc: string; name: string; description: string }) => req<Page<DocTemplate>>(`${B}/doc-templates`, { method: 'POST', body }),
+  archiveDocTemplate: (tplId: string) => req<Page<DocTemplate>>(`${B}/doc-templates/${id(tplId)}/archive`, { method: 'POST' }),
+  /** 문서 댓글 — 메모(target_kind 'doc'), 답글(parent_id)·위치(anchor) */
+  docComments: (docId: string) => req<Page<DocComment>>(`${B}/notes${qs({ target_kind: 'doc', target_id: docId })}`),
+  addDocComment: (body: { target_id: string; body: string; mentions: string[]; parent_id?: string | null; anchor?: DocComment['anchor'] }) =>
+    req<DocComment>(`${B}/notes`, { method: 'POST', body: { target_kind: 'doc', attachments: [], ...body } }),
+  /** 문서 속 AUDENIQ 블록의 실시간 값 — 'kind:id[:view]' 여러 개를 한 번에 */
+  embeds: (refs: string[]) => req<{ items: Record<string, EmbedData> }>(`${B}/embeds${qs({ refs: refs.join(',') })}`),
+  /** 문서에 넣을 파일 — 메모 첨부와 같은 업로드, 문서에 저장되면 문서 권한으로 내려받는다 */
+  attachmentInline: (attId: string) => `${(import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '')}${B}/attachments/${id(attId)}?inline=true`,
+
   attachmentUrl: (attId: string) => `${(import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '')}${B}/attachments/${id(attId)}`,
 };
 
@@ -87,7 +148,7 @@ function lazyMock(): WorkApi {
   return new Proxy({} as WorkApi, {
     get: (_, key) => {
       // 첨부 주소는 동기 함수 — 체험 모드에서는 내려받기 대신 이름만 보여 준다
-      if (key === 'attachmentUrl') return () => '';
+      if (key === 'attachmentUrl' || key === 'attachmentInline') return () => '';
       return (...args: unknown[]) => load().then(api => (api[key as keyof WorkApi] as (...a: unknown[]) => unknown)(...args));
     },
   });
