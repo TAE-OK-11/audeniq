@@ -113,6 +113,7 @@ work.exception_reports  수동 보고(정산 불일치 등 원천이 없는 경�
 - 업무함 항목: Assigned Tasks, Review Requests(업무 검토 + 내가 맡은 발매 심사), Approval Requests(2차 승인), Mentions, Failed Automations, SLA Warning, Overdue, Support Escalation(SLA 넘긴 문의), Rights Issue, Distribution Failure. 필터: 담당자·업무 유형·우선순위·상태·기한·Entity 종류.
 - 처리시간 측정: 업무는 이벤트로, 기존 대기열은 audit_events로.
 - RLS: `reconciliation_cases`에 스태프 읽기 정책 추가 (기존 `delivery_staging` 방식과 동일).
+- 구현 메모: 상향(escalation)은 스케줄러 없이 스태프 읽기(업무함·요약·SLA 화면)에서 멱등으로 처리한다. 업무함에 `CONTACT_DUE`(관계 관리 다음 연락)를 Phase 3에서 더했다. API 역할 권한은 `deploy/grants.sql`이 기준이며, 분할 역할 테스트가 모든 Phase 2·3 엔드포인트를 production 권한으로 호출한다.
 
 ### Phase 3 — CRM Lite · DSP Operations
 ```
@@ -171,6 +172,6 @@ work.relationship_activities relationship_id, kind(CALL|EMAIL|MEETING|NOTE), sum
 |---|---|---|
 | 0 분석·설계 | 완료 | 이 문서 |
 | 1 Task Engine · Internal Notes · Mentions | 완료 | `tests/work.rs` 2개(업무·하위 업무·검토·반복·연결·보관 / 메모·멘션·수정 이력·첨부), clippy·fmt, 빈 DB 마이그레이션, 기준선 대비 회귀 없음, 프론트 tsc·vitest·빌드 |
-| 2 Inbox · SLA · Exception Queue | 다음 | |
-| 3 CRM Lite · DSP Operations | 예정 | |
+| 2 Inbox · SLA · Exception Queue | 완료 | `tests/work_phase2.rs`(SLA 정책·휴일·업무 SLA·상향·예외 원천·처리·업무 전환·업무함·읽음·요약), `sla.rs` 영업시간 단위 테스트, 분할 역할(`grants.sql`) 회귀 `sandbox_regressions::staff_endpoints_work_under_split_roles`, 빈 DB 마이그레이션, 프론트 tsc·vitest·빌드·화면 확인 |
+| 3 CRM Lite · DSP Operations | 완료 | `tests/work_phase3.rs`(원천 이름·계약 상태, 연락처·이력(추가 전용)·연결·메모·업무, 수동 파트너, 연락 예정 업무함, DSP 운영, 보관 권한), 분할 역할 회귀, 프론트 확인 |
 | 4 Operations Analytics | 예정 | |

@@ -6,6 +6,35 @@ import { localStamp } from '../lib/format';
 import { relativeTime } from '../lib/date';
 import { markAllNoticesRead, markNoticeRead, useNotices, useUnreadCount, type Notice } from '../store/support';
 import { Glyph } from '../components/Glyph';
+import { alertsBlocked, alertsEnabled, alertsSupported, disableAlerts, enableAlerts } from '../lib/alerts';
+import { MOCK } from '../lib/mode';
+
+/** 브라우저 알림 켜기 — 다른 탭·창에 있어도 답변·검토 결과를 바로 알려 준다 */
+function BrowserAlerts() {
+  const toast = useToast();
+  const [on, setOn] = useState(alertsEnabled);
+  if (!alertsSupported() || MOCK) return null;
+  const blocked = alertsBlocked();
+  const toggle = async (next: boolean) => {
+    if (!next) { disableAlerts(); setOn(false); toast('브라우저 알림을 껐어요.', 'info'); return; }
+    const ok = await enableAlerts();
+    setOn(ok);
+    toast(ok ? '브라우저 알림을 켰어요. 다른 탭에 있어도 알려 드릴게요.' : '브라우저에서 알림 권한을 허용해 주세요.', ok ? 'success' : 'error');
+  };
+  return (
+    <div className="aq-alert-pref">
+      <span className="aq-alert-pref-icon" aria-hidden="true"><Glyph name="bell" size={18} /></span>
+      <span className="min-0">
+        <strong>브라우저 알림</strong>
+        <span>{blocked ? '브라우저 설정에서 이 사이트의 알림이 차단돼 있어요. 주소창의 자물쇠 아이콘에서 허용해 주세요.' : '문의 답변·검토 결과·지급 소식을 다른 탭에 있어도 바로 알려 드려요.'}</span>
+      </span>
+      <label className="aq-switch">
+        <input type="checkbox" role="switch" aria-label="브라우저 알림" checked={on} disabled={blocked} onChange={e => void toggle(e.target.checked)} />
+        <span aria-hidden="true" />
+      </label>
+    </div>
+  );
+}
 
 function noticeSymbol(kind: string) {
   return <Glyph size={17} name={kind === '지급' ? 'won' : kind === '발매' ? 'music' : kind === '서류' ? 'doc' : kind === '문의' ? 'mail' : kind === '계정' ? 'user' : 'bell'} />;
@@ -42,6 +71,8 @@ export function Notifications() {
           <p>발매·정산·서류 변경 사항을 확인해 보세요.</p>
         </div>
       </div>
+
+      <BrowserAlerts />
 
       <div className="studio-alert-tools" id="notificationTools">
         <button

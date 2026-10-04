@@ -30,6 +30,7 @@ pub const KINDS: &[&str] = &[
     "payout",
     "settlement_report",
     "task",
+    "relationship",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -147,6 +148,16 @@ async fn fetch(
             .fetch_all(&mut *c)
             .await?
         }
+        "relationship" => {
+            sqlx::query(concat!(
+                "SELECT r.id::text AS id, COALESCE(",
+                super::crm::source_name!(),
+                ", '?') AS label, r.kind || ' · ' || r.status AS sub FROM work.relationships r WHERE r.id = ANY($1)"
+            ))
+            .bind(uuids(ids))
+            .fetch_all(&mut *c)
+            .await?
+        }
         "task" => {
             sqlx::query(
                 "SELECT t.id::text AS id, 'WRK-' || t.seq || ' ' || t.title AS label, t.status AS sub FROM work.tasks t WHERE t.id = ANY($1)",
@@ -231,6 +242,11 @@ pub async fn search(s: &AppState, h: &HeaderMap, q: SearchQuery) -> Result<Value
         "document" => sqlx::query_scalar("SELECT id::text FROM portal.documents WHERE title ILIKE $1 OR id::text=$2 ORDER BY updated_at DESC LIMIT 20"),
         "payout" => sqlx::query_scalar("SELECT p.id::text FROM portal.payout_requests p JOIN identity.orgs o ON o.id=p.org_id WHERE o.name ILIKE $1 OR p.id::text=$2 ORDER BY p.created_at DESC LIMIT 20"),
         "settlement_report" => sqlx::query_scalar("SELECT id::text FROM finance.royalty_reports WHERE dsp_id ILIKE $1 OR source_filename ILIKE $1 OR id::text=$2 ORDER BY received_at DESC LIMIT 20"),
+        "relationship" => sqlx::query_scalar(concat!(
+            "SELECT r.id::text FROM work.relationships r WHERE r.archived_at IS NULL AND (",
+            super::crm::source_name!(),
+            " ILIKE $1 OR r.id::text=$2) ORDER BY r.updated_at DESC LIMIT 20"
+        )),
         "task" => sqlx::query_scalar("SELECT id::text FROM work.tasks WHERE archived_at IS NULL AND (title ILIKE $1 OR 'WRK-'||seq=upper($2)) ORDER BY created_at DESC LIMIT 20"),
         _ => return Err(Error::InvalidCode("ENTITY_KIND_UNKNOWN")),
     }

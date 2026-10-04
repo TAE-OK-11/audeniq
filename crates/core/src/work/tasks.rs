@@ -47,7 +47,9 @@ macro_rules! task_cols {
     () => {
         "t.id,t.seq,t.parent_id,t.title,t.description,t.work_type,t.status,t.priority,t.assignee_id,t.reviewer_id,t.due_at,
          t.changes_requested,t.recurrence,t.recurred_from,t.tags,t.created_by,t.created_at,t.updated_at,t.assigned_at,t.started_at,
-         t.completed_at,t.archived_at,t.row_version,
+         t.completed_at,t.archived_at,t.row_version,t.sla_due_at,t.escalation_level,t.priority_raised,
+         COALESCE((SELECT p.warn_ratio FROM work.sla_policies p WHERE p.work_type=t.work_type AND p.scope_kind IS NULL
+                    AND p.archived_at IS NULL AND p.enabled),0.25)::real AS warn_ratio,
          (SELECT count(*) FROM work.tasks c WHERE c.parent_id=t.id AND c.archived_at IS NULL) AS subtasks_total,
          (SELECT count(*) FROM work.tasks c WHERE c.parent_id=t.id AND c.archived_at IS NULL AND c.status IN ('DONE','CANCELLED')) AS subtasks_done,
          (SELECT count(*) FROM work.notes n WHERE n.target_kind='task' AND n.target_id=t.id::text AND n.archived_at IS NULL) AS note_count"
@@ -79,6 +81,10 @@ pub(crate) struct Task {
     pub completed_at: Option<DateTime<Utc>>,
     pub archived_at: Option<DateTime<Utc>>,
     pub row_version: i32,
+    pub sla_due_at: Option<DateTime<Utc>>,
+    pub escalation_level: i16,
+    pub priority_raised: Option<String>,
+    pub warn_ratio: f32,
     pub subtasks_total: i64,
     pub subtasks_done: i64,
     pub note_count: i64,
@@ -110,6 +116,10 @@ impl Task {
             completed_at: r.get("completed_at"),
             archived_at: r.get("archived_at"),
             row_version: r.get("row_version"),
+            sla_due_at: r.get("sla_due_at"),
+            escalation_level: r.get("escalation_level"),
+            priority_raised: r.get("priority_raised"),
+            warn_ratio: r.get("warn_ratio"),
             subtasks_total: r.get("subtasks_total"),
             subtasks_done: r.get("subtasks_done"),
             note_count: r.get("note_count"),
@@ -119,12 +129,21 @@ impl Task {
         matches!(self.status.as_str(), "DONE" | "CANCELLED")
     }
     fn json(&self, links: &[Value]) -> Value {
+        let (deadline, sla_state) = super::sla::task_deadline(
+            self.due_at,
+            self.sla_due_at,
+            self.created_at,
+            self.closed(),
+            self.warn_ratio,
+        );
         json!({
             "id": self.id, "key": format!("WRK-{}", self.seq), "parent_id": self.parent_id,
             "title": self.title, "description": self.description, "type": self.work_type,
             "status": self.status, "priority": self.priority,
             "assignee_id": self.assignee_id, "reviewer_id": self.reviewer_id, "due_at": self.due_at,
             "overdue": !self.closed() && self.due_at.is_some_and(|d| d < Utc::now()),
+            "sla_due_at": self.sla_due_at, "deadline": deadline, "sla_state": sla_state,
+            "escalation_level": self.escalation_level, "priority_raised": self.priority_raised,
             "changes_requested": self.changes_requested, "recurrence": self.recurrence, "recurred_from": self.recurred_from,
             "tags": self.tags, "created_by": self.created_by, "created_at": self.created_at, "updated_at": self.updated_at,
             "assigned_at": self.assigned_at, "started_at": self.started_at, "completed_at": self.completed_at,
@@ -308,14 +327,14 @@ pub async fn list(s: &AppState, h: &HeaderMap, q: ListQuery) -> Result<Value> {
             AND ($5::text IS NULL OR t.priority=$5)
             AND ($6::uuid IS NULL OR t.assignee_id=$6)
             AND ($7::text IS NULL
-                 OR ($7='overdue' AND t.due_at < now() AND t.status NOT IN ('DONE','CANCELLED'))
-                 OR ($7='today' AND t.due_at < date_trunc('day', now() AT TIME ZONE 'Asia/Seoul') AT TIME ZONE 'Asia/Seoul' + interval '1 day')
-                 OR ($7='week' AND t.due_at < now() + interval '7 days'))
+                 OR ($7='overdue' AND LEAST(COALESCE(t.due_at,'infinity'),COALESCE(t.sla_due_at,'infinity')) < now() AND t.status NOT IN ('DONE','CANCELLED'))
+                 OR ($7='today' AND LEAST(COALESCE(t.due_at,'infinity'),COALESCE(t.sla_due_at,'infinity')) < date_trunc('day', now() AT TIME ZONE 'Asia/Seoul') AT TIME ZONE 'Asia/Seoul' + interval '1 day')
+                 OR ($7='week' AND LEAST(COALESCE(t.due_at,'infinity'),COALESCE(t.sla_due_at,'infinity')) < now() + interval '7 days'))
             AND ($8::text IS NULL OR EXISTS(SELECT 1 FROM work.links l WHERE l.subject_kind='task' AND l.subject_id=t.id
                    AND l.archived_at IS NULL AND l.entity_kind=$8 AND l.entity_id=$9))
             AND ($10::text IS NULL OR t.title ILIKE '%'||$10||'%' OR t.description ILIKE '%'||$10||'%' OR ('WRK-'||t.seq)=upper($10) OR $10=ANY(t.tags))
             AND ($11 OR t.parent_id IS NULL)
-          ORDER BY (t.status IN ('DONE','CANCELLED')), array_position($12::text[], t.priority) DESC, t.due_at NULLS LAST, t.created_at DESC
+          ORDER BY (t.status IN ('DONE','CANCELLED')), array_position($12::text[], t.priority) DESC, LEAST(COALESCE(t.due_at,'infinity'),COALESCE(t.sla_due_at,'infinity')), t.created_at DESC
           LIMIT 300"
     ))
     .bind(view)
@@ -504,13 +523,14 @@ pub async fn create(s: &AppState, h: &HeaderMap, i: CreateInput) -> Result<Value
         }
     }
     let rec = recurrence(i.recurrence.as_ref(), now)?;
+    let sla_due = super::sla::task_due(&mut tx, &i.work_type, now).await?;
     let id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO work.tasks(id,parent_id,title,description,work_type,priority,assignee_id,reviewer_id,due_at,recurrence,tags,created_by,created_at,updated_at,assigned_at)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13,CASE WHEN $7::uuid IS NULL THEN NULL ELSE $13 END)",
+        "INSERT INTO work.tasks(id,parent_id,title,description,work_type,priority,assignee_id,reviewer_id,due_at,recurrence,tags,created_by,created_at,updated_at,assigned_at,sla_due_at)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13,CASE WHEN $7::uuid IS NULL THEN NULL ELSE $13 END,$14)",
     )
     .bind(id).bind(i.parent_id).bind(&title).bind(&description).bind(&i.work_type).bind(&i.priority)
-    .bind(i.assignee_id).bind(i.reviewer_id).bind(i.due_at).bind(rec).bind(&tg).bind(st.actor.user).bind(now)
+    .bind(i.assignee_id).bind(i.reviewer_id).bind(i.due_at).bind(rec).bind(&tg).bind(st.actor.user).bind(now).bind(sla_due)
     .execute(&mut *tx)
     .await?;
     event(&mut tx, id, Some(st.actor.user), "CREATED", None).await?;
@@ -604,6 +624,8 @@ pub async fn update(s: &AppState, h: &HeaderMap, id: Uuid, p: UpdateInput) -> Re
         one_of(v, WORK_TYPES, "WORK_TYPE_UNKNOWN")?;
         if *v != t.work_type {
             t.work_type = v.clone();
+            t.sla_due_at = super::sla::task_due(&mut tx, v, t.created_at).await?;
+            t.escalation_level = 0;
             events.push(("TYPE", Some(v.clone())));
         }
     }
@@ -633,6 +655,7 @@ pub async fn update(s: &AppState, h: &HeaderMap, id: Uuid, p: UpdateInput) -> Re
         && v != t.due_at
     {
         t.due_at = v;
+        t.escalation_level = 0;
         events.push(("DUE", v.map(|d| d.to_rfc3339())));
     }
     if let Some(v) = &p.recurrence {
@@ -746,12 +769,14 @@ pub async fn update(s: &AppState, h: &HeaderMap, id: Uuid, p: UpdateInput) -> Re
     }
     sqlx::query(
         "UPDATE work.tasks SET title=$2,description=$3,work_type=$4,status=$5,priority=$6,assignee_id=$7,reviewer_id=$8,due_at=$9,
-            changes_requested=$10,recurrence=$11,tags=$12,assigned_at=$13,started_at=$14,completed_at=$15,updated_at=$16,row_version=row_version+1
+            changes_requested=$10,recurrence=$11,tags=$12,assigned_at=$13,started_at=$14,completed_at=$15,updated_at=$16,
+            sla_due_at=$17,escalation_level=$18,row_version=row_version+1
           WHERE id=$1",
     )
     .bind(t.id).bind(&t.title).bind(&t.description).bind(&t.work_type).bind(&t.status).bind(&t.priority)
     .bind(t.assignee_id).bind(t.reviewer_id).bind(t.due_at).bind(t.changes_requested).bind(&t.recurrence).bind(&t.tags)
     .bind(t.assigned_at).bind(t.started_at).bind(t.completed_at).bind(now)
+    .bind(t.sla_due_at).bind(t.escalation_level)
     .execute(&mut *tx)
     .await?;
     for (a, d) in &events {
@@ -762,13 +787,14 @@ pub async fn update(s: &AppState, h: &HeaderMap, id: Uuid, p: UpdateInput) -> Re
         let freq = r["freq"].as_str().unwrap_or("WEEKLY").to_string();
         let interval = r["interval"].as_i64().unwrap_or(1) as i32;
         let next = Uuid::new_v4();
+        let next_sla = super::sla::task_due(&mut tx, &t.work_type, now).await?;
         let rec = json!({"freq": freq, "interval": interval, "next_at": next_occurrence(&freq, interval, now)});
         let seq: i64 = sqlx::query_scalar(
-            "INSERT INTO work.tasks(id,title,description,work_type,priority,assignee_id,reviewer_id,due_at,recurrence,recurred_from,tags,created_by,created_at,updated_at,assigned_at)
-             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13,CASE WHEN $6::uuid IS NULL THEN NULL ELSE $13 END) RETURNING seq",
+            "INSERT INTO work.tasks(id,title,description,work_type,priority,assignee_id,reviewer_id,due_at,recurrence,recurred_from,tags,created_by,created_at,updated_at,assigned_at,sla_due_at)
+             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13,CASE WHEN $6::uuid IS NULL THEN NULL ELSE $13 END,$14) RETURNING seq",
         )
-        .bind(next).bind(&t.title).bind(&t.description).bind(&t.work_type).bind(&t.priority).bind(t.assignee_id).bind(t.reviewer_id)
-        .bind(t.due_at.map(|d| next_occurrence(&freq, interval, d))).bind(rec).bind(t.id).bind(&t.tags).bind(me).bind(now)
+        .bind(next).bind(&t.title).bind(&t.description).bind(&t.work_type).bind(t.priority_raised.as_ref().unwrap_or(&t.priority)).bind(t.assignee_id).bind(t.reviewer_id)
+        .bind(t.due_at.map(|d| next_occurrence(&freq, interval, d))).bind(rec).bind(t.id).bind(&t.tags).bind(me).bind(now).bind(next_sla)
         .fetch_one(&mut *tx)
         .await?;
         sqlx::query(

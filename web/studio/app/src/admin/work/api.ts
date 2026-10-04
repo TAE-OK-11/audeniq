@@ -4,7 +4,9 @@ import { putToGrant, req, type UploadGrant } from '../../api/http';
 import { MOCK } from '../../lib/mode';
 import type {
   EntityKind, EntityRef, NoteInput, NoteRevision, StaffPerson, TaskDetail, TaskInput, TaskPatch, TaskQuery,
-  WorkNote, WorkTask, LinkInput,
+  WorkNote, WorkTask, LinkInput, InboxPage, InboxQuery, WorkSummary, ExceptionPage, ExceptionQuery,
+  ExceptionActInput, ExceptionItem, ExceptionReportInput, SlaOverview, SlaPolicyInput,
+  ActivityInput, ContactInput, DspOps, RelInput, RelPatch, RelQuery, Relationship, RelationshipDetail,
 } from './types';
 
 interface Page<T> { items: T[] }
@@ -45,6 +47,35 @@ const remote = {
     await req(`${B}/attachments/${id(r.id)}/complete`, { method: 'POST' });
     return r.id;
   },
+  // Phase 2 — 업무함 · 예외 처리 · SLA
+  summary: () => req<WorkSummary>(`${B}/summary`),
+  inbox: (q: InboxQuery = {}) => req<InboxPage>(`${B}/inbox${qs({ ...q })}`),
+  markRead: (ids: string[]) => req<{ read: number }>(`${B}/inbox/read`, { method: 'POST', body: { ids } }),
+  exceptions: (q: ExceptionQuery = {}) => req<ExceptionPage>(`${B}/exceptions${qs({ ...q })}`),
+  actException: (source: string, sourceId: string, body: ExceptionActInput) =>
+    req<{ item: ExceptionItem | null }>(`${B}/exceptions/${id(source)}/${id(sourceId)}`, { method: 'POST', body }),
+  reportException: (body: ExceptionReportInput) => req<{ id: string }>(`${B}/exceptions/reports`, { method: 'POST', body }),
+  sla: () => req<SlaOverview>(`${B}/sla`),
+  savePolicy: (body: SlaPolicyInput) => req<SlaOverview>(`${B}/sla/policies`, { method: 'POST', body }),
+  archivePolicy: (policyId: string) => req<SlaOverview>(`${B}/sla/policies/${id(policyId)}/archive`, { method: 'POST' }),
+  saveCalendar: (calId: string, body: { name: string; work_start: string; work_end: string; workdays: number[] }) =>
+    req<SlaOverview>(`${B}/calendars/${id(calId)}`, { method: 'POST', body }),
+  setHoliday: (calId: string, day: string, name?: string) =>
+    req<SlaOverview>(`${B}/calendars/${id(calId)}/holidays`, { method: 'POST', body: { day, name: name ?? null } }),
+
+  // Phase 3 — CRM Lite · DSP 운영
+  relationships: (q: RelQuery = {}) => req<{ items: Relationship[]; counts: Record<string, number> }>(`${B}/relationships${qs({ ...q })}`),
+  relationship: (relId: string) => req<RelationshipDetail>(`${B}/relationships/${id(relId)}`),
+  createRelationship: (body: RelInput) => req<RelationshipDetail>(`${B}/relationships`, { method: 'POST', body }),
+  updateRelationship: (relId: string, body: RelPatch) => req<RelationshipDetail>(`${B}/relationships/${id(relId)}`, { method: 'POST', body }),
+  archiveRelationship: (relId: string) => req<{ archived: string }>(`${B}/relationships/${id(relId)}/archive`, { method: 'POST' }),
+  addContact: (relId: string, body: ContactInput) => req<RelationshipDetail>(`${B}/relationships/${id(relId)}/contacts`, { method: 'POST', body }),
+  editContact: (contactId: string, body: ContactInput) => req<RelationshipDetail>(`${B}/relationship-contacts/${id(contactId)}`, { method: 'POST', body }),
+  logActivity: (relId: string, body: ActivityInput) => req<RelationshipDetail>(`${B}/relationships/${id(relId)}/activities`, { method: 'POST', body }),
+  linkRelationship: (relId: string, body: LinkInput) => req<RelationshipDetail>(`${B}/relationships/${id(relId)}/links`, { method: 'POST', body }),
+  unlinkRelationship: (relId: string, linkId: string) => req<RelationshipDetail>(`${B}/relationships/${id(relId)}/links/${id(linkId)}/archive`, { method: 'POST' }),
+  dspOps: (dsp?: string) => req<DspOps>(`${B}/dsp-ops${qs({ dsp })}`),
+
   attachmentUrl: (attId: string) => `${(import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '')}${B}/attachments/${id(attId)}`,
 };
 
