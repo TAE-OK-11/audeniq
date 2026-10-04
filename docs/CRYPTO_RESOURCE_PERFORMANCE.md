@@ -67,6 +67,7 @@ python3 deploy/kms-keyring.py materialize \
   공유 cipher의 동시 사용, Argon2 성공/실패·랜덤 salt를 포함한다.
 - KMS 공급자/병렬 작업 테스트 **19개**, 키링·실제 age 백업 테스트 **8개**
   로컬 통과. 네트워크는 테스트 대역이며 실제 IAM/KMS 성능 측정은 아니다.
+  GitHub Actions의 KMS·백업·업로드/업데이트 테스트도 **49개 통과**했다.
 - PostgreSQL 회귀는 105행을 100/5/0행으로 처리하는 경계, 행별 감사 기록,
   인증·감사 실패의 원자성, 다른 트랜잭션이 잠근 행의 건너뛰기를 검사한다.
   전체 Cargo 빌드·Clippy·DB 통합 검증은 GitHub Actions에서 실행한다.

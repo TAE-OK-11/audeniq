@@ -120,4 +120,9 @@ DB 마이그레이션, API readiness, 음원 QC·지문 결과, 같은 입력으
   분리하고, host 스크립트 실행과 target crate 컴파일 성공을 확인했다.
 
 로컬 머신은 x86이며 전체 Docker 빌드에 필요한 디스크·메모리가 부족하다.
-새 네이티브 ARM CI·전체 컨테이너 빌드·Graviton4 실기 검증은 아직 실행하지 않았다.
+전체 빌드·DB 회귀와 x86/ARM 컨테이너 검증은
+[Backend portability](https://github.com/TAE-OK-11/audeniq/actions/workflows/backend-portability.yml),
+[Foundation](https://github.com/TAE-OK-11/audeniq/actions/workflows/foundation.yml),
+[Backend image](https://github.com/TAE-OK-11/audeniq/actions/workflows/backend-image.yml)에서
+실행한다. Backend image의 수동 검증 실행은 `deploy=false`를 사용한다.
+Graviton4 실기 성능 측정은 별도로 필요하다.
