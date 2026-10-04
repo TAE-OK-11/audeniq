@@ -1,8 +1,16 @@
 import { useEffect } from 'react';
+import { Link } from '../../lib/router';
+import { useAsync } from '../../hooks/useAsync';
+import { Glyph } from '../../components/Glyph';
+import { workApi } from '../work/api';
+import { INBOX_KIND, INBOX_KINDS } from '../work/labels';
+import { PriorityChip } from '../work/ui';
+import { remaining } from '../work/sla';
+import { ago } from '../labels';
 import { useNavigate } from '../../lib/router';
 import { Icon } from '../AdminApp';
 import { DUTY_LABEL, ROLE_LABEL } from '../labels';
-import { CountUp, PageHead, useStaff } from '../ui';
+import { Chip, CountUp, PageHead, Section, useStaff } from '../ui';
 import type { Overview } from '../api';
 
 interface Tile { key: keyof Overview; label: string; hint: string; to: string; icon: string; alert?: boolean }
@@ -42,6 +50,8 @@ export function OverviewPage() {
         <div className="adm-hero-num" aria-hidden="true">{counts ? <CountUp value={urgent} /> : '–'}<small>처리 대기</small></div>
       </div>
 
+      <InboxPeek />
+
       <div className="adm-stats">
         {TILES.map(t => {
           const n = counts ? Number(counts[t.key] ?? 0) : null;
@@ -69,5 +79,42 @@ export function OverviewPage() {
         </div>
       )}
     </div>
+  );
+}
+
+/** 업무함 미리 보기 — 안 읽은 일 다섯 건과 종류별 숫자 */
+function InboxPeek() {
+  const nav = useNavigate();
+  const { work } = useStaff();
+  const { data } = useAsync(() => workApi.inbox('', true), [work?.inbox_unread]);
+  const items = (data?.items ?? []).slice(0, 5);
+  const kinds = INBOX_KINDS.filter(k => (work?.by_kind[k] ?? 0) > 0);
+  return (
+    <Section
+      title="업무함" meta={work ? `안 읽은 일 ${work.inbox_unread}건` : undefined}
+      action={<Link to="/admin/inbox" className="adm-btn soft small">업무함 열기</Link>}
+    >
+      {kinds.length > 0 && (
+        <div className="adm-codes adm-w-peek-kinds">
+          {kinds.map(k => <button key={k} type="button" className="adm-w-chip-btn" onClick={() => nav(`/admin/inbox?kind=${k}`)}><Chip tone={INBOX_KIND[k].tone}>{INBOX_KIND[k].label} {work?.by_kind[k]}</Chip></button>)}
+        </div>
+      )}
+      {items.length === 0 ? (
+        <div className="adm-alert">새로 처리할 일이 없어요. 배정·멘션·자동화 실패가 생기면 업무함에 모여요.</div>
+      ) : (
+        <div className="adm-list">
+          {items.map(i => (
+            <Link key={i.id} to={i.link} className="adm-row adm-w-inbox-row" onClick={() => { void workApi.readInbox([i.id]).catch(() => {}); }}>
+              <span className={`adm-row-icon plain adm-w-kind is-${INBOX_KIND[i.kind].tone}`} aria-hidden="true"><Glyph name={INBOX_KIND[i.kind].icon} size={20} /></span>
+              <span className="adm-min">
+                <span className="adm-row-title">{i.title}</span>
+                <span className="adm-row-meta"><span>{INBOX_KIND[i.kind].label}</span><span>{i.summary}</span></span>
+              </span>
+              <span className="adm-row-end"><PriorityChip value={i.priority} /><small>{i.due_at ? remaining(i.due_at) : ago(i.at)}</small></span>
+            </Link>
+          ))}
+        </div>
+      )}
+    </Section>
   );
 }

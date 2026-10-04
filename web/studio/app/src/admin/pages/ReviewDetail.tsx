@@ -29,6 +29,8 @@ import { contextOrReadOnly, ReviewActions } from '../ReviewActions';
 import { AgreementTermsSection } from '../AgreementTerms';
 import { ReviewClaimPanel, claimLabel } from '../ReviewClaim';
 import { useConfirm } from '../../components/Confirm';
+import { NotesPanel } from '../work/ui';
+import { TaskForm } from '../work/TaskForm';
 
 /** withdraw::WITHDRAWABLE와 같게 유지 */
 const WITHDRAWABLE = ['STAGE1_CORRECTION', 'STAGE2_REVIEW', 'STAGE2_CORRECTION', 'STAGE3_CORRECTION', 'READY_FOR_DELIVERY', 'ON_HOLD_RIGHTS'];
@@ -415,6 +417,7 @@ function ReviewSheet({ id }: { id: string }) {
   const { data: sheet, loading, error, reload } = useAsync(() => staffApi.release(id), [id]);
   const [action, setAction] = useState<DecisionAction | null>(null);
   const [modal, setModal] = useState<'proof' | 'reissue' | 'withdraw' | null>(null);
+  const [taskOpen, setTaskOpen] = useState(false);
   const [done, setDone] = useState('');
   const [showAll, setShowAll] = useState(false);
   const [timelineTick, setTimelineTick] = useState(0);
@@ -655,6 +658,8 @@ function ReviewSheet({ id }: { id: string }) {
             )}
           </Section>
 
+          <div id="rv-notes" className="adm-anchor adm-card adm-section"><NotesPanel kind="release" targetId={id} title="이 발매 내부 메모" /></div>
+
           <div id="rv-history" className="adm-anchor"><ReviewTimeline releaseId={id} revisionId={r.revision_id} refreshTick={timelineTick} /></div>
         </div>
 
@@ -685,6 +690,11 @@ function ReviewSheet({ id }: { id: string }) {
               <button type="button" className="adm-btn soft small" onClick={() => setModal('reissue')}>재발급 요청</button>
             </div>
           )}
+          <div className="adm-card">
+            <b>이 발매로 업무 만들기</b>
+            <p className="small muted" style={{ margin: '6px 0 12px' }}>권리 확인·DSP 문의처럼 심사와 따로 챙길 일을 담당자에게 넘겨요.</p>
+            <button type="button" className="adm-btn soft small" onClick={() => setTaskOpen(true)}>업무 만들기</button>
+          </div>
           <div className="adm-card adm-id-card">
             <dl className="adm-kv" style={{ gridTemplateColumns: '1fr' }}>
               <div><dt>발매 ID</dt><dd><span className="adm-code">{r.id}</span></dd></div>
@@ -712,6 +722,11 @@ function ReviewSheet({ id }: { id: string }) {
       {modal === 'proof' && (
         <Modal title="권리 증빙 요청" onClose={() => setModal(null)} dismissible={false}>
           <ProofForm sheet={sheet} onDone={() => after('권리 증빙을 요청했어요.')} />
+        </Modal>
+      )}
+      {taskOpen && (
+        <Modal title="새 업무" onClose={() => setTaskOpen(false)} dismissible={false} modalClass="adm-w-modal">
+          <TaskForm initial={{ type: 'RELEASE', title: `${r.title} `, related: [{ kind: 'release', id, label: r.title }] }} onSaved={() => { toast('업무함과 업무 목록에서 확인할 수 있어요.', 'info'); }} />
         </Modal>
       )}
       {modal === 'withdraw' && (

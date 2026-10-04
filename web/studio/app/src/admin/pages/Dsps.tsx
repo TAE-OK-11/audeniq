@@ -3,6 +3,7 @@
 import { Link } from '../../lib/router';
 import { useAsync } from '../../hooks/useAsync';
 import { staffApi } from '../api';
+import { DSP_TABS } from '../work/labels';
 import { reqsFor } from '../dspReqs';
 import { Chip, Empty, ErrorBox, PageHead, Skeleton, SubTabs } from '../ui';
 
@@ -18,7 +19,7 @@ export function Dsps() {
         sub="플랫폼별 요구 조건과 연결 상태예요. 문제가 있으면 빨간색으로 표시돼요."
         actions={<button type="button" className="adm-btn soft small" onClick={() => { reload(); blocked.reload(); }}>새로고침</button>}
       />
-      <SubTabs tabs={[{ to: '/admin/deliveries', label: '배급 현황' }, { to: '/admin/dsps', label: '플랫폼별 조건' }]} />
+      <SubTabs tabs={DSP_TABS} />
       {error && <ErrorBox message={error} onRetry={reload} />}
       {loading && !data ? <Skeleton rows={3} /> : items.length === 0 ? <Empty title="플랫폼 정보가 없어요" /> : (
         <div className="adm-dsp-grid">
