@@ -17,6 +17,7 @@ trap 'rm -rf -- "$task_work"' EXIT
 git -C "$task_repo_root" show "$task_base:crates/core/src/fingerprint.rs" > "$task_work/baseline-fingerprint.rs"
 cp "$task_repo_root/crates/core/src/fingerprint.rs" "$task_work/updated-fingerprint.rs"
 cp "$task_repo_root/crates/core/src/parser_sandbox.rs" "$task_work/parser_sandbox.rs"
+cp "$task_repo_root/crates/core/src/analyzer_process.rs" "$task_work/analyzer_process.rs"
 cp "$task_repo_root/scripts/benchmark-fingerprint-review.rs" "$task_work/benchmark.rs"
 rustc --edition=2024 -O "$task_work/benchmark.rs" --extern "rustfft=$task_fft_rlib" --extern "libc=$task_libc_rlib" \
     -L "dependency=$task_target_dir/debug/deps" -o "$task_work/benchmark"
