@@ -7,6 +7,8 @@ import type {
   TaskQuery, WorkNote, WorkTask,
 } from './types';
 import type { WorkApi } from './api';
+import { makeOps, mockExceptions } from './mockOps';
+import { makeCrm } from './mockCrm';
 
 const ME = 'staff-me-0001';
 const KIM = 'staff-kim-0002';
@@ -300,4 +302,6 @@ export const mockWork: WorkApi = {
     return wait(id);
   },
   attachmentUrl: () => '',
+  ...makeOps({ me: ME, tasks, notes, createTask: i => mockWork.createTask(i) }),
+  ...makeCrm({ me: ME, others: [KIM, TAE], resolve, exceptions: mockExceptions }),
 };

@@ -144,6 +144,13 @@ REVOKE UPDATE,DELETE,TRUNCATE ON operations.audit_events FROM audeniq_api,audeni
 GRANT USAGE ON SCHEMA work TO audeniq_api;
 GRANT SELECT,INSERT,UPDATE ON ALL TABLES IN SCHEMA work TO audeniq_api;
 GRANT USAGE,SELECT ON SEQUENCE work.task_seq TO audeniq_api;
+-- Phase 2 (0078): holidays are calendar settings, removed by ADMIN (audited).
+-- Staff read delivery results across workspaces (RLS app.staff policy) for the
+-- exception queue; reconciliation cases are read-only for the API.
+GRANT DELETE ON work.calendar_holidays TO audeniq_api;
+-- Phase 3 (0079): contact history is append-only (trigger too).
+REVOKE UPDATE ON work.relationship_activities FROM audeniq_api;
+GRANT SELECT ON execution.reconciliation_cases,execution.delivery_attempts,execution.ack_events TO audeniq_api;
 -- Runtime timeouts as role defaults: they apply to every server connection,
 -- including the ones PgBouncer opens in transaction pooling mode, where the
 -- per-connection SET in database::connect cannot survive.
