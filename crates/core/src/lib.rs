@@ -63,6 +63,7 @@ pub mod states {
 mod analyzer_process;
 mod audio_header;
 pub mod launch;
+pub mod live;
 mod local_analyzer;
 pub mod lossless;
 mod media_budget;

@@ -5,6 +5,7 @@ import { useProfile } from '../store/profile';
 import { useUnreadCount } from '../store/support';
 import { useConfirm } from './Confirm';
 import { useToast } from './Toast';
+import { LIVE_NOTICE_EVENT } from '../lib/liveEvents';
 import { prefetchCommonRoutes, prefetchRoute } from '../routes';
 import { useScrollReveal } from '../hooks/useScrollReveal';
 import { Glyph } from './Glyph';
@@ -68,6 +69,20 @@ export function Layout({ children }: { children: ReactNode }) {
   const profile = useProfile();
   const unread = useUnreadCount();
   const [menuOpen, setMenuOpen] = useState(false);
+  // 실시간으로 들어온 새 알림 — 화면을 보고 있으면 토스트로, 누르면 해당 화면으로
+  useEffect(() => {
+    const on = (e: Event) => {
+      const n = (e as CustomEvent<{ title: string }>).detail;
+      if (n?.title) toast(n.title, 'info');
+    };
+    window.addEventListener(LIVE_NOTICE_EVENT, on);
+    return () => window.removeEventListener(LIVE_NOTICE_EVENT, on);
+  }, [toast]);
+  // 탭 제목에 읽지 않은 알림 수
+  useEffect(() => {
+    const base = document.title.replace(/^\(\d+\+?\) /, '');
+    document.title = unread ? `(${unread > 99 ? '99+' : unread}) ${base}` : base;
+  }, [unread, loc.pathname]);
   const [menuClosing, setMenuClosing] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const closeTimer = useRef<number | null>(null);

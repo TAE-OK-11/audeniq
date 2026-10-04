@@ -5,6 +5,7 @@ import { Glyph } from '../../components/Glyph';
 import { workApi } from '../work/api';
 import { ENTITY_KIND } from '../work/labels';
 import { ago } from '../labels';
+import { ADMIN_WORK_EVENT } from '../liveEvents';
 import { useNavigate } from '../../lib/router';
 import { Icon } from '../AdminApp';
 import { DUTY_LABEL, ROLE_LABEL } from '../labels';
@@ -82,7 +83,11 @@ export function OverviewPage() {
 
 /** 나를 언급한 내부 메모 (해결 전) — 업무함(Phase 2)이 생기기 전까지 오늘의 업무에서 바로 본다 */
 function MentionsPeek() {
-  const { data } = useAsync(() => workApi.mentions(), []);
+  const { data, reload } = useAsync(() => workApi.mentions(), []);
+  useEffect(() => {
+    window.addEventListener(ADMIN_WORK_EVENT, reload);
+    return () => window.removeEventListener(ADMIN_WORK_EVENT, reload);
+  }, [reload]);
   const items = (data?.items ?? []).slice(0, 5);
   if (!data || items.length === 0) return null;
   const link = (kind: string, id: string) => (kind === 'task' ? `/admin/tasks/${id}` : kind === 'release' ? `/admin/reviews/${id}` : kind === 'inquiry' ? `/admin/inquiries/${id}` : null);

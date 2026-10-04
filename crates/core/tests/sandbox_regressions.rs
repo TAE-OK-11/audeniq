@@ -2030,3 +2030,195 @@ async fn stage1_hold_parks_release_until_override_but_warning_does_not(pool: PgP
     assert_eq!(run_one(&e, "rights", "stage2").await, "SUCCEEDED");
     assert_eq!(release_status(&e, second).await, "STAGE2_PASSED");
 }
+
+/// Production 2026-10: every staff call writes `privacy.staff_access_logs`
+/// with `ON CONFLICT(...) DO NOTHING`, which needs SELECT on the conflict
+/// columns. With INSERT alone every staff endpoint was a 500 under the real
+/// `audeniq_api` role (the owner-connected suites never saw it). Also covers
+/// the internal work module, whose tables are granted in deploy/grants.sql.
+#[sqlx::test]
+async fn staff_endpoints_work_under_split_roles(pool: PgPool) {
+    let e = env(pool).await;
+    let u = user(&e.api).await;
+    sqlx::query(
+        "INSERT INTO identity.staff_members(user_id,role,granted_by) VALUES($1,'ADMIN','test-operator')",
+    )
+    .bind(u.user)
+    .execute(&e.owner)
+    .await
+    .unwrap();
+    let me = ok(&e.api, "GET", "/api/staff/me", json!({}), &u).await;
+    assert_eq!(me["role"], "ADMIN");
+    ok(&e.api, "GET", "/api/staff/overview", json!({}), &u).await;
+    ok(&e.api, "GET", "/api/staff/inquiries", json!({}), &u).await;
+    // the access log row is there, and the API role still cannot read its content
+    let n: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM privacy.staff_access_logs WHERE actor_user_id=$1")
+            .bind(u.user)
+            .fetch_one(&e.owner)
+            .await
+            .unwrap();
+    assert!(n >= 3);
+    let mut c = e.owner.acquire().await.unwrap();
+    sqlx::query("SET ROLE audeniq_api")
+        .execute(&mut *c)
+        .await
+        .unwrap();
+    assert!(
+        sqlx::query("SELECT occurred_at FROM privacy.staff_access_logs LIMIT 1")
+            .execute(&mut *c)
+            .await
+            .is_err()
+    );
+    sqlx::query("RESET ROLE").execute(&mut *c).await.unwrap();
+    drop(c);
+
+    let t = ok(
+        &e.api,
+        "POST",
+        "/api/staff/work/tasks",
+        json!({"title": "분할 권한 확인", "type": "GENERAL", "priority": "NORMAL", "assignee_id": u.user}),
+        &u,
+    )
+    .await;
+    let id = t["task"]["id"].as_str().unwrap().to_string();
+    ok(&e.api, "GET", "/api/staff/work/tasks", json!({}), &u).await;
+    ok(
+        &e.api,
+        "POST",
+        "/api/staff/work/notes",
+        json!({"target_kind": "task", "target_id": id, "body": "메모"}),
+        &u,
+    )
+    .await;
+    ok(&e.api, "GET", "/api/staff/work/mentions", json!({}), &u).await;
+
+    // Phase 2 reads every exception source, the SLA queues and the inbox
+    // across workspaces under the same role.
+    let job = Uuid::new_v4();
+    sqlx::query("INSERT INTO operations.jobs(id,queue,kind,payload,status,idempotency_key,last_error,dead_lettered_at)
+                 VALUES($1,'qc','stage1','{}','DEAD_LETTER',$2,'boom',now())")
+        .bind(job)
+        .bind(format!("t:{job}"))
+        .execute(&e.owner)
+        .await
+        .unwrap();
+    let ex = ok(&e.api, "GET", "/api/staff/work/exceptions", json!({}), &u).await;
+    assert!(ex["total"].as_u64().unwrap() >= 1, "{ex}");
+    ok(
+        &e.api,
+        "POST",
+        &format!("/api/staff/work/exceptions/job/{job}"),
+        json!({"action": "ACK"}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "POST",
+        &format!("/api/staff/work/exceptions/job/{job}"),
+        json!({"action": "TO_TASK"}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "POST",
+        "/api/staff/work/exceptions/reports",
+        json!({"kind": "SETTLEMENT_MISMATCH", "severity": "LOW", "title": "수동 보고", "detail": ""}),
+        &u,
+    )
+    .await;
+    let inbox = ok(&e.api, "GET", "/api/staff/work/inbox", json!({}), &u).await;
+    let first = inbox["items"][0]["id"].clone();
+    ok(
+        &e.api,
+        "POST",
+        "/api/staff/work/inbox/read",
+        json!({"ids": [first]}),
+        &u,
+    )
+    .await;
+    ok(&e.api, "GET", "/api/staff/work/summary", json!({}), &u).await;
+    let sla = ok(&e.api, "GET", "/api/staff/work/sla", json!({}), &u).await;
+    let pid = sla["policies"][0]["id"].clone();
+    let mut p = sla["policies"][0].clone();
+    p.as_object_mut().unwrap().remove("updated_at");
+    p["id"] = pid;
+    ok(&e.api, "POST", "/api/staff/work/sla/policies", p, &u).await;
+    ok(
+        &e.api,
+        "POST",
+        "/api/staff/work/calendars/KR_BUSINESS/holidays",
+        json!({"day": "2099-05-05", "name": "어린이날"}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "POST",
+        "/api/staff/work/calendars/KR_BUSINESS/holidays",
+        json!({"day": "2099-05-05"}),
+        &u,
+    )
+    .await;
+
+    // Phase 3: CRM over source records and the DSP operations board.
+    let rel = ok(
+        &e.api,
+        "POST",
+        "/api/staff/work/relationships",
+        json!({"kind": "ORG", "entity_kind": "org", "entity_id": u.org.to_string(), "owner_id": u.user}),
+        &u,
+    )
+    .await;
+    let rid = rel["relationship"]["id"].as_str().unwrap().to_string();
+    ok(
+        &e.api,
+        "POST",
+        &format!("/api/staff/work/relationships/{rid}/contacts"),
+        json!({"name": "담당자"}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "POST",
+        &format!("/api/staff/work/relationships/{rid}/activities"),
+        json!({"kind": "CALL", "summary": "통화"}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "POST",
+        "/api/staff/work/relationships",
+        json!({"kind": "DSP", "entity_kind": "dsp", "entity_id": "D-5"}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "GET",
+        "/api/staff/work/relationships",
+        json!({}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "GET",
+        "/api/staff/work/dsp-ops?dsp=D-5",
+        json!({}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "POST",
+        &format!("/api/staff/work/relationships/{rid}/archive"),
+        json!({}),
+        &u,
+    )
+    .await;
+}

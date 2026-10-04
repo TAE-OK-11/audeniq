@@ -187,7 +187,40 @@ Phase 1 (task engine, notes, mentions):
 | `GET /mentions?resolved=` | Notes mentioning the caller, with the target's label |
 | `POST /attachments {name,content_type,size_bytes}` → `{id, grant}` · `POST /attachments/{id}/complete` · `GET /attachments/{id}` | Same path as studio uploads: presigned PUT to quarantine, completion checks size/type/nonce, freezes, hashes and runs the antivirus scan when enabled. ≤ 20 MiB, documents/images/spreadsheets/zip. Downloads are `attachment` only and audited |
 
-Phases 2–4 (inbox, SLA, exception queue, CRM Lite, DSP operations, analytics) are specified in the plan and not yet served.
+Phase 2 (inbox, SLA, exception queue — migration `0078`). Inbox items and queue deadlines are computed from the
+sources (tasks, release review claims, second approvals, document review, inquiries, notes, exception sources); only read
+marks and triage are stored.
+
+| Method & path | Purpose |
+|---|---|
+| `GET /inbox?category=&type=&priority=&unread=&due=overdue\|today\|week&entity_kind=` | Everything waiting on the caller: `ASSIGNED, REVIEW_REQUEST, APPROVAL_REQUEST, MENTION, FAILED_AUTOMATION, SLA_WARNING, OVERDUE, SUPPORT_ESCALATION, RIGHTS_ISSUE, DISTRIBUTION_FAILURE, EXCEPTION`, with counts. Item ids carry a version (`task:{id}@{row_version}`), so a changed item is unread again |
+| `POST /inbox/read {ids}` | Mark items read (≤ 500) |
+| `GET /summary` | Navigation badges: inbox total/unread, overdue, SLA warnings, open/mine/critical exceptions |
+| `GET /sla` | Policies, calendars with holidays, deadline board of the existing queues, open tasks with deadlines. Also runs the escalation sweep: an open task past its deadline (earlier of `due_at` and `sla_due_at`) goes to level 1 (priority raised one step once, when the policy says so) and, overdue by another full window, level 2 — each recorded as a `SLA_ESCALATED` task event and audited; the inbox shows it to the policy's `escalate_to` role |
+| `POST /sla/policies` · `POST /sla/policies/{id}/archive` | ADMIN: create/update (`id` present) a policy for a task type or queue (`RELEASE_REVIEW, SECOND_APPROVAL, DOCUMENT_REVIEW, SUPPORT_INQUIRY, EXCEPTION`), optionally `scope_kind: dsp` + D-code; one active policy per type and scope (`SLA_POLICY_EXISTS`) · archive |
+| `POST /calendars/{id}` · `POST /calendars/{id}/holidays {day, name?}` | ADMIN: working hours and workdays · add/rename a holiday, or remove it without `name`. Business time skips nights, non-working days and holidays |
+| `GET /exceptions?view=open\|mine\|unassigned\|resolved\|all&kind=&severity=&source=&dsp=&q=` | Current failures from the sources (`check, staging, document, rights_hold, reconciliation, delivery_job, report, job, manual`) with triage, SLA and whether the caller may act |
+| `POST /exceptions/{source}/{id} {action}` | `ASSIGN {assignee_id}` · `ACK` · `RESOLVE {resolution?}` · `IGNORE {resolution}` · `REOPEN` · `RETRY` (delivery sources only: the existing restage, ≤ once per 2 min) · `TO_TASK {title?, priority?, assignee_id?}` (typed, prioritised by severity, linked to the entity, once). Duty of the source: QC → REVIEW, rights proofs → DOCUMENTS, delivery → DELIVERY, settlement/automation → ADMIN. Resolved/ignored items come back when the source fails again |
+| `POST /exceptions/reports {kind, severity, title, detail, entity_kind?, entity_id?}` | Report a problem with no source record (e.g. a settlement mismatch) |
+
+Tasks also carry `sla_due_at`, `deadline`, `sla_state` (`OK\|WARNING\|BREACHED`), `escalation_level`, `priority_raised`.
+
+Phase 3 (CRM Lite, DSP operations — migration `0079`). A relationship points at the source record (`artist, label,
+dsp, org`); only a partner/prospect without one keeps its own name and a hand-tracked contract status. Names, contract
+status (workspace distribution agreements, DSP contract route/onboarding), releases and delivery numbers are read from the
+sources. Inbox category `CONTACT_DUE`: relationships the caller owns whose next contact has come.
+
+| Method & path | Purpose |
+|---|---|
+| `GET /relationships?kind=&status=&owner=&contact=due\|week&q=&archived=` · `POST /relationships` | List (with derived contract, last contact, open tasks, notes, primary contact, counts by kind) · create (`kind` must match the entity; one active relationship per record: `RELATIONSHIP_EXISTS`; `NAME_FROM_SOURCE` / `CONTRACT_FROM_SOURCE` when a source exists) |
+| `GET /relationships/{id}` · `POST /relationships/{id}` | Detail: contacts, contact history, linked records, the workspace's releases and agreements · update with `row_version` (owner, status, next contact, tags; name / manual contract only without a source) |
+| `POST /relationships/{id}/archive` | ADMIN only |
+| `POST /relationships/{id}/contacts` · `POST /relationship-contacts/{id}` | Add · edit or archive (`archived: true`) a contact; first contact is primary |
+| `POST /relationships/{id}/activities {kind: CALL\|EMAIL\|MEETING\|NOTE, summary, at?, contact_id?, next_contact_at?}` | Log contact history (append-only); "last contact" is the latest entry |
+| `POST /relationships/{id}/links` · `POST /relationships/{id}/links/{link}/archive` | Link / unlink related records. Notes (`target_kind=relationship`) and tasks link to relationships like any entity |
+| `GET /dsp-ops?dsp=` | Per DSP: registry, contract route and onboarding (same as `/api/staff/dsps`), last 30 days of delivery jobs (total, delivered, failed, in flight, failure rate, partner rejections, average minutes), staging pending/blocked, open exceptions, the CRM relationship and DSP-scoped SLA policies; with `dsp`, that DSP's recent failures and open exceptions |
+
+Phase 4 (analytics) is specified in the plan and not yet served.
 
 ## Partner webhooks (`/api/partner-hooks/*`)
 

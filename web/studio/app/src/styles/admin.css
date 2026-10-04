@@ -1032,3 +1032,5 @@ a.adm-row,button.adm-row,.adm-stat,.adm-track summary,.adm-filter,.adm-pick,.adm
 .adm-terms-checks li{display:flex;gap:6px;color:var(--adm-muted)}
 .adm-terms-checks li.is-on{color:var(--adm-ink)}
 .adm-terms-checks li span{flex:none;width:12px;color:var(--adm-blue)}
+/* 브라우저 알림 켜기 (헤더) */
+.adm-alert-toggle.is-on{color:var(--adm-blue);background:var(--adm-blue-soft)}

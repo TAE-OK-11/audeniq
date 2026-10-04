@@ -1,5 +1,5 @@
 // 문의 답변 — 작업 공간 전체의 문의를 보고 담당자 답변을 남긴다 (답변하면 ANSWERED + 작성자 알림).
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from '../../lib/router';
 import { useToast } from '../../components/Toast';
 import { errorMessage } from '../../api/errors';
@@ -11,6 +11,16 @@ import { Glyph } from '../../components/Glyph';
 import { Modal } from '../../components/Modal';
 import { NotesPanel } from '../work/ui';
 import { TaskForm } from '../work/TaskForm';
+import { ADMIN_INQUIRIES_EVENT } from '../liveEvents';
+
+/** 실시간 연결로 문의가 바뀌면 부른다 (id가 없으면 모두) */
+function useInquiryChanged(fn: (id: string | null) => void) {
+  useEffect(() => {
+    const on = (e: Event) => fn((e as CustomEvent<{ inquiryId: string | null }>).detail?.inquiryId ?? null);
+    window.addEventListener(ADMIN_INQUIRIES_EVENT, on);
+    return () => window.removeEventListener(ADMIN_INQUIRIES_EVENT, on);
+  }, [fn]);
+}
 
 const STATUSES = ['OPEN', 'ANSWERED', 'CLOSED'] as const;
 const TEMPLATES: { label: string; text: string }[] = [
@@ -31,6 +41,7 @@ function Thread({ id, onReplied }: { id: string; onReplied: () => void }) {
 
   const paneRef = useRef<HTMLElement>(null);
   useEffect(() => { setBody(''); }, [id]);
+  useInquiryChanged(useCallback((changed: string | null) => { if (!changed || changed === id) reload(); }, [id, reload]));
   // 목록 아래에 대화가 쌓이는 좁은 화면에서는 문의를 누르면 대화로 내려간다
   const loaded = !!data;
   useEffect(() => {
@@ -134,6 +145,7 @@ export function Inquiries() {
   const status = (params.get('status') as typeof STATUSES[number]) || 'OPEN';
   const { refreshCounts } = useStaff();
   const { data, loading, error, reload } = useAsync(() => staffApi.inquiries(status), [status]);
+  useInquiryChanged(useCallback(() => reload(), [reload]));
   const items = data?.items ?? [];
   const go = (to: string) => nav(`${to}?status=${status}`, { replace: true });
 

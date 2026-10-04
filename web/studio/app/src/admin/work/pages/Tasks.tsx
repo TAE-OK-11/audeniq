@@ -33,7 +33,7 @@ function TaskRow({ t, people }: { t: WorkTask; people: People }) {
       </span>
       <span className="adm-row-end">
         <span className="adm-codes"><PriorityChip value={t.priority} /><TaskStatusChip value={t.status} /></span>
-        <DueChip due={t.due_at} closed={closed(t)} />
+        <DueChip due={t.deadline ?? t.due_at} closed={closed(t)} />
       </span>
     </Link>
   );
@@ -48,12 +48,12 @@ function Board({ items, people }: { items: WorkTask[]; people: People }) {
           <section key={s} className="adm-w-col" aria-label={TASK_STATUS[s][0]}>
             <h3>{TASK_STATUS[s][0]}<b className="adm-count">{col.length}</b></h3>
             {col.length === 0 ? <p className="adm-w-col-empty">없음</p> : col.map(t => (
-              <Link key={t.id} to={`/admin/tasks/${t.id}`} className={`adm-w-card${t.overdue ? ' is-late' : ''}`}>
+              <Link key={t.id} to={`/admin/tasks/${t.id}`} className={`adm-w-card${t.overdue || t.sla_state === 'BREACHED' ? ' is-late' : ''}`}>
                 <span className="adm-w-card-top"><span className="adm-w-key">{t.key}</span><PriorityChip value={t.priority} /></span>
                 <b>{t.title}</b>
                 <span className="adm-w-card-foot">
                   <Person id={t.assignee_id} people={people} />
-                  <DueChip due={t.due_at} />
+                  <DueChip due={t.deadline ?? t.due_at} />
                 </span>
               </Link>
             ))}
