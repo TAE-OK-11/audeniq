@@ -117,13 +117,14 @@ export const DELIVERY_TABS = [
 ];
 
 /** 업무 허브 — 업무함 · 업무 · 예외 처리 · 관계 관리 · SLA를 한 메뉴 안의 탭으로 */
-export const WORK_PATHS = ['/admin/inbox', '/admin/tasks', '/admin/exceptions', '/admin/crm', '/admin/sla'];
+export const WORK_PATHS = ['/admin/inbox', '/admin/tasks', '/admin/board', '/admin/exceptions', '/admin/crm', '/admin/sla'];
 export function WorkTabs() {
   const { work } = useStaff();
   return (
     <SubTabs tabs={[
       { to: '/admin/inbox', label: '업무함', count: work?.inbox.unread },
       { to: '/admin/tasks', label: '업무', count: work?.overdue },
+      { to: '/admin/board', label: '보드' },
       { to: '/admin/exceptions', label: '예외 처리', count: work?.exceptions.open },
       { to: '/admin/crm', label: '관계 관리' },
       { to: '/admin/sla', label: 'SLA·마감', count: work?.sla_warning },

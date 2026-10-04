@@ -9,7 +9,7 @@ export type WorkType =
 
 /** 업무·메모가 가리킬 수 있는 AUDENIQ Entity. 이름은 서버가 원천 테이블에서 읽어 준다(저장하지 않음). */
 export type EntityKind =
-  | 'release' | 'org' | 'artist' | 'label' | 'dsp' | 'inquiry' | 'document' | 'payout' | 'settlement_report' | 'task' | 'relationship';
+  | 'release' | 'org' | 'artist' | 'label' | 'dsp' | 'inquiry' | 'document' | 'payout' | 'settlement_report' | 'task' | 'relationship' | 'channel';
 
 export interface EntityRef {
   kind: EntityKind;
@@ -209,6 +209,7 @@ export interface InboxPage {
   unread: number;
 }
 export interface WorkSummary {
+  chat?: { unread: number };
   inbox: { total: number; unread: number };
   overdue: number;
   sla_warning: number;
@@ -353,3 +354,17 @@ export interface DspOpsItem {
   [k: string]: unknown;
 }
 export interface DspOps { items: DspOpsItem[]; window_days: number; live_transmission: boolean }
+
+// ---------- 팀 대화 (채널) — 메시지는 내부 메모(work.notes, target_kind='channel') ----------
+export interface Channel {
+  id: string;
+  name: string;
+  topic: string;
+  created_by: string | null;
+  created_at: string;
+  archived_at: string | null;
+  last_read_at?: string | null;
+  last_message_at?: string | null;
+  unread?: number;
+  mentions?: number;
+}

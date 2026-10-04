@@ -51,6 +51,7 @@ export const ENTITY_KIND: Record<EntityKind, { label: string; icon: string }> = 
   settlement_report: { label: '정산 리포트', icon: 'won' },
   task: { label: '업무', icon: 'task' },
   relationship: { label: '관계(CRM)', icon: 'users' },
+  channel: { label: '팀 대화', icon: 'inquiry' },
 };
 /** 연결할 때 고르는 순서 */
 export const LINK_KINDS: EntityKind[] = ['release', 'artist', 'label', 'org', 'document', 'dsp', 'inquiry', 'settlement_report', 'payout', 'task', 'relationship'];
@@ -65,6 +66,7 @@ export function entityLink(kind: EntityKind, id: string): string | null {
     case 'payout': return '/admin/payouts';
     case 'task': return `/admin/tasks/${id}`;
     case 'relationship': return `/admin/crm/${id}`;
+    case 'channel': return `/admin/chat/${id}`;
     default: return null;
   }
 }

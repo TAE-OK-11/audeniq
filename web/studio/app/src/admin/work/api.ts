@@ -6,7 +6,7 @@ import type {
   EntityKind, EntityRef, NoteInput, NoteRevision, StaffPerson, TaskDetail, TaskInput, TaskPatch, TaskQuery,
   WorkNote, WorkTask, LinkInput, InboxPage, InboxQuery, WorkSummary, ExceptionPage, ExceptionQuery,
   ExceptionActInput, ExceptionItem, ExceptionReportInput, SlaOverview, SlaPolicyInput,
-  ActivityInput, ContactInput, DspOps, RelInput, RelPatch, RelQuery, Relationship, RelationshipDetail,
+  Channel, ActivityInput, ContactInput, DspOps, RelInput, RelPatch, RelQuery, Relationship, RelationshipDetail,
 } from './types';
 
 interface Page<T> { items: T[] }
@@ -75,6 +75,16 @@ const remote = {
   linkRelationship: (relId: string, body: LinkInput) => req<RelationshipDetail>(`${B}/relationships/${id(relId)}/links`, { method: 'POST', body }),
   unlinkRelationship: (relId: string, linkId: string) => req<RelationshipDetail>(`${B}/relationships/${id(relId)}/links/${id(linkId)}/archive`, { method: 'POST' }),
   dspOps: (dsp?: string) => req<DspOps>(`${B}/dsp-ops${qs({ dsp })}`),
+
+  // 팀 대화
+  channels: (archived = false) => req<Page<Channel>>(`${B}/channels${qs({ archived })}`),
+  createChannel: (body: { name: string; topic: string }) => req<Channel>(`${B}/channels`, { method: 'POST', body }),
+  updateChannel: (chId: string, body: { name: string; topic: string }) => req<Channel>(`${B}/channels/${id(chId)}`, { method: 'POST', body }),
+  archiveChannel: (chId: string) => req<Channel>(`${B}/channels/${id(chId)}/archive`, { method: 'POST' }),
+  readChannel: (chId: string) => req<{ read: string }>(`${B}/channels/${id(chId)}/read`, { method: 'POST' }),
+  /** 최근 메시지부터 (화면에는 오래된 순) — before로 더 이전 */
+  messages: (chId: string, before?: string, latest = 60) =>
+    req<{ items: WorkNote[]; has_more: boolean }>(`${B}/notes${qs({ target_kind: 'channel', target_id: chId, latest, before })}`),
 
   attachmentUrl: (attId: string) => `${(import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '')}${B}/attachments/${id(attId)}`,
 };

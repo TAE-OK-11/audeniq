@@ -30,6 +30,8 @@ const PAGE_LOADERS = {
   Exceptions: () => import('./work/pages/Exceptions'),
   Sla: () => import('./work/pages/Sla'),
   Crm: () => import('./work/pages/Crm'),
+  Chat: () => import('./work/pages/Chat'),
+  Board: () => import('./work/pages/Tasks'),
   CrmDetail: () => import('./work/pages/Crm'),
   DspOps: () => import('./work/pages/DspOps'),
 } satisfies Record<string, () => Promise<unknown>>;
@@ -50,6 +52,8 @@ const Inbox = page('Inbox');
 const Exceptions = page('Exceptions');
 const Sla = page('Sla');
 const Crm = page('Crm');
+const Chat = page('Chat');
+const Board = page('Board');
 const CrmDetail = page('CrmDetail');
 const DspOps = page('DspOps');
 function prefetchPages() {
@@ -70,7 +74,7 @@ import type { WorkSummary } from './work/types';
 const ICONS: Record<string, string> = {
   home: 'home', review: 'review', approval: 'approval', doc: 'doc', inquiry: 'inquiry',
   delivery: 'truck', dsp: 'globe', payout: 'card',
-  task: 'task', inbox: 'bell', exception: 'warning', sla: 'clock', crm: 'users',
+  task: 'task', inbox: 'bell', exception: 'warning', sla: 'clock', crm: 'users', chat: 'inquiry',
 };
 
 export function Icon({ name }: { name: string }) {
@@ -85,6 +89,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
     items: [
       // 업무함 · 업무 · 예외 처리 · 관계 관리 · SLA는 한 메뉴(업무) 안의 탭
       { to: '/admin/inbox', label: '업무', icon: 'task', count: (_, w) => w?.inbox.unread ?? 0, hot: true, also: WORK_PATHS },
+      { to: '/admin/chat', label: '팀 대화', icon: 'chat', count: (_, w) => w?.chat?.unread ?? 0 },
     ],
   },
   {
@@ -290,6 +295,9 @@ export function AdminApp() {
               <Route path="/admin/crm/:id" element={<CrmDetail />} />
               <Route path="/admin/dsp-ops" element={<DspOps />} />
               <Route path="/admin/tasks" element={<Tasks />} />
+              <Route path="/admin/board" element={<Board />} />
+              <Route path="/admin/chat" element={<Chat />} />
+              <Route path="/admin/chat/:id" element={<Chat />} />
               <Route path="/admin/tasks/:id" element={<TaskDetail />} />
               <Route path="/admin/payouts" element={me.role === 'ADMIN' ? <Payouts /> : <Navigate to="/admin" replace />} />
               <Route path="/admin/content" element={me.role === 'ADMIN' ? <ContentAdmin /> : <Navigate to="/admin" replace />} />
