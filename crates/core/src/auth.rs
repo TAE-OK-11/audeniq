@@ -27,7 +27,13 @@ pub struct Credentials {
     pub password: String,
 }
 pub fn hash_token(s: &str) -> Vec<u8> {
-    Sha256::digest(s.as_bytes()).to_vec()
+    token_digest(s).to_vec()
+}
+pub(crate) fn token_digest(s: &str) -> [u8; 32] {
+    Sha256::digest(s.as_bytes()).into()
+}
+pub(crate) fn secret_matches_digest(provided: &str, expected: &[u8; 32]) -> bool {
+    token_digest(provided).ct_eq(expected).into()
 }
 pub fn random_token() -> String {
     let mut bytes = [0u8; 32];
@@ -37,7 +43,7 @@ pub fn random_token() -> String {
     hex::encode(bytes)
 }
 pub fn secret_eq(a: &str, b: &str) -> bool {
-    hash_token(a).ct_eq(&hash_token(b)).into()
+    token_digest(a).ct_eq(&token_digest(b)).into()
 }
 pub fn origin(headers: &HeaderMap, config: &Config) -> Result<()> {
     if headers.get("origin").and_then(|v| v.to_str().ok()) != Some(config.origin.as_str()) {
@@ -214,27 +220,30 @@ fn credentials(c: &Credentials) -> Result<String> {
     }
     Ok(email)
 }
-pub async fn password_hash(password: String) -> Result<String> {
-    tokio::task::spawn_blocking(move || {
-        Argon2::default()
-            // Random 16-byte salt from the OS RNG (password-hash 0.6 default).
-            .hash_password(password.as_bytes())
-            .map(|h| h.to_string())
-            .map_err(|_| Error::Internal)
-    })
-    .await
-    .map_err(|_| Error::Internal)?
+fn hash_password(password: String) -> Result<String> {
+    Argon2::default()
+        // Random 16-byte salt from the OS RNG (password-hash 0.6 default).
+        .hash_password(password.as_bytes())
+        .map(|h| h.to_string())
+        .map_err(|_| Error::Internal)
 }
-async fn verify(password: String, hash: String) -> bool {
-    tokio::task::spawn_blocking(move || {
-        PasswordHash::new(&hash).is_ok_and(|h| {
-            Argon2::default()
-                .verify_password(password.as_bytes(), &h)
-                .is_ok()
-        })
+pub async fn password_hash(password: String) -> Result<String> {
+    tokio::task::spawn_blocking(move || hash_password(password))
+        .await
+        .map_err(|_| Error::Internal)?
+}
+fn verify_password(password: &str, hash: &str) -> bool {
+    PasswordHash::new(hash).is_ok_and(|h| {
+        Argon2::default()
+            .verify_password(password.as_bytes(), &h)
+            .is_ok()
     })
-    .await
-    .unwrap_or(false)
+}
+#[cfg(test)]
+async fn verify(password: String, hash: String) -> bool {
+    tokio::task::spawn_blocking(move || verify_password(&password, &hash))
+        .await
+        .unwrap_or(false)
 }
 pub async fn register(s: &AppState, h: &HeaderMap, input: Credentials) -> Result<Json<Value>> {
     origin(h, &s.config)?;
@@ -249,13 +258,16 @@ pub async fn register(s: &AppState, h: &HeaderMap, input: Credentials) -> Result
         REGISTER_PER_ACCOUNT,
     )
     .await?;
-    let _permit = s
+    let permit = s
         .password_slots
-        .acquire()
+        .clone()
+        .acquire_owned()
         .await
         .map_err(|_| Error::Internal)?;
-    let hash = password_hash(input.password).await?;
-    drop(_permit);
+    let (_, hash) = crate::password_work::run(permit, move || hash_password(input.password))
+        .await
+        .map_err(|_| Error::Internal)?;
+    let hash = hash?;
     let mut tx = s.pool.begin().await?;
     let user = Uuid::new_v4();
     let org = Uuid::new_v4();
@@ -311,9 +323,10 @@ pub async fn login(
         LOGIN_PER_ACCOUNT,
     )
     .await?;
-    let _permit = s
+    let permit = s
         .password_slots
-        .acquire()
+        .clone()
+        .acquire_owned()
         .await
         .map_err(|_| Error::Internal)?;
     let row = sqlx::query("SELECT id,password_hash,status FROM identity.users WHERE email=$1")
@@ -323,9 +336,14 @@ pub async fn login(
     let hash = row
         .as_ref()
         .map(|r| r.get::<String, _>("password_hash"))
-        .unwrap_or(s.dummy_hash.clone());
-    let ok = verify(input.password, hash.clone()).await;
-    drop(_permit);
+        .unwrap_or_else(|| s.dummy_hash.clone());
+    let check_hash = hash.clone();
+    let ok = crate::password_work::run(permit, move || {
+        verify_password(&input.password, &check_hash)
+    })
+    .await
+    .map(|(_, valid)| valid)
+    .unwrap_or(false);
     let mut tx = s.pool.begin().await?;
     if !ok
         || row
@@ -357,9 +375,10 @@ pub async fn login(
         return Err(Error::Unauthorized);
     }
     let token = random_token();
-    let csrf = session_csrf(&s.config.service_secret, &hash_token(&token));
+    let token_hash = hash_token(&token);
+    let csrf = session_csrf(&s.config.service_secret, &token_hash);
     sqlx::query("INSERT INTO identity.sessions(token_hash,user_id,csrf_hash,expires_at) VALUES($1,$2,$3,now()+make_interval(secs=>$4))")
- .bind(hash_token(&token)).bind(user).bind(hash_token(&csrf)).bind(s.config.session_seconds as f64).execute(&mut *tx).await?;
+ .bind(&token_hash).bind(user).bind(hash_token(&csrf)).bind(s.config.session_seconds as f64).execute(&mut *tx).await?;
     operations::audit(
         &mut tx,
         Some(user),
@@ -557,9 +576,10 @@ pub async fn change_password(
         return Err(Error::Invalid);
     }
     rate(&s.pool, &format!("password:{}", a.user), 5).await?;
-    let _permit = s
+    let permit = s
         .password_slots
-        .acquire()
+        .clone()
+        .acquire_owned()
         .await
         .map_err(|_| Error::Internal)?;
     let old: String = sqlx::query_scalar(
@@ -569,13 +589,21 @@ pub async fn change_password(
     .fetch_optional(&s.pool)
     .await?
     .ok_or(Error::Unauthorized)?;
-    let valid = verify(i.current_password, old.clone()).await;
-    let hash = if valid {
-        Some(password_hash(i.new_password).await?)
-    } else {
-        None
+    let check_hash = old.clone();
+    let checked = crate::password_work::run(permit, move || {
+        verify_password(&i.current_password, &check_hash)
+    })
+    .await;
+    let (valid, hash) = match checked {
+        Ok((permit, true)) => {
+            let (_, hash) =
+                crate::password_work::run(permit, move || hash_password(i.new_password))
+                    .await
+                    .map_err(|_| Error::Internal)?;
+            (true, Some(hash?))
+        }
+        Ok((_, false)) | Err(_) => (false, None),
     };
-    drop(_permit);
     let mut tx = s.pool.begin().await?;
     let current: Option<String> = sqlx::query_scalar(
         "SELECT password_hash FROM identity.users WHERE id=$1 AND status='ACTIVE' FOR UPDATE",
@@ -665,6 +693,23 @@ mod tests {
         assert_eq!(hash_token(&a).len(), 32);
         assert!(!secret_eq(&a, &b));
         assert!(secret_eq(&a, &a));
+    }
+    #[test]
+    fn fixed_token_digests_and_cached_secret_checks_match_previous_hashes() {
+        for value in ["", "abc", "한글\n", &"x".repeat(4096)] {
+            let digest = token_digest(value);
+            assert_eq!(
+                digest.as_slice(),
+                Sha256::digest(value.as_bytes()).as_slice()
+            );
+            assert_eq!(hash_token(value), digest);
+            assert!(secret_matches_digest(value, &digest));
+            assert!(!secret_matches_digest(&format!("{value}x"), &digest));
+        }
+        assert_eq!(
+            hex::encode(token_digest("abc")),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
     }
     #[test]
     fn origin_exact_and_fetch_metadata() {

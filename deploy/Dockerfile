@@ -3,6 +3,8 @@ FROM rust:1.98.1-slim-trixie AS chef
 # 의존성은 cargo-chef로 따로 한 층에 빌드해, 우리 코드만 바뀌면 그 층을 캐시에서 그대로 쓴다
 RUN cargo install cargo-chef --version 0.1.78 --locked
 WORKDIR /build
+COPY deploy/build-target.sh /usr/local/bin/audeniq-build-target
+RUN chmod 0755 /usr/local/bin/audeniq-build-target
 
 FROM chef AS plan
 COPY Cargo.toml Cargo.lock ./
@@ -12,22 +14,24 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM chef AS build
 # release(기본): LTO까지 한 운영 빌드. fast: 테스트 서버용 (Cargo.toml [profile.fast]). dev: CI 스모크용
 ARG CARGO_PROFILE=release
-# CPU 기준선 (예: x86-64-v3 = AVX2·BMI2·FMA, Zen3/Haswell 이상). 비우면 일반 x86-64.
-# 의존성 층(cook)과 본 빌드가 같은 값을 써야 캐시가 맞는다. 값은 이미지에 기록되고,
-# deploy.sh가 서버 CPU가 그 기준을 지원하는지 먼저 확인한다.
+# BuildKit selects the matching Rust/Debian image for each target platform.
+# Empty TARGET_CPU is portable: x86-64 on amd64, generic ARMv8-A on arm64.
+# Opt in to x86-64-v3 or neoverse-v2 (AWS Graviton4) for tuned images.
+ARG TARGETARCH
 ARG TARGET_CPU=
 COPY --from=plan /build/recipe.json recipe.json
-RUN if [ -n "$TARGET_CPU" ]; then export RUSTFLAGS="-C target-cpu=$TARGET_CPU"; fi \
-    && cargo chef cook --locked --profile "$CARGO_PROFILE" -p audeniq-core --recipe-path recipe.json
+RUN audeniq-build-target "$TARGETARCH" "$TARGET_CPU" \
+    cargo chef cook --locked --profile "$CARGO_PROFILE" -p audeniq-core --recipe-path recipe.json
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY config ./config
 COPY migrations ./migrations
-RUN if [ -n "$TARGET_CPU" ]; then export RUSTFLAGS="-C target-cpu=$TARGET_CPU"; fi \
-    && cargo build --locked --profile "$CARGO_PROFILE" -p audeniq-core --bins \
+RUN AUDENIQ_BUILD_METADATA_DIR=/meta audeniq-build-target "$TARGETARCH" "$TARGET_CPU" \
+    cargo build --locked --profile "$CARGO_PROFILE" -p audeniq-core --bins \
     && mkdir -p /out /meta \
-    && printf '%s\n' "${TARGET_CPU:-x86-64}" > /meta/target-cpu \
-    && dir=$([ "$CARGO_PROFILE" = dev ] && echo debug || echo "$CARGO_PROFILE") \
+    && case "$TARGETARCH" in amd64) triple=x86_64-unknown-linux-gnu ;; arm64) triple=aarch64-unknown-linux-gnu ;; esac \
+    && profile_dir=$([ "$CARGO_PROFILE" = dev ] && echo debug || echo "$CARGO_PROFILE") \
+    && dir="$triple/$profile_dir" \
     && cp "target/$dir/audeniq-api" "target/$dir/audeniq-worker" "target/$dir/audeniq-migrate" "target/$dir/audeniq-admin" /out/
 FROM debian:13-slim
 # ffmpeg/ffprobe are runtime dependencies of the worker: Stage 1 audio QC

@@ -6,7 +6,7 @@
 #   ./deploy.sh --rollback                              # 직전 이미지로 되돌리기
 #   ./deploy.sh --status                                # 지금 이미지·컨테이너 상태
 #
-# 같은 폴더에 compose.production.yaml, bootstrap.sql, grants.sql, pgbouncer/, production.env(비밀),
+# 같은 폴더에 compose.production.yaml, bootstrap.sql, grants.sql, check-cpu.sh, pgbouncer/, production.env(비밀),
 # tunnel-token(비밀)이 있어야 한다. production.env의 AUDENIQ_IMAGE 줄을 이 스크립트가 바꾼다.
 # 비공개 패키지면 먼저 `docker login ghcr.io` (read:packages 토큰) 하거나,
 # GHCR_USER와 GHCR_TOKEN_STDIN=1을 주고 토큰을 표준입력으로 넘긴다 (GitHub Actions 배포가 이렇게 한다).
@@ -25,6 +25,7 @@ current_image() { sed -n 's/^AUDENIQ_IMAGE=//p' "$ENV_FILE" | tail -n 1; }
 [ -f "$ENV_FILE" ] || die "$ENV_FILE 이 없어요 (production.env.example 참고, chmod 600)"
 [ -f compose.production.yaml ] || die "compose.production.yaml 이 없어요"
 [ -f pgbouncer/Dockerfile ] || die "pgbouncer/ 폴더가 없어요 (저장소의 deploy/pgbouncer를 함께 복사)"
+[ -f check-cpu.sh ] || die "check-cpu.sh 가 없어요 (저장소의 deploy/check-cpu.sh를 함께 복사)"
 # PostgreSQL 18은 새 볼륨을 쓴다: 옛 17 데이터가 있는데 아직 옮기지 않았으면 빈 DB로 뜨지 않게 멈춘다
 if docker volume inspect audeniq-production_pg_prod >/dev/null 2>&1 \
    && ! docker volume inspect audeniq-production_pg18_prod >/dev/null 2>&1; then
@@ -93,6 +94,27 @@ else
   PINNED=$digest
 fi
 
+# Architecture and CPU checks must precede the sandbox check and migrations:
+# even audeniq-admin can SIGILL if a tuned image lands on the wrong CPU.
+image_arch=$(docker image inspect --format '{{.Architecture}}' "$PINNED")
+case "$image_arch" in
+  amd64|arm64) ;;
+  *) die "지원하지 않는 이미지 아키텍처: $image_arch" ;;
+esac
+# Refuse cross-architecture images even when the host has QEMU/binfmt enabled.
+case "$(uname -m):$image_arch" in
+  x86_64:amd64|aarch64:arm64) ;;
+  *) die "서버와 이미지의 아키텍처가 달라요: $(uname -m)/$image_arch" ;;
+esac
+target_cpu=$(docker run --rm --network none --entrypoint sh "$PINNED" -c '
+  if [ -f /usr/local/share/audeniq/target-cpu ]; then
+    cat /usr/local/share/audeniq/target-cpu
+  else
+    # Legacy images have no metadata and used the default Rust CPU.
+    case "$(uname -m)" in x86_64) echo x86-64 ;; aarch64) echo generic ;; *) exit 1 ;; esac
+  fi') || die "이미지 CPU 정보 확인 실패: $PINNED"
+bash ./check-cpu.sh "$image_arch" "$target_cpu"
+
 # 이미지가 필요한 바이너리를 갖췄는지 먼저 확인 (잘못된 이미지로 DB 마이그레이션이 도는 것을 막는다)
 docker run --rm --entrypoint sh "$PINNED" -c \
   'for b in audeniq-api audeniq-worker audeniq-migrate ffprobe; do command -v "$b" >/dev/null || { echo "missing $b"; exit 1; }; done' \
@@ -100,23 +122,6 @@ docker run --rm --entrypoint sh "$PINNED" -c \
 
 # Refuse a kernel/container profile that would leave upload parsers unconfined.
 docker run --rm --network none --cap-drop ALL --read-only   --security-opt no-new-privileges --entrypoint audeniq-admin "$PINNED" upload-sandbox-check   || die "업로드 샌드박스 실행 실패: Landlock ABI 3 이상과 seccomp 허용을 확인해 주세요"
-
-# 이미지가 빌드된 CPU 기준선을 이 서버가 지원하는지 확인한다. x86-64-v3 이미지를 AVX2가 없는
-# CPU에서 돌리면 시작하자마자 SIGILL로 죽는다 (마이그레이션 전에 막는다). 기록이 없는 예전
-# 이미지는 일반 x86-64다.
-target_cpu=$(docker run --rm --entrypoint cat "$PINNED" /usr/local/share/audeniq/target-cpu 2>/dev/null || echo x86-64)
-case "$target_cpu" in
-  x86-64) need="" ;;
-  x86-64-v2) need="cx16 lahf_lm popcnt sse4_1 sse4_2 ssse3" ;;
-  x86-64-v3) need="cx16 lahf_lm popcnt sse4_1 sse4_2 ssse3 avx avx2 bmi1 bmi2 f16c fma abm movbe xsave" ;;
-  *) die "알 수 없는 CPU 기준선: $target_cpu" ;;
-esac
-flags=" $(grep -m1 '^flags' /proc/cpuinfo | cut -d: -f2) "
-missing=""
-for f in $need; do
-  [[ "$flags" == *" $f "* ]] || missing="$missing $f"
-done
-[ -z "$missing" ] || die "이 서버 CPU는 이미지 기준선 $target_cpu 를 지원하지 않아요 (없는 기능:$missing). TARGET_CPU를 비워 다시 빌드하세요"
 
 PREVIOUS=$(current_image)
 tmp=$(mktemp "$ENV_FILE.XXXXXX")

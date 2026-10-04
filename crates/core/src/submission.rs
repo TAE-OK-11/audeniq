@@ -1716,20 +1716,7 @@ fn qc_max_bytes() -> u64 {
 /// CPU-bound (full decode + FFT) plus a storage download; 4 saturates a
 /// typical worker without starving the job-lease heartbeat.
 fn qc_asset_parallelism() -> usize {
-    if let Some(n) = std::env::var("AUDENIQ_QC_ASSET_PARALLELISM")
-        .ok()
-        .and_then(|s| s.parse::<usize>().ok())
-        .filter(|n| *n > 0)
-    {
-        return n;
-    }
-    // Default matches the machine: asset analyses are CPU-bound (ffmpeg +
-    // FFT), so more in flight than cores only adds contention. Override
-    // with AUDENIQ_QC_ASSET_PARALLELISM.
-    std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(4)
-        .clamp(1, 8)
+    crate::media_budget::parallelism()
 }
 
 /// Download one asset and run the fixed check contract over it. Storage and
@@ -1780,6 +1767,9 @@ async fn analyze_asset(
             qc_max_bytes()
         ));
     }
+    let capacity = crate::media_budget::acquire()
+        .await
+        .map_err(str::to_string)?;
     // RAII guard: the temp file is removed on drop, even if a QC analyzer
     // panics or the download fails half way. Prevents the QC scratch volume
     // from filling up under parallel load.
@@ -1808,12 +1798,14 @@ async fn analyze_asset(
         sha256.map_or_else(|| downloaded.sha256.clone(), str::to_string),
     );
     tokio::task::spawn_blocking(move || {
+        // Cancellation of the async job must not free capacity while this
+        // non-cancellable blocking decode is still running.
+        let _capacity = capacity;
         let path = tmp.0.as_path();
-        // check_audio runs the single decode pass (full analysis + ebur128 +
-        // outcomes), tapping the fingerprint PCM out of the same decode, and
-        // returns the probe metrics: no second ffprobe pass is needed.
-        let (mut outcomes, tap_pcm, metrics) = match kind.as_str() {
-            "AUDIO" => qc::check_audio_with_fp_tap(
+        // QC and fingerprint share one decode. The tap computes FFT frames
+        // as it drains, retaining neither whole windows nor a second file.
+        let (mut outcomes, tapped_fp, metrics) = match kind.as_str() {
+            "AUDIO" => qc::check_audio_with_fingerprint(
                 path,
                 Some(&sha256),
                 Some(&content_type),
@@ -1884,16 +1876,14 @@ async fn analyze_asset(
             }
         }
 
-        // The window PCM is read from the mono 11025 Hz tap of the single
-        // decode pass above (ffmpeg's own resampler); the three separate
-        // segment decodes are gone. Each segment is fingerprinted separately
-        // to avoid fake boundary frames at the junctions.
+        // The mono 11025 Hz tap uses ffmpeg's continuous resampler and
+        // separate fingerprint histories for the head/middle/tail windows.
         let duration_secs = metrics.as_ref().map(|m| m.duration_secs).unwrap_or(0.0);
         let fp = match kind.as_str() {
             "AUDIO" if !invalid && duration_secs > 0.0 => Some((|| {
-                let windows = tap_pcm.ok_or_else(|| "fingerprint tap missing".to_string())?;
-                let segments: Vec<&[f32]> = windows.iter().map(Vec::as_slice).collect();
-                fingerprint::fingerprint_from_segments(&segments).map_err(|e| format!("{e:?}"))
+                tapped_fp
+                    .ok_or_else(|| "fingerprint tap missing".to_string())?
+                    .map_err(|e| format!("{e:?}"))
             })()),
             _ => None,
         };

@@ -1,6 +1,7 @@
 use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::OnceLock;
 use uuid::Uuid;
 pub fn state_contract() -> &'static Value {
     static CONTRACT: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
@@ -122,6 +123,25 @@ pub fn contract_schema(name: &str) -> Option<Value> {
     };
     serde_json::from_str(raw).ok()
 }
+
+fn contract_validator(name: &str) -> Result<&'static jsonschema::Validator> {
+    // Only four immutable, embedded schemas can enter this cache. Package
+    // bodies and validation results are always checked afresh.
+    static CONSENT: OnceLock<Option<jsonschema::Validator>> = OnceLock::new();
+    static VALIDATION: OnceLock<Option<jsonschema::Validator>> = OnceLock::new();
+    static VERIFICATION: OnceLock<Option<jsonschema::Validator>> = OnceLock::new();
+    static PREPARATION: OnceLock<Option<jsonschema::Validator>> = OnceLock::new();
+    let slot = match name {
+        "ConsentPackageV1" => &CONSENT,
+        "ValidationPackageV1" => &VALIDATION,
+        "VerificationPackageV1" => &VERIFICATION,
+        "PreparationPackageV1" => &PREPARATION,
+        _ => return Err(Error::Invalid),
+    };
+    slot.get_or_init(|| jsonschema::validator_for(&contract_schema(name)?).ok())
+        .as_ref()
+        .ok_or(Error::Internal)
+}
 /// SHA-256 of deterministically key-sorted JSON. Versioned internal canonical format, not an assertion of JCS.
 pub fn digest(value: &Value) -> String {
     sha256_json(value)
@@ -155,8 +175,33 @@ pub fn sha256_json<T: Serialize + ?Sized>(value: &T) -> String {
     hex::encode(w.0.finalize())
 }
 
+/// Serialize a borrowed object, omitting only its top-level self-hash.
+/// Iteration and nested values match cloning the object and removing the key.
+struct WithoutField<'a> {
+    object: &'a serde_json::Map<String, Value>,
+    field: &'a str,
+}
+impl Serialize for WithoutField<'_> {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let len = self.object.len() - usize::from(self.object.contains_key(self.field));
+        let mut map = serializer.serialize_map(Some(len))?;
+        for (key, value) in self.object {
+            if key != self.field {
+                map.serialize_entry(key, value)?;
+            }
+        }
+        map.end()
+    }
+}
+
 #[cfg(test)]
 mod hash_tests {
+    use super::*;
+
     #[test]
     fn streamed_hash_equals_buffered_hash() {
         use sha2::{Digest, Sha256};
@@ -164,10 +209,59 @@ mod hash_tests {
         let buffered = hex::encode(Sha256::digest(serde_json::to_string(&v).unwrap()));
         assert_eq!(super::sha256_json(&v), buffered);
     }
+
+    #[test]
+    fn borrowed_hash_matches_cloned_json_at_boundaries_and_with_escaped_strings() {
+        for n in [0, 1, 63, 64, 4095, 4096, 4097, 16384] {
+            let value = serde_json::json!({
+                "verification_package_hash": "b".repeat(64),
+                "array": (0..n).map(|i| i % 17).collect::<Vec<_>>(),
+                "text": format!("한글\\\"\n\t{}", "x".repeat(n)),
+                "nested": [{"verification_package_hash": "nested", "bool": true, "null": null, "float": -1.25}]
+            });
+            let mut expected = value.clone();
+            expected
+                .as_object_mut()
+                .unwrap()
+                .remove("verification_package_hash");
+            let view = WithoutField {
+                object: value.as_object().unwrap(),
+                field: "verification_package_hash",
+            };
+            assert_eq!(
+                sha256_json(&view),
+                sha256_hex(serde_json::to_vec(&expected).unwrap())
+            );
+        }
+    }
+
+    #[test]
+    fn borrowed_hash_omits_only_top_level_field_and_preserves_body() {
+        let body = serde_json::json!({
+            "consent_package_hash": "claimed",
+            "nested": {"consent_package_hash": "nested", "text": "한글"},
+            "array": [1, false, null]
+        });
+        let mut expected = body.clone();
+        expected
+            .as_object_mut()
+            .unwrap()
+            .remove("consent_package_hash");
+        for field in ["consent_package_hash", "missing"] {
+            let view = WithoutField {
+                object: body.as_object().unwrap(),
+                field,
+            };
+            let expected = if field == "missing" { &body } else { &expected };
+            assert_eq!(sha256_json(&view), digest(expected));
+            assert_eq!(serde_json::to_value(&view).unwrap(), *expected);
+        }
+        assert_eq!(body["consent_package_hash"], "claimed");
+        assert_eq!(body["nested"]["consent_package_hash"], "nested");
+    }
 }
 pub fn validate_package(name: &str, body: &Value) -> Result<()> {
-    let schema = contract_schema(name).ok_or(Error::Invalid)?;
-    let validator = jsonschema::validator_for(&schema).map_err(|_| Error::Internal)?;
+    let validator = contract_validator(name)?;
     if !validator.is_valid(body) {
         return Err(Error::Invalid);
     }
@@ -203,13 +297,9 @@ pub fn validate_package(name: &str, body: &Value) -> Result<()> {
         _ => None,
     };
     if let Some(field) = hash_field {
-        let mut copy = body.clone();
-        let claimed = copy
-            .as_object_mut()
-            .unwrap()
-            .remove(field)
-            .ok_or(Error::Invalid)?;
-        if claimed != digest(&copy) {
+        let object = body.as_object().ok_or(Error::Invalid)?;
+        let claimed = object.get(field).ok_or(Error::Invalid)?;
+        if claimed != &sha256_json(&WithoutField { object, field }) {
             return Err(Error::Invalid);
         }
     }
@@ -218,6 +308,108 @@ pub fn validate_package(name: &str, body: &Value) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compiled_schemas_are_reused_across_threads_and_unknown_names_rejected() {
+        for name in [
+            "ConsentPackageV1",
+            "ValidationPackageV1",
+            "VerificationPackageV1",
+            "PreparationPackageV1",
+        ] {
+            let expected = contract_validator(name).unwrap() as *const _ as usize;
+            let tasks: Vec<_> = (0..8)
+                .map(|_| {
+                    std::thread::spawn(move || {
+                        contract_validator(name).unwrap() as *const _ as usize
+                    })
+                })
+                .collect();
+            for task in tasks {
+                assert_eq!(task.join().unwrap(), expected);
+            }
+        }
+        assert!(matches!(
+            validate_package("unknown", &Value::Null),
+            Err(Error::Invalid)
+        ));
+    }
+
+    #[test]
+    fn cached_verification_rechecks_content_ids_and_hashes() {
+        let id = "00000000-0000-4000-8000-000000000001";
+        let mut body = serde_json::json!({
+            "schema_version": 1, "validation_hash": "a".repeat(64), "rights_epoch": 1,
+            "approved_scope": ["WORLDWIDE"], "approved_dsp_ids": [id], "blocked_scope": [],
+            "evidence_ids": [id], "split_plan_snapshot_id": id, "catalog_match_refs": [id],
+            "check_matrix_refs": [id], "policy_versions": ["v1"]
+        });
+        body["verification_package_hash"] = Value::String(digest(&body));
+        validate_package("VerificationPackageV1", &body).unwrap();
+        validate_package("VerificationPackageV1", &body).unwrap();
+        let original = body.clone();
+        for (field, value) in [
+            ("rights_epoch", serde_json::json!(2)),
+            ("approved_dsp_ids", serde_json::json!(["bad-id"])),
+            ("validation_hash", serde_json::json!("A".repeat(64))),
+            (
+                "verification_package_hash",
+                serde_json::json!("f".repeat(64)),
+            ),
+            ("passport", serde_json::json!("secret")),
+        ] {
+            let mut tampered = original.clone();
+            tampered[field] = value;
+            assert!(
+                matches!(
+                    validate_package("VerificationPackageV1", &tampered),
+                    Err(Error::Invalid)
+                ),
+                "{field}"
+            );
+        }
+        assert_eq!(body, original);
+        body.as_object_mut()
+            .unwrap()
+            .remove("verification_package_hash");
+        assert!(matches!(
+            validate_package("VerificationPackageV1", &body),
+            Err(Error::Invalid)
+        ));
+    }
+
+    #[test]
+    fn cached_preparation_accepts_valid_package_and_rejects_invalid_fields() {
+        let id = "00000000-0000-4000-8000-000000000001";
+        let body = serde_json::json!({
+            "schema_version": 1, "snapshot_id": id, "snapshot_hash": "a".repeat(64),
+            "verification_package_hash": "b".repeat(64), "identifier_refs": [id],
+            "route_id": id, "contract_id": id, "fee_schedule_id": id,
+            "dsp_packages": [{"dsp_id": id, "package_digest": "c".repeat(64), "asset_manifest_ref": id}],
+            "submit_not_before": "2026-10-01T00:00:00Z", "submit_deadline": "2026-10-02T00:00:00Z",
+            "consumer_release_at": "2026-10-03T00:00:00Z", "preflight_ref": id, "queued_job_refs": [id]
+        });
+        validate_package("PreparationPackageV1", &body).unwrap();
+        let dto: crate::packages::PreparationPackageV1 =
+            serde_json::from_value(body.clone()).unwrap();
+        dto.validate().unwrap();
+        for (field, value) in [
+            ("snapshot_id", serde_json::json!("invalid")),
+            ("snapshot_hash", serde_json::json!("a".repeat(63))),
+            ("dsp_packages", serde_json::json!([{"dsp_id": id}])),
+            ("schema_version", serde_json::json!(2)),
+        ] {
+            let mut changed = body.clone();
+            changed[field] = value;
+            assert!(
+                matches!(
+                    validate_package("PreparationPackageV1", &changed),
+                    Err(Error::Invalid)
+                ),
+                "{field}"
+            );
+        }
+    }
     #[test]
     fn deny_implicit_progress() {
         assert!(transition("application_pipeline_status", "DRAFT", "READY_FOR_DELIVERY").is_err());
