@@ -8,7 +8,7 @@ import { useConfirm } from '../../../components/Confirm';
 import { errorMessage } from '../../../api/errors';
 import { useAsync } from '../../../hooks/useAsync';
 import { Glyph } from '../../../components/Glyph';
-import { Chip, Empty, ErrorBox, Filters, PageHead, Section, Skeleton, StatusChip, useStaff } from '../../ui';
+import { Chip, Empty, ErrorBox, Filters, PageHead, Section, Skeleton, StatusChip, useStaff, WorkTabs } from '../../ui';
 import { DOC_STATUS, RELEASE_STATUS, ago, when } from '../../labels';
 import { workApi } from '../api';
 import {
@@ -159,6 +159,7 @@ export function Crm() {
           <button type="button" className="adm-btn primary small" onClick={() => setCreating(true)}><Glyph name="plus" size={14} />관계 등록</button>
         </>}
       />
+      <WorkTabs />
       <MiniStats items={[
         { label: '전체', value: total, onClick: () => setKind(''), active: !kind },
         { label: '연락할 때', value: due, tone: due ? 'warn' : 'muted', onClick: () => setContact(contact === 'due' ? '' : 'due'), active: contact === 'due' },

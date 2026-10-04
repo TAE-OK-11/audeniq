@@ -8,7 +8,7 @@ import { useToast } from '../../../components/Toast';
 import { errorMessage } from '../../../api/errors';
 import { useAsync } from '../../../hooks/useAsync';
 import { Glyph } from '../../../components/Glyph';
-import { Chip, Empty, ErrorBox, Filters, PageHead, Seg, Skeleton, StatusChip, useStaff } from '../../ui';
+import { Chip, Empty, ErrorBox, Filters, PageHead, Seg, Skeleton, StatusChip, useStaff, WorkTabs } from '../../ui';
 import { ago } from '../../labels';
 import { workApi } from '../api';
 import {
@@ -247,6 +247,7 @@ export function Exceptions() {
           <button type="button" className="adm-btn primary small" onClick={() => setReporting(true)}><Glyph name="plus" size={14} />직접 등록</button>
         </>}
       />
+      <WorkTabs />
       {view !== 'resolved' && (
         <MiniStats items={[
           { label: '처리 대기', value: data?.total ?? '–' },

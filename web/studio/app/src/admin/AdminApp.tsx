@@ -9,7 +9,7 @@ import { useConfirm } from '../components/Confirm';
 import { useToast } from '../components/Toast';
 import { staffApi, type Duty, type Overview, type StaffMe } from './api';
 import { ROLE_LABEL } from './labels';
-import { Skeleton, StaffContext } from './ui';
+import { Skeleton, StaffContext, WORK_PATHS } from './ui';
 import { OverviewPage } from './pages/Overview';
 
 // 첫 화면(오늘의 업무) 말고는 열 때 불러온다 — 첫 로딩 JS를 줄이고, 로그인 뒤 한가할 때 미리 받아 둔다
@@ -82,12 +82,9 @@ const NAV: { group: string; items: NavItem[] }[] = [
   { group: 'OVERVIEW', items: [{ to: '/admin', label: '오늘의 업무', icon: 'home' }] },
   {
     group: 'WORK',
-    // 나에게 온 일(업무함) · 범용 업무 · 자동 처리 실패(예외)
     items: [
-      { to: '/admin/inbox', label: '업무함', icon: 'inbox', count: (_, w) => w?.inbox.unread ?? 0, hot: true },
-      { to: '/admin/tasks', label: '업무', icon: 'task', count: (_, w) => w?.overdue ?? 0 },
-      { to: '/admin/exceptions', label: '예외 처리', icon: 'exception', count: (_, w) => w?.exceptions.open ?? 0, hot: true },
-      { to: '/admin/crm', label: '관계 관리', icon: 'crm' },
+      // 업무함 · 업무 · 예외 처리 · 관계 관리 · SLA는 한 메뉴(업무) 안의 탭
+      { to: '/admin/inbox', label: '업무', icon: 'task', count: (_, w) => w?.inbox.unread ?? 0, hot: true, also: WORK_PATHS },
     ],
   },
   {
@@ -99,7 +96,6 @@ const NAV: { group: string; items: NavItem[] }[] = [
     ],
   },
   { group: 'SUPPORT', items: [{ to: '/admin/inquiries', label: '문의 답변', icon: 'inquiry', count: o => (o ? o.inquiries : 0), hot: true }] },
-  { group: 'OPERATIONS', items: [{ to: '/admin/sla', label: 'SLA · 마감', icon: 'sla', count: (_, w) => w?.sla_warning ?? 0 }] },
   { group: 'CONTENT', items: [{ to: '/admin/content', label: '공지·이벤트 관리', icon: 'doc', adminOnly: true }] },
   {
     group: 'DISTRIBUTION',
@@ -286,6 +282,7 @@ export function AdminApp() {
               <Route path="/admin/inquiries/:id" element={<Inquiries />} />
               <Route path="/admin/deliveries" element={<Deliveries />} />
               <Route path="/admin/dsps" element={<Dsps />} />
+              <Route path="/admin/work" element={<Navigate to="/admin/inbox" replace />} />
               <Route path="/admin/inbox" element={<Inbox />} />
               <Route path="/admin/exceptions" element={<Exceptions />} />
               <Route path="/admin/sla" element={<Sla />} />
