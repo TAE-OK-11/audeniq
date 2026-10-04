@@ -59,9 +59,13 @@ pub mod states {
     include!(concat!(env!("OUT_DIR"), "/states.rs"));
 }
 
+mod analyzer_process;
+mod audio_header;
 pub mod launch;
 mod local_analyzer;
 pub mod lossless;
+mod media_budget;
+mod password_work;
 
 pub mod payout_keys;
 pub mod privacy_maintenance;

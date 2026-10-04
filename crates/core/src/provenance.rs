@@ -106,11 +106,12 @@ pub fn inspect_audio(path: &Path) -> Value {
 }
 
 fn read_metadata(command: &mut Command) -> Result<Vec<u8>, &'static str> {
-    let child = command
+    let deadline = Instant::now() + Duration::from_secs(10);
+    command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn();
+        .stderr(Stdio::null());
+    let child = crate::analyzer_process::AnalyzerProcess::spawn(command, deadline);
     let Ok(mut child) = child else {
         return Err("metadata reader unavailable");
     };
@@ -119,14 +120,24 @@ fn read_metadata(command: &mut Command) -> Result<Vec<u8>, &'static str> {
         let _ = child.wait();
         return Err("metadata reader output unavailable");
     };
-    let reader = std::thread::spawn(move || {
-        let mut output = Vec::new();
-        stdout
-            .take(OUTPUT_LIMIT + 1)
-            .read_to_end(&mut output)
-            .map(|_| output)
-    });
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let stdout = child
+        .reader(stdout)
+        .map_err(|_| "metadata reader output unavailable")?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    child
+        .spawn_reader("metadata-reader", move || {
+            let mut output = Vec::new();
+            let result = stdout
+                .take(OUTPUT_LIMIT + 1)
+                .read_to_end(&mut output)
+                .map(|_| output);
+            let _ = tx.send(result);
+        })
+        .map_err(|_| "metadata reader unavailable")?;
+    let bytes = rx
+        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+        .map_err(|_| "metadata reader failed")?
+        .map_err(|_| "metadata reader failed")?;
     let success = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status.success(),
@@ -137,9 +148,6 @@ fn read_metadata(command: &mut Command) -> Result<Vec<u8>, &'static str> {
                 break false;
             }
         }
-    };
-    let Ok(Ok(bytes)) = reader.join() else {
-        return Err("metadata reader failed");
     };
     if !success || bytes.len() as u64 > OUTPUT_LIMIT {
         return Err("metadata reader failed or exceeded limits");

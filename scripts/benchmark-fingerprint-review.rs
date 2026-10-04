@@ -9,6 +9,8 @@ mod error {
 }
 #[path = "parser_sandbox.rs"]
 mod parser_sandbox;
+#[path = "analyzer_process.rs"]
+mod analyzer_process;
 #[path = "baseline-fingerprint.rs"]
 mod baseline;
 #[path = "updated-fingerprint.rs"]

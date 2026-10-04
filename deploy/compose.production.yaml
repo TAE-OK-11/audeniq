@@ -169,6 +169,8 @@ services:
       APP_ENV: production
       APP_ORIGIN: ${APP_ORIGIN:?set exact HTTPS Studio origin}
       API_BIND: 0.0.0.0:8080
+      AUDENIQ_QC_ASSET_PARALLELISM: '${AUDENIQ_QC_ASSET_PARALLELISM:-}'
+      AUDENIQ_AUDIO_PARSER_MEMORY_MIB: '${AUDENIQ_AUDIO_PARSER_MEMORY_MIB:-768}'
       EDGE_SERVICE_SECRET: ${EDGE_SERVICE_SECRET:?set random service secret}
       PAYOUT_KMS_ENABLED: '${PAYOUT_KMS_ENABLED:-false}'
       PAYOUT_KEYRING_FILE: ${PAYOUT_KEYRING_FILE:-}
@@ -224,6 +226,9 @@ services:
       # 곡마다 업로드 직후 사전 분석(ffmpeg 디코드)이 이 큐로 돈다. CPU 작업이라 vCPU 수만큼이
       # 알맞다(1 vCPU: 1, 2 vCPU: 2). API는 cpu_shares로 CPU 우선권을 가진다.
       QUEUE_QC_CONCURRENCY: '${QUEUE_QC_CONCURRENCY:-1}'
+      # Process-wide media capacity (1–8). Empty uses available CPU capacity.
+      AUDENIQ_QC_ASSET_PARALLELISM: '${AUDENIQ_QC_ASSET_PARALLELISM:-}'
+      AUDENIQ_AUDIO_PARSER_MEMORY_MIB: '${AUDENIQ_AUDIO_PARSER_MEMORY_MIB:-768}'
       QUEUE_RIGHTS_CONCURRENCY: '1'
       QUEUE_DISTRIBUTION_CONCURRENCY: '1'
       QUEUE_FINANCE_CONCURRENCY: '1'

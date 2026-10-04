@@ -31,6 +31,82 @@ pub fn restrict(command: &mut Command, inputs: &[&Path], outputs: &[&Path]) -> i
     }
 }
 
+/// Bound allocations in audio parser children. This is an address-space
+/// limit, not an RSS allowance: shared libraries and thread stacks count.
+pub(crate) fn restrict_audio(
+    command: &mut Command,
+    inputs: &[&Path],
+    outputs: &[&Path],
+) -> io::Result<()> {
+    use std::os::unix::process::CommandExt;
+    restrict(command, inputs, outputs)?;
+    command.env("MALLOC_ARENA_MAX", "2");
+    let mib = std::env::var("AUDENIQ_AUDIO_PARSER_MEMORY_MIB")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(768)
+        .clamp(512, 1024);
+    // SAFETY: a single syscall with a fixed captured value runs after fork.
+    unsafe {
+        command.pre_exec(move || {
+            let mut limit = libc::rlimit {
+                rlim_cur: 0,
+                rlim_max: 0,
+            };
+            if libc::getrlimit(libc::RLIMIT_AS, &mut limit) != 0 {
+                return Err(io::Error::last_os_error());
+            }
+            limit.rlim_cur = limit.rlim_cur.min(mib * 1024 * 1024);
+            limit.rlim_max = limit.rlim_max.min(mib * 1024 * 1024);
+            if libc::setrlimit(libc::RLIMIT_AS, &limit) != 0 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::process::CommandExt;
+
+    #[test]
+    fn audio_allocation_limit_fails_in_child_without_crashing_worker() {
+        let mut command = Command::new("python3");
+        command.args(["-c", "import resource\nlimit=resource.getrlimit(resource.RLIMIT_AS)[0]\nassert 0 < limit <= 1024*1024*1024\ntry: bytearray(limit+1)\nexcept MemoryError: print('bounded')\nelse: raise Exception('allocation limit missing')"]);
+        restrict_audio(&mut command, &[], &[]).unwrap();
+        let output = command.output().unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(output.stdout, b"bounded\n");
+    }
+
+    #[test]
+    fn sandbox_preserves_lower_inherited_memory_limit() {
+        let mut command = Command::new("python3");
+        command.args([
+            "-c",
+            "import resource\nassert resource.getrlimit(resource.RLIMIT_AS)==(128*1024*1024,)*2",
+        ]);
+        // SAFETY: the child only invokes setrlimit with a fixed stack value.
+        unsafe {
+            command.pre_exec(|| {
+                let limit = libc::rlimit {
+                    rlim_cur: 128 * 1024 * 1024,
+                    rlim_max: 128 * 1024 * 1024,
+                };
+                if libc::setrlimit(libc::RLIMIT_AS, &limit) != 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        restrict_audio(&mut command, &[], &[]).unwrap();
+        assert!(command.status().unwrap().success());
+    }
+}
+
 #[cfg(all(
     target_os = "linux",
     any(target_arch = "x86_64", target_arch = "aarch64")
@@ -151,6 +227,9 @@ mod linux {
             .env("HOME", "/nonexistent")
             .env("TMPDIR", "/nonexistent")
             .env("OMP_THREAD_LIMIT", "1")
+            .env("OMP_NUM_THREADS", "1")
+            .env("OPENBLAS_NUM_THREADS", "1")
+            .env("MKL_NUM_THREADS", "1")
             .env("PYTHONDONTWRITEBYTECODE", "1")
             .current_dir("/");
         let denied = [
@@ -229,10 +308,15 @@ mod linux {
                     (libc::RLIMIT_CPU, 600),
                     (libc::RLIMIT_NOFILE, 128),
                 ] {
-                    let limit = libc::rlimit {
-                        rlim_cur: max,
-                        rlim_max: max,
+                    let mut limit = libc::rlimit {
+                        rlim_cur: 0,
+                        rlim_max: 0,
                     };
+                    if libc::getrlimit(resource, &mut limit) != 0 {
+                        return Err(io::Error::last_os_error());
+                    }
+                    limit.rlim_cur = limit.rlim_cur.min(max);
+                    limit.rlim_max = limit.rlim_max.min(max);
                     if libc::setrlimit(resource, &limit) != 0 {
                         return Err(io::Error::last_os_error());
                     }

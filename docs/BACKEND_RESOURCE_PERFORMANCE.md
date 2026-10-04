@@ -1,0 +1,96 @@
+# Backend CPU·RAM 최적화 — 2026-10-04
+
+## 적용한 변경
+
+- `domain::validate_package`는 내장된 네 종류의 JSON 스키마를 프로세스에서
+  각각 한 번만 컴파일한다. 요청마다 스키마 JSON을 파싱하고 validator를
+  만드는 비용을 없앴다. 캐시에는 고정 스키마만 들어가며 패키지 본문,
+  검증 결과, 사용자 권한은 캐시하지 않는다.
+- Consent/Verification의 자체 해시를 검증할 때 JSON 전체를 복제하지 않는다.
+  원본 객체를 빌려 최상위 해시 필드만 제외하고 직렬화한다. 키 순서,
+  중첩 데이터, SHA-256 입력 바이트와 검증 규칙은 기존과 같다.
+- 회원가입·로그인·비밀번호 변경의 실행 슬롯을 `spawn_blocking` 작업이
+  직접 소유한다. 요청이 취소돼도 진행 중인 Argon2가 끝날 때까지 슬롯을
+  유지해 기본 동시 실행 한도 2개를 지킨다. 비밀번호 변경은 검증과 새
+  해시 생성 사이에서도 같은 슬롯을 사용한다. Argon2 비용·랜덤 salt와
+  비밀번호/세션 재검증은 유지한다.
+- worker의 빈 큐 조회 최대 간격은 2초에서 5초로 늘렸다. 각 루프의
+  정상 상태 claim 시도는 초당 0.5회에서 0.2회로 **60% 감소**한다.
+  이는 조회 횟수 계산이며 프로세스 CPU 감소율 측정이 아니다.
+  알림 future를 실행 슬롯/DB 조회 전에 만들어, 빈 조회와 대기 사이의
+  `notify_waiters` 알림도 받는다. 신규 작업의 LISTEN/NOTIFY 경로는 즉시
+  깨우며, 알림 연결이 끊기거나 미래 시각에 예약된 재시도는 최대 5초
+  간격의 polling으로 찾는다. 실행 슬롯 경쟁·DB 지연은 별도로 더해질 수 있다.
+
+이 변경은 아키텍처별 명령어를 추가하지 않아 기존 x86-64/ARM64 빌드에
+공통으로 적용된다. 미디어 경로의 앞선 최적화와 측정은
+[AUDIO_QC_PERFORMANCE.md](AUDIO_QC_PERFORMANCE.md)에 있다.
+
+## 로컬 측정
+
+Linux x86-64, Rust 1.98.1에서 실제 `domain.rs`를 `rustc -O`로 컴파일했다.
+기준은 `b3bcdfe`의 알고리즘이며 새 벤치마크의 reference 구현에도 보관했다.
+전체 라이브러리 빌드가 이 호스트의 메모리 한도를 넘어서, 동일한 벤치마크
+소스를 실제 domain 모듈과 연결한 격리 harness를 사용했다. 의존성은 두
+경로에 같은 캐시의 최적화된 빌드를 사용했다. 운영 release/fat LTO 또는
+Graviton4 실기 측정은 아니다.
+
+각 fixture를 미리 만들고 두 경로를 워밍업한 뒤, 실행 순서를 번갈아 5회
+측정한 CPU 시간 중앙값이다. 한 회의 반복 수는 아래 표와 같다. CPU 시간은
+`getrusage`의 user+system이며 측정 중 다른 빌드·테스트를 실행하지 않았다.
+
+| 패키지 입력 | 반복/회 | 검증 CPU µs, 기존 → 변경 | CPU 감소 | 할당 횟수/검증, 기존 → 변경 | 임시 할당 payload 피크 bytes, 기존 → 변경 |
+|---|---:|---:|---:|---:|---:|
+| Consent: signer/ref 각각 1개 | 500 | 28.054 → 1.298 | 95.4% | 325 → 1 | 23842 → 64 |
+| Consent: signer/ref 각각 1000개 | 100 | 241.210 → 145.450 | 39.7% | 2323 → 1 | 155340 → 64 |
+| Verification: 네 ID/ref 배열 각각 16개 | 500 | 33.396 → 5.464 | 83.6% | 398 → 1 | 31625 → 64 |
+| Verification: 네 ID/ref 배열 각각 2048개 | 30 | 818.033 → 515.667 | 37.0% | 8526 → 1 | 584329 → 64 |
+
+할당 추적은 단일 스레드에서 System allocator를 감싼 별도 측정이며,
+타이밍 중에는 추적하지 않는다. **payload 피크는 RSS가 아니다.** 입력
+fixture, 이미 준비된 캐시, allocator 관리 비용, 스택, 다른 프로세스는
+제외한다. 운영 API/worker의 mimalloc이나 전체 서비스 RAM 감소율을 나타내지
+않는다. 표의 남은 64바이트 할당은 해시의 hex 문자열이다.
+
+네 validator를 모두 준비하면 총 37609바이트의 할당 payload가 캐시에
+남는다. 초기화 중 피크는 59105바이트였다. 이 작은 상주 비용을 추가해
+반복 컴파일과 큰 패키지의 임시 복사를 없앤다. 작은 단일 요청에서 전체
+프로세스 RSS까지 줄어든다는 의미는 아니다. SHA-256 sink 자체는 기존
+스트리밍 구현을 유지했다.
+
+## 검증과 재현
+
+- 실제 domain, packages, auth, password_work, worker poll 소스와 기존
+  config/error 테스트를 격리 harness에서 실행: **28개 통과**.
+  테스트는 네 패키지의 정상/비정상 입력, 변조 후 재검증, 스키마 재사용,
+  대형·한글·escape·중첩 JSON의 해시 바이트 일치, 취소된 blocking 작업의
+  슬롯 보유, 연속 작업의 슬롯 재사용과 panic 후 해제를 확인한다.
+  worker는 조회 중 알림, 같은 큐의 복수 waiter, 알림 없는 polling을 검사한다.
+- auth endpoint 전체를 실제 의존성과 최소 AppState/audit 연결 stub으로
+  타입 검사했고, 반환 future의 `Send`도 확인했다. DB 경로는 실행하지 않았다.
+- 실제 worker binary와 테스트의 타입 검사는 기존 core metadata에 연결해
+  통과했다. 새 전체 core 빌드 성공을 대신하는 검사는 아니다.
+- 변경 모듈·테스트와 벤치마크의 Clippy `-D warnings` 통과. 격리 harness의
+  기존 생성 상태 enum에만 acronym lint를 제외했다.
+- x86/ARM 네이티브 CI에 worker binary 회귀 테스트를 추가했다. 기존
+  라이브러리 테스트에 새 domain/password 테스트도 포함된다.
+- 전체 `cargo check`는 incremental 제거·단일 컴파일러 스레드로 재시도해도
+  OOM killer의 SIGKILL로 완료하지 못했다. 전체 서비스/DB 통합 테스트,
+  네이티브 ARM CI 실행, 운영 CPU·RSS 및 Graviton4 실기 측정은 미실행이다.
+
+충분한 메모리가 있는 개발/CI 환경의 명령:
+
+```sh
+cargo test --locked -p audeniq-core --lib domain::
+cargo test --locked -p audeniq-core --lib packages::
+cargo test --locked -p audeniq-core --lib auth::
+cargo test --locked -p audeniq-core --lib password_work::
+cargo test --locked -p audeniq-core --bin audeniq-worker
+cargo clippy --locked -p audeniq-core --all-targets -- -D warnings
+cargo bench --locked -p audeniq-core --bench backend_resources
+```
+
+Graviton4에서는 같은 입력·같은 자원 제한으로 공용 ARM 빌드와
+`neoverse-v2` 빌드를 각각 측정한다. CPU 옵션과 서버 설정은
+[GRAVITON4.md](../deploy/GRAVITON4.md)를 따른다. 이 벤치마크는 패키지 경로의
+비용을 분리하며 API 처리량·DB 부하·전체 RSS는 운영 부하 시험으로 확인한다.
