@@ -29,24 +29,29 @@ fn run(args: &[&OsStr], timeout: Duration) -> ConversionResult<Vec<u8>> {
         .filter(|a| a[0] == OsStr::new("-f") && a[1] == OsStr::new("flac"))
         .map(|a| Path::new(a[2]))
         .collect();
-    crate::parser_sandbox::restrict(&mut command, &inputs, &outputs)
+    crate::parser_sandbox::restrict_audio(&mut command, &inputs, &outputs)
         .map_err(|_| "UPLOAD_CONVERSION_UNAVAILABLE")?;
-    let mut child = command
+    command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
+        .stderr(Stdio::null());
+    let mut child = crate::analyzer_process::AnalyzerProcess::spawn(&mut command, deadline)
         .map_err(|_| "UPLOAD_CONVERSION_UNAVAILABLE")?;
     let stdout = child.stdout.take().ok_or("UPLOAD_CONVERSION_UNAVAILABLE")?;
+    let stdout = child
+        .reader(stdout)
+        .map_err(|_| "UPLOAD_CONVERSION_UNAVAILABLE")?;
     let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let mut out = Vec::new();
-        let result = stdout
-            .take(MAX_OUTPUT + 1)
-            .read_to_end(&mut out)
-            .map(|_| out);
-        let _ = tx.send(result);
-    });
+    child
+        .spawn_reader("lossless-conversion", move || {
+            let mut out = Vec::new();
+            let result = stdout
+                .take(MAX_OUTPUT + 1)
+                .read_to_end(&mut out)
+                .map(|_| out);
+            let _ = tx.send(result);
+        })
+        .map_err(|_| "UPLOAD_CONVERSION_UNAVAILABLE")?;
     let result = (|| {
         let out = rx
             .recv_timeout(deadline.saturating_duration_since(Instant::now()))

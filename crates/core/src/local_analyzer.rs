@@ -25,27 +25,34 @@ pub(crate) fn run_timeout(
     timeout: Duration,
 ) -> Result<Vec<u8>, &'static str> {
     const LIMIT: u64 = 512 * 1024;
-    let deadline = Instant::now() + timeout;
-    let mut child = command
+    let deadline = Instant::now()
+        .checked_add(timeout)
+        .ok_or("invalid analyzer deadline")?;
+    command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
+        .stderr(Stdio::null());
+    let mut child = crate::analyzer_process::AnalyzerProcess::spawn(command, deadline)
         .map_err(|_| "local analyzer unavailable")?;
     let Some(stdout) = child.stdout.take() else {
         let _ = child.kill();
         let _ = child.wait();
         return Err("local analyzer output unavailable");
     };
+    let stdout = child
+        .reader(stdout)
+        .map_err(|_| "local analyzer output unavailable")?;
     let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let mut bytes = Vec::new();
-        let result = stdout
-            .take(LIMIT + 1)
-            .read_to_end(&mut bytes)
-            .map(|_| bytes);
-        let _ = tx.send(result);
-    });
+    child
+        .spawn_reader("local-analyzer", move || {
+            let mut bytes = Vec::new();
+            let result = stdout
+                .take(LIMIT + 1)
+                .read_to_end(&mut bytes)
+                .map(|_| bytes);
+            let _ = tx.send(result);
+        })
+        .map_err(|_| "local analyzer reader unavailable")?;
     let bytes = match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
         Ok(Ok(bytes)) if bytes.len() as u64 <= LIMIT => bytes,
         _ => {

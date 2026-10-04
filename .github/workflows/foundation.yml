@@ -198,7 +198,11 @@ jobs:
           sudo apt-get install --no-install-recommends -y age python3-pil poppler-utils curl openssl
           python3 -m unittest discover -s deploy/tests -v
   compose-smoke:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 35
     env:
       POSTGRES_PASSWORD: ephemeral-owner-ci
@@ -221,11 +225,15 @@ jobs:
           jq -e '.services.api.environment.APP_ENV == "production" and .name == "audeniq-production"' /tmp/production.json
           jq -e '.services.api.environment.PAYOUT_KMS_ENABLED == "false" and .services.api.environment.UPLOAD_AV_ENABLED == "false" and .services.worker.environment.UPLOAD_AV_ENABLED == "false"' /tmp/production.json
           docker compose -f deploy/compose.production.yaml config --services > /tmp/default-services
-          ! grep -Eq '^antivirus(-update)?$' /tmp/default-services
+          if grep -Eq '^antivirus(-update)?$' /tmp/default-services; then
+            echo 'Default configuration unexpectedly enables antivirus services'
+            exit 1
+          fi
           # Workers analyze and package the stored masters: they need the
           # object store and non-zero QC/rights/distribution concurrency.
           jq -e '.services.worker.environment | has("STORAGE_ENABLED") and has("S3_BUCKET") and has("S3_ENDPOINT")' /tmp/production.json
           jq -e '.services.worker.environment | [.QUEUE_QC_CONCURRENCY, .QUEUE_RIGHTS_CONCURRENCY, .QUEUE_DISTRIBUTION_CONCURRENCY] | all(tonumber > 0)' /tmp/production.json
+          jq -e '[.services.api.environment, .services.worker.environment] | all(has("AUDENIQ_QC_ASSET_PARALLELISM") and .AUDENIQ_AUDIO_PARSER_MEMORY_MIB == "768")' /tmp/production.json
           # api/worker go through PgBouncer (transaction pooling); the
           # worker's LISTEN and migrate/grants stay on direct connections.
           jq -e '(.services.api.environment.DATABASE_URL | test("@pgbouncer:6432/")) and .services.api.environment.DATABASE_POOLER == "pgbouncer"' /tmp/production.json
@@ -234,7 +242,7 @@ jobs:
           jq -e '[.services.antivirus.environment // {} | keys[]] | all(test("DATABASE|S3_|PAYOUT|PARTNER") | not)' /tmp/production.json
           jq -e '(.services.migrate.environment.DATABASE_URL | test("@postgres/"))' /tmp/production.json
       - name: Deploy script lint
-        run: shellcheck deploy/deploy.sh
+        run: shellcheck deploy/deploy.sh deploy/build-target.sh deploy/check-cpu.sh
       - run: docker compose up --build -d postgres migrate grants pgbouncer api worker
       - name: Check API readiness
         run: curl --fail --retry 15 --retry-all-errors --retry-delay 2 -H "X-Audeniq-Service:$EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready

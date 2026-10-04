@@ -6,6 +6,7 @@ The API receives no cloud credentials. No cloud resources are created here.
 """
 import argparse
 import base64
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 from pathlib import Path
@@ -272,22 +273,35 @@ def unwrap_key(key, version, scratch):
     return plaintext
 
 
-def rewrap_bundle(bundle, provider, key_id, scratch):
+def map_keys(keys, operation, concurrency):
+    if type(concurrency) is not int or not 1 <= concurrency <= 4:
+        raise ValueError('KMS concurrency must be 1..4')
+    items = list(keys.items())
+    def apply(item):
+        version, key = item
+        return version, operation(version, key)
+    if concurrency == 1 or len(items) <= 1:
+        return dict(map(apply, items))
+    # Outstanding requests are bounded; every task finishes before returning
+    # or propagating a failure. No partial keyring can be published.
+    with ThreadPoolExecutor(max_workers=min(concurrency, len(items)), thread_name_prefix='audeniq-kms') as executor:
+        return dict(executor.map(apply, items))
+
+
+def rewrap_bundle(bundle, provider, key_id, scratch, concurrency=2):
     source = upgrade_bundle(bundle)
     validate_key_id(provider, key_id)
     # Preserve each AES key/version; changing the KMS requires no DB rewrite.
-    keys = {version: wrap_key(provider, key_id, version, unwrap_key(key, version, scratch), scratch)
-            for version, key in source['keys'].items()}
+    keys = map_keys(source['keys'], lambda version, key:
+                    wrap_key(provider, key_id, version, unwrap_key(key, version, scratch), scratch), concurrency)
     result = dict(source, keys=keys)
     validate_bundle(result)
     return result
 
 
-def materialize(bundle, scratch, destination, gid):
+def materialize(bundle, scratch, destination, gid, concurrency=2):
     validate_bundle(bundle)
-    keys = {}
-    for version, key in bundle['keys'].items():
-        keys[version] = unwrap_key(key, version, scratch).hex()
+    keys = map_keys(bundle['keys'], lambda version, key: unwrap_key(key, version, scratch).hex(), concurrency)
     # All versions must decrypt successfully before replacing a usable keyring.
     atomic_write(destination, {'version': 1, 'active_version': bundle['active_version'], 'keys': keys}, gid)
 
@@ -302,6 +316,8 @@ def main():
     parser.add_argument('--legacy-key-file', type=Path, help='private 64-hex key file, supplied only for migration')
     parser.add_argument('--runtime-dir', type=Path, default=Path('/dev/shm/audeniq-secrets'))
     parser.add_argument('--gid', type=int, default=10001, help='API container group; directory owner remains root')
+    parser.add_argument('--kms-concurrency', type=int, choices=range(1, 5), default=2,
+                        help='simultaneous key operations (default: 2; use 1 for minimum startup RAM)')
     args = parser.parse_args()
     try:
         scratch = secure_directory(args.runtime_dir, os.geteuid(), args.gid)
@@ -309,12 +325,12 @@ def main():
         if args.command == 'materialize':
             if args.provider is not None or args.key_id is not None:
                 raise ValueError('materialize reads providers from the bundle; use rewrap to switch')
-            materialize(bundle, scratch, scratch / 'payout-keyring.json', args.gid)
+            materialize(bundle, scratch, scratch / 'payout-keyring.json', args.gid, args.kms_concurrency)
         else:
             provider = args.provider or 'aws'
             validate_key_id(provider, args.key_id or '')
             if args.command == 'rewrap':
-                bundle = rewrap_bundle(bundle, provider, args.key_id, scratch)
+                bundle = rewrap_bundle(bundle, provider, args.key_id, scratch, args.kms_concurrency)
                 atomic_write(args.bundle, bundle)
                 print(f'KMS keyring rewrap completed; active version {bundle["active_version"]}')
                 return

@@ -58,27 +58,42 @@ pub async fn reencrypt_accounts(pool: &PgPool, operator: &str) -> Result<Value> 
     let mut tx = pool.begin().await?;
     let rows=sqlx::query("SELECT org_id,account_cipher FROM portal.payout_accounts WHERE key_version<>$1 OR substring(account_cipher FROM 1 FOR 6)<>$2 ORDER BY org_id LIMIT 100 FOR UPDATE SKIP LOCKED")
         .bind(keys.active_version()).bind(crate::payout_keys::TAG).fetch_all(&mut *tx).await?;
+    let mut orgs = Vec::with_capacity(rows.len());
+    let mut ciphers = Vec::with_capacity(rows.len());
+    let mut event_ids = Vec::with_capacity(rows.len());
+    let mut request_ids = Vec::with_capacity(rows.len());
     for row in &rows {
         let org: Uuid = row.get("org_id");
-        let cipher: Vec<u8> = row.get("account_cipher");
-        let number = keys.open(org, &cipher)?;
-        let cipher = keys.seal(org, &number)?;
-        sqlx::query("UPDATE portal.payout_accounts SET account_cipher=$2,key_version=$3,row_version=row_version+1 WHERE org_id=$1")
-            .bind(org).bind(cipher).bind(keys.active_version()).execute(&mut *tx).await?;
-        operations::audit(
-            &mut tx,
-            None,
-            Some(org),
-            Some(org),
-            "privacy.account.reencrypted",
-            &format!(
-                "OPERATOR:{} key_version={}",
-                operator.trim(),
-                keys.active_version()
-            ),
-            Uuid::new_v4(),
+        let cipher: &[u8] = row.get("account_cipher");
+        let number = keys.open(org, cipher)?;
+        orgs.push(org);
+        ciphers.push(keys.seal(org, &number)?);
+        event_ids.push(Uuid::new_v4());
+        request_ids.push(Uuid::new_v4());
+    }
+    if !rows.is_empty() {
+        // The selected rows remain locked. Update and one audit event per
+        // account share one statement/transaction; an audit failure rolls all
+        // changes back. Only ciphertext and IDs enter these bounded arrays.
+        let changed = sqlx::query(
+            "WITH changed AS (
+                UPDATE portal.payout_accounts AS account
+                SET account_cipher=source.cipher,key_version=$3,row_version=account.row_version+1
+                FROM unnest($1::uuid[],$2::bytea[]) AS source(org_id,cipher)
+                WHERE account.org_id=source.org_id RETURNING account.org_id
+             )
+             INSERT INTO operations.audit_events(id,actor_user_id,actor_service,org_id,resource_id,action,reason_code,request_id)
+             SELECT source.event_id,NULL,'audeniq-system',changed.org_id,changed.org_id,
+                    'privacy.account.reencrypted',$6,source.request_id
+             FROM changed JOIN unnest($1::uuid[],$4::uuid[],$5::uuid[]) AS source(org_id,event_id,request_id)
+                  ON changed.org_id=source.org_id"
         )
-        .await?;
+        .bind(&orgs).bind(&ciphers).bind(keys.active_version()).bind(&event_ids).bind(&request_ids)
+        .bind(format!("OPERATOR:{} key_version={}", operator.trim(), keys.active_version()))
+        .execute(&mut *tx).await?.rows_affected();
+        if changed != rows.len() as u64 {
+            return Err(Error::Internal);
+        }
     }
     tx.commit().await?;
     Ok(json!({"reencrypted":rows.len(),"active_version":keys.active_version(),"batch_limit":100}))
