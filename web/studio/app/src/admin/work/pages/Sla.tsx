@@ -9,7 +9,7 @@ import { useConfirm } from '../../../components/Confirm';
 import { errorMessage } from '../../../api/errors';
 import { useAsync } from '../../../hooks/useAsync';
 import { Glyph } from '../../../components/Glyph';
-import { Chip, Empty, ErrorBox, PageHead, Section, Skeleton, StatusChip, useStaff } from '../../ui';
+import { Chip, Empty, ErrorBox, PageHead, Section, Skeleton, StatusChip, useStaff, WorkTabs } from '../../ui';
 import { DSP_NAME } from '../../dspReqs';
 import { workApi } from '../api';
 import {
@@ -221,7 +221,7 @@ export function Sla() {
   return (
     <div className="view-enter">
       <PageHead
-        eyebrow="운영"
+        eyebrow="업무"
         title="SLA · 마감"
         sub="업무 유형과 기존 대기열마다 처리 기한을 정하고, 임박·초과 건을 한눈에 봐요. 영업일 기준이면 근무 시간과 휴일을 빼고 계산해요."
         actions={<>
@@ -229,6 +229,7 @@ export function Sla() {
           {admin && <button type="button" className="adm-btn primary small" onClick={() => setEditing('new')}><Glyph name="plus" size={14} />정책 추가</button>}
         </>}
       />
+      <WorkTabs />
       <MiniStats items={[
         { label: '기한 초과', value: breached, tone: breached ? 'alert' : 'muted' },
         { label: '임박', value: warning, tone: warning ? 'warn' : 'muted' },

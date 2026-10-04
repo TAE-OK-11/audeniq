@@ -6,7 +6,7 @@ import { useToast } from '../../../components/Toast';
 import { errorMessage } from '../../../api/errors';
 import { useAsync } from '../../../hooks/useAsync';
 import { Glyph } from '../../../components/Glyph';
-import { Chip, Empty, ErrorBox, Filters, PageHead, Seg, Skeleton, useStaff } from '../../ui';
+import { Chip, Empty, ErrorBox, Filters, PageHead, Seg, Skeleton, useStaff, WorkTabs } from '../../ui';
 import { ago } from '../../labels';
 import { workApi } from '../api';
 import { ENTITY_KIND, EXCEPTION_KIND, INBOX_CATEGORIES, INBOX_CATEGORY, INBOX_FLAG, PRIORITIES, PRIORITY, QUEUE_TYPE, WORK_TYPE } from '../labels';
@@ -106,6 +106,7 @@ export function Inbox() {
           <button type="button" className="adm-btn soft small" onClick={readAll} disabled={!items.some(i => !i.read)}>모두 읽음</button>
         </>}
       />
+      <WorkTabs />
       <MiniStats items={[
         { label: '전체', value: data?.total ?? '–', hint: data ? `읽지 않음 ${data.unread}` : undefined, onClick: () => setCategory(''), active: !category },
         { label: '기한 초과', value: n('OVERDUE') + n('SUPPORT_ESCALATION'), tone: n('OVERDUE') + n('SUPPORT_ESCALATION') ? 'alert' : 'muted', onClick: () => setCategory('OVERDUE'), active: category === 'OVERDUE' },
