@@ -94,3 +94,25 @@ allocator 관리 비용을 제외하므로 RSS와 같지 않다. Argon2 비용�
 
 참고: [AES-GCM in-place API](https://docs.rs/aes-gcm/0.11.1/aes_gcm/),
 [Argon2 메모리 비용 API](https://docs.rs/argon2/0.6.0/argon2/struct.Argon2.html).
+
+## 네이티브 CI 측정 결과
+
+[2026-10-04 Backend portability 실행](https://github.com/TAE-OK-11/audeniq/actions/runs/37171628590)은
+x86-64·ARM64 각각 Rust 회귀 296개(ignored 1개 제외), CPU/KMS Python 테스트
+33개를 통과했다. 실제 PostgreSQL의 배치 경계·감사 실패/변조 rollback·잠긴 행
+검사도 포함한다. 아래 값은 같은 dev 프로필과 의존성에서 순서를 번갈아
+5회 비교한 CPU 중앙값이다. 운영 release/Graviton4 서버 측정과 구분한다.
+
+| 경로 | x86-64 CPU µs 기존 → 변경 | ARM64 CPU µs 기존 → 변경 | 할당 횟수 기존 → 변경 | 순간 payload bytes 기존 → 변경 |
+|---|---:|---:|---:|---:|
+| 암호화 14자 | 14.076 → 8.969 | 15.472 → 7.245 | 7 → 1 | 134 → 50 |
+| 복호화 14자 | 13.862 → 8.655 | 15.740 → 7.272 | 4 → 1 | 122 → 14 |
+| 암호화 20자 | 19.643 → 14.507 | 17.662 → 9.426 | 7 → 1 | 140 → 56 |
+| 복호화 20자 | 19.422 → 14.244 | 18.015 → 9.484 | 4 → 1 | 128 → 20 |
+| secret 일치 비교 | 1.330 → 1.245 | 2.115 → 1.998 | 2 → 0 | 64 → 0 |
+
+이 계좌 fixture에서 CPU 감소는 x86-64 26–38%, ARM64 47–54%다.
+프로세스 전체 RSS 또는 API 지연 감소율은 아니다. 준비된 cipher는 양쪽
+아키텍처에서 버전당 1,104바이트였고, raw 32바이트 키보다 크다.
+키 64개일 때 cipher 상태만 약 69 KiB이며 BTreeMap 관리 비용은 별도다.
+KMS 및 DB의 네트워크/전체 처리 시간은 이 마이크로벤치마크에서 측정하지 않는다.
