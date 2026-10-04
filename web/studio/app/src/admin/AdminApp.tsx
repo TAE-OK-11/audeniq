@@ -31,7 +31,7 @@ const PAGE_LOADERS = {
   Sla: () => import('./work/pages/Sla'),
   Crm: () => import('./work/pages/Crm'),
   Chat: () => import('./work/pages/Chat'),
-  Board: () => import('./work/pages/Tasks'),
+  Board: () => import('./work/pages/Board'),
   CrmDetail: () => import('./work/pages/Crm'),
   DspOps: () => import('./work/pages/DspOps'),
 } satisfies Record<string, () => Promise<unknown>>;
@@ -296,6 +296,7 @@ export function AdminApp() {
               <Route path="/admin/dsp-ops" element={<DspOps />} />
               <Route path="/admin/tasks" element={<Tasks />} />
               <Route path="/admin/board" element={<Board />} />
+              <Route path="/admin/board/:id" element={<Board />} />
               <Route path="/admin/chat" element={<Chat />} />
               <Route path="/admin/chat/:id" element={<Chat />} />
               <Route path="/admin/tasks/:id" element={<TaskDetail />} />

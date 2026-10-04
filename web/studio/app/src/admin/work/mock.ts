@@ -9,6 +9,8 @@ import type {
 import type { WorkApi } from './api';
 import { makeOps, mockExceptions } from './mockOps';
 import { makeCrm } from './mockCrm';
+import { makeBoards } from './mockBoards';
+import { makeDocs } from './mockDocs';
 
 const ME = 'staff-me-0001';
 const KIM = 'staff-kim-0002';
@@ -349,4 +351,6 @@ export const mockWork: WorkApi = {
   attachmentUrl: () => '',
   ...makeOps({ me: ME, tasks, notes, createTask: i => mockWork.createTask(i) }),
   ...makeCrm({ me: ME, others: [KIM, TAE], resolve, exceptions: mockExceptions }),
+  ...makeBoards({ me: ME, tasks, notes, resolve, createTask: i => mockWork.createTask(i), updateTask: (id, p) => mockWork.updateTask(id, p) }),
+  ...makeDocs({ me: ME, tasks, notes, resolve }),
 };
