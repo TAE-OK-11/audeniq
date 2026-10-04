@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { Link, useLocation } from '../lib/router';
 import type { Duty, Overview, StaffMe } from './api';
 import type { Tone } from './labels';
+import type { WorkSummary } from './work/types';
 import { useSegPill } from '../hooks/useSegPill';
 import { CheckIcon } from '../components/Check';
 
@@ -92,6 +93,9 @@ interface StaffCtx {
   me: StaffMe;
   counts: Overview | null;
   refreshCounts: () => void;
+  /** 업무함·업무·예외·SLA 숫자 (메뉴 배지) */
+  work: WorkSummary | null;
+  refreshWork: () => void;
   can: (d: Duty) => boolean;
 }
 export const StaffContext = createContext<StaffCtx | null>(null);

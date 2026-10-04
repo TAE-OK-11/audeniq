@@ -8,6 +8,8 @@ import { MOCK } from '../lib/mode';
 import { useConfirm } from '../components/Confirm';
 import { useToast } from '../components/Toast';
 import { staffApi, type Duty, type Overview, type StaffMe } from './api';
+import { workApi } from './work/api';
+import type { WorkSummary } from './work/types';
 import { ROLE_LABEL } from './labels';
 import { Skeleton, StaffContext } from './ui';
 import { OverviewPage } from './pages/Overview';
@@ -24,6 +26,14 @@ const PAGE_LOADERS = {
   Dsps: () => import('./pages/Dsps'),
   Payouts: () => import('./pages/Payouts'),
   ContentAdmin: () => import('../pages/ContentAdmin'),
+  Inbox: () => import('./work/pages/Inbox'),
+  Tasks: () => import('./work/pages/Tasks'),
+  TaskDetail: () => import('./work/pages/TaskDetail'),
+  Exceptions: () => import('./work/pages/Exceptions'),
+  Sla: () => import('./work/pages/Sla'),
+  Crm: () => import('./work/pages/Crm'),
+  DspOps: () => import('./work/pages/DspOps'),
+  Analytics: () => import('./work/pages/Analytics'),
 } satisfies Record<string, () => Promise<unknown>>;
 const page = (name: keyof typeof PAGE_LOADERS) =>
   lazy(() => PAGE_LOADERS[name]().then(m => ({ default: (m as unknown as PageModule)[name] })));
@@ -36,27 +46,46 @@ const Deliveries = page('Deliveries');
 const Dsps = page('Dsps');
 const Payouts = page('Payouts');
 const ContentAdmin = page('ContentAdmin');
+const Inbox = page('Inbox');
+const Tasks = page('Tasks');
+const TaskDetail = page('TaskDetail');
+const Exceptions = page('Exceptions');
+const Sla = page('Sla');
+const Crm = page('Crm');
+const DspOps = page('DspOps');
+const Analytics = page('Analytics');
 function prefetchPages() {
   const run = () => { for (const load of Object.values(PAGE_LOADERS)) void load().catch(() => {}); };
   if ('requestIdleCallback' in window) window.requestIdleCallback(run, { timeout: 4000 });
   else setTimeout(run, 1500);
 }
 import '../styles/admin.css';
+import '../styles/work.css';
 import { Glyph } from '../components/Glyph';
 
 // 관리자 메뉴 아이콘 — 스튜디오와 같은 AUDENIQ 아이콘 세트(Glyph)
 const ICONS: Record<string, string> = {
   home: 'home', review: 'review', approval: 'approval', doc: 'doc', inquiry: 'inquiry',
   delivery: 'truck', dsp: 'globe', payout: 'card',
+  inbox: 'inbox', task: 'task', exception: 'bolt', sla: 'clock', crm: 'users', dspops: 'pulse', analytics: 'chart',
 };
 
 export function Icon({ name }: { name: string }) {
   return <Glyph name={ICONS[name] ?? name} size={18} />;
 }
 
-interface NavItem { to: string; label: string; icon: string; count?: (o: Overview) => number; hot?: boolean; adminOnly?: boolean; also?: string[] }
+interface NavItem { to: string; label: string; icon: string; count?: (o: Overview) => number; workCount?: (w: WorkSummary) => number; hot?: boolean; adminOnly?: boolean; also?: string[] }
 const NAV: { group: string; items: NavItem[] }[] = [
   { group: 'OVERVIEW', items: [{ to: '/admin', label: '오늘의 업무', icon: 'home' }] },
+  {
+    group: 'WORK',
+    items: [
+      // 출근하면 업무함 하나만 본다 — 배정·승인 요청·보완 요청·멘션·자동화 실패·SLA 초과·문의·권리 이슈
+      { to: '/admin/inbox', label: '업무함', icon: 'inbox', workCount: w => w.inbox_unread, hot: true },
+      { to: '/admin/tasks', label: '업무', icon: 'task', workCount: w => w.my_open },
+      { to: '/admin/exceptions', label: '예외 처리', icon: 'exception', workCount: w => w.exceptions_open, hot: true },
+    ],
+  },
   {
     group: 'REVIEW',
     items: [
@@ -72,7 +101,16 @@ const NAV: { group: string; items: NavItem[] }[] = [
     items: [
       // 배급은 최종 승인 + 아티스트 서명 후 자동 — 여기서는 현황과 문제만 본다 (DSP 사양은 탭)
       { to: '/admin/deliveries', label: '배급 현황', icon: 'delivery', count: o => o.deliveries_blocked, hot: true, also: ['/admin/dsps'] },
+      { to: '/admin/dsp-ops', label: 'DSP 운영', icon: 'dspops' },
       { to: '/admin/payouts', label: '지급 요청', icon: 'payout', count: o => o.payout_requests, adminOnly: true },
+    ],
+  },
+  {
+    group: 'OPERATIONS',
+    items: [
+      { to: '/admin/sla', label: 'SLA · 마감', icon: 'sla', workCount: w => w.overdue, hot: true },
+      { to: '/admin/crm', label: '거래처', icon: 'crm', workCount: w => w.follow_ups_due },
+      { to: '/admin/analytics', label: '업무 분석', icon: 'analytics' },
     ],
   },
 ];
@@ -99,6 +137,7 @@ export function AdminApp() {
   const [me, setMe] = useState<StaffMe | null>(null);
   const [gate, setGate] = useState<'loading' | 'ok' | 'forbidden' | 'error'>('loading');
   const [counts, setCounts] = useState<Overview | null>(null);
+  const [work, setWork] = useState<WorkSummary | null>(null);
 
   const loadMe = useCallback(() => {
     setGate('loading');
@@ -111,13 +150,18 @@ export function AdminApp() {
   const refreshCounts = useCallback(() => {
     staffApi.overview().then(setCounts).catch(() => { /* 숫자는 보조 정보 — 실패해도 화면은 쓸 수 있다 */ });
   }, []);
+  const refreshWork = useCallback(() => {
+    workApi.summary().then(setWork).catch(() => { /* 업무 숫자도 보조 정보 */ });
+  }, []);
+
   useEffect(() => {
     if (gate !== 'ok') return;
     refreshCounts();
+    refreshWork();
     // 여러 담당자가 동시에 처리하므로 1분마다 대기 건수를 새로 받는다 (탭이 보일 때만)
-    const t = window.setInterval(() => { if (document.visibilityState === 'visible') refreshCounts(); }, 60_000);
+    const t = window.setInterval(() => { if (document.visibilityState === 'visible') { refreshCounts(); refreshWork(); } }, 60_000);
     return () => window.clearInterval(t);
-  }, [gate, refreshCounts]);
+  }, [gate, refreshCounts, refreshWork]);
 
   useEffect(() => { window.scrollTo(0, 0); }, [loc.pathname]);
   useEffect(() => {
@@ -127,8 +171,8 @@ export function AdminApp() {
   }, []);
 
   const ctx = useMemo(() => me && ({
-    me, counts, refreshCounts, can: (d: Duty) => me.duties.includes(d),
-  }), [me, counts, refreshCounts]);
+    me, counts, refreshCounts, work, refreshWork, can: (d: Duty) => me.duties.includes(d),
+  }), [me, counts, refreshCounts, work, refreshWork]);
 
   const doLogout = async () => {
     const ok = await confirm({ title: '로그아웃할까요?', confirmLabel: '로그아웃' });
@@ -186,7 +230,7 @@ export function AdminApp() {
               <div className="adm-side-group" key={g.group}>
                 <div className="adm-side-label">{g.group}</div>
                 {g.items.filter(i => !i.adminOnly || me.role === 'ADMIN').map(i => {
-                  const n = counts && i.count ? i.count(counts) : 0;
+                  const n = i.workCount ? (work ? i.workCount(work) : 0) : counts && i.count ? i.count(counts) : 0;
                   const cur = active(loc.pathname, i.to) || !!i.also?.some(a => active(loc.pathname, a));
                   return (
                     <Link key={i.to} to={i.to} aria-current={cur ? 'page' : undefined}>
@@ -214,6 +258,15 @@ export function AdminApp() {
               <Route path="/admin/inquiries/:id" element={<Inquiries />} />
               <Route path="/admin/deliveries" element={<Deliveries />} />
               <Route path="/admin/dsps" element={<Dsps />} />
+              <Route path="/admin/inbox" element={<Inbox />} />
+              <Route path="/admin/tasks" element={<Tasks />} />
+              <Route path="/admin/tasks/:id" element={<TaskDetail />} />
+              <Route path="/admin/exceptions" element={<Exceptions />} />
+              <Route path="/admin/sla" element={<Sla />} />
+              <Route path="/admin/crm" element={<Crm />} />
+              <Route path="/admin/crm/:id" element={<Crm />} />
+              <Route path="/admin/dsp-ops" element={<DspOps />} />
+              <Route path="/admin/analytics" element={<Analytics />} />
               <Route path="/admin/payouts" element={me.role === 'ADMIN' ? <Payouts /> : <Navigate to="/admin" replace />} />
               <Route path="/admin/content" element={me.role === 'ADMIN' ? <ContentAdmin /> : <Navigate to="/admin" replace />} />
               <Route path="/content-admin" element={<Navigate to="/admin/content" replace />} />
