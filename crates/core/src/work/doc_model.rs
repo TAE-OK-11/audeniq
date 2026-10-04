@@ -345,6 +345,7 @@ impl Walker {
                     return Err(bad("DOC_EMBED_INVALID"));
                 }
                 if let Some(view) = short_str(a.get("view"), 20)?
+                    && view != "summary"
                     && !(kind == "release" && EMBED_VIEWS.contains(&view.as_str()))
                 {
                     return Err(bad("DOC_EMBED_INVALID"));

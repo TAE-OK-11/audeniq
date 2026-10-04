@@ -57,6 +57,17 @@ fn parse_refs(raw: &str) -> Result<Vec<EmbedRef>> {
         if !VIEWS.contains(&view) || (view != "summary" && kind != "release") {
             return Err(Error::InvalidCode("EMBED_VIEW_UNKNOWN"));
         }
+        if kind == "audit" {
+            // an audit trail is keyed by the resource it is about
+            let id =
+                Uuid::parse_str(id.trim()).map_err(|_| Error::InvalidCode("ENTITY_ID_INVALID"))?;
+            out.insert(EmbedRef {
+                kind: kind.into(),
+                id: id.to_string(),
+                view: view.into(),
+            });
+            continue;
+        }
         let r = entities::parse(kind, id)?;
         out.insert(EmbedRef {
             kind: r.kind,
@@ -308,13 +319,40 @@ pub async fn resolve(s: &AppState, h: &HeaderMap, raw: &str) -> Result<Value> {
     )
     .await?;
 
+    // Audit trails: reviewers and ADMIN (the audit log is review evidence).
+    let audit_ids = if st.role.may(staff::Duty::Review) {
+        ids_of(&refs, "audit", None)
+    } else {
+        Vec::new()
+    };
+    let audits = objects(
+        &mut tx,
+        "SELECT x.rid::text AS id, jsonb_build_object('events', COALESCE((
+                  SELECT jsonb_agg(jsonb_build_object('action', a.action, 'reason', a.reason_code, 'at', a.occurred_at,
+                                   'actor_id', a.actor_user_id, 'service', a.actor_service) ORDER BY a.occurred_at DESC)
+                    FROM (SELECT * FROM operations.audit_events e WHERE e.resource_id=x.rid ORDER BY e.occurred_at DESC LIMIT 12) a), '[]'),
+                'total', (SELECT count(*) FROM operations.audit_events e WHERE e.resource_id=x.rid)) AS v
+           FROM unnest($1::uuid[]) AS x(rid)",
+        &audit_ids,
+        None,
+    )
+    .await?;
+
     // Other kinds show their label from the entity layer.
     let others: Vec<entities::Ref> = refs
         .iter()
         .filter(|r| {
             !matches!(
                 r.kind.as_str(),
-                "release" | "track" | "artist" | "dsp" | "inquiry" | "task" | "approval" | "doc"
+                "release"
+                    | "track"
+                    | "artist"
+                    | "dsp"
+                    | "inquiry"
+                    | "task"
+                    | "approval"
+                    | "doc"
+                    | "audit"
             )
         })
         .map(|r| entities::Ref {
@@ -360,6 +398,8 @@ pub async fn resolve(s: &AppState, h: &HeaderMap, raw: &str) -> Result<Value> {
             ("task", _) => tasks.get(&r.id).cloned(),
             ("approval", _) => approvals.get(&r.id).cloned(),
             ("doc", _) => docs.get(&r.id).cloned(),
+            ("audit", _) if audit_ids.is_empty() => Some(json!({ "missing": true, "restricted": true })),
+            ("audit", _) => audits.get(&r.id).cloned().filter(|v| v["total"].as_i64().unwrap_or(0) > 0),
             (kind, _) => labels
                 .get(&entities::Ref {
                     kind: kind.into(),
