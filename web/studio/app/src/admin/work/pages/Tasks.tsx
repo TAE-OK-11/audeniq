@@ -1,4 +1,4 @@
-// 업무 — 릴리즈 외 업무까지 전부 등록하는 범용 Task 엔진. 목록 / 보드로 보고,
+// 업무 — 릴리즈 외 업무까지 전부 등록하는 범용 Task 엔진. 목록으로 보고(보드는 /admin/board),
 // 담당·상태·유형·우선순위·담당자·기한·연결 Entity로 거른다.
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from '../../../lib/router';
@@ -9,7 +9,6 @@ import { Empty, ErrorBox, Filters, PageHead, Seg, Skeleton, WorkTabs } from '../
 import { workApi } from '../api';
 import { ENTITY_KIND, PRIORITIES, PRIORITY, WORK_TYPE, WORK_TYPES, recurLabel } from '../labels';
 import { TaskForm } from '../TaskForm';
-import { Kanban } from '../Kanban';
 import { DueChip, EntityChips, Person, PersonSelect, PriorityChip, TaskStatusChip, usePeople, type People } from '../ui';
 import type { EntityKind, Priority, TaskQuery, WorkTask, WorkType } from '../types';
 
@@ -40,8 +39,7 @@ function TaskRow({ t, people }: { t: WorkTask; people: People }) {
   );
 }
 
-/** `board` = 칸반 보드(/admin/board), 아니면 목록(/admin/tasks) */
-export function Tasks({ board = false }: { board?: boolean }) {
+export function Tasks() {
   const nav = useNavigate();
   const [params, setParams] = useSearchParams();
   const view = (params.get('view') as View) || 'mine';
@@ -53,16 +51,16 @@ export function Tasks({ board = false }: { board?: boolean }) {
   const [due, setDue] = useState<NonNullable<TaskQuery['due']>>('');
   const [assignee, setAssignee] = useState<string | null>(null);
   const [q, setQ] = useState('');
-  const layout = board ? 'board' : 'list';
-  const setLayout = (v: 'list' | 'board') => nav(`${v === 'board' ? '/admin/board' : '/admin/tasks'}${params.toString() ? `?${params}` : ''}`);
+  // 보드 보기는 칸반 보드 화면으로 (보드마다 열·필터가 따로 있다)
+  const setLayout = (v: 'list' | 'board') => { if (v === 'board') nav('/admin/board'); };
   const [creating, setCreating] = useState(false);
   const people = usePeople();
   const { data, loading, error, reload } = useAsync(
     () => workApi.tasks({
-      view, status: layout === 'board' ? 'all' : status, type, priority, due, q: q.trim() || undefined,
+      view, status, type, priority, due, q: q.trim() || undefined,
       assignee: view === 'all' ? assignee ?? undefined : undefined, entity_kind: entityKind, entity_id: entityId,
     }),
-    [view, status, type, priority, due, assignee, layout, entityKind, entityId, q],
+    [view, status, type, priority, due, assignee, entityKind, entityId, q],
   );
   const items = data?.items ?? [];
   const set = (k: string, v: string) => { const next = new URLSearchParams(params); next.set(k, v); setParams(next, { replace: true }); };
@@ -90,10 +88,10 @@ export function Tasks({ board = false }: { board?: boolean }) {
       <div className="adm-queue-tools">
         <label htmlFor="tSearch" className="sr-only">검색</label>
         <input id="tSearch" type="search" className="adm-input" placeholder="제목·번호·태그로 찾기" value={q} onChange={e => setQ(e.target.value)} />
-        <Seg label="보기 방식" value={layout} onChange={setLayout} options={[['list', '목록'], ['board', '보드']] as const} />
+        <Seg label="보기 방식" value="list" onChange={setLayout} options={[['list', '목록'], ['board', '보드']] as const} />
       </div>
       <div className="adm-queue-tools adm-w-filter-row">
-        {layout === 'list' && <Seg label="상태" value={status} onChange={v => set('status', v)} options={[['open', '진행 중'], ['done', '완료'], ['all', '전체'], ['archived', '보관']] as const} />}
+        <Seg label="상태" value={status} onChange={v => set('status', v)} options={[['open', '진행 중'], ['done', '완료'], ['all', '전체'], ['archived', '보관']] as const} />
         <select className="adm-select" aria-label="업무 유형" value={type} onChange={e => setType(e.target.value as WorkType | '')}>
           <option value="">모든 유형</option>
           {WORK_TYPES.map(t => <option key={t} value={t}>{WORK_TYPE[t]}</option>)}
@@ -116,7 +114,7 @@ export function Tasks({ board = false }: { board?: boolean }) {
         <Empty icon={<Glyph name="task" size={22} />} title={status === 'archived' ? '보관한 업무가 없어요' : status === 'done' ? '완료한 업무가 없어요' : '진행 중인 업무가 없어요'}>
           <button type="button" className="adm-btn soft small" style={{ marginTop: 14 }} onClick={() => setCreating(true)}>새 업무 만들기</button>
         </Empty>
-      ) : layout === 'board' ? <Kanban items={items} people={people} onReload={reload} /> : (
+      ) : (
         <div className="adm-list">{items.map(t => <TaskRow key={t.id} t={t} people={people} />)}</div>
       )}
       {creating && (
@@ -126,9 +124,4 @@ export function Tasks({ board = false }: { board?: boolean }) {
       )}
     </div>
   );
-}
-
-/** 칸반 보드 (/admin/board) — 같은 목록·필터를 상태 열로 */
-export function Board() {
-  return <Tasks board />;
 }
