@@ -1767,3 +1767,11 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-doc-done .button{flex:none;margin-left:auto}
 @media(max-width:640px){.aq-paper-parties .aq-paper-signer strong{min-width:0;text-align:center}.aq-doc-done{flex-wrap:wrap}.aq-doc-done .button{width:100%}}
 @media print{.aq-doc-done.is-pending{display:none!important}}
+
+/* 브라우저 알림 켜기 — 알림 카드와 같은 면(윤곽선 없음) + 스튜디오 스위치 */
+.aq-alert-pref{display:flex;align-items:center;gap:14px;margin:0 0 16px;padding:16px 18px;border-radius:22px;background:#F5F8FF}
+.aq-alert-pref-icon{flex:0 0 auto;width:40px;height:40px;border-radius:13px;display:grid;place-items:center;background:#e6edff;color:#3B63F3}
+.aq-alert-pref .min-0{flex:1 1 auto;display:grid;gap:2px}
+.aq-alert-pref strong{font-size:14px;font-weight:760;color:#171B29}
+.aq-alert-pref .min-0>span{font-size:12.5px;line-height:1.55;color:#67738a}
+.aq-alert-pref .aq-switch input:disabled+span{opacity:.5}

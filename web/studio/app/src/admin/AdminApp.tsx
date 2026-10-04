@@ -48,6 +48,9 @@ function prefetchPages() {
 import '../styles/admin.css';
 import '../styles/work.css';
 import { Glyph } from '../components/Glyph';
+import { openLive } from '../lib/live';
+import { alertsBlocked, alertsEnabled, alertsSupported, disableAlerts, enableAlerts, systemAlert } from '../lib/alerts';
+import { ADMIN_INQUIRIES_EVENT, ADMIN_WORK_EVENT } from './liveEvents';
 
 // 관리자 메뉴 아이콘 — 스튜디오와 같은 AUDENIQ 아이콘 세트(Glyph)
 const ICONS: Record<string, string> = {
@@ -101,6 +104,25 @@ function Gate({ title, children, action }: { title: string; children: ReactNode;
   );
 }
 
+/** 브라우저 알림 — 다른 탭에 있어도 새 고객 메시지를 알려 준다 */
+function AlertToggle() {
+  const toast = useToast();
+  const [on, setOn] = useState(alertsEnabled);
+  if (!alertsSupported() || MOCK) return null;
+  const toggle = async () => {
+    if (on) { disableAlerts(); setOn(false); toast('브라우저 알림을 껐어요.', 'info'); return; }
+    if (alertsBlocked()) { toast('브라우저 설정에서 이 사이트의 알림을 허용해 주세요.', 'error'); return; }
+    const ok = await enableAlerts();
+    setOn(ok);
+    toast(ok ? '브라우저 알림을 켰어요. 새 고객 메시지를 알려 드릴게요.' : '브라우저에서 알림 권한을 허용해 주세요.', ok ? 'success' : 'error');
+  };
+  return (
+    <button type="button" className={`adm-ghost adm-alert-toggle${on ? ' is-on' : ''}`} aria-pressed={on} onClick={toggle} title={on ? '브라우저 알림 끄기' : '브라우저 알림 켜기'}>
+      <Glyph name="bell" size={15} /><span className="adm-ghost-text">{on ? '알림 켜짐' : '알림 켜기'}</span>
+    </button>
+  );
+}
+
 export function AdminApp() {
   const loc = useLocation();
   const nav = useNavigate();
@@ -127,8 +149,24 @@ export function AdminApp() {
     refreshCounts();
     // 여러 담당자가 동시에 처리하므로 1분마다 대기 건수를 새로 받는다 (탭이 보일 때만)
     const t = window.setInterval(() => { if (document.visibilityState === 'visible') refreshCounts(); }, 60_000);
-    return () => window.clearInterval(t);
-  }, [gate, refreshCounts]);
+    // 실시간 연결 — 고객 문의·업무가 바뀌면 숫자와 열린 화면을 바로 새로 고치고, 새 고객 메시지는 알린다
+    const stopLive = MOCK ? () => {} : openLive('/api/staff/live', {
+      on: {
+        inquiries: d => {
+          refreshCounts();
+          window.dispatchEvent(new CustomEvent(ADMIN_INQUIRIES_EVENT, { detail: { inquiryId: d.inquiry_id ?? null } }));
+          if (d.customer && me?.duties.includes('INQUIRIES') && d.inquiry_id) {
+            const title = '새 고객 문의 메시지';
+            const body = [d.org, d.subject].filter(Boolean).join(' · ');
+            if (!systemAlert(title, body, `/admin/inquiries/${d.inquiry_id}`, `inq-${d.inquiry_id}`)) toast(`${title} — ${body}`, 'info');
+          }
+        },
+        work: () => window.dispatchEvent(new Event(ADMIN_WORK_EVENT)),
+      },
+      resync: refreshCounts,
+    });
+    return () => { window.clearInterval(t); stopLive(); };
+  }, [gate, refreshCounts]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { window.scrollTo(0, 0); }, [loc.pathname]);
   useEffect(() => {
@@ -181,6 +219,7 @@ export function AdminApp() {
             </Link>
             <div className="adm-header-right">
               {MOCK && <span className="adm-chip adm-t-amber">체험 데이터</span>}
+              <AlertToggle />
               <div className="adm-who" title={user?.email}>
                 <span className="adm-who-avatar" aria-hidden="true">{initial}</span>
                 <span className="adm-who-text"><b>{user?.email}</b><small>{ROLE_LABEL[me.role]}</small></span>
