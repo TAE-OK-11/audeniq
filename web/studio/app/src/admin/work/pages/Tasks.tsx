@@ -5,7 +5,7 @@ import { Link, useNavigate, useSearchParams } from '../../../lib/router';
 import { Modal } from '../../../components/Modal';
 import { useAsync } from '../../../hooks/useAsync';
 import { Glyph } from '../../../components/Glyph';
-import { Empty, ErrorBox, Filters, PageHead, Seg, Skeleton } from '../../ui';
+import { Empty, ErrorBox, Filters, PageHead, Seg, Skeleton, WorkTabs } from '../../ui';
 import { workApi } from '../api';
 import { ENTITY_KIND, OPEN_STATUSES, PRIORITIES, PRIORITY, TASK_STATUS, WORK_TYPE, WORK_TYPES, recurLabel } from '../labels';
 import { TaskForm } from '../TaskForm';
@@ -101,6 +101,7 @@ export function Tasks() {
           <button type="button" className="adm-btn primary small" onClick={() => setCreating(true)}><Glyph name="plus" size={14} />새 업무</button>
         </>}
       />
+      <WorkTabs />
       <Filters label="담당" value={view} onChange={v => set('view', v)} options={VIEWS.map(([value, label]) => ({ value, label }))} />
       {entityKind && entityId && (
         <div className="adm-alert adm-alert-row">
