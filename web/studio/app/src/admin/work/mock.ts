@@ -133,6 +133,8 @@ const dsps: DspOps[] = [
   dsp('D-9', { contract_stage: 'NEGOTIATING', health: 'ONBOARDING', integration: 'DDEX_SFTP', last_sync_at: null, deliveries_30d: 0, failures_30d: 0, avg_approval_hours: null, failure_trend: [0, 0, 0, 0, 0, 0, 0, 0], owner_id: ME }),
 ];
 
+const uploads = new Map<string, { id: string; name: string; size: number; content_type: string }>();
+
 // ---------- 업무함 읽음 ----------
 const readIds = new Set<string>();
 
@@ -295,7 +297,7 @@ export const mockWork: WorkApi = {
     if (!body.body.trim() && body.attachments.length === 0) fail('VALIDATION');
     const n: WorkNote = {
       id: `n-${uid()}`, target_kind: body.target_kind, target_id: body.target_id, author_id: ME, body: body.body.trim(), mentions: body.mentions,
-      attachments: body.attachments.map(a => ({ id: `att-${uid()}`, name: a.name, content_type: a.content_type, size: Math.round(a.data.length * 0.75) })),
+      attachments: body.attachments.map(u => uploads.get(u) ?? fail('NOT_FOUND', 404)),
       resolved: false, resolved_by: null, resolved_at: null, created_at: new Date().toISOString(),
     };
     notes.push(n);
@@ -307,6 +309,11 @@ export const mockWork: WorkApi = {
     const n = notes.find(x => x.id === id) ?? fail('NOT_FOUND', 404);
     n.resolved = resolved; n.resolved_by = resolved ? ME : null; n.resolved_at = resolved ? new Date().toISOString() : null;
     return wait(n);
+  },
+  upload: async (file: File) => {
+    const upId = `att-${uid()}`;
+    uploads.set(upId, { id: upId, name: file.name, size: file.size, content_type: file.type || 'application/octet-stream' });
+    return wait(upId);
   },
   attachmentUrl: () => '',
 
