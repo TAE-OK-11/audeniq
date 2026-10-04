@@ -29,6 +29,7 @@ export interface TaskQuery {
 }
 
 const B = '/api/staff/work';
+const UPLOAD_PART = 32 * 1024;
 
 const remote = {
   summary: () => req<WorkSummary>(`${B}/summary`),
@@ -45,6 +46,19 @@ const remote = {
   notes: (kind: EntityKind, targetId: string) => req<Page<WorkNote>>(`${B}/notes${qs({ target_kind: kind, target_id: targetId })}`),
   addNote: (body: NoteInput) => req<WorkNote>(`${B}/notes`, { method: 'POST', body }),
   resolveNote: (noteId: string, resolved: boolean) => req<WorkNote>(`${B}/notes/${id(noteId)}/resolve`, { method: 'POST', body: { resolved } }),
+  /** 첨부 올리기 — 엣지가 JSON 본문을 64KB까지만 받으므로 32KB씩 나눠 보낸다 */
+  upload: async (file: File, onProgress?: (done: number) => void): Promise<string> => {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const sha256 = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b => b.toString(16).padStart(2, '0')).join('');
+    const { id: upId } = await req<{ id: string }>(`${B}/uploads`, { method: 'POST', body: { name: file.name, content_type: file.type || 'application/octet-stream', size: bytes.length, sha256 } });
+    for (let i = 0, part = 0; i < bytes.length; i += UPLOAD_PART, part++) {
+      let bin = '';
+      for (const b of bytes.subarray(i, i + UPLOAD_PART)) bin += String.fromCharCode(b);
+      await req(`${B}/uploads/${id(upId)}/parts`, { method: 'POST', body: { index: part, data: btoa(bin) } });
+      onProgress?.(Math.min(bytes.length, i + UPLOAD_PART) / bytes.length);
+    }
+    return upId;
+  },
   attachmentUrl: (attId: string) => `${(import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '')}${B}/attachments/${id(attId)}`,
 
   exceptions: (kind?: ExceptionKind | '', status?: ExceptionStatus | 'active' | '') => req<Page<WorkException>>(`${B}/exceptions${qs({ kind, status })}`),

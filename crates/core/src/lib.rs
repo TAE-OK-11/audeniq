@@ -55,6 +55,7 @@ pub mod transport;
 pub mod upload_safety;
 pub mod uploads;
 pub mod withdraw;
+pub mod work;
 pub mod states {
     include!(concat!(env!("OUT_DIR"), "/states.rs"));
 }

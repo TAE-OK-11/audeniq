@@ -180,8 +180,8 @@ export interface NoteInput {
   target_id: string;
   body: string;
   mentions: string[];
-  /** base64 (data URL 아님), 파일당 2MB · 메모당 3개까지 */
-  attachments: { name: string; content_type: string; data: string }[];
+  /** 먼저 올린 첨부(workApi.upload)의 id — 파일당 2MB · 메모당 3개까지 */
+  attachments: string[];
 }
 
 // ---------- 거래처 (CRM Lite) ----------

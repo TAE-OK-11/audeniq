@@ -134,15 +134,6 @@ export function RelatedLinks({ items, onRemove, plain }: { items: EntityRef[]; o
 const MAX_FILE = 2 * 1024 * 1024;
 const MAX_FILES = 3;
 
-function fileToBase64(f: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result).replace(/^data:[^,]*,/, ''));
-    r.onerror = () => reject(r.error);
-    r.readAsDataURL(f);
-  });
-}
-
 const sizeLabel = (n: number) => (n < 1024 ? `${n}B` : n < 1024 * 1024 ? `${Math.round(n / 1024)}KB` : `${(n / 1024 / 1024).toFixed(1)}MB`);
 
 /** 본문 속 @이름을 강조 */
@@ -163,6 +154,7 @@ export function NotesPanel({ kind, targetId, title = '내부 메모', onChange }
   const [body, setBody] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
   const [showResolved, setShowResolved] = useState(false);
   const [mentionAt, setMentionAt] = useState<number | null>(null);
   const area = useRef<HTMLTextAreaElement>(null);
@@ -208,7 +200,11 @@ export function NotesPanel({ kind, targetId, title = '내부 메모', onChange }
     setBusy(true);
     try {
       const mentions = people.list.filter(p => body.includes(`@${p.name}`)).map(p => p.user_id);
-      const attachments = await Promise.all(files.map(async f => ({ name: f.name, content_type: f.type || 'application/octet-stream', data: await fileToBase64(f) })));
+      const attachments: string[] = [];
+      for (const [i, f] of files.entries()) {
+        setProgress(i / files.length);
+        attachments.push(await workApi.upload(f, d => setProgress((i + d) / files.length)));
+      }
       await workApi.addNote({ target_kind: kind, target_id: targetId, body: body.trim(), mentions, attachments });
       setBody(''); setFiles([]);
       toast(mentions.length ? `메모를 남기고 ${mentions.length}명에게 알렸어요.` : '메모를 남겼어요.', 'success');
@@ -218,6 +214,7 @@ export function NotesPanel({ kind, targetId, title = '내부 메모', onChange }
       toast(errorMessage(err, '메모를 남기지 못했어요.'), 'error');
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   };
 
@@ -304,7 +301,7 @@ export function NotesPanel({ kind, targetId, title = '내부 메모', onChange }
             <button type="button" className="adm-btn soft small" onClick={() => fileRef.current?.click()}><Glyph name="clip" size={14} />파일 첨부</button>
             <button type="button" className="adm-btn soft small" onClick={() => { const v = `${body}${body && !body.endsWith(' ') ? ' ' : ''}@`; onType(v, v.length); area.current?.focus(); }}><Glyph name="at" size={14} />멘션</button>
           </span>
-          <button type="submit" className="adm-btn primary" disabled={busy || (!body.trim() && files.length === 0)}>{busy ? '남기는 중…' : '메모 남기기'}</button>
+          <button type="submit" className="adm-btn primary" disabled={busy || (!body.trim() && files.length === 0)}>{busy ? (progress != null && files.length ? `첨부 올리는 중 ${Math.round(progress * 100)}%` : '남기는 중…') : '메모 남기기'}</button>
         </div>
       </form>
     </section>

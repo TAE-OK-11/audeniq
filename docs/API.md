@@ -162,6 +162,37 @@ All roles can read every list below.
 | GET | `/api/staff/dsps` | D-1..D-11 registry with spec, route profile and onboarding gaps |
 | GET | `/api/staff/payouts?status=REQUESTED` | ADMIN only; read-only (money still moves through operations tooling) |
 
+## Staff work module (`/api/staff/work/*`)
+
+Staff-only work management for the admin console (`/admin/inbox`, `/admin/tasks`, …). Same session, CSRF and staff-role
+checks as the staff portal; every mutation is audited as `work.*`. Code: `crates/core/src/work.rs`, schema `work`
+(migration `0076`).
+
+| Method & path | Purpose |
+|---|---|
+| `GET /summary` | Menu badges: unread inbox, my open tasks, due soon, overdue, open exceptions, follow-ups due, unread by kind |
+| `GET /people` | Active staff (assignee / reviewer pickers, @mentions) |
+| `GET /inbox?kind=&unread=` · `POST /inbox/read {ids}` | Unified inbox: `ASSIGNED`, `REVIEW_REQUEST`, `CORRECTION`, `MENTION`, `AUTOMATION_FAILED`, `SLA_BREACH`, `INQUIRY`, `RIGHTS` |
+| `GET /tasks?view=mine\|review\|created\|all&status=open\|done\|all&type=&assignee=&q=&related_kind=&related_id=` | Task list |
+| `POST /tasks` · `GET /tasks/{id}` · `POST /tasks/{id}` | Create · detail with event log · update (`row_version` required; `status`, or `review: APPROVE\|REQUEST_CHANGES` + `review_note`) |
+| `GET /notes?target_kind=&target_id=` · `POST /notes` · `POST /notes/{id}/resolve` | Internal notes on tasks, releases, contacts, DSPs …; `mentions` notify via the inbox |
+| `POST /uploads` · `POST /uploads/{id}/parts {index,data}` · `GET /attachments/{id}` | Note attachments (≤ 2 MiB, ≤ 3 per note) uploaded as ordered base64 parts of ≤ 48 KiB (the edge forwards JSON bodies up to 64 KiB); size and SHA-256 are verified; downloads are `attachment` only |
+| `GET /exceptions?kind=&status=active\|RESOLVED\|IGNORED` · `POST /exceptions` · `POST /exceptions/{id}` | Exception queue; actions `ASSIGN`, `RESOLVE`, `IGNORE` (resolution required), `REOPEN`, `TO_TASK` |
+| `GET /sla` · `PUT /sla/{type}` | SLA policy per task type (ADMIN to edit); changing one re-derives open task deadlines |
+| `GET /contacts?kind=&q=&due=` · `POST /contacts` · `GET/POST /contacts/{id}` · `POST /contacts/{id}/activities` | CRM Lite |
+| `GET /dsp-ops` · `POST /dsp-ops/{code}` | DSP operations (metrics from `execution.*`; owner, contract, renewal, SLA, health override editable by ADMIN/OPERATOR) |
+| `GET /analytics?days=7..90` | Audit-log based workload: daily manual vs automatic actions, per person, cycle time, stage dwell, reject rate, SLA met rate, DSP failure rate |
+
+SLA: deadline = task creation + `target_minutes` (business hours = weekdays 09–18 KST when `business_hours`). The earlier of
+the due date and the SLA deadline counts. Due Soon when the remaining time ≤ `warn_ratio` of the total; then the priority
+rises one step (escalation level 1). Overdue makes it `URGENT` and escalates to `escalate_to` (level 2, shown in that
+role's inbox). A person choosing a priority clears the automatic raise.
+
+Exceptions are opened by the automation through `work.report_exception(...)`: delivery jobs `FAILED`/`DEAD_LETTER`
+(`DELIVERY_FAILURE`), partner acks `REJECTED` (`DSP_REJECTION`), delivery staging `CONTENT_BLOCKED` (`METADATA_CONFLICT`)
+and rights proofs sent back (`RIGHTS_DOCS`). A repeat bumps `occurrences`; the matching success (delivered, accepted,
+re-checked, approved) resolves it; a resolved problem that recurs reopens.
+
 ## Partner webhooks (`/api/partner-hooks/*`)
 
 `POST /api/partner-hooks/{partner_id}` receives a contracted partner's
