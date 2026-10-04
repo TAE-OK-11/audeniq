@@ -151,6 +151,11 @@ GRANT DELETE ON work.calendar_holidays TO audeniq_api;
 -- Phase 3 (0079): contact history is append-only (trigger too).
 REVOKE UPDATE ON work.relationship_activities FROM audeniq_api;
 GRANT SELECT ON execution.reconciliation_cases,execution.delivery_attempts,execution.ack_events TO audeniq_api;
+-- Kanban + Docs (0081): per-document grants are replaced on share (DELETE);
+-- version snapshots are immutable (trigger too); access is work.doc_level.
+GRANT DELETE ON work.doc_permissions TO audeniq_api;
+REVOKE UPDATE ON work.doc_versions FROM audeniq_api;
+GRANT EXECUTE ON FUNCTION work.doc_level(uuid,uuid,text) TO audeniq_api;
 -- Runtime timeouts as role defaults: they apply to every server connection,
 -- including the ones PgBouncer opens in transaction pooling mode, where the
 -- per-connection SET in database::connect cannot survive.

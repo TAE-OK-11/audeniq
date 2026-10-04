@@ -2264,4 +2264,179 @@ async fn staff_endpoints_work_under_split_roles(pool: PgPool) {
         &u,
     )
     .await;
+    // Kanban (0081): boards, columns, moves, automatic cards.
+    let boards = ok(&e.api, "GET", "/api/staff/work/boards", json!({}), &u).await;
+    let general = boards["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|b| b["key"] == "general")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let view = ok(
+        &e.api,
+        "GET",
+        &format!("/api/staff/work/boards/{general}?q=분할"),
+        json!({}),
+        &u,
+    )
+    .await;
+    let done = view["columns"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["status"] == "IN_PROGRESS")
+        .unwrap()["id"]
+        .clone();
+    let card = view["cards"][0].clone();
+    ok(
+        &e.api,
+        "POST",
+        &format!(
+            "/api/staff/work/tasks/{}/move",
+            card["id"].as_str().unwrap()
+        ),
+        json!({"row_version": card["row_version"], "column_id": done}),
+        &u,
+    )
+    .await;
+    let mine = ok(
+        &e.api,
+        "POST",
+        "/api/staff/work/boards",
+        json!({"name": "개인", "kind": "PERSONAL"}),
+        &u,
+    )
+    .await;
+    let mine_id = mine["board"]["id"].as_str().unwrap().to_string();
+    let col = ok(
+        &e.api,
+        "POST",
+        &format!("/api/staff/work/boards/{mine_id}/columns"),
+        json!({"name": "보류", "status": "BLOCKED"}),
+        &u,
+    )
+    .await;
+    let new_col = col["columns"].as_array().unwrap().last().unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    ok(
+        &e.api,
+        "POST",
+        &format!("/api/staff/work/board-columns/{new_col}/archive"),
+        json!({}),
+        &u,
+    )
+    .await;
+    ok(&e.api, "GET", "/api/staff/work/board-rules", json!({}), &u).await;
+    ok(
+        &e.api,
+        "POST",
+        "/api/staff/work/automation/run",
+        json!({}),
+        &u,
+    )
+    .await;
+    // Docs: create, save, versions, share, comment, embeds, search, delete.
+    let d = ok(
+        &e.api,
+        "POST",
+        "/api/staff/work/docs",
+        json!({"title": "분할 문서"}),
+        &u,
+    )
+    .await;
+    let did = d["doc"]["id"].as_str().unwrap().to_string();
+    ok(
+        &e.api,
+        "POST",
+        &format!("/api/staff/work/docs/{did}"),
+        json!({"base_version": 1, "content": {"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "본문"}]}]}}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "POST",
+        &format!("/api/staff/work/docs/{did}/versions"),
+        json!({"label": "v1"}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "GET",
+        &format!("/api/staff/work/docs/{did}/versions"),
+        json!({}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "POST",
+        &format!("/api/staff/work/docs/{did}/permissions"),
+        json!({"staff_access": "VIEWER", "grants": [{"principal_kind": "ROLE", "principal_id": "OPERATOR", "level": "EDITOR"}]}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "POST",
+        "/api/staff/work/notes",
+        json!({"target_kind": "doc", "target_id": did, "body": "의견"}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "GET",
+        &format!("/api/staff/work/embeds?refs=doc:{did},task:{id},dsp:D-5"),
+        json!({}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "GET",
+        "/api/staff/work/docs/search?q=본문",
+        json!({}),
+        &u,
+    )
+    .await;
+    ok(&e.api, "GET", "/api/staff/work/docs", json!({}), &u).await;
+    ok(
+        &e.api,
+        "GET",
+        "/api/staff/work/doc-templates",
+        json!({}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "POST",
+        &format!("/api/staff/work/docs/{did}/duplicate"),
+        json!({}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "POST",
+        &format!("/api/staff/work/docs/{did}/archive"),
+        json!({}),
+        &u,
+    )
+    .await;
+    ok(
+        &e.api,
+        "POST",
+        &format!("/api/staff/work/docs/{did}/delete"),
+        json!({}),
+        &u,
+    )
+    .await;
 }

@@ -672,10 +672,20 @@ pub async fn act(
                 .map(|o| format!(" · {o}"))
                 .unwrap_or_default()
         );
+        // the board that handles this kind of problem (automation rule), else the general board
+        let rule: Option<(Uuid, Uuid)> = sqlx::query_as(
+            "SELECT r.board_id, r.column_id FROM work.board_rules r JOIN work.boards b ON b.id=r.board_id AND b.archived_at IS NULL
+              WHERE r.trigger=$1",
+        )
+        .bind(&item.kind)
+        .fetch_optional(&s.pool)
+        .await?;
         let created = super::tasks::create(
             s,
             h,
             super::tasks::CreateInput {
+                board_id: rule.map(|r| r.0),
+                column_id: rule.map(|r| r.1),
                 title,
                 description: description.chars().take(8000).collect(),
                 work_type: task_type(&item.kind).into(),
@@ -755,7 +765,18 @@ pub async fn report(s: &AppState, h: &HeaderMap, i: ReportInput) -> Result<Value
     let entity = match (i.entity_kind.as_deref(), i.entity_id.as_deref()) {
         (Some(k), Some(id)) if !k.is_empty() && !id.is_empty() => {
             let r = entities::parse(k, id)?;
-            if r.kind == "task" || r.kind == "relationship" {
+            if !matches!(
+                r.kind.as_str(),
+                "release"
+                    | "org"
+                    | "artist"
+                    | "label"
+                    | "dsp"
+                    | "inquiry"
+                    | "document"
+                    | "payout"
+                    | "settlement_report"
+            ) {
                 return Err(Error::InvalidCode("ENTITY_KIND_UNKNOWN"));
             }
             Some(r)
