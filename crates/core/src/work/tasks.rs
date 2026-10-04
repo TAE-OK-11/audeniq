@@ -48,6 +48,7 @@ macro_rules! task_cols {
         "t.id,t.seq,t.parent_id,t.title,t.description,t.work_type,t.status,t.priority,t.assignee_id,t.reviewer_id,t.due_at,
          t.changes_requested,t.recurrence,t.recurred_from,t.tags,t.created_by,t.created_at,t.updated_at,t.assigned_at,t.started_at,
          t.completed_at,t.archived_at,t.row_version,t.sla_due_at,t.escalation_level,t.priority_raised,
+         t.board_id,t.column_id,t.position,t.source,(SELECT bc.name FROM work.board_columns bc WHERE bc.id=t.column_id) AS column_name,
          COALESCE((SELECT p.warn_ratio FROM work.sla_policies p WHERE p.work_type=t.work_type AND p.scope_kind IS NULL
                     AND p.archived_at IS NULL AND p.enabled),0.25)::real AS warn_ratio,
          (SELECT count(*) FROM work.tasks c WHERE c.parent_id=t.id AND c.archived_at IS NULL) AS subtasks_total,
@@ -55,6 +56,8 @@ macro_rules! task_cols {
          (SELECT count(*) FROM work.notes n WHERE n.target_kind='task' AND n.target_id=t.id::text AND n.archived_at IS NULL) AS note_count"
     };
 }
+
+pub(crate) use task_cols;
 
 #[derive(Debug, Clone)]
 pub(crate) struct Task {
@@ -73,7 +76,8 @@ pub(crate) struct Task {
     pub recurrence: Option<Value>,
     pub recurred_from: Option<Uuid>,
     pub tags: Vec<String>,
-    pub created_by: Uuid,
+    /// NULL = created by an AUDENIQ event (source)
+    pub created_by: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub assigned_at: Option<DateTime<Utc>>,
@@ -85,13 +89,18 @@ pub(crate) struct Task {
     pub escalation_level: i16,
     pub priority_raised: Option<String>,
     pub warn_ratio: f32,
+    pub board_id: Option<Uuid>,
+    pub column_id: Option<Uuid>,
+    pub column_name: Option<String>,
+    pub position: Option<f64>,
+    pub source: String,
     pub subtasks_total: i64,
     pub subtasks_done: i64,
     pub note_count: i64,
 }
 
 impl Task {
-    fn from_row(r: &PgRow) -> Self {
+    pub(crate) fn from_row(r: &PgRow) -> Self {
         Self {
             id: r.get("id"),
             seq: r.get("seq"),
@@ -120,6 +129,11 @@ impl Task {
             escalation_level: r.get("escalation_level"),
             priority_raised: r.get("priority_raised"),
             warn_ratio: r.get("warn_ratio"),
+            board_id: r.get("board_id"),
+            column_id: r.get("column_id"),
+            column_name: r.get("column_name"),
+            position: r.get("position"),
+            source: r.get("source"),
             subtasks_total: r.get("subtasks_total"),
             subtasks_done: r.get("subtasks_done"),
             note_count: r.get("note_count"),
@@ -128,7 +142,19 @@ impl Task {
     fn closed(&self) -> bool {
         matches!(self.status.as_str(), "DONE" | "CANCELLED")
     }
-    fn json(&self, links: &[Value]) -> Value {
+    /// Status of the column the card is in.
+    pub(crate) async fn column_status(&self, c: &mut PgConnection) -> Result<Option<String>> {
+        let Some(col) = self.column_id else {
+            return Ok(None);
+        };
+        Ok(
+            sqlx::query_scalar("SELECT status FROM work.board_columns WHERE id=$1")
+                .bind(col)
+                .fetch_optional(&mut *c)
+                .await?,
+        )
+    }
+    pub(crate) fn json(&self, links: &[Value]) -> Value {
         let (deadline, sla_state) = super::sla::task_deadline(
             self.due_at,
             self.sla_due_at,
@@ -144,6 +170,8 @@ impl Task {
             "overdue": !self.closed() && self.due_at.is_some_and(|d| d < Utc::now()),
             "sla_due_at": self.sla_due_at, "deadline": deadline, "sla_state": sla_state,
             "escalation_level": self.escalation_level, "priority_raised": self.priority_raised,
+            "board_id": self.board_id, "column_id": self.column_id, "column_name": self.column_name,
+            "position": self.position, "source": self.source,
             "changes_requested": self.changes_requested, "recurrence": self.recurrence, "recurred_from": self.recurred_from,
             "tags": self.tags, "created_by": self.created_by, "created_at": self.created_at, "updated_at": self.updated_at,
             "assigned_at": self.assigned_at, "started_at": self.started_at, "completed_at": self.completed_at,
@@ -174,7 +202,7 @@ pub(crate) async fn event(
     Ok(())
 }
 
-async fn load(c: &mut PgConnection, id: Uuid, lock: bool) -> Result<Task> {
+pub(crate) async fn load(c: &mut PgConnection, id: Uuid, lock: bool) -> Result<Task> {
     let q = if lock {
         sqlx::query(concat!(
             "SELECT ",
@@ -197,7 +225,10 @@ async fn load(c: &mut PgConnection, id: Uuid, lock: bool) -> Result<Task> {
 }
 
 /// Active links of the given tasks, labels resolved from the source tables.
-async fn links_of(c: &mut PgConnection, tasks: &[Uuid]) -> Result<HashMap<Uuid, Vec<Value>>> {
+pub(crate) async fn links_of(
+    c: &mut PgConnection,
+    tasks: &[Uuid],
+) -> Result<HashMap<Uuid, Vec<Value>>> {
     let rows = sqlx::query(
         "SELECT id, subject_id, entity_kind, entity_id FROM work.links
           WHERE subject_kind='task' AND subject_id = ANY($1) AND archived_at IS NULL ORDER BY created_at",
@@ -334,6 +365,7 @@ pub async fn list(s: &AppState, h: &HeaderMap, q: ListQuery) -> Result<Value> {
                    AND l.archived_at IS NULL AND l.entity_kind=$8 AND l.entity_id=$9))
             AND ($10::text IS NULL OR t.title ILIKE '%'||$10||'%' OR t.description ILIKE '%'||$10||'%' OR ('WRK-'||t.seq)=upper($10) OR $10=ANY(t.tags))
             AND ($11 OR t.parent_id IS NULL)
+            AND ", crate::work_card_visible!("$2"), "
           ORDER BY (t.status IN ('DONE','CANCELLED')), array_position($12::text[], t.priority) DESC, LEAST(COALESCE(t.due_at,'infinity'),COALESCE(t.sla_due_at,'infinity')), t.created_at DESC
           LIMIT 300"
     ))
@@ -365,9 +397,12 @@ pub async fn list(s: &AppState, h: &HeaderMap, q: ListQuery) -> Result<Value> {
 // ---------------------------------------------------------------------------
 
 pub async fn detail(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<Value> {
-    staff::staff(s, h, false).await?;
+    let st = staff::staff(s, h, false).await?;
     let mut c = s.pool.acquire().await?;
     let t = load(&mut c, id, false).await?;
+    if !super::kanban::card_visible(&mut c, &st, &t).await? {
+        return Err(Error::NotFound);
+    }
     let subs = sqlx::query(concat!(
         "SELECT ",
         task_cols!(),
@@ -487,6 +522,11 @@ pub struct CreateInput {
     pub links: Vec<LinkInput>,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Kanban placement; without it the card goes to the general board
+    #[serde(default)]
+    pub board_id: Option<Uuid>,
+    #[serde(default)]
+    pub column_id: Option<Uuid>,
 }
 
 pub async fn create(s: &AppState, h: &HeaderMap, i: CreateInput) -> Result<Value> {
@@ -524,13 +564,29 @@ pub async fn create(s: &AppState, h: &HeaderMap, i: CreateInput) -> Result<Value
     }
     let rec = recurrence(i.recurrence.as_ref(), now)?;
     let sla_due = super::sla::task_due(&mut tx, &i.work_type, now).await?;
+    // Subtasks live inside their task; top-level tasks are cards on a board.
+    let place = if i.parent_id.is_some() {
+        if i.board_id.is_some() || i.column_id.is_some() {
+            return Err(Error::InvalidCode("SUBTASK_ON_BOARD"));
+        }
+        None
+    } else {
+        Some(super::kanban::place(&mut tx, &st, i.board_id, i.column_id).await?)
+    };
+    let status = place.as_ref().map(|p| p.status.as_str()).unwrap_or("TODO");
+    if status == "IN_REVIEW" && i.reviewer_id.is_none() {
+        return Err(Error::PolicyGate("TASK_NO_REVIEWER"));
+    }
     let id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO work.tasks(id,parent_id,title,description,work_type,priority,assignee_id,reviewer_id,due_at,recurrence,tags,created_by,created_at,updated_at,assigned_at,sla_due_at)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13,CASE WHEN $7::uuid IS NULL THEN NULL ELSE $13 END,$14)",
+        "INSERT INTO work.tasks(id,parent_id,title,description,work_type,priority,assignee_id,reviewer_id,due_at,recurrence,tags,created_by,created_at,updated_at,assigned_at,sla_due_at,
+                                status,board_id,column_id,position,started_at,completed_at)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13,CASE WHEN $7::uuid IS NULL THEN NULL ELSE $13 END,$14,
+                $15,$16,$17,$18,CASE WHEN $15 IN ('IN_PROGRESS','IN_REVIEW') THEN $13 END,CASE WHEN $15 IN ('DONE','CANCELLED') THEN $13 END)",
     )
     .bind(id).bind(i.parent_id).bind(&title).bind(&description).bind(&i.work_type).bind(&i.priority)
     .bind(i.assignee_id).bind(i.reviewer_id).bind(i.due_at).bind(rec).bind(&tg).bind(st.actor.user).bind(now).bind(sla_due)
+    .bind(status).bind(place.as_ref().map(|p| p.board)).bind(place.as_ref().map(|p| p.column)).bind(place.as_ref().map(|p| p.position))
     .execute(&mut *tx)
     .await?;
     event(&mut tx, id, Some(st.actor.user), "CREATED", None).await?;
@@ -556,7 +612,7 @@ pub async fn create(s: &AppState, h: &HeaderMap, i: CreateInput) -> Result<Value
 // Update (fields, status, review decision)
 // ---------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateInput {
     pub row_version: i32,
@@ -591,16 +647,34 @@ where
 
 pub async fn update(s: &AppState, h: &HeaderMap, id: Uuid, p: UpdateInput) -> Result<Value> {
     let st = staff::staff(s, h, true).await?;
+    let mut tx = s.pool.begin().await?;
+    apply(&mut tx, &st, id, p).await?;
+    tx.commit().await?;
+    detail(s, h, id).await
+}
+
+/// Apply an update inside the caller's transaction (also used by the Kanban
+/// move, so a column change and its status change commit together).
+pub(crate) async fn apply(
+    c: &mut PgConnection,
+    st: &staff::Staff,
+    id: Uuid,
+    p: UpdateInput,
+) -> Result<()> {
     let me = st.actor.user;
     let now = Utc::now();
-    let mut tx = s.pool.begin().await?;
-    let mut t = load(&mut tx, id, true).await?;
+    let mut t = load(&mut *c, id, true).await?;
     if t.archived_at.is_some() {
         return Err(Error::PolicyGate("TASK_ARCHIVED"));
     }
     if t.row_version != p.row_version {
         return Err(Error::Conflict);
     }
+    if !super::kanban::card_visible(&mut *c, st, &t).await? {
+        return Err(Error::NotFound);
+    }
+    super::kanban::card_writable(&mut *c, st, &t).await?;
+    let status_before = t.status.clone();
     let mut events: Vec<(&'static str, Option<String>)> = Vec::new();
 
     if let Some(v) = &p.title {
@@ -624,7 +698,7 @@ pub async fn update(s: &AppState, h: &HeaderMap, id: Uuid, p: UpdateInput) -> Re
         one_of(v, WORK_TYPES, "WORK_TYPE_UNKNOWN")?;
         if *v != t.work_type {
             t.work_type = v.clone();
-            t.sla_due_at = super::sla::task_due(&mut tx, v, t.created_at).await?;
+            t.sla_due_at = super::sla::task_due(&mut *c, v, t.created_at).await?;
             t.escalation_level = 0;
             events.push(("TYPE", Some(v.clone())));
         }
@@ -637,7 +711,7 @@ pub async fn update(s: &AppState, h: &HeaderMap, id: Uuid, p: UpdateInput) -> Re
         }
     }
     if let Some(v) = p.assignee_id {
-        active_staff(&mut tx, v).await?;
+        active_staff(&mut *c, v).await?;
         if v != t.assignee_id {
             t.assignee_id = v;
             t.assigned_at = v.map(|_| now);
@@ -645,7 +719,7 @@ pub async fn update(s: &AppState, h: &HeaderMap, id: Uuid, p: UpdateInput) -> Re
         }
     }
     if let Some(v) = p.reviewer_id {
-        active_staff(&mut tx, v).await?;
+        active_staff(&mut *c, v).await?;
         if v != t.reviewer_id {
             t.reviewer_id = v;
             events.push(("REVIEWER", v.map(|u| u.to_string())));
@@ -680,7 +754,7 @@ pub async fn update(s: &AppState, h: &HeaderMap, id: Uuid, p: UpdateInput) -> Re
             return Err(Error::PolicyGate("TASK_NOT_IN_REVIEW"));
         }
         permit(
-            &st,
+            st,
             Act::DecideReview {
                 reviewer: t.reviewer_id,
             },
@@ -724,7 +798,7 @@ pub async fn update(s: &AppState, h: &HeaderMap, id: Uuid, p: UpdateInput) -> Re
             if t.status == "IN_REVIEW" && next == "DONE" {
                 // finishing a task in review is the reviewer's decision
                 permit(
-                    &st,
+                    st,
                     Act::DecideReview {
                         reviewer: t.reviewer_id,
                     },
@@ -764,30 +838,43 @@ pub async fn update(s: &AppState, h: &HeaderMap, id: Uuid, p: UpdateInput) -> Re
     }
 
     if events.is_empty() && p.tags.is_none() {
-        tx.commit().await?;
-        return detail(s, h, id).await;
+        return Ok(());
+    }
+    // On a board, a status change moves the card to the first column of that status.
+    if t.status != status_before
+        && let Some(b) = t.board_id
+        && t.column_status(&mut *c).await?.as_deref() != Some(t.status.as_str())
+        && let Some((col, pos)) = super::kanban::column_for_status(&mut *c, b, &t.status).await?
+    {
+        t.column_id = Some(col);
+        t.position = Some(pos);
+        let name: String = sqlx::query_scalar("SELECT name FROM work.board_columns WHERE id=$1")
+            .bind(col)
+            .fetch_one(&mut *c)
+            .await?;
+        events.push(("MOVED", Some(name)));
     }
     sqlx::query(
         "UPDATE work.tasks SET title=$2,description=$3,work_type=$4,status=$5,priority=$6,assignee_id=$7,reviewer_id=$8,due_at=$9,
             changes_requested=$10,recurrence=$11,tags=$12,assigned_at=$13,started_at=$14,completed_at=$15,updated_at=$16,
-            sla_due_at=$17,escalation_level=$18,row_version=row_version+1
+            sla_due_at=$17,escalation_level=$18,column_id=$19,position=$20,row_version=row_version+1
           WHERE id=$1",
     )
     .bind(t.id).bind(&t.title).bind(&t.description).bind(&t.work_type).bind(&t.status).bind(&t.priority)
     .bind(t.assignee_id).bind(t.reviewer_id).bind(t.due_at).bind(t.changes_requested).bind(&t.recurrence).bind(&t.tags)
     .bind(t.assigned_at).bind(t.started_at).bind(t.completed_at).bind(now)
-    .bind(t.sla_due_at).bind(t.escalation_level)
-    .execute(&mut *tx)
+    .bind(t.sla_due_at).bind(t.escalation_level).bind(t.column_id).bind(t.position)
+    .execute(&mut *c)
     .await?;
     for (a, d) in &events {
-        event(&mut tx, t.id, Some(me), a, d.as_deref()).await?;
+        event(&mut *c, t.id, Some(me), a, d.as_deref()).await?;
     }
     // A recurring task that is done makes the next one: same people, type and links.
     if done_now && let Some(r) = t.recurrence.clone() {
         let freq = r["freq"].as_str().unwrap_or("WEEKLY").to_string();
         let interval = r["interval"].as_i64().unwrap_or(1) as i32;
         let next = Uuid::new_v4();
-        let next_sla = super::sla::task_due(&mut tx, &t.work_type, now).await?;
+        let next_sla = super::sla::task_due(&mut *c, &t.work_type, now).await?;
         let rec = json!({"freq": freq, "interval": interval, "next_at": next_occurrence(&freq, interval, now)});
         let seq: i64 = sqlx::query_scalar(
             "INSERT INTO work.tasks(id,title,description,work_type,priority,assignee_id,reviewer_id,due_at,recurrence,recurred_from,tags,created_by,created_at,updated_at,assigned_at,sla_due_at)
@@ -795,7 +882,7 @@ pub async fn update(s: &AppState, h: &HeaderMap, id: Uuid, p: UpdateInput) -> Re
         )
         .bind(next).bind(&t.title).bind(&t.description).bind(&t.work_type).bind(t.priority_raised.as_ref().unwrap_or(&t.priority)).bind(t.assignee_id).bind(t.reviewer_id)
         .bind(t.due_at.map(|d| next_occurrence(&freq, interval, d))).bind(rec).bind(t.id).bind(&t.tags).bind(me).bind(now).bind(next_sla)
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut *c)
         .await?;
         sqlx::query(
             "INSERT INTO work.links(id,subject_kind,subject_id,entity_kind,entity_id,created_by)
@@ -805,10 +892,21 @@ pub async fn update(s: &AppState, h: &HeaderMap, id: Uuid, p: UpdateInput) -> Re
         .bind(next)
         .bind(t.id)
         .bind(me)
-        .execute(&mut *tx)
+        .execute(&mut *c)
         .await?;
+        if let Some(b) = t.board_id
+            && let Some((col, pos)) = super::kanban::column_for_status(&mut *c, b, "TODO").await?
+        {
+            sqlx::query("UPDATE work.tasks SET board_id=$2, column_id=$3, position=$4 WHERE id=$1")
+                .bind(next)
+                .bind(b)
+                .bind(col)
+                .bind(pos)
+                .execute(&mut *c)
+                .await?;
+        }
         event(
-            &mut tx,
+            &mut *c,
             next,
             Some(me),
             "CREATED",
@@ -816,14 +914,14 @@ pub async fn update(s: &AppState, h: &HeaderMap, id: Uuid, p: UpdateInput) -> Re
         )
         .await?;
         event(
-            &mut tx,
+            &mut *c,
             t.id,
             Some(me),
             "RECURRED",
             Some(&format!("WRK-{seq}")),
         )
         .await?;
-        audit(&mut tx, &st, Some(next), "work.task_created", "RECURRENCE").await?;
+        audit(&mut *c, st, Some(next), "work.task_created", "RECURRENCE").await?;
     }
     let reason = events
         .iter()
@@ -831,9 +929,8 @@ pub async fn update(s: &AppState, h: &HeaderMap, id: Uuid, p: UpdateInput) -> Re
         .find(|a| *a != "EDITED")
         .or(events.first().map(|e| e.0))
         .unwrap_or("TAGS");
-    audit(&mut tx, &st, Some(t.id), "work.task_updated", reason).await?;
-    tx.commit().await?;
-    detail(s, h, id).await
+    audit(&mut *c, st, Some(t.id), "work.task_updated", reason).await?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -853,6 +950,9 @@ pub async fn archive(s: &AppState, h: &HeaderMap, id: Uuid, i: ArchiveInput) -> 
     let reason = line(&i.reason, 200)?;
     let mut tx = s.pool.begin().await?;
     let t = load(&mut tx, id, true).await?;
+    if !super::kanban::card_visible(&mut tx, &st, &t).await? {
+        return Err(Error::NotFound);
+    }
     permit(
         &st,
         Act::ArchiveTask {
@@ -905,6 +1005,10 @@ pub async fn link(s: &AppState, h: &HeaderMap, id: Uuid, i: LinkInput) -> Result
     if t.archived_at.is_some() {
         return Err(Error::PolicyGate("TASK_ARCHIVED"));
     }
+    if !super::kanban::card_visible(&mut tx, &st, &t).await? {
+        return Err(Error::NotFound);
+    }
+    super::kanban::card_writable(&mut tx, &st, &t).await?;
     let n: i64 = sqlx::query_scalar("SELECT count(*) FROM work.links WHERE subject_kind='task' AND subject_id=$1 AND archived_at IS NULL")
         .bind(id)
         .fetch_one(&mut *tx)
@@ -921,7 +1025,7 @@ pub async fn unlink(s: &AppState, h: &HeaderMap, link: Uuid) -> Result<Value> {
     let st = staff::staff(s, h, true).await?;
     let mut tx = s.pool.begin().await?;
     let r = sqlx::query(
-        "UPDATE work.links SET archived_at=now(), archived_by=$2 WHERE id=$1 AND archived_at IS NULL
+        "UPDATE work.links SET archived_at=now(), archived_by=$2 WHERE id=$1 AND archived_at IS NULL AND subject_kind='task'
          RETURNING subject_id, entity_kind, entity_id",
     )
     .bind(link)

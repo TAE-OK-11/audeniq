@@ -21,12 +21,17 @@ use serde_json::{Value, json};
 use sqlx::{PgConnection, Row};
 use uuid::Uuid;
 
+pub mod automation;
 pub mod channels;
 pub mod crm;
+pub mod doc_model;
+pub mod docs;
 pub mod dsp_ops;
+pub mod embeds;
 pub mod entities;
 pub mod exceptions;
 pub mod inbox;
+pub mod kanban;
 pub mod notes;
 pub mod sla;
 pub mod tasks;
@@ -35,7 +40,7 @@ pub mod tasks;
 pub(crate) enum Act {
     /// Archive a task: its creator, its assignee or ADMIN.
     ArchiveTask {
-        created_by: Uuid,
+        created_by: Option<Uuid>,
         assignee: Option<Uuid>,
     },
     /// Approve or send back a task in review: its reviewer or ADMIN.
@@ -55,7 +60,7 @@ pub(crate) fn permit(st: &Staff, act: Act) -> Result<()> {
         Act::ArchiveTask {
             created_by,
             assignee,
-        } => admin || created_by == me || assignee == Some(me),
+        } => admin || created_by == Some(me) || assignee == Some(me),
         Act::DecideReview { reviewer } => admin || reviewer == Some(me),
         Act::EditNote { author } => author == me,
         Act::ArchiveNote { author } => admin || author == me,
@@ -163,5 +168,8 @@ pub fn routes() -> Router<AppState> {
         .merge(inbox::routes())
         .merge(crm::routes())
         .merge(channels::routes())
+        .merge(kanban::routes())
+        .merge(embeds::routes())
+        .merge(docs::routes())
         .merge(dsp_ops::routes())
 }
