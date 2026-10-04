@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from '../lib/router';
 import { Modal, useModalClose } from '../components/Modal';
 import { useToast } from '../components/Toast';
@@ -13,6 +13,7 @@ import { MOCK } from '../lib/mode';
 import * as portal from '../api/portal';
 import { errorMessage } from '../api/errors';
 import { refreshTickets } from '../store/portalSync';
+import { INQUIRY_CHANGED_EVENT } from '../lib/liveEvents';
 import { Glyph } from '../components/Glyph';
 
 /** 실서버 문의 대화 — 담당자 답변을 보고 이어서 묻거나 문의를 닫는다 */
@@ -22,6 +23,18 @@ function TicketThread({ ticket, onClosed }: { ticket: Ticket; onClosed: () => vo
   const [reply, setReply] = useState('');
   const [busy, setBusy] = useState(false);
   const status = data?.ticket.status ?? ticket.status;
+  const listRef = useRef<HTMLOListElement>(null);
+  // 담당자가 답하면 실시간 연결로 바로 다시 받는다 (새로 고침 없이)
+  useEffect(() => {
+    const on = (e: Event) => {
+      const id = (e as CustomEvent<{ inquiryId: string | null }>).detail?.inquiryId;
+      if (!id || id === ticket.id) reload();
+    };
+    window.addEventListener(INQUIRY_CHANGED_EVENT, on);
+    return () => window.removeEventListener(INQUIRY_CHANGED_EVENT, on);
+  }, [ticket.id, reload]);
+  const count = data?.messages.length ?? 0;
+  useEffect(() => { const el = listRef.current; if (el) el.scrollTop = el.scrollHeight; }, [count]);
 
   const send = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,7 +70,7 @@ function TicketThread({ ticket, onClosed }: { ticket: Ticket; onClosed: () => vo
   if (error) return <button type="button" className="button secondary" onClick={reload}>다시 불러오기</button>;
   return (
     <>
-      <ol className="aq-thread">
+      <ol className="aq-thread" ref={listRef} aria-live="polite">
         {(data?.messages ?? []).map(m => (
           <li key={m.id} className={m.from === 'staff' ? 'is-staff' : ''}>
             <span className="aq-thread-who">{m.from === 'staff' ? 'AUDENIQ 담당자' : '나'} · {m.time}</span>
@@ -155,7 +168,16 @@ export function Inquiries() {
     body: '이 발매 신청을 취소해 주세요.\n\n취소 사유: ',
   } : null));
   useEffect(() => { if (cancelFor) setParams({}, { replace: true }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const [openId, setOpenId] = useState<string | null>(null);
+  // 알림의 ‘문의 열기’ 링크 (/inquiries?open=<id>)로 오면 그 대화를 바로 연다
+  const [openId, setOpenId] = useState<string | null>(() => params.get('open'));
+  useEffect(() => {
+    const id = params.get('open');
+    if (!id) return;
+    setOpenId(id);
+    const next = new URLSearchParams(params);
+    next.delete('open');
+    setParams(next, { replace: true });
+  }, [params]); // eslint-disable-line react-hooks/exhaustive-deps
   const openTicket = tickets.find(t => t.id === openId) ?? null;
 
   const removeTicket = async (t: Ticket) => {
