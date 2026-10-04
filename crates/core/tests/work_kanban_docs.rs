@@ -592,6 +592,7 @@ async fn docs_access_content_versions_and_tree(pool: PgPool) {
     let content = json!({"type": "doc", "content": [
         para("원인: SFTP 연결 거부"),
         {"type": "entityEmbed", "attrs": {"kind": "release", "id": release.to_string(), "view": "qc", "label": "연결 발매"}},
+        {"type": "entityEmbed", "attrs": {"kind": "audit", "id": release.to_string(), "view": "summary", "label": "감사 기록"}},
         {"type": "taskList", "content": [{"type": "taskItem", "attrs": {"checked": false}, "content": [para("재전송")]}]},
     ]});
     let saved = ok(
@@ -635,6 +636,39 @@ async fn docs_access_content_versions_and_tree(pool: PgPool) {
             .iter()
             .any(|d| d["id"] == id.as_str())
     );
+
+    // embeds: live release QC view for everyone; the audit trail for reviewers only
+    let refs = format!("release:{release}:qc,release:{release}:distribution,audit:{release}");
+    let e = ok(
+        &app,
+        "GET",
+        &format!("/api/staff/work/embeds?refs={refs}"),
+        json!({}),
+        &kim,
+    )
+    .await;
+    assert!(
+        e["items"][format!("release:{release}:qc")]["qc"].is_object(),
+        "{e}"
+    );
+    assert!(
+        e["items"][format!("release:{release}:distribution")]["distribution"].is_array(),
+        "{e}"
+    );
+    assert!(
+        e["items"][format!("audit:{release}")]["events"].is_array(),
+        "{e}"
+    );
+    let e = ok(
+        &app,
+        "GET",
+        &format!("/api/staff/work/embeds?refs={refs}"),
+        json!({}),
+        &other,
+    )
+    .await;
+    assert_eq!(e["items"][format!("audit:{release}")]["restricted"], true);
+    assert!(e["items"][format!("release:{release}:qc")]["title"].is_string());
 
     // a stale save is a conflict
     let (s, _) = status(

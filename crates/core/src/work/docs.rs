@@ -456,7 +456,10 @@ async fn sync_links(
 ) -> Result<()> {
     let wanted: Vec<entities::Ref> = embeds
         .iter()
-        .filter(|(k, i)| !(k == "doc" && *i == doc.to_string()))
+        // audit trails are shown, not linked; a document never links itself
+        .filter(|(k, i)| {
+            entities::KINDS.contains(&k.as_str()) && !(k == "doc" && *i == doc.to_string())
+        })
         .map(|(k, i)| entities::Ref {
             kind: k.clone(),
             id: i.clone(),
