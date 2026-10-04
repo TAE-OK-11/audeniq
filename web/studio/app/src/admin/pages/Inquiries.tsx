@@ -8,6 +8,9 @@ import { staffApi } from '../api';
 import { INQUIRY_STATUS, ago, pick, when } from '../labels';
 import { Empty, ErrorBox, Filters, NoDuty, PageHead, Skeleton, StatusChip, useStaff } from '../ui';
 import { Glyph } from '../../components/Glyph';
+import { Modal } from '../../components/Modal';
+import { NotesPanel } from '../work/ui';
+import { TaskForm } from '../work/TaskForm';
 
 const STATUSES = ['OPEN', 'ANSWERED', 'CLOSED'] as const;
 const TEMPLATES: { label: string; text: string }[] = [
@@ -23,6 +26,7 @@ function Thread({ id, onReplied }: { id: string; onReplied: () => void }) {
   const { data, loading, error, reload } = useAsync(() => staffApi.inquiry(id), [id]);
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
+  const [panel, setPanel] = useState<null | 'notes' | 'task'>(null);
   const listRef = useRef<HTMLOListElement>(null);
 
   const paneRef = useRef<HTMLElement>(null);
@@ -72,6 +76,10 @@ function Thread({ id, onReplied }: { id: string; onReplied: () => void }) {
           <span>{q.org_name}</span><span>{q.category}</span>
           {q.release_id && <span><Link to={`/admin/reviews/${q.release_id}`}>관련 발매 <Glyph name="arrow-right" size={13} className="aq-inline-glyph" /></Link></span>}
         </span>
+        <span className="adm-codes adm-w-thread-tools">
+          <button type="button" className="adm-btn soft small" onClick={() => setPanel('notes')}><Glyph name="lock" size={13} />내부 메모</button>
+          <button type="button" className="adm-btn soft small" onClick={() => setPanel('task')}><Glyph name="task" size={13} />업무 만들기</button>
+        </span>
       </div>
       <ol className="adm-thread" ref={listRef}>
         {data.messages.map(m => (
@@ -101,6 +109,19 @@ function Thread({ id, onReplied }: { id: string; onReplied: () => void }) {
             <button type="submit" className="adm-btn primary" disabled={busy || !body.trim()}>{busy ? '보내는 중…' : q.status === 'ANSWERED' ? '추가 답변' : '답변 보내기'}</button>
           </div>
         </form>
+      )}
+      {panel === 'notes' && (
+        <Modal title="내부 메모" onClose={() => setPanel(null)} modalClass="adm-w-modal">
+          <NotesPanel kind="inquiry" targetId={q.id} title={q.subject} />
+        </Modal>
+      )}
+      {panel === 'task' && (
+        <Modal title="새 업무" onClose={() => setPanel(null)} dismissible={false} modalClass="adm-w-modal">
+          <TaskForm
+            initial={{ type: 'SUPPORT', title: `${q.subject} `, links: [{ kind: 'inquiry', id: q.id, label: q.subject, sub: q.org_name }, ...(q.release_id ? [{ kind: 'release' as const, id: q.release_id, label: '관련 발매', sub: null }] : [])] }}
+            onSaved={() => toast('업무 목록에서 확인할 수 있어요.', 'info')}
+          />
+        </Modal>
       )}
     </section>
   );

@@ -693,7 +693,10 @@ function ReviewSheet({ id }: { id: string }) {
           <div className="adm-card">
             <b>이 발매로 업무 만들기</b>
             <p className="small muted" style={{ margin: '6px 0 12px' }}>권리 확인·DSP 문의처럼 심사와 따로 챙길 일을 담당자에게 넘겨요.</p>
-            <button type="button" className="adm-btn soft small" onClick={() => setTaskOpen(true)}>업무 만들기</button>
+            <span className="adm-codes">
+              <button type="button" className="adm-btn soft small" onClick={() => setTaskOpen(true)}>업무 만들기</button>
+              <Link to={`/admin/tasks?view=all&status=all&entity_kind=release&entity_id=${id}`} className="adm-btn soft small">연결된 업무</Link>
+            </span>
           </div>
           <div className="adm-card adm-id-card">
             <dl className="adm-kv" style={{ gridTemplateColumns: '1fr' }}>
@@ -726,7 +729,7 @@ function ReviewSheet({ id }: { id: string }) {
       )}
       {taskOpen && (
         <Modal title="새 업무" onClose={() => setTaskOpen(false)} dismissible={false} modalClass="adm-w-modal">
-          <TaskForm initial={{ type: 'RELEASE', title: `${r.title} `, related: [{ kind: 'release', id, label: r.title }] }} onSaved={() => { toast('업무함과 업무 목록에서 확인할 수 있어요.', 'info'); }} />
+          <TaskForm initial={{ type: 'RELEASE', title: `${r.title} `, links: [{ kind: 'release', id, label: r.title, sub: r.org_name }] }} onSaved={() => { toast('업무 목록에서 확인할 수 있어요.', 'info'); }} />
         </Modal>
       )}
       {modal === 'withdraw' && (
