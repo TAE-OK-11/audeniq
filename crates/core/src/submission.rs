@@ -2002,7 +2002,7 @@ async fn handle_fingerprint_checks(
         .await?;
     sqlx::query(
         "INSERT INTO catalog.asset_fingerprints(asset_id, org_id, version, frames, duration_secs, hash)
-         VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(asset_id) DO NOTHING",
+         VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(asset_id, version) DO NOTHING",
     )
     .bind(aid)
     .bind(org)
@@ -2363,6 +2363,144 @@ async fn qc_single_asset(
         }
     }
     Ok(out)
+}
+
+/// Queue [`refingerprint_asset`] for up to `limit` registered audio assets
+/// that have a fingerprint only at an older algorithm version. Idempotent per
+/// asset and version; run it again until it queues 0. Requires the
+/// schema-owner connection (the only role that sees every org's rows).
+pub async fn queue_fingerprint_backfill(pool: &PgPool, limit: i64) -> Result<u64> {
+    let rows: Vec<(Uuid, Uuid)> = sqlx::query_as(
+        "SELECT DISTINCT a.org_id, a.id
+           FROM catalog.assets a
+           JOIN catalog.asset_fingerprints f ON f.asset_id = a.id AND f.version < $1
+          WHERE a.state = 'REGISTERED' AND a.kind = 'AUDIO'
+            AND NOT EXISTS (SELECT 1 FROM catalog.asset_fingerprints n
+                             WHERE n.asset_id = a.id AND n.version = $1)
+            AND NOT EXISTS (SELECT 1 FROM operations.jobs j
+                             WHERE j.idempotency_key = 'asset.fingerprint:v' || $1 || ':' || a.id)
+          ORDER BY a.id
+          LIMIT $2",
+    )
+    .bind(fingerprint::FINGERPRINT_VERSION)
+    .bind(limit.clamp(1, 10_000))
+    .fetch_all(pool)
+    .await?;
+    let mut tx = pool.begin().await?;
+    for (org, asset) in &rows {
+        crate::operations::enqueue(
+            &mut tx,
+            "qc",
+            "asset.fingerprint",
+            &json!({"org_id": org, "asset_id": asset}),
+            &format!(
+                "asset.fingerprint:v{}:{asset}",
+                fingerprint::FINGERPRINT_VERSION
+            ),
+            None,
+        )
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(rows.len() as u64)
+}
+
+/// Fingerprint-version backfill for one registered audio master: download it,
+/// fingerprint it at [`fingerprint::FINGERPRINT_VERSION`] and store that row
+/// next to the older ones. QC results, `qc_status` and the asset itself are
+/// left untouched; Stage 1 compares new uploads against the stored row.
+///
+/// Returns `true` when a transient failure (storage, engine) should be
+/// retried.
+pub async fn refingerprint_asset(
+    pool: &PgPool,
+    storage: &Arc<dyn ObjectStore>,
+    org: Uuid,
+    aid: Uuid,
+) -> Result<bool> {
+    let Some(row) = sqlx::query(
+        "SELECT object_key, state, kind, size_bytes, etag, sha256 FROM catalog.assets WHERE org_id=$1 AND id=$2",
+    )
+    .bind(org)
+    .bind(aid)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Ok(false);
+    };
+    let state: String = row.get("state");
+    let kind: String = row.get("kind");
+    let recorded: Option<String> = row.get("sha256");
+    let Some(recorded) = recorded.filter(|_| state == "REGISTERED" && kind == "AUDIO") else {
+        return Ok(false);
+    };
+    if load_stored_fingerprint(pool, org, aid).await?.is_some() {
+        return Ok(false);
+    }
+    let key: String = row.get("object_key");
+    let size: i64 = row.get("size_bytes");
+    let etag: Option<String> = row.get("etag");
+    match storage.head(&key).await {
+        Ok(Some(m)) if m.size == size && etag.as_deref().is_none_or(|e| e == m.etag) => {}
+        Ok(_) => return Err(Error::PolicyGate("ASSET_OBJECT_DRIFT")),
+        Err(_) => return Ok(true),
+    }
+    if size < 0 || size as u64 > qc_max_bytes() {
+        return Ok(false);
+    }
+    let capacity = crate::media_budget::acquire()
+        .await
+        .map_err(|_| Error::Internal)?;
+    struct TempFile(std::path::PathBuf);
+    impl Drop for TempFile {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+    let tmp =
+        TempFile(std::env::temp_dir().join(format!("audeniq-refingerprint-{}", Uuid::new_v4())));
+    let downloaded = match storage.download_to(&key, &tmp.0, qc_max_bytes()).await {
+        Ok(d) => d,
+        Err(_) => return Ok(true),
+    };
+    if downloaded.sha256 != recorded {
+        return Err(Error::PolicyGate("ASSET_OBJECT_DRIFT"));
+    }
+    let fp = tokio::task::spawn_blocking(move || {
+        let _capacity = capacity;
+        fingerprint::compute_fingerprint(&tmp.0)
+    })
+    .await
+    .map_err(|_| Error::Internal)?;
+    let fp = match fp {
+        Ok(fp) if !fp.is_empty() => fp,
+        // Too short to compare, or not decodable by the engine: Stage 1 never
+        // stored a comparable fingerprint for it either.
+        Ok(_) | Err(Error::PolicyGate(_)) | Err(Error::InvalidCode(_)) => {
+            tracing::warn!(%aid, "fingerprint backfill: asset has no comparable fingerprint");
+            return Ok(false);
+        }
+        Err(_) => return Ok(true),
+    };
+    let mut tx = pool.begin().await?;
+    sqlx::query("SELECT set_config('app.org_id',$1,true)")
+        .bind(org.to_string())
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "INSERT INTO catalog.asset_fingerprints(asset_id, org_id, version, frames, duration_secs, hash)
+         VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(asset_id, version) DO NOTHING",
+    )
+    .bind(aid)
+    .bind(org)
+    .bind(fingerprint::FINGERPRINT_VERSION)
+    .bind(fp.frames.len() as i32)
+    .bind(fp.duration_secs)
+    .bind(fp.to_bytes())
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(false)
 }
 
 /// Pre-submission audio analysis: the `asset.analyze` job queued at upload

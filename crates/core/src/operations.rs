@@ -619,6 +619,27 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
             }
         };
     }
+    if j.kind == "asset.fingerprint" {
+        // Fingerprint-version backfill (`audeniq-admin fingerprint backfill`):
+        // writes only the current-version fingerprint row of an asset.
+        let id = |k: &str| {
+            j.payload
+                .get(k)
+                .and_then(Value::as_str)
+                .and_then(|s| Uuid::parse_str(s).ok())
+                .ok_or(Error::Internal)
+        };
+        let (org, asset) = (id("org_id")?, id("asset_id")?);
+        return match crate::submission::refingerprint_asset(pool, storage, org, asset).await {
+            Ok(false) => succeed(pool, j).await,
+            Ok(true) => retry_or_surface(pool, j, "ASSET_FINGERPRINT_TECHNICAL_RETRY").await,
+            Err(Error::PolicyGate(code)) => fail(pool, j, true, code).await,
+            Err(e) => {
+                let short: String = format!("{e:?}").chars().take(500).collect();
+                retry_or_surface(pool, j, &format!("ASSET_FINGERPRINT_ERROR:{short}")).await
+            }
+        };
+    }
     if j.kind == "stage2" {
         // F3: the durable stage2.review job. None = lease lost; leave the job
         // alone so the sweeper reclaims it instead of burning an attempt.

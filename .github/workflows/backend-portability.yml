@@ -54,6 +54,10 @@ jobs:
           key: backend-native-1.98.1-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
           restore-keys: |
             backend-native-1.98.1-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}-
+      - name: Build the pinned AUDENIQ media engine (audeniq-qc)
+        run: |
+          sh deploy/install-audeniq-qc.sh "$HOME/.local/audeniq-qc"
+          echo "AUDENIQ_QC_BIN=$HOME/.local/audeniq-qc/bin/audeniq-qc" >> "$GITHUB_ENV"
       - name: Install native analyzers and disposable antivirus
         run: |
           sudo apt-get update -qq

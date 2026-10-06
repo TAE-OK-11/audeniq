@@ -1042,6 +1042,69 @@ async fn fingerprint_flags_byte_identical_reupload_for_review(pool: PgPool) {
         .unwrap();
     rtx.rollback().await.unwrap();
     assert_eq!(n, 3, "one fingerprint row per analyzed asset");
+
+    // Fingerprint-version backfill: an asset fingerprinted before the
+    // current version is queued once, and the worker adds the current row
+    // next to the old one without touching anything else.
+    let (legacy, hash): (Uuid, Vec<u8>) = sqlx::query_as(
+        "SELECT asset_id, hash FROM catalog.asset_fingerprints ORDER BY asset_id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE catalog.asset_fingerprints SET version=2 WHERE asset_id=$1")
+        .bind(legacy)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let qc_before: Option<String> =
+        sqlx::query_scalar("SELECT qc_status FROM catalog.assets WHERE id=$1")
+            .bind(legacy)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        audeniq_core::submission::queue_fingerprint_backfill(&pool, 100)
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        audeniq_core::submission::queue_fingerprint_backfill(&pool, 100)
+            .await
+            .unwrap(),
+        0,
+        "a queued backfill is not queued twice"
+    );
+    let job = operations::claim(&pool, "qc", "test-worker", 60)
+        .await
+        .unwrap()
+        .expect("backfill job queued");
+    assert_eq!(job.kind, "asset.fingerprint");
+    operations::execute(&pool, &store_obj, &job).await.unwrap();
+    let status: String = sqlx::query_scalar("SELECT status FROM operations.jobs WHERE id=$1")
+        .bind(job.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "SUCCEEDED");
+    let rows: Vec<(i16, Vec<u8>)> = sqlx::query_as(
+        "SELECT version, hash FROM catalog.asset_fingerprints WHERE asset_id=$1 ORDER BY version",
+    )
+    .bind(legacy)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(rows.len(), 2, "old row kept for rollback");
+    assert_eq!(rows[1].0, audeniq_core::fingerprint::FINGERPRINT_VERSION);
+    assert_eq!(rows[1].1, hash, "same bytes, same engine, same fingerprint");
+    let qc_after: Option<String> =
+        sqlx::query_scalar("SELECT qc_status FROM catalog.assets WHERE id=$1")
+            .bind(legacy)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(qc_after, qc_before, "backfill leaves QC state alone");
 }
 
 #[sqlx::test]

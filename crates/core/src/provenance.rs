@@ -53,35 +53,19 @@ pub fn inspect(path: &Path) -> Value {
     }
 }
 
-/// FFprobe reads audio tags in containers ExifTool cannot inspect (e.g. TTA).
-/// Both readers remain local and share the same output and execution limits.
+/// The AUDENIQ engine reads audio tags in containers ExifTool cannot inspect
+/// (e.g. TTA). Both readers remain local, sandboxed and bounded.
 pub fn inspect_audio(path: &Path) -> Value {
     let report = inspect(path);
     if report["inspection_status"] == "COMPLETED" {
         return report;
     }
-    let executable = std::env::var("FFPROBE_BIN").unwrap_or_else(|_| "ffprobe".into());
-    let mut command = Command::new(executable);
-    command
-        .args([
-            "-v",
-            "error",
-            "-show_entries",
-            "format_tags",
-            "-of",
-            "json",
-            "-i",
-        ])
-        .arg(path);
-    if crate::parser_sandbox::restrict(&mut command, &[path], &[]).is_err() {
-        return unknown("metadata sandbox unavailable");
-    }
-    let bytes = match read_metadata(&mut command) {
-        Ok(bytes) => bytes,
-        Err(reason) => return unknown(reason),
-    };
-    let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
-        return unknown("audio metadata reader returned an invalid report");
+    let value = match crate::qc_engine::tags(path, Duration::from_secs(10)) {
+        Ok(value) => value,
+        Err(crate::qc_engine::EngineError::Rejected(..)) => {
+            return unknown("audio metadata reader rejected the file");
+        }
+        Err(_) => return unknown("audio metadata reader unavailable"),
     };
     if !value["format"].is_object() {
         return unknown("audio metadata reader returned an invalid report");
@@ -101,7 +85,7 @@ pub fn inspect_audio(path: &Path) -> Value {
         }
     }
     let mut report = from_metadata(&Value::Object(metadata));
-    report["reader"] = json!("FFPROBE_FALLBACK");
+    report["reader"] = json!("AUDENIQ_QC_FALLBACK");
     report
 }
 

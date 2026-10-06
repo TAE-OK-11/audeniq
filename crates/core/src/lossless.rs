@@ -1,123 +1,25 @@
 //! Normalize supported lossless uploads to a DSP-compatible FLAC master.
 //! Container labels alone never establish that a codec is lossless.
+//!
+//! Probing, decoding, FLAC encoding and the lossless proof run in the
+//! sandboxed AUDENIQ engine ([`crate::qc_engine`]); no FFmpeg is involved.
 use crate::qc;
+use crate::qc_engine::{self, EngineError, Rejection};
 use std::{
-    ffi::OsStr,
     io::{Read, Seek, SeekFrom},
     path::Path,
-    process::Stdio,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 type ConversionResult<T> = std::result::Result<T, &'static str>;
-const MAX_OUTPUT: u64 = 4096;
 
-fn run(args: &[&OsStr], timeout: Duration) -> ConversionResult<Vec<u8>> {
-    let deadline = Instant::now() + timeout;
-    let mut command =
-        std::process::Command::new(std::env::var("FFMPEG_BIN").unwrap_or_else(|_| "ffmpeg".into()));
-    command.args(args);
-    // Only real input files are readable. The one FLAC output is granted
-    // separately; no access to neighboring uploads, keyrings or credentials.
-    let inputs: Vec<_> = args
-        .iter()
-        .map(Path::new)
-        .filter(|p| p.is_absolute() && p.is_file())
-        .collect();
-    let outputs: Vec<_> = args
-        .windows(3)
-        .filter(|a| a[0] == OsStr::new("-f") && a[1] == OsStr::new("flac"))
-        .map(|a| Path::new(a[2]))
-        .collect();
-    crate::parser_sandbox::restrict_audio(&mut command, &inputs, &outputs)
-        .map_err(|_| "UPLOAD_CONVERSION_UNAVAILABLE")?;
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    let mut child = crate::analyzer_process::AnalyzerProcess::spawn(&mut command, deadline)
-        .map_err(|_| "UPLOAD_CONVERSION_UNAVAILABLE")?;
-    let stdout = child.stdout.take().ok_or("UPLOAD_CONVERSION_UNAVAILABLE")?;
-    let stdout = child
-        .reader(stdout)
-        .map_err(|_| "UPLOAD_CONVERSION_UNAVAILABLE")?;
-    let (tx, rx) = std::sync::mpsc::channel();
-    child
-        .spawn_reader("lossless-conversion", move || {
-            let mut out = Vec::new();
-            let result = stdout
-                .take(MAX_OUTPUT + 1)
-                .read_to_end(&mut out)
-                .map(|_| out);
-            let _ = tx.send(result);
-        })
-        .map_err(|_| "UPLOAD_CONVERSION_UNAVAILABLE")?;
-    let result = (|| {
-        let out = rx
-            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-            .map_err(|_| "UPLOAD_CONVERSION_TIMEOUT")?
-            .map_err(|_| "UPLOAD_CONVERSION_FAILED")?;
-        if out.len() as u64 > MAX_OUTPUT {
-            return Err("UPLOAD_CONVERSION_FAILED");
-        }
-        // EOF is not proof that the process exited. Enforce the same deadline
-        // even if a broken analyzer closes stdout and then hangs.
-        loop {
-            if let Some(status) = child.try_wait().map_err(|_| "UPLOAD_CONVERSION_FAILED")? {
-                return if status.success() {
-                    Ok(out)
-                } else {
-                    Err("UPLOAD_CONVERSION_FAILED")
-                };
-            }
-            if Instant::now() >= deadline {
-                return Err("UPLOAD_CONVERSION_TIMEOUT");
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-    })();
-    if result.is_err() {
-        let _ = child.kill();
-        let _ = child.wait();
-    }
-    result
-}
+const PROBE_TIMEOUT: Duration = Duration::from_secs(30);
+const CONVERT_TIMEOUT: Duration = Duration::from_secs(600);
 
-fn hash_output(out: &[u8]) -> ConversionResult<String> {
-    let text = std::str::from_utf8(out).map_err(|_| "UPLOAD_CONVERSION_FAILED")?;
-    let hash = text
-        .trim()
-        .strip_prefix("SHA256=")
-        .ok_or("UPLOAD_CONVERSION_FAILED")?;
-    if hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Err("UPLOAD_CONVERSION_FAILED");
-    }
-    Ok(hash.to_ascii_lowercase())
-}
-
+/// Canonical PCM SHA-256 (interleaved, left-aligned s32le) of a full decode.
+#[cfg(test)]
 pub(crate) fn pcm_sha256(path: &Path) -> ConversionResult<String> {
-    let args: Vec<&OsStr> = vec![
-        "-nostdin".as_ref(),
-        "-v".as_ref(),
-        "error".as_ref(),
-        "-xerror".as_ref(),
-        "-protocol_whitelist".as_ref(),
-        "file".as_ref(),
-        "-threads".as_ref(),
-        "1".as_ref(),
-        "-i".as_ref(),
-        path.as_os_str(),
-        "-map".as_ref(),
-        "0:a:0".as_ref(),
-        "-c:a".as_ref(),
-        "pcm_s32le".as_ref(),
-        "-f".as_ref(),
-        "hash".as_ref(),
-        "-hash".as_ref(),
-        "sha256".as_ref(),
-        "pipe:1".as_ref(),
-    ];
-    hash_output(&run(&args, Duration::from_secs(600))?)
+    qc_engine::pcm_sha256(path, CONVERT_TIMEOUT).map_err(|_| "UPLOAD_CONVERSION_FAILED")
 }
 
 /// Read every WavPack block, not just the first: hybrid mode can change
@@ -221,22 +123,60 @@ fn validate_wavpack(path: &Path) -> ConversionResult<()> {
     Ok(())
 }
 
-/// Decode once into FLAC and a source PCM SHA-256 concurrently, then decode
-/// FLAC once to verify it. This removes the old third full decoding pass.
-/// FLAC compression level for converted masters. Measured single-threaded
-/// on a 4-minute 24-bit/48 kHz stereo master (2026-09): level 0 66.3 % of
-/// the WAV in 2.9 s, 3 and 5 57.8 % in ~3 s, 6 56.6 % in 3.8 s, 8 56.2 % in
-/// 4.6 s, 12 55.6 % in 15 s. Level 5 (the FLAC default) is where extra CPU
-/// stops buying size: 8 costs ~50 % more encode time on a small shared
-/// 2-vCPU host for ~3 % smaller files, and decode cost is flat across
-/// levels. Size does not affect DSP ingestion; the bytes stay lossless.
-const FLAC_COMPRESSION_LEVEL: &str = "5";
+/// The engine's refusal of the source, as the upload error the Studio shows.
+/// An M4A the engine cannot open as a single ALAC track is (in practice) AAC:
+/// the engine finds no `alac` sample description in it.
+fn source_rejection(container: &str, error: EngineError) -> &'static str {
+    match error {
+        EngineError::Unavailable => "UPLOAD_CONVERSION_UNAVAILABLE",
+        EngineError::Deadline => "UPLOAD_CONVERSION_TIMEOUT",
+        EngineError::Rejected(Rejection::Limit, _) => "UPLOAD_AUDIO_TOO_LARGE",
+        EngineError::Rejected(Rejection::Unsupported, _) if container == "M4A" => {
+            "UPLOAD_LOSSY_NOT_ACCEPTED"
+        }
+        EngineError::Rejected(Rejection::Invalid, detail)
+            if container == "M4A" && detail.contains("missing MP4 table") =>
+        {
+            "UPLOAD_LOSSY_NOT_ACCEPTED"
+        }
+        // Float, 32-bit, 8-bit or >2-channel PCM is lossless but not a
+        // deliverable format: say so, not "lossy".
+        EngineError::Rejected(Rejection::Unsupported, _) => "UPLOAD_AUDIO_FORMAT_UNSUPPORTED",
+        EngineError::Rejected(Rejection::Invalid, _) => "UPLOAD_CONTENT_MISMATCH",
+    }
+}
 
+/// Removes the private engine staging directory however conversion ends.
+struct Staging(std::path::PathBuf);
+impl Drop for Staging {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Convert `src` (WAV, ALAC in M4A, AIFF, WavPack, TTA or FLAC) to a FLAC
+/// master at `dst`, which must not exist yet.
+///
+/// One engine run decodes the source once, hashes its PCM, encodes FLAC
+/// (adaptive LPC, profile 5; a FLAC source keeps its validated frames and
+/// loses only its tags), re-decodes the output and publishes it only when
+/// spec, frame count and PCM SHA-256 match. The backend then checks the
+/// report against the probe and the output's own STREAMINFO. Never
+/// resamples, changes bit depth or keeps source metadata.
 pub fn to_flac(src: &Path, dst: &Path, container: &str) -> ConversionResult<()> {
-    let report = qc::probe_classified(src).map_err(|e| match e {
-        qc::AnalyzerError::Unavailable => "UPLOAD_CONVERSION_UNAVAILABLE",
-        qc::AnalyzerError::Undecodable => "UPLOAD_CONTENT_MISMATCH",
-    })?;
+    if !matches!(
+        container,
+        "WAV" | "M4A" | "AIFF" | "WAVPACK" | "TTA" | "FLAC"
+    ) {
+        return Err("UPLOAD_LOSSY_NOT_ACCEPTED");
+    }
+    // A WAV whose data chunk promises more bytes than the file holds keeps
+    // its own code; the engine would only report it as malformed.
+    if container == "WAV" && qc::wav_data_truncation(src).is_some() {
+        return Err("UPLOAD_AUDIO_TRUNCATED");
+    }
+    let report =
+        qc_engine::probe(src, PROBE_TIMEOUT).map_err(|e| source_rejection(container, e))?;
     let streams = report["streams"]
         .as_array()
         .ok_or("UPLOAD_CONTENT_MISMATCH")?;
@@ -253,8 +193,6 @@ pub fn to_flac(src: &Path, dst: &Path, container: &str) -> ConversionResult<()> 
     }
     let m = qc::audio_metrics_from_report(&report).ok_or("UPLOAD_CONTENT_MISMATCH")?;
     let accepted = match container {
-        // Same integer PCM the Stage 1 WAV policy accepts at 16/24 bit
-        // (float, 32-bit and 8-bit WAVs were always rejected there).
         "WAV" => {
             m.format_name == "wav" && matches!(m.codec_name.as_str(), "pcm_s16le" | "pcm_s24le")
         }
@@ -268,16 +206,11 @@ pub fn to_flac(src: &Path, dst: &Path, container: &str) -> ConversionResult<()> 
         }
         "WAVPACK" => m.format_name == "wv" && m.codec_name == "wavpack",
         "TTA" => m.format_name == "tta" && m.codec_name == "tta",
-        "FLAC" => m.format_name == "flac" && m.codec_name == "flac",
-        _ => false,
+        _ => m.format_name == "flac" && m.codec_name == "flac",
     };
     if !accepted {
-        // Float / 32-bit / 8-bit PCM in a WAV is lossless but not a
-        // deliverable format: say so, not "lossy".
-        if container == "WAV" && m.format_name == "wav" && m.codec_name.starts_with("pcm_") {
-            return Err("UPLOAD_AUDIO_FORMAT_UNSUPPORTED");
-        }
-        return Err("UPLOAD_LOSSY_NOT_ACCEPTED");
+        // The magic bytes said one container, the parser found another.
+        return Err("UPLOAD_CONTENT_MISMATCH");
     }
     if !matches!(m.bits_per_sample, Some(16 | 24))
         || !(1..=2).contains(&m.channels)
@@ -288,14 +221,8 @@ pub fn to_flac(src: &Path, dst: &Path, container: &str) -> ConversionResult<()> 
     if container == "WAVPACK" {
         validate_wavpack(src)?;
     }
-    // A WAV whose data chunk promises more bytes than the file holds would
-    // otherwise convert "cleanly" to a shorter FLAC and lose the evidence
-    // Stage 1 used to report as AUDIO_TRUNCATED.
-    if container == "WAV" && qc::wav_data_truncation(src).is_some() {
-        return Err("UPLOAD_AUDIO_TRUNCATED");
-    }
-    // Bound expansion before launching the decoder, plus a file-size cap
-    // below for forged duration headers. Never resample or downconvert.
+    // Bound expansion before launching the decoder, plus an output size cap
+    // below for forged duration headers.
     let pcm_bytes = m.duration_secs
         * f64::from(m.sample_rate)
         * f64::from(m.channels)
@@ -303,69 +230,88 @@ pub fn to_flac(src: &Path, dst: &Path, container: &str) -> ConversionResult<()> 
     if pcm_bytes > crate::uploads::MAX_AUDIO_BYTES as f64 {
         return Err("UPLOAD_AUDIO_TOO_LARGE");
     }
-    let limit = crate::uploads::MAX_AUDIO_BYTES.to_string();
-    let args: Vec<&OsStr> = vec![
-        "-nostdin".as_ref(),
-        "-v".as_ref(),
-        "error".as_ref(),
-        "-xerror".as_ref(),
-        "-y".as_ref(),
-        "-protocol_whitelist".as_ref(),
-        "file".as_ref(),
-        "-threads".as_ref(),
-        "1".as_ref(),
-        "-i".as_ref(),
-        src.as_os_str(),
-        "-map".as_ref(),
-        "0:a:0".as_ref(),
-        "-map_metadata".as_ref(),
-        "-1".as_ref(),
-        "-c:a".as_ref(),
-        "flac".as_ref(),
-        "-threads".as_ref(),
-        "1".as_ref(),
-        "-compression_level".as_ref(),
-        FLAC_COMPRESSION_LEVEL.as_ref(),
-        "-fs".as_ref(),
-        limit.as_ref(),
-        "-f".as_ref(),
-        "flac".as_ref(),
-        dst.as_os_str(),
-        "-map".as_ref(),
-        "0:a:0".as_ref(),
-        "-c:a".as_ref(),
-        "pcm_s32le".as_ref(),
-        "-f".as_ref(),
-        "hash".as_ref(),
-        "-hash".as_ref(),
-        "sha256".as_ref(),
-        "pipe:1".as_ref(),
-    ];
-    let original_hash = hash_output(&run(&args, Duration::from_secs(600))?)?;
-    if std::fs::metadata(dst)
-        .map_err(|_| "UPLOAD_CONVERSION_FAILED")?
-        .len()
-        > crate::uploads::MAX_AUDIO_BYTES as u64
-    {
-        return Err("UPLOAD_AUDIO_TOO_LARGE");
-    }
-    let out = qc::probe_audio_metrics(dst).ok_or("UPLOAD_CONVERSION_FAILED")?;
-    if out.codec_name != "flac"
-        || out.sample_rate != m.sample_rate
-        || out.channels != m.channels
-        || out.bits_per_sample != m.bits_per_sample
-    {
+    if dst.exists() {
         return Err("UPLOAD_CONVERSION_FAILED");
     }
-    if original_hash != pcm_sha256(dst)? {
+    // The engine's only writable grant: a new private directory next to
+    // `dst`, never the upload workspace that holds the source.
+    let parent = dst.parent().ok_or("UPLOAD_CONVERSION_FAILED")?;
+    let staging = Staging(parent.join(format!(".flac-staging-{}", uuid::Uuid::new_v4())));
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&staging.0)
+            .map_err(|_| "UPLOAD_CONVERSION_UNAVAILABLE")?;
+    }
+    let (staged, conversion) = qc_engine::convert(src, &staging.0, "master.flac", CONVERT_TIMEOUT)
+        .map_err(|e| match e {
+            EngineError::Rejected(Rejection::Unsupported, _) => source_rejection(container, e),
+            EngineError::Rejected(Rejection::Limit, _) => "UPLOAD_AUDIO_TOO_LARGE",
+            EngineError::Rejected(Rejection::Invalid, _) => "UPLOAD_CONVERSION_FAILED",
+            EngineError::Deadline => "UPLOAD_CONVERSION_TIMEOUT",
+            EngineError::Unavailable => "UPLOAD_CONVERSION_UNAVAILABLE",
+        })?;
+    let size = std::fs::symlink_metadata(&staged)
+        .ok()
+        .filter(|meta| meta.is_file())
+        .map(|meta| meta.len())
+        .ok_or("UPLOAD_CONVERSION_FAILED")?;
+    if size > crate::uploads::MAX_AUDIO_BYTES as u64 {
+        return Err("UPLOAD_AUDIO_TOO_LARGE");
+    }
+    // The engine verified its own output; still refuse a report that does
+    // not describe the probed source, or a file whose STREAMINFO disagrees.
+    let expected_frames = (m.duration_secs * f64::from(m.sample_rate)).round() as u64;
+    let out = &conversion.spec;
+    let header = crate::audio_header::probe(&staged).ok_or("UPLOAD_CONVERSION_FAILED")?;
+    if out.codec != "flac"
+        || out.sample_rate != m.sample_rate
+        || out.channels != m.channels
+        || Some(out.bits_per_sample) != m.bits_per_sample
+        || out.frames != conversion.frames
+        || conversion.frames.abs_diff(expected_frames) > u64::from(m.sample_rate)
+        || conversion.output_bytes != size
+        || conversion.pcm_sha256.len() != 64
+        || header.codec_name != "flac"
+        || header.sample_rate != m.sample_rate
+        || header.channels != m.channels
+        || header.bits_per_sample != m.bits_per_sample
+    {
         return Err("UPLOAD_CONVERSION_NOT_LOSSLESS");
     }
+    // No-clobber publication outside the engine's grant.
+    std::fs::hard_link(&staged, dst).map_err(|_| "UPLOAD_CONVERSION_FAILED")?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn ffmpeg_pcm_sha256(path: &Path) -> String {
+        let out = std::process::Command::new("ffmpeg")
+            .args(["-v", "error", "-i"])
+            .arg(path)
+            .args([
+                "-map",
+                "0:a:0",
+                "-c:a",
+                "pcm_s32le",
+                "-f",
+                "hash",
+                "-hash",
+                "sha256",
+                "-",
+            ])
+            .output()
+            .expect("ffmpeg (test oracle) missing");
+        assert!(out.status.success());
+        String::from_utf8(out.stdout)
+            .unwrap()
+            .trim()
+            .to_ascii_lowercase()
+    }
 
     #[test]
     fn additional_lossless_formats_preserve_pcm() {
@@ -408,6 +354,12 @@ mod tests {
                 (Some(bits), 2, 48000)
             );
             assert_eq!(pcm_sha256(&src).unwrap(), pcm_sha256(&dst).unwrap());
+            // Independent oracle: FFmpeg (test-only) decodes both to the same PCM.
+            assert_eq!(
+                ffmpeg_pcm_sha256(&src),
+                ffmpeg_pcm_sha256(&dst),
+                "{ext} {codec}"
+            );
             std::fs::remove_file(src).unwrap();
             std::fs::remove_file(dst).unwrap();
         }
@@ -504,7 +456,7 @@ mod tests {
         );
         assert_eq!(
             to_flac(&src, &dst, "AIFF"),
-            Err("UPLOAD_LOSSY_NOT_ACCEPTED")
+            Err("UPLOAD_AUDIO_FORMAT_UNSUPPORTED")
         );
         assert!(!dst.exists());
         std::fs::remove_file(src).unwrap();
