@@ -200,7 +200,7 @@ pub fn fingerprint_from_segments(segments: &[&[f32]]) -> Result<Fingerprint> {
 ///
 /// This is the FFT/differential core shared by the file-decode entry point
 /// and the QC fast path, where the segment samples are tapped out of the
-/// single `decode_analysis` pass instead of a second ffmpeg decode.
+/// single `decode_analysis` pass instead of a second engine decode.
 pub fn fingerprint_from_samples(samples: &[f32]) -> Result<Fingerprint> {
     let mut frames = Vec::with_capacity(samples.len().saturating_sub(FRAME_SIZE) / FRAME_HOP);
     FingerprintWorkspace::new().append_frames(samples, &mut frames)?;

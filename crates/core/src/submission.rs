@@ -1700,7 +1700,7 @@ async fn cached_statuses(
 }
 
 /// 1-C: file QC over the revision's assets. Bytes-unchanged assets hit the
-/// change cache and are never re-analyzed (ffprobe runs 0 times for them).
+/// change cache and are never re-analyzed (the engine runs 0 times for them).
 /// Upper bound on bytes the QC worker will download for one asset.
 /// Larger objects skip analysis (per-asset TECHNICAL_RETRY) instead of
 /// OOMing the worker. Overridable for tests and small deployments.
@@ -1876,7 +1876,7 @@ async fn analyze_asset(
             }
         }
 
-        // The mono 11025 Hz tap uses ffmpeg's continuous resampler and
+        // The mono 11025 Hz tap uses the engine's continuous resampler and
         // separate fingerprint histories for the head/middle/tail windows.
         let duration_secs = metrics.as_ref().map(|m| m.duration_secs).unwrap_or(0.0);
         let fp = match kind.as_str() {

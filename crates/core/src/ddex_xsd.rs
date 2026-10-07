@@ -9,7 +9,7 @@
 //! The schema files are vendored at `schemas/ddex/ern-382/` (see its
 //! README for provenance and licence). Validation itself is delegated to
 //! `xmllint` (libxml2), the same "system binary the worker shells out to"
-//! pattern the QC pipeline already uses for `ffmpeg`/`ffprobe`.
+//! pattern the QC pipeline uses for the `audeniq-qc` engine.
 
 use crate::error::{Error, Result};
 use std::path::PathBuf;
@@ -120,7 +120,7 @@ fn run_xmllint(schema: &std::path::Path, doc: &std::path::Path) -> Result<()> {
         .spawn()
         .map_err(|_| Error::PolicyGate("ERN_XSD_VALIDATOR_UNAVAILABLE"))?;
     // xmllint on a local document returns quickly; guard against a hung
-    // validator the same way the QC pipeline guards ffmpeg.
+    // validator the same way the QC pipeline guards its engine.
     let status = wait_status_with_timeout(&mut child, Duration::from_secs(60))
         .ok_or(Error::PolicyGate("ERN_XSD_VALIDATOR_UNAVAILABLE"))?;
     if status.success() {
