@@ -22,11 +22,11 @@
 //! - Audio technical details come from the asset `content_type`
 //!   (`audio/wav` -> PCM/WAV, `audio/flac` -> FLAC, `audio/mpeg` -> MP3).
 //!   The PCM spec fields (BitRate/NumberOfChannels/SamplingRate/
-//!   BitsPerSample) carry the ffprobe-measured values persisted on
+//!   BitsPerSample) carry the engine-measured values persisted on
 //!   `catalog.assets` by Stage 1 QC, for WAV and FLAC (BitRate for PCM
 //!   only); they are omitted when unknown, never fabricated.
 //! - Duration is required by the schema: emitted as `PT{secs}S` from
-//!   `AssetRef::duration_secs` (Stage 1 persists it from ffprobe); missing
+//!   `AssetRef::duration_secs` (Stage 1 persists the engine probe); missing
 //!   duration fails closed with `DDEX_DURATION_UNKNOWN`.
 //! - Image dimensions are omitted: not stored on the asset.
 //! - Credits are emitted as `ResourceContributor` with roles mapped onto
@@ -282,7 +282,7 @@ fn validate_config(c: &DdexErnConfig) -> Result<()> {
 
 /// (codec, file extension). Technical spec fields (bit rate, channels,
 /// sample rate, bit depth) are NOT derived here: they come from the
-/// ffprobe-measured `AssetRef` fields, and are omitted when unknown rather
+/// engine-measured `AssetRef` fields, and are omitted when unknown rather
 /// than fabricated.
 fn audio_codec(content_type: &str) -> (&'static str, &'static str) {
     match content_type {
@@ -517,7 +517,7 @@ fn resource_list(
         out.push_str("<TechnicalSoundRecordingDetails>");
         element(out, "TechnicalResourceDetailsReference", &tech_ref);
         element(out, "AudioCodecType", codec);
-        // Real measured specs, from Stage 1 ffprobe via `AssetRef`. All four
+        // Real measured specs, from the Stage 1 engine probe via `AssetRef`. All four
         // elements are optional per the XSD; when the asset predates spec
         // persistence (or probing failed) they are omitted — never
         // fabricated. The old code emitted 1411/44100/16/2 for every WAV,

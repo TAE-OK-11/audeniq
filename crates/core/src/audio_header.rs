@@ -12,7 +12,8 @@ fn duration(frames: u64, rate: u32) -> Option<f64> {
     if frames == 0 || rate == 0 {
         return None;
     }
-    // FFprobe reports six decimal places; retain the existing metric hashes.
+    // Six decimal places, as the former FFprobe probe reported, so existing
+    // metric hashes still match.
     format!("{:.6}", frames as f64 / f64::from(rate))
         .parse()
         .ok()

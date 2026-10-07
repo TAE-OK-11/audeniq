@@ -24,7 +24,7 @@ pub struct AssetRef {
     /// the DDEX builder fails closed without it (DDEX_DURATION_UNKNOWN).
     #[serde(default)]
     pub duration_secs: Option<f64>,
-    /// ffprobe-measured audio technical specs (Stage 1 QC), persisted to
+    /// Engine-measured audio technical specs (Stage 1 QC), persisted to
     /// `catalog.assets`. None for images, for legacy rows probed before
     /// the columns existed, or when probing failed. The DDEX ERN builder
     /// emits these as the real `TechnicalSoundRecordingDetails` and omits
