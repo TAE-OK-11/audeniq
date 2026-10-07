@@ -58,7 +58,11 @@ jobs:
           git diff --exit-code
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo build --locked -p audeniq-core --bins
-      - name: Install FFmpeg (QC fixture generation + ffprobe) and xmllint (DDEX XSD validation)
+      - name: Build the pinned AUDENIQ media engine (audeniq-qc)
+        run: |
+          sh deploy/install-audeniq-qc.sh "$HOME/.local/audeniq-qc"
+          echo "AUDENIQ_QC_BIN=$HOME/.local/audeniq-qc/bin/audeniq-qc" >> "$GITHUB_ENV"
+      - name: Install FFmpeg (test fixtures and oracle only) and xmllint (DDEX XSD validation)
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg libxml2-utils openssh-server openssh-client libimage-exiftool-perl tesseract-ocr tesseract-ocr-eng tesseract-ocr-kor zbar-tools qrencode fonts-dejavu-core python3-pil poppler-utils clamav-daemon
@@ -277,8 +281,7 @@ jobs:
           docker compose exec -T worker audeniq-admin upload-sandbox-check
       - name: Worker image ships the audio and provenance analyzers
         run: |
-          docker compose run --rm --no-deps --entrypoint ffprobe worker -version
-          docker compose run --rm --no-deps --entrypoint ffmpeg worker -version
+          docker compose run --rm --no-deps --entrypoint audeniq-qc worker capabilities
           docker compose run --rm --no-deps --entrypoint exiftool worker -ver
           docker compose run --rm --no-deps --entrypoint tesseract worker --list-langs
           docker compose run --rm --no-deps --entrypoint zbarimg worker --version

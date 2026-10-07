@@ -7,8 +7,9 @@
 //! by bit error rate (BER) over the best alignment.
 //!
 //! Design notes:
-//! - Decode is via `ffmpeg` (already a hard QC dependency): mono,
-//!   11025 Hz, 16-bit PCM. No new system dependencies.
+//! - Decode and resampling run in the sandboxed AUDENIQ engine
+//!   ([`crate::qc_engine`]): mono, 11025 Hz, 16-bit PCM from one
+//!   continuous resampler, head/middle/tail windows only.
 //! - 33 logarithmically spaced bands over 300-3000 Hz give 32 differential
 //!   bits per frame (Philips robust hash construction).
 //! - Similarity is BER = Hamming distance / compared bits, minimized over
@@ -20,14 +21,15 @@
 use crate::error::{Error, Result};
 use rustfft::{Fft, FftPlanner, num_complex::Complex};
 use std::path::Path;
-use std::process::{Command, Stdio};
 use std::time::Duration;
 
 /// Fingerprint algorithm version, stored alongside the hash so a future
 /// algorithm change can coexist with (not silently mix with) old rows.
-/// v2 = segmented coverage (head/middle/tail windows); v1 covered the
-/// first 600 s contiguously.
-pub const FINGERPRINT_VERSION: i16 = 2;
+/// v3 = v2's head/middle/tail windows resampled by the AUDENIQ engine
+/// (`native-sinc64-v1`); v2 used FFmpeg's resampler and is not comparable
+/// (BER up to ~0.4 on tonal material), so rows of different versions are
+/// never compared. v1 covered the first 600 s contiguously.
+pub const FINGERPRINT_VERSION: i16 = 3;
 
 const SAMPLE_RATE: u32 = 11025;
 /// Sample rate of the PCM the fingerprint operates on.
@@ -115,96 +117,6 @@ impl Fingerprint {
     }
 }
 
-/// Decode one window of an audio file to mono 11025 Hz f32 PCM via
-/// ffmpeg (`-ss`/`-t` as input options, so the decoder seeks instead of
-/// decoding from the start). Uses the same helper-thread + timeout pattern
-/// as `qc::probe_with` so a hung decoder cannot wedge the worker.
-fn decode_window(path: &Path, start_secs: f64, len_secs: f64) -> Result<Vec<f32>> {
-    use std::io::Read;
-    let mut command = Command::new("ffmpeg");
-    command.args([
-        "-v",
-        "error",
-        "-filter_threads",
-        "1",
-        "-threads",
-        "1",
-        "-ss",
-        &start_secs.to_string(),
-        "-t",
-        &len_secs.to_string(),
-        "-i",
-        path.to_str().ok_or(Error::Internal)?,
-        "-ac",
-        "1",
-        "-ar",
-        &SAMPLE_RATE.to_string(),
-        "-f",
-        "s16le",
-        "-acodec",
-        "pcm_s16le",
-        "-threads",
-        "1",
-        "-",
-    ]);
-    crate::parser_sandbox::restrict_audio(&mut command, &[path], &[])
-        .map_err(|_| Error::Internal)?;
-    let deadline = std::time::Instant::now() + Duration::from_secs(120);
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    let mut child = crate::analyzer_process::AnalyzerProcess::spawn(&mut command, deadline)
-        .map_err(|_| Error::Internal)?;
-    let stdout = child.stdout.take().ok_or(Error::Internal)?;
-    let stdout = child.reader(stdout).map_err(|_| Error::Internal)?;
-    let max_bytes = ((len_secs * SAMPLE_RATE as f64).ceil() as usize + 1) * 2;
-    let (tx, rx) = std::sync::mpsc::channel();
-    child
-        .spawn_reader("fingerprint-decode", move || {
-            let mut buf = Vec::new();
-            let r = stdout
-                .take(max_bytes as u64 + 1)
-                .read_to_end(&mut buf)
-                .map(|_| buf);
-            let _ = tx.send(r);
-        })
-        .map_err(|_| Error::Internal)?;
-    let bytes = match rx.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
-    {
-        Ok(Ok(buf)) => buf,
-        _ => {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(Error::Internal);
-        }
-    };
-    if bytes.len() > max_bytes {
-        // Defensive: `-t` bounds the output, but never block in wait() on a
-        // decoder that is still writing into a pipe nobody reads.
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(Error::Internal);
-    }
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) if std::time::Instant::now() < deadline => {
-                std::thread::sleep(Duration::from_millis(10))
-            }
-            _ => return Err(Error::Internal),
-        }
-    };
-    let (sample_chunks, remainder) = bytes.as_chunks::<2>();
-    if !status.success() || !remainder.is_empty() {
-        return Err(Error::Internal);
-    }
-    Ok(sample_chunks
-        .iter()
-        .map(|chunk| i16::from_le_bytes(*chunk) as f32 / 32768.0)
-        .collect())
-}
-
 /// FFT bin edges for 33 logarithmically spaced bands over [300, 3000] Hz,
 /// computed once.
 fn band_edges() -> &'static [usize; N_BANDS + 1] {
@@ -238,17 +150,19 @@ fn fft_plan() -> &'static std::sync::Arc<dyn Fft<f32>> {
     FFT.get_or_init(|| FftPlanner::<f32>::new().plan_fft_forward(FRAME_SIZE))
 }
 
-/// Compute the perceptual fingerprint of an audio file.
-/// Perceptual fingerprint over the configured [`segment_windows`]
-/// (head/middle/tail), decoded with ffmpeg's own resampler to mono
-/// 11025 Hz. Each window is decoded independently with input seeking, so a
-/// 3:30 track decodes 90 s of audio instead of the whole track.
-pub fn compute_fingerprint(path: &Path, duration_secs: f64) -> Result<Fingerprint> {
-    let mut segments: Vec<Vec<f32>> = Vec::new();
-    for (start, len) in segment_windows(duration_secs) {
-        segments.push(decode_window(path, start, len)?);
-    }
-    let refs: Vec<&[f32]> = segments.iter().map(|v| v.as_slice()).collect();
+/// Perceptual fingerprint of an audio file over its head/middle/tail
+/// [`segment_windows`], decoded and resampled by the AUDENIQ engine. Only
+/// the engine's supported lossless formats can be fingerprinted.
+pub fn compute_fingerprint(path: &Path) -> Result<Fingerprint> {
+    let report =
+        crate::qc_engine::fingerprint(path, Duration::from_secs(600)).map_err(|e| match e {
+            crate::qc_engine::EngineError::Rejected(..) => {
+                Error::InvalidCode("REFERENCE_AUDIO_UNSUPPORTED")
+            }
+            _ => Error::Internal,
+        })?;
+    let segments = crate::qc_engine::windows_to_segments(&report.fingerprint_windows);
+    let refs: Vec<&[f32]> = segments.iter().map(Vec::as_slice).collect();
     fingerprint_from_segments(&refs)
 }
 
@@ -364,64 +278,6 @@ fn differential(previous: &[f32; N_BANDS], bands: &[f32; N_BANDS]) -> u32 {
     bits
 }
 
-/// Fingerprint one tapped window with only one overlapping PCM frame in
-/// memory. A separate builder per window keeps segment boundaries intact.
-pub(crate) struct FingerprintBuilder {
-    workspace: FingerprintWorkspace,
-    pending: Vec<f32>,
-    previous: Option<[f32; N_BANDS]>,
-    frames: Vec<u32>,
-    samples: usize,
-}
-
-impl FingerprintBuilder {
-    pub(crate) fn new() -> Self {
-        Self {
-            workspace: FingerprintWorkspace::new(),
-            pending: Vec::with_capacity(FRAME_SIZE),
-            previous: None,
-            frames: Vec::new(),
-            samples: 0,
-        }
-    }
-
-    pub(crate) fn push_s16le(&mut self, mut pcm: &[[u8; 2]]) {
-        self.samples += pcm.len();
-        while !pcm.is_empty() {
-            let take = pcm.len().min(FRAME_SIZE - self.pending.len());
-            self.pending.extend(
-                pcm[..take]
-                    .iter()
-                    .map(|s| i16::from_le_bytes(*s) as f32 / 32768.0),
-            );
-            pcm = &pcm[take..];
-            if self.pending.len() == FRAME_SIZE {
-                let bands = self.workspace.band_energies(&self.pending);
-                if let Some(previous) = &self.previous {
-                    self.frames.push(differential(previous, &bands));
-                }
-                self.previous = Some(bands);
-                self.pending.copy_within(FRAME_HOP.., 0);
-                self.pending.truncate(FRAME_SIZE - FRAME_HOP);
-            }
-        }
-    }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.samples == 0
-    }
-
-    pub(crate) fn finish(self) -> Result<Fingerprint> {
-        if self.samples < FRAME_SIZE + FRAME_HOP * MIN_OVERLAP_FRAMES {
-            return Err(Error::PolicyGate(TOO_SHORT_CODE));
-        }
-        Ok(Fingerprint {
-            frames: self.frames,
-            duration_secs: self.samples as f64 / SAMPLE_RATE as f64,
-        })
-    }
-}
-
 /// Bit error rate between two sub-fingerprint sequences at a fixed offset.
 /// `offset` shifts `b` relative to `a`: negative = b starts earlier.
 fn ber_at_offset(a: &[u32], b: &[u32], offset: isize) -> Option<f64> {
@@ -532,40 +388,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn streaming_fingerprint_matches_batch_at_frame_boundaries() {
-        let minimum = FRAME_SIZE + FRAME_HOP * MIN_OVERLAP_FRAMES;
-        let mut seed = 0x2545_f491_4f6c_dd1du64;
-        let pcm: Vec<[u8; 2]> = (0..30 * SAMPLE_RATE as usize + 13)
-            .map(|_| {
-                seed ^= seed << 13;
-                seed ^= seed >> 7;
-                seed ^= seed << 17;
-                (seed as i16).to_le_bytes()
-            })
-            .collect();
-        for len in [minimum - 1, minimum, minimum + FRAME_HOP, pcm.len()] {
-            let samples: Vec<f32> = pcm[..len]
-                .iter()
-                .map(|s| i16::from_le_bytes(*s) as f32 / 32768.0)
-                .collect();
-            for chunk in [1, 2, FRAME_HOP - 1, FRAME_SIZE * 2 + 1] {
-                let mut builder = FingerprintBuilder::new();
-                for part in pcm[..len].chunks(chunk) {
-                    builder.push_s16le(part);
-                }
-                match (fingerprint_from_samples(&samples), builder.finish()) {
-                    (Ok(batch), Ok(stream)) => {
-                        assert_eq!(stream.frames, batch.frames, "len={len} chunk={chunk}");
-                        assert_eq!(stream.duration_secs, batch.duration_secs);
-                    }
-                    (Err(Error::PolicyGate(a)), Err(Error::PolicyGate(b))) => assert_eq!(a, b),
-                    _ => panic!("stream and batch disagreed at len={len} chunk={chunk}"),
-                }
-            }
-        }
-    }
-
-    #[test]
     fn long_tracks_fingerprint_a_bounded_segment() {
         // Sandbox: 11 and 45 minute masters hung the fingerprint step until
         // the 600 s timeout and then died after five retries. Only the
@@ -580,7 +402,7 @@ mod tests {
                 "-f",
                 "lavfi",
                 "-i",
-                "sine=frequency=440:duration=660:sample_rate=22050",
+                "sine=frequency=440:duration=660:sample_rate=44100",
                 "-c:a",
                 "pcm_s16le",
             ])
@@ -589,7 +411,7 @@ mod tests {
             .expect("ffmpeg missing");
         assert!(st.success());
         let started = std::time::Instant::now();
-        let fp = compute_fingerprint(&p, 660.0);
+        let fp = compute_fingerprint(&p);
         let _ = std::fs::remove_file(&p);
         let fp = fp.expect("11 minute track fingerprints");
         assert!(!fp.is_empty());
@@ -613,7 +435,7 @@ mod tests {
     }
 
     fn sine_frames(freq: f64, secs: f64, phase: f64) -> Fingerprint {
-        // Build a fingerprint directly from synthetic PCM, bypassing ffmpeg.
+        // Build a fingerprint directly from synthetic PCM, bypassing the engine.
         let n = (secs * SAMPLE_RATE as f64) as usize;
         let samples: Vec<f32> = (0..n)
             .map(|i| {
