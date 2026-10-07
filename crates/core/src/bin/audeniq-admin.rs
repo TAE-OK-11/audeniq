@@ -5,6 +5,10 @@
 //! audeniq-admin external-recording import METADATA_JSON AUDIO_FILE
 //! audeniq-admin external-recording list
 //! audeniq-admin external-recording activate|deactivate REFERENCE_UUID
+//!   (references must be lossless: WAV, FLAC, ALAC, AIFF, WavPack or TTA)
+//! audeniq-admin fingerprint backfill [--limit N]
+//!   (queues current-version fingerprints for assets that only have older
+//!    ones; repeat until it reports 0)
 //! audeniq-admin protected list
 //! audeniq-admin protected add NAME [--mode CONTAINS|TOKEN] [--action BLOCK|REVIEW] [--note TEXT]
 //! audeniq-admin protected remove NAME              (deactivate; history kept)
@@ -149,6 +153,19 @@ async fn main() -> anyhow::Result<()> {
                 "usage: audeniq-admin [--operator NAME] external-recording <list|import METADATA_JSON AUDIO_FILE|activate ID|deactivate ID>"
             ),
         }
+        return Ok(());
+    }
+    if args.first().map(String::as_str) == Some("fingerprint") {
+        let limit = take_opt(&mut args, "--limit")
+            .map(|n| n.parse::<i64>())
+            .transpose()?
+            .unwrap_or(1000);
+        if args.len() != 2 || args[1] != "backfill" {
+            anyhow::bail!("usage: audeniq-admin fingerprint backfill [--limit N]");
+        }
+        let pool = audeniq_core::database::connect(&std::env::var("DATABASE_URL")?, 1).await?;
+        let queued = audeniq_core::submission::queue_fingerprint_backfill(&pool, limit).await?;
+        println!("{}", serde_json::json!({"queued": queued}));
         return Ok(());
     }
     if args.first().map(String::as_str) == Some("staff") {

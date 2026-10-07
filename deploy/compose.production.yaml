@@ -223,7 +223,7 @@ services:
       JOB_LEASE_SECONDS: '${JOB_LEASE_SECONDS:-300}'
       WORKER_DRAIN_SECONDS: '${WORKER_DRAIN_SECONDS:-30}'
       QUEUE_INTERACTIVE_CONCURRENCY: '1'
-      # 곡마다 업로드 직후 사전 분석(ffmpeg 디코드)이 이 큐로 돈다. CPU 작업이라 vCPU 수만큼이
+      # 곡마다 업로드 직후 사전 분석(audeniq-qc 디코드)이 이 큐로 돈다. CPU 작업이라 vCPU 수만큼이
       # 알맞다(1 vCPU: 1, 2 vCPU: 2). API는 cpu_shares로 CPU 우선권을 가진다.
       QUEUE_QC_CONCURRENCY: '${QUEUE_QC_CONCURRENCY:-1}'
       # Process-wide media capacity (1–8). Empty uses available CPU capacity.
@@ -238,7 +238,7 @@ services:
       # need the same bucket as the API. Analysis temp files go to TMPDIR (a
       # volume), never the 16 MiB /tmp tmpfs.
       # Workers only read (HEAD/GET): give them a read-only token
-      # (S3_WORKER_*), so the process that opens user files with ffmpeg
+      # (S3_WORKER_*), so the process that opens user files with audeniq-qc
       # cannot write or delete objects. Falls back to the API token.
       STORAGE_ENABLED: ${STORAGE_ENABLED:-false}
       S3_ENDPOINT: ${S3_ENDPOINT:-https://unconfigured.invalid}

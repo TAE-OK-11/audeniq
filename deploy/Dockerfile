@@ -33,18 +33,28 @@ RUN AUDENIQ_BUILD_METADATA_DIR=/meta audeniq-build-target "$TARGETARCH" "$TARGET
     && profile_dir=$([ "$CARGO_PROFILE" = dev ] && echo debug || echo "$CARGO_PROFILE") \
     && dir="$triple/$profile_dir" \
     && cp "target/$dir/audeniq-api" "target/$dir/audeniq-worker" "target/$dir/audeniq-migrate" "target/$dir/audeniq-admin" /out/
+
+# The AUDENIQ media engine (probe, lossless FLAC conversion, QC decode,
+# fingerprint windows) at the commit pinned in deploy/audeniq-qc.rev. It is a
+# separate binary so uploads are parsed only in its sandboxed child process.
+FROM chef AS engine
+ARG TARGETARCH
+ARG TARGET_CPU=
+COPY deploy/audeniq-qc.rev deploy/install-audeniq-qc.sh /engine/
+RUN audeniq-build-target "$TARGETARCH" "$TARGET_CPU" sh /engine/install-audeniq-qc.sh /engine/root
 FROM debian:13-slim
-# ffmpeg/ffprobe are runtime dependencies of the worker: Stage 1 audio QC
-# (probe, loudness, clipping, truncation) and fingerprinting shell out to them.
+# Audio probing, lossless FLAC conversion, Stage 1 QC and fingerprinting run
+# in audeniq-qc (built above); FFmpeg is no longer part of the runtime image.
 # openssh-client: SFTP partner delivery (DDEX drops) runs `sftp -b -` with a
 # pinned known_hosts file (crate::transport::SftpTransport).
 # /var/tmp/audeniq is the worker TMPDIR. A new named volume copies this
 # ownership, so UID 10001 can write downloaded masters for QC.
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg openssh-client libxml2-utils libimage-exiftool-perl tesseract-ocr tesseract-ocr-eng tesseract-ocr-kor zbar-tools python3-pil poppler-utils clamav-daemon clamav-freshclam && rm -rf /var/lib/apt/lists/* \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssh-client libxml2-utils libimage-exiftool-perl tesseract-ocr tesseract-ocr-eng tesseract-ocr-kor zbar-tools python3-pil poppler-utils clamav-daemon clamav-freshclam && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 audeniq && useradd --uid 10001 --gid 10001 --no-create-home audeniq \
     && install -d -o 10001 -g 10001 -m 700 /var/tmp/audeniq \
     && install -d -o 10001 -g 10001 -m 755 /var/lib/clamav /run/audeniq-av
 COPY --from=build /out/ /usr/local/bin/
+COPY --from=engine /engine/root/bin/audeniq-qc /usr/local/bin/audeniq-qc
 COPY --from=build /meta/ /usr/local/share/audeniq/
 COPY deploy/sanitize-upload.py /usr/local/lib/audeniq/sanitize-upload.py
 COPY deploy/update-antivirus.py /usr/local/lib/audeniq/update-antivirus.py

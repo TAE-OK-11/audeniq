@@ -117,7 +117,7 @@ bash ./check-cpu.sh "$image_arch" "$target_cpu"
 
 # 이미지가 필요한 바이너리를 갖췄는지 먼저 확인 (잘못된 이미지로 DB 마이그레이션이 도는 것을 막는다)
 docker run --rm --entrypoint sh "$PINNED" -c \
-  'for b in audeniq-api audeniq-worker audeniq-migrate ffprobe; do command -v "$b" >/dev/null || { echo "missing $b"; exit 1; }; done' \
+  'for b in audeniq-api audeniq-worker audeniq-migrate audeniq-qc; do command -v "$b" >/dev/null || { echo "missing $b"; exit 1; }; done' \
   || die "이미지 확인 실패: $PINNED"
 
 # Refuse a kernel/container profile that would leave upload parsers unconfined.

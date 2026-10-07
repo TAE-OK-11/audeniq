@@ -3,7 +3,7 @@
 //! API key, or inference that an unmatched recording is original or authorized.
 use crate::{
     error::{Error, Result},
-    fingerprint, qc,
+    fingerprint,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -79,8 +79,9 @@ pub async fn import(
             }
             digest.update(&bytes[..n]);
         }
-        let metrics = qc::probe_audio_metrics(&path).ok_or(Error::Invalid)?;
-        let fp = fingerprint::compute_fingerprint(&path, metrics.duration_secs)?;
+        // The engine accepts lossless references only (WAV, FLAC, ALAC, AIFF,
+        // WavPack, TTA); convert a lossy reference before importing it.
+        let fp = fingerprint::compute_fingerprint(&path)?;
         if fp.frames.len() < 128
             || fp.frames.len() > 2000
             || fp.frames.iter().collect::<BTreeSet<_>>().len() < 16

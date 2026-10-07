@@ -803,7 +803,7 @@ fn unsupported_exif_audio_uses_free_ffprobe_tags() {
     );
     let report = audeniq_core::provenance::inspect_audio(&path);
     assert_eq!(report["inspection_status"], "COMPLETED", "{report}");
-    assert_eq!(report["reader"], "FFPROBE_FALLBACK", "{report}");
+    assert_eq!(report["reader"], "AUDENIQ_QC_FALLBACK", "{report}");
     assert_eq!(report["outcome"], "AI_METADATA_SIGNAL", "{report}");
     assert_eq!(report["synthid"], "NOT_CHECKED");
     std::fs::remove_dir_all(dir).unwrap();

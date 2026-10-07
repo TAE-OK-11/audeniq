@@ -41,6 +41,7 @@ pub mod protected_admin;
 pub mod protected_names;
 pub mod provenance;
 pub mod qc;
+pub mod qc_engine;
 pub mod review;
 pub mod route_plan;
 pub mod routing;
