@@ -1,11 +1,13 @@
-// 이용약관 (/terms) — 로그인 없이 볼 수 있고, 회원가입·배급 신청·계약서에서 연결한다.
+// 약관 (/terms, /terms/settlement) — 로그인 없이 볼 수 있고, 회원가입·배급 신청·계약서·계좌 등록에서 연결한다.
 import { useMemo } from 'react';
-import { Link, useNavigate } from '../lib/router';
-import { TERMS_TITLE, TERMS_VERSION, parseTerms } from '../lib/terms';
+import { Link, useLocation, useNavigate } from '../lib/router';
+import { TERMS_DOCS, parseTerms } from '../lib/terms';
 
 export function Terms() {
   const nav = useNavigate();
-  const { meta, blocks } = useMemo(() => parseTerms(), []);
+  const { pathname } = useLocation();
+  const doc = TERMS_DOCS.find(d => d.path !== '/terms' && pathname.startsWith(d.path)) ?? TERMS_DOCS[0];
+  const { meta, blocks } = useMemo(() => parseTerms(doc.text), [doc]);
   const chapters = blocks.filter(b => b.kind === 'chapter');
   return (
     <div className="aq-terms-page">
@@ -13,10 +15,15 @@ export function Terms() {
         <Link to="/" aria-label="AUDENIQ"><img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" /></Link>
         <span>약관</span>
       </header>
-      <article className="aq-terms" aria-labelledby="aqTermsTitle">
-        <p className="eyebrow">{TERMS_VERSION}</p>
-        <h1 id="aqTermsTitle">{TERMS_TITLE}</h1>
-        <p className="aq-terms-meta">{meta.join(' · ')}</p>
+      <article key={doc.key} className="aq-terms" aria-labelledby="aqTermsTitle">
+        <nav className="aq-terms-docs" aria-label="약관 종류">
+          {TERMS_DOCS.map(d => (
+            <Link key={d.key} to={d.path} replace aria-current={d === doc ? 'page' : undefined}>{d.short}</Link>
+          ))}
+        </nav>
+        <p className="eyebrow">{doc.version}</p>
+        <h1 id="aqTermsTitle">{doc.title}</h1>
+        <ul className="aq-terms-meta">{meta.map(m => <li key={m}>{m}</li>)}</ul>
         <nav className="aq-terms-toc" aria-label="장 바로가기">
           <label htmlFor="aqTermsJump" className="sr-only">장 바로가기</label>
           <select id="aqTermsJump" defaultValue="" onChange={e => { document.getElementById(e.target.value)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>

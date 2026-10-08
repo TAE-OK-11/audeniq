@@ -1333,3 +1333,5 @@ body.aq-nav-locked #portalNav{position:fixed!important;top:calc(var(--aq-menu-to
 .aq-chevron.is-open{transform:rotate(90deg)}
 .aq-notice-body{margin:0 20px;padding:16px 0 20px;border-top:1px solid #f0f3f8;font-size:14px;line-height:1.8;color:#4a5a75}
 .aq-notice-body p{margin:0 0 6px}
+.aq-agree-list a{display:grid;place-items:center;align-self:stretch;color:#9aa4b4;font-size:25px;text-decoration:none}
+.aq-agree-list a:hover{color:#3b63f3}

@@ -45,11 +45,13 @@ const PAY_TYPES: { value: PaymentInfo['type']; label: string; desc: string }[] =
   { value: 'corporate', label: '법인', desc: '법인 명의 계좌로 받아요.' },
 ];
 
-const AGREE_ITEMS = [
-  '정산금 지급 및 계좌 확인 약관',
-  '개인정보 수집·이용 동의',
-  '금융정보 처리 동의',
-  '수령인 정보 정확성 확인',
+// href가 있으면 '약관 보기'가 전문을 새 탭으로 연다 (입력하던 계좌 정보는 그대로 둔다).
+// 약관 원문(lib/terms)은 크므로 여기서 import하지 않고 경로만 쓴다.
+const AGREE_ITEMS: { label: string; href?: string }[] = [
+  { label: '[필수] AUDENIQ 정산금 지급 및 계좌 확인 약관에 동의합니다.', href: '/terms/settlement' },
+  { label: '개인정보 수집·이용 동의' },
+  { label: '금융정보 처리 동의' },
+  { label: '수령인 정보 정확성 확인' },
 ];
 
 interface Draft {
@@ -345,7 +347,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
                 <span><strong>필수 약관 전체 동의</strong><small>아래 항목을 모두 확인했어요.</small></span>
               </label>
               <div className="aq-agree-list">
-                {AGREE_ITEMS.map((label, i) => (
+                {AGREE_ITEMS.map(({ label, href }, i) => (
                   <label key={label}>
                     <input
                       type="checkbox" data-aq-agree checked={agrees[i]}
@@ -356,7 +358,9 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
                       }}
                     />
                     <span>{label}</span>
-                    <button type="button" aria-label="약관 보기">›</button>
+                    {href
+                      ? <a href={href} target="_blank" rel="noopener" aria-label="정산금 지급 및 계좌 확인 약관 전문 보기 (새 탭)">›</a>
+                      : <button type="button" aria-label="약관 보기">›</button>}
                   </label>
                 ))}
               </div>

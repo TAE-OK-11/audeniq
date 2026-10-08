@@ -144,6 +144,7 @@ export function App() {
                     {/* 권리자 서명 — 로그인 없이 받은 링크로 (본인확인 후 직접 서명) */}
                     <Route path="/sign/:token" element={<Sign />} />
                     <Route path="/terms" element={<Terms />} />
+                    <Route path="/terms/settlement" element={<Terms />} />
                     <Route path="/content-admin" element={<Navigate to="/admin/content" replace />} />
                     {/* 스태프 관리자 — 같은 로그인 세션 + 서버의 스태프 역할(/api/staff/me)로 접근 */}
                     <Route path="/admin/*" element={<Protected><AdminApp /></Protected>} />
