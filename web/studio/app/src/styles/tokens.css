@@ -68,10 +68,11 @@
   --aq-surface-hover:#EDF2FF;
   --aq-surface-2:var(--aq-gray-50);       /* 중립 컨트롤 면 */
   --aq-surface-2-hover:var(--aq-gray-100);
-  --aq-field:#F2F4F6;            /* 입력칸 면 — 회색 (토스처럼 선 없이 면으로) */
-  --aq-field-hover:#EDF0F3;
-  --aq-field-focus-bg:#E9ECF0;   /* 포커스 — 윤곽선·그림자 없이 회색이 한 단계 진해진다 */
-  --aq-field-placeholder:#B0B8C1;
+  --aq-field:var(--aq-gray-100);         /* 입력칸 면 — AUDENIQ 회색 (선 없이 면으로) */
+  --aq-field-hover:#EBEFF5;
+  --aq-field-focus-bg:var(--aq-gray-150); /* 포커스 — 윤곽선·그림자 없이 회색이 한 단계 진해진다 */
+  --aq-field-placeholder:var(--aq-gray-400);
+  --aq-field-hover-on-soft:var(--aq-gray-25);
   --aq-field-line:#E4EAF4;
   --aq-line:var(--aq-gray-150);
   --aq-line-2:var(--aq-gray-200);

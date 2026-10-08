@@ -464,4 +464,4 @@
 }
 .ui-card .adm-w-ref{background:#fff}
 .adm-chat-msg-body p{margin:0;font-size:inherit;line-height:inherit;color:var(--aq-text)}
-.adm-w-box{--aq-field-bg:#fff;--aq-field-hover-bg:#F7F8FA;--aq-field-focus-bg:var(--aq-field)}
+.adm-w-box{--aq-field-bg:#fff;--aq-field-hover-bg:var(--aq-field-hover-on-soft);--aq-field-focus-bg:var(--aq-field)}

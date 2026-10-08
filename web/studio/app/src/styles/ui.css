@@ -101,11 +101,11 @@
 .ui-input[type=search]{padding-left:44px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239AA3B2' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6.5'/%3E%3Cpath d='m16 16 4 4'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:16px 50%;background-size:18px}
 .ui-input.is-sm[type=search]{padding-left:38px;background-position:13px 50%;background-size:16px}
 /* 옅은 면(카드·줄) 안에서는 흰 칸, 포커스 때 회색 */
-:is(.ui-card,.ui-row,.ui-box,.ui-stat,.ui-callout,.ui-on-soft){--aq-field-bg:#fff;--aq-field-hover-bg:#F7F8FA;--aq-field-focus-bg:var(--aq-field)}
+:is(.ui-card,.ui-row,.ui-box,.ui-stat,.ui-callout,.ui-on-soft){--aq-field-bg:#fff;--aq-field-hover-bg:var(--aq-field-hover-on-soft);--aq-field-focus-bg:var(--aq-field)}
 
 /* 폼 크기 — 아티스트용 큰 폼(신청서·프로필·로그인)은 컨테이너에 .ui-form-lg (칸 56px) */
 .ui-form-lg,.wizard,.aq-profile-card,.auth-card{--aq-field-h:var(--aq-h-lg);--aq-field-r:var(--aq-r-ctl-lg)}
-.aq-profile-card,.aq-sign-page{--aq-field-bg:#fff;--aq-field-hover-bg:#F7F8FA;--aq-field-focus-bg:var(--aq-field)}
+.aq-profile-card,.aq-sign-page{--aq-field-bg:#fff;--aq-field-hover-bg:var(--aq-field-hover-on-soft);--aq-field-focus-bg:var(--aq-field)}
 
 /* 입력 묶음: 이름표 · 칸 · 도움말 */
 .ui-field{display:grid;gap:8px;min-width:0;margin:0 0 18px}

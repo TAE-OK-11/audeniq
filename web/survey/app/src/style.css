@@ -88,7 +88,7 @@ button{cursor:pointer}button:disabled{cursor:not-allowed}
 .input-label{display:block;margin:28px 0 10px;font-size:15px;font-weight:680;color:var(--ink);line-height:1.55}
 .input-label span{font-size:12px;color:var(--muted);font-weight:400;margin-left:5px}
 .text-field,.other-field input,#contact,textarea{display:block;width:100%;padding:15px 17px;background:#fff;border:0;border-radius:12px;color:var(--ink);font-size:15px;line-height:1.6;outline:none;resize:vertical;transition:background .2s,box-shadow .2s}
-.text-field:focus,.other-field input:focus,#contact:focus,textarea:focus{background:#F2F4F6;box-shadow:none;caret-color:var(--blue)}
+.text-field:focus,.other-field input:focus,#contact:focus,textarea:focus{background:#E8EDF5;box-shadow:none;caret-color:var(--blue)}
 .text-field::placeholder,.other-field input::placeholder{color:#97A1B2}
 .other-field{display:block;margin-top:17px;font-size:14px;font-weight:650;color:#4B5F88}
 .other-field input{margin-top:9px}.char-count{font-size:12px;text-align:right;color:#8C9AB4;margin:8px 0 0}

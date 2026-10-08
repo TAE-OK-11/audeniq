@@ -355,7 +355,7 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
 @media(prefers-reduced-motion:reduce){.aq-success-ring,.aq-success-tick,.aq-pay-receipt,.aq-success-mark{animation:none!important;stroke-dashoffset:0!important}}
 
 /* 트랙 카드 안은 카드 배경과 구분되도록 흰 칸 */
-.track-editor,.aq-option-detail,.cover-track-item{--aq-field-bg:#fff;--aq-field-hover-bg:#F7F8FA;--aq-field-focus-bg:var(--aq-field)}
+.track-editor,.aq-option-detail,.cover-track-item{--aq-field-bg:#fff;--aq-field-hover-bg:var(--aq-field-hover-on-soft);--aq-field-focus-bg:var(--aq-field)}
 
 /* ==========================================================================
    카드·입력 칸 윤곽선 없는 스타일 통일 — 메인 화면 카드처럼 배경색 면으로만 구분
