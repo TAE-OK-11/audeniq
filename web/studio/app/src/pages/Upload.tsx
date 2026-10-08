@@ -1985,19 +1985,23 @@ export function Upload() {
                     type="radio" name="artistIsNew" checked={form.artistProfile.isNew === v}
                     onChange={() => set('artistProfile', { ...form.artistProfile, isNew: v })}
                   />
+                  <span className="aq-choice-mark" aria-hidden="true" />
                   <strong>{t}</strong>
                   <small>{sub}</small>
                 </label>
               ))}
             </div>
             {!form.artistProfile.isNew && (
-              <div className="aq-reveal">
-                <p className="ui-field-help" style={{ margin: '4px 0 14px' }}>
-                  기존 아티스트 페이지 주소를 하나 이상 입력해 주세요. 이름이 같은 다른 아티스트 페이지로 잘못 올라가는 것을 막아요.
+              <div className="aq-profile-links ui-on-soft aq-reveal">
+                <p className="aq-profile-links-help">
+                  기존 아티스트 페이지 주소를 <b>하나 이상</b> 넣어 주세요. 이름이 같은 다른 아티스트 페이지로 잘못 올라가는 것을 막아요.
                 </p>
                 {PROFILE_LINKS.map(l => (
                   <div className="ui-field" key={l.key}>
-                    <label htmlFor={`f-link-${l.key}`}>{l.label}</label>
+                    <label htmlFor={`f-link-${l.key}`}>
+                      <span className="aq-dsp-mark" style={{ background: DSP_COLOR[l.key] }} aria-hidden="true">{l.label.slice(0, 1)}</span>
+                      {l.label}
+                    </label>
                     <input
                       id={`f-link-${l.key}`} type="url" inputMode="url" autoComplete="off"
                       value={form.artistProfile[l.key]} placeholder={l.placeholder} maxLength={300}
