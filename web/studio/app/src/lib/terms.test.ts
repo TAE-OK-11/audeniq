@@ -22,8 +22,9 @@ it('정산금 지급 및 계좌 확인 약관도 같은 방식으로 나눈다',
   expect(meta).toContain('문서 버전: 2.0 (통합 최종 검토 초안)');
   expect(meta.some(m => m.startsWith('시행일:'))).toBe(true);
   const articles = blocks.filter(b => b.kind === 'article');
-  expect(articles).toHaveLength(34); // 본문 31조 + 부칙 3조
+  expect(articles).toHaveLength(39); // 본문 36조 + 부칙 3조
   expect(articles[8]).toMatchObject({ text: '제9조(출금 수수료)' });
+  expect(articles[35]).toMatchObject({ text: '제36조(정산금 계산 단위 및 반올림)' });
   const chapters = blocks.filter(b => b.kind === 'chapter').map(b => b.kind === 'chapter' && b.text);
   expect(chapters).toEqual(['제1장 총칙', '제2장 정산금의 산정 및 관리', '제3장 정산금 출금 및 지급', '제4장 금융계좌 등록 및 인증',
     '제5장 세금 및 외화 지급', '제6장 부정 정산 및 지급 보류', '제7장 오류, 이의신청 및 계약 종료', '제8장 개인정보 및 기타 사항', '부칙', '문의처', '약관 동의']);
