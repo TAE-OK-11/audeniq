@@ -906,7 +906,7 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 .aq-sysdialog-actions .ui-btn{flex:1}
 
 /* ---------- 오래된 브라우저·JavaScript 꺼짐 ---------- */
-.aq-legacy{max-width:480px;margin:18vh auto 0;padding:36px 28px;border-radius:var(--aq-r-2xl);background:var(--aq-blue-50);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;color:var(--aq-gray-900)}
+.aq-legacy{max-width:480px;margin:18vh auto 0;padding:36px 28px;border-radius:var(--aq-r-2xl);background:var(--aq-blue-50);font-family:var(--font-body);color:var(--aq-gray-900)}
 .aq-legacy strong{display:block;font-size:24px;letter-spacing:-.04em;margin-bottom:10px}
 .aq-legacy p{margin:0;font-size:15px;line-height:1.7;color:#5b6678}
 

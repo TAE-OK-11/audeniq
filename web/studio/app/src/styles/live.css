@@ -544,7 +544,7 @@ body.wizard-mode .portal-layout{min-height:100dvh;padding-top:0!important;paddin
 
 html{scroll-behavior:smooth;scroll-padding-top:88px;-webkit-text-size-adjust:100%}
 html body [hidden]{display:none!important}
-body{margin:0;background:#fff;color:var(--aq-final-ink);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;font-weight:var(--weight-body);line-height:1.55;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased;min-width:320px;overflow-x:clip;letter-spacing:-.022em}
+body{margin:0;background:#fff;color:var(--aq-final-ink);font-family:var(--font-body);font-weight:var(--weight-body);line-height:1.55;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased;min-width:320px;overflow-x:clip;letter-spacing:-.022em}
 button,input,select,textarea{font:inherit;font-family:inherit;letter-spacing:inherit}
 button{font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 button:disabled{cursor:not-allowed!important;opacity:.45}

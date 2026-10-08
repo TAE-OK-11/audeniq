@@ -5,7 +5,7 @@
    ========================================================================== */
 :root{
   /* ---------- 글꼴 ---------- */
-  --font-brand:"AUDENIQ Sans";
+  --font-brand:"Pretendard Variable", Pretendard;  /* index.html 에서 jsDelivr로 불러옴 */
   --font-fallback:-apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
   --font-body:var(--font-brand), var(--font-fallback);
   --font-display:var(--font-body);

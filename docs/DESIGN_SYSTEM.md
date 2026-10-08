@@ -18,7 +18,8 @@
    입력칸은 토스처럼 선 없는 면이되 색은 AUDENIQ 회색(`--aq-field` = `--aq-gray-100` #EEF1F6)이고, 포커스는 윤곽선·그림자 없이 회색이 한 단계 진해집니다(`--aq-field-focus-bg`). 옅은 카드 안에서는 흰 칸 → 포커스 때 회색. 고른 줄·선택한 은행처럼 '켜짐' 표시도 테두리 대신 진한 면으로 합니다. 키보드로 이동할 때 버튼·링크·체크박스에만 포커스 표시가 남습니다(접근성).
 5. 색 규칙: 보완 필요 = 주황, 거절·오류 = 빨강, 검토 중 = 보라, 완료 = 초록.
 6. 버튼은 놓인 면에 맞춰 스스로 바뀝니다 (`.ui-card` 위에서는 한 단계 진하게, `.ui-dark` 위에서는 반전).
-7. 새 역할이 생기면 화면 CSS에 만들지 말고 `ui.css` + `src/ui`에 더하고 견본 화면에 올립니다.
+7. 글꼴은 **Pretendard Variable** 하나입니다(굵기 100–900 자유). 각 앱 `index.html`이 jsDelivr의 동적 서브셋 CSS(`pretendard@v1.3.9`)를 불러오고, 토큰 `--font-brand`가 첫 글꼴로 씁니다. CSP의 `style-src`·`font-src`에 `https://cdn.jsdelivr.net`이 허용돼 있어요. 자체 CDN으로 옮길 때는 `index.html`의 주소와 CSP 두 곳만 바꾸면 됩니다. 화면 CSS에 `font-family`를 직접 쓰지 말고 `var(--font-body)`를 씁니다.
+8. 새 역할이 생기면 화면 CSS에 만들지 말고 `ui.css` + `src/ui`에 더하고 견본 화면에 올립니다.
 
 ## 컴포넌트
 | 역할 | React | 클래스 |

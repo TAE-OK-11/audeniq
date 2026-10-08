@@ -42,7 +42,7 @@
    Drop the approved WOFF2 in assets/fonts/, then use the matching recipe in
    docs/FONTS.md. Do not declare a variable weight range for a static font. */
 :root {
-  --font-brand: "AUDENIQ Sans";
+  --font-brand: "Pretendard Variable", Pretendard;
   --font-fallback: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
   --font-body: var(--font-brand), var(--font-fallback);
   --font-display: var(--font-body);
@@ -252,6 +252,9 @@ main{overflow-x:clip}
 .footer-social .social-links a:hover{color:var(--blue)}
 .survey-inner .survey-first-release{font-size:15px;line-height:1.8}
 </style>
+<!-- 글꼴: Pretendard Variable (jsDelivr). 자체 CDN으로 옮길 때는 이 주소와 CSP의 cdn.jsdelivr.net만 바꾸면 된다 -->
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <!-- SEO_BUILD_START -->
 <link rel="alternate" type="application/rss+xml" title="AUDENIQ 공식 안내 업데이트" href="https://audeniq.com/feed.xml">
 <style>.hero h1 .hero-service{display:block;font-size:15px;line-height:1.7;letter-spacing:.03em;font-weight:700;color:var(--blue);margin-bottom:22px}@media(max-width:680px){.hero h1 .hero-service{font-size:12px}}</style>

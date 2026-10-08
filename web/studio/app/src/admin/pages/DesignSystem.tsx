@@ -97,7 +97,7 @@ function Tokens() {
       <Section title="상태 색조" meta="배지·숫자 칸·아이콘 칸·알림이 같은 짝">
         <div className="ds-row">{TONES.map(t => <Badge key={t} tone={t}>{t}</Badge>)}</div>
       </Section>
-      <Section title="글자" meta="AUDENIQ Sans (없으면 시스템 글꼴)">
+      <Section title="글자" meta="Pretendard Variable (jsDelivr · 없으면 시스템 글꼴)">
         <div className="ds-type">
           {TYPE.map(([v, label, sample]) => (
             <div key={v}><small>{label} · <code>{v}</code></small><span style={{ fontSize: `var(${v})`, fontWeight: v.includes('h1') || v.includes('title') ? 780 : undefined, letterSpacing: v.includes('h1') || v.includes('title') ? '-.045em' : undefined }}>{sample}</span></div>

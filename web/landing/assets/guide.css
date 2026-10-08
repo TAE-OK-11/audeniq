@@ -3,7 +3,7 @@
    Drop the approved WOFF2 in assets/fonts/, then use the matching recipe in
    docs/FONTS.md. Do not declare a variable weight range for a static font. */
 :root {
-  --font-brand: "AUDENIQ Sans";
+  --font-brand: "Pretendard Variable", Pretendard;
   --font-fallback: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
   --font-body: var(--font-brand), var(--font-fallback);
   --font-display: var(--font-body);

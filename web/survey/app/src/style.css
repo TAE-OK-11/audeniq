@@ -8,7 +8,7 @@
   --surface-alt:#F2F6FF; --ink:#171B29; --muted:#667085;
   --border:#E6ECF5; --navy:#111C3D; --radius:32px;
   --container:1120px;
-  --font-body:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --font-body:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
   font-family:var(--font-body); color:var(--ink);
 }
 *,*::before,*::after{box-sizing:border-box}
