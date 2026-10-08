@@ -1,0 +1,73 @@
+/* ==========================================================================
+   AUDENIQ 디자인 템플릿 — 토큰 (색·글꼴·모서리·그림자·움직임)
+   홍보 페이지(web/landing)·STUDIO(web/studio)·설문(web/survey)이 모두 이 값을 쓴다.
+   값을 정한 순서: STUDIO에 이미 있는 값 그대로 → 홍보 페이지 → STUDIO → 설문.
+   사이트 CSS에서 같은 값을 다시 정의하지 말고 여기만 고친다. (README.md 참고)
+   ========================================================================== */
+:root{
+  /* 글꼴 — 홍보 페이지 기준 (AUDENIQ Sans는 @font-face를 켤 때까지 시스템 글꼴로 대체) */
+  --font-brand:"AUDENIQ Sans";
+  --font-fallback:-apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+  --font-body:var(--font-brand), var(--font-fallback);
+  --font-display:var(--font-body);
+  --weight-body:400;
+  --weight-heading:750;
+  --weight-hero:780;
+  --tracking-heading:-.045em;
+  --tracking-hero:-.055em;
+
+  /* 색 — 세 사이트 공통 팔레트 */
+  --aq-blue:#3B63F3;
+  --aq-blue-hover:#2C56E0;
+  --aq-violet:#7A5AF8;
+  --aq-soft-violet:#EEE8FF;
+  --aq-ink:#171B29;
+  --aq-text-muted:#667085;
+  --aq-navy:#111C3D;
+  --aq-border:#E6ECF5;
+  --aq-surface:#fff;
+  --aq-background:#F8FAFD;    /* 푸터·옅은 바탕 */
+  --aq-surface-alt:#F2F6FF;   /* 헤더 링크·배지 바탕 */
+  --aq-hero-bg:#F3F6FF;       /* STUDIO 홈 상단 패널 */
+  --aq-card-bg:#F5F8FF;       /* STUDIO 카드(surface) */
+  --aq-soft-bg:#F1F4FF;          /* STUDIO 보조 버튼 */
+  --aq-soft-ink:#385DD7;
+  --aq-soft-hover:#E8EEF9;
+  --aq-focus:#6F91FF;         /* STUDIO 키보드 초점 테두리 */
+
+  /* 모서리 — STUDIO 기준 */
+  --aq-radius-hero:36px;
+  --aq-radius-card:32px;
+  --aq-radius-button:17px;
+  --aq-radius-button-lg:18px;
+  --aq-radius-field:12px;
+  --aq-radius-pill:10px;
+
+  /* 그림자·움직임 */
+  --aq-shadow-header:0 12px 24px -24px #15254266;
+  --aq-ease:cubic-bezier(.22,1,.36,1);          /* 누름·호버 */
+  --aq-ease-reveal:cubic-bezier(.22,.61,.36,1); /* 스크롤 등장 */
+
+  /* 배치 */
+  --aq-container:1120px;
+  --aq-header-max:1240px;
+
+  /* 예전 이름 — 기존 사이트 CSS가 그대로 동작하도록 같은 값을 가리킨다 */
+  --blue:var(--aq-blue);
+  --blue-hover:var(--aq-blue-hover);
+  --violet:var(--aq-violet);
+  --soft-violet:var(--aq-soft-violet);
+  --background:var(--aq-background);
+  --surface:var(--aq-surface);
+  --surface-alt:var(--aq-surface-alt);
+  --ink:var(--aq-ink);
+  --muted:var(--aq-text-muted);
+  --border:var(--aq-border);
+  --navy:var(--aq-navy);
+  --container:var(--aq-container);
+  --radius:var(--aq-radius-card);
+  --ease-out:var(--aq-ease);
+}
+@media (max-width:760px){
+  :root{--aq-radius-hero:30px;--aq-radius-card:28px}
+}

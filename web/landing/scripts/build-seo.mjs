@@ -16,7 +16,15 @@ const org = `${origin}/#organization`;
 const site = `${origin}/#website`;
 const data = JSON.parse(read('content/pages.json'));
 let home = read('index.html');
-home = home.replace('<p class="eyebrow">독립 음악을 위한 배급과 퍼블리싱</p>\n      <h1 id="hero-title">', '<h1 id="hero-title"><span class="hero-service eyebrow">독립 음악을 위한 배급과 퍼블리싱</span>');
+home = home.replace('<p class="aq-eyebrow aq-eyebrow--lg">독립 음악을 위한 배급과 퍼블리싱</p>\n      <h1 id="hero-title">', '<h1 id="hero-title"><span class="hero-service aq-eyebrow aq-eyebrow--lg">독립 음악을 위한 배급과 퍼블리싱</span>');
+// AUDENIQ design template (web/shared/design): tokens and shared components, shared with STUDIO and the survey.
+// Inlined ahead of the homepage styles so the page stays a single request; guide.css inherits it below.
+const designCss = ['tokens.css','components.css']
+  .map(name => readFileSync(join(root, '..', 'shared', 'design', name), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\n{2,}/g, '\n').trim())
+  .join('\n');
+home = home.replace(/[ \t]*<!-- AUDENIQ_DESIGN_START -->[\s\S]*?<!-- AUDENIQ_DESIGN_END -->\n/g, '');
+if (!/\n  <style>/.test(home)) throw new Error('Homepage style block missing');
+home = home.replace('\n  <style>', () => `\n  <!-- AUDENIQ_DESIGN_START -->\n  <style id="audeniq-design-template">\n${designCss}\n</style>\n  <!-- AUDENIQ_DESIGN_END -->\n  <style>`);
 const faqSection = home.match(/<section[^>]*id="faq"[\s\S]*?<\/section>/)?.[0];
 if (!faqSection) throw new Error('Homepage FAQ section missing');
 const homeFaq = [...faqSection.matchAll(/<details><summary>([\s\S]*?)<\/summary><p>([\s\S]*?)<\/p><\/details>/g)]
@@ -43,14 +51,14 @@ const homeGraph = [organization, website, {
 }];
 home = home.replace(/<script type="application\/ld\+json">[\s\S]*?<\/script>/, schemaScript(homeGraph));
 home = home.replace(/<!-- SEO_BUILD_START -->[\s\S]*?<!-- SEO_BUILD_END -->\s*/g, '');
-home = home.replace('</head>', `<!-- SEO_BUILD_START -->\n<link rel="alternate" type="application/rss+xml" title="AUDENIQ 공식 안내 업데이트" href="${origin}/feed.xml">\n<style>.hero h1 .hero-service{display:block;font-size:15px;line-height:1.7;letter-spacing:.03em;font-weight:700;color:var(--blue);margin-bottom:22px}@media(max-width:680px){.hero h1 .hero-service{font-size:12px}}</style>\n<!-- SEO_BUILD_END -->\n</head>`);
+home = home.replace('</head>', `<!-- SEO_BUILD_START -->\n<link rel="alternate" type="application/rss+xml" title="AUDENIQ 공식 안내 업데이트" href="${origin}/feed.xml">\n<style>.hero h1 .hero-service{margin-bottom:22px}</style>\n<!-- SEO_BUILD_END -->\n</head>`);
 write('index.html',home);
 write('public/index.html',home);
 
 const homepageStyles = [...home.matchAll(/<style(?:\s[^>]*)?>([\s\S]*?)<\/style>/g)].map(match=>match[1]).join('\n');
 if (!homepageStyles.includes('--font-body') || !homepageStyles.includes('--blue:')) throw new Error('Homepage brand styles missing');
 const css = homepageStyles + '\n' + read('content/guide.css');
-const homepageBrand = home.match(/<a class="brand"[^>]*>([\s\S]*?)<\/a>/)?.[1];
+const homepageBrand = home.match(/<a class="aq-brand brand"[^>]*>([\s\S]*?)<\/a>/)?.[1];
 const homepageFooter = home.match(/<footer\b[\s\S]*?<\/footer>/)?.[0];
 if (!homepageBrand || !homepageFooter) throw new Error('Homepage brand header/footer missing');
 // The homepage switches its legacy inline logo to this asset at runtime.
@@ -84,7 +92,7 @@ for (const page of pages) {
     audience:{'@type':'Audience',audienceType:page.audience}});
   const label = guideLabels[page.path];
   if (!label) throw new Error(`Missing guide label ${page.path}`);
-  const navLinks = pages.map(item=>`<a href="${item.path}"${item.path===page.path?' aria-current="page"':''}>${esc(guideLabels[item.path].name)}</a>`).join('') + '<a class="nav-cta" href="#contact">문의</a>';
+  const navLinks = pages.map(item=>`<a href="${item.path}"${item.path===page.path?' aria-current="page"':''}>${esc(guideLabels[item.path].name)}</a>`).join('') + '<a class="aq-header-link nav-cta" href="#contact">문의</a>';
   const html = `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title><meta name="description" content="${esc(page.description)}"><meta name="robots" content="index, follow, max-image-preview:large">
@@ -93,21 +101,21 @@ for (const page of pages) {
 <meta property="og:type" content="website"><meta property="og:locale" content="ko_KR"><meta property="og:site_name" content="AUDENIQ"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(page.description)}"><meta property="og:url" content="${url}"><meta property="og:image" content="${origin}/assets/social-preview.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="AUDENIQ — 독립 음악을 위한 배급과 퍼블리싱 · 출시 준비 중">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${esc(title)}"><meta name="twitter:description" content="${esc(page.description)}"><meta name="twitter:image" content="${origin}/assets/social-preview.png">
 ${schemaScript(graph)}
-</head><body class="guide-page"><a class="skip-link" href="#main">본문으로 바로가기</a>
-<header class="site-header guide-header"><div class="nav-shell"><a class="brand" href="/" aria-label="AUDENIQ 홈">${brandImage}</a>
+</head><body class="guide-page"><a class="aq-skip-link" href="#main">본문으로 바로가기</a>
+<header class="aq-header site-header guide-header"><div class="aq-header__inner nav-shell"><a class="aq-brand brand" href="/" aria-label="AUDENIQ 홈">${brandImage}</a>
 <nav class="primary-nav" aria-label="주 메뉴">${navLinks}</nav>
 <details class="mobile-menu"><summary><span class="sr-only">메뉴 열기 및 닫기</span><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 8h18M3 16h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></summary><nav aria-label="모바일 메뉴">${navLinks}</nav></details></div></header>
 <main id="main"><div class="guide-breadcrumb container" aria-label="현재 위치"><a href="/">AUDENIQ</a><span aria-hidden="true">/</span><span>${esc(label.name)}</span></div>
-<section class="hero wide guide-hero" id="top" aria-labelledby="guide-title"><div class="hero-copy"><p class="eyebrow">${esc(label.eyebrow)}</p><h1 id="guide-title">${esc(page.title)}</h1>
+<section class="aq-hero hero wide guide-hero" id="top" aria-labelledby="guide-title"><div class="hero-copy"><p class="aq-eyebrow aq-eyebrow--lg">${esc(label.eyebrow)}</p><h1 id="guide-title">${esc(page.title)}</h1>
 <div class="guide-intro"><h2>${esc(page.question)}</h2><p>${esc(page.answer)}</p></div>
-<div class="guide-meta"><span class="pill">서비스 출시 준비 중</span><p class="small">AUDENIQ 공식 안내 · <time datetime="${data.updated}">${data.updated}</time></p></div></div></section>
-<section class="section guide-overview" aria-labelledby="overview-title"><div class="container guide-facts-layout"><div class="guide-section-heading"><p class="eyebrow">AT A GLANCE</p><h2 id="overview-title">서비스를 한눈에.</h2><p>현재 준비 중인 내용과<br>확인할 점을 모아두었어요.</p></div>
+<div class="guide-meta"><span class="aq-chip aq-chip--blue">서비스 출시 준비 중</span><p class="small">AUDENIQ 공식 안내 · <time datetime="${data.updated}">${data.updated}</time></p></div></div></section>
+<section class="section guide-overview" aria-labelledby="overview-title"><div class="container guide-facts-layout"><div class="guide-section-heading"><p class="aq-eyebrow aq-eyebrow--lg">AT A GLANCE</p><h2 id="overview-title">서비스를 한눈에.</h2><p>현재 준비 중인 내용과<br>확인할 점을 모아두었어요.</p></div>
 <div class="guide-table"><table><caption>현재 준비 중인 서비스 안내</caption><tbody>${page.facts.map(([key,value])=>`<tr><th scope="row">${esc(key)}</th><td>${esc(value)}</td></tr>`).join('')}</tbody></table></div></div></section>
 ${page.sections.length ? `<section class="section guide-story" aria-label="${esc(label.name)} 상세 안내"><div class="container">${page.sections.map((section,index)=>`<div class="guide-story-row"><div class="guide-story-heading"><span class="service-no" aria-hidden="true">${String(index+1).padStart(2,'0')}</span><h2>${esc(section.heading)}</h2></div><div>${section.paragraphs.map(text=>`<p>${esc(text)}</p>`).join('')}</div></div>`).join('\n')}</div></section>` : ''}
-${page.faq.length ? `<section class="section faq chapter-soft guide-faq" aria-labelledby="faq-title"><div class="container faq-layout"><div class="guide-section-heading"><p class="eyebrow">궁금한 점이 있나요?</p><h2 id="faq-title">자주 묻는 질문</h2><p>더 궁금한 점은<br><a href="mailto:audeniq.official@gmail.com">이메일로 편하게 물어보세요 ↗</a></p></div><div class="faq-list">${page.faq.map(faq=>`<details><summary>${esc(faq.q)}<span aria-hidden="true">＋</span></summary><p>${esc(faq.a)}</p></details>`).join('\n')}</div></div></section>` : ''}
-<section class="section guide-related" aria-labelledby="related-title"><div class="container"><div class="section-heading"><p class="eyebrow">음악의 다음을 함께</p><h2 id="related-title">더 알아보세요.</h2></div><div class="service-grid">${page.related.map(path=>{const related=pages.find(candidate=>candidate.path===path);if(!related)throw new Error(`Unknown related path ${path}`);return `<a class="service-item" href="${path}"><div class="service-top"><span class="service-no">${esc(guideLabels[path].name)}</span><span class="pill">준비 중</span></div><h3>${esc(related.title)}</h3><p>${esc(related.answer)}</p><div class="service-caption"><strong>자세히 보기</strong><span aria-hidden="true">→</span></div></a>`;}).join('')}</div>
+${page.faq.length ? `<section class="section faq chapter-soft guide-faq" aria-labelledby="faq-title"><div class="container faq-layout"><div class="guide-section-heading"><p class="aq-eyebrow aq-eyebrow--lg">궁금한 점이 있나요?</p><h2 id="faq-title">자주 묻는 질문</h2><p>더 궁금한 점은<br><a href="mailto:audeniq.official@gmail.com">이메일로 편하게 물어보세요 ↗</a></p></div><div class="faq-list">${page.faq.map(faq=>`<details><summary>${esc(faq.q)}<span aria-hidden="true">＋</span></summary><p>${esc(faq.a)}</p></details>`).join('\n')}</div></div></section>` : ''}
+<section class="section guide-related" aria-labelledby="related-title"><div class="container"><div class="section-heading"><p class="aq-eyebrow aq-eyebrow--lg">음악의 다음을 함께</p><h2 id="related-title">더 알아보세요.</h2></div><div class="service-grid">${page.related.map(path=>{const related=pages.find(candidate=>candidate.path===path);if(!related)throw new Error(`Unknown related path ${path}`);return `<a class="aq-card service-item" href="${path}"><div class="service-top"><span class="service-no">${esc(guideLabels[path].name)}</span><span class="aq-chip aq-chip--blue">준비 중</span></div><h3>${esc(related.title)}</h3><p>${esc(related.answer)}</p><div class="service-caption"><strong>자세히 보기</strong><span aria-hidden="true">→</span></div></a>`;}).join('')}</div>
 <div class="guide-sources"><span>공식 홈페이지에서 더 알아보기</span>${page.sources.map(source=>`<a href="${esc(source.url)}">${esc(source.name)} ↗</a>`).join('')}</div></div></section>
-<section class="survey-section wide guide-contact" aria-labelledby="contact-title"><div class="survey-inner"><p class="eyebrow">YOUR MUSIC. YOUR NEXT.</p><h2 id="contact-title">당신의 음악,<br>다음을 함께 준비해요.</h2><p>서비스에 대한 질문과<br>음악 파트너의 협업 제안을 기다려요.</p><a class="button" href="mailto:audeniq.official@gmail.com">서비스 및 파트너십 문의 <span aria-hidden="true">↗</span></a><p class="small">신청 가능 시점과 확정된 지원 범위는<br>공식 홈페이지와 SNS에서 안내할 예정이에요.</p></div></section>
+<section class="aq-hero survey-section wide guide-contact" aria-labelledby="contact-title"><div class="survey-inner"><p class="aq-eyebrow aq-eyebrow--lg">YOUR MUSIC. YOUR NEXT.</p><h2 id="contact-title">당신의 음악,<br>다음을 함께 준비해요.</h2><p>서비스에 대한 질문과<br>음악 파트너의 협업 제안을 기다려요.</p><a class="aq-button aq-button--lg" href="mailto:audeniq.official@gmail.com">서비스 및 파트너십 문의 <span class="aq-button__arrow" aria-hidden="true">↗</span></a><p class="small">신청 가능 시점과 확정된 지원 범위는<br>공식 홈페이지와 SNS에서 안내할 예정이에요.</p></div></section>
 </main>${footer}</body></html>
 `;
   write(`public${page.path}index.html`,html);

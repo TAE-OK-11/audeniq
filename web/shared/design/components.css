@@ -1,0 +1,91 @@
+/* ==========================================================================
+   AUDENIQ 디자인 템플릿 — 공통 요소
+   tokens.css 다음에 불러온다. 클래스는 모두 aq- 로 시작하고 한 단계 선택자만 쓴다.
+   사이트 CSS는 이 파일 뒤에 와서 배치(여백·크기)만 덧붙이고 모양(색·모서리·글자)은 다시 정의하지 않는다.
+   각 요소의 출처는 README.md 의 표 참고 — STUDIO에 있던 요소는 STUDIO 모양 그대로다.
+   ========================================================================== */
+
+/* ---------- 본문으로 건너뛰기 (STUDIO) ---------- */
+.aq-skip-link{position:fixed;left:16px;top:-60px;z-index:300;background:var(--aq-ink);color:#fff;padding:10px 16px;border-radius:12px;font-size:13px;font-weight:700;transition:top .2s var(--aq-ease)}
+.aq-skip-link:focus{top:12px}
+
+/* ---------- 키보드 초점 (STUDIO) — 우선순위 0이라 화면별 규칙이 이긴다 ---------- */
+:where(a,button,summary,[tabindex]):focus-visible{outline:3px solid var(--aq-focus);outline-offset:3px}
+
+/* ---------- 헤더 (STUDIO 헤더 + 홍보 페이지 헤더 링크) ----------
+   <header class="aq-header"><div class="aq-header__inner">
+     <a class="aq-brand"><img src=".../AUDENIQ_Logo_Light.svg" alt="AUDENIQ"></a>
+     <span class="aq-header-pill">STUDIO</span>
+     <div class="aq-header__end"> … <a class="aq-header-link">공식 홈페이지 <span>↗</span></a></div>
+   </div></header>
+   스크롤하면 JS로 .is-scrolled 를 붙인다. */
+.aq-header{position:sticky;top:0;z-index:50;background:var(--aq-surface);border-bottom:1px solid var(--aq-border);transition:box-shadow .25s var(--aq-ease)}
+.aq-header.is-scrolled{box-shadow:var(--aq-shadow-header)}
+.aq-header__inner{max-width:var(--aq-header-max);width:calc(100% - 64px);min-height:76px;margin:auto;display:flex;align-items:center;gap:20px}
+.aq-header__end{margin-left:auto;display:flex;align-items:center;gap:12px}
+.aq-brand{display:block;width:158px;flex-shrink:0;line-height:0}
+.aq-brand img{display:block;width:100%;height:auto}
+.aq-header-pill{display:inline-flex;align-items:center;min-height:30px;padding:0 11px;border-radius:var(--aq-radius-pill);background:var(--aq-surface-alt);color:var(--aq-blue);font-size:11px;font-weight:800;letter-spacing:.14em;line-height:1.55;white-space:nowrap}
+.aq-header-link{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:12px;background:var(--aq-surface-alt);color:var(--aq-blue);font-size:14px;font-weight:650;line-height:1.7;white-space:nowrap;transition:background .2s}
+.aq-header-link:hover{background:var(--aq-soft-hover)}
+.aq-header-link>span{font-size:17px;line-height:1}
+@media (max-width:760px){
+  .aq-header{padding-top:env(safe-area-inset-top)}
+  .aq-header__inner{width:calc(100% - 40px);min-height:68px;gap:10px}
+  .aq-brand{width:137px}
+  .aq-header-link{font-size:12px;padding:9px 11px}
+}
+
+/* ---------- 버튼 (STUDIO .button) ----------
+   <a class="aq-button">발매 등록하기 <span class="aq-button__arrow" aria-hidden="true">→</span></a>
+   aq-button--lg : 홍보·설문의 큰 행동 버튼 (STUDIO 모바일 큰 버튼 크기)
+   aq-button--soft : 보조 버튼 (STUDIO .button.secondary) */
+.aq-button{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:48px;padding:12px 18px;border:0;border-radius:var(--aq-radius-button);background:var(--aq-blue);color:#fff;font:inherit;font-size:14px;font-weight:730;letter-spacing:-.012em;line-height:1.35;text-align:center;cursor:pointer;transition:background-color .2s,color .2s,transform .15s var(--aq-ease)}
+.aq-button:not(:disabled):hover{background:var(--aq-blue-hover)}
+.aq-button:not(:disabled):active{transform:scale(.97)}
+.aq-button:disabled{cursor:not-allowed;background:#DCE5F8}
+.aq-button--lg{min-height:54px;padding:11px 16px 11px 22px;border-radius:var(--aq-radius-button-lg);font-size:16px;gap:16px}
+.aq-button--soft{background:var(--aq-soft-bg);color:var(--aq-soft-ink)}
+.aq-button--soft:not(:disabled):hover{background:var(--aq-soft-hover)}
+.aq-button--soft:disabled{background:var(--aq-soft-bg);color:#A7B4D6}
+.aq-button__arrow{display:grid;place-items:center;flex:none;width:26px;height:26px;border-radius:50%;background:#ffffff26;font-size:15px;line-height:1;transition:transform .25s var(--aq-ease)}
+.aq-button--lg .aq-button__arrow{width:30px;height:30px;font-size:17px}
+.aq-button--soft .aq-button__arrow{background:#fff}
+@media (hover:hover) and (pointer:fine){
+  .aq-button:not(:disabled):hover .aq-button__arrow{transform:translateX(3px)}
+}
+
+/* ---------- 작은 제목 (STUDIO .eyebrow) ---------- */
+.aq-eyebrow{display:block;margin:0 0 11px;color:var(--aq-blue);font-size:12px;font-weight:800;letter-spacing:.02em;line-height:1.3}
+.aq-eyebrow--lg{font-size:15px;line-height:1.7}
+@media (max-width:760px){.aq-eyebrow--lg{font-size:13px}}
+
+/* ---------- 상단 패널 (STUDIO 홈 패널) ---------- */
+.aq-hero{position:relative;overflow:hidden;background:var(--aq-hero-bg);border-radius:var(--aq-radius-hero)}
+.aq-hero::after{content:"";position:absolute;width:300px;height:300px;top:-180px;right:-140px;background:radial-gradient(circle,#DCE4FFBB,transparent 72%);pointer-events:none}
+.aq-hero>*{position:relative;z-index:1}
+
+/* ---------- 카드 (STUDIO .surface) ---------- */
+.aq-card{background:var(--aq-card-bg);border:0;border-radius:var(--aq-radius-card);box-shadow:none}
+
+/* ---------- 배지 (STUDIO .status-chip) ---------- */
+.aq-chip{display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:7px 11px;border-radius:999px;background:#EEF2FC;color:#506583;font-size:11px;font-weight:720;line-height:1.2;white-space:nowrap}
+.aq-chip--blue{background:#EAF0FF;color:#365CD4}
+.aq-chip--green{background:#E8F6F0;color:#21815B}
+.aq-chip--orange{background:#FFF3E6;color:#A76525}
+.aq-chip--violet{background:#F0EDFF;color:#6852BA}
+.aq-chip--gray{background:#EDEFF4;color:#6A7386}
+
+/* ---------- 푸터 (홍보 페이지 footer · .footer-bottom) ----------
+   <footer class="aq-footer"><div class="(사이트 컨테이너)"><div class="aq-footer__bar"><small>© AUDENIQ</small> … <a>맨 위로 ↑</a></div></div></footer>
+   너비·여백은 사이트 컨테이너가 정한다. */
+.aq-footer{background:var(--aq-background)}
+.aq-footer__bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 26px;font-size:12px;line-height:1.7;color:var(--aq-text-muted)}
+.aq-footer__bar small{font-size:12px}
+.aq-footer__bar a:hover{color:var(--aq-blue)}
+.aq-footer__links{display:flex;gap:4px 22px;margin-left:auto}
+
+@media (prefers-reduced-motion:reduce){
+  .aq-skip-link,.aq-header,.aq-button,.aq-button__arrow,.aq-header-link{transition:none}
+  .aq-button:not(:disabled):active,.aq-button:not(:disabled):hover .aq-button__arrow{transform:none}
+}

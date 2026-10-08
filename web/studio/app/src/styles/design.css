@@ -1,5 +1,6 @@
 /* AUDENIQ STUDIO — exact port from studio.audeniq.com live HTML */
-:root{--font-brand:"AUDENIQ Sans";--font-fallback:-apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;--font-body:var(--font-brand), var(--font-fallback);--blue:#3B63F3;--blue-hover:#2C56E0;--portal-blue:var(--blue);--portal-border:#E6ECF5;--portal-ink:#171B29;--portal-muted:#667085;--portal-soft:#F2F6FF;--studio-blue:var(--blue);--studio-ink:#171B29;--studio-muted:#78849b;--studio-ease:cubic-bezier(.22,1,.36,1);--ink:#171B29;--muted:#667085;--border:#E6ECF5}
+/* 글꼴·기본 색 토큰은 web/shared/design/tokens.css (공통 템플릿) */
+:root{--portal-blue:var(--blue);--portal-border:#E6ECF5;--portal-ink:#171B29;--portal-muted:#667085;--portal-soft:#F2F6FF;--studio-blue:var(--blue);--studio-ink:#171B29;--studio-muted:#78849b;--studio-ease:cubic-bezier(.22,1,.36,1)}
 
 *{box-sizing:border-box}
 body{margin:0;background:#fff;color:var(--ink);font-family:var(--font-body);font-weight:400;line-height:1.7;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased}

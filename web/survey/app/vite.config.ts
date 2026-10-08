@@ -17,6 +17,8 @@ export default defineConfig({
     rollupOptions: { input: { index: src('./index.html'), notFound: src('./404.html') } },
   },
   server: {
+    // 공통 디자인 템플릿(web/shared/design)을 개발 서버에서도 읽을 수 있게
+    fs: { allow: [src('.'), src('../../shared/design')] },
     // 로컬: bunx wrangler dev(:8787)의 /api로 제출 (선택)
     proxy: process.env.SURVEY_API ? { '/api': { target: process.env.SURVEY_API, changeOrigin: false } } : undefined,
   },

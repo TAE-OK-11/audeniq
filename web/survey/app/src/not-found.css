@@ -1,0 +1,13 @@
+/* 404 배치만 — 모양은 공통 디자인 템플릿 */
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--aq-surface);color:var(--aq-ink);font-family:var(--font-body);line-height:1.7;word-break:keep-all;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+h1,p{margin:0}
+.nf-main{width:calc(100% - 48px);max-width:1360px;margin:0 auto;padding:18px 0 64px}
+.nf-panel{padding:76px clamp(30px,6vw,90px) 70px}
+.nf-panel h1{font-size:clamp(33px,4.8vw,52px);line-height:1.28;font-weight:var(--weight-hero);letter-spacing:var(--tracking-hero)}
+.nf-panel p{margin:16px 0 30px;color:var(--aq-text-muted);font-size:16px}
+@media (max-width:760px){
+  .nf-main{width:calc(100% - 24px);padding-top:5px}
+  .nf-panel{padding:45px 24px 42px}
+}

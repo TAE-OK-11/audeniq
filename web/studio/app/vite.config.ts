@@ -38,6 +38,8 @@ export default defineConfig(({ command, mode }) => ({
     reportCompressedSize: false,
   },
   server: {
+    // 공통 디자인 템플릿(web/shared/design)을 개발 서버에서도 읽을 수 있게
+    fs: { allow: [src('.'), src('../../shared/design')] },
     // 로컬 백엔드 연동: 엣지 Worker처럼 서비스 비밀 헤더를 붙여 API로 전달한다.
     // 실행: EDGE_SERVICE_SECRET=... bun run dev:api  (APP_ORIGIN=http://localhost:5173)
     proxy: {

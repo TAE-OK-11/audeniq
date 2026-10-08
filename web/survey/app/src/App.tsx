@@ -31,12 +31,12 @@ function QuestionBlock({ q, st, skip, onChoice, onOther, extra }: {
   const showOther = otherOpen(st, q);
   return (
     <div
-      className="question" id={`question-${q.key}`} data-question={q.key} data-kind={q.kind}
+      className="aq-card question" id={`question-${q.key}`} data-question={q.key} data-kind={q.kind}
       data-required={String(q.required)} data-max={q.max} hidden={hidden}
     >
       <div className="question-header">
         <span className="question-id">{q.qid}</span>
-        {q.tag && <span className="required-tag">{q.tag}</span>}
+        {q.tag && <span className="aq-chip aq-chip--blue required-tag">{q.tag}</span>}
       </div>
       <h3 className="question-title">{q.title}</h3>
       {q.key === 'beta' ? (
@@ -94,6 +94,7 @@ export function App() {
   const [security, setSecurity] = useState('보안 확인을 준비하고 있어요.');
   const [receipt, setReceipt] = useState<string | null>(null);
   const [copyLabel, setCopyLabel] = useState('접수번호 복사');
+  const [scrolled, setScrolled] = useState(false);
   const submissionId = useRef(crypto.randomUUID());
   const siteKey = useRef('');
   const widgetId = useRef<string | null>(null);
@@ -123,6 +124,14 @@ export function App() {
   }, []);
 
   useEffect(() => { initializeMotion(); }, []);
+
+  // 공통 헤더: 스크롤하면 그림자 (홍보 페이지·STUDIO와 같은 .is-scrolled)
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 8);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   const renderTurnstile = useCallback(async () => {
     if (!siteKey.current || widgetId.current !== null || turnstileLoading.current) return;
@@ -227,17 +236,19 @@ export function App() {
 
   return (
     <>
-      <a className="skip" href="#survey-main">설문으로 건너뛰기</a>
-      <header className="topbar">
-        <div className="topbar-inner">
-          <a href="#top" className="brand" aria-label="설문 페이지 맨 위로 이동"><img src="/assets/AUDENIQ_Logo_Light.svg" alt="AUDENIQ" /></a>
-          <span className="header-label">리서치 · 사전조사</span>
-          <a className="back-home" href="https://audeniq.com/">공식 홈페이지 <span aria-hidden="true">↗</span></a>
+      <a className="aq-skip-link" href="#survey-main">설문으로 건너뛰기</a>
+      <header className={`aq-header topbar${scrolled ? ' is-scrolled' : ''}`}>
+        <div className="aq-header__inner">
+          <a href="#top" className="aq-brand" aria-label="설문 페이지 맨 위로 이동"><img src="/assets/AUDENIQ_Logo_Light.svg" alt="AUDENIQ" /></a>
+          <span className="aq-header-pill">RESEARCH</span>
+          <div className="aq-header__end">
+            <a className="aq-header-link" href="https://audeniq.com/">공식 홈페이지 <span aria-hidden="true">↗</span></a>
+          </div>
         </div>
       </header>
       <main id="survey-main" className="layout">
-        <div className="intro">
-          <span className="eyebrow"><span className="pulse" aria-hidden="true" />AUDENIQ RESEARCH · 사전 수요조사</span>
+        <div className="aq-hero intro">
+          <span className="aq-eyebrow aq-eyebrow--lg"><span className="pulse" aria-hidden="true" />AUDENIQ RESEARCH · 사전 수요조사</span>
           <h1>당신의 음악이<br /><span className="accent">더 멀리 가도록.</span></h1>
           <p className="intro-lead">국내 아티스트 음원 유통·배급 서비스 수요조사</p>
           <p className="intro-callout">아티스트 여러분의 경험과 의견이<br /><strong>AUDENIQ의 서비스 방향을 만듭니다.</strong></p>
@@ -249,11 +260,11 @@ export function App() {
             <span className="purpose-mark" aria-hidden="true">↗</span>
             <p><strong>응답 활용 안내</strong><br />응답은 서비스 기획·시장 수요 분석 및 향후 DSP·관련 업체 협의를 위한 통계 자료로 활용될 수 있습니다.</p>
           </div>
-          <div className="intro-foot"><span>◷ &nbsp;약 5~10분</span><span>✓ &nbsp;익명 참여 가능</span><span>↗ &nbsp;정식 가입과 별개</span></div>
+          <div className="intro-foot"><span className="aq-chip aq-chip--blue">◷ 약 5~10분</span><span className="aq-chip aq-chip--blue">✓ 익명 참여 가능</span><span className="aq-chip aq-chip--blue">↗ 정식 가입과 별개</span></div>
         </div>
         <section className="form-shell" aria-label="AUDENIQ 사전조사">
           <div className="progress-head" hidden={done}>
-            <span className="mini-label">YOUR VOICE MATTERS</span>
+            <span className="aq-eyebrow mini-label">YOUR VOICE MATTERS</span>
             <span className="progress-number"><strong id="progress-now">{String(current + 1).padStart(2, '0')}</strong>{` / ${String(STEPS.length).padStart(2, '0')}`}</span>
           </div>
           <div
@@ -268,14 +279,14 @@ export function App() {
                 key={step.kicker} className="step" data-step={i} hidden={i !== current} aria-label={step.title}
                 ref={el => { stepsRef.current[i] = el; }}
               >
-                <div className="step-kicker">{step.kicker}</div>
+                <div className="aq-eyebrow aq-eyebrow--lg step-kicker">{step.kicker}</div>
                 <h2 tabIndex={-1}>{step.title}</h2>
                 <p className="step-desc">{step.desc}</p>
                 {step.questions.map(q => {
                   if (q.key === 'q14') {
                     return (
-                      <div key={q.key} className="question" id="question-q14" data-question="q14" data-kind="text" data-required="false">
-                        <div className="question-header"><span className="question-id">{q.qid}</span><span className="required-tag">{q.tag}</span></div>
+                      <div key={q.key} className="aq-card question" id="question-q14" data-question="q14" data-kind="text" data-required="false">
+                        <div className="question-header"><span className="question-id">{q.qid}</span><span className="aq-chip aq-chip--blue required-tag">{q.tag}</span></div>
                         <h3 className="question-title">{q.title}</h3>
                         <textarea
                           className="text-field" id="q14" name="q14" rows={5} maxLength={2000} placeholder="이런 부분이 바뀌면 좋겠어요."
@@ -339,31 +350,33 @@ export function App() {
             ))}
             <p className="form-error" id="form-error" role="alert" hidden={!error} ref={errorRef}>{error}</p>
             <div className="form-controls">
-              <button type="button" className="previous" id="prev-btn" hidden={current === 0} onClick={() => show(current - 1)}>← 이전</button>
-              <button type="button" className="next" id="next-btn" hidden={current === last} onClick={next}>다음으로 <span aria-hidden="true">→</span></button>
+              <button type="button" className="aq-button aq-button--lg aq-button--soft previous" id="prev-btn" hidden={current === 0} onClick={() => show(current - 1)}>← 이전</button>
+              <button type="button" className="aq-button aq-button--lg next" id="next-btn" hidden={current === last} onClick={next}>다음으로 <span className="aq-button__arrow" aria-hidden="true">→</span></button>
               <button
-                type="submit" className="next" id="submit-btn" hidden={current !== last}
+                type="submit" className="aq-button aq-button--lg next" id="submit-btn" hidden={current !== last}
                 disabled={busy || !serviceReady || !token || !st.surveyConsent}
               >
-                {busy ? '제출하는 중…' : <>설문 제출하기 <span aria-hidden="true">↗</span></>}
+                {busy ? '제출하는 중…' : <>설문 제출하기 <span className="aq-button__arrow" aria-hidden="true">↗</span></>}
               </button>
             </div>
           </form>
           <div id="complete" className="complete" hidden={!done} ref={completeRef}>
             <div className="complete-icon" aria-hidden="true">✓</div>
-            <span className="step-kicker">THANK YOU</span>
+            <span className="aq-eyebrow aq-eyebrow--lg step-kicker">THANK YOU</span>
             <h2>당신의 이야기가<br />AUDENIQ의 다음을 만들어요.</h2>
             <p>의견을 보내줘서 고마워요. 더 나은 음악 배급 서비스를 준비하는 데 소중하게 활용할게요.</p>
             <div className="receipt">접수번호 <code id="receipt-id">{receipt}</code></div>
-            <button type="button" id="copy-receipt" className="copy-btn" onClick={() => void copyReceipt()}>{copyLabel}</button>
-            <a className="complete-home" href="https://audeniq.com/">AUDENIQ 홈페이지로 돌아가기 ↗</a>
+            <button type="button" id="copy-receipt" className="aq-button aq-button--soft copy-btn" onClick={() => void copyReceipt()}>{copyLabel}</button>
+            <a className="aq-button aq-button--lg complete-home" href="https://audeniq.com/">AUDENIQ 홈페이지로 돌아가기 <span className="aq-button__arrow" aria-hidden="true">↗</span></a>
           </div>
         </section>
         <p className="below-note">음원을 발매한 경험이 없어도 참여할 수 있어요. 설문 응답은 익명으로 제출할 수 있어요.</p>
       </main>
-      <footer>
-        <div>© AUDENIQ · 당신의 음악, 더 넓은 세상으로</div>
-        <div><a href="https://audeniq.com/">공식 홈페이지</a><a href="mailto:audeniq.official@gmail.com">문의하기</a></div>
+      <footer className="aq-footer">
+        <div className="aq-footer__bar">
+          <small>© AUDENIQ · 당신의 음악, 더 넓은 세상으로</small>
+          <div className="aq-footer__links"><a href="https://audeniq.com/">공식 홈페이지</a><a href="mailto:audeniq.official@gmail.com">문의하기</a></div>
+        </div>
       </footer>
     </>
   );

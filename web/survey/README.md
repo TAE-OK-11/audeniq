@@ -10,10 +10,14 @@
 | `app/src/logic.ts` | 검증·배타 선택·최대 개수·경험 분기·제출 본문 (기존 `app.js` 규칙) |
 | `app/src/App.tsx` | 화면 |
 | `app/src/motion.ts` | 등장 애니메이션 (기존 `motion.js`) |
-| `app/src/style.css` | 기존 CSS 그대로 |
+| `app/src/style.css` | 설문에만 있는 요소와 배치. 헤더·버튼·카드·배지·푸터·색·글꼴은 공통 디자인 템플릿(`web/shared/design`)을 `@import` |
 | `app/public/` | 로고·파비콘·robots.txt·`_headers` (빌드 때 그대로 복사) |
 
 `bun run build`가 `app/`을 빌드해 **`public/`에 정적 파일로** 내보내요. 배포는 지금처럼 정적 자산 우선이라 페이지 조회에 Worker가 실행되지 않아요. `bun run deploy`는 빌드 → preflight → 배포 순서로 돌아요. 로컬 화면 개발은 `cd app && bun run dev`.
+
+## 공통 디자인 템플릿
+
+홍보 페이지·STUDIO와 같은 디자인 언어를 쓰도록 헤더(`RESEARCH` 라벨), 상단 패널, 버튼, 질문 카드, 배지, 푸터, 404 화면을 `web/shared/design`의 공통 요소로 바꿨어요. 템플릿을 고치면 `bun run build`로 `public/`을 다시 만들어 주세요. 규칙은 [web/shared/design/README.md](../shared/design/README.md)를 참고하세요.
 
 ## 핵심 변경 사항
 

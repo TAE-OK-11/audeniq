@@ -10,10 +10,13 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { SystemStatus } from './components/SystemStatus';
 import { PageSkeleton } from './components/Skeleton';
 import { pageLoaders } from './routes';
+// AUDENIQ 디자인 템플릿(web/shared/design) — 홍보 페이지·설문과 같은 토큰·공통 요소. STUDIO 화면 레이어보다 먼저 불러온다.
+import '../../../shared/design/tokens.css';
+import '../../../shared/design/components.css';
 import './styles/design.css';
 import './styles/live.css';
 import './styles/enhance.css';
-import './styles/controls.css';
+import '../../../shared/design/controls.css';
 
 // 배포 직후 옛 청크가 사라져 동적 import가 실패하면 한 번만 새로고침해 새 버전을 받는다
 function lazyPage<M>(load: () => Promise<M>, pick: (m: M) => ComponentType) {
