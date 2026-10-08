@@ -41,10 +41,8 @@
 .adm-doc-main{min-width:0}
 .adm-doc-top{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:10px 0;background:linear-gradient(#fff 80%,rgba(255,255,255,0))}
 .adm-doc-crumbs{flex:1 1 220px;min-width:0;font-size:12.5px;color:var(--adm-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.adm-doc-crumbs .adm-link-btn{font-size:12.5px}
 .adm-doc-crumbs [aria-current]{color:#3d4760;font-weight:720}
 .adm-doc-top-actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-.adm-doc-top-actions .adm-btn.is-on{background:var(--adm-blue-soft);color:var(--adm-blue)}
 .adm-doc-save{font-size:12px;font-weight:700;color:var(--adm-muted);display:inline-flex;gap:6px;align-items:center;min-width:110px}
 .adm-doc-save.is-error{color:#B33744}
 .adm-doc-save.is-conflict{color:#A76525}
@@ -128,8 +126,6 @@
 .adm-doc-prose table{border-collapse:collapse;width:100%;margin:.6em 0;table-layout:fixed}
 .adm-doc-prose th,.adm-doc-prose td{border:1px solid #dfe5ef;padding:6px 9px;vertical-align:top;min-width:60px}
 .adm-doc-prose th{background:var(--adm-soft);font-weight:760;text-align:left}
-.adm-doc-prose .selectedCell{background:#e9efff}
-.adm-doc-prose .tableWrapper{overflow-x:auto}
 .adm-doc-prose details,.adm-doc-prose [data-type="details"]{margin:.4em 0;padding:6px 10px;border-radius:12px;background:var(--adm-soft)}
 .adm-doc-prose [data-type="details"]{display:flex;gap:6px}
 .adm-doc-prose [data-type="details"]>button{border:0;background:none;cursor:pointer;color:#5d6880;width:22px;flex:0 0 auto}
@@ -140,8 +136,6 @@
 .adm-doc-prose summary{font-weight:720}
 .adm-doc-prose p.is-editor-empty:first-child::before,.adm-doc-prose .is-empty::before{content:attr(data-placeholder);float:left;height:0;color:#b9c1cf;pointer-events:none}
 .adm-doc-editor.is-readonly .adm-doc-prose .is-empty::before{content:none}
-.adm-doc-prose .ProseMirror-selectednode{outline:2px solid var(--adm-blue);outline-offset:2px;border-radius:12px}
-.adm-doc-prose .ProseMirror-gapcursor:after{border-top-color:var(--adm-blue)}
 .adm-doc-mention{padding:1px 5px;border-radius:7px;background:#eaf0ff;color:var(--adm-blue);font-weight:720;text-decoration:none!important}
 .adm-doc-mention.is-doc{background:#f2f4f8;color:#2c3550}
 
@@ -247,7 +241,7 @@ a.adm-doc-embed-title:hover{color:var(--adm-blue)}
 
 /* 전역 문단·포커스 규칙보다 앞서게 */
 .adm-docs .adm-doc-prose :is(p,li,td,th,blockquote){color:inherit}
-.adm-docs .adm-doc-prose:focus,.adm-docs .adm-doc-prose:focus-visible,.adm-docs .ProseMirror:focus{outline:none}
+.adm-docs .adm-doc-prose:focus,.adm-docs .adm-doc-prose:focus-visible{outline:none}
 .adm-docs .adm-doc-editor:focus-within .adm-doc-toolbar{box-shadow:0 0 0 1px #cfdbff}
 .adm-doc-embed{overflow-x:auto}
 .adm-docs .adm-doc-prose .adm-doc-err{color:#9a2c38}

@@ -9,7 +9,7 @@ import { useConfirm } from '../../../components/Confirm';
 import { errorMessage } from '../../../api/errors';
 import { useAsync } from '../../../hooks/useAsync';
 import { Glyph } from '../../../components/Glyph';
-import { Chip, Empty, ErrorBox, PageHead, Section, Skeleton, StatusChip, useStaff, WorkTabs } from '../../ui';
+import { Badge, EmptyState, ErrorBox, PageHeader, Section, SkeletonList, StatusBadge, useStaff, WorkTabs } from '../../ui';
 import { DSP_NAME } from '../../dspReqs';
 import { workApi } from '../api';
 import {
@@ -56,45 +56,45 @@ function PolicyForm({ init, data, onSaved }: { init: SlaPolicy | null; data: Sla
   return (
     <form onSubmit={submit} className="adm-w-form">
       <div className="adm-w-grid2">
-        <div className="adm-field">
+        <div className="ui-field">
           <label htmlFor="spType">대상</label>
-          <select id="spType" className="adm-select adm-w-select" value={v.type} onChange={e => set('type', e.target.value as SlaPolicyInput['type'])}>
+          <select id="spType" className="ui-select" value={v.type} onChange={e => set('type', e.target.value as SlaPolicyInput['type'])}>
             <optgroup label="기존 대기열">{QUEUE_TYPES.map(t => <option key={t} value={t}>{QUEUE_TYPE[t]}</option>)}</optgroup>
             <optgroup label="업무 유형">{WORK_TYPES.map(t => <option key={t} value={t}>{WORK_TYPE[t]}</option>)}</optgroup>
           </select>
         </div>
-        <div className="adm-field">
+        <div className="ui-field">
           <label htmlFor="spScope">적용 범위</label>
-          <select id="spScope" className="adm-select adm-w-select" value={v.scope_id ?? ''}
+          <select id="spScope" className="ui-select" value={v.scope_id ?? ''}
             onChange={e => setV(x => ({ ...x, scope_kind: e.target.value ? 'dsp' : null, scope_id: e.target.value || null }))}>
             <option value="">전체</option>
             {Object.entries(DSP_NAME).map(([code, name]) => <option key={code} value={code}>{name} 전용</option>)}
           </select>
         </div>
-        <div className="adm-field">
+        <div className="ui-field">
           <label htmlFor="spHours">처리 기한 (시간)</label>
-          <input id="spHours" className="adm-input" inputMode="decimal" value={hours} onChange={e => setHours(e.target.value)} />
+          <input id="spHours" className="ui-input" inputMode="decimal" value={hours} onChange={e => setHours(e.target.value)} />
         </div>
-        <div className="adm-field">
+        <div className="ui-field">
           <label htmlFor="spCal">시간 계산</label>
-          <select id="spCal" className="adm-select adm-w-select" value={v.calendar_id ?? ''} onChange={e => set('calendar_id', e.target.value || null)}>
+          <select id="spCal" className="ui-select" value={v.calendar_id ?? ''} onChange={e => set('calendar_id', e.target.value || null)}>
             <option value="">24시간 (휴일 없이)</option>
             {data.calendars.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </div>
-        <div className="adm-field">
+        <div className="ui-field">
           <label htmlFor="spWarn">임박 경고</label>
-          <select id="spWarn" className="adm-select adm-w-select" value={String(v.warn_ratio)} onChange={e => set('warn_ratio', Number(e.target.value))}>
+          <select id="spWarn" className="ui-select" value={String(v.warn_ratio)} onChange={e => set('warn_ratio', Number(e.target.value))}>
             {[0.1, 0.2, 0.25, 0.33, 0.5].map(r => <option key={r} value={r}>남은 시간 {Math.round(r * 100)}% 이하</option>)}
           </select>
         </div>
-        <div className="adm-field">
+        <div className="ui-field">
           <label htmlFor="spIdle">진행 없음 알림 (시간)</label>
-          <input id="spIdle" className="adm-input" inputMode="decimal" value={idle} onChange={e => setIdle(e.target.value)} />
+          <input id="spIdle" className="ui-input" inputMode="decimal" value={idle} onChange={e => setIdle(e.target.value)} />
         </div>
-        <div className="adm-field">
+        <div className="ui-field">
           <label htmlFor="spEsc">기한 초과 시 알릴 역할</label>
-          <select id="spEsc" className="adm-select adm-w-select" value={v.escalate_to} onChange={e => set('escalate_to', e.target.value as StaffRoleName)}>
+          <select id="spEsc" className="ui-select" value={v.escalate_to} onChange={e => set('escalate_to', e.target.value as StaffRoleName)}>
             {ROLES.map(r => <option key={r} value={r}>{ROLE_NAME[r]}</option>)}
           </select>
         </div>
@@ -104,8 +104,8 @@ function PolicyForm({ init, data, onSaved }: { init: SlaPolicy | null; data: Sla
         <SwitchRow title="정책 사용" hint="끄면 이 대상에는 기한을 계산하지 않아요." checked={v.enabled} onChange={x => set('enabled', x)} />
       </div>
       <div className="adm-form-actions">
-        <button type="button" className="adm-btn soft" onClick={close}>취소</button>
-        <button type="submit" className="adm-btn primary" disabled={busy}>{busy ? '저장 중…' : '저장'}</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="submit" className="ui-btn is-primary" disabled={busy}>{busy ? '저장 중…' : '저장'}</button>
       </div>
     </form>
   );
@@ -135,23 +135,23 @@ function CalendarForm({ cal, onSaved }: { cal: WorkCalendar; onSaved: (d: SlaOve
   };
   return (
     <form onSubmit={submit} className="adm-w-form">
-      <div className="adm-field">
+      <div className="ui-field">
         <label htmlFor="cName">이름</label>
-        <input id="cName" className="adm-input" maxLength={80} value={name} onChange={e => setName(e.target.value)} />
+        <input id="cName" className="ui-input" maxLength={80} value={name} onChange={e => setName(e.target.value)} />
       </div>
       <div className="adm-w-grid2">
-        <div className="adm-field"><label htmlFor="cStart">근무 시작</label><input id="cStart" type="time" className="adm-input" value={start} onChange={e => setStart(e.target.value)} /></div>
-        <div className="adm-field"><label htmlFor="cEnd">근무 종료</label><input id="cEnd" type="time" className="adm-input" value={end} onChange={e => setEnd(e.target.value)} /></div>
+        <div className="ui-field"><label htmlFor="cStart">근무 시작</label><input id="cStart" type="time" className="ui-input" value={start} onChange={e => setStart(e.target.value)} /></div>
+        <div className="ui-field"><label htmlFor="cEnd">근무 종료</label><input id="cEnd" type="time" className="ui-input" value={end} onChange={e => setEnd(e.target.value)} /></div>
       </div>
-      <div className="adm-field">
-        <span className="adm-field-label">근무일</span>
-        <div className="adm-filters" role="group" aria-label="근무일">
-          {[1, 2, 3, 4, 5, 6, 7].map(d => <button key={d} type="button" className="adm-filter" aria-pressed={days.includes(d)} onClick={() => toggle(d)}>{WEEKDAY[d]}</button>)}
+      <div className="ui-field">
+        <span className="ui-field-label">근무일</span>
+        <div className="ui-chips" role="group" aria-label="근무일">
+          {[1, 2, 3, 4, 5, 6, 7].map(d => <button key={d} type="button" className="ui-chip" aria-pressed={days.includes(d)} onClick={() => toggle(d)}>{WEEKDAY[d]}</button>)}
         </div>
       </div>
       <div className="adm-form-actions">
-        <button type="button" className="adm-btn soft" onClick={close}>취소</button>
-        <button type="submit" className="adm-btn primary" disabled={busy || !days.length || !name.trim()}>{busy ? '저장 중…' : '저장'}</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="submit" className="ui-btn is-primary" disabled={busy || !days.length || !name.trim()}>{busy ? '저장 중…' : '저장'}</button>
       </div>
     </form>
   );
@@ -185,9 +185,9 @@ function Holidays({ cal, names, admin, onSaved }: { cal: WorkCalendar; names: Re
       )}
       {admin && (
         <form className="adm-w-inline" onSubmit={add}>
-          <input type="date" className="adm-input" aria-label="휴일 날짜" value={day} onChange={e => setDay(e.target.value)} />
-          <input className="adm-input" aria-label="휴일 이름" placeholder="예: 추석" maxLength={80} value={name} onChange={e => setName(e.target.value)} />
-          <button type="submit" className="adm-btn soft small" disabled={!day || !name.trim()}>추가</button>
+          <input type="date" className="ui-input" aria-label="휴일 날짜" value={day} onChange={e => setDay(e.target.value)} />
+          <input className="ui-input" aria-label="휴일 이름" placeholder="예: 추석" maxLength={80} value={name} onChange={e => setName(e.target.value)} />
+          <button type="submit" className="ui-btn is-soft is-sm" disabled={!day || !name.trim()}>추가</button>
         </form>
       )}
     </div>
@@ -208,7 +208,7 @@ export function Sla() {
   const saved = (d: SlaOverview) => setOverride(d);
 
   if (error && !data) return <ErrorBox message={error} onRetry={reload} />;
-  if (loading && !data) return <Skeleton rows={6} />;
+  if (loading && !data) return <SkeletonList rows={6} />;
   if (!data) return null;
   const calOf = (id: string | null) => data.calendars.find(c => c.id === id);
   const breached = data.board.reduce((n, b) => n + b.breached, 0) + data.tasks.filter(t => t.state === 'BREACHED').length;
@@ -220,13 +220,13 @@ export function Sla() {
 
   return (
     <div className="view-enter">
-      <PageHead
+      <PageHeader
         eyebrow="업무"
         title="SLA · 마감"
         sub="업무 유형과 기존 대기열마다 처리 기한을 정하고, 임박·초과 건을 한눈에 봐요. 영업일 기준이면 근무 시간과 휴일을 빼고 계산해요."
         actions={<>
-          <button type="button" className="adm-btn soft small" onClick={() => { setOverride(null); reload(); }}>새로고침</button>
-          {admin && <button type="button" className="adm-btn primary small" onClick={() => setEditing('new')}><Glyph name="plus" size={14} />정책 추가</button>}
+          <button type="button" className="ui-btn is-soft is-sm" onClick={() => { setOverride(null); reload(); }}>새로고침</button>
+          {admin && <button type="button" className="ui-btn is-primary is-sm" onClick={() => setEditing('new')}><Glyph name="plus" size={14} />정책 추가</button>}
         </>}
       />
       <WorkTabs />
@@ -248,15 +248,15 @@ export function Sla() {
           ))}
         </div>
         {data.queue.length > 0 && (
-          <div className="adm-list" style={{ marginTop: 12 }}>
+          <div className="ui-list" style={{ marginTop: 12 }}>
             {data.queue.slice(0, 30).map(q => (
-              <Link key={`${q.queue}:${q.id}`} to={q.link} className="adm-row adm-w-task-row">
-                <StatusChip value={SLA_STATE[q.state]} />
+              <Link key={`${q.queue}:${q.id}`} to={q.link} className="ui-row adm-w-task-row">
+                <StatusBadge value={SLA_STATE[q.state]} />
                 <span className="adm-min">
-                  <span className="adm-row-title">{q.title}</span>
-                  <span className="adm-row-meta"><span>{QUEUE_TYPE[q.queue]}</span>{q.org_name && <span>{q.org_name}</span>}<span>알림 {ROLE_NAME[q.escalate_to]}</span></span>
+                  <span className="ui-row-title">{q.title}</span>
+                  <span className="ui-row-meta"><span>{QUEUE_TYPE[q.queue]}</span>{q.org_name && <span>{q.org_name}</span>}<span>알림 {ROLE_NAME[q.escalate_to]}</span></span>
                 </span>
-                <span className="adm-row-end"><Chip tone={SLA_STATE[q.state][1]}><Glyph name="clock" size={12} />{remaining(q.due_at)}</Chip></span>
+                <span className="ui-row-end"><Badge tone={SLA_STATE[q.state][1]}><Glyph name="clock" size={12} />{remaining(q.due_at)}</Badge></span>
               </Link>
             ))}
           </div>
@@ -264,17 +264,17 @@ export function Sla() {
       </Section>
 
       <Section title="업무 기한" meta="마감일과 SLA 중 이른 쪽">
-        {data.tasks.length === 0 ? <Empty title="기한이 있는 업무가 없어요" /> : (
-          <div className="adm-list">
+        {data.tasks.length === 0 ? <EmptyState title="기한이 있는 업무가 없어요" /> : (
+          <div className="ui-list">
             {data.tasks.slice(0, 40).map(t => (
-              <Link key={t.id} to={`/admin/tasks/${t.id}`} className="adm-row adm-w-task-row">
+              <Link key={t.id} to={`/admin/tasks/${t.id}`} className="ui-row adm-w-task-row">
                 <Person id={t.assignee_id} people={people} compact />
                 <span className="adm-min">
-                  <span className="adm-row-title"><span className="adm-w-key">{t.key}</span>{t.title}</span>
-                  <span className="adm-row-meta"><span>{WORK_TYPE[t.type]}</span>{t.escalation_level > 0 && <span className="is-late-text">상향 {t.escalation_level}단계</span>}</span>
+                  <span className="ui-row-title"><span className="ui-tag is-mono">{t.key}</span>{t.title}</span>
+                  <span className="ui-row-meta"><span>{WORK_TYPE[t.type]}</span>{t.escalation_level > 0 && <span className="is-late-text">상향 {t.escalation_level}단계</span>}</span>
                 </span>
-                <span className="adm-row-end">
-                  <span className="adm-codes"><PriorityChip value={t.priority} />{t.state && <StatusChip value={SLA_STATE[t.state]} />}</span>
+                <span className="ui-row-end">
+                  <span className="adm-codes"><PriorityChip value={t.priority} />{t.state && <StatusBadge value={SLA_STATE[t.state]} />}</span>
                   {t.deadline && <span className="small muted">{remaining(t.deadline)}</span>}
                 </span>
               </Link>
@@ -284,25 +284,25 @@ export function Sla() {
       </Section>
 
       <Section title="SLA 정책" meta={admin ? '관리자만 바꿀 수 있어요' : '보기 전용'}>
-        <div className="adm-list">
+        <div className="ui-list">
           {data.policies.map(p => {
             const cal = calOf(p.calendar_id);
             return (
-              <div key={p.id} className={`adm-row adm-w-policy${p.enabled ? '' : ' is-closed'}`}>
+              <div key={p.id} className={`ui-row adm-w-policy${p.enabled ? '' : ' is-closed'}`}>
                 <span className="adm-min">
-                  <span className="adm-row-title">{slaTypeLabel(p.type)}{p.scope_id && <Chip tone="violet">{DSP_NAME[p.scope_id] ?? p.scope_id} 전용</Chip>}</span>
-                  <span className="adm-row-meta">
+                  <span className="ui-row-title">{slaTypeLabel(p.type)}{p.scope_id && <Badge tone="violet">{DSP_NAME[p.scope_id] ?? p.scope_id} 전용</Badge>}</span>
+                  <span className="ui-row-meta">
                     <span>{minutesLabel(p.target_minutes, dayMinutes(cal))} 안에</span>
                     <span>{cal ? cal.name : '24시간 기준'}</span>
                     <span>멈춤 알림 {minutesLabel(p.idle_alert_minutes)}</span>
                     <span>초과 시 {ROLE_NAME[p.escalate_to]}{p.auto_raise_priority ? ' · 우선순위 올림' : ''}</span>
                   </span>
                 </span>
-                <span className="adm-row-end">
-                  {!p.enabled && <Chip tone="gray">꺼짐</Chip>}
+                <span className="ui-row-end">
+                  {!p.enabled && <Badge tone="gray">꺼짐</Badge>}
                   {admin && <span className="adm-w-btns">
-                    <button type="button" className="adm-btn soft small" onClick={() => setEditing(p)}>수정</button>
-                    <button type="button" className="adm-btn soft small" onClick={() => archive(p)}>보관</button>
+                    <button type="button" className="ui-btn is-soft is-sm" onClick={() => setEditing(p)}>수정</button>
+                    <button type="button" className="ui-btn is-soft is-sm" onClick={() => archive(p)}>보관</button>
                   </span>}
                 </span>
               </div>
@@ -313,7 +313,7 @@ export function Sla() {
 
       {data.calendars.map(c => (
         <Section key={c.id} title={`업무 캘린더 · ${c.name}`} meta={`${c.workdays.map(d => WEEKDAY[d]).join('·')} ${c.work_start}–${c.work_end} (UTC${c.utc_offset_minutes >= 0 ? '+' : ''}${c.utc_offset_minutes / 60})`}
-          action={admin ? <button type="button" className="adm-btn soft small" onClick={() => setCalEdit(c)}>근무 시간 수정</button> : undefined}>
+          action={admin ? <button type="button" className="ui-btn is-soft is-sm" onClick={() => setCalEdit(c)}>근무 시간 수정</button> : undefined}>
           <Holidays cal={c} names={data.holiday_names} admin={admin} onSaved={saved} />
         </Section>
       ))}

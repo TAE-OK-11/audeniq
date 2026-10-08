@@ -103,7 +103,7 @@ function DialogBody({ kind, title, body, meta, actions }: {
       {meta && <p className="aq-sysdialog-meta">{meta.join(' · ')}</p>}
       <div className="aq-sysdialog-actions">
         {actions.map(a => (
-          <button key={a.label} type="button" className={`button${a.primary ? '' : ' secondary'}`} onClick={() => { a.onClick(); if (!a.primary) close(); }}>
+          <button key={a.label} type="button" className={`ui-btn${a.primary ? ' is-primary' : ' is-soft'}`} onClick={() => { a.onClick(); if (!a.primary) close(); }}>
             {a.label}
           </button>
         ))}

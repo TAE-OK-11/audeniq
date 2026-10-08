@@ -15,6 +15,7 @@ import { errorMessage } from '../api/errors';
 import { refreshTickets } from '../store/portalSync';
 import { INQUIRY_CHANGED_EVENT } from '../lib/liveEvents';
 import { Glyph } from '../components/Glyph';
+import { Badge } from '../ui';
 
 /** 실서버 문의 대화 — 담당자 답변을 보고 이어서 묻거나 문의를 닫는다 */
 function TicketThread({ ticket, onClosed }: { ticket: Ticket; onClosed: () => void }) {
@@ -67,7 +68,7 @@ function TicketThread({ ticket, onClosed }: { ticket: Ticket; onClosed: () => vo
   };
 
   if (loading && !data) return <p className="small muted">대화를 불러오는 중이에요…</p>;
-  if (error) return <button type="button" className="button secondary" onClick={reload}>다시 불러오기</button>;
+  if (error) return <button type="button" className="ui-btn is-soft" onClick={reload}>다시 불러오기</button>;
   return (
     <>
       <ol className="aq-thread" ref={listRef} aria-live="polite">
@@ -83,12 +84,12 @@ function TicketThread({ ticket, onClosed }: { ticket: Ticket; onClosed: () => vo
           <label htmlFor="tReply" className="sr-only">추가 메시지</label>
           <textarea id="tReply" rows={3} maxLength={4000} value={reply} onChange={e => setReply(e.target.value)} placeholder="추가로 전할 내용을 입력해 주세요" />
           <div className="row-actions">
-            <button type="button" className="button secondary" onClick={close} disabled={busy}>문의 종료</button>
-            <button type="submit" className="button" disabled={busy || !reply.trim()}>보내기</button>
+            <button type="button" className="ui-btn is-soft" onClick={close} disabled={busy}>문의 종료</button>
+            <button type="submit" className="ui-btn is-primary" disabled={busy || !reply.trim()}>보내기</button>
           </div>
         </form>
       ) : (
-        <div className="notice" style={{ marginTop: 16 }}>종료된 문의예요. 더 궁금한 점은 새 문의로 남겨 주세요.</div>
+        <div className="ui-callout" style={{ marginTop: 16 }}>종료된 문의예요. 더 궁금한 점은 새 문의로 남겨 주세요.</div>
       )}
     </>
   );
@@ -126,13 +127,13 @@ function TicketForm({ onSave, preset }: { onSave: (t: Omit<Ticket, 'id' | 'creat
     <form id="ticketForm" onSubmit={submit}>
       <p className="small muted">문의 내용을 작성하고 필요한 발매를 연결해 주세요.</p>
       <div className="form-grid">
-        <div className="field">
+        <div className="ui-field">
           <label htmlFor="tCategory">문의 유형</label>
           <select id="tCategory" value={category} onChange={e => setCategory(e.target.value)}>
             {CATEGORIES.map(c => <option key={c}>{c}</option>)}
           </select>
         </div>
-        <div className="field">
+        <div className="ui-field">
           <label htmlFor="tRelease">관련 발매</label>
           <select id="tRelease" value={releaseId} onChange={e => setReleaseId(e.target.value)}>
             <option value="">선택 안 함</option>
@@ -140,17 +141,17 @@ function TicketForm({ onSave, preset }: { onSave: (t: Omit<Ticket, 'id' | 'creat
           </select>
         </div>
       </div>
-      <div className="field">
+      <div className="ui-field">
         <label htmlFor="tSubject">문의 제목</label>
         <input id="tSubject" maxLength={180} required placeholder="문의 제목" value={subject} onChange={e => setSubject(e.target.value)} />
       </div>
-      <div className="field">
+      <div className="ui-field">
         <label htmlFor="tBody">문의 내용</label>
         <textarea id="tBody" maxLength={4000} rows={6} required placeholder="상황과 확인이 필요한 내용을 자세히 입력해 주세요." value={body} onChange={e => setBody(e.target.value)} />
-        <p className="help aq-counter">{body.length} / 4000</p>
+        <p className="ui-field-help aq-counter">{body.length} / 4000</p>
       </div>
       <div className="aq-sticky-foot">
-        <button className="button studio-submit-wide" type="submit">문의 저장</button>
+        <button className="ui-btn is-primary studio-submit-wide" type="submit">문의 저장</button>
       </div>
     </form>
   );
@@ -192,13 +193,13 @@ export function Inquiries() {
 
   return (
     <div id="view-inquiries" className="view">
-      <div className="view-title">
+      <div className="ui-page-head">
         <div>
           <p className="eyebrow">INQUIRIES</p>
           <h1>문의</h1>
           <p>발매 보완 요청과 정산·계약 관련 문의를 확인해 보세요.</p>
         </div>
-        <button type="button" className="button" onClick={() => setShowForm(true)}>
+        <button type="button" className="ui-btn is-primary" onClick={() => setShowForm(true)}>
           새 문의 <Glyph name="arrow-up-right" size={14} />
         </button>
       </div>
@@ -206,21 +207,21 @@ export function Inquiries() {
       {ordered.length ? (
         <div className="aq-catalog-cards aq-stagger">
           {ordered.map(t => (
-            <button key={t.id} type="button" className="aq-ticket-card" onClick={() => setOpenId(t.id)}>
+            <button key={t.id} type="button" className="ui-row aq-ticket-card" onClick={() => setOpenId(t.id)}>
               <span className="aq-ticket-icon" aria-hidden="true"><Glyph name="mail" size={18} /></span>
               <span className="min-0">
-                <span className="row-name">{t.subject}</span>
-                <span className="row-sub">{t.category} · {niceDate(t.created)} · {t.releaseTitle || '일반 문의'}</span>
+                <span className="ui-row-title">{t.subject}</span>
+                <span className="ui-row-meta">{t.category} · {niceDate(t.created)} · {t.releaseTitle || '일반 문의'}</span>
               </span>
-              <span className={`status-chip ${t.status === '답변 완료' ? 'ready' : t.status === '종료' ? 'draft' : 'review'}`}>{t.status}</span>
+              <Badge tone={t.status === '답변 완료' ? 'blue' : t.status === '종료' ? 'gray' : 'violet'}>{t.status}</Badge>
             </button>
           ))}
         </div>
       ) : (
-        <div className="empty-page">
+        <div className="ui-empty">
           <h2>작성한 문의가 없어요.</h2>
           <p>발매·정산·권리 관련 문의 내용을 작성하고 보관할 수 있어요.</p>
-          <button type="button" className="button" onClick={() => setShowForm(true)}>문의 작성하기</button>
+          <button type="button" className="ui-btn is-primary" onClick={() => setShowForm(true)}>문의 작성하기</button>
         </div>
       )}
 
@@ -251,13 +252,13 @@ export function Inquiries() {
           <p className="small muted">{openTicket.category} · {niceDate(openTicket.created)} · {openTicket.releaseTitle || '일반 문의'}</p>
           {!MOCK ? <TicketThread ticket={openTicket} onClosed={() => setOpenId(null)} /> : (<>
           <div className="document-body aq-ticket-body">{openTicket.body}</div>
-          <div className="notice" style={{ marginTop: 20 }}>
+          <div className="ui-callout" style={{ marginTop: 20 }}>
             {openTicket.status === '답변 완료'
               ? '담당자 답변이 등록된 문의예요. 자세한 답변은 가입한 이메일로 안내돼요.'
               : '담당자가 확인 후 가입한 이메일로 답변을 드릴게요.'}
           </div>
           <div className="row-actions" style={{ marginTop: 20 }}>
-            <button type="button" className="button danger" onClick={() => removeTicket(openTicket)}>
+            <button type="button" className="ui-btn is-danger" onClick={() => removeTicket(openTicket)}>
               문의 기록 삭제
             </button>
           </div>

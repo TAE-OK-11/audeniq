@@ -1,5 +1,6 @@
 // 날짜/금액 포맷 헬퍼
 import { parseStamp } from './date';
+import type { Tone } from '../ui/tone';
 
 export const dateOnly = (d: unknown): string => String(d || '').slice(0, 10);
 
@@ -40,7 +41,7 @@ export function stripSampleSuffix(title: string): string {
   return title.replace(/\s*[·•]\s*샘플\s*$/u, '');
 }
 
-/** 발매 상태 라벨 — 라이브 statusLabel (칩 클래스는 상태값 그대로 사용) */
+/** 발매 상태 라벨 — 라이브 statusLabel (배지 색은 STATUS_TONE) */
 export const STATUS_LABEL: Record<string, string> = {
   draft: '작성 중',
   ready: '접수 대기',
@@ -52,3 +53,10 @@ export const STATUS_LABEL: Record<string, string> = {
   rejected: '발매 거절',
   cancelled: '신청 취소',
 };
+
+/** 발매 상태 배지 색 — 보완 필요는 앱 전체에서 주황, 빨강은 거절에만 */
+export const STATUS_TONE: Record<string, Tone> = {
+  draft: 'gray', ready: 'blue', needs: 'amber', review: 'violet', scheduled: 'blue',
+  live: 'green', closed: 'gray', rejected: 'red', cancelled: 'gray',
+};
+export const statusTone = (s: string | null | undefined): Tone => STATUS_TONE[s || 'draft'] ?? 'gray';

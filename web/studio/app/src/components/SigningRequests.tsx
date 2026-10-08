@@ -81,9 +81,9 @@ export function SigningRequests({ releases, tick, onOpenDoc }: {
             </div>
             <em className={TONE[r.status]}>{SIGNING_STATUS_LABEL[r.status]}</em>
             <div className="aq-signreq-actions">
-              {r.status === 'SIGNED' && r.document_id && <button type="button" className="link-btn" onClick={() => onOpenDoc(r.document_id!)}>문서 보기</button>}
-              {(r.status === 'PENDING' || r.status === 'EXPIRED') && <button type="button" className="link-btn" onClick={() => { setRelink(r); setIssued(null); setChannel('LINK'); }}>새 링크</button>}
-              {(r.status === 'PENDING' || r.status === 'VERIFIED') && <button type="button" className="link-btn" onClick={() => void cancel(r)}>취소</button>}
+              {r.status === 'SIGNED' && r.document_id && <button type="button" className="ui-btn is-white is-sm" onClick={() => onOpenDoc(r.document_id!)}>문서 보기</button>}
+              {(r.status === 'PENDING' || r.status === 'EXPIRED') && <button type="button" className="ui-btn is-white is-sm" onClick={() => { setRelink(r); setIssued(null); setChannel('LINK'); }}>새 링크</button>}
+              {(r.status === 'PENDING' || r.status === 'VERIFIED') && <button type="button" className="ui-btn is-white is-sm" onClick={() => void cancel(r)}>취소</button>}
             </div>
           </li>
         ))}
@@ -95,14 +95,14 @@ export function SigningRequests({ releases, tick, onOpenDoc }: {
             <p>{relink.signer_name}님께 새 링크를 보내 주세요. 이전 링크는 더 이상 쓸 수 없어요.</p>
             <div className="aq-sign-link"><code>{signingUrl(issued.token)}</code></div>
             <div className="doc-actions">
-              <button type="button" className="button secondary" onClick={() => { void navigator.clipboard?.writeText(signingUrl(issued.token)).then(() => toast('링크를 복사했어요.', 'success')); }}>링크 복사</button>
-              <button type="button" className="button" onClick={() => setRelink(null)}>완료</button>
+              <button type="button" className="ui-btn is-soft" onClick={() => { void navigator.clipboard?.writeText(signingUrl(issued.token)).then(() => toast('링크를 복사했어요.', 'success')); }}>링크 복사</button>
+              <button type="button" className="ui-btn is-primary" onClick={() => setRelink(null)}>완료</button>
             </div>
           </> : <>
             <p className="small muted">새 링크를 만들면 이전 링크는 바로 막혀요.</p>
             <Segmented className="aq-method" label="서명 받는 방법" value={channel} onChange={setChannel}
               options={[{ value: 'LINK', label: '서명 링크 보내기' }, { value: 'IN_PERSON', label: '이 기기에서 바로' }] as const} />
-            <button type="button" className="button studio-submit-wide" disabled={busy} onClick={() => void reissue()}>{busy ? '만드는 중…' : '새 링크 만들기'}</button>
+            <button type="button" className="ui-btn is-primary studio-submit-wide" disabled={busy} onClick={() => void reissue()}>{busy ? '만드는 중…' : '새 링크 만들기'}</button>
           </>}
         </Modal>
       )}

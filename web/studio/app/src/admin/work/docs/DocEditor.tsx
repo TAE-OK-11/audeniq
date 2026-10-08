@@ -129,21 +129,21 @@ function LinkDialog({ initial, card, onClose, onSubmit }: { initial: string; car
   return (
     <Modal title={card ? '링크 미리보기 넣기' : '링크'} onClose={onClose}>
       <form className="adm-form" onSubmit={e => { e.preventDefault(); if (ok || (!card && !url)) onSubmit({ url: url.trim(), title: title.trim(), description: description.trim() }); }}>
-        <label className="adm-field"><span>주소</span>
-          <input className="adm-input" autoFocus type="url" inputMode="url" placeholder="https://" value={url} onChange={e => setUrl(e.target.value)} maxLength={2048} />
+        <label className="ui-field"><span>주소</span>
+          <input className="ui-input" autoFocus type="url" inputMode="url" placeholder="https://" value={url} onChange={e => setUrl(e.target.value)} maxLength={2048} />
           {url && !ok && <small className="adm-field-error">http(s){card ? '' : ' 또는 mailto'} 주소만 넣을 수 있어요.</small>}
         </label>
         {card && (
           <>
-            <label className="adm-field"><span>제목</span><input className="adm-input" value={title} maxLength={300} onChange={e => setTitle(e.target.value)} placeholder="비워 두면 주소를 보여 줘요" /></label>
-            <label className="adm-field"><span>설명</span><input className="adm-input" value={description} maxLength={300} onChange={e => setDescription(e.target.value)} /></label>
+            <label className="ui-field"><span>제목</span><input className="ui-input" value={title} maxLength={300} onChange={e => setTitle(e.target.value)} placeholder="비워 두면 주소를 보여 줘요" /></label>
+            <label className="ui-field"><span>설명</span><input className="ui-input" value={description} maxLength={300} onChange={e => setDescription(e.target.value)} /></label>
             <p className="small muted">보안을 위해 서버가 주소를 대신 열어 보지 않아요. 제목·설명은 직접 적어 주세요.</p>
           </>
         )}
         <div className="adm-form-actions">
-          {!card && initial && <button type="button" className="adm-btn soft" onClick={() => onSubmit({ url: '', title: '', description: '' })}>링크 없애기</button>}
-          <button type="button" className="adm-btn soft" onClick={onClose}>취소</button>
-          <button type="submit" className="adm-btn primary" disabled={!ok}>넣기</button>
+          {!card && initial && <button type="button" className="ui-btn is-soft" onClick={() => onSubmit({ url: '', title: '', description: '' })}>링크 없애기</button>}
+          <button type="button" className="ui-btn is-soft" onClick={onClose}>취소</button>
+          <button type="submit" className="ui-btn is-primary" disabled={!ok}>넣기</button>
         </div>
       </form>
     </Modal>
@@ -377,7 +377,7 @@ export const DocEditor = memo(function DocEditor({ docId, content, editable, peo
     else ed.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
   };
 
-  if (!editor) return <div className="adm-skel"><span /><span /></div>;
+  if (!editor) return <div className="ui-skel-rows"><span /><span /></div>;
   return (
     <div className={`adm-doc-editor${editable ? '' : ' is-readonly'}`}>
       {editable && (

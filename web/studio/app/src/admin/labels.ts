@@ -3,7 +3,8 @@ import { correctionTarget, isKnownCorrection } from '../lib/corrections';
 import type { Duty, StaffRole } from './api';
 export { dspLabel } from '../lib/catalog';
 
-export type Tone = 'blue' | 'violet' | 'amber' | 'green' | 'red' | 'gray';
+export type { Tone } from '../ui';
+import type { Tone } from '../ui';
 
 export const ROLE_LABEL: Record<StaffRole, string> = {
   ADMIN: '관리자', REVIEWER: '심사 담당', OPERATOR: '배급 운영', SUPPORT: '고객 지원',

@@ -71,7 +71,7 @@ export function Profile() {
 
   return (
     <div id="view-profile" className="view">
-      <div className="view-title">
+      <div className="ui-page-head">
         <div>
           <p className="eyebrow">ARTIST</p>
           <h1>아티스트 정보</h1>
@@ -81,7 +81,7 @@ export function Profile() {
 
       <div className="aq-profile-card">
         <div className="aq-profile-head">
-          <div className="profile-avatar aq-profile-avatar" aria-hidden="true">
+          <div className="ui-avatar is-xl aq-profile-avatar" aria-hidden="true">
             {(draft.name || 'A').slice(0, 1)}
           </div>
           <div className="min-0">
@@ -91,32 +91,32 @@ export function Profile() {
         </div>
 
         <form id="profileForm" onSubmit={saveProfile} noValidate>
-          <div className="field">
+          <div className="ui-field">
             <label htmlFor="profileName">활동명 <span className="required">*</span></label>
             <input
               id="profileName" maxLength={120} required autoComplete="nickname"
               placeholder="아티스트명" value={draft.name} onChange={e => setField('name', e.target.value)}
             />
           </div>
-          <div className="field">
+          <div className="ui-field">
             <label htmlFor="profileEmail">연락 이메일</label>
             <input
               id="profileEmail" type="email" maxLength={180} autoComplete="email" aria-invalid={!!emailError}
               placeholder="hello@example.com" value={draft.email}
               onChange={e => { setField('email', e.target.value); setEmailError(''); }}
             />
-            {emailError && <p className="help aq-help-error">{emailError}</p>}
+            {emailError && <p className="ui-field-help aq-help-error">{emailError}</p>}
           </div>
-          <div className="field">
+          <div className="ui-field">
             <label htmlFor="profileBio">아티스트 소개</label>
             <textarea
               id="profileBio" rows={4} maxLength={1500}
               placeholder="아티스트를 소개해 주세요."
               value={draft.bio} onChange={e => setField('bio', e.target.value)}
             />
-            <p className="help aq-counter">{draft.bio.length} / 1500</p>
+            <p className="ui-field-help aq-counter">{draft.bio.length} / 1500</p>
           </div>
-          <div className="field">
+          <div className="ui-field">
             <label htmlFor="profileCountry">활동 국가</label>
             <select id="profileCountry" value={draft.country} onChange={e => setField('country', e.target.value)}>
               <option value="KR">대한민국</option>
@@ -127,9 +127,9 @@ export function Profile() {
           </div>
           <div className={`aq-form-actions${dirty ? ' is-pinned' : ''}`}>
             {dirty && (
-              <button type="button" className="button secondary" onClick={() => setDraft(profile)}>되돌리기</button>
+              <button type="button" className="ui-btn is-soft" onClick={() => setDraft(profile)}>되돌리기</button>
             )}
-            <button type="submit" className={`button studio-submit-wide${saving ? ' is-busy' : ''}`} disabled={!dirty || saving}>
+            <button type="submit" className={`ui-btn is-primary studio-submit-wide${saving ? ' is-busy' : ''}`} disabled={!dirty || saving}>
               {saving ? '저장하는 중' : dirty ? '프로필 저장' : '저장된 상태예요'}
             </button>
           </div>
@@ -137,7 +137,7 @@ export function Profile() {
       </div>
 
       <section className="aq-profile-card aq-payment-card" aria-labelledby="payoutHead">
-        <div className="section-top">
+        <div className="ui-section-head">
           <h2 id="payoutHead">수익을 받을 정보</h2>
         </div>
         <PayoutAccountCard payment={registered ? payment : null} onEdit={() => setShowPayment(true)} />
@@ -146,7 +146,7 @@ export function Profile() {
       {MOCK && (
         <p className="aq-reset-line">
           이 브라우저에만 저장되는 체험 모드예요.{' '}
-          <button type="button" className="link-btn" onClick={resetData}>저장된 데이터 초기화</button>
+          <button type="button" className="ui-btn is-white is-sm" onClick={resetData}>저장된 데이터 초기화</button>
         </p>
       )}
 

@@ -9,6 +9,7 @@ import {
   contentAdmin, type AdminEvent, type AdminMaintenance, type AdminNotice, type ContentKind, type EventInput,
   type MaintenanceInput, type NoticeInput,
 } from '../api/content';
+import { Badge, Tabs } from '../ui';
 
 const KST = 9 * 3_600_000;
 /** UTC ISO → datetime-local 값 (KST) */
@@ -107,9 +108,9 @@ function Editor({ kind, draft, saving, onChange, onSave, onCancel, onDelete }: {
     <form className="aq-cadmin-editor" onSubmit={e => { e.preventDefault(); onSave(); }}>
       <div className="aq-cadmin-editor-head">
         <h2>{heading}</h2>
-        {draft.deleted && <span className="status-chip">내린 글 · 저장하면 다시 게시돼요</span>}
+        {draft.deleted && <Badge>내린 글 · 저장하면 다시 게시돼요</Badge>}
       </div>
-      <div className="field">
+      <div className="ui-field">
         <label htmlFor="caTitle">제목 <span className="required">*</span></label>
         <input
           id="caTitle" required maxLength={200} value={draft.title} onChange={e => set('title', e.target.value)}
@@ -118,11 +119,11 @@ function Editor({ kind, draft, saving, onChange, onSave, onCancel, onDelete }: {
       </div>
       {maint && (
         <div className="aq-cadmin-grid">
-          <div className="field">
+          <div className="ui-field">
             <label htmlFor="caMaintStart">점검 시작 (한국 시간) <span className="required">*</span></label>
             <input id="caMaintStart" type="datetime-local" required value={draft.maintStart} onChange={e => set('maintStart', e.target.value)} />
           </div>
-          <div className="field">
+          <div className="ui-field">
             <label htmlFor="caMaintEnd">예상 종료 (한국 시간) <span className="required">*</span></label>
             <input id="caMaintEnd" type="datetime-local" required min={draft.maintStart} value={draft.maintEnd} onChange={e => set('maintEnd', e.target.value)} />
           </div>
@@ -134,43 +135,43 @@ function Editor({ kind, draft, saving, onChange, onSave, onCancel, onDelete }: {
       )}
       {kind === 'events' && (
         <>
-          <div className="field">
+          <div className="ui-field">
             <label htmlFor="caSummary">한 줄 소개</label>
             <input id="caSummary" maxLength={300} value={draft.summary} onChange={e => set('summary', e.target.value)} />
           </div>
           <div className="aq-cadmin-grid">
-            <div className="field">
+            <div className="ui-field">
               <label htmlFor="caStarts">시작일 <span className="required">*</span></label>
               <input id="caStarts" type="date" required value={draft.startsOn} onChange={e => set('startsOn', e.target.value)} />
             </div>
-            <div className="field">
+            <div className="ui-field">
               <label htmlFor="caEnds">종료일</label>
               <input id="caEnds" type="date" min={draft.startsOn} value={draft.endsOn} onChange={e => set('endsOn', e.target.value)} />
             </div>
-            <div className="field">
+            <div className="ui-field">
               <label htmlFor="caPlace">장소</label>
               <input id="caPlace" maxLength={120} placeholder="AUDENIQ STUDIO" value={draft.place} onChange={e => set('place', e.target.value)} />
             </div>
           </div>
-          <div className="field">
+          <div className="ui-field">
             <label htmlFor="caLink">자세히 보기 링크</label>
             <input id="caLink" type="url" maxLength={500} placeholder="https://" value={draft.linkUrl} onChange={e => set('linkUrl', e.target.value)} />
           </div>
         </>
       )}
-      <div className="field">
+      <div className="ui-field">
         <label htmlFor="caBody">{maint ? '안내 문구' : '본문'}</label>
         <textarea
           id="caBody" rows={maint ? 5 : 12} maxLength={maint ? 2000 : 20000} value={draft.body} onChange={e => set('body', e.target.value)}
           placeholder={maint ? '예: 더 안정적인 서비스를 위해 서버를 업데이트해요. 점검 중에는 로그인과 발매 접수를 할 수 없어요.' : undefined}
         />
-        <p className="help">줄바꿈은 그대로 보여요. {draft.body.length.toLocaleString()} / {maint ? '2,000' : '20,000'}자</p>
+        <p className="ui-field-help">줄바꿈은 그대로 보여요. {draft.body.length.toLocaleString()} / {maint ? '2,000' : '20,000'}자</p>
       </div>
       <div className="aq-cadmin-grid">
-        <div className="field">
+        <div className="ui-field">
           <label htmlFor="caPublished">{maint ? '예고 공개 시각 (한국 시간)' : '게시 시각 (한국 시간)'}</label>
           <input id="caPublished" type="datetime-local" required value={draft.publishedAt} onChange={e => set('publishedAt', e.target.value)} />
-          <p className="help">
+          <p className="ui-field-help">
             {maint
               ? '점검 72시간 전부터 스튜디오 상단에 예고가 뜨고, 시작 시각이 되면 점검 화면으로 바뀌어요.'
               : scheduled ? '이 시각이 되면 자동으로 보여요.' : '저장하면 바로 보여요.'}
@@ -184,10 +185,10 @@ function Editor({ kind, draft, saving, onChange, onSave, onCancel, onDelete }: {
         )}
       </div>
       <div className="aq-cadmin-actions">
-        {draft.id && !draft.deleted && <button type="button" className="button ghost aq-cadmin-danger" onClick={onDelete} disabled={saving}>내리기</button>}
+        {draft.id && !draft.deleted && <button type="button" className="ui-btn is-neutral aq-cadmin-danger" onClick={onDelete} disabled={saving}>내리기</button>}
         <span className="aq-cadmin-spacer" />
-        <button type="button" className="button secondary" onClick={onCancel} disabled={saving}>취소</button>
-        <button type="submit" className="button" disabled={saving}>
+        <button type="button" className="ui-btn is-soft" onClick={onCancel} disabled={saving}>취소</button>
+        <button type="submit" className="ui-btn is-primary" disabled={saving}>
           {saving ? '저장하는 중' : draft.deleted ? '다시 게시' : scheduled ? '예약 저장' : draft.id ? '저장' : '게시하기'}
         </button>
       </div>
@@ -267,11 +268,11 @@ function EmergencyPanel({ rows, now, onChanged }: {
         </div>
         <p>스튜디오 전체에 점검 화면이 떠 있고, 백엔드 API 요청은 503으로 막혀 있어요.</p>
         <div className="aq-cadmin-emergency-actions">
-          <button type="button" className="button secondary" disabled={busy}
+          <button type="button" className="ui-btn is-soft" disabled={busy}
             onClick={() => void update(active, { ends_at: new Date(base + 30 * 60_000).toISOString().replace(/\.\d{3}Z$/, 'Z'), end_unknown: false }, '30분 연장했어요.')}>
             30분 연장
           </button>
-          <button type="button" className="button" disabled={busy} onClick={() => void finish(active)}>점검 종료</button>
+          <button type="button" className="ui-btn is-primary" disabled={busy} onClick={() => void finish(active)}>점검 종료</button>
         </div>
       </section>
     );
@@ -286,15 +287,15 @@ function EmergencyPanel({ rows, now, onChanged }: {
       </div>
       {!open ? (
         <div className="aq-cadmin-emergency-actions">
-          <button type="button" className="button aq-cadmin-danger-fill" onClick={() => setOpen(true)}>긴급 점검 시작</button>
+          <button type="button" className="ui-btn is-danger-solid aq-cadmin-danger-fill" onClick={() => setOpen(true)}>긴급 점검 시작</button>
         </div>
       ) : (
         <div className="aq-cadmin-emergency-form">
-          <div className="field">
+          <div className="ui-field">
             <label htmlFor="caEmBody">사용자에게 보일 안내</label>
             <textarea id="caEmBody" rows={3} maxLength={2000} value={body} onChange={e => setBody(e.target.value)} />
           </div>
-          <div className="field">
+          <div className="ui-field">
             <span className="aq-cadmin-label">예상 소요</span>
             <div className="aq-cadmin-chips" role="radiogroup" aria-label="예상 소요">
               {EMERGENCY_DURATIONS.map(d => (
@@ -306,8 +307,8 @@ function EmergencyPanel({ rows, now, onChanged }: {
             </div>
           </div>
           <div className="aq-cadmin-emergency-actions">
-            <button type="button" className="button secondary" disabled={busy} onClick={() => setOpen(false)}>취소</button>
-            <button type="button" className="button aq-cadmin-danger-fill" disabled={busy} onClick={() => void start()}>
+            <button type="button" className="ui-btn is-soft" disabled={busy} onClick={() => setOpen(false)}>취소</button>
+            <button type="button" className="ui-btn is-danger-solid aq-cadmin-danger-fill" disabled={busy} onClick={() => void start()}>
               {busy ? '시작하는 중' : '지금 시작'}
             </button>
           </div>
@@ -394,13 +395,12 @@ export function ContentAdmin() {
 
   return (
     <div className="aq-cadmin">
-      <div className="adm-head"><div><p className="eyebrow">CONTENT</p><h1>공지·이벤트 관리</h1><p className="adm-sub">관리자 계정으로 작성하고 게시하면 바로 공개돼요. 예약 시각을 지정하면 그때 공개돼요.</p></div></div>
+      <div className="ui-page-head"><div><p className="eyebrow">CONTENT</p><h1>공지·이벤트 관리</h1><p className="ui-page-sub">관리자 계정으로 작성하고 게시하면 바로 공개돼요. 예약 시각을 지정하면 그때 공개돼요.</p></div></div>
 
-      <div className="tabs aq-tabs" role="tablist" aria-label="콘텐츠 종류">
-        <button type="button" role="tab" className="tab" aria-selected={kind === 'notices'} onClick={() => switchKind('notices')}>공지사항</button>
-        <button type="button" role="tab" className="tab" aria-selected={kind === 'events'} onClick={() => switchKind('events')}>이벤트</button>
-        <button type="button" role="tab" className="tab" aria-selected={kind === 'maintenance'} onClick={() => switchKind('maintenance')}>서버 점검</button>
-      </div>
+      <Tabs
+        label="콘텐츠 종류" value={kind} onChange={switchKind}
+        items={[{ value: 'notices', label: '공지사항' }, { value: 'events', label: '이벤트' }, { value: 'maintenance', label: '서버 점검' }]}
+      />
 
       {draft ? (
         <Editor
@@ -414,14 +414,14 @@ export function ContentAdmin() {
           )}
           <div className="aq-cadmin-bar">
             <p>{rows ? `${rows.filter(r => ['live', 'active'].includes(stateOf(r, now))).length}개 ${kind === 'maintenance' ? '예고·진행 중' : '게시 중'} · 전체 ${rows.length}개` : '불러오는 중'}</p>
-            <button type="button" className="button secondary" onClick={() => void load()}>새로고침</button>
-            <button type="button" className="button" onClick={() => setDraft(emptyDraft())}>{kind === 'notices' ? '새 공지 쓰기' : kind === 'events' ? '새 이벤트 쓰기' : '점검 일정 추가'}</button>
+            <button type="button" className="ui-btn is-soft" onClick={() => void load()}>새로고침</button>
+            <button type="button" className="ui-btn is-primary" onClick={() => setDraft(emptyDraft())}>{kind === 'notices' ? '새 공지 쓰기' : kind === 'events' ? '새 이벤트 쓰기' : '점검 일정 추가'}</button>
           </div>
           {loadError && (
-            <div className="empty-page"><h2>목록을 불러오지 못했어요.</h2><p>{loadError}</p></div>
+            <div className="ui-empty"><h2>목록을 불러오지 못했어요.</h2><p>{loadError}</p></div>
           )}
           {rows && !rows.length && !loadError && (
-            <div className="empty-page"><h2>아직 올린 글이 없어요.</h2><p>첫 글을 써 보세요. 저장하면 바로 스튜디오에 보여요.</p></div>
+            <div className="ui-empty"><h2>아직 올린 글이 없어요.</h2><p>첫 글을 써 보세요. 저장하면 바로 스튜디오에 보여요.</p></div>
           )}
           {!!rows?.length && <ul className="aq-cadmin-list">
             {rows.map(r => {

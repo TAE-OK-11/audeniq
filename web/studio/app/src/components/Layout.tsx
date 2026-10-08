@@ -184,7 +184,7 @@ export function Layout({ children }: { children: ReactNode }) {
             </button>
             <button
               id="headerProfile"
-              className="header-profile"
+              className="ui-avatar header-profile"
               type="button"
               aria-label="아티스트 정보"
               onClick={() => go('/profile')}

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useToast } from '../components/Toast';
-import { CountUp } from '../components/CountUp';
+import { CountUp } from '../ui';
 import { money, num } from '../lib/format';
 import { todayStr } from '../lib/date';
 import { useGrowOnView, type CSSVarStyle } from '../hooks/useAnimations';
@@ -158,20 +158,20 @@ export function Reports() {
 
   return (
     <div id="view-reports" className="view">
-      <div className="view-title">
+      <div className="ui-page-head">
         <div>
           <p className="eyebrow">INSIGHTS</p>
           <h1 id="reportsTitle">음악 리포트</h1>
           <p>플랫폼별 실적을 기간과 곡별로 확인해 보세요.</p>
         </div>
-        <button type="button" className="button secondary" onClick={exportCsv}><Glyph name="download" size={15} className="aq-glyph-lead" />CSV 내보내기</button>
+        <button type="button" className="ui-btn is-soft" onClick={exportCsv}><Glyph name="download" size={15} className="aq-glyph-lead" />CSV 내보내기</button>
       </div>
 
       <div className="report-tools">
-        <select id="reportPeriod" aria-label="리포트 기간" value={period} onChange={e => setPeriod(e.target.value)}>
+        <select id="reportPeriod" className="ui-select" aria-label="리포트 기간" value={period} onChange={e => setPeriod(e.target.value)}>
           {PERIODS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
         </select>
-        <select id="reportRelease" aria-label="발매별 필터" value={release} onChange={e => setRelease(e.target.value)}>
+        <select id="reportRelease" className="ui-select" aria-label="발매별 필터" value={release} onChange={e => setRelease(e.target.value)}>
           <option value="all">전체 발매</option>
           {releases.map(r => <option key={r} value={r}>{r}</option>)}
         </select>
@@ -280,7 +280,7 @@ export function Reports() {
               ))}
             </ul>
           ) : (
-            <div className="empty-page">
+            <div className="ui-empty">
               <h2>아직 집계된 실적이 없어요.</h2>
               <p>플랫폼 정산이 반영되면 재생·수익 내역이 여기에 표시돼요.</p>
             </div>

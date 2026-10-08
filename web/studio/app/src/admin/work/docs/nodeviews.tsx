@@ -227,12 +227,12 @@ export function EmbedView({ node, selected }: ReactNodeViewProps) {
     <NodeViewWrapper className={`adm-doc-embed is-${kind}${selected ? ' is-selected' : ''}`} data-type="entity-embed" contentEditable={false}>
       <header>
         <span className="adm-doc-embed-kind">{label}{VIEW_TITLE[view] ? ` · ${VIEW_TITLE[view]}` : ''}</span>
-        {kind === 'task' && s(d.seq) && <span className="adm-w-key">WRK-{s(d.seq)}</span>}
+        {kind === 'task' && s(d.seq) && <span className="ui-tag is-mono">WRK-{s(d.seq)}</span>}
         {href && !d.missing ? <Link to={href} className="adm-doc-embed-title">{title}</Link> : <b className="adm-doc-embed-title">{title}</b>}
-        <button type="button" className="adm-link-btn" onClick={refresh} aria-label={`${title} 새로고침`}>새로고침</button>
+        <button type="button" className="ui-btn is-text is-muted" onClick={refresh} aria-label={`${title} 새로고침`}>새로고침</button>
       </header>
-      {error ? <p className="adm-doc-embed-note is-error">불러오지 못했어요. <button type="button" className="adm-link-btn" onClick={refresh}>다시 시도</button></p>
-        : loading && !data ? <div className="adm-skel"><span /></div>
+      {error ? <p className="adm-doc-embed-note is-error">불러오지 못했어요. <button type="button" className="ui-btn is-text is-muted" onClick={refresh}>다시 시도</button></p>
+        : loading && !data ? <div className="ui-skel-rows"><span /></div>
           : d.restricted ? <p className="adm-doc-embed-note">감사 기록은 심사 권한이 있어야 볼 수 있어요.</p>
             : d.missing ? <p className="adm-doc-embed-note">찾을 수 없거나 볼 권한이 없어요. (저장된 이름: {s(node.attrs.label) || '없음'})</p>
               : <Body kind={kind} view={view} d={d} people={people} />}

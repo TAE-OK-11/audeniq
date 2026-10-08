@@ -9,7 +9,7 @@ import { useConfirm } from '../components/Confirm';
 import { useToast } from '../components/Toast';
 import { staffApi, type Duty, type Overview, type StaffMe } from './api';
 import { ROLE_LABEL } from './labels';
-import { Skeleton, StaffContext, WORK_PATHS } from './ui';
+import { SkeletonList, StaffContext, WORK_PATHS } from './ui';
 import { OverviewPage } from './pages/Overview';
 
 // 첫 화면(오늘의 업무) 말고는 열 때 불러온다 — 첫 로딩 JS를 줄이고, 로그인 뒤 한가할 때 미리 받아 둔다
@@ -71,6 +71,7 @@ import { alertsBlocked, alertsEnabled, alertsSupported, disableAlerts, enableAle
 import { ADMIN_INQUIRIES_EVENT, ADMIN_WORK_EVENT } from './liveEvents';
 import { workApi } from './work/api';
 import type { WorkSummary } from './work/types';
+import { Avatar, Badge } from '../ui';
 
 // 관리자 메뉴 아이콘 — 스튜디오와 같은 AUDENIQ 아이콘 세트(Glyph)
 const ICONS: Record<string, string> = {
@@ -120,7 +121,7 @@ const active = (path: string, to: string) => (to === '/admin' ? path === '/admin
 function Gate({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
   return (
     <div className="adm-gate">
-      <div className="adm-empty-icon" aria-hidden="true"><Glyph name="lock" size={26} /></div>
+      <div className="ui-icon is-lg" aria-hidden="true"><Glyph name="lock" size={26} /></div>
       <h1>{title}</h1>
       <p>{children}</p>
       {action}
@@ -141,7 +142,7 @@ function AlertToggle() {
     toast(ok ? '브라우저 알림을 켰어요. 새 고객 메시지를 알려 드릴게요.' : '브라우저에서 알림 권한을 허용해 주세요.', ok ? 'success' : 'error');
   };
   return (
-    <button type="button" className={`adm-ghost adm-alert-toggle${on ? ' is-on' : ''}`} aria-pressed={on} onClick={toggle} title={on ? '브라우저 알림 끄기' : '브라우저 알림 켜기'}>
+    <button type="button" className={`ui-btn is-ghost is-sm adm-alert-toggle${on ? ' is-on' : ''}`} aria-pressed={on} onClick={toggle} title={on ? '브라우저 알림 끄기' : '브라우저 알림 켜기'}>
       <Glyph name="bell" size={15} /><span className="adm-ghost-text">{on ? '알림 켜짐' : '알림 켜기'}</span>
     </button>
   );
@@ -218,14 +219,14 @@ export function AdminApp() {
   }
   if (gate === 'forbidden') {
     return (
-      <Gate title="관리자 권한이 필요해요" action={<Link to="/" className="adm-btn primary">스튜디오로 돌아가기</Link>}>
+      <Gate title="관리자 권한이 필요해요" action={<Link to="/" className="ui-btn is-primary">스튜디오로 돌아가기</Link>}>
         {user?.email ?? '이 계정'}은 아직 관리자로 등록되지 않았어요. 운영 책임자에게 권한을 요청해 주세요.
       </Gate>
     );
   }
   if (gate === 'error' || !ctx || !me) {
     return (
-      <Gate title="관리자 정보를 불러오지 못했어요" action={<button type="button" className="adm-btn primary" onClick={loadMe}>다시 시도</button>}>
+      <Gate title="관리자 정보를 불러오지 못했어요" action={<button type="button" className="ui-btn is-primary" onClick={loadMe}>다시 시도</button>}>
         서버 연결을 확인한 뒤 다시 시도해 주세요.
       </Gate>
     );
@@ -244,14 +245,14 @@ export function AdminApp() {
               <span className="adm-pill">ADMIN</span>
             </Link>
             <div className="adm-header-right">
-              {MOCK && <span className="adm-chip adm-t-amber">체험 데이터</span>}
+              {MOCK && <Badge tone="amber">체험 데이터</Badge>}
               <AlertToggle />
               <div className="adm-who" title={user?.email}>
-                <span className="adm-who-avatar" aria-hidden="true">{initial}</span>
+                <Avatar name={initial} size="sm" />
                 <span className="adm-who-text"><b>{user?.email}</b><small>{ROLE_LABEL[me.role]}</small></span>
               </div>
-              <Link to="/" className="adm-ghost" aria-label="스튜디오로 이동"><Glyph name="arrow-up-right" size={15} /><span className="adm-ghost-text">스튜디오</span></Link>
-              <button type="button" className="adm-ghost" onClick={doLogout}>로그아웃</button>
+              <Link to="/" className="ui-btn is-ghost is-sm" aria-label="스튜디오로 이동"><Glyph name="arrow-up-right" size={15} /><span className="adm-ghost-text">스튜디오</span></Link>
+              <button type="button" className="ui-btn is-ghost is-sm" onClick={doLogout}>로그아웃</button>
             </div>
           </div>
         </header>
@@ -267,7 +268,7 @@ export function AdminApp() {
                   return (
                     <Link key={i.to} to={i.to} aria-current={cur ? 'page' : undefined}>
                       <span><Icon name={i.icon} />{i.label}</span>
-                      {n > 0 && <b className={`adm-count${i.hot ? ' is-hot' : ''}`}>{n > 99 ? '99+' : n}</b>}
+                      {n > 0 && <b className={`ui-count${i.hot ? ' is-hot' : ''}`}>{n > 99 ? '99+' : n}</b>}
                     </Link>
                   );
                 })}
@@ -279,7 +280,7 @@ export function AdminApp() {
           </nav>
 
           <main className="adm-main" id="main" tabIndex={-1}>
-            <Suspense fallback={<Skeleton rows={6} />}>
+            <Suspense fallback={<SkeletonList rows={6} />}>
             <Routes>
               <Route path="/admin" element={<OverviewPage />} />
               <Route path="/admin/reviews" element={<ReviewQueue />} />

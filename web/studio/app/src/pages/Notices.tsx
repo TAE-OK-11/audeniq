@@ -67,13 +67,13 @@ function useNotices() {
 function LoadState({ loading, error, reload, empty }: { loading: boolean; error: string | null; reload: () => void; empty: boolean }) {
   if (loading) return <SkeletonRows count={4} />;
   if (error) return (
-    <div className="empty-page">
+    <div className="ui-empty">
       <h2>공지사항을 불러오지 못했어요.</h2>
       <p>{error}</p>
-      <button type="button" className="button secondary" onClick={reload}>다시 불러오기</button>
+      <button type="button" className="ui-btn is-soft" onClick={reload}>다시 불러오기</button>
     </div>
   );
-  if (empty) return <div className="empty-page"><h2>등록된 공지가 없어요.</h2><p>새 소식이 생기면 이곳에서 알려 드릴게요.</p></div>;
+  if (empty) return <div className="ui-empty"><h2>등록된 공지가 없어요.</h2><p>새 소식이 생기면 이곳에서 알려 드릴게요.</p></div>;
   return null;
 }
 
@@ -173,10 +173,10 @@ export function NoticeDetail() {
     <div id="view-notice-detail" className="view aq-npage">
       <LoadState loading={loading && !data} error={error} reload={reload} empty={false} />
       {data && !notice && (
-        <div className="empty-page">
+        <div className="ui-empty">
           <h2>공지를 찾을 수 없어요.</h2>
           <p>삭제됐거나 주소가 바뀌었을 수 있어요.</p>
-          <Link to="/notices" className="button secondary">목록으로</Link>
+          <Link to="/notices" className="ui-btn is-soft">목록으로</Link>
         </div>
       )}
       {notice && (
@@ -199,7 +199,7 @@ export function NoticeDetail() {
             )}
           </div>
           <div className="aq-narticle-foot">
-            <Link to="/notices" className="button">목록으로</Link>
+            <Link to="/notices" className="ui-btn is-primary">목록으로</Link>
           </div>
         </article>
       )}

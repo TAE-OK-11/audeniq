@@ -49,7 +49,7 @@ function CommentItem({ c, replies, people, canWrite, onReply, onChanged, onJump 
         </ol>
       )}
       <div className="adm-doc-comment-actions">
-        {canWrite && !c.resolved && <button type="button" className="adm-link-btn" onClick={() => onReply(c)}>답글</button>}
+        {canWrite && !c.resolved && <button type="button" className="ui-btn is-text is-muted" onClick={() => onReply(c)}>답글</button>}
         {canWrite && (
           <button type="button" className={`adm-w-resolve${c.resolved ? ' is-on' : ''}`} disabled={busy} aria-pressed={c.resolved} onClick={() => void resolve()}>
             <CheckIcon size={12} />{c.resolved ? '해결됨' : '해결'}
@@ -96,12 +96,12 @@ export function CommentsPanel({ docId, people, canWrite, anchor, onClearAnchor, 
 
   return (
     <section className="adm-doc-panel" aria-label="댓글">
-      <div className="adm-section-top">
+      <div className="ui-section-head">
         <h3>댓글</h3>
-        {tops.some(c => c.resolved) && <button type="button" className="adm-link-btn" onClick={() => setShowResolved(v => !v)}>{showResolved ? '해결된 댓글 숨기기' : '해결된 댓글 보기'}</button>}
+        {tops.some(c => c.resolved) && <button type="button" className="ui-btn is-text is-muted" onClick={() => setShowResolved(v => !v)}>{showResolved ? '해결된 댓글 숨기기' : '해결된 댓글 보기'}</button>}
       </div>
-      {error && <div className="adm-alert is-error">{error} <button type="button" className="adm-link-btn" onClick={reload}>다시 시도</button></div>}
-      {loading && !data ? <div className="adm-skel"><span /></div> : shown.length === 0 ? <p className="adm-w-notes-empty">열린 댓글이 없어요. 본문을 고른 뒤 댓글 버튼으로 위치를 남길 수 있어요.</p> : (
+      {error && <div className="ui-callout is-danger">{error} <button type="button" className="ui-btn is-text is-muted" onClick={reload}>다시 시도</button></div>}
+      {loading && !data ? <div className="ui-skel-rows"><span /></div> : shown.length === 0 ? <p className="adm-w-notes-empty">열린 댓글이 없어요. 본문을 고른 뒤 댓글 버튼으로 위치를 남길 수 있어요.</p> : (
         <ol className="adm-doc-comments">
           {shown.map(c => <CommentItem key={c.id} c={c} replies={byParent.get(c.id) ?? []} people={people} canWrite={canWrite}
             onReply={setReplyTo} onChanged={() => { reload(); onChanged(); }} onJump={onJump} />)}
@@ -109,12 +109,12 @@ export function CommentsPanel({ docId, people, canWrite, anchor, onClearAnchor, 
       )}
       {canWrite && (
         <form className="adm-w-note-form" onSubmit={e => { e.preventDefault(); void send(); }}>
-          {replyTo && <p className="adm-doc-replying">답글: {replyTo.body.slice(0, 40)} <button type="button" className="adm-link-btn" onClick={() => setReplyTo(null)}>취소</button></p>}
-          {!replyTo && anchor && <p className="adm-doc-replying">위치: “{anchor.quote}” <button type="button" className="adm-link-btn" onClick={onClearAnchor}>빼기</button></p>}
+          {replyTo && <p className="adm-doc-replying">답글: {replyTo.body.slice(0, 40)} <button type="button" className="ui-btn is-text is-muted" onClick={() => setReplyTo(null)}>취소</button></p>}
+          {!replyTo && anchor && <p className="adm-doc-replying">위치: “{anchor.quote}” <button type="button" className="ui-btn is-text is-muted" onClick={onClearAnchor}>빼기</button></p>}
           <label htmlFor={`doc-comment-${docId}`} className="sr-only">댓글</label>
           <MentionArea id={`doc-comment-${docId}`} value={body} onChange={setBody} people={people} onSubmit={() => void send()} rows={2}
             placeholder={replyTo ? '답글 (@이름으로 알림)' : '댓글 (@이름으로 알림, Ctrl+Enter로 보내기)'} />
-          <div className="adm-form-actions"><button type="submit" className="adm-btn primary small" disabled={busy || !body.trim()}>{busy ? '남기는 중…' : '남기기'}</button></div>
+          <div className="adm-form-actions"><button type="submit" className="ui-btn is-primary is-sm" disabled={busy || !body.trim()}>{busy ? '남기는 중…' : '남기기'}</button></div>
         </form>
       )}
     </section>
@@ -141,15 +141,15 @@ export function InfoPanel({ detail, people, onNewCard, busy }: { detail: DocDeta
       </dl>
       <h3>관련 기록</h3>
       {detail.related.length ? <EntityChips items={detail.related} /> : <p className="small muted">본문에 넣은 AUDENIQ 블록이 여기에 모여요.</p>}
-      <div className="adm-section-top"><h3>연결된 카드</h3>
-        <button type="button" className="adm-btn soft small" disabled={busy} onClick={onNewCard}><Glyph name="plus" size={12} />카드 만들기</button>
+      <div className="ui-section-head"><h3>연결된 카드</h3>
+        <button type="button" className="ui-btn is-soft is-sm" disabled={busy} onClick={onNewCard}><Glyph name="plus" size={12} />카드 만들기</button>
       </div>
       {detail.cards.length ? (
         <ul className="adm-doc-cards">
           {detail.cards.map(c => (
             <li key={c.id}>
               <Link to={c.board_id ? `/admin/board/${c.board_id}?card=${c.id}` : `/admin/tasks/${c.id}`}>
-                <span className="adm-w-key">{c.key}</span><b>{c.title}</b>
+                <span className="ui-tag is-mono">{c.key}</span><b>{c.title}</b>
                 <small>{PRIORITY_CODE[c.priority]} · {c.column_name ?? TASK_STATUS[c.status][0]}</small>
               </Link>
             </li>
@@ -189,10 +189,10 @@ export function VersionsPanel({ docId, current, people, canRestore, onRestore }:
 
   return (
     <section className="adm-doc-panel" aria-label="버전 기록">
-      <div className="adm-section-top"><h3>버전 기록</h3><button type="button" className="adm-link-btn" onClick={reload}>새로고침</button></div>
+      <div className="ui-section-head"><h3>버전 기록</h3><button type="button" className="ui-btn is-text is-muted" onClick={reload}>새로고침</button></div>
       <p className="small muted">편집 세션(다른 사람이 이어 쓰거나 10분 넘게 쉰 뒤), 상태 변경, 복원 때 저장돼요.</p>
-      {error && <div className="adm-alert is-error">{error}</div>}
-      {loading && !data ? <div className="adm-skel"><span /></div> : (
+      {error && <div className="ui-callout is-danger">{error}</div>}
+      {loading && !data ? <div className="ui-skel-rows"><span /></div> : (
         <ol className="adm-doc-versions">
           {(data?.items ?? []).map(v => (
             <li key={v.version} className={open?.version === v.version ? 'is-open' : ''}>
@@ -207,9 +207,9 @@ export function VersionsPanel({ docId, current, people, canRestore, onRestore }:
       )}
       {open && (
         <div className="adm-doc-version-view">
-          <div className="adm-section-top">
+          <div className="ui-section-head">
             <h4>v{open.version} · {open.title}</h4>
-            <label className="adm-check"><input type="checkbox" checked={compare} onChange={e => setCompare(e.target.checked)} />지금 내용과 비교</label>
+            <label className="adm-check ui-on-soft"><input type="checkbox" checked={compare} onChange={e => setCompare(e.target.checked)} />지금 내용과 비교</label>
           </div>
           {compare ? (
             <>
@@ -220,7 +220,7 @@ export function VersionsPanel({ docId, current, people, canRestore, onRestore }:
             </>
           ) : <pre className="adm-doc-diff">{open.content_text || plainText(open.content)}</pre>}
           {canRestore && !open.current && (
-            <button type="button" className="adm-btn soft small" onClick={async () => {
+            <button type="button" className="ui-btn is-soft is-sm" onClick={async () => {
               if (await confirm({ title: `v${open.version}으로 되돌릴까요?`, message: '지금 내용은 새 버전으로 남아서 언제든 다시 돌아올 수 있어요.', confirmLabel: '되돌리기' })) {
                 onRestore(open.version);
                 setOpen(null);

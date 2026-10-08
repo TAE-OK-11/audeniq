@@ -1,91 +1,23 @@
-// 관리자 화면 공통 조각 — 칩, 페이지 머리, 빈 상태, 로딩, 오류, 필터 레일.
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+// 관리자 화면 공통 조각 — 상태 배지, 오류 줄, 고르기 토글, 하위 탭과 스태프 컨텍스트.
+// 버튼·배지·칩·탭·카드·빈 상태 같은 모양은 모두 디자인 시스템(src/ui)을 그대로 쓴다.
+import { createContext, useContext } from 'react';
 import type { WorkSummary } from './work/types';
-import { Link, useLocation } from '../lib/router';
 import type { Duty, Overview, StaffMe } from './api';
-import type { Tone } from './labels';
-import { useSegPill } from '../hooks/useSegPill';
-import { CheckIcon } from '../components/Check';
+import { Badge, Callout, LinkTabs, Segmented, type Tone } from '../ui';
 
-export function Chip({ tone = 'gray', children }: { tone?: Tone; children: ReactNode }) {
-  return <span className={`adm-chip adm-t-${tone}`}>{children}</span>;
-}
+export { Badge, ChipGroup, CountUp, Cover, EmptyState, PageHeader, Section, SkeletonList } from '../ui';
 
-export function StatusChip({ value }: { value: [string, Tone] }) {
-  return <Chip tone={value[1]}>{value[0]}</Chip>;
-}
-
-export function PageHead({ eyebrow, title, sub, actions }: { eyebrow: string; title: ReactNode; sub?: ReactNode; actions?: ReactNode }) {
-  return (
-    <div className="adm-head">
-      <div>
-        <p className="eyebrow">{eyebrow}</p>
-        <h1>{title}</h1>
-        {sub && <p className="adm-sub">{sub}</p>}
-      </div>
-      {actions && <div className="adm-head-actions">{actions}</div>}
-    </div>
-  );
-}
-
-export function Empty({ icon = <CheckIcon size={22} />, title, children }: { icon?: ReactNode; title: string; children?: ReactNode }) {
-  return (
-    <div className="adm-empty">
-      <div className="adm-empty-icon" aria-hidden="true">{icon}</div>
-      <h3>{title}</h3>
-      {children && <p>{children}</p>}
-    </div>
-  );
-}
-
-export function Skeleton({ rows = 4 }: { rows?: number }) {
-  return (
-    <div className="adm-skel" role="status" aria-label="불러오는 중">
-      {Array.from({ length: rows }, (_, i) => <span key={i} />)}
-    </div>
-  );
+/** [이름, 색조] 짝으로 된 상태 값 → 배지 */
+export function StatusBadge({ value, dot }: { value: [string, Tone]; dot?: boolean }) {
+  return <Badge tone={value[1]} dot={dot}>{value[0]}</Badge>;
 }
 
 export function ErrorBox({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
-    <div className="adm-alert is-error adm-alert-row" role="alert">
-      <span>{message}</span>
-      {onRetry && <button type="button" className="adm-btn danger small" onClick={onRetry}>다시 시도</button>}
-    </div>
+    <Callout tone="danger" role="alert" action={onRetry ? <button type="button" className="ui-btn is-danger is-sm" onClick={onRetry}>다시 시도</button> : undefined}>
+      {message}
+    </Callout>
   );
-}
-
-export function Filters<T extends string>({ value, options, onChange, label }: {
-  value: T; options: { value: T; label: string; count?: number }[]; onChange: (v: T) => void; label: string;
-}) {
-  return (
-    <div className="adm-filters" role="group" aria-label={label}>
-      {options.map(o => (
-        <button key={o.value} type="button" className="adm-filter" aria-pressed={o.value === value} onClick={() => onChange(o.value)}>
-          {o.label}{o.count != null && o.count > 0 ? ` ${o.count}` : ''}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-export function Section({ title, meta, action, children }: { title: string; meta?: ReactNode; action?: ReactNode; children: ReactNode }) {
-  return (
-    <section className="adm-section">
-      <div className="adm-section-top">
-        <h2>{title}{meta != null && <small>{meta}</small>}</h2>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-/** 이니셜 아이콘 (커버 대신) */
-/** 앨범 커버(있으면 실제 이미지) 또는 첫 글자 */
-export function Initial({ text, plain, src }: { text: string; plain?: boolean; src?: string | null }) {
-  if (src) return <span className="adm-row-icon has-cover" aria-hidden="true"><img src={src} alt="" loading="lazy" decoding="async" /></span>;
-  return <span className={`adm-row-icon${plain ? ' plain' : ''}`} aria-hidden="true">{(text || '?').trim().slice(0, 1).toUpperCase()}</span>;
 }
 
 // ---------- 스태프 컨텍스트 ----------
@@ -106,7 +38,7 @@ export function useStaff(): StaffCtx {
 
 /** 권한이 없는 작업 버튼 옆에 붙이는 안내 */
 export function NoDuty({ duty }: { duty: string }) {
-  return <div className="adm-alert">현재 역할로는 <b>{duty}</b> 작업을 할 수 없어요. 조회만 가능해요.</div>;
+  return <div className="ui-callout">현재 역할로는 <b>{duty}</b> 작업을 할 수 없어요. 조회만 가능해요.</div>;
 }
 
 /** 배급 메뉴의 하위 화면 */
@@ -134,58 +66,17 @@ export function WorkTabs() {
 
 /** 한 메뉴 안의 하위 화면 (발매 심사 | 2차 승인, 배급 현황 | DSP 사양) — 밑줄이 고른 탭으로 미끄러진다 */
 export function SubTabs({ tabs }: { tabs: { to: string; label: string; count?: number }[] }) {
-  const loc = useLocation();
-  // 탭마다 화면이 새로 그려지므로 이전 탭 자리를 기억해 거기서 출발
-  const { ref, live, pillStyle } = useSegPill(loc.pathname, `sub:${tabs.map(t => t.to).join('|')}`);
-  return (
-    <div ref={ref} className={`adm-filters adm-subtabs${live ? ' is-live' : ''}`} role="tablist">
-      <span className="adm-seg-pill" aria-hidden="true" style={pillStyle} />
-      {tabs.map(t => (
-        <Link key={t.to} to={t.to} role="tab" className="adm-filter" aria-selected={loc.pathname === t.to || loc.pathname.startsWith(`${t.to}/`)} aria-pressed={loc.pathname === t.to || loc.pathname.startsWith(`${t.to}/`)}>
-          {t.label}{t.count ? <span className="adm-subtab-count">{t.count}</span> : null}
-        </Link>
-      ))}
-    </div>
-  );
+  return <LinkTabs tabs={tabs} />;
 }
 
-/** 고르기 토글 — 고른 칸으로 파란 알약이 미끄러진다 (담당 · 정렬) */
-export function Seg<T extends string>({ value, options, onChange, label }: {
+/** 고르기 토글 — [값, 이름] 짝 목록 (담당 · 정렬) */
+export function Seg<T extends string>({ value, options, onChange, label, size }: {
   value: T;
   options: readonly (readonly [T, string])[];
   onChange: (v: T) => void;
   label: string;
+  size?: 'sm' | 'md';
 }) {
-  const { ref, live, pillStyle } = useSegPill(value);
-  return (
-    <div ref={ref} className={`adm-seg${live ? ' is-live' : ''}`} role="radiogroup" aria-label={label}>
-      <span className="adm-seg-pill" aria-hidden="true" style={pillStyle} />
-      {options.map(([k, l]) => (
-        <button key={k} type="button" role="radio" aria-checked={value === k} className={value === k ? 'is-on' : ''} onClick={() => onChange(k)}>{l}</button>
-      ))}
-    </div>
-  );
+  return <Segmented value={value} options={options.map(([k, l]) => ({ value: k, label: l }))} onChange={onChange} label={label} size={size} />;
 }
 
-/** 숫자가 바뀔 때 0(또는 이전 값)에서 부드럽게 세어 올라간다 — 움직임 줄이기 설정이면 바로 표시 */
-export function CountUp({ value, ms = 700 }: { value: number; ms?: number }) {
-  const [shown, setShown] = useState(value);
-  const from = useRef(0);
-  useEffect(() => {
-    const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    const start = from.current;
-    from.current = value;
-    if (reduce || start === value) { setShown(value); return; }
-    let raf = 0;
-    const t0 = performance.now();
-    const tick = (t: number) => {
-      const k = Math.min(1, (t - t0) / ms);
-      const ease = 1 - Math.pow(1 - k, 3);
-      setShown(Math.round(start + (value - start) * ease));
-      if (k < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [value, ms]);
-  return <>{shown}</>;
-}

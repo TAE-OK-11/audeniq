@@ -64,7 +64,7 @@ export function Notifications() {
 
   return (
     <div id="view-notifications" className="view">
-      <div className="view-title">
+      <div className="ui-page-head">
         <div>
           <p className="eyebrow">NOTIFICATIONS</p>
           <h1>알림</h1>
@@ -74,20 +74,20 @@ export function Notifications() {
 
       <BrowserAlerts />
 
-      <div className="studio-alert-tools" id="notificationTools">
+      <div className="ui-chips is-wrap" id="notificationTools">
         <button
           type="button"
-          className={`studio-alert-filter${filter === 'all' ? ' active' : ''}`}
+          className={`ui-chip${filter === 'all' ? ' is-on' : ''}`}
           aria-pressed={filter === 'all'}
           onClick={() => setFilter('all')}
         >전체 알림</button>
         <button
           type="button"
-          className={`studio-alert-filter${filter === 'unread' ? ' active' : ''}`}
+          className={`ui-chip${filter === 'unread' ? ' is-on' : ''}`}
           aria-pressed={filter === 'unread'}
           onClick={() => setFilter('unread')}
         >읽지 않음 <span id="unreadCount">{unread}</span></button>
-        <button type="button" className="link-btn" id="readAllNotices" onClick={readAll} disabled={!unread}>모두 읽음</button>
+        <button type="button" className="ui-btn is-white is-sm" id="readAllNotices" onClick={readAll} disabled={!unread}>모두 읽음</button>
       </div>
 
       {shown.length ? (
@@ -95,7 +95,7 @@ export function Notifications() {
           {shown.map(n => (
             <button
               key={n.id} type="button"
-              className={`aq-notice-card${n.read ? ' is-read' : ''}`}
+              className={`ui-row aq-notice-card${n.read ? ' is-read' : ''}`}
               onClick={() => openNoticeDetail(n)}
             >
               <span className="aq-notice-symbol" aria-hidden="true">{noticeSymbol(n.kind)}</span>
@@ -109,7 +109,7 @@ export function Notifications() {
           ))}
         </div>
       ) : (
-        <div className="empty-page">
+        <div className="ui-empty">
           <h2>{filter === 'unread' ? '읽지 않은 알림이 없어요.' : '새 알림이 없어요.'}</h2>
           <p>발매·정산·서류 변경 사항을 여기에서 확인할 수 있어요.</p>
         </div>
@@ -123,7 +123,7 @@ export function Notifications() {
             {openNotice.link ? (
               <div className="aq-sticky-foot">
                 <button
-                  type="button" className="button studio-submit-wide"
+                  type="button" className="ui-btn is-primary studio-submit-wide"
                   onClick={() => { const to = openNotice.link!; setOpenNotice(null); nav(to); }}
                 >관련 화면으로 이동 <Glyph name="arrow-up-right" size={13} /></button>
               </div>

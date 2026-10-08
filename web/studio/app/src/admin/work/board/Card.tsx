@@ -53,7 +53,7 @@ export const BoardCard = memo(function BoardCard({ card, people, canWrite, colum
       onDragEnd={canWrite ? h.dragEnd : undefined}
     >
       <span className="adm-kb-card-top">
-        <span className="adm-w-key">{card.key}</span>
+        <span className="ui-tag is-mono">{card.key}</span>
         <PriorityBadge value={card.priority} />
         {auto && <span className="adm-kb-source"><Glyph name="bell" size={11} />{auto}</span>}
         {late && <span className="adm-kb-late"><Glyph name="clock" size={11} />기한 지남</span>}
@@ -88,7 +88,7 @@ export const BoardCard = memo(function BoardCard({ card, people, canWrite, colum
         <label className="adm-kb-move">
           <span className="sr-only">{card.key} 다른 열로 옮기기</span>
           <Glyph name="arrow-right" size={12} />
-          <select className="adm-select" value={card.column_id ?? ''} onChange={e => h.moveTo(card.id, e.target.value)}>
+          <select className="ui-select is-auto" value={card.column_id ?? ''} onChange={e => h.moveTo(card.id, e.target.value)}>
             {columns.map(c => <option key={c.id} value={c.id}>{c.id === card.column_id ? `${c.name} (지금)` : `${c.name}(으)로 옮기기`}</option>)}
           </select>
         </label>

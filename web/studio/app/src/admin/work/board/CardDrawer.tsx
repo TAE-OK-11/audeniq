@@ -8,7 +8,7 @@ import { useToast } from '../../../components/Toast';
 import { useConfirm } from '../../../components/Confirm';
 import { errorMessage } from '../../../api/errors';
 import { Glyph } from '../../../components/Glyph';
-import { ErrorBox, Skeleton, useStaff } from '../../ui';
+import { ErrorBox, SkeletonList, useStaff } from '../../ui';
 import { ago, when } from '../../labels';
 import { workApi } from '../api';
 import { ENTITY_KIND, EVENT_LABEL, LINK_KINDS, PRIORITIES, PRIORITY, PRIORITY_CODE, PRIORITY_NAME, TASK_STATUS, WORK_TYPE, WORK_TYPES } from '../labels';
@@ -183,62 +183,62 @@ export function CardDrawer({ cardId, boardWritable, onClose, onChanged, onArchiv
       <div className="adm-kb-drawer-backdrop" onMouseDown={() => onClose()} aria-hidden="true" />
       <aside ref={panel} className="adm-kb-drawer" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
         <div className="adm-kb-drawer-top">
-          <h2 id={titleId}>{t ? <><span className="adm-w-key is-big">{t.key}</span><span className="sr-only"> {t.title}</span></> : '카드'}</h2>
+          <h2 id={titleId}>{t ? <><span className="ui-tag is-mono">{t.key}</span><span className="sr-only"> {t.title}</span></> : '카드'}</h2>
           <span className="adm-w-btns">
-            {t && <Link to={`/admin/tasks/${t.id}`} className="adm-btn soft small">전체 화면<Glyph name="arrow-up-right" size={13} /></Link>}
+            {t && <Link to={`/admin/tasks/${t.id}`} className="ui-btn is-soft is-sm">전체 화면<Glyph name="arrow-up-right" size={13} /></Link>}
             <button type="button" className="adm-kb-icon-btn" aria-label="닫기" onClick={onClose}><Glyph name="close" size={18} /></button>
           </span>
         </div>
         <div className="adm-kb-drawer-body">
-          {error ? <ErrorBox message={error} onRetry={() => void load()} /> : !t || !draft ? <Skeleton rows={5} /> : (
+          {error ? <ErrorBox message={error} onRetry={() => void load()} /> : !t || !draft ? <SkeletonList rows={5} /> : (
             <>
-              {archived && <div className="adm-alert">보관한 카드예요 ({when(t.archived_at)}). 내용과 기록은 그대로 남아 있어요.</div>}
-              {!editable && !archived && <div className="adm-alert">이 카드는 보기만 할 수 있어요. 바꾸려면 보드 쓰기 권한이 있거나 카드 담당·검토자여야 해요.</div>}
-              {t.changes_requested && <div className="adm-alert adm-w-alert-warn">검토자가 보완을 요청했어요. 아래 이력에서 내용을 확인해 주세요.</div>}
+              {archived && <div className="ui-callout">보관한 카드예요 ({when(t.archived_at)}). 내용과 기록은 그대로 남아 있어요.</div>}
+              {!editable && !archived && <div className="ui-callout">이 카드는 보기만 할 수 있어요. 바꾸려면 보드 쓰기 권한이 있거나 카드 담당·검토자여야 해요.</div>}
+              {t.changes_requested && <div className="ui-callout is-warn">검토자가 보완을 요청했어요. 아래 이력에서 내용을 확인해 주세요.</div>}
               <form className="adm-kb-form" onSubmit={save}>
-                <div className="adm-field">
+                <div className="ui-field">
                   <label htmlFor="kbdTitle">제목</label>
-                  <input id="kbdTitle" ref={titleInput} className="adm-input" maxLength={200} value={draft.title} disabled={!editable} onChange={e => set('title', e.target.value)} />
+                  <input id="kbdTitle" ref={titleInput} className="ui-input" maxLength={200} value={draft.title} disabled={!editable} onChange={e => set('title', e.target.value)} />
                 </div>
-                <div className="adm-field">
+                <div className="ui-field">
                   <label htmlFor="kbdDesc">내용</label>
-                  <textarea id="kbdDesc" className="adm-textarea" rows={4} maxLength={10000} value={draft.description} disabled={!editable} placeholder="무엇을 하면 끝나는지 적어 주세요." onChange={e => set('description', e.target.value)} />
+                  <textarea id="kbdDesc" className="ui-textarea" rows={4} maxLength={10000} value={draft.description} disabled={!editable} placeholder="무엇을 하면 끝나는지 적어 주세요." onChange={e => set('description', e.target.value)} />
                 </div>
                 <div className="adm-w-grid2">
-                  <div className="adm-field">
+                  <div className="ui-field">
                     <label htmlFor="kbdPriority">우선순위</label>
-                    <select id="kbdPriority" className="adm-select adm-w-select" value={draft.priority} disabled={!editable} onChange={e => set('priority', e.target.value as Priority)}>
+                    <select id="kbdPriority" className="ui-select" value={draft.priority} disabled={!editable} onChange={e => set('priority', e.target.value as Priority)}>
                       {PRIORITIES.map(p => <option key={p} value={p}>{PRIORITY_CODE[p]} · {PRIORITY_NAME[p]} ({PRIORITY[p][0]})</option>)}
                     </select>
                   </div>
-                  <div className="adm-field">
+                  <div className="ui-field">
                     <label htmlFor="kbdType">유형</label>
-                    <select id="kbdType" className="adm-select adm-w-select" value={draft.type} disabled={!editable} onChange={e => set('type', e.target.value as WorkType)}>
+                    <select id="kbdType" className="ui-select" value={draft.type} disabled={!editable} onChange={e => set('type', e.target.value as WorkType)}>
                       {WORK_TYPES.map(w => <option key={w} value={w}>{WORK_TYPE[w]}</option>)}
                     </select>
                   </div>
-                  <div className="adm-field">
+                  <div className="ui-field">
                     <label htmlFor="kbdAssignee">담당자</label>
                     {editable ? <PersonSelect id="kbdAssignee" value={draft.assignee_id} onChange={v => set('assignee_id', v)} people={people} empty="담당자 없음" /> : <Person id={t.assignee_id} people={people} />}
                   </div>
-                  <div className="adm-field">
+                  <div className="ui-field">
                     <label htmlFor="kbdReviewer">검토자</label>
                     {editable ? <PersonSelect id="kbdReviewer" value={draft.reviewer_id} onChange={v => set('reviewer_id', v)} people={people} empty="검토 없음" /> : <Person id={t.reviewer_id} people={people} empty="검토 없음" />}
                   </div>
-                  <div className="adm-field">
+                  <div className="ui-field">
                     <label htmlFor="kbdDue">마감일</label>
-                    <input id="kbdDue" type="datetime-local" className="adm-input" value={draft.due} disabled={!editable} onChange={e => set('due', e.target.value)} />
+                    <input id="kbdDue" type="datetime-local" className="ui-input" value={draft.due} disabled={!editable} onChange={e => set('due', e.target.value)} />
                   </div>
-                  <div className="adm-field">
+                  <div className="ui-field">
                     <label htmlFor="kbdTags">태그</label>
-                    <input id="kbdTags" className="adm-input" maxLength={300} value={draft.tags} disabled={!editable} placeholder="쉼표로 나눠요 (8개까지)" onChange={e => set('tags', e.target.value)} />
+                    <input id="kbdTags" className="ui-input" maxLength={300} value={draft.tags} disabled={!editable} placeholder="쉼표로 나눠요 (8개까지)" onChange={e => set('tags', e.target.value)} />
                   </div>
                 </div>
                 {editable && (
                   <div className="adm-kb-form-actions">
                     {dirty && <small className="muted">저장하지 않은 변경이 있어요.</small>}
-                    <button type="button" className="adm-btn soft small" disabled={!dirty || busy} onClick={() => setDraft(draftOf(t))}>되돌리기</button>
-                    <button type="submit" className="adm-btn primary small" disabled={!dirty || busy}>{busy ? '저장 중…' : '저장'}</button>
+                    <button type="button" className="ui-btn is-soft is-sm" disabled={!dirty || busy} onClick={() => setDraft(draftOf(t))}>되돌리기</button>
+                    <button type="submit" className="ui-btn is-primary is-sm" disabled={!dirty || busy}>{busy ? '저장 중…' : '저장'}</button>
                   </div>
                 )}
               </form>
@@ -254,12 +254,12 @@ export function CardDrawer({ cardId, boardWritable, onClose, onChanged, onArchiv
               </dl>
 
               <section className="adm-kb-drawer-sec" aria-labelledby="kbdLinks">
-                <div className="adm-section-top">
+                <div className="ui-section-head">
                   <h3 id="kbdLinks">연결<small>발매·아티스트·계약·문서 등</small></h3>
                   {editable && (
                     <span className="adm-w-btns">
-                      <button type="button" className="adm-btn soft small" disabled={busy} onClick={newDoc}><Glyph name="doc" size={13} />새 문서 만들기</button>
-                      {!linking && <button type="button" className="adm-btn soft small" onClick={() => setLinking(true)}><Glyph name="plus" size={13} />연결</button>}
+                      <button type="button" className="ui-btn is-soft is-sm" disabled={busy} onClick={newDoc}><Glyph name="doc" size={13} />새 문서 만들기</button>
+                      {!linking && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setLinking(true)}><Glyph name="plus" size={13} />연결</button>}
                     </span>
                   )}
                 </div>
@@ -268,7 +268,7 @@ export function CardDrawer({ cardId, boardWritable, onClose, onChanged, onArchiv
                 {linking && (
                   <div className="adm-kb-picker">
                     <EntityPicker kinds={LINK_KINDS} exclude={t.links.map(l => `${l.kind}:${l.id}`)} onPick={r => void run(() => workApi.linkTask(t.id, { entity_kind: r.kind, entity_id: r.id }), '연결했어요.')} />
-                    <div className="adm-form-actions"><button type="button" className="adm-btn soft small" onClick={() => setLinking(false)}>닫기</button></div>
+                    <div className="adm-form-actions"><button type="button" className="ui-btn is-soft is-sm" onClick={() => setLinking(false)}>닫기</button></div>
                   </div>
                 )}
               </section>
@@ -278,7 +278,7 @@ export function CardDrawer({ cardId, boardWritable, onClose, onChanged, onArchiv
               </section>
 
               <section className="adm-kb-drawer-sec" aria-labelledby="kbdHistory">
-                <div className="adm-section-top"><h3 id="kbdHistory">활동<small>{detail.events.length}건</small></h3></div>
+                <div className="ui-section-head"><h3 id="kbdHistory">활동<small>{detail.events.length}건</small></h3></div>
                 {detail.events.length === 0 ? <p className="small muted">기록이 없어요.</p> : (
                   <ol className="adm-kb-events">
                     {detail.events.slice(0, 40).map((e, i) => {
@@ -296,7 +296,7 @@ export function CardDrawer({ cardId, boardWritable, onClose, onChanged, onArchiv
 
               {editable && (
                 <div className="adm-kb-drawer-foot">
-                  <button type="button" className="adm-btn danger small" disabled={busy} onClick={() => void archive()}>카드 보관</button>
+                  <button type="button" className="ui-btn is-danger is-sm" disabled={busy} onClick={() => void archive()}>카드 보관</button>
                 </div>
               )}
             </>

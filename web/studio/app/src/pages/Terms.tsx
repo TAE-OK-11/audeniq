@@ -23,7 +23,7 @@ export function Terms() {
             <option value="" disabled>장 바로가기</option>
             {chapters.map(c => c.kind === 'chapter' && <option key={c.id} value={c.id}>{c.text}</option>)}
           </select>
-          <button type="button" className="button secondary" onClick={() => window.print()}>인쇄·저장</button>
+          <button type="button" className="ui-btn is-soft" onClick={() => window.print()}>인쇄·저장</button>
         </nav>
         {blocks.map((b, i) => {
           switch (b.kind) {
@@ -35,7 +35,7 @@ export function Terms() {
         })}
       </article>
       <div className="aq-terms-back">
-        <button type="button" className="link-btn" onClick={() => (window.history.length > 1 ? window.history.back() : nav('/'))}>돌아가기</button>
+        <button type="button" className="ui-btn is-white is-sm" onClick={() => (window.history.length > 1 ? window.history.back() : nav('/'))}>돌아가기</button>
       </div>
     </div>
   );

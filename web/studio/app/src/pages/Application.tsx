@@ -62,19 +62,19 @@ export function Application() {
   }
   if (error || !rel) {
     return (
-      <div className="empty-page">
+      <div className="ui-empty">
         <h2>신청서를 불러오지 못했어요.</h2>
         <p>{error || '발매를 찾을 수 없어요.'}</p>
-        <button type="button" className="button secondary" onClick={reload}>다시 시도</button>
+        <button type="button" className="ui-btn is-soft" onClick={reload}>다시 시도</button>
       </div>
     );
   }
   if (rel.status === 'draft' && !issued) {
     return (
-      <div className="empty-page">
+      <div className="ui-empty">
         <h2>아직 접수 전인 발매예요.</h2>
         <p>신청서 마지막 단계에서 서명하고 접수하면 배급 신청서가 발급돼요.</p>
-        <button type="button" className="button" onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}>계속 작성</button>
+        <button type="button" className="ui-btn is-primary" onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}>계속 작성</button>
       </div>
     );
   }
@@ -101,10 +101,10 @@ export function Application() {
       )}
 
       <div className="aq-doc-toolbar">
-        <button type="button" className="link-btn aq-back-link" onClick={() => nav(`/releases/${rel.id}`)}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />발매 상세</button>
+        <button type="button" className="ui-btn is-white is-sm aq-back-link" onClick={() => nav(`/releases/${rel.id}`)}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />발매 상세</button>
         <div className="row-actions">
-          <button type="button" className="button secondary" onClick={() => nav('/')}>홈으로</button>
-          <button type="button" className="button" onClick={() => window.print()}>인쇄 · PDF 저장</button>
+          <button type="button" className="ui-btn is-soft" onClick={() => nav('/')}>홈으로</button>
+          <button type="button" className="ui-btn is-primary" onClick={() => window.print()}>인쇄 · PDF 저장</button>
         </div>
       </div>
 

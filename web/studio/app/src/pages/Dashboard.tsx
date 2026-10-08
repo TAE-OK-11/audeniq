@@ -1,13 +1,13 @@
 import { Link, useNavigate } from '../lib/router';
 import { fixPath, resolveCorrection, splitCorrections } from '../lib/corrections';
 import { api } from '../api/client';
-import { STATUS_LABEL, money, num } from '../lib/format';
+import { STATUS_LABEL, money, num, statusTone } from '../lib/format';
 import { useUnreadCount } from '../store/support';
 import { useProfile } from '../store/profile';
 import { useDocs } from '../store/docs';
 import { useAsync } from '../hooks/useAsync';
 import { SkeletonRows } from '../components/Skeleton';
-import { CountUp } from '../components/CountUp';
+import { Badge, CountUp } from '../ui';
 import { Money } from '../components/Money';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { latestSummary, periodLabel } from '../data/reports';
@@ -114,7 +114,7 @@ export function Dashboard() {
 
   return (
     <div id="view-home" className="view">
-      <div className="view-title aq-home-title">
+      <div className="ui-page-head aq-home-title">
         <div>
           <p className="aq-home-date">{todayLabel()}</p>
           <h1>{profileName ? <>{profileName}<span className="aq-home-suffix">님의 작업실</span></> : '내 작업실'}</h1>
@@ -128,7 +128,7 @@ export function Dashboard() {
           <h2>새로운 발매를 <span className="aq-accent">시작해 보세요.</span></h2>
           <p>음원과 커버아트, 크레딧을 등록하고 발매를 준비해요.</p>
         </div>
-        <span className="button aq-hero-cta">
+        <span className="ui-btn is-primary aq-hero-cta">
           발매 등록하기
           <span className="aq-cta-arrow" aria-hidden="true">
             <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10M9 4l4 4-4 4" /></svg>
@@ -140,7 +140,7 @@ export function Dashboard() {
         {GRID_ITEMS.map((item, i) => (
           <Link key={item.to} className="service-item" to={item.to} onPointerEnter={() => prefetchRoute(item.to)} onFocus={() => prefetchRoute(item.to)}>
             <span className="aq-service-top">
-              <span className="icon-chip">{item.icon}</span>
+              <span className="ui-icon">{item.icon}</span>
               <span className="aq-service-no" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span>
             </span>
             <div>
@@ -152,10 +152,10 @@ export function Dashboard() {
       </div>
 
       <div className="dashboard-columns">
-        <section className="surface" aria-labelledby="upcomingTitle">
-          <div className="section-top">
+        <section className="ui-card" aria-labelledby="upcomingTitle">
+          <div className="ui-section-head">
             <h2 id="upcomingTitle">내 발매</h2>
-            <button type="button" className="link-btn" onClick={() => navigate('/releases')}>전체 보기 <Glyph name="arrow-up-right" size={13} /></button>
+            <button type="button" className="ui-btn is-white is-sm" onClick={() => navigate('/releases')}>전체 보기 <Glyph name="arrow-up-right" size={13} /></button>
           </div>
           <div id="homeReleases" aria-live="polite">
             {loading ? (
@@ -163,19 +163,19 @@ export function Dashboard() {
             ) : error ? (
               <div className="empty-note">
                 {error}<br />
-                <button className="link-btn" type="button" onClick={reload}>다시 불러오기</button>
+                <button className="ui-btn is-white is-sm" type="button" onClick={reload}>다시 불러오기</button>
               </div>
             ) : releases.length ? (
-              <div className="aq-stagger">
+              <div className="ui-list is-inset aq-stagger">
                 {releases.slice(0, 4).map(r => (
-                  <Link key={r.id} to={`/releases/${r.id}`} className="release-row studio-album-row aq-row-link">
+                  <Link key={r.id} to={`/releases/${r.id}`} className="release-row ui-row studio-album-row aq-row-link">
                     <ReleaseCover id={r.id} src={r.coverData} />
                     <div className="min-0">
-                      <span className="row-name">{r.title || '제목 없는 발매'}</span>
-                      <span className="row-sub">{r.artist || '아티스트 미입력'} · {r.track_count}곡 · {r.release_date || '발매일 미정'}</span>
+                      <span className="ui-row-title">{r.title || '제목 없는 발매'}</span>
+                      <span className="ui-row-meta">{r.artist || '아티스트 미입력'} · {r.track_count}곡 · {r.release_date || '발매일 미정'}</span>
                     </div>
-                    <div className="row-end">
-                      <span className={`status-chip ${r.status || 'draft'}`}>{STATUS_LABEL[r.status] || r.status}</span>
+                    <div className="ui-row-end">
+                      <Badge tone={statusTone(r.status)}>{STATUS_LABEL[r.status] || r.status}</Badge>
                     </div>
                   </Link>
                 ))}
@@ -183,15 +183,15 @@ export function Dashboard() {
             ) : (
               <div className="empty-note">
                 아직 등록한 발매가 없어요.<br />새 발매를 만들면 여기에서 확인할 수 있어요.<br />
-                <button className="link-btn" type="button" onClick={() => navigate('/upload')}>발매 등록하기 <Glyph name="arrow-up-right" size={13} /></button>
+                <button className="ui-btn is-white is-sm" type="button" onClick={() => navigate('/upload')}>발매 등록하기 <Glyph name="arrow-up-right" size={13} /></button>
               </div>
             )}
           </div>
         </section>
-        <section className="surface" aria-labelledby="workTitle">
-          <div className="section-top">
+        <section className="ui-card" aria-labelledby="workTitle">
+          <div className="ui-section-head">
             <h2 id="workTitle">확인할 작업</h2>
-            {tasks.length > 0 && <span className="aq-count-pill">{tasks.length}</span>}
+            {tasks.length > 0 && <span className="ui-count is-soft">{tasks.length}</span>}
           </div>
           <div id="homeTasks">
             {loading ? (
@@ -201,7 +201,7 @@ export function Dashboard() {
                 {tasks.map(t => (
                   <li key={t.name}>
                     <button type="button" className={`aq-task is-${t.tone}`} onClick={() => navigate(t.to)}>
-                      <span className="aq-task-icon" aria-hidden="true">{TASK_ICONS[t.icon]}</span>
+                      <span className="ui-icon" aria-hidden="true">{TASK_ICONS[t.icon]}</span>
                       <span className="aq-task-text">
                         <strong>{t.name}</strong>
                         <small>{t.sub}</small>
@@ -221,11 +221,11 @@ export function Dashboard() {
         </section>
       </div>
 
-      <div className="section-top">
+      <div className="ui-section-head">
         <h2>{periodLabel(report.period)} 음악 리포트</h2>
-        <button className="link-btn" type="button" onClick={() => navigate('/reports')}>리포트 보기 <Glyph name="arrow-up-right" size={13} /></button>
+        <button className="ui-btn is-white is-sm" type="button" onClick={() => navigate('/reports')}>리포트 보기 <Glyph name="arrow-up-right" size={13} /></button>
       </div>
-      <section className="surface aq-report-card" aria-label="이번 달 리포트 요약">
+      <section className="ui-card aq-report-card" aria-label="이번 달 리포트 요약">
         <div className="aq-report-total">
           <small>이번 달 수익</small>
           <strong><Money value={report.revenue} animate /></strong>

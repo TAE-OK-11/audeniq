@@ -48,25 +48,25 @@ export function ShareDialog({ docId, people, onClose, onSaved }: { docId: string
 
   return (
     <Modal title="공유" onClose={onClose}>
-      {error ? <div className="adm-alert is-error">{error}</div> : loading || !data ? <div className="adm-skel"><span /></div> : (
+      {error ? <div className="ui-callout is-danger">{error}</div> : loading || !data ? <div className="ui-skel-rows"><span /></div> : (
         <form className="adm-form" onSubmit={e => { e.preventDefault(); void save(); }}>
-          <fieldset className="adm-field">
+          <fieldset className="ui-field">
             <legend>모든 직원</legend>
             {([['EDITOR', '편집할 수 있어요'], ['VIEWER', '볼 수만 있어요'], ['NONE', '제한됨 — 아래 사람·역할과 관리자만']] as const).map(([v, l]) => (
               <label key={v} className="adm-radio"><input type="radio" name="access" checked={access === v} onChange={() => setAccess(v)} />{l}</label>
             ))}
           </fieldset>
-          <div className="adm-field">
+          <div className="ui-field">
             <span>사람·역할에게 권한 주기</span>
             <div className="adm-doc-grant-add">
               <PersonSelect id="grant-user" value={who} onChange={v => { setWho(v); if (v) setRole(''); }} people={people} empty="사람 고르기" label="사람" />
-              <select className="adm-select" aria-label="역할" value={role} onChange={e => { setRole(e.target.value as StaffRoleName | ''); if (e.target.value) setWho(null); }}>
+              <select className="ui-select is-auto" aria-label="역할" value={role} onChange={e => { setRole(e.target.value as StaffRoleName | ''); if (e.target.value) setWho(null); }}>
                 <option value="">또는 역할</option>{ROLES.map(r => <option key={r} value={r}>{ROLE_NAME[r]}</option>)}
               </select>
-              <select className="adm-select" aria-label="권한" value={level} onChange={e => setLevel(e.target.value as DocGrant['level'])}>
+              <select className="ui-select is-auto" aria-label="권한" value={level} onChange={e => setLevel(e.target.value as DocGrant['level'])}>
                 {LEVELS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
-              <button type="button" className="adm-btn soft small" disabled={!who && !role} onClick={add}>추가</button>
+              <button type="button" className="ui-btn is-soft is-sm" disabled={!who && !role} onClick={add}>추가</button>
             </div>
           </div>
           {grants.length > 0 && (
@@ -74,20 +74,20 @@ export function ShareDialog({ docId, people, onClose, onSaved }: { docId: string
               {grants.map(g => (
                 <li key={`${g.principal_kind}:${g.principal_id}`}>
                   <span>{name(g)}</span>
-                  <select className="adm-select" aria-label={`${name(g)} 권한`} value={g.level}
+                  <select className="ui-select is-auto" aria-label={`${name(g)} 권한`} value={g.level}
                     onChange={e => setGrants(gs => gs.map(x => (x === g ? { ...x, level: e.target.value as DocGrant['level'] } : x)))}>
                     {LEVELS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                   </select>
-                  <button type="button" className="adm-link-btn" onClick={() => setGrants(gs => gs.filter(x => x !== g))} aria-label={`${name(g)} 빼기`}>빼기</button>
+                  <button type="button" className="ui-btn is-text is-muted" onClick={() => setGrants(gs => gs.filter(x => x !== g))} aria-label={`${name(g)} 빼기`}>빼기</button>
                 </li>
               ))}
             </ul>
           )}
-          <label className="adm-check"><input type="checkbox" checked={children} onChange={e => setChildren(e.target.checked)} />하위 문서에도 같게</label>
+          <label className="adm-check ui-on-soft"><input type="checkbox" checked={children} onChange={e => setChildren(e.target.checked)} />하위 문서에도 같게</label>
           <p className="small muted">만든 사람과 관리자는 항상 볼 수 있어요. 볼 수 없는 직원에게는 문서가 목록·검색·링크 어디에도 나타나지 않아요.</p>
           <div className="adm-form-actions">
-            <button type="button" className="adm-btn soft" onClick={onClose}>취소</button>
-            <button type="submit" className="adm-btn primary" disabled={busy}>{busy ? '저장 중…' : '저장'}</button>
+            <button type="button" className="ui-btn is-soft" onClick={onClose}>취소</button>
+            <button type="submit" className="ui-btn is-primary" disabled={busy}>{busy ? '저장 중…' : '저장'}</button>
           </div>
         </form>
       )}
@@ -99,7 +99,7 @@ export function MoveDialog({ docId, onClose, onMove }: { docId: string; onClose:
   return (
     <Modal title="문서 옮기기" onClose={onClose}>
       <p className="small muted">새 상위 문서를 고르세요. 문서는 5단계까지 둘 수 있어요.</p>
-      <button type="button" className="adm-btn soft" onClick={() => onMove(null)}>맨 위로 옮기기</button>
+      <button type="button" className="ui-btn is-soft" onClick={() => onMove(null)}>맨 위로 옮기기</button>
       <EntityPicker kinds={['doc']} exclude={[`doc:${docId}`]} onPick={(r: EntityRef) => onMove(r.id)} />
     </Modal>
   );
@@ -110,14 +110,14 @@ export function NewDocDialog({ parentId, onClose, onCreate }: { parentId: string
   const [title, setTitle] = useState('');
   return (
     <Modal title={parentId ? '하위 문서 만들기' : '새 문서'} onClose={onClose}>
-      <label className="adm-field"><span>제목</span>
-        <input className="adm-input" autoFocus maxLength={200} value={title} onChange={e => setTitle(e.target.value)} placeholder="비워 두면 템플릿 이름" />
+      <label className="ui-field"><span>제목</span>
+        <input className="ui-input" autoFocus maxLength={200} value={title} onChange={e => setTitle(e.target.value)} placeholder="비워 두면 템플릿 이름" />
       </label>
       <div className="adm-doc-templates" role="list" aria-label="시작할 모양">
         <button type="button" role="listitem" className="adm-doc-template" onClick={() => onCreate(null, title)}>
           <span aria-hidden="true">📄</span><b>빈 문서</b><small>처음부터 쓰기</small>
         </button>
-        {error ? <div className="adm-alert is-error">{error}</div> : loading && !data ? <div className="adm-skel"><span /></div> : (data?.items ?? []).map(t => (
+        {error ? <div className="ui-callout is-danger">{error}</div> : loading && !data ? <div className="ui-skel-rows"><span /></div> : (data?.items ?? []).map(t => (
           <button key={t.id} type="button" role="listitem" className="adm-doc-template" onClick={() => onCreate(t, title)}>
             <span aria-hidden="true">{t.icon || '📋'}</span><b>{t.name}</b><small>{t.description}</small>
           </button>
@@ -132,10 +132,10 @@ export function ReasonDialog({ title, label, onClose, onSubmit }: { title: strin
   return (
     <Modal title={title} onClose={onClose}>
       <form className="adm-form" onSubmit={e => { e.preventDefault(); if (v.trim()) onSubmit(v.trim()); }}>
-        <label className="adm-field"><span>{label}</span><textarea className="adm-textarea" autoFocus rows={3} maxLength={1000} value={v} onChange={e => setV(e.target.value)} /></label>
+        <label className="ui-field"><span>{label}</span><textarea className="ui-textarea" autoFocus rows={3} maxLength={1000} value={v} onChange={e => setV(e.target.value)} /></label>
         <div className="adm-form-actions">
-          <button type="button" className="adm-btn soft" onClick={onClose}>취소</button>
-          <button type="submit" className="adm-btn primary" disabled={!v.trim()}>보내기</button>
+          <button type="button" className="ui-btn is-soft" onClick={onClose}>취소</button>
+          <button type="submit" className="ui-btn is-primary" disabled={!v.trim()}>보내기</button>
         </div>
       </form>
     </Modal>
@@ -157,12 +157,12 @@ export function TemplateDialog({ docId, defaultName, onClose }: { docId: string;
         try { await workApi.saveDocTemplate({ from_doc: docId, name: name.trim(), description: description.trim() }); toast('템플릿을 만들었어요.', 'success'); onClose(); }
         catch (err) { toast(errorMessage(err, '템플릿을 만들지 못했어요.'), 'error'); } finally { setBusy(false); }
       }}>
-        <label className="adm-field"><span>이름</span><input className="adm-input" autoFocus maxLength={100} value={name} onChange={e => setName(e.target.value)} /></label>
-        <label className="adm-field"><span>설명</span><input className="adm-input" maxLength={300} value={description} onChange={e => setDescription(e.target.value)} /></label>
+        <label className="ui-field"><span>이름</span><input className="ui-input" autoFocus maxLength={100} value={name} onChange={e => setName(e.target.value)} /></label>
+        <label className="ui-field"><span>설명</span><input className="ui-input" maxLength={300} value={description} onChange={e => setDescription(e.target.value)} /></label>
         <p className="small muted">파일·이미지가 들어간 문서는 템플릿이 될 수 없어요.</p>
         <div className="adm-form-actions">
-          <button type="button" className="adm-btn soft" onClick={onClose}>취소</button>
-          <button type="submit" className="adm-btn primary" disabled={busy || !name.trim()}>저장</button>
+          <button type="button" className="ui-btn is-soft" onClick={onClose}>취소</button>
+          <button type="submit" className="ui-btn is-primary" disabled={busy || !name.trim()}>저장</button>
         </div>
       </form>
     </Modal>

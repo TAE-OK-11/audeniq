@@ -133,8 +133,8 @@ export function DocTree({ currentId, reloadKey, ancestors, onOpen, onAddChild, a
 
   const root = kids[ROOT];
   const focusId = focus && rows.some(r => r.d.id === focus) ? focus : rows[0]?.d.id ?? null;
-  if (root === undefined || root === 'loading') return <div className="adm-skel" aria-label="문서 목록 불러오는 중"><span /><span /><span /></div>;
-  if (!Array.isArray(root)) return <div className="adm-alert is-error">{root.error} <button type="button" className="adm-link-btn" onClick={() => void load(null)}>다시 시도</button></div>;
+  if (root === undefined || root === 'loading') return <div className="ui-skel-rows" aria-label="문서 목록 불러오는 중"><span /><span /><span /></div>;
+  if (!Array.isArray(root)) return <div className="ui-callout is-danger">{root.error} <button type="button" className="ui-btn is-text is-muted" onClick={() => void load(null)}>다시 시도</button></div>;
   if (root.length === 0) return <p className="adm-doc-tree-empty">{archived ? '보관한 문서가 없어요.' : '아직 문서가 없어요.'}</p>;
   return (
     <div ref={box} role="tree" aria-label={archived ? '보관한 문서' : '문서'} className="adm-doc-tree" onKeyDown={onKey}>
@@ -166,8 +166,8 @@ export function DocSearchResults({ q, onOpen }: { q: string; onOpen: (id: string
     }, 250);
     return () => { alive = false; window.clearTimeout(t); };
   }, [q]);
-  if (!state) return <div className="adm-skel"><span /><span /></div>;
-  if ('error' in state) return <div className="adm-alert is-error">{state.error}</div>;
+  if (!state) return <div className="ui-skel-rows"><span /><span /></div>;
+  if ('error' in state) return <div className="ui-callout is-danger">{state.error}</div>;
   if (state.items.length === 0) return <p className="adm-doc-tree-empty">‘{q}’에 맞는 문서가 없어요.</p>;
   return (
     <ul className="adm-doc-results" aria-label="검색 결과">

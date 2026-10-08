@@ -107,7 +107,7 @@ export const BoardColumnView = memo(function BoardColumnView({
         <h3 id={`kbcol-h-${column.id}`}>
           <span className={`adm-kb-dot is-${column.status.toLowerCase()}`} aria-hidden="true" />
           <span className="adm-kb-col-name">{column.name}</span>
-          <b className="adm-count">{cards.length}<span className="sr-only">개</span></b>
+          <b className="ui-count">{cards.length}<span className="sr-only">개</span></b>
         </h3>
         <span className="adm-kb-col-sub">
           <span>{statusLabel}</span>
@@ -133,12 +133,12 @@ export const BoardColumnView = memo(function BoardColumnView({
         <form className="adm-kb-add" onSubmit={e => { e.preventDefault(); void submit(); }}>
           <label htmlFor={`kbadd-${column.id}`} className="sr-only">{column.name}에 추가할 카드 제목</label>
           <input
-            id={`kbadd-${column.id}`} className="adm-input" autoFocus maxLength={200} value={title} placeholder="카드 제목 · Enter로 추가"
+            id={`kbadd-${column.id}`} className="ui-input" autoFocus maxLength={200} value={title} placeholder="카드 제목 · Enter로 추가"
             onChange={e => setTitle(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancel(); } }}
           />
           <span className="adm-w-btns">
-            <button type="submit" className="adm-btn primary small" disabled={!title.trim() || busy}>{busy ? '추가 중…' : '추가'}</button>
-            <button type="button" className="adm-btn soft small" onClick={cancel}>닫기</button>
+            <button type="submit" className="ui-btn is-primary is-sm" disabled={!title.trim() || busy}>{busy ? '추가 중…' : '추가'}</button>
+            <button type="button" className="ui-btn is-soft is-sm" onClick={cancel}>닫기</button>
           </span>
         </form>
       ) : (

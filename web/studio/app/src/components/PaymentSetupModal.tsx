@@ -220,7 +220,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
               <p className="eyebrow">PAYOUT PROFILE</p>
               <h1>수익을 받을<br />정보를 알려주세요.</h1>
               <p className="aq-pay-lead">계약과 정산 서류에 표시할 수령인 정보를 입력해 주세요.</p>
-              <div className="field aq-pay-field">
+              <div className="ui-field aq-pay-field">
                 <label htmlFor="aqPayRecipient">수령인 이름 또는 상호</label>
                 <input
                   id="aqPayRecipient" maxLength={120} autoComplete="name"
@@ -308,7 +308,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
                 <BankLogo name={draft.bank} />
                 <div><strong>{draft.bank}</strong><small>수익 정산 계좌</small></div>
               </div>
-              <div className="field aq-pay-field">
+              <div className="ui-field aq-pay-field">
                 <label htmlFor="aqPayAccount">계좌번호</label>
                 <input
                   id="aqPayAccount" inputMode="numeric" autoComplete="off" maxLength={20}
@@ -317,7 +317,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
                   placeholder="숫자만 입력"
                 />
               </div>
-              <div className="field aq-pay-field">
+              <div className="ui-field aq-pay-field">
                 <label htmlFor="aqPayOwner">예금주</label>
                 <input
                   id="aqPayOwner" maxLength={120}
@@ -402,12 +402,12 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
         {step === 4 ? (
           // 완료 화면도 확인 버튼을 하단에 고정 — 작은 화면에서 스크롤하지 않아도 바로 보이게
           <footer className="aq-pay-actions is-final">
-            <button type="button" className="button" id="aqPayDone" onClick={done}>확인</button>
+            <button type="button" className="ui-btn is-primary" id="aqPayDone" onClick={done}>확인</button>
           </footer>
         ) : (
           <footer className="aq-pay-actions">
             <button
-              type="button" className="button" id="aqPayNext"
+              type="button" className="ui-btn is-primary" id="aqPayNext"
               disabled={nextDisabled}
               onClick={step === 0 ? nextFrom0 : step === 1 ? undefined : step === 2 ? nextFrom2 : nextFrom3}
             >
