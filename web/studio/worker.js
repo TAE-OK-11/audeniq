@@ -12,6 +12,7 @@
  *   PUT    /api/content/notices|events/:id    수정
  *   DELETE /api/content/notices|events/:id    삭제 (deleted_at 기록, 복구 가능)
  *   (서버 점검 일정도 같은 방식: /api/content/maintenance[/:id])
+ *   GET    /api/content/survey                AUDENIQ 설문 응답·문항 (D1 SURVEY_DB, ADMIN 전용·읽기 전용)
  * 상태
  *   GET  /api/status   진행 중·예정된 서버 점검 (스튜디오의 점검 화면·예고 배너)
  * 점검 중 차단
@@ -23,6 +24,7 @@
  * 경로·입력 규칙은 crates/edge/src/content.rs(Rust 엣지)와 같다.
  */
 
+import surveyQuestions from '../survey/questions.json' with { type: 'json' };
 import { backendOrigin, clientEncoding, passThroughEncoding, readLimitedBody, requireHttps, secureResponse, serveAssets } from '../shared/transport.js';
 export { passThroughEncoding } from '../shared/transport.js';
 
@@ -181,6 +183,7 @@ export function route(method, pathname) {
   if (pathname.startsWith('/api/content/')) { admin = true; rest = pathname.slice(13); }
   else if (pathname.startsWith('/api/')) rest = pathname.slice(5);
   else return null;
+  if (admin && rest === 'survey') return (method === 'GET' || method === 'HEAD') ? { kind: 'survey' } : { kind: 'method' };
   if (!admin && rest === 'status') return (method === 'GET' || method === 'HEAD') ? { kind: 'status' } : { kind: 'method' };
   const [table, id, extra] = rest.split('/');
   if (!admin && !PUBLIC_TABLES.has(table)) return null;
@@ -399,6 +402,10 @@ export async function handleContent(request, env, r, ctx) {
   const now = nowUtc();
 
   if (r.kind === 'status') return json(await serviceStatus(env, now), 200, 'no-store');
+  if (r.kind === 'survey') {
+    const denied = await authorizeContent(request, env);
+    return denied ?? surveyResults(env.SURVEY_DB, now);
+  }
   if (!db) return error(503, 'CONTENT_UNAVAILABLE');
 
   if (r.kind === 'list' || r.kind === 'get') {
@@ -462,6 +469,47 @@ async function handleAdmin(request, db, r, now) {
     if (e instanceof InputError) return error(e.code === 'PAYLOAD_TOO_LARGE' ? 413 : 400, e.code);
     console.error('content error', e);
     return error(500, 'CONTENT_ERROR');
+  }
+}
+
+// ---- AUDENIQ 설문 결과 (survey.audeniq.com의 D1을 읽기 전용으로) ----
+// 설문 Worker(web/survey)가 쓰는 audeniq-survey D1을 SURVEY_DB로 묶는다. 연락처가 있으므로 ADMIN만 읽는다.
+const SURVEY_LIMIT = 5000;
+const SURVEY_TEXT = {
+  q4_provider: '이용한 배급사 이름',
+  q14: 'AUDENIQ에 바라는 점 · 개선되었으면 하는 점',
+};
+const SURVEY_BETA = {
+  title: '비공개 베타 참여 의향',
+  type: 'single',
+  options: ['적극적으로 참여하고 싶다', '자세한 조건을 확인한 후 참여하고 싶다', '서비스 출시 소식만 받아보고 싶다', '참여 의향 없음'],
+};
+export const SURVEY_SCHEMA = {
+  questions: Object.entries(surveyQuestions).map(([key, q]) => ({ key, title: q.title, type: q.type, options: q.options })),
+  text: Object.entries(SURVEY_TEXT).map(([key, title]) => ({ key, title })),
+  beta: SURVEY_BETA,
+};
+
+export async function surveyResults(db, now = nowUtc()) {
+  if (!db) return error(503, 'SURVEY_UNAVAILABLE');
+  try {
+    const count = await db.prepare('SELECT COUNT(*) AS n FROM survey_responses').first();
+    const { results } = await db.prepare(
+      'SELECT id, survey_version, answers_json, beta_preference, contact, beta_contact_consent, created_at FROM survey_responses ORDER BY created_at DESC LIMIT ?1',
+    ).bind(SURVEY_LIMIT).all();
+    const items = (results ?? []).map(row => {
+      let answers = {};
+      try { answers = JSON.parse(row.answers_json) ?? {}; } catch { /* 깨진 행은 빈 응답으로 */ }
+      return {
+        id: row.id, version: row.survey_version, created_at: row.created_at, answers,
+        beta: row.beta_preference ?? '', contact: row.contact ?? null,
+        contact_consent: row.beta_contact_consent === 1 || row.beta_contact_consent === true,
+      };
+    });
+    return json({ ...SURVEY_SCHEMA, total: Number(count?.n ?? items.length), items, now });
+  } catch (e) {
+    console.error('survey results error', e);
+    return error(500, 'SURVEY_ERROR');
   }
 }
 

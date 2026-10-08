@@ -10,11 +10,13 @@ on:
     paths:
       - web/studio/**
       - web/shared/**
+      - web/survey/questions.json
       - .github/workflows/studio-deploy.yml
   pull_request:
     paths:
       - web/studio/**
       - web/shared/**
+      - web/survey/questions.json
       - .github/workflows/studio-deploy.yml
   workflow_dispatch:
     inputs:

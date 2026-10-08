@@ -384,3 +384,30 @@ test('emergency window from the admin API blocks the API until it ends', async (
     globalThis.fetch = real;
   }
 });
+
+test('survey results: ADMIN-only read of the survey D1 with question labels', async () => {
+  const answers = { q1: ['0', '3'], q2: '1', q14: '정산이 빨랐으면 해요' };
+  const surveyDb = {
+    prepare: sql => ({
+      bind: () => ({ all: async () => ({ results: [{ id: 'a', survey_version: 4, answers_json: JSON.stringify(answers), beta_preference: '0', contact: '@artist', beta_contact_consent: 1, created_at: '2026-10-01T00:00:00.000Z' }] }) }),
+      first: async () => (sql.startsWith('SELECT COUNT') ? { n: 1 } : null),
+    }),
+  };
+  assert.deepEqual(route('GET', '/api/content/survey'), { kind: 'survey' });
+  assert.deepEqual(route('POST', '/api/content/survey'), { kind: 'method' });
+  assert.equal(route('GET', '/api/survey'), null);
+
+  const e = { ...env(), SURVEY_DB: surveyDb };
+  assert.equal((await call(e, 'GET', '/api/content/survey', null, 'wrong'.repeat(10))).status, 401);
+  const res = await call(e, 'GET', '/api/content/survey');
+  assert.equal(res.status, 200);
+  const data = await res.json();
+  assert.equal(data.total, 1);
+  assert.deepEqual(data.items[0].answers, answers);
+  assert.equal(data.items[0].contact_consent, true);
+  assert.equal(data.questions[0].key, 'q1');
+  assert.ok(data.questions[0].options.includes('솔로 아티스트'));
+  assert.equal(data.beta.options.length, 4);
+
+  assert.equal((await call({ ...env() }, 'GET', '/api/content/survey')).status, 503);
+});

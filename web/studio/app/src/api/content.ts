@@ -83,3 +83,24 @@ export const contentAdmin = {
   remove: (kind: ContentKind, id: string) =>
     req<{ id: string }>(`/api/content/${kind}/${encodeURIComponent(id)}`, { method: 'DELETE', quietServer: true }),
 };
+
+// ---------------------------------------------------------------------------
+// AUDENIQ 설문 결과 (survey.audeniq.com 응답 — Worker가 설문 D1을 ADMIN에게만 읽기 전용으로 준다)
+// ---------------------------------------------------------------------------
+export interface SurveyQuestion { key: string; title: string; type: 'single' | 'multi'; options: string[] }
+export interface SurveyResponseRow {
+  id: string; version: number; created_at: string;
+  answers: Record<string, string | string[] | undefined>;
+  beta: string; contact: string | null; contact_consent: boolean;
+}
+export interface SurveyResults {
+  questions: SurveyQuestion[];
+  text: { key: string; title: string }[];
+  beta: { title: string; type: 'single'; options: string[] };
+  total: number;
+  items: SurveyResponseRow[];
+  now: string;
+}
+export const surveyAdmin = {
+  results: () => req<SurveyResults>('/api/content/survey', { quietServer: true }),
+};

@@ -24,6 +24,7 @@ const PAGE_LOADERS = {
   Dsps: () => import('./pages/Dsps'),
   Payouts: () => import('./pages/Payouts'),
   ContentAdmin: () => import('../pages/ContentAdmin'),
+  SurveyResults: () => import('./pages/SurveyResults'),
   Tasks: () => import('./work/pages/Tasks'),
   TaskDetail: () => import('./work/pages/TaskDetail'),
   Inbox: () => import('./work/pages/Inbox'),
@@ -47,6 +48,7 @@ const Deliveries = page('Deliveries');
 const Dsps = page('Dsps');
 const Payouts = page('Payouts');
 const ContentAdmin = page('ContentAdmin');
+const SurveyResults = page('SurveyResults');
 const Tasks = page('Tasks');
 const TaskDetail = page('TaskDetail');
 const Inbox = page('Inbox');
@@ -104,7 +106,10 @@ const NAV: { group: string; items: NavItem[] }[] = [
     ],
   },
   { group: 'SUPPORT', items: [{ to: '/admin/inquiries', label: '문의 답변', icon: 'inquiry', count: o => (o ? o.inquiries : 0), hot: true }] },
-  { group: 'CONTENT', items: [{ to: '/admin/content', label: '공지·이벤트 관리', icon: 'doc', adminOnly: true }] },
+  { group: 'CONTENT', items: [
+    { to: '/admin/content', label: '공지·이벤트 관리', icon: 'doc', adminOnly: true },
+    { to: '/admin/survey', label: '설문 결과', icon: 'chart', adminOnly: true },
+  ] },
   {
     group: 'DISTRIBUTION',
     items: [
@@ -307,6 +312,7 @@ export function AdminApp() {
               <Route path="/admin/tasks/:id" element={<TaskDetail />} />
               <Route path="/admin/payouts" element={me.role === 'ADMIN' ? <Payouts /> : <Navigate to="/admin" replace />} />
               <Route path="/admin/content" element={me.role === 'ADMIN' ? <ContentAdmin /> : <Navigate to="/admin" replace />} />
+              <Route path="/admin/survey" element={me.role === 'ADMIN' ? <SurveyResults /> : <Navigate to="/admin" replace />} />
               <Route path="/content-admin" element={<Navigate to="/admin/content" replace />} />
               <Route path="*" element={<Navigate to="/admin" replace />} />
             </Routes>

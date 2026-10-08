@@ -17,6 +17,24 @@ npx wrangler deploy
    - 게시 시각을 미래로 두면 예약 게시, `중요 공지로 상단에 고정`은 상단 고정.
    - `내리기`는 화면에서만 숨기고 목록에는 남아요. 다시 열어 저장하면 재게시돼요.
 
+## 설문 결과 보기
+
+ADMIN 계정으로 https://studio.audeniq.com/admin/survey (관리자 메뉴 `CONTENT → 설문 결과`)에서 survey.audeniq.com 응답을 문항별 막대그래프, 자유 의견, 베타 연락처, CSV 내려받기로 볼 수 있어요. Worker가 설문 D1을 읽기 전용으로 읽고, 연락처가 있어 ADMIN만 열 수 있어요.
+
+처음 한 번 설문 D1(`audeniq-survey`)을 STUDIO Worker에 `SURVEY_DB`로 연결해야 해요. 연결 전에는 화면에 "설문 DB가 아직 STUDIO에 연결되지 않았어요"가 보여요.
+
+```sh
+npx wrangler d1 list            # audeniq-survey 의 database_id 확인
+```
+
+`web/studio/wrangler.jsonc`의 `d1_databases`에 추가한 뒤 배포:
+
+```jsonc
+{ "binding": "SURVEY_DB", "database_id": "<audeniq-survey의 ID>", "database_name": "audeniq-survey" }
+```
+
+`migrations_dir`는 넣지 않아요 (설문 테이블 마이그레이션은 `web/survey`가 관리).
+
 ## 서버 점검 알리기
 
 `/admin/content` → `서버 점검` 탭 → `점검 일정 추가`에서 시작·예상 종료 시각(한국 시간)과 안내 문구를 넣어요.

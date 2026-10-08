@@ -1034,3 +1034,28 @@ a.adm-row,button.adm-row,.adm-stat,.adm-track summary,.adm-filter,.adm-pick,.adm
 .adm-terms-checks li span{flex:none;width:12px;color:var(--adm-blue)}
 /* 브라우저 알림 켜기 (헤더) */
 .adm-alert-toggle.is-on{color:var(--adm-blue);background:var(--adm-blue-soft)}
+
+/* ---------- 설문 결과 (/admin/survey) ---------- */
+.adm-survey-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:-14px 0 26px}
+.adm-survey-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.adm-survey-q{display:flex;flex-direction:column;gap:12px;margin:0!important}
+.adm-survey-q h3{margin:0;font-size:16px;line-height:1.5;letter-spacing:-.03em}
+.adm-survey-q-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.adm-survey-no{font-size:12px;font-weight:800;color:var(--adm-blue)}
+.adm-survey-opts{list-style:none;margin:0;padding:0;display:grid;gap:9px}
+.adm-survey-opt-row{display:flex;justify-content:space-between;gap:12px;font-size:13px;line-height:1.45;color:#4a5670}
+.adm-survey-opt-row b{flex:none;color:var(--adm-ink);font-variant-numeric:tabular-nums}
+.adm-survey-opt-row small{font-weight:600;color:var(--adm-muted)}
+.adm-survey-track{display:block;height:6px;margin-top:5px;border-radius:999px;background:#e6ecf8;overflow:hidden}
+.adm-survey-track>span{display:block;height:100%;border-radius:inherit;background:#9db1fb;transition:width .4s var(--adm-ease)}
+.adm-survey-opts .is-top .adm-survey-track>span{background:var(--adm-blue)}
+.adm-survey-opts .is-top .adm-survey-opt-row span{color:var(--adm-ink);font-weight:700}
+.adm-survey-others summary{cursor:pointer;font-size:12.5px;font-weight:720;color:#385dd7}
+.adm-survey-others ul{margin:8px 0 0;padding-left:18px;font-size:13px;color:#4a5670}
+.adm-survey-texts{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.adm-survey-texts li{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:14px 16px;border-radius:16px;background:var(--adm-soft)}
+.adm-survey-texts p{margin:0;font-size:14px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}
+.adm-survey-texts span{flex:none}
+@media (max-width:900px){.adm-survey-grid{grid-template-columns:1fr}}
+@media (max-width:600px){.adm-survey-texts li{flex-direction:column;gap:6px}}
+@media (prefers-reduced-motion:reduce){.adm-survey-track>span{transition:none}}
