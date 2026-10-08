@@ -122,7 +122,7 @@ export function Dashboard() {
         </div>
       </div>
 
-      <Link className="portal-hero aq-home-hero" to="/upload" onPointerEnter={() => prefetchRoute('/upload')}>
+      <Link className="ui-hero aq-home-hero" to="/upload" onPointerEnter={() => prefetchRoute('/upload')}>
         <div>
           <p className="eyebrow">새 발매</p>
           <h2>새로운 발매를 <span className="aq-accent">시작해 보세요.</span></h2>

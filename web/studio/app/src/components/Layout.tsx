@@ -170,9 +170,9 @@ export function Layout({ children }: { children: ReactNode }) {
         <div className="nav-shell">
           <Link to="/" className="brand" aria-label="AUDENIQ STUDIO 홈">
             <img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" />
+            <span className="workspace-label ui-product">STUDIO</span>
           </Link>
           <div className="header-right">
-            <span className="workspace-label aq-workspace-pill">STUDIO</span>
             <button
               type="button"
               className="aq-header-bell"

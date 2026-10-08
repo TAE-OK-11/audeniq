@@ -7,6 +7,10 @@
    · 미리보기: /admin/design
    ========================================================================== */
 
+/* ---------- 제품 표시 (STUDIO · ADMIN) — 로고 옆 ---------- */
+.ui-product{display:inline-flex;align-items:center;height:26px;padding:0 10px;border-radius:var(--aq-r-sm);background:var(--aq-primary-soft);color:var(--aq-primary);font-size:11px;font-weight:800;letter-spacing:var(--aq-tracking-eyebrow);line-height:1;white-space:nowrap}
+.ui-product.is-dark{background:var(--aq-inverse);color:#fff}
+
 /* ---------- 머리표 (eyebrow) ---------- */
 .ui-eyebrow,.eyebrow{display:block;margin:0 0 10px;color:var(--aq-primary);font-size:11px;font-weight:800;letter-spacing:var(--aq-tracking-eyebrow);line-height:1.3}
 
@@ -263,8 +267,9 @@
 .ui-card>h2,.ui-card>h3{margin:0 0 10px;font-size:var(--aq-fs-title);font-weight:var(--aq-fw-bold);letter-spacing:var(--aq-tracking-heading)}
 .ui-box{display:grid;gap:12px;padding:14px 16px;border-radius:var(--aq-r-lg);background:#fff}
 .ui-card .ui-box{background:#fff}
-.ui-hero{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:space-between;gap:24px;min-height:168px;padding:32px 36px;border-radius:var(--aq-r-3xl);background:#F3F6FF;margin:0 0 12px}
-.ui-hero::after{content:"";position:absolute;width:320px;height:320px;top:-190px;right:-130px;background:radial-gradient(circle,#dce4ffbb,transparent 72%);pointer-events:none}
+.ui-hero{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:space-between;gap:24px;min-height:160px;padding:30px 34px;border-radius:var(--aq-r-2xl);background:#F3F6FF;color:var(--aq-text);margin:0 0 12px}
+a.ui-hero{text-decoration:none;transition:background-color var(--aq-dur) var(--aq-ease)}
+a.ui-hero:hover{background:var(--aq-surface-hover)}
 .ui-hero>*{position:relative;z-index:1}
 .ui-hero h2{margin:0;font-size:clamp(24px,2.8vw,34px);line-height:1.3;letter-spacing:-.057em}
 .ui-hero p:not(.ui-eyebrow):not(.eyebrow){margin-top:10px;max-width:460px;font-size:var(--aq-fs-base);line-height:1.7;color:#6A7993}
@@ -422,9 +427,9 @@ button.ui-avatar:hover{transform:scale(1.06);background:var(--aq-blue-200)}
 @media (max-width:760px){
   .ui-page-head{margin-bottom:24px}
   .ui-page-actions{width:100%}
-  .ui-hero{flex-direction:column;align-items:stretch;min-height:0;padding:26px 22px 22px;border-radius:30px;gap:20px}
+  .ui-hero{flex-direction:column;align-items:stretch;min-height:0;padding:26px 22px 22px;border-radius:var(--aq-r-2xl);gap:20px}
   .ui-hero .ui-btn{width:100%}
-  .ui-card{padding:20px;border-radius:24px}
+  .ui-card{padding:20px;border-radius:var(--aq-r-xl)}
   .ui-stats{gap:8px}
   .ui-stat{min-height:116px;padding:17px}
   .ui-row{gap:12px;padding:14px 15px}

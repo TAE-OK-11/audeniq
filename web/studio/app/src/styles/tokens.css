@@ -146,6 +146,9 @@
   --aq-dur:.2s;
   --aq-dur-slow:.36s;
 
+  /* ---------- 앱 상단 ---------- */
+  --aq-header-h:72px; --aq-logo-w:144px;
+
   /* ---------- 층 ---------- */
   --aq-z-sticky:40; --aq-z-header:50; --aq-z-menu:60; --aq-z-modal:110; --aq-z-toast:400;
 
@@ -182,3 +185,4 @@
   --n-line:var(--aq-line); --n-soft:var(--aq-surface); --n-weak:var(--aq-text-3);
   --radius:32px; --section-space:128px;
 }
+@media (max-width:760px){:root{--aq-header-h:64px;--aq-logo-w:120px}}

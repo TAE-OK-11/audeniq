@@ -305,7 +305,6 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
 .aq-skeleton-list,.aq-skel-block,.aq-page-skeleton{animation:aq-fade-in .2s ease .15s both!important}
 
 /* ---------- 홈 히어로: 물방울 장식 제거 (단색 카드로 정돈) ---------- */
-.portal-hero::after,.portal-hero:after{display:none!important;content:none!important}
 
 /* ---------- 위자드 상단 바: 저장 상태가 칸을 넘쳐 페이지가 가로로 밀리던 문제 ---------- */
 #view-new .wizard-topbar{grid-template-columns:84px minmax(0,1fr) 84px!important}
@@ -422,12 +421,10 @@ body:has(.aq-payout-setup-mode) .aq-toast-stack{bottom:calc(104px + env(safe-are
 /* 제목 마지막 줄 파란 강조 — 홍보 페이지 히어로 '더 넓은 세상으로.' */
 .aq-accent{color:var(--aq-e-blue)}
 /* 헤더 STUDIO 표시를 홍보 페이지 메뉴의 pill(사전 설문 안내)처럼 */
-.portal-header .aq-workspace-pill{display:inline-flex;align-items:center;min-height:30px;padding:0 11px;border-radius:var(--aq-r-sm);background:var(--aq-blue-50);color:var(--aq-e-blue);letter-spacing:.14em}
 /* 홈 업무 카드: 홍보 페이지 서비스 카드처럼 번호 표시 */
 .aq-service-top{display:flex;align-items:flex-start;justify-content:space-between;width:100%}
 .aq-service-no{font-size:13px;font-weight:650;color:var(--aq-gray-500);letter-spacing:.02em;font-variant-numeric:tabular-nums}
 /* 기본 버튼: 홍보 페이지처럼 호버 시 진한 파랑 + 살짝 떠오름 */
-@media(max-width:400px){.portal-header .aq-workspace-pill{display:none!important}}
 @media print{.aq-reveal-wait{opacity:1!important}}
 
 /* ---------- 계약서 서명: 검토 대기 화면, 다시 그리기 위치 ---------- */
@@ -970,7 +967,6 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 }
 /* 모바일 헤더: STUDIO 표시는 로고와 겹치는 정보라 숨기고 알림·프로필·메뉴만 */
 @media (max-width:767px){
-  .portal-header .aq-workspace-pill{display:none!important}
   .portal-header .header-right{gap:8px}
 }
 /* 홈 바로가기 카드: 설명은 한 줄로 맞춰 제목 높이를 가지런히 */
@@ -1059,9 +1055,7 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 /* 진행 단계 — 체크 표시 없이 지나온 단계와 지금 단계를 파란색으로 채운다 */
 
 /* 보완 필요는 앱 전체에서 주황 한 가지 — 빨강은 ‘거절’에만 쓴다 */
-.aq-doc-card.is-needs .aq-doc-state-pill{background:var(--aq-amber-50)!important;color:var(--aq-amber-600)!important}
 /* 서명할 계약서 — 파란색으로 눈에 띄게 */
-.aq-doc-card.is-to-sign .aq-doc-state-pill{background:var(--aq-blue-100)!important;color:var(--aq-blue-700)!important}
 /* 보완 카드 안의 ‘보완하기’ — 할 일을 설명 바로 옆에 (주황 톤) */
 .aq-fix-card-head .min-0{flex:1}
 .aq-fix-go{flex:none;align-self:center;background:#e0892f!important;color:#fff!important;min-height:44px!important}
@@ -1590,3 +1584,10 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-task.is-sign .ui-icon{--tone-bg:var(--aq-violet-100);--tone-fg:var(--aq-violet-600)}
 .dashboard-grid .service-item .ui-icon{transition:transform .35s var(--aq-spring),background-color var(--aq-dur)}
 .dashboard-grid .service-item:hover .ui-icon{transform:translateY(-2px) rotate(-6deg);--tone-bg:var(--aq-blue-200)}
+
+/* ---------- 앱 상단 — 스튜디오·관리자 같은 높이·로고 크기, 제품 표시는 로고 옆 ---------- */
+.portal-header .nav-shell,.adm-header-shell{min-height:var(--aq-header-h)}
+.portal-header .brand,.adm-brand{display:flex;align-items:center;gap:10px;width:auto;max-width:none;min-width:0}
+.portal-header .brand img,.adm-brand img{width:var(--aq-logo-w);flex:none}
+@media (max-width:760px){.portal-header .workspace-label{display:inline-flex}}
+@media (max-width:370px){.portal-header .workspace-label,.adm-brand .ui-product{display:none}}

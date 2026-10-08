@@ -242,7 +242,7 @@ export function AdminApp() {
           <div className="adm-header-shell">
             <Link to="/admin" className="adm-brand" aria-label="AUDENIQ ADMIN 홈">
               <img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" />
-              <span className="adm-pill">ADMIN</span>
+              <span className="ui-product is-dark">ADMIN</span>
             </Link>
             <div className="adm-header-right">
               {MOCK && <Badge tone="amber">체험 데이터</Badge>}

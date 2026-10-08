@@ -8,7 +8,6 @@
 .adm-header-shell{max-width:1360px;width:calc(100% - 48px);margin:auto;display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:70px}
 .adm-brand{display:flex;align-items:center;gap:12px;min-width:0}
 .adm-brand img{width:142px;height:auto;display:block}
-.adm-pill{display:inline-flex;align-items:center;height:26px;padding:0 10px;border-radius:var(--aq-r-sm);background:var(--adm-ink);color:#fff;font-size:11px;font-weight:800;letter-spacing:.14em}
 .adm-header-right{display:flex;align-items:center;gap:8px}
 .adm-who{display:flex;align-items:center;gap:10px;padding:5px 12px 5px 5px;border-radius:var(--aq-r-md);background:var(--adm-soft-2);min-width:0}
 .adm-who-text{display:grid;line-height:1.25;min-width:0}
@@ -17,7 +16,7 @@
 
 /* ---------- 본문 그리드 ---------- */
 .adm-shell{max-width:1360px;width:calc(100% - 48px);margin:auto;display:grid;grid-template-columns:232px minmax(0,1fr);gap:40px;padding:28px 0 96px}
-.adm-side{position:sticky;top:98px;align-self:start;display:grid;gap:22px}
+.adm-side{position:sticky;top:calc(var(--aq-header-h) + 28px);align-self:start;display:grid;gap:22px}
 .adm-side-group{display:grid;gap:3px}
 .adm-side-label{font-size:11px;font-weight:800;letter-spacing:.14em;color:var(--aq-gray-400);padding:0 12px 6px}
 .adm-side a{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;padding:10px 12px;border-radius:var(--aq-r-md);color:var(--aq-gray-800);font-size:14px;font-weight:700;letter-spacing:-.02em;transition:background-color .18s var(--adm-ease),color .18s var(--adm-ease)}
@@ -36,9 +35,6 @@
 /* ---------- 칩 ---------- */
 
 /* ---------- 개요 ---------- */
-.adm-hero{position:relative;overflow:hidden;background:var(--aq-blue-50);border-radius:var(--aq-r-3xl);padding:30px 34px;display:flex;align-items:center;justify-content:space-between;gap:24px;margin-bottom:14px}
-.adm-hero:after{content:"";position:absolute;width:320px;height:320px;top:-190px;right:-120px;background:radial-gradient(circle,#dce4ffbb,transparent 72%);pointer-events:none}
-.adm-hero>*{position:relative;z-index:1}
 .adm-hero h2{font-size:clamp(24px,2.6vw,32px);line-height:1.3;letter-spacing:-.055em}
 .adm-hero p{font-size:13.5px;color:var(--aq-gray-600);margin-top:9px;max-width:460px}
 .adm-hero-num{font-size:64px;font-weight:800;letter-spacing:-.06em;color:var(--adm-blue);line-height:1}
@@ -55,7 +51,7 @@
 
 /* ---------- 심사 상세 ---------- */
 .adm-detail{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:24px;align-items:start}
-.adm-detail-side{position:sticky;top:98px;display:grid;gap:12px}
+.adm-detail-side{position:sticky;top:calc(var(--aq-header-h) + 28px);display:grid;gap:12px}
 .adm-release-hero{display:grid;grid-template-columns:88px minmax(0,1fr);gap:18px;align-items:center;background:var(--adm-soft);border-radius:var(--aq-r-2xl);padding:20px;margin-bottom:18px}
 .adm-release-hero .ui-cover{width:88px}
 .adm-release-hero h1{font-size:clamp(22px,2.4vw,28px);letter-spacing:-.05em;line-height:1.25}
@@ -119,7 +115,7 @@
 
 /* ---------- 문의 ---------- */
 .adm-split{display:grid;grid-template-columns:minmax(280px,380px) minmax(0,1fr);gap:18px;align-items:start}
-.adm-thread-pane{background:#fff;border:1px solid var(--adm-line);border-radius:var(--aq-r-2xl);padding:22px;position:sticky;top:98px;max-height:calc(100dvh - 124px);display:flex;flex-direction:column;min-height:420px}
+.adm-thread-pane{background:#fff;border:1px solid var(--adm-line);border-radius:var(--aq-r-2xl);padding:22px;position:sticky;top:calc(var(--aq-header-h) + 28px);max-height:calc(100dvh - 124px);display:flex;flex-direction:column;min-height:420px}
 .adm-thread-head{padding-bottom:14px;border-bottom:1px solid var(--adm-line)}
 .adm-thread-head h2{font-size:19px;letter-spacing:-.045em;line-height:1.35}
 .adm-thread{list-style:none;margin:0;padding:16px 2px;display:grid;gap:10px;overflow-y:auto;flex:1;align-content:start}
@@ -155,7 +151,7 @@
 }
 @media (max-width:960px){
   .adm-shell{grid-template-columns:minmax(0,1fr);gap:0;padding-top:0}
-  .adm-side{position:sticky;top:70px;z-index:40;background:#fffffff2;-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;margin:0 -24px 22px;padding:10px 24px;border-bottom:1px solid var(--adm-line)}
+  .adm-side{position:sticky;top:var(--aq-header-h);z-index:40;background:#fffffff2;-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;margin:0 -24px 22px;padding:10px 24px;border-bottom:1px solid var(--adm-line)}
   .adm-side::-webkit-scrollbar{display:none}
   .adm-side-group{display:contents}
   .adm-side-label,.adm-side-foot{display:none}
@@ -172,7 +168,6 @@
   .adm-brand img{width:118px}
   .adm-header-right>.ui-badge{display:none}
   .adm-header .adm-ghost-text{display:none}
-  .adm-hero{padding:24px 22px;border-radius:var(--aq-r-2xl);flex-direction:column;align-items:flex-start}
   .adm-hero-num small{text-align:left}
   .adm-release-hero{grid-template-columns:64px minmax(0,1fr);padding:16px;border-radius:var(--aq-r-xl)}
   .adm-release-hero .ui-cover{width:64px}
@@ -439,7 +434,7 @@
 /* 바로가기 바 — 결정 칸이 옆에 붙지 않는 폭에서만 */
 .adm-jump{display:none}
 @media (max-width:1180px){
-  .adm-jump{position:sticky;top:70px;z-index:30;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -24px 16px;padding:10px 24px;background:rgba(255,255,255,.94);-webkit-backdrop-filter:saturate(1.4) blur(12px);backdrop-filter:saturate(1.4) blur(12px);border-bottom:1px solid var(--adm-line)}
+  .adm-jump{position:sticky;top:var(--aq-header-h);z-index:30;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -24px 16px;padding:10px 24px;background:rgba(255,255,255,.94);-webkit-backdrop-filter:saturate(1.4) blur(12px);backdrop-filter:saturate(1.4) blur(12px);border-bottom:1px solid var(--adm-line)}
   .adm-jump::-webkit-scrollbar{display:none}
   .adm-jump button{flex:none;display:inline-flex;align-items:center;gap:5px;min-height:36px;padding:0 13px;border:0;border-radius:var(--aq-r-3xl);background:var(--aq-gray-50);color:var(--aq-gray-700);font:inherit;font-size:13px;font-weight:760;cursor:pointer;transition:background-color .15s,color .15s}
   .adm-jump button span{min-width:18px;height:18px;padding:0 5px;border-radius:var(--aq-r-sm);background:#fff;font-size:11px;font-weight:800;line-height:18px;text-align:center;color:var(--aq-gray-600)}
@@ -539,8 +534,8 @@
    ========================================================================== */
 
 /* 카드 */
-.adm-release-hero,.adm-thread-pane,.adm-dspreq,.adm-dsp-grid>.adm-dsp,.adm-deliv,.adm-hero,.adm-brief.is-compact,.adm-check,.adm-track{background:var(--adm-card);border:0!important;box-shadow:none}
-.adm-release-hero,.adm-thread-pane,.adm-dspreq,.adm-dsp-grid>.adm-dsp,.adm-deliv,.adm-hero,.adm-brief.is-compact{border-radius:var(--adm-r-card)}
+.adm-release-hero,.adm-thread-pane,.adm-dspreq,.adm-dsp-grid>.adm-dsp,.adm-deliv,.adm-brief.is-compact,.adm-check,.adm-track{background:var(--adm-card);border:0!important;box-shadow:none}
+.adm-release-hero,.adm-thread-pane,.adm-dspreq,.adm-dsp-grid>.adm-dsp,.adm-deliv,.adm-brief.is-compact{border-radius:var(--adm-r-card)}
 .adm-dspreq,.adm-dsp-grid>.adm-dsp,.adm-deliv{padding:26px 28px}
 .adm-brief.is-compact{padding:22px}
 .adm-check,.adm-track{border-radius:var(--aq-r-2xl)}

@@ -20,6 +20,7 @@ import { RightsDocumentModal } from '../components/RightsDocumentModal';
 import { SigningRequests } from '../components/SigningRequests';
 import { RIGHTS_DOCUMENTS, type RightsDocumentContext, type RightsDocumentKind } from '../lib/rightsDocument';
 import { Segmented } from '../components/Segmented';
+import { StatGrid, StatTile } from '../ui';
 
 const REQUIRED_DOCS: [string, string, string][] = [
   ['master', '마스터 음원 권리 확인서', '본인은 해당 마스터 음원에 관한 배급 권한을 보유하거나 권리자로부터 적법한 이용 허락을 받았음을 확인합니다.'],
@@ -149,11 +150,11 @@ export function Rights() {
         </button>
       </div>
 
-      <div className="aq-rights-summary">
-        <div><span>제출할 서류</span><strong id="rightsNeededCount">{needed}</strong></div>
-        <div><span>검토 중</span><strong id="rightsReviewCount">{review}</strong></div>
-        <div><span>보완 요청</span><strong id="rightsFixCount">{fix}</strong></div>
-      </div>
+      <StatGrid cols={3} className="aq-rights-summary">
+        <StatTile compact label="제출할 서류" value={<span id="rightsNeededCount">{needed}</span>} tone={needed ? undefined : 'muted'} />
+        <StatTile compact label="검토 중" value={<span id="rightsReviewCount">{review}</span>} tone={review ? undefined : 'muted'} />
+        <StatTile compact label="보완 요청" value={<span id="rightsFixCount">{fix}</span>} tone={fix ? 'warn' : 'muted'} />
+      </StatGrid>
 
       <SigningRequests releases={releases} tick={signingTick} onOpenDoc={setOpenId} />
 
