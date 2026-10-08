@@ -34,22 +34,16 @@ const website = {'@type':'WebSite','@id':site,url:`${origin}/`,name:'AUDENIQ',in
   description:'독립 아티스트, 작곡가·작사가와 레이블을 위한 배급과 퍼블리싱 서비스를 준비하고 있어요.', publisher:{'@id':org}};
 const questions = faqs => faqs.map(faq => ({'@type':'Question',name:faq.q,acceptedAnswer:{'@type':'Answer',text:faq.a}}));
 const schemaScript = graph => `<script type="application/ld+json">${JSON.stringify({'@context':'https://schema.org','@graph':graph}).replace(/</g,'\\u003c')}</script>`;
-const links = pages.map(page => `<a href="${page.path}">${esc(page.title)} <span aria-hidden="true">↗</span></a>`).join('\n');
-const guide = `<!-- SEARCH_GUIDES_START -->
-<section class="section chapter-soft" id="guides" aria-labelledby="guides-title"><div class="container">
-<p class="eyebrow">AUDENIQ 공식 안내</p><h2 id="guides-title">배급과 퍼블리싱, 더 자세히 알아보세요</h2>
-<p style="margin-top:24px">AUDENIQ는 독립 아티스트, 작곡가·작사가와 레이블을 위한 음악 배급·퍼블리싱 플랫폼으로 대한민국에서 준비 중이에요.</p>
-<div class="official-guides">${links}</div><p class="small">공식 안내 업데이트 <time datetime="${data.updated}">${data.updated}</time> · 서비스 출시 준비 중 · <a href="/feed.xml">안내 업데이트 RSS ↗</a></p>
-</div></section>
-<!-- SEARCH_GUIDES_END -->`;
-home = home.replace(/<!-- SEARCH_GUIDES_START -->[\s\S]*?<!-- SEARCH_GUIDES_END -->\s*/g, '').replace('</main>', `${guide}\n</main>`);
+// Keep discovery resources in the head and assets, without a directory/RSS block
+// beneath the homepage FAQ. Service cards provide the relevant guide links.
+home = home.replace(/<!-- SEARCH_GUIDES_START -->[\s\S]*?<!-- SEARCH_GUIDES_END -->\s*/g, '');
 const homeGraph = [organization, website, {
   '@type':['WebPage','FAQPage'],'@id':`${origin}/#webpage`,url:`${origin}/`,name:'AUDENIQ | 독립 음악을 위한 배급과 퍼블리싱',
   inLanguage:'ko-KR',dateModified:data.updated,isPartOf:{'@id':site},about:{'@id':org},mainEntity:questions(homeFaq)
 }];
 home = home.replace(/<script type="application\/ld\+json">[\s\S]*?<\/script>/, schemaScript(homeGraph));
 home = home.replace(/<!-- SEO_BUILD_START -->[\s\S]*?<!-- SEO_BUILD_END -->\s*/g, '');
-home = home.replace('</head>', `<!-- SEO_BUILD_START -->\n<link rel="alternate" type="application/rss+xml" title="AUDENIQ 공식 안내 업데이트" href="${origin}/feed.xml">\n<style>.hero h1 .hero-service{display:block;font-size:15px;line-height:1.7;letter-spacing:.03em;font-weight:700;color:var(--blue);margin-bottom:22px}.official-guides{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:32px 0}.official-guides a{padding:22px;border:1px solid #DCE3F2;border-radius:16px;background:white;font-weight:650}.official-guides a:hover{color:#3456C4}.official-guides a span{color:#3456C4}@media(max-width:680px){.hero h1 .hero-service{font-size:12px}.official-guides{grid-template-columns:1fr}}</style>\n<!-- SEO_BUILD_END -->\n</head>`);
+home = home.replace('</head>', `<!-- SEO_BUILD_START -->\n<link rel="alternate" type="application/rss+xml" title="AUDENIQ 공식 안내 업데이트" href="${origin}/feed.xml">\n<style>.hero h1 .hero-service{display:block;font-size:15px;line-height:1.7;letter-spacing:.03em;font-weight:700;color:var(--blue);margin-bottom:22px}@media(max-width:680px){.hero h1 .hero-service{font-size:12px}}</style>\n<!-- SEO_BUILD_END -->\n</head>`);
 write('index.html',home);
 write('public/index.html',home);
 
