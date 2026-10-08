@@ -1,6 +1,7 @@
 // SEO uses one primary hostname. Change this and the absolute URLs in the
 // landing HTML / sitemap / robots together if AUDENIQ chooses another domain.
 import { requireHttps, secureResponse } from '../../shared/transport.js';
+import { PAGE_PATHS, FILE_PATHS } from './public-routes.js';
 export const PRIMARY_HOST = "audeniq.com";
 const PRIMARY_ORIGIN = `https://${PRIMARY_HOST}`;
 // AUDENIQ STUDIO is a separate React app on its own Worker (web/studio).
@@ -20,13 +21,20 @@ export function studioRedirect(hostname, pathname, searchParams = new URLSearchP
   return null;
 }
 
-/** Asset for a landing request: shared files as-is, everything else is the single landing page. */
+/** Only published documents are routed to HTML; unknown paths remain real 404s. */
 export function resolveAssetPath(_hostname, pathname) {
   const path = pathname || "/";
-  if (path.startsWith("/assets/") || path === "/favicon.ico" || path === "/robots.txt" || path === "/sitemap.xml") {
-    return path;
+  if (path.startsWith('/assets/') || FILE_PATHS.includes(path)) return path;
+  if (PAGE_PATHS.includes(path)) return `${path}index.html`;
+  return null;
+}
+
+export function canonicalPagePath(path) {
+  if (path === '/index.html') return '/';
+  for (const page of PAGE_PATHS.filter(page => page !== '/')) {
+    if (path === page.slice(0,-1) || path === `${page}index.html`) return page;
   }
-  return "/index.html";
+  return path;
 }
 
 export function isPublicCanonicalHost(hostname) {
@@ -69,7 +77,7 @@ const landingWorker = {
     // Only the apex domain should be indexed. Preserve the path and query in redirects.
     if (host === `www.${PRIMARY_HOST}`) {
       const destination = new URL(PRIMARY_ORIGIN);
-      destination.pathname = url.pathname;
+      destination.pathname = canonicalPagePath(url.pathname);
       destination.search = url.search;
       destination.hash = url.hash;
       return Response.redirect(destination, 308);
@@ -86,17 +94,17 @@ const landingWorker = {
       return withSecurityHeaders(Response.json({ ok: true, service: "AUDENIQ Web", host }), { isCanonical: false, isStudio: isStudioHost });
     }
 
-    // The landing page is a single document with fragment sections, not a catch-all
-    // that should answer 200 to every arbitrary URL (which causes soft-404 SEO issues).
-    if (path === "/index.html") {
-      return Response.redirect(new URL("/", url), 308);
+    const canonicalPath = canonicalPagePath(path);
+    if (canonicalPath !== path) {
+      const destination = new URL(url);
+      destination.pathname = canonicalPath;
+      return Response.redirect(destination, 308);
     }
-    const sharedFile = path.startsWith("/assets/") || path === "/favicon.ico" || path === "/robots.txt" || path === "/sitemap.xml";
-    if (!sharedFile && path !== "/") {
+    const assetPath = resolveAssetPath(host, path);
+    if (!assetPath) {
       return withSecurityHeaders(plainText("Not found", "text/plain; charset=utf-8", 404), { isCanonical });
     }
 
-    const assetPath = resolveAssetPath(host, path, url.searchParams);
     const assetUrl = new URL(assetPath, url);
     const assetRequest = new Request(assetUrl, request);
     const response = await env.ASSETS.fetch(assetRequest);

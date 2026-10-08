@@ -1,55 +1,67 @@
-# AUDENIQ — Cloudflare Workers 배포·기본 SEO
+# AUDENIQ 공개 웹사이트
 
-홍보 페이지(audeniq.com)를 서빙하는 Worker예요. **홍보 페이지는 검색 대상**, 미리보기 주소는 **검색 제외**입니다. 아티스트 포털 STUDIO는 별도 React 앱과 Worker(`web/studio`, studio.audeniq.com)로 옮겼고, 이 Worker로 들어온 예전 STUDIO 주소는 studio.audeniq.com으로 308 리디렉션합니다.
+`audeniq.com`의 한국어 공식 홈페이지와 서비스 안내를 제공하는 Cloudflare Worker입니다. 공개 문서는 정적 HTML이며 JavaScript 없이 읽을 수 있습니다. STUDIO는 별도 Worker(`web/studio`)에서 운영합니다.
 
-## 배포 경로 (권장: Wrangler로 Worker + 정적 assets 배포)
+## 공개 페이지와 원본
 
+| URL | 내용 | 수정 원본 |
+| --- | --- | --- |
+| `/` | 홈페이지와 11개 FAQ | `index.html` |
+| `/music-distribution/` | 음원 배급·발매 준비 | `content/pages.json` |
+| `/publishing/` | 작곡가·작사가의 음악 퍼블리싱 | `content/pages.json` |
+| `/label-services/` | 독립 레이블의 카탈로그·발매·정산 | `content/pages.json` |
+| `/about/` | 브랜드·현재 상태·공식 연락처 | `content/pages.json` |
+| `/faq/` | 홈페이지와 같은 질문·답변 | 홈페이지 FAQ에서 생성 |
 
+수수료율과 가격은 공개 콘텐츠에 넣지 않습니다. 출시 준비 상태와 계약 미확정 범위를 유지합니다.
 
-| 요청 URL | 제공 화면/동작 |
-| --- | --- |
-| `https://audeniq.com/` | 검색 가능한 홍보 페이지 |
-| `studio.*` 호스트가 이 Worker로 올 때 | `https://studio.audeniq.com`(같은 경로)으로 308 |
-| `https://<worker>.<account>.workers.dev/` | 홍보 페이지 미리보기 (HTTP `X-Robots-Tag: noindex`) |
-| `/studio/…`, `?site=studio` | `https://studio.audeniq.com/…`으로 308 |
-| `https://www.audeniq.com/` | `https://audeniq.com/`으로 308 리디렉션 |
+## 수정·검증
 
-사용 환경: Node.js 20+ 또는 Bun 1.4.x, Cloudflare 계정, Wrangler 로그인.
+Node.js 20+로 실행합니다. SEO 생성·테스트에는 외부 패키지가 필요하지 않습니다.
 
 ```bash
-# 프로젝트 폴더 내에서
-npm install
+cd web/landing
+npm run build:seo
 npm run check
-npx wrangler login
-npm run deploy
 ```
 
-배포 후 Cloudflare 대시보드에서 Worker `audeniq-web`에 `audeniq.com`을 **Custom Domain**으로 연결합니다 (`studio.audeniq.com`은 `audeniq-studio` Worker에 연결). `www.audeniq.com`까지 308 정규 주소 리디렉션을 사용하려면 이 호스트도 같은 Worker에 연결하세요. DNS·도메인 소유권·실제 배포는 이 ZIP 생성만으로 완료되지 않습니다.
+`content/pages.json`의 `updated`는 실제 검토·수정일입니다. 빌드 때마다 날짜를 바꾸지 않습니다. 생성기는 서비스 HTML과 같은 문구의 JSON-LD, 링크, sitemap·RSS·robots, llms.txt·llms-full.txt, 공개 라우트·버전 목록을 함께 생성합니다. `public/`의 생성 파일을 직접 수정하지 마세요. 홈페이지·공유 이미지·아이콘과 발견용 파일의 최상위 복사본도 유지합니다.
 
-로컬 미리보기: `npm run dev` → 홍보 `/`.
+테스트는 HTTP 상태·canonical·메타정보·한 개의 H1·본문/FAQ 스키마 일치·내부 링크·404·STUDIO 리디렉션·미리보기 noindex·검색/학습 봇 정책·공개 콘텐츠의 금액/요율 제외를 확인합니다.
 
-**Cloudflare 대시보드의 ZIP 드래그 앤 드롭 정적 업로드 주의:** ZIP 최상위에도 `index.html`, `robots.txt`, `sitemap.xml`, `assets/`를 두었으므로 정적 파일로 업로드하는 용도에는 사용할 수 있습니다. 그러나 **정적 ZIP 업로드만으로는 `src/worker.js`의 호스트별 라우팅, www 리디렉션 및 미리보기용 X-Robots-Tag가 실행되지 않습니다.** 이 동작이 필요한 현재 구성에서는 위의 Wrangler 배포를 사용하세요. `public/`은 Wrangler가 사용하는 정적 파일 디렉터리이며, 최상위 복사본과 내용이 같습니다.
+## SEO·AEO·GEO·LLMO·Naver NEO
 
-## SEO에 포함된 설정
+- 고유 title/description·canonical·Open Graph·X 공유 정보.
+- 일관된 Organization·WebSite ID 및 WebPage/AboutPage/FAQPage·Service·BreadcrumbList. 가격·평점·미확정 계약 없음.
+- Googlebot·Bingbot·Naver Yeti와 AI 검색/사용자 조회 봇 허용. STUDIO·admin·API·login·health 제외.
+- GPTBot·ClaudeBot·Google-Extended·CCBot·Applebot-Extended의 학습 수집 차단. robots는 협조적인 크롤러 정책이며 인증을 대체하지 않습니다.
+- 공개 HTML 6개만 sitemap에 등록. RSS는 공식 안내 업데이트입니다.
+- llms.txt와 llms-full.txt는 보조 텍스트입니다. Google AI 검색 노출의 필수 조건이나 순위 보장 수단으로 설명하지 않습니다.
+- FAQ 스키마는 실제 본문과 일치하며 2026년에 종료된 Google FAQ rich results 표시를 전제로 하지 않습니다.
 
-- 홍보 페이지: 검색 허용, 한국어 title/description, `https://audeniq.com/` 정규 URL, Open Graph / X(Twitter) 공유 메타정보.
-- `assets/social-preview.png`: 현재 브랜드 로고를 사용한 **실제 1200×630 PNG**. favicon SVG/ICO도 포함.
-- JSON-LD: 과장된 평점이나 확인되지 않은 사업자 정보 대신 `Organization`, `WebSite` 기본 정보만 표기.
-- `https://audeniq.com/robots.txt`: 검색 허용 + STUDIO/health 크롤링 제한 + 사이트맵 위치 제공.
-- `https://audeniq.com/sitemap.xml`: 현재 **실제로 공개할 수 있는 단일 홍보 페이지(`/`)만** 등록. `#about` 같은 문서 내 앵커나 STUDIO는 개별 색인 URL로 넣지 않았습니다.
-- Worker: workers.dev·별도 도메인 미리보기는 `X-Robots-Tag: noindex` 적용, 미리보기용 robots.txt는 전체 차단. 없는 홍보 URL은 `404`, `/index.html`은 `/`로 리디렉션.
+감사는 [docs/AUDIT.md](docs/AUDIT.md), 계정 설정·성과 측정은 [docs/SEARCH.md](docs/SEARCH.md)를 참고하세요.
 
-### 중요: 공식 도메인이 변경될 경우
+## 라우팅과 향후 수동 배포
 
-현재 공식 주소는 **`https://audeniq.com/`을 사용할 예정이라는 전제로** 설정했습니다. 실제로 구매·연결할 공식 도메인이 다르다면 **배포 전에** 다음 내용을 함께 교체하세요.
+이번 변경은 커밋만 하며 배포는 실행하지 않습니다. 자동 배포 워크플로를 추가하지 않았습니다.
 
-1. `src/worker.js` 맨 위 `PRIMARY_HOST` 상수.
-2. `index.html`과 `public/index.html`의 canonical, OG URL·이미지 URL·구조화 데이터 URL.
-3. `sitemap.xml`, `robots.txt` 및 `public/`의 동명 파일.
-4. 이 README의 연결할 커스텀 도메인.
+| 요청 | 동작 |
+| --- | --- |
+| 공식 호스트의 공개 문서 | 검색 가능한 HTML |
+| www 호스트 | apex로 308, 알려진 별칭을 한 번에 정규화 |
+| index.html 또는 슬래시 없는 서비스 별칭 | canonical로 308, 쿼리 유지 |
+| 공개 목록에 없는 페이지·파일 | 실제 404 + noindex |
+| workers.dev 등 미리보기 | HTML HTTP noindex, robots 전체 차단, sitemap 404 |
+| STUDIO 호스트·/studio·?site=studio | studio.audeniq.com으로 308 |
 
-일부만 바꾸면 검색엔진에서 주소가 충돌하거나 SNS 공유 이미지가 깨질 수 있습니다. **구매한 도메인을 실제로 연결하기 전까지는 도메인에 대한 실서비스 검색·공유 동작을 확인할 수 없습니다.**
+별도로 배포를 결정했을 때 Cloudflare 권한으로 기존 Worker `audeniq-web`을 배포하세요.
 
-## 배포 후 직접 확인할 주소
+```bash
+npm run deploy
+npm run verify:live
+npm run indexnow
+```
 
-브라우저로 `https://audeniq.com/`, `/robots.txt`, `/sitemap.xml`, `/assets/social-preview.png`가 200으로 열리는지 확인하세요. (`https://studio.audeniq.com/`의 `noindex`는 `web/studio`의 `_headers`가 담당합니다.) 이후 Google Search Console의 도메인 소유권 인증과 `https://audeniq.com/sitemap.xml` 제출을 직접 진행하면 됩니다. 색인 여부나 순위는 검색엔진이 결정하며 자동으로 보장되지 않습니다.
+`verify:live`는 실제 사이트와 현재 빌드를 비교합니다. `indexnow`는 배포된 버전·공개 키·URL을 검증한 뒤에만 검색엔진에 갱신 알림을 보냅니다. 빌드·테스트·커밋에서는 호출하지 않습니다. 색인과 순위는 검색엔진이 결정합니다.
+
+도메인이 바뀌면 생성기의 origin·Worker PRIMARY_HOST·리디렉션·서비스 출처 링크·문서를 함께 갱신합니다. STUDIO의 검색 차단은 별도 프로젝트 설정도 확인하세요.
