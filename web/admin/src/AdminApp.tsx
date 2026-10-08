@@ -177,7 +177,7 @@ export function AdminApp() {
                 <Avatar name={initial} size="sm" />
                 <span className="adm-who-text"><b>{user?.email}</b><small>{ROLE_LABEL[me.role]}</small></span>
               </div>
-              <a href={STUDIO_URL} className="ui-btn is-ghost is-sm" target="_blank" rel="noopener noreferrer" aria-label="스튜디오 새 창으로 열기"><Glyph name="arrow-up-right" size={15} /><span className="adm-ghost-text">스튜디오</span></a>
+              <a href={STUDIO_URL} className="ui-btn is-ghost is-sm" target="_blank" rel="noopener noreferrer" aria-label="스튜디오 새 창으로 열기">스튜디오<Glyph name="arrow-up-right" size={14} /></a>
               <button type="button" className="ui-btn is-ghost is-sm" onClick={doLogout}>로그아웃</button>
             </div>
           </div>

@@ -254,7 +254,7 @@ export function AdminApp() {
                 <Avatar name={initial} size="sm" />
                 <span className="adm-who-text"><b>{user?.email}</b><small>{ROLE_LABEL[me.role]}</small></span>
               </div>
-              <Link to="/" className="ui-btn is-ghost is-sm" aria-label="스튜디오로 이동"><Glyph name="arrow-up-right" size={15} /><span className="adm-ghost-text">스튜디오</span></Link>
+              <Link to="/" className="ui-btn is-ghost is-sm" aria-label="스튜디오로 이동">스튜디오<Glyph name="arrow-up-right" size={14} /></Link>
               <button type="button" className="ui-btn is-ghost is-sm" onClick={doLogout}>로그아웃</button>
             </div>
           </div>

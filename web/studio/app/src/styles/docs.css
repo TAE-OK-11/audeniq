@@ -245,3 +245,8 @@ a.adm-doc-embed-title:hover{color:var(--adm-blue)}
 .adm-docs .adm-doc-editor:focus-within .adm-doc-toolbar{box-shadow:0 0 0 1px var(--aq-blue-300)}
 .adm-doc-embed{overflow-x:auto}
 .adm-docs .adm-doc-prose .adm-doc-err{color:var(--aq-red-700)}
+
+/* 모바일 · 터치: 마우스를 올릴 수 없으니 '+' 버튼을 늘 보이게 하고 누르기 쉽게 */
+@media (max-width:760px),(hover:none){
+  .adm-doc-tree-add{opacity:1;width:32px;height:32px}
+}

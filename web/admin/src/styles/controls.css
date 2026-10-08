@@ -107,7 +107,7 @@ html{-webkit-tap-highlight-color:transparent}
 /* ---------- 금액 표시 (Money) — 숫자는 자리 맞춤, 단위는 작고 옅게, 화폐 기호는 AUDENIQ 아이콘 ---------- */
 .aq-money{display:inline-flex;align-items:baseline;gap:.14em;font-variant-numeric:tabular-nums;letter-spacing:-.02em;white-space:nowrap}
 .aq-money-num{font-weight:inherit}
-.aq-money-unit{font-size:.72em;font-weight:700;opacity:.62;letter-spacing:0}
+.aq-money-unit{font-size:max(.72em,11px);font-weight:700;opacity:.62;letter-spacing:0}
 .aq-money.is-mark{gap:.12em}
 .aq-money-mark{display:inline-grid;place-items:center;flex:none;align-self:center;margin-right:.24em;width:1.25em;height:1.25em;border-radius:.42em;background:#eaf0ff;color:var(--aqc-blue)}
 .aq-money-mark svg{width:72%;height:72%;display:block}

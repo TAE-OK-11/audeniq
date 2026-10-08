@@ -289,7 +289,7 @@ body.wizard-mode .portal-header{display:none!important}
  #view-new .step-actions #wizardNext{flex:1.45}
  
 }
-@media(max-width:370px){.portal-header .nav-shell{width:calc(100% - 30px)}.portal-header .brand{width:121px}.workspace-label{display:none;font-size:9px}.header-right{gap:5px}.portal-layout{width:calc(100% - 30px)}.portal-header .portal-nav{right:15px}.dashboard-grid .service-item{padding:17px 14px}.dashboard-grid .service-item h3{font-size:14px}.dashboard-grid .service-item p{font-size:10px}body.wizard-mode .portal-layout{width:calc(100% - 30px)}.step-actions{margin-left:-15px;margin-right:-15px;padding-left:15px;padding-right:15px}}
+@media(max-width:370px){.portal-header .nav-shell{width:calc(100% - 30px)}.portal-header .brand{width:121px}.workspace-label{display:none;font-size:9px}.header-right{gap:5px}.portal-layout{width:calc(100% - 30px)}.portal-header .portal-nav{right:15px}.dashboard-grid .service-item{padding:17px 14px}.dashboard-grid .service-item h3{font-size:14px}.dashboard-grid .service-item p{font-size:11px}body.wizard-mode .portal-layout{width:calc(100% - 30px)}.step-actions{margin-left:-15px;margin-right:-15px;padding-left:15px;padding-right:15px}}
 @media(prefers-reduced-motion:reduce){.view,.portal-header .portal-nav,.report-bar{animation:none!important}}
 
 /* Sample mode is visibly separate from real operations without changing the public-site card styling. */
@@ -375,7 +375,7 @@ body.wizard-mode .portal-header{display:none!important}
 .studio-doc-path strong{display:block;font-size:14px;color:#23304b;letter-spacing:-.035em}.studio-doc-path small{display:block;color:var(--aq-gray-500);font-size:11px;margin-top:5px;line-height:1.55}
 #readAllNotices{margin-left:auto;min-height:38px}
 .studio-notice-detail p{line-height:1.9;white-space:pre-wrap;overflow-wrap:anywhere;margin:16px 0;font-size:15px;color:var(--aq-gray-800)}
-@media(max-width:760px){.studio-album-row{grid-template-columns:54px minmax(0,1fr) auto;gap:10px}.studio-album-row .cover{width:54px;height:54px}.studio-payout-surface{display:block;padding:25px;border-radius:var(--aq-r-2xl)}.studio-payout-actions{align-items:stretch;margin-top:21px}.studio-doc-path{padding:17px 11px;gap:0;border-radius:var(--aq-r-2xl)}.studio-doc-path>div{padding:3px 7px}.studio-doc-path strong{font-size:12px}.studio-doc-path small{font-size:10px}#readAllNotices{margin-left:0}}
+@media(max-width:760px){.studio-album-row{grid-template-columns:54px minmax(0,1fr) auto;gap:10px}.studio-album-row .cover{width:54px;height:54px}.studio-payout-surface{display:block;padding:25px;border-radius:var(--aq-r-2xl)}.studio-payout-actions{align-items:stretch;margin-top:21px}.studio-doc-path{padding:17px 11px;gap:0;border-radius:var(--aq-r-2xl)}.studio-doc-path>div{padding:3px 7px}.studio-doc-path strong{font-size:12px}.studio-doc-path small{font-size:11px}#readAllNotices{margin-left:0}}
 
 /* ===== Live block boundary ===== */
 
@@ -591,9 +591,6 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 /* ===== Live block boundary ===== */
 
 /* Product-complete pass: contracts and rights are separate, action states use soft public-site cards. */
-.aq-rights-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 26px}
-.aq-rights-summary>div{background:var(--aq-blue-50);border-radius:var(--aq-r-2xl);padding:22px 23px;min-width:0}
-.aq-rights-summary span{display:block;color:var(--aq-gray-500);font-size:12px;font-weight:680}.aq-rights-summary strong{display:block;margin-top:7px;font-size:28px;line-height:1.2}
 .aq-doc-grid{display:grid;gap:11px}.aq-doc-card{display:grid;grid-template-columns:48px minmax(0,1fr) auto;align-items:center;gap:14px;min-width:0}
 .aq-doc-card .ui-icon{width:45px;display:grid}
 .aq-doc-copy{min-width:0}.aq-doc-copy .ui-row-title{display:block;text-align:left;width:100%;overflow-wrap:anywhere}
@@ -608,7 +605,7 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 @media(max-width:760px){
  .portal-header{padding-top:env(safe-area-inset-top)!important}.portal-header .nav-shell{width:calc(100% - 40px);min-height:68px!important;min-width:0}.portal-header .menu-toggle{width:43px;height:43px;align-self:center!important;overflow:visible!important;margin-top:0!important}
  #portalNav{top:var(--aq-menu-top,calc(68px + env(safe-area-inset-top)))!important;max-height:calc(100dvh - var(--aq-menu-top,68px) - env(safe-area-inset-bottom) - 8px)!important}
- .aq-rights-summary{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.aq-rights-summary>div{padding:17px 13px;border-radius:var(--aq-r-lg)}.aq-rights-summary span{font-size:10px}.aq-rights-summary strong{font-size:23px}
+ 
 }
 
 /* ===== Live block boundary ===== */

@@ -115,7 +115,7 @@ img{max-width:100%}
 .aq-report-delta.is-down{color:#c24a3b!important;background:var(--aq-red-50)!important}
 .aq-mini-trend{display:flex;align-items:flex-end;gap:10px;height:112px;padding-top:8px}
 .aq-mini-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end;min-width:0}
-.aq-mini-col small{font-size:10px;color:var(--aq-gray-400);font-weight:700}
+.aq-mini-col small{font-size:11px;color:var(--aq-gray-400);font-weight:700}
 .aq-mini-bar{display:block;width:100%;max-width:34px;height:var(--h);border-radius:9px 9px 5px 5px;background:var(--aq-blue-200);transform:scaleY(0);transform-origin:bottom}
 .aq-mini-bar.is-current{background:linear-gradient(180deg,#6d8cff,#3B63F3)}
 .aq-mini-bar.grow{animation:aq-grow-y .7s var(--aq-e-ease) both;animation-delay:var(--d,0s)}

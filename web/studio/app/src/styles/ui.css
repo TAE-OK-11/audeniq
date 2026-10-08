@@ -289,7 +289,8 @@ a.ui-hero:hover{background:var(--aq-surface-hover)}
 :is(a,button).ui-stat:active{transform:scale(.985)}
 .ui-stat:focus-visible{outline:var(--aq-focus);outline-offset:2px}
 .ui-stat-top{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
-.ui-stat-label{min-width:0;font-size:13px;font-weight:740;color:var(--aq-text-2);line-height:1.4}
+.ui-stat-label{min-width:0;font-size:13px;font-weight:740;color:var(--aq-text-2);line-height:1.4;word-break:keep-all;overflow-wrap:break-word}
+.ui-stat-top>:not(.ui-stat-label){flex:none}
 .ui-stat-value{display:block;font-size:clamp(24px,2.4vw,32px);font-weight:800;line-height:1.1;letter-spacing:-.05em;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
 .ui-stat-value small{margin-left:3px;font-size:.5em;font-weight:720;letter-spacing:0;color:var(--aq-text-3)}
 .ui-stat-hint{display:block;margin-top:4px;font-size:12px;font-weight:650;line-height:1.45;color:var(--aq-text-4)}
@@ -422,8 +423,9 @@ button.ui-avatar:hover{transform:scale(1.06);background:var(--aq-blue-200)}
 .ui-skel-rows>span{height:78px;border-radius:var(--aq-r-xl);background:linear-gradient(90deg,#F3F6FB 25%,#EAF0F8 37%,#F3F6FB 63%);background-size:400% 100%;animation:aq-shimmer 1.4s ease-in-out infinite}
 
 /* ---------- 반응형 ---------- */
+/* 인라인 --cols 보다 우선하도록 grid-template-columns 를 직접 지정 */
 @media (max-width:1180px){
-  .ui-stats{--cols:2}
+  .ui-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media (max-width:760px){
   .ui-page-head{margin-bottom:24px}
@@ -432,7 +434,9 @@ button.ui-avatar:hover{transform:scale(1.06);background:var(--aq-blue-200)}
   .ui-hero .ui-btn{width:100%}
   .ui-card{padding:20px;border-radius:var(--aq-r-xl)}
   .ui-stats{gap:8px}
-  .ui-stat{min-height:116px;padding:17px}
+  .ui-stats>:last-child:nth-child(odd):not(:first-child){grid-column:1/-1}
+  .ui-stat{min-height:108px;padding:16px}
+  .ui-stat-value{font-size:24px}
   .ui-row{gap:12px;padding:14px 15px}
   .ui-row>.ui-cover{--cv:40px}
   .ui-row>.ui-icon{--ic:36px}

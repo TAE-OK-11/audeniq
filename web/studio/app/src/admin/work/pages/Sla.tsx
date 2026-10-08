@@ -238,25 +238,21 @@ export function Sla() {
       ]} />
 
       <Section title="대기열 기한 현황" meta="원천의 시작 시각 기준">
-        <div className="adm-w-sla-board">
-          {data.board.map(b => (
-            <div key={b.queue} className={`adm-w-stat${b.breached ? ' is-alert' : b.warning ? '' : ' is-muted'}`}>
-              <strong>{b.open}</strong>
-              <span>{QUEUE_TYPE[b.queue]}</span>
-              <small>{b.breached ? `초과 ${b.breached}` : ''}{b.breached && b.warning ? ' · ' : ''}{b.warning ? `임박 ${b.warning}` : ''}{!b.breached && !b.warning ? '모두 여유' : ''}</small>
-            </div>
-          ))}
-        </div>
+        <MiniStats items={data.board.map(b => ({
+          label: QUEUE_TYPE[b.queue],
+          value: b.open,
+          tone: b.breached ? 'alert' as const : b.warning ? undefined : 'muted' as const,
+          hint: [b.breached ? `초과 ${b.breached}` : '', b.warning ? `임박 ${b.warning}` : ''].filter(Boolean).join(' · ') || '모두 여유',
+        }))} />
         {data.queue.length > 0 && (
           <div className="ui-list" style={{ marginTop: 12 }}>
             {data.queue.slice(0, 30).map(q => (
-              <Link key={`${q.queue}:${q.id}`} to={q.link} className="ui-row adm-w-task-row">
-                <StatusBadge value={SLA_STATE[q.state]} />
+              <Link key={`${q.queue}:${q.id}`} to={q.link} className="ui-row adm-w-policy">
                 <span className="adm-min">
                   <span className="ui-row-title">{q.title}</span>
                   <span className="ui-row-meta"><span>{QUEUE_TYPE[q.queue]}</span>{q.org_name && <span>{q.org_name}</span>}<span>알림 {ROLE_NAME[q.escalate_to]}</span></span>
                 </span>
-                <span className="ui-row-end"><Badge tone={SLA_STATE[q.state][1]}><Glyph name="clock" size={12} />{remaining(q.due_at)}</Badge></span>
+                <span className="ui-row-end adm-codes"><StatusBadge value={SLA_STATE[q.state]} /><Badge tone={SLA_STATE[q.state][1]}><Glyph name="clock" size={12} />{remaining(q.due_at)}</Badge></span>
               </Link>
             ))}
           </div>
