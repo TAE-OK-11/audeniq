@@ -21,19 +21,9 @@ npx wrangler deploy
 
 ADMIN 계정으로 https://studio.audeniq.com/admin/survey (관리자 메뉴 `CONTENT → 설문 결과`)에서 survey.audeniq.com 응답을 문항별 막대그래프, 자유 의견, 베타 연락처, CSV 내려받기로 볼 수 있어요. Worker가 설문 D1을 읽기 전용으로 읽고, 연락처가 있어 ADMIN만 열 수 있어요.
 
-처음 한 번 설문 D1(`audeniq-survey`)을 STUDIO Worker에 `SURVEY_DB`로 연결해야 해요. 연결 전에는 화면에 "설문 DB가 아직 STUDIO에 연결되지 않았어요"가 보여요.
+설문 D1(`audeniq-survey`)은 `wrangler.jsonc`에 `SURVEY_DB`로 연결돼 있어요. 설문 Worker와 같은 DB를 읽기만 해요. 연결이 빠지면 화면에 "설문 DB가 아직 STUDIO에 연결되지 않았어요"가 보여요.
 
-```sh
-npx wrangler d1 list            # audeniq-survey 의 database_id 확인
-```
-
-`web/studio/wrangler.jsonc`의 `d1_databases`에 추가한 뒤 배포:
-
-```jsonc
-{ "binding": "SURVEY_DB", "database_id": "<audeniq-survey의 ID>", "database_name": "audeniq-survey" }
-```
-
-`migrations_dir`는 넣지 않아요 (설문 테이블 마이그레이션은 `web/survey`가 관리).
+이 연결에는 `migrations_dir`를 두지 않아요. 설문 테이블 마이그레이션은 `web/survey`가 관리해요.
 
 ## 서버 점검 알리기
 

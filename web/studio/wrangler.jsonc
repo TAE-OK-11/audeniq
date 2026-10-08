@@ -15,6 +15,11 @@
       "database_id": "401ad401-0a13-4059-8e9d-23298de21761",
       "database_name": "audeniq-content",
       "migrations_dir": "migrations"
+    },
+    {
+      "binding": "SURVEY_DB",
+      "database_id": "b6d9d9d9-9075-41e0-97bf-2614ab0b2926",
+      "database_name": "audeniq-survey"
     }
   ],
   "main": "./worker.js",
