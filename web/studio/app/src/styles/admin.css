@@ -1059,3 +1059,25 @@ a.adm-row,button.adm-row,.adm-stat,.adm-track summary,.adm-filter,.adm-pick,.adm
 @media (max-width:900px){.adm-survey-grid{grid-template-columns:1fr}}
 @media (max-width:600px){.adm-survey-texts li{flex-direction:column;gap:6px}}
 @media (prefers-reduced-motion:reduce){.adm-survey-track>span{transition:none}}
+.adm-survey-period{display:inline-flex;align-items:center;gap:10px}
+.adm-survey-table .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.adm-survey-table tbody+tbody{border-top:2px solid var(--adm-line)}
+.adm-survey-table-q{vertical-align:top;text-align:left;width:38%;font-weight:400}
+.adm-survey-table-q b{display:block;margin:2px 0 4px;font-size:13.5px;line-height:1.5;color:var(--adm-ink)}
+.adm-survey-list .is-click{cursor:pointer}
+.adm-survey-list .is-click:hover td{background:var(--adm-soft)}
+.adm-survey-detail{display:grid;gap:12px}
+.adm-survey-detail-nav{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.adm-survey-detail-step{display:inline-flex;gap:6px;margin-left:auto}
+.adm-survey-meta{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0}
+.adm-survey-meta dt{font-size:12px;font-weight:720;color:var(--adm-muted)}
+.adm-survey-meta dd{margin:4px 0 0;font-size:14px;overflow-wrap:anywhere}
+.adm-survey-answers{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.adm-survey-answers li{display:grid;grid-template-columns:44px 1fr;gap:10px;padding:16px 18px;border-radius:18px;background:var(--adm-soft)}
+.adm-survey-answers li.is-empty{background:var(--adm-soft-2)}
+.adm-survey-answers-q{margin:0 0 8px;font-size:14px;font-weight:720;line-height:1.5}
+.adm-survey-picked{display:flex;flex-wrap:wrap;gap:6px}
+.adm-survey-picked span{padding:6px 11px;border-radius:999px;background:#fff;color:#2f4fb8;font-size:13px;font-weight:700}
+.adm-survey-free{margin:0;font-size:14px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}
+@media (max-width:900px){.adm-survey-meta{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:600px){.adm-survey-answers li{grid-template-columns:1fr;gap:4px}.adm-survey-detail-step{margin-left:0}}

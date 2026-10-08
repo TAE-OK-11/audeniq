@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SurveyResults } from '../api/content';
-import { tallyAll, tallyBeta, textAnswers, toCsv, withinDays } from './surveyResults';
+import { answerLabels, tallyAll, tallyBeta, textAnswers, toCsv, withinDays } from './surveyResults';
 
 const data: SurveyResults = {
   now: '2026-10-08T00:00:00.000Z',
@@ -39,5 +39,10 @@ describe('survey results', () => {
     const csv = toCsv(data);
     expect(csv.startsWith('﻿응답 ID,제출 시각,활동 형태,활동 형태 (기타),발매 경험,바라는 점,베타,연락처')).toBe(true);
     expect(csv).toContain('a,2026-10-07T00:00:00.000Z,솔로 / 기타,세션,있다,"정산이 ""빨랐으면"", 해요",적극,@a');
+  });
+
+  it('names each chosen option for a single response, with the typed "기타"', () => {
+    expect(answerLabels(data.questions[0], data.items[0])).toEqual(['솔로', '기타: 세션']);
+    expect(answerLabels(data.questions[1], data.items[2])).toEqual([]);
   });
 });

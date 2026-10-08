@@ -71,3 +71,12 @@ export function toCsv(data: SurveyResults, rows = data.items): string {
   ]);
   return '﻿' + [head, ...lines].map(l => l.map(v => cell(String(v))).join(',')).join('\r\n') + '\r\n';
 }
+
+/** 응답 1건의 한 문항 — 고른 선택지 이름들 ('기타'에 적은 말은 붙여서) */
+export function answerLabels(q: { key: string; options: string[] }, row: SurveyResponseRow, value = row.answers[q.key]): string[] {
+  const other = row.answers[`${q.key}_other`];
+  return picked(value).map(c => {
+    const name = q.options[Number(c)] ?? c;
+    return name === '기타' && typeof other === 'string' && other.trim() ? `기타: ${other.trim()}` : name;
+  });
+}

@@ -5,13 +5,17 @@ import { useAsync } from '../../hooks/useAsync';
 import { surveyAdmin, type SurveyResults as Results } from '../../api/content';
 import { ApiError } from '../../api/errors';
 import { MOCK } from '../../lib/mode';
-import { tallyAll, tallyBeta, textAnswers, toCsv, withinDays, type QuestionTally } from '../../lib/surveyResults';
+import { answerLabels, tallyAll, tallyBeta, textAnswers, toCsv, withinDays, type QuestionTally } from '../../lib/surveyResults';
+import { useSearchParams } from '../../lib/router';
+import type { SurveyResponseRow } from '../../api/content';
 import { ago, when } from '../labels';
 import { Chip, Empty, ErrorBox, PageHead, Section, Seg, Skeleton } from '../ui';
 import { Glyph } from '../../components/Glyph';
 
 type Period = 'all' | '30' | '7';
 const PERIODS = [['all', '전체'], ['30', '최근 30일'], ['7', '최근 7일']] as const;
+type View = 'chart' | 'table' | 'responses';
+const VIEWS = [['chart', '그래프'], ['table', '숫자표'], ['responses', '응답 하나씩']] as const;
 
 async function load(): Promise<Results> {
   try {
@@ -29,6 +33,11 @@ async function load(): Promise<Results> {
 export function SurveyResults() {
   const { data, loading, error, reload } = useAsync(load, []);
   const [period, setPeriod] = useState<Period>('all');
+  const [params, setParams] = useSearchParams();
+  const view: View = (['chart', 'table', 'responses'] as const).find(v => v === params.get('view')) ?? 'chart';
+  const openId = params.get('id');
+  const setView = (v: View) => setParams(v === 'chart' ? {} : { view: v }, { replace: true });
+  const openResponse = (id: string | null) => setParams(id ? { view: 'responses', id } : { view: 'responses' });
   const rows = useMemo(() => (data ? withinDays(data.items, period === 'all' ? null : Number(period), data.now) : []), [data, period]);
   const tallies = useMemo(() => (data ? tallyAll(data, rows) : []), [data, rows]);
   const beta = useMemo(() => (data ? tallyBeta(data, rows) : null), [data, rows]);
@@ -69,48 +78,64 @@ export function SurveyResults() {
             <Stat label="연락처 남김" value={contacts.length} hint={period === 'all' ? undefined : '선택한 기간'} />
           </div>
           <div className="adm-survey-bar">
-            <Seg value={period} options={PERIODS} onChange={setPeriod} label="기간" />
-            <span className="small muted">{rows.length}건 집계</span>
+            <Seg value={view} options={VIEWS} onChange={setView} label="보기 방식" />
+            <span className="adm-survey-period">
+              <Seg value={period} options={PERIODS} onChange={setPeriod} label="기간" />
+              <span className="small muted">{rows.length}건</span>
+            </span>
           </div>
+          {view === 'responses' ? (
+            openId ? (
+              <ResponseDetail data={data} rows={rows} id={openId} onOpen={openResponse} />
+            ) : (
+              <ResponseList data={data} rows={rows} onOpen={openResponse} />
+            )
+          ) : (
+            <>
+            <Section title="문항별 응답" meta={`${tallies.length}문항`}>
+              {view === 'table' ? (
+                <NumberTable tallies={[...tallies.map((t, i) => ({ no: `Q${i + 1}`, t })), ...(beta ? [{ no: '베타', t: beta }] : [])]} />
+              ) : (
+                <div className="adm-survey-grid">
+                  {tallies.map((t, i) => <QuestionCard key={t.key} no={`Q${i + 1}`} t={t} />)}
+                  {beta && <QuestionCard no="베타" t={beta} />}
+                </div>
+              )}
+            </Section>
 
-          <Section title="문항별 응답" meta={`${tallies.length}문항`}>
-            <div className="adm-survey-grid">
-              {tallies.map((t, i) => <QuestionCard key={t.key} no={`Q${i + 1}`} t={t} />)}
-              {beta && <QuestionCard no="베타" t={beta} />}
-            </div>
-          </Section>
+            {data.text.map(t => {
+              const list = textAnswers(rows, t.key);
+              return (
+                <Section key={t.key} title={t.title} meta={`${list.length}건`}>
+                  {list.length === 0 ? <p className="small muted">아직 적힌 내용이 없어요.</p> : (
+                    <ul className="adm-survey-texts">
+                      {list.map(a => <li key={a.id}><p>{a.text}</p><span className="small muted" title={when(a.created_at)}>{ago(a.created_at)}</span></li>)}
+                    </ul>
+                  )}
+                </Section>
+              );
+            })}
 
-          {data.text.map(t => {
-            const list = textAnswers(rows, t.key);
-            return (
-              <Section key={t.key} title={t.title} meta={`${list.length}건`}>
-                {list.length === 0 ? <p className="small muted">아직 적힌 내용이 없어요.</p> : (
-                  <ul className="adm-survey-texts">
-                    {list.map(a => <li key={a.id}><p>{a.text}</p><span className="small muted" title={when(a.created_at)}>{ago(a.created_at)}</span></li>)}
-                  </ul>
-                )}
-              </Section>
-            );
-          })}
-
-          <Section title="베타·출시 안내 연락처" meta={`${contacts.length}명`}>
-            {contacts.length === 0 ? <p className="small muted">연락처를 남긴 응답이 없어요.</p> : (
-              <div className="adm-card white adm-table-wrap">
-                <table className="adm-table">
-                  <thead><tr><th>연락처</th><th>참여 의향</th><th>제출</th></tr></thead>
-                  <tbody>
-                    {contacts.map(r => (
-                      <tr key={r.id}>
-                        <td><b>{r.contact}</b></td>
-                        <td>{data.beta.options[Number(r.beta)] ?? '—'}</td>
-                        <td className="small" title={when(r.created_at)}>{ago(r.created_at)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Section>
+            <Section title="베타·출시 안내 연락처" meta={`${contacts.length}명`}>
+              {contacts.length === 0 ? <p className="small muted">연락처를 남긴 응답이 없어요.</p> : (
+                <div className="adm-card white adm-table-wrap">
+                  <table className="adm-table">
+                    <thead><tr><th>연락처</th><th>참여 의향</th><th>제출</th></tr></thead>
+                    <tbody>
+                      {contacts.map(r => (
+                        <tr key={r.id}>
+                          <td><b>{r.contact}</b></td>
+                          <td>{data.beta.options[Number(r.beta)] ?? '—'}</td>
+                          <td className="small" title={when(r.created_at)}>{ago(r.created_at)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Section>
+            </>
+          )}
         </>
       )}
     </div>
@@ -155,6 +180,120 @@ function QuestionCard({ no, t }: { no: string; t: QuestionTally }) {
         </details>
       )}
     </article>
+  );
+}
+
+/** 숫자표 — 문항·선택지·인원·비율을 한 표로 */
+function NumberTable({ tallies }: { tallies: { no: string; t: QuestionTally }[] }) {
+  return (
+    <div className="adm-card white adm-table-wrap">
+      <table className="adm-table adm-survey-table">
+        <thead><tr><th>문항</th><th>선택지</th><th className="num">인원</th><th className="num">비율</th></tr></thead>
+        {tallies.map(({ no, t }) => (
+          <tbody key={t.key}>
+            {t.options.map((o, i) => (
+              <tr key={o.label} className={i === 0 ? 'is-first' : ''}>
+                {i === 0 && (
+                  <th scope="rowgroup" rowSpan={t.options.length} className="adm-survey-table-q">
+                    <span className="adm-survey-no">{no}</span>
+                    <b>{t.title}</b>
+                    <span className="small muted">{t.answered}명 응답 · {t.type === 'multi' ? '여러 개 선택' : '하나 선택'}</span>
+                  </th>
+                )}
+                <td>{o.label}</td>
+                <td className="num"><b>{o.count}</b></td>
+                <td className="num">{(o.share * 100).toFixed(1)}%</td>
+              </tr>
+            ))}
+          </tbody>
+        ))}
+      </table>
+    </div>
+  );
+}
+
+/** 응답 목록 — 한 줄에 한 사람, 누르면 전체 답을 본다 */
+function ResponseList({ data, rows, onOpen }: { data: Results; rows: SurveyResponseRow[]; onOpen: (id: string) => void }) {
+  const q1 = data.questions[0];
+  const q2 = data.questions[1];
+  if (!rows.length) return <Empty title="이 기간에는 응답이 없어요" />;
+  return (
+    <div className="adm-card white adm-table-wrap">
+      <table className="adm-table adm-survey-list">
+        <thead><tr><th>#</th><th>제출</th>{q1 && <th>활동 형태</th>}{q2 && <th>발매 경험</th>}<th>베타</th><th>연락처</th><th aria-label="열기" /></tr></thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={r.id} onClick={() => onOpen(r.id)} className="is-click">
+              <td className="small muted">{rows.length - i}</td>
+              <td className="small" title={when(r.created_at)}>{when(r.created_at)}</td>
+              {q1 && <td>{answerLabels(q1, r).join(', ') || '—'}</td>}
+              {q2 && <td>{answerLabels(q2, r).join(', ') || '—'}</td>}
+              <td>{data.beta.options[Number(r.beta)] ?? '—'}</td>
+              <td>{r.contact ? <Chip tone="green">있음</Chip> : <span className="muted">—</span>}</td>
+              <td><button type="button" className="adm-btn soft small" onClick={e => { e.stopPropagation(); onOpen(r.id); }}>보기</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** 응답 1건 — 모든 문항과 고른 답, 이전·다음 응답으로 이동 */
+function ResponseDetail({ data, rows, id, onOpen }: { data: Results; rows: SurveyResponseRow[]; id: string; onOpen: (id: string | null) => void }) {
+  const index = rows.findIndex(r => r.id === id);
+  const r = index >= 0 ? rows[index] : data.items.find(x => x.id === id);
+  if (!r) return <Empty title="응답을 찾을 수 없어요"><button type="button" className="adm-btn soft small" onClick={() => onOpen(null)}>목록으로</button></Empty>;
+  const prev = index > 0 ? rows[index - 1] : null;
+  const next = index >= 0 && index < rows.length - 1 ? rows[index + 1] : null;
+  return (
+    <div className="adm-survey-detail">
+      <div className="adm-survey-detail-nav">
+        <button type="button" className="adm-btn soft small" onClick={() => onOpen(null)}>← 목록</button>
+        <span className="small muted">{index >= 0 ? `${rows.length - index} / ${rows.length}` : ''}</span>
+        <span className="adm-survey-detail-step">
+          <button type="button" className="adm-btn soft small" disabled={!prev} onClick={() => prev && onOpen(prev.id)}>더 최근</button>
+          <button type="button" className="adm-btn soft small" disabled={!next} onClick={() => next && onOpen(next.id)}>이전 응답</button>
+        </span>
+      </div>
+      <div className="adm-card white">
+        <dl className="adm-survey-meta">
+          <div><dt>제출</dt><dd>{when(r.created_at)} <span className="small muted">({ago(r.created_at)})</span></dd></div>
+          <div><dt>응답 ID</dt><dd><span className="adm-code">{r.id}</span></dd></div>
+          <div><dt>베타 참여</dt><dd>{data.beta.options[Number(r.beta)] ?? '—'}</dd></div>
+          <div><dt>연락처</dt><dd>{r.contact ? <b>{r.contact}</b> : <span className="muted">남기지 않음</span>}</dd></div>
+        </dl>
+      </div>
+      <ol className="adm-survey-answers">
+        {data.questions.map((q, i) => {
+          const labels = answerLabels(q, r);
+          return (
+            <li key={q.key} className={labels.length ? '' : 'is-empty'}>
+              <span className="adm-survey-no">Q{i + 1}</span>
+              <div>
+                <p className="adm-survey-answers-q">{q.title}</p>
+                {labels.length
+                  ? <div className="adm-survey-picked">{labels.map(l => <span key={l}>{l}</span>)}</div>
+                  : <span className="small muted">응답 없음 (건너뜀)</span>}
+              </div>
+            </li>
+          );
+        })}
+        {data.text.map(t => {
+          const v = r.answers[t.key];
+          const text = typeof v === 'string' ? v.trim() : '';
+          return (
+            <li key={t.key} className={text ? '' : 'is-empty'}>
+              <span className="adm-survey-no">글</span>
+              <div>
+                <p className="adm-survey-answers-q">{t.title}</p>
+                {text ? <p className="adm-survey-free">{text}</p> : <span className="small muted">적지 않음</span>}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
   );
 }
 
