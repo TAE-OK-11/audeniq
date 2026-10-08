@@ -3,6 +3,7 @@
 import { createStore } from '../lib/store';
 import { MOCK } from '../lib/mode';
 import type { ElectronicRightsRecord } from '../lib/rightsDocument';
+import type { Tone } from '../ui';
 
 export interface ConsentRecord { time: string; action: string; version: string }
 export interface ReviewRecord { status: string; time: string; detail: string }
@@ -203,6 +204,12 @@ export function docState(c: DocRecord): string {
   if (c.reviewStatus === 'review' || c.reviewStatus === 'prepared') return '검토 중';
   if (c.localSignatureAt) return '서명 완료';
   return c.kind === 'rights' ? '서류 제출 필요' : '서명 필요';
+}
+
+/** 상태 배지 색 — 보완은 주황, 검토 중은 보라, 승인은 초록, 해야 할 일은 파랑 */
+export function docBadgeTone(c: DocRecord): Tone {
+  const t = docTone(c);
+  return t === 'is-needs' ? 'amber' : t === 'is-approved' ? 'green' : t === 'is-review' ? 'violet' : c.localSignatureAt ? 'green' : 'blue';
 }
 
 /** 카드 톤 클래스 */

@@ -30,7 +30,7 @@
   --aq-gray-0:#FFFFFF;
   --aq-gray-25:#FAFBFD;
   --aq-gray-50:#F5F7FA;   /* 컨트롤 면 (고르기·필터·보조 버튼) */
-  --aq-gray-75:#F7F9FD;   /* 입력칸 면 */
+  --aq-gray-75:#F7F9FD;
   --aq-gray-100:#EEF1F6;
   --aq-gray-150:#E8EDF5;  /* 구분선 */
   --aq-gray-200:#DFE4EC;
@@ -68,7 +68,7 @@
   --aq-surface-hover:#EDF2FF;
   --aq-surface-2:var(--aq-gray-50);       /* 중립 컨트롤 면 */
   --aq-surface-2-hover:var(--aq-gray-100);
-  --aq-field:var(--aq-gray-75);
+  --aq-field:#F4F7FC;            /* 입력칸 면 — 흰 바탕 위 */
   --aq-field-line:#E4EAF4;
   --aq-line:var(--aq-gray-150);
   --aq-line-2:var(--aq-gray-200);

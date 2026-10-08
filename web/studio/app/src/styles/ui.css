@@ -77,17 +77,19 @@
    테두리 없는 면 + 포커스 때 흰 면으로 떠오름 (홍보·설문 페이지와 같은 언어).
    옅은 면(카드·목록 줄) 안에서는 --aq-field-bg가 흰색으로 바뀐다. */
 .ui-input,.ui-select,.ui-textarea,
-.ui-field :is(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]):not([type=color]),select,textarea){
-  --ui-input-h:var(--aq-h-md);--ui-input-r:var(--aq-r-ctl-md);
+.ui-field :where(input:not([type=checkbox],[type=radio],[type=file],[type=range],[type=color],[type=hidden]),select,textarea){
+  --ui-input-h:var(--aq-field-h,var(--aq-h-md));--ui-input-r:var(--aq-field-r,var(--aq-r-ctl-md));
   display:block;width:100%;min-width:0;min-height:var(--ui-input-h);padding:10px 16px;margin:0;
   border:0;border-radius:var(--ui-input-r);background-color:var(--aq-field-bg,var(--aq-field));color:var(--aq-text);
   font:inherit;font-size:var(--aq-fs-lg);line-height:1.5;
   transition:background-color var(--aq-dur) var(--aq-ease),box-shadow var(--aq-dur) var(--aq-ease)
 }
-.ui-input::placeholder,.ui-textarea::placeholder,.ui-field :is(input,textarea)::placeholder{color:var(--aq-text-disabled)}
-:is(.ui-input,.ui-select,.ui-textarea,.ui-field :is(input,select,textarea)):focus{outline:0;background-color:#fff;box-shadow:var(--aq-field-focus)}
-:is(.ui-input,.ui-select,.ui-textarea,.ui-field :is(input,select,textarea)):disabled{color:var(--aq-text-disabled);cursor:not-allowed}
-.ui-textarea,.ui-field textarea{min-height:112px;padding-block:13px;line-height:1.65;resize:vertical}
+.ui-input::placeholder,.ui-textarea::placeholder,.ui-field :where(input,textarea)::placeholder{color:var(--aq-text-disabled)}
+:is(.ui-input,.ui-select,.ui-textarea,.ui-field :where(input,select,textarea)):focus{outline:0;background-color:#fff;box-shadow:var(--aq-field-focus)}
+:is(.ui-input,.ui-select,.ui-textarea,.ui-field :where(input,select,textarea)):disabled{color:var(--aq-text-disabled);cursor:not-allowed}
+.ui-select,.ui-field :where(select){padding-right:44px}
+.ui-select.is-sm{padding-right:38px}
+.ui-textarea,.ui-field :where(textarea){min-height:112px;padding-block:13px;line-height:1.65;resize:vertical}
 .ui-input.is-sm,.ui-select.is-sm{--ui-input-h:var(--aq-h-sm);--ui-input-r:var(--aq-r-ctl-sm);padding-inline:13px;font-size:var(--aq-fs-md)}
 .ui-input.is-lg,.ui-select.is-lg{--ui-input-h:var(--aq-h-lg);--ui-input-r:var(--aq-r-ctl-lg);padding-inline:18px;font-size:16px}
 .ui-select.is-auto,.ui-input.is-auto{width:auto}
@@ -95,6 +97,10 @@
 .ui-input.is-sm[type=search]{padding-left:38px;background-position:13px 50%;background-size:16px}
 :is(.ui-card,.ui-row,.ui-box,.ui-stat,.ui-callout,.ui-on-soft){--aq-field-bg:#fff}
 :is(.ui-card,.ui-row,.ui-box) :is(.ui-input,.ui-select,.ui-textarea):focus{background-color:#fff;box-shadow:var(--aq-field-focus-on-soft)}
+
+/* 폼 크기 — 아티스트용 큰 폼(신청서·프로필·로그인)은 컨테이너에 .ui-form-lg (칸 56px) */
+.ui-form-lg,.wizard,.aq-profile-card,.auth-card{--aq-field-h:var(--aq-h-lg);--aq-field-r:var(--aq-r-ctl-lg)}
+.aq-profile-card,.aq-sign-page{--aq-field-bg:#fff}
 
 /* 입력 묶음: 이름표 · 칸 · 도움말 */
 .ui-field{display:grid;gap:8px;min-width:0;margin:0 0 18px}
@@ -310,6 +316,8 @@
 .ui-row.is-read{opacity:.62}
 .ui-row.is-muted .ui-row-title{color:var(--aq-text-4)}
 .ui-row-body{display:block;min-width:0}
+button.ui-row-title{width:100%;padding:0;border:0;background:none;font-family:inherit;text-align:left;cursor:pointer}
+button.ui-row-title:hover{color:var(--aq-primary)}
 .ui-row-title{display:block;margin:0;font-size:15px;font-weight:var(--aq-fw-bold);line-height:1.4;letter-spacing:-.03em;color:inherit;overflow-wrap:anywhere}
 .ui-row-meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin-top:4px;font-size:12px;line-height:1.5;color:var(--aq-text-4)}
 .ui-row-meta>span+span::before{content:"·";margin-right:10px;color:var(--aq-gray-300)}
@@ -419,10 +427,9 @@ button.ui-avatar:hover{transform:scale(1.06);background:var(--aq-blue-200)}
   .ui-card{padding:20px;border-radius:24px}
   .ui-stats{gap:8px}
   .ui-stat{min-height:116px;padding:17px}
-  .ui-row{grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:14px 15px}
-  .ui-row>.ui-cover,.ui-row>.ui-avatar,.ui-row>.ui-icon{display:none}
-  .ui-row.is-keep-lead{grid-template-columns:auto minmax(0,1fr) auto}
-  .ui-row.is-keep-lead>:is(.ui-cover,.ui-avatar,.ui-icon){display:inline-grid}
+  .ui-row{gap:12px;padding:14px 15px}
+  .ui-row>.ui-cover{--cv:40px}
+  .ui-row>.ui-icon{--ic:36px}
   .ui-kv{--cols:2}
   .ui-form-grid{grid-template-columns:1fr}
   .ui-tabs{gap:20px}

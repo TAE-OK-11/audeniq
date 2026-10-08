@@ -1,5 +1,6 @@
 // 계약·권리 서류 카드 — 라이브 aqDocumentCards의 카드 1개 대응
-import { docState, docTone, type DocRecord } from '../store/docs';
+import { docBadgeTone, docState, docTone, type DocRecord } from '../store/docs';
+import { Badge } from '../ui';
 import { niceDate, stripSampleSuffix } from '../lib/format';
 import { CheckIcon } from './Check';
 import { Glyph } from './Glyph';
@@ -17,7 +18,7 @@ export function DocCard({ c, onOpen }: { c: DocRecord; onOpen: (id: string) => v
         </button>
         <span className="ui-row-meta">{c.releaseTitle || '공통 문서'} · {niceDate(c.created)}</span>
         <div className="aq-doc-state-line">
-          <span className="aq-doc-state-pill">{docState(c)}</span>
+          <Badge tone={docBadgeTone(c)}>{docState(c)}</Badge>
           {c.fileName && <span>{c.fileName}</span>}
           {c.reviewNote && <span>{c.reviewNote}</span>}
         </div>
