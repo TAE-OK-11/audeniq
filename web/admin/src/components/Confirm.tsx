@@ -23,12 +23,12 @@ function ConfirmBody({ opts, onAnswer }: { opts: ConfirmOptions; onAnswer: (v: b
     <>
       {opts.message && <div className="aq-confirm-message">{opts.message}</div>}
       <div className="aq-confirm-actions">
-        <button type="button" className="button secondary" onClick={() => answer(false)}>
+        <button type="button" className="ui-btn is-soft" onClick={() => answer(false)}>
           {opts.cancelLabel ?? '취소'}
         </button>
         <button
           type="button" data-autofocus
-          className={`button${opts.danger ? ' danger' : ''}`}
+          className={`ui-btn ${opts.danger ? 'is-danger' : 'is-primary'}`}
           onClick={() => answer(true)}
         >
           {opts.confirmLabel ?? '확인'}

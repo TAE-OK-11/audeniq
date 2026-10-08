@@ -3,7 +3,7 @@ import { Link, useSearchParams } from '../lib/router';
 import { errorMessage } from '../api/errors';
 import { staffApi, type QueueRelease } from '../api/staff';
 import { QUEUE_FILTERS, RELEASE_STATUS, RELEASE_TYPE, ago, applicationPending, day, dspLabel, pick } from '../labels';
-import { Chip, Empty, ErrorBox, Filters, Initial, PageHead, Skeleton, StatusChip, Seg, SubTabs, useStaff } from '../ui';
+import { Badge, EmptyState, ErrorBox, ChipGroup, Cover, PageHeader, SkeletonList, StatusBadge, Seg, SubTabs, useStaff } from '../staffUi';
 
 const PAGE = 50;
 /** 심사 상세의 ‘다음 건’이 이 목록 순서를 따른다 */
@@ -68,14 +68,14 @@ export function ReviewQueue() {
 
   return (
     <div className="view-enter">
-      <PageHead
+      <PageHeader
         eyebrow="발매 심사"
         title="발매 심사"
         sub="새 발매 신청과 담당자 판단이 필요한 발매예요. 오래 기다린 순서로 보여요."
-        actions={<button type="button" className="adm-btn soft small" onClick={() => setTick(t => t + 1)}>새로고침</button>}
+        actions={<button type="button" className="ui-btn is-soft is-sm" onClick={() => setTick(t => t + 1)}>새로고침</button>}
       />
       <SubTabs tabs={[{ to: '/reviews', label: '심사 목록', count: counts?.review }, { to: '/approvals', label: '2차 승인', count: counts?.second_approvals }]} />
-      <Filters
+      <ChipGroup
         label="발매 상태"
         value={status}
         onChange={v => setParams({ status: v }, { replace: true })}
@@ -83,48 +83,48 @@ export function ReviewQueue() {
       />
       <div className="adm-queue-tools">
         <label htmlFor="qSearch" className="sr-only">검색</label>
-        <input id="qSearch" type="search" className="adm-input" placeholder="제목·아티스트·작업 공간으로 찾기" value={search} onChange={e => setSearch(e.target.value)} />
+        <input id="qSearch" type="search" className="ui-input" placeholder="제목·아티스트·작업 공간으로 찾기" value={search} onChange={e => setSearch(e.target.value)} />
         <Seg label="담당" value={who} onChange={setWho} options={[['all', '전체'], ['mine', '내 담당'], ['free', '담당자 없음']] as const} />
         <Seg label="정렬" value={sort} onChange={setSort} options={[['wait', '오래 기다린 순'], ['date', '발매일 빠른 순']] as const} />
       </div>
       {!loading && items.length > 0 && <p className="adm-queue-count">{term ? `‘${search.trim()}’ 검색 결과 ${shown.length}건` : `${shown.length}건`}</p>}
 
       {error && <ErrorBox message={error} onRetry={() => setTick(t => t + 1)} />}
-      {loading ? <Skeleton /> : shown.length === 0 ? (
-        <Empty title={status === 'PENDING' ? '심사 대기 중인 발매가 없어요' : '해당 상태의 발매가 없어요'}>
+      {loading ? <SkeletonList /> : shown.length === 0 ? (
+        <EmptyState title={status === 'PENDING' ? '심사 대기 중인 발매가 없어요' : '해당 상태의 발매가 없어요'}>
           {status === 'PENDING' ? '새로 들어오는 발매 신청은 자동 검사 후 이곳에 쌓여요.' : '다른 상태를 선택해 보세요.'}
-        </Empty>
+        </EmptyState>
       ) : (
-        <div className="adm-list">
+        <div className="ui-list">
           {shown.map(r => (
-            <Link key={r.id} to={`/reviews/${r.id}`} className="adm-row">
-              <Initial text={r.title} src={r.cover} />
+            <Link key={r.id} to={`/reviews/${r.id}`} className="ui-row">
+              <Cover id={r.id} text={r.title} src={r.cover} />
               <span className="adm-min">
-                <span className="adm-row-title">{r.title}</span>
-                <span className="adm-row-meta">
+                <span className="ui-row-title">{r.title}</span>
+                <span className="ui-row-meta">
                   <span>{r.artist || '아티스트 미기재'}</span>
                   <span>{r.org_name}</span>
                   <span>{RELEASE_TYPE[r.release_type] ?? r.release_type}</span>
                   <span>발매 예정 {day(r.release_date)}</span>
                 </span>
                 {r.platforms.length > 0 && (
-                  <span className="adm-dsps" title={r.platforms.map(dspLabel).join(', ')}>
-                    {r.platforms.slice(0, 4).map(p => <span key={p}>{dspLabel(p)}</span>)}
-                    {r.platforms.length > 4 && <span className="is-more">+{r.platforms.length - 4}</span>}
+                  <span className="ui-tags" title={r.platforms.map(dspLabel).join(', ')}>
+                    {r.platforms.slice(0, 4).map(p => <span key={p} className="ui-tag is-white">{dspLabel(p)}</span>)}
+                    {r.platforms.length > 4 && <span className="ui-tag is-white">+{r.platforms.length - 4}</span>}
                   </span>
                 )}
               </span>
-              <span className="adm-row-end">
+              <span className="ui-row-end">
                 {(() => {
                   const left = daysLeft(r.release_date);
                   return left != null && left < 21
-                    ? <Chip tone={left < 14 ? 'red' : 'amber'}>{left < 0 ? '발매일 지남' : left === 0 ? '오늘 발매' : `발매 D-${left}`}</Chip>
+                    ? <Badge tone={left < 14 ? 'red' : 'amber'}>{left < 0 ? '발매일 지남' : left === 0 ? '오늘 발매' : `발매 D-${left}`}</Badge>
                     : null;
                 })()}
-                {r.claim && <Chip tone={r.claim.user_id === me.user_id ? 'blue' : 'gray'}>{r.claim.user_id === me.user_id ? '내 담당' : `담당 ${r.claim.email.split('@')[0]}`}</Chip>}
+                {r.claim && <Badge tone={r.claim.user_id === me.user_id ? 'blue' : 'gray'}>{r.claim.user_id === me.user_id ? '내 담당' : `담당 ${r.claim.email.split('@')[0]}`}</Badge>}
                 {r.status === 'READY_FOR_DELIVERY' && applicationPending(r.agreement)
-                  ? <Chip tone="violet">새 발매 신청</Chip>
-                  : <StatusChip value={pick(RELEASE_STATUS, r.status)} />}
+                  ? <Badge tone="violet">새 발매 신청</Badge>
+                  : <StatusBadge value={pick(RELEASE_STATUS, r.status)} />}
                 <small className={waitedHours(r.submitted_at) >= 48 ? 'is-late' : undefined}>접수 {ago(r.submitted_at) || '—'}</small>
               </span>
             </Link>
@@ -132,7 +132,7 @@ export function ReviewQueue() {
         </div>
       )}
       {more && !term && !loading && (
-        <div className="adm-more"><button type="button" className="adm-btn soft" onClick={loadMore}>더 보기</button></div>
+        <div className="adm-more"><button type="button" className="ui-btn is-soft" onClick={loadMore}>더 보기</button></div>
       )}
     </div>
   );

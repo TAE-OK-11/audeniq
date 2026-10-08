@@ -56,9 +56,9 @@ export function Login() {
           <p className="auth-sub">
             {MOCK ? '체험 모드예요. 아무 이메일로나 들어가 예시 데이터를 볼 수 있어요.' : '스튜디오와 같은 계정으로 로그인해요.'}
           </p>
-          {error && <div className="feedback feedback-error aq-shake" role="alert" key={error}>{error}</div>}
+          {error && <div className="ui-callout is-danger aq-shake" role="alert" key={error}>{error}</div>}
           <form onSubmit={submit}>
-            <div className="field">
+            <div className="ui-field">
               <label htmlFor="loginEmail">이메일</label>
               <input
                 id="loginEmail" type="email" required autoComplete="email" autoFocus
@@ -66,7 +66,7 @@ export function Login() {
                 value={email} onChange={e => setEmail(e.target.value)}
               />
             </div>
-            <div className="field">
+            <div className="ui-field">
               <label htmlFor="loginPassword">비밀번호</label>
               <PasswordInput
                 id="loginPassword" required={!MOCK} autoComplete="current-password"
@@ -75,7 +75,7 @@ export function Login() {
                 show={showPw} onToggle={() => setShowPw(v => !v)}
               />
             </div>
-            <button className={`button auth-submit${busy ? ' is-busy' : ''}`} type="submit" disabled={busy} aria-busy={busy}>
+            <button className={`ui-btn is-primary auth-submit${busy ? ' is-busy' : ''}`} type="submit" disabled={busy} aria-busy={busy}>
               {busy ? '들어가는 중' : '로그인'}
             </button>
           </form>

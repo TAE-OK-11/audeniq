@@ -23,6 +23,8 @@ const P: Record<string, ReactNode> = {
   'arrow-left': <path d="M19 12H5M11 6l-6 6 6 6" />,
   'chevron-right': <path d="m9 6 6 6-6 6" />,
   download: <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />,
+  // 디자인 시스템 — 겹친 면
+  layers: <><path d="m12 3 9 5-9 5-9-5 9-5Z" /><path d="m3 13 9 5 9-5" /></>,
   lock: <><rect x="4" y="10" width="16" height="11" rx="3" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></>,
   truck: <><path d="M3 7h11v10H3zM14 10h4l3 3v4h-7" /><circle cx="7" cy="18" r="2" /><circle cx="17" cy="18" r="2" /></>,
   alert: <><path d="M12 7v6" /><circle cx="12" cy="17" r="1" fill="currentColor" /></>,

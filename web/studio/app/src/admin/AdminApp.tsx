@@ -58,6 +58,8 @@ const Docs = page('Docs');
 const Board = page('Board');
 const CrmDetail = page('CrmDetail');
 const DspOps = page('DspOps');
+// 디자인 시스템 화면은 미리 받지 않는다 (가끔 여는 참고 화면)
+const DesignSystem = lazy(() => import('./pages/DesignSystem').then(m => ({ default: m.DesignSystem })));
 function prefetchPages() {
   const run = () => { for (const load of Object.values(PAGE_LOADERS)) void load().catch(() => {}); };
   if ('requestIdleCallback' in window) window.requestIdleCallback(run, { timeout: 4000 });
@@ -77,7 +79,7 @@ import { Avatar, Badge } from '../ui';
 const ICONS: Record<string, string> = {
   home: 'home', review: 'review', approval: 'approval', doc: 'doc', inquiry: 'inquiry',
   delivery: 'truck', dsp: 'globe', payout: 'card',
-  task: 'task', inbox: 'bell', exception: 'warning', sla: 'clock', crm: 'users', chat: 'inquiry',
+  task: 'task', inbox: 'bell', exception: 'warning', sla: 'clock', crm: 'users', chat: 'inquiry', design: 'layers',
 };
 
 export function Icon({ name }: { name: string }) {
@@ -114,6 +116,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { to: '/admin/payouts', label: '지급 요청', icon: 'payout', count: o => (o ? o.payout_requests : 0), adminOnly: true },
     ],
   },
+  { group: 'SYSTEM', items: [{ to: '/admin/design', label: '디자인 시스템', icon: 'design' }] },
 ];
 
 const active = (path: string, to: string) => (to === '/admin' ? path === '/admin' || path === '/admin/' : path === to || path.startsWith(`${to}/`));
@@ -298,6 +301,7 @@ export function AdminApp() {
               <Route path="/admin/crm" element={<Crm />} />
               <Route path="/admin/crm/:id" element={<CrmDetail />} />
               <Route path="/admin/dsp-ops" element={<DspOps />} />
+              <Route path="/admin/design" element={<DesignSystem />} />
               <Route path="/admin/tasks" element={<Tasks />} />
               <Route path="/admin/board" element={<Board />} />
               <Route path="/admin/board/:id" element={<Board />} />

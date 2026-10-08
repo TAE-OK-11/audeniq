@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { staffApi, type AgreementTermsInput, type StaffDocument } from '../api/staff';
 import { errorMessage } from '../api/errors';
 import { useToast } from './Toast';
-import { Section, Seg } from '../ui';
+import { Section, Seg } from '../staffUi';
 import { CheckIcon } from './Check';
 
 const pct = (bps: number) => `${(bps / 100).toLocaleString('ko-KR', { maximumFractionDigits: 2 })}%`;
@@ -44,7 +44,7 @@ export function AgreementTermsSection({ releaseId, doc, editable, onSaved }: {
     <Section title="배급 계약 조건" meta={t ? `${t.form} · ${exclusivity === 'EXCLUSIVE' ? '독점' : '비독점'} · 회사 ${pct(t.fee_bps)}` : '입력 전'}>
       {!editable ? (
         t ? (
-          <dl className="adm-kv">
+          <dl className="ui-kv">
             <div><dt>배급 형태</dt><dd>{t.exclusivity === 'EXCLUSIVE' ? '독점' : '비독점'}</dd></div>
             <div><dt>배급수수료</dt><dd>회사 {pct(t.fee_bps)} / 이용자 {pct(t.user_bps)}</dd></div>
             {t.rate_note && <div><dt>특별 요율</dt><dd>{t.rate_note}</dd></div>}
@@ -55,24 +55,24 @@ export function AgreementTermsSection({ releaseId, doc, editable, onSaved }: {
         ) : <p className="small muted">이 발매를 맡은 담당자가 승인 전에 수수료와 배급 형태를 입력해요.</p>
       ) : (
         <div className="adm-terms-form">
-          <div className="adm-field"><span className="adm-terms-label">배급 형태</span>
+          <div className="ui-field"><span className="adm-terms-label">배급 형태</span>
             <Seg label="배급 형태" value={exclusivity} onChange={setExclusivity} options={[['NON_EXCLUSIVE', '비독점 (기본)'], ['EXCLUSIVE', '독점']] as const} /></div>
-          <div className="adm-field">
+          <div className="ui-field">
             <label htmlFor="atFee">AUDENIQ 배급수수료 (%)</label>
             <div className="adm-terms-fee">
-              <input id="atFee" className="adm-input" inputMode="decimal" value={fee} placeholder="예: 8" onChange={e => setFee(e.target.value.replace(/[^\d.]/g, ''))} aria-invalid={fee !== '' && !feeOk} />
+              <input id="atFee" className="ui-input" inputMode="decimal" value={fee} placeholder="예: 8" onChange={e => setFee(e.target.value.replace(/[^\d.]/g, ''))} aria-invalid={fee !== '' && !feeOk} />
               <span>{feeOk ? `이용자 ${pct(10000 - feeBps)}` : '0~100 사이'}</span>
             </div>
           </div>
-          <div className="adm-field"><label htmlFor="atRate">특별 요율 메모 (선택)</label>
-            <textarea id="atRate" className="adm-textarea" rows={2} maxLength={500} value={rateNote} onChange={e => setRateNote(e.target.value)} placeholder="레이블 특별요율, 프로모션 요율(기간), Merlin·직계약 등 경로별 요율" /></div>
-          <div className="adm-field"><label htmlFor="atTerritory">배급 지역 제외·조건 (선택)</label>
-            <input id="atTerritory" className="adm-input" maxLength={300} value={territoryNote} onChange={e => setTerritoryNote(e.target.value)} placeholder="예: 일본 제외" /></div>
-          <div className="adm-field"><label htmlFor="atMin">최소지급액 특약 (선택)</label>
-            <input id="atMin" className="adm-input" maxLength={300} value={minPayout} onChange={e => setMinPayout(e.target.value)} placeholder="비우면 약관의 기본 기준" /></div>
-          <div className="adm-field"><label htmlFor="atSpecial">개별 특약 (선택)</label>
-            <textarea id="atSpecial" className="adm-textarea" rows={3} maxLength={2000} value={special} onChange={e => setSpecial(e.target.value)} placeholder="특정 DSP 포함·제외, 전담 지원, 별도 SLA 등 이 고객과만 합의한 내용이 있을 때만" /></div>
-          <button type="button" className="adm-btn primary" disabled={!feeOk || busy} onClick={() => void save()}>{busy ? '저장하는 중…' : t ? '계약 조건 다시 저장' : '계약 조건 저장'}</button>
+          <div className="ui-field"><label htmlFor="atRate">특별 요율 메모 (선택)</label>
+            <textarea id="atRate" className="ui-textarea" rows={2} maxLength={500} value={rateNote} onChange={e => setRateNote(e.target.value)} placeholder="레이블 특별요율, 프로모션 요율(기간), Merlin·직계약 등 경로별 요율" /></div>
+          <div className="ui-field"><label htmlFor="atTerritory">배급 지역 제외·조건 (선택)</label>
+            <input id="atTerritory" className="ui-input" maxLength={300} value={territoryNote} onChange={e => setTerritoryNote(e.target.value)} placeholder="예: 일본 제외" /></div>
+          <div className="ui-field"><label htmlFor="atMin">최소지급액 특약 (선택)</label>
+            <input id="atMin" className="ui-input" maxLength={300} value={minPayout} onChange={e => setMinPayout(e.target.value)} placeholder="비우면 약관의 기본 기준" /></div>
+          <div className="ui-field"><label htmlFor="atSpecial">개별 특약 (선택)</label>
+            <textarea id="atSpecial" className="ui-textarea" rows={3} maxLength={2000} value={special} onChange={e => setSpecial(e.target.value)} placeholder="특정 DSP 포함·제외, 전담 지원, 별도 SLA 등 이 고객과만 합의한 내용이 있을 때만" /></div>
+          <button type="button" className="ui-btn is-primary" disabled={!feeOk || busy} onClick={() => void save()}>{busy ? '저장하는 중…' : t ? '계약 조건 다시 저장' : '계약 조건 저장'}</button>
           {!t && <p className="small muted">저장해야 승인할 수 있어요.</p>}
         </div>
       )}

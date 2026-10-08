@@ -7,10 +7,12 @@ import { ConfirmProvider } from './components/Confirm';
 import { Login } from './Login';
 import { AdminApp } from './AdminApp';
 // 스튜디오와 같은 디자인 레이어(버튼·입력창·카드·모달·토스트) 위에 관리자 레이아웃(admin.css)
+import './styles/tokens.css';
 import './styles/design.css';
 import './styles/live.css';
 import './styles/enhance.css';
 import './styles/controls.css';
+import './styles/ui.css';
 
 function BootScreen() {
   return (

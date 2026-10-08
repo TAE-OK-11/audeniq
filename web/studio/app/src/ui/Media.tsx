@@ -1,7 +1,7 @@
 // 아바타 · 앨범 커버 · 아이콘 칸
 import type { ReactNode } from 'react';
 import { Glyph } from '../components/Glyph';
-import { gradientFor } from '../lib/catalog';
+import { gradientFor } from './cover';
 import { cx, type Tone } from './tone';
 
 const initial = (s: string | null | undefined) => (s || '?').trim().slice(0, 1).toUpperCase() || '?';

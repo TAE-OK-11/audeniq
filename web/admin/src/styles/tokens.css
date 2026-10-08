@@ -1,0 +1,188 @@
+/* ==========================================================================
+   AUDENIQ 디자인 토큰 — 색·글자·모서리·높이·간격·그림자·움직임의 단 하나의 기준
+   스튜디오(아티스트 화면)·관리자·업무 화면이 모두 이 값을 쓴다. 다른 CSS는 숫자 대신 토큰을 쓴다.
+   원본은 web/studio/app/src/styles/tokens.css, web/admin은 같은 내용 복사본.
+   ========================================================================== */
+:root{
+  /* ---------- 글꼴 ---------- */
+  --font-brand:"AUDENIQ Sans";
+  --font-fallback:-apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+  --font-body:var(--font-brand), var(--font-fallback);
+  --font-display:var(--font-body);
+  --font-mono:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* ---------- 팔레트 (원색 단계) ---------- */
+  /* 파랑 — 브랜드 */
+  --aq-blue-25:#F8FAFF;
+  --aq-blue-50:#F5F8FF;   /* 카드·목록 면 */
+  --aq-blue-100:#EEF3FF;  /* 고른 항목·옅은 버튼 */
+  --aq-blue-150:#E6EDFF;  /* 아이콘 칸·아바타 */
+  --aq-blue-200:#DCE5FF;
+  --aq-blue-300:#CFDBFF;  /* 고른 줄 테두리 */
+  --aq-blue-400:#7F99EF;  /* 입력칸 포커스 */
+  --aq-blue-450:#6F91FF;  /* 포커스 윤곽선 */
+  --aq-blue-500:#3B63F3;  /* 브랜드 */
+  --aq-blue-600:#2C56E0;  /* 누름·호버 */
+  --aq-blue-700:#2F55D4;  /* 옅은 면 위 파란 글자 */
+  --aq-blue-800:#23408F;
+
+  /* 회색 — 푸른 기가 도는 중립 */
+  --aq-gray-0:#FFFFFF;
+  --aq-gray-25:#FAFBFD;
+  --aq-gray-50:#F5F7FA;   /* 컨트롤 면 (고르기·필터·보조 버튼) */
+  --aq-gray-75:#F7F9FD;
+  --aq-gray-100:#EEF1F6;
+  --aq-gray-150:#E8EDF5;  /* 구분선 */
+  --aq-gray-200:#DFE4EC;
+  --aq-gray-300:#C2C9D6;
+  --aq-gray-400:#9AA3B2;  /* 흐린 글자·자리표시 */
+  --aq-gray-500:#8792A8;  /* 메타 정보 */
+  --aq-gray-600:#67738A;  /* 보조 설명 */
+  --aq-gray-700:#4D5970;  /* 두 번째 본문 */
+  --aq-gray-800:#36425B;
+  --aq-gray-900:#171B29;  /* 본문 잉크 */
+  --aq-gray-950:#0F1424;
+
+  /* 의미 색 */
+  --aq-green-50:#E8F6F0; --aq-green-100:#D3EFE2; --aq-green-500:#2FB47C; --aq-green-600:#21815B; --aq-green-700:#1D6B4C;
+  --aq-amber-50:#FFF3E6; --aq-amber-100:#FFE6CC; --aq-amber-500:#F0A531; --aq-amber-600:#A76525; --aq-amber-700:#8A4F12;
+  --aq-red-50:#FFF1F2;   --aq-red-100:#FFE3E6;   --aq-red-500:#E5484D;   --aq-red-600:#B33744;   --aq-red-700:#9A2C38;
+  --aq-violet-50:#F3F0FF; --aq-violet-100:#E7E1FF; --aq-violet-500:#7A5AF8; --aq-violet-600:#6852BA; --aq-violet-700:#54419A;
+  --aq-alert:#F04452;     /* 알림 숫자 배지 */
+
+  /* ---------- 의미 토큰 (화면은 이것만 쓴다) ---------- */
+  --aq-text:var(--aq-gray-900);
+  --aq-text-2:var(--aq-gray-700);
+  --aq-text-3:var(--aq-gray-600);
+  --aq-text-4:var(--aq-gray-500);
+  --aq-text-disabled:var(--aq-gray-400);
+
+  --aq-primary:var(--aq-blue-500);
+  --aq-primary-hover:var(--aq-blue-600);
+  --aq-primary-soft:var(--aq-blue-100);
+  --aq-primary-soft-hover:var(--aq-blue-150);
+  --aq-primary-text:var(--aq-blue-700);
+
+  --aq-bg:var(--aq-gray-0);
+  --aq-surface:var(--aq-blue-50);         /* 카드·목록 줄·숫자 칸 */
+  --aq-surface-hover:#EDF2FF;
+  --aq-surface-2:var(--aq-gray-50);       /* 중립 컨트롤 면 */
+  --aq-surface-2-hover:var(--aq-gray-100);
+  --aq-field:#F4F7FC;            /* 입력칸 면 — 흰 바탕 위 */
+  --aq-field-line:#E4EAF4;
+  --aq-line:var(--aq-gray-150);
+  --aq-line-2:var(--aq-gray-200);
+  --aq-scrim:#1323407a;
+  --aq-inverse:var(--aq-gray-900);         /* 어두운 결정 패널·관리자 표시 */
+  --aq-toast:#1F2B47;
+  --aq-row-warn:#FFF7EE; --aq-row-success:#EEF8F3; --aq-row-danger:#FFF6F7;  /* 상태가 있는 목록 줄 면 */
+
+  /* 상태 색조 — 배지·알림·숫자 칸·아이콘 칸이 같은 짝을 쓴다 */
+  --aq-tone-blue-bg:#EAF0FF;    --aq-tone-blue-fg:#365CD4;
+  --aq-tone-violet-bg:#F0EDFF;  --aq-tone-violet-fg:var(--aq-violet-600);
+  --aq-tone-amber-bg:var(--aq-amber-50); --aq-tone-amber-fg:var(--aq-amber-600);
+  --aq-tone-green-bg:var(--aq-green-50); --aq-tone-green-fg:var(--aq-green-600);
+  --aq-tone-red-bg:#FFEDEF;     --aq-tone-red-fg:var(--aq-red-600);
+  --aq-tone-gray-bg:#EDEFF4;    --aq-tone-gray-fg:#6A7386;
+
+  /* ---------- 글자 ---------- */
+  --aq-fs-2xs:10.5px;
+  --aq-fs-xs:11.5px;   /* 배지·메타 */
+  --aq-fs-sm:12.5px;   /* 작은 버튼·보조 */
+  --aq-fs-md:13.5px;   /* 설명·표 */
+  --aq-fs-base:14px;   /* 본문·버튼 */
+  --aq-fs-lg:15px;     /* 입력칸 */
+  --aq-fs-title-sm:16px;
+  --aq-fs-title:18px;  /* 섹션 제목 */
+  --aq-fs-title-lg:22px;
+  --aq-fs-h1:clamp(28px, 3vw, 36px);  /* 화면 제목 */
+  --aq-fs-display:clamp(30px, 3.6vw, 40px);
+  --aq-fw-regular:400;
+  --aq-fw-medium:650;
+  --aq-fw-semibold:720;
+  --aq-fw-bold:780;
+  --aq-fw-heavy:820;
+  --aq-tracking-tight:-.05em;
+  --aq-tracking-heading:-.045em;
+  --aq-tracking-snug:-.02em;
+  --aq-tracking-eyebrow:.14em;
+
+  /* ---------- 모서리 ---------- */
+  --aq-r-xs:7px;     /* 태그·코드 */
+  --aq-r-sm:11px;    /* 작은 버튼·작은 아바타 */
+  --aq-r-md:14px;    /* 버튼·입력칸·필터 */
+  --aq-r-lg:18px;    /* 안쪽 칸·말풍선 */
+  --aq-r-xl:22px;    /* 목록 줄·숫자 칸 */
+  --aq-r-2xl:28px;   /* 카드 */
+  --aq-r-3xl:34px;   /* 히어로·큰 면 */
+  --aq-r-pill:999px;
+
+  /* ---------- 누르는 요소 높이 (8px 단위) · 높이에 비례한 모서리 ---------- */
+  --aq-h-xs:32px;  --aq-r-ctl-xs:10px;   /* 표 안 작은 버튼 */
+  --aq-h-sm:40px;  --aq-r-ctl-sm:13px;   /* 관리자 버튼·필터·도구줄 */
+  --aq-h-md:48px;  --aq-r-ctl-md:16px;   /* 기본 버튼·입력칸 */
+  --aq-h-lg:56px;  --aq-r-ctl-lg:18px;   /* 큰 실행 버튼·신청서 입력칸 */
+
+  /* ---------- 간격 (4px 단위) ---------- */
+  --aq-s-1:4px; --aq-s-2:8px; --aq-s-3:12px; --aq-s-4:16px; --aq-s-5:20px; --aq-s-6:24px;
+  --aq-s-7:28px; --aq-s-8:32px; --aq-s-10:40px; --aq-s-12:48px; --aq-s-16:64px;
+
+  /* ---------- 그림자 (면 디자인이라 아주 아껴 쓴다) ---------- */
+  --aq-shadow-thumb:0 1px 3px rgba(23,27,41,.08),0 6px 14px -10px rgba(23,27,41,.18);
+  --aq-shadow-lift:0 18px 40px -26px rgba(27,51,104,.32);
+  --aq-shadow-pop:0 14px 34px -10px rgba(21,35,76,.28);
+  --aq-shadow-modal:0 30px 80px -24px rgba(19,35,64,.38);
+  --aq-ring:0 0 0 3px rgba(59,99,243,.12);
+  /* 입력칸 포커스 — 어디서든 한 가지: 흰 면 + 연한 파란 테두리 + 살짝 떠오름 */
+  --aq-field-focus:0 0 0 2px var(--aq-blue-300),0 12px 28px -16px rgba(59,99,243,.5);
+  --aq-field-focus-on-soft:var(--aq-field-focus);
+  --aq-focus:3px solid var(--aq-blue-450);
+
+  /* ---------- 움직임 ---------- */
+  --aq-ease:cubic-bezier(.22,1,.36,1);
+  --aq-spring:cubic-bezier(.34,1.56,.64,1);
+  --aq-glide:cubic-bezier(.32,.72,.28,1);   /* 미끄러지는 알약·밑줄 */
+  --aq-dur-fast:.15s;
+  --aq-dur:.2s;
+  --aq-dur-slow:.36s;
+
+  /* ---------- 앱 상단 ---------- */
+  --aq-header-h:72px; --aq-logo-w:144px;
+
+  /* ---------- 층 ---------- */
+  --aq-z-sticky:40; --aq-z-header:50; --aq-z-menu:60; --aq-z-modal:110; --aq-z-toast:400;
+
+  /* ---------- 예전 이름 → 토큰 (기존 CSS가 그대로 따라오게) ---------- */
+  --weight-body:var(--aq-fw-regular); --weight-heading:750; --weight-hero:var(--aq-fw-bold);
+  --tracking-heading:var(--aq-tracking-heading); --tracking-hero:-.055em;
+  --blue:var(--aq-primary); --blue-hover:var(--aq-primary-hover);
+  --violet:var(--aq-violet-500); --soft-violet:#EEE8FF; --navy:#111C3D;
+  --ink:var(--aq-text); --muted:var(--aq-text-3); --border:var(--aq-line);
+  --background:#F8FAFD; --surface:var(--aq-bg); --surface-alt:#F2F6FF;
+  --ease-out:var(--aq-ease); --container:1120px;
+  --portal-blue:var(--aq-primary); --portal-border:var(--aq-line); --portal-ink:var(--aq-text);
+  --portal-muted:var(--aq-text-3); --portal-soft:#F2F6FF; --portal-ease:var(--aq-ease);
+  --studio-blue:var(--aq-primary); --studio-ink:var(--aq-text); --studio-muted:var(--aq-text-4);
+  --studio-ease:var(--aq-ease); --studio-line:var(--aq-line); --studio-bg:var(--aq-surface-2);
+  --studio-bluewash:#F3F6FF; --studio-action:var(--aq-primary); --studio-action-hover:var(--aq-primary-hover);
+  --studio-shadow:0 16px 45px -32px rgba(27,51,104,.24);
+  --aq-blue:var(--aq-primary); --aq-ink:var(--aq-text); --aq-muted:var(--aq-text-3); --aq-soft:#F2F6FF;
+  --aq-gray:var(--aq-surface-2); --aq-radius:var(--aq-r-2xl);
+  --aq-motion-ease:var(--aq-ease); --aq-motion-fast:210ms; --aq-motion-page:510ms;
+  --aq-final-blue:var(--aq-primary); --aq-final-ink:var(--aq-text); --aq-final-weak:var(--aq-text-3);
+  --aq-final-soft:var(--aq-surface); --aq-final-soft-2:var(--aq-surface-2); --aq-final-ease:var(--aq-ease);
+  --aq-e-ease:var(--aq-ease); --aq-e-spring:var(--aq-spring);
+  --aq-e-blue:var(--aq-primary); --aq-e-blue-soft:var(--aq-primary-soft);
+  --aq-e-ink:var(--aq-text); --aq-e-muted:var(--aq-text-4); --aq-e-line:var(--aq-line);
+  --aq-e-green:var(--aq-green-600); --aq-e-green-soft:var(--aq-green-50);
+  --aq-e-red:var(--aq-red-600); --aq-e-red-soft:var(--aq-red-50);
+  --aq-e-amber:var(--aq-amber-600); --aq-e-amber-soft:var(--aq-amber-50);
+  --aq-e-lift:var(--aq-shadow-lift);
+  --adm-ink:var(--aq-text); --adm-muted:var(--aq-text-3); --adm-line:var(--aq-line);
+  --adm-soft:var(--aq-surface); --adm-soft-2:var(--aq-surface-2); --adm-card:var(--aq-surface);
+  --adm-blue:var(--aq-primary); --adm-blue-soft:var(--aq-primary-soft); --adm-ease:var(--aq-ease);
+  --adm-r-card:var(--aq-r-2xl); --adm-r-item:var(--aq-r-lg); --adm-r-btn:var(--aq-r-md);
+  --n-line:var(--aq-line); --n-soft:var(--aq-surface); --n-weak:var(--aq-text-3);
+  --radius:32px; --section-space:128px;
+}
+@media (max-width:760px){:root{--aq-header-h:64px;--aq-logo-w:120px}}

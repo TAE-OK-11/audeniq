@@ -87,7 +87,7 @@ main { padding-top: 20px; }
 .hero h1 { overflow: visible; line-height: 1.25; }
 .hero h1 .hero-line { display: block; overflow: visible; }
 .hero h1 .hero-accent {
-  color: #3182F6;
+  color: var(--blue);
   background: transparent;
   background-image: none;
   -webkit-background-clip: initial;

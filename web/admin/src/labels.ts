@@ -2,7 +2,8 @@
 import { correctionTarget, isKnownCorrection } from './lib/corrections';
 import type { Duty, StaffRole } from './api/staff';
 
-export type Tone = 'blue' | 'violet' | 'amber' | 'green' | 'red' | 'gray';
+export type { Tone } from './ui';
+import type { Tone } from './ui';
 
 /** 스튜디오 lib/catalog.ts DSP와 같은 순서 — DSP_NAMES[i] = 서버 코드 D-(i+1) */
 const DSP_NAMES: [string, string][] = [

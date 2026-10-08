@@ -43,7 +43,8 @@ EDGE_SERVICE_SECRET=... bun run dev:api  # 로컬 API(127.0.0.1:8080)와 연결�
 - `lib/corrections.ts` — 보완 요청 코드(서버 검사 `check_code` 포함) → 신청서 단계·입력칸 매핑. 발매 목록·상세의 ‘보완하기’는 `/upload?edit={id}&fix={code}`로 해당 칸에 바로 이동
 - `store/` — 공유 상태(프로필, 수령 정보, 알림, 서류, 정산, 문의)
 - `components/` — 모달(퇴장 애니메이션·포커스 트랩), 확인 대화상자, 토스트 스택, 스켈레톤, 오류 경계
-- `styles/` — `design.css`·`live.css`(기존 디자인) 위에 `enhance.css`(모션·보강) 레이어
+- `styles/` — `tokens.css`(디자인 토큰) · `ui.css`(공통 컴포넌트 `ui-*`) · 화면별 배치(`design.css`·`live.css`·`enhance.css`·`admin.css`·`work.css`)
+- `ui/` — 디자인 시스템 React 컴포넌트(Button, Badge, ChipGroup, Segmented, Tabs, PageHeader, StatTile …). 규칙과 목록은 `docs/DESIGN_SYSTEM.md`, 견본은 `/admin/design`
 
 ## 성능·경량화
 - **라우터**: react-router(48KB min / 15KB gzip) 대신 이 앱이 쓰는 API만 같은 이름으로 구현한 `lib/router.tsx`(약 2KB). 되돌리려면 import 경로를 `'react-router'`로 바꾸고 패키지를 설치하면 됩니다.
