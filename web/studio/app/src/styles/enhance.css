@@ -168,7 +168,7 @@ img{max-width:100%}
 .aq-toast.is-error .aq-toast-icon{background:var(--aq-red-500)}
 
 /* ---------- 폼 ---------- */
-.aq-invalid{animation:aq-shake .4s ease;box-shadow:0 0 0 2px #f2a3a3 inset!important}
+.aq-invalid{animation:aq-shake .4s ease}
 .aq-shake{animation:aq-shake .4s ease}
 .aq-help-error{color:var(--aq-e-red)!important;animation:aq-fade-up .25s ease both}
 .aq-help-warn{color:var(--aq-e-amber)!important;animation:aq-fade-up .25s ease both}
@@ -177,7 +177,6 @@ img{max-width:100%}
 .aq-form-actions{display:flex;gap:10px}
 .aq-form-actions .ui-btn{flex:1}
 .aq-form-actions .ui-btn.is-soft{flex:0 0 auto}
-input[aria-invalid=true]{box-shadow:0 0 0 2px #f2a3a3 inset!important}
 .aq-ok-text{color:var(--aq-e-green)!important;font-weight:700}
 
 /* 비밀번호 */
@@ -356,7 +355,7 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
 @media(prefers-reduced-motion:reduce){.aq-success-ring,.aq-success-tick,.aq-pay-receipt,.aq-success-mark{animation:none!important;stroke-dashoffset:0!important}}
 
 /* 트랙 카드 안은 카드 배경과 구분되도록 흰 칸 */
-.track-editor .ui-field input:not([type=checkbox]):not([type=radio]):not([type=file]),.track-editor .ui-field textarea,.track-editor .ui-field select,.aq-option-detail .ui-field input:not([type=checkbox]):not([type=radio]):not([type=file]),.aq-option-detail .ui-field textarea,.aq-option-detail .ui-field select{background:#fff!important}
+.track-editor,.aq-option-detail,.cover-track-item{--aq-field-bg:#fff;--aq-field-hover-bg:#F7F8FA;--aq-field-focus-bg:var(--aq-field)}
 
 /* ==========================================================================
    카드·입력 칸 윤곽선 없는 스타일 통일 — 메인 화면 카드처럼 배경색 면으로만 구분
@@ -387,7 +386,6 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
 .aq-pay-field{margin-top:30px}
 @media(max-width:760px){#modal .aq-pay-field input{font-size:18px!important;min-height:56px}}
 /* 포커스는 접근성을 위해 부드러운 광채로만 표시 */
-.aq-invalid,input[aria-invalid=true]{box-shadow:0 0 0 3px rgba(228,109,109,.3)!important}
 /* 파일 선택 영역: 점선 테두리 대신 채움 */
 .track-editor .ui-field input[type=file],.aq-option-detail .ui-field input[type=file],.cover-track-item .ui-field input[type=file]{background:#fff!important}
 body:has(.aq-payout-setup-mode) .aq-toast-stack{bottom:calc(104px + env(safe-area-inset-bottom))}
@@ -403,8 +401,8 @@ body:has(.aq-payout-setup-mode) .aq-toast-stack{bottom:calc(104px + env(safe-are
 }
 :is(#root,#modal) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),select,textarea):not(:focus){box-shadow:none!important}
 :is(#root,#modal) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea):is(:focus,:focus-visible){
-  outline:none!important;background-color:#fff!important;
-  box-shadow:var(--aq-field-focus)!important
+  outline:none!important;background-color:var(--aq-field-focus-bg)!important;
+  box-shadow:none!important
 }
 /* 파일 선택 */
 :is(#root,#modal) input[type=file]:is(:focus,:focus-visible){background-color:var(--aq-blue-100)!important;box-shadow:none!important}
@@ -1027,7 +1025,7 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 .aq-chip:active{transform:scale(.98)}
 .aq-chip.is-on{background:var(--aq-blue-500);color:#fff}
 .aq-chip:focus-visible{outline:3px solid var(--aq-blue-450);outline-offset:2px}
-.aq-chip-other{margin-top:10px;width:100%;box-sizing:border-box;border:0;border-radius:var(--aq-r-md);background:#fff;padding:12px 14px;font:inherit;font-size:14px;box-shadow:var(--aq-field-focus)}
+.aq-chip-other{margin-top:10px;width:100%;box-sizing:border-box;border:0;border-radius:var(--aq-r-md);background:#fff;padding:12px 14px;font:inherit;font-size:14px;box-shadow:none}
 .aq-chip-other:focus{outline:0}
 
 /* ---------- 배급 플랫폼 타일 ---------- */

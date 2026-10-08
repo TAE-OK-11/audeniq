@@ -43,7 +43,7 @@ const DECISIONS: [string, string, string, string][] = [
   ['숫자 칸', 'stat-card · adm-stat(숫자 먼저) · adm-w-stat · aq-rights-summary', 'StatTile — [이름표·아이콘 / 숫자 / 설명]', '이름표를 먼저 두면 금액(이번 달 수익)과 건수(심사 대기)가 같은 순서로 읽혀요. 경고·오류는 색조로.'],
   ['목록 줄', 'adm-row · aq-release-card · aq-track-row · aq-ticket-card · aq-notice-card · aq-statement-card · aq-doc-card', 'ui-row 하나', '패딩 15~19px, 모서리 22~26px, 배경 2가지, 떠오르는 호버와 면 호버가 섞여 있었어요. 지금은 면 색만 바뀌는 한 가지.'],
   ['앨범 커버', '스튜디오: 발매별 그라데이션+음표 · 관리자: 같은 그라데이션+첫 글자', 'Cover — 발매별 그라데이션+음표', '목록에서 발매끼리 색으로 구분돼 훑어보기 쉬워요.'],
-  ['입력칸', '테두리 선 · 밑줄 · 면(3가지 바탕색) · 관리자 면+모서리 18 · 포커스 3가지', 'ui-input · Field — 테두리 없는 면', '포커스는 어디서든 ‘흰 면 + 연한 파란 테두리 + 살짝 떠오름’ 하나. 기본 48px, 아티스트용 큰 폼(신청서·프로필·로그인)은 56px.'],
+  ['입력칸', '테두리 선 · 밑줄 · 면(3가지 바탕색) · 관리자 면+모서리 18 · 포커스 3가지', 'ui-input · Field — 테두리 없는 면', '토스처럼 선 없는 회색 면(#F2F4F6). 포커스는 윤곽선·그림자 없이 회색이 한 단계 진해지는 것 하나. 옅은 카드 안에서는 흰 칸이 포커스 때 회색이 돼요. 기본 48px, 아티스트용 큰 폼(신청서·프로필·로그인)은 56px.'],
   ['이름표', '13 · 14 · 15px, 굵기 650~750', 'Field 이름표 — 14px', '폼마다 다르던 이름표 크기를 하나로.'],
   ['알림 상자', 'notice · feedback · adm-alert', 'Callout — 안내·완료·주의·오류·중립', '오류는 빨간 면, 주의는 주황 면으로 같은 색 규칙.'],
   ['빈 상태', 'empty-page(아이콘 없음) · adm-empty(아이콘)', 'EmptyState — 아이콘 있는 쪽', '무엇이 비었는지 아이콘이 먼저 알려 줘요.'],
@@ -189,7 +189,7 @@ function Components() {
         <div className="ds-row is-end"><Avatar name="kim" size="xs" /><Avatar name="kim" size="sm" /><Avatar name="kim" /><Avatar me size="lg" /><Avatar empty size="lg" /><Avatar name="서린" size="xl" /></div>
         <div className="ds-row is-end"><Cover id="a" text="A" /><Cover id="b" text="B" size="lg" /><Cover text="권리 증빙" plain /><IconTile size="sm"><Glyph name="doc" size={16} /></IconTile><IconTile tone="green"><CheckIcon size={18} /></IconTile><IconTile tone="violet" size="lg"><Glyph name="pencil" size={22} /></IconTile></div>
       </Demo>
-      <Demo title="입력칸 · Field" note="테두리 없는 면, 포커스는 한 가지">
+      <Demo title="입력칸 · Field" note="회색 면, 포커스 때 한 단계 진하게 — 윤곽선 없음">
         <Field label="발매 제목" htmlFor="dsTitle" required help="싱글 또는 앨범 제목"><input id="dsTitle" className="ui-input" placeholder="제목을 입력해 주세요" /></Field>
         <div className="ui-form-grid">
           <Field label="장르" htmlFor="dsGenre"><select id="dsGenre" className="ui-select"><option>인디 팝</option><option>발라드</option></select></Field>

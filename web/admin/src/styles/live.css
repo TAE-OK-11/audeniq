@@ -53,7 +53,7 @@ main{padding-top:20px}
 
 /* AUDENIQ public site's CSS and brand tokens above are inherited without re-creation. */
 
-*,*:before,*:after{box-sizing:border-box}a{color:inherit;text-decoration:none}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible,[tabindex]:focus-visible{outline:3px solid var(--aq-blue-450);outline-offset:3px}[hidden]{display:none!important}.muted{color:var(--portal-muted)}.small{font-size:13px}.blue{color:var(--portal-blue)}.sr-only{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}.break{overflow-wrap:anywhere}
+*,*:before,*:after{box-sizing:border-box}a{color:inherit;text-decoration:none}button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type=range],[type=file]):focus-visible,summary:focus-visible,[tabindex]:not(input):not(select):not(textarea):focus-visible{outline:3px solid var(--aq-blue-450);outline-offset:3px}[hidden]{display:none!important}.muted{color:var(--portal-muted)}.small{font-size:13px}.blue{color:var(--portal-blue)}.sr-only{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}.break{overflow-wrap:anywhere}
 /* Public site header styles, logo and hamburger reused. */
 /* Cards use original site's .service-item and .audience-panel, not boxed page frames. */.doc-row{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:16px;align-items:center;text-align:left}
 /* Authenticated workspace: actual working pages are open full-width sections. */.split{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(240px,.65fr);gap:40px}
@@ -94,9 +94,6 @@ img.cover:after{display:none}
 
 /* AUDENIQ STUDIO / product screens — functional extensions of the public-site design language */
 /* 전역 입력창 통일: 둥근 박스 스타일 */
-.modal .ui-field input:not([type=checkbox]):not([type=radio]):not([type=file]),.modal .ui-field textarea,.modal .ui-field select{background:var(--aq-blue-50);border:0!important;border-radius:var(--aq-r-md);padding:14px 16px;min-height:52px;font-size:15px;color:var(--portal-ink)}
-.modal .ui-field textarea{min-height:110px;resize:vertical}
-.modal .ui-field input:focus,.modal .ui-field textarea:focus,.modal .ui-field select:focus{outline:2px solid var(--portal-blue)!important;outline-offset:-2px;background:#fff}
 
 /* ===== Live block boundary ===== */
 
@@ -163,7 +160,7 @@ body{margin:0;background:#fff;color:var(--aq-final-ink);font-family:-apple-syste
 button,input,select,textarea{font:inherit;font-family:inherit;letter-spacing:inherit}
 button{font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 button:disabled{cursor:not-allowed!important;opacity:.45}
-button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid var(--aq-blue-450)!important;outline-offset:3px}
+button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type=range],[type=file]):focus-visible,summary:focus-visible{outline:3px solid var(--aq-blue-450)!important;outline-offset:3px}
 .doc-actions .ui-btn{min-width:0;align-items:center!important;justify-content:center!important;text-align:center!important;white-space:normal;--btn-h:var(--aq-h-md);--btn-r:var(--aq-r-ctl-md);--btn-px:18px;--btn-fs:var(--aq-fs-base)}
 .doc-onboard,.doc-content{box-shadow:none!important;border:0!important}
 .doc-actions .ui-btn{flex:1 1 0!important}
@@ -272,8 +269,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .auth-sub{font-size:14px;color:var(--portal-muted);margin:0 0 28px}
 .auth-card .ui-field{margin-bottom:18px}
 .auth-card .ui-field label{display:block;margin-bottom:8px}
-.auth-card .ui-field input:not([type=checkbox]):not([type=radio]){background:var(--aq-blue-50);border:0;border-radius:var(--aq-r-md);padding:15px 17px;min-height:54px;font-size:15px;color:var(--portal-ink);width:100%}
-.auth-card .ui-field input:focus{outline:2px solid var(--portal-blue);outline-offset:-2px;background:#fff}
+.auth-card .ui-field input:not([type=checkbox]):not([type=radio]){width:100%}
 .auth-submit{width:100%;min-height:54px;font-size:16px;margin-top:8px}
 .auth-card .ui-tabs{margin-bottom:24px}
 .auth-foot{display:flex;align-items:center;gap:10px;margin-top:28px;font-size:12px;color:var(--aq-gray-500)}

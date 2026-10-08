@@ -18,6 +18,7 @@ a{color:inherit;text-decoration:none}button,input,textarea{font:inherit}
 button,a{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 button{cursor:pointer}button:disabled{cursor:not-allowed}
 :focus-visible{outline:3px solid var(--blue);outline-offset:4px}
+:is(input:not([type=checkbox]):not([type=radio]),textarea,select):focus-visible{outline:none}
 [hidden],.step[hidden],.other-field[hidden]{display:none!important}
 .skip{position:fixed;left:20px;top:-90px;z-index:50;background:white;padding:12px 20px;box-shadow:0 8px 24px #171b2920;color:var(--blue)}
 .skip:focus{top:12px}
@@ -87,7 +88,7 @@ button{cursor:pointer}button:disabled{cursor:not-allowed}
 .input-label{display:block;margin:28px 0 10px;font-size:15px;font-weight:680;color:var(--ink);line-height:1.55}
 .input-label span{font-size:12px;color:var(--muted);font-weight:400;margin-left:5px}
 .text-field,.other-field input,#contact,textarea{display:block;width:100%;padding:15px 17px;background:#fff;border:0;border-radius:12px;color:var(--ink);font-size:15px;line-height:1.6;outline:none;resize:vertical;transition:background .2s,box-shadow .2s}
-.text-field:focus,.other-field input:focus,#contact:focus,textarea:focus{background:#fff;box-shadow:0 0 0 3px #3B63F350}
+.text-field:focus,.other-field input:focus,#contact:focus,textarea:focus{background:#F2F4F6;box-shadow:none;caret-color:var(--blue)}
 .text-field::placeholder,.other-field input::placeholder{color:#97A1B2}
 .other-field{display:block;margin-top:17px;font-size:14px;font-weight:650;color:#4B5F88}
 .other-field input{margin-top:9px}.char-count{font-size:12px;text-align:right;color:#8C9AB4;margin:8px 0 0}

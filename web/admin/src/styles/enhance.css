@@ -80,7 +80,6 @@ img{max-width:100%}
 
 /* ---------- 폼 ---------- */
 .aq-shake{animation:aq-shake .4s ease}
-input[aria-invalid=true]{box-shadow:0 0 0 2px #f2a3a3 inset!important}
 
 /* 비밀번호 */
 .aq-password{position:relative}
@@ -160,8 +159,8 @@ input[aria-invalid=true]{box-shadow:0 0 0 3px rgba(228,109,109,.3)!important}
 }
 :is(#root,#modal) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),select,textarea):not(:focus){box-shadow:none!important}
 :is(#root,#modal) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea):is(:focus,:focus-visible){
-  outline:none!important;background-color:#fff!important;
-  box-shadow:var(--aq-field-focus)!important
+  outline:none!important;background-color:var(--aq-field-focus-bg)!important;
+  box-shadow:none!important
 }
 /* 흰 배경 위의 입력창은 포커스 때 연한 파란 면으로 */
 :is(#root,#modal) :is(.track-editor,.aq-option-detail,.cover-track-item,.auth-card) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea):focus{background-color:var(--aq-blue-50)!important}

@@ -68,7 +68,10 @@
   --aq-surface-hover:#EDF2FF;
   --aq-surface-2:var(--aq-gray-50);       /* 중립 컨트롤 면 */
   --aq-surface-2-hover:var(--aq-gray-100);
-  --aq-field:#F4F7FC;            /* 입력칸 면 — 흰 바탕 위 */
+  --aq-field:#F2F4F6;            /* 입력칸 면 — 회색 (토스처럼 선 없이 면으로) */
+  --aq-field-hover:#EDF0F3;
+  --aq-field-focus-bg:#E9ECF0;   /* 포커스 — 윤곽선·그림자 없이 회색이 한 단계 진해진다 */
+  --aq-field-placeholder:#B0B8C1;
   --aq-field-line:#E4EAF4;
   --aq-line:var(--aq-gray-150);
   --aq-line-2:var(--aq-gray-200);
@@ -133,9 +136,7 @@
   --aq-shadow-pop:0 14px 34px -10px rgba(21,35,76,.28);
   --aq-shadow-modal:0 30px 80px -24px rgba(19,35,64,.38);
   --aq-ring:0 0 0 3px rgba(59,99,243,.12);
-  /* 입력칸 포커스 — 어디서든 한 가지: 흰 면 + 연한 파란 테두리 + 살짝 떠오름 */
-  --aq-field-focus:0 0 0 2px var(--aq-blue-300),0 12px 28px -16px rgba(59,99,243,.5);
-  --aq-field-focus-on-soft:var(--aq-field-focus);
+  --aq-field-focus:none;  /* 입력칸 포커스는 면 색으로만 (윤곽선·그림자 없음) */
   --aq-focus:3px solid var(--aq-blue-450);
 
   /* ---------- 움직임 ---------- */
