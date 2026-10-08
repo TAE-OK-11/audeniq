@@ -1985,7 +1985,6 @@ export function Upload() {
                     type="radio" name="artistIsNew" checked={form.artistProfile.isNew === v}
                     onChange={() => set('artistProfile', { ...form.artistProfile, isNew: v })}
                   />
-                  <span className="aq-choice-mark" aria-hidden="true" />
                   <strong>{t}</strong>
                   <small>{sub}</small>
                 </label>
@@ -2165,7 +2164,7 @@ export function Upload() {
                         >
                           <span className="aq-dsp-mark" style={{ background: DSP_COLOR[key] ?? '#3B63F3' }} aria-hidden="true">{label.slice(0, 1)}</span>
                           <span className="aq-dsp-name">{label}{!available && <small>현재 배급 불가</small>}</span>
-                          <span className="aq-dsp-check" aria-hidden="true"><CheckIcon size={11} /></span>
+                          <span className="aq-dsp-check" aria-hidden="true"><CheckIcon size={16} /></span>
                         </button>
                       );
                     })}

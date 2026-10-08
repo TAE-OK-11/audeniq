@@ -105,7 +105,7 @@ img{max-width:100%}
 .aq-all-done span{display:grid;place-items:center;width:40px;height:40px;border-radius:50%;background:var(--aq-e-green-soft);color:var(--aq-e-green);font-weight:800;animation:aq-pop .5s var(--aq-e-spring) both}
 
 /* ---------- 홈 히어로 ---------- */
-.aq-hero-cta>.aq-cta-arrow{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#ffffff26;flex:none;transition:transform .25s var(--aq-e-ease)}
+.aq-hero-cta>.aq-cta-arrow{display:grid;place-items:center;flex:none;transition:transform .25s var(--aq-e-ease)}
 .aq-hero-cta>.aq-cta-arrow svg{display:block}
 .aq-hero-cta:hover span{transform:translateX(4px)}
 
@@ -368,11 +368,9 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
 .doc-consent{background:var(--aq-blue-50)!important}
 
 /* 수령인 유형 선택: 테두리 대신 채움으로 선택 표시 */
-.aq-pay-type span{position:relative;padding-right:52px!important}
+.aq-pay-type span{position:relative}
 .aq-pay-type input:checked+span{box-shadow:none!important;background:var(--aq-blue-150)!important}
 .aq-pay-type input:checked+span strong{color:var(--aq-blue-700)}
-.aq-pay-type span::after{content:"";position:absolute;right:18px;top:50%;width:22px;height:22px;margin-top:-11px;border-radius:50%;background:var(--aq-gray-200);transition:background-color .2s}
-.aq-pay-type input:checked+span::after{background:var(--aq-blue-500) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 12.5 4 4 8-9'/%3E%3C/svg%3E") center/14px no-repeat;animation:aq-pop .3s var(--aq-e-spring) both}
 .aq-pay-type input:focus-visible+span{outline:3px solid var(--aq-blue-450);outline-offset:2px}
 
 /* 입력 칸: 테두리 없이 주변과 다른 배경색으로 칸을 표시 */
@@ -619,19 +617,15 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 }
 
 /* ── 신청서: 아티스트 프로필 선택 · 연주곡 · 서명 ───────────────────── */
-/* 고르기 카드 (라디오) — 안 고른 칸은 회색 면 + 빈 동그라미, 고른 칸은 파란 면 + 채운 동그라미. 테두리 없음 */
+/* 고르기 카드 (라디오) — 안 고른 칸은 회색 면, 고른 칸은 파란 면 + 파란 제목. 동그라미·테두리 없이 면 색으로만 구분 */
 .aq-choice-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:0 0 16px}
-.aq-choice{position:relative;display:grid;grid-template-columns:22px minmax(0,1fr);column-gap:12px;row-gap:3px;align-items:center;padding:16px 18px;border-radius:var(--aq-r-lg);background:var(--aq-gray-50);cursor:pointer;transition:background-color .2s var(--aq-e-ease)}
+.aq-choice{position:relative;display:grid;gap:3px;align-content:center;padding:16px 18px;border-radius:var(--aq-r-lg);background:var(--aq-gray-50);cursor:pointer;transition:background-color .2s var(--aq-e-ease)}
 .aq-choice:hover{background:var(--aq-gray-100)}
 .aq-choice input{position:absolute;opacity:0;pointer-events:none}
-.aq-choice-mark{grid-row:1/span 2;align-self:center;width:22px;height:22px;border-radius:50%;background:var(--aq-gray-200);position:relative;transition:background-color .2s var(--aq-e-ease)}
-.aq-choice-mark::after{content:"";position:absolute;inset:6px;border-radius:50%;background:#fff;transform:scale(0);transition:transform .2s var(--aq-e-spring,ease)}
 .aq-choice strong{font-size:15px;font-weight:760;line-height:1.4;color:var(--aq-text)}
 .aq-choice small{font-size:13px;line-height:1.5;color:var(--aq-text-3)}
 .aq-choice.is-on{background:var(--aq-primary-soft)}
 .aq-choice.is-on:hover{background:var(--aq-primary-soft)}
-.aq-choice.is-on .aq-choice-mark{background:var(--aq-primary)}
-.aq-choice.is-on .aq-choice-mark::after{transform:scale(1)}
 .aq-choice.is-on strong{color:var(--aq-primary)}
 .aq-choice:has(input:focus-visible){outline:var(--aq-focus);outline-offset:2px}
 @media(max-width:560px){.aq-choice-row{grid-template-columns:1fr}}
@@ -1053,10 +1047,10 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 .aq-dsp:focus-visible{outline:3px solid var(--aq-blue-450);outline-offset:2px}
 .aq-dsp-mark{flex:none;width:34px;height:34px;border-radius:var(--aq-r-sm);display:grid;place-items:center;color:#fff;font-size:14px;font-weight:800;filter:grayscale(1);opacity:.45;transition:filter .18s ease,opacity .18s ease}
 .aq-dsp-name{flex:1;min-width:0;font-size:13.5px;font-weight:720;letter-spacing:-.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.aq-dsp-check{flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:900;background:var(--aq-gray-200);color:transparent;transition:background-color .18s ease,color .18s ease}
+.aq-dsp-check{flex:none;width:18px;height:18px;display:grid;place-items:center;color:transparent;transition:color .18s ease}
 .aq-dsp.is-on{background:var(--aq-blue-100);color:var(--aq-gray-900)}
 .aq-dsp.is-on .aq-dsp-mark{filter:none;opacity:1}
-.aq-dsp.is-on .aq-dsp-check{background:var(--aq-blue-500);color:#fff}
+.aq-dsp.is-on .aq-dsp-check{color:var(--aq-primary)}
 .aq-dsp.is-unavailable{background:var(--aq-gray-100);color:var(--aq-gray-500);opacity:.55;filter:grayscale(1)}
 .aq-dsp.is-unavailable:not(.is-on){cursor:not-allowed}
 .aq-dsp.is-unavailable .aq-dsp-name{white-space:normal}
