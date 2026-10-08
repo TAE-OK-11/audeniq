@@ -1,0 +1,9 @@
+observed_at,phase,deployed_at,source,metric,value,unit,query,page_url,notes
+2026-10-08,predeploy,,public_http,homepage_status,200,http_status,,https://audeniq.com/,Observed old production homepage
+2026-10-08,predeploy,,public_http,sitemap_url_count,1,urls,,https://audeniq.com/sitemap.xml,Production before this commit
+2026-10-08,predeploy,,public_http,llms_status,404,http_status,,https://audeniq.com/llms.txt,Not yet deployed
+2026-10-08,predeploy,,search_console,impressions,,count,,,Unavailable; not assumed zero
+2026-10-08,predeploy,,search_console,clicks,,count,,,Unavailable; not assumed zero
+2026-10-08,predeploy,,search_console,indexed_pages,,count,,,Unavailable; not assumed zero
+2026-10-08,predeploy,,naver_search_advisor,indexed_pages,,count,,,Unavailable; not assumed zero
+2026-10-08,predeploy,,ai_search,cited_urls,,count,,,Not measured

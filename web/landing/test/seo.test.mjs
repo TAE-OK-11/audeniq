@@ -64,7 +64,7 @@ test("robots and sitemap are public only on the canonical domain", async () => {
 test("duplicate home URLs redirect and non-existent landing pages yield real 404", async () => {
   const www = await fetchPath("www.audeniq.com", "/about?a=1");
   assert.equal(www.status, 308);
-  assert.equal(www.headers.get("Location"), "https://audeniq.com/about?a=1");
+  assert.equal(www.headers.get("Location"), "https://audeniq.com/about/?a=1");
   const index = await fetchPath("audeniq.com", "/index.html");
   assert.equal(index.status, 308);
   assert.equal(index.headers.get("Location"), "https://audeniq.com/");

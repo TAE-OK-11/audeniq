@@ -1,6 +1,27 @@
-# Canonical AUDENIQ marketing site only. STUDIO is not a public search page.
+# Public search is allowed. STUDIO and private application routes are excluded.
 User-agent: *
+User-agent: Googlebot
+User-agent: Bingbot
+User-agent: Yeti
+User-agent: OAI-SearchBot
+User-agent: ChatGPT-User
+User-agent: PerplexityBot
+User-agent: Perplexity-User
+User-agent: Claude-SearchBot
+User-agent: Claude-User
 Allow: /
 Disallow: /studio
+Disallow: /admin
+Disallow: /api
+Disallow: /login
 Disallow: /health
+
+# Search retrieval and model training are different uses.
+User-agent: GPTBot
+User-agent: ClaudeBot
+User-agent: Google-Extended
+User-agent: CCBot
+User-agent: Applebot-Extended
+Disallow: /
+
 Sitemap: https://audeniq.com/sitemap.xml

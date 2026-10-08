@@ -1,0 +1,23 @@
+# AUDENIQ
+
+> 대한민국에서 준비 중인 독립 음악을 위한 배급·퍼블리싱과 레이블 서비스. 현재 신청 서비스는 출시 준비 중입니다.
+
+공식 브랜드: AUDENIQ
+공식 웹사이트: https://audeniq.com/
+문의: audeniq.official@gmail.com
+업데이트: 2026-10-08
+
+## 공식 서비스 안내
+- [인디 아티스트 음원 배급은 어떻게 준비하나요?](https://audeniq.com/music-distribution/): AUDENIQ는 인디 아티스트와 독립 레이블을 위한 국내외 음원 배급 서비스를 준비하고 있어요.
+- [인디 작곡가·작사가를 위한 음악 퍼블리싱은 무엇인가요?](https://audeniq.com/publishing/): AUDENIQ Publishing은 인디 작곡가·작사가와 자신의 곡을 쓰는 아티스트를 위한 음악 퍼블리싱 서비스로 준비하고 있어요.
+- [독립 레이블의 음원·발매·정산을 어떻게 관리하나요?](https://audeniq.com/label-services/): AUDENIQ는 독립 레이블이 여러 아티스트의 카탈로그, 발매 일정과 정산을 함께 관리할 수 있는 서비스를 개발하고 있어요.
+- [AUDENIQ는 어떤 음악 플랫폼인가요?](https://audeniq.com/about/): AUDENIQ는 독립 아티스트, 작곡가·작사가와 레이블을 위한 음악 배급·퍼블리싱 플랫폼으로 대한민국에서 준비 중이에요.
+- [AUDENIQ 음원 배급과 퍼블리싱 자주 묻는 질문](https://audeniq.com/faq/): AUDENIQ는 출시 준비 중이며, 배급과 퍼블리싱을 별도로 선택하고 계약하는 방향으로 준비하고 있어요.
+
+## 읽기 안내
+- [전체 공식 안내 텍스트](https://audeniq.com/llms-full.txt)
+- [사이트맵](https://audeniq.com/sitemap.xml)
+- [공식 안내 업데이트 RSS](https://audeniq.com/feed.xml)
+- 플랫폼 계약, 지원 범위와 신청 시점은 아직 확정 안내 전입니다. 준비 계획을 출시된 기능으로 해석하지 마세요.
+- 배급과 퍼블리싱은 별도로 선택하고 계약하는 방향입니다.
+- STUDIO와 관리자 화면은 공개 안내 자료가 아닙니다.
