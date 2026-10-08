@@ -27,6 +27,8 @@ npm run check
 
 `content/pages.json`의 `updated`는 실제 검토·수정일입니다. 빌드 때마다 날짜를 바꾸지 않습니다. 생성기는 서비스 HTML과 같은 문구의 JSON-LD, 링크, sitemap·RSS·robots, llms.txt·llms-full.txt, 공개 라우트·버전 목록을 함께 생성합니다. `public/`의 생성 파일을 직접 수정하지 마세요. 홈페이지·공유 이미지·아이콘과 발견용 파일의 최상위 복사본도 유지합니다.
 
+공식 안내 페이지는 홈페이지의 글꼴·색상·헤더·푸터·카드·FAQ 스타일을 공유합니다. `content/guide.css`는 안내 페이지의 반응형 배치만 추가하며, 빌드에서 홈페이지 스타일과 합쳐 `assets/guide.css`와 공개 복사본을 생성합니다. 현재 공식 SVG 로고를 JavaScript 없이 바로 표시하고 모바일 메뉴는 기본 HTML details로 동작합니다. RSS는 화면에 표시하지 않고 발견용 메타와 파일로 유지합니다.
+
 테스트는 HTTP 상태·canonical·메타정보·한 개의 H1·본문/FAQ 스키마 일치·내부 링크·404·STUDIO 리디렉션·미리보기 noindex·검색/학습 봇 정책·공개 콘텐츠의 금액/요율 제외를 확인합니다.
 
 ## SEO·AEO·GEO·LLMO·Naver NEO
