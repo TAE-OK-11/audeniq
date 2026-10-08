@@ -253,7 +253,7 @@ export function App() {
           <p className="intro-lead">국내 아티스트 음원 유통·배급 서비스 수요조사</p>
           <p className="intro-callout">아티스트 여러분의 경험과 의견이<br /><strong>AUDENIQ의 서비스 방향을 만듭니다.</strong></p>
           <div className="intro-summary">
-            <p>안녕하세요. 현재 학생 창업가로서 국내 아티스트를 위한 음원 배급 및 아티스트 인프라 플랫폼 <strong>AUDENIQ</strong>를 준비하고 있습니다.</p>
+            <p>안녕하세요. 국내 아티스트를 위한 음원 배급 및 아티스트 인프라 플랫폼 <strong>AUDENIQ</strong>를 준비하고 있습니다.</p>
             <p>합리적인 수수료, 빠른 처리, 투명한 정산과 음원 배급·통계·가사·아티스트 지원 기능을 하나로 제공하는 것을 목표로 합니다. 정식 출시 전, 실제 아티스트분들의 의견을 듣고 싶습니다.</p>
           </div>
           <div className="intro-purpose">
