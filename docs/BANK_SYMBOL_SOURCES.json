@@ -46,8 +46,7 @@
     "file": "kakao.svg",
     "source": "https://static.toss.im/icons/svg/icon-bank-kakao.svg",
     "provider": "Toss financial institution asset",
-    "note": "Background-free variant: original B glyph path only; yellow tile removed and viewBox cropped to the glyph.",
-    "format": "vector-svg"
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
   },
   "kdb": {
     "file": "kdb-symbol.svg",
@@ -142,8 +141,7 @@
     "file": "kakaopay.svg",
     "source": "https://static.toss.im/icons/svg/icon-bank-kakaopay.svg",
     "provider": "Toss financial institution asset",
-    "note": "Background-free variant: original speech-bubble path only; yellow tile removed and viewBox cropped to the symbol.",
-    "format": "vector-svg"
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
   },
   "postoffice": {
     "file": "postoffice.svg",
