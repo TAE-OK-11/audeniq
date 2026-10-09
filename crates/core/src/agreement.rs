@@ -1,4 +1,4 @@
-//! 배급 계약서 (AUD-DIST 2.0): 릴리즈마다 AUDENIQ와 이용자가 맺는 개별 배급 계약.
+//! 배급 계약서 (AUD-DIST 2.0): 릴리즈마다 AUDENIQ과 이용자가 맺는 개별 배급 계약.
 //!
 //! - Staff enter the commercial terms on the review sheet
 //!   (`PUT /api/staff/releases/{id}/agreement-terms`): exclusivity, the

@@ -1,4 +1,4 @@
-// 본인인증 창 — 인증 방법 고르기 → 정보 입력 → (문자: 인증번호 / PASS·카드사: 앱 승인) → 완료.
+// 본인인증 창 — 인증 방법 고르기 → 정보 입력 → (문자: 인증번호 / PASS: 앱 승인 / 카드사: ARS 전화) → 완료.
 // 체험 단계라 실제 인증 기관에 요청하지 않고 흐름만 보여 준다. 완료하면 입력한 이름을 실명으로 저장한다.
 import { useEffect, useRef, useState } from 'react';
 import { useModalClose } from './Modal';
@@ -9,7 +9,7 @@ const METHODS: { id: VerifyMethod; title: string; sub: string; icon: string }[] 
   { id: 'pass', title: 'PASS 인증', sub: '통신사 PASS 앱으로 인증', icon: 'lock' },
   { id: 'sms', title: '휴대폰 문자 인증', sub: '문자로 받은 인증번호 입력', icon: 'mail' },
   { id: 'ipin', title: '아이핀 인증', sub: '아이핀 아이디로 인증', icon: 'user' },
-  { id: 'card', title: '카드사 인증', sub: '본인 명의 카드사 앱으로 인증', icon: 'card' },
+  { id: 'card', title: '카드사 인증', sub: '카드번호 입력 후 ARS 전화로 인증', icon: 'card' },
 ];
 const CARRIERS = ['SKT', 'KT', 'LG U+', 'SKT 알뜰폰', 'KT 알뜰폰', 'LG U+ 알뜰폰'];
 const CARD_COMPANIES = ['신한카드', 'KB국민카드', '삼성카드', '현대카드', '롯데카드', '하나카드', '우리카드', 'BC카드', 'NH농협카드'];
@@ -17,14 +17,20 @@ const CARD_COMPANIES = ['신한카드', 'KB국민카드', '삼성카드', '현�
 type Step = 'method' | 'form' | 'code' | 'approve';
 
 const digits = (v: string, n: number) => v.replace(/\D/g, '').slice(0, n);
+const newCaptcha = () => String(Math.floor(100000 + Math.random() * 900000));
+const maskPhone = (p: string) => p.replace(/^(\d{3})(\d{3,4})(\d{4})$/, (_, a: string, b: string, c: string) => `${a}-${'*'.repeat(b.length)}-${c}`);
 
 export function IdentityVerify({ onDone }: { onDone: (name: string, method: VerifyMethod) => void }) {
   const close = useModalClose();
   const [step, setStep] = useState<Step>('method');
   const [method, setMethod] = useState<VerifyMethod>('pass');
-  const [f, setF] = useState({ name: '', birth: '', sex: '', carrier: CARRIERS[0], phone: '', card: CARD_COMPANIES[0], ipinId: '', ipinPw: '', code: '' });
+  const [f, setF] = useState({ name: '', birth: '', sex: '', carrier: CARRIERS[0], phone: '', card: CARD_COMPANIES[0], cardA: '', cardB: '', captcha: '', ipinId: '', ipinPw: '', code: '' });
+  // 카드사 인증(ARS): 보안문자와 서비스 이용 동의
+  const [captcha, setCaptcha] = useState(newCaptcha);
+  const [cardAgree, setCardAgree] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [codeFocus, setCodeFocus] = useState(false);
   const [left, setLeft] = useState(180);
   const timer = useRef(0);
   const set = (k: keyof typeof f, v: string) => { setF(p => ({ ...p, [k]: v })); setError(''); };
@@ -55,7 +61,12 @@ export function IdentityVerify({ onDone }: { onDone: (name: string, method: Veri
       return finish();
     }
     if (f.birth.length !== 6 || f.sex.length !== 1) return setError('생년월일 6자리와 주민등록번호 뒷자리 첫 숫자를 입력해 주세요.');
-    if ((method === 'pass' || method === 'sms') && !/^01\d{8,9}$/.test(f.phone)) return setError('휴대폰 번호를 확인해 주세요.');
+    if (!/^01\d{8,9}$/.test(f.phone)) return setError('휴대폰 번호를 확인해 주세요.');
+    if (method === 'card') {
+      if ((f.cardA + f.cardB).length !== 8) return setError('카드번호 뒤 8자리를 입력해 주세요.');
+      if (f.captcha !== captcha) { setCaptcha(newCaptcha()); set('captcha', ''); return setError('보안문자가 맞지 않아요. 새 보안문자를 입력해 주세요.'); }
+      if (!cardAgree) return setError('카드 본인확인 서비스 이용에 동의해 주세요.');
+    }
     setStep(method === 'sms' ? 'code' : 'approve');
   };
 
@@ -122,12 +133,43 @@ export function IdentityVerify({ onDone }: { onDone: (name: string, method: Veri
               </div>
             </div>
             {method === 'card' ? (
-              <div className="ui-field">
-                <label htmlFor="vfCard">카드사</label>
-                <select id="vfCard" value={f.card} onChange={e => set('card', e.target.value)}>
-                  {CARD_COMPANIES.map(c => <option key={c}>{c}</option>)}
-                </select>
-              </div>
+              // 실제 카드 본인확인(ARS)과 같은 입력 — 카드사 · 휴대폰 번호 · 카드번호 뒤 8자리 · 보안문자 · 이용 동의
+              <>
+                <div className="ui-field">
+                  <label htmlFor="vfCard">카드사</label>
+                  <select id="vfCard" value={f.card} onChange={e => set('card', e.target.value)}>
+                    {CARD_COMPANIES.map(c => <option key={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div className="ui-field">
+                  <label htmlFor="vfPhone">휴대폰 번호</label>
+                  <input id="vfPhone" inputMode="numeric" autoComplete="tel-national" placeholder="01012345678" value={f.phone} onChange={e => set('phone', digits(e.target.value, 11))} />
+                </div>
+                <div className="ui-field">
+                  <label htmlFor="vfCardA">카드번호 뒤 8자리</label>
+                  <div className="aq-verify-cardno">
+                    <span aria-hidden="true">●●●●</span>
+                    <span aria-hidden="true">●●●●</span>
+                    <input id="vfCardA" inputMode="numeric" autoComplete="off" placeholder="0000" aria-label="카드번호 9~12번째 자리" value={f.cardA} onChange={e => { const v = digits(e.target.value, 4); set('cardA', v); if (v.length === 4) document.getElementById('vfCardB')?.focus(); }} />
+                    <input id="vfCardB" inputMode="numeric" autoComplete="off" placeholder="0000" aria-label="카드번호 13~16번째 자리" value={f.cardB} onChange={e => set('cardB', digits(e.target.value, 4))} />
+                  </div>
+                  <p className="ui-field-help">본인 명의 신용·체크카드만 쓸 수 있어요. 가족·법인·선불카드는 안 돼요.</p>
+                </div>
+                <div className="ui-field">
+                  <label htmlFor="vfCaptcha">보안문자</label>
+                  <div className="aq-verify-captcha">
+                    <span className="aq-captcha-img" aria-label={`보안문자 ${captcha.split('').join(' ')}`} role="img">
+                      {captcha.split('').map((d, i) => <i key={i} style={{ ['--r' as string]: `${(i % 2 ? 1 : -1) * (6 + i * 2)}deg` }}>{d}</i>)}
+                    </span>
+                    <button type="button" className="aq-captcha-refresh" onClick={() => { setCaptcha(newCaptcha()); set('captcha', ''); }} aria-label="보안문자 새로 받기"><Glyph name="undo" size={16} /></button>
+                    <input id="vfCaptcha" inputMode="numeric" autoComplete="off" placeholder="숫자 6자리" value={f.captcha} onChange={e => set('captcha', digits(e.target.value, 6))} />
+                  </div>
+                </div>
+                <label className="ui-check aq-verify-agree">
+                  <input type="checkbox" checked={cardAgree} onChange={e => { setCardAgree(e.target.checked); setError(''); }} />
+                  <span>카드 본인확인 서비스 이용약관과 개인정보 수집·이용에 동의해요 (필수)</span>
+                </label>
+              </>
             ) : (
               <div className="ui-field">
                 <label htmlFor="vfPhone">휴대폰 번호</label>
@@ -146,7 +188,7 @@ export function IdentityVerify({ onDone }: { onDone: (name: string, method: Veri
           {method === 'sms' ? '인증번호 받기'
             : method === 'ipin' ? (busy ? '인증하는 중' : '인증하기')
             : method === 'pass' ? 'PASS 앱으로 인증 요청'
-            : `${f.card} 앱으로 인증 요청`}
+            : 'ARS 인증 요청'}
         </button>
       </form>
     );
@@ -160,25 +202,55 @@ export function IdentityVerify({ onDone }: { onDone: (name: string, method: Veri
         {notice}
         <p className="aq-verify-lead">{f.phone.replace(/^(\d{3})(\d{3,4})(\d{4})$/, '$1-$2-$3')}로 보낸 인증번호 6자리를 입력해 주세요.</p>
         <div className="ui-field">
-          <label htmlFor="vfCode" className="sr-only">인증번호</label>
-          <div className="aq-verify-code">
-            <input id="vfCode" autoFocus inputMode="numeric" autoComplete="one-time-code" placeholder="인증번호 6자리" value={f.code} onChange={e => set('code', digits(e.target.value, 6))} />
-            <span className={left < 30 ? 'is-low' : ''}>{mm}:{ss}</span>
+          <label htmlFor="vfCode" className="sr-only">인증번호 6자리</label>
+          {/* 입력은 칸 하나로 받고(문자 자동 채우기·붙여넣기 유지), 화면에는 숫자를 한 칸씩 나눠 보여 준다 */}
+          <div className="aq-otp">
+            <input
+              id="vfCode" autoFocus inputMode="numeric" autoComplete="one-time-code" maxLength={6}
+              className="aq-otp-input" value={f.code}
+              onChange={e => set('code', digits(e.target.value, 6))}
+              onFocus={() => setCodeFocus(true)} onBlur={() => setCodeFocus(false)}
+            />
+            {Array.from({ length: 6 }, (_, i) => (
+              <span
+                key={i} aria-hidden="true"
+                className={`aq-otp-cell${f.code[i] ? ' is-filled' : ''}${codeFocus && i === Math.min(f.code.length, 5) ? ' is-active' : ''}`}
+              >
+                {f.code[i] ?? ''}
+              </span>
+            ))}
           </div>
         </div>
-        <button type="button" className="aq-verify-resend" onClick={() => { setLeft(180); set('code', ''); }}>인증번호 다시 받기</button>
+        <div className="aq-otp-meta">
+          <span className={left < 30 ? 'is-low' : ''}>남은 시간 {mm}:{ss}</span>
+          <button type="button" className="aq-verify-resend" onClick={() => { setLeft(180); set('code', ''); }}>인증번호 다시 받기</button>
+        </div>
         {error && <p className="ui-field-help aq-help-error" role="alert">{error}</p>}
         <button type="submit" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={busy}>{busy ? '확인하는 중' : '확인'}</button>
       </form>
     );
   }
 
-  // PASS·카드사: 앱에서 승인하기를 기다리는 화면
+  // 카드사: ARS 전화를 받아 카드 비밀번호 앞 2자리를 누르는 단계
+  if (method === 'card') {
+    return (
+      <div className="aq-verify aq-verify-wait">
+        {notice}
+        <span className="aq-verify-pulse" aria-hidden="true"><Glyph name="bell" size={26} /></span>
+        <strong>{f.card} 인증 전화가 곧 와요</strong>
+        <p>{maskPhone(f.phone)}로 전화를 걸고 있어요. 전화를 받고 안내에 따라 <b>카드 비밀번호 앞 2자리</b>를 휴대폰 버튼으로 눌러 주세요.</p>
+        <button type="button" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={busy} onClick={finish}>{busy ? '확인하는 중' : '통화를 마쳤어요'}</button>
+        <button type="button" className="aq-verify-resend" onClick={() => { setStep('form'); setCaptcha(newCaptcha()); set('captcha', ''); }}>전화가 오지 않나요? 다시 요청하기</button>
+      </div>
+    );
+  }
+
+  // PASS: 앱에서 승인하기를 기다리는 화면
   return (
     <div className="aq-verify aq-verify-wait">
       {notice}
-      <span className="aq-verify-pulse" aria-hidden="true"><Glyph name={method === 'card' ? 'card' : 'lock'} size={26} /></span>
-      <strong>{method === 'card' ? `${f.card} 앱` : 'PASS 앱'}에서 인증을 완료해 주세요</strong>
+      <span className="aq-verify-pulse" aria-hidden="true"><Glyph name="lock" size={26} /></span>
+      <strong>PASS 앱에서 인증을 완료해 주세요</strong>
       <p>휴대폰으로 받은 알림을 눌러 인증을 마친 뒤, 아래 버튼을 눌러 주세요.</p>
       <button type="button" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={busy} onClick={finish}>{busy ? '확인하는 중' : '인증 완료'}</button>
       <button type="button" className="aq-verify-resend" onClick={() => setStep('form')}>다른 정보로 다시 요청</button>
