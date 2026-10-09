@@ -728,3 +728,28 @@ summary::-webkit-details-marker{display:none}
 .aq-brand.is-app>img{width:100%;height:100%;object-fit:cover}
 .aq-brand.is-image>img{padding:10%}
 .aq-bank-logo.is-real .aq-brand.is-app>img{padding:0}
+
+/* ---------- 배급 신청서(문서) — 휴대폰: 표 대신 '항목 | 내용' 줄, 수록곡은 곡마다 작은 카드 ---------- */
+@media (max-width:600px){
+  .aq-paper{padding:24px 16px 20px}
+  .aq-paper-head h1{font-size:20px;letter-spacing:.06em}
+  .aq-paper-en{font-size:10px;letter-spacing:.1em}
+  .aq-paper-kv,.aq-paper-kv tbody{display:block;width:100%}
+  .aq-paper-kv{border-top:1px solid var(--aq-gray-300)}
+  .aq-paper-kv tr{display:grid;grid-template-columns:96px minmax(0,1fr)}
+  .aq-paper-sec .aq-paper-kv th,.aq-paper-kv th,.aq-paper-kv td{width:auto!important;border:0!important;border-bottom:1px solid var(--aq-gray-150)!important;padding:10px 8px!important}
+  .aq-paper-kv th{background:none!important;white-space:normal;color:var(--aq-text-4);font-weight:600}
+  .aq-paper-kv td[colspan]{grid-column:2}
+  .aq-paper-scroll{overflow:visible}
+  .aq-paper-grid{min-width:0!important;width:100%;border-collapse:separate;border-spacing:0}
+  .aq-paper-grid thead{display:none}
+  .aq-paper-grid,.aq-paper-grid tbody{display:block}
+  .aq-paper-grid tr{display:grid;grid-template-columns:28px minmax(0,1fr);gap:2px 8px;padding:12px 0;border-top:1px solid var(--aq-gray-150)}
+  .aq-paper-grid tr:first-child{border-top:1px solid var(--aq-gray-300)}
+  .aq-paper-grid td{display:block;border:0!important;padding:0!important;text-align:left!important;font-size:var(--aq-fs-sm)}
+  .aq-paper-grid td.aq-paper-no{grid-row:span 5;color:var(--aq-text-4);font-weight:700;padding-top:1px!important}
+  .aq-paper-grid td.aq-paper-title{font-size:var(--aq-fs-md);margin-bottom:4px}
+  .aq-paper-grid td[data-label]{display:flex;gap:8px;color:var(--aq-text-2)}
+  .aq-paper-grid td[data-label]::before{content:attr(data-label);flex:0 0 40px;color:var(--aq-text-4);font-weight:600}
+  .aq-paper-grid td[data-label] small{display:inline;margin:0 6px 0 0}
+}
