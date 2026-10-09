@@ -658,3 +658,27 @@ summary::-webkit-details-marker{display:none}
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238792A8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.5' y='5' width='17' height='15.5' rx='3'/%3E%3Cpath d='M3.5 10h17M8 3v4M16 3v4'/%3E%3C/svg%3E")!important;
   background-repeat:no-repeat!important;background-position:right 16px center!important;background-size:18px 18px!important
 }
+/* 시간 · 달 · 날짜+시간 */
+.aq-time{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:6px;padding-top:12px;border-top:1px solid var(--aq-gray-100)}
+.aq-cal>.aq-time:first-child{margin-top:0;padding-top:0;border-top:0}
+.aq-time-col{display:flex;flex-direction:column;gap:2px;max-height:176px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none}
+.aq-time-col::-webkit-scrollbar{display:none}
+.aq-time-col button{flex:none;height:40px;border:0;border-radius:var(--aq-r-md);background:none;color:var(--aq-text-2);font:inherit;font-size:var(--aq-fs-lg);font-weight:600;font-variant-numeric:tabular-nums;cursor:pointer}
+.aq-time-col button.is-on{background:var(--aq-blue-50);color:var(--aq-primary);font-weight:var(--aq-fw-bold)}
+@media (hover:hover){.aq-time-col button:not(.is-on):hover{background:var(--aq-gray-50)}}
+.aq-cal-done{flex:1}
+.aq-cal-title.is-static{cursor:default}
+.aq-cal-nav button:disabled{opacity:.4;cursor:default}
+.aq-cal-months{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.aq-cal-months button{height:48px;border:0;border-radius:var(--aq-r-md);background:var(--aq-gray-50);color:var(--aq-text);font:inherit;font-size:var(--aq-fs-md);font-weight:600;cursor:pointer}
+.aq-cal-months button.is-on{background:var(--aq-primary);color:#fff}
+.aq-cal-months button:disabled{background:none;color:var(--aq-gray-300);cursor:default}
+:is(#root,#modal,body) input.aq-date-input.is-time:not(#_){
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238792A8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 7v5l3.2 2'/%3E%3C/svg%3E")!important
+}
+.aq-time-col{position:relative}
+/* 넓은 화면: 날짜+시간은 달력 옆에 시간 줄을 두어 창이 너무 길어지지 않게 */
+.aq-picker.is-pop .aq-dt{display:grid;grid-template-columns:minmax(0,1fr) 196px;gap:0 14px;padding:2px}
+.aq-picker.is-pop .aq-dt>.aq-time{margin:44px 0 0;padding:0 0 0 14px;border-top:0;border-left:1px solid var(--aq-gray-100);align-self:start}
+.aq-picker.is-pop .aq-dt>.aq-time .aq-time-col{max-height:236px}
+.aq-picker.is-pop .aq-dt>.aq-cal-foot{grid-column:1/-1}

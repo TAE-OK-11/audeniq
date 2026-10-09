@@ -25,7 +25,8 @@ function Surface({ anchor, title, onClose, className, children, labelledBy }: {
     if (sheet || !anchor) return;
     const box = boxRef.current;
     const vw = window.innerWidth, vh = window.innerHeight;
-    const width = Math.min(Math.max(anchor.width, className?.includes('is-calendar') ? 320 : 220), vw - 24);
+    const want = className?.includes('is-datetime') ? 540 : className?.includes('is-calendar') || className?.includes('is-time') ? 320 : 220;
+    const width = Math.min(Math.max(anchor.width, want), vw - 24);
     const left = Math.min(Math.max(12, anchor.left), vw - width - 12);
     // 실제 너비를 먼저 준 뒤 높이를 재야 줄바꿈까지 맞는 높이가 나온다
     if (box) { box.style.width = `${width}px`; box.style.maxHeight = 'none'; }
@@ -269,8 +270,8 @@ export const formatDateKo = (v: string) => {
 };
 const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
 
-function Calendar({ value, min, max, required, onPick, onClear, onClose, title, autoFocus }: {
-  value: string; min?: string; max?: string; required?: boolean; title: string; autoFocus: boolean;
+function Calendar({ value, min, max, required, onPick, onClear, onClose, title, autoFocus, foot = true }: {
+  value: string; min?: string; max?: string; required?: boolean; title: string; autoFocus: boolean; foot?: boolean;
   onPick: (v: string) => void; onClear: () => void; onClose: () => void;
 }) {
   const today = todayIso();
@@ -365,53 +366,254 @@ function Calendar({ value, min, max, required, onPick, onClear, onClose, title, 
         </>
       )}
 
-      <div className="aq-cal-foot">
+      {foot && <div className="aq-cal-foot">
         {!out(today) && <button type="button" className="ui-btn is-soft is-sm" onClick={() => onPick(today)}>오늘</button>}
         {!required && value && <button type="button" className="ui-btn is-white is-sm" onClick={onClear}>지우기</button>}
-      </div>
+      </div>}
     </div>
   );
 }
 
-/** 날짜 칸 — 값은 'YYYY-MM-DD', 화면에는 '2026년 10월 30일'. 누르면 AUDENIQ 달력이 열린다. */
-export function DateField({ id, value, onChange, min, max, required, placeholder = '날짜를 선택해 주세요', className, disabled, ...aria }: {
-  id?: string; value: string; onChange: (v: string) => void; min?: string; max?: string; required?: boolean;
-  placeholder?: string; className?: string; disabled?: boolean; 'aria-label'?: string; 'aria-invalid'?: boolean;
+// ---------------------------------------------------------------------------
+// 칸 껍데기 — 읽기 전용 입력칸(다른 입력칸과 같은 모양) + 누르면 열리는 AUDENIQ 창
+// ---------------------------------------------------------------------------
+type FieldBase = {
+  id?: string; required?: boolean; placeholder?: string; className?: string; disabled?: boolean;
+  'aria-label'?: string; 'aria-invalid'?: boolean;
+};
+type OpenState = { viaTouch: boolean; kbd: boolean; rect: DOMRect; title: string };
+
+function PickerInput({ id, display, placeholder, className, disabled, required, icon, kind, onClear, aria, children }: {
+  id?: string; display: string; placeholder: string; className?: string; disabled?: boolean; required?: boolean;
+  icon: 'calendar' | 'clock'; kind: string; onClear?: () => void; aria: Pick<FieldBase, 'aria-label' | 'aria-invalid'>;
+  children: (close: () => void, open: OpenState) => ReactNode;
 }) {
   const ref = useRef<HTMLInputElement>(null);
-  const [open, setOpen] = useState<{ viaTouch: boolean; kbd?: boolean; rect: DOMRect; title: string } | null>(null);
+  const [open, setOpen] = useState<OpenState | null>(null);
   const touched = useRef(false);
-
   const close = useCallback(() => {
     const via = open?.viaTouch;
     setOpen(null);
     if (!via) ref.current?.focus({ preventScroll: true });
   }, [open]);
-
+  const show = (el: HTMLInputElement, kbd: boolean) => {
+    if (disabled) return;
+    setOpen({ viaTouch: !kbd && touched.current, kbd, rect: el.getBoundingClientRect(), title: fieldTitle(el) });
+    touched.current = false;
+  };
   return (
     <>
       <input
         ref={ref} id={id} type="text" readOnly inputMode="none" autoComplete="off"
-        className={`aq-date-input${className ? ` ${className}` : ''}`}
-        value={formatDateKo(value)} placeholder={placeholder} required={required} disabled={disabled}
+        className={`aq-date-input${icon === 'clock' ? ' is-time' : ''}${className ? ` ${className}` : ''}`}
+        value={display} placeholder={placeholder} required={required} disabled={disabled}
         aria-haspopup="dialog" aria-expanded={!!open} {...aria}
         onTouchStart={() => { touched.current = true; }}
-        onClick={e => { if (!disabled) setOpen({ viaTouch: touched.current, rect: e.currentTarget.getBoundingClientRect(), title: fieldTitle(e.currentTarget) }); touched.current = false; }}
+        onClick={e => show(e.currentTarget, false)}
         onKeyDown={e => {
-          if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') { e.preventDefault(); setOpen({ viaTouch: false, kbd: true, rect: e.currentTarget.getBoundingClientRect(), title: fieldTitle(e.currentTarget) }); }
-          if ((e.key === 'Backspace' || e.key === 'Delete') && !required && value) { e.preventDefault(); onChange(''); }
+          if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') { e.preventDefault(); show(e.currentTarget, true); }
+          if ((e.key === 'Backspace' || e.key === 'Delete') && !required && display && onClear) { e.preventDefault(); onClear(); }
         }}
       />
       {open && (
-        <Surface anchor={open.rect} title={open.title} onClose={close} className="is-calendar">
-          <Calendar
-            value={value} min={min} max={max} required={required} title={open.title} autoFocus={!!open.kbd}
-            onPick={v => { onChange(v); close(); }}
-            onClear={() => { onChange(''); close(); }}
-            onClose={close}
-          />
+        <Surface anchor={open.rect} title={open.title} onClose={close} className={kind}>
+          {children(close, open)}
         </Surface>
       )}
     </>
+  );
+}
+
+/** 날짜 칸 — 값은 'YYYY-MM-DD', 화면에는 '2026년 10월 30일'. 누르면 AUDENIQ 달력이 열린다. */
+export function DateField({ value, onChange, min, max, placeholder = '날짜를 선택해 주세요', ...rest }: FieldBase & {
+  value: string; onChange: (v: string) => void; min?: string; max?: string;
+}) {
+  const { 'aria-label': al, 'aria-invalid': ai, ...base } = rest;
+  return (
+    <PickerInput {...base} aria={{ 'aria-label': al, 'aria-invalid': ai }} icon="calendar" kind="is-calendar"
+      display={formatDateKo(value)} placeholder={placeholder} onClear={() => onChange('')}>
+      {(close, open) => (
+        <Calendar
+          value={value} min={min} max={max} required={rest.required} title={open.title} autoFocus={open.kbd}
+          onPick={v => { onChange(v); close(); }}
+          onClear={() => { onChange(''); close(); }}
+          onClose={close}
+        />
+      )}
+    </PickerInput>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 시간 — 오전/오후 · 시 · 분을 눌러 고르는 세 줄 (휠처럼 돌리지 않고 누른다)
+// ---------------------------------------------------------------------------
+export const formatTimeKo = (v: string) => {
+  const m = /^(\d{2}):(\d{2})/.exec(v ?? '');
+  if (!m) return '';
+  const h = +m[1];
+  return `${h < 12 ? '오전' : '오후'} ${h % 12 === 0 ? 12 : h % 12}:${m[2]}`;
+};
+
+function TimeColumns({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const m = /^(\d{2}):(\d{2})/.exec(value) ?? ['', '09', '00'];
+  const h = +m[1], min = +m[2];
+  const pm = h >= 12, h12 = h % 12 === 0 ? 12 : h % 12;
+  const minutes = Array.from({ length: 12 }, (_, i) => i * 5);
+  if (!minutes.includes(min)) minutes.push(min), minutes.sort((a, b) => a - b);
+  const set = (nh: number, nm: number) => onChange(`${pad(nh)}:${pad(nm)}`);
+  const to24 = (v12: number, isPm: boolean) => (v12 % 12) + (isPm ? 12 : 0);
+  const boxRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    boxRef.current?.querySelectorAll<HTMLElement>('.aq-time-col .is-on').forEach(el => {
+      const col = el.parentElement!;
+      col.scrollTop = el.offsetTop - col.clientHeight / 2 + el.clientHeight / 2;
+    });
+  }, []);
+  return (
+    <div className="aq-time" ref={boxRef}>
+      <div className="aq-time-col" role="listbox" aria-label="오전·오후">
+        {[false, true].map(isPm => (
+          <button key={String(isPm)} type="button" role="option" aria-selected={pm === isPm} className={pm === isPm ? 'is-on' : undefined}
+            onClick={() => set(to24(h12, isPm), min)}>{isPm ? '오후' : '오전'}</button>
+        ))}
+      </div>
+      <div className="aq-time-col" role="listbox" aria-label="시">
+        {Array.from({ length: 12 }, (_, i) => i + 1).map(v => (
+          <button key={v} type="button" role="option" aria-selected={v === h12} className={v === h12 ? 'is-on' : undefined}
+            onClick={() => set(to24(v, pm), min)}>{v}시</button>
+        ))}
+      </div>
+      <div className="aq-time-col" role="listbox" aria-label="분">
+        {minutes.map(v => (
+          <button key={v} type="button" role="option" aria-selected={v === min} className={v === min ? 'is-on' : undefined}
+            onClick={() => set(h, v)}>{pad(v)}분</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TimeSheet({ value, onDone, onClose }: { value: string; onDone: (v: string) => void; onClose: () => void }) {
+  const [t, setT] = useState(value || '09:00');
+  useTopKeys(e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); } });
+  return (
+    <div className="aq-cal">
+      <TimeColumns value={t} onChange={setT} />
+      <div className="aq-cal-foot"><button type="button" className="ui-btn is-primary is-sm aq-cal-done" onClick={() => onDone(t)}>확인</button></div>
+    </div>
+  );
+}
+
+/** 시간 칸 — 값은 'HH:mm', 화면에는 '오전 9:00' */
+export function TimeField({ value, onChange, placeholder = '시간을 선택해 주세요', ...rest }: FieldBase & {
+  value: string; onChange: (v: string) => void;
+}) {
+  const { 'aria-label': al, 'aria-invalid': ai, ...base } = rest;
+  return (
+    <PickerInput {...base} aria={{ 'aria-label': al, 'aria-invalid': ai }} icon="clock" kind="is-time"
+      display={formatTimeKo(value)} placeholder={placeholder} onClear={() => onChange('')}>
+      {close => <TimeSheet value={value} onClose={close} onDone={v => { onChange(v); close(); }} />}
+    </PickerInput>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 날짜 + 시간 — 값은 'YYYY-MM-DDTHH:mm'(datetime-local과 같은 모양)
+// ---------------------------------------------------------------------------
+export const formatDateTimeKo = (v: string) => {
+  const [d, t] = (v ?? '').split('T');
+  const ds = formatDateKo(d ?? '');
+  return ds ? `${ds} ${formatTimeKo(t ?? '')}`.trim() : '';
+};
+
+function DateTimeSheet({ value, min, required, title, kbd, onDone, onClear, onClose }: {
+  value: string; min?: string; required?: boolean; title: string; kbd: boolean;
+  onDone: (v: string) => void; onClear: () => void; onClose: () => void;
+}) {
+  const [d0, t0] = (value ?? '').split('T');
+  const [date, setDate] = useState(d0 ?? '');
+  const [time, setTime] = useState((t0 ?? '').slice(0, 5) || '09:00');
+  return (
+    <div className="aq-dt">
+      <Calendar
+        value={date} min={min?.slice(0, 10)} required title={title} autoFocus={kbd} foot={false}
+        onPick={setDate} onClear={() => setDate('')} onClose={onClose}
+      />
+      <TimeColumns value={time} onChange={setTime} />
+      <div className="aq-cal-foot">
+        {!required && value && <button type="button" className="ui-btn is-white is-sm" onClick={onClear}>지우기</button>}
+        <button type="button" className="ui-btn is-primary is-sm aq-cal-done" disabled={!date} onClick={() => onDone(`${date}T${time}`)}>
+          {date ? `${formatDateKo(date)} ${formatTimeKo(time)}` : '날짜를 골라 주세요'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** 날짜·시간 칸 — `<input type="datetime-local">` 대신 */
+export function DateTimeField({ value, onChange, min, placeholder = '날짜와 시간을 선택해 주세요', ...rest }: FieldBase & {
+  value: string; onChange: (v: string) => void; min?: string;
+}) {
+  const { 'aria-label': al, 'aria-invalid': ai, ...base } = rest;
+  return (
+    <PickerInput {...base} aria={{ 'aria-label': al, 'aria-invalid': ai }} icon="calendar" kind="is-calendar is-datetime"
+      display={formatDateTimeKo(value)} placeholder={placeholder} onClear={() => onChange('')}>
+      {(close, open) => (
+        <DateTimeSheet
+          value={value} min={min} required={rest.required} title={open.title} kbd={open.kbd}
+          onDone={v => { onChange(v); close(); }} onClear={() => { onChange(''); close(); }} onClose={close}
+        />
+      )}
+    </PickerInput>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 달(月) — 값은 'YYYY-MM'
+// ---------------------------------------------------------------------------
+export const formatMonthKo = (v: string) => {
+  const m = /^(\d{4})-(\d{2})$/.exec(v ?? '');
+  return m ? `${m[1]}년 ${+m[2]}월` : '';
+};
+
+function MonthSheet({ value, min, max, onPick, onClose }: { value: string; min?: string; max?: string; onPick: (v: string) => void; onClose: () => void }) {
+  const now = new Date();
+  const [year, setYear] = useState(+(value || max || '').slice(0, 4) || now.getFullYear());
+  useTopKeys(e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); } });
+  const key = (m: number) => `${year}-${pad(m + 1)}`;
+  return (
+    <div className="aq-cal">
+      <div className="aq-cal-head">
+        <span className="aq-cal-title is-static">{year}년</span>
+        <span className="aq-cal-nav">
+          <button type="button" aria-label="이전 해" disabled={!!min && `${year - 1}-12` < min} onClick={() => setYear(y => y - 1)}><Glyph name="chevron-left" size={18} /></button>
+          <button type="button" aria-label="다음 해" disabled={!!max && `${year + 1}-01` > max} onClick={() => setYear(y => y + 1)}><Glyph name="chevron-right" size={18} /></button>
+        </span>
+      </div>
+      <div className="aq-cal-months">
+        {Array.from({ length: 12 }, (_, m) => {
+          const k = key(m);
+          return (
+            <button key={k} type="button" className={k === value ? 'is-on' : undefined} aria-pressed={k === value}
+              disabled={(!!min && k < min) || (!!max && k > max)} onClick={() => onPick(k)}>
+              {m + 1}월
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** 달 칸 — `<input type="month">` 대신. 화면에는 '2026년 10월' */
+export function MonthField({ value, onChange, min, max, placeholder = '달을 선택해 주세요', ...rest }: FieldBase & {
+  value: string; onChange: (v: string) => void; min?: string; max?: string;
+}) {
+  const { 'aria-label': al, 'aria-invalid': ai, ...base } = rest;
+  return (
+    <PickerInput {...base} aria={{ 'aria-label': al, 'aria-invalid': ai }} icon="calendar" kind="is-calendar"
+      display={formatMonthKo(value)} placeholder={placeholder} onClear={() => onChange('')}>
+      {close => <MonthSheet value={value} min={min} max={max} onClose={close} onPick={v => { onChange(v); close(); }} />}
+    </PickerInput>
   );
 }

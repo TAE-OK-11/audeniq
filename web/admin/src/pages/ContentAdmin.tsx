@@ -5,7 +5,7 @@ import { Link } from '../lib/router';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
 import { errorMessage } from '../api/errors';
-import { DateField } from '../components/Picker';
+import { DateField, DateTimeField } from '../components/Picker';
 import {
   contentAdmin, type AdminEvent, type AdminMaintenance, type AdminNotice, type ContentKind, type EventInput,
   type MaintenanceInput, type NoticeInput,
@@ -121,11 +121,11 @@ function Editor({ kind, draft, saving, onChange, onSave, onCancel, onDelete }: {
         <div className="aq-cadmin-grid">
           <div className="ui-field">
             <label htmlFor="caMaintStart">점검 시작 (한국 시간) <span className="required">*</span></label>
-            <input id="caMaintStart" type="datetime-local" required value={draft.maintStart} onChange={e => set('maintStart', e.target.value)} />
+            <DateTimeField id="caMaintStart" required value={draft.maintStart} onChange={v => set('maintStart', v)} />
           </div>
           <div className="ui-field">
             <label htmlFor="caMaintEnd">예상 종료 (한국 시간) <span className="required">*</span></label>
-            <input id="caMaintEnd" type="datetime-local" required min={draft.maintStart} value={draft.maintEnd} onChange={e => set('maintEnd', e.target.value)} />
+            <DateTimeField id="caMaintEnd" required min={draft.maintStart} value={draft.maintEnd} onChange={v => set('maintEnd', v)} />
           </div>
           <label className="aq-cadmin-check">
             <input type="checkbox" checked={draft.endUnknown} onChange={e => set('endUnknown', e.target.checked)} />
@@ -170,7 +170,7 @@ function Editor({ kind, draft, saving, onChange, onSave, onCancel, onDelete }: {
       <div className="aq-cadmin-grid">
         <div className="ui-field">
           <label htmlFor="caPublished">{maint ? '예고 공개 시각 (한국 시간)' : '게시 시각 (한국 시간)'}</label>
-          <input id="caPublished" type="datetime-local" required value={draft.publishedAt} onChange={e => set('publishedAt', e.target.value)} />
+          <DateTimeField id="caPublished" required value={draft.publishedAt} onChange={v => set('publishedAt', v)} />
           <p className="ui-field-help">
             {maint
               ? '점검 72시간 전부터 스튜디오 상단에 예고가 뜨고, 시작 시각이 되면 점검 화면으로 바뀌어요.'

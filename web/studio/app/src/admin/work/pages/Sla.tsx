@@ -17,7 +17,7 @@ import {
 } from '../labels';
 import { MiniStats, Person, PriorityChip, SwitchRow, usePeople } from '../ui';
 import type { SlaOverview, SlaPolicy, SlaPolicyInput, StaffRoleName, WorkCalendar } from '../types';
-import { DateField } from '../../../components/Picker';
+import { DateField, TimeField } from '../../../components/Picker';
 
 const ROLES: StaffRoleName[] = ['ADMIN', 'REVIEWER', 'OPERATOR', 'SUPPORT'];
 const dayMinutes = (c?: WorkCalendar) => {
@@ -141,8 +141,8 @@ function CalendarForm({ cal, onSaved }: { cal: WorkCalendar; onSaved: (d: SlaOve
         <input id="cName" className="ui-input" maxLength={80} value={name} onChange={e => setName(e.target.value)} />
       </div>
       <div className="adm-w-grid2">
-        <div className="ui-field"><label htmlFor="cStart">근무 시작</label><input id="cStart" type="time" className="ui-input" value={start} onChange={e => setStart(e.target.value)} /></div>
-        <div className="ui-field"><label htmlFor="cEnd">근무 종료</label><input id="cEnd" type="time" className="ui-input" value={end} onChange={e => setEnd(e.target.value)} /></div>
+        <div className="ui-field"><label htmlFor="cStart">근무 시작</label><TimeField id="cStart" className="ui-input" value={start} onChange={setStart} /></div>
+        <div className="ui-field"><label htmlFor="cEnd">근무 종료</label><TimeField id="cEnd" className="ui-input" value={end} onChange={setEnd} /></div>
       </div>
       <div className="ui-field">
         <span className="ui-field-label">근무일</span>

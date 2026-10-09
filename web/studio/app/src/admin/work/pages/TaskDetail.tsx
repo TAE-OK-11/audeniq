@@ -15,6 +15,7 @@ import { ENTITY_KIND, EVENT_LABEL, PRIORITIES, PRIORITY, SLA_STATE, TASK_STATUS,
 import { TaskForm, fromLocalInput, toLocalInput } from '../TaskForm';
 import { DueChip, EntityChips, EntityPicker, NotesPanel, Person, PersonSelect, PriorityChip, TaskStatusChip, usePeople, type People } from '../ui';
 import type { EntityKind, Priority, TaskDetail as Detail, TaskEvent, TaskPatch, TaskStatus, WorkTask } from '../types';
+import { DateTimeField } from '../../../components/Picker';
 
 function ReviewForm({ task, approve, onDone }: { task: WorkTask; approve: boolean; onDone: () => void }) {
   const close = useModalClose();
@@ -250,7 +251,7 @@ export function TaskDetail() {
               <div><dt><label htmlFor="dReviewer">검토자</label></dt><dd>{archived ? <Person id={t.reviewer_id} people={people} empty="검토 없음" /> : <PersonSelect id="dReviewer" value={t.reviewer_id} onChange={v => patch({ reviewer_id: v }, '검토자를 바꿨어요.')} people={people} empty="검토 없음" />}</dd></div>
               <div><dt>우선순위</dt><dd>{archived ? <PriorityChip value={t.priority} /> : <Seg label="우선순위" value={t.priority} onChange={v => patch({ priority: v }, '우선순위를 바꿨어요.')} options={PRIORITIES.map(p => [p, PRIORITY[p][0]] as const)} />}</dd></div>
               {t.sla_due_at && <div><dt>SLA 기한</dt><dd>{when(t.sla_due_at)}{t.sla_state && <small>{SLA_STATE[t.sla_state][0]} · {remaining(t.sla_due_at)}{t.priority_raised ? ` · 우선순위 ${PRIORITY[t.priority_raised][0]}에서 올라감` : ''}</small>}</dd></div>}
-              <div><dt><label htmlFor="dDue">마감일</label></dt><dd>{archived ? (t.due_at ? when(t.due_at) : '—') : <input id="dDue" type="datetime-local" className="ui-input" defaultValue={toLocalInput(t.due_at)} key={t.due_at ?? 'none'} onBlur={e => { const v = fromLocalInput(e.target.value); if (v !== t.due_at) void patch({ due_at: v }, '마감일을 바꿨어요.'); }} />}</dd></div>
+              <div><dt><label htmlFor="dDue">마감일</label></dt><dd>{archived ? (t.due_at ? when(t.due_at) : '—') : <DateTimeField id="dDue" className="ui-input" value={toLocalInput(t.due_at)} onChange={val => { const v = fromLocalInput(val); if (v !== t.due_at) void patch({ due_at: v }, '마감일을 바꿨어요.'); }} />}</dd></div>
               {t.started_at && <div><dt>시작</dt><dd>{when(t.started_at)}</dd></div>}
               {t.completed_at && <div><dt>{t.status === 'CANCELLED' ? '취소' : '완료'}</dt><dd>{when(t.completed_at)}</dd></div>}
             </dl>

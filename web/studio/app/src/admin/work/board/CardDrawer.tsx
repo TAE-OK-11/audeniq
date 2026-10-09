@@ -17,6 +17,7 @@ import { EntityChips, EntityPicker, NotesPanel, Person, PersonSelect, TaskStatus
 import { sourceLabel } from './Card';
 import { cardSelector, errorCode } from './logic';
 import type { EntityKind, Priority, TaskDetail, TaskEvent, TaskPatch, TaskStatus, WorkTask, WorkType } from '../types';
+import { DateTimeField } from '../../../components/Picker';
 
 interface Draft { title: string; description: string; priority: Priority; type: WorkType; assignee_id: string | null; reviewer_id: string | null; due: string; tags: string }
 const draftOf = (t: WorkTask): Draft => ({
@@ -227,7 +228,7 @@ export function CardDrawer({ cardId, boardWritable, onClose, onChanged, onArchiv
                   </div>
                   <div className="ui-field">
                     <label htmlFor="kbdDue">마감일</label>
-                    <input id="kbdDue" type="datetime-local" className="ui-input" value={draft.due} disabled={!editable} onChange={e => set('due', e.target.value)} />
+                    <DateTimeField id="kbdDue" className="ui-input" value={draft.due} disabled={!editable} onChange={v => set('due', v)} />
                   </div>
                   <div className="ui-field">
                     <label htmlFor="kbdTags">태그</label>

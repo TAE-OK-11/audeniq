@@ -27,6 +27,7 @@ import { Glyph } from '../components/Glyph';
 import { Money } from '../components/Money';
 import { Segmented } from '../components/Segmented';
 import { Badge, type Tone } from '../ui';
+import { MonthField } from '../components/Picker';
 
 const PLATFORMS = ['Spotify', 'Apple Music', 'YouTube Music', '멜론', '지니', 'FLO', '벅스', 'Amazon Music', 'TIDAL', 'Deezer', '기타'];
 
@@ -52,7 +53,7 @@ function StatementForm({ onSave }: { onSave: (s: { period: string; platform: str
       <div className="form-grid">
         <div className="ui-field">
           <label htmlFor="stPeriod">정산 기간</label>
-          <input id="stPeriod" type="month" required max={monthKey(0)} value={period} onChange={e => setPeriod(e.target.value)} />
+          <MonthField id="stPeriod" required max={monthKey(0)} value={period} onChange={setPeriod} />
         </div>
         <div className="ui-field">
           <label htmlFor="stPlatform">플랫폼</label>

@@ -19,6 +19,7 @@ import { DueChip, EntityChips, EntityPicker, MiniStats, NotesPanel, Person, Pers
 import type {
   ActivityKind, ContactInput, ContractStatus, EntityRef, RelContact, RelKind, RelQuery, RelStatus, Relationship, RelationshipDetail,
 } from '../types';
+import { DateTimeField } from '../../../components/Picker';
 
 const contractChip = (r: Relationship) => <StatusBadge value={CONTRACT_STATUS[r.contract.status]} />;
 const name = (r: Relationship) => r.name ?? (r.missing ? '원천 기록이 없어요' : '이름 없음');
@@ -116,7 +117,7 @@ function NewRelationship({ onSaved }: { onSaved: (d: RelationshipDetail) => void
             {REL_STATUSES.map(s => <option key={s} value={s}>{REL_STATUS[s][0]}</option>)}
           </select>
         </div>
-        <div className="ui-field"><label htmlFor="relNext">다음 연락</label><input id="relNext" type="datetime-local" className="ui-input" value={next} onChange={e => setNext(e.target.value)} /></div>
+        <div className="ui-field"><label htmlFor="relNext">다음 연락</label><DateTimeField id="relNext" className="ui-input" value={next} onChange={setNext} /></div>
       </div>
       <div className="adm-form-actions">
         <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
@@ -284,7 +285,7 @@ function ActivityForm({ d, onSaved }: { d: RelationshipDetail; onSaved: (d: Rela
           </select>
         )}
         <label className="adm-w-inline-label" htmlFor="actNext">다음 연락</label>
-        <input id="actNext" type="datetime-local" className="ui-input" value={next} onChange={e => setNext(e.target.value)} />
+        <DateTimeField id="actNext" className="ui-input" value={next} onChange={setNext} />
         <button type="submit" className="ui-btn is-primary is-sm" disabled={!summary.trim() || busy}>{busy ? '기록 중…' : '기록'}</button>
       </div>
     </form>
@@ -390,8 +391,8 @@ export function CrmDetail() {
                   {REL_STATUSES.map(s => <option key={s} value={s}>{REL_STATUS[s][0]}</option>)}
                 </select>)}</dd></div>
               <div><dt><label htmlFor="rNext">다음 연락</label></dt><dd>{archived ? (r.next_contact_at ? when(r.next_contact_at) : '—') : (
-                <input id="rNext" type="datetime-local" className="ui-input" key={r.next_contact_at ?? 'none'} defaultValue={toLocalInput(r.next_contact_at)}
-                  onBlur={e => { const v = fromLocalInput(e.target.value); if (v !== r.next_contact_at) void patch({ next_contact_at: v }, '다음 연락일을 바꿨어요.'); }} />)}
+                <DateTimeField id="rNext" className="ui-input" value={toLocalInput(r.next_contact_at)}
+                  onChange={val => { const v = fromLocalInput(val); if (v !== r.next_contact_at) void patch({ next_contact_at: v }, '다음 연락일을 바꿨어요.'); }} />)}
                 {r.contact_due && <small className="is-late-text">연락할 때가 됐어요</small>}</dd></div>
               <div><dt>계약</dt><dd>
                 {r.contract.source === 'manual' && !archived ? (

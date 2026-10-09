@@ -9,6 +9,7 @@ import { workApi } from './api';
 import { PRIORITIES, PRIORITY, RECUR, WORK_TYPE, WORK_TYPES } from './labels';
 import { EntityChips, EntityPicker, PersonSelect, SwitchRow, usePeople } from './ui';
 import type { EntityRef, Priority, RecurFreq, TaskDetail, TaskInput, WorkTask, WorkType } from './types';
+import { DateTimeField } from '../../components/Picker';
 
 /** datetime-local 값 ↔ ISO (브라우저 현지 시간) */
 export const toLocalInput = (iso: string | null | undefined) => {
@@ -87,7 +88,7 @@ export function TaskForm({ task, initial, onSaved }: { task?: WorkTask; initial?
         </div>
         <div className="ui-field">
           <label htmlFor="tDue">마감일</label>
-          <input id="tDue" type="datetime-local" className="ui-input" value={due} onChange={e => setDue(e.target.value)} />
+          <DateTimeField id="tDue" className="ui-input" value={due} onChange={setDue} />
         </div>
       </div>
       <div className="ui-field">
