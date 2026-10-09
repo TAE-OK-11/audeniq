@@ -17,6 +17,7 @@ import {
 } from '../labels';
 import { MiniStats, Person, PriorityChip, SwitchRow, usePeople } from '../ui';
 import type { SlaOverview, SlaPolicy, SlaPolicyInput, StaffRoleName, WorkCalendar } from '../types';
+import { DateField } from '../../../components/Picker';
 
 const ROLES: StaffRoleName[] = ['ADMIN', 'REVIEWER', 'OPERATOR', 'SUPPORT'];
 const dayMinutes = (c?: WorkCalendar) => {
@@ -185,7 +186,7 @@ function Holidays({ cal, names, admin, onSaved }: { cal: WorkCalendar; names: Re
       )}
       {admin && (
         <form className="adm-w-inline" onSubmit={add}>
-          <input type="date" className="ui-input" aria-label="휴일 날짜" value={day} onChange={e => setDay(e.target.value)} />
+          <DateField className="ui-input" aria-label="휴일 날짜" value={day} onChange={setDay} />
           <input className="ui-input" aria-label="휴일 이름" placeholder="예: 추석" maxLength={80} value={name} onChange={e => setName(e.target.value)} />
           <button type="submit" className="ui-btn is-soft is-sm" disabled={!day || !name.trim()}>추가</button>
         </form>

@@ -31,6 +31,7 @@ import { uid } from '../lib/store';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
 import { Segmented } from '../components/Segmented';
+import { DateField } from '../components/Picker';
 
 const STEPS = [
   { short: '발매 정보', kicker: '01 / 06 · 발매 정보', title: '어떤 음악을\n발매할까요?', sub: '발매 정보와 아티스트명을 입력해 주세요.' },
@@ -187,15 +188,7 @@ function KoreanDateField({ id, label, required, value, min, onChange }: {
   return (
     <div className="ui-field">
       <label htmlFor={id}>{label}{required && <> <span className="required">*</span></>}</label>
-      <div className="kdate-wrap">
-        <input
-          id={id} type="date" className="kdate-input"
-          value={value} min={min} onChange={e => onChange(e.target.value)}
-        />
-        <div className={`kdate-display${value ? '' : ' empty'}`} aria-hidden="true">
-          {value ? formatKoreanDate(value) : '날짜를 선택해 주세요.'}
-        </div>
-      </div>
+      <DateField id={id} value={value} min={min} required={required} onChange={onChange} />
     </div>
   );
 }

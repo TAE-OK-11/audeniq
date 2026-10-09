@@ -22,7 +22,8 @@
 8. 아이콘은 직접 그린 SVG만 씁니다(`components/Glyph.tsx`, 설문은 `survey/app/src/Icon.tsx`). 이모지와 아이콘처럼 쓰는 글자 기호(₩ ✓ › ‹ ▸ ↗ ⚠ 등)는 기기마다 모양이 달라서 쓰지 않아요. CSS로 그릴 때는 `--aq-icon-check`·`--aq-icon-chevron`을 mask로 씁니다. 문서 아이콘도 이모지 대신 아이콘 이름을 저장하고, 예전 이모지는 비슷한 SVG로 바꿔 보여 줍니다. 문장 속 화살표(→)처럼 글자로 읽히는 것은 Pretendard에 들어 있어 그대로 둡니다.
 9. 글자 단계: 크기는 11 · 12 · 13 · 14 · 15 · 16 · 18 · 22px와 큰 제목(`--aq-fs-h1` 28–36, `--aq-fs-display` 30–40)만 씁니다(`--aq-fs-2xs`~`--aq-fs-title-lg`). 굵기는 400(본문) · 600(보조) · 700(제목·버튼) · 800(숫자·큰 제목) 네 가지뿐입니다. 글자 회색은 `--aq-text` · `--aq-text-2` · `--aq-text-3` · `--aq-text-4` · `--aq-text-disabled` 다섯 단계만 쓰고, 회색 hex나 `--aq-gray-*`를 글자색으로 직접 쓰지 않아요. 카드 제목(h2)은 18px/700, 페이지 제목(h1)은 `--aq-fs-h1`입니다.
 10. 라벨은 한글로 씁니다. 페이지 위 작은 분류 글자(eyebrow), 관리자 메뉴 묶음 이름, 단계 이름 모두 한글이고 영어 대문자 라벨(MONTHLY REPORT 등)은 쓰지 않아요. 고유명사(Spotify, UPC/EAN, ISRC)만 예외입니다.
-11. 새 역할이 생기면 화면 CSS에 만들지 말고 `ui.css` + `src/ui`에 더하고 견본 화면에 올립니다.
+11. 선택 상자와 날짜는 기기 기본 팝업(iOS 휠·안드로이드 목록·기본 달력)을 쓰지 않습니다. 앱 루트의 `<SelectHost/>`가 모든 `<select>`를 AUDENIQ 선택 시트로 열고(휴대폰은 아래에서 올라오는 시트, 넓은 화면은 칸 아래 작은 창), 날짜는 `<DateField>`(`components/Picker.tsx`)를 씁니다. `<input type="date">`는 새로 쓰지 않아요. 기본 팝업이 꼭 필요한 곳만 조상에 `data-native-select`를 붙입니다.
+12. 새 역할이 생기면 화면 CSS에 만들지 말고 `ui.css` + `src/ui`에 더하고 견본 화면에 올립니다.
 
 ## 컴포넌트
 | 역할 | React | 클래스 |

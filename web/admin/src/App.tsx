@@ -13,6 +13,7 @@ import './styles/live.css';
 import './styles/enhance.css';
 import './styles/controls.css';
 import './styles/ui.css';
+import { SelectHost } from './components/Picker';
 
 function BootScreen() {
   return (
@@ -47,6 +48,7 @@ export function App() {
     <BrowserRouter>
       <AuthProvider>
         <ToastProvider>
+          <SelectHost />
           <ConfirmProvider>
             <Routes>
               <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />

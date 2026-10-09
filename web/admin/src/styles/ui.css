@@ -607,3 +607,54 @@ summary::-webkit-details-marker{display:none}
 .aq-set-row:active,.aq-set-profile:active{transform:scale(.99)}
 .aq-set-row:focus-visible,.aq-set-profile:focus-visible{outline:var(--aq-focus);outline-offset:2px}
 .aq-set-editor .ui-btn{width:100%;margin-top:6px}
+
+/* ---------- 선택 시트 · 달력 (components/Picker.tsx) — 어느 기기에서나 같은 모양 ---------- */
+@keyframes aq-picker-fade{from{opacity:0}}
+@keyframes aq-picker-up{from{transform:translateY(100%)}}
+@keyframes aq-picker-pop{from{opacity:0;transform:translateY(-4px) scale(.98)}}
+.aq-picker{position:fixed;inset:0;z-index:1200}
+.aq-picker.is-sheet{display:flex;align-items:flex-end;background:rgba(17,24,39,.42);animation:aq-picker-fade .18s ease both}
+.aq-picker-box{background:#fff;color:var(--aq-text);overscroll-behavior:contain}
+.aq-picker.is-sheet .aq-picker-box{width:100%;max-height:min(80dvh,660px);overflow:auto;padding:8px 12px max(18px,env(safe-area-inset-bottom));border-radius:26px 26px 0 0;animation:aq-picker-up .26s cubic-bezier(.2,.8,.2,1) both}
+.aq-picker.is-pop .aq-picker-box{position:fixed;overflow:auto;padding:6px;border-radius:var(--aq-r-xl);box-shadow:0 18px 44px -14px rgba(27,47,95,.3),0 0 0 1px rgba(23,27,41,.05);animation:aq-picker-pop .14s ease both}
+.aq-picker-grip{display:block;width:38px;height:5px;margin:2px auto 12px;border-radius:3px;background:var(--aq-gray-150)}
+.aq-picker-title{margin:0 10px 10px;font-size:var(--aq-fs-title);font-weight:var(--aq-fw-bold);letter-spacing:-.02em;color:var(--aq-text)}
+.aq-picker-opt{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:54px;padding:0 14px;border:0;border-radius:var(--aq-r-lg);background:none;color:var(--aq-text);font:inherit;font-size:var(--aq-fs-title-sm);font-weight:500;text-align:left;cursor:pointer}
+.aq-picker.is-pop .aq-picker-opt{min-height:42px;padding:0 12px;font-size:var(--aq-fs-md);border-radius:var(--aq-r-md)}
+.aq-picker-opt>span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.aq-picker-opt.is-on{color:var(--aq-primary);font-weight:var(--aq-fw-bold)}
+.aq-picker-opt:disabled{color:var(--aq-text-disabled);cursor:default}
+.aq-picker-opt:focus-visible{outline:0;background:var(--aq-blue-50)}
+@media (hover:hover){.aq-picker-opt:not(:disabled):hover{background:var(--aq-gray-50)}}
+.aq-picker-opt:not(:disabled):active{background:var(--aq-gray-75)}
+.aq-picker-group{margin:12px 14px 4px;font-size:var(--aq-fs-xs);font-weight:var(--aq-fw-bold);color:var(--aq-text-4)}
+.aq-picker-empty{margin:14px;font-size:var(--aq-fs-sm);color:var(--aq-text-4)}
+
+.aq-cal{padding:2px 2px 0}
+.aq-cal-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 0 10px}
+.aq-cal-title{display:inline-flex;align-items:center;gap:4px;padding:6px 8px;border:0;border-radius:var(--aq-r-md);background:none;color:var(--aq-text);font:inherit;font-size:var(--aq-fs-title);font-weight:var(--aq-fw-bold);letter-spacing:-.02em;cursor:pointer}
+.aq-cal-title .aq-glyph{color:var(--aq-text-4)}
+.aq-cal-nav{display:flex;gap:6px}
+.aq-cal-nav button{display:grid;place-items:center;width:36px;height:36px;border:0;border-radius:var(--aq-r-pill,999px);background:var(--aq-gray-50);color:var(--aq-text-2);cursor:pointer}
+.aq-cal-week{display:grid;grid-template-columns:repeat(7,1fr);padding:0 0 4px;text-align:center;font-size:var(--aq-fs-xs);font-weight:var(--aq-fw-bold);color:var(--aq-text-4)}
+.aq-cal-week .is-sun{color:var(--aq-red-500)}
+.aq-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px 0}
+.aq-cal-grid button{justify-self:center;width:min(44px,100%);aspect-ratio:1;border:0;border-radius:999px;background:none;color:var(--aq-text);font:inherit;font-size:var(--aq-fs-lg);font-weight:600;font-variant-numeric:tabular-nums;cursor:pointer}
+.aq-picker.is-pop .aq-cal-grid button{width:min(40px,100%);font-size:var(--aq-fs-md)}
+.aq-cal-grid button.is-today{background:var(--aq-blue-50);color:var(--aq-primary)}
+.aq-cal-grid button.is-on{background:var(--aq-primary);color:#fff}
+.aq-cal-grid button:disabled{color:var(--aq-gray-300);background:none;cursor:default}
+@media (hover:hover){.aq-cal-grid button:not(:disabled):not(.is-on):hover,.aq-cal-nav button:hover,.aq-cal-title:hover{background:var(--aq-gray-75)}}
+.aq-cal-grid button:focus-visible,.aq-cal-years button:focus-visible{outline:var(--aq-focus);outline-offset:1px}
+.aq-cal-years{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;max-height:288px;overflow:auto;padding:2px}
+.aq-cal-years button{height:44px;border:0;border-radius:var(--aq-r-md);background:var(--aq-gray-50);color:var(--aq-text);font:inherit;font-size:var(--aq-fs-md);font-weight:600;cursor:pointer}
+.aq-cal-years button.is-on{background:var(--aq-primary);color:#fff}
+.aq-cal-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 0 2px}
+.aq-cal-foot:empty{display:none}
+
+/* 날짜 칸: 읽기 전용 입력칸 + AUDENIQ 달력 아이콘 (입력칸 모양은 다른 칸과 같다) */
+:is(#root,#modal,body) input.aq-date-input:not(#_){
+  cursor:pointer;caret-color:transparent;padding-right:46px;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238792A8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.5' y='5' width='17' height='15.5' rx='3'/%3E%3Cpath d='M3.5 10h17M8 3v4M16 3v4'/%3E%3C/svg%3E")!important;
+  background-repeat:no-repeat!important;background-position:right 16px center!important;background-size:18px 18px!important
+}

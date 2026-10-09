@@ -5,6 +5,7 @@ import { Link } from '../lib/router';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
 import { errorMessage } from '../api/errors';
+import { DateField } from '../components/Picker';
 import {
   contentAdmin, type AdminEvent, type AdminMaintenance, type AdminNotice, type ContentKind, type EventInput,
   type MaintenanceInput, type NoticeInput,
@@ -141,11 +142,11 @@ function Editor({ kind, draft, saving, onChange, onSave, onCancel, onDelete }: {
           <div className="aq-cadmin-grid">
             <div className="ui-field">
               <label htmlFor="caStarts">시작일 <span className="required">*</span></label>
-              <input id="caStarts" type="date" required value={draft.startsOn} onChange={e => set('startsOn', e.target.value)} />
+              <DateField id="caStarts" required value={draft.startsOn} onChange={v => set('startsOn', v)} />
             </div>
             <div className="ui-field">
               <label htmlFor="caEnds">종료일</label>
-              <input id="caEnds" type="date" min={draft.startsOn} value={draft.endsOn} onChange={e => set('endsOn', e.target.value)} />
+              <DateField id="caEnds" min={draft.startsOn} value={draft.endsOn} onChange={v => set('endsOn', v)} />
             </div>
             <div className="ui-field">
               <label htmlFor="caPlace">장소</label>

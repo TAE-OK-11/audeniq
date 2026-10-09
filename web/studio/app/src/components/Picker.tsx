@@ -1,0 +1,417 @@
+// AUDENIQ 선택 시트 · 달력 — 기기마다 모양이 다른 기본 선택 팝업(iOS 휠, 안드로이드 다이얼로그, 데스크톱 목록)과
+// 기본 달력 대신 어디서나 같은 모양으로 보여 준다. 휴대폰은 아래에서 올라오는 시트, 넓은 화면은 칸 아래 작은 창.
+//
+// <SelectHost/>를 앱에 한 번 두면 화면의 모든 <select>가 이 시트로 열린다. 원래 <select>는 그대로 남아
+// 값·onChange·폼·테스트(selectOption)가 그대로 동작하고, 고르면 값만 바꾼 뒤 change 이벤트를 보낸다.
+// 기본 팝업이 꼭 필요한 곳은 조상에 data-native-select를 붙인다.
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { Glyph } from './Glyph';
+
+const SHEET_QUERY = '(max-width: 600px), (pointer: coarse) and (max-width: 900px)';
+const isSheet = () => typeof window !== 'undefined' && !!window.matchMedia?.(SHEET_QUERY).matches;
+
+// ---------------------------------------------------------------------------
+// 공통 바탕: 휴대폰은 바텀 시트, 넓은 화면은 칸에 붙은 작은 창
+// ---------------------------------------------------------------------------
+function Surface({ anchor, title, onClose, className, children, labelledBy }: {
+  anchor: DOMRect | null; title: string; onClose: () => void; className?: string; children: ReactNode; labelledBy?: string;
+}) {
+  const sheet = isSheet();
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number; width: number; maxHeight: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (sheet || !anchor) return;
+    const box = boxRef.current;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const width = Math.min(Math.max(anchor.width, className?.includes('is-calendar') ? 320 : 220), vw - 24);
+    const left = Math.min(Math.max(12, anchor.left), vw - width - 12);
+    // 실제 너비를 먼저 준 뒤 높이를 재야 줄바꿈까지 맞는 높이가 나온다
+    if (box) { box.style.width = `${width}px`; box.style.maxHeight = 'none'; }
+    const natural = box ? box.scrollHeight : 320;
+    const below = vh - anchor.bottom - 16, above = anchor.top - 16;
+    // 다 들어가는 쪽(아래 우선), 둘 다 모자라면 더 넓은 쪽에 스크롤로
+    const placeBelow = below >= natural || (above < natural && below >= above);
+    const maxHeight = Math.max(160, Math.min(natural, placeBelow ? below : above));
+    const top = placeBelow ? anchor.bottom + 6 : anchor.top - 6 - Math.min(natural, maxHeight);
+    setPos({ left, top, width, maxHeight });
+  }, [anchor, sheet, className]);
+
+  // 휴대폰 시트가 열려 있는 동안 뒤 화면이 끌려 스크롤되지 않게
+  useEffect(() => {
+    if (!sheet) return;
+    const html = document.documentElement, body = document.body;
+    const prev = [html.style.overflow, body.style.overflow];
+    html.style.overflow = 'hidden'; body.style.overflow = 'hidden';
+    return () => { html.style.overflow = prev[0]; body.style.overflow = prev[1]; };
+  }, [sheet]);
+
+  // 넓은 화면: 바깥 스크롤·창 크기 변경이면 닫는다(칸에서 떨어져 떠 있지 않도록)
+  useEffect(() => {
+    if (sheet) return;
+    const onScroll = (e: Event) => { if (!boxRef.current?.contains(e.target as Node)) onClose(); };
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onClose);
+    return () => { window.removeEventListener('scroll', onScroll, true); window.removeEventListener('resize', onClose); };
+  }, [sheet, onClose]);
+
+  return createPortal(
+    <div className={`aq-picker${sheet ? ' is-sheet' : ' is-pop'}`} onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div
+        ref={boxRef}
+        className={`aq-picker-box${className ? ` ${className}` : ''}`}
+        role="dialog" aria-modal={sheet || undefined} aria-label={labelledBy ? undefined : title || '선택'} aria-labelledby={labelledBy}
+        style={sheet || !pos ? (sheet ? undefined : { visibility: 'hidden' }) : { left: pos.left, top: pos.top, width: pos.width, maxHeight: pos.maxHeight }}
+      >
+        {sheet && <span className="aq-picker-grip" aria-hidden="true" />}
+        {sheet && title && <p className="aq-picker-title">{title}</p>}
+        {children}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+/** 열려 있는 동안 Esc·Tab을 이 창이 먼저 받는다(뒤 모달이 같이 닫히지 않게) */
+function useTopKeys(onKey: (e: KeyboardEvent) => void) {
+  const ref = useRef(onKey);
+  ref.current = onKey;
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => ref.current(e);
+    window.addEventListener('keydown', h, true);
+    return () => window.removeEventListener('keydown', h, true);
+  }, []);
+}
+
+// ---------------------------------------------------------------------------
+// 선택 시트
+// ---------------------------------------------------------------------------
+type Opt = { value: string; label: string; disabled: boolean; group?: string };
+
+function readOptions(el: HTMLSelectElement): Opt[] {
+  const out: Opt[] = [];
+  for (const child of Array.from(el.children)) {
+    if (child instanceof HTMLOptGroupElement) {
+      for (const o of Array.from(child.querySelectorAll('option'))) {
+        if (!o.hidden) out.push({ value: o.value, label: o.label || o.text, disabled: o.disabled || child.disabled, group: child.label });
+      }
+    } else if (child instanceof HTMLOptionElement && !child.hidden) {
+      // '선택해 주세요' 같은 안내용 빈 칸(고를 수 없음)은 목록에서 뺀다
+      if (child.value === '' && child.disabled) continue;
+      out.push({ value: child.value, label: child.label || child.text, disabled: child.disabled });
+    }
+  }
+  return out;
+}
+
+function fieldTitle(el: HTMLElement): string {
+  const label = (el as HTMLSelectElement | HTMLInputElement).labels?.[0]?.textContent
+    ?? el.getAttribute('aria-label')
+    ?? (el.getAttribute('aria-labelledby') ? document.getElementById(el.getAttribute('aria-labelledby')!)?.textContent : '')
+    ?? '';
+  return label.replace(/\*/g, '').replace(/\s+/g, ' ').trim();
+}
+
+const eligible = (t: EventTarget | null): HTMLSelectElement | null => {
+  if (!(t instanceof HTMLSelectElement)) return null;
+  if (t.multiple || t.size > 1 || t.disabled || t.closest('[data-native-select]')) return null;
+  return t;
+};
+
+function pickValue(el: HTMLSelectElement, value: string) {
+  if (el.value === value) return;
+  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+  if (setter) setter.call(el, value); else el.value = value;
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function SelectSheet({ el, viaTouch, onClose }: { el: HTMLSelectElement; viaTouch: boolean; onClose: () => void }) {
+  const [anchor] = useState(() => el.getBoundingClientRect());
+  const [opts] = useState(() => readOptions(el));
+  const current = el.value;
+  const listRef = useRef<HTMLDivElement>(null);
+
+  const close = useCallback((refocus = true) => {
+    onClose();
+    // 손가락으로 연 경우 select에 포커스를 돌리면 iOS가 기본 휠을 다시 띄우므로 키보드·마우스일 때만
+    if (refocus && !viaTouch) el.focus({ preventScroll: true });
+  }, [el, onClose, viaTouch]);
+
+  useEffect(() => {
+    const list = listRef.current;
+    const sel = list?.querySelector<HTMLElement>('[aria-selected="true"]') ?? list?.querySelector<HTMLElement>('[role=option]:not([disabled])');
+    // 손가락으로 열었을 때는 포커스 테두리 없이 고른 항목만 보이게 스크롤
+    if (!viaTouch) sel?.focus({ preventScroll: true });
+    sel?.scrollIntoView({ block: 'center' });
+  }, [viaTouch]);
+
+  useTopKeys(e => {
+    if (e.key === 'Escape' || e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); close(); return; }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End') {
+      const items = Array.from(listRef.current?.querySelectorAll<HTMLButtonElement>('[role=option]:not([disabled])') ?? []);
+      if (!items.length) return;
+      e.preventDefault(); e.stopPropagation();
+      const i = items.indexOf(document.activeElement as HTMLButtonElement);
+      const next = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1
+        : e.key === 'ArrowDown' ? Math.min(items.length - 1, i + 1) : Math.max(0, i - 1);
+      items[next].focus();
+    }
+  });
+
+  const title = fieldTitle(el);
+  let lastGroup: string | undefined;
+  return (
+    <Surface anchor={anchor} title={title} onClose={() => close()} className="is-select">
+      <div className="aq-picker-list" role="listbox" aria-label={title || '선택'} ref={listRef}>
+        {opts.length === 0 && <p className="aq-picker-empty">고를 수 있는 항목이 없어요.</p>}
+        {opts.map((o, i) => {
+          const head = o.group && o.group !== lastGroup ? o.group : null;
+          lastGroup = o.group;
+          const on = o.value === current;
+          return (
+            <div key={`${o.value}-${i}`} role="presentation">
+              {head && <p className="aq-picker-group">{head}</p>}
+              <button
+                type="button" role="option" aria-selected={on} disabled={o.disabled}
+                className={`aq-picker-opt${on ? ' is-on' : ''}`}
+                onClick={() => { pickValue(el, o.value); close(); }}
+              >
+                <span>{o.label}</span>
+                {on && <Glyph name="check" size={18} />}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </Surface>
+  );
+}
+
+/** 앱에 한 번 두면 모든 <select>가 AUDENIQ 선택 시트로 열린다 */
+export function SelectHost() {
+  const [open, setOpen] = useState<{ el: HTMLSelectElement; viaTouch: boolean; n: number } | null>(null);
+
+  useEffect(() => {
+    let n = 0;
+    let start: { x: number; y: number; el: HTMLSelectElement } | null = null;
+    const show = (el: HTMLSelectElement, viaTouch: boolean) => setOpen({ el, viaTouch, n: ++n });
+
+    const onMouseDown = (e: MouseEvent) => {
+      const el = eligible(e.target);
+      if (!el || e.button !== 0) return;
+      e.preventDefault();
+      el.focus({ preventScroll: true });
+      show(el, false);
+    };
+    const onTouchStart = (e: TouchEvent) => {
+      const el = eligible(e.target);
+      const t = e.touches[0];
+      start = el && t ? { x: t.clientX, y: t.clientY, el } : null;
+    };
+    const onTouchEnd = (e: TouchEvent) => {
+      const el = eligible(e.target);
+      const t = e.changedTouches[0];
+      if (!el || !start || start.el !== el || !t) return;
+      const moved = Math.hypot(t.clientX - start.x, t.clientY - start.y) > 10;
+      start = null;
+      if (moved) return;
+      // 기본 동작(포커스 → iOS 휠·안드로이드 목록)을 막고 우리 시트를 연다
+      e.preventDefault();
+      if (document.activeElement instanceof HTMLElement && document.activeElement !== el) document.activeElement.blur();
+      show(el, true);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      const el = eligible(e.target);
+      if (!el) return;
+      if (e.key === ' ' || e.key === 'Enter' || ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && (e.altKey || !e.shiftKey))) {
+        e.preventDefault();
+        show(el, false);
+      }
+    };
+    document.addEventListener('mousedown', onMouseDown, true);
+    document.addEventListener('touchstart', onTouchStart, { capture: true, passive: true });
+    document.addEventListener('touchend', onTouchEnd, { capture: true, passive: false });
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown, true);
+      document.removeEventListener('touchstart', onTouchStart, true);
+      document.removeEventListener('touchend', onTouchEnd, true);
+      document.removeEventListener('keydown', onKeyDown, true);
+    };
+  }, []);
+
+  // 시트가 떠 있는 동안 select가 화면에서 사라지면(페이지 이동 등) 닫는다
+  useEffect(() => {
+    if (!open) return;
+    const t = window.setInterval(() => { if (!document.contains(open.el)) setOpen(null); }, 400);
+    return () => window.clearInterval(t);
+  }, [open]);
+
+  const close = useCallback(() => setOpen(null), []);
+  return open ? <SelectSheet key={open.n} el={open.el} viaTouch={open.viaTouch} onClose={close} /> : null;
+}
+
+// ---------------------------------------------------------------------------
+// 달력
+// ---------------------------------------------------------------------------
+const pad = (n: number) => String(n).padStart(2, '0');
+const iso = (y: number, m: number, d: number) => `${y}-${pad(m + 1)}-${pad(d)}`;
+const parseIso = (v?: string) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v ?? '');
+  return m ? { y: +m[1], m: +m[2] - 1, d: +m[3] } : null;
+};
+const todayIso = () => { const t = new Date(); return iso(t.getFullYear(), t.getMonth(), t.getDate()); };
+export const formatDateKo = (v: string) => {
+  const p = parseIso(v);
+  return p ? `${p.y}년 ${p.m + 1}월 ${p.d}일` : '';
+};
+const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
+
+function Calendar({ value, min, max, required, onPick, onClear, onClose, title, autoFocus }: {
+  value: string; min?: string; max?: string; required?: boolean; title: string; autoFocus: boolean;
+  onPick: (v: string) => void; onClear: () => void; onClose: () => void;
+}) {
+  const today = todayIso();
+  const start = parseIso(value) ?? parseIso(min && min > today ? min : today)!;
+  const [view, setView] = useState({ y: start.y, m: start.m });
+  const [mode, setMode] = useState<'day' | 'year'>('day');
+  const [focus, setFocus] = useState(iso(start.y, start.m, start.d));
+  const gridRef = useRef<HTMLDivElement>(null);
+  const yearsRef = useRef<HTMLDivElement>(null);
+  // 키보드로 열었을 때만 날짜 칸에 포커스(손가락·마우스로 열면 오늘 칸이 고른 것처럼 보이지 않게)
+  const [kbd, setKbd] = useState(autoFocus);
+
+  const out = (v: string) => (!!min && v < min) || (!!max && v > max);
+  const first = new Date(view.y, view.m, 1).getDay();
+  const days = new Date(view.y, view.m + 1, 0).getDate();
+  const move = (dm: number) => setView(v => {
+    const d = new Date(v.y, v.m + dm, 1);
+    return { y: d.getFullYear(), m: d.getMonth() };
+  });
+
+  useEffect(() => {
+    if (mode !== 'day' || !kbd) return;
+    gridRef.current?.querySelector<HTMLElement>(`[data-day="${focus}"]`)?.focus({ preventScroll: true });
+  }, [focus, mode, view, kbd]);
+  useEffect(() => {
+    if (mode === 'year') yearsRef.current?.querySelector<HTMLElement>('.is-on')?.scrollIntoView({ block: 'center' });
+  }, [mode]);
+
+  useTopKeys(e => {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); return; }
+    if (mode !== 'day' || !gridRef.current?.contains(document.activeElement)) return;
+    setKbd(true);
+    const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[e.key];
+    if (step == null) return;
+    e.preventDefault(); e.stopPropagation();
+    const p = parseIso(focus)!;
+    const d = new Date(p.y, p.m, p.d + step);
+    setView({ y: d.getFullYear(), m: d.getMonth() });
+    setFocus(iso(d.getFullYear(), d.getMonth(), d.getDate()));
+  });
+
+  const minY = parseIso(min)?.y ?? 1920;
+  const maxY = parseIso(max)?.y ?? new Date().getFullYear() + 10;
+  const years: number[] = [];
+  for (let y = maxY; y >= minY; y--) years.push(y);
+
+  return (
+    <div className="aq-cal">
+      <div className="aq-cal-head">
+        <button type="button" className="aq-cal-title" onClick={() => setMode(mode === 'day' ? 'year' : 'day')} aria-expanded={mode === 'year'}>
+          {view.y}년 {view.m + 1}월
+          <Glyph name="chevron-down" size={16} />
+        </button>
+        {mode === 'day' && (
+          <span className="aq-cal-nav">
+            <button type="button" aria-label="이전 달" onClick={() => move(-1)}><Glyph name="chevron-left" size={18} /></button>
+            <button type="button" aria-label="다음 달" onClick={() => move(1)}><Glyph name="chevron-right" size={18} /></button>
+          </span>
+        )}
+      </div>
+
+      {mode === 'year' ? (
+        <div className="aq-cal-years" ref={yearsRef} role="listbox" aria-label={`${title} 연도`}>
+          {years.map(y => (
+            <button key={y} type="button" role="option" aria-selected={y === view.y} className={y === view.y ? 'is-on' : ''}
+              onClick={() => { setView(v => ({ y, m: v.m })); setMode('day'); }}>
+              {y}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <>
+          <div className="aq-cal-week" aria-hidden="true">
+            {WEEK.map((w, i) => <span key={w} className={i === 0 ? 'is-sun' : undefined}>{w}</span>)}
+          </div>
+          <div className="aq-cal-grid" ref={gridRef} role="grid" aria-label={`${view.y}년 ${view.m + 1}월`}>
+            {Array.from({ length: first }, (_, i) => <span key={`b${i}`} aria-hidden="true" />)}
+            {Array.from({ length: days }, (_, i) => {
+              const v = iso(view.y, view.m, i + 1);
+              const cls = [v === value ? 'is-on' : '', v === today ? 'is-today' : ''].filter(Boolean).join(' ');
+              return (
+                <button
+                  key={v} type="button" data-day={v} className={cls || undefined} disabled={out(v)}
+                  tabIndex={v === focus ? 0 : -1} aria-pressed={v === value} aria-label={formatDateKo(v)}
+                  onClick={() => onPick(v)}
+                >
+                  {i + 1}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      <div className="aq-cal-foot">
+        {!out(today) && <button type="button" className="ui-btn is-soft is-sm" onClick={() => onPick(today)}>오늘</button>}
+        {!required && value && <button type="button" className="ui-btn is-white is-sm" onClick={onClear}>지우기</button>}
+      </div>
+    </div>
+  );
+}
+
+/** 날짜 칸 — 값은 'YYYY-MM-DD', 화면에는 '2026년 10월 30일'. 누르면 AUDENIQ 달력이 열린다. */
+export function DateField({ id, value, onChange, min, max, required, placeholder = '날짜를 선택해 주세요', className, disabled, ...aria }: {
+  id?: string; value: string; onChange: (v: string) => void; min?: string; max?: string; required?: boolean;
+  placeholder?: string; className?: string; disabled?: boolean; 'aria-label'?: string; 'aria-invalid'?: boolean;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [open, setOpen] = useState<{ viaTouch: boolean; kbd?: boolean; rect: DOMRect; title: string } | null>(null);
+  const touched = useRef(false);
+
+  const close = useCallback(() => {
+    const via = open?.viaTouch;
+    setOpen(null);
+    if (!via) ref.current?.focus({ preventScroll: true });
+  }, [open]);
+
+  return (
+    <>
+      <input
+        ref={ref} id={id} type="text" readOnly inputMode="none" autoComplete="off"
+        className={`aq-date-input${className ? ` ${className}` : ''}`}
+        value={formatDateKo(value)} placeholder={placeholder} required={required} disabled={disabled}
+        aria-haspopup="dialog" aria-expanded={!!open} {...aria}
+        onTouchStart={() => { touched.current = true; }}
+        onClick={e => { if (!disabled) setOpen({ viaTouch: touched.current, rect: e.currentTarget.getBoundingClientRect(), title: fieldTitle(e.currentTarget) }); touched.current = false; }}
+        onKeyDown={e => {
+          if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') { e.preventDefault(); setOpen({ viaTouch: false, kbd: true, rect: e.currentTarget.getBoundingClientRect(), title: fieldTitle(e.currentTarget) }); }
+          if ((e.key === 'Backspace' || e.key === 'Delete') && !required && value) { e.preventDefault(); onChange(''); }
+        }}
+      />
+      {open && (
+        <Surface anchor={open.rect} title={open.title} onClose={close} className="is-calendar">
+          <Calendar
+            value={value} min={min} max={max} required={required} title={open.title} autoFocus={!!open.kbd}
+            onPick={v => { onChange(v); close(); }}
+            onClear={() => { onChange(''); close(); }}
+            onClose={close}
+          />
+        </Surface>
+      )}
+    </>
+  );
+}
