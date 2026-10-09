@@ -1,5 +1,4 @@
 import { Fragment, memo, useCallback, useEffect, useRef, useState } from 'react';
-import { ReviewNote } from '../components/CorrectionList';
 import { FilePicker } from '../components/FilePicker';
 import { FileCard } from '../components/FileCard';
 import { useNavigate, useSearchParams } from '../lib/router';
@@ -20,7 +19,7 @@ import { useProfile } from '../store/profile';
 import { fileSize, localStamp } from '../lib/format';
 import { DSP, GENRES, KINDS, LANGUAGES, dspLabel, genreLabel, kindLabel } from '../lib/catalog';
 import { formatKoreanDate, stampNow, todayStr } from '../lib/date';
-import { correctionWhere, resolveCorrection, splitCorrections, type ResolvedCorrection } from '../lib/corrections';
+import { resolveCorrection, splitCorrections, type ResolvedCorrection } from '../lib/corrections';
 import { checkAudioFile, formatDuration, specLabel } from '../lib/audioSpec';
 import { AGREEMENTS, SIGNER_ROLES, compactSignature, createApplication } from '../lib/application';
 import {
@@ -30,6 +29,7 @@ import {
 import { uid } from '../lib/store';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
+import { Badge } from '../ui';
 import { Segmented } from '../components/Segmented';
 import { DateField } from '../components/Picker';
 import { BrandMark } from '../components/BrandMark';
@@ -42,6 +42,9 @@ const STEPS = [
   { short: '권리 확인', kicker: '05 / 06 · 권리 확인', title: '음악의 권리를\n확인해 주세요.', sub: '권리자 정보와 필요한 증빙을 준비해 주세요.' },
   { short: '최종 확인', kicker: '06 / 06 · 최종 확인', title: '발매 정보를\n마지막으로 확인해 주세요.', sub: '입력한 정보와 빠진 항목을 확인해 주세요.' },
 ];
+
+/** 1~5는 '한·두·세·네·다섯 가지만', 그 이상은 'N가지를' */
+const countWord = (n: number) => (n <= 5 ? `${['한', '두', '세', '네', '다섯'][n - 1]} 가지만` : `${n}가지를`);
 
 const RIGHTS_CHECKS: [string, string][] = [
   ['rightsMaster', '음원 마스터를 배급할 권한이 있어요.'],
@@ -1149,6 +1152,8 @@ export function Upload() {
   const fixCode = searchParams.get('fix');
   const fixTrack = searchParams.get('track');
   const [step, setStep] = useState(0);
+  // 보완 요청 패널 — 단계마다 위에 크게 떠 있으니 한 줄로 접어 둘 수 있게
+  const [fixOpen, setFixOpen] = useState(true);
   // 지금까지 열어 본 가장 먼 단계 (단계 목록에서 바로 이동 가능)
   const [reached, setReached] = useState(0);
   // 보완 요청 — 수정 모드에서 불러온 발매의 요청 항목과 신청서 위치
@@ -1893,27 +1898,43 @@ export function Upload() {
       </div>
 
       {(fixes.length > 0 || reviewNote) && (
-        <section className="aq-fix-panel" aria-labelledby="aqFixHead">
-          <div className="aq-fix-head">
-            <span className="aq-fix-head-ico" aria-hidden="true"><Glyph name={fixes.length ? 'alert' : 'inquiry'} size={18} /></span>
-            <div className="min-0">
-              <strong id="aqFixHead">{fixes.length ? `보완 요청 ${fixes.length}건` : '담당자 의견'}</strong>
-              {fixes.length > 0 && <span>항목을 누르면 고쳐야 할 입력칸으로 이동해요.</span>}
-            </div>
+        <section className={`aq-fix-panel${fixOpen ? '' : ' is-collapsed'}`} aria-labelledby="aqFixHead">
+          <div className="aq-fix-top">
+            <Badge tone="amber">{fixes.length ? `보완 요청 ${fixes.length}건` : '담당자 의견'}</Badge>
+            <button type="button" className="aq-fix-toggle" aria-expanded={fixOpen} onClick={() => setFixOpen(v => !v)}>
+              {fixOpen ? '접기' : '펼치기'} <Glyph name="chevron-down" size={14} />
+            </button>
           </div>
-          {reviewNote && <ReviewNote text={reviewNote} />}
-          {fixes.length > 0 && <ol>
-            {fixes.map((c, i) => (
-              <li key={`${c.code}-${c.trackId ?? ''}-${i}`} className={c.step === step ? 'is-here' : ''}>
-                <button type="button" onClick={() => jumpToFix(c)}>
-                  <i className="aq-fix-no" aria-hidden="true">{i + 1}</i>
-                  <em>{correctionWhere(c)}{c.step === step && <small className="aq-fix-here">이 단계</small>}</em>
-                  <span>{c.message}</span>
-                  <b aria-label={c.step === step ? '입력칸 보기' : '이동'}><Glyph name="chevron-right" size={16} /></b>
-                </button>
-              </li>
-            ))}
-          </ol>}
+          <h2 id="aqFixHead" className="aq-fix-title">
+            {fixes.length ? `${countWord(fixes.length)} 고치면 바로 다시 검토해요` : '검토팀이 의견을 남겼어요'}
+          </h2>
+          {fixOpen && (
+            <div className="aq-fix-body">
+              {reviewNote && (
+                <figure className="aq-fix-note">
+                  <span className="aq-fix-note-avatar" aria-hidden="true">A</span>
+                  <div className="aq-fix-note-bubble">
+                    <figcaption>AUDENIQ 검토팀</figcaption>
+                    <blockquote><p>{reviewNote}</p></blockquote>
+                  </div>
+                </figure>
+              )}
+              {fixes.length > 0 && <ul className="aq-fix-list">
+                {fixes.map((c, i) => {
+                  const here = c.step === step;
+                  return (
+                    <li key={`${c.code}-${c.trackId ?? ''}-${i}`} className={here ? 'is-here' : ''}>
+                      <span className="aq-fix-step">{c.step + 1}단계 · {STEPS[c.step]?.short}</span>
+                      <p><strong>{c.label}</strong>{c.message}</p>
+                      <button type="button" className={`ui-btn is-sm ${here ? 'is-primary' : 'is-soft'}`} onClick={() => jumpToFix(c)}>
+                        {here ? '입력칸 보기' : '고치러 가기'}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>}
+            </div>
+          )}
         </section>
       )}
 
