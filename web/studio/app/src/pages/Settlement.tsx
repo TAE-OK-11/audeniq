@@ -111,6 +111,11 @@ export function Settlement() {
     setShowPayout(true);
   };
 
+  // 줄을 누르면 상세를 열고, 삭제는 상세 안에서만 — 금액 옆 ×를 잘못 누르는 일을 막는다
+  const [detail, setDetail] = useState<{ kind: 'statement' | 'payout'; id: string } | null>(null);
+  const detailStatement = detail?.kind === 'statement' ? statements.find(x => x.id === detail.id) : undefined;
+  const detailPayout = detail?.kind === 'payout' ? payouts.find(x => x.id === detail.id) : undefined;
+
   const deleteStatement = async (id: string) => {
     const s = statements.find(x => x.id === id);
     if (!s) return;
@@ -216,7 +221,7 @@ export function Settlement() {
           {orderedStatements.length ? (
             <div className="aq-catalog-cards aq-stagger">
               {orderedStatements.map(s => (
-                <div key={s.id} className="ui-row aq-statement-card">
+                <button type="button" key={s.id} className="ui-row aq-statement-card" onClick={() => setDetail({ kind: 'statement', id: s.id })}>
                   <span className="aq-statement-icon" aria-hidden="true"><Glyph name="krw" size={17} /></span>
                   <div className="min-0">
                     <span className="ui-row-title">{s.period} · {s.platform}</span>
@@ -224,9 +229,9 @@ export function Settlement() {
                   </div>
                   <div className="aq-statement-end">
                     <strong><Money value={s.amount} /></strong>
-                    {MOCK && <button type="button" className="ui-btn is-ghost is-sm is-icon" aria-label="정산 내역 삭제" onClick={() => deleteStatement(s.id)}><Glyph name="close" size={14} /></button>}
+                    <Glyph name="chevron-right" size={16} />
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           ) : (
@@ -244,7 +249,7 @@ export function Settlement() {
           {payouts.length ? (
             <div className="aq-catalog-cards aq-stagger">
               {(MOCK ? [...payouts].reverse() : payouts).map(p => (
-                <div key={p.id} className="ui-row aq-statement-card">
+                <button type="button" key={p.id} className="ui-row aq-statement-card" onClick={() => setDetail({ kind: 'payout', id: p.id })}>
                   <span className="aq-statement-icon" aria-hidden="true"><Glyph name="arrow-up-right" size={17} /></span>
                   <div className="min-0">
                     <span className="ui-row-title"><Money value={p.amount} /> · 지급 요청</span>
@@ -252,9 +257,9 @@ export function Settlement() {
                   </div>
                   <div className="aq-statement-end">
                     <Badge tone={PAYOUT_STATUS[p.status]?.[1] ?? 'violet'}>{PAYOUT_STATUS[p.status]?.[0] ?? p.status}</Badge>
-                    {MOCK && <button type="button" className="ui-btn is-white is-sm" aria-label="요청 기록 삭제" onClick={() => deletePayout(p.id)}><Glyph name="close" size={14} /></button>}
+                    <Glyph name="chevron-right" size={16} />
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           ) : (
@@ -264,6 +269,39 @@ export function Settlement() {
             </div>
           )}
         </div>
+      )}
+
+      {detailStatement && (
+        <Modal title={`${detailStatement.period} · ${detailStatement.platform}`} onClose={() => setDetail(null)}>
+          <dl className="ui-kv aq-statement-detail">
+            <div><dt>정산 금액</dt><dd><Money value={detailStatement.amount} /></dd></div>
+            <div><dt>정산 기간</dt><dd>{detailStatement.period}</dd></div>
+            <div><dt>플랫폼</dt><dd>{detailStatement.platform}</dd></div>
+            <div><dt>기록일</dt><dd>{niceDate(detailStatement.created)}</dd></div>
+            {detailStatement.note && <div><dt>메모</dt><dd>{detailStatement.note}</dd></div>}
+          </dl>
+          {MOCK && (
+            <div className="row-actions aq-statement-detail-actions">
+              <button type="button" className="ui-btn is-danger" onClick={async () => { const id = detailStatement.id; setDetail(null); await deleteStatement(id); }}>정산 내역 삭제</button>
+            </div>
+          )}
+        </Modal>
+      )}
+
+      {detailPayout && (
+        <Modal title={`${money(detailPayout.amount)} 지급 요청`} onClose={() => setDetail(null)}>
+          <dl className="ui-kv aq-statement-detail">
+            <div><dt>요청 금액</dt><dd><Money value={detailPayout.amount} /></dd></div>
+            <div><dt>상태</dt><dd><Badge tone={PAYOUT_STATUS[detailPayout.status]?.[1] ?? 'violet'}>{PAYOUT_STATUS[detailPayout.status]?.[0] ?? detailPayout.status}</Badge></dd></div>
+            <div><dt>요청일</dt><dd>{niceDate(detailPayout.created)}</dd></div>
+            {detailPayout.note && <div><dt>메모</dt><dd>{detailPayout.note}</dd></div>}
+          </dl>
+          {MOCK && (
+            <div className="row-actions aq-statement-detail-actions">
+              <button type="button" className="ui-btn is-danger" onClick={async () => { const id = detailPayout.id; setDetail(null); await deletePayout(id); }}>요청 기록 삭제</button>
+            </div>
+          )}
+        </Modal>
       )}
 
       {showPayout && (
