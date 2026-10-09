@@ -8,7 +8,8 @@ import * as portal from '../api/portal';
 import { errorMessage } from '../api/errors';
 import { refreshDocs } from '../store/portalSync';
 import { useToast } from './Toast';
-import { updateDoc, type DocRecord } from '../store/docs';
+import { docBadgeTone, updateDoc, type DocRecord } from '../store/docs';
+import { Badge } from '../ui';
 import { fileSize, localStamp } from '../lib/format';
 import { stampNow } from '../lib/date';
 import { docState } from '../store/docs';
@@ -194,8 +195,8 @@ export function DocumentModal({
   return (
     <Modal title={doc.title} onClose={onClose}>
       <div className="doc-meta">
-        <span className="ui-tag is-blue">{doc.kind === 'agreements' ? '계약·신청서' : '권리 증빙'}</span>
-        <span className="ui-tag is-blue">{statusPill(doc)}</span>
+        <span className="ui-tag">{doc.kind === 'agreements' ? '계약·신청서' : '권리 증빙'}</span>
+        <Badge tone={docBadgeTone(doc)}>{statusPill(doc)}</Badge>
       </div>
       <dl className="ui-kv is-2">
         <div><dt>관련 발매</dt><dd>{doc.releaseTitle || '공통'}</dd></div>

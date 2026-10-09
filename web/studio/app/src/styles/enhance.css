@@ -112,7 +112,7 @@ img{max-width:100%}
 /* 이번 달 리포트 미니 추이 */
 .aq-report-card{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:4px 28px;align-items:end}
 .aq-report-card .aq-report-grid{grid-column:1/-1}
-.aq-report-delta.is-down{color:#c24a3b!important;background:var(--aq-red-50)!important}
+.aq-report-delta.is-down{color:var(--aq-tone-red-fg)!important;background:var(--aq-tone-red-bg)!important}
 .aq-mini-trend{display:flex;align-items:flex-end;gap:10px;height:112px;padding-top:8px}
 .aq-mini-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end;min-width:0}
 .aq-mini-col small{font-size:11px;color:var(--aq-gray-400);font-weight:700}
@@ -209,10 +209,7 @@ img{max-width:100%}
 /* ---------- 위자드 ---------- */
 .wizard-topbar{position:relative}
 .aq-save-state{margin-left:auto;font-size:11px;font-weight:700;color:var(--aq-gray-500);padding:5px 10px;border-radius:var(--aq-r-sm);background:var(--aq-gray-50);white-space:nowrap;animation:aq-fade-in .3s ease both;max-width:52vw;overflow:hidden;text-overflow:ellipsis}
-.aq-save-state.is-saved{color:var(--aq-e-green);background:var(--aq-e-green-soft)}
 .aq-save-state.is-saving::before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;border:1.5px solid currentColor;border-right-color:transparent;animation:aq-spin .7s linear infinite;margin-right:6px;vertical-align:-1px}
-.aq-save-state.is-error{color:var(--aq-e-red);background:var(--aq-e-red-soft)}
-.aq-save-state.is-edit{color:var(--aq-violet-600);background:var(--aq-violet-50)}
 .aq-step-kicker{font-size:11px;font-weight:800;letter-spacing:.14em;color:var(--aq-e-blue);margin:0 0 10px}
 .aq-step-anim.is-fwd{animation:aq-slide-in-right .42s var(--aq-e-ease) both}
 .aq-step-anim.is-back{animation:aq-slide-in-left .42s var(--aq-e-ease) both}
@@ -704,9 +701,6 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 .aq-paper-foot code{font:600 12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--aq-gray-900);letter-spacing:.04em;word-break:break-all}
 .aq-paper-foot p{grid-column:1/-1;margin:0!important;font-size:11.5px!important;line-height:1.6!important;color:var(--aq-gray-600)!important;max-width:none!important}
 .aq-paper-integrity{font-weight:800;font-size:12px;padding:6px 10px;border-radius:var(--aq-r-3xl);white-space:nowrap}
-.aq-paper-integrity.is-ok{background:var(--aq-e-green-soft);color:var(--aq-e-green)}
-.aq-paper-integrity.is-changed{background:var(--aq-e-red-soft);color:var(--aq-e-red)}
-.aq-paper-integrity.is-checking{background:var(--aq-gray-100);color:#7a8497}
 @media(max-width:640px){
   .aq-paper{padding:28px 18px 24px;border-radius:var(--aq-r-md)}
   .aq-paper-brand{flex-direction:column;gap:14px;margin-bottom:22px}
@@ -737,7 +731,6 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
   .aq-paper-grid{min-width:0}
 }
 .aq-paper-note{margin:0 0 10px;padding:10px 14px;background:var(--aq-gray-50);font-size:12.5px;line-height:1.6;color:var(--aq-gray-700)}
-.aq-paper-integrity.is-legacy{background:var(--aq-gray-100);color:var(--aq-gray-700)}
 .aq-doc-open-app{margin:12px 0 4px;width:100%}
 
 /* ── 문의 대화 (실서버) ─────────────────────────────────────────────── */
@@ -838,8 +831,6 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 @media (hover:hover){.aq-cadmin-row:hover .aq-cadmin-row-title{color:var(--aq-e-blue)}}
 .aq-cadmin-row-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font-size:13px;color:var(--aq-gray-600);font-variant-numeric:tabular-nums}
 .aq-cadmin-state{padding:2px 8px;border-radius:var(--aq-r-xs);font-size:12px;font-weight:800;background:var(--aq-gray-100);color:#5b6678}
-.aq-cadmin-state.is-live{background:var(--aq-e-green-soft);color:var(--aq-e-green)}
-.aq-cadmin-state.is-scheduled{background:var(--aq-e-amber-soft);color:var(--aq-e-amber)}
 .aq-cadmin-view{flex:0 0 auto;font-size:13px;font-weight:700;color:var(--aq-e-blue);text-decoration:none;padding:8px 4px}
 .aq-cadmin-editor{margin-top:24px}
 .aq-cadmin-editor-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 20px}
@@ -920,8 +911,6 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 .aq-legacy p{margin:0;font-size:15px;line-height:1.7;color:#5b6678}
 
 /* 콘텐츠 관리: 점검 상태 */
-.aq-cadmin-state.is-active{background:var(--aq-e-red-soft);color:var(--aq-e-red)}
-.aq-cadmin-state.is-ended{background:var(--aq-gray-100);color:var(--aq-gray-500)}
 /* 상태 창: 창 제목은 스크린리더용으로만 두고(본문 제목과 같은 문구) 닫기 버튼만 오른쪽 위에 */
 #modal.aq-sysdialog-mode .modal-top{justify-content:flex-end;margin-bottom:-44px;position:relative;z-index:1}
 #modal.aq-sysdialog-mode .modal-top h2{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}

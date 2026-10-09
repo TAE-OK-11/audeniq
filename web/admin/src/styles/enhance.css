@@ -293,9 +293,6 @@ input[aria-invalid=true]{box-shadow:0 0 0 3px rgba(228,109,109,.3)!important}
 .aq-paper-foot code{font:600 12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--aq-gray-900);letter-spacing:.04em;word-break:break-all}
 .aq-paper-foot p{grid-column:1/-1;margin:0!important;font-size:11.5px!important;line-height:1.6!important;color:var(--aq-gray-600)!important;max-width:none!important}
 .aq-paper-integrity{font-weight:800;font-size:12px;padding:6px 10px;border-radius:var(--aq-r-3xl);white-space:nowrap}
-.aq-paper-integrity.is-ok{background:var(--aq-e-green-soft);color:var(--aq-e-green)}
-.aq-paper-integrity.is-changed{background:var(--aq-e-red-soft);color:var(--aq-e-red)}
-.aq-paper-integrity.is-checking{background:var(--aq-gray-100);color:#7a8497}
 @media(max-width:640px){
   .aq-paper{padding:28px 18px 24px;border-radius:var(--aq-r-md)}
   .aq-paper-brand{flex-direction:column;gap:14px;margin-bottom:22px}
@@ -326,7 +323,6 @@ input[aria-invalid=true]{box-shadow:0 0 0 3px rgba(228,109,109,.3)!important}
   .aq-paper-grid{min-width:0}
 }
 .aq-paper-note{margin:0 0 10px;padding:10px 14px;background:var(--aq-gray-50);font-size:12.5px;line-height:1.6;color:var(--aq-gray-700)}
-.aq-paper-integrity.is-legacy{background:var(--aq-gray-100);color:var(--aq-gray-700)}
 
 /* ── 문의 대화 (실서버) ─────────────────────────────────────────────── */
 
@@ -346,8 +342,6 @@ input[aria-invalid=true]{box-shadow:0 0 0 3px rgba(228,109,109,.3)!important}
 @media (hover:hover){.aq-cadmin-row:hover .aq-cadmin-row-title{color:var(--aq-e-blue)}}
 .aq-cadmin-row-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font-size:13px;color:var(--aq-gray-600);font-variant-numeric:tabular-nums}
 .aq-cadmin-state{padding:2px 8px;border-radius:var(--aq-r-xs);font-size:12px;font-weight:800;background:var(--aq-gray-100);color:#5b6678}
-.aq-cadmin-state.is-live{background:var(--aq-e-green-soft);color:var(--aq-e-green)}
-.aq-cadmin-state.is-scheduled{background:var(--aq-e-amber-soft);color:var(--aq-e-amber)}
 .aq-cadmin-view{flex:0 0 auto;font-size:13px;font-weight:700;color:var(--aq-e-blue);text-decoration:none;padding:8px 4px}
 .aq-cadmin-editor{margin-top:24px}
 .aq-cadmin-editor-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 20px}
@@ -373,8 +367,6 @@ input[aria-invalid=true]{box-shadow:0 0 0 3px rgba(228,109,109,.3)!important}
 /* ---------- 오래된 브라우저·JavaScript 꺼짐 ---------- */
 
 /* 콘텐츠 관리: 점검 상태 */
-.aq-cadmin-state.is-active{background:var(--aq-e-red-soft);color:var(--aq-e-red)}
-.aq-cadmin-state.is-ended{background:var(--aq-gray-100);color:var(--aq-gray-500)}
 /* 상태 창: 창 제목은 스크린리더용으로만 두고(본문 제목과 같은 문구) 닫기 버튼만 오른쪽 위에 */
 /* 점검 화면은 앱 위에 덮는다 (앱은 그대로 남아 입력 보존) */
 

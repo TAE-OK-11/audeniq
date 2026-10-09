@@ -485,3 +485,20 @@ button.ui-avatar:hover{transform:scale(1.06);background:var(--aq-blue-200)}
   .ui-row>.ui-row-end:has(>:nth-child(3)){grid-column:2/-1;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-start;gap:6px}
   .ui-row.is-flat>.ui-row-end:has(>:nth-child(3)){grid-column:1/-1}
 }
+
+/* ---------- 따로 만들어졌던 상태 알약 → 상태 배지(Badge)와 같은 모양 ----------
+   모서리·크기·여백·굵기를 .ui-badge와 똑같이 맞추고, 색은 같은 상태 색조를 쓴다.
+   (DSP 이름·파일 이름 같은 '정보 이름표'는 네모난 .ui-tag 그대로) */
+:is(.aq-new-badge,.aq-report-delta,.aq-paper-integrity,.aq-save-state,.aq-pay-receipt-badge,.aq-acct-status,.aq-nboard-tag,.aq-cadmin-state,.aq-req-tag,.aq-event-hero-badge,.adm-doc-tree-status,.adm-kb-pri,.adm-kb-source,.adm-kb-late){
+  --tone-bg:var(--aq-tone-gray-bg);--tone-fg:var(--aq-tone-gray-fg);
+  display:inline-flex;align-items:center;justify-content:center;gap:5px;flex:none;max-width:100%;
+  padding:5px 10px;border-radius:var(--aq-r-pill);background:var(--tone-bg);color:var(--tone-fg);
+  font-size:var(--aq-fs-xs);font-style:normal;font-weight:740;line-height:1.3;letter-spacing:-.01em;white-space:nowrap;vertical-align:middle
+}
+:is(.aq-new-badge,.aq-report-delta:not(.is-down),.aq-nboard-tag,.aq-req-tag,.adm-kb-pri.is-normal){--tone-bg:var(--aq-tone-blue-bg);--tone-fg:var(--aq-tone-blue-fg)}
+:is(.aq-save-state.is-edit,.adm-doc-tree-status,.adm-kb-source){--tone-bg:var(--aq-tone-violet-bg);--tone-fg:var(--aq-tone-violet-fg)}
+:is(.aq-cadmin-state.is-scheduled,.adm-kb-pri.is-high){--tone-bg:var(--aq-tone-amber-bg);--tone-fg:var(--aq-tone-amber-fg)}
+:is(.aq-paper-integrity.is-ok,.aq-save-state.is-saved,.aq-pay-receipt-badge,.aq-acct-status,.aq-cadmin-state.is-live,.adm-doc-tree-status.is-approved){--tone-bg:var(--aq-tone-green-bg);--tone-fg:var(--aq-tone-green-fg)}
+:is(.aq-paper-integrity.is-changed,.aq-save-state.is-error,.aq-cadmin-state.is-active,.adm-kb-pri.is-urgent,.adm-kb-late){--tone-bg:var(--aq-tone-red-bg);--tone-fg:var(--aq-tone-red-fg)}
+.aq-event-hero-badge{--tone-bg:#ffffff2e;--tone-fg:#fff}
+.aq-report-delta{margin-top:10px}
