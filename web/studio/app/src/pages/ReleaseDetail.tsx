@@ -330,7 +330,7 @@ export function ReleaseDetail() {
       <div id="releaseDetailBody" className="ui-tab-panel" key={tab}>
         {tab === 'overview' && (
           <div className="split">
-            <div>
+            <div className="aq-relinfo-card">
               <h2 className="subhead">발매 정보</h2>
               <dl className="ui-kv is-2">
                 <div><dt>아티스트</dt><dd>{rel.artist || <Empty>미입력</Empty>}</dd></div>
@@ -355,8 +355,9 @@ export function ReleaseDetail() {
                   </>
                 ) : (
                   <div className="aq-detail-cover-empty">
-                    <Glyph name="music" size={22} />
-                    <span>{d?.coverName ? '미리보기 없음' : '커버아트 없음'}</span>
+                    {/* 이미지가 없을 땐 위 머리 카드와 같은 발매별 색 커버 */}
+                    <ReleaseCover id={rel.id} className="cover aq-detail-cover-fallback" />
+                    <span>{d?.coverName ? '미리보기 없음' : '커버아트 등록 전'}</span>
                   </div>
                 )}
               </div>
@@ -381,13 +382,18 @@ export function ReleaseDetail() {
                         {t.title || '곡명 없음'}{t.version ? ` (${t.version})` : ''}
                         {t.explicit && <em className="aq-explicit" title="Explicit">E</em>}
                       </span>
-                      <span className="ui-row-meta">
-                        ISRC {t.isrc || '등록 전'} · 작곡 {t.composers || '미입력'} · 작사 {t.lyricists || '없음'}
+                      {/* 크레딧 · 길이 / 식별자 · 파일 — 잘리지 않게 두 줄로 나눈다 */}
+                      <span className="ui-row-meta aq-track-credit">
+                        작곡 {t.composers || '미입력'} · 작사 {t.lyricists || '없음'}
                         {t.duration_ms ? ` · ${durationLabel(t.duration_ms)}` : ''}
                       </span>
-                      <span className="ui-row-meta">음원 파일: {t.audioName || '미등록'}</span>
+                      <span className="aq-track-facts">
+                        <span className="ui-tag">ISRC {t.isrc || '등록 전'}</span>
+                        <span className={`ui-tag aq-track-file${t.audioName ? '' : ' is-missing'}`}>
+                          {t.audioName ? <><Glyph name="check" size={12} />{t.audioName}</> : '음원 파일 없음'}
+                        </span>
+                      </span>
                     </div>
-                    <Badge tone={t.audioName ? 'blue' : 'gray'}>{t.audioName ? '파일 등록' : '파일 없음'}</Badge>
                   </div>
                 ))}
               </div>

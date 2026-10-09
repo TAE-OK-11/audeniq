@@ -50,17 +50,17 @@ export function Contracts() {
 
       <div className="studio-doc-path">
         <div>
-          <span className="studio-path-n">01</span>
+          <span className="studio-path-n">1단계</span>
           <strong>배급 신청서 서명</strong>
           <small>발매를 접수할 때</small>
         </div>
         <div>
-          <span className="studio-path-n">02</span>
+          <span className="studio-path-n">2단계</span>
           <strong>담당자 검토</strong>
           <small>수수료·배급 조건 확정</small>
         </div>
         <div>
-          <span className="studio-path-n">03</span>
+          <span className="studio-path-n">3단계</span>
           <strong>배급 계약서 서명</strong>
           <small>권리 확인 체크 후 배급 시작</small>
         </div>

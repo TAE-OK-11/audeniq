@@ -1,4 +1,4 @@
-// 홍보 페이지(web/landing)·설문과 같은 스크롤 등장 모션.
+// 스크롤 등장 모션 — 정산 정보 등록 흐름과 같은 박자(10px · .45s)로 절제해서.
 // 처음 화면 아래에 있던 카드·섹션만 보일 때 한 번 떠오른다 (위쪽 콘텐츠는 지연 없이 바로 표시).
 import { useEffect } from 'react';
 
@@ -7,7 +7,7 @@ const TARGETS = [
   '.aq-doc-grid', '.aq-rights-summary', '.studio-doc-path', '.aq-profile-card', '.aq-event-hero',
   '.aq-notice-featured-list', '.settle-hero', '.aq-detail-hero', '.split > *',
 ].join(',');
-const EASE = 'cubic-bezier(.22,.61,.36,1)';
+const EASE = 'cubic-bezier(.22,1,.36,1)';
 
 export function useScrollReveal(key: string) {
   useEffect(() => {
@@ -15,7 +15,6 @@ export function useScrollReveal(key: string) {
     if (reduced || !('IntersectionObserver' in window) || !Element.prototype.animate) return;
     const root = document.getElementById('main');
     if (!root) return;
-    const small = window.matchMedia('(max-width: 760px)').matches;
     const seen = new WeakSet<Element>();
     const io = new IntersectionObserver(entries => {
       let order = 0;
@@ -25,11 +24,11 @@ export function useScrollReveal(key: string) {
         const el = e.target as HTMLElement;
         el.classList.remove('aq-reveal-wait');
         el.animate(
-          [{ opacity: 0, transform: `translateY(${small ? 12 : 16}px)` }, { opacity: 1, transform: 'none' }],
-          { duration: 760, delay: order++ * 70, easing: EASE, fill: 'backwards' },
+          [{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }],
+          { duration: 450, delay: order++ * 40, easing: EASE, fill: 'backwards' },
         );
       }
-    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+    }, { rootMargin: '0px 0px 0px 0px', threshold: 0.01 });
 
     const scan = () => {
       const vh = window.innerHeight;

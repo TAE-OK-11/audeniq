@@ -47,7 +47,7 @@ const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
   {
     group: '계약·권리',
     items: [
-      { to: '/contracts', label: 'AUDENIQ 계약서', desc: '계약 확인 · 서명', icon: 'sign', tone: 'violet' },
+      { to: '/contracts', label: '계약서', desc: '계약 확인 · 서명', icon: 'sign', tone: 'violet' },
       { to: '/rights', label: '권리·보완 서류', desc: '증빙 · 보완 요청', icon: 'doc', tone: 'amber' },
     ],
   },
