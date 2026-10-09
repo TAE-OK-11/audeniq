@@ -25,6 +25,7 @@ export function IdentityVerify({ onDone }: { onDone: (name: string, method: Veri
   const [f, setF] = useState({ name: '', birth: '', sex: '', carrier: CARRIERS[0], phone: '', card: CARD_COMPANIES[0], ipinId: '', ipinPw: '', code: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [codeFocus, setCodeFocus] = useState(false);
   const [left, setLeft] = useState(180);
   const timer = useRef(0);
   const set = (k: keyof typeof f, v: string) => { setF(p => ({ ...p, [k]: v })); setError(''); };
@@ -160,13 +161,29 @@ export function IdentityVerify({ onDone }: { onDone: (name: string, method: Veri
         {notice}
         <p className="aq-verify-lead">{f.phone.replace(/^(\d{3})(\d{3,4})(\d{4})$/, '$1-$2-$3')}로 보낸 인증번호 6자리를 입력해 주세요.</p>
         <div className="ui-field">
-          <label htmlFor="vfCode" className="sr-only">인증번호</label>
-          <div className="aq-verify-code">
-            <input id="vfCode" autoFocus inputMode="numeric" autoComplete="one-time-code" placeholder="인증번호 6자리" value={f.code} onChange={e => set('code', digits(e.target.value, 6))} />
-            <span className={left < 30 ? 'is-low' : ''}>{mm}:{ss}</span>
+          <label htmlFor="vfCode" className="sr-only">인증번호 6자리</label>
+          {/* 입력은 칸 하나로 받고(문자 자동 채우기·붙여넣기 유지), 화면에는 숫자를 한 칸씩 나눠 보여 준다 */}
+          <div className="aq-otp">
+            <input
+              id="vfCode" autoFocus inputMode="numeric" autoComplete="one-time-code" maxLength={6}
+              className="aq-otp-input" value={f.code}
+              onChange={e => set('code', digits(e.target.value, 6))}
+              onFocus={() => setCodeFocus(true)} onBlur={() => setCodeFocus(false)}
+            />
+            {Array.from({ length: 6 }, (_, i) => (
+              <span
+                key={i} aria-hidden="true"
+                className={`aq-otp-cell${f.code[i] ? ' is-filled' : ''}${codeFocus && i === Math.min(f.code.length, 5) ? ' is-active' : ''}`}
+              >
+                {f.code[i] ?? ''}
+              </span>
+            ))}
           </div>
         </div>
-        <button type="button" className="aq-verify-resend" onClick={() => { setLeft(180); set('code', ''); }}>인증번호 다시 받기</button>
+        <div className="aq-otp-meta">
+          <span className={left < 30 ? 'is-low' : ''}>남은 시간 {mm}:{ss}</span>
+          <button type="button" className="aq-verify-resend" onClick={() => { setLeft(180); set('code', ''); }}>인증번호 다시 받기</button>
+        </div>
         {error && <p className="ui-field-help aq-help-error" role="alert">{error}</p>}
         <button type="submit" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={busy}>{busy ? '확인하는 중' : '확인'}</button>
       </form>
