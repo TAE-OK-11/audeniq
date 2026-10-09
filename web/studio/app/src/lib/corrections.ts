@@ -6,6 +6,9 @@ import type { Correction } from '../api/types';
 export const WIZ_STEP = { info: 0, tracks: 1, cover: 2, distribution: 3, rights: 4, review: 5 } as const;
 export const WIZ_STEP_NAMES = ['발매 정보', '트랙 등록', '커버아트', '배급 설정', '권리 확인', '최종 확인'];
 
+/** 보완 건수를 제목 문장으로 — ‘두 가지만 고치면 …’ */
+export const fixCountWord = (n: number) => (n <= 5 ? `${['한', '두', '세', '네', '다섯'][n - 1]} 가지만` : `${n}가지를`);
+
 interface Target {
   step: number;
   /** 입력칸 id. `{k}`는 트랙 순번(0부터)으로 바뀐다 */

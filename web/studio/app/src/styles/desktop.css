@@ -45,7 +45,6 @@
   #view-catalog .aq-release-card .ui-row-title { font-size: 16px; }
   /* 상태 표시는 커버 위 오른쪽 위 모서리에 */
   #view-catalog .aq-release-end { position: absolute; top: 22px; right: 22px; }
-  #view-catalog .aq-release-end .aq-status { box-shadow: 0 2px 8px rgba(17, 24, 39, .12); }
   #view-catalog .aq-release-fix { flex-direction: column; align-items: stretch; gap: 8px; margin: 0; }
   #view-catalog .aq-release-fix-btn { justify-content: center; }
   #view-catalog .aq-catalog-cards:has(.aq-track-row) {
@@ -130,12 +129,12 @@
     font-size: var(--aq-fs-sm); font-weight: var(--aq-fw-bold);
   }
 
-  /* ── 다듬기: 누를 수 있는 카드는 마우스를 올리면 살짝 떠올라 PC에서 바로 알아보게 ── */
+  /* ── 다듬기: 누를 수 있는 카드는 마우스를 올리면 면이 한 단계 진해져 PC에서 바로 알아보게 (그림자·띄우기 없음) ── */
   :is(.aq-release-card, .aq-track-row, .aq-notice-card, .aq-event-card, .aq-ticket-card, .aq-doc-grid > *, .aq-bundle-list > *) {
-    transition: transform .2s var(--aq-e-ease), box-shadow .2s var(--aq-e-ease), background-color .2s ease;
+    transition: background-color .2s ease;
   }
   :is(.aq-release-card, .aq-track-row, .aq-notice-card, .aq-event-card, .aq-ticket-card):hover {
-    transform: translateY(-2px); box-shadow: 0 12px 28px rgba(17, 24, 39, .08);
+    background-color: var(--aq-blue-100);
   }
   #view-catalog .aq-release-card:hover .ui-row-title { color: var(--aq-blue-700); }
 

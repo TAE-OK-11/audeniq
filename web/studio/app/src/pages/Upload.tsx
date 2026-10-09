@@ -20,7 +20,7 @@ import { useProfile } from '../store/profile';
 import { fileSize, localStamp } from '../lib/format';
 import { DSP, GENRES, KINDS, LANGUAGES, dspLabel, genreLabel, kindLabel } from '../lib/catalog';
 import { formatKoreanDate, stampNow, todayStr } from '../lib/date';
-import { resolveCorrection, splitCorrections, type ResolvedCorrection } from '../lib/corrections';
+import { fixCountWord, resolveCorrection, splitCorrections, type ResolvedCorrection } from '../lib/corrections';
 import { checkAudioFile, formatDuration, specLabel } from '../lib/audioSpec';
 import { AGREEMENTS, SIGNER_ROLES, compactSignature, createApplication } from '../lib/application';
 import {
@@ -45,7 +45,6 @@ const STEPS = [
 ];
 
 /** 1~5는 '한·두·세·네·다섯 가지만', 그 이상은 'N가지를' */
-const countWord = (n: number) => (n <= 5 ? `${['한', '두', '세', '네', '다섯'][n - 1]} 가지만` : `${n}가지를`);
 
 const RIGHTS_CHECKS: [string, string][] = [
   ['rightsMaster', '음원 마스터를 배급할 권한이 있어요.'],
@@ -1925,7 +1924,7 @@ export function Upload() {
             </button>
           </div>
           <h2 id="aqFixHead" className="aq-fix-title">
-            {fixes.length ? `${countWord(fixes.length)} 고치면 바로 다시 검토해요` : '검토팀이 의견을 남겼어요'}
+            {fixes.length ? `${fixCountWord(fixes.length)} 고치면 바로 다시 검토해요` : '검토팀이 의견을 남겼어요'}
           </h2>
           {(fixOpen || fixes.some(f => f.step === step)) && (
             <div className="aq-fix-body">
