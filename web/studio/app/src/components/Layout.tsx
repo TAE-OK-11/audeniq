@@ -230,7 +230,7 @@ export function Layout({ children }: { children: ReactNode }) {
                     onPointerEnter={() => prefetchRoute(item.to)}
                     onFocus={() => prefetchRoute(item.to)}
                   >
-                    <i className={`aq-nav-ico is-${item.tone}`} aria-hidden="true"><Glyph name={item.icon} size={18} /></i>
+                    <i className={`aq-nav-ico is-${item.tone}`} aria-hidden="true"><Glyph name={item.icon} size={20} /></i>
                     <em className="aq-nav-label">
                       {item.label}
                       {item.to === '/notifications' && unread > 0 && <b className="aq-nav-count">{unread}</b>}

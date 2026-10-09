@@ -564,19 +564,21 @@ summary::-webkit-details-marker{display:none}
 .portal-header .portal-nav{background:var(--aq-gray-50);padding:10px;border:0;width:min(400px,calc(100vw - 40px));max-width:calc(100vw - 40px)}
 .portal-nav .aq-nav-card{background:#fff;border-radius:var(--aq-r-xl);padding:6px 6px 8px}
 .portal-nav .aq-nav-card+.aq-nav-card{margin-top:8px}
-.portal-nav .aq-nav-card .nav-group{margin:0;padding:12px 12px 6px;font-size:var(--aq-fs-sm);font-weight:var(--aq-fw-bold);letter-spacing:0;color:var(--aq-text-3)}
-.portal-nav .aq-nav-card button{display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:12px;min-height:54px;padding:8px 10px;border-radius:var(--aq-r-lg);font-size:var(--aq-fs-lg)}
+.portal-nav .aq-nav-card .nav-group{margin:0;padding:14px 12px 6px;font-size:var(--aq-fs-md);font-weight:var(--aq-fw-medium);letter-spacing:-.01em;color:var(--aq-text-3)}
+.portal-nav .aq-nav-card button{display:grid;grid-template-columns:38px minmax(0,1fr) auto;align-items:center;gap:14px;min-height:56px;padding:8px 10px;border-radius:var(--aq-r-lg);font-size:var(--aq-fs-title-sm);font-weight:var(--aq-fw-medium);letter-spacing:-.02em}
 .portal-nav .aq-nav-card button:not(.active):hover{background:var(--aq-gray-50)}
-.portal-nav .aq-nav-card button.active{background:var(--aq-blue-50);color:var(--aq-primary)}
-.aq-nav-ico{display:grid;place-items:center;width:36px;height:36px;border-radius:var(--aq-r-md);font-style:normal}
-.aq-nav-ico.is-blue{background:var(--aq-blue-100);color:var(--aq-blue-600)}
-.aq-nav-ico.is-violet{background:var(--aq-violet-100);color:var(--aq-violet-600)}
-.aq-nav-ico.is-green{background:var(--aq-green-100);color:var(--aq-green-600)}
-.aq-nav-ico.is-amber{background:var(--aq-amber-100);color:var(--aq-amber-600)}
-.aq-nav-ico.is-red{background:var(--aq-red-100);color:var(--aq-red-600)}
-.aq-nav-ico.is-gray{background:var(--aq-gray-100);color:var(--aq-text-3)}
+.portal-nav .aq-nav-card button.active{background:none;color:var(--aq-primary)}
+.portal-nav .aq-nav-card button.active .aq-nav-label{font-weight:var(--aq-fw-bold)}
+.portal-nav .aq-nav-card button.active .aq-nav-ico{background:var(--aq-blue-50)}
+.aq-nav-ico{display:grid;place-items:center;width:38px;height:38px;border-radius:var(--aq-r-lg);font-style:normal;background:var(--aq-gray-50)}
+.aq-nav-ico.is-blue{color:var(--aq-blue-500)}
+.aq-nav-ico.is-violet{color:var(--aq-violet-500)}
+.aq-nav-ico.is-green{color:var(--aq-green-600)}
+.aq-nav-ico.is-amber{color:var(--aq-amber-500)}
+.aq-nav-ico.is-red{color:var(--aq-red-500)}
+.aq-nav-ico.is-gray{color:var(--aq-text-3)}
 .portal-nav .aq-nav-desc{font-size:var(--aq-fs-sm);font-weight:400;color:var(--aq-text-4);white-space:nowrap;text-align:right}
-.portal-nav .aq-nav-card button.active .aq-nav-desc{color:var(--aq-blue-400)}
+.portal-nav .aq-nav-card button.active .aq-nav-desc{color:var(--aq-text-4)}
 /* 맨 아래: 카드 없이 계정 이메일 · 로그아웃 글자 버튼 한 줄 */
 #portalNav .aq-nav-foot{margin-top:4px!important;padding:14px 12px 4px!important;border:0;border-radius:0;background:none;font-size:var(--aq-fs-sm);letter-spacing:0;color:var(--aq-text-4)}
 #portalNav .aq-logout{min-height:0!important;padding:6px 4px!important;background:none!important;border-radius:var(--aq-r-xs)!important;font-size:var(--aq-fs-sm)!important;font-weight:var(--aq-fw-bold)!important;color:var(--aq-text-3)!important;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--aq-gray-300)}
