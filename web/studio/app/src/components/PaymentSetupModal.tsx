@@ -254,12 +254,12 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
               </header>
               <div className="aq-pay-body">
                 <div className="ui-field aq-pay-field">
-                  <label htmlFor="aqPayRecipient">수령인 이름 또는 상호</label>
+                  <label htmlFor="aqPayRecipient" className="sr-only">수령인 이름 또는 상호</label>
                   <input
                     id="aqPayRecipient" maxLength={120} autoComplete="name"
                     value={draft.recipient}
                     onChange={e => setDraft(d => ({ ...d, recipient: e.target.value }))}
-                    placeholder="예금주 또는 법인명"
+                    placeholder="수령인 이름 또는 상호"
                   />
                 </div>
                 <div className="aq-pay-type-list" role="radiogroup" aria-label="수령인 유형">
@@ -351,21 +351,21 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
                   <div><strong>{draft.bank}</strong><small>수익 정산 계좌</small></div>
                 </div>
                 <div className="ui-field aq-pay-field">
-                  <label htmlFor="aqPayAccount">계좌번호</label>
+                  <label htmlFor="aqPayAccount" className="sr-only">계좌번호</label>
                   <input
                     id="aqPayAccount" inputMode="numeric" autoComplete="off" maxLength={20}
                     value={draft.account}
                     onChange={e => setDraft(d => ({ ...d, account: e.target.value.replace(/\D/g, '') }))}
-                    placeholder="숫자만 입력"
+                    placeholder="계좌번호 (숫자만 입력)"
                   />
                 </div>
                 <div className="ui-field aq-pay-field">
-                  <label htmlFor="aqPayOwner">예금주</label>
+                  <label htmlFor="aqPayOwner" className="sr-only">예금주</label>
                   <input
                     id="aqPayOwner" maxLength={120}
                     value={draft.recipient}
                     onChange={e => setDraft(d => ({ ...d, recipient: e.target.value }))}
-                    placeholder="예금주명"
+                    placeholder="예금주"
                   />
                 </div>
                 <p className="aq-pay-privacy">
