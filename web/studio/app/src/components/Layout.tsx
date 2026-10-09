@@ -4,6 +4,10 @@ import { useAuth } from '../api/auth';
 import { useProfile } from '../store/profile';
 import { useUnreadCount } from '../store/support';
 import { isPaymentRegistered, usePayment } from '../store/payment';
+import { useDocs } from '../store/docs';
+import { api } from '../api/client';
+import { Badge } from '../ui';
+import type { Tone } from '../ui/tone';
 import { useConfirm } from './Confirm';
 import { useToast } from './Toast';
 import { LIVE_NOTICE_EVENT } from '../lib/liveEvents';
@@ -73,7 +77,18 @@ export function Layout({ children }: { children: ReactNode }) {
   const profile = useProfile();
   const unread = useUnreadCount();
   const payment = usePayment();
+  const docs = useDocs();
+  // 메뉴를 열 때만 발매 목록을 한 번 불러와 '보완·작성 중' 개수를 메뉴에 보여 준다
+  const [relCounts, setRelCounts] = useState<{ needs: number; drafts: number } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => {
+    if (!menuOpen) return;
+    let alive = true;
+    api.listReleases()
+      .then(rs => { if (alive) setRelCounts({ needs: rs.filter(r => r.status === 'needs').length, drafts: rs.filter(r => r.status === 'draft').length }); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [menuOpen]);
   // 실시간으로 들어온 새 알림 — 화면을 보고 있으면 토스트로, 누르면 해당 화면으로
   useEffect(() => {
     const on = (e: Event) => {
@@ -163,6 +178,16 @@ export function Layout({ children }: { children: ReactNode }) {
     nav('/login', { replace: true });
   };
 
+  // 메뉴마다 지금 처리할 일 — 대시보드 '확인할 작업'과 같은 기준, AUDENIQ 상태 색(보완=주황, 서명=파랑, 작성 중=회색)
+  const toSign = docs.filter(d => d.kind === 'agreements' && d.reviewStatus === 'approved' && !d.localSignatureAt).length;
+  const docFix = docs.filter(d => d.kind === 'rights' && d.reviewStatus === 'needs').length;
+  const docNeeded = docs.filter(d => d.kind === 'rights' && !['review', 'prepared', 'approved'].includes(d.reviewStatus)).length;
+  const navStatus: Record<string, { tone: Tone; text: string } | undefined> = {
+    '/releases': relCounts?.needs ? { tone: 'amber', text: `보완 ${relCounts.needs}` }
+      : relCounts?.drafts ? { tone: 'gray', text: `작성 중 ${relCounts.drafts}` } : undefined,
+    '/contracts': toSign ? { tone: 'blue', text: `서명 ${toSign}` } : undefined,
+    '/rights': docFix ? { tone: 'amber', text: `보완 ${docFix}` } : docNeeded ? { tone: 'blue', text: `제출 ${docNeeded}` } : undefined,
+  };
   const initial = (profile.name || user?.email || 'A').slice(0, 1).toUpperCase();
   const navVisible = menuOpen || menuClosing;
 
@@ -260,7 +285,9 @@ export function Layout({ children }: { children: ReactNode }) {
                       {item.label}
                       {item.to === '/notifications' && unread > 0 && <b className="aq-nav-count">{unread}</b>}
                     </em>
-                    <small className="aq-nav-desc">{item.desc}</small>
+                    {navStatus[item.to]
+                      ? <Badge tone={navStatus[item.to]!.tone} className="aq-nav-status">{navStatus[item.to]!.text}</Badge>
+                      : <small className="aq-nav-desc">{item.desc}</small>}
                   </button>
                 );
               })}
