@@ -215,6 +215,20 @@ export function Layout({ children }: { children: ReactNode }) {
           aria-label="아티스트 포털 전체 메뉴"
           hidden={!navVisible}
         >
+          {/* 내 계정 — 활동명·이메일을 맨 위에 두고 누르면 계정 정보로 */}
+          <button
+            type="button"
+            className={`aq-nav-me${isActive(loc.pathname, '/profile') ? ' is-active' : ''}`}
+            onClick={() => go('/profile')}
+            onPointerEnter={() => prefetchRoute('/profile')}
+          >
+            <span className="aq-nav-me-avatar" aria-hidden="true">{initial}</span>
+            <span className="aq-nav-me-text">
+              <strong>{profile.name || '활동명을 입력해 주세요'}</strong>
+              <small>{user?.email ?? 'AUDENIQ STUDIO'}</small>
+            </span>
+            <Glyph name="chevron-right" size={18} className="aq-nav-me-chev" />
+          </button>
           {NAV_GROUPS.map(g => (
             <div key={g.group} className="aq-nav-card">
               <div className="nav-group">{g.group}</div>
@@ -242,12 +256,11 @@ export function Layout({ children }: { children: ReactNode }) {
             </div>
           ))}
           <div className="nav-foot aq-nav-foot">
-            <span className="aq-nav-account">{user?.email ?? 'AUDENIQ / STUDIO'}</span>
+            <div className="aq-nav-legal">
+              <button type="button" onClick={() => go('/terms')}>이용약관</button>
+              <button type="button" onClick={() => go('/terms/settlement')}>정산 약관</button>
+            </div>
             <button type="button" className="aq-logout" onClick={doLogout}>로그아웃</button>
-          </div>
-          <div className="aq-nav-legal">
-            <button type="button" onClick={() => go('/terms')}>이용약관</button>
-            <button type="button" onClick={() => go('/terms/settlement')}>정산 약관</button>
           </div>
         </nav>
       </header>
