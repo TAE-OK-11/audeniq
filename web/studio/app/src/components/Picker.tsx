@@ -280,7 +280,7 @@ function Calendar({ value, min, max, required, onPick, onClear, onClose, title, 
   const today = todayIso();
   const start = parseIso(value) ?? parseIso(min && min > today ? min : today)!;
   const [view, setView] = useState({ y: start.y, m: start.m });
-  const [mode, setMode] = useState<'day' | 'year'>('day');
+  const [mode, setMode] = useState<'day' | 'year' | 'month'>('day');
   const [focus, setFocus] = useState(iso(start.y, start.m, start.d));
   const gridRef = useRef<HTMLDivElement>(null);
   const yearsRef = useRef<HTMLDivElement>(null);
@@ -300,7 +300,9 @@ function Calendar({ value, min, max, required, onPick, onClear, onClose, title, 
     gridRef.current?.querySelector<HTMLElement>(`[data-day="${focus}"]`)?.focus({ preventScroll: true });
   }, [focus, mode, view, kbd]);
   useEffect(() => {
-    if (mode === 'year') yearsRef.current?.querySelector<HTMLElement>('.is-on')?.scrollIntoView({ block: 'center' });
+    if (mode !== 'year') return;
+    const box = yearsRef.current, on = box?.querySelector<HTMLElement>('.is-on');
+    if (box && on) box.scrollTop = Math.max(0, on.offsetTop - box.clientHeight / 2 + on.clientHeight / 2);
   }, [mode]);
 
   useTopKeys(e => {
@@ -317,15 +319,18 @@ function Calendar({ value, min, max, required, onPick, onClear, onClose, title, 
   });
 
   const minY = parseIso(min)?.y ?? 1920;
-  const maxY = parseIso(max)?.y ?? new Date().getFullYear() + 10;
+  const maxY = parseIso(max)?.y ?? Math.max(2040, new Date().getFullYear() + 10);
+  // 작은 해부터 — 발매일처럼 올해부터 고르는 칸은 올해가 맨 앞에 온다
   const years: number[] = [];
-  for (let y = maxY; y >= minY; y--) years.push(y);
+  for (let y = minY; y <= maxY; y++) years.push(y);
+  const monthOut = (y: number, m: number) =>
+    (!!min && `${y}-${pad(m + 1)}` < min.slice(0, 7)) || (!!max && `${y}-${pad(m + 1)}` > max.slice(0, 7));
 
   return (
     <div className="aq-cal">
       <div className="aq-cal-head">
-        <button type="button" className="aq-cal-title" onClick={() => setMode(mode === 'day' ? 'year' : 'day')} aria-expanded={mode === 'year'}>
-          {view.y}년 {view.m + 1}월
+        <button type="button" className="aq-cal-title" onClick={() => setMode(mode === 'day' ? 'year' : mode === 'month' ? 'year' : 'day')} aria-expanded={mode !== 'day'}>
+          {mode === 'day' ? `${view.y}년 ${view.m + 1}월` : mode === 'month' ? `${view.y}년` : '연도 선택'}
           <Glyph name="chevron-down" size={16} />
         </button>
         {mode === 'day' && (
@@ -340,8 +345,17 @@ function Calendar({ value, min, max, required, onPick, onClear, onClose, title, 
         <div className="aq-cal-years" ref={yearsRef} role="listbox" aria-label={`${title} 연도`}>
           {years.map(y => (
             <button key={y} type="button" role="option" aria-selected={y === view.y} className={y === view.y ? 'is-on' : ''}
-              onClick={() => { setView(v => ({ y, m: v.m })); setMode('day'); }}>
+              onClick={() => { setView(v => ({ y, m: v.m })); setMode('month'); }}>
               {y}
+            </button>
+          ))}
+        </div>
+      ) : mode === 'month' ? (
+        <div className="aq-cal-months" role="listbox" aria-label={`${title} ${view.y}년 월`}>
+          {Array.from({ length: 12 }, (_, m) => (
+            <button key={m} type="button" role="option" aria-selected={m === view.m} className={m === view.m ? 'is-on' : undefined}
+              disabled={monthOut(view.y, m)} onClick={() => { setView({ y: view.y, m }); setMode('day'); }}>
+              {m + 1}월
             </button>
           ))}
         </div>

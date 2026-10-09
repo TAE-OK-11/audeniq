@@ -646,7 +646,7 @@ summary::-webkit-details-marker{display:none}
 .aq-cal-grid button:disabled{color:var(--aq-gray-300);background:none;cursor:default}
 @media (hover:hover){.aq-cal-grid button:not(:disabled):not(.is-on):hover,.aq-cal-nav button:hover,.aq-cal-title:hover{background:var(--aq-gray-75)}}
 .aq-cal-grid button:focus-visible,.aq-cal-years button:focus-visible{outline:var(--aq-focus);outline-offset:1px}
-.aq-cal-years{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;max-height:288px;overflow:auto;padding:2px}
+.aq-cal-years{position:relative;display:grid;grid-template-columns:repeat(4,1fr);gap:6px;max-height:288px;overflow:auto;padding:2px}
 .aq-cal-years button{height:44px;border:0;border-radius:var(--aq-r-md);background:var(--aq-gray-50);color:var(--aq-text);font:inherit;font-size:var(--aq-fs-md);font-weight:600;cursor:pointer}
 .aq-cal-years button.is-on{background:var(--aq-primary);color:#fff}
 .aq-cal-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 0 2px}
