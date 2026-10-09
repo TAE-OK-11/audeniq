@@ -1,0 +1,73 @@
+/* ── 디자인 언어 정리 — 화면마다 남아 있던 선·그림자·그라데이션·한글 자간·단계 밖 글자 크기를
+   AUDENIQ 규칙(면 색으로 구분, 진한 면으로 선택, 상태 색 고정)에 맞춘다. 화면별로 묶어 둔다. ── */
+
+/* 음악 리포트 — 구분선 대신 흰 면 타일, 막대는 단색 */
+#view-reports .aq-report-doc-head{padding-bottom:0;border-bottom:0}
+#view-reports .aq-report-doc-head h2{font-size:22px;letter-spacing:-.03em}
+#view-reports .aq-report-doc-stats{padding:0;margin:20px 0 4px;border-bottom:0;gap:8px}
+#view-reports .aq-report-doc-stats>div{padding:16px;border-radius:var(--aq-r-lg);background:#fff}
+#view-reports .aq-report-doc section{padding:28px 0 0;border-bottom:0}
+#view-reports .aq-insight-card{background:#fff}
+#view-reports .aq-insight-card strong{font-size:22px}
+#view-reports .aq-insight-list{display:grid;gap:6px}
+#view-reports .aq-insight-list li{padding:12px 14px;border-bottom:0;border-radius:var(--aq-r-md);background:#fff}
+#view-reports .aq-insight-note{box-shadow:none;margin-top:10px;background:var(--aq-blue-100)}
+#view-reports .aq-platform-track{background:#fff}
+#view-reports .aq-platform-track span{background:var(--aq-blue-500)}
+#view-reports .report-chart{border-bottom:0}
+#view-reports .report-bar{background:var(--aq-blue-500)}
+#view-reports .report-bar:not(:last-child){background:var(--aq-blue-300)}
+#view-reports .aq-report-details{display:grid;gap:6px}
+#view-reports .aq-report-details li{padding:14px 16px;border-bottom:0!important;border-radius:var(--aq-r-md);background:#fff}
+@media(min-width:1024px){#view-reports .aq-report-details{column-gap:8px!important;row-gap:6px}}
+
+/* 공지사항 — 굵은 검은 선·줄 구분선 게시판 대신, 다른 목록처럼 옅은 면 카드 줄 */
+.aq-nboard-list{display:grid;gap:8px;border-top:0}
+.aq-nboard-list li{border-bottom:0}
+.aq-nboard-row{padding:20px 22px;border-radius:var(--aq-r-xl);background:var(--aq-surface);transition:background-color .2s var(--aq-e-ease)}
+@media (hover:hover){.aq-nboard-row:hover{background:var(--aq-blue-100)}}
+.aq-nboard-title{font-size:16px}
+.aq-nboard-date{font-size:13px}
+@media(min-width:760px){.aq-nboard-row{padding:24px 28px}.aq-nboard-title{font-size:18px}.aq-nboard-date{font-size:14px}}
+.aq-narticle-sibling{gap:8px;border-top:0}
+.aq-narticle-sibling a{padding:18px 22px;border-bottom:0;border-radius:var(--aq-r-xl);background:var(--aq-surface);transition:background-color .2s var(--aq-e-ease)}
+@media (hover:hover){.aq-narticle-sibling a:hover{background:var(--aq-blue-100)}}
+.aq-nhero-eyebrow,.aq-nboard-eyebrow{letter-spacing:0}
+
+/* 오류·404 — 아이콘 둘레 링 그림자 대신 둥근 네모 면, 제목은 글자 단계 안(22px) */
+.aq-errscreen-icon{border-radius:18px;box-shadow:none!important}
+.aq-errscreen-code{letter-spacing:0}
+.aq-errscreen-meta{border-top:0;padding-top:0}
+.aq-errscreen h1{font-size:22px!important}
+
+/* 아바타 — 그라데이션 없이 브랜드 단색
+   (이벤트 고정 배너·로그인 화면 배경의 그라데이션은 브랜드 연출로 유지) */
+.aq-profile-avatar{background:var(--aq-blue-500)!important}
+
+/* 글자 단계 — 11·12·13·14·15·16·18·22px와 큰 제목(28px~)만 */
+.aq-report-total .aq-money-unit,.settle-hero-amount .aq-money-unit{font-size:22px}
+#view-home .aq-home-hero h2,#view-home .aq-home-hero h2 .aq-accent{font-size:22px}
+.auth-card h1{font-size:28px}
+.aq-terms h1{font-size:28px}
+.aq-sign-card h1{font-size:22px}
+.aq-event-hero-title{font-size:22px}
+.aq-badge{font-size:11px}
+.aq-auth-brand span{font-size:11px;letter-spacing:.14em}
+.aq-legacy strong{font-size:22px}
+.aq-acct-number{font-size:22px}
+@media(max-width:370px){.aq-acct-number{font-size:22px}}
+
+/* 한글 라벨은 자간 없이 */
+:is(.eyebrow,.ui-eyebrow,.aq-nhero-eyebrow,.aq-nboard-eyebrow,.aq-sign-top>span,.aq-errscreen-eyebrow){letter-spacing:0!important}
+
+/* 권리·보완 서류 — 숫자 칸 3개는 휴대폰에서도 한 줄(2+1로 갈라지지 않게) */
+.aq-rights-summary.ui-stats{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+.aq-rights-summary.ui-stats>*{grid-column:auto!important;min-width:0}
+@media(max-width:420px){.aq-rights-summary .ui-stat{padding:14px 12px}.aq-rights-summary .ui-stat-label{font-size:12px}}
+
+/* 카드 안 구분선 대신 간격 */
+.aq-cover-meta>div{border-top:0!important}
+#view-home .aq-report-grid{border-top:0!important;padding-top:4px}
+.settle-hero-account{border-top:0!important}
+/* 알림 숫자 배지 — 흰 테두리 없이 */
+.aq-header-bell .aq-badge{border:0}

@@ -11,7 +11,7 @@ import { dspLabel, durationLabel, genreLabel, kindLabel, languageLabel } from '.
 import { docState, docsForRelease, useDocs } from '../store/docs';
 import { errorMessage } from '../api/errors';
 import { CorrectionList, ReviewNote } from '../components/CorrectionList';
-import { fixPath, splitCorrections } from '../lib/corrections';
+import { fixCountWord, fixPath, splitCorrections } from '../lib/corrections';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
 import { ContractBundle } from '../components/ContractBundle';
@@ -291,39 +291,37 @@ export function ReleaseDetail() {
       )}
 
       {rejected && (
-        <section className="aq-fix-card is-rejected" aria-labelledby="aqRejectHead">
-          <div className="aq-fix-card-head">
-            <span className="aq-fix-icon" aria-hidden="true"><Glyph name="close" size={16} /></span>
-            <div className="min-0">
-              <h2 id="aqRejectHead">발매가 거절됐어요</h2>
-              <p className="break" style={{ whiteSpace: 'pre-line' }}>{reviewNote
-                || '담당자 검토 결과 이 발매는 배급할 수 없어요. 궁금한 점은 문의로 남겨 주세요.'}</p>
-              <p className="small muted" style={{ marginTop: 8 }}>거절된 발매는 다시 접수할 수 없어요. 내용을 고쳐 새 발매로 신청해 주세요.</p>
-            </div>
+        <section className="aq-fix-panel is-rejected" aria-labelledby="aqRejectHead">
+          <div className="aq-fix-top"><Badge tone="red">배급 거절</Badge></div>
+          <h2 id="aqRejectHead" className="aq-fix-title">이 발매는 배급할 수 없어요</h2>
+          <div className="aq-fix-body">
+            <ReviewNote text={reviewNote || '담당자 검토 결과 이 발매는 배급할 수 없어요. 궁금한 점은 문의로 남겨 주세요.'} />
+            <p className="aq-fix-foot">거절된 발매는 다시 접수할 수 없어요. 내용을 고쳐 새 발매로 신청해 주세요.</p>
           </div>
         </section>
       )}
 
       {needsFix && (
-        <section className="aq-fix-card" aria-labelledby="aqFixCardHead">
-          <div className="aq-fix-card-head">
-            <span className="aq-fix-icon" aria-hidden="true"><Glyph name="alert" size={18} /></span>
-            <div className="min-0">
-              <h2 id="aqFixCardHead">{fixes.length ? `보완 요청 ${fixes.length}건` : '보완이 필요해요'}</h2>
-              <p>{fixes.length
-                ? '항목을 누르면 고칠 칸으로 이동해요.'
-                : reviewNote ? '담당자 의견을 확인하고 신청서를 고쳐 주세요.' : '알림과 권리 서류에서 요청 내용을 확인해 주세요.'}</p>
-            </div>
-            <button type="button" className="ui-btn is-sm is-warn-solid aq-fix-go" onClick={() => nav(fixPath(rel.id, fixes[0]))}>보완하기<Glyph name="chevron-right" size={13} /></button>
+        <section className="aq-fix-panel" aria-labelledby="aqFixCardHead">
+          <div className="aq-fix-top">
+            <Badge tone="amber">{fixes.length ? `보완 요청 ${fixes.length}건` : '보완 필요'}</Badge>
           </div>
-          {fixes.length > 0 && (
-            <CorrectionList
-              releaseId={rel.id} corrections={fixes}
-              trackIds={(d?.draftTracks ?? rel.tracks).map(t => t.id)}
-              trackTitles={Object.fromEntries((d?.draftTracks ?? rel.tracks).map(t => [t.id, t.title]))}
-            />
-          )}
-          {reviewNote && <ReviewNote text={reviewNote} />}
+          <h2 id="aqFixCardHead" className="aq-fix-title">
+            {fixes.length ? `${fixCountWord(fixes.length)} 고치면 바로 다시 검토해요`
+              : reviewNote ? '검토팀 의견을 확인하고 신청서를 고쳐 주세요' : '알림과 권리 서류에서 요청 내용을 확인해 주세요'}
+          </h2>
+          <div className="aq-fix-body">
+            {reviewNote && <ReviewNote text={reviewNote} />}
+            {fixes.length > 0 ? (
+              <CorrectionList
+                releaseId={rel.id} corrections={fixes}
+                trackIds={(d?.draftTracks ?? rel.tracks).map(t => t.id)}
+                trackTitles={Object.fromEntries((d?.draftTracks ?? rel.tracks).map(t => [t.id, t.title]))}
+              />
+            ) : (
+              <button type="button" className="ui-btn is-primary aq-fix-cta" onClick={() => nav(fixPath(rel.id))}>신청서 고치러 가기</button>
+            )}
+          </div>
         </section>
       )}
 
