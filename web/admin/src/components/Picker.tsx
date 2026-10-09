@@ -1,5 +1,6 @@
 // AUDENIQ 선택 시트 · 달력 — 기기마다 모양이 다른 기본 선택 팝업(iOS 휠, 안드로이드 다이얼로그, 데스크톱 목록)과
-// 기본 달력 대신 어디서나 같은 모양으로 보여 준다. 휴대폰은 아래에서 올라오는 시트, 넓은 화면은 칸 아래 작은 창.
+// 기본 달력 대신 어디서나 같은 모양으로 보여 준다. 선택 목록은 어느 기기든 칸 바로 아래 작은 창,
+// 달력·시간은 휴대폰에서 아래에서 올라오는 시트(넓은 화면은 칸 아래 작은 창).
 //
 // <SelectHost/>를 앱에 한 번 두면 화면의 모든 <select>가 이 시트로 열린다. 원래 <select>는 그대로 남아
 // 값·onChange·폼·테스트(selectOption)가 그대로 동작하고, 고르면 값만 바꾼 뒤 change 이벤트를 보낸다.
@@ -14,10 +15,12 @@ const isSheet = () => typeof window !== 'undefined' && !!window.matchMedia?.(SHE
 // ---------------------------------------------------------------------------
 // 공통 바탕: 휴대폰은 바텀 시트, 넓은 화면은 칸에 붙은 작은 창
 // ---------------------------------------------------------------------------
-function Surface({ anchor, title, onClose, className, children, labelledBy }: {
+function Surface({ anchor, title, onClose, className, children, labelledBy, pop }: {
   anchor: DOMRect | null; title: string; onClose: () => void; className?: string; children: ReactNode; labelledBy?: string;
+  /** 휴대폰에서도 시트 대신 칸 아래 작은 창으로 */
+  pop?: boolean;
 }) {
-  const sheet = isSheet();
+  const sheet = !pop && isSheet();
   const boxRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number; width: number; maxHeight: number } | null>(null);
 
@@ -164,7 +167,7 @@ function SelectSheet({ el, viaTouch, onClose }: { el: HTMLSelectElement; viaTouc
   const title = fieldTitle(el);
   let lastGroup: string | undefined;
   return (
-    <Surface anchor={anchor} title={title} onClose={() => close()} className="is-select">
+    <Surface anchor={anchor} title={title} onClose={() => close()} className="is-select" pop>
       <div className="aq-picker-list" role="listbox" aria-label={title || '선택'} ref={listRef}>
         {opts.length === 0 && <p className="aq-picker-empty">고를 수 있는 항목이 없어요.</p>}
         {opts.map((o, i) => {
