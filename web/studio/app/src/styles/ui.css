@@ -583,6 +583,48 @@ summary::-webkit-details-marker{display:none}
 #portalNav .aq-nav-foot{margin-top:4px!important;padding:14px 12px 4px!important;border:0;border-radius:0;background:none;font-size:var(--aq-fs-sm);letter-spacing:0;color:var(--aq-text-4)}
 #portalNav .aq-logout{min-height:0!important;padding:6px 4px!important;background:none!important;border-radius:var(--aq-r-xs)!important;font-size:var(--aq-fs-sm)!important;font-weight:var(--aq-fw-bold)!important;color:var(--aq-text-3)!important;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--aq-gray-300)}
 #portalNav .aq-logout:hover{background:none!important;color:var(--aq-red-600)!important;text-decoration-color:currentColor}
+/* 디테일 — AUDENIQ 화면과 같은 말투: 그룹 이름은 페이지 위 파란 분류 글자(eyebrow)와 같은 모양,
+   선택은 테두리 대신 진한 면, 아이콘 칸은 메뉴마다 고유 색의 옅은 면 */
+#portalNav .aq-nav-me{position:relative;overflow:hidden;margin:0 0 10px;padding:8px 8px 10px;border-radius:var(--aq-r-xl);background:#fff;animation:aq-fade-up .32s var(--aq-e-ease) both}
+#portalNav .aq-nav-me>*{position:relative}
+#portalNav .aq-nav-me button{width:100%;border:0;font:inherit;cursor:pointer;text-align:left}
+#portalNav .aq-nav-me-row{display:grid!important;grid-template-columns:52px minmax(0,1fr) auto;align-items:center;gap:14px;min-height:0!important;padding:8px 8px!important;border-radius:var(--aq-r-lg)!important;background:none!important;color:var(--aq-text);transition:background-color .15s ease}
+#portalNav .aq-nav-me-row:hover,#portalNav .aq-nav-me.is-active .aq-nav-me-row{background:var(--aq-blue-50)!important}
+#portalNav .aq-nav-me-avatar{display:grid;place-items:center;width:52px!important;height:52px!important;flex:none;border-radius:18px!important;font-size:21px!important;font-style:normal;font-weight:var(--aq-fw-bold);transform:none!important}
+#portalNav .aq-nav-me-text{display:grid;gap:3px;min-width:0;font-style:normal}
+#portalNav .aq-nav-me-text strong{font-size:var(--aq-fs-title-sm);font-weight:var(--aq-fw-bold);letter-spacing:-.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#portalNav .aq-nav-me-text small{font-size:var(--aq-fs-sm);font-weight:400;color:var(--aq-text-4);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#portalNav .aq-nav-me-chev{color:var(--aq-text-disabled)}
+#portalNav .aq-nav-me-alert{display:grid!important;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;min-height:0!important;margin:6px 0 0;padding:11px 12px!important;border-radius:var(--aq-r-md)!important;background:var(--aq-amber-50)!important;color:var(--aq-amber-700)!important;font-size:var(--aq-fs-sm)!important;font-weight:var(--aq-fw-bold)!important;transition:background-color .15s ease}
+#portalNav .aq-nav-me-alert:hover{background:var(--aq-amber-100)!important}
+#portalNav .aq-nav-me-alert i{font-style:normal;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#portalNav .aq-nav-cta{display:flex!important;align-items:center;justify-content:center;gap:6px;min-height:50px!important;margin:8px 0 0;padding:0 16px!important;border-radius:var(--aq-r-lg)!important;background:var(--aq-primary)!important;color:#fff!important;font-size:var(--aq-fs-lg)!important;font-weight:var(--aq-fw-bold)!important;transition:background-color .15s ease,transform .12s ease}
+#portalNav .aq-nav-cta:hover{background:var(--aq-blue-600)!important}
+#portalNav .aq-nav-cta:active{transform:scale(.98)}
+#portalNav .aq-nav-cta>span,#portalNav .aq-nav-me-alert>span,#portalNav .aq-nav-me-row>span{display:none}
+#portalNav .aq-nav-card{padding:4px 6px 6px}
+#portalNav .aq-nav-card .nav-group{padding:16px 12px 6px;font-size:11px;font-weight:800;letter-spacing:.15em;color:var(--portal-blue)}
+#portalNav .aq-nav-card button{transition:background-color .15s ease,transform .12s ease}
+#portalNav .aq-nav-card button:active{transform:scale(.985)}
+.aq-nav-ico{transition:background-color .2s ease,color .2s ease}
+.aq-nav-ico.is-blue{background:var(--aq-blue-50)}
+.aq-nav-ico.is-violet{background:var(--aq-violet-50)}
+.aq-nav-ico.is-green{background:var(--aq-green-50)}
+.aq-nav-ico.is-amber{background:var(--aq-amber-50)}
+.aq-nav-ico.is-red{background:var(--aq-red-50)}
+.aq-nav-ico.is-gray{background:var(--aq-gray-50)}
+#portalNav .aq-nav-card button.active{background:var(--aq-blue-100)}
+#portalNav .aq-nav-card button.active .aq-nav-ico{background:#fff;color:var(--aq-blue-500)}
+#portalNav .aq-nav-card button.active .aq-nav-desc{color:var(--aq-blue-600)}
+#portalNav .aq-nav-desc{font-size:var(--aq-fs-xs);color:var(--aq-text-disabled)}
+#portalNav .aq-nav-count{border-radius:999px;min-width:20px;height:20px;font-size:11px}
+/* 메뉴마다 지금 처리할 일 — 설명 자리에 상태 배지 */
+#portalNav .aq-nav-status{justify-self:end;width:auto;height:auto;font-size:var(--aq-fs-xs);white-space:nowrap;transform:none!important;animation:aq-fade-in .25s ease both}
+/* 맨 아래 한 줄: 왼쪽 약관 링크 · 오른쪽 로그아웃 */
+#portalNav .aq-nav-foot{align-items:center;margin-top:10px!important;padding:10px 6px 0!important}
+#portalNav .aq-nav-foot .aq-nav-legal{padding:0}
+#portalNav .aq-logout{text-decoration:none!important;padding:8px 14px!important;border-radius:999px!important;background:#fff!important}
+#portalNav .aq-logout:hover{background:var(--aq-red-50)!important}
 /* 휴대폰: 헤더 아래 화면 전체를 덮는 '전체' 화면 */
 @media (max-width:760px){
   #portalNav{left:0!important;right:0!important;bottom:auto!important;width:100%!important;max-width:none!important;height:calc(100dvh - var(--aq-menu-top,68px))!important;max-height:none!important;border-radius:0;box-shadow:none;padding:20px 16px max(28px,env(safe-area-inset-bottom))}
