@@ -34,23 +34,14 @@
 @media (hover:hover){.aq-narticle-sibling a:hover{background:var(--aq-blue-100)}}
 .aq-nhero-eyebrow,.aq-nboard-eyebrow{letter-spacing:0}
 
-/* 이벤트 — 진행 중 배너는 그라데이션·장식 원 없이 브랜드 단색 면 */
-.aq-event-hero{background:var(--aq-blue-500)!important}
-.aq-event-hero::after{content:none!important}
-.aq-event-hero-title{font-size:22px}
-@media(hover:hover){.aq-event-hero:hover{background:var(--aq-blue-600)!important}}
-
 /* 오류·404 — 아이콘 둘레 링 그림자 대신 둥근 네모 면, 제목은 글자 단계 안(22px) */
 .aq-errscreen-icon{border-radius:18px;box-shadow:none!important}
 .aq-errscreen-code{letter-spacing:0}
 .aq-errscreen-meta{border-top:0;padding-top:0}
 .aq-errscreen h1{font-size:22px!important}
 
-/* 로그인·회원가입·계정 찾기 — 배경 그라데이션·번짐 대신 옅은 단색 면 */
-.auth-page{background:var(--aq-blue-25)!important}
-.aq-auth-glow{display:none}
-
-/* 아바타 — 그라데이션 없이 브랜드 단색 */
+/* 아바타 — 그라데이션 없이 브랜드 단색
+   (이벤트 고정 배너·로그인 화면 배경의 그라데이션은 브랜드 연출로 유지) */
 .aq-profile-avatar{background:var(--aq-blue-500)!important}
 
 /* 글자 단계 — 11·12·13·14·15·16·18·22px와 큰 제목(28px~)만 */
@@ -59,6 +50,7 @@
 .auth-card h1{font-size:28px}
 .aq-terms h1{font-size:28px}
 .aq-sign-card h1{font-size:22px}
+.aq-event-hero-title{font-size:22px}
 .aq-badge{font-size:11px}
 .aq-auth-brand span{font-size:11px;letter-spacing:.14em}
 .aq-legacy strong{font-size:22px}
