@@ -103,11 +103,37 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    // 실제 스크롤 컨테이너(.modal-inner)를 위로 — window.scrollTo는 모달 안에서 무효
-    // 단계가 바뀌면 실제로 스크롤되는 영역(.aq-pay-main, .modal-inner)을 모두 맨 위로
+    // 단계가 바뀌면 실제로 스크롤되는 영역(.aq-pay-main과 모달 바깥 컨테이너)을 모두 맨 위로
     // (이전 단계 스크롤이 남아 제목 위쪽이 상단 바에 가려지던 문제 방지)
-    flowRef.current?.querySelector('.aq-pay-main')?.scrollTo({ top: 0 });
-    (flowRef.current?.closest('.modal-inner') as HTMLElement | null)?.scrollTo({ top: 0 });
+    // iOS Safari는 계좌번호 입력 키보드가 내려가며 화면을 다시 맞추는 동안 스크롤을 밀어 두므로,
+    // 화면이 자리 잡을 때까지(애니메이션·키보드 닫힘) 몇 번 더 맞춘다. 사용자가 스크롤을 시작하면 멈춘다.
+    const flow = flowRef.current;
+    const main = flow?.querySelector<HTMLElement>('.aq-pay-main');
+    if (!flow || !main) return;
+    let userScrolled = false;
+    const reset = () => {
+      if (userScrolled) return;
+      main.scrollTop = 0;
+      for (let el = flow.parentElement; el && el !== document.body; el = el.parentElement) {
+        if (el.scrollTop) el.scrollTop = 0;
+      }
+    };
+    const stop = () => { userScrolled = true; };
+    main.addEventListener('touchstart', stop, { passive: true });
+    main.addEventListener('wheel', stop, { passive: true });
+    window.visualViewport?.addEventListener('resize', reset);
+    reset();
+    const frame = requestAnimationFrame(reset);
+    const timers = [120, 480].map(ms => window.setTimeout(reset, ms));
+    const done = window.setTimeout(() => window.visualViewport?.removeEventListener('resize', reset), 900);
+    return () => {
+      cancelAnimationFrame(frame);
+      timers.forEach(window.clearTimeout);
+      window.clearTimeout(done);
+      main.removeEventListener('touchstart', stop);
+      main.removeEventListener('wheel', stop);
+      window.visualViewport?.removeEventListener('resize', reset);
+    };
   }, [step]);
 
   useEffect(() => {
@@ -123,6 +149,8 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
 
   const back = () => {
     if (step === 0 || step === 4) { onClose(); return; }
+    // 입력 중이던 칸의 포커스를 먼저 풀어 iOS 키보드가 이전 단계 화면을 밀어 올리지 않게 한다
+    (document.activeElement as HTMLElement | null)?.blur?.();
     setStep(s => s - 1);
   };
 
