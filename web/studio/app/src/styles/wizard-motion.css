@@ -1,0 +1,92 @@
+/* ── 배급 신청(새 발매) 모션 — 위자드의 움직임은 이 파일 한 곳에서 관리한다 ──────────────
+   원칙: 짧고(≤.5s) 한 방향으로. 제목은 진행 방향으로 들어오고, 입력 칸은 위에서부터 차례로 떠오른다.
+   테두리·그림자 없이 면 색과 위치만 움직인다. 동작 줄이기 설정에선 모두 끈다. */
+@keyframes aq-wiz-head-in{from{opacity:0;transform:translate3d(var(--wiz-dx,24px),0,0)}to{opacity:1;transform:none}}
+@keyframes aq-wiz-rise{from{opacity:0;transform:translate3d(0,14px,0)}to{opacity:1;transform:none}}
+@keyframes aq-wiz-soft-in{from{opacity:0;transform:translate3d(0,6px,0)}to{opacity:1;transform:none}}
+@keyframes aq-wiz-pop{0%{transform:scale(.72)}60%{transform:scale(1.1)}100%{transform:none}}
+@keyframes aq-wiz-draw{from{stroke-dashoffset:14}to{stroke-dashoffset:0}}
+@keyframes aq-wiz-cover-in{from{opacity:0;transform:scale(.86)}to{opacity:1;transform:none}}
+@keyframes aq-wiz-error{0%{opacity:0;transform:translate3d(0,-6px,0)}30%{opacity:1;transform:none}46%{transform:translateX(-5px)}62%{transform:translateX(4px)}78%{transform:translateX(-2px)}100%{transform:none}}
+@keyframes aq-wiz-flash{0%,100%{background-color:transparent;box-shadow:0 0 0 0 transparent}15%,60%{background-color:var(--aq-amber-50);box-shadow:0 0 0 10px var(--aq-amber-50)}}
+
+/* 1) 단계 전환 — 제목 세 줄은 진행 방향(다음 → 오른쪽에서, 이전 → 왼쪽에서), 본문은 칸마다 차례로 */
+#view-new .wizard-header.is-fwd{--wiz-dx:24px}
+#view-new .wizard-header.is-back{--wiz-dx:-24px}
+#view-new .wizard-header>*{animation:aq-wiz-head-in .5s var(--aq-e-ease) both}
+#view-new .wizard-header>:nth-child(2){animation-delay:.04s}
+#view-new .wizard-header>:nth-child(3){animation-delay:.08s}
+#view-new #wizardBody>.step-section>:not(.form-grid),
+#view-new #wizardBody>.step-section>.form-grid>*{animation:aq-wiz-rise .5s var(--aq-e-ease) both;animation-delay:calc(.1s + var(--wi,0) * .04s)}
+#view-new #wizardBody>.step-section>:nth-child(2),#view-new #wizardBody .form-grid>:nth-child(2){--wi:1}
+#view-new #wizardBody>.step-section>:nth-child(3),#view-new #wizardBody .form-grid>:nth-child(3){--wi:2}
+#view-new #wizardBody>.step-section>:nth-child(4),#view-new #wizardBody .form-grid>:nth-child(4){--wi:3}
+#view-new #wizardBody>.step-section>:nth-child(5),#view-new #wizardBody .form-grid>:nth-child(5){--wi:4}
+#view-new #wizardBody>.step-section>:nth-child(6),#view-new #wizardBody .form-grid>:nth-child(6){--wi:5}
+#view-new #wizardBody>.step-section>:nth-child(7),#view-new #wizardBody .form-grid>:nth-child(7){--wi:6}
+#view-new #wizardBody>.step-section>:nth-child(n+8),#view-new #wizardBody .form-grid>:nth-child(n+8){--wi:7}
+
+/* 2) 모바일 진행 막대 — 지금 칸이 왼쪽부터 차오르고, 단계 이름이 살짝 떠오른다 */
+#view-new .wizard-progress-seg.current{background:var(--aq-gray-150)!important}
+#view-new .wizard-progress-seg::after{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--aq-blue-500);transform:scaleX(0);transform-origin:left center;transition:transform .45s var(--aq-e-ease)}
+#view-new .wizard-progress-seg.current::after{transform:none}
+#view-new .wizard-progress-seg em{animation:aq-wiz-soft-in .35s var(--aq-e-ease) .1s both}
+
+/* 3) PC 단계 카드 — 진한 면이 단계 사이를 미끄러져 옮겨 가고, 번호는 톡 튀고, 체크는 그려진다 */
+@media(min-width:1024px){
+  .aq-wiz-rail{animation:aq-wiz-rise .5s var(--aq-e-ease) both}
+  .aq-wiz-rail .aq-wiz-steps{position:relative}
+  .aq-wiz-rail .aq-wiz-steps::before{content:"";position:absolute;left:0;right:0;top:0;height:50px;border-radius:var(--aq-r-lg);background:var(--aq-blue-100);transform:translate3d(0,calc(var(--cur,0) * 52px),0);transition:transform .42s cubic-bezier(.3,1.2,.5,1)}
+  .aq-wiz-rail .aq-wiz-steps li{position:relative;z-index:1}
+  .aq-wiz-rail .aq-wiz-steps button{height:50px;box-sizing:border-box}
+  .aq-wiz-rail .aq-wiz-steps li.is-current button{background:transparent}
+  .aq-wiz-rail .aq-wiz-steps li.is-current .aq-wiz-step-no{animation:aq-wiz-pop .45s var(--aq-e-spring) .08s both}
+  .aq-wiz-rail .aq-wiz-step-no path{stroke-dasharray:14;animation:aq-wiz-draw .4s var(--aq-e-ease) .12s both}
+  .aq-wiz-rail .aq-wiz-step-fix{animation:aq-wiz-soft-in .3s var(--aq-e-ease) both}
+  .aq-wiz-rail-progress b em{display:inline-block;font-style:normal;animation:aq-wiz-soft-in .35s var(--aq-e-ease) both}
+  .aq-wiz-rail-progress i::after{transition:width .55s cubic-bezier(.3,1.2,.5,1)}
+  .aq-wiz-summary img,.aq-wiz-summary-cover{animation:aq-wiz-cover-in .4s var(--aq-e-ease) both}
+}
+.aq-wiz-rail-progress b em{font-style:normal}
+
+/* 4) 보완 요청 패널 — 처음엔 떠오르고, 의견·할 일 줄은 차례로. 접고 펼칠 땐 높이가 부드럽게 바뀐다 */
+#view-new .aq-fix-panel{animation:aq-wiz-rise .45s var(--aq-e-ease) .04s both}
+#view-new .aq-fix-note,#view-new .aq-fix-list li{animation:aq-wiz-rise .4s var(--aq-e-ease) both;animation-delay:calc(.08s + var(--fi,0) * .05s)}
+#view-new .aq-fix-list li:nth-child(1){--fi:1}
+#view-new .aq-fix-list li:nth-child(2){--fi:2}
+#view-new .aq-fix-list li:nth-child(3){--fi:3}
+#view-new .aq-fix-list li:nth-child(n+4){--fi:4}
+html.aq-vt-fix #view-new .aq-fix-panel{view-transition-name:aq-fix}
+#view-new .aq-fix-title{width:fit-content;max-width:100%}
+html.aq-vt-fix #view-new .aq-fix-title{view-transition-name:aq-fix-title}
+html.aq-vt-fix #view-new #wizardBody{view-transition-name:aq-wiz-body}
+/* 움직이는 입력 영역이 위아래 고정 막대 위로 올라오지 않게 막대도 따로 떼어 맨 위에 둔다 */
+html.aq-vt-fix #view-new .wizard-topbar{view-transition-name:aq-wiz-top}
+html.aq-vt-fix #view-new .step-actions{view-transition-name:aq-wiz-actions}
+html.aq-vt-fix #view-new .aq-fix-note,html.aq-vt-fix #view-new .aq-fix-list li{animation:none}
+::view-transition-group(aq-fix),::view-transition-group(aq-fix-title),::view-transition-group(aq-wiz-body){animation-duration:.36s;animation-timing-function:cubic-bezier(.22,1,.36,1)}
+::view-transition-group(aq-fix){overflow:clip;border-radius:24px}
+::view-transition-old(aq-fix),::view-transition-new(aq-fix){height:100%;object-fit:none;object-position:top;animation-duration:.24s}
+::view-transition-old(aq-fix){animation-duration:.16s}
+::view-transition-old(aq-fix-title),::view-transition-new(aq-fix-title){height:100%;object-fit:fill;animation-duration:.36s}
+::view-transition-group(aq-wiz-top),::view-transition-group(aq-wiz-actions){animation:none;z-index:2}
+::view-transition-old(aq-wiz-top),::view-transition-old(aq-wiz-actions){display:none}
+::view-transition-new(aq-wiz-top),::view-transition-new(aq-wiz-actions){animation:none}
+::view-transition-old(root),::view-transition-new(root){animation-duration:.2s}
+
+/* 이동한 입력칸 — 옅은 노랑 면이 잠깐 번졌다 사라진다 */
+#view-new .aq-fix-flash{animation:aq-wiz-flash 1.8s var(--aq-e-ease) 1}
+
+/* 5) 오류 · 버튼 — 오류는 내려앉으며 한 번 흔들리고, 버튼은 눌림과 문구 바뀜을 보여 준다 */
+#view-new #wizardError.aq-shake{animation:aq-wiz-error .55s var(--aq-e-ease) both}
+#view-new .step-actions .ui-btn{transition:background-color .2s var(--aq-e-ease),color .2s var(--aq-e-ease),transform .14s var(--aq-e-ease)}
+#view-new .step-actions .ui-btn:active:not(:disabled){transform:scale(.97)}
+#view-new .aq-btn-label{display:inline-block;font-style:normal;animation:aq-wiz-soft-in .3s var(--aq-e-ease) both}
+
+@media(prefers-reduced-motion:reduce){
+  #view-new .wizard-header>*,#view-new #wizardBody>.step-section>*,#view-new #wizardBody .form-grid>*,
+  #view-new .wizard-progress-seg em,.aq-wiz-rail,.aq-wiz-rail *,
+  #view-new .aq-fix-panel,#view-new .aq-fix-note,#view-new .aq-fix-list li,#view-new .aq-fix-flash,
+  #view-new #wizardError.aq-shake,#view-new .aq-btn-label{animation:none!important}
+  #view-new .wizard-progress-seg::after,.aq-wiz-rail .aq-wiz-steps::before,.aq-wiz-rail-progress i::after,#view-new .step-actions .ui-btn{transition:none!important}
+}
