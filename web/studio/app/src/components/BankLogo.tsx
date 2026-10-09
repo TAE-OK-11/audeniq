@@ -1,13 +1,13 @@
 import { BANK_SYMBOLS } from '../lib/bankSymbols';
 
-// 배경까지 칠해진 사각 로고 — 기관 카드에서 모서리를 둥글려 앱 아이콘처럼 보이게
-const SQUARE = new Set(['miraeasset.svg', 'samsung.svg']);
+// 가로로 긴 글자 로고 — 정사각 칸에 넣으면 너무 작아져 기관 카드에서 가로 폭을 더 준다
+const WIDE = new Set(['miraeasset.svg', 'samsung.svg']);
 
 export function BankLogo({ name }: { name: string }) {
   const file = BANK_SYMBOLS[name] ?? 'institution.svg';
   const src = `${import.meta.env.BASE_URL}static/banks/${file}`;
   return (
-    <span className={`aq-bank-logo is-symbol${SQUARE.has(file) ? ' is-square' : ''}`} aria-hidden="true">
+    <span className={`aq-bank-logo is-symbol${WIDE.has(file) ? ' is-wide' : ''}`} aria-hidden="true">
       <img
         key={src}
         src={src}
