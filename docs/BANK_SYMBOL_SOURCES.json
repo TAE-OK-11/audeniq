@@ -1,0 +1,344 @@
+{
+  "ibk": {
+    "file": "ibk.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-ibk.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+  },
+  "shinhan": {
+    "file": "shinhan.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-shinhan.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+  },
+  "kb": {
+    "file": "kb.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-kb.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+  },
+  "hana": {
+    "file": "hana.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-hana.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+  },
+  "woori": {
+    "file": "woori.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-woori.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+  },
+  "nh": {
+    "file": "nh.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-nh.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+  },
+  "sc": {
+    "file": "sc.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-sc.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+  },
+  "kakao": {
+    "file": "kakao.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-kakao.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+  },
+  "kdb": {
+    "file": "kdb.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-kdb.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+  },
+  "citi": {
+    "file": "citi.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-citi.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+  },
+  "bnk": {
+    "file": "bnk.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-bnk.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+  },
+  "mg": {
+    "file": "mg.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-mg.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+  },
+  "cu": {
+    "file": "cu.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-cu.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+  },
+  "jb": {
+    "file": "jb.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-jb.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+  },
+  "db": {
+    "file": "db.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-db.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+  },
+  "yuanta": {
+    "file": "yuanta.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-yuanta.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+  },
+  "samsung": {
+    "file": "samsung.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-samsung.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Downloaded original wordmark paths displayed in white on the reference Samsung-blue square; path geometry preserved."
+  },
+  "meritz": {
+    "file": "meritz.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-meritz.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+  },
+  "kyobo": {
+    "file": "kyobo.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-kyobo.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+  },
+  "ls": {
+    "file": "ls.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-ls.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+  },
+  "sk": {
+    "file": "sk.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-sk.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+  },
+  "shinyoung": {
+    "file": "shinyoung.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-shinyoung.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+  },
+  "kakaopay": {
+    "file": "kakaopay.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-kakaopay.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+  },
+  "postoffice": {
+    "file": "postoffice.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-postoffice.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+  },
+  "koreainvestment": {
+    "file": "koreainvestment.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-koreainvestment.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+  },
+  "gwangju": {
+    "file": "gwangju.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-gwangju.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+  },
+  "miraeasset": {
+    "file": "miraeasset.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-miraeasset.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Downloaded original wordmark paths, displayed in the reference orange-square reverse variant; presentation disc replaced by the square and accent reversed to white."
+  },
+  "hyundai": {
+    "file": "hyundai.svg",
+    "source": "https://github.com/flxh4894/korea_bank_icons/blob/main/assets/icons/263.svg",
+    "provider": "korea_bank_icons 1.0.0 (MIT)",
+    "note": "Presentation disc removed; original artwork and colors retained."
+  },
+  "daishin": {
+    "file": "daishin.svg",
+    "source": "https://github.com/flxh4894/korea_bank_icons/blob/main/assets/icons/267.svg",
+    "provider": "korea_bank_icons 1.0.0 (MIT)",
+    "note": "Presentation disc removed; light reverse artwork uses the institution primary symbol color."
+  },
+  "hanwha": {
+    "file": "hanwha.svg",
+    "source": "https://github.com/flxh4894/korea_bank_icons/blob/main/assets/icons/269.svg",
+    "provider": "korea_bank_icons 1.0.0 (MIT)",
+    "note": "Presentation disc removed; light reverse artwork uses the institution primary symbol color."
+  },
+  "cape": {
+    "file": "cape.svg",
+    "source": "https://github.com/flxh4894/korea_bank_icons/blob/main/assets/icons/292.svg",
+    "provider": "korea_bank_icons 1.0.0 (MIT)",
+    "note": "Presentation disc removed; light reverse artwork uses the institution primary symbol color."
+  },
+  "eugene": {
+    "file": "eugene.svg",
+    "source": "https://github.com/flxh4894/korea_bank_icons/blob/main/assets/icons/280.svg",
+    "provider": "korea_bank_icons 1.0.0 (MIT)",
+    "note": "Presentation disc removed; original artwork and colors retained."
+  },
+  "im": {
+    "file": "im.png",
+    "source": "https://www.imfngroup.com/com/img/favicon.ico",
+    "provider": "iM Financial Group official site",
+    "note": "Official symbol; original 16px favicon converted losslessly to PNG."
+  },
+  "daol": {
+    "file": "daol.png",
+    "source": "https://www.daolsecurities.com/img/common/favicon.ico",
+    "provider": "DAOL Securities official site",
+    "note": "Original 256px symbol converted losslessly from ICO to PNG."
+  },
+  "acuon": {
+    "file": "acuon.png",
+    "source": "https://www.acuonsb.co.kr/images/common/favicon.ico",
+    "provider": "ACUON Savings Bank official site",
+    "note": "Official symbol; original 16px favicon converted losslessly to PNG."
+  },
+  "welcome": {
+    "file": "welcome.png",
+    "source": "https://www.google.com/s2/favicons?domain=welcomebank.co.kr&sz=128",
+    "provider": "Official site favicon via Google cache",
+    "note": "Cached institutional mark, not a rendered text substitute."
+  },
+  "pepper": {
+    "file": "pepper.png",
+    "source": "https://www.google.com/s2/favicons?domain=pepperbank.kr&sz=128",
+    "provider": "Official site favicon via Google cache",
+    "note": "Cached institutional mark, not a rendered text substitute."
+  },
+  "toss": {
+    "file": "toss.png",
+    "source": "https://static.toss.im/assets/homepage/brand/Toss_Symbol.zip",
+    "provider": "Toss official brand resource center",
+    "note": "Toss_Symbol_Primary.png resized proportionally to 256px for the 36–38px UI; original colors and shape."
+  },
+  "kiwoom": {
+    "file": "kiwoom.svg",
+    "source": "https://companieslogo.com/img/orig/039490.KS-ef639b7b.svg",
+    "provider": "CompaniesLogo",
+    "note": "Downloaded primary symbol vector; original shape and colors."
+  },
+  "sh": {
+    "file": "sh.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-sh.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original standalone symbol."
+  },
+  "sj": {
+    "file": "sj.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-sj.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original standalone symbol."
+  },
+  "kbank": {
+    "file": "kbank.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-kbank.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original K path in Kbank blue, without the presentation circle."
+  },
+  "sbi": {
+    "file": "sbi.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-sbi.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original SBI paths; presentation disc removed and reverse white artwork shown in SBI blue."
+  },
+  "bookook": {
+    "file": "bookook.svg",
+    "source": "https://static.toss.im/icons/svg/icon-bank-bookook.svg",
+    "provider": "Toss financial institution asset",
+    "note": "Original standalone symbol."
+  },
+  "moa": {
+    "file": "moa.png",
+    "source": "https://www.google.com/s2/favicons?domain=moasb.co.kr&sz=128",
+    "provider": "Official site favicon via Google cache",
+    "note": "The institution site publishes this Savings Bank federation symbol."
+  },
+  "baro": {
+    "file": "baro.png",
+    "source": "https://www.google.com/s2/favicons?domain=barosavings.com&sz=128",
+    "provider": "Official site favicon via Google cache",
+    "note": "The institution site publishes this Savings Bank federation symbol."
+  },
+  "jt": {
+    "file": "jt.png",
+    "source": "https://www.jt-bank.co.kr/asset/public/favicon.png",
+    "provider": "Institution official site",
+    "note": "Original institutional symbol. ICO entries converted losslessly to PNG."
+  },
+  "smart": {
+    "file": "smart.png",
+    "source": "https://www.smartbank.co.kr/img/common/favicon_32.png",
+    "provider": "Institution official site",
+    "note": "Original institutional symbol. ICO entries converted losslessly to PNG."
+  },
+  "ok": {
+    "file": "ok.png",
+    "source": "https://www.oksavingsbank.com/assets/images/favicon_128.ico",
+    "provider": "Institution official site",
+    "note": "Original institutional symbol. ICO entries converted losslessly to PNG."
+  },
+  "heungkuk": {
+    "file": "heungkuk.svg",
+    "source": "https://www.heungkuksec.co.kr/images/common/logo.gif",
+    "provider": "Institution official site",
+    "note": "Unchanged original bitmap embedded in an SVG viewBox showing only the symbol; this is not vector-traced artwork."
+  },
+  "yegaram": {
+    "file": "yegaram.svg",
+    "source": "https://www.yegaramsb.co.kr/resources/images/main/img_logo.png",
+    "provider": "Institution official site",
+    "note": "Unchanged original bitmap embedded in an SVG viewBox showing only the symbol; this is not vector-traced artwork."
+  },
+  "dongwon": {
+    "file": "dongwon.svg",
+    "source": "https://loan.dongwonjeilbank.kr/homepage/new/images/logo.jpg",
+    "provider": "Institution official site",
+    "note": "Unchanged original bitmap embedded in an SVG viewBox showing only the symbol; this is not vector-traced artwork."
+  },
+  "sangsangin": {
+    "file": "sangsangin.png",
+    "source": "https://www.sangsanginworld.co.kr/m/img/logo_sangsangin_s2.png",
+    "provider": "Institution/group official site",
+    "note": "Original symbol; ICO converted losslessly to PNG where necessary."
+  },
+  "pureun": {
+    "file": "pureun.png",
+    "source": "https://www.prsb.co.kr/favicon.ico",
+    "provider": "Institution/group official site",
+    "note": "Original symbol; ICO converted losslessly to PNG where necessary."
+  },
+  "cheongju": {
+    "file": "cheongju.png",
+    "source": "https://www.cheongjubank.com/img/common/favicon_32.png",
+    "provider": "Institution/group official site",
+    "note": "Original symbol; ICO converted losslessly to PNG where necessary."
+  },
+  "jtchinae": {
+    "file": "jtchinae.svg",
+    "source": "https://jtchinae.ibs.fsb.or.kr/img/logo67/068.png",
+    "provider": "Institution official site",
+    "note": "Original bitmap embedded in an SVG viewBox showing only the symbol; not vector-traced artwork."
+  },
+  "osb": {
+    "file": "osb.svg",
+    "source": "https://osb.co.kr/home/html/img/common/img_logo.gif",
+    "provider": "Institution official site",
+    "note": "Original bitmap embedded in an SVG viewBox showing only the symbol; not vector-traced artwork."
+  }
+}
