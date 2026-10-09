@@ -186,6 +186,12 @@ export function Profile() {
         <SetRow label="공지사항" onClick={() => nav('/notices')} />
       </section>
 
+      <section className="aq-set-card" aria-labelledby="setLegal">
+        <h2 id="setLegal">약관</h2>
+        <SetRow label="서비스 이용약관" onClick={() => nav('/terms')} />
+        <SetRow label="정산금 지급 및 계좌 확인 약관" onClick={() => nav('/terms/settlement')} />
+      </section>
+
       <section className="aq-set-card">
         <SetRow label="로그아웃" danger onClick={() => void doLogout()} />
       </section>

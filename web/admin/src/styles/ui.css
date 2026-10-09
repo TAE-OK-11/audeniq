@@ -753,3 +753,16 @@ summary::-webkit-details-marker{display:none}
   .aq-paper-grid td[data-label]::before{content:attr(data-label);flex:0 0 40px;color:var(--aq-text-4);font-weight:600}
   .aq-paper-grid td[data-label] small{display:inline;margin:0 6px 0 0}
 }
+
+/* ---------- 약관 ---------- */
+#portalNav .aq-nav-legal{display:flex;gap:4px;padding:0 6px 4px}
+#portalNav .aq-nav-legal button{display:inline-flex;width:auto!important;min-height:0!important;padding:4px 6px!important;border:0;border-radius:var(--aq-r-xs)!important;background:none!important;color:var(--aq-text-4)!important;font-size:var(--aq-fs-xs)!important;font-weight:var(--aq-fw-medium)!important;animation:none!important}
+#portalNav .aq-nav-legal button:hover{color:var(--aq-text-2)!important}
+.aq-terms-tabs{display:flex;gap:6px;margin:0 0 18px}
+.aq-terms-tabs a{display:inline-flex;align-items:center;height:var(--aq-h-sm);padding:0 14px;border-radius:999px;background:#fff;color:var(--aq-text-3);font-size:var(--aq-fs-md);font-weight:var(--aq-fw-bold);text-decoration:none}
+.aq-terms-tabs a.is-on{background:var(--aq-primary);color:#fff}
+/* 지금 하던 화면 위에 여는 약관 창 — 읽기 편한 폭·높이 */
+#modal.aq-legal-mode .modal-inner{width:min(720px,calc(100vw - 32px));max-height:min(86dvh,900px)}
+.aq-legal-sheet{padding:18px 18px 24px;max-height:calc(min(86dvh,900px) - 96px);overflow-y:auto;overscroll-behavior:contain}
+@media (max-width:600px){#modal.aq-legal-mode .modal-inner{width:100%;max-height:92dvh}.aq-legal-sheet{max-height:calc(92dvh - 90px);padding:16px 14px 22px}}
+#modal.aq-legal-mode{z-index:160!important}

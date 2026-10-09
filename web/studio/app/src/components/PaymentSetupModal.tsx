@@ -1,5 +1,6 @@
 // 수익 정산 정보 등록 마법사 — 라이브 openPaymentSetup/renderPaymentSetup 대응
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { LegalModal } from './LegalDoc';
 import { Modal } from './Modal';
 import { BankLogo } from './BankLogo';
 import { useToast } from './Toast';
@@ -46,11 +47,12 @@ const PAY_TYPES: { value: PaymentInfo['type']; label: string; desc: string }[] =
   { value: 'corporate', label: '법인', desc: '법인 명의 계좌로 받아요.' },
 ];
 
-const AGREE_ITEMS = [
-  '정산금 지급 및 계좌 확인 약관',
-  '개인정보 수집·이용 동의',
-  '금융정보 처리 동의',
-  '수령인 정보 정확성 확인',
+// 항목마다 '정산금 지급 및 계좌 확인 약관'의 해당 조를 열어 보여 준다 (anchor: 조 제목에 든 말)
+const AGREE_ITEMS: { label: string; anchor?: string }[] = [
+  { label: '정산금 지급 및 계좌 확인 약관' },
+  { label: '개인정보 수집·이용 동의', anchor: '개인정보의 보호' },
+  { label: '금융정보 처리 동의', anchor: '금융계좌 확인' },
+  { label: '수령인 정보 정확성 확인', anchor: '계좌 등록' },
 ];
 
 interface Draft {
@@ -65,6 +67,7 @@ interface Draft {
 export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
   const toast = useToast();
   const [step, setStep] = useState(0);
+  const [legal, setLegal] = useState<{ anchor?: string } | null>(null);
   const [draft, setDraft] = useState<Draft>(() => {
     const profileName = getProfileSnapshot().name || '';
     return { recipient: profileName, type: 'personal', bank: '', last4: '', account: '' };
@@ -346,7 +349,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
                 <span><strong>필수 약관 전체 동의</strong><small>아래 항목을 모두 확인했어요.</small></span>
               </label>
               <div className="aq-agree-list">
-                {AGREE_ITEMS.map((label, i) => (
+                {AGREE_ITEMS.map(({ label, anchor }, i) => (
                   <label key={label}>
                     <input
                       type="checkbox" data-aq-agree checked={agrees[i]}
@@ -357,7 +360,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
                       }}
                     />
                     <span>{label}</span>
-                    <button type="button" aria-label="약관 보기"><Glyph name="chevron-right" size={18} /></button>
+                    <button type="button" aria-label={`${label} 보기`} onClick={e => { e.preventDefault(); setLegal({ anchor }); }}><Glyph name="chevron-right" size={18} /></button>
                   </label>
                 ))}
               </div>
@@ -428,6 +431,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
           </div>
         )}
       </div>
+      {legal && <LegalModal doc="settlement" anchor={legal.anchor} onClose={() => setLegal(null)} />}
     </Modal>
   );
 }
