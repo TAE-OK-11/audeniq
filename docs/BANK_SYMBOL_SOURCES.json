@@ -172,7 +172,7 @@
     "file": "hyundai.svg",
     "source": "https://github.com/flxh4894/korea_bank_icons/blob/main/assets/icons/263.svg",
     "provider": "korea_bank_icons 1.0.0 (MIT)",
-    "note": "Presentation disc removed; original artwork and colors retained."
+    "note": "Positive variant for light cards: presentation disc removed, the white main stroke filled with the disc's brand blue #004A8D, gold accents retained; viewBox cropped to the symbol."
   },
   "daishin": {
     "file": "daishin.svg",
