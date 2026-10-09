@@ -178,6 +178,8 @@ img{max-width:100%}
 .aq-form-actions .ui-btn{flex:1}
 .aq-form-actions .ui-btn.is-soft{flex:0 0 auto}
 .aq-ok-text{color:var(--aq-e-green)!important;font-weight:700}
+.aq-rights-status{display:flex;align-items:center;gap:7px;margin:18px 0 0;padding-top:14px;border-top:1px solid var(--aq-line,#eef0f4);line-height:1.4}
+.aq-rights-status>.aq-check-badge{flex:0 0 auto;vertical-align:0}
 
 /* 비밀번호 */
 .aq-password{position:relative}
@@ -349,7 +351,66 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
   .aq-pay-success-sub{display:none}
   .aq-pay-success-note{font-size:11px}
 }
+/* 등록 완료 화면 — 제목 하나로 완료를 알리고, 카드 맨 위에 은행·계좌 뒷자리를 크게, 나머지는 가볍게 */
+.aq-pay-flow .aq-pay-success{width:min(400px,100%);margin:0 auto;justify-self:center;padding-top:clamp(12px,7vh,72px)}
+.aq-pay-flow .aq-success-mark{width:clamp(56px,9vh,76px);height:clamp(56px,9vh,76px);margin-bottom:clamp(12px,2.6vh,24px)}
+.aq-pay-flow .aq-pay-success h1{font-size:clamp(24px,min(7.4vw,4.4vh),32px)!important;line-height:1.32!important;letter-spacing:-.04em}
+.aq-pay-flow .aq-pay-success-sub{margin-top:clamp(8px,1.4vh,12px);font-size:15px;color:var(--aq-text-3)}
+.aq-pay-flow .aq-pay-receipt{width:100%;margin:clamp(20px,4vh,36px) 0 clamp(12px,2vh,16px);border-radius:24px;background:var(--aq-gray-50);overflow:visible}
+.aq-pay-flow .aq-pay-receipt-head{gap:14px;padding:clamp(16px,2.6vh,22px) 22px clamp(14px,2.2vh,18px);border-bottom:1px solid var(--aq-gray-150)}
+.aq-pay-flow .aq-pay-receipt-head>.aq-bank-logo{width:48px;height:48px;flex:0 0 48px;border-radius:50%!important;background:#fff!important;box-shadow:0 0 0 1px rgba(17,24,39,.05)}
+.aq-pay-flow .aq-pay-receipt-head>.aq-bank-logo.is-symbol>img{width:30px;height:30px}
+.aq-pay-flow .aq-pay-receipt-head small{margin:0 0 2px;font-size:13px;font-weight:600;color:var(--aq-text-3)}
+.aq-pay-flow .aq-pay-receipt-head strong{font-size:20px;font-weight:800;letter-spacing:.02em;color:var(--aq-text);font-variant-numeric:tabular-nums}
+.aq-pay-flow .aq-pay-receipt dl{padding:clamp(8px,1.6vh,12px) 22px clamp(10px,1.8vh,14px)}
+.aq-pay-flow .aq-pay-receipt dl>div{padding:clamp(6px,1.2vh,9px) 0;border-bottom:0}
+.aq-pay-flow .aq-pay-receipt dt{font-size:14px}
+.aq-pay-flow .aq-pay-receipt dd{font-size:14px;font-weight:600;color:var(--aq-text-2)}
+.aq-pay-flow .aq-pay-success-note{width:100%;font-size:13px;color:var(--aq-text-4);text-align:center}
 @media(prefers-reduced-motion:reduce){.aq-success-ring,.aq-success-tick,.aq-pay-receipt,.aq-success-mark{animation:none!important;stroke-dashoffset:0!important}}
+
+/* ── 수익 받기 흐름 움직임: 상태가 바뀌는 곳마다 짧게 반응해 지금 무슨 일이 일어났는지 보이게 ── */
+@keyframes aq-check-pop{0%{transform:scale(.7)}60%{transform:scale(1.15)}100%{transform:scale(1)}}
+/* 진행 막대는 단계가 바뀔 때 부드럽게 차오른다 */
+.aq-pay-flow .aq-pay-progress span{transition:width .5s var(--aq-e-ease)}
+/* 입력 칸·검색·버튼의 상태 변화(포커스, 사용 가능해짐)도 끊기지 않게 */
+.aq-pay-flow .aq-pay-field input,.aq-pay-flow .aq-bank-search input{transition:background-color .2s ease,box-shadow .2s ease}
+.aq-pay-flow .aq-pay-actions .ui-btn{transition:background-color .25s ease,color .25s ease,opacity .25s ease,transform .12s ease}
+.aq-pay-flow .aq-pay-actions .ui-btn:not(:disabled):active{transform:scale(.98)}
+.aq-pay-flow .aq-pay-type span{transition:background-color .2s ease,box-shadow .2s ease,transform .12s ease}
+.aq-pay-flow .aq-pay-type:active span{transform:scale(.985)}
+.aq-pay-flow .aq-bank .aq-bank-logo{transition:transform .2s var(--aq-e-ease)}
+.aq-pay-flow .aq-bank:hover .aq-bank-logo{transform:translateY(-2px)}
+.aq-pay-flow .aq-bank.selected .aq-bank-logo{transform:scale(1.08)}
+@media(prefers-reduced-motion:no-preference){
+  /* 단계 내용: 제목 → 본문 순으로 살짝 떠오른다 */
+  .aq-pay-head>*{animation:aq-fade-up .42s var(--aq-e-ease) both}
+  .aq-pay-head>:nth-child(2){animation-delay:.04s}
+  .aq-pay-head>:nth-child(3){animation-delay:.08s}
+  .aq-pay-body>*{animation:aq-fade-up .45s var(--aq-e-ease) .1s both}
+  .aq-pay-body>:nth-child(2){animation-delay:.14s}
+  .aq-pay-body>:nth-child(3){animation-delay:.18s}
+  .aq-pay-body>:nth-child(n+4){animation-delay:.22s}
+  /* 고정 탭은 떠오르면 겹쳐 보이고, 기관 목록은 카드마다 따로 움직이므로 제외 */
+  .aq-pay-body>.aq-bank-sticky,.aq-pay-body>#aqBankGroups{animation:none}
+  /* 기관 카드: 순서대로 떠오른다(탭을 바꿀 때도) */
+  .aq-pay-flow .aq-bank-grid>.aq-bank{animation:aq-fade-up .36s var(--aq-e-ease) both;animation-delay:calc(.12s + var(--i,0) * 16ms)}
+  /* 동의 체크·전체 동의 */
+  .aq-agree-all input:checked,.aq-agree-list input:checked{animation:aq-check-pop .28s var(--aq-e-spring)}
+  /* 오류 창은 살짝 흔들려 다시 확인할 곳을 알린다 */
+  .aq-pay-error-dialog{animation:aq-fade-up .22s var(--aq-e-ease) both,aq-shake .38s ease .18s}
+  /* 등록 완료: 체크 → 제목 → 설명 → 영수증(줄마다) → 안내 → 확인 버튼 */
+  .aq-pay-success>h1{animation:aq-fade-up .45s var(--aq-e-ease) .35s both}
+  .aq-pay-success>.aq-pay-success-sub{animation:aq-fade-up .45s var(--aq-e-ease) .42s both}
+  .aq-pay-flow .aq-pay-receipt{animation:aq-fade-up .5s var(--aq-e-ease) .5s both}
+  .aq-pay-receipt dl>div{animation:aq-fade-in .4s ease both}
+  .aq-pay-receipt dl>div:nth-child(1){animation-delay:.68s}
+  .aq-pay-receipt dl>div:nth-child(2){animation-delay:.74s}
+  .aq-pay-receipt dl>div:nth-child(3){animation-delay:.8s}
+  .aq-pay-success>.aq-pay-success-note{animation:aq-fade-in .4s ease .85s both}
+  .aq-pay-actions.is-final .ui-btn{animation:aq-fade-up .45s var(--aq-e-ease) .9s both}
+}
+@media(prefers-reduced-motion:reduce){.aq-pay-flow .aq-bank .aq-bank-logo,.aq-pay-flow .aq-pay-type span{transform:none!important}}
 
 /* 트랙 카드 안은 카드 배경과 구분되도록 흰 칸 */
 .track-editor,.aq-option-detail,.cover-track-item{--aq-field-bg:#fff;--aq-field-hover-bg:var(--aq-field-hover-on-soft);--aq-field-focus-bg:var(--aq-field)}
@@ -602,7 +663,62 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 /* ── 데스크톱: 수익 받기 흐름 폭 (아티스트 정보는 설정 목록 한 줄 흐름) ─── */
 @media(min-width:1024px){
   .aq-pay-top{width:min(816px,100%);margin:0 auto;padding-top:22px;box-sizing:border-box}
-  .aq-pay-main>h1{font-size:44px}
+  .aq-pay-head>h1{font-size:44px}
+}
+/* 계좌 입력 칸 위 간격 — 공용 .ui-field 여백(ui.css)이 나중에 읽혀 덮어쓰던 것을 되살린다 */
+.ui-field.aq-pay-field{margin:30px 0 0}
+.ui-field.aq-pay-field+.ui-field.aq-pay-field{margin-top:22px}
+
+/* ── 수익 받기 흐름 반응형: 구간마다 값을 바꾸지 않고 화면 너비·높이에 맞춰 연속으로 늘고 준다 ──
+   세로 휴대폰(390×844)·가로 휴대폰(844×390)·노트북(1024×700)·데스크톱(1440×900)에서 모두 목록과 입력 칸이 보이게 */
+.aq-pay-flow .aq-pay-top{min-height:clamp(52px,9vh,72px);padding-top:max(clamp(6px,1.4vh,22px),env(safe-area-inset-top));padding-bottom:clamp(4px,1vh,8px)}
+.aq-pay-flow .aq-pay-top>button{width:clamp(38px,6vh,44px);height:clamp(38px,6vh,44px)}
+.aq-pay-flow .aq-pay-main{width:min(720px,calc(100% - clamp(40px,6vw,48px) - env(safe-area-inset-left) - env(safe-area-inset-right)));padding:clamp(14px,5vh,48px) 0 clamp(20px,5vh,42px);container-type:inline-size}
+.aq-pay-flow .aq-pay-main:has(.aq-bank-sticky){padding-top:0}
+.aq-pay-flow .aq-pay-main:has(.aq-bank-sticky) .aq-pay-head>.eyebrow:first-child{margin-top:clamp(14px,5vh,48px)}
+.aq-pay-flow .aq-pay-head>.eyebrow{margin-bottom:clamp(8px,2vh,17px)}
+.aq-pay-flow .aq-pay-head>h1{font-size:clamp(24px,min(8.7vw,6.5vh),48px)}
+.aq-pay-flow .aq-pay-lead{margin-top:clamp(8px,2vh,17px);font-size:clamp(13px,1.8vh,16px)}
+.aq-pay-flow .aq-bank-sticky{margin-top:clamp(14px,3vh,24px);padding:clamp(4px,1vh,8px) 0 clamp(6px,1.4vh,12px)}
+.aq-pay-flow .aq-bank-tabs button{min-height:clamp(38px,5.5vh,45px)}
+.aq-pay-flow .aq-bank-search{padding:clamp(6px,1.4vh,12px) 0 0}
+.aq-pay-flow .aq-bank-search input{min-height:clamp(44px,6vh,49px)}
+/* 본문 폭이 넉넉하면(가로 화면·PC) 탭과 검색을 한 줄로 — 고정 영역이 목록을 덜 가린다 */
+@container (min-width:600px){
+  .aq-bank-sticky{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:center}
+  .aq-pay-flow .aq-bank-search{padding:0}
+  .aq-pay-flow .aq-bank-search input{min-height:clamp(48px,6.6vh,55px)}
+}
+.aq-pay-flow .aq-bank-group{margin:clamp(14px,3.5vh,32px) 0 clamp(24px,5vh,46px)}
+.aq-pay-flow .aq-bank-group>h2{font-size:clamp(15px,2.2vh,18px);margin-bottom:clamp(10px,1.8vh,15px)}
+/* 칸 수는 폭에 맞춰 자동(휴대폰 3칸 → 넓을수록 늘어남), 칸 높이는 화면 높이에 맞춰 */
+.aq-pay-flow .aq-bank-grid{grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:10px}
+.aq-pay-flow .aq-bank{min-height:clamp(84px,13vh,112px);padding:clamp(12px,2vh,18px) 4px clamp(10px,1.8vh,16px);gap:clamp(8px,1.4vh,12px)}
+.aq-pay-flow .aq-bank>strong{font-size:clamp(12px,3.4vw,14px)}
+.aq-pay-flow .aq-selected-bank,.aq-pay-flow .aq-pay-review{margin-top:clamp(14px,3.5vh,28px);padding:clamp(12px,2vh,17px) clamp(14px,2vw,18px)}
+.aq-pay-flow .ui-field.aq-pay-field{margin-top:clamp(16px,3.6vh,30px)}
+.aq-pay-flow .ui-field.aq-pay-field+.ui-field.aq-pay-field{margin-top:clamp(12px,2.6vh,22px)}
+.aq-pay-flow .ui-field.aq-pay-field{gap:0}#modal .aq-pay-flow .aq-pay-field label{margin-bottom:clamp(6px,2vh,17px)}
+.aq-pay-flow .aq-pay-privacy{margin-top:clamp(16px,3.4vh,27px)}
+.aq-pay-flow .aq-pay-actions{padding-top:clamp(8px,1.6vh,13px);padding-bottom:max(clamp(10px,2vh,16px),env(safe-area-inset-bottom))}
+.aq-pay-flow .aq-pay-actions .ui-btn{--btn-h:clamp(48px,7vh,var(--aq-h-lg))}
+@media(max-height:560px){.aq-pay-flow .aq-pay-success{min-height:0}}
+
+/* ── PC(넓은 창): 왼쪽에 단계 제목, 오른쪽에 고르기·입력. 하단 버튼도 오른쪽 칸에 맞춘다 ── */
+@media(min-width:1024px){
+  .aq-pay-flow{--pay-w:min(1180px,calc(100% - 96px));--pay-cols:minmax(280px,400px) minmax(0,1fr);--pay-gap:clamp(48px,6vw,104px)}
+  .aq-pay-flow .aq-pay-top{width:var(--pay-w);padding-left:0;padding-right:0}
+  .aq-pay-flow .aq-pay-main{width:var(--pay-w);display:grid;grid-template-columns:var(--pay-cols);column-gap:var(--pay-gap);align-items:start}
+  .aq-pay-head{position:sticky;top:0}
+  .aq-pay-flow .aq-pay-head>h1{font-size:clamp(32px,4.6vh,44px)}
+  .aq-pay-flow .aq-pay-body>:first-child{margin-top:0}
+  /* 금융기관 단계는 고정 탭 때문에 스크롤 영역 위 여백이 0 — 오른쪽 칸 위 여백을 제목과 맞춘다 */
+  .aq-pay-flow .aq-pay-main:has(.aq-bank-sticky) .aq-pay-body{padding-top:clamp(14px,5vh,48px)}
+  .aq-pay-flow .aq-pay-main:has(.aq-bank-sticky) .aq-bank-sticky{margin-top:0}
+  .aq-pay-flow .aq-pay-success{grid-column:1/-1}
+  .aq-pay-flow .aq-pay-actions{width:var(--pay-w);margin:0 auto;padding-left:0;padding-right:0;display:grid;grid-template-columns:var(--pay-cols);column-gap:var(--pay-gap);box-sizing:border-box}
+  .aq-pay-flow .aq-pay-actions .ui-btn{grid-column:2;width:100%;margin:0}
+  .aq-pay-flow .aq-pay-actions.is-final .ui-btn{grid-column:1/-1;justify-self:center;width:min(400px,100%)}
 }
 
 /* ── 신청서: 아티스트 프로필 선택 · 연주곡 · 서명 ───────────────────── */
