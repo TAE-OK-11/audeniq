@@ -178,6 +178,8 @@ img{max-width:100%}
 .aq-form-actions .ui-btn{flex:1}
 .aq-form-actions .ui-btn.is-soft{flex:0 0 auto}
 .aq-ok-text{color:var(--aq-e-green)!important;font-weight:700}
+.aq-rights-status{display:flex;align-items:center;gap:7px;margin:18px 0 0;padding-top:14px;border-top:1px solid var(--aq-line,#eef0f4);line-height:1.4}
+.aq-rights-status>.aq-check-badge{flex:0 0 auto;vertical-align:0}
 
 /* 비밀번호 */
 .aq-password{position:relative}
