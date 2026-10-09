@@ -176,7 +176,7 @@ export function Dashboard() {
                       <span className="ui-row-meta">{r.artist || '아티스트 미입력'} · {r.track_count}곡 · {r.release_date || '발매일 미정'}</span>
                     </div>
                     <div className="ui-row-end">
-                      <Badge tone={statusTone(r.status)}>{STATUS_LABEL[r.status] || r.status}</Badge>
+                      <Badge tone={statusTone(r.status)} className={`aq-status is-${r.status}`}>{STATUS_LABEL[r.status] || r.status}</Badge>
                     </div>
                   </Link>
                 ))}

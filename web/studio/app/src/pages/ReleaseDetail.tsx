@@ -213,7 +213,7 @@ export function ReleaseDetail() {
         <div className="aq-detail-info">
           <div className="aq-detail-top">
             <span className="eyebrow">{kindLabel(d?.type) || '발매'}</span>
-            <Badge tone={statusTone(rel.status)}>{STATUS_LABEL[rel.status] || rel.status}</Badge>
+            <Badge tone={statusTone(rel.status)} className={`aq-status is-${rel.status}`}>{STATUS_LABEL[rel.status] || rel.status}</Badge>
           </div>
           <h1>{rel.title || '제목 없는 발매'}</h1>
           <p className="aq-detail-artist">{rel.artist || '아티스트 미입력'}</p>

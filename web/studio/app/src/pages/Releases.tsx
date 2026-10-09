@@ -183,7 +183,7 @@ export function Releases() {
                     <span className="ui-row-meta">{r.release_date ?? '발매일 미정'}</span>
                   </div>
                   <div className="aq-release-end">
-                    <Badge tone={statusTone(r.status)}>{STATUS_LABEL[r.status] || r.status}</Badge>
+                    <Badge tone={statusTone(r.status)} className={`aq-status is-${r.status}`}>{STATUS_LABEL[r.status] || r.status}</Badge>
                   </div>
                   {r.status === 'needs' && (
                     <div className="aq-release-fix">
