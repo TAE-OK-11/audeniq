@@ -1517,11 +1517,7 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-bundle.is-compact{padding:0;background:transparent}
 .aq-bundle-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin:0 0 12px}
 .aq-bundle-head strong{display:block;font-size:16px;font-weight:820;letter-spacing:-.03em;color:var(--aq-e-ink)}
-.aq-bundle-head span{display:block;margin-top:2px;font-size:12.5px;color:var(--aq-gray-500)}
-.aq-bundle-head em{flex:none;font-style:normal;font-size:12px;font-weight:780;padding:5px 10px;border-radius:var(--aq-r-sm);background:var(--aq-gray-150);color:var(--aq-gray-600)}
-.aq-bundle.is-to-sign .aq-bundle-head em{background:var(--aq-e-blue);color:#fff}
-.aq-bundle.is-needs .aq-bundle-head em{background:var(--aq-e-amber-soft);color:var(--aq-e-amber)}
-.aq-bundle.is-signed .aq-bundle-head em{background:var(--aq-e-green-soft);color:var(--aq-e-green)}
+.aq-bundle-head .min-0>span{display:block;margin-top:2px;font-size:12.5px;color:var(--aq-gray-500)}
 .aq-bundle-docs{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .aq-bundle-docs li{display:grid;grid-template-columns:32px minmax(0,1fr) auto;align-items:center;gap:4px 12px;padding:13px 14px;border-radius:var(--aq-r-lg);background:#fff}
 .aq-bundle-docs strong{display:block;font-size:14px;font-weight:780;color:var(--aq-e-ink)}
@@ -1608,3 +1604,4 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 }
 .aq-empty-val{color:var(--aq-text-4);font-weight:600}
 @media(max-width:760px){.aq-doc-card>.ui-icon{align-self:start}}
+.aq-bundle-head>.ui-badge{flex:none}
