@@ -1066,10 +1066,8 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 
 /* ---------- 발매 상세: 목록 링크는 위, 할 일 버튼은 카드 아래 한 줄 ---------- */
 #view-release .spaced-actions{margin:4px 0 14px!important}
-.aq-detail-actions{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 0}
+.aq-detail-actions{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 20px}
 .aq-detail-actions:empty{display:none}
-.aq-detail-hero .aq-detail-actions .ui-btn.is-soft{--btn-bg:#fff;--btn-bg-hover:var(--aq-primary-soft)}
-.aq-detail-actions .ui-btn{--btn-h:var(--aq-h-sm);--btn-r:var(--aq-r-ctl-sm);--btn-px:14px;--btn-fs:13px}
 @media(max-width:560px){.aq-detail-actions .ui-btn{flex:1 1 0}}
 
 /* ---------- 펼쳐질 때 부드럽게 ---------- */

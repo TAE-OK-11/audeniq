@@ -225,33 +225,34 @@ export function ReleaseDetail() {
               {rel.release_date && <span>{rel.release_date}</span>}
             </div>
           )}
-          <div className="row-actions aq-detail-actions">
-          {(d?.application || !isDraft) && (
-            <button type="button" className="ui-btn is-soft" onClick={() => nav(`/releases/${encodeURIComponent(rel.id)}/application`)}>
-              신청서 보기
-            </button>
-          )}
-          {/* 보완하기는 아래 보완 카드 안에 — 위 버튼 줄은 모두 같은 옅은 버튼으로 */}
-          {rel.status !== 'closed' && !rejected && !needsFix && (
-            <button
-              type="button" className={`ui-btn ${isDraft ? 'is-primary' : 'is-soft'}`}
-              onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}
-            >
-              {editLabel}
-            </button>
-          )}
-          {canWithdraw && (
-            <button type="button" className="ui-btn is-danger aq-withdraw-btn" onClick={handleWithdraw} disabled={withdrawing}>
-              {withdrawing ? '취소하는 중' : '신청 취소'}
-            </button>
-          )}
-          {isDraft && (
-            <button type="button" className="ui-btn is-danger" onClick={handleDelete} disabled={deleting}>
-              {deleting ? '삭제 중' : '삭제'}
-            </button>
-          )}
         </div>
-        </div>
+      </div>
+
+      <div className="row-actions aq-detail-actions">
+        {(d?.application || !isDraft) && (
+          <button type="button" className="ui-btn is-soft" onClick={() => nav(`/releases/${encodeURIComponent(rel.id)}/application`)}>
+            신청서 보기
+          </button>
+        )}
+        {/* 보완하기는 아래 보완 카드 안에 */}
+        {rel.status !== 'closed' && !rejected && !needsFix && (
+          <button
+            type="button" className={`ui-btn ${isDraft ? 'is-primary' : 'is-soft'}`}
+            onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}
+          >
+            {editLabel}
+          </button>
+        )}
+        {canWithdraw && (
+          <button type="button" className="ui-btn is-danger aq-withdraw-btn" onClick={handleWithdraw} disabled={withdrawing}>
+            {withdrawing ? '취소하는 중' : '신청 취소'}
+          </button>
+        )}
+        {isDraft && (
+          <button type="button" className="ui-btn is-danger" onClick={handleDelete} disabled={deleting}>
+            {deleting ? '삭제 중' : '삭제'}
+          </button>
+        )}
       </div>
 
       {!settledLive && (

@@ -547,5 +547,5 @@ summary::-webkit-details-marker{display:none}
 /* release detail: status pill keeps the standard Badge size (live.css enlarges every span in .aq-detail-top) */
 .aq-detail-top>.ui-badge{font-size:var(--aq-fs-xs);letter-spacing:normal}
 /* release detail: tabs never touch the hero; back link sits closer to the header on phones */
-#view-release .aq-detail-hero{margin-bottom:16px}
-@media (max-width:560px){#view-release .spaced-actions{margin:-12px 0 10px!important}}
+#view-release .aq-detail-hero{margin-bottom:12px;align-items:start}
+#view-release .spaced-actions{margin:-18px 0 8px!important}
