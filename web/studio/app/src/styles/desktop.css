@@ -2,6 +2,21 @@
    PC(넓은 화면) 배치 — 휴대폰용 한 줄 목록을 그대로 늘리지 않고, 넓은 폭에 맞게 칸을 나눈다.
    1024px 이상에서만 적용되므로 휴대폰·태블릿 세로 화면은 기존 배치 그대로다. (상단 메뉴바는 공통이라 제외)
    ========================================================================== */
+/* 신청서 아래 버튼 줄 — 휴대폰과 같은 비율로 입력 영역 폭을 꽉 채운다
+   [이전 1][다음으로 2], 버튼 3개면 [나가기 1][수정 완료 1][다음으로 1.5] */
+@media (min-width: 760px) {
+  #view-new .step-actions {
+    display: grid !important; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 10px !important;
+  }
+  #view-new .step-actions:has(#wizardSaveNow) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.5fr); }
+  #view-new .step-actions .ui-btn,
+  #view-new .step-actions #wizardBack,
+  #view-new .step-actions #wizardSaveNow,
+  #view-new .step-actions #wizardNext {
+    width: 100% !important; min-width: 0 !important; margin: 0 !important; white-space: nowrap;
+  }
+}
+
 /* 태블릿: 3칸 요약 숫자는 2칸+1칸으로 쪼개지 않고 한 줄에 */
 @media (min-width: 600px) {
   .ui-stats.is-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -138,4 +153,57 @@
 
   /* 정산·지급: 내역 탭은 오른쪽 칸 폭에 맞춰 */
   #view-settlement > .ui-seg.aq-seg-tabs { max-width: none; width: 100%; }
+
+  /* ── 배급 신청(새 발매): 왼쪽 단계 카드 · 오른쪽 입력 — 다른 화면과 같은 옅은 파랑 면 카드 ── */
+  .aq-wiz-layout { grid-template-columns: 280px minmax(0, 1fr) !important; gap: 48px !important; }
+  .aq-wiz-rail {
+    top: 92px !important; padding: 12px !important; border-radius: var(--aq-r-2xl);
+    background: var(--aq-surface);
+  }
+  /* 작성 중인 발매 — 내 음악·발매 상세와 같은 커버 카드 */
+  .aq-wiz-rail .aq-wiz-summary { margin: 0 0 6px; padding: 12px; border-radius: var(--aq-r-xl); background: #fff; gap: 14px; }
+  .aq-wiz-rail .aq-wiz-summary img, .aq-wiz-rail .aq-wiz-summary-cover { width: 56px; height: 56px; border-radius: 14px; }
+  .aq-wiz-rail .aq-wiz-summary strong { font-size: 15px; }
+  /* 진행 — 페이지 위 분류 글자와 같은 파란 eyebrow + 숫자 + 얇은 막대 */
+  .aq-wiz-rail-progress {
+    display: grid; grid-template-columns: 1fr auto; align-items: center; row-gap: 8px; padding: 14px 10px 12px;
+  }
+  .aq-wiz-rail-progress span { font-size: 12px; font-weight: 800; letter-spacing: .02em; color: var(--portal-blue); }
+  .aq-wiz-rail-progress b { font-size: 12px; font-weight: 800; color: var(--aq-text-3); font-variant-numeric: tabular-nums; }
+  .aq-wiz-rail-progress i {
+    grid-column: 1 / -1; height: 6px; border-radius: 999px; background: #fff; overflow: hidden; position: relative;
+  }
+  .aq-wiz-rail-progress i::after {
+    content: ''; position: absolute; inset: 0 auto 0 0; width: var(--p, 0%); border-radius: inherit;
+    background: var(--aq-blue-500); transition: width .5s var(--aq-e-ease);
+  }
+  /* 단계 목록 — 번호는 둥근 네모(버튼 안 동그라미 금지), 지금 단계는 진한 면 */
+  .aq-wiz-rail .aq-wiz-steps { gap: 2px; }
+  .aq-wiz-rail .aq-wiz-steps button { padding: 11px 10px; border-radius: var(--aq-r-lg); }
+  .aq-wiz-rail .aq-wiz-step-no { width: 28px; height: 28px; border-radius: 9px; background: #fff; }
+  .aq-wiz-rail .aq-wiz-steps li.is-done button:hover { background: rgba(255, 255, 255, .8); }
+  .aq-wiz-rail .aq-wiz-steps li.is-current button { background: var(--aq-blue-100); }
+  .aq-wiz-rail .aq-wiz-steps li.is-done .aq-wiz-step-no { background: var(--aq-blue-150); }
+  .aq-wiz-rail .aq-wiz-steps li.is-current .aq-wiz-step-no { background: var(--aq-blue-500); color: #fff; }
+  .aq-wiz-rail .aq-wiz-step-fix { padding: 4px 8px; border-radius: 999px; font-size: 11px; }
+  .aq-wiz-rail .aq-wiz-rail-note { margin: 12px 10px 4px; }
+  /* 단계 제목 — 분류 글자는 페이지 위 eyebrow와 같은 파란 글자 */
+  #view-new .wizard-header .aq-step-kicker { color: var(--portal-blue); font-weight: 800; }
+  #view-new .wizard-header { margin-bottom: 28px; }
+  /* 아래 버튼 줄 — 오른쪽 입력 영역 폭에 맞춘다(왼쪽 카드 280 + 간격 48) */
+  #view-new .step-actions {
+    padding-left: max(360px, calc(50vw - 232px)) !important;
+    box-shadow: 0 -1px 0 var(--aq-gray-100);
+  }
+
+  /* 5단계 해당 항목 — 2칸(선택하면 열리는 확인 사항은 한 줄 전체) */
+  #view-new .aq-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  #view-new .aq-options > .aq-option { margin: 0 !important; height: 100%; }
+  #view-new .aq-options > :not(.aq-option) { grid-column: 1 / -1; margin: 0 !important; }
+  /* 6단계 최종 확인 — 항목 카드 2칸, 수정 버튼은 오른쪽 위 */
+  #view-new .step-section > .aq-catalog-cards:has(.aq-review-card) {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: stretch;
+  }
+  #view-new .aq-review-card { margin: 0 !important; padding-right: 76px; }
+  #view-new .aq-review-card .aq-review-edit { position: absolute; top: 14px; right: 14px; margin: 0; }
 }
