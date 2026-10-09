@@ -1330,8 +1330,8 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-stage.is-error{--stage-c:#d92d3b;--stage-ink:var(--aq-red-600);--stage-soft:var(--aq-red-100)}
 .aq-stage-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
 .aq-stage-kicker{display:block;font-size:12px;font-weight:700;color:var(--aq-text-4);letter-spacing:-.01em}
-.aq-stage-now{display:block;margin-top:3px;font-size:18px;font-weight:800;letter-spacing:-.035em;color:var(--stage-ink)}
-.aq-stage-count{flex:none;font-size:22px;font-weight:800;letter-spacing:-.04em;color:var(--aq-e-ink);font-variant-numeric:tabular-nums;line-height:1.1}
+.aq-stage-now{display:block;margin-top:3px;font-size:var(--aq-fs-lg);font-weight:700;letter-spacing:-.035em;color:var(--stage-ink)}
+.aq-stage-count{flex:none;font-size:18px;font-weight:800;letter-spacing:-.04em;color:var(--aq-e-ink);font-variant-numeric:tabular-nums;line-height:1.1}
 .aq-stage-count small{margin-left:3px;font-size:13px;font-weight:700;color:var(--aq-text-disabled);letter-spacing:0}
 .aq-stage-note{margin:6px 0 0;font-size:13px;line-height:1.55;color:var(--aq-text-3)}
 .aq-stage-track{list-style:none;margin:16px 0 0;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
@@ -1349,7 +1349,7 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-stage-label svg{flex:none;color:var(--aq-e-blue)}
 .aq-stage-track li.is-done .aq-stage-label{color:var(--aq-text-2);font-weight:700}
 .aq-stage-track li.is-current .aq-stage-label{color:var(--stage-ink);font-weight:800}
-@media(max-width:560px){.aq-stage{padding:16px 16px 16px;border-radius:var(--aq-r-xl)}.aq-stage-now{font-size:18px}.aq-stage-track{gap:5px}.aq-stage-label{font-size:12px}}
+@media(max-width:560px){.aq-stage{padding:16px 16px 16px;border-radius:var(--aq-r-xl)}.aq-stage-track{gap:5px}.aq-stage-label{font-size:12px}}
 
 /* 담당자 의견: 인용선 대신 AUDENIQ 카드 — 파란 말풍선 표시 + 보낸 곳 */
 .aq-review-note{margin:12px 0 0;padding:14px 16px 15px;border-radius:var(--aq-r-lg);background:#fff}
