@@ -1172,7 +1172,6 @@ export function Upload() {
   const [signed, setSigned] = useState(false);
   const [signer, setSigner] = useState({ name: '', role: SIGNER_ROLES[0], touched: false });
   const [agreed, setAgreed] = useState<Record<string, boolean>>({});
-  const [dir, setDir] = useState<'fwd' | 'back'>('fwd');
   const [form, setForm] = useState<WizardForm>(() => ({ ...EMPTY, artist: profile.name || '', tracks: [newTrack()] }));
   const [dsps, setDsps] = useState<DspAvailability[] | null>(null);
   const [dspError, setDspError] = useState('');
@@ -1608,7 +1607,6 @@ export function Upload() {
   };
 
   const goStep = (to: number) => {
-    setDir(to > step ? 'fwd' : 'back');
     setStep(to);
     setReached(r => Math.max(r, to));
     setError('');
@@ -1880,7 +1878,7 @@ export function Upload() {
         </div>
         <div className="aq-wiz-rail-progress" aria-hidden="true">
           <span>발매 신청</span>
-          <b><em key={step}>{step + 1}</em> / {STEPS.length}</b>
+          <b>{step + 1} / {STEPS.length}</b>
           <i style={{ ['--p' as string]: `${((step + 1) / STEPS.length) * 100}%` }} />
         </div>
         <ol className="aq-wiz-steps" style={{ ['--cur' as string]: step }}>
@@ -1909,7 +1907,7 @@ export function Upload() {
         </p>
       </aside>
       <div className="aq-wiz-main">
-      <div className={`wizard-header aq-step-anim is-${dir}`} key={`h-${step}`}>
+      <div className="wizard-header" key={`h-${step}`}>
         <p className="aq-step-kicker">{s.kicker}</p>
         <h1 id="newTitle" className="aq-step-title">{s.title}</h1>
         <p id="wizardSubtitle">{s.sub}</p>
@@ -1957,7 +1955,7 @@ export function Upload() {
         </section>
       )}
 
-      <div id="wizardBody" className={`aq-step-anim is-${dir}`} key={`b-${step}`}>
+      <div id="wizardBody" key={`b-${step}`}>
         {step === 0 && (
           <section className="step-section">
             <div className="form-grid">
@@ -2387,7 +2385,7 @@ export function Upload() {
           className={`ui-btn is-primary${submitting ? ' is-busy' : ''}`}
           onClick={next} disabled={submitting || loadingEdit} aria-busy={submitting}
         >
-          <i className="aq-btn-label" key={nextLabel}>{nextLabel}</i>
+          {nextLabel}
         </button>
       </div>
       {electronic && <RightsDocumentModal kind={electronic.kind} context={electronic.context} onClose={() => setElectronic(null)} onRequested={() => toast('서명 요청을 만들었어요. 권리자가 서명하면 권리·보완 서류에 문서가 생겨요.', 'success')} />}
