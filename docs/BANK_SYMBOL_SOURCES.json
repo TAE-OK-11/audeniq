@@ -24,10 +24,11 @@
     "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
   },
   "woori": {
-    "file": "woori.svg",
-    "source": "https://static.toss.im/icons/svg/icon-bank-woori.svg",
-    "provider": "Toss financial institution asset",
-    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+    "file": "woori-symbol.svg",
+    "source": "https://logo.vibers.co.kr/_clients/logo-of-woori-bank/logo.svg",
+    "provider": "SemoLogo vector logo resource",
+    "note": "Original standalone Woori vector paths and gradients; wordmark paths outside the symbol removed. No embedded bitmap.",
+    "format": "vector-svg"
   },
   "nh": {
     "file": "nh.svg",
@@ -48,10 +49,11 @@
     "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
   },
   "kdb": {
-    "file": "kdb.svg",
-    "source": "https://static.toss.im/icons/svg/icon-bank-kdb.svg",
-    "provider": "Toss financial institution asset",
-    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+    "file": "kdb-symbol.svg",
+    "source": "https://www.kdb.co.kr/wcmscontents/ci/2025_KDB_CI_SC_Eng_AI.zip",
+    "provider": "KDB official CI resource center",
+    "note": "Standalone Mobius symbol from the official vertical signature AI; original paths and gradient exported as SVG, wordmark excluded. No embedded bitmap.",
+    "format": "vector-svg"
   },
   "citi": {
     "file": "citi.svg",
@@ -66,10 +68,11 @@
     "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
   },
   "mg": {
-    "file": "mg.svg",
-    "source": "https://static.toss.im/icons/svg/icon-bank-mg.svg",
-    "provider": "Toss financial institution asset",
-    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+    "file": "mg-symbol.svg",
+    "source": "https://www.kfcc.co.kr/cc/corporateIdentity.do",
+    "provider": "MG official CI artwork mirrored by Kakaolove",
+    "note": "symbol_mark.ai from the official CI archive mirrored at https://kakaolove.tistory.com/entry/새마을금고-로고-CI이미지-심볼-고화질-원본-이미지-및-뜻과-유래. Official page download unavailable; original native paths and gradients exported to SVG with the symbol-only viewport. No embedded bitmap.",
+    "format": "vector-svg"
   },
   "cu": {
     "file": "cu.svg",
@@ -84,16 +87,18 @@
     "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
   },
   "db": {
-    "file": "db.svg",
-    "source": "https://static.toss.im/icons/svg/icon-bank-db.svg",
-    "provider": "Toss financial institution asset",
-    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+    "file": "db-symbol.svg",
+    "source": "https://dbgroup.co.kr/new/images/sub02/ai.zip",
+    "provider": "DB Group official CI resource center",
+    "note": "Original standalone multicolor symbol from page 3 of db_ci.ai; native paths and gradients exported to SVG. No embedded bitmap. CI page: https://dbgroup.co.kr/new/center/center_2_0.jsp?mainidx=3&subIdx1=2&subIdx2=0.",
+    "format": "vector-svg"
   },
   "yuanta": {
-    "file": "yuanta.svg",
-    "source": "https://static.toss.im/icons/svg/icon-bank-yuanta.svg",
-    "provider": "Toss financial institution asset",
-    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+    "file": "yuanta-symbol.svg",
+    "source": "https://www.yuantakorea.com/data/yuanta_logo_guide.zip",
+    "provider": "Yuanta official CI resource center",
+    "note": "Original symbol from YuantaLogo.pdf; native paths and the original two blues exported as SVG. No embedded bitmap.",
+    "format": "vector-svg"
   },
   "samsung": {
     "file": "samsung.svg",
@@ -222,10 +227,15 @@
     "note": "Cached institutional mark, not a rendered text substitute."
   },
   "toss": {
-    "file": "toss.png",
+    "file": "toss.webp",
     "source": "https://static.toss.im/assets/homepage/brand/Toss_Symbol.zip",
     "provider": "Toss official brand resource center",
-    "note": "Toss_Symbol_Primary.png resized proportionally to 256px for the 36–38px UI; original colors and shape."
+    "note": "Original official 2000px transparent 3D symbol, cropped to its 1610 x 1493px artwork bounds and encoded losslessly as WebP. Pixel equality with the original RGBA crop verified. The official Primary.ai also embeds bitmap artwork; this is not a vector SVG.",
+    "format": "raster-webp-lossless",
+    "dimensions": [
+      1610,
+      1493
+    ]
   },
   "kiwoom": {
     "file": "kiwoom.svg",
@@ -294,16 +304,18 @@
     "note": "Original transparent bitmap embedded in an SVG viewport showing the institutional mark only. No vector tracing; colors and pixels unchanged."
   },
   "heungkuk": {
-    "file": "heungkuk.svg",
-    "source": "https://www.heungkuksec.co.kr/images/common/logo.gif",
-    "provider": "Institution official site",
-    "note": "Unchanged original bitmap embedded in an SVG viewBox showing only the symbol; this is not vector-traced artwork."
+    "file": "heungkuk-symbol.svg",
+    "source": "https://www.heungkuksec.co.kr/jsp/company/hk_CI_all.pdf",
+    "provider": "Heungkuk Securities official CI resource center",
+    "note": "Original shared Heungkuk Finance symbol; native magenta paths exported as SVG. No embedded bitmap.",
+    "format": "vector-svg"
   },
   "yegaram": {
-    "file": "yegaram.svg",
-    "source": "https://www.yegaramsb.co.kr/resources/images/main/img_logo.png",
-    "provider": "Institution official site",
-    "note": "Unchanged original bitmap embedded in an SVG viewBox showing only the symbol; this is not vector-traced artwork."
+    "file": "yegaram-symbol.svg",
+    "source": "https://www.heungkuksec.co.kr/jsp/company/hk_CI_all.pdf",
+    "provider": "Heungkuk Finance Group official CI artwork",
+    "note": "Original shared finance group symbol, including Yegaram Bank, from the official CI guide; native magenta paths exported as SVG. No embedded bitmap.",
+    "format": "vector-svg"
   },
   "dongwon": {
     "file": "dongwon.svg",
