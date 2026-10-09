@@ -84,9 +84,9 @@ img{max-width:100%}
 .aq-stagger>*:nth-child(n+9){animation-delay:.34s}
 
 /* ---------- 카드 호버 ---------- */
-.aq-event-card,.aq-track-card{transition:transform .25s var(--aq-e-ease),box-shadow .25s var(--aq-e-ease),background-color .2s ease!important}
+.aq-track-card{transition:transform .25s var(--aq-e-ease),box-shadow .25s var(--aq-e-ease),background-color .2s ease!important}
 @media(hover:hover) and (pointer:fine){
-  .aq-event-card:hover{transform:translateY(-2px)!important;box-shadow:var(--aq-e-lift)!important}
+
   .aq-release-card:hover .aq-cover,.aq-track-row:hover .aq-cover{transform:rotate(-3deg) scale(1.04)}
   .aq-track-row:hover .chevron{transform:translateX(3px);color:var(--aq-e-blue)}
 }

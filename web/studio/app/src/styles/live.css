@@ -673,7 +673,7 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 }
 
 /* 대시보드 카드 호버 리프트 복원 */
-.dashboard-grid .service-item:hover{background:var(--aq-blue-100)!important;box-shadow:var(--studio-shadow)!important;transform:translateY(-3px)!important}
+.dashboard-grid .service-item:hover{background:var(--aq-blue-100)!important;box-shadow:none!important;transform:none!important}
 @media(prefers-reduced-motion:reduce){
   .dashboard-grid .service-item:hover{transform:none!important;box-shadow:none!important}
 }
@@ -806,7 +806,7 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 
 /* ===== Auth pages (login / signup / find-account) ===== */
 .auth-page{min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 20px;background:linear-gradient(160deg,#eef2ff 0%,#f7f9fd 55%,#f7f9fd 100%)}
-.auth-split{display:flex;width:min(480px,100%);border-radius:var(--aq-r-3xl);overflow:hidden;background:#fff;box-shadow:0 16px 48px rgba(35,55,120,.12)}
+.auth-split{display:flex;width:min(480px,100%);border-radius:var(--aq-r-3xl);overflow:hidden;background:#fff}
 
 .auth-card{flex:1 1 58%;padding:48px 44px}
 .auth-card h1{font-size:26px;letter-spacing:-.04em;margin:0 0 8px}
@@ -841,9 +841,9 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 .aq-event-hero-meta{font-size:13px;opacity:.85;position:relative;z-index:1}
 .aq-event-hero-summary{font-size:14px;line-height:1.7;opacity:.92;position:relative;z-index:1}
 .aq-event-hero-cta{font-size:13px;font-weight:800;margin-top:6px;background:#fff;color:var(--aq-blue-700);border-radius:var(--aq-r-3xl);padding:10px 18px;position:relative;z-index:1}
-.aq-event-card{display:flex;align-items:center;gap:16px;width:100%;text-align:left;background:#fff;border:0;border-radius:var(--aq-r-xl);padding:20px;cursor:pointer;box-shadow:0 2px 10px rgba(20,31,52,.05);transition:transform .15s ease}
+.aq-event-card{cursor:pointer}
 .aq-event-card:active{transform:scale(.99)}
-.aq-event-date{display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;width:58px;height:64px;background:var(--aq-blue-50);border-radius:var(--aq-r-md);color:var(--portal-blue)}
+.aq-event-date{display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;width:58px;height:64px;background:#fff;border-radius:var(--aq-r-md);color:var(--portal-blue)}
 .aq-event-date b{font-size:22px;line-height:1;letter-spacing:-.03em}
 .aq-event-date span{font-size:11px;margin-top:4px;color:var(--aq-gray-600)}
 .aq-event-card .ui-row-title{display:block;margin-bottom:4px}

@@ -155,7 +155,7 @@ export function Dashboard() {
         <section className="ui-card" aria-labelledby="upcomingTitle">
           <div className="ui-section-head">
             <h2 id="upcomingTitle">내 발매</h2>
-            <button type="button" className="ui-btn is-white is-sm" onClick={() => navigate('/releases')}>전체 보기 <Glyph name="arrow-up-right" size={13} /></button>
+            <button type="button" className="ui-btn is-white is-sm" onClick={() => navigate('/releases')}>전체 보기 <Glyph name="chevron-right" size={13} /></button>
           </div>
           <div id="homeReleases" aria-live="polite">
             {loading ? (
@@ -183,7 +183,7 @@ export function Dashboard() {
             ) : (
               <div className="empty-note">
                 아직 등록한 발매가 없어요.<br />새 발매를 만들면 여기에서 확인할 수 있어요.<br />
-                <button className="ui-btn is-white is-sm" type="button" onClick={() => navigate('/upload')}>발매 등록하기 <Glyph name="arrow-up-right" size={13} /></button>
+                <button className="ui-btn is-white is-sm" type="button" onClick={() => navigate('/upload')}>발매 등록하기 <Glyph name="chevron-right" size={13} /></button>
               </div>
             )}
           </div>
@@ -223,7 +223,7 @@ export function Dashboard() {
 
       <div className="ui-section-head">
         <h2>{periodLabel(report.period)} 음악 리포트</h2>
-        <button className="ui-btn is-white is-sm" type="button" onClick={() => navigate('/reports')}>리포트 보기 <Glyph name="arrow-up-right" size={13} /></button>
+        <button className="ui-btn is-white is-sm" type="button" onClick={() => navigate('/reports')}>리포트 보기 <Glyph name="chevron-right" size={13} /></button>
       </div>
       <section className="ui-card aq-report-card" aria-label="이번 달 리포트 요약">
         <div className="aq-report-total">

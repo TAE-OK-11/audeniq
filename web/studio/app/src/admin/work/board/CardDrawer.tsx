@@ -185,7 +185,7 @@ export function CardDrawer({ cardId, boardWritable, onClose, onChanged, onArchiv
         <div className="adm-kb-drawer-top">
           <h2 id={titleId}>{t ? <><span className="ui-tag is-mono">{t.key}</span><span className="sr-only"> {t.title}</span></> : '카드'}</h2>
           <span className="adm-w-btns">
-            {t && <Link to={`/admin/tasks/${t.id}`} className="ui-btn is-soft is-sm">전체 화면<Glyph name="arrow-up-right" size={13} /></Link>}
+            {t && <Link to={`/admin/tasks/${t.id}`} className="ui-btn is-soft is-sm">전체 화면<Glyph name="chevron-right" size={13} /></Link>}
             <button type="button" className="adm-kb-icon-btn" aria-label="닫기" onClick={onClose}><Glyph name="close" size={18} /></button>
           </span>
         </div>

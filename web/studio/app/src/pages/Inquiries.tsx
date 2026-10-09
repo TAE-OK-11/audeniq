@@ -200,7 +200,7 @@ export function Inquiries() {
           <p>발매 보완 요청과 정산·계약 관련 문의를 확인해 보세요.</p>
         </div>
         <button type="button" className="ui-btn is-primary" onClick={() => setShowForm(true)}>
-          새 문의 <Glyph name="arrow-up-right" size={14} />
+          <Glyph name="plus" size={14} />새 문의
         </button>
       </div>
 

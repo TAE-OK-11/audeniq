@@ -509,3 +509,4 @@ summary::-webkit-details-marker{display:none}
 :is(.aq-sign-privacy,.adm-terms-body)>summary{display:inline-flex;align-items:center;gap:6px}
 :is(.aq-sign-privacy,.adm-terms-body)>summary::before{content:"";flex:none;width:12px;height:12px;background:currentColor;-webkit-mask:var(--aq-icon-chevron) center/contain no-repeat;mask:var(--aq-icon-chevron) center/contain no-repeat;transition:transform var(--aq-dur) var(--aq-ease)}
 :is(.aq-sign-privacy,.adm-terms-body)[open]>summary::before{transform:rotate(90deg)}
+.ui-avatar.is-empty{background:var(--aq-gray-100);color:var(--aq-gray-500)}

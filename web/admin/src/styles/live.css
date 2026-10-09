@@ -262,7 +262,7 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 
 /* ===== Auth pages (login / signup / find-account) ===== */
 .auth-page{min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 20px;background:linear-gradient(160deg,#eef2ff 0%,#f7f9fd 55%,#f7f9fd 100%)}
-.auth-split{display:flex;width:min(480px,100%);border-radius:var(--aq-r-3xl);overflow:hidden;background:#fff;box-shadow:0 16px 48px rgba(35,55,120,.12)}
+.auth-split{display:flex;width:min(480px,100%);border-radius:var(--aq-r-3xl);overflow:hidden;background:#fff}
 
 .auth-card{flex:1 1 58%;padding:48px 44px}
 .auth-card h1{font-size:26px;letter-spacing:-.04em;margin:0 0 8px}

@@ -118,7 +118,7 @@ export function Releases() {
           <h1 id="catalogTitle">내 음악</h1>
           <p>발매한 음악과 심사 진행 상황을 한눈에 확인해 보세요.</p>
         </div>
-        <button type="button" className="ui-btn is-primary" onClick={() => nav('/upload')}>새 발매</button>
+        <button type="button" className="ui-btn is-primary" onClick={() => nav('/upload')}><Glyph name="plus" size={14} />새 발매</button>
       </div>
 
       <Tabs

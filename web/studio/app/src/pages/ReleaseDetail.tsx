@@ -241,7 +241,7 @@ export function ReleaseDetail() {
           </button>
         )}
         {canWithdraw && (
-          <button type="button" className="ui-btn is-soft aq-withdraw-btn" onClick={handleWithdraw} disabled={withdrawing}>
+          <button type="button" className="ui-btn is-danger aq-withdraw-btn" onClick={handleWithdraw} disabled={withdrawing}>
             {withdrawing ? '취소하는 중' : '신청 취소'}
           </button>
         )}
@@ -390,7 +390,7 @@ export function ReleaseDetail() {
             ) : (
               <div className="empty-note">
                 등록된 트랙이 없어요.<br />
-                <button type="button" className="ui-btn is-white is-sm" onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}>트랙 등록하기 <Glyph name="arrow-up-right" size={13} /></button>
+                <button type="button" className="ui-btn is-white is-sm" onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}>트랙 등록하기 <Glyph name="chevron-right" size={13} /></button>
               </div>
             )}
             <div className="ui-callout" style={{ marginTop: 22 }}>
@@ -464,7 +464,7 @@ export function ReleaseDetail() {
                   ))}
                 </ul>
               </>}
-              <button className="ui-btn is-primary aq-doc-manage" type="button" onClick={() => nav('/contracts')}>문서 관리 <Glyph name="arrow-up-right" size={14} /></button>
+              <button className="ui-btn is-primary aq-doc-manage" type="button" onClick={() => nav('/contracts')}>문서 관리 <Glyph name="chevron-right" size={14} /></button>
             </div>
           </div>
         )}

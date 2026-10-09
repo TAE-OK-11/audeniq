@@ -125,7 +125,7 @@ export function Notifications() {
                 <button
                   type="button" className="ui-btn is-primary studio-submit-wide"
                   onClick={() => { const to = openNotice.link!; setOpenNotice(null); nav(to); }}
-                >관련 화면으로 이동 <Glyph name="arrow-up-right" size={13} /></button>
+                >관련 화면으로 이동 <Glyph name="chevron-right" size={13} /></button>
               </div>
             ) : (
               <div className="doc-connection">관련 발매 또는 정산 내역은 각 관리 화면에서 확인할 수 있어요.</div>

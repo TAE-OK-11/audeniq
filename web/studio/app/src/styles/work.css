@@ -138,8 +138,13 @@
   .adm-w-filter-row .ui-select{flex:1 1 calc(50% - 10px);min-width:0}
   .adm-w-note-top{flex-wrap:wrap}
 }
-.adm-w-filter-row .ui-select{min-width:132px}
-.adm-w-filter-row .ui-select{width:auto;min-width:210px;--ui-input-h:var(--aq-h-sm);--ui-input-r:var(--aq-r-ctl-sm)}
+/* 거르기 줄: 검색칸이 넓게, 고르기 칸은 남은 폭을 나눠 한 줄에 — 좁으면 두 칸씩 */
+.adm-w-filter-row>.ui-input{flex:2 1 220px;width:auto;min-width:0}
+.adm-w-filter-row .ui-select{flex:1 1 150px;width:auto;min-width:0;max-width:260px}
+@media (max-width:640px){
+  .adm-w-filter-row>.ui-input{flex-basis:100%}
+  .adm-w-filter-row .ui-select{flex:1 1 calc(50% - 10px);max-width:none}
+}
 
 /* ---------- Phase 2: 업무함 · 예외 처리 · SLA ---------- */
 .adm-w-inbox-row{grid-template-columns:auto minmax(0,1fr) auto;cursor:pointer;font:inherit}
@@ -230,7 +235,7 @@
 .adm-chat-side ul{list-style:none;margin:0;padding:0;display:grid;gap:2px}
 .adm-chat-side a{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 11px;border-radius:var(--aq-r-md);color:var(--aq-gray-700);font-size:13.5px;font-weight:700}
 .adm-chat-side a:hover{background:#fff}
-.adm-chat-side a[aria-current=page]{background:#fff;color:var(--adm-blue);box-shadow:0 2px 10px rgba(23,27,41,.05)}
+.adm-chat-side a[aria-current=page]{background:#fff;color:var(--adm-blue)}
 .adm-chat-side a.is-unread{color:var(--adm-ink);font-weight:850}
 .adm-chat-hash{color:var(--aq-gray-400);margin-right:4px;font-weight:700}
 .adm-chat-side .ui-btn.is-text{margin-top:auto;align-self:flex-start}
@@ -329,11 +334,12 @@
 
 /* 카드 — 제목 버튼을 카드 전체로 늘려 어디를 눌러도 열린다 */
 .adm-kb-card{position:relative;display:grid;gap:7px;padding:12px 13px;border-radius:var(--aq-r-lg);background:#fff;cursor:grab;transition:box-shadow .15s var(--adm-ease),opacity .15s var(--adm-ease),transform .15s var(--adm-ease)}
-.adm-kb-card:hover{box-shadow:0 6px 18px rgba(23,27,41,.08)}
+.adm-kb-card:hover{background:var(--aq-surface-hover)}
 .adm-kb-card:active{cursor:grabbing}
 .adm-kb-card:not([draggable=true]){cursor:default}
 .adm-kb-card.is-dragging{opacity:.4;transform:scale(.98)}
-.adm-kb-card.is-late{box-shadow:inset 3px 0 0 var(--aq-red-500)}
+.adm-kb-card.is-late{background:var(--aq-row-danger)}
+.adm-kb-card.is-late:hover{background:var(--aq-red-50)}
 .adm-kb-card.is-closed .adm-kb-card-open{color:var(--aq-gray-500);text-decoration:line-through;text-decoration-color:var(--aq-gray-300)}
 .adm-kb-card:has(.adm-kb-card-open:focus-visible){outline:3px solid var(--aq-blue-450);outline-offset:2px}
 .adm-kb-card-top,.adm-kb-card-foot{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}

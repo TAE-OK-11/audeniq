@@ -110,7 +110,7 @@ export function Events() {
       <div className="ui-section-head"><h2>전체 이벤트</h2></div>
       <div className="aq-catalog-cards">
         {rest.map(ev => (
-          <button key={ev.id} type="button" className="aq-event-card" onClick={() => setSelected(ev)}>
+          <button key={ev.id} type="button" className="ui-row aq-event-card" onClick={() => setSelected(ev)}>
             <span className="aq-event-date" aria-hidden="true">
               <b>{ev.date.slice(5, 7)}</b>
               <span>{ev.date.slice(0, 4)}</span>

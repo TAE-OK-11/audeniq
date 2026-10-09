@@ -146,7 +146,7 @@ export function Rights() {
           <p>발매별 권리 증빙과 AUDENIQ의 보완 요청을 한곳에서 처리하세요.</p>
         </div>
         <button type="button" className="ui-btn is-soft" onClick={() => setFormOpen(true)}>
-          권리 서류 작성·제출 <Glyph name="arrow-up-right" size={14} />
+          <Glyph name="plus" size={14} />권리 서류 작성·제출
         </button>
       </div>
 

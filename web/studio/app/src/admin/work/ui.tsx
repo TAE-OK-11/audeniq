@@ -37,7 +37,7 @@ export type People = ReturnType<typeof usePeople>;
 
 export function Person({ id, people, empty = '담당자 없음', compact }: { id: string | null | undefined; people: People; empty?: string; compact?: boolean }) {
   const { me } = useStaff();
-  if (!id) return <span className="adm-w-person is-empty"><span className="ui-avatar is-sm" aria-hidden="true">–</span>{!compact && empty}</span>;
+  if (!id) return <span className="adm-w-person is-empty"><span className="ui-avatar is-sm is-empty" aria-hidden="true"><Glyph name="user" size={14} /></span>{!compact && empty}</span>;
   const p = people.get(id);
   const mine = id === me.user_id;
   const name = mine ? '나' : p?.name ?? '담당자';
