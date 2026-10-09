@@ -217,11 +217,14 @@ export function ReleaseDetail() {
           </div>
           <h1>{rel.title || '제목 없는 발매'}</h1>
           <p className="aq-detail-artist">{rel.artist || '아티스트 미입력'}</p>
-          <div className="aq-detail-facts">
-            <span>{rel.tracks.length}곡</span>
-            <span>{genre || '장르 미등록'}</span>
-            <span>{rel.release_date || '발매일 미정'}</span>
-          </div>
+          {/* 비어 있는 값은 아래 '발매 정보'에서 미입력으로 보여 주므로 여기서는 있는 것만 */}
+          {(rel.tracks.length > 0 || genre || rel.release_date) && (
+            <div className="aq-detail-facts">
+              {rel.tracks.length > 0 && <span>{rel.tracks.length}곡</span>}
+              {genre && <span>{genre}</span>}
+              {rel.release_date && <span>{rel.release_date}</span>}
+            </div>
+          )}
           <div className="row-actions aq-detail-actions">
           {(d?.application || !isDraft) && (
             <button type="button" className="ui-btn is-soft" onClick={() => nav(`/releases/${encodeURIComponent(rel.id)}/application`)}>
@@ -231,7 +234,7 @@ export function ReleaseDetail() {
           {/* 보완하기는 아래 보완 카드 안에 — 위 버튼 줄은 모두 같은 옅은 버튼으로 */}
           {rel.status !== 'closed' && !rejected && !needsFix && (
             <button
-              type="button" className="ui-btn is-soft"
+              type="button" className={`ui-btn ${isDraft ? 'is-primary' : 'is-soft'}`}
               onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}
             >
               {editLabel}

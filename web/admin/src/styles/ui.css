@@ -248,7 +248,7 @@
   border:0;border-radius:0;background:transparent;color:var(--aq-text-3);font:inherit;font-size:15px;font-weight:700;letter-spacing:-.02em;white-space:nowrap;cursor:pointer;
   transition:color var(--aq-dur) var(--aq-ease)
 }
-.ui-tab:hover{color:var(--aq-primary)}
+@media (hover:hover){.ui-tab:not([aria-selected=true]):hover{color:var(--aq-text)}}
 .ui-tab[aria-selected=true]{color:var(--aq-primary)}
 .ui-tab[aria-selected=true] .ui-count{background:var(--aq-primary-soft);color:var(--aq-primary)}
 .ui-tab:focus-visible{outline:var(--aq-focus);outline-offset:-3px;border-radius:8px}
@@ -546,3 +546,6 @@ summary::-webkit-details-marker{display:none}
 .aq-report-card .aq-mini-col{flex:0 1 72px}
 /* release detail: status pill keeps the standard Badge size (live.css enlarges every span in .aq-detail-top) */
 .aq-detail-top>.ui-badge{font-size:var(--aq-fs-xs);letter-spacing:normal}
+/* release detail: tabs never touch the hero; back link sits closer to the header on phones */
+#view-release .aq-detail-hero{margin-bottom:16px}
+@media (max-width:560px){#view-release .spaced-actions{margin:-12px 0 10px!important}}
