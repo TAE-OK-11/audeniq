@@ -51,7 +51,7 @@ export function Signup() {
   }
 
   return (
-    <AuthLayout title="AUDENIQ와 함께 시작하세요." sub="아티스트 계정을 만들고 발매를 준비해 보세요.">
+    <AuthLayout title="AUDENIQ과 함께 시작하세요." sub="아티스트 계정을 만들고 발매를 준비해 보세요.">
       {error && <div className="ui-callout is-danger aq-shake" role="alert" key={error}>{error}</div>}
       <form onSubmit={submit}>
         <div className="ui-field">
