@@ -1,4 +1,5 @@
 import { Fragment, memo, useCallback, useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { FilePicker } from '../components/FilePicker';
 import { FileCard } from '../components/FileCard';
 import { useNavigate, useSearchParams } from '../lib/router';
@@ -1596,6 +1597,17 @@ export function Upload() {
     return true;
   };
 
+  // 보완 요청 패널 접기·펼치기 — 지원하는 브라우저에선 패널 높이와 아래 입력 영역이 부드럽게 따라 움직인다
+  const toggleFix = () => {
+    const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+    if (!doc.startViewTransition || window.matchMedia('(prefers-reduced-motion: reduce)').matches) { setFixOpen(v => !v); return; }
+    const root = document.documentElement;
+    root.classList.add('aq-vt-fix');
+    const vt = doc.startViewTransition(() => flushSync(() => setFixOpen(v => !v))) as { finished?: Promise<unknown> } | undefined;
+    const done = () => root.classList.remove('aq-vt-fix');
+    if (vt?.finished) vt.finished.then(done, done); else done();
+  };
+
   const goStep = (to: number) => {
     setDir(to > step ? 'fwd' : 'back');
     setStep(to);
@@ -1794,6 +1806,7 @@ export function Upload() {
   const signerName = signer.touched ? signer.name : (form.ownership || profile.name || '');
   const resubmit = !!editId && origStatus !== 'draft' && hasApplication;
   const s = STEPS[step];
+  const nextLabel = submitting ? '접수하는 중' : step === STEPS.length - 1 ? (resubmit ? '다시 접수하기' : editId && origStatus !== 'draft' ? '서명하고 수정 완료' : '서명하고 접수하기') : '다음으로';
   const genreIsCustom = form.genre === '__other__';
   const availablePlatforms = dsps?.filter(d => d.available).map(d => d.slug) ?? [];
   const allPlatforms = availablePlatforms.length > 0 && availablePlatforms.every(p => form.platforms.includes(p)) && form.platforms.every(p => availablePlatforms.includes(p));
@@ -1868,10 +1881,10 @@ export function Upload() {
         </div>
         <div className="aq-wiz-rail-progress" aria-hidden="true">
           <span>발매 신청</span>
-          <b>{step + 1} / {STEPS.length}</b>
+          <b><em key={step}>{step + 1}</em> / {STEPS.length}</b>
           <i style={{ ['--p' as string]: `${((step + 1) / STEPS.length) * 100}%` }} />
         </div>
-        <ol className="aq-wiz-steps">
+        <ol className="aq-wiz-steps" style={{ ['--cur' as string]: step }}>
           {STEPS.map((st, i) => {
             const state = i === step ? 'is-current' : i <= reached ? 'is-done' : '';
             const fixHere = fixes.some(f => f.step === i);
@@ -1907,7 +1920,7 @@ export function Upload() {
         <section className={`aq-fix-panel${fixOpen ? '' : ' is-collapsed'}`} aria-labelledby="aqFixHead">
           <div className="aq-fix-top">
             <Badge tone="amber">{fixes.length ? `보완 요청 ${fixes.length}건` : '담당자 의견'}</Badge>
-            <button type="button" className="aq-fix-toggle" aria-expanded={fixOpen} onClick={() => setFixOpen(v => !v)}>
+            <button type="button" className="aq-fix-toggle" aria-expanded={fixOpen} onClick={toggleFix}>
               {fixOpen ? '접기' : '펼치기'} <Glyph name="chevron-down" size={14} />
             </button>
           </div>
@@ -2375,7 +2388,7 @@ export function Upload() {
           className={`ui-btn is-primary${submitting ? ' is-busy' : ''}`}
           onClick={next} disabled={submitting || loadingEdit} aria-busy={submitting}
         >
-          {submitting ? '접수하는 중' : step === STEPS.length - 1 ? (resubmit ? '다시 접수하기' : editId && origStatus !== 'draft' ? '서명하고 수정 완료' : '서명하고 접수하기') : '다음으로'}
+          <i className="aq-btn-label" key={nextLabel}>{nextLabel}</i>
         </button>
       </div>
       {electronic && <RightsDocumentModal kind={electronic.kind} context={electronic.context} onClose={() => setElectronic(null)} onRequested={() => toast('서명 요청을 만들었어요. 권리자가 서명하면 권리·보완 서류에 문서가 생겨요.', 'success')} />}

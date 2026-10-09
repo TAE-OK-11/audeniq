@@ -15,8 +15,6 @@ img{max-width:100%}
 /* ---------- 공통 키프레임 ---------- */
 @keyframes aq-fade-up{from{opacity:0;transform:translate3d(0,10px,0)}to{opacity:1;transform:none}}
 @keyframes aq-fade-in{from{opacity:0}to{opacity:1}}
-@keyframes aq-slide-in-right{from{opacity:0;transform:translate3d(26px,0,0)}to{opacity:1;transform:none}}
-@keyframes aq-slide-in-left{from{opacity:0;transform:translate3d(-26px,0,0)}to{opacity:1;transform:none}}
 @keyframes aq-pop{0%{transform:scale(.6);opacity:0}70%{transform:scale(1.08);opacity:1}100%{transform:scale(1)}}
 @keyframes aq-shimmer{0%{background-position:150% 0}100%{background-position:-50% 0}}
 @keyframes aq-shake{0%,100%{transform:none}20%{transform:translateX(-6px)}40%{transform:translateX(5px)}60%{transform:translateX(-3px)}80%{transform:translateX(2px)}}
@@ -213,9 +211,6 @@ img{max-width:100%}
 .aq-save-state{margin-left:auto;font-size:11px;font-weight:700;color:var(--aq-text-4);padding:5px 10px;border-radius:var(--aq-r-sm);background:var(--aq-gray-50);white-space:nowrap;animation:aq-fade-in .3s ease both;max-width:52vw;overflow:hidden;text-overflow:ellipsis}
 .aq-save-state.is-saving::before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;border:1.5px solid currentColor;border-right-color:transparent;animation:aq-spin .7s linear infinite;margin-right:6px;vertical-align:-1px}
 .aq-step-kicker{font-size:11px;font-weight:800;letter-spacing:.14em;color:var(--aq-e-blue);margin:0 0 10px}
-.aq-step-anim.is-fwd{animation:aq-slide-in-right .42s var(--aq-e-ease) both}
-.aq-step-anim.is-back{animation:aq-slide-in-left .42s var(--aq-e-ease) both}
-#wizardBody.aq-step-anim{animation-delay:.04s}
 .aq-seg-link{cursor:pointer}
 .aq-seg-link:hover{filter:brightness(1.12)}
 .aq-loading-notice{display:flex;align-items:center}
@@ -624,7 +619,7 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
   body.wizard-mode #view-new .wizard{max-width:none!important}
   #view-new .wizard-progress{display:none!important}
   .aq-wiz-layout{display:grid;grid-template-columns:248px minmax(0,1fr);gap:64px;align-items:start;flex:1 0 auto}
-  .aq-wiz-rail{display:block;position:sticky;top:92px;padding-top:6px;animation:aq-fade-up .45s var(--aq-e-ease) both}
+  .aq-wiz-rail{display:block;position:sticky;top:92px;padding-top:6px}
   #view-new .wizard-header h1.aq-step-title{white-space:normal;font-size:36px!important;line-height:1.25!important}
   /* 하단 버튼: 바는 화면 전체, 버튼은 입력 영역에 맞춰 양 끝 정렬 */
   #view-new .step-actions{padding-left:max(344px,calc(50vw - 248px))!important;padding-right:max(32px,calc(50vw - 560px))!important;justify-content:space-between!important;align-items:center}
@@ -1749,7 +1744,7 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 #view-new .aq-fix-title{margin:12px 0 0;font-size:20px;font-weight:var(--aq-fw-bold);line-height:1.4;letter-spacing:-.03em;color:var(--aq-text)}
 #view-new .aq-fix-panel.is-collapsed{padding-bottom:18px}
 #view-new .aq-fix-panel.is-collapsed .aq-fix-title{margin-top:8px;font-size:16px}
-#view-new .aq-fix-body{display:grid;gap:14px;margin-top:18px;animation:aq-fade-up .3s var(--aq-e-ease) both}
+#view-new .aq-fix-body{display:grid;gap:14px;margin-top:18px}
 /* 검토팀 의견 — 문의 답변처럼 아바타 + 흰 말풍선 */
 #view-new .aq-fix-note{display:grid;grid-template-columns:40px minmax(0,1fr);gap:10px;align-items:start;margin:0}
 #view-new .aq-fix-note-avatar{display:grid;place-items:center;width:40px;height:40px;border-radius:13px;background:var(--aq-blue-500);color:#fff;font-size:17px;font-weight:800}
@@ -1775,4 +1770,3 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
   #view-new .aq-fix-list li{grid-template-columns:minmax(0,1fr);grid-template-areas:"step" "text" "btn";padding:14px}
   #view-new .aq-fix-list .ui-btn{justify-self:stretch;margin-top:4px}
 }
-@media(prefers-reduced-motion:reduce){#view-new .aq-fix-body{animation:none}}
