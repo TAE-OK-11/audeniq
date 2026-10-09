@@ -50,7 +50,7 @@ const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
   {
     group: '계정·지원',
     items: [
-      { to: '/profile', label: '아티스트 정보', desc: '프로필 · 정산 계좌', icon: 'user', tone: 'blue' },
+      { to: '/profile', label: '계정 정보', desc: '프로필 · 정산 계좌', icon: 'user', tone: 'blue' },
       { to: '/notifications', label: '알림', desc: '새 소식', icon: 'bell', tone: 'red' },
       { to: '/inquiries', label: '문의', desc: '1:1 문의 · 답변', icon: 'inquiry', tone: 'blue' },
       { to: '/events', label: '이벤트', desc: '진행 중인 이벤트', icon: 'star', tone: 'amber' },
@@ -190,7 +190,7 @@ export function Layout({ children }: { children: ReactNode }) {
               id="headerProfile"
               className="ui-avatar header-profile"
               type="button"
-              aria-label="아티스트 정보"
+              aria-label="계정 정보"
               onClick={() => go('/profile')}
             >
               {initial}

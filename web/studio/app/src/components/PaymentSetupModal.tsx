@@ -13,6 +13,7 @@ import * as portal from '../api/portal';
 import { errorMessage } from '../api/errors';
 import { Glyph } from './Glyph';
 import { requestPortalRefresh } from '../store/portalSync';
+import { getAccountSnapshot } from '../store/account';
 
 // 은행: 주요 시중은행 → iM·부산·경남 → 인터넷은행 → 씨티·수협·산업 → 상호금융·저축은행 → 전북·광주·제주은행
 // 증권사: 주요 대형사(한투·미래·NH·삼성·KB·신한·하나)와 토스증권을 앞에, 나머지는 자기자본·이용 규모 순
@@ -67,7 +68,8 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState(0);
   const [legal, setLegal] = useState<{ anchor?: string } | null>(null);
   const [draft, setDraft] = useState<Draft>(() => {
-    const profileName = getProfileSnapshot().name || '';
+    // 본인인증으로 확인한 실명이 있으면 그 이름을, 없으면 활동명을 기본값으로
+    const profileName = getAccountSnapshot().realName || getProfileSnapshot().name || '';
     return { recipient: profileName, type: 'personal', bank: '', last4: '', account: '' };
   });
   const [category, setCategory] = useState('bank');
@@ -441,7 +443,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
                   <div><dt>등록 일시</dt><dd>{registeredAt}</dd></div>
                 </dl>
               </div>
-              <p className="aq-pay-success-note">계좌는 정산·지급이나 아티스트 정보에서 언제든 바꿀 수 있어요.</p>
+              <p className="aq-pay-success-note">계좌는 정산·지급이나 계정 정보에서 언제든 바꿀 수 있어요.</p>
             </div>
           )}
         </main>

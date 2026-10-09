@@ -588,7 +588,7 @@ summary::-webkit-details-marker{display:none}
   #portalNav{left:0!important;right:0!important;bottom:auto!important;width:100%!important;max-width:none!important;height:calc(100dvh - var(--aq-menu-top,68px))!important;max-height:none!important;border-radius:0;box-shadow:none;padding:20px 16px max(28px,env(safe-area-inset-bottom))}
 }
 
-/* ---------- 아티스트 정보 — 설정 목록형 (프로필 줄 + '줄 + ›' 카드) ---------- */
+/* ---------- 계정 정보 — 설정 목록형 (프로필 줄 + '줄 + ›' 카드) ---------- */
 .aq-settings{max-width:680px}
 .aq-settings .ui-page-head{margin-bottom:8px}
 .aq-set-profile{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;width:100%;margin:0 0 14px;padding:10px 6px;border:0;border-radius:var(--aq-r-xl);background:none;color:var(--aq-text);font:inherit;text-align:left;cursor:pointer}
@@ -607,6 +607,50 @@ summary::-webkit-details-marker{display:none}
 .aq-set-row:active,.aq-set-profile:active{transform:scale(.99)}
 .aq-set-row:focus-visible,.aq-set-profile:focus-visible{outline:var(--aq-focus);outline-offset:2px}
 .aq-set-editor .ui-btn{width:100%;margin-top:6px}
+/* 본인인증 창 — 방법 고르기(2×2) · 입력 · 인증번호 · 앱 승인 대기 */
+.aq-verify{display:grid;gap:14px}
+.aq-verify .ui-field{margin:0}
+.aq-verify .ui-btn{width:100%;margin-top:4px}
+.aq-verify-demo{margin:0;padding:10px 12px;border-radius:var(--aq-r-md);background:var(--aq-gray-50);color:var(--aq-text-4);font-size:var(--aq-fs-xs);line-height:1.5}
+.aq-verify-lead{margin:0;color:var(--aq-text-2);font-size:var(--aq-fs-md);line-height:1.6}
+.aq-verify-methods{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.aq-verify-method{position:relative;display:grid;gap:4px;align-content:start;padding:16px;border-radius:var(--aq-r-lg);background:var(--aq-gray-50);cursor:pointer;transition:background-color .2s ease,box-shadow .2s ease,transform .12s ease}
+.aq-verify-method input{position:absolute;opacity:0;pointer-events:none}
+.aq-verify-method:hover{background:var(--aq-gray-100)}
+.aq-verify-method:active{transform:scale(.98)}
+.aq-verify-method.is-on{background:var(--aq-blue-50);box-shadow:inset 0 0 0 1.5px var(--aq-blue-500)}
+.aq-verify-method:has(input:focus-visible){outline:var(--aq-focus);outline-offset:2px}
+.aq-verify-ic{display:grid;place-items:center;width:36px;height:36px;margin-bottom:6px;border-radius:12px;background:#fff;color:var(--aq-blue-500)}
+.aq-verify-method strong{font-size:var(--aq-fs-md);font-weight:var(--aq-fw-bold);color:var(--aq-text)}
+.aq-verify-method.is-on strong{color:var(--aq-blue-700)}
+.aq-verify-method small{font-size:var(--aq-fs-xs);line-height:1.5;color:var(--aq-text-4)}
+.aq-verify-back{display:inline-flex;align-items:center;gap:2px;justify-self:start;margin:0 0 -2px -4px;padding:4px;border:0;background:none;color:var(--aq-text-3);font:inherit;font-size:var(--aq-fs-sm);font-weight:var(--aq-fw-bold);cursor:pointer}
+.aq-verify-rrn{display:grid;grid-template-columns:minmax(0,1fr) auto 52px auto;align-items:center;gap:8px}
+.aq-verify-rrn input:last-of-type{text-align:center}
+.aq-verify-rrn>span{color:var(--aq-text-4)}
+.aq-verify-dots{letter-spacing:2px;font-size:10px}
+.aq-verify-phone{display:grid;grid-template-columns:minmax(104px,128px) minmax(0,1fr);gap:8px}
+.aq-verify-code{position:relative}
+.aq-verify-code input{padding-right:64px!important;letter-spacing:.2em;font-variant-numeric:tabular-nums}
+.aq-verify-code>span{position:absolute;right:14px;top:50%;transform:translateY(-50%);color:var(--aq-blue-500);font-size:var(--aq-fs-sm);font-weight:var(--aq-fw-bold);font-variant-numeric:tabular-nums}
+.aq-verify-code>span.is-low{color:var(--aq-red-500,#e5484d)}
+.aq-verify-resend{justify-self:start;padding:0;border:0;background:none;color:var(--aq-text-3);font:inherit;font-size:var(--aq-fs-sm);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.aq-verify-wait{justify-items:center;text-align:center}
+.aq-verify-wait>.aq-verify-demo{justify-self:stretch;text-align:left}
+.aq-verify-wait strong{font-size:var(--aq-fs-lg);font-weight:var(--aq-fw-bold);color:var(--aq-text)}
+.aq-verify-wait p{margin:-6px 0 4px;color:var(--aq-text-3);font-size:var(--aq-fs-sm);line-height:1.6}
+.aq-verify-wait .aq-verify-resend{justify-self:center}
+.aq-verify-pulse{display:grid;place-items:center;width:64px;height:64px;margin-top:8px;border-radius:50%;background:var(--aq-blue-50);color:var(--aq-blue-500);animation:aq-verify-pulse 1.6s ease-in-out infinite}
+@keyframes aq-verify-pulse{0%,100%{box-shadow:0 0 0 0 rgba(59,99,243,.25)}50%{box-shadow:0 0 0 12px rgba(59,99,243,0)}}
+@media(prefers-reduced-motion:reduce){.aq-verify-pulse{animation:none}}
+/* 해외 납세 의무 */
+.aq-tax{display:grid;gap:14px}
+.aq-tax .ui-field{margin:0}
+.aq-tax-lead{margin:0;color:var(--aq-text-3);font-size:var(--aq-fs-sm);line-height:1.6}
+.aq-tax-choice{margin:0}
+.aq-tax-more{display:grid;gap:14px}
+.aq-optional{margin-left:4px;color:var(--aq-text-4);font-weight:400}
+
 
 /* ---------- 선택 시트 · 달력 (components/Picker.tsx) — 어느 기기에서나 같은 모양 ---------- */
 @keyframes aq-picker-fade{from{opacity:0}}

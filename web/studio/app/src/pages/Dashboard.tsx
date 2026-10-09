@@ -114,7 +114,7 @@ export function Dashboard() {
   if (docFix) tasks.push({ icon: 'doc', name: `보완 요청된 서류 ${docFix}건`, sub: '요청 사유를 보고 새 원본을 제출해 주세요.', btn: '제출', to: '/rights', tone: 'warn' });
   if (toSign) tasks.push({ icon: 'pen', name: `서명할 계약서 ${toSign}건`, sub: '검토가 끝난 계약서에 서명해 주세요.', btn: '서명', to: '/contracts', tone: 'sign' });
   if (drafts) tasks.push({ icon: 'draft', name: `작성 중인 발매 ${drafts}건`, sub: '이어서 작성하고 접수해 보세요.', btn: '보기', to: '/releases?status=draft', tone: 'info' });
-  if (!profileName) tasks.push({ icon: 'user', name: '아티스트 정보 등록', sub: '활동명과 연락처를 입력해 주세요.', btn: '등록', to: '/profile', tone: 'info' });
+  if (!profileName) tasks.push({ icon: 'user', name: '계정 정보 등록', sub: '활동명과 연락처를 입력해 주세요.', btn: '등록', to: '/profile', tone: 'info' });
   if (unread) tasks.push({ icon: 'bell', name: `읽지 않은 알림 ${unread}건`, sub: '최근 변경사항을 확인해 보세요.', btn: '확인', to: '/notifications', tone: 'info' });
 
   // 정산·재생이 아직 하나도 없으면 빈 차트 대신 짧은 안내만
