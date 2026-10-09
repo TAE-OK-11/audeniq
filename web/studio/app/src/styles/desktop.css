@@ -2,6 +2,21 @@
    PC(넓은 화면) 배치 — 휴대폰용 한 줄 목록을 그대로 늘리지 않고, 넓은 폭에 맞게 칸을 나눈다.
    1024px 이상에서만 적용되므로 휴대폰·태블릿 세로 화면은 기존 배치 그대로다. (상단 메뉴바는 공통이라 제외)
    ========================================================================== */
+/* 신청서 아래 버튼 줄 — 휴대폰과 같은 비율로 입력 영역 폭을 꽉 채운다
+   [이전 1][다음으로 2], 버튼 3개면 [나가기 1][수정 완료 1][다음으로 1.5] */
+@media (min-width: 760px) {
+  #view-new .step-actions {
+    display: grid !important; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 10px !important;
+  }
+  #view-new .step-actions:has(#wizardSaveNow) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.5fr); }
+  #view-new .step-actions .ui-btn,
+  #view-new .step-actions #wizardBack,
+  #view-new .step-actions #wizardSaveNow,
+  #view-new .step-actions #wizardNext {
+    width: 100% !important; min-width: 0 !important; margin: 0 !important; white-space: nowrap;
+  }
+}
+
 /* 태블릿: 3칸 요약 숫자는 2칸+1칸으로 쪼개지 않고 한 줄에 */
 @media (min-width: 600px) {
   .ui-stats.is-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
