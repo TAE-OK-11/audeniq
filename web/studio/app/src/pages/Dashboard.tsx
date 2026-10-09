@@ -117,6 +117,9 @@ export function Dashboard() {
   if (!profileName) tasks.push({ icon: 'user', name: '아티스트 정보 등록', sub: '활동명과 연락처를 입력해 주세요.', btn: '등록', to: '/profile', tone: 'info' });
   if (unread) tasks.push({ icon: 'bell', name: `읽지 않은 알림 ${unread}건`, sub: '최근 변경사항을 확인해 보세요.', btn: '확인', to: '/notifications', tone: 'info' });
 
+  // 정산·재생이 아직 하나도 없으면 빈 차트 대신 짧은 안내만
+  const reportEmpty = report.revenue <= 0 && report.plays <= 0 && report.trend.every(d => !d.revenue);
+
   return (
     <div id="view-home" className="view">
       <div className="ui-page-head aq-home-title">
@@ -157,7 +160,7 @@ export function Dashboard() {
         <section className="ui-card" aria-labelledby="upcomingTitle">
           <div className="ui-section-head">
             <h2 id="upcomingTitle">내 발매</h2>
-            <button type="button" className="ui-btn is-white is-sm" onClick={() => navigate('/releases')}>전체 보기 <Glyph name="chevron-right" size={13} /></button>
+            <button type="button" className="aq-head-link" onClick={() => navigate('/releases')}>전체 보기<Glyph name="chevron-right" size={14} /></button>
           </div>
           <div id="homeReleases" aria-live="polite">
             {loading ? (
@@ -226,8 +229,17 @@ export function Dashboard() {
       <section className="ui-card aq-report-card" aria-label="이번 달 리포트 요약">
         <div className="ui-section-head aq-report-head">
           <h2>{periodLabel(report.period)} 음악 리포트</h2>
-          <button className="ui-btn is-white is-sm" type="button" onClick={() => navigate('/reports')}>리포트 보기 <Glyph name="chevron-right" size={13} /></button>
+          <button className="aq-head-link" type="button" onClick={() => navigate('/reports')}>리포트 보기<Glyph name="chevron-right" size={14} /></button>
         </div>
+        {reportEmpty ? (
+          <div className="aq-report-empty">
+            <span className="ui-icon is-blue" aria-hidden="true"><Glyph name="chart" size={20} /></span>
+            <div className="min-0">
+              <strong>아직 수익 리포트가 없어요</strong>
+              <small>발매가 플랫폼에 나가고 정산이 들어오면 여기서 수익과 재생 수를 보여 드려요.</small>
+            </div>
+          </div>
+        ) : (<>
         <div className="aq-report-total">
           <small>이번 달 수익</small>
           <strong><Money value={report.revenue} animate /></strong>
@@ -243,6 +255,7 @@ export function Dashboard() {
           <div><small>Top 트랙</small><strong>{report.topTrack || '—'}</strong></div>
           <div><small>Top 플랫폼</small><strong>{report.topPlatform || '—'}</strong></div>
         </div>
+        </>)}
       </section>
     </div>
   );

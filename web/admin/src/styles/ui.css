@@ -688,3 +688,16 @@ summary::-webkit-details-marker{display:none}
 :is(.ui-card,.ui-box,.aq-sign-card,.aq-stage,.aq-bundle,.aq-set-card,.aq-detail-hero) .ui-callout:not(.is-warn):not(.is-danger):not(.is-success):not(.is-neutral):not(.is-blue):not(.is-violet):not(.is-amber):not(.is-green):not(.is-red):not(.is-gray){--tone-bg:#fff}
 /* 흰 버튼이 흰 바탕(작은 창·모달·흰 줄) 위에 놓이면 글자만 떠 보이므로 옅은 회색 면으로 */
 :is(.aq-picker-box,.modal-inner,.aq-bundle-docs li,:where(.ui-card .ui-list:not(.is-inset))>.ui-row) .ui-btn.is-white{--btn-bg:var(--aq-gray-50);--btn-bg-hover:var(--aq-gray-75)}
+
+/* 홈 — 카드 머리의 '전체 보기 ›'는 버튼 면 없이 가벼운 글자 링크 */
+.aq-head-link{display:inline-flex;align-items:center;gap:2px;flex:none;margin:-6px -6px -6px 0;padding:6px 6px 6px 8px;border:0;border-radius:var(--aq-r-sm);background:none;color:var(--aq-text-3);font:inherit;font-size:var(--aq-fs-md);font-weight:var(--aq-fw-medium);cursor:pointer}
+.aq-head-link .aq-glyph{color:var(--aq-text-4)}
+@media (hover:hover){.aq-head-link:hover{color:var(--aq-primary);background:var(--aq-blue-50)}.aq-head-link:hover .aq-glyph{color:currentColor}}
+.aq-head-link:focus-visible{outline:var(--aq-focus);outline-offset:2px}
+/* 확인할 작업 — 보완도 다른 줄처럼 흰 줄, 주황은 아이콘과 버튼에만 */
+.aq-task-list .aq-task.is-warn{background:#fff}
+.aq-task-list .aq-task.is-warn .aq-task-go{background:var(--aq-amber-50);color:var(--aq-amber-700)}
+/* 리포트가 아직 없을 때 */
+.aq-report-card .aq-report-empty{grid-column:1/-1;display:flex;align-items:center;gap:14px;padding:16px;border-radius:var(--aq-r-lg);background:#fff}
+.aq-report-empty strong{display:block;font-size:var(--aq-fs-lg);font-weight:var(--aq-fw-bold);color:var(--aq-text)}
+.aq-report-empty small{display:block;margin-top:3px;font-size:var(--aq-fs-sm);line-height:1.55;color:var(--aq-text-4)}
