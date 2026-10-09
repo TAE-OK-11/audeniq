@@ -713,3 +713,18 @@ summary::-webkit-details-marker{display:none}
   .aq-detail-actions.is-wide .ui-btn.is-soft{--btn-bg:#fff;--btn-bg-hover:var(--aq-blue-100)}
   .aq-detail-actions.is-wide .ui-btn.is-danger{--btn-bg:transparent;--btn-bg-hover:var(--aq-red-50)}
 }
+
+/* ---------- 은행·플랫폼 로고 (components/BrandMark.tsx) ---------- */
+.aq-brand{display:inline-grid;place-items:center;flex:none;overflow:hidden;border-radius:28%;background:var(--brand);color:#fff;font-size:13px;font-weight:var(--aq-fw-heavy);line-height:1}
+.aq-brand.is-glyph>i{display:block;width:62%;height:62%;background:#fff;-webkit-mask:no-repeat center/contain;mask:no-repeat center/contain}
+.aq-brand.is-glyph.is-ink>i{background:#111}
+.aq-brand.is-image{background:#fff;box-shadow:inset 0 0 0 1px rgba(23,27,41,.06)}
+.aq-brand.is-image>img{width:100%;height:100%;object-fit:contain}
+.aq-brand.is-letter{border-radius:50%}
+/* 은행 로고 칸 안의 실제 로고는 칸을 꽉 채운다(칸의 둥근 모서리·흰 바탕을 그대로 쓴다) */
+.aq-bank-logo.is-real .aq-brand{width:100%!important;height:100%!important;border-radius:inherit;box-shadow:none}
+.aq-bank-logo.is-real .aq-brand.is-image>img{padding:12%}
+.aq-brand.is-app{background:#fff;box-shadow:inset 0 0 0 1px rgba(23,27,41,.06)}
+.aq-brand.is-app>img{width:100%;height:100%;object-fit:cover}
+.aq-brand.is-image>img{padding:10%}
+.aq-bank-logo.is-real .aq-brand.is-app>img{padding:0}

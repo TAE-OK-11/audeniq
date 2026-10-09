@@ -1,3 +1,6 @@
+import { BrandMark } from './BrandMark';
+import { BRAND_ASSETS } from '../lib/brands';
+
 const INSTITUTION_INDEX: Record<string, [string, string, string]> = {
   'IBK기업은행': ['IBK기업은행', 'IBK', 'ibk'],
   '신한은행': ['신한은행', '신한', 'shinhan'],
@@ -20,7 +23,7 @@ const INSTITUTION_INDEX: Record<string, [string, string, string]> = {
   '우체국': ['우체국', 'POST', 'post'],
   '산림조합': ['산림조합', 'SJ', 'forest'],
   '전북은행': ['전북은행', 'JB', 'jb'],
-  '광주은행': ['광주은행', 'KJ', 'jb'],
+  '광주은행': ['광주은행', 'KJ', 'kj'],
   '제주은행': ['제주은행', '제주', 'jeju'],
   'SBI저축은행': ['SBI저축은행', 'SBI', 'sbi'],
   'OK저축은행': ['OK저축은행', 'OK', 'ok'],
@@ -116,6 +119,9 @@ function bankMark(name: string): string {
 }
 
 export function BankLogo({ name }: { name: string }) {
+  // 공식 로고 파일이 있으면 그것을, 없으면 아래 그린 표시를
+  const key = (INSTITUTION_INDEX[name] || [])[2];
+  if (key && BRAND_ASSETS[key]) return <span className="aq-bank-logo is-real"><BrandMark id={key} label={name} color={LOGO_COLORS[key]} size={40} /></span>;
   return (
     <span className="aq-bank-logo" aria-hidden="true">
       <svg viewBox="0 0 48 48" role="img" dangerouslySetInnerHTML={{ __html: bankMark(name) }} />

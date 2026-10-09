@@ -32,6 +32,7 @@ import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
 import { Segmented } from '../components/Segmented';
 import { DateField } from '../components/Picker';
+import { BrandMark } from '../components/BrandMark';
 
 const STEPS = [
   { short: '발매 정보', kicker: '01 / 06 · 발매 정보', title: '어떤 음악을\n발매할까요?', sub: '발매 정보와 아티스트명을 입력해 주세요.' },
@@ -1991,7 +1992,7 @@ export function Upload() {
                 {PROFILE_LINKS.map(l => (
                   <div className="ui-field" key={l.key}>
                     <label htmlFor={`f-link-${l.key}`}>
-                      <span className="aq-dsp-mark" style={{ background: DSP_COLOR[l.key] }} aria-hidden="true">{l.label.slice(0, 1)}</span>
+                      <BrandMark id={l.key} label={l.label} color={DSP_COLOR[l.key]} size={28} className="aq-dsp-mark" />
                       {l.label}
                     </label>
                     <input
@@ -2155,7 +2156,7 @@ export function Upload() {
                           key={key} type="button" aria-pressed={on} disabled={!available && !on} className={`aq-dsp${on ? ' is-on' : ''}${!available ? ' is-unavailable' : ''}`}
                           onClick={() => set('platforms', on ? form.platforms.filter(p => p !== key) : [...form.platforms, key])}
                         >
-                          <span className="aq-dsp-mark" style={{ background: DSP_COLOR[key] ?? '#3B63F3' }} aria-hidden="true">{label.slice(0, 1)}</span>
+                          <BrandMark id={key} label={label} color={DSP_COLOR[key] ?? '#3B63F3'} size={28} className="aq-dsp-mark" />
                           <span className="aq-dsp-name">{label}{!available && <small>현재 배급 불가</small>}</span>
                           <span className="aq-dsp-check" aria-hidden="true"><CheckIcon size={16} /></span>
                         </button>
