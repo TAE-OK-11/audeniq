@@ -1154,6 +1154,12 @@ export function Upload() {
   const [step, setStep] = useState(0);
   // 보완 요청 패널 — 단계마다 위에 크게 떠 있으니 한 줄로 접어 둘 수 있게
   const [fixOpen, setFixOpen] = useState(true);
+  // 처음 연 단계에서는 펼쳐 보여 주고, 다른 단계로 넘어가면 자동으로 접는다(접힌 상태에선 이 단계 항목만 보임)
+  const fixFirstStep = useRef<number | null>(null);
+  useEffect(() => {
+    if (fixFirstStep.current === null) { fixFirstStep.current = step; return; }
+    if (step !== fixFirstStep.current) setFixOpen(false);
+  }, [step]);
   // 지금까지 열어 본 가장 먼 단계 (단계 목록에서 바로 이동 가능)
   const [reached, setReached] = useState(0);
   // 보완 요청 — 수정 모드에서 불러온 발매의 요청 항목과 신청서 위치
@@ -1908,9 +1914,9 @@ export function Upload() {
           <h2 id="aqFixHead" className="aq-fix-title">
             {fixes.length ? `${countWord(fixes.length)} 고치면 바로 다시 검토해요` : '검토팀이 의견을 남겼어요'}
           </h2>
-          {fixOpen && (
+          {(fixOpen || fixes.some(f => f.step === step)) && (
             <div className="aq-fix-body">
-              {reviewNote && (
+              {fixOpen && reviewNote && (
                 <figure className="aq-fix-note">
                   <span className="aq-fix-note-avatar" aria-hidden="true">A</span>
                   <div className="aq-fix-note-bubble">
@@ -1922,6 +1928,7 @@ export function Upload() {
               {fixes.length > 0 && <ul className="aq-fix-list">
                 {fixes.map((c, i) => {
                   const here = c.step === step;
+                  if (!fixOpen && !here) return null;
                   return (
                     <li key={`${c.code}-${c.trackId ?? ''}-${i}`} className={here ? 'is-here' : ''}>
                       <span className="aq-fix-step">{c.step + 1}단계 · {STEPS[c.step]?.short}</span>
