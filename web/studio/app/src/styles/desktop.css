@@ -2,6 +2,12 @@
    PC(넓은 화면) 배치 — 휴대폰용 한 줄 목록을 그대로 늘리지 않고, 넓은 폭에 맞게 칸을 나눈다.
    1024px 이상에서만 적용되므로 휴대폰·태블릿 세로 화면은 기존 배치 그대로다. (상단 메뉴바는 공통이라 제외)
    ========================================================================== */
+/* 태블릿: 3칸 요약 숫자는 2칸+1칸으로 쪼개지 않고 한 줄에 */
+@media (min-width: 600px) {
+  .ui-stats.is-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ui-stats.is-cols-3 > :last-child:nth-child(odd):not(:first-child) { grid-column: auto; }
+}
+
 @media (min-width: 1024px) {
   /* 왼쪽 칸을 화면에 고정할 때의 위치(상단 메뉴바 아래) */
   .view { --pc-sticky-top: 96px; }

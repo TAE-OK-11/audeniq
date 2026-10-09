@@ -26,7 +26,7 @@ export function StatTile({ label, value, unit, hint, icon, tone, compact, to, on
 }
 
 export function StatGrid({ cols = 4, children, className }: { cols?: number; children: ReactNode; className?: string }) {
-  return <div className={cx('ui-stats', className)} style={{ '--cols': cols } as CSSProperties}>{children}</div>;
+  return <div className={cx('ui-stats', `is-cols-${cols}`, className)} style={{ '--cols': cols } as CSSProperties}>{children}</div>;
 }
 
 /** 항목·값 목록 (dl) */
