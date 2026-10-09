@@ -554,3 +554,5 @@ summary::-webkit-details-marker{display:none}
 .ui-card.aq-report-card{display:grid}
 .aq-report-card .aq-mini-trend{justify-content:space-around;align-self:end}
 .aq-report-card .aq-mini-col{flex:0 1 72px}
+/* release detail: status pill keeps the standard Badge size (live.css enlarges every span in .aq-detail-top) */
+.aq-detail-top>.ui-badge{font-size:var(--aq-fs-xs);letter-spacing:normal}

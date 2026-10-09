@@ -1054,11 +1054,10 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 /* 서명할 계약서 — 파란색으로 눈에 띄게 */
 /* 보완 카드 안의 ‘보완하기’ — 할 일을 설명 바로 옆에 (주황 톤) */
 .aq-fix-card-head .min-0{flex:1}
-.aq-fix-go{flex:none;align-self:center;background:#e0892f!important;color:#fff!important;min-height:var(--aq-h-md)!important}
+.aq-fix-go{flex:none;align-self:center;gap:2px;background:#e0892f!important;color:#fff!important;min-height:var(--aq-h-sm)!important}
 .aq-fix-go:hover{background:#cf7a22!important}
-@media(max-width:560px){.aq-fix-card-head{flex-wrap:wrap}.aq-fix-go{width:100%}}
+
 /* 발매 상세 보완 카드: 보완 항목 목록 아래 한 줄 전체 버튼 */
-.aq-fix-card>.aq-fix-go-foot{display:flex!important;width:100%;min-height:var(--aq-h-md)!important;margin-top:16px}
 
 /* ---------- 주황 보완 카드 안의 버튼은 주황으로 (파란 버튼이 튀지 않게) ---------- */
 
@@ -1374,7 +1373,7 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-detail-cover-large{display:block;width:100%;aspect-ratio:1;object-fit:cover;margin:0;border-radius:var(--aq-r-md);box-shadow:0 24px 40px -24px rgba(17,28,61,.6);animation:aq-fade-up .45s var(--aq-e-ease) both}
 .aq-cover-stage.is-empty{padding:0}
 .aq-cover-stage.is-empty::after{content:none}
-.aq-detail-cover-empty{display:grid;place-items:center;align-content:center;gap:8px;aspect-ratio:auto;min-height:150px;color:var(--aq-text-4);font-size:13px;font-weight:700}
+.aq-detail-cover-empty{display:grid;place-items:center;align-content:center;gap:8px;aspect-ratio:auto;min-height:120px;color:var(--aq-text-4);font-size:13px;font-weight:700}
 .aq-cover-meta{max-width:420px;margin:12px 0 0;padding:2px 16px;background:#fff;border-radius:var(--aq-r-lg)}
 .aq-cover-meta div{display:flex;align-items:baseline;justify-content:space-between;gap:16px;padding:12px 0;font-size:13px}
 .aq-cover-meta div+div{border-top:1px solid var(--aq-gray-100)}

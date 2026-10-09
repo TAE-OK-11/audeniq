@@ -262,7 +262,7 @@ export function ReleaseDetail() {
               {stage + 1}<small>/ {PIPELINE.length}</small>
             </span>
           </div>
-          {STAGE_NOTE[rel.status] && <p className="aq-stage-note">{STAGE_NOTE[rel.status]}</p>}
+          {STAGE_NOTE[rel.status] && !needsFix && !rejected && <p className="aq-stage-note">{STAGE_NOTE[rel.status]}</p>}
           <ol className="aq-stage-track">
             {PIPELINE.map((p, i) => {
               const done = i < stage || (i === stage && rel.status === 'live');
@@ -301,11 +301,10 @@ export function ReleaseDetail() {
             <div className="min-0">
               <h2 id="aqFixCardHead">{fixes.length ? `보완 요청 ${fixes.length}건` : '보완이 필요해요'}</h2>
               <p>{fixes.length
-                ? '항목을 누르면 고칠 칸으로 바로 이동해요. 다 고친 뒤 마지막 단계에서 다시 접수해 주세요.'
-                : reviewNote
-                  ? '담당자 의견을 확인하고 신청서를 고친 뒤 마지막 단계에서 다시 접수해 주세요.'
-                  : '알림과 권리·보완 서류에서 요청 내용을 확인한 뒤 ‘보완하기’로 다시 접수해 주세요.'}</p>
+                ? '항목을 누르면 고칠 칸으로 이동해요.'
+                : reviewNote ? '담당자 의견을 확인하고 신청서를 고쳐 주세요.' : '알림과 권리 서류에서 요청 내용을 확인해 주세요.'}</p>
             </div>
+            <button type="button" className="ui-btn is-sm is-warn-solid aq-fix-go" onClick={() => nav(fixPath(rel.id, fixes[0]))}>보완하기<Glyph name="chevron-right" size={13} /></button>
           </div>
           {fixes.length > 0 && (
             <CorrectionList
@@ -315,8 +314,6 @@ export function ReleaseDetail() {
             />
           )}
           {reviewNote && <ReviewNote text={reviewNote} />}
-          {/* 무엇을 고칠지 먼저 읽고 나서 누르도록 목록 아래에 둔다 */}
-          <button type="button" className="ui-btn is-warn-solid aq-fix-go aq-fix-go-foot" onClick={() => nav(fixPath(rel.id, fixes[0]))}>보완하기</button>
         </section>
       )}
 
