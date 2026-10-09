@@ -1845,7 +1845,21 @@ export function Upload() {
 
       <div className="aq-wiz-layout">
       <aside className="aq-wiz-rail" aria-label="발매 신청 단계">
-        <p className="aq-wiz-rail-kicker">발매 신청</p>
+        <div className="aq-wiz-summary">
+          {form.coverData
+            ? <img src={form.coverData} alt="" />
+            : <span className="aq-wiz-summary-cover" aria-hidden="true"><Glyph name="music" size={18} /></span>}
+          <div className="min-0">
+            <strong>{form.title.trim() || '제목 없는 발매'}</strong>
+            <span>{form.artist.trim() || '아티스트 미입력'} · {kindLabel(form.type)}</span>
+            <span>{form.tracks.filter(t => t.title.trim()).length}곡{form.releaseDate ? ` · ${formatKoreanDate(form.releaseDate)}` : ''}</span>
+          </div>
+        </div>
+        <div className="aq-wiz-rail-progress" aria-hidden="true">
+          <span>발매 신청</span>
+          <b>{step + 1} / {STEPS.length}</b>
+          <i style={{ ['--p' as string]: `${((step + 1) / STEPS.length) * 100}%` }} />
+        </div>
         <ol className="aq-wiz-steps">
           {STEPS.map((st, i) => {
             const state = i === step ? 'is-current' : i <= reached ? 'is-done' : '';
@@ -1867,16 +1881,6 @@ export function Upload() {
             );
           })}
         </ol>
-        <div className="aq-wiz-summary">
-          {form.coverData
-            ? <img src={form.coverData} alt="" />
-            : <span className="aq-wiz-summary-cover" aria-hidden="true"><Glyph name="music" size={18} /></span>}
-          <div className="min-0">
-            <strong>{form.title.trim() || '제목 없는 발매'}</strong>
-            <span>{form.artist.trim() || '아티스트 미입력'} · {kindLabel(form.type)}</span>
-            <span>{form.tracks.filter(t => t.title.trim()).length}곡{form.releaseDate ? ` · ${formatKoreanDate(form.releaseDate)}` : ''}</span>
-          </div>
-        </div>
         <p className="aq-wiz-rail-note">
           {canAutoSave ? '입력 내용은 자동으로 임시 저장돼요.' : '수정 내용은 마지막 단계에서 ‘수정 완료’를 눌러야 반영돼요.'}
         </p>
