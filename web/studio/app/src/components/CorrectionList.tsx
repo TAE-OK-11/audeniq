@@ -33,7 +33,7 @@ export function CorrectionList({ releaseId, corrections, trackIds = [], trackTit
           <li key={`${c.code}-${c.trackId ?? ''}-${i}`}>
             <span className="aq-fix-step">{r.step + 1}단계 · {WIZ_STEP_NAMES[r.step]}</span>
             <p><strong>{r.label}{track ? ` · ${track}` : ''}</strong>{r.message}</p>
-            <button type="button" className={`ui-btn is-sm ${i === 0 ? 'is-primary' : 'is-soft'}`} onClick={() => nav(fixPath(releaseId, c))}>
+            <button type="button" className="ui-btn is-sm is-soft" onClick={() => nav(fixPath(releaseId, c))}>
               고치러 가기<Glyph name="chevron-right" size={13} />
             </button>
           </li>
