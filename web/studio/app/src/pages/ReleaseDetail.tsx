@@ -445,8 +445,8 @@ export function ReleaseDetail() {
                 <div><dt>℗ 표기</dt><dd>{d?.phonogram || '미입력'}</dd></div>
                 <div><dt>© 표기</dt><dd>{d?.copyright || '미입력'}</dd></div>
               </dl>
-              <p className={`small ${rightsOk(d?.rightsChecks, d?.options) ? 'aq-ok-text' : 'muted'}`}>
-                {rightsOk(d?.rightsChecks, d?.options) ? <><span className="aq-check-badge is-sm"><CheckIcon size={10} /></span> 신청서 권리 확인 항목 작성 완료</> : '권리 확인 항목을 보완해 주세요.'}
+              <p className={`small aq-rights-status ${rightsOk(d?.rightsChecks, d?.options) ? 'aq-ok-text' : 'muted'}`}>
+                {rightsOk(d?.rightsChecks, d?.options) ? <><span className="aq-check-badge is-sm"><CheckIcon size={10} /></span>신청서 권리 확인 항목 작성 완료</> : '권리 확인 항목을 보완해 주세요.'}
               </p>
             </div>
             <div className="ui-card">

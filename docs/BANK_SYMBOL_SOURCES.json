@@ -104,7 +104,8 @@
     "file": "samsung.svg",
     "source": "https://static.toss.im/icons/svg/icon-bank-samsung.svg",
     "provider": "Toss financial institution asset",
-    "note": "Downloaded original wordmark paths displayed in white on the reference Samsung-blue square; path geometry preserved."
+    "note": "Positive (no background) variant: original wordmark paths in Samsung blue #003CDC with the square removed; viewBox cropped to the wordmark.",
+    "format": "vector-svg"
   },
   "meritz": {
     "file": "meritz.svg",
@@ -164,7 +165,8 @@
     "file": "miraeasset.svg",
     "source": "https://static.toss.im/icons/svg/icon-bank-miraeasset.svg",
     "provider": "Toss financial institution asset",
-    "note": "Downloaded original wordmark paths, displayed in the reference orange-square reverse variant; presentation disc replaced by the square and accent reversed to white."
+    "note": "Positive (no background) variant: Toss wordmark paths with the presentation disc removed, letters in Mirae Asset Blue #043B72 and slash in Mirae Asset Orange #F58220 per the official CI guide (https://securities.miraeasset.com/newir/view/pc/en/ciguide.jsp). ViewBox cropped to the wordmark.",
+    "format": "vector-svg"
   },
   "hyundai": {
     "file": "hyundai.svg",
@@ -203,10 +205,11 @@
     "note": "Original vector AI/PDF exported as SVG; viewBox tightened to the standalone mark. Shape, gradient and color retained."
   },
   "daol": {
-    "file": "daol.png",
+    "file": "daol-symbol.svg",
     "source": "https://www.daolsecurities.com/img/common/favicon.ico",
     "provider": "DAOL Securities official site",
-    "note": "Original 256px symbol converted losslessly from ICO to PNG."
+    "note": "Background-free vector: the white D of the official 256px favicon traced to paths (potrace, evenodd) and filled black; black tile removed. No embedded bitmap.",
+    "format": "vector-svg"
   },
   "acuon": {
     "file": "acuon.png",
