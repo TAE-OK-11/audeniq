@@ -24,7 +24,7 @@ function ConfirmBody({ opts, onAnswer }: { opts: ConfirmOptions; onAnswer: (v: b
       {opts.message && <div className="aq-confirm-message">{opts.message}</div>}
       <div className="aq-confirm-actions">
         <button type="button" className="ui-btn is-soft" onClick={() => answer(false)}>
-          {opts.cancelLabel ?? '취소'}
+          {opts.cancelLabel ?? '닫기'}
         </button>
         <button
           type="button" data-autofocus

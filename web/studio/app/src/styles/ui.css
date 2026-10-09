@@ -570,7 +570,7 @@ summary::-webkit-details-marker{display:none}
 .portal-nav .aq-nav-card button.active{background:none;color:var(--aq-primary)}
 .portal-nav .aq-nav-card button.active .aq-nav-label{font-weight:var(--aq-fw-bold)}
 .portal-nav .aq-nav-card button.active .aq-nav-ico{background:var(--aq-blue-50)}
-.aq-nav-ico{display:grid;place-items:center;width:38px;height:38px;border-radius:var(--aq-r-lg);font-style:normal;background:var(--aq-gray-50)}
+.aq-nav-ico{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;font-style:normal;background:var(--aq-gray-50)}
 .aq-nav-ico.is-blue{color:var(--aq-blue-500)}
 .aq-nav-ico.is-violet{color:var(--aq-violet-500)}
 .aq-nav-ico.is-green{color:var(--aq-green-600)}
