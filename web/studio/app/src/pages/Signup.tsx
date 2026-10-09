@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from '../lib/router';
 import { useAuth } from '../api/auth';
 import { PASSWORD_MIN } from '../api/client';
-import { errorMessage } from '../api/errors';
+import { authErrorMessage } from '../api/errors';
 import { AuthLayout, PasswordInput } from '../components/AuthLayout';
 import { patchProfile } from '../store/profile';
 
@@ -45,7 +45,7 @@ export function Signup() {
       patchProfile({ name: name.trim(), email: email.trim() });
       nav('/', { replace: true });
     } catch (err) {
-      setError(errorMessage(err, '회원가입에 실패했어요.'));
+      setError(authErrorMessage(err, 'signup'));
       setBusy(false);
     }
   }

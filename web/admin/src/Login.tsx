@@ -3,7 +3,7 @@ import { loginRedirect } from './lib/loginRedirect';
 import { useState } from 'react';
 import { useLocation, useNavigate } from './lib/router';
 import { useAuth } from './auth';
-import { errorMessage } from './api/errors';
+import { authErrorMessage } from './api/errors';
 import { MOCK } from './lib/mode';
 
 function PasswordInput(props: React.InputHTMLAttributes<HTMLInputElement> & { show: boolean; onToggle: () => void }) {
@@ -38,7 +38,7 @@ export function Login() {
       await login(email, password);
       nav(from ?? '/', { replace: true });
     } catch (err) {
-      setError(errorMessage(err, '로그인에 실패했어요.'));
+      setError(authErrorMessage(err, 'login'));
       setBusy(false);
     }
   }

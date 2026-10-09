@@ -2,7 +2,7 @@ import { loginRedirect } from '../lib/loginRedirect';
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from '../lib/router';
 import { useAuth } from '../api/auth';
-import { errorMessage } from '../api/errors';
+import { authErrorMessage } from '../api/errors';
 import { AuthLayout, PasswordInput } from '../components/AuthLayout';
 
 export function Login() {
@@ -25,7 +25,7 @@ export function Login() {
       await login(email.trim(), password);
       nav(from ?? '/', { replace: true });
     } catch (err) {
-      setError(errorMessage(err, '로그인에 실패했어요.'));
+      setError(authErrorMessage(err, 'login'));
       setBusy(false);
     }
   }
