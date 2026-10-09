@@ -1,15 +1,18 @@
 # 은행·플랫폼 로고
 
-은행·DSP 칸에 실제 로고를 보여 준다. 파일은 `web/studio/app/public/static/brands/`, 목록은 `web/studio/app/src/lib/brands.ts`, 그리는 곳은 `components/BrandMark.tsx`(DSP)·`components/BankLogo.tsx`(은행)이다.
-로고는 각 회사의 상표이며, 해당 서비스·금융기관을 알아보게 하는 용도로만 쓴다. 모양·색을 바꾸지 않는다.
+## 은행·저축은행·증권사 심볼
 
-## 넣는 방법 (새 로고·교체)
+Studio의 83개 금융기관은 `web/studio/app/public/static/banks/`의 실제 로고 파일을 사용한다. 기관 이름과 파일 연결은 `src/lib/bankSymbols.ts`, 렌더링은 `components/BankLogo.tsx`에서 관리한다. 기존 카드 배치·기관명·선택 동작은 유지하고, 로고만 원래 비율과 색으로 보여 준다. 카카오뱅크와 카카오페이증권은 서로 다른 심볼을 사용한다.
 
-1. 공식 파일을 `public/static/brands/<키>.png`(정사각형, 128px 이상) 또는 `.svg`로 둔다.
-2. `src/lib/brands.ts`에 한 줄 추가: 앱 아이콘처럼 칸을 꽉 채우는 그림은 `kind: 'app'`, 여백이 필요한 로고는 `'image'`, 단색 SVG는 `'glyph'`(+ `color`).
-3. 키는 은행은 `BankLogo.tsx`의 세 번째 값(예: `shinhan`), DSP는 `Upload.tsx`의 `DSP_COLOR` 키(예: `melon`).
+SVG를 우선 사용한다. 공식 사이트가 비트맵만 제공하는 경우 PNG 또는 원본 비트맵을 포함한 SVG를 사용한다. 일부 저축은행의 공식 favicon은 16–32px이며 고해상도에서 선명도가 제한될 수 있다. 출처와 변환 내역은 [BANK_SYMBOL_SOURCES.json](BANK_SYMBOL_SOURCES.json)에 기록했다. 공식 CI·사이트 외에도 Toss의 공개 금융기관 에셋, CompaniesLogo, MIT 라이선스의 `korea_bank_icons`를 사용한다. 해당 패키지의 저작권 고지는 [라이선스 파일](licenses/korea-bank-icons-MIT.txt)에 있다. 상표 권리는 각 기관에 있다.
 
-## 지금 들어간 로고와 출처
+새 기관은 `public/static/banks/`에 파일을 넣고 `bankSymbols.ts`에 이름을 연결하며 출처 기록을 추가한다. 이름이 없거나 파일을 불러오지 못하면 중립적인 금융기관 아이콘을 표시한다. 글자 이니셜을 로고로 만들지 않는다.
+
+## DSP·앱 아이콘
+
+DSP는 기존 `public/static/brands/`, `src/lib/brands.ts`, `components/BrandMark.tsx`를 그대로 사용한다. 새 DSP 파일은 `public/static/brands/<키>.png` 또는 `.svg`로 넣고, `brands.ts`에 `kind: 'app'`, `'image'`, 또는 `'glyph'`(+ `color`)를 등록한다.
+
+### DSP 로고와 출처
 
 | 키 | 이름 | 출처 |
 |---|---|---|
@@ -53,6 +56,12 @@
 | `trebel` | TREBEL | App Store 공식 앱 아이콘 — TREBEL Music - Download Songs (M&M Media, Inc.) — https://apps.apple.com/us/app/trebel-music-download-songs/id912390687 |
 | `yandex` | Yandex Music | App Store 공식 앱 아이콘 — Яндекс Музыка, книги, подкасты (DIRECT CURSUS COMPUTER SYSTEMS TRADING LLC) — https://apps.apple.com/ru/app/%D1%8F%D0%BD%D0%B4%D0%B5%D0%BA%D1%81-%D0%BC%D1%83%D0%B7%D1%8B%D0%BA%D0%B0-%D0%BA%D0%BD%D0%B8%D0%B3%D0%B8-%D0%BF%D0%BE%D0%B4%D0%BA%D0%B0%D1%81%D1%82%D1%8B/id520797969 |
 | `canva` | Canva | App Store 공식 앱 아이콘 — Canva(캔바): 디자인, 사진편집, 동영상 편집 (Canva Pty Ltd) — https://apps.apple.com/kr/app/canva-%EC%BA%94%EB%B0%94-%EB%94%94%EC%9E%90%EC%9D%B8-%EC%82%AC%EC%A7%84%ED%8E%B8%EC%A7%91-%EB%8F%99%EC%98%81%EC%83%81-%ED%8E%B8%EC%A7%91/id897446215 |
+### 보관 중인 이전 금융기관 앱 아이콘
+
+아래 파일은 기존 공용 브랜드 레지스트리에 보관되어 있으며, 은행 심볼 표시에 사용하지 않는다. 현재 출처는 위 금융기관 출처 JSON을 참조한다.
+
+| 키 | 이름 | 출처 |
+|---|---|---|
 | `acuon` | 애큐온저축은행 | App Store 공식 앱 아이콘 — 애큐온저축은행 (acuon Savings Bank) — https://apps.apple.com/kr/app/%EC%95%A0%ED%81%90%EC%98%A8%EC%A0%80%EC%B6%95%EC%9D%80%ED%96%89/id1304908041 |
 | `bnk` | BNK(부산·경남은행) | App Store 공식 앱 아이콘 — BNK부산은행모바일뱅킹 (Busan Bank) — https://apps.apple.com/kr/app/bnk%EB%B6%80%EC%82%B0%EC%9D%80%ED%96%89%EB%AA%A8%EB%B0%94%EC%9D%BC%EB%B1%85%ED%82%B9/id1445137607 |
 | `bookook` | 부국증권 | App Store 공식 앱 아이콘 — BEST-M Plus (BOOKOOK SECURITIES CO, LTD) — https://apps.apple.com/kr/app/best-m-plus/id1166765542 |
@@ -87,35 +96,10 @@
 | `ls` | LS증권 | 공식 홈페이지 아이콘 — https://www.ls-sec.co.kr |
 | `hana` | 하나(은행 등) | 공식 홈페이지 아이콘 — https://www.kebhana.com |
 
-## 아직 공식 로고가 없는 곳 (지금은 그린 표시·첫 글자로 보임)
-
-앱 아이콘이 회사 로고가 아니라 상품 이름(예: 신한 ‘super SOL’, 우리 ‘WON’, NH ‘all one’)이거나, 공식 사이트에서 자동으로 받을 수 없던 곳이다. 각 회사 홈페이지의 ‘회사소개 › CI’ 페이지에서 심볼 파일을 받아 위 방법대로 넣는다.
+### 아직 공식 로고가 없는 DSP
 
 | 키 | 이름 | 공식 홈페이지 |
 |---|---|---|
-| `shinhan` | 신한은행·신한저축은행·신한투자증권 | https://www.shinhan.com |
-| `woori` | 우리은행·우리금융저축은행·우리투자증권 | https://www.wooribank.com |
-| `nh` | NH농협은행·NH저축은행·NH투자증권 | https://www.nonghyup.com |
-| `ibk` | IBK기업은행·IBK저축은행·IBK투자증권 | https://www.ibk.co.kr |
-| `post` | 우체국 | https://www.epostbank.go.kr |
-| `cu` | 신협 | https://www.cu.co.kr |
-| `jb` | 전북은행 | https://www.jbbank.co.kr |
-| `kj` | 광주은행 | https://www.kjbank.com |
-| `jeju` | 제주은행 | https://www.e-jejubank.com |
-| `sbi` | SBI저축은행 | https://www.sbisb.co.kr |
-| `welcome` | 웰컴저축은행 | https://www.welcomebank.co.kr |
-| `jt` | JT친애저축은행 | https://www.jtchinae-bank.co.kr |
-| `sangsangin` | 상상인 | https://www.sangsanginbank.co.kr |
-| `daishin` | 대신증권·대신저축은행 | https://www.daishin.com |
-| `kiwoom` | 키움증권·키움YES저축은행 | https://www.kiwoom.com |
-| `mirae` | 미래에셋증권 | https://securities.miraeasset.com |
-| `sk` | SK증권 | https://www.sks.co.kr |
-| `shinyoung` | 신영증권 | https://www.shinyoung.com |
-| `eugene` | 유진투자증권 | https://www.eugenefn.com |
-| `heungkuk` | 흥국증권 | https://www.heungkuksec.co.kr |
-| `yuanta` | 유안타 | https://www.myasset.com |
-| `baro` | 바로저축은행 | https://www.barosavings.com |
-| `cheongju` | 청주저축은행 | https://www.cjbank.co.kr |
 | `line-music` | LINE MUSIC | https://music.line.me |
 | `pretzel` | Pretzel | https://www.pretzel.rocks |
 | `touchtunes` | TouchTunes | https://www.touchtunes.com |
