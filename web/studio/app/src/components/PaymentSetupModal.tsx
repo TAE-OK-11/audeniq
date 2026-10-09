@@ -147,6 +147,15 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
     [cat, q],
   );
 
+  // 고른 카드가 잠깐 선택 상태로 보인 뒤 다음 단계로 넘어간다 (누른 것을 눈으로 확인하게)
+  const pickTimer = useRef(0);
+  useEffect(() => () => window.clearTimeout(pickTimer.current), []);
+  const pickBank = (name: string) => {
+    if (pickTimer.current) return;
+    setDraft(d => ({ ...d, bank: name }));
+    pickTimer.current = window.setTimeout(() => { pickTimer.current = 0; setStep(2); }, 160);
+  };
+
   const back = () => {
     if (step === 0 || step === 4) { onClose(); return; }
     // 입력 중이던 칸의 포커스를 먼저 풀어 iOS 키보드가 이전 단계 화면을 밀어 올리지 않게 한다
@@ -319,14 +328,16 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
                 <div id="aqBankGroups">
                   <section className="aq-bank-group" hidden={visibleBanks.length === 0}>
                     <h2>{cat.label}</h2>
-                    <div className="aq-bank-grid">
-                      {cat.items.map(name => (
+                    {/* 탭을 바꾸면 목록을 새로 그려 카드가 차례로 떠오르게 한다 */}
+                    <div className="aq-bank-grid" key={category}>
+                      {cat.items.map((name, i) => (
                         <button
                           key={name} type="button"
                           className={`aq-bank${draft.bank === name ? ' selected' : ''}`}
+                          style={{ ['--i' as string]: Math.min(i, 18) }}
                           data-bank={name}
                           hidden={!!q && !name.toLowerCase().includes(q)}
-                          onClick={() => { setDraft(d => ({ ...d, bank: name })); setStep(2); }}
+                          onClick={() => pickBank(name)}
                         >
                           <BankLogo name={name} />
                           <strong>{name}</strong>
