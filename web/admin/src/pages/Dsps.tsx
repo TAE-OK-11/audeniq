@@ -4,7 +4,7 @@ import { Link } from '../lib/router';
 import { useAsync } from '../hooks/useAsync';
 import { staffApi } from '../api/staff';
 import { reqsFor } from '../dspReqs';
-import { Chip, Empty, ErrorBox, PageHead, Skeleton, SubTabs } from '../ui';
+import { Badge, EmptyState, ErrorBox, PageHeader, SkeletonList, SubTabs } from '../staffUi';
 
 export function Dsps() {
   const { data, loading, error, reload } = useAsync(() => staffApi.dsps(), []);
@@ -13,14 +13,14 @@ export function Dsps() {
   const blockedBy = (code: string) => (blocked.data?.items ?? []).filter(b => b.dsp === code);
   return (
     <div className="view-enter">
-      <PageHead
+      <PageHeader
         eyebrow="배급" title="플랫폼별 조건"
         sub="플랫폼별 요구 조건과 연결 상태예요. 문제가 있으면 빨간색으로 표시돼요."
-        actions={<button type="button" className="adm-btn soft small" onClick={() => { reload(); blocked.reload(); }}>새로고침</button>}
+        actions={<button type="button" className="ui-btn is-soft is-sm" onClick={() => { reload(); blocked.reload(); }}>새로고침</button>}
       />
       <SubTabs tabs={[{ to: '/deliveries', label: '배급 현황' }, { to: '/dsps', label: '플랫폼별 조건' }]} />
       {error && <ErrorBox message={error} onRetry={reload} />}
-      {loading && !data ? <Skeleton rows={3} /> : items.length === 0 ? <Empty title="플랫폼 정보가 없어요" /> : (
+      {loading && !data ? <SkeletonList rows={3} /> : items.length === 0 ? <EmptyState title="플랫폼 정보가 없어요" /> : (
         <div className="adm-dsp-grid">
           {items.map(d => {
             const code = d.code ?? d.dsp;
@@ -29,12 +29,12 @@ export function Dsps() {
             const stuck = blockedBy(code);
             const bad = stuck.length > 0 || (!!r && r.delivery_enabled && !r.adapter_can_send);
             return (
-              <div key={code} className={`adm-dsp${bad ? ' is-bad' : ''}`}>
+              <div key={code} className={`adm-dsp ui-on-soft${bad ? ' is-bad' : ''}`}>
                 <div className="adm-dsp-top">
                   <h3>{d.name}</h3>
                   {bad
-                    ? <Chip tone="red">{stuck.length ? `막힌 발매 ${stuck.length}건` : '플랫폼 점검 필요'}</Chip>
-                    : <Chip tone={live ? 'green' : 'gray'}>{live ? '전송 가능' : '연동 대기'}</Chip>}
+                    ? <Badge tone="red">{stuck.length ? `막힌 발매 ${stuck.length}건` : '플랫폼 점검 필요'}</Badge>
+                    : <Badge tone={live ? 'green' : 'gray'}>{live ? '전송 가능' : '연동 대기'}</Badge>}
                 </div>
                 <span className="small muted">{d.region === 'Kr' ? '국내' : '해외'} 플랫폼</span>
                 <ul>
@@ -44,7 +44,7 @@ export function Dsps() {
                   {r && <li><span>연동</span><b>{live ? '완료' : r.recipient_dpid_registered ? '테스트 중' : '연동 준비 중'}</b></li>}
                 </ul>
                 {stuck.length > 0 && (
-                  <div className="adm-alert is-error" style={{ marginTop: 12 }}>
+                  <div className="ui-callout is-danger" style={{ marginTop: 12 }}>
                     {stuck.slice(0, 3).map(b => (
                       <div key={b.package_id}><Link to={`/reviews/${b.release_id}`}>{b.title}</Link> · {b.blockers.join(', ')}</div>
                     ))}

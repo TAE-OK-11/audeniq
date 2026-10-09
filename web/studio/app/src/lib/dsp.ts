@@ -129,7 +129,7 @@ export function rightsLineIssue(line: string, today = todayStr()): string {
 export const PROFILE_LINKS: { key: 'spotify' | 'apple' | 'melon'; label: string; placeholder: string; re: RegExp }[] = [
   { key: 'spotify', label: 'Spotify', placeholder: 'https://open.spotify.com/artist/…', re: /^(https:\/\/open\.spotify\.com\/(intl-[a-z-]+\/)?artist\/[A-Za-z0-9]{22}|spotify:artist:[A-Za-z0-9]{22})/ },
   { key: 'apple', label: 'Apple Music', placeholder: 'https://music.apple.com/kr/artist/…', re: /^https:\/\/music\.apple\.com\/[a-z]{2}\/artist\/[^/?#]+\/\d+/ },
-  { key: 'melon', label: '멜론', placeholder: 'https://www.melon.com/artist/detail.htm?artistId=…', re: /^https:\/\/(www\.|m2?\.)?melon\.com\/.*artistId=\d+/ },
+  { key: 'melon', label: '멜론', placeholder: 'https://www.melon.com/artist/…', re: /^https:\/\/(www\.|m2?\.)?melon\.com\/.*artistId=\d+/ },
 ];
 
 export function profileLinkIssue(key: 'spotify' | 'apple' | 'melon', url: string): string {

@@ -6,7 +6,7 @@ import { useConfirm } from '../components/Confirm';
 import { SkeletonBlock, SkeletonRows } from '../components/Skeleton';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { useAsync } from '../hooks/useAsync';
-import { STATUS_LABEL, localStamp } from '../lib/format';
+import { STATUS_LABEL, localStamp, statusTone } from '../lib/format';
 import { dspLabel, durationLabel, genreLabel, kindLabel, languageLabel } from '../lib/catalog';
 import { docState, docsForRelease, useDocs } from '../store/docs';
 import { errorMessage } from '../api/errors';
@@ -15,6 +15,10 @@ import { fixPath, splitCorrections } from '../lib/corrections';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
 import { ContractBundle } from '../components/ContractBundle';
+
+/** 아직 없는 값 — 실제 값처럼 진하게 보이지 않도록 흐리게 */
+const Empty = ({ children }: { children: string }) => <span className="aq-empty-val">{children}</span>;
+import { Badge, Tabs } from '../ui';
 
 // 플랫폼별 배급 진행 단계 (서버 delivery_staging 기준)
 const DELIVERY_STAGE: Record<string, string> = {
@@ -110,12 +114,12 @@ export function ReleaseDetail() {
   }
   if (error || !rel) {
     return (
-      <div className="empty-page">
+      <div className="ui-empty">
         <h2>발매 정보를 불러오지 못했어요.</h2>
         <p>{error || '발매를 찾을 수 없어요.'}</p>
         <div className="row-actions" style={{ justifyContent: 'center' }}>
-          <button type="button" className="button secondary" onClick={reload}>다시 시도</button>
-          <button type="button" className="button" onClick={() => nav('/releases')}>발매 목록으로</button>
+          <button type="button" className="ui-btn is-soft" onClick={reload}>다시 시도</button>
+          <button type="button" className="ui-btn is-primary" onClick={() => nav('/releases')}>발매 목록으로</button>
         </div>
       </div>
     );
@@ -198,10 +202,40 @@ export function ReleaseDetail() {
     }
   };
 
+  // 발매 카드 버튼 — 넓은 화면은 카드 오른쪽 안, 휴대폰은 카드 아래 한 줄 (같은 버튼을 두 자리에)
+  const actionButtons = (
+    <>
+      {(d?.application || !isDraft) && (
+        <button type="button" className="ui-btn is-soft" onClick={() => nav(`/releases/${encodeURIComponent(rel.id)}/application`)}>
+          신청서 보기
+        </button>
+      )}
+      {/* 보완하기는 아래 보완 카드 안에 */}
+      {rel.status !== 'closed' && !rejected && !needsFix && (
+        <button
+          type="button" className={`ui-btn ${isDraft ? 'is-primary' : 'is-soft'}`}
+          onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}
+        >
+          {editLabel}
+        </button>
+      )}
+      {canWithdraw && (
+        <button type="button" className="ui-btn is-danger aq-withdraw-btn" onClick={handleWithdraw} disabled={withdrawing}>
+          {withdrawing ? '취소하는 중' : '신청 취소'}
+        </button>
+      )}
+      {isDraft && (
+        <button type="button" className="ui-btn is-danger" onClick={handleDelete} disabled={deleting}>
+          {deleting ? '삭제 중' : '삭제'}
+        </button>
+      )}
+    </>
+  );
+
   return (
     <div id="view-release" className="view">
       <div className="spaced-actions">
-        <button type="button" className="link-btn aq-back-link" onClick={() => nav('/releases')}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />발매 목록</button>
+        <button type="button" className="ui-btn is-white is-sm aq-back-link" onClick={() => nav('/releases')}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />발매 목록</button>
       </div>
 
       <div className="aq-detail-hero" aria-label="발매 정보">
@@ -209,44 +243,23 @@ export function ReleaseDetail() {
         <div className="aq-detail-info">
           <div className="aq-detail-top">
             <span className="eyebrow">{kindLabel(d?.type) || '발매'}</span>
-            <span className={`status-chip ${rel.status}`}>{STATUS_LABEL[rel.status] || rel.status}</span>
+            <Badge tone={statusTone(rel.status)} className={`aq-status is-${rel.status}`}>{STATUS_LABEL[rel.status] || rel.status}</Badge>
           </div>
           <h1>{rel.title || '제목 없는 발매'}</h1>
           <p className="aq-detail-artist">{rel.artist || '아티스트 미입력'}</p>
-          <div className="aq-detail-facts">
-            <span>{rel.tracks.length}곡</span>
-            <span>{genre || '장르 미등록'}</span>
-            <span>{rel.release_date || '발매일 미정'}</span>
-          </div>
+          {/* 비어 있는 값은 아래 '발매 정보'에서 미입력으로 보여 주므로 여기서는 있는 것만 */}
+          {(rel.tracks.length > 0 || genre || rel.release_date) && (
+            <div className="aq-detail-facts">
+              {rel.tracks.length > 0 && <span>{rel.tracks.length}곡</span>}
+              {genre && <span>{genre}</span>}
+              {rel.release_date && <span>{rel.release_date}</span>}
+            </div>
+          )}
         </div>
+        <div className="aq-detail-actions is-wide">{actionButtons}</div>
       </div>
 
-        <div className="row-actions aq-detail-actions">
-        {(d?.application || !isDraft) && (
-          <button type="button" className="button secondary" onClick={() => nav(`/releases/${encodeURIComponent(rel.id)}/application`)}>
-            신청서 보기
-          </button>
-        )}
-        {/* 보완하기는 아래 보완 카드 안에 — 위 버튼 줄은 모두 같은 옅은 버튼으로 */}
-        {rel.status !== 'closed' && !rejected && !needsFix && (
-          <button
-            type="button" className="button secondary"
-            onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}
-          >
-            {editLabel}
-          </button>
-        )}
-        {canWithdraw && (
-          <button type="button" className="button secondary aq-withdraw-btn" onClick={handleWithdraw} disabled={withdrawing}>
-            {withdrawing ? '취소하는 중' : '신청 취소'}
-          </button>
-        )}
-        {isDraft && (
-          <button type="button" className="button danger" onClick={handleDelete} disabled={deleting}>
-            {deleting ? '삭제 중' : '삭제'}
-          </button>
-        )}
-      </div>
+      <div className="row-actions aq-detail-actions is-narrow">{actionButtons}</div>
 
       {!settledLive && (
         <section className={`aq-stage${stageTone ? ` ${stageTone}` : ''}`} aria-label="발매 진행 단계">
@@ -259,7 +272,7 @@ export function ReleaseDetail() {
               {stage + 1}<small>/ {PIPELINE.length}</small>
             </span>
           </div>
-          {STAGE_NOTE[rel.status] && <p className="aq-stage-note">{STAGE_NOTE[rel.status]}</p>}
+          {STAGE_NOTE[rel.status] && !needsFix && !rejected && <p className="aq-stage-note">{STAGE_NOTE[rel.status]}</p>}
           <ol className="aq-stage-track">
             {PIPELINE.map((p, i) => {
               const done = i < stage || (i === stage && rel.status === 'live');
@@ -298,11 +311,10 @@ export function ReleaseDetail() {
             <div className="min-0">
               <h2 id="aqFixCardHead">{fixes.length ? `보완 요청 ${fixes.length}건` : '보완이 필요해요'}</h2>
               <p>{fixes.length
-                ? '항목을 누르면 고칠 칸으로 바로 이동해요. 다 고친 뒤 마지막 단계에서 다시 접수해 주세요.'
-                : reviewNote
-                  ? '담당자 의견을 확인하고 신청서를 고친 뒤 마지막 단계에서 다시 접수해 주세요.'
-                  : '알림과 권리·보완 서류에서 요청 내용을 확인한 뒤 ‘보완하기’로 다시 접수해 주세요.'}</p>
+                ? '항목을 누르면 고칠 칸으로 이동해요.'
+                : reviewNote ? '담당자 의견을 확인하고 신청서를 고쳐 주세요.' : '알림과 권리 서류에서 요청 내용을 확인해 주세요.'}</p>
             </div>
+            <button type="button" className="ui-btn is-sm is-warn-solid aq-fix-go" onClick={() => nav(fixPath(rel.id, fixes[0]))}>보완하기<Glyph name="chevron-right" size={13} /></button>
           </div>
           {fixes.length > 0 && (
             <CorrectionList
@@ -312,34 +324,24 @@ export function ReleaseDetail() {
             />
           )}
           {reviewNote && <ReviewNote text={reviewNote} />}
-          {/* 무엇을 고칠지 먼저 읽고 나서 누르도록 목록 아래에 둔다 */}
-          <button type="button" className="button aq-fix-go aq-fix-go-foot" onClick={() => nav(fixPath(rel.id, fixes[0]))}>보완하기</button>
         </section>
       )}
 
-      <div className="tabs aq-tabs" role="tablist" aria-label="발매 상세 메뉴">
-        {DETAIL_TABS.map(t => (
-          <button
-            key={t.value} type="button" role="tab" className="tab"
-            aria-selected={tab === t.value}
-            onClick={() => setTab(t.value)}
-          >{t.label}</button>
-        ))}
-      </div>
+      <Tabs label="발매 상세 메뉴" value={tab} items={DETAIL_TABS} onChange={setTab} />
 
-      <div id="releaseDetailBody" className="aq-tab-panel" key={tab}>
+      <div id="releaseDetailBody" className="ui-tab-panel" key={tab}>
         {tab === 'overview' && (
           <div className="split">
             <div>
               <h2 className="subhead">발매 정보</h2>
-              <dl className="information">
-                <div><dt>아티스트</dt><dd>{rel.artist || '미입력'}</dd></div>
-                <div><dt>발매 유형</dt><dd>{kindLabel(d?.type) || '미입력'}</dd></div>
-                <div><dt>주요 언어</dt><dd>{languageLabel(d?.language) || '미입력'}</dd></div>
-                <div><dt>발매 예정일</dt><dd>{rel.release_date || '미정'}</dd></div>
-                <div><dt>UPC / EAN</dt><dd>{d?.upc || '등록 전'}</dd></div>
-                <div><dt>장르</dt><dd>{genre || '미입력'}</dd></div>
-                <div><dt>레이블</dt><dd>{d?.label || '미입력'}</dd></div>
+              <dl className="ui-kv is-2">
+                <div><dt>아티스트</dt><dd>{rel.artist || <Empty>미입력</Empty>}</dd></div>
+                <div><dt>발매 유형</dt><dd>{kindLabel(d?.type) || <Empty>미입력</Empty>}</dd></div>
+                <div><dt>주요 언어</dt><dd>{languageLabel(d?.language) || <Empty>미입력</Empty>}</dd></div>
+                <div><dt>발매 예정일</dt><dd>{rel.release_date || <Empty>미정</Empty>}</dd></div>
+                <div><dt>UPC / EAN</dt><dd>{d?.upc || <Empty>등록 전</Empty>}</dd></div>
+                <div><dt>장르</dt><dd>{genre || <Empty>미입력</Empty>}</dd></div>
+                <div><dt>레이블</dt><dd>{d?.label || <Empty>미입력</Empty>}</dd></div>
               </dl>
               <h2 className="subhead">앨범 소개</h2>
               <p className="muted small break">{d?.notes || '등록된 소개가 없어요.'}</p>
@@ -377,27 +379,27 @@ export function ReleaseDetail() {
                   <div key={t.id} className="aq-track-card">
                     <span className="aq-track-num" aria-hidden="true">{i + 1}</span>
                     <div className="min-0">
-                      <span className="row-name">
+                      <span className="ui-row-title">
                         {t.title || '곡명 없음'}{t.version ? ` (${t.version})` : ''}
                         {t.explicit && <em className="aq-explicit" title="Explicit">E</em>}
                       </span>
-                      <span className="row-sub">
+                      <span className="ui-row-meta">
                         ISRC {t.isrc || '등록 전'} · 작곡 {t.composers || '미입력'} · 작사 {t.lyricists || '없음'}
                         {t.duration_ms ? ` · ${durationLabel(t.duration_ms)}` : ''}
                       </span>
-                      <span className="row-sub">음원 파일: {t.audioName || '미등록'}</span>
+                      <span className="ui-row-meta">음원 파일: {t.audioName || '미등록'}</span>
                     </div>
-                    <span className={`status-chip ${t.audioName ? 'ready' : 'draft'}`}>{t.audioName ? '파일 등록' : '파일 없음'}</span>
+                    <Badge tone={t.audioName ? 'blue' : 'gray'}>{t.audioName ? '파일 등록' : '파일 없음'}</Badge>
                   </div>
                 ))}
               </div>
             ) : (
               <div className="empty-note">
                 등록된 트랙이 없어요.<br />
-                <button type="button" className="link-btn" onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}>트랙 등록하기 <Glyph name="arrow-up-right" size={13} /></button>
+                <button type="button" className="ui-btn is-white is-sm" onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}>트랙 등록하기 <Glyph name="chevron-right" size={13} /></button>
               </div>
             )}
-            <div className="notice" style={{ marginTop: 22 }}>
+            <div className="ui-callout" style={{ marginTop: 22 }}>
               음원 원본의 재첨부가 필요한 경우가 있어요. 제출 전 파일을 다시 확인해 주세요.
             </div>
           </>
@@ -407,9 +409,9 @@ export function ReleaseDetail() {
           <div className="split">
             <div>
               <h2 className="subhead">배급 설정</h2>
-              <dl className="information">
+              <dl className="ui-kv is-2">
                 <div><dt>희망 배급 지역</dt><dd>{d?.territories?.includes('WORLD') ? '전 세계' : '지정 안 함'}</dd></div>
-                <div><dt>발매 예정일</dt><dd>{rel.release_date || '미정'}</dd></div>
+                <div><dt>발매 예정일</dt><dd>{rel.release_date || <Empty>미정</Empty>}</dd></div>
                 {d?.originalDate && <div><dt>최초 발매일</dt><dd>{d.originalDate}</dd></div>}
               </dl>
               <div className="tag-row">
@@ -438,7 +440,7 @@ export function ReleaseDetail() {
                 </>
               )}
               <h2 className="subhead">권리 확인</h2>
-              <dl className="information">
+              <dl className="ui-kv is-2">
                 <div><dt>마스터 권리자</dt><dd>{d?.ownership || '미입력'}</dd></div>
                 <div><dt>℗ 표기</dt><dd>{d?.phonogram || '미입력'}</dd></div>
                 <div><dt>© 표기</dt><dd>{d?.copyright || '미입력'}</dd></div>
@@ -447,7 +449,7 @@ export function ReleaseDetail() {
                 {rightsOk(d?.rightsChecks, d?.options) ? <><span className="aq-check-badge is-sm"><CheckIcon size={10} /></span> 신청서 권리 확인 항목 작성 완료</> : '권리 확인 항목을 보완해 주세요.'}
               </p>
             </div>
-            <div className="surface">
+            <div className="ui-card">
               <h2 className="subhead">계약·증빙</h2>
               <ContractBundle
                 compact releaseId={rel.id} releaseTitle={rel.title}
@@ -468,7 +470,7 @@ export function ReleaseDetail() {
                   ))}
                 </ul>
               </>}
-              <button className="button secondary aq-doc-manage" type="button" onClick={() => nav('/contracts')}>문서 관리 <Glyph name="arrow-up-right" size={14} /></button>
+              <button className="ui-btn is-primary aq-doc-manage" type="button" onClick={() => nav('/contracts')}>문서 관리 <Glyph name="chevron-right" size={14} /></button>
             </div>
           </div>
         )}
@@ -477,7 +479,7 @@ export function ReleaseDetail() {
           <>
             <h2 className="subhead">변경 기록</h2>
             {d?.history?.length ? (
-              <ol className="aq-timeline">
+              <ol className="ui-timeline is-latest-first">
                 {d.history.slice().reverse().map((h, i) => (
                   <li key={`${h.time}-${i}`}>
                     <strong>{h.text}</strong>

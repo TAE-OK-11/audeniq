@@ -160,7 +160,7 @@ export function ReviewBrief({ sheet, integrity, title = '결정 전 확인할 �
   const ok = compact ? all.filter(i => i.tone === 'ok') : [];
   const items = compact ? all.filter(i => i.tone !== 'ok') : all;
   return (
-    <section className={`adm-brief${compact ? ' is-compact' : ''}`} aria-label={title}>
+    <section className={`adm-brief ui-on-soft${compact ? ' is-compact' : ''}`} aria-label={title}>
       <div className="adm-brief-top">
         <b>{title}</b>
         <small>{bad ? `문제 ${bad}` : '문제 없음'}{warn ? ` · 주의 ${warn}` : ''}</small>
@@ -178,7 +178,7 @@ export function ReviewBrief({ sheet, integrity, title = '결정 전 확인할 �
                 {i.detail && <BriefDetail text={i.detail} fold={compact} />}
               </span>
               {onAddFix && i.fix && !i.fix.system && (
-                <button type="button" className="adm-btn soft small" disabled={isAdded} onClick={() => onAddFix(i.fix!)}>{isAdded ? '추가됨' : '항목으로 추가'}</button>
+                <button type="button" className="ui-btn is-soft is-sm" disabled={isAdded} onClick={() => onAddFix(i.fix!)}>{isAdded ? '추가됨' : '항목으로 추가'}</button>
               )}
             </li>
           );

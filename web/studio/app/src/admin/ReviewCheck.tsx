@@ -1,6 +1,6 @@
 import type { Check } from './api';
 import { CHECK_STATUS, checkLabel, checkSummary, pick } from './labels';
-import { Chip, StatusChip } from './ui';
+import { Badge, StatusBadge } from './ui';
 import { CheckDetail } from './RecordDetail';
 
 /** 검사 항목 — 쉬운 설명을 먼저, 검사 코드와 원문은 ‘자세히’에.
@@ -15,8 +15,8 @@ export function CheckCard({ c, open }: { c: Check; open?: boolean }) {
         <div className="adm-check-top">
           <b>{checkLabel(c.check_code)}{c.stage && <small> · {c.stage}차 검사</small>}</b>
           <span className="adm-codes">
-            {sensitive && <Chip tone="red">2인 승인</Chip>}
-            {!open && <StatusChip value={pick(CHECK_STATUS, c.status)} />}
+            {sensitive && <Badge tone="red">2인 승인</Badge>}
+            {!open && <StatusBadge value={pick(CHECK_STATUS, c.status)} />}
           </span>
         </div>
         <p>{checkSummary(c)}</p>

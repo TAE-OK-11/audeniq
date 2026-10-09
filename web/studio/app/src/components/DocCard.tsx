@@ -1,5 +1,6 @@
 // 계약·권리 서류 카드 — 라이브 aqDocumentCards의 카드 1개 대응
-import { docState, docTone, type DocRecord } from '../store/docs';
+import { docBadgeTone, docState, docTone, type DocRecord } from '../store/docs';
+import { Badge } from '../ui';
 import { niceDate, stripSampleSuffix } from '../lib/format';
 import { CheckIcon } from './Check';
 import { Glyph } from './Glyph';
@@ -9,20 +10,20 @@ export function DocCard({ c, onOpen }: { c: DocRecord; onOpen: (id: string) => v
     ? (c.localSignatureAt ? '계약서 보기' : '확인하고 서명')
     : (c.reviewStatus === 'needs' ? '보완하기' : '자세히 보기');
   return (
-    <article className={`aq-doc-card ${docTone(c)}`}>
-      <span className="document-icon" aria-hidden="true">{c.reviewStatus === 'needs' ? <Glyph name="alert" size={18} /> : c.kind === 'agreements' ? (c.localSignatureAt ? <CheckIcon size={16} /> : <Glyph name="pencil" size={17} />) : <Glyph name="doc" size={17} />}</span>
+    <article className={`ui-row aq-doc-card ${docTone(c)}`}>
+      <span className="ui-icon" aria-hidden="true">{c.reviewStatus === 'needs' ? <Glyph name="alert" size={18} /> : c.kind === 'agreements' ? (c.localSignatureAt ? <CheckIcon size={16} /> : <Glyph name="pencil" size={17} />) : <Glyph name="doc" size={17} />}</span>
       <div className="aq-doc-copy">
-        <button type="button" className="row-name" onClick={() => onOpen(c.id)}>
+        <button type="button" className="ui-row-title" onClick={() => onOpen(c.id)}>
           {stripSampleSuffix(c.title)}
         </button>
-        <span className="row-sub">{c.releaseTitle || '공통 문서'} · {niceDate(c.created)}</span>
+        <span className="ui-row-meta">{c.releaseTitle || '공통 문서'} · {niceDate(c.created)}</span>
         <div className="aq-doc-state-line">
-          <span className="aq-doc-state-pill">{docState(c)}</span>
+          <Badge tone={docBadgeTone(c)}>{docState(c)}</Badge>
           {c.fileName && <span>{c.fileName}</span>}
           {c.reviewNote && <span>{c.reviewNote}</span>}
         </div>
       </div>
-      <button className="button secondary" type="button" onClick={() => onOpen(c.id)}>
+      <button className="ui-btn is-soft" type="button" onClick={() => onOpen(c.id)}>
         {btnLabel}
       </button>
     </article>
@@ -32,7 +33,7 @@ export function DocCard({ c, onOpen }: { c: DocRecord; onOpen: (id: string) => v
 /** 빈 목록 플레이스홀더 — 라이브 emptyPage */
 export function DocEmpty({ title, desc }: { title: string; desc: string }) {
   return (
-    <div className="empty-page">
+    <div className="ui-empty">
       <h2>{title}</h2>
       <p>{desc}</p>
     </div>

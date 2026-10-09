@@ -9,7 +9,7 @@ import { useConfirm } from '../../../components/Confirm';
 import { errorMessage } from '../../../api/errors';
 import { useAsync } from '../../../hooks/useAsync';
 import { Glyph } from '../../../components/Glyph';
-import { Empty, ErrorBox, PageHead, Skeleton, useStaff } from '../../ui';
+import { EmptyState, ErrorBox, PageHeader, SkeletonList, useStaff } from '../../ui';
 import { when } from '../../labels';
 import { workApi } from '../api';
 import { MAX_FILE, MAX_FILES, MentionArea, NoteBody, Person, mentionsIn, sizeLabel, usePeople, type People } from '../ui';
@@ -49,17 +49,17 @@ function ChannelForm({ init, onSaved }: { init: Channel | null; onSaved: (c: Cha
   };
   return (
     <form onSubmit={submit} className="adm-w-form">
-      <div className="adm-field">
+      <div className="ui-field">
         <label htmlFor="chName">채널 이름 <span className="required">*</span></label>
-        <input id="chName" data-autofocus className="adm-input" maxLength={40} value={name} onChange={e => setName(e.target.value)} placeholder="예: 멜론 장애 대응" />
+        <input id="chName" data-autofocus className="ui-input" maxLength={40} value={name} onChange={e => setName(e.target.value)} placeholder="예: 멜론 장애 대응" />
       </div>
-      <div className="adm-field">
+      <div className="ui-field">
         <label htmlFor="chTopic">설명</label>
-        <input id="chTopic" className="adm-input" maxLength={200} value={topic} onChange={e => setTopic(e.target.value)} placeholder="이 채널에서 무엇을 이야기하나요?" />
+        <input id="chTopic" className="ui-input" maxLength={200} value={topic} onChange={e => setTopic(e.target.value)} placeholder="이 채널에서 무엇을 이야기하나요?" />
       </div>
       <div className="adm-form-actions">
-        <button type="button" className="adm-btn soft" onClick={close}>취소</button>
-        <button type="submit" className="adm-btn primary" disabled={!name.trim() || busy}>{busy ? '저장 중…' : init ? '저장' : '만들기'}</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="submit" className="ui-btn is-primary" disabled={!name.trim() || busy}>{busy ? '저장 중…' : init ? '저장' : '만들기'}</button>
       </div>
     </form>
   );
@@ -92,8 +92,8 @@ function Message({ m, people, grouped, onChanged }: { m: WorkNote; people: Peopl
           <div className="adm-w-note-edit">
             <MentionArea id={`edit-${m.id}`} value={draft} onChange={setDraft} people={people} onSubmit={save} placeholder="메시지" rows={2} enterSends />
             <div className="adm-form-actions">
-              <button type="button" className="adm-btn soft small" onClick={() => setEditing(false)}>취소</button>
-              <button type="button" className="adm-btn primary small" disabled={!draft.trim()} onClick={save}>저장</button>
+              <button type="button" className="ui-btn is-soft is-sm" onClick={() => setEditing(false)}>취소</button>
+              <button type="button" className="ui-btn is-primary is-sm" disabled={!draft.trim()} onClick={save}>저장</button>
             </div>
           </div>
         ) : m.body && <NoteBody text={m.body} people={people} />}
@@ -110,8 +110,8 @@ function Message({ m, people, grouped, onChanged }: { m: WorkNote; people: Peopl
       </div>
       {!editing && (mine || me.role === 'ADMIN') && (
         <span className="adm-chat-msg-actions">
-          {mine && <button type="button" className="adm-ghost" aria-label="메시지 고치기" onClick={() => { setDraft(m.body); setEditing(true); }}><Glyph name="pencil" size={13} /></button>}
-          <button type="button" className="adm-ghost" aria-label="메시지 지우기" onClick={archive}><Glyph name="close" size={13} /></button>
+          {mine && <button type="button" className="ui-btn is-ghost is-sm" aria-label="메시지 고치기" onClick={() => { setDraft(m.body); setEditing(true); }}><Glyph name="pencil" size={13} /></button>}
+          <button type="button" className="ui-btn is-ghost is-sm" aria-label="메시지 지우기" onClick={archive}><Glyph name="close" size={13} /></button>
         </span>
       )}
     </li>
@@ -164,11 +164,11 @@ function Composer({ channel, people, onSent }: { channel: Channel; people: Peopl
       )}
       <div className="adm-chat-input">
         <input ref={fileRef} type="file" multiple hidden accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.csv,.zip,.xlsx,.xls,.docx,.doc,.pptx" onChange={e => addFiles(e.target.files)} />
-        <button type="button" className="adm-ghost" aria-label="파일 첨부" onClick={() => fileRef.current?.click()}><Glyph name="clip" size={17} /></button>
+        <button type="button" className="ui-btn is-ghost is-sm" aria-label="파일 첨부" onClick={() => fileRef.current?.click()}><Glyph name="clip" size={17} /></button>
         <label htmlFor={`chat-${channel.id}`} className="sr-only">#{channel.name}에 메시지 보내기</label>
         <MentionArea id={`chat-${channel.id}`} value={body} onChange={setBody} people={people} onSubmit={send} rows={1} enterSends
           placeholder={`#${channel.name}에 메시지 보내기 · @이름으로 알림 · Shift+Enter 줄 바꿈`} />
-        <button type="submit" className="adm-btn primary small" disabled={busy || (!body.trim() && files.length === 0)}>{busy ? '보내는 중…' : '보내기'}</button>
+        <button type="submit" className="ui-btn is-primary is-sm" disabled={busy || (!body.trim() && files.length === 0)}>{busy ? '보내는 중…' : '보내기'}</button>
       </div>
     </form>
   );
@@ -233,23 +233,23 @@ function Conversation({ channel, people, onRead, onEdit, onArchive }: {
   return (
     <section className="adm-chat-main" aria-label={`#${channel.name}`}>
       <header className="adm-chat-head">
-        <Link to="/admin/chat" className="adm-ghost adm-chat-back" aria-label="채널 목록"><Glyph name="arrow-left" size={15} /></Link>
+        <Link to="/admin/chat" className="ui-btn is-ghost is-sm adm-chat-back" aria-label="채널 목록"><Glyph name="arrow-left" size={15} /></Link>
         <span className="adm-min">
           <b>#{channel.name}</b>
           {channel.topic && <small>{channel.topic}</small>}
         </span>
         {manage && !channel.archived_at && (
           <span className="adm-w-btns">
-            <button type="button" className="adm-btn soft small" onClick={onEdit}>수정</button>
-            <button type="button" className="adm-btn soft small" onClick={onArchive}>보관</button>
+            <button type="button" className="ui-btn is-soft is-sm" onClick={onEdit}>수정</button>
+            <button type="button" className="ui-btn is-soft is-sm" onClick={onArchive}>보관</button>
           </span>
         )}
       </header>
       <div className="adm-chat-scroll" ref={scroller} onScroll={e => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; }} aria-live="polite">
         {error && <ErrorBox message={error} onRetry={reload} />}
-        {!data && !error ? <Skeleton rows={4} /> : (
+        {!data && !error ? <SkeletonList rows={4} /> : (
           <>
-            {more && <button type="button" className="adm-btn soft small adm-chat-more" disabled={loadingOlder} onClick={loadOlder}>{loadingOlder ? '불러오는 중…' : '이전 메시지 더 보기'}</button>}
+            {more && <button type="button" className="ui-btn is-soft is-sm adm-chat-more" disabled={loadingOlder} onClick={loadOlder}>{loadingOlder ? '불러오는 중…' : '이전 메시지 더 보기'}</button>}
             {items.length === 0 ? (
               <div className="adm-chat-empty"><Glyph name="inquiry" size={22} /><p>아직 대화가 없어요. 첫 메시지를 남겨 보세요.</p></div>
             ) : (
@@ -310,14 +310,14 @@ export function Chat() {
 
   return (
     <div className="view-enter">
-      <PageHead
+      <PageHeader
         eyebrow="업무"
         title="팀 대화"
         sub="직원끼리 채널에서 이야기해요. @이름으로 부르면 업무함에 알림이 가고, 고객에게는 보이지 않아요."
-        actions={<button type="button" className="adm-btn primary small" onClick={() => setForm('new')}><Glyph name="plus" size={14} />채널 만들기</button>}
+        actions={<button type="button" className="ui-btn is-primary is-sm" onClick={() => setForm('new')}><Glyph name="plus" size={14} />채널 만들기</button>}
       />
       {error && <ErrorBox message={error} onRetry={reload} />}
-      {loading && !data ? <Skeleton rows={6} /> : (
+      {loading && !data ? <SkeletonList rows={6} /> : (
         <div className={`adm-chat${id ? ' has-channel' : ''}`}>
           <nav className="adm-chat-side" aria-label="채널">
             <ul>
@@ -325,17 +325,17 @@ export function Chat() {
                 <li key={c.id}>
                   <Link to={`/admin/chat/${c.id}`} aria-current={c.id === id ? 'page' : undefined} className={c.unread ? 'is-unread' : ''}>
                     <span className="adm-min"><span className="adm-chat-hash">#</span>{c.name}</span>
-                    {c.mentions ? <b className="adm-count is-hot">@{c.mentions}</b> : c.unread ? <b className="adm-count">{c.unread > 99 ? '99+' : c.unread}</b> : null}
+                    {c.mentions ? <b className="ui-count is-hot">@{c.mentions}</b> : c.unread ? <b className="ui-count">{c.unread > 99 ? '99+' : c.unread}</b> : null}
                   </Link>
                 </li>
               ))}
             </ul>
             {channels.length === 0 && <p className="small muted">{archived ? '보관한 채널이 없어요.' : '채널이 없어요.'}</p>}
-            <button type="button" className="adm-link-btn" onClick={() => { setArchived(a => !a); nav('/admin/chat'); }}>{archived ? '사용 중인 채널 보기' : '보관한 채널 보기'}</button>
+            <button type="button" className="ui-btn is-text is-muted" onClick={() => { setArchived(a => !a); nav('/admin/chat'); }}>{archived ? '사용 중인 채널 보기' : '보관한 채널 보기'}</button>
           </nav>
           {current ? (
             <Conversation key={current.id} channel={current} people={people} onRead={onRead} onEdit={() => setForm(current)} onArchive={() => archive(current)} />
-          ) : id ? <Empty title="채널을 찾을 수 없어요"><Link to="/admin/chat" className="adm-btn soft small">채널 목록</Link></Empty>
+          ) : id ? <EmptyState title="채널을 찾을 수 없어요"><Link to="/admin/chat" className="ui-btn is-soft is-sm">채널 목록</Link></EmptyState>
             : <div className="adm-chat-main adm-chat-pick"><p className="muted">왼쪽에서 채널을 고르세요.</p></div>}
         </div>
       )}

@@ -1,4 +1,5 @@
 // 정산·지급 — hero + 탭 구조의 단순화된 레이아웃
+import { Link } from '../lib/router';
 import { useState } from 'react';
 import { Modal, useModalClose } from '../components/Modal';
 import { useToast } from '../components/Toast';
@@ -12,12 +13,12 @@ import * as portal from '../api/portal';
 import { errorMessage } from '../api/errors';
 import { refreshFinance } from '../store/portalSync';
 
-const PAYOUT_STATUS: Record<Payout['status'], [string, string]> = {
-  recorded: ['전송 전', 'ready'],
-  requested: ['요청 접수', 'review'],
-  processing: ['지급 처리 중', 'review'],
-  sent: ['지급 완료', 'live'],
-  failed: ['지급 실패', 'needs'],
+const PAYOUT_STATUS: Record<Payout['status'], [string, Tone]> = {
+  recorded: ['전송 전', 'blue'],
+  requested: ['요청 접수', 'violet'],
+  processing: ['지급 처리 중', 'violet'],
+  sent: ['지급 완료', 'green'],
+  failed: ['지급 실패', 'amber'],
 };
 import { money, niceDate } from '../lib/format';
 import { monthKey, todayStr } from '../lib/date';
@@ -26,6 +27,8 @@ import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
 import { Money } from '../components/Money';
 import { Segmented } from '../components/Segmented';
+import { Badge, type Tone } from '../ui';
+import { MonthField } from '../components/Picker';
 
 const PLATFORMS = ['Spotify', 'Apple Music', 'YouTube Music', '멜론', '지니', 'FLO', '벅스', 'Amazon Music', 'TIDAL', 'Deezer', '기타'];
 
@@ -49,29 +52,29 @@ function StatementForm({ onSave }: { onSave: (s: { period: string; platform: str
     <form onSubmit={submit}>
       <p className="small muted">받은 정산서의 기간·플랫폼·금액을 기록하면 요청 가능 잔액에 반영돼요.</p>
       <div className="form-grid">
-        <div className="field">
+        <div className="ui-field">
           <label htmlFor="stPeriod">정산 기간</label>
-          <input id="stPeriod" type="month" required max={monthKey(0)} value={period} onChange={e => setPeriod(e.target.value)} />
+          <MonthField id="stPeriod" required max={monthKey(0)} value={period} onChange={setPeriod} />
         </div>
-        <div className="field">
+        <div className="ui-field">
           <label htmlFor="stPlatform">플랫폼</label>
           <select id="stPlatform" value={platform} onChange={e => setPlatform(e.target.value)}>
             {PLATFORMS.map(p => <option key={p}>{p}</option>)}
           </select>
         </div>
       </div>
-      <div className="field">
+      <div className="ui-field">
         <label htmlFor="stAmount">정산 금액 (원)</label>
         <input id="stAmount" inputMode="numeric" required placeholder="예: 24406"
           value={amount} onChange={e => setAmount(e.target.value.replace(/[^\d]/g, ''))} />
-        {amount && <p className="help">{money(Number(amount))}</p>}
+        {amount && <p className="ui-field-help">{money(Number(amount))}</p>}
       </div>
-      <div className="field">
+      <div className="ui-field">
         <label htmlFor="stNote">메모 (선택)</label>
         <input id="stNote" maxLength={200} value={note} onChange={e => setNote(e.target.value)} placeholder="정산서 번호 등" />
       </div>
       <div className="aq-sticky-foot">
-        <button className="button studio-submit-wide" type="submit">정산 내역 기록</button>
+        <button className="ui-btn is-primary studio-submit-wide" type="submit">정산 내역 기록</button>
       </div>
     </form>
   );
@@ -163,18 +166,18 @@ export function Settlement() {
 
   return (
     <div id="view-settlement" className="view">
-      <div className="view-title">
+      <div className="ui-page-head">
         <div>
-          <p className="eyebrow">ROYALTIES &amp; PAYOUTS</p>
+          <p className="eyebrow">내 작업실</p>
           <h1>정산·지급</h1>
-          <p>확정된 정산 금액과 지급 요청 내역을 확인해 보세요.</p>
+          <p>확정된 정산 금액과 지급 요청 내역을 확인해 보세요. <Link to="/terms/settlement" className="aq-inline-link">정산 약관 보기</Link></p>
         </div>
       </div>
 
-      <section className="surface settle-hero" aria-labelledby="settleHeroHeading">
+      <section className="ui-card settle-hero" aria-labelledby="settleHeroHeading">
         <div className="settle-hero-top">
           <div>
-            <span className="eyebrow">PAYOUT</span>
+            <span className="eyebrow">지급</span>
             <h2 id="settleHeroHeading">요청 전 잔액</h2>
             <strong className="settle-hero-amount"><Money value={left} mark animate /></strong>
             <p className="settle-hero-sub">
@@ -182,8 +185,8 @@ export function Settlement() {
             </p>
           </div>
           <div className="row-actions">
-            {MOCK && <button type="button" className="button secondary" onClick={() => setShowStatement(true)}>정산 기록</button>}
-            <button type="button" className="button" onClick={openPayoutModal}>수익 받기</button>
+            {MOCK && <button type="button" className="ui-btn is-soft" onClick={() => setShowStatement(true)}>정산 기록</button>}
+            <button type="button" className="ui-btn is-primary" onClick={openPayoutModal}>수익 받기</button>
           </div>
         </div>
         <div className="settle-hero-account">
@@ -191,13 +194,13 @@ export function Settlement() {
             <>
               <BankLogo name={payment.bank} />
               <span className="min-0">{payment.bank} · •••• {payment.last4} · {payment.recipient}</span>
-              <button type="button" className="link-btn" onClick={() => setShowPaymentSetup(true)}>변경</button>
+              <button type="button" className="ui-btn is-white is-sm" onClick={() => setShowPaymentSetup(true)}>변경</button>
             </>
           ) : (
             <>
               <span className="aq-payment-badge is-empty" aria-hidden="true"><Glyph name="won" size={18} /></span>
               <span className="min-0">수익을 받을 계좌를 등록해 주세요.</span>
-              <button type="button" className="link-btn" onClick={() => setShowPaymentSetup(true)}>등록하기</button>
+              <button type="button" className="ui-btn is-white is-sm" onClick={() => setShowPaymentSetup(true)}>등록하기</button>
             </>
           )}
         </div>
@@ -209,53 +212,53 @@ export function Settlement() {
       />
 
       {tab === 'statements' ? (
-        <div id="statementList" className="aq-tab-panel" key="st">
+        <div id="statementList" className="ui-tab-panel" key="st">
           {orderedStatements.length ? (
             <div className="aq-catalog-cards aq-stagger">
               {orderedStatements.map(s => (
-                <div key={s.id} className="aq-statement-card">
+                <div key={s.id} className="ui-row aq-statement-card">
                   <span className="aq-statement-icon" aria-hidden="true"><Glyph name="krw" size={17} /></span>
                   <div className="min-0">
-                    <span className="row-name">{s.period} · {s.platform}</span>
-                    <span className="row-sub">{s.note || (MOCK ? '수기 등록 정산 내역' : '플랫폼 정산')} · {niceDate(s.created)}</span>
+                    <span className="ui-row-title">{s.period} · {s.platform}</span>
+                    <span className="ui-row-meta"><span>{s.note || (MOCK ? '수기 등록 정산 내역' : '플랫폼 정산')}</span><span>{niceDate(s.created)}</span></span>
                   </div>
                   <div className="aq-statement-end">
                     <strong><Money value={s.amount} /></strong>
-                    {MOCK && <button type="button" className="link-btn" aria-label="정산 내역 삭제" onClick={() => deleteStatement(s.id)}><Glyph name="close" size={14} /></button>}
+                    {MOCK && <button type="button" className="ui-btn is-ghost is-sm is-icon" aria-label="정산 내역 삭제" onClick={() => deleteStatement(s.id)}><Glyph name="close" size={14} /></button>}
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="empty-page">
+            <div className="ui-empty">
               <h2>정산 내역이 없어요.</h2>
               {MOCK ? (<>
                 <p>정산서를 받은 뒤 금액과 기간을 직접 기록할 수 있어요.</p>
-                <button type="button" className="button" onClick={() => setShowStatement(true)}>정산 내역 기록하기</button>
+                <button type="button" className="ui-btn is-primary" onClick={() => setShowStatement(true)}>정산 내역 기록하기</button>
               </>) : <p>플랫폼 정산이 확정되면 이곳에 표시돼요. 보통 매월 중순에 전월 정산이 반영돼요.</p>}
             </div>
           )}
         </div>
       ) : (
-        <div id="payoutList" className="aq-tab-panel" key="po">
+        <div id="payoutList" className="ui-tab-panel" key="po">
           {payouts.length ? (
             <div className="aq-catalog-cards aq-stagger">
               {(MOCK ? [...payouts].reverse() : payouts).map(p => (
-                <div key={p.id} className="aq-statement-card">
+                <div key={p.id} className="ui-row aq-statement-card">
                   <span className="aq-statement-icon" aria-hidden="true"><Glyph name="arrow-up-right" size={17} /></span>
                   <div className="min-0">
-                    <span className="row-name"><Money value={p.amount} /> · 지급 요청</span>
-                    <span className="row-sub">{niceDate(p.created)} · {p.note || (MOCK ? '현재 작업 공간에만 기록됨' : '등록한 계좌로 지급')}</span>
+                    <span className="ui-row-title"><Money value={p.amount} /> · 지급 요청</span>
+                    <span className="ui-row-meta"><span>{niceDate(p.created)}</span><span>{p.note || (MOCK ? '현재 작업 공간에만 기록됨' : '등록한 계좌로 지급')}</span></span>
                   </div>
                   <div className="aq-statement-end">
-                    <span className={`status-chip ${PAYOUT_STATUS[p.status]?.[1] ?? 'review'}`}>{PAYOUT_STATUS[p.status]?.[0] ?? p.status}</span>
-                    {MOCK && <button type="button" className="link-btn" aria-label="요청 기록 삭제" onClick={() => deletePayout(p.id)}><Glyph name="close" size={14} /></button>}
+                    <Badge tone={PAYOUT_STATUS[p.status]?.[1] ?? 'violet'}>{PAYOUT_STATUS[p.status]?.[0] ?? p.status}</Badge>
+                    {MOCK && <button type="button" className="ui-btn is-white is-sm" aria-label="요청 기록 삭제" onClick={() => deletePayout(p.id)}><Glyph name="close" size={14} /></button>}
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="empty-page">
+            <div className="ui-empty">
               <h2>지급 요청 기록이 없어요.</h2>
               <p>지급 요청 내용을 저장하면 이곳에 표시돼요.</p>
             </div>
@@ -270,7 +273,7 @@ export function Settlement() {
             <strong className="studio-payout-number"><Money value={left} mark /></strong>
             <p className="small muted">원하는 금액을 입력하고 받으실 계좌를 확인해 주세요.</p>
             <form id="payoutForm" onSubmit={submitPayout}>
-              <div className="field">
+              <div className="ui-field">
                 <label htmlFor="pAmount">받을 금액 (원)</label>
                 <div className="studio-amount-field">
                   <input
@@ -280,9 +283,9 @@ export function Settlement() {
                     value={amount ? Number(amount).toLocaleString('ko-KR') : ''}
                     onChange={e => setAmount(e.target.value.replace(/\D/g, '').replace(/^0+/, '').slice(0, 15))}
                   />
-                  <button type="button" id="payoutAll" className="link-btn" onClick={() => setAmount(String(left))}>전액</button>
+                  <button type="button" id="payoutAll" className="ui-btn is-white is-sm" onClick={() => setAmount(String(left))}>전액</button>
                 </div>
-                <p className="help">요청 가능 금액을 초과할 수 없어요.</p>
+                <p className="ui-field-help">요청 가능 금액을 초과할 수 없어요.</p>
               </div>
               <div className="studio-receive-account">
                 <BankLogo name={payment?.bank || ''} />
@@ -294,7 +297,7 @@ export function Settlement() {
                 </div>
                 <span className="studio-account-check" aria-label="선택된 수령 계좌"><CheckIcon size={12} /></span>
               </div>
-              {MOCK && <div className="field">
+              {MOCK && <div className="ui-field">
                 <label htmlFor="pNote">메모 (선택)</label>
                 <input
                   id="pNote" maxLength={200} placeholder="필요한 내용을 남겨 주세요"
@@ -307,7 +310,7 @@ export function Settlement() {
                   : `담당자가 확인한 뒤 등록한 계좌로 보내 드려요. ${money(minimum)} 이상부터 요청할 수 있어요.`}
               </div>
               <div className="aq-sticky-foot">
-                <button className={`button studio-submit-wide${requesting ? ' is-busy' : ''}`} type="submit" disabled={requesting}>
+                <button className={`ui-btn is-primary studio-submit-wide${requesting ? ' is-busy' : ''}`} type="submit" disabled={requesting}>
                   {MOCK ? '지급 요청 내용 저장' : requesting ? '요청하는 중' : '지급 요청하기'}
                 </button>
               </div>

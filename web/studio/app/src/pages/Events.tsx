@@ -3,6 +3,8 @@ import { fetchEvents, loadContent } from '../api/content';
 import { useAsync } from '../hooks/useAsync';
 import { SkeletonRows } from '../components/Skeleton';
 import { Modal } from '../components/Modal';
+import { Glyph } from '../components/Glyph';
+import { Badge } from '../ui';
 
 interface AudenEvent {
   id: string;
@@ -75,22 +77,22 @@ export function Events() {
 
   return (
     <div id="view-events" className="view">
-      <div className="view-title">
+      <div className="ui-page-head">
         <div>
-          <p className="eyebrow">EVENTS</p>
+          <p className="eyebrow">계정·지원</p>
           <h1>이벤트</h1>
           <p>진행 중인 이벤트와 지난 소식을 확인해 보세요.</p>
         </div>
       </div>
 
       {loading && !data ? <SkeletonRows count={3} /> : error ? (
-        <div className="empty-page">
+        <div className="ui-empty">
           <h2>이벤트를 불러오지 못했어요.</h2>
           <p>{error}</p>
-          <button type="button" className="button secondary" onClick={reload}>다시 불러오기</button>
+          <button type="button" className="ui-btn is-soft" onClick={reload}>다시 불러오기</button>
         </div>
       ) : !EVENTS.length ? (
-        <div className="empty-page"><h2>진행 중인 이벤트가 없어요.</h2><p>새 이벤트가 열리면 이곳에서 알려 드릴게요.</p></div>
+        <div className="ui-empty"><h2>진행 중인 이벤트가 없어요.</h2><p>새 이벤트가 열리면 이곳에서 알려 드릴게요.</p></div>
       ) : null}
 
       {featured && (
@@ -101,26 +103,26 @@ export function Events() {
             {featured.date}{featured.endDate ? ` ~ ${featured.endDate}` : ''} · {featured.place}
           </span>
           <span className="aq-event-hero-summary">{featured.summary}</span>
-          <span className="aq-event-hero-cta">자세히 보기 ›</span>
+          <span className="aq-event-hero-cta">자세히 보기 <Glyph name="chevron-right" size={14} /></span>
         </button>
       )}
 
-      <div className="section-top"><h2>전체 이벤트</h2></div>
+      <div className="ui-section-head"><h2>전체 이벤트</h2></div>
       <div className="aq-catalog-cards">
         {rest.map(ev => (
-          <button key={ev.id} type="button" className="aq-event-card" onClick={() => setSelected(ev)}>
+          <button key={ev.id} type="button" className="ui-row aq-event-card" onClick={() => setSelected(ev)}>
             <span className="aq-event-date" aria-hidden="true">
               <b>{ev.date.slice(5, 7)}</b>
               <span>{ev.date.slice(0, 4)}</span>
             </span>
             <span className="min-0">
-              <span className="row-name">{ev.title}</span>
-              <span className="row-sub">{ev.summary}</span>
-              <span className="row-sub">{ev.date}{ev.endDate ? ` ~ ${ev.endDate}` : ''} · {ev.place}</span>
+              <span className="ui-row-title">{ev.title}</span>
+              <span className="ui-row-meta">{ev.summary}</span>
+              <span className="ui-row-meta">{ev.date}{ev.endDate ? ` ~ ${ev.endDate}` : ''} · {ev.place}</span>
             </span>
-            <span className={`status-chip ${ev.status === 'ongoing' ? 'ready' : ev.status === 'upcoming' ? 'pending' : ''}`}>
+            <Badge tone={ev.status === 'ongoing' ? 'green' : ev.status === 'upcoming' ? 'blue' : 'gray'}>
               {STATUS_LABEL[ev.status]}
-            </span>
+            </Badge>
           </button>
         ))}
       </div>
@@ -128,9 +130,9 @@ export function Events() {
       {selected && (
         <Modal title={selected.title} onClose={() => setSelected(null)}>
           <p className="eyebrow">{selected.date}{selected.endDate ? ` ~ ${selected.endDate}` : ''} · {selected.place}</p>
-          <span className={`status-chip ${selected.status === 'ongoing' ? 'ready' : selected.status === 'upcoming' ? 'pending' : ''}`}>
+          <Badge tone={selected.status === 'ongoing' ? 'green' : selected.status === 'upcoming' ? 'blue' : 'gray'}>
             {STATUS_LABEL[selected.status]}
-          </span>
+          </Badge>
           <div className="document-body" style={{ marginTop: 16 }}>
             {selected.body.split('\n').map((line, i) => (
               <p key={i}>{line || '\u00A0'}</p>
@@ -138,7 +140,7 @@ export function Events() {
           </div>
           {selected.link && /^https:\/\//.test(selected.link) && (
             <div className="aq-sticky-foot">
-              <a className="button" href={selected.link} target="_blank" rel="noopener noreferrer" style={{ width: '100%' }}>
+              <a className="ui-btn is-primary" href={selected.link} target="_blank" rel="noopener noreferrer" style={{ width: '100%' }}>
                 이벤트 페이지 열기
               </a>
             </div>

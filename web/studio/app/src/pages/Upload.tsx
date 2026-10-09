@@ -31,6 +31,8 @@ import { uid } from '../lib/store';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
 import { Segmented } from '../components/Segmented';
+import { DateField } from '../components/Picker';
+import { BrandMark } from '../components/BrandMark';
 
 const STEPS = [
   { short: '발매 정보', kicker: '01 / 06 · 발매 정보', title: '어떤 음악을\n발매할까요?', sub: '발매 정보와 아티스트명을 입력해 주세요.' },
@@ -185,17 +187,9 @@ function KoreanDateField({ id, label, required, value, min, onChange }: {
   value: string; min?: string; onChange: (v: string) => void;
 }) {
   return (
-    <div className="field">
+    <div className="ui-field">
       <label htmlFor={id}>{label}{required && <> <span className="required">*</span></>}</label>
-      <div className="kdate-wrap">
-        <input
-          id={id} type="date" className="kdate-input"
-          value={value} min={min} onChange={e => onChange(e.target.value)}
-        />
-        <div className={`kdate-display${value ? '' : ' empty'}`} aria-hidden="true">
-          {value ? formatKoreanDate(value) : '날짜를 선택해 주세요.'}
-        </div>
-      </div>
+      <DateField id={id} value={value} min={min} required={required} onChange={onChange} />
     </div>
   );
 }
@@ -222,7 +216,7 @@ function DocAttach({ id, label, fileName, assetId, busy, onSelect, required, hel
   const [method, setMethod] = useState<'electronic' | 'upload'>(fileName ? 'upload' : 'electronic');
   const docs = useDocs().filter(d => d.releaseId === releaseId && d.electronic?.document_kind === kind);
   return (
-    <div className="field doc-attach aq-rights-evidence">
+    <div className="ui-field doc-attach aq-rights-evidence">
       <strong>{label}{required && <> <span className="required">*</span></>}</strong>
       <Segmented className="aq-method" label="서류 준비 방법" value={method} onChange={setMethod} options={[{ value: 'electronic', label: 'AUDENIQ에서 작성' }, { value: 'upload', label: '보유한 서류 첨부' }] as const} />
       {method === 'electronic' ? (
@@ -334,8 +328,8 @@ function GuardianConsentModal({ guardianName, onClose, onComplete }: {
       </div>
       <div className="aq-modal-foot aq-guardian-foot aq-sticky-foot">
         <p className="aq-guardian-missing" aria-live="polite">{missing}</p>
-        <button type="button" className="button secondary" onClick={onClose}>취소</button>
-        <button type="button" className="button" disabled={!!missing} onClick={() => onComplete(certName, certMethod)}>동의 완료</button>
+        <button type="button" className="ui-btn is-soft" onClick={onClose}>취소</button>
+        <button type="button" className="ui-btn is-primary" disabled={!!missing} onClick={() => onComplete(certName, certMethod)}>동의 완료</button>
       </div>
     </Modal>
   );
@@ -458,7 +452,7 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
       <div className="aq-option-detail">
         <h3>신속 발매 요청</h3>
         <p className="aq-option-intro">신속 발매는 가능 여부와 조건을 확인한 뒤 진행해요. 특정 발매일이나 플랫폼 송출을 보장하지 않아요.</p>
-        <div className="field">
+        <div className="ui-field">
           <label htmlFor="aqExpressReason">신속 발매가 필요한 이유 (선택)</label>
           <ChipPicker
             id="aqExpressReason" single list options={EXPRESS_REASONS} value={expressPick}
@@ -484,7 +478,7 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
         <h3>법정대리인 확인</h3>
         <p className="aq-option-intro">본인 및 권리자의 동의 범위를 확인할 수 있도록 보호자 정보를 입력해 주세요. 법정대리인은 2명을 입력하는 것이 원칙이지만, 1명인 경우도 접수할 수 있어요.</p>
         <h4 className="aq-guardian-head">법정대리인 1</h4>
-        <div className="field">
+        <div className="ui-field">
           <label htmlFor="aqGuardian">법정대리인 성명 <span className="required">*</span></label>
           <input
             id="aqGuardian" autoComplete="name" maxLength={90} value={o.guardian}
@@ -492,7 +486,7 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
             placeholder="법정대리인 성명"
           />
         </div>
-        <div className="field">
+        <div className="ui-field">
           <label htmlFor="aqGuardianRelation">아티스트와의 관계 <span className="required">*</span></label>
           <select
             id="aqGuardianRelation" value={o.guardianRelation}
@@ -504,7 +498,7 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
             ))}
           </select>
         </div>
-        <div className="field">
+        <div className="ui-field">
           <label htmlFor="aqGuardianContact">법정대리인 연락처 또는 이메일 <span className="required">*</span></label>
           <input
             id="aqGuardianContact" maxLength={160} value={o.guardianContact}
@@ -513,7 +507,7 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
           />
         </div>
         <h4 className="aq-guardian-head">법정대리인 2 <small>(해당하는 경우)</small></h4>
-        <div className="field">
+        <div className="ui-field">
           <label htmlFor="aqGuardian2">법정대리인 성명</label>
           <input
             id="aqGuardian2" autoComplete="name" maxLength={90} value={o.guardian2}
@@ -521,7 +515,7 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
             placeholder="법정대리인 성명"
           />
         </div>
-        <div className="field">
+        <div className="ui-field">
           <label htmlFor="aqGuardian2Relation">아티스트와의 관계</label>
           <select
             id="aqGuardian2Relation" value={o.guardian2Relation}
@@ -533,7 +527,7 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
             ))}
           </select>
         </div>
-        <div className="field">
+        <div className="ui-field">
           <label htmlFor="aqGuardian2Contact">법정대리인 연락처 또는 이메일</label>
           <input
             id="aqGuardian2Contact" maxLength={160} value={o.guardian2Contact}
@@ -541,15 +535,15 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
             placeholder="확인이 가능한 연락처"
           />
         </div>
-        <div className="field">
+        <div className="ui-field">
           <label>법정대리인 동의</label>
           <button
-            type="button" className="button secondary" style={{ width: '100%' }}
+            type="button" className="ui-btn is-soft" style={{ width: '100%' }}
             onClick={() => setShowGuardianModal(true)}
           >
             {o.guardianConsentDone ? '법정대리인 동의 완료 · 다시 진행' : '법정대리인 동의 진행하기'}
           </button>
-          <p className="help">
+          <p className="ui-field-help">
             {o.guardianConsentDone
               ? `동의 완료${o.familyCertName ? ` · 가족관계증명서: ${o.familyCertName}` : ''}`
               : '동의창에서 법정대리인 서명과 가족관계증명서를 제출해요.'}
@@ -575,7 +569,7 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
           };
           return (
             <div key={t.id} className="cover-track-item">
-              <label className="check-line">
+              <label className="ui-check is-plain">
                 <input
                   type="checkbox" checked={!!info}
                   onChange={e => toggleCover(e.target.checked)}
@@ -584,7 +578,7 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
               </label>
               {info && (
                 <div className="cover-track-fields">
-                  <div className="field">
+                  <div className="ui-field">
                     <label htmlFor={`cover-orig-title-${i}`}>원곡 제목 <span className="required">*</span></label>
                     <input
                       id={`cover-orig-title-${i}`} maxLength={200} value={info.originalTitle}
@@ -592,7 +586,7 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
                       placeholder="원곡의 제목"
                     />
                   </div>
-                  <div className="field">
+                  <div className="ui-field">
                     <label htmlFor={`cover-orig-artist-${i}`}>원곡 아티스트 <span className="required">*</span></label>
                     <input
                       id={`cover-orig-artist-${i}`} maxLength={200} value={info.originalArtist}
@@ -600,7 +594,7 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
                       placeholder="원곡자 또는 원 아티스트"
                     />
                   </div>
-                  <div className="field">
+                  <div className="ui-field">
                     <label htmlFor={`cover-orig-writers-${i}`}>원곡 작사 / 작곡</label>
                     <input
                       id={`cover-orig-writers-${i}`} maxLength={200} value={info.originalWriters}
@@ -613,7 +607,7 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
             </div>
           );
         })}
-        <label className="check-line" style={{ marginTop: 12 }}>
+        <label className="ui-check is-plain" style={{ marginTop: 12 }}>
           <input
             type="checkbox" id="aqCoverRightsAck"
             checked={o.coverRightsAck}
@@ -674,12 +668,12 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
       <div className="aq-option-detail">
         <h3>기존 발매 이전·재발매</h3>
         <p className="aq-option-intro">현재 상황을 고르면 기존 코드와 서비스 이전에 필요한 내용을 안내해 드려요.</p>
-        <div className="field">
+        <div className="ui-field">
           <label>어떤 상황인가요? <span className="required">*</span></label>
           <ChipPicker id="aqRereleaseKind" single options={Object.values(RERELEASE_KINDS)} value={o.rereleaseKind ? [RERELEASE_KINDS[o.rereleaseKind]] : []}
             onChange={v => set('options', { ...o, rereleaseKind: (Object.entries(RERELEASE_KINDS).find(([, label]) => label === v[0])?.[0] ?? '') as RereleaseData['rereleaseKind'], rereleaseAck: false })} />
         </div>
-        <div className="field">
+        <div className="ui-field">
           <label htmlFor="aqPreviousTitle">기존 발매명 <span className="required">*</span></label>
           <input
             id="aqPreviousTitle" maxLength={180} value={o.previousTitle}
@@ -687,11 +681,11 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
             placeholder="기존 앨범·싱글 제목"
           />
         </div>
-        <div className="field">
+        <div className="ui-field">
           <label htmlFor="aqPreviousDistributor">이전 유통사·레이블 (알고 있다면)</label>
           <input id="aqPreviousDistributor" maxLength={160} value={o.previousDistributor ?? ''} onChange={e => setOpt('previousDistributor', e.target.value)} placeholder="기존 배급을 맡은 곳" />
         </div>
-        <div className="field">
+        <div className="ui-field">
           <label htmlFor="aqPreviousUrl">기존 발매 링크 (보유 시)</label>
           <input id="aqPreviousUrl" type="url" maxLength={500} value={o.previousUrl ?? ''} onChange={e => setOpt('previousUrl', e.target.value)} placeholder="https://…" />
         </div>
@@ -700,11 +694,11 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
           value={form.originalDate}
           onChange={v => set('originalDate', v)}
         />
-        <div className="field"><label>기존 음원은 지금 서비스 중인가요? <span className="required">*</span></label>
+        <div className="ui-field"><label>기존 음원은 지금 서비스 중인가요? <span className="required">*</span></label>
           <ChipPicker id="aqPreviousAvailability" single options={Object.values(RERELEASE_AVAILABILITY)} value={o.previousAvailability ? [RERELEASE_AVAILABILITY[o.previousAvailability]] : []}
             onChange={v => set('options', { ...o, previousAvailability: (Object.entries(RERELEASE_AVAILABILITY).find(([, label]) => label === v[0])?.[0] ?? '') as RereleaseData['previousAvailability'], rereleaseAck: false })} />
         </div>
-        <div className="field"><label htmlFor="aqRereleaseAudio">이번 음원은 기존 녹음과 같은가요? <span className="required">*</span></label>
+        <div className="ui-field"><label htmlFor="aqRereleaseAudio">이번 음원은 기존 녹음과 같은가요? <span className="required">*</span></label>
           <select id="aqRereleaseAudio" value={o.rereleaseAudio ?? ''} onChange={e => set('options', { ...o, rereleaseAudio: e.target.value as RereleaseData['rereleaseAudio'], rereleaseAck: false })}>
             <option value="">선택해 주세요</option><option value="same">같은 녹음 · 음원 내용 변경 없음</option><option value="changed">새 녹음·리믹스 등 음악 내용 변경</option><option value="unknown">리마스터 등 변경 여부 확인 필요</option>
           </select>
@@ -714,54 +708,54 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
             : o.rereleaseAudio === 'changed' ? '새 녹음·리믹스처럼 음악 내용이 달라지면 새로운 ISRC가 필요해요. 기존 코드는 비교용으로 보관하고 새 음원에 적용하지 않아요.'
               : '단순 음량 조정과 음악 내용 변경은 코드 처리 방식이 달라요. 변경 내용을 아래에 적고 문의 메뉴에서 확인해 주세요. 확인 전에는 임시 저장해 둘 수 있어요.'}
         </div>}
-        <div className="field"><label htmlFor="aqPreviousUpc">기존 음반 코드 UPC (보유 시)</label>
+        <div className="ui-field"><label htmlFor="aqPreviousUpc">기존 음반 코드 UPC (보유 시)</label>
           <input id="aqPreviousUpc" inputMode="numeric" maxLength={14} value={o.previousUpc ?? ''} onChange={e => setOpt('previousUpc', e.target.value)} placeholder="기존 앨범·싱글의 UPC" />
-          {o.rereleaseKind === 'transfer' && o.rereleaseAudio === 'same' && o.previousUpc && <button type="button" className="link-btn" onClick={() => set('upc', o.previousUpc ?? '')}>동일한 음반의 UPC를 배급 설정에 적용</button>}
-          <p className="help">트랙 구성이나 버전이 다른 음반은 새 UPC를 사용해요. 기존 UPC는 이전 유통사에서 확인할 수 있어요.</p>
+          {o.rereleaseKind === 'transfer' && o.rereleaseAudio === 'same' && o.previousUpc && <button type="button" className="ui-btn is-white is-sm" onClick={() => set('upc', o.previousUpc ?? '')}>동일한 음반의 UPC를 배급 설정에 적용</button>}
+          <p className="ui-field-help">트랙 구성이나 버전이 다른 음반은 새 UPC를 사용해요. 기존 UPC는 이전 유통사에서 확인할 수 있어요.</p>
         </div>
         <h4>트랙별 기존 ISRC</h4>
-        {form.tracks.map((t, i) => <div key={t.id} className="field">
+        {form.tracks.map((t, i) => <div key={t.id} className="ui-field">
           <label htmlFor={`aqPreviousIsrc-${i}`}>{i + 1}. {t.title || '제목 없는 트랙'} · 기존 ISRC{o.rereleaseAudio === 'same' && <> <span className="required">*</span></>}</label>
           <input id={`aqPreviousIsrc-${i}`} maxLength={15} value={o.rereleaseTracks?.find(x => x.trackId === t.id)?.previousIsrc ?? (i === 0 ? o.previousId : '')}
             onChange={e => setOpt('rereleaseTracks', form.tracks.map((track, k) => ({ trackId: track.id, previousIsrc: track.id === t.id ? e.target.value : o.rereleaseTracks?.find(x => x.trackId === track.id)?.previousIsrc ?? (k === 0 ? o.previousId : '') })))} placeholder="예: KR-ABC-26-00001" />
         </div>)}
-        {o.rereleaseAudio === 'same' && <button type="button" className="button secondary" onClick={() => {
+        {o.rereleaseAudio === 'same' && <button type="button" className="ui-btn is-soft" onClick={() => {
           const previous = form.tracks.map((t, i) => ({ trackId: t.id, previousIsrc: o.rereleaseTracks?.find(x => x.trackId === t.id)?.previousIsrc ?? (i === 0 ? o.previousId : '') }));
           set('tracks', form.tracks.map(t => ({ ...t, isrc: previous.find(x => x.trackId === t.id)?.previousIsrc || t.isrc })));
           setOpt('rereleaseTracks', previous);
         }}>기존 ISRC를 트랙 등록에 적용</button>}
-        <p className="help">ISRC를 모르면 이전 유통사의 발매 내역에서 확인해 주세요. 같은 녹음에 새 코드를 발급하지 않도록 확인 후 접수해요.</p>
-        <div className="field"><label htmlFor="aqRereleaseRights">기존 계약과 이번 배급 권한 <span className="required">*</span></label>
+        <p className="ui-field-help">ISRC를 모르면 이전 유통사의 발매 내역에서 확인해 주세요. 같은 녹음에 새 코드를 발급하지 않도록 확인 후 접수해요.</p>
+        <div className="ui-field"><label htmlFor="aqRereleaseRights">기존 계약과 이번 배급 권한 <span className="required">*</span></label>
           <select id="aqRereleaseRights" value={o.rereleaseRights ?? ''} onChange={e => setOpt('rereleaseRights', e.target.value as RereleaseData['rereleaseRights'])}>
             <option value="">선택해 주세요</option><option value="owned">내가 권리자이며 이전 계약의 제한을 확인했어요</option><option value="permission">권리자·레이블로부터 이번 배급 허락을 받았어요</option><option value="pending">계약 또는 이전 허락을 확인 중이에요</option>
           </select>
         </div>
         {o.rereleaseRights === 'permission' && <DocAttach kind="master" releaseId={releaseId} onElectronic={onElectronic} onOpenDoc={onOpenDoc}
           id="aqRereleasePermission" label="이번 배급 이용 허락서" fileName={o.rereleasePermissionFile ?? ''} assetId={o.rereleasePermissionAssetId} busy={uploads.rereleasePermissionFile?.state === 'uploading'} onSelect={file => onDocument('rereleasePermissionFile', 'rereleasePermissionAssetId', file)} />}
-        <div className="field"><label htmlFor="aqRereleaseNotes">변경 사항·이전 일정·확인이 필요한 내용</label><textarea id="aqRereleaseNotes" maxLength={1200} rows={3} value={o.rereleaseNotes ?? ''} onChange={e => setOpt('rereleaseNotes', e.target.value)} placeholder="예: 기존 서비스 종료 요청일, 리마스터 변경 내용, 이전 계약 확인 상황" /></div>
+        <div className="ui-field"><label htmlFor="aqRereleaseNotes">변경 사항·이전 일정·확인이 필요한 내용</label><textarea id="aqRereleaseNotes" maxLength={1200} rows={3} value={o.rereleaseNotes ?? ''} onChange={e => setOpt('rereleaseNotes', e.target.value)} placeholder="예: 기존 서비스 종료 요청일, 리마스터 변경 내용, 이전 계약 확인 상황" /></div>
         {(o.previousAvailability === 'live' || o.previousAvailability === 'takedown_requested') && <p className="aq-option-note">기존 서비스가 남아 있어요. 이전 유통사와 종료·이전 일정을 조율하고, 새 서비스 연결을 확인한 뒤 중복 송출을 정리해 주세요. AUDENIQ 신청만으로 기존 서비스가 내려가지는 않아요.</p>}
-        <label className="check-line"><input id="aqRereleaseAck" type="checkbox" checked={!!o.rereleaseAck} onChange={e => setOpt('rereleaseAck', e.target.checked)} /><span>기존 계약·음원 코드·서비스 상태를 확인했고, 서비스 이전 일정과 플랫폼 연결 결과는 별도로 확인할게요.</span></label>
-        <p className="help">코드 안내 기준: <a href="https://isrc.ifpi.org/why-use-isrc/when-to-assign" target="_blank" rel="noreferrer">IFPI ISRC</a> · <a href="https://support.spotify.com/sc-en/artists/article/re-uploading-music/" target="_blank" rel="noreferrer">Spotify 재업로드 안내</a></p>
+        <label className="ui-check is-plain"><input id="aqRereleaseAck" type="checkbox" checked={!!o.rereleaseAck} onChange={e => setOpt('rereleaseAck', e.target.checked)} /><span>기존 계약·음원 코드·서비스 상태를 확인했고, 서비스 이전 일정과 플랫폼 연결 결과는 별도로 확인할게요.</span></label>
+        <p className="ui-field-help">코드 안내 기준: <a href="https://isrc.ifpi.org/why-use-isrc/when-to-assign" target="_blank" rel="noreferrer">IFPI ISRC</a> · <a href="https://support.spotify.com/sc-en/artists/article/re-uploading-music/" target="_blank" rel="noreferrer">Spotify 재업로드 안내</a></p>
       </div>
     ),
     ai: (
       <div className="aq-option-detail">
         <h3>AI 활용 내역</h3>
-        <div className="field">
+        <div className="ui-field">
           <label htmlFor="aqAiTool">어떻게 활용했나요? <span className="required">*</span> <small className="muted">여러 개 고를 수 있어요</small></label>
           <ChipPicker
             id="aqAiTool" list options={AI_USES} value={aiUses} onChange={v => setAi({ aiUses: v })}
             other={aiUseOther} onOther={v => setAi({ aiUseOther: v })} otherPlaceholder="AI를 활용한 부분을 적어 주세요"
           />
         </div>
-        <div className="field">
+        <div className="ui-field">
           <label htmlFor="aqAiTools">사용한 도구 <small className="muted">(선택)</small></label>
           <ChipPicker
             id="aqAiTools" options={AI_TOOLS} value={o.aiTools ?? []} onChange={v => setAi({ aiTools: v })}
             other={o.aiToolOther ?? ''} onOther={v => setAi({ aiToolOther: v })} otherPlaceholder="도구 이름"
           />
         </div>
-        <p className="help">이용 약관과 상업적 이용 허가 자료를 요청할 수 있어요. 모든 배급 플랫폼이 AI 음악을 받는 것은 아니에요.</p>
+        <p className="ui-field-help">이용 약관과 상업적 이용 허가 자료를 요청할 수 있어요. 모든 배급 플랫폼이 AI 음악을 받는 것은 아니에요.</p>
       </div>
     ),
   };
@@ -800,11 +794,11 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
         <div className="aq-option-detail" id="aqContentIdRights">
           <h3>YouTube Content ID 권리 확인</h3>
           <p>다른 이용자의 영상에 권리 주장을 하는 서비스예요. 일반 YouTube Music 배급과 별도로, 참조 음원의 독점 권리와 고유성을 확인해 주세요.</p>
-          <label className="check-line">
+          <label className="ui-check is-plain">
             <input type="checkbox" checked={!!o.contentIdExclusiveRightsAck} onChange={e => setOpt('contentIdExclusiveRightsAck', e.target.checked)} />
             <span>신청한 모든 지역에서 참조 음원 전체에 대한 독점 권리가 있어요.</span>
           </label>
-          <label className="check-line">
+          <label className="ui-check is-plain">
             <input type="checkbox" checked={!!o.contentIdOriginalRecordingAck} onChange={e => setOpt('contentIdOriginalRecordingAck', e.target.checked)} />
             <span>직접 제작한 고유한 녹음이며, 비독점 루프·무료 이용 음원·공공저작물 등을 포함하지 않아요.</span>
           </label>
@@ -887,7 +881,7 @@ function FinalReviewBanner({ form }: { form: WizardForm }) {
         </div>
       </div>
       {warnings.map(w => <p key={w} className="aq-option-note">{w}</p>)}
-      <p className="help" style={{ marginTop: 13 }}>
+      <p className="ui-field-help" style={{ marginTop: 13 }}>
         접수하기를 누르면 입력 내용을 바탕으로 신청서와 필요한 서류 목록이 생성돼요. 최종 승인 및 배급일은 검토 후 결정돼요.
       </p>
     </div>
@@ -896,8 +890,8 @@ function FinalReviewBanner({ form }: { form: WizardForm }) {
 
 /** 업로드 진행 표시 */
 function UploadStatus({ upload, idle }: { upload?: UploadState; idle: string }) {
-  if (!upload || upload.state === 'done') return <p className="help">{idle}</p>;
-  if (upload.state === 'error') return <p className="help aq-help-error" role="alert">{upload.message || '업로드에 실패했어요. 파일을 다시 선택해 주세요.'}</p>;
+  if (!upload || upload.state === 'done') return <p className="ui-field-help">{idle}</p>;
+  if (upload.state === 'error') return <p className="ui-field-help aq-help-error" role="alert">{upload.message || '업로드에 실패했어요. 파일을 다시 선택해 주세요.'}</p>;
   const pct = Math.round(upload.pct * 100);
   return (
     <div className="aq-upload-progress" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="업로드 진행률">
@@ -923,23 +917,23 @@ const TrackEditor = memo(function TrackEditor({
       <div className="minor-actions">
         <h3>트랙 {i + 1}</h3>
         {canDelete && (
-          <button type="button" className="link-btn" onClick={() => onDeleteTrack(t.id)}>삭제</button>
+          <button type="button" className="ui-btn is-white is-sm" onClick={() => onDeleteTrack(t.id)}>삭제</button>
         )}
       </div>
-      <div className="field track-title-field">
+      <div className="ui-field track-title-field">
         <label htmlFor={`tr-${i}-title`}>곡 제목 <span className="required">*</span></label>
         <input id={`tr-${i}-title`} value={t.title} onChange={e => setTrack(t.id, 'title', e.target.value)} placeholder="곡명만 입력 (피처링·버전 표기 제외)" maxLength={200} />
       </div>
-      <div className="field">
+      <div className="ui-field">
         <label htmlFor={`tr-${i}-featuring`}>피처링 아티스트</label>
         <input id={`tr-${i}-featuring`} value={t.featuring} onChange={e => setTrack(t.id, 'featuring', e.target.value)} placeholder="없으면 비워 두세요 · 여러 명은 쉼표로 구분" maxLength={200} />
       </div>
       <div className="form-grid">
-        <div className="field">
+        <div className="ui-field">
           <label htmlFor={`tr-${i}-composers`}>작곡 <span className="required">*</span></label>
           <input id={`tr-${i}-composers`} value={t.composers} onChange={e => setTrack(t.id, 'composers', e.target.value)} placeholder="실명 또는 활동명, 쉼표로 구분" maxLength={200} />
         </div>
-        <div className="field">
+        <div className="ui-field">
           <label htmlFor={`tr-${i}-lyricists`}>작사 {!t.instrumental && <span className="required">*</span>}</label>
           <input
             id={`tr-${i}-lyricists`} value={t.instrumental ? '' : t.lyricists} disabled={t.instrumental}
@@ -948,11 +942,11 @@ const TrackEditor = memo(function TrackEditor({
           />
         </div>
       </div>
-      <label className="check-line aq-inst-line">
+      <label className="ui-check is-plain aq-inst-line">
         <input type="checkbox" checked={t.instrumental} onChange={e => setTrack(t.id, 'instrumental', e.target.checked)} />
         <span><strong>가사 없는 연주곡이에요</strong><small>보컬·가사가 없으면 작사와 가사를 입력하지 않아도 돼요.</small></span>
       </label>
-      <div className="field">
+      <div className="ui-field">
         <label htmlFor={`trackFile-${i}`}>음원 파일 <span className="required">*</span></label>
         <FilePicker
           id={`trackFile-${i}`} fileName={t.audioName}
@@ -972,33 +966,33 @@ const TrackEditor = memo(function TrackEditor({
         aria-expanded={expanded}
       >
         <span>상세 정보 {t.isrc ? `· ${t.isrc}` : ''}</span>
-        <span className={`toggle-arrow${expanded ? ' open' : ''}`}>›</span>
+        <span className={`toggle-arrow${expanded ? ' open' : ''}`}><Glyph name="chevron-right" size={16} /></span>
       </button>
       {expanded && (
         <div className="track-detail-body">
           <div className="form-grid">
-            <div className="field">
+            <div className="ui-field">
               <label htmlFor={`tr-${i}-version`}>버전 / 부제</label>
               <input id={`tr-${i}-version`} value={t.version} onChange={e => setTrack(t.id, 'version', e.target.value)} placeholder="예: Acoustic Version" maxLength={200} />
             </div>
-            <div className="field">
+            <div className="ui-field">
               <label htmlFor={`tr-${i}-isrc`}>ISRC (보유 시)</label>
               <input id={`tr-${i}-isrc`} value={t.isrc} onChange={e => setTrack(t.id, 'isrc', e.target.value)} placeholder="예: KR-ABC-26-00001" maxLength={200} />
             </div>
-            <div className="field">
+            <div className="ui-field">
               <label htmlFor={`tr-${i}-arrangers`}>편곡</label>
               <input id={`tr-${i}-arrangers`} value={t.arrangers} onChange={e => setTrack(t.id, 'arrangers', e.target.value)} placeholder="참여자 이름" maxLength={200} />
             </div>
-            <div className="field">
+            <div className="ui-field">
               <label htmlFor={`tr-${i}-performers`}>실연자 (보컬·연주)</label>
               <input id={`tr-${i}-performers`} value={t.performers} onChange={e => setTrack(t.id, 'performers', e.target.value)} placeholder="참여자 이름" maxLength={200} />
             </div>
-            <div className="field">
+            <div className="ui-field">
               <label htmlFor={`tr-${i}-producer`}>프로듀서</label>
               <input id={`tr-${i}-producer`} value={t.producer} onChange={e => setTrack(t.id, 'producer', e.target.value)} placeholder="프로듀서 이름" maxLength={200} />
             </div>
           </div>
-          {!t.instrumental && <div className="field">
+          {!t.instrumental && <div className="ui-field">
             <label htmlFor={`tr-${i}-lyrics`}>가사 전문</label>
             <textarea
               id={`tr-${i}-lyrics`} value={t.lyrics}
@@ -1006,7 +1000,7 @@ const TrackEditor = memo(function TrackEditor({
               rows={4} maxLength={10000} placeholder="가사 전체를 입력해 주세요 (국내 플랫폼 가사 노출·심의에 쓰여요)"
             />
           </div>}
-          <label className="check-line">
+          <label className="ui-check is-plain">
             <input
               type="checkbox" checked={t.explicit}
               onChange={e => setTrack(t.id, 'explicit', e.target.checked)}
@@ -1831,7 +1825,7 @@ export function Upload() {
       </div>
 
       {loadingEdit && (
-        <div className="notice aq-loading-notice" role="status" style={{ marginBottom: 12 }}>
+        <div className="ui-callout aq-loading-notice" role="status" style={{ marginBottom: 12 }}>
           <span className="aq-spinner" aria-hidden="true" /> 기존 발매 정보를 불러오는 중이에요…
         </div>
       )}
@@ -1907,7 +1901,7 @@ export function Upload() {
                 <button type="button" onClick={() => jumpToFix(c)}>
                   <em>{correctionWhere(c)}</em>
                   <span>{c.message}</span>
-                  <b aria-hidden="true">{c.step === step ? '입력칸 보기' : '이동'} ›</b>
+                  <b aria-hidden="true">{c.step === step ? '입력칸 보기' : '이동'} <Glyph name="chevron-right" size={14} /></b>
                 </button>
               </li>
             ))}
@@ -1919,27 +1913,27 @@ export function Upload() {
         {step === 0 && (
           <section className="step-section">
             <div className="form-grid">
-              <div className="field">
+              <div className="ui-field">
                 <label htmlFor="f-artist">아티스트명 <span className="required">*</span></label>
                 <input id="f-artist" value={form.artist} onChange={e => set('artist', e.target.value)} maxLength={120} placeholder="예: AUDENIQ" autoComplete="off" />
               </div>
-              <div className="field">
+              <div className="ui-field">
                 <label htmlFor="f-title">발매 제목 <span className="required">*</span></label>
                 <input id="f-title" value={form.title} onChange={e => set('title', e.target.value)} maxLength={180} placeholder="싱글 또는 앨범 제목" autoComplete="off" />
               </div>
-              <div className="field">
+              <div className="ui-field">
                 <label htmlFor="f-type">발매 유형</label>
                 <select id="f-type" value={form.type} onChange={e => set('type', e.target.value)}>
                   {KINDS.map(([id, title]) => <option key={id} value={id}>{title}</option>)}
                 </select>
               </div>
-              <div className="field">
+              <div className="ui-field">
                 <label htmlFor="f-language">주요 언어</label>
                 <select id="f-language" value={form.language} onChange={e => set('language', e.target.value)}>
                   {LANGUAGES.map(([id, title]) => <option key={id} value={id}>{title}</option>)}
                 </select>
               </div>
-              <div className="field">
+              <div className="ui-field">
                 <label htmlFor="f-genre">장르 <span className="required">*</span></label>
                 <select
                   id="f-genre" value={genreIsCustom ? '__other__' : form.genre}
@@ -1964,18 +1958,18 @@ export function Upload() {
                   />
                 )}
               </div>
-              <div className="field">
+              <div className="ui-field">
                 <label htmlFor="f-label">레이블 / 발매사 표기</label>
                 <input id="f-label" value={form.label} onChange={e => set('label', e.target.value)} maxLength={120} placeholder="권리 계약에 맞는 표기" />
               </div>
             </div>
-            <div className="field">
+            <div className="ui-field">
               <label htmlFor="f-notes">앨범 소개</label>
               <textarea
                 id="f-notes" value={form.notes} onChange={e => set('notes', e.target.value)}
                 rows={3} maxLength={1500} placeholder="발매 소개와 전달 메모"
               />
-              <p className="help aq-counter">{form.notes.length} / 1500</p>
+              <p className="ui-field-help aq-counter">{form.notes.length} / 1500</p>
             </div>
             <h2 className="subhead">플랫폼 아티스트 프로필</h2>
             <div className="aq-choice-row" role="radiogroup" aria-label="플랫폼 아티스트 프로필">
@@ -1991,13 +1985,16 @@ export function Upload() {
               ))}
             </div>
             {!form.artistProfile.isNew && (
-              <div className="aq-reveal">
-                <p className="help" style={{ margin: '4px 0 14px' }}>
-                  기존 아티스트 페이지 주소를 하나 이상 입력해 주세요. 이름이 같은 다른 아티스트 페이지로 잘못 올라가는 것을 막아요.
+              <div className="aq-profile-links ui-on-soft aq-reveal">
+                <p className="aq-profile-links-help">
+                  기존 아티스트 페이지 주소를 <b>하나 이상</b> 넣어 주세요. 이름이 같은 다른 아티스트 페이지로 잘못 올라가는 것을 막아요.
                 </p>
                 {PROFILE_LINKS.map(l => (
-                  <div className="field" key={l.key}>
-                    <label htmlFor={`f-link-${l.key}`}>{l.label}</label>
+                  <div className="ui-field" key={l.key}>
+                    <label htmlFor={`f-link-${l.key}`}>
+                      <BrandMark id={l.key} label={l.label} color={DSP_COLOR[l.key]} size={28} className="aq-dsp-mark" />
+                      {l.label}
+                    </label>
                     <input
                       id={`f-link-${l.key}`} type="url" inputMode="url" autoComplete="off"
                       value={form.artistProfile[l.key]} placeholder={l.placeholder} maxLength={300}
@@ -2030,7 +2027,7 @@ export function Upload() {
             </div>
             <div className="spaced-actions">
               <button
-                type="button" className="button secondary"
+                type="button" className="ui-btn is-soft"
                 onClick={() => {
                   const t = newTrack();
                   set('tracks', [...form.tracks, t]);
@@ -2049,7 +2046,7 @@ export function Upload() {
 
         {step === 2 && (
           <section className="step-section">
-            <div className="field">
+            <div className="ui-field">
               <label htmlFor="coverFile">커버아트 <span className="required">*</span></label>
               <label
                 className={`aq-dropzone${dragOver ? ' is-over' : ''}${form.coverData ? ' has-file' : ''}`}
@@ -2075,7 +2072,7 @@ export function Upload() {
                 </span>
               </label>
               {uploads.cover && uploads.cover.state !== 'done' && <UploadStatus upload={uploads.cover} idle="" />}
-              {coverWarn && <p className="help aq-help-warn">{coverWarn}</p>}
+              {coverWarn && <p className="ui-field-help aq-help-warn">{coverWarn}</p>}
             </div>
             {form.coverData && (
               <div className="cover-dist-preview aq-reveal">
@@ -2087,9 +2084,9 @@ export function Upload() {
                     <span>{form.artist.trim() || '아티스트'}</span>
                   </div>
                 </div>
-                <p className="help">실제 배급되면 각 플랫폼에 이 커버아트로 표시돼요.</p>
+                <p className="ui-field-help">실제 배급되면 각 플랫폼에 이 커버아트로 표시돼요.</p>
                 <button
-                  type="button" className="link-btn"
+                  type="button" className="ui-btn is-white is-sm"
                   onClick={() => {
                     uploadAborts.current.get('cover')?.abort();
                     uploadAborts.current.delete('cover');
@@ -2113,13 +2110,13 @@ export function Upload() {
                 value={form.releaseDate} min={origDate && origDate < minReleaseDate(form.options.express) ? origDate : minReleaseDate(form.options.express)}
                 onChange={v => set('releaseDate', v)}
               />
-              <div className="field">
+              <div className="ui-field">
                 <label htmlFor="f-upc">음반 코드 UPC (있을 때만)</label>
                 <input id="f-upc" inputMode="numeric" value={form.upc} onChange={e => set('upc', e.target.value.replace(/\D/g, '').slice(0, 13))} maxLength={13} placeholder="없으면 자동 발급돼요" />
               </div>
             </div>
             <h2 className="subhead">배급 대상</h2>
-            <label className="check-line">
+            <label className="ui-check is-plain">
               <input
                 type="checkbox"
                 checked={form.territories.includes('WORLD')}
@@ -2131,7 +2128,7 @@ export function Upload() {
             <div className="distribution-default">
               <div>
                 <strong>{allPlatforms ? '주요 음악 플랫폼에 모두 배급해요.' : `${form.platforms.length}개 플랫폼에 배급해요.`}</strong>
-                <p className="help">{dspError || (!dsps ? '서버에서 플랫폼 상태를 확인하는 중이에요.' : showPlatforms ? '현재 배급 가능한 플랫폼만 선택할 수 있어요.' : '특정 플랫폼만 고르려면 스위치를 꺼 주세요.')}</p>
+                <p className="ui-field-help">{dspError || (!dsps ? '서버에서 플랫폼 상태를 확인하는 중이에요.' : showPlatforms ? '현재 배급 가능한 플랫폼만 선택할 수 있어요.' : '특정 플랫폼만 고르려면 스위치를 꺼 주세요.')}</p>
               </div>
               <label className="aq-switch">
                 <input
@@ -2159,9 +2156,9 @@ export function Upload() {
                           key={key} type="button" aria-pressed={on} disabled={!available && !on} className={`aq-dsp${on ? ' is-on' : ''}${!available ? ' is-unavailable' : ''}`}
                           onClick={() => set('platforms', on ? form.platforms.filter(p => p !== key) : [...form.platforms, key])}
                         >
-                          <span className="aq-dsp-mark" style={{ background: DSP_COLOR[key] ?? '#3B63F3' }} aria-hidden="true">{label.slice(0, 1)}</span>
+                          <BrandMark id={key} label={label} color={DSP_COLOR[key] ?? '#3B63F3'} size={28} className="aq-dsp-mark" />
                           <span className="aq-dsp-name">{label}{!available && <small>현재 배급 불가</small>}</span>
-                          <span className="aq-dsp-check" aria-hidden="true"><CheckIcon size={11} /></span>
+                          <span className="aq-dsp-check" aria-hidden="true"><CheckIcon size={16} /></span>
                         </button>
                       );
                     })}
@@ -2170,7 +2167,7 @@ export function Upload() {
               ))}
             </div>
             )}
-            {!dsps && <p className="help" role="status">{dspError || '플랫폼 목록을 서버에서 불러오는 중이에요.'}</p>}
+            {!dsps && <p className="ui-field-help" role="status">{dspError || '플랫폼 목록을 서버에서 불러오는 중이에요.'}</p>}
             <div className="aq-fix-zone"><OptionsSection form={form} set={set} group="service" onDocument={attachOptionDocument} uploads={uploads} onElectronic={kind => void openElectronic(kind)} onOpenDoc={setOpenDocId} releaseId={draftIdRef.current ?? undefined} /></div>
           </section>
         )}
@@ -2178,7 +2175,7 @@ export function Upload() {
         {step === 4 && (
           <section className="step-section">
             <div className="form-grid">
-              <div className="field">
+              <div className="ui-field">
                 <label htmlFor="f-ownership">음원(마스터) 권리자 <span className="required">*</span></label>
                 <input
                   id="f-ownership" value={form.ownership} maxLength={160} placeholder="개인명 또는 법인명"
@@ -2196,20 +2193,20 @@ export function Upload() {
                     dirtyRef.current = true;
                   }}
                 />
-                <small className="help">입력하면 아래 ℗·© 표기가 ‘{(form.releaseDate || todayStr()).slice(0, 4)} 권리자명’으로 자동으로 채워져요. 다르면 직접 고쳐 주세요.</small>
+                <small className="ui-field-help">입력하면 아래 ℗·© 표기가 ‘{(form.releaseDate || todayStr()).slice(0, 4)} 권리자명’으로 자동으로 채워져요. 다르면 직접 고쳐 주세요.</small>
               </div>
-              <div className="field">
+              <div className="ui-field">
                 <label htmlFor="f-phonogram">℗ 음반제작자 권리 표기 <span className="required">*</span></label>
                 <input id="f-phonogram" value={form.phonogram} onChange={e => set('phonogram', e.target.value)} maxLength={180} placeholder={`예: ${new Date().getFullYear()} 권리자명`} />
               </div>
-              <div className="field">
+              <div className="ui-field">
                 <label htmlFor="f-copyright">© 아트워크 / 앨범 권리 표기 <span className="required">*</span></label>
                 <input id="f-copyright" value={form.copyright} onChange={e => set('copyright', e.target.value)} maxLength={180} placeholder={`예: ${new Date().getFullYear()} 권리자명`} />
               </div>
             </div>
             {!form.ownership && !form.phonogram && !form.copyright && form.artist.trim() && (
               <button
-                type="button" className="link-btn aq-autofill"
+                type="button" className="ui-btn is-white is-sm aq-autofill"
                 onClick={() => {
                   const y = (form.releaseDate || todayStr()).slice(0, 4);
                   const who = form.label.trim() || form.artist.trim();
@@ -2224,7 +2221,7 @@ export function Upload() {
             <h2 className="subhead">필수 확인 항목</h2>
             <div className="field-group">
               {RIGHTS_CHECKS.map(([k, label]) => (
-                <label key={k} className="check-line">
+                <label key={k} className="ui-check is-plain">
                   <input
                     type="checkbox"
                     checked={!!form.rightsChecks[k]}
@@ -2239,7 +2236,7 @@ export function Upload() {
                 <h2 className="subhead" style={{ marginTop: 20 }}>선택한 옵션 추가 확인</h2>
                 <div className="field-group">
                   {applicableConditionals(form.options).map(([k, label]) => (
-                    <label key={k} className="check-line">
+                    <label key={k} className="ui-check is-plain">
                       <input
                         type="checkbox"
                         checked={!!form.rightsChecks[k]}
@@ -2251,7 +2248,7 @@ export function Upload() {
                 </div>
               </>
             )}
-            <div className="notice">
+            <div className="ui-callout">
               허락서·동의서는 위의 AUDENIQ 전자 문서 도구에서 작성하고 권리자가 직접 서명할 수 있어요. 완성된 서류는 ‘권리·보완 서류’에도 보관돼요.
             </div>
             <OptionDocsBanner options={form.options} />
@@ -2265,11 +2262,11 @@ export function Upload() {
                 <div key={h} className="aq-review-card">
                   <strong>{h}</strong>
                   <p className="break">{t}</p>
-                  <button type="button" className="link-btn aq-review-edit" onClick={() => goStep(target)} aria-label={`${h} 수정`}>수정</button>
+                  <button type="button" className="ui-btn is-white is-sm aq-review-edit" onClick={() => goStep(target)} aria-label={`${h} 수정`}>수정</button>
                 </div>
               ))}
             </div>
-            <div className="notice" style={{ marginTop: 24 }}>
+            <div className="ui-callout" style={{ marginTop: 24 }}>
               {resubmit
                 ? '‘다시 접수하기’를 누르면 고친 내용으로 다시 검토를 받아요. 처음 낸 배급 신청서는 그대로 유지돼요.'
                 : `아래에 서명하고 ‘${editId && origStatus !== 'draft' ? '서명하고 수정 완료' : '서명하고 접수하기'}’를 누르면 배급 신청서가 발급되고 권리 확인서가 준비돼요. 최종 승인과 배급일은 담당자 검토 후 확정돼요.`}
@@ -2279,28 +2276,28 @@ export function Upload() {
             {!resubmit && (
             <section className="aq-apply-sign" aria-labelledby="aqApplySignHead">
               <h2 className="subhead" id="aqApplySignHead">신청인 서명</h2>
-              <p className="help">서명하면 입력한 내용으로 배급 신청서가 만들어지고, 접수 후 바로 확인·저장할 수 있어요.</p>
+              <p className="ui-field-help">서명하면 입력한 내용으로 배급 신청서가 만들어지고, 접수 후 바로 확인·저장할 수 있어요.</p>
               <div className="form-grid">
-                <div className="field">
+                <div className="ui-field">
                   <label htmlFor="f-signer">신청인 성명 <span className="required">*</span></label>
                   <input
                     id="f-signer" autoComplete="name" maxLength={80} value={signerName}
                     onChange={e => setSigner(v => ({ ...v, name: e.target.value, touched: true }))} placeholder="실명 또는 법인명"
                   />
                 </div>
-                <div className="field">
+                <div className="ui-field">
                   <label htmlFor="f-signer-role">신청인 구분</label>
                   <select id="f-signer-role" value={signer.role} onChange={e => setSigner(v => ({ ...v, role: e.target.value }))}>
                     {SIGNER_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
                   </select>
                 </div>
               </div>
-              <div className="field">
+              <div className="ui-field">
                 <label htmlFor="aqApplyPad">서명 <span className="required">*</span></label>
                 <SignaturePad ref={signRef} id="aqApplyPad" label="신청인 서명 입력" height={170} onChange={setSigned} />
               </div>
               <div className="aq-agree-box">
-                <label className="check-line aq-agree-all-line">
+                <label className="ui-check is-plain aq-agree-all-line">
                   <input
                     type="checkbox" checked={AGREEMENTS.every(a => agreed[a.id])}
                     onChange={e => setAgreed(Object.fromEntries(AGREEMENTS.map(a => [a.id, e.target.checked])))}
@@ -2308,7 +2305,7 @@ export function Upload() {
                   <span><strong>아래 내용에 모두 동의해요</strong></span>
                 </label>
                 {AGREEMENTS.map(a => (
-                  <label key={a.id} className="check-line">
+                  <label key={a.id} className="ui-check is-plain">
                     <input
                       type="checkbox" id={`agree-${a.id}`} checked={!!agreed[a.id]}
                       onChange={e => setAgreed(v => ({ ...v, [a.id]: e.target.checked }))}
@@ -2323,23 +2320,23 @@ export function Upload() {
         )}
       </div>
 
-      {error && <div id="wizardError" className="notice error aq-shake" role="alert" key={error}>{error}</div>}
+      {error && <div id="wizardError" className="ui-callout is-danger aq-shake" role="alert" key={error}>{error}</div>}
       </div>
       </div>
 
       <div className="step-actions">
-        <button type="button" id="wizardBack" className="button secondary" onClick={back} disabled={submitting}>
+        <button type="button" id="wizardBack" className="ui-btn is-soft" onClick={back} disabled={submitting}>
           {step === 0 ? (editId ? '나가기' : '홈으로') : '이전'}
         </button>
         {resubmit && step < STEPS.length - 1 && (
           // 이미 접수한 발매를 고칠 때는 끝까지 가지 않고 여기서 바로 저장(다시 접수)할 수 있다
-          <button type="button" id="wizardSaveNow" className="button secondary" onClick={() => void submit()} disabled={submitting || loadingEdit}>
+          <button type="button" id="wizardSaveNow" className="ui-btn is-soft" onClick={() => void submit()} disabled={submitting || loadingEdit}>
             {submitting ? '저장하는 중' : '수정 완료'}
           </button>
         )}
         <button
           type="button" id="wizardNext"
-          className={`button${submitting ? ' is-busy' : ''}`}
+          className={`ui-btn is-primary${submitting ? ' is-busy' : ''}`}
           onClick={next} disabled={submitting || loadingEdit} aria-busy={submitting}
         >
           {submitting ? '접수하는 중' : step === STEPS.length - 1 ? (resubmit ? '다시 접수하기' : editId && origStatus !== 'draft' ? '서명하고 수정 완료' : '서명하고 접수하기') : '다음으로'}

@@ -6,7 +6,7 @@
    ========================================================================== */
 :root{
   --aqc-blue:#3B63F3;--aqc-blue-press:#2C56E0;--aqc-ink:#171B29;--aqc-muted:#8a95ab;
-  --aqc-box:#e6ebf4;--aqc-box-hover:#dde4f1;--aqc-ring:#d3dbe8;--aqc-focus:#9db1fb;
+  --aqc-box:#E8EDF5;--aqc-box-hover:#DFE4EC;--aqc-ring:transparent;--aqc-focus:#9db1fb;
   --aqc-check:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.6 8.3 6.6 11.3 12.4 4.9' fill='none' stroke='%23fff' stroke-width='2.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   --aqc-dash:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 8h7' fill='none' stroke='%23fff' stroke-width='2.3' stroke-linecap='round'/%3E%3C/svg%3E");
   --aqc-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='m6.5 9.5 5.5 5.5 5.5-5.5' fill='none' stroke='%235d6880' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");

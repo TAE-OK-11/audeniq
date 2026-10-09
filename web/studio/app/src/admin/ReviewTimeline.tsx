@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { staffApi, type ReleaseTimelineItem } from './api';
 import { useAsync } from '../hooks/useAsync';
 import { APPROVAL_STATUS, CHECK_STATUS, checkLabel, checkSummary, dspLabel, pick, shortId } from './labels';
-import { ErrorBox, Section, Skeleton, StatusChip } from './ui';
+import { ChipGroup, ErrorBox, Section, SkeletonList, StatusBadge } from './ui';
 import { Glyph } from '../components/Glyph';
 import { RecordDetail, recordRows } from './RecordDetail';
 
@@ -111,13 +111,12 @@ export function TimelineRow({ item: t, repeat = 1 }: { item: ReleaseTimelineItem
   // 줄에 이미 보이는 상태·결과·횟수는 ‘자세히’에서 빼고, 남는 게 없으면 ‘자세히’도 숨긴다
   const rows = recordRows(t.detail, t.source === 'job' ? ['status', 'attempts', 'last_error'] : ['status', 'approval', 'outcome']);
   return <li className={['is-' + kind, tone(t) && `is-${tone(t)}`].filter(Boolean).join(' ')}>
-    <i aria-hidden="true" />
     <div className="adm-min">
       <div className="adm-tl-top">
         <b>{title}</b>
         {repeat > 1 && <span className="adm-tl-repeat">×{repeat}</span>}
-        {t.source === 'check' && <StatusChip value={pick(CHECK_STATUS, String(t.detail.status))} />}
-        {t.source === 'staff_decision' && <StatusChip value={pick(APPROVAL_STATUS, String(t.detail.approval))} />}
+        {t.source === 'check' && <StatusBadge value={pick(CHECK_STATUS, String(t.detail.status))} />}
+        {t.source === 'staff_decision' && <StatusBadge value={pick(APPROVAL_STATUS, String(t.detail.approval))} />}
       </div>
       <small>{fmt(timeFmt, t.at)} · {KIND_LABEL[kind]}{actor && ` · ${actor}`}</small>
       {summary && <p className="adm-tl-summary">{summary}</p>}
@@ -149,26 +148,25 @@ export function ReviewTimeline({ releaseId, revisionId, refreshTick }: { release
   }
   return <Section title="처리 이력" meta={data ? `${items.length}건${data.truncated ? ` · 최근 ${limit}건` : ''}` : '검사·담당자 결정·배급 작업·플랫폼 응답'}>
     {error && <ErrorBox message={error} onRetry={reload} />}
-    {loading && !data ? <Skeleton rows={3} /> : <>
+    {loading && !data ? <SkeletonList rows={3} /> : <>
       {items.length > 0 && (
-        <div className="adm-tl-filter" role="group" aria-label="이력 종류">
-          <button type="button" className={filter === 'all' ? 'is-on' : ''} aria-pressed={filter === 'all'} onClick={() => { setFilter('all'); setExpanded(false); }}>전체 <span>{items.length}</span></button>
-          {KINDS.filter(k => counts[k]).map(k => (
-            <button key={k} type="button" className={filter === k ? 'is-on' : ''} aria-pressed={filter === k} onClick={() => { setFilter(k); setExpanded(false); }}>{KIND_LABEL[k]} <span>{counts[k]}</span></button>
-          ))}
-        </div>
+        <ChipGroup
+          label="이력 종류" size="sm" wrap className="adm-tl-filter" value={filter}
+          options={[{ value: 'all' as const, label: '전체', count: items.length }, ...KINDS.filter(k => counts[k]).map(k => ({ value: k, label: KIND_LABEL[k], count: counts[k] }))]}
+          onChange={v => { setFilter(v); setExpanded(false); }}
+        />
       )}
       {!items.length && <p className="small muted">기록된 처리 이력이 없어요.</p>}
       {groups.map(g => (
         <div key={g.day} className="adm-tl-day">
           <h3>{g.day}</h3>
-          <ol className="adm-timeline">{g.items.map(({ item: t, repeat }, i) => <TimelineRow key={`${t.at}-${t.source}-${t.kind}-${i}`} item={t} repeat={repeat} />)}</ol>
+          <ol className="ui-timeline">{g.items.map(({ item: t, repeat }, i) => <TimelineRow key={`${t.at}-${t.source}-${t.kind}-${i}`} item={t} repeat={repeat} />)}</ol>
         </div>
       ))}
       {shown.length < filtered.length && (
         <button type="button" className="adm-tl-more" onClick={() => setExpanded(true)}>이전 기록 {filtered.length - shown.length}건 더 보기<Glyph name="chevron-right" size={12} /></button>
       )}
-      {(expanded || filtered.length <= PREVIEW + 2) && data?.truncated && limit < 2000 && <button type="button" className="adm-btn soft small" disabled={loading} onClick={() => setLimit(n => Math.min(n * 5, 2000))}>이전 기록 더 보기</button>}
+      {(expanded || filtered.length <= PREVIEW + 2) && data?.truncated && limit < 2000 && <button type="button" className="ui-btn is-soft is-sm" disabled={loading} onClick={() => setLimit(n => Math.min(n * 5, 2000))}>이전 기록 더 보기</button>}
     </>}
   </Section>;
 }

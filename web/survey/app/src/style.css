@@ -8,7 +8,7 @@
   --surface-alt:#F2F6FF; --ink:#171B29; --muted:#667085;
   --border:#E6ECF5; --navy:#111C3D; --radius:32px;
   --container:1120px;
-  --font-body:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --font-body:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
   font-family:var(--font-body); color:var(--ink);
 }
 *,*::before,*::after{box-sizing:border-box}
@@ -18,6 +18,7 @@ a{color:inherit;text-decoration:none}button,input,textarea{font:inherit}
 button,a{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 button{cursor:pointer}button:disabled{cursor:not-allowed}
 :focus-visible{outline:3px solid var(--blue);outline-offset:4px}
+:is(input:not([type=checkbox]):not([type=radio]),textarea,select):focus-visible{outline:none}
 [hidden],.step[hidden],.other-field[hidden]{display:none!important}
 .skip{position:fixed;left:20px;top:-90px;z-index:50;background:white;padding:12px 20px;box-shadow:0 8px 24px #171b2920;color:var(--blue)}
 .skip:focus{top:12px}
@@ -48,7 +49,7 @@ button{cursor:pointer}button:disabled{cursor:not-allowed}
 .intro-purpose strong{display:inline-block;color:var(--ink);font-size:14px;font-weight:760;margin-bottom:3px}
 .intro p strong{color:var(--ink);font-weight:650}
 .intro-foot{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin-top:24px;color:#4663A0;font-size:13px;font-weight:720}
-.intro-foot span{display:inline-flex;align-items:center;background:#E3ECFF;border-radius:10px;padding:6px 10px}
+.intro-foot span{display:inline-flex;align-items:center;gap:5px;background:#E3ECFF;border-radius:10px;padding:6px 10px}
 .intro-dot{color:#ABB6CF}
 /* The angled navy detail deliberately echoes the homepage's tilted release concept. */
 .intro::after{content:'AUDENIQ  /  YOUR VOICE MATTERS';position:absolute;z-index:0;right:-67px;bottom:35px;transform:rotate(-8deg);width:370px;text-align:center;padding:18px 12px;background:var(--navy);color:#B7C6EA;font-size:11px;letter-spacing:.11em;font-weight:700;border-radius:13px;box-shadow:0 24px 46px -25px #22396640;pointer-events:none}
@@ -69,7 +70,7 @@ button{cursor:pointer}button:disabled{cursor:not-allowed}
 .question-title,.step .question h3{margin:0 0 9px;font-size:clamp(19px,2.2vw,23px);font-weight:730;line-height:1.5;letter-spacing:-.035em;color:var(--ink)}
 .question-instructions{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:0 0 21px}
 .question-hint{display:inline-flex;align-items:center;gap:9px;font-size:14px;font-weight:730;line-height:1.45;color:#3153A3;background:#E9F0FF;padding:9px 12px;border-radius:10px;margin:0;letter-spacing:-.016em}
-.question-hint::before{content:"✓";display:grid;place-items:center;flex-shrink:0;width:18px;height:18px;border-radius:50%;background:var(--blue);color:#fff;font-size:11px;font-weight:850}
+.question-hint::before{content:"";flex-shrink:0;width:16px;height:16px;background:var(--blue);-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5 9.5 17 19 7.5'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5 9.5 17 19 7.5'/%3E%3C/svg%3E") center/contain no-repeat}
 .selection-count{font-size:13px;font-weight:680;color:#62718E;white-space:nowrap;font-variant-numeric:tabular-nums}
 .selection-count.has-selection{color:var(--blue)}
 .choices{display:grid;grid-template-columns:1fr;gap:10px}
@@ -80,14 +81,14 @@ button{cursor:pointer}button:disabled{cursor:not-allowed}
 .choice:has(input:focus-visible){outline:3px solid var(--blue);outline-offset:2px}
 .choice input{position:absolute;width:1px;height:1px;opacity:0}
 .choice-label{flex:1;min-width:0}
-.choice-tick{display:grid;place-items:center;flex-shrink:0;width:22px;height:22px;margin-left:auto;border-radius:50%;background:#E8EDF9;color:transparent;font-size:12px;font-weight:750;transition:background .2s,color .2s}
-.choice:has(input:checked) .choice-tick,.choice.is-selected .choice-tick{background:var(--blue);color:#fff}
+.choice-tick{display:grid;place-items:center;flex-shrink:0;width:22px;height:22px;margin-left:auto;color:transparent;transition:background .2s,color .2s}
+.choice:has(input:checked) .choice-tick,.choice.is-selected .choice-tick{color:var(--blue)}
 .choice-icon{width:30px;height:30px;display:grid;place-items:center;border-radius:10px;flex-shrink:0;background:var(--surface-alt);color:var(--blue);font-size:17px}
 .wide-choice{grid-column:1/-1}.compact .choice{min-height:55px;padding:12px 15px}
 .input-label{display:block;margin:28px 0 10px;font-size:15px;font-weight:680;color:var(--ink);line-height:1.55}
 .input-label span{font-size:12px;color:var(--muted);font-weight:400;margin-left:5px}
 .text-field,.other-field input,#contact,textarea{display:block;width:100%;padding:15px 17px;background:#fff;border:0;border-radius:12px;color:var(--ink);font-size:15px;line-height:1.6;outline:none;resize:vertical;transition:background .2s,box-shadow .2s}
-.text-field:focus,.other-field input:focus,#contact:focus,textarea:focus{background:#fff;box-shadow:0 0 0 3px #3B63F350}
+.text-field:focus,.other-field input:focus,#contact:focus,textarea:focus{background:#E8EDF5;box-shadow:none;caret-color:var(--blue)}
 .text-field::placeholder,.other-field input::placeholder{color:#97A1B2}
 .other-field{display:block;margin-top:17px;font-size:14px;font-weight:650;color:#4B5F88}
 .other-field input{margin-top:9px}.char-count{font-size:12px;text-align:right;color:#8C9AB4;margin:8px 0 0}
@@ -193,3 +194,10 @@ footer>div:last-child{display:flex;gap:22px}footer a:hover{color:var(--blue)}
   .topbar .brand{width:138px;margin-left:-8px}
   .topbar .header-label{display:none}
 }
+
+/* 글자 기호 대신 SVG 아이콘 */
+.icon{flex:none;vertical-align:-2px}
+:is(.previous,.next,.back-home,.complete-home,#submit-btn){display:inline-flex;align-items:center;justify-content:center;gap:5px}
+:is(.previous,.next,#submit-btn)[hidden]{display:none}
+/* 스크린리더용으로 코드가 옮긴 포커스(제목 등)는 윤곽선 없이 */
+[tabindex="-1"]:focus{outline:none}

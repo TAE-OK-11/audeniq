@@ -1,3 +1,4 @@
+import { Glyph } from '../components/Glyph';
 import { useState } from 'react';
 import { Link } from '../lib/router';
 import { AuthLayout } from '../components/AuthLayout';
@@ -14,9 +15,9 @@ export function FindAccount() {
         options={[{ value: 'id', label: '아이디 찾기' }, { value: 'password', label: '비밀번호 찾기' }] as const}
       />
       <div className="auth-done" role="tabpanel">
-        <span className="aq-done-icon" aria-hidden="true">i</span>
+        <span className="aq-done-icon" aria-hidden="true"><Glyph name="mail" size={20} /></span>
         <p>{tab === 'id' ? '가입한 이메일이 기억나지 않으면' : '비밀번호를 재설정해야 한다면'} 고객지원에 문의해 주세요. 자동 복구와 메일 발송은 아직 제공되지 않아요.</p>
-        <a href="mailto:audeniq.official@gmail.com" className="button auth-submit">고객지원에 이메일 보내기</a>
+        <a href="mailto:audeniq.official@gmail.com" className="ui-btn is-primary auth-submit">고객지원에 이메일 보내기</a>
       </div>
 
       <div className="auth-links">

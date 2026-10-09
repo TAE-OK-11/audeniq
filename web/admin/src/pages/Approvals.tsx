@@ -7,7 +7,7 @@ import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
 import { staffApi, type ApprovalItem } from '../api/staff';
 import { ago, checkLabel, shortId, when } from '../labels';
-import { Chip, Empty, ErrorBox, NoDuty, PageHead, Skeleton, SubTabs, useStaff } from '../ui';
+import { Badge, EmptyState, ErrorBox, NoDuty, PageHeader, SkeletonList, SubTabs, useStaff } from '../staffUi';
 import { Glyph } from '../components/Glyph';
 
 export function Approvals() {
@@ -39,38 +39,38 @@ export function Approvals() {
 
   return (
     <div className="view-enter">
-      <PageHead
+      <PageHeader
         eyebrow="발매 심사"
         title="2차 승인"
         sub="중복 음원·권리 같은 민감 항목은 두 사람이 확인해요. 내가 올린 요청은 다른 담당자가 처리해요."
-        actions={<button type="button" className="adm-btn soft small" onClick={reload}>새로고침</button>}
+        actions={<button type="button" className="ui-btn is-soft is-sm" onClick={reload}>새로고침</button>}
       />
       <SubTabs tabs={[{ to: '/reviews', label: '심사 목록', count: counts?.review }, { to: '/approvals', label: '2차 승인', count: counts?.second_approvals }]} />
       {!can('REVIEW') && <NoDuty duty="발매 심사" />}
       {error && <ErrorBox message={error} onRetry={reload} />}
-      {loading && !data ? <Skeleton rows={3} /> : items.length === 0 ? (
-        <Empty title="대기 중인 2차 승인이 없어요">민감 항목이 승인되면 이곳에 확인 요청이 올라와요.</Empty>
+      {loading && !data ? <SkeletonList rows={3} /> : items.length === 0 ? (
+        <EmptyState title="대기 중인 2차 승인이 없어요">민감 항목이 승인되면 이곳에 확인 요청이 올라와요.</EmptyState>
       ) : (
-        <div className="adm-list">
+        <div className="ui-list">
           {items.map(a => {
             const mine = a.requested_by === me.user_id;
             return (
-              <div key={a.id} className="adm-card">
+              <div key={a.id} className="ui-card">
                 <div className="adm-check-top">
                   <span>
-                    <Link to={`/reviews/${a.release_id}`} className="adm-row-title">{a.title} <Glyph name="arrow-right" size={13} className="aq-inline-glyph" /></Link>
-                    <span className="adm-row-meta"><span>요청 {ago(a.at)}</span><span>만료 {when(a.expires_at)}</span><span>요청자 {mine ? '나' : shortId(a.requested_by)}</span></span>
+                    <Link to={`/reviews/${a.release_id}`} className="ui-row-title">{a.title} <Glyph name="arrow-right" size={13} className="aq-inline-glyph" /></Link>
+                    <span className="ui-row-meta"><span>요청 {ago(a.at)}</span><span>만료 {when(a.expires_at)}</span><span>요청자 {mine ? '나' : shortId(a.requested_by)}</span></span>
                   </span>
-                  <span className="adm-codes">{a.check_codes.map(c => <Chip key={c} tone="red">{checkLabel(c)}</Chip>)}</span>
+                  <span className="adm-codes">{a.check_codes.map(c => <Badge key={c} tone="red">{checkLabel(c)}</Badge>)}</span>
                 </div>
-                <div className="adm-note" style={{ marginTop: 12 }}>
+                <div className="adm-note ui-on-soft" style={{ marginTop: 12 }}>
                   <small className="muted">요청 근거</small>
                   <p>{a.reason}</p>
                 </div>
                 <div className="adm-form-actions">
                   {mine && <span className="small muted" style={{ alignSelf: 'center' }}>내가 올린 요청은 다른 담당자가 승인해야 해요.</span>}
-                  <button type="button" className="adm-btn danger" disabled={!can('REVIEW') || busy === a.id} onClick={() => act(a, false)}>반려</button>
-                  <button type="button" className="adm-btn primary" disabled={!can('REVIEW') || mine || busy === a.id} onClick={() => act(a, true)}>2차 승인</button>
+                  <button type="button" className="ui-btn is-danger" disabled={!can('REVIEW') || busy === a.id} onClick={() => act(a, false)}>반려</button>
+                  <button type="button" className="ui-btn is-primary" disabled={!can('REVIEW') || mine || busy === a.id} onClick={() => act(a, true)}>2차 승인</button>
                 </div>
               </div>
             );

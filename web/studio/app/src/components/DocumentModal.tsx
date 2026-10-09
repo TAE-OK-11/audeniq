@@ -8,7 +8,8 @@ import * as portal from '../api/portal';
 import { errorMessage } from '../api/errors';
 import { refreshDocs } from '../store/portalSync';
 import { useToast } from './Toast';
-import { updateDoc, type DocRecord } from '../store/docs';
+import { docBadgeTone, updateDoc, type DocRecord } from '../store/docs';
+import { Badge } from '../ui';
 import { fileSize, localStamp } from '../lib/format';
 import { stampNow } from '../lib/date';
 import { docState } from '../store/docs';
@@ -194,10 +195,10 @@ export function DocumentModal({
   return (
     <Modal title={doc.title} onClose={onClose}>
       <div className="doc-meta">
-        <span className="doc-pill">{doc.kind === 'agreements' ? '계약·신청서' : '권리 증빙'}</span>
-        <span className="doc-pill">{statusPill(doc)}</span>
+        <span className="ui-tag">{doc.kind === 'agreements' ? '계약·신청서' : '권리 증빙'}</span>
+        <Badge tone={docBadgeTone(doc)}>{statusPill(doc)}</Badge>
       </div>
-      <dl className="information">
+      <dl className="ui-kv is-2">
         <div><dt>관련 발매</dt><dd>{doc.releaseTitle || '공통'}</dd></div>
         <div><dt>작성일</dt><dd>{localStamp(doc.created)}</dd></div>
         <div><dt>버전</dt><dd>v{doc.version || '1.0'}</dd></div>
@@ -205,9 +206,9 @@ export function DocumentModal({
 
       <h3 className="doc-section-title">문서 내용</h3>
       <div className="aq-document-snapshot">{doc.content || '첨부된 문서의 원본을 확인해 주세요.'}</div>
-      {doc.electronic && <button type="button" className="button secondary aq-doc-open-app" onClick={() => { onClose(); nav(`/rights/${encodeURIComponent(doc.id)}`); }}>완성된 전자 문서 보기 · PDF 저장</button>}
+      {doc.electronic && <button type="button" className="ui-btn is-soft aq-doc-open-app" onClick={() => { onClose(); nav(`/rights/${encodeURIComponent(doc.id)}`); }}>완성된 전자 문서 보기 · PDF 저장</button>}
       {doc.kind === 'agreements' && doc.releaseId && (
-        <button type="button" className="button secondary aq-doc-open-app" onClick={() => nav(`/releases/${encodeURIComponent(doc.releaseId!)}/application`)}>
+        <button type="button" className="ui-btn is-soft aq-doc-open-app" onClick={() => nav(`/releases/${encodeURIComponent(doc.releaseId!)}/application`)}>
           배급 신청서 보기
         </button>
       )}
@@ -228,7 +229,7 @@ export function DocumentModal({
         <p className="muted small">아직 확인한 내역이 없어요.</p>
       )}
 
-      <label className="doc-consent check-line">
+      <label className="doc-consent ui-check">
         <input
           id="aqConfirmDoc" type="checkbox"
           checked={confirmed} onChange={e => setConfirmed(e.target.checked)}
@@ -262,18 +263,18 @@ export function DocumentModal({
       )}
 
       {doc.reviewStatus === 'needs' && (
-        <div className="notice error">{doc.reviewNote || (doc.electronic ? '보완 내용을 반영한 전자 문서를 새로 작성해 주세요.' : '보완을 요청한 서류를 첨부해 주세요.')}</div>
+        <div className="ui-callout is-danger">{doc.reviewNote || (doc.electronic ? '보완 내용을 반영한 전자 문서를 새로 작성해 주세요.' : '보완을 요청한 서류를 첨부해 주세요.')}</div>
       )}
 
       {!doc.electronic && (doc.reviewStatus === 'awaiting_documents' || doc.kind === 'rights') && (
-        <div className="field">
+        <div className="ui-field">
           <label htmlFor="aqEvidenceFile">요청된 서류 첨부</label>
           <FilePicker
             id="aqEvidenceFile" fileName={pendingFile?.name}
             accept=".pdf,.txt,image/png,image/jpeg,image/webp,application/pdf,text/plain"
             onChange={e => setPendingFile(e.target.files?.[0] || null)}
           />
-          <p className="help">
+          <p className="ui-field-help">
             {pendingFile ? `선택한 파일 · ${pendingFile.name} (${fileSize(pendingFile.size)}) — ‘검토 요청’을 누르면 제출돼요.` : '서류를 선택하면 원본과 발매 정보가 함께 보관돼요.'}
           </p>
         </div>
@@ -281,20 +282,20 @@ export function DocumentModal({
 
       {doc.kind === 'agreements' && (
         <div className="aq-doc-extra">
-          <button type="button" id="aqSignIntent" className="button secondary" onClick={onOpenSignature}>
+          <button type="button" id="aqSignIntent" className="ui-btn is-soft" onClick={onOpenSignature}>
             {doc.reviewStatus === 'approved' ? (doc.localSignatureAt ? '서명 다시 하기' : '서명 진행하기') : '검토 진행 상황 보기'}
           </button>
         </div>
       )}
 
       <div className="doc-actions aq-sticky-foot">
-        <button id="aqDocConfirm" type="button" className="button" onClick={confirmSave}>확인 및 저장</button>
+        <button id="aqDocConfirm" type="button" className="ui-btn is-primary" onClick={confirmSave}>확인 및 저장</button>
         {/* 검토가 끝났거나 이미 검토 중인 서류에는 다시 요청할 일이 없다 — 제출 대기·보완 요청일 때만. 전자 문서는 서명으로 접수된다 */}
         {!doc.electronic && (doc.reviewStatus === 'awaiting_documents' || doc.reviewStatus === 'needs') && (
-          <button id="aqDocSubmit" type="button" className="button secondary" onClick={submitReview} disabled={sending}>{sending ? '제출하는 중' : '검토 요청'}</button>
+          <button id="aqDocSubmit" type="button" className="ui-btn is-soft" onClick={submitReview} disabled={sending}>{sending ? '제출하는 중' : '검토 요청'}</button>
         )}
         {doc.fileName && (
-          <button id="aqDocDownload" type="button" className="button secondary" onClick={download}>원본 열기</button>
+          <button id="aqDocDownload" type="button" className="ui-btn is-soft" onClick={download}>원본 열기</button>
         )}
       </div>
     </Modal>

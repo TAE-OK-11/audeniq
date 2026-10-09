@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from '../lib/router';
 import { useAuth } from '../api/auth';
 import { PASSWORD_MIN } from '../api/client';
-import { errorMessage } from '../api/errors';
+import { authErrorMessage } from '../api/errors';
 import { AuthLayout, PasswordInput } from '../components/AuthLayout';
 import { patchProfile } from '../store/profile';
 
@@ -45,16 +45,16 @@ export function Signup() {
       patchProfile({ name: name.trim(), email: email.trim() });
       nav('/', { replace: true });
     } catch (err) {
-      setError(errorMessage(err, '회원가입에 실패했어요.'));
+      setError(authErrorMessage(err, 'signup'));
       setBusy(false);
     }
   }
 
   return (
     <AuthLayout title="AUDENIQ와 함께 시작하세요." sub="아티스트 계정을 만들고 발매를 준비해 보세요.">
-      {error && <div className="feedback feedback-error aq-shake" role="alert" key={error}>{error}</div>}
+      {error && <div className="ui-callout is-danger aq-shake" role="alert" key={error}>{error}</div>}
       <form onSubmit={submit}>
-        <div className="field">
+        <div className="ui-field">
           <label htmlFor="suName">이름 (활동명)</label>
           <input
             id="suName" type="text" required autoComplete="name" autoFocus maxLength={120}
@@ -62,7 +62,7 @@ export function Signup() {
             value={name} onChange={e => setName(e.target.value)}
           />
         </div>
-        <div className="field">
+        <div className="ui-field">
           <label htmlFor="suEmail">이메일</label>
           <input
             id="suEmail" type="email" required autoComplete="email"
@@ -70,7 +70,7 @@ export function Signup() {
             value={email} onChange={e => setEmail(e.target.value)}
           />
         </div>
-        <div className="field">
+        <div className="ui-field">
           <label htmlFor="suPassword">비밀번호</label>
           <PasswordInput
             id="suPassword" required autoComplete="new-password" minLength={PASSWORD_MIN}
@@ -85,14 +85,14 @@ export function Signup() {
             </div>
           )}
         </div>
-        <div className="field">
+        <div className="ui-field">
           <label htmlFor="suConfirm">비밀번호 확인</label>
           <input
             id="suConfirm" type={showPw ? 'text' : 'password'} required autoComplete="new-password"
             placeholder="비밀번호를 다시 입력해 주세요" aria-invalid={mismatch}
             value={confirm} onChange={e => setConfirm(e.target.value)}
           />
-          {mismatch && <p className="help aq-help-error">비밀번호가 일치하지 않아요.</p>}
+          {mismatch && <p className="ui-field-help aq-help-error">비밀번호가 일치하지 않아요.</p>}
         </div>
         <div className="auth-agree">
           <label className="check-row">
@@ -111,7 +111,7 @@ export function Signup() {
             <span>개인정보 처리방침에 동의합니다. (필수)</span>
           </label>
         </div>
-        <button className={`button auth-submit${busy ? ' is-busy' : ''}`} type="submit" disabled={busy} aria-busy={busy}>
+        <button className={`ui-btn is-primary auth-submit${busy ? ' is-busy' : ''}`} type="submit" disabled={busy} aria-busy={busy}>
           {busy ? '가입하는 중' : '회원가입'}
         </button>
       </form>

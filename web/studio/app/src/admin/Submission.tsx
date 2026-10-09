@@ -7,7 +7,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { ReleaseSheet, Track } from './api';
 import { day, dspLabel, when } from './labels';
-import { Chip, Empty, Section } from './ui';
+import { Badge, EmptyState, Section } from './ui';
 import {
   CONTENT_ID_ACKS, PROFILE_LINKS, RIGHTS_OPTIONS, SERVICE_OPTIONS, draftFromSheet, displayCode, draftNotes, genreLabel, kindLabel, languageLabel,
   rightsChecksFor, verifyDraft, wantsContentId, type Integrity, type StudioDraftTrack, type StudioOptions,
@@ -55,21 +55,21 @@ export function ApplicationSection({ sheet }: { sheet: ReleaseSheet }) {
     <Section
       title="배급 신청서"
       meta={no ? displayCode(no) : '전자서명 기록 없음'}
-      action={<button type="button" className="adm-btn soft small" onClick={() => setOpen(true)}>신청서 보기</button>}
+      action={<button type="button" className="ui-btn is-soft is-sm" onClick={() => setOpen(true)}>신청서 보기</button>}
     >
-      <div className="adm-card adm-appdoc">
-        <dl className="adm-kv">
+      <div className="ui-card adm-appdoc">
+        <dl className="ui-kv">
           <div><dt>신청인</dt><dd>{dash(app?.signerName ?? signed?.signer_name)}</dd></div>
           <div><dt>구분</dt><dd>{dash(app?.signerRole ?? signed?.signer_role)}</dd></div>
           <div><dt>접수</dt><dd>{when(signed?.received_at) || dash(app?.submittedAt)}</dd></div>
-          <div className="adm-kv-wide"><dt>연락 이메일</dt><dd>{dash(signed?.contact_email)}</dd></div>
+          <div className="is-wide"><dt>연락 이메일</dt><dd>{dash(signed?.contact_email)}</dd></div>
         </dl>
         <div className="adm-appdoc-foot">
           {signature && !sigBroken
             ? <span className="adm-sig"><img src={signature} alt={`${app?.signerName ?? signed?.signer_name ?? ''} 서명`} onError={() => setSigBroken(true)} /></span>
             : <span className="adm-sig is-empty">{signature ? '서명 이미지를 불러오지 못했어요' : '서명 이미지 없음'}</span>}
           <span className="adm-appdoc-state">
-            <Chip tone={INTEGRITY_TONE[integrity]}>{INTEGRITY_LABEL[integrity]}</Chip>
+            <Badge tone={INTEGRITY_TONE[integrity]}>{INTEGRITY_LABEL[integrity]}</Badge>
             <small>동의 {(app?.agreements ?? signed?.agreements ?? []).length} / 4 항목</small>
           </span>
         </div>
@@ -80,7 +80,7 @@ export function ApplicationSection({ sheet }: { sheet: ReleaseSheet }) {
       {open && (
         <Modal title="배급 신청서" onClose={() => setOpen(false)} modalClass="adm-paper-modal">
           <div className="adm-paper-tools">
-            <button type="button" className="adm-btn soft small" onClick={() => window.print()}>인쇄 · PDF 저장</button>
+            <button type="button" className="ui-btn is-soft is-sm" onClick={() => window.print()}>인쇄 · PDF 저장</button>
           </div>
           <ApplicationPaper sheet={sheet} draft={paperDraft} integrity={integrity} />
         </Modal>
@@ -135,8 +135,8 @@ export function EnteredInfoSection({ sheet }: { sheet: ReleaseSheet }) {
   const [moreOpen, setMoreOpen] = useState(() => typeof window === 'undefined' || !window.matchMedia || window.matchMedia('(min-width: 1181px)').matches);
   return (
     <Section title="입력 내용" meta={d ? '아티스트가 신청서에 적은 그대로' : '서버 신청 정보'}>
-      <div className="adm-card">
-        <dl className="adm-kv">
+      <div className="ui-card">
+        <dl className="ui-kv">
           <div><dt>아티스트</dt><dd>{dash(d?.artist ?? app.artist)}</dd></div>
           <div><dt>발매 유형</dt><dd>{d ? kindLabel(d.type) || '—' : '—'}</dd></div>
           <div><dt>장르 · 언어</dt><dd>{[d ? genreLabel(d) : app.genre, d ? languageLabel(d.language) : app.language].filter(Boolean).join(' · ') || '—'}</dd></div>
@@ -146,12 +146,12 @@ export function EnteredInfoSection({ sheet }: { sheet: ReleaseSheet }) {
           <div><dt>UPC</dt><dd>{d?.upc || r.upc || '발급 전'}</dd></div>
           <div style={{ gridColumn: '1 / -1' }}>
             <dt>배급 플랫폼 <small className="muted">{platforms.length}곳</small></dt>
-            <dd className="adm-dsps">{platforms.length ? platforms.map(p => <span key={p}>{dspLabel(p)}</span>) : '—'}</dd>
+            <dd className="ui-tags">{platforms.length ? platforms.map(p => <span key={p} className="ui-tag is-white">{dspLabel(p)}</span>) : '—'}</dd>
           </div>
         </dl>
         <details className="adm-info-more" open={moreOpen} onToggle={e => setMoreOpen((e.currentTarget as HTMLDetailsElement).open)}>
           <summary>권리자·표기·프로필·신고 항목{notes ? '·앨범 소개' : ''}{d?.rightsChecks ? '·권리 확인' : ''}<Glyph name="chevron-right" size={12} /></summary>
-        <dl className="adm-kv">
+        <dl className="ui-kv">
           {d && <div><dt>마스터 권리자</dt><dd>{dash(d.ownership)}</dd></div>}
           <div><dt>℗ / ©</dt><dd>{[d?.phonogram ?? app.p_line, d?.copyright ?? app.c_line].filter(Boolean).join(' / ') || '—'}</dd></div>
           {d && (
@@ -175,7 +175,7 @@ export function EnteredInfoSection({ sheet }: { sheet: ReleaseSheet }) {
               {Object.entries(DECL_LABEL).map(([k, label]) => {
                 const v = (decl as Record<string, boolean>)[k];
                 const warnWhenTrue = !['rights_confirmed', 'adult_confirmed'].includes(k);
-                return <Chip key={k} tone={v ? (warnWhenTrue ? 'amber' : 'green') : 'gray'}>{label} {v ? '예' : '아니오'}</Chip>;
+                return <Badge key={k} tone={v ? (warnWhenTrue ? 'amber' : 'green') : 'gray'}>{label} {v ? '예' : '아니오'}</Badge>;
               })}
             </dd>
           </div>
@@ -272,7 +272,7 @@ function OptionGroup({ title, list, o, tracks }: { title: string; list: [keyof S
     <div className="adm-opt-group">
       <h3>{title} <small>{on.length ? `${on.length}개 선택` : '선택 없음'}</small></h3>
       {on.map(([k, label]) => (
-        <div key={k} className="adm-opt is-on">
+        <div key={k} className="adm-opt ui-on-soft is-on">
           <div className="adm-opt-head"><span className="adm-opt-mark"><CheckIcon size={11} /></span><b>{label}</b></div>
           <dl>{optionDetail(k, o, tracks)}</dl>
         </div>
@@ -297,7 +297,7 @@ export function OptionsSection({ sheet }: { sheet: ReleaseSheet }) {
   const acked = CONTENT_ID_ACKS.filter(([k]) => o[k] === true).length;
   return (
     <Section title="부가서비스 · 해당 항목" meta={picked ? `${picked}개 선택` : '일반 발매'}>
-      <div className="adm-card adm-opts">
+      <div className="ui-card adm-opts">
         <OptionGroup title="부가서비스" list={SERVICE_OPTIONS} o={o} tracks={tracks} />
         <OptionGroup title="해당 항목" list={RIGHTS_OPTIONS} o={o} tracks={tracks} />
         {contentId && (
@@ -341,23 +341,23 @@ export function TracksSection({ sheet }: { sheet: ReleaseSheet }) {
             const title = d?.title || s?.title || '제목 없음';
             const explicit = d?.explicit ?? s?.parental_advisory;
             return (
-              <details key={key} className="adm-track">
+              <details key={key} className="adm-track ui-on-soft">
                 <summary>
                   <span className="adm-track-no">{no}</span>
                   <span className="adm-track-title">
                     <b>{title}</b>{(d?.version || s?.version) && <small> ({d?.version || s?.version})</small>}
-                    {explicit && <Chip tone="red">19</Chip>}
-                    {d?.instrumental && <Chip tone="gray">연주곡</Chip>}
+                    {explicit && <Badge tone="red">19</Badge>}
+                    {d?.instrumental && <Badge tone="gray">연주곡</Badge>}
                   </span>
                   <span className="adm-track-meta">
                     <span>{d?.duration || '—'}</span>
-                    <span className="adm-code">{s?.isrc || d?.isrc || 'ISRC 발급 전'}</span>
+                    <span className="ui-tag is-mono">{s?.isrc || d?.isrc || 'ISRC 발급 전'}</span>
                   </span>
                   <Glyph name="chevron-right" size={14} className="adm-track-chev" />
                 </summary>
                 <div className="adm-track-body">
                   {d ? (
-                    <dl className="adm-kv">
+                    <dl className="ui-kv">
                       <div><dt>작곡</dt><dd>{dash(d.composers)}</dd></div>
                       <div><dt>작사</dt><dd>{d.instrumental ? '연주곡' : dash(d.lyricists)}</dd></div>
                       <div><dt>편곡</dt><dd>{dash(d.arrangers)}</dd></div>
@@ -368,7 +368,7 @@ export function TracksSection({ sheet }: { sheet: ReleaseSheet }) {
                       {s && <div style={{ gridColumn: '1 / -1' }}><dt>서버 측정</dt><dd>{audioSpecs(sheet.track_audio?.[s.id])}</dd></div>}
                     </dl>
                   ) : (
-                    <dl className="adm-kv">
+                    <dl className="ui-kv">
                       <div><dt>크레딧</dt><dd>{s?.credits.map(c => ROLE_KO[c.role] ?? c.role).join(', ') || '—'}</dd></div>
                       <div><dt>음원</dt><dd>{s?.asset_kind ?? '—'}</dd></div>
                       {s && <div><dt>서버 측정</dt><dd>{audioSpecs(sheet.track_audio?.[s.id])}</dd></div>}
@@ -385,7 +385,7 @@ export function TracksSection({ sheet }: { sheet: ReleaseSheet }) {
             );
           })}
         </div>
-      ) : <Empty icon={<Glyph name="music" size={22} />} title="트랙 정보가 없어요" />}
+      ) : <EmptyState icon={<Glyph name="music" size={22} />} title="트랙 정보가 없어요" />}
     </Section>
   );
 }

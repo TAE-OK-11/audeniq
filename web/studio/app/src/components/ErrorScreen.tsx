@@ -60,8 +60,8 @@ export function ErrorScreen({ kind, code, eyebrow, title, description, actions =
       {actions.length > 0 && (
         <div className="aq-errscreen-actions">
           {actions.map(a => (a.href
-            ? <a key={a.label} className={`button${a.primary ? '' : ' secondary'}`} href={a.href}>{a.label}</a>
-            : <button key={a.label} type="button" className={`button${a.primary ? '' : ' secondary'}`} onClick={a.onClick}>{a.label}</button>))}
+            ? <a key={a.label} className={`ui-btn${a.primary ? ' is-primary' : ' is-soft'}`} href={a.href}>{a.label}</a>
+            : <button key={a.label} type="button" className={`ui-btn${a.primary ? ' is-primary' : ' is-soft'}`} onClick={a.onClick}>{a.label}</button>))}
         </div>
       )}
       {meta && meta.length > 0 && <p className="aq-errscreen-meta">{meta.join(' · ')}</p>}

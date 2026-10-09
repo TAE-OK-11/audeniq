@@ -8,7 +8,8 @@ import { useToast } from '../../../components/Toast';
 import { useConfirm } from '../../../components/Confirm';
 import { ApiError, errorMessage } from '../../../api/errors';
 import { Glyph } from '../../../components/Glyph';
-import { Chip, Empty, ErrorBox, Skeleton, useStaff } from '../../ui';
+import { DocIcon, DocIconPicker } from '../docs/DocIcon';
+import { Badge, EmptyState, ErrorBox, SkeletonList, useStaff } from '../../ui';
 import { workApi } from '../api';
 import { DOC_STATUS } from '../labels';
 import { usePeople, type People } from '../ui';
@@ -22,6 +23,7 @@ import { DocSearchResults, DocTree } from '../docs/DocTree';
 import { CommentsPanel, InfoPanel, VersionsPanel } from '../docs/DocPanels';
 import { MoveDialog, NewDocDialog, ReasonDialog, ShareDialog, TemplateDialog } from '../docs/DocDialogs';
 import '../../../styles/docs.css';
+import { josa } from '../../../lib/josa';
 
 type Panel = 'comments' | 'info' | 'versions' | null;
 const LEVEL_RANK = { NONE: 0, VIEWER: 1, EDITOR: 2, MANAGER: 3, OWNER: 4 } as const;
@@ -33,7 +35,7 @@ function SaveStatus({ s, onRetry }: { s: AutosaveSnapshot; onRetry: () => void }
   return (
     <span className={`adm-doc-save is-${s.state}`} role="status" aria-live="polite">
       {text}
-      {s.state === 'error' && <button type="button" className="adm-link-btn" onClick={onRetry}>다시 시도</button>}
+      {s.state === 'error' && <button type="button" className="ui-btn is-text is-muted" onClick={onRetry}>다시 시도</button>}
     </span>
   );
 }
@@ -176,7 +178,7 @@ function DocView({ id, people, onTreeChange, onAncestors }: { id: string; people
     await settle();
     const d = await workApi.restoreDocVersion(id, v, ctrlRef.current?.version ?? detail?.doc.version ?? 0);
     replaceContent(d);
-  }, `v${v}으로 되돌렸어요.`);
+  }, `${josa(`v${v}`, '으로/로')} 되돌렸어요.`);
 
   const conflictReload = async () => {
     if (!(await confirm({ title: '최신본을 불러올까요?', message: '아직 저장되지 않은 내 변경은 사라져요. 필요하면 먼저 본문을 복사해 두세요.', confirmLabel: '불러오기', danger: true }))) return;
@@ -212,10 +214,10 @@ function DocView({ id, people, onTreeChange, onAncestors }: { id: string; people
 
   if (loadError) {
     return loadError.status === 404
-      ? <Empty title="문서를 찾을 수 없어요">삭제됐거나 볼 권한이 없는 문서예요.</Empty>
+      ? <EmptyState title="문서를 찾을 수 없어요">삭제됐거나 볼 권한이 없는 문서예요.</EmptyState>
       : <ErrorBox message={loadError.msg} onRetry={() => void load()} />;
   }
-  if (!detail) return <Skeleton rows={6} />;
+  if (!detail) return <SkeletonList rows={6} />;
   const d = detail.doc;
 
   return (
@@ -223,29 +225,29 @@ function DocView({ id, people, onTreeChange, onAncestors }: { id: string; people
       <div className={`adm-doc-main${panel ? ' has-panel' : ''}`}>
         <div className="adm-doc-top">
           <nav className="adm-doc-crumbs" aria-label="문서 위치">
-            {detail.breadcrumb.map(b => <span key={b.id}><button type="button" className="adm-link-btn" onClick={() => nav(`/admin/docs/${b.id}`)}>{b.icon || '📄'} {b.title || '제목 없음'}</button> / </span>)}
+            {detail.breadcrumb.map(b => <span key={b.id}><button type="button" className="ui-btn is-text is-muted" onClick={() => nav(`/admin/docs/${b.id}`)}><DocIcon icon={b.icon} size={14} /> {b.title || '제목 없음'}</button> / </span>)}
             <span aria-current="page">{title || '제목 없음'}</span>
           </nav>
           <SaveStatus s={save} onRetry={() => ctrlRef.current?.retry()} />
-          <Chip tone={DOC_STATUS[d.status][1]}>{DOC_STATUS[d.status][0]}</Chip>
-          {d.staff_access == null && <Chip tone="gray"><Glyph name="lock" size={11} />제한됨</Chip>}
+          <Badge tone={DOC_STATUS[d.status][1]}>{DOC_STATUS[d.status][0]}</Badge>
+          {d.staff_access == null && <Badge tone="gray"><Glyph name="lock" size={11} />제한됨</Badge>}
           <span className="adm-doc-top-actions">
-            {!archived && d.status === 'DRAFT' && canEdit && <button type="button" className="adm-btn soft small" disabled={busy} onClick={() => void status('REQUEST_REVIEW')}>검토 요청</button>}
+            {!archived && d.status === 'DRAFT' && canEdit && <button type="button" className="ui-btn is-soft is-sm" disabled={busy} onClick={() => void status('REQUEST_REVIEW')}>검토 요청</button>}
             {!archived && d.status === 'IN_REVIEW' && canManage && (
               <>
-                <button type="button" className="adm-btn primary small" disabled={busy} onClick={() => void status('APPROVE')}>승인</button>
-                <button type="button" className="adm-btn soft small" disabled={busy} onClick={() => setDialog('reject')}>반려</button>
+                <button type="button" className="ui-btn is-primary is-sm" disabled={busy} onClick={() => void status('APPROVE')}>승인</button>
+                <button type="button" className="ui-btn is-soft is-sm" disabled={busy} onClick={() => setDialog('reject')}>반려</button>
               </>
             )}
-            {!archived && d.status !== 'DRAFT' && canEdit && <button type="button" className="adm-btn soft small" disabled={busy} onClick={() => void status('REOPEN')}>초안으로</button>}
-            {canManage && <button type="button" className="adm-btn soft small" onClick={() => setDialog('share')}><Glyph name="users" size={13} />공유</button>}
+            {!archived && d.status !== 'DRAFT' && canEdit && <button type="button" className="ui-btn is-soft is-sm" disabled={busy} onClick={() => void status('REOPEN')}>초안으로</button>}
+            {canManage && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setDialog('share')}><Glyph name="users" size={13} />공유</button>}
             {(['comments', 'info', 'versions'] as const).map(p => (
-              <button key={p} type="button" className={`adm-btn soft small${panel === p ? ' is-on' : ''}`} aria-pressed={panel === p} onClick={() => setPanel(x => (x === p ? null : p))}>
+              <button key={p} type="button" className={`ui-btn is-soft is-sm${panel === p ? ' is-on' : ''}`} aria-pressed={panel === p} onClick={() => setPanel(x => (x === p ? null : p))}>
                 {p === 'comments' ? `댓글${detail.open_comments ? ` ${detail.open_comments}` : ''}` : p === 'info' ? '정보' : '기록'}
               </button>
             ))}
             <span className="adm-doc-more">
-              <button type="button" className="adm-btn soft small" aria-haspopup="menu" aria-expanded={menu} aria-label="더 보기" onClick={() => setMenu(m => !m)}>더 보기</button>
+              <button type="button" className="ui-btn is-soft is-sm" aria-haspopup="menu" aria-expanded={menu} aria-label="더 보기" onClick={() => setMenu(m => !m)}>더 보기</button>
               {menu && (
                 <MoreMenu onClose={() => setMenu(false)} items={[
                   { label: '복제', hidden: archived, run: () => void act(async () => { await settle(); const c = await workApi.duplicateDoc(id); onTreeChange(); nav(`/admin/docs/${c.doc.id}`); }, '복제했어요.') },
@@ -272,22 +274,21 @@ function DocView({ id, people, onTreeChange, onAncestors }: { id: string; people
         </div>
 
         {save.state === 'conflict' && (
-          <div className="adm-alert is-warn adm-doc-conflict" role="alert">
+          <div className="ui-callout is-warn adm-doc-conflict" role="alert">
             다른 사람이 이 문서를 먼저 고쳤어요. 내 변경은 아직 저장되지 않았어요.
             <span className="adm-w-btns">
-              <button type="button" className="adm-btn soft small" onClick={() => void conflictReload()}>최신본 불러오기</button>
-              <button type="button" className="adm-btn soft small" onClick={() => void conflictOverwrite()}>내 내용으로 덮어쓰기</button>
+              <button type="button" className="ui-btn is-soft is-sm" onClick={() => void conflictReload()}>최신본 불러오기</button>
+              <button type="button" className="ui-btn is-soft is-sm" onClick={() => void conflictOverwrite()}>내 내용으로 덮어쓰기</button>
             </span>
           </div>
         )}
-        {archived && <div className="adm-alert">보관된 문서예요. 읽기만 할 수 있어요.</div>}
-        {d.status === 'APPROVED' && canEdit && <div className="adm-alert small">승인된 문서예요. 고치면 다시 초안이 되고 검토를 받아야 해요.</div>}
-        {d.review.rejection_reason && d.status === 'DRAFT' && <div className="adm-alert is-warn small">반려 사유: {d.review.rejection_reason}</div>}
+        {archived && <div className="ui-callout">보관된 문서예요. 읽기만 할 수 있어요.</div>}
+        {d.status === 'APPROVED' && canEdit && <div className="ui-callout small">승인된 문서예요. 고치면 다시 초안이 되고 검토를 받아야 해요.</div>}
+        {d.review.rejection_reason && d.status === 'DRAFT' && <div className="ui-callout is-warn small">반려 사유: {d.review.rejection_reason}</div>}
 
         <div className="adm-doc-head">
-          <label className="sr-only" htmlFor="doc-icon">아이콘</label>
-          <input id="doc-icon" className="adm-doc-icon" value={icon} placeholder="📄" maxLength={8} disabled={!canEdit}
-            onChange={e => { const v = e.target.value.trim(); setIcon(v); iconRef.current = v || null; ctrlRef.current?.change(build); }} />
+          <DocIconPicker value={icon || null} disabled={!canEdit}
+            onChange={v => { setIcon(v); iconRef.current = v; ctrlRef.current?.change(build); }} />
           <label className="sr-only" htmlFor="doc-title">제목</label>
           <input id="doc-title" className="adm-doc-title" value={title} placeholder="제목 없음" maxLength={200} readOnly={!canEdit}
             onChange={e => { setTitle(e.target.value); titleRef.current = e.target.value; ctrlRef.current?.change(build); }}
@@ -299,7 +300,7 @@ function DocView({ id, people, onTreeChange, onAncestors }: { id: string; people
             onChange={changed} onReady={onReady} onComment={a => { setAnchor(a); setPanel('comments'); }} />
           {panel && (
             <aside className="adm-doc-side" aria-label="문서 패널">
-              <button type="button" className="adm-link-btn adm-doc-side-close" onClick={() => setPanel(null)}>닫기</button>
+              <button type="button" className="ui-btn is-text is-muted adm-doc-side-close" onClick={() => setPanel(null)}>닫기</button>
               {panel === 'comments' && (
                 <CommentsPanel docId={id} people={people} canWrite={!archived} anchor={anchor} onClearAnchor={() => setAnchor(null)}
                   onChanged={() => void workApi.doc(id).then(r => setDetail(x => (x ? { ...x, open_comments: r.open_comments } : x))).catch(() => {})}
@@ -370,25 +371,25 @@ export function Docs() {
       <aside className="adm-docs-nav" aria-label="문서 목록">
         <div className="adm-docs-nav-top">
           <h1>문서</h1>
-          <button type="button" className="adm-btn primary small" onClick={() => setCreating({ parent: null })}><Glyph name="plus" size={13} />새 문서</button>
+          <button type="button" className="ui-btn is-primary is-sm" onClick={() => setCreating({ parent: null })}><Glyph name="plus" size={13} />새 문서</button>
         </div>
         <label className="sr-only" htmlFor="doc-search">문서 찾기</label>
-        <input id="doc-search" className="adm-input" type="search" placeholder="제목·본문으로 찾기" value={query} onChange={e => setQuery(e.target.value)} />
+        <input id="doc-search" className="ui-input" type="search" placeholder="제목·본문으로 찾기" value={query} onChange={e => setQuery(e.target.value)} />
         <div className="adm-docs-nav-body">
           {q ? <DocSearchResults q={q} onOpen={() => setQuery('')} />
             : <DocTree currentId={id ?? null} reloadKey={reloadKey} ancestors={ancestors} archived={archived} onOpen={open} onAddChild={p => setCreating({ parent: p })} />}
         </div>
-        <button type="button" className="adm-link-btn adm-docs-archive" aria-pressed={archived} onClick={() => setArchived(a => !a)}>
-          {archived ? '← 문서로 돌아가기' : '보관함'}
+        <button type="button" className="ui-btn is-text is-muted adm-docs-archive" aria-pressed={archived} onClick={() => setArchived(a => !a)}>
+          {archived ? <><Glyph name="arrow-left" size={14} />문서로 돌아가기</> : '보관함'}
         </button>
       </aside>
       <button type="button" className="adm-docs-nav-toggle" aria-expanded={treeOpen} onClick={() => setTreeOpen(o => !o)}>{treeOpen ? '목록 닫기' : '문서 목록'}</button>
       <main className="adm-docs-content">
         {id ? <DocView key={id} id={id} people={people} onTreeChange={treeChanged} onAncestors={setAncestors} /> : (
-          <Empty title="문서를 고르거나 새로 만드세요" icon={<span aria-hidden="true">📄</span>}>
+          <EmptyState title="문서를 고르거나 새로 만드세요" icon={<Glyph name="doc" size={22} />}
+            actions={<button type="button" className="ui-btn is-primary" onClick={() => setCreating({ parent: null })}>새 문서</button>}>
             회의록·장애 보고·DSP 이슈·권리 검토 같은 템플릿으로 시작할 수 있어요. 본문에서 ‘/’를 누르면 발매·QC·DSP·카드 같은 AUDENIQ 블록을 넣을 수 있어요.
-            <p><button type="button" className="adm-btn primary" onClick={() => setCreating({ parent: null })}>새 문서</button></p>
-          </Empty>
+          </EmptyState>
         )}
       </main>
       {creating && <NewDocDialog parentId={creating.parent} onClose={() => setCreating(null)} onCreate={(t, title) => void create(t, title)} />}

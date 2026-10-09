@@ -9,6 +9,7 @@ import { workApi } from './api';
 import { PRIORITIES, PRIORITY, RECUR, WORK_TYPE, WORK_TYPES } from './labels';
 import { EntityChips, EntityPicker, PersonSelect, SwitchRow, usePeople } from './ui';
 import type { EntityRef, Priority, RecurFreq, TaskDetail, TaskInput, WorkTask, WorkType } from './types';
+import { DateTimeField } from '../../components/Picker';
 
 /** datetime-local 값 ↔ ISO (브라우저 현지 시간) */
 export const toLocalInput = (iso: string | null | undefined) => {
@@ -73,49 +74,49 @@ export function TaskForm({ task, initial, onSaved }: { task?: WorkTask; initial?
 
   return (
     <form onSubmit={submit} className="adm-w-form">
-      {initial?.parentTitle && <div className="adm-alert">하위 업무 · 상위: <b>{initial.parentTitle}</b></div>}
-      <div className="adm-field">
+      {initial?.parentTitle && <div className="ui-callout">하위 업무 · 상위: <b>{initial.parentTitle}</b></div>}
+      <div className="ui-field">
         <label htmlFor="tTitle">제목 <span className="required">*</span></label>
-        <input id="tTitle" data-autofocus className="adm-input" maxLength={200} value={title} onChange={e => setTitle(e.target.value)} placeholder="예: Lumi Records 계약 갱신 검토" />
+        <input id="tTitle" data-autofocus className="ui-input" maxLength={200} value={title} onChange={e => setTitle(e.target.value)} placeholder="예: Lumi Records 계약 갱신 검토" />
       </div>
       <div className="adm-w-grid2">
-        <div className="adm-field">
+        <div className="ui-field">
           <label htmlFor="tType">업무 유형</label>
-          <select id="tType" className="adm-select adm-w-select" value={type} onChange={e => setType(e.target.value as WorkType)}>
+          <select id="tType" className="ui-select" value={type} onChange={e => setType(e.target.value as WorkType)}>
             {WORK_TYPES.map(t => <option key={t} value={t}>{WORK_TYPE[t]}</option>)}
           </select>
         </div>
-        <div className="adm-field">
+        <div className="ui-field">
           <label htmlFor="tDue">마감일</label>
-          <input id="tDue" type="datetime-local" className="adm-input" value={due} onChange={e => setDue(e.target.value)} />
+          <DateTimeField id="tDue" className="ui-input" value={due} onChange={setDue} />
         </div>
       </div>
-      <div className="adm-field">
-        <span className="adm-field-label">우선순위</span>
+      <div className="ui-field">
+        <span className="ui-field-label">우선순위</span>
         <Seg label="우선순위" value={priority} onChange={setPriority} options={PRIORITIES.map(p => [p, PRIORITY[p][0]] as const)} />
       </div>
       <div className="adm-w-grid2">
-        <div className="adm-field">
+        <div className="ui-field">
           <label htmlFor="tAssignee">담당자</label>
           <PersonSelect id="tAssignee" value={assignee} onChange={setAssignee} people={people} empty="담당자 없음" />
         </div>
-        <div className="adm-field">
+        <div className="ui-field">
           <label htmlFor="tReviewer">검토자</label>
           <PersonSelect id="tReviewer" value={reviewer} onChange={setReviewer} people={people} empty="검토 없이 완료" />
           <small>검토자가 있으면 완료 전에 승인을 받아요.</small>
         </div>
       </div>
-      <div className="adm-field">
+      <div className="ui-field">
         <label htmlFor="tDesc">내용</label>
-        <textarea id="tDesc" className="adm-textarea" rows={4} maxLength={8000} value={description} onChange={e => setDescription(e.target.value)} placeholder="무엇을, 어디까지 하면 끝나는지 적어 주세요." />
+        <textarea id="tDesc" className="ui-textarea" rows={4} maxLength={8000} value={description} onChange={e => setDescription(e.target.value)} placeholder="무엇을, 어디까지 하면 끝나는지 적어 주세요." />
       </div>
       {!task && (
-        <div className="adm-field">
-          <span className="adm-field-label">연결</span>
+        <div className="ui-field">
+          <span className="ui-field-label">연결</span>
           <EntityChips items={links} onRemove={r => setLinks(links.filter(x => !(x.kind === r.kind && x.id === r.id)))} />
           {picking
             ? <EntityPicker exclude={links.map(l => `${l.kind}:${l.id}`)} onPick={r => setLinks(list => [...list, r])} />
-            : <button type="button" className="adm-btn soft small adm-w-add" onClick={() => setPicking(true)}>발매·아티스트·계약·DSP 연결</button>}
+            : <button type="button" className="ui-btn is-soft is-sm adm-w-add" onClick={() => setPicking(true)}>발매·아티스트·계약·DSP 연결</button>}
         </div>
       )}
       {!isSub && (
@@ -125,20 +126,20 @@ export function TaskForm({ task, initial, onSaved }: { task?: WorkTask; initial?
             <div className="adm-w-recur">
               <Seg label="반복 주기" value={freq} onChange={setFreq} options={(['DAILY', 'WEEKLY', 'MONTHLY'] as const).map(f => [f, RECUR[f][0]] as const)} />
               <label className="adm-w-inline">
-                <input type="number" className="adm-input" min={1} max={12} value={interval} onChange={e => setInterval(Number(e.target.value) || 1)} aria-label="반복 간격" />
+                <input type="number" className="ui-input" min={1} max={12} value={interval} onChange={e => setInterval(Number(e.target.value) || 1)} aria-label="반복 간격" />
                 <span>{RECUR[freq][1]}마다</span>
               </label>
             </div>
           )}
         </div>
       )}
-      <div className="adm-field" style={{ marginTop: 16 }}>
+      <div className="ui-field" style={{ marginTop: 16 }}>
         <label htmlFor="tTags">태그</label>
-        <input id="tTags" className="adm-input" value={tags} onChange={e => setTags(e.target.value)} placeholder="쉼표로 구분 (예: 월말, 긴급)" />
+        <input id="tTags" className="ui-input" value={tags} onChange={e => setTags(e.target.value)} placeholder="쉼표로 구분 (예: 월말, 긴급)" />
       </div>
       <div className="adm-form-actions">
-        <button type="button" className="adm-btn soft" onClick={close}>취소</button>
-        <button type="submit" className="adm-btn primary" disabled={busy || !title.trim()}>{busy ? '저장 중…' : task ? '저장' : '업무 만들기'}</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="submit" className="ui-btn is-primary" disabled={busy || !title.trim()}>{busy ? '저장 중…' : task ? '저장' : '업무 만들기'}</button>
       </div>
     </form>
   );

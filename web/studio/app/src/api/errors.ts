@@ -151,3 +151,24 @@ export function messageForCode(code: string, status = 0): string {
 export function errorMessage(e: unknown, fallback = '문제가 생겼어요. 잠시 후 다시 시도해 주세요.'): string {
   return e instanceof Error && e.message ? e.message : fallback;
 }
+
+/** 로그인·회원가입 화면 전용 문구. 일반 API 문구("로그인이 필요해요", "입력값을 확인해 주세요")는 이 화면에서 뜻이 맞지 않아요. */
+const AUTH_MESSAGES: Record<'login' | 'signup', Record<string, string>> = {
+  login: {
+    UNAUTHENTICATED: '이메일 또는 비밀번호가 맞지 않아요. 다시 확인해 주세요.',
+    INVALID_INPUT: '이메일 또는 비밀번호가 맞지 않아요. 다시 확인해 주세요.',
+    FORBIDDEN: '보안 확인에 실패했어요. 페이지를 새로고침한 뒤 다시 로그인해 주세요.',
+    RATE_LIMITED: '로그인 시도가 너무 많아요. 몇 분 뒤 다시 시도해 주세요.',
+  },
+  signup: {
+    INVALID_INPUT: '이메일 형식과 비밀번호(12자 이상)를 확인해 주세요.',
+    CONFLICT: '이미 가입된 이메일이에요. 로그인하거나 비밀번호 찾기를 이용해 주세요.',
+    FORBIDDEN: '보안 확인에 실패했어요. 페이지를 새로고침한 뒤 다시 시도해 주세요.',
+    RATE_LIMITED: '가입 시도가 너무 많아요. 몇 분 뒤 다시 시도해 주세요.',
+  },
+};
+
+export function authErrorMessage(e: unknown, mode: 'login' | 'signup'): string {
+  const code = e instanceof ApiError ? e.code : '';
+  return AUTH_MESSAGES[mode][code] ?? errorMessage(e, mode === 'login' ? '로그인하지 못했어요. 잠시 후 다시 시도해 주세요.' : '회원가입하지 못했어요. 잠시 후 다시 시도해 주세요.');
+}

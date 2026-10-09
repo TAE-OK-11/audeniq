@@ -9,6 +9,7 @@ import { compactSignature } from '../lib/application';
 import { SIGNING_CONSENTS, SIGNING_PRIVACY_NOTICE, type SigningConsentKey } from '../lib/rightsDocument';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
+import { DateField } from '../components/Picker';
 
 const EVENT_LABEL: Record<string, string> = {
   CREATED: '서명 요청 생성', LINK_REISSUED: '서명 링크 다시 발급', VIEWED: '문서 열람',
@@ -122,7 +123,7 @@ export function Sign() {
       <div className="aq-sign-page">
         {brand}
         <section className="aq-sign-card aq-sign-closed"><h1>{msg[0]}</h1><p>{msg[1]}</p>
-          {back && <button type="button" className="button secondary" onClick={() => nav(back)}>돌아가기</button>}
+          {back && <button type="button" className="ui-btn is-soft" onClick={() => nav(back)}>돌아가기</button>}
         </section>
       </div>
     );
@@ -145,7 +146,7 @@ export function Sign() {
           <div><dt>{v.status === 'SIGNED' ? '서명 시각' : '서명 기한'}</dt><dd>{when(v.status === 'SIGNED' ? v.signed_at : v.expires_at)}</dd></div>
         </dl>
         <ol className="aq-sign-steps" aria-label="서명 단계">
-          {['본인확인', '문서 확인·동의', '서명'].map((label, i) => (
+          {['본인확인', '문서 동의', '서명'].map((label, i) => (
             <li key={label} className={i + 1 < step || v.status === 'SIGNED' ? 'is-done' : i + 1 === step ? 'is-current' : ''}>
               <span aria-hidden="true">{i + 1 < step || v.status === 'SIGNED' ? <CheckIcon size={11} /> : i + 1}</span>{label}
             </li>
@@ -159,8 +160,8 @@ export function Sign() {
           <h2 id="aqSignDone">서명이 끝났어요</h2>
           <p>서명본과 서명 기록을 아래에서 확인할 수 있어요. 필요하면 저장하거나 인쇄해 두세요. 이 링크로 서명 후 90일 동안 다시 볼 수 있어요.</p>
           <div className="aq-sign-actions">
-            <button type="button" className="button secondary" onClick={() => window.print()}><Glyph name="download" size={15} /> 저장·인쇄</button>
-            {back && <button type="button" className="button" onClick={() => nav(back)}>발매 신청인에게 기기 돌려주기</button>}
+            <button type="button" className="ui-btn is-soft" onClick={() => window.print()}><Glyph name="download" size={15} /> 저장·인쇄</button>
+            {back && <button type="button" className="ui-btn is-primary" onClick={() => nav(back)}>발매 신청인에게 기기 돌려주기</button>}
           </div>
         </section>
       ) : (
@@ -170,7 +171,7 @@ export function Sign() {
             <p className="aq-sign-ok"><span className="aq-check-badge is-sm"><CheckIcon size={10} /></span>
               {v.identity?.name}님 본인확인 완료 · {when(v.identity?.verified_at)}</p>
           ) : !v.identity_provider.ready ? (
-            <div className="notice">
+            <div className="ui-callout is-warn">
               본인확인 서비스(휴대폰·간편인증)를 연결하고 있어요. 연결되기 전에는 법적 효력이 있는 전자 서명을 할 수 없어요.
               급하면 서면 허락서에 서명해 요청한 분께 전달해 주세요.
             </div>
@@ -178,13 +179,13 @@ export function Sign() {
             <>
               <p className="small muted">체험·테스트 환경이에요. 실제 서비스에서는 휴대폰·간편인증(PASS·카카오·네이버·토스) 창이 열려요.</p>
               <div className="aq-sign-grid">
-                <div className="field"><label htmlFor="aqSignName">이름</label><input id="aqSignName" autoComplete="name" value={name} onChange={e => setName(e.target.value)} placeholder={v.signer_name} /></div>
-                <div className="field"><label htmlFor="aqSignBirth">생년월일</label><input id="aqSignBirth" type="date" value={birth} onChange={e => setBirth(e.target.value)} /></div>
+                <div className="ui-field"><label htmlFor="aqSignName">이름</label><input id="aqSignName" autoComplete="name" value={name} onChange={e => setName(e.target.value)} placeholder={v.signer_name} /></div>
+                <div className="ui-field"><label htmlFor="aqSignBirth">생년월일</label><DateField id="aqSignBirth" value={birth} max={new Date().toISOString().slice(0, 10)} required onChange={setBirth} /></div>
               </div>
-              <button type="button" className="button studio-submit-wide" disabled={busy} onClick={() => void verify()}>{busy ? '확인 중…' : '본인확인하기'}</button>
+              <button type="button" className="ui-btn is-primary studio-submit-wide" disabled={busy} onClick={() => void verify()}>{busy ? '확인 중…' : '본인확인하기'}</button>
             </>
           ) : (
-            <div className="notice">본인확인 창을 여는 연결이 아직 준비되지 않았어요.</div>
+            <div className="ui-callout">본인확인 창을 여는 연결이 아직 준비되지 않았어요.</div>
           )}
         </section>
       )}
@@ -205,7 +206,7 @@ export function Sign() {
           <div className="aq-sign-consents">
             {!readAll && <p className="small muted">문서를 끝까지 내려 읽으면 동의할 수 있어요.</p>}
             {(Object.keys(SIGNING_CONSENTS) as SigningConsentKey[]).map(k => (
-              <label key={k} className="check-line">
+              <label key={k} className="ui-check is-plain">
                 <input type="checkbox" checked={consents[k]} disabled={busy || (k === 'document' && !readAll)}
                   onChange={e => setConsents(c => ({ ...c, [k]: e.target.checked }))} />
                 <span><b>(필수)</b> {SIGNING_CONSENTS[k]}</span>
@@ -226,7 +227,7 @@ export function Sign() {
           <div className={busy ? 'aq-rights-pad is-busy' : 'aq-rights-pad'} inert={busy}>
             <SignaturePad ref={pad} id="aqSignPad" label={`${v.signer_name} 서명`} onChange={setSigned} />
           </div>
-          <button type="button" className="button studio-submit-wide" disabled={busy} onClick={() => void sign()}>{busy ? '서명하는 중…' : '동의하고 서명하기'}</button>
+          <button type="button" className="ui-btn is-primary studio-submit-wide" disabled={busy} onClick={() => void sign()}>{busy ? '서명하는 중…' : '동의하고 서명하기'}</button>
         </section>
       )}
 
@@ -255,14 +256,14 @@ export function Sign() {
           {declining ? (
             <div className="aq-sign-card">
               <h2>서명하지 않을래요</h2>
-              <div className="field"><label htmlFor="aqSignReason">이유 (선택)</label><textarea id="aqSignReason" rows={3} maxLength={500} value={reason} onChange={e => setReason(e.target.value)} placeholder="예: 지분 비율이 실제와 달라요" /></div>
+              <div className="ui-field"><label htmlFor="aqSignReason">이유 (선택)</label><textarea id="aqSignReason" rows={3} maxLength={500} value={reason} onChange={e => setReason(e.target.value)} placeholder="예: 지분 비율이 실제와 달라요" /></div>
               <div className="aq-sign-actions">
-                <button type="button" className="button secondary" disabled={busy} onClick={() => setDeclining(false)}>돌아가기</button>
-                <button type="button" className="button danger" disabled={busy} onClick={() => void decline()}>서명 거절하기</button>
+                <button type="button" className="ui-btn is-soft" disabled={busy} onClick={() => setDeclining(false)}>돌아가기</button>
+                <button type="button" className="ui-btn is-danger" disabled={busy} onClick={() => void decline()}>서명 거절하기</button>
               </div>
             </div>
           ) : (
-            <button type="button" className="link-btn" onClick={() => setDeclining(true)}>내용이 다르거나 서명하지 않으려면</button>
+            <button type="button" className="ui-btn is-white is-sm" onClick={() => setDeclining(true)}>내용이 다르거나 서명하지 않으려면</button>
           )}
         </section>
       )}

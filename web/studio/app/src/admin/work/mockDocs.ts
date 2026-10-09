@@ -32,15 +32,15 @@ interface Doc {
 interface Version { doc: string; version: number; title: string; content: DocNode; reason: DocVersion['reason']; label: string | null; created_by: string; created_at: string }
 
 const TEMPLATES: (DocTemplate & { content: DocNode })[] = [
-  { id: 'tpl-meeting', key: 'meeting_notes', name: '회의록', description: '참석자·안건·결정·할 일', icon: '📝', system: true,
+  { id: 'tpl-meeting', key: 'meeting_notes', name: '회의록', description: '참석자·안건·결정·할 일', icon: 'pencil', system: true,
     content: { type: 'doc', content: [h2('안건'), p(), h2('결정 사항'), p(), h2('할 일'), todo('담당자 · 기한 · 내용')] } },
-  { id: 'tpl-incident', key: 'incident_report', name: '장애 보고서', description: '영향·타임라인·원인·재발 방지', icon: '🚨', system: true,
+  { id: 'tpl-incident', key: 'incident_report', name: '장애 보고서', description: '영향·타임라인·원인·재발 방지', icon: 'siren', system: true,
     content: { type: 'doc', content: [{ type: 'callout', attrs: { tone: 'danger' }, content: [p('심각도와 영향 범위를 먼저 적어 주세요.')] }, h2('타임라인'), p(), h2('원인'), p(), h2('재발 방지'), todo('')] } },
-  { id: 'tpl-dsp', key: 'dsp_issue_report', name: 'DSP 이슈 보고', description: 'DSP 전송 실패·반려 분석', icon: '📡', system: true,
+  { id: 'tpl-dsp', key: 'dsp_issue_report', name: 'DSP 이슈 보고', description: 'DSP 전송 실패·반려 분석', icon: 'antenna', system: true,
     content: { type: 'doc', content: [h2('현상'), p(), h2('DSP 응답'), { type: 'codeBlock', content: [{ type: 'text', text: '응답 원문' }] }, h2('조치'), todo('메타데이터 수정', '재전송')] } },
-  { id: 'tpl-rights', key: 'rights_review', name: '권리 검토', description: '권리 증빙·판단 근거 기록', icon: '⚖️', system: true,
+  { id: 'tpl-rights', key: 'rights_review', name: '권리 검토', description: '권리 증빙·판단 근거 기록', icon: 'scale', system: true,
     content: { type: 'doc', content: [h2('검토 대상'), p(), h2('확인 사항'), todo('원권리자 서명', '사용 범위'), h2('판단'), p()] } },
-  { id: 'tpl-sop', key: 'sop', name: 'SOP', description: '업무 절차서', icon: '📘', system: true,
+  { id: 'tpl-sop', key: 'sop', name: 'SOP', description: '업무 절차서', icon: 'book', system: true,
     content: { type: 'doc', content: [h2('목적'), p(), h2('절차'), { type: 'orderedList', content: [{ type: 'listItem', content: [p()] }] }] } },
 ];
 
@@ -62,8 +62,8 @@ export function makeDocs(ctx: DocsCtx): DocApi {
     versions.push({ doc: d.id, version: 1, title: d.title, content: d.content, reason: 'CREATE', label: null, created_by: d.created_by, created_at: d.created_at });
     return d;
   };
-  const ops = mk({ title: '배급 운영', icon: '🚚', content: { type: 'doc', content: [p('배급팀 문서 모음이에요.')] } }, 400);
-  mk({ title: '멜론 SFTP 전송 장애 (9/28)', icon: '🚨', parent_id: ops.id, status: 'APPROVED', created_by: others[1], content: {
+  const ops = mk({ title: '배급 운영', icon: 'truck', content: { type: 'doc', content: [p('배급팀 문서 모음이에요.')] } }, 400);
+  mk({ title: '멜론 SFTP 전송 장애 (9/28)', icon: 'siren', parent_id: ops.id, status: 'APPROVED', created_by: others[1], content: {
     type: 'doc', content: [
       { type: 'callout', attrs: { tone: 'danger' }, content: [p('P1 · 멜론 신규 발매 12건 전송 지연 (2시간 10분)')] },
       h2('영향 받은 발매'),
@@ -71,9 +71,9 @@ export function makeDocs(ctx: DocsCtx): DocApi {
       h2('원인'), p('파트너 측 SFTP 인증서 교체 후 호스트 키 불일치.'),
       h2('재발 방지'), todo('호스트 키 변경 공지 채널 등록', '전송 실패 3회 연속 시 자동 카드'),
     ] } }, 150);
-  mk({ title: 'DSP 반려 대응 SOP', icon: '📘', parent_id: ops.id, content: TEMPLATES[4].content }, 90);
-  mk({ title: '권리 검토 기준', icon: '⚖️', staff_access: 'VIEWER', content: { type: 'doc', content: [h2('샘플 사용'), p('허락서에 사용 범위가 명시돼야 해요.'), { type: 'entityEmbed', attrs: { kind: 'release', id: 'r4d5e6f7', view: 'qc', label: 'Paper Moon' } }] } }, 300);
-  mk({ title: '임원 회의 메모', icon: '🔒', staff_access: null, created_by: others[0] }, 30);
+  mk({ title: 'DSP 반려 대응 SOP', icon: 'book', parent_id: ops.id, content: TEMPLATES[4].content }, 90);
+  mk({ title: '권리 검토 기준', icon: 'scale', staff_access: 'VIEWER', content: { type: 'doc', content: [h2('샘플 사용'), p('허락서에 사용 범위가 명시돼야 해요.'), { type: 'entityEmbed', attrs: { kind: 'release', id: 'r4d5e6f7', view: 'qc', label: 'Paper Moon' } }] } }, 300);
+  mk({ title: '임원 회의 메모', icon: 'lock', staff_access: null, created_by: others[0] }, 30);
 
   const name = (l: number) => (['NONE', 'VIEWER', 'EDITOR', 'MANAGER', 'OWNER'] as const)[l];
   const level = (d: Doc): number => {

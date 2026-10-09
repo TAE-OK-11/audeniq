@@ -1,7 +1,7 @@
 // DSP별 요구 조건 — 레지스트리 사양(무엇을 요구하는지)과 이 발매의 스테이징 검사(맞는지)를 한 표로.
 // 문제가 있으면 바로 빨간색: 콘텐츠 차단(BLOCKER)은 빨강, 권고(WARNING)는 주황, 연동 대기는 회색.
 import type { DspItem, StagingRow } from './api/staff';
-import { Chip } from './ui';
+import { Badge } from './staffUi';
 import { checkLabel } from './labels';
 import { Glyph } from './components/Glyph';
 import { CheckIcon } from './components/Check';
@@ -81,12 +81,12 @@ export function DspRequirements({ codes, dsps, staging }: { codes: string[]; dsp
         const bad = results.some(x => x.state === 'bad');
         const warn = !bad && results.some(x => x.state === 'warn');
         return (
-          <div key={d.code ?? d.dsp} className={`adm-dspreq${bad ? ' is-bad' : warn ? ' is-warn' : ''}`}>
+          <div key={d.code ?? d.dsp} className={`adm-dspreq ui-on-soft${bad ? ' is-bad' : warn ? ' is-warn' : ''}`}>
             <div className="adm-dspreq-top">
               <b>{d.name}</b>
-              <Chip tone={bad ? 'red' : warn ? 'amber' : row ? 'green' : 'gray'}>
+              <Badge tone={bad ? 'red' : warn ? 'amber' : row ? 'green' : 'gray'}>
                 {bad ? `문제 ${results.filter(x => x.state === 'bad').length}건` : warn ? '확인 권고' : row ? '요구 조건 충족' : '배급 준비 후 검사'}
-              </Chip>
+              </Badge>
             </div>
             <ul>
               {results.map(({ r, state, detail }) => (
@@ -96,7 +96,7 @@ export function DspRequirements({ codes, dsps, staging }: { codes: string[]; dsp
                     <b>{r.label}</b>
                     <small>{r.spec(d)}</small>
                   </span>
-                  <Chip tone={STATE_LABEL[state][1]}>{STATE_LABEL[state][0]}</Chip>
+                  <Badge tone={STATE_LABEL[state][1]}>{STATE_LABEL[state][0]}</Badge>
                 </li>
               ))}
             </ul>

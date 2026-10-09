@@ -1,4 +1,5 @@
 import { isrcValid, normalizeIsrc, upcValid } from './dsp';
+import { josa } from './josa';
 
 export const RERELEASE_KINDS = { transfer: '유통사를 AUDENIQ로 이전', redistribute: '서비스가 종료된 음원 재발매', new_version: '새 녹음·리믹스·변경 버전 발매' } as const;
 export const RERELEASE_AVAILABILITY = { live: '현재 서비스 중', takedown_requested: '이전 유통사에 서비스 종료 요청', removed: '서비스 종료됨', unknown: '확인이 필요해요' } as const;
@@ -33,7 +34,7 @@ export function rereleaseIssue(o: RereleaseData & { previousTitle: string }, tra
   for (const [i, t] of tracks.entries()) {
     const previous = o.rereleaseTracks?.find(x => x.trackId === t.id)?.previousIsrc ?? '';
     if (previous && !isrcValid(previous)) return fail(`트랙 ${i + 1}의 기존 ISRC 형식을 확인해 주세요.`, `aqPreviousIsrc-${i}`);
-    if (o.rereleaseAudio === 'same' && (!previous || normalizeIsrc(previous) !== normalizeIsrc(t.isrc))) return fail(`트랙 ${i + 1}은 같은 녹음이에요. 기존 ISRC를 입력하고 트랙에 적용해 주세요.`, `aqPreviousIsrc-${i}`);
+    if (o.rereleaseAudio === 'same' && (!previous || normalizeIsrc(previous) !== normalizeIsrc(t.isrc))) return fail(`트랙 ${josa(i + 1, '은/는')} 같은 녹음이에요. 기존 ISRC를 입력하고 트랙에 적용해 주세요.`, `aqPreviousIsrc-${i}`);
     if (o.rereleaseAudio === 'changed' && previous && normalizeIsrc(previous) === normalizeIsrc(t.isrc)) return fail(`트랙 ${i + 1}의 변경된 녹음에 기존 ISRC를 재사용할 수 없어요. 트랙 등록에서 새 코드로 바꾸거나 비워 주세요.`, `aqPreviousIsrc-${i}`);
   }
   if (!o.rereleaseAck) return fail('이전·재발매 진행 안내를 확인해 주세요.', 'aqRereleaseAck');

@@ -10,11 +10,12 @@ import { errorMessage } from '../../api/errors';
 import { Glyph } from '../../components/Glyph';
 import { CheckIcon } from '../../components/Check';
 import { useAsync } from '../../hooks/useAsync';
-import { Chip, useStaff } from '../ui';
+import { Badge, useStaff } from '../ui';
 import { ago, when } from '../labels';
 import { workApi } from './api';
 import { DOC_KIND_LABEL, ENTITY_KIND, LINK_KINDS, PRIORITY, TASK_STATUS, entityLink, remaining } from './labels';
 import type { EntityKind, EntityRef, Priority, StaffPerson, TaskStatus, WorkNote } from './types';
+import { StatGrid, StatTile } from '../../ui';
 
 // ---------- 담당자 ----------
 let peopleCache: Promise<StaffPerson[]> | null = null;
@@ -36,13 +37,13 @@ export type People = ReturnType<typeof usePeople>;
 
 export function Person({ id, people, empty = '담당자 없음', compact }: { id: string | null | undefined; people: People; empty?: string; compact?: boolean }) {
   const { me } = useStaff();
-  if (!id) return <span className="adm-w-person is-empty"><span className="adm-w-avatar" aria-hidden="true">–</span>{!compact && empty}</span>;
+  if (!id) return <span className="adm-w-person is-empty"><span className="ui-avatar is-sm is-empty" aria-hidden="true"><Glyph name="user" size={14} /></span>{!compact && empty}</span>;
   const p = people.get(id);
   const mine = id === me.user_id;
   const name = mine ? '나' : p?.name ?? '담당자';
   return (
     <span className="adm-w-person" title={p?.email}>
-      <span className={`adm-w-avatar${mine ? ' is-me' : ''}`} aria-hidden="true">{mine ? '나' : name.slice(0, 1).toUpperCase()}</span>
+      <span className={`ui-avatar is-sm${mine ? ' is-me' : ''}`} aria-hidden="true">{mine ? '나' : name.slice(0, 1).toUpperCase()}</span>
       {!compact && <span className="adm-w-person-name">{name}</span>}
     </span>
   );
@@ -53,7 +54,7 @@ export function PersonSelect({ id, value, onChange, people, empty = '지정 안 
 }) {
   const { me } = useStaff();
   return (
-    <select id={id} className="adm-select adm-w-select" aria-label={label} value={value ?? ''} onChange={e => onChange(e.target.value || null)}>
+    <select id={id} className="ui-select" aria-label={label} value={value ?? ''} onChange={e => onChange(e.target.value || null)}>
       <option value="">{empty}</option>
       {people.list.map(p => <option key={p.user_id} value={p.user_id}>{p.user_id === me.user_id ? `나 (${p.email})` : p.email}</option>)}
     </select>
@@ -63,12 +64,12 @@ export function PersonSelect({ id, value, onChange, people, empty = '지정 안 
 // ---------- 칩 ----------
 export function PriorityChip({ value }: { value: Priority }) {
   const [label, tone] = PRIORITY[value];
-  return <Chip tone={tone}><span className={`adm-w-pri is-${value.toLowerCase()}`} aria-hidden="true" />{label}</Chip>;
+  return <Badge tone={tone}><span className={`adm-w-pri is-${value.toLowerCase()}`} aria-hidden="true" />{label}</Badge>;
 }
 
 export function TaskStatusChip({ value }: { value: TaskStatus }) {
   const [label, tone] = TASK_STATUS[value];
-  return <Chip tone={tone}>{label}</Chip>;
+  return <Badge tone={tone}>{label}</Badge>;
 }
 
 /** 마감 칩 — 지났으면 빨강, 하루 안이면 주황 (SLA는 Phase 2) */
@@ -76,7 +77,7 @@ export function DueChip({ due, closed }: { due: string | null; closed?: boolean 
   if (!due || closed) return null;
   const ms = Date.parse(due) - Date.now();
   const tone = ms < 0 ? 'red' : ms < 24 * 3_600_000 ? 'amber' : 'gray';
-  return <Chip tone={tone}><Glyph name="clock" size={12} />{remaining(due)}</Chip>;
+  return <Badge tone={tone}><Glyph name="clock" size={12} />{remaining(due)}</Badge>;
 }
 
 // ---------- 스위치 (스튜디오 aq-switch) ----------
@@ -143,10 +144,10 @@ export function EntityPicker({ onPick, kinds = LINK_KINDS, exclude = [] }: { onP
   return (
     <div className="adm-w-picker">
       <div className="adm-w-picker-top">
-        <select className="adm-select" aria-label="연결할 종류" value={kind} onChange={e => setKind(e.target.value as EntityKind)}>
+        <select className="ui-select is-auto" aria-label="연결할 종류" value={kind} onChange={e => setKind(e.target.value as EntityKind)}>
           {kinds.map(k => <option key={k} value={k}>{ENTITY_KIND[k].label}</option>)}
         </select>
-        <input className="adm-input" type="search" aria-label="이름으로 찾기" placeholder={`${ENTITY_KIND[kind].label} 이름으로 찾기`} value={q} onChange={e => setQ(e.target.value)} />
+        <input className="ui-input" type="search" aria-label="이름으로 찾기" placeholder={`${ENTITY_KIND[kind].label} 이름으로 찾기`} value={q} onChange={e => setQ(e.target.value)} />
       </div>
       <div className="adm-w-picker-list" role="listbox" aria-label="찾은 항목">
         {items == null ? <span className="small muted">찾는 중…</span> : shown.length === 0 ? <span className="small muted">찾은 항목이 없어요.</span> : shown.slice(0, 8).map(r => (
@@ -204,7 +205,7 @@ export function MentionArea({ id, value, onChange, people, onSubmit, placeholder
   return (
     <div className="adm-w-mention-area">
       <textarea
-        id={id} ref={area} className="adm-textarea" rows={rows} maxLength={4000} value={value} placeholder={placeholder}
+        id={id} ref={area} className="ui-textarea" rows={rows} maxLength={4000} value={value} placeholder={placeholder}
         onChange={e => type(e.target.value, e.target.selectionStart)}
         onKeyDown={e => {
           if (suggestions.length && (e.key === 'Enter' || e.key === 'Tab')) { e.preventDefault(); pick(suggestions[0]); return; }
@@ -229,7 +230,7 @@ function Revisions({ noteId, people, onClose }: { noteId: string; people: People
   const { data, loading, error } = useAsync(() => workApi.noteRevisions(noteId), [noteId]);
   return (
     <Modal title="수정 이력" onClose={onClose}>
-      {error ? <div className="adm-alert is-error">{error}</div> : loading && !data ? <div className="adm-skel"><span /></div> : (
+      {error ? <div className="ui-callout is-danger">{error}</div> : loading && !data ? <div className="ui-skel-rows"><span /></div> : (
         <ol className="adm-w-note-list">
           {(data?.items ?? []).map((r, i) => (
             <li key={i} className="adm-w-note">
@@ -269,9 +270,9 @@ function NoteItem({ n, people, onChanged }: { n: WorkNote; people: People; onCha
         <Person id={n.author_id} people={people} />
         <small className="muted" title={when(n.created_at)}>{ago(n.created_at)}{n.edited_at && ' · 수정됨'}</small>
         <span className="adm-w-note-actions">
-          {n.revisions > 0 && <button type="button" className="adm-link-btn" onClick={() => setHistory(true)}>이력 {n.revisions}</button>}
-          {mine && !editing && <button type="button" className="adm-link-btn" onClick={() => { setDraft(n.body); setEditing(true); }}>고치기</button>}
-          {(mine || me.role === 'ADMIN') && <button type="button" className="adm-link-btn" onClick={archive}>보관</button>}
+          {n.revisions > 0 && <button type="button" className="ui-btn is-text is-muted" onClick={() => setHistory(true)}>이력 {n.revisions}</button>}
+          {mine && !editing && <button type="button" className="ui-btn is-text is-muted" onClick={() => { setDraft(n.body); setEditing(true); }}>고치기</button>}
+          {(mine || me.role === 'ADMIN') && <button type="button" className="ui-btn is-text is-muted" onClick={archive}>보관</button>}
           <button type="button" className={`adm-w-resolve${n.resolved ? ' is-on' : ''}`} disabled={busy} aria-pressed={n.resolved} onClick={() => run(() => workApi.resolveNote(n.id, !n.resolved))}>
             <CheckIcon size={12} />{n.resolved ? '해결됨' : '해결 표시'}
           </button>
@@ -281,8 +282,8 @@ function NoteItem({ n, people, onChanged }: { n: WorkNote; people: People; onCha
         <div className="adm-w-note-edit">
           <MentionArea id={`edit-${n.id}`} value={draft} onChange={setDraft} people={people} onSubmit={save} placeholder="메모" />
           <div className="adm-form-actions">
-            <button type="button" className="adm-btn soft small" onClick={() => setEditing(false)}>취소</button>
-            <button type="button" className="adm-btn primary small" disabled={busy || (!draft.trim() && n.attachments.length === 0)} onClick={save}>저장</button>
+            <button type="button" className="ui-btn is-soft is-sm" onClick={() => setEditing(false)}>취소</button>
+            <button type="button" className="ui-btn is-primary is-sm" disabled={busy || (!draft.trim() && n.attachments.length === 0)} onClick={save}>저장</button>
           </div>
         </div>
       ) : n.body && <NoteBody text={n.body} people={people} />}
@@ -353,12 +354,12 @@ export function NotesPanel({ kind, targetId, title = '내부 메모', onChange }
 
   return (
     <section className="adm-w-notes" aria-label={title}>
-      <div className="adm-section-top">
+      <div className="ui-section-head">
         <h2>{title}<small><Glyph name="lock" size={12} className="aq-inline-glyph" /> 고객에게는 보이지 않아요</small></h2>
-        {resolvedCount > 0 && <button type="button" className="adm-link-btn" onClick={() => setShowResolved(v => !v)}>{showResolved ? '해결된 메모 숨기기' : `해결된 메모 ${resolvedCount}개 보기`}</button>}
+        {resolvedCount > 0 && <button type="button" className="ui-btn is-text is-muted" onClick={() => setShowResolved(v => !v)}>{showResolved ? '해결된 메모 숨기기' : `해결된 메모 ${resolvedCount}개 보기`}</button>}
       </div>
-      {error && <div className="adm-alert is-error">{error}</div>}
-      {loading && !data ? <div className="adm-skel"><span /></div> : shown.length === 0 ? (
+      {error && <div className="ui-callout is-danger">{error}</div>}
+      {loading && !data ? <div className="ui-skel-rows"><span /></div> : shown.length === 0 ? (
         <p className="adm-w-notes-empty">{items.length ? '열린 메모가 없어요.' : '아직 메모가 없어요. @이름으로 동료를 부를 수 있어요.'}</p>
       ) : (
         <ol className="adm-w-note-list">{shown.map(n => <NoteItem key={n.id} n={n} people={people} onChanged={() => { reload(); onChange?.(); }} />)}</ol>
@@ -378,10 +379,10 @@ export function NotesPanel({ kind, targetId, title = '내부 메모', onChange }
         <div className="adm-reply-foot">
           <span className="adm-w-note-tools">
             <input ref={fileRef} type="file" multiple hidden accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.csv,.zip,.xlsx,.xls,.docx,.doc,.pptx" onChange={e => addFiles(e.target.files)} />
-            <button type="button" className="adm-btn soft small" onClick={() => fileRef.current?.click()}><Glyph name="clip" size={14} />파일 첨부</button>
-            <button type="button" className="adm-btn soft small" onClick={() => setBody(b => `${b}${b && !b.endsWith(' ') ? ' ' : ''}@`)}><Glyph name="at" size={14} />멘션</button>
+            <button type="button" className="ui-btn is-soft is-sm" onClick={() => fileRef.current?.click()}><Glyph name="clip" size={14} />파일 첨부</button>
+            <button type="button" className="ui-btn is-soft is-sm" onClick={() => setBody(b => `${b}${b && !b.endsWith(' ') ? ' ' : ''}@`)}><Glyph name="at" size={14} />멘션</button>
           </span>
-          <button type="submit" className="adm-btn primary" disabled={busy || (!body.trim() && files.length === 0)}>
+          <button type="submit" className="ui-btn is-primary" disabled={busy || (!body.trim() && files.length === 0)}>
             {busy ? (progress != null && files.length ? `첨부 올리는 중 ${Math.round(progress * 100)}%` : '남기는 중…') : '메모 남기기'}
           </button>
         </div>
@@ -390,17 +391,13 @@ export function NotesPanel({ kind, targetId, title = '내부 메모', onChange }
   );
 }
 
-/** 작은 숫자 카드 줄 — 개요의 adm-stat과 같은 면, 높이만 낮게 */
+/** 작은 숫자 칸 줄 — 개요의 숫자 칸(StatTile)과 같은 면, 높이만 낮게 */
 export function MiniStats({ items }: { items: { label: string; value: ReactNode; hint?: string; tone?: 'alert' | 'warn' | 'muted'; onClick?: () => void; active?: boolean }[] }) {
   return (
-    <div className="adm-w-stats">
-      {items.map(s => {
-        const cls = ['adm-w-stat', s.tone ? `is-${s.tone}` : '', s.active ? 'is-active' : ''].filter(Boolean).join(' ');
-        const inner = <><strong>{s.value}</strong><span>{s.label}</span>{s.hint && <small>{s.hint}</small>}</>;
-        return s.onClick
-          ? <button key={s.label} type="button" className={cls} onClick={s.onClick} aria-pressed={s.active}>{inner}</button>
-          : <div key={s.label} className={cls}>{inner}</div>;
-      })}
-    </div>
+    <StatGrid cols={Math.min(4, items.length)}>
+      {items.map(s => (
+        <StatTile key={s.label} compact label={s.label} value={s.value} hint={s.hint} tone={s.active ? 'active' : s.tone} onClick={s.onClick} pressed={s.onClick ? !!s.active : undefined} />
+      ))}
+    </StatGrid>
   );
 }

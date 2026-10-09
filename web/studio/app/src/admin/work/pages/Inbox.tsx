@@ -6,7 +6,7 @@ import { useToast } from '../../../components/Toast';
 import { errorMessage } from '../../../api/errors';
 import { useAsync } from '../../../hooks/useAsync';
 import { Glyph } from '../../../components/Glyph';
-import { Chip, Empty, ErrorBox, Filters, PageHead, Seg, Skeleton, useStaff, WorkTabs } from '../../ui';
+import { Badge, EmptyState, ErrorBox, ChipGroup, PageHeader, Seg, SkeletonList, useStaff, WorkTabs } from '../../ui';
 import { ago } from '../../labels';
 import { workApi } from '../api';
 import { ENTITY_KIND, EXCEPTION_KIND, INBOX_CATEGORIES, INBOX_CATEGORY, INBOX_FLAG, PRIORITIES, PRIORITY, QUEUE_TYPE, WORK_TYPE } from '../labels';
@@ -21,14 +21,14 @@ const typeLabel = (t: string) =>
 function Row({ i, onOpen }: { i: InboxItem; onOpen: (i: InboxItem) => void }) {
   const c = INBOX_CATEGORY[i.category];
   return (
-    <button type="button" className={`adm-row adm-w-inbox-row${i.read ? ' is-read' : ''}`} onClick={() => onOpen(i)}>
+    <button type="button" className={`ui-row adm-w-inbox-row${i.read ? ' is-read' : ''}`} onClick={() => onOpen(i)}>
       <span className={`adm-w-inbox-icon adm-t-${c.tone}`} aria-hidden="true"><Glyph name={c.icon} size={16} /></span>
       <span className="adm-min">
-        <span className="adm-row-title">
+        <span className="ui-row-title">
           {!i.read && <span className="adm-w-unread-dot" aria-label="읽지 않음" />}
           {i.title}
         </span>
-        <span className="adm-row-meta">
+        <span className="ui-row-meta">
           <span>{c.label}</span>
           <span>{typeLabel(i.type)}</span>
           {i.subtitle && <span className="adm-w-ellipsis">{i.subtitle}</span>}
@@ -36,9 +36,9 @@ function Row({ i, onOpen }: { i: InboxItem; onOpen: (i: InboxItem) => void }) {
           <span>{ago(i.at)}</span>
         </span>
       </span>
-      <span className="adm-row-end">
+      <span className="ui-row-end">
         <span className="adm-codes">
-          {i.flags.map(f => <Chip key={f} tone={f === 'ESCALATED' ? 'red' : 'amber'}>{INBOX_FLAG[f] ?? f}</Chip>)}
+          {i.flags.map(f => <Badge key={f} tone={f === 'ESCALATED' ? 'red' : 'amber'}>{INBOX_FLAG[f] ?? f}</Badge>)}
           <PriorityChip value={i.priority} />
         </span>
         <DueChip due={i.due_at} />
@@ -97,13 +97,13 @@ export function Inbox() {
 
   return (
     <div className="view-enter">
-      <PageHead
+      <PageHeader
         eyebrow="업무"
         title="업무함"
         sub="배정된 업무, 검토·승인 요청, 멘션, SLA 임박·초과, 자동화·배급 실패까지 나에게 온 일을 모아 보여 줘요."
         actions={<>
-          <button type="button" className="adm-btn soft small" onClick={reload}>새로고침</button>
-          <button type="button" className="adm-btn soft small" onClick={readAll} disabled={!items.some(i => !i.read)}>모두 읽음</button>
+          <button type="button" className="ui-btn is-soft is-sm" onClick={reload}>새로고침</button>
+          <button type="button" className="ui-btn is-soft is-sm" onClick={readAll} disabled={!items.some(i => !i.read)}>모두 읽음</button>
         </>}
       />
       <WorkTabs />
@@ -114,35 +114,35 @@ export function Inbox() {
         { label: '검토·승인 요청', value: n('REVIEW_REQUEST') + n('APPROVAL_REQUEST'), onClick: () => setCategory('REVIEW_REQUEST'), active: category === 'REVIEW_REQUEST' },
       ]} />
       {present.length > 0 && (
-        <Filters label="분류" value={category} onChange={setCategory}
+        <ChipGroup label="분류" value={category} onChange={setCategory}
           options={[{ value: '' as InboxCategory | '', label: '전체', count: data?.total ?? 0 }, ...present.map(c => ({ value: c as InboxCategory | '', label: INBOX_CATEGORY[c].label, count: n(c) }))]} />
       )}
       <div className="adm-queue-tools adm-w-filter-row">
         <Seg label="읽음" value={unread} onChange={setUnread} options={[['all', '전체'], ['unread', '읽지 않음']] as const} />
-        <select className="adm-select" aria-label="우선순위" value={priority} onChange={e => setPriority(e.target.value as Priority | '')}>
+        <select className="ui-select is-auto" aria-label="우선순위" value={priority} onChange={e => setPriority(e.target.value as Priority | '')}>
           <option value="">모든 우선순위</option>
           {PRIORITIES.map(p => <option key={p} value={p}>{PRIORITY[p][0]}</option>)}
         </select>
-        <select className="adm-select" aria-label="기한" value={due} onChange={e => setDue(e.target.value as NonNullable<InboxQuery['due']>)}>
+        <select className="ui-select is-auto" aria-label="기한" value={due} onChange={e => setDue(e.target.value as NonNullable<InboxQuery['due']>)}>
           <option value="">모든 기한</option>
           <option value="overdue">기한 지남</option>
           <option value="today">오늘까지</option>
           <option value="week">7일 안</option>
         </select>
-        <select className="adm-select" aria-label="연결 대상" value={entityKind} onChange={e => setEntityKind(e.target.value as EntityKind | '')}>
+        <select className="ui-select is-auto" aria-label="연결 대상" value={entityKind} onChange={e => setEntityKind(e.target.value as EntityKind | '')}>
           <option value="">모든 대상</option>
           {(['task', 'release', 'inquiry', 'document', 'dsp', 'settlement_report'] as EntityKind[]).map(k => <option key={k} value={k}>{ENTITY_KIND[k].label}</option>)}
         </select>
       </div>
       {error && <ErrorBox message={error} onRetry={reload} />}
-      {loading && !data ? <Skeleton rows={6} /> : items.length === 0 ? (
-        <Empty title={unread === 'unread' ? '읽지 않은 일이 없어요' : '지금 처리할 일이 없어요'}>
+      {loading && !data ? <SkeletonList rows={6} /> : items.length === 0 ? (
+        <EmptyState title={unread === 'unread' ? '읽지 않은 일이 없어요' : '지금 처리할 일이 없어요'}>
           새 업무·멘션·SLA 경고가 생기면 여기에 바로 나타나요.
-        </Empty>
+        </EmptyState>
       ) : (
         <>
           <p className="adm-queue-count">{items.length}건</p>
-          <div className="adm-list">{items.map(i => <Row key={i.id} i={i} onOpen={open} />)}</div>
+          <div className="ui-list">{items.map(i => <Row key={i.id} i={i} onOpen={open} />)}</div>
         </>
       )}
     </div>

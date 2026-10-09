@@ -1,7 +1,7 @@
 // 금액 표시 — 숫자는 자리 맞춤, 단위(원·달러…)는 작고 옅게. mark를 켜면 화폐 기호를 AUDENIQ 아이콘으로 앞에 붙인다.
 // 글꼴·OS마다 모양이 다른 ₩ $ € ¥ £ 글자는 쓰지 않는다. 화면 읽기 프로그램에는 ‘12,000원’처럼 읽힌다.
 import { Glyph } from './Glyph';
-import { CountUp } from './CountUp';
+import { CountUp } from '../ui/CountUp';
 
 const UNIT: Record<string, { unit: string; mark: string; digits: number }> = {
   KRW: { unit: '원', mark: 'krw', digits: 0 },

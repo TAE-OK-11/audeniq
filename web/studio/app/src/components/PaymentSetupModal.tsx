@@ -1,5 +1,6 @@
 // 수익 정산 정보 등록 마법사 — 라이브 openPaymentSetup/renderPaymentSetup 대응
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { LegalModal } from './LegalDoc';
 import { Modal } from './Modal';
 import { BankLogo } from './BankLogo';
 import { useToast } from './Toast';
@@ -10,6 +11,7 @@ import { localStamp } from '../lib/format';
 import { MOCK } from '../lib/mode';
 import * as portal from '../api/portal';
 import { errorMessage } from '../api/errors';
+import { Glyph } from './Glyph';
 import { requestPortalRefresh } from '../store/portalSync';
 
 const FINANCIAL_INSTITUTIONS: Record<string, { label: string; note: string; items: string[] }> = {
@@ -45,11 +47,12 @@ const PAY_TYPES: { value: PaymentInfo['type']; label: string; desc: string }[] =
   { value: 'corporate', label: '법인', desc: '법인 명의 계좌로 받아요.' },
 ];
 
-const AGREE_ITEMS = [
-  '정산금 지급 및 계좌 확인 약관',
-  '개인정보 수집·이용 동의',
-  '금융정보 처리 동의',
-  '수령인 정보 정확성 확인',
+// 항목마다 '정산금 지급 및 계좌 확인 약관'의 해당 조를 열어 보여 준다 (anchor: 조 제목에 든 말)
+const AGREE_ITEMS: { label: string; anchor?: string }[] = [
+  { label: '정산금 지급 및 계좌 확인 약관' },
+  { label: '개인정보 수집·이용 동의', anchor: '개인정보의 보호' },
+  { label: '금융정보 처리 동의', anchor: '금융계좌 확인' },
+  { label: '수령인 정보 정확성 확인', anchor: '계좌 등록' },
 ];
 
 interface Draft {
@@ -64,6 +67,7 @@ interface Draft {
 export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
   const toast = useToast();
   const [step, setStep] = useState(0);
+  const [legal, setLegal] = useState<{ anchor?: string } | null>(null);
   const [draft, setDraft] = useState<Draft>(() => {
     const profileName = getProfileSnapshot().name || '';
     return { recipient: profileName, type: 'personal', bank: '', last4: '', account: '' };
@@ -208,7 +212,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
     <Modal title="수익 정산 정보 등록" onClose={onClose} modalClass="aq-payout-setup-mode">
       <div className="aq-pay-flow" ref={flowRef}>
         <header className="aq-pay-top">
-          <button type="button" aria-label="이전으로" onClick={back}>‹</button>
+          <button type="button" aria-label="이전으로" onClick={back}><Glyph name="chevron-left" size={20} /></button>
           <div className="aq-pay-progress" aria-label={`수령 정보 등록 ${step + 1}단계`}>
             <span style={{ ['--pay-progress' as string]: `${Math.min(100, (step + 1) * 25)}%` }} />
           </div>
@@ -217,10 +221,10 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
         <main className={`aq-pay-main aq-step-anim is-${dir}`} key={step}>
           {step === 0 && (
             <>
-              <p className="eyebrow">PAYOUT PROFILE</p>
+              <p className="eyebrow">수령인 정보</p>
               <h1>수익을 받을<br />정보를 알려주세요.</h1>
               <p className="aq-pay-lead">계약과 정산 서류에 표시할 수령인 정보를 입력해 주세요.</p>
-              <div className="field aq-pay-field">
+              <div className="ui-field aq-pay-field">
                 <label htmlFor="aqPayRecipient">수령인 이름 또는 상호</label>
                 <input
                   id="aqPayRecipient" maxLength={120} autoComplete="name"
@@ -246,7 +250,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
 
           {step === 1 && (
             <>
-              <p className="eyebrow">PAYOUT ACCOUNT</p>
+              <p className="eyebrow">수령 계좌</p>
               <h1>수익을 받을<br />금융기관을 선택해 주세요.</h1>
               <p className="aq-pay-lead">은행, 저축은행, 증권사 계좌를 등록할 수 있어요.</p>
               <div className="aq-bank-tabs" ref={tabsRef} role="tablist" aria-label="금융기관 종류">
@@ -302,13 +306,13 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
 
           {step === 2 && (
             <>
-              <p className="eyebrow">ACCOUNT NUMBER</p>
+              <p className="eyebrow">계좌번호</p>
               <h1>{draft.bank}<br />계좌번호를 입력해 주세요.</h1>
               <div className="aq-selected-bank">
                 <BankLogo name={draft.bank} />
                 <div><strong>{draft.bank}</strong><small>수익 정산 계좌</small></div>
               </div>
-              <div className="field aq-pay-field">
+              <div className="ui-field aq-pay-field">
                 <label htmlFor="aqPayAccount">계좌번호</label>
                 <input
                   id="aqPayAccount" inputMode="numeric" autoComplete="off" maxLength={20}
@@ -317,7 +321,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
                   placeholder="숫자만 입력"
                 />
               </div>
-              <div className="field aq-pay-field">
+              <div className="ui-field aq-pay-field">
                 <label htmlFor="aqPayOwner">예금주</label>
                 <input
                   id="aqPayOwner" maxLength={120}
@@ -334,7 +338,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
 
           {step === 3 && (
             <>
-              <p className="eyebrow">AGREEMENT</p>
+              <p className="eyebrow">약관 동의</p>
               <h1>수령 계좌 등록에<br />동의해 주세요.</h1>
               <p className="aq-pay-lead">정산금 지급과 계좌 확인에 필요한 항목이에요.</p>
               <label className="aq-agree-all">
@@ -345,7 +349,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
                 <span><strong>필수 약관 전체 동의</strong><small>아래 항목을 모두 확인했어요.</small></span>
               </label>
               <div className="aq-agree-list">
-                {AGREE_ITEMS.map((label, i) => (
+                {AGREE_ITEMS.map(({ label, anchor }, i) => (
                   <label key={label}>
                     <input
                       type="checkbox" data-aq-agree checked={agrees[i]}
@@ -356,7 +360,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
                       }}
                     />
                     <span>{label}</span>
-                    <button type="button" aria-label="약관 보기">›</button>
+                    <button type="button" aria-label={`${label} 보기`} onClick={e => { e.preventDefault(); setLegal({ anchor }); }}><Glyph name="chevron-right" size={18} /></button>
                   </label>
                 ))}
               </div>
@@ -376,7 +380,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
                 <circle className="aq-success-ring" cx="44" cy="44" r="40" />
                 <path className="aq-success-tick" d="M27 45.5 39.5 58 62 33" />
               </svg>
-              <p className="eyebrow">PAYOUT READY</p>
+              <p className="eyebrow">등록 완료</p>
               <h1>수익을 받을 계좌가<br />등록됐어요.</h1>
               <p className="aq-pay-success-sub">정산이 확정되면 이 계좌로 수익을 받을 수 있어요.</p>
               <div className="aq-pay-receipt">
@@ -402,12 +406,12 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
         {step === 4 ? (
           // 완료 화면도 확인 버튼을 하단에 고정 — 작은 화면에서 스크롤하지 않아도 바로 보이게
           <footer className="aq-pay-actions is-final">
-            <button type="button" className="button" id="aqPayDone" onClick={done}>확인</button>
+            <button type="button" className="ui-btn is-primary" id="aqPayDone" onClick={done}>확인</button>
           </footer>
         ) : (
           <footer className="aq-pay-actions">
             <button
-              type="button" className="button" id="aqPayNext"
+              type="button" className="ui-btn is-primary" id="aqPayNext"
               disabled={nextDisabled}
               onClick={step === 0 ? nextFrom0 : step === 1 ? undefined : step === 2 ? nextFrom2 : nextFrom3}
             >
@@ -427,6 +431,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
           </div>
         )}
       </div>
+      {legal && <LegalModal doc="settlement" anchor={legal.anchor} onClose={() => setLegal(null)} />}
     </Modal>
   );
 }

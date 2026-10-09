@@ -40,9 +40,9 @@ export function Contracts() {
 
   return (
     <div id="view-contracts" className="view">
-      <div className="view-title">
+      <div className="ui-page-head">
         <div>
-          <p className="eyebrow">AUDENIQ AGREEMENTS</p>
+          <p className="eyebrow">계약·권리</p>
           <h1>계약서</h1>
           <p>발매마다 배급 신청서와 배급 계약서를 한곳에서 확인하고 서명하세요.</p>
         </div>
@@ -81,7 +81,7 @@ export function Contracts() {
         )}
       </div>
 
-      <div className="notice" style={{ marginTop: 25 }}>
+      <div className="ui-callout" style={{ marginTop: 25 }}>
         배급 신청서는 접수할 때, 배급 계약서는 담당자 검토가 끝난 뒤 서명해요. 계약서에 서명하면 플랫폼으로 배급이 시작돼요.
       </div>
 

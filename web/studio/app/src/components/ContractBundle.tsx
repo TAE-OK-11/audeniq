@@ -5,6 +5,8 @@ import { docState, type DocRecord } from '../store/docs';
 import { niceDate, stripSampleSuffix } from '../lib/format';
 import { CheckIcon } from './Check';
 import { Glyph } from './Glyph';
+import { Badge } from '../ui';
+import type { Tone } from '../ui/tone';
 
 export type BundleStage = 'to-sign' | 'review' | 'needs' | 'signed' | 'waiting';
 
@@ -23,6 +25,11 @@ const STAGE_LABEL: Record<BundleStage, string> = {
   needs: '보완 필요',
   signed: '계약 체결 완료',
   waiting: '계약서 준비 전',
+};
+
+/** 상태 알약 색 — 다른 화면의 상태 배지와 같은 규칙 (서명 필요 = 파랑, 검토 중 = 보라, 보완 = 주황, 완료 = 초록) */
+const STAGE_TONE: Record<BundleStage, Tone> = {
+  'to-sign': 'blue', review: 'violet', needs: 'amber', signed: 'green', waiting: 'gray',
 };
 
 export function ContractBundle({ releaseId, releaseTitle, agreement, hasApplication = true, onOpenAgreement, compact = false }: {
@@ -46,24 +53,24 @@ export function ContractBundle({ releaseId, releaseTitle, agreement, hasApplicat
             <strong>{stripSampleSuffix(releaseTitle) || '제목 없는 발매'}</strong>
             {agreement?.created && <span>{niceDate(agreement.created)} 접수</span>}
           </div>
-          <em>{STAGE_LABEL[stage]}</em>
+          <Badge tone={STAGE_TONE[stage]}>{STAGE_LABEL[stage]}</Badge>
         </header>
       )}
       <ol className="aq-bundle-docs">
         <li className={hasApplication ? 'is-done' : ''}>
-          <span className="aq-bundle-no" aria-hidden="true">{hasApplication ? <CheckIcon size={12} /> : 1}</span>
+          <span className="aq-bundle-no" aria-hidden="true">{hasApplication ? <CheckIcon size={14} /> : 1}</span>
           <div className="min-0">
             <strong>배급 신청서</strong>
             <span>{hasApplication ? '접수할 때 서명 완료' : '발매를 접수할 때 서명해요'}</span>
           </div>
           {hasApplication && (
-            <button type="button" className="link-btn" onClick={() => nav(`/releases/${encodeURIComponent(releaseId)}/application`)}>
+            <button type="button" className="ui-btn is-soft is-sm" onClick={() => nav(`/releases/${encodeURIComponent(releaseId)}/application`)}>
               신청서 보기
             </button>
           )}
         </li>
         <li className={stage === 'signed' ? 'is-done' : stage === 'to-sign' ? 'is-current' : ''}>
-          <span className="aq-bundle-no" aria-hidden="true">{stage === 'signed' ? <CheckIcon size={12} /> : stage === 'to-sign' ? <Glyph name="pencil" size={12} /> : 2}</span>
+          <span className="aq-bundle-no" aria-hidden="true">{stage === 'signed' ? <CheckIcon size={14} /> : stage === 'to-sign' ? <Glyph name="pencil" size={15} /> : 2}</span>
           <div className="min-0">
             <strong>배급 계약서</strong>
             <span>{agreement
@@ -73,7 +80,7 @@ export function ContractBundle({ releaseId, releaseTitle, agreement, hasApplicat
               : '신청서를 접수하면 준비돼요'}</span>
           </div>
           {canOpen && (
-            <button type="button" className={stage === 'to-sign' ? 'button aq-bundle-sign' : 'link-btn'} onClick={() => (stage === 'signed' ? nav(`/contracts/${encodeURIComponent(agreement!.id)}`) : onOpenAgreement(agreement!.id))}>
+            <button type="button" className={stage === 'to-sign' ? 'ui-btn is-primary aq-bundle-sign' : 'ui-btn is-soft is-sm'} onClick={() => (stage === 'signed' ? nav(`/contracts/${encodeURIComponent(agreement!.id)}`) : onOpenAgreement(agreement!.id))}>
               {stage === 'to-sign' ? '확인하고 서명' : '계약서 최종본'}
             </button>
           )}

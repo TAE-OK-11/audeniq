@@ -14,7 +14,7 @@ import {
   CHECK_STATUS, DECISION_LABEL, DOC_KIND, DOC_STATUS, MAX_REASON, RELEASE_STATUS, RELEASE_TYPE,
   REJECT_REASONS, checkLabel, checkSummary, pick, shortId, stageStateLabel, systemStages, when,
 } from '../labels';
-import { Chip, ErrorBox, Initial, NoDuty, Section, Skeleton, StatusChip, useStaff } from '../ui';
+import { Badge, ErrorBox, Cover, NoDuty, Section, SkeletonList, StatusBadge, useStaff } from '../ui';
 import { Glyph } from '../../components/Glyph';
 import { CheckIcon } from '../../components/Check';
 import { DocFileLink } from '../DocFileLink';
@@ -78,17 +78,17 @@ function ApproveForm({ sheet, application, onDone }: { sheet: ReleaseSheet; appl
       </p>
       <ReviewBrief sheet={sheet} integrity={integrity} title="승인 전 확인할 것" />
       {sensitive && (
-        <div className="adm-alert is-warn" style={{ marginTop: 14 }}>
+        <div className="ui-callout is-warn" style={{ marginTop: 14 }}>
           권리·중복·보호명 등 <b>민감 항목</b>이 있어 다른 심사 담당자의 <b>2차 승인</b> 후 반영돼요.
         </div>
       )}
-      <div className="adm-field" style={{ marginTop: 16 }}>
+      <div className="ui-field" style={{ marginTop: 16 }}>
         <label htmlFor="aMemo">승인 메모 <span className="muted">(선택)</span></label>
-        <textarea id="aMemo" data-autofocus className="adm-textarea" rows={3} maxLength={MAX_REASON} value={memo} placeholder="남길 내용이 있으면 적어 주세요. 비워 두면 ‘담당자 승인’으로 기록돼요." onChange={e => setMemo(e.target.value)} />
+        <textarea id="aMemo" data-autofocus className="ui-textarea" rows={3} maxLength={MAX_REASON} value={memo} placeholder="남길 내용이 있으면 적어 주세요. 비워 두면 ‘담당자 승인’으로 기록돼요." onChange={e => setMemo(e.target.value)} />
       </div>
       <div className="adm-form-actions">
-        <button type="button" className="adm-btn soft" onClick={close}>취소</button>
-        <button type="submit" className="adm-btn primary" disabled={busy}>{busy ? '저장 중…' : '승인하기'}</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="submit" className="ui-btn is-primary" disabled={busy}>{busy ? '저장 중…' : '승인하기'}</button>
       </div>
     </form>
   );
@@ -115,26 +115,26 @@ function RejectForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: stri
     <form onSubmit={submit}>
       <ReviewBrief sheet={sheet} integrity={integrity} title="거절 전 확인할 것" />
       <p className="small muted" style={{ marginTop: 14 }}>사유를 누르면 그대로 기록되고 아티스트에게 전달돼요. 여러 개 고를 수 있어요. 고칠 수 있는 문제면 거절 대신 보완 요청을 보내 주세요.</p>
-      <div className="adm-reasons" role="group" aria-label="거절 사유">
+      <div className="ui-chips is-wrap" role="group" aria-label="거절 사유">
         {REJECT_REASONS.map(r => (
-          <button key={r.id} type="button" className={`adm-reason${picked.includes(r.id) ? ' is-on' : ''}`} aria-pressed={picked.includes(r.id)} title={r.text} onClick={() => toggle(r.id)}>{r.label}</button>
+          <button key={r.id} type="button" className={`ui-chip is-danger${picked.includes(r.id) ? ' is-on' : ''}`} aria-pressed={picked.includes(r.id)} title={r.text} onClick={() => toggle(r.id)}>{r.label}</button>
         ))}
-        <button type="button" className={`adm-reason${other ? ' is-on' : ''}`} aria-pressed={other} onClick={() => setOther(v => !v)}>기타 (직접 입력)</button>
+        <button type="button" className={`ui-chip is-danger${other ? ' is-on' : ''}`} aria-pressed={other} onClick={() => setOther(v => !v)}>기타 (직접 입력)</button>
       </div>
       {other && (
-        <div className="adm-field">
+        <div className="ui-field">
           <label htmlFor="rCustom">기타 사유</label>
-          <textarea id="rCustom" data-autofocus className="adm-textarea" rows={3} maxLength={1000} value={custom} placeholder="아티스트에게 전달할 거절 사유" onChange={e => setCustom(e.target.value)} />
+          <textarea id="rCustom" data-autofocus className="ui-textarea" rows={3} maxLength={1000} value={custom} placeholder="아티스트에게 전달할 거절 사유" onChange={e => setCustom(e.target.value)} />
         </div>
       )}
-      {reason && <div className="adm-alert" style={{ whiteSpace: 'pre-line' }}>{reason}</div>}
-      <label className="adm-check-line">
+      {reason && <div className="ui-callout" style={{ whiteSpace: 'pre-line' }}>{reason}</div>}
+      <label className="ui-check">
         <input type="checkbox" checked={sure} onChange={e => setSure(e.target.checked)} />
         <span><b>{sheet.release.title}</b> 발매를 거절하면 되돌릴 수 없어요. 아티스트는 새로 접수해야 해요.</span>
       </label>
       <div className="adm-form-actions">
-        <button type="button" className="adm-btn soft" onClick={close}>취소</button>
-        <button type="submit" className="adm-btn solid-danger" disabled={busy || !reason || !sure}>{busy ? '저장 중…' : '거절 확정'}</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="submit" className="ui-btn is-danger-solid" disabled={busy || !reason || !sure}>{busy ? '저장 중…' : '거절 확정'}</button>
       </div>
     </form>
   );
@@ -187,22 +187,22 @@ function CorrectionForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: 
           const o = opt(i.code);
           const step = o ? o.step : i.system ? correctionTarget(i.code).step : i.step;
           return (
-            <div key={i.key} className="adm-fix">
+            <div key={i.key} className="adm-fix ui-on-soft">
               <div className="adm-fix-top">
                 <b>{i.system ? `시스템이 찾은 문제 · ${checkLabel(i.code)}` : `보완 항목 ${n + 1}`}</b>
                 {!i.system && items.length > 1 && (
-                  <button type="button" className="adm-btn soft small" onClick={() => setItems(list => list.filter(x => x.key !== i.key))}>삭제</button>
+                  <button type="button" className="ui-btn is-soft is-sm" onClick={() => setItems(list => list.filter(x => x.key !== i.key))}>삭제</button>
                 )}
               </div>
               {!i.system && (
                 <div className="adm-fix-pick">
                   {/* 1. 페이지 → 2. 고칠 부분 (→ 트랙) — 눌러서 고른다 */}
                   <span className="adm-fix-label">페이지</span>
-                  <div className="adm-picks" role="radiogroup" aria-label="페이지">
+                  <div className="ui-chips is-wrap" role="radiogroup" aria-label="페이지">
                     {WIZ_STEP_NAMES.map((name, s2) => STAFF_FIX_OPTIONS.some(x => x.step === s2) && (
                       <button
                         key={name} type="button" role="radio" aria-checked={step === s2}
-                        className={`adm-pick${step === s2 ? ' is-on' : ''}`}
+                        className={`ui-chip${step === s2 ? ' is-on' : ''}`}
                         onClick={() => set(i.key, { step: s2, code: '', trackId: '', note: '', custom: false })}
                       >{name}</button>
                     ))}
@@ -210,11 +210,11 @@ function CorrectionForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: 
                   {step >= 0 && (
                     <>
                       <span className="adm-fix-label">보완할 부분</span>
-                      <div className="adm-picks" role="radiogroup" aria-label="보완할 부분">
+                      <div className="ui-chips is-wrap" role="radiogroup" aria-label="보완할 부분">
                         {STAFF_FIX_OPTIONS.filter(x => x.step === step).map(x => (
                           <button
                             key={x.code} type="button" role="radio" aria-checked={i.code === x.code}
-                            className={`adm-pick${i.code === x.code ? ' is-on' : ''}`}
+                            className={`ui-chip${i.code === x.code ? ' is-on' : ''}`}
                             onClick={() => set(i.key, { code: x.code, trackId: '', note: '', custom: !FIX_PRESETS[x.code]?.length })}
                           >{x.label}</button>
                         ))}
@@ -224,11 +224,11 @@ function CorrectionForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: 
                   {o?.track && (
                     <>
                       <span className="adm-fix-label">트랙</span>
-                      <div className="adm-picks" role="radiogroup" aria-label="트랙">
+                      <div className="ui-chips is-wrap" role="radiogroup" aria-label="트랙">
                         {tracks.map(t => (
                           <button
                             key={t.id} type="button" role="radio" aria-checked={i.trackId === t.id}
-                            className={`adm-pick${i.trackId === t.id ? ' is-on' : ''}`}
+                            className={`ui-chip${i.trackId === t.id ? ' is-on' : ''}`}
                             onClick={() => set(i.key, { trackId: t.id })}
                           >{t.track_number}. {t.title}</button>
                         ))}
@@ -239,24 +239,24 @@ function CorrectionForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: 
                   {i.code && (
                     <>
                       <span className="adm-fix-label">안내 문구</span>
-                      <div className="adm-reasons" role="radiogroup" aria-label="안내 문구">
+                      <div className="ui-choices" role="radiogroup" aria-label="안내 문구">
                         {(FIX_PRESETS[i.code] ?? []).map(text => (
                           <button
                             key={text} type="button" role="radio" aria-checked={!i.custom && i.note === text}
-                            className={`adm-reason${!i.custom && i.note === text ? ' is-on' : ''}`}
+                            className="ui-choice"
                             onClick={() => set(i.key, { note: text, custom: false })}
                           >
                             <span>{text}</span>
-                            <span className="adm-reason-mark" aria-hidden="true">{!i.custom && i.note === text && <CheckIcon size={11} />}</span>
+                            <span className="ui-choice-mark" aria-hidden="true">{!i.custom && i.note === text && <CheckIcon size={11} />}</span>
                           </button>
                         ))}
                         <button
                           type="button" role="radio" aria-checked={!!i.custom}
-                          className={`adm-reason${i.custom ? ' is-on' : ''}`}
+                          className="ui-choice"
                           onClick={() => set(i.key, { custom: true, note: i.custom ? i.note : '' })}
                         >
                           <span>직접 입력</span>
-                          <span className="adm-reason-mark" aria-hidden="true">{i.custom && <CheckIcon size={11} />}</span>
+                          <span className="ui-choice-mark" aria-hidden="true">{i.custom && <CheckIcon size={11} />}</span>
                         </button>
                       </div>
                     </>
@@ -265,7 +265,7 @@ function CorrectionForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: 
               )}
               {(i.system || i.custom) && (
                 <textarea
-                  className="adm-textarea" rows={2} maxLength={2000} value={i.note} aria-label="문제 내용"
+                  className="ui-textarea" rows={2} maxLength={2000} value={i.note} aria-label="문제 내용"
                   autoFocus={!i.system}
                   placeholder={i.code ? correctionTarget(i.code).hint : '무엇이 문제이고 어떻게 고치면 되는지 적어 주세요.'}
                   onChange={e => set(i.key, { note: e.target.value })}
@@ -275,14 +275,14 @@ function CorrectionForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: 
           );
         })}
       </div>
-      <button type="button" className="adm-btn soft small" style={{ marginTop: 10 }} onClick={() => setItems(list => [...list, newFix()])}>+ 항목 추가</button>
-      <div className="adm-field" style={{ marginTop: 16 }}>
+      <button type="button" className="ui-btn is-soft is-sm" style={{ marginTop: 10 }} onClick={() => setItems(list => [...list, newFix()])}>+ 항목 추가</button>
+      <div className="ui-field" style={{ marginTop: 16 }}>
         <label htmlFor="cSummary">전체 안내 <span className="muted">(선택)</span></label>
-        <textarea id="cSummary" className="adm-textarea" rows={2} maxLength={MAX_REASON} value={summary} placeholder="비워 두면 ‘표시된 항목을 고친 뒤 다시 접수해 주세요.’로 보내요." onChange={e => setSummary(e.target.value)} />
+        <textarea id="cSummary" className="ui-textarea" rows={2} maxLength={MAX_REASON} value={summary} placeholder="비워 두면 ‘표시된 항목을 고친 뒤 다시 접수해 주세요.’로 보내요." onChange={e => setSummary(e.target.value)} />
       </div>
       <div className="adm-form-actions">
-        <button type="button" className="adm-btn soft" onClick={close}>취소</button>
-        <button type="submit" className="adm-btn primary" disabled={busy || !ready.length || incomplete}>{busy ? '보내는 중…' : `보완 요청 보내기 (${ready.length}건)`}</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="submit" className="ui-btn is-primary" disabled={busy || !ready.length || incomplete}>{busy ? '보내는 중…' : `보완 요청 보내기 (${ready.length}건)`}</button>
       </div>
     </form>
   );
@@ -312,17 +312,17 @@ function ProofForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: () => void 
   return (
     <form onSubmit={submit}>
       <p className="small muted">아티스트의 ‘권리·보완 서류’ 화면에 제출 요청이 생기고 알림이 가요.</p>
-      <div className="adm-field" style={{ marginTop: 16 }}>
+      <div className="ui-field" style={{ marginTop: 16 }}>
         <label htmlFor="pTitle">요청 서류 이름 <span className="required">*</span></label>
-        <input id="pTitle" data-autofocus className="adm-input" maxLength={200} required value={title} placeholder="예: 샘플 사용 허락서" onChange={e => setTitle(e.target.value)} />
+        <input id="pTitle" data-autofocus className="ui-input" maxLength={200} required value={title} placeholder="예: 샘플 사용 허락서" onChange={e => setTitle(e.target.value)} />
       </div>
-      <div className="adm-field">
+      <div className="ui-field">
         <label htmlFor="pBody">안내 내용</label>
-        <textarea id="pBody" className="adm-textarea" rows={5} maxLength={20000} value={body} placeholder="어떤 서류가 왜 필요한지, 어떤 형식으로 내면 되는지 적어 주세요." onChange={e => setBody(e.target.value)} />
+        <textarea id="pBody" className="ui-textarea" rows={5} maxLength={20000} value={body} placeholder="어떤 서류가 왜 필요한지, 어떤 형식으로 내면 되는지 적어 주세요." onChange={e => setBody(e.target.value)} />
       </div>
       <div className="adm-form-actions">
-        <button type="button" className="adm-btn soft" onClick={close}>취소</button>
-        <button type="submit" className="adm-btn primary" disabled={busy || !title.trim()}>{busy ? '보내는 중…' : '증빙 요청 보내기'}</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="submit" className="ui-btn is-primary" disabled={busy || !title.trim()}>{busy ? '보내는 중…' : '증빙 요청 보내기'}</button>
       </div>
     </form>
   );
@@ -351,13 +351,13 @@ function WithdrawForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: () => vo
   return (
     <form onSubmit={submit}>
       <p className="small muted">아티스트가 문의로 요청한 취소를 처리해요. 아티스트의 월 3회 직접 취소 횟수에는 포함되지 않아요. 계약서 서명 후(배급 시작)에는 테이크다운으로 처리해야 해요.</p>
-      <div className="adm-field" style={{ marginTop: 16 }}>
+      <div className="ui-field" style={{ marginTop: 16 }}>
         <label htmlFor="wReason">처리 메모 <span className="required">*</span></label>
-        <input id="wReason" data-autofocus className="adm-input" maxLength={2000} required value={reason} onChange={e => setReason(e.target.value)} />
+        <input id="wReason" data-autofocus className="ui-input" maxLength={2000} required value={reason} onChange={e => setReason(e.target.value)} />
       </div>
       <div className="adm-form-actions">
-        <button type="button" className="adm-btn soft" onClick={close}>닫기</button>
-        <button type="submit" className="adm-btn solid-danger" disabled={busy || !reason.trim()}>{busy ? '처리 중…' : '신청 취소 처리'}</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>닫기</button>
+        <button type="submit" className="ui-btn is-danger-solid" disabled={busy || !reason.trim()}>{busy ? '처리 중…' : '신청 취소 처리'}</button>
       </div>
     </form>
   );
@@ -386,13 +386,13 @@ function ReissueForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: () => voi
   return (
     <form onSubmit={submit}>
       <p className="small muted">테스트용 임시 UPC·ISRC로 준비된 배급을 정식 코드로 다시 만들어요. 발매는 ‘배포 보완 요청’ 상태가 되고, 재접수 시 정식 코드가 발급돼요.</p>
-      <div className="adm-field" style={{ marginTop: 16 }}>
+      <div className="ui-field" style={{ marginTop: 16 }}>
         <label htmlFor="rReason">사유 <span className="required">*</span></label>
-        <textarea id="rReason" data-autofocus className="adm-textarea" rows={3} maxLength={2000} required value={reason} onChange={e => setReason(e.target.value)} placeholder="예: 정식 ISRC 발급 범위 등록 완료" />
+        <textarea id="rReason" data-autofocus className="ui-textarea" rows={3} maxLength={2000} required value={reason} onChange={e => setReason(e.target.value)} placeholder="예: 정식 ISRC 발급 범위 등록 완료" />
       </div>
       <div className="adm-form-actions">
-        <button type="button" className="adm-btn soft" onClick={close}>취소</button>
-        <button type="submit" className="adm-btn primary" disabled={busy || !reason.trim()}>{busy ? '처리 중…' : '재발급 요청'}</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="submit" className="ui-btn is-primary" disabled={busy || !reason.trim()}>{busy ? '처리 중…' : '재발급 요청'}</button>
       </div>
     </form>
   );
@@ -437,7 +437,7 @@ function ReviewSheet({ id }: { id: string }) {
     return () => { if (timer !== undefined) window.clearInterval(timer); document.removeEventListener('visibilitychange', update); };
   }, [sheet?.release.status, action, modal, reload]);
 
-  if (loading && !sheet) return <Skeleton rows={6} />;
+  if (loading && !sheet) return <SkeletonList rows={6} />;
   if (error && !sheet) return <ErrorBox message={error} onRetry={reload} />;
   if (!sheet) return null;
 
@@ -502,10 +502,11 @@ function ReviewSheet({ id }: { id: string }) {
       <div className="adm-detail-nav">
         <Link to="/admin/reviews" className="adm-back"><Glyph name="arrow-left" size={14} className="aq-inline-glyph" />심사 목록</Link>
         <div className="adm-detail-nav-end">
-          <button type="button" className={`adm-icon-btn adm-refresh${loading || spin === 'spin' ? ' is-spinning' : ''}${spin === 'done' && !loading ? ' is-done' : ''}`} disabled={loading || spin === 'spin'} onClick={refresh} aria-label={loading || spin === 'spin' ? '갱신 중' : spin === 'done' ? '갱신됨' : '심사 정보 새로고침'} title="새로고침">
+          <button type="button" className={`ui-btn is-soft is-sm adm-refresh${loading || spin === 'spin' ? ' is-spinning' : ''}${spin === 'done' && !loading ? ' is-done' : ''}`} disabled={loading || spin === 'spin'} onClick={refresh} aria-label={loading || spin === 'spin' ? '갱신 중' : spin === 'done' ? '갱신됨' : '심사 정보 새로고침'} title="새로고침">
             {spin === 'done' && !loading
               ? <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m5.5 12.5 4.2 4.2 8.8-9.4" /></svg>
               : <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1" /><path d="M20.5 3.8v4.6h-4.6" /></svg>}
+            {spin === 'done' && !loading ? '갱신됨' : '새로고침'}
           </button>
           {nextId && <Link to={`/admin/reviews/${nextId}`} className="adm-next-btn">다음 건<Glyph name="chevron-right" size={14} /></Link>}
         </div>
@@ -513,16 +514,16 @@ function ReviewSheet({ id }: { id: string }) {
 
       <div className="adm-detail">
         <div>
-          <div className="adm-release-hero">
-            <Initial text={r.title} src={r.cover} />
+          <div className="adm-release-hero ui-on-soft">
+            <Cover id={r.id} text={r.title} src={r.cover} />
             <div className="adm-min">
               <div className="adm-codes" style={{ marginBottom: 6 }}>
-                <StatusChip value={pick(RELEASE_STATUS, r.status)} />
-                <Chip tone="gray">{RELEASE_TYPE[r.release_type] ?? r.release_type}</Chip>
-                {decidable && <Chip tone={mine ? 'blue' : context.claim ? 'amber' : 'gray'}>{claimLabel(context)}</Chip>}
+                <StatusBadge value={pick(RELEASE_STATUS, r.status)} />
+                <Badge tone="gray">{RELEASE_TYPE[r.release_type] ?? r.release_type}</Badge>
+                {decidable && <Badge tone={mine ? 'blue' : context.claim ? 'amber' : 'gray'}>{claimLabel(context)}</Badge>}
               </div>
               <h1>{r.title}</h1>
-              <span className="adm-row-meta">
+              <span className="ui-row-meta">
                 <span>{app.artist || '아티스트 미기재'}</span>
                 <span>{r.org_name}</span>
               </span>
@@ -533,20 +534,20 @@ function ReviewSheet({ id }: { id: string }) {
           {!sheet.review_context && <ErrorBox message="심사 가능 여부를 확인할 수 없어요. 새로고침 후 다시 확인해 주세요." onRetry={refresh} />}
           {error && <ErrorBox message={error} onRetry={refresh} />}
           {done && !pending && (
-            <div className="adm-alert is-ok adm-alert-row" role="status">
+            <div className="ui-callout is-success is-row" role="status">
               <span>{done}</span>
-              {nextId && <button type="button" className="adm-btn soft small" onClick={() => nav(`/admin/reviews/${nextId}`)}>다음 심사 건 열기</button>}
+              {nextId && <button type="button" className="ui-btn is-soft is-sm" onClick={() => nav(`/admin/reviews/${nextId}`)}>다음 심사 건 열기</button>}
             </div>
           )}
           {pending && (
-            <div className="adm-alert is-warn adm-alert-row">
+            <div className="ui-callout is-warn is-row">
               <span>2차 승인 대기 중 — {pending.check_codes.map(checkLabel).join(', ')} · 요청 {when(pending.at)}{pending.requested_by === me.user_id ? ' (내 요청)' : ''}</span>
-              <button type="button" className="adm-btn warn small" onClick={() => nav('/admin/approvals')}>2차 승인으로</button>
+              <button type="button" className="ui-btn is-warn is-sm" onClick={() => nav('/admin/approvals')}>2차 승인으로</button>
             </div>
           )}
 
           <JumpNav items={jump} />
-          <div id="rv-summary" className="adm-anchor"><SheetSummary sheet={sheet} lead={statusLine} /></div>
+          <div id="rv-summary" className="adm-anchor"><SheetSummary sheet={sheet} lead={inReview ? '' : statusLine} /></div>
 
 
           <Section title="시스템 검사" meta={`검사 ${sheet.checks.length}개 · 통과 ${context.check_counts.PASS ?? 0}개 (담당자 결정 포함)`}>
@@ -562,7 +563,7 @@ function ReviewSheet({ id }: { id: string }) {
               ))}
             </ol>
             {decidable && sheet.open_checks.length === 0 && (
-              <div className="adm-alert is-ok" style={{ marginTop: 12 }}>시스템 검사를 모두 통과했어요. 신청 정보와 커버·음원만 확인하고 최종 결정해 주세요.</div>
+              <div className="ui-callout is-success" style={{ marginTop: 12 }}>시스템 검사를 모두 통과했어요. 신청 정보와 커버·음원만 확인하고 최종 결정해 주세요.</div>
             )}
           </Section>
 
@@ -591,19 +592,19 @@ function ReviewSheet({ id }: { id: string }) {
 
           <div id="rv-docs" className="adm-anchor"><Section
             title="서류" meta={`${sheet.documents.length}건`}
-            action={can('DOCUMENTS') && <button type="button" className="adm-btn soft small" onClick={() => setModal('proof')}>권리 증빙 요청</button>}
+            action={can('DOCUMENTS') && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setModal('proof')}>권리 증빙 요청</button>}
           >
             {sheet.documents.length ? (
-              <div className="adm-list">
+              <div className="ui-list">
                 {sheet.documents.map(d => (
-                  <div key={d.id} className="adm-row">
-                    <Initial text={DOC_KIND[d.kind] ?? d.kind} plain />
+                  <div key={d.id} className="ui-row">
+                    <Cover text={DOC_KIND[d.kind] ?? d.kind} plain />
                     <span className="adm-min">
-                      <span className="adm-row-title">{d.title}</span>
-                      <span className="adm-row-meta"><span>{DOC_KIND[d.kind] ?? d.kind}</span>{d.file_name && <span>{d.file_name}</span>}<span>{when(d.updated_at)}</span></span>
-                      {d.review_note && <span className="adm-row-meta"><span>메모: {d.review_note}</span></span>}
+                      <span className="ui-row-title">{d.title}</span>
+                      <span className="ui-row-meta"><span>{DOC_KIND[d.kind] ?? d.kind}</span>{d.file_name && <span>{d.file_name}</span>}<span>{when(d.updated_at)}</span></span>
+                      {d.review_note && <span className="ui-row-meta"><span>메모: {d.review_note}</span></span>}
                     </span>
-                    <span className="adm-row-end"><StatusChip value={pick(DOC_STATUS, d.status)} /><DocFileLink id={d.id} assetId={d.asset_id} /></span>
+                    <span className="ui-row-end"><StatusBadge value={pick(DOC_STATUS, d.status)} /><DocFileLink id={d.id} assetId={d.asset_id} /></span>
                   </div>
                 ))}
               </div>
@@ -616,16 +617,16 @@ function ReviewSheet({ id }: { id: string }) {
           {(sheet.notes.length > 0 || sheet.overrides.length > 0) && (
             <Section title="담당자 결정 기록">
               {sheet.notes.map(n => (
-                <div key={n.id} className="adm-note">
+                <div key={n.id} className="adm-note ui-on-soft">
                   <div className="adm-check-top">
-                    <span><Chip tone={n.decision === 'REJECT' ? 'red' : n.decision === 'APPROVE' ? 'green' : 'amber'}>{DECISION_LABEL[n.decision] ?? n.decision}</Chip>{n.check_code && <> <span className="adm-note-target">{checkLabel(n.check_code)}</span></>}</span>
+                    <span><Badge tone={n.decision === 'REJECT' ? 'red' : n.decision === 'APPROVE' ? 'green' : 'amber'}>{DECISION_LABEL[n.decision] ?? n.decision}</Badge>{n.check_code && <> <span className="adm-note-target">{checkLabel(n.check_code)}</span></>}</span>
                     <small className="muted">{when(n.at)} · {shortId(n.author_user_id)}</small>
                   </div>
                   <p>{n.note}</p>
                 </div>
               ))}
               {sheet.overrides.length > 0 && (
-                <div className="adm-card white adm-table-wrap" style={{ marginTop: 10 }}>
+                <div className="ui-card adm-table-wrap" style={{ marginTop: 10 }}>
                   <table className="adm-table">
                     <thead><tr><th>검사</th><th>변경</th><th>담당 / 2차</th><th>시각</th></tr></thead>
                     <tbody>
@@ -646,25 +647,25 @@ function ReviewSheet({ id }: { id: string }) {
 
           <Section
             title="전체 검사 결과" meta={`${sheet.checks.length}건`}
-            action={<button type="button" className="adm-btn soft small" onClick={() => setShowAll(v => !v)}>{showAll ? '접기' : '펼치기'}</button>}
+            action={<button type="button" className="ui-btn is-soft is-sm" onClick={() => setShowAll(v => !v)}>{showAll ? '접기' : '펼치기'}</button>}
           >
             {showAll ? (
               <div className="adm-checks">{sheet.checks.map(c => <CheckCard key={c.id ?? c.check_code} c={c} />)}</div>
             ) : (
               <div className="adm-codes">
                 {Object.entries(context.check_counts)
-                  .map(([s, n]) => <Chip key={s} tone={pick(CHECK_STATUS, s)[1]}>{pick(CHECK_STATUS, s)[0]} {n}</Chip>)}
+                  .map(([s, n]) => <Badge key={s} tone={pick(CHECK_STATUS, s)[1]}>{pick(CHECK_STATUS, s)[0]} {n}</Badge>)}
               </div>
             )}
           </Section>
 
-          <div id="rv-notes" className="adm-anchor adm-card adm-section"><NotesPanel kind="release" targetId={id} title="이 발매 내부 메모" /></div>
+          <div id="rv-notes" className="adm-anchor ui-card ui-section"><NotesPanel kind="release" targetId={id} title="이 발매 내부 메모" /></div>
 
           <div id="rv-history" className="adm-anchor"><ReviewTimeline releaseId={id} revisionId={r.revision_id} refreshTick={timelineTick} /></div>
         </div>
 
         <aside className="adm-detail-side">
-          <div className="adm-decide">
+          <div className="adm-decide ui-dark">
             <h2>심사 결정</h2>
             <p>{statusLine}</p>
             <ReviewClaimPanel context={context} canReview={canReview} onClaim={claim} onRelease={unclaim} />
@@ -677,31 +678,31 @@ function ReviewSheet({ id }: { id: string }) {
           </div>
           {!canReview && <NoDuty duty="발매 심사" />}
           {WITHDRAWABLE.includes(r.status) && canReview && !sheet.documents.some(d => d.kind === 'AGREEMENT' && d.status === 'SIGNED') && (
-            <div className="adm-card">
+            <div className="ui-card">
               <b>취소 요청 처리</b>
               <p className="small muted" style={{ margin: '6px 0 12px' }}>아티스트가 문의로 취소를 요청했을 때 써요.</p>
-              <button type="button" className="adm-btn soft small" onClick={() => setModal('withdraw')}>신청 취소 처리</button>
+              <button type="button" className="ui-btn is-soft is-sm" onClick={() => setModal('withdraw')}>신청 취소 처리</button>
             </div>
           )}
           {r.status === 'READY_FOR_DELIVERY' && canReview && (
-            <div className="adm-card">
+            <div className="ui-card">
               <b>식별자 재발급</b>
               <p className="small muted" style={{ margin: '6px 0 12px' }}>테스트용 임시 UPC·ISRC로 준비된 배급을 정식 코드로 다시 만들어요.</p>
-              <button type="button" className="adm-btn soft small" onClick={() => setModal('reissue')}>재발급 요청</button>
+              <button type="button" className="ui-btn is-soft is-sm" onClick={() => setModal('reissue')}>재발급 요청</button>
             </div>
           )}
-          <div className="adm-card">
+          <div className="ui-card">
             <b>이 발매로 업무 만들기</b>
             <p className="small muted" style={{ margin: '6px 0 12px' }}>권리 확인·DSP 문의처럼 심사와 따로 챙길 일을 담당자에게 넘겨요.</p>
             <span className="adm-codes">
-              <button type="button" className="adm-btn soft small" onClick={() => setTaskOpen(true)}>업무 만들기</button>
-              <Link to={`/admin/tasks?view=all&status=all&entity_kind=release&entity_id=${id}`} className="adm-btn soft small">연결된 업무</Link>
+              <button type="button" className="ui-btn is-soft is-sm" onClick={() => setTaskOpen(true)}>업무 만들기</button>
+              <Link to={`/admin/tasks?view=all&status=all&entity_kind=release&entity_id=${id}`} className="ui-btn is-soft is-sm">연결된 업무</Link>
             </span>
           </div>
-          <div className="adm-card adm-id-card">
-            <dl className="adm-kv" style={{ gridTemplateColumns: '1fr' }}>
-              <div><dt>발매 ID</dt><dd><span className="adm-code">{r.id}</span></dd></div>
-              <div><dt>작업 공간</dt><dd>{r.org_name} <span className="adm-code">{shortId(r.org_id)}</span></dd></div>
+          <div className="ui-card adm-id-card">
+            <dl className="ui-kv" style={{ gridTemplateColumns: '1fr' }}>
+              <div><dt>발매 ID</dt><dd><span className="ui-tag is-mono">{r.id}</span></dd></div>
+              <div><dt>작업 공간</dt><dd>{r.org_name} <span className="ui-tag is-mono">{shortId(r.org_id)}</span></dd></div>
             </dl>
           </div>
         </aside>

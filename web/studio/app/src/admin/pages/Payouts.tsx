@@ -3,7 +3,7 @@ import { useSearchParams } from '../../lib/router';
 import { useAsync } from '../../hooks/useAsync';
 import { staffApi } from '../api';
 import { PAYOUT_STATUS, ago, pick, shortId, when } from '../labels';
-import { Empty, ErrorBox, Filters, PageHead, Skeleton, StatusChip } from '../ui';
+import { EmptyState, ErrorBox, ChipGroup, PageHeader, SkeletonList, StatusBadge } from '../ui';
 import { Glyph } from '../../components/Glyph';
 import { Money } from '../../components/Money';
 
@@ -18,18 +18,18 @@ export function Payouts() {
 
   return (
     <div className="view-enter">
-      <PageHead
+      <PageHeader
         eyebrow="정산"
         title="지급 요청"
         sub="아티스트 정산 지급 요청이에요. 여기서는 확인만 하고, 지급은 운영 도구에서 처리해요."
-        actions={<button type="button" className="adm-btn soft small" onClick={reload}>새로고침</button>}
+        actions={<button type="button" className="ui-btn is-soft is-sm" onClick={reload}>새로고침</button>}
       />
-      <Filters label="지급 상태" value={status} onChange={v => setParams({ status: v }, { replace: true })} options={STATUSES.map(s => ({ value: s, label: PAYOUT_STATUS[s][0] }))} />
+      <ChipGroup label="지급 상태" value={status} onChange={v => setParams({ status: v }, { replace: true })} options={STATUSES.map(s => ({ value: s, label: PAYOUT_STATUS[s][0] }))} />
       {error && <ErrorBox message={error} onRetry={reload} />}
-      {loading && !data ? <Skeleton rows={3} /> : items.length === 0 ? <Empty icon={<Glyph name="won" size={22} />} title="해당 상태의 지급 요청이 없어요" /> : (
+      {loading && !data ? <SkeletonList rows={3} /> : items.length === 0 ? <EmptyState icon={<Glyph name="won" size={22} />} title="해당 상태의 지급 요청이 없어요" /> : (
         <>
-          <div className="adm-alert">{items.length}건 · 합계 <b><Money value={total} mark /></b></div>
-          <div className="adm-card white adm-table-wrap">
+          <div className="ui-callout">{items.length}건 · 합계 <b><Money value={total} mark /></b></div>
+          <div className="ui-card adm-table-wrap">
             <table className="adm-table">
               <thead><tr><th>작업 공간</th><th>금액</th><th>상태</th><th>지급 지시</th><th>요청</th></tr></thead>
               <tbody>
@@ -37,8 +37,8 @@ export function Payouts() {
                   <tr key={p.id}>
                     <td><b>{p.org_name}</b></td>
                     <td><Money value={p.amount} currency={p.currency} /></td>
-                    <td><StatusChip value={pick(PAYOUT_STATUS, p.status)} /></td>
-                    <td>{p.payout_order_id ? <span className="adm-code">{shortId(p.payout_order_id)}</span> : '—'}</td>
+                    <td><StatusBadge value={pick(PAYOUT_STATUS, p.status)} /></td>
+                    <td>{p.payout_order_id ? <span className="ui-tag is-mono">{shortId(p.payout_order_id)}</span> : '—'}</td>
                     <td className="small" title={when(p.created_at)}>{ago(p.created_at)}</td>
                   </tr>
                 ))}
