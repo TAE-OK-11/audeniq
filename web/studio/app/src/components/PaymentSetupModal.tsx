@@ -247,155 +247,171 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
         <main className={`aq-pay-main aq-step-anim is-${dir}`} key={step}>
           {step === 0 && (
             <>
-              <p className="eyebrow">수령인 정보</p>
-              <h1>수익을 받을<br />정보를 알려주세요.</h1>
-              <p className="aq-pay-lead">계약과 정산 서류에 표시할 수령인 정보를 입력해 주세요.</p>
-              <div className="ui-field aq-pay-field">
-                <label htmlFor="aqPayRecipient">수령인 이름 또는 상호</label>
-                <input
-                  id="aqPayRecipient" maxLength={120} autoComplete="name"
-                  value={draft.recipient}
-                  onChange={e => setDraft(d => ({ ...d, recipient: e.target.value }))}
-                  placeholder="예금주 또는 법인명"
-                />
-              </div>
-              <div className="aq-pay-type-list" role="radiogroup" aria-label="수령인 유형">
-                {PAY_TYPES.map(t => (
-                  <label key={t.value} className="aq-pay-type">
-                    <input
-                      type="radio" name="aqPayType" value={t.value}
-                      checked={draft.type === t.value}
-                      onChange={() => setDraft(d => ({ ...d, type: t.value }))}
-                    />
-                    <span><strong>{t.label}</strong><small>{t.desc}</small></span>
-                  </label>
-                ))}
+              <header className="aq-pay-head">
+                <p className="eyebrow">수령인 정보</p>
+                <h1>수익을 받을<br />정보를 알려주세요.</h1>
+                <p className="aq-pay-lead">계약과 정산 서류에 표시할 수령인 정보를 입력해 주세요.</p>
+              </header>
+              <div className="aq-pay-body">
+                <div className="ui-field aq-pay-field">
+                  <label htmlFor="aqPayRecipient">수령인 이름 또는 상호</label>
+                  <input
+                    id="aqPayRecipient" maxLength={120} autoComplete="name"
+                    value={draft.recipient}
+                    onChange={e => setDraft(d => ({ ...d, recipient: e.target.value }))}
+                    placeholder="예금주 또는 법인명"
+                  />
+                </div>
+                <div className="aq-pay-type-list" role="radiogroup" aria-label="수령인 유형">
+                  {PAY_TYPES.map(t => (
+                    <label key={t.value} className="aq-pay-type">
+                      <input
+                        type="radio" name="aqPayType" value={t.value}
+                        checked={draft.type === t.value}
+                        onChange={() => setDraft(d => ({ ...d, type: t.value }))}
+                      />
+                      <span><strong>{t.label}</strong><small>{t.desc}</small></span>
+                    </label>
+                  ))}
+                </div>
               </div>
             </>
           )}
 
           {step === 1 && (
             <>
-              <p className="eyebrow">수령 계좌</p>
-              <h1>수익을 받을<br />금융기관을 선택해 주세요.</h1>
-              <p className="aq-pay-lead">은행, 저축은행, 증권사 계좌를 등록할 수 있어요.</p>
-              <div className="aq-bank-sticky">
-              <div className="aq-bank-tabs" ref={tabsRef} role="tablist" aria-label="금융기관 종류">
-                <span
-                  className="aq-bank-tab-pill" aria-hidden="true"
-                  style={{
-                    transform: `translateX(${tabPill.left}px)`,
-                    width: tabPill.width || undefined,
-                    height: tabPill.height || undefined,
-                    opacity: tabPill.width ? 1 : 0,
-                  }}
-                />
-                {Object.entries(FINANCIAL_INSTITUTIONS).map(([key, value]) => (
-                  <button
-                    key={key} type="button"
-                    data-fin-category={key}
-                    aria-selected={key === category}
-                    onClick={() => { setCategory(key); setQuery(''); }}
-                  >
-                    {value.label}
-                  </button>
-                ))}
-              </div>
-              <div className="aq-bank-search">
-                <input
-                  id="aqBankSearch" type="search"
-                  placeholder={`${cat.label} 검색`} aria-label="금융기관 검색"
-                  value={query} onChange={e => setQuery(e.target.value)}
-                />
-              </div>
-              </div>
-              <div id="aqBankGroups">
-                <section className="aq-bank-group" hidden={visibleBanks.length === 0}>
-                  <h2>{cat.label}</h2>
-                  <div className="aq-bank-grid">
-                    {cat.items.map(name => (
-                      <button
-                        key={name} type="button"
-                        className={`aq-bank${draft.bank === name ? ' selected' : ''}`}
-                        data-bank={name}
-                        hidden={!!q && !name.toLowerCase().includes(q)}
-                        onClick={() => { setDraft(d => ({ ...d, bank: name })); setStep(2); }}
-                      >
-                        <BankLogo name={name} />
-                        <strong>{name}</strong>
-                      </button>
-                    ))}
-                  </div>
-                </section>
+              <header className="aq-pay-head">
+                <p className="eyebrow">수령 계좌</p>
+                <h1>수익을 받을<br />금융기관을 선택해 주세요.</h1>
+                <p className="aq-pay-lead">은행, 저축은행, 증권사 계좌를 등록할 수 있어요.</p>
+              </header>
+              <div className="aq-pay-body">
+                <div className="aq-bank-sticky">
+                <div className="aq-bank-tabs" ref={tabsRef} role="tablist" aria-label="금융기관 종류">
+                  <span
+                    className="aq-bank-tab-pill" aria-hidden="true"
+                    style={{
+                      transform: `translateX(${tabPill.left}px)`,
+                      width: tabPill.width || undefined,
+                      height: tabPill.height || undefined,
+                      opacity: tabPill.width ? 1 : 0,
+                    }}
+                  />
+                  {Object.entries(FINANCIAL_INSTITUTIONS).map(([key, value]) => (
+                    <button
+                      key={key} type="button"
+                      data-fin-category={key}
+                      aria-selected={key === category}
+                      onClick={() => { setCategory(key); setQuery(''); }}
+                    >
+                      {value.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="aq-bank-search">
+                  <input
+                    id="aqBankSearch" type="search"
+                    placeholder={`${cat.label} 검색`} aria-label="금융기관 검색"
+                    value={query} onChange={e => setQuery(e.target.value)}
+                  />
+                </div>
+                </div>
+                <div id="aqBankGroups">
+                  <section className="aq-bank-group" hidden={visibleBanks.length === 0}>
+                    <h2>{cat.label}</h2>
+                    <div className="aq-bank-grid">
+                      {cat.items.map(name => (
+                        <button
+                          key={name} type="button"
+                          className={`aq-bank${draft.bank === name ? ' selected' : ''}`}
+                          data-bank={name}
+                          hidden={!!q && !name.toLowerCase().includes(q)}
+                          onClick={() => { setDraft(d => ({ ...d, bank: name })); setStep(2); }}
+                        >
+                          <BankLogo name={name} />
+                          <strong>{name}</strong>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                </div>
               </div>
             </>
           )}
 
           {step === 2 && (
             <>
-              <p className="eyebrow">계좌번호</p>
-              <h1>{draft.bank}<br />계좌번호를 입력해 주세요.</h1>
-              <div className="aq-selected-bank">
-                <BankLogo name={draft.bank} />
-                <div><strong>{draft.bank}</strong><small>수익 정산 계좌</small></div>
+              <header className="aq-pay-head">
+                <p className="eyebrow">계좌번호</p>
+                <h1>{draft.bank}<br />계좌번호를 입력해 주세요.</h1>
+              </header>
+              <div className="aq-pay-body">
+                <div className="aq-selected-bank">
+                  <BankLogo name={draft.bank} />
+                  <div><strong>{draft.bank}</strong><small>수익 정산 계좌</small></div>
+                </div>
+                <div className="ui-field aq-pay-field">
+                  <label htmlFor="aqPayAccount">계좌번호</label>
+                  <input
+                    id="aqPayAccount" inputMode="numeric" autoComplete="off" maxLength={20}
+                    value={draft.account}
+                    onChange={e => setDraft(d => ({ ...d, account: e.target.value.replace(/\D/g, '') }))}
+                    placeholder="숫자만 입력"
+                  />
+                </div>
+                <div className="ui-field aq-pay-field">
+                  <label htmlFor="aqPayOwner">예금주</label>
+                  <input
+                    id="aqPayOwner" maxLength={120}
+                    value={draft.recipient}
+                    onChange={e => setDraft(d => ({ ...d, recipient: e.target.value }))}
+                    placeholder="예금주명"
+                  />
+                </div>
+                <p className="aq-pay-privacy">
+                  화면에는 계좌번호 뒤 4자리만 표시해요. 실제 서비스에서는 암호화된 서버 저장소에 안전하게 보관돼요.
+                </p>
               </div>
-              <div className="ui-field aq-pay-field">
-                <label htmlFor="aqPayAccount">계좌번호</label>
-                <input
-                  id="aqPayAccount" inputMode="numeric" autoComplete="off" maxLength={20}
-                  value={draft.account}
-                  onChange={e => setDraft(d => ({ ...d, account: e.target.value.replace(/\D/g, '') }))}
-                  placeholder="숫자만 입력"
-                />
-              </div>
-              <div className="ui-field aq-pay-field">
-                <label htmlFor="aqPayOwner">예금주</label>
-                <input
-                  id="aqPayOwner" maxLength={120}
-                  value={draft.recipient}
-                  onChange={e => setDraft(d => ({ ...d, recipient: e.target.value }))}
-                  placeholder="예금주명"
-                />
-              </div>
-              <p className="aq-pay-privacy">
-                화면에는 계좌번호 뒤 4자리만 표시해요. 실제 서비스에서는 암호화된 서버 저장소에 안전하게 보관돼요.
-              </p>
             </>
           )}
 
           {step === 3 && (
             <>
-              <p className="eyebrow">약관 동의</p>
-              <h1>수령 계좌 등록에<br />동의해 주세요.</h1>
-              <p className="aq-pay-lead">정산금 지급과 계좌 확인에 필요한 항목이에요.</p>
-              <label className="aq-agree-all">
-                <input
-                  id="aqAgreeAll" type="checkbox" checked={allAgreed}
-                  onChange={e => setAgrees([e.target.checked, e.target.checked, e.target.checked, e.target.checked])}
-                />
-                <span><strong>필수 약관 전체 동의</strong><small>아래 항목을 모두 확인했어요.</small></span>
-              </label>
-              <div className="aq-agree-list">
-                {AGREE_ITEMS.map(({ label, anchor }, i) => (
-                  <label key={label}>
-                    <input
-                      type="checkbox" data-aq-agree checked={agrees[i]}
-                      onChange={e => {
-                        const arr = [...agrees];
-                        arr[i] = e.target.checked;
-                        setAgrees(arr);
-                      }}
-                    />
-                    <span>{label}</span>
-                    <button type="button" aria-label={`${label} 보기`} onClick={e => { e.preventDefault(); setLegal({ anchor }); }}><Glyph name="chevron-right" size={18} /></button>
-                  </label>
-                ))}
-              </div>
-              <div className="aq-pay-review">
-                <BankLogo name={draft.bank} />
-                <div>
-                  <strong>{draft.bank} · •••• {draft.last4}</strong>
-                  <small>{draft.recipient} · {TYPE_LABEL[draft.type]}</small>
+              <header className="aq-pay-head">
+                <p className="eyebrow">약관 동의</p>
+                <h1>수령 계좌 등록에<br />동의해 주세요.</h1>
+                <p className="aq-pay-lead">정산금 지급과 계좌 확인에 필요한 항목이에요.</p>
+              </header>
+              <div className="aq-pay-body">
+                <label className="aq-agree-all">
+                  <input
+                    id="aqAgreeAll" type="checkbox" checked={allAgreed}
+                    onChange={e => setAgrees([e.target.checked, e.target.checked, e.target.checked, e.target.checked])}
+                  />
+                  <span><strong>필수 약관 전체 동의</strong><small>아래 항목을 모두 확인했어요.</small></span>
+                </label>
+                <div className="aq-agree-list">
+                  {AGREE_ITEMS.map(({ label, anchor }, i) => (
+                    <label key={label}>
+                      <input
+                        type="checkbox" data-aq-agree checked={agrees[i]}
+                        onChange={e => {
+                          const arr = [...agrees];
+                          arr[i] = e.target.checked;
+                          setAgrees(arr);
+                        }}
+                      />
+                      <span>{label}</span>
+                      <button type="button" aria-label={`${label} 보기`} onClick={e => { e.preventDefault(); setLegal({ anchor }); }}><Glyph name="chevron-right" size={18} /></button>
+                    </label>
+                  ))}
+                </div>
+                <div className="aq-pay-review">
+                  <BankLogo name={draft.bank} />
+                  <div>
+                    <strong>{draft.bank} · •••• {draft.last4}</strong>
+                    <small>{draft.recipient} · {TYPE_LABEL[draft.type]}</small>
+                  </div>
                 </div>
               </div>
             </>
