@@ -557,3 +557,5 @@ summary::-webkit-details-marker{display:none}
 .ui-badge.aq-status.is-live{background:#E8F6F0;color:#21815B}
 .ui-badge.aq-status.is-scheduled{background:#EAF0FF;color:#365cd4}
 .ui-badge.aq-status.is-rejected,.ui-badge.aq-status.is-failed{background:#ffedef;color:#b33744}
+/* 발매 신청 단계 라벨 — 한글은 글자 사이를 벌리지 않는다 */
+.aq-step-kicker,.aq-wiz-rail-kicker{letter-spacing:.02em;font-size:var(--aq-fs-xs)}

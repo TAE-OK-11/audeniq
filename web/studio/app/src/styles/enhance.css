@@ -1600,3 +1600,14 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-task-go i,.chevron,.toggle-arrow{display:inline-flex;align-items:center}
 .aq-event-hero-cta{display:inline-flex;align-items:center;gap:2px}
 :is(.aq-release-fix,.aq-fix-panel) button>svg{vertical-align:-2px}
+/* 발매 신청 — 휴대폰: 위 ‹ 가 이전 단계 역할을 하므로 아래는 다음 버튼 하나만, 선 없이 흰색으로 스며드는 바닥 */
+@media(max-width:759.98px){
+  #view-new .step-actions #wizardBack{display:none!important}
+  #view-new .step-actions{
+    grid-template-columns:minmax(0,1fr);border-top:0!important;
+    background:linear-gradient(180deg,rgba(255,255,255,0),#fff 22px)!important;
+    padding-top:22px!important;padding-bottom:max(16px,env(safe-area-inset-bottom))!important
+  }
+  #view-new .step-actions:has(#wizardSaveNow){grid-template-columns:minmax(0,1fr) minmax(0,1.6fr)}
+  #view-new .step-actions .ui-btn{--btn-h:var(--aq-h-lg);--btn-r:var(--aq-r-ctl-lg);--btn-fs:var(--aq-fs-title-sm)}
+}
