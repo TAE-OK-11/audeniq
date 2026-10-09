@@ -8,7 +8,7 @@ import { useToast } from './Toast';
 import { LIVE_NOTICE_EVENT } from '../lib/liveEvents';
 import { prefetchCommonRoutes, prefetchRoute } from '../routes';
 import { useScrollReveal } from '../hooks/useScrollReveal';
-import { Glyph } from './Glyph';
+import { Glyph, type GlyphName } from './Glyph';
 
 // 라우트 변경 시 view 진입 애니메이션만 재시작 (children remount 없음 → useEffect/API 재실행 방지)
 function ViewEnter({ pathname, children }: { pathname: string; children: ReactNode }) {
@@ -25,32 +25,36 @@ function ViewEnter({ pathname, children }: { pathname: string; children: ReactNo
   return <div ref={ref} className="view-enter">{children}</div>;
 }
 
-const NAV_GROUPS: { group: string; items: { to: string; label: string }[] }[] = [
+type NavTone = 'blue' | 'violet' | 'green' | 'amber' | 'red' | 'gray';
+type NavItem = { to: string; label: string; desc: string; icon: GlyphName; tone: NavTone };
+
+/** 전체 메뉴 — 토스 '전체' 화면처럼 아이콘 · 이름 · 회색 설명 한 줄 */
+const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
   {
     group: '내 작업실',
     items: [
-      { to: '/', label: '홈' },
-      { to: '/upload', label: '새로운 발매' },
-      { to: '/releases', label: '발매·곡 관리' },
-      { to: '/reports', label: '음악 리포트' },
-      { to: '/settlement', label: '정산·지급' },
+      { to: '/', label: '홈', desc: '오늘 할 일 · 요약', icon: 'home', tone: 'blue' },
+      { to: '/upload', label: '새로운 발매', desc: '음원 · 커버 등록', icon: 'plus', tone: 'blue' },
+      { to: '/releases', label: '발매·곡 관리', desc: '발매 목록 · 곡 정보', icon: 'disc', tone: 'violet' },
+      { to: '/reports', label: '음악 리포트', desc: '재생 · 수익 분석', icon: 'chart', tone: 'blue' },
+      { to: '/settlement', label: '정산·지급', desc: '정산 내역 · 지급 요청', icon: 'won', tone: 'green' },
     ],
   },
   {
     group: '계약·권리',
     items: [
-      { to: '/contracts', label: 'AUDENIQ 계약서' },
-      { to: '/rights', label: '권리·보완 서류' },
+      { to: '/contracts', label: 'AUDENIQ 계약서', desc: '계약 확인 · 서명', icon: 'sign', tone: 'violet' },
+      { to: '/rights', label: '권리·보완 서류', desc: '증빙 · 보완 요청', icon: 'doc', tone: 'amber' },
     ],
   },
   {
     group: '계정·지원',
     items: [
-      { to: '/inquiries', label: '문의' },
-      { to: '/notifications', label: '알림' },
-      { to: '/events', label: '이벤트' },
-      { to: '/notices', label: '공지사항' },
-      { to: '/profile', label: '아티스트 정보' },
+      { to: '/profile', label: '아티스트 정보', desc: '프로필 · 정산 계좌', icon: 'user', tone: 'blue' },
+      { to: '/notifications', label: '알림', desc: '새 소식', icon: 'bell', tone: 'red' },
+      { to: '/inquiries', label: '문의', desc: '1:1 문의 · 답변', icon: 'inquiry', tone: 'blue' },
+      { to: '/events', label: '이벤트', desc: '진행 중인 이벤트', icon: 'star', tone: 'amber' },
+      { to: '/notices', label: '공지사항', desc: '서비스 소식', icon: 'antenna', tone: 'gray' },
     ],
   },
 ];
@@ -212,7 +216,7 @@ export function Layout({ children }: { children: ReactNode }) {
           hidden={!navVisible}
         >
           {NAV_GROUPS.map(g => (
-            <div key={g.group}>
+            <div key={g.group} className="aq-nav-card">
               <div className="nav-group">{g.group}</div>
               {g.items.map(item => {
                 const active = isActive(loc.pathname, item.to);
@@ -226,11 +230,12 @@ export function Layout({ children }: { children: ReactNode }) {
                     onPointerEnter={() => prefetchRoute(item.to)}
                     onFocus={() => prefetchRoute(item.to)}
                   >
+                    <i className={`aq-nav-ico is-${item.tone}`} aria-hidden="true"><Glyph name={item.icon} size={18} /></i>
                     <em className="aq-nav-label">
                       {item.label}
                       {item.to === '/notifications' && unread > 0 && <b className="aq-nav-count">{unread}</b>}
                     </em>
-                    <span aria-hidden="true"><Glyph name="chevron-right" size={16} /></span>
+                    <small className="aq-nav-desc">{item.desc}</small>
                   </button>
                 );
               })}

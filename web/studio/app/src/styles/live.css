@@ -612,9 +612,6 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 
 /* Reference-led polish: detached Toss-like menu, calmer document actions, red-only attention cue. */
 #portalNav::before{content:"메뉴";display:block;padding:8px 14px 3px;color:var(--aq-text);font-size:20px;font-weight:800;letter-spacing:-.035em}
-#portalNav .nav-group{padding:15px 14px 6px!important;color:var(--aq-text-4)!important;font-size:10px!important;letter-spacing:.12em!important}
-#portalNav button{min-height:48px!important;padding:12px 14px!important;border-radius:var(--aq-r-md)!important;font-size:14px!important}
-#portalNav button.active{background:var(--aq-blue-100)!important;color:var(--aq-blue-700)!important}
 #portalNav .nav-foot{white-space:normal;margin-top:10px!important;padding:14px 14px 5px!important}
 .aq-doc-card>.ui-btn{--btn-h:var(--aq-h-sm);--btn-r:var(--aq-r-ctl-sm);--btn-px:14px;--btn-fs:13px}
 .aq-doc-state-line{display:flex;gap:8px!important;align-items:center;flex-wrap:wrap;margin-top:9px!important}

@@ -41,11 +41,12 @@ async function main() {
 
     await step('profile saves and survives a reload (session + CSRF recovery)', page, async () => {
       await page.goto(`${BASE}/profile`);
+      await page.click('#profileRowName');
       await page.fill('#profileName', '스모크 <safe>');
       await page.click('#profileForm button[type=submit]');
       await page.waitForTimeout(1200);
       await page.reload();
-      await page.waitForFunction(() => (document.querySelector('#profileName') as HTMLInputElement | null)?.value === '스모크 <safe>', null, { timeout: 15_000 });
+      await page.waitForFunction(() => document.querySelector('#profileRowName')?.textContent?.includes('스모크 <safe>'), null, { timeout: 15_000 });
     });
 
     await step('release draft is saved on the server', page, async () => {

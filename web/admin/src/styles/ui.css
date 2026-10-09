@@ -559,3 +559,46 @@ summary::-webkit-details-marker{display:none}
 .ui-badge.aq-status.is-rejected,.ui-badge.aq-status.is-failed{background:#ffedef;color:#b33744}
 /* 발매 신청 단계 라벨 — 한글은 글자 사이를 벌리지 않는다 */
 .aq-step-kicker,.aq-wiz-rail-kicker{letter-spacing:.02em;font-size:var(--aq-fs-xs)}
+
+/* ---------- 전체 메뉴 (☰) — 회색 바탕 위 흰 카드, 아이콘 · 이름 · 회색 설명 ---------- */
+.portal-header .portal-nav{background:var(--aq-gray-50);padding:10px;border:0;width:min(400px,calc(100vw - 40px));max-width:calc(100vw - 40px)}
+.portal-nav .aq-nav-card{background:#fff;border-radius:var(--aq-r-xl);padding:6px 6px 8px}
+.portal-nav .aq-nav-card+.aq-nav-card{margin-top:8px}
+.portal-nav .aq-nav-card .nav-group{margin:0;padding:12px 12px 6px;font-size:var(--aq-fs-sm);font-weight:var(--aq-fw-bold);letter-spacing:0;color:var(--aq-text-3)}
+.portal-nav .aq-nav-card button{display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:12px;min-height:54px;padding:8px 10px;border-radius:var(--aq-r-lg);font-size:var(--aq-fs-lg)}
+.portal-nav .aq-nav-card button:not(.active):hover{background:var(--aq-gray-50)}
+.portal-nav .aq-nav-card button.active{background:var(--aq-blue-50);color:var(--aq-primary)}
+.aq-nav-ico{display:grid;place-items:center;width:36px;height:36px;border-radius:var(--aq-r-md);font-style:normal}
+.aq-nav-ico.is-blue{background:var(--aq-blue-100);color:var(--aq-blue-600)}
+.aq-nav-ico.is-violet{background:var(--aq-violet-100);color:var(--aq-violet-600)}
+.aq-nav-ico.is-green{background:var(--aq-green-100);color:var(--aq-green-600)}
+.aq-nav-ico.is-amber{background:var(--aq-amber-100);color:var(--aq-amber-600)}
+.aq-nav-ico.is-red{background:var(--aq-red-100);color:var(--aq-red-600)}
+.aq-nav-ico.is-gray{background:var(--aq-gray-100);color:var(--aq-text-3)}
+.portal-nav .aq-nav-desc{font-size:var(--aq-fs-sm);font-weight:400;color:var(--aq-text-4);white-space:nowrap;text-align:right}
+.portal-nav .aq-nav-card button.active .aq-nav-desc{color:var(--aq-blue-400)}
+.portal-nav .aq-nav-foot{margin-top:8px;padding:12px 14px;border:0;border-radius:var(--aq-r-xl);background:#fff}
+/* 휴대폰: 헤더 아래 화면 전체를 덮는 '전체' 화면 */
+@media (max-width:760px){
+  #portalNav{left:0!important;right:0!important;bottom:auto!important;width:100%!important;max-width:none!important;height:calc(100dvh - var(--aq-menu-top,68px))!important;max-height:none!important;border-radius:0;box-shadow:none;padding:4px 16px max(24px,env(safe-area-inset-bottom))}
+}
+
+/* ---------- 아티스트 정보 — 설정 목록형 (프로필 줄 + '줄 + ›' 카드) ---------- */
+.aq-settings{max-width:680px}
+.aq-settings .ui-page-head{margin-bottom:8px}
+.aq-set-profile{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;width:100%;margin:0 0 14px;padding:10px 6px;border:0;border-radius:var(--aq-r-xl);background:none;color:var(--aq-text);font:inherit;text-align:left;cursor:pointer}
+.aq-set-profile strong{display:block;font-size:var(--aq-fs-title);font-weight:var(--aq-fw-bold);letter-spacing:-.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-set-profile small{display:block;margin-top:3px;font-size:var(--aq-fs-sm);color:var(--aq-text-4);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-set-card{margin:0 0 12px;padding:6px;border-radius:var(--aq-r-2xl);background:var(--aq-surface)}
+.aq-set-card h2{margin:0;padding:14px 14px 4px;font-size:var(--aq-fs-md);font-weight:var(--aq-fw-bold);color:var(--aq-text-2)}
+.aq-set-row{display:flex;align-items:center;gap:10px;width:100%;min-height:54px;padding:0 12px 0 14px;border:0;border-radius:var(--aq-r-lg);background:none;color:var(--aq-text);font:inherit;text-align:left;cursor:pointer;transition:background-color var(--aq-dur) var(--aq-ease)}
+.aq-set-label{flex:none;font-size:var(--aq-fs-lg);font-weight:var(--aq-fw-medium)}
+.aq-set-value{flex:1;min-width:0;font-size:var(--aq-fs-md);color:var(--aq-text-3);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-set-value.is-empty{color:var(--aq-primary);font-weight:var(--aq-fw-bold)}
+.aq-set-chev{flex:none;margin-left:auto;color:var(--aq-text-disabled)}
+.aq-set-row.is-danger{color:var(--aq-red-600)}
+.aq-set-row.is-danger .aq-set-label{font-weight:var(--aq-fw-bold)}
+@media (hover:hover){.aq-set-row:hover,.aq-set-profile:hover{background:var(--aq-blue-50)}.aq-set-card .aq-set-row:hover{background:#fff}}
+.aq-set-row:active,.aq-set-profile:active{transform:scale(.99)}
+.aq-set-row:focus-visible,.aq-set-profile:focus-visible{outline:var(--aq-focus);outline-offset:2px}
+.aq-set-editor .ui-btn{width:100%;margin-top:6px}

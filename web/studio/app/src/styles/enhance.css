@@ -601,14 +601,8 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 .aq-release-fix-btn{flex:none;display:inline-flex;align-items:center;gap:2px;height:var(--aq-h-xs);border:0;background:#fff;color:var(--aq-e-amber);font:inherit;font-size:13px;font-weight:700;padding:0 12px;border-radius:var(--aq-r-sm);white-space:nowrap;cursor:pointer;transition:background-color .2s ease}
 .aq-release-fix-btn:hover{background:var(--aq-gray-25)}
 
-/* ── 데스크톱: 아티스트 정보 2단, 수익 받기 흐름 폭 ─────────────────── */
+/* ── 데스크톱: 수익 받기 흐름 폭 (아티스트 정보는 설정 목록 한 줄 흐름) ─── */
 @media(min-width:1024px){
-  #view-profile{display:grid;grid-template-columns:minmax(0,1fr) 380px;column-gap:20px;align-items:start}
-  #view-profile>.aq-reset-line{grid-column:1/-1}
-  #view-profile>.ui-page-head{grid-column:1/-1}
-  #view-profile .aq-profile-card{max-width:none}
-  #view-profile .aq-payment-card{margin-top:0;position:sticky;top:96px}
-  #view-profile .aq-payment-card .ui-section-head{margin-top:0}
   .aq-pay-top{width:min(816px,100%);margin:0 auto;padding-top:22px;box-sizing:border-box}
   .aq-pay-main>h1{font-size:44px}
 }
@@ -1610,4 +1604,11 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
   }
   #view-new .step-actions:has(#wizardSaveNow){grid-template-columns:minmax(0,1fr) minmax(0,1.6fr)}
   #view-new .step-actions .ui-btn{--btn-h:var(--aq-h-lg);--btn-r:var(--aq-r-ctl-lg);--btn-fs:var(--aq-fs-title-sm)}
+}
+/* 발매 신청 — 휴대폰: 단계 이름은 아래 '02 / 06 · 트랙 등록' 한 곳에만. 막대 위 같은 이름은 숨긴다.
+   입력칸에 포커스가 가면 바닥 버튼에 가리지 않게 그만큼 위에서 멈춘다(iOS 키보드 포함). */
+@media(max-width:759.98px){
+  #view-new .wizard-progress-seg em{display:none!important}
+  #view-new .wizard-progress{padding-top:14px!important}
+  html:has(#view-new){scroll-padding-bottom:120px}
 }
