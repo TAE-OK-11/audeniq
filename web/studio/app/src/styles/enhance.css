@@ -257,7 +257,7 @@ img{max-width:100%}
 /* ---------- 프로필 ---------- */
 .aq-payment-card{margin-top:14px;animation:aq-fade-up .45s var(--aq-e-ease) .08s both}
 .aq-payment-card .ui-section-head{margin-bottom:12px}
-.aq-reset-line{margin-top:22px;font-size:12px;color:var(--aq-text-disabled);text-align:center}
+.aq-reset-line{margin-top:22px;font-size:12px;color:var(--aq-text-4);text-align:center}
 .aq-profile-avatar{transition:transform .3s var(--aq-e-spring)}
 .aq-profile-card:hover .aq-profile-avatar{transform:rotate(-6deg) scale(1.04)}
 
@@ -1046,8 +1046,8 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 /* 서명할 계약서 — 파란색으로 눈에 띄게 */
 /* 보완 카드 안의 ‘보완하기’ — 할 일을 설명 바로 옆에 (주황 톤) */
 .aq-fix-card-head .min-0{flex:1}
-.aq-fix-go{flex:none;align-self:center;gap:2px;background:#e0892f!important;color:#fff!important;min-height:var(--aq-h-sm)!important}
-.aq-fix-go:hover{background:#cf7a22!important}
+.aq-fix-go{flex:none;align-self:center;gap:2px;background:#C06E1B!important;color:#fff!important;min-height:var(--aq-h-sm)!important}
+.aq-fix-go:hover{background:#A95F14!important}
 
 /* 발매 상세 보완 카드: 보완 항목 목록 아래 한 줄 전체 버튼 */
 
@@ -1335,7 +1335,7 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-stage-track li:nth-child(3) .aq-stage-bar::after{animation-delay:.16s}
 .aq-stage-track li:nth-child(4) .aq-stage-bar::after{animation-delay:.24s}
 @keyframes aq-stage-fill{from{transform:scaleX(0)}to{transform:scaleX(.55)}}
-.aq-stage-label{display:flex;align-items:center;gap:4px;min-width:0;font-size:13px;font-weight:600;letter-spacing:-.01em;color:var(--aq-text-disabled);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.aq-stage-label{display:flex;align-items:center;gap:4px;min-width:0;font-size:13px;font-weight:600;letter-spacing:-.01em;color:var(--aq-text-4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .aq-stage-label svg{flex:none;color:var(--aq-e-blue)}
 .aq-stage-track li.is-done .aq-stage-label{color:var(--aq-text-2);font-weight:700}
 .aq-stage-track li.is-current .aq-stage-label{color:var(--stage-ink);font-weight:800}
@@ -1346,7 +1346,7 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-review-note-head{display:flex;align-items:center;gap:8px;min-width:0}
 .aq-review-note-mark{flex:none;display:grid;place-items:center;width:26px;height:26px;border-radius:var(--aq-r-sm);background:var(--aq-e-blue-soft);color:var(--aq-e-blue)}
 .aq-review-note-label{font-size:13px;font-weight:800;letter-spacing:-.02em;color:var(--aq-e-ink)}
-.aq-review-note-by{margin-left:auto;font-size:12px;font-weight:700;color:var(--aq-text-disabled);white-space:nowrap}
+.aq-review-note-by{margin-left:auto;font-size:12px;font-weight:700;color:var(--aq-text-4);white-space:nowrap}
 .aq-review-note blockquote{margin:10px 0 0;padding:0}
 .aq-review-note p{margin:0;font-size:14px;line-height:1.65;color:var(--aq-text);white-space:pre-line;overflow-wrap:anywhere}
 .aq-fix-card .aq-review-note p{font-size:14px;color:var(--aq-text)}

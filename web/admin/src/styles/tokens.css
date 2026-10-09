@@ -58,7 +58,7 @@
   --aq-text:var(--aq-gray-900);
   --aq-text-2:var(--aq-gray-700);
   --aq-text-3:var(--aq-gray-600);
-  --aq-text-4:var(--aq-gray-500);
+  --aq-text-4:#737E95;          /* 메타 정보 글자 — 흰 바탕 대비 4:1 이상 */
   --aq-text-disabled:var(--aq-gray-400);
 
   --aq-primary:var(--aq-blue-500);

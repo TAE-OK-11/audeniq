@@ -18,7 +18,7 @@
 .adm-shell{max-width:1360px;width:calc(100% - 48px);margin:auto;display:grid;grid-template-columns:232px minmax(0,1fr);gap:40px;padding:28px 0 96px}
 .adm-side{position:sticky;top:calc(var(--aq-header-h) + 28px);align-self:start;display:grid;gap:22px}
 .adm-side-group{display:grid;gap:3px}
-.adm-side-label{font-size:11px;font-weight:800;letter-spacing:.02em;color:var(--aq-text-disabled);padding:0 12px 6px}
+.adm-side-label{font-size:12px;font-weight:700;letter-spacing:.02em;color:var(--aq-text-4);padding:0 12px 6px}
 .adm-side a{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;padding:10px 12px;border-radius:var(--aq-r-md);color:var(--aq-text-2);font-size:14px;font-weight:700;letter-spacing:-.02em;transition:background-color .18s var(--adm-ease),color .18s var(--adm-ease)}
 .adm-side a:hover{background:var(--adm-soft-2);color:var(--adm-ink)}
 .adm-side a[aria-current=page]{background:var(--adm-blue-soft);color:var(--adm-blue)}

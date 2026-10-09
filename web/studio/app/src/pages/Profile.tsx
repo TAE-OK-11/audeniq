@@ -193,7 +193,7 @@ export function Profile() {
       {MOCK && (
         <p className="aq-reset-line">
           이 브라우저에만 저장되는 체험 모드예요.{' '}
-          <button type="button" className="ui-btn is-white is-sm" onClick={resetData}>저장된 데이터 초기화</button>
+          <button type="button" className="ui-btn is-soft is-sm" onClick={resetData}>저장된 데이터 초기화</button>
         </p>
       )}
 

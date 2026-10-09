@@ -103,7 +103,7 @@ export function validateStep(st: SurveyState, step: Step): string {
     if (key === 'q3' && ['0', '1'].includes(first(st, 'q2')) && s[0] === '6') return '발매 경험이 있다면 최근 12개월간 발매 여부에 맞춰 응답해 주세요.';
     if (q.required && !s.length) return `${key.toUpperCase()} 필수 문항에 응답해 주세요.`;
     if (key === 'q15' && s.includes('13') && s.length > 1) return '‘잘 모르겠다’는 다른 플랫폼과 함께 선택할 수 없어요.';
-    if (q.max && s.length > q.max) return `${key.toUpperCase()}는 최대 ${q.max}개까지 선택할 수 있어요.`;
+    if (q.max && s.length > q.max) return `${key.toUpperCase()} 문항은 최대 ${q.max}개까지 선택할 수 있어요.`;
     if (otherOpen(st, q) && !(st.others[key] ?? '').trim()) return `${key.toUpperCase()}의 기타 내용을 적어 주세요.`;
   }
   return '';

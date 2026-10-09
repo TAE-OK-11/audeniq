@@ -17,6 +17,7 @@ import type { DocComment, DocDetail, DocNode, DocVersionBody } from '../types';
 import { diffLines, diffStats } from './diff';
 import { plainText } from './model';
 import type { CommentAnchor } from './DocEditor';
+import { josa } from '../../../lib/josa';
 
 // ---------- 댓글 ----------
 function CommentItem({ c, replies, people, canWrite, onReply, onChanged, onJump }: {
@@ -222,7 +223,7 @@ export function VersionsPanel({ docId, current, people, canRestore, onRestore }:
           ) : <pre className="adm-doc-diff">{open.content_text || plainText(open.content)}</pre>}
           {canRestore && !open.current && (
             <button type="button" className="ui-btn is-soft is-sm" onClick={async () => {
-              if (await confirm({ title: `v${open.version}으로 되돌릴까요?`, message: '지금 내용은 새 버전으로 남아서 언제든 다시 돌아올 수 있어요.', confirmLabel: '되돌리기' })) {
+              if (await confirm({ title: `${josa(`v${open.version}`, '으로/로')} 되돌릴까요?`, message: '지금 내용은 새 버전으로 남아서 언제든 다시 돌아올 수 있어요.', confirmLabel: '되돌리기' })) {
                 onRestore(open.version);
                 setOpen(null);
                 reload();

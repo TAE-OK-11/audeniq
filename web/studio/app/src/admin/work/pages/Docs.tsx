@@ -23,6 +23,7 @@ import { DocSearchResults, DocTree } from '../docs/DocTree';
 import { CommentsPanel, InfoPanel, VersionsPanel } from '../docs/DocPanels';
 import { MoveDialog, NewDocDialog, ReasonDialog, ShareDialog, TemplateDialog } from '../docs/DocDialogs';
 import '../../../styles/docs.css';
+import { josa } from '../../../lib/josa';
 
 type Panel = 'comments' | 'info' | 'versions' | null;
 const LEVEL_RANK = { NONE: 0, VIEWER: 1, EDITOR: 2, MANAGER: 3, OWNER: 4 } as const;
@@ -177,7 +178,7 @@ function DocView({ id, people, onTreeChange, onAncestors }: { id: string; people
     await settle();
     const d = await workApi.restoreDocVersion(id, v, ctrlRef.current?.version ?? detail?.doc.version ?? 0);
     replaceContent(d);
-  }, `v${v}으로 되돌렸어요.`);
+  }, `${josa(`v${v}`, '으로/로')} 되돌렸어요.`);
 
   const conflictReload = async () => {
     if (!(await confirm({ title: '최신본을 불러올까요?', message: '아직 저장되지 않은 내 변경은 사라져요. 필요하면 먼저 본문을 복사해 두세요.', confirmLabel: '불러오기', danger: true }))) return;

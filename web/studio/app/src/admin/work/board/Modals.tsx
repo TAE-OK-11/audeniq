@@ -14,6 +14,7 @@ import { boardError } from './logic';
 import type {
   AutoTrigger, Board, BoardColumn, BoardKind, BoardRule, BoardView, Priority, StaffRoleKey, TaskStatus, WorkTask, WorkType,
 } from '../types';
+import { josa } from '../../../lib/josa';
 
 const COLUMN_STATUSES: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'IN_REVIEW', 'BLOCKED', 'DONE', 'CANCELLED'];
 const ROLES: StaffRoleKey[] = ['ADMIN', 'REVIEWER', 'OPERATOR', 'SUPPORT'];
@@ -106,7 +107,7 @@ function ColumnRow({ col, index, total, others, busy, run, onMove }: {
   const saveWip = () => {
     const v = wip.trim() === '' ? null : Number(wip);
     if (v != null && (!Number.isInteger(v) || v < 1 || v > 999)) { setWip(col.wip_limit == null ? '' : String(col.wip_limit)); return; }
-    if (v !== col.wip_limit) void run(() => workApi.updateColumn(col.id, { wip_limit: v }), v == null ? 'WIP 한도를 없앴어요.' : `WIP 한도를 ${v}로 정했어요.`);
+    if (v !== col.wip_limit) void run(() => workApi.updateColumn(col.id, { wip_limit: v }), v == null ? 'WIP 한도를 없앴어요.' : `WIP 한도를 ${josa(v, '으로/로')} 정했어요.`);
   };
   const changeStatus = async (s: TaskStatus) => {
     if (s === col.status) return;
@@ -196,7 +197,7 @@ export function ColumnManager({ view, onView }: { view: BoardView; onView: (v: B
     const ids = cols.map(c => c.id);
     const [x] = ids.splice(from, 1);
     ids.splice(to, 0, x);
-    void run(() => workApi.orderColumns(view.board.id, ids), `‘${cols[from].name}’ 열을 ${to < from ? '앞' : '뒤'}으로 옮겼어요.`);
+    void run(() => workApi.orderColumns(view.board.id, ids), `‘${cols[from].name}’ 열을 ${to < from ? '앞으로' : '뒤로'} 옮겼어요.`);
   };
   const add = async (e: FormEvent) => {
     e.preventDefault();

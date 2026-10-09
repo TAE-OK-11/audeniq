@@ -18,7 +18,7 @@
 .adm-doc-tree-row:focus-visible{box-shadow:inset 0 0 0 2px var(--adm-blue)}
 .adm-doc-tree-row.is-active{background:#fff;color:var(--adm-blue);box-shadow:0 1px 3px rgba(23,27,41,.06)}
 .adm-doc-tree-row.is-archived{color:var(--aq-text-4)}
-.adm-doc-tree-caret{width:20px;height:20px;border:0;background:none;color:var(--aq-text-4);font-size:11px;cursor:pointer;border-radius:var(--aq-r-xs);flex:0 0 auto}
+.adm-doc-tree-caret{width:28px;height:28px;display:grid;place-items:center;border:0;background:none;color:var(--aq-text-4);font-size:11px;cursor:pointer;border-radius:var(--aq-r-xs);flex:0 0 auto}
 .adm-doc-tree-caret:hover:not(:disabled){background:var(--aq-blue-200)}
 .adm-doc-tree-icon{flex:0 0 auto;width:18px;text-align:center}
 .adm-doc-tree-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

@@ -42,7 +42,7 @@
 .ui-btn.is-ghost{--btn-bg:transparent;--btn-fg:var(--aq-text-2);--btn-bg-hover:var(--aq-surface-2);--btn-fg-hover:var(--aq-text)}
 .ui-btn.is-white{--btn-bg:#fff;--btn-fg:var(--aq-btn-white-fg,var(--aq-primary-text));--btn-bg-hover:var(--aq-btn-white-hover,var(--aq-primary-soft))}
 .ui-btn.is-warn{--btn-bg:var(--aq-btn-warn,var(--aq-amber-50));--btn-fg:var(--aq-btn-warn-fg,#9A5B1F);--btn-bg-hover:var(--aq-btn-warn-hover,var(--aq-amber-100));--btn-fg-hover:var(--btn-fg)}
-.ui-btn.is-warn-solid{--btn-bg:#E0892F;--btn-fg:#fff;--btn-bg-hover:#CF7A22;--btn-fg-hover:#fff}
+.ui-btn.is-warn-solid{--btn-bg:#C06E1B;--btn-fg:#fff;--btn-bg-hover:#A95F14;--btn-fg-hover:#fff}
 .ui-btn.is-danger{--btn-bg:var(--aq-btn-danger,var(--aq-red-50));--btn-fg:var(--aq-btn-danger-fg,#B64A4A);--btn-bg-hover:var(--aq-btn-danger-hover,var(--aq-red-100));--btn-fg-hover:var(--btn-fg)}
 .ui-btn.is-danger-solid{--btn-bg:#D64545;--btn-fg:#fff;--btn-bg-hover:#C23B3B;--btn-fg-hover:#fff}
 /* 켜짐 상태 (패널 열기·보기 바꾸기 같은 토글 버튼) */
@@ -59,7 +59,7 @@
 :is(.ui-tone-warn,.ui-row.is-warn,.ui-callout.is-warn,.aq-doc-card.is-needs,.aq-fix-card:not(.is-rejected),.aq-fix-panel,.aq-release-fix,.aq-task.is-warn,.adm-dspreq.is-warn,.adm-stages li.is-fix,.adm-doc-callout.is-warning,.adm-chat-msg.is-mention){
   --aq-btn-soft:#FFE4C4;--aq-btn-soft-hover:#FFD9AD;--aq-btn-soft-fg:var(--aq-amber-700);
   --aq-btn-white-fg:var(--aq-amber-700);--aq-btn-white-hover:var(--aq-amber-100);
-  --aq-btn-primary:#E0892F;--aq-btn-primary-hover:#CF7A22;--aq-btn-primary-fg:#fff
+  --aq-btn-primary:#C06E1B;--aq-btn-primary-hover:#A95F14;--aq-btn-primary-fg:#fff
 }
 :is(.ui-tone-danger,.ui-row.is-danger,.ui-callout.is-danger,.ui-stat.is-alert,.aq-fix-card.is-rejected,.adm-dspreq.is-bad,.adm-dsp.is-bad,.adm-deliv.is-bad,.adm-check.is-sensitive,.adm-doc-callout.is-danger){
   --aq-btn-soft:#FFDCDC;--aq-btn-soft-hover:#FFCFCF;--aq-btn-soft-fg:#B0393B;

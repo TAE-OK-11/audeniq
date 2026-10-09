@@ -147,7 +147,7 @@ export function AdminApp() {
   if (gate === 'forbidden') {
     return (
       <Gate title="관리자 권한이 필요해요" action={<button type="button" className="ui-btn is-primary" onClick={() => { void logout().then(() => nav('/login', { replace: true })); }}>다른 계정으로 로그인</button>}>
-        {user?.email ?? '이 계정'}은 아직 관리자로 등록되지 않았어요. 운영 책임자에게 권한을 요청해 주세요.
+        {user?.email ? `${user.email} 계정은` : '이 계정은'} 아직 관리자로 등록되지 않았어요. 운영 책임자에게 권한을 요청해 주세요.
       </Gate>
     );
   }

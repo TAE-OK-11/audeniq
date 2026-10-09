@@ -17,6 +17,7 @@ import { useGrowOnView } from '../hooks/useAnimations';
 import { prefetchRoute } from '../routes';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
+import { josa } from '../lib/josa';
 
 const GRID_ITEMS = [
   {
@@ -106,7 +107,7 @@ export function Dashboard() {
     const first = splitCorrections(only?.corrections).items[0];
     tasks.push({
       icon: 'alert', name: `보완이 필요한 발매 ${needs}건`,
-      sub: only ? `‘${only.title}’ · ${first ? resolveCorrection(first).label : '요청 내용'}을 고쳐 주세요.` : '요청 항목을 고쳐서 다시 접수해 주세요.',
+      sub: only ? `‘${only.title}’ · ${josa(first ? resolveCorrection(first).label : '요청 내용', '을/를')} 고쳐 주세요.` : '요청 항목을 고쳐서 다시 접수해 주세요.',
       btn: '보완', to: only ? fixPath(only.id, first) : '/releases?status=needs', tone: 'warn',
     });
   }

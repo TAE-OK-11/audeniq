@@ -187,7 +187,7 @@ export function checkSummary(c: { check_code: string; detail: string | null }): 
       return '지원하는 AI 출처 근거가 없어서 판정할 수 없어요. 사람이 만들었다는 증거가 아니며 SynthID는 검사하지 않았어요.';
     case 'AUDIO_SIMILAR_TO_EXISTING': {
       const n = num(d, /similar to (\d+) asset/);
-      return `이미 등록된 음원${n ? ` ${n}개` : ''}와 거의 같은 소리예요. 같은 곡을 다시 낸 것인지, 권리가 있는지 확인해 주세요.`;
+      return `이미 등록된 ${n ? `음원 ${n}개와` : '음원과'} 거의 같은 소리예요. 같은 곡을 다시 낸 것인지, 권리가 있는지 확인해 주세요.`;
     }
     case 'AUDIO_LOUDNESS_OUT_OF_RANGE':
     case 'DSP_LOUDNESS_ADVISORY': {

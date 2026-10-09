@@ -35,7 +35,7 @@ export function Terms() {
         })}
       </article>
       <div className="aq-terms-back">
-        <button type="button" className="ui-btn is-white is-sm" onClick={() => (window.history.length > 1 ? window.history.back() : nav('/'))}>돌아가기</button>
+        <button type="button" className="ui-btn is-soft is-sm" onClick={() => (window.history.length > 1 ? window.history.back() : nav('/'))}>돌아가기</button>
       </div>
     </div>
   );
