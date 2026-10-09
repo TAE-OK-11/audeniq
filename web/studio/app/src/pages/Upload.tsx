@@ -972,7 +972,7 @@ const TrackEditor = memo(function TrackEditor({
         aria-expanded={expanded}
       >
         <span>상세 정보 {t.isrc ? `· ${t.isrc}` : ''}</span>
-        <span className={`toggle-arrow${expanded ? ' open' : ''}`}>›</span>
+        <span className={`toggle-arrow${expanded ? ' open' : ''}`}><Glyph name="chevron-right" size={16} /></span>
       </button>
       {expanded && (
         <div className="track-detail-body">
@@ -1907,7 +1907,7 @@ export function Upload() {
                 <button type="button" onClick={() => jumpToFix(c)}>
                   <em>{correctionWhere(c)}</em>
                   <span>{c.message}</span>
-                  <b aria-hidden="true">{c.step === step ? '입력칸 보기' : '이동'} ›</b>
+                  <b aria-hidden="true">{c.step === step ? '입력칸 보기' : '이동'} <Glyph name="chevron-right" size={14} /></b>
                 </button>
               </li>
             ))}

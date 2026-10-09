@@ -3,6 +3,7 @@ import { fetchEvents, loadContent } from '../api/content';
 import { useAsync } from '../hooks/useAsync';
 import { SkeletonRows } from '../components/Skeleton';
 import { Modal } from '../components/Modal';
+import { Glyph } from '../components/Glyph';
 import { Badge } from '../ui';
 
 interface AudenEvent {
@@ -102,7 +103,7 @@ export function Events() {
             {featured.date}{featured.endDate ? ` ~ ${featured.endDate}` : ''} · {featured.place}
           </span>
           <span className="aq-event-hero-summary">{featured.summary}</span>
-          <span className="aq-event-hero-cta">자세히 보기 ›</span>
+          <span className="aq-event-hero-cta">자세히 보기 <Glyph name="chevron-right" size={14} /></span>
         </button>
       )}
 

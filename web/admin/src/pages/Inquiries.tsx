@@ -97,7 +97,7 @@ function Thread({ id, onReplied }: { id: string; onReplied: () => void }) {
             onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void send(e); }}
           />
           <div className="adm-reply-foot">
-            <small className="muted">{body.length} / 4000<span className="adm-kbd-hint"> · ⌘/Ctrl + Enter로 보내기</span></small>
+            <small className="muted">{body.length} / 4000<span className="adm-kbd-hint"> · Ctrl(맥은 Cmd) + Enter로 보내기</span></small>
             <button type="submit" className="ui-btn is-primary" disabled={busy || !body.trim()}>{busy ? '보내는 중…' : q.status === 'ANSWERED' ? '추가 답변' : '답변 보내기'}</button>
           </div>
         </form>

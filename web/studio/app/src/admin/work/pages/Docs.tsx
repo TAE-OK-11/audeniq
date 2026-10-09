@@ -8,6 +8,7 @@ import { useToast } from '../../../components/Toast';
 import { useConfirm } from '../../../components/Confirm';
 import { ApiError, errorMessage } from '../../../api/errors';
 import { Glyph } from '../../../components/Glyph';
+import { DocIcon, DocIconPicker } from '../docs/DocIcon';
 import { Badge, EmptyState, ErrorBox, SkeletonList, useStaff } from '../../ui';
 import { workApi } from '../api';
 import { DOC_STATUS } from '../labels';
@@ -223,7 +224,7 @@ function DocView({ id, people, onTreeChange, onAncestors }: { id: string; people
       <div className={`adm-doc-main${panel ? ' has-panel' : ''}`}>
         <div className="adm-doc-top">
           <nav className="adm-doc-crumbs" aria-label="문서 위치">
-            {detail.breadcrumb.map(b => <span key={b.id}><button type="button" className="ui-btn is-text is-muted" onClick={() => nav(`/admin/docs/${b.id}`)}>{b.icon || '📄'} {b.title || '제목 없음'}</button> / </span>)}
+            {detail.breadcrumb.map(b => <span key={b.id}><button type="button" className="ui-btn is-text is-muted" onClick={() => nav(`/admin/docs/${b.id}`)}><DocIcon icon={b.icon} size={14} /> {b.title || '제목 없음'}</button> / </span>)}
             <span aria-current="page">{title || '제목 없음'}</span>
           </nav>
           <SaveStatus s={save} onRetry={() => ctrlRef.current?.retry()} />
@@ -285,9 +286,8 @@ function DocView({ id, people, onTreeChange, onAncestors }: { id: string; people
         {d.review.rejection_reason && d.status === 'DRAFT' && <div className="ui-callout is-warn small">반려 사유: {d.review.rejection_reason}</div>}
 
         <div className="adm-doc-head">
-          <label className="sr-only" htmlFor="doc-icon">아이콘</label>
-          <input id="doc-icon" className="adm-doc-icon" value={icon} placeholder="📄" maxLength={8} disabled={!canEdit}
-            onChange={e => { const v = e.target.value.trim(); setIcon(v); iconRef.current = v || null; ctrlRef.current?.change(build); }} />
+          <DocIconPicker value={icon || null} disabled={!canEdit}
+            onChange={v => { setIcon(v); iconRef.current = v; ctrlRef.current?.change(build); }} />
           <label className="sr-only" htmlFor="doc-title">제목</label>
           <input id="doc-title" className="adm-doc-title" value={title} placeholder="제목 없음" maxLength={200} readOnly={!canEdit}
             onChange={e => { setTitle(e.target.value); titleRef.current = e.target.value; ctrlRef.current?.change(build); }}
@@ -379,13 +379,13 @@ export function Docs() {
             : <DocTree currentId={id ?? null} reloadKey={reloadKey} ancestors={ancestors} archived={archived} onOpen={open} onAddChild={p => setCreating({ parent: p })} />}
         </div>
         <button type="button" className="ui-btn is-text is-muted adm-docs-archive" aria-pressed={archived} onClick={() => setArchived(a => !a)}>
-          {archived ? '← 문서로 돌아가기' : '보관함'}
+          {archived ? <><Glyph name="arrow-left" size={14} />문서로 돌아가기</> : '보관함'}
         </button>
       </aside>
       <button type="button" className="adm-docs-nav-toggle" aria-expanded={treeOpen} onClick={() => setTreeOpen(o => !o)}>{treeOpen ? '목록 닫기' : '문서 목록'}</button>
       <main className="adm-docs-content">
         {id ? <DocView key={id} id={id} people={people} onTreeChange={treeChanged} onAncestors={setAncestors} /> : (
-          <EmptyState title="문서를 고르거나 새로 만드세요" icon={<span aria-hidden="true">📄</span>}>
+          <EmptyState title="문서를 고르거나 새로 만드세요" icon={<Glyph name="doc" size={22} />}>
             회의록·장애 보고·DSP 이슈·권리 검토 같은 템플릿으로 시작할 수 있어요. 본문에서 ‘/’를 누르면 발매·QC·DSP·카드 같은 AUDENIQ 블록을 넣을 수 있어요.
             <p><button type="button" className="ui-btn is-primary" onClick={() => setCreating({ parent: null })}>새 문서</button></p>
           </EmptyState>

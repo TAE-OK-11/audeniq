@@ -19,7 +19,8 @@
 5. 색 규칙: 보완 필요 = 주황, 거절·오류 = 빨강, 검토 중 = 보라, 완료 = 초록.
 6. 버튼은 놓인 면에 맞춰 스스로 바뀝니다 (`.ui-card` 위에서는 한 단계 진하게, `.ui-dark` 위에서는 반전). 상태 색 면(주황 보완 · 빨강 오류 · 초록 완료) 위에서는 버튼·기본 아이콘 칸도 그 색을 따릅니다 — 새 상태 면은 `.ui-tone-warn` / `.ui-tone-danger` / `.ui-tone-success`를 붙이면 됩니다.
 7. 글꼴은 **Pretendard Variable** 하나입니다(굵기 100–900 자유). 각 앱 `index.html`이 jsDelivr의 동적 서브셋 CSS(`pretendard@v1.3.9`)를 불러오고, 토큰 `--font-brand`가 첫 글꼴로 씁니다. CSP의 `style-src`·`font-src`에 `https://cdn.jsdelivr.net`이 허용돼 있어요. 자체 CDN으로 옮길 때는 `index.html`의 주소와 CSP 두 곳만 바꾸면 됩니다. 화면 CSS에 `font-family`를 직접 쓰지 말고 `var(--font-body)`를 씁니다.
-8. 새 역할이 생기면 화면 CSS에 만들지 말고 `ui.css` + `src/ui`에 더하고 견본 화면에 올립니다.
+8. 아이콘은 직접 그린 SVG만 씁니다(`components/Glyph.tsx`, 설문은 `survey/app/src/Icon.tsx`). 이모지와 아이콘처럼 쓰는 글자 기호(₩ ✓ › ‹ ▸ ↗ ⚠ 등)는 기기마다 모양이 달라서 쓰지 않아요. CSS로 그릴 때는 `--aq-icon-check`·`--aq-icon-chevron`을 mask로 씁니다. 문서 아이콘도 이모지 대신 아이콘 이름을 저장하고, 예전 이모지는 비슷한 SVG로 바꿔 보여 줍니다. 문장 속 화살표(→)처럼 글자로 읽히는 것은 Pretendard에 들어 있어 그대로 둡니다.
+9. 새 역할이 생기면 화면 CSS에 만들지 말고 `ui.css` + `src/ui`에 더하고 견본 화면에 올립니다.
 
 ## 컴포넌트
 | 역할 | React | 클래스 |

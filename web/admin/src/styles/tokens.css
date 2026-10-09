@@ -11,6 +11,10 @@
   --font-display:var(--font-body);
   --font-mono:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
+  /* ---------- CSS로 그리는 아이콘 (mask로 쓰고 색은 background로) — 글자 기호 ✓ › ▸ 대신 ---------- */
+  --aq-icon-check:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5 9.5 17 19 7.5'/%3E%3C/svg%3E");
+  --aq-icon-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 6 6 6-6 6'/%3E%3C/svg%3E");
+
   /* ---------- 팔레트 (원색 단계) ---------- */
   /* 파랑 — 브랜드 */
   --aq-blue-25:#F8FAFF;

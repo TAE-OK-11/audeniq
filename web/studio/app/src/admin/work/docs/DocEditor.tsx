@@ -58,7 +58,7 @@ const SuggestMenu = memo(function SuggestMenu({ state, active, onPick, onHover }
               {head && <div className="adm-doc-suggest-group" role="presentation">{head}</div>}
               <button type="button" role="option" id={`doc-suggest-${i}`} data-i={i} aria-selected={i === active}
                 className={i === active ? 'is-active' : ''} onMouseDown={e => { e.preventDefault(); onPick(i); }} onMouseEnter={() => onHover(i)}>
-                <span className="adm-doc-suggest-icon" aria-hidden="true">{it.icon}</span>
+                <span className="adm-doc-suggest-icon" aria-hidden="true">{it.icon.startsWith('g:') ? <Glyph name={it.icon.slice(2)} size={16} /> : it.icon}</span>
                 <span className="adm-min"><b>{it.title}</b><small>{it.hint}</small></span>
                 <kbd>/{it.id}</kbd>
               </button>
@@ -69,7 +69,7 @@ const SuggestMenu = memo(function SuggestMenu({ state, active, onPick, onHover }
         return (
           <button key={`${it.kind}:${it.id}`} type="button" role="option" id={`doc-suggest-${i}`} data-i={i} aria-selected={i === active}
             className={i === active ? 'is-active' : ''} onMouseDown={e => { e.preventDefault(); onPick(i); }} onMouseEnter={() => onHover(i)}>
-            <span className="adm-doc-suggest-icon" aria-hidden="true">{it.kind === 'doc' ? '📄' : '@'}</span>
+            <span className="adm-doc-suggest-icon" aria-hidden="true">{it.kind === 'doc' ? <Glyph name="doc" size={15} /> : <Glyph name="at" size={15} />}</span>
             <span className="adm-min"><b>{it.label}</b>{it.sub && <small>{it.sub}</small>}</span>
           </button>
         );
@@ -99,8 +99,8 @@ function Toolbar({ editor, onLink, onComment, onSlash }: { editor: Editor; onLin
   const c = () => editor.chain().focus();
   return (
     <div className="adm-doc-toolbar" role="toolbar" aria-label="서식">
-      <ToolButton label="실행 취소 (Ctrl+Z)" disabled={!st.canUndo} onClick={() => c().undo().run()}>↶</ToolButton>
-      <ToolButton label="다시 실행 (Ctrl+Shift+Z)" disabled={!st.canRedo} onClick={() => c().redo().run()}>↷</ToolButton>
+      <ToolButton label="실행 취소 (Ctrl+Z)" disabled={!st.canUndo} onClick={() => c().undo().run()}><Glyph name="undo" size={15} /></ToolButton>
+      <ToolButton label="다시 실행 (Ctrl+Shift+Z)" disabled={!st.canRedo} onClick={() => c().redo().run()}><Glyph name="redo" size={15} /></ToolButton>
       <span className="adm-doc-tool-sep" aria-hidden="true" />
       <ToolButton label="제목 1" on={st.h1} onClick={() => c().toggleHeading({ level: 1 }).run()}>H1</ToolButton>
       <ToolButton label="제목 2" on={st.h2} onClick={() => c().toggleHeading({ level: 2 }).run()}>H2</ToolButton>
@@ -109,11 +109,11 @@ function Toolbar({ editor, onLink, onComment, onSlash }: { editor: Editor; onLin
       <ToolButton label="밑줄 (Ctrl+U)" on={st.underline} onClick={() => c().toggleUnderline().run()}><u>U</u></ToolButton>
       <ToolButton label="취소선" on={st.strike} onClick={() => c().toggleStrike().run()}><s>S</s></ToolButton>
       <ToolButton label="코드" on={st.code} onClick={() => c().toggleCode().run()}>{'<>'}</ToolButton>
-      <ToolButton label="링크 (Ctrl+K)" on={st.link} onClick={onLink}>🔗</ToolButton>
+      <ToolButton label="링크 (Ctrl+K)" on={st.link} onClick={onLink}><Glyph name="link" size={15} /></ToolButton>
       <span className="adm-doc-tool-sep" aria-hidden="true" />
-      <ToolButton label="글머리 목록" on={st.bullet} onClick={() => c().toggleBulletList().run()}>•</ToolButton>
+      <ToolButton label="글머리 목록" on={st.bullet} onClick={() => c().toggleBulletList().run()}><Glyph name="list" size={15} /></ToolButton>
       <ToolButton label="번호 목록" on={st.ordered} onClick={() => c().toggleOrderedList().run()}>1.</ToolButton>
-      <ToolButton label="할 일 목록" on={st.task} onClick={() => c().toggleTaskList().run()}>☑</ToolButton>
+      <ToolButton label="할 일 목록" on={st.task} onClick={() => c().toggleTaskList().run()}><Glyph name="checklist" size={15} /></ToolButton>
       <ToolButton label="블록 넣기 (/)" onClick={onSlash}><Glyph name="plus" size={14} /></ToolButton>
       <span className="adm-doc-tool-sep" aria-hidden="true" />
       <ToolButton label="선택한 부분에 댓글" disabled={st.empty} onClick={onComment}><Glyph name="inquiry" size={14} /></ToolButton>

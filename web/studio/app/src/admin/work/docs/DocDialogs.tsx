@@ -9,6 +9,8 @@ import { useStaff } from '../../ui';
 import { workApi } from '../api';
 import { ROLE_NAME } from '../labels';
 import { EntityPicker, PersonSelect, type People } from '../ui';
+import { Glyph } from '../../../components/Glyph';
+import { DocIcon } from './DocIcon';
 import type { DocAccess, DocGrant, DocTemplate, EntityRef, StaffRoleName } from '../types';
 
 const LEVELS: [DocGrant['level'], string][] = [['VIEWER', '보기'], ['EDITOR', '편집'], ['MANAGER', '관리(공유·승인)']];
@@ -115,11 +117,11 @@ export function NewDocDialog({ parentId, onClose, onCreate }: { parentId: string
       </label>
       <div className="adm-doc-templates" role="list" aria-label="시작할 모양">
         <button type="button" role="listitem" className="adm-doc-template" onClick={() => onCreate(null, title)}>
-          <span aria-hidden="true">📄</span><b>빈 문서</b><small>처음부터 쓰기</small>
+          <span aria-hidden="true"><Glyph name="doc" size={20} /></span><b>빈 문서</b><small>처음부터 쓰기</small>
         </button>
         {error ? <div className="ui-callout is-danger">{error}</div> : loading && !data ? <div className="ui-skel-rows"><span /></div> : (data?.items ?? []).map(t => (
           <button key={t.id} type="button" role="listitem" className="adm-doc-template" onClick={() => onCreate(t, title)}>
-            <span aria-hidden="true">{t.icon || '📋'}</span><b>{t.name}</b><small>{t.description}</small>
+            <span aria-hidden="true"><DocIcon icon={t.icon || 'template'} size={20} /></span><b>{t.name}</b><small>{t.description}</small>
           </button>
         ))}
       </div>

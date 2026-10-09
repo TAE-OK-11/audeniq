@@ -206,7 +206,7 @@ export function Dashboard() {
                         <strong>{t.name}</strong>
                         <small>{t.sub}</small>
                       </span>
-                      <span className="aq-task-go">{t.btn}<i aria-hidden="true">›</i></span>
+                      <span className="aq-task-go">{t.btn}<i aria-hidden="true"><Glyph name="chevron-right" size={14} /></i></span>
                     </button>
                   </li>
                 ))}

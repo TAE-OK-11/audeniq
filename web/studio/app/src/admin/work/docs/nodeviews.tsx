@@ -33,10 +33,10 @@ const dt = (v: unknown) => (typeof v === 'string' && v ? when(v) : '—');
 
 export function CalloutView({ node, updateAttributes, editor }: ReactNodeViewProps) {
   const tone = s(node.attrs.tone) || 'info';
-  const icon = tone === 'warning' ? '⚠' : tone === 'danger' ? '⛔' : tone === 'success' ? '✓' : 'ℹ';
+  const icon = tone === 'warning' ? 'warning' : tone === 'danger' ? 'stop' : tone === 'success' ? 'check' : 'info';
   return (
     <NodeViewWrapper className={`adm-doc-callout is-${tone}`} data-type="callout">
-      <span className="adm-doc-callout-icon" contentEditable={false} aria-hidden="true">{icon}</span>
+      <span className="adm-doc-callout-icon" contentEditable={false} aria-hidden="true"><Glyph name={icon} size={17} /></span>
       {editor.isEditable && (
         <select className="adm-doc-callout-tone" contentEditable={false} aria-label="강조 상자 종류" value={tone}
           onChange={e => updateAttributes({ tone: e.target.value })}>

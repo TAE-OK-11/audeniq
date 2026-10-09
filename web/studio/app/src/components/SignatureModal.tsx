@@ -340,9 +340,9 @@ export function SignatureModal({
                   type="password" id="aqCertRrnBack" aria-label="주민등록번호 뒷자리 첫 자리"
                   value={rrnBack}
                   onChange={e => setRrnBack(e.target.value.replace(/\D/g, '').slice(0, 1))}
-                  placeholder="●" inputMode="numeric" maxLength={1}
+                  inputMode="numeric" maxLength={1}
                 />
-                <span className="aq-rrn-mask">●●●●●●</span>
+                <span className="aq-rrn-mask" aria-hidden="true">{Array.from({ length: 6 }, (_, i) => <i key={i} />)}</span>
               </div>
             </div>
             <div className="ui-callout">뒷자리는 첫 번째 숫자만 입력해요. 나머지는 저장되지 않아요.</div>

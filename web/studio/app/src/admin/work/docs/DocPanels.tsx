@@ -5,6 +5,7 @@ import { useToast } from '../../../components/Toast';
 import { useConfirm } from '../../../components/Confirm';
 import { errorMessage } from '../../../api/errors';
 import { Glyph } from '../../../components/Glyph';
+import { DocIcon } from './DocIcon';
 import { CheckIcon } from '../../../components/Check';
 import { useAsync } from '../../../hooks/useAsync';
 import { ago, when } from '../../labels';
@@ -159,7 +160,7 @@ export function InfoPanel({ detail, people, onNewCard, busy }: { detail: DocDeta
       {detail.backlinks.length > 0 && (
         <>
           <h3>이 문서를 언급한 문서</h3>
-          <ul className="adm-doc-cards">{detail.backlinks.map(b => <li key={b.id}><Link to={`/admin/docs/${b.id}`}>{b.icon || '📄'} {b.title || '제목 없음'}</Link></li>)}</ul>
+          <ul className="adm-doc-cards">{detail.backlinks.map(b => <li key={b.id}><Link to={`/admin/docs/${b.id}`}><DocIcon icon={b.icon} size={14} /> {b.title || '제목 없음'}</Link></li>)}</ul>
         </>
       )}
     </section>
@@ -213,9 +214,9 @@ export function VersionsPanel({ docId, current, people, canRestore, onRestore }:
           </div>
           {compare ? (
             <>
-              <p className="small muted">+{stats.added}줄 / −{stats.removed}줄 (지금 기준)</p>
+              <p className="small muted">+{stats.added}줄 / -{stats.removed}줄 (지금 기준)</p>
               <pre className="adm-doc-diff" aria-label="차이">
-                {diff.map((l, i) => <span key={i} className={`is-${l.kind}`}>{l.kind === 'add' ? '+ ' : l.kind === 'del' ? '− ' : '  '}{l.text}{'\n'}</span>)}
+                {diff.map((l, i) => <span key={i} className={`is-${l.kind}`}>{l.kind === 'add' ? '+ ' : l.kind === 'del' ? '- ' : '  '}{l.text}{'\n'}</span>)}
               </pre>
             </>
           ) : <pre className="adm-doc-diff">{open.content_text || plainText(open.content)}</pre>}

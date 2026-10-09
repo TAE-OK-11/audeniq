@@ -10,6 +10,7 @@ import { localStamp } from '../lib/format';
 import { MOCK } from '../lib/mode';
 import * as portal from '../api/portal';
 import { errorMessage } from '../api/errors';
+import { Glyph } from './Glyph';
 import { requestPortalRefresh } from '../store/portalSync';
 
 const FINANCIAL_INSTITUTIONS: Record<string, { label: string; note: string; items: string[] }> = {
@@ -208,7 +209,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
     <Modal title="수익 정산 정보 등록" onClose={onClose} modalClass="aq-payout-setup-mode">
       <div className="aq-pay-flow" ref={flowRef}>
         <header className="aq-pay-top">
-          <button type="button" aria-label="이전으로" onClick={back}>‹</button>
+          <button type="button" aria-label="이전으로" onClick={back}><Glyph name="chevron-left" size={20} /></button>
           <div className="aq-pay-progress" aria-label={`수령 정보 등록 ${step + 1}단계`}>
             <span style={{ ['--pay-progress' as string]: `${Math.min(100, (step + 1) * 25)}%` }} />
           </div>
@@ -356,7 +357,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
                       }}
                     />
                     <span>{label}</span>
-                    <button type="button" aria-label="약관 보기">›</button>
+                    <button type="button" aria-label="약관 보기"><Glyph name="chevron-right" size={18} /></button>
                   </label>
                 ))}
               </div>

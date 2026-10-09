@@ -138,7 +138,7 @@ body.wizard-mode #view-new{margin:0 auto;width:100%}
 .portal-nav .nav-group:first-child{margin-top:0;padding-top:7px}
 .portal-nav button{border:0;background:none;display:flex;align-items:center;justify-content:space-between;width:100%;padding:10px 13px;color:var(--portal-ink);font-size:14px;text-align:left;font-weight:710;border-radius:var(--aq-r-sm);min-height:47px;transition:background .18s,color .18s}
 .portal-nav button>span{font-size:0;display:inline-flex;width:17px;height:17px;align-items:center;justify-content:center;color:inherit}
-.portal-nav button>span:after{content:'›';font-size:23px;font-weight:350;line-height:1}
+.portal-nav button>span:after{content:'';width:16px;height:16px;background:currentColor;-webkit-mask:var(--aq-icon-chevron) center/contain no-repeat;mask:var(--aq-icon-chevron) center/contain no-repeat}
 .portal-nav button.active{background:var(--aq-blue-100);color:var(--studio-blue)}
 .portal-nav button:active{background:var(--aq-blue-150)}
 .portal-nav .nav-foot{border-top:1px solid var(--portal-border);margin-top:8px;padding:15px 10px 5px;color:var(--aq-gray-400);font-size:10px;letter-spacing:.08em;border-color:var(--studio-line)}
@@ -706,7 +706,8 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 .aq-rrn-row input{flex:1;min-width:0;text-align:center;letter-spacing:.1em}
 .aq-rrn-row input#aqCertRrnBack{max-width:52px}
 .aq-rrn-dash{color:var(--aq-gray-400);font-weight:700}
-.aq-rrn-mask{color:var(--aq-gray-300);letter-spacing:.2em;font-size:14px}
+.aq-rrn-mask{display:inline-flex;align-items:center;gap:6px}
+.aq-rrn-mask>i{width:8px;height:8px;border-radius:50%;background:var(--aq-gray-300)}
 
 /* 인증 완료 화면 */
 .aq-cert-done{text-align:center;padding:32px 16px}

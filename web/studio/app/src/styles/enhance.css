@@ -1607,3 +1607,7 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-empty-val{color:var(--aq-text-4);font-weight:600}
 @media(max-width:760px){.aq-doc-card>.ui-icon{align-self:start}}
 .aq-bundle-head>.ui-badge{flex:none}
+/* 글자 › 대신 SVG 화살표 — 글자와 같은 줄 가운데에 */
+.aq-task-go i,.chevron,.toggle-arrow{display:inline-flex;align-items:center}
+.aq-event-hero-cta{display:inline-flex;align-items:center;gap:2px}
+:is(.aq-release-fix,.aq-fix-panel) button>svg{vertical-align:-2px}

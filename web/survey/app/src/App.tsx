@@ -5,6 +5,7 @@ import {
   applyChoice, emptyState, noDistributorExperience, otherOpen, payload, selected, validateAll, validateStep,
   type SurveyState,
 } from './logic';
+import { Icon } from './Icon';
 import { animateSurveyComplete, animateSurveyStep, initializeMotion } from './motion';
 
 declare global {
@@ -64,7 +65,7 @@ function QuestionBlock({ q, st, skip, onChoice, onOther, extra }: {
                   onChange={e => onChoice(q.key, value, e.target.checked)}
                 />
                 <span className="choice-label">{label}</span>
-                <span className="choice-tick" aria-hidden="true">✓</span>
+                <span className="choice-tick" aria-hidden="true"><Icon name="check" size={16} /></span>
               </label>
             );
           })}
@@ -215,7 +216,7 @@ export function App() {
   const copyReceipt = async () => {
     try {
       await navigator.clipboard.writeText(receipt ?? '');
-      setCopyLabel('복사했어요 ✓');
+      setCopyLabel('복사했어요');
     } catch {
       setCopyLabel('접수번호를 길게 눌러 복사해 주세요.');
     }
@@ -232,7 +233,7 @@ export function App() {
         <div className="topbar-inner">
           <a href="#top" className="brand" aria-label="설문 페이지 맨 위로 이동"><img src="/assets/AUDENIQ_Logo_Light.svg" alt="AUDENIQ" /></a>
           <span className="header-label">리서치 · 사전조사</span>
-          <a className="back-home" href="https://audeniq.com/">공식 홈페이지 <span aria-hidden="true">↗</span></a>
+          <a className="back-home" href="https://audeniq.com/">공식 홈페이지 <Icon name="arrow-up-right" /></a>
         </div>
       </header>
       <main id="survey-main" className="layout">
@@ -246,10 +247,10 @@ export function App() {
             <p>합리적인 수수료, 빠른 처리, 투명한 정산과 음원 배급·통계·가사·아티스트 지원 기능을 하나로 제공하는 것을 목표로 합니다. 정식 출시 전, 실제 아티스트분들의 의견을 듣고 싶습니다.</p>
           </div>
           <div className="intro-purpose">
-            <span className="purpose-mark" aria-hidden="true">↗</span>
+            <span className="purpose-mark" aria-hidden="true"><Icon name="arrow-up-right" size={16} /></span>
             <p><strong>응답 활용 안내</strong><br />응답은 서비스 기획·시장 수요 분석 및 향후 DSP·관련 업체 협의를 위한 통계 자료로 활용될 수 있습니다.</p>
           </div>
-          <div className="intro-foot"><span>◷ &nbsp;약 5~10분</span><span>✓ &nbsp;익명 참여 가능</span><span>↗ &nbsp;정식 가입과 별개</span></div>
+          <div className="intro-foot"><span><Icon name="clock" size={13} />약 5~10분</span><span><Icon name="check" size={13} />익명 참여 가능</span><span><Icon name="arrow-up-right" size={13} />정식 가입과 별개</span></div>
         </div>
         <section className="form-shell" aria-label="AUDENIQ 사전조사">
           <div className="progress-head" hidden={done}>
@@ -339,24 +340,24 @@ export function App() {
             ))}
             <p className="form-error" id="form-error" role="alert" hidden={!error} ref={errorRef}>{error}</p>
             <div className="form-controls">
-              <button type="button" className="previous" id="prev-btn" hidden={current === 0} onClick={() => show(current - 1)}>← 이전</button>
-              <button type="button" className="next" id="next-btn" hidden={current === last} onClick={next}>다음으로 <span aria-hidden="true">→</span></button>
+              <button type="button" className="previous" id="prev-btn" hidden={current === 0} onClick={() => show(current - 1)}><Icon name="arrow-left" />이전</button>
+              <button type="button" className="next" id="next-btn" hidden={current === last} onClick={next}>다음으로 <Icon name="arrow-right" /></button>
               <button
                 type="submit" className="next" id="submit-btn" hidden={current !== last}
                 disabled={busy || !serviceReady || !token || !st.surveyConsent}
               >
-                {busy ? '제출하는 중…' : <>설문 제출하기 <span aria-hidden="true">↗</span></>}
+                {busy ? '제출하는 중…' : <>설문 제출하기 <Icon name="arrow-up-right" /></>}
               </button>
             </div>
           </form>
           <div id="complete" className="complete" hidden={!done} ref={completeRef}>
-            <div className="complete-icon" aria-hidden="true">✓</div>
+            <div className="complete-icon" aria-hidden="true"><Icon name="check" size={30} /></div>
             <span className="step-kicker">THANK YOU</span>
             <h2>당신의 이야기가<br />AUDENIQ의 다음을 만들어요.</h2>
             <p>의견을 보내줘서 고마워요. 더 나은 음악 배급 서비스를 준비하는 데 소중하게 활용할게요.</p>
             <div className="receipt">접수번호 <code id="receipt-id">{receipt}</code></div>
             <button type="button" id="copy-receipt" className="copy-btn" onClick={() => void copyReceipt()}>{copyLabel}</button>
-            <a className="complete-home" href="https://audeniq.com/">AUDENIQ 홈페이지로 돌아가기 ↗</a>
+            <a className="complete-home" href="https://audeniq.com/">AUDENIQ 홈페이지로 돌아가기 <Icon name="arrow-up-right" /></a>
           </div>
         </section>
         <p className="below-note">음원을 발매한 경험이 없어도 참여할 수 있어요. 설문 응답은 익명으로 제출할 수 있어요.</p>

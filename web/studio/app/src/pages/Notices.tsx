@@ -144,7 +144,7 @@ export function Notices() {
           </ul>
           {pages > 1 && (
             <div className="aq-nboard-pages" role="navigation" aria-label="공지 페이지">
-              <button type="button" className="aq-nboard-arrow" disabled={page === 1} onClick={() => go(page - 1)} aria-label="이전 페이지">‹</button>
+              <button type="button" className="aq-nboard-arrow" disabled={page === 1} onClick={() => go(page - 1)} aria-label="이전 페이지"><Glyph name="chevron-left" size={18} /></button>
               {numbers.map(p => (
                 <button
                   key={p} type="button" onClick={() => go(p)}
@@ -152,7 +152,7 @@ export function Notices() {
                   aria-current={p === page ? 'page' : undefined}
                 >{p}</button>
               ))}
-              <button type="button" className="aq-nboard-arrow" disabled={page === pages} onClick={() => go(page + 1)} aria-label="다음 페이지">›</button>
+              <button type="button" className="aq-nboard-arrow" disabled={page === pages} onClick={() => go(page + 1)} aria-label="다음 페이지"><Glyph name="chevron-right" size={18} /></button>
             </div>
           )}
         </section>

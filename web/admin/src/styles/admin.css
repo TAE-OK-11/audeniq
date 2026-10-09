@@ -187,7 +187,7 @@
 .adm-more{margin-top:8px}
 .adm-more summary{cursor:pointer;font-size:12px;font-weight:720;color:var(--aq-gray-500);list-style:none;display:inline-flex;align-items:center;gap:4px}
 .adm-more summary::-webkit-details-marker{display:none}
-.adm-more summary::after{content:"›";transition:transform .18s var(--adm-ease)}
+.adm-more summary::after{content:"";width:14px;height:14px;background:currentColor;-webkit-mask:var(--aq-icon-chevron) center/contain no-repeat;mask:var(--aq-icon-chevron) center/contain no-repeat;transition:transform .18s var(--adm-ease)}
 .adm-more[open] summary::after{transform:rotate(90deg)}
 .adm-more>div{margin-top:8px}
 

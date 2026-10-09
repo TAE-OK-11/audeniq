@@ -6,6 +6,7 @@ import { STATUS_LABEL, statusTone } from '../lib/format';
 import { useAsync } from '../hooks/useAsync';
 import { SkeletonRows } from '../components/Skeleton';
 import { ReleaseCover } from '../components/ReleaseCover';
+import { Glyph } from '../components/Glyph';
 import { Badge, Tabs } from '../ui';
 
 const FILTERS = [
@@ -194,7 +195,7 @@ export function Releases() {
                         type="button" className="aq-release-fix-btn"
                         onClick={e => { e.stopPropagation(); nav(fixPath(r.id, splitCorrections(r.corrections).items[0])); }}
                         onKeyDown={e => e.stopPropagation()}
-                      >보완하기 ›</button>
+                      >보완하기 <Glyph name="chevron-right" size={14} /></button>
                     </div>
                   )}
                 </article>
@@ -234,7 +235,7 @@ export function Releases() {
                     <span className="ui-row-title">{t.title || '제목 없는 곡'}{t.explicit && <em className="aq-explicit" title="Explicit">E</em>}</span>
                     <span className="ui-row-meta">{t.releaseTitle} · {t.artist || '아티스트 미입력'}{t.isrc ? ` · ISRC ${t.isrc}` : ''}</span>
                   </div>
-                  <span className="chevron" aria-hidden="true">›</span>
+                  <span className="chevron" aria-hidden="true"><Glyph name="chevron-right" size={18} /></span>
                 </div>
               ))}
             </div>

@@ -3,6 +3,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from '../../../lib/router';
 import { Glyph } from '../../../components/Glyph';
+import { DocIcon } from './DocIcon';
 import { errorMessage } from '../../../api/errors';
 import { workApi } from '../api';
 import { DOC_STATUS } from '../labels';
@@ -36,8 +37,8 @@ const Row = memo(function Row({ d, depth, open, active, focused, kids, onToggle,
       onClick={() => onOpen(d.id)}
     >
       <button type="button" tabIndex={-1} className="adm-doc-tree-caret" aria-hidden="true" disabled={!kids}
-        onClick={e => { e.stopPropagation(); onToggle(d.id); }}>{kids ? (open ? '▾' : '▸') : ''}</button>
-      <span className="adm-doc-tree-icon" aria-hidden="true">{d.icon || '📄'}</span>
+        onClick={e => { e.stopPropagation(); onToggle(d.id); }}>{kids ? <Glyph name={open ? 'chevron-down' : 'chevron-right'} size={13} /> : null}</button>
+      <span className="adm-doc-tree-icon" aria-hidden="true"><DocIcon icon={d.icon} size={15} /></span>
       <span className="adm-doc-tree-title">{d.title || '제목 없음'}</span>
       {d.staff_access == null && <span className="adm-doc-tree-lock" title="제한된 문서"><Glyph name="lock" size={11} /><span className="sr-only">제한된 문서</span></span>}
       {d.status !== 'DRAFT' && <span className={`adm-doc-tree-status is-${d.status.toLowerCase()}`}>{DOC_STATUS[d.status][0]}</span>}
@@ -174,7 +175,7 @@ export function DocSearchResults({ q, onOpen }: { q: string; onOpen: (id: string
       {state.items.map(d => (
         <li key={d.id}>
           <Link to={`/admin/docs/${d.id}`} onClick={() => onOpen(d.id)}>
-            <b>{d.icon || '📄'} {d.title || '제목 없음'}</b>
+            <b><DocIcon icon={d.icon} size={14} /> {d.title || '제목 없음'}</b>
             {d.snippet && <small>{d.snippet}</small>}
           </Link>
         </li>

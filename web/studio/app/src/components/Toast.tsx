@@ -1,3 +1,4 @@
+import { Glyph } from './Glyph';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { STORAGE_FAIL_EVENT } from '../lib/storage';
 import { CheckIcon } from './Check';
@@ -72,7 +73,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       <div className="aq-toast-stack" role="status" aria-live="polite">
         {items.map(t => (
           <div key={t.id} className={`aq-toast is-${t.tone}${t.leaving ? ' is-leaving' : ''}`} onClick={() => dismiss(t.id)}>
-            <span className="aq-toast-icon" aria-hidden="true">{t.tone === 'success' ? <CheckIcon size={12} /> : t.tone === 'error' ? '!' : 'i'}</span>
+            <span className="aq-toast-icon" aria-hidden="true">{t.tone === 'success' ? <CheckIcon size={12} /> : <Glyph name={t.tone === 'error' ? 'alert' : 'info'} size={14} />}</span>
             <span>{t.message}</span>
           </div>
         ))}
