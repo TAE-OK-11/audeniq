@@ -385,9 +385,9 @@ export function Docs() {
       <button type="button" className="adm-docs-nav-toggle" aria-expanded={treeOpen} onClick={() => setTreeOpen(o => !o)}>{treeOpen ? '목록 닫기' : '문서 목록'}</button>
       <main className="adm-docs-content">
         {id ? <DocView key={id} id={id} people={people} onTreeChange={treeChanged} onAncestors={setAncestors} /> : (
-          <EmptyState title="문서를 고르거나 새로 만드세요" icon={<Glyph name="doc" size={22} />}>
+          <EmptyState title="문서를 고르거나 새로 만드세요" icon={<Glyph name="doc" size={22} />}
+            actions={<button type="button" className="ui-btn is-primary" onClick={() => setCreating({ parent: null })}>새 문서</button>}>
             회의록·장애 보고·DSP 이슈·권리 검토 같은 템플릿으로 시작할 수 있어요. 본문에서 ‘/’를 누르면 발매·QC·DSP·카드 같은 AUDENIQ 블록을 넣을 수 있어요.
-            <p><button type="button" className="ui-btn is-primary" onClick={() => setCreating({ parent: null })}>새 문서</button></p>
           </EmptyState>
         )}
       </main>

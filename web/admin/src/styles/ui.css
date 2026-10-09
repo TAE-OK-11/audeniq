@@ -448,6 +448,7 @@ button.ui-avatar:hover{transform:scale(1.06);background:var(--aq-blue-200)}
 /* 인라인 --cols 보다 우선하도록 grid-template-columns 를 직접 지정 */
 @media (max-width:1180px){
   .ui-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .ui-stats>:last-child:nth-child(odd):not(:first-child){grid-column:1/-1}
 }
 @media (max-width:760px){
   .ui-page-head{margin-bottom:24px}
@@ -456,7 +457,6 @@ button.ui-avatar:hover{transform:scale(1.06);background:var(--aq-blue-200)}
   .ui-hero .ui-btn{width:100%}
   .ui-card{padding:20px;border-radius:var(--aq-r-xl)}
   .ui-stats{gap:8px}
-  .ui-stats>:last-child:nth-child(odd):not(:first-child){grid-column:1/-1}
   .ui-stat{min-height:0;padding:16px}
   .ui-stat-value{font-size:24px}
   .ui-row{gap:12px;padding:14px 15px}
@@ -502,3 +502,10 @@ button.ui-avatar:hover{transform:scale(1.06);background:var(--aq-blue-200)}
 :is(.aq-paper-integrity.is-changed,.aq-save-state.is-error,.aq-cadmin-state.is-active,.adm-kb-pri.is-urgent,.adm-kb-late){--tone-bg:var(--aq-tone-red-bg);--tone-fg:var(--aq-tone-red-fg)}
 .aq-event-hero-badge{--tone-bg:#ffffff2e;--tone-fg:#fff}
 .aq-report-delta{margin-top:10px}
+
+/* ---------- 펼치기 (details/summary) — 브라우저 기본 ▶ 대신 AUDENIQ 화살표 ---------- */
+summary{list-style:none}
+summary::-webkit-details-marker{display:none}
+:is(.aq-sign-privacy,.adm-terms-body)>summary{display:inline-flex;align-items:center;gap:6px}
+:is(.aq-sign-privacy,.adm-terms-body)>summary::before{content:"";flex:none;width:12px;height:12px;background:currentColor;-webkit-mask:var(--aq-icon-chevron) center/contain no-repeat;mask:var(--aq-icon-chevron) center/contain no-repeat;transition:transform var(--aq-dur) var(--aq-ease)}
+:is(.aq-sign-privacy,.adm-terms-body)[open]>summary::before{transform:rotate(90deg)}

@@ -1418,12 +1418,13 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-sign-facts dd{margin:0;min-width:0;text-align:right;color:#2f3646;font-weight:700;overflow-wrap:anywhere}
 .aq-sign-mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;font-weight:600!important}
 .aq-sign-steps{list-style:none;margin:16px 0 0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
-.aq-sign-steps li{display:flex;align-items:center;gap:6px;min-width:0;padding:10px;border-radius:var(--aq-r-md);background:var(--aq-gray-150);color:var(--aq-gray-500);font-size:12.5px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.aq-sign-steps li{display:flex;align-items:center;gap:6px;min-width:0;padding:10px;line-height:1.3;word-break:keep-all;border-radius:var(--aq-r-md);background:var(--aq-gray-150);color:var(--aq-gray-500);font-size:12.5px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .aq-sign-steps li span{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:#fff;font-size:11px;flex:none}
 .aq-sign-steps li.is-current{background:#fff;color:var(--aq-e-blue)}
 .aq-sign-steps li.is-current span{background:var(--aq-e-blue);color:#fff}
 .aq-sign-steps li.is-done{background:#fff;color:var(--aq-gray-700)}
 .aq-sign-steps li.is-done span{background:var(--aq-e-blue);color:#fff}
+@media(max-width:480px){.aq-sign-steps li{white-space:normal;overflow:visible;padding:9px 8px;gap:5px;font-size:12px}}
 .aq-sign-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
 @media(max-width:480px){.aq-sign-grid{grid-template-columns:1fr}}
 .aq-sign-ok{display:flex;align-items:center;gap:8px;margin:0;font-size:14px;font-weight:750;color:var(--aq-e-green)}
