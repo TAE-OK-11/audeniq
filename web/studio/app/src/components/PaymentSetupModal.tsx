@@ -425,7 +425,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
                 <circle className="aq-success-ring" cx="44" cy="44" r="40" />
                 <path className="aq-success-tick" d="M27 45.5 39.5 58 62 33" />
               </svg>
-              <h1>정산 계좌를<br />등록했어요</h1>
+              <h1>정산 계좌를 등록했어요</h1>
               <p className="aq-pay-success-sub">정산이 확정되면 이 계좌로 수익을 보내 드려요.</p>
               <div className="aq-pay-receipt">
                 <div className="aq-pay-receipt-head">
