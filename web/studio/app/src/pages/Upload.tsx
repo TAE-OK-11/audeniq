@@ -1895,21 +1895,25 @@ export function Upload() {
       {(fixes.length > 0 || reviewNote) && (
         <section className="aq-fix-panel" aria-labelledby="aqFixHead">
           <div className="aq-fix-head">
-            <strong id="aqFixHead">{fixes.length ? `보완 요청 ${fixes.length}건` : '담당자 의견'}</strong>
-            {fixes.length > 0 && <span>항목을 누르면 고쳐야 할 입력칸으로 이동해요.</span>}
+            <span className="aq-fix-head-ico" aria-hidden="true"><Glyph name={fixes.length ? 'alert' : 'inquiry'} size={18} /></span>
+            <div className="min-0">
+              <strong id="aqFixHead">{fixes.length ? `보완 요청 ${fixes.length}건` : '담당자 의견'}</strong>
+              {fixes.length > 0 && <span>항목을 누르면 고쳐야 할 입력칸으로 이동해요.</span>}
+            </div>
           </div>
           {reviewNote && <ReviewNote text={reviewNote} />}
-          {fixes.length > 0 && <ul>
+          {fixes.length > 0 && <ol>
             {fixes.map((c, i) => (
               <li key={`${c.code}-${c.trackId ?? ''}-${i}`} className={c.step === step ? 'is-here' : ''}>
                 <button type="button" onClick={() => jumpToFix(c)}>
-                  <em>{correctionWhere(c)}</em>
+                  <i className="aq-fix-no" aria-hidden="true">{i + 1}</i>
+                  <em>{correctionWhere(c)}{c.step === step && <small className="aq-fix-here">이 단계</small>}</em>
                   <span>{c.message}</span>
-                  <b aria-hidden="true">{c.step === step ? '입력칸 보기' : '이동'} <Glyph name="chevron-right" size={14} /></b>
+                  <b aria-label={c.step === step ? '입력칸 보기' : '이동'}><Glyph name="chevron-right" size={16} /></b>
                 </button>
               </li>
             ))}
-          </ul>}
+          </ol>}
         </section>
       )}
 
