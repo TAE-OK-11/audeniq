@@ -362,7 +362,6 @@
     "file": "savings.svg",
     "source": "https://github.com/flxh4894/korea_bank_icons/blob/main/assets/icons/050.svg",
     "provider": "korea_bank_icons 1.0.0 (MIT)",
-    "note": "Background-free variant: original SB badge glyph paths in the federation green #019657 with the green tile removed; viewBox cropped to the glyph.",
-    "format": "vector-svg"
+    "note": "Original Savings Bank federation badge paths in their green-background reverse variant; outer presentation disc removed. Common transfer institution code is 050 (https://docs.tosspayments.com/codes/org-codes)."
   }
 }
