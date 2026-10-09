@@ -4,7 +4,11 @@
 
 Studio의 계좌 선택은 은행 24개(목록 마지막에 통합 저축은행 1개)·증권사 30개를 보여 준다. 저축은행 개별 목록과 별도 탭은 사용하지 않는다. 기존 등록 정보의 개별 기관명도 렌더링하도록 84개 금융기관 이름을 연결한다. 금융기관은 `web/studio/app/public/static/banks/`의 실제 로고 파일을 사용한다. 기관 이름과 파일 연결은 `src/lib/bankSymbols.ts`, 렌더링은 `components/BankLogo.tsx`에서 관리한다. 기존 카드 배치·기관명·선택 동작은 유지하고, 로고만 원래 비율과 색으로 보여 준다. 카카오뱅크와 카카오페이증권은 서로 다른 심볼을 사용한다.
 
-SVG를 우선 사용한다. 공식 사이트가 비트맵만 제공하는 경우 PNG 또는 원본 비트맵을 포함한 SVG를 사용한다. 일부 과거 저축은행 등록명에 사용되는 공식 favicon은 16–32px이며 고해상도에서 선명도가 제한될 수 있다. 출처와 변환 내역은 [BANK_SYMBOL_SOURCES.json](BANK_SYMBOL_SOURCES.json)에 기록했다. 공식 CI·사이트 외에도 Toss의 공개 금융기관 에셋, CompaniesLogo, MIT 라이선스의 `korea_bank_icons`를 사용한다. 해당 패키지의 저작권 고지는 [라이선스 파일](licenses/korea-bank-icons-MIT.txt)에 있다. 상표 권리는 각 기관에 있다.
+실제 벡터 SVG를 우선 사용한다. 현재 선택 화면의 54개 항목 중 50개는 `<image>`를 포함하지 않는 벡터 SVG를 사용한다. 우리·산업은행·새마을금고·DB·유안타·흥국의 기존 비트맵 포함 SVG는 공식 CI 또는 원본 벡터 리소스의 path·gradient로 교체했다. iM·광주도 실제 벡터 SVG다.
+
+토스뱅크·토스증권은 공식 3D 로고의 1610×1493px 원본을 무손실 WebP로 변환해 사용한다. 공식 AI 파일에도 해당 심볼은 비트맵으로 포함되어 있다. 다올·상상인은 동일한 심볼의 공개 벡터 원본을 확보하지 못해 PNG를 유지한다. 과거에 등록한 개별 저축은행 이름의 일부 로고도 PNG 또는 비트맵 포함 SVG이며, 이를 벡터 SVG로 분류하지 않는다. 개별 저축은행 favicon 중 일부는 16–32px라 고해상도에서 선명도가 제한될 수 있다.
+
+출처와 변환 내역은 [BANK_SYMBOL_SOURCES.json](BANK_SYMBOL_SOURCES.json)에 기록했다. 공식 CI·사이트 외에도 Toss의 공개 금융기관 에셋, SemoLogo, CompaniesLogo, MIT 라이선스의 `korea_bank_icons`를 사용한다. 해당 패키지의 저작권 고지는 [라이선스 파일](licenses/korea-bank-icons-MIT.txt)에 있다. 상표 권리는 각 기관에 있다.
 
 새 기관은 `public/static/banks/`에 파일을 넣고 `bankSymbols.ts`에 이름을 연결하며 출처 기록을 추가한다. 이름이 없거나 파일을 불러오지 못하면 중립적인 금융기관 아이콘을 표시한다. 글자 이니셜을 로고로 만들지 않는다.
 
