@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from '../lib/router';
 import { useAuth } from '../api/auth';
 import { useProfile } from '../store/profile';
 import { useUnreadCount } from '../store/support';
+import { isPaymentRegistered, usePayment } from '../store/payment';
 import { useConfirm } from './Confirm';
 import { useToast } from './Toast';
 import { LIVE_NOTICE_EVENT } from '../lib/liveEvents';
@@ -34,7 +35,6 @@ const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
     group: '내 작업실',
     items: [
       { to: '/', label: '홈', desc: '오늘 할 일 · 요약', icon: 'home', tone: 'blue' },
-      { to: '/upload', label: '새로운 발매', desc: '음원 · 커버 등록', icon: 'plus', tone: 'blue' },
       { to: '/releases', label: '발매·곡 관리', desc: '발매 목록 · 곡 정보', icon: 'disc', tone: 'violet' },
       { to: '/reports', label: '음악 리포트', desc: '재생 · 수익 분석', icon: 'chart', tone: 'blue' },
       { to: '/settlement', label: '정산·지급', desc: '정산 내역 · 지급 요청', icon: 'won', tone: 'green' },
@@ -72,6 +72,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const profile = useProfile();
   const unread = useUnreadCount();
+  const payment = usePayment();
   const [menuOpen, setMenuOpen] = useState(false);
   // 실시간으로 들어온 새 알림 — 화면을 보고 있으면 토스트로, 누르면 해당 화면으로
   useEffect(() => {
@@ -215,20 +216,30 @@ export function Layout({ children }: { children: ReactNode }) {
           aria-label="아티스트 포털 전체 메뉴"
           hidden={!navVisible}
         >
-          {/* 내 계정 — 활동명·이메일을 맨 위에 두고 누르면 계정 정보로 */}
-          <button
-            type="button"
-            className={`aq-nav-me${isActive(loc.pathname, '/profile') ? ' is-active' : ''}`}
-            onClick={() => go('/profile')}
-            onPointerEnter={() => prefetchRoute('/profile')}
-          >
-            <span className="aq-nav-me-avatar" aria-hidden="true">{initial}</span>
-            <span className="aq-nav-me-text">
-              <strong>{profile.name || '활동명을 입력해 주세요'}</strong>
-              <small>{user?.email ?? 'AUDENIQ STUDIO'}</small>
-            </span>
-            <Glyph name="chevron-right" size={18} className="aq-nav-me-chev" />
-          </button>
+          {/* 내 계정 — 계정 정보 페이지와 같은 아바타, 정산 계좌가 없으면 알림 줄, 가장 자주 하는 '새 발매'는 큰 버튼 */}
+          <div className={`aq-nav-me${isActive(loc.pathname, '/profile') ? ' is-active' : ''}`}>
+            <button type="button" className="aq-nav-me-row" onClick={() => go('/profile')} onPointerEnter={() => prefetchRoute('/profile')}>
+              <i className="ui-avatar aq-profile-avatar aq-nav-me-avatar" aria-hidden="true">{initial}</i>
+              <i className="aq-nav-me-text">
+                <strong>{profile.name || '활동명을 입력해 주세요'}</strong>
+                <small>{user?.email ?? 'AUDENIQ STUDIO'}</small>
+              </i>
+              <Glyph name="chevron-right" size={18} className="aq-nav-me-chev" />
+            </button>
+            {!isPaymentRegistered(payment) && (
+              <button type="button" className="aq-nav-me-alert" onClick={() => go('/profile')}>
+                <Glyph name="won" size={15} />
+                <i>수익을 받을 정산 계좌를 등록해 주세요</i>
+                <Glyph name="chevron-right" size={14} />
+              </button>
+            )}
+            <button
+              type="button" className={`aq-nav-cta${isActive(loc.pathname, '/upload') ? ' is-current' : ''}`}
+              onClick={() => go('/upload')} onPointerEnter={() => prefetchRoute('/upload')}
+            >
+              <Glyph name="plus" size={17} /> 새 발매 등록하기
+            </button>
+          </div>
           {NAV_GROUPS.map(g => (
             <div key={g.group} className="aq-nav-card">
               <div className="nav-group">{g.group}</div>
