@@ -16,13 +16,13 @@ import { requestPortalRefresh } from '../store/portalSync';
 
 // 은행: IBK기업은행 우선, 이후 총자산 순 → 상호금융·저축은행 → 전북·광주·제주은행
 // 증권사: 별도 자기자본 순(2025년 말 공시, 11~13위는 2026년 6월 말)
-const FINANCIAL_INSTITUTIONS: Record<string, { label: string; note: string; items: string[] }> = {
+const FINANCIAL_INSTITUTIONS: Record<string, { label: string; items: string[] }> = {
   bank: {
-    label: '은행', note: '은행·인터넷은행·특수은행·상호금융·저축은행',
+    label: '은행',
     items: ['IBK기업은행','KB국민은행','신한은행','하나은행','우리은행','NH농협은행','KDB산업은행','SC제일은행','부산은행','카카오뱅크','iM뱅크','수협은행','경남은행','한국씨티은행','토스뱅크','케이뱅크','새마을금고','신협','우체국','산림조합','저축은행','전북은행','광주은행','제주은행'],
   },
   securities: {
-    label: '증권사', note: '주요 증권사를 자기자본 순으로 정리했어요.',
+    label: '증권사',
     items: ['한국투자증권','미래에셋증권','NH투자증권','삼성증권','메리츠증권','KB증권','하나증권','키움증권','신한투자증권','대신증권','한화투자증권','교보증권','우리투자증권','신영증권','유안타증권','DB증권','iM증권','유진투자증권','현대차증권','LS증권','IBK투자증권','토스증권','BNK투자증권','다올투자증권','카카오페이증권','SK증권','부국증권','케이프투자증권','흥국증권','상상인증권'],
   },
 };
@@ -273,7 +273,6 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
                   </button>
                 ))}
               </div>
-              <p className="aq-bank-category-note">{cat.note}</p>
               <div className="aq-bank-search">
                 <input
                   id="aqBankSearch" type="search"
