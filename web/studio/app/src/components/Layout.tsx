@@ -55,17 +55,6 @@ const NAV_GROUPS: { group: string; items: { to: string; label: string }[] }[] = 
   },
 ];
 
-/** 넓은 화면 헤더에 바로 보이는 주요 메뉴 (전체 메뉴는 ☰에) */
-const TOP_NAV: { to: string; label: string }[] = [
-  { to: '/', label: '홈' },
-  { to: '/releases', label: '발매·곡' },
-  { to: '/reports', label: '리포트' },
-  { to: '/settlement', label: '정산·지급' },
-  { to: '/contracts', label: '계약서' },
-  { to: '/rights', label: '권리 서류' },
-  { to: '/inquiries', label: '문의' },
-];
-
 const isActive = (pathname: string, to: string) =>
   to === '/' ? pathname === '/' : pathname === to || pathname.startsWith(to + '/');
 
@@ -183,11 +172,6 @@ export function Layout({ children }: { children: ReactNode }) {
             <img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" />
             <span className="workspace-label ui-product">STUDIO</span>
           </Link>
-          <nav className="portal-topnav" aria-label="주요 메뉴">
-            {TOP_NAV.map(it => (
-              <Link key={it.to} to={it.to} className={isActive(loc.pathname, it.to) ? 'is-active' : undefined} aria-current={isActive(loc.pathname, it.to) ? 'page' : undefined}>{it.label}</Link>
-            ))}
-          </nav>
           <div className="header-right">
             <button
               type="button"

@@ -511,16 +511,6 @@ summary::-webkit-details-marker{display:none}
 :is(.aq-sign-privacy,.adm-terms-body)[open]>summary::before{transform:rotate(90deg)}
 .ui-avatar.is-empty{background:var(--aq-gray-100);color:var(--aq-text-4)}
 
-/* ---------- 스튜디오 헤더 주요 메뉴 — 넓은 화면에서만 (좁은 화면은 ☰) ---------- */
-.portal-topnav{display:none}
-@media (min-width:1100px){
-  .portal-topnav{display:flex;align-items:center;gap:2px;margin:0 auto 0 28px;min-width:0}
-  .portal-topnav a{display:inline-flex;align-items:center;height:var(--aq-h-sm);padding:0 13px;border-radius:var(--aq-r-ctl-sm);color:var(--aq-text-3);font-size:var(--aq-fs-base);font-weight:var(--aq-fw-bold);white-space:nowrap;transition:background-color var(--aq-dur) var(--aq-ease),color var(--aq-dur) var(--aq-ease)}
-  .portal-topnav a:hover{background:var(--aq-surface);color:var(--aq-text)}
-  .portal-topnav a.is-active{background:var(--aq-primary-soft);color:var(--aq-primary)}
-  .portal-topnav a:focus-visible{outline:var(--aq-focus);outline-offset:2px}
-}
-
 /* 리포트 기간·발매 고르기 — 짧은 내용이라 넓은 화면에서 끝까지 늘이지 않는다 */
 @media (min-width:761px){.report-tools>select{flex:0 1 260px!important;max-width:260px!important}}
 /* 한글 라벨은 영문 대문자처럼 글자 사이를 벌리지 않는다 */
