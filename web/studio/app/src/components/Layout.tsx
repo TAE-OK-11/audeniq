@@ -3,6 +3,11 @@ import { Link, useLocation, useNavigate } from '../lib/router';
 import { useAuth } from '../api/auth';
 import { useProfile } from '../store/profile';
 import { useUnreadCount } from '../store/support';
+import { isPaymentRegistered, usePayment } from '../store/payment';
+import { useDocs } from '../store/docs';
+import { api } from '../api/client';
+import { Badge } from '../ui';
+import type { Tone } from '../ui/tone';
 import { useConfirm } from './Confirm';
 import { useToast } from './Toast';
 import { LIVE_NOTICE_EVENT } from '../lib/liveEvents';
@@ -34,7 +39,6 @@ const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
     group: '내 작업실',
     items: [
       { to: '/', label: '홈', desc: '오늘 할 일 · 요약', icon: 'home', tone: 'blue' },
-      { to: '/upload', label: '새로운 발매', desc: '음원 · 커버 등록', icon: 'plus', tone: 'blue' },
       { to: '/releases', label: '발매·곡 관리', desc: '발매 목록 · 곡 정보', icon: 'disc', tone: 'violet' },
       { to: '/reports', label: '음악 리포트', desc: '재생 · 수익 분석', icon: 'chart', tone: 'blue' },
       { to: '/settlement', label: '정산·지급', desc: '정산 내역 · 지급 요청', icon: 'won', tone: 'green' },
@@ -72,7 +76,19 @@ export function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const profile = useProfile();
   const unread = useUnreadCount();
+  const payment = usePayment();
+  const docs = useDocs();
+  // 메뉴를 열 때만 발매 목록을 한 번 불러와 '보완·작성 중' 개수를 메뉴에 보여 준다
+  const [relCounts, setRelCounts] = useState<{ needs: number; drafts: number } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => {
+    if (!menuOpen) return;
+    let alive = true;
+    api.listReleases()
+      .then(rs => { if (alive) setRelCounts({ needs: rs.filter(r => r.status === 'needs').length, drafts: rs.filter(r => r.status === 'draft').length }); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [menuOpen]);
   // 실시간으로 들어온 새 알림 — 화면을 보고 있으면 토스트로, 누르면 해당 화면으로
   useEffect(() => {
     const on = (e: Event) => {
@@ -162,6 +178,16 @@ export function Layout({ children }: { children: ReactNode }) {
     nav('/login', { replace: true });
   };
 
+  // 메뉴마다 지금 처리할 일 — 대시보드 '확인할 작업'과 같은 기준, AUDENIQ 상태 색(보완=주황, 서명=파랑, 작성 중=회색)
+  const toSign = docs.filter(d => d.kind === 'agreements' && d.reviewStatus === 'approved' && !d.localSignatureAt).length;
+  const docFix = docs.filter(d => d.kind === 'rights' && d.reviewStatus === 'needs').length;
+  const docNeeded = docs.filter(d => d.kind === 'rights' && !['review', 'prepared', 'approved'].includes(d.reviewStatus)).length;
+  const navStatus: Record<string, { tone: Tone; text: string } | undefined> = {
+    '/releases': relCounts?.needs ? { tone: 'amber', text: `보완 ${relCounts.needs}` }
+      : relCounts?.drafts ? { tone: 'gray', text: `작성 중 ${relCounts.drafts}` } : undefined,
+    '/contracts': toSign ? { tone: 'blue', text: `서명 ${toSign}` } : undefined,
+    '/rights': docFix ? { tone: 'amber', text: `보완 ${docFix}` } : docNeeded ? { tone: 'blue', text: `제출 ${docNeeded}` } : undefined,
+  };
   const initial = (profile.name || user?.email || 'A').slice(0, 1).toUpperCase();
   const navVisible = menuOpen || menuClosing;
 
@@ -215,6 +241,30 @@ export function Layout({ children }: { children: ReactNode }) {
           aria-label="아티스트 포털 전체 메뉴"
           hidden={!navVisible}
         >
+          {/* 내 계정 — 계정 정보 페이지와 같은 아바타, 정산 계좌가 없으면 알림 줄, 가장 자주 하는 '새 발매'는 큰 버튼 */}
+          <div className={`aq-nav-me${isActive(loc.pathname, '/profile') ? ' is-active' : ''}`}>
+            <button type="button" className="aq-nav-me-row" onClick={() => go('/profile')} onPointerEnter={() => prefetchRoute('/profile')}>
+              <i className="ui-avatar aq-profile-avatar aq-nav-me-avatar" aria-hidden="true">{initial}</i>
+              <i className="aq-nav-me-text">
+                <strong>{profile.name || '활동명을 입력해 주세요'}</strong>
+                <small>{user?.email ?? 'AUDENIQ STUDIO'}</small>
+              </i>
+              <Glyph name="chevron-right" size={18} className="aq-nav-me-chev" />
+            </button>
+            {!isPaymentRegistered(payment) && (
+              <button type="button" className="aq-nav-me-alert" onClick={() => go('/profile')}>
+                <Glyph name="won" size={15} />
+                <i>수익을 받을 정산 계좌를 등록해 주세요</i>
+                <Glyph name="chevron-right" size={14} />
+              </button>
+            )}
+            <button
+              type="button" className={`aq-nav-cta${isActive(loc.pathname, '/upload') ? ' is-current' : ''}`}
+              onClick={() => go('/upload')} onPointerEnter={() => prefetchRoute('/upload')}
+            >
+              <Glyph name="plus" size={17} /> 새 발매 등록하기
+            </button>
+          </div>
           {NAV_GROUPS.map(g => (
             <div key={g.group} className="aq-nav-card">
               <div className="nav-group">{g.group}</div>
@@ -235,19 +285,20 @@ export function Layout({ children }: { children: ReactNode }) {
                       {item.label}
                       {item.to === '/notifications' && unread > 0 && <b className="aq-nav-count">{unread}</b>}
                     </em>
-                    <small className="aq-nav-desc">{item.desc}</small>
+                    {navStatus[item.to]
+                      ? <Badge tone={navStatus[item.to]!.tone} className="aq-nav-status">{navStatus[item.to]!.text}</Badge>
+                      : <small className="aq-nav-desc">{item.desc}</small>}
                   </button>
                 );
               })}
             </div>
           ))}
           <div className="nav-foot aq-nav-foot">
-            <span className="aq-nav-account">{user?.email ?? 'AUDENIQ / STUDIO'}</span>
+            <div className="aq-nav-legal">
+              <button type="button" onClick={() => go('/terms')}>이용약관</button>
+              <button type="button" onClick={() => go('/terms/settlement')}>정산 약관</button>
+            </div>
             <button type="button" className="aq-logout" onClick={doLogout}>로그아웃</button>
-          </div>
-          <div className="aq-nav-legal">
-            <button type="button" onClick={() => go('/terms')}>이용약관</button>
-            <button type="button" onClick={() => go('/terms/settlement')}>정산 약관</button>
           </div>
         </nav>
       </header>
