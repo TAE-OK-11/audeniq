@@ -202,6 +202,36 @@ export function ReleaseDetail() {
     }
   };
 
+  // 발매 카드 버튼 — 넓은 화면은 카드 오른쪽 안, 휴대폰은 카드 아래 한 줄 (같은 버튼을 두 자리에)
+  const actionButtons = (
+    <>
+      {(d?.application || !isDraft) && (
+        <button type="button" className="ui-btn is-soft" onClick={() => nav(`/releases/${encodeURIComponent(rel.id)}/application`)}>
+          신청서 보기
+        </button>
+      )}
+      {/* 보완하기는 아래 보완 카드 안에 */}
+      {rel.status !== 'closed' && !rejected && !needsFix && (
+        <button
+          type="button" className={`ui-btn ${isDraft ? 'is-primary' : 'is-soft'}`}
+          onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}
+        >
+          {editLabel}
+        </button>
+      )}
+      {canWithdraw && (
+        <button type="button" className="ui-btn is-danger aq-withdraw-btn" onClick={handleWithdraw} disabled={withdrawing}>
+          {withdrawing ? '취소하는 중' : '신청 취소'}
+        </button>
+      )}
+      {isDraft && (
+        <button type="button" className="ui-btn is-danger" onClick={handleDelete} disabled={deleting}>
+          {deleting ? '삭제 중' : '삭제'}
+        </button>
+      )}
+    </>
+  );
+
   return (
     <div id="view-release" className="view">
       <div className="spaced-actions">
@@ -226,34 +256,10 @@ export function ReleaseDetail() {
             </div>
           )}
         </div>
+        <div className="aq-detail-actions is-wide">{actionButtons}</div>
       </div>
 
-      <div className="row-actions aq-detail-actions">
-        {(d?.application || !isDraft) && (
-          <button type="button" className="ui-btn is-soft" onClick={() => nav(`/releases/${encodeURIComponent(rel.id)}/application`)}>
-            신청서 보기
-          </button>
-        )}
-        {/* 보완하기는 아래 보완 카드 안에 */}
-        {rel.status !== 'closed' && !rejected && !needsFix && (
-          <button
-            type="button" className={`ui-btn ${isDraft ? 'is-primary' : 'is-soft'}`}
-            onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}
-          >
-            {editLabel}
-          </button>
-        )}
-        {canWithdraw && (
-          <button type="button" className="ui-btn is-danger aq-withdraw-btn" onClick={handleWithdraw} disabled={withdrawing}>
-            {withdrawing ? '취소하는 중' : '신청 취소'}
-          </button>
-        )}
-        {isDraft && (
-          <button type="button" className="ui-btn is-danger" onClick={handleDelete} disabled={deleting}>
-            {deleting ? '삭제 중' : '삭제'}
-          </button>
-        )}
-      </div>
+      <div className="row-actions aq-detail-actions is-narrow">{actionButtons}</div>
 
       {!settledLive && (
         <section className={`aq-stage${stageTone ? ` ${stageTone}` : ''}`} aria-label="발매 진행 단계">

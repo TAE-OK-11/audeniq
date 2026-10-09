@@ -701,3 +701,15 @@ summary::-webkit-details-marker{display:none}
 .aq-report-card .aq-report-empty{grid-column:1/-1;display:flex;align-items:center;gap:14px;padding:16px;border-radius:var(--aq-r-lg);background:#fff}
 .aq-report-empty strong{display:block;font-size:var(--aq-fs-lg);font-weight:var(--aq-fw-bold);color:var(--aq-text)}
 .aq-report-empty small{display:block;margin-top:3px;font-size:var(--aq-fs-sm);line-height:1.55;color:var(--aq-text-4)}
+/* 발매 상세 버튼 — 넓은 화면(태블릿·PC)은 발매 카드 오른쪽 안에 세로 가운데로, 휴대폰은 카드 아래 한 줄 */
+.aq-detail-actions.is-wide{display:none}
+@media (min-width:761px){
+  #view-release .aq-detail-hero{grid-template-columns:118px minmax(0,1fr) auto;align-items:center}
+  .aq-detail-actions.is-narrow{display:none!important}
+  .aq-detail-actions.is-wide{display:flex;flex-direction:column;align-items:stretch;gap:8px;margin:0;min-width:148px}
+  .aq-detail-actions.is-wide:empty{display:none}
+  #view-release .aq-detail-top{justify-content:flex-start;gap:10px}
+  .aq-detail-actions.is-wide .ui-btn{--btn-h:var(--aq-h-md);--btn-r:var(--aq-r-ctl-md);--btn-px:22px;--btn-fs:var(--aq-fs-md);width:100%}
+  .aq-detail-actions.is-wide .ui-btn.is-soft{--btn-bg:#fff;--btn-bg-hover:var(--aq-blue-100)}
+  .aq-detail-actions.is-wide .ui-btn.is-danger{--btn-bg:transparent;--btn-bg-hover:var(--aq-red-50)}
+}
