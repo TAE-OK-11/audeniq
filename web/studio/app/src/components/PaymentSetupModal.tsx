@@ -414,26 +414,23 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
                 <circle className="aq-success-ring" cx="44" cy="44" r="40" />
                 <path className="aq-success-tick" d="M27 45.5 39.5 58 62 33" />
               </svg>
-              <p className="eyebrow">등록 완료</p>
-              <h1>수익을 받을 계좌가<br />등록됐어요.</h1>
-              <p className="aq-pay-success-sub">정산이 확정되면 이 계좌로 수익을 받을 수 있어요.</p>
+              <h1>정산 계좌를<br />등록했어요</h1>
+              <p className="aq-pay-success-sub">정산이 확정되면 이 계좌로 수익을 보내 드려요.</p>
               <div className="aq-pay-receipt">
                 <div className="aq-pay-receipt-head">
                   <BankLogo name={draft.bank} />
                   <div className="min-0">
-                    <strong>{draft.bank}</strong>
-                    <small>수익 정산 계좌</small>
+                    <small>{draft.bank}</small>
+                    <strong>•••• {draft.last4}</strong>
                   </div>
-                  <span className="aq-pay-receipt-badge">등록 완료</span>
                 </div>
                 <dl>
-                  <div><dt>계좌번호</dt><dd>•••• •••• {draft.last4}</dd></div>
                   <div><dt>예금주</dt><dd>{draft.recipient}</dd></div>
                   <div><dt>수령 유형</dt><dd>{TYPE_LABEL[draft.type]}</dd></div>
                   <div><dt>등록 일시</dt><dd>{registeredAt}</dd></div>
                 </dl>
               </div>
-              <p className="aq-pay-success-note">계좌번호는 뒤 4자리만 화면에 표시돼요. 계좌를 바꾸려면 정산·지급 또는 아티스트 정보에서 변경할 수 있어요.</p>
+              <p className="aq-pay-success-note">계좌는 정산·지급이나 아티스트 정보에서 언제든 바꿀 수 있어요.</p>
             </div>
           )}
         </main>
