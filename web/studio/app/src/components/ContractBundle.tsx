@@ -64,7 +64,7 @@ export function ContractBundle({ releaseId, releaseTitle, agreement, hasApplicat
             <span>{hasApplication ? '접수할 때 서명 완료' : '발매를 접수할 때 서명해요'}</span>
           </div>
           {hasApplication && (
-            <button type="button" className="ui-btn is-white is-sm" onClick={() => nav(`/releases/${encodeURIComponent(releaseId)}/application`)}>
+            <button type="button" className="ui-btn is-soft is-sm" onClick={() => nav(`/releases/${encodeURIComponent(releaseId)}/application`)}>
               신청서 보기
             </button>
           )}
@@ -80,7 +80,7 @@ export function ContractBundle({ releaseId, releaseTitle, agreement, hasApplicat
               : '신청서를 접수하면 준비돼요'}</span>
           </div>
           {canOpen && (
-            <button type="button" className={stage === 'to-sign' ? 'ui-btn is-primary aq-bundle-sign' : 'ui-btn is-white is-sm'} onClick={() => (stage === 'signed' ? nav(`/contracts/${encodeURIComponent(agreement!.id)}`) : onOpenAgreement(agreement!.id))}>
+            <button type="button" className={stage === 'to-sign' ? 'ui-btn is-primary aq-bundle-sign' : 'ui-btn is-soft is-sm'} onClick={() => (stage === 'signed' ? nav(`/contracts/${encodeURIComponent(agreement!.id)}`) : onOpenAgreement(agreement!.id))}>
               {stage === 'to-sign' ? '확인하고 서명' : '계약서 최종본'}
             </button>
           )}

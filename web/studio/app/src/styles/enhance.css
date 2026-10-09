@@ -444,8 +444,6 @@ body:has(.aq-payout-setup-mode) .aq-toast-stack{bottom:calc(104px + env(safe-are
 /* ==========================================================================
    입력창 포커스 효과 제거 — 흰색으로 바뀌며 떠오르는 그림자 없이, 면 색만 살짝 진해짐
    ========================================================================== */
-:is(#root,#modal) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea):is(:focus,:focus-visible),
-
 /* 날짜·월 입력: iOS 기본 최소 너비 때문에 칸이 화면 밖으로 넘치던 문제 */
 :is(#root,#modal) input:is([type=date],[type=month],[type=time],[type=datetime-local]){
   -webkit-appearance:none;appearance:none;display:block;width:100%!important;min-width:0!important;max-width:100%!important;

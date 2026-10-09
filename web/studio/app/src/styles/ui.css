@@ -684,3 +684,7 @@ summary::-webkit-details-marker{display:none}
 .aq-picker.is-pop .aq-dt>.aq-cal-foot{grid-column:1/-1}
 /* 선택 목록은 휴대폰에서도 칸 아래 작은 창 — 손가락으로 누르기 좋게 줄 높이만 조금 크게 */
 @media (pointer:coarse){.aq-picker.is-pop .aq-picker-opt{min-height:48px;font-size:var(--aq-fs-lg)}}
+/* 기본(색 없는) 안내 상자가 옅은 파랑 카드 위에 놓이면 바탕이 같아 안 보이므로 흰 바탕으로 */
+:is(.ui-card,.ui-box,.aq-sign-card,.aq-stage,.aq-bundle,.aq-set-card,.aq-detail-hero) .ui-callout:not(.is-warn):not(.is-danger):not(.is-success):not(.is-neutral):not(.is-blue):not(.is-violet):not(.is-amber):not(.is-green):not(.is-red):not(.is-gray){--tone-bg:#fff}
+/* 흰 버튼이 흰 바탕(작은 창·모달·흰 줄) 위에 놓이면 글자만 떠 보이므로 옅은 회색 면으로 */
+:is(.aq-picker-box,.modal-inner,.aq-bundle-docs li,:where(.ui-card .ui-list:not(.is-inset))>.ui-row) .ui-btn.is-white{--btn-bg:var(--aq-gray-50);--btn-bg-hover:var(--aq-gray-75)}

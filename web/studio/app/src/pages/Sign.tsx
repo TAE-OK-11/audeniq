@@ -171,7 +171,7 @@ export function Sign() {
             <p className="aq-sign-ok"><span className="aq-check-badge is-sm"><CheckIcon size={10} /></span>
               {v.identity?.name}님 본인확인 완료 · {when(v.identity?.verified_at)}</p>
           ) : !v.identity_provider.ready ? (
-            <div className="ui-callout">
+            <div className="ui-callout is-warn">
               본인확인 서비스(휴대폰·간편인증)를 연결하고 있어요. 연결되기 전에는 법적 효력이 있는 전자 서명을 할 수 없어요.
               급하면 서면 허락서에 서명해 요청한 분께 전달해 주세요.
             </div>
