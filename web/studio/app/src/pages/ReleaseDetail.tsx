@@ -15,6 +15,9 @@ import { fixPath, splitCorrections } from '../lib/corrections';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
 import { ContractBundle } from '../components/ContractBundle';
+
+/** 아직 없는 값 — 실제 값처럼 진하게 보이지 않도록 흐리게 */
+const Empty = ({ children }: { children: string }) => <span className="aq-empty-val">{children}</span>;
 import { Badge, Tabs } from '../ui';
 
 // 플랫폼별 배급 진행 단계 (서버 delivery_staging 기준)
@@ -326,13 +329,13 @@ export function ReleaseDetail() {
             <div>
               <h2 className="subhead">발매 정보</h2>
               <dl className="ui-kv is-2">
-                <div><dt>아티스트</dt><dd>{rel.artist || '미입력'}</dd></div>
-                <div><dt>발매 유형</dt><dd>{kindLabel(d?.type) || '미입력'}</dd></div>
-                <div><dt>주요 언어</dt><dd>{languageLabel(d?.language) || '미입력'}</dd></div>
-                <div><dt>발매 예정일</dt><dd>{rel.release_date || '미정'}</dd></div>
-                <div><dt>UPC / EAN</dt><dd>{d?.upc || '등록 전'}</dd></div>
-                <div><dt>장르</dt><dd>{genre || '미입력'}</dd></div>
-                <div><dt>레이블</dt><dd>{d?.label || '미입력'}</dd></div>
+                <div><dt>아티스트</dt><dd>{rel.artist || <Empty>미입력</Empty>}</dd></div>
+                <div><dt>발매 유형</dt><dd>{kindLabel(d?.type) || <Empty>미입력</Empty>}</dd></div>
+                <div><dt>주요 언어</dt><dd>{languageLabel(d?.language) || <Empty>미입력</Empty>}</dd></div>
+                <div><dt>발매 예정일</dt><dd>{rel.release_date || <Empty>미정</Empty>}</dd></div>
+                <div><dt>UPC / EAN</dt><dd>{d?.upc || <Empty>등록 전</Empty>}</dd></div>
+                <div><dt>장르</dt><dd>{genre || <Empty>미입력</Empty>}</dd></div>
+                <div><dt>레이블</dt><dd>{d?.label || <Empty>미입력</Empty>}</dd></div>
               </dl>
               <h2 className="subhead">앨범 소개</h2>
               <p className="muted small break">{d?.notes || '등록된 소개가 없어요.'}</p>
@@ -402,7 +405,7 @@ export function ReleaseDetail() {
               <h2 className="subhead">배급 설정</h2>
               <dl className="ui-kv is-2">
                 <div><dt>희망 배급 지역</dt><dd>{d?.territories?.includes('WORLD') ? '전 세계' : '지정 안 함'}</dd></div>
-                <div><dt>발매 예정일</dt><dd>{rel.release_date || '미정'}</dd></div>
+                <div><dt>발매 예정일</dt><dd>{rel.release_date || <Empty>미정</Empty>}</dd></div>
                 {d?.originalDate && <div><dt>최초 발매일</dt><dd>{d.originalDate}</dd></div>}
               </dl>
               <div className="tag-row">

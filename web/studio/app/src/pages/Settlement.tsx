@@ -218,11 +218,11 @@ export function Settlement() {
                   <span className="aq-statement-icon" aria-hidden="true"><Glyph name="krw" size={17} /></span>
                   <div className="min-0">
                     <span className="ui-row-title">{s.period} · {s.platform}</span>
-                    <span className="ui-row-meta">{s.note || (MOCK ? '수기 등록 정산 내역' : '플랫폼 정산')} · {niceDate(s.created)}</span>
+                    <span className="ui-row-meta"><span>{s.note || (MOCK ? '수기 등록 정산 내역' : '플랫폼 정산')}</span><span>{niceDate(s.created)}</span></span>
                   </div>
                   <div className="aq-statement-end">
                     <strong><Money value={s.amount} /></strong>
-                    {MOCK && <button type="button" className="ui-btn is-white is-sm" aria-label="정산 내역 삭제" onClick={() => deleteStatement(s.id)}><Glyph name="close" size={14} /></button>}
+                    {MOCK && <button type="button" className="ui-btn is-ghost is-sm is-icon" aria-label="정산 내역 삭제" onClick={() => deleteStatement(s.id)}><Glyph name="close" size={14} /></button>}
                   </div>
                 </div>
               ))}
@@ -246,7 +246,7 @@ export function Settlement() {
                   <span className="aq-statement-icon" aria-hidden="true"><Glyph name="arrow-up-right" size={17} /></span>
                   <div className="min-0">
                     <span className="ui-row-title"><Money value={p.amount} /> · 지급 요청</span>
-                    <span className="ui-row-meta">{niceDate(p.created)} · {p.note || (MOCK ? '현재 작업 공간에만 기록됨' : '등록한 계좌로 지급')}</span>
+                    <span className="ui-row-meta"><span>{niceDate(p.created)}</span><span>{p.note || (MOCK ? '현재 작업 공간에만 기록됨' : '등록한 계좌로 지급')}</span></span>
                   </div>
                   <div className="aq-statement-end">
                     <Badge tone={PAYOUT_STATUS[p.status]?.[1] ?? 'violet'}>{PAYOUT_STATUS[p.status]?.[0] ?? p.status}</Badge>

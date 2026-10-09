@@ -268,6 +268,8 @@
 @media (max-width:900px){
   .adm-chat{grid-template-columns:minmax(0,1fr);height:calc(100vh - 220px)}
   .adm-chat.has-channel .adm-chat-side{display:none}
+  .adm-chat:not(.has-channel){height:auto;min-height:0}
+  .adm-chat:not(.has-channel) .adm-chat-side .ui-btn.is-text{margin-top:6px}
   .adm-chat:not(.has-channel) .adm-chat-main{display:none}
   .adm-chat-back{display:inline-flex}
   .adm-chat-msg-body{padding-left:0}

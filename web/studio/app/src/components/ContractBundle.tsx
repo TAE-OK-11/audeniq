@@ -51,7 +51,7 @@ export function ContractBundle({ releaseId, releaseTitle, agreement, hasApplicat
       )}
       <ol className="aq-bundle-docs">
         <li className={hasApplication ? 'is-done' : ''}>
-          <span className="aq-bundle-no" aria-hidden="true">{hasApplication ? <CheckIcon size={12} /> : 1}</span>
+          <span className="aq-bundle-no" aria-hidden="true">{hasApplication ? <CheckIcon size={14} /> : 1}</span>
           <div className="min-0">
             <strong>배급 신청서</strong>
             <span>{hasApplication ? '접수할 때 서명 완료' : '발매를 접수할 때 서명해요'}</span>
@@ -63,7 +63,7 @@ export function ContractBundle({ releaseId, releaseTitle, agreement, hasApplicat
           )}
         </li>
         <li className={stage === 'signed' ? 'is-done' : stage === 'to-sign' ? 'is-current' : ''}>
-          <span className="aq-bundle-no" aria-hidden="true">{stage === 'signed' ? <CheckIcon size={12} /> : stage === 'to-sign' ? <Glyph name="pencil" size={12} /> : 2}</span>
+          <span className="aq-bundle-no" aria-hidden="true">{stage === 'signed' ? <CheckIcon size={14} /> : stage === 'to-sign' ? <Glyph name="pencil" size={15} /> : 2}</span>
           <div className="min-0">
             <strong>배급 계약서</strong>
             <span>{agreement

@@ -193,7 +193,7 @@
 .ui-chip:focus-visible{outline:var(--aq-focus);outline-offset:2px}
 .ui-chip:is([aria-pressed=true],.is-on){background:var(--aq-primary);color:#fff}
 .ui-chip.is-danger:is([aria-pressed=true],.is-on){background:var(--aq-red-100);color:var(--aq-red-600)}
-.ui-chip-count,.ui-chip>small{margin:0;font-size:11.5px;font-weight:750;opacity:.75;font-variant-numeric:tabular-nums}
+.ui-chip-count,.ui-chip>small{margin:0;color:inherit;font-size:11.5px;font-weight:750;opacity:.75;font-variant-numeric:tabular-nums}
 .ui-chip.is-sm{min-height:var(--aq-h-xs);padding:0 11px;border-radius:var(--aq-r-ctl-xs);font-size:12px}
 :is(.ui-card,.ui-box,.ui-on-soft) .ui-chip:not([aria-pressed=true]):not(.is-on){background:#fff}
 
@@ -280,7 +280,7 @@ a.ui-hero:hover{background:var(--aq-surface-hover)}
 .ui-stats{display:grid;grid-template-columns:repeat(var(--cols,4),minmax(0,1fr));gap:12px;margin:0 0 28px}
 .ui-stat{
   --tone-bg:var(--aq-primary-soft);--tone-fg:var(--aq-primary);
-  display:flex;flex-direction:column;justify-content:space-between;gap:12px;min-width:0;min-height:132px;
+  display:flex;flex-direction:column;justify-content:flex-start;gap:12px;min-width:0;min-height:132px;
   padding:20px;border:0;border-radius:var(--aq-r-xl);background:var(--aq-surface);color:var(--aq-text);font:inherit;text-align:left;
   transition:background-color var(--aq-dur) var(--aq-ease),transform var(--aq-dur-fast) var(--aq-ease),box-shadow var(--aq-dur) var(--aq-ease)
 }
@@ -327,7 +327,8 @@ button.ui-row-title{width:100%;padding:0;border:0;background:none;font-family:in
 button.ui-row-title:hover{color:var(--aq-primary)}
 .ui-row-title{display:block;margin:0;font-size:15px;font-weight:var(--aq-fw-bold);line-height:1.4;letter-spacing:-.03em;color:inherit;overflow-wrap:anywhere}
 .ui-row-meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin-top:4px;font-size:12px;line-height:1.5;color:var(--aq-text-4)}
-.ui-row-meta>span+span::before{content:"·";margin-right:10px;color:var(--aq-gray-300)}
+/* 구분 점은 앞 항목 끝에 붙인다 — 줄이 바뀌어도 새 줄이 "·"로 시작하지 않게 */
+.ui-row-meta>span:not(:last-child)::after{content:"·";margin-left:10px;color:var(--aq-gray-300)}
 .ui-row-end{display:flex;flex-direction:column;align-items:flex-end;gap:6px;min-width:0}
 .ui-row-end small{font-size:var(--aq-fs-xs);font-weight:650;color:var(--aq-text-4);white-space:nowrap}
 /* 카드 안 목록 — 한 면 안에서 구분선으로 나눈다 (홈 '내 발매') */
@@ -435,7 +436,7 @@ button.ui-avatar:hover{transform:scale(1.06);background:var(--aq-blue-200)}
   .ui-card{padding:20px;border-radius:var(--aq-r-xl)}
   .ui-stats{gap:8px}
   .ui-stats>:last-child:nth-child(odd):not(:first-child){grid-column:1/-1}
-  .ui-stat{min-height:108px;padding:16px}
+  .ui-stat{min-height:0;padding:16px}
   .ui-stat-value{font-size:24px}
   .ui-row{gap:12px;padding:14px 15px}
   .ui-row>.ui-cover{--cv:40px}
@@ -457,3 +458,9 @@ button.ui-avatar:hover{transform:scale(1.06);background:var(--aq-blue-200)}
 .ui-timeline>li:nth-child(5){animation-delay:.16s}
 .ui-timeline>li:nth-child(n+6){animation-delay:.2s}
 @media (prefers-reduced-motion:reduce){.ui-timeline>li{animation:none}}
+/* 폰: 줄 오른쪽에 배지가 3개 이상이면 세로로 쌓지 않고 제목 아래 한 줄로 */
+@media (max-width:560px){
+  .ui-row:has(>.ui-row-end>:nth-child(3)){align-items:start}
+  .ui-row>.ui-row-end:has(>:nth-child(3)){grid-column:2/-1;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-start;gap:6px}
+  .ui-row.is-flat>.ui-row-end:has(>:nth-child(3)){grid-column:1/-1}
+}

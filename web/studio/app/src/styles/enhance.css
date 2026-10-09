@@ -756,9 +756,9 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 
 /* ---------- 공지사항: 홍보 페이지 톤 (연파랑 패널·큰 헤드라인, 그림자·떠오름 없음) ---------- */
 .aq-npage{--n-soft:var(--aq-blue-50);--n-weak:var(--aq-gray-600);--n-line:var(--aq-gray-150)}
-.aq-nhero{background:var(--n-soft);border-radius:var(--aq-r-2xl);padding:44px 24px 36px;margin:0 0 56px}
+.aq-nhero{background:var(--n-soft);border-radius:var(--aq-r-2xl);padding:30px 22px 24px;margin:0 0 40px}
 .aq-nhero-eyebrow{display:inline-block;margin:0 0 18px;font-size:13px;font-weight:700;letter-spacing:.03em;color:var(--aq-e-blue);text-decoration:none}
-.aq-nhero h1{margin:0;font-size:34px;font-weight:780;line-height:1.28;letter-spacing:-.055em;color:var(--aq-e-ink)}
+.aq-nhero h1{margin:0;font-size:28px;font-weight:780;line-height:1.32;letter-spacing:-.055em;color:var(--aq-e-ink)}
 .aq-nhero h1>span{display:block}
 .aq-nhero h1 em{font-style:normal;color:var(--aq-e-blue)}
 .aq-nhero-desc{margin:20px 0 0;font-size:15px;line-height:1.8;color:var(--n-weak)}
@@ -774,8 +774,8 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 .aq-nboard{margin:0 0 24px}
 .aq-nboard-eyebrow{margin:0 0 14px;font-size:13px;font-weight:700;letter-spacing:.03em;color:var(--aq-e-blue)}
 .aq-nboard-eyebrow span{margin-left:4px;opacity:.7;font-variant-numeric:tabular-nums}
-.aq-nboard h2{scroll-margin-top:120px;margin:0 0 32px;font-size:27px;font-weight:760;line-height:1.35;letter-spacing:-.045em;color:var(--aq-e-ink)}
-.aq-br-narrow{display:inline}
+.aq-nboard h2{scroll-margin-top:120px;margin:0 0 22px;font-size:22px;font-weight:760;line-height:1.35;letter-spacing:-.045em;color:var(--aq-e-ink)}
+.aq-br-narrow{display:none}
 .aq-nboard-list{list-style:none;margin:0;padding:0;border-top:2px solid var(--aq-e-ink)}
 .aq-nboard-list li{border-bottom:1px solid var(--n-line)}
 .aq-nboard-row{display:flex;flex-direction:column;gap:8px;padding:24px 0;text-decoration:none;color:var(--aq-e-ink)}
@@ -1285,7 +1285,7 @@ body:has(#modal .aq-sticky-foot) .aq-toast-stack,body:has(.aq-form-actions.is-pi
 
 /* ---------- 보완 요청 목록: 번호 · 위치 · 내용 · 화살표 ---------- */
 .aq-correction-list button{grid-template-columns:24px minmax(0,1fr) 20px!important;gap:2px 12px!important;align-items:center;padding:14px 14px 14px 12px!important;background:#fff!important;border-radius:var(--aq-r-md)!important}
-.aq-correction-no{grid-column:1;grid-row:1/3;align-self:start;margin-top:1px;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--aq-amber-100);color:var(--aq-amber-600);font-size:12px;font-weight:850}
+.aq-correction-no{grid-column:1;grid-row:1/3;align-self:start;margin-top:1px;display:grid;place-items:center;width:24px;height:24px;background:none;color:var(--aq-amber-600);font-size:15px;font-weight:850}
 .aq-correction-list .aq-correction-where{grid-column:2}
 .aq-correction-list .aq-correction-msg{grid-column:2;font-size:13.5px;color:#2f3646}
 .aq-correction-list .aq-correction-go{grid-column:3;grid-row:1/3;display:grid;place-items:center;color:#d08a45}
@@ -1523,15 +1523,15 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-bundle.is-needs .aq-bundle-head em{background:var(--aq-e-amber-soft);color:var(--aq-e-amber)}
 .aq-bundle.is-signed .aq-bundle-head em{background:var(--aq-e-green-soft);color:var(--aq-e-green)}
 .aq-bundle-docs{list-style:none;margin:0;padding:0;display:grid;gap:8px}
-.aq-bundle-docs li{display:grid;grid-template-columns:28px minmax(0,1fr) auto;align-items:center;gap:4px 12px;padding:13px 14px;border-radius:var(--aq-r-lg);background:#fff}
+.aq-bundle-docs li{display:grid;grid-template-columns:32px minmax(0,1fr) auto;align-items:center;gap:4px 12px;padding:13px 14px;border-radius:var(--aq-r-lg);background:#fff}
 .aq-bundle-docs strong{display:block;font-size:14px;font-weight:780;color:var(--aq-e-ink)}
 .aq-bundle-docs span:not(.aq-bundle-no){display:block;margin-top:2px;font-size:12.5px;line-height:1.5;color:var(--aq-gray-600)}
-.aq-bundle-no{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--aq-gray-150);color:var(--aq-gray-500);font-size:12px;font-weight:850}
+.aq-bundle-no{display:grid;place-items:center;width:32px;height:32px;border-radius:var(--aq-r-sm);background:var(--aq-gray-150);color:var(--aq-gray-500);font-size:12px;font-weight:850}
 .aq-bundle-docs li.is-done .aq-bundle-no{background:var(--aq-e-blue);color:#fff}
 .aq-bundle-docs li.is-current .aq-bundle-no{background:var(--aq-e-blue-soft);color:var(--aq-e-blue)}
 .aq-bundle-docs .ui-btn.is-white{white-space:nowrap}
 :is(#root) .aq-bundle-sign{min-height:38px!important;padding:8px 14px!important;font-size:13px!important;border-radius:var(--aq-r-sm)!important;white-space:nowrap}
-@media(max-width:480px){.aq-bundle-docs li{grid-template-columns:28px minmax(0,1fr)}.aq-bundle-docs li>button{grid-column:2;justify-self:start;margin-top:6px}}
+@media(max-width:480px){.aq-bundle-docs li{grid-template-columns:32px minmax(0,1fr)}.aq-bundle-docs li>button{grid-column:2;justify-self:start;margin-top:6px}}
 .aq-bundle-sub{margin:18px 0 8px;font-size:14px;font-weight:800;color:var(--aq-e-ink)}
 
 /* 배급 계약서 최종본 (/contracts/:id) — 신청서와 같은 서류 스타일에 계약서 조항만 더한다 */
@@ -1606,3 +1606,5 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 @media(min-width:760px) and (max-width:1023.98px){
   #view-new .step-actions{padding-left:calc(50vw - 50%)!important;padding-right:calc(50vw - 50%)!important}
 }
+.aq-empty-val{color:var(--aq-text-4);font-weight:600}
+@media(max-width:760px){.aq-doc-card>.ui-icon{align-self:start}}

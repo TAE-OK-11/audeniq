@@ -302,7 +302,7 @@ export function Board() {
       title={board ? board.name : '보드'}
       sub={board ? (
         <span className="adm-kb-sub">
-          <Badge tone={board.kind === 'PERSONAL' ? 'violet' : board.kind === 'TEAM' ? 'blue' : 'green'}>{BOARD_KIND[board.kind]} 보드{board.team_role ? ` · ${ROLE_NAME[board.team_role]}` : ''}</Badge>
+          <Badge tone={board.kind === 'PERSONAL' ? 'gray' : board.kind === 'TEAM' ? 'violet' : 'blue'}>{BOARD_KIND[board.kind]} 보드{board.team_role ? ` · ${ROLE_NAME[board.team_role]}` : ''}</Badge>
           {board.description && <span>{board.description}</span>}
         </span>
       ) : '카드를 끌어 옮기거나, 카드에서 Alt+화살표로 옮길 수 있어요.'}
