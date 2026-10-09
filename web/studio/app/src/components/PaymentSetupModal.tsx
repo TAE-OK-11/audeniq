@@ -249,6 +249,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
               <p className="eyebrow">수령 계좌</p>
               <h1>수익을 받을<br />금융기관을 선택해 주세요.</h1>
               <p className="aq-pay-lead">은행, 저축은행, 증권사 계좌를 등록할 수 있어요.</p>
+              <div className="aq-bank-sticky">
               <div className="aq-bank-tabs" ref={tabsRef} role="tablist" aria-label="금융기관 종류">
                 <span
                   className="aq-bank-tab-pill" aria-hidden="true"
@@ -277,6 +278,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
                   placeholder={`${cat.label} 검색`} aria-label="금융기관 검색"
                   value={query} onChange={e => setQuery(e.target.value)}
                 />
+              </div>
               </div>
               <div id="aqBankGroups">
                 <section className="aq-bank-group" hidden={visibleBanks.length === 0}>
