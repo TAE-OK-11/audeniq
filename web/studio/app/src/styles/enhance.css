@@ -1371,6 +1371,8 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-review-note p{margin:0;font-size:14px;line-height:1.65;color:#2f3646;white-space:pre-line;overflow-wrap:anywhere}
 .aq-fix-card .aq-review-note p{font-size:13.5px;color:#2f3646}
 .aq-fix-panel .aq-review-note{margin:10px 0 12px}
+:is(.aq-fix-card:not(.is-rejected),.aq-fix-panel) .aq-review-note-mark{background:var(--aq-amber-100);color:var(--aq-amber-700)}
+.aq-fix-card.is-rejected .aq-review-note-mark{background:var(--aq-red-100);color:var(--aq-red-600)}
 
 /* 커버아트: 커버 색이 바탕에 번지는 무대 + 같은 폭의 정보 카드 */
 #view-release .studio-album-aside.aq-cover-card{background:var(--aq-blue-50)!important;padding:22px!important}
