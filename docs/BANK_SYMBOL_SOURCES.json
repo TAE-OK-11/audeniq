@@ -151,9 +151,9 @@
   },
   "gwangju": {
     "file": "gwangju.svg",
-    "source": "https://static.toss.im/icons/svg/icon-bank-gwangju.svg",
-    "provider": "Toss financial institution asset",
-    "note": "Original multicolor symbol; no app-icon registry or DSP styles are changed."
+    "source": "https://www.jbfg.com/assets/img/about/ci-sig-1.svg",
+    "provider": "JB Financial Group official CI resource center",
+    "note": "Original current JB square/people symbol shared by Gwangju Bank. ViewBox shows the symbol only; path colors preserved. Current identity confirmed at https://museum.kjbank.com/page_h/ci.php."
   },
   "miraeasset": {
     "file": "miraeasset.svg",
@@ -192,10 +192,10 @@
     "note": "Presentation disc removed; original artwork and colors retained."
   },
   "im": {
-    "file": "im.png",
-    "source": "https://www.imfngroup.com/com/img/favicon.ico",
-    "provider": "iM Financial Group official site",
-    "note": "Official symbol; original 16px favicon converted losslessly to PNG."
+    "file": "im.svg",
+    "source": "https://www.imfngroup.com/com/img/ci/iM_symbol.ai",
+    "provider": "iM Financial Group official CI resource center",
+    "note": "Original vector AI/PDF exported as SVG; viewBox tightened to the standalone mark. Shape, gradient and color retained."
   },
   "daol": {
     "file": "daol.png",
@@ -205,15 +205,15 @@
   },
   "acuon": {
     "file": "acuon.png",
-    "source": "https://www.acuonsb.co.kr/images/common/favicon.ico",
-    "provider": "ACUON Savings Bank official site",
-    "note": "Official symbol; original 16px favicon converted losslessly to PNG."
+    "source": "https://www.acuonsb.co.kr/images/hksb/img_cont_ci_01.png",
+    "provider": "ACUON Savings Bank official CI resource center",
+    "note": "Original 80px standalone symbol, replacing the 16px favicon."
   },
   "welcome": {
-    "file": "welcome.png",
-    "source": "https://www.google.com/s2/favicons?domain=welcomebank.co.kr&sz=128",
-    "provider": "Official site favicon via Google cache",
-    "note": "Cached institutional mark, not a rendered text substitute."
+    "file": "welcome.svg",
+    "source": "https://prd-welcomefg.s3.ap-northeast-2.amazonaws.com/press/80/2021041218051877.png",
+    "provider": "Institution official site/press resource",
+    "note": "Original transparent bitmap embedded in an SVG viewport showing the institutional mark only. No vector tracing; colors and pixels unchanged."
   },
   "pepper": {
     "file": "pepper.png",
@@ -276,10 +276,10 @@
     "note": "The institution site publishes this Savings Bank federation symbol."
   },
   "jt": {
-    "file": "jt.png",
-    "source": "https://www.jt-bank.co.kr/asset/public/favicon.png",
-    "provider": "Institution official site",
-    "note": "Original institutional symbol. ICO entries converted losslessly to PNG."
+    "file": "jt.svg",
+    "source": "https://www.jt-bank.co.kr/asset/public/w/img/logo.png",
+    "provider": "Institution official site/press resource",
+    "note": "Original transparent bitmap embedded in an SVG viewport showing the institutional mark only. No vector tracing; colors and pixels unchanged."
   },
   "smart": {
     "file": "smart.png",
@@ -288,10 +288,10 @@
     "note": "Original institutional symbol. ICO entries converted losslessly to PNG."
   },
   "ok": {
-    "file": "ok.png",
-    "source": "https://www.oksavingsbank.com/assets/images/favicon_128.ico",
-    "provider": "Institution official site",
-    "note": "Original institutional symbol. ICO entries converted losslessly to PNG."
+    "file": "ok.svg",
+    "source": "https://www.oksavingsbank.com/assets/images/renewal2/common/logo.png",
+    "provider": "Institution official site/press resource",
+    "note": "Original transparent bitmap embedded in an SVG viewport showing the institutional mark only. No vector tracing; colors and pixels unchanged."
   },
   "heungkuk": {
     "file": "heungkuk.svg",
@@ -340,5 +340,11 @@
     "source": "https://osb.co.kr/home/html/img/common/img_logo.gif",
     "provider": "Institution official site",
     "note": "Original bitmap embedded in an SVG viewBox showing only the symbol; not vector-traced artwork."
+  },
+  "savings": {
+    "file": "savings.svg",
+    "source": "https://github.com/flxh4894/korea_bank_icons/blob/main/assets/icons/050.svg",
+    "provider": "korea_bank_icons 1.0.0 (MIT)",
+    "note": "Original Savings Bank federation badge paths in their green-background reverse variant; outer presentation disc removed. Common transfer institution code is 050 (https://docs.tosspayments.com/codes/org-codes)."
   }
 }
