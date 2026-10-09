@@ -1,4 +1,4 @@
-// 아티스트 정보 — 토스 설정 화면처럼 '줄 + ›' 목록. 줄을 누르면 그 항목 하나만 고치는 창이 열린다.
+// 계정 정보 — 본인 확인·아티스트·수익 받기 설정. 토스 설정 화면처럼 '줄 + ›' 목록. 줄을 누르면 그 항목 하나만 고치는 창이 열린다.
 import { useState } from 'react';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
@@ -7,7 +7,8 @@ import { Glyph } from '../components/Glyph';
 import { PaymentSetupModal } from '../components/PaymentSetupModal';
 import { setProfile, useProfile, type ProfileInfo } from '../store/profile';
 import { isPaymentRegistered, usePayment } from '../store/payment';
-import { useUnreadCount } from '../store/support';
+import { patchAccount, taxCountryLabel, useAccount, VERIFY_LABEL, TAX_COUNTRIES, type TaxResidency } from '../store/account';
+import { IdentityVerify } from '../components/IdentityVerify';
 import { useAuth } from '../api/auth';
 import { MOCK } from '../api/client';
 import * as portal from '../api/portal';
@@ -96,6 +97,58 @@ function FieldEditor({ field, profile, onSaved }: { field: Field; profile: Profi
   );
 }
 
+/** 해외 납세 의무 — 대한민국 외 국가에 세금을 낼 의무가 있는지(정산 원천징수 확인용) */
+function TaxEditor({ current, onSaved }: { current: TaxResidency | null; onSaved: (t: TaxResidency) => void }) {
+  const close = useModalClose();
+  const [t, setT] = useState<TaxResidency>(current ?? { foreign: false, country: 'US', tin: '', usPerson: false });
+  const [error, setError] = useState('');
+  const set = (p: Partial<TaxResidency>) => { setT(prev => ({ ...prev, ...p })); setError(''); };
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (t.foreign && !t.country) { setError('납세 의무가 있는 국가를 골라 주세요.'); return; }
+    onSaved(t.foreign ? { ...t, tin: t.tin.trim(), usPerson: t.country === 'US' && t.usPerson } : { foreign: false, country: '', tin: '', usPerson: false });
+    close();
+  };
+
+  return (
+    <form className="aq-set-editor aq-tax" onSubmit={submit} noValidate>
+      <p className="aq-tax-lead">정산금을 지급할 때 적용할 세율을 확인하는 데 쓰여요.</p>
+      <div className="aq-choice-row aq-tax-choice" role="radiogroup" aria-label="해외 납세 의무">
+        {([[false, '대한민국에만 있어요', '국내 거주자로 정산해요.'], [true, '다른 나라에도 있어요', '해당 국가 납세 정보가 필요해요.']] as const).map(([v, title, sub]) => (
+          <label key={title} className={`aq-choice${t.foreign === v ? ' is-on' : ''}`}>
+            <input type="radio" name="taxForeign" checked={t.foreign === v} onChange={() => set({ foreign: v })} />
+            <strong>{title}</strong>
+            <small>{sub}</small>
+          </label>
+        ))}
+      </div>
+      {t.foreign && (
+        <div className="aq-tax-more aq-reveal">
+          <div className="ui-field">
+            <label htmlFor="taxCountry">납세 의무가 있는 국가</label>
+            <select id="taxCountry" value={t.country} onChange={e => set({ country: e.target.value })}>
+              {TAX_COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
+            </select>
+          </div>
+          <div className="ui-field">
+            <label htmlFor="taxTin">납세자번호(TIN) <span className="aq-optional">선택</span></label>
+            <input id="taxTin" maxLength={30} autoComplete="off" placeholder={t.country === 'US' ? 'SSN 또는 ITIN' : '해당 국가 납세자번호'} value={t.tin} onChange={e => set({ tin: e.target.value })} />
+          </div>
+          {t.country === 'US' && (
+            <label className="ui-check aq-tax-us">
+              <input type="checkbox" checked={t.usPerson} onChange={e => set({ usPerson: e.target.checked })} />
+              <span>미국 시민권자 또는 영주권자예요</span>
+            </label>
+          )}
+        </div>
+      )}
+      {error && <p className="ui-field-help aq-help-error" role="alert">{error}</p>}
+      <button type="submit" className="ui-btn is-primary is-block">저장</button>
+    </form>
+  );
+}
+
 export function Profile() {
   const toast = useToast();
   const confirm = useConfirm();
@@ -103,8 +156,9 @@ export function Profile() {
   const { logout } = useAuth();
   const profile = useProfile();
   const payment = usePayment();
-  const unread = useUnreadCount();
+  const account = useAccount();
   const [editing, setEditing] = useState<Field | null>(null);
+  const [accountEdit, setAccountEdit] = useState<'verify' | 'tax' | null>(null);
   const [showPayment, setShowPayment] = useState(false);
 
   const save = async (next: ProfileInfo): Promise<boolean> => {
@@ -148,7 +202,7 @@ export function Profile() {
     <div id="view-profile" className="view aq-settings">
       <div className="ui-page-head">
         <div>
-          <h1>아티스트 정보</h1>
+          <h1>계정 정보</h1>
         </div>
       </div>
 
@@ -160,6 +214,16 @@ export function Profile() {
         </span>
         <Glyph name="chevron-right" size={18} className="aq-set-chev" />
       </button>
+
+      <section className="aq-set-card" aria-labelledby="setIdentity">
+        <h2 id="setIdentity">본인 확인</h2>
+        <SetRow id="accountRowName" label="실명" value={account.realName} empty="본인인증 후 등록돼요" onClick={() => setAccountEdit('verify')} />
+        <SetRow
+          id="accountRowVerify" label="본인인증"
+          value={account.verified ? `${VERIFY_LABEL[account.verified.method]} 인증 완료` : undefined}
+          empty="인증하기" onClick={() => setAccountEdit('verify')}
+        />
+      </section>
 
       <section className="aq-set-card" aria-labelledby="setArtist">
         <h2 id="setArtist">아티스트</h2>
@@ -176,14 +240,12 @@ export function Profile() {
           value={registered ? `${payment.bank} ···${payment.last4}` : undefined} empty="등록하기"
           onClick={() => setShowPayment(true)}
         />
+        <SetRow
+          id="accountRowTax" label="해외 납세 의무"
+          value={account.tax ? (account.tax.foreign ? `있음 · ${taxCountryLabel(account.tax.country)}` : '없음') : undefined}
+          empty="설정하기" onClick={() => setAccountEdit('tax')}
+        />
         <SetRow label="정산·지급 내역" onClick={() => nav('/settlement')} />
-      </section>
-
-      <section className="aq-set-card" aria-labelledby="setSupport">
-        <h2 id="setSupport">알림·지원</h2>
-        <SetRow label="알림" value={unread ? `새 소식 ${unread}건` : undefined} onClick={() => nav('/notifications')} />
-        <SetRow label="문의" onClick={() => nav('/inquiries')} />
-        <SetRow label="공지사항" onClick={() => nav('/notices')} />
       </section>
 
       <section className="aq-set-card" aria-labelledby="setLegal">
@@ -209,6 +271,16 @@ export function Profile() {
         </Modal>
       )}
       {showPayment && <PaymentSetupModal onClose={() => setShowPayment(false)} />}
+      {accountEdit === 'verify' && (
+        <Modal title={account.verified ? '본인인증 다시 하기' : '본인인증'} onClose={() => setAccountEdit(null)} modalClass="aq-set-modal">
+          <IdentityVerify onDone={() => toast('본인인증을 마쳤어요.')} />
+        </Modal>
+      )}
+      {accountEdit === 'tax' && (
+        <Modal title="해외 납세 의무" onClose={() => setAccountEdit(null)} modalClass="aq-set-modal">
+          <TaxEditor current={account.tax} onSaved={t => { patchAccount({ tax: t }); toast('저장했어요.'); }} />
+        </Modal>
+      )}
     </div>
   );
 }
