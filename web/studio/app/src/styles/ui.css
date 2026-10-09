@@ -561,7 +561,7 @@ summary::-webkit-details-marker{display:none}
 .aq-step-kicker,.aq-wiz-rail-kicker{letter-spacing:.02em;font-size:var(--aq-fs-xs)}
 
 /* ---------- 전체 메뉴 (☰) — 회색 바탕 위 흰 카드, 아이콘 · 이름 · 회색 설명 ---------- */
-.portal-header .portal-nav{background:var(--aq-gray-50);padding:10px;border:0;width:min(400px,calc(100vw - 40px));max-width:calc(100vw - 40px)}
+.portal-header .portal-nav{background:var(--aq-gray-50);padding:14px 12px 12px;border:0;width:min(400px,calc(100vw - 40px));max-width:calc(100vw - 40px)}
 .portal-nav .aq-nav-card{background:#fff;border-radius:var(--aq-r-xl);padding:6px 6px 8px}
 .portal-nav .aq-nav-card+.aq-nav-card{margin-top:8px}
 .portal-nav .aq-nav-card .nav-group{margin:0;padding:14px 12px 6px;font-size:var(--aq-fs-md);font-weight:var(--aq-fw-medium);letter-spacing:-.01em;color:var(--aq-text-3)}
@@ -585,7 +585,7 @@ summary::-webkit-details-marker{display:none}
 #portalNav .aq-logout:hover{background:none!important;color:var(--aq-red-600)!important;text-decoration-color:currentColor}
 /* 휴대폰: 헤더 아래 화면 전체를 덮는 '전체' 화면 */
 @media (max-width:760px){
-  #portalNav{left:0!important;right:0!important;bottom:auto!important;width:100%!important;max-width:none!important;height:calc(100dvh - var(--aq-menu-top,68px))!important;max-height:none!important;border-radius:0;box-shadow:none;padding:4px 16px max(24px,env(safe-area-inset-bottom))}
+  #portalNav{left:0!important;right:0!important;bottom:auto!important;width:100%!important;max-width:none!important;height:calc(100dvh - var(--aq-menu-top,68px))!important;max-height:none!important;border-radius:0;box-shadow:none;padding:20px 16px max(28px,env(safe-area-inset-bottom))}
 }
 
 /* ---------- 아티스트 정보 — 설정 목록형 (프로필 줄 + '줄 + ›' 카드) ---------- */
