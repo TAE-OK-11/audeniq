@@ -73,7 +73,7 @@ export function Profile() {
     <div id="view-profile" className="view">
       <div className="ui-page-head">
         <div>
-          <p className="eyebrow">ARTIST</p>
+          <p className="eyebrow">계정·지원</p>
           <h1>아티스트 정보</h1>
           <p>아티스트 프로필과 수익을 받을 정보를 관리해 보세요.</p>
         </div>

@@ -59,19 +59,19 @@ export function Icon({ name }: { name: string }) {
 
 interface NavItem { to: string; label: string; icon: string; count?: (o: Overview) => number; hot?: boolean; adminOnly?: boolean; also?: string[] }
 const NAV: { group: string; items: NavItem[] }[] = [
-  { group: 'OVERVIEW', items: [{ to: '/', label: '오늘의 업무', icon: 'home' }] },
+  { group: '한눈에', items: [{ to: '/', label: '오늘의 업무', icon: 'home' }] },
   {
-    group: 'REVIEW',
+    group: '심사',
     items: [
       // 2차 승인은 발매 심사 안의 탭
       { to: '/reviews', label: '발매 심사', icon: 'review', count: o => o.review + o.second_approvals, hot: true, also: ['/approvals'] },
       { to: '/documents', label: '서류 검토', icon: 'doc', count: o => o.documents },
     ],
   },
-  { group: 'CONTENT', items: [{ to: '/admin/content', label: '공지·이벤트 관리', icon: 'doc', adminOnly: true }] },
-  { group: 'SUPPORT', items: [{ to: '/inquiries', label: '문의 답변', icon: 'inquiry', count: o => o.inquiries, hot: true }] },
+  { group: '콘텐츠', items: [{ to: '/admin/content', label: '공지·이벤트 관리', icon: 'doc', adminOnly: true }] },
+  { group: '고객 지원', items: [{ to: '/inquiries', label: '문의 답변', icon: 'inquiry', count: o => o.inquiries, hot: true }] },
   {
-    group: 'DISTRIBUTION',
+    group: '배급',
     items: [
       // 배급은 최종 승인 + 아티스트 서명 후 자동 — 여기서는 현황과 문제만 본다 (플랫폼 조건은 탭)
       { to: '/deliveries', label: '배급 현황', icon: 'delivery', count: o => o.deliveries_blocked, hot: true, also: ['/dsps'] },

@@ -66,7 +66,7 @@ export function Notifications() {
     <div id="view-notifications" className="view">
       <div className="ui-page-head">
         <div>
-          <p className="eyebrow">NOTIFICATIONS</p>
+          <p className="eyebrow">계정·지원</p>
           <h1>알림</h1>
           <p>발매·정산·서류 변경 사항을 확인해 보세요.</p>
         </div>

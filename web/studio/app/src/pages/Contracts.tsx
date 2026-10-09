@@ -42,7 +42,7 @@ export function Contracts() {
     <div id="view-contracts" className="view">
       <div className="ui-page-head">
         <div>
-          <p className="eyebrow">AUDENIQ AGREEMENTS</p>
+          <p className="eyebrow">계약·권리</p>
           <h1>계약서</h1>
           <p>발매마다 배급 신청서와 배급 계약서를 한곳에서 확인하고 서명하세요.</p>
         </div>

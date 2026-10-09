@@ -160,7 +160,7 @@ export function Reports() {
     <div id="view-reports" className="view">
       <div className="ui-page-head">
         <div>
-          <p className="eyebrow">INSIGHTS</p>
+          <p className="eyebrow">내 작업실</p>
           <h1 id="reportsTitle">음악 리포트</h1>
           <p>플랫폼별 실적을 기간과 곡별로 확인해 보세요.</p>
         </div>
@@ -180,8 +180,8 @@ export function Reports() {
       {/* 보고서 문서 */}
       <article className="aq-report-doc" aria-label={`${periodLabel} 음악 리포트`}>
         <header className="aq-report-doc-head">
-          <p className="eyebrow">MONTHLY REPORT</p>
-          <h2>{periodLabel} 음악 리포트</h2>
+          <p className="eyebrow">리포트 기간</p>
+          <h2>{periodLabel}</h2>
           <p className="muted small">발행일 {todayStr()} · AUDENIQ STUDIO</p>
         </header>
 

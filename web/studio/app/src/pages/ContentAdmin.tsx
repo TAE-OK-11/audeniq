@@ -395,7 +395,7 @@ export function ContentAdmin() {
 
   return (
     <div className="aq-cadmin">
-      <div className="ui-page-head"><div><p className="eyebrow">CONTENT</p><h1>공지·이벤트 관리</h1><p className="ui-page-sub">관리자 계정으로 작성하고 게시하면 바로 공개돼요. 예약 시각을 지정하면 그때 공개돼요.</p></div></div>
+      <div className="ui-page-head"><div><p className="eyebrow">콘텐츠</p><h1>공지·이벤트 관리</h1><p className="ui-page-sub">관리자 계정으로 작성하고 게시하면 바로 공개돼요. 예약 시각을 지정하면 그때 공개돼요.</p></div></div>
 
       <Tabs
         label="콘텐츠 종류" value={kind} onChange={switchKind}

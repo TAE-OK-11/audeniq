@@ -145,7 +145,7 @@ export function Sign() {
           <div><dt>{v.status === 'SIGNED' ? '서명 시각' : '서명 기한'}</dt><dd>{when(v.status === 'SIGNED' ? v.signed_at : v.expires_at)}</dd></div>
         </dl>
         <ol className="aq-sign-steps" aria-label="서명 단계">
-          {['본인확인', '문서 확인·동의', '서명'].map((label, i) => (
+          {['본인확인', '문서 동의', '서명'].map((label, i) => (
             <li key={label} className={i + 1 < step || v.status === 'SIGNED' ? 'is-done' : i + 1 === step ? 'is-current' : ''}>
               <span aria-hidden="true">{i + 1 < step || v.status === 'SIGNED' ? <CheckIcon size={11} /> : i + 1}</span>{label}
             </li>

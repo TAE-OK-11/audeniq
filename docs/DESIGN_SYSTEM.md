@@ -20,7 +20,10 @@
 6. 버튼은 놓인 면에 맞춰 스스로 바뀝니다 (`.ui-card` 위에서는 한 단계 진하게, `.ui-dark` 위에서는 반전). 상태 색 면(주황 보완 · 빨강 오류 · 초록 완료) 위에서는 버튼·기본 아이콘 칸도 그 색을 따릅니다 — 새 상태 면은 `.ui-tone-warn` / `.ui-tone-danger` / `.ui-tone-success`를 붙이면 됩니다.
 7. 글꼴은 **Pretendard Variable** 하나입니다(굵기 100–900 자유). 각 앱 `index.html`이 jsDelivr의 동적 서브셋 CSS(`pretendard@v1.3.9`)를 불러오고, 토큰 `--font-brand`가 첫 글꼴로 씁니다. CSP의 `style-src`·`font-src`에 `https://cdn.jsdelivr.net`이 허용돼 있어요. 자체 CDN으로 옮길 때는 `index.html`의 주소와 CSP 두 곳만 바꾸면 됩니다. 화면 CSS에 `font-family`를 직접 쓰지 말고 `var(--font-body)`를 씁니다.
 8. 아이콘은 직접 그린 SVG만 씁니다(`components/Glyph.tsx`, 설문은 `survey/app/src/Icon.tsx`). 이모지와 아이콘처럼 쓰는 글자 기호(₩ ✓ › ‹ ▸ ↗ ⚠ 등)는 기기마다 모양이 달라서 쓰지 않아요. CSS로 그릴 때는 `--aq-icon-check`·`--aq-icon-chevron`을 mask로 씁니다. 문서 아이콘도 이모지 대신 아이콘 이름을 저장하고, 예전 이모지는 비슷한 SVG로 바꿔 보여 줍니다. 문장 속 화살표(→)처럼 글자로 읽히는 것은 Pretendard에 들어 있어 그대로 둡니다.
-9. 새 역할이 생기면 화면 CSS에 만들지 말고 `ui.css` + `src/ui`에 더하고 견본 화면에 올립니다.
+9. 글자 단계: 크기는 11 · 12 · 13 · 14 · 15 · 16 · 18 · 22px와 큰 제목(`--aq-fs-h1` 28–36, `--aq-fs-display` 30–40)만 씁니다(`--aq-fs-2xs`~`--aq-fs-title-lg`). 굵기는 400(본문) · 600(보조) · 700(제목·버튼) · 800(숫자·큰 제목) 네 가지뿐입니다. 글자 회색은 `--aq-text` · `--aq-text-2` · `--aq-text-3` · `--aq-text-4` · `--aq-text-disabled` 다섯 단계만 쓰고, 회색 hex나 `--aq-gray-*`를 글자색으로 직접 쓰지 않아요. 카드 제목(h2)은 18px/700, 페이지 제목(h1)은 `--aq-fs-h1`입니다.
+10. 라벨은 한글로 씁니다. 페이지 위 작은 분류 글자(eyebrow), 관리자 메뉴 묶음 이름, 단계 이름 모두 한글이고 영어 대문자 라벨(MONTHLY REPORT 등)은 쓰지 않아요. 고유명사(Spotify, UPC/EAN, ISRC)만 예외입니다.
+11. 스튜디오 헤더: 1100px 이상에서는 주요 메뉴(홈 · 발매·곡 · 리포트 · 정산·지급 · 계약서 · 권리 서류 · 문의)를 헤더에 바로 보여 주고, 햄버거에는 전체 메뉴가 남아 있습니다.
+12. 새 역할이 생기면 화면 CSS에 만들지 말고 `ui.css` + `src/ui`에 더하고 견본 화면에 올립니다.
 
 ## 컴포넌트
 | 역할 | React | 클래스 |

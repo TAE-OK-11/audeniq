@@ -60,6 +60,9 @@ function greeting(): string {
   return '오늘도 수고했어요.';
 }
 
+/** 막대 위 짧은 금액 — 1만 원 이상은 ‘2.7만’처럼 */
+const shortWon = (n: number) => (n >= 10000 ? `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)}만` : num(n));
+
 function MiniTrend({ data }: { data: { period: string; revenue: number }[] }) {
   const ref = useGrowOnView<HTMLDivElement>('.aq-mini-bar');
   const high = Math.max(1, ...data.map(d => d.revenue));
@@ -67,6 +70,7 @@ function MiniTrend({ data }: { data: { period: string; revenue: number }[] }) {
     <div className="aq-mini-trend" ref={ref} role="img" aria-label="최근 월별 수익 추이">
       {data.map((d, i) => (
         <span key={d.period} className="aq-mini-col">
+          <b className="aq-mini-val">{shortWon(d.revenue)}</b>
           <span
             className={`aq-mini-bar${i === data.length - 1 ? ' is-current' : ''}`}
             style={{ '--h': `${Math.max(6, Math.round((d.revenue / high) * 100))}%`, '--d': `${i * 80}ms` } as CSSVarStyle}
@@ -137,12 +141,9 @@ export function Dashboard() {
       </Link>
 
       <div className="dashboard-grid aq-stagger" aria-label="주요 업무">
-        {GRID_ITEMS.map((item, i) => (
+        {GRID_ITEMS.map(item => (
           <Link key={item.to} className="service-item" to={item.to} onPointerEnter={() => prefetchRoute(item.to)} onFocus={() => prefetchRoute(item.to)}>
-            <span className="aq-service-top">
-              <span className="ui-icon">{item.icon}</span>
-              <span className="aq-service-no" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span>
-            </span>
+            <span className="ui-icon">{item.icon}</span>
             <div>
               <h3>{item.title}</h3>
               <p>{item.desc}</p>
@@ -166,7 +167,7 @@ export function Dashboard() {
                 <button className="ui-btn is-white is-sm" type="button" onClick={reload}>다시 불러오기</button>
               </div>
             ) : releases.length ? (
-              <div className="ui-list is-inset aq-stagger">
+              <div className="ui-list aq-stagger">
                 {releases.slice(0, 4).map(r => (
                   <Link key={r.id} to={`/releases/${r.id}`} className="release-row ui-row studio-album-row aq-row-link">
                     <ReleaseCover id={r.id} src={r.coverData} />
@@ -221,11 +222,11 @@ export function Dashboard() {
         </section>
       </div>
 
-      <div className="ui-section-head">
-        <h2>{periodLabel(report.period)} 음악 리포트</h2>
-        <button className="ui-btn is-white is-sm" type="button" onClick={() => navigate('/reports')}>리포트 보기 <Glyph name="chevron-right" size={13} /></button>
-      </div>
       <section className="ui-card aq-report-card" aria-label="이번 달 리포트 요약">
+        <div className="ui-section-head aq-report-head">
+          <h2>{periodLabel(report.period)} 음악 리포트</h2>
+          <button className="ui-btn is-white is-sm" type="button" onClick={() => navigate('/reports')}>리포트 보기 <Glyph name="chevron-right" size={13} /></button>
+        </div>
         <div className="aq-report-total">
           <small>이번 달 수익</small>
           <strong><Money value={report.revenue} animate /></strong>

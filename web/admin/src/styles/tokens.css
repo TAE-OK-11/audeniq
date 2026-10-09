@@ -94,10 +94,10 @@
   --aq-tone-gray-bg:#EDEFF4;    --aq-tone-gray-fg:#6A7386;
 
   /* ---------- 글자 ---------- */
-  --aq-fs-2xs:10.5px;
-  --aq-fs-xs:11.5px;   /* 배지·메타 */
-  --aq-fs-sm:12.5px;   /* 작은 버튼·보조 */
-  --aq-fs-md:13.5px;   /* 설명·표 */
+  --aq-fs-2xs:11px;
+  --aq-fs-xs:12px;   /* 배지·메타 */
+  --aq-fs-sm:13px;   /* 작은 버튼·보조 */
+  --aq-fs-md:14px;   /* 설명·표 */
   --aq-fs-base:14px;   /* 본문·버튼 */
   --aq-fs-lg:15px;     /* 입력칸 */
   --aq-fs-title-sm:16px;
@@ -106,10 +106,10 @@
   --aq-fs-h1:clamp(28px, 3vw, 36px);  /* 화면 제목 */
   --aq-fs-display:clamp(30px, 3.6vw, 40px);
   --aq-fw-regular:400;
-  --aq-fw-medium:650;
-  --aq-fw-semibold:720;
-  --aq-fw-bold:780;
-  --aq-fw-heavy:820;
+  --aq-fw-medium:600;
+  --aq-fw-semibold:700;
+  --aq-fw-bold:700;
+  --aq-fw-heavy:800;
   --aq-tracking-tight:-.05em;
   --aq-tracking-heading:-.045em;
   --aq-tracking-snug:-.02em;
@@ -159,7 +159,7 @@
   --aq-z-sticky:40; --aq-z-header:50; --aq-z-menu:60; --aq-z-modal:110; --aq-z-toast:400;
 
   /* ---------- 예전 이름 → 토큰 (기존 CSS가 그대로 따라오게) ---------- */
-  --weight-body:var(--aq-fw-regular); --weight-heading:750; --weight-hero:var(--aq-fw-bold);
+  --weight-body:var(--aq-fw-regular); --weight-heading:var(--aq-fw-bold); --weight-hero:var(--aq-fw-bold);
   --tracking-heading:var(--aq-tracking-heading); --tracking-hero:-.055em;
   --blue:var(--aq-primary); --blue-hover:var(--aq-primary-hover);
   --violet:var(--aq-violet-500); --soft-violet:#EEE8FF; --navy:#111C3D;

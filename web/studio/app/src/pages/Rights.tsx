@@ -141,7 +141,7 @@ export function Rights() {
     <div id="view-rights" className="view">
       <div className="ui-page-head">
         <div>
-          <p className="eyebrow">RIGHTS &amp; DOCUMENTS</p>
+          <p className="eyebrow">계약·권리</p>
           <h1>권리·보완 서류</h1>
           <p>발매별 권리 증빙과 AUDENIQ의 보완 요청을 한곳에서 처리하세요.</p>
         </div>

@@ -499,10 +499,11 @@ function ReviewSheet({ id }: { id: string }) {
       <div className="adm-detail-nav">
         <Link to="/reviews" className="adm-back"><Glyph name="arrow-left" size={14} className="aq-inline-glyph" />심사 목록</Link>
         <div className="adm-detail-nav-end">
-          <button type="button" className={`adm-icon-btn adm-refresh${loading || spin === 'spin' ? ' is-spinning' : ''}${spin === 'done' && !loading ? ' is-done' : ''}`} disabled={loading || spin === 'spin'} onClick={refresh} aria-label={loading || spin === 'spin' ? '갱신 중' : spin === 'done' ? '갱신됨' : '심사 정보 새로고침'} title="새로고침">
+          <button type="button" className={`ui-btn is-soft is-sm adm-refresh${loading || spin === 'spin' ? ' is-spinning' : ''}${spin === 'done' && !loading ? ' is-done' : ''}`} disabled={loading || spin === 'spin'} onClick={refresh} aria-label={loading || spin === 'spin' ? '갱신 중' : spin === 'done' ? '갱신됨' : '심사 정보 새로고침'} title="새로고침">
             {spin === 'done' && !loading
               ? <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m5.5 12.5 4.2 4.2 8.8-9.4" /></svg>
               : <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1" /><path d="M20.5 3.8v4.6h-4.6" /></svg>}
+            {spin === 'done' && !loading ? '갱신됨' : '새로고침'}
           </button>
           {nextId && <Link to={`/reviews/${nextId}`} className="adm-next-btn">다음 건<Glyph name="chevron-right" size={14} /></Link>}
         </div>
@@ -543,7 +544,7 @@ function ReviewSheet({ id }: { id: string }) {
           )}
 
           <JumpNav items={jump} />
-          <div id="rv-summary" className="adm-anchor"><SheetSummary sheet={sheet} lead={statusLine} /></div>
+          <div id="rv-summary" className="adm-anchor"><SheetSummary sheet={sheet} lead={inReview ? '' : statusLine} /></div>
 
 
           <Section title="시스템 검사" meta={`검사 ${sheet.checks.length}개 · 통과 ${context.check_counts.PASS ?? 0}개 (담당자 결정 포함)`}>

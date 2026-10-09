@@ -88,9 +88,9 @@ export function Icon({ name }: { name: string }) {
 
 interface NavItem { to: string; label: string; icon: string; count?: (o: Overview | null, w: WorkSummary | null) => number; hot?: boolean; adminOnly?: boolean; also?: string[] }
 const NAV: { group: string; items: NavItem[] }[] = [
-  { group: 'OVERVIEW', items: [{ to: '/admin', label: '오늘의 업무', icon: 'home' }] },
+  { group: '한눈에', items: [{ to: '/admin', label: '오늘의 업무', icon: 'home' }] },
   {
-    group: 'WORK',
+    group: '업무',
     items: [
       // 업무함 · 업무 · 예외 처리 · 관계 관리 · SLA는 한 메뉴(업무) 안의 탭
       { to: '/admin/inbox', label: '업무', icon: 'task', count: (_, w) => w?.inbox.unread ?? 0, hot: true, also: WORK_PATHS },
@@ -99,24 +99,24 @@ const NAV: { group: string; items: NavItem[] }[] = [
     ],
   },
   {
-    group: 'REVIEW',
+    group: '심사',
     items: [
       // 2차 승인은 발매 심사 안의 탭
       { to: '/admin/reviews', label: '발매 심사', icon: 'review', count: o => (o ? o.review + o.second_approvals : 0), hot: true, also: ['/admin/approvals'] },
       { to: '/admin/documents', label: '서류 검토', icon: 'doc', count: o => (o ? o.documents : 0) },
     ],
   },
-  { group: 'SUPPORT', items: [{ to: '/admin/inquiries', label: '문의 답변', icon: 'inquiry', count: o => (o ? o.inquiries : 0), hot: true }] },
-  { group: 'CONTENT', items: [{ to: '/admin/content', label: '공지·이벤트 관리', icon: 'doc', adminOnly: true }] },
+  { group: '고객 지원', items: [{ to: '/admin/inquiries', label: '문의 답변', icon: 'inquiry', count: o => (o ? o.inquiries : 0), hot: true }] },
+  { group: '콘텐츠', items: [{ to: '/admin/content', label: '공지·이벤트 관리', icon: 'doc', adminOnly: true }] },
   {
-    group: 'DISTRIBUTION',
+    group: '배급',
     items: [
       // 배급은 최종 승인 + 아티스트 서명 후 자동 — 여기서는 현황과 문제만 본다 (DSP 사양은 탭)
       { to: '/admin/deliveries', label: '배급 현황', icon: 'delivery', count: o => (o ? o.deliveries_blocked : 0), hot: true, also: ['/admin/dsps', '/admin/dsp-ops'] },
       { to: '/admin/payouts', label: '지급 요청', icon: 'payout', count: o => (o ? o.payout_requests : 0), adminOnly: true },
     ],
   },
-  { group: 'SYSTEM', items: [{ to: '/admin/design', label: '디자인 시스템', icon: 'design' }] },
+  { group: '시스템', items: [{ to: '/admin/design', label: '디자인 시스템', icon: 'design' }] },
 ];
 
 const active = (path: string, to: string) => (to === '/admin' ? path === '/admin' || path === '/admin/' : path === to || path.startsWith(`${to}/`));

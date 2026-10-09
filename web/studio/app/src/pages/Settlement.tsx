@@ -166,7 +166,7 @@ export function Settlement() {
     <div id="view-settlement" className="view">
       <div className="ui-page-head">
         <div>
-          <p className="eyebrow">ROYALTIES &amp; PAYOUTS</p>
+          <p className="eyebrow">내 작업실</p>
           <h1>정산·지급</h1>
           <p>확정된 정산 금액과 지급 요청 내역을 확인해 보세요.</p>
         </div>
@@ -175,7 +175,7 @@ export function Settlement() {
       <section className="ui-card settle-hero" aria-labelledby="settleHeroHeading">
         <div className="settle-hero-top">
           <div>
-            <span className="eyebrow">PAYOUT</span>
+            <span className="eyebrow">지급</span>
             <h2 id="settleHeroHeading">요청 전 잔액</h2>
             <strong className="settle-hero-amount"><Money value={left} mark animate /></strong>
             <p className="settle-hero-sub">

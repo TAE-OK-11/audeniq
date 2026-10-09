@@ -195,7 +195,7 @@ export function Inquiries() {
     <div id="view-inquiries" className="view">
       <div className="ui-page-head">
         <div>
-          <p className="eyebrow">INQUIRIES</p>
+          <p className="eyebrow">계정·지원</p>
           <h1>문의</h1>
           <p>발매 보완 요청과 정산·계약 관련 문의를 확인해 보세요.</p>
         </div>

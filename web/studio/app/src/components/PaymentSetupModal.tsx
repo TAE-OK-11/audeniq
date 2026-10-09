@@ -218,7 +218,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
         <main className={`aq-pay-main aq-step-anim is-${dir}`} key={step}>
           {step === 0 && (
             <>
-              <p className="eyebrow">PAYOUT PROFILE</p>
+              <p className="eyebrow">수령인 정보</p>
               <h1>수익을 받을<br />정보를 알려주세요.</h1>
               <p className="aq-pay-lead">계약과 정산 서류에 표시할 수령인 정보를 입력해 주세요.</p>
               <div className="ui-field aq-pay-field">
@@ -247,7 +247,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
 
           {step === 1 && (
             <>
-              <p className="eyebrow">PAYOUT ACCOUNT</p>
+              <p className="eyebrow">수령 계좌</p>
               <h1>수익을 받을<br />금융기관을 선택해 주세요.</h1>
               <p className="aq-pay-lead">은행, 저축은행, 증권사 계좌를 등록할 수 있어요.</p>
               <div className="aq-bank-tabs" ref={tabsRef} role="tablist" aria-label="금융기관 종류">
@@ -303,7 +303,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
 
           {step === 2 && (
             <>
-              <p className="eyebrow">ACCOUNT NUMBER</p>
+              <p className="eyebrow">계좌번호</p>
               <h1>{draft.bank}<br />계좌번호를 입력해 주세요.</h1>
               <div className="aq-selected-bank">
                 <BankLogo name={draft.bank} />
@@ -335,7 +335,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
 
           {step === 3 && (
             <>
-              <p className="eyebrow">AGREEMENT</p>
+              <p className="eyebrow">약관 동의</p>
               <h1>수령 계좌 등록에<br />동의해 주세요.</h1>
               <p className="aq-pay-lead">정산금 지급과 계좌 확인에 필요한 항목이에요.</p>
               <label className="aq-agree-all">
@@ -377,7 +377,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
                 <circle className="aq-success-ring" cx="44" cy="44" r="40" />
                 <path className="aq-success-tick" d="M27 45.5 39.5 58 62 33" />
               </svg>
-              <p className="eyebrow">PAYOUT READY</p>
+              <p className="eyebrow">등록 완료</p>
               <h1>수익을 받을 계좌가<br />등록됐어요.</h1>
               <p className="aq-pay-success-sub">정산이 확정되면 이 계좌로 수익을 받을 수 있어요.</p>
               <div className="aq-pay-receipt">
