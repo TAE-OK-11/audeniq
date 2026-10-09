@@ -224,7 +224,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
   };
 
   const allAgreed = agrees.every(Boolean);
-  // 라이브: step2의 다음 버튼은 계좌번호·예금주가 모두 입력될 때까지 비활성화
+  // 라이브: step2의 다음 버튼은 계좌번호가 입력될 때까지 비활성화 (예금주는 1단계 수령인 이름을 그대로 쓴다)
   const step2Ready = !!draft.account.replace(/\D/g, '') && !!draft.recipient.trim();
   const nextDisabled = saving || (step === 1 ? true : step === 2 ? !step2Ready : step === 3 ? !allAgreed : false);
 
@@ -348,7 +348,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
               <div className="aq-pay-body">
                 <div className="aq-selected-bank">
                   <BankLogo name={draft.bank} />
-                  <div><strong>{draft.bank}</strong><small>수익 정산 계좌</small></div>
+                  <div><strong>{draft.bank}</strong><small>예금주 {draft.recipient}</small></div>
                 </div>
                 <div className="ui-field aq-pay-field">
                   <label htmlFor="aqPayAccount" className="sr-only">계좌번호</label>
@@ -357,15 +357,6 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
                     value={draft.account}
                     onChange={e => setDraft(d => ({ ...d, account: e.target.value.replace(/\D/g, '') }))}
                     placeholder="계좌번호 (숫자만 입력)"
-                  />
-                </div>
-                <div className="ui-field aq-pay-field">
-                  <label htmlFor="aqPayOwner" className="sr-only">예금주</label>
-                  <input
-                    id="aqPayOwner" maxLength={120}
-                    value={draft.recipient}
-                    onChange={e => setDraft(d => ({ ...d, recipient: e.target.value }))}
-                    placeholder="예금주"
                   />
                 </div>
                 <p className="aq-pay-privacy">
