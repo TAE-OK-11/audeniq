@@ -10,10 +10,13 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { SystemStatus } from './components/SystemStatus';
 import { PageSkeleton } from './components/Skeleton';
 import { pageLoaders } from './routes';
+import './styles/tokens.css';
 import './styles/design.css';
 import './styles/live.css';
 import './styles/enhance.css';
 import './styles/controls.css';
+import './styles/ui.css';
+import { SelectHost } from './components/Picker';
 
 // 배포 직후 옛 청크가 사라져 동적 import가 실패하면 한 번만 새로고침해 새 버전을 받는다
 function lazyPage<M>(load: () => Promise<M>, pick: (m: M) => ComponentType) {
@@ -36,6 +39,7 @@ const Signup = lazyPage(pageLoaders.Signup, m => m.Signup);
 const FindAccount = lazyPage(pageLoaders.FindAccount, m => m.FindAccount);
 const Sign = lazyPage(pageLoaders.Sign, m => m.Sign);
 const Terms = lazyPage(pageLoaders.Terms, m => m.Terms);
+const SettlementTerms = lazyPage(pageLoaders.Terms, m => m.SettlementTerms);
 const Dashboard = lazyPage(pageLoaders.Dashboard, m => m.Dashboard);
 const Releases = lazyPage(pageLoaders.Releases, m => m.Releases);
 const ReleaseDetail = lazyPage(pageLoaders.ReleaseDetail, m => m.ReleaseDetail);
@@ -131,6 +135,7 @@ export function App() {
       <AuthProvider>
         <ToastProvider>
           <ConfirmProvider>
+            <SelectHost />
             <ErrorBoundary fullPage>
               <SystemStatus>
                 <Suspense fallback={<BootScreen />}>
@@ -141,6 +146,7 @@ export function App() {
                     {/* 권리자 서명 — 로그인 없이 받은 링크로 (본인확인 후 직접 서명) */}
                     <Route path="/sign/:token" element={<Sign />} />
                     <Route path="/terms" element={<Terms />} />
+                    <Route path="/terms/settlement" element={<SettlementTerms />} />
                     <Route path="/content-admin" element={<Navigate to="/admin/content" replace />} />
                     {/* 스태프 관리자 — 같은 로그인 세션 + 서버의 스태프 역할(/api/staff/me)로 접근 */}
                     <Route path="/admin/*" element={<Protected><AdminApp /></Protected>} />

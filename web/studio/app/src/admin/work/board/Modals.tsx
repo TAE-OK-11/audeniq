@@ -5,7 +5,7 @@ import { useModalClose } from '../../../components/Modal';
 import { useToast } from '../../../components/Toast';
 import { useConfirm } from '../../../components/Confirm';
 import { Glyph } from '../../../components/Glyph';
-import { ErrorBox, Skeleton, useStaff } from '../../ui';
+import { ErrorBox, SkeletonList, useStaff } from '../../ui';
 import { when } from '../../labels';
 import { workApi } from '../api';
 import { AUTO_TRIGGER, BOARD_KIND, PRIORITIES, PRIORITY, PRIORITY_CODE, PRIORITY_NAME, ROLE_NAME, TASK_STATUS, WORK_TYPE, WORK_TYPES } from '../labels';
@@ -14,6 +14,7 @@ import { boardError } from './logic';
 import type {
   AutoTrigger, Board, BoardColumn, BoardKind, BoardRule, BoardView, Priority, StaffRoleKey, TaskStatus, WorkTask, WorkType,
 } from '../types';
+import { josa } from '../../../lib/josa';
 
 const COLUMN_STATUSES: TaskStatus[] = ['TODO', 'IN_PROGRESS', 'IN_REVIEW', 'BLOCKED', 'DONE', 'CANCELLED'];
 const ROLES: StaffRoleKey[] = ['ADMIN', 'REVIEWER', 'OPERATOR', 'SUPPORT'];
@@ -48,38 +49,38 @@ export function NewCardForm({ view, onCreated }: { view: BoardView; onCreated: (
   };
   return (
     <form onSubmit={submit}>
-      <div className="adm-field">
+      <div className="ui-field">
         <label htmlFor="kbnTitle">제목 <span className="required">*</span></label>
-        <input id="kbnTitle" data-autofocus className="adm-input" maxLength={200} value={title} onChange={e => setTitle(e.target.value)} placeholder="예: Paper Moon 메타데이터 수정 확인" />
+        <input id="kbnTitle" data-autofocus className="ui-input" maxLength={200} value={title} onChange={e => setTitle(e.target.value)} placeholder="예: Paper Moon 메타데이터 수정 확인" />
       </div>
       <div className="adm-w-grid2">
-        <div className="adm-field">
+        <div className="ui-field">
           <label htmlFor="kbnColumn">열</label>
-          <select id="kbnColumn" className="adm-select adm-w-select" value={column} onChange={e => setColumn(e.target.value)}>
+          <select id="kbnColumn" className="ui-select" value={column} onChange={e => setColumn(e.target.value)}>
             {cols.map(c => <option key={c.id} value={c.id}>{c.name} · {TASK_STATUS[c.status][0]}</option>)}
           </select>
         </div>
-        <div className="adm-field">
+        <div className="ui-field">
           <label htmlFor="kbnAssignee">담당자</label>
           <PersonSelect id="kbnAssignee" value={assignee} onChange={setAssignee} people={people} empty="담당자 없음" />
         </div>
-        <div className="adm-field">
+        <div className="ui-field">
           <label htmlFor="kbnPriority">우선순위</label>
-          <select id="kbnPriority" className="adm-select adm-w-select" value={priority} onChange={e => setPriority(e.target.value as Priority)}>
+          <select id="kbnPriority" className="ui-select" value={priority} onChange={e => setPriority(e.target.value as Priority)}>
             {PRIORITIES.map(p => <option key={p} value={p}>{PRIORITY_CODE[p]} · {PRIORITY_NAME[p]} ({PRIORITY[p][0]})</option>)}
           </select>
         </div>
-        <div className="adm-field">
+        <div className="ui-field">
           <label htmlFor="kbnType">유형</label>
-          <select id="kbnType" className="adm-select adm-w-select" value={type} onChange={e => setType(e.target.value as WorkType)}>
+          <select id="kbnType" className="ui-select" value={type} onChange={e => setType(e.target.value as WorkType)}>
             {WORK_TYPES.map(w => <option key={w} value={w}>{WORK_TYPE[w]}</option>)}
           </select>
         </div>
       </div>
       <p className="small muted">검토 열에는 검토자를 정한 뒤 카드를 옮겨 주세요.</p>
       <div className="adm-form-actions">
-        <button type="button" className="adm-btn soft" onClick={close}>취소</button>
-        <button type="submit" className="adm-btn primary" disabled={busy || !title.trim()}>{busy ? '만드는 중…' : '카드 만들기'}</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="submit" className="ui-btn is-primary" disabled={busy || !title.trim()}>{busy ? '만드는 중…' : '카드 만들기'}</button>
       </div>
     </form>
   );
@@ -106,7 +107,7 @@ function ColumnRow({ col, index, total, others, busy, run, onMove }: {
   const saveWip = () => {
     const v = wip.trim() === '' ? null : Number(wip);
     if (v != null && (!Number.isInteger(v) || v < 1 || v > 999)) { setWip(col.wip_limit == null ? '' : String(col.wip_limit)); return; }
-    if (v !== col.wip_limit) void run(() => workApi.updateColumn(col.id, { wip_limit: v }), v == null ? 'WIP 한도를 없앴어요.' : `WIP 한도를 ${v}로 정했어요.`);
+    if (v !== col.wip_limit) void run(() => workApi.updateColumn(col.id, { wip_limit: v }), v == null ? 'WIP 한도를 없앴어요.' : `WIP 한도를 ${josa(v, '으로/로')} 정했어요.`);
   };
   const changeStatus = async (s: TaskStatus) => {
     if (s === col.status) return;
@@ -137,32 +138,32 @@ function ColumnRow({ col, index, total, others, busy, run, onMove }: {
           </button>
         </span>
         <label className="sr-only" htmlFor={`kbcName-${col.id}`}>열 이름</label>
-        <input id={`kbcName-${col.id}`} className="adm-input" maxLength={40} value={name} onChange={e => setName(e.target.value)} onBlur={saveName}
+        <input id={`kbcName-${col.id}`} className="ui-input" maxLength={40} value={name} onChange={e => setName(e.target.value)} onBlur={saveName}
           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveName(); } }} />
         <label className="sr-only" htmlFor={`kbcStatus-${col.id}`}>{col.name} 상태</label>
-        <select id={`kbcStatus-${col.id}`} className="adm-select" value={col.status} disabled={busy} onChange={e => void changeStatus(e.target.value as TaskStatus)}>
+        <select id={`kbcStatus-${col.id}`} className="ui-select is-auto" value={col.status} disabled={busy} onChange={e => void changeStatus(e.target.value as TaskStatus)}>
           {COLUMN_STATUSES.map(s => <option key={s} value={s}>{TASK_STATUS[s][0]}</option>)}
         </select>
         <label className="adm-kb-wip-input">
           <span>WIP</span>
-          <input className="adm-input" inputMode="numeric" placeholder="없음" aria-label={`${col.name} WIP 한도 (비우면 없음)`} value={wip}
+          <input className="ui-input" inputMode="numeric" placeholder="없음" aria-label={`${col.name} WIP 한도 (비우면 없음)`} value={wip}
             onChange={e => setWip(e.target.value.replace(/\D/g, '').slice(0, 3))} onBlur={saveWip}
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveWip(); } }} />
         </label>
         <span className="adm-kb-colrow-count">카드 {col.count}</span>
-        <button type="button" className="adm-link-btn" disabled={busy || total <= 1} onClick={() => setArchiving(v => !v)} aria-expanded={archiving}>보관</button>
+        <button type="button" className="ui-btn is-text is-muted" disabled={busy || total <= 1} onClick={() => setArchiving(v => !v)} aria-expanded={archiving}>보관</button>
       </div>
       {archiving && (
         <div className="adm-kb-colrow-archive">
           {col.count > 0 ? (
             <label className="adm-w-inline">
               <span>카드 {col.count}개를 옮길 열</span>
-              <select className="adm-select" value={moveTo} onChange={e => setMoveTo(e.target.value)}>
+              <select className="ui-select is-auto" value={moveTo} onChange={e => setMoveTo(e.target.value)}>
                 {others.map(o => <option key={o.id} value={o.id}>{o.name} · {TASK_STATUS[o.status][0]}</option>)}
               </select>
             </label>
           ) : <span className="small muted">빈 열이에요.</span>}
-          <button type="button" className="adm-btn danger small" disabled={busy || (col.count > 0 && !moveTo)} onClick={() => void archive()}>열 보관</button>
+          <button type="button" className="ui-btn is-danger is-sm" disabled={busy || (col.count > 0 && !moveTo)} onClick={() => void archive()}>열 보관</button>
         </div>
       )}
     </li>
@@ -196,7 +197,7 @@ export function ColumnManager({ view, onView }: { view: BoardView; onView: (v: B
     const ids = cols.map(c => c.id);
     const [x] = ids.splice(from, 1);
     ids.splice(to, 0, x);
-    void run(() => workApi.orderColumns(view.board.id, ids), `‘${cols[from].name}’ 열을 ${to < from ? '앞' : '뒤'}으로 옮겼어요.`);
+    void run(() => workApi.orderColumns(view.board.id, ids), `‘${cols[from].name}’ 열을 ${to < from ? '앞으로' : '뒤로'} 옮겼어요.`);
   };
   const add = async (e: FormEvent) => {
     e.preventDefault();
@@ -212,15 +213,15 @@ export function ColumnManager({ view, onView }: { view: BoardView; onView: (v: B
   return (
     <div className="adm-kb-manager">
       <form className="adm-kb-board-info" onSubmit={saveBoard}>
-        <div className="adm-field">
+        <div className="ui-field">
           <label htmlFor="kbmName">보드 이름</label>
-          <input id="kbmName" className="adm-input" maxLength={80} value={boardName} onChange={e => setBoardName(e.target.value)} />
+          <input id="kbmName" className="ui-input" maxLength={80} value={boardName} onChange={e => setBoardName(e.target.value)} />
         </div>
-        <div className="adm-field">
+        <div className="ui-field">
           <label htmlFor="kbmDesc">설명</label>
-          <input id="kbmDesc" className="adm-input" maxLength={500} value={boardDesc} onChange={e => setBoardDesc(e.target.value)} />
+          <input id="kbmDesc" className="ui-input" maxLength={500} value={boardDesc} onChange={e => setBoardDesc(e.target.value)} />
         </div>
-        <button type="submit" className="adm-btn soft small" disabled={busy || !boardName.trim() || (boardName.trim() === view.board.name && boardDesc.trim() === view.board.description)}>보드 정보 저장</button>
+        <button type="submit" className="ui-btn is-soft is-sm" disabled={busy || !boardName.trim() || (boardName.trim() === view.board.name && boardDesc.trim() === view.board.description)}>보드 정보 저장</button>
       </form>
       <h3 className="adm-w-subhead">열 {cols.length}/20</h3>
       <p className="small muted">열의 상태가 카드 상태예요. 상태를 바꾸면 그 열의 카드도 함께 바뀌어요. 이름·WIP는 칸을 벗어나거나 Enter를 누르면 저장돼요.</p>
@@ -231,12 +232,12 @@ export function ColumnManager({ view, onView }: { view: BoardView; onView: (v: B
       </ol>
       <form className="adm-kb-coladd" onSubmit={add}>
         <label htmlFor="kbmNew" className="sr-only">새 열 이름</label>
-        <input id="kbmNew" className="adm-input" maxLength={40} placeholder="새 열 이름" value={name} onChange={e => setName(e.target.value)} />
+        <input id="kbmNew" className="ui-input" maxLength={40} placeholder="새 열 이름" value={name} onChange={e => setName(e.target.value)} />
         <label htmlFor="kbmNewStatus" className="sr-only">새 열 상태</label>
-        <select id="kbmNewStatus" className="adm-select" value={status} onChange={e => setStatus(e.target.value as TaskStatus)}>
+        <select id="kbmNewStatus" className="ui-select is-auto" value={status} onChange={e => setStatus(e.target.value as TaskStatus)}>
           {COLUMN_STATUSES.map(s => <option key={s} value={s}>{TASK_STATUS[s][0]}</option>)}
         </select>
-        <button type="submit" className="adm-btn primary small" disabled={busy || !name.trim() || cols.length >= 20}><Glyph name="plus" size={13} />열 추가</button>
+        <button type="submit" className="ui-btn is-primary is-sm" disabled={busy || !name.trim() || cols.length >= 20}><Glyph name="plus" size={13} />열 추가</button>
       </form>
     </div>
   );
@@ -275,16 +276,16 @@ export function BoardCreateForm({ onCreated }: { onCreated: (v: BoardView) => vo
   };
   return (
     <form onSubmit={submit}>
-      <div className="adm-field">
+      <div className="ui-field">
         <label htmlFor="kbbName">이름 <span className="required">*</span></label>
-        <input id="kbbName" data-autofocus className="adm-input" maxLength={80} value={name} onChange={e => setName(e.target.value)} placeholder="예: 10월 발매 준비" />
+        <input id="kbbName" data-autofocus className="ui-input" maxLength={80} value={name} onChange={e => setName(e.target.value)} placeholder="예: 10월 발매 준비" />
       </div>
-      <div className="adm-field">
+      <div className="ui-field">
         <label htmlFor="kbbDesc">설명</label>
-        <input id="kbbDesc" className="adm-input" maxLength={500} value={description} onChange={e => setDescription(e.target.value)} placeholder="이 보드에서 다루는 일" />
+        <input id="kbbDesc" className="ui-input" maxLength={500} value={description} onChange={e => setDescription(e.target.value)} placeholder="이 보드에서 다루는 일" />
       </div>
       <fieldset className="adm-kb-kinds">
-        <legend className="adm-field-label">종류</legend>
+        <legend className="ui-field-label">종류</legend>
         {(['PERSONAL', 'TEAM', 'OPERATIONS'] as BoardKind[]).map(k => (
           <label key={k} className={`adm-kb-kind${kind === k ? ' is-on' : ''}${k !== 'PERSONAL' && !admin ? ' is-disabled' : ''}`}>
             <input type="radio" name="kbbKind" value={k} checked={kind === k} disabled={k !== 'PERSONAL' && !admin} onChange={() => setKind(k)} />
@@ -294,17 +295,17 @@ export function BoardCreateForm({ onCreated }: { onCreated: (v: BoardView) => vo
         {!admin && <small className="muted">팀·운영 보드는 관리자만 만들 수 있어요.</small>}
       </fieldset>
       {kind === 'TEAM' && (
-        <div className="adm-field">
+        <div className="ui-field">
           <label htmlFor="kbbRole">팀(역할)</label>
-          <select id="kbbRole" className="adm-select adm-w-select" value={role} onChange={e => setRole(e.target.value as StaffRoleKey)}>
+          <select id="kbbRole" className="ui-select" value={role} onChange={e => setRole(e.target.value as StaffRoleKey)}>
             {ROLES.map(r => <option key={r} value={r}>{ROLE_NAME[r]}</option>)}
           </select>
         </div>
       )}
       <p className="small muted">기본 열(Inbox · To Do · In Progress · Review · Waiting · Blocked · Done)이 함께 만들어져요.</p>
       <div className="adm-form-actions">
-        <button type="button" className="adm-btn soft" onClick={close}>취소</button>
-        <button type="submit" className="adm-btn primary" disabled={busy || !name.trim()}>{busy ? '만드는 중…' : '보드 만들기'}</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="submit" className="ui-btn is-primary" disabled={busy || !name.trim()}>{busy ? '만드는 중…' : '보드 만들기'}</button>
       </div>
     </form>
   );
@@ -332,11 +333,11 @@ function RuleRow({ trigger, rule, boards, colsMap, ensure, busy, onSave }: {
         <b>{label}</b>
         <small>{rule ? `${rule.board_name} · ${rule.column_name}${rule.enabled ? ` · ${when(rule.active_since)}부터` : ''}` : '아직 규칙이 없어요'}</small>
       </span>
-      <select className="adm-select" aria-label={`${label} 카드를 놓을 보드`} value={boardId} disabled={busy} onChange={e => pickBoard(e.target.value)}>
+      <select className="ui-select is-auto" aria-label={`${label} 카드를 놓을 보드`} value={boardId} disabled={busy} onChange={e => pickBoard(e.target.value)}>
         <option value="">보드 고르기</option>
         {boards.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
       </select>
-      <select className="adm-select" aria-label={`${label} 카드를 놓을 열`} value={columnId} disabled={busy || !boardId || !cols} onChange={e => pickColumn(e.target.value)}>
+      <select className="ui-select is-auto" aria-label={`${label} 카드를 놓을 열`} value={columnId} disabled={busy || !boardId || !cols} onChange={e => pickColumn(e.target.value)}>
         <option value="">{boardId && !cols ? '불러오는 중…' : '열 고르기'}</option>
         {(cols ?? []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
       </select>
@@ -400,7 +401,7 @@ export function RulesPanel({ boards, onRan }: { boards: Board[]; onRan: () => vo
   };
 
   if (error) return <ErrorBox message={error} onRetry={load} />;
-  if (!data) return <Skeleton rows={4} />;
+  if (!data) return <SkeletonList rows={4} />;
   return (
     <div className="adm-kb-rules">
       <p className="small muted">AUDENIQ에서 일이 생기면(QC 실패, 새 문의 등) 고른 보드·열에 카드가 자동으로 만들어져요. 규칙을 켠 뒤에 생긴 일만 카드가 돼요.</p>
@@ -411,7 +412,7 @@ export function RulesPanel({ boards, onRan }: { boards: Board[]; onRan: () => vo
       </ul>
       <div className="adm-form-actions">
         {ran != null && <span className="small muted" role="status">방금 실행: 카드 {ran}개</span>}
-        <button type="button" className="adm-btn primary small" disabled={busy} onClick={() => void runNow()}>{busy ? '실행 중…' : '지금 실행'}</button>
+        <button type="button" className="ui-btn is-primary is-sm" disabled={busy} onClick={() => void runNow()}>{busy ? '실행 중…' : '지금 실행'}</button>
       </div>
     </div>
   );

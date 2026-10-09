@@ -20,6 +20,7 @@ import { RightsDocumentModal } from '../components/RightsDocumentModal';
 import { SigningRequests } from '../components/SigningRequests';
 import { RIGHTS_DOCUMENTS, type RightsDocumentContext, type RightsDocumentKind } from '../lib/rightsDocument';
 import { Segmented } from '../components/Segmented';
+import { StatGrid, StatTile } from '../ui';
 
 const REQUIRED_DOCS: [string, string, string][] = [
   ['master', '마스터 음원 권리 확인서', '본인은 해당 마스터 음원에 관한 배급 권한을 보유하거나 권리자로부터 적법한 이용 허락을 받았음을 확인합니다.'],
@@ -138,22 +139,22 @@ export function Rights() {
 
   return (
     <div id="view-rights" className="view">
-      <div className="view-title">
+      <div className="ui-page-head">
         <div>
-          <p className="eyebrow">RIGHTS &amp; DOCUMENTS</p>
+          <p className="eyebrow">계약·권리</p>
           <h1>권리·보완 서류</h1>
           <p>발매별 권리 증빙과 AUDENIQ의 보완 요청을 한곳에서 처리하세요.</p>
         </div>
-        <button type="button" className="button secondary" onClick={() => setFormOpen(true)}>
-          권리 서류 작성·제출 <Glyph name="arrow-up-right" size={14} />
+        <button type="button" className="ui-btn is-soft" onClick={() => setFormOpen(true)}>
+          <Glyph name="plus" size={14} />권리 서류 작성·제출
         </button>
       </div>
 
-      <div className="aq-rights-summary">
-        <div><span>제출할 서류</span><strong id="rightsNeededCount">{needed}</strong></div>
-        <div><span>검토 중</span><strong id="rightsReviewCount">{review}</strong></div>
-        <div><span>보완 요청</span><strong id="rightsFixCount">{fix}</strong></div>
-      </div>
+      <StatGrid cols={3} className="aq-rights-summary">
+        <StatTile compact label="제출할 서류" value={<span id="rightsNeededCount">{needed}</span>} tone={needed ? undefined : 'muted'} />
+        <StatTile compact label="검토 중" value={<span id="rightsReviewCount">{review}</span>} tone={review ? undefined : 'muted'} />
+        <StatTile compact label="보완 요청" value={<span id="rightsFixCount">{fix}</span>} tone={fix ? 'warn' : 'muted'} />
+      </StatGrid>
 
       <SigningRequests releases={releases} tick={signingTick} onOpenDoc={setOpenId} />
 
@@ -170,7 +171,7 @@ export function Rights() {
         )}
       </div>
 
-      <div className="notice" style={{ marginTop: 25 }}>
+      <div className="ui-callout" style={{ marginTop: 25 }}>
         보완 요청이 있으면 요청 사유와 필요한 서류를 확인한 뒤 새 원본을 제출해 주세요.
       </div>
 
@@ -180,7 +181,7 @@ export function Rights() {
             AUDENIQ에서 문서를 자동 작성하고 권리자가 서명하거나, 보유한 허락서를 첨부할 수 있어요.
           </p>
           <form id="aqRequiredDocForm" onSubmit={submitForm}>
-            <div className="field">
+            <div className="ui-field">
               <label htmlFor="aqRequiredRelease">관련 발매</label>
               <select
                 id="aqRequiredRelease" required
@@ -192,7 +193,7 @@ export function Rights() {
                 ))}
               </select>
             </div>
-            <div className="field">
+            <div className="ui-field">
               <label htmlFor="aqRequiredKind">서류 종류</label>
               <select
                 id="aqRequiredKind"
@@ -203,15 +204,15 @@ export function Rights() {
                 ))}
               </select>
             </div>
-            <div className="field">
+            <div className="ui-field">
               <label htmlFor="aqRequiredTitle">서류 이름</label>
               <input
                 id="aqRequiredTitle" maxLength={160} required
                 value={docName} onChange={e => setDocName(e.target.value)}
               />
             </div>
-            {kind in RIGHTS_DOCUMENTS && <div className="field"><span className="aq-method-label" id="aqMethodLabel">서류 준비 방법</span><Segmented className="aq-method" labelledBy="aqMethodLabel" value={method} onChange={setMethod} options={[{ value: 'electronic', label: 'AUDENIQ에서 작성' }, { value: 'upload', label: '보유한 서류 첨부' }] as const} /></div>}
-            {(method === 'upload' || !(kind in RIGHTS_DOCUMENTS)) && <div className="field">
+            {kind in RIGHTS_DOCUMENTS && <div className="ui-field"><span className="aq-method-label" id="aqMethodLabel">서류 준비 방법</span><Segmented className="aq-method" labelledBy="aqMethodLabel" value={method} onChange={setMethod} options={[{ value: 'electronic', label: 'AUDENIQ에서 작성' }, { value: 'upload', label: '보유한 서류 첨부' }] as const} /></div>}
+            {(method === 'upload' || !(kind in RIGHTS_DOCUMENTS)) && <div className="ui-field">
               <label htmlFor="aqRequiredFile">증빙 원본 <span className="muted">(필요 시)</span></label>
               <FileCard
                 id="aqRequiredFile" fileName={file?.name}
@@ -221,7 +222,7 @@ export function Rights() {
               />
             </div>}
             <div className="aq-sticky-foot">
-              <button type="submit" className="button studio-submit-wide" disabled={submitting}>
+              <button type="submit" className="ui-btn is-primary studio-submit-wide" disabled={submitting}>
                 {submitting ? '준비 중…' : method === 'electronic' && kind in RIGHTS_DOCUMENTS ? '전자 문서 작성하기' : '서류 접수하기'}
               </button>
             </div>

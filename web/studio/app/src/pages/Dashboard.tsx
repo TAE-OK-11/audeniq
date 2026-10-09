@@ -1,13 +1,13 @@
 import { Link, useNavigate } from '../lib/router';
 import { fixPath, resolveCorrection, splitCorrections } from '../lib/corrections';
 import { api } from '../api/client';
-import { STATUS_LABEL, money, num } from '../lib/format';
+import { STATUS_LABEL, money, num, statusTone } from '../lib/format';
 import { useUnreadCount } from '../store/support';
 import { useProfile } from '../store/profile';
 import { useDocs } from '../store/docs';
 import { useAsync } from '../hooks/useAsync';
 import { SkeletonRows } from '../components/Skeleton';
-import { CountUp } from '../components/CountUp';
+import { Badge, CountUp } from '../ui';
 import { Money } from '../components/Money';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { latestSummary, periodLabel } from '../data/reports';
@@ -17,6 +17,7 @@ import { useGrowOnView } from '../hooks/useAnimations';
 import { prefetchRoute } from '../routes';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
+import { josa } from '../lib/josa';
 
 const GRID_ITEMS = [
   {
@@ -60,6 +61,9 @@ function greeting(): string {
   return '오늘도 수고했어요.';
 }
 
+/** 막대 위 짧은 금액 — 1만 원 이상은 ‘2.7만’처럼 */
+const shortWon = (n: number) => (n >= 10000 ? `${(n / 10000).toFixed(n >= 100000 ? 0 : 1)}만` : num(n));
+
 function MiniTrend({ data }: { data: { period: string; revenue: number }[] }) {
   const ref = useGrowOnView<HTMLDivElement>('.aq-mini-bar');
   const high = Math.max(1, ...data.map(d => d.revenue));
@@ -67,6 +71,7 @@ function MiniTrend({ data }: { data: { period: string; revenue: number }[] }) {
     <div className="aq-mini-trend" ref={ref} role="img" aria-label="최근 월별 수익 추이">
       {data.map((d, i) => (
         <span key={d.period} className="aq-mini-col">
+          <b className="aq-mini-val">{shortWon(d.revenue)}</b>
           <span
             className={`aq-mini-bar${i === data.length - 1 ? ' is-current' : ''}`}
             style={{ '--h': `${Math.max(6, Math.round((d.revenue / high) * 100))}%`, '--d': `${i * 80}ms` } as CSSVarStyle}
@@ -102,7 +107,7 @@ export function Dashboard() {
     const first = splitCorrections(only?.corrections).items[0];
     tasks.push({
       icon: 'alert', name: `보완이 필요한 발매 ${needs}건`,
-      sub: only ? `‘${only.title}’ · ${first ? resolveCorrection(first).label : '요청 내용'}을 고쳐 주세요.` : '요청 항목을 고쳐서 다시 접수해 주세요.',
+      sub: only ? `‘${only.title}’ · ${josa(first ? resolveCorrection(first).label : '요청 내용', '을/를')} 고쳐 주세요.` : '요청 항목을 고쳐서 다시 접수해 주세요.',
       btn: '보완', to: only ? fixPath(only.id, first) : '/releases?status=needs', tone: 'warn',
     });
   }
@@ -112,9 +117,12 @@ export function Dashboard() {
   if (!profileName) tasks.push({ icon: 'user', name: '아티스트 정보 등록', sub: '활동명과 연락처를 입력해 주세요.', btn: '등록', to: '/profile', tone: 'info' });
   if (unread) tasks.push({ icon: 'bell', name: `읽지 않은 알림 ${unread}건`, sub: '최근 변경사항을 확인해 보세요.', btn: '확인', to: '/notifications', tone: 'info' });
 
+  // 정산·재생이 아직 하나도 없으면 빈 차트 대신 짧은 안내만
+  const reportEmpty = report.revenue <= 0 && report.plays <= 0 && report.trend.every(d => !d.revenue);
+
   return (
     <div id="view-home" className="view">
-      <div className="view-title aq-home-title">
+      <div className="ui-page-head aq-home-title">
         <div>
           <p className="aq-home-date">{todayLabel()}</p>
           <h1>{profileName ? <>{profileName}<span className="aq-home-suffix">님의 작업실</span></> : '내 작업실'}</h1>
@@ -122,13 +130,13 @@ export function Dashboard() {
         </div>
       </div>
 
-      <Link className="portal-hero aq-home-hero" to="/upload" onPointerEnter={() => prefetchRoute('/upload')}>
+      <Link className="ui-hero aq-home-hero" to="/upload" onPointerEnter={() => prefetchRoute('/upload')}>
         <div>
           <p className="eyebrow">새 발매</p>
           <h2>새로운 발매를 <span className="aq-accent">시작해 보세요.</span></h2>
           <p>음원과 커버아트, 크레딧을 등록하고 발매를 준비해요.</p>
         </div>
-        <span className="button aq-hero-cta">
+        <span className="ui-btn is-primary aq-hero-cta">
           발매 등록하기
           <span className="aq-cta-arrow" aria-hidden="true">
             <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10M9 4l4 4-4 4" /></svg>
@@ -137,12 +145,9 @@ export function Dashboard() {
       </Link>
 
       <div className="dashboard-grid aq-stagger" aria-label="주요 업무">
-        {GRID_ITEMS.map((item, i) => (
+        {GRID_ITEMS.map(item => (
           <Link key={item.to} className="service-item" to={item.to} onPointerEnter={() => prefetchRoute(item.to)} onFocus={() => prefetchRoute(item.to)}>
-            <span className="aq-service-top">
-              <span className="icon-chip">{item.icon}</span>
-              <span className="aq-service-no" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span>
-            </span>
+            <span className="ui-icon">{item.icon}</span>
             <div>
               <h3>{item.title}</h3>
               <p>{item.desc}</p>
@@ -152,10 +157,10 @@ export function Dashboard() {
       </div>
 
       <div className="dashboard-columns">
-        <section className="surface" aria-labelledby="upcomingTitle">
-          <div className="section-top">
+        <section className="ui-card" aria-labelledby="upcomingTitle">
+          <div className="ui-section-head">
             <h2 id="upcomingTitle">내 발매</h2>
-            <button type="button" className="link-btn" onClick={() => navigate('/releases')}>전체 보기 <Glyph name="arrow-up-right" size={13} /></button>
+            <button type="button" className="aq-head-link" onClick={() => navigate('/releases')}>전체 보기<Glyph name="chevron-right" size={14} /></button>
           </div>
           <div id="homeReleases" aria-live="polite">
             {loading ? (
@@ -163,19 +168,19 @@ export function Dashboard() {
             ) : error ? (
               <div className="empty-note">
                 {error}<br />
-                <button className="link-btn" type="button" onClick={reload}>다시 불러오기</button>
+                <button className="ui-btn is-white is-sm" type="button" onClick={reload}>다시 불러오기</button>
               </div>
             ) : releases.length ? (
-              <div className="aq-stagger">
+              <div className="ui-list aq-stagger">
                 {releases.slice(0, 4).map(r => (
-                  <Link key={r.id} to={`/releases/${r.id}`} className="release-row studio-album-row aq-row-link">
+                  <Link key={r.id} to={`/releases/${r.id}`} className="release-row ui-row studio-album-row aq-row-link">
                     <ReleaseCover id={r.id} src={r.coverData} />
                     <div className="min-0">
-                      <span className="row-name">{r.title || '제목 없는 발매'}</span>
-                      <span className="row-sub">{r.artist || '아티스트 미입력'} · {r.track_count}곡 · {r.release_date || '발매일 미정'}</span>
+                      <span className="ui-row-title">{r.title || '제목 없는 발매'}</span>
+                      <span className="ui-row-meta">{r.artist || '아티스트 미입력'} · {r.track_count}곡 · {r.release_date || '발매일 미정'}</span>
                     </div>
-                    <div className="row-end">
-                      <span className={`status-chip ${r.status || 'draft'}`}>{STATUS_LABEL[r.status] || r.status}</span>
+                    <div className="ui-row-end">
+                      <Badge tone={statusTone(r.status)} className={`aq-status is-${r.status}`}>{STATUS_LABEL[r.status] || r.status}</Badge>
                     </div>
                   </Link>
                 ))}
@@ -183,15 +188,15 @@ export function Dashboard() {
             ) : (
               <div className="empty-note">
                 아직 등록한 발매가 없어요.<br />새 발매를 만들면 여기에서 확인할 수 있어요.<br />
-                <button className="link-btn" type="button" onClick={() => navigate('/upload')}>발매 등록하기 <Glyph name="arrow-up-right" size={13} /></button>
+                <button className="ui-btn is-white is-sm" type="button" onClick={() => navigate('/upload')}>발매 등록하기 <Glyph name="chevron-right" size={13} /></button>
               </div>
             )}
           </div>
         </section>
-        <section className="surface" aria-labelledby="workTitle">
-          <div className="section-top">
+        <section className="ui-card" aria-labelledby="workTitle">
+          <div className="ui-section-head">
             <h2 id="workTitle">확인할 작업</h2>
-            {tasks.length > 0 && <span className="aq-count-pill">{tasks.length}</span>}
+            {tasks.length > 0 && <span className="ui-count is-soft">{tasks.length}</span>}
           </div>
           <div id="homeTasks">
             {loading ? (
@@ -201,12 +206,12 @@ export function Dashboard() {
                 {tasks.map(t => (
                   <li key={t.name}>
                     <button type="button" className={`aq-task is-${t.tone}`} onClick={() => navigate(t.to)}>
-                      <span className="aq-task-icon" aria-hidden="true">{TASK_ICONS[t.icon]}</span>
+                      <span className="ui-icon" aria-hidden="true">{TASK_ICONS[t.icon]}</span>
                       <span className="aq-task-text">
                         <strong>{t.name}</strong>
                         <small>{t.sub}</small>
                       </span>
-                      <span className="aq-task-go">{t.btn}<i aria-hidden="true">›</i></span>
+                      <span className="aq-task-go">{t.btn}<i aria-hidden="true"><Glyph name="chevron-right" size={14} /></i></span>
                     </button>
                   </li>
                 ))}
@@ -221,11 +226,20 @@ export function Dashboard() {
         </section>
       </div>
 
-      <div className="section-top">
-        <h2>{periodLabel(report.period)} 음악 리포트</h2>
-        <button className="link-btn" type="button" onClick={() => navigate('/reports')}>리포트 보기 <Glyph name="arrow-up-right" size={13} /></button>
-      </div>
-      <section className="surface aq-report-card" aria-label="이번 달 리포트 요약">
+      <section className="ui-card aq-report-card" aria-label="이번 달 리포트 요약">
+        <div className="ui-section-head aq-report-head">
+          <h2>{periodLabel(report.period)} 음악 리포트</h2>
+          <button className="aq-head-link" type="button" onClick={() => navigate('/reports')}>리포트 보기<Glyph name="chevron-right" size={14} /></button>
+        </div>
+        {reportEmpty ? (
+          <div className="aq-report-empty">
+            <span className="ui-icon is-blue" aria-hidden="true"><Glyph name="chart" size={20} /></span>
+            <div className="min-0">
+              <strong>아직 수익 리포트가 없어요</strong>
+              <small>발매가 플랫폼에 나가고 정산이 들어오면 여기서 수익과 재생 수를 보여 드려요.</small>
+            </div>
+          </div>
+        ) : (<>
         <div className="aq-report-total">
           <small>이번 달 수익</small>
           <strong><Money value={report.revenue} animate /></strong>
@@ -241,6 +255,7 @@ export function Dashboard() {
           <div><small>Top 트랙</small><strong>{report.topTrack || '—'}</strong></div>
           <div><small>Top 플랫폼</small><strong>{report.topPlatform || '—'}</strong></div>
         </div>
+        </>)}
       </section>
     </div>
   );

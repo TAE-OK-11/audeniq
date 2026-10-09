@@ -2,7 +2,7 @@
 import type { StagingRow } from '../api/staff';
 import { Link } from '../lib/router';
 import { APPROVAL_STATUS, READINESS, checkLabel, dspLabel, pick } from '../labels';
-import { Section, StatusChip } from '../ui';
+import { Section, StatusBadge } from '../staffUi';
 import { Glyph } from './Glyph';
 import { CheckIcon } from './Check';
 
@@ -19,7 +19,7 @@ function Row({ d }: { d: StagingRow }) {
   const notes = d.checks.filter(c => !!c.severity && c.severity in SEV_TONE).sort((a, b) => SEV_ORDER[a.severity!] - SEV_ORDER[b.severity!]);
   const tone = d.readiness === 'CONTENT_BLOCKED' ? 'bad' : d.readiness === 'READY' ? 'ok' : 'wait';
   return (
-    <li className={`adm-dsp is-${tone}`}>
+    <li className={`adm-dsp ui-on-soft is-${tone}`}>
       <span className="adm-dsp-mark" aria-hidden="true">
         {tone === 'ok' ? <CheckIcon size={11} /> : tone === 'bad' ? <Glyph name="close" size={10} /> : <Glyph name="dot" size={11} />}
       </span>
@@ -28,8 +28,8 @@ function Row({ d }: { d: StagingRow }) {
           <b>{dspLabel(d.dsp)}</b>
           <span className="adm-codes">
             {d.ern_is_preview && <span className="adm-dsp-tag">ERN 미리보기</span>}
-            <StatusChip value={pick(READINESS, d.readiness)} />
-            <StatusChip value={pick(APPROVAL_STATUS, d.approval)} />
+            <StatusBadge value={pick(READINESS, d.readiness)} />
+            <StatusBadge value={pick(APPROVAL_STATUS, d.approval)} />
           </span>
         </div>
         {notes.length > 0 && (
@@ -52,7 +52,7 @@ export function DeliveryStatus({ rows }: { rows: StagingRow[] }) {
   const attention = sorted.filter(r => !ready.includes(r));
   const meta = [`${rows.length}곳`, blocked ? `막힘 ${blocked}` : '', ready.length ? `전송 가능 ${ready.length}` : ''].filter(Boolean).join(' · ');
   return (
-    <Section title="플랫폼별 배급 상태" meta={`현재 제출본 · ${meta}`} action={<Link to="/deliveries" className="adm-btn soft small">배급 관리</Link>}>
+    <Section title="플랫폼별 배급 상태" meta={`현재 제출본 · ${meta}`} action={<Link to="/deliveries" className="ui-btn is-soft is-sm">배급 관리</Link>}>
       {attention.length > 0 && <ul className="adm-dsp-list">{attention.map(d => <Row key={`${d.package_id}-${d.dsp}`} d={d} />)}</ul>}
       {ready.length > 0 && (attention.length ? (
         <details className="adm-dsp-more">

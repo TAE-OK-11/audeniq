@@ -9,7 +9,7 @@ import { useConfirm } from '../components/Confirm';
 import { useToast } from '../components/Toast';
 import { staffApi, type Duty, type Overview, type StaffMe } from './api';
 import { ROLE_LABEL } from './labels';
-import { Skeleton, StaffContext, WORK_PATHS } from './ui';
+import { SkeletonList, StaffContext, WORK_PATHS } from './ui';
 import { OverviewPage } from './pages/Overview';
 
 // 첫 화면(오늘의 업무) 말고는 열 때 불러온다 — 첫 로딩 JS를 줄이고, 로그인 뒤 한가할 때 미리 받아 둔다
@@ -58,6 +58,8 @@ const Docs = page('Docs');
 const Board = page('Board');
 const CrmDetail = page('CrmDetail');
 const DspOps = page('DspOps');
+// 디자인 시스템 화면은 미리 받지 않는다 (가끔 여는 참고 화면)
+const DesignSystem = lazy(() => import('./pages/DesignSystem').then(m => ({ default: m.DesignSystem })));
 function prefetchPages() {
   const run = () => { for (const load of Object.values(PAGE_LOADERS)) void load().catch(() => {}); };
   if ('requestIdleCallback' in window) window.requestIdleCallback(run, { timeout: 4000 });
@@ -71,12 +73,13 @@ import { alertsBlocked, alertsEnabled, alertsSupported, disableAlerts, enableAle
 import { ADMIN_INQUIRIES_EVENT, ADMIN_WORK_EVENT } from './liveEvents';
 import { workApi } from './work/api';
 import type { WorkSummary } from './work/types';
+import { Avatar, Badge } from '../ui';
 
 // 관리자 메뉴 아이콘 — 스튜디오와 같은 AUDENIQ 아이콘 세트(Glyph)
 const ICONS: Record<string, string> = {
   home: 'home', review: 'review', approval: 'approval', doc: 'doc', inquiry: 'inquiry',
   delivery: 'truck', dsp: 'globe', payout: 'card',
-  task: 'task', inbox: 'bell', exception: 'warning', sla: 'clock', crm: 'users', chat: 'inquiry',
+  task: 'task', inbox: 'bell', exception: 'warning', sla: 'clock', crm: 'users', chat: 'inquiry', design: 'layers',
 };
 
 export function Icon({ name }: { name: string }) {
@@ -85,9 +88,9 @@ export function Icon({ name }: { name: string }) {
 
 interface NavItem { to: string; label: string; icon: string; count?: (o: Overview | null, w: WorkSummary | null) => number; hot?: boolean; adminOnly?: boolean; also?: string[] }
 const NAV: { group: string; items: NavItem[] }[] = [
-  { group: 'OVERVIEW', items: [{ to: '/admin', label: '오늘의 업무', icon: 'home' }] },
+  { group: '한눈에', items: [{ to: '/admin', label: '오늘의 업무', icon: 'home' }] },
   {
-    group: 'WORK',
+    group: '업무',
     items: [
       // 업무함 · 업무 · 예외 처리 · 관계 관리 · SLA는 한 메뉴(업무) 안의 탭
       { to: '/admin/inbox', label: '업무', icon: 'task', count: (_, w) => w?.inbox.unread ?? 0, hot: true, also: WORK_PATHS },
@@ -96,23 +99,24 @@ const NAV: { group: string; items: NavItem[] }[] = [
     ],
   },
   {
-    group: 'REVIEW',
+    group: '심사',
     items: [
       // 2차 승인은 발매 심사 안의 탭
       { to: '/admin/reviews', label: '발매 심사', icon: 'review', count: o => (o ? o.review + o.second_approvals : 0), hot: true, also: ['/admin/approvals'] },
       { to: '/admin/documents', label: '서류 검토', icon: 'doc', count: o => (o ? o.documents : 0) },
     ],
   },
-  { group: 'SUPPORT', items: [{ to: '/admin/inquiries', label: '문의 답변', icon: 'inquiry', count: o => (o ? o.inquiries : 0), hot: true }] },
-  { group: 'CONTENT', items: [{ to: '/admin/content', label: '공지·이벤트 관리', icon: 'doc', adminOnly: true }] },
+  { group: '고객 지원', items: [{ to: '/admin/inquiries', label: '문의 답변', icon: 'inquiry', count: o => (o ? o.inquiries : 0), hot: true }] },
+  { group: '콘텐츠', items: [{ to: '/admin/content', label: '공지·이벤트 관리', icon: 'doc', adminOnly: true }] },
   {
-    group: 'DISTRIBUTION',
+    group: '배급',
     items: [
       // 배급은 최종 승인 + 아티스트 서명 후 자동 — 여기서는 현황과 문제만 본다 (DSP 사양은 탭)
       { to: '/admin/deliveries', label: '배급 현황', icon: 'delivery', count: o => (o ? o.deliveries_blocked : 0), hot: true, also: ['/admin/dsps', '/admin/dsp-ops'] },
       { to: '/admin/payouts', label: '지급 요청', icon: 'payout', count: o => (o ? o.payout_requests : 0), adminOnly: true },
     ],
   },
+  { group: '시스템', items: [{ to: '/admin/design', label: '디자인 시스템', icon: 'design' }] },
 ];
 
 const active = (path: string, to: string) => (to === '/admin' ? path === '/admin' || path === '/admin/' : path === to || path.startsWith(`${to}/`));
@@ -120,7 +124,7 @@ const active = (path: string, to: string) => (to === '/admin' ? path === '/admin
 function Gate({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
   return (
     <div className="adm-gate">
-      <div className="adm-empty-icon" aria-hidden="true"><Glyph name="lock" size={26} /></div>
+      <div className="ui-icon is-lg" aria-hidden="true"><Glyph name="lock" size={26} /></div>
       <h1>{title}</h1>
       <p>{children}</p>
       {action}
@@ -141,7 +145,7 @@ function AlertToggle() {
     toast(ok ? '브라우저 알림을 켰어요. 새 고객 메시지를 알려 드릴게요.' : '브라우저에서 알림 권한을 허용해 주세요.', ok ? 'success' : 'error');
   };
   return (
-    <button type="button" className={`adm-ghost adm-alert-toggle${on ? ' is-on' : ''}`} aria-pressed={on} onClick={toggle} title={on ? '브라우저 알림 끄기' : '브라우저 알림 켜기'}>
+    <button type="button" className={`ui-btn is-ghost is-sm adm-alert-toggle${on ? ' is-on' : ''}`} aria-pressed={on} onClick={toggle} title={on ? '브라우저 알림 끄기' : '브라우저 알림 켜기'}>
       <Glyph name="bell" size={15} /><span className="adm-ghost-text">{on ? '알림 켜짐' : '알림 켜기'}</span>
     </button>
   );
@@ -218,14 +222,14 @@ export function AdminApp() {
   }
   if (gate === 'forbidden') {
     return (
-      <Gate title="관리자 권한이 필요해요" action={<Link to="/" className="adm-btn primary">스튜디오로 돌아가기</Link>}>
-        {user?.email ?? '이 계정'}은 아직 관리자로 등록되지 않았어요. 운영 책임자에게 권한을 요청해 주세요.
+      <Gate title="관리자 권한이 필요해요" action={<Link to="/" className="ui-btn is-primary">스튜디오로 돌아가기</Link>}>
+        {user?.email ? `${user.email} 계정은` : '이 계정은'} 아직 관리자로 등록되지 않았어요. 운영 책임자에게 권한을 요청해 주세요.
       </Gate>
     );
   }
   if (gate === 'error' || !ctx || !me) {
     return (
-      <Gate title="관리자 정보를 불러오지 못했어요" action={<button type="button" className="adm-btn primary" onClick={loadMe}>다시 시도</button>}>
+      <Gate title="관리자 정보를 불러오지 못했어요" action={<button type="button" className="ui-btn is-primary" onClick={loadMe}>다시 시도</button>}>
         서버 연결을 확인한 뒤 다시 시도해 주세요.
       </Gate>
     );
@@ -241,17 +245,17 @@ export function AdminApp() {
           <div className="adm-header-shell">
             <Link to="/admin" className="adm-brand" aria-label="AUDENIQ ADMIN 홈">
               <img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" />
-              <span className="adm-pill">ADMIN</span>
+              <span className="ui-product is-dark">ADMIN</span>
             </Link>
             <div className="adm-header-right">
-              {MOCK && <span className="adm-chip adm-t-amber">체험 데이터</span>}
+              {MOCK && <Badge tone="amber">체험 데이터</Badge>}
               <AlertToggle />
               <div className="adm-who" title={user?.email}>
-                <span className="adm-who-avatar" aria-hidden="true">{initial}</span>
+                <Avatar name={initial} size="sm" />
                 <span className="adm-who-text"><b>{user?.email}</b><small>{ROLE_LABEL[me.role]}</small></span>
               </div>
-              <Link to="/" className="adm-ghost" aria-label="스튜디오로 이동"><Glyph name="arrow-up-right" size={15} /><span className="adm-ghost-text">스튜디오</span></Link>
-              <button type="button" className="adm-ghost" onClick={doLogout}>로그아웃</button>
+              <Link to="/" className="ui-btn is-ghost is-sm" aria-label="스튜디오로 이동">스튜디오<Glyph name="arrow-up-right" size={14} /></Link>
+              <button type="button" className="ui-btn is-ghost is-sm" onClick={doLogout}>로그아웃</button>
             </div>
           </div>
         </header>
@@ -267,7 +271,7 @@ export function AdminApp() {
                   return (
                     <Link key={i.to} to={i.to} aria-current={cur ? 'page' : undefined}>
                       <span><Icon name={i.icon} />{i.label}</span>
-                      {n > 0 && <b className={`adm-count${i.hot ? ' is-hot' : ''}`}>{n > 99 ? '99+' : n}</b>}
+                      {n > 0 && <b className={`ui-count${i.hot ? ' is-hot' : ''}`}>{n > 99 ? '99+' : n}</b>}
                     </Link>
                   );
                 })}
@@ -279,7 +283,7 @@ export function AdminApp() {
           </nav>
 
           <main className="adm-main" id="main" tabIndex={-1}>
-            <Suspense fallback={<Skeleton rows={6} />}>
+            <Suspense fallback={<SkeletonList rows={6} />}>
             <Routes>
               <Route path="/admin" element={<OverviewPage />} />
               <Route path="/admin/reviews" element={<ReviewQueue />} />
@@ -297,6 +301,7 @@ export function AdminApp() {
               <Route path="/admin/crm" element={<Crm />} />
               <Route path="/admin/crm/:id" element={<CrmDetail />} />
               <Route path="/admin/dsp-ops" element={<DspOps />} />
+              <Route path="/admin/design" element={<DesignSystem />} />
               <Route path="/admin/tasks" element={<Tasks />} />
               <Route path="/admin/board" element={<Board />} />
               <Route path="/admin/board/:id" element={<Board />} />

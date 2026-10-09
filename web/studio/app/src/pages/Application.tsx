@@ -62,19 +62,19 @@ export function Application() {
   }
   if (error || !rel) {
     return (
-      <div className="empty-page">
+      <div className="ui-empty">
         <h2>신청서를 불러오지 못했어요.</h2>
         <p>{error || '발매를 찾을 수 없어요.'}</p>
-        <button type="button" className="button secondary" onClick={reload}>다시 시도</button>
+        <button type="button" className="ui-btn is-soft" onClick={reload}>다시 시도</button>
       </div>
     );
   }
   if (rel.status === 'draft' && !issued) {
     return (
-      <div className="empty-page">
+      <div className="ui-empty">
         <h2>아직 접수 전인 발매예요.</h2>
         <p>신청서 마지막 단계에서 서명하고 접수하면 배급 신청서가 발급돼요.</p>
-        <button type="button" className="button" onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}>계속 작성</button>
+        <button type="button" className="ui-btn is-primary" onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}>계속 작성</button>
       </div>
     );
   }
@@ -101,10 +101,10 @@ export function Application() {
       )}
 
       <div className="aq-doc-toolbar">
-        <button type="button" className="link-btn aq-back-link" onClick={() => nav(`/releases/${rel.id}`)}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />발매 상세</button>
+        <button type="button" className="ui-btn is-white is-sm aq-back-link" onClick={() => nav(`/releases/${rel.id}`)}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />발매 상세</button>
         <div className="row-actions">
-          <button type="button" className="button secondary" onClick={() => nav('/')}>홈으로</button>
-          <button type="button" className="button" onClick={() => window.print()}>인쇄 · PDF 저장</button>
+          <button type="button" className="ui-btn is-soft" onClick={() => nav('/')}>홈으로</button>
+          <button type="button" className="ui-btn is-primary" onClick={() => window.print()}>인쇄 · PDF 저장</button>
         </div>
       </div>
 
@@ -166,17 +166,17 @@ export function Application() {
               <tbody>
                 {snap.tracks.map((t, i) => (
                   <tr key={i}>
-                    <td className="num">{i + 1}</td>
-                    <td>
+                    <td className="num aq-paper-no">{i + 1}</td>
+                    <td className="aq-paper-title">
                       <strong>{t.title}</strong>{t.version && ` (${t.version})`}
                       {t.explicit && <em className="aq-paper-tag">19</em>}
                       {t.featuring && <small>피처링 {t.featuring}</small>}
                       {(t.arrangers || t.producer) && <small>{[t.arrangers && `편곡 ${t.arrangers}`, t.producer && `프로듀서 ${t.producer}`].filter(Boolean).join(' · ')}</small>}
                     </td>
-                    <td>{t.composers}</td>
-                    <td>{t.instrumental ? '연주곡' : dash(t.lyricists)}</td>
-                    <td className="num">{dash(t.duration)}</td>
-                    <td>
+                    <td data-label="작곡">{t.composers}</td>
+                    <td data-label="작사">{t.instrumental ? '연주곡' : dash(t.lyricists)}</td>
+                    <td className="num" data-label="길이">{dash(t.duration)}</td>
+                    <td data-label="음원">
                       <small>{t.audioSpec || t.audioName || '—'}</small>
                       <small>{t.isrc ? `ISRC ${t.isrc}` : 'ISRC 발급 예정'}</small>
                     </td>

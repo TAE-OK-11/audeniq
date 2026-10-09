@@ -11,7 +11,7 @@ import { useConfirm } from '../../../components/Confirm';
 import { errorMessage } from '../../../api/errors';
 import { Glyph } from '../../../components/Glyph';
 import { readJSON, writeJSON } from '../../../lib/storage';
-import { Chip, Empty, ErrorBox, PageHead, Skeleton, WorkTabs, useStaff } from '../../ui';
+import { Badge, EmptyState, ErrorBox, PageHeader, SkeletonList, WorkTabs, useStaff } from '../../ui';
 import { workApi } from '../api';
 import { BOARD_KIND, ROLE_NAME } from '../labels';
 import { usePeople } from '../ui';
@@ -297,21 +297,21 @@ export function Board() {
   const scrollToColumn = (id: string) => document.getElementById(`kbcol-${id}`)?.scrollIntoView?.({ inline: 'start', block: 'nearest', behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
 
   const head = (
-    <PageHead
+    <PageHeader
       eyebrow="업무 · 보드"
       title={board ? board.name : '보드'}
       sub={board ? (
         <span className="adm-kb-sub">
-          <Chip tone={board.kind === 'PERSONAL' ? 'violet' : board.kind === 'TEAM' ? 'blue' : 'green'}>{BOARD_KIND[board.kind]} 보드{board.team_role ? ` · ${ROLE_NAME[board.team_role]}` : ''}</Chip>
+          <Badge tone={board.kind === 'PERSONAL' ? 'gray' : board.kind === 'TEAM' ? 'violet' : 'blue'}>{BOARD_KIND[board.kind]} 보드{board.team_role ? ` · ${ROLE_NAME[board.team_role]}` : ''}</Badge>
           {board.description && <span>{board.description}</span>}
         </span>
       ) : '카드를 끌어 옮기거나, 카드에서 Alt+화살표로 옮길 수 있어요.'}
       actions={<>
-        {canWrite && <button type="button" className="adm-btn primary small" onClick={() => setDialog('card')}><Glyph name="plus" size={14} />새 카드</button>}
-        {canManage && <button type="button" className="adm-btn soft small" onClick={() => setDialog('columns')}>열 관리</button>}
-        {admin && <button type="button" className="adm-btn soft small" onClick={() => setDialog('rules')}>자동 규칙</button>}
-        <button type="button" className="adm-btn soft small" onClick={() => setDialog('board')}>보드 만들기</button>
-        {canManage && board?.key !== 'general' && board && <button type="button" className="adm-btn danger small" onClick={() => void archiveBoard()}>보관</button>}
+        {canWrite && <button type="button" className="ui-btn is-primary is-sm" onClick={() => setDialog('card')}><Glyph name="plus" size={14} />새 카드</button>}
+        {canManage && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setDialog('columns')}>열 관리</button>}
+        {admin && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setDialog('rules')}>자동 규칙</button>}
+        <button type="button" className="ui-btn is-soft is-sm" onClick={() => setDialog('board')}>보드 만들기</button>
+        {canManage && board?.key !== 'general' && board && <button type="button" className="ui-btn is-danger is-sm" onClick={() => void archiveBoard()}>보관</button>}
       </>}
     />
   );
@@ -325,7 +325,7 @@ export function Board() {
 
       <div className="adm-kb-bar">
         <label htmlFor="kbBoard" className="sr-only">보드 고르기</label>
-        <select id="kbBoard" className="adm-select adm-kb-picker-select" value={routeId ?? ''} disabled={!boards} onChange={e => pickBoard(e.target.value)}>
+        <select id="kbBoard" className="ui-select is-auto adm-kb-picker-select" value={routeId ?? ''} disabled={!boards} onChange={e => pickBoard(e.target.value)}>
           {!boards && <option value={routeId ?? ''}>보드 불러오는 중…</option>}
           {routeId && boards && !boards.some(b => b.id === routeId) && <option value={routeId}>{board?.name ?? '선택한 보드'}</option>}
           {grouped.map(([k, list]) => (
@@ -334,34 +334,34 @@ export function Board() {
             </optgroup>
           ))}
         </select>
-        <button type="button" className="adm-btn soft small" onClick={() => void load()} disabled={loading}>{loading && view ? '불러오는 중…' : '새로고침'}</button>
+        <button type="button" className="ui-btn is-soft is-sm" onClick={() => void load()} disabled={loading}>{loading && view ? '불러오는 중…' : '새로고침'}</button>
       </div>
       {boardsError && <ErrorBox message={boardsError} onRetry={loadBoards} />}
 
       {boards && boards.length === 0 && !routeId ? (
-        <Empty icon={<Glyph name="task" size={22} />} title="볼 수 있는 보드가 없어요">
-          <button type="button" className="adm-btn soft small" style={{ marginTop: 14 }} onClick={() => setDialog('board')}>보드 만들기</button>
-        </Empty>
+        <EmptyState icon={<Glyph name="task" size={22} />} title="볼 수 있는 보드가 없어요">
+          <button type="button" className="ui-btn is-soft is-sm" style={{ marginTop: 14 }} onClick={() => setDialog('board')}>보드 만들기</button>
+        </EmptyState>
       ) : (
         <>
           <FilterBar filters={filters} onChange={changeFilters} onClear={clearFilters} people={people} columns={view?.columns ?? []} tags={view?.tags ?? []} boardKind={board?.kind} />
           {error && <ErrorBox message={error} onRetry={() => void load()} />}
           {view && !canWrite && (
-            <div className="adm-alert adm-kb-note"><Glyph name="lock" size={13} className="aq-inline-glyph" /> 이 보드는 보기만 할 수 있어요. {board?.archived ? '보관된 보드예요.' : board?.kind === 'TEAM' ? `${board.team_role ? ROLE_NAME[board.team_role] : '해당'} 팀과 관리자만 카드를 옮기고 추가할 수 있어요.` : '카드 담당·검토자는 카드 상세에서 내용을 바꿀 수 있어요.'}</div>
+            <div className="ui-callout adm-kb-note"><Glyph name="lock" size={13} className="aq-inline-glyph" /> 이 보드는 보기만 할 수 있어요. {board?.archived ? '보관된 보드예요.' : board?.kind === 'TEAM' ? `${board.team_role ? ROLE_NAME[board.team_role] : '해당'} 팀과 관리자만 카드를 옮기고 추가할 수 있어요.` : '카드 담당·검토자는 카드 상세에서 내용을 바꿀 수 있어요.'}</div>
           )}
-          {view?.truncated && <div className="adm-alert adm-w-alert-warn">카드가 많아 1,500장까지만 보여요. 필터로 범위를 좁혀 주세요.</div>}
+          {view?.truncated && <div className="ui-callout is-warn">카드가 많아 1,500장까지만 보여요. 필터로 범위를 좁혀 주세요.</div>}
           {view && filtered && totalCards === 0 && (
-            <div className="adm-alert adm-alert-row"><span>조건에 맞는 카드가 없어요.</span><button type="button" className="adm-btn soft small" onClick={clearFilters}>필터 지우기</button></div>
+            <div className="ui-callout is-row"><span>조건에 맞는 카드가 없어요.</span><button type="button" className="ui-btn is-soft is-sm" onClick={clearFilters}>필터 지우기</button></div>
           )}
           {view && !filtered && totalCards === 0 && (
             <p className="adm-kb-empty-board">아직 카드가 없어요. {canWrite ? '열 아래 ‘카드 추가’나 위의 ‘새 카드’로 시작해 보세요.' : ''}</p>
           )}
 
-          {!view ? (error ? null : <Skeleton rows={6} />) : (
+          {!view ? (error ? null : <SkeletonList rows={6} />) : (
             <>
               <nav className="adm-kb-jump" aria-label="열로 이동">
                 {view.columns.map(c => (
-                  <button key={c.id} type="button" onClick={() => scrollToColumn(c.id)}>{c.name}<span className="adm-count">{byColumn.get(c.id)?.length ?? 0}</span></button>
+                  <button key={c.id} type="button" onClick={() => scrollToColumn(c.id)}>{c.name}<span className="ui-count">{byColumn.get(c.id)?.length ?? 0}</span></button>
                 ))}
               </nav>
               <div className={`adm-kb-board${loading ? ' is-loading' : ''}`} aria-busy={loading} aria-label={`${view.board.name} 보드 열`} role="region" tabIndex={-1}>

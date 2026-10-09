@@ -59,24 +59,24 @@ export const FilterBar = memo(function FilterBar({ filters, onChange, onClear, p
       <div className="adm-kb-filter-row">
         <label htmlFor="kbSearch" className="sr-only">카드 찾기</label>
         <input
-          id="kbSearch" type="search" className="adm-input adm-kb-search" placeholder="제목·내용·번호·연결 이름으로 찾기" value={q} maxLength={80}
+          id="kbSearch" type="search" className="ui-input adm-kb-search" placeholder="제목·내용·번호·연결 이름으로 찾기" value={q} maxLength={80}
           onChange={e => { typing.current = true; setQ(e.target.value); }}
         />
-        <select className="adm-select" aria-label="담당자" value={filters.assignee} onChange={e => onChange({ assignee: e.target.value })}>
+        <select className="ui-select is-auto" aria-label="담당자" value={filters.assignee} onChange={e => onChange({ assignee: e.target.value })}>
           <option value="">모든 담당자</option>
           <option value="me">나</option>
           <option value="none">미배정</option>
           {others.map(p => <option key={p.user_id} value={p.user_id}>{p.email}</option>)}
         </select>
-        <select className="adm-select" aria-label="우선순위" value={filters.priority} onChange={e => onChange({ priority: e.target.value as BoardFilters['priority'] })}>
+        <select className="ui-select is-auto" aria-label="우선순위" value={filters.priority} onChange={e => onChange({ priority: e.target.value as BoardFilters['priority'] })}>
           <option value="">모든 우선순위</option>
           {PRIORITIES.map(p => <option key={p} value={p}>{PRIORITY_CODE[p]} · {PRIORITY_NAME[p]}</option>)}
         </select>
-        <select className="adm-select" aria-label="마감" value={filters.due} onChange={e => onChange({ due: e.target.value as BoardFilters['due'] })}>
+        <select className="ui-select is-auto" aria-label="마감" value={filters.due} onChange={e => onChange({ due: e.target.value as BoardFilters['due'] })}>
           <option value="">모든 마감</option>
           {DUE_OPTIONS.map(d => <option key={d} value={d}>{DUE_LABEL[d]}</option>)}
         </select>
-        <select className="adm-select" aria-label="출처" value={filters.source} onChange={e => onChange({ source: e.target.value as BoardFilters['source'] })}>
+        <select className="ui-select is-auto" aria-label="출처" value={filters.source} onChange={e => onChange({ source: e.target.value as BoardFilters['source'] })}>
           <option value="">직접·자동 모두</option>
           <option value="manual">{SOURCE_LABEL('manual')}</option>
           <option value="auto">{SOURCE_LABEL('auto')}</option>
@@ -86,28 +86,28 @@ export const FilterBar = memo(function FilterBar({ filters, onChange, onClear, p
       <details className="adm-kb-more" open={active.some(k => ['column', 'tag', 'type', 'creator', 'entity_kind'].includes(k)) || undefined}>
         <summary>필터 더 보기</summary>
         <div className="adm-kb-filter-row">
-          <select className="adm-select" aria-label="열" value={filters.column} onChange={e => onChange({ column: e.target.value })}>
+          <select className="ui-select is-auto" aria-label="열" value={filters.column} onChange={e => onChange({ column: e.target.value })}>
             <option value="">모든 열</option>
             {columns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <select className="adm-select" aria-label="태그" value={filters.tag} onChange={e => onChange({ tag: e.target.value })}>
+          <select className="ui-select is-auto" aria-label="태그" value={filters.tag} onChange={e => onChange({ tag: e.target.value })}>
             <option value="">모든 태그</option>
             {filters.tag && !tags.includes(filters.tag) && <option value={filters.tag}>#{filters.tag}</option>}
             {tags.map(t => <option key={t} value={t}>#{t}</option>)}
           </select>
-          <select className="adm-select" aria-label="업무 유형" value={filters.type} onChange={e => onChange({ type: e.target.value as BoardFilters['type'] })}>
+          <select className="ui-select is-auto" aria-label="업무 유형" value={filters.type} onChange={e => onChange({ type: e.target.value as BoardFilters['type'] })}>
             <option value="">모든 유형</option>
             {WORK_TYPES.map(t => <option key={t} value={t}>{WORK_TYPE[t]}</option>)}
           </select>
-          <select className="adm-select" aria-label="만든 사람" value={filters.creator} onChange={e => onChange({ creator: e.target.value })}>
+          <select className="ui-select is-auto" aria-label="만든 사람" value={filters.creator} onChange={e => onChange({ creator: e.target.value })}>
             <option value="">만든 사람 전체</option>
             {people.list.map(p => <option key={p.user_id} value={p.user_id}>{p.user_id === me.user_id ? `나 (${p.email})` : p.email}</option>)}
           </select>
-          <select className="adm-select" aria-label="연결된 항목 종류" value={filters.entity_kind} onChange={e => onChange({ entity_kind: e.target.value as BoardFilters['entity_kind'] })}>
+          <select className="ui-select is-auto" aria-label="연결된 항목 종류" value={filters.entity_kind} onChange={e => onChange({ entity_kind: e.target.value as BoardFilters['entity_kind'] })}>
             <option value="">연결 전체</option>
             {LINK_KINDS.map(k => <option key={k} value={k}>{ENTITY_KIND[k].label} 연결</option>)}
           </select>
-          <select className="adm-select" aria-label="완료 카드 보기 기간" value={filters.done_days ?? ''} onChange={e => onChange({ done_days: e.target.value ? Number(e.target.value) : null })}>
+          <select className="ui-select is-auto" aria-label="완료 카드 보기 기간" value={filters.done_days ?? ''} onChange={e => onChange({ done_days: e.target.value ? Number(e.target.value) : null })}>
             <option value="">완료 카드 최근 30일</option>
             {DONE_DAYS.filter(d => d !== 30).map(d => <option key={d} value={d}>완료 카드 최근 {d}일</option>)}
           </select>
@@ -121,7 +121,7 @@ export const FilterBar = memo(function FilterBar({ filters, onChange, onClear, p
               <span aria-hidden="true">×</span><span className="sr-only"> 필터 끄기</span>
             </button>
           ))}
-          <button type="button" className="adm-link-btn" onClick={() => { typing.current = false; setQ(''); onClear(); }}>모두 지우기</button>
+          <button type="button" className="ui-btn is-text is-muted" onClick={() => { typing.current = false; setQ(''); onClear(); }}>모두 지우기</button>
         </div>
       )}
     </div>

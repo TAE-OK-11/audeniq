@@ -288,7 +288,7 @@ export function SignatureModal({
                 </button>
               ))}
             </div>
-            <div className="notice">
+            <div className="ui-callout">
               선택한 인증서로 휴대폰 본인 확인을 진행해요. 실제 인증 연동 전까지는 데모 흐름으로 동작해요.
             </div>
           </>
@@ -299,7 +299,7 @@ export function SignatureModal({
             <p className="aq-sign-intro">
               <strong>{certProvider}</strong> 본인 확인을 위해 이름과 휴대폰 번호를 입력해 주세요.
             </p>
-            <div className="field">
+            <div className="ui-field">
               <label htmlFor="aqCertName">이름</label>
               <input
                 type="text" id="aqCertName" maxLength={20}
@@ -308,7 +308,7 @@ export function SignatureModal({
                 autoComplete="name"
               />
             </div>
-            <div className="field">
+            <div className="ui-field">
               <label htmlFor="aqCertPhone">휴대폰 번호</label>
               <input
                 type="tel" id="aqCertPhone"
@@ -317,7 +317,7 @@ export function SignatureModal({
                 autoComplete="tel" inputMode="tel"
               />
             </div>
-            <div className="notice">입력한 번호로 인증번호 6자리가 발송돼요.</div>
+            <div className="ui-callout">입력한 번호로 인증번호 6자리가 발송돼요.</div>
           </>
         );
       case 'rrn':
@@ -326,7 +326,7 @@ export function SignatureModal({
             <p className="aq-sign-intro">
               본인 확인을 위해 주민등록번호를 입력해 주세요.
             </p>
-            <div className="field">
+            <div className="ui-field">
               <label htmlFor="aqCertRrnFront">주민등록번호</label>
               <div className="aq-rrn-row">
                 <input
@@ -340,12 +340,12 @@ export function SignatureModal({
                   type="password" id="aqCertRrnBack" aria-label="주민등록번호 뒷자리 첫 자리"
                   value={rrnBack}
                   onChange={e => setRrnBack(e.target.value.replace(/\D/g, '').slice(0, 1))}
-                  placeholder="●" inputMode="numeric" maxLength={1}
+                  inputMode="numeric" maxLength={1}
                 />
-                <span className="aq-rrn-mask">●●●●●●</span>
+                <span className="aq-rrn-mask" aria-hidden="true">{Array.from({ length: 6 }, (_, i) => <i key={i} />)}</span>
               </div>
             </div>
-            <div className="notice">뒷자리는 첫 번째 숫자만 입력해요. 나머지는 저장되지 않아요.</div>
+            <div className="ui-callout">뒷자리는 첫 번째 숫자만 입력해요. 나머지는 저장되지 않아요.</div>
           </>
         );
       case 'verify':
@@ -354,7 +354,7 @@ export function SignatureModal({
             <p className="aq-sign-intro">
               <strong>{phone}</strong>으로 발송된 인증번호 6자리를 입력해 주세요.
             </p>
-            <div className="field">
+            <div className="ui-field">
               <label htmlFor="aqCertCode">인증번호</label>
               <input
                 type="text" id="aqCertCode"
@@ -364,7 +364,7 @@ export function SignatureModal({
                 autoComplete="one-time-code"
               />
             </div>
-            <button type="button" className="link-btn" onClick={() => toast('인증번호를 다시 발송했어요.')}>
+            <button type="button" className="ui-btn is-white is-sm" onClick={() => toast('인증번호를 다시 발송했어요.')}>
               인증번호 다시 받기
             </button>
           </>
@@ -375,7 +375,7 @@ export function SignatureModal({
             <div className="aq-cert-done-icon"><CheckIcon size={28} /></div>
             <strong>본인 인증이 완료됐어요</strong>
             <p>{certProvider} · {certName} · {phone}</p>
-            <p className="help">계약서 서명 기록에 본인 인증 내역이 저장됐어요.</p>
+            <p className="ui-field-help">계약서 서명 기록에 본인 인증 내역이 저장됐어요.</p>
           </div>
         );
     }
@@ -385,17 +385,17 @@ export function SignatureModal({
     switch (certStep) {
       case 'select':
         return (
-          <button type="button" className="button secondary" onClick={() => setPhase('sign')}>
+          <button type="button" className="ui-btn is-soft" onClick={() => setPhase('sign')}>
             이전: 서명 단계로
           </button>
         );
       case 'phone':
         return (
           <>
-            <button type="button" className="button" onClick={submitPhone}>
+            <button type="button" className="ui-btn is-primary" onClick={submitPhone}>
               다음
             </button>
-            <button type="button" className="button secondary" onClick={() => setCertStep('select')}>
+            <button type="button" className="ui-btn is-soft" onClick={() => setCertStep('select')}>
               이전
             </button>
           </>
@@ -403,10 +403,10 @@ export function SignatureModal({
       case 'rrn':
         return (
           <>
-            <button type="button" className="button" onClick={submitRrn}>
+            <button type="button" className="ui-btn is-primary" onClick={submitRrn}>
               인증번호 받기
             </button>
-            <button type="button" className="button secondary" onClick={() => setCertStep('phone')}>
+            <button type="button" className="ui-btn is-soft" onClick={() => setCertStep('phone')}>
               이전
             </button>
           </>
@@ -414,10 +414,10 @@ export function SignatureModal({
       case 'verify':
         return (
           <>
-            <button type="button" className="button" onClick={submitVerify}>
+            <button type="button" className="ui-btn is-primary" onClick={submitVerify}>
               인증 완료
             </button>
-            <button type="button" className="button secondary" onClick={() => setCertStep('rrn')}>
+            <button type="button" className="ui-btn is-soft" onClick={() => setCertStep('rrn')}>
               이전
             </button>
           </>
@@ -425,10 +425,10 @@ export function SignatureModal({
       case 'done':
         return (
           <>
-            <button type="button" className="button" onClick={() => (onDone ?? onBack)()}>
+            <button type="button" className="ui-btn is-primary" onClick={() => (onDone ?? onBack)()}>
               확인
             </button>
-            <button type="button" className="button secondary" onClick={resetCert}>
+            <button type="button" className="ui-btn is-soft" onClick={resetCert}>
               다시 인증하기
             </button>
           </>
@@ -456,7 +456,7 @@ export function SignatureModal({
         <div className="aq-sign-doc">
           <small>{readOnly ? '서명 절차를 확인할 문서' : '서명할 문서'} · v{doc.version || '1.0'}</small>
           <strong>{title}</strong>
-          <div className="help">{readOnly ? '검토 진행 중' : '검토 완료'} · {doc.releaseTitle || '공통 문서'}</div>
+          <div className="ui-field-help">{readOnly ? '검토 진행 중' : '검토 완료'} · {doc.releaseTitle || '공통 문서'}</div>
         </div>
 
         {phase === 'sign' && readOnly ? (
@@ -483,7 +483,7 @@ export function SignatureModal({
           </section>
         ) : phase === 'sign' ? (
           <section id="aqDrawPane">
-            <div className="field">
+            <div className="ui-field">
               <label htmlFor="aqSignerName">서명자 이름</label>
               <input
                 type="text" maxLength={100} id="aqSignerName"
@@ -492,7 +492,7 @@ export function SignatureModal({
                 placeholder="실명 또는 계약서의 서명자명을 입력해 주세요."
               />
             </div>
-            <div className="field">
+            <div className="ui-field">
               <label htmlFor="aqDrawCanvas">서명 입력</label>
               <div className="aq-sign-sheet">
                 <canvas
@@ -513,13 +513,13 @@ export function SignatureModal({
             {boxes.length > 0 && (
               <fieldset className="aq-confirm-boxes">
                 <legend>권리·배급 권한 확인 <small>계약서 별첨 2 · 직접 체크해 주세요</small></legend>
-                <label className="check-line aq-confirm-all">
+                <label className="ui-check is-plain aq-confirm-all">
                   <input type="checkbox" checked={boxes.every(b => ticked[b.id])}
                     onChange={e => setTicked(Object.fromEntries(boxes.map(b => [b.id, e.target.checked])))} />
                   <span>모두 확인했어요</span>
                 </label>
                 {boxes.map(b => (
-                  <label key={b.id} className="check-line">
+                  <label key={b.id} className="ui-check is-plain">
                     <input type="checkbox" checked={!!ticked[b.id]} onChange={e => setTicked(t => ({ ...t, [b.id]: e.target.checked }))} />
                     <span><b>{b.required ? '(필수)' : '(해당 시)'}</b> {b.text}</span>
                   </label>
@@ -555,15 +555,15 @@ export function SignatureModal({
       </div>
       <div className="aq-sign-foot">
         {phase === 'sign' && readOnly ? (
-          <button type="button" className="button secondary aq-sign-full" id="aqSignReturn" onClick={onBack}>
+          <button type="button" className="ui-btn is-soft aq-sign-full" id="aqSignReturn" onClick={onBack}>
             문서로 돌아가기
           </button>
         ) : phase === 'sign' ? (
           <>
-            <button type="button" className={`button${signing ? ' is-busy' : ''}`} id="aqSignSave" onClick={save} disabled={signing}>
+            <button type="button" className={`ui-btn is-primary${signing ? ' is-busy' : ''}`} id="aqSignSave" onClick={save} disabled={signing}>
               {MOCK ? '서명 저장 후 본인 인증' : signing ? '서명하는 중' : '서명하고 계약 체결'}
             </button>
-            <button type="button" className="button secondary" id="aqSignReturn" onClick={onBack}>
+            <button type="button" className="ui-btn is-soft" id="aqSignReturn" onClick={onBack}>
               문서로 돌아가기
             </button>
           </>
@@ -571,10 +571,10 @@ export function SignatureModal({
           renderCertFoot()
         ) : (
           <>
-            <button type="button" className="button" onClick={() => (onDone ?? onBack)()}>
+            <button type="button" className="ui-btn is-primary" onClick={() => (onDone ?? onBack)()}>
               계약서 완성 확인
             </button>
-            <button type="button" className="button secondary" onClick={() => { setPhase('sign'); }}>
+            <button type="button" className="ui-btn is-soft" onClick={() => { setPhase('sign'); }}>
               서명 다시 하기
             </button>
           </>

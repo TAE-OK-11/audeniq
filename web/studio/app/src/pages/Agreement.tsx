@@ -37,10 +37,10 @@ export function Agreement() {
   if (loading && !doc) return <div className="view aq-doc-view"><SkeletonBlock height={640} /></div>;
   if (error || !doc) {
     return (
-      <div className="empty-page">
+      <div className="ui-empty">
         <h2>계약서를 확인할 수 없어요.</h2>
         <p>{error || '이 계정에서 볼 수 있는 계약서가 없어요.'}</p>
-        <button type="button" className="button secondary" onClick={() => nav('/contracts')}>계약서 목록</button>
+        <button type="button" className="ui-btn is-soft" onClick={() => nav('/contracts')}>계약서 목록</button>
       </div>
     );
   }
@@ -90,15 +90,15 @@ export function Agreement() {
             <strong>{doc.reviewStatus === 'approved' ? '서명 전 계약서예요.' : '담당자 검토 중인 계약서예요.'}</strong>
             <span>{doc.reviewStatus === 'approved' ? '내용을 확인하고 권리 확인 항목에 체크한 뒤 서명하면 계약이 체결돼요.' : '검토가 끝나면 계약 조건이 확정되고 서명할 수 있어요.'}</span>
           </div>
-          {doc.reviewStatus === 'approved' && <button type="button" className="button" onClick={() => nav(`/contracts?doc=${encodeURIComponent(doc.id)}`)}>확인하고 서명</button>}
+          {doc.reviewStatus === 'approved' && <button type="button" className="ui-btn is-primary" onClick={() => nav(`/contracts?doc=${encodeURIComponent(doc.id)}`)}>확인하고 서명</button>}
         </div>
       )}
 
       <div className="aq-doc-toolbar">
-        <button type="button" className="link-btn aq-back-link" onClick={() => nav('/contracts')}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />계약서</button>
+        <button type="button" className="ui-btn is-white is-sm aq-back-link" onClick={() => nav('/contracts')}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />계약서</button>
         <div className="row-actions">
-          {doc.releaseId && <button type="button" className="button secondary" onClick={() => nav(`/releases/${doc.releaseId}/application`)}>신청서 보기</button>}
-          <button type="button" className="button" onClick={() => window.print()}>인쇄 · PDF 저장</button>
+          {doc.releaseId && <button type="button" className="ui-btn is-soft" onClick={() => nav(`/releases/${doc.releaseId}/application`)}>신청서 보기</button>}
+          <button type="button" className="ui-btn is-primary" onClick={() => window.print()}>인쇄 · PDF 저장</button>
         </div>
       </div>
 

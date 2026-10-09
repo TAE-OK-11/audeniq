@@ -3,6 +3,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from '../../../lib/router';
 import { Glyph } from '../../../components/Glyph';
+import { DocIcon } from './DocIcon';
 import { errorMessage } from '../../../api/errors';
 import { workApi } from '../api';
 import { DOC_STATUS } from '../labels';
@@ -36,8 +37,8 @@ const Row = memo(function Row({ d, depth, open, active, focused, kids, onToggle,
       onClick={() => onOpen(d.id)}
     >
       <button type="button" tabIndex={-1} className="adm-doc-tree-caret" aria-hidden="true" disabled={!kids}
-        onClick={e => { e.stopPropagation(); onToggle(d.id); }}>{kids ? (open ? '▾' : '▸') : ''}</button>
-      <span className="adm-doc-tree-icon" aria-hidden="true">{d.icon || '📄'}</span>
+        onClick={e => { e.stopPropagation(); onToggle(d.id); }}>{kids ? <Glyph name={open ? 'chevron-down' : 'chevron-right'} size={13} /> : null}</button>
+      <span className="adm-doc-tree-icon" aria-hidden="true"><DocIcon icon={d.icon} size={15} /></span>
       <span className="adm-doc-tree-title">{d.title || '제목 없음'}</span>
       {d.staff_access == null && <span className="adm-doc-tree-lock" title="제한된 문서"><Glyph name="lock" size={11} /><span className="sr-only">제한된 문서</span></span>}
       {d.status !== 'DRAFT' && <span className={`adm-doc-tree-status is-${d.status.toLowerCase()}`}>{DOC_STATUS[d.status][0]}</span>}
@@ -133,8 +134,8 @@ export function DocTree({ currentId, reloadKey, ancestors, onOpen, onAddChild, a
 
   const root = kids[ROOT];
   const focusId = focus && rows.some(r => r.d.id === focus) ? focus : rows[0]?.d.id ?? null;
-  if (root === undefined || root === 'loading') return <div className="adm-skel" aria-label="문서 목록 불러오는 중"><span /><span /><span /></div>;
-  if (!Array.isArray(root)) return <div className="adm-alert is-error">{root.error} <button type="button" className="adm-link-btn" onClick={() => void load(null)}>다시 시도</button></div>;
+  if (root === undefined || root === 'loading') return <div className="ui-skel-rows" aria-label="문서 목록 불러오는 중"><span /><span /><span /></div>;
+  if (!Array.isArray(root)) return <div className="ui-callout is-danger">{root.error} <button type="button" className="ui-btn is-text is-muted" onClick={() => void load(null)}>다시 시도</button></div>;
   if (root.length === 0) return <p className="adm-doc-tree-empty">{archived ? '보관한 문서가 없어요.' : '아직 문서가 없어요.'}</p>;
   return (
     <div ref={box} role="tree" aria-label={archived ? '보관한 문서' : '문서'} className="adm-doc-tree" onKeyDown={onKey}>
@@ -166,15 +167,15 @@ export function DocSearchResults({ q, onOpen }: { q: string; onOpen: (id: string
     }, 250);
     return () => { alive = false; window.clearTimeout(t); };
   }, [q]);
-  if (!state) return <div className="adm-skel"><span /><span /></div>;
-  if ('error' in state) return <div className="adm-alert is-error">{state.error}</div>;
+  if (!state) return <div className="ui-skel-rows"><span /><span /></div>;
+  if ('error' in state) return <div className="ui-callout is-danger">{state.error}</div>;
   if (state.items.length === 0) return <p className="adm-doc-tree-empty">‘{q}’에 맞는 문서가 없어요.</p>;
   return (
     <ul className="adm-doc-results" aria-label="검색 결과">
       {state.items.map(d => (
         <li key={d.id}>
           <Link to={`/admin/docs/${d.id}`} onClick={() => onOpen(d.id)}>
-            <b>{d.icon || '📄'} {d.title || '제목 없음'}</b>
+            <b><DocIcon icon={d.icon} size={14} /> {d.title || '제목 없음'}</b>
             {d.snippet && <small>{d.snippet}</small>}
           </Link>
         </li>

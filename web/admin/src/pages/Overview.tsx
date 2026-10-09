@@ -2,8 +2,9 @@ import { useEffect } from 'react';
 import { useNavigate } from '../lib/router';
 import { Icon } from '../AdminApp';
 import { DUTY_LABEL, ROLE_LABEL } from '../labels';
-import { CountUp, PageHead, useStaff } from '../ui';
+import { CountUp, PageHeader, useStaff } from '../staffUi';
 import type { Overview } from '../api/staff';
+import { IconTile, StatGrid, StatTile } from '../ui';
 
 interface Tile { key: keyof Overview; label: string; hint: string; to: string; icon: string; alert?: boolean }
 
@@ -28,13 +29,13 @@ export function OverviewPage() {
 
   return (
     <div className="view-enter">
-      <PageHead
+      <PageHeader
         eyebrow="관리자"
         title="오늘의 업무"
         sub={<>역할 <b>{ROLE_LABEL[me.role]}</b> · 담당 업무 {me.duties.map(d => DUTY_LABEL[d]).join(', ') || '조회 전용'}</>}
       />
 
-      <div className="adm-hero">
+      <div className="ui-hero adm-hero">
         <div>
           <h2>{greet}.<br />{counts ? (urgent ? `처리할 일이 ${urgent}건 있어요.` : '밀린 일이 없어요.') : '대기열을 확인하는 중이에요.'}</h2>
           <p>카드를 누르면 바로 이동해요. 숫자는 1분마다 새로 고쳐져요.</p>
@@ -42,30 +43,25 @@ export function OverviewPage() {
         <div className="adm-hero-num" aria-hidden="true">{counts ? <CountUp value={urgent} /> : '–'}<small>처리 대기</small></div>
       </div>
 
-      <div className="adm-stats">
+      <StatGrid>
         {TILES.map(t => {
           const n = counts ? Number(counts[t.key] ?? 0) : null;
-          const cls = ['adm-stat', n === 0 ? 'is-muted' : '', t.alert && n ? 'is-alert' : ''].filter(Boolean).join(' ');
           return (
-            <button key={t.key} type="button" className={cls} onClick={() => nav(t.to)}>
-              <span className="adm-stat-top">
-                <span className="adm-stat-icon"><Icon name={t.icon} /></span>
-                
-              </span>
-              <span>
-                <strong>{n == null ? '–' : <CountUp value={n} />}</strong>
-                <span className="adm-stat-label">{t.label}</span>
-                <span className="small muted adm-stat-hint">{t.hint}</span>
-              </span>
-            </button>
+            <StatTile
+              key={t.key} onClick={() => nav(t.to)}
+              tone={n === 0 ? 'muted' : t.alert && n ? 'alert' : undefined}
+              label={t.label} hint={t.hint}
+              icon={<IconTile size="sm"><Icon name={t.icon} /></IconTile>}
+              value={n == null ? '–' : <CountUp value={n} />}
+            />
           );
         })}
-      </div>
+      </StatGrid>
 
       {me.role === 'ADMIN' && counts && counts.payout_requests > 0 && (
-        <div className="adm-alert adm-alert-row">
+        <div className="ui-callout is-row">
           <span>지급 요청 <b>{counts.payout_requests}건</b>이 운영 처리를 기다리고 있어요. (지급 실행은 운영 도구에서만 할 수 있어요)</span>
-          <button type="button" className="adm-btn soft small" onClick={() => nav('/payouts')}>지급 요청 보기</button>
+          <button type="button" className="ui-btn is-soft is-sm" onClick={() => nav('/payouts')}>지급 요청 보기</button>
         </div>
       )}
     </div>

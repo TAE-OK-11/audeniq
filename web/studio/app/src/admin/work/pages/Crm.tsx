@@ -8,7 +8,7 @@ import { useConfirm } from '../../../components/Confirm';
 import { errorMessage } from '../../../api/errors';
 import { useAsync } from '../../../hooks/useAsync';
 import { Glyph } from '../../../components/Glyph';
-import { Chip, Empty, ErrorBox, Filters, PageHead, Section, Skeleton, StatusChip, useStaff, WorkTabs } from '../../ui';
+import { Badge, EmptyState, ErrorBox, ChipGroup, PageHeader, Section, SkeletonList, StatusBadge, useStaff, WorkTabs } from '../../ui';
 import { DOC_STATUS, RELEASE_STATUS, ago, when } from '../../labels';
 import { workApi } from '../api';
 import {
@@ -19,17 +19,18 @@ import { DueChip, EntityChips, EntityPicker, MiniStats, NotesPanel, Person, Pers
 import type {
   ActivityKind, ContactInput, ContractStatus, EntityRef, RelContact, RelKind, RelQuery, RelStatus, Relationship, RelationshipDetail,
 } from '../types';
+import { DateTimeField } from '../../../components/Picker';
 
-const contractChip = (r: Relationship) => <StatusChip value={CONTRACT_STATUS[r.contract.status]} />;
+const contractChip = (r: Relationship) => <StatusBadge value={CONTRACT_STATUS[r.contract.status]} />;
 const name = (r: Relationship) => r.name ?? (r.missing ? '원천 기록이 없어요' : '이름 없음');
 
 function Row({ r, people }: { r: Relationship; people: People }) {
   return (
-    <Link to={`/admin/crm/${r.id}`} className="adm-row adm-w-task-row">
+    <Link to={`/admin/crm/${r.id}`} className="ui-row adm-w-task-row">
       <Person id={r.owner_id} people={people} compact />
       <span className="adm-min">
-        <span className="adm-row-title"><Chip tone="gray">{REL_KIND[r.kind].label}</Chip>&nbsp;{name(r)}</span>
-        <span className="adm-row-meta">
+        <span className="ui-row-title"><Badge tone="gray">{REL_KIND[r.kind].label}</Badge>&nbsp;{name(r)}</span>
+        <span className="ui-row-meta">
           {r.primary_contact && <span>{r.primary_contact.name}{r.primary_contact.role ? ` · ${r.primary_contact.role}` : ''}</span>}
           <span>{r.last_contact_at ? `마지막 연락 ${ago(r.last_contact_at)}` : '연락 기록 없음'}</span>
           {r.open_tasks > 0 && <span className="adm-w-meta-icon"><Glyph name="task" size={12} />업무 {r.open_tasks}</span>}
@@ -37,8 +38,8 @@ function Row({ r, people }: { r: Relationship; people: People }) {
           {r.tags.map(t => <span key={t}>#{t}</span>)}
         </span>
       </span>
-      <span className="adm-row-end">
-        <span className="adm-codes"><StatusChip value={REL_STATUS[r.status]} />{contractChip(r)}</span>
+      <span className="ui-row-end">
+        <span className="adm-codes"><StatusBadge value={REL_STATUS[r.status]} />{contractChip(r)}</span>
         {r.next_contact_at && <DueChip due={r.next_contact_at} />}
       </span>
     </Link>
@@ -80,15 +81,15 @@ function NewRelationship({ onSaved }: { onSaved: (d: RelationshipDetail) => void
   };
   return (
     <form onSubmit={submit} className="adm-w-form">
-      <div className="adm-field">
-        <span className="adm-field-label">종류</span>
-        <div className="adm-filters" role="group" aria-label="종류">
-          {REL_KINDS.map(k => <button key={k} type="button" className="adm-filter" aria-pressed={kind === k} onClick={() => { setKind(k); setEntity(null); }}>{REL_KIND[k].label}</button>)}
+      <div className="ui-field">
+        <span className="ui-field-label">종류</span>
+        <div className="ui-chips" role="group" aria-label="종류">
+          {REL_KINDS.map(k => <button key={k} type="button" className="ui-chip" aria-pressed={kind === k} onClick={() => { setKind(k); setEntity(null); }}>{REL_KIND[k].label}</button>)}
         </div>
       </div>
       {ek ? (
-        <div className="adm-field">
-          <span className="adm-field-label">{ENTITY_KIND[ek].label} <span className="required">*</span></span>
+        <div className="ui-field">
+          <span className="ui-field-label">{ENTITY_KIND[ek].label} <span className="required">*</span></span>
           {entity ? (
             <EntityChips items={[entity]} onRemove={() => setEntity(null)} />
           ) : <EntityPicker key={ek} kinds={[ek]} onPick={setEntity} />}
@@ -96,31 +97,31 @@ function NewRelationship({ onSaved }: { onSaved: (d: RelationshipDetail) => void
         </div>
       ) : (
         <div className="adm-w-grid2">
-          <div className="adm-field">
+          <div className="ui-field">
             <label htmlFor="relName">이름 <span className="required">*</span></label>
-            <input id="relName" data-autofocus className="adm-input" maxLength={120} value={own} onChange={e => setOwn(e.target.value)} placeholder="예: 모노 퍼블리싱" />
+            <input id="relName" data-autofocus className="ui-input" maxLength={120} value={own} onChange={e => setOwn(e.target.value)} placeholder="예: 모노 퍼블리싱" />
           </div>
-          <div className="adm-field">
+          <div className="ui-field">
             <label htmlFor="relContract">계약 상태</label>
-            <select id="relContract" className="adm-select adm-w-select" value={contract} onChange={e => setContract(e.target.value as ContractStatus)}>
+            <select id="relContract" className="ui-select" value={contract} onChange={e => setContract(e.target.value as ContractStatus)}>
               {CONTRACT_STATUSES.map(c => <option key={c} value={c}>{CONTRACT_STATUS[c][0]}</option>)}
             </select>
           </div>
         </div>
       )}
       <div className="adm-w-grid2">
-        <div className="adm-field"><label htmlFor="relOwner">담당자</label><PersonSelect id="relOwner" value={owner} onChange={setOwner} people={people} /></div>
-        <div className="adm-field">
+        <div className="ui-field"><label htmlFor="relOwner">담당자</label><PersonSelect id="relOwner" value={owner} onChange={setOwner} people={people} /></div>
+        <div className="ui-field">
           <label htmlFor="relStatus">상태</label>
-          <select id="relStatus" className="adm-select adm-w-select" value={status} onChange={e => setStatus(e.target.value as RelStatus)}>
+          <select id="relStatus" className="ui-select" value={status} onChange={e => setStatus(e.target.value as RelStatus)}>
             {REL_STATUSES.map(s => <option key={s} value={s}>{REL_STATUS[s][0]}</option>)}
           </select>
         </div>
-        <div className="adm-field"><label htmlFor="relNext">다음 연락</label><input id="relNext" type="datetime-local" className="adm-input" value={next} onChange={e => setNext(e.target.value)} /></div>
+        <div className="ui-field"><label htmlFor="relNext">다음 연락</label><DateTimeField id="relNext" className="ui-input" value={next} onChange={setNext} /></div>
       </div>
       <div className="adm-form-actions">
-        <button type="button" className="adm-btn soft" onClick={close}>취소</button>
-        <button type="submit" className="adm-btn primary" disabled={!ready || busy}>{busy ? '등록 중…' : '등록'}</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="submit" className="ui-btn is-primary" disabled={!ready || busy}>{busy ? '등록 중…' : '등록'}</button>
       </div>
     </form>
   );
@@ -150,13 +151,13 @@ export function Crm() {
 
   return (
     <div className="view-enter">
-      <PageHead
+      <PageHeader
         eyebrow="업무"
         title="관계 관리"
         sub="아티스트·레이블·DSP·파트너마다 담당자, 연락처, 연락 이력, 다음 연락일을 관리해요. 이름과 계약 상태는 원천 기록에서 읽어요."
         actions={<>
-          <button type="button" className="adm-btn soft small" onClick={reload}>새로고침</button>
-          <button type="button" className="adm-btn primary small" onClick={() => setCreating(true)}><Glyph name="plus" size={14} />관계 등록</button>
+          <button type="button" className="ui-btn is-soft is-sm" onClick={reload}>새로고침</button>
+          <button type="button" className="ui-btn is-primary is-sm" onClick={() => setCreating(true)}><Glyph name="plus" size={14} />관계 등록</button>
         </>}
       />
       <WorkTabs />
@@ -166,35 +167,35 @@ export function Crm() {
         { label: '주의', value: atRisk, tone: atRisk ? 'alert' : 'muted', onClick: () => setStatus(status === 'AT_RISK' ? '' : 'AT_RISK'), active: status === 'AT_RISK' },
         { label: 'DSP', value: counts.DSP ?? 0, onClick: () => setKind('DSP'), active: kind === 'DSP' },
       ]} />
-      <Filters label="종류" value={kind} onChange={setKind}
+      <ChipGroup label="종류" value={kind} onChange={setKind}
         options={[{ value: '' as RelKind | '', label: '전체', count: total }, ...REL_KINDS.map(k => ({ value: k as RelKind | '', label: REL_KIND[k].label, count: counts[k] ?? 0 }))]} />
       <div className="adm-queue-tools adm-w-filter-row">
         <label htmlFor="crmSearch" className="sr-only">검색</label>
-        <input id="crmSearch" type="search" className="adm-input" placeholder="이름·태그로 찾기" value={q} onChange={e => setQ(e.target.value)} />
-        <select className="adm-select" aria-label="상태" value={status} onChange={e => setStatus(e.target.value as RelStatus | '')}>
+        <input id="crmSearch" type="search" className="ui-input" placeholder="이름·태그로 찾기" value={q} onChange={e => setQ(e.target.value)} />
+        <select className="ui-select is-auto" aria-label="상태" value={status} onChange={e => setStatus(e.target.value as RelStatus | '')}>
           <option value="">모든 상태</option>
           {REL_STATUSES.map(s => <option key={s} value={s}>{REL_STATUS[s][0]}</option>)}
         </select>
-        <select className="adm-select" aria-label="다음 연락" value={contact} onChange={e => setContact(e.target.value as NonNullable<RelQuery['contact']>)}>
+        <select className="ui-select is-auto" aria-label="다음 연락" value={contact} onChange={e => setContact(e.target.value as NonNullable<RelQuery['contact']>)}>
           <option value="">모든 연락 일정</option>
           <option value="due">연락할 때가 됨</option>
           <option value="week">7일 안</option>
         </select>
         <PersonSelect id="crmOwner" label="담당자" value={owner} onChange={setOwner} people={people} empty="모든 담당자" />
-        <select className="adm-select" aria-label="보관" value={archived ? 'y' : ''} onChange={e => setArchived(!!e.target.value)}>
+        <select className="ui-select is-auto" aria-label="보관" value={archived ? 'y' : ''} onChange={e => setArchived(!!e.target.value)}>
           <option value="">사용 중</option>
           <option value="y">보관함</option>
         </select>
       </div>
       {error && <ErrorBox message={error} onRetry={reload} />}
-      {loading && !data ? <Skeleton rows={5} /> : items.length === 0 ? (
-        <Empty icon={<Glyph name="users" size={22} />} title={archived ? '보관한 관계가 없어요' : '등록된 관계가 없어요'}>
-          {!archived && <button type="button" className="adm-btn soft small" style={{ marginTop: 14 }} onClick={() => setCreating(true)}>관계 등록</button>}
-        </Empty>
+      {loading && !data ? <SkeletonList rows={5} /> : items.length === 0 ? (
+        <EmptyState icon={<Glyph name="users" size={22} />} title={archived ? '보관한 관계가 없어요' : '등록된 관계가 없어요'}>
+          {!archived && <button type="button" className="ui-btn is-soft is-sm" style={{ marginTop: 14 }} onClick={() => setCreating(true)}>관계 등록</button>}
+        </EmptyState>
       ) : (
         <>
           <p className="adm-queue-count">{items.length}건</p>
-          <div className="adm-list">{items.map(r => <Row key={r.id} r={r} people={people} />)}</div>
+          <div className="ui-list">{items.map(r => <Row key={r.id} r={r} people={people} />)}</div>
         </>
       )}
       {creating && (
@@ -232,15 +233,15 @@ function ContactForm({ relId, init, onSaved }: { relId: string; init: RelContact
   return (
     <form onSubmit={submit} className="adm-w-form">
       <div className="adm-w-grid2">
-        <div className="adm-field"><label htmlFor="ctName">이름 <span className="required">*</span></label><input id="ctName" data-autofocus className="adm-input" maxLength={80} value={v.name} onChange={e => setV({ ...v, name: e.target.value })} /></div>
-        <div className="adm-field"><label htmlFor="ctRole">역할</label><input id="ctRole" className="adm-input" maxLength={80} value={v.role} onChange={e => setV({ ...v, role: e.target.value })} placeholder="예: A&R 팀장" /></div>
-        <div className="adm-field"><label htmlFor="ctEmail">이메일</label><input id="ctEmail" type="email" className="adm-input" maxLength={254} value={v.email ?? ''} onChange={e => setV({ ...v, email: e.target.value })} /></div>
-        <div className="adm-field"><label htmlFor="ctPhone">전화</label><input id="ctPhone" type="tel" className="adm-input" maxLength={32} value={v.phone ?? ''} onChange={e => setV({ ...v, phone: e.target.value })} /></div>
+        <div className="ui-field"><label htmlFor="ctName">이름 <span className="required">*</span></label><input id="ctName" data-autofocus className="ui-input" maxLength={80} value={v.name} onChange={e => setV({ ...v, name: e.target.value })} /></div>
+        <div className="ui-field"><label htmlFor="ctRole">역할</label><input id="ctRole" className="ui-input" maxLength={80} value={v.role} onChange={e => setV({ ...v, role: e.target.value })} placeholder="예: A&R 팀장" /></div>
+        <div className="ui-field"><label htmlFor="ctEmail">이메일</label><input id="ctEmail" type="email" className="ui-input" maxLength={254} value={v.email ?? ''} onChange={e => setV({ ...v, email: e.target.value })} /></div>
+        <div className="ui-field"><label htmlFor="ctPhone">전화</label><input id="ctPhone" type="tel" className="ui-input" maxLength={32} value={v.phone ?? ''} onChange={e => setV({ ...v, phone: e.target.value })} /></div>
       </div>
       <label className="adm-w-check"><input type="checkbox" checked={v.is_primary} onChange={e => setV({ ...v, is_primary: e.target.checked })} />주 연락처</label>
       <div className="adm-form-actions">
-        <button type="button" className="adm-btn soft" onClick={close}>취소</button>
-        <button type="submit" className="adm-btn primary" disabled={!v.name.trim() || busy}>{busy ? '저장 중…' : '저장'}</button>
+        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="submit" className="ui-btn is-primary" disabled={!v.name.trim() || busy}>{busy ? '저장 중…' : '저장'}</button>
       </div>
     </form>
   );
@@ -271,21 +272,21 @@ function ActivityForm({ d, onSaved }: { d: RelationshipDetail; onSaved: (d: Rela
   };
   return (
     <form className="adm-w-box adm-w-activity-form" onSubmit={submit}>
-      <div className="adm-filters" role="group" aria-label="연락 방법">
-        {ACTIVITY_KINDS.map(k => <button key={k} type="button" className="adm-filter" aria-pressed={kind === k} onClick={() => setKind(k)}>{ACTIVITY_KIND[k].label}</button>)}
+      <div className="ui-chips" role="group" aria-label="연락 방법">
+        {ACTIVITY_KINDS.map(k => <button key={k} type="button" className="ui-chip" aria-pressed={kind === k} onClick={() => setKind(k)}>{ACTIVITY_KIND[k].label}</button>)}
       </div>
       <label htmlFor="actSummary" className="sr-only">내용</label>
-      <textarea id="actSummary" className="adm-textarea" rows={3} maxLength={2000} value={summary} onChange={e => setSummary(e.target.value)} placeholder="무엇을 이야기했나요? 약속한 일도 같이 적어 두세요." />
+      <textarea id="actSummary" className="ui-textarea" rows={3} maxLength={2000} value={summary} onChange={e => setSummary(e.target.value)} placeholder="무엇을 이야기했나요? 약속한 일도 같이 적어 두세요." />
       <div className="adm-w-inline">
         {d.contacts.length > 0 && (
-          <select className="adm-select" aria-label="상대" value={contact} onChange={e => setContact(e.target.value)}>
+          <select className="ui-select is-auto" aria-label="상대" value={contact} onChange={e => setContact(e.target.value)}>
             <option value="">상대 선택 안 함</option>
             {d.contacts.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         )}
         <label className="adm-w-inline-label" htmlFor="actNext">다음 연락</label>
-        <input id="actNext" type="datetime-local" className="adm-input" value={next} onChange={e => setNext(e.target.value)} />
-        <button type="submit" className="adm-btn primary small" disabled={!summary.trim() || busy}>{busy ? '기록 중…' : '기록'}</button>
+        <DateTimeField id="actNext" className="ui-input" value={next} onChange={setNext} />
+        <button type="submit" className="ui-btn is-primary is-sm" disabled={!summary.trim() || busy}>{busy ? '기록 중…' : '기록'}</button>
       </div>
     </form>
   );
@@ -305,7 +306,7 @@ export function CrmDetail() {
   const [linking, setLinking] = useState(false);
 
   if (error && !d) return <ErrorBox message={error} onRetry={reload} />;
-  if (loading && !d) return <Skeleton rows={6} />;
+  if (loading && !d) return <SkeletonList rows={6} />;
   if (!d) return null;
   const r = d.relationship;
   const archived = !!r.archived_at;
@@ -325,13 +326,13 @@ export function CrmDetail() {
   return (
     <div className="view-enter">
       <Link to="/admin/crm" className="adm-back"><Glyph name="arrow-left" size={14} />관계 관리</Link>
-      <PageHead
+      <PageHeader
         eyebrow={REL_KIND[r.kind].label}
         title={name(r)}
-        sub={<span className="adm-codes"><StatusChip value={REL_STATUS[r.status]} />{contractChip(r)}{r.tags.map(t => <Chip key={t} tone="gray">#{t}</Chip>)}{archived && <Chip tone="gray">보관됨</Chip>}</span>}
+        sub={<span className="adm-codes"><StatusBadge value={REL_STATUS[r.status]} />{contractChip(r)}{r.tags.map(t => <Badge key={t} tone="gray">#{t}</Badge>)}{archived && <Badge tone="gray">보관됨</Badge>}</span>}
         actions={<>
-          <Link to={`/admin/tasks?entity_kind=relationship&entity_id=${r.id}`} className="adm-btn soft small"><Glyph name="task" size={14} />연결된 업무 {r.open_tasks}</Link>
-          {me.role === 'ADMIN' && !archived && <button type="button" className="adm-btn soft small" onClick={archive}>보관</button>}
+          <Link to={`/admin/tasks?entity_kind=relationship&entity_id=${r.id}`} className="ui-btn is-soft is-sm"><Glyph name="task" size={14} />연결된 업무 {r.open_tasks}</Link>
+          {me.role === 'ADMIN' && !archived && <button type="button" className="ui-btn is-soft is-sm" onClick={archive}>보관</button>}
         </>}
       />
       <div className="adm-detail">
@@ -358,22 +359,22 @@ export function CrmDetail() {
             <Section title="작업 공간 기록" meta="원천에서 읽어요">
               {d.agreements.length > 0 && <>
                 <h3 className="adm-w-subhead">배급 계약서</h3>
-                <div className="adm-list">
+                <div className="ui-list">
                   {d.agreements.map(a => (
-                    <div key={a.id} className="adm-row adm-w-policy">
-                      <span className="adm-min"><span className="adm-row-title">{a.title}</span><span className="adm-row-meta">{a.release_title && <span>{a.release_title}</span>}<span>{ago(a.updated_at)}</span></span></span>
-                      <span className="adm-row-end">{DOC_STATUS[a.status] ? <StatusChip value={DOC_STATUS[a.status]} /> : <Chip tone="gray">{a.status}</Chip>}</span>
+                    <div key={a.id} className="ui-row adm-w-policy">
+                      <span className="adm-min"><span className="ui-row-title">{a.title}</span><span className="ui-row-meta">{a.release_title && <span>{a.release_title}</span>}<span>{ago(a.updated_at)}</span></span></span>
+                      <span className="ui-row-end">{DOC_STATUS[a.status] ? <StatusBadge value={DOC_STATUS[a.status]} /> : <Badge tone="gray">{a.status}</Badge>}</span>
                     </div>
                   ))}
                 </div>
               </>}
               {d.releases.length > 0 && <>
                 <h3 className="adm-w-subhead">최근 발매</h3>
-                <div className="adm-list">
+                <div className="ui-list">
                   {d.releases.map(x => (
-                    <Link key={x.id} to={`/admin/reviews/${x.id}`} className="adm-row adm-w-policy">
-                      <span className="adm-min"><span className="adm-row-title">{x.title}</span><span className="adm-row-meta"><span>{ago(x.created_at)}</span></span></span>
-                      <span className="adm-row-end">{RELEASE_STATUS[x.status] ? <StatusChip value={RELEASE_STATUS[x.status]} /> : <Chip tone="gray">{x.status}</Chip>}</span>
+                    <Link key={x.id} to={`/admin/reviews/${x.id}`} className="ui-row adm-w-policy">
+                      <span className="adm-min"><span className="ui-row-title">{x.title}</span><span className="ui-row-meta"><span>{ago(x.created_at)}</span></span></span>
+                      <span className="ui-row-end">{RELEASE_STATUS[x.status] ? <StatusBadge value={RELEASE_STATUS[x.status]} /> : <Badge tone="gray">{x.status}</Badge>}</span>
                     </Link>
                   ))}
                 </div>
@@ -382,20 +383,20 @@ export function CrmDetail() {
           )}
         </div>
         <aside className="adm-detail-side">
-          <section className="adm-card adm-section adm-w-side">
+          <section className="ui-card ui-section adm-w-side">
             <dl className="adm-w-fields">
               <div><dt><label htmlFor="rOwner">담당자</label></dt><dd>{archived ? <Person id={r.owner_id} people={people} /> : <PersonSelect id="rOwner" value={r.owner_id} people={people} onChange={v => void patch({ owner_id: v }, '담당자를 바꿨어요.')} />}</dd></div>
               <div><dt><label htmlFor="rStatus">상태</label></dt><dd>{archived ? REL_STATUS[r.status][0] : (
-                <select id="rStatus" className="adm-select adm-w-select" value={r.status} onChange={e => void patch({ status: e.target.value as RelStatus }, '상태를 바꿨어요.')}>
+                <select id="rStatus" className="ui-select" value={r.status} onChange={e => void patch({ status: e.target.value as RelStatus }, '상태를 바꿨어요.')}>
                   {REL_STATUSES.map(s => <option key={s} value={s}>{REL_STATUS[s][0]}</option>)}
                 </select>)}</dd></div>
               <div><dt><label htmlFor="rNext">다음 연락</label></dt><dd>{archived ? (r.next_contact_at ? when(r.next_contact_at) : '—') : (
-                <input id="rNext" type="datetime-local" className="adm-input" key={r.next_contact_at ?? 'none'} defaultValue={toLocalInput(r.next_contact_at)}
-                  onBlur={e => { const v = fromLocalInput(e.target.value); if (v !== r.next_contact_at) void patch({ next_contact_at: v }, '다음 연락일을 바꿨어요.'); }} />)}
+                <DateTimeField id="rNext" className="ui-input" value={toLocalInput(r.next_contact_at)}
+                  onChange={val => { const v = fromLocalInput(val); if (v !== r.next_contact_at) void patch({ next_contact_at: v }, '다음 연락일을 바꿨어요.'); }} />)}
                 {r.contact_due && <small className="is-late-text">연락할 때가 됐어요</small>}</dd></div>
               <div><dt>계약</dt><dd>
                 {r.contract.source === 'manual' && !archived ? (
-                  <select className="adm-select adm-w-select" aria-label="계약 상태" value={r.contract.status} onChange={e => void patch({ manual_contract_status: e.target.value as ContractStatus }, '계약 상태를 바꿨어요.')}>
+                  <select className="ui-select" aria-label="계약 상태" value={r.contract.status} onChange={e => void patch({ manual_contract_status: e.target.value as ContractStatus }, '계약 상태를 바꿨어요.')}>
                     {CONTRACT_STATUSES.map(c => <option key={c} value={c}>{CONTRACT_STATUS[c][0]}</option>)}
                   </select>
                 ) : CONTRACT_STATUS[r.contract.status][0]}
@@ -404,34 +405,34 @@ export function CrmDetail() {
               {r.entity && <div><dt>원천 기록</dt><dd>{source ? <Link to={source}>{ENTITY_KIND[r.entity.kind].label} 열기</Link> : ENTITY_KIND[r.entity.kind].label}</dd></div>}
             </dl>
           </section>
-          <section className="adm-card adm-section">
-            <div className="adm-section-top">
+          <section className="ui-card ui-section">
+            <div className="ui-section-head">
               <h2>연락처<small>{d.contacts.length}명</small></h2>
-              {!archived && <button type="button" className="adm-btn soft small" onClick={() => setContactEdit('new')}><Glyph name="plus" size={14} />추가</button>}
+              {!archived && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setContactEdit('new')}><Glyph name="plus" size={14} />추가</button>}
             </div>
             {d.contacts.length === 0 ? <p className="small muted">등록된 연락처가 없어요.</p> : (
               <ul className="adm-w-contacts">
                 {d.contacts.map(c => (
                   <li key={c.id}>
                     <span className="adm-min">
-                      <b>{c.name}{c.is_primary && <Chip tone="blue">주 연락처</Chip>}</b>
+                      <b>{c.name}{c.is_primary && <Badge tone="blue">주 연락처</Badge>}</b>
                       {c.role && <small>{c.role}</small>}
                       {c.email && <a href={`mailto:${c.email}`}>{c.email}</a>}
                       {c.phone && <a href={`tel:${c.phone.replace(/[^0-9+]/g, '')}`}>{c.phone}</a>}
                     </span>
                     {!archived && <span className="adm-w-btns">
-                      <button type="button" className="adm-ghost" aria-label={`${c.name} 수정`} onClick={() => setContactEdit(c)}><Glyph name="pencil" size={13} /></button>
-                      <button type="button" className="adm-ghost" aria-label={`${c.name} 지우기`} onClick={() => removeContact(c)}><Glyph name="close" size={13} /></button>
+                      <button type="button" className="ui-btn is-ghost is-sm" aria-label={`${c.name} 수정`} onClick={() => setContactEdit(c)}><Glyph name="pencil" size={13} /></button>
+                      <button type="button" className="ui-btn is-ghost is-sm" aria-label={`${c.name} 지우기`} onClick={() => removeContact(c)}><Glyph name="close" size={13} /></button>
                     </span>}
                   </li>
                 ))}
               </ul>
             )}
           </section>
-          <section className="adm-card adm-section">
-            <div className="adm-section-top">
+          <section className="ui-card ui-section">
+            <div className="ui-section-head">
               <h2>관련 기록<small>{d.links.length}</small></h2>
-              {!archived && <button type="button" className="adm-btn soft small" onClick={() => setLinking(v => !v)}>{linking ? '닫기' : '연결'}</button>}
+              {!archived && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setLinking(v => !v)}>{linking ? '닫기' : '연결'}</button>}
             </div>
             {d.links.length > 0 ? <EntityChips items={d.links} onRemove={archived ? undefined : l => void workApi.unlinkRelationship(r.id, l.link_id!).then(setOver).catch(e => toast(errorMessage(e, '해제하지 못했어요.'), 'error'))} />
               : <p className="small muted">관련 발매·계약서·정산 리포트를 연결해 두면 한곳에서 찾을 수 있어요.</p>}

@@ -9,7 +9,7 @@ import { useConfirm } from './components/Confirm';
 import { useToast } from './components/Toast';
 import { staffApi, type Duty, type Overview, type StaffMe } from './api/staff';
 import { ROLE_LABEL } from './labels';
-import { Skeleton, StaffContext } from './ui';
+import { SkeletonList, StaffContext } from './staffUi';
 import { OverviewPage } from './pages/Overview';
 
 // 첫 화면(오늘의 업무) 말고는 열 때 불러온다 — 첫 로딩 JS를 줄이고, 로그인 뒤 한가할 때 미리 받아 둔다
@@ -43,6 +43,7 @@ function prefetchPages() {
 }
 import './styles/admin.css';
 import { Glyph } from './components/Glyph';
+import { Avatar } from './ui';
 
 const STUDIO_URL = import.meta.env.VITE_STUDIO_URL ?? 'https://studio.audeniq.com';
 
@@ -58,19 +59,19 @@ export function Icon({ name }: { name: string }) {
 
 interface NavItem { to: string; label: string; icon: string; count?: (o: Overview) => number; hot?: boolean; adminOnly?: boolean; also?: string[] }
 const NAV: { group: string; items: NavItem[] }[] = [
-  { group: 'OVERVIEW', items: [{ to: '/', label: '오늘의 업무', icon: 'home' }] },
+  { group: '한눈에', items: [{ to: '/', label: '오늘의 업무', icon: 'home' }] },
   {
-    group: 'REVIEW',
+    group: '심사',
     items: [
       // 2차 승인은 발매 심사 안의 탭
       { to: '/reviews', label: '발매 심사', icon: 'review', count: o => o.review + o.second_approvals, hot: true, also: ['/approvals'] },
       { to: '/documents', label: '서류 검토', icon: 'doc', count: o => o.documents },
     ],
   },
-  { group: 'CONTENT', items: [{ to: '/admin/content', label: '공지·이벤트 관리', icon: 'doc', adminOnly: true }] },
-  { group: 'SUPPORT', items: [{ to: '/inquiries', label: '문의 답변', icon: 'inquiry', count: o => o.inquiries, hot: true }] },
+  { group: '콘텐츠', items: [{ to: '/admin/content', label: '공지·이벤트 관리', icon: 'doc', adminOnly: true }] },
+  { group: '고객 지원', items: [{ to: '/inquiries', label: '문의 답변', icon: 'inquiry', count: o => o.inquiries, hot: true }] },
   {
-    group: 'DISTRIBUTION',
+    group: '배급',
     items: [
       // 배급은 최종 승인 + 아티스트 서명 후 자동 — 여기서는 현황과 문제만 본다 (플랫폼 조건은 탭)
       { to: '/deliveries', label: '배급 현황', icon: 'delivery', count: o => o.deliveries_blocked, hot: true, also: ['/dsps'] },
@@ -84,7 +85,7 @@ const active = (path: string, to: string) => (to === '/' ? path === '/' : path =
 function Gate({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
   return (
     <div className="adm-gate">
-      <div className="adm-empty-icon" aria-hidden="true"><Glyph name="lock" size={26} /></div>
+      <div className="ui-icon is-lg" aria-hidden="true"><Glyph name="lock" size={26} /></div>
       <h1>{title}</h1>
       <p>{children}</p>
       {action}
@@ -145,14 +146,14 @@ export function AdminApp() {
   }
   if (gate === 'forbidden') {
     return (
-      <Gate title="관리자 권한이 필요해요" action={<button type="button" className="adm-btn primary" onClick={() => { void logout().then(() => nav('/login', { replace: true })); }}>다른 계정으로 로그인</button>}>
-        {user?.email ?? '이 계정'}은 아직 관리자로 등록되지 않았어요. 운영 책임자에게 권한을 요청해 주세요.
+      <Gate title="관리자 권한이 필요해요" action={<button type="button" className="ui-btn is-primary" onClick={() => { void logout().then(() => nav('/login', { replace: true })); }}>다른 계정으로 로그인</button>}>
+        {user?.email ? `${user.email} 계정은` : '이 계정은'} 아직 관리자로 등록되지 않았어요. 운영 책임자에게 권한을 요청해 주세요.
       </Gate>
     );
   }
   if (gate === 'error' || !ctx || !me) {
     return (
-      <Gate title="관리자 정보를 불러오지 못했어요" action={<button type="button" className="adm-btn primary" onClick={loadMe}>다시 시도</button>}>
+      <Gate title="관리자 정보를 불러오지 못했어요" action={<button type="button" className="ui-btn is-primary" onClick={loadMe}>다시 시도</button>}>
         서버 연결을 확인한 뒤 다시 시도해 주세요.
       </Gate>
     );
@@ -168,16 +169,16 @@ export function AdminApp() {
           <div className="adm-header-shell">
             <Link to="/" className="adm-brand" aria-label="AUDENIQ ADMIN 홈">
               <img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" />
-              <span className="adm-pill">ADMIN</span>
+              <span className="ui-product is-dark">ADMIN</span>
             </Link>
             <div className="adm-header-right">
-              {MOCK && <span className="adm-chip adm-t-amber">체험 데이터</span>}
+              {MOCK && <span className="ui-badge is-amber">체험 데이터</span>}
               <div className="adm-who" title={user?.email}>
-                <span className="adm-who-avatar" aria-hidden="true">{initial}</span>
+                <Avatar name={initial} size="sm" />
                 <span className="adm-who-text"><b>{user?.email}</b><small>{ROLE_LABEL[me.role]}</small></span>
               </div>
-              <a href={STUDIO_URL} className="adm-ghost" target="_blank" rel="noopener noreferrer" aria-label="스튜디오 새 창으로 열기"><Glyph name="arrow-up-right" size={15} /><span className="adm-ghost-text">스튜디오</span></a>
-              <button type="button" className="adm-ghost" onClick={doLogout}>로그아웃</button>
+              <a href={STUDIO_URL} className="ui-btn is-ghost is-sm" target="_blank" rel="noopener noreferrer" aria-label="스튜디오 새 창으로 열기">스튜디오<Glyph name="arrow-up-right" size={14} /></a>
+              <button type="button" className="ui-btn is-ghost is-sm" onClick={doLogout}>로그아웃</button>
             </div>
           </div>
         </header>
@@ -193,7 +194,7 @@ export function AdminApp() {
                   return (
                     <Link key={i.to} to={i.to} aria-current={cur ? 'page' : undefined}>
                       <span><Icon name={i.icon} />{i.label}</span>
-                      {n > 0 && <b className={`adm-count${i.hot ? ' is-hot' : ''}`}>{n > 99 ? '99+' : n}</b>}
+                      {n > 0 && <b className={`ui-count${i.hot ? ' is-hot' : ''}`}>{n > 99 ? '99+' : n}</b>}
                     </Link>
                   );
                 })}
@@ -205,7 +206,7 @@ export function AdminApp() {
           </nav>
 
           <main className="adm-main" id="main" tabIndex={-1}>
-            <Suspense fallback={<Skeleton rows={6} />}>
+            <Suspense fallback={<SkeletonList rows={6} />}>
             <Routes>
               <Route path="/" element={<OverviewPage />} />
               <Route path="/reviews" element={<ReviewQueue />} />

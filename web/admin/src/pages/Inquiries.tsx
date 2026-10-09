@@ -6,7 +6,7 @@ import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
 import { staffApi } from '../api/staff';
 import { INQUIRY_STATUS, ago, pick, when } from '../labels';
-import { Empty, ErrorBox, Filters, NoDuty, PageHead, Skeleton, StatusChip, useStaff } from '../ui';
+import { EmptyState, ErrorBox, ChipGroup, NoDuty, PageHeader, SkeletonList, StatusBadge, useStaff } from '../staffUi';
 import { Glyph } from '../components/Glyph';
 
 const STATUSES = ['OPEN', 'ANSWERED', 'CLOSED'] as const;
@@ -55,20 +55,20 @@ function Thread({ id, onReplied }: { id: string; onReplied: () => void }) {
     }
   };
 
-  if (loading && !data) return <div className="adm-thread-pane"><Skeleton rows={3} /></div>;
-  if (error || !data) return <div className="adm-thread-pane"><ErrorBox message={error || '문의를 불러오지 못했어요.'} onRetry={reload} /></div>;
+  if (loading && !data) return <div className="adm-thread-pane ui-on-soft"><SkeletonList rows={3} /></div>;
+  if (error || !data) return <div className="adm-thread-pane ui-on-soft"><ErrorBox message={error || '문의를 불러오지 못했어요.'} onRetry={reload} /></div>;
   const q = data.inquiry;
   const closed = q.status === 'CLOSED';
 
   return (
-    <section className="adm-thread-pane" aria-label="문의 대화" ref={paneRef}>
+    <section className="adm-thread-pane ui-on-soft" aria-label="문의 대화" ref={paneRef}>
       <div className="adm-thread-head">
         <div className="adm-check-top">
-          <StatusChip value={pick(INQUIRY_STATUS, q.status)} />
+          <StatusBadge value={pick(INQUIRY_STATUS, q.status)} />
           <small className="muted">{when(q.created_at)}</small>
         </div>
         <h2 style={{ marginTop: 8 }}>{q.subject}</h2>
-        <span className="adm-row-meta">
+        <span className="ui-row-meta">
           <span>{q.org_name}</span><span>{q.category}</span>
           {q.release_id && <span><Link to={`/reviews/${q.release_id}`}>관련 발매 <Glyph name="arrow-right" size={13} className="aq-inline-glyph" /></Link></span>}
         </span>
@@ -82,23 +82,23 @@ function Thread({ id, onReplied }: { id: string; onReplied: () => void }) {
         ))}
       </ol>
       {closed ? (
-        <div className="adm-alert">작성자가 종료한 문의예요. 답변을 남길 수 없어요.</div>
+        <div className="ui-callout">작성자가 종료한 문의예요. 답변을 남길 수 없어요.</div>
       ) : !can('INQUIRIES') ? (
         <NoDuty duty="문의 답변" />
       ) : (
         <form className="adm-reply" onSubmit={send}>
-          <div className="adm-templates" aria-label="자주 쓰는 문구">
-            {TEMPLATES.map(t => <button key={t.label} type="button" onClick={() => setBody(b => (t.label === '인사' ? t.text + b : b + t.text))}>{t.label}</button>)}
+          <div className="ui-chips is-wrap adm-templates" role="group" aria-label="자주 쓰는 문구">
+            {TEMPLATES.map(t => <button key={t.label} type="button" className="ui-chip is-sm" onClick={() => setBody(b => (t.label === '인사' ? t.text + b : b + t.text))}>{t.label}</button>)}
           </div>
           <label htmlFor="replyBody" className="sr-only">답변</label>
           <textarea
-            id="replyBody" className="adm-textarea" rows={5} maxLength={4000} value={body} placeholder="답변을 입력하세요. 아티스트의 문의 화면과 알림으로 전달돼요."
+            id="replyBody" className="ui-textarea" rows={5} maxLength={4000} value={body} placeholder="답변을 입력하세요. 아티스트의 문의 화면과 알림으로 전달돼요."
             onChange={e => setBody(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void send(e); }}
           />
           <div className="adm-reply-foot">
-            <small className="muted">{body.length} / 4000<span className="adm-kbd-hint"> · ⌘/Ctrl + Enter로 보내기</span></small>
-            <button type="submit" className="adm-btn primary" disabled={busy || !body.trim()}>{busy ? '보내는 중…' : q.status === 'ANSWERED' ? '추가 답변' : '답변 보내기'}</button>
+            <small className="muted">{body.length} / 4000<span className="adm-kbd-hint"> · Ctrl(맥은 Cmd) + Enter로 보내기</span></small>
+            <button type="submit" className="ui-btn is-primary" disabled={busy || !body.trim()}>{busy ? '보내는 중…' : q.status === 'ANSWERED' ? '추가 답변' : '답변 보내기'}</button>
           </div>
         </form>
       )}
@@ -118,26 +118,26 @@ export function Inquiries() {
 
   return (
     <div className="view-enter">
-      <PageHead
+      <PageHeader
         eyebrow="고객 지원"
         title="문의 답변"
         sub="아티스트 문의에 답해요. 오래 기다린 문의부터 보여요."
-        actions={<button type="button" className="adm-btn soft small" onClick={reload}>새로고침</button>}
+        actions={<button type="button" className="ui-btn is-soft is-sm" onClick={reload}>새로고침</button>}
       />
-      <Filters label="문의 상태" value={status} onChange={v => nav(`/inquiries?status=${v}`, { replace: true })} options={STATUSES.map(s => ({ value: s, label: INQUIRY_STATUS[s][0] }))} />
+      <ChipGroup label="문의 상태" value={status} onChange={v => nav(`/inquiries?status=${v}`, { replace: true })} options={STATUSES.map(s => ({ value: s, label: INQUIRY_STATUS[s][0] }))} />
       {error && <ErrorBox message={error} onRetry={reload} />}
       <div className="adm-split">
-        <div className="adm-list">
-          {loading && !data ? <Skeleton rows={4} /> : items.length === 0 ? (
-            <Empty icon={<Glyph name="mail" size={22} />} title={status === 'OPEN' ? '답변 대기 중인 문의가 없어요' : '해당 상태의 문의가 없어요'} />
+        <div className="ui-list">
+          {loading && !data ? <SkeletonList rows={4} /> : items.length === 0 ? (
+            <EmptyState icon={<Glyph name="mail" size={22} />} title={status === 'OPEN' ? '답변 대기 중인 문의가 없어요' : '해당 상태의 문의가 없어요'} />
           ) : items.map(q => (
-            <button key={q.id} type="button" className={`adm-row${q.id === id ? ' is-active' : ''}`} onClick={() => go(`/inquiries/${q.id}`)} style={{ gridTemplateColumns: 'minmax(0,1fr) auto' }}>
+            <button key={q.id} type="button" className={`ui-row${q.id === id ? ' is-active' : ''}`} onClick={() => go(`/inquiries/${q.id}`)} style={{ gridTemplateColumns: 'minmax(0,1fr) auto' }}>
               <span className="adm-min">
-                <span className="adm-row-title">{q.subject}</span>
-                <span className="adm-row-meta"><span>{q.org_name}</span><span>{q.category}</span></span>
+                <span className="ui-row-title">{q.subject}</span>
+                <span className="ui-row-meta"><span>{q.org_name}</span><span>{q.category}</span></span>
               </span>
-              <span className="adm-row-end">
-                <StatusChip value={pick(INQUIRY_STATUS, q.status)} />
+              <span className="ui-row-end">
+                <StatusBadge value={pick(INQUIRY_STATUS, q.status)} />
                 <small>{ago(q.updated_at ?? q.created_at)}</small>
               </span>
             </button>
@@ -146,8 +146,8 @@ export function Inquiries() {
         {id ? (
           <Thread id={id} onReplied={() => { reload(); refreshCounts(); }} />
         ) : (
-          <div className="adm-thread-pane adm-thread-empty" style={{ justifyContent: 'center' }}>
-            <Empty icon={<Glyph name="mail" size={22} />} title="문의를 선택해 주세요">목록에서 문의를 누르면 대화가 열려요.</Empty>
+          <div className="adm-thread-pane ui-on-soft adm-thread-empty" style={{ justifyContent: 'center' }}>
+            <EmptyState icon={<Glyph name="mail" size={22} />} title="문의를 선택해 주세요">목록에서 문의를 누르면 대화가 열려요.</EmptyState>
           </div>
         )}
       </div>

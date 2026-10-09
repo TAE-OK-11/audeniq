@@ -4,7 +4,7 @@
 백엔드 `/api/staff/*`(crates/core/src/staff.rs, docs/API.md "Staff portal")를 그대로 씁니다.
 
 ## 디자인
-버튼 · 입력창 · 카드 · 모달 · 토스트는 AUDENIQ STUDIO와 같습니다. `src/styles/design.css`, `live.css`, `enhance.css`와
+AUDENIQ 디자인 시스템(`docs/DESIGN_SYSTEM.md`)을 스튜디오와 같이 씁니다. `src/styles/tokens.css`·`ui.css`와 `src/ui/`는 `web/studio/app/src`의 복사본이에요. 버튼 · 입력창 · 카드 · 모달 · 토스트는 AUDENIQ STUDIO와 같습니다. `src/styles/design.css`, `live.css`, `enhance.css`와
 `src/components/{Modal,Confirm,Toast}.tsx`는 `web/studio/app/src`에서 그대로 가져온 복사본이고, 관리자 레이아웃만
 `src/styles/admin.css`(`adm-` 접두사)에 있습니다. 스튜디오 디자인을 바꾸면 이 파일들도 같이 맞춰 주세요.
 

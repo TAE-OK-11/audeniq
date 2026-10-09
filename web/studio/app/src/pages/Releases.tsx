@@ -2,10 +2,12 @@ import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from '../lib/router';
 import { api, type Release, type Track } from '../api/client';
 import { fixPath, resolveCorrection, splitCorrections } from '../lib/corrections';
-import { STATUS_LABEL } from '../lib/format';
+import { STATUS_LABEL, statusTone } from '../lib/format';
 import { useAsync } from '../hooks/useAsync';
 import { SkeletonRows } from '../components/Skeleton';
 import { ReleaseCover } from '../components/ReleaseCover';
+import { Glyph } from '../components/Glyph';
+import { Badge, Tabs } from '../ui';
 
 const FILTERS = [
   { value: 'all', label: '전체' },
@@ -110,46 +112,44 @@ export function Releases() {
 
   return (
     <div id="view-catalog" className="view">
-      <div className="view-title">
+      <div className="ui-page-head">
         <div>
-          <p className="eyebrow">CATALOG</p>
+          <p className="eyebrow">내 작업실</p>
           <h1 id="catalogTitle">내 음악</h1>
           <p>발매한 음악과 심사 진행 상황을 한눈에 확인해 보세요.</p>
         </div>
-        <button type="button" className="button" onClick={() => nav('/upload')}>새 발매</button>
+        <button type="button" className="ui-btn is-primary" onClick={() => nav('/upload')}><Glyph name="plus" size={14} />새 발매</button>
       </div>
 
-      <div className="tabs aq-tabs" role="tablist" aria-label="카탈로그 메뉴">
-        <button
-          type="button" role="tab" className="tab" aria-selected={tab === 'releases'}
-          onClick={() => setParam('tab', 'releases', 'releases')}
-        >발매 목록 {!listLoading && <small className="aq-tab-count">{list.length}</small>}</button>
-        <button
-          type="button" role="tab" className="tab" aria-selected={tab === 'tracks'}
-          onClick={() => setParam('tab', 'tracks', 'releases')}
-        >전체 트랙 {!listLoading && <small className="aq-tab-count">{trackCount}</small>}</button>
-      </div>
+      <Tabs
+        label="카탈로그 메뉴" value={tab}
+        items={[
+          { value: 'releases', label: '발매 목록', count: listLoading ? null : list.length },
+          { value: 'tracks', label: '전체 트랙', count: listLoading ? null : trackCount },
+        ]}
+        onChange={v => setParam('tab', v, 'releases')}
+      />
 
       {loading ? (
         <SkeletonRows count={4} />
       ) : error ? (
-        <div className="empty-page">
+        <div className="ui-empty">
           <h2>발매 목록을 불러오지 못했어요.</h2>
           <p>{error}</p>
-          <button type="button" className="button secondary" onClick={reload}>다시 불러오기</button>
+          <button type="button" className="ui-btn is-soft" onClick={reload}>다시 불러오기</button>
         </div>
       ) : tab === 'releases' ? (
-        <div className="aq-tab-panel" key="releases">
+        <div className="ui-tab-panel" key="releases">
           <div className="toolbar">
             <input
-              id="catalogSearch" type="search" aria-label="발매 검색" placeholder="발매명·아티스트 검색"
+              id="catalogSearch" className="ui-input" type="search" aria-label="발매 검색" placeholder="발매명·아티스트 검색"
               value={query} onChange={e => setQuery(e.target.value)}
             />
-            <select id="catalogSort" aria-label="정렬" value={sort} onChange={e => setSort(e.target.value)}>
+            <select id="catalogSort" className="ui-select" aria-label="정렬" value={sort} onChange={e => setSort(e.target.value)}>
               {SORTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
-          <div className="studio-filterrail" id="catalogFilterRail" role="group" aria-label="발매 진행 상태">
+          <div className="ui-chips" id="catalogFilterRail" role="group" aria-label="발매 진행 상태">
             {FILTERS.map(f => {
               const active = filter === f.value;
               const count = counts[f.value] || 0;
@@ -157,7 +157,7 @@ export function Releases() {
               return (
                 <button
                   key={f.value} type="button"
-                  className={`studio-filter${active ? ' active' : ''}`}
+                  className={`ui-chip${active ? ' is-on' : ''}`}
                   aria-pressed={active}
                   onClick={() => setParam('status', f.value, 'all')}
                 >
@@ -172,18 +172,18 @@ export function Releases() {
             <div className="aq-catalog-cards aq-stagger">
               {filtered.map(r => (
                 <article
-                  key={r.id} className="aq-release-card"
+                  key={r.id} className="ui-row aq-release-card"
                   onClick={() => openRelease(r.id)} onKeyDown={onCardKey(r.id)}
                   tabIndex={0} role="link" aria-label={`${r.title || '제목 없는 발매'} 상세 보기`}
                 >
                   <ReleaseCover id={r.id} src={r.coverData} />
                   <div className="min-0">
-                    <span className="row-name">{r.title || '제목 없는 발매'}</span>
-                    <span className="row-sub">{r.artist || '아티스트 미입력'} · {r.track_count}곡</span>
-                    <span className="row-sub">{r.release_date ?? '발매일 미정'}</span>
+                    <span className="ui-row-title">{r.title || '제목 없는 발매'}</span>
+                    <span className="ui-row-meta">{r.artist || '아티스트 미입력'} · {r.track_count}곡</span>
+                    <span className="ui-row-meta">{r.release_date ?? '발매일 미정'}</span>
                   </div>
                   <div className="aq-release-end">
-                    <span className={`status-chip ${r.status || 'draft'}`}>{STATUS_LABEL[r.status] || r.status}</span>
+                    <Badge tone={statusTone(r.status)} className={`aq-status is-${r.status}`}>{STATUS_LABEL[r.status] || r.status}</Badge>
                   </div>
                   {r.status === 'needs' && (
                     <div className="aq-release-fix">
@@ -195,29 +195,29 @@ export function Releases() {
                         type="button" className="aq-release-fix-btn"
                         onClick={e => { e.stopPropagation(); nav(fixPath(r.id, splitCorrections(r.corrections).items[0])); }}
                         onKeyDown={e => e.stopPropagation()}
-                      >보완하기 ›</button>
+                      >보완하기 <Glyph name="chevron-right" size={14} /></button>
                     </div>
                   )}
                 </article>
               ))}
             </div>
           ) : (
-            <div className="empty-page">
+            <div className="ui-empty">
               <h2>{query || filter !== 'all' ? '조건에 맞는 발매가 없어요.' : '아직 등록한 발매가 없어요.'}</h2>
               <p>{query || filter !== 'all' ? '검색어나 상태 필터를 바꿔 보세요.' : '발매 정보를 저장하면 이곳에서 수정하고 관리할 수 있어요.'}</p>
               {(query || filter !== 'all') ? (
-                <button type="button" className="button secondary" onClick={() => { setQuery(''); setParam('status', 'all', 'all'); }}>필터 초기화</button>
+                <button type="button" className="ui-btn is-soft" onClick={() => { setQuery(''); setParam('status', 'all', 'all'); }}>필터 초기화</button>
               ) : (
-                <button type="button" className="button" onClick={() => nav('/upload')}>첫 발매 등록하기</button>
+                <button type="button" className="ui-btn is-primary" onClick={() => nav('/upload')}>첫 발매 등록하기</button>
               )}
             </div>
           )}
         </div>
       ) : (
-        <div className="aq-tab-panel" key="tracks">
+        <div className="ui-tab-panel" key="tracks">
           <div className="toolbar">
             <input
-              id="trackSearch" type="search" aria-label="트랙 검색" placeholder="곡명·아티스트·ISRC 검색"
+              id="trackSearch" className="ui-input" type="search" aria-label="트랙 검색" placeholder="곡명·아티스트·ISRC 검색"
               value={trackQuery} onChange={e => setTrackQuery(e.target.value)}
             />
           </div>
@@ -226,21 +226,21 @@ export function Releases() {
             <div className="aq-catalog-cards aq-stagger">
               {filteredTracks.map(t => (
                 <div
-                  key={t.releaseId + t.id} className="track-row aq-track-row"
+                  key={t.releaseId + t.id} className="track-row ui-row aq-track-row"
                   onClick={() => openRelease(t.releaseId)} onKeyDown={onCardKey(t.releaseId)}
                   tabIndex={0} role="link" aria-label={`${t.title || '제목 없는 곡'} 상세 보기`}
                 >
                   <ReleaseCover id={t.releaseId} src={t.coverData} />
                   <div className="min-0">
-                    <span className="row-name">{t.title || '제목 없는 곡'}{t.explicit && <em className="aq-explicit" title="Explicit">E</em>}</span>
-                    <span className="row-sub">{t.releaseTitle} · {t.artist || '아티스트 미입력'}{t.isrc ? ` · ISRC ${t.isrc}` : ''}</span>
+                    <span className="ui-row-title">{t.title || '제목 없는 곡'}{t.explicit && <em className="aq-explicit" title="Explicit">E</em>}</span>
+                    <span className="ui-row-meta">{t.releaseTitle} · {t.artist || '아티스트 미입력'}{t.isrc ? ` · ISRC ${t.isrc}` : ''}</span>
                   </div>
-                  <span className="chevron" aria-hidden="true">›</span>
+                  <span className="chevron" aria-hidden="true"><Glyph name="chevron-right" size={18} /></span>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="empty-page">
+            <div className="ui-empty">
               <h2>{trackQuery ? '검색 결과가 없어요.' : '표시할 트랙이 없어요.'}</h2>
               <p>{trackQuery ? '다른 검색어로 찾아보세요.' : '새로운 발매를 등록하면 곡별 정보를 볼 수 있어요.'}</p>
             </div>
