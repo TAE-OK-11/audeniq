@@ -213,7 +213,7 @@ export function Inquiries() {
                 <span className="ui-row-title">{t.subject}</span>
                 <span className="ui-row-meta">{t.category} · {niceDate(t.created)} · {t.releaseTitle || '일반 문의'}</span>
               </span>
-              <Badge tone={t.status === '답변 완료' ? 'blue' : t.status === '종료' ? 'gray' : 'violet'}>{t.status}</Badge>
+              <Badge tone={t.status === '답변 완료' ? 'green' : t.status === '종료' ? 'gray' : 'violet'}>{t.status}</Badge>
             </button>
           ))}
         </div>
@@ -251,12 +251,16 @@ export function Inquiries() {
         <Modal title={openTicket.subject} onClose={() => setOpenId(null)}>
           <p className="small muted">{openTicket.category} · {niceDate(openTicket.created)} · {openTicket.releaseTitle || '일반 문의'}</p>
           {!MOCK ? <TicketThread ticket={openTicket} onClosed={() => setOpenId(null)} /> : (<>
-          <div className="document-body aq-ticket-body">{openTicket.body}</div>
-          <div className="ui-callout" style={{ marginTop: 20 }}>
-            {openTicket.status === '답변 완료'
-              ? '담당자 답변이 등록된 문의예요. 자세한 답변은 가입한 이메일로 안내돼요.'
-              : '담당자가 확인 후 가입한 이메일로 답변을 드릴게요.'}
-          </div>
+          {/* 체험 모드도 실서버와 같은 대화 모양 — 내 문의는 오른쪽, 검토팀 안내는 왼쪽 말풍선 */}
+          <ol className="aq-thread">
+            <li><span className="aq-thread-who">나 · {niceDate(openTicket.created)}</span><p>{openTicket.body}</p></li>
+            <li className="is-staff">
+              <span className="aq-thread-who">AUDENIQ 담당자</span>
+              <p>{openTicket.status === '답변 완료'
+                ? '답변을 등록했어요. 자세한 내용은 가입한 이메일로 안내해 드렸어요.'
+                : '문의를 받았어요. 확인 후 가입한 이메일로 답변을 드릴게요.'}</p>
+            </li>
+          </ol>
           <div className="row-actions" style={{ marginTop: 20 }}>
             <button type="button" className="ui-btn is-danger" onClick={() => removeTicket(openTicket)}>
               문의 기록 삭제

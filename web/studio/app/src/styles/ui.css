@@ -56,12 +56,12 @@
 :is(.ui-box,.ui-on-white){--aq-btn-soft:initial;--aq-btn-soft-hover:initial;--aq-btn-soft-fg:initial;--aq-btn-warn:initial;--aq-btn-warn-hover:initial;--aq-btn-warn-fg:initial;--aq-btn-danger:initial;--aq-btn-danger-hover:initial;--aq-btn-danger-fg:initial}
 /* 상태 색 면(주황 보완 · 빨강 오류 · 초록 완료) 위에서는 버튼도 그 색을 따른다
    — 주황 카드 안의 '보완하기'가 파랑이면 다른 일처럼 보이기 때문 */
-:is(.ui-tone-warn,.ui-row.is-warn,.ui-callout.is-warn,.aq-doc-card.is-needs,.aq-fix-card:not(.is-rejected),.aq-fix-panel,.aq-release-fix,.aq-task.is-warn,.adm-dspreq.is-warn,.adm-stages li.is-fix,.adm-doc-callout.is-warning,.adm-chat-msg.is-mention){
+:is(.ui-tone-warn,.ui-row.is-warn,.ui-callout.is-warn,.aq-doc-card.is-needs,.aq-release-fix,.aq-task.is-warn,.adm-dspreq.is-warn,.adm-stages li.is-fix,.adm-doc-callout.is-warning,.adm-chat-msg.is-mention){
   --aq-btn-soft:#FFE4C4;--aq-btn-soft-hover:#FFD9AD;--aq-btn-soft-fg:var(--aq-amber-700);
   --aq-btn-white-fg:var(--aq-amber-700);--aq-btn-white-hover:var(--aq-amber-100);
   --aq-btn-primary:#C06E1B;--aq-btn-primary-hover:#A95F14;--aq-btn-primary-fg:#fff
 }
-:is(.ui-tone-danger,.ui-row.is-danger,.ui-callout.is-danger,.ui-stat.is-alert,.aq-fix-card.is-rejected,.adm-dspreq.is-bad,.adm-dsp.is-bad,.adm-deliv.is-bad,.adm-check.is-sensitive,.adm-doc-callout.is-danger){
+:is(.ui-tone-danger,.ui-row.is-danger,.ui-callout.is-danger,.ui-stat.is-alert,.adm-dspreq.is-bad,.adm-dsp.is-bad,.adm-deliv.is-bad,.adm-check.is-sensitive,.adm-doc-callout.is-danger){
   --aq-btn-soft:#FFDCDC;--aq-btn-soft-hover:#FFCFCF;--aq-btn-soft-fg:#B0393B;
   --aq-btn-white-fg:#B0393B;--aq-btn-white-hover:var(--aq-red-100);
   --aq-btn-primary:#D64545;--aq-btn-primary-hover:#C23B3B;--aq-btn-primary-fg:#fff
@@ -221,7 +221,7 @@
   padding:4px;border-radius:var(--aq-r-ctl-md);background:var(--aq-gray-100);vertical-align:middle
 }
 .ui-seg.is-fill{display:grid;grid-auto-columns:minmax(0,1fr);grid-auto-flow:column;width:100%}
-.ui-seg-thumb{position:absolute;left:0;top:0;z-index:0;width:var(--pill-w);height:var(--pill-h);transform:translate3d(var(--pill-x),var(--pill-y),0);border-radius:calc(var(--aq-r-ctl-md) - 4px);background:#fff;box-shadow:var(--aq-shadow-thumb);pointer-events:none}
+.ui-seg-thumb{position:absolute;left:0;top:0;z-index:0;width:var(--pill-w);height:var(--pill-h);transform:translate3d(var(--pill-x),var(--pill-y),0);border-radius:calc(var(--aq-r-ctl-md) - 4px);background:#fff;pointer-events:none}
 .ui-seg.is-live .ui-seg-thumb{transition:transform var(--aq-dur-slow) var(--aq-glide),width var(--aq-dur-slow) var(--aq-glide),height var(--aq-dur-slow) var(--aq-glide),opacity var(--aq-dur)}
 .ui-seg>button{
   position:relative;z-index:1;min-width:0;min-height:calc(var(--aq-h-md) - 8px);padding:0 14px;margin:0;border:0;border-radius:calc(var(--aq-r-ctl-md) - 4px);
@@ -308,11 +308,11 @@ a.ui-hero:hover{background:var(--aq-surface-hover)}
 .ui-stat-top{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
 .ui-stat-label{min-width:0;font-size:13px;font-weight:700;color:var(--aq-text-2);line-height:1.4;word-break:keep-all;overflow-wrap:break-word}
 .ui-stat-top>:not(.ui-stat-label){flex:none}
-.ui-stat-value{display:block;font-size:clamp(24px,2.4vw,32px);font-weight:800;line-height:1.1;letter-spacing:-.05em;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.ui-stat-value{display:block;font-size:28px;font-weight:800;line-height:1.1;letter-spacing:-.05em;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
 .ui-stat-value small{margin-left:3px;font-size:.5em;font-weight:700;letter-spacing:0;color:var(--aq-text-3)}
 .ui-stat-hint{display:block;margin-top:4px;font-size:12px;font-weight:600;line-height:1.45;color:var(--aq-text-4)}
 .ui-stat.is-compact{min-height:0;gap:8px;padding:16px 18px}
-.ui-stat.is-compact .ui-stat-value{font-size:26px}
+.ui-stat.is-compact .ui-stat-value{font-size:22px}
 .ui-stat.is-muted .ui-stat-value{color:var(--aq-text-disabled)}
 .ui-stat.is-warn .ui-stat-value{color:var(--aq-amber-600)}
 .ui-stat.is-alert{background:var(--aq-red-50)}
@@ -458,7 +458,7 @@ button.ui-avatar:hover{transform:scale(1.06);background:var(--aq-blue-200)}
   .ui-card{padding:20px;border-radius:var(--aq-r-xl)}
   .ui-stats{gap:8px}
   .ui-stat{min-height:0;padding:16px}
-  .ui-stat-value{font-size:24px}
+  .ui-stat-value{font-size:22px}
   .ui-row{gap:12px;padding:14px 15px}
   .ui-row>.ui-cover{--cv:40px}
   .ui-row>.ui-icon{--ic:36px}
@@ -514,7 +514,7 @@ summary::-webkit-details-marker{display:none}
 /* 리포트 기간·발매 고르기 — 짧은 내용이라 넓은 화면에서 끝까지 늘이지 않는다 */
 @media (min-width:761px){.report-tools>select{flex:0 1 260px!important;max-width:260px!important}}
 /* 한글 라벨은 영문 대문자처럼 글자 사이를 벌리지 않는다 */
-:is(.eyebrow,.ui-eyebrow,.adm-side-label,.aq-nhero-eyebrow){letter-spacing:.02em}
+:is(.eyebrow,.ui-eyebrow,.adm-side-label,.aq-nhero-eyebrow,.aq-nboard-eyebrow){letter-spacing:0}
 :is(.eyebrow,.ui-eyebrow){font-size:var(--aq-fs-xs)}
 
 /* 색 있는 면(카드·목록 줄·상단 요약) 위의 상태 알약은 바탕을 한 단계 진하게 — 면에 묻히지 않게 */
@@ -660,7 +660,7 @@ summary::-webkit-details-marker{display:none}
 .aq-verify-method input{position:absolute;opacity:0;pointer-events:none}
 .aq-verify-method:hover{background:var(--aq-gray-100)}
 .aq-verify-method:active{transform:scale(.98)}
-.aq-verify-method.is-on{background:var(--aq-blue-50);box-shadow:inset 0 0 0 1.5px var(--aq-blue-500)}
+.aq-verify-method.is-on{background:var(--aq-blue-100)}
 .aq-verify-method:has(input:focus-visible){outline:var(--aq-focus);outline-offset:2px}
 .aq-verify-ic{display:grid;place-items:center;width:36px;height:36px;margin-bottom:6px;border-radius:12px;background:#fff;color:var(--aq-blue-500)}
 .aq-verify-method strong{font-size:var(--aq-fs-md);font-weight:var(--aq-fw-bold);color:var(--aq-text)}
