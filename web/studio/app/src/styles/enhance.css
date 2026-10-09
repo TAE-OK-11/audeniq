@@ -369,6 +369,49 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
 .aq-pay-flow .aq-pay-success-note{width:100%;font-size:13px;color:var(--aq-text-4);text-align:center}
 @media(prefers-reduced-motion:reduce){.aq-success-ring,.aq-success-tick,.aq-pay-receipt,.aq-success-mark{animation:none!important;stroke-dashoffset:0!important}}
 
+/* ── 수익 받기 흐름 움직임: 상태가 바뀌는 곳마다 짧게 반응해 지금 무슨 일이 일어났는지 보이게 ── */
+@keyframes aq-check-pop{0%{transform:scale(.7)}60%{transform:scale(1.15)}100%{transform:scale(1)}}
+/* 진행 막대는 단계가 바뀔 때 부드럽게 차오른다 */
+.aq-pay-flow .aq-pay-progress span{transition:width .5s var(--aq-e-ease)}
+/* 입력 칸·검색·버튼의 상태 변화(포커스, 사용 가능해짐)도 끊기지 않게 */
+.aq-pay-flow .aq-pay-field input,.aq-pay-flow .aq-bank-search input{transition:background-color .2s ease,box-shadow .2s ease}
+.aq-pay-flow .aq-pay-actions .ui-btn{transition:background-color .25s ease,color .25s ease,opacity .25s ease,transform .12s ease}
+.aq-pay-flow .aq-pay-actions .ui-btn:not(:disabled):active{transform:scale(.98)}
+.aq-pay-flow .aq-pay-type span{transition:background-color .2s ease,box-shadow .2s ease,transform .12s ease}
+.aq-pay-flow .aq-pay-type:active span{transform:scale(.985)}
+.aq-pay-flow .aq-bank .aq-bank-logo{transition:transform .2s var(--aq-e-ease)}
+.aq-pay-flow .aq-bank:hover .aq-bank-logo{transform:translateY(-2px)}
+.aq-pay-flow .aq-bank.selected .aq-bank-logo{transform:scale(1.08)}
+@media(prefers-reduced-motion:no-preference){
+  /* 단계 내용: 제목 → 본문 순으로 살짝 떠오른다 */
+  .aq-pay-head>*{animation:aq-fade-up .42s var(--aq-e-ease) both}
+  .aq-pay-head>:nth-child(2){animation-delay:.04s}
+  .aq-pay-head>:nth-child(3){animation-delay:.08s}
+  .aq-pay-body>*{animation:aq-fade-up .45s var(--aq-e-ease) .1s both}
+  .aq-pay-body>:nth-child(2){animation-delay:.14s}
+  .aq-pay-body>:nth-child(3){animation-delay:.18s}
+  .aq-pay-body>:nth-child(n+4){animation-delay:.22s}
+  /* 고정 탭은 떠오르면 겹쳐 보이고, 기관 목록은 카드마다 따로 움직이므로 제외 */
+  .aq-pay-body>.aq-bank-sticky,.aq-pay-body>#aqBankGroups{animation:none}
+  /* 기관 카드: 순서대로 떠오른다(탭을 바꿀 때도) */
+  .aq-pay-flow .aq-bank-grid>.aq-bank{animation:aq-fade-up .36s var(--aq-e-ease) both;animation-delay:calc(.12s + var(--i,0) * 16ms)}
+  /* 동의 체크·전체 동의 */
+  .aq-agree-all input:checked,.aq-agree-list input:checked{animation:aq-check-pop .28s var(--aq-e-spring)}
+  /* 오류 창은 살짝 흔들려 다시 확인할 곳을 알린다 */
+  .aq-pay-error-dialog{animation:aq-fade-up .22s var(--aq-e-ease) both,aq-shake .38s ease .18s}
+  /* 등록 완료: 체크 → 제목 → 설명 → 영수증(줄마다) → 안내 → 확인 버튼 */
+  .aq-pay-success>h1{animation:aq-fade-up .45s var(--aq-e-ease) .35s both}
+  .aq-pay-success>.aq-pay-success-sub{animation:aq-fade-up .45s var(--aq-e-ease) .42s both}
+  .aq-pay-flow .aq-pay-receipt{animation:aq-fade-up .5s var(--aq-e-ease) .5s both}
+  .aq-pay-receipt dl>div{animation:aq-fade-in .4s ease both}
+  .aq-pay-receipt dl>div:nth-child(1){animation-delay:.68s}
+  .aq-pay-receipt dl>div:nth-child(2){animation-delay:.74s}
+  .aq-pay-receipt dl>div:nth-child(3){animation-delay:.8s}
+  .aq-pay-success>.aq-pay-success-note{animation:aq-fade-in .4s ease .85s both}
+  .aq-pay-actions.is-final .ui-btn{animation:aq-fade-up .45s var(--aq-e-ease) .9s both}
+}
+@media(prefers-reduced-motion:reduce){.aq-pay-flow .aq-bank .aq-bank-logo,.aq-pay-flow .aq-pay-type span{transform:none!important}}
+
 /* 트랙 카드 안은 카드 배경과 구분되도록 흰 칸 */
 .track-editor,.aq-option-detail,.cover-track-item{--aq-field-bg:#fff;--aq-field-hover-bg:var(--aq-field-hover-on-soft);--aq-field-focus-bg:var(--aq-field)}
 
