@@ -95,7 +95,6 @@
   #view-settlement > .settle-hero {
     grid-column: 1; grid-row: 2 / span 20; position: sticky; top: var(--pc-sticky-top); margin: 0;
   }
-  #view-settlement .settle-hero-top { flex-direction: column; align-items: stretch; gap: 20px; }
   #view-settlement > .ui-seg { margin-top: 0; }
 
   /* ── 음악 리포트: 요약은 가로로, 전월 대비·플랫폼별 수익은 좌우 두 칸 ───── */
