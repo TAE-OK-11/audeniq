@@ -5,7 +5,6 @@
 #   ./deploy.sh ghcr.io/tae-ok-11/audeniq:sha-<commit>  # 태그도 가능 (받은 뒤 digest로 고정)
 #   ./deploy.sh --rollback                              # 직전 이미지로 되돌리기
 #   ./deploy.sh --status                                # 지금 이미지·컨테이너 상태
-#   ./deploy.sh --web                                   # 화면 nginx(web)만 다시 띄우기 (설정 바뀐 뒤, deploy/web)
 #
 # 같은 폴더에 compose.production.yaml, bootstrap.sql, grants.sql, check-cpu.sh, pgbouncer/, production.env(비밀),
 # tunnel-token(비밀)이 있어야 한다. production.env의 AUDENIQ_IMAGE 줄을 이 스크립트가 바꾼다.
@@ -39,11 +38,6 @@ case "${1:-}" in
     "${COMPOSE[@]}" ps -a
     exit 0
     ;;
-  --web)
-    # 설정 템플릿은 컨테이너 시작 때 채워지므로 다시 만든다 (몇 초, 다른 서비스는 그대로)
-    "${COMPOSE[@]}" up -d --no-deps --force-recreate web
-    exit 0
-    ;;
   --rollback)
     [ -s "$HISTORY" ] || die "되돌릴 기록이 없어요 ($HISTORY)"
     prev=$(awk -v cur="$(current_image)" '$2 != cur { ref = $2 } END { print ref }' "$HISTORY")
@@ -53,7 +47,7 @@ case "${1:-}" in
     set -- "$prev"
     ;;
   ''|-h|--help)
-    sed -n '2,13p' "$0"; exit 2
+    sed -n '2,12p' "$0"; exit 2
     ;;
 esac
 
