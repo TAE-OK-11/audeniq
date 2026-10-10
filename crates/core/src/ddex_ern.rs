@@ -679,10 +679,15 @@ fn release_list(out: &mut String, prepared: &PreparedRelease, tracks: &[&Prepare
     element(out, "Year", &year);
     element(out, "CLineText", &prepared.c_line);
     out.push_str("</CLine>");
+    // 재발매·이전 음원은 최초 발매일, 신규 발매는 발매일 (감사 E05).
     element(
         out,
         "GlobalOriginalReleaseDate",
-        prepared.release_date.format("%Y-%m-%d").to_string(),
+        prepared
+            .original_release_date
+            .unwrap_or(prepared.release_date)
+            .format("%Y-%m-%d")
+            .to_string(),
     );
     out.push_str("</Release></ReleaseList>");
 }

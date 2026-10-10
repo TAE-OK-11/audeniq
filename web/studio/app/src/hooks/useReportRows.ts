@@ -9,9 +9,10 @@ export function useReportRows(): { rows: ReportRow[]; loading: boolean; error: s
   const { data, loading, error } = useAsync(async (): Promise<ReportRow[]> => {
     if (MOCK) return REPORT_ROWS;
     const r = await fetchReports();
+    // 화면은 원화로 표시한다: 원화가 아닌 리포트 금액은 원화로 확정되기 전이라 더하지 않는다(재생 수는 반영).
     return r.rows.map(x => ({
       period: x.month, platform: dspLabel(x.dsp), release: x.release || '미확인 발매', track: '전체',
-      plays: Number(x.streams) || 0, revenue: Math.round(Number(x.revenue) || 0),
+      plays: Number(x.streams) || 0, revenue: (x.currency ?? 'KRW') === 'KRW' ? Math.round(Number(x.revenue) || 0) : 0,
     }));
   }, []);
   return { rows: data ?? (MOCK ? REPORT_ROWS : []), loading, error };
