@@ -119,23 +119,6 @@ test('D1 insert is idempotent and records survey version 4',async()=>{
  }finally{globalThis.fetch=originalFetch;}
 });
 
-test('behind CloudFront the public survey address is used for Origin and Turnstile hostname checks',async()=>{
- const originalFetch=globalThis.fetch;
- const saved=[];
- const db={prepare(){return {bind(...params){return {async first(){return null;},async run(){saved.push(params[0]);return {success:true};}};}}}};
- globalThis.fetch=async()=>Response.json({success:true,hostname:'survey.audeniq.com',action:'audeniq_survey'});
- try{
-  const edge='e'.repeat(40);
-  const env={DB:db,TURNSTILE_SECRET_KEY:'testsecret',TURNSTILE_SITE_KEY:'testsitekey',EDGE_ORIGIN_SECRET:edge,PUBLIC_ORIGIN:'https://survey.audeniq.com'};
-  const request=(origin,extra={})=>new Request('https://survey-api.audeniq.com/api/responses',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json',...extra},body:JSON.stringify(valid())});
-  assert.equal((await worker.fetch(request('https://survey.audeniq.com'),{...env,EDGE_ORIGIN_ONLY:'true'})).status,403);
-  assert.equal((await worker.fetch(request('https://survey-api.audeniq.com',{'x-audeniq-edge':edge}),env)).status,403);
-  assert.equal(saved.length,0);
-  const r=await worker.fetch(request('https://survey.audeniq.com',{'x-audeniq-edge':edge}),env);
-  assert.equal(r.status,200);assert.equal(saved.length,1);
- }finally{globalThis.fetch=originalFetch;}
-});
-
 test('public API cannot enumerate private D1 data or reveal secret and DB ID', async()=>{
  const db={prepare(){throw new Error('Public request must not access D1');}};
  const env={DB:db,TURNSTILE_SECRET_KEY:'keep-this-private',TURNSTILE_SITE_KEY:'public-site-key'};

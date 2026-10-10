@@ -7,55 +7,6 @@ export function requireHttps(request) {
   });
 }
 
-/** 길이가 같을 때만 비교하는 상수 시간 문자열 비교 */
-export function safeEqual(a, b) {
-  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
-
-// AWS CloudFront가 화면(S3)을 서빙하고 /api/* 만 이 Worker로 보낼 때의 설정 (deploy/aws/README.md)
-//   EDGE_ORIGIN_SECRET  (secret) CloudFront origin custom header(x-audeniq-edge)에 넣은 값.
-//                       이 값이 맞는 요청만 CloudFront 경유로 보고 CloudFront-Viewer-Address를 사용자 IP로 믿는다
-//   EDGE_ORIGIN_ONLY    (var) "true"면 CloudFront를 거치지 않은 직접 호출을 403으로 막는다 (전환이 끝난 뒤 켠다)
-//   PUBLIC_ORIGIN       (var) 브라우저가 보는 주소 (예: https://studio.audeniq.com). Origin 검사·Turnstile hostname 기준
-// 셋 다 없으면 지금처럼 Worker가 직접 도메인을 받는 것으로 본다. 미리 넣어 둬도 직접 접속은 그대로 동작한다.
-export const EDGE_HEADER = 'x-audeniq-edge';
-
-export function fromEdge(request, env) {
-  const secret = env?.EDGE_ORIGIN_SECRET;
-  return typeof secret === 'string' && secret.length >= 32 && safeEqual(request.headers.get(EDGE_HEADER) ?? '', secret);
-}
-
-export function requireEdge(request, env) {
-  if (!['1', 'true', 'yes', 'on'].includes(String(env?.EDGE_ORIGIN_ONLY ?? '').trim().toLowerCase())) return null;
-  if (fromEdge(request, env)) return null;
-  return Response.json({ error: { code: 'FORBIDDEN' } }, {
-    status: 403, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
-  });
-}
-
-export function publicOrigin(request, env) {
-  if (!env?.PUBLIC_ORIGIN) return new URL(request.url).origin;
-  const url = new URL(env.PUBLIC_ORIGIN);
-  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/') {
-    throw new TypeError('PUBLIC_ORIGIN must be an HTTPS origin');
-  }
-  return url.origin;
-}
-
-/** 사용자 IP. CloudFront 경유(비밀 확인됨)면 CloudFront-Viewer-Address, 아니면 Cloudflare가 덮어쓰는 CF-Connecting-IP */
-export function clientIp(request, env) {
-  if (fromEdge(request, env)) {
-    // "203.0.113.7:4312" 또는 "2001:db8::1:4312" — 마지막 콜론 뒤는 포트
-    const address = request.headers.get('cloudfront-viewer-address') ?? '';
-    const cut = address.lastIndexOf(':');
-    return cut > 0 ? address.slice(0, cut).replace(/^\[|\]$/g, '') : null;
-  }
-  return request.headers.get('cf-connecting-ip');
-}
-
 export function backendOrigin(env) {
   const url = new URL(env.BACKEND_URL || 'https://api-origin.audeniq.com');
   if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/') {

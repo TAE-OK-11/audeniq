@@ -1,7 +1,9 @@
-// 화면(UI)을 AWS CloudFront + S3로 서빙하는 앱 목록. /api 는 Cloudflare Workers에 남는다 (README.md).
+// 화면(UI)은 S3, /api 는 백엔드(ALB)로 보내는 CloudFront 배포 목록 (README.md)
 //   dir      S3에 올릴 빌드 결과 (저장소 루트 기준)
 //   headers  Cloudflare `_headers` 파일 — 보안 헤더(CloudFront 응답 헤더 정책)와 Cache-Control(S3 메타데이터)의 원본
-//   api      Worker로 보낼 경로. 비어 있으면 Worker 없이 S3만
+//   api      백엔드로 보낼 경로. 비어 있으면 S3만
+//   site     백엔드에 x-audeniq-site 로 알리는 화면 이름 (crate::sites)
+//   apiPrefix 설문처럼 백엔드 경로가 다를 때 /api 를 바꿀 접두사
 export const APPS = {
   studio: {
     aliases: ['studio.audeniq.com'],
@@ -9,6 +11,7 @@ export const APPS = {
     headers: 'web/studio/public/_headers',
     function: 'studio.js',
     api: ['/api/*', '/ready'],
+    site: 'studio',
   },
   admin: {
     aliases: ['admin.audeniq.com'],
@@ -16,13 +19,16 @@ export const APPS = {
     headers: 'web/admin/public/_headers',
     function: 'admin.js',
     api: ['/api/*'],
+    site: 'admin',
   },
   survey: {
     aliases: ['survey.audeniq.com'],
     dir: 'web/survey/public',
     headers: 'web/survey/public/_headers',
     function: 'survey.js',
-    api: ['/api/*', '/health'],
+    api: ['/api/*'],
+    site: 'survey',
+    apiPrefix: '/api/survey',
     notFoundPage: '/404.html',
   },
   landing: {

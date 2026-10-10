@@ -1,0 +1,68 @@
+#!/usr/bin/env node
+// Cloudflare D1(공지·이벤트·점검, 설문 응답) → Postgres(content 스키마, 마이그레이션 0086) 옮기기
+//
+//   CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... node deploy/aws/migrate-d1.mjs > d1-import.sql
+//   psql "$OWNER_DATABASE_URL" -v ON_ERROR_STOP=1 -f d1-import.sql
+//
+// 같은 id가 이미 있으면 건너뛴다(ON CONFLICT DO NOTHING) — 여러 번 실행해도 된다.
+// 전환 직전(관리 화면에서 글을 더 쓰지 않을 때) 한 번 더 실행해 마지막 변경까지 옮긴다.
+// 설문 D1이 아직 없으면(설정 전) --skip-survey.
+import { execFileSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
+
+const TABLES = [
+  {
+    db: 'audeniq-content', table: 'notices',
+    columns: 'id text, title text, body text, pinned int, published_at text, created_at text, updated_at text, deleted_at text',
+    insert: `INSERT INTO content.notices (id,title,body,pinned,published_at,created_at,updated_at,deleted_at)
+  SELECT id,title,body,pinned=1,published_at::timestamptz,created_at::timestamptz,updated_at::timestamptz,deleted_at::timestamptz`,
+  },
+  {
+    db: 'audeniq-content', table: 'events',
+    columns: 'id text, title text, summary text, body text, place text, starts_on text, ends_on text, link_url text, published_at text, created_at text, updated_at text, deleted_at text',
+    insert: `INSERT INTO content.events (id,title,summary,body,place,starts_on,ends_on,link_url,published_at,created_at,updated_at,deleted_at)
+  SELECT id,title,summary,body,place,starts_on::date,NULLIF(ends_on,'')::date,NULLIF(link_url,''),published_at::timestamptz,created_at::timestamptz,updated_at::timestamptz,deleted_at::timestamptz`,
+  },
+  {
+    db: 'audeniq-content', table: 'maintenance',
+    columns: 'id text, title text, body text, starts_at text, ends_at text, kind text, end_unknown int, published_at text, created_at text, updated_at text, deleted_at text',
+    insert: `INSERT INTO content.maintenance (id,title,body,starts_at,ends_at,kind,end_unknown,published_at,created_at,updated_at,deleted_at)
+  SELECT id,title,body,starts_at::timestamptz,ends_at::timestamptz,kind,end_unknown=1,published_at::timestamptz,created_at::timestamptz,updated_at::timestamptz,deleted_at::timestamptz`,
+  },
+  {
+    db: 'audeniq-survey', table: 'survey_responses', survey: true,
+    columns: 'id text, survey_version int, answers_json text, beta_preference text, contact text, beta_contact_consent int, survey_consent int, created_at text',
+    insert: `INSERT INTO content.survey_responses (id,survey_version,answers,beta_preference,contact,beta_contact_consent,survey_consent,created_at)
+  SELECT id::uuid,survey_version,answers_json::jsonb,beta_preference,NULLIF(contact,''),beta_contact_consent=1,survey_consent=1,created_at::timestamptz`,
+  },
+];
+
+function rows(db, table) {
+  const out = execFileSync('npx', ['--yes', 'wrangler@4.141.0', 'd1', 'execute', db, '--remote', '--json',
+    '--command', `SELECT * FROM ${table}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], maxBuffer: 1 << 30 });
+  const parsed = JSON.parse(out);
+  return (Array.isArray(parsed) ? parsed : [parsed]).flatMap(r => r.results ?? []);
+}
+
+/** jsonb_to_recordset 으로 넣는 SQL — 값은 JSON 한 덩어리로, 따옴표 이스케이프 없이 달러 인용 */
+export function importSql({ table, columns, insert }, data) {
+  const json = JSON.stringify(data);
+  let tag;
+  do tag = `d1_${randomBytes(6).toString('hex')}`; while (json.includes(`$${tag}$`));
+  return `-- ${table}: ${data.length}\n${insert}\n  FROM jsonb_to_recordset($${tag}$${json}$${tag}$::jsonb) AS x(${columns})\n  ON CONFLICT (id) DO NOTHING;\n`;
+}
+
+if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop())) {
+  const skipSurvey = process.argv.includes('--skip-survey');
+  const parts = ['BEGIN;'];
+  for (const t of TABLES) {
+    if (t.survey && skipSurvey) continue;
+    const data = rows(t.db, t.table);
+    console.error(`${t.db}.${t.table}: ${data.length}`);
+    parts.push(importSql(t, data));
+  }
+  parts.push('COMMIT;');
+  console.log(parts.join('\n'));
+}
+
+export { TABLES };
