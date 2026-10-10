@@ -1,8 +1,8 @@
 // AUDENIQ 수요조사 — 스튜디오 공통 디자인과 현재 서비스 준비 방향을 반영해요.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
-import { STEPS, type Question } from './survey';
+import { STEPS, PUBLISHING_BRANCH, type Question } from './survey';
 import {
-  applyChoice, emptyState, noDistributorExperience, otherOpen, payload, selected, validateAll, validateStep,
+  applyChoice, emptyState, hasPublishingExperience, noDistributorExperience, otherOpen, payload, selected, validateAll, validateStep,
   type SurveyState,
 } from './logic';
 import { Icon } from './Icon';
@@ -19,13 +19,14 @@ declare global {
 
 const EXPERIENCE_KEYS = new Set(['q5', 'q6', 'q12']);
 
-function QuestionBlock({ q, st, skip, onChoice, onOther, extra }: {
+function QuestionBlock({ q, st, skip, onChoice, onOther, onText, extra }: {
   q: Question; st: SurveyState; skip: boolean;
   onChoice: (key: string, value: string, checked: boolean) => void;
   onOther: (key: string, value: string) => void;
+  onText: (key: string, value: string) => void;
   extra?: React.ReactNode;
 }) {
-  const hidden = skip && EXPERIENCE_KEYS.has(q.key);
+  const hidden = (skip && EXPERIENCE_KEYS.has(q.key)) || (PUBLISHING_BRANCH.includes(q.key) && !hasPublishingExperience(st));
   const picked = selected(st, q.key);
   const n = picked.length;
   const type = q.kind === 'multi' ? 'checkbox' : 'radio';
@@ -43,7 +44,7 @@ function QuestionBlock({ q, st, skip, onChoice, onOther, extra }: {
       <h3 className="question-title" id={`title-${q.key}`}>{q.title}</h3>
       {q.key === 'beta' ? (
         q.hint && <p className="question-hint" id={`hint-${q.key}`}>{q.hint}</p>
-      ) : q.kind !== 'text' && (
+      ) : (
         <div className="question-instructions">
           {q.hint && <p className="question-hint" id={`hint-${q.key}`}>{q.hint}</p>}
           {q.count && (
@@ -53,7 +54,7 @@ function QuestionBlock({ q, st, skip, onChoice, onOther, extra }: {
           )}
         </div>
       )}
-      {q.options && (
+      {q.kind !== 'text' && q.options && (
         <div className={`choices${q.twoCols ? ' two-cols' : ''}`}>
           {q.options.map((label, i) => {
             const value = String(i);
@@ -71,6 +72,13 @@ function QuestionBlock({ q, st, skip, onChoice, onOther, extra }: {
             );
           })}
         </div>
+      )}
+      {q.kind === 'text' && (
+        <input className="text-field" type="text" name={q.key} maxLength={160} autoComplete="off"
+          aria-labelledby={`title-${q.key}`} aria-describedby={`hint-${q.key}`}
+          placeholder={q.key === 'q24' ? '퍼블리싱 업체명을 적어주세요' : '예: 저작권료의 10% (선택)'}
+          value={st.texts[q.key] ?? ''} disabled={hidden} required={q.required && !hidden}
+          onChange={e => onText(q.key, e.target.value)} />
       )}
       {q.other && (
         <label className="other-field" id={`${q.key}-other-wrap`} hidden={!showOther}>
@@ -177,6 +185,8 @@ export function App() {
     if (r.error !== null) setError(r.error);
   };
   const onOther = (key: string, value: string) => setSt(s => ({ ...s, others: { ...s.others, [key]: value } }));
+
+  const onText = (key: string, value: string) => setSt(s => ({ ...s, texts: { ...s.texts, [key]: value } }));
 
   const show = (index: number) => { setError(''); setCurrent(index); };
   const next = () => {
@@ -335,7 +345,7 @@ export function App() {
                       </>
                     );
                   }
-                  return <QuestionBlock key={q.key} q={q} st={st} skip={skip} onChoice={onChoice} onOther={onOther} extra={extra} />;
+                  return <QuestionBlock key={q.key} q={q} st={st} skip={skip} onChoice={onChoice} onOther={onOther} onText={onText} extra={extra} />;
                 })}
               </section>
             ))}

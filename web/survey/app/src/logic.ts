@@ -1,11 +1,12 @@
 // 설문 규칙 — 기존 public/app.js의 동작을 상태 기반 순수 함수로 옮겼다 (문구·조건 동일).
-import { EXCLUSIVE, EXPERIENCE_BRANCH, FIRST, LAST, MULTI, STEPS, SURVEY_VERSION, type Question, type Step } from './survey.ts';
+import { EXCLUSIVE, EXPERIENCE_BRANCH, FIRST, LAST, MULTI, STEPS, SURVEY_VERSION, PUBLISHING_BRANCH, type Question, type Step } from './survey.ts';
 
 export interface SurveyState {
   /** 문항별 선택한 값 (단일 선택은 0~1개) */
   choices: Record<string, string[]>;
   /** 문항별 '기타' 직접 입력 */
   others: Record<string, string>;
+  texts: Record<string, string>;
   provider: string;
   comment: string;
   contact: string;
@@ -14,7 +15,7 @@ export interface SurveyState {
 }
 
 export const emptyState = (): SurveyState => ({
-  choices: {}, others: {}, provider: '', comment: '', contact: '', betaConsent: false, surveyConsent: false,
+  choices: {}, others: {}, texts: {}, provider: '', comment: '', contact: '', betaConsent: false, surveyConsent: false,
 });
 
 const QUESTIONS = new Map(STEPS.flatMap(s => s.questions).map(q => [q.key, q]));
@@ -27,6 +28,8 @@ const first = (st: SurveyState, key: string) => selected(st, key)[0] ?? '';
 export function noDistributorExperience(st: SurveyState): boolean {
   return ['2', '3', '4'].includes(first(st, 'q2')) || selected(st, 'q4').includes('9');
 }
+
+export const hasPublishingExperience = (st: SurveyState): boolean => ['0', '1'].includes(first(st, 'q23'));
 
 /** '기타'(마지막 선택지)를 골랐는지 — 직접 입력칸을 보여 준다 */
 export function otherOpen(st: SurveyState, q: Question): boolean {
@@ -75,6 +78,7 @@ export function applyChoice(st: SurveyState, key: string, value: string, checked
     if (noRelease && freq !== '6') next = { ...next, choices: { ...next.choices, q3: ['6'] } };
     else if (!noRelease && freq === '6') next = { ...next, choices: { ...next.choices, q3: [] } };
   }
+  if (key === 'q23' && !hasPublishingExperience(next)) next = { ...next, texts: { ...next.texts, q24: '', q25: '' } };
   if (key === 'q4' && list.includes('9')) next = { ...next, provider: '' };
   if (key === 'q2' || key === 'q4') next = withBranch(next);
   return { state: next, error };
@@ -87,6 +91,13 @@ export function validateStep(st: SurveyState, step: Step): string {
   const skip = noDistributorExperience(st);
   for (const q of step.questions) {
     const key = q.key;
+    if (PUBLISHING_BRANCH.includes(key) && !hasPublishingExperience(st)) continue;
+    if (q.kind === 'text' && key !== 'q14') {
+      const value = (st.texts[key] ?? '').trim();
+      if (q.required && !value) return `${q.qid}의 내용을 적어주세요.`;
+      if (value.length > 160) return `${q.qid}는 160자 이내로 적어주세요.`;
+      continue;
+    }
     if (key === 'q14' || (skip && EXPERIENCE_BRANCH.includes(key))) continue;
     if (key === 'beta') {
       const v = first(st, 'beta');
@@ -118,6 +129,7 @@ export function payload(st: SurveyState, submissionId: string, turnstileToken: s
     const key = `q${i}`;
     answers[key] = MULTI.has(key) ? selected(st, key) : first(st, key);
     const q = question(key);
+    if (q?.kind === 'text' && key !== 'q14') answers[key] = hasPublishingExperience(st) ? (st.texts[key] ?? '').trim() : '';
     if (q?.other) answers[`${key}_other`] = otherOpen(st, q) ? (st.others[key] ?? '').trim() : '';
   }
   answers.q4_provider = selected(st, 'q4').includes('9') ? '' : st.provider.trim();

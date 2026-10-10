@@ -47,9 +47,11 @@ export function validateSubmission(p){
  const noExperience=['2','3','4'].includes(p.answers.q2) || (Array.isArray(p.answers.q4) && p.answers.q4.includes('9'));
  for(const key of KEYS){
   const q=questions[key];const selection=p.answers[key];
-  const skipped=noExperience && ['q5','q6','q12'].includes(key);
+  const skipped=(noExperience && ['q5','q6','q12'].includes(key)) || (['q24','q25'].includes(key) && !['0','1'].includes(p.answers.q23));
   if(skipped && !(q.type==='multi'?Array.isArray(selection)&&selection.length===0:selection===''))return null;
-  if(q.type==='multi'){
+  if(q.type==='text'){
+   if(!boundedString(selection,160)||(q.required && !skipped && !selection.trim()))return null;
+  }else if(q.type==='multi'){
    if(!Array.isArray(selection)||selection.length>(q.max||q.options.length)||(q.required && !skipped && !selection.length)||new Set(selection).size!==selection.length)return null;
    if(!selection.every(v=>typeof v==='string' && /^\d{1,2}$/.test(v) && Number(v)<q.options.length))return null;
    if(key==='q4' && selection.includes('9') && selection.length!==1)return null;
