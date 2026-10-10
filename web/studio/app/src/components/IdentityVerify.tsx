@@ -1,9 +1,14 @@
 // 본인인증 창 — 인증 방법 고르기 → 정보 입력 → (문자: 인증번호 / PASS: 앱 승인 / 카드사: ARS 전화) → 완료.
-// 체험 단계라 실제 인증 기관에 요청하지 않고 흐름만 보여 준다. 완료하면 입력한 이름을 실명으로 저장한다.
+// 체험 모드: 인증 기관에 요청하지 않고 흐름만 보여 주며, 입력한 이름을 실명으로 브라우저에 저장한다.
+// 실서버 모드: 서버(/api/me/identity)가 인증 기관 거래를 확인하고, 확인된 이름을 실명으로 저장한다.
+// 인증 기관이 연결되기 전에는 서버가 거절하고, 테스트 기관(test)에서는 이름·생년월일로 테스트 거래를 만든다.
 import { useEffect, useRef, useState } from 'react';
 import { useModalClose } from './Modal';
 import { Glyph } from './Glyph';
-import { patchAccount, VERIFY_LABEL, type VerifyMethod } from '../store/account';
+import { getAccountSnapshot, patchAccount, VERIFY_LABEL, type VerifyMethod } from '../store/account';
+import { MOCK } from '../api/client';
+import { verifyAccountIdentity } from '../api/portal';
+import { errorMessage } from '../api/errors';
 
 const METHODS: { id: VerifyMethod; title: string; sub: string; icon: string }[] = [
   { id: 'pass', title: 'PASS 인증', sub: '통신사 PASS 앱으로 인증', icon: 'lock' },
@@ -18,6 +23,14 @@ type Step = 'method' | 'form' | 'code' | 'approve';
 
 const digits = (v: string, n: number) => v.replace(/\D/g, '').slice(0, n);
 const newCaptcha = () => String(Math.floor(100000 + Math.random() * 900000));
+/** 주민등록번호 앞 6자리 + 뒷자리 첫 숫자 → YYYY-MM-DD (1·2·5·6: 1900년대, 3·4·7·8: 2000년대, 9·0: 1800년대) */
+export function birthFrom(yymmdd: string, sex: string): string | null {
+  if (!/^\d{6}$/.test(yymmdd) || !/^\d$/.test(sex)) return null;
+  const century = '1256'.includes(sex) ? '19' : '3478'.includes(sex) ? '20' : '18';
+  const iso = `${century}${yymmdd.slice(0, 2)}-${yymmdd.slice(2, 4)}-${yymmdd.slice(4, 6)}`;
+  const d = new Date(`${iso}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === iso ? iso : null;
+}
 const maskPhone = (p: string) => p.replace(/^(\d{3})(\d{3,4})(\d{4})$/, (_, a: string, b: string, c: string) => `${a}-${'*'.repeat(b.length)}-${c}`);
 
 export function IdentityVerify({ onDone }: { onDone: (name: string, method: VerifyMethod) => void }) {
@@ -45,12 +58,32 @@ export function IdentityVerify({ onDone }: { onDone: (name: string, method: Veri
   useEffect(() => () => window.clearTimeout(timer.current), []);
 
   const finish = () => {
+    if (!MOCK) { void finishServer(); return; }
     setBusy(true);
     timer.current = window.setTimeout(() => {
       patchAccount({ realName: f.name.trim(), verified: { method, at: new Date().toISOString() } });
       onDone(f.name.trim(), method);
       close();
     }, 700);
+  };
+
+  const finishServer = async () => {
+    const provider = getAccountSnapshot().provider;
+    if (!provider?.ready) return setError('본인인증 서비스(휴대폰·간편인증)를 연결하고 있어요. 연결되면 인증할 수 있어요.');
+    if (provider.name !== 'test') return setError('본인인증 창을 여는 연결이 아직 준비되지 않았어요.');
+    const birth = birthFrom(f.birth, f.sex);
+    if (!birth) return setError(method === 'ipin' ? '테스트 환경에서는 아이핀 대신 휴대폰·PASS·카드사 인증을 써 주세요.' : '생년월일을 확인해 주세요.');
+    setBusy(true);
+    try {
+      const r = await verifyAccountIdentity(`test:${f.name.trim()}:${birth}`);
+      patchAccount(r);
+      onDone(r.realName, method);
+      close();
+    } catch (err) {
+      setError(errorMessage(err, '본인인증을 마치지 못했어요. 다시 시도해 주세요.'));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const submitForm = (e: React.FormEvent) => {
@@ -77,7 +110,7 @@ export function IdentityVerify({ onDone }: { onDone: (name: string, method: Veri
     finish();
   };
 
-  const notice = <p className="aq-verify-demo">체험용 화면이에요. 실제 본인인증은 진행되지 않아요.</p>;
+  const notice = MOCK ? <p className="aq-verify-demo">체험용 화면이에요. 실제 본인인증은 진행되지 않아요.</p> : null;
 
   if (step === 'method') {
     return (

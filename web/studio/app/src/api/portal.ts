@@ -6,6 +6,7 @@ import { cleanText, remoteApi } from './remote';
 import { dspLabel } from '../lib/catalog';
 import type { ProfileInfo } from '../store/profile';
 import type { PaymentInfo } from '../store/payment';
+import type { AccountInfo, TaxResidency } from '../store/account';
 import type { Notice } from '../store/support';
 import type { Ticket } from '../store/tickets';
 import type { DocRecord } from '../store/docs';
@@ -52,6 +53,56 @@ export async function saveProfile(input: ProfileInfo): Promise<void> {
       return;
     }
     throw e;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 계정 정보 — 본인인증(실명)·해외 납세 의무. 본인인증은 서버가 인증 기관 거래를 직접 확인한다.
+// ---------------------------------------------------------------------------
+interface ServerVerified { provider: string; method: string; verified_at: string; adult: boolean }
+interface ServerAccountInfo {
+  real_name: string;
+  verified: ServerVerified | null;
+  tax: { foreign: boolean; country: string; tin_last4: string | null; us_person: boolean; row_version: number } | null;
+  identity_provider: { ready: boolean; name: string | null };
+}
+let taxVersion = 0;
+
+const verifiedFrom = (v: ServerVerified | null): AccountInfo['verified'] =>
+  v ? { method: v.method.toLowerCase(), at: v.verified_at, adult: v.adult } : null;
+
+export async function fetchAccountInfo(): Promise<AccountInfo> {
+  const a = await req<ServerAccountInfo>('/api/me/account');
+  taxVersion = a.tax?.row_version ?? 0;
+  return {
+    realName: a.real_name,
+    verified: verifiedFrom(a.verified),
+    tax: a.tax ? { foreign: a.tax.foreign, country: a.tax.country, tin: '', usPerson: a.tax.us_person, tinLast4: a.tax.tin_last4 } : null,
+    provider: a.identity_provider,
+  };
+}
+
+/** 인증 기관 거래 번호로 본인인증 — 서버가 확인한 이름이 실명으로 저장된다 */
+export async function verifyAccountIdentity(transactionId: string): Promise<Pick<AccountInfo, 'realName' | 'verified'>> {
+  const r = await req<{ real_name: string; verified: ServerVerified }>('/api/me/identity', {
+    method: 'POST', body: { transaction_id: transactionId },
+  });
+  return { realName: r.real_name, verified: verifiedFrom(r.verified) };
+}
+
+/** 납세 정보 저장. 납세자번호 칸을 비워 두면 저장된 번호(뒷자리만 보이는)를 그대로 둔다 */
+export async function saveTax(t: TaxResidency): Promise<void> {
+  const keepTin = t.foreign && !t.tin.trim() && !!t.tinLast4;
+  const body = () => (t.foreign
+    ? { foreign: true, country: t.country, tin: keepTin ? '' : t.tin.trim(), keep_tin: keepTin, us_person: t.country === 'US' && t.usPerson, row_version: taxVersion }
+    : { foreign: false, row_version: taxVersion });
+  try {
+    taxVersion = (await req<{ row_version: number }>('/api/me/tax', { method: 'PUT', body: body() })).row_version;
+  } catch (e) {
+    if ((e as { code?: string }).code !== 'CONFLICT') throw e;
+    // 다른 탭·기기에서 먼저 바뀌었으면 최신 버전을 받아 한 번 더 저장
+    await fetchAccountInfo();
+    taxVersion = (await req<{ row_version: number }>('/api/me/tax', { method: 'PUT', body: body() })).row_version;
   }
 }
 
