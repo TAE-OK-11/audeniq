@@ -14,10 +14,11 @@
  *   BACKEND_URL         백엔드 주소 (기본 https://api-origin.audeniq.com)
  *   BACKEND_APP_ORIGIN  백엔드 APP_ORIGIN (기본 https://studio.audeniq.com)
  *   EDGE_SERVICE_SECRET 백엔드 서비스 비밀 (wrangler secret put EDGE_SERVICE_SECRET)
+ *   PUBLIC_ORIGIN, EDGE_ORIGIN_SECRET, EDGE_ORIGIN_ONLY  화면을 AWS CloudFront가 서빙할 때 (shared/transport.js, deploy/aws/README.md)
  */
 
 import { route as contentRoute, handleContent } from '../studio/worker.js';
-import { backendOrigin, clientEncoding, passThroughEncoding, readLimitedBody, requireHttps, secureResponse, serveAssets } from '../shared/transport.js';
+import { backendOrigin, clientEncoding, clientIp, passThroughEncoding, publicOrigin, readLimitedBody, requireEdge, requireHttps, secureResponse, serveAssets } from '../shared/transport.js';
 
 const ALLOWED = [/^\/api\/auth\/(login|logout|csrf)$/, /^\/api\/me$/, /^\/api\/staff(\/.*)?$/];
 const FORWARD_HEADERS = ['cookie', 'content-type', 'accept', 'x-csrf-token'];
@@ -36,7 +37,7 @@ export async function proxy(request, env, url) {
   if (!read && request.method !== 'POST') return error(405, 'METHOD_NOT_ALLOWED');
   // 상태 변경 요청은 이 관리자 페이지에서 온 것만 (다른 사이트의 폼·스크립트 차단)
   if (!read) {
-    if (request.headers.get('origin') !== url.origin) return error(403, 'FORBIDDEN');
+    if (request.headers.get('origin') !== publicOrigin(request, env)) return error(403, 'FORBIDDEN');
     const site = request.headers.get('sec-fetch-site');
     if (site && site !== 'same-origin') return error(403, 'FORBIDDEN');
   }
@@ -49,7 +50,7 @@ export async function proxy(request, env, url) {
   headers.set('accept-encoding', passThroughEncoding(clientEncoding(request)));
   headers.set('origin', env.BACKEND_APP_ORIGIN || 'https://studio.audeniq.com');
   headers.set('sec-fetch-site', 'same-origin');
-  const ip = request.headers.get('cf-connecting-ip');
+  const ip = clientIp(request, env);
   if (ip) headers.set('x-audeniq-client-ip', ip);
   if (env.EDGE_SERVICE_SECRET) headers.set('x-audeniq-service', env.EDGE_SERVICE_SECRET);
 
@@ -75,7 +76,7 @@ export async function proxy(request, env, url) {
 
 export default {
   async fetch(request, env) {
-    const refused = requireHttps(request);
+    const refused = requireHttps(request) ?? requireEdge(request, env);
     if (refused) return refused;
     const url = new URL(request.url);
     const content = contentRoute(request.method, url.pathname);

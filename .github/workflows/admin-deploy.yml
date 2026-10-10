@@ -3,6 +3,7 @@ name: Admin deploy
 # main일 때만 Cloudflare Worker(audeniq-admin)로 배포한다.
 # 필요한 저장소 Secrets: CLOUDFLARE_API_TOKEN (Workers Scripts:Edit), CLOUDFLARE_ACCOUNT_ID
 # Worker 비밀(한 번만): npx wrangler secret put EDGE_SERVICE_SECRET  (web/admin에서)
+# 화면(S3 + CloudFront) 배포: 저장소 Variables AWS_UI_ROLE_ARN(OIDC 역할), AWS_UI_REGION — 없으면 건너뜀 (deploy/aws/README.md)
 on:
   push:
     paths:
@@ -23,6 +24,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  id-token: write  # AWS OIDC (화면 S3 배포)
 concurrency:
   group: admin-deploy-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -52,3 +54,14 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: bunx wrangler deploy
+      - name: Configure AWS credentials (UI)
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.AWS_UI_ROLE_ARN != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_UI_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_UI_REGION || 'ap-northeast-2' }}
+      - name: Publish Admin UI to S3 + CloudFront
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          AWS_UI_ROLE_ARN: ${{ vars.AWS_UI_ROLE_ARN }}
+        run: deploy/aws/ci-publish.sh admin
