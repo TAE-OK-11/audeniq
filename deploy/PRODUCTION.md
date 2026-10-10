@@ -74,6 +74,22 @@ cd /opt/audeniq
 
 Actions → Backend image → *Run workflow*에서 `deploy`와 `cpu_variant`를 선택하거나, `AUTO_DEPLOY=true`와 `BACKEND_CPU_VARIANT`로 자동 배포한다. 배포 작업은 같은 커밋의 `compose.production.yaml`·`grants.sql`·`bootstrap.sql`·`deploy.sh`·`check-cpu.sh`·`pg-upgrade.sh`·`pgbouncer/`를 서버에 복사하고, 그 작업 동안만 유효한 토큰으로 GHCR에 로그인해 `deploy.sh`를 실행한다. 비밀 파일(`production.env`, `tunnel-token`)은 서버에만 있다.
 
+### CircleCI에서 빌드·배포 (선택)
+
+`.circleci/config.yml`은 위 워크플로와 같은 방식으로 main의 백엔드 변경마다 amd64·arm64 공용 이미지를 만들어 GHCR(`:sha-<커밋>`, `:main`, `:latest`)에 올린다. CPU 최적화 태그는 만들지 않는다. CircleCI 화면에서 **approve-deploy**를 승인하면 같은 커밋의 배포 파일을 서버에 복사하고 `deploy.sh`를 실행한다. 백엔드 변경이 없는 푸시에서는 작업이 바로 끝난다. 강제로 빌드하려면 파이프라인 파라미터 `force=true`로 실행한다.
+
+CircleCI 조직 설정 → Contexts에 `audeniq-production`을 만들고 다음 값을 넣는다.
+
+| 이름 | 값 |
+|------|----|
+| `GHCR_USER` | GitHub 아이디 |
+| `GHCR_TOKEN` | GitHub PAT (`write:packages`, `read:packages`) — 빌드 푸시와 서버의 이미지 받기에 쓴다 |
+| `DEPLOY_HOST` | 서버 주소 |
+| `DEPLOY_USER` | SSH 사용자 (docker 권한) |
+| `DEPLOY_SSH_KEY` | 배포 전용 SSH 개인키, `base64 -w0 < key` |
+| `DEPLOY_KNOWN_HOSTS` | `ssh-keyscan <서버> \| base64 -w0` |
+| `DEPLOY_PATH` | (선택) 기본 `/opt/audeniq` |
+
 ### PostgreSQL 17 → 18 (한 번)
 
 이미지는 `postgres:18-trixie`이고 데이터는 새 볼륨 `pg18_prod`에 둔다(18은 `/var/lib/postgresql/18/docker`에
