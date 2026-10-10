@@ -43,6 +43,10 @@ npm run check
 
 감사는 [docs/AUDIT.md](docs/AUDIT.md), 계정 설정·성과 측정은 [docs/SEARCH.md](docs/SEARCH.md)를 참고하세요.
 
+## IndexNow 직접 제출
+
+기존의 공개 키 파일과 `scripts/submit-indexnow.mjs`를 사용하는 직접 제출을 지원합니다. GitHub **Actions → IndexNow — submit AUDENIQ public URLs → Run workflow**에서 배포 검증 후 IndexNow API에 공개 URL을 제출할 수 있습니다. 배포 자체는 이 워크플로에서 수행하지 않습니다. 상세 절차와 결과 확인은 [docs/INDEXNOW.md](docs/INDEXNOW.md)를 참고하세요.
+
 ## 라우팅과 향후 수동 배포
 
 이번 변경은 커밋만 하며 배포는 실행하지 않습니다. 자동 배포 워크플로를 추가하지 않았습니다.
