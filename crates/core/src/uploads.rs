@@ -324,7 +324,7 @@ async fn prepare(
     // When enabled, scan the whole source before any decoder / metadata reader.
     crate::upload_safety::scan(&src, digest.size, s.antivirus_enabled).await?;
     let (kind, mime) = (kind.to_string(), mime.to_string());
-    let (workspace, dst, provenance, slot) = tokio::task::spawn_blocking(move || {
+    let (workspace, dst, provenance, slot, sha256) = tokio::task::spawn_blocking(move || {
         // Guards outlive a cancelled HTTP future, including each decoder.
         let provenance = if kind == "AUDIO" {
             Some(crate::provenance::inspect_audio(&src))
@@ -347,7 +347,10 @@ async fn prepare(
         } else {
             crate::upload_safety::sanitize(&src, &dst, &mime, &workspace.0)?;
         }
-        Ok::<_, Error>((workspace, dst, provenance, slot))
+        // Hash here, not on the async runtime: a 512 MiB master is seconds of
+        // CPU that would otherwise stall every request on that runtime thread.
+        let sha256 = crate::qc::sha256_file(&dst)?;
+        Ok::<_, Error>((workspace, dst, provenance, slot, sha256))
     })
     .await
     .map_err(|_| Error::Internal)??;
@@ -359,7 +362,6 @@ async fn prepare(
         return Err(Error::PolicyGate("UPLOAD_AUDIO_TOO_LARGE"));
     }
     crate::upload_safety::scan(&dst, safe_size, s.antivirus_enabled).await?;
-    let sha256 = crate::qc::sha256_file(&dst)?;
     let safe_mime = if kind_is_audio(container) {
         "audio/flac"
     } else {

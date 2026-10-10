@@ -110,44 +110,47 @@ pub async fn visible_inline_files(
     if images.is_empty() {
         return Ok(value);
     }
-    let hashes: Vec<String> = images
-        .into_iter()
-        .map(crate::domain::sha256_hex)
+    // One SHA-256 per occurrence, reused by the hiding pass below: inline
+    // images are base64 data URLs that can be hundreds of KiB each, so
+    // hashing them a second time doubled the CPU of a catalog list.
+    let hashes: Vec<String> = images.into_iter().map(crate::domain::sha256_hex).collect();
+    let unique: Vec<&str> = hashes
+        .iter()
+        .map(String::as_str)
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .take(512)
         .collect();
     let admitted: Vec<String> = sqlx::query_scalar("SELECT source_sha256 FROM catalog.inline_file_safety WHERE source_sha256=ANY($1) AND rule_version=$2 AND (NOT $3 OR antivirus_status='SCANNED')")
-        .bind(hashes).bind(RULE_VERSION).bind(crate::config::antivirus_enabled()?).fetch_all(pool).await?;
+        .bind(unique).bind(RULE_VERSION).bind(crate::config::antivirus_enabled()?).fetch_all(pool).await?;
     let admitted: std::collections::BTreeSet<_> = admitted.into_iter().collect();
-    fn hide(
-        value: &mut serde_json::Value,
-        key: &str,
-        admitted: &std::collections::BTreeSet<String>,
-    ) {
+    // Same traversal and predicate as `visit_inline`, so the n-th match here
+    // is the n-th hash above.
+    fn hide(value: &mut serde_json::Value, key: &str, visible: &mut impl Iterator<Item = bool>) {
         match value {
             serde_json::Value::String(s)
                 if !s.is_empty()
                     && (key == "signature" || s.starts_with("data:") || s.starts_with("blob:")) =>
             {
-                if !admitted.contains(&crate::domain::sha256_hex(&*s)) {
+                if !visible.next().unwrap_or(false) {
                     s.clear();
                 }
             }
             serde_json::Value::Array(a) => {
                 for v in a {
-                    hide(v, key, admitted);
+                    hide(v, key, visible);
                 }
             }
             serde_json::Value::Object(o) => {
                 for (k, v) in o {
-                    hide(v, k, admitted);
+                    hide(v, k, visible);
                 }
             }
             _ => (),
         }
     }
-    hide(&mut value, "", &admitted);
+    let mut visible = hashes.iter().map(|h| admitted.contains(h));
+    hide(&mut value, "", &mut visible);
     Ok(value)
 }
 
