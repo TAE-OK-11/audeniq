@@ -265,6 +265,42 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .aq-sign-docinfo strong{display:block;font-size:16px;line-height:1.5;word-break:keep-all;color:var(--portal-ink)}
 #modal.aq-signature-mode .aq-sign-foot{grid-template-columns:1fr!important;gap:4px!important}
 #modal.aq-signature-mode .aq-sign-foot .ui-btn.is-text{--btn-h:40px;--btn-bg:transparent;background:transparent!important}
-/* 문서 팝업 '배급 신청서 보기·완성된 전자 문서 보기' — .ui-btn의 margin:0에 덮여 위 본문 칸·아래 제목에 붙던 것 */
-.ui-btn.aq-doc-open-app{margin:12px 0 8px}
-.doc-section-title+.ui-btn.aq-doc-open-app{margin-top:4px}
+
+/* ── 문서 팝업(계약서·권리 서류) — 계정 정보 화면처럼: 맨 위 '지금 할 일' 한 줄, 아래는 회색 이름의 옅은 파랑 묶음 ── */
+.aq-dm-next{display:grid;grid-template-columns:36px minmax(0,1fr);gap:12px;align-items:center;margin:0 0 14px;padding:14px 16px;border-radius:var(--aq-r-lg);background:var(--aq-blue-100)}
+.aq-dm-next-ico{display:grid;place-items:center;width:36px;height:36px;border-radius:12px;background:#fff;color:var(--aq-blue-500)}
+.aq-dm-next .min-0{display:grid;gap:2px}
+.aq-dm-next strong{font-size:15px;font-weight:700;color:var(--portal-ink)}
+.aq-dm-next small{font-size:13px;line-height:1.5;color:var(--aq-text-3)}
+.aq-dm-next.is-amber{background:var(--aq-amber-50)}
+.aq-dm-next.is-amber .aq-dm-next-ico{color:var(--aq-amber-700)}
+.aq-dm-next.is-green{background:var(--aq-green-50)}
+.aq-dm-next.is-green .aq-dm-next-ico{color:var(--aq-green-600)}
+.aq-dm-next.is-violet .aq-dm-next-ico{color:var(--aq-violet-600)}
+.aq-dm-sec{margin:0 0 10px;padding:6px 14px 14px;border-radius:var(--aq-r-xl);background:var(--aq-surface)}
+.aq-dm-sec>h4{margin:0;padding:10px 0 6px;font-size:var(--aq-fs-md);font-weight:700;color:var(--aq-text-3)}
+.aq-dm-kv{display:grid;margin:0}
+.aq-dm-kv>div{display:flex;align-items:baseline;justify-content:space-between;gap:16px;padding:7px 0}
+.aq-dm-kv dt{flex:none;font-size:13px;color:var(--aq-text-4)}
+.aq-dm-kv dd{min-width:0;margin:0;text-align:right;font-size:14px;font-weight:600;color:var(--portal-ink)}
+.aq-dm-sec .aq-document-snapshot{margin:8px 0 0;background:#fff}
+.aq-dm-links{display:grid;margin:6px -8px -6px}
+.aq-dm-links:empty{display:none}
+.aq-dm-link{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;width:100%;min-height:48px;padding:0 8px;border:0;border-radius:var(--aq-r-md);background:none;color:var(--aq-blue-500);font:inherit;font-size:14px;font-weight:700;text-align:left;cursor:pointer;transition:background-color .2s ease}
+.aq-dm-link>svg:last-child{color:var(--aq-text-disabled)}
+@media(hover:hover){.aq-dm-link:hover{background:var(--aq-surface-hover)}}
+.aq-dm-steps{display:grid;gap:0;margin:4px 0 0;padding:0;list-style:none}
+.aq-dm-steps li{position:relative;padding:0 0 14px 20px;font-size:13px;color:var(--aq-text-3)}
+.aq-dm-steps li:last-child{padding-bottom:0}
+.aq-dm-steps li::before{content:'';position:absolute;left:3px;top:6px;width:7px;height:7px;border-radius:50%;background:var(--aq-blue-300)}
+.aq-dm-steps li:not(:last-child)::after{content:'';position:absolute;left:6px;top:16px;bottom:2px;width:1px;background:var(--aq-blue-150)}
+.aq-dm-steps li.is-now::before{background:var(--aq-blue-500);box-shadow:0 0 0 4px var(--aq-blue-150)}
+.aq-dm-steps strong{display:inline;font-size:14px;font-weight:700;color:var(--portal-ink)}
+.aq-dm-steps small{margin-left:8px;font-size:12px;color:var(--aq-text-4)}
+.aq-dm-steps p{margin:3px 0 0;font-size:13px;line-height:1.55;color:var(--aq-text-3)}
+.aq-dm-audit{display:flex;align-items:center;gap:6px;margin:4px 0;font-size:13px;color:var(--aq-text-2)}
+.aq-dm-audit svg{color:var(--aq-blue-500)}
+.aq-dm-consent{margin:6px 0 0;align-items:flex-start}
+.aq-dm-consent small{display:block;margin-top:2px;font-size:12px;color:var(--aq-text-4)}
+.aq-dm-sec.aq-sign-record{display:grid;gap:6px}
+.aq-dm-foot:has(>.ui-btn:only-child){grid-template-columns:1fr!important}
