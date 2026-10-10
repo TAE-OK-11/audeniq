@@ -5,6 +5,7 @@ import { useAsync } from '../hooks/useAsync';
 import { SkeletonRows } from '../components/Skeleton';
 import { toKstDate } from '../lib/date';
 import { Glyph } from '../components/Glyph';
+import { TextBody } from '../components/TextBody';
 
 interface Notice {
   id: string;
@@ -75,10 +76,6 @@ function LoadState({ loading, error, reload, empty }: { loading: boolean; error:
   );
   if (empty) return <div className="ui-empty"><h2>등록된 공지가 없어요.</h2><p>새 소식이 생기면 이곳에서 알려 드릴게요.</p></div>;
   return null;
-}
-
-function Body({ text }: { text: string }) {
-  return <>{text.split('\n').map((line, i) => <p key={i}>{line || '\u00A0'}</p>)}</>;
 }
 
 const noticeHref = (n: Notice) => `/notices/${encodeURIComponent(n.id)}`;
@@ -189,7 +186,7 @@ export function NoticeDetail() {
               <time dateTime={notice.date}>{dotted(notice.date)}</time>
             </p>
           </header>
-          <div className="aq-narticle-content"><Body text={notice.body} /></div>
+          <TextBody className="aq-narticle-content" text={notice.body} />
           <div className="aq-narticle-sibling" role="navigation" aria-label="다른 공지">
             {newer && (
               <Link to={noticeHref(newer)}><span>다음 글</span><strong>{newer.title}</strong></Link>

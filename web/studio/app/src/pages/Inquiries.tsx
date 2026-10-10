@@ -262,7 +262,7 @@ export function Inquiries() {
             </li>
           </ol>
           <div className="row-actions" style={{ marginTop: 20 }}>
-            <button type="button" className="ui-btn is-danger" onClick={() => removeTicket(openTicket)}>
+            <button type="button" className="ui-btn is-text aq-danger-text" onClick={() => removeTicket(openTicket)}>
               문의 기록 삭제
             </button>
           </div>
