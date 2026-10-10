@@ -1,4 +1,4 @@
-// 실서버 모드 동기화 — 로그인하면 포털 데이터(프로필·계좌·알림·문의·서류·정산)를 서버에서 채우고,
+// 실서버 모드 동기화 — 로그인하면 포털 데이터(프로필·계정 정보·계좌·알림·문의·서류·정산)를 서버에서 채우고,
 // 알림·문의는 실시간 연결(SSE)로 바뀌는 즉시 다시 받는다. 연결이 안 되면 짧은 주기로 새로 고친다.
 // 체험 모드에서는 쓰지 않는다.
 import * as portal from '../api/portal';
@@ -8,6 +8,7 @@ import { systemAlert } from '../lib/alerts';
 import { INQUIRY_CHANGED_EVENT, LIVE_NOTICE_EVENT } from '../lib/liveEvents';
 import { setProfile } from './profile';
 import { setPayment } from './payment';
+import { EMPTY_ACCOUNT, setAccount } from './account';
 import { noticesStore } from './support';
 import { ticketsStore } from './tickets';
 import { setDocs } from './docs';
@@ -42,9 +43,15 @@ export async function refreshPayment() {
   if (p !== undefined) setPayment(p);
 }
 
+export async function refreshAccount() {
+  const a = await quiet(portal.fetchAccountInfo());
+  if (a) setAccount(a);
+}
+
 export async function hydratePortal() {
   await Promise.all([
     quiet(portal.fetchProfile()).then(p => { if (p) setProfile(p); }),
+    refreshAccount(),
     refreshPayment(),
     refreshNotifications(),
     refreshTickets(),
@@ -57,6 +64,7 @@ export async function hydratePortal() {
 export function clearPortal() {
   setProfile({ name: '', email: '', bio: '', country: 'KR' });
   setPayment(null);
+  setAccount(EMPTY_ACCOUNT);
   noticesStore.set([]);
   ticketsStore.set([]);
   setDocs([]);
