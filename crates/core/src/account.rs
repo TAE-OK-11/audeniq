@@ -90,7 +90,10 @@ pub async fn get_account(s: &AppState, a: &Actor) -> Result<Value> {
             "updated_at": r.get::<DateTime<Utc>, _>("updated_at"),
         })
     });
+    let phone = crate::password_reset::registered_phone(s, a.user).await?;
     Ok(json!({
+        "phone": phone,
+        "sms_ready": crate::sms::SmsSender::from_env().ready(),
         "real_name": identity.as_ref().map(|r| r.get::<String, _>("real_name")).unwrap_or_default(),
         "verified": verified,
         "tax": tax,
