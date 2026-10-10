@@ -571,14 +571,6 @@ summary::-webkit-details-marker{display:none}
 .portal-nav .aq-nav-card button.active .aq-nav-label{font-weight:var(--aq-fw-bold)}
 .portal-nav .aq-nav-card button.active .aq-nav-ico{background:var(--aq-blue-50)}
 .aq-nav-ico{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;font-style:normal;background:var(--aq-gray-50)}
-.aq-nav-ico.is-blue{color:var(--aq-blue-500)}
-.aq-nav-ico.is-violet{color:var(--aq-violet-500)}
-.aq-nav-ico.is-green{color:var(--aq-green-600)}
-.aq-nav-ico.is-amber{color:var(--aq-amber-500)}
-.aq-nav-ico.is-red{color:var(--aq-red-500)}
-.aq-nav-ico.is-gray{color:var(--aq-text-3)}
-.portal-nav .aq-nav-desc{font-size:var(--aq-fs-sm);font-weight:400;color:var(--aq-text-4);white-space:nowrap;text-align:right}
-.portal-nav .aq-nav-card button.active .aq-nav-desc{color:var(--aq-text-4)}
 /* 맨 아래: 카드 없이 계정 이메일 · 로그아웃 글자 버튼 한 줄 */
 #portalNav .aq-nav-foot{margin-top:4px!important;padding:14px 12px 4px!important;border:0;border-radius:0;background:none;font-size:var(--aq-fs-sm);letter-spacing:0;color:var(--aq-text-4)}
 #portalNav .aq-logout{min-height:0!important;padding:6px 4px!important;background:none!important;border-radius:var(--aq-r-xs)!important;font-size:var(--aq-fs-sm)!important;font-weight:var(--aq-fw-bold)!important;color:var(--aq-text-3)!important;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--aq-gray-300)}
@@ -607,16 +599,8 @@ summary::-webkit-details-marker{display:none}
 #portalNav .aq-nav-card button{transition:background-color .15s ease,transform .12s ease}
 #portalNav .aq-nav-card button:active{transform:scale(.985)}
 .aq-nav-ico{transition:background-color .2s ease,color .2s ease}
-.aq-nav-ico.is-blue{background:var(--aq-blue-50)}
-.aq-nav-ico.is-violet{background:var(--aq-violet-50)}
-.aq-nav-ico.is-green{background:var(--aq-green-50)}
-.aq-nav-ico.is-amber{background:var(--aq-amber-50)}
-.aq-nav-ico.is-red{background:var(--aq-red-50)}
-.aq-nav-ico.is-gray{background:var(--aq-gray-50)}
 #portalNav .aq-nav-card button.active{background:var(--aq-blue-100)}
 #portalNav .aq-nav-card button.active .aq-nav-ico{background:#fff;color:var(--aq-blue-500)}
-#portalNav .aq-nav-card button.active .aq-nav-desc{color:var(--aq-blue-600)}
-#portalNav .aq-nav-desc{font-size:var(--aq-fs-xs);color:var(--aq-text-disabled)}
 #portalNav .aq-nav-count{border-radius:999px;min-width:20px;height:20px;font-size:11px}
 /* 메뉴마다 지금 처리할 일 — 설명 자리에 상태 배지 */
 #portalNav .aq-nav-status{justify-self:end;width:auto;height:auto;font-size:var(--aq-fs-xs);white-space:nowrap;transform:none!important;animation:aq-fade-in .25s ease both}
@@ -626,22 +610,30 @@ summary::-webkit-details-marker{display:none}
 #portalNav .aq-logout{text-decoration:none!important;padding:8px 14px!important;border-radius:999px!important;background:#fff!important}
 #portalNav .aq-logout:hover{background:var(--aq-red-50)!important}
 
-/* 메뉴 밀도 — 한 줄 48px·아이콘 칸 34px로 줄여 한 화면에 더 많이, 다른 페이지 목록과 같은 크기 */
-#portalNav .aq-nav-me{margin:0 0 8px;padding:6px 6px 8px}
-#portalNav .aq-nav-me-row{grid-template-columns:44px minmax(0,1fr) auto;gap:12px;padding:6px 8px!important}
-#portalNav .aq-nav-me-avatar{width:44px!important;height:44px!important;border-radius:14px!important;font-size:18px!important}
-#portalNav .aq-nav-me-text{gap:1px}
-#portalNav .aq-nav-me-text strong{font-size:var(--aq-fs-lg)}
-#portalNav .aq-nav-me-text small{font-size:var(--aq-fs-xs)}
-#portalNav .aq-nav-me-alert{padding:10px 12px!important;font-size:var(--aq-fs-xs)!important}
-#portalNav .aq-nav-cta{min-height:46px!important;margin-top:6px;border-radius:var(--aq-r-md)!important;font-size:var(--aq-fs-lg)!important}
-#portalNav .aq-nav-card{padding:2px 6px 6px}
-#portalNav .aq-nav-card+.aq-nav-card{margin-top:8px}
-#portalNav .aq-nav-card .nav-group{padding:14px 10px 4px;font-size:var(--aq-fs-xs);font-weight:700;letter-spacing:0}
-#portalNav .aq-nav-card button{grid-template-columns:34px minmax(0,1fr) auto;gap:12px;min-height:48px;padding:7px 10px;border-radius:var(--aq-r-md);font-size:var(--aq-fs-lg)}
-#portalNav .aq-nav-ico{width:34px;height:34px;border-radius:10px}
-#portalNav .aq-nav-desc{font-size:var(--aq-fs-xs)}
+/* 전체 메뉴 — 계정 정보 화면과 같은 말투: 흰 바탕 · 옅은 파랑 묶음 카드 · 회색 묶음 이름 · 브랜드 파랑 아이콘 한 가지 · 꺾쇠 */
+.portal-header #portalNav{background:#fff}
+#portalNav .aq-nav-me{margin:0 0 16px;padding:0;background:none;border-radius:0}
+#portalNav .aq-nav-me-row{grid-template-columns:48px minmax(0,1fr) auto;gap:14px;padding:6px 4px!important}
+#portalNav .aq-nav-me-row:hover,#portalNav .aq-nav-me.is-active .aq-nav-me-row{background:var(--aq-surface)!important}
+#portalNav .aq-nav-me-avatar{width:48px!important;height:48px!important;border-radius:16px!important;font-size:19px!important}
+#portalNav .aq-nav-me-text{gap:2px}
+#portalNav .aq-nav-me-text strong{font-size:var(--aq-fs-title-sm)}
+#portalNav .aq-nav-me-text small{font-size:var(--aq-fs-sm)}
+#portalNav .aq-nav-me-alert{margin-top:10px;padding:11px 14px!important;font-size:var(--aq-fs-sm)!important}
+#portalNav .aq-nav-cta{min-height:48px!important;margin-top:10px;border-radius:var(--aq-r-md)!important;font-size:var(--aq-fs-lg)!important}
+#portalNav .aq-nav-card{padding:6px 8px 8px;background:var(--aq-surface);border-radius:var(--aq-r-2xl)}
+#portalNav .aq-nav-card+.aq-nav-card{margin-top:10px}
+#portalNav .aq-nav-card .nav-group{padding:14px 12px 6px;font-size:var(--aq-fs-md);font-weight:700;letter-spacing:0;color:var(--aq-text-3)}
+#portalNav .aq-nav-card button{grid-template-columns:36px minmax(0,1fr) auto;gap:12px;min-height:52px;padding:8px 10px 8px 8px;border-radius:var(--aq-r-lg);font-size:var(--aq-fs-lg);font-weight:600;color:var(--portal-ink)}
+#portalNav .aq-nav-card button:not(.active):hover{background:var(--aq-surface-hover)}
+#portalNav .aq-nav-ico,#portalNav .aq-nav-card button.active .aq-nav-ico{width:36px;height:36px;border-radius:12px;background:var(--aq-blue-150);color:var(--aq-blue-500)}
+#portalNav .aq-nav-card button.active{background:#fff;color:var(--aq-blue-500)}
+#portalNav .aq-nav-end{display:inline-flex;align-items:center;gap:6px;width:auto;height:auto;font-size:inherit;color:var(--aq-text-disabled)}
+#portalNav .aq-nav-end::after{content:none}
+#portalNav .aq-nav-card button.active .aq-nav-end{color:var(--aq-blue-500)}
 #portalNav .aq-nav-count{min-width:18px;height:18px;font-size:10px}
+#portalNav .aq-nav-foot{margin-top:14px!important}
+#portalNav .aq-logout{background:var(--aq-surface)!important}
 /* 휴대폰: 헤더 아래 화면 전체를 덮는 '전체' 화면 */
 @media (max-width:760px){
   #portalNav{left:0!important;right:0!important;bottom:auto!important;width:100%!important;max-width:none!important;height:calc(100dvh - var(--aq-menu-top,68px))!important;max-height:none!important;border-radius:0;box-shadow:none;padding:20px 16px max(28px,env(safe-area-inset-bottom))}
