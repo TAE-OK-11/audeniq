@@ -133,6 +133,7 @@ pub fn router(s: AppState) -> Router {
         )
         .merge(crate::portal::routes())
         .merge(crate::account::routes())
+        .merge(crate::password_reset::routes())
         .merge(crate::signing::routes())
         .merge(crate::staff::routes())
         .merge(crate::work::routes())
