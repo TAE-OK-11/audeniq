@@ -146,6 +146,19 @@ pub fn message(code: &str) -> Option<&'static str> {
         "IDENTITY_ACCOUNT_MISMATCH" => {
             "This account was verified by a different person. Only the account holder can verify it again."
         }
+        "SMS_PROVIDER_NOT_CONFIGURED" => {
+            "Text message verification is not available yet. Contact support for account help."
+        }
+        "PHONE_INVALID" => "Enter a Korean mobile number (010-0000-0000).",
+        "SMS_CODE_INVALID" => {
+            "The verification code is wrong or expired. Request a new code and try again."
+        }
+        "RESET_CODE_INVALID" => {
+            "The verification code is wrong or expired. Check the email and phone number, then request a new code."
+        }
+        "RESET_TOKEN_INVALID" => {
+            "This password reset has expired or was already used. Start the reset again."
+        }
         "TAX_COUNTRY_INVALID" => "Choose the country where you have a tax obligation.",
         "TIN_INVALID" => {
             "The taxpayer identification number must be 4 to 30 letters or digits (spaces and hyphens allowed)."
