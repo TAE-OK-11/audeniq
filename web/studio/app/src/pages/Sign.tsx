@@ -1,6 +1,7 @@
 // 권리자 서명 화면 (/sign/:token) — 로그인 없이, 받은 링크로 들어와
 // 본인확인 → 문서 확인·동의 → 자필 서명 순서로 진행한다. 서명 후에는 서명본과 서명 기록을 보여 준다.
 import { useEffect, useRef, useState } from 'react';
+import { DocText } from '../components/DocText';
 import { useNavigate, useParams, useSearchParams } from '../lib/router';
 import { signingApi, type SigningConsents, type SigningView } from '../api/signing';
 import { errorMessage } from '../api/errors';
@@ -193,7 +194,7 @@ export function Sign() {
       <section className="aq-sign-card" aria-labelledby="aqSignStep2">
         <h2 id="aqSignStep2">{v.status !== 'SIGNED' && <span className="aq-sign-no">2</span>}{v.status === 'SIGNED' ? '서명본' : '문서 확인·동의'}</h2>
         <div className={`aq-document-snapshot aq-sign-doc${v.status === 'SIGNED' ? ' is-signed' : ''}`} ref={docRef} onScroll={onScroll} tabIndex={0} aria-label="문서 내용">
-          {v.body}
+          <DocText text={v.body} />
           {v.status === 'SIGNED' && v.signature && (
             <div className="aq-sign-signature">
               <span>서명자 {v.signer_name} ({v.signer_role})</span>

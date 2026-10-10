@@ -81,10 +81,6 @@ export function Contracts() {
         )}
       </div>
 
-      <div className="ui-callout" style={{ marginTop: 25 }}>
-        배급 신청서는 접수할 때, 배급 계약서는 담당자 검토가 끝난 뒤 서명해요. 계약서에 서명하면 플랫폼으로 배급이 시작돼요.
-      </div>
-
       {openDoc && !signing && (
         <DocumentModal
           doc={openDoc}

@@ -1,32 +1,28 @@
 // 계약·권리 서류 카드 — 라이브 aqDocumentCards의 카드 1개 대응
 import { docBadgeTone, docState, docTone, type DocRecord } from '../store/docs';
-import { Badge } from '../ui';
 import { niceDate, stripSampleSuffix } from '../lib/format';
 import { CheckIcon } from './Check';
 import { Glyph } from './Glyph';
 
-export function DocCard({ c, onOpen }: { c: DocRecord; onOpen: (id: string) => void }) {
-  const btnLabel = c.kind === 'agreements'
-    ? (c.localSignatureAt ? '계약서 보기' : '확인하고 서명')
-    : (c.reviewStatus === 'needs' ? '보완하기' : '자세히 보기');
+/** 서류 한 줄 — 줄 전체를 눌러 연다. 상태는 배지 대신 오른쪽 색 글자, 보완 사유는 제목 아래 */
+export function DocRow({ c, onOpen }: { c: DocRecord; onOpen: (id: string) => void }) {
+  const title = stripSampleSuffix(c.title);
+  const prefix = c.releaseTitle ? `${c.releaseTitle} · ` : '';
+  const name = prefix && title.startsWith(prefix) ? title.slice(prefix.length) : title;
+  const needs = c.reviewStatus === 'needs';
   return (
-    <article className={`ui-row aq-doc-card ${docTone(c)}`}>
-      <span className="ui-icon" aria-hidden="true">{c.reviewStatus === 'needs' ? <Glyph name="alert" size={18} /> : c.kind === 'agreements' ? (c.localSignatureAt ? <CheckIcon size={16} /> : <Glyph name="pencil" size={17} />) : <Glyph name="doc" size={17} />}</span>
-      <div className="aq-doc-copy">
-        <button type="button" className="ui-row-title" onClick={() => onOpen(c.id)}>
-          {stripSampleSuffix(c.title)}
-        </button>
-        <span className="ui-row-meta">{c.releaseTitle || '공통 문서'} · {niceDate(c.created)}</span>
-        <div className="aq-doc-state-line">
-          <Badge tone={docBadgeTone(c)}>{docState(c)}</Badge>
-          {c.fileName && <span>{c.fileName}</span>}
-          {c.reviewNote && <span>{c.reviewNote}</span>}
-        </div>
-      </div>
-      <button className="ui-btn is-soft" type="button" onClick={() => onOpen(c.id)}>
-        {btnLabel}
-      </button>
-    </article>
+    <button type="button" className={`aq-doc-row ${docTone(c)}`} onClick={() => onOpen(c.id)}>
+      <span className="aq-doc-ico" aria-hidden="true">
+        {needs ? <Glyph name="alert" size={18} /> : c.kind === 'agreements' ? (c.localSignatureAt ? <CheckIcon size={16} /> : <Glyph name="pencil" size={17} />) : <Glyph name="doc" size={17} />}
+      </span>
+      <span className="aq-doc-copy">
+        <strong>{name}</strong>
+        <small>{c.releaseTitle || '공통 문서'} · {niceDate(c.created)}{c.fileName ? ` · ${c.fileName}` : ''}</small>
+        {needs && c.reviewNote && <em>{c.reviewNote}</em>}
+      </span>
+      <span className={`aq-doc-state is-${docBadgeTone(c)}`}>{docState(c)}</span>
+      <Glyph name="chevron-right" size={16} className="aq-doc-chev" />
+    </button>
   );
 }
 

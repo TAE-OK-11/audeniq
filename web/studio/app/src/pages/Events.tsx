@@ -3,6 +3,7 @@ import { fetchEvents, loadContent } from '../api/content';
 import { useAsync } from '../hooks/useAsync';
 import { SkeletonRows } from '../components/Skeleton';
 import { Modal } from '../components/Modal';
+import { TextBody } from '../components/TextBody';
 import { Glyph } from '../components/Glyph';
 import { Badge } from '../ui';
 
@@ -129,15 +130,11 @@ export function Events() {
 
       {selected && (
         <Modal title={selected.title} onClose={() => setSelected(null)}>
-          <p className="eyebrow">{selected.date}{selected.endDate ? ` ~ ${selected.endDate}` : ''} · {selected.place}</p>
-          <Badge tone={selected.status === 'ongoing' ? 'green' : selected.status === 'upcoming' ? 'blue' : 'gray'}>
-            {STATUS_LABEL[selected.status]}
-          </Badge>
-          <div className="document-body" style={{ marginTop: 16 }}>
-            {selected.body.split('\n').map((line, i) => (
-              <p key={i}>{line || '\u00A0'}</p>
-            ))}
-          </div>
+          <p className="aq-meta-line">
+            <b className={`is-${selected.status}`}>{STATUS_LABEL[selected.status]}</b>
+            {selected.date}{selected.endDate ? ` ~ ${selected.endDate}` : ''} · {selected.place}
+          </p>
+          <TextBody className="aq-event-body" text={selected.body} />
           {selected.link && /^https:\/\//.test(selected.link) && (
             <div className="aq-sticky-foot">
               <a className="ui-btn is-primary" href={selected.link} target="_blank" rel="noopener noreferrer" style={{ width: '100%' }}>

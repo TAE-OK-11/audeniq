@@ -87,7 +87,7 @@ export function Notifications() {
           aria-pressed={filter === 'unread'}
           onClick={() => setFilter('unread')}
         >읽지 않음 <span id="unreadCount">{unread}</span></button>
-        <button type="button" className="ui-btn is-soft is-sm" id="readAllNotices" onClick={readAll} disabled={!unread}>모두 읽음</button>
+        <button type="button" className="ui-btn is-text" id="readAllNotices" onClick={readAll} disabled={!unread}>모두 읽음</button>
       </div>
 
       {shown.length ? (
