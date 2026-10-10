@@ -22,6 +22,11 @@ parameters:
     description: 백엔드 파일이 바뀌지 않았어도 이미지를 만든다 (수동 실행용)
     type: boolean
     default: false
+  target:
+    description: 실행할 워크플로 (수동 실행용) — all, backend, frontend
+    type: enum
+    enum: [all, backend, frontend]
+    default: all
   apply_migrations:
     description: Studio·설문 D1 마이그레이션을 변경이 없어도 적용한다 (수동 실행용)
     type: boolean
@@ -310,7 +315,7 @@ jobs:
             - run:
                 name: Deploy audeniq-admin
                 working_directory: web/admin
-                command: bunx wrangler deploy
+                command: npx --yes wrangler@4.141.0 deploy
 
   landing:
     docker:
@@ -379,6 +384,9 @@ jobs:
 
 workflows:
   backend-image:
+    when:
+      not:
+        equal: [frontend, << pipeline.parameters.target >>]
     jobs:
       - build:
           name: build-amd64
@@ -411,6 +419,9 @@ workflows:
           filters: *main-only
 
   frontend:
+    when:
+      not:
+        equal: [backend, << pipeline.parameters.target >>]
     jobs:
       - studio:
           context: audeniq-production
