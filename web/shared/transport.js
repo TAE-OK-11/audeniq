@@ -109,3 +109,63 @@ export async function readLimitedBody(request, maxBytes) {
   for (const part of parts) { bytes.set(part, offset); offset += part.byteLength; }
   return bytes;
 }
+
+// ---- 백엔드 전달 (Worker는 화면 서빙 + /api 전달만; 공지·점검·인증 보조·설문은 백엔드가 한다) ----
+// 브라우저 헤더는 필요한 것만 골라 보낸다. 브라우저가 보낸 x-audeniq-* 와 IP 헤더는 버리고,
+// 서비스 비밀·화면 이름(x-audeniq-site, crates/core/src/sites.rs)·Cloudflare가 준 사용자 IP를 붙인다.
+// user-agent: 권리 서류 서명 기록(증거)에 남긴다
+const FORWARD_HEADERS = ['cookie', 'origin', 'content-type', 'accept', 'x-csrf-token', 'sec-fetch-site', 'x-request-id', 'user-agent'];
+const PARTNER_HOOK = /^\/api\/partner-hooks\//;
+const PARTNER_DROP = new Set(['x-forwarded-for', 'x-real-ip', 'host', 'connection', 'accept-encoding']);
+
+export function backendHeaders(request, env, pathname, site) {
+  const src = request.headers;
+  const headers = new Headers();
+  for (const name of FORWARD_HEADERS) {
+    const v = src.get(name);
+    if (v) headers.set(name, v);
+  }
+  headers.set('accept-encoding', passThroughEncoding(clientEncoding(request)));
+  if (PARTNER_HOOK.test(pathname)) {
+    // 파트너 설정이 정한 서명·시각 헤더(이름 자유)는 전달하되 우리 이름공간·전달 IP 헤더는 제외
+    for (const [name, value] of src) {
+      if (!name.startsWith('x-audeniq-') && !PARTNER_DROP.has(name)) headers.set(name, value);
+    }
+  }
+  // 로그인 시도 제한은 사용자 IP 기준 — Cloudflare가 매 요청 덮어쓰는 CF-Connecting-IP만 믿는다
+  const ip = src.get('cf-connecting-ip');
+  if (ip) headers.set('x-audeniq-client-ip', ip);
+  headers.set('x-audeniq-site', site);
+  headers.set('x-audeniq-service', env.EDGE_SERVICE_SECRET);
+  return headers;
+}
+
+const proxyError = (status, code) => Response.json({ error: { code } }, {
+  status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
+});
+
+/** 요청을 백엔드(터널 → api)로 넘긴다. path를 주면 그 경로로 (설문: /api/x → /api/survey/x) */
+export async function proxyToBackend(request, env, { site, path }) {
+  if (!env.EDGE_SERVICE_SECRET) return proxyError(503, 'BACKEND_UNAVAILABLE');
+  const url = new URL(request.url);
+  const target = path ?? url.pathname;
+  const read = request.method === 'GET' || request.method === 'HEAD';
+  let res;
+  try {
+    res = await fetch(new Request(backendOrigin(env) + target + url.search, {
+      method: request.method,
+      headers: backendHeaders(request, env, target, site),
+      // 본문은 읽지 않고 스트림으로 넘긴다 (Worker 메모리·CPU 절약)
+      body: read ? null : request.body,
+      redirect: 'manual',
+      duplex: 'half',
+    }));
+  } catch {
+    return proxyError(502, 'BACKEND_UNAVAILABLE');
+  }
+  // 본문을 건드리지 않고 헤더만 — 압축된 응답이 다시 풀리거나 재압축되지 않는다
+  const out = new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers,
+    ...(res.headers.has('content-encoding') ? { encodeBody: 'manual' } : {}) });
+  if (!out.headers.has('Cache-Control')) out.headers.set('Cache-Control', 'no-store');
+  return out;
+}

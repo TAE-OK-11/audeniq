@@ -50,6 +50,8 @@ pub mod route_plan;
 pub mod routing;
 pub mod royalty;
 pub mod signing;
+pub mod site_content;
+pub mod sites;
 pub mod sms;
 pub mod staff;
 pub mod staff_admin;
