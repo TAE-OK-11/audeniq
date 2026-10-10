@@ -265,3 +265,6 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .aq-sign-docinfo strong{display:block;font-size:16px;line-height:1.5;word-break:keep-all;color:var(--portal-ink)}
 #modal.aq-signature-mode .aq-sign-foot{grid-template-columns:1fr!important;gap:4px!important}
 #modal.aq-signature-mode .aq-sign-foot .ui-btn.is-text{--btn-h:40px;--btn-bg:transparent;background:transparent!important}
+/* 문서 팝업 '배급 신청서 보기·완성된 전자 문서 보기' — .ui-btn의 margin:0에 덮여 위 본문 칸·아래 제목에 붙던 것 */
+.ui-btn.aq-doc-open-app{margin:12px 0 8px}
+.doc-section-title+.ui-btn.aq-doc-open-app{margin-top:4px}
