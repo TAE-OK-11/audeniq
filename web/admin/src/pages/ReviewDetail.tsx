@@ -1,0 +1,730 @@
+// 발매 심사 시트 — 검사 결과·신청 정보·서류·이력을 보고 승인 / 보완 요청 / 거절을 결정한다.
+// 두 경우를 결정한다: 2차 검사에서 멈춘 발매(STAGE2_REVIEW), 자동 검사를 통과했고 신청서(배급 계약서)가
+// 검토 전인 새 발매 신청(READY_FOR_DELIVERY). 신청서는 발매와 함께 결정되고 서류 검토에는 나오지 않는다.
+import { useEffect, useState } from 'react';
+import { Link, useNavigate, useParams } from '../lib/router';
+import { Modal, useModalClose } from '../components/Modal';
+import { useToast } from '../components/Toast';
+import { errorMessage } from '../api/errors';
+import { useAsync } from '../hooks/useAsync';
+import { staffApi, type DecisionAction, type DecisionInput, type DecisionResult, type ReleaseSheet } from '../api/staff';
+import { FIX_PRESETS } from '../lib/fixPresets';
+import { STAFF_FIX_OPTIONS, WIZ_STEP_NAMES, correctionTarget, isKnownCorrection, staffFixCode } from '../lib/corrections';
+import {
+  CHECK_STATUS, DECISION_LABEL, DOC_KIND, DOC_STATUS, MAX_REASON, RELEASE_STATUS, RELEASE_TYPE,
+  REJECT_REASONS, checkLabel, checkSummary, pick, shortId, stageStateLabel, systemStages, when,
+} from '../labels';
+import { Badge, ErrorBox, Cover, NoDuty, Section, SkeletonList, StatusBadge, useStaff } from '../staffUi';
+import { Glyph } from '../components/Glyph';
+import { CheckIcon } from '../components/Check';
+import { DocFileLink } from '../components/DocFileLink';
+import { QUEUE_ORDER_KEY } from './ReviewQueue';
+import { ApplicationSection, EnteredInfoSection, OptionsSection, TracksSection, useIntegrity } from '../components/Submission';
+import { CurrentValue, ReviewBrief, type BriefFix } from '../components/ReviewBrief';
+import { CheckCard } from '../components/ReviewCheck';
+import { DeliveryStatus } from '../components/DeliveryStatus';
+import { JumpNav, type JumpItem } from '../components/JumpNav';
+import { ReviewTimeline } from '../components/ReviewTimeline';
+import { contextOrReadOnly, ReviewActions } from '../components/ReviewActions';
+import { AgreementTermsSection } from '../components/AgreementTerms';
+import { ReviewClaimPanel, claimLabel } from '../components/ReviewClaim';
+import { useConfirm } from '../components/Confirm';
+
+/** withdraw::WITHDRAWABLE와 같게 유지 */
+const WITHDRAWABLE = ['STAGE1_CORRECTION', 'STAGE2_REVIEW', 'STAGE2_CORRECTION', 'STAGE3_CORRECTION', 'READY_FOR_DELIVERY', 'ON_HOLD_RIGHTS'];
+
+const ACTION_TITLE: Record<DecisionAction, string> = { APPROVE: '발매 승인', REQUEST_CORRECTION: '보완 요청', REJECT: '발매 거절' };
+
+function useDecide(sheet: ReleaseSheet, onDone: (msg: string) => void) {
+  const close = useModalClose();
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const run = async (input: Omit<DecisionInput, 'revision_id'>, msg: (r: DecisionResult) => string) => {
+    if (busy || !sheet.release.revision_id) return;
+    setBusy(true);
+    try {
+      const res = await staffApi.decide(sheet.release.id, { ...input, revision_id: sheet.release.revision_id });
+      onDone(msg(res));
+      close();
+    } catch (err) {
+      toast(errorMessage(err, '결정을 저장하지 못했어요.'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return { busy, run, close };
+}
+
+function ApproveForm({ sheet, application, onDone }: { sheet: ReleaseSheet; application: boolean; onDone: (msg: string) => void }) {
+  const { busy, run, close } = useDecide(sheet, onDone);
+  const [memo, setMemo] = useState('');
+  const integrity = useIntegrity(sheet);
+  const sensitive = sheet.review_context?.requires_second_approval ?? true;
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    void run({ action: 'APPROVE', reason: memo.trim() }, res => {
+      if (res.result === 'PENDING_SECOND_APPROVAL') return '민감 항목이 있어 2차 승인 요청을 올렸어요. 다른 심사 담당자가 승인하면 반영돼요.';
+      return application ? '승인했어요. 아티스트가 계약서에 서명하면 문제 없는 플랫폼으로 자동 배급돼요.' : '승인했어요. 시스템이 나머지 검사와 배급 준비를 이어서 해요.';
+    });
+  };
+  return (
+    <form onSubmit={submit}>
+      <p className="small muted">
+        {application
+          ? '최종 승인이에요. 아티스트가 계약서에 서명하면 문제 없는 플랫폼으로 시스템이 자동 배급해요. 따로 배급 승인할 필요 없어요.'
+          : '남은 검사 항목을 통과로 처리해요. 이후 배급 준비는 시스템이 자동으로 이어서 해요.'}
+      </p>
+      <ReviewBrief sheet={sheet} integrity={integrity} title="승인 전 확인할 것" />
+      {sensitive && (
+        <div className="ui-callout is-warn" style={{ marginTop: 14 }}>
+          권리·중복·보호명 등 <b>민감 항목</b>이 있어 다른 심사 담당자의 <b>2차 승인</b> 후 반영돼요.
+        </div>
+      )}
+      <div className="ui-field" style={{ marginTop: 16 }}>
+        <label htmlFor="aMemo">승인 메모 <span className="muted">(선택)</span></label>
+        <textarea id="aMemo" data-autofocus className="ui-textarea" rows={3} maxLength={MAX_REASON} value={memo} placeholder="남길 내용이 있으면 적어 주세요. 비워 두면 ‘담당자 승인’으로 기록돼요." onChange={e => setMemo(e.target.value)} />
+      </div>
+      <div className="adm-form-actions">
+        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="submit" className="ui-btn is-primary" disabled={busy}>{busy ? '저장 중…' : '승인하기'}</button>
+      </div>
+    </form>
+  );
+}
+
+function RejectForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: string) => void }) {
+  const { busy, run, close } = useDecide(sheet, onDone);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [other, setOther] = useState(false);
+  const [custom, setCustom] = useState('');
+  const [sure, setSure] = useState(false);
+  const integrity = useIntegrity(sheet);
+  const toggle = (id: string) => setPicked(p => (p.includes(id) ? p.filter(x => x !== id) : [...p, id]));
+  const reason = [
+    ...REJECT_REASONS.filter(r => picked.includes(r.id)).map(r => `· ${r.label}: ${r.text}`),
+    ...(other && custom.trim() ? [`· 기타: ${custom.trim()}`] : []),
+  ].join('\n');
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reason || !sure) return;
+    void run({ action: 'REJECT', reason, notes: [] }, () => '발매를 거절했어요. 아티스트에게 거절 사유와 함께 알림이 갔어요.');
+  };
+  return (
+    <form onSubmit={submit}>
+      <ReviewBrief sheet={sheet} integrity={integrity} title="거절 전 확인할 것" />
+      <p className="small muted" style={{ marginTop: 14 }}>사유를 누르면 그대로 기록되고 아티스트에게 전달돼요. 여러 개 고를 수 있어요. 고칠 수 있는 문제면 거절 대신 보완 요청을 보내 주세요.</p>
+      <div className="ui-chips is-wrap" role="group" aria-label="거절 사유">
+        {REJECT_REASONS.map(r => (
+          <button key={r.id} type="button" className={`ui-chip is-danger${picked.includes(r.id) ? ' is-on' : ''}`} aria-pressed={picked.includes(r.id)} title={r.text} onClick={() => toggle(r.id)}>{r.label}</button>
+        ))}
+        <button type="button" className={`ui-chip is-danger${other ? ' is-on' : ''}`} aria-pressed={other} onClick={() => setOther(v => !v)}>기타 (직접 입력)</button>
+      </div>
+      {other && (
+        <div className="ui-field">
+          <label htmlFor="rCustom">기타 사유</label>
+          <textarea id="rCustom" data-autofocus className="ui-textarea" rows={3} maxLength={1000} value={custom} placeholder="아티스트에게 전달할 거절 사유" onChange={e => setCustom(e.target.value)} />
+        </div>
+      )}
+      {reason && <div className="ui-callout" style={{ whiteSpace: 'pre-line' }}>{reason}</div>}
+      <label className="ui-check">
+        <input type="checkbox" checked={sure} onChange={e => setSure(e.target.checked)} />
+        <span><b>{sheet.release.title}</b> 발매를 거절하면 되돌릴 수 없어요. 아티스트는 새로 접수해야 해요.</span>
+      </label>
+      <div className="adm-form-actions">
+        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="submit" className="ui-btn is-danger-solid" disabled={busy || !reason || !sure}>{busy ? '저장 중…' : '거절 확정'}</button>
+      </div>
+    </form>
+  );
+}
+
+interface FixItem { key: string; step: number; code: string; trackId: string; note: string; custom?: boolean; system?: boolean }
+let fixSeq = 0;
+const newFix = (over: Partial<FixItem> = {}): FixItem => ({ key: `fx${++fixSeq}`, step: -1, code: '', trackId: '', note: '', ...over });
+
+/** 보완 요청 — 페이지 → 항목(→ 트랙)을 고르고 문제를 적으면 아티스트는 그 입력칸으로 바로 가서 고친다 */
+function CorrectionForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: string) => void }) {
+  const { busy, run, close } = useDecide(sheet, onDone);
+  const tracks = sheet.application.tracks ?? [];
+  // 시스템이 찾은 문제(미해결 검사)는 미리 채워 둔다 — 담당자는 문구만 다듬으면 된다
+  const [items, setItems] = useState<FixItem[]>(() => {
+    const sys = sheet.open_checks.map(c => newFix({ code: c.check_code, note: isKnownCorrection(c.check_code) ? correctionTarget(c.check_code).hint : checkSummary(c), system: true }));
+    return sys.length ? sys : [newFix()];
+  });
+  const [summary, setSummary] = useState('');
+  const integrity = useIntegrity(sheet);
+  // ‘확인할 것’에서 누른 문제를 보완 항목으로 (빈 첫 항목이 있으면 그 자리에)
+  const addFromBrief = (f: BriefFix) => setItems(list => {
+    const item = newFix({ step: correctionTarget(f.code).step, code: f.code, trackId: f.trackId ?? '', note: f.note, custom: !FIX_PRESETS[f.code]?.includes(f.note) });
+    const blank = list.findIndex(x => !x.system && !x.code);
+    return blank >= 0 ? list.map((x, n) => (n === blank ? { ...item, key: x.key } : x)) : [...list, item];
+  });
+  const set = (key: string, patch: Partial<FixItem>) => setItems(list => list.map(i => (i.key === key ? { ...i, ...patch } : i)));
+  const opt = (code: string) => STAFF_FIX_OPTIONS.find(o => o.code === code);
+  const ready = items.filter(i => i.code && (!opt(i.code)?.track || i.trackId));
+  const incomplete = items.some(i => !i.system && (!i.code || (opt(i.code)?.track && !i.trackId) || !i.note.trim()));
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ready.length || incomplete) return;
+    const notes = ready.map(i => ({
+      check_code: i.system ? i.code : staffFixCode(i.code, opt(i.code)?.track ? i.trackId : undefined),
+      note: i.note.trim() || correctionTarget(i.code).hint,
+    }));
+    const reason = summary.trim() || '표시된 항목을 고친 뒤 다시 접수해 주세요.';
+    void run({ action: 'REQUEST_CORRECTION', reason, notes }, () => '보완 요청을 보냈어요. 아티스트는 표시된 칸으로 바로 가서 고칠 수 있어요.');
+  };
+  return (
+    <form onSubmit={submit}>
+      <ReviewBrief
+        sheet={sheet} integrity={integrity} title="찾은 문제" onAddFix={addFromBrief}
+        added={items.filter(i => i.code).map(i => `${i.code}@${i.trackId || ''}`)}
+      />
+      <p className="small muted" style={{ marginTop: 14 }}>고칠 곳을 페이지와 항목으로 지정하고 무엇이 문제인지 적어 주세요. 아티스트 화면에서 그 입력칸으로 바로 이동해요.</p>
+      <div className="adm-fixes">
+        {items.map((i, n) => {
+          const o = opt(i.code);
+          const step = o ? o.step : i.system ? correctionTarget(i.code).step : i.step;
+          return (
+            <div key={i.key} className="adm-fix ui-on-soft">
+              <div className="adm-fix-top">
+                <b>{i.system ? `시스템이 찾은 문제 · ${checkLabel(i.code)}` : `보완 항목 ${n + 1}`}</b>
+                {!i.system && items.length > 1 && (
+                  <button type="button" className="ui-btn is-soft is-sm" onClick={() => setItems(list => list.filter(x => x.key !== i.key))}>삭제</button>
+                )}
+              </div>
+              {!i.system && (
+                <div className="adm-fix-pick">
+                  {/* 1. 페이지 → 2. 고칠 부분 (→ 트랙) — 눌러서 고른다 */}
+                  <span className="adm-fix-label">페이지</span>
+                  <div className="ui-chips is-wrap" role="radiogroup" aria-label="페이지">
+                    {WIZ_STEP_NAMES.map((name, s2) => STAFF_FIX_OPTIONS.some(x => x.step === s2) && (
+                      <button
+                        key={name} type="button" role="radio" aria-checked={step === s2}
+                        className={`ui-chip${step === s2 ? ' is-on' : ''}`}
+                        onClick={() => set(i.key, { step: s2, code: '', trackId: '', note: '', custom: false })}
+                      >{name}</button>
+                    ))}
+                  </div>
+                  {step >= 0 && (
+                    <>
+                      <span className="adm-fix-label">보완할 부분</span>
+                      <div className="ui-chips is-wrap" role="radiogroup" aria-label="보완할 부분">
+                        {STAFF_FIX_OPTIONS.filter(x => x.step === step).map(x => (
+                          <button
+                            key={x.code} type="button" role="radio" aria-checked={i.code === x.code}
+                            className={`ui-chip${i.code === x.code ? ' is-on' : ''}`}
+                            onClick={() => set(i.key, { code: x.code, trackId: '', note: '', custom: !FIX_PRESETS[x.code]?.length })}
+                          >{x.label}</button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  {o?.track && (
+                    <>
+                      <span className="adm-fix-label">트랙</span>
+                      <div className="ui-chips is-wrap" role="radiogroup" aria-label="트랙">
+                        {tracks.map(t => (
+                          <button
+                            key={t.id} type="button" role="radio" aria-checked={i.trackId === t.id}
+                            className={`ui-chip${i.trackId === t.id ? ' is-on' : ''}`}
+                            onClick={() => set(i.key, { trackId: t.id })}
+                          >{t.track_number}. {t.title}</button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  {i.code && (!o?.track || i.trackId) && <CurrentValue sheet={sheet} code={i.code} trackId={i.trackId || undefined} />}
+                  {i.code && (
+                    <>
+                      <span className="adm-fix-label">안내 문구</span>
+                      <div className="ui-choices" role="radiogroup" aria-label="안내 문구">
+                        {(FIX_PRESETS[i.code] ?? []).map(text => (
+                          <button
+                            key={text} type="button" role="radio" aria-checked={!i.custom && i.note === text}
+                            className="ui-choice"
+                            onClick={() => set(i.key, { note: text, custom: false })}
+                          >
+                            <span>{text}</span>
+                            <span className="ui-choice-mark" aria-hidden="true">{!i.custom && i.note === text && <CheckIcon size={11} />}</span>
+                          </button>
+                        ))}
+                        <button
+                          type="button" role="radio" aria-checked={!!i.custom}
+                          className="ui-choice"
+                          onClick={() => set(i.key, { custom: true, note: i.custom ? i.note : '' })}
+                        >
+                          <span>직접 입력</span>
+                          <span className="ui-choice-mark" aria-hidden="true">{i.custom && <CheckIcon size={11} />}</span>
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+              {(i.system || i.custom) && (
+                <textarea
+                  className="ui-textarea" rows={2} maxLength={2000} value={i.note} aria-label="문제 내용"
+                  autoFocus={!i.system}
+                  placeholder={i.code ? correctionTarget(i.code).hint : '무엇이 문제이고 어떻게 고치면 되는지 적어 주세요.'}
+                  onChange={e => set(i.key, { note: e.target.value })}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <button type="button" className="ui-btn is-soft is-sm" style={{ marginTop: 10 }} onClick={() => setItems(list => [...list, newFix()])}>+ 항목 추가</button>
+      <div className="ui-field" style={{ marginTop: 16 }}>
+        <label htmlFor="cSummary">전체 안내 <span className="muted">(선택)</span></label>
+        <textarea id="cSummary" className="ui-textarea" rows={2} maxLength={MAX_REASON} value={summary} placeholder="비워 두면 ‘표시된 항목을 고친 뒤 다시 접수해 주세요.’로 보내요." onChange={e => setSummary(e.target.value)} />
+      </div>
+      <div className="adm-form-actions">
+        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="submit" className="ui-btn is-primary" disabled={busy || !ready.length || incomplete}>{busy ? '보내는 중…' : `보완 요청 보내기 (${ready.length}건)`}</button>
+      </div>
+    </form>
+  );
+}
+
+function ProofForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: () => void }) {
+  const close = useModalClose();
+  const toast = useToast();
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim() || busy) return;
+    setBusy(true);
+    try {
+      await staffApi.requestProof(sheet.release.org_id, { release_id: sheet.release.id, title: title.trim(), body: body.trim() });
+      toast('권리 증빙을 요청했어요. 아티스트에게 알림이 갔어요.', 'success');
+      onDone();
+      close();
+    } catch (err) {
+      toast(errorMessage(err, '증빙 요청을 보내지 못했어요.'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form onSubmit={submit}>
+      <p className="small muted">아티스트의 ‘권리·보완 서류’ 화면에 제출 요청이 생기고 알림이 가요.</p>
+      <div className="ui-field" style={{ marginTop: 16 }}>
+        <label htmlFor="pTitle">요청 서류 이름 <span className="required">*</span></label>
+        <input id="pTitle" data-autofocus className="ui-input" maxLength={200} required value={title} placeholder="예: 샘플 사용 허락서" onChange={e => setTitle(e.target.value)} />
+      </div>
+      <div className="ui-field">
+        <label htmlFor="pBody">안내 내용</label>
+        <textarea id="pBody" className="ui-textarea" rows={5} maxLength={20000} value={body} placeholder="어떤 서류가 왜 필요한지, 어떤 형식으로 내면 되는지 적어 주세요." onChange={e => setBody(e.target.value)} />
+      </div>
+      <div className="adm-form-actions">
+        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="submit" className="ui-btn is-primary" disabled={busy || !title.trim()}>{busy ? '보내는 중…' : '증빙 요청 보내기'}</button>
+      </div>
+    </form>
+  );
+}
+
+function WithdrawForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: () => void }) {
+  const close = useModalClose();
+  const toast = useToast();
+  const [reason, setReason] = useState('아티스트 문의로 취소 요청');
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reason.trim() || busy) return;
+    setBusy(true);
+    try {
+      await staffApi.withdraw(sheet.release.id, reason.trim());
+      toast('발매 신청을 취소했어요. 아티스트에게 알림이 갔어요.', 'success');
+      onDone();
+      close();
+    } catch (err) {
+      toast(errorMessage(err, '취소하지 못했어요.'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form onSubmit={submit}>
+      <p className="small muted">아티스트가 문의로 요청한 취소를 처리해요. 아티스트의 월 3회 직접 취소 횟수에는 포함되지 않아요. 계약서 서명 후(배급 시작)에는 테이크다운으로 처리해야 해요.</p>
+      <div className="ui-field" style={{ marginTop: 16 }}>
+        <label htmlFor="wReason">처리 메모 <span className="required">*</span></label>
+        <input id="wReason" data-autofocus className="ui-input" maxLength={2000} required value={reason} onChange={e => setReason(e.target.value)} />
+      </div>
+      <div className="adm-form-actions">
+        <button type="button" className="ui-btn is-soft" onClick={close}>닫기</button>
+        <button type="submit" className="ui-btn is-danger-solid" disabled={busy || !reason.trim()}>{busy ? '처리 중…' : '신청 취소 처리'}</button>
+      </div>
+    </form>
+  );
+}
+
+function ReissueForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: () => void }) {
+  const close = useModalClose();
+  const toast = useToast();
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reason.trim() || busy) return;
+    setBusy(true);
+    try {
+      await staffApi.reissue(sheet.release.id, reason.trim());
+      toast('식별자 재발급을 위해 아티스트에게 돌려보냈어요.', 'success');
+      onDone();
+      close();
+    } catch (err) {
+      toast(errorMessage(err, '재발급 요청을 처리하지 못했어요.'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form onSubmit={submit}>
+      <p className="small muted">테스트용 임시 UPC·ISRC로 준비된 배급을 정식 코드로 다시 만들어요. 발매는 ‘배포 보완 요청’ 상태가 되고, 재접수 시 정식 코드가 발급돼요.</p>
+      <div className="ui-field" style={{ marginTop: 16 }}>
+        <label htmlFor="rReason">사유 <span className="required">*</span></label>
+        <textarea id="rReason" data-autofocus className="ui-textarea" rows={3} maxLength={2000} required value={reason} onChange={e => setReason(e.target.value)} placeholder="예: 정식 ISRC 발급 범위 등록 완료" />
+      </div>
+      <div className="adm-form-actions">
+        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="submit" className="ui-btn is-primary" disabled={busy || !reason.trim()}>{busy ? '처리 중…' : '재발급 요청'}</button>
+      </div>
+    </form>
+  );
+}
+
+/** 시트 맨 위 요약 — 결정에 필요한 문제·주의만 먼저, 이상 없는 항목은 접어서 */
+function SheetSummary({ sheet, lead }: { sheet: ReleaseSheet; lead: string }) {
+  const integrity = useIntegrity(sheet);
+  return <ReviewBrief sheet={sheet} integrity={integrity} title="확인할 것" lead={lead} compact />;
+}
+
+export function ReviewDetail() {
+  const { id = '' } = useParams<{ id: string }>();
+  return <ReviewSheet key={id} id={id} />;
+}
+
+function ReviewSheet({ id }: { id: string }) {
+  const nav = useNavigate();
+  const toast = useToast();
+  const confirm = useConfirm();
+  const { can, refreshCounts, me } = useStaff();
+  const { data: sheet, loading, error, reload } = useAsync(() => staffApi.release(id), [id]);
+  const [action, setAction] = useState<DecisionAction | null>(null);
+  const [modal, setModal] = useState<'proof' | 'reissue' | 'withdraw' | null>(null);
+  const [done, setDone] = useState('');
+  const [showAll, setShowAll] = useState(false);
+  const [timelineTick, setTimelineTick] = useState(0);
+  // 눌렀다는 게 보이게 — 금방 끝나도 한 바퀴는 돌고, 끝나면 잠깐 체크 표시
+  const [spin, setSpin] = useState<'idle' | 'spin' | 'done'>('idle');
+  const refresh = () => {
+    if (spin === 'spin') return;
+    setSpin('spin');
+    reload(); setTimelineTick(t => t + 1);
+    window.setTimeout(() => { setSpin('done'); window.setTimeout(() => setSpin('idle'), 1100); }, 700);
+  };
+  useEffect(() => {
+    const update = () => { if (!action && !modal && document.visibilityState === 'visible') { reload(); setTimelineTick(t => t + 1); } };
+    const active = !action && !modal && sheet && (['SUBMITTED', 'STAGE1_RUNNING', 'STAGE1_PASSED', 'STAGE2_RUNNING', 'STAGE2_PASSED', 'STAGE3_PREPARING', 'STAGE2_REVIEW'].includes(sheet.release.status));
+    const timer = active ? window.setInterval(update, 15000) : undefined;
+    document.addEventListener('visibilitychange', update);
+    return () => { if (timer !== undefined) window.clearInterval(timer); document.removeEventListener('visibilitychange', update); };
+  }, [sheet?.release.status, action, modal, reload]);
+
+  if (loading && !sheet) return <SkeletonList rows={6} />;
+  if (error && !sheet) return <ErrorBox message={error} onRetry={reload} />;
+  if (!sheet) return null;
+
+  const r = sheet.release;
+  const app = sheet.application;
+  // 결정 가능 여부·버튼은 서버(review_context)가 정한다. 예전 API면 읽기 전용
+  const context = contextOrReadOnly(sheet.review_context);
+  const inReview = context.decision_kind === 'CHECKS';
+  const application = context.decision_kind === 'APPLICATION';
+  const decidable = context.decision_kind !== null;
+  const stages = systemStages(r.status);
+  const pending = sheet.second_approvals.find(a => a.id === context.pending_second_approval_id);
+  const canReview = can('REVIEW');
+  const agreementDoc = sheet.documents.find(d => d.kind === 'AGREEMENT');
+  const after = (msg: string) => { setDone(msg); refresh(); refreshCounts(); };
+  const mine = !!context.claim?.mine;
+  const claim = async (takeOver: boolean) => {
+    if (takeOver && !(await confirm({ title: '심사 넘겨받기', message: `${context.claim?.email ?? '다른 담당자'}님이 맡은 심사를 넘겨받아요. 이후 결정은 나만 할 수 있어요.`, confirmLabel: '넘겨받기' }))) return;
+    try {
+      await staffApi.claim(r.id, takeOver);
+      toast(takeOver ? '심사를 넘겨받았어요.' : '이 심사를 담당했어요. 이제 결정할 수 있어요.', 'success');
+      refresh(); refreshCounts();
+    } catch (err) { toast(errorMessage(err, '담당하지 못했어요.'), 'error'); refresh(); }
+  };
+  const unclaim = async () => {
+    if (!(await confirm({ title: '담당 해제', message: '담당을 내려놓으면 다른 담당자가 이 심사를 맡을 수 있어요.', confirmLabel: '담당 해제' }))) return;
+    try {
+      await staffApi.unclaim(r.id);
+      toast('담당을 내려놓았어요.', 'success');
+      refresh(); refreshCounts();
+    } catch (err) { toast(errorMessage(err, '담당을 해제하지 못했어요.'), 'error'); }
+  };
+  const statusLine = inReview
+    ? `담당자 확인 필요 ${sheet.open_checks.length}건`
+    : application
+      ? '새 발매 신청 · 시스템 검사 모두 통과'
+      : `지금은 ‘${pick(RELEASE_STATUS, r.status)[0]}’ 상태라 결정할 수 없어요.`;
+  const trackCount = (app.tracks ?? []).length || (sheet.draft?.draftTracks ?? []).filter(t => t.title?.trim()).length;
+  const blocked = sheet.delivery_staging.filter(d => d.readiness === 'CONTENT_BLOCKED').length;
+  const jump: JumpItem[] = [
+    { id: 'rv-summary', label: '요약' },
+    ...(sheet.open_checks.length ? [{ id: 'rv-open', label: '확인 필요', count: sheet.open_checks.length, tone: 'bad' as const }] : []),
+    { id: 'rv-app', label: '신청서' },
+    { id: 'rv-info', label: '입력 내용' },
+    ...(sheet.draft?.options ?? app.options ? [{ id: 'rv-opts', label: '부가서비스' }] : []),
+    { id: 'rv-tracks', label: '트랙', count: trackCount },
+    { id: 'rv-docs', label: '서류', count: sheet.documents.length },
+    ...(sheet.delivery_staging.length ? [{ id: 'rv-dsp', label: '배급', ...(blocked ? { count: blocked, tone: 'bad' as const } : {}) }] : []),
+    { id: 'rv-history', label: '이력' },
+  ];
+  // 심사 목록에서 보던 순서의 다음 건 (목록을 거치지 않고 이어서 심사)
+  const nextId = (() => {
+    try {
+      const order = JSON.parse(sessionStorage.getItem(QUEUE_ORDER_KEY) || '[]') as string[];
+      const i = order.indexOf(r.id);
+      return i >= 0 ? order[i + 1] ?? null : null;
+    } catch { return null; }
+  })();
+
+  return (
+    <div className="view-enter">
+      <div className="adm-detail-nav">
+        <Link to="/reviews" className="adm-back"><Glyph name="arrow-left" size={14} className="aq-inline-glyph" />심사 목록</Link>
+        <div className="adm-detail-nav-end">
+          <button type="button" className={`ui-btn is-soft is-sm adm-refresh${loading || spin === 'spin' ? ' is-spinning' : ''}${spin === 'done' && !loading ? ' is-done' : ''}`} disabled={loading || spin === 'spin'} onClick={refresh} aria-label={loading || spin === 'spin' ? '갱신 중' : spin === 'done' ? '갱신됨' : '심사 정보 새로고침'} title="새로고침">
+            {spin === 'done' && !loading
+              ? <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m5.5 12.5 4.2 4.2 8.8-9.4" /></svg>
+              : <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1" /><path d="M20.5 3.8v4.6h-4.6" /></svg>}
+            {spin === 'done' && !loading ? '갱신됨' : '새로고침'}
+          </button>
+          {nextId && <Link to={`/reviews/${nextId}`} className="adm-next-btn">다음 건<Glyph name="chevron-right" size={14} /></Link>}
+        </div>
+      </div>
+
+      <div className="adm-detail">
+        <div>
+          <div className="adm-release-hero ui-on-soft">
+            <Cover id={r.id} text={r.title} src={r.cover} />
+            <div className="adm-min">
+              <div className="adm-codes" style={{ marginBottom: 6 }}>
+                <StatusBadge value={pick(RELEASE_STATUS, r.status)} />
+                <Badge tone="gray">{RELEASE_TYPE[r.release_type] ?? r.release_type}</Badge>
+                {decidable && <Badge tone={mine ? 'blue' : context.claim ? 'amber' : 'gray'}>{claimLabel(context)}</Badge>}
+              </div>
+              <h1>{r.title}</h1>
+              <span className="ui-row-meta">
+                <span>{app.artist || '아티스트 미기재'}</span>
+                <span>{r.org_name}</span>
+              </span>
+              <span className="adm-hero-when">접수 {when(r.submitted_at)}</span>
+            </div>
+          </div>
+
+          {!sheet.review_context && <ErrorBox message="심사 가능 여부를 확인할 수 없어요. 새로고침 후 다시 확인해 주세요." onRetry={refresh} />}
+          {error && <ErrorBox message={error} onRetry={refresh} />}
+          {done && !pending && (
+            <div className="ui-callout is-success is-row" role="status">
+              <span>{done}</span>
+              {nextId && <button type="button" className="ui-btn is-soft is-sm" onClick={() => nav(`/reviews/${nextId}`)}>다음 심사 건 열기</button>}
+            </div>
+          )}
+          {pending && (
+            <div className="ui-callout is-warn is-row">
+              <span>2차 승인 대기 중 — {pending.check_codes.map(checkLabel).join(', ')} · 요청 {when(pending.at)}{pending.requested_by === me.user_id ? ' (내 요청)' : ''}</span>
+              <button type="button" className="ui-btn is-warn is-sm" onClick={() => nav('/approvals')}>2차 승인으로</button>
+            </div>
+          )}
+
+          <JumpNav items={jump} />
+          <div id="rv-summary" className="adm-anchor"><SheetSummary sheet={sheet} lead={inReview ? '' : statusLine} /></div>
+
+
+          <Section title="시스템 검사" meta={`검사 ${sheet.checks.length}개 · 통과 ${context.check_counts.PASS ?? 0}개 (담당자 결정 포함)`}>
+            <ol className="adm-stages">
+              {stages.map((st, i) => (
+                <li key={st.key} className={`is-${st.state}`}>
+                  <span className="adm-stage-dot" aria-hidden="true">{st.state === 'done' ? <CheckIcon size={13} /> : st.state === 'stopped' ? <Glyph name="close" size={13} /> : i + 1}</span>
+                  <span className="adm-min">
+                    <b>{st.label} {stageStateLabel(st.state)}</b>
+                    <small>{st.hint}</small>
+                  </span>
+                </li>
+              ))}
+            </ol>
+            {decidable && sheet.open_checks.length === 0 && (
+              <div className="ui-callout is-success" style={{ marginTop: 12 }}>시스템 검사를 모두 통과했어요. 신청 정보와 커버·음원만 확인하고 최종 결정해 주세요.</div>
+            )}
+          </Section>
+
+
+          {sheet.open_checks.length > 0 && (
+            <div id="rv-open" className="adm-anchor"><Section title="담당자 확인 필요" meta={`${sheet.open_checks.length}건${sheet.open_checks.some(c => c.needs_second_approval) ? ` · ${sheet.open_checks.every(c => c.needs_second_approval) ? '모두' : '일부'} 2인 승인` : ''}`}>
+              <div className="adm-checks">{sheet.open_checks.map(c => <CheckCard key={c.id ?? c.check_code} c={c} open />)}</div>
+            </Section></div>
+          )}
+
+          {sheet.advisories.length > 0 && (
+            <Section title="참고 사항" meta="발매를 막지 않는 음원 권고">
+              <div className="adm-checks">{sheet.advisories.map(c => <CheckCard key={c.id ?? c.check_code} c={c} />)}</div>
+            </Section>
+          )}
+
+          <div id="rv-app" className="adm-anchor"><ApplicationSection sheet={sheet} /></div>
+          <div id="rv-info" className="adm-anchor"><EnteredInfoSection sheet={sheet} /></div>
+          <div id="rv-opts" className="adm-anchor"><OptionsSection sheet={sheet} /></div>
+          <div id="rv-tracks" className="adm-anchor"><TracksSection sheet={sheet} /></div>
+
+          {agreementDoc && <div id="rv-terms" className="adm-anchor"><AgreementTermsSection
+            releaseId={r.id} doc={agreementDoc} onSaved={refresh}
+            editable={canReview && mine && ['REVIEW', 'PREPARED'].includes(agreementDoc.status)}
+          /></div>}
+
+          <div id="rv-docs" className="adm-anchor"><Section
+            title="서류" meta={`${sheet.documents.length}건`}
+            action={can('DOCUMENTS') && <button type="button" className="ui-btn is-soft is-sm" onClick={() => setModal('proof')}>권리 증빙 요청</button>}
+          >
+            {sheet.documents.length ? (
+              <div className="ui-list">
+                {sheet.documents.map(d => (
+                  <div key={d.id} className="ui-row">
+                    <Cover text={DOC_KIND[d.kind] ?? d.kind} plain />
+                    <span className="adm-min">
+                      <span className="ui-row-title">{d.title}</span>
+                      <span className="ui-row-meta"><span>{DOC_KIND[d.kind] ?? d.kind}</span>{d.file_name && <span>{d.file_name}</span>}<span>{when(d.updated_at)}</span></span>
+                      {d.review_note && <span className="ui-row-meta"><span>메모: {d.review_note}</span></span>}
+                    </span>
+                    <span className="ui-row-end"><StatusBadge value={pick(DOC_STATUS, d.status)} /><DocFileLink id={d.id} assetId={d.asset_id} /></span>
+                  </div>
+                ))}
+              </div>
+            ) : <p className="small muted">연결된 서류가 없어요.</p>}
+          </Section></div>
+
+
+          <div id="rv-dsp" className="adm-anchor"><DeliveryStatus rows={sheet.delivery_staging} /></div>
+
+          {(sheet.notes.length > 0 || sheet.overrides.length > 0) && (
+            <Section title="담당자 결정 기록">
+              {sheet.notes.map(n => (
+                <div key={n.id} className="adm-note ui-on-soft">
+                  <div className="adm-check-top">
+                    <span><Badge tone={n.decision === 'REJECT' ? 'red' : n.decision === 'APPROVE' ? 'green' : 'amber'}>{DECISION_LABEL[n.decision] ?? n.decision}</Badge>{n.check_code && <> <span className="adm-note-target">{checkLabel(n.check_code)}</span></>}</span>
+                    <small className="muted">{when(n.at)} · {shortId(n.author_user_id)}</small>
+                  </div>
+                  <p>{n.note}</p>
+                </div>
+              ))}
+              {sheet.overrides.length > 0 && (
+                <div className="ui-card adm-table-wrap" style={{ marginTop: 10 }}>
+                  <table className="adm-table">
+                    <thead><tr><th>검사</th><th>변경</th><th>담당 / 2차</th><th>시각</th></tr></thead>
+                    <tbody>
+                      {sheet.overrides.map(o => (
+                        <tr key={o.id}>
+                          <td>{checkLabel(o.check_code)}</td>
+                          <td>{pick(CHECK_STATUS, o.original_status)[0]} → <b>{pick(CHECK_STATUS, o.proposed_status)[0]}</b></td>
+                          <td className="small">{shortId(o.actor_user_id)}{o.second_approver_user_id ? ` / ${shortId(o.second_approver_user_id)}` : ''}</td>
+                          <td className="small">{when(o.at)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Section>
+          )}
+
+          <Section
+            title="전체 검사 결과" meta={`${sheet.checks.length}건`}
+            action={<button type="button" className="ui-btn is-soft is-sm" onClick={() => setShowAll(v => !v)}>{showAll ? '접기' : '펼치기'}</button>}
+          >
+            {showAll ? (
+              <div className="adm-checks">{sheet.checks.map(c => <CheckCard key={c.id ?? c.check_code} c={c} />)}</div>
+            ) : (
+              <div className="adm-codes">
+                {Object.entries(context.check_counts)
+                  .map(([s, n]) => <Badge key={s} tone={pick(CHECK_STATUS, s)[1]}>{pick(CHECK_STATUS, s)[0]} {n}</Badge>)}
+              </div>
+            )}
+          </Section>
+
+          <div id="rv-history" className="adm-anchor"><ReviewTimeline releaseId={id} revisionId={r.revision_id} refreshTick={timelineTick} /></div>
+        </div>
+
+        <aside className="adm-detail-side">
+          <div className="adm-decide ui-dark">
+            <h2>심사 결정</h2>
+            <p>{statusLine}</p>
+            <ReviewClaimPanel context={context} canReview={canReview} onClaim={claim} onRelease={unclaim} />
+            {mine && <ReviewActions context={context} loading={loading} onAction={setAction} />}
+            <div className="adm-decide-note">
+              {application
+                ? '승인하면 아티스트 서명 후 배급이 시작돼요. 서류가 더 필요하면 ‘권리 증빙 요청’을 보내 주세요.'
+                : '승인하면 남은 검사와 배급 준비가 자동으로 이어져요. 민감 항목은 다른 담당자가 한 번 더 확인해요.'}
+            </div>
+          </div>
+          {!canReview && <NoDuty duty="발매 심사" />}
+          {WITHDRAWABLE.includes(r.status) && canReview && !sheet.documents.some(d => d.kind === 'AGREEMENT' && d.status === 'SIGNED') && (
+            <div className="ui-card">
+              <b>취소 요청 처리</b>
+              <p className="small muted" style={{ margin: '6px 0 12px' }}>아티스트가 문의로 취소를 요청했을 때 써요.</p>
+              <button type="button" className="ui-btn is-soft is-sm" onClick={() => setModal('withdraw')}>신청 취소 처리</button>
+            </div>
+          )}
+          {r.status === 'READY_FOR_DELIVERY' && canReview && (
+            <div className="ui-card">
+              <b>식별자 재발급</b>
+              <p className="small muted" style={{ margin: '6px 0 12px' }}>테스트용 임시 UPC·ISRC로 준비된 배급을 정식 코드로 다시 만들어요.</p>
+              <button type="button" className="ui-btn is-soft is-sm" onClick={() => setModal('reissue')}>재발급 요청</button>
+            </div>
+          )}
+          <div className="ui-card adm-id-card">
+            <dl className="ui-kv" style={{ gridTemplateColumns: '1fr' }}>
+              <div><dt>발매 ID</dt><dd><span className="ui-tag is-mono">{r.id}</span></dd></div>
+              <div><dt>작업 공간</dt><dd>{r.org_name} <span className="ui-tag is-mono">{shortId(r.org_id)}</span></dd></div>
+            </dl>
+          </div>
+        </aside>
+      </div>
+
+      {/* 휴대폰·좁은 화면: 내용을 읽다가 바로 결정하도록 아래에 고정 */}
+      {decidable && canReview && !action && (
+        <div className={`adm-decide-bar${mine ? '' : ' is-claim'}`} role="group" aria-label="심사 결정">
+          {mine
+            ? <ReviewActions context={context} loading={loading} onAction={setAction} />
+            : <ReviewClaimPanel context={context} canReview={canReview} onClaim={claim} onRelease={unclaim} compact />}
+        </div>
+      )}
+      {action && (
+        <Modal key={`${r.revision_id}-${action}`} title={ACTION_TITLE[action]} onClose={() => setAction(null)} dismissible={false}>
+          {action === 'APPROVE' && <ApproveForm sheet={sheet} application={application} onDone={after} />}
+          {action === 'REJECT' && <RejectForm sheet={sheet} onDone={after} />}
+          {action === 'REQUEST_CORRECTION' && <CorrectionForm sheet={sheet} onDone={after} />}
+        </Modal>
+      )}
+      {modal === 'proof' && (
+        <Modal title="권리 증빙 요청" onClose={() => setModal(null)} dismissible={false}>
+          <ProofForm sheet={sheet} onDone={() => after('권리 증빙을 요청했어요.')} />
+        </Modal>
+      )}
+      {modal === 'withdraw' && (
+        <Modal title="신청 취소 처리" onClose={() => setModal(null)} dismissible={false}>
+          <WithdrawForm sheet={sheet} onDone={() => after('발매 신청을 취소했어요.')} />
+        </Modal>
+      )}
+      {modal === 'reissue' && (
+        <Modal title="식별자 재발급" onClose={() => setModal(null)} dismissible={false}>
+          <ReissueForm sheet={sheet} onDone={() => after('식별자 재발급을 요청했어요.')} />
+        </Modal>
+      )}
+    </div>
+  );
+}

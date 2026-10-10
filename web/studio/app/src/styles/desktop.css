@@ -1,0 +1,208 @@
+/* ==========================================================================
+   PC(넓은 화면) 배치 — 휴대폰용 한 줄 목록을 그대로 늘리지 않고, 넓은 폭에 맞게 칸을 나눈다.
+   1024px 이상에서만 적용되므로 휴대폰·태블릿 세로 화면은 기존 배치 그대로다. (상단 메뉴바는 공통이라 제외)
+   ========================================================================== */
+/* 신청서 아래 버튼 줄 — 휴대폰과 같은 비율로 입력 영역 폭을 꽉 채운다
+   [이전 1][다음으로 2], 버튼 3개면 [나가기 1][수정 완료 1][다음으로 1.5] */
+@media (min-width: 760px) {
+  #view-new .step-actions {
+    display: grid !important; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 10px !important;
+  }
+  #view-new .step-actions:has(#wizardSaveNow) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.5fr); }
+  #view-new .step-actions .ui-btn,
+  #view-new .step-actions #wizardBack,
+  #view-new .step-actions #wizardSaveNow,
+  #view-new .step-actions #wizardNext {
+    width: 100% !important; min-width: 0 !important; margin: 0 !important; white-space: nowrap;
+  }
+}
+
+/* 태블릿: 3칸 요약 숫자는 2칸+1칸으로 쪼개지 않고 한 줄에 */
+@media (min-width: 600px) {
+  .ui-stats.is-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ui-stats.is-cols-3 > :last-child:nth-child(odd):not(:first-child) { grid-column: auto; }
+}
+
+@media (min-width: 1024px) {
+  /* 왼쪽 칸을 화면에 고정할 때의 위치(상단 메뉴바 아래) */
+  .view { --pc-sticky-top: 96px; }
+
+  /* ── 내 음악: 발매는 커버가 큰 카드 격자, 트랙은 2칸 ───────────────── */
+  #view-catalog .toolbar { display: grid; grid-template-columns: minmax(0, 1fr) 240px; }
+  #view-catalog .toolbar select { min-width: 0; }
+  #view-catalog .aq-catalog-cards:has(.aq-release-card) {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; align-items: start;
+  }
+  #view-catalog .aq-release-card {
+    position: relative; display: flex !important; flex-direction: column; align-items: stretch;
+    gap: 12px; margin: 0 !important; padding: 12px 12px 16px !important;
+  }
+  #view-catalog .aq-release-card > .cover {
+    width: 100% !important; height: auto !important; aspect-ratio: 1; flex: none; border-radius: 14px !important;
+  }
+  #view-catalog .aq-release-card > .cover .aq-cover-glyph { width: 30%; height: 30%; }
+  #view-catalog .aq-release-card > .min-0 { padding: 0 4px; }
+  #view-catalog .aq-release-card .ui-row-title { font-size: 16px; }
+  /* 상태 표시는 커버 위 오른쪽 위 모서리에 */
+  #view-catalog .aq-release-end { position: absolute; top: 22px; right: 22px; }
+  #view-catalog .aq-release-fix { flex-direction: column; align-items: stretch; gap: 8px; margin: 0; }
+  #view-catalog .aq-release-fix-btn { justify-content: center; }
+  #view-catalog .aq-catalog-cards:has(.aq-track-row) {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
+  }
+  #view-catalog .aq-track-row { margin: 0 !important; }
+
+  /* ── 계약서: 발매별 계약 묶음을 2칸 ─────────────────────────────────── */
+  #view-contracts .aq-bundle-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+  #view-contracts .aq-bundle-list > * { margin: 0 !important; }
+
+  /* ── 권리·보완 서류: 서류 카드를 2칸 ────────────────────────────────── */
+  #view-rights .aq-doc-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+  #view-rights .aq-doc-grid > * { margin: 0 !important; }
+
+  /* ── 알림·이벤트·문의: 카드 목록을 2칸 ──────────────────────────────── */
+  :is(#view-notifications, #view-events, #view-inquiries) .aq-catalog-cards {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: stretch;
+  }
+  :is(#view-notifications, #view-events, #view-inquiries) .aq-catalog-cards > * { margin: 0 !important; height: 100%; }
+
+  /* ── 공지사항: 왼쪽 소개·고정 공지(고정), 오른쪽 전체 목록 ─────────────── */
+  #view-notices.aq-npage {
+    display: grid; grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
+    column-gap: clamp(32px, 4vw, 64px); align-items: start;
+  }
+  #view-notices.aq-npage > .aq-nhero { position: sticky; top: var(--pc-sticky-top); margin: 0; }
+  #view-notices.aq-npage > :not(.aq-nhero) { grid-column: 2; }
+  #view-notices .aq-nboard { margin-top: 4px; }
+  /* 좁은 왼쪽 칸에 맞춘 소개 카드: 여백·제목을 줄이고, 고정 공지는 제목 아래에 날짜 */
+  #view-notices > .aq-nhero { padding: 44px 36px 36px; }
+  #view-notices > .aq-nhero h1 { font-size: 34px; }
+  #view-notices > .aq-nhero .aq-nhero-desc { font-size: 16px; }
+  #view-notices > .aq-nhero .aq-nhero-pins { margin-top: 32px; }
+  #view-notices > .aq-nhero .aq-nhero-pin {
+    align-items: start !important; grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: 'tag title arrow' '. date arrow'; column-gap: 10px; padding: 18px 20px;
+  }
+  #view-notices > .aq-nhero .aq-nhero-pin-title { font-size: 16px; }
+
+  /* ── 정산·지급: 왼쪽 잔액·계좌 카드(고정), 오른쪽 내역 ──────────────── */
+  #view-settlement {
+    display: grid; grid-template-columns: minmax(340px, 420px) minmax(0, 1fr);
+    column-gap: 32px; align-items: start;
+  }
+  #view-settlement > * { grid-column: 2; }
+  #view-settlement > .ui-page-head { grid-column: 1 / -1; }
+  #view-settlement > .settle-hero {
+    grid-column: 1; grid-row: 2 / span 20; position: sticky; top: var(--pc-sticky-top); margin: 0;
+  }
+  #view-settlement .settle-hero-top { flex-direction: column; align-items: stretch; gap: 20px; }
+  #view-settlement > .ui-seg { margin-top: 0; }
+
+  /* ── 음악 리포트: 요약은 가로로, 전월 대비·플랫폼별 수익은 좌우 두 칸 ───── */
+  #view-reports .aq-report-doc {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 32px; align-items: start;
+  }
+  #view-reports .aq-report-doc > * { grid-column: 1 / -1; min-width: 0; }
+  #view-reports .aq-report-doc > section[aria-label='전월 대비 인사이트'] { grid-column: 1; }
+  #view-reports .aq-report-doc > section[aria-label='플랫폼별 수익'] { grid-column: 2; }
+  #view-reports .aq-report-doc-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+  /* ── 계정 정보: 왼쪽 프로필 카드(고정), 오른쪽 설정 목록 ─────────────── */
+  .aq-settings {
+    max-width: none; display: grid; grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+    column-gap: clamp(24px, 3vw, 40px); align-items: start;
+  }
+  .aq-settings > * { grid-column: 2; }
+  .aq-settings > .ui-page-head { grid-column: 1 / -1; }
+  .aq-settings > .aq-set-profile {
+    grid-column: 1; grid-row: 2 / span 20; position: sticky; top: var(--pc-sticky-top);
+    grid-template-columns: 1fr; justify-items: center; gap: 16px; margin: 0; padding: 32px 24px 28px;
+    background: var(--aq-surface); border-radius: var(--aq-r-2xl); text-align: center;
+  }
+  .aq-settings > .aq-set-profile .min-0 { width: 100%; }
+  .aq-settings > .aq-set-profile strong { font-size: 22px; }
+  .aq-settings > .aq-set-profile small { margin-top: 6px; }
+  .aq-settings > .aq-set-profile .aq-set-chev { display: none; }
+  .aq-settings > .aq-set-profile::after {
+    content: '프로필 수정'; display: inline-flex; align-items: center; height: 36px; padding: 0 16px;
+    border-radius: var(--aq-r-md); background: #fff; color: var(--aq-blue-700);
+    font-size: var(--aq-fs-sm); font-weight: var(--aq-fw-bold);
+  }
+
+  /* ── 다듬기: 누를 수 있는 카드는 마우스를 올리면 면이 한 단계 진해져 PC에서 바로 알아보게 (그림자·띄우기 없음) ── */
+  :is(.aq-release-card, .aq-track-row, .aq-notice-card, .aq-event-card, .aq-ticket-card, .aq-doc-grid > *, .aq-bundle-list > *) {
+    transition: background-color .2s ease;
+  }
+  :is(.aq-release-card, .aq-track-row, .aq-notice-card, .aq-event-card, .aq-ticket-card):hover {
+    background-color: var(--aq-blue-100);
+  }
+  #view-catalog .aq-release-card:hover .ui-row-title { color: var(--aq-blue-700); }
+
+  /* 옆 카드와 높이를 맞춰 줄이 들쭉날쭉하지 않게 */
+  #view-catalog .aq-catalog-cards:has(.aq-release-card),
+  #view-rights .aq-doc-grid { align-items: stretch; }
+  #view-catalog .aq-release-fix { margin-top: auto; }
+  #view-rights .aq-doc-grid > * { height: 100%; align-content: center; }
+
+  /* 리포트: 막대는 적당한 폭(양 끝은 축 이름과 맞춤), 상세 내역은 2칸 */
+  #view-reports .report-chart { height: 220px; justify-content: space-between; gap: 24px; }
+  #view-reports .report-bar { flex: 0 1 140px !important; max-width: 140px; }
+  #view-reports .aq-report-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 40px; }
+  #view-reports .aq-report-details li:nth-last-child(2):nth-child(odd) { border-bottom: 0; }
+
+  /* 정산·지급: 내역 탭은 오른쪽 칸 폭에 맞춰 */
+  #view-settlement > .ui-seg.aq-seg-tabs { max-width: none; width: 100%; }
+
+  /* ── 배급 신청(새 발매): 왼쪽 단계 카드 · 오른쪽 입력 — 다른 화면과 같은 옅은 파랑 면 카드 ── */
+  .aq-wiz-layout { grid-template-columns: 280px minmax(0, 1fr) !important; gap: 48px !important; }
+  .aq-wiz-rail {
+    top: 92px !important; padding: 12px !important; border-radius: var(--aq-r-2xl);
+    background: var(--aq-surface);
+  }
+  /* 작성 중인 발매 — 내 음악·발매 상세와 같은 커버 카드 */
+  .aq-wiz-rail .aq-wiz-summary { margin: 0 0 6px; padding: 12px; border-radius: var(--aq-r-xl); background: #fff; gap: 14px; }
+  .aq-wiz-rail .aq-wiz-summary img, .aq-wiz-rail .aq-wiz-summary-cover { width: 56px; height: 56px; border-radius: 14px; }
+  .aq-wiz-rail .aq-wiz-summary strong { font-size: 15px; }
+  /* 진행 — 페이지 위 분류 글자와 같은 파란 eyebrow + 숫자 + 얇은 막대 */
+  .aq-wiz-rail-progress {
+    display: grid; grid-template-columns: 1fr auto; align-items: center; row-gap: 8px; padding: 14px 10px 12px;
+  }
+  .aq-wiz-rail-progress span { font-size: 12px; font-weight: 800; letter-spacing: .02em; color: var(--portal-blue); }
+  .aq-wiz-rail-progress b { font-size: 12px; font-weight: 800; color: var(--aq-text-3); font-variant-numeric: tabular-nums; }
+  .aq-wiz-rail-progress i {
+    grid-column: 1 / -1; height: 6px; border-radius: 999px; background: #fff; overflow: hidden; position: relative;
+  }
+  .aq-wiz-rail-progress i::after {
+    content: ''; position: absolute; inset: 0 auto 0 0; width: var(--p, 0%); border-radius: inherit;
+    background: var(--aq-blue-500); transition: width .5s var(--aq-e-ease);
+  }
+  /* 단계 목록 — 번호는 둥근 네모(버튼 안 동그라미 금지), 지금 단계는 진한 면 */
+  .aq-wiz-rail .aq-wiz-steps { gap: 2px; }
+  .aq-wiz-rail .aq-wiz-steps button { padding: 11px 10px; border-radius: var(--aq-r-lg); }
+  .aq-wiz-rail .aq-wiz-step-no { width: 28px; height: 28px; border-radius: 9px; background: #fff; }
+  .aq-wiz-rail .aq-wiz-steps li.is-done button:hover { background: rgba(255, 255, 255, .8); }
+  .aq-wiz-rail .aq-wiz-steps li.is-current button { background: var(--aq-blue-100); }
+  .aq-wiz-rail .aq-wiz-steps li.is-done .aq-wiz-step-no { background: var(--aq-blue-150); }
+  .aq-wiz-rail .aq-wiz-steps li.is-current .aq-wiz-step-no { background: var(--aq-blue-500); color: #fff; }
+  .aq-wiz-rail .aq-wiz-step-fix { padding: 4px 8px; border-radius: 999px; font-size: 11px; }
+  .aq-wiz-rail .aq-wiz-rail-note { margin: 12px 10px 4px; }
+  /* 단계 제목 — 분류 글자는 페이지 위 eyebrow와 같은 파란 글자 */
+  #view-new .wizard-header .aq-step-kicker { color: var(--portal-blue); font-weight: 800; }
+  #view-new .wizard-header { margin-bottom: 28px; }
+  /* 아래 버튼 줄 — 오른쪽 입력 영역 폭에 맞춘다(왼쪽 카드 280 + 간격 48) */
+  #view-new .step-actions {
+    padding-left: max(360px, calc(50vw - 232px)) !important;
+    box-shadow: 0 -1px 0 var(--aq-gray-100);
+  }
+
+  /* 5단계 해당 항목 — 2칸(선택하면 열리는 확인 사항은 한 줄 전체) */
+  #view-new .aq-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  #view-new .aq-options > .aq-option { margin: 0 !important; height: 100%; }
+  #view-new .aq-options > :not(.aq-option) { grid-column: 1 / -1; margin: 0 !important; }
+  /* 6단계 최종 확인 — 항목 카드 2칸, 수정 버튼은 오른쪽 위 */
+  #view-new .step-section > .aq-catalog-cards:has(.aq-review-card) {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: stretch;
+  }
+  #view-new .aq-review-card { margin: 0 !important; padding-right: 76px; }
+  #view-new .aq-review-card .aq-review-edit { position: absolute; top: 14px; right: 14px; margin: 0; }
+}

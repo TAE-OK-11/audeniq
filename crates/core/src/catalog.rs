@@ -1,0 +1,677 @@
+use crate::{
+    api::AppState,
+    auth::{self, Actor},
+    drafts,
+    error::{Error, Result},
+    operations,
+};
+use serde::Deserialize;
+use serde_json::{Value, json};
+use sqlx::{PgConnection, Row};
+use uuid::Uuid;
+#[derive(Clone, Copy)]
+pub enum Kind {
+    Artist,
+    Label,
+    Release,
+}
+impl Kind {
+    pub fn parse(s: &str) -> Result<Self> {
+        match s {
+            "artists" => Ok(Self::Artist),
+            "labels" => Ok(Self::Label),
+            "releases" => Ok(Self::Release),
+            _ => Err(Error::NotFound),
+        }
+    }
+    pub fn resource(self) -> &'static str {
+        match self {
+            Self::Artist => "artist",
+            Self::Label => "label",
+            Self::Release => "release",
+        }
+    }
+    pub fn table(self) -> &'static str {
+        match self {
+            Self::Artist => "catalog.artists",
+            Self::Label => "catalog.labels",
+            Self::Release => "catalog.releases",
+        }
+    }
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Input {
+    pub name: String,
+    #[serde(default)]
+    pub profile: Value,
+    pub party_id: Option<Uuid>,
+    pub label_id: Option<Uuid>,
+    pub release_type: Option<String>,
+    pub row_version: Option<i64>,
+    /// Release only: artist-supplied UPC-A (12 digits, check digit verified).
+    /// Absent or empty = none; Stage 3 issues one from the active issuer.
+    #[serde(default)]
+    pub upc: Option<String>,
+    /// Release only: registered IMAGE asset used as the cover art.
+    #[serde(default)]
+    pub artwork_asset_id: Option<Uuid>,
+}
+/// UPC and cover art of a release input, normalized (empty UPC = none).
+/// Other kinds must not carry them.
+fn release_fields(kind: Kind, i: &Input) -> Result<(Option<String>, Option<Uuid>)> {
+    let upc = i
+        .upc
+        .as_deref()
+        .map(str::trim)
+        .filter(|u| !u.is_empty())
+        .map(str::to_string);
+    if !matches!(kind, Kind::Release) {
+        return if upc.is_none() && i.artwork_asset_id.is_none() {
+            Ok((None, None))
+        } else {
+            Err(Error::Invalid)
+        };
+    }
+    if let Some(u) = &upc {
+        crate::identifiers::validate_upc(u)?;
+    }
+    Ok((upc, i.artwork_asset_id))
+}
+/// Cover art must be the caller's registered image in this org.
+async fn artwork_ref(
+    c: &mut PgConnection,
+    a: &Actor,
+    org: Uuid,
+    asset: Option<Uuid>,
+) -> Result<()> {
+    let Some(asset) = asset else { return Ok(()) };
+    auth::authorize(c, a, org, asset, "asset", false).await?;
+    let ok: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM catalog.assets WHERE org_id=$1 AND id=$2 AND kind='IMAGE' AND state='REGISTERED')",
+    )
+    .bind(org)
+    .bind(asset)
+    .fetch_one(&mut *c)
+    .await?;
+    if ok { Ok(()) } else { Err(Error::Invalid) }
+}
+fn validate(i: &Input) -> Result<()> {
+    if i.name.trim().is_empty()
+        || i.name.len() > 200
+        || (!i.profile.is_null() && !i.profile.is_object())
+    {
+        return Err(Error::Invalid);
+    }
+    crate::text_policy::check(&i.name)?;
+    crate::text_policy::check_json(&i.profile)
+}
+/// Hard block on protected artist names in the name and every profile
+/// string (display artist, featured artists, P/C lines...).
+async fn protected(c: &mut PgConnection, org: Uuid, i: &Input) -> Result<()> {
+    let mut texts = vec![i.name.as_str()];
+    texts.extend(crate::protected_names::json_strings(&i.profile));
+    crate::protected_names::enforce(c, org, &texts).await
+}
+async fn refs(c: &mut PgConnection, a: &Actor, org: Uuid, i: &Input) -> Result<()> {
+    if let Some(id) = i.label_id {
+        auth::authorize(c, a, org, id, "label", false).await?;
+    }
+    if let Some(id) = i.party_id {
+        let found: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM identity.parties WHERE org_id=$1 AND id=$2)",
+        )
+        .bind(org)
+        .bind(id)
+        .fetch_one(&mut *c)
+        .await?;
+        if !found {
+            return Err(Error::Forbidden);
+        }
+    }
+    Ok(())
+}
+pub async fn create(s: &AppState, a: &Actor, org: Uuid, kind: Kind, i: Input) -> Result<Value> {
+    validate(&i)?;
+    crate::upload_safety::check_inline_files(s, &i.profile).await?;
+    let (upc, artwork) = release_fields(kind, &i)?;
+    let mut tx = s.pool.begin().await?;
+    let id = Uuid::new_v4();
+    auth::create_resource(&mut tx, a, org, id, kind.resource()).await?;
+    refs(&mut tx, a, org, &i).await?;
+    artwork_ref(&mut tx, a, org, artwork).await?;
+    protected(&mut tx, org, &i).await?;
+    match kind {
+        Kind::Artist => {
+            sqlx::query("INSERT INTO catalog.artists(id,org_id,name,profile,party_id,label_id) VALUES($1,$2,$3,$4,$5,$6)").bind(id).bind(org).bind(i.name).bind(i.profile).bind(i.party_id).bind(i.label_id).execute(&mut *tx).await?;
+        }
+        Kind::Label => {
+            sqlx::query("INSERT INTO catalog.labels(id,org_id,name,profile,party_id) VALUES($1,$2,$3,$4,$5)").bind(id).bind(org).bind(i.name).bind(i.profile).bind(i.party_id.ok_or(Error::Invalid)?).execute(&mut *tx).await?;
+        }
+        Kind::Release => {
+            // A missing profile must not leave draft as JSON null: downstream
+            // jsonb `||` merges would treat null as an array element.
+            let draft = if i.profile.is_null() {
+                json!({})
+            } else {
+                i.profile.clone()
+            };
+            sqlx::query("INSERT INTO catalog.releases(id,org_id,title,draft,release_type,upc,artwork_asset_id) VALUES($1,$2,$3,$4,$5,$6,$7)").bind(id).bind(org).bind(i.name).bind(draft).bind(i.release_type.ok_or(Error::Invalid)?).bind(upc).bind(artwork).execute(&mut *tx).await?;
+        }
+    }
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        Some(org),
+        Some(id),
+        &format!("{}.created", kind.resource()),
+        "USER_EDIT",
+        a.request,
+    )
+    .await?;
+    operations::event(
+        &mut tx,
+        org,
+        id,
+        &format!("{}.created", kind.resource()),
+        &format!("create:{id}"),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"id":id,"row_version":0}))
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Page {
+    pub after: Option<Uuid>,
+    pub limit: Option<i64>,
+}
+pub async fn list(s: &AppState, a: &Actor, org: Uuid, kind: Kind, page: Page) -> Result<Value> {
+    let limit = page.limit.unwrap_or(50);
+    if !(1..=100).contains(&limit) {
+        return Err(Error::Invalid);
+    }
+    let mut tx = s.pool.begin().await?;
+    auth::membership(&mut tx, a, org, false).await?;
+    let query = format!(
+        "SELECT to_jsonb(t) AS body FROM {} t WHERE t.org_id=$1 AND t.archived_at IS NULL AND EXISTS(SELECT 1 FROM identity.resource_acl acl WHERE acl.org_id=t.org_id AND acl.resource_id=t.id AND acl.principal_party_id=$2 AND acl.action='read' AND acl.revoked_at IS NULL AND acl.starts_at<=now() AND (acl.ends_at IS NULL OR acl.ends_at>now())) AND ($3::uuid IS NULL OR t.id>$3) ORDER BY t.id LIMIT $4",
+        kind.table()
+    );
+    // Audited: only `kind.table()` (a fixed enum -> static table name) is
+    // interpolated; every value is a bound parameter.
+    let mut rows: Vec<Value> = sqlx::query_scalar(sqlx::AssertSqlSafe(query))
+        .bind(org)
+        .bind(a.party)
+        .bind(page.after)
+        .bind(limit + 1)
+        .fetch_all(&mut *tx)
+        .await?;
+    let has_more = rows.len() > limit as usize;
+    rows.truncate(limit as usize);
+    if matches!(kind, Kind::Release) {
+        let ids: Vec<Uuid> = rows
+            .iter()
+            .filter_map(|v| v["id"].as_str().and_then(|s| Uuid::parse_str(s).ok()))
+            .collect();
+        let mut axes = delivery_axes(&mut tx, org, &ids).await?;
+        let mut agreements = agreement_statuses(&mut tx, org, &ids).await?;
+        for v in &mut rows {
+            let id = v["id"].as_str().and_then(|s| Uuid::parse_str(s).ok());
+            let (delivery, live) = id.and_then(|i| axes.remove(&i)).unwrap_or_default();
+            v["delivery_status_by_dsp"] = json!(delivery);
+            v["live_status_by_dsp"] = json!(live);
+            v["agreement_status"] = json!(id.and_then(|i| agreements.remove(&i)));
+        }
+    }
+    tx.commit().await?;
+    let next_cursor = if has_more {
+        rows.last().map(|v| v["id"].clone())
+    } else {
+        None
+    };
+    crate::upload_safety::visible_inline_files(
+        &s.pool,
+        json!({"items":rows,"limit":limit,"next_cursor":next_cursor}),
+    )
+    .await
+}
+/// Per-DSP delivery job and live state of each release's latest frozen
+/// package (one batched read for any number of releases). The execution
+/// tables are org-scoped by RLS, so this authorizes `org` on the caller's
+/// transaction. Registry partners carry their D-code as `dsp`.
+/// Distribution agreement status per release (REVIEW, APPROVED, NEEDS,
+/// SIGNED, ...). Delivery waits for SIGNED; Studio shows 검토 중 until staff
+/// approve it, 배급 승인 after, and 보완 필요 when staff asked for documents.
+async fn agreement_statuses(
+    tx: &mut sqlx::PgConnection,
+    org: Uuid,
+    releases: &[Uuid],
+) -> Result<std::collections::HashMap<Uuid, String>> {
+    if releases.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let rows: Vec<(Uuid, String)> = sqlx::query_as(
+        "SELECT release_id, status FROM portal.documents
+         WHERE org_id=$1 AND kind='AGREEMENT' AND release_id = ANY($2)",
+    )
+    .bind(org)
+    .bind(releases)
+    .fetch_all(&mut *tx)
+    .await?;
+    Ok(rows.into_iter().collect())
+}
+pub(crate) async fn delivery_axes(
+    tx: &mut sqlx::PgConnection,
+    org: Uuid,
+    releases: &[Uuid],
+) -> Result<std::collections::HashMap<Uuid, (Vec<Value>, Vec<Value>)>> {
+    let mut out: std::collections::HashMap<Uuid, (Vec<Value>, Vec<Value>)> =
+        std::collections::HashMap::new();
+    if releases.is_empty() {
+        return Ok(out);
+    }
+    sqlx::query("SELECT set_config('app.org_id',$1,true)")
+        .bind(org.to_string())
+        .execute(&mut *tx)
+        .await?;
+    let rows = sqlx::query(
+        "WITH latest AS (
+           SELECT DISTINCT ON (cr.release_id) cr.release_id, dp.id AS package_id
+           FROM distribution.canonical_releases cr
+           JOIN distribution.distribution_packages dp ON dp.canonical_release_id=cr.id
+           WHERE cr.org_id=$1 AND cr.release_id = ANY($2)
+           ORDER BY cr.release_id, dp.created_at DESC)
+         SELECT l.release_id, j.partner_id, j.status, j.attempts, j.updated_at,
+                b.live_status, b.partner_release_id, b.last_checked_at
+         FROM latest l
+         JOIN execution.delivery_jobs j ON j.org_id=$1 AND j.package_id=l.package_id
+         LEFT JOIN execution.live_bindings b ON b.org_id=$1 AND b.package_id=l.package_id AND b.partner_id=j.partner_id
+         ORDER BY l.release_id, j.partner_id",
+    )
+    .bind(org)
+    .bind(releases)
+    .fetch_all(&mut *tx)
+    .await?;
+    for r in rows {
+        let partner: String = r.get("partner_id");
+        let dsp = crate::dsp_registry::Dsp::from_code(&partner).map(|d| d.code());
+        let entry = out.entry(r.get("release_id")).or_default();
+        entry.0.push(json!({
+            "partner_id": partner, "dsp": dsp, "status": r.get::<String,_>("status"),
+            "attempts": r.get::<i32,_>("attempts"),
+            "updated_at": r.get::<chrono::DateTime<chrono::Utc>,_>("updated_at"),
+        }));
+        if let Some(live) = r.get::<Option<String>, _>("live_status") {
+            entry.1.push(json!({
+                "partner_id": partner, "dsp": dsp, "live_status": live,
+                "partner_release_id": r.get::<Option<String>,_>("partner_release_id"),
+                "last_checked_at": r.get::<Option<chrono::DateTime<chrono::Utc>>,_>("last_checked_at"),
+            }));
+        }
+    }
+    Ok(out)
+}
+pub async fn get(s: &AppState, a: &Actor, org: Uuid, kind: Kind, id: Uuid) -> Result<Value> {
+    let mut tx = s.pool.begin().await?;
+    auth::authorize(&mut tx, a, org, id, kind.resource(), false).await?;
+    let q = format!(
+        "SELECT to_jsonb(t) FROM {} t WHERE org_id=$1 AND id=$2 AND archived_at IS NULL",
+        kind.table()
+    );
+    // Audited: static table name from the Kind enum; values are bound.
+    let mut v: Value = sqlx::query_scalar(sqlx::AssertSqlSafe(q))
+        .bind(org)
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(Error::NotFound)?;
+    if matches!(kind, Kind::Release) {
+        let tracks:Vec<Value>=sqlx::query_scalar("SELECT to_jsonb(t) || jsonb_build_object('credits',COALESCE((SELECT jsonb_agg(jsonb_build_object('party_id',c.party_id,'role',c.role) ORDER BY c.party_id,c.role) FROM catalog.credits c WHERE c.org_id=t.org_id AND c.track_id=t.id),'[]'::jsonb)) FROM catalog.tracks t WHERE org_id=$1 AND release_id=$2 AND archived_at IS NULL ORDER BY disc_number,track_number").bind(org).bind(id).fetch_all(&mut *tx).await?;
+        v["tracks"] = json!(tracks);
+        let mut axes = delivery_axes(&mut tx, org, &[id]).await?;
+        let (delivery, live) = axes.remove(&id).unwrap_or_default();
+        v["delivery_status_by_dsp"] = json!(delivery);
+        v["live_status_by_dsp"] = json!(live);
+        v["agreement_status"] = json!(agreement_statuses(&mut tx, org, &[id]).await?.remove(&id));
+        v["submission_enabled"] = json!(false);
+    }
+    tx.commit().await?;
+    crate::upload_safety::visible_inline_files(&s.pool, v).await
+}
+pub async fn update(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    kind: Kind,
+    id: Uuid,
+    i: Input,
+) -> Result<Value> {
+    validate(&i)?;
+    crate::upload_safety::check_inline_files(s, &i.profile).await?;
+    let (upc, artwork) = release_fields(kind, &i)?;
+    let expected = i.row_version.ok_or(Error::Invalid)?;
+    let mut tx = s.pool.begin().await?;
+    auth::authorize(&mut tx, a, org, id, kind.resource(), true).await?;
+    refs(&mut tx, a, org, &i).await?;
+    artwork_ref(&mut tx, a, org, artwork).await?;
+    protected(&mut tx, org, &i).await?;
+    let n=match kind{
+ Kind::Artist=>sqlx::query("UPDATE catalog.artists SET name=$3,profile=$4,party_id=$6,label_id=$7,row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND row_version=$5 AND archived_at IS NULL").bind(org).bind(id).bind(i.name).bind(i.profile).bind(expected).bind(i.party_id).bind(i.label_id).execute(&mut *tx).await?.rows_affected(),
+ Kind::Label=>sqlx::query("UPDATE catalog.labels SET name=$3,profile=$4,party_id=$6,row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND row_version=$5 AND archived_at IS NULL").bind(org).bind(id).bind(i.name).bind(i.profile).bind(expected).bind(i.party_id.ok_or(Error::Invalid)?).execute(&mut *tx).await?.rows_affected(),
+ Kind::Release=>sqlx::query("UPDATE catalog.releases SET title=$3,draft=$4,release_type=$6,upc=$7,artwork_asset_id=$8,row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND row_version=$5 AND catalog.is_editable_status(status) AND archived_at IS NULL").bind(org).bind(id).bind(i.name).bind(i.profile).bind(expected).bind(i.release_type.ok_or(Error::Invalid)?).bind(upc).bind(artwork).execute(&mut *tx).await?.rows_affected(),
+ };
+    if n != 1 {
+        return Err(Error::Conflict);
+    }
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        Some(org),
+        Some(id),
+        &format!("{}.updated", kind.resource()),
+        "USER_EDIT",
+        a.request,
+    )
+    .await?;
+    operations::event(
+        &mut tx,
+        org,
+        id,
+        &format!("{}.updated", kind.resource()),
+        &format!("update:{id}:{}", expected + 1),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"id":id,"row_version":expected+1}))
+}
+pub async fn archive(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    kind: Kind,
+    id: Uuid,
+    version: i64,
+) -> Result<Value> {
+    let mut tx = s.pool.begin().await?;
+    auth::authorize(&mut tx, a, org, id, kind.resource(), true).await?;
+    let extra = if matches!(kind, Kind::Release) {
+        " AND catalog.is_editable_status(status)"
+    } else {
+        ""
+    };
+    let q = format!(
+        "UPDATE {} SET archived_at=now(),row_version=row_version+1 WHERE org_id=$1 AND id=$2 AND row_version=$3 AND archived_at IS NULL{extra}",
+        kind.table()
+    );
+    // Audited: static table name + static status filter; values are bound.
+    if sqlx::query(sqlx::AssertSqlSafe(q))
+        .bind(org)
+        .bind(id)
+        .bind(version)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected()
+        != 1
+    {
+        return Err(Error::Conflict);
+    }
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        Some(org),
+        Some(id),
+        &format!("{}.archived", kind.resource()),
+        "USER_EDIT",
+        a.request,
+    )
+    .await?;
+    operations::event(
+        &mut tx,
+        org,
+        id,
+        &format!("{}.archived", kind.resource()),
+        &format!("archive:{id}"),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"archived":true}))
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TrackInput {
+    pub title: String,
+    pub disc_number: i32,
+    pub track_number: i32,
+    pub artist_id: Uuid,
+    pub asset_id: Option<Uuid>,
+    pub row_version: i64,
+    /// Optional lyrics text (max 20_000 chars). Stored for future screening;
+    /// presence alone never blocks.
+    pub lyrics: Option<String>,
+    /// Parental advisory flag for explicit content. Drives the EXPLICIT
+    /// special flag and the DDEX ParentalWarningType.
+    pub parental_advisory: Option<bool>,
+    /// Version/designation of the recording ("Radio Edit", "2024 Remaster").
+    /// Spotify Style Guide 8.2/8.4: version info belongs here, not in the
+    /// title. Empty = no version; maps to DDEX SubTitle (ERN 3.8.2 has no VersionTitle element).
+    pub version: Option<String>,
+    /// Artist-supplied ISRC. Dashes and case are normalized
+    /// ("kr-abc-26-00001" -> "KRABC2600001"). Absent or empty = none; Stage 3
+    /// issues one from the active issuer.
+    #[serde(default)]
+    pub isrc: Option<String>,
+}
+impl TrackInput {
+    /// Normalized, validated ISRC or none.
+    pub fn isrc(&self) -> Result<Option<String>> {
+        let Some(raw) = self.isrc.as_deref() else {
+            return Ok(None);
+        };
+        let v: String = raw
+            .chars()
+            .filter(|c| *c != '-' && !c.is_whitespace())
+            .collect::<String>()
+            .to_ascii_uppercase();
+        if v.is_empty() {
+            return Ok(None);
+        }
+        crate::identifiers::validate_isrc(&v)?;
+        Ok(Some(v))
+    }
+}
+pub async fn track(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    release: Uuid,
+    i: TrackInput,
+) -> Result<Value> {
+    let mut tx = s.pool.begin().await?;
+    auth::authorize(&mut tx, a, org, release, "release", true).await?;
+    drafts::track_refs(&mut tx, a, org, &i).await?;
+    let isrc = i.isrc()?;
+    drafts::bump(&mut tx, org, release, i.row_version).await?;
+    let id = Uuid::new_v4();
+    let lyrics = i.lyrics.as_deref().filter(|s| !s.trim().is_empty());
+    let version = i
+        .version
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("");
+    sqlx::query("INSERT INTO catalog.tracks(id,org_id,release_id,title,version,disc_number,track_number,artist_id,asset_id,lyrics,parental_advisory,isrc) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)")
+ .bind(id).bind(org).bind(release).bind(i.title).bind(version).bind(i.disc_number).bind(i.track_number).bind(i.artist_id).bind(i.asset_id).bind(lyrics).bind(i.parental_advisory.unwrap_or(false)).bind(isrc).execute(&mut *tx).await?;
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        Some(org),
+        Some(release),
+        "release.track_added",
+        "USER_EDIT",
+        a.request,
+    )
+    .await?;
+    operations::event(
+        &mut tx,
+        org,
+        release,
+        "release.updated",
+        &format!("track:{id}"),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"id":id,"row_version":i.row_version+1}))
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MemberInput {
+    pub user_id: Uuid,
+    pub role: String,
+    pub status: String,
+}
+/// PUT /memberships (OWNER only). Adding someone never makes them a member
+/// on the owner's word alone (sandbox round 2.5: an owner enrolled arbitrary
+/// accounts and used them as "second approvers"). A user without an ACTIVE
+/// membership gets an INVITED row that only their own session can accept
+/// (POST /memberships/accept). Role changes of already-ACTIVE members and
+/// revocations apply directly. A REVOKED member must be invited again.
+pub async fn member(s: &AppState, a: &Actor, org: Uuid, i: MemberInput) -> Result<Value> {
+    if !matches!(i.role.as_str(), "EDITOR" | "VIEWER")
+        || !matches!(i.status.as_str(), "ACTIVE" | "REVOKED")
+        || i.user_id == a.user
+    {
+        return Err(Error::Invalid);
+    }
+    let mut tx = s.pool.begin().await?;
+    if auth::membership(&mut tx, a, org, true).await? != "OWNER" {
+        return Err(Error::Forbidden);
+    }
+    let current: Option<(String, String)> = sqlx::query_as(
+        "SELECT role, status FROM identity.memberships WHERE org_id=$1 AND user_id=$2 FOR UPDATE",
+    )
+    .bind(org)
+    .bind(i.user_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if matches!(&current, Some((role, _)) if role == "OWNER") {
+        // Owners are never demoted or revoked through this endpoint.
+        return Err(Error::Conflict);
+    }
+    let outcome = if i.status == "REVOKED" {
+        // Idempotent: revoking a non-member records a REVOKED row.
+        sqlx::query("INSERT INTO identity.memberships(org_id,user_id,role,status,accepted_at) VALUES($1,$2,$3,'REVOKED',NULL) ON CONFLICT(org_id,user_id) DO UPDATE SET status='REVOKED', role=EXCLUDED.role WHERE identity.memberships.role<>'OWNER'")
+            .bind(org)
+            .bind(i.user_id)
+            .bind(&i.role)
+            .execute(&mut *tx)
+            .await?;
+        "REVOKED"
+    } else if matches!(&current, Some((_, status)) if status == "ACTIVE") {
+        sqlx::query("UPDATE identity.memberships SET role=$3 WHERE org_id=$1 AND user_id=$2")
+            .bind(org)
+            .bind(i.user_id)
+            .bind(&i.role)
+            .execute(&mut *tx)
+            .await?;
+        "ACTIVE"
+    } else {
+        let active: Option<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM identity.users WHERE id=$1 AND status='ACTIVE' FOR SHARE",
+        )
+        .bind(i.user_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        active.ok_or(Error::Conflict)?;
+        sqlx::query("INSERT INTO identity.memberships(org_id,user_id,role,status,accepted_at,invited_by,invited_at) VALUES($1,$2,$3,'INVITED',NULL,$4,now()) ON CONFLICT(org_id,user_id) DO UPDATE SET role=EXCLUDED.role,status='INVITED',accepted_at=NULL,invited_by=EXCLUDED.invited_by,invited_at=EXCLUDED.invited_at WHERE identity.memberships.role<>'OWNER'")
+            .bind(org)
+            .bind(i.user_id)
+            .bind(&i.role)
+            .bind(a.user)
+            .execute(&mut *tx)
+            .await?;
+        "INVITED"
+    };
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        Some(org),
+        Some(i.user_id),
+        if outcome == "INVITED" {
+            "membership.invited"
+        } else {
+            "membership.changed"
+        },
+        "OWNER_REQUEST",
+        a.request,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"updated":true,"status":outcome}))
+}
+
+/// POST /memberships/accept: the invitee accepts in their own session.
+pub async fn accept_membership(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
+    let mut tx = s.pool.begin().await?;
+    let n = sqlx::query("UPDATE identity.memberships m SET status='ACTIVE', accepted_at=now() FROM identity.users u WHERE u.id=m.user_id AND u.status='ACTIVE' AND m.org_id=$1 AND m.user_id=$2 AND m.status='INVITED'")
+        .bind(org)
+        .bind(a.user)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    if n == 0 {
+        return Err(Error::NotFound);
+    }
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        Some(org),
+        Some(a.user),
+        "membership.accepted",
+        "INVITEE_ACCEPT",
+        a.request,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"status":"ACTIVE"}))
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AclInput {
+    pub user_id: Uuid,
+    pub action: String,
+    pub revoked: bool,
+}
+pub async fn acl(s: &AppState, a: &Actor, org: Uuid, resource: Uuid, i: AclInput) -> Result<Value> {
+    if !matches!(i.action.as_str(), "read" | "write") {
+        return Err(Error::Invalid);
+    }
+    let mut tx = s.pool.begin().await?;
+    if auth::membership(&mut tx, a, org, true).await? != "OWNER" {
+        return Err(Error::Forbidden);
+    }
+    // Owner must also possess resource write ACL; no tenant-wide ACL bypass.
+    let kind: String =
+        sqlx::query_scalar("SELECT kind FROM identity.resources WHERE org_id=$1 AND id=$2")
+            .bind(org)
+            .bind(resource)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(Error::Forbidden)?;
+    auth::authorize(&mut tx, a, org, resource, &kind, true).await?;
+    let party:Uuid=sqlx::query_scalar("SELECT u.party_id FROM identity.users u JOIN identity.memberships m ON m.user_id=u.id WHERE m.org_id=$1 AND u.id=$2 AND m.status='ACTIVE' FOR SHARE OF m")
+ .bind(org).bind(i.user_id).fetch_optional(&mut *tx).await?.ok_or(Error::Forbidden)?;
+    sqlx::query("INSERT INTO identity.resource_acl(org_id,resource_id,principal_party_id,action,revoked_at) VALUES($1,$2,$3,$4,CASE WHEN $5 THEN now() END) ON CONFLICT(org_id,resource_id,principal_party_id,action) DO UPDATE SET revoked_at=EXCLUDED.revoked_at")
+ .bind(org).bind(resource).bind(party).bind(i.action).bind(i.revoked).execute(&mut *tx).await?;
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        Some(org),
+        Some(resource),
+        "acl.changed",
+        "OWNER_REQUEST",
+        a.request,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"updated":true}))
+}
