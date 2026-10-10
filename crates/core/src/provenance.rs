@@ -18,28 +18,9 @@ const OUTPUT_LIMIT: u64 = 256 * 1024;
 
 /// Read provenance fields locally, with bounded output and runtime.
 pub fn inspect(path: &Path) -> Value {
-    let executable = std::env::var("EXIFTOOL_BIN").unwrap_or_else(|_| "exiftool".into());
-    let mut command = Command::new(executable);
-    command
-        .args([
-            "-j",
-            "-n",
-            "-G1",
-            "-s",
-            "-Software",
-            "-CreatorTool",
-            "-DigitalSourceType",
-            "-Description",
-            "-Comment",
-            "-Encoder",
-            "-UserComment",
-            "-Parameters",
-            "-GenerationParameters",
-            "-Prompt",
-            "-Workflow",
-            "--",
-        ])
-        .arg(path);
+    // ExifTool `-j -n -G1 -s` fields (`Group:Name`); audio sample data is not read.
+    let mut command = crate::photo::command("provenance");
+    command.arg(path);
     if crate::parser_sandbox::restrict(&mut command, &[path], &[]).is_err() {
         return unknown("metadata sandbox unavailable");
     }
@@ -48,13 +29,14 @@ pub fn inspect(path: &Path) -> Value {
         Err(reason) => return unknown(reason),
     };
     match serde_json::from_slice::<Value>(&bytes) {
-        Ok(Value::Array(rows)) if rows.len() == 1 => from_metadata(&rows[0]),
+        Ok(fields @ Value::Object(_)) => from_metadata(&fields),
         _ => unknown("metadata reader returned an invalid report"),
     }
 }
 
-/// The AUDENIQ engine reads audio tags in containers ExifTool cannot inspect
-/// (e.g. TTA). Both readers remain local, sandboxed and bounded.
+/// audeniq-photo reads RIFF, AIFF, FLAC, MP4, WavPack and TTA tags; the
+/// AUDENIQ engine's tag reader remains the fallback for anything else. Both
+/// readers are local, sandboxed and bounded.
 pub fn inspect_audio(path: &Path) -> Value {
     let report = inspect(path);
     if report["inspection_status"] == "COMPLETED" {
