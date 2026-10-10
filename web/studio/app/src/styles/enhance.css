@@ -412,12 +412,11 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
 /* ==========================================================================
    카드·입력 칸 윤곽선 없는 스타일 통일 — 메인 화면 카드처럼 배경색 면으로만 구분
    ========================================================================== */
-.dist-mock,.cover-track-item,.track-detail-toggle,.doc-consent{border:0!important;box-shadow:none!important}
+.dist-mock,.cover-track-item,.track-detail-toggle{border:0!important;box-shadow:none!important}
 .dist-mock{background:var(--aq-blue-50)!important}
 .cover-track-item{background:#fff!important;border-radius:var(--aq-r-lg)!important}
 .track-detail-toggle{background:#fff!important;transition:background-color .2s!important}
 .track-detail-toggle:hover{background:var(--aq-blue-100)!important}
-.doc-consent{background:var(--aq-blue-50)!important}
 
 /* 수령인 유형 선택: 테두리 대신 채움으로 선택 표시 */
 .aq-pay-type span{position:relative}
