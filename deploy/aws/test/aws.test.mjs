@@ -32,13 +32,6 @@ test('admin: 화면 경로는 index.html', async () => {
   assert.equal(run('/favicon.ico').uri, '/favicon.ico');
 });
 
-test('survey: 슬래시 경로는 index.html, index.html은 슬래시로', async () => {
-  const run = await viewer('survey');
-  assert.equal(run('/').uri, '/index.html');
-  assert.equal(run('/index.html').headers.location.value, '/');
-  assert.equal(run('/assets/x.js').uri, '/assets/x.js');
-});
-
 test('landing: worker.js 와 같은 라우팅', async () => {
   const run = await viewer('landing');
   assert.equal(run('/').uri, '/index.html');
@@ -70,7 +63,7 @@ test('landing viewer-response: 오류·미리보기 주소는 noindex', async ()
   assert.equal(respond('d111.cloudfront.net', 200).value, 'noindex, nofollow, noarchive');
 });
 
-test('API 함수: 브라우저의 x-audeniq-* 를 버리고 사용자 IP를 넣는다, 설문은 /api/survey 로', () => {
+test('API 함수: 브라우저의 x-audeniq-* 를 버리고 사용자 IP를 넣는다', () => {
   const run = (app, uri) => {
     const sandbox = {};
     runInNewContext(`${apiFunctionCode(app)}\nthis.handler = handler;`, sandbox);
@@ -86,8 +79,6 @@ test('API 함수: 브라우저의 x-audeniq-* 를 버리고 사용자 IP를 넣�
   assert.equal(r.uri, '/api/me');
   assert.deepEqual(Object.keys(r.headers).sort(), ['cookie', 'x-audeniq-client-ip']);
   assert.equal(r.headers['x-audeniq-client-ip'].value, '2001:db8::7');
-  assert.equal(run('survey', '/api/responses').uri, '/api/survey/responses');
-  assert.equal(run('survey', '/api/config').uri, '/api/survey/config');
 });
 
 test('템플릿: /api 만 백엔드로(캐시 없음, 서비스 비밀·사이트 헤더), 나머지는 S3', async () => {

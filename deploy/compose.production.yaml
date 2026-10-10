@@ -193,11 +193,8 @@ services:
       PARTNER_CONFIG_DIR: /etc/audeniq/partners
       # Pre-launch lock: empty = no request ever reaches a real DSP.
       DSP_LIVE_TRANSMISSION: ${DSP_LIVE_TRANSMISSION:-}
-      # 화면별 규칙·공지·점검·설문 (crates/core/src/sites.rs, site_content.rs, survey.rs)
+      # 화면별 규칙·공지·점검 (crates/core/src/sites.rs, site_content.rs)
       ADMIN_ORIGIN: ${ADMIN_ORIGIN:-}
-      SURVEY_ORIGIN: ${SURVEY_ORIGIN:-}
-      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
-      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
       CONTENT_ADMIN_TOKEN: ${CONTENT_ADMIN_TOKEN:-}
       MAINTENANCE_MODE: ${MAINTENANCE_MODE:-}
       MAINTENANCE_TITLE: ${MAINTENANCE_TITLE:-}
