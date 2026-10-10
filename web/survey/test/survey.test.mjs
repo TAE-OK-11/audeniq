@@ -13,14 +13,14 @@ const ui=new Map(STEPS.flatMap(s=>s.questions).map(q=>[q.key,q]));
 function valid(){
  const answers={};
  for(const [key,q] of Object.entries(questions)){
-  answers[key]=q.type==='multi'?(q.required?['0']:[]):(q.required?'0':'');
+  answers[key]=q.type==='text'?'':q.type==='multi'?(q.required?['0']:[]):(q.required?'0':'');
   if(q.options.includes('기타'))answers[`${key}_other`]='';
  }
- answers.q4_provider='';answers.q14='';
+ answers.q23='2';answers.q4_provider='';answers.q14='';
  return {survey_version:5,submission_id:'ccb1d9d3-65de-4a58-96d7-4fe041109895',answers,beta:'',contact:'',beta_contact_consent:false,survey_consent:true,turnstile_token:'unit-test-token'};
 }
-test('all 22 questions in the React UI match the server questions exactly',()=>{
- assert.equal(Object.keys(questions).length,21);
+test('all 25 questions in the React UI match the server questions exactly',()=>{
+ assert.equal(Object.keys(questions).length,24);
  for(const [key,q] of Object.entries(questions)){
   const u=ui.get(key);
   assert.ok(u,`missing question ${key}`);
@@ -29,7 +29,7 @@ test('all 22 questions in the React UI match the server questions exactly',()=>{
   assert.equal(u.kind,q.type,`type ${key}`);
   assert.equal(u.required,!!q.required,`required ${key}`);
   assert.equal(u.max??null,q.max??null,`max ${key}`);
-  assert.ok(q.options.length>=5);
+  if(q.type!=='text')assert.ok(q.options.length>=4);
  }
  assert.ok(ui.has('q14'));
  assert.equal(ui.get('beta').options.length,4);
@@ -41,7 +41,7 @@ test('all 22 questions in the React UI match the server questions exactly',()=>{
 test('what the React form sends passes server validation',()=>{
  let st=emptyState();
  const pick=(k,v,on=true)=>{st=applyChoice(st,k,v,on).state;};
- for(const [k,q] of ui) if(q.required&&q.options&&k!=='beta') pick(k,'0');
+ for(const [k,q] of ui) if(q.required&&q.kind!=='text'&&q.options&&k!=='beta') pick(k,k==='q23'?'2':'0');
  pick('q2','3'); // no release: q3 becomes '6', experience questions are cleared
  st={...st,surveyConsent:true};
  assert.equal(validateAll(st),'');
@@ -197,7 +197,7 @@ test('old open tabs validate against version 4 and keep their original option me
 });
 test('new optional demand questions enforce caps and exclusive no-purchase choice end to end',()=>{
  let st=emptyState();
- for(const [key,q] of ui)if(q.required&&q.options&&key!=='beta')st=applyChoice(st,key,'0',true).state;
+ for(const [key,q] of ui)if(q.required&&q.kind!=='text'&&q.options&&key!=='beta')st=applyChoice(st,key,key==='q23'?'2':'0',true).state;
  st={...st,surveyConsent:true};
  for(const key of ['q19','q20','q21','q22'])assert.equal(ui.get(key).required,false);
  st=applyChoice(st,'q21','0',true).state;
@@ -211,4 +211,26 @@ test('new optional demand questions enforce caps and exclusive no-purchase choic
  for(const [key,selection] of [['q21',['0','6']],['q21',['0','1','2','3']],['q22',['0','1','2','3']]]){
   const p=valid();p.answers[key]=selection;assert.equal(validateSubmission(p),null);
  }
+});
+
+test('publishing provider is required only with experience and fee disclosure remains optional',()=>{
+ let st=emptyState();
+ for(const [key,q] of ui)if(q.required&&q.kind!=='text'&&q.options&&key!=='beta')st=applyChoice(st,key,key==='q23'?'2':'0',true).state;
+ st={...st,surveyConsent:true};
+ const body=()=>payload(st,'ccb1d9d3-65de-4a58-96d7-4fe041109895','test');
+ assert.equal(validateAll(st),'');assert.ok(validateSubmission(body()));
+ for(const experience of ['0','1']){
+  st=applyChoice(st,'q23',experience,true).state;
+  st={...st,texts:{q24:'',q25:''}};
+  assert.match(validateAll(st),/내용/);assert.equal(validateSubmission(body()),null);
+  st={...st,texts:{q24:'기존 퍼블리셔',q25:''}};
+  assert.equal(validateAll(st),'');assert.ok(validateSubmission(body()));
+  st={...st,texts:{q24:'기존 퍼블리셔',q25:'국내 10%·해외 15%'}};
+  assert.equal(JSON.parse(validateSubmission(body()).answers).q25,'국내 10%·해외 15%');
+ }
+ st=applyChoice(st,'q23','2',true).state;
+ assert.deepEqual(st.texts,{q24:'',q25:''});assert.ok(validateSubmission(body()));
+ const injected=body();injected.answers.q24='숨겨진 업체명';assert.equal(validateSubmission(injected),null);
+ injected.answers.q24='';injected.answers.q25='10%';assert.equal(validateSubmission(injected),null);
+ for(const key of ['q24','q25']){const p=valid();p.answers.q23='0';p.answers.q24='업체명';p.answers[key]='x'.repeat(161);assert.equal(validateSubmission(p),null);}
 });
