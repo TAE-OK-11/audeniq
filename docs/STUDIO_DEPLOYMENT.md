@@ -13,7 +13,7 @@ Desktop (1280px) and mobile (390px) browser comparisons against the restored pro
 Studio is a React + TypeScript app (`web/studio/app`). The old HTML prototype and the Rust/WASM shell (`crates/studio`, `studio-pack`, `audeniq-dev-web`) were removed; every screen is React. Two Workers can serve it:
 
 - `web/studio/worker.js` (what studio.audeniq.com runs today): static React build, notices/events/maintenance from D1, `/api/*` proxied to the rented-server API through the named tunnel with the service secret.
-- `crates/edge` (Rust Workers): the same build with `/api/*` through Workers VPC `PRIVATE_API`.
+- `crates/edge` (Rust Workers): the same build, the same notices/events/maintenance API from D1 (`/api/status`, maintenance blocking and the `MAINTENANCE_MODE` emergency switch included), `/api/*` through Workers VPC `PRIVATE_API`.
 
 The rented server runs Rust API, worker, PostgreSQL and cloudflared. Backend ports are not published by production Compose. Browser authentication is a Rust API session; the edge adds a separate service secret. Browser files go directly to R2.
 
@@ -54,7 +54,7 @@ npx wrangler d1 migrations apply audeniq-content --remote   # creates the tables
 npx wrangler deploy
 ```
 
-For the Rust edge, run the same commands from `crates/edge`. `crates/edge/migrations/0002_seed.sql` holds the launch sample posts; apply it only if you want them live. Publishing from a script:
+For the Rust edge, run the same commands from `crates/edge`. `crates/edge/migrations/0002_seed.sql` holds the launch sample posts; apply it only if you want them live. `0003_maintenance.sql` creates the maintenance table in its final shape (`kind`, `end_unknown`) and is a no-op when the static Studio Worker's migrations already created it in the shared database. Emergency switch for the Rust edge: `echo on | npx wrangler secret put MAINTENANCE_MODE` (optional `MAINTENANCE_TITLE`, `MAINTENANCE_MESSAGE`, `MAINTENANCE_UNTIL`), off with `npx wrangler secret delete MAINTENANCE_MODE`. Publishing from a script:
 
 ```sh
 curl -X POST https://studio.audeniq.com/api/content/notices \
