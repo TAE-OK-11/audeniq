@@ -30,35 +30,34 @@ function ViewEnter({ pathname, children }: { pathname: string; children: ReactNo
   return <div ref={ref} className="view-enter">{children}</div>;
 }
 
-type NavTone = 'blue' | 'violet' | 'green' | 'amber' | 'red' | 'gray';
-type NavItem = { to: string; label: string; desc: string; icon: GlyphName; tone: NavTone };
+type NavItem = { to: string; label: string; icon: GlyphName };
 
-/** 전체 메뉴 — 토스 '전체' 화면처럼 아이콘 · 이름 · 회색 설명 한 줄 */
+/** 전체 메뉴 — 계정 정보 화면처럼 옅은 파랑 묶음 카드에 아이콘 · 이름 · 꺾쇠 */
 const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
   {
     group: '내 작업실',
     items: [
-      { to: '/', label: '홈', desc: '오늘 할 일 · 요약', icon: 'home', tone: 'blue' },
-      { to: '/releases', label: '발매·곡 관리', desc: '발매 목록 · 곡 정보', icon: 'disc', tone: 'violet' },
-      { to: '/reports', label: '음악 리포트', desc: '재생 · 수익 분석', icon: 'chart', tone: 'blue' },
-      { to: '/settlement', label: '정산·지급', desc: '정산 내역 · 지급 요청', icon: 'won', tone: 'green' },
+      { to: '/', label: '홈', icon: 'home' },
+      { to: '/releases', label: '발매·곡 관리', icon: 'disc' },
+      { to: '/reports', label: '음악 리포트', icon: 'chart' },
+      { to: '/settlement', label: '정산·지급', icon: 'won' },
     ],
   },
   {
     group: '계약·권리',
     items: [
-      { to: '/contracts', label: '계약서', desc: '계약 확인 · 서명', icon: 'sign', tone: 'violet' },
-      { to: '/rights', label: '권리·보완 서류', desc: '증빙 · 보완 요청', icon: 'doc', tone: 'amber' },
+      { to: '/contracts', label: '계약서', icon: 'sign' },
+      { to: '/rights', label: '권리·보완 서류', icon: 'doc' },
     ],
   },
   {
     group: '계정·지원',
     items: [
-      { to: '/profile', label: '계정 정보', desc: '프로필 · 정산 계좌', icon: 'user', tone: 'blue' },
-      { to: '/notifications', label: '알림', desc: '새 소식', icon: 'bell', tone: 'red' },
-      { to: '/inquiries', label: '문의', desc: '1:1 문의 · 답변', icon: 'inquiry', tone: 'blue' },
-      { to: '/events', label: '이벤트', desc: '진행 중인 이벤트', icon: 'star', tone: 'amber' },
-      { to: '/notices', label: '공지사항', desc: '서비스 소식', icon: 'antenna', tone: 'gray' },
+      { to: '/profile', label: '계정 정보', icon: 'user' },
+      { to: '/notifications', label: '알림', icon: 'bell' },
+      { to: '/inquiries', label: '문의', icon: 'inquiry' },
+      { to: '/events', label: '이벤트', icon: 'star' },
+      { to: '/notices', label: '공지사항', icon: 'antenna' },
     ],
   },
 ];
@@ -280,14 +279,15 @@ export function Layout({ children }: { children: ReactNode }) {
                     onPointerEnter={() => prefetchRoute(item.to)}
                     onFocus={() => prefetchRoute(item.to)}
                   >
-                    <i className={`aq-nav-ico is-${item.tone}`} aria-hidden="true"><Glyph name={item.icon} size={20} /></i>
+                    <i className="aq-nav-ico" aria-hidden="true"><Glyph name={item.icon} size={18} /></i>
                     <em className="aq-nav-label">
                       {item.label}
                       {item.to === '/notifications' && unread > 0 && <b className="aq-nav-count">{unread}</b>}
                     </em>
-                    {navStatus[item.to]
-                      ? <Badge tone={navStatus[item.to]!.tone} className="aq-nav-status">{navStatus[item.to]!.text}</Badge>
-                      : <small className="aq-nav-desc">{item.desc}</small>}
+                    <span className="aq-nav-end">
+                      {navStatus[item.to] && <Badge tone={navStatus[item.to]!.tone} className="aq-nav-status">{navStatus[item.to]!.text}</Badge>}
+                      <Glyph name="chevron-right" size={16} />
+                    </span>
                   </button>
                 );
               })}
