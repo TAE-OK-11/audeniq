@@ -301,7 +301,7 @@ export function Settlement() {
           </dl>
           {MOCK && (
             <div className="row-actions aq-statement-detail-actions">
-              <button type="button" className="ui-btn is-danger" onClick={async () => { const id = detailStatement.id; setDetail(null); await deleteStatement(id); }}>정산 내역 삭제</button>
+              <button type="button" className="ui-btn is-text aq-danger-text" onClick={async () => { const id = detailStatement.id; setDetail(null); await deleteStatement(id); }}>정산 내역 삭제</button>
             </div>
           )}
         </Modal>
@@ -319,12 +319,12 @@ export function Settlement() {
           </dl>
           {MOCK && (
             <div className="row-actions aq-statement-detail-actions">
-              <button type="button" className="ui-btn is-danger" onClick={async () => { const id = detailPayout.id; setDetail(null); await deletePayout(id); }}>요청 기록 삭제</button>
+              <button type="button" className="ui-btn is-text aq-danger-text" onClick={async () => { const id = detailPayout.id; setDetail(null); await deletePayout(id); }}>요청 기록 삭제</button>
             </div>
           )}
           {!MOCK && detailPayout.cancellable && (
             <div className="row-actions aq-statement-detail-actions">
-              <button type="button" className={`ui-btn is-danger${cancelling ? ' is-busy' : ''}`} disabled={cancelling} onClick={() => void cancelPayout(detailPayout)}>요청 취소</button>
+              <button type="button" className={`ui-btn is-text aq-danger-text${cancelling ? ' is-busy' : ''}`} disabled={cancelling} onClick={() => void cancelPayout(detailPayout)}>요청 취소</button>
             </div>
           )}
         </Modal>

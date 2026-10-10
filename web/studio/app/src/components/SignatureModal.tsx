@@ -1,5 +1,6 @@
 // 계약서 서명 모달 — 라이브 openSignatureFlow 대응
 import { useEffect, useRef, useState } from 'react';
+import { StepBar } from './StepBar';
 import { Modal } from './Modal';
 import { useToast } from './Toast';
 import { updateDoc, type DocRecord } from '../store/docs';
@@ -440,20 +441,12 @@ export function SignatureModal({
   // (체험 모드의 전자서명 화면은 흉내일 뿐 실제 인증이 아니므로 실서버에 보여 주지 않는다)
   const phases = MOCK ? ['서명 진행', '전자서명 진행', '계약서 완성'] : ['서명 진행', '계약 완료'];
   const phaseIndex = phase === 'sign' ? 0 : phase === 'cert' ? 1 : phases.length - 1;
-  const phaseLabel = `${phaseIndex + 1}단계 · ${phases[phaseIndex]}`;
 
   return (
     <Modal title="계약서 서명" onClose={onBack} modalClass="aq-signature-mode">
       <div className="aq-sign-body">
-        <div className="aq-phase-steps" aria-label="서명 절차 단계">
-          {phases.map((label, i) => (
-            <span key={label} className={`aq-phase-step${i === phaseIndex ? ' active' : ''}${i < phaseIndex ? ' done' : ''}`}>
-              <em>{i + 1}</em>{label}
-            </span>
-          ))}
-        </div>
-        <p className="aq-sign-intro">{phaseLabel}</p>
-        <div className="aq-sign-doc">
+        <StepBar steps={phases} current={phaseIndex} />
+        <div className="aq-sign-docinfo">
           <small>{readOnly ? '서명 절차를 확인할 문서' : '서명할 문서'} · v{doc.version || '1.0'}</small>
           <strong>{title}</strong>
           <div className="ui-field-help">{readOnly ? '검토 진행 중' : '검토 완료'} · {doc.releaseTitle || '공통 문서'}</div>
@@ -563,7 +556,7 @@ export function SignatureModal({
             <button type="button" className={`ui-btn is-primary${signing ? ' is-busy' : ''}`} id="aqSignSave" onClick={save} disabled={signing}>
               {MOCK ? '서명 저장 후 본인 인증' : signing ? '서명하는 중' : '서명하고 계약 체결'}
             </button>
-            <button type="button" className="ui-btn is-soft" id="aqSignReturn" onClick={onBack}>
+            <button type="button" className="ui-btn is-text is-muted" id="aqSignReturn" onClick={onBack}>
               문서로 돌아가기
             </button>
           </>
@@ -574,7 +567,7 @@ export function SignatureModal({
             <button type="button" className="ui-btn is-primary" onClick={() => (onDone ?? onBack)()}>
               계약서 완성 확인
             </button>
-            <button type="button" className="ui-btn is-soft" onClick={() => { setPhase('sign'); }}>
+            <button type="button" className="ui-btn is-text is-muted" onClick={() => { setPhase('sign'); }}>
               서명 다시 하기
             </button>
           </>
