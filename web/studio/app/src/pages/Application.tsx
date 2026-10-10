@@ -1,0 +1,254 @@
+// 배급 신청서 — 신청인이 서명해 접수한 내용을 정식 서류 형태로 보여 주고 인쇄·PDF로 저장한다.
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams, useSearchParams } from '../lib/router';
+import { api } from '../api/client';
+import { useAsync } from '../hooks/useAsync';
+import { SkeletonBlock } from '../components/Skeleton';
+import { useProfile } from '../store/profile';
+import { dspLabel, genreLabel, kindLabel, languageLabel } from '../lib/catalog';
+import { formatKoreanDate, parseStamp } from '../lib/date';
+import { localStamp } from '../lib/format';
+import type { ApplicationRecord } from '../api/types';
+import { AGREEMENTS, OPTION_LABELS, displayCode, hashLabel, legacyApplication, snapshotFromRelease, verifyApplication } from '../lib/application';
+import { docsForRelease, useDocs } from '../store/docs';
+import { PROFILE_LINKS } from '../lib/dsp';
+import { CheckIcon } from '../components/Check';
+import { Glyph } from '../components/Glyph';
+import { rereleaseSummary } from '../lib/rerelease';
+
+type Integrity = 'checking' | 'ok' | 'changed' | 'legacy';
+
+const dash = (v?: string | null) => (v && v.trim() ? v : '—');
+
+function longDate(stamp: string): string {
+  const d = parseStamp(stamp);
+  return d ? `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일` : stamp;
+}
+
+export function Application() {
+  const { id = '' } = useParams();
+  const [params] = useSearchParams();
+  const done = params.get('done') === '1';
+  const nav = useNavigate();
+  const profile = useProfile();
+  const { data: rel, loading, error, reload } = useAsync(() => api.getRelease(id), [id]);
+  const allDocs = useDocs();
+  const issued = rel?.draft?.application;
+  // 서명 기능 전에 접수된 발매는 발매 기록으로 신청서를 만든다 (계약서 서명이 있으면 그 서명을 표시)
+  const [legacy, setLegacy] = useState<ApplicationRecord | null>(null);
+  const app = issued ?? legacy;
+  const [integrity, setIntegrity] = useState<Integrity>('checking');
+
+  const contract = rel ? docsForRelease(allDocs, rel.id, rel.title).find(d => d.kind === 'agreements' && d.localSignatureData) : undefined;
+  useEffect(() => {
+    if (!rel || issued || rel.status === 'draft') { setLegacy(null); return; }
+    let live = true;
+    const signed = contract ? { name: contract.signerName, signature: contract.localSignatureData, at: contract.localSignatureAt } : undefined;
+    legacyApplication(rel, signed).then(a => { if (live) setLegacy(a); }).catch(() => {});
+    return () => { live = false; };
+  }, [rel, issued, contract?.localSignatureData]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!rel || !app) return;
+    if (!issued) { setIntegrity('legacy'); return; }
+    let live = true;
+    setIntegrity('checking');
+    verifyApplication(issued, rel).then(ok => { if (live) setIntegrity(ok ? 'ok' : 'changed'); }).catch(() => { if (live) setIntegrity('changed'); });
+    return () => { live = false; };
+  }, [rel, app, issued]);
+
+  if (loading) {
+    return <div className="view aq-doc-view"><SkeletonBlock height={640} /></div>;
+  }
+  if (error || !rel) {
+    return (
+      <div className="ui-empty">
+        <h2>신청서를 불러오지 못했어요.</h2>
+        <p>{error || '발매를 찾을 수 없어요.'}</p>
+        <button type="button" className="ui-btn is-soft" onClick={reload}>다시 시도</button>
+      </div>
+    );
+  }
+  if (rel.status === 'draft' && !issued) {
+    return (
+      <div className="ui-empty">
+        <h2>아직 접수 전인 발매예요.</h2>
+        <p>신청서 마지막 단계에서 서명하고 접수하면 배급 신청서가 발급돼요.</p>
+        <button type="button" className="ui-btn is-primary" onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}>계속 작성</button>
+      </div>
+    );
+  }
+  if (!app) {
+    return <div className="view aq-doc-view"><SkeletonBlock height={640} /></div>;
+  }
+
+  const snap = snapshotFromRelease(rel);
+  const d = rel.draft;
+  const cover = d?.coverData || rel.coverData;
+
+  return (
+    <div id="view-application" className="view aq-doc-view">
+      {done && (
+        <div className="aq-doc-done" role="status">
+          <span className="aq-doc-done-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </span>
+          <div className="min-0">
+            <strong>배급 신청이 접수됐어요.</strong>
+            <span>서명한 신청서가 발급됐어요. 담당자 검토가 끝나면 알림으로 알려 드릴게요.</span>
+          </div>
+        </div>
+      )}
+
+      <div className="aq-doc-toolbar">
+        <button type="button" className="ui-btn is-white is-sm aq-back-link" onClick={() => nav(`/releases/${rel.id}`)}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />발매 상세</button>
+        <div className="row-actions">
+          <button type="button" className="ui-btn is-soft" onClick={() => nav('/')}>홈으로</button>
+          <button type="button" className="ui-btn is-primary" onClick={() => window.print()}>인쇄 · PDF 저장</button>
+        </div>
+      </div>
+
+      <article className="aq-paper" aria-label="디지털 음원 배급 신청서">
+        <header className="aq-paper-head">
+          <div className="aq-paper-brand">
+            <img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" />
+            <dl className="aq-paper-meta">
+              <div><dt>신청서 번호</dt><dd>{displayCode(app.no)}</dd></div>
+              <div><dt>접수 일시</dt><dd>{localStamp(app.submittedAt)}</dd></div>
+              <div><dt>서식</dt><dd>{displayCode(app.form)}</dd></div>
+            </dl>
+          </div>
+          <h1>디지털 음원 배급 신청서</h1>
+          <p className="aq-paper-en">Digital Music Distribution Application</p>
+        </header>
+
+        <section className="aq-paper-sec">
+          <h2><span>1</span>신청인</h2>
+          <table className="aq-paper-kv">
+            <tbody>
+              <tr><th>성명</th><td>{app.signerName}</td><th>구분</th><td>{app.signerRole}</td></tr>
+              <tr><th>대표 아티스트</th><td>{dash(snap.artist)}</td><th>연락 이메일</th><td className="break">{dash(profile.email)}</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section className="aq-paper-sec">
+          <h2><span>2</span>발매 정보</h2>
+          <div className="aq-paper-release">
+            {cover && <img className="aq-paper-cover" src={cover} alt="커버아트" />}
+            <table className="aq-paper-kv">
+              <tbody>
+                <tr><th>발매 제목</th><td colSpan={3}><strong>{snap.title}</strong></td></tr>
+                <tr><th>발매 유형</th><td>{kindLabel(snap.type)}</td><th>장르</th><td>{snap.genre === '__other__' ? dash(d?.genreCustom || '기타') : genreLabel(snap.genre) || dash(snap.genre)}</td></tr>
+                <tr><th>주요 언어</th><td>{languageLabel(snap.language) || dash(snap.language)}</td><th>레이블 표기</th><td>{dash(snap.label)}</td></tr>
+                <tr><th>발매 예정일</th><td>{snap.releaseDate ? formatKoreanDate(snap.releaseDate) : '—'}</td><th>UPC / EAN</th><td>{snap.upc || '발급 예정'}</td></tr>
+                {snap.originalDate && <tr><th>최초 발매일</th><td colSpan={3}>{formatKoreanDate(snap.originalDate)}</td></tr>}
+                <tr>
+                  <th>플랫폼 프로필</th>
+                  <td colSpan={3} className="break">
+                    {snap.artistProfile.isNew
+                      ? '신규 아티스트 (새 프로필 생성)'
+                      : PROFILE_LINKS.filter(l => snap.artistProfile[l.key]).map(l => `${l.label}: ${snap.artistProfile[l.key]}`).join(' / ')}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="aq-paper-sec">
+          <h2><span>3</span>수록곡 <small>{snap.tracks.length}곡</small></h2>
+          <div className="aq-paper-scroll">
+            <table className="aq-paper-grid">
+              <thead>
+                <tr><th>No.</th><th>곡명</th><th>작곡</th><th>작사</th><th>길이</th><th>음원 · ISRC</th></tr>
+              </thead>
+              <tbody>
+                {snap.tracks.map((t, i) => (
+                  <tr key={i}>
+                    <td className="num aq-paper-no">{i + 1}</td>
+                    <td className="aq-paper-title">
+                      <strong>{t.title}</strong>{t.version && ` (${t.version})`}
+                      {t.explicit && <em className="aq-paper-tag">19</em>}
+                      {t.featuring && <small>피처링 {t.featuring}</small>}
+                      {(t.arrangers || t.producer) && <small>{[t.arrangers && `편곡 ${t.arrangers}`, t.producer && `프로듀서 ${t.producer}`].filter(Boolean).join(' · ')}</small>}
+                    </td>
+                    <td data-label="작곡">{t.composers}</td>
+                    <td data-label="작사">{t.instrumental ? '연주곡' : dash(t.lyricists)}</td>
+                    <td className="num" data-label="길이">{dash(t.duration)}</td>
+                    <td data-label="음원">
+                      <small>{t.audioSpec || t.audioName || '—'}</small>
+                      <small>{t.isrc ? `ISRC ${t.isrc}` : 'ISRC 발급 예정'}</small>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="aq-paper-sec">
+          <h2><span>4</span>배급 범위 및 권리</h2>
+          <table className="aq-paper-kv">
+            <tbody>
+              <tr><th>배급 지역</th><td colSpan={3}>{snap.territories.includes('WORLD') ? '전 세계' : dash(snap.territories.join(', '))}</td></tr>
+              <tr><th>배급 플랫폼</th><td colSpan={3}>{snap.platforms.map(dspLabel).join(', ') || '—'}</td></tr>
+              <tr><th>마스터 권리자</th><td colSpan={3}>{dash(snap.ownership)}</td></tr>
+              <tr><th>℗ 표기</th><td>℗ {dash(snap.phonogram)}</td><th>© 표기</th><td>© {dash(snap.copyright)}</td></tr>
+              <tr><th>신고 항목</th><td colSpan={3}>{snap.options.map(k => OPTION_LABELS[k] ?? k).join(', ') || '해당 없음 (일반 발매)'}</td></tr>
+              {snap.rerelease && <>
+                <tr><th>이전·재발매</th><td colSpan={3}>{rereleaseSummary(snap.rerelease)}</td></tr>
+                <tr><th>기존 발매 정보</th><td colSpan={3}>{[snap.rerelease.previousReleaseDate && `이전 최초 발매일 ${snap.rerelease.previousReleaseDate}`, snap.rerelease.previousUpc && `UPC ${snap.rerelease.previousUpc}`, snap.rerelease.previousUrl, snap.rerelease.rereleaseNotes].filter(Boolean).join(' / ') || '—'}</td></tr>
+              </>}
+            </tbody>
+          </table>
+        </section>
+
+        <section className="aq-paper-sec">
+          <h2><span>5</span>신청인 확인 및 동의</h2>
+          {!issued && (
+            <p className="aq-paper-note">
+              전자서명 신청 기능 도입 전에 접수된 발매예요. 접수 당시 동의 내용은 {contract ? 'AUDENIQ 계약서 서명으로 확인됐어요.' : 'AUDENIQ 계약서 서명으로 확인해요.'}
+            </p>
+          )}
+          {issued && <ol className="aq-paper-agree">
+            {AGREEMENTS.map(a => (
+              <li key={a.id} className={app.agreements.includes(a.id) ? 'is-on' : ''}>
+                <span className="aq-paper-check" aria-label={app.agreements.includes(a.id) ? '동의함' : '동의하지 않음'}>
+                  {app.agreements.includes(a.id) ? <CheckIcon size={12} /> : null}
+                </span>
+                {a.text}
+              </li>
+            ))}
+          </ol>}
+        </section>
+
+        <section className="aq-paper-signoff">
+          <p>위와 같이 AUDENIQ 디지털 음원 배급을 신청합니다.</p>
+          <p className="aq-paper-date">{longDate(app.submittedAt)}</p>
+          <div className="aq-paper-signer">
+            <span>신청인</span>
+            <strong>{app.signerName}</strong>
+            <span className="aq-paper-sig">
+              {app.signature ? <img src={app.signature} alt={`${app.signerName} 서명`} /> : <em>{issued ? '(서명)' : '(계약서 서명 전)'}</em>}
+            </span>
+          </div>
+          <p className="aq-paper-to">AUDENIQ 귀중</p>
+        </section>
+
+        <footer className="aq-paper-foot">
+          <div>
+            <span>문서 확인 코드 (SHA-256)</span>
+            <code>{hashLabel(app.hash)}</code>
+          </div>
+          <span className={`aq-paper-integrity is-${integrity}`}>
+            {integrity === 'ok' ? '접수 원본과 일치' : integrity === 'changed' ? '접수 후 내용이 바뀌었어요' : integrity === 'legacy' ? '기존 접수 건 · 현재 내용 기준' : '원본 확인 중'}
+          </span>
+          <p>{issued
+            ? '이 신청서는 AUDENIQ STUDIO에서 전자서명으로 작성됐어요. 문서 확인 코드는 신청 내용과 서명으로 계산돼, 내용이 바뀌면 달라져요.'
+            : '이 신청서는 기존 접수 기록으로 다시 발급됐어요. 문서 확인 코드는 현재 발매 정보 기준이에요.'}</p>
+        </footer>
+      </article>
+    </div>
+  );
+}

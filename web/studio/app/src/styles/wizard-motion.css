@@ -1,0 +1,61 @@
+/* ── 배급 신청(새 발매) 모션 — 정산 정보 등록 흐름과 같은 절제된 움직임 ──────────────
+   제목 → 본문 순으로 10px 살짝 떠오르는 것(aq-fade-up, .42~.45s) 하나만 쓴다.
+   흐림·미끄러짐·튕김·선 그리기 같은 연출은 쓰지 않고, 선택·진행 표시는 면 색만 바뀐다.
+   동작 줄이기 설정에선 모두 끈다. */
+@keyframes aq-wiz-invalid{0%,100%{background-color:var(--aq-field)}25%,55%{background-color:var(--aq-red-50)}}
+
+@media(prefers-reduced-motion:no-preference){
+  /* 단계 내용: 제목 → 본문 순으로 살짝 떠오른다 (정산 정보 등록과 같은 박자) */
+  #view-new .wizard-header>*{animation:aq-fade-up .42s var(--aq-e-ease) both}
+  #view-new .wizard-header>:nth-child(2){animation-delay:.04s}
+  #view-new .wizard-header>:nth-child(3){animation-delay:.08s}
+  #view-new #wizardBody>.step-section>*{animation:aq-fade-up .45s var(--aq-e-ease) .1s both}
+  #view-new #wizardBody>.step-section>:nth-child(2){animation-delay:.14s}
+  #view-new #wizardBody>.step-section>:nth-child(3){animation-delay:.18s}
+  #view-new #wizardBody>.step-section>:nth-child(n+4){animation-delay:.22s}
+  /* 보완 요청 패널은 제목과 함께 한 덩어리로 */
+  #view-new .aq-fix-panel{animation:aq-fade-up .45s var(--aq-e-ease) .06s both}
+  /* 오류 안내는 살짝 떠오르고, 빠진 칸은 옅은 빨강으로 한 번 물든다 */
+  #view-new #wizardError.aq-shake{animation:aq-fade-up .22s var(--aq-e-ease) both}
+  #view-new .aq-invalid:is(input,select,textarea){animation:aq-wiz-invalid 1.2s ease 1}
+  #view-new .aq-invalid:not(input,select,textarea){animation:none}
+}
+
+/* 모바일 진행 막대 — 지금 칸까지 색이 부드럽게 바뀐다 */
+#view-new .wizard-progress-seg{transition:background-color .3s ease!important}
+
+/* PC 단계 카드 — 지금 단계는 진한 면, 바뀔 때 면과 글자 색만 부드럽게 */
+@media(min-width:1024px){
+  .aq-wiz-rail .aq-wiz-steps button{transition:background-color .2s ease,color .2s ease}
+  .aq-wiz-rail .aq-wiz-step-no{transition:background-color .2s ease,color .2s ease}
+  .aq-wiz-rail-progress i::after{transition:width .4s var(--aq-e-ease)}
+}
+
+/* 보완 요청 패널 — 접고 펼칠 때 높이가 짧게 따라 바뀐다 */
+#view-new .aq-fix-title{width:fit-content;max-width:100%}
+html.aq-vt-fix #view-new .aq-fix-panel{view-transition-name:aq-fix}
+#view-new .aq-fix-title{width:fit-content;max-width:100%}
+html.aq-vt-fix #view-new .aq-fix-title{view-transition-name:aq-fix-title}
+html.aq-vt-fix #view-new #wizardBody{view-transition-name:aq-wiz-body}
+/* 움직이는 입력 영역이 위아래 고정 막대 위로 올라오지 않게 막대도 따로 떼어 맨 위에 둔다 */
+html.aq-vt-fix #view-new .wizard-topbar{view-transition-name:aq-wiz-top}
+html.aq-vt-fix #view-new .step-actions{view-transition-name:aq-wiz-actions}
+html.aq-vt-fix #view-new .aq-fix-note,html.aq-vt-fix #view-new .aq-fix-list li{animation:none}
+::view-transition-group(aq-fix),::view-transition-group(aq-fix-title),::view-transition-group(aq-wiz-body){animation-duration:.32s;animation-timing-function:cubic-bezier(.22,1,.36,1)}
+::view-transition-group(aq-fix){overflow:clip;border-radius:24px}
+::view-transition-old(aq-fix),::view-transition-new(aq-fix){height:100%;object-fit:none;object-position:top;animation-duration:.24s}
+::view-transition-old(aq-fix){animation-duration:.16s}
+::view-transition-old(aq-fix-title),::view-transition-new(aq-fix-title){height:100%;object-fit:fill;animation-duration:.36s}
+::view-transition-group(aq-wiz-top),::view-transition-group(aq-wiz-actions){animation:none;z-index:2}
+::view-transition-old(aq-wiz-top),::view-transition-old(aq-wiz-actions){display:none}
+::view-transition-new(aq-wiz-top),::view-transition-new(aq-wiz-actions){animation:none}
+::view-transition-old(root),::view-transition-new(root){animation-duration:.2s}
+
+/* 이동한 입력칸 — 옅은 노랑 면이 잠깐 번졌다 사라진다 */
+#view-new .aq-fix-flash{animation:aq-fix-flash 1.8s var(--aq-e-ease) 1}
+
+
+@media(prefers-reduced-motion:reduce){
+  #view-new .aq-fix-flash,#view-new .aq-invalid{animation:none!important}
+  #view-new .wizard-progress-seg,.aq-wiz-rail .aq-wiz-steps button,.aq-wiz-rail .aq-wiz-step-no,.aq-wiz-rail-progress i::after{transition:none!important}
+}

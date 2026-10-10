@@ -1,0 +1,46 @@
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams } from '../lib/router';
+import { useDocs, setDocs, docState } from '../store/docs';
+import { fetchDocuments } from '../api/portal';
+import { MOCK } from '../lib/mode';
+import { errorMessage } from '../api/errors';
+import { localStamp } from '../lib/format';
+import { sha256Hex } from '../lib/application';
+import { rightsHashInput } from '../lib/rightsDocument';
+
+export function RightsDocument() {
+  const { id } = useParams();
+  const nav = useNavigate();
+  const doc = useDocs().find(d => d.id === id && d.electronic);
+  const [loading, setLoading] = useState(!MOCK);
+  const [error, setError] = useState('');
+  const [integrity, setIntegrity] = useState<'checking' | 'ok' | 'changed'>('checking');
+  useEffect(() => {
+    if (MOCK) return;
+    let cancelled = false;
+    fetchDocuments().then(list => { if (!cancelled) setDocs(list); })
+      .catch(e => { if (!cancelled) setError(errorMessage(e)); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [id]);
+  useEffect(() => {
+    if (!doc?.electronic) return;
+    let cancelled = false;
+    setIntegrity('checking');
+    sha256Hex(rightsHashInput(doc.title, doc.content, { ...doc.electronic, signature: doc.localSignatureData }))
+      .then(hash => { if (!cancelled) setIntegrity(hash === doc.electronic?.content_hash ? 'ok' : 'changed'); });
+    return () => { cancelled = true; };
+  }, [doc]);
+  if (loading) return <p role="status">문서를 불러오는 중이에요.</p>;
+  if (error || !doc?.electronic) return <div className="ui-empty"><h1>문서를 확인할 수 없어요.</h1><p>{error || '이 계정에서 볼 수 있는 전자 문서가 없어요.'}</p><button className="ui-btn is-soft" onClick={() => nav('/rights')}>권리 서류로 돌아가기</button></div>;
+  const e = doc.electronic;
+  return <div className="aq-doc-view view-enter">
+    <div className="aq-doc-toolbar"><button className="ui-btn is-white is-sm" onClick={() => nav('/rights')}>권리·보완 서류</button><button className="ui-btn is-primary" onClick={() => window.print()}>인쇄 · PDF 저장</button></div>
+    <article className="aq-paper" aria-label="권리자 서명 전자 문서">
+      <header className="aq-paper-head"><div className="aq-paper-brand"><img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" /><dl className="aq-paper-meta"><div><dt>문서 번호</dt><dd>AUD-RIGHTS-{e.document_no}</dd></div><div><dt>서식</dt><dd>{e.form}</dd></div><div><dt>서명 일시</dt><dd>{localStamp(doc.localSignatureAt)}</dd></div></dl></div><h1>{doc.title}</h1></header>
+      <div className="aq-rights-paper-body">{doc.content}</div>
+      <section className="aq-paper-signoff"><p>위 내용을 확인하고 기재한 범위에서 이용을 허락합니다.</p><div className="aq-paper-signer"><span>{e.signer_role}</span><strong>{doc.signerName}</strong><span className="aq-paper-sig"><img src={doc.localSignatureData} alt={`${doc.signerName} 서명`} /></span></div><p>{localStamp(doc.localSignatureAt)}</p>{e.identity && <dl className="aq-paper-meta aq-paper-identity"><div><dt>본인확인</dt><dd>{e.identity.name} · {localStamp(e.identity.verified_at)}</dd></div><div><dt>서명 방법</dt><dd>{e.channel === 'IN_PERSON' ? '대면(같은 기기)' : '서명 링크'} · 권리자 직접 서명</dd></div>{e.certificate_hash && <div><dt>서명 증명 해시</dt><dd><code>{e.certificate_hash}</code></dd></div>}</dl>}</section>
+      <footer className="aq-paper-foot"><span>{docState(doc)}</span><span className={`aq-paper-integrity is-${integrity}`}>{integrity === 'ok' ? '문서 확인 일치' : integrity === 'changed' ? '문서 내용 불일치' : '문서 확인 중'}</span><code>{e.content_hash}</code><p>작성 내용·권리자·서명자·서명 이미지로 문서 확인 코드를 계산해 보관합니다. {e.identity ? '권리자는 본인확인 후 직접 서명했고, 서명 기록(본인확인 결과·시각·접속 기록)은 서명 증명 해시로 묶여 보관됩니다. ' : ''}권리자 서명과 AUDENIQ 검토 상태는 별도로 관리합니다.</p>{doc.reviewNote && <p>검토 메모: {doc.reviewNote}</p>}</footer>
+    </article>
+  </div>;
+}
