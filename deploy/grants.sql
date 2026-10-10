@@ -21,11 +21,8 @@ GRANT INSERT ON privacy.staff_access_logs TO audeniq_api;
 GRANT SELECT(actor_user_id,request_id,route) ON privacy.staff_access_logs TO audeniq_api;
 REVOKE UPDATE,DELETE,TRUNCATE ON privacy.staff_access_logs FROM audeniq_api;
 -- 공지·이벤트·서버 점검(0086): 삭제는 deleted_at 기록뿐이라 DELETE는 주지 않는다.
--- 설문 응답은 접수만 (중복 확인용 id 읽기 + 추가). 12개월 정리는 소유자가 purge-transient로.
 GRANT USAGE ON SCHEMA content TO audeniq_api;
 GRANT SELECT,INSERT,UPDATE ON content.notices,content.events,content.maintenance TO audeniq_api;
-GRANT SELECT(id),INSERT ON content.survey_responses TO audeniq_api;
-REVOKE UPDATE,DELETE,TRUNCATE ON content.survey_responses FROM audeniq_api;
 GRANT SELECT ON operations.allowed_transitions TO audeniq_api;
 -- Consent + submit run in the API request: it signs the consent package and
 -- freezes the submitted application revision (both append-only; no UPDATE or

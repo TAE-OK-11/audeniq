@@ -1,14 +1,14 @@
 # (나중) 전부 AWS로: CloudFront + S3 + 백엔드(ALB)
 
-> 지금(개발 단계)은 Cloudflare Workers가 화면을 서빙하고 `/api`를 터널로 백엔드에 넘겨요(공지·점검·설문 로직은 백엔드).
-> 이 문서는 AWS로 옮길 때 쓰는 구성이에요. 공지·점검·설문을 백엔드로 옮긴 부분은 두 구성이 같아요.
+> 지금(개발 단계)은 Cloudflare Workers가 화면을 서빙하고 `/api`를 터널로 백엔드에 넘겨요(공지·점검 로직은 백엔드, 설문은 베타 전까지 D1 Worker 그대로).
+> 이 문서는 AWS로 옮길 때 쓰는 구성이에요. 공지·점검을 백엔드로 옮긴 부분은 두 구성이 같아요.
 
 Cloudflare Workers, D1, Tunnel이 하던 일을 전부 AWS로 옮겨요.
 
 ```
 브라우저 ── studio.audeniq.com ── CloudFront ─┬─ /*            → S3 (화면, 뷰어 함수: SPA 폴백·리다이렉트)
                                               └─ /api/*, /ready → ALB → 백엔드 api (Postgres)
-                                                  + x-audeniq-service(서비스 비밀), x-audeniq-site(studio|admin|survey)
+                                                  + x-audeniq-service(서비스 비밀), x-audeniq-site(studio|admin)
 ```
 
 | 예전 (Cloudflare) | 지금 (AWS) | 코드 |
@@ -18,17 +18,15 @@ Cloudflare Workers, D1, Tunnel이 하던 일을 전부 AWS로 옮겨요.
 | 공지·이벤트·서버 점검 (D1) | 백엔드 + Postgres `content` 스키마 | `crates/core/src/site_content.rs`, 마이그레이션 0086 |
 | 점검 중 API 차단(503 MAINTENANCE), 비상 스위치 | 백엔드 미들웨어, 환경변수 `MAINTENANCE_MODE` | `site_content::gate` |
 | 관리자 콘솔 경로 제한·Origin 확인 (인증 보조) | 백엔드 미들웨어 | `crates/core/src/sites.rs` |
-| 설문 접수 (D1, Turnstile, 12개월 cron) | 백엔드 + Postgres, `purge-transient`가 12개월 정리 | `crates/core/src/survey.rs` |
 | 서비스 비밀 헤더, 사용자 IP 전달 | CloudFront origin custom header + API 뷰어 함수 | `template.mjs`, `functions/api.js` |
 | Cloudflare Tunnel | ALB (인터넷용, HTTPS) → 서버 8080 | `deploy/compose.production.yaml` |
 
-Turnstile(설문 봇 방지), R2(업로드 저장소), DNS는 이번에 바꾸지 않아요.
+R2(업로드 저장소), DNS는 이번에 바꾸지 않아요. 설문(survey.audeniq.com)은 베타 전까지 D1 Worker 그대로라 이 구성에 없어요.
 
 | 앱 | 화면 주소 | 빌드 결과 | 백엔드로 가는 경로 |
 |---|---|---|---|
 | studio | studio.audeniq.com | `web/studio/public` | `/api/*`, `/ready` |
 | admin | admin.audeniq.com | `web/admin/dist` | `/api/*` (관리자 경로만 열림) |
-| survey | survey.audeniq.com | `web/survey/public` | `/api/*` → 백엔드 `/api/survey/*` |
 | landing | audeniq.com, www.audeniq.com | `web/landing/public` | 없음 |
 
 브라우저 입장에서는 화면과 `/api`가 계속 **같은 주소**예요. 그래서 프론트 코드, 세션 쿠키, CSRF, CSP는 그대로예요.
@@ -52,11 +50,11 @@ Turnstile(설문 봇 방지), R2(업로드 저장소), DNS는 이번에 바꾸�
 
 ## 전환 순서
 
-1. **백엔드 배포**(마이그레이션 0086 포함)와 `deploy/grants.sql` 재실행. `production.env`에 `ADMIN_ORIGIN`, `SURVEY_ORIGIN`, (설문을 쓸 때) `TURNSTILE_*`를 넣어요.
+1. **백엔드 배포**(마이그레이션 0086 포함)와 `deploy/grants.sql` 재실행. `production.env`에 `ADMIN_ORIGIN`을 넣어요.
    - 이 단계는 지금 구조(Workers + Tunnel)에 영향이 없어요. 새 경로를 아직 아무도 부르지 않아요.
 2. **데이터 옮기기**(1차): 관리 화면에서 글을 잠시 쓰지 않는 시간에 실행해요.
    ```sh
-   CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... node deploy/aws/migrate-d1.mjs > d1-import.sql   # 설문 D1이 없으면 --skip-survey
+   CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... node deploy/aws/migrate-d1.mjs > d1-import.sql
    psql "$OWNER_DATABASE_URL" -v ON_ERROR_STOP=1 -f d1-import.sql
    ```
 3. **ALB**: 서버가 있는 VPC에 인터넷용 ALB를 만들어요.
@@ -69,18 +67,17 @@ Turnstile(설문 봇 방지), R2(업로드 저장소), DNS는 이번에 바꾸�
    ```sh
    AWS_UI_CERT_ARN=arn:aws:acm:us-east-1:...:certificate/... \
    API_ORIGIN_DOMAIN=api-origin.audeniq.com EDGE_SERVICE_SECRET="<production.env 값>" \
-     deploy/aws/deploy-stack.sh studio        # admin, survey, landing(API 값 불필요)
+     deploy/aws/deploy-stack.sh studio        # admin, landing(API 값 불필요)
    ```
 6. **화면 올리기**: 빌드한 뒤 `node deploy/aws/publish.mjs studio`를 실행해요. 출력된 `dxxxx.cloudfront.net`에서 화면과 `/api/status`가 뜨는지 확인해요.
 7. **DNS 전환**(앱마다): Worker의 커스텀 도메인을 제거하고, `studio CNAME dxxxx.cloudfront.net`을 **DNS only**로 추가해요.
    - 전환 직전에 2단계를 한 번 더 실행해서 마지막 글까지 옮겨요. 이미 있는 id는 건너뛰어요.
-8. **확인**: 로그인, 공지 읽기·쓰기, 관리자 점검 등록 → 스튜디오 점검 화면, 설문 제출, 백엔드 로그의 사용자 IP를 확인해요.
+8. **확인**: 로그인, 공지 읽기·쓰기, 관리자 점검 등록 → 스튜디오 점검 화면, 백엔드 로그의 사용자 IP를 확인해요.
 9. **정리**:
    - `compose.production.yaml`의 `tunnel` 서비스와 `tunnel-token`을 지워요.
    - CI의 `wrangler deploy` 단계(`.circleci/config.yml` frontend, `.github/workflows/studio-deploy.yml`, `admin-deploy.yml`)와 D1 마이그레이션 단계를 지워요.
-   - Cloudflare의 Workers(`audeniq-studio`, `audeniq-admin`, `audeniq-web`, `audeniq-survey`)와 D1을 삭제해요.
-   - `web/*/worker.js`, `wrangler.jsonc`, `web/studio/migrations`, `web/survey/migrations`, `crates/edge`를 저장소에서 지워요.
-   - `purge-transient`(설문 12개월 정리 포함)를 매일 cron으로 돌려요.
+   - Cloudflare의 Workers(`audeniq-studio`, `audeniq-admin`, `audeniq-web`)와 D1 `audeniq-content`를 삭제해요.
+   - studio·admin·landing의 `worker.js`·`wrangler.jsonc`, `web/studio/migrations`, `crates/edge`를 저장소에서 지워요.
 
 롤백: 7단계 전까지는 아무것도 바뀌지 않아요. 7단계 뒤에는 DNS를 되돌리면 Workers가 다시 받아요. 다만 그사이 백엔드에 쓴 공지·점검은 D1에 없어요.
 
@@ -110,6 +107,5 @@ Turnstile(설문 봇 방지), R2(업로드 저장소), DNS는 이번에 바꾸�
 - 비상 점검 스위치는 이제 Worker secret이 아니라 백엔드 환경변수예요. `production.env`에 `MAINTENANCE_MODE=on`을 넣고 api를 재시작해요.
   - 평소에는 관리자 콘솔의 '서버 점검'으로 등록해요. 10초 안에 반영돼요.
 - 공개 공지·이벤트는 `Cache-Control: public, max-age=30`이에요. CloudFront `/api`는 캐시하지 않아서 브라우저만 30초 캐시해요.
-- 설문 404 페이지는 CloudFront 오류 응답(배포 전체)이라서, 설문 API의 404 JSON도 `404.html`로 바뀌어요.
 - 업로드는 지금처럼 브라우저가 저장소(R2) presigned URL로 직접 올려서 CloudFront를 거치지 않아요.
 - 검증: `node --test deploy/aws/test/aws.test.mjs`, `cargo test -p audeniq-core --test site_content`

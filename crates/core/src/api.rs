@@ -140,7 +140,6 @@ pub fn router(s: AppState) -> Router {
         .merge(crate::live::routes())
         .merge(crate::partner_hooks::routes())
         .merge(crate::site_content::routes())
-        .merge(crate::survey::routes())
         .fallback(|| async { Error::NotFound.into_response() })
         // Innermost: the boundary middleware still stamps the request id,
         // no-store and the access log on a panic's 500.
