@@ -14,6 +14,7 @@ version: 2.1
 #   DEPLOY_PATH          (선택) 기본 /opt/audeniq
 #   CLOUDFLARE_API_TOKEN   프론트엔드 배포 (Workers Scripts:Edit, D1:Edit)
 #   CLOUDFLARE_ACCOUNT_ID  Cloudflare 계정 ID
+#   UI_ON_SERVER         (선택) true면 main의 화면 빌드를 서버 web(nginx)로도 올린다 (deploy/web/README.md)
 #
 # frontend 워크플로: Studio·Admin·랜딩·설문을 어느 브랜치든 테스트·빌드하고 main에서만 Workers로 배포한다.
 
@@ -28,6 +29,22 @@ parameters:
     default: false
 
 commands:
+  publish-ui:
+    description: 빌드한 화면을 서버의 web(nginx)로 올린다 — Context에 UI_ON_SERVER=true일 때만 (deploy/web/README.md)
+    parameters:
+      app: {type: string}
+    steps:
+      - run:
+          name: Publish << parameters.app >> UI to server (nginx)
+          command: |
+            if [ "${UI_ON_SERVER:-}" != "true" ]; then
+              echo "UI_ON_SERVER가 true가 아니라 서버로 화면을 올리지 않음"
+              exit 0
+            fi
+            install -m 700 -d ~/.ssh
+            printf '%s' "$DEPLOY_SSH_KEY" | base64 -d > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+            printf '%s' "$DEPLOY_KNOWN_HOSTS" | base64 -d > ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts
+            deploy/web/publish.sh << parameters.app >>
   skip-unless-changed:
     description: 이 푸시에서 paths(정규식)에 맞는 파일이 바뀌지 않았으면 작업을 성공으로 끝낸다
     parameters:
@@ -235,9 +252,9 @@ jobs:
               "cd '$path' && chmod +x deploy.sh pg-upgrade.sh && GHCR_USER='$GHCR_USER' GHCR_TOKEN_STDIN=1 ./deploy.sh '$ref'" \<<< "$GHCR_TOKEN"
             echo "배포됨: $ref → $DEPLOY_HOST:$path"
 
-  # ── 프론트엔드 (Cloudflare Workers → AWS S3 + CloudFront 전환 중, deploy/aws/README.md) ──
+  # ── 프론트엔드 (Cloudflare Workers → 서버 web(nginx) 전환 중, deploy/web/README.md) ──
   # 어느 브랜치든 테스트·빌드, main일 때만 배포. CLOUDFLARE_API_TOKEN·CLOUDFLARE_ACCOUNT_ID는 Context에 둔다.
-  # 화면 배포는 Context에 AWS_UI_ROLE_ARN(CircleCI OIDC로 맡을 IAM 역할)이 있을 때만 (deploy/aws/README.md).
+  # 화면을 서버로 올리는 것은 Context에 UI_ON_SERVER=true가 있을 때만 (DEPLOY_* 사용).
   studio:
     docker:
       - image: cimg/node:22.17
@@ -246,7 +263,7 @@ jobs:
     steps:
       - checkout
       - skip-unless-changed:
-          paths: '^(web/studio/|web/shared/|deploy/aws/)'
+          paths: '^(web/studio/|web/shared/|deploy/aws/|deploy/web/)'
       - setup-bun:
           version_file: web/studio/.bun-version
       - run:
@@ -261,8 +278,8 @@ jobs:
           working_directory: web/studio
           command: bun test test/
       - run:
-          name: AWS UI (CloudFront) config tests
-          command: node --test deploy/aws/test/aws.test.mjs
+          name: UI serving config tests (nginx, CloudFront)
+          command: node --test deploy/web/test/web.test.mjs deploy/aws/test/aws.test.mjs
       - when:
           condition:
             equal: [main, << pipeline.git.branch >>]
@@ -279,9 +296,8 @@ jobs:
                 name: Deploy audeniq-studio
                 working_directory: web/studio
                 command: npx --yes wrangler@4.141.0 deploy
-            - run:
-                name: Publish studio UI (S3 + CloudFront)
-                command: deploy/aws/ci-publish.sh studio
+            - publish-ui:
+                app: studio
 
   admin:
     docker:
@@ -312,9 +328,8 @@ jobs:
                 name: Deploy audeniq-admin
                 working_directory: web/admin
                 command: bunx wrangler deploy
-            - run:
-                name: Publish admin UI (S3 + CloudFront)
-                command: deploy/aws/ci-publish.sh admin
+            - publish-ui:
+                app: admin
 
   landing:
     docker:
@@ -324,14 +339,14 @@ jobs:
     steps:
       - checkout
       - skip-unless-changed:
-          paths: '^(web/landing/|deploy/aws/)'
+          paths: '^(web/landing/|deploy/aws/|deploy/web/)'
       - run:
           name: SEO build and tests
           working_directory: web/landing
           command: npm run check
       - run:
-          name: AWS UI (CloudFront) config tests
-          command: node --test deploy/aws/test/aws.test.mjs
+          name: UI serving config tests (nginx, CloudFront)
+          command: node --test deploy/web/test/web.test.mjs deploy/aws/test/aws.test.mjs
       - when:
           condition:
             equal: [main, << pipeline.git.branch >>]
@@ -340,9 +355,8 @@ jobs:
                 name: Deploy audeniq-web
                 working_directory: web/landing
                 command: npx --yes wrangler@4.141.0 deploy
-            - run:
-                name: Publish landing UI (S3 + CloudFront)
-                command: deploy/aws/ci-publish.sh landing
+            - publish-ui:
+                app: landing
 
   survey:
     docker:
@@ -386,9 +400,8 @@ jobs:
                 name: Deploy audeniq-survey
                 working_directory: web/survey
                 command: npx --yes wrangler@4.141.0 deploy
-            - run:
-                name: Publish survey UI (S3 + CloudFront)
-                command: deploy/aws/ci-publish.sh survey
+            - publish-ui:
+                app: survey
 
 workflows:
   backend-image:

@@ -1,4 +1,7 @@
-# 전부 AWS로: CloudFront + S3 + 백엔드(ALB)
+# (나중) 전부 AWS로: CloudFront + S3 + 백엔드(ALB)
+
+> 지금(개발 단계)은 Cloudflare CDN + 터널 + 서버 nginx로 서빙해요 — [`deploy/web/README.md`](../web/README.md).
+> 이 문서는 AWS로 옮길 때 쓰는 구성이에요. 공지·점검·설문을 백엔드로 옮긴 부분은 두 구성이 같아요.
 
 Cloudflare Workers, D1, Tunnel이 하던 일을 전부 AWS로 옮겨요.
 
