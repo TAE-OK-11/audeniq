@@ -313,8 +313,11 @@ Served by `crates/edge` from the D1 binding `CONTENT_DB` (migrations in `crates/
 |---|---|---|
 | GET | `/api/notices`, `/api/notices/{id}` | Published (`published_at` ≤ now), not deleted; pinned first. `Cache-Control: public, max-age=60` |
 | GET | `/api/events`, `/api/events/{id}` | Adds `status` upcoming/ongoing/ended from KST dates (`starts_on`, `ends_on`) |
-| POST | `/api/content/notices`, `/api/content/events` | `Authorization: Bearer <CONTENT_ADMIN_TOKEN>`. Notice `{id?,title,body,pinned,published_at:"YYYY-MM-DDTHH:MM:SSZ"}`; event `{id?,title,summary,body,place,starts_on,ends_on?,link_url?(https),published_at}` |
-| PUT/DELETE | `/api/content/{notices|events}/{id}` | Replace / soft delete (`deleted_at`) |
+| GET | `/api/status` | `{now, maintenance:{active, upcoming}}`: the window in progress and the next one starting within 72 hours (published, not deleted). The `MAINTENANCE_MODE` Worker secret/var (optional `MAINTENANCE_TITLE`, `MAINTENANCE_MESSAGE`, `MAINTENANCE_UNTIL`) forces an active `emergency` window without D1. `no-store` |
+| GET/POST | `/api/content/{notices|events|maintenance}` | Active ADMIN session (CSRF on writes, checked through `/api/staff/content-access`) or `Authorization: Bearer <CONTENT_ADMIN_TOKEN>`. Notice `{id?,title,body,pinned,published_at:"YYYY-MM-DDTHH:MM:SSZ"}`; event `{id?,title,summary,body,place,starts_on,ends_on?,link_url?(https),published_at}`; maintenance `{id?,title,body?,starts_at,ends_at,published_at?,kind?:"scheduled"\|"emergency",end_unknown?}` (UTC timestamps, `ends_at > starts_at`) |
+| PUT/DELETE | `/api/content/{notices|events|maintenance}/{id}` | Replace / soft delete (`deleted_at`) |
+
+While a maintenance window is active the edge answers every other private API call with `503 {"error":{"code":"MAINTENANCE"},"maintenance":{…}}` and `Retry-After: 60`, without contacting the API. `GET /api/me`, `GET /api/staff/me` and `POST /api/auth/{login,logout,csrf}` stay available so ADMIN can manage content and end the window.
 
 A future `published_at` schedules a post. IDs are lowercase letters, digits and hyphens (≤ 64). Text rejects control, bidi and zero-width characters.
 

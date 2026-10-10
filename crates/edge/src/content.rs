@@ -1,23 +1,40 @@
-//! Studio notices and events served from D1 (binding `CONTENT_DB`) at the
-//! edge, without a round trip to the private API.
+//! Studio notices, events and maintenance windows served from D1 (binding
+//! `CONTENT_DB`) at the edge, without a round trip to the private API.
 //!
 //! - `GET /api/notices`, `GET /api/notices/{id}`, `GET /api/events`,
 //!   `GET /api/events/{id}`: published, not deleted rows. Event status
 //!   (upcoming / ongoing / ended) is computed from KST dates on read.
-//! - `GET|POST /api/content/{notices|events}`, `PUT|DELETE .../{id}`: content
-//!   administration with `Authorization: Bearer <CONTENT_ADMIN_TOKEN>`
-//!   (Wrangler secret). The admin list includes scheduled and removed rows.
-//!   Deletes are soft (`deleted_at`); saving a removed row publishes it again.
+//! - `GET /api/status`: the maintenance window in progress and the next one
+//!   starting within 72 hours (Studio maintenance screen and banner). The
+//!   `MAINTENANCE_MODE` emergency switch (Wrangler secret or var) forces an
+//!   active emergency window without D1.
+//! - `GET|POST /api/content/{notices|events|maintenance}`, `PUT|DELETE
+//!   .../{id}`: content administration by an active ADMIN session (CSRF on
+//!   writes, checked by the private API) or `Authorization: Bearer
+//!   <CONTENT_ADMIN_TOKEN>` for emergency scripts. The admin list includes
+//!   scheduled and removed rows. Deletes are soft (`deleted_at`); saving a
+//!   removed row publishes it again.
 //!   Same contract as the static Studio Worker (web/studio/worker.js).
+use std::cell::RefCell;
+
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use worker::{
-    D1Database, Env, Headers, Method, Request, RequestInit, Response, Result, wasm_bindgen::JsValue,
+    D1Database, Env, Headers, Method, Request, RequestInit, Response, Result, console_error,
+    wasm_bindgen::JsValue,
 };
 
 const NOTICE_COLUMNS: &str = "id, title, body, pinned, published_at, updated_at";
 const EVENT_COLUMNS: &str =
     "id, title, summary, body, place, starts_on, ends_on, link_url, published_at, updated_at";
+const MAINTENANCE_COLUMNS: &str =
+    "id, title, body, starts_at, ends_at, kind, end_unknown, published_at, updated_at";
+/// The Studio banner announces a window from 72 hours before it starts.
+const NOTICE_AHEAD_SECS: i64 = 72 * 3600;
+/// Maintenance rows are remembered per isolate for a few seconds: every tab
+/// polls `/api/status` and every proxied API call checks for maintenance.
+/// Active/upcoming is always recomputed from the current time.
+const STATUS_TTL_MS: f64 = 10_000.0;
 
 #[derive(Debug, PartialEq)]
 pub enum Route<'a> {
@@ -27,6 +44,8 @@ pub enum Route<'a> {
     Create(&'a str),
     Update(&'a str, &'a str),
     Delete(&'a str, &'a str),
+    /// `GET /api/status`: maintenance in progress and announced.
+    Status,
 }
 
 /// Which content route (if any) a request path/method is.
@@ -35,10 +54,15 @@ pub fn route<'a>(method: &Method, path: &'a str) -> Option<Route<'a>> {
         Some(r) => (true, r),
         None => (false, path.strip_prefix("/api/")?),
     };
+    if !admin && rest == "status" {
+        return matches!(method, Method::Get | Method::Head).then_some(Route::Status);
+    }
     let mut parts = rest.split('/');
     let table = match parts.next()? {
         "notices" => "notices",
         "events" => "events",
+        // Maintenance windows are public only through /api/status.
+        "maintenance" if admin => "maintenance",
         _ => return None,
     };
     let id = parts.next().filter(|s| !s.is_empty());
@@ -194,6 +218,256 @@ pub fn validate_event(i: EventInput) -> std::result::Result<Row, &'static str> {
     })
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MaintenanceInput {
+    pub id: Option<String>,
+    pub title: String,
+    #[serde(default)]
+    pub body: String,
+    pub starts_at: String,
+    pub ends_at: String,
+    /// Empty or missing: announce from now.
+    #[serde(default)]
+    pub published_at: Option<String>,
+    /// `scheduled` (default) or `emergency` (started from the admin screen).
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// The end time is not known; `ends_at` is a placeholder.
+    #[serde(default)]
+    pub end_unknown: bool,
+}
+
+pub fn validate_maintenance(
+    i: MaintenanceInput,
+    now: &str,
+) -> std::result::Result<Row, &'static str> {
+    let kind = match i.kind.as_deref() {
+        None | Some("scheduled") => "scheduled",
+        Some("emergency") => "emergency",
+        Some(_) => return Err("INVALID_INPUT"),
+    };
+    let title = clean(&i.title, 200, false)?;
+    if title.is_empty() {
+        return Err("TITLE_REQUIRED");
+    }
+    let body = clean(&i.body, 2_000, true)?;
+    if !valid_timestamp(&i.starts_at) || !valid_timestamp(&i.ends_at) || i.ends_at <= i.starts_at {
+        return Err("DATES_INVALID");
+    }
+    let published_at = match i.published_at.filter(|p| !p.is_empty()) {
+        None => now.to_string(),
+        Some(p) if valid_timestamp(&p) => p,
+        Some(_) => return Err("PUBLISHED_AT_INVALID"),
+    };
+    if i.id.as_deref().is_some_and(|id| !valid_id(id)) {
+        return Err("ID_INVALID");
+    }
+    Ok(Row {
+        id: i.id,
+        values: vec![
+            Some(title),
+            Some(body),
+            Some(i.starts_at),
+            Some(i.ends_at),
+            Some(kind.into()),
+            Some(if i.end_unknown { "1" } else { "0" }.into()),
+            Some(published_at),
+        ],
+    })
+}
+
+/// Seconds since the Unix epoch for `YYYY-MM-DDTHH:MM:SSZ`.
+fn epoch_secs(t: &str) -> Option<i64> {
+    if !valid_timestamp(t) {
+        return None;
+    }
+    let n = |r: std::ops::Range<usize>| t.get(r)?.parse::<i64>().ok();
+    let (y, m, d) = (n(0..4)?, n(5..7)?, n(8..10)?);
+    let (hh, mm, ss) = (n(11..13)?, n(14..16)?, n(17..19)?);
+    if hh > 23 || mm > 59 || ss > 59 {
+        return None;
+    }
+    // Days from civil (proleptic Gregorian).
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    Some(days * 86_400 + hh * 3600 + mm * 60 + ss)
+}
+
+/// D1 row → response shape (`kind` normalized, `end_unknown` boolean).
+fn present_maintenance(mut v: Value) -> Value {
+    let emergency = v["kind"].as_str() == Some("emergency");
+    v["kind"] = json!(if emergency { "emergency" } else { "scheduled" });
+    let unknown = v["end_unknown"].as_f64() == Some(1.0) || v["end_unknown"] == json!(true);
+    v["end_unknown"] = json!(unknown);
+    v
+}
+
+/// The window in progress (earliest start) and the next announced one
+/// starting within 72 hours. Rows must already be presented.
+pub fn pick_status(rows: &[Value], now: &str) -> Value {
+    let field = |r: &Value, k: &str| r[k].as_str().unwrap_or_default().to_string();
+    let mut live: Vec<&Value> = rows
+        .iter()
+        .filter(|r| field(r, "published_at").as_str() <= now && field(r, "ends_at").as_str() > now)
+        .collect();
+    live.sort_by_key(|r| field(r, "starts_at"));
+    let active = live
+        .iter()
+        .find(|r| field(r, "starts_at").as_str() <= now)
+        .map(|r| (*r).clone());
+    let now_secs = epoch_secs(now).unwrap_or(0);
+    let upcoming = live
+        .iter()
+        .find(|r| {
+            let starts = field(r, "starts_at");
+            starts.as_str() > now
+                && epoch_secs(&starts).is_some_and(|s| s - now_secs <= NOTICE_AHEAD_SECS)
+        })
+        .map(|r| (*r).clone());
+    json!({ "now": now, "maintenance": { "active": active, "upcoming": upcoming } })
+}
+
+/// Emergency switch: `MAINTENANCE_MODE` set to anything but empty/0/off/
+/// false/no starts an emergency window now. Optional `MAINTENANCE_TITLE`,
+/// `MAINTENANCE_MESSAGE`, `MAINTENANCE_UNTIL` (UTC timestamp).
+pub fn env_maintenance(
+    mode: &str,
+    title: &str,
+    message: &str,
+    until: &str,
+    now: &str,
+) -> Option<Value> {
+    let mode = mode.trim().to_ascii_lowercase();
+    if matches!(mode.as_str(), "" | "0" | "off" | "false" | "no") {
+        return None;
+    }
+    let until = until.trim();
+    let known = valid_timestamp(until) && until > now;
+    let title = title.trim();
+    Some(json!({
+        "id": "emergency-switch",
+        "title": if title.is_empty() { "긴급 서버 점검" } else { title },
+        "body": message.trim(),
+        "starts_at": now,
+        "ends_at": if known { until } else { "9999-12-31T00:00:00Z" },
+        "kind": "emergency",
+        "end_unknown": !known,
+        "published_at": now,
+        "updated_at": now,
+    }))
+}
+
+/// A Wrangler secret or plain var; missing is empty.
+fn env_text(env: &Env, name: &str) -> String {
+    env.secret(name)
+        .map(|s| s.to_string())
+        .or_else(|_| env.var(name).map(|v| v.to_string()))
+        .unwrap_or_default()
+}
+
+fn forced_maintenance(env: &Env, now: &str) -> Option<Value> {
+    env_maintenance(
+        &env_text(env, "MAINTENANCE_MODE"),
+        &env_text(env, "MAINTENANCE_TITLE"),
+        &env_text(env, "MAINTENANCE_MESSAGE"),
+        &env_text(env, "MAINTENANCE_UNTIL"),
+        now,
+    )
+}
+
+thread_local! {
+    static MAINTENANCE_ROWS: RefCell<Option<(f64, Vec<Value>)>> = const { RefCell::new(None) };
+}
+
+fn reset_maintenance_cache() {
+    MAINTENANCE_ROWS.with(|c| *c.borrow_mut() = None);
+}
+
+/// Windows not yet over. A missing binding or table (before the migration)
+/// reads as none, so Studio keeps working.
+async fn maintenance_rows(env: &Env, now: &str) -> Vec<Value> {
+    let at = worker::js_sys::Date::now();
+    if let Some(rows) = MAINTENANCE_ROWS.with(|c| {
+        c.borrow()
+            .as_ref()
+            .filter(|(t, _)| at - t < STATUS_TTL_MS)
+            .map(|(_, rows)| rows.clone())
+    }) {
+        return rows;
+    }
+    let read = async {
+        env.d1("CONTENT_DB")?
+            .prepare(format!(
+                "SELECT {MAINTENANCE_COLUMNS} FROM maintenance WHERE deleted_at IS NULL AND ends_at > ?1 ORDER BY starts_at LIMIT 20"
+            ))
+            .bind(&[now.into()])?
+            .all()
+            .await?
+            .results::<Value>()
+    };
+    let rows: Vec<Value> = match read.await {
+        Ok(rows) => rows.into_iter().map(present_maintenance).collect(),
+        Err(e) => {
+            console_error!("status error: {e}");
+            Vec::new()
+        }
+    };
+    MAINTENANCE_ROWS.with(|c| *c.borrow_mut() = Some((at, rows.clone())));
+    rows
+}
+
+/// Emergency switch + D1 schedule.
+pub async fn service_status(env: &Env, now: &str) -> Value {
+    let forced = forced_maintenance(env, now);
+    let mut status = pick_status(&maintenance_rows(env, now).await, now);
+    if let Some(f) = forced {
+        status["maintenance"]["active"] = f;
+    }
+    status
+}
+
+/// The maintenance window in progress, if any. The emergency switch skips D1.
+pub async fn active_maintenance(env: &Env) -> Option<Value> {
+    let now = now_utc();
+    if let Some(f) = forced_maintenance(env, &now) {
+        return Some(f);
+    }
+    let status = service_status(env, &now).await;
+    Some(status["maintenance"]["active"].clone()).filter(|a| !a.is_null())
+}
+
+/// While maintenance runs, the edge answers private API calls itself (no
+/// writes reach the database); Studio switches to its maintenance screen.
+pub fn maintenance_response(window: &Value) -> Result<Response> {
+    let mut r = Response::from_json(&json!({
+        "error": { "code": "MAINTENANCE", "message": window["title"] },
+        "maintenance": window,
+    }))?
+    .with_status(503);
+    r.headers_mut().set("Cache-Control", "no-store")?;
+    r.headers_mut().set("Retry-After", "60")?;
+    r.headers_mut().set("X-Content-Type-Options", "nosniff")?;
+    Ok(r)
+}
+
+/// Session checks and sign-in stay available during maintenance so ADMIN can
+/// manage content (and end the window); everything else is blocked.
+pub fn allowed_during_maintenance(method: &Method, path: &str) -> bool {
+    match method {
+        Method::Get => matches!(path, "/api/me" | "/api/staff/me"),
+        Method::Post => matches!(
+            path,
+            "/api/auth/login" | "/api/auth/logout" | "/api/auth/csrf"
+        ),
+        _ => false,
+    }
+}
+
 /// upcoming / ongoing / ended for a KST calendar day.
 pub fn event_status(starts_on: &str, ends_on: Option<&str>, today: &str) -> &'static str {
     let end = ends_on.unwrap_or(starts_on);
@@ -336,6 +610,9 @@ async fn authorize_content(req: &Request, env: &Env) -> Result<Option<Response>>
 }
 
 pub async fn handle(mut req: Request, env: &Env, r: Route<'_>) -> Result<Response> {
+    if r == Route::Status {
+        return json_response(&service_status(env, &now_utc()).await, 200, "no-store");
+    }
     let db: D1Database = match env.d1("CONTENT_DB") {
         Ok(db) => db,
         Err(_) => return error(503, "CONTENT_UNAVAILABLE"),
@@ -404,19 +681,14 @@ pub async fn handle(mut req: Request, env: &Env, r: Route<'_>) -> Result<Respons
             }
             if let Route::AdminList(table) = admin {
                 let today = today_kst();
+                let (columns, order) = match table {
+                    "notices" => (NOTICE_COLUMNS, "pinned DESC, published_at DESC"),
+                    "maintenance" => (MAINTENANCE_COLUMNS, "starts_at DESC"),
+                    _ => (EVENT_COLUMNS, "starts_on DESC"),
+                };
                 let rows = db
                     .prepare(format!(
-                        "SELECT {}, created_at, deleted_at FROM {table} ORDER BY {} LIMIT 500",
-                        if table == "notices" {
-                            NOTICE_COLUMNS
-                        } else {
-                            EVENT_COLUMNS
-                        },
-                        if table == "notices" {
-                            "pinned DESC, published_at DESC"
-                        } else {
-                            "starts_on DESC"
-                        }
+                        "SELECT {columns}, created_at, deleted_at FROM {table} ORDER BY {order} LIMIT 500"
                     ))
                     .all()
                     .await?
@@ -424,15 +696,19 @@ pub async fn handle(mut req: Request, env: &Env, r: Route<'_>) -> Result<Respons
                 let items: Vec<Value> = rows
                     .into_iter()
                     .map(|mut v| {
-                        if table == "notices" {
-                            v["pinned"] = json!(v["pinned"].as_f64() == Some(1.0));
-                        } else {
-                            let status = event_status(
-                                v["starts_on"].as_str().unwrap_or_default(),
-                                v["ends_on"].as_str(),
-                                &today,
-                            );
-                            v["status"] = json!(status);
+                        match table {
+                            "notices" => {
+                                v["pinned"] = json!(v["pinned"].as_f64() == Some(1.0));
+                            }
+                            "maintenance" => v = present_maintenance(v),
+                            _ => {
+                                let status = event_status(
+                                    v["starts_on"].as_str().unwrap_or_default(),
+                                    v["ends_on"].as_str(),
+                                    &today,
+                                );
+                                v["status"] = json!(status);
+                            }
                         }
                         v
                     })
@@ -445,6 +721,9 @@ pub async fn handle(mut req: Request, env: &Env, r: Route<'_>) -> Result<Respons
                 Route::Delete(t, id) => (t, Some(id.to_string()), None),
                 _ => return error(404, "NOT_FOUND"),
             };
+            if table == "maintenance" {
+                reset_maintenance_cache();
+            }
             let Some(body) = body else {
                 let meta = db
                     .prepare(format!("UPDATE {table} SET deleted_at = ?1, updated_at = ?1 WHERE id = ?2 AND deleted_at IS NULL"))
@@ -462,23 +741,33 @@ pub async fn handle(mut req: Request, env: &Env, r: Route<'_>) -> Result<Respons
             if body.len() > 64 * 1024 {
                 return error(413, "PAYLOAD_TOO_LARGE");
             }
-            let row = if table == "notices" {
-                serde_json::from_str::<NoticeInput>(&body)
+            let row = match table {
+                "notices" => serde_json::from_str::<NoticeInput>(&body)
                     .map_err(|_| "INVALID_INPUT")
-                    .and_then(validate_notice)
-            } else {
-                serde_json::from_str::<EventInput>(&body)
+                    .and_then(validate_notice),
+                "maintenance" => serde_json::from_str::<MaintenanceInput>(&body)
                     .map_err(|_| "INVALID_INPUT")
-                    .and_then(validate_event)
+                    .and_then(|i| validate_maintenance(i, &now)),
+                _ => serde_json::from_str::<EventInput>(&body)
+                    .map_err(|_| "INVALID_INPUT")
+                    .and_then(validate_event),
             };
             let row = match row {
                 Ok(r) => r,
                 Err(code) => return error(400, code),
             };
-            let columns: &[&str] = if table == "notices" {
-                &["title", "body", "pinned", "published_at"]
-            } else {
-                &[
+            let columns: &[&str] = match table {
+                "notices" => &["title", "body", "pinned", "published_at"],
+                "maintenance" => &[
+                    "title",
+                    "body",
+                    "starts_at",
+                    "ends_at",
+                    "kind",
+                    "end_unknown",
+                    "published_at",
+                ],
+                _ => &[
                     "title",
                     "summary",
                     "body",
@@ -487,7 +776,7 @@ pub async fn handle(mut req: Request, env: &Env, r: Route<'_>) -> Result<Respons
                     "ends_on",
                     "link_url",
                     "published_at",
-                ]
+                ],
             };
             let mut values: Vec<JsValue> = row
                 .values
@@ -579,6 +868,185 @@ mod tests {
         assert_eq!(route(&Method::Get, "/api/notices/Bad_ID"), None);
         assert_eq!(route(&Method::Get, "/api/notices/a/b"), None);
         assert_eq!(route(&Method::Get, "/api/orgs/x/releases"), None);
+        // maintenance: public only through /api/status, managed under /api/content
+        assert_eq!(route(&Method::Get, "/api/status"), Some(Route::Status));
+        assert_eq!(route(&Method::Head, "/api/status"), Some(Route::Status));
+        assert_eq!(route(&Method::Post, "/api/status"), None);
+        assert_eq!(route(&Method::Get, "/api/content/status"), None);
+        assert_eq!(route(&Method::Get, "/api/maintenance"), None);
+        assert_eq!(route(&Method::Get, "/api/maintenance/m-1"), None);
+        assert_eq!(
+            route(&Method::Get, "/api/content/maintenance"),
+            Some(Route::AdminList("maintenance"))
+        );
+        assert_eq!(
+            route(&Method::Post, "/api/content/maintenance"),
+            Some(Route::Create("maintenance"))
+        );
+        assert_eq!(
+            route(&Method::Put, "/api/content/maintenance/m-1"),
+            Some(Route::Update("maintenance", "m-1"))
+        );
+        assert_eq!(
+            route(&Method::Delete, "/api/content/maintenance/m-1"),
+            Some(Route::Delete("maintenance", "m-1"))
+        );
+    }
+
+    #[test]
+    fn maintenance_validation() {
+        let now = "2026-10-10T00:00:00Z";
+        let m = |starts: &str, ends: &str, kind: Option<&str>| MaintenanceInput {
+            id: None,
+            title: "DB 점검".into(),
+            body: "발매 접수가 잠시 멈춰요.".into(),
+            starts_at: starts.into(),
+            ends_at: ends.into(),
+            published_at: None,
+            kind: kind.map(Into::into),
+            end_unknown: false,
+        };
+        let row =
+            validate_maintenance(m("2026-10-11T17:00:00Z", "2026-10-11T19:00:00Z", None), now)
+                .unwrap();
+        assert_eq!(row.values[4].as_deref(), Some("scheduled"));
+        assert_eq!(row.values[5].as_deref(), Some("0"));
+        assert_eq!(
+            row.values[6].as_deref(),
+            Some(now),
+            "empty published_at = now"
+        );
+        let emergency = MaintenanceInput {
+            end_unknown: true,
+            published_at: Some("2026-10-09T00:00:00Z".into()),
+            ..m(
+                "2026-10-10T00:00:00Z",
+                "9999-12-31T00:00:00Z",
+                Some("emergency"),
+            )
+        };
+        let row = validate_maintenance(emergency, now).unwrap();
+        assert_eq!(row.values[4].as_deref(), Some("emergency"));
+        assert_eq!(row.values[5].as_deref(), Some("1"));
+        assert_eq!(row.values[6].as_deref(), Some("2026-10-09T00:00:00Z"));
+        assert_eq!(
+            validate_maintenance(m("2026-10-11T19:00:00Z", "2026-10-11T17:00:00Z", None), now),
+            Err("DATES_INVALID")
+        );
+        assert_eq!(
+            validate_maintenance(m("2026-10-11", "2026-10-12", None), now),
+            Err("DATES_INVALID")
+        );
+        assert_eq!(
+            validate_maintenance(
+                m(
+                    "2026-10-11T17:00:00Z",
+                    "2026-10-11T19:00:00Z",
+                    Some("weekly")
+                ),
+                now
+            ),
+            Err("INVALID_INPUT")
+        );
+        assert!(
+            serde_json::from_str::<MaintenanceInput>(
+                r#"{"title":"a","starts_at":"2026-10-11T17:00:00Z","ends_at":"2026-10-11T19:00:00Z","extra":1}"#
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn maintenance_status() {
+        assert_eq!(epoch_secs("1970-01-01T00:00:00Z"), Some(0));
+        assert_eq!(epoch_secs("2026-10-10T00:00:00Z"), Some(1_791_590_400));
+        assert_eq!(epoch_secs("2024-02-29T12:00:00Z"), Some(1_709_208_000));
+        assert_eq!(epoch_secs("2026-10-10T24:00:00Z"), None);
+        let w = |id: &str, starts: &str, ends: &str, published: &str| {
+            present_maintenance(json!({
+                "id": id, "title": id, "body": "", "starts_at": starts, "ends_at": ends,
+                "kind": null, "end_unknown": 0, "published_at": published,
+                "updated_at": published,
+            }))
+        };
+        let now = "2026-10-10T12:00:00Z";
+        let rows = [
+            w(
+                "later",
+                "2026-10-11T00:00:00Z",
+                "2026-10-11T02:00:00Z",
+                "2026-10-01T00:00:00Z",
+            ),
+            w(
+                "far",
+                "2026-10-20T00:00:00Z",
+                "2026-10-20T02:00:00Z",
+                "2026-10-01T00:00:00Z",
+            ),
+            w(
+                "hidden",
+                "2026-10-10T13:00:00Z",
+                "2026-10-10T14:00:00Z",
+                "2026-10-10T12:30:00Z",
+            ),
+            w(
+                "now",
+                "2026-10-10T11:00:00Z",
+                "2026-10-10T13:00:00Z",
+                "2026-10-01T00:00:00Z",
+            ),
+            w(
+                "over",
+                "2026-10-10T09:00:00Z",
+                "2026-10-10T12:00:00Z",
+                "2026-10-01T00:00:00Z",
+            ),
+        ];
+        let s = pick_status(&rows, now);
+        assert_eq!(s["now"], now);
+        assert_eq!(s["maintenance"]["active"]["id"], "now");
+        assert_eq!(s["maintenance"]["active"]["kind"], "scheduled");
+        assert_eq!(s["maintenance"]["active"]["end_unknown"], false);
+        assert_eq!(s["maintenance"]["upcoming"]["id"], "later");
+        let s = pick_status(&rows[1..2], now);
+        assert!(s["maintenance"]["active"].is_null());
+        assert!(
+            s["maintenance"]["upcoming"].is_null(),
+            "more than 72h ahead"
+        );
+
+        for off in ["", " ", "0", "off", "FALSE", "no"] {
+            assert_eq!(env_maintenance(off, "", "", "", now), None, "{off:?}");
+        }
+        let f = env_maintenance("on", "", " DB 복구 중 ", "", now).unwrap();
+        assert_eq!(f["kind"], "emergency");
+        assert_eq!(f["title"], "긴급 서버 점검");
+        assert_eq!(f["body"], "DB 복구 중");
+        assert_eq!(f["end_unknown"], true);
+        assert_eq!(f["starts_at"], now);
+        let f = env_maintenance("1", "점검", "", "2026-10-10T15:00:00Z", now).unwrap();
+        assert_eq!(f["ends_at"], "2026-10-10T15:00:00Z");
+        assert_eq!(f["end_unknown"], false);
+        let f = env_maintenance("1", "", "", "2026-10-10T11:00:00Z", now).unwrap();
+        assert_eq!(
+            f["end_unknown"], true,
+            "a past MAINTENANCE_UNTIL is unknown"
+        );
+
+        assert!(allowed_during_maintenance(&Method::Get, "/api/me"));
+        assert!(allowed_during_maintenance(&Method::Get, "/api/staff/me"));
+        assert!(allowed_during_maintenance(&Method::Post, "/api/auth/login"));
+        assert!(allowed_during_maintenance(&Method::Post, "/api/auth/csrf"));
+        assert!(!allowed_during_maintenance(&Method::Post, "/api/me"));
+        assert!(!allowed_during_maintenance(
+            &Method::Post,
+            "/api/auth/register"
+        ));
+        assert!(!allowed_during_maintenance(&Method::Get, "/api/orgs"));
+        assert!(!allowed_during_maintenance(
+            &Method::Post,
+            "/api/partner-hooks/D-5"
+        ));
     }
 
     #[test]

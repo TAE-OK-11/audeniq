@@ -19,12 +19,15 @@ service_id = "REPLACE_WITH_VERIFIED_VPC_SERVICE_ID"
 # Binding must route to the private API, never a public origin.
 # Set EDGE_SERVICE_SECRET through Wrangler secrets. No fallback public URL.
 [[d1_databases]]
-# Studio notices/events (served by this Worker at /api/notices, /api/events).
+# Studio notices/events/maintenance (served by this Worker at /api/notices,
+# /api/events and /api/status; maintenance also blocks /api/* while active).
 # Create: npx wrangler d1 create audeniq-content, then paste the database_id.
 # Migrate: npx wrangler d1 migrations apply audeniq-content --remote
 binding = "CONTENT_DB"
 database_name = "audeniq-content"
 database_id = "REPLACE_WITH_D1_DATABASE_ID"
 migrations_dir = "migrations"
-# Content admin writes (POST/PUT/DELETE /api/content/...) need the
-# CONTENT_ADMIN_TOKEN Wrangler secret (at least 32 random characters).
+# Content admin (/api/content/...) uses the ADMIN session; emergency scripts
+# may use the CONTENT_ADMIN_TOKEN Wrangler secret (at least 32 random characters).
+# Emergency maintenance switch without D1: wrangler secret put MAINTENANCE_MODE
+# (optional MAINTENANCE_TITLE, MAINTENANCE_MESSAGE, MAINTENANCE_UNTIL=UTC timestamp).
