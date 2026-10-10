@@ -1,0 +1,270 @@
+//! 공지·이벤트·서버 점검 API(예전 Cloudflare Worker + D1)와 사이트별 규칙(관리자·설문 화면).
+//! 점검 일정 캐시는 프로세스 전역이라 한 테스트 함수에서 순서대로 확인한다.
+use axum::{
+    Router,
+    body::Body,
+    http::{Request, StatusCode},
+};
+use serde_json::{Value, json};
+use sqlx::PgPool;
+use tower::ServiceExt;
+
+mod support;
+use support::*;
+
+const ADMIN_ORIGIN: &str = "https://admin.audeniq.test";
+
+async fn raw(
+    app: &Router,
+    method: &str,
+    path: &str,
+    headers: &[(&str, &str)],
+    body: Value,
+) -> (StatusCode, Value) {
+    let mut b = Request::builder()
+        .method(method)
+        .uri(path)
+        .header("x-audeniq-service", SECRET)
+        .header("content-type", "application/json");
+    for (k, v) in headers {
+        b = b.header(*k, *v);
+    }
+    let r = app
+        .clone()
+        .oneshot(b.body(Body::from(body.to_string())).unwrap())
+        .await
+        .unwrap();
+    let status = r.status();
+    let bytes = axum::body::to_bytes(r.into_body(), 1 << 20).await.unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
+}
+
+#[sqlx::test]
+async fn content_maintenance_and_site_rules(pool: PgPool) {
+    // SAFETY: 이 테스트 바이너리에는 테스트가 하나뿐이고, 앱을 만들기 전에 설정한다
+    unsafe { std::env::set_var("ADMIN_ORIGIN", ADMIN_ORIGIN) };
+    audeniq_core::site_content::reset_maintenance_cache();
+    let (app, _) = app(pool.clone()).await;
+    let admin = user(&app).await;
+    sqlx::query("INSERT INTO identity.staff_members(user_id,role,granted_by) VALUES($1,'ADMIN','test-operator')")
+        .bind(admin.user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let artist = user(&app).await;
+
+    // ---- 공지: 공개 목록, 관리 권한, 예약 글, 수정·삭제
+    let (s, v) = call(&app, "GET", "/api/notices", json!(null), None).await;
+    assert_eq!((s, v), (StatusCode::OK, json!({"items": []})));
+    let notice = json!({"id":"n-welcome","title":"환영합니다","body":"첫 공지","pinned":true});
+    let (s, _) = call(
+        &app,
+        "POST",
+        "/api/content/notices",
+        notice.clone(),
+        Some(&artist),
+    )
+    .await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    let (s, v) = call(
+        &app,
+        "POST",
+        "/api/content/notices",
+        notice.clone(),
+        Some(&admin),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED, "{v}");
+    assert_eq!(v["pinned"], true);
+    let (s, v) = call(&app, "POST", "/api/content/notices", notice, Some(&admin)).await;
+    assert_eq!(
+        (s, v["error"]["code"].clone()),
+        (StatusCode::CONFLICT, json!("ID_TAKEN"))
+    );
+    let (s, v) = call(
+        &app,
+        "POST",
+        "/api/content/notices",
+        json!({"title":""}),
+        Some(&admin),
+    )
+    .await;
+    assert_eq!(
+        (s, v["error"]["code"].clone()),
+        (StatusCode::BAD_REQUEST, json!("TITLE_REQUIRED"))
+    );
+    let later = json!({"title":"예약","published_at":"2099-01-01T00:00:00Z"});
+    let (s, v) = call(&app, "POST", "/api/content/notices", later, Some(&admin)).await;
+    assert_eq!(s, StatusCode::CREATED);
+    assert!(v["id"].as_str().unwrap().starts_with("n-"));
+    let (_, v) = call(&app, "GET", "/api/notices", json!(null), None).await;
+    assert_eq!(v["items"].as_array().unwrap().len(), 1, "예약 글은 공개 전");
+    let (_, v) = call(
+        &app,
+        "GET",
+        "/api/content/notices",
+        json!(null),
+        Some(&admin),
+    )
+    .await;
+    assert_eq!(
+        v["items"].as_array().unwrap().len(),
+        2,
+        "관리 목록은 예약 글 포함"
+    );
+    let (s, v) = call(
+        &app,
+        "PUT",
+        "/api/content/notices/n-welcome",
+        json!({"title":"바뀐 제목"}),
+        Some(&admin),
+    )
+    .await;
+    assert_eq!(
+        (s, v["title"].clone()),
+        (StatusCode::OK, json!("바뀐 제목"))
+    );
+    let (s, _) = call(
+        &app,
+        "DELETE",
+        "/api/content/notices/n-welcome",
+        json!(null),
+        Some(&admin),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (s, _) = call(&app, "GET", "/api/notices/n-welcome", json!(null), None).await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+    // 수정하면 복구된다
+    call(
+        &app,
+        "PUT",
+        "/api/content/notices/n-welcome",
+        json!({"title":"복구"}),
+        Some(&admin),
+    )
+    .await;
+    let (s, _) = call(&app, "GET", "/api/notices/n-welcome", json!(null), None).await;
+    assert_eq!(s, StatusCode::OK);
+
+    // ---- 이벤트: 진행 상태
+    let ev = json!({"id":"e-1","title":"쇼케이스","starts_on":"2020-01-01","ends_on":"2020-01-02","link_url":"https://a.example/x"});
+    let (s, v) = call(&app, "POST", "/api/content/events", ev, Some(&admin)).await;
+    assert_eq!(
+        (s, v["status"].clone()),
+        (StatusCode::CREATED, json!("ended")),
+        "{v}"
+    );
+    let (_, v) = call(&app, "GET", "/api/events/e-1", json!(null), None).await;
+    assert_eq!(v["starts_on"], "2020-01-01");
+
+    // ---- 관리자 사이트: 경로 허용 목록과 Origin
+    let site = ("x-audeniq-site", "admin");
+    let (s, _) = raw(
+        &app,
+        "GET",
+        "/api/orgs",
+        &[site, ("cookie", &admin.cookie)],
+        json!(null),
+    )
+    .await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+    let (s, v) = raw(
+        &app,
+        "GET",
+        "/api/staff/me",
+        &[site, ("cookie", &admin.cookie)],
+        json!(null),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let write = |origin: &'static str| {
+        let (app, admin) = (app.clone(), admin.clone());
+        async move {
+            raw(
+                &app,
+                "POST",
+                "/api/content/notices",
+                &[
+                    site,
+                    ("origin", origin),
+                    ("cookie", &admin.cookie),
+                    ("x-csrf-token", &admin.csrf),
+                ],
+                json!({"title":"관리자 화면에서"}),
+            )
+            .await
+        }
+    };
+    assert_eq!(write(ADMIN_ORIGIN).await.0, StatusCode::CREATED);
+    // 같은 사이트의 스튜디오 화면이 관리자 주소로 쓰기를 보내면 막는다
+    assert_eq!(write(ORIGIN).await.0, StatusCode::FORBIDDEN);
+
+    // ---- 서버 점검: 일반 API는 503, 세션·콘텐츠·관리자 사이트는 유지
+    let (s, v) = call(&app, "GET", "/api/status", json!(null), None).await;
+    assert_eq!(
+        (s, v["maintenance"]["active"].clone()),
+        (StatusCode::OK, Value::Null)
+    );
+    let m = json!({"id":"m-now","title":"DB 작업","starts_at":"2020-01-01T00:00:00Z","ends_at":"2099-01-01T00:00:00Z","kind":"emergency","end_unknown":true});
+    let (s, v) = call(&app, "POST", "/api/content/maintenance", m, Some(&admin)).await;
+    assert_eq!(s, StatusCode::CREATED, "{v}");
+    let (_, v) = call(&app, "GET", "/api/status", json!(null), None).await;
+    assert_eq!(v["maintenance"]["active"]["id"], "m-now");
+    let (s, v) = call(
+        &app,
+        "POST",
+        "/api/orgs",
+        json!({"name":"x","kind":"LABEL"}),
+        Some(&artist),
+    )
+    .await;
+    assert_eq!(
+        (s, v["error"]["code"].clone()),
+        (StatusCode::SERVICE_UNAVAILABLE, json!("MAINTENANCE"))
+    );
+    assert_eq!(v["maintenance"]["title"], "DB 작업");
+    let (s, _) = call(&app, "GET", "/api/me", json!(null), Some(&artist)).await;
+    assert_eq!(s, StatusCode::OK);
+    let (s, _) = call(&app, "GET", "/api/notices", json!(null), None).await;
+    assert_eq!(s, StatusCode::OK);
+    let (s, _) = raw(
+        &app,
+        "GET",
+        "/api/staff/releases",
+        &[site, ("cookie", &admin.cookie)],
+        json!(null),
+    )
+    .await;
+    assert_ne!(s, StatusCode::SERVICE_UNAVAILABLE);
+    // 점검을 지우면 바로 풀린다 (이 프로세스의 캐시를 비운다)
+    call(
+        &app,
+        "DELETE",
+        "/api/content/maintenance/m-now",
+        json!(null),
+        Some(&admin),
+    )
+    .await;
+    let (s, _) = call(&app, "GET", "/api/orgs", json!(null), Some(&artist)).await;
+    assert_eq!(s, StatusCode::OK);
+
+    // ---- 설문 사이트: /api/survey/* 만, 설정 전에는 접수하지 않는다
+    let survey = ("x-audeniq-site", "survey");
+    let (s, _) = raw(&app, "GET", "/api/notices", &[survey], json!(null)).await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+    let (s, v) = raw(&app, "GET", "/api/survey/config", &[survey], json!(null)).await;
+    assert_eq!((s, v["ready"].clone()), (StatusCode::OK, json!(false)));
+    let (s, _) = raw(
+        &app,
+        "POST",
+        "/api/survey/responses",
+        &[survey, ("origin", ORIGIN)],
+        json!({}),
+    )
+    .await;
+    assert_eq!(s, StatusCode::FORBIDDEN, "설문 주소가 아닌 Origin");
+}

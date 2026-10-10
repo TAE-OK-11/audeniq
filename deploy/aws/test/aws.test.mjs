@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runInNewContext } from 'node:vm';
 import { APPS, cacheGroups, parseHeaders } from '../apps.mjs';
-import { functionCode, template } from '../template.mjs';
+import { apiFunctionCode, functionCode, template } from '../template.mjs';
 import { syncCommands } from '../publish.mjs';
 
 async function viewer(app) {
@@ -70,21 +70,47 @@ test('landing viewer-response: 오류·미리보기 주소는 noindex', async ()
   assert.equal(respond('d111.cloudfront.net', 200).value, 'noindex, nofollow, noarchive');
 });
 
-test('템플릿: /api 만 Worker로(캐시 없음, 비밀 헤더), 나머지는 S3', async () => {
+test('API 함수: 브라우저의 x-audeniq-* 를 버리고 사용자 IP를 넣는다, 설문은 /api/survey 로', () => {
+  const run = (app, uri) => {
+    const sandbox = {};
+    runInNewContext(`${apiFunctionCode(app)}\nthis.handler = handler;`, sandbox);
+    return sandbox.handler({
+      viewer: { ip: '2001:db8::7' },
+      request: { uri, querystring: {}, headers: {
+        'x-audeniq-service': { value: 'forged' }, 'x-audeniq-client-ip': { value: '1.1.1.1' },
+        'x-audeniq-site': { value: 'admin' }, cookie: { value: 'a=b' },
+      } },
+    });
+  };
+  const r = run('studio', '/api/me');
+  assert.equal(r.uri, '/api/me');
+  assert.deepEqual(Object.keys(r.headers).sort(), ['cookie', 'x-audeniq-client-ip']);
+  assert.equal(r.headers['x-audeniq-client-ip'].value, '2001:db8::7');
+  assert.equal(run('survey', '/api/responses').uri, '/api/survey/responses');
+  assert.equal(run('survey', '/api/config').uri, '/api/survey/config');
+});
+
+test('템플릿: /api 만 백엔드로(캐시 없음, 서비스 비밀·사이트 헤더), 나머지는 S3', async () => {
   for (const app of Object.keys(APPS)) {
     const t = await template(app);
     const d = t.Resources.Distribution.Properties.DistributionConfig;
     assert.equal(d.DefaultCacheBehavior.TargetOriginId, 's3');
     assert.deepEqual(d.CacheBehaviors.map(b => b.PathPattern), APPS[app].api);
     for (const b of d.CacheBehaviors) {
-      assert.equal(b.TargetOriginId, 'worker');
+      assert.equal(b.TargetOriginId, 'api');
       assert.equal(b.CachePolicyId, '4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
       assert.ok(b.AllowedMethods.includes('POST'));
+      assert.deepEqual(b.FunctionAssociations[0].FunctionARN, { 'Fn::GetAtt': ['ApiFunction', 'FunctionARN'] });
     }
-    const worker = d.Origins.find(o => o.Id === 'worker');
-    assert.equal(!!worker, APPS[app].api.length > 0);
-    if (worker) assert.deepEqual(worker.OriginCustomHeaders, [{ HeaderName: 'x-audeniq-edge', HeaderValue: { Ref: 'EdgeOriginSecret' } }]);
-    assert.equal(t.Parameters.EdgeOriginSecret?.NoEcho ?? true, true);
+    const api = d.Origins.find(o => o.Id === 'api');
+    assert.equal(!!api, APPS[app].api.length > 0);
+    if (api) {
+      assert.deepEqual(api.OriginCustomHeaders, [
+        { HeaderName: 'x-audeniq-service', HeaderValue: { Ref: 'ServiceSecret' } },
+        { HeaderName: 'x-audeniq-site', HeaderValue: APPS[app].site },
+      ]);
+      assert.equal(t.Parameters.ServiceSecret.NoEcho, true);
+    }
     const policy = t.Resources.ResponseHeaders.Properties.ResponseHeadersPolicyConfig;
     assert.equal(policy.SecurityHeadersConfig.StrictTransportSecurity.AccessControlMaxAgeSec, 31536000);
     assert.match(policy.SecurityHeadersConfig.ContentSecurityPolicy.ContentSecurityPolicy, /frame-ancestors 'none'/);

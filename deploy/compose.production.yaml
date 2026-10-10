@@ -193,6 +193,20 @@ services:
       PARTNER_CONFIG_DIR: /etc/audeniq/partners
       # Pre-launch lock: empty = no request ever reaches a real DSP.
       DSP_LIVE_TRANSMISSION: ${DSP_LIVE_TRANSMISSION:-}
+      # 화면별 규칙·공지·점검·설문 (crates/core/src/sites.rs, site_content.rs, survey.rs)
+      ADMIN_ORIGIN: ${ADMIN_ORIGIN:-}
+      SURVEY_ORIGIN: ${SURVEY_ORIGIN:-}
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      CONTENT_ADMIN_TOKEN: ${CONTENT_ADMIN_TOKEN:-}
+      MAINTENANCE_MODE: ${MAINTENANCE_MODE:-}
+      MAINTENANCE_TITLE: ${MAINTENANCE_TITLE:-}
+      MAINTENANCE_MESSAGE: ${MAINTENANCE_MESSAGE:-}
+      MAINTENANCE_UNTIL: ${MAINTENANCE_UNTIL:-}
+    # AWS ALB의 대상 포트. 기본은 이 서버 안에서만(터널 사용 중). ALB로 바꾸면 API_PUBLISH_ADDR를
+    # 서버의 사설 IP(또는 0.0.0.0)로 두고, 보안 그룹은 ALB에서 오는 8080만 허용한다 (deploy/aws/README.md).
+    ports:
+      - ${API_PUBLISH_ADDR:-127.0.0.1}:8080:8080
     volumes:
       - av_socket:/run/audeniq-av:ro
       - ${PAYOUT_KEYRING_DIR:-/dev/shm/audeniq-secrets}:/run/audeniq-keys:ro
@@ -266,6 +280,7 @@ services:
     mem_limit: ${WORKER_MEM_LIMIT:-768m}
     cpus: ${WORKER_CPUS:-1.0}
     cpu_shares: 512
+  # Cloudflare 터널: AWS ALB로 옮긴 뒤(deploy/aws/README.md) 이 서비스와 secrets.tunnel_token을 지운다
   tunnel:
     image: ${CLOUDFLARED_IMAGE:?set tested cloudflared image digest}
     restart: unless-stopped

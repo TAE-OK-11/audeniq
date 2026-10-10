@@ -12,10 +12,10 @@ const ROOT = resolve(HERE, '../..');
 // AWS 관리형 정책 ID (고정값)
 const CACHING_OPTIMIZED = '658327ea-f89d-4fab-a63d-7e88639e58f6';
 const CACHING_DISABLED = '4135ea2d-6df8-44a3-9df3-4b5a84be39ad';
-// Host를 빼고 뷰어 헤더·쿠키·쿼리 전부 + CloudFront-Viewer-Address 등 CloudFront 헤더를 전달
+// Host를 빼고 뷰어 헤더·쿠키·쿼리 전부를 전달
 const ALL_VIEWER_EXCEPT_HOST = 'b689b0a8-53d0-40ab-baf2-68738e2966ac';
-
-export const EDGE_HEADER = 'x-audeniq-edge';
+// HSTS·nosniff·Referrer-Policy 등 (API 응답용)
+const SECURITY_HEADERS = '67f7725c-6f97-4210-82d7-5512b31e9d03';
 
 export async function functionCode(name) {
   const app = APPS[name];
@@ -26,6 +26,12 @@ export async function functionCode(name) {
   }
   if (Buffer.byteLength(code) > 10 * 1024) throw new Error(`${app.function}: CloudFront Function은 10KB까지`);
   return code;
+}
+
+export function apiFunctionCode(name) {
+  const prefix = APPS[name].apiPrefix ?? '';
+  return readFileSync(resolve(HERE, 'functions', 'api.js'), 'utf8')
+    .replace("var REWRITE_PREFIX = '';", `var REWRITE_PREFIX = ${JSON.stringify(prefix)};`);
 }
 
 export function headersText(name) {
@@ -78,11 +84,11 @@ export async function template(name) {
   if (hasApi) {
     parameters.ApiOriginDomain = {
       Type: 'String', MinLength: 1, AllowedPattern: '^[a-z0-9.-]+$',
-      Description: '/api 를 처리하는 Cloudflare Worker의 커스텀 도메인 (예: studio-api.audeniq.com)',
+      Description: '백엔드 ALB의 HTTPS 주소 (예: api-origin.audeniq.com, ALB에 ACM 인증서)',
     };
-    parameters.EdgeOriginSecret = {
+    parameters.ServiceSecret = {
       Type: 'String', NoEcho: true, MinLength: 32,
-      Description: `Worker의 EDGE_ORIGIN_SECRET 과 같은 값. CloudFront가 ${EDGE_HEADER} 헤더로 붙인다`,
+      Description: '백엔드 EDGE_SERVICE_SECRET 과 같은 값. CloudFront가 x-audeniq-service 헤더로 붙인다',
     };
   }
 
@@ -94,10 +100,14 @@ export async function template(name) {
   }];
   if (hasApi) {
     origins.push({
-      Id: 'worker',
+      Id: 'api',
       DomainName: { Ref: 'ApiOriginDomain' },
+      // 실시간 알림(SSE)은 20초마다 keep-alive를 보내므로 60초 안에 끊기지 않는다
       CustomOriginConfig: { OriginProtocolPolicy: 'https-only', OriginSSLProtocols: ['TLSv1.2'], HTTPSPort: 443, OriginReadTimeout: 60 },
-      OriginCustomHeaders: [{ HeaderName: EDGE_HEADER, HeaderValue: { Ref: 'EdgeOriginSecret' } }],
+      OriginCustomHeaders: [
+        { HeaderName: 'x-audeniq-service', HeaderValue: { Ref: 'ServiceSecret' } },
+        { HeaderName: 'x-audeniq-site', HeaderValue: app.site },
+      ],
     });
   }
 
@@ -123,26 +133,28 @@ export async function template(name) {
       Compress: true,
       FunctionAssociations: functions,
     },
-    // /api 는 캐시하지 않고 Worker로 그대로 (Worker가 자체 보안 헤더·압축·HTTPS 검사를 한다)
+    // /api 는 캐시하지 않고 백엔드로 (백엔드가 압축·no-store를 정한다)
     CacheBehaviors: app.api.map(PathPattern => ({
       PathPattern,
-      TargetOriginId: 'worker',
+      TargetOriginId: 'api',
       ViewerProtocolPolicy: 'https-only',
       AllowedMethods: ['GET', 'HEAD', 'OPTIONS', 'PUT', 'PATCH', 'POST', 'DELETE'],
       CachedMethods: ['GET', 'HEAD'],
       CachePolicyId: CACHING_DISABLED,
       OriginRequestPolicyId: ALL_VIEWER_EXCEPT_HOST,
+      ResponseHeadersPolicyId: SECURITY_HEADERS,
       Compress: false,
+      FunctionAssociations: [{ EventType: 'viewer-request', FunctionARN: { 'Fn::GetAtt': ['ApiFunction', 'FunctionARN'] } }],
     })),
   };
   if (app.notFoundPage) {
-    // 오류 응답 페이지는 배포 전체에 걸리므로 404만 — Worker의 403·405 JSON은 그대로 둔다
+    // 오류 응답 페이지는 배포 전체에 걸리므로 404만 — API의 403·405 JSON은 그대로 둔다
     distribution.CustomErrorResponses = [{ ErrorCode: 404, ResponseCode: 404, ResponsePagePath: app.notFoundPage, ErrorCachingMinTTL: 10 }];
   }
 
   return {
     AWSTemplateFormatVersion: '2010-09-09',
-    Description: `AUDENIQ ${name} UI — S3 + CloudFront${hasApi ? ' (/api → Cloudflare Worker)' : ''}`,
+    Description: `AUDENIQ ${name} — S3 + CloudFront${hasApi ? ' (/api → backend ALB)' : ''}`,
     Parameters: parameters,
     Resources: {
       Bucket: {
@@ -185,6 +197,15 @@ export async function template(name) {
           FunctionCode: await functionCode(name),
         },
       },
+      ...(hasApi ? { ApiFunction: {
+        Type: 'AWS::CloudFront::Function',
+        Properties: {
+          Name: { 'Fn::Sub': '${AWS::StackName}-api' },
+          AutoPublish: true,
+          FunctionConfig: { Comment: `AUDENIQ ${name} API request cleanup`, Runtime: 'cloudfront-js-2.0' },
+          FunctionCode: apiFunctionCode(name),
+        },
+      } } : {}),
       ResponseHeaders: {
         Type: 'AWS::CloudFront::ResponseHeadersPolicy',
         Properties: { ResponseHeadersPolicyConfig: {

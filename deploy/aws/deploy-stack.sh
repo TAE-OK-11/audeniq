@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # CloudFront + S3 스택 만들기/갱신: deploy/aws/deploy-stack.sh <studio|admin|survey|landing>
 #   AWS_UI_CERT_ARN       us-east-1 ACM 인증서 ARN (처음 만들 때 필수, 이후 생략하면 기존 값)
-#   API_ORIGIN_DOMAIN     /api 를 받을 Worker 커스텀 도메인 (예: studio-api.audeniq.com, 랜딩은 없음)
-#   EDGE_ORIGIN_SECRET    Worker secret EDGE_ORIGIN_SECRET 과 같은 32자 이상 값
+#   API_ORIGIN_DOMAIN     /api 를 받을 백엔드 ALB의 HTTPS 주소 (예: api-origin.audeniq.com, 랜딩은 없음)
+#   EDGE_SERVICE_SECRET   백엔드 EDGE_SERVICE_SECRET 과 같은 값 (CloudFront가 x-audeniq-service로 붙인다)
 # 지정하지 않은 값은 기존 스택 값을 그대로 쓴다.
 set -euo pipefail
 app=${1:?사용법: deploy-stack.sh <studio|admin|survey|landing>}
@@ -14,7 +14,7 @@ node "$here/template.mjs" "$app" > "$template"
 params=()
 [ -n "${AWS_UI_CERT_ARN:-}" ] && params+=("AcmCertificateArn=$AWS_UI_CERT_ARN")
 [ -n "${API_ORIGIN_DOMAIN:-}" ] && params+=("ApiOriginDomain=$API_ORIGIN_DOMAIN")
-[ -n "${EDGE_ORIGIN_SECRET:-}" ] && params+=("EdgeOriginSecret=$EDGE_ORIGIN_SECRET")
+[ -n "${EDGE_SERVICE_SECRET:-}" ] && params+=("ServiceSecret=$EDGE_SERVICE_SECRET")
 
 aws cloudformation deploy \
   --stack-name "audeniq-$app-ui" \
