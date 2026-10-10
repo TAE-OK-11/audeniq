@@ -30,6 +30,13 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
     // Partner webhooks (DSP ingestion ACKs) are server-to-server: no browser
     // Origin. The API authenticates them by the partner's HMAC signature.
     let partner_hook = is_partner_hook(&request.method(), &path);
+    // During maintenance the private API is not called (no writes while the
+    // database is being worked on); session checks and sign-in stay open.
+    if !content::allowed_during_maintenance(&request.method(), &path)
+        && let Some(window) = content::active_maintenance(&env).await
+    {
+        return content::maintenance_response(&window);
+    }
     if !matches!(request.method(), Method::Get | Method::Head)
         && !partner_hook
         && request.headers().get("origin")?.as_deref() != Some(&origin)
