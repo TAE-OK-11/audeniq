@@ -45,7 +45,10 @@ export const GENRES: [string, string][] = [
 ];
 
 export const kindLabel = (v?: string) => KINDS.find(k => k[0] === v)?.[1] || v || '';
+/** 공식 오픈 전 테스트용 플랫폼 (서버의 MockDSP, 실제 DSP로는 아무것도 나가지 않음) */
+export const MOCK_DSP: readonly [string, string] = ['mockdsp-studio', 'MockDSP (테스트)'];
 export const dspLabel = (v: string) => {
+  if (v === MOCK_DSP[0]) return MOCK_DSP[1];
   const bySlug = DSP.find(d => d[0] === v);
   if (bySlug) return bySlug[1];
   const code = /^D-(\d+)$/.exec(v);

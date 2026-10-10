@@ -326,7 +326,7 @@ async fn available_dsps(
     tx.commit().await?;
     let ids: Vec<Uuid> = dsp_registry::Dsp::ALL.iter().map(|d| d.uuid()).collect();
     let decisions = routing::public_routes(&s.pool, org, &ids).await?;
-    let items: Vec<Value> = dsp_registry::REGISTRY
+    let mut items: Vec<Value> = dsp_registry::REGISTRY
         .iter()
         .zip(decisions.iter())
         .map(|(spec, route)| {
@@ -334,6 +334,13 @@ async fn available_dsps(
                                     "category":spec.category,"available":route.routable})
         })
         .collect();
+    // Pre-launch test platform: the in-process MockDSP (migration 0087).
+    if crate::mockdsp::studio_route(&s.pool, org).await?.is_some() {
+        items.push(
+            json!({"slug":crate::mockdsp::STUDIO_PARTNER,"name":crate::mockdsp::STUDIO_NAME,
+                          "region":"GLOBAL","category":"STREAMING","available":true}),
+        );
+    }
     Ok(Json(json!({"items":items})))
 }
 async fn register(

@@ -139,6 +139,9 @@ fn advance_live_poll(inner: &mut Inner, pmid: &str) {
 #[derive(Clone)]
 pub struct MockDsp {
     inner: Arc<Mutex<Inner>>,
+    /// Adapter profile this instance answers for (`mockdsp`, or
+    /// [`STUDIO_PARTNER`] for the Studio test platform).
+    partner_id: &'static str,
 }
 
 impl MockDsp {
@@ -181,7 +184,14 @@ impl MockDsp {
                 events_emitted: 0,
                 recover_unknown: false,
             })),
+            partner_id: "mockdsp",
         }
+    }
+
+    /// The same mock answering for another sandbox profile.
+    pub fn for_partner(mut self, partner_id: &'static str) -> Self {
+        self.partner_id = partner_id;
+        self
     }
 
     /// Every wire call the mock has seen, in order.
@@ -246,7 +256,7 @@ impl MockDsp {
 #[async_trait]
 impl DspAdapter for MockDsp {
     fn partner_id(&self) -> &str {
-        "mockdsp"
+        self.partner_id
     }
 
     fn capabilities(&self) -> Capabilities {
@@ -489,6 +499,88 @@ impl DspAdapter for MockDsp {
             None => Ok(InquiryOutcome::StillUnknown),
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Studio test platform (migration 0087)
+// ---------------------------------------------------------------------------
+
+/// Adapter profile, and Studio platform key (`release.draft.platforms`), of
+/// the MockDSP artists can pick in Studio. Same in-process mock as `mockdsp`
+/// (nothing leaves the server); its own profile so only releases that picked
+/// it are routed to it.
+pub const STUDIO_PARTNER: &str = "mockdsp-studio";
+/// What Studio, staff screens and the agreement show for it.
+pub const STUDIO_NAME: &str = "MockDSP (테스트)";
+/// `enabled` / `disabled` override; unset = shown while real DSP
+/// transmission is locked (before the official launch).
+pub const STUDIO_ENV: &str = "MOCKDSP_STUDIO";
+
+/// May Studio offer the MockDSP platform right now?
+pub fn studio_enabled() -> bool {
+    match std::env::var(STUDIO_ENV).as_deref().map(str::trim) {
+        Ok("enabled") => true,
+        Ok("disabled") => false,
+        _ => !crate::launch::live_transmission_enabled(),
+    }
+}
+
+/// Did the application pick the Studio MockDSP?
+pub fn studio_selected(draft: &Value) -> bool {
+    draft
+        .get("platforms")
+        .and_then(Value::as_array)
+        .is_some_and(|p| p.iter().any(|v| v.as_str() == Some(STUDIO_PARTNER)))
+}
+
+/// The Studio MockDSP's DSP id when it can take a release now: offered
+/// ([`studio_enabled`]) and its profile routable (seeded, delivery enabled).
+pub async fn studio_route(pool: &sqlx::PgPool, org: Uuid) -> Result<Option<Uuid>> {
+    if !studio_enabled() {
+        return Ok(None);
+    }
+    let dsp: Option<Uuid> = sqlx::query_scalar(
+        "SELECT dsp_id FROM execution.adapter_profiles
+         WHERE partner_id=$1 AND activation_kind='MOCK' AND dsp_id IS NOT NULL",
+    )
+    .bind(STUDIO_PARTNER)
+    .fetch_optional(pool)
+    .await?;
+    let Some(dsp) = dsp else {
+        return Ok(None);
+    };
+    let route = crate::routing::decide_routes(pool, org, &[dsp]).await?;
+    Ok(route
+        .first()
+        .is_some_and(|r| r.routable && r.partner_id.as_deref() == Some(STUDIO_PARTNER))
+        .then_some(dsp))
+}
+
+/// Partner behavior of the worker's sandbox mocks: `MOCKDSP_BEHAVIOR`
+/// (see [`MockBehavior::from_spec`]), default accept then LIVE on the
+/// second status check. Plain `accept` never goes live through polling
+/// (only via a webhook the sandbox never sends), which left sandbox
+/// releases INGESTING forever.
+pub fn sandbox_behavior() -> MockBehavior {
+    let sandbox = MockBehavior::DelayedLive {
+        polls_before_live: 2,
+    };
+    match std::env::var("MOCKDSP_BEHAVIOR") {
+        Ok(spec) => MockBehavior::from_spec(&spec).unwrap_or_else(|| {
+            tracing::warn!(spec, "invalid MOCKDSP_BEHAVIOR; using delayed_live:2");
+            sandbox
+        }),
+        Err(_) => sandbox,
+    }
+}
+
+/// Process-wide Studio MockDSP (shared state across send/poll/takedown,
+/// like the worker's `mockdsp`).
+pub fn studio_adapter() -> Arc<MockDsp> {
+    static INSTANCE: std::sync::OnceLock<Arc<MockDsp>> = std::sync::OnceLock::new();
+    INSTANCE
+        .get_or_init(|| Arc::new(MockDsp::sandbox(sandbox_behavior()).for_partner(STUDIO_PARTNER)))
+        .clone()
 }
 
 #[cfg(test)]

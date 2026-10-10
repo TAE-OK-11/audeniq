@@ -15,22 +15,10 @@ fn shared_mockdsp() -> Arc<crate::mockdsp::MockDsp> {
     static INSTANCE: OnceLock<Arc<crate::mockdsp::MockDsp>> = OnceLock::new();
     INSTANCE
         .get_or_init(|| {
-            // MOCKDSP_BEHAVIOR injects partner failures for sandbox testing
-            // (see MockBehavior::from_spec). Default: accept, then report
-            // LIVE on the second status check. Plain `accept` never goes
-            // live through polling (only via a webhook the sandbox never
-            // sends), which left sandbox releases INGESTING forever.
-            let sandbox = crate::mockdsp::MockBehavior::DelayedLive {
-                polls_before_live: 2,
-            };
-            let behavior = match std::env::var("MOCKDSP_BEHAVIOR") {
-                Ok(spec) => crate::mockdsp::MockBehavior::from_spec(&spec).unwrap_or_else(|| {
-                    tracing::warn!(spec, "invalid MOCKDSP_BEHAVIOR; using delayed_live:2");
-                    sandbox.clone()
-                }),
-                Err(_) => sandbox,
-            };
-            Arc::new(crate::mockdsp::MockDsp::sandbox(behavior))
+            // MOCKDSP_BEHAVIOR injects partner failures for sandbox testing.
+            Arc::new(crate::mockdsp::MockDsp::sandbox(
+                crate::mockdsp::sandbox_behavior(),
+            ))
         })
         .clone()
 }

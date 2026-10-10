@@ -193,6 +193,9 @@ services:
       PARTNER_CONFIG_DIR: /etc/audeniq/partners
       # Pre-launch lock: empty = no request ever reaches a real DSP.
       DSP_LIVE_TRANSMISSION: ${DSP_LIVE_TRANSMISSION:-}
+      # Studio test platform "MockDSP (테스트)": empty = offered while the lock
+      # above is closed; enabled / disabled overrides (migration 0087).
+      MOCKDSP_STUDIO: ${MOCKDSP_STUDIO:-}
       # 화면별 규칙·공지·점검 (crates/core/src/sites.rs, site_content.rs)
       ADMIN_ORIGIN: ${ADMIN_ORIGIN:-}
       CONTENT_ADMIN_TOKEN: ${CONTENT_ADMIN_TOKEN:-}

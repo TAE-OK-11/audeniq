@@ -290,11 +290,14 @@ fn render(ctx: &Context, t: &Value, items: &[&Confirmation]) -> String {
         "EP" => "EP",
         _ => "앨범",
     };
-    let platforms: Vec<&str> = dsp_registry::requested(&json!({"platforms": d["platforms"]}))
+    let mut platforms: Vec<&str> = dsp_registry::requested(&json!({"platforms": d["platforms"]}))
         .unwrap_or_default()
         .into_iter()
         .map(|p| p.display_name())
         .collect();
+    if crate::mockdsp::studio_selected(d) {
+        platforms.push(crate::mockdsp::STUDIO_NAME);
+    }
     let world = d["territories"]
         .as_array()
         .is_none_or(|a| a.is_empty() || a.iter().any(|x| x == "WORLD"));

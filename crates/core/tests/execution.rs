@@ -4149,3 +4149,181 @@ async fn staff_uses_run_refs_and_renews_expired_second_approval(pool: PgPool) {
     assert!(items.iter().any(|e| e["kind"] == "stage2.decision"));
     assert!(!items.iter().any(|e| e["kind"] == "stage2.checks_recorded"));
 }
+
+/// Pre-launch Studio test platform (migration 0087): with every real DSP
+/// locked, Studio lists the MockDSP, a release that picks it passes the
+/// public DSP gate and goes all the way to a mock delivery. A release that
+/// did not pick it never routes there.
+#[sqlx::test]
+async fn studio_mockdsp_is_selectable_and_delivers(pool: PgPool) {
+    let studio_dsp = Uuid::parse_str("357a6db5-5f95-59b9-86a2-c7e90daf3926").unwrap();
+    assert_eq!(
+        studio_dsp,
+        Uuid::new_v5(&Uuid::NAMESPACE_URL, b"audeniq:dsp:mockdsp-studio")
+    );
+    let (app, store) = app_with_dsp_gate(pool.clone(), false).await;
+    let artist = user(&app).await;
+    let (s, v) = call(
+        &app,
+        "GET",
+        &format!("/api/orgs/{}/dsps", artist.org),
+        Value::Null,
+        Some(&artist),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let items = v["items"].as_array().unwrap();
+    assert!(
+        items
+            .iter()
+            .filter(|d| d["slug"] != "mockdsp-studio")
+            .all(|d| d["available"] == false),
+        "real DSPs stay locked before launch: {v}"
+    );
+    let mock = items
+        .iter()
+        .find(|d| d["slug"] == "mockdsp-studio")
+        .expect("Studio lists the MockDSP");
+    assert_eq!(mock["available"], true);
+    assert_eq!(mock["name"], "MockDSP (테스트)");
+
+    let mut audio = wav_bytes().to_vec();
+    audio.extend_from_slice(&Uuid::new_v4().as_u128().to_le_bytes());
+    let asset = register_asset(&pool, &store, &artist, "t.wav", &audio).await;
+    let release = build_submittable(&app, &pool, &artist, asset).await;
+    add_preparation_supplements(&pool, &store, &artist, release).await;
+    // A real DSP next to the mock is still refused, and so is a repeat pick.
+    for (platforms, code) in [
+        (json!(["mockdsp-studio", "spotify"]), "DSP_UNAVAILABLE"),
+        (
+            json!(["mockdsp-studio", "mockdsp-studio"]),
+            "DSP_SELECTION_INVALID",
+        ),
+    ] {
+        sqlx::query("UPDATE catalog.releases SET draft = draft || jsonb_build_object('platforms',$2::jsonb), row_version = row_version + 1 WHERE id=$1")
+            .bind(release)
+            .bind(&platforms)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let (_, consent) = call(
+            &app,
+            "POST",
+            &format!("/api/orgs/{}/releases/{release}/consents", artist.org),
+            json!({"parties":[{"party_id":artist.party,"role":"ARTIST"}],"minority_declared":false}),
+            Some(&artist),
+        )
+        .await;
+        let (s, v) = call(
+            &app,
+            "POST",
+            &format!("/api/orgs/{}/releases/{release}/submit", artist.org),
+            json!({"consent_id":consent["consent_id"],"minority_declared":false,
+                "idempotency_key":format!("mock-gate-{}", Uuid::new_v4()),
+                "declarations":{"rights_confirmed":true,"adult_confirmed":true,"is_cover":false,
+                    "is_remix":false,"contains_samples":false,"ai_involved":false,"explicit_content":false}}),
+            Some(&artist),
+        )
+        .await;
+        assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+        assert_eq!(v["error"]["code"], code, "{platforms}");
+    }
+    sqlx::query("UPDATE catalog.releases SET draft = draft || '{\"genre\":\"Pop\",\"platforms\":[\"mockdsp-studio\"]}'::jsonb, row_version = row_version + 1 WHERE id=$1")
+        .bind(release)
+        .execute(&pool)
+        .await
+        .unwrap();
+    consent_and_submit(
+        &app,
+        &artist,
+        release,
+        &format!("k-studio-{}", Uuid::new_v4()),
+    )
+    .await;
+    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        run_one(&pool, &store, "distribution", "prepare_release").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(release_status(&pool, release).await, "READY_FOR_DELIVERY");
+    let package: Uuid = sqlx::query_scalar(
+        "SELECT dp.id FROM distribution.distribution_packages dp JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id WHERE cr.release_id=$1",
+    )
+    .bind(release)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let plan: Value = sqlx::query_scalar(
+        "SELECT route_plan FROM distribution.preparation_artifacts WHERE package_id=$1",
+    )
+    .bind(package)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let plan_dsps: Vec<&str> = plan
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|i| i["scope"]["dsp_id"].as_str())
+        .collect();
+    assert_eq!(plan_dsps, vec![studio_dsp.to_string()], "{plan}");
+    set_agreement(&pool, artist.org, release, true).await;
+    assert_eq!(
+        run_one(&pool, &store, "delivery", "delivery.enqueue").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        run_one(&pool, &store, "delivery", "delivery.send").await,
+        "SUCCEEDED"
+    );
+    let mut c = authed(&pool, artist.org).await;
+    let jobs: Vec<(String, String)> = sqlx::query_as(
+        "SELECT partner_id, status FROM execution.delivery_jobs WHERE package_id=$1",
+    )
+    .bind(package)
+    .fetch_all(&mut *c)
+    .await
+    .unwrap();
+    assert_eq!(
+        jobs,
+        vec![("mockdsp-studio".to_string(), "DELIVERED".to_string())]
+    );
+
+    // A release that did not pick the MockDSP never routes to it.
+    let (app2, store2) = app_with_dsp_gate(pool.clone(), true).await;
+    let other = user(&app2).await;
+    let mut audio = wav_bytes().to_vec();
+    audio.extend_from_slice(&Uuid::new_v4().as_u128().to_le_bytes());
+    let asset = register_asset(&pool, &store2, &other, "t.wav", &audio).await;
+    let release = build_submittable(&app2, &pool, &other, asset).await;
+    add_preparation_supplements(&pool, &store2, &other, release).await;
+    sqlx::query("UPDATE catalog.releases SET draft = draft || '{\"genre\":\"Pop\",\"platforms\":[\"spotify\"]}'::jsonb, row_version = row_version + 1 WHERE id=$1")
+        .bind(release)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let revision = consent_and_submit(
+        &app2,
+        &other,
+        release,
+        &format!("k-nomock-{}", Uuid::new_v4()),
+    )
+    .await;
+    assert_eq!(run_one(&pool, &store2, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(
+        run_one(&pool, &store2, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    let detail: String = sqlx::query_scalar(
+        "SELECT detail FROM operations.check_results WHERE revision_id=$1 AND check_code='S2_DSP_ELIGIBILITY' ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(revision)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(!detail.contains(&studio_dsp.to_string()), "{detail}");
+}

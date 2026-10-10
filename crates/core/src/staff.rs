@@ -317,11 +317,16 @@ pub async fn list_releases(s: &AppState, h: &HeaderMap, p: Page) -> Result<Value
 
 /// Studio slugs -> D-codes for staff screens (unknown values dropped).
 fn platform_codes(v: &Value) -> Vec<&'static str> {
-    dsp_registry::requested(&json!({"platforms": v}))
+    let platforms = json!({"platforms": v});
+    let mut codes: Vec<&'static str> = dsp_registry::requested(&platforms)
         .unwrap_or_default()
         .into_iter()
         .map(Dsp::code)
-        .collect()
+        .collect();
+    if crate::mockdsp::studio_selected(&platforms) {
+        codes.push(crate::mockdsp::STUDIO_PARTNER);
+    }
+    codes
 }
 
 struct OpenCheck {
