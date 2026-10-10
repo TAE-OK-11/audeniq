@@ -1,0 +1,65 @@
+/* AUDENIQ ADMIN 리디자인 — admin.css 위에 얹는 정리. 스튜디오 화면과 같은 말투(옅은 파랑 면·회색 이름·상태 색 고정)를
+   유지하면서, 하루 종일 쓰는 업무 도구라 한 화면에 더 많이 보이게 밀도를 올린다.
+   같은 파일이 web/studio/app/src/styles/ 와 web/admin/src/styles/ 에 있다 — 한쪽을 고치면 다른 쪽도 같이. */
+
+/* ── 헤더: 낮게, 계정은 이름표 하나로 ── */
+.adm-body{--aq-header-h:60px}
+.adm-header-shell{min-height:60px}
+.adm-brand img{width:128px}
+.adm-who{padding:4px 10px 4px 4px;background:none}
+.adm-who-text b{font-size:13px;max-width:220px}
+.adm-header-right .ui-btn.is-ghost{--btn-fg:var(--aq-text-3)}
+
+/* ── 본문 틀(PC): 왼쪽 메뉴 폭·간격 줄이고, 메뉴는 화면 높이 안에서 따로 스크롤 — 960px 이하는 admin.css의 가로 메뉴 그대로 ── */
+@media (min-width:961px){
+  .adm-shell{grid-template-columns:216px minmax(0,1fr);gap:32px;padding:20px 0 80px}
+  .adm-side{top:calc(var(--aq-header-h) + 20px);max-height:calc(100dvh - var(--aq-header-h) - 32px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;gap:14px;padding-right:4px}
+  .adm-side-group{gap:1px}
+  .adm-side-label{padding:0 10px 4px;font-size:12px;letter-spacing:0;color:var(--aq-text-4)}
+  .adm-side a{min-height:38px;padding:8px 10px;border-radius:var(--aq-r-sm);font-size:14px;font-weight:600}
+  .adm-side a[aria-current=page]{font-weight:700}
+  .adm-side a svg{width:17px;height:17px}
+  .adm-side-foot{padding-top:12px;border-top:0;font-size:11px}
+}
+
+/* ── 화면 머리: 업무 화면이라 제목은 한 단계 작게, 목록이 더 위로 ── */
+.adm-main .ui-page-head{margin-bottom:20px;align-items:center}
+.adm-main .ui-page-head h1{font-size:28px;letter-spacing:-.04em}
+.adm-main .ui-page-head>div:first-child>p:last-child:not(:first-child):not(.ui-eyebrow):not(.eyebrow){margin-top:6px;font-size:14px}
+.adm-main .ui-tabs{margin-bottom:16px}
+
+/* ── 오늘의 업무 머리 카드: 인사 문구는 작게, 숫자 강조는 유지 ── */
+.adm-hero.ui-hero,.adm-hero{padding:24px 28px}
+.adm-hero.ui-hero h2,.adm-hero h2{font-size:22px;line-height:1.4;letter-spacing:-.03em}
+.adm-hero.ui-hero p,.adm-hero p{margin-top:6px;font-size:13px}
+.adm-hero-num{font-size:48px}
+
+/* ── 목록 줄: 오른쪽 상태 알약은 세로로 쌓지 않고 가로로 — 줄이 낮아지고 한눈에 ── */
+.adm-main .ui-row{padding:14px 16px;gap:14px}
+.adm-main .ui-row-end{flex-direction:row;flex-wrap:wrap;justify-content:flex-end;align-items:center;justify-self:end;gap:6px}
+/* 알약이 아닌 보조 글자(접수 n시간 전 등)만 아래 줄 오른쪽에 */
+.adm-main .ui-row-end>small:not([class]){flex-basis:100%;text-align:right}
+.adm-main .ui-row-title{font-size:15px}
+
+/* ── 걸러보기 칩: 줄바꿈 대신 한 줄 가로 스크롤 ── */
+.adm-main .ui-chips.is-wrap{flex-wrap:nowrap;overflow-x:auto}
+.adm-main .ui-chips{padding-bottom:10px}
+
+/* ── 숫자 칸: 낮게 ── */
+.adm-main .ui-stat{min-height:0;padding:16px 18px}
+
+@media (max-width:960px){
+  .adm-body{--aq-header-h:56px}
+  .adm-header-shell{min-height:56px}
+  .adm-who-text{display:none}
+  .adm-main .ui-page-head h1{font-size:24px}
+  .adm-main .ui-row-end{max-width:none}
+  .adm-main .ui-row-end>small:not([class]){text-align:left}
+}
+/* 휴대폰 머리: 로고·간격을 줄여 ADMIN 이름표와 스튜디오·로그아웃이 겹치지 않게 */
+@media (max-width:560px){
+  .adm-brand{gap:8px}
+  .adm-brand img{width:104px}
+  .adm-header-right{gap:2px}
+  .adm-header-right .ui-btn.is-ghost{--btn-px:8px}
+}

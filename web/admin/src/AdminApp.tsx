@@ -42,6 +42,7 @@ function prefetchPages() {
   else setTimeout(run, 1500);
 }
 import './styles/admin.css';
+import './styles/admin-refresh.css';
 import { Glyph } from './components/Glyph';
 import { Avatar } from './ui';
 
@@ -169,7 +170,7 @@ export function AdminApp() {
           <div className="adm-header-shell">
             <Link to="/" className="adm-brand" aria-label="AUDENIQ ADMIN 홈">
               <img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" />
-              <span className="ui-product is-dark">ADMIN</span>
+              <span className="ui-product">ADMIN</span>
             </Link>
             <div className="adm-header-right">
               {MOCK && <span className="ui-badge is-amber">체험 데이터</span>}
