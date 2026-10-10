@@ -149,6 +149,8 @@ const STAFF_FIX: Record<string, Target & { track?: boolean }> = {
   FIX_OWNERSHIP: { step: WIZ_STEP.rights, field: 'f-ownership', label: '음원 권리자', hint: '음원 권리자를 확인해 주세요.' },
   FIX_PLINE: { step: WIZ_STEP.rights, field: 'f-phonogram', label: '℗ 표기', hint: '℗ 표기를 확인해 주세요.' },
   FIX_CLINE: { step: WIZ_STEP.rights, field: 'f-copyright', label: '© 표기', hint: '© 표기를 확인해 주세요.' },
+  // 서류 요청 — 신청서가 아니라 그 요청의 서류 첨부 창으로 간다 (fixPath)
+  FIX_DOCUMENT: { step: WIZ_STEP.rights, label: '추가 서류 첨부', hint: '담당자가 요청한 서류를 첨부해 주세요.' },
   FIX_OTHER: { step: WIZ_STEP.review, label: '기타', hint: '담당자 요청 내용을 확인해 주세요.' },
 };
 Object.assign(TARGETS, STAFF_FIX);
@@ -161,10 +163,12 @@ export const STAFF_FIX_OPTIONS: StaffFixOption[] = Object.entries(STAFF_FIX)
 /** 담당자 지정 항목 → 서버 check_code (`FIX_AUDIO@<트랙 id>`) */
 export const staffFixCode = (code: string, trackId?: string) => (trackId ? `${code}@${trackId}` : code);
 /** 서버 check_code → 담당자 지정 항목 (아니면 null) */
-export function parseStaffFix(checkCode: string): { code: string; trackId?: string } | null {
-  const [code, trackId] = checkCode.split('@');
+export function parseStaffFix(checkCode: string): { code: string; trackId?: string; documentId?: string } | null {
+  const [code, ref] = checkCode.split('@');
   if (!(code in STAFF_FIX)) return null;
-  return trackId ? { code, trackId } : { code };
+  // FIX_DOCUMENT@<서류 id>: 서버가 만든 서류 요청 (그 외에는 트랙 id)
+  if (code === 'FIX_DOCUMENT') return ref ? { code, documentId: ref } : { code };
+  return ref ? { code, trackId: ref } : { code };
 }
 
 const FALLBACK: Target = { step: WIZ_STEP.review, label: '기타', hint: '요청 내용을 확인하고 필요한 항목을 고쳐 주세요.' };
@@ -198,8 +202,12 @@ export function resolveCorrection(c: Correction, trackIds: string[] = []): Resol
   };
 }
 
-/** 보완 요청 → 신청서의 해당 입력칸으로 바로 가는 주소 */
+/** 서류 첨부를 요청한 보완 항목인지 (담당자의 ‘추가 서류 첨부’) */
+export const isDocumentFix = (c?: Correction) => c?.code === 'FIX_DOCUMENT';
+
+/** 보완 요청 → 신청서의 해당 입력칸으로 바로 가는 주소. 서류 요청은 그 요청의 첨부 창(권리·보완 서류)으로 */
 export function fixPath(releaseId: string, c?: Correction): string {
+  if (isDocumentFix(c)) return c!.documentId ? `/rights?doc=${encodeURIComponent(c!.documentId)}` : '/rights';
   const q = new URLSearchParams({ edit: releaseId });
   if (c) {
     q.set('fix', c.code);

@@ -3272,7 +3272,8 @@ async fn staff_correction_and_rejection_reach_the_artist(pool: PgPool) {
         "POST",
         &format!("/api/staff/releases/{r1}/decision"),
         json!({"action":"REQUEST_CORRECTION","revision_id":rev,"reason":"mark the explicit track",
-               "notes":[{"check_code":"S2_SPECIAL_FLAGS","note":"19금 표시와 가사 확인이 필요해요."}]}),
+               "notes":[{"check_code":"S2_SPECIAL_FLAGS","note":"19금 표시와 가사 확인이 필요해요."},
+                        {"check_code":"FIX_DOCUMENT","note":"샘플 사용 허락서\nPDF로 첨부해 주세요."}]}),
         Some(&reviewer),
     )
     .await;
@@ -3307,6 +3308,34 @@ async fn staff_correction_and_rejection_reach_the_artist(pool: PgPool) {
             .any(|n| n["check_code"] == "S2_SPECIAL_FLAGS"),
         "{v}"
     );
+    // 「추가 서류」 items become a document request the artist attaches to,
+    // and the note names that request so 보완하기 opens it (UI-001).
+    let doc_code = v["review_notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find_map(|n| {
+            n["check_code"]
+                .as_str()
+                .filter(|c| c.starts_with("FIX_DOCUMENT@"))
+        })
+        .unwrap_or_else(|| panic!("document correction note: {v}"))
+        .to_owned();
+    let doc: Uuid = doc_code["FIX_DOCUMENT@".len()..].parse().unwrap();
+    let (kind, status, title, body): (String, String, String, String) = sqlx::query_as(
+        "SELECT kind,status,title,body FROM portal.documents WHERE id=$1 AND release_id=$2",
+    )
+    .bind(doc)
+    .bind(r1)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        (kind.as_str(), status.as_str()),
+        ("RIGHTS_PROOF", "AWAITING_DOCUMENTS")
+    );
+    assert_eq!(title, "샘플 사용 허락서");
+    assert!(body.contains("PDF로 첨부해 주세요."));
 
     // A stale revision id is refused; rejection closes the application.
     let r2 = explicit_release_in_review(&app, &pool, &store, &artist).await;

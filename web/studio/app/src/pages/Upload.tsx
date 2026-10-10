@@ -20,7 +20,7 @@ import { useProfile } from '../store/profile';
 import { fileSize, localStamp } from '../lib/format';
 import { DSP, GENRES, KINDS, LANGUAGES, dspLabel, genreLabel, kindLabel } from '../lib/catalog';
 import { formatKoreanDate, stampNow, todayStr } from '../lib/date';
-import { fixCountWord, resolveCorrection, splitCorrections, type ResolvedCorrection } from '../lib/corrections';
+import { fixCountWord, fixPath, isDocumentFix, resolveCorrection, splitCorrections, type ResolvedCorrection } from '../lib/corrections';
 import { checkAudioFile, formatDuration, specLabel } from '../lib/audioSpec';
 import { AGREEMENTS, SIGNER_ROLES, compactSignature, createApplication } from '../lib/application';
 import {
@@ -1953,9 +1953,15 @@ export function Upload() {
                     <li key={`${c.code}-${c.trackId ?? ''}-${i}`} className={here ? 'is-here' : ''}>
                       <span className="aq-fix-step">{c.step + 1}단계 · {STEPS[c.step]?.short}</span>
                       <p><strong>{c.label}</strong>{c.message}</p>
-                      <button type="button" className={`ui-btn is-sm ${here ? 'is-primary' : 'is-soft'}`} onClick={() => jumpToFix(c)}>
-                        {here ? '입력칸 보기' : '고치러 가기'}
-                      </button>
+                      {isDocumentFix(c) ? (
+                        <button type="button" className={`ui-btn is-sm ${here ? 'is-primary' : 'is-soft'}`} onClick={() => nav(fixPath(editId ?? '', c))}>
+                          서류 첨부하기
+                        </button>
+                      ) : (
+                        <button type="button" className={`ui-btn is-sm ${here ? 'is-primary' : 'is-soft'}`} onClick={() => jumpToFix(c)}>
+                          {here ? '입력칸 보기' : '고치러 가기'}
+                        </button>
+                      )}
                     </li>
                   );
                 })}

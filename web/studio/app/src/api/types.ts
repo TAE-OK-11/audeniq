@@ -37,6 +37,8 @@ export interface Correction {
   message: string;
   /** 특정 곡에 대한 요청이면 해당 트랙 ID */
   trackId?: string;
+  /** 서류 첨부 요청(FIX_DOCUMENT)이면 서버가 만든 서류 요청 ID */
+  documentId?: string;
 }
 
 /** 플랫폼(DSP)별 배급 진행 — 서버 DSP 코드(D-1…D-11) 기준 */

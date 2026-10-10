@@ -202,6 +202,15 @@ export function pendingProofs(list: DocRecord[], releaseId: string, releaseTitle
     .sort((a, b) => String(a.created || '').localeCompare(String(b.created || '')));
 }
 
+/** 아직 할 일이 남은 보완 항목 — 서류 첨부 요청(documentId)은 그 서류를 냈으면(검토 중·승인) 끝난 것으로 본다 */
+export function openFixes<T extends { documentId?: string }>(items: T[], list: DocRecord[]): T[] {
+  return items.filter(c => {
+    if (!c.documentId) return true;
+    const doc = list.find(d => d.id === c.documentId);
+    return !doc || doc.reviewStatus === 'awaiting_documents' || doc.reviewStatus === 'needs';
+  });
+}
+
 /** 요청받은 서류를 첨부·제출하는 화면 — 서류가 있으면 그 요청을 바로 연다 */
 export function proofPath(doc?: DocRecord): string {
   return doc ? `/rights?doc=${encodeURIComponent(doc.id)}` : '/rights';
