@@ -13,7 +13,7 @@ Desktop (1280px) and mobile (390px) browser comparisons against the restored pro
 Studio is a React + TypeScript app (`web/studio/app`). The old HTML prototype and the Rust/WASM shell (`crates/studio`, `studio-pack`, `audeniq-dev-web`) were removed; every screen is React. Two Workers can serve it:
 
 - `web/studio/worker.js` (what studio.audeniq.com runs today): static React build, notices/events/maintenance from D1, `/api/*` proxied to the rented-server API through the named tunnel with the service secret.
-- `crates/edge` (Rust Workers): the same build with `/api/*` through Workers VPC `PRIVATE_API`.
+- `crates/edge` (Rust Workers): the same build, the same notices/events/maintenance API from D1 (`/api/status`, maintenance blocking and the `MAINTENANCE_MODE` emergency switch included), `/api/*` through Workers VPC `PRIVATE_API`.
 
 The rented server runs Rust API, worker, PostgreSQL and cloudflared. Backend ports are not published by production Compose. Browser authentication is a Rust API session; the edge adds a separate service secret. Browser files go directly to R2.
 
@@ -36,7 +36,7 @@ Request path: browser → `crates/edge` Worker (same origin, serves the app at `
 - Audio (WAV/FLAC) and cover (JPG/PNG) files go straight to R2 through the upload grant. Only JSON control traffic passes through the Worker, which keeps its 64 KiB body cap.
 - Minor-artist releases are held on the client until the guardian review flow exists on the server.
 
-Studio features that used to live in browser storage now have server APIs (docs/API.md "Portal"): artist profile, payout account (AES-256-GCM sealed with `PAYOUT_ACCOUNT_KEY`), inquiries with staff replies, notifications raised by pipeline triggers, agreement signing and rights proofs, the signed release application, settlement (ledger read-only + payout requests) and reports. In the server-connected build the stores start empty, are filled after login, keep nothing in localStorage and refresh notifications every minute and on focus. Identity verification (PASS/카카오 etc.) is not wired: in the connected build a drawn signature on an approved, read-confirmed agreement completes the contract.
+Studio features that used to live in browser storage now have server APIs (docs/API.md "Portal"): artist profile, payout account (AES-256-GCM sealed with `PAYOUT_ACCOUNT_KEY`), inquiries with staff replies, notifications raised by pipeline triggers, agreement signing and rights proofs, the signed release application, settlement (ledger read-only + payout requests) and reports. In the server-connected build the stores start empty, are filled after login, keep nothing in localStorage and refresh notifications every minute and on focus. Account identity verification and foreign tax residency (계정 정보 → 본인 확인) are stored by the API (`/api/me/account`, `/api/me/identity`, `/api/me/tax`); verification uses the same provider integration as rights signing and is refused until `IDENTITY_PROVIDER` is configured (`test` only outside production). Password reset by email + registered phone + SMS code is available in the API (`/api/auth/password-reset/*`, phone registration `/api/me/phone/*`) but needs an SMS sender contract (`SMS_PROVIDER`; until then it answers `SMS_PROVIDER_NOT_CONFIGURED`), and the Studio screens still point to support. A real provider (PASS/카카오 etc.) is not contracted yet: in the connected build a drawn signature on an approved, read-confirmed agreement completes the contract.
 
 Notices and events live in D1 (`audeniq-content`, binding `CONTENT_DB`), not in the private API. Both Workers serve the same API from it: the static Studio Worker (`web/studio/worker.js`, what studio.audeniq.com runs today) and the Rust edge (`crates/edge`). The pages always read `/api/notices` and `/api/events`, also in the demo build; the built-in sample posts only appear when no Worker answers (plain `vite` dev).
 
@@ -54,7 +54,7 @@ npx wrangler d1 migrations apply audeniq-content --remote   # creates the tables
 npx wrangler deploy
 ```
 
-For the Rust edge, run the same commands from `crates/edge`. `crates/edge/migrations/0002_seed.sql` holds the launch sample posts; apply it only if you want them live. Publishing from a script:
+For the Rust edge, run the same commands from `crates/edge`. `crates/edge/migrations/0002_seed.sql` holds the launch sample posts; apply it only if you want them live. `0003_maintenance.sql` creates the maintenance table in its final shape (`kind`, `end_unknown`) and is a no-op when the static Studio Worker's migrations already created it in the shared database. Emergency switch for the Rust edge: `echo on | npx wrangler secret put MAINTENANCE_MODE` (optional `MAINTENANCE_TITLE`, `MAINTENANCE_MESSAGE`, `MAINTENANCE_UNTIL`), off with `npx wrangler secret delete MAINTENANCE_MODE`. Publishing from a script:
 
 ```sh
 curl -X POST https://studio.audeniq.com/api/content/notices \
