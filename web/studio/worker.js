@@ -23,7 +23,7 @@
  * 경로·입력 규칙은 crates/edge/src/content.rs(Rust 엣지)와 같다.
  */
 
-import { backendOrigin, clientEncoding, passThroughEncoding, readLimitedBody, requireHttps, secureResponse, serveAssets } from '../shared/transport.js';
+import { backendOrigin, clientEncoding, clientIp, passThroughEncoding, publicOrigin, readLimitedBody, requireEdge, requireHttps, safeEqual, secureResponse, serveAssets } from '../shared/transport.js';
 export { passThroughEncoding } from '../shared/transport.js';
 
 const TABLES = new Set(['notices', 'events', 'maintenance']);
@@ -160,10 +160,7 @@ export function validate(table, input) {
 export function bearerOk(header, secret) {
   if (typeof secret !== 'string' || secret.length < 32) return false;
   const token = typeof header === 'string' && header.startsWith('Bearer ') ? header.slice(7) : '';
-  if (token.length !== secret.length) return false;
-  let diff = 0;
-  for (let i = 0; i < token.length; i++) diff |= token.charCodeAt(i) ^ secret.charCodeAt(i);
-  return diff === 0;
+  return safeEqual(token, secret);
 }
 
 function json(data, status = 200, cache = 'no-store') {
@@ -349,14 +346,14 @@ export async function authorizeContent(request, env) {
     if (!env.CONTENT_ADMIN_TOKEN) return error(503, 'CONTENT_ADMIN_DISABLED');
     return bearerOk(request.headers.get('Authorization'), env.CONTENT_ADMIN_TOKEN) ? null : error(401, 'UNAUTHENTICATED');
   }
-  const url = new URL(request.url);
+  const origin = publicOrigin(request, env);
   const read = request.method === 'GET' || request.method === 'HEAD';
-  if (!read && (request.headers.get('origin') !== url.origin
+  if (!read && (request.headers.get('origin') !== origin
     || (request.headers.get('sec-fetch-site') && request.headers.get('sec-fetch-site') !== 'same-origin'))) return error(403, 'FORBIDDEN');
   if (!request.headers.get('cookie')) return error(401, 'UNAUTHENTICATED');
   if (!env.EDGE_SERVICE_SECRET) return error(503, 'BACKEND_UNAVAILABLE');
   const headers = new Headers({ Accept: 'application/json', 'x-audeniq-service': env.EDGE_SERVICE_SECRET,
-    origin: env.BACKEND_APP_ORIGIN || url.origin, 'sec-fetch-site': 'same-origin' });
+    origin: env.BACKEND_APP_ORIGIN || origin, 'sec-fetch-site': 'same-origin' });
   for (const key of ['cookie', 'x-csrf-token']) {
     const value = request.headers.get(key);
     if (value) headers.set(key, value);
@@ -471,7 +468,7 @@ async function handleAdmin(request, db, r, now) {
 // user-agent: 권리 서류 서명 기록(증거)에 남긴다
 const FORWARD_HEADERS = ['cookie', 'origin', 'content-type', 'accept', 'x-csrf-token', 'sec-fetch-site', 'x-request-id', 'user-agent'];
 const PARTNER_HOOK = /^\/api\/partner-hooks\//;
-const PARTNER_DROP = new Set(['x-forwarded-for', 'x-real-ip', 'host', 'connection', 'accept-encoding']);
+const PARTNER_DROP = new Set(['x-forwarded-for', 'x-real-ip', 'cloudfront-viewer-address', 'host', 'connection', 'accept-encoding']);
 
 export function backendHeaders(request, env, pathname) {
   const src = request.headers;
@@ -487,8 +484,8 @@ export function backendHeaders(request, env, pathname) {
       if (!name.startsWith('x-audeniq-') && !PARTNER_DROP.has(name)) headers.set(name, value);
     }
   }
-  // 로그인 시도 제한은 사용자 IP 기준 — Cloudflare가 매 요청 덮어쓰는 CF-Connecting-IP만 믿는다
-  const ip = src.get('cf-connecting-ip');
+  // 로그인 시도 제한은 사용자 IP 기준 — 엣지가 매 요청 덮어쓰는 헤더만 믿는다 (shared/transport.js clientIp)
+  const ip = clientIp(request, env);
   if (ip) headers.set('x-audeniq-client-ip', ip);
   headers.set('x-audeniq-service', env.EDGE_SERVICE_SECRET);
   return headers;
@@ -556,7 +553,7 @@ const studioWorker = {
 
 export default {
   async fetch(request, env, ctx) {
-    const refused = requireHttps(request);
+    const refused = requireHttps(request) ?? requireEdge(request, env);
     if (refused) return refused;
     return secureResponse(await studioWorker.fetch(request, env, ctx));
   },
