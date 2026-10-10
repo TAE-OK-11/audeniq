@@ -94,7 +94,7 @@ impl Provider {
             Self::Test => Some("test"),
         }
     }
-    async fn verify(&self, transaction_id: &str) -> Result<VerifiedIdentity> {
+    pub(crate) async fn verify(&self, transaction_id: &str) -> Result<VerifiedIdentity> {
         match self {
             Self::Unconfigured => Err(Error::PolicyGate("IDENTITY_PROVIDER_NOT_CONFIGURED")),
             Self::Test => {
