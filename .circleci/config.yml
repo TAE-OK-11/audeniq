@@ -12,31 +12,72 @@ version: 2.1
 #   DEPLOY_SSH_KEY       배포 전용 SSH 개인키를 base64 한 줄로 (base64 -w0 < key)
 #   DEPLOY_KNOWN_HOSTS   ssh-keyscan <서버> 결과를 base64 한 줄로 (호스트 키 고정)
 #   DEPLOY_PATH          (선택) 기본 /opt/audeniq
+#   CLOUDFLARE_API_TOKEN   프론트엔드 배포 (Workers Scripts:Edit, D1:Edit)
+#   CLOUDFLARE_ACCOUNT_ID  Cloudflare 계정 ID
+#
+# frontend 워크플로: Studio·Admin·랜딩·설문을 어느 브랜치든 테스트·빌드하고 main에서만 Workers로 배포한다.
 
 parameters:
   force:
     description: 백엔드 파일이 바뀌지 않았어도 이미지를 만든다 (수동 실행용)
     type: boolean
     default: false
+  apply_migrations:
+    description: Studio·설문 D1 마이그레이션을 변경이 없어도 적용한다 (수동 실행용)
+    type: boolean
+    default: false
 
 commands:
-  skip-unless-backend-changed:
-    description: 백엔드 이미지에 들어가는 파일이 이 푸시에서 바뀌지 않았으면 작업을 성공으로 끝낸다
+  skip-unless-changed:
+    description: 이 푸시에서 paths(정규식)에 맞는 파일이 바뀌지 않았으면 작업을 성공으로 끝낸다
+    parameters:
+      paths:
+        type: string
     steps:
       - run:
-          name: Check backend changes
+          name: Check changes
           command: |
             if [ "<< pipeline.parameters.force >>" = true ]; then exit 0; fi
             base="<< pipeline.git.base_revision >>"
             head="<< pipeline.git.revision >>"
-            # 새 브랜치 첫 푸시 등 비교 기준이 없으면 빌드한다
+            # 새 브랜치 첫 푸시·수동 실행 등 비교 기준이 없으면 실행한다
             if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then exit 0; fi
-            if git diff --name-only "$base" "$head" | grep -Eq \
-              '^(Cargo\.toml|Cargo\.lock|crates/core/|config/|migrations/|deploy/(Dockerfile|build-target\.sh|check-cpu\.sh|deploy\.sh|audeniq-photo\.rev|audeniq-qc\.rev|install-audeniq-photo\.sh|install-audeniq-qc\.sh|clamd\.conf|freshclam\.conf|update-antivirus\.py|pgbouncer/|compose\.production\.yaml)|\.dockerignore$|\.circleci/)'; then
-              exit 0
-            fi
-            echo "백엔드 변경 없음 — 건너뜀"
+            if git diff --name-only "$base" "$head" | grep -Eq '<< parameters.paths >>'; then exit 0; fi
+            echo "관련 변경 없음 — 건너뜀"
             circleci-agent step halt
+  skip-unless-backend-changed:
+    steps:
+      - skip-unless-changed:
+          paths: '^(Cargo\.toml|Cargo\.lock|crates/core/|config/|migrations/|deploy/(Dockerfile|build-target\.sh|check-cpu\.sh|deploy\.sh|audeniq-photo\.rev|audeniq-qc\.rev|install-audeniq-photo\.sh|install-audeniq-qc\.sh|clamd\.conf|freshclam\.conf|update-antivirus\.py|pgbouncer/|compose\.production\.yaml)|\.dockerignore$)'
+  setup-bun:
+    description: web/<app>/.bun-version의 Bun 설치
+    parameters:
+      version_file:
+        type: string
+    steps:
+      - run:
+          name: Install Bun
+          command: |
+            v=$(tr -d '[:space:]' < << parameters.version_file >>)
+            curl -fsSL https://bun.sh/install | bash -s "bun-v$v"
+            echo 'export PATH="$HOME/.bun/bin:$PATH"' >> "$BASH_ENV"
+  migrations-changed:
+    description: D1 마이그레이션 폴더가 바뀌었으면 /tmp/apply-migrations 파일을 만든다
+    parameters:
+      dir:
+        type: string
+    steps:
+      - run:
+          name: Check D1 migration changes
+          command: |
+            base="<< pipeline.git.base_revision >>"
+            if [ "<< pipeline.parameters.apply_migrations >>" = true ]; then
+              touch /tmp/apply-migrations
+            elif [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null \
+                 && ! git diff --quiet "$base" "<< pipeline.git.revision >>" -- << parameters.dir >>; then
+              touch /tmp/apply-migrations
+            fi
+            [ -f /tmp/apply-migrations ] && echo "D1 마이그레이션 적용함" || echo "D1 마이그레이션 변경 없음"
   image-name:
     steps:
       - run:
@@ -194,6 +235,142 @@ jobs:
               "cd '$path' && chmod +x deploy.sh pg-upgrade.sh && GHCR_USER='$GHCR_USER' GHCR_TOKEN_STDIN=1 ./deploy.sh '$ref'" \<<< "$GHCR_TOKEN"
             echo "배포됨: $ref → $DEPLOY_HOST:$path"
 
+  # ── 프론트엔드 (Cloudflare Workers) ─────────────────────────────
+  # 어느 브랜치든 테스트·빌드, main일 때만 배포. CLOUDFLARE_API_TOKEN·CLOUDFLARE_ACCOUNT_ID는 Context에 둔다.
+  studio:
+    docker:
+      - image: cimg/node:22.17
+    environment:
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - checkout
+      - skip-unless-changed:
+          paths: '^(web/studio/|web/shared/)'
+      - setup-bun:
+          version_file: web/studio/.bun-version
+      - run:
+          name: Test and build Studio
+          working_directory: web/studio/app
+          command: |
+            bun install --frozen-lockfile
+            bun run test
+            bun run build
+      - run:
+          name: Worker and D1 content tests
+          working_directory: web/studio
+          command: bun test test/
+      - when:
+          condition:
+            equal: [main, << pipeline.git.branch >>]
+          steps:
+            - migrations-changed:
+                dir: web/studio/migrations
+            - run:
+                name: Apply D1 migrations (content)
+                working_directory: web/studio
+                command: |
+                  [ -f /tmp/apply-migrations ] || exit 0
+                  npx --yes wrangler@4.141.0 d1 migrations apply audeniq-content --remote
+            - run:
+                name: Deploy audeniq-studio
+                working_directory: web/studio
+                command: npx --yes wrangler@4.141.0 deploy
+
+  admin:
+    docker:
+      - image: cimg/node:22.17
+    environment:
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - checkout
+      - skip-unless-changed:
+          paths: '^(web/admin/|web/shared/|web/studio/app/build/retain-assets\.ts|web/studio/worker\.js|web/studio/test/worker\.test\.mjs)'
+      - setup-bun:
+          version_file: web/admin/.bun-version
+      - run:
+          name: Type check and build
+          working_directory: web/admin
+          command: |
+            bun install --frozen-lockfile
+            bun run test
+            bun run build
+      - run:
+          name: Shared content Worker tests
+          command: bun test web/studio/test/worker.test.mjs
+      - when:
+          condition:
+            equal: [main, << pipeline.git.branch >>]
+          steps:
+            - run:
+                name: Deploy audeniq-admin
+                working_directory: web/admin
+                command: bunx wrangler deploy
+
+  landing:
+    docker:
+      - image: cimg/node:22.17
+    environment:
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - checkout
+      - skip-unless-changed:
+          paths: '^(web/landing/)'
+      - run:
+          name: SEO build and tests
+          working_directory: web/landing
+          command: npm run check
+      - when:
+          condition:
+            equal: [main, << pipeline.git.branch >>]
+          steps:
+            - run:
+                name: Deploy audeniq-web
+                working_directory: web/landing
+                command: npx --yes wrangler@4.141.0 deploy
+
+  survey:
+    docker:
+      - image: cimg/node:22.17
+    environment:
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - checkout
+      - skip-unless-changed:
+          paths: '^(web/survey/)'
+      - setup-bun:
+          version_file: web/studio/.bun-version
+      - run:
+          name: Test and build
+          working_directory: web/survey
+          command: |
+            bun run test
+            bun run build
+      - when:
+          condition:
+            equal: [main, << pipeline.git.branch >>]
+          steps:
+            - run:
+                name: Preflight (실제 D1·Turnstile 설정 확인)
+                working_directory: web/survey
+                command: |
+                  # wrangler.jsonc에 실제 값이 들어가기 전에는 배포하지 않고 이유만 남긴다
+                  if ! bun run preflight; then
+                    echo "설문 설정이 아직 완료되지 않아 배포를 건너뜀"
+                    circleci-agent step halt
+                  fi
+            - migrations-changed:
+                dir: web/survey/migrations
+            - run:
+                name: Apply D1 migrations (survey)
+                working_directory: web/survey
+                command: |
+                  [ -f /tmp/apply-migrations ] || exit 0
+                  npx --yes wrangler@4.141.0 d1 migrations apply audeniq-survey --remote
+            - run:
+                name: Deploy audeniq-survey
+                working_directory: web/survey
+                command: npx --yes wrangler@4.141.0 deploy
+
 workflows:
   backend-image:
     jobs:
@@ -226,3 +403,14 @@ workflows:
           context: audeniq-production
           requires: [approve-deploy]
           filters: *main-only
+
+  frontend:
+    jobs:
+      - studio:
+          context: audeniq-production
+      - admin:
+          context: audeniq-production
+      - landing:
+          context: audeniq-production
+      - survey:
+          context: audeniq-production

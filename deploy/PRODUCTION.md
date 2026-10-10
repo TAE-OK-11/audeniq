@@ -89,6 +89,10 @@ CircleCI 조직 설정 → Contexts에 `audeniq-production`을 만들고 다음 
 | `DEPLOY_SSH_KEY` | 배포 전용 SSH 개인키, `base64 -w0 < key` |
 | `DEPLOY_KNOWN_HOSTS` | `ssh-keyscan <서버> \| base64 -w0` |
 | `DEPLOY_PATH` | (선택) 기본 `/opt/audeniq` |
+| `CLOUDFLARE_API_TOKEN` | 프론트엔드 배포 (Workers Scripts:Edit, D1:Edit) |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 계정 ID |
+
+같은 파일의 **frontend** 워크플로는 Studio(`web/studio`)·관리자(`web/admin`)·랜딩(`web/landing`)·설문(`web/survey`)을 각 폴더가 바뀐 푸시마다 테스트·빌드하고, main에서만 Cloudflare Workers로 배포한다. Studio·설문 D1 마이그레이션은 `migrations/` 폴더가 바뀌었거나 파이프라인 파라미터 `apply_migrations=true`일 때만 적용한다. 설문은 `bun run preflight`(실제 D1 ID·Turnstile 키)를 통과해야 배포한다.
 
 ### PostgreSQL 17 → 18 (한 번)
 
