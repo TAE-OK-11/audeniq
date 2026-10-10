@@ -360,3 +360,44 @@ fn per_dsp_deals_are_schema_valid() {
             .unwrap_or_else(|e| panic!("{}: {e:?}", spec.code));
     }
 }
+
+#[test]
+fn ddex_ern_rerelease_keeps_the_original_release_date() {
+    // Audit E05: a transferred / re-released recording keeps its first
+    // release date; the new delivery date stays in ReleaseDate.
+    let mut f = fixture(0);
+    let new_date = f.release_date;
+    f.original_release_date = Some(chrono::NaiveDate::from_ymd_opt(2019, 5, 17).unwrap());
+    let xml = generate_ddex_ern_382(&f, &config(MessageSubType::Initial)).unwrap();
+    assert!(xml.contains("<GlobalOriginalReleaseDate>2019-05-17</GlobalOriginalReleaseDate>"));
+    assert!(xml.contains(&format!(
+        "<ReleaseDate>{}</ReleaseDate>",
+        new_date.format("%Y-%m-%d")
+    )));
+    // Snapshots without the field serialize exactly as before (hash-stable).
+    let plain = fixture(0);
+    assert!(
+        !serde_json::to_string(&plain)
+            .unwrap()
+            .contains("original_release_date")
+    );
+}
+
+#[test]
+fn original_release_date_must_not_follow_the_new_date() {
+    use audeniq_core::preparation_model::original_release_date;
+    let new = chrono::NaiveDate::from_ymd_opt(2026, 12, 1).unwrap();
+    let d =
+        |v: serde_json::Value| original_release_date(&serde_json::json!({"originalDate": v}), new);
+    assert_eq!(d(serde_json::json!("")).unwrap(), None);
+    assert_eq!(
+        d(serde_json::json!("2019-05-17")).unwrap(),
+        Some(chrono::NaiveDate::from_ymd_opt(2019, 5, 17).unwrap())
+    );
+    assert!(d(serde_json::json!("2027-01-01")).is_err());
+    assert!(d(serde_json::json!("2019/05/17")).is_err());
+    assert_eq!(
+        original_release_date(&serde_json::json!({}), new).unwrap(),
+        None
+    );
+}

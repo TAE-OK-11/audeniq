@@ -1167,6 +1167,7 @@ mod tests {
             artist: "Artist".into(),
             release_type: "SINGLE".into(),
             release_date: NaiveDate::from_ymd_opt(2026, 12, 1).unwrap(),
+            original_release_date: None,
             language: "ko".into(),
             p_line: "2026 A".into(),
             c_line: "2026 A".into(),
