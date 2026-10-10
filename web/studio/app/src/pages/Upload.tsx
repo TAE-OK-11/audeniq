@@ -9,7 +9,7 @@ import { SignaturePad, type SignaturePadHandle } from '../components/SignaturePa
 import { useConfirm } from '../components/Confirm';
 import { useProgressFill } from '../hooks/useAnimations';
 import { ApiError, MOCK, api, type ArtistProfileLinks, type DspAvailability, type ReleasePayload } from '../api/client';
-import { errorMessage } from '../api/errors';
+import { PartialSaveError, errorMessage } from '../api/errors';
 import { addDoc, docsForRelease, getDocsSnapshot, useDocs, type DocRecord } from '../store/docs';
 import { RightsDocumentModal } from '../components/RightsDocumentModal';
 import { DocumentModal } from '../components/DocumentModal';
@@ -1136,7 +1136,7 @@ function ensureReleaseDocuments(f: WizardForm, releaseId: string) {
   addDoc(agreement);
 }
 
-type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'saved'; at: string } | { kind: 'error' };
+type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'saved'; at: string } | { kind: 'error'; message?: string };
 
 export function Upload() {
   const nav = useNavigate();
@@ -1383,6 +1383,26 @@ export function Upload() {
     setForm(f => ({ ...f, tracks: f.tracks.map(t => (t.id === id ? { ...t, [key]: value } : t)) }));
   }, []);
 
+  // 서버가 새로 만든 트랙 ID를 반영해야 다음 저장 때 트랙이 중복 생성되지 않는다
+  const adoptTrackIds = useCallback((ids: Record<string, string> | undefined) => {
+    if (!ids || !Object.keys(ids).length) return;
+    setForm(f => {
+      let changed = false;
+      const tracks = f.tracks.map(t => {
+        const sid = ids[t.id];
+        if (sid && sid !== t.serverId) { changed = true; return { ...t, serverId: sid }; }
+        return t;
+      });
+      return changed ? { ...f, tracks } : f;
+    });
+  }, []);
+  // 저장이 중간에 실패해도 이미 반영된 발매·트랙은 다음 저장이 이어서 쓴다 (새 발매를 또 만들지 않음)
+  const adoptPartialSave = useCallback((e: unknown) => {
+    if (!(e instanceof PartialSaveError)) return;
+    draftIdRef.current = e.releaseId;
+    adoptTrackIds(e.trackServerIds);
+  }, [adoptTrackIds]);
+
   // 자동 임시 저장 — 저장 요청을 직렬화해 draft가 두 개 생기지 않도록 한다
   const autoSave = useCallback((): Promise<void> => {
     if (!canAutoSave) return Promise.resolve();
@@ -1393,29 +1413,18 @@ export function Upload() {
       try {
         const r = await api.saveDraft(draftIdRef.current, toPayload(formRef.current, stepRef.current));
         draftIdRef.current = r.id;
-        // 서버가 새로 만든 트랙 ID를 반영해야 다음 저장 때 트랙이 중복 생성되지 않는다
-        const ids = r.trackServerIds;
-        if (ids && Object.keys(ids).length) {
-          setForm(f => {
-            let changed = false;
-            const tracks = f.tracks.map(t => {
-              const sid = ids[t.id];
-              if (sid && sid !== t.serverId) { changed = true; return { ...t, serverId: sid }; }
-              return t;
-            });
-            return changed ? { ...f, tracks } : f;
-          });
-        }
+        adoptTrackIds(r.trackServerIds);
         dirtyRef.current = false;
         setSave({ kind: 'saved', at: stampNow().slice(11) });
-      } catch {
-        setSave({ kind: 'error' });
+      } catch (e) {
+        adoptPartialSave(e);
+        setSave({ kind: 'error', message: e instanceof PartialSaveError ? e.message : undefined });
       }
     };
     const p = saveChain.current.then(run, run);
     saveChain.current = p;
     return p;
-  }, [canAutoSave]);
+  }, [canAutoSave, adoptTrackIds, adoptPartialSave]);
 
   const openElectronic = async (kind: RightsDocumentKind) => {
     await autoSave();
@@ -1642,6 +1651,7 @@ export function Upload() {
       // 서명한 신청서를 정식 서류로 바로 보여 준다 (보완 재접수는 발매 상세로)
       nav(resubmit ? `/releases/${r.id}` : `/releases/${r.id}/application?done=1`, { replace: true });
     } catch (e) {
+      adoptPartialSave(e);
       if (e instanceof ApiError && e.code === 'DSP_UNAVAILABLE') {
         goStep(3);
         api.listDsps().then(setDsps).catch(err => { setDsps(null); setDspError(errorMessage(err)); });
@@ -1828,7 +1838,7 @@ export function Upload() {
     : save.kind === 'error' ? '저장 실패' : '';
   const saveTitle = !canAutoSave ? '수정 내용은 마지막 단계에서 ‘수정 완료’를 눌러야 반영돼요.'
     : save.kind === 'saved' ? `${save.at}에 자동 저장됐어요.`
-    : save.kind === 'error' ? '자동 저장에 실패했어요. 네트워크를 확인해 주세요.' : '';
+    : save.kind === 'error' ? (save.message || '자동 저장에 실패했어요. 네트워크를 확인해 주세요.') : '';
 
   return (
     <section id="view-new" className="view">

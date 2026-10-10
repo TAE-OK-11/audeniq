@@ -13,7 +13,7 @@ import type {
   DraftTrack, Org, PreflightIssue, Release, ReleaseDetail, ReleaseDraft, ReleasePayload,
   ReleaseOptionsData, SaveResult, Track, UploadKind, UploadResult, User,
 } from './types';
-import { ApiError } from './errors';
+import { ApiError, PartialSaveError } from './errors';
 import { bootstrapCsrf, hasCsrf, listAll, orgPath, putToGrant, req, setCsrf, type UploadGrant } from './http';
 import { stampNow } from '../lib/date';
 import { normalizeIsrc } from '../lib/dsp';
@@ -75,6 +75,13 @@ export function uiStatus(server: string, live = false, agreement: string | null 
 }
 const EDITABLE = new Set(['DRAFT', 'STAGE1_CORRECTION', 'STAGE2_CORRECTION', 'STAGE3_CORRECTION']);
 
+/** 보완 필요(needs)의 종류 — 신청서를 고칠 수 있는 보완 단계면 신청서, 아니면(권리 보류 등
+ *  신청서가 잠긴 상태) 담당자가 요청한 서류를 내는 것이 보완이다 */
+export function fixKind(server: string, status: string): Release['fixKind'] {
+  if (status !== 'needs') return undefined;
+  return EDITABLE.has(server) ? 'application' : 'documents';
+}
+
 /** 서버는 UPC-A(12자리)만 받는다: 0으로 시작하는 EAN-13은 같은 번호라 앞 0을 뗀다. 비우면 3단계에서 발급 */
 export function serverUpc(v: string): string | null {
   const d = v.trim();
@@ -113,7 +120,18 @@ export function sanitizeProfile(v: unknown, key = ''): unknown {
 
 const PROFILE_LIMIT = 48 * 1024; // 요청 본문 64KB 한도 안에서 여유를 둔다
 
+/** 저장할 커버 미리보기. 서버는 profile 안의 data:·blob: 값을 전자서명 PNG로 검사하므로
+ *  (upload_safety::check_inline_files) JPEG 미리보기를 보내면 발매 저장 전체가 400이 된다.
+ *  커버는 업로드한 파일(artwork_asset_id = coverAssetId)로 참조·검사되므로, 그 참조가 있으면
+ *  PNG가 아닌 인라인 미리보기는 비워 보낸다 (2026-10-10 중계 Worker 긴급 패치와 같은 규칙). */
+export function storedCoverData(coverData: string | undefined, coverAssetId: string | undefined): string | undefined {
+  if (!coverData || !coverAssetId) return coverData;
+  const inline = coverData.startsWith('data:') || coverData.startsWith('blob:');
+  return inline && !coverData.startsWith('data:image/png;base64,') ? '' : coverData;
+}
+
 function buildProfile(data: ReleasePayload, prev: Record<string, unknown> | null, history: ReleaseDraft['history']) {
+  const coverAssetId = data.coverAssetId ?? (prev?.coverAssetId as string | undefined);
   const profile = {
     app: 'studio-react',
     schema: 1,
@@ -127,8 +145,8 @@ function buildProfile(data: ReleasePayload, prev: Record<string, unknown> | null
     // 앨범 소개는 여러 줄이라 줄 단위 배열로 보관 (서버는 lyrics 외 줄바꿈을 받지 않음)
     notes_lines: data.notes.split(/\r?\n/),
     coverName: data.coverName,
-    coverData: data.coverData,
-    coverAssetId: data.coverAssetId ?? (prev?.coverAssetId as string | undefined),
+    coverData: storedCoverData(data.coverData, coverAssetId),
+    coverAssetId,
     originalDate: data.originalDate,
     release_date: data.release_date,
     territories: data.territories,
@@ -220,10 +238,12 @@ const realLive = (r: ServerRelease) => (r.live_status_by_dsp ?? []).filter(l => 
 
 function toSummary(r: ServerRelease): Release {
   const d = readDraft(r);
+  const status = uiStatus(r.status, realLive(r).length > 0, r.agreement_status ?? null);
   return {
     id: r.id,
     title: r.title,
-    status: uiStatus(r.status, realLive(r).length > 0, r.agreement_status ?? null),
+    status,
+    fixKind: fixKind(r.status, status),
     livePlatforms: realLive(r).map(l => l.dsp ?? l.partner_id),
     release_date: (typeof r.draft?.release_date === 'string' && r.draft.release_date) || null,
     created_at: (r.created_at ?? '').slice(0, 10),
@@ -317,7 +337,8 @@ const creditKey = (cs: ServerCredit[]) => cs.map(c => `${c.party_id}|${c.role}`)
 // ---------------------------------------------------------------------------
 // 트랙 동기화 — 제목이 있는 트랙만 서버에 반영 (작성 중인 빈 트랙은 profile에만)
 // ---------------------------------------------------------------------------
-async function syncTracks(release: ServerRelease, tracks: DraftTrack[], artistId: string): Promise<{ rowVersion: number; tracks: DraftTrack[] }> {
+/** created: 이번 저장에서 서버가 새로 만든 트랙 (화면 트랙 id → 서버 id) — 중간에 실패해도 남는다 */
+async function syncTracks(release: ServerRelease, tracks: DraftTrack[], artistId: string, created: Record<string, string> = {}): Promise<{ rowVersion: number; tracks: DraftTrack[] }> {
   const base = orgPath(`/releases/${release.id}/tracks`);
   let rv = release.row_version;
   const server = new Map((release.tracks ?? []).map(t => [t.id, t]));
@@ -367,6 +388,7 @@ async function syncTracks(release: ServerRelease, tracks: DraftTrack[], artistId
       const r = await req<{ id: string; row_version: number }>(base, { method: 'POST', body });
       rv = r.row_version;
       trackId = r.id;
+      created[t.id] = r.id;
       out.push({ ...t, serverId: r.id });
     }
     const credits = await wantedCredits(t);
@@ -450,16 +472,27 @@ async function persist(id: string | null, data: ReleasePayload, historyText: str
     }
   }
 
-  // 트랙 → 서버 트랙 ID를 받은 뒤 profile에 함께 저장
-  const artistId = await ensureArtist(data.artist);
-  const synced = await syncTracks(rel, data.tracks, artistId);
-  const prevHistory = readDraft(rel).history;
-  const history = historyText && id ? [...prevHistory, { text: historyText, time: stampNow() }] : prevHistory;
-  const profile = buildProfile({ ...data, tracks: synced.tracks }, rel.draft, history);
-  const r = await req<{ row_version: number }>(detailPath(rel.id), {
-    method: 'PUT',
-    body: { name, release_type: toReleaseType(data.type), profile, row_version: synced.rowVersion, ...releaseRefs(data, rel.draft) },
-  });
+  // 트랙 → 서버 트랙 ID를 받은 뒤 profile에 함께 저장. 트랙과 발매 정보는 따로 저장되므로
+  // 중간에 실패하면 무엇이 반영됐는지(발매 id, 새 트랙 id)를 화면에 돌려준다
+  const created: Record<string, string> = {};
+  let tracksSaved = false;
+  let r: { row_version: number };
+  let synced: { rowVersion: number; tracks: DraftTrack[] };
+  let profile: Record<string, unknown>;
+  try {
+    const artistId = await ensureArtist(data.artist);
+    synced = await syncTracks(rel, data.tracks, artistId, created);
+    tracksSaved = true;
+    const prevHistory = readDraft(rel).history;
+    const history = historyText && id ? [...prevHistory, { text: historyText, time: stampNow() }] : prevHistory;
+    profile = buildProfile({ ...data, tracks: synced.tracks }, rel.draft, history);
+    r = await req<{ row_version: number }>(detailPath(rel.id), {
+      method: 'PUT',
+      body: { name, release_type: toReleaseType(data.type), profile, row_version: synced.rowVersion, ...releaseRefs(data, rel.draft) },
+    });
+  } catch (err) {
+    throw new PartialSaveError(err, rel.id, created, tracksSaved);
+  }
   const trackServerIds: Record<string, string> = {};
   for (const t of synced.tracks) if (t.serverId) trackServerIds[t.id] = t.serverId;
   return { ...rel, title: name, draft: profile, row_version: r.row_version, trackServerIds };

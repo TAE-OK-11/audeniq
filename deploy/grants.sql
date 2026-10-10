@@ -138,6 +138,8 @@ GRANT SELECT,INSERT ON operations.check_results TO audeniq_worker;
 GRANT SELECT,INSERT ON operations.asset_qc_results TO audeniq_worker;
 GRANT SELECT ON operations.allowed_transitions TO audeniq_worker;
 GRANT INSERT ON rights.review_overrides,rights.rights_epochs TO audeniq_worker;
+-- Row locks need UPDATE; the worker share-locks the epoch only through 0088.
+GRANT EXECUTE ON FUNCTION rights.share_lock_epoch(uuid, uuid) TO audeniq_worker;
 GRANT INSERT ON finance.ledger_transactions,finance.ledger_entries,finance.commercial_split_snapshots TO audeniq_worker;
 GRANT SELECT,INSERT,UPDATE ON finance.payout_orders,finance.finance_holds TO audeniq_worker;
 -- Stage packages, canonical releases and delivery evidence cannot be written by the Foundation API.

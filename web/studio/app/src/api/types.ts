@@ -25,6 +25,9 @@ export interface Release {
   livePlatforms?: string[];
   /** 검토 결과 보완이 필요한 항목 (status === 'needs'일 때) */
   corrections?: Correction[];
+  /** 보완이 무엇인지 (status === 'needs'일 때) — 신청서를 고칠지(application),
+   *  신청서는 잠긴 채 담당자가 요청한 서류만 내면 되는지(documents, 권리 보류 등) */
+  fixKind?: 'application' | 'documents';
 }
 
 /** 보완 요청 한 건 — code로 신청서의 어느 단계·입력칸을 고쳐야 하는지 찾는다 (lib/corrections.ts) */

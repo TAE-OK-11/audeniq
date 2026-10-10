@@ -1,6 +1,7 @@
 // 권리·보완 서류 — 라이브 view-rights / renderRights / openRequiredDocForm 대응
 import { FileCard } from '../components/FileCard';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from '../lib/router';
 import { addDoc, useDocs, type DocRecord } from '../store/docs';
 import { MOCK } from '../lib/mode';
 import * as portal from '../api/portal';
@@ -48,6 +49,15 @@ export function Rights() {
   const [electronic, setElectronic] = useState<{ kind: RightsDocumentKind; context: RightsDocumentContext } | null>(null);
 
   const openDoc = openId ? docs.find(d => d.id === openId) ?? null : null;
+  // 발매·알림의 ‘서류 제출하기’로 들어오면 그 요청을 바로 연다 (?doc=)
+  const [params, setParams] = useSearchParams();
+  const linked = params.get('doc');
+  useEffect(() => {
+    if (!MOCK) void refreshDocs();
+  }, []);
+  useEffect(() => {
+    if (linked && docs.some(d => d.id === linked)) { setOpenId(linked); setParams({}, { replace: true }); }
+  }, [linked, docs]); // eslint-disable-line react-hooks/exhaustive-deps
   const rights = docs
     .filter(c => c.kind === 'rights')
     .slice()

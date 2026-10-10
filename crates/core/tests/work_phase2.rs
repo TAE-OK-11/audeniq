@@ -135,7 +135,39 @@ async fn sla_exceptions_and_inbox(pool: PgPool) {
         .expect("dead job listed")
         .clone();
     assert_eq!(item["kind"], "AUTOMATION_FAILURE");
+    assert_eq!(item["severity"], "HIGH");
+    assert!(
+        item["detail"]
+            .as_str()
+            .unwrap()
+            .starts_with("중단 · qc · boom"),
+        "{item}"
+    );
     assert_eq!(item["can_act"], false); // automation → ADMIN
+    // A job still retrying after failures is visible before it dead-letters;
+    // one that never failed (or already succeeded) is not.
+    let retrying = Uuid::new_v4();
+    let quiet = Uuid::new_v4();
+    sqlx::query("INSERT INTO operations.jobs(id,queue,kind,payload,status,attempts,idempotency_key,last_error)
+                 VALUES($1,'distribution','delivery.stage','{}','QUEUED',3,$2,'42501'),
+                       ($3,'distribution','delivery.stage','{}','QUEUED',0,$4,NULL)")
+        .bind(retrying).bind(format!("t:{retrying}")).bind(quiet).bind(format!("t:{quiet}"))
+        .execute(&pool).await.unwrap();
+    let ex = ok(&app, "GET", "/api/staff/work/exceptions", json!({}), &admin).await;
+    let item = find(&ex["items"], &format!("job:{retrying}")).expect("retrying job listed");
+    assert_eq!(item["severity"], "MEDIUM");
+    assert_eq!(item["detail"], "재시도 중 3/5 · distribution · 42501");
+    assert!(find(&ex["items"], &format!("job:{quiet}")).is_none());
+    sqlx::query("UPDATE operations.jobs SET status='SUCCEEDED' WHERE id=$1")
+        .bind(retrying)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let ex = ok(&app, "GET", "/api/staff/work/exceptions", json!({}), &admin).await;
+    assert!(
+        find(&ex["items"], &format!("job:{retrying}")).is_none(),
+        "recovers by itself"
+    );
     let path = format!("/api/staff/work/exceptions/job/{job}");
     let (s, _) = send(&app, "POST", &path, json!({"action": "ACK"}), Some(&op)).await;
     assert_eq!(s, StatusCode::FORBIDDEN);

@@ -9,6 +9,25 @@ export class ApiError extends Error {
   }
 }
 
+/** 발매 저장이 중간에 실패했다 — 발매·트랙 일부는 이미 서버에 반영됐다.
+ *  화면은 releaseId·trackServerIds를 받아 다음 저장이 같은 발매·트랙을 이어서 쓰게 한다
+ *  (새 발매를 또 만들거나, 방금 만든 트랙을 보관했다가 다시 만들지 않도록). */
+export class PartialSaveError extends ApiError {
+  releaseId: string;
+  trackServerIds: Record<string, string>;
+  constructor(cause: unknown, releaseId: string, trackServerIds: Record<string, string>, tracksSaved: boolean) {
+    const reason = cause instanceof Error && cause.message ? cause.message : '잠시 후 다시 시도해 주세요.';
+    super(
+      tracksSaved ? `트랙 정보는 저장됐지만 발매 정보는 저장되지 않았어요. ${reason}` : `발매 정보를 저장하지 못했어요. ${reason}`,
+      cause instanceof ApiError ? cause.status : 0,
+      cause instanceof ApiError ? cause.code : '',
+    );
+    this.name = 'PartialSaveError';
+    this.releaseId = releaseId;
+    this.trackServerIds = trackServerIds;
+  }
+}
+
 /** 백엔드 오류 코드(`{ error: { code } }`) → 사용자에게 보여줄 한국어 문구 */
 const CODE_MESSAGES: Record<string, string> = {
   UNAUTHENTICATED: '로그인이 필요해요.',

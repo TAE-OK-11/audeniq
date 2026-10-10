@@ -8,6 +8,7 @@ import { SkeletonRows } from '../components/Skeleton';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { Glyph } from '../components/Glyph';
 import { Badge, Tabs } from '../ui';
+import { pendingProofs, proofPath, useDocs, type DocRecord } from '../store/docs';
 
 const FILTERS = [
   { value: 'all', label: '전체' },
@@ -31,7 +32,11 @@ const SORTS = [
 type TrackWithRelease = Track & { releaseTitle: string; releaseId: string; artist?: string; coverData?: string };
 
 /** 첫 보완 요청 한 줄 요약 */
-function firstFixText(r: Release): string {
+function firstFixText(r: Release, proofs: DocRecord[] = []): string {
+  if (r.fixKind === 'documents') {
+    if (!proofs.length) return '권리·보완 서류에서 담당자가 요청한 서류를 확인해 주세요.';
+    return `요청 서류: ${proofs[0].title}${proofs.length > 1 ? ` 외 ${proofs.length - 1}건` : ''}`;
+  }
   const { items: list, note } = splitCorrections(r.corrections);
   if (!list.length) return note ? `담당자 의견: ${note}` : '요청 내용을 확인하고 고쳐 주세요.';
   const first = resolveCorrection(list[0]);
@@ -43,6 +48,7 @@ const norm = (s: string | null | undefined) => (s ?? '').toLowerCase().replace(/
 
 export function Releases() {
   const nav = useNavigate();
+  const docs = useDocs();
   const [params, setParams] = useSearchParams();
   const tab = params.get('tab') === 'tracks' ? 'tracks' : 'releases';
   const filter = params.get('status') || 'all';
@@ -185,19 +191,32 @@ export function Releases() {
                   <div className="aq-release-end">
                     <Badge tone={statusTone(r.status)} className={`aq-status is-${r.status}`}>{STATUS_LABEL[r.status] || r.status}</Badge>
                   </div>
-                  {r.status === 'needs' && (
-                    <div className="aq-release-fix">
-                      <span className="min-0">
-                        <b>보완 요청{splitCorrections(r.corrections).items.length ? ` ${splitCorrections(r.corrections).items.length}건` : ''}</b>
-                        {firstFixText(r)}
-                      </span>
-                      <button
-                        type="button" className="aq-release-fix-btn"
-                        onClick={e => { e.stopPropagation(); nav(fixPath(r.id, splitCorrections(r.corrections).items[0])); }}
-                        onKeyDown={e => e.stopPropagation()}
-                      >보완하기 <Glyph name="chevron-right" size={14} /></button>
-                    </div>
-                  )}
+                  {r.status === 'needs' && (() => {
+                    // 서류 요청은 신청서가 아니라 그 요청의 첨부·제출 화면으로 간다
+                    const proofs = pendingProofs(docs, r.id, r.title);
+                    const docsOnly = r.fixKind === 'documents';
+                    const count = docsOnly ? proofs.length : splitCorrections(r.corrections).items.length;
+                    return (
+                      <div className="aq-release-fix">
+                        <span className="min-0">
+                          <b>{docsOnly ? '서류 제출 요청' : '보완 요청'}{count ? ` ${count}건` : ''}</b>
+                          {firstFixText(r, proofs)}
+                        </span>
+                        <button
+                          type="button" className="aq-release-fix-btn"
+                          onClick={e => { e.stopPropagation(); nav(docsOnly ? proofPath(proofs[0]) : fixPath(r.id, splitCorrections(r.corrections).items[0])); }}
+                          onKeyDown={e => e.stopPropagation()}
+                        >{docsOnly ? '서류 제출하기' : '보완하기'} <Glyph name="chevron-right" size={14} /></button>
+                        {!docsOnly && proofs.length > 0 && (
+                          <button
+                            type="button" className="aq-release-fix-btn"
+                            onClick={e => { e.stopPropagation(); nav(proofPath(proofs[0])); }}
+                            onKeyDown={e => e.stopPropagation()}
+                          >서류 제출 {proofs.length}건 <Glyph name="chevron-right" size={14} /></button>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </article>
               ))}
             </div>
