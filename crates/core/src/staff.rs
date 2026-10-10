@@ -1063,15 +1063,23 @@ async fn decide_application(
     )
     .await?;
     if next.is_some() {
-        for n in &i.notes {
+        let notes = if i.action == "REQUEST_CORRECTION" {
+            correction_notes(c, org, release, &i.notes).await?
+        } else {
+            i.notes
+                .iter()
+                .map(|n| (n.check_code.clone(), n.note.clone()))
+                .collect()
+        };
+        for (code, note) in &notes {
             write_note(
                 c,
                 org,
                 release,
                 i.revision_id,
-                Some(n.check_code.as_str()),
+                Some(code.as_str()),
                 &i.action,
-                &n.note,
+                note,
                 actor.user,
             )
             .await?;
@@ -1115,6 +1123,55 @@ async fn decide_application(
     .await?;
     Ok(result)
 }
+
+/// A correction item can ask for a file instead of an application field:
+/// 「추가 서류」(`FIX_DOCUMENT`). The application editor has nowhere to attach
+/// it, so each such item also files a rights-proof request (AWAITING_DOCUMENTS,
+/// the insert trigger notifies the org) and its note is stored as
+/// `FIX_DOCUMENT@<document id>`, letting Studio open that request's attach
+/// window from 보완하기. Other items pass through unchanged.
+async fn correction_notes(
+    c: &mut PgConnection,
+    org: Uuid,
+    release: Uuid,
+    notes: &[CheckNote],
+) -> Result<Vec<(String, String)>> {
+    let mut out = Vec::with_capacity(notes.len());
+    for n in notes {
+        if n.check_code != FIX_DOCUMENT {
+            out.push((n.check_code.clone(), n.note.clone()));
+            continue;
+        }
+        let first = n
+            .note
+            .lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty())
+            .unwrap_or("");
+        let title: String = if first.is_empty() {
+            "추가 서류".to_owned()
+        } else {
+            first.chars().take(200).collect()
+        };
+        crate::text_policy::check(&title)?;
+        let id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO portal.documents(id,org_id,release_id,kind,title,body,status) VALUES($1,$2,$3,'RIGHTS_PROOF',$4,$5,'AWAITING_DOCUMENTS')",
+        )
+        .bind(id)
+        .bind(org)
+        .bind(release)
+        .bind(&title)
+        .bind(&n.note)
+        .execute(&mut *c)
+        .await?;
+        out.push((format!("{FIX_DOCUMENT}@{id}"), n.note.clone()));
+    }
+    Ok(out)
+}
+
+/// Correction item code for "attach this document" (see [`correction_notes`]).
+const FIX_DOCUMENT: &str = "FIX_DOCUMENT";
 
 #[allow(clippy::too_many_arguments)]
 async fn write_note(
@@ -1357,15 +1414,15 @@ pub async fn decide(s: &AppState, h: &HeaderMap, release: Uuid, i: DecisionInput
                 user,
             )
             .await?;
-            for n in &i.notes {
+            for (code, note) in correction_notes(&mut tx, org, release, &i.notes).await? {
                 write_note(
                     &mut tx,
                     org,
                     release,
                     i.revision_id,
-                    Some(n.check_code.as_str()),
+                    Some(code.as_str()),
                     "REQUEST_CORRECTION",
-                    &n.note,
+                    &note,
                     user,
                 )
                 .await?;

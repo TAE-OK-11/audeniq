@@ -1,14 +1,14 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from '../lib/router';
 import { api, type Release, type Track } from '../api/client';
-import { fixPath, resolveCorrection, splitCorrections } from '../lib/corrections';
+import { fixPath, isDocumentFix, resolveCorrection, splitCorrections } from '../lib/corrections';
 import { STATUS_LABEL, statusTone } from '../lib/format';
 import { useAsync } from '../hooks/useAsync';
 import { SkeletonRows } from '../components/Skeleton';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { Glyph } from '../components/Glyph';
 import { Badge, Tabs } from '../ui';
-import { pendingProofs, proofPath, useDocs, type DocRecord } from '../store/docs';
+import { openFixes, pendingProofs, proofPath, useDocs, type DocRecord } from '../store/docs';
 
 const FILTERS = [
   { value: 'all', label: '전체' },
@@ -193,20 +193,25 @@ export function Releases() {
                   </div>
                   {r.status === 'needs' && (() => {
                     // 서류 요청은 신청서가 아니라 그 요청의 첨부·제출 화면으로 간다
-                    const proofs = pendingProofs(docs, r.id, r.title);
+                    const all = splitCorrections(r.corrections).items;
+                    // 보완 항목으로 요청한 서류는 항목 쪽에서 안내하므로 따로 세지 않는다. 낸 서류 항목은 끝난 것으로
+                    const linked = new Set(all.map(c => c.documentId).filter(Boolean));
+                    const items = openFixes(all, docs);
+                    const proofs = pendingProofs(docs, r.id, r.title).filter(d => !linked.has(d.id));
                     const docsOnly = r.fixKind === 'documents';
-                    const count = docsOnly ? proofs.length : splitCorrections(r.corrections).items.length;
+                    const count = docsOnly ? proofs.length : items.length;
+                    const first = items[0];
                     return (
                       <div className="aq-release-fix">
                         <span className="min-0">
                           <b>{docsOnly ? '서류 제출 요청' : '보완 요청'}{count ? ` ${count}건` : ''}</b>
-                          {firstFixText(r, proofs)}
+                          {!docsOnly && all.length > 0 && !items.length ? '요청한 서류를 냈어요. 신청서를 다시 접수해 주세요.' : firstFixText({ ...r, corrections: items }, proofs)}
                         </span>
                         <button
                           type="button" className="aq-release-fix-btn"
-                          onClick={e => { e.stopPropagation(); nav(docsOnly ? proofPath(proofs[0]) : fixPath(r.id, splitCorrections(r.corrections).items[0])); }}
+                          onClick={e => { e.stopPropagation(); nav(docsOnly ? proofPath(proofs[0]) : fixPath(r.id, first)); }}
                           onKeyDown={e => e.stopPropagation()}
-                        >{docsOnly ? '서류 제출하기' : '보완하기'} <Glyph name="chevron-right" size={14} /></button>
+                        >{docsOnly ? '서류 제출하기' : isDocumentFix(first) ? '서류 첨부하기' : '보완하기'} <Glyph name="chevron-right" size={14} /></button>
                         {!docsOnly && proofs.length > 0 && (
                           <button
                             type="button" className="aq-release-fix-btn"

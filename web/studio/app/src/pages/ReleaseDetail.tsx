@@ -8,7 +8,7 @@ import { ReleaseCover } from '../components/ReleaseCover';
 import { useAsync } from '../hooks/useAsync';
 import { STATUS_LABEL, localStamp, statusTone } from '../lib/format';
 import { dspLabel, durationLabel, genreLabel, kindLabel, languageLabel } from '../lib/catalog';
-import { docState, docsForRelease, pendingProofs, proofPath, useDocs } from '../store/docs';
+import { docState, docsForRelease, openFixes, pendingProofs, proofPath, useDocs } from '../store/docs';
 import { refreshDocs } from '../store/portalSync';
 import { MOCK } from '../lib/mode';
 import { errorMessage } from '../api/errors';
@@ -145,9 +145,13 @@ export function ReleaseDetail() {
   const coverSrc = d?.coverData || rel.coverData;
   const allFixes = rel.corrections ?? [];
   // 담당자 전체 의견은 고칠 항목이 아니라 따로 보여 준다
-  const { items: fixes, note: reviewNote } = splitCorrections(allFixes);
+  const { items: requested, note: reviewNote } = splitCorrections(allFixes);
+  // 요청 서류를 이미 낸 ‘추가 서류 첨부’ 항목은 끝난 것으로 본다 (남은 일은 다시 접수)
+  const fixes = openFixes(requested, allDocs);
   // 담당자가 요청한 서류 — 신청서 보완과 따로, 그 요청의 첨부·제출 화면으로 보낸다
-  const proofs = pendingProofs(allDocs, rel.id, rel.title);
+  // 보완 항목(추가 서류 첨부)으로 요청한 서류는 항목 목록에서 안내하므로 빼고 보여 준다
+  const linkedDocs = new Set(requested.map(c => c.documentId).filter(Boolean));
+  const proofs = pendingProofs(allDocs, rel.id, rel.title).filter(doc => !linkedDocs.has(doc.id));
   const docsOnly = needsFix && rel.fixKind === 'documents';
 
   // 접수한 신청 취소 — 한 달 3회까지 직접, 그 이상·배급 시작 후는 문의로
@@ -318,6 +322,7 @@ export function ReleaseDetail() {
           <h2 id="aqFixCardHead" className="aq-fix-title">
             {docsOnly ? '담당자가 요청한 서류를 제출해 주세요'
               : fixes.length ? `${fixCountWord(fixes.length)} 고치면 바로 다시 검토해요`
+                : requested.length ? '요청한 서류를 냈어요. 신청서를 다시 접수해 주세요'
                 : reviewNote ? '검토팀 의견을 확인하고 신청서를 고쳐 주세요' : '알림과 권리 서류에서 요청 내용을 확인해 주세요'}
           </h2>
           <div className="aq-fix-body">
