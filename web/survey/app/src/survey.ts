@@ -458,8 +458,43 @@ export const STEPS: Step[] = [
     "desc": "AUDENIQ에 대한 기대와 개선 의견을 들려주세요.",
     "questions": [
       {
-        "key": "q19",
+        "key": "q23",
         "qid": "Q19",
+        "kind": "single",
+        "required": true,
+        "tag": "필수",
+        "title": "현재 또는 과거에 퍼블리싱 서비스를 이용한 경험이 있으신가요?",
+        "hint": "작사·작곡 저작권 관리 계약을 기준으로 답해주세요. 음원 배급사 이용 경험과는 별개예요",
+        "options": [
+          "현재 이용하고 있어요",
+          "과거에 이용한 경험이 있어요",
+          "이용한 경험이 없어요",
+          "계약이 퍼블리싱에 해당하는지 잘 모르겠어요"
+        ]
+      },
+      {
+        "key": "q24",
+        "qid": "Q20",
+        "kind": "text",
+        "required": true,
+        "tag": "필수",
+        "title": "어떤 퍼블리싱 업체를 이용하셨나요?",
+        "hint": "현재 또는 가장 최근에 이용한 업체명을 적어주세요. 여러 곳이면 함께 적어도 돼요. 기억나지 않으면 “기억나지 않아요”라고 적어주세요",
+        "options": []
+      },
+      {
+        "key": "q25",
+        "qid": "Q21",
+        "kind": "text",
+        "required": false,
+        "tag": "선택",
+        "title": "해당 퍼블리싱 업체의 관리 수수료율은 얼마였나요?",
+        "hint": "알고 계실 때만 적어주세요. 예: 저작권료의 10%, 국내 10%·해외 15%. 업체마다 다르면 업체명과 함께 적어주세요",
+        "options": []
+      },
+      {
+        "key": "q19",
+        "qid": "Q22",
         "kind": "single",
         "required": false,
         "tag": "선택",
@@ -477,7 +512,7 @@ export const STEPS: Step[] = [
       },
       {
         "key": "q21",
-        "qid": "Q20",
+        "qid": "Q23",
         "kind": "multi",
         "required": false,
         "tag": "선택",
@@ -498,7 +533,7 @@ export const STEPS: Step[] = [
       },
       {
         "key": "q13",
-        "qid": "Q21",
+        "qid": "Q24",
         "kind": "single",
         "required": true,
         "tag": "필수",
@@ -515,7 +550,7 @@ export const STEPS: Step[] = [
       },
       {
         "key": "q14",
-        "qid": "Q22",
+        "qid": "Q25",
         "kind": "text",
         "required": false,
         "tag": "선택",
@@ -553,5 +588,8 @@ export const EXCLUSIVE: Record<string, string> = { q4: '9', q6: '18', q15: '13',
 /** 배급 경험이 없으면 건너뛰는 문항 */
 export const EXPERIENCE_BRANCH = ['q5', 'q6', 'q12'];
 export const FIRST = 1;
-export const LAST = 22;
+export const LAST = 25;
 
+
+/** 퍼블리싱 경험이 있을 때만 묻는 업체명·수수료율 */
+export const PUBLISHING_BRANCH = ['q24', 'q25'];
