@@ -198,34 +198,35 @@ export function Settlement() {
       </div>
 
       <section className="ui-card settle-hero" aria-labelledby="settleHeroHeading">
-        <div className="settle-hero-top">
-          <div>
-            <span className="eyebrow">지급</span>
-            <h2 id="settleHeroHeading">요청 전 잔액</h2>
-            <strong className="settle-hero-amount"><Money value={left} mark animate /></strong>
-            <p className="settle-hero-sub">
-              {MOCK ? `기록한 정산액 ${money(total)} · 지급 요청 합계 ${money(used)}` : `확정 정산액 ${money(total)} · 처리 중인 지급 ${money(used)}`}
-            </p>
-          </div>
-          <div className="row-actions">
-            {MOCK && <button type="button" className="ui-btn is-soft" onClick={() => setShowStatement(true)}>정산 기록</button>}
-            <button type="button" className="ui-btn is-primary" onClick={openPayoutModal}>수익 받기</button>
-          </div>
-        </div>
+        <h2 id="settleHeroHeading">요청 전 잔액</h2>
+        <strong className="settle-hero-amount"><Money value={left} animate /></strong>
+        <p className="settle-hero-sub">
+          {MOCK ? `기록한 정산액 ${money(total)} · 지급 요청 합계 ${money(used)}` : `확정 정산액 ${money(total)} · 처리 중인 지급 ${money(used)}`}
+        </p>
         <div className="settle-hero-account">
           {paymentRegistered && payment ? (
             <>
               <BankLogo name={payment.bank} />
-              <span className="min-0">{payment.bank} · •••• {payment.last4} · {payment.recipient}</span>
-              <button type="button" className="ui-btn is-white is-sm" onClick={() => setShowPaymentSetup(true)}>변경</button>
+              <div className="min-0">
+                <strong>{payment.bank}</strong>
+                <span>•••• {payment.last4} · {payment.recipient}</span>
+              </div>
+              <button type="button" className="settle-hero-link" onClick={() => setShowPaymentSetup(true)}>변경</button>
             </>
           ) : (
             <>
               <span className="aq-payment-badge is-empty" aria-hidden="true"><Glyph name="won" size={18} /></span>
-              <span className="min-0">수익을 받을 계좌를 등록해 주세요.</span>
-              <button type="button" className="ui-btn is-white is-sm" onClick={() => setShowPaymentSetup(true)}>등록하기</button>
+              <div className="min-0">
+                <strong>받을 계좌 없음</strong>
+                <span>수익을 받을 계좌를 등록해 주세요.</span>
+              </div>
+              <button type="button" className="settle-hero-link" onClick={() => setShowPaymentSetup(true)}>등록</button>
             </>
           )}
+        </div>
+        <div className="settle-hero-actions">
+          {MOCK && <button type="button" className="ui-btn is-soft is-lg" onClick={() => setShowStatement(true)}>정산 기록</button>}
+          <button type="button" className="ui-btn is-primary is-lg" onClick={openPayoutModal}>수익 받기</button>
         </div>
       </section>
 
