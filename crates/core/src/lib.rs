@@ -34,6 +34,7 @@ pub mod partner_config;
 pub mod partner_hooks;
 pub mod partner_onboarding;
 pub mod partners;
+pub mod photo;
 pub mod portal;
 pub mod preflight;
 pub mod preparation_model;
