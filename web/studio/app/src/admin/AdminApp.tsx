@@ -67,6 +67,7 @@ function prefetchPages() {
 }
 import '../styles/admin.css';
 import '../styles/work.css';
+import '../styles/admin-refresh.css';
 import { Glyph } from '../components/Glyph';
 import { openLive } from '../lib/live';
 import { alertsBlocked, alertsEnabled, alertsSupported, disableAlerts, enableAlerts, systemAlert } from '../lib/alerts';
@@ -245,7 +246,7 @@ export function AdminApp() {
           <div className="adm-header-shell">
             <Link to="/admin" className="adm-brand" aria-label="AUDENIQ ADMIN 홈">
               <img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" />
-              <span className="ui-product is-dark">ADMIN</span>
+              <span className="ui-product">ADMIN</span>
             </Link>
             <div className="adm-header-right">
               {MOCK && <Badge tone="amber">체험 데이터</Badge>}
