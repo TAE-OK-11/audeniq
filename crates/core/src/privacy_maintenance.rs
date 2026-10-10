@@ -31,6 +31,9 @@ pub async fn purge_transient(pool: &PgPool, operator: &str) -> Result<Value> {
         .execute(&mut *tx).await?.rows_affected();
     let logs=sqlx::query("WITH old AS (SELECT id FROM privacy.staff_access_logs WHERE retain_until<now() ORDER BY occurred_at LIMIT 10000 FOR UPDATE SKIP LOCKED) DELETE FROM privacy.staff_access_logs l USING old WHERE l.id=old.id")
         .execute(&mut *tx).await?.rows_affected();
+    // 설문 응답은 12개월 보관 (예전 Worker의 매일 cron과 같은 기준)
+    let surveys=sqlx::query("WITH old AS (SELECT id FROM content.survey_responses WHERE created_at<now()-interval '12 months' ORDER BY created_at LIMIT 10000 FOR UPDATE SKIP LOCKED) DELETE FROM content.survey_responses r USING old WHERE r.id=old.id")
+        .execute(&mut *tx).await?.rows_affected();
     operations::audit(
         &mut tx,
         None,
@@ -38,7 +41,7 @@ pub async fn purge_transient(pool: &PgPool, operator: &str) -> Result<Value> {
         None,
         "privacy.transient.purged",
         &format!(
-            "OPERATOR:{} sessions={sessions} limits={limits} expired_logs={logs}",
+            "OPERATOR:{} sessions={sessions} limits={limits} expired_logs={logs} surveys={surveys}",
             operator.trim()
         ),
         Uuid::new_v4(),
@@ -46,7 +49,7 @@ pub async fn purge_transient(pool: &PgPool, operator: &str) -> Result<Value> {
     .await?;
     tx.commit().await?;
     Ok(
-        json!({"sessions":sessions,"auth_limits":limits,"expired_access_logs":logs,"batch_limit":10000}),
+        json!({"sessions":sessions,"auth_limits":limits,"expired_access_logs":logs,"survey_responses":surveys,"batch_limit":10000}),
     )
 }
 

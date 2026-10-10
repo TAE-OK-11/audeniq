@@ -235,7 +235,7 @@ jobs:
               "cd '$path' && chmod +x deploy.sh pg-upgrade.sh && GHCR_USER='$GHCR_USER' GHCR_TOKEN_STDIN=1 ./deploy.sh '$ref'" \<<< "$GHCR_TOKEN"
             echo "배포됨: $ref → $DEPLOY_HOST:$path"
 
-  # ── 프론트엔드 (화면: AWS S3 + CloudFront, /api: Cloudflare Workers) ─────────
+  # ── 프론트엔드 (Cloudflare Workers → AWS S3 + CloudFront 전환 중, deploy/aws/README.md) ──
   # 어느 브랜치든 테스트·빌드, main일 때만 배포. CLOUDFLARE_API_TOKEN·CLOUDFLARE_ACCOUNT_ID는 Context에 둔다.
   # 화면 배포는 Context에 AWS_UI_ROLE_ARN(CircleCI OIDC로 맡을 IAM 역할)이 있을 때만 (deploy/aws/README.md).
   studio:

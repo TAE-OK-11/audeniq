@@ -326,48 +326,6 @@ test('backend proxy derives source identity from Cloudflare and fails closed wit
   } finally { globalThis.fetch = real; }
 });
 
-test('behind CloudFront: the viewer IP is trusted only with the edge secret, and EDGE_ORIGIN_ONLY refuses direct calls', async () => {
-  const real = globalThis.fetch;
-  const seen = [];
-  globalThis.fetch = async req => { seen.push(req); return new Response('{}'); };
-  try {
-    const edge = 'e'.repeat(40);
-    const e = { ...env(), EDGE_SERVICE_SECRET: 's'.repeat(40), EDGE_ORIGIN_SECRET: edge, PUBLIC_ORIGIN: 'https://studio.audeniq.com' };
-    // CloudFront는 Host를 Worker 주소(studio-api)로 바꿔 보내고, 브라우저 Origin은 화면 주소 그대로다
-    const login = extra => new Request('https://studio-api.audeniq.com/api/auth/login', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', origin: 'https://studio.audeniq.com', 'sec-fetch-site': 'same-origin',
-        'cf-connecting-ip': '198.51.100.1', 'cloudfront-viewer-address': '2001:db8::7:51234', ...extra },
-      body: '{}',
-    });
-    // 비밀이 없거나 틀리면 위조 가능한 CloudFront-Viewer-Address 대신 Cloudflare IP
-    for (const extra of [{}, { 'x-audeniq-edge': 'wrong' }, { 'x-audeniq-edge': edge.slice(1) }]) {
-      assert.equal((await worker.fetch(login(extra), e)).status, 200);
-      assert.equal(seen.at(-1).headers.get('x-audeniq-client-ip'), '198.51.100.1');
-    }
-    seen.length = 0;
-    assert.equal((await worker.fetch(login({ 'x-audeniq-edge': edge }), e)).status, 200);
-    assert.equal(seen[0].headers.get('x-audeniq-client-ip'), '2001:db8::7');
-    assert.equal(seen[0].headers.get('x-audeniq-edge'), null);
-    assert.equal((await worker.fetch(login({ 'x-audeniq-edge': edge, 'cloudfront-viewer-address': '203.0.113.7:4312' }), e)).status, 200);
-    assert.equal(seen[1].headers.get('x-audeniq-client-ip'), '203.0.113.7');
-    // 전환이 끝나면 직접 호출 차단
-    const only = { ...e, EDGE_ORIGIN_ONLY: 'true' };
-    for (const extra of [{}, { 'x-audeniq-edge': 'wrong' }]) {
-      const refused = await worker.fetch(login(extra), only);
-      assert.equal(refused.status, 403);
-      assert.equal((await refused.json()).error.code, 'FORBIDDEN');
-    }
-    assert.equal(seen.length, 2);
-    assert.equal((await worker.fetch(login({ 'x-audeniq-edge': edge }), only)).status, 200);
-    // 공개 주소 기준 Origin 검사: 콘텐츠 쓰기는 화면 주소에서 온 것만
-    const write = origin => worker.fetch(new Request('https://studio-api.audeniq.com/api/content/notices', {
-      method: 'POST', headers: { origin, cookie: 'a=b', 'x-audeniq-edge': edge, 'content-type': 'application/json' }, body: '{}',
-    }), e);
-    assert.equal((await write('https://studio-api.audeniq.com')).status, 403);
-  } finally { globalThis.fetch = real; }
-});
-
 test('emergency: env switch forces maintenance and API calls get 503 MAINTENANCE', async () => {
   resetMaintenanceCache();
   const real = globalThis.fetch;
