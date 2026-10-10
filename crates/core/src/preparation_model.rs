@@ -77,6 +77,11 @@ pub struct PreparedRelease {
     pub artist: String,
     pub release_type: String,
     pub release_date: NaiveDate,
+    /// 재발매·이전 음원의 최초 발매일 (`originalDate`). 없으면 신규 발매.
+    /// Omitted from the serialized form when absent so snapshots prepared
+    /// before this field keep their hash.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_release_date: Option<NaiveDate>,
     pub language: String,
     pub p_line: String,
     pub c_line: String,
@@ -158,6 +163,25 @@ fn draft_field(draft: &Value, key: &str, code: &'static str) -> Result<String> {
         .filter(|s| !s.trim().is_empty())
         .map(str::to_owned)
         .ok_or(Error::PolicyGate(code))
+}
+
+/// The wizard's `originalDate` (최초 발매일, 재발매일 때만). It must not be
+/// after the new release date; an empty value means a first release.
+pub fn original_release_date(draft: &Value, release_date: NaiveDate) -> Result<Option<NaiveDate>> {
+    let Some(raw) = draft
+        .get("originalDate")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    else {
+        return Ok(None);
+    };
+    let d = NaiveDate::parse_from_str(raw, "%Y-%m-%d")
+        .map_err(|_| Error::PolicyGate("PREPARATION_ORIGINAL_DATE_INVALID"))?;
+    if d > release_date {
+        return Err(Error::PolicyGate("PREPARATION_ORIGINAL_DATE_INVALID"));
+    }
+    Ok(Some(d))
 }
 
 impl PreparedRelease {
@@ -256,6 +280,7 @@ impl PreparedRelease {
             draft_field(&draft, "release_date", "PREPARATION_RELEASE_DATE_MISSING")?;
         let release_date = NaiveDate::parse_from_str(&release_date_raw, "%Y-%m-%d")
             .map_err(|_| Error::PolicyGate("PREPARATION_RELEASE_DATE_INVALID"))?;
+        let original_release_date = original_release_date(&draft, release_date)?;
 
         Ok(PreparedRelease {
             canonical: c.clone(),
@@ -276,6 +301,7 @@ impl PreparedRelease {
             artist: draft_field(&draft, "artist", "PREPARATION_ARTIST_MISSING")?,
             release_type: c.release_type.clone(),
             release_date,
+            original_release_date,
             language: draft_field(&draft, "language", "PREPARATION_LANGUAGE_MISSING")?,
             p_line: draft_field(&draft, "p_line", "PREPARATION_P_LINE_MISSING")?,
             c_line: draft_field(&draft, "c_line", "PREPARATION_C_LINE_MISSING")?,

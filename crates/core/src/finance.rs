@@ -87,6 +87,19 @@ fn map_unique_violation(e: sqlx::Error, code: &'static str) -> Error {
 
 /// Post a balanced double-entry transaction. Returns the transaction id.
 pub async fn post_transaction(pool: &PgPool, org: Uuid, t: PostTransaction<'_>) -> Result<Uuid> {
+    let mut tx = pool.begin().await?;
+    let id = post_transaction_in(&mut tx, org, t).await?;
+    tx.commit().await?;
+    Ok(id)
+}
+
+/// [`post_transaction`] inside the caller's database transaction, so a
+/// ledger posting and the state change it accounts for commit together.
+pub async fn post_transaction_in(
+    tx: &mut sqlx::PgConnection,
+    org: Uuid,
+    t: PostTransaction<'_>,
+) -> Result<Uuid> {
     if t.transaction_code.trim().is_empty() {
         return Err(Error::PolicyGate("TRANSACTION_CODE_REQUIRED"));
     }
@@ -138,7 +151,6 @@ pub async fn post_transaction(pool: &PgPool, org: Uuid, t: PostTransaction<'_>) 
         return Err(Error::PolicyGate("UNBALANCED_TRANSACTION"));
     }
 
-    let mut tx = pool.begin().await?;
     let id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO finance.ledger_transactions(id,org_id,transaction_code,currency,fx_rate,fee_policy_version,contract_version,tax_rule_version,source_ref,description,created_by)
@@ -175,7 +187,6 @@ pub async fn post_transaction(pool: &PgPool, org: Uuid, t: PostTransaction<'_>) 
         .execute(&mut *tx)
         .await?;
     }
-    tx.commit().await?;
     Ok(id)
 }
 
@@ -448,6 +459,17 @@ pub async fn approve_payout_order(
     approver: Uuid,
     order_id: Uuid,
 ) -> Result<()> {
+    // Separation of duties: whoever created the order does not approve it.
+    let creator: Option<Option<Uuid>> = sqlx::query_scalar(
+        "SELECT created_by FROM finance.payout_orders WHERE org_id=$1 AND id=$2",
+    )
+    .bind(org)
+    .bind(order_id)
+    .fetch_optional(pool)
+    .await?;
+    if creator.flatten() == Some(approver) {
+        return Err(Error::PolicyGate("PAYOUT_APPROVER_MUST_DIFFER"));
+    }
     let n = sqlx::query(
         "UPDATE finance.payout_orders SET status='APPROVED',approved_by=$3,approved_at=now()
          WHERE org_id=$1 AND id=$2 AND status='PENDING_APPROVAL'",
@@ -490,6 +512,12 @@ impl BankOutcome {
 /// Record the bank's result for a submitted payout. An unclear response is
 /// stored as SUBMITTED_UNKNOWN; reconciliation happens out-of-band and the
 /// order is never auto-resubmitted by this function.
+///
+/// SETTLED posts the payout to the ledger in the same database transaction
+/// (debit ROYALTY_PAYABLE by the requested amount; credit PAYOUT_CLEARING by
+/// the net transfer and PAYOUT_FEE_REVENUE by the fee), so a settled order
+/// can never drop out of the reserved balance without reducing the payable.
+/// A repeated SETTLED for the same order and bank transaction is a no-op.
 pub async fn record_bank_result(
     pool: &PgPool,
     org: Uuid,
@@ -499,10 +527,101 @@ pub async fn record_bank_result(
     outcome: BankOutcome,
     bank_result: Value,
 ) -> Result<()> {
-    let n = sqlx::query(
+    let mut tx = pool.begin().await?;
+    type OrderRow = (
+        String,
+        Decimal,
+        String,
+        Uuid,
+        Option<Decimal>,
+        Option<Decimal>,
+        Option<String>,
+        Option<String>,
+    );
+    let row: Option<OrderRow> = sqlx::query_as(
+        "SELECT status,amount,currency,payee_party_id,fee_amount,net_amount,fee_policy_version,bank_transaction_id
+         FROM finance.payout_orders WHERE org_id=$1 AND id=$2 FOR UPDATE",
+    )
+    .bind(org)
+    .bind(order_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let (status, amount, currency, payee, fee, net, policy, bank_tx) =
+        row.ok_or(Error::NotFound)?;
+    if status == "SETTLED"
+        && outcome == BankOutcome::Settled
+        && (bank_transaction_id.is_none() || bank_transaction_id == bank_tx.as_deref())
+    {
+        return Ok(()); // duplicate confirmation: one bank transfer, one ledger debit
+    }
+    if !matches!(
+        status.as_str(),
+        "APPROVED" | "SUBMITTED" | "SUBMITTED_UNKNOWN"
+    ) {
+        return Err(Error::PolicyGate("INVALID_PAYOUT_STATUS_TRANSITION"));
+    }
+    let mut related: Option<Uuid> = None;
+    if outcome == BankOutcome::Settled {
+        let fee = fee.unwrap_or(Decimal::ZERO);
+        let net = net.unwrap_or(amount - fee);
+        let mut entries = vec![
+            LedgerEntryInput {
+                account: "ROYALTY_PAYABLE",
+                side: EntrySide::Debit,
+                amount,
+                currency: None,
+                party_id: Some(payee),
+                isrc: None,
+                split_snapshot_id: None,
+            },
+            LedgerEntryInput {
+                account: "PAYOUT_CLEARING",
+                side: EntrySide::Credit,
+                amount: net,
+                currency: None,
+                party_id: Some(payee),
+                isrc: None,
+                split_snapshot_id: None,
+            },
+        ];
+        if fee > Decimal::ZERO {
+            entries.push(LedgerEntryInput {
+                account: "PAYOUT_FEE_REVENUE",
+                side: EntrySide::Credit,
+                amount: fee,
+                currency: None,
+                party_id: None,
+                isrc: None,
+                split_snapshot_id: None,
+            });
+        }
+        let code = format!("PAYOUT:{order_id}");
+        related = Some(
+            post_transaction_in(
+                &mut tx,
+                org,
+                PostTransaction {
+                    transaction_code: &code,
+                    currency: &currency,
+                    entries,
+                    match_status: None,
+                    fx_rate: None,
+                    fee_policy_version: policy.as_deref(),
+                    contract_version: None,
+                    tax_rule_version: None,
+                    source_ref: serde_json::json!({"payout_order_id": order_id, "bank_transaction_id": bank_transaction_id.or(bank_tx.as_deref())}),
+                    description: "payout settled",
+                    created_by: Some(executor),
+                },
+            )
+            .await?,
+        );
+    }
+    sqlx::query(
         "UPDATE finance.payout_orders
-         SET status=$3,executed_by=$4,bank_transaction_id=COALESCE($5,bank_transaction_id),bank_result=$6
-         WHERE org_id=$1 AND id=$2 AND status IN ('APPROVED','SUBMITTED','SUBMITTED_UNKNOWN')",
+         SET status=$3,executed_by=$4,bank_transaction_id=COALESCE($5,bank_transaction_id),bank_result=$6,
+             related_transaction_id=COALESCE($7,related_transaction_id)
+         WHERE org_id=$1 AND id=$2",
     )
     .bind(org)
     .bind(order_id)
@@ -510,12 +629,122 @@ pub async fn record_bank_result(
     .bind(executor)
     .bind(bank_transaction_id)
     .bind(&bank_result)
-    .execute(pool)
+    .bind(related)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| map_unique_violation(e, "BANK_TRANSACTION_ALREADY_USED"))?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Turn an artist's payout request into a payout order in one database
+/// transaction (the request stops counting as reserved exactly when the order
+/// starts). The order carries the request's amount, fee, net, policy version
+/// and the payout account frozen at request time. Re-running for the same
+/// request returns the existing order.
+pub async fn order_payout_request(
+    pool: &PgPool,
+    org: Uuid,
+    request_id: Uuid,
+    created_by: Uuid,
+) -> Result<Uuid> {
+    let mut tx = pool.begin().await?;
+    // Same per-organisation lock as the portal request path.
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1::text, 7))")
+        .bind(org)
+        .execute(&mut *tx)
+        .await?;
+    let r = sqlx::query(
+        "SELECT status,payout_order_id,payee_party_id,amount,currency,fee_amount,net_amount,policy_version,
+                account_snapshot,account_cipher,account_key_version
+         FROM portal.payout_requests WHERE org_id=$1 AND id=$2 FOR UPDATE",
+    )
+    .bind(org)
+    .bind(request_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(Error::NotFound)?;
+    use sqlx::Row;
+    let status: String = r.get("status");
+    if status == "ORDERED" {
+        return r
+            .get::<Option<Uuid>, _>("payout_order_id")
+            .ok_or(Error::Internal);
+    }
+    if status != "REQUESTED" {
+        return Err(Error::PolicyGate("INVALID_PAYOUT_STATUS_TRANSITION"));
+    }
+    let payee: Uuid = r.get("payee_party_id");
+    let held: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM finance.finance_holds WHERE org_id=$1 AND scope_type='PARTY' AND scope_value=$2 AND active)",
+    )
+    .bind(org)
+    .bind(payee.to_string())
+    .fetch_one(&mut *tx)
+    .await?;
+    if held {
+        return Err(Error::PolicyGate("PAYEE_ON_HOLD"));
+    }
+    if r.get::<Option<Vec<u8>>, _>("account_cipher").is_none() {
+        // Requests from before account freezing (0085) are re-requested by the artist.
+        return Err(Error::PolicyGate("PAYOUT_ACCOUNT_SNAPSHOT_MISSING"));
+    }
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO finance.payout_orders(id,org_id,idempotency_key,payee_party_id,amount,currency,created_by,
+           payout_request_id,fee_amount,net_amount,fee_policy_version,account_snapshot,account_cipher,account_key_version)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)",
+    )
+    .bind(id)
+    .bind(org)
+    .bind(format!("request:{request_id}"))
+    .bind(payee)
+    .bind(r.get::<Decimal, _>("amount"))
+    .bind(r.get::<String, _>("currency"))
+    .bind(created_by)
+    .bind(request_id)
+    .bind(r.get::<Option<Decimal>, _>("fee_amount"))
+    .bind(r.get::<Option<Decimal>, _>("net_amount"))
+    .bind(r.get::<Option<String>, _>("policy_version"))
+    .bind(r.get::<Option<Value>, _>("account_snapshot"))
+    .bind(r.get::<Option<Vec<u8>>, _>("account_cipher"))
+    .bind(r.get::<Option<i16>, _>("account_key_version"))
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("UPDATE portal.payout_requests SET status='ORDERED',payout_order_id=$3 WHERE org_id=$1 AND id=$2")
+        .bind(org)
+        .bind(request_id)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(id)
+}
+
+/// Cancel an order before it is handed to the bank (PENDING_APPROVAL or
+/// APPROVED). Its portal request, if any, is cancelled with it.
+pub async fn cancel_payout_order(pool: &PgPool, org: Uuid, order_id: Uuid) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    let n = sqlx::query(
+        "UPDATE finance.payout_orders SET status='CANCELLED',cancelled_at=now()
+         WHERE org_id=$1 AND id=$2 AND status IN ('PENDING_APPROVAL','APPROVED')",
+    )
+    .bind(org)
+    .bind(order_id)
+    .execute(&mut *tx)
     .await?
     .rows_affected();
     if n != 1 {
-        return Err(Error::PolicyGate("INVALID_PAYOUT_STATUS_TRANSITION"));
+        return Err(Error::PolicyGate("PAYOUT_NOT_CANCELLABLE"));
     }
+    sqlx::query(
+        "UPDATE portal.payout_requests SET status='CANCELLED',cancelled_at=now() WHERE org_id=$1 AND payout_order_id=$2",
+    )
+    .bind(org)
+    .bind(order_id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
     Ok(())
 }
 
@@ -536,7 +765,8 @@ pub async fn mark_payout_submitted(
     .bind(executor)
     .bind(bank_transaction_id)
     .execute(pool)
-    .await?
+    .await
+    .map_err(|e| map_unique_violation(e, "BANK_TRANSACTION_ALREADY_USED"))?
     .rows_affected();
     if n != 1 {
         return Err(Error::PolicyGate("INVALID_PAYOUT_STATUS_TRANSITION"));

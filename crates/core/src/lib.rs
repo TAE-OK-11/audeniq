@@ -72,4 +72,5 @@ mod media_budget;
 mod password_work;
 
 pub mod payout_keys;
+pub mod payout_policy;
 pub mod privacy_maintenance;

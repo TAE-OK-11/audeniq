@@ -1422,11 +1422,12 @@ async fn settlement_balance_payout_requests_and_reports(pool: PgPool) {
         &app,
         "POST",
         &org_path(&u, "/finance/payouts"),
-        req("5000", "payout-key-0"),
+        req("500", "payout-key-0"),
         Some(&u),
     )
     .await;
-    assert_eq!(v["error"]["code"], "PAYOUT_BELOW_MINIMUM");
+    // Minimum waived until 2027-12-31 KST, but the 500원 fee leaves nothing to pay.
+    assert_eq!(v["error"]["code"], "PAYOUT_NET_NOT_POSITIVE");
     let (_, _, v) = call(
         &app,
         "POST",
@@ -1505,6 +1506,263 @@ async fn settlement_balance_payout_requests_and_reports(pool: PgPool) {
     )
     .await;
     assert_eq!(s, StatusCode::FORBIDDEN);
+}
+
+#[sqlx::test]
+async fn payout_quote_snapshot_cancel_order_and_settle(pool: PgPool) {
+    // Legal/operations audit 2026-10-10: C01 (minimum waiver), C02 (fee/net),
+    // C04 (account frozen per request), C14/C15 (order + settle with ledger
+    // debit), C17 (cancel before the bank transfer).
+    key();
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    use audeniq_core::finance::{self, BankOutcome, EntrySide, LedgerEntryInput, PostTransaction};
+    let entry = |account, side, amount: &str| LedgerEntryInput {
+        account,
+        side,
+        amount: amount.parse().unwrap(),
+        currency: None,
+        party_id: Some(u.party),
+        isrc: None,
+        split_snapshot_id: None,
+    };
+    finance::post_transaction(
+        &pool,
+        u.org,
+        PostTransaction {
+            transaction_code: "ROYALTY_ACCRUAL",
+            currency: "KRW",
+            entries: vec![
+                entry("ROYALTY_RECEIVABLE", EntrySide::Debit, "50000"),
+                entry("ROYALTY_PAYABLE", EntrySide::Credit, "50000"),
+            ],
+            match_status: Some("AUTO"),
+            fx_rate: None,
+            fee_policy_version: None,
+            contract_version: None,
+            tax_rule_version: None,
+            source_ref: json!({}),
+            description: "accrual",
+            created_by: None,
+        },
+    )
+    .await
+    .unwrap();
+    let get = |path: &str| {
+        let (app, u, path) = (app.clone(), u.clone(), org_path(&u, path));
+        async move { call(&app, "GET", &path, Value::Null, Some(&u)).await.2 }
+    };
+    let post = |path: &str, body: Value| {
+        let (app, u, path) = (app.clone(), u.clone(), org_path(&u, path));
+        async move {
+            let (s, _, v) = call(&app, "POST", &path, body, Some(&u)).await;
+            (s, v)
+        }
+    };
+    let summary = get("/finance/summary").await;
+    assert_eq!(
+        summary["minimum_payout"], "0",
+        "minimum waived until 2027-12-31 KST"
+    );
+    assert_eq!(summary["payout_policy"]["small_payout_fee"], "500");
+
+    let q = get("/finance/payouts/quote?amount=30000").await;
+    assert_eq!(
+        (q["fee"].as_str(), q["net"].as_str()),
+        (Some("500"), Some("29500"))
+    );
+    assert_eq!(q["within_balance"], true);
+    let q = get("/finance/payouts/quote?amount=30001").await;
+    assert_eq!(
+        (q["fee"].as_str(), q["net"].as_str()),
+        (Some("0"), Some("30001"))
+    );
+    let q = get("/finance/payouts/quote?amount=500").await;
+    assert_eq!(q["error"]["code"], "PAYOUT_NET_NOT_POSITIVE");
+
+    let acct = |n: &str| json!({"payee_type":"INDIVIDUAL","holder_name":"서린","bank_name":"국민은행","account_number":n});
+    call(
+        &app,
+        "PUT",
+        &org_path(&u, "/payout-account"),
+        acct("12345678901111"),
+        Some(&u),
+    )
+    .await;
+    let (s, r) = post(
+        "/finance/payouts",
+        json!({"amount":"30000","idempotency_key":"key-cancel-1"}),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{r}");
+    assert_eq!(
+        (r["fee"].as_str(), r["net"].as_str()),
+        (Some("500"), Some("29500"))
+    );
+    // Changing the account later does not move an existing request.
+    call(
+        &app,
+        "PUT",
+        &org_path(&u, "/payout-account"),
+        acct("99998888772222"),
+        Some(&u),
+    )
+    .await;
+    let list = get("/finance/payouts").await;
+    assert_eq!(list["items"][0]["account"]["account_last4"], "1111");
+    assert_eq!(list["items"][0]["cancellable"], true);
+    // Cancel before ordering restores the balance.
+    let (s, v) = post(
+        &format!("/finance/payouts/{}/cancel", r["id"].as_str().unwrap()),
+        json!({}),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(get("/finance/summary").await["pending"], "0");
+
+    // A new request (new account 2222) becomes an order in one step.
+    let (_, r) = post(
+        "/finance/payouts",
+        json!({"amount":"30000","idempotency_key":"key-order-2"}),
+    )
+    .await;
+    let request: Uuid = r["id"].as_str().unwrap().parse().unwrap();
+    let ops = Uuid::new_v4();
+    let order = finance::order_payout_request(&pool, u.org, request, ops)
+        .await
+        .unwrap();
+    assert_eq!(
+        finance::order_payout_request(&pool, u.org, request, ops)
+            .await
+            .unwrap(),
+        order
+    );
+    assert_eq!(
+        get("/finance/summary").await["pending"],
+        "30000",
+        "request and order are not both counted"
+    );
+    let frozen: Value =
+        sqlx::query_scalar("SELECT account_snapshot FROM finance.payout_orders WHERE id=$1")
+            .bind(order)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(frozen["account_last4"], "2222");
+    // Separation of duties.
+    let e = finance::approve_payout_order(&pool, u.org, ops, order)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            e,
+            audeniq_core::error::Error::PolicyGate("PAYOUT_APPROVER_MUST_DIFFER")
+        ),
+        "{e:?}"
+    );
+    finance::approve_payout_order(&pool, u.org, Uuid::new_v4(), order)
+        .await
+        .unwrap();
+    finance::mark_payout_submitted(&pool, u.org, ops, order, "bank-1")
+        .await
+        .unwrap();
+    // Handed to the bank: the artist can no longer cancel.
+    let (s, v) = post(&format!("/finance/payouts/{request}/cancel"), json!({})).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(v["error"]["code"], "PAYOUT_NOT_CANCELLABLE");
+    // Settle: payable drops by the request, the balance does not come back.
+    for _ in 0..2 {
+        finance::record_bank_result(
+            &pool,
+            u.org,
+            ops,
+            order,
+            Some("bank-1"),
+            BankOutcome::Settled,
+            json!({}),
+        )
+        .await
+        .unwrap();
+    }
+    let summary = get("/finance/summary").await;
+    assert_eq!(
+        (
+            summary["payable"].as_str(),
+            summary["pending"].as_str(),
+            summary["available"].as_str()
+        ),
+        (Some("20000"), Some("0"), Some("20000"))
+    );
+    let rows: Vec<(String, String, rust_decimal::Decimal)> = sqlx::query_as(
+        "SELECT e.account,e.side,e.amount FROM finance.ledger_entries e JOIN finance.ledger_transactions t ON t.id=e.transaction_id
+         WHERE t.transaction_code=$1 ORDER BY e.account",
+    )
+    .bind(format!("PAYOUT:{order}"))
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        rows.len(),
+        3,
+        "one posting despite the repeated confirmation: {rows:?}"
+    );
+    assert!(rows.contains(&(
+        "PAYOUT_CLEARING".into(),
+        "CREDIT".into(),
+        "29500".parse().unwrap()
+    )));
+    assert!(rows.contains(&(
+        "PAYOUT_FEE_REVENUE".into(),
+        "CREDIT".into(),
+        "500".parse().unwrap()
+    )));
+    assert!(rows.contains(&(
+        "ROYALTY_PAYABLE".into(),
+        "DEBIT".into(),
+        "30000".parse().unwrap()
+    )));
+
+    // The same bank transaction cannot complete a second order.
+    let (_, r) = post(
+        "/finance/payouts",
+        json!({"amount":"10000","idempotency_key":"key-dup-3"}),
+    )
+    .await;
+    let second = finance::order_payout_request(
+        &pool,
+        u.org,
+        r["id"].as_str().unwrap().parse().unwrap(),
+        ops,
+    )
+    .await
+    .unwrap();
+    finance::approve_payout_order(&pool, u.org, Uuid::new_v4(), second)
+        .await
+        .unwrap();
+    let e = finance::mark_payout_submitted(&pool, u.org, ops, second, "bank-1")
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            e,
+            audeniq_core::error::Error::PolicyGate("BANK_TRANSACTION_ALREADY_USED")
+        ),
+        "{e:?}"
+    );
+    // Approved but not sent: the artist can still cancel it.
+    let (s, v) = post(
+        &format!("/finance/payouts/{}/cancel", r["id"].as_str().unwrap()),
+        json!({}),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(
+        finance::get_payout_status(&pool, u.org, second)
+            .await
+            .unwrap(),
+        "CANCELLED"
+    );
+    assert_eq!(get("/finance/summary").await["available"], "20000");
 }
 
 #[sqlx::test]
