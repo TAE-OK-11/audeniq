@@ -92,7 +92,7 @@ CircleCI 조직 설정 → Contexts에 `audeniq-production`을 만들고 다음 
 | `CLOUDFLARE_API_TOKEN` | 프론트엔드 배포 (Workers Scripts:Edit, D1:Edit — 설문) |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 계정 ID |
 
-같은 파일의 **frontend** 워크플로는 Studio(`web/studio`)·관리자(`web/admin`)·랜딩(`web/landing`)·설문(`web/survey`)을 각 폴더가 바뀐 푸시마다 테스트·빌드하고, main에서만 Cloudflare Workers로 배포한다. Worker는 화면 서빙과 `/api` 전달(터널 → api)만 하고, 공지·이벤트·서버 점검·인증 보조는 백엔드가 한다 (`crates/core/src/site_content.rs`, `sites.rs`). 설문은 베타 전까지 D1 Worker 그대로다. 예전 D1 데이터는 `node deploy/aws/migrate-d1.mjs`로 옮긴다. 나중에 AWS로 옮길 때는 [`aws/README.md`](aws/README.md). 설문 D1 마이그레이션은 `web/survey/migrations`가 바뀌었거나 파이프라인 파라미터 `apply_migrations=true`일 때만 적용하고, 설문은 `bun run preflight`(실제 D1 ID·Turnstile 키)를 통과해야 배포한다.
+같은 파일의 **frontend** 워크플로는 Studio(`web/studio`)·관리자(`web/admin`)·랜딩(`web/landing`)·설문(`web/survey`)을 각 폴더가 바뀐 푸시마다 테스트·빌드하고, main에서만 Cloudflare Workers로 배포한다. Worker는 화면 서빙과 `/api` 전달(터널 → api)만 하고, 공지·이벤트·서버 점검·인증 보조는 백엔드가 한다 (`crates/core/src/site_content.rs`, `sites.rs`). 설문은 베타 전까지 D1 Worker 그대로다. 예전 D1 데이터는 `node deploy/aws/migrate-d1.mjs`로 옮긴다. 나중에 AWS로 옮길 때는 [`aws/README.md`](aws/README.md). 설문 D1 마이그레이션은 `web/survey/migrations`가 바뀌었거나 파이프라인 파라미터 `apply_migrations=true`일 때만 적용하고, 설문은 `bun run preflight`(실제 D1 ID·Turnstile 키)를 통과해야 배포한다. 수동 실행에서 파이프라인 파라미터 `target`을 `backend` 또는 `frontend`로 주면 그 워크플로만 돈다(`force=true`와 함께 쓰면 변경 여부와 상관없이 실행).
 
 ### PostgreSQL 17 → 18 (한 번)
 
