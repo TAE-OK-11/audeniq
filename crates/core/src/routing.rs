@@ -1,0 +1,347 @@
+//! Per-package DSP route decisions: direct / aggregator / upstream.
+//!
+//! The engine answers one question per approved DSP: "is there a sendable
+//! adapter profile for this DSP right now, and on which route?" Preference
+//! order is direct first, then aggregator (Merlin), then upstream (LIMBO).
+//! A profile is sendable when it is delivery_enabled, its capabilities declare
+//! send_or_publish=true, and it is MOCK — or CONTRACTED with a live contract
+//! route: the distributor-level contract (partner onboarding complete and
+//! staged LIVE, `execution.platform_contract_live`) or a per-org route plan
+//! (enabled route plan + ACTIVE endpoint + non-revoked contract revision). Without contracts every real DSP resolves to NO_ROUTE and the
+//! package waits for F6 instead of failing.
+//!
+//! The engine never transmits anything; it only records the decision so
+//! delivery enqueue and F6 have an auditable, deterministic basis.
+
+use crate::error::{Error, Result};
+use serde::{Deserialize, Serialize};
+use sqlx::{PgPool, Row};
+use std::collections::HashMap;
+use uuid::Uuid;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RouteKind {
+    Direct,
+    Aggregator,
+    Upstream,
+}
+
+impl RouteKind {
+    fn from_db(s: &str) -> Option<Self> {
+        match s {
+            "direct" => Some(Self::Direct),
+            "aggregator" => Some(Self::Aggregator),
+            "upstream" => Some(Self::Upstream),
+            _ => None,
+        }
+    }
+
+    /// Preference rank: direct first, then aggregator, then upstream.
+    fn rank(&self) -> u8 {
+        match self {
+            Self::Direct => 0,
+            Self::Aggregator => 1,
+            Self::Upstream => 2,
+        }
+    }
+
+    pub fn as_db(&self) -> &'static str {
+        match self {
+            Self::Direct => "direct",
+            Self::Aggregator => "aggregator",
+            Self::Upstream => "upstream",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RouteDecision {
+    pub dsp_id: Uuid,
+    pub route_kind: Option<RouteKind>,
+    pub partner_id: Option<String>,
+    pub routable: bool,
+    pub reason: &'static str,
+}
+
+struct Profile {
+    partner_id: String,
+    activation_kind: String,
+    route_kind: RouteKind,
+    delivery_enabled: bool,
+    /// capabilities.send_or_publish: the adapter itself must declare it can
+    /// put bytes on the wire. Undeclared or false = never sendable, even if
+    /// someone flips delivery_enabled on a placeholder.
+    cap_sendable: bool,
+    /// Distributor-level contract: onboarding complete and staged LIVE
+    /// (`execution.platform_contract_live`, migration 0054).
+    platform_contract: bool,
+}
+
+/// Decide the route for every DSP in `dsp_ids`, in preference order:
+/// direct profile, then covering aggregator, then covering upstream.
+/// Deterministic: ties break on partner_id. Duplicate DSP ids are decided
+/// once.
+///
+/// Fail-closed rules, all of which must hold for a profile to be sendable:
+/// - delivery_enabled = true
+/// - capabilities.send_or_publish = true (explicit; placeholders declare false)
+/// - activation MOCK, or CONTRACTED with a live contract route (enabled route
+///   plan + ACTIVE endpoint + non-revoked contract revision)
+/// - aggregator/upstream profiles additionally need an explicit
+///   route_coverage row for the DSP — coverage is never assumed.
+///
+/// Two queries for the whole set (candidates, live contract routes); the
+/// old per-DSP x per-class loop was 3N+ round trips.
+pub async fn decide_routes(
+    pool: &PgPool,
+    org_id: Uuid,
+    dsp_ids: &[Uuid],
+) -> Result<Vec<RouteDecision>> {
+    decide_routes_inner(pool, org_id, dsp_ids, true).await
+}
+
+/// Artist-facing availability excludes MOCK routes, even when a test
+/// adapter can send. The same contract gate is used again at submit time.
+pub async fn public_routes(
+    pool: &PgPool,
+    org_id: Uuid,
+    dsp_ids: &[Uuid],
+) -> Result<Vec<RouteDecision>> {
+    decide_routes_inner(pool, org_id, dsp_ids, false).await
+}
+
+async fn decide_routes_inner(
+    pool: &PgPool,
+    org_id: Uuid,
+    dsp_ids: &[Uuid],
+    include_mock: bool,
+) -> Result<Vec<RouteDecision>> {
+    let mut unique = Vec::with_capacity(dsp_ids.len());
+    let mut seen = std::collections::HashSet::with_capacity(dsp_ids.len());
+    for d in dsp_ids {
+        if seen.insert(*d) {
+            unique.push(*d);
+        }
+    }
+    if unique.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut tx = pool.begin().await?;
+    // Aggregator and upstream candidates need an explicit route_coverage
+    // row: the engine never assumes an aggregator's member set or an
+    // upstream's downstream footprint.
+    let rows = sqlx::query(
+        "SELECT d.dsp_id, p.partner_id, p.activation_kind, p.route_kind, p.delivery_enabled,
+                COALESCE((p.capabilities->>'send_or_publish')::boolean, false) AS cap_sendable,
+                (p.activation_kind='CONTRACTED' AND execution.platform_contract_live(p.partner_id)) AS platform_contract
+         FROM unnest($1::uuid[]) AS d(dsp_id)
+         JOIN execution.adapter_profiles p
+           ON (p.route_kind='direct' AND p.dsp_id=d.dsp_id)
+           OR (p.route_kind IN ('aggregator','upstream') AND EXISTS(
+                 SELECT 1 FROM execution.route_coverage c WHERE c.partner_id=p.partner_id AND c.dsp_id=d.dsp_id))",
+    )
+    .bind(&unique)
+    .fetch_all(&mut *tx)
+    .await?;
+    let mut by_dsp: HashMap<Uuid, Vec<Profile>> = HashMap::with_capacity(unique.len());
+    let mut any_contracted = false;
+    for r in &rows {
+        let Some(route_kind) = RouteKind::from_db(r.get("route_kind")) else {
+            continue;
+        };
+        let activation_kind: String = r.get("activation_kind");
+        any_contracted |= activation_kind == "CONTRACTED";
+        by_dsp.entry(r.get("dsp_id")).or_default().push(Profile {
+            partner_id: r.get("partner_id"),
+            activation_kind,
+            route_kind,
+            delivery_enabled: r.get("delivery_enabled"),
+            cap_sendable: r.get("cap_sendable"),
+            platform_contract: r.get("platform_contract"),
+        });
+    }
+    // A CONTRACTED profile is sendable only through a live contract route:
+    // an enabled route plan whose endpoint is ACTIVE and whose contract
+    // revision is not revoked. MOCK profiles are always sendable (test only).
+    let contract_live: std::collections::HashSet<(Uuid, RouteKind)> = if any_contracted {
+        sqlx::query(
+            "SELECT DISTINCT r.dsp_id, r.route_kind FROM distribution.route_plans r
+             JOIN distribution.dsp_endpoints e ON e.org_id=r.org_id AND e.dsp_id=r.dsp_id AND e.id=r.endpoint_id
+             JOIN rights.contract_revisions cr ON cr.org_id=r.org_id AND cr.contract_id=r.contract_id AND cr.id=r.contract_revision_id
+             WHERE r.org_id=$1 AND r.dsp_id = ANY($2) AND r.enabled
+               AND e.integration_status='ACTIVE' AND cr.policy_version<>'REVOKED'",
+        )
+        .bind(org_id)
+        .bind(&unique)
+        .fetch_all(&mut *tx)
+        .await?
+        .into_iter()
+        .filter_map(|r| {
+            let kind = match r.get::<String, _>("route_kind").as_str() {
+                "DIRECT" => RouteKind::Direct,
+                "MERLIN" => RouteKind::Aggregator,
+                "LIMBO" => RouteKind::Upstream,
+                _ => return None,
+            };
+            Some((r.get("dsp_id"), kind))
+        })
+        .collect()
+    } else {
+        std::collections::HashSet::new()
+    };
+    tx.commit().await?;
+
+    let mut out = Vec::with_capacity(unique.len());
+    for dsp_id in unique {
+        let mut candidates = by_dsp.remove(&dsp_id).unwrap_or_default();
+        // Preference: direct, then aggregator, then upstream; partner_id
+        // breaks ties deterministically.
+        candidates.sort_by(|a, b| {
+            (a.route_kind.rank(), &a.partner_id).cmp(&(b.route_kind.rank(), &b.partner_id))
+        });
+        let mut decision = RouteDecision {
+            dsp_id,
+            route_kind: None,
+            partner_id: None,
+            routable: false,
+            reason: "NO_PROFILE",
+        };
+        let mut saw_locked = false;
+        let mut saw_disabled = false;
+        let mut saw_uncontracted = false;
+        let mut saw_unsendable_cap = false;
+        for p in candidates {
+            if !include_mock && p.activation_kind != "CONTRACTED" {
+                continue;
+            }
+            if !p.delivery_enabled {
+                saw_disabled = true;
+                continue;
+            }
+            if !p.cap_sendable {
+                // The adapter itself declares it cannot send (or never
+                // declared it): enabling the profile must not open the wire.
+                saw_unsendable_cap = true;
+                continue;
+            }
+            if p.activation_kind == "CONTRACTED"
+                && !p.platform_contract
+                && !contract_live.contains(&(dsp_id, p.route_kind))
+            {
+                saw_uncontracted = true;
+                continue;
+            }
+            // Pre-launch lock (crate::launch): a real partner may be fully
+            // onboarded and contracted, but nothing is routed to it before
+            // the official launch opens DSP_LIVE_TRANSMISSION.
+            if p.activation_kind == "CONTRACTED" && !crate::launch::live_transmission_enabled() {
+                saw_locked = true;
+                continue;
+            }
+            decision.route_kind = Some(p.route_kind);
+            decision.partner_id = Some(p.partner_id);
+            decision.routable = true;
+            decision.reason = "SENDABLE_PROFILE";
+            break;
+        }
+        if !decision.routable {
+            decision.reason = if saw_locked {
+                "PRE_LAUNCH_LOCKED"
+            } else if saw_uncontracted {
+                "NO_CONTRACT_ROUTE"
+            } else if saw_disabled {
+                "PROFILE_DISABLED"
+            } else if saw_unsendable_cap {
+                "ADAPTER_CANNOT_SEND"
+            } else {
+                "NO_PROFILE"
+            };
+        }
+        out.push(decision);
+    }
+    Ok(out)
+}
+
+/// Persist one package's route decisions in one statement. Idempotent per
+/// (org, package, dsp): re-running the decision never duplicates rows; for a
+/// dsp listed twice the last decision wins.
+pub async fn record_route_decisions(
+    pool: &PgPool,
+    org_id: Uuid,
+    package_id: Uuid,
+    decisions: &[RouteDecision],
+) -> Result<()> {
+    let mut last: HashMap<Uuid, &RouteDecision> = HashMap::with_capacity(decisions.len());
+    for d in decisions {
+        last.insert(d.dsp_id, d);
+    }
+    let (mut dsp, mut kind, mut partner, mut status, mut reason) =
+        (vec![], vec![], vec![], vec![], vec![]);
+    for d in last.into_values() {
+        dsp.push(d.dsp_id);
+        kind.push(d.route_kind.map(|k| k.as_db()));
+        partner.push(d.partner_id.as_deref());
+        status.push(if d.routable { "ROUTABLE" } else { "NO_ROUTE" });
+        reason.push(d.reason);
+    }
+    sqlx::query(
+        "INSERT INTO execution.route_decisions(id,org_id,package_id,dsp_id,route_kind,partner_id,status,reason)
+         SELECT gen_random_uuid(),$1,$2,d.* FROM unnest($3::uuid[],$4::text[],$5::text[],$6::text[],$7::text[]) AS d
+         ON CONFLICT(org_id,package_id,dsp_id) DO UPDATE SET
+           route_kind=EXCLUDED.route_kind, partner_id=EXCLUDED.partner_id,
+           status=EXCLUDED.status, reason=EXCLUDED.reason, decided_at=now()",
+    )
+    .bind(org_id)
+    .bind(package_id)
+    .bind(dsp)
+    .bind(kind)
+    .bind(partner)
+    .bind(status)
+    .bind(reason)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Read back the recorded decision for one (package, dsp), if any.
+pub async fn get_route_decision(
+    pool: &PgPool,
+    org_id: Uuid,
+    package_id: Uuid,
+    dsp_id: Uuid,
+) -> Result<Option<RouteDecision>> {
+    let r = sqlx::query(
+        "SELECT dsp_id, route_kind, partner_id, status, reason FROM execution.route_decisions
+         WHERE org_id=$1 AND package_id=$2 AND dsp_id=$3",
+    )
+    .bind(org_id)
+    .bind(package_id)
+    .bind(dsp_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(Error::NotFound);
+    let r = match r {
+        Ok(r) => r,
+        Err(Error::NotFound) => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    Ok(Some(RouteDecision {
+        dsp_id: r.get("dsp_id"),
+        route_kind: r
+            .get::<Option<String>, _>("route_kind")
+            .as_deref()
+            .and_then(RouteKind::from_db),
+        partner_id: r.get("partner_id"),
+        routable: r.get::<String, _>("status") == "ROUTABLE",
+        reason: match r.get::<String, _>("reason").as_str() {
+            "SENDABLE_PROFILE" => "SENDABLE_PROFILE",
+            "NO_CONTRACT_ROUTE" => "NO_CONTRACT_ROUTE",
+            "PROFILE_DISABLED" => "PROFILE_DISABLED",
+            // Recorded by decide_routes; used to read back as NO_PROFILE,
+            // hiding that a profile existed but its adapter cannot send.
+            "ADAPTER_CANNOT_SEND" => "ADAPTER_CANNOT_SEND",
+            _ => "NO_PROFILE",
+        },
+    }))
+}

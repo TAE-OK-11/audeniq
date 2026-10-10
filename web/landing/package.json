@@ -1,0 +1,21 @@
+{
+  "name": "audeniq-cloudflare-workers",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.2",
+  "engines": {
+    "bun": ">=1.4.2 <1.5.0"
+  },
+  "scripts": {
+    "dev": "wrangler dev",
+    "build:seo": "node scripts/build-seo.mjs",
+    "deploy": "npm run check && npx --yes wrangler@4.141.0 deploy",
+    "verify:live": "node scripts/verify-live.mjs",
+    "indexnow": "node scripts/submit-indexnow.mjs",
+    "check": "node scripts/build-seo.mjs && node --check src/worker.js && node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.141.0"
+  }
+}

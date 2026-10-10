@@ -1,0 +1,405 @@
+//! Versioned AES-256-GCM keys, separated from the database and API environment.
+//! Optional KMS mode requires a read-only keyring materialized in tmpfs.
+use crate::error::{Error, Result};
+use aes_gcm::{
+    Aes256Gcm, KeyInit, Nonce,
+    aead::{AeadInOut, Generate},
+};
+use serde::Deserialize;
+use std::{collections::BTreeMap, io::Read};
+use uuid::Uuid;
+use zeroize::{Zeroize, Zeroizing};
+
+pub const TAG: &[u8] = b"AQAC\0\x02";
+const HEADER_LEN: usize = TAG.len() + 2;
+const NONCE_LEN: usize = 12;
+const AUTH_TAG_LEN: usize = 16;
+const AAD_PREFIX: &[u8] = b"audeniq:portal.payout_accounts:account_number:";
+pub struct KeyRing {
+    active: i16,
+    // Expand each key once. The AES/GHASH states zeroize on drop; plaintext
+    // input keys are wiped immediately after construction.
+    keys: BTreeMap<i16, Aes256Gcm>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct KeyFile {
+    version: u8,
+    active_version: i16,
+    keys: BTreeMap<String, String>,
+}
+impl Drop for KeyFile {
+    fn drop(&mut self) {
+        for value in self.keys.values_mut() {
+            value.zeroize();
+        }
+    }
+}
+
+impl KeyRing {
+    fn parse(bytes: &[u8]) -> Result<Self> {
+        let file: KeyFile = serde_json::from_slice(bytes)
+            .map_err(|_| Error::PolicyGate("PAYOUT_KEYRING_INVALID"))?;
+        if file.version != 1
+            || file.active_version <= 0
+            || file.keys.is_empty()
+            || file.keys.len() > 64
+        {
+            return Err(Error::PolicyGate("PAYOUT_KEYRING_INVALID"));
+        }
+        let mut keys = BTreeMap::new();
+        for (version, value) in &file.keys {
+            let version: i16 = version
+                .parse()
+                .map_err(|_| Error::PolicyGate("PAYOUT_KEYRING_INVALID"))?;
+            let value = Zeroizing::new(
+                hex::decode(value).map_err(|_| Error::PolicyGate("PAYOUT_KEYRING_INVALID"))?,
+            );
+            if version <= 0 || value.len() != 32 {
+                return Err(Error::PolicyGate("PAYOUT_KEYRING_INVALID"));
+            }
+            if keys
+                .insert(version, Self::prepare_cipher(&value)?)
+                .is_some()
+            {
+                return Err(Error::PolicyGate("PAYOUT_KEYRING_INVALID"));
+            }
+        }
+        if !keys.contains_key(&file.active_version) {
+            return Err(Error::PolicyGate("PAYOUT_KEYRING_INVALID"));
+        }
+        Ok(Self {
+            active: file.active_version,
+            keys,
+        })
+    }
+
+    pub fn from_env(require_file: bool) -> Result<Self> {
+        let require_file = require_file || crate::config::kms_enabled()?;
+        if let Some(path) = std::env::var("PAYOUT_KEYRING_FILE")
+            .ok()
+            .filter(|path| !path.is_empty())
+        {
+            #[cfg(unix)]
+            let mut file = {
+                use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+                let file = std::fs::OpenOptions::new()
+                    .read(true)
+                    .custom_flags(libc::O_NOFOLLOW)
+                    .open(path)
+                    .map_err(|_| Error::PolicyGate("PAYOUT_KEYRING_INVALID"))?;
+                let m = file.metadata().map_err(|_| Error::Internal)?;
+                // Root or this user owns it; other users cannot read it or edit it.
+                let uid = unsafe { libc::geteuid() };
+                let gid = unsafe { libc::getegid() };
+                if !m.is_file()
+                    || (m.uid() != 0 && m.uid() != uid)
+                    || m.mode() & 0o037 != 0
+                    || (uid != 0 && m.mode() & 0o040 != 0 && m.gid() != gid)
+                {
+                    return Err(Error::PolicyGate("PAYOUT_KEYRING_PERMISSIONS"));
+                }
+                #[cfg(target_os = "linux")]
+                if require_file {
+                    use std::os::fd::AsRawFd;
+                    let mut fs = std::mem::MaybeUninit::<libc::statfs>::uninit();
+                    if unsafe { libc::fstatfs(file.as_raw_fd(), fs.as_mut_ptr()) } != 0
+                        || unsafe { fs.assume_init() }.f_type != 0x01021994
+                    {
+                        return Err(Error::PolicyGate("PAYOUT_KEYRING_REQUIRES_TMPFS"));
+                    }
+                }
+                file
+            };
+            #[cfg(not(unix))]
+            let mut file = std::fs::File::open(path)
+                .map_err(|_| Error::PolicyGate("PAYOUT_KEYRING_INVALID"))?;
+            let mut bytes = Zeroizing::new(Vec::new());
+            (&mut file)
+                .take(16385)
+                .read_to_end(&mut bytes)
+                .map_err(|_| Error::Internal)?;
+            if bytes.len() > 16384 {
+                return Err(Error::PolicyGate("PAYOUT_KEYRING_INVALID"));
+            }
+            return Self::parse(&bytes);
+        }
+        if require_file {
+            return Err(Error::PolicyGate("PAYOUT_KEYRING_REQUIRED"));
+        }
+        // KMS-off mode may use a local AES key. An absent key disables account
+        // encryption operations, never storing account numbers as plaintext.
+        Self::development_key(std::env::var("PAYOUT_ACCOUNT_KEY").ok())
+    }
+
+    fn development_key(key: Option<String>) -> Result<Self> {
+        let keys = match key {
+            Some(key) if !key.trim().is_empty() => {
+                let key = Zeroizing::new(key);
+                let decoded = Zeroizing::new(
+                    hex::decode(key.trim())
+                        .map_err(|_| Error::PolicyGate("PAYOUT_ACCOUNT_KEY_MISSING"))?,
+                );
+                if decoded.len() != 32 {
+                    return Err(Error::PolicyGate("PAYOUT_ACCOUNT_KEY_MISSING"));
+                }
+                BTreeMap::from([(1, Self::prepare_cipher(&decoded)?)])
+            }
+            _ => BTreeMap::new(),
+        };
+        Ok(Self { active: 1, keys })
+    }
+
+    pub fn active_version(&self) -> i16 {
+        self.active
+    }
+    fn prepare_cipher(key: &[u8]) -> Result<Aes256Gcm> {
+        // Enforce the sensitive-state Drop contract in production builds too.
+        fn zeroizes_on_drop<T: zeroize::ZeroizeOnDrop>(value: T) -> T {
+            value
+        }
+        Aes256Gcm::new_from_slice(key)
+            .map(zeroizes_on_drop)
+            .map_err(|_| Error::Internal)
+    }
+    fn cipher(&self, version: i16) -> Result<&Aes256Gcm> {
+        self.keys
+            .get(&version)
+            .ok_or(Error::PolicyGate("PAYOUT_KEY_VERSION_MISSING"))
+    }
+    fn aad(org: Uuid, header: &[u8; HEADER_LEN]) -> [u8; AAD_PREFIX.len() + 16 + HEADER_LEN] {
+        let mut aad = [0; AAD_PREFIX.len() + 16 + HEADER_LEN];
+        aad[..AAD_PREFIX.len()].copy_from_slice(AAD_PREFIX);
+        aad[AAD_PREFIX.len()..AAD_PREFIX.len() + 16].copy_from_slice(org.as_bytes());
+        aad[AAD_PREFIX.len() + 16..].copy_from_slice(header);
+        aad
+    }
+    pub fn seal(&self, org: Uuid, number: &str) -> Result<Vec<u8>> {
+        let cipher = self.cipher(self.active)?;
+        let mut header = [0; HEADER_LEN];
+        header[..TAG.len()].copy_from_slice(TAG);
+        header[TAG.len()..].copy_from_slice(&self.active.to_be_bytes());
+        let nonce = Nonce::generate();
+        let capacity = number
+            .len()
+            .checked_add(HEADER_LEN + NONCE_LEN + AUTH_TAG_LEN)
+            .ok_or(Error::Internal)?;
+        // Also wipe on an encryption error, when the buffer may hold plaintext.
+        let mut out = Zeroizing::new(Vec::with_capacity(capacity));
+        out.extend_from_slice(&header);
+        out.extend_from_slice(&nonce);
+        out.extend_from_slice(number.as_bytes());
+        let tag = cipher
+            .encrypt_inout_detached(
+                &nonce,
+                &Self::aad(org, &header),
+                (&mut out[HEADER_LEN + NONCE_LEN..]).into(),
+            )
+            .map_err(|_| Error::Internal)?;
+        out.extend_from_slice(&tag);
+        Ok(std::mem::take(&mut *out))
+    }
+    pub fn open(&self, org: Uuid, sealed: &[u8]) -> Result<Zeroizing<String>> {
+        let aad_storage;
+        let (version, rest, aad) = if sealed.starts_with(TAG) {
+            let header: &[u8; HEADER_LEN] = sealed
+                .get(..HEADER_LEN)
+                .ok_or(Error::Internal)?
+                .try_into()
+                .map_err(|_| Error::Internal)?;
+            aad_storage = Self::aad(org, header);
+            (
+                i16::from_be_bytes(
+                    header[TAG.len()..]
+                        .try_into()
+                        .map_err(|_| Error::Internal)?,
+                ),
+                &sealed[header.len()..],
+                aad_storage.as_slice(),
+            )
+        } else {
+            (1, sealed, org.as_bytes().as_slice())
+        };
+        if rest.len() < NONCE_LEN + AUTH_TAG_LEN {
+            return Err(Error::Internal);
+        }
+        let (nonce, ct) = rest.split_at(NONCE_LEN);
+        let (ct, tag) = ct.split_at(ct.len() - AUTH_TAG_LEN);
+        let mut pt = Zeroizing::new(ct.to_vec());
+        self.cipher(version)?
+            .decrypt_inout_detached(
+                &Nonce::try_from(nonce).map_err(|_| Error::Internal)?,
+                aad,
+                pt.as_mut_slice().into(),
+                &aes_gcm::Tag::try_from(tag).map_err(|_| Error::Internal)?,
+            )
+            .map_err(|_| Error::Internal)?;
+        // Transfer the same allocation into String; wipe invalid UTF-8 as well.
+        match String::from_utf8(std::mem::take(&mut *pt)) {
+            Ok(value) => Ok(Zeroizing::new(value)),
+            Err(error) => {
+                let _invalid = Zeroizing::new(error.into_bytes());
+                Err(Error::Internal)
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aes_gcm::aead::{Aead, Payload};
+    #[test]
+    fn development_can_disable_payouts_with_an_absent_or_empty_key() {
+        let org = Uuid::new_v4();
+        for key in [None, Some(String::new()), Some("  ".to_owned())] {
+            let disabled = KeyRing::development_key(key).unwrap();
+            assert!(disabled.seal(org, "11012345678901").is_err());
+        }
+        let enabled = KeyRing::development_key(Some("11".repeat(32))).unwrap();
+        let sealed = enabled.seal(org, "11012345678901").unwrap();
+        assert_eq!(&*enabled.open(org, &sealed).unwrap(), "11012345678901");
+        assert!(KeyRing::development_key(Some("invalid".to_owned())).is_err());
+    }
+    fn ring(active: i16) -> KeyRing {
+        KeyRing::parse(
+            format!(
+                r#"{{"version":1,"active_version":{active},"keys":{{"1":"{}","2":"{}"}}}}"#,
+                "11".repeat(32),
+                "22".repeat(32)
+            )
+            .as_bytes(),
+        )
+        .unwrap()
+    }
+    #[test]
+    fn rotation_preserves_history_and_authenticates_metadata() {
+        let org = Uuid::new_v4();
+        let old = ring(1).seal(org, "11012345678901").unwrap();
+        let rotated = ring(2);
+        assert_eq!(&*rotated.open(org, &old).unwrap(), "11012345678901");
+        let new = rotated.seal(org, "11012345678901").unwrap();
+        assert_ne!(new, rotated.seal(org, "11012345678901").unwrap());
+        assert!(rotated.open(Uuid::new_v4(), &new).is_err());
+        let mut tampered = new.clone();
+        tampered[TAG.len() + 1] = 1;
+        assert!(rotated.open(org, &tampered).is_err());
+        let mut tampered = new;
+        *tampered.last_mut().unwrap() ^= 1;
+        assert!(rotated.open(org, &tampered).is_err());
+    }
+    #[test]
+    fn legacy_rows_survive_a_keyring_upgrade() {
+        let org = Uuid::new_v4();
+        let r = ring(2);
+        let nonce = Nonce::generate();
+        let ct = r
+            .cipher(1)
+            .unwrap()
+            .encrypt(
+                &nonce,
+                Payload {
+                    msg: b"11012345678901",
+                    aad: org.as_bytes(),
+                },
+            )
+            .unwrap();
+        let mut legacy = nonce.to_vec();
+        legacy.extend_from_slice(&ct);
+        assert_eq!(&*r.open(org, &legacy).unwrap(), "11012345678901");
+        assert!(r.open(Uuid::new_v4(), &legacy).is_err());
+    }
+    #[test]
+    fn invalid_ring_fails_closed() {
+        assert!(KeyRing::parse(br#"{"version":1,"active_version":2,"keys":{"1":"00"}}"#).is_err());
+        assert!(KeyRing::parse(br#"{"version":1,"active_version":2,"keys":{}}"#).is_err());
+    }
+
+    #[test]
+    fn in_place_ciphertext_matches_the_previous_wire_format() {
+        let org = Uuid::new_v4();
+        let ring = ring(2);
+        let reference = Aes256Gcm::new_from_slice(&[0x22; 32]).unwrap();
+        for text in [
+            String::new(),
+            "11012345678901".into(),
+            "한글\n".repeat(17),
+            "x".repeat(4096),
+        ] {
+            let sealed = ring.seal(org, &text).unwrap();
+            let header = &sealed[..HEADER_LEN];
+            let nonce = Nonce::try_from(&sealed[HEADER_LEN..HEADER_LEN + NONCE_LEN]).unwrap();
+            let mut aad = AAD_PREFIX.to_vec();
+            aad.extend_from_slice(org.as_bytes());
+            aad.extend_from_slice(header);
+            let expected = reference
+                .encrypt(
+                    &nonce,
+                    Payload {
+                        msg: text.as_bytes(),
+                        aad: &aad,
+                    },
+                )
+                .unwrap();
+            assert_eq!(&sealed[HEADER_LEN + NONCE_LEN..], expected);
+            assert_eq!(&*ring.open(org, &sealed).unwrap(), &text);
+        }
+    }
+
+    #[test]
+    fn truncation_tampering_unknown_versions_and_invalid_utf8_are_rejected() {
+        let org = Uuid::new_v4();
+        let ring = ring(2);
+        let sealed = ring.seal(org, "11012345678901").unwrap();
+        for end in 0..sealed.len() {
+            assert!(ring.open(org, &sealed[..end]).is_err());
+        }
+        for index in 0..sealed.len() {
+            let mut changed = sealed.clone();
+            changed[index] ^= 1;
+            assert!(ring.open(org, &changed).is_err(), "byte {index}");
+        }
+        let mut unknown = sealed.clone();
+        unknown[TAG.len()..HEADER_LEN].copy_from_slice(&3i16.to_be_bytes());
+        assert!(matches!(
+            ring.open(org, &unknown),
+            Err(Error::PolicyGate("PAYOUT_KEY_VERSION_MISSING"))
+        ));
+        let nonce = Nonce::generate();
+        let ct = ring
+            .cipher(1)
+            .unwrap()
+            .encrypt(
+                &nonce,
+                Payload {
+                    msg: &[0xff],
+                    aad: org.as_bytes(),
+                },
+            )
+            .unwrap();
+        let mut invalid = nonce.to_vec();
+        invalid.extend_from_slice(&ct);
+        assert!(ring.open(org, &invalid).is_err());
+    }
+
+    #[test]
+    fn prepared_ciphers_support_concurrent_organizations() {
+        let ring = std::sync::Arc::new(ring(2));
+        let tasks: Vec<_> = (1..=4)
+            .map(|i| {
+                let ring = ring.clone();
+                std::thread::spawn(move || {
+                    let org = Uuid::from_u128(i);
+                    for _ in 0..64 {
+                        let sealed = ring.seal(org, "11012345678901").unwrap();
+                        assert_eq!(&*ring.open(org, &sealed).unwrap(), "11012345678901");
+                        assert!(ring.open(Uuid::nil(), &sealed).is_err());
+                    }
+                })
+            })
+            .collect();
+        for task in tasks {
+            task.join().unwrap();
+        }
+    }
+}

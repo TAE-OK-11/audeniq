@@ -1,0 +1,427 @@
+/* ==========================================================================
+   AUDENIQ STUDIO — enhance layer
+   기존 디자인(design.css + live.css)을 유지하면서 그 위에 얹는 보강 레이어.
+   · 모션: 진입/퇴장, 스태거, 호버 리프트, 스켈레톤, 카운트업과 짝을 이루는 효과
+   · 안정성: 포커스 링, 터치 타깃, 긴 텍스트 줄바꿈, 모션 줄이기
+   마지막에 로드되므로 여기 선언이 우선한다.
+   ========================================================================== */
+
+html{scroll-padding-top:90px;-webkit-text-size-adjust:100%}
+body{text-rendering:optimizeLegibility}
+::selection{background:var(--aq-blue-200);color:var(--aq-e-ink)}
+img{max-width:100%}
+
+/* ---------- 공통 키프레임 ---------- */
+@keyframes aq-fade-up{from{opacity:0;transform:translate3d(0,10px,0)}to{opacity:1;transform:none}}
+@keyframes aq-fade-in{from{opacity:0}to{opacity:1}}
+@keyframes aq-shake{0%,100%{transform:none}20%{transform:translateX(-6px)}40%{transform:translateX(5px)}60%{transform:translateX(-3px)}80%{transform:translateX(2px)}}
+@keyframes aq-boot-bar{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}
+@keyframes aq-modal-out{to{opacity:0;transform:translate3d(0,10px,0) scale(.98)}}
+@keyframes aq-overlay-out{to{background-color:transparent}}
+
+/* ---------- 스킵 링크 ---------- */
+.aq-skip-link{position:fixed;left:16px;top:-60px;z-index:300;background:var(--aq-e-ink);color:#fff;padding:10px 16px;border-radius:var(--aq-r-sm);font-size:13px;font-weight:700;transition:top .2s var(--aq-e-ease)}
+.aq-skip-link:focus{top:12px}
+#main:focus{outline:none}
+
+/* ---------- 부팅 화면 ---------- */
+.aq-boot{min-height:100dvh;display:grid;place-content:center;gap:22px;justify-items:center;animation:aq-fade-in .4s ease both}
+.aq-boot img{width:150px;opacity:.9}
+.aq-boot-bar{display:block;width:120px;height:3px;border-radius:3px;background:var(--aq-gray-100);overflow:hidden;position:relative}
+.aq-boot-bar::after{content:"";position:absolute;inset:0;width:40%;border-radius:3px;background:var(--aq-e-blue);animation:aq-boot-bar 1s var(--aq-e-ease) infinite}
+
+/* ---------- 헤더 ---------- */
+
+/* 메뉴 */
+
+/* ---------- 스태거 진입 ---------- */
+
+/* ---------- 카드 호버 ---------- */
+
+/* 이미지 커버 */
+.cover.has-image{background:var(--aq-gray-100)!important;padding:0}
+.cover.has-image img{width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit}
+
+/* 대시보드 행 링크 */
+
+/* ---------- 홈 히어로 ---------- */
+
+/* 이번 달 리포트 미니 추이 */
+
+/* ---------- 스켈레톤 ---------- */
+
+/* ---------- 탭 ---------- */
+
+/* 필터 레일 */
+
+/* ---------- 상태 칩 ---------- */
+
+/* ---------- 버튼 ---------- */
+
+/* ---------- 모달 ---------- */
+#modal.is-leaving{animation:aq-overlay-out .18s ease forwards!important;pointer-events:none}
+#modal.is-leaving>.modal-inner{animation:aq-modal-out .18s ease forwards!important}
+#modal .modal-inner:focus{outline:none}
+#modal .modal-top>.icon-button{display:grid;place-items:center;width:40px;height:40px;min-width:40px;min-height:40px;max-width:40px;max-height:40px;aspect-ratio:1;flex:0 0 40px;padding:0;line-height:1;transform:none!important;transition:background-color .18s ease!important;color:var(--aq-text-3)}
+#modal .modal-top>.icon-button svg{display:block;width:20px;height:20px;flex:none;transform:none}
+#modal .modal-top>.icon-button:hover{transform:none!important;background:var(--aq-gray-150)!important}
+.aq-confirm-mode .modal-inner{width:min(420px,100%)!important;min-height:0!important}
+@media(max-width:760px){#modal.aq-confirm-mode{place-items:center!important}.aq-confirm-mode .modal-inner{min-height:0!important;max-height:none!important}}
+.aq-confirm-message{color:var(--aq-text-3);font-size:14px;line-height:1.7;margin:-6px 0 22px;white-space:pre-line}
+.aq-confirm-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
+
+/* ---------- 토스트 ---------- */
+.aq-toast-stack{position:fixed;left:50%;bottom:calc(22px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:400;display:flex;flex-direction:column;align-items:center;gap:8px;width:max-content;max-width:calc(100vw - 32px);pointer-events:none}
+.aq-toast{pointer-events:auto;cursor:pointer;display:flex;align-items:center;gap:10px;background:#1f2b47;color:#fff;padding:12px 16px 12px 12px;border-radius:var(--aq-r-md);box-shadow:0 14px 34px -10px rgba(21,35,76,.45);font-size:13px;font-weight:600;line-height:1.5;animation:aq-fade-up .32s var(--aq-e-spring) both}
+.aq-toast.is-leaving{animation:aq-modal-out .2s ease forwards}
+.aq-toast-icon{flex-shrink:0;display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,.14);font-size:12px;font-weight:800}
+.aq-toast.is-success .aq-toast-icon{background:var(--aq-green-500)}
+.aq-toast.is-error .aq-toast-icon{background:var(--aq-red-500)}
+
+/* ---------- 폼 ---------- */
+.aq-shake{animation:aq-shake .4s ease}
+
+/* 비밀번호 */
+.aq-password{position:relative}
+.aq-password input{width:100%;padding-right:66px!important}
+.aq-password-toggle{position:absolute;right:8px;top:50%;transform:translateY(-50%);border:0;background:var(--aq-gray-100);color:var(--aq-text-2);font-size:12px;font-weight:700;padding:6px 10px;border-radius:var(--aq-r-sm);min-height:30px}
+.aq-password-toggle:hover{color:var(--aq-e-blue)}
+
+/* ---------- 인증 화면 ---------- */
+.auth-page{position:relative;overflow:hidden}
+.aq-auth-glow{position:absolute;inset:-20% -10% auto;height:520px;background:radial-gradient(420px 260px at 20% 30%,#e8eeff,transparent 70%),radial-gradient(360px 240px at 80% 10%,#f1ecff,transparent 70%);pointer-events:none;z-index:0;animation:aq-fade-in 1s ease both}
+.auth-page>*:not(.aq-auth-glow){position:relative;z-index:1}
+.auth-card{animation:aq-fade-up .55s var(--aq-e-ease) both}
+.aq-auth-brand{display:inline-flex;align-items:center;gap:8px;margin-bottom:26px}
+.aq-auth-brand img{width:118px;height:auto}
+.aq-auth-brand span{font-size:10px;font-weight:800;letter-spacing:.2em;color:var(--aq-e-blue);padding:4px 8px;border-radius:var(--aq-r-xs);background:var(--aq-e-blue-soft)}
+.auth-foot{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+
+/* ---------- 위자드 ---------- */
+
+/* 커버 드롭존 */
+
+/* ---------- 발매 상세 ---------- */
+
+/* ---------- 오류 화면 ---------- */
+
+/* ---------- 빈 상태 ---------- */
+
+/* ---------- 프로필 ---------- */
+
+/* ---------- 문의 ---------- */
+
+/* ---------- 차트/리포트 ---------- */
+.aq-countup{font-variant-numeric:tabular-nums}
+
+/* ---------- 알림 ---------- */
+
+/* ---------- 정산 ---------- */
+
+/* ---------- 모션 줄이기 ---------- */
+@media(prefers-reduced-motion:reduce){
+  .aq-toast{animation:none!important}
+}
+
+/* 홈 '확인할 작업' — 데스크톱에서는 버튼을 오른쪽에 두어 카드 높이를 줄인다 */
+
+/* 로딩이 150ms 안에 끝나면 스켈레톤이 아예 보이지 않도록 늦게 등장 (깜빡임 방지) */
+
+/* ---------- 홈 히어로: 물방울 장식 제거 (단색 카드로 정돈) ---------- */
+
+/* ---------- 위자드 상단 바: 저장 상태가 칸을 넘쳐 페이지가 가로로 밀리던 문제 ---------- */
+
+/* ---------- 수령 정보 등록 완료 화면 ---------- */
+
+/* 트랙 카드 안은 카드 배경과 구분되도록 흰 칸 */
+
+/* ==========================================================================
+   카드·입력 칸 윤곽선 없는 스타일 통일 — 메인 화면 카드처럼 배경색 면으로만 구분
+   ========================================================================== */
+.doc-consent{border:0!important;box-shadow:none!important}
+.doc-consent{background:var(--aq-blue-50)!important}
+
+/* 수령인 유형 선택: 테두리 대신 채움으로 선택 표시 */
+
+/* 입력 칸: 테두리 없이 주변과 다른 배경색으로 칸을 표시 */
+/* 포커스는 접근성을 위해 부드러운 광채로만 표시 */
+input[aria-invalid=true]{box-shadow:0 0 0 3px rgba(228,109,109,.3)!important}
+/* 파일 선택 영역: 점선 테두리 대신 채움 */
+
+/* ==========================================================================
+   입력창 윤곽선 완전 제거 (홍보·설문 페이지와 같은 면 스타일)
+   - 평소: 테두리·링 없이 배경색 면
+   - 포커스: 선 대신 면이 밝아지고 부드러운 그림자로 떠오름
+   - 오류: 붉은 면으로 표시
+   ========================================================================== */
+:is(#root,#modal) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea){
+  border:0!important;outline:none!important;border-radius:var(--ui-input-r,var(--aq-r-ctl-md));
+}
+:is(#root,#modal) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),select,textarea):not(:focus){box-shadow:none!important}
+:is(#root,#modal) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea):is(:focus,:focus-visible){
+  outline:none!important;background-color:var(--aq-field-focus-bg)!important;
+  box-shadow:none!important
+}
+/* 흰 배경 위의 입력창은 포커스 때 연한 파란 면으로 */
+:is(#root,#modal) :is(.track-editor,.aq-option-detail,.cover-track-item,.auth-card) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea):focus{background-color:var(--aq-blue-50)!important}
+/* 파일 선택 */
+:is(#root,#modal) input[type=file]:is(:focus,:focus-visible){background-color:var(--aq-blue-100)!important;box-shadow:none!important}
+/* 오류 표시: 붉은 링 대신 붉은 면 */
+:is(#root,#modal) :is(input,select,textarea):is([aria-invalid=true],.aq-invalid){background-color:var(--aq-red-50)!important;box-shadow:none!important}
+
+/* ==========================================================================
+   홍보 페이지(web/landing) 디자인 언어 반영
+   ========================================================================== */
+/* 스크롤 등장 대기 (IntersectionObserver가 보일 때 떠오르게 함) */
+/* 제목 마지막 줄 파란 강조 — 홍보 페이지 히어로 '더 넓은 세상으로.' */
+/* 헤더 STUDIO 표시를 홍보 페이지 메뉴의 pill(사전 설문 안내)처럼 */
+/* 홈 업무 카드: 홍보 페이지 서비스 카드처럼 번호 표시 */
+/* 기본 버튼: 홍보 페이지처럼 호버 시 진한 파랑 + 살짝 떠오름 */
+
+/* ---------- 계약서 서명: 검토 대기 화면, 다시 그리기 위치 ---------- */
+
+/* ==========================================================================
+   입력창 포커스 효과 제거 — 흰색으로 바뀌며 떠오르는 그림자 없이, 면 색만 살짝 진해짐
+   ========================================================================== */
+:is(#root,#modal) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea):is(:focus,:focus-visible),
+:is(#root,#modal) :is(.track-editor,.aq-option-detail,.cover-track-item,.auth-card) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea):focus{
+  box-shadow:none!important;background-color:var(--aq-blue-100)!important
+}
+:is(#root,#modal) :is(.track-editor,.aq-option-detail,.cover-track-item) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea):focus{background-color:var(--aq-blue-50)!important}
+
+/* 날짜·월 입력: iOS 기본 최소 너비 때문에 칸이 화면 밖으로 넘치던 문제 */
+:is(#root,#modal) input:is([type=date],[type=month],[type=time],[type=datetime-local]){
+  -webkit-appearance:none;appearance:none;display:block;width:100%!important;min-width:0!important;max-width:100%!important;
+  text-align:left;min-height:52px;line-height:1.3
+}
+:is(#root,#modal) input:is([type=date],[type=month])::-webkit-date-and-time-value{text-align:left;margin:0}
+:is(#root,#modal) input:is([type=date],[type=month])::-webkit-calendar-picker-indicator{opacity:.55;cursor:pointer}
+
+/* 모달 안 안내 문구와 첫 입력 사이 여백 */
+#modalBody form>p.small:first-child,#modalBody>p.small:first-child,#modalBody>form>p:first-child{margin-bottom:20px}
+
+/* 모바일 모달: 내용 높이만큼만 차지하는 하단 시트 (짧은 입력 창 아래가 텅 비던 문제)
+   전체 화면이 필요한 수령 정보 등록·서명 창은 제외 */
+@media(max-width:760px){
+  #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode){place-items:end center!important;padding:0!important}
+  #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode)>.modal-inner{
+    min-height:0!important;max-height:calc(100dvh - 24px)!important;width:100%!important;
+    border-radius:26px 26px 0 0!important;margin:0!important;
+    padding-bottom:calc(24px + env(safe-area-inset-bottom))!important;
+    animation:aq-sheet-up .38s var(--aq-e-ease) both
+  }
+  #modal.is-leaving:not(.aq-payout-setup-mode):not(.aq-signature-mode)>.modal-inner{animation:aq-sheet-down .2s ease forwards!important}
+}
+@keyframes aq-sheet-up{from{transform:translate3d(0,40px,0);opacity:.6}to{transform:none;opacity:1}}
+@keyframes aq-sheet-down{to{transform:translate3d(0,40px,0);opacity:0}}
+
+/* ---------- 홈 '확인할 작업': 전체가 눌리는 한 줄 카드 ---------- */
+
+/* ==========================================================================
+   공용 서명 칸 + 법정대리인 동의 창
+   ========================================================================== */
+/* 모달이 열려 있는 동안 위자드 하단 버튼 바가 모달 버튼을 가리지 않도록 숨김 */
+
+/* 상태 표시는 모두 '발매 완료'와 같은 글자 pill로 통일 (앞의 점·깜빡임 없음) */
+
+/* 파일 업로드 진행률 — 윤곽선 없는 얇은 바 */
+
+/* ── 신청서(위자드) 단계 목록 · 데스크톱 2단 레이아웃 ───────────────── */
+
+@media(min-width:1024px){
+  /* 하단 버튼: 바는 화면 전체, 버튼은 입력 영역에 맞춰 양 끝 정렬 */
+}
+
+/* ── 보완 요청 ─────────────────────────────────────────────────────── */
+/* 위자드 상단 보완 패널 */
+/* 이동한 입력칸을 잠깐 물들여 위치를 알려 준다 (윤곽선 없이 배경만) */
+/* 발매 상세 보완 카드 */
+/* 발매 목록 안내 배너 */
+/* 보완 필요 카드 하단 줄 */
+
+/* ── 데스크톱: 아티스트 정보 2단, 수익 받기 흐름 폭 ─────────────────── */
+
+/* ── 신청서: 아티스트 프로필 선택 · 연주곡 · 서명 ───────────────────── */
+
+/* ── 배급 신청서 (정식 서류) ─────────────────────────────────────────── */
+.aq-paper{background:#fff;border-radius:var(--aq-r-sm);padding:56px 60px 40px;color:var(--aq-text);box-shadow:0 1px 2px rgba(20,33,68,.06),0 30px 70px -38px rgba(27,51,104,.38);animation:aq-paper-in .6s var(--aq-e-ease) .05s both}
+@keyframes aq-paper-in{from{opacity:0;transform:translateY(22px) scale(.99)}to{opacity:1;transform:none}}
+.aq-paper-head{text-align:center;padding-bottom:26px;margin-bottom:28px;border-bottom:2px solid var(--aq-gray-900)}
+.aq-paper-brand{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;text-align:left;margin-bottom:34px}
+.aq-paper-brand img{height:22px;width:auto;margin-top:4px}
+.aq-paper-meta{margin:0;display:grid;gap:3px;font-size:12px}
+.aq-paper-meta div{display:flex;gap:10px;justify-content:flex-end}
+.aq-paper-meta dt{color:var(--aq-text-4)}
+.aq-paper-meta dd{margin:0;font-weight:700;font-variant-numeric:tabular-nums;min-width:132px;text-align:right}
+.aq-paper-head h1{font-size:28px;font-weight:800;letter-spacing:.18em;margin:0}
+.aq-paper-en{margin:8px 0 0;font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:var(--aq-text-4)}
+.aq-paper-sec{margin:0 0 26px;break-inside:avoid}
+.aq-paper-sec h2{display:flex;align-items:center;gap:9px;font-size:15px;font-weight:800;letter-spacing:-.02em;margin:0 0 10px}
+.aq-paper-sec h2>span{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:var(--aq-gray-900);color:#fff;font-size:11px;font-weight:800}
+.aq-paper-sec h2 small{font-size:12px;font-weight:600;color:var(--aq-text-4)}
+.aq-paper table{width:100%;border-collapse:collapse;font-size:13px;line-height:1.55}
+.aq-paper-kv th,.aq-paper-kv td,.aq-paper-grid th,.aq-paper-grid td{border:1px solid var(--aq-gray-200);padding:9px 12px;text-align:left;vertical-align:top}
+.aq-paper-kv th{width:108px;background:var(--aq-gray-50);color:var(--aq-text-2);font-weight:700;font-size:12px;white-space:nowrap}
+.aq-paper-kv td strong{font-size:14px}
+.aq-paper-release{display:flex;gap:16px;align-items:flex-start}
+.aq-paper-release>table{flex:1;min-width:0}
+.aq-paper-cover{width:112px;height:112px;border-radius:var(--aq-r-xs);object-fit:cover;flex:none;box-shadow:0 0 0 1px var(--aq-gray-200)}
+.aq-paper-scroll{overflow-x:auto}
+.aq-paper-grid{min-width:560px}
+.aq-paper-grid thead th{background:var(--aq-gray-50);color:var(--aq-text-2);font-size:12px;font-weight:700;white-space:nowrap}
+.aq-paper-grid td small{display:block;font-size:12px;color:var(--aq-text-3);margin-top:2px}
+.aq-paper-grid .num{text-align:center;white-space:nowrap;font-variant-numeric:tabular-nums}
+.aq-paper-grid tr{break-inside:avoid}
+.aq-paper-tag{font-style:normal;display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:var(--aq-red-500);color:#fff;font-size:9.5px;font-weight:800;margin-left:6px;vertical-align:1px}
+.aq-paper-agree{list-style:none;margin:0;padding:0;counter-reset:agree;border:1px solid var(--aq-gray-200)}
+.aq-paper-agree li{display:flex;gap:12px;align-items:flex-start;padding:10px 14px;font-size:13px;line-height:1.6}
+.aq-paper-agree li+li{border-top:1px solid var(--aq-gray-100)}
+.aq-paper-check{width:18px;height:18px;flex:none;margin-top:2px;border:1.5px solid var(--aq-gray-900);display:grid;place-items:center;font-size:12px;font-weight:800;line-height:1}
+.aq-paper-signoff{text-align:center;margin:40px 0 34px;break-inside:avoid}
+.aq-paper-signoff p{margin:0;font-size:14px;color:var(--aq-text)}
+.aq-paper-date{margin-top:18px!important;font-size:15px!important;font-weight:700;letter-spacing:.06em}
+.aq-paper-signer{display:flex;align-items:center;justify-content:flex-end;gap:16px;margin:30px 0 0;font-size:14px}
+.aq-paper-signer>span:first-child{color:var(--aq-text-2);letter-spacing:.3em}
+.aq-paper-signer strong{font-size:18px;letter-spacing:.14em}
+.aq-paper-sig{position:relative;min-width:150px;height:64px;display:grid;place-items:center;border-bottom:1px solid var(--aq-gray-900)}
+.aq-paper-sig img{max-width:180px;max-height:70px;object-fit:contain;animation:aq-sig-in .9s ease .5s both}
+.aq-paper-sig em{font-style:normal;color:var(--aq-text-4);font-size:12px}
+@keyframes aq-sig-in{from{opacity:0;clip-path:inset(0 100% 0 0)}to{opacity:1;clip-path:inset(0 0 0 0)}}
+.aq-paper-to{color:var(--aq-text);margin-top:34px!important;font-size:18px!important;font-weight:800;letter-spacing:.3em;text-align:left}
+.aq-paper-foot{background:none!important;margin:0!important;border-top:1px dashed var(--aq-blue-300);padding-top:16px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 16px;align-items:center;font-size:12px;color:var(--aq-text-3)}
+.aq-paper-foot>div span{display:block;margin-bottom:3px}
+.aq-paper-foot code{font:600 12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--aq-text);letter-spacing:.04em;word-break:break-all}
+.aq-paper-foot p{grid-column:1/-1;margin:0!important;font-size:12px!important;line-height:1.6!important;color:var(--aq-text-3)!important;max-width:none!important}
+.aq-paper-integrity{font-weight:800;font-size:12px;padding:6px 10px;border-radius:var(--aq-r-3xl);white-space:nowrap}
+@media(max-width:640px){
+  .aq-paper{padding:28px 18px 24px;border-radius:var(--aq-r-md)}
+  .aq-paper-brand{flex-direction:column;gap:14px;margin-bottom:22px}
+  .aq-paper-meta div{justify-content:flex-start}
+  .aq-paper-meta dd{min-width:0;text-align:left}
+  .aq-paper-head h1{font-size:21px;letter-spacing:.1em}
+  .aq-paper-release{flex-direction:column}
+  .aq-paper-kv th{width:84px;padding:8px}
+  .aq-paper-kv td{padding:8px}
+  .aq-paper-kv tr{display:grid;grid-template-columns:84px minmax(0,1fr)}
+  .aq-paper-kv tr>*{border-top:0}
+  .aq-paper-kv tr:first-child>*{border-top:1px solid var(--aq-gray-200)}
+  .aq-paper-kv td[colspan]{grid-column:2}
+  .aq-paper-signer{justify-content:center;flex-wrap:wrap}
+  .aq-paper-foot{grid-template-columns:1fr}
+}
+
+/* 인쇄·PDF: 서류만 A4에 */
+@media print{
+  @page{size:A4;margin:14mm}
+  html,body{background:#fff!important}
+  .aq-skip-link,.aq-toast-stack{display:none!important}
+  #main,.view-enter{padding:0!important;margin:0!important;max-width:none!important;width:auto!important;animation:none!important}
+  .aq-paper{box-shadow:none!important;padding:0!important;border-radius:0!important;animation:none!important}
+  .aq-paper *{animation:none!important}
+  .aq-paper-kv th,.aq-paper-grid thead th{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .aq-paper-scroll{overflow:visible}
+  .aq-paper-grid{min-width:0}
+}
+.aq-paper-note{margin:0 0 10px;padding:10px 14px;background:var(--aq-gray-50);font-size:13px;line-height:1.6;color:var(--aq-text-2)}
+
+/* ── 문의 대화 (실서버) ─────────────────────────────────────────────── */
+
+/* ---------- 공지사항: 홍보 페이지 톤 (연파랑 패널·큰 헤드라인, 그림자·떠오름 없음) ---------- */
+.aq-nboard-tag{display:inline-block;vertical-align:2px;margin-right:8px;padding:2px 8px;border-radius:var(--aq-r-xs);background:var(--aq-blue-150);color:var(--aq-e-blue);font-style:normal;font-size:12px;font-weight:800;letter-spacing:0;line-height:1.5}
+
+/* ---------- 콘텐츠 관리 (/content-admin) ---------- */
+.aq-cadmin{max-width:920px;margin:0 auto;padding:24px 20px 80px;min-height:100vh}
+.aq-cadmin-bar{display:flex;align-items:center;gap:10px;margin:24px 0 12px}
+.aq-cadmin-bar p{flex:1;margin:0;font-size:14px;font-weight:600}
+.aq-cadmin-list{list-style:none;margin:0;padding:0;border-top:2px solid var(--aq-e-ink)}
+.aq-cadmin-list:empty{display:none}
+.aq-cadmin-list li{display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--aq-e-line)}
+.aq-cadmin-list li.is-deleted .aq-cadmin-row-title{color:var(--aq-text-disabled);text-decoration:line-through}
+.aq-cadmin-row{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;padding:20px 0;border:0;background:none;text-align:left;cursor:pointer;color:var(--aq-e-ink)}
+.aq-cadmin-row-title{font-size:16px;font-weight:700;letter-spacing:-.03em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (hover:hover){.aq-cadmin-row:hover .aq-cadmin-row-title{color:var(--aq-e-blue)}}
+.aq-cadmin-row-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font-size:13px;color:var(--aq-text-3);font-variant-numeric:tabular-nums}
+.aq-cadmin-state{padding:2px 8px;border-radius:var(--aq-r-xs);font-size:12px;font-weight:800;background:var(--aq-gray-100);color:var(--aq-text-2)}
+.aq-cadmin-view{flex:0 0 auto;font-size:13px;font-weight:700;color:var(--aq-e-blue);text-decoration:none;padding:8px 4px}
+.aq-cadmin-editor{margin-top:24px}
+.aq-cadmin-editor-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 20px}
+.aq-cadmin-editor-head h2{margin:0;font-size:22px;font-weight:700;letter-spacing:-.04em}
+.aq-cadmin-editor textarea{min-height:240px;resize:vertical;line-height:1.7!important}
+.aq-cadmin-grid{display:grid;grid-template-columns:1fr;gap:0 20px}
+.aq-cadmin-check{display:flex;align-items:center;gap:10px;min-height:53px;font-size:15px;font-weight:600;cursor:pointer}
+.aq-cadmin-check input{width:20px;height:20px;accent-color:var(--aq-e-blue)}
+.aq-cadmin-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:12px}
+.aq-cadmin-spacer{flex:1}
+.aq-cadmin-danger{color:var(--aq-e-red)!important}
+@media (min-width:768px){
+  .aq-cadmin{padding:36px 32px 100px}
+  .aq-cadmin-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+
+/* ---------- 오류·점검 화면 — 앱 안 오류 카드(.empty-page)와 같은 가운데 정렬 연파랑 카드 ---------- */
+
+/* ---------- 상태 띠 (오프라인·점검 예고) — 헤더 위 전체 폭 ---------- */
+
+/* ---------- 상태 창 (서버 오류·새 버전·기기 확인) ---------- */
+
+/* ---------- 오래된 브라우저·JavaScript 꺼짐 ---------- */
+
+/* 콘텐츠 관리: 점검 상태 */
+/* 상태 창: 창 제목은 스크린리더용으로만 두고(본문 제목과 같은 문구) 닫기 버튼만 오른쪽 위에 */
+/* 점검 화면은 앱 위에 덮는다 (앱은 그대로 남아 입력 보존) */
+
+/* 콘텐츠 관리: 긴급 점검 패널 */
+.aq-cadmin-emergency{margin:24px 0 8px;padding:20px 20px 18px;border-radius:var(--aq-r-xl);background:var(--aq-blue-50)}
+.aq-cadmin-emergency.is-active{background:var(--aq-e-red-soft)}
+.aq-cadmin-emergency-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.aq-cadmin-emergency-head strong{font-size:16px;font-weight:700;letter-spacing:-.03em;color:var(--aq-e-ink)}
+.aq-cadmin-emergency-head span:last-child{font-size:13px;color:var(--aq-text-3);font-variant-numeric:tabular-nums}
+.aq-cadmin-emergency.is-active .aq-cadmin-emergency-head strong{color:var(--aq-e-red)}
+.aq-cadmin-emergency>p{margin:8px 0 0;font-size:14px;color:var(--aq-text-2)}
+.aq-cadmin-dot{width:10px;height:10px;border-radius:50%;background:var(--aq-e-green);box-shadow:0 0 0 4px var(--aq-e-green-soft)}
+.aq-cadmin-pulse{width:10px;height:10px;border-radius:50%;background:var(--aq-e-red);animation:aq-cadmin-pulse 1.6s ease-in-out infinite}
+@keyframes aq-cadmin-pulse{0%,100%{box-shadow:0 0 0 0 rgba(194,59,59,.35)}50%{box-shadow:0 0 0 7px rgba(194,59,59,0)}}
+@media (prefers-reduced-motion:reduce){.aq-cadmin-pulse{animation:none}}
+.aq-cadmin-emergency-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+.aq-cadmin-emergency-form{margin-top:14px}
+.aq-cadmin-emergency-form textarea{min-height:88px!important}
+.aq-cadmin-label{display:block;font-size:14px;font-weight:700;margin-bottom:10px}
+.aq-cadmin-chips{display:flex;flex-wrap:wrap;gap:8px}
+.aq-cadmin-chip{min-height:38px;padding:0 14px;border:1.5px solid var(--aq-gray-200);border-radius:var(--aq-r-sm);background:#fff;font-size:14px;font-weight:700;color:var(--aq-text-2);cursor:pointer}
+.aq-cadmin-chip.is-on{border-color:var(--aq-e-blue);color:var(--aq-e-blue);background:var(--aq-e-blue-soft)}
+
+/* ---------- 홈 상단 정리: 날짜·인사·제목 한 덩어리, 새 발매 카드 하나 ---------- */
+/* 모바일 헤더: STUDIO 표시는 로고와 겹치는 정보라 숨기고 알림·프로필·메뉴만 */
+/* 홈 바로가기 카드: 설명은 한 줄로 맞춰 제목 높이를 가지런히 */
+
+/* ---------- 콘텐츠 관리(공지·이벤트·점검): 입력칸이 카드 색에 묻히지 않게, 칸 사이는 여유 있게 ---------- */
+.aq-cadmin .ui-field{margin-bottom:20px}
+.aq-cadmin .aq-cadmin-label{display:block;margin:0 0 8px;font-size:14px;font-weight:700}
+.aq-cadmin .ui-field>label{display:block;margin:0 0 8px}
+/* 긴급 점검 입력: 카드 안에서 단계적으로 */
+.aq-cadmin-emergency-form{margin-top:18px;padding-top:18px;border-top:1px solid rgba(23,27,41,.06);animation:aq-fade-up .28s ease both}
+.aq-cadmin-emergency-form .ui-field:last-of-type{margin-bottom:0}
+.aq-cadmin-chips{gap:8px}
+.aq-cadmin-chip{min-height:42px;padding:0 16px;border:1.5px solid var(--aq-gray-200);background:#fff;transition:border-color .15s ease,background-color .15s ease,color .15s ease}
+.aq-cadmin-emergency-actions{display:grid;grid-template-columns:1fr 1.6fr;gap:10px;margin-top:22px}
+.aq-cadmin-emergency-actions .ui-btn{width:100%}
+@media (prefers-reduced-motion:reduce){.aq-cadmin-emergency-form{animation:none}}
+.aq-cadmin-emergency-actions>.ui-btn:only-child{grid-column:1/-1}
+
+/* 알림(토스트): 아래로 번지는 그림자 없이 평평하게 */
+.aq-toast{box-shadow:none!important;filter:none!important}
+/* 날짜·시간 입력: iPhone에서 값이 가운데로 몰리지 않게 왼쪽 정렬, 칸 높이 고정 */
+:is(#root,#modal) .aq-cadmin .ui-field input:is([type=datetime-local],[type=date],[type=time]){display:block;width:100%}
+.aq-cadmin .aq-cadmin-check{margin:4px 0 18px}
+
+/* 버튼은 윤곽선 없이 색으로만 구분 — 이미 쓰는 두 색: 옅은 파랑(안 고름) · AUDENIQ 파랑(고름) */
+.aq-cadmin-chip,.aq-cadmin-chip.is-on{border:0!important}
+.aq-cadmin-chip{background:var(--aq-blue-100);color:var(--aq-blue-700)}
+.aq-cadmin-chip:not(.is-on):hover{background:var(--aq-blue-150)}
+.aq-cadmin-chip.is-on{background:var(--aq-e-blue,var(--aq-blue-500));color:#fff}
+
+/* ---------- 앱 상단 — 스튜디오·관리자 같은 높이·로고 크기, 제품 표시는 로고 옆 ---------- */
+.adm-header-shell{min-height:var(--aq-header-h)}
+.adm-brand{display:flex;align-items:center;gap:10px;width:auto;max-width:none;min-width:0}
+.adm-brand img{width:var(--aq-logo-w);flex:none}
+@media (max-width:370px){.adm-brand .ui-product{display:none}}

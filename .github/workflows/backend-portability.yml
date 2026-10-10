@@ -1,0 +1,91 @@
+name: Backend portability
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - crates/core/**
+      - config/**
+      - migrations/**
+      - deploy/**
+      - .github/workflows/backend-portability.yml
+permissions:
+  contents: read
+concurrency:
+  group: backend-portability-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+jobs:
+  native-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:18-trixie
+        env:
+          POSTGRES_PASSWORD: ephemeral-portability-ci
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:ephemeral-portability-ci@localhost:5432/postgres
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      UPLOAD_AV_ENABLED: 'true'
+      UPLOAD_SCANNER_SOCKET: /tmp/audeniq-ci-av.sock
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.1
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: backend-native-1.98.1-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            backend-native-1.98.1-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}-
+      - name: Build the pinned AUDENIQ media engine (audeniq-qc)
+        run: |
+          sh deploy/install-audeniq-qc.sh "$HOME/.local/audeniq-qc"
+          echo "AUDENIQ_QC_BIN=$HOME/.local/audeniq-qc/bin/audeniq-qc" >> "$GITHUB_ENV"
+      - name: Build the pinned AUDENIQ image toolkit (audeniq-photo)
+        run: |
+          sh deploy/install-audeniq-photo.sh "$HOME/.local/audeniq-photo"
+          echo "AUDENIQ_PHOTO_BIN=$HOME/.local/audeniq-photo/bin/audeniq-photo" >> "$GITHUB_ENV"
+      - name: Install native analyzers and disposable antivirus
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg libxml2-utils libimage-exiftool-perl qrencode fonts-dejavu-core clamav-daemon
+          bash deploy/tests/start-test-antivirus.sh
+      - name: Build every backend binary for the native architecture
+        run: cargo build --locked -p audeniq-core --bins
+      - name: Native QC, fingerprint, lossless and sandbox regression tests
+        run: |
+          cargo test --locked -p audeniq-core --lib
+          cargo test --locked -p audeniq-core --bin audeniq-worker
+          cargo test --locked -p audeniq-core --test foundation --test stage1 --test album_flac10 --test sandbox_regressions --test crypto_performance
+          target/debug/audeniq-admin upload-sandbox-check
+      - name: Measure package and crypto resource paths
+        run: |
+          set -euo pipefail
+          cargo bench --locked --profile dev -p audeniq-core --bench backend_resources --bench crypto_resources 2>&1 | tee /tmp/backend-resource-benchmarks.log
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: backend-resource-benchmarks-${{ runner.arch }}
+          path: /tmp/backend-resource-benchmarks.log
+          if-no-files-found: ignore
+      - name: Build configuration and deployment CPU gate tests
+        run: |
+          python3 -m unittest discover -s deploy/tests -p test_cpu_compatibility.py -v
+          python3 -m unittest discover -s deploy/tests -p 'test_kms*.py' -v

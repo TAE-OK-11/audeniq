@@ -1,0 +1,231 @@
+// AUDENIQ ADMIN — 스태프 전용 콘솔. 스튜디오와 같은 계정으로 로그인하고,
+// 스태프 역할(ADMIN·REVIEWER·OPERATOR·SUPPORT)은 서버 `/api/staff/me`가 알려준다.
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react';
+import { Link, Navigate, Route, Routes, useLocation, useNavigate } from './lib/router';
+import { useAuth } from './auth';
+import { ApiError } from './api/errors';
+import { MOCK } from './lib/mode';
+import { useConfirm } from './components/Confirm';
+import { useToast } from './components/Toast';
+import { staffApi, type Duty, type Overview, type StaffMe } from './api/staff';
+import { ROLE_LABEL } from './labels';
+import { SkeletonList, StaffContext } from './staffUi';
+import { OverviewPage } from './pages/Overview';
+
+// 첫 화면(오늘의 업무) 말고는 열 때 불러온다 — 첫 로딩 JS를 줄이고, 로그인 뒤 한가할 때 미리 받아 둔다
+type PageModule = Record<string, ComponentType>;
+const PAGE_LOADERS = {
+  ReviewQueue: () => import('./pages/ReviewQueue'),
+  ReviewDetail: () => import('./pages/ReviewDetail'),
+  Approvals: () => import('./pages/Approvals'),
+  Documents: () => import('./pages/Documents'),
+  Inquiries: () => import('./pages/Inquiries'),
+  Deliveries: () => import('./pages/Deliveries'),
+  Dsps: () => import('./pages/Dsps'),
+  Payouts: () => import('./pages/Payouts'),
+  ContentAdmin: () => import('./pages/ContentAdmin'),
+} satisfies Record<string, () => Promise<unknown>>;
+const page = (name: keyof typeof PAGE_LOADERS) =>
+  lazy(() => PAGE_LOADERS[name]().then(m => ({ default: (m as unknown as PageModule)[name] })));
+const ReviewQueue = page('ReviewQueue');
+const ReviewDetail = page('ReviewDetail');
+const Approvals = page('Approvals');
+const Documents = page('Documents');
+const Inquiries = page('Inquiries');
+const Deliveries = page('Deliveries');
+const Dsps = page('Dsps');
+const Payouts = page('Payouts');
+const ContentAdmin = page('ContentAdmin');
+function prefetchPages() {
+  const run = () => { for (const load of Object.values(PAGE_LOADERS)) void load().catch(() => {}); };
+  if ('requestIdleCallback' in window) window.requestIdleCallback(run, { timeout: 4000 });
+  else setTimeout(run, 1500);
+}
+import './styles/admin.css';
+import { Glyph } from './components/Glyph';
+import { Avatar } from './ui';
+
+const STUDIO_URL = import.meta.env.VITE_STUDIO_URL ?? 'https://studio.audeniq.com';
+
+// 관리자 메뉴 아이콘 — 스튜디오와 같은 AUDENIQ 아이콘 세트(Glyph)
+const ICONS: Record<string, string> = {
+  home: 'home', review: 'review', approval: 'approval', doc: 'doc', inquiry: 'inquiry',
+  delivery: 'truck', dsp: 'globe', payout: 'card',
+};
+
+export function Icon({ name }: { name: string }) {
+  return <Glyph name={ICONS[name] ?? name} size={18} />;
+}
+
+interface NavItem { to: string; label: string; icon: string; count?: (o: Overview) => number; hot?: boolean; adminOnly?: boolean; also?: string[] }
+const NAV: { group: string; items: NavItem[] }[] = [
+  { group: '한눈에', items: [{ to: '/', label: '오늘의 업무', icon: 'home' }] },
+  {
+    group: '심사',
+    items: [
+      // 2차 승인은 발매 심사 안의 탭
+      { to: '/reviews', label: '발매 심사', icon: 'review', count: o => o.review + o.second_approvals, hot: true, also: ['/approvals'] },
+      { to: '/documents', label: '서류 검토', icon: 'doc', count: o => o.documents },
+    ],
+  },
+  { group: '콘텐츠', items: [{ to: '/admin/content', label: '공지·이벤트 관리', icon: 'doc', adminOnly: true }] },
+  { group: '고객 지원', items: [{ to: '/inquiries', label: '문의 답변', icon: 'inquiry', count: o => o.inquiries, hot: true }] },
+  {
+    group: '배급',
+    items: [
+      // 배급은 최종 승인 + 아티스트 서명 후 자동 — 여기서는 현황과 문제만 본다 (플랫폼 조건은 탭)
+      { to: '/deliveries', label: '배급 현황', icon: 'delivery', count: o => o.deliveries_blocked, hot: true, also: ['/dsps'] },
+      { to: '/payouts', label: '지급 요청', icon: 'payout', count: o => o.payout_requests, adminOnly: true },
+    ],
+  },
+];
+
+const active = (path: string, to: string) => (to === '/' ? path === '/' : path === to || path.startsWith(`${to}/`));
+
+function Gate({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
+  return (
+    <div className="adm-gate">
+      <div className="ui-icon is-lg" aria-hidden="true"><Glyph name="lock" size={26} /></div>
+      <h1>{title}</h1>
+      <p>{children}</p>
+      {action}
+    </div>
+  );
+}
+
+export function AdminApp() {
+  const loc = useLocation();
+  const nav = useNavigate();
+  const toast = useToast();
+  const confirm = useConfirm();
+  const { user, logout } = useAuth();
+  const [me, setMe] = useState<StaffMe | null>(null);
+  const [gate, setGate] = useState<'loading' | 'ok' | 'forbidden' | 'error'>('loading');
+  const [counts, setCounts] = useState<Overview | null>(null);
+
+  const loadMe = useCallback(() => {
+    setGate('loading');
+    staffApi.me()
+      .then(m => { setMe(m); setGate('ok'); prefetchPages(); })
+      .catch(e => setGate(e instanceof ApiError && e.status === 403 ? 'forbidden' : 'error'));
+  }, []);
+  useEffect(loadMe, [loadMe]);
+
+  const refreshCounts = useCallback(() => {
+    staffApi.overview().then(setCounts).catch(() => { /* 숫자는 보조 정보 — 실패해도 화면은 쓸 수 있다 */ });
+  }, []);
+  useEffect(() => {
+    if (gate !== 'ok') return;
+    refreshCounts();
+    // 여러 담당자가 동시에 처리하므로 1분마다 대기 건수를 새로 받는다 (탭이 보일 때만)
+    const t = window.setInterval(() => { if (document.visibilityState === 'visible') refreshCounts(); }, 60_000);
+    return () => window.clearInterval(t);
+  }, [gate, refreshCounts]);
+
+  useEffect(() => { window.scrollTo(0, 0); }, [loc.pathname]);
+  useEffect(() => {
+    const prev = document.title;
+    document.title = 'AUDENIQ ADMIN';
+    return () => { document.title = prev; };
+  }, []);
+
+  const ctx = useMemo(() => me && ({
+    me, counts, refreshCounts, can: (d: Duty) => me.duties.includes(d),
+  }), [me, counts, refreshCounts]);
+
+  const doLogout = async () => {
+    const ok = await confirm({ title: '로그아웃할까요?', confirmLabel: '로그아웃' });
+    if (!ok) return;
+    await logout();
+    toast('로그아웃했어요.', 'info');
+    nav('/login', { replace: true });
+  };
+
+  if (gate === 'loading') {
+    return <div className="aq-boot" role="status" aria-label="관리자 화면을 불러오는 중"><img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="" /><span className="aq-boot-bar" /></div>;
+  }
+  if (gate === 'forbidden') {
+    return (
+      <Gate title="관리자 권한이 필요해요" action={<button type="button" className="ui-btn is-primary" onClick={() => { void logout().then(() => nav('/login', { replace: true })); }}>다른 계정으로 로그인</button>}>
+        {user?.email ? `${user.email} 계정은` : '이 계정은'} 아직 관리자로 등록되지 않았어요. 운영 책임자에게 권한을 요청해 주세요.
+      </Gate>
+    );
+  }
+  if (gate === 'error' || !ctx || !me) {
+    return (
+      <Gate title="관리자 정보를 불러오지 못했어요" action={<button type="button" className="ui-btn is-primary" onClick={loadMe}>다시 시도</button>}>
+        서버 연결을 확인한 뒤 다시 시도해 주세요.
+      </Gate>
+    );
+  }
+
+  const initial = (user?.email || 'A').slice(0, 1).toUpperCase();
+
+  return (
+    <StaffContext.Provider value={ctx}>
+      <div className="adm-body">
+        <a className="aq-skip-link" href="#main" onClick={e => { e.preventDefault(); document.getElementById('main')?.focus(); }}>본문으로 건너뛰기</a>
+        <header className="adm-header">
+          <div className="adm-header-shell">
+            <Link to="/" className="adm-brand" aria-label="AUDENIQ ADMIN 홈">
+              <img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" />
+              <span className="ui-product is-dark">ADMIN</span>
+            </Link>
+            <div className="adm-header-right">
+              {MOCK && <span className="ui-badge is-amber">체험 데이터</span>}
+              <div className="adm-who" title={user?.email}>
+                <Avatar name={initial} size="sm" />
+                <span className="adm-who-text"><b>{user?.email}</b><small>{ROLE_LABEL[me.role]}</small></span>
+              </div>
+              <a href={STUDIO_URL} className="ui-btn is-ghost is-sm" target="_blank" rel="noopener noreferrer" aria-label="스튜디오 새 창으로 열기">스튜디오<Glyph name="arrow-up-right" size={14} /></a>
+              <button type="button" className="ui-btn is-ghost is-sm" onClick={doLogout}>로그아웃</button>
+            </div>
+          </div>
+        </header>
+
+        <div className="adm-shell">
+          <nav className="adm-side" aria-label="관리자 메뉴">
+            {NAV.map(g => (
+              <div className="adm-side-group" key={g.group}>
+                <div className="adm-side-label">{g.group}</div>
+                {g.items.filter(i => !i.adminOnly || me.role === 'ADMIN').map(i => {
+                  const n = counts && i.count ? i.count(counts) : 0;
+                  const cur = active(loc.pathname, i.to) || !!i.also?.some(a => active(loc.pathname, a));
+                  return (
+                    <Link key={i.to} to={i.to} aria-current={cur ? 'page' : undefined}>
+                      <span><Icon name={i.icon} />{i.label}</span>
+                      {n > 0 && <b className={`ui-count${i.hot ? ' is-hot' : ''}`}>{n > 99 ? '99+' : n}</b>}
+                    </Link>
+                  );
+                })}
+              </div>
+            ))}
+            <div className="adm-side-foot">
+              {ROLE_LABEL[me.role]} 권한<br />모든 처리는 담당자 계정으로 감사 기록에 남아요.
+            </div>
+          </nav>
+
+          <main className="adm-main" id="main" tabIndex={-1}>
+            <Suspense fallback={<SkeletonList rows={6} />}>
+            <Routes>
+              <Route path="/" element={<OverviewPage />} />
+              <Route path="/reviews" element={<ReviewQueue />} />
+              <Route path="/reviews/:id" element={<ReviewDetail />} />
+              <Route path="/approvals" element={<Approvals />} />
+              <Route path="/documents" element={<Documents />} />
+              <Route path="/inquiries" element={<Inquiries />} />
+              <Route path="/inquiries/:id" element={<Inquiries />} />
+              <Route path="/deliveries" element={<Deliveries />} />
+              <Route path="/dsps" element={<Dsps />} />
+              <Route path="/payouts" element={me.role === 'ADMIN' ? <Payouts /> : <Navigate to="/" replace />} />
+              <Route path="/admin/content" element={me.role === 'ADMIN' ? <ContentAdmin /> : <Navigate to="/" replace />} />
+              <Route path="/content-admin" element={<Navigate to="/admin/content" replace />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+            </Suspense>
+          </main>
+        </div>
+      </div>
+    </StaffContext.Provider>
+  );
+}

@@ -1,0 +1,300 @@
+name: Backend image
+# Native runners build each architecture; only validated digests receive release tags.
+# Common tags are portable amd64 + arm64. Tuned tags keep CPU requirements explicit.
+on:
+  push:
+    branches: [main]
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - crates/core/**
+      - config/**
+      - migrations/**
+      - deploy/Dockerfile
+      - deploy/build-target.sh
+      - deploy/check-cpu.sh
+      - deploy/deploy.sh
+      - deploy/audeniq-photo.rev
+      - deploy/install-audeniq-photo.sh
+      - deploy/clamd.conf
+      - deploy/freshclam.conf
+      - deploy/update-antivirus.py
+      - deploy/pgbouncer/**
+      - deploy/compose.production.yaml
+      - .dockerignore
+      - .github/workflows/backend-image.yml
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: 이미지를 만든 뒤 production 서버에 배포
+        type: boolean
+        default: false
+      cpu_variant:
+        description: 배포할 이미지 (공용 / AMD·Intel AVX2 / AWS Graviton4)
+        type: choice
+        options: [portable, x86-64-v3, graviton4]
+        default: portable
+permissions:
+  contents: read
+concurrency:
+  group: backend-image-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: amd64
+            runner: ubuntu-24.04
+            platform: linux/amd64
+            arch: amd64
+            cpu: x86-64
+          - variant: arm64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            arch: arm64
+            cpu: generic
+          - variant: x86-64-v3
+            runner: ubuntu-24.04
+            platform: linux/amd64
+            arch: amd64
+            cpu: x86-64-v3
+          - variant: graviton4
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            arch: arm64
+            cpu: neoverse-v2
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+      - id: name
+        name: Image name
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/audeniq" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/Dockerfile
+          build-args: |
+            CARGO_PROFILE=release
+            TARGET_CPU=${{ matrix.cpu }}
+          platforms: ${{ matrix.platform }}
+          # Matrix jobs push by digest, never racing over a shared tag.
+          outputs: type=image,name=${{ steps.name.outputs.image }},push-by-digest=true,name-canonical=true,push=true
+          labels: |
+            org.opencontainers.image.title=audeniq
+            org.opencontainers.image.revision=${{ github.sha }}
+            io.audeniq.target-cpu=${{ matrix.cpu }}
+          cache-from: type=gha,scope=backend-${{ matrix.variant }}
+          cache-to: type=gha,scope=backend-${{ matrix.variant }},mode=max
+          provenance: mode=max
+          sbom: true
+      - name: Smoke test runtime dependencies and image metadata
+        env:
+          REF: ${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}
+          ARCH: ${{ matrix.arch }}
+          CPU: ${{ matrix.cpu }}
+        run: |
+          docker pull "$REF"
+          test "$(docker image inspect --format '{{.Architecture}}' "$REF")" = "$ARCH"
+          docker run --rm --entrypoint sh -e EXPECTED_ARCH="$ARCH" -e EXPECTED_CPU="$CPU" "$REF" -c '
+            set -e
+            for b in audeniq-api audeniq-worker audeniq-migrate audeniq-admin audeniq-qc audeniq-photo sftp python3 xmllint clamd; do command -v "$b"; done
+            for b in exiftool tesseract zbarimg pdftoppm; do if command -v "$b"; then echo "$b must not ship in the runtime image"; exit 1; fi; done
+            if command -v ffmpeg; then echo "ffmpeg must not ship in the runtime image"; exit 1; fi
+            test "$(cat /usr/local/share/audeniq/target-arch)" = "$EXPECTED_ARCH"
+            test "$(cat /usr/local/share/audeniq/target-cpu)" = "$EXPECTED_CPU"
+            test "$(id -u)" = 10001
+            audeniq-qc capabilities
+            audeniq-photo --version'
+      - name: Verify portable binary execution and parser sandbox on native CPU
+        if: matrix.variant == 'amd64' || matrix.variant == 'arm64'
+        env:
+          REF: ${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}
+        run: |
+          docker run --rm --network none --cap-drop ALL --read-only --security-opt no-new-privileges \
+            --entrypoint audeniq-admin "$REF" upload-sandbox-check
+      # Hosted ARM runners are not Graviton4. Execute tuned binaries under
+      # QEMU's max CPU; test Landlock/seccomp natively on the portable image.
+      - name: Verify tuned binary can execute with the required instruction set
+        if: matrix.variant == 'graviton4' || matrix.variant == 'x86-64-v3'
+        env:
+          REF: ${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-user-static
+          case "$ARCH" in
+            amd64) task_emulator=/usr/bin/qemu-x86_64-static ;;
+            arm64) task_emulator=/usr/bin/qemu-aarch64-static ;;
+            *) exit 1 ;;
+          esac
+          docker run --rm --network none --read-only --tmpfs /tmp:size=1m,mode=1777 \
+            -v "$task_emulator:/usr/local/bin/audeniq-qemu:ro" --entrypoint sh "$REF" -c '
+              set +e
+              /usr/local/bin/audeniq-qemu -cpu max /usr/local/bin/audeniq-admin > /tmp/cpu-check.log 2>&1
+              result=$?
+              cat /tmp/cpu-check.log
+              test "$result" = 1 && grep -q "usage: audeniq-admin" /tmp/cpu-check.log'
+      - name: Attest build provenance
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ steps.name.outputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Export validated digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          mkdir -p /tmp/audeniq-digests
+          printf '%s\n' "$DIGEST" > "/tmp/audeniq-digests/$VARIANT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: backend-digest-${{ matrix.variant }}
+          path: /tmp/audeniq-digests/*
+          retention-days: 1
+
+  image:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.name.outputs.image }}
+      digest: ${{ steps.publish.outputs.digest }}
+      sha: ${{ github.sha }}
+    steps:
+      - id: name
+        name: Image name
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/audeniq" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: backend-digest-*
+          path: /tmp/audeniq-digests
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: publish
+        name: Publish portable manifest and explicit CPU variants
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}
+          SHA: ${{ github.sha }}
+          BRANCH: ${{ github.ref }}
+          # Repository variable keeps automatic deploys on their chosen CPU variant.
+          DEPLOY_VARIANT: ${{ inputs.cpu_variant || vars.BACKEND_CPU_VARIANT || 'portable' }}
+        run: |
+          set -euo pipefail
+          task_portable_tags=(-t "$IMAGE:sha-$SHA")
+          if [ "$BRANCH" = refs/heads/main ]; then task_portable_tags+=(-t "$IMAGE:main" -t "$IMAGE:latest"); fi
+          docker buildx imagetools create "${task_portable_tags[@]}" \
+            "$IMAGE@$(cat /tmp/audeniq-digests/amd64)" "$IMAGE@$(cat /tmp/audeniq-digests/arm64)"
+          for variant in x86-64-v3 graviton4; do
+            task_tuned_tags=(-t "$IMAGE:sha-$SHA-$variant")
+            if [ "$BRANCH" = refs/heads/main ]; then task_tuned_tags+=(-t "$IMAGE:main-$variant" -t "$IMAGE:latest-$variant"); fi
+            docker buildx imagetools create "${task_tuned_tags[@]}" "$IMAGE@$(cat "/tmp/audeniq-digests/$variant")"
+          done
+          # Verify the common manifest includes both executable architectures.
+          docker buildx imagetools inspect "$IMAGE:sha-$SHA" --raw > /tmp/audeniq-manifest.json
+          jq -e '[.manifests[].platform | select(.os == "linux") | .architecture] | sort == ["amd64", "arm64"]' /tmp/audeniq-manifest.json
+          case "$DEPLOY_VARIANT" in
+            portable) task_tag="$IMAGE:sha-$SHA" ;;
+            x86-64-v3|graviton4) task_tag="$IMAGE:sha-$SHA-$DEPLOY_VARIANT" ;;
+            *) echo "Unsupported BACKEND_CPU_VARIANT: $DEPLOY_VARIANT" >&2; exit 1 ;;
+          esac
+          task_digest=$(docker buildx imagetools inspect "$task_tag" --format '{{json .Manifest}}' | jq -er '.digest')
+          echo "digest=$task_digest" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Backend images"
+            echo
+            echo "Portable amd64 + arm64: \`$IMAGE:sha-$SHA\`"
+            echo "AMD/Intel AVX2: \`$IMAGE:sha-$SHA-x86-64-v3\`"
+            echo "AWS Graviton4: \`$IMAGE:sha-$SHA-graviton4\`"
+            echo
+            echo "Deploy ($DEPLOY_VARIANT): \`./deploy.sh $IMAGE@$task_digest\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    needs: image
+    # 수동 실행에서 deploy를 켰거나, 저장소 변수 AUTO_DEPLOY=true면 main 통과 때마다 배포
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.deploy) ||
+      (github.event_name == 'push' && vars.AUTO_DEPLOY == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: read
+    env:
+      REF: ${{ needs.image.outputs.image }}@${{ needs.image.outputs.digest }}
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/audeniq' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.image.outputs.sha }}
+      - name: Check deploy settings
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          missing=""
+          [ -n "$DEPLOY_HOST" ] || missing="$missing DEPLOY_HOST"
+          [ -n "$DEPLOY_USER" ] || missing="$missing DEPLOY_USER"
+          [ -n "$KEY" ] || missing="$missing DEPLOY_SSH_KEY"
+          [ -n "$KNOWN" ] || missing="$missing DEPLOY_KNOWN_HOSTS"
+          if [ -n "$missing" ]; then
+            echo "::error::production 환경 시크릿이 없어요:$missing (deploy/PRODUCTION.md 'GHCR 이미지 배포' 참고)"
+            exit 1
+          fi
+      - name: SSH setup
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN" > ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts
+      - name: Copy deploy files of this commit
+        # compose·grants·bootstrap은 이미지(마이그레이션)와 같은 커밋이어야 한다. 비밀 파일은 서버에만 있다.
+        run: |
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
+          scp -i ~/.ssh/deploy_key deploy/compose.production.yaml deploy/bootstrap.sql deploy/grants.sql deploy/deploy.sh deploy/check-cpu.sh deploy/pg-upgrade.sh deploy/kms-keyring.py deploy/backup.sh deploy/restore-backup.sh \
+            "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+          scp -r -i ~/.ssh/deploy_key deploy/pgbouncer "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+      - name: Deploy
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          # 이 작업 동안만 유효한 토큰으로 GHCR에 로그인해 받고, 끝나면 로그아웃한다
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd '$DEPLOY_PATH' && chmod +x deploy.sh pg-upgrade.sh && GHCR_USER='$ACTOR' GHCR_TOKEN_STDIN=1 ./deploy.sh '$REF'" <<< "$TOKEN"
+      - name: Summary
+        run: |
+          echo "배포됨: \`$REF\` → \`$DEPLOY_HOST:$DEPLOY_PATH\`" >> "$GITHUB_STEP_SUMMARY"

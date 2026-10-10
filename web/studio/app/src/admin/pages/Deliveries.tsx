@@ -1,0 +1,139 @@
+// 배급 현황 — 배급은 발매 심사 최종 승인 + 아티스트 서명 뒤 시스템이 알아서 보낸다.
+// 담당자는 여기서 플랫폼별 진행과 문제만 확인하고, 필요하면 멈추거나(보류) 다시 검사한다.
+import { useState } from 'react';
+import { Link, useSearchParams } from '../../lib/router';
+import { Modal, useModalClose } from '../../components/Modal';
+import { useToast } from '../../components/Toast';
+import { errorMessage } from '../../api/errors';
+import { useAsync } from '../../hooks/useAsync';
+import { staffApi, type DeliveryItem } from '../api';
+import { ago } from '../labels';
+import { DSP_NAME, deliveryVerdict } from '../dspReqs';
+import { Badge, EmptyState, ErrorBox, ChipGroup, NoDuty, PageHeader, SkeletonList, DELIVERY_TABS, SubTabs, useStaff } from '../ui';
+import { Glyph } from '../../components/Glyph';
+
+const VIEWS = [
+  { value: 'PENDING', label: '확인 필요' },
+  { value: 'APPROVED', label: '자동 배급 중' },
+  { value: 'HELD', label: '멈춤' },
+] as const;
+
+function HoldForm({ item, onDone }: { item: DeliveryItem; onDone: () => void }) {
+  const close = useModalClose();
+  const toast = useToast();
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (busy || !note.trim()) return;
+    setBusy(true);
+    try {
+      await staffApi.decideDelivery(item.package_id, item.dsp, { action: 'HOLD', note: note.trim() });
+      toast(`${item.dsp_name ?? DSP_NAME[item.dsp] ?? '플랫폼'} 배급을 멈췄어요.`, 'success');
+      onDone();
+      close();
+    } catch (err) {
+      toast(errorMessage(err, '멈추지 못했어요.'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form onSubmit={submit}>
+      <p className="small muted">{item.title} · {item.dsp_name ?? DSP_NAME[item.dsp] ?? '플랫폼'} 배급을 멈춰요. 멈춘 플랫폼은 자동으로 보내지 않아요.</p>
+      <div className="ui-field" style={{ marginTop: 14 }}>
+        <label htmlFor="holdNote">멈추는 이유 <span className="required">*</span></label>
+        <input id="holdNote" data-autofocus className="ui-input" maxLength={1000} value={note} onChange={e => setNote(e.target.value)} placeholder="예: 권리 확인 중" />
+      </div>
+      <div className="adm-form-actions">
+        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="submit" className="ui-btn is-warn" disabled={busy || !note.trim()}>{busy ? '처리 중…' : '배급 멈추기'}</button>
+      </div>
+    </form>
+  );
+}
+
+export function Deliveries() {
+  const toast = useToast();
+  const [params, setParams] = useSearchParams();
+  const view = params.get('approval') || 'PENDING';
+  const { can, refreshCounts } = useStaff();
+  const { data, loading, error, reload } = useAsync(() => staffApi.deliveries({ approval: view }), [view]);
+  const [hold, setHold] = useState<DeliveryItem | null>(null);
+  const items = data?.items ?? [];
+
+  // 발매(패키지)별로 묶는다 — 한 발매의 플랫폼들을 한 카드에서
+  const groups = new Map<string, DeliveryItem[]>();
+  for (const d of items) groups.set(d.package_id, [...(groups.get(d.package_id) ?? []), d]);
+
+  const recheck = async (pkg: string) => {
+    try {
+      await staffApi.restage(pkg);
+      toast('다시 검사를 시작했어요. 잠시 후 새로고침해 주세요.', 'success');
+    } catch (e) {
+      toast(errorMessage(e, '다시 검사하지 못했어요.'), 'error');
+    }
+  };
+
+  return (
+    <div className="view-enter">
+      <PageHeader
+        eyebrow="배급"
+        title="배급 현황"
+        sub="승인과 서명이 끝난 발매는 플랫폼마다 자동으로 전송돼요. 여기서는 문제만 확인하면 돼요."
+        actions={<button type="button" className="ui-btn is-soft is-sm" onClick={reload}>새로고침</button>}
+      />
+      <SubTabs tabs={DELIVERY_TABS} />
+      {!can('DELIVERY') && <NoDuty duty="배급 관리" />}
+      <ChipGroup label="보기" value={view} onChange={v => setParams({ approval: v }, { replace: true })} options={VIEWS.map(v => ({ value: v.value, label: v.label }))} />
+      {error && <ErrorBox message={error} onRetry={reload} />}
+      {loading && !data ? <SkeletonList rows={4} /> : groups.size === 0 ? (
+        <EmptyState icon={<Glyph name="truck" size={22} />} title={view === 'PENDING' ? '확인할 배급이 없어요' : '해당하는 배급이 없어요'}>
+          {view === 'PENDING' ? '문제가 있거나 플랫폼 연동을 기다리는 배급이 여기에 모여요.' : undefined}
+        </EmptyState>
+      ) : (
+        <div className="ui-list">
+          {[...groups.values()].map(list => {
+            const first = list[0];
+            const verdicts = list.map(d => ({ d, v: deliveryVerdict(d) }));
+            const bad = verdicts.filter(x => x.v.tone === 'red').length;
+            return (
+              <div key={first.package_id} className={`ui-card adm-deliv ui-on-soft${bad ? ' is-bad' : ''}`}>
+                <div className="adm-check-top">
+                  <span className="adm-min">
+                    <Link to={`/admin/reviews/${first.release_id}`} className="ui-row-title">{first.title} <Glyph name="arrow-right" size={13} className="aq-inline-glyph" /></Link>
+                    <span className="ui-row-meta"><span>{first.org_name}</span><span>배급 준비 {ago(first.staged_at)}</span></span>
+                  </span>
+                  <span className="adm-codes">
+                    {bad > 0 ? <Badge tone="red">문제 {bad}곳</Badge> : <Badge tone="green">문제 없음</Badge>}
+                    {can('DELIVERY') && <button type="button" className="ui-btn is-soft is-sm" onClick={() => recheck(first.package_id)}>다시 검사</button>}
+                  </span>
+                </div>
+                <ul className="adm-deliv-rows">
+                  {verdicts.map(({ d, v }) => (
+                    <li key={d.dsp} className={`is-${v.tone}`}>
+                      <b className="adm-deliv-name">{d.dsp_name ?? DSP_NAME[d.dsp] ?? '플랫폼'}</b>
+                      <span className="adm-min">
+                        <span className="adm-deliv-head">{d.approval === 'HELD' ? '멈춤' : d.approval === 'APPROVED' && v.tone !== 'red' ? (v.tone === 'gray' ? '플랫폼 연동 대기 · 연동되면 자동 전송' : '서명 후 자동 전송') : v.headline}</span>
+                        {v.problems.map(p => <small key={p} className="adm-deliv-problem">{p}</small>)}
+                        {v.notes.length > 0 && <small className="adm-deliv-note">{v.notes.join(' · ')}</small>}
+                      </span>
+                      {can('DELIVERY') && d.approval !== 'HELD' && (
+                        <button type="button" className="ui-btn is-text is-muted" onClick={() => setHold(d)}>멈추기</button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {hold && (
+        <Modal title="배급 멈추기" onClose={() => setHold(null)} dismissible={false}>
+          <HoldForm item={hold} onDone={() => { reload(); refreshCounts(); }} />
+        </Modal>
+      )}
+    </div>
+  );
+}
