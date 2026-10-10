@@ -614,7 +614,7 @@ async fn persist_ddex_messages(
         // schema-valid before it is persisted. A message that fails XSD
         // validation never becomes a ddex_messages row (fail-closed); the
         // worker retries only when the cause is transient.
-        ddex_xsd::validate_ern_382_xml(&xml)?;
+        let xml = ddex_xsd::validate_ern_382_xml_blocking(xml).await?;
         // Business-rule layer (ddex-workbench-inspired, Rust from scratch):
         // structural, profile, and cross-reference checks that XSD alone
         // cannot express. Errors fail closed like the XSD gate above;

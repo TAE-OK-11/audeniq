@@ -247,7 +247,8 @@ pub async fn set_recipient_dpid(
 pub async fn test_ern(pool: &PgPool, operator: &str, partner_id: &str, xml: &str) -> Result<Value> {
     need_operator(operator)?;
     profile_exists(pool, partner_id).await?;
-    crate::ddex_xsd::validate_ern_382_xml(xml)
+    crate::ddex_xsd::validate_ern_382_xml_blocking(xml.to_owned())
+        .await
         .map_err(|_| Error::PolicyGate("TEST_ERN_XSD_INVALID"))?;
     let report = crate::ddex_validate::validate_ern_message(xml, None);
     let errors: Vec<String> = report
