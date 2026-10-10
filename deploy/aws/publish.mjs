@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 빌드된 화면을 S3에 올리고 CloudFront 캐시를 비운다: node deploy/aws/publish.mjs <studio|admin|survey|landing>
+// 빌드된 화면을 S3에 올리고 CloudFront 캐시를 비운다: node deploy/aws/publish.mjs <studio|admin|landing>
 // 먼저 deploy-stack.sh 로 스택(audeniq-<app>-ui)이 있어야 한다. AWS 자격증명·리전은 환경변수(AWS_REGION 등)로.
 //
 // - Cache-Control은 앱의 _headers 규칙 그대로 S3 메타데이터로 넣는다 (나머지는 no-cache)

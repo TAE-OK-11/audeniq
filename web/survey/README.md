@@ -1,12 +1,4 @@
-# AUDENIQ Survey — 정적 자산 우선 / 초저 CPU 배포본
-
-> **2026-10 변경: 응답 저장은 백엔드로.** Worker는 화면 서빙과 `/api` 전달만 해요.
-> - `POST /api/responses`는 형식·출처를 먼저 확인한 뒤 백엔드 `/api/survey/responses`로 넘겨요(`crates/core/src/survey.rs`).
-> - Turnstile 확인, Postgres(`content.survey_responses`) 저장, 12개월 정리(`purge-transient`)는 백엔드가 해요.
-> - `GET /api/config`는 백엔드 `/api/survey/config`예요.
-> - D1·cron은 더 이상 쓰지 않아요. Turnstile 비밀 키와 공개 키는 백엔드 `production.env`의 `TURNSTILE_SECRET_KEY`·`TURNSTILE_SITE_KEY`에 넣어요.
-> - Worker secret은 `EDGE_SERVICE_SECRET` 하나예요. 기존 D1 응답은 `deploy/aws/migrate-d1.mjs`로 옮겨요.
-> - 아래 D1 관련 설명은 이전 기록이에요.
+# AUDENIQ Survey — 정적 자산 우선 / D1 비공개 / 초저 CPU 배포본
 
 ## 화면: React + TypeScript (V6)
 

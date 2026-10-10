@@ -1,13 +1,12 @@
-//! 어느 화면(사이트)에서 온 요청인지에 따른 규칙 — 예전 web/admin/worker.js·web/survey/src/worker.js의 몫
+//! 어느 화면(사이트)에서 온 요청인지에 따른 규칙 — 예전 web/admin/worker.js의 몫
 //!
-//! 화면은 AWS CloudFront가 서빙하고 `/api/*`는 CloudFront가 이 API로 보낸다(deploy/aws). 배포마다
-//! origin custom header로 `x-audeniq-site`(studio|admin|survey)와 `x-audeniq-service`를 붙인다.
-//! 브라우저가 같은 이름을 보내도 CloudFront가 덮어쓰고, 서비스 비밀이 없으면 boundary가 거절한다.
+//! 화면 앞단(Cloudflare Worker, 나중에는 AWS CloudFront)이 `/api/*`를 이 API로 넘기면서
+//! `x-audeniq-site`(studio|admin)와 `x-audeniq-service`를 붙인다. 브라우저가 같은 이름을 보내도
+//! 앞단이 덮어쓰고, 서비스 비밀이 없으면 boundary가 거절한다.
 //! 헤더가 없으면(개발·테스트·예전 경로) studio로 본다.
 //!
 //! - admin: 관리자 콘솔이 쓰는 경로만 연다. 쓰기는 관리자 주소(ADMIN_ORIGIN)에서 온 것만 받고,
 //!   Origin을 APP_ORIGIN으로 바꿔 넘긴다(세션·CSRF 검사는 그대로). 점검 중에도 막지 않는다.
-//! - survey: `/api/survey/*`만 연다(CloudFront 함수가 `/api/x` → `/api/survey/x`). 쓰기는 SURVEY_ORIGIN에서 온 것만.
 use crate::{api::AppState, site_content::fail};
 use axum::{
     extract::{Request, State},
@@ -23,13 +22,11 @@ pub const SITE_HEADER: &str = "x-audeniq-site";
 pub enum Site {
     Studio,
     Admin,
-    Survey,
 }
 
 pub fn site(h: &HeaderMap) -> Site {
     match h.get(SITE_HEADER).and_then(|v| v.to_str().ok()) {
         Some("admin") => Site::Admin,
-        Some("survey") => Site::Survey,
         _ => Site::Studio,
     }
 }
@@ -46,10 +43,6 @@ fn env_origin(name: &str) -> Option<String> {
 pub fn admin_origin() -> Option<&'static str> {
     static V: OnceLock<Option<String>> = OnceLock::new();
     V.get_or_init(|| env_origin("ADMIN_ORIGIN")).as_deref()
-}
-pub fn survey_origin() -> Option<&'static str> {
-    static V: OnceLock<Option<String>> = OnceLock::new();
-    V.get_or_init(|| env_origin("SURVEY_ORIGIN")).as_deref()
 }
 
 /// 관리자 콘솔이 쓰는 경로 (공지·이벤트·점검 API 포함)
@@ -114,14 +107,6 @@ pub async fn policy(State(s): State<AppState>, mut req: Request, next: Next) -> 
                 return fail(StatusCode::FORBIDDEN, "FORBIDDEN");
             }
         }
-        Site::Survey => {
-            if !req.uri().path().starts_with("/api/survey/") {
-                return fail(StatusCode::NOT_FOUND, "NOT_FOUND");
-            }
-            if adopt_origin(&mut req, survey_origin(), &s.config.origin).is_err() {
-                return fail(StatusCode::FORBIDDEN, "FORBIDDEN");
-            }
-        }
     }
     next.run(req).await
 }
@@ -136,8 +121,6 @@ mod tests {
         assert_eq!(site(&h), Site::Studio);
         h.insert(SITE_HEADER, HeaderValue::from_static("admin"));
         assert_eq!(site(&h), Site::Admin);
-        h.insert(SITE_HEADER, HeaderValue::from_static("survey"));
-        assert_eq!(site(&h), Site::Survey);
         h.insert(SITE_HEADER, HeaderValue::from_static("other"));
         assert_eq!(site(&h), Site::Studio);
     }

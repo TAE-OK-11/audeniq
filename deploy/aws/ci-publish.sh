@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CI(main)에서 화면을 S3 + CloudFront로 배포: deploy/aws/ci-publish.sh <studio|admin|survey|landing>
+# CI(main)에서 화면을 S3 + CloudFront로 배포: deploy/aws/ci-publish.sh <studio|admin|landing>
 # AWS_UI_ROLE_ARN 이 없으면 (아직 AWS로 옮기기 전) 건너뛴다.
 #   GitHub Actions: aws-actions/configure-aws-credentials 가 자격증명을 먼저 넣어 둔다
 #   CircleCI: OIDC 토큰(CIRCLE_OIDC_TOKEN_V2)으로 여기서 역할을 맡는다

@@ -251,20 +251,4 @@ async fn content_maintenance_and_site_rules(pool: PgPool) {
     .await;
     let (s, _) = call(&app, "GET", "/api/orgs", json!(null), Some(&artist)).await;
     assert_eq!(s, StatusCode::OK);
-
-    // ---- 설문 사이트: /api/survey/* 만, 설정 전에는 접수하지 않는다
-    let survey = ("x-audeniq-site", "survey");
-    let (s, _) = raw(&app, "GET", "/api/notices", &[survey], json!(null)).await;
-    assert_eq!(s, StatusCode::NOT_FOUND);
-    let (s, v) = raw(&app, "GET", "/api/survey/config", &[survey], json!(null)).await;
-    assert_eq!((s, v["ready"].clone()), (StatusCode::OK, json!(false)));
-    let (s, _) = raw(
-        &app,
-        "POST",
-        "/api/survey/responses",
-        &[survey, ("origin", ORIGIN)],
-        json!({}),
-    )
-    .await;
-    assert_eq!(s, StatusCode::FORBIDDEN, "설문 주소가 아닌 Origin");
 }
