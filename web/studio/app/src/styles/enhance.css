@@ -279,8 +279,6 @@ img{max-width:100%}
 
 /* ---------- 정산 ---------- */
 .settle-hero{animation:aq-fade-up .45s var(--aq-e-ease) both}
-.settle-hero-top .row-actions{flex-wrap:nowrap}
-@media(max-width:560px){.settle-hero-top .row-actions{width:100%}.settle-hero-top .row-actions .ui-btn{flex:1}}
 
 /* ---------- 모션 줄이기 ---------- */
 @media(prefers-reduced-motion:reduce){
