@@ -1,5 +1,5 @@
 import questions from '../questions.json' with { type: 'json' };
-import { requireHttps, secureResponse } from '../../shared/transport.js';
+import { publicOrigin, requireEdge, requireHttps, secureResponse } from '../../shared/transport.js';
 const MAX_BYTES=32*1024;
 const IS_CONFIGURED_SITEKEY = key => typeof key === 'string' && key.length > 5 && !key.includes('REPLACE_WITH');
 const ready = env => Boolean(env.DB && env.TURNSTILE_SECRET_KEY && IS_CONFIGURED_SITEKEY(env.TURNSTILE_SITE_KEY));
@@ -86,7 +86,7 @@ const surveyWorker = {
    if(path==='/api/config' && request.method==='GET')return json({turnstileSitekey:IS_CONFIGURED_SITEKEY(env.TURNSTILE_SITE_KEY)?env.TURNSTILE_SITE_KEY:'',ready:ready(env)});
    if(path!=='/api/responses')return err('페이지를 찾을 수 없어요.',404);
    if(request.method!=='POST')return err('허용되지 않는 요청입니다.',405);
-   if(request.headers.get('Origin')!==url.origin)return err('허용되지 않은 요청 출처입니다.',403);
+   if(request.headers.get('Origin')!==publicOrigin(request,env))return err('허용되지 않은 요청 출처입니다.',403);
    if(!/^application\/json(?:\s*;|$)/i.test(request.headers.get('Content-Type')||''))return err('JSON 형식으로 제출해 주세요.');
    if(Number(request.headers.get('Content-Length')||0)>MAX_BYTES)return err('제출 크기 제한을 초과했습니다.',413);
    if(!ready(env))return err('설문 접수를 준비하고 있어요. 설정을 확인해 주세요.',503);
@@ -97,7 +97,7 @@ const surveyWorker = {
    try{
     const existing=await env.DB.prepare('SELECT id FROM survey_responses WHERE id = ?1').bind(item.id).first();
     if(existing)return json({ok:true,receipt:item.id,duplicate:true});
-    const valid=await verifyTurnstile(payload.turnstile_token,env.TURNSTILE_SECRET_KEY,url.hostname);
+    const valid=await verifyTurnstile(payload.turnstile_token,env.TURNSTILE_SECRET_KEY,new URL(publicOrigin(request,env)).hostname);
     if(!valid)return err('보안 확인이 만료됐어요. 다시 확인해 주세요.',403);
     const write=await env.DB.prepare('INSERT OR IGNORE INTO survey_responses (id,survey_version,answers_json,beta_preference,contact,beta_contact_consent,survey_consent) VALUES (?1,4,?2,?3,?4,?5,1)').bind(item.id,item.answers,item.beta,item.contact,item.betaConsent).run();
     if (!write?.success) throw new Error('D1 write failed');
@@ -115,7 +115,7 @@ const surveyWorker = {
 
 export default {
  async fetch(request,env){
-  const refused=requireHttps(request);
+  const refused=requireHttps(request)??requireEdge(request,env);
   if(refused)return refused;
   return secureResponse(await surveyWorker.fetch(request,env));
  },
