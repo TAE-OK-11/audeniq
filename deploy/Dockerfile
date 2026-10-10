@@ -42,21 +42,32 @@ ARG TARGETARCH
 ARG TARGET_CPU=
 COPY deploy/audeniq-qc.rev deploy/install-audeniq-qc.sh /engine/
 RUN audeniq-build-target "$TARGETARCH" "$TARGET_CPU" sh /engine/install-audeniq-qc.sh /engine/root
+
+# The AUDENIQ image toolkit (cover metadata, QR, OCR, upload sanitization) at
+# the commit pinned in deploy/audeniq-photo.rev; it replaces ExifTool, ZBar,
+# Tesseract and the Pillow/Poppler sanitizer and runs only in the parser sandbox.
+FROM chef AS photo
+ARG TARGETARCH
+ARG TARGET_CPU=
+COPY deploy/audeniq-photo.rev deploy/install-audeniq-photo.sh /photo/
+RUN audeniq-build-target "$TARGETARCH" "$TARGET_CPU" sh /photo/install-audeniq-photo.sh /photo/root
 FROM debian:13-slim
 # Audio probing, lossless FLAC conversion, Stage 1 QC and fingerprinting run
 # in audeniq-qc (built above); FFmpeg is no longer part of the runtime image.
+# Image metadata, QR, OCR and upload sanitization run in audeniq-photo; python3
+# remains for the antivirus updater and the parser sandbox self-test.
 # openssh-client: SFTP partner delivery (DDEX drops) runs `sftp -b -` with a
 # pinned known_hosts file (crate::transport::SftpTransport).
 # /var/tmp/audeniq is the worker TMPDIR. A new named volume copies this
 # ownership, so UID 10001 can write downloaded masters for QC.
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssh-client libxml2-utils libimage-exiftool-perl tesseract-ocr tesseract-ocr-eng tesseract-ocr-kor zbar-tools python3-pil poppler-utils clamav-daemon clamav-freshclam && rm -rf /var/lib/apt/lists/* \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates openssh-client libxml2-utils python3 clamav-daemon clamav-freshclam && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 audeniq && useradd --uid 10001 --gid 10001 --no-create-home audeniq \
     && install -d -o 10001 -g 10001 -m 700 /var/tmp/audeniq \
     && install -d -o 10001 -g 10001 -m 755 /var/lib/clamav /run/audeniq-av
 COPY --from=build /out/ /usr/local/bin/
 COPY --from=engine /engine/root/bin/audeniq-qc /usr/local/bin/audeniq-qc
+COPY --from=photo /photo/root/bin/audeniq-photo /usr/local/bin/audeniq-photo
 COPY --from=build /meta/ /usr/local/share/audeniq/
-COPY deploy/sanitize-upload.py /usr/local/lib/audeniq/sanitize-upload.py
 COPY deploy/update-antivirus.py /usr/local/lib/audeniq/update-antivirus.py
 COPY deploy/clamd.conf deploy/freshclam.conf /usr/local/share/audeniq/
 USER 10001:10001

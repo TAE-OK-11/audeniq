@@ -62,10 +62,14 @@ jobs:
         run: |
           sh deploy/install-audeniq-qc.sh "$HOME/.local/audeniq-qc"
           echo "AUDENIQ_QC_BIN=$HOME/.local/audeniq-qc/bin/audeniq-qc" >> "$GITHUB_ENV"
+      - name: Build the pinned AUDENIQ image toolkit (audeniq-photo)
+        run: |
+          sh deploy/install-audeniq-photo.sh "$HOME/.local/audeniq-photo"
+          echo "AUDENIQ_PHOTO_BIN=$HOME/.local/audeniq-photo/bin/audeniq-photo" >> "$GITHUB_ENV"
       - name: Install FFmpeg (test fixtures and oracle only) and xmllint (DDEX XSD validation)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg libxml2-utils openssh-server openssh-client libimage-exiftool-perl tesseract-ocr tesseract-ocr-eng tesseract-ocr-kor zbar-tools qrencode fonts-dejavu-core python3-pil poppler-utils clamav-daemon
+          sudo apt-get install -y -qq ffmpeg libxml2-utils openssh-server openssh-client libimage-exiftool-perl qrencode fonts-dejavu-core clamav-daemon
       - name: Start real antivirus with disposable CI signatures
         run: bash deploy/tests/start-test-antivirus.sh
       # 서명을 실제로 검사하는 S3 서버 (R2처럼 SigV4 확인; moto는 서명을 보지 않는다).
@@ -101,7 +105,6 @@ jobs:
       - run: cargo nextest run --locked -p audeniq-core --test-threads 4 --no-fail-fast
         env:
           UPLOAD_SCANNER_SOCKET: /tmp/audeniq-ci-av.sock
-          UPLOAD_SANITIZER: ${{ github.workspace }}/deploy/sanitize-upload.py
           S3_TEST_ENDPOINT: http://127.0.0.1:7070/
           S3_TEST_BUCKET: audeniq-test
           S3_TEST_ACCESS_KEY_ID: ci-s3-access
@@ -196,10 +199,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - name: KMS, backup, upload sanitization and HTTPS-only antivirus update tests
+      - name: KMS, backup and HTTPS-only antivirus update tests
         run: |
           sudo apt-get update -qq
-          sudo apt-get install --no-install-recommends -y age python3-pil poppler-utils curl openssl
+          sudo apt-get install --no-install-recommends -y age curl openssl
           python3 -m unittest discover -s deploy/tests -v
   compose-smoke:
     strategy:
@@ -279,12 +282,10 @@ jobs:
         run: |
           docker compose exec -T api audeniq-admin upload-sandbox-check
           docker compose exec -T worker audeniq-admin upload-sandbox-check
-      - name: Worker image ships the audio and provenance analyzers
+      - name: Worker image ships the audio and image analyzers
         run: |
           docker compose run --rm --no-deps --entrypoint audeniq-qc worker capabilities
-          docker compose run --rm --no-deps --entrypoint exiftool worker -ver
-          docker compose run --rm --no-deps --entrypoint tesseract worker --list-langs
-          docker compose run --rm --no-deps --entrypoint zbarimg worker --version
+          docker compose run --rm --no-deps --entrypoint audeniq-photo worker --version
       - name: Runtime logs
         if: always()
         run: |

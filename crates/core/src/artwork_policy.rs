@@ -4,7 +4,7 @@ use crate::{
     qc::{CheckOutcome, CheckStatus},
 };
 use serde_json::{Value, json};
-use std::{collections::BTreeMap, path::Path, process::Command};
+use std::{collections::BTreeMap, path::Path};
 
 pub const RULE_VERSION: &str = "1";
 
@@ -37,54 +37,21 @@ pub fn inspect(path: &Path) -> Vec<CheckOutcome> {
 }
 
 fn color(path: &Path) -> Result<Value, &'static str> {
-    let executable = std::env::var("EXIFTOOL_BIN").unwrap_or_else(|_| "exiftool".into());
-    let bytes = crate::local_analyzer::run_file(
-        Command::new(executable)
-            .args([
-                "-j",
-                "-n",
-                "-s",
-                "-ColorSpace",
-                "-ColorType",
-                "-PhotometricInterpretation",
-                "-SamplesPerPixel",
-                "-BitsPerSample",
-                "-BitDepth",
-                "-ColorComponents",
-                "-ProfileDescription",
-                "-ProfileID",
-                "-Orientation",
-                "--",
-            ])
-            .arg(path),
-        path,
-        &[0],
-    )?;
-    let Value::Array(rows) =
-        serde_json::from_slice::<Value>(&bytes).map_err(|_| "invalid image properties")?
-    else {
+    // ExifTool `-j -n -s` color fields, one value per field.
+    let bytes =
+        crate::local_analyzer::run_file(crate::photo::command("color").arg(path), path, &[0])?;
+    let report = serde_json::from_slice::<Value>(&bytes).map_err(|_| "invalid image properties")?;
+    let properties = &report["properties"];
+    if report["inspection_status"] != "COMPLETED" || !properties.is_object() {
         return Err("invalid image properties");
-    };
-    if rows.len() != 1 || rows[0].get("Error").is_some() {
-        return Err("invalid image properties");
-    }
-    let mut properties = rows[0].clone();
-    if let Some(object) = properties.as_object_mut() {
-        object.remove("SourceFile");
     }
     Ok(json!({"inspection_status":"COMPLETED","properties":properties}))
 }
 
 fn text(path: &Path) -> Result<Value, &'static str> {
-    let executable = std::env::var("TESSERACT_BIN").unwrap_or_else(|_| "tesseract".into());
-    let bytes = crate::local_analyzer::run_file(
-        Command::new(executable)
-            .arg(path)
-            .args(["stdout", "-l", "eng+kor", "--psm", "11", "tsv"])
-            .env("OMP_THREAD_LIMIT", "1"),
-        path,
-        &[0],
-    )?;
+    // Same TSV as `tesseract <file> stdout -l eng+kor --psm 11 tsv`.
+    let bytes =
+        crate::local_analyzer::run_file(crate::photo::command("ocr").arg(path), path, &[0])?;
     parse_tsv(std::str::from_utf8(&bytes).map_err(|_| "invalid OCR report")?)
 }
 
@@ -127,58 +94,20 @@ fn parse_tsv(tsv: &str) -> Result<Value, &'static str> {
         lines.entry(key).or_default().push(word.to_owned());
     }
     Ok(
-        json!({"inspection_status":"COMPLETED","method":"LOCAL_TESSERACT_OCR",
+        json!({"inspection_status":"COMPLETED","method":"LOCAL_AUDENIQ_PHOTO_OCR",
         "minimum_word_confidence":80,"lines":lines.into_values().map(|words| words.join(" ")).collect::<Vec<_>>(),
         "limitation":"OCR may miss or misread text; absence is not proof of compliant artwork"}),
     )
 }
 
 fn qr(path: &Path) -> Result<Value, &'static str> {
-    let executable = std::env::var("ZBARIMG_BIN").unwrap_or_else(|_| "zbarimg".into());
-    let bytes = crate::local_analyzer::run_file(
-        Command::new(executable)
-            .args([
-                "--quiet",
-                "--nodbus",
-                "--xml",
-                "-Sdisable",
-                "-Sqrcode.enable",
-                "--",
-            ])
-            .arg(path),
-        path,
-        &[0, 4],
-    )?;
-    let mut reader = quick_xml::Reader::from_reader(bytes.as_slice());
-    let mut count = 0;
-    let mut root = false;
-    loop {
-        use quick_xml::events::Event;
-        match reader.read_event() {
-            Ok(Event::Start(e) | Event::Empty(e)) => {
-                if e.name().as_ref() == "barcodes" {
-                    root = true;
-                }
-                if e.name().as_ref() == "symbol" {
-                    for attribute in e.attributes() {
-                        let a = attribute.map_err(|_| "invalid QR report")?;
-                        if a.key.as_ref() == "type" && a.value.as_ref() == "QR-Code" {
-                            count += 1;
-                        }
-                    }
-                }
-            }
-            Ok(Event::Eof) => break,
-            Ok(Event::DocType(_)) | Err(_) => return Err("invalid QR report"),
-            _ => {}
-        }
-    }
-    if !root {
-        return Err("invalid QR report");
-    }
-    // Never retain or follow the decoded payload (including private URLs).
+    let bytes = crate::local_analyzer::run_file(crate::photo::command("qr").arg(path), path, &[0])?;
+    let report = serde_json::from_slice::<Value>(&bytes).map_err(|_| "invalid QR report")?;
+    let count = report["qr_count"].as_u64().ok_or("invalid QR report")?;
+    // The reader reports only how many codes decoded, never their payloads
+    // (including private URLs).
     Ok(
-        json!({"inspection_status":"COMPLETED","method":"LOCAL_ZBAR_QR","qr_count":count,
+        json!({"inspection_status":"COMPLETED","method":"LOCAL_AUDENIQ_PHOTO_QR","qr_count":count,
         "limitation":"undetected codes do not establish absence"}),
     )
 }
