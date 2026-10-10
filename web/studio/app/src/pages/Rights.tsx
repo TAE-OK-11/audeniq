@@ -6,7 +6,7 @@ import { MOCK } from '../lib/mode';
 import * as portal from '../api/portal';
 import { errorMessage } from '../api/errors';
 import { refreshDocs } from '../store/portalSync';
-import { DocCard, DocEmpty } from '../components/DocCard';
+import { DocRow, DocEmpty } from '../components/DocCard';
 import { DocumentModal } from '../components/DocumentModal';
 import { SignatureModal } from '../components/SignatureModal';
 import { Modal } from '../components/Modal';
@@ -20,7 +20,6 @@ import { RightsDocumentModal } from '../components/RightsDocumentModal';
 import { SigningRequests } from '../components/SigningRequests';
 import { RIGHTS_DOCUMENTS, type RightsDocumentContext, type RightsDocumentKind } from '../lib/rightsDocument';
 import { Segmented } from '../components/Segmented';
-import { StatGrid, StatTile } from '../ui';
 
 const REQUIRED_DOCS: [string, string, string][] = [
   ['master', '마스터 음원 권리 확인서', '본인은 해당 마스터 음원에 관한 배급 권한을 보유하거나 권리자로부터 적법한 이용 허락을 받았음을 확인합니다.'],
@@ -56,7 +55,8 @@ export function Rights() {
 
   const needed = rights.filter(c => !['review', 'prepared', 'approved'].includes(c.reviewStatus)).length;
   const review = rights.filter(c => ['review', 'prepared'].includes(c.reviewStatus)).length;
-  const fix = rights.filter(c => c.reviewStatus === 'needs').length;
+  const fixDocs = rights.filter(c => c.reviewStatus === 'needs');
+  const fix = fixDocs.length;
 
   const onKindChange = (v: string) => {
     setKind(v);
@@ -150,18 +150,27 @@ export function Rights() {
         </button>
       </div>
 
-      <StatGrid cols={3} className="aq-rights-summary">
-        <StatTile compact label="제출할 서류" value={<span id="rightsNeededCount">{needed}</span>} tone={needed ? undefined : 'muted'} />
-        <StatTile compact label="검토 중" value={<span id="rightsReviewCount">{review}</span>} tone={review ? undefined : 'muted'} />
-        <StatTile compact label="보완 요청" value={<span id="rightsFixCount">{fix}</span>} tone={fix ? 'warn' : 'muted'} />
-      </StatGrid>
+      {fix > 0 && (
+        <button type="button" className="aq-doc-alert" onClick={() => setOpenId(fixDocs[0].id)}>
+          <Glyph name="alert" size={18} />
+          <span className="min-0">
+            <strong>보완 요청 {fix}건이 있어요</strong>
+            <small>{fixDocs[0].reviewNote || '요청 사유를 확인하고 새 원본을 제출해 주세요.'}</small>
+          </span>
+          <Glyph name="chevron-right" size={16} />
+        </button>
+      )}
 
       <SigningRequests releases={releases} tick={signingTick} onOpenDoc={setOpenId} />
 
-      <div id="rightsList">
+      <section id="rightsList" className="aq-doc-list" aria-labelledby="rightsListHeading">
+        <h2 id="rightsListHeading">
+          서류 <span className="aq-doc-count">{rights.length}</span>
+          {rights.length > 0 && <small>제출 필요 {needed} · 검토 중 {review}</small>}
+        </h2>
         {rights.length ? (
-          <div className="aq-doc-grid aq-stagger">
-            {rights.map(c => <DocCard key={c.id} c={c} onOpen={setOpenId} />)}
+          <div className="aq-doc-rows aq-stagger">
+            {rights.map(c => <DocRow key={c.id} c={c} onOpen={setOpenId} />)}
           </div>
         ) : (
           <DocEmpty
@@ -169,11 +178,7 @@ export function Rights() {
             desc="보완 자료가 필요하면 요청 내용과 제출 항목이 여기에 표시돼요."
           />
         )}
-      </div>
-
-      <div className="ui-callout" style={{ marginTop: 25 }}>
-        보완 요청이 있으면 요청 사유와 필요한 서류를 확인한 뒤 새 원본을 제출해 주세요.
-      </div>
+      </section>
 
       {formOpen && (
         <Modal title="권리 서류 작성·접수" onClose={() => setFormOpen(false)} dismissible={false}>

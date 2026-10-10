@@ -3,8 +3,8 @@
 import { useEffect } from 'react';
 
 const TARGETS = [
-  '.surface', '.aq-report-card', '.section-top', '.aq-report-doc > section', '.aq-report-doc-stats',
-  '.aq-doc-grid', '.aq-rights-summary', '.studio-doc-path', '.aq-profile-card', '.aq-event-hero',
+  '.surface', '.aq-report-card', '.section-top', '.aq-rp-card',
+  '.aq-doc-list', '.studio-doc-path', '.aq-profile-card', '.aq-event-hero',
   '.aq-notice-featured-list', '.settle-hero', '.aq-detail-hero', '.split > *',
 ].join(',');
 const EASE = 'cubic-bezier(.22,1,.36,1)';
