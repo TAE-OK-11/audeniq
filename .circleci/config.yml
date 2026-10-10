@@ -89,8 +89,8 @@ commands:
       - run:
           name: Image name
           command: |
-            owner=$(printf '%s' "$CIRCLE_PROJECT_USERNAME" | tr '[:upper:]' '[:lower:]')
-            echo "export IMAGE=ghcr.io/$owner/audeniq" >> "$BASH_ENV"
+            # GitHub App 프로젝트의 CIRCLE_PROJECT_USERNAME은 CircleCI 조직 이름이라 GitHub 소유자와 다르다
+            echo "export IMAGE=${IMAGE_REPO:-ghcr.io/tae-ok-11/audeniq}" >> "$BASH_ENV"
   ghcr-login:
     steps:
       - run:
