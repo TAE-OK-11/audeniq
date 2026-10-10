@@ -424,9 +424,6 @@ body.wizard-mode .portal-layout{min-height:100dvh;padding-top:0!important;paddin
 /* Signature form: same clean, borderless surfaces as the public website */
 
 .aq-sign-intro{color:var(--aq-muted);font-size:14px;line-height:1.7;margin:6px 0 20px}
-.aq-sign-doc{padding:18px 20px;background:var(--aq-blue-50);border-radius:var(--aq-r-xl);margin:15px 0 20px}
-.aq-sign-doc small{color:var(--aq-muted);display:block;font-size:12px;margin-bottom:4px}
-.aq-sign-doc strong{font-size:16px;line-height:1.55;word-break:keep-all}
 .aq-sign-sheet{width:100%;margin-top:10px;position:relative;background:var(--aq-gray-75);border-radius:var(--aq-r-xl);overflow:hidden;touch-action:none}
 .aq-sign-sheet canvas{display:block;width:100%;height:190px;touch-action:none;cursor:crosshair}
 .aq-sign-placeholder{pointer-events:none;position:absolute;inset:0;display:grid;place-items:center;text-align:center;color:var(--aq-text-disabled);font-size:14px}
@@ -691,13 +688,6 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 .icon-button:hover{background:var(--aq-gray-150)!important}
 
 /* 서명 절차 단계 표시 */
-.aq-phase-steps{display:flex;gap:6px;margin:0 0 14px}
-.aq-phase-step{flex:1;display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:var(--aq-text-4);background:var(--aq-gray-50);border-radius:var(--aq-r-sm);padding:8px 6px;justify-content:center}
-.aq-phase-step em{font-style:normal;width:18px;height:18px;border-radius:50%;background:var(--aq-gray-200);color:#fff;font-size:11px;display:grid;place-items:center;flex-shrink:0}
-.aq-phase-step.active{background:var(--aq-blue-150);color:var(--aq-blue-500)}
-.aq-phase-step.active em{background:var(--aq-blue-500)}
-.aq-phase-step.done{color:var(--aq-blue-500)}
-.aq-phase-step.done em{background:var(--aq-blue-500)}
 
 /* 계약서 완성 화면 */
 .aq-complete-hero{text-align:center;padding:28px 0 20px}
