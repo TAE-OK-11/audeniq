@@ -55,10 +55,15 @@ function Chart({ rows }: { rows: ReportRow[] }) {
   );
 }
 
+const DETAIL_PREVIEW = 6;
+const pctText = (v: number | null) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`);
+const changeTone = (v: number | null) => (v == null ? '' : v >= 0 ? 'is-up' : 'is-down');
+
 export function Reports() {
   const toast = useToast();
   const [period, setPeriod] = useState('all');
   const [release, setRelease] = useState('all');
+  const [showAll, setShowAll] = useState(false);
 
   const { rows: MOCK_ROWS } = useReportRows(); // 체험 모드는 예시 행, 실서버는 플랫폼 리포트
   const [thisMonth = '', lastMonth = ''] = periods(MOCK_ROWS);
@@ -177,55 +182,44 @@ export function Reports() {
         </select>
       </div>
 
-      {/* 보고서 문서 */}
-      <article className="aq-report-doc" aria-label={`${periodLabel} 음악 리포트`}>
-        <header className="aq-report-doc-head">
-          <p className="eyebrow">리포트 기간</p>
-          <h2>{periodLabel}</h2>
-          <p className="muted small">발행일 {todayStr()} · AUDENIQ STUDIO</p>
-        </header>
-
-        <div className="aq-report-doc-stats">
-          <div><small>집계 수익</small><strong><Money value={totalRevenue} animate /></strong></div>
-          <div><small>재생 수</small><strong><CountUp value={totalPlays} format={n => `${num(n)}회`} /></strong></div>
-          <div><small>플랫폼</small><strong>{platforms}곳</strong></div>
-        </div>
+      <div className="aq-report">
+        <section className="aq-report-hero" aria-labelledby="reportHeroHeading">
+          <h2 id="reportHeroHeading">{periodLabel} 수익</h2>
+          <strong className="aq-report-amount"><Money value={totalRevenue} animate /></strong>
+          {insight?.revenueChange != null && (
+            <span className={`aq-report-change ${insight.revenueChange >= 0 ? 'is-up' : 'is-down'}`}>
+              지난달보다 {pctText(insight.revenueChange)}
+            </span>
+          )}
+          <p className="aq-report-sub">
+            재생 <CountUp value={totalPlays} format={n => `${num(n)}회`} /> · 플랫폼 {platforms}곳 · 발행일 {todayStr()}
+          </p>
+        </section>
 
         {insight && (
-          <section aria-label="전월 대비 인사이트">
-            <h3>전월 대비</h3>
-            <div className="aq-insight-cards">
-              <div className="aq-insight-card">
-                <small>수익 변화</small>
-                <strong className={insight.revenueChange != null && insight.revenueChange >= 0 ? 'up' : 'down'}>
-                  {insight.revenueChange == null ? '—' : `${insight.revenueChange >= 0 ? '+' : ''}${insight.revenueChange.toFixed(1)}%`}
-                </strong>
-                <span><Money value={insight.prevRevenue} /> <Glyph name="arrow-right" size={12} /> <Money value={insight.curRevenue} /></span>
-              </div>
-              <div className="aq-insight-card">
-                <small>재생 변화</small>
-                <strong className={insight.playsChange != null && insight.playsChange >= 0 ? 'up' : 'down'}>
-                  {insight.playsChange == null ? '—' : `${insight.playsChange >= 0 ? '+' : ''}${insight.playsChange.toFixed(1)}%`}
-                </strong>
-                <span>{num(insight.prevPlays)}회 <Glyph name="arrow-right" size={12} /> {num(insight.curPlays)}회</span>
-              </div>
-            </div>
-            <ul className="aq-insight-list">
+          <section className="aq-rp-card" aria-label="전월 대비 인사이트">
+            <h3>지난달과 비교</h3>
+            <ul className="aq-report-rows">
+              <li>
+                <div className="min-0"><strong>수익</strong><small><Money value={insight.prevRevenue} /> → <Money value={insight.curRevenue} /></small></div>
+                <b className={changeTone(insight.revenueChange)}>{pctText(insight.revenueChange)}</b>
+              </li>
+              <li>
+                <div className="min-0"><strong>재생</strong><small>{num(insight.prevPlays)}회 → {num(insight.curPlays)}회</small></div>
+                <b className={changeTone(insight.playsChange)}>{pctText(insight.playsChange)}</b>
+              </li>
+            </ul>
+            <h4>플랫폼별 변화</h4>
+            <ul className="aq-report-rows is-compact">
               {insight.platChanges.map(p => (
                 <li key={p.name}>
-                  <span>{p.name}</span>
-                  {p.isNew ? (
-                    <em className="aq-new-badge">신규 유입</em>
-                  ) : (
-                    <strong className={p.change != null && p.change >= 0 ? 'up' : 'down'}>
-                      {p.change == null ? '—' : `${p.change >= 0 ? '+' : ''}${p.change.toFixed(1)}%`}
-                    </strong>
-                  )}
+                  <strong>{p.name}</strong>
+                  {p.isNew ? <em className="aq-new-badge">신규 유입</em> : <b className={changeTone(p.change)}>{pctText(p.change)}</b>}
                 </li>
               ))}
             </ul>
             {insight.topDriver && (
-              <p className="aq-insight-note">
+              <p className="aq-report-note">
                 이번 달 성장을 이끈 곳은 <b>{insight.topDriver.name}</b>이에요.
                 {insight.platChanges.some(p => p.isNew) && (
                   <> {insight.platChanges.filter(p => p.isNew).map(p => p.name).join(', ')}에서 신규 유입도 있었어요.</>
@@ -236,7 +230,7 @@ export function Reports() {
         )}
 
         {byPlatform.length > 0 && (
-          <section aria-label="플랫폼별 수익">
+          <section className="aq-rp-card" aria-label="플랫폼별 수익">
             <h3>플랫폼별 수익</h3>
             <ul className="aq-platform-bars">
               {byPlatform.map(([name, v]) => (
@@ -258,27 +252,33 @@ export function Reports() {
           </section>
         )}
 
-        <section aria-label="기간별 추이">
+        <section className="aq-rp-card" aria-label="기간별 추이">
           <h3>기간별 추이</h3>
           <div id="reportGraph"><Chart key={`${period}-${release}`} rows={filtered} /></div>
         </section>
 
-        <section aria-label="상세 내역">
-          <h3>상세 내역</h3>
+        <section className="aq-rp-card" aria-label="상세 내역">
+          <h3>상세 내역 {filtered.length > 0 && <span className="aq-report-count">{filtered.length}</span>}</h3>
           {filtered.length ? (
-            <ul className="aq-report-details">
-              {filtered.map((r, i) => (
-                <li key={i}>
-                  <div className="aq-detail-top">
-                    <strong>{r.platform}</strong>
-                    <span><Money value={r.revenue} /></span>
-                  </div>
-                  <div className="aq-detail-sub">
-                    {r.release || '—'} / {r.track || '전체'} · {r.period} · {num(r.plays)}회 재생
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="aq-report-rows aq-report-details">
+                {(showAll ? filtered : filtered.slice(0, DETAIL_PREVIEW)).map((r, i) => (
+                  <li key={i}>
+                    <div className="min-0">
+                      <strong>{r.platform}</strong>
+                      <small>{r.release || '—'} / {r.track || '전체'} · {r.period} · {num(r.plays)}회 재생</small>
+                    </div>
+                    <b><Money value={r.revenue} /></b>
+                  </li>
+                ))}
+              </ul>
+              {filtered.length > DETAIL_PREVIEW && (
+                <button type="button" className="ui-btn is-white aq-report-more" aria-expanded={showAll} onClick={() => setShowAll(v => !v)}>
+                  {showAll ? '접기' : `전체 ${filtered.length}건 보기`}
+                  <Glyph name="chevron-down" size={15} className={showAll ? 'is-flip' : ''} />
+                </button>
+              )}
+            </>
           ) : (
             <div className="ui-empty">
               <h2>아직 집계된 실적이 없어요.</h2>
@@ -286,7 +286,7 @@ export function Reports() {
             </div>
           )}
         </section>
-      </article>
+      </div>
     </div>
   );
 }

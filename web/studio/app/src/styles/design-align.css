@@ -1,25 +1,43 @@
 /* ── 디자인 언어 정리 — 화면마다 남아 있던 선·그림자·그라데이션·한글 자간·단계 밖 글자 크기를
    AUDENIQ 규칙(면 색으로 구분, 진한 면으로 선택, 상태 색 고정)에 맞춘다. 화면별로 묶어 둔다. ── */
 
-/* 음악 리포트 — 구분선 대신 흰 면 타일, 막대는 단색 */
-#view-reports .aq-report-doc-head{padding-bottom:0;border-bottom:0}
-#view-reports .aq-report-doc-head h2{font-size:22px;letter-spacing:-.03em}
-#view-reports .aq-report-doc-stats{padding:0;margin:20px 0 4px;border-bottom:0;gap:8px}
-#view-reports .aq-report-doc-stats>div{padding:16px;border-radius:var(--aq-r-lg);background:#fff}
-#view-reports .aq-report-doc section{padding:28px 0 0;border-bottom:0}
-#view-reports .aq-insight-card{background:#fff}
-#view-reports .aq-insight-card strong{font-size:22px}
-#view-reports .aq-insight-list{display:grid;gap:6px}
-#view-reports .aq-insight-list li{padding:12px 14px;border-bottom:0;border-radius:var(--aq-r-md);background:#fff}
-#view-reports .aq-insight-note{box-shadow:none;margin-top:10px;background:var(--aq-blue-100)}
-#view-reports .aq-platform-track{background:#fff}
-#view-reports .aq-platform-track span{background:var(--aq-blue-500)}
-#view-reports .report-chart{border-bottom:0}
-#view-reports .report-bar{background:var(--aq-blue-500)}
-#view-reports .report-bar:not(:last-child){background:var(--aq-blue-300)}
-#view-reports .aq-report-details{display:grid;gap:6px}
-#view-reports .aq-report-details li{padding:14px 16px;border-bottom:0!important;border-radius:var(--aq-r-md);background:#fff}
-@media(min-width:1024px){#view-reports .aq-report-details{column-gap:8px!important;row-gap:6px}}
+/* 음악 리포트 — 큰 문서 카드 하나 대신 정산 화면처럼 요약 카드 + 계정 정보 화면 같은 옅은 파랑 카드들 */
+.aq-report{display:grid;gap:12px}
+.aq-report>*{min-width:0;margin:0}
+.aq-report-hero{padding:28px 28px 24px;border-radius:var(--aq-r-2xl);background:var(--aq-surface)}
+.aq-report-hero h2{margin:0 0 8px;font-size:14px;font-weight:700;letter-spacing:0;color:var(--aq-text-3)}
+.aq-report-amount{display:block;font-size:clamp(36px,5vw,44px);font-weight:800;letter-spacing:-.04em;line-height:1.15;color:var(--portal-ink)}
+.aq-report-amount .aq-money-unit{font-size:22px}
+.aq-report-change{display:inline-flex;margin-top:12px;padding:5px 10px;border-radius:var(--aq-r-pill);background:#fff;font-size:13px;font-weight:700;color:var(--aq-blue-500)}
+.aq-report-change.is-down{color:var(--aq-red-500)}
+.aq-report-sub{margin:12px 0 0;font-size:13px;color:var(--aq-text-4)}
+.aq-rp-card{padding:6px 6px 8px;border-radius:var(--aq-r-2xl);background:var(--aq-surface)}
+.aq-rp-card h3{display:flex;align-items:center;gap:6px;margin:0;padding:14px 14px 6px;font-size:var(--aq-fs-md);font-weight:700;letter-spacing:0;color:var(--aq-text-3)}
+.aq-rp-card h4{margin:10px 0 0;padding:8px 14px 2px;font-size:var(--aq-fs-xs);font-weight:700;color:var(--aq-text-4)}
+.aq-report-count{font-size:var(--aq-fs-xs);font-weight:700;color:var(--aq-blue-500)}
+.aq-report-rows{display:grid;margin:0;padding:0;list-style:none}
+.aq-report-rows li{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:56px;padding:10px 14px;border-radius:var(--aq-r-lg)}
+.aq-report-rows li .min-0{display:grid;gap:3px}
+.aq-report-rows strong{font-size:15px;font-weight:600;color:var(--portal-ink)}
+.aq-report-rows small{font-size:12px;color:var(--aq-text-4);overflow-wrap:anywhere}
+.aq-report-rows b{flex:none;font-size:15px;font-weight:700;color:var(--portal-ink);font-variant-numeric:tabular-nums}
+.aq-report-rows b.is-up{color:var(--aq-blue-500)}
+.aq-report-rows b.is-down{color:var(--aq-red-500)}
+.aq-report-rows.is-compact li{min-height:44px;padding:8px 14px}
+.aq-report-rows.is-compact strong{font-size:14px}
+.aq-report-note{margin:8px 8px 4px;padding:12px 14px;border-radius:var(--aq-r-md);background:#fff;font-size:13px;line-height:1.65;color:var(--aq-text-2)}
+.aq-report-note b{color:var(--portal-ink)}
+.aq-rp-card .aq-platform-bars{gap:18px;padding:8px 14px 10px}
+.aq-rp-card .aq-platform-track{background:#fff}
+.aq-rp-card .aq-platform-track span{background:var(--aq-blue-500)}
+.aq-rp-card #reportGraph{padding:0 14px 8px}
+.aq-rp-card .report-chart{margin-top:12px;border-bottom:0}
+.aq-rp-card .report-bar{background:var(--aq-blue-300)}
+.aq-rp-card .report-bar:last-child{background:var(--aq-blue-500)}
+.aq-rp-card .ui-empty{margin:4px 8px 8px}
+.aq-report-more{width:calc(100% - 16px);margin:6px 8px 4px;justify-content:center;gap:4px}
+.aq-report-more .is-flip{transform:rotate(180deg)}
+@media(max-width:560px){.aq-report-hero{padding:24px 20px 20px}}
 
 /* 공지사항 — 굵은 검은 선·줄 구분선 게시판 대신, 다른 목록처럼 옅은 면 카드 줄 */
 .aq-nboard-list{display:grid;gap:8px;border-top:0}
@@ -61,9 +79,6 @@
 :is(.eyebrow,.ui-eyebrow,.aq-nhero-eyebrow,.aq-nboard-eyebrow,.aq-sign-top>span,.aq-errscreen-eyebrow){letter-spacing:0!important}
 
 /* 권리·보완 서류 — 숫자 칸 3개는 휴대폰에서도 한 줄(2+1로 갈라지지 않게) */
-.aq-rights-summary.ui-stats{grid-template-columns:repeat(3,minmax(0,1fr))!important}
-.aq-rights-summary.ui-stats>*{grid-column:auto!important;min-width:0}
-@media(max-width:420px){.aq-rights-summary .ui-stat{padding:14px 12px}.aq-rights-summary .ui-stat-label{font-size:12px}}
 
 /* 카드 안 구분선 대신 간격 */
 .aq-cover-meta>div{border-top:0!important}
@@ -119,14 +134,59 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .aq-track-file{display:inline-flex;align-items:center;gap:4px;color:var(--aq-green-700,#1f7a4d)}
 .aq-track-file.is-missing{color:var(--aq-text-4)}
 
-/* 계약서 진행 순서 — 영문식 01·02·03 대신 다른 화면과 같은 ‘n단계’ 이름표 + 흰 칸 */
-#view-contracts .studio-doc-path{gap:8px;padding:10px}
-#view-contracts .studio-doc-path>div{padding:14px 16px;border-radius:var(--aq-r-lg);background:#fff}
-#view-contracts .studio-path-n{display:inline-block;margin-bottom:10px;padding:3px 8px;border-radius:6px;background:var(--aq-blue-50);color:var(--aq-blue-700);font-size:11px;font-weight:700;letter-spacing:0}
-#view-contracts .studio-doc-path strong{font-size:14px;letter-spacing:-.02em}
+/* 계약서 — 큰 3단계 카드 대신 한 줄 진행 순서, 발매 묶음은 계정 정보 화면 같은 옅은 파랑 카드 + 줄(흰 칸 없음) */
+.aq-contract-steps{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0 0 16px;padding:0;list-style:none;font-size:13px;font-weight:600;color:var(--aq-text-3)}
+.aq-contract-steps li{display:inline-flex;align-items:center;gap:6px}
+.aq-contract-steps li+li::before{content:'';width:14px;height:1px;margin-right:2px;background:var(--aq-gray-300)}
+.aq-contract-steps b{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--aq-blue-150);color:var(--aq-blue-500);font-size:11px;font-weight:700}
+.aq-bundle:not(.is-compact){padding:6px 6px 8px;border-radius:var(--aq-r-2xl);background:var(--aq-surface)}
+.aq-bundle:not(.is-compact) .aq-bundle-head{margin:0;padding:14px 14px 6px}
+.aq-bundle-state{flex:none;font-size:13px;font-weight:700;white-space:nowrap}
+.aq-bundle-state.is-blue{color:var(--aq-blue-500)}
+.aq-bundle-state.is-violet{color:var(--aq-violet-600)}
+.aq-bundle-state.is-amber{color:var(--aq-amber-700)}
+.aq-bundle-state.is-green{color:var(--aq-green-600)}
+.aq-bundle-state.is-gray{color:var(--aq-text-4)}
+.aq-bundle:not(.is-compact) .aq-bundle-docs{gap:0}
+.aq-bundle:not(.is-compact) .aq-bundle-docs li{padding:12px 10px 12px 14px;background:none}
+.aq-bundle:not(.is-compact) .aq-bundle-docs li:not(.is-done) .aq-bundle-no{background:var(--aq-blue-150);color:var(--aq-blue-500)}
+@media(max-width:400px){.aq-contract-steps{gap:6px;font-size:12px}.aq-contract-steps li+li::before{width:8px}}
+
+/* 권리·보완 서류 — 숫자 칸 3개·주황 카드 대신: 보완 요청은 위 알림 줄 하나, 서류는 계정 정보 화면 같은 옅은 파랑 카드 안의 줄 */
+.aq-doc-alert{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;width:100%;margin:0 0 12px;padding:14px 16px;border:0;border-radius:var(--aq-r-lg);background:var(--aq-amber-50);color:var(--aq-amber-700);font:inherit;text-align:left;cursor:pointer;transition:background-color .2s ease}
+@media(hover:hover){.aq-doc-alert:hover{background:var(--aq-amber-100)}}
+.aq-doc-alert .min-0{display:grid;gap:2px}
+.aq-doc-alert strong{font-size:var(--aq-fs-lg);font-weight:700}
+.aq-doc-alert small{font-size:var(--aq-fs-sm);color:var(--aq-text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-doc-list{padding:6px;border-radius:var(--aq-r-2xl);background:var(--aq-surface)}
+.aq-doc-list>h2{display:flex;align-items:baseline;gap:6px;margin:0;padding:14px 14px 6px;font-size:var(--aq-fs-md);font-weight:700;letter-spacing:0;color:var(--aq-text-3)}
+.aq-doc-list>h2 small{margin-left:auto;font-size:var(--aq-fs-xs);font-weight:600;color:var(--aq-text-4)}
+.aq-doc-count{font-size:var(--aq-fs-xs);color:var(--aq-blue-500)}
+.aq-doc-list>.ui-empty{margin:4px 8px 8px}
+.aq-doc-rows{display:grid}
+.aq-doc-row{display:grid;grid-template-columns:40px minmax(0,1fr) auto auto;align-items:center;gap:12px;width:100%;min-height:64px;padding:10px 10px 10px 12px;border:0;border-radius:var(--aq-r-lg);background:none;color:var(--portal-ink);font:inherit;text-align:left;cursor:pointer;transition:background-color .2s ease}
+@media(hover:hover){.aq-doc-row:hover{background:var(--aq-surface-hover)}}
+.aq-doc-ico{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:var(--aq-blue-150);color:var(--aq-blue-500)}
+.aq-doc-row.is-needs .aq-doc-ico{background:var(--aq-amber-100);color:var(--aq-amber-700)}
+.aq-doc-copy{display:grid;gap:3px}
+.aq-doc-copy strong{font-size:15px;font-weight:600;line-height:1.4}
+.aq-doc-copy small{font-size:12px;color:var(--aq-text-4)}
+.aq-doc-copy em{font-style:normal;font-size:12px;line-height:1.5;color:var(--aq-amber-700)}
+.aq-doc-state{font-size:13px;font-weight:700;white-space:nowrap}
+.aq-doc-state.is-blue{color:var(--aq-blue-500)}
+.aq-doc-state.is-amber{color:var(--aq-amber-700)}
+.aq-doc-state.is-violet{color:var(--aq-violet-600,#6D4FD8)}
+.aq-doc-state.is-green{color:var(--aq-green-600)}
+.aq-doc-chev{color:var(--aq-text-disabled)}
 @media(max-width:560px){
-  #view-contracts .studio-doc-path{grid-template-columns:1fr}
-  #view-contracts .studio-doc-path>div{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:10px;align-items:center;padding:12px 14px}
-  #view-contracts .studio-path-n{grid-row:1/3;margin:0}
-  #view-contracts .studio-doc-path small{margin-top:2px}
+  .aq-doc-row{grid-template-columns:40px minmax(0,1fr) auto;align-items:start}
+  .aq-doc-row>.aq-doc-ico{grid-row:1/3}
+  .aq-doc-state{grid-column:2;grid-row:2;justify-self:start;margin-top:-4px;font-size:12px}
+  .aq-doc-chev{grid-column:3;grid-row:1/3;align-self:center}
 }
+
+/* 내 음악 — 휴대폰에서도 검색과 정렬을 한 줄로 (정렬은 좁게) */
+@media(max-width:759px){#view-catalog .toolbar{display:grid;grid-template-columns:minmax(0,1fr) 124px}#view-catalog .toolbar select{min-width:0}}
+
+/* PC 머리 버튼(새 발매·CSV 내보내기·새 문의…) — 설명 줄 아래에 떠 보이지 않게 제목 묶음 가운데에 */
+@media(min-width:761px){.ui-page-head{align-items:center}}
