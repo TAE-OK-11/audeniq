@@ -86,15 +86,14 @@ test('discovery resources contain exactly the published public pages',async()=>{
   assert.equal((await (await get(`/${key}.txt`)).text()).trim(),key);
 });
 
-test('search bots and training bots have separate robots policies',()=>{
-  const groups = read('robots.txt').trim().split(/\n\s*\n/);
-  for (const agent of ['Googlebot','Bingbot','Yeti','OAI-SearchBot','ChatGPT-User','PerplexityBot','Claude-SearchBot','Claude-User']) {
-    const group = groups.find(group=>group.split('\n').includes(`User-agent: ${agent}`));
-    assert.ok(group,agent); assert.match(group,/Allow: \/\n/);
-    for (const path of ['/studio','/admin','/api','/login','/health']) assert.ok(group.includes(`Disallow: ${path}\n`)||group.endsWith(`Disallow: ${path}`));
-  }
-  for (const agent of ['GPTBot','ClaudeBot','Google-Extended','CCBot','Applebot-Extended']) {
-    const group = groups.find(group=>group.split('\n').includes(`User-agent: ${agent}`));
-    assert.match(group,/Disallow: \/$/);
-  }
+test('robots allows every crawler, including AI training bots',()=>{
+  const robots = read('robots.txt');
+  const groups = robots.trim().split(/\n\s*\n/);
+  // One `*` group: GPTBot, ClaudeBot, Google-Extended, CCBot … fall under it and are allowed.
+  assert.deepEqual(robots.match(/^User-agent: .+$/gm),['User-agent: *']);
+  const all = groups.find(group=>group.split('\n').includes('User-agent: *'));
+  assert.match(all,/Allow: \/\n/);
+  assert.doesNotMatch(robots,/Disallow: \/\s*$/m);
+  for (const path of ['/studio','/admin','/api','/login','/health']) assert.ok(all.includes(`Disallow: ${path}\n`)||all.endsWith(`Disallow: ${path}`));
+  assert.match(robots,/Sitemap: https:\/\/audeniq\.com\/sitemap\.xml/);
 });
