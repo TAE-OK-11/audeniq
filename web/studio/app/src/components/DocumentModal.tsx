@@ -1,0 +1,303 @@
+// 문서 상세 모달 — 라이브 openDocument(오버라이드) 대응
+import { FilePicker } from './FilePicker';
+import { useEffect, useRef, useState } from 'react';
+import { Modal } from './Modal';
+import { useNavigate } from '../lib/router';
+import { MOCK } from '../lib/mode';
+import * as portal from '../api/portal';
+import { errorMessage } from '../api/errors';
+import { refreshDocs } from '../store/portalSync';
+import { useToast } from './Toast';
+import { docBadgeTone, updateDoc, type DocRecord } from '../store/docs';
+import { Badge } from '../ui';
+import { fileSize, localStamp } from '../lib/format';
+import { stampNow } from '../lib/date';
+import { docState } from '../store/docs';
+
+const statusPill = docState;
+
+interface Stage { status: string; time: string; detail: string }
+
+function buildStages(c: DocRecord): Stage[] {
+  const stages: Stage[] = [
+    { status: '문서 생성', time: c.created, detail: '제출 정보가 문서로 정리됐어요.' },
+    ...c.reviewHistory.slice().sort((a, b) => String(a.time || '').localeCompare(String(b.time || '')))
+      .map(h => ({ status: h.status, time: h.time, detail: h.detail })),
+  ];
+  if (c.fileName) stages.push({ status: '원본 첨부', time: c.uploadedAt || c.created, detail: c.fileName });
+  if (c.checkedAt) stages.push({ status: '내용 확인', time: c.checkedAt, detail: `v${c.version || '1.0'} · 내용 확인 기록` });
+  if (c.reviewStatus === 'approved' && !stages.some(x => x.status === '검토 완료')) {
+    stages.push({ status: '검토 완료', time: c.approvedAt || '', detail: '검토 결과가 반영됐어요.' });
+  }
+  return stages;
+}
+
+function FilePreview({ doc }: { doc: DocRecord }) {
+  const [body, setBody] = useState<React.ReactNode>('첨부 서류를 확인하고 있어요.');
+  useEffect(() => {
+    const blob = doc.fileBlob;
+    if (!blob) { setBody('원본 파일은 첨부한 기기의 현재 세션에서만 미리 볼 수 있어요. 파일명과 제출 기록은 보관돼요.'); return; }
+    let url = '';
+    let cancelled = false;
+    (async () => {
+      try {
+        url = URL.createObjectURL(blob);
+        if (cancelled) { URL.revokeObjectURL(url); return; }
+        if (blob.type.startsWith('image/')) {
+          setBody(<img className="doc-image" alt={`${doc.title} 첨부 이미지`} src={url} />);
+        } else if (blob.type === 'application/pdf' || /\.pdf$/i.test(doc.fileName)) {
+          setBody(<iframe className="doc-pdf" title="첨부 서류" src={url} />);
+        } else if (blob.type === 'text/plain') {
+          setBody(<>{(await blob.text()).slice(0, 200000)}</>);
+        } else {
+          setBody('파일을 첨부했어요. 원본 다운로드로 확인할 수 있어요.');
+        }
+      } catch {
+        if (!cancelled) setBody('첨부한 원본을 읽을 수 없어요.');
+      }
+    })();
+    return () => { cancelled = true; if (url) URL.revokeObjectURL(url); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc.id, doc.fileBlob]);
+  return <div id="aqDocPreview" className="aq-document-snapshot">{body}</div>;
+}
+
+export function DocumentModal({
+  doc,
+  onClose,
+  onOpenSignature,
+}: {
+  doc: DocRecord;
+  onClose: () => void;
+  onOpenSignature: () => void;
+}) {
+  const toast = useToast();
+  const nav = useNavigate();
+  const [sending, setSending] = useState(false);
+  const [confirmed, setConfirmed] = useState(!!doc.checkedAt);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const downloadUrlRef = useRef<string>('');
+
+  useEffect(() => {
+    setConfirmed(!!doc.checkedAt);
+    setPendingFile(null);
+  }, [doc.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => () => {
+    if (downloadUrlRef.current) URL.revokeObjectURL(downloadUrlRef.current);
+  }, []);
+
+  const versions = doc.consentHistory.filter(x => x.action === '내용 확인');
+  const stages = buildStages(doc);
+
+  const confirmSave = async () => {
+    if (!confirmed) { toast('문서 내용을 확인해 주세요.'); return; }
+    if (!MOCK) {
+      try {
+        if (!doc.checkedAt) await portal.checkDocument(doc.id);
+        await refreshDocs();
+        onClose();
+        toast('문서 확인 기록을 저장했어요.');
+      } catch (err) {
+        toast(errorMessage(err, '확인 기록을 저장하지 못했어요.'));
+      }
+      return;
+    }
+    if (!doc.checkedAt) {
+      const at = stampNow();
+      updateDoc(doc.id, {
+        checked: true,
+        checkedAt: at,
+        consentHistory: [...doc.consentHistory, { time: at, action: '내용 확인', version: doc.version || '1.0' }],
+      });
+    }
+    onClose();
+    toast('문서 확인 기록을 저장했어요.');
+  };
+
+  const submitReview = async () => {
+    if (!MOCK) {
+      // 실서버: 확인 기록 → (권리 서류) 원본 업로드 후 검토 요청. 계약서는 담당자 검토가 자동으로 시작된다.
+      if (!doc.checkedAt && !confirmed) { toast('문서 내용을 확인했다고 체크해 주세요.'); return; }
+      if (doc.kind === 'rights' && !pendingFile && !doc.fileName) { toast('요청된 증빙 서류를 첨부해 주세요.'); return; }
+      if (pendingFile && !/\.(pdf|jpe?g|png)$/i.test(pendingFile.name)) { toast('서류는 PDF, JPG, PNG 파일로 올려 주세요.'); return; }
+      if (['review', 'prepared', 'approved'].includes(doc.reviewStatus) && !pendingFile) { toast('이미 검토 요청된 문서예요.', 'info'); return; }
+      setSending(true);
+      try {
+        let rv = doc.rowVersion ?? 0;
+        if (!doc.checkedAt) rv = await portal.checkDocument(doc.id);
+        if (pendingFile && doc.kind === 'rights') await portal.submitProof(doc.id, pendingFile, rv);
+        await refreshDocs();
+        onClose();
+        toast(doc.kind === 'rights' ? '서류를 제출했어요. 검토가 끝나면 알려 드릴게요.' : '문서 확인 기록을 저장했어요.');
+      } catch (err) {
+        toast(errorMessage(err, '서류를 제출하지 못했어요. 잠시 후 다시 시도해 주세요.'));
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
+    let base: Partial<DocRecord> = {};
+    let history = doc.reviewHistory;
+    let fileName = doc.fileName;
+    // 체크박스만 체크하고 바로 검토 요청을 누른 경우 확인 기록을 함께 남긴다
+    if (!doc.checkedAt && confirmed) {
+      const at = stampNow();
+      base = {
+        checked: true,
+        checkedAt: at,
+        consentHistory: [...doc.consentHistory, { time: at, action: '내용 확인', version: doc.version || '1.0' }],
+      };
+    }
+    if (pendingFile) {
+      const okType = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'text/plain'].includes(pendingFile.type)
+        || /\.(pdf|txt)$/i.test(pendingFile.name);
+      if (!okType) { toast('PDF, 이미지 또는 TXT 형식의 서류를 첨부해 주세요.'); return; }
+      const at = stampNow();
+      fileName = pendingFile.name;
+      history = [...history, { status: '서류 등록', time: at, detail: pendingFile.name + ' 원본 첨부' }];
+      base = { ...base, fileName: pendingFile.name, fileBlob: pendingFile, fileType: pendingFile.type, uploadedAt: at };
+    }
+    if (!doc.checkedAt && !confirmed) { toast('문서 내용을 확인했다고 체크해 주세요.'); return; }
+    if (['review', 'prepared', 'approved'].includes(doc.reviewStatus) && !pendingFile) {
+      toast('이미 검토 요청된 문서예요.', 'info');
+      return;
+    }
+    if (doc.kind === 'rights' && !fileName) { toast('요청된 증빙 서류를 첨부해 주세요.'); return; }
+    const at = stampNow();
+    updateDoc(doc.id, {
+      ...base,
+      reviewStatus: 'prepared',
+      reviewHistory: [...history, { status: '검토 요청 대기', time: at, detail: '접수 전송 준비가 완료됐어요.' }],
+    });
+    onClose();
+    toast('서류를 제출 대기 상태로 보관했어요.');
+  };
+
+  const download = () => {
+    const blob = pendingFile || doc.fileBlob;
+    if (!blob) { toast('첨부한 원본을 찾을 수 없어요.'); return; }
+    if (downloadUrlRef.current) URL.revokeObjectURL(downloadUrlRef.current);
+    const url = URL.createObjectURL(blob);
+    downloadUrlRef.current = url;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = doc.fileName || 'AUDENIQ-document';
+    a.click();
+    window.setTimeout(() => {
+      if (downloadUrlRef.current === url) {
+        URL.revokeObjectURL(url);
+        downloadUrlRef.current = '';
+      }
+    }, 30000);
+  };
+
+  return (
+    <Modal title={doc.title} onClose={onClose}>
+      <div className="doc-meta">
+        <span className="ui-tag">{doc.kind === 'agreements' ? '계약·신청서' : '권리 증빙'}</span>
+        <Badge tone={docBadgeTone(doc)}>{statusPill(doc)}</Badge>
+      </div>
+      <dl className="ui-kv is-2">
+        <div><dt>관련 발매</dt><dd>{doc.releaseTitle || '공통'}</dd></div>
+        <div><dt>작성일</dt><dd>{localStamp(doc.created)}</dd></div>
+        <div><dt>버전</dt><dd>v{doc.version || '1.0'}</dd></div>
+      </dl>
+
+      <h3 className="doc-section-title">문서 내용</h3>
+      <div className="aq-document-snapshot">{doc.content || '첨부된 문서의 원본을 확인해 주세요.'}</div>
+      {doc.electronic && <button type="button" className="ui-btn is-soft aq-doc-open-app" onClick={() => { onClose(); nav(`/rights/${encodeURIComponent(doc.id)}`); }}>완성된 전자 문서 보기 · PDF 저장</button>}
+      {doc.kind === 'agreements' && doc.releaseId && (
+        <button type="button" className="ui-btn is-soft aq-doc-open-app" onClick={() => nav(`/releases/${encodeURIComponent(doc.releaseId!)}/application`)}>
+          배급 신청서 보기
+        </button>
+      )}
+      {doc.fileName && (
+        <>
+          <p className="small muted">첨부 파일 · {doc.fileName}</p>
+          <FilePreview doc={doc} />
+        </>
+      )}
+
+      <h3 className="doc-section-title">확인 및 동의 기록</h3>
+      {versions.length ? versions.map((h, i) => (
+        <div key={i} className="doc-audit">
+          <strong>확인 완료 · v{h.version || '1.0'}</strong>
+          <span>{localStamp(h.time)}</span>
+        </div>
+      )) : (
+        <p className="muted small">아직 확인한 내역이 없어요.</p>
+      )}
+
+      <label className="doc-consent ui-check">
+        <input
+          id="aqConfirmDoc" type="checkbox"
+          checked={confirmed} onChange={e => setConfirmed(e.target.checked)}
+        />
+        <span>
+          위 문서의 내용을 읽고 확인했어요.
+          <small>확인 시간과 문서 버전이 기록돼요. 실제 계약 서명과는 별도로 처리돼요.</small>
+        </span>
+      </label>
+
+      <div className="aq-process">
+        <h3>처리 과정</h3>
+        <ol>
+          {stages.map((h, i) => (
+            <li key={i}>
+              <strong>{h.status || '확인'}</strong>
+              <small>{h.time ? localStamp(h.time) : '진행 예정'}</small>
+              {h.detail}
+            </li>
+          ))}
+        </ol>
+      </div>
+
+      {doc.localSignatureData && (
+        <div className="aq-sign-record">
+          <strong>{doc.electronic ? '권리자 서명 완료' : '직접 서명 입력 기록'}</strong>
+          <img src={doc.localSignatureData} alt="직접 입력한 서명" />
+          <small>{doc.signerName || '서명자'} · {localStamp(doc.localSignatureAt)}</small>
+          <small>{doc.electronic ? `서명자 구분: ${doc.electronic.signer_role} · 문서 번호: ${doc.electronic.document_no}` : '본인 확인 및 법적 전자서명 처리는 별도 절차에서 진행돼요.'}</small>
+        </div>
+      )}
+
+      {doc.reviewStatus === 'needs' && (
+        <div className="ui-callout is-danger">{doc.reviewNote || (doc.electronic ? '보완 내용을 반영한 전자 문서를 새로 작성해 주세요.' : '보완을 요청한 서류를 첨부해 주세요.')}</div>
+      )}
+
+      {!doc.electronic && (doc.reviewStatus === 'awaiting_documents' || doc.kind === 'rights') && (
+        <div className="ui-field">
+          <label htmlFor="aqEvidenceFile">요청된 서류 첨부</label>
+          <FilePicker
+            id="aqEvidenceFile" fileName={pendingFile?.name}
+            accept=".pdf,.txt,image/png,image/jpeg,image/webp,application/pdf,text/plain"
+            onChange={e => setPendingFile(e.target.files?.[0] || null)}
+          />
+          <p className="ui-field-help">
+            {pendingFile ? `선택한 파일 · ${pendingFile.name} (${fileSize(pendingFile.size)}) — ‘검토 요청’을 누르면 제출돼요.` : '서류를 선택하면 원본과 발매 정보가 함께 보관돼요.'}
+          </p>
+        </div>
+      )}
+
+      {doc.kind === 'agreements' && (
+        <div className="aq-doc-extra">
+          <button type="button" id="aqSignIntent" className="ui-btn is-soft" onClick={onOpenSignature}>
+            {doc.reviewStatus === 'approved' ? (doc.localSignatureAt ? '서명 다시 하기' : '서명 진행하기') : '검토 진행 상황 보기'}
+          </button>
+        </div>
+      )}
+
+      <div className="doc-actions aq-sticky-foot">
+        <button id="aqDocConfirm" type="button" className="ui-btn is-primary" onClick={confirmSave}>확인 및 저장</button>
+        {/* 검토가 끝났거나 이미 검토 중인 서류에는 다시 요청할 일이 없다 — 제출 대기·보완 요청일 때만. 전자 문서는 서명으로 접수된다 */}
+        {!doc.electronic && (doc.reviewStatus === 'awaiting_documents' || doc.reviewStatus === 'needs') && (
+          <button id="aqDocSubmit" type="button" className="ui-btn is-soft" onClick={submitReview} disabled={sending}>{sending ? '제출하는 중' : '검토 요청'}</button>
+        )}
+        {doc.fileName && (
+          <button id="aqDocDownload" type="button" className="ui-btn is-soft" onClick={download}>원본 열기</button>
+        )}
+      </div>
+    </Modal>
+  );
+}

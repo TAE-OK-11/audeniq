@@ -1,0 +1,37 @@
+{
+  "partner_id": "D-2",
+  "adapter": "http_api",
+  "http_api": {
+    "base_url": "https://REPLACE-with-partner-api-host",
+    "auth": {
+      "kind": "oauth2",
+      "token_url": "https://REPLACE-with-partner-auth-host/oauth/token",
+      "client_id": {"file": "/etc/audeniq/partners/secrets/D-2.client_id"},
+      "client_secret": {"file": "/etc/audeniq/partners/secrets/D-2.client_secret"},
+      "scope": "delivery"
+    },
+    "create_path": "/v1/releases",
+    "file_path": "/v1/releases/{id}/files/{name}",
+    "commit_path": "/v1/releases/{id}/commit",
+    "status_path": "/v1/releases/{id}",
+    "lookup_path": "/v1/releases?idempotency_key={key}",
+    "takedown_path": "/v1/releases/{id}/takedown",
+    "update_path": "/v1/releases/{id}",
+    "id_pointer": "/id",
+    "status_pointer": "/status",
+    "release_id_pointer": "/release_id",
+    "status_map": {
+      "received": "PENDING",
+      "processing": "PENDING",
+      "approved": "ACCEPTED",
+      "service": "LIVE",
+      "rejected": "REJECTED",
+      "deleted": "TAKEN_DOWN"
+    },
+    "timeout_secs": 120,
+    "send_ddex_xml": false
+  },
+  "webhook": {
+    "secret": {"file": "/etc/audeniq/partners/secrets/D-2.webhook_secret"}
+  }
+}

@@ -1,0 +1,57 @@
+# AUDENIQ 디자인 시스템
+
+스튜디오(아티스트 화면)·관리자·업무 화면이 함께 쓰는 **토큰**과 **공통 컴포넌트**입니다.
+같은 역할의 요소는 화면이 달라도 이 한 벌만 씁니다. 미리보기: 관리자 `/admin/design`.
+
+| 위치 | 내용 |
+|---|---|
+| `web/studio/app/src/styles/tokens.css` | 색·글자·모서리·높이·간격·그림자·움직임 토큰 (단 하나의 기준) |
+| `web/studio/app/src/styles/ui.css` | 공통 컴포넌트 클래스 `ui-*` |
+| `web/studio/app/src/ui/` | React 컴포넌트 (`import { Button, Badge, … } from '../ui'`) |
+| `web/studio/app/src/admin/pages/DesignSystem.tsx` | 살아 있는 견본 화면 |
+
+## 규칙
+1. 화면 CSS는 **배치(폭·여백·정렬·그리드)** 만 바꿉니다. 색·크기·모서리는 컴포넌트와 토큰이 정합니다.
+2. 숫자 대신 토큰: `var(--aq-text-3)`, `var(--aq-r-xl)`, `var(--aq-h-sm)` …
+3. 누르는 요소 높이는 8px 단위 4단계(32·40·48·56). 모서리는 높이에 비례.
+4. 윤곽선·그림자 없이 면 색으로 구분합니다. 호버는 면 색만 바뀝니다.
+   입력칸은 토스처럼 선 없는 면이되 색은 AUDENIQ 회색(`--aq-field` = `--aq-gray-100` #EEF1F6)이고, 포커스는 윤곽선·그림자 없이 회색이 한 단계 진해집니다(`--aq-field-focus-bg`). 옅은 카드 안에서는 흰 칸 → 포커스 때 회색. 고른 줄·선택한 은행처럼 '켜짐' 표시도 테두리 대신 진한 면으로 합니다. 버튼·고르기 칸 안에 동그란 표시(라디오 점, 동그란 배경의 아이콘·체크)를 넣지 않습니다. 고른 칸은 면 색과 글자 색으로, 여러 개 고르는 칸은 배경 없는 체크로만 보여요. 키보드로 이동할 때 버튼·링크·체크박스에만 포커스 표시가 남습니다(접근성).
+5. 색 규칙: 보완 필요 = 주황, 거절·오류 = 빨강, 검토 중 = 보라, 완료 = 초록. 상태를 보여 주는 알약은 모두 상태 배지(`Badge`, `.ui-badge`) 하나의 모양(둥근 알약 · 12px 굵은 글자 · 옅은 바탕 + 진한 글자)만 씁니다. 화면마다 따로 알약을 만들지 말고, DSP 이름·번호·파일처럼 '정보'를 붙이는 이름표만 네모난 `Tag`를 씁니다. 발매 상태(작성 중·보완 필요·검토 중·발매 완료 등)는 처음 쓰던 상태 칩 모양 그대로 `Badge`에 `aq-status is-<상태>`를 붙여 씁니다(11px · 옅은 바탕 + 상태 색 글자).
+6. 버튼은 놓인 면에 맞춰 스스로 바뀝니다 (`.ui-card` 위에서는 한 단계 진하게, `.ui-dark` 위에서는 반전). 상태 색 면(주황 보완 · 빨강 오류 · 초록 완료) 위에서는 버튼·기본 아이콘 칸도 그 색을 따릅니다 — 새 상태 면은 `.ui-tone-warn` / `.ui-tone-danger` / `.ui-tone-success`를 붙이면 됩니다.
+7. 글꼴은 **Pretendard Variable** 하나입니다(굵기 100–900 자유). 각 앱 `index.html`이 jsDelivr의 동적 서브셋 CSS(`pretendard@v1.3.9`)를 불러오고, 토큰 `--font-brand`가 첫 글꼴로 씁니다. CSP의 `style-src`·`font-src`에 `https://cdn.jsdelivr.net`이 허용돼 있어요. 자체 CDN으로 옮길 때는 `index.html`의 주소와 CSP 두 곳만 바꾸면 됩니다. 화면 CSS에 `font-family`를 직접 쓰지 말고 `var(--font-body)`를 씁니다.
+8. 아이콘은 직접 그린 SVG만 씁니다(`components/Glyph.tsx`, 설문은 `survey/app/src/Icon.tsx`). 이모지와 아이콘처럼 쓰는 글자 기호(₩ ✓ › ‹ ▸ ↗ ⚠ 등)는 기기마다 모양이 달라서 쓰지 않아요. CSS로 그릴 때는 `--aq-icon-check`·`--aq-icon-chevron`을 mask로 씁니다. 문서 아이콘도 이모지 대신 아이콘 이름을 저장하고, 예전 이모지는 비슷한 SVG로 바꿔 보여 줍니다. 문장 속 화살표(→)처럼 글자로 읽히는 것은 Pretendard에 들어 있어 그대로 둡니다.
+9. 글자 단계: 크기는 11 · 12 · 13 · 14 · 15 · 16 · 18 · 22px와 큰 제목(`--aq-fs-h1` 28–36, `--aq-fs-display` 30–40)만 씁니다(`--aq-fs-2xs`~`--aq-fs-title-lg`). 굵기는 400(본문) · 600(보조) · 700(제목·버튼) · 800(숫자·큰 제목) 네 가지뿐입니다. 글자 회색은 `--aq-text` · `--aq-text-2` · `--aq-text-3` · `--aq-text-4` · `--aq-text-disabled` 다섯 단계만 쓰고, 회색 hex나 `--aq-gray-*`를 글자색으로 직접 쓰지 않아요. 카드 제목(h2)은 18px/700, 페이지 제목(h1)은 `--aq-fs-h1`입니다.
+10. 라벨은 한글로 씁니다. 페이지 위 작은 분류 글자(eyebrow), 관리자 메뉴 묶음 이름, 단계 이름 모두 한글이고 영어 대문자 라벨(MONTHLY REPORT 등)은 쓰지 않아요. 고유명사(Spotify, UPC/EAN, ISRC)만 예외입니다.
+11. 선택 상자와 날짜는 기기 기본 팝업(iOS 휠·안드로이드 목록·기본 달력)을 쓰지 않습니다. 앱 루트의 `<SelectHost/>`가 모든 `<select>`를 AUDENIQ 선택 시트로 열고(휴대폰은 아래에서 올라오는 시트, 넓은 화면은 칸 아래 작은 창), 날짜·시간은 `components/Picker.tsx`의 `<DateField>`(날짜) · `<DateTimeField>`(날짜+시간) · `<TimeField>`(시간) · `<MonthField>`(달)을 씁니다. `<input type="date|datetime-local|time|month">`는 새로 쓰지 않아요. 기본 팝업이 꼭 필요한 곳만 조상에 `data-native-select`를 붙입니다.
+12. 새 역할이 생기면 화면 CSS에 만들지 말고 `ui.css` + `src/ui`에 더하고 견본 화면에 올립니다.
+
+## 컴포넌트
+| 역할 | React | 클래스 |
+|---|---|---|
+| 버튼 | `Button`, `buttonClass()` | `ui-btn` + `is-primary·is-neutral·is-ghost·is-white·is-warn·is-warn-solid·is-danger·is-danger-solid·is-text` / `is-xs·is-sm·is-lg·is-block·is-icon·is-busy` |
+| 상태 배지 | `Badge` | `ui-badge is-{blue·violet·amber·green·red·gray}` |
+| 정보 태그 · 숫자 | `Tag`, `Count` | `ui-tag(is-mono)`, `ui-count(is-hot·is-alert)` |
+| 필터 칩 | `ChipGroup` | `ui-chips` / `ui-chip[aria-pressed]` |
+| 고르기 토글 | `Segmented` | `ui-seg` (흰 알약) |
+| 탭 | `Tabs`, `LinkTabs` | `ui-tabs` / `ui-tab` |
+| 화면 머리 · 섹션 | `PageHeader`, `Section`, `SectionHeader` | `ui-page-head`, `ui-section-head` |
+| 면 | `Card` | `ui-card`, `ui-box`, `ui-hero` |
+| 숫자 칸 | `StatTile`, `StatGrid` | `ui-stat`, `ui-stats` |
+| 목록 줄 | — | `ui-list(is-inset)` / `ui-row` |
+| 아바타 · 커버 · 아이콘 칸 | `Avatar`, `Cover`, `IconTile` | `ui-avatar`, `ui-cover`, `ui-icon` |
+| 입력칸 | `Field` | `ui-input`, `ui-select`, `ui-textarea`, `ui-field` (`.ui-form-lg` 안은 56px) |
+| 선택 줄 · 체크 줄 | — | `ui-choice`, `ui-check(is-plain)` |
+| 알림 상자 · 빈 상태 · 로딩 | `Callout`, `EmptyState`, `SkeletonList` | `ui-callout`, `ui-empty`, `ui-skel-rows` |
+| 타임라인 · 항목/값 | `KeyValue` | `ui-timeline`, `ui-kv` |
+
+## 이번에 하나로 합친 것 (요약)
+버튼 5벌 → 1, 상태 배지 4벌 → 1, 필터 칩 7벌 → 1, 고르기 토글 2벌(흰/파란 알약) → 흰 알약, 탭 2벌 → 미끄러지는 밑줄,
+화면 머리·섹션 머리·카드·숫자 칸·빈 상태·알림 상자·타임라인·체크 줄 각 2~4벌 → 1, 스튜디오 목록 카드 6벌 + 관리자 목록 줄 → `ui-row`,
+입력칸 바탕 3색·포커스 3가지 → 1, 앨범 커버 2벌 → 발매별 그라데이션, 앱 상단 높이·로고·제품 표시 위치 통일,
+고유 색 587개 → 토큰 47개, 모서리 30여 가지 → 7+4단계. 자세한 비교와 이유는 `/admin/design` › 통일 기록.
+
+함께 고친 버그: 보드 화면 가로 스크롤, 플랫폼별 조건 카드 글자 겹침, 리포트 금액 세로 줄바꿈, 선택 상자 글자와 화살표 겹침, 팀 대화 본문 글자 크기.
+
+## 다른 앱
+- `web/admin`(독립 관리자 콘솔)은 `tokens.css`·`ui.css`·`src/ui`를 같은 내용으로 복사해 씁니다. 스튜디오 쪽을 바꾸면 같이 맞춰 주세요.
+- 랜딩·설문은 같은 브랜드 토큰 값(파랑 #3B63F3, 잉크 #171B29)을 씁니다.

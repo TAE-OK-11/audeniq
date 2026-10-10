@@ -1,0 +1,298 @@
+name: audeniq-production
+x-runtime: &runtime
+  image: ${AUDENIQ_IMAGE:?set verified immutable API image}
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  pids_limit: 128
+  security_opt: [no-new-privileges:true]
+  tmpfs: [/tmp:size=16m]
+  networks: [backend, egress]
+  logging:
+    driver: json-file
+    options: {max-size: 10m, max-file: '3'}
+services:
+  postgres:
+    restart: unless-stopped
+    # PostgreSQL 18 keeps its data under /var/lib/postgresql/18/docker, so the
+    # volume mounts one level up. pg_prod (17) stays for rollback; move data
+    # with ./pg-upgrade.sh once (deploy.sh refuses to start until then).
+    image: postgres:18-trixie
+    environment:
+      POSTGRES_USER: audeniq_owner
+      POSTGRES_DB: audeniq_prod
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set production owner password}
+      API_DB_PASSWORD: ${API_DB_PASSWORD:?set production API password}
+      WORKER_DB_PASSWORD: ${WORKER_DB_PASSWORD:?set production worker password}
+    volumes:
+      - pg18_prod:/var/lib/postgresql
+      - ./bootstrap.sql:/docker-entrypoint-initdb.d/001-roles.sql:ro
+      - ./grants.sql:/opt/audeniq/grants.sql:ro
+    networks: [backend]
+    # 기본값은 1 vCPU / 1 GB 서버 기준(+ 스왑 2 GB). 서버를 키우면 production.env만 바꾼다:
+    # 단계별 값은 deploy/PRODUCTION.md "서버 크기와 확장".
+    # 병렬 쿼리·JIT는 끈다(작은 OLTP 쿼리에서는 오히려 느리고 메모리를 먹는다).
+    command:
+      - postgres
+      - -c
+      - password_encryption=scram-sha-256
+      - -c
+      - log_parameter_max_length=0
+      - -c
+      - log_parameter_max_length_on_error=0
+      - -c
+      - log_min_error_statement=panic
+      - -c
+      - max_connections=40
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-128MB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-384MB}
+      - -c
+      - work_mem=${PG_WORK_MEM:-4MB}
+      - -c
+      - maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-64MB}
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
+      - -c
+      - max_parallel_workers_per_gather=0
+      - -c
+      - jit=off
+      - -c
+      - wal_compression=on
+      - -c
+      - checkpoint_completion_target=0.9
+      - -c
+      - max_wal_size=1GB
+      - -c
+      - log_min_duration_statement=500ms
+      - -c
+      - log_lock_waits=on
+    shm_size: 128m
+    mem_limit: ${PG_MEM_LIMIT:-512m}
+    cpus: ${PG_CPUS:-1.0}
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: '3'}
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U audeniq_owner -d audeniq_prod']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  migrate:
+    <<: *runtime
+    command: [audeniq-migrate]
+    environment:
+      DATABASE_URL: postgres://audeniq_owner:${POSTGRES_PASSWORD}@postgres/audeniq_prod
+    depends_on:
+      postgres: {condition: service_healthy}
+    mem_limit: 256m
+    cpus: 0.5
+  grants:
+    image: postgres:18-trixie
+    command: [psql, -h, postgres, -U, audeniq_owner, -d, audeniq_prod, -v, ON_ERROR_STOP=1, -f, /opt/grants.sql]
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes: ['./grants.sql:/opt/grants.sql:ro']
+    networks: [backend]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+  # Transaction pooling in front of PostgreSQL for the api/worker roles.
+  # migrate, grants and the worker's LISTEN connect to postgres directly
+  # (they need a session). Built here from deploy/pgbouncer (Debian package).
+  pgbouncer:
+    restart: unless-stopped
+    build: ./pgbouncer
+    image: audeniq-pgbouncer:local
+    environment:
+      PGBOUNCER_DB: audeniq_prod
+      POSTGRES_HOST: postgres
+      API_DB_PASSWORD: ${API_DB_PASSWORD:?set production API password}
+      WORKER_DB_PASSWORD: ${WORKER_DB_PASSWORD:?set production worker password}
+      PGBOUNCER_POOL_SIZE: '${PGBOUNCER_POOL_SIZE:-8}'
+      PGBOUNCER_MAX_DB_CONN: '${PGBOUNCER_MAX_DB_CONN:-20}'
+    read_only: true
+    tmpfs: ['/run/pgbouncer:size=1m,mode=1777']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [backend]
+    depends_on:
+      grants: {condition: service_completed_successfully}
+    healthcheck:
+      test: ['CMD', 'bash', '-c', 'exec 3<>/dev/tcp/127.0.0.1/6432']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    mem_limit: 64m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: '3'}
+  antivirus:
+    profiles: [antivirus]
+    image: ${AUDENIQ_IMAGE:?set verified immutable API image}
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command: [clamd, --foreground, --config-file=/usr/local/share/audeniq/clamd.conf]
+    restart: unless-stopped
+    # Only INSTREAM over a shared Unix socket: no object-store, DB, KMS or network.
+    network_mode: none
+    tmpfs: [/tmp:size=1200m,mode=1777,noexec,nosuid,nodev]
+    volumes:
+      - av_socket:/run/audeniq-av
+      - av_database:/var/lib/clamav:ro
+    pids_limit: 32
+    mem_limit: ${AV_MEM_LIMIT:-3g}
+    cpus: ${AV_CPUS:-0.75}
+  antivirus-update:
+    profiles: [antivirus]
+    <<: *runtime
+    command: [python3, /usr/local/lib/audeniq/update-antivirus.py]
+    restart: unless-stopped
+    networks: [egress]
+    volumes: [av_database:/var/lib/clamav]
+    mem_limit: ${AV_UPDATE_MEM_LIMIT:-1536m}
+    cpus: 0.5
+    pids_limit: 16
+  api:
+    restart: unless-stopped
+    <<: *runtime
+    command: [audeniq-api]
+    # SIGTERM drains in-flight requests; upload completion hashes a master
+    # of up to 512 MiB, so allow more than the default 10 s.
+    stop_grace_period: 30s
+    environment:
+      APP_ENV: production
+      APP_ORIGIN: ${APP_ORIGIN:?set exact HTTPS Studio origin}
+      API_BIND: 0.0.0.0:8080
+      AUDENIQ_QC_ASSET_PARALLELISM: '${AUDENIQ_QC_ASSET_PARALLELISM:-}'
+      AUDENIQ_AUDIO_PARSER_MEMORY_MIB: '${AUDENIQ_AUDIO_PARSER_MEMORY_MIB:-768}'
+      EDGE_SERVICE_SECRET: ${EDGE_SERVICE_SECRET:?set random service secret}
+      PAYOUT_KMS_ENABLED: '${PAYOUT_KMS_ENABLED:-false}'
+      PAYOUT_KEYRING_FILE: ${PAYOUT_KEYRING_FILE:-}
+      PAYOUT_ACCOUNT_KEY: ${PAYOUT_ACCOUNT_KEY:-}
+      UPLOAD_AV_ENABLED: '${UPLOAD_AV_ENABLED:-false}'
+      DATABASE_URL: postgres://audeniq_api:${API_DB_PASSWORD}@pgbouncer:6432/audeniq_prod
+      DATABASE_POOLER: pgbouncer
+      STORAGE_ENABLED: ${STORAGE_ENABLED:-false}
+      S3_ENDPOINT: ${S3_ENDPOINT:-https://unconfigured.invalid}
+      S3_BUCKET: ${S3_BUCKET:-unconfigured}
+      S3_REGION: ${S3_REGION:-auto}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      # ALAC uploads are converted to FLAC here (source + result on disk),
+      # never in the 16 MiB /tmp tmpfs.
+      TMPDIR: /var/tmp/audeniq
+      RUST_LOG: info
+      # Partner configs (docs/PARTNER_DELIVERY.md): the API only reads the
+      # webhook secrets to verify signed partner notifications.
+      PARTNER_CONFIG_DIR: /etc/audeniq/partners
+      # Pre-launch lock: empty = no request ever reaches a real DSP.
+      DSP_LIVE_TRANSMISSION: ${DSP_LIVE_TRANSMISSION:-}
+    volumes:
+      - av_socket:/run/audeniq-av:ro
+      - ${PAYOUT_KEYRING_DIR:-/dev/shm/audeniq-secrets}:/run/audeniq-keys:ro
+      - api_tmp:/var/tmp/audeniq
+      - ./partners:/etc/audeniq/partners:ro
+    depends_on:
+      pgbouncer: {condition: service_healthy}
+    mem_limit: ${API_MEM_LIMIT:-384m}
+    cpus: ${API_CPUS:-1.0}
+    # CPU가 붐빌 때 API(1024)가 worker(512)의 두 배 몫을 받는다: 무거운 QC 중에도 응답이 밀리지 않는다.
+    cpu_shares: 1024
+  worker:
+    restart: unless-stopped
+    <<: *runtime
+    command: [audeniq-worker]
+    # SIGTERM drains in-flight jobs for WORKER_DRAIN_SECONDS, then releases
+    # unfinished leases; the grace period must exceed the drain window.
+    stop_grace_period: 45s
+    environment:
+      UPLOAD_AV_ENABLED: '${UPLOAD_AV_ENABLED:-false}'
+      APP_ENV: production
+      DATABASE_URL: postgres://audeniq_worker:${WORKER_DB_PASSWORD}@pgbouncer:6432/audeniq_prod
+      DATABASE_POOLER: pgbouncer
+      # LISTEN needs a session: direct to postgres, not through the pooler.
+      DATABASE_LISTEN_URL: postgres://audeniq_worker:${WORKER_DB_PASSWORD}@postgres/audeniq_prod
+      WORKER_MAX_IN_FLIGHT: '${WORKER_MAX_IN_FLIGHT:-2}'
+      DATABASE_MAX_CONNECTIONS: '${DATABASE_MAX_CONNECTIONS:-6}'
+      JOB_LEASE_SECONDS: '${JOB_LEASE_SECONDS:-300}'
+      WORKER_DRAIN_SECONDS: '${WORKER_DRAIN_SECONDS:-30}'
+      QUEUE_INTERACTIVE_CONCURRENCY: '1'
+      # 곡마다 업로드 직후 사전 분석(audeniq-qc 디코드)이 이 큐로 돈다. CPU 작업이라 vCPU 수만큼이
+      # 알맞다(1 vCPU: 1, 2 vCPU: 2). API는 cpu_shares로 CPU 우선권을 가진다.
+      QUEUE_QC_CONCURRENCY: '${QUEUE_QC_CONCURRENCY:-1}'
+      # Process-wide media capacity (1–8). Empty uses available CPU capacity.
+      AUDENIQ_QC_ASSET_PARALLELISM: '${AUDENIQ_QC_ASSET_PARALLELISM:-}'
+      AUDENIQ_AUDIO_PARSER_MEMORY_MIB: '${AUDENIQ_AUDIO_PARSER_MEMORY_MIB:-768}'
+      QUEUE_RIGHTS_CONCURRENCY: '1'
+      QUEUE_DISTRIBUTION_CONCURRENCY: '1'
+      QUEUE_FINANCE_CONCURRENCY: '1'
+      # DSP 전송은 네트워크 대기(I/O)라 CPU와 따로 센다.
+      QUEUE_DELIVERY_CONCURRENCY: '${QUEUE_DELIVERY_CONCURRENCY:-2}'
+      # Workers read the frozen masters for Stage 1 QC and packaging; they
+      # need the same bucket as the API. Analysis temp files go to TMPDIR (a
+      # volume), never the 16 MiB /tmp tmpfs.
+      # Workers only read (HEAD/GET): give them a read-only token
+      # (S3_WORKER_*), so the process that opens user files with audeniq-qc
+      # cannot write or delete objects. Falls back to the API token.
+      STORAGE_ENABLED: ${STORAGE_ENABLED:-false}
+      S3_ENDPOINT: ${S3_ENDPOINT:-https://unconfigured.invalid}
+      S3_BUCKET: ${S3_BUCKET:-unconfigured}
+      S3_REGION: ${S3_REGION:-auto}
+      S3_ACCESS_KEY_ID: ${S3_WORKER_ACCESS_KEY_ID:-${S3_ACCESS_KEY_ID:-}}
+      S3_SECRET_ACCESS_KEY: ${S3_WORKER_SECRET_ACCESS_KEY:-${S3_SECRET_ACCESS_KEY:-}}
+      TMPDIR: /var/tmp/audeniq
+      RUST_LOG: info
+      # One <partner_id>.json per contracted DSP plus the secret files they
+      # reference (SSH keys, pinned known_hosts, API tokens). No file = no
+      # adapter = sends to that partner fail closed.
+      PARTNER_CONFIG_DIR: /etc/audeniq/partners
+      AUDENIQ_DELIVERY_TMP: /var/tmp/audeniq
+      DDEX_SENDER_DPID: ${DDEX_SENDER_DPID:-}
+      DDEX_SENDER_NAME: ${DDEX_SENDER_NAME:-AUDENIQ}
+      # Pre-launch lock: empty = no request ever reaches a real DSP.
+      DSP_LIVE_TRANSMISSION: ${DSP_LIVE_TRANSMISSION:-}
+    volumes:
+      - worker_tmp:/var/tmp/audeniq
+      - ./partners:/etc/audeniq/partners:ro
+    depends_on:
+      pgbouncer: {condition: service_healthy}
+    # cpus는 서버 vCPU 수를 넘을 수 없다(넘으면 Docker가 컨테이너를 만들지 않는다).
+    mem_limit: ${WORKER_MEM_LIMIT:-768m}
+    cpus: ${WORKER_CPUS:-1.0}
+    cpu_shares: 512
+  tunnel:
+    image: ${CLOUDFLARED_IMAGE:?set tested cloudflared image digest}
+    restart: unless-stopped
+    command: [tunnel, --no-autoupdate, run, --token-file, /run/secrets/tunnel_token]
+    # cloudflared는 종료 신호를 받으면 처리 중인 요청을 최대 30초 기다린다(기본 grace-period).
+    # Docker 기본 10초면 그 전에 강제 종료되므로 여유를 준다.
+    stop_grace_period: 35s
+    secrets: [tunnel_token]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [backend, egress]
+    depends_on: [api]
+    mem_limit: 256m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: '3'}
+secrets:
+  tunnel_token:
+    file: ./tunnel-token
+volumes:
+  pg18_prod:
+  worker_tmp:
+  api_tmp:
+  av_socket:
+  av_database:
+networks:
+  backend: {internal: true}
+  egress: {}

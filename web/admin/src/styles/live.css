@@ -1,0 +1,289 @@
+
+/* AUDENIQ font entry point. No font download is made until @font-face is enabled.
+   Drop the approved WOFF2 in assets/fonts/, then use the matching recipe in
+   docs/FONTS.md. Do not declare a variable weight range for a static font. */
+
+/* Enable ONLY after adding the actual variable font:
+@font-face {
+  font-family: "AUDENIQ Sans";
+  src: url("./fonts/AUDENIQSans-Variable.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+}
+*/
+
+*{box-sizing:border-box}button,a{-webkit-tap-highlight-color:transparent}button,a,summary{touch-action:manipulation}img{max-width:100%;display:block}figure,p,h1,h2,h3{margin:0}p+p{margin-top:20px}h1,h2,h3{font-family:var(--font-display);line-height:1.3;letter-spacing:var(--tracking-heading)}h2{font-size:clamp(30px,4.1vw,48px);font-weight:var(--weight-heading)}h3{font-size:26px;font-weight:700}p{color:var(--muted);font-size:18px}small,.small{font-size:14px;line-height:1.65;color:var(--muted)}:focus-visible{outline:3px solid var(--blue);outline-offset:6px;border-radius:var(--aq-r-xs)}section,footer{scroll-margin-top:24px}.section{padding-block:var(--section-space)}nav{display:flex;align-items:center;gap:30px}nav>a:hover{color:var(--blue)}summary::-webkit-details-marker{display:none}details[open]>summary>span{transform:rotate(45deg)}footer{padding:70px 0 25px;background:var(--background)}.email>span{margin-left:12px;color:var(--blue)}
+@media(max-width:1050px){nav{gap:19px}}
+@media(max-width:760px){:root{--section-space:86px;--radius:28px}.eyebrow{font-size:13px;margin-bottom:20px}h2{font-size:clamp(27px,6.8vw,38px);line-height:1.4;letter-spacing:-.045em}h3{font-size:24px}footer{padding-top:45px}}
+@media print{nav{display:none!important}.section{padding-block:35px}details>p,details>div{display:block!important}footer{break-inside:avoid}}
+
+/* v0.2: softer, borderless surfaces and restrained interaction feedback. */
+
+nav>a{font-size:14px;color:var(--aq-text-2);font-weight:600;padding:12px 0;transition:color .2s,background .2s}
+
+/* AUDENIQ — source design preserved; single consolidated adjustment layer. */
+/* Header-to-card clearance previously implemented in the original optimized version. */
+main{padding-top:20px}
+@media (max-width: 760px) { main{padding-top:14px} }
+
+/* Keep the original final hero geometry without competing !important hotfixes. */
+/* All text and cards retain their normal CSS-visible state. Motion never controls visibility. */
+
+/* Flat FAQ surface and the original small, internal row separators. */
+
+/* AUDENIQ STUDIO — unified working-surface and action system */
+
+.doc-onboard{background:linear-gradient(132deg,#f4f7ff,#f5f3ff);border:1px solid var(--aq-blue-150);border-radius:var(--aq-r-2xl);padding:24px;margin:6px 0 26px}
+.doc-onboard strong{display:block;font-size:18px;color:var(--aq-text);letter-spacing:-.035em}
+.doc-onboard p{margin-top:8px;color:var(--aq-text-3);font-size:13px;line-height:1.7}
+.doc-connection{border-radius:var(--aq-r-md);background:var(--aq-gray-50);border:1px solid var(--aq-gray-150);color:var(--aq-text-3);font-size:12px;line-height:1.65;padding:13px 15px;margin:19px 0}
+.doc-meta{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
+
+.doc-loading{border-radius:var(--aq-r-xl);background:var(--aq-blue-25);color:var(--aq-text-3);padding:38px 15px;text-align:center}
+.doc-image{display:block;max-width:100%;max-height:440px;margin:0 auto;object-fit:contain;border-radius:var(--aq-r-md)}
+.doc-pdf{display:block;width:100%;height:min(58vh,580px);background:#fff;border:1px solid var(--aq-gray-150);border-radius:var(--aq-r-md)}
+.doc-audit{display:grid;gap:7px;background:var(--aq-blue-100);color:#3653a5;border:1px solid var(--aq-blue-200);border-radius:var(--aq-r-lg);padding:17px;font-size:13px}
+.doc-audit strong{font-size:14px;color:var(--aq-blue-800)}
+
+.doc-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:21px}
+@media(max-width:760px){.doc-content{padding:16px}}
+
+/* ===== Live block boundary ===== */
+
+/* AUDENIQ public site's CSS and brand tokens above are inherited without re-creation. */
+
+*,*:before,*:after{box-sizing:border-box}a{color:inherit;text-decoration:none}button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type=range],[type=file]):focus-visible,summary:focus-visible,[tabindex]:not(input):not(select):not(textarea):focus-visible{outline:3px solid var(--aq-blue-450);outline-offset:3px}[hidden]{display:none!important}.muted{color:var(--portal-muted)}.small{font-size:13px}.blue{color:var(--portal-blue)}.sr-only{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}.break{overflow-wrap:anywhere}
+/* Public site header styles, logo and hamburger reused. */
+/* Cards use original site's .service-item and .audience-panel, not boxed page frames. */.doc-row{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:16px;align-items:center;text-align:left}
+/* Authenticated workspace: actual working pages are open full-width sections. */.split{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(240px,.65fr);gap:40px}
+/* Toss-style input spacing, not a landing-page card. */
+/* Reporting, settlement and contract content. */.doc-row{grid-template-columns:41px minmax(0,1fr) auto}.modal-top{display:flex;align-items:start;justify-content:space-between;gap:20px;margin:0 0 20px}.modal-top h2{font-size:24px;margin:0;letter-spacing:-.04em}
+/* The same card surface and corner tokens as the public AUDENIQ homepage. */
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}}
+
+/* Artist portal fixes: standalone release flow and the public-site two-line hamburger. */
+html,body{max-width:100%}
+
+/* ===== Live block boundary ===== */
+
+/* AUDENIQ STUDIO — final editorial system. Layered over the original public-site CSS. */
+/* Match the real homepage's two horizontal bars; rotate around their centers. */
+
+@keyframes studio-enter{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.eyebrow{font-size:11px;font-weight:800;color:var(--studio-blue);letter-spacing:.15em;margin-bottom:24px;margin:0 0 11px;line-height:1.3}
+/* The homepage's original borderless rounded card language: functional, not a page frame. */
+/* Rows, indicators and release art share one compact visual grammar. */
+.doc-row{gap:12px;min-width:0}
+.doc-row>*{min-width:0}
+.cover{width:52px;height:52px;flex:0 0 52px;border-radius:var(--aq-r-md);object-fit:cover;background:linear-gradient(135deg,#9ed9ff 1%,#8575d9 57%,#526eb8);display:grid;place-items:center;color:transparent;overflow:hidden;position:relative}
+.cover:after{content:'';position:absolute;inset:auto -10% -40% -10%;height:80%;border-radius:50% 50% 0 0;background:#e6e8ff63;pointer-events:none}
+img.cover:after{display:none}
+/* Working pages are broad, open layouts; only summaries and short tools use public-site cards. */
+/* Form fields: consistent native controls and generous labels, without wrapping the whole form in a card. */
+.required{color:var(--studio-blue)}
+/* Distraction-free release flow. Top and bottom controls remain outside the form. */
+/* Clean footer: quiet, never overlaps the working form. */
+@media(max-width:900px){.split{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:760px){
+ .doc-row{gap:10px}
+ 
+}
+
+/* Sample mode is visibly separate from real operations without changing the public-site card styling. */
+
+/* AUDENIQ STUDIO / product screens — functional extensions of the public-site design language */
+/* 전역 입력창 통일: 둥근 박스 스타일 */
+
+/* ===== Live block boundary ===== */
+
+[hidden],button[hidden]{display:none!important}
+#main button:not(.ui-tab),#modal button{box-shadow:none!important;filter:none!important}
+/* One simple public-site-inspired action system: no focusless outlined buttons, hovering cards, float or shadow. */
+#main button,.modal button{filter:none!important;text-shadow:none!important}
+.doc-actions .ui-btn{align-items:center!important;justify-content:center!important;text-align:center!important;white-space:normal;max-width:100%;--btn-h:var(--aq-h-md);--btn-r:var(--aq-r-ctl-md);--btn-px:18px;--btn-fs:var(--aq-fs-base)}
+.doc-onboard,.doc-content,.doc-connection{border:0!important;box-shadow:none!important}
+.doc-actions{align-items:stretch;gap:10px!important}
+.doc-actions .ui-btn{flex:1 1 150px;margin:0!important}
+
+.doc-consent span{flex:1;min-width:0;line-height:1.65}
+.doc-content{background:var(--aq-gray-50)!important;border:1px solid var(--aq-gray-150);padding:21px;border-radius:var(--aq-r-xl);color:var(--aq-text-2);font-size:13px;line-height:1.9;white-space:pre-wrap;overflow-wrap:anywhere;max-height:min(52vh,600px);overflow:auto}
+.doc-section-title{font-size:18px;letter-spacing:-.035em;color:var(--aq-text);margin:25px 0 12px!important;font-weight:800}
+.aq-document-snapshot{background:var(--aq-blue-50);border-radius:var(--aq-r-xl);padding:21px;line-height:1.85;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}
+.aq-document-snapshot h3{white-space:normal;margin:0 0 13px;font-size:18px}
+@media(max-width:760px){
+ .doc-actions{display:grid!important;grid-template-columns:1fr 1fr}
+ .doc-actions .ui-btn{flex:1 1 100%;min-width:0!important;width:100%!important}
+}
+
+/* ===== Live block boundary ===== */
+
+/* AUDENIQ STUDIO · document / signature and mobile navigation refinement */
+/* Full-height release editor with an independent, compact action bar */
+/* Signature form: same clean, borderless surfaces as the public website */
+.aq-sign-record{margin-top:12px;background:var(--aq-blue-50);padding:18px;border-radius:var(--aq-r-lg);display:grid;gap:8px}
+.aq-sign-record img{max-width:100%;width:240px;height:95px;object-fit:contain;mix-blend-mode:multiply}
+.aq-sign-record small{color:var(--aq-text-4)}
+
+/* ===== Live block boundary ===== */
+
+/* AUDENIQ site vocabulary: flat blue actions, airy rounded surfaces, no hover floating. */
+
+/* ===== Live block boundary ===== */
+
+/* AUDENIQ homepage motion: short transform-only entrances, no opacity-hidden content. */
+
+/* The landing site intentionally keeps text readable during the whole scroll.
+   The portal does the same; do not replay the old fade-in on every rerender. */
+/* Gentle feedback on interaction; buttons never float, gain outlines, or cast shadows. */
+/* The public site's two-bar navigation remains anchored to the viewport. */
+/* More tactile form completion, without animating entire forms or keyboard position. */
+/* Small success feedback does not move layout and is distinct from page reveals. */
+#modal:not([hidden]){animation:aq-overlay-enter .18s ease-out both}
+#modal:not([hidden])>.modal-inner{animation:aq-dialog-enter .35s var(--aq-motion-ease) both}
+@keyframes aq-overlay-enter{from{background-color:#13244200}to{background-color:#13244288}}
+@keyframes aq-dialog-enter{from{transform:translate3d(0,12px,0)}to{transform:translate3d(0,0,0)}}
+/* Remove the old chart animation at creation; it will grow once when scrolled into view. */
+/* Do not animate the floating navigation, scroll container, signature canvas or sticky actions. */
+@media(prefers-reduced-motion:reduce){
+ #modal:not([hidden]),#modal:not([hidden])>.modal-inner{animation:none!important}
+ /* Keep hamburger's open/close state understandable without animated movement. */
+}
+
+/* ===== Live block boundary ===== */
+
+/* AUDENIQ STUDIO final pass: rely on the public landing site's borderless, softly filled surfaces. */
+
+html{scroll-behavior:smooth;scroll-padding-top:88px;-webkit-text-size-adjust:100%}
+html body [hidden]{display:none!important}
+body{margin:0;background:#fff;color:var(--aq-final-ink);font-family:var(--font-body);font-weight:var(--weight-body);line-height:1.55;word-break:keep-all;overflow-wrap:break-word;-webkit-font-smoothing:antialiased;min-width:320px;overflow-x:clip;letter-spacing:-.022em}
+button,input,select,textarea{font:inherit;font-family:inherit;letter-spacing:inherit}
+button{font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+button:disabled{cursor:not-allowed!important;opacity:.45}
+button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type=range],[type=file]):focus-visible,summary:focus-visible{outline:3px solid var(--aq-blue-450)!important;outline-offset:3px}
+.doc-actions .ui-btn{min-width:0;align-items:center!important;justify-content:center!important;text-align:center!important;white-space:normal;--btn-h:var(--aq-h-md);--btn-r:var(--aq-r-ctl-md);--btn-px:18px;--btn-fs:var(--aq-fs-base)}
+.doc-onboard,.doc-content{box-shadow:none!important;border:0!important}
+.doc-actions .ui-btn{flex:1 1 0!important}
+.doc-consent{margin-top:15px;border-radius:var(--aq-r-xl)!important;padding:19px!important;background:var(--aq-blue-50)!important;border:1px solid var(--aq-gray-150);display:flex!important;align-items:flex-start!important;gap:12px!important;margin:17px 0 18px!important}
+.doc-consent input{flex:0 0 21px!important;width:21px!important;height:21px!important;margin:3px 0 0!important;accent-color:var(--aq-blue-500);min-width:21px!important;min-height:21px!important}
+#modal{position:fixed!important;inset:0!important;z-index:110!important;overscroll-behavior:contain}
+#modal .modal-inner{max-height:min(90dvh,920px)!important;overflow-y:auto!important;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+#modal .modal-inner .ui-field input,#modal .modal-inner .ui-field textarea{font-size:16px}
+@media(max-width:760px){
+ #main{max-width:100%;min-width:0}
+ .doc-actions{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:10px!important}
+ .doc-actions .ui-btn{width:100%!important;min-width:0!important}
+}
+@media(max-width:359px){.doc-actions{grid-template-columns:1fr!important}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto!important}*,*::before,*::after{animation:none!important;transition:none!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+
+/* ===== Live block boundary ===== */
+
+/* Product-complete pass: contracts and rights are separate, action states use soft public-site cards. */
+
+/* ===== Live block boundary ===== */
+
+/* Reference-led polish: detached Toss-like menu, calmer document actions, red-only attention cue. */
+
+/* ===== Live block boundary ===== */
+
+/* AUDENIQ full-screen payout registration, interpreted from the supplied mobile references. */
+
+/* 진행 기록 타임라인 (React 추가) */
+
+/* 차트 막대: 스크롤로 보일 때 한 번 자라나는 애니메이션 (라이브와 동일) */
+
+/* 페이지 전환 애니메이션 복원: 라우트 변경 시에만 재생 (key 변경으로 리마운트) */
+.view-enter{animation:studio-enter .35s var(--studio-ease) backwards}
+@media(prefers-reduced-motion:reduce){
+  .view-enter{animation:none!important}
+}
+
+/* 대시보드 카드 호버 리프트 복원 */
+
+/* 모달 그림자 (원본 유지) */
+
+/* 서명 방법 탭 버튼: 텍스트 가운데 정렬 */
+
+/* 서명 방법 탭 버튼 크기: 일반 버튼과 동일한 규격 */
+
+/* 모달 위치 수정: 내용이 길어도 위가 잘리지 않도록 (grid 유지) */
+.modal{position:fixed;inset:0;z-index:110;background:#1323407a;display:grid;place-items:center;padding:18px;overflow-y:auto!important}
+.modal-inner{background:#fff;max-height:min(88dvh,860px);overflow-y:auto;width:min(630px,100%);border-radius:var(--aq-r-2xl);padding:28px;box-shadow:0 24px 70px rgba(17,24,39,.18)!important;margin-top:auto!important;margin-bottom:auto!important;flex-shrink:0!important}
+
+/* 날짜가 시간 중간에서 잘리지 않도록 (예: "9:00:"/"00" 분리 방지) */
+
+/* 모바일에서 모달이 화면을 풀로 사용하도록 (원본처럼) */
+@media(max-width:760px){
+  .modal{padding:8px!important;place-items:start center!important}
+  .modal-inner{padding:24px 20px!important;border-radius:var(--aq-r-xl);width:100%!important;max-width:100%!important;max-height:calc(100dvh - 20px)!important;min-height:calc(100dvh - 20px)!important}
+}
+
+/* 서명 모달: 단일 스크롤 컨테이너 + 하단 버튼 sticky 고정 */
+
+/* 주민등록번호 입력 */
+
+/* 인증 완료 화면 */
+
+/* 발매 상세 상단 빈 공간 축소 */
+
+/* X 닫기 버튼 디자인 통일 */
+.icon-button{border:0!important;border-radius:var(--aq-r-md)!important;background:var(--aq-gray-50)!important;width:39px!important;height:39px!important;min-width:39px!important;min-height:44px;display:grid!important;place-items:center!important;font-size:20px!important;line-height:1!important;color:var(--aq-text-2)!important;cursor:pointer!important;padding:0!important}
+.icon-button:hover{background:var(--aq-gray-150)!important}
+
+/* 서명 절차 단계 표시 */
+
+/* 계약서 완성 화면 */
+
+/* 발매 위자드 진행 바 단계 라벨 */
+
+/* 트랙 상세 정보 토글 */
+
+/* 트랙 카드 간격 */
+
+/* 트랙 삭제 버튼 넓게 */
+
+/* 커버아트 배급 미리보기 */
+
+/* 커버곡 트랙별 입력 */
+
+/* 법정대리인 구분 제목 */
+
+/* 한국어 날짜 표시 */
+
+/* 법정대리인 동의 모달 */
+
+/* 서명 패드 */
+
+/* 가족관계증명서 방법 선택 */
+
+/* 서류 첨부 */
+.doc-attach input[type="file"]{margin-top:4px}
+
+/* ===== Auth pages (login / signup / find-account) ===== */
+.auth-page{min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 20px;background:linear-gradient(160deg,#eef2ff 0%,#f7f9fd 55%,#f7f9fd 100%)}
+.auth-split{display:flex;width:min(480px,100%);border-radius:var(--aq-r-3xl);overflow:hidden;background:#fff}
+
+.auth-card{flex:1 1 58%;padding:48px 44px}
+.auth-card h1{font-size:26px;letter-spacing:-.04em;margin:0 0 8px}
+.auth-sub{font-size:14px;color:var(--portal-muted);margin:0 0 28px}
+.auth-card .ui-field{margin-bottom:18px}
+.auth-card .ui-field label{display:block;margin-bottom:8px}
+.auth-card .ui-field input:not([type=checkbox]):not([type=radio]){width:100%}
+.auth-submit{width:100%;min-height:54px;font-size:16px;margin-top:8px}
+.auth-card .ui-tabs{margin-bottom:24px}
+.auth-foot{display:flex;align-items:center;gap:10px;margin-top:28px;font-size:12px;color:var(--aq-text-4)}
+.auth-foot a{color:var(--aq-text-4);text-decoration:none}
+@media(max-width:760px){
+  .auth-split{border-radius:var(--aq-r-2xl)}
+  
+  
+  
+  
+  .auth-card{padding:36px 26px}
+  .auth-card h1{font-size:22px}
+}
+
+/* ===== Events ===== */
+
+/* ===== Notices ===== */

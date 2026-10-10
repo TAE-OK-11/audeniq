@@ -1,0 +1,29 @@
+{
+  "http_request_firewall_custom": [
+    {
+      "ref": "audeniq_reject_plaintext_http",
+      "description": "AUDENIQ external requests require HTTPS; reject before origin access",
+      "expression": "(http.host in {\"audeniq.com\" \"www.audeniq.com\" \"studio.audeniq.com\" \"admin.audeniq.com\" \"survey.audeniq.com\" \"api-origin.audeniq.com\"} and not ssl)",
+      "action": "block",
+      "enabled": true
+    }
+  ],
+  "http_response_compression": [
+    {
+      "ref": "audeniq_static_brotli",
+      "description": "AUDENIQ deployment assets prefer Brotli",
+      "expression": "(http.host in {\"audeniq.com\" \"www.audeniq.com\" \"studio.audeniq.com\" \"admin.audeniq.com\" \"survey.audeniq.com\"} and not starts_with(http.request.uri.path, \"/api/\") and http.response.content_type.media_type in {\"text/html\" \"text/css\" \"text/javascript\" \"application/javascript\" \"application/json\" \"image/svg+xml\" \"application/wasm\"})",
+      "action": "compress_response",
+      "action_parameters": { "algorithms": [{ "name": "brotli" }, { "name": "gzip" }] },
+      "enabled": true
+    },
+    {
+      "ref": "audeniq_api_zstd",
+      "description": "AUDENIQ JSON API prefers zstd with Brotli and gzip fallback",
+      "expression": "(http.host in {\"studio.audeniq.com\" \"admin.audeniq.com\" \"survey.audeniq.com\" \"api-origin.audeniq.com\"} and (starts_with(http.request.uri.path, \"/api/\") or http.request.uri.path eq \"/ready\") and http.response.content_type.media_type in {\"application/json\" \"application/vnd.api+json\"})",
+      "action": "compress_response",
+      "action_parameters": { "algorithms": [{ "name": "zstd" }, { "name": "brotli" }, { "name": "gzip" }] },
+      "enabled": true
+    }
+  ]
+}

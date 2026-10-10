@@ -1,0 +1,808 @@
+/* AUDENIQ ADMIN — 스튜디오 디자인(design.css·enhance.css 토큰) 위의 관리자 레이아웃.
+   클래스는 모두 adm- 접두사로 두어 아티스트 화면 규칙과 섞이지 않게 한다. */
+
+.adm-body{min-height:100dvh;background:#fff}
+
+/* ---------- 헤더 ---------- */
+.adm-header{position:sticky;top:0;z-index:50;background:#ffffffeb;-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-bottom:1px solid var(--adm-line)}
+.adm-header-shell{max-width:1360px;width:calc(100% - 48px);margin:auto;display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:70px}
+.adm-brand{display:flex;align-items:center;gap:12px;min-width:0}
+.adm-brand img{width:142px;height:auto;display:block}
+.adm-header-right{display:flex;align-items:center;gap:8px}
+.adm-who{display:flex;align-items:center;gap:10px;padding:5px 12px 5px 5px;border-radius:var(--aq-r-md);background:var(--adm-soft-2);min-width:0}
+.adm-who-text{display:grid;line-height:1.25;min-width:0}
+.adm-who-text b{font-size:13px;font-weight:700;color:var(--adm-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:190px}
+.adm-who-text small{font-size:11px;color:var(--adm-muted);font-weight:600}
+
+/* ---------- 본문 그리드 ---------- */
+.adm-shell{max-width:1360px;width:calc(100% - 48px);margin:auto;display:grid;grid-template-columns:232px minmax(0,1fr);gap:40px;padding:28px 0 96px}
+.adm-side{position:sticky;top:calc(var(--aq-header-h) + 28px);align-self:start;display:grid;gap:22px}
+.adm-side-group{display:grid;gap:3px}
+.adm-side-label{font-size:12px;font-weight:700;letter-spacing:.02em;color:var(--aq-text-4);padding:0 12px 6px}
+.adm-side a{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:44px;padding:10px 12px;border-radius:var(--aq-r-md);color:var(--aq-text-2);font-size:14px;font-weight:700;letter-spacing:-.02em;transition:background-color .18s var(--adm-ease),color .18s var(--adm-ease)}
+.adm-side a:hover{background:var(--adm-soft-2);color:var(--adm-ink)}
+.adm-side a[aria-current=page]{background:var(--adm-blue-soft);color:var(--adm-blue)}
+.adm-side a span{display:flex;align-items:center;gap:10px;min-width:0}
+.adm-side a svg{width:18px;height:18px;flex:0 0 auto;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;opacity:.9}
+.adm-side-foot{border-top:1px solid var(--adm-line);padding-top:16px;font-size:12px;color:var(--adm-muted);line-height:1.6}
+.adm-main{min-width:0;outline:0}
+.adm-main>.aq-cadmin{max-width:none;min-height:0;margin:0;padding:0}
+
+/* ---------- 페이지 머리 ---------- */
+.adm-back{display:inline-flex;align-items:center;gap:6px;color:var(--aq-text-3);font-size:13px;font-weight:700;margin-bottom:14px;padding:6px 10px 6px 6px;border-radius:var(--aq-r-sm)}
+.adm-back:hover{background:var(--adm-soft-2);color:var(--adm-ink)}
+
+/* ---------- 칩 ---------- */
+
+/* ---------- 개요 ---------- */
+.adm-hero h2{font-size:clamp(24px,2.6vw,32px);line-height:1.3;letter-spacing:-.055em}
+.adm-hero p{font-size:14px;color:var(--aq-text-3);margin-top:9px;max-width:460px}
+.adm-hero-num{font-size:64px;font-weight:800;letter-spacing:-.06em;color:var(--adm-blue);line-height:1}
+.adm-hero-num small{display:block;font-size:12px;letter-spacing:0;color:var(--aq-text-3);font-weight:700;margin-top:8px;text-align:right}
+
+/* ---------- 섹션·카드 ---------- */
+
+/* ---------- 필터 레일 ---------- */
+
+/* ---------- 목록 ---------- */
+.adm-more{display:flex;justify-content:center;margin-top:14px}
+
+/* ---------- 상태 ---------- */
+
+/* ---------- 심사 상세 ---------- */
+.adm-detail{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:24px;align-items:start}
+.adm-detail-side{position:sticky;top:calc(var(--aq-header-h) + 28px);display:grid;gap:12px}
+.adm-release-hero{display:grid;grid-template-columns:88px minmax(0,1fr);gap:18px;align-items:center;background:var(--adm-soft);border-radius:var(--aq-r-2xl);padding:20px;margin-bottom:18px}
+.adm-release-hero .ui-cover{width:88px}
+.adm-release-hero h1{font-size:clamp(22px,5.6vw,30px);letter-spacing:-.05em;line-height:1.25}
+.adm-release-hero .ui-row-meta{margin-top:6px}
+.adm-checks{display:grid;gap:8px}
+.adm-check{background:#fff;border-radius:var(--aq-r-lg);padding:14px 16px;border:1px solid var(--adm-line)}
+.adm-check-top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.adm-check-top b{font-size:14px;letter-spacing:-.02em}
+.adm-check p{font-size:13px;color:var(--aq-text-2);margin-top:6px;line-height:1.6;white-space:pre-wrap}
+.adm-check.is-open{border-color:var(--aq-blue-300);background:var(--aq-blue-25)}
+.adm-check.is-sensitive{border-color:var(--aq-red-100);background:var(--aq-gray-25)}
+.adm-check textarea{margin-top:10px}
+.adm-table{width:100%;border-collapse:collapse;font-size:13px}
+.adm-table th{text-align:left;font-size:12px;font-weight:700;color:var(--adm-muted);padding:0 10px 10px;white-space:nowrap}
+.adm-table td{padding:11px 10px;border-top:1px solid var(--adm-line);vertical-align:top}
+.adm-table-wrap{overflow-x:auto}
+.ui-card.adm-table-wrap{padding:16px 14px 6px}
+@media (max-width:760px){.adm-table td{white-space:nowrap}.adm-table-wrap{-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}}
+.adm-decl{display:flex;flex-wrap:wrap;gap:6px}
+.adm-tl-top{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.adm-tl-summary{margin:4px 0 0;font-size:13px;line-height:1.5;color:var(--aq-text-2);overflow-wrap:anywhere}
+.adm-tl-day+.adm-tl-day{margin-top:6px}
+.adm-tl-day h3{margin:0 0 10px;font-size:12px;font-weight:800;color:var(--adm-muted);letter-spacing:-.01em}
+/* 플랫폼별 배급 상태 */
+.adm-dsp-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.adm-dsp-list>.adm-dsp{display:grid;grid-template-columns:20px minmax(0,1fr);gap:10px;padding:13px 15px;border-radius:var(--aq-r-md);background:#fff;border:1px solid var(--adm-line)}
+.adm-dsp-mark{display:grid;place-items:center;width:20px;height:20px;margin-top:1px;border-radius:50%;background:var(--aq-gray-100);color:var(--aq-text-4)}
+.adm-dsp-list>.adm-dsp.is-ok .adm-dsp-mark{background:var(--aq-green-50);color:var(--aq-green-600)}
+.adm-dsp-list>.adm-dsp.is-bad{border-color:var(--aq-red-100);background:var(--aq-gray-25)}
+.adm-dsp-list>.adm-dsp.is-bad .adm-dsp-mark{background:var(--aq-red-100);color:var(--aq-red-600)}
+.adm-dsp-top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px}
+.adm-dsp-top b{font-size:14px;font-weight:800}
+.adm-dsp-tag{padding:3px 8px;border-radius:var(--aq-r-xs);background:var(--aq-gray-50);font-size:12px;font-weight:700;color:var(--aq-text-2)}
+.adm-dsp-issues{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:4px}
+.adm-dsp-issues li{position:relative;padding-left:12px;font-size:13px;line-height:1.5;color:var(--aq-text-2);overflow-wrap:anywhere}
+.adm-dsp-issues li:before{content:"";position:absolute;left:0;top:.62em;width:5px;height:5px;border-radius:50%;background:#aab3c8}
+.adm-dsp-issues li.is-bad{color:var(--aq-red-600);font-weight:600}
+.adm-dsp-issues li.is-bad:before{background:var(--aq-red-500)}
+.adm-dsp-issues li.is-warn:before{background:var(--aq-amber-500)}
+.adm-dsp-issues li.is-info{color:var(--adm-muted)}
+.adm-dsp-note{margin:6px 0 0;font-size:12px;color:var(--adm-muted);overflow-wrap:anywhere}
+.adm-dsp-more{margin-top:8px}
+.adm-dsp-more>summary{display:inline-flex;align-items:center;gap:4px;min-height:36px;padding:0 4px;font-size:13px;font-weight:700;color:var(--aq-blue-500);cursor:pointer;list-style:none}
+.adm-dsp-more>summary::-webkit-details-marker{display:none}
+.adm-dsp-more>summary svg{transition:transform .2s}
+.adm-dsp-more[open]>summary svg{transform:rotate(90deg)}
+.adm-dsp-more .adm-dsp-list{margin-top:6px}
+.adm-note{background:#fff;border-radius:var(--aq-r-md);padding:12px 14px;border:1px solid var(--adm-line)}
+.adm-note + .adm-note{margin-top:8px}
+.adm-note p{font-size:13px;color:var(--aq-text-2);margin-top:5px;white-space:pre-wrap}
+
+/* 결정 패널 */
+.adm-decide{background:var(--adm-ink);color:#fff;border-radius:var(--aq-r-2xl);padding:22px}
+.adm-decide h2{font-size:var(--aq-fs-title);letter-spacing:-.04em;color:#fff}
+.adm-decide p{color:var(--aq-text-disabled);font-size:13px;margin-top:6px;line-height:1.6}
+.adm-decide-actions{display:grid;gap:8px;margin-top:16px}
+.adm-decide-note{margin-top:14px;padding-top:14px;border-top:1px solid #ffffff1f;font-size:12px;color:var(--aq-text-disabled);line-height:1.6}
+
+/* 폼 */
+.adm-form-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px;flex-wrap:wrap}
+.adm-counter{text-align:right}
+.adm-codes{display:flex;flex-wrap:wrap;gap:6px}
+
+/* ---------- 문의 ---------- */
+.adm-split{display:grid;grid-template-columns:minmax(280px,380px) minmax(0,1fr);gap:18px;align-items:start}
+.adm-thread-pane{background:#fff;border:1px solid var(--adm-line);border-radius:var(--aq-r-2xl);padding:22px;position:sticky;top:calc(var(--aq-header-h) + 28px);max-height:calc(100dvh - 124px);display:flex;flex-direction:column;min-height:420px}
+.adm-thread-head{padding-bottom:14px;border-bottom:1px solid var(--adm-line)}
+.adm-thread-head h2{font-size:18px;letter-spacing:-.045em;line-height:1.35}
+.adm-thread{list-style:none;margin:0;padding:16px 2px;display:grid;gap:10px;overflow-y:auto;flex:1;align-content:start}
+.adm-msg{max-width:86%;justify-self:start;background:var(--adm-soft-2);border-radius:18px 18px 18px 6px;padding:11px 14px}
+.adm-msg.is-staff{justify-self:end;background:var(--adm-blue-soft);border-radius:18px 18px 6px 18px}
+.adm-msg-who{display:block;font-size:12px;font-weight:700;color:var(--adm-muted);margin-bottom:3px}
+.adm-msg.is-staff .adm-msg-who{color:var(--adm-blue)}
+.adm-msg p{margin:0;font-size:14px;color:var(--adm-ink);line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}
+.adm-reply{border-top:1px solid var(--adm-line);padding-top:14px;display:grid;gap:10px}
+.adm-reply-foot{display:flex;align-items:center;justify-content:space-between;gap:10px}
+
+/* ---------- 배급 ---------- */
+.adm-dsp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+.adm-dsp{background:var(--adm-soft);border-radius:var(--aq-r-xl);padding:18px}
+.adm-dsp-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.adm-dsp h3{font-size:16px;letter-spacing:-.035em}
+.adm-dsp ul{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:6px;font-size:13px;color:var(--aq-text-2)}
+.adm-dsp li{display:flex;justify-content:space-between;gap:10px}
+.adm-dsp li b{color:var(--adm-ink);font-weight:700}
+
+/* ---------- 접근 불가 ---------- */
+.adm-gate{max-width:480px;margin:12dvh auto;text-align:center;padding:0 20px}
+.adm-gate .ui-icon.is-lg{width:64px}
+.adm-gate h1{font-size:26px;letter-spacing:-.05em}
+.adm-gate p{font-size:14px;margin:10px 0 22px}
+
+/* ---------- 반응형 ---------- */
+@media (max-width:1180px){
+  .adm-detail{grid-template-columns:minmax(0,1fr)}
+  .adm-detail-side{position:static;order:-1}
+  .adm-decide-note,.adm-detail-side .adm-id-card{display:none}
+  .adm-decide-actions{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media (max-width:960px){
+  .adm-shell{grid-template-columns:minmax(0,1fr);gap:0;padding-top:0}
+  .adm-side{position:sticky;top:var(--aq-header-h);z-index:40;background:#fffffff2;-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;margin:0 -24px 22px;padding:10px 24px;border-bottom:1px solid var(--adm-line)}
+  .adm-side::-webkit-scrollbar{display:none}
+  .adm-side-group{display:contents}
+  .adm-side-label,.adm-side-foot{display:none}
+  .adm-side a{flex:0 0 auto;min-height:40px;padding:8px 12px;font-size:13px}
+  .adm-side a svg{display:none}
+  .adm-split{grid-template-columns:minmax(0,1fr)}
+  .adm-thread-pane{position:static;max-height:none}
+  .adm-who-text{display:none}
+  .adm-who{padding:5px}
+}
+@media (max-width:640px){
+  .adm-header-shell,.adm-shell{width:calc(100% - 32px)}
+  .adm-side{margin:0 -16px 20px;padding:10px 16px}
+  .adm-brand img{width:118px}
+  .adm-header-right>.ui-badge{display:none}
+  .adm-hero-num small{text-align:left}
+  .adm-release-hero{grid-template-columns:64px minmax(0,1fr);padding:16px;border-radius:var(--aq-r-xl)}
+  .adm-release-hero .ui-cover{width:64px}
+}
+.adm-min{min-width:0;display:block}
+
+/* ---------- 외곽선 없는 카드 (Studio와 같은 면 카드) ---------- */
+.adm-check{background:var(--adm-soft);border:0}
+.adm-check.is-open{background:var(--aq-violet-50);border:0}
+.adm-check.is-sensitive{background:var(--aq-red-50);border:0}
+.adm-note{background:var(--adm-soft);border:0}
+.adm-thread-pane{background:var(--adm-soft);border:0}
+.adm-table td{border-top-color:var(--aq-gray-150)}
+
+/* ---------- 앨범 커버 ---------- */
+
+/* ---------- 상세 보기 (검사 코드·원문) ---------- */
+.adm-more{margin-top:8px}
+.adm-more summary{cursor:pointer;font-size:12px;font-weight:700;color:var(--aq-text-4);list-style:none;display:inline-flex;align-items:center;gap:4px}
+.adm-more summary::-webkit-details-marker{display:none}
+.adm-more summary::after{content:"";width:14px;height:14px;background:currentColor;-webkit-mask:var(--aq-icon-chevron) center/contain no-repeat;mask:var(--aq-icon-chevron) center/contain no-repeat;transition:transform .18s var(--adm-ease)}
+.adm-more[open] summary::after{transform:rotate(90deg)}
+.adm-more>div{margin-top:8px}
+
+/* ---------- 시스템 검사 단계 ---------- */
+.adm-stages{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.adm-stages li{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:var(--aq-r-lg);background:var(--adm-soft)}
+.adm-stages small{display:block;font-size:12px;color:var(--adm-muted);margin-top:2px}
+.adm-stages b{font-size:14px}
+.adm-stage-dot{width:30px;height:30px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;font-size:12px;font-weight:800;background:var(--aq-gray-150);color:var(--aq-text-4)}
+.adm-stages li.is-done .adm-stage-dot{background:var(--aq-green-600);color:#fff}
+.adm-stages li.is-done b{color:var(--aq-green-700)}
+.adm-stages li.is-staff{background:var(--aq-violet-50)}
+.adm-stages li.is-staff .adm-stage-dot{background:var(--aq-violet-600);color:#fff}
+.adm-stages li.is-fix{background:var(--aq-amber-50)}
+.adm-stages li.is-fix .adm-stage-dot{background:var(--aq-amber-500);color:#fff}
+.adm-stages li.is-running .adm-stage-dot{background:var(--adm-blue);color:#fff}
+.adm-stages li.is-stopped{background:var(--aq-red-50)}
+.adm-stages li.is-stopped .adm-stage-dot{background:#d92d3b;color:#fff}
+
+/* ---------- 거절 사유 버튼 ---------- */
+
+/* ---------- 보완 항목 ---------- */
+.adm-fixes{display:grid;gap:10px;margin-top:14px}
+.adm-fix{background:var(--adm-soft);border-radius:var(--aq-r-lg);padding:14px;display:grid;gap:10px}
+.adm-fix-top{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px}
+.adm-fix-pick{display:flex;flex-wrap:wrap;gap:8px}
+.adm-fix-pick .ui-select{flex:1 1 150px;min-width:0}
+
+@media(max-width:760px){.adm-stages{grid-template-columns:1fr}}
+
+/* ---------- 하위 탭 ---------- */
+
+/* ---------- 플랫폼별 요구 조건 ---------- */
+.adm-dspreq-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.adm-dspreq{background:var(--adm-soft);border-radius:var(--aq-r-xl);padding:16px}
+.adm-dspreq.is-bad{background:var(--aq-red-50)}
+.adm-dspreq.is-warn{background:var(--aq-amber-50)}
+.adm-dspreq-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.adm-dspreq ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.adm-dspreq li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;font-size:13px}
+.adm-dspreq li b{display:block;font-size:13px}
+.adm-dspreq li small{display:block;color:var(--adm-muted);font-size:12px}
+.adm-dspreq-dot{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:800;background:var(--aq-gray-200);color:var(--aq-text-4)}
+.adm-dspreq li.is-ok .adm-dspreq-dot{background:var(--aq-green-600);color:#fff}
+.adm-dspreq li.is-bad .adm-dspreq-dot{background:#d92d3b;color:#fff}
+.adm-dspreq li.is-bad b{color:var(--aq-red-600)}
+.adm-dspreq li.is-warn .adm-dspreq-dot{background:var(--aq-amber-500);color:#fff}
+.adm-dsp.is-bad{background:var(--aq-red-50)}
+
+/* ---------- 배급 현황 ---------- */
+.adm-deliv.is-bad{background:var(--aq-red-50)}
+.adm-deliv-rows{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:6px}
+.adm-deliv-rows li{display:grid;grid-template-columns:120px minmax(0,1fr) auto;align-items:center;gap:12px;padding:11px 14px;border-radius:var(--aq-r-md);background:#fff}
+.adm-deliv-name{font-size:14px}
+.adm-deliv-head{display:block;font-size:13px;font-weight:700}
+.adm-deliv-rows li.is-green .adm-deliv-head{color:var(--aq-green-700)}
+.adm-deliv-rows li.is-gray .adm-deliv-head{color:var(--aq-text-3)}
+.adm-deliv-rows li.is-red .adm-deliv-head{color:var(--aq-red-600)}
+.adm-deliv-problem{display:block;font-size:13px;color:var(--aq-red-600);margin-top:2px}
+.adm-deliv-note{display:block;font-size:12px;color:var(--aq-amber-600);margin-top:2px}
+@media(max-width:760px){.adm-deliv-rows li{grid-template-columns:minmax(0,1fr) auto}.adm-deliv-rows li .adm-min{grid-column:1/-1;grid-row:2}}
+
+/* ==========================================================================
+   심사 — 아티스트 입력 전체 (배급 신청서 · 입력 내용 · 부가서비스 · 트랙)
+   ========================================================================== */
+/* 배급 신청서 요약 */
+.adm-appdoc-foot{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:16px;padding-top:14px;border-top:1px solid var(--aq-gray-150);flex-wrap:wrap}
+.adm-sig{display:grid;place-items:center;min-width:150px;height:64px;padding:6px 14px;border-radius:var(--aq-r-md);background:#fff}
+.adm-sig img{max-height:52px;max-width:220px;object-fit:contain}
+.adm-sig.is-empty{font-size:12px;color:var(--adm-muted);font-weight:600}
+.adm-appdoc-state{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.adm-appdoc-state small{font-size:12px;color:var(--adm-muted);font-weight:600}
+.adm-appdoc-warn{margin:12px 0 0;padding:11px 14px;border-radius:var(--aq-r-md);background:var(--aq-red-50);color:var(--aq-red-700);font-size:13px;line-height:1.6}
+/* 신청서 전체 보기 — 넓은 창 */
+#modal.adm-paper-modal .modal-inner{width:min(900px,100%)!important;max-width:900px!important}
+.adm-paper-tools{display:flex;justify-content:flex-end;margin:0 0 12px}
+.adm-paper{margin:0;box-shadow:none}
+
+/* 입력 내용 */
+.adm-links{display:flex;flex-wrap:wrap;gap:8px}
+.adm-links a{display:inline-flex;align-items:center;gap:3px;padding:4px 9px;border-radius:var(--aq-r-sm);background:#fff;color:var(--aq-blue-700);font-size:13px;font-weight:700;text-decoration:none}
+.adm-notes,.adm-rights,.adm-lyrics{margin-top:16px;padding-top:14px;border-top:1px solid var(--aq-gray-150)}
+.adm-notes dt,.adm-rights dt,.adm-lyrics dt{font-size:12px;color:var(--adm-muted);font-weight:700;margin-bottom:6px}
+.adm-notes p{margin:0;font-size:14px;line-height:1.75;color:var(--aq-text-2);white-space:pre-wrap;overflow-wrap:anywhere}
+.adm-rights ul{list-style:none;margin:0;padding:0;display:grid;gap:7px}
+.adm-rights li{display:flex;align-items:flex-start;gap:9px;font-size:13px;line-height:1.55;color:var(--aq-text-2)}
+.adm-rights li>span{display:grid;place-items:center;flex:none;width:18px;height:18px;margin-top:1px;border-radius:50%;background:var(--aq-blue-500);color:#fff}
+.adm-rights li.is-off{color:var(--aq-red-700)}
+.adm-rights li.is-off>span{background:var(--aq-red-100);color:var(--aq-red-600)}
+
+/* 부가서비스 · 해당 항목 */
+.adm-opts{display:grid;gap:18px}
+.adm-opt-group h3{margin:0 0 10px;font-size:14px;font-weight:800;letter-spacing:-.02em}
+.adm-opt-group h3 small{margin-left:6px;font-size:12px;font-weight:600;color:var(--adm-muted)}
+.adm-opt{padding:13px 15px;border-radius:var(--aq-r-md);background:#fff}
+.adm-opt+.adm-opt{margin-top:8px}
+.adm-opt-head{display:flex;align-items:center;gap:8px}
+.adm-opt-head b{font-size:14px;font-weight:800}
+.adm-opt-mark{display:grid;place-items:center;width:18px;height:18px;border-radius:50%;background:var(--aq-blue-500);color:#fff}
+.adm-opt dl{margin:8px 0 0 26px;display:grid;gap:6px}
+.adm-opt-row{display:grid;grid-template-columns:110px minmax(0,1fr);gap:10px;font-size:13px;line-height:1.55}
+.adm-opt-row dt{color:var(--adm-muted);font-weight:700}
+.adm-opt-row dd{margin:0;color:var(--aq-text);font-weight:600;overflow-wrap:anywhere}
+.adm-opt-row dd p{margin:0}
+.adm-opt-off{margin:8px 0 0;font-size:12px;color:var(--adm-muted)}
+.adm-opt-ack{display:grid;grid-template-columns:18px minmax(0,1fr) auto;align-items:center;gap:8px;padding:11px 14px;border-radius:var(--aq-r-md);background:#fff;font-size:13px;font-weight:600;color:var(--aq-text)}
+.adm-opt-ack+.adm-opt-ack{margin-top:6px}
+.adm-opt-ack small{font-size:12px;font-weight:700;color:var(--aq-red-600)}
+.adm-opt-ack .adm-opt-mark{background:var(--aq-red-100);color:var(--aq-red-600)}
+.adm-opt-ack.is-on small{color:var(--adm-muted)}
+.adm-opt-ack.is-on .adm-opt-mark{background:var(--aq-blue-500);color:#fff}
+.adm-file{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:var(--aq-r-xs);background:var(--aq-blue-50);color:var(--aq-text-2);font-weight:700}
+.adm-tags{display:flex;flex-wrap:wrap;gap:5px}
+.adm-tags span{padding:3px 8px;border-radius:var(--aq-r-xs);background:var(--aq-blue-50);font-size:12px;font-weight:700;color:var(--aq-text-2)}
+@media(max-width:640px){.adm-opt-row{grid-template-columns:1fr;gap:2px}.adm-opt dl{margin-left:0}}
+
+/* 트랙 — 펼쳐서 크레딧·가사 */
+.adm-tracks{display:grid;gap:8px}
+.adm-track{border-radius:var(--aq-r-lg);background:var(--adm-soft)}
+.adm-track summary{display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer;list-style:none;border-radius:var(--aq-r-lg)}
+.adm-track summary::-webkit-details-marker{display:none}
+.adm-track summary:focus-visible{outline:3px solid var(--aq-blue-450);outline-offset:2px}
+.adm-track-no{display:grid;place-items:center;flex:none;width:28px;height:28px;border-radius:var(--aq-r-sm);background:#fff;font-size:12px;font-weight:800;color:var(--aq-text-3)}
+.adm-track-title{flex:1;min-width:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:14px}
+.adm-track-title small{color:var(--adm-muted);font-weight:600}
+.adm-track-meta{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--adm-muted);font-weight:600;font-variant-numeric:tabular-nums}
+.adm-track-chev{flex:none;color:var(--aq-text-disabled);transition:transform .2s ease}
+/* 스튜디오 복사본의 details[open]>summary>span 회전 규칙이 번호·제목까지 돌리지 않게 */
+.adm-track[open]>summary>span{transform:none}
+.adm-track[open] .adm-track-chev{transform:rotate(90deg)}
+.adm-track-body{padding:4px 16px 16px 56px}
+.adm-lyrics pre{margin:0;max-height:260px;overflow:auto;padding:12px 14px;border-radius:var(--aq-r-sm);background:#fff;font:inherit;font-size:13px;line-height:1.75;color:var(--aq-text-2);white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:640px){.adm-track-meta .ui-tag.is-mono{display:none}.adm-track-body{padding-left:16px}}
+
+/* 인쇄: 신청서만 (나머지 화면은 자리도 차지하지 않게 빼서 빈 쪽이 생기지 않게) */
+@media print{
+  body:has(#modal.adm-paper-modal)>*:not(#modal){display:none!important}
+  #modal.adm-paper-modal{position:static!important;inset:auto!important;display:block!important;background:#fff!important;padding:0!important;overflow:visible!important;animation:none!important}
+  #modal.adm-paper-modal .modal-inner{position:static!important;max-height:none!important;overflow:visible!important;box-shadow:none!important;padding:0!important;margin:0!important;width:100%!important;max-width:none!important;border-radius:0!important;animation:none!important}
+  #modal.adm-paper-modal .modal-top,.adm-paper-tools{display:none!important}
+}
+
+/* ==========================================================================
+   보완 요청 — 페이지 → 보완할 부분 → (트랙) → 안내 문구를 눌러서 고르고, 없으면 직접 입력
+   ========================================================================== */
+.adm-fix .adm-fix-pick{display:grid;gap:8px}
+.adm-fix-label{font-size:12px;font-weight:800;color:var(--adm-muted);margin-top:4px}
+.adm-fix .ui-chips{display:grid}
+.adm-fix .ui-chip.is-danger{display:flex;align-items:center;justify-content:space-between;width:100%;text-align:left}
+.adm-fix .ui-chip.is-danger>span:first-child{flex:1;min-width:0}
+.adm-fix .ui-chips,.adm-fix .ui-chips{margin:0}
+
+/* ==========================================================================
+   결정 창 ‘확인할 것’ · 보완 요청의 ‘지금 입력된 내용’
+   ========================================================================== */
+.adm-brief{margin:4px 0 0;padding:14px;border-radius:var(--aq-r-lg);background:var(--adm-soft)}
+.adm-brief-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 2px 10px}
+.adm-brief-top b{font-size:14px;font-weight:800}
+.adm-brief-top small{font-size:12px;font-weight:700;color:var(--adm-muted)}
+.adm-brief ul{list-style:none;margin:0;padding:0;display:grid;gap:6px;max-height:320px;overflow:auto;overscroll-behavior:contain}
+.adm-brief li{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--aq-r-md);background:#fff}
+.adm-brief-mark{display:grid;place-items:center;flex:none;width:20px;height:20px;border-radius:50%;color:#fff}
+.adm-brief li.is-ok .adm-brief-mark{background:var(--aq-green-600)}
+.adm-brief li.is-warn .adm-brief-mark{background:#e0892f}
+.adm-brief li.is-bad .adm-brief-mark{background:#d92d3b}
+.adm-brief-text{flex:1;min-width:0;display:grid;gap:2px}
+.adm-brief-text b{font-size:13px;font-weight:700;line-height:1.45;overflow-wrap:anywhere}
+.adm-brief li.is-ok .adm-brief-text b{font-weight:600;color:var(--aq-text-2)}
+.adm-brief-text small{font-size:12px;line-height:1.5;color:var(--adm-muted);overflow-wrap:anywhere;white-space:pre-line}
+.adm-brief li .ui-btn{flex:none;--btn-h:var(--aq-h-xs);--btn-r:var(--aq-r-ctl-xs);--btn-px:10px;--btn-fs:12px}
+.adm-now{display:grid;gap:6px}
+.adm-now-body{padding:10px 12px;border-radius:var(--aq-r-sm);background:#fff;font-size:13px;font-weight:700;color:var(--aq-text);line-height:1.55;overflow-wrap:anywhere}
+.adm-now-body pre{margin:0;max-height:160px;overflow:auto;font:inherit;font-weight:600;white-space:pre-wrap}
+.adm-now-cover{display:block;width:120px;height:120px;object-fit:cover;border-radius:var(--aq-r-sm)}
+@media(max-width:560px){.adm-brief li{flex-wrap:wrap}.adm-brief li .ui-btn{margin-left:30px}}
+
+/* ==========================================================================
+   관리자 편의 — 심사 목록 도구 · 급한 발매 표시 · 다음 건 · 휴대폰 결정 바 · 좁은 화면 정리
+   ========================================================================== */
+.adm-queue-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 10px}
+.adm-queue-tools .ui-input{flex:1 1 260px;min-width:0}
+.adm-queue-count{margin:0 0 10px 4px;font-size:12px;font-weight:700;color:var(--adm-muted)}
+
+.adm-detail-nav{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
+.adm-detail-nav .adm-back{margin-bottom:0;min-height:40px}
+.adm-detail-nav-end{display:flex;align-items:center;gap:8px;margin-left:auto}
+.adm-icon-btn{display:grid;place-items:center;width:40px;height:40px;border:0;border-radius:50%;background:var(--adm-soft-2);color:var(--aq-text-2);cursor:pointer;transition:background-color .15s,color .15s}
+.adm-icon-btn:hover{background:var(--aq-gray-150);color:var(--adm-ink)}
+.adm-icon-btn:disabled{cursor:default;opacity:.7}
+.adm-icon-btn.is-spinning svg{animation:adm-spin .9s linear infinite}
+@keyframes adm-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.adm-icon-btn.is-spinning svg{animation:none}}
+.adm-next-btn{display:inline-flex;align-items:center;gap:4px;min-height:40px;padding:0 12px 0 16px;border-radius:var(--aq-r-3xl);background:var(--adm-blue-soft);color:var(--adm-blue);font-size:13px;font-weight:700;text-decoration:none;transition:background-color .15s}
+.adm-next-btn:hover{background:var(--aq-blue-150)}
+
+/* 결정 바 — 오른쪽 결정 칸이 고정되지 않는 폭(≤1180px)에서만 화면 아래에 */
+.adm-decide-bar{display:none}
+@media (max-width:1180px){
+  .adm-decide-bar{position:fixed;left:0;right:0;bottom:0;z-index:60;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:10px max(16px,env(safe-area-inset-left)) max(12px,env(safe-area-inset-bottom));background:rgba(255,255,255,.94);-webkit-backdrop-filter:saturate(1.4) blur(12px);backdrop-filter:saturate(1.4) blur(12px);border-top:1px solid var(--adm-line)}
+  .adm-decide-bar .ui-btn{--btn-h:var(--aq-h-md);--btn-r:var(--aq-r-ctl-md);--btn-px:18px;--btn-fs:var(--aq-fs-base)}
+  .adm-decide-bar .adm-decide-actions{display:contents}
+  .adm-body:has(.adm-decide-bar) .adm-main{padding-bottom:92px}
+  .adm-body:has(.adm-decide-bar) .aq-toast-stack{bottom:calc(84px + env(safe-area-inset-bottom))}
+}
+
+@media (max-width:640px){
+  /* 로고·ADMIN·계정 아이콘이 겹치던 헤더 — 계정 아이콘은 빼고(로그아웃에 계정 표시) 간격을 줄인다 */
+  .adm-header-right{gap:4px}
+  .adm-header-right>.adm-who{display:none}
+  .adm-brand{min-width:0;flex-shrink:1}
+}
+/* 문의: 목록과 대화가 위아래로 쌓이는 폭에서는 고르기 전 빈 안내 칸이 자리만 차지한다 */
+@media (max-width:960px){.adm-thread-empty{display:none!important}}
+/* 아래 결정 바가 있는 폭에서는 위 결정 칸의 같은 버튼 세 개를 숨긴다 (상태 안내만) */
+@media (max-width:1180px){.adm-detail-side .adm-decide-actions{display:none}}
+
+/* ---------- 심사 시트: 모바일 정리 ---------- */
+.adm-anchor{scroll-margin-top:24px}
+.adm-anchor:empty{display:none}
+/* 맨 위 요약 */
+.adm-brief.is-compact{margin:0 0 26px;padding:16px}
+.adm-brief.is-compact ul{max-height:none;overflow:visible}
+.adm-brief-lead{margin:-4px 2px 12px;font-size:13px;font-weight:700;color:var(--aq-text-2)}
+.adm-brief-ok{margin-top:6px}
+.adm-brief-ok>summary{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 12px;border-radius:var(--aq-r-md);background:#fff;font-size:13px;font-weight:700;color:var(--aq-text-2);cursor:pointer;list-style:none}
+.adm-brief-ok>summary::-webkit-details-marker{display:none}
+.adm-brief-ok>summary .adm-brief-mark{background:var(--aq-green-600)}
+.adm-brief-ok>summary>svg:last-child{margin-left:auto;transition:transform .2s var(--adm-ease)}
+.adm-brief-ok[open]>summary>svg:last-child{transform:rotate(90deg)}
+.adm-brief-ok ul{margin-top:6px}
+.adm-brief.is-compact ul:empty{display:none}
+/* 권리 확인 접기 */
+.adm-rights dt small{margin-left:6px;font-size:12px;font-weight:700;color:var(--aq-green-600)}
+.adm-rights dt small.is-bad{color:var(--aq-red-600)}
+.adm-rights-more{margin-top:8px}
+.adm-rights-more>summary{display:inline-flex;align-items:center;gap:4px;min-height:32px;font-size:13px;font-weight:700;color:var(--aq-blue-500);cursor:pointer;list-style:none}
+.adm-rights-more>summary::-webkit-details-marker{display:none}
+.adm-rights-more>summary svg{transition:transform .2s var(--adm-ease)}
+.adm-rights-more[open]>summary svg{transform:rotate(90deg)}
+.adm-rights-more ul{margin-top:6px}
+/* 처리 이력 더 보기 */
+.adm-tl-more{display:inline-flex;align-items:center;gap:4px;min-height:40px;margin:2px 0 0 26px;padding:0 4px;border:0;background:none;font:inherit;font-size:13px;font-weight:700;color:var(--aq-blue-500);cursor:pointer}
+/* 바로가기 바 — 결정 칸이 옆에 붙지 않는 폭에서만 */
+.adm-jump{display:none}
+@media (max-width:1180px){
+  .adm-jump{position:sticky;top:var(--aq-header-h);z-index:30;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -24px 16px;padding:10px 24px;background:rgba(255,255,255,.94);-webkit-backdrop-filter:saturate(1.4) blur(12px);backdrop-filter:saturate(1.4) blur(12px);border-bottom:1px solid var(--adm-line)}
+  .adm-jump::-webkit-scrollbar{display:none}
+  .adm-jump button{flex:none;display:inline-flex;align-items:center;gap:5px;min-height:36px;padding:0 13px;border:0;border-radius:var(--aq-r-3xl);background:var(--aq-gray-50);color:var(--aq-text-2);font:inherit;font-size:13px;font-weight:700;cursor:pointer;transition:background-color .15s,color .15s}
+  .adm-jump button span{min-width:18px;height:18px;padding:0 5px;border-radius:var(--aq-r-sm);background:#fff;font-size:11px;font-weight:800;line-height:18px;text-align:center;color:var(--aq-text-3)}
+  .adm-jump button span.is-bad{background:var(--aq-red-100);color:var(--aq-red-600)}
+  .adm-jump button.is-on{background:var(--aq-gray-900);color:#fff}
+  .adm-jump button.is-on span{background:rgba(255,255,255,.16);color:#fff}
+  .adm-anchor{scroll-margin-top:136px}
+  /* 결정은 아래 고정 바에서 — 위쪽 어두운 결정 칸·취소/재발급 카드는 시트 맨 아래로 */
+  .adm-detail-side{order:1}
+  .adm-detail-side .adm-decide{display:none}
+}
+@media (max-width:960px){
+  /* 심사 시트에서는 메뉴 줄을 고정하지 않는다 (헤더 + 바로가기만 위에 남긴다) */
+  .adm-body:has(.adm-jump) .adm-side{position:static}
+}
+@media (max-width:760px){
+  /* 검사 단계: 세 칸 카드 대신 한 줄 단계 표시 */
+  .adm-stages{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+  .adm-stages li{flex-direction:column;align-items:center;text-align:center;gap:6px;padding:12px 6px}
+  .adm-stages li small{display:none}
+  .adm-stages li b{font-size:12px;line-height:1.35;word-break:keep-all}
+  .adm-check{padding:13px 14px}
+}
+@media (max-width:640px){
+  .adm-jump{margin:0 -16px 14px;padding:10px 16px}
+  .adm-release-hero{margin-bottom:12px}
+}
+.adm-check .adm-more{justify-content:flex-start;margin-top:6px}
+.adm-check .adm-more summary{min-height:30px}
+.adm-tl-repeat{padding:1px 7px;border-radius:var(--aq-r-xs);background:var(--aq-gray-100);font-size:11px;font-weight:800;color:var(--aq-text-3)}
+.adm-info-more{margin-top:14px;padding-top:12px;border-top:1px solid var(--aq-gray-150)}
+.adm-info-more>summary{display:flex;align-items:center;gap:6px;min-height:36px;font-size:13px;font-weight:700;color:var(--aq-blue-500);cursor:pointer;list-style:none}
+.adm-info-more>summary::-webkit-details-marker{display:none}
+.adm-info-more>summary svg{margin-left:auto;transition:transform .2s var(--adm-ease)}
+.adm-info-more[open]>summary svg{transform:rotate(90deg)}
+.adm-info-more[open]>summary{margin-bottom:10px}
+.adm-hero-when{display:block;margin-top:4px;font-size:13px;color:var(--adm-muted);font-variant-numeric:tabular-nums}
+
+/* 관리자 입력칸 — 스튜디오와 같은 면 스타일: 윤곽선 없이 흰 면(옅은 카드 위), 누르면 연한 파란 면 */
+.adm-fix{gap:12px}
+/* 문의 답변 보내기 줄: 버튼은 한 줄·보통 크기, 휴대폰에서는 키보드 단축키 안내 숨김 */
+.adm-reply-foot .ui-btn{flex:none;white-space:nowrap;--btn-h:var(--aq-h-sm);--btn-r:var(--aq-r-ctl-sm);--btn-px:14px;--btn-fs:13px}
+.adm-reply-foot small{min-width:0}
+@media (hover:none),(max-width:640px){.adm-kbd-hint{display:none}}
+
+/* ---------- 색이 묻히는 버튼: 옅은 색 카드·알림 위에서는 윤곽선 없이 한 단계 진한 색 면으로 ---------- */
+/* 흰 카드 안의 옅은 버튼은 원래 색 면 그대로 */
+
+/* ---------- 심사 담당 ---------- */
+.adm-claim{display:grid;gap:10px;margin-top:14px}
+.adm-claim p{margin:0;font-size:13px;line-height:1.6}
+.adm-claim-who{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:14px;font-weight:700}
+.adm-claim-who i{width:8px;height:8px;border-radius:50%;background:#7a849b;flex:none}
+.adm-claim.is-mine .adm-claim-who i{background:#4ade80;box-shadow:0 0 0 3px rgba(74,222,128,.18)}
+.adm-claim.is-other .adm-claim-who i{background:var(--aq-amber-500)}
+.adm-claim-who small{font-weight:600;opacity:.75}
+.adm-claim-link{justify-self:start;border:0;background:none;padding:2px 0;font:inherit;font-size:13px;font-weight:700;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.adm-claim-go{width:100%}
+/* 어두운 결정 칸 안 */
+.adm-decide .adm-claim{color:var(--aq-gray-200)}
+.adm-decide .adm-claim p{color:var(--aq-text-disabled)}
+.adm-decide .adm-claim-link{color:var(--aq-blue-300)}
+.adm-decide .adm-claim.is-mine{padding:10px 12px;border-radius:var(--aq-r-md);background:#ffffff0f}
+/* 아래 고정 바: 담당 전·다른 담당자일 때는 한 줄 */
+.adm-decide-bar.is-claim{grid-template-columns:1fr}
+.adm-decide-bar .adm-claim{margin:0}
+.adm-decide-bar .adm-claim.is-other{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:48px;padding:0 4px;color:var(--aq-text-2)}
+.adm-decide-bar .adm-claim.is-other .ui-btn{--btn-h:var(--aq-h-sm);--btn-r:var(--aq-r-ctl-sm);--btn-px:14px;--btn-fs:13px}
+
+/* ---------- 공지·이벤트·점검 작성(관리자 화면): 흰 화면 위 입력칸은 윤곽선 없이 연한 파란 면 ---------- */
+.adm-main .aq-cadmin .aq-cadmin-chip:not(.is-on){background:var(--aq-blue-100);color:var(--aq-text-2);border:0}
+.adm-main .aq-cadmin .aq-cadmin-chip.is-on{background:var(--aq-blue-500);color:#fff;border:0}
+
+/* ---------- 심사 시트 읽기 편하게 ---------- */
+/* 확인할 것: 표시는 제목 줄에 맞춰 위로, 여러 줄 설명은 접기 */
+.adm-brief li{align-items:flex-start}
+.adm-brief li .adm-brief-mark{margin-top:1px}
+.adm-brief li.is-ok,.adm-brief-ok>summary{align-items:center}
+.adm-brief li.is-ok .adm-brief-mark,.adm-brief-ok>summary .adm-brief-mark{margin-top:0}
+.adm-brief-text b{font-size:14px;color:var(--adm-ink)}
+.adm-brief-text small{color:var(--aq-text-3)}
+.adm-brief-fold>summary{display:grid;gap:4px;list-style:none;cursor:pointer}
+.adm-brief-fold>summary::-webkit-details-marker{display:none}
+.adm-brief-fold>summary>span{display:inline-flex;align-items:center;gap:3px;font-size:12px;font-weight:700;color:var(--aq-blue-500)}
+.adm-brief-fold>summary>span svg{transition:transform .2s var(--adm-ease)}
+.adm-brief-fold[open]>summary>span svg{transform:rotate(90deg)}
+.adm-brief-fold>small{display:block;margin-top:2px}
+/* 이력 필터: 한 줄로, 넘치면 옆으로 밀기 */
+/* 구역 제목 옆 개수는 한 줄에, 제목과 구역 사이 여유 */
+
+/* ==========================================================================
+   스튜디오와 같은 카드·버튼 — 관리자 화면 전체 통일 (맨 마지막에 둬서 위 규칙을 덮는다)
+   - 카드: 윤곽선·그림자 없는 연파랑 면(#f5f8ff), 큰 라운드(32 · 휴대폰 28)
+   - 카드 안 항목: 흰 면, 라운드 20
+   - 상태는 카드 색이 아니라 칩·점으로 (분홍·보라·주황 카드 없이 한 가지 면)
+   - 버튼: 높이 48 · 라운드 17 (작은 버튼 40 · 14), 선택된 칩·탭은 파란 면
+   ========================================================================== */
+
+/* 카드 */
+.adm-release-hero,.adm-thread-pane,.adm-dspreq,.adm-dsp-grid>.adm-dsp,.adm-deliv,.adm-brief.is-compact,.adm-check,.adm-track{background:var(--adm-card);border:0!important;box-shadow:none}
+.adm-release-hero,.adm-thread-pane,.adm-dspreq,.adm-dsp-grid>.adm-dsp,.adm-deliv,.adm-brief.is-compact{border-radius:var(--adm-r-card)}
+.adm-dspreq,.adm-dsp-grid>.adm-dsp,.adm-deliv{padding:26px 28px}
+.adm-brief.is-compact{padding:22px}
+.adm-check,.adm-track{border-radius:var(--aq-r-2xl)}
+.adm-check{padding:18px 20px}
+.adm-track summary{border-radius:var(--aq-r-2xl);padding:16px 18px}
+.adm-checks,.adm-tracks{gap:10px}
+@media (max-width:640px){
+  .adm-dspreq,.adm-dsp-grid>.adm-dsp,.adm-deliv{padding:22px 20px}
+  .adm-brief.is-compact{padding:20px 18px}
+  .adm-release-hero{padding:20px;border-radius:var(--adm-r-card)}
+  .adm-check,.adm-track{border-radius:var(--aq-r-xl)}
+  .adm-check{padding:18px}
+  .adm-track summary{border-radius:var(--aq-r-xl);padding:15px 16px}
+}
+/* 상태별 색 카드 → 한 가지 면 (상태는 안의 칩·점이 알려 준다) */
+.adm-check.is-open,.adm-check.is-sensitive,.adm-dspreq.is-bad,.adm-dspreq.is-warn,.adm-dsp.is-bad,.adm-deliv.is-bad,
+.adm-stages li,.adm-stages li.is-staff,.adm-stages li.is-fix,.adm-stages li.is-stopped{background:var(--adm-card)}
+.adm-stages li{border-radius:var(--aq-r-xl)}
+/* 지금 단계는 파란 테 없이 흰 점 대신 진한 글씨로 */
+.adm-stages li:is(.is-staff,.is-fix,.is-running,.is-stopped) b{color:var(--adm-ink)}
+
+/* 카드 안 항목: 흰 면 */
+.adm-brief li,.adm-brief-ok>summary,.adm-opt,.adm-opt-ack,.adm-deliv-rows li,.adm-note,.adm-now-body,.adm-sig,.adm-lyrics pre{background:#fff;border:0}
+.adm-brief li,.adm-brief-ok>summary,.adm-opt,.adm-deliv-rows li,.adm-note{border-radius:var(--adm-r-item)}
+.adm-brief li{padding:14px 16px}
+.adm-brief-ok>summary{min-height:48px;padding:0 16px}
+.adm-brief ul{gap:8px}
+.adm-opt{padding:16px 18px}
+.adm-opt-ack{border-radius:var(--aq-r-md);padding:13px 16px}
+.adm-note{padding:14px 16px}
+.adm-fix{border-radius:var(--adm-r-item);padding:18px}
+.adm-appdoc-warn{border-radius:var(--aq-r-md)}
+
+/* 버튼 */
+.adm-brief li .ui-btn{--btn-h:var(--aq-h-sm);--btn-r:var(--aq-r-ctl-sm);--btn-px:14px;--btn-fs:13px}
+.adm-reply-foot .ui-btn{--btn-h:var(--aq-h-md);--btn-r:var(--aq-r-ctl-md);--btn-px:18px;--btn-fs:var(--aq-fs-base)}
+/* 연한 면 카드 위의 보조 버튼은 한 단계 진한 색 (스튜디오 카드 위 보조 버튼과 같은 대비) */
+/* 둥근 아이콘·다음 건 버튼: 스튜디오 헤더 버튼처럼 둥근 사각 */
+.adm-icon-btn{width:44px;height:44px;border-radius:var(--aq-r-md);background:var(--adm-card)}
+.adm-icon-btn:hover{background:var(--aq-blue-100);color:var(--adm-blue)}
+.adm-next-btn{min-height:44px;padding:0 14px 0 18px;border-radius:var(--aq-r-md);background:var(--adm-blue-soft)}
+.adm-back{min-height:44px;border-radius:var(--aq-r-md)}
+
+/* 선택 칩·탭: 스튜디오 필터와 같은 모양 — 높이 40 · 라운드 16, 선택되면 파란 면 */
+@media (max-width:1180px){
+  .adm-jump button{min-height:40px;padding:0 15px;border-radius:var(--aq-r-md);background:var(--aq-gray-50)}
+  .adm-jump button.is-on{background:var(--adm-blue);color:#fff}
+  .adm-jump button.is-on span{background:rgba(255,255,255,.22);color:#fff}
+}
+
+/* 칩: 스튜디오 상태 칩과 같은 알약 */
+.adm-tags span{border-radius:var(--aq-r-sm)}
+/* 입력칸: 흰 화면 위에서는 연한 면, 연파랑 카드 안에서는 흰 면 (스튜디오 검색칸·카드 안 입력칸과 같게) */
+/* 문의 대화: 연파랑 카드 안 아티스트 말풍선은 흰 면 */
+.adm-thread-pane .adm-msg:not(.is-staff){background:#fff}
+/* 칩은 옆 버튼 높이에 늘어나지 않게 */
+/* 칩·필터 글자 가운데 */
+/* 화면 안 하위 탭: 스튜디오 ‘발매 목록 · 전체 트랙’처럼 밑줄 탭 */
+@media (max-width:560px){.adm-brief li .adm-brief-text{flex-basis:calc(100% - 40px)}.adm-brief li .ui-btn{margin-left:30px}}
+/* 서류 검토 카드: 상태 칩은 오른쪽 위, 버튼은 카드 아래 한 줄 */
+.adm-doc-row{align-items:start}
+.adm-doc-row .ui-row-end{align-self:start}
+.adm-doc-actions{grid-column:2/-1;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}
+.adm-doc-actions:empty{display:none}
+@media (max-width:640px){
+  .adm-doc-actions{grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));justify-content:stretch;margin-top:4px}
+  .adm-doc-actions .ui-btn{width:100%;white-space:nowrap;--btn-h:var(--aq-h-sm);--btn-r:var(--aq-r-ctl-sm);--btn-px:14px;--btn-fs:13px}
+}
+
+/* ---------- 담당자 확인 필요 카드: 왼쪽 표시 + 제목·설명, 2인 승인만 작은 칩 ---------- */
+.adm-check{display:flex;align-items:flex-start;gap:12px}
+.adm-check-body{flex:1;min-width:0}
+.adm-check-mark{display:grid;place-items:center;flex:none;width:26px;height:26px;margin-top:-1px;border-radius:50%;background:var(--aq-amber-500);color:#fff}
+.adm-check.is-sensitive .adm-check-mark{background:var(--aq-red-500)}
+.adm-check-top{flex-wrap:nowrap;align-items:flex-start}
+.adm-check-top b{font-size:15px;font-weight:800;line-height:1.45}
+.adm-check-top .adm-codes{flex:none}
+.adm-check p{margin-top:4px;font-size:14px;line-height:1.6;color:var(--aq-text-2)}
+.adm-check .adm-more{margin-top:6px}
+.adm-check .adm-more summary{min-height:28px;font-size:13px;color:var(--aq-blue-500)}
+@media (max-width:640px){.adm-check{padding:16px 16px 14px;gap:10px}}
+
+/* ---------- 부가서비스: 고르지 않은 항목은 접기, 빈 값은 옅게 ---------- */
+.adm-opt-off{margin-top:10px}
+.adm-opt-off>summary{display:inline-flex;align-items:center;gap:4px;min-height:34px;font-size:13px;font-weight:700;color:var(--adm-muted);cursor:pointer;list-style:none}
+.adm-opt-off>summary::-webkit-details-marker{display:none}
+.adm-opt-off>summary svg{transition:transform .2s var(--adm-ease)}
+.adm-opt-off[open]>summary svg{transform:rotate(90deg)}
+.adm-opt-off .adm-tags{margin-top:4px}
+.adm-opt-off .adm-tags span{background:#fff;color:var(--aq-text-3);font-weight:600}
+.adm-none{color:var(--aq-text-disabled);font-weight:600}
+.adm-opt-group h3{font-size:15px}
+.adm-opt dl{gap:10px}
+.adm-opt-row dt{font-size:13px}
+
+/* ==========================================================================
+   마무리 디테일
+   ========================================================================== */
+/* 메타 줄: 줄이 바뀌어도 줄 맨 앞에 ‘·’가 남지 않게 (왼쪽 끝 구분점은 잘라 낸다) */
+/* 긴 이메일은 휴대폰에서 한 줄 전체를 쓰게 */
+/* 숫자는 자리 맞춤 */
+.adm-tl-day h3,.adm-track-meta,.adm-hero-when{font-variant-numeric:tabular-nums}
+/* 누를 때 반응: 회색 탭 하이라이트 대신 살짝 눌림 (스튜디오와 같게) */
+.adm-body{-webkit-tap-highlight-color:transparent}
+.adm-track summary,.adm-icon-btn,.adm-next-btn,.adm-jump button{transition:background-color .18s var(--adm-ease),color .18s var(--adm-ease),transform .16s var(--adm-ease)}
+:is(.adm-icon-btn,.adm-next-btn,.adm-jump button):active{transform:scale(.96)}
+.adm-track summary:active{background:var(--aq-blue-100)}
+/* 키보드 이동 때만 보이는 파란 테 */
+:is(.adm-icon-btn,.adm-next-btn,.adm-jump button,.adm-back):focus-visible{outline:3px solid #9db1fb;outline-offset:2px}
+/* 불러오는 중 자리도 카드와 같은 둥글기 */
+/* 구역 안 ‘없어요’ 안내는 연한 면 카드로 */
+/* 결정 바: 위 가는 선 대신 부드러운 흰 그라데이션, 버튼 글자 굵게 */
+@media (max-width:1180px){
+  .adm-decide-bar{border-top:0!important;background:linear-gradient(to bottom,rgba(255,255,255,.72),#fff 38%)!important;box-shadow:none!important}
+}
+/* 상단 바로가기 아래 선 대신 흐림만 */
+@media (max-width:1180px){.adm-jump{border-bottom:0!important;box-shadow:0 1px 0 rgba(23,27,41,.05)}}
+/* 칩 글자 줄바꿈 방지, 제목 줄 정렬 */
+/* 문의 답변 칸: 누르면 파란 면 대신 흰 면 위 연파랑 테두리 없이 살짝 진하게 */
+/* 이력 필터 개수: 위로 뜨지 않게 작은 알약으로 */
+/* 구역 제목과 오른쪽 버튼은 가운데 맞춤 */
+.adm-decide{border-radius:var(--adm-r-card);padding:26px}
+
+/* 동그라미 안 체크·표시: 정확히 가운데 (svg 기준선 여백 없이) */
+:is(.adm-brief-mark,.adm-opt-mark,.adm-stage-dot,.adm-check-mark,.adm-dsp-mark,.adm-dspreq-dot,.adm-rights li>span,.adm-reason-mark) svg{display:block;margin:0}
+.adm-brief-mark svg.aq-check-icon,.adm-opt-mark svg.aq-check-icon{width:12px;height:12px;transform:translate(.3px,.3px)}
+.adm-stage-dot svg.aq-check-icon{width:15px;height:15px}
+/* 새로고침: 다음 건 버튼과 같은 높이·면, 누르면 한 바퀴 돌고 끝나면 초록 체크 */
+.adm-refresh svg{width:15px;height:15px}
+.adm-refresh:disabled{opacity:1;cursor:progress}
+.adm-refresh svg{display:block}
+.adm-refresh.is-spinning svg{animation:adm-spin .7s cubic-bezier(.45,.05,.35,1) infinite}
+.adm-refresh.is-done{background:var(--aq-green-50);color:var(--aq-green-600)}
+.adm-refresh.is-done svg{animation:adm-pop .32s cubic-bezier(.34,1.56,.64,1) both}
+@keyframes adm-pop{from{transform:scale(.4);opacity:0}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){.adm-refresh svg{animation:none!important}}
+/* 스튜디오 공통 규칙(details[open] > summary span 45° 회전)이 관리자 접기 줄의 체크 표시·글자까지 돌려 ‘ㄴ’처럼 보이던 문제 */
+:is(.adm-body,#modal) details[open]>summary span{transform:none}
+.adm-brief-ok[open]>summary{color:var(--aq-text-2)}
+
+/* ---------- ‘자세히’: 영어 원문 대신 한국어 항목 목록 ---------- */
+.adm-detail-list{margin:8px 0 0;padding:12px 14px;border-radius:var(--aq-r-md);background:#fff;display:grid;gap:8px}
+.adm-detail-list>div{display:grid;grid-template-columns:96px minmax(0,1fr);gap:10px;font-size:13px;line-height:1.5}
+.adm-detail-list dt{color:var(--adm-muted);font-weight:700}
+.adm-detail-list dd{margin:0;color:var(--aq-text);font-weight:600;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.adm-check .adm-detail-list{background:#fff}
+.adm-detail-empty{margin:6px 0 0;font-size:13px;color:var(--adm-muted)}
+.adm-id{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--aq-text-3);letter-spacing:.02em}
+.adm-note-target{font-size:13px;font-weight:700;color:var(--aq-text-2);margin-left:4px}
+@media (max-width:640px){.adm-detail-list>div{grid-template-columns:84px minmax(0,1fr)}}
+.adm-check .adm-more{display:block}
+
+/* ==========================================================================
+   움직임 — 나타날 때 차례로, 펼칠 때 부드럽게, 바뀔 때 살짝 튀게 (움직임 줄이기 설정이면 모두 끔)
+   ========================================================================== */
+@keyframes adm-rise{from{opacity:0;transform:translate3d(0,12px,0)}to{opacity:1;transform:none}}
+@keyframes adm-reveal{from{opacity:0;transform:translate3d(0,-6px,0)}to{opacity:1;transform:none}}
+@keyframes adm-bar-up{from{transform:translate3d(0,100%,0)}to{transform:none}}
+@keyframes adm-scale-in{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:none}}
+@keyframes adm-glow{0%{box-shadow:0 0 0 0 rgba(59,99,243,.35)}100%{box-shadow:0 0 0 10px rgba(59,99,243,0)}}
+@media (prefers-reduced-motion:no-preference){
+  /* 카드·목록이 위에서부터 차례로 */
+  :is(.adm-checks,.adm-tracks,.adm-dsp-list,.adm-dspreq-grid,.adm-dsp-grid)>*,.adm-brief.is-compact ul>li,.adm-fixes>*{animation:adm-rise .42s var(--adm-ease) both}
+  :is(.adm-checks,.adm-tracks,.adm-dsp-list,.adm-dspreq-grid,.adm-dsp-grid,.adm-fixes)>*:nth-child(2),.adm-brief.is-compact ul>li:nth-child(2){animation-delay:.04s}
+  :is(.adm-checks,.adm-tracks,.adm-dsp-list,.adm-dspreq-grid,.adm-dsp-grid,.adm-fixes)>*:nth-child(3),.adm-brief.is-compact ul>li:nth-child(3){animation-delay:.08s}
+  :is(.adm-checks,.adm-tracks,.adm-dsp-list,.adm-dspreq-grid,.adm-dsp-grid,.adm-fixes)>*:nth-child(4),.adm-brief.is-compact ul>li:nth-child(4){animation-delay:.12s}
+  :is(.adm-checks,.adm-tracks,.adm-dsp-list,.adm-dspreq-grid,.adm-dsp-grid,.adm-fixes)>*:nth-child(5),.adm-brief.is-compact ul>li:nth-child(5){animation-delay:.16s}
+  :is(.adm-checks,.adm-tracks,.adm-dsp-list,.adm-dspreq-grid,.adm-dsp-grid,.adm-fixes)>*:nth-child(6),.adm-brief.is-compact ul>li:nth-child(6){animation-delay:.2s}
+  :is(.adm-checks,.adm-tracks,.adm-dsp-list,.adm-dspreq-grid,.adm-dsp-grid,.adm-fixes)>*:nth-child(n+7),.adm-brief.is-compact ul>li:nth-child(n+7){animation-delay:.24s}
+  /* 머리·큰 카드 */
+  .adm-hero,.adm-release-hero,.adm-brief.is-compact,.adm-decide{animation:adm-rise .46s var(--adm-ease) .04s both}
+  .adm-hero-num{animation:adm-scale-in .55s cubic-bezier(.34,1.56,.64,1) .12s both}
+  /* 펼치기: 안쪽 내용이 위에서 살짝 내려오며 */
+  :is(.adm-body,#modal) details[open]>:not(summary){animation:adm-reveal .28s var(--adm-ease) both}
+  /* 아래 결정 바는 올라오며 등장 */
+  @media (max-width:1180px){.adm-decide-bar{animation:adm-bar-up .45s var(--adm-ease) .15s both}}
+  /* 하위 탭 밑줄이 그어지며 */
+  /* 칩·개수는 살짝 튀게 */
+  .adm-jump button span.is-bad{animation:adm-scale-in .4s cubic-bezier(.34,1.56,.64,1) both}
+  /* 2인 승인·확인 필요 표시는 한 번 퍼지는 빛 */
+  .adm-check-mark{animation:adm-scale-in .4s cubic-bezier(.34,1.56,.64,1) both,adm-glow 1.2s ease-out .4s 1}
+  .adm-check.is-sensitive .adm-check-mark{animation:adm-scale-in .4s cubic-bezier(.34,1.56,.64,1) both}
+  /* 담당 상태 점: 내 담당이면 은은하게 숨쉬기 */
+  .adm-claim.is-mine .adm-claim-who i{animation:adm-breathe 2.4s ease-in-out infinite}
+  @keyframes adm-breathe{0%,100%{box-shadow:0 0 0 3px rgba(74,222,128,.18)}50%{box-shadow:0 0 0 6px rgba(74,222,128,.08)}}
+  /* 선택 칩·탭 전환 */
+  :is(.adm-jump button){transition:background-color .22s var(--adm-ease),color .22s var(--adm-ease),transform .16s var(--adm-ease),box-shadow .22s var(--adm-ease)}
+  /* 넓은 화면: 누르는 카드는 올려 놓으면 살짝 떠오름 */
+  /* 화살표는 올려 놓으면 앞으로 */
+  .adm-next-btn svg,.adm-back svg{transition:transform .2s var(--adm-ease)}
+  .adm-next-btn:hover svg{transform:translateX(3px)}
+  .adm-back:hover svg{transform:translateX(-3px)}
+}
+
+/* ---------- 고르기 토글 · 하위 탭: 고른 칸으로 미끄러지는 알약/밑줄 (스튜디오 정산 금융기관 탭처럼) ---------- */
+
+/* ---------- 배급 계약 조건 (AUD-DIST 2.0) ---------- */
+.adm-terms-form{display:grid;gap:4px}
+.adm-terms-label{display:block;margin:0 0 6px;font-size:13px;font-weight:700;color:var(--adm-ink)}
+.adm-terms-fee{display:flex;align-items:center;gap:12px}
+.adm-terms-fee .ui-input{max-width:140px}
+.adm-terms-fee span{font-size:13px;font-weight:700;color:var(--adm-muted)}
+.adm-terms-form .ui-btn{justify-self:start;margin-top:6px}
+.adm-terms-body{margin-top:14px}
+.adm-terms-body summary{cursor:pointer;font-size:13px;font-weight:700;color:var(--adm-blue)}
+.adm-terms-body pre{margin:10px 0 0;padding:16px;border-radius:var(--aq-r-md);background:#fff;white-space:pre-wrap;font:inherit;font-size:13px;line-height:1.7;max-height:420px;overflow:auto}
+.adm-terms-checks{margin-top:14px;font-size:13px}
+.adm-terms-checks ul{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:4px}
+.adm-terms-checks li{display:flex;gap:6px;color:var(--adm-muted)}
+.adm-terms-checks li.is-on{color:var(--adm-ink)}
+.adm-terms-checks li span{flex:none;width:12px;color:var(--adm-blue)}
+/* 브라우저 알림 켜기 (헤더) */
+.adm-alert-toggle.is-on{color:var(--adm-blue);background:var(--adm-blue-soft)}
+
+/* 섹션 안 빈 안내 문장 — 옅은 면 칸 */
+.ui-section>p.small.muted{margin:0;padding:18px 20px;border-radius:var(--aq-r-xl);background:var(--aq-surface);font-size:var(--aq-fs-md)}
+.ui-row-end small.is-late{color:var(--aq-amber-600);font-weight:800}
+.adm-release-hero .ui-cover{--cv:88px}
+.adm-reply .ui-textarea{min-height:120px}
+@media (max-width:640px){.adm-release-hero .ui-cover{--cv:64px}}
+
+/* 처리 이력 안 '자세히' */
+.ui-timeline .adm-more{display:block;margin-top:2px}
+.ui-timeline .adm-more summary{min-height:26px;font-size:12px;color:var(--aq-primary)}
+.ui-timeline .adm-detail-list{background:var(--aq-surface)}
+
+/* ---------- 디자인 시스템 화면 (/admin/design) ---------- */
+.ds-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.ds-demo{display:grid;gap:14px;align-content:start;margin:0!important}
+.ds-demo .ui-section-head{margin:0}
+.ds-demo-body{display:grid;gap:12px;min-width:0}
+.ds-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.ds-row.is-end{align-items:flex-end}
+.ds-code{margin:0;padding:12px 14px;border-radius:var(--aq-r-lg);background:var(--aq-gray-950);color:#D6DEF0;font:12px/1.6 var(--font-mono);white-space:pre-wrap;overflow-wrap:anywhere}
+.ds-surfaces{display:grid;gap:8px}
+.ds-surfaces small{display:block;margin-bottom:8px;font-size:var(--aq-fs-xs);font-weight:700;color:var(--aq-text-3)}
+.ds-surface{padding:16px 18px;border-radius:var(--aq-r-xl);background:#fff;box-shadow:inset 0 0 0 1px var(--aq-line)}
+.ds-dark{padding:16px 18px;border-radius:var(--aq-r-xl)}
+.ds-dark small{color:var(--aq-text-disabled)}
+.ds-mini{padding:16px 18px;border-radius:var(--aq-r-xl);background:#fff}
+.ds-mini .ui-page-head{margin-bottom:18px}
+.ds-palette{display:grid;gap:10px}
+.ds-ramp{display:grid;grid-template-columns:64px minmax(0,1fr);align-items:center;gap:10px}
+.ds-ramp>b{font-size:var(--aq-fs-sm);font-weight:700;color:var(--aq-text-2)}
+.ds-ramp>div{display:flex;flex-wrap:wrap;gap:6px}
+.ds-swatch{display:grid;place-items:end start;width:56px;height:44px;padding:4px 6px;border-radius:var(--aq-r-sm);box-shadow:inset 0 0 0 1px rgba(23,27,41,.06)}
+.ds-swatch small{font-size:10px;font-weight:800;color:#fff;mix-blend-mode:difference}
+.ds-semantic{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}
+.ds-semantic>div{display:grid;grid-template-columns:32px minmax(0,1fr);grid-template-rows:auto auto;column-gap:10px;align-items:center;padding:10px 12px;border-radius:var(--aq-r-lg);background:var(--aq-surface)}
+.ds-chip-swatch{grid-row:1/3;width:32px;height:32px;border-radius:var(--aq-r-sm);box-shadow:inset 0 0 0 1px rgba(23,27,41,.08)}
+.ds-semantic b{font-size:var(--aq-fs-md)}
+.ds-semantic code,.ds-type code{font:11px var(--font-mono);color:var(--aq-text-3)}
+.ds-type{display:grid;gap:12px}
+.ds-type>div{display:grid;gap:2px}
+.ds-type small{font-size:var(--aq-fs-xs);color:var(--aq-text-3)}
+.ds-radii{display:flex;flex-wrap:wrap;gap:12px}
+.ds-radii>div{display:grid;justify-items:center;gap:4px}
+.ds-radii span{width:72px;height:56px;background:var(--aq-primary-soft);box-shadow:inset 0 0 0 1.5px var(--aq-blue-300)}
+.ds-radii b{font-size:var(--aq-fs-sm)}
+.ds-radii small{font-size:11px;color:var(--aq-text-3)}
+.ds-lead{margin:0 0 14px;max-width:720px;font-size:var(--aq-fs-base);color:var(--aq-text-2)}
+.ds-table-wrap{overflow-x:auto;border-radius:var(--aq-r-xl);background:var(--aq-surface)}
+.ds-table{width:100%;min-width:760px;border-collapse:collapse;font-size:var(--aq-fs-md);line-height:1.6}
+.ds-table th,.ds-table td{padding:14px 16px;text-align:left;vertical-align:top;border-top:1px solid var(--aq-line)}
+.ds-table thead th{border-top:0;font-size:var(--aq-fs-xs);font-weight:700;color:var(--aq-text-3);white-space:nowrap}
+.ds-table tbody th{font-weight:700;white-space:nowrap}
+.ds-table td:nth-child(2){color:var(--aq-text-3)}
+.ds-table td b{color:var(--aq-primary-text)}
+@media (max-width:1180px){.ds-grid{grid-template-columns:minmax(0,1fr)}}

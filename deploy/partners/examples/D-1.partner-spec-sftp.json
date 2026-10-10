@@ -1,0 +1,31 @@
+{
+  "partner_id": "D-1",
+  "adapter": "partner_spec",
+  "transport": {
+    "kind": "sftp",
+    "host": "REPLACE-with-partner-sftp-host",
+    "username": "REPLACE-with-account",
+    "private_key": {"file": "/etc/audeniq/partners/secrets/D-1.id_ed25519"},
+    "known_hosts": {"file": "/etc/audeniq/partners/secrets/D-1.known_hosts"},
+    "remote_root": "/upload"
+  },
+  "partner_spec": {
+    "formats": ["json", "csv"],
+    "inbox_dir": "releases",
+    "result_dir": "results",
+    "complete_marker": "{id}.complete",
+    "field_map": {
+      "upc": "UPC",
+      "isrc": "ISRC",
+      "title": "곡명",
+      "album_title": "앨범명",
+      "artist": "아티스트",
+      "composer": "작곡",
+      "lyricist": "작사",
+      "arranger": "편곡",
+      "adult_only": "19금여부",
+      "release_date": "발매일"
+    },
+    "live_policy": "explicit"
+  }
+}
