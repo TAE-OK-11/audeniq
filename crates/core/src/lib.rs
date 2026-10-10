@@ -1,3 +1,4 @@
+pub mod account;
 pub mod agreement;
 pub mod api;
 pub mod artifacts;
