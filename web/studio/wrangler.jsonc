@@ -9,14 +9,6 @@
   },
   "compatibility_date": "2026-09-21",
   "compatibility_flags": ["brotli_content_encoding"],
-  "d1_databases": [
-    {
-      "binding": "CONTENT_DB",
-      "database_id": "401ad401-0a13-4059-8e9d-23298de21761",
-      "database_name": "audeniq-content",
-      "migrations_dir": "migrations"
-    }
-  ],
   "main": "./worker.js",
   "name": "audeniq-studio"
 }
