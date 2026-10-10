@@ -219,13 +219,14 @@ export function ReleaseDetail() {
           {editLabel}
         </button>
       )}
+      {/* 되돌릴 수 없는 일은 주 버튼과 같은 무게로 두지 않는다 — 조용한 빨간 글자 버튼 (누르면 확인 창) */}
       {canWithdraw && (
-        <button type="button" className="ui-btn is-danger aq-withdraw-btn" onClick={handleWithdraw} disabled={withdrawing}>
+        <button type="button" className="ui-btn is-text aq-danger-text aq-withdraw-btn" onClick={handleWithdraw} disabled={withdrawing}>
           {withdrawing ? '취소하는 중' : '신청 취소'}
         </button>
       )}
       {isDraft && (
-        <button type="button" className="ui-btn is-danger" onClick={handleDelete} disabled={deleting}>
+        <button type="button" className="ui-btn is-text aq-danger-text" onClick={handleDelete} disabled={deleting}>
           {deleting ? '삭제 중' : '삭제'}
         </button>
       )}
@@ -243,7 +244,8 @@ export function ReleaseDetail() {
         <div className="aq-detail-info">
           <div className="aq-detail-top">
             <span className="eyebrow">{kindLabel(d?.type) || '발매'}</span>
-            <Badge tone={statusTone(rel.status)} className={`aq-status is-${rel.status}`}>{STATUS_LABEL[rel.status] || rel.status}</Badge>
+            {/* 진행 단계 카드가 보이면 상태는 거기서 — 같은 말을 두 번 하지 않는다 */}
+            {settledLive && <Badge tone={statusTone(rel.status)} className={`aq-status is-${rel.status}`}>{STATUS_LABEL[rel.status] || rel.status}</Badge>}
           </div>
           <h1>{rel.title || '제목 없는 발매'}</h1>
           <p className="aq-detail-artist">{rel.artist || '아티스트 미입력'}</p>

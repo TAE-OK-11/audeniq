@@ -9,7 +9,6 @@ import { errorMessage } from '../api/errors';
 import { refreshDocs } from '../store/portalSync';
 import { useToast } from './Toast';
 import { docBadgeTone, updateDoc, type DocRecord } from '../store/docs';
-import { Badge } from '../ui';
 import { fileSize, localStamp } from '../lib/format';
 import { stampNow } from '../lib/date';
 import { docState } from '../store/docs';
@@ -194,10 +193,10 @@ export function DocumentModal({
 
   return (
     <Modal title={doc.title} onClose={onClose}>
-      <div className="doc-meta">
-        <span className="ui-tag">{doc.kind === 'agreements' ? '계약·신청서' : '권리 증빙'}</span>
-        <Badge tone={docBadgeTone(doc)}>{statusPill(doc)}</Badge>
-      </div>
+      <p className="aq-meta-line">
+        <b className={`aq-doc-state is-${docBadgeTone(doc)}`}>{statusPill(doc)}</b>
+        {doc.kind === 'agreements' ? '계약·신청서' : '권리 증빙'}
+      </p>
       <dl className="ui-kv is-2">
         <div><dt>관련 발매</dt><dd>{doc.releaseTitle || '공통'}</dd></div>
         <div><dt>작성일</dt><dd>{localStamp(doc.created)}</dd></div>
