@@ -230,3 +230,38 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
   .aq-nhero-article h1{font-size:32px}
   .aq-narticle-content{font-size:17px}
 }
+
+/* ── 전자 문서(권리 서류 작성·서명 요청 / 계약서 서명) ───────────────────────────── */
+/* 단계 머리 — 칸 막대 + 'n단계 · 이름' (수익 받을 정보 등록 흐름과 같은 모양) */
+.aq-stepbar{margin:0 0 18px}
+.aq-stepbar-track{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:4px}
+.aq-stepbar-track span{height:4px;border-radius:var(--aq-r-pill);background:var(--aq-gray-150);transition:background-color .3s ease}
+.aq-stepbar-track span.is-on{background:var(--aq-blue-500)}
+.aq-stepbar-label{margin:10px 0 0;font-size:13px;color:var(--aq-text-4)}
+.aq-stepbar-label b{font-weight:700;color:var(--aq-blue-500)}
+/* 권리 서류 작성 — 제목·안내, 입력은 '권리자 / 허락 내용' 두 묶음 */
+.aq-rd-title{margin:0;font-size:20px;font-weight:700;letter-spacing:-.03em;color:var(--portal-ink)}
+.aq-rd-intro{margin:6px 0 4px;font-size:14px;line-height:1.6;color:var(--aq-text-3)}
+.aq-form-group{margin:22px 0 10px;padding-top:2px;font-size:var(--aq-fs-md);font-weight:700;color:var(--aq-text-3)}
+.aq-rights-document-mode form .aq-rights-error{margin:4px 0 12px}
+.aq-rd-doc{max-height:46vh;overflow:auto;margin:16px 0 0}
+.aq-rights-document-mode .aq-method-label{margin-top:20px}
+/* 서명 링크 — 주소와 복사 버튼을 한 칸에 */
+.aq-sign-link{display:flex;align-items:center;gap:10px;margin:14px 0}
+.aq-sign-link code{flex:1;min-width:0;font-size:12px;line-height:1.5;color:var(--aq-text-2)}
+.aq-sign-link .ui-btn{flex:none}
+/* 문서 본문 — 원문 줄글을 제목·묶음·조항으로 */
+.aq-doctext{white-space:normal;font-size:13px;line-height:1.75;color:var(--aq-text-2)}
+:is(#modal,#root) .aq-doctext p{margin:0;font-size:13px;line-height:1.75}
+:is(#modal,#root) .aq-doctext .aq-doctext-form{margin:0;font-size:11px;color:var(--aq-text-4);overflow-wrap:anywhere}
+.aq-doctext-group,.aq-doctext-article{margin:16px 0 6px;font-size:13px;font-weight:700;color:var(--portal-ink)}
+.aq-doctext-group{color:var(--aq-blue-500)}
+.aq-doctext-kv{display:grid;grid-template-columns:7.5em minmax(0,1fr);gap:10px;padding:3px 0}
+.aq-doctext-kv span:first-child{color:var(--aq-text-4)}
+.aq-doctext-kv span:last-child{color:var(--portal-ink);font-weight:600}
+/* 계약서 서명 — 서명할 문서 칸, 아래 버튼은 주 버튼 가득 + 돌아가기 글자 버튼 */
+.aq-sign-docinfo{margin:0 0 20px;padding:16px 18px;border-radius:var(--aq-r-lg);background:var(--aq-surface)}
+.aq-sign-docinfo small{display:block;margin-bottom:4px;font-size:12px;color:var(--aq-text-4)}
+.aq-sign-docinfo strong{display:block;font-size:16px;line-height:1.5;word-break:keep-all;color:var(--portal-ink)}
+#modal.aq-signature-mode .aq-sign-foot{grid-template-columns:1fr!important;gap:4px!important}
+#modal.aq-signature-mode .aq-sign-foot .ui-btn.is-text{--btn-h:40px;--btn-bg:transparent;background:transparent!important}
