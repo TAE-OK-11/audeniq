@@ -1,0 +1,228 @@
+version: 2.1
+# AUDENIQ 백엔드 이미지 — GitHub Actions의 .github/workflows/backend-image.yml과 같은 흐름.
+# amd64·arm64를 각 아키텍처 머신에서 빌드해 GHCR에 digest로 올리고, 검증된 digest만
+# ghcr.io/tae-ok-11/audeniq:sha-<커밋>(·main·latest) 공용 매니페스트로 묶는다.
+# main에서는 그 뒤 "approve-deploy" 승인을 누르면 production 서버에 deploy.sh로 배포한다.
+#
+# CircleCI 프로젝트 설정 → Contexts에 "audeniq-production"을 만들고 다음 환경 변수를 넣는다:
+#   GHCR_USER            GitHub 아이디
+#   GHCR_TOKEN           GitHub PAT (write:packages, read:packages)
+#   DEPLOY_HOST          서버 주소
+#   DEPLOY_USER          SSH 사용자 (docker 권한)
+#   DEPLOY_SSH_KEY       배포 전용 SSH 개인키를 base64 한 줄로 (base64 -w0 < key)
+#   DEPLOY_KNOWN_HOSTS   ssh-keyscan <서버> 결과를 base64 한 줄로 (호스트 키 고정)
+#   DEPLOY_PATH          (선택) 기본 /opt/audeniq
+
+parameters:
+  force:
+    description: 백엔드 파일이 바뀌지 않았어도 이미지를 만든다 (수동 실행용)
+    type: boolean
+    default: false
+
+commands:
+  skip-unless-backend-changed:
+    description: 백엔드 이미지에 들어가는 파일이 이 푸시에서 바뀌지 않았으면 작업을 성공으로 끝낸다
+    steps:
+      - run:
+          name: Check backend changes
+          command: |
+            if [ "<< pipeline.parameters.force >>" = true ]; then exit 0; fi
+            base="<< pipeline.git.base_revision >>"
+            head="<< pipeline.git.revision >>"
+            # 새 브랜치 첫 푸시 등 비교 기준이 없으면 빌드한다
+            if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then exit 0; fi
+            if git diff --name-only "$base" "$head" | grep -Eq \
+              '^(Cargo\.toml|Cargo\.lock|crates/core/|config/|migrations/|deploy/(Dockerfile|build-target\.sh|check-cpu\.sh|deploy\.sh|audeniq-photo\.rev|audeniq-qc\.rev|install-audeniq-photo\.sh|install-audeniq-qc\.sh|clamd\.conf|freshclam\.conf|update-antivirus\.py|pgbouncer/|compose\.production\.yaml)|\.dockerignore$|\.circleci/)'; then
+              exit 0
+            fi
+            echo "백엔드 변경 없음 — 건너뜀"
+            circleci-agent step halt
+  image-name:
+    steps:
+      - run:
+          name: Image name
+          command: |
+            owner=$(printf '%s' "$CIRCLE_PROJECT_USERNAME" | tr '[:upper:]' '[:lower:]')
+            echo "export IMAGE=ghcr.io/$owner/audeniq" >> "$BASH_ENV"
+  ghcr-login:
+    steps:
+      - run:
+          name: GHCR login
+          command: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+
+jobs:
+  build:
+    parameters:
+      arch:
+        type: enum
+        enum: [amd64, arm64]
+      cpu:
+        type: string
+      resource_class:
+        type: string
+    machine:
+      image: ubuntu-2404:current
+    resource_class: << parameters.resource_class >>
+    steps:
+      - checkout
+      - skip-unless-backend-changed
+      - image-name
+      - ghcr-login
+      - run:
+          name: Build and push by digest
+          no_output_timeout: 60m
+          command: |
+            set -euo pipefail
+            docker buildx create --name audeniq --driver docker-container --use >/dev/null
+            # 아키텍처마다 같은 태그를 두고 다투지 않도록 digest로만 올린다
+            docker buildx build \
+              --file deploy/Dockerfile \
+              --platform linux/<< parameters.arch >> \
+              --build-arg CARGO_PROFILE=release \
+              --build-arg TARGET_CPU=<< parameters.cpu >> \
+              --label org.opencontainers.image.title=audeniq \
+              --label "org.opencontainers.image.revision=$CIRCLE_SHA1" \
+              --label io.audeniq.target-cpu=<< parameters.cpu >> \
+              --cache-from "type=registry,ref=$IMAGE:buildcache-<< parameters.arch >>" \
+              --cache-to "type=registry,ref=$IMAGE:buildcache-<< parameters.arch >>,mode=max" \
+              --output "type=image,name=$IMAGE,push-by-digest=true,name-canonical=true,push=true" \
+              --metadata-file /tmp/build-meta.json \
+              .
+            digest=$(jq -er '."containerimage.digest"' /tmp/build-meta.json)
+            mkdir -p /tmp/audeniq-digests
+            printf '%s\n' "$digest" > /tmp/audeniq-digests/<< parameters.arch >>
+            echo "export REF=$IMAGE@$digest" >> "$BASH_ENV"
+      - run:
+          name: Smoke test runtime dependencies and image metadata
+          command: |
+            set -euo pipefail
+            docker pull "$REF"
+            test "$(docker image inspect --format '{{.Architecture}}' "$REF")" = << parameters.arch >>
+            docker run --rm --entrypoint sh -e EXPECTED_ARCH=<< parameters.arch >> -e EXPECTED_CPU=<< parameters.cpu >> "$REF" -c '
+              set -e
+              for b in audeniq-api audeniq-worker audeniq-migrate audeniq-admin audeniq-qc audeniq-photo sftp python3 xmllint clamd; do command -v "$b"; done
+              for b in exiftool tesseract zbarimg pdftoppm; do if command -v "$b"; then echo "$b must not ship in the runtime image"; exit 1; fi; done
+              if command -v ffmpeg; then echo "ffmpeg must not ship in the runtime image"; exit 1; fi
+              test "$(cat /usr/local/share/audeniq/target-arch)" = "$EXPECTED_ARCH"
+              test "$(cat /usr/local/share/audeniq/target-cpu)" = "$EXPECTED_CPU"
+              test "$(id -u)" = 10001
+              audeniq-qc capabilities
+              audeniq-photo --version'
+      - run:
+          name: Verify binary execution and parser sandbox on native CPU
+          command: |
+            docker run --rm --network none --cap-drop ALL --read-only --security-opt no-new-privileges \
+              --entrypoint audeniq-admin "$REF" upload-sandbox-check
+      - persist_to_workspace:
+          root: /tmp
+          paths:
+            - audeniq-digests/<< parameters.arch >>
+
+  image:
+    machine:
+      image: ubuntu-2404:current
+    resource_class: medium
+    steps:
+      - checkout
+      - skip-unless-backend-changed
+      - attach_workspace:
+          at: /tmp
+      - image-name
+      - ghcr-login
+      - run:
+          name: Publish portable manifest
+          command: |
+            set -euo pipefail
+            tags=(-t "$IMAGE:sha-$CIRCLE_SHA1")
+            if [ "$CIRCLE_BRANCH" = main ]; then tags+=(-t "$IMAGE:main" -t "$IMAGE:latest"); fi
+            docker buildx imagetools create "${tags[@]}" \
+              "$IMAGE@$(cat /tmp/audeniq-digests/amd64)" "$IMAGE@$(cat /tmp/audeniq-digests/arm64)"
+            # 공용 매니페스트에 실행 가능한 두 아키텍처가 모두 있는지 확인
+            docker buildx imagetools inspect "$IMAGE:sha-$CIRCLE_SHA1" --raw > /tmp/audeniq-manifest.json
+            jq -e '[.manifests[].platform | select(.os == "linux") | .architecture] | sort == ["amd64", "arm64"]' /tmp/audeniq-manifest.json
+            digest=$(docker buildx imagetools inspect "$IMAGE:sha-$CIRCLE_SHA1" --format '{{json .Manifest}}' | jq -er '.digest')
+            printf '%s\n' "$digest" > /tmp/audeniq-digests/portable
+            echo "Deploy: ./deploy.sh $IMAGE@$digest"
+      - persist_to_workspace:
+          root: /tmp
+          paths:
+            - audeniq-digests/portable
+
+  deploy:
+    docker:
+      - image: cimg/base:current
+    resource_class: small
+    steps:
+      - checkout
+      - skip-unless-backend-changed
+      - attach_workspace:
+          at: /tmp
+      - image-name
+      - run:
+          name: Check deploy settings
+          command: |
+            missing=""
+            for v in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS GHCR_USER GHCR_TOKEN; do
+              [ -n "${!v:-}" ] || missing="$missing $v"
+            done
+            if [ -n "$missing" ]; then
+              echo "audeniq-production 컨텍스트에 환경 변수가 없어요:$missing (.circleci/config.yml 머리말 참고)" >&2
+              exit 1
+            fi
+      - run:
+          name: SSH setup
+          command: |
+            install -m 700 -d ~/.ssh
+            printf '%s' "$DEPLOY_SSH_KEY" | base64 -d > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+            printf '%s' "$DEPLOY_KNOWN_HOSTS" | base64 -d > ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts
+      - run:
+          name: Copy deploy files of this commit
+          # compose·grants·bootstrap은 이미지(마이그레이션)와 같은 커밋이어야 한다. 비밀 파일은 서버에만 있다.
+          command: |
+            path=${DEPLOY_PATH:-/opt/audeniq}
+            ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$path'"
+            scp -i ~/.ssh/deploy_key deploy/compose.production.yaml deploy/bootstrap.sql deploy/grants.sql deploy/deploy.sh deploy/check-cpu.sh deploy/pg-upgrade.sh deploy/kms-keyring.py deploy/backup.sh deploy/restore-backup.sh \
+              "$DEPLOY_USER@$DEPLOY_HOST:$path/"
+            scp -r -i ~/.ssh/deploy_key deploy/pgbouncer "$DEPLOY_USER@$DEPLOY_HOST:$path/"
+      - run:
+          name: Deploy
+          command: |
+            path=${DEPLOY_PATH:-/opt/audeniq}
+            ref="$IMAGE@$(cat /tmp/audeniq-digests/portable)"
+            # deploy.sh가 표준입력의 토큰으로 GHCR에 로그인해 받고, 끝나면 로그아웃한다
+            ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
+              "cd '$path' && chmod +x deploy.sh pg-upgrade.sh && GHCR_USER='$GHCR_USER' GHCR_TOKEN_STDIN=1 ./deploy.sh '$ref'" \<<< "$GHCR_TOKEN"
+            echo "배포됨: $ref → $DEPLOY_HOST:$path"
+
+workflows:
+  backend-image:
+    jobs:
+      - build:
+          name: build-amd64
+          context: audeniq-production
+          arch: amd64
+          cpu: x86-64
+          resource_class: large
+          filters: &main-only
+            branches:
+              only: main
+      - build:
+          name: build-arm64
+          context: audeniq-production
+          arch: arm64
+          cpu: generic
+          resource_class: arm.large
+          filters: *main-only
+      - image:
+          context: audeniq-production
+          requires: [build-amd64, build-arm64]
+          filters: *main-only
+      # CircleCI 화면에서 승인을 눌러야 production에 배포된다
+      - approve-deploy:
+          type: approval
+          requires: [image]
+          filters: *main-only
+      - deploy:
+          context: audeniq-production
+          requires: [approve-deploy]
+          filters: *main-only
