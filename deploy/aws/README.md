@@ -1,6 +1,6 @@
 # (나중) 전부 AWS로: CloudFront + S3 + 백엔드(ALB)
 
-> 지금(개발 단계)은 Cloudflare CDN + 터널 + 서버 nginx로 서빙해요 — [`deploy/web/README.md`](../web/README.md).
+> 지금(개발 단계)은 Cloudflare Workers가 화면을 서빙하고 `/api`를 터널로 백엔드에 넘겨요(공지·점검·설문 로직은 백엔드).
 > 이 문서는 AWS로 옮길 때 쓰는 구성이에요. 공지·점검·설문을 백엔드로 옮긴 부분은 두 구성이 같아요.
 
 Cloudflare Workers, D1, Tunnel이 하던 일을 전부 AWS로 옮겨요.
@@ -62,7 +62,7 @@ Turnstile(설문 봇 방지), R2(업로드 저장소), DNS는 이번에 바꾸�
 3. **ALB**: 서버가 있는 VPC에 인터넷용 ALB를 만들어요.
    - HTTPS 443 리스너에 `api-origin.audeniq.com` ACM 인증서(ALB 리전)를 붙여요.
    - 대상 그룹은 인스턴스 `8080`(HTTP), 헬스체크 `/health`. 단, `/health`도 서비스 비밀이 필요해서 성공 코드를 `200,403`으로 두세요.
-   - `production.env`에 `API_PUBLISH_ADDR=<서버 사설 IP>`를 넣고 재배포해요. 서버 보안 그룹은 ALB 보안 그룹에서 오는 8080만 허용해요.
+   - `compose.production.yaml`의 `api`에 `ports: ["<서버 사설 IP>:8080:8080"]`을 추가하고 재배포해요. 서버 보안 그룹은 ALB 보안 그룹에서 오는 8080만 허용해요.
    - DNS: `api-origin.audeniq.com`을 ALB로 바꿔요(Cloudflare DNS only). 지금 이 이름을 Tunnel이 쓰고 있다면 `api-aws.audeniq.com`처럼 새 이름을 쓰세요.
 4. **인증서**: us-east-1 ACM에서 화면 주소(`studio.audeniq.com` 등, 또는 `*.audeniq.com` + `audeniq.com`) 인증서를 발급해요.
 5. **스택 만들기**(앱마다):
@@ -76,7 +76,7 @@ Turnstile(설문 봇 방지), R2(업로드 저장소), DNS는 이번에 바꾸�
    - 전환 직전에 2단계를 한 번 더 실행해서 마지막 글까지 옮겨요. 이미 있는 id는 건너뛰어요.
 8. **확인**: 로그인, 공지 읽기·쓰기, 관리자 점검 등록 → 스튜디오 점검 화면, 설문 제출, 백엔드 로그의 사용자 IP를 확인해요.
 9. **정리**:
-   - `compose.production.yaml`의 `tunnel` 서비스와 `tunnel-token`을 지우고, `API_PUBLISH_ADDR`만 남겨요.
+   - `compose.production.yaml`의 `tunnel` 서비스와 `tunnel-token`을 지워요.
    - CI의 `wrangler deploy` 단계(`.circleci/config.yml` frontend, `.github/workflows/studio-deploy.yml`, `admin-deploy.yml`)와 D1 마이그레이션 단계를 지워요.
    - Cloudflare의 Workers(`audeniq-studio`, `audeniq-admin`, `audeniq-web`, `audeniq-survey`)와 D1을 삭제해요.
    - `web/*/worker.js`, `wrangler.jsonc`, `web/studio/migrations`, `web/survey/migrations`, `crates/edge`를 저장소에서 지워요.

@@ -276,28 +276,6 @@ services:
     mem_limit: ${WORKER_MEM_LIMIT:-768m}
     cpus: ${WORKER_CPUS:-1.0}
     cpu_shares: 512
-  # 화면(스튜디오·관리자·설문·랜딩)과 /api 앞단 — Workers 대신 (deploy/web/README.md)
-  # 터널이 화면 주소들을 web:8080으로 보낸다. 설정은 deploy/web/publish.sh가 ./web/nginx 에 올린다.
-  web:
-    image: ${WEB_IMAGE:-nginx:1.28-alpine}
-    restart: unless-stopped
-    environment:
-      EDGE_SERVICE_SECRET: ${EDGE_SERVICE_SECRET:?set random service secret}
-      # 설정 템플릿에서 이 변수만 채운다 ($host 같은 nginx 변수는 그대로)
-      NGINX_ENVSUBST_FILTER: ^EDGE_SERVICE_SECRET$
-    volumes:
-      - ./web/nginx:/etc/nginx/templates:ro
-      - ./web/site:/srv/web:ro
-    tmpfs: [/etc/nginx/conf.d, /var/cache/nginx, /var/run]
-    read_only: true
-    security_opt: [no-new-privileges:true]
-    networks: [backend]
-    depends_on: [api]
-    mem_limit: 128m
-    cpus: 0.5
-    logging:
-      driver: json-file
-      options: {max-size: 10m, max-file: '3'}
   tunnel:
     image: ${CLOUDFLARED_IMAGE:?set tested cloudflared image digest}
     restart: unless-stopped

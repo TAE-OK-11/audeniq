@@ -89,11 +89,10 @@ CircleCI 조직 설정 → Contexts에 `audeniq-production`을 만들고 다음 
 | `DEPLOY_SSH_KEY` | 배포 전용 SSH 개인키, `base64 -w0 < key` |
 | `DEPLOY_KNOWN_HOSTS` | `ssh-keyscan <서버> \| base64 -w0` |
 | `DEPLOY_PATH` | (선택) 기본 `/opt/audeniq` |
-| `CLOUDFLARE_API_TOKEN` | 프론트엔드 배포 (Workers Scripts:Edit, D1:Edit) |
+| `CLOUDFLARE_API_TOKEN` | 프론트엔드 배포 (Workers Scripts:Edit) |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 계정 ID |
-| `UI_ON_SERVER` | (선택) `true`면 main의 화면 빌드를 서버 web(nginx)로 올린다 (`DEPLOY_*` 사용) — [`web/README.md`](web/README.md) |
 
-같은 파일의 **frontend** 워크플로는 Studio(`web/studio`)·관리자(`web/admin`)·랜딩(`web/landing`)·설문(`web/survey`)을 각 폴더가 바뀐 푸시마다 테스트·빌드하고, main에서만 Cloudflare Workers로 배포하고, `UI_ON_SERVER=true`면 화면을 서버의 web(nginx)에도 올린다. Workers 없이 Cloudflare CDN → 터널 → 서버로 서빙하는 구조와 전환 순서는 [`web/README.md`](web/README.md) (AWS로 옮길 때는 [`aws/README.md`](aws/README.md)). Studio·설문 D1 마이그레이션은 `migrations/` 폴더가 바뀌었거나 파이프라인 파라미터 `apply_migrations=true`일 때만 적용한다. 설문은 `bun run preflight`(실제 D1 ID·Turnstile 키)를 통과해야 배포한다.
+같은 파일의 **frontend** 워크플로는 Studio(`web/studio`)·관리자(`web/admin`)·랜딩(`web/landing`)·설문(`web/survey`)을 각 폴더가 바뀐 푸시마다 테스트·빌드하고, main에서만 Cloudflare Workers로 배포한다. Worker는 화면 서빙과 `/api` 전달(터널 → api)만 하고, 공지·이벤트·서버 점검·인증 보조·설문은 백엔드가 한다 (`crates/core/src/site_content.rs`, `sites.rs`, `survey.rs`). 예전 D1 데이터는 `node deploy/aws/migrate-d1.mjs`로 옮긴다. 나중에 AWS로 옮길 때는 [`aws/README.md`](aws/README.md). 설문은 `bun run preflight`(Turnstile 공개 키)를 통과해야 배포한다.
 
 ### PostgreSQL 17 → 18 (한 번)
 
