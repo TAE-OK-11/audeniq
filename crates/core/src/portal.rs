@@ -15,7 +15,7 @@ use crate::{
     api::AppState,
     auth::{self, Actor},
     error::{Error, Result},
-    operations, text_policy,
+    operations, payout_policy, text_policy,
 };
 use axum::{
     Json, Router,
@@ -1111,9 +1111,28 @@ pub async fn finance_summary(s: &AppState, a: &Actor, org: Uuid) -> Result<Value
             .await?;
     tx.rollback().await?;
     let available = (payable - pending).max(Decimal::ZERO);
-    Ok(
-        json!({"currency":"KRW","payable":payable.to_string(),"pending":pending.to_string(),"available":available.to_string(),"account_registered":account,"minimum_payout":MIN_PAYOUT.to_string()}),
-    )
+    let now = chrono::Utc::now();
+    Ok(json!({
+        "currency": "KRW", "payable": payable.to_string(), "pending": pending.to_string(),
+        "available": available.to_string(), "account_registered": account,
+        "minimum_payout": payout_policy::minimum_at(now).to_string(),
+        "payout_policy": payout_policy::policy_json(now),
+    }))
+}
+
+/// 출금 견적: 신청 전에 수수료·실수령액을 보여 준다 (정산 약관 제7조 ④).
+pub async fn quote_payout(s: &AppState, a: &Actor, org: Uuid, amount: &str) -> Result<Value> {
+    let amount = Decimal::from_str(amount.trim()).map_err(|_| Error::Invalid)?;
+    let q = payout_policy::quote(amount, chrono::Utc::now())?;
+    let mut tx = s.pool.begin().await?;
+    member(&mut tx, a, org, false).await?;
+    let (payable, pending) = balances(&mut tx, org).await?;
+    tx.rollback().await?;
+    let available = (payable - pending).max(Decimal::ZERO);
+    let mut v = q.json();
+    v["available"] = json!(available.to_string());
+    v["within_balance"] = json!(q.amount <= available);
+    Ok(v)
 }
 
 pub async fn statements(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
@@ -1139,6 +1158,9 @@ pub async fn list_payouts(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
     member(&mut tx, a, org, false).await?;
     let items: Vec<Value> = sqlx::query_scalar(
         "SELECT jsonb_build_object('id',p.id,'amount',p.amount::text,'currency',p.currency,'status',p.status,'note',p.note,'created_at',p.created_at,
+            'fee',p.fee_amount::text,'net',p.net_amount::text,'policy_version',p.policy_version,
+            'account',p.account_snapshot - 'key_version','cancelled_at',p.cancelled_at,
+            'cancellable',(p.status='REQUESTED' OR (p.status='ORDERED' AND o.status IN ('PENDING_APPROVAL','APPROVED'))),
             'order_status',o.status,'order_updated_at',COALESCE(o.approved_at,o.created_at))
          FROM portal.payout_requests p LEFT JOIN finance.payout_orders o ON o.id=p.payout_order_id
          WHERE p.org_id=$1 ORDER BY p.created_at DESC LIMIT 200",
@@ -1149,8 +1171,6 @@ pub async fn list_payouts(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
     tx.rollback().await?;
     Ok(json!({"items":items}))
 }
-
-pub const MIN_PAYOUT: i64 = 10_000;
 
 /// "30,000원" for user-facing notices (no ₩ glyph — it renders differently per font/OS).
 fn won(amount: Decimal) -> String {
@@ -1179,9 +1199,7 @@ pub async fn request_payout(
     i: PayoutRequestInput,
 ) -> Result<Value> {
     let amount = Decimal::from_str(i.amount.trim()).map_err(|_| Error::Invalid)?;
-    if amount.fract() != Decimal::ZERO || amount < Decimal::from(MIN_PAYOUT) {
-        return Err(Error::PolicyGate("PAYOUT_BELOW_MINIMUM"));
-    }
+    let q = payout_policy::quote(amount, chrono::Utc::now())?;
     let key = text(&i.idempotency_key, 8, 120)?;
     let mut tx = s.pool.begin().await?;
     owner(&mut tx, a, org).await?;
@@ -1191,7 +1209,7 @@ pub async fn request_payout(
         .execute(&mut *tx)
         .await?;
     if let Some(v) = sqlx::query_scalar::<_, Value>(
-        "SELECT jsonb_build_object('id',id,'amount',amount::text,'status',status) FROM portal.payout_requests WHERE org_id=$1 AND idempotency_key=$2",
+        "SELECT jsonb_build_object('id',id,'amount',amount::text,'fee',fee_amount::text,'net',net_amount::text,'status',status) FROM portal.payout_requests WHERE org_id=$1 AND idempotency_key=$2",
     )
     .bind(org)
     .bind(&key)
@@ -1200,14 +1218,22 @@ pub async fn request_payout(
     {
         return Ok(v);
     }
-    let account: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM portal.payout_accounts WHERE org_id=$1)")
-            .bind(org)
-            .fetch_one(&mut *tx)
-            .await?;
-    if !account {
-        return Err(Error::PolicyGate("PAYOUT_ACCOUNT_REQUIRED"));
-    }
+    // 신청 시점의 수령 계좌를 고정한다: 이후 계좌를 바꿔도 이 신청은 이 계좌로 간다.
+    let account = sqlx::query(
+        "SELECT payee_type,holder_name,bank_name,account_last4,account_cipher,key_version,row_version
+         FROM portal.payout_accounts WHERE org_id=$1 FOR SHARE",
+    )
+    .bind(org)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(Error::PolicyGate("PAYOUT_ACCOUNT_REQUIRED"))?;
+    let snapshot = json!({
+        "payee_type": account.get::<String, _>("payee_type"),
+        "holder_name": account.get::<String, _>("holder_name"),
+        "bank_name": account.get::<String, _>("bank_name"),
+        "account_last4": account.get::<String, _>("account_last4"),
+        "account_row_version": account.get::<i64, _>("row_version"),
+    });
     let held: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM finance.finance_holds WHERE org_id=$1 AND scope_type='PARTY' AND scope_value=$2 AND active)",
     )
@@ -1223,15 +1249,25 @@ pub async fn request_payout(
         return Err(Error::PolicyGate("PAYOUT_EXCEEDS_BALANCE"));
     }
     let id = Uuid::new_v4();
-    sqlx::query("INSERT INTO portal.payout_requests(id,org_id,requested_by,payee_party_id,amount,currency,idempotency_key) VALUES($1,$2,$3,$4,$5,'KRW',$6)")
-        .bind(id)
-        .bind(org)
-        .bind(a.user)
-        .bind(a.party)
-        .bind(amount)
-        .bind(&key)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(
+        "INSERT INTO portal.payout_requests(id,org_id,requested_by,payee_party_id,amount,currency,idempotency_key,
+           fee_amount,net_amount,policy_version,account_snapshot,account_cipher,account_key_version)
+         VALUES($1,$2,$3,$4,$5,'KRW',$6,$7,$8,$9,$10,$11,$12)",
+    )
+    .bind(id)
+    .bind(org)
+    .bind(a.user)
+    .bind(a.party)
+    .bind(amount)
+    .bind(&key)
+    .bind(q.fee)
+    .bind(q.net)
+    .bind(payout_policy::POLICY_VERSION)
+    .bind(&snapshot)
+    .bind(account.get::<Vec<u8>, _>("account_cipher"))
+    .bind(account.get::<i16, _>("key_version"))
+    .execute(&mut *tx)
+    .await?;
     operations::audit(
         &mut tx,
         Some(a.user),
@@ -1244,14 +1280,58 @@ pub async fn request_payout(
     .await?;
     sqlx::query("SELECT portal.notify($1,'SETTLEMENT','수익 지급을 요청했어요.',$2,'/settlement')")
         .bind(org)
-        .bind(format!(
-            "{} · 담당자 확인 후 등록한 계좌로 보내 드려요.",
-            won(amount)
-        ))
+        .bind(if q.fee > Decimal::ZERO {
+            format!(
+                "{} 신청 · 수수료 {} · 실수령 {} · 담당자 확인 후 등록한 계좌로 보내 드려요.",
+                won(amount),
+                won(q.fee),
+                won(q.net)
+            )
+        } else {
+            format!(
+                "{} · 담당자 확인 후 등록한 계좌로 보내 드려요.",
+                won(amount)
+            )
+        })
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
-    Ok(json!({"id":id,"amount":amount.to_string(),"status":"REQUESTED"}))
+    Ok(
+        json!({"id":id,"amount":amount.to_string(),"fee":q.fee.to_string(),"net":q.net.to_string(),"status":"REQUESTED"}),
+    )
+}
+
+/// 송금 실행 전 출금 취소 (정산 약관 제12조). 신청 상태와 승인 대기·승인된 주문까지 취소되고,
+/// 은행에 넘긴(SUBMITTED) 뒤에는 취소할 수 없다. 예약된 금액은 곧바로 출금 가능 잔액으로 돌아온다.
+pub async fn cancel_payout(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> {
+    let mut tx = s.pool.begin().await?;
+    owner(&mut tx, a, org).await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1::text, 7))")
+        .bind(org)
+        .execute(&mut *tx)
+        .await?;
+    let result: String = sqlx::query_scalar("SELECT finance.cancel_unsent_payout($1,$2)")
+        .bind(org)
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+    match result.as_str() {
+        "CANCELLED" => {}
+        "NOT_FOUND" => return Err(Error::NotFound),
+        _ => return Err(Error::PolicyGate("PAYOUT_NOT_CANCELLABLE")),
+    }
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        Some(org),
+        Some(id),
+        "portal.payout.cancelled",
+        "OWNER_REQUEST",
+        a.request,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({"id": id, "status": "CANCELLED"}))
 }
 
 // ---------------------------------------------------------------------------
@@ -1263,44 +1343,54 @@ pub async fn reports(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
     let base = "FROM finance.report_lines l JOIN finance.royalty_reports rr ON rr.id=l.report_id
                 WHERE l.org_id=$1 AND l.match_status='AUTO' AND rr.period_start >= (date_trunc('month', now()) - interval '11 months')";
     let by_month: Vec<Value> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
-        "SELECT jsonb_build_object('month',to_char(rr.period_start,'YYYY-MM'),'streams',COALESCE(SUM(l.quantity),0)::text,'revenue',COALESCE(SUM(l.gross_amount),0)::text)
-         {base} GROUP BY to_char(rr.period_start,'YYYY-MM') ORDER BY 1"
+        "SELECT jsonb_build_object('month',to_char(rr.period_start,'YYYY-MM'),'currency',COALESCE(l.currency, rr.currency),'streams',COALESCE(SUM(l.quantity),0)::text,'revenue',COALESCE(SUM(l.gross_amount),0)::text)
+         {base} GROUP BY to_char(rr.period_start,'YYYY-MM'), COALESCE(l.currency, rr.currency) ORDER BY to_char(rr.period_start,'YYYY-MM'), COALESCE(l.currency, rr.currency)"
     )))
     .bind(org)
     .fetch_all(&mut *tx)
     .await?;
     let by_dsp: Vec<Value> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
-        "SELECT jsonb_build_object('dsp',rr.dsp_id,'streams',COALESCE(SUM(l.quantity),0)::text,'revenue',COALESCE(SUM(l.gross_amount),0)::text)
-         {base} GROUP BY rr.dsp_id ORDER BY SUM(l.quantity) DESC NULLS LAST"
+        "SELECT jsonb_build_object('dsp',rr.dsp_id,'currency',COALESCE(l.currency, rr.currency),'streams',COALESCE(SUM(l.quantity),0)::text,'revenue',COALESCE(SUM(l.gross_amount),0)::text)
+         {base} GROUP BY rr.dsp_id, COALESCE(l.currency, rr.currency) ORDER BY SUM(l.quantity) DESC NULLS LAST"
     )))
     .bind(org)
     .fetch_all(&mut *tx)
     .await?;
     let by_release: Vec<Value> = sqlx::query_scalar(
-        "SELECT jsonb_build_object('release_id',r.id,'title',r.title,'streams',COALESCE(SUM(l.quantity),0)::text,'revenue',COALESCE(SUM(l.gross_amount),0)::text)
+        "SELECT jsonb_build_object('release_id',r.id,'title',r.title,'currency',COALESCE(l.currency, rr.currency),'streams',COALESCE(SUM(l.quantity),0)::text,'revenue',COALESCE(SUM(l.gross_amount),0)::text)
          FROM finance.report_lines l JOIN finance.royalty_reports rr ON rr.id=l.report_id
            JOIN catalog.releases r ON r.id=l.matched_release_id AND r.org_id=l.org_id
          WHERE l.org_id=$1 AND l.match_status='AUTO' AND rr.period_start >= (date_trunc('month', now()) - interval '11 months')
-         GROUP BY r.id ORDER BY SUM(l.quantity) DESC NULLS LAST LIMIT 20",
+         GROUP BY r.id, COALESCE(l.currency, rr.currency) ORDER BY SUM(l.quantity) DESC NULLS LAST LIMIT 20",
     )
     .bind(org)
     .fetch_all(&mut *tx)
     .await?;
     // Month × platform × release rows for the studio report table and chart.
     let rows: Vec<Value> = sqlx::query_scalar(
-        "SELECT jsonb_build_object('month',to_char(rr.period_start,'YYYY-MM'),'dsp',rr.dsp_id,'release_id',r.id,'release',COALESCE(r.title,''),
+        "SELECT jsonb_build_object('month',to_char(rr.period_start,'YYYY-MM'),'dsp',rr.dsp_id,'release_id',r.id,'release',COALESCE(r.title,''),'currency',COALESCE(l.currency, rr.currency),
             'streams',COALESCE(SUM(l.quantity),0)::text,'revenue',COALESCE(SUM(l.gross_amount),0)::text)
          FROM finance.report_lines l JOIN finance.royalty_reports rr ON rr.id=l.report_id
            LEFT JOIN catalog.releases r ON r.id=l.matched_release_id AND r.org_id=l.org_id
          WHERE l.org_id=$1 AND l.match_status='AUTO' AND rr.period_start >= (date_trunc('month', now()) - interval '11 months')
-         GROUP BY to_char(rr.period_start,'YYYY-MM'), rr.dsp_id, r.id, r.title
+         GROUP BY to_char(rr.period_start,'YYYY-MM'), rr.dsp_id, r.id, r.title, COALESCE(l.currency, rr.currency)
          ORDER BY 1 DESC, SUM(l.gross_amount) DESC NULLS LAST LIMIT 500",
     )
     .bind(org)
     .fetch_all(&mut *tx)
     .await?;
+    // 통화가 다른 금액은 더하지 않는다: 원통화별 합계 (원화 환산은 정산 확정 때 환율과 함께 기록).
+    let by_currency: Vec<Value> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+        "SELECT jsonb_build_object('currency',COALESCE(l.currency, rr.currency),'streams',COALESCE(SUM(l.quantity),0)::text,'revenue',COALESCE(SUM(l.gross_amount),0)::text)
+         {base} GROUP BY COALESCE(l.currency, rr.currency) ORDER BY 1"
+    )))
+    .bind(org)
+    .fetch_all(&mut *tx)
+    .await?;
     tx.rollback().await?;
-    Ok(json!({"by_month":by_month,"by_dsp":by_dsp,"by_release":by_release,"rows":rows}))
+    Ok(
+        json!({"by_month":by_month,"by_dsp":by_dsp,"by_release":by_release,"rows":rows,"by_currency":by_currency}),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -1406,6 +1496,21 @@ org_get!(h_finance_summary, finance_summary);
 org_get!(h_statements, statements);
 org_get!(h_payouts, list_payouts);
 org_body!(h_request_payout, request_payout, PayoutRequestInput);
+id_post!(h_cancel_payout, cancel_payout);
+
+#[derive(Deserialize)]
+pub struct QuoteQuery {
+    pub amount: String,
+}
+async fn h_quote_payout(
+    State(s): State<AppState>,
+    Path(org): Path<Uuid>,
+    axum::extract::Query(q): axum::extract::Query<QuoteQuery>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    Ok(Json(quote_payout(&s, &a, org, &q.amount).await?))
+}
 org_get!(h_reports, reports);
 
 pub fn routes() -> Router<AppState> {
@@ -1455,6 +1560,11 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/orgs/{org}/finance/payouts",
             get(h_payouts).post(h_request_payout),
+        )
+        .route("/api/orgs/{org}/finance/payouts/quote", get(h_quote_payout))
+        .route(
+            "/api/orgs/{org}/finance/payouts/{id}/cancel",
+            post(h_cancel_payout),
         )
         .route("/api/orgs/{org}/reports", get(h_reports))
 }
