@@ -7,7 +7,7 @@ import { useConfirm } from '../components/Confirm';
 import { BankLogo } from '../components/BankLogo';
 import { PaymentSetupModal } from '../components/PaymentSetupModal';
 import { isPaymentRegistered, usePayment } from '../store/payment';
-import { balance, payoutsStore, statementsStore, useBalance, type Payout } from '../store/settlement';
+import { balance, payoutFee, payoutsStore, statementsStore, useBalance, type Payout } from '../store/settlement';
 import { MOCK } from '../lib/mode';
 import * as portal from '../api/portal';
 import { errorMessage } from '../api/errors';
@@ -19,6 +19,7 @@ const PAYOUT_STATUS: Record<Payout['status'], [string, Tone]> = {
   processing: ['지급 처리 중', 'violet'],
   sent: ['지급 완료', 'green'],
   failed: ['지급 실패', 'amber'],
+  cancelled: ['요청 취소', 'gray'],
 };
 import { money, niceDate } from '../lib/format';
 import { monthKey, todayStr } from '../lib/date';
@@ -129,6 +130,22 @@ export function Settlement() {
     toast('정산 내역을 삭제했어요.');
   };
 
+  const [cancelling, setCancelling] = useState(false);
+  const cancelPayout = async (p: Payout) => {
+    if (!(await confirm({ title: '지급 요청을 취소할까요?', message: `${niceDate(p.created)} · ${money(p.amount)} — 취소하면 요청 금액이 다시 요청 가능 금액으로 돌아와요.`, confirmLabel: '요청 취소', danger: true }))) return;
+    setCancelling(true);
+    try {
+      await portal.cancelPayout(p.id);
+      await refreshFinance();
+      setDetail(null);
+      toast('지급 요청을 취소했어요.');
+    } catch (err) {
+      toast(errorMessage(err, '지급 요청을 취소하지 못했어요. 잠시 후 다시 시도해 주세요.'));
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   const deletePayout = async (id: string) => {
     const p = payouts.find(x => x.id === id);
     if (!p) return;
@@ -145,6 +162,7 @@ export function Settlement() {
       return;
     }
     if (amt < minimum) { toast(`${money(minimum)} 이상부터 요청할 수 있어요.`); return; }
+    if (!MOCK && amt - payoutFee(amt) <= 0) { toast(`수수료 ${money(payoutFee(amt))}을 빼면 받을 금액이 없어요. 금액을 늘려 주세요.`); return; }
     if (!MOCK) {
       if (requesting) return;
       setRequesting(true);
@@ -292,6 +310,8 @@ export function Settlement() {
         <Modal title={`${money(detailPayout.amount)} 지급 요청`} onClose={() => setDetail(null)}>
           <dl className="ui-kv aq-statement-detail">
             <div><dt>요청 금액</dt><dd><Money value={detailPayout.amount} /></dd></div>
+            {detailPayout.fee != null && <div><dt>출금 수수료</dt><dd>{detailPayout.fee ? <Money value={detailPayout.fee} /> : '무료'}</dd></div>}
+            {detailPayout.net != null && <div><dt>실수령액</dt><dd><Money value={detailPayout.net} /></dd></div>}
             <div><dt>상태</dt><dd><Badge tone={PAYOUT_STATUS[detailPayout.status]?.[1] ?? 'violet'}>{PAYOUT_STATUS[detailPayout.status]?.[0] ?? detailPayout.status}</Badge></dd></div>
             <div><dt>요청일</dt><dd>{niceDate(detailPayout.created)}</dd></div>
             {detailPayout.note && <div><dt>메모</dt><dd>{detailPayout.note}</dd></div>}
@@ -299,6 +319,11 @@ export function Settlement() {
           {MOCK && (
             <div className="row-actions aq-statement-detail-actions">
               <button type="button" className="ui-btn is-danger" onClick={async () => { const id = detailPayout.id; setDetail(null); await deletePayout(id); }}>요청 기록 삭제</button>
+            </div>
+          )}
+          {!MOCK && detailPayout.cancellable && (
+            <div className="row-actions aq-statement-detail-actions">
+              <button type="button" className={`ui-btn is-danger${cancelling ? ' is-busy' : ''}`} disabled={cancelling} onClick={() => void cancelPayout(detailPayout)}>요청 취소</button>
             </div>
           )}
         </Modal>
@@ -323,7 +348,11 @@ export function Settlement() {
                   />
                   <button type="button" id="payoutAll" className="ui-btn is-white is-sm" onClick={() => setAmount(String(left))}>전액</button>
                 </div>
-                <p className="ui-field-help">요청 가능 금액을 초과할 수 없어요.</p>
+                <p className="ui-field-help">
+                  {!MOCK && Number(amount) > 0
+                    ? `출금 수수료 ${payoutFee(Number(amount)) ? money(payoutFee(Number(amount))) : '무료'} · 실수령 ${money(Math.max(0, Number(amount) - payoutFee(Number(amount))))}`
+                    : '요청 가능 금액을 초과할 수 없어요.'}
+                </p>
               </div>
               <div className="studio-receive-account">
                 <BankLogo name={payment?.bank || ''} />
@@ -345,7 +374,7 @@ export function Settlement() {
               <div className="doc-connection">
                 {MOCK
                   ? '신청 내용은 현재 작업 공간에 저장돼요. 지급 서비스가 연결되기 전에는 실제 송금이 진행되지 않아요.'
-                  : `담당자가 확인한 뒤 등록한 계좌로 보내 드려요. ${money(minimum)} 이상부터 요청할 수 있어요.`}
+                  : `담당자가 확인한 뒤 등록한 계좌로 보내 드려요. 30,000원 이하는 수수료 500원(부가가치세 포함), 초과는 무료예요.${minimum > 0 ? ` ${money(minimum)} 이상부터 요청할 수 있어요.` : ' 2027년 12월 31일까지는 최소 출금금액 없이 요청할 수 있어요.'} 은행에 보내기 전까지는 취소할 수 있어요.`}
               </div>
               <div className="aq-sticky-foot">
                 <button className={`ui-btn is-primary studio-submit-wide${requesting ? ' is-busy' : ''}`} type="submit" disabled={requesting}>

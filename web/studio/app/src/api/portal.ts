@@ -284,7 +284,7 @@ export async function fetchFinance(): Promise<{ summary: FinanceSummary; stateme
   const [s, st, po] = await Promise.all([
     req<{ payable: string; pending: string; available: string; minimum_payout: string; account_registered: boolean }>(orgPath('/finance/summary')),
     req<{ items: { id: string; description: string; source: Record<string, unknown>; created_at: string; amount: string }[] }>(orgPath('/finance/statements')),
-    req<{ items: { id: string; amount: string; note: string; status: string; order_status: string | null; created_at: string }[] }>(orgPath('/finance/payouts')),
+    req<{ items: { id: string; amount: string; note: string; status: string; order_status: string | null; created_at: string; fee: string | null; net: string | null; cancellable: boolean }[] }>(orgPath('/finance/payouts')),
   ]);
   return {
     summary: {
@@ -299,11 +299,18 @@ export async function fetchFinance(): Promise<{ summary: FinanceSummary; stateme
     })),
     payouts: po.items.map(p => ({
       id: p.id, amount: Number(p.amount), note: p.note, created: stamp(p.created_at).slice(0, 10),
+      fee: p.fee == null ? undefined : Number(p.fee), net: p.net == null ? undefined : Number(p.net), cancellable: !!p.cancellable,
       status: p.order_status === 'SETTLED' ? 'sent'
-        : p.status === 'REJECTED' || p.status === 'CANCELLED' || p.order_status === 'FAILED' || p.order_status === 'RETURNED' ? 'failed'
+        : p.status === 'CANCELLED' ? 'cancelled'
+        : p.status === 'REJECTED' || p.order_status === 'FAILED' || p.order_status === 'RETURNED' ? 'failed'
         : p.status === 'ORDERED' ? 'processing' : 'requested',
     })),
   };
+}
+
+/** 송금 실행 전 출금 취소 — 예약된 금액은 바로 요청 가능 금액으로 돌아온다 */
+export async function cancelPayout(id: string): Promise<void> {
+  await req(orgPath(`/finance/payouts/${encodeURIComponent(id)}/cancel`), { method: 'POST' });
 }
 
 export async function requestPayout(amount: number): Promise<void> {
@@ -315,9 +322,11 @@ export async function requestPayout(amount: number): Promise<void> {
 // 리포트 (매칭된 플랫폼 리포트)
 // ---------------------------------------------------------------------------
 export interface ServerReports {
-  by_month: { month: string; streams: string; revenue: string }[];
-  by_dsp: { dsp: string; streams: string; revenue: string }[];
-  by_release: { release_id: string; title: string; streams: string; revenue: string }[];
-  rows: { month: string; dsp: string; release_id: string | null; release: string; streams: string; revenue: string }[];
+  // 금액은 원통화별로 따로 온다 (서로 다른 통화를 더하지 않는다)
+  by_month: { month: string; currency: string; streams: string; revenue: string }[];
+  by_dsp: { dsp: string; currency: string; streams: string; revenue: string }[];
+  by_release: { release_id: string; title: string; currency: string; streams: string; revenue: string }[];
+  rows: { month: string; dsp: string; release_id: string | null; release: string; currency: string; streams: string; revenue: string }[];
+  by_currency: { currency: string; streams: string; revenue: string }[];
 }
 export const fetchReports = () => req<ServerReports>(orgPath('/reports'));
