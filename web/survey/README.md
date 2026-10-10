@@ -6,7 +6,7 @@
 
 | 파일 | 역할 |
 |---|---|
-| `app/src/survey.ts` | 문항·단계 데이터 (기존 HTML 문구 그대로, `questions.json`과 제목·선택지 일치를 테스트로 확인) |
+| `app/src/survey.ts` | 문항·단계 데이터 (`questions.json`과 제목·선택지 일치를 테스트로 확인) |
 | `app/src/logic.ts` | 검증·배타 선택·최대 개수·경험 분기·제출 본문 (기존 `app.js` 규칙) |
 | `app/src/App.tsx` | 화면 |
 | `app/src/motion.ts` | 등장 애니메이션 (기존 `motion.js`) |
@@ -71,3 +71,11 @@ bunx wrangler d1 execute audeniq-survey --remote --command "SELECT COUNT(*) AS t
 - 설문 페이지에서 로고를 누르면 **현재 설문 페이지 맨 위**(`#top`)로 이동합니다. 오른쪽 `공식 홈페이지` 버튼은 기존처럼 홈페이지로 연결됩니다. 문항 입력값과 현재 설문 단계는 초기화하지 않습니다.
 - 로고·헤더 수정은 정적 HTML/CSS만 변경하므로 Worker API/D1/Turnstile 로직에는 변화가 없습니다.
 - 기존 운영 프로젝트에서는 전체 ZIP보다 **V5.1 헤더 패치 ZIP**에 포함된 `public/index.html`과 `public/style.css`만 덮어쓰면 D1·Turnstile 설정을 안전하게 유지할 수 있습니다.
+
+
+## 문항 개편 (2026-10-10, 버전 5)
+
+- 안내와 문장형 선택지는 해요체로 통일하고, 스튜디오의 `tokens.css`·`controls.css`를 직접 공유해요.
+- 관리 음원 규모, 정산·출금 우선순위, 퍼블리싱 관심도, 유료 부가서비스 수요를 선택 문항으로 추가했어요. 준비 중인 항목은 확정 지원으로 안내하지 않아요.
+- 화면 번호는 응답 흐름대로 Q1~Q22이며, 기존 분석용 저장 키는 유지해요.
+- 새 클라이언트는 `survey_version: 5`를 제출해요. Worker는 버전 미지정 또는 4인 기존 탭의 응답을 `questions-v4.json`으로 검증하고, 실제 버전을 D1에 기록해요. 기존 응답을 변경하거나 새 의미로 해석하지 않아요.

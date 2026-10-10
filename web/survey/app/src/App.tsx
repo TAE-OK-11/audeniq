@@ -1,4 +1,4 @@
-// AUDENIQ 수요조사 — 기존 정적 HTML·app.js를 React로 옮긴 화면. 마크업·클래스·문구는 원본과 같다.
+// AUDENIQ 수요조사 — 스튜디오 공통 디자인과 현재 서비스 준비 방향을 반영해요.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { STEPS, type Question } from './survey';
 import {
@@ -34,17 +34,18 @@ function QuestionBlock({ q, st, skip, onChoice, onOther, extra }: {
     <div
       className="question" id={`question-${q.key}`} data-question={q.key} data-kind={q.kind}
       data-required={String(q.required)} data-max={q.max} hidden={hidden}
+      role="group" aria-labelledby={`title-${q.key}`} aria-describedby={q.hint ? `hint-${q.key}` : undefined}
     >
       <div className="question-header">
         <span className="question-id">{q.qid}</span>
         {q.tag && <span className="required-tag">{q.tag}</span>}
       </div>
-      <h3 className="question-title">{q.title}</h3>
+      <h3 className="question-title" id={`title-${q.key}`}>{q.title}</h3>
       {q.key === 'beta' ? (
-        q.hint && <p className="question-hint">{q.hint}</p>
+        q.hint && <p className="question-hint" id={`hint-${q.key}`}>{q.hint}</p>
       ) : q.kind !== 'text' && (
         <div className="question-instructions">
-          {q.hint && <p className="question-hint">{q.hint}</p>}
+          {q.hint && <p className="question-hint" id={`hint-${q.key}`}>{q.hint}</p>}
           {q.count && (
             <span className={`selection-count${n ? ' has-selection' : ''}`} data-count-for={q.key} aria-live="polite">
               {n ? `${n}개 선택됨` : '0개 선택'}
@@ -73,9 +74,9 @@ function QuestionBlock({ q, st, skip, onChoice, onOther, extra }: {
       )}
       {q.other && (
         <label className="other-field" id={`${q.key}-other-wrap`} hidden={!showOther}>
-          기타 내용을 적어 주세요{' '}
+          기타 내용을 적어주세요{' '}
           <input
-            name={`${q.key}_other`} type="text" maxLength={160} autoComplete="off" placeholder="직접 입력"
+            name={`${q.key}_other`} type="text" maxLength={160} autoComplete="off" placeholder="내용을 직접 입력해 주세요"
             aria-label={`${q.key} 기타 입력`} disabled={!showOther}
             value={st.others[q.key] ?? ''} onChange={e => onOther(q.key, e.target.value)}
           />
@@ -240,15 +241,15 @@ export function App() {
         <div className="intro">
           <span className="eyebrow"><span className="pulse" aria-hidden="true" />AUDENIQ RESEARCH · 사전 수요조사</span>
           <h1>당신의 음악이<br /><span className="accent">더 멀리 가도록.</span></h1>
-          <p className="intro-lead">국내 아티스트 음원 유통·배급 서비스 수요조사</p>
-          <p className="intro-callout">아티스트 여러분의 경험과 의견이<br /><strong>AUDENIQ의 서비스 방향을 만듭니다.</strong></p>
+          <p className="intro-lead">독립 아티스트·레이블을 위한 음악 서비스 수요조사</p>
+          <p className="intro-callout">아티스트 여러분의 경험과 의견이<br /><strong>AUDENIQ의 서비스 방향을 만들어요.</strong></p>
           <div className="intro-summary">
-            <p>안녕하세요. 현재 학생 창업가로서 국내 아티스트를 위한 음원 배급 및 아티스트 인프라 플랫폼 <strong>AUDENIQ</strong>를 준비하고 있습니다.</p>
-            <p>합리적인 수수료, 빠른 처리, 투명한 정산과 음원 배급·통계·가사·아티스트 지원 기능을 하나로 제공하는 것을 목표로 합니다. 정식 출시 전, 실제 아티스트분들의 의견을 듣고 싶습니다.</p>
+            <p>독립 아티스트와 소형 레이블을 위한 음악 플랫폼 <strong>AUDENIQ</strong>를 준비하고 있어요. 배급·정산·권리 관리를 하나의 스튜디오에서 이용할 수 있도록 만들고 있어요.</p>
+            <p>국내 주요 음원 플랫폼 배급을 우선 준비하면서 해외 배급과 퍼블리싱도 함께 검토하고 있어요. 실제로 필요한 기능과 불편했던 점을 알려주시면 개발과 운영의 우선순위를 정하는 데 참고할게요.</p>
           </div>
           <div className="intro-purpose">
             <span className="purpose-mark" aria-hidden="true"><Icon name="arrow-up-right" size={16} /></span>
-            <p><strong>응답 활용 안내</strong><br />응답은 서비스 기획·시장 수요 분석 및 향후 DSP·관련 업체 협의를 위한 통계 자료로 활용될 수 있습니다.</p>
+            <p><strong>응답 활용 안내</strong><br />응답은 서비스 기획과 시장 수요 분석에 활용해요. 음원 플랫폼·관련 업체와 협의할 때는 연락처를 제외한 통계로 참고할 수 있어요.</p>
           </div>
           <div className="intro-foot"><span><Icon name="clock" size={13} />약 5~10분</span><span><Icon name="check" size={13} />익명 참여 가능</span><span><Icon name="arrow-up-right" size={13} />정식 가입과 별개</span></div>
         </div>
@@ -277,9 +278,9 @@ export function App() {
                     return (
                       <div key={q.key} className="question" id="question-q14" data-question="q14" data-kind="text" data-required="false">
                         <div className="question-header"><span className="question-id">{q.qid}</span><span className="required-tag">{q.tag}</span></div>
-                        <h3 className="question-title">{q.title}</h3>
+                        <h3 className="question-title" id={`title-${q.key}`}>{q.title}</h3>
                         <textarea
-                          className="text-field" id="q14" name="q14" rows={5} maxLength={2000} placeholder="이런 부분이 바뀌면 좋겠어요."
+                          className="text-field" id="q14" name="q14" aria-labelledby="title-q14" rows={5} maxLength={2000} placeholder="이런 부분이 바뀌면 좋겠어요."
                           value={st.comment} onChange={e => setSt(s => ({ ...s, comment: e.target.value }))}
                         />
                         <div className="char-count" id="char-count">{`${commentLength} / 2,000`}</div>
@@ -317,7 +318,7 @@ export function App() {
                         </label>
                         <div className="privacy">
                           <div className="privacy-title">개인정보 및 응답 수집 안내</div>
-                          <p>수집 주체: AUDENIQ · 설문 응답 목적: 서비스 기획, 시장 수요 분석 및 관련 업체 협의를 위한 통계. 선택적으로 입력한 연락처는 별도 동의한 경우에만 베타테스트·서비스 출시 안내에 이용합니다. 수집 항목: 설문 답변(자유입력 포함), 선택적으로 입력한 연락처. 보유 기간: 제출일로부터 최대 12개월이며 목적 달성 시 조기 삭제할 수 있습니다. 열람·삭제 문의: <a href="mailto:audeniq.official@gmail.com">audeniq.official@gmail.com</a>. 제출 후 표시되는 접수번호를 함께 알려주시면 응답을 찾는 데 도움이 됩니다. 제3자에게 통계 결과를 제공할 때는 개별 연락처를 포함하지 않습니다.</p>
+                          <p>수집 주체는 AUDENIQ예요. 설문 답변(자유입력 포함)은 서비스 기획·시장 수요 분석과 관련 업체 협의를 위한 통계에 사용해요. 선택적으로 입력한 연락처는 별도 동의한 경우에만 베타테스트·서비스 출시 안내에 사용해요. 제출일부터 최대 12개월간 보관하며 목적을 달성하면 더 일찍 삭제할 수 있어요. 열람·삭제 문의: <a href="mailto:audeniq.official@gmail.com">audeniq.official@gmail.com</a>. 제출 후 표시되는 접수번호를 알려주시면 응답을 찾는 데 도움이 돼요. 외부에 통계 결과를 제공할 때는 개별 연락처를 포함하지 않아요. 연락처 제공에 동의하지 않아도 설문에 참여할 수 있지만, 베타·출시 안내는 받을 수 없어요.</p>
                         </div>
                         <label className="agree required-agree">
                           <input
@@ -354,7 +355,7 @@ export function App() {
             <div className="complete-icon" aria-hidden="true"><Icon name="check" size={30} /></div>
             <span className="step-kicker">THANK YOU</span>
             <h2>당신의 이야기가<br />AUDENIQ의 다음을 만들어요.</h2>
-            <p>의견을 보내줘서 고마워요. 더 나은 음악 배급 서비스를 준비하는 데 소중하게 활용할게요.</p>
+            <p>의견을 보내주셔서 감사해요. 더 나은 음악 배급 서비스를 준비하는 데 소중하게 활용할게요.</p>
             <div className="receipt">접수번호 <code id="receipt-id">{receipt}</code></div>
             <button type="button" id="copy-receipt" className="copy-btn" onClick={() => void copyReceipt()}>{copyLabel}</button>
             <a className="complete-home" href="https://audeniq.com/">AUDENIQ 홈페이지로 돌아가기 <Icon name="arrow-up-right" /></a>
@@ -369,3 +370,4 @@ export function App() {
     </>
   );
 }
+
