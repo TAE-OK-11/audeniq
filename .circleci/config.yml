@@ -40,8 +40,11 @@ commands:
             if [ "<< pipeline.parameters.force >>" = true ]; then exit 0; fi
             base="<< pipeline.git.base_revision >>"
             head="<< pipeline.git.revision >>"
-            # 새 브랜치 첫 푸시·수동 실행 등 비교 기준이 없으면 실행한다
-            if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then exit 0; fi
+            # GitHub App 트리거는 base_revision을 비워 보낼 수 있다: 그때는 바로 앞 커밋(병합이면 PR 전체)과 비교
+            if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+              base=$(git rev-parse -q --verify "$head~1" || true)
+              [ -n "$base" ] || exit 0
+            fi
             if git diff --name-only "$base" "$head" | grep -Eq '<< parameters.paths >>'; then exit 0; fi
             echo "관련 변경 없음 — 건너뜀"
             circleci-agent step halt
@@ -71,6 +74,9 @@ commands:
           name: Check D1 migration changes
           command: |
             base="<< pipeline.git.base_revision >>"
+            if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+              base=$(git rev-parse -q --verify "<< pipeline.git.revision >>~1" || true)
+            fi
             if [ "<< pipeline.parameters.apply_migrations >>" = true ]; then
               touch /tmp/apply-migrations
             elif [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null \
