@@ -892,6 +892,138 @@ async fn original_audio_provenance_is_preserved_and_not_shared_between_identical
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// A pool on the non-owner `audeniq_worker` role with deploy/grants.sql applied.
+async fn worker_role_pool(pool: &PgPool) -> PgPool {
+    sqlx::raw_sql(
+        "DO $$ BEGIN
+         IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='audeniq_api') THEN CREATE ROLE audeniq_api NOLOGIN; END IF;
+         IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='audeniq_worker') THEN CREATE ROLE audeniq_worker NOLOGIN; END IF;
+         END $$;",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::raw_sql(include_str!("../../../deploy/grants.sql"))
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .after_connect(|c, _| {
+            Box::pin(async move {
+                sqlx::query("SET ROLE audeniq_worker").execute(c).await?;
+                Ok(())
+            })
+        })
+        .connect_with((*pool.connect_options()).clone())
+        .await
+        .unwrap()
+}
+
+/// BE-003: the worker holds no UPDATE on rights.rights_epochs, so it cannot
+/// row-lock the epoch directly (42501). It share-locks it through
+/// rights.share_lock_epoch (0088), which still blocks a concurrent rights
+/// bump until the worker's transaction ends, and the counter stays unwritable.
+#[sqlx::test]
+async fn worker_share_locks_rights_epoch_without_update_grant(pool: PgPool) {
+    let (app, _store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let release = create_release(&app, &u).await;
+    let mut c = pool.begin().await.unwrap();
+    sqlx::query("SELECT set_config('app.org_id',$1,true)")
+        .bind(u.org.to_string())
+        .execute(&mut *c)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO rights.rights_epochs(org_id,release_id,epoch) VALUES($1,$2,3)")
+        .bind(u.org)
+        .bind(release)
+        .execute(&mut *c)
+        .await
+        .unwrap();
+    c.commit().await.unwrap();
+    let worker = worker_role_pool(&pool).await;
+
+    let mut w = worker.begin().await.unwrap();
+    let direct = sqlx::query(
+        "SELECT epoch FROM rights.rights_epochs WHERE org_id=$1 AND release_id=$2 FOR SHARE",
+    )
+    .bind(u.org)
+    .bind(release)
+    .fetch_optional(&mut *w)
+    .await
+    .unwrap_err();
+    assert_eq!(
+        direct.as_database_error().unwrap().code().as_deref(),
+        Some("42501"),
+        "a direct row lock still needs UPDATE"
+    );
+    w.rollback().await.unwrap();
+
+    let mut w = worker.begin().await.unwrap();
+    let denied = sqlx::query("UPDATE rights.rights_epochs SET epoch=epoch+1 WHERE release_id=$1")
+        .bind(release)
+        .execute(&mut *w)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        denied.as_database_error().unwrap().code().as_deref(),
+        Some("42501"),
+        "the worker must not move the rights counter"
+    );
+    w.rollback().await.unwrap();
+
+    let mut w = worker.begin().await.unwrap();
+    let epoch: Option<i64> = sqlx::query_scalar("SELECT rights.share_lock_epoch($1,$2)")
+        .bind(u.org)
+        .bind(release)
+        .fetch_one(&mut *w)
+        .await
+        .unwrap();
+    assert_eq!(epoch, Some(3));
+    let missing: Option<i64> = sqlx::query_scalar("SELECT rights.share_lock_epoch($1,$2)")
+        .bind(u.org)
+        .bind(Uuid::new_v4())
+        .fetch_one(&mut *w)
+        .await
+        .unwrap();
+    assert!(missing.is_none(), "no epoch row means not suitable");
+    // While the worker holds the share lock, a rights bump must wait.
+    let mut bump = pool.begin().await.unwrap();
+    sqlx::query("SET LOCAL lock_timeout='200ms'")
+        .execute(&mut *bump)
+        .await
+        .unwrap();
+    let blocked = sqlx::query(
+        "UPDATE rights.rights_epochs SET epoch=epoch+1 WHERE org_id=$1 AND release_id=$2",
+    )
+    .bind(u.org)
+    .bind(release)
+    .execute(&mut *bump)
+    .await
+    .unwrap_err();
+    assert_eq!(
+        blocked.as_database_error().unwrap().code().as_deref(),
+        Some("55P03"),
+        "the epoch is locked until the worker commits"
+    );
+    bump.rollback().await.unwrap();
+    w.commit().await.unwrap();
+    let bumped = sqlx::query(
+        "UPDATE rights.rights_epochs SET epoch=epoch+1 WHERE org_id=$1 AND release_id=$2",
+    )
+    .bind(u.org)
+    .bind(release)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        bumped.rows_affected(),
+        1,
+        "the lock ends with the transaction"
+    );
+}
+
 #[sqlx::test]
 async fn clean_delivery_is_auto_approved_but_staff_hold_and_signature_still_gate(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
@@ -926,7 +1058,10 @@ async fn clean_delivery_is_auto_approved_but_staff_hold_and_signature_still_gate
     );
     let package:Uuid=sqlx::query_scalar("SELECT dp.id FROM distribution.distribution_packages dp JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id WHERE cr.revision_id=$1")
         .bind(revision).fetch_one(&pool).await.unwrap();
-    let staged = audeniq_core::delivery_staging::stage_package(&pool, package)
+    // Stage as the production worker role (deploy grants applied): it has no
+    // UPDATE on rights.rights_epochs, so a plain FOR SHARE failed with 42501.
+    let worker = worker_role_pool(&pool).await;
+    let staged = audeniq_core::delivery_staging::stage_package(&worker, package)
         .await
         .unwrap();
     let staging: Value = sqlx::query_scalar(

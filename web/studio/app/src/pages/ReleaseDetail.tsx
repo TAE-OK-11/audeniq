@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from '../lib/router';
 import { api, type DeliveryItem } from '../api/client';
 import { useToast } from '../components/Toast';
@@ -8,7 +8,9 @@ import { ReleaseCover } from '../components/ReleaseCover';
 import { useAsync } from '../hooks/useAsync';
 import { STATUS_LABEL, localStamp, statusTone } from '../lib/format';
 import { dspLabel, durationLabel, genreLabel, kindLabel, languageLabel } from '../lib/catalog';
-import { docState, docsForRelease, useDocs } from '../store/docs';
+import { docState, docsForRelease, pendingProofs, proofPath, useDocs } from '../store/docs';
+import { refreshDocs } from '../store/portalSync';
+import { MOCK } from '../lib/mode';
 import { errorMessage } from '../api/errors';
 import { CorrectionList, ReviewNote } from '../components/CorrectionList';
 import { fixCountWord, fixPath, splitCorrections } from '../lib/corrections';
@@ -93,6 +95,8 @@ export function ReleaseDetail() {
   const toast = useToast();
   const confirm = useConfirm();
   const allDocs = useDocs();
+  // 계약서·서류 상태는 담당자 처리로 바뀐다 — 발매를 열 때 새로 받는다
+  useEffect(() => { if (!MOCK) void refreshDocs(); }, [id]);
   const [tab, setTab] = useState('overview');
   const [deleting, setDeleting] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
@@ -142,6 +146,9 @@ export function ReleaseDetail() {
   const allFixes = rel.corrections ?? [];
   // 담당자 전체 의견은 고칠 항목이 아니라 따로 보여 준다
   const { items: fixes, note: reviewNote } = splitCorrections(allFixes);
+  // 담당자가 요청한 서류 — 신청서 보완과 따로, 그 요청의 첨부·제출 화면으로 보낸다
+  const proofs = pendingProofs(allDocs, rel.id, rel.title);
+  const docsOnly = needsFix && rel.fixKind === 'documents';
 
   // 접수한 신청 취소 — 한 달 3회까지 직접, 그 이상·배급 시작 후는 문의로
   const canWithdraw = ['review', 'needs', 'scheduled'].includes(rel.status);
@@ -306,15 +313,32 @@ export function ReleaseDetail() {
       {needsFix && (
         <section className="aq-fix-panel" aria-labelledby="aqFixCardHead">
           <div className="aq-fix-top">
-            <Badge tone="amber">{fixes.length ? `보완 요청 ${fixes.length}건` : '보완 필요'}</Badge>
+            <Badge tone="amber">{docsOnly ? (proofs.length ? `서류 제출 요청 ${proofs.length}건` : '서류 확인 필요') : fixes.length ? `보완 요청 ${fixes.length}건` : '보완 필요'}</Badge>
           </div>
           <h2 id="aqFixCardHead" className="aq-fix-title">
-            {fixes.length ? `${fixCountWord(fixes.length)} 고치면 바로 다시 검토해요`
-              : reviewNote ? '검토팀 의견을 확인하고 신청서를 고쳐 주세요' : '알림과 권리 서류에서 요청 내용을 확인해 주세요'}
+            {docsOnly ? '담당자가 요청한 서류를 제출해 주세요'
+              : fixes.length ? `${fixCountWord(fixes.length)} 고치면 바로 다시 검토해요`
+                : reviewNote ? '검토팀 의견을 확인하고 신청서를 고쳐 주세요' : '알림과 권리 서류에서 요청 내용을 확인해 주세요'}
           </h2>
           <div className="aq-fix-body">
             {reviewNote && <ReviewNote text={reviewNote} />}
-            {fixes.length > 0 ? (
+            {proofs.length > 0 && (
+              <ul className="aq-linked-docs" aria-label="요청받은 서류">
+                {proofs.map(doc => (
+                  <li key={doc.id}>
+                    <Link to={proofPath(doc)}>
+                      <span className="min-0">{doc.title.replace(`${rel.title} · `, '')}{doc.reviewNote ? ` — ${doc.reviewNote}` : ''}</span>
+                      <em>{docState(doc)}</em>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {docsOnly ? (
+              <button type="button" className="ui-btn is-primary aq-fix-cta" onClick={() => nav(proofPath(proofs[0]))}>
+                {proofs.length ? '서류 첨부하러 가기' : '권리·보완 서류 확인하기'}
+              </button>
+            ) : fixes.length > 0 ? (
               <CorrectionList
                 releaseId={rel.id} corrections={fixes}
                 trackIds={(d?.draftTracks ?? rel.tracks).map(t => t.id)}

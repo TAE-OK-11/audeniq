@@ -289,7 +289,16 @@ async fn boundary(State(s): State<AppState>, mut req: Request, next: Next) -> Re
         "x-content-type-options",
         HeaderValue::from_static("nosniff"),
     );
-    tracing::info!(request_id=%id,status=response.status().as_u16(),elapsed_ms=started.elapsed().as_millis(),"http_request");
+    // Validation failures (4xx) log their stable error code with the request
+    // id so a 400 can be traced to the check that rejected it (BE-005).
+    match response.extensions().get::<crate::error::ErrorCode>() {
+        Some(code) => {
+            tracing::info!(request_id=%id,status=response.status().as_u16(),error_code=code.0,elapsed_ms=started.elapsed().as_millis(),"http_request")
+        }
+        None => {
+            tracing::info!(request_id=%id,status=response.status().as_u16(),elapsed_ms=started.elapsed().as_millis(),"http_request")
+        }
+    }
     response
 }
 /// The release a request path is about: `/api/orgs/{org}/releases/{id}/...`
