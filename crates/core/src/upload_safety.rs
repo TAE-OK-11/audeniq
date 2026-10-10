@@ -278,22 +278,44 @@ async fn scan_on(path: &Path, expected_size: u64, socket: &Path) -> Result<()> {
     .map_err(|_| Error::UploadBusy)?
 }
 
-/// Rasterize PDFs / decode and re-encode images. Child cannot read secrets,
-/// make network connections or write outside this private processing directory.
+/// Rasterize PDFs / decode and re-encode images with audeniq-photo. Each child
+/// cannot read secrets, make network connections or write outside its outputs.
 pub fn sanitize(src: &Path, dst: &Path, mime: &str, workspace: &Path) -> Result<()> {
-    let helper = std::env::var_os("UPLOAD_SANITIZER")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| "/usr/local/lib/audeniq/sanitize-upload.py".into());
-    let mut command = std::process::Command::new("python3");
-    command.arg(&helper).arg(src).arg(dst).arg(mime);
-    crate::parser_sandbox::restrict(&mut command, &[src, &helper], &[workspace])
-        .map_err(|_| Error::UploadBusy)?;
-    crate::local_analyzer::run_timeout(&mut command, &[0], Duration::from_secs(120))
-        .map_err(|_| Error::PolicyGate("UPLOAD_SANITIZATION_FAILED"))?;
+    let deadline = std::time::Instant::now() + Duration::from_secs(120);
+    if mime == "application/pdf" {
+        // Untrusted half: parse and render the pages to raw RGB frames only.
+        let frames = workspace.join("pages.frames");
+        let mut rasterize = crate::photo::command("pdf-rasterize");
+        rasterize.arg(src).arg(&frames);
+        run_sanitizer(&mut rasterize, &[src], &frames, deadline)?;
+        // The assembler validates page count, sizes, pixel budget and exact
+        // frame lengths before writing an image-only PDF, so a compromised
+        // renderer can contribute nothing but pixels.
+        let mut assemble = crate::photo::command("pdf-assemble");
+        assemble.arg(&frames).arg(dst);
+        run_sanitizer(&mut assemble, &[&frames], dst, deadline)?;
+    } else {
+        let mut command = crate::photo::command("sanitize");
+        command.arg(src).arg(dst).arg(mime);
+        run_sanitizer(&mut command, &[src], dst, deadline)?;
+    }
     let len = std::fs::metadata(dst).map_err(|_| Error::UploadBusy)?.len();
     if len == 0 || len > crate::uploads::MAX_DOCUMENT_BYTES as u64 {
         return Err(Error::PolicyGate("UPLOAD_SANITIZATION_FAILED"));
     }
+    Ok(())
+}
+
+fn run_sanitizer(
+    command: &mut std::process::Command,
+    inputs: &[&Path],
+    output: &Path,
+    deadline: std::time::Instant,
+) -> Result<()> {
+    crate::parser_sandbox::restrict(command, inputs, &[output]).map_err(|_| Error::UploadBusy)?;
+    let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+    crate::local_analyzer::run_timeout(command, &[0], remaining)
+        .map_err(|_| Error::PolicyGate("UPLOAD_SANITIZATION_FAILED"))?;
     Ok(())
 }
 

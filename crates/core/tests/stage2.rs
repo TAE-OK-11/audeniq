@@ -779,7 +779,7 @@ async fn reviewed_cover_drift_is_blocked_without_pinning_verification(pool: PgPo
 }
 
 #[test]
-fn unsupported_exif_audio_uses_free_ffprobe_tags() {
+fn tta_audio_tags_are_read_without_the_engine_fallback() {
     let dir = tmpdir();
     let path = dir.join("source.tta");
     assert!(
@@ -803,7 +803,8 @@ fn unsupported_exif_audio_uses_free_ffprobe_tags() {
     );
     let report = audeniq_core::provenance::inspect_audio(&path);
     assert_eq!(report["inspection_status"], "COMPLETED", "{report}");
-    assert_eq!(report["reader"], "AUDENIQ_QC_FALLBACK", "{report}");
+    // audeniq-photo reads TTA (APE) tags itself, unlike ExifTool.
+    assert!(report.get("reader").is_none(), "{report}");
     assert_eq!(report["outcome"], "AI_METADATA_SIGNAL", "{report}");
     assert_eq!(report["synthid"], "NOT_CHECKED");
     std::fs::remove_dir_all(dir).unwrap();
