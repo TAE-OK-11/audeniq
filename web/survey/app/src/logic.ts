@@ -1,5 +1,5 @@
 // 설문 규칙 — 기존 public/app.js의 동작을 상태 기반 순수 함수로 옮겼다 (문구·조건 동일).
-import { EXCLUSIVE, EXPERIENCE_BRANCH, FIRST, LAST, MULTI, STEPS, type Question, type Step } from './survey';
+import { EXCLUSIVE, EXPERIENCE_BRANCH, FIRST, LAST, MULTI, STEPS, SURVEY_VERSION, type Question, type Step } from './survey.ts';
 
 export interface SurveyState {
   /** 문항별 선택한 값 (단일 선택은 0~1개) */
@@ -101,17 +101,17 @@ export function validateStep(st: SurveyState, step: Step): string {
     const s = selected(st, key);
     if (key === 'q3' && ['2', '3', '4'].includes(first(st, 'q2')) && s[0] !== '6') return '발매 경험이 없다면 ‘아직 정식 음원을 발매한 경험이 없음’을 선택해 주세요.';
     if (key === 'q3' && ['0', '1'].includes(first(st, 'q2')) && s[0] === '6') return '발매 경험이 있다면 최근 12개월간 발매 여부에 맞춰 응답해 주세요.';
-    if (q.required && !s.length) return `${key.toUpperCase()} 필수 문항에 응답해 주세요.`;
-    if (key === 'q15' && s.includes('13') && s.length > 1) return '‘잘 모르겠다’는 다른 플랫폼과 함께 선택할 수 없어요.';
-    if (q.max && s.length > q.max) return `${key.toUpperCase()} 문항은 최대 ${q.max}개까지 선택할 수 있어요.`;
-    if (otherOpen(st, q) && !(st.others[key] ?? '').trim()) return `${key.toUpperCase()}의 기타 내용을 적어 주세요.`;
+    if (q.required && !s.length) return `${q.qid} 필수 문항에 응답해 주세요.`;
+    if (key === 'q15' && s.includes('13') && s.length > 1) return '‘아직 잘 모르겠어요’는 다른 플랫폼과 함께 선택할 수 없어요.';
+    if (q.max && s.length > q.max) return `${q.qid} 문항은 최대 ${q.max}개까지 선택할 수 있어요.`;
+    if (otherOpen(st, q) && !(st.others[key] ?? '').trim()) return `${q.qid}의 기타 내용을 적어 주세요.`;
   }
   return '';
 }
 
 export const validateAll = (st: SurveyState) => STEPS.map(step => validateStep(st, step)).find(Boolean) ?? '';
 
-/** POST /api/responses 본문 (기존과 같은 모양) */
+/** POST /api/responses 본문 — 문항 버전을 포함해 이전 응답과 구분해요. */
 export function payload(st: SurveyState, submissionId: string, turnstileToken: string) {
   const answers: Record<string, string | string[]> = {};
   for (let i = FIRST; i <= LAST; i++) {
@@ -123,6 +123,7 @@ export function payload(st: SurveyState, submissionId: string, turnstileToken: s
   answers.q4_provider = selected(st, 'q4').includes('9') ? '' : st.provider.trim();
   answers.q14 = st.comment.trim();
   return {
+    survey_version: SURVEY_VERSION,
     submission_id: submissionId,
     answers,
     beta: first(st, 'beta'),
@@ -132,3 +133,4 @@ export function payload(st: SurveyState, submissionId: string, turnstileToken: s
     turnstile_token: turnstileToken,
   };
 }
+
