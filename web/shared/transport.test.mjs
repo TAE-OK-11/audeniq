@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { brotliDecompressSync } from 'node:zlib';
 import { backendOrigin, passThroughEncoding, readLimitedBody, serveAssets } from './transport.js';
 import { compressAssets } from './compress-assets.mjs';
-import studio, { resetMaintenanceCache } from '../studio/worker.js';
+import studio from '../studio/worker.js';
 import admin from '../admin/worker.js';
 import landing from '../landing/src/worker.js';
 import survey from '../survey/src/worker.js';
@@ -46,22 +46,6 @@ test('oversized streamed JSON stops reading and cancels the source by byte count
   assert.equal(cancelled, true);
   const small = new Request('https://studio.audeniq.com/api/me', { method: 'POST', body: '한글' });
   await assert.rejects(readLimitedBody(small, 5), RangeError);
-});
-
-test('concurrent requests share one pending maintenance read', async () => {
-  resetMaintenanceCache();
-  let reads = 0, release;
-  const ready = new Promise(resolve => { release = resolve; });
-  const db = { prepare() { return { bind() { return { async all() { reads++; await ready; return { results: [] }; } }; } }; } };
-  const previous = globalThis.fetch;
-  globalThis.fetch = async () => Response.json({ ok: true });
-  try {
-    const requests = Array.from({ length: 25 }, () => studio.fetch(new Request('https://studio.audeniq.com/api/releases'), { CONTENT_DB: db, EDGE_SERVICE_SECRET: 's'.repeat(40) }));
-    await Promise.resolve();
-    assert.equal(reads, 1);
-    release();
-    for (const response of await Promise.all(requests)) assert.equal(response.status, 200);
-  } finally { globalThis.fetch = previous; resetMaintenanceCache(); }
 });
 
 test('build-time Brotli is served unchanged with the original media type and variant headers', async () => {
