@@ -36,6 +36,7 @@ pub mod partner_hooks;
 pub mod partner_onboarding;
 pub mod partners;
 pub mod password_reset;
+pub mod photo;
 pub mod portal;
 pub mod preflight;
 pub mod preparation_model;

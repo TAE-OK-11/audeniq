@@ -58,16 +58,18 @@ jobs:
         run: |
           sh deploy/install-audeniq-qc.sh "$HOME/.local/audeniq-qc"
           echo "AUDENIQ_QC_BIN=$HOME/.local/audeniq-qc/bin/audeniq-qc" >> "$GITHUB_ENV"
+      - name: Build the pinned AUDENIQ image toolkit (audeniq-photo)
+        run: |
+          sh deploy/install-audeniq-photo.sh "$HOME/.local/audeniq-photo"
+          echo "AUDENIQ_PHOTO_BIN=$HOME/.local/audeniq-photo/bin/audeniq-photo" >> "$GITHUB_ENV"
       - name: Install native analyzers and disposable antivirus
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg libxml2-utils libimage-exiftool-perl tesseract-ocr tesseract-ocr-eng tesseract-ocr-kor zbar-tools qrencode fonts-dejavu-core python3-pil poppler-utils clamav-daemon
+          sudo apt-get install -y -qq ffmpeg libxml2-utils libimage-exiftool-perl qrencode fonts-dejavu-core clamav-daemon
           bash deploy/tests/start-test-antivirus.sh
       - name: Build every backend binary for the native architecture
         run: cargo build --locked -p audeniq-core --bins
       - name: Native QC, fingerprint, lossless and sandbox regression tests
-        env:
-          UPLOAD_SANITIZER: ${{ github.workspace }}/deploy/sanitize-upload.py
         run: |
           cargo test --locked -p audeniq-core --lib
           cargo test --locked -p audeniq-core --bin audeniq-worker
