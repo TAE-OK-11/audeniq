@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {validateSubmission,default as worker} from '../src/worker.js';
 import questions from '../questions.json' with {type:'json'};
+import legacyQuestions from '../questions-v4.json' with {type:'json'};
 import {STEPS} from '../app/src/survey.ts';
 import {applyChoice,emptyState,payload,validateAll} from '../app/src/logic.ts';
 const html=fs.readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
@@ -16,10 +17,10 @@ function valid(){
   if(q.options.includes('기타'))answers[`${key}_other`]='';
  }
  answers.q4_provider='';answers.q14='';
- return {submission_id:'ccb1d9d3-65de-4a58-96d7-4fe041109895',answers,beta:'',contact:'',beta_contact_consent:false,survey_consent:true,turnstile_token:'unit-test-token'};
+ return {survey_version:5,submission_id:'ccb1d9d3-65de-4a58-96d7-4fe041109895',answers,beta:'',contact:'',beta_contact_consent:false,survey_consent:true,turnstile_token:'unit-test-token'};
 }
-test('all 18 questions in the React UI match the server questions exactly',()=>{
- assert.equal(Object.keys(questions).length,17);
+test('all 22 questions in the React UI match the server questions exactly',()=>{
+ assert.equal(Object.keys(questions).length,21);
  for(const [key,q] of Object.entries(questions)){
   const u=ui.get(key);
   assert.ok(u,`missing question ${key}`);
@@ -78,7 +79,7 @@ test('no-release frequency and release experience must be consistent',()=>{
  p.answers.q2='0';assert.equal(validateSubmission(p),null);
 });
 test('other fields and free-text lengths are validated',()=>{
- const p=valid();p.answers.q1=['10'];assert.equal(validateSubmission(p),null);
+ const p=valid();p.answers.q1=[String(questions.q1.options.indexOf('기타'))];assert.equal(validateSubmission(p),null);
  p.answers.q1_other='기타 음악';assert.ok(validateSubmission(p));
  p.answers.q1_other='X'.repeat(161);assert.equal(validateSubmission(p),null);
  const r=valid();r.answers.q14='X'.repeat(2001);assert.equal(validateSubmission(r),null);
@@ -106,16 +107,17 @@ test('unknown URL uses the static 404 page, with security headers',async()=>{
  assert.match(headers,/X-Robots-Tag: noindex/);
  assert.match(headers,/frame-ancestors 'none'/);
 });
-test('D1 insert is idempotent and records survey version 4',async()=>{
+test('D1 insert is idempotent and records survey version 5',async()=>{
  const originalFetch=globalThis.fetch;
  const saved=[];
- const db={prepare(sql){return {bind(...params){return {async first(){return saved.includes(params[0]?.id??params[0])?{id:params[0]}:null;},async run(){saved.push(params[0]);return {success:true};}};}}}};
+ let storedVersion;
+ const db={prepare(sql){return {bind(...params){return {async first(){return saved.includes(params[0]?.id??params[0])?{id:params[0]}:null;},async run(){storedVersion=params[1];saved.push(params[0]);return {success:true};}};}}}};
  globalThis.fetch=async(url)=> {assert.match(String(url),/turnstile\/v0\/siteverify/);return Response.json({success:true,hostname:'survey.audeniq.com',action:'audeniq_survey'});};
  try{
   const env={DB:db,TURNSTILE_SECRET_KEY:'testsecret',TURNSTILE_SITE_KEY:'testsitekey'};
   const request=()=>new Request('https://survey.audeniq.com/api/responses',{method:'POST',headers:{Origin:'https://survey.audeniq.com','Content-Type':'application/json'},body:JSON.stringify(valid())});
   let r=await worker.fetch(request(),env);assert.equal(r.status,200);assert.equal((await r.json()).ok,true);
-  r=await worker.fetch(request(),env);assert.equal(r.status,200);assert.equal((await r.json()).duplicate,true);assert.equal(saved.length,1);
+  r=await worker.fetch(request(),env);assert.equal(r.status,200);assert.equal((await r.json()).duplicate,true);assert.equal(saved.length,1);assert.equal(storedVersion,5);
  }finally{globalThis.fetch=originalFetch;}
 });
 
@@ -176,4 +178,37 @@ test('all requests pass the HTTPS guard and /api responses retain private server
  assert.ok(!client.includes('TURNSTILE_SECRET_KEY'));
  assert.ok(!fs.existsSync(new URL('../public/questions.json',import.meta.url)));
  assert.ok(!fs.existsSync(new URL('../public/wrangler.jsonc',import.meta.url)));
+});
+
+
+test('old open tabs validate against version 4 and keep their original option meanings',()=>{
+ const p=valid();delete p.survey_version;
+ p.answers={};
+ for(const [key,q] of Object.entries(legacyQuestions)){
+  p.answers[key]=q.type==='multi'?(q.required?['0']:[]):(q.required?'0':'');
+  if(q.options.includes('기타'))p.answers[`${key}_other`]='';
+ }
+ p.answers.q4_provider='';p.answers.q14='';
+ p.answers.q1=['10'];p.answers.q1_other='기타 활동';
+ assert.equal(validateSubmission(p).version,4);
+ p.survey_version=4;assert.equal(validateSubmission(p).version,4);
+ p.survey_version=5;assert.equal(validateSubmission(p),null,'new version cannot reinterpret an old payload');
+ p.survey_version=6;assert.equal(validateSubmission(p),null);
+});
+test('new optional demand questions enforce caps and exclusive no-purchase choice end to end',()=>{
+ let st=emptyState();
+ for(const [key,q] of ui)if(q.required&&q.options&&key!=='beta')st=applyChoice(st,key,'0',true).state;
+ st={...st,surveyConsent:true};
+ for(const key of ['q19','q20','q21','q22'])assert.equal(ui.get(key).required,false);
+ st=applyChoice(st,'q21','0',true).state;
+ st=applyChoice(st,'q21','6',true).state;
+ assert.deepEqual(st.choices.q21,['6']);
+ st=applyChoice(st,'q21','1',true).state;
+ assert.deepEqual(st.choices.q21,['1']);
+ for(const key of ['q19','q20','q22'])st=applyChoice(st,key,'0',true).state;
+ const body=payload(st,'ccb1d9d3-65de-4a58-96d7-4fe041109895','test');
+ assert.equal(body.survey_version,5);assert.equal(validateSubmission(body).version,5);
+ for(const [key,selection] of [['q21',['0','6']],['q21',['0','1','2','3']],['q22',['0','1','2','3']]]){
+  const p=valid();p.answers[key]=selection;assert.equal(validateSubmission(p),null);
+ }
 });
