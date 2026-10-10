@@ -7,7 +7,8 @@ import { Glyph } from '../components/Glyph';
 import { PaymentSetupModal } from '../components/PaymentSetupModal';
 import { setProfile, useProfile, type ProfileInfo } from '../store/profile';
 import { isPaymentRegistered, usePayment } from '../store/payment';
-import { patchAccount, taxCountryLabel, useAccount, VERIFY_LABEL, TAX_COUNTRIES, type TaxResidency } from '../store/account';
+import { patchAccount, taxCountryLabel, useAccount, verifyLabel, TAX_COUNTRIES, type TaxResidency } from '../store/account';
+import { refreshAccount } from '../store/portalSync';
 import { IdentityVerify } from '../components/IdentityVerify';
 import { useAuth } from '../api/auth';
 import { MOCK } from '../api/client';
@@ -98,17 +99,24 @@ function FieldEditor({ field, profile, onSaved }: { field: Field; profile: Profi
 }
 
 /** 해외 납세 의무 — 대한민국 외 국가에 세금을 낼 의무가 있는지(정산 원천징수 확인용) */
-function TaxEditor({ current, onSaved }: { current: TaxResidency | null; onSaved: (t: TaxResidency) => void }) {
+function TaxEditor({ current, onSaved }: { current: TaxResidency | null; onSaved: (t: TaxResidency) => Promise<boolean> }) {
   const close = useModalClose();
-  const [t, setT] = useState<TaxResidency>(current ?? { foreign: false, country: 'US', tin: '', usPerson: false });
+  const [t, setT] = useState<TaxResidency>(current ? { ...current, country: current.country || 'US' } : { foreign: false, country: 'US', tin: '', usPerson: false });
   const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
   const set = (p: Partial<TaxResidency>) => { setT(prev => ({ ...prev, ...p })); setError(''); };
+  // 서버에 저장된 번호는 뒷자리만 보여 주고, 칸을 비워 두면 그대로 둔다
+  const savedTin = current?.foreign && current.tinLast4 && t.country === current.country ? current.tinLast4 : null;
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (t.foreign && !t.country) { setError('납세 의무가 있는 국가를 골라 주세요.'); return; }
-    onSaved(t.foreign ? { ...t, tin: t.tin.trim(), usPerson: t.country === 'US' && t.usPerson } : { foreign: false, country: '', tin: '', usPerson: false });
-    close();
+    setBusy(true);
+    const ok = await onSaved(t.foreign
+      ? { ...t, tin: t.tin.trim(), usPerson: t.country === 'US' && t.usPerson, tinLast4: savedTin }
+      : { foreign: false, country: '', tin: '', usPerson: false });
+    setBusy(false);
+    if (ok) close();
   };
 
   return (
@@ -133,7 +141,7 @@ function TaxEditor({ current, onSaved }: { current: TaxResidency | null; onSaved
           </div>
           <div className="ui-field">
             <label htmlFor="taxTin">납세자번호(TIN) <span className="aq-optional">선택</span></label>
-            <input id="taxTin" maxLength={30} autoComplete="off" placeholder={t.country === 'US' ? 'SSN 또는 ITIN' : '해당 국가 납세자번호'} value={t.tin} onChange={e => set({ tin: e.target.value })} />
+            <input id="taxTin" maxLength={30} autoComplete="off" placeholder={savedTin ? `•••• ${savedTin} (바꿀 때만 입력)` : t.country === 'US' ? 'SSN 또는 ITIN' : '해당 국가 납세자번호'} value={t.tin} onChange={e => set({ tin: e.target.value })} />
           </div>
           {t.country === 'US' && (
             <label className="ui-check aq-tax-us">
@@ -144,7 +152,7 @@ function TaxEditor({ current, onSaved }: { current: TaxResidency | null; onSaved
         </div>
       )}
       {error && <p className="ui-field-help aq-help-error" role="alert">{error}</p>}
-      <button type="submit" className="ui-btn is-primary is-block">저장</button>
+      <button type="submit" className={`ui-btn is-primary is-block${busy ? ' is-busy' : ''}`} disabled={busy}>저장</button>
     </form>
   );
 }
@@ -222,7 +230,7 @@ export function Profile() {
         <SetRow id="accountRowName" label="실명" value={account.realName} empty="본인인증 후 등록돼요" onClick={() => setAccountEdit('verify')} />
         <SetRow
           id="accountRowVerify" label="본인인증"
-          value={account.verified ? `${VERIFY_LABEL[account.verified.method]} 인증 완료` : undefined}
+          value={account.verified ? `${verifyLabel(account.verified.method)} 인증 완료` : undefined}
           empty="인증하기" onClick={() => setAccountEdit('verify')}
         />
       </section>
@@ -280,7 +288,19 @@ export function Profile() {
       )}
       {accountEdit === 'tax' && (
         <Modal title="해외 납세 의무" onClose={() => setAccountEdit(null)} modalClass="aq-set-modal">
-          <TaxEditor current={account.tax} onSaved={t => { patchAccount({ tax: t }); toast('저장했어요.'); }} />
+          <TaxEditor current={account.tax} onSaved={async t => {
+            if (!MOCK) {
+              try {
+                await portal.saveTax(t);
+                await refreshAccount();
+              } catch (err) {
+                toast(errorMessage(err, '납세 정보를 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'));
+                return false;
+              }
+            } else patchAccount({ tax: t });
+            toast('저장했어요.');
+            return true;
+          }} />
         </Modal>
       )}
     </div>
