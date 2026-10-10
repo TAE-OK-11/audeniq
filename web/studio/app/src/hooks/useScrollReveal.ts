@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 
 const TARGETS = [
   '.surface', '.aq-report-card', '.section-top', '.aq-rp-card',
-  '.aq-doc-list', '.aq-profile-card', '.aq-event-hero',
+  '.aq-doc-list', '.studio-doc-path', '.aq-profile-card', '.aq-event-hero',
   '.aq-notice-featured-list', '.settle-hero', '.aq-detail-hero', '.split > *',
 ].join(',');
 const EASE = 'cubic-bezier(.22,1,.36,1)';
