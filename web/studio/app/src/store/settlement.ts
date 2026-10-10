@@ -3,8 +3,18 @@ import { createStore } from '../lib/store';
 import { MOCK } from '../lib/mode';
 
 export interface Statement { id: string; period: string; platform: string; amount: number; note: string; created: string }
-/** recorded = 체험 모드 기록, requested·processing·sent·failed = 실서버 지급 요청 상태 */
-export interface Payout { id: string; amount: number; note: string; created: string; status: 'recorded' | 'requested' | 'processing' | 'sent' | 'failed' }
+/** recorded = 체험 모드 기록, requested·processing·sent·failed·cancelled = 실서버 지급 요청 상태.
+ *  fee·net: 신청 때 고정된 수수료·실수령액, cancellable: 송금 실행 전이라 취소할 수 있음 (실서버) */
+export interface Payout {
+  id: string; amount: number; note: string; created: string;
+  status: 'recorded' | 'requested' | 'processing' | 'sent' | 'failed' | 'cancelled';
+  fee?: number; net?: number; cancellable?: boolean;
+}
+
+/** 출금 수수료 (정산 약관 제9조): 신청금액 30,000원 이하 500원(부가가치세 포함), 초과 무료. 서버가 최종 계산한다. */
+export function payoutFee(amount: number): number {
+  return amount <= 30000 ? 500 : 0;
+}
 
 const INITIAL_STATEMENTS: Statement[] = [
   { id: 'st1', period: '2026-08', platform: 'Spotify', amount: 24406, note: '', created: '2026-09-10' },

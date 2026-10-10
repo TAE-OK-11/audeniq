@@ -43,10 +43,17 @@
 //!   (AUDENIQ employees for /api/staff; the API can only read this)
 //! audeniq-admin dsp list
 //!   (the D-1..D-11 registry with each direct route's onboarding gaps)
+//! audeniq-admin --operator STAFF_EMAIL payout list [REQUESTED|ORDERED|...]
+//! audeniq-admin --operator STAFF_EMAIL payout order REQUEST_ID
+//! audeniq-admin --operator STAFF_EMAIL payout approve ORDER_ID   (not the order's creator)
+//! audeniq-admin --operator STAFF_EMAIL payout submit ORDER_ID BANK_TX_ID
+//! audeniq-admin --operator STAFF_EMAIL payout result ORDER_ID settled|failed|returned|unknown [BANK_TX_ID]
+//! audeniq-admin --operator STAFF_EMAIL payout cancel ORDER_ID    (before submit only)
+//!   (ADMIN/OPERATOR staff; SETTLED posts the ledger debit, UNKNOWN is never resent)
 use audeniq_core::protected_admin as admin;
 use audeniq_core::protected_names::{Action, Mode};
 
-const USAGE: &str = "usage: audeniq-admin [--operator NAME] protected <list|add|remove|activate|alias|remove-alias|grant-exception|revoke-exception> ...\n       audeniq-admin [--operator NAME] identifier-issuer <list|register UPC|ISRC PREFIX>\n       audeniq-admin [--operator NAME] partner <list|config-check|status ID|set-dsp ID [DSP_UUID]|probe ID|dpid ID DPID|test-ern ID FILE|test-ack ID FILE|capabilities ID JSON|contract ID REF|go-live ID|suspend ID --reason TEXT|route D-n DIRECT|MERLIN|merlin-eligible D-n true|false>\n       audeniq-admin [--operator NAME] staff <list|grant EMAIL ROLE|revoke EMAIL>\n       audeniq-admin dsp list";
+const USAGE: &str = "usage: audeniq-admin [--operator NAME] protected <list|add|remove|activate|alias|remove-alias|grant-exception|revoke-exception> ...\n       audeniq-admin [--operator NAME] identifier-issuer <list|register UPC|ISRC PREFIX>\n       audeniq-admin [--operator NAME] partner <list|config-check|status ID|set-dsp ID [DSP_UUID]|probe ID|dpid ID DPID|test-ern ID FILE|test-ack ID FILE|capabilities ID JSON|contract ID REF|go-live ID|suspend ID --reason TEXT|route D-n DIRECT|MERLIN|merlin-eligible D-n true|false>\n       audeniq-admin [--operator NAME] staff <list|grant EMAIL ROLE|revoke EMAIL>\n       audeniq-admin dsp list\n       audeniq-admin --operator STAFF_EMAIL payout <list [STATUS]|order REQUEST_ID|approve ORDER_ID|submit ORDER_ID BANK_TX|result ORDER_ID settled|failed|returned|unknown [BANK_TX]|cancel ORDER_ID>";
 
 fn take_opt(args: &mut Vec<String>, key: &str) -> Option<String> {
     let i = args.iter().position(|a| a == key)?;
@@ -190,6 +197,106 @@ async fn main() -> anyhow::Result<()> {
             }
             _ => anyhow::bail!(USAGE),
         }
+        return Ok(());
+    }
+    if args.first().map(String::as_str) == Some("payout") {
+        use audeniq_core::finance;
+        let pool = audeniq_core::database::connect(&std::env::var("DATABASE_URL")?, 1).await?;
+        let uuid = |i: usize| -> anyhow::Result<uuid::Uuid> {
+            Ok(args.get(i).ok_or_else(|| anyhow::anyhow!(USAGE))?.parse()?)
+        };
+        if args.get(1).map(String::as_str) == Some("list") {
+            let status = args.get(2).cloned().unwrap_or_else(|| "REQUESTED".into());
+            let rows: Vec<serde_json::Value> = sqlx::query_scalar(
+                "SELECT jsonb_build_object('request_id',p.id,'org_id',p.org_id,'amount',p.amount::text,'fee',p.fee_amount::text,
+                   'net',p.net_amount::text,'status',p.status,'account',p.account_snapshot,'created_at',p.created_at,
+                   'order_id',o.id,'order_status',o.status)
+                 FROM portal.payout_requests p LEFT JOIN finance.payout_orders o ON o.id=p.payout_order_id
+                 WHERE p.status=$1 ORDER BY p.created_at LIMIT 500",
+            )
+            .bind(status.to_ascii_uppercase())
+            .fetch_all(&pool)
+            .await?;
+            println!("{}", serde_json::to_string_pretty(&rows)?);
+            return Ok(());
+        }
+        // Every change is attributed to an active ADMIN/OPERATOR staff account.
+        let actor: Option<uuid::Uuid> = sqlx::query_scalar(
+            "SELECT u.id FROM identity.users u JOIN identity.staff_members s ON s.user_id=u.id
+             WHERE u.email=lower($1) AND s.status='ACTIVE' AND s.role IN ('ADMIN','OPERATOR')",
+        )
+        .bind(operator.trim())
+        .fetch_optional(&pool)
+        .await?;
+        let actor = actor.ok_or_else(|| {
+            anyhow::anyhow!(
+                "--operator must be the email of an active ADMIN/OPERATOR staff account"
+            )
+        })?;
+        let org_of = |order: uuid::Uuid| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query_scalar::<_, uuid::Uuid>(
+                    "SELECT org_id FROM finance.payout_orders WHERE id=$1",
+                )
+                .bind(order)
+                .fetch_optional(&pool)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("payout order not found"))
+            }
+        };
+        let out = match args.get(1).map(String::as_str) {
+            Some("order") => {
+                let request = uuid(2)?;
+                let org: uuid::Uuid =
+                    sqlx::query_scalar("SELECT org_id FROM portal.payout_requests WHERE id=$1")
+                        .bind(request)
+                        .fetch_optional(&pool)
+                        .await?
+                        .ok_or_else(|| anyhow::anyhow!("payout request not found"))?;
+                let id = finance::order_payout_request(&pool, org, request, actor).await?;
+                serde_json::json!({"order_id": id})
+            }
+            Some("approve") => {
+                let id = uuid(2)?;
+                finance::approve_payout_order(&pool, org_of(id).await?, actor, id).await?;
+                serde_json::json!({"order_id": id, "status": "APPROVED"})
+            }
+            Some("submit") => {
+                let id = uuid(2)?;
+                let bank = args.get(3).ok_or_else(|| anyhow::anyhow!(USAGE))?;
+                finance::mark_payout_submitted(&pool, org_of(id).await?, actor, id, bank).await?;
+                serde_json::json!({"order_id": id, "status": "SUBMITTED"})
+            }
+            Some("result") => {
+                let id = uuid(2)?;
+                let outcome = match args.get(3).map(|s| s.to_ascii_lowercase()).as_deref() {
+                    Some("settled") => finance::BankOutcome::Settled,
+                    Some("failed") => finance::BankOutcome::Failed,
+                    Some("returned") => finance::BankOutcome::Returned,
+                    Some("unknown") => finance::BankOutcome::Unknown,
+                    _ => anyhow::bail!(USAGE),
+                };
+                finance::record_bank_result(
+                    &pool,
+                    org_of(id).await?,
+                    actor,
+                    id,
+                    args.get(4).map(String::as_str),
+                    outcome,
+                    serde_json::json!({"recorded_by": operator.trim()}),
+                )
+                .await?;
+                serde_json::json!({"order_id": id, "status": finance::get_payout_status(&pool, org_of(id).await?, id).await?})
+            }
+            Some("cancel") => {
+                let id = uuid(2)?;
+                finance::cancel_payout_order(&pool, org_of(id).await?, id).await?;
+                serde_json::json!({"order_id": id, "status": "CANCELLED"})
+            }
+            _ => anyhow::bail!(USAGE),
+        };
+        println!("{out}");
         return Ok(());
     }
     if args.first().map(String::as_str) == Some("dsp") {
