@@ -257,6 +257,8 @@ docker exec -e DATABASE_URL="postgres://audeniq_owner:$POSTGRES_PASSWORD@postgre
 
 ### 전송 파트너 연결
 
+스튜디오 테스트용 **MockDSP (테스트)**(`mockdsp-studio`)는 마이그레이션 0087이 설치해 두므로 따로 연결할 필요가 없다. 공식 오픈 전에는 스튜디오 플랫폼 목록에 나오고, 고른 발매만 MockDSP로 전송된다 ([PARTNER_DELIVERY.md](../docs/PARTNER_DELIVERY.md) 0-3절, `MOCKDSP_STUDIO`).
+
 Stage 2는 DSP id가 있는 파트너만 전송 대상으로 본다. 시드된 테스트 파트너 `mockdsp`는 DSP id가 비어 있어 한 번 연결해야 전송 작업이 만들어진다. 계약 파트너(CONTRACTED)는 DSP id가 있어도 계약 경로가 있어야 대상이 된다.
 
 ```sh

@@ -593,13 +593,22 @@ pub async fn submit(
             .get("platforms")
             .and_then(Value::as_array)
             .ok_or(Error::PolicyGate("DSP_SELECTION_REQUIRED"))?;
-        if selected.is_empty() || selected.len() > crate::dsp_registry::REGISTRY.len() {
+        if selected.is_empty() || selected.len() > crate::dsp_registry::REGISTRY.len() + 1 {
             return Err(Error::PolicyGate("DSP_SELECTION_REQUIRED"));
         }
         let dsps = crate::dsp_registry::requested(draft)
             .ok_or(Error::PolicyGate("DSP_SELECTION_REQUIRED"))?;
-        if dsps.len() != selected.len() {
+        // The Studio MockDSP (pre-launch test platform) is the one pick
+        // outside the registry.
+        let mock = selected
+            .iter()
+            .filter(|v| v.as_str() == Some(crate::mockdsp::STUDIO_PARTNER))
+            .count();
+        if mock > 1 || dsps.len() + mock != selected.len() {
             return Err(Error::PolicyGate("DSP_SELECTION_INVALID"));
+        }
+        if mock == 1 && crate::mockdsp::studio_route(&s.pool, org).await?.is_none() {
+            return Err(Error::PolicyGate("DSP_UNAVAILABLE"));
         }
         let ids: Vec<Uuid> = dsps.iter().map(|d| d.uuid()).collect();
         if crate::routing::public_routes(&s.pool, org, &ids)
