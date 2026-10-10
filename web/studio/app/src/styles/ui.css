@@ -56,7 +56,7 @@
 :is(.ui-box,.ui-on-white){--aq-btn-soft:initial;--aq-btn-soft-hover:initial;--aq-btn-soft-fg:initial;--aq-btn-warn:initial;--aq-btn-warn-hover:initial;--aq-btn-warn-fg:initial;--aq-btn-danger:initial;--aq-btn-danger-hover:initial;--aq-btn-danger-fg:initial}
 /* 상태 색 면(주황 보완 · 빨강 오류 · 초록 완료) 위에서는 버튼도 그 색을 따른다
    — 주황 카드 안의 '보완하기'가 파랑이면 다른 일처럼 보이기 때문 */
-:is(.ui-tone-warn,.ui-row.is-warn,.ui-callout.is-warn,.aq-doc-card.is-needs,.aq-release-fix,.aq-task.is-warn,.adm-dspreq.is-warn,.adm-stages li.is-fix,.adm-doc-callout.is-warning,.adm-chat-msg.is-mention){
+:is(.ui-tone-warn,.ui-row.is-warn,.ui-callout.is-warn,.aq-release-fix,.aq-task.is-warn,.adm-dspreq.is-warn,.adm-stages li.is-fix,.adm-doc-callout.is-warning,.adm-chat-msg.is-mention){
   --aq-btn-soft:#FFE4C4;--aq-btn-soft-hover:#FFD9AD;--aq-btn-soft-fg:var(--aq-amber-700);
   --aq-btn-white-fg:var(--aq-amber-700);--aq-btn-white-hover:var(--aq-amber-100);
   --aq-btn-primary:#C06E1B;--aq-btn-primary-hover:#A95F14;--aq-btn-primary-fg:#fff
@@ -66,7 +66,7 @@
   --aq-btn-white-fg:#B0393B;--aq-btn-white-hover:var(--aq-red-100);
   --aq-btn-primary:#D64545;--aq-btn-primary-hover:#C23B3B;--aq-btn-primary-fg:#fff
 }
-:is(.ui-tone-success,.ui-row.is-success,.ui-callout.is-success,.aq-doc-card.is-approved){
+:is(.ui-tone-success,.ui-row.is-success,.ui-callout.is-success){
   --aq-btn-soft:#D6F0E1;--aq-btn-soft-hover:#C6E9D5;--aq-btn-soft-fg:#25734B;
   --aq-btn-white-fg:#25734B;--aq-btn-white-hover:#E3F5EA;
   --aq-btn-primary:#2F9E63;--aq-btn-primary-hover:#278A55;--aq-btn-primary-fg:#fff
@@ -388,9 +388,9 @@ button.ui-avatar:hover{transform:scale(1.06);background:var(--aq-blue-200)}
 .ui-icon.is-sm{--ic:32px}
 .ui-icon.is-lg{--ic:52px}
 /* 상태 색 줄 안의 기본(파랑) 아이콘 칸은 줄 색을 따른다 */
-:is(.ui-row.is-warn,.aq-doc-card.is-needs)>.ui-icon:not(.is-violet,.is-green,.is-red,.is-gray){--tone-bg:var(--aq-amber-100);--tone-fg:var(--aq-amber-700)}
+.ui-row.is-warn>.ui-icon:not(.is-violet,.is-green,.is-red,.is-gray){--tone-bg:var(--aq-amber-100);--tone-fg:var(--aq-amber-700)}
 .ui-row.is-danger>.ui-icon:not(.is-violet,.is-green,.is-amber,.is-gray){--tone-bg:var(--aq-red-100);--tone-fg:var(--aq-red-600)}
-:is(.ui-row.is-success,.aq-doc-card.is-approved)>.ui-icon:not(.is-violet,.is-amber,.is-red,.is-gray){--tone-bg:#D6F0E1;--tone-fg:#25734B}
+.ui-row.is-success>.ui-icon:not(.is-violet,.is-amber,.is-red,.is-gray){--tone-bg:#D6F0E1;--tone-fg:#25734B}
 
 /* ---------- 알림 상자 (Callout) — 안내·경고·오류·완료 ---------- */
 .ui-callout{
@@ -518,8 +518,8 @@ summary::-webkit-details-marker{display:none}
 :is(.eyebrow,.ui-eyebrow){font-size:var(--aq-fs-xs)}
 
 /* 색 있는 면(카드·목록 줄·상단 요약) 위의 상태 알약은 바탕을 한 단계 진하게 — 면에 묻히지 않게 */
-:is(.ui-card,.ui-row,.ui-stat,.ui-on-soft,.aq-detail-hero,.adm-release-hero,.aq-bundle,.aq-report-doc)>* .ui-badge:not(.is-dot),
-:is(.ui-card,.ui-row,.ui-stat,.ui-on-soft,.aq-detail-hero,.adm-release-hero,.aq-bundle,.aq-report-doc)>.ui-badge:not(.is-dot){background:color-mix(in srgb,var(--tone-bg) 86%,var(--tone-fg))}
+:is(.ui-card,.ui-row,.ui-stat,.ui-on-soft,.aq-detail-hero,.adm-release-hero,.aq-bundle,.aq-rp-card)>* .ui-badge:not(.is-dot),
+:is(.ui-card,.ui-row,.ui-stat,.ui-on-soft,.aq-detail-hero,.adm-release-hero,.aq-bundle,.aq-rp-card)>.ui-badge:not(.is-dot){background:color-mix(in srgb,var(--tone-bg) 86%,var(--tone-fg))}
 :is(.ui-box,.ui-on-white) .ui-badge:not(.is-dot){background:var(--tone-bg)}
 
 /* 홈 바로가기 카드 — 꾸밈 번호 없이, 아이콘과 글을 붙여 빈 공간을 줄인다 (넓은 화면은 가로 배치) */
@@ -634,6 +634,14 @@ summary::-webkit-details-marker{display:none}
 #portalNav .aq-nav-count{min-width:18px;height:18px;font-size:10px}
 #portalNav .aq-nav-foot{margin-top:14px!important}
 #portalNav .aq-logout{background:var(--aq-surface)!important}
+/* PC 드롭다운: 약관·로그아웃 줄을 패널 아래에 붙여 목록 끝에 처져 보이지 않게, 좌우는 카드 안쪽 글자선에 맞춤 */
+@media (min-width:761px){
+  #portalNav{padding-bottom:0!important}
+  #portalNav .aq-nav-foot{position:sticky;bottom:0;z-index:1;margin:8px -12px 0!important;padding:12px 20px 14px!important;background:#fff;border-top:1px solid var(--aq-gray-100)}
+  #portalNav .aq-nav-foot .aq-nav-legal{gap:12px}
+  #portalNav .aq-nav-foot .aq-nav-legal button{padding:4px 0!important;font-size:var(--aq-fs-sm)!important}
+  #portalNav .aq-logout{padding:7px 14px!important}
+}
 /* 휴대폰: 헤더 아래 화면 전체를 덮는 '전체' 화면 */
 @media (max-width:760px){
   #portalNav{left:0!important;right:0!important;bottom:auto!important;width:100%!important;max-width:none!important;height:calc(100dvh - var(--aq-menu-top,68px))!important;max-height:none!important;border-radius:0;box-shadow:none;padding:20px 16px max(28px,env(safe-area-inset-bottom))}

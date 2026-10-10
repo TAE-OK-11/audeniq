@@ -48,23 +48,11 @@ export function Contracts() {
         </div>
       </div>
 
-      <div className="studio-doc-path">
-        <div>
-          <span className="studio-path-n">1단계</span>
-          <strong>배급 신청서 서명</strong>
-          <small>발매를 접수할 때</small>
-        </div>
-        <div>
-          <span className="studio-path-n">2단계</span>
-          <strong>담당자 검토</strong>
-          <small>수수료·배급 조건 확정</small>
-        </div>
-        <div>
-          <span className="studio-path-n">3단계</span>
-          <strong>배급 계약서 서명</strong>
-          <small>권리 확인 체크 후 배급 시작</small>
-        </div>
-      </div>
+      <ol className="aq-contract-steps" aria-label="계약 진행 순서">
+        <li><b>1</b>신청서 서명</li>
+        <li><b>2</b>담당자 검토</li>
+        <li><b>3</b>계약서 서명·배급 시작</li>
+      </ol>
 
       <div id="contractList">
         {agreements.length ? (
@@ -79,10 +67,6 @@ export function Contracts() {
             desc="발매를 접수하면 배급 신청서와 배급 계약서가 여기에 함께 정리돼요."
           />
         )}
-      </div>
-
-      <div className="ui-callout" style={{ marginTop: 25 }}>
-        배급 신청서는 접수할 때, 배급 계약서는 담당자 검토가 끝난 뒤 서명해요. 계약서에 서명하면 플랫폼으로 배급이 시작돼요.
       </div>
 
       {openDoc && !signing && (
