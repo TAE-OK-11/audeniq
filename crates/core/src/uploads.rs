@@ -218,7 +218,7 @@ pub async fn complete(
     let prepared = stage(
         a.request,
         "prepare",
-        prepare(
+        Box::pin(prepare(
             s,
             org,
             asset,
@@ -229,13 +229,13 @@ pub async fn complete(
             &mime,
             container,
             slot,
-        ),
+        )),
     )
     .await?;
     // Registering may still fail (cancelled or expired meanwhile, DB error):
     // then the converted master in `registered/` is orphaned — remove it.
     let registered = prepared.key.clone();
-    let out: Result<Value> = async {
+    let out: Result<Value> = Box::pin(async {
         let mut tx = s.pool.begin().await?;
         auth::authorize(&mut tx, a, org, asset, "asset", true).await?;
         let status: String = sqlx::query_scalar(
@@ -310,7 +310,7 @@ pub async fn complete(
             "converted_from":if kind=="AUDIO" { Some(if container=="M4A" { "ALAC" } else { container }) } else { None },
             "safety_status":crate::upload_safety::safety_status(antivirus_status)}),
         )
-    }
+    })
     .await;
     if out.is_err() {
         let _ = s.storage.delete(&registered).await;
