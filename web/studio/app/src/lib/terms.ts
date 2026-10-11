@@ -4,7 +4,7 @@ import raw from '../content/terms-ko.txt?raw';
 import settlementRaw from '../content/settlement-terms-ko.txt?raw';
 
 export const TERMS_TITLE = 'AUDENIQ 음원 배급 서비스 이용약관';
-export const TERMS_VERSION = 'AUD-TERMS 2026.10';
+export const TERMS_VERSION = 'AUD-TERMS 2026.10.1';
 export const TERMS_TEXT = raw;
 
 export type TermsBlock =
@@ -47,7 +47,8 @@ export type LegalKey = 'service' | 'settlement';
 export const LEGAL_DOCS: Record<LegalKey, { title: string; short: string; version: string; text: string; path: string }> = {
   service: { title: TERMS_TITLE, short: '이용약관', version: TERMS_VERSION, text: raw, path: '/terms' },
   settlement: {
-    title: 'AUDENIQ 정산금 지급 및 계좌 확인 약관', short: '정산 약관', version: 'AUD-SETTLE 2.0',
+    title: 'AUDENIQ 정산금 지급 및 계좌 확인 약관', short: '정산 약관', version: 'AUD-SETTLE 2.1',
     text: settlementRaw, path: '/terms/settlement',
   },
 };
+
