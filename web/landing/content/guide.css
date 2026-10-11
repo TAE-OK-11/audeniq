@@ -111,3 +111,6 @@
 @media(max-width:359px){.guide-page .guide-hero{padding-inline:20px}.guide-page .guide-hero h1{font-size:29px}.guide-table{padding-inline:18px}.guide-table th{width:34%;padding-right:12px}}
 @media(prefers-reduced-motion:reduce){.guide-page *, .guide-page *::before, .guide-page *::after{scroll-behavior:auto;transition:none!important;animation:none!important}}
 @media print{.guide-page .mobile-menu{display:none}.guide-page .guide-hero{padding:24px}.guide-page .guide-contact{display:none}.guide-page .faq-list details>p{display:block}.guide-facts-layout,.guide-story-row{grid-template-columns:1fr;gap:24px}}
+.guide-related .service-no{color:#5C6A85}
+/* Text on the soft FAQ background keeps a 4.5:1 contrast ratio. */
+.guide-faq .eyebrow,.guide-faq p a{color:#3456C4}
