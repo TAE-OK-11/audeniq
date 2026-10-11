@@ -829,7 +829,7 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
             std::future::pending::<()>().await
         };
         let delivered = tokio::select! {
-            r = crate::execution::run_delivery(pool, storage, adapter.as_ref(), &djob) => r,
+            r = Box::pin(crate::execution::run_delivery(pool, storage, adapter.as_ref(), &djob)) => r,
             _ = renew => unreachable!(),
         };
         return match delivered {

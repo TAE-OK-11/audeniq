@@ -1749,13 +1749,18 @@ async fn payout_quote_snapshot_cancel_order_and_settle(pool: PgPool) {
         ),
         "{e:?}"
     );
-    // Approved but not sent: the artist can still cancel it.
+    // Approved: the transfer may already be under way, so the artist can no
+    // longer cancel (that freed the amount for a second withdrawal); staff can.
     let (s, v) = post(
         &format!("/finance/payouts/{}/cancel", r["id"].as_str().unwrap()),
         json!({}),
     )
     .await;
-    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(v["error"]["code"], "PAYOUT_NOT_CANCELLABLE");
+    finance::cancel_payout_order(&pool, u.org, second)
+        .await
+        .unwrap();
     assert_eq!(
         finance::get_payout_status(&pool, u.org, second)
             .await
