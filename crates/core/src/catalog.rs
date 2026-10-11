@@ -98,7 +98,7 @@ async fn artwork_ref(
 }
 fn validate(i: &Input) -> Result<()> {
     if i.name.trim().is_empty()
-        || i.name.len() > 200
+        || i.name.chars().count() > 200
         || (!i.profile.is_null() && !i.profile.is_object())
     {
         return Err(Error::Invalid);

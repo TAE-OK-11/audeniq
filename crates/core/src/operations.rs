@@ -432,7 +432,12 @@ pub const STAGE3_PREPARATION_FAILED: &str = "STAGE3_PREPARATION_FAILED";
 
 /// Plain-language explanation of a Stage 3 failure for the artist.
 fn stage3_failure_message(reason: &str) -> &'static str {
-    if reason.contains("IDENTIFIER_CONFLICT") {
+    if reason.contains("IDENTIFIER_RANGE_EXHAUSTED")
+        || reason.contains("IDENTIFIER_ISSUER_MISCONFIGURED")
+        || reason.contains("IDENTIFIER_ISSUANCE_OFF")
+    {
+        "AUDENIQ could not issue a UPC or ISRC for this release right now. Nothing on your release needs to change: we are fixing it and will let you know when you can resubmit."
+    } else if reason.contains("IDENTIFIER_CONFLICT") {
         "The UPC or an ISRC on this release is already used by another release or track in your account. Assign unique codes and resubmit."
     } else if reason.contains("PREFLIGHT_FAILED") {
         "The final delivery check could not verify this release's files or metadata. Re-upload the audio/artwork if you changed them, then resubmit; contact support if it happens again."
@@ -676,8 +681,18 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
                 // equally permanent. Either way the release is surfaced as
                 // STAGE3_CORRECTION with a readable reason, never left in
                 // STAGE3_PREPARING behind a silent dead letter.
-                let permanent =
-                    matches!(e, Error::PolicyGate("IDENTIFIER_CONFLICT") | Error::Invalid);
+                // Range exhaustion and issuer misconfiguration are equally
+                // permanent until staff register a range, so do not burn
+                // attempts on them either.
+                let permanent = matches!(
+                    e,
+                    Error::PolicyGate(
+                        "IDENTIFIER_CONFLICT"
+                            | "IDENTIFIER_RANGE_EXHAUSTED"
+                            | "IDENTIFIER_ISSUER_MISCONFIGURED"
+                            | "IDENTIFIER_ISSUANCE_OFF"
+                    ) | Error::Invalid
+                );
                 return retry_or_surface_with(
                     pool,
                     j,
