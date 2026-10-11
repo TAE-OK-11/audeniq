@@ -8,6 +8,7 @@ import {
   type Integrity, type StudioDraft,
 } from './application';
 import { CheckIcon } from '../components/Check';
+import { territorySummary } from '../lib/territories';
 
 const dash = (v?: string | null) => (v && v.trim() ? v : '—');
 
@@ -138,7 +139,7 @@ export function ApplicationPaper({ sheet, draft, integrity }: { sheet: ReleaseSh
         <h2><span>4</span>배급 범위 및 권리</h2>
         <table className="aq-paper-kv">
           <tbody>
-            <tr><th>배급 지역</th><td colSpan={3}>{territories.includes('WORLD') ? '전 세계' : dash(territories.join(', '))}</td></tr>
+            <tr><th>배급 지역</th><td colSpan={3}>{dash(territorySummary(territories, ''))}</td></tr>
             <tr><th>배급 플랫폼</th><td colSpan={3}>{(draft.platforms ?? []).map(dspLabel).join(', ') || '—'}</td></tr>
             <tr><th>마스터 권리자</th><td colSpan={3}>{dash(draft.ownership)}</td></tr>
             <tr><th>℗ 표기</th><td>℗ {dash(draft.phonogram)}</td><th>© 표기</th><td>© {dash(draft.copyright)}</td></tr>

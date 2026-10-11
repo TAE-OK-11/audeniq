@@ -10,6 +10,7 @@
   --aqc-check:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.6 8.3 6.6 11.3 12.4 4.9' fill='none' stroke='%23fff' stroke-width='2.3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   --aqc-dash:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 8h7' fill='none' stroke='%23fff' stroke-width='2.3' stroke-linecap='round'/%3E%3C/svg%3E");
   --aqc-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='m6.5 9.5 5.5 5.5 5.5-5.5' fill='none' stroke='%235d6880' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --aqc-chevron-up:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='m6.5 14.5 5.5-5.5 5.5 5.5' fill='none' stroke='%233B63F3' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   --aqc-calendar:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233B63F3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3.5' y='5' width='17' height='15.5' rx='3.5'/%3E%3Cpath d='M3.5 10h17M8 3v4M16 3v4'/%3E%3C/svg%3E");
   --aqc-clock:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233B63F3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='8.5'/%3E%3Cpath d='M12 7.5V12l3 2'/%3E%3C/svg%3E");
 }
@@ -44,6 +45,8 @@
   background-image:var(--aqc-chevron)!important;background-repeat:no-repeat!important;background-position:right 16px center!important;background-size:18px 18px!important;
   -webkit-appearance:none!important;appearance:none!important
 }
+/* 선택 목록이 열려 있는 동안(SelectHost가 data-open을 단다) 화살표는 위로, 파랑으로 */
+:is(#root,#modal,body) select[data-open]:not([multiple]):not([size]):not(#_){background-image:var(--aqc-chevron-up)!important}
 :where(select)::-ms-expand{display:none}
 
 /* ---------- 날짜·시간: 기기마다 다른 달력 아이콘 대신 같은 아이콘 ---------- */
