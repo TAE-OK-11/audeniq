@@ -1354,7 +1354,7 @@ pub async fn reports(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
     member(&mut tx, a, org, false).await?;
     let base = "FROM finance.report_lines l JOIN finance.royalty_reports rr ON rr.id=l.report_id
-                WHERE l.org_id=$1 AND l.match_status='AUTO' AND rr.period_start >= (date_trunc('month', now()) - interval '11 months')";
+                WHERE l.org_id=$1 AND l.match_status='AUTO' AND rr.period_start >= (date_trunc('month', now() AT TIME ZONE 'Asia/Seoul') - interval '11 months')";
     let by_month: Vec<Value> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT jsonb_build_object('month',to_char(rr.period_start,'YYYY-MM'),'currency',COALESCE(l.currency, rr.currency),'streams',COALESCE(SUM(l.quantity),0)::text,'revenue',COALESCE(SUM(l.gross_amount),0)::text)
          {base} GROUP BY to_char(rr.period_start,'YYYY-MM'), COALESCE(l.currency, rr.currency) ORDER BY to_char(rr.period_start,'YYYY-MM'), COALESCE(l.currency, rr.currency)"
@@ -1373,7 +1373,7 @@ pub async fn reports(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
         "SELECT jsonb_build_object('release_id',r.id,'title',r.title,'currency',COALESCE(l.currency, rr.currency),'streams',COALESCE(SUM(l.quantity),0)::text,'revenue',COALESCE(SUM(l.gross_amount),0)::text)
          FROM finance.report_lines l JOIN finance.royalty_reports rr ON rr.id=l.report_id
            JOIN catalog.releases r ON r.id=l.matched_release_id AND r.org_id=l.org_id
-         WHERE l.org_id=$1 AND l.match_status='AUTO' AND rr.period_start >= (date_trunc('month', now()) - interval '11 months')
+         WHERE l.org_id=$1 AND l.match_status='AUTO' AND rr.period_start >= (date_trunc('month', now() AT TIME ZONE 'Asia/Seoul') - interval '11 months')
          GROUP BY r.id, COALESCE(l.currency, rr.currency) ORDER BY SUM(l.quantity) DESC NULLS LAST LIMIT 20",
     )
     .bind(org)
@@ -1385,7 +1385,7 @@ pub async fn reports(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
             'streams',COALESCE(SUM(l.quantity),0)::text,'revenue',COALESCE(SUM(l.gross_amount),0)::text)
          FROM finance.report_lines l JOIN finance.royalty_reports rr ON rr.id=l.report_id
            LEFT JOIN catalog.releases r ON r.id=l.matched_release_id AND r.org_id=l.org_id
-         WHERE l.org_id=$1 AND l.match_status='AUTO' AND rr.period_start >= (date_trunc('month', now()) - interval '11 months')
+         WHERE l.org_id=$1 AND l.match_status='AUTO' AND rr.period_start >= (date_trunc('month', now() AT TIME ZONE 'Asia/Seoul') - interval '11 months')
          GROUP BY to_char(rr.period_start,'YYYY-MM'), rr.dsp_id, r.id, r.title, COALESCE(l.currency, rr.currency)
          ORDER BY 1 DESC, SUM(l.gross_amount) DESC NULLS LAST LIMIT 500",
     )
