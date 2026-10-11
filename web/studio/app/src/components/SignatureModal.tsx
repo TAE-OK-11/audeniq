@@ -166,8 +166,9 @@ export function SignatureModal({
       if (signing) return;
       setSigning(true);
       try {
-        let rv = doc.rowVersion ?? 0;
-        if (!doc.checkedAt) rv = await portal.checkDocument(doc.id);
+        // 확인 기록은 여러 번 해도 같고, 서버의 현재 문서 버전을 돌려준다.
+        // 화면을 연 뒤 담당자가 승인·조건을 바꿨어도 옛 버전으로 서명해 거절되지 않는다.
+        const rv = await portal.checkDocument(doc.id);
         const compact = await compactSignature(data);
         await portal.signDocument(doc.id, name.trim(), compact || data, rv, boxes.filter(b => ticked[b.id]).map(b => b.id));
         await refreshDocs();

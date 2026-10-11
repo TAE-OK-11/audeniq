@@ -28,11 +28,30 @@ pub(crate) fn signature_bytes(value: &str) -> Result<Vec<u8>> {
 /// pixel stream. Neither arbitrary data URLs nor appended bytes can be saved.
 pub async fn signature(state: &crate::api::AppState, value: &str) -> Result<String> {
     let bytes = signature_bytes(value)?;
-    let slot = state
-        .transcode_slots
-        .clone()
-        .try_acquire_owned()
-        .map_err(|_| Error::UploadBusy)?;
+    // These exact bytes already passed (same rule version, and the AV scan
+    // when it is on): a draft re-saved or a signature re-sent is not
+    // re-sanitized.
+    let admitted: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM catalog.inline_file_safety WHERE source_sha256=$1 AND rule_version=$2 AND (NOT $3 OR antivirus_status='SCANNED'))",
+    )
+    .bind(crate::domain::sha256_hex(value))
+    .bind(RULE_VERSION)
+    .bind(state.antivirus_enabled)
+    .fetch_one(&state.pool)
+    .await?;
+    if admitted {
+        return Ok(value.to_string());
+    }
+    // A small image of its own slot pool, waited for briefly: signing a
+    // contract used to fail at once whenever an audio upload was converting
+    // (it shared the single transcode slot through try_acquire).
+    let slot = tokio::time::timeout(
+        Duration::from_secs(20),
+        state.inline_slots.clone().acquire_owned(),
+    )
+    .await
+    .map_err(|_| Error::UploadBusy)?
+    .map_err(|_| Error::Internal)?;
     let workspace = Workspace::new()?;
     let source = workspace.0.join("signature.png");
     let target = workspace.0.join("validated.png");

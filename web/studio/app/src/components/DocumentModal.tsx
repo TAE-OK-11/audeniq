@@ -124,8 +124,8 @@ export function DocumentModal({
       if (['review', 'prepared', 'approved'].includes(doc.reviewStatus) && !pendingFile) { toast('이미 검토 요청된 문서예요.', 'info'); return; }
       setSending(true);
       try {
-        let rv = doc.rowVersion ?? 0;
-        if (!doc.checkedAt) rv = await portal.checkDocument(doc.id);
+        // 현재 문서 버전을 서버에서 받아 제출한다 (담당자가 그사이 요청을 바꿨을 수 있다)
+        const rv = await portal.checkDocument(doc.id);
         if (pendingFile && doc.kind === 'rights') await portal.submitProof(doc.id, pendingFile, rv);
         await refreshDocs();
         onClose();
