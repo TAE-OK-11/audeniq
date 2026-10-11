@@ -1,7 +1,7 @@
 // 로그인 상태 — 스튜디오와 같은 계정·세션 API(/api/auth/*, /api/me)를 쓴다.
 // 스태프 여부는 로그인 후 AdminApp이 /api/staff/me로 확인한다.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { bootstrapCsrf, hasCsrf, req, setCsrf } from './api/http';
+import { bootstrapCsrf, hasCsrf, req, setCsrf, setSessionUser } from './api/http';
 import { ApiError } from './api/errors';
 import { MOCK } from './lib/mode';
 
@@ -22,17 +22,19 @@ const forget = () => { try { localStorage.removeItem(ACCOUNT_KEY); } catch { /* 
 const remote = {
   async me(): Promise<User> {
     const me = await req<{ user_id: string }>('/api/me', { quiet401: true });
+    setSessionUser(me.user_id);
     if (!hasCsrf()) await bootstrapCsrf();
     return { id: me.user_id, email: recall() };
   },
   async login(email: string, password: string): Promise<User> {
     const r = await req<{ user_id: string; csrf_token: string }>('/api/auth/login', { method: 'POST', body: { email, password }, quiet401: true });
     setCsrf(r.csrf_token);
+    setSessionUser(r.user_id);
     remember(email);
     return { id: r.user_id, email };
   },
   async logout(): Promise<void> {
-    try { await req('/api/auth/logout', { method: 'POST', quiet401: true }); } finally { setCsrf(''); forget(); }
+    try { await req('/api/auth/logout', { method: 'POST', quiet401: true }); } finally { setCsrf(''); setSessionUser(''); forget(); }
   },
 };
 

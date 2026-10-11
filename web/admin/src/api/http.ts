@@ -16,6 +16,9 @@ const STATUS_CODES: Record<number, string> = {
 
 export function setCsrf(token: string) { csrfToken = token; }
 export function hasCsrf() { return !!csrfToken; }
+/** 이 탭이 로그인한 사용자 (다른 탭에서 다른 계정으로 로그인했는지 알아보는 데 쓴다) */
+let sessionUser = '';
+export function setSessionUser(id: string) { sessionUser = id; }
 
 interface ReqOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -23,6 +26,8 @@ interface ReqOptions {
   timeoutMs?: number;
   /** 401이어도 로그인 화면으로 보내지 않음 (세션 확인·로그인 요청용) */
   quiet401?: boolean;
+  /** 내부용: CSRF 토큰을 새로 받아 한 번 다시 보낸 요청 */
+  csrfRetried?: boolean;
 }
 
 /**
@@ -58,6 +63,10 @@ export async function req<T>(path: string, opts: ReqOptions = {}): Promise<T> {
 
   if (!res.ok) {
     const code = (data as { error?: { code?: string } } | null)?.error?.code ?? STATUS_CODES[res.status] ?? '';
+    // 다른 탭에서 다시 로그인하면 세션(과 CSRF 토큰)이 바뀌어 이 탭의 쓰기가 모두 403이 된다.
+    if (res.status === 403 && method !== 'GET' && !opts.csrfRetried && path !== '/api/auth/csrf') {
+      if (await refreshSession()) return req<T>(path, { ...opts, csrfRetried: true });
+    }
     if (res.status === 401 && !opts.quiet401) {
       csrfToken = '';
       if (!currentPath().startsWith('/login')) window.location.assign(toHref('/login'));
@@ -68,6 +77,22 @@ export async function req<T>(path: string, opts: ReqOptions = {}): Promise<T> {
     throw new ApiError(msg, res.status, code);
   }
   return (data ?? {}) as T;
+}
+
+/** 세션이 바뀌었는지 확인하고 CSRF 토큰을 새로 받는다. 다시 보내도 되면 true */
+async function refreshSession(): Promise<boolean> {
+  const before = csrfToken;
+  try {
+    const me = await req<{ user_id: string }>('/api/me', { quiet401: true });
+    if (sessionUser && me.user_id !== sessionUser) {
+      window.location.reload();
+      return false;
+    }
+    await bootstrapCsrf();
+  } catch {
+    return false;
+  }
+  return csrfToken !== '' && csrfToken !== before;
 }
 
 /** 새로고침 후 세션 쿠키로 CSRF 토큰을 다시 받는다 */

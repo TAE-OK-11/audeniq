@@ -698,9 +698,11 @@ pub async fn verify_identity(
             return Err(e);
         }
     };
-    // The same provider transaction cannot verify two requests.
+    // The same provider transaction cannot verify two requests, nor a
+    // request and an account (account.rs checks both tables too).
     let reused: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM portal.signing_requests WHERE id<>$1 AND identity->>'transaction_id'=$2 AND identity->>'provider'=$3)",
+        "SELECT EXISTS(SELECT 1 FROM portal.signing_requests WHERE id<>$1 AND identity->>'transaction_id'=$2 AND identity->>'provider'=$3)
+             OR EXISTS(SELECT 1 FROM portal.account_identities WHERE transaction_id=$2 AND provider=$3)",
     )
     .bind(id)
     .bind(&verified.transaction_id)

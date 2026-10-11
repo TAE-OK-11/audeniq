@@ -26,7 +26,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loadOrgs = useCallback(async () => {
-    const o = await api.listOrgs().catch(() => [] as Org[]);
+    // 목록을 한 번 못 받았다고 '작업 공간 없음'으로 굳지 않게 잠시 뒤 다시 받는다
+    // (그대로 두면 모든 요청이 NO_ORG로 실패하고 다시 로그인하는 수밖에 없었다)
+    let o: Org[] = [];
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try { o = await api.listOrgs(); break; } catch {
+        if (attempt < 2) await new Promise(r => window.setTimeout(r, 800 * (attempt + 1)));
+      }
+    }
     setOrgs(o);
     setOrg(o[0] ?? null);
   }, [setOrg]);
