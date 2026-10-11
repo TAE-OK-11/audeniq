@@ -200,6 +200,20 @@ pub async fn reverse_transaction(
     transaction_id: Uuid,
     reason: &str,
 ) -> Result<Uuid> {
+    let mut tx = pool.begin().await?;
+    let id = reverse_transaction_in(&mut tx, org, actor, transaction_id, reason).await?;
+    tx.commit().await?;
+    Ok(id)
+}
+
+/// As [`reverse_transaction`], inside the caller's transaction.
+pub async fn reverse_transaction_in(
+    c: &mut PgConnection,
+    org: Uuid,
+    actor: Option<Uuid>,
+    transaction_id: Uuid,
+    reason: &str,
+) -> Result<Uuid> {
     if reason.trim().is_empty() {
         return Err(Error::PolicyGate("REVERSAL_REASON_REQUIRED"));
     }
@@ -208,7 +222,7 @@ pub async fn reverse_transaction(
     )
     .bind(org)
     .bind(transaction_id)
-    .fetch_one(pool)
+    .fetch_one(&mut *c)
     .await?;
     if already {
         return Err(Error::PolicyGate("ALREADY_REVERSED"));
@@ -228,7 +242,7 @@ pub async fn reverse_transaction(
         )
         .bind(org)
         .bind(transaction_id)
-        .fetch_optional(pool)
+        .fetch_optional(&mut *c)
         .await?;
     let (code, currency, fx_rate, fee_v, contract_v, tax_v) = head.ok_or(Error::NotFound)?;
     type EntryRow = (
@@ -245,13 +259,12 @@ pub async fn reverse_transaction(
     )
     .bind(org)
     .bind(transaction_id)
-    .fetch_all(pool)
+    .fetch_all(&mut *c)
     .await?;
     if rows.is_empty() {
         return Err(Error::PolicyGate("EMPTY_TRANSACTION"));
     }
 
-    let mut tx = pool.begin().await?;
     let id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO finance.ledger_transactions(id,org_id,transaction_code,currency,fx_rate,fee_policy_version,contract_version,tax_rule_version,reversal_of,source_ref,description,created_by)
@@ -267,7 +280,7 @@ pub async fn reverse_transaction(
     .bind(transaction_id)
     .bind(format!("reversal of {transaction_id} ({code}): {reason}"))
     .bind(actor)
-    .execute(&mut *tx)
+    .execute(&mut *c)
     .await?;
     for (account, side, amount, party_id, isrc, split_id) in &rows {
         let flipped = if side == "DEBIT" { "CREDIT" } else { "DEBIT" };
@@ -285,10 +298,9 @@ pub async fn reverse_transaction(
         .bind(party_id)
         .bind(isrc)
         .bind(split_id)
-        .execute(&mut *tx)
+        .execute(&mut *c)
         .await?;
     }
-    tx.commit().await?;
     Ok(id)
 }
 
@@ -610,11 +622,61 @@ pub async fn record_bank_result(
     .await?;
     let (status, amount, currency, payee, fee, net, policy, bank_tx) =
         row.ok_or(Error::NotFound)?;
+    // Each bank notice is recorded once (0097): a repeat never posts or
+    // notifies twice.
+    let fresh: Option<Uuid> = sqlx::query_scalar(
+        "INSERT INTO finance.payout_bank_events(id,org_id,order_id,outcome,bank_transaction_id,payload,recorded_by)
+         VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (order_id, outcome, bank_transaction_id) DO NOTHING RETURNING id",
+    )
+    .bind(Uuid::new_v4())
+    .bind(org)
+    .bind(order_id)
+    .bind(outcome.status())
+    .bind(bank_transaction_id.or(bank_tx.as_deref()).unwrap_or(""))
+    .bind(&bank_result)
+    .bind(executor)
+    .fetch_optional(&mut *tx)
+    .await?;
     if status == "SETTLED"
         && outcome == BankOutcome::Settled
         && (bank_transaction_id.is_none() || bank_transaction_id == bank_tx.as_deref())
     {
+        tx.commit().await?;
         return Ok(()); // duplicate confirmation: one bank transfer, one ledger debit
+    }
+    if fresh.is_none() && status == outcome.status() {
+        tx.commit().await?;
+        return Ok(()); // the same notice again
+    }
+    // The bank sent a settled transfer back: undo the payout posting so the
+    // amount is withdrawable again, and mark the order RETURNED.
+    if status == "SETTLED" && outcome == BankOutcome::Returned {
+        let related: Option<Uuid> = sqlx::query_scalar(
+            "SELECT related_transaction_id FROM finance.payout_orders WHERE org_id=$1 AND id=$2",
+        )
+        .bind(org)
+        .bind(order_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        let reversal = match related {
+            Some(t) => Some(
+                reverse_transaction_in(&mut tx, org, Some(executor), t, "bank returned the payout")
+                    .await?,
+            ),
+            None => None,
+        };
+        sqlx::query(
+            "UPDATE finance.payout_orders SET status='RETURNED', returned_transaction_id=$3, returned_at=now(),
+               bank_result=$4 WHERE org_id=$1 AND id=$2",
+        )
+        .bind(org)
+        .bind(order_id)
+        .bind(reversal)
+        .bind(&bank_result)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        return Ok(());
     }
     if !matches!(
         status.as_str(),
@@ -852,6 +914,141 @@ pub async fn mark_payout_submitted(
     }
     tx.commit().await?;
     Ok(())
+}
+
+/// Settle an approved order that staff transferred by hand (no bank API
+/// yet): only with the transfer reference and an uploaded evidence file
+/// (이체확인증), recorded on the order. The person who approved it does not
+/// record the transfer. Posts the payout like a bank-confirmed one.
+pub async fn record_manual_payout(
+    pool: &PgPool,
+    org: Uuid,
+    executor: Uuid,
+    order_id: Uuid,
+    bank_reference: &str,
+    evidence_asset_id: Uuid,
+) -> Result<()> {
+    let reference = bank_reference.trim();
+    if reference.is_empty() || reference.len() > 120 {
+        return Err(Error::PolicyGate("BANK_REFERENCE_REQUIRED"));
+    }
+    let evidence: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM catalog.assets WHERE org_id IN ($1, $2) AND id=$3 AND state='REGISTERED' AND kind IN ('DOCUMENT','IMAGE'))",
+    )
+    .bind(org)
+    .bind(Uuid::nil())
+    .bind(evidence_asset_id)
+    .fetch_one(pool)
+    .await?;
+    if !evidence {
+        return Err(Error::PolicyGate("PAYOUT_EVIDENCE_REQUIRED"));
+    }
+    let approved_by: Option<Option<Uuid>> = sqlx::query_scalar(
+        "SELECT approved_by FROM finance.payout_orders WHERE org_id=$1 AND id=$2 AND status='APPROVED'",
+    )
+    .bind(org)
+    .bind(order_id)
+    .fetch_optional(pool)
+    .await?;
+    match approved_by {
+        None => return Err(Error::PolicyGate("INVALID_PAYOUT_STATUS_TRANSITION")),
+        Some(a) if a == Some(executor) => {
+            return Err(Error::PolicyGate("PAYOUT_EXECUTOR_MUST_DIFFER"));
+        }
+        _ => {}
+    }
+    sqlx::query("UPDATE finance.payout_orders SET manual=true, evidence_asset_id=$3 WHERE org_id=$1 AND id=$2 AND status='APPROVED'")
+        .bind(org)
+        .bind(order_id)
+        .bind(evidence_asset_id)
+        .execute(pool)
+        .await?;
+    mark_payout_submitted(pool, org, executor, order_id, reference).await?;
+    record_bank_result(
+        pool,
+        org,
+        executor,
+        order_id,
+        Some(reference),
+        BankOutcome::Settled,
+        serde_json::json!({"manual": true, "evidence_asset_id": evidence_asset_id}),
+    )
+    .await
+}
+
+/// Reissue a returned or failed order to the payout account registered now
+/// (the artist may have fixed it), for the same amount and request. The new
+/// order starts at PENDING_APPROVAL and passes every payout check again.
+pub async fn reissue_payout(pool: &PgPool, org: Uuid, actor: Uuid, order_id: Uuid) -> Result<Uuid> {
+    let mut tx = pool.begin().await?;
+    use sqlx::Row;
+    let old = sqlx::query(
+        "SELECT status, payee_party_id, amount, currency, payout_request_id, fee_amount, net_amount, fee_policy_version
+           FROM finance.payout_orders WHERE org_id=$1 AND id=$2 FOR UPDATE",
+    )
+    .bind(org)
+    .bind(order_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(Error::NotFound)?;
+    if !matches!(
+        old.get::<String, _>("status").as_str(),
+        "RETURNED" | "FAILED"
+    ) {
+        return Err(Error::PolicyGate("INVALID_PAYOUT_STATUS_TRANSITION"));
+    }
+    let payee: Uuid = old.get("payee_party_id");
+    let amount: Decimal = old.get("amount");
+    ensure_payable(&mut tx, org, payee, None, amount).await?;
+    let account = sqlx::query(
+        "SELECT payee_type,holder_name,bank_name,account_last4,account_cipher,key_version,row_version
+           FROM portal.payout_accounts WHERE org_id=$1",
+    )
+    .bind(org)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(Error::PolicyGate("PAYOUT_ACCOUNT_REQUIRED"))?;
+    let snapshot = serde_json::json!({
+        "payee_type": account.get::<String, _>("payee_type"),
+        "holder_name": account.get::<String, _>("holder_name"),
+        "bank_name": account.get::<String, _>("bank_name"),
+        "account_last4": account.get::<String, _>("account_last4"),
+        "account_row_version": account.get::<i64, _>("row_version"),
+        "reissue_of": order_id,
+    });
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO finance.payout_orders(id,org_id,idempotency_key,payee_party_id,amount,currency,created_by,
+           payout_request_id,fee_amount,net_amount,fee_policy_version,account_snapshot,account_cipher,account_key_version,reissue_of)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)",
+    )
+    .bind(id)
+    .bind(org)
+    .bind(format!("reissue:{order_id}"))
+    .bind(payee)
+    .bind(amount)
+    .bind(old.get::<String, _>("currency"))
+    .bind(actor)
+    .bind(old.get::<Option<Uuid>, _>("payout_request_id"))
+    .bind(old.get::<Option<Decimal>, _>("fee_amount"))
+    .bind(old.get::<Option<Decimal>, _>("net_amount"))
+    .bind(old.get::<Option<String>, _>("fee_policy_version"))
+    .bind(&snapshot)
+    .bind(account.get::<Vec<u8>, _>("account_cipher"))
+    .bind(account.get::<i16, _>("key_version"))
+    .bind(order_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| map_unique_violation(e, "PAYOUT_ALREADY_REISSUED"))?;
+    // The artist's request follows the order now in flight.
+    sqlx::query("UPDATE portal.payout_requests SET payout_order_id=$3 WHERE org_id=$1 AND payout_order_id=$2")
+        .bind(org)
+        .bind(order_id)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(id)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

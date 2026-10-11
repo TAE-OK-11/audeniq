@@ -49,11 +49,14 @@
 //! audeniq-admin --operator STAFF_EMAIL payout submit ORDER_ID BANK_TX_ID
 //! audeniq-admin --operator STAFF_EMAIL payout result ORDER_ID settled|failed|returned|unknown [BANK_TX_ID]
 //! audeniq-admin --operator STAFF_EMAIL payout cancel ORDER_ID    (before submit only)
+//! audeniq-admin --operator STAFF_EMAIL payout manual ORDER_ID BANK_TX EVIDENCE_ASSET_ID
+//!     (paid in the bank's own channel; receipt asset required, executor ≠ approver)
+//! audeniq-admin --operator STAFF_EMAIL payout reissue ORDER_ID   (after RETURNED/FAILED)
 //!   (ADMIN/OPERATOR staff; SETTLED posts the ledger debit, UNKNOWN is never resent)
 use audeniq_core::protected_admin as admin;
 use audeniq_core::protected_names::{Action, Mode};
 
-const USAGE: &str = "usage: audeniq-admin [--operator NAME] protected <list|add|remove|activate|alias|remove-alias|grant-exception|revoke-exception> ...\n       audeniq-admin [--operator NAME] identifier-issuer <list|register UPC|ISRC PREFIX>\n       audeniq-admin [--operator NAME] partner <list|config-check|status ID|set-dsp ID [DSP_UUID]|probe ID|dpid ID DPID|test-ern ID FILE|test-ack ID FILE|capabilities ID JSON|contract ID REF|go-live ID|suspend ID --reason TEXT|route D-n DIRECT|MERLIN|merlin-eligible D-n true|false>\n       audeniq-admin [--operator NAME] staff <list|grant EMAIL ROLE|revoke EMAIL>\n       audeniq-admin dsp list\n       audeniq-admin --operator STAFF_EMAIL payout <list [STATUS]|order REQUEST_ID|approve ORDER_ID|submit ORDER_ID BANK_TX|result ORDER_ID settled|failed|returned|unknown [BANK_TX]|cancel ORDER_ID>";
+const USAGE: &str = "usage: audeniq-admin [--operator NAME] protected <list|add|remove|activate|alias|remove-alias|grant-exception|revoke-exception> ...\n       audeniq-admin [--operator NAME] identifier-issuer <list|register UPC|ISRC PREFIX>\n       audeniq-admin [--operator NAME] partner <list|config-check|status ID|set-dsp ID [DSP_UUID]|probe ID|dpid ID DPID|test-ern ID FILE|test-ack ID FILE|capabilities ID JSON|contract ID REF|go-live ID|suspend ID --reason TEXT|route D-n DIRECT|MERLIN|merlin-eligible D-n true|false>\n       audeniq-admin [--operator NAME] staff <list|grant EMAIL ROLE|revoke EMAIL>\n       audeniq-admin dsp list\n       audeniq-admin --operator STAFF_EMAIL payout <list [STATUS]|order REQUEST_ID|approve ORDER_ID|submit ORDER_ID BANK_TX|result ORDER_ID settled|failed|returned|unknown [BANK_TX]|manual ORDER_ID BANK_TX EVIDENCE_ASSET_ID|reissue ORDER_ID|cancel ORDER_ID>";
 
 fn take_opt(args: &mut Vec<String>, key: &str) -> Option<String> {
     let i = args.iter().position(|a| a == key)?;
@@ -288,6 +291,21 @@ async fn main() -> anyhow::Result<()> {
                 )
                 .await?;
                 serde_json::json!({"order_id": id, "status": finance::get_payout_status(&pool, org_of(id).await?, id).await?})
+            }
+            Some("manual") => {
+                // Paid by hand in the bank's own channel (no transfer API
+                // contract yet): the transfer receipt must be registered first.
+                let id = uuid(2)?;
+                let bank = args.get(3).ok_or_else(|| anyhow::anyhow!(USAGE))?;
+                let evidence = uuid(4)?;
+                finance::record_manual_payout(&pool, org_of(id).await?, actor, id, bank, evidence)
+                    .await?;
+                serde_json::json!({"order_id": id, "status": "SETTLED", "manual": true})
+            }
+            Some("reissue") => {
+                let id = uuid(2)?;
+                let new = finance::reissue_payout(&pool, org_of(id).await?, actor, id).await?;
+                serde_json::json!({"reissue_of": id, "order_id": new, "status": "PENDING_APPROVAL"})
             }
             Some("cancel") => {
                 let id = uuid(2)?;

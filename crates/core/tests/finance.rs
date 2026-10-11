@@ -541,3 +541,262 @@ async fn withdrawable_balance_gates_every_payout_step(pool: PgPool) {
         "{e:?}"
     );
 }
+
+async fn withdrawable(pool: &PgPool, org: Uuid) -> Decimal {
+    let mut c = pool.acquire().await.unwrap();
+    finance::withdrawable(&mut c, org, None).await.unwrap()
+}
+
+/// Approve, submit and settle one order for `amount` from a funded ledger.
+async fn settled_order(pool: &PgPool, org: Uuid, key: &'static str, amount: &str) -> Uuid {
+    let (id, _) = finance::create_payout_order(
+        pool,
+        org,
+        PayoutOrderInput {
+            idempotency_key: key,
+            payee_party_id: Uuid::nil(),
+            amount: dec(amount),
+            currency: "KRW",
+            created_by: None,
+        },
+    )
+    .await
+    .unwrap();
+    let approver = Uuid::new_v4();
+    finance::approve_payout_order(pool, org, approver, id)
+        .await
+        .unwrap();
+    finance::mark_payout_submitted(pool, org, approver, id, "bank-r-1")
+        .await
+        .unwrap();
+    finance::record_bank_result(
+        pool,
+        org,
+        approver,
+        id,
+        Some("bank-r-1"),
+        BankOutcome::Settled,
+        json!({}),
+    )
+    .await
+    .unwrap();
+    id
+}
+
+/// 감사 7번: a transfer the bank sends back after settling reverses the
+/// payout posting (the amount is withdrawable again), and a repeated bank
+/// notice changes nothing.
+#[sqlx::test]
+async fn returned_after_settlement_reverses_and_repeats_are_noops(pool: PgPool) {
+    let org = org(&pool).await;
+    finance::post_transaction(&pool, org, balanced())
+        .await
+        .unwrap();
+    let id = settled_order(&pool, org, "ret-0001", "40000").await;
+    assert_eq!(withdrawable(&pool, org).await, dec("60000"));
+    let staff = Uuid::new_v4();
+    // The same settlement notice again: one transfer, one debit.
+    finance::record_bank_result(
+        &pool,
+        org,
+        staff,
+        id,
+        Some("bank-r-1"),
+        BankOutcome::Settled,
+        json!({}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(withdrawable(&pool, org).await, dec("60000"));
+    for _ in 0..2 {
+        finance::record_bank_result(
+            &pool,
+            org,
+            staff,
+            id,
+            Some("bank-r-1"),
+            BankOutcome::Returned,
+            json!({"reason": "계좌 해지"}),
+        )
+        .await
+        .unwrap();
+    }
+    assert_eq!(
+        finance::get_payout_status(&pool, org, id).await.unwrap(),
+        "RETURNED"
+    );
+    assert_eq!(withdrawable(&pool, org).await, dec("100000"));
+    let (reversal, events): (Option<Uuid>, i64) = sqlx::query_as(
+        "SELECT returned_transaction_id, (SELECT COUNT(*) FROM finance.payout_bank_events WHERE order_id=$1)
+           FROM finance.payout_orders WHERE id=$1",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(reversal.is_some());
+    assert_eq!(events, 2, "SETTLED and RETURNED once each");
+    let notices: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM portal.notifications WHERE org_id=$1 AND title LIKE '%반송%'",
+    )
+    .bind(org)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(notices, 1);
+    // A failure after the return contradicts a final state.
+    let e = finance::record_bank_result(
+        &pool,
+        org,
+        staff,
+        id,
+        Some("bank-r-1"),
+        BankOutcome::Failed,
+        json!({}),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(e, Error::PolicyGate("INVALID_PAYOUT_STATUS_TRANSITION")),
+        "{e:?}"
+    );
+}
+
+/// A manual transfer settles only with a registered receipt and by someone
+/// other than the approver; a returned order is reissued through approval
+/// again, once.
+#[sqlx::test]
+async fn manual_payout_needs_evidence_and_reissue_goes_through_approval(pool: PgPool) {
+    let org = org(&pool).await;
+    finance::post_transaction(&pool, org, balanced())
+        .await
+        .unwrap();
+    let (id, _) = finance::create_payout_order(
+        &pool,
+        org,
+        PayoutOrderInput {
+            idempotency_key: "man-0001",
+            payee_party_id: Uuid::nil(),
+            amount: dec("30000"),
+            currency: "KRW",
+            created_by: None,
+        },
+    )
+    .await
+    .unwrap();
+    let approver = Uuid::new_v4();
+    let executor = Uuid::new_v4();
+    finance::approve_payout_order(&pool, org, approver, id)
+        .await
+        .unwrap();
+    let receipt = Uuid::new_v4();
+    let e = finance::record_manual_payout(&pool, org, executor, id, "IBK-20261011-1", receipt)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(e, Error::PolicyGate("PAYOUT_EVIDENCE_REQUIRED")),
+        "{e:?}"
+    );
+    sqlx::query("INSERT INTO identity.resources(org_id,id,kind) VALUES($1,$2,'asset')")
+        .bind(org)
+        .bind(receipt)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO catalog.assets(id,org_id,kind,object_key,size_bytes,content_type,sha256,state) VALUES($1,$2,'DOCUMENT','receipt.pdf',10,'application/pdf',$3,'REGISTERED')")
+        .bind(receipt)
+        .bind(org)
+        .bind("a".repeat(64))
+        .execute(&pool)
+        .await
+        .unwrap();
+    let e = finance::record_manual_payout(&pool, org, approver, id, "IBK-20261011-1", receipt)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(e, Error::PolicyGate("PAYOUT_EXECUTOR_MUST_DIFFER")),
+        "{e:?}"
+    );
+    finance::record_manual_payout(&pool, org, executor, id, "IBK-20261011-1", receipt)
+        .await
+        .unwrap();
+    let (status, manual, evidence): (String, bool, Option<Uuid>) = sqlx::query_as(
+        "SELECT status, manual, evidence_asset_id FROM finance.payout_orders WHERE id=$1",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        (status.as_str(), manual, evidence),
+        ("SETTLED", true, Some(receipt))
+    );
+    assert_eq!(withdrawable(&pool, org).await, dec("70000"));
+
+    // Only a returned or failed order is reissued, and it needs an account.
+    let e = finance::reissue_payout(&pool, org, executor, id)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(e, Error::PolicyGate("INVALID_PAYOUT_STATUS_TRANSITION")),
+        "{e:?}"
+    );
+    finance::record_bank_result(
+        &pool,
+        org,
+        executor,
+        id,
+        Some("IBK-20261011-1"),
+        BankOutcome::Returned,
+        json!({}),
+    )
+    .await
+    .unwrap();
+    let e = finance::reissue_payout(&pool, org, executor, id)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(e, Error::PolicyGate("PAYOUT_ACCOUNT_REQUIRED")),
+        "{e:?}"
+    );
+    let (party, user) = (Uuid::new_v4(), Uuid::new_v4());
+    sqlx::query(
+        "INSERT INTO identity.parties(id,org_id,kind,display_name) VALUES($1,$2,'PERSON','p')",
+    )
+    .bind(party)
+    .bind(org)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO identity.users(id,email,password_hash,party_id) VALUES($1,'pay@x.y','x',$2)",
+    )
+    .bind(user)
+    .bind(party)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO portal.payout_accounts(org_id,payee_type,holder_name,bank_name,account_last4,account_cipher,registered_by) VALUES($1,'INDIVIDUAL','홍길동','하나은행','1234',$2,$3)")
+        .bind(org)
+        .bind(vec![0u8; 40])
+        .bind(user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let new = finance::reissue_payout(&pool, org, executor, id)
+        .await
+        .unwrap();
+    assert_eq!(
+        finance::get_payout_status(&pool, org, new).await.unwrap(),
+        "PENDING_APPROVAL"
+    );
+    // The reissued order reserves the amount again.
+    assert_eq!(withdrawable(&pool, org).await, dec("70000"));
+    let e = finance::reissue_payout(&pool, org, executor, id)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(e, Error::PolicyGate("PAYOUT_ALREADY_REISSUED")),
+        "{e:?}"
+    );
+}
