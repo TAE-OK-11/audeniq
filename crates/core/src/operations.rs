@@ -320,6 +320,20 @@ pub async fn fail(pool: &PgPool, j: &Job, permanent: bool, code: &str) -> Result
     let mut tx = pool.begin().await?;
     let r=sqlx::query("UPDATE operations.jobs SET status=CASE WHEN $3 OR attempts>=max_attempts THEN 'DEAD_LETTER' ELSE 'QUEUED' END,dead_lettered_at=CASE WHEN $3 OR attempts>=max_attempts THEN now() END,last_error=$4,run_at=now()+make_interval(secs=>least(3600,power(2,attempts)*5)::double precision),lock_token=NULL,lease_until=NULL WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp() RETURNING status")
  .bind(j.id).bind(j.token).bind(permanent).bind(code).fetch_optional(&mut *tx).await?.ok_or(Error::Conflict)?;
+    if r.get::<String, _>("status") == "DEAD_LETTER" && SURFACED_KINDS.contains(&j.kind.as_str()) {
+        // A pipeline job dead-lettered here (the worker's fallback after the
+        // handler's own surfacing failed) must still move its release out of
+        // the running state. Best effort in a savepoint: the dead letter
+        // itself is recorded either way.
+        let mut sp = sqlx::Acquire::begin(&mut *tx).await?;
+        match surface_dead_letter(&mut sp, &j.kind, &j.payload, code).await {
+            Ok(()) => sp.commit().await?,
+            Err(e) => {
+                tracing::warn!(job_id = %j.id, error = %e, "dead letter not surfaced on the release");
+                sp.rollback().await?;
+            }
+        }
+    }
     audit(
         &mut tx,
         None,
@@ -798,7 +812,27 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
             crate::execution::release_delivery_lease(pool, &djob, "EXECUTION_NO_ADAPTER").await?;
             return fail(pool, j, true, "EXECUTION_NO_ADAPTER").await;
         };
-        return match crate::execution::run_delivery(pool, storage, adapter.as_ref(), &djob).await {
+        // Keep the delivery job's lease alive for as long as the send runs.
+        let lease = job_lease_seconds();
+        let renew = async {
+            let mut tick =
+                tokio::time::interval(std::time::Duration::from_secs((lease / 3).max(1) as u64));
+            tick.tick().await;
+            loop {
+                tick.tick().await;
+                match crate::execution::renew_delivery_lease(pool, &djob, lease).await {
+                    Ok(true) => {}
+                    Ok(false) => break,
+                    Err(e) => tracing::warn!(error = %e, "delivery lease renewal failed"),
+                }
+            }
+            std::future::pending::<()>().await
+        };
+        let delivered = tokio::select! {
+            r = crate::execution::run_delivery(pool, storage, adapter.as_ref(), &djob) => r,
+            _ = renew => unreachable!(),
+        };
+        return match delivered {
             Ok(status) => match status.as_str() {
                 "DELIVERED" => {
                     // E-4: ingestion takes hours; schedule the first live-state

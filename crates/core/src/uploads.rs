@@ -183,29 +183,22 @@ pub async fn complete(
     let kind: String = r.get("kind");
     let mime: String = r.get("content_type");
     let container = expected_container(&kind, &mime).ok_or(Error::Invalid)?;
+    let size: i64 = r.get("expected_bytes");
+    let nonce: Uuid = r.get("nonce");
+    // Never keep a DB transaction (and the session row lock) open across
+    // storage calls, scans or decoding. Cancellation and concurrent
+    // completion are checked again under a fresh row lock; the freeze copy is
+    // conditional on the ETag seen here.
+    tx.commit().await?;
     let meta = stage(a.request, "head", s.storage.head(&key))
         .await?
         .ok_or(Error::Conflict)?;
-    let size: i64 = r.get("expected_bytes");
-    let nonce: Uuid = r.get("nonce");
     if meta.size != size || meta.content_type != mime || meta.nonce != nonce.to_string() {
         return Err(Error::Conflict);
     }
     // Freeze into quarantine, never the registered namespace. A cancelled or
     // failed completion leaves no object that any reader can serve or analyze.
     let frozen = format!("quarantine/{org}/{asset}/frozen-{}", Uuid::new_v4());
-    let valid: bool = sqlx::query_scalar(
-        "SELECT expires_at+interval '30 minutes'>clock_timestamp() FROM catalog.upload_sessions WHERE id=$1",
-    )
-    .bind(id)
-    .fetch_one(&mut *tx)
-    .await?;
-    if !valid {
-        return Err(Error::Conflict);
-    }
-    // Never keep a DB transaction idle during scans or decoding. Cancellation
-    // and concurrent completion are checked again under a fresh row lock.
-    tx.commit().await?;
     stage(
         a.request,
         "freeze",
@@ -239,80 +232,90 @@ pub async fn complete(
         ),
     )
     .await?;
-    let mut tx = s.pool.begin().await?;
-    auth::authorize(&mut tx, a, org, asset, "asset", true).await?;
-    let status: String = sqlx::query_scalar(
-        "SELECT status FROM catalog.upload_sessions WHERE id=$1 AND org_id=$2 FOR UPDATE",
-    )
-    .bind(id)
-    .bind(org)
-    .fetch_one(&mut *tx)
-    .await?;
-    if status == "COMPLETED" {
-        tx.commit().await?;
-        let _ = s.storage.delete(&prepared.key).await;
-        crate::upload_safety::require_policy(&s.pool, org, asset, s.antivirus_enabled).await?;
-        let recorded: String = sqlx::query_scalar(
-            "SELECT antivirus_status FROM catalog.asset_safety WHERE asset_id=$1 AND org_id=$2",
+    // Registering may still fail (cancelled or expired meanwhile, DB error):
+    // then the converted master in `registered/` is orphaned — remove it.
+    let registered = prepared.key.clone();
+    let out: Result<Value> = async {
+        let mut tx = s.pool.begin().await?;
+        auth::authorize(&mut tx, a, org, asset, "asset", true).await?;
+        let status: String = sqlx::query_scalar(
+            "SELECT status FROM catalog.upload_sessions WHERE id=$1 AND org_id=$2 FOR UPDATE",
         )
-        .bind(asset)
+        .bind(id)
         .bind(org)
-        .fetch_one(&s.pool)
+        .fetch_one(&mut *tx)
         .await?;
-        return Ok(
-            json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":true,"safety_status":crate::upload_safety::safety_status(&recorded)}),
-        );
+        if status == "COMPLETED" {
+            tx.commit().await?;
+            let _ = s.storage.delete(&prepared.key).await;
+            crate::upload_safety::require_policy(&s.pool, org, asset, s.antivirus_enabled).await?;
+            let recorded: String = sqlx::query_scalar(
+                "SELECT antivirus_status FROM catalog.asset_safety WHERE asset_id=$1 AND org_id=$2",
+            )
+            .bind(asset)
+            .bind(org)
+            .fetch_one(&s.pool)
+            .await?;
+            return Ok(
+                json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":true,"safety_status":crate::upload_safety::safety_status(&recorded)}),
+            );
+        }
+        if status != "ISSUED" {
+            return Err(Error::Conflict);
+        }
+        finish_session(&mut tx, id).await?;
+        let antivirus_status = crate::upload_safety::antivirus_status(s.antivirus_enabled);
+        sqlx::query("INSERT INTO catalog.asset_safety(asset_id,org_id,source_key,source_sha256,safe_key,safe_sha256,rule_version,antivirus_status) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
+            .bind(asset).bind(org).bind(&frozen).bind(&prepared.source_sha256).bind(&prepared.key)
+            .bind(&prepared.sha256).bind(crate::upload_safety::RULE_VERSION).bind(antivirus_status).execute(&mut *tx).await?;
+        sqlx::query("UPDATE catalog.assets SET state='REGISTERED',object_key=$2,content_type=$3,size_bytes=$4,etag=$5,sha256=$6 WHERE id=$1")
+            .bind(asset).bind(&prepared.key).bind(&prepared.mime).bind(prepared.size)
+            .bind(&prepared.etag).bind(&prepared.sha256).execute(&mut *tx).await?;
+        if let Some(provenance) = &prepared.provenance {
+            sqlx::query("INSERT INTO catalog.asset_provenance(asset_id,org_id,source_sha256,master_sha256,rule_version,body) VALUES($1,$2,$3,$4,$5,$6)")
+                .bind(asset).bind(org).bind(&prepared.source_sha256).bind(&prepared.sha256)
+                .bind(crate::provenance::RULE_VERSION).bind(provenance).execute(&mut *tx).await?;
+        }
+        if kind == "AUDIO" {
+            queue_analysis(&mut tx, org, asset).await?;
+        }
+        operations::audit(
+            &mut tx,
+            Some(a.user),
+            Some(org),
+            Some(asset),
+            "upload.completed",
+            if s.antivirus_enabled {
+                "MALWARE_CHECKED_AND_NORMALIZED"
+            } else {
+                "NORMALIZED_AV_DISABLED"
+            },
+            a.request,
+        )
+        .await?;
+        operations::event(
+            &mut tx,
+            org,
+            asset,
+            "asset.registered",
+            &format!("asset:{asset}"),
+        )
+        .await?;
+        tx.commit().await?;
+        // The original signed PUT stays as a single-use lock until lifecycle
+        // expiry. The frozen evidence remains private and is never downloadable.
+        Ok(
+            json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":false,
+            "sha256":prepared.sha256,"detected_container":if kind=="AUDIO" { "FLAC" } else { container },
+            "converted_from":if kind=="AUDIO" { Some(if container=="M4A" { "ALAC" } else { container }) } else { None },
+            "safety_status":crate::upload_safety::safety_status(antivirus_status)}),
+        )
     }
-    if status != "ISSUED" {
-        return Err(Error::Conflict);
+    .await;
+    if out.is_err() {
+        let _ = s.storage.delete(&registered).await;
     }
-    finish_session(&mut tx, id).await?;
-    let antivirus_status = crate::upload_safety::antivirus_status(s.antivirus_enabled);
-    sqlx::query("INSERT INTO catalog.asset_safety(asset_id,org_id,source_key,source_sha256,safe_key,safe_sha256,rule_version,antivirus_status) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
-        .bind(asset).bind(org).bind(&frozen).bind(&prepared.source_sha256).bind(&prepared.key)
-        .bind(&prepared.sha256).bind(crate::upload_safety::RULE_VERSION).bind(antivirus_status).execute(&mut *tx).await?;
-    sqlx::query("UPDATE catalog.assets SET state='REGISTERED',object_key=$2,content_type=$3,size_bytes=$4,etag=$5,sha256=$6 WHERE id=$1")
-        .bind(asset).bind(&prepared.key).bind(&prepared.mime).bind(prepared.size)
-        .bind(&prepared.etag).bind(&prepared.sha256).execute(&mut *tx).await?;
-    if let Some(provenance) = &prepared.provenance {
-        sqlx::query("INSERT INTO catalog.asset_provenance(asset_id,org_id,source_sha256,master_sha256,rule_version,body) VALUES($1,$2,$3,$4,$5,$6)")
-            .bind(asset).bind(org).bind(&prepared.source_sha256).bind(&prepared.sha256)
-            .bind(crate::provenance::RULE_VERSION).bind(provenance).execute(&mut *tx).await?;
-    }
-    if kind == "AUDIO" {
-        queue_analysis(&mut tx, org, asset).await?;
-    }
-    operations::audit(
-        &mut tx,
-        Some(a.user),
-        Some(org),
-        Some(asset),
-        "upload.completed",
-        if s.antivirus_enabled {
-            "MALWARE_CHECKED_AND_NORMALIZED"
-        } else {
-            "NORMALIZED_AV_DISABLED"
-        },
-        a.request,
-    )
-    .await?;
-    operations::event(
-        &mut tx,
-        org,
-        asset,
-        "asset.registered",
-        &format!("asset:{asset}"),
-    )
-    .await?;
-    tx.commit().await?;
-    // The original signed PUT stays as a single-use lock until lifecycle
-    // expiry. The frozen evidence remains private and is never downloadable.
-    Ok(
-        json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":false,
-        "sha256":prepared.sha256,"detected_container":if kind=="AUDIO" { "FLAC" } else { container },
-        "converted_from":if kind=="AUDIO" { Some(if container=="M4A" { "ALAC" } else { container }) } else { None },
-        "safety_status":crate::upload_safety::safety_status(antivirus_status)}),
-    )
+    out
 }
 
 async fn finish_session(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, id: Uuid) -> Result<()> {
@@ -366,21 +369,10 @@ async fn prepare(
     // When enabled, scan the whole source before any decoder / metadata reader.
     crate::upload_safety::scan(&src, digest.size, s.antivirus_enabled).await?;
     let (kind, mime) = (kind.to_string(), mime.to_string());
-    let (workspace, dst, provenance, slot) = tokio::task::spawn_blocking(move || {
+    let (workspace, dst, provenance, sha256) = tokio::task::spawn_blocking(move || {
         // Guards outlive a cancelled HTTP future, including each decoder.
-        let provenance = if kind == "AUDIO" {
-            Some(crate::provenance::inspect_audio(&src))
-        } else if kind == "IMAGE" {
-            Some(crate::provenance::inspect(&src))
-        } else {
-            None
-        };
-        if provenance
-            .as_ref()
-            .is_some_and(|p| p["inspection_status"] != "COMPLETED")
-        {
-            return Err(Error::UploadBusy);
-        }
+        // Convert / sanitize first: a bad file gets its precise 4xx here
+        // instead of a metadata-reader failure answered as "busy, retry".
         if kind == "AUDIO" {
             crate::lossless::to_flac(&src, &dst, container).map_err(|code| match code {
                 "UPLOAD_CONVERSION_UNAVAILABLE" | "UPLOAD_CONVERSION_TIMEOUT" => Error::UploadBusy,
@@ -389,7 +381,26 @@ async fn prepare(
         } else {
             crate::upload_safety::sanitize(&src, &dst, &mime, &workspace.0)?;
         }
-        Ok::<_, Error>((workspace, dst, provenance, slot))
+        let provenance = if kind == "AUDIO" {
+            Some(crate::provenance::inspect_audio(&src))
+        } else if kind == "IMAGE" {
+            Some(crate::provenance::inspect(&src))
+        } else {
+            None
+        };
+        if let Some(p) = provenance
+            .as_ref()
+            .filter(|p| p["inspection_status"] != "COMPLETED")
+        {
+            return Err(provenance_error(p));
+        }
+        // Hash on the blocking pool, not a runtime thread (up to 512 MiB).
+        let sha256 = crate::qc::sha256_file(&dst)?;
+        // The single transcode slot covers decoding only: the AV scan of the
+        // result and the upload to storage below no longer hold it, so other
+        // completions are not serialized on network time.
+        drop(slot);
+        Ok::<_, Error>((workspace, dst, provenance, sha256))
     })
     .await
     .map_err(|_| Error::Internal)??;
@@ -401,7 +412,6 @@ async fn prepare(
         return Err(Error::PolicyGate("UPLOAD_AUDIO_TOO_LARGE"));
     }
     crate::upload_safety::scan(&dst, safe_size, s.antivirus_enabled).await?;
-    let sha256 = crate::qc::sha256_file(&dst)?;
     let safe_mime = if kind_is_audio(container) {
         "audio/flac"
     } else {
@@ -409,11 +419,23 @@ async fn prepare(
     };
     let key = format!("registered/{org}/{asset}/{}", Uuid::new_v4());
     s.storage.put_file(&key, &dst, safe_mime, nonce).await?;
-    let meta = s.storage.head(&key).await?.ok_or(Error::Storage)?;
-    if meta.size != safe_size as i64 || meta.content_type != safe_mime || meta.nonce != nonce {
-        return Err(Error::Storage);
-    }
-    drop((workspace, slot));
+    let meta = match s.storage.head(&key).await {
+        Ok(Some(m))
+            if m.size == safe_size as i64 && m.content_type == safe_mime && m.nonce == nonce =>
+        {
+            m
+        }
+        Ok(_) => {
+            let _ = s.storage.delete(&key).await;
+            return Err(Error::Storage);
+        }
+        Err(e) => {
+            let _ = s.storage.delete(&key).await;
+            return Err(e);
+        }
+    };
+    // Removing the source and FLAC copies is file-system work: off the runtime.
+    tokio::task::spawn_blocking(move || drop(workspace));
     Ok(Prepared {
         key,
         size: safe_size as i64,
@@ -423,6 +445,18 @@ async fn prepare(
         source_sha256: digest.sha256,
         provenance,
     })
+}
+
+/// A metadata reader that rejected an already converted/sanitized file
+/// found the file itself unreadable (422); anything else (reader missing,
+/// sandbox unavailable, timeout) is capacity, retried as 503.
+fn provenance_error(report: &serde_json::Value) -> Error {
+    let reason = report["reason"].as_str().unwrap_or_default();
+    if reason.contains("rejected the file") || reason.contains("invalid report") {
+        Error::PolicyGate("UPLOAD_CONTENT_MISMATCH")
+    } else {
+        Error::UploadBusy
+    }
 }
 
 fn kind_is_audio(container: &str) -> bool {

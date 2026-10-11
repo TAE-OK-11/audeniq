@@ -344,8 +344,13 @@ pub async fn update(
     org: Uuid,
     kind: Kind,
     id: Uuid,
-    i: Input,
+    mut i: Input,
 ) -> Result<Value> {
+    // Same as create: a missing profile is an empty object, never JSON null
+    // (a null draft silently failed every later check of the release).
+    if i.profile.is_null() {
+        i.profile = json!({});
+    }
     validate(&i)?;
     crate::upload_safety::check_inline_files(s, &i.profile).await?;
     let (upc, artwork) = release_fields(kind, &i)?;

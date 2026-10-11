@@ -1160,7 +1160,7 @@ pub async fn list_payouts(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
         "SELECT jsonb_build_object('id',p.id,'amount',p.amount::text,'currency',p.currency,'status',p.status,'note',p.note,'created_at',p.created_at,
             'fee',p.fee_amount::text,'net',p.net_amount::text,'policy_version',p.policy_version,
             'account',p.account_snapshot - 'key_version','cancelled_at',p.cancelled_at,
-            'cancellable',(p.status='REQUESTED' OR (p.status='ORDERED' AND o.status IN ('PENDING_APPROVAL','APPROVED'))),
+            'cancellable',(p.status='REQUESTED' OR (p.status='ORDERED' AND o.status='PENDING_APPROVAL')),
             'order_status',o.status,'order_updated_at',COALESCE(o.approved_at,o.created_at))
          FROM portal.payout_requests p LEFT JOIN finance.payout_orders o ON o.id=p.payout_order_id
          WHERE p.org_id=$1 ORDER BY p.created_at DESC LIMIT 200",

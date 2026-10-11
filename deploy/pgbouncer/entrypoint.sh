@@ -24,7 +24,7 @@ auth_type = scram-sha-256
 auth_file = ${dir}/userlist.txt
 pool_mode = transaction
 ; sqlx prepares every statement; PgBouncer tracks them per server connection.
-max_prepared_statements = ${PGBOUNCER_MAX_PREPARED:-200}
+max_prepared_statements = ${PGBOUNCER_MAX_PREPARED:-1000}
 max_client_conn = ${PGBOUNCER_MAX_CLIENT_CONN:-200}
 default_pool_size = ${PGBOUNCER_POOL_SIZE:-10}
 min_pool_size = 0

@@ -354,8 +354,13 @@ pub async fn complete_reset(s: &AppState, h: &HeaderMap, i: ResetComplete) -> Re
         .acquire_owned()
         .await
         .map_err(|_| Error::Internal)?;
-    let hash = auth::password_hash(i.new_password.clone()).await?;
+    // The slot stays with the Argon2 work even if the client disconnects.
+    let password = i.new_password.clone();
+    let (permit, hash) = crate::password_work::run(permit, move || auth::hash_password(password))
+        .await
+        .map_err(|_| Error::Internal)?;
     drop(permit);
+    let hash = hash?;
     let mut tx = s.pool.begin().await?;
     // 같은 토큰으로 두 번 바꿀 수 없다 (동시 요청 포함).
     let user: Option<Uuid> = sqlx::query_scalar(

@@ -82,6 +82,7 @@ const CODE_MESSAGES: Record<string, string> = {
   INVARIANT_CONFLICT: '다른 곳에서 먼저 수정됐어요. 새로고침한 뒤 다시 시도해 주세요.',
   INVALID_INPUT: '입력값을 확인해 주세요. 빠진 항목이나 형식이 맞지 않는 값이 있어요.',
   RELEASE_BUSY: '지금 자동 검사가 진행 중이에요. 잠시 후 다시 취소해 주세요.',
+  PAYOUT_NOT_CANCELLABLE: '담당자가 승인한 출금은 취소할 수 없어요. 문의로 알려 주세요.',
   RELEASE_NOT_WITHDRAWABLE: '이 상태에서는 발매 신청을 취소할 수 없어요.',
   RELEASE_ALREADY_DELIVERING: '계약서에 서명해 배급이 시작된 발매예요. 취소(테이크다운)는 문의로 요청해 주세요.',
   WITHDRAW_LIMIT_REACHED: '이번 달 직접 취소할 수 있는 3회를 모두 썼어요. 문의로 취소를 요청해 주세요.',
