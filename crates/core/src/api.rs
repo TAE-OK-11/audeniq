@@ -33,6 +33,9 @@ pub struct AppState {
     pub upload_slots: Arc<Semaphore>,
     /// Lossless → FLAC conversions at upload completion (CPU and temp disk).
     pub transcode_slots: Arc<Semaphore>,
+    /// Inline images (electronic signatures, profile images): a few KB each,
+    /// so they never wait behind an audio conversion in `transcode_slots`.
+    pub inline_slots: Arc<Semaphore>,
     pub dummy_hash: String,
     pub payout_keys: Arc<crate::payout_keys::KeyRing>,
     pub antivirus_enabled: bool,
@@ -48,6 +51,7 @@ impl AppState {
             password_slots: Arc::new(Semaphore::new(2)),
             upload_slots: Arc::new(Semaphore::new(4)),
             transcode_slots: Arc::new(Semaphore::new(1)),
+            inline_slots: Arc::new(Semaphore::new(2)),
             payout_keys: Arc::new(crate::payout_keys::KeyRing::from_env(false)?),
             antivirus_enabled: crate::config::antivirus_enabled()?,
             dummy_hash: auth::password_hash(auth::random_token()).await?,

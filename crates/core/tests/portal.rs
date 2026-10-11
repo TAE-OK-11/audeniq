@@ -1806,7 +1806,10 @@ async fn portal_writes_need_csrf_and_document_uploads_accept_pdf(pool: PgPool) {
 
 #[sqlx::test]
 async fn distribution_agreement_needs_staff_terms_and_artist_confirmations(pool: PgPool) {
-    let (app, _) = app(pool.clone()).await;
+    // No free audio conversion slot (an upload is converting): signing must
+    // still work — signatures were refused with UPLOAD_BUSY whenever that
+    // single slot was taken.
+    let (app, _) = app_with_parser_slots(pool.clone(), 0).await;
     let u = user(&app).await;
     let release = create(&app, &u, "releases").await;
     sqlx::query("UPDATE catalog.releases SET draft = draft || $2, row_version = row_version + 1 WHERE id=$1")
