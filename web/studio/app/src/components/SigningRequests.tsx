@@ -50,7 +50,7 @@ export function SigningRequests({ releases, tick, onOpenDoc }: {
   const cancel = async (r: SigningRequest) => {
     if (!(await confirm({ title: '서명 요청을 취소할까요?', message: `${r.signer_name}님께 보낸 링크로는 더 이상 서명할 수 없어요.`, confirmLabel: '요청 취소', danger: true }))) return;
     try { await signingApi.cancel(r.id); toast('서명 요청을 취소했어요.'); void load(); }
-    catch (e) { toast(errorMessage(e)); }
+    catch (e) { toast(errorMessage(e), 'error'); }
   };
   const reissue = async () => {
     if (!relink || busy) return;
@@ -60,7 +60,7 @@ export function SigningRequests({ releases, tick, onOpenDoc }: {
       if (channel === 'IN_PERSON') { nav(`/sign/${link.token}?from=${encodeURIComponent(currentPath())}`); return; }
       setIssued(link);
       void load();
-    } catch (e) { toast(errorMessage(e)); }
+    } catch (e) { toast(errorMessage(e), 'error'); }
     finally { setBusy(false); }
   };
 

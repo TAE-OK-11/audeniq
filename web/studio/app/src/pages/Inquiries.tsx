@@ -47,7 +47,7 @@ function TicketThread({ ticket, onClosed }: { ticket: Ticket; onClosed: () => vo
       reload();
       void refreshTickets();
     } catch (err) {
-      toast(errorMessage(err, '메시지를 보내지 못했어요.'));
+      toast(errorMessage(err, '메시지를 보내지 못했어요.'), 'error');
     } finally {
       setBusy(false);
     }
@@ -61,7 +61,7 @@ function TicketThread({ ticket, onClosed }: { ticket: Ticket; onClosed: () => vo
       toast('문의를 종료했어요.');
       onClosed();
     } catch (err) {
-      toast(errorMessage(err, '문의를 종료하지 못했어요.'));
+      toast(errorMessage(err, '문의를 종료하지 못했어요.'), 'error');
     } finally {
       setBusy(false);
     }
@@ -236,7 +236,7 @@ export function Inquiries() {
                   await refreshTickets();
                   toast('문의를 보냈어요. 답변이 오면 알림으로 알려 드릴게요.');
                 } catch (err) {
-                  toast(errorMessage(err, '문의를 보내지 못했어요. 잠시 후 다시 시도해 주세요.'));
+                  toast(errorMessage(err, '문의를 보내지 못했어요. 잠시 후 다시 시도해 주세요.'), 'error');
                 }
                 return;
               }

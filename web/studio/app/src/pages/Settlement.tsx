@@ -140,7 +140,7 @@ export function Settlement() {
       setDetail(null);
       toast('지급 요청을 취소했어요.');
     } catch (err) {
-      toast(errorMessage(err, '지급 요청을 취소하지 못했어요. 잠시 후 다시 시도해 주세요.'));
+      toast(errorMessage(err, '지급 요청을 취소하지 못했어요. 잠시 후 다시 시도해 주세요.'), 'error');
     } finally {
       setCancelling(false);
     }
@@ -173,7 +173,7 @@ export function Settlement() {
         setTab('payouts');
         toast('지급을 요청했어요. 담당자 확인 후 등록한 계좌로 보내 드려요.');
       } catch (err) {
-        toast(errorMessage(err, '지급을 요청하지 못했어요. 잠시 후 다시 시도해 주세요.'));
+        toast(errorMessage(err, '지급을 요청하지 못했어요. 잠시 후 다시 시도해 주세요.'), 'error');
       } finally {
         setRequesting(false);
       }

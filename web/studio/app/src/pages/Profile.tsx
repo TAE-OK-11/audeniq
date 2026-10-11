@@ -174,7 +174,7 @@ export function Profile() {
       try {
         await portal.saveProfile(next);
       } catch (err) {
-        toast(errorMessage(err, '프로필을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'));
+        toast(errorMessage(err, '프로필을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'), 'error');
         return false;
       }
     }
@@ -294,7 +294,7 @@ export function Profile() {
                 await portal.saveTax(t);
                 await refreshAccount();
               } catch (err) {
-                toast(errorMessage(err, '납세 정보를 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'));
+                toast(errorMessage(err, '납세 정보를 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'), 'error');
                 return false;
               }
             } else patchAccount({ tax: t });

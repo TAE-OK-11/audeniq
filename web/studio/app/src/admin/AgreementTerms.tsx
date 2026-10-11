@@ -35,7 +35,7 @@ export function AgreementTermsSection({ releaseId, doc, editable, onSaved }: {
       await staffApi.agreementTerms(releaseId, { exclusivity, fee_bps: feeBps, rate_note: rateNote, territory_note: territoryNote, min_payout_note: minPayout, special_terms: special });
       toast('계약 조건을 저장했어요. 계약서 본문이 새로 만들어졌어요.', 'success');
       onSaved();
-    } catch (e) { toast(errorMessage(e)); }
+    } catch (e) { toast(errorMessage(e), 'error'); }
     finally { setBusy(false); }
   };
 

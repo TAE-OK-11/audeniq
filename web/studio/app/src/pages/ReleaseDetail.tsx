@@ -188,7 +188,7 @@ export function ReleaseDetail() {
         const go = await confirm({ title: '문의로 취소를 요청해 주세요', message: errorMessage(e), confirmLabel: '문의로 취소 요청' });
         if (go) askByInquiry();
       } else {
-        toast(errorMessage(e, '취소하지 못했어요. 잠시 후 다시 시도해 주세요.'));
+        toast(errorMessage(e, '취소하지 못했어요. 잠시 후 다시 시도해 주세요.'), 'error');
       }
     } finally {
       setWithdrawing(false);
@@ -209,7 +209,7 @@ export function ReleaseDetail() {
       toast('발매를 삭제했어요.');
       nav('/releases', { replace: true });
     } catch (e) {
-      toast(errorMessage(e, '삭제에 실패했어요. 다시 시도해 주세요.'));
+      toast(errorMessage(e, '삭제에 실패했어요. 다시 시도해 주세요.'), 'error');
       setDeleting(false);
     }
   };

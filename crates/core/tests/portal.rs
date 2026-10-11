@@ -787,7 +787,7 @@ async fn concurrent_signing_and_replacement_never_bind_an_old_signature_to_new_c
 
 #[sqlx::test]
 async fn profile_is_per_user_with_optimistic_versions(pool: PgPool) {
-    let (app, _) = app(pool).await;
+    let (app, _) = app(pool.clone()).await;
     let u = user(&app).await;
     let (s, _, v) = call(&app, "GET", "/api/me/profile", Value::Null, Some(&u)).await;
     assert_eq!(s, StatusCode::OK);
@@ -801,6 +801,7 @@ async fn profile_is_per_user_with_optimistic_versions(pool: PgPool) {
     let body = json!({"display_name":"서린","contact_email":"a@b.kr","bio":"첫 줄\n둘째 줄","country":"kr","row_version":0});
     let (s, _, v) = call(&app, "PUT", "/api/me/profile", body.clone(), Some(&u)).await;
     assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["row_version"], 1);
     // Stale version and bidi control characters are refused.
     let (s, _, _) = call(&app, "PUT", "/api/me/profile", body, Some(&u)).await;
     assert_eq!(s, StatusCode::CONFLICT);
@@ -810,7 +811,26 @@ async fn profile_is_per_user_with_optimistic_versions(pool: PgPool) {
     let (_, _, v) = call(&app, "GET", "/api/me/profile", Value::Null, Some(&u)).await;
     assert_eq!(v["display_name"], "서린");
     assert_eq!(v["country"], "KR");
-    assert_eq!(v["row_version"], 0);
+    assert_eq!(v["row_version"], 1);
+    // The saved version keeps saving (the first save used to leave the row
+    // at version 0, so every later save conflicted).
+    let rename = json!({"display_name":"새 활동명","contact_email":"a@b.kr","bio":"","country":"KR","row_version":1});
+    let (s, _, v) = call(&app, "PUT", "/api/me/profile", rename, Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["row_version"], 2);
+    // A row the old insert left at version 0 is still editable.
+    sqlx::query("UPDATE portal.artist_profiles SET row_version=0")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let legacy = json!({"display_name":"a","contact_email":"a@b.kr","bio":"","country":"KR","row_version":0});
+    let (s, _, v) = call(&app, "PUT", "/api/me/profile", legacy.clone(), Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["row_version"], 1);
+    let (s, _, _) = call(&app, "PUT", "/api/me/profile", legacy, Some(&u)).await;
+    assert_eq!(s, StatusCode::CONFLICT);
+    let (_, _, v) = call(&app, "GET", "/api/me/profile", Value::Null, Some(&u)).await;
+    assert_eq!(v["display_name"], "a");
     // Another user sees only their own profile.
     let other = user(&app).await;
     let (_, _, v) = call(&app, "GET", "/api/me/profile", Value::Null, Some(&other)).await;
