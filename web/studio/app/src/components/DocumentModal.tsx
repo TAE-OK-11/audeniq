@@ -99,7 +99,7 @@ export function DocumentModal({
         onClose();
         toast('문서 확인 기록을 저장했어요.');
       } catch (err) {
-        toast(errorMessage(err, '확인 기록을 저장하지 못했어요.'));
+        toast(errorMessage(err, '확인 기록을 저장하지 못했어요.'), 'error');
       }
       return;
     }
@@ -131,7 +131,7 @@ export function DocumentModal({
         onClose();
         toast(doc.kind === 'rights' ? '서류를 제출했어요. 검토가 끝나면 알려 드릴게요.' : '문서 확인 기록을 저장했어요.');
       } catch (err) {
-        toast(errorMessage(err, '서류를 제출하지 못했어요. 잠시 후 다시 시도해 주세요.'));
+        toast(errorMessage(err, '서류를 제출하지 못했어요. 잠시 후 다시 시도해 주세요.'), 'error');
       } finally {
         setSending(false);
       }

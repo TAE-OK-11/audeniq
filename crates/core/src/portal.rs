@@ -116,8 +116,14 @@ pub async fn put_profile(s: &AppState, a: &Actor, i: ProfileInput) -> Result<Val
     let mut tx = s.pool.begin().await?;
     let rv: Option<i64> = if i.row_version == 0 {
         sqlx::query_scalar(
-            "INSERT INTO portal.artist_profiles(user_id,display_name,contact_email,bio,country) VALUES($1,$2,$3,$4,$5)
-             ON CONFLICT(user_id) DO NOTHING RETURNING row_version",
+            // The first save starts the row at version 1. Rows the old insert
+            // left at version 0 (the column default) are taken over here, or
+            // every later save would retry this insert and conflict forever.
+            "INSERT INTO portal.artist_profiles(user_id,display_name,contact_email,bio,country,row_version) VALUES($1,$2,$3,$4,$5,1)
+             ON CONFLICT(user_id) DO UPDATE SET display_name=EXCLUDED.display_name,contact_email=EXCLUDED.contact_email,
+               bio=EXCLUDED.bio,country=EXCLUDED.country,row_version=portal.artist_profiles.row_version+1,updated_at=now()
+             WHERE portal.artist_profiles.row_version=0
+             RETURNING row_version",
         )
         .bind(a.user)
         .bind(&name)

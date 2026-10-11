@@ -1447,7 +1447,7 @@ export function Upload() {
     }).catch(e => {
       if (cancelled) return;
       setLoadingEdit(false);
-      toast(errorMessage(e, '발매 정보를 불러오지 못했어요.'));
+      toast(errorMessage(e, '발매 정보를 불러오지 못했어요.'), 'error');
       nav('/releases', { replace: true });
     });
     return () => { cancelled = true; };

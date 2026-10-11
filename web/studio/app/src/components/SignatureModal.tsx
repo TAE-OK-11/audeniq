@@ -175,7 +175,7 @@ export function SignatureModal({
         onSaved?.();
         setPhase('complete');
       } catch (err) {
-        toast(errorMessage(err, '서명을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'));
+        toast(errorMessage(err, '서명을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'), 'error');
       } finally {
         setSigning(false);
       }
