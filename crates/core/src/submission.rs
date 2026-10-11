@@ -661,8 +661,8 @@ pub async fn submit(
     let rid = match inserted {
         Some(id) => id,
         None => {
-            let v = keyed_revision_response(&mut tx, org, release, &idem_key, &body, &status)
-                .await?;
+            let v =
+                keyed_revision_response(&mut tx, org, release, &idem_key, &body, &status).await?;
             tx.commit().await?;
             return Ok(v);
         }

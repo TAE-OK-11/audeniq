@@ -889,11 +889,13 @@ async fn submit_retry_with_fresh_consent_dedups(pool: PgPool) {
     assert_eq!(s, StatusCode::OK, "{v}");
     assert_eq!(v["deduped"], true);
     assert_eq!(v["revision_id"], first["revision_id"]);
-    let n: i64 = sqlx::query_scalar("SELECT count(*) FROM catalog.application_revisions WHERE release_id=$1")
-        .bind(release)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    let n: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM catalog.application_revisions WHERE release_id=$1",
+    )
+    .bind(release)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     assert_eq!(n, 1, "one revision for the retried submit");
 }
 
