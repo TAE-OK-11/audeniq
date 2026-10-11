@@ -59,6 +59,7 @@ pub async fn signature(state: &crate::api::AppState, value: &str) -> Result<Stri
         .await
         .map_err(|_| Error::Storage)?;
     scan(&source, bytes.len() as u64, state.antivirus_enabled).await?;
+    let len = bytes.len();
     tokio::task::spawn_blocking(move || {
         let _slot = slot;
         let _workspace = workspace;
@@ -68,7 +69,11 @@ pub async fn signature(state: &crate::api::AppState, value: &str) -> Result<Stri
             "application/x-audeniq-signature",
             &_workspace.0,
         )
-        .map_err(|_| Error::InvalidCode("SIGNATURE_INVALID"))
+        .map_err(|e| {
+            // 기기·브라우저별 PNG 차이로 거절된 서명을 운영 로그에서 찾을 수 있게
+            tracing::warn!(error = ?e, bytes = len, "inline signature rejected by sanitizer");
+            Error::InvalidCode("SIGNATURE_INVALID")
+        })
     })
     .await
     .map_err(|_| Error::Internal)??;
