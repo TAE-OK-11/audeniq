@@ -109,6 +109,8 @@ GRANT USAGE ON SCHEMA finance TO audeniq_api;
 GRANT SELECT ON finance.ledger_transactions,finance.ledger_entries,finance.payout_orders,finance.royalty_reports,finance.report_lines,finance.finance_holds TO audeniq_api;
 -- Held (disputed) royalties are not withdrawable (0124).
 GRANT EXECUTE ON FUNCTION finance.held_payable(uuid) TO audeniq_api,audeniq_worker;
+-- One withdrawable balance for request, order, approval and submission (0128).
+GRANT EXECUTE ON FUNCTION finance.withdrawable(uuid, uuid) TO audeniq_api,audeniq_worker;
 -- DSP registry + delivery staging (0042/0043): artists read their release's
 -- per-DSP status; staff (/api/staff, identity.staff_members) approve or hold
 -- staged rows and read the DSP overview. Staging rows are written only by

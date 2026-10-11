@@ -1520,8 +1520,7 @@ pub async fn request_payout(
     if held {
         return Err(Error::PolicyGate("PAYEE_ON_HOLD"));
     }
-    let (payable, pending, held) = balances(&mut tx, org).await?;
-    if amount > payable - pending - held {
+    if amount > crate::finance::withdrawable(&mut tx, org, None).await? {
         return Err(Error::PolicyGate("PAYOUT_EXCEEDS_BALANCE"));
     }
     let id = Uuid::new_v4();
