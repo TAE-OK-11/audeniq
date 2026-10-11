@@ -677,6 +677,12 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
     .await?;
     let facts = credit_facts(&canonical, &draft);
     let today = chrono::Utc::now().date_naive();
+    // The agreement's scope (0092), once staff approved it: a DSP it does not
+    // cover never gets an approvable row.
+    let contract = {
+        let mut c = pool.acquire().await?;
+        crate::contract_scope::load(&mut c, org, release_id).await?
+    };
     let approved: HashSet<Uuid> = canonical.approved_dsp_ids.iter().copied().collect();
 
     let dsp_ids: Vec<Uuid> = requested.iter().map(|d| d.uuid()).collect();
@@ -742,6 +748,16 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
                     )
                 }),
         );
+        if let Some(scope) = &contract {
+            for (code, detail) in scope.dsp_findings(dsp, today) {
+                checks.push(DspCheck::new(
+                    code,
+                    Class::Content,
+                    Severity::Blocker,
+                    detail,
+                ));
+            }
+        }
         // The grants list the uses they license; a DSP whose deal needs any
         // other use (e.g. downloads when only streaming is licensed) is not sent.
         let missing_uses: Vec<&str> = if prepared.permitted_uses.is_empty() {
@@ -1210,6 +1226,7 @@ mod tests {
             artwork: asset("image/jpeg", None, None),
             explicit,
             territories: vec![],
+            excluded_territories: vec![],
             rights_end: None,
             permitted_uses: vec![],
         }

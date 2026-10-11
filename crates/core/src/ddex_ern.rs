@@ -712,7 +712,12 @@ fn deal_list(out: &mut String, c: &DdexErnConfig, prepared: &PreparedRelease) {
     out.push_str("</Usage>");
     // Only the licensed territories (application ∩ rights grants); Worldwide
     // only when nothing narrows it (감사: Worldwide 고정 제거).
-    if prepared.territories.is_empty() {
+    if prepared.territories.is_empty() && !prepared.excluded_territories.is_empty() {
+        // Worldwide minus the agreement's excluded territories.
+        for code in &prepared.excluded_territories {
+            element(out, "ExcludedTerritoryCode", code);
+        }
+    } else if prepared.territories.is_empty() {
         element(out, "TerritoryCode", "Worldwide");
     } else {
         for code in &prepared.territories {

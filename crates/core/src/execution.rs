@@ -532,6 +532,19 @@ async fn freshness_check(
     if profile.map(|(e,)| e) != Some(true) {
         return Err(Error::PolicyGate("EXECUTION_DELIVERY_DISABLED"));
     }
+    // Contract scope (0092), checked again right before the send: an expired
+    // agreement or a DSP it does not cover never receives the release.
+    if let Some(scope) = crate::contract_scope::load(tx, org_id, release_id).await? {
+        let today = chrono::Utc::now().date_naive();
+        if scope.end.is_some_and(|end| today > end) {
+            return Err(Error::PolicyGate("EXECUTION_CONTRACT_EXPIRED"));
+        }
+        if let Some(dsp) = crate::dsp_registry::Dsp::from_code(&job.partner_id)
+            && !scope.dsp_findings(dsp, today).is_empty()
+        {
+            return Err(Error::PolicyGate("EXECUTION_CONTRACT_SCOPE"));
+        }
+    }
     Ok(())
 }
 
@@ -995,6 +1008,24 @@ pub async fn run_delivery(
     // A partner id the adapter picks itself (DDEX batch folder) is part of
     // the attempt record before the call: after a crash or lost response
     // the inquiry asks about exactly this submission.
+    // The deal territories that actually go out must sit inside the contract
+    // (a package staged before staff fixed the scope is restaged first).
+    let release_id: Uuid = package.release_id;
+    if let Some(scope) = crate::contract_scope::load(&mut tx, job.org_id, release_id).await?
+        && !scope.ern_within(&String::from_utf8_lossy(&package.ern_xml))
+    {
+        tx.rollback().await?;
+        fail_job(
+            pool,
+            job,
+            "FAILED",
+            "EXECUTION_CONTRACT_TERRITORY",
+            Some("PARTNER_REJECTED"),
+            Some(json!({"stage":"E-2","contract_scope":"deal territories outside the agreement; restage the package"})),
+        )
+        .await?;
+        return Err(Error::PolicyGate("EXECUTION_CONTRACT_TERRITORY"));
+    }
     let planned_message_id = if supersedes.is_some() {
         update_target.clone()
     } else {

@@ -1013,6 +1013,7 @@ async fn decide_agreement(
     .bind(&note)
     .fetch_all(&mut *c)
     .await?;
+    let approved = status == "APPROVED" && !ids.is_empty();
     for id in ids {
         operations::audit(
             c,
@@ -1022,6 +1023,64 @@ async fn decide_agreement(
             "staff.document_reviewed",
             status,
             actor.request,
+        )
+        .await?;
+    }
+    if approved {
+        apply_contract_scope(c, org, release).await?;
+    }
+    Ok(())
+}
+
+/// Staff approval fixes the agreement's scope (contract_scope, 0092). Refuse
+/// a scope that leaves none of the requested DSPs, and restage the prepared
+/// package so every DSP row and ERN is rebuilt inside it before the artist
+/// signs (E-1 re-checks it before the send).
+async fn apply_contract_scope(c: &mut PgConnection, org: Uuid, release: Uuid) -> Result<()> {
+    let Some(scope) = crate::contract_scope::load(c, org, release).await? else {
+        return Ok(());
+    };
+    let draft: Option<Value> = sqlx::query_scalar(
+        "SELECT ar.body -> 'release' -> 'draft' FROM catalog.releases r
+           JOIN catalog.application_revisions ar ON ar.org_id=r.org_id AND ar.id=r.current_revision_id
+          WHERE r.org_id=$1 AND r.id=$2",
+    )
+    .bind(org)
+    .bind(release)
+    .fetch_optional(&mut *c)
+    .await?
+    .flatten();
+    let requested = crate::dsp_registry::requested(&json!({"platforms": draft.as_ref().map(|d| d["platforms"].clone()).unwrap_or(Value::Null)}))
+        .unwrap_or_default();
+    let today = chrono::Utc::now().date_naive();
+    if !requested.is_empty()
+        && requested
+            .iter()
+            .all(|d| !scope.dsp_findings(*d, today).is_empty())
+    {
+        return Err(Error::PolicyGate("CONTRACT_SCOPE_EXCLUDES_ALL"));
+    }
+    sqlx::query("SELECT set_config('app.org_id',$1,true)")
+        .bind(org.to_string())
+        .execute(&mut *c)
+        .await?;
+    let package: Option<Uuid> = sqlx::query_scalar(
+        "SELECT dp.id FROM distribution.canonical_releases cr
+           JOIN distribution.distribution_packages dp ON dp.canonical_release_id=cr.id
+          WHERE cr.org_id=$1 AND cr.release_id=$2 ORDER BY dp.created_at DESC LIMIT 1",
+    )
+    .bind(org)
+    .bind(release)
+    .fetch_optional(&mut *c)
+    .await?;
+    if let Some(package) = package {
+        operations::enqueue(
+            c,
+            "distribution",
+            "delivery.stage",
+            &json!({"package_id": package}),
+            &format!("delivery.stage:{package}:contract-scope:{}", Uuid::new_v4()),
+            None,
         )
         .await?;
     }

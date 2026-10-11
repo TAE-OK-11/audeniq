@@ -7,6 +7,7 @@ pub mod auth;
 pub mod catalog;
 pub mod config;
 pub mod content_policy;
+pub mod contract_scope;
 pub mod contracts;
 pub mod database;
 pub mod ddex_ern;

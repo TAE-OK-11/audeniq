@@ -422,3 +422,16 @@ fn deal_carries_licensed_territories_and_licence_end() {
     );
     assert!(d.contains("<EndDate>2027-12-31</EndDate>"), "{d}");
 }
+
+/// A Worldwide contract with exclusions uses DDEX ExcludedTerritoryCode (the
+/// DealTerms choice), never Worldwide plus a separate list.
+#[test]
+fn worldwide_deal_with_contract_exclusions() {
+    let mut p = fixture(0);
+    p.excluded_territories = vec!["CN".into(), "KP".into()];
+    let xml = generate_ddex_ern_382(&p, &config(MessageSubType::Initial)).unwrap();
+    let d = &xml[xml.find("<DealList>").unwrap()..];
+    assert!(d.contains("<ExcludedTerritoryCode>CN</ExcludedTerritoryCode><ExcludedTerritoryCode>KP</ExcludedTerritoryCode>"), "{d}");
+    assert!(!d.contains("<TerritoryCode>"), "{d}");
+    audeniq_core::ddex_xsd::validate_ern_382_xml(&xml).expect("valid against the ERN 3.8.2 XSD");
+}

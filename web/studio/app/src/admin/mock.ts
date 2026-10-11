@@ -290,7 +290,9 @@ export const mockStaff = {
     const r = find(rid);
     const d = r.sheet.documents.find(x => x.kind === 'AGREEMENT' && ['REVIEW', 'PREPARED'].includes(x.status));
     if (!d) fail('AGREEMENT_NOT_IN_REVIEW');
-    const terms: AgreementTerms = { ...i, form: 'AUD-DIST 2.0', terms_version: 'AUD-TERMS 2026.10', user_bps: 10000 - i.fee_bps, currency: 'KRW',
+    const sc = i.scope;
+    const scope = sc && { ...sc, worldwide: !sc.territories.length || sc.territories.includes('WORLD'), all_dsps: !sc.dsps.length };
+    const terms: AgreementTerms = { ...i, scope, form: 'AUD-DIST 2.0', terms_version: 'AUD-TERMS 2026.10', user_bps: 10000 - i.fee_bps, currency: 'KRW',
       confirmations: [], required: [], set_at: new Date().toISOString() };
     const body = `AUDENIQ 음원 배급 계약서 (체험)\n\n배급 형태: ${i.exclusivity === 'EXCLUSIVE' ? '독점' : '비독점'}\n배급수수료: 회사 ${i.fee_bps / 100}% / 이용자 ${(10000 - i.fee_bps) / 100}%${i.rate_note ? `\n특별 요율: ${i.rate_note}` : ''}\n개별 특약: ${i.special_terms || '없음'}`;
     Object.assign(d!, { agreement_terms: terms, body, row_version: d!.row_version + 1 });

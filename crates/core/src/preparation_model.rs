@@ -97,6 +97,10 @@ pub struct PreparedRelease {
     /// their hash.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub territories: Vec<String>,
+    /// Territories the agreement excludes from a Worldwide deal (DDEX
+    /// ExcludedTerritoryCode). Only used when `territories` is empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub excluded_territories: Vec<String>,
     /// The grants' licence end (exclusive): the deal's EndDate.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rights_end: Option<NaiveDate>,
@@ -110,6 +114,7 @@ pub struct PreparedRelease {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RightsScope {
     pub territories: Vec<String>,
+    pub excluded_territories: Vec<String>,
     pub rights_end: Option<NaiveDate>,
     pub permitted_uses: Vec<String>,
 }
@@ -238,9 +243,41 @@ pub fn rights_scope(
     };
     Ok(RightsScope {
         territories,
+        excluded_territories: vec![],
         rights_end,
         permitted_uses: uses,
     })
+}
+
+/// Apply the agreement's scope (contract_scope) on top of the application and
+/// the rights grants: only the contract's territories, never its excluded
+/// ones, and no later than its last day.
+pub fn with_contract(
+    mut scope: RightsScope,
+    contract: Option<&crate::contract_scope::ContractScope>,
+) -> Result<RightsScope> {
+    let Some(c) = contract else {
+        return Ok(scope);
+    };
+    let allowed = c.effective_territories();
+    if scope.territories.is_empty() {
+        match allowed {
+            Some(a) => scope.territories = a.into_iter().collect(),
+            None => scope.excluded_territories = c.excluded.iter().cloned().collect(),
+        }
+    } else {
+        scope
+            .territories
+            .retain(|t| !c.excluded.contains(t) && allowed.as_ref().is_none_or(|a| a.contains(t)));
+        if scope.territories.is_empty() {
+            return Err(Error::PolicyGate("PREPARATION_CONTRACT_TERRITORY"));
+        }
+    }
+    if let Some(last) = c.end {
+        let end = last.succ_opt().unwrap_or(last);
+        scope.rights_end = Some(scope.rights_end.map_or(end, |e| e.min(end)));
+    }
+    Ok(scope)
 }
 
 fn grants_restrict_territory(live: &[&ScopeGrant]) -> bool {
@@ -441,7 +478,14 @@ impl PreparedRelease {
             .map_err(|_| Error::PolicyGate("PREPARATION_RELEASE_DATE_INVALID"))?;
         let original_release_date = original_release_date(&draft, release_date)?;
         let grants = scope_grants(pool, c).await?;
-        let scope = rights_scope(application_territories(&draft)?, &grants, release_date)?;
+        let contract = {
+            let mut conn = pool.acquire().await?;
+            crate::contract_scope::load(&mut conn, c.org_id, c.release_id).await?
+        };
+        let scope = with_contract(
+            rights_scope(application_territories(&draft)?, &grants, release_date)?,
+            contract.as_ref(),
+        )?;
 
         Ok(PreparedRelease {
             canonical: c.clone(),
@@ -471,6 +515,7 @@ impl PreparedRelease {
             artwork,
             explicit: c.explicit,
             territories: scope.territories,
+            excluded_territories: scope.excluded_territories,
             rights_end: scope.rights_end,
             permitted_uses: scope.permitted_uses,
         })
