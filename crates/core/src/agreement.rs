@@ -31,7 +31,7 @@ use uuid::Uuid;
 
 pub const FORM: &str = "AUD-DIST 2.0";
 pub const TERMS_TITLE: &str = "AUDENIQ 음원 배급 서비스 이용약관";
-pub const TERMS_VERSION: &str = "AUD-TERMS 2026.10";
+pub const TERMS_VERSION: &str = "AUD-TERMS 2026.10.1";
 
 /// One box the artist ticks before signing. `required` boxes must all be
 /// ticked; optional ones are recorded as given (e.g. settlement authority).
@@ -303,10 +303,12 @@ fn render(ctx: &Context, t: &Value, items: &[&Confirmation]) -> String {
         .is_none_or(|a| a.is_empty() || a.iter().any(|x| x == "WORLD"));
     let note = |k: &str| t[k].as_str().unwrap_or("").trim().to_string();
     let fee = t["fee_bps"].as_u64().unwrap_or(0) as u32;
+    // Re-rendering an existing agreement keeps the version recorded with its terms.
+    let terms_version = t["terms_version"].as_str().unwrap_or(TERMS_VERSION);
     let mut out: Vec<String> = vec![
         "AUDENIQ 음원 배급 계약서".into(),
         String::new(),
-        format!("서식 {FORM} · 적용 약관 {TERMS_TITLE} ({TERMS_VERSION})"),
+        format!("서식 {FORM} · 적용 약관 {TERMS_TITLE} ({terms_version})"),
         format!(
             "신청서 번호 {}",
             ctx.application_no.as_deref().unwrap_or("미접수")
@@ -435,7 +437,7 @@ fn render(ctx: &Context, t: &Value, items: &[&Confirmation]) -> String {
     if !note("min_payout_note").is_empty() {
         settle.push(format!("최소지급액 특약: {}", note("min_payout_note")));
     }
-    settle.push("정산 주기, 공제·조정, 환수, 지급 보류와 최소지급액의 일반 기준은 약관 제15장(정산)에 따릅니다.".into());
+    settle.push("정산 주기, 출금 신청, 계좌 확인, 공제·조정, 환수, 지급 보류와 최소지급액의 일반 기준은 AUDENIQ 정산금 지급 및 계좌 확인 약관에 따릅니다. 정산 관련 사항은 해당 약관을 우선 적용하고, 그 밖의 사항은 서비스 이용약관에 따릅니다.".into());
     art(&mut out, "정산", settle);
     art(
         &mut out,
@@ -494,7 +496,7 @@ fn render(ctx: &Context, t: &Value, items: &[&Confirmation]) -> String {
         &mut out,
         "약관의 적용",
         vec![format!(
-            "이 계약에서 정하지 않은 사항은 {TERMS_TITLE}({TERMS_VERSION})에 따릅니다. 이 계약과 약관의 내용이 서로 다르면 이 계약을 우선합니다."
+            "이 계약에서 정하지 않은 사항은 {TERMS_TITLE}({terms_version})에 따릅니다. 이 계약과 약관의 내용이 서로 다르면 이 계약을 우선합니다."
         )],
     );
     art(
@@ -668,6 +670,16 @@ mod tests {
     }
 
     #[test]
+    fn rendering_keeps_the_recorded_terms_version() {
+        let ctx = sample(json!({}));
+        let items = confirmations(&ctx.draft["options"]);
+        let terms = json!({"terms_version": "AUD-TERMS 2026.10", "fee_bps": 800});
+        let body = render(&ctx, &terms, &items);
+        assert!(body.contains("적용 약관 AUDENIQ 음원 배급 서비스 이용약관 (AUD-TERMS 2026.10)"));
+        assert!(!body.contains(TERMS_VERSION));
+    }
+
+    #[test]
     fn percentages() {
         assert_eq!(pct(800), "8%");
         assert_eq!(pct(9200), "92%");
@@ -720,3 +732,4 @@ mod tests {
         );
     }
 }
+
