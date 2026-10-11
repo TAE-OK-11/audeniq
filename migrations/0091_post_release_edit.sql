@@ -61,3 +61,37 @@ BEGIN
  END IF;
  RETURN NEW;
 END $$;
+
+-- The final-approval trigger (0051/0066) approves every staged row once the
+-- agreement is APPROVED or SIGNED. A post-release revision keeps the signed
+-- agreement, so that would send the Update without the staff re-review:
+-- skip rows whose release was already delivered from another package.
+-- Staff approve those per DSP (approval_by set; the trigger never touches
+-- explicit decisions). delivery_jobs is FORCE RLS: scope the read to the
+-- row's org and restore the caller's setting.
+CREATE OR REPLACE FUNCTION distribution.auto_approve_staging() RETURNS trigger
+ LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $$
+DECLARE
+ v_prev text := current_setting('app.org_id', true);
+ v_revision boolean;
+BEGIN
+ IF NEW.approval='PENDING' AND NEW.readiness <> 'CONTENT_BLOCKED'
+    AND distribution.release_finally_approved(NEW.org_id,NEW.release_id) THEN
+  PERFORM set_config('app.org_id', NEW.org_id::text, true);
+  v_revision := EXISTS (
+   SELECT 1 FROM execution.delivery_jobs j
+     JOIN distribution.distribution_packages dp ON dp.id = j.package_id
+     JOIN distribution.canonical_releases cr ON cr.id = dp.canonical_release_id
+    WHERE j.org_id = NEW.org_id AND cr.release_id = NEW.release_id
+      AND j.status = 'DELIVERED' AND j.package_id <> NEW.package_id);
+  PERFORM set_config('app.org_id', coalesce(v_prev, ''), true);
+  IF NOT v_revision THEN
+   NEW.approval := 'APPROVED';
+   NEW.approval_by := NULL;
+   NEW.approval_rule_version := 'STAFF_FINAL';
+   NEW.approval_note := '발매 최종 승인에 따른 자동 승인';
+   NEW.approval_at := now();
+  END IF;
+ END IF;
+ RETURN NEW;
+END $$;

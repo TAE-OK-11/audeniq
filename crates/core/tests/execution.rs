@@ -4374,7 +4374,15 @@ async fn post_release_edit_is_delivered_as_an_update(pool: PgPool) {
     assert_eq!(status, "DELIVERED");
     let first_live = live_status(&pool, ctx.org, ctx.package_id).await;
     // The first preparation's staging job is still queued ahead.
-    assert_eq!(run_one(&pool, &ctx.store, "distribution", "delivery.stage").await, "SUCCEEDED");
+    assert_eq!(
+        run_one(&pool, &ctx.store, "distribution", "delivery.stage").await,
+        "SUCCEEDED"
+    );
+    // First delivery: the signed agreement's final approval applies.
+    assert_eq!(
+        ready_staged_row(&pool, ctx.org, ctx.package_id).await,
+        "APPROVED"
+    );
 
     let (s, v) = call(&ctx.app, "POST", &revise, json!({}), Some(&ctx.user)).await;
     assert_eq!(s, StatusCode::OK, "{v}");
@@ -4464,4 +4472,32 @@ async fn post_release_edit_is_delivered_as_an_update(pool: PgPool) {
         "the fixed title reached the wire"
     );
     assert_eq!(live_status(&pool, ctx.org, new_package).await, first_live);
+
+    // Staff re-review: with the agreement still SIGNED the final-approval
+    // trigger auto-approves the first delivery's staged rows, but never the
+    // revision's — staff approve those per DSP.
+    assert_eq!(
+        run_one(&pool, &ctx.store, "distribution", "delivery.stage").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        ready_staged_row(&pool, org, new_package).await,
+        "PENDING",
+        "revision: staff re-review"
+    );
+}
+
+/// Make one staged row of a package deliverable and return the approval the
+/// final-approval trigger leaves on it.
+async fn ready_staged_row(pool: &PgPool, org: Uuid, package: Uuid) -> String {
+    let mut c = authed(pool, org).await;
+    sqlx::query_scalar(
+        "UPDATE distribution.delivery_staging SET readiness='READY', checks='[]'
+          WHERE package_id=$1 AND dsp_code=(SELECT min(dsp_code) FROM distribution.delivery_staging WHERE package_id=$1)
+         RETURNING approval",
+    )
+    .bind(package)
+    .fetch_one(&mut *c)
+    .await
+    .unwrap()
 }
