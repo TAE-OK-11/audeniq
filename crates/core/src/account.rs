@@ -70,7 +70,7 @@ pub async fn get_account(s: &AppState, a: &Actor) -> Result<Value> {
     .bind(a.user)
     .fetch_optional(&s.pool)
     .await?;
-    let today = Utc::now().date_naive();
+    let today = crate::domain::today_kst();
     let verified = identity.as_ref().map(|r| {
         let birth: NaiveDate = r.get("birth_date");
         json!({
@@ -186,7 +186,7 @@ pub async fn verify_identity(s: &AppState, a: &Actor, i: IdentityInput) -> Resul
     )
     .await?;
     tx.commit().await?;
-    let today = Utc::now().date_naive();
+    let today = crate::domain::today_kst();
     Ok(json!({
         "real_name": name,
         "verified": {

@@ -494,21 +494,9 @@ async fn freshness_check(
     if live_epoch != Some(pinned_epoch) {
         return Err(Error::PolicyGate("EXECUTION_RIGHTS_EPOCH_DRIFT"));
     }
-    // A hold placed after preparation blocks the send. Holds are scoped;
-    // a RELEASE hold on this release or any active PARTY hold blocks.
-    let held: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM finance.finance_holds
-         WHERE org_id=$1 AND active
-           AND ((scope_type='RELEASE' AND scope_value=$2) OR scope_type='PARTY'))",
-    )
-    .bind(org_id)
-    .bind(release_id.to_string())
-    .fetch_one(&mut **tx)
-    .await
-    .unwrap_or(false);
-    if held {
-        return Err(Error::PolicyGate("EXECUTION_HOLD_ACTIVE"));
-    }
+    // Finance holds (finance.finance_holds) stop money, not releases: a held
+    // payee or release still goes out, and only its payouts wait for the hold
+    // to clear (portal::request_payout, PAYEE_ON_HOLD).
     let profile: Option<(bool,)> = sqlx::query_as(
         "SELECT delivery_enabled FROM execution.adapter_profiles WHERE partner_id=$1",
     )
