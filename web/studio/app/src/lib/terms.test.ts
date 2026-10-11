@@ -24,3 +24,17 @@ it('정산 약관도 장·조로 나누고 머리 정보는 따로 모은다', (
   expect(titles).toContain('제14조(금융계좌 확인)');
 });
 
+it('개인정보 처리방침을 독립 문서로 제공하고 초안 상태를 표시한다', () => {
+  const d = LEGAL_DOCS.privacy;
+  expect(d.path).toBe('/privacy');
+  const { meta, blocks } = parseTerms(d.text);
+  expect(meta).toContain('문서 상태: 정식 시행 전 검토본');
+  expect(blocks[0]).toMatchObject({ kind: 'chapter', text: '제1장 처리 원칙 및 항목' });
+  const articles = blocks.filter(b => b.kind === 'article');
+  expect(articles).toHaveLength(19);
+  const ids = articles.map(a => a.kind === 'article' && a.id);
+  expect(new Set(ids).size).toBe(ids.length);
+  expect(d.text).toContain('제9조(개인정보의 국외 이전)');
+  expect(d.text).toContain('제10조(정보주체의 권리와 행사방법)');
+});
+
