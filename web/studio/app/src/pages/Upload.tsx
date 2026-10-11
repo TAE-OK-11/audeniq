@@ -34,6 +34,7 @@ import { Badge } from '../ui';
 import { Segmented } from '../components/Segmented';
 import { DateField } from '../components/Picker';
 import { BrandMark } from '../components/BrandMark';
+import { TERRITORY_GROUPS, WORLD, parseTerritories, territoryName, territorySummary, worldExcept } from '../lib/territories';
 
 const STEPS = [
   { short: '발매 정보', kicker: '01 / 06 · 발매 정보', title: '어떤 음악을\n발매할까요?', sub: '발매 정보와 아티스트명을 입력해 주세요.' },
@@ -335,6 +336,99 @@ function GuardianConsentModal({ guardianName, onClose, onComplete }: {
         <button type="button" className="ui-btn is-primary" disabled={!!missing} onClick={() => onComplete(certName, certMethod)}>동의 완료</button>
       </div>
     </Modal>
+  );
+}
+
+/** 배급 지역 — 기본은 ‘전 세계’ 스위치만. 끄면 배급할 지역 또는 뺄 지역을 고른다 */
+function TerritoryPicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  const plan = parseTerritories(value);
+  const plainWorld = plan.world && !plan.excluded.length;
+  const [open, setOpen] = useState(!plainWorld);
+  const [mode, setMode] = useState<'exclude' | 'include'>(plan.world ? 'exclude' : 'include');
+  const [query, setQuery] = useState('');
+  const picked = mode === 'exclude' ? plan.excluded : plan.included;
+  const write = (codes: string[]) => onChange(mode === 'exclude' ? worldExcept(codes) : codes);
+  const toggle = (code: string) => write(picked.includes(code) ? picked.filter(c => c !== code) : [...picked, code]);
+  const q = query.trim().toLowerCase();
+  const groups = TERRITORY_GROUPS
+    .map(([region, codes]) => [region, codes.filter(c => !q || territoryName(c).toLowerCase().includes(q) || c.toLowerCase() === q)] as const)
+    .filter(([, codes]) => codes.length > 0);
+  const n = picked.length;
+  const headline = !open || (mode === 'exclude' && !n) ? '전 세계에 배급해요.'
+    : mode === 'exclude' ? `전 세계에서 ${n}곳을 빼고 배급해요.`
+      : n ? `${n}개 국가·지역에만 배급해요.` : '배급할 지역을 골라 주세요.';
+  const help = !open ? '특정 지역만 고르거나 빼려면 스위치를 꺼 주세요.'
+    : mode === 'exclude' ? (n ? territorySummary(value) : '아래에서 배급하지 않을 지역을 골라 주세요.')
+      : n ? picked.map(territoryName).join(', ') : '아래에서 배급할 지역을 하나 이상 골라 주세요.';
+
+  return (
+    <div id="aqTerritories" className="aq-territory">
+      <div className="distribution-default">
+        <div className="min-0">
+          <strong>{headline}</strong>
+          <p className="ui-field-help break">{help}</p>
+        </div>
+        <label className="aq-switch">
+          <input
+            type="checkbox" aria-label="전 세계 배급"
+            checked={!open}
+            onChange={e => {
+              if (e.target.checked) { onChange([WORLD]); setOpen(false); setQuery(''); } else setOpen(true);
+            }}
+          />
+          <span />
+        </label>
+      </div>
+      {open && (
+        <div className="aq-territory-panel aq-reveal">
+          <Segmented
+            className="aq-territory-mode" label="지역 선택 방식" value={mode}
+            onChange={m => { setMode(m); onChange(m === 'exclude' ? [WORLD] : []); }}
+            options={[{ value: 'exclude', label: '뺄 지역 고르기' }, { value: 'include', label: '배급할 지역 고르기' }] as const}
+          />
+          <div className="aq-territory-search">
+            <label className="sr-only" htmlFor="aqTerritorySearch">국가·지역 검색</label>
+            <input id="aqTerritorySearch" type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="국가·지역 이름으로 찾기" autoComplete="off" />
+          </div>
+          {n > 0 && (
+            <div className="aq-territory-picked">
+              <span>{mode === 'exclude' ? '빼는 지역' : '배급할 지역'} <b>{n}</b>곳</span>
+              <button type="button" className="ui-btn is-ghost is-xs" onClick={() => write([])}>모두 해제</button>
+            </div>
+          )}
+          {groups.length === 0 && <p className="aq-territory-empty">‘{query.trim()}’에 맞는 국가·지역이 없어요.</p>}
+          {groups.map(([region, codes]) => {
+            const all = codes.every(c => picked.includes(c));
+            return (
+              <div key={region} className="aq-territory-group">
+                <div className="aq-territory-region">
+                  <p>{region}</p>
+                  {!q && (
+                    <button type="button" className="ui-btn is-ghost is-xs" onClick={() => write(all ? picked.filter(c => !codes.includes(c)) : [...new Set([...picked, ...codes])])}>
+                      {all ? '모두 해제' : '모두 선택'}
+                    </button>
+                  )}
+                </div>
+                <div className="aq-chips" role="group" aria-label={`${region} 국가·지역`}>
+                  {codes.map(c => {
+                    const on = picked.includes(c);
+                    return (
+                      <button key={c} type="button" className={`aq-chip${on ? ' is-on' : ''}${on && mode === 'exclude' ? ' is-excluded' : ''}`} aria-pressed={on} onClick={() => toggle(c)}>
+                        {on && (mode === 'exclude' ? <Glyph name="minus" size={12} className="aq-chip-check" /> : <CheckIcon size={12} className="aq-chip-check" />)}{territoryName(c)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <p className="aq-territory-note">
+        <Glyph name="info" size={16} />
+        <span>AUDENIQ 이용약관과 관련 법령에 따라 배급이 제한된 국가·지역은 전 세계 배급을 선택해도 자동으로 제외돼요. <a href="/terms" target="_blank" rel="noopener" className="aq-inline-link">약관 보기</a></span>
+      </p>
+    </div>
   );
 }
 
@@ -1104,7 +1198,7 @@ function ensureReleaseDocuments(f: WizardForm, releaseId: string) {
     `마스터 권리자: ${f.ownership.trim() || '미입력'}`,
     `℗ 표기: ${f.phonogram.trim() || '미입력'}`,
     `© 표기: ${f.copyright.trim() || '미입력'}`,
-    `배급 지역: ${f.territories.includes('WORLD') ? '전 세계' : '지정 안 함'}`,
+    `배급 지역: ${territorySummary(f.territories)}`,
     `배급 플랫폼: ${f.platforms.map(dspLabel).join(', ')}`,
     `추가 확인 항목: ${selectedOptions(f.options).map(([, t]) => t).join(', ') || '일반 발매'}`,
     '',
@@ -1186,6 +1280,8 @@ export function Upload() {
     return () => { alive = false; };
   }, [editId]);
   const [error, setError] = useState('');
+  // 접수 요청 자체가 실패했을 때 (입력 오류와 따로, 다시 시도 버튼과 함께 보여 준다)
+  const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   // 중복 제출 방지용 ref (비동기 경계에서도 동작)
   const submittingRef = useRef(false);
@@ -1466,6 +1562,10 @@ export function Upload() {
           el.classList.remove('aq-invalid');
           void el.offsetWidth;
           el.classList.add('aq-invalid');
+          // 고치면 바로 표시를 지운다 (체크한 뒤에도 붉게 남아 있지 않도록)
+          const clear = () => el.classList.remove('aq-invalid');
+          el.addEventListener('change', clear, { once: true });
+          el.addEventListener('input', clear, { once: true });
           return;
         }
       }
@@ -1537,6 +1637,8 @@ export function Upload() {
           ? '신속 발매도 플랫폼 납품에 최소 3일이 필요해요. 3일 뒤 이후 날짜를 선택해 주세요.'
           : '플랫폼 납품·검수에 2주가 필요해요. 오늘부터 14일 뒤 이후로 선택하거나, 급하면 아래 ‘신속 발매 요청’을 선택해 주세요.', '#f-releaseDate');
       }
+      const tp = parseTerritories(form.territories);
+      if (!tp.world && !tp.included.length) return fail('배급할 지역을 하나 이상 골라 주세요. 모든 지역에 배급하려면 ‘전 세계 배급’을 켜 주세요.', '#aqTerritories');
       if (!dsps) return fail(dspError || '플랫폼 배급 가능 상태를 확인하는 중이에요.', '#aqPlatforms');
       if (!form.platforms.length) return fail('배급할 플랫폼을 하나 이상 선택해 주세요.', '#aqPlatforms');
       if (['coverLicenseFile', 'sampleLicenseFile', 'featuredConsentFile', 'sharedContractFile'].some(k => uploads[k]?.state === 'uploading')) return fail('첨부서류 업로드가 끝나면 계속할 수 있어요.', '#aqSpecialOptions');
@@ -1601,6 +1703,7 @@ export function Upload() {
       if (missing) return fail('신청 확인 항목에 모두 동의해 주세요.', `#agree-${missing.id}`);
     }
     setError('');
+    document.querySelectorAll('#view-new .aq-invalid').forEach(el => el.classList.remove('aq-invalid'));
     return true;
   };
 
@@ -1619,6 +1722,7 @@ export function Upload() {
     setStep(to);
     setReached(r => Math.max(r, to));
     setError('');
+    setSubmitError('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -1630,6 +1734,7 @@ export function Upload() {
     if (submittingRef.current) return;
     submittingRef.current = true;
     setSubmitting(true);
+    setSubmitError('');
     try {
       await saveChain.current.catch(() => {});
       const payload = toPayload(form, step);
@@ -1652,12 +1757,16 @@ export function Upload() {
       nav(resubmit ? `/releases/${r.id}` : `/releases/${r.id}/application?done=1`, { replace: true });
     } catch (e) {
       adoptPartialSave(e);
+      const message = errorMessage(e, '서버와 연결이 원활하지 않아요.');
       if (e instanceof ApiError && e.code === 'DSP_UNAVAILABLE') {
         goStep(3);
         api.listDsps().then(setDsps).catch(err => { setDsps(null); setDspError(errorMessage(err)); });
+        setError(message);
+      } else {
+        // 버튼 위를 가리는 알림 대신, 이유와 다시 시도 버튼을 서명 아래에 펼쳐 보여 준다
+        setSubmitError(message);
+        requestAnimationFrame(() => document.getElementById('wizardSubmitError')?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
       }
-      setError(errorMessage(e, '제출에 실패했어요. 잠시 후 다시 시도해 주세요.'));
-      toast('제출에 실패했어요. 다시 시도해 주세요.');
     } finally {
       submittingRef.current = false;
       setSubmitting(false);
@@ -1826,7 +1935,8 @@ export function Upload() {
     ['트랙', form.tracks.map(t => t.title || '곡명 없음').join(' / '), 1],
     ['커버아트', form.coverName || '등록되지 않음', 2],
     ['발매일', form.releaseDate ? formatKoreanDate(form.releaseDate) : '지정하지 않음', 3],
-    ['배급 대상', form.platforms.map(dspLabel).join(', ') || '선택하지 않음', 3],
+    ['배급 지역', territorySummary(form.territories, '선택하지 않음'), 3],
+    ['배급 플랫폼', form.platforms.map(dspLabel).join(', ') || '선택하지 않음', 3],
     ['권리자', form.ownership || '미입력', 4],
     ['권리 확인', rightsOk(form) ? '필수 확인 완료' : '필수 확인 항목 누락', 4],
   ];
@@ -2148,7 +2258,7 @@ export function Upload() {
                 </div>
                 <p className="ui-field-help">실제 배급되면 각 플랫폼에 이 커버아트로 표시돼요.</p>
                 <button
-                  type="button" className="ui-btn is-white is-sm"
+                  type="button" className="ui-btn is-danger is-sm aq-cover-remove"
                   onClick={() => {
                     uploadAborts.current.get('cover')?.abort();
                     uploadAborts.current.delete('cover');
@@ -2158,7 +2268,7 @@ export function Upload() {
                     setCoverWarn('');
                     if (coverInputRef.current) coverInputRef.current.value = '';
                   }}
-                >커버 삭제</button>
+                >커버아트 지우기</button>
               </div>
             )}
           </section>
@@ -2177,15 +2287,8 @@ export function Upload() {
                 <input id="f-upc" inputMode="numeric" value={form.upc} onChange={e => set('upc', e.target.value.replace(/\D/g, '').slice(0, 13))} maxLength={13} placeholder="없으면 자동 발급돼요" />
               </div>
             </div>
-            <h2 className="subhead">배급 대상</h2>
-            <label className="ui-check is-plain">
-              <input
-                type="checkbox"
-                checked={form.territories.includes('WORLD')}
-                onChange={e => set('territories', e.target.checked ? ['WORLD'] : [])}
-              />
-              <span><strong>전 세계 배급</strong><small>권리를 보유한 지역에만 배급할 수 있어요.</small></span>
-            </label>
+            <h2 className="subhead">배급 지역</h2>
+            <TerritoryPicker value={form.territories} onChange={v => set('territories', v)} />
             <h2 className="subhead">배급 플랫폼</h2>
             <div className="distribution-default">
               <div>
@@ -2237,7 +2340,7 @@ export function Upload() {
         {step === 4 && (
           <section className="step-section">
             <div className="form-grid">
-              <div className="ui-field">
+              <div className="ui-field aq-field-wide">
                 <label htmlFor="f-ownership">음원(마스터) 권리자 <span className="required">*</span></label>
                 <input
                   id="f-ownership" value={form.ownership} maxLength={160} placeholder="개인명 또는 법인명"
@@ -2268,7 +2371,7 @@ export function Upload() {
             </div>
             {!form.ownership && !form.phonogram && !form.copyright && form.artist.trim() && (
               <button
-                type="button" className="ui-btn is-white is-sm aq-autofill"
+                type="button" className="ui-btn is-soft is-block aq-autofill"
                 onClick={() => {
                   const y = (form.releaseDate || todayStr()).slice(0, 4);
                   const who = form.label.trim() || form.artist.trim();
@@ -2276,7 +2379,8 @@ export function Upload() {
                   dirtyRef.current = true;
                 }}
               >
-                ‘{form.label.trim() || form.artist.trim()}’(으)로 권리자 정보 채우기
+                <Glyph name="pencil" size={15} className="aq-glyph-lead" />
+                <span className="aq-autofill-text">‘{form.label.trim() || form.artist.trim()}’(으)로 권리자 정보 채우기</span>
               </button>
             )}
             <div id="aqSpecialOptions" className="aq-fix-zone"><OptionsSection form={form} set={set} group="rights" onDocument={attachOptionDocument} uploads={uploads} onElectronic={kind => void openElectronic(kind)} onOpenDoc={setOpenDocId} releaseId={draftIdRef.current ?? undefined} /></div>
@@ -2322,9 +2426,11 @@ export function Upload() {
             <div className="aq-catalog-cards aq-stagger">
               {reviewSections.map(([h, t, target]) => (
                 <div key={h} className="aq-review-card">
-                  <strong>{h}</strong>
-                  <p className="break">{t}</p>
-                  <button type="button" className="ui-btn is-white is-sm aq-review-edit" onClick={() => goStep(target)} aria-label={`${h} 수정`}>수정</button>
+                  <div className="aq-review-body">
+                    <strong>{h}</strong>
+                    <p className="break">{t}</p>
+                  </div>
+                  <button type="button" className="ui-btn is-white is-xs aq-review-edit" onClick={() => goStep(target)} aria-label={`${h} 수정`}>수정</button>
                 </div>
               ))}
             </div>
@@ -2383,6 +2489,19 @@ export function Upload() {
       </div>
 
       {error && <div id="wizardError" className="ui-callout is-danger aq-shake" role="alert" key={error}>{error}</div>}
+      {submitError && step === STEPS.length - 1 && (
+        <div id="wizardSubmitError" className="aq-submit-error ui-tone-danger" role="alert">
+          <span className="aq-submit-error-icon" aria-hidden="true"><Glyph name="alert" size={18} /></span>
+          <div className="aq-submit-error-text">
+            <strong>{resubmit ? '다시 접수하지 못했어요' : '접수하지 못했어요'}</strong>
+            <p>{submitError}</p>
+            <small>입력한 내용{resubmit ? '' : '과 서명'}은 그대로 남아 있어요. 잠시 후 다시 시도해 주세요.</small>
+          </div>
+          <button type="button" className="ui-btn is-primary is-sm" onClick={() => void submit()} disabled={submitting}>
+            {submitting ? '접수하는 중' : '다시 시도'}
+          </button>
+        </div>
+      )}
       </div>
       </div>
 
