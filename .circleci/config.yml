@@ -7,6 +7,8 @@ version: 2.1
 # CircleCI 프로젝트 설정 → Contexts에 "audeniq-production"을 만들고 다음 환경 변수를 넣는다:
 #   GHCR_USER            GitHub 아이디
 #   GHCR_TOKEN           GitHub PAT (write:packages, read:packages)
+#   AUDENIQ_GITHUB_TOKEN GitHub fine-grained PAT, audeniq-qc·audeniq-photo 저장소 Contents 읽기 전용
+#                        (비공개 엔진을 이미지 빌드에서 받는다. 빌드 비밀로만 쓰고 이미지에 남기지 않음)
 #   DEPLOY_HOST          서버 주소
 #   DEPLOY_USER          SSH 사용자 (docker 권한)
 #   DEPLOY_SSH_KEY       배포 전용 SSH 개인키를 base64 한 줄로 (base64 -w0 < key)
