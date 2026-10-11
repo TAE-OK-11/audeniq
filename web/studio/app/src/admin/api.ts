@@ -75,6 +75,8 @@ export interface AgreementTermsInput {
   /** AUDENIQ 몫 (bp, 800 = 8%) */
   fee_bps: number;
   rate_note: string; territory_note: string; min_payout_note: string; special_terms: string;
+  /** 프로모션 요율(bp)과 마지막 날 — 서명하면 정산 배분율(split snapshot)로 그대로 쓰인다 */
+  promo_fee_bps?: number | null; promo_until?: string | null;
   /** 배급 권한 범위 — 승인부터 전송 직전까지 서버가 같은 기준으로 검사 (비우면 신청서 지역·플랫폼, 기한 없음, UGC 제외) */
   scope?: { territories: string[]; excluded_territories: string[]; end_date: string | null; dsps: string[]; ugc: boolean };
 }

@@ -644,10 +644,10 @@ pub async fn sign_document(
         "confirmations": confirmations, "signer_name": name, "signature_sha256": crate::domain::sha256_hex(&sig),
     }));
     let identity = crate::consents::signer_identity(&mut tx, a.user).await?;
-    let rv: i64 = sqlx::query_scalar(
+    let (rv, signed_at): (i64, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
         "UPDATE portal.documents SET status='SIGNED',signer_name=$2,signature=$3,signed_by=$4,signed_at=now(),confirmations=$5,
            signed_content_hash=$6,signer_identity=$7,row_version=row_version+1,updated_at=now()
-         WHERE id=$1 RETURNING row_version",
+         WHERE id=$1 RETURNING row_version, signed_at",
     )
     .bind(id)
     .bind(&name)
@@ -658,6 +658,14 @@ pub async fn sign_document(
     .bind(&identity)
     .fetch_one(&mut *tx)
     .await?;
+    // The signed rates and shares become the release's split snapshots
+    // (settlement_split, 0095), effective from this signature.
+    if let (Some(t), Some(release)) = (&terms, release) {
+        crate::settlement_split::snapshot_signed_agreement(
+            &mut tx, org, release, id, t, &version, signed_at,
+        )
+        .await?;
+    }
     operations::audit(
         &mut tx,
         Some(a.user),

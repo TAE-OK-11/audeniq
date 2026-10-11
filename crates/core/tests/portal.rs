@@ -1961,7 +1961,8 @@ async fn distribution_agreement_needs_staff_terms_and_artist_confirmations(pool:
 
     // Only staff with the review duty set the commercial terms.
     let terms_path = format!("/api/staff/releases/{release}/agreement-terms");
-    let terms = json!({"exclusivity":"NON_EXCLUSIVE","fee_bps":800,"rate_note":"프로모션 요율","territory_note":"","min_payout_note":"","special_terms":""});
+    let terms = json!({"exclusivity":"NON_EXCLUSIVE","fee_bps":800,"rate_note":"프로모션 요율","territory_note":"","min_payout_note":"","special_terms":"",
+                       "promo_fee_bps":500,"promo_until":"2099-12-31"});
     assert_eq!(
         call(&app, "PUT", &terms_path, terms.clone(), Some(&u))
             .await
@@ -2081,6 +2082,25 @@ async fn distribution_agreement_needs_staff_terms_and_artist_confirmations(pool:
             == false
     );
     assert!(doc["confirmations"]["content_hash"].as_str().unwrap().len() == 64);
+    // 감사 5번: the signed rates became split snapshots — the promotional fee
+    // from the signature, the standard fee from the day after the promotion.
+    let snaps: Vec<(Value, Value)> = sqlx::query_as(
+        "SELECT lines, source_ref FROM finance.commercial_split_snapshots WHERE release_id=$1 ORDER BY valid_from",
+    )
+    .bind(release)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(snaps.len(), 2, "{snaps:?}");
+    assert_eq!(snaps[0].1["rate"], "PROMO");
+    assert_eq!(snaps[0].0[0]["party_name"], "AUDENIQ");
+    assert_eq!(snaps[0].0[0]["share_bps"], 500);
+    assert_eq!(
+        snaps[0].0[1]["share_bps"], 9500,
+        "the owner keeps the artist portion"
+    );
+    assert_eq!(snaps[1].1["rate"], "STANDARD");
+    assert_eq!(snaps[1].0[0]["share_bps"], 800);
     // A signed agreement's terms can no longer be changed.
     let (_, _, v) = call(
         &app,

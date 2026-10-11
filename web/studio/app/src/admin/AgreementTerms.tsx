@@ -32,16 +32,21 @@ export function AgreementTermsSection({ releaseId, doc, editable, onSaved }: {
   const [scopeDsps, setScopeDsps] = useState(sc && !sc.all_dsps ? sc.dsps.join(', ') : '');
   const [scopeUgc, setScopeUgc] = useState(sc?.ugc ?? false);
   const split = (s: string) => s.toUpperCase().split(/[\s,]+/).filter(Boolean);
+  const [promoFee, setPromoFee] = useState(t?.promo_fee_bps != null ? String(t.promo_fee_bps / 100) : '');
+  const [promoUntil, setPromoUntil] = useState(t?.promo_until ?? '');
+  const promoBps = Math.round(Number(promoFee) * 100);
+  const promoOk = (!promoFee && !promoUntil) || (promoFee !== '' && promoBps >= 0 && promoBps <= 10000 && !!promoUntil);
   const [busy, setBusy] = useState(false);
   const feeBps = Math.round(Number(fee) * 100);
   const feeOk = fee.trim() !== '' && Number.isFinite(feeBps) && feeBps >= 0 && feeBps <= 10000;
 
   const save = async () => {
-    if (!feeOk || busy) return;
+    if (!feeOk || !promoOk || busy) return;
     setBusy(true);
     try {
       await staffApi.agreementTerms(releaseId, {
         exclusivity, fee_bps: feeBps, rate_note: rateNote, territory_note: territoryNote, min_payout_note: minPayout, special_terms: special,
+        promo_fee_bps: promoFee ? promoBps : null, promo_until: promoUntil || null,
         scope: { territories: split(scopeTerritories), excluded_territories: split(scopeExcluded), end_date: scopeEnd || null, dsps: split(scopeDsps), ugc: scopeUgc },
       });
       toast('계약 조건을 저장했어요. 계약서 본문이 새로 만들어졌어요.', 'success');
@@ -58,6 +63,7 @@ export function AgreementTermsSection({ releaseId, doc, editable, onSaved }: {
           <dl className="ui-kv">
             <div><dt>배급 형태</dt><dd>{t.exclusivity === 'EXCLUSIVE' ? '독점' : '비독점'}</dd></div>
             <div><dt>배급수수료</dt><dd>회사 {pct(t.fee_bps)} / 이용자 {pct(t.user_bps)}</dd></div>
+            {t.promo_fee_bps != null && t.promo_until && <div><dt>프로모션 요율</dt><dd>회사 {pct(t.promo_fee_bps)} · {t.promo_until}까지</dd></div>}
             {t.rate_note && <div><dt>특별 요율</dt><dd>{t.rate_note}</dd></div>}
             {t.territory_note && <div><dt>지역 조건</dt><dd>{t.territory_note}</dd></div>}
             {t.scope && <div><dt>배급 지역</dt><dd>{t.scope.worldwide ? '전 세계' : t.scope.territories.join(', ')}{t.scope.excluded_territories.length ? ` (제외 ${t.scope.excluded_territories.join(', ')})` : ''}</dd></div>}
@@ -76,6 +82,12 @@ export function AgreementTermsSection({ releaseId, doc, editable, onSaved }: {
             <div className="adm-terms-fee">
               <input id="atFee" className="ui-input" inputMode="decimal" value={fee} placeholder="예: 8" onChange={e => setFee(e.target.value.replace(/[^\d.]/g, ''))} aria-invalid={fee !== '' && !feeOk} />
               <span>{feeOk ? `이용자 ${pct(10000 - feeBps)}` : '0~100 사이'}</span>
+            </div>
+          </div>
+          <div className="ui-field"><label htmlFor="atPromo">프로모션 수수료 (%) · 마지막 날 (선택 — 서명하면 이 기간 정산에 적용)</label>
+            <div className="adm-terms-fee">
+              <input id="atPromo" className="ui-input" inputMode="decimal" value={promoFee} placeholder="예: 5" onChange={e => setPromoFee(e.target.value.replace(/[^\d.]/g, ''))} aria-invalid={!promoOk} />
+              <input className="ui-input" type="date" value={promoUntil} onChange={e => setPromoUntil(e.target.value)} aria-label="프로모션 마지막 날" />
             </div>
           </div>
           <div className="ui-field"><label htmlFor="atRate">특별 요율 메모 (선택)</label>
@@ -99,7 +111,7 @@ export function AgreementTermsSection({ releaseId, doc, editable, onSaved }: {
             <input id="atMin" className="ui-input" maxLength={300} value={minPayout} onChange={e => setMinPayout(e.target.value)} placeholder="비우면 약관의 기본 기준" /></div>
           <div className="ui-field"><label htmlFor="atSpecial">개별 특약 (선택)</label>
             <textarea id="atSpecial" className="ui-textarea" rows={3} maxLength={2000} value={special} onChange={e => setSpecial(e.target.value)} placeholder="특정 DSP 포함·제외, 전담 지원, 별도 SLA 등 이 고객과만 합의한 내용이 있을 때만" /></div>
-          <button type="button" className="ui-btn is-primary" disabled={!feeOk || busy} onClick={() => void save()}>{busy ? '저장하는 중…' : t ? '계약 조건 다시 저장' : '계약 조건 저장'}</button>
+          <button type="button" className="ui-btn is-primary" disabled={!feeOk || !promoOk || busy} onClick={() => void save()}>{busy ? '저장하는 중…' : t ? '계약 조건 다시 저장' : '계약 조건 저장'}</button>
           {!t && <p className="small muted">저장해야 승인할 수 있어요.</p>}
         </div>
       )}

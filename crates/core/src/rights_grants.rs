@@ -148,7 +148,7 @@ fn check(i: &GrantInput) -> Result<Checked<'_>> {
 }
 
 /// The party that owns the release (its first writer ACL principal).
-async fn owner_party(c: &mut PgConnection, org: Uuid, release: Uuid) -> Result<Uuid> {
+pub async fn owner_party(c: &mut PgConnection, org: Uuid, release: Uuid) -> Result<Uuid> {
     sqlx::query_scalar(
         "SELECT principal_party_id FROM identity.resource_acl
           WHERE org_id=$1 AND resource_id=$2 AND action='write' AND revoked_at IS NULL

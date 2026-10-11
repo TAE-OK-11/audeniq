@@ -4616,4 +4616,56 @@ async fn approved_rights_document_becomes_grants_and_rechecks(pool: PgPool) {
     ]}), Some(&staff)).await;
     assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
     assert_eq!(v["error"]["code"], "GRANT_SHARE_EXCEEDS_100");
+
+    // 감사 5번: the royalty grant shares the artist portion in the split the
+    // signed agreement writes; the track's own grant gets per-track lines.
+    let mut tx = pool.begin().await.unwrap();
+    let ids = audeniq_core::settlement_split::snapshot_signed_agreement(
+        &mut tx,
+        ctx.org,
+        ctx.release,
+        doc,
+        &json!({"form":"AUD-DIST 2.0","fee_bps":1000,"terms_version":"AUD-TERMS 2026.10"}),
+        "1.0",
+        chrono::Utc::now(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(ids.len(), 1);
+    let lines = audeniq_core::settlement_split::split_for(
+        &mut tx,
+        ctx.org,
+        ctx.release,
+        Some(track),
+        chrono::Utc::now(),
+    )
+    .await
+    .unwrap()
+    .unwrap()
+    .1;
+    let names: Vec<(String, i64)> = lines
+        .iter()
+        .map(|l| (l.party_name.clone(), l.share_bps))
+        .collect();
+    assert_eq!(names[0], ("AUDENIQ".into(), 1000));
+    assert!(
+        names.contains(&("김작곡".into(), 2700)),
+        "30% of the 90% artist portion: {names:?}"
+    );
+    assert_eq!(names.iter().map(|n| n.1).sum::<i64>(), 10_000);
+    let release_wide = audeniq_core::settlement_split::split_for(
+        &mut tx,
+        ctx.org,
+        ctx.release,
+        None,
+        chrono::Utc::now(),
+    )
+    .await
+    .unwrap()
+    .unwrap()
+    .1;
+    assert!(
+        !release_wide.iter().any(|l| l.party_name == "김작곡"),
+        "the track grant does not touch other tracks"
+    );
 }

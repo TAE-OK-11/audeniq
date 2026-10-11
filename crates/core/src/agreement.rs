@@ -173,6 +173,12 @@ pub struct TermsInput {
     pub min_payout_note: String,
     #[serde(default)]
     pub special_terms: String,
+    /// Promotional fee (basis points) and its last day, `YYYY-MM-DD`. Both or
+    /// neither. Settlement uses it until that day, then `fee_bps`.
+    #[serde(default)]
+    pub promo_fee_bps: Option<u32>,
+    #[serde(default)]
+    pub promo_until: Option<String>,
     /// Structured distribution scope (territories, exclusions, end date,
     /// DSPs, UGC). Absent = the application's territories and DSPs, no end,
     /// no UGC. Enforced by `contract_scope` from approval to the send.
@@ -457,6 +463,14 @@ fn render(ctx: &Context, t: &Value, items: &[&Confirmation]) -> String {
         pct(fee),
         pct(10_000 - fee)
     )];
+    if let (Some(bps), Some(until)) = (t["promo_fee_bps"].as_u64(), t["promo_until"].as_str()) {
+        let bps = bps.min(10_000) as u32;
+        fee_body.push(format!(
+            "프로모션 요율: 계약 효력일부터 {until}까지는 회사 {} / 이용자 {}, 그 다음 날부터 위 배급수수료를 적용합니다.",
+            pct(bps),
+            pct(10_000 - bps)
+        ));
+    }
     if !note("rate_note").is_empty() {
         fee_body.push(format!("특별 요율: {}", note("rate_note")));
     }
@@ -577,6 +591,24 @@ pub async fn set_terms(s: &AppState, h: &HeaderMap, release: Uuid, i: TermsInput
     if !matches!(i.exclusivity.as_str(), "NON_EXCLUSIVE" | "EXCLUSIVE") || i.fee_bps > 10_000 {
         return Err(Error::Invalid);
     }
+    let promo = match (
+        i.promo_fee_bps,
+        i.promo_until
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty()),
+    ) {
+        (None, None) => None,
+        (Some(bps), Some(until)) if bps <= 10_000 => {
+            let d = chrono::NaiveDate::parse_from_str(until, "%Y-%m-%d")
+                .map_err(|_| Error::InvalidCode("PROMO_UNTIL_INVALID"))?;
+            if d < chrono::Utc::now().date_naive() {
+                return Err(Error::InvalidCode("PROMO_UNTIL_INVALID"));
+            }
+            Some((bps, d))
+        }
+        _ => return Err(Error::InvalidCode("PROMO_INCOMPLETE")),
+    };
     let terms_in = json!({
         "rate_note": line(&i.rate_note, 500)?,
         "territory_note": line(&i.territory_note, 300)?,
@@ -611,6 +643,10 @@ pub async fn set_terms(s: &AppState, h: &HeaderMap, release: Uuid, i: TermsInput
         terms[k] = v.clone();
     }
     terms["scope"] = scope.to_json();
+    if let Some((bps, until)) = promo {
+        terms["promo_fee_bps"] = json!(bps);
+        terms["promo_until"] = json!(until.format("%Y-%m-%d").to_string());
+    }
     let body = render(&ctx, &terms, &items);
     let title = format!(
         "{} · AUDENIQ 음원 배급 계약서",
