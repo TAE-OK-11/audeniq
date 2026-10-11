@@ -284,6 +284,9 @@ async fn split_snapshot_is_append_only(pool: PgPool) {
 #[sqlx::test]
 async fn payout_order_idempotency(pool: PgPool) {
     let org = org(&pool).await;
+    finance::post_transaction(&pool, org, balanced())
+        .await
+        .unwrap();
     let payee = Uuid::new_v4();
     let p = PayoutOrderInput {
         idempotency_key: "pay-001",
@@ -315,6 +318,9 @@ async fn payout_order_idempotency(pool: PgPool) {
 #[sqlx::test]
 async fn payout_unknown_bank_response_is_not_retried(pool: PgPool) {
     let org = org(&pool).await;
+    finance::post_transaction(&pool, org, balanced())
+        .await
+        .unwrap();
     let (id, _) = finance::create_payout_order(
         &pool,
         org,
@@ -439,4 +445,99 @@ async fn finance_hold_scopes_payout_exclusion(pool: PgPool) {
         .await
         .unwrap();
     assert!(!active);
+}
+
+/// 감사 6번: one withdrawable balance (payable − held − other open payouts)
+/// gates the order, the approval and the bank submission alike.
+#[sqlx::test]
+async fn withdrawable_balance_gates_every_payout_step(pool: PgPool) {
+    let org = org(&pool).await;
+    let order = |key: &'static str, amount: &str| PayoutOrderInput {
+        idempotency_key: key,
+        payee_party_id: Uuid::nil(),
+        amount: dec(amount),
+        currency: "KRW",
+        created_by: None,
+    };
+    // Nothing earned: nothing can be ordered.
+    let e = finance::create_payout_order(&pool, org, order("w-0", "1000"))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(e, Error::PolicyGate("PAYOUT_EXCEEDS_UNHELD_BALANCE")),
+        "{e:?}"
+    );
+    finance::post_transaction(&pool, org, balanced())
+        .await
+        .unwrap(); // 100000 payable
+    let (a, _) = finance::create_payout_order(&pool, org, order("w-1", "60000"))
+        .await
+        .unwrap();
+    // The open order reserves its amount: a second one cannot overdraw.
+    let e = finance::create_payout_order(&pool, org, order("w-2", "50000"))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(e, Error::PolicyGate("PAYOUT_EXCEEDS_UNHELD_BALANCE")),
+        "{e:?}"
+    );
+    // A dispute hold after the order stops its approval.
+    let hold = finance::place_hold(
+        &pool,
+        org,
+        None,
+        HoldScope::Isrc,
+        "KRA402600009",
+        "dispute",
+        "RIGHTS_DISPUTE",
+    )
+    .await
+    .unwrap();
+    // Re-label 50000 of the payable as the held track's: reverse-free way is a
+    // new balanced pair that debits unlabelled payable and credits labelled.
+    let mut move_to_track = balanced();
+    move_to_track.transaction_code = "ROYALTY_RECLASS";
+    move_to_track.entries = vec![
+        entry("ROYALTY_PAYABLE", EntrySide::Debit, "50000"),
+        LedgerEntryInput {
+            isrc: Some("KRA402600009"),
+            ..entry("ROYALTY_PAYABLE", EntrySide::Credit, "50000")
+        },
+    ];
+    finance::post_transaction(&pool, org, move_to_track)
+        .await
+        .unwrap();
+    let approver = Uuid::new_v4();
+    let e = finance::approve_payout_order(&pool, org, approver, a)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(e, Error::PolicyGate("PAYOUT_EXCEEDS_UNHELD_BALANCE")),
+        "{e:?}"
+    );
+    // Released: it approves, and a hold placed after approval stops the submission.
+    finance::release_hold(&pool, org, approver, hold)
+        .await
+        .unwrap();
+    finance::approve_payout_order(&pool, org, approver, a)
+        .await
+        .unwrap();
+    finance::place_hold(
+        &pool,
+        org,
+        None,
+        HoldScope::Isrc,
+        "KRA402600009",
+        "dispute again",
+        "RIGHTS_DISPUTE",
+    )
+    .await
+    .unwrap();
+    let e = finance::mark_payout_submitted(&pool, org, approver, a, "bank-w-1")
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(e, Error::PolicyGate("PAYOUT_EXCEEDS_UNHELD_BALANCE")),
+        "{e:?}"
+    );
 }

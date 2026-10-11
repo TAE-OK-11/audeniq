@@ -24,7 +24,7 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 use std::str::FromStr;
 use uuid::Uuid;
 
@@ -374,6 +374,53 @@ pub async fn effective_split(
     }
 }
 
+/// The withdrawable balance (finance.withdrawable, 0096): payable minus
+/// held royalties minus every other open payout request and order. `self_id`
+/// is the request or order being decided, not counted against itself. The
+/// same figure gates the request, the staff order, the approval and the bank
+/// submission.
+pub async fn withdrawable(
+    c: &mut PgConnection,
+    org: Uuid,
+    self_id: Option<Uuid>,
+) -> Result<Decimal> {
+    Ok(sqlx::query_scalar("SELECT finance.withdrawable($1,$2)")
+        .bind(org)
+        .bind(self_id)
+        .fetch_one(&mut *c)
+        .await?)
+}
+
+/// Serialise payout decisions per organisation (same lock as the portal
+/// request path) and refuse an amount the withdrawable balance or a payee
+/// hold does not allow.
+async fn ensure_payable(
+    c: &mut PgConnection,
+    org: Uuid,
+    payee: Uuid,
+    self_id: Option<Uuid>,
+    amount: Decimal,
+) -> Result<()> {
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1::text, 7))")
+        .bind(org)
+        .execute(&mut *c)
+        .await?;
+    let held: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM finance.finance_holds WHERE org_id=$1 AND scope_type='PARTY' AND scope_value=$2 AND active)",
+    )
+    .bind(org)
+    .bind(payee.to_string())
+    .fetch_one(&mut *c)
+    .await?;
+    if held {
+        return Err(Error::PolicyGate("PAYEE_ON_HOLD"));
+    }
+    if withdrawable(c, org, self_id).await? < amount {
+        return Err(Error::PolicyGate("PAYOUT_EXCEEDS_UNHELD_BALANCE"));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone)]
 pub struct PayoutOrderInput<'a> {
     pub idempotency_key: &'a str,
@@ -400,11 +447,14 @@ pub async fn create_payout_order(
     if !valid_currency(p.currency) {
         return Err(Error::PolicyGate("INVALID_CURRENCY"));
     }
-    if !is_payable(pool, org, "PARTY", &p.payee_party_id.to_string()).await? {
-        return Err(Error::PolicyGate("PAYEE_ON_HOLD"));
-    }
     if let Some(existing) = existing_payout(pool, org, p.idempotency_key).await? {
         return Ok((existing, false));
+    }
+    {
+        let mut c = pool.acquire().await?;
+        let mut tx = sqlx::Connection::begin(&mut *c).await?;
+        ensure_payable(&mut tx, org, p.payee_party_id, None, p.amount).await?;
+        tx.commit().await?;
     }
     let id = Uuid::new_v4();
     let r = sqlx::query(
@@ -470,6 +520,17 @@ pub async fn approve_payout_order(
     if creator.flatten() == Some(approver) {
         return Err(Error::PolicyGate("PAYOUT_APPROVER_MUST_DIFFER"));
     }
+    let mut tx = pool.begin().await?;
+    let (payee, amount): (Uuid, Decimal) = sqlx::query_as(
+        "SELECT payee_party_id, amount FROM finance.payout_orders WHERE org_id=$1 AND id=$2",
+    )
+    .bind(org)
+    .bind(order_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(Error::NotFound)?;
+    // Holds and the balance are re-checked at approval (0096).
+    ensure_payable(&mut tx, org, payee, Some(order_id), amount).await?;
     let n = sqlx::query(
         "UPDATE finance.payout_orders SET status='APPROVED',approved_by=$3,approved_at=now()
          WHERE org_id=$1 AND id=$2 AND status='PENDING_APPROVAL'",
@@ -477,12 +538,13 @@ pub async fn approve_payout_order(
     .bind(org)
     .bind(order_id)
     .bind(approver)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?
     .rows_affected();
     if n != 1 {
         return Err(Error::PolicyGate("INVALID_PAYOUT_STATUS_TRANSITION"));
     }
+    tx.commit().await?;
     Ok(())
 }
 
@@ -688,22 +750,7 @@ pub async fn order_payout_request(
     // A track/release hold placed after the request still has to fit: the
     // order may not pay out money now held for a dispute.
     let amount: Decimal = r.get("amount");
-    let fits: bool = sqlx::query_scalar(
-        "SELECT (SELECT COALESCE(SUM(CASE WHEN e.side='CREDIT' THEN e.amount ELSE -e.amount END),0)
-                   FROM finance.ledger_entries e WHERE e.org_id=$1 AND e.account='ROYALTY_PAYABLE' AND e.currency='KRW')
-              - finance.held_payable($1)
-              - COALESCE((SELECT SUM(amount) FROM portal.payout_requests
-                           WHERE org_id=$1 AND status='REQUESTED' AND currency='KRW' AND id<>$2),0)
-              - COALESCE((SELECT SUM(amount) FROM finance.payout_orders WHERE org_id=$1 AND currency='KRW'
-                           AND status IN ('PENDING_APPROVAL','APPROVED','SUBMITTED','SUBMITTED_UNKNOWN')),0)
-              >= $3",
-    )
-    .bind(org)
-    .bind(request_id)
-    .bind(amount)
-    .fetch_one(&mut *tx)
-    .await?;
-    if !fits {
+    if withdrawable(&mut tx, org, Some(request_id)).await? < amount {
         return Err(Error::PolicyGate("PAYOUT_EXCEEDS_UNHELD_BALANCE"));
     }
     if r.get::<Option<Vec<u8>>, _>("account_cipher").is_none() {
@@ -777,6 +824,17 @@ pub async fn mark_payout_submitted(
     order_id: Uuid,
     bank_transaction_id: &str,
 ) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    let (payee, amount): (Uuid, Decimal) = sqlx::query_as(
+        "SELECT payee_party_id, amount FROM finance.payout_orders WHERE org_id=$1 AND id=$2",
+    )
+    .bind(org)
+    .bind(order_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(Error::NotFound)?;
+    // A hold placed after approval stops the transfer (0096).
+    ensure_payable(&mut tx, org, payee, Some(order_id), amount).await?;
     let n = sqlx::query(
         "UPDATE finance.payout_orders SET status='SUBMITTED',executed_by=$3,bank_transaction_id=$4
          WHERE org_id=$1 AND id=$2 AND status='APPROVED'",
@@ -785,13 +843,14 @@ pub async fn mark_payout_submitted(
     .bind(order_id)
     .bind(executor)
     .bind(bank_transaction_id)
-    .execute(pool)
+    .execute(&mut *tx)
     .await
     .map_err(|e| map_unique_violation(e, "BANK_TRANSACTION_ALREADY_USED"))?
     .rows_affected();
     if n != 1 {
         return Err(Error::PolicyGate("INVALID_PAYOUT_STATUS_TRANSITION"));
     }
+    tx.commit().await?;
     Ok(())
 }
 
