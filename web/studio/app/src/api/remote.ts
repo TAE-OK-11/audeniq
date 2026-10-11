@@ -620,13 +620,19 @@ export const remoteApi = {
     // 4) 서명한 신청서를 서버에도 기록 — 신청서 번호·문서 확인 코드가 남고 배급 계약서 검토가 시작된다
     const app = data.application;
     if (app) {
-      await req(orgPath(`/releases/${rel.id}/application`), {
-        method: 'POST',
-        body: {
-          application_no: app.no, form: app.form, content_hash: app.hash, signer_name: app.signerName,
-          signer_role: app.signerRole, agreements: app.agreements, signature: app.signature, submitted_at: app.submittedAt,
-        },
-      });
+      try {
+        await req(orgPath(`/releases/${rel.id}/application`), {
+          method: 'POST',
+          body: {
+            application_no: app.no, form: app.form, content_hash: app.hash, signer_name: app.signerName,
+            signer_role: app.signerRole, agreements: app.agreements, signature: app.signature, submitted_at: app.submittedAt,
+          },
+        });
+      } catch (e) {
+        // 이미 서명(또는 종료)된 계약은 새 신청서로 바뀌지 않는다. 코드 재발급·3단계 재시도 뒤
+        // 다시 접수하면 이렇게 되는데, 접수 자체(3)는 이미 끝났으므로 오류로 보이지 않는다.
+        if (!(e instanceof ApiError && e.code === 'APPLICATION_DOCUMENT_FINAL')) throw e;
+      }
     }
     const fresh = await fetchRelease(rel.id);
     return { ...toSummary(fresh), updated_at: stampNow() };
