@@ -216,6 +216,7 @@ export function Sign() {
             <details className="aq-sign-privacy">
               <summary>개인정보 수집·이용 안내 보기</summary>
               <ul>{SIGNING_PRIVACY_NOTICE.map(line => <li key={line}>{line}</li>)}</ul>
+              <p><a href="/privacy" target="_blank" rel="noopener" className="aq-inline-link">개인정보 처리방침 전체 보기</a></p>
             </details>
           </div>
         )}
@@ -271,3 +272,4 @@ export function Sign() {
     </div>
   );
 }
+
