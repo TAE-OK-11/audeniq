@@ -107,6 +107,7 @@ pub fn router(s: AppState) -> Router {
             "/api/orgs/{org}/releases/{id}/withdraw",
             post(withdraw_release),
         )
+        .route("/api/orgs/{org}/releases/{id}/revise", post(revise_release))
         .route("/api/orgs/{org}/withdrawals", get(withdraw_quota))
         .route(
             "/api/orgs/{org}/releases/{id}/submission",
@@ -658,6 +659,16 @@ async fn withdraw_release(
     let a = auth::actor(&s.pool, &h, &s.config, true).await?;
     Ok(Json(
         crate::withdraw::withdraw_by_artist(&s.pool, &a, org, id).await?,
+    ))
+}
+async fn revise_release(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, true).await?;
+    Ok(Json(
+        crate::post_release::open_edit(&s.pool, &a, org, id).await?,
     ))
 }
 async fn withdraw_quota(

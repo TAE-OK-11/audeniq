@@ -38,6 +38,7 @@ pub mod partners;
 pub mod password_reset;
 pub mod photo;
 pub mod portal;
+pub mod post_release;
 pub mod preflight;
 pub mod preparation_model;
 pub mod protected_admin;

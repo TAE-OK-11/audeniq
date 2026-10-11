@@ -317,14 +317,28 @@ pub async fn enqueue_delivery_jobs(pool: &PgPool, package_id: Uuid) -> Result<(V
         {
             continue;
         }
+        // A partner that already has this release (an earlier package was
+        // delivered and not taken down) gets an Update, never a second new
+        // release (post-release edit, 0091).
         let job_id: Option<Uuid> = sqlx::query_scalar(
-            "INSERT INTO execution.delivery_jobs(id,org_id,package_id,partner_id)
-             VALUES($1,$2,$3,$4) ON CONFLICT(org_id,package_id,partner_id) DO NOTHING RETURNING id",
+            "INSERT INTO execution.delivery_jobs(id,org_id,package_id,partner_id,supersedes_job_id)
+             VALUES($1,$2,$3,$4,(
+               SELECT j.id FROM execution.delivery_jobs j
+                 JOIN distribution.distribution_packages dp ON dp.id=j.package_id
+                 JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id
+                WHERE j.org_id=$2 AND cr.release_id=$5 AND j.partner_id=$4
+                  AND j.status='DELIVERED' AND j.package_id<>$3
+                  AND NOT EXISTS (SELECT 1 FROM execution.live_bindings b
+                                   WHERE b.org_id=j.org_id AND b.package_id=j.package_id AND b.partner_id=j.partner_id
+                                     AND b.live_status IN ('TAKEDOWN_REQUESTED','TAKEN_DOWN'))
+                ORDER BY j.updated_at DESC LIMIT 1))
+             ON CONFLICT(org_id,package_id,partner_id) DO NOTHING RETURNING id",
         )
         .bind(Uuid::new_v4())
         .bind(org_id)
         .bind(package_id)
         .bind(partner_id)
+        .bind(release_id)
         .fetch_optional(&mut *tx)
         .await?;
         if let Some(id) = job_id {
@@ -864,7 +878,7 @@ pub async fn run_delivery(
         return Err(e);
     }
     // E-2. Same poisoned-transaction rule as E-1.
-    let package = match materialize(pool, &mut tx, storage, job).await {
+    let mut package = match materialize(pool, &mut tx, storage, job).await {
         Ok(p) => p,
         Err(e) => {
             let msg = format!("{e:?}");
@@ -895,6 +909,44 @@ pub async fn run_delivery(
         )
         .await?;
         return Err(e);
+    }
+    // Post-release edit (0091): the partner already has this release, so the
+    // new package goes out as an ERN Update in the first delivery's thread,
+    // through the adapter's update call — never as a second new release.
+    let supersedes: Option<Uuid> =
+        sqlx::query_scalar("SELECT supersedes_job_id FROM execution.delivery_jobs WHERE id=$1")
+            .bind(job.id)
+            .fetch_one(&mut *tx)
+            .await?;
+    let mut update_target: Option<String> = None;
+    if let Some(prior) = supersedes {
+        if !adapter.capabilities().update_release {
+            tx.rollback().await?;
+            fail_job(
+                pool,
+                job,
+                "FAILED",
+                "PARTNER_UPDATE_UNSUPPORTED",
+                Some("PARTNER_REJECTED"),
+                Some(json!({"stage":"E-2","supersedes_job_id":prior})),
+            )
+            .await?;
+            return Err(Error::PolicyGate("PARTNER_UPDATE_UNSUPPORTED"));
+        }
+        let thread = first_delivery_message_id(&mut tx, prior, &job.partner_id).await?;
+        let update = followup_package_in_thread(
+            pool,
+            job.org_id,
+            job.package_id,
+            &job.partner_id,
+            crate::ddex_ern::MessageSubType::Update,
+            thread,
+        )
+        .await?;
+        if !update.ern_xml.is_empty() {
+            package.ern_xml = update.ern_xml;
+        }
+        update_target = accepted_message_id(pool, job.org_id, prior).await?;
     }
 
     // E-3. The attempt row (with its idempotency key) commits before the
@@ -943,7 +995,11 @@ pub async fn run_delivery(
     // A partner id the adapter picks itself (DDEX batch folder) is part of
     // the attempt record before the call: after a crash or lost response
     // the inquiry asks about exactly this submission.
-    let planned_message_id = adapter.plan_message_id(&package);
+    let planned_message_id = if supersedes.is_some() {
+        update_target.clone()
+    } else {
+        adapter.plan_message_id(&package)
+    };
     let inserted = sqlx::query_scalar::<_, i32>(
         "INSERT INTO execution.delivery_attempts(id,org_id,job_id,attempt_no,idempotency_key,request_sha256,outcome,partner_message_id)
          VALUES($1,$2,$3,$4,$5,$6,'IN_FLIGHT',$7) ON CONFLICT DO NOTHING RETURNING 1",
@@ -974,7 +1030,17 @@ pub async fn run_delivery(
         planned_message_id,
         package,
     };
-    let outcome = adapter.send_or_publish(&ctx).await;
+    let outcome = match supersedes {
+        Some(prior) => {
+            adapter
+                .update_release(
+                    &ctx,
+                    &json!({"reason": "POST_RELEASE_EDIT", "supersedes_job_id": prior}),
+                )
+                .await
+        }
+        None => adapter.send_or_publish(&ctx).await,
+    };
 
     // Record the outcome. Every branch is terminal for this attempt; only
     // Accepted advances the job, and Unknown/Timeout never auto-retry.
@@ -991,7 +1057,12 @@ pub async fn run_delivery(
             .execute(&mut *tx)
             .await?;
             set_job_status(&mut tx, job, "DELIVERED", None).await?;
-            upsert_live_binding(&mut tx, job, "INGESTING", None).await?;
+            match supersedes {
+                // An accepted Update keeps the release where it is at the
+                // partner: carry its live status and partner id over.
+                Some(prior) => carry_live_binding(&mut tx, job, prior).await?,
+                None => upsert_live_binding(&mut tx, job, "INGESTING", None).await?,
+            }
             tx.commit().await?;
             Ok("DELIVERED".to_string())
         }
@@ -1073,6 +1144,62 @@ pub async fn run_delivery(
             Ok("AWAITING_RECONCILIATION".to_string())
         }
     }
+}
+
+/// MessageId of the message that first delivered the release to this
+/// partner: follow the supersede chain back to the original job.
+async fn first_delivery_message_id(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    prior: Uuid,
+    partner_id: &str,
+) -> Result<Option<String>> {
+    let xml: Option<String> = sqlx::query_scalar(
+        "WITH RECURSIVE chain(id, package_id, supersedes_job_id, depth) AS (
+           SELECT id, package_id, supersedes_job_id, 0 FROM execution.delivery_jobs WHERE id=$1
+           UNION ALL
+           SELECT j.id, j.package_id, j.supersedes_job_id, c.depth+1
+             FROM execution.delivery_jobs j JOIN chain c ON j.id=c.supersedes_job_id
+            WHERE c.depth < 100)
+         SELECT COALESCE(m.ern_xml, pa.ern_xml)
+           FROM (SELECT package_id FROM chain ORDER BY depth DESC LIMIT 1) root
+           LEFT JOIN execution.adapter_profiles p ON p.partner_id=$2
+           LEFT JOIN distribution.ddex_messages m ON m.package_id=root.package_id AND m.dsp_id=p.dsp_id
+           LEFT JOIN distribution.preparation_artifacts pa ON pa.package_id=root.package_id",
+    )
+    .bind(prior)
+    .bind(partner_id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .flatten();
+    Ok(xml.and_then(|x| {
+        crate::transport::xml_values(&x, "MessageId")
+            .into_iter()
+            .next()
+    }))
+}
+
+/// The new package inherits the superseded package's binding at the partner.
+async fn carry_live_binding(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    job: &DeliveryJob,
+    prior: Uuid,
+) -> Result<()> {
+    let (status, partner_release_id): (Option<String>, Option<String>) = sqlx::query_as(
+        "SELECT b.live_status, b.partner_release_id FROM execution.delivery_jobs j
+           LEFT JOIN execution.live_bindings b ON b.org_id=j.org_id AND b.package_id=j.package_id AND b.partner_id=j.partner_id
+          WHERE j.id=$1",
+    )
+    .bind(prior)
+    .fetch_optional(&mut **tx)
+    .await?
+    .unwrap_or((None, None));
+    upsert_live_binding(
+        tx,
+        job,
+        status.as_deref().unwrap_or("INGESTING"),
+        partner_release_id.as_deref(),
+    )
+    .await
 }
 
 async fn upsert_live_binding(
@@ -1789,6 +1916,20 @@ async fn followup_package(
     partner_id: &str,
     sub_type: crate::ddex_ern::MessageSubType,
 ) -> Result<TransferPackage> {
+    followup_package_in_thread(pool, org, package_id, partner_id, sub_type, None).await
+}
+
+/// As [`followup_package`]; `thread` is the MessageId of the message that
+/// first delivered the release to this partner (an Update built from a newer
+/// package must continue that thread, not start its own).
+async fn followup_package_in_thread(
+    pool: &PgPool,
+    org: Uuid,
+    package_id: Uuid,
+    partner_id: &str,
+    sub_type: crate::ddex_ern::MessageSubType,
+    thread: Option<String>,
+) -> Result<TransferPackage> {
     let mut tx = pool.begin().await?;
     authorize_org(&mut tx, org).await?;
     let row = sqlx::query(
@@ -1843,7 +1984,7 @@ async fn followup_package(
                 .map(|d| d.spec().deal)
                 .unwrap_or(&crate::ddex_ern::DEAL_SUBSCRIPTION),
             message_id: format!("{original_id}-{suffix}{}", now.format("%Y%m%d%H%M%S")),
-            message_thread_id: Some(original_id),
+            message_thread_id: Some(thread.unwrap_or(original_id)),
             message_sub_type: sub_type,
             created_at: now.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
             sender_name: row.get("sender_name"),

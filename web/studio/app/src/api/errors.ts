@@ -30,6 +30,9 @@ export class PartialSaveError extends ApiError {
 
 /** 백엔드 오류 코드(`{ error: { code } }`) → 사용자에게 보여줄 한국어 문구 */
 const CODE_MESSAGES: Record<string, string> = {
+  RELEASE_NOT_DELIVERED: '아직 플랫폼에 배급되지 않은 발매예요. 검토 중인 발매는 보완 요청이나 신청 취소로 고쳐 주세요.',
+  RELEASE_DELIVERY_IN_PROGRESS: '플랫폼에 전송 중인 작업이 끝난 뒤에 수정할 수 있어요.',
+  RELEASE_ON_HOLD: '권리 확인을 위해 보류된 발매라 지금은 수정할 수 없어요. 문의로 알려 주세요.',
   UNAUTHENTICATED: '로그인이 필요해요.',
   FORBIDDEN: '이 작업을 할 수 있는 권한이 없어요. 새로고침 후 다시 시도해 주세요.',
   NOT_FOUND: '요청한 정보를 찾을 수 없어요. 삭제됐거나 주소가 잘못됐을 수 있어요.',

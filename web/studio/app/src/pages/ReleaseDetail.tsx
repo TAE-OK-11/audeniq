@@ -154,6 +154,23 @@ export function ReleaseDetail() {
   const proofs = pendingProofs(allDocs, rel.id, rel.title).filter(doc => !linkedDocs.has(doc.id));
   const docsOnly = needsFix && rel.fixKind === 'documents';
 
+  // 발매 후 수정: 서버에서 수정 가능한 상태로 연 뒤 신청서를 고친다. 다시 접수하면 검사와
+  // 담당자 확인을 거쳐 이미 배급된 플랫폼에 수정 내용(Update)이 전송된다
+  const startRevision = async () => {
+    const go = await confirm({
+      title: '발매 정보를 수정할까요?',
+      message: '고친 뒤 다시 접수하면 검사와 담당자 확인을 거쳐 이미 배급된 플랫폼에 수정 내용을 보내요. 그동안 플랫폼의 기존 정보는 그대로 유지돼요.',
+      confirmLabel: '수정 시작',
+    });
+    if (!go) return;
+    try {
+      await api.reviseRelease(rel.id);
+      nav(`/upload?edit=${encodeURIComponent(rel.id)}`);
+    } catch (err) {
+      toast(errorMessage(err, '지금은 수정을 시작할 수 없어요. 잠시 후 다시 시도해 주세요.'));
+    }
+  };
+
   // 접수한 신청 취소 — 한 달 3회까지 직접, 그 이상·배급 시작 후는 문의로
   const canWithdraw = ['review', 'needs', 'scheduled'].includes(rel.status);
   const askByInquiry = () => nav(`/inquiries?new=cancel&release=${encodeURIComponent(rel.id)}`);
@@ -225,7 +242,7 @@ export function ReleaseDetail() {
       {rel.status !== 'closed' && !rejected && !needsFix && (
         <button
           type="button" className={`ui-btn ${isDraft ? 'is-primary' : 'is-soft'}`}
-          onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}
+          onClick={rel.status === 'live' ? startRevision : () => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}
         >
           {editLabel}
         </button>

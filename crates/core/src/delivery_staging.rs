@@ -1021,7 +1021,13 @@ async fn auto_approve(
           AND ar.body->'release'->'draft'->'platforms'<>'[]'::jsonb
           AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(ar.body->'tracks') t WHERE NOT t ? 'lyrics')
           AND cp.body->>'policy_version'='v1-self'
-          AND (cp.body->>'valid_until')::timestamptz>now(),false)
+          AND (cp.body->>'valid_until')::timestamptz>now()
+          -- A post-release edit (an earlier package already delivered) is
+          -- re-reviewed by staff before the Update goes out (0091).
+          AND NOT EXISTS (SELECT 1 FROM execution.delivery_jobs j
+                JOIN distribution.distribution_packages dp2 ON dp2.id=j.package_id
+                JOIN distribution.canonical_releases cr2 ON cr2.id=dp2.canonical_release_id
+               WHERE j.org_id=r.org_id AND cr2.release_id=r.id AND j.status='DELIVERED' AND j.package_id<>$4),false)
          FROM catalog.releases r
          JOIN distribution.distribution_packages dp ON dp.id=$4 AND dp.org_id=r.org_id
          JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id AND cr.release_id=r.id AND cr.revision_id=$3

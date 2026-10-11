@@ -42,6 +42,8 @@ export const api = {
   deleteRelease: (id: string): Promise<void> => (MOCK ? mockApi.deleteRelease(id) : remoteApi.deleteRelease(id)),
   /** 접수한 발매 신청 취소 — 한 달에 3회까지 직접, 그 이상은 문의로 */
   withdrawRelease: (id: string): Promise<WithdrawQuota> => (MOCK ? mockApi.withdrawRelease(id) : remoteApi.withdrawRelease(id)),
+  /** 발매 후 수정 시작 — 다시 접수하면 담당자 확인 후 플랫폼에 수정 내용을 보낸다 (체험 모드는 바로 수정) */
+  reviseRelease: (id: string): Promise<void> => (MOCK ? Promise.resolve() : remoteApi.reviseRelease(id)),
   withdrawQuota: (): Promise<WithdrawQuota> => (MOCK ? mockApi.withdrawQuota() : remoteApi.withdrawQuota()),
   preflight: async (id: string): Promise<PreflightIssue[]> => (MOCK ? [] : remoteApi.preflight(id)),
   /** 플랫폼별 배급 진행 — 체험 모드에는 실제 배급이 없어 빈 목록 */

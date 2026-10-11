@@ -72,6 +72,8 @@ pub struct ReceivedSend {
     pub package_hash: String,
     /// SHA-256 of the transfer document bytes the adapter actually received.
     pub ern_sha256: String,
+    /// The transfer document itself (tests check what went out).
+    pub ern_xml: String,
 }
 
 #[derive(Debug, Clone)]
@@ -287,6 +289,7 @@ impl DspAdapter for MockDsp {
             attempt_no: ctx.attempt_no,
             package_hash: ctx.package.package_hash.clone(),
             ern_sha256: crate::domain::sha256_hex(&ctx.package.ern_xml),
+            ern_xml: String::from_utf8_lossy(&ctx.package.ern_xml).into_owned(),
         });
         let pmid = Self::fresh_message_id(&inner);
         let state = SubmissionState {
@@ -455,6 +458,7 @@ impl DspAdapter for MockDsp {
             attempt_no: ctx.attempt_no,
             package_hash: ctx.package.package_hash.clone(),
             ern_sha256: crate::domain::sha256_hex(&ctx.package.ern_xml),
+            ern_xml: String::from_utf8_lossy(&ctx.package.ern_xml).into_owned(),
         });
         Ok(SendOutcome::Accepted {
             partner_message_id: format!("mock-update-{}", Uuid::new_v4().simple()),
@@ -469,6 +473,7 @@ impl DspAdapter for MockDsp {
             attempt_no: ctx.attempt_no,
             package_hash: ctx.package.package_hash.clone(),
             ern_sha256: crate::domain::sha256_hex(&ctx.package.ern_xml),
+            ern_xml: String::from_utf8_lossy(&ctx.package.ern_xml).into_owned(),
         });
         // Mark every accepted submission taken down partner-side.
         for s in inner.submissions.values_mut() {

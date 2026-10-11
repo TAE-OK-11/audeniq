@@ -631,6 +631,9 @@ export const remoteApi = {
     const r = await req<{ quota: WithdrawQuota }>(`${detailPath(id)}/withdraw`, { method: 'POST', body: {} });
     return r.quota;
   },
+  async reviseRelease(id: string): Promise<void> {
+    await req(`${detailPath(id)}/revise`, { method: 'POST', body: {} });
+  },
   async withdrawQuota(): Promise<WithdrawQuota> {
     return req<WithdrawQuota>(orgPath('/withdrawals'));
   },

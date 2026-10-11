@@ -4356,3 +4356,112 @@ async fn studio_mockdsp_is_selectable_and_delivers(pool: PgPool) {
     .unwrap();
     assert!(!detail.contains(&studio_dsp.to_string()), "{detail}");
 }
+
+/// 감사 1번: a title fixed after release reaches the DSP. The owner reopens
+/// the delivered release, resubmits it through Stage 1–3, and the new
+/// package goes to the partner that already has it as an Update (not a
+/// second new release) carrying the new title; the live status carries over.
+#[sqlx::test]
+async fn post_release_edit_is_delivered_as_an_update(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let revise = format!("/api/orgs/{}/releases/{}/revise", ctx.org, ctx.release);
+    let (s, v) = call(&ctx.app, "POST", &revise, json!({}), Some(&ctx.user)).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(v["error"]["code"], "RELEASE_NOT_DELIVERED");
+
+    let mock = MockDsp::new(MockBehavior::Accept);
+    let (first_job, status) = run_send(&pool, &ctx, &mock).await;
+    assert_eq!(status, "DELIVERED");
+    let first_live = live_status(&pool, ctx.org, ctx.package_id).await;
+    // The first preparation's staging job is still queued ahead.
+    assert_eq!(run_one(&pool, &ctx.store, "distribution", "delivery.stage").await, "SUCCEEDED");
+
+    let (s, v) = call(&ctx.app, "POST", &revise, json!({}), Some(&ctx.user)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(
+        release_status(&pool, ctx.release).await,
+        "STAGE3_CORRECTION"
+    );
+    sqlx::query("UPDATE catalog.tracks SET title='T1 Revised' WHERE release_id=$1")
+        .bind(ctx.release)
+        .execute(&pool)
+        .await
+        .unwrap();
+    consent_and_submit(
+        &ctx.app,
+        &ctx.user,
+        ctx.release,
+        &format!("k-revise-{}", Uuid::new_v4()),
+    )
+    .await;
+    assert_eq!(
+        run_one(&pool, &ctx.store, "qc", "stage1").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        run_one(&pool, &ctx.store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        run_one(&pool, &ctx.store, "distribution", "prepare_release").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        release_status(&pool, ctx.release).await,
+        "READY_FOR_DELIVERY"
+    );
+    let new_package: Uuid = sqlx::query_scalar(
+        "SELECT dp.id FROM distribution.distribution_packages dp
+         JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id
+         WHERE cr.release_id=$1 AND dp.id<>$2",
+    )
+    .bind(ctx.release)
+    .bind(ctx.package_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let (job_ids, org) = execution::enqueue_delivery_jobs(&pool, new_package)
+        .await
+        .unwrap();
+    assert_eq!(job_ids.len(), 1);
+    let mut c = authed(&pool, org).await;
+    let supersedes: Option<Uuid> =
+        sqlx::query_scalar("SELECT supersedes_job_id FROM execution.delivery_jobs WHERE id=$1")
+            .bind(job_ids[0])
+            .fetch_one(&mut *c)
+            .await
+            .unwrap();
+    drop(c);
+    assert_eq!(
+        supersedes,
+        Some(first_job),
+        "the new job updates the delivered one"
+    );
+    let job = execution::claim_delivery_job(&pool, org, "mockdsp", "test-worker", 60)
+        .await
+        .unwrap()
+        .expect("update job claimed");
+    let dyn_store: Arc<dyn ObjectStore> = ctx.store.clone();
+    let status = execution::run_delivery(&pool, &dyn_store, &mock, &job)
+        .await
+        .unwrap();
+    assert_eq!(status, "DELIVERED");
+    let sent = mock.received();
+    assert_eq!(
+        sent.len(),
+        2,
+        "one release send, then one update — no second new release"
+    );
+    let update = sent.last().unwrap();
+    assert!(
+        update.idempotency_key.ends_with(":update"),
+        "{}",
+        update.idempotency_key
+    );
+    assert!(
+        update.ern_xml.contains("T1 Revised"),
+        "the fixed title reached the wire"
+    );
+    assert_eq!(live_status(&pool, ctx.org, new_package).await, first_live);
+}
