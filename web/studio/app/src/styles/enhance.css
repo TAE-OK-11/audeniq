@@ -1579,7 +1579,7 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-bundle-docs li.is-current .aq-bundle-no{background:var(--aq-e-blue-soft);color:var(--aq-e-blue)}
 .aq-bundle-docs .ui-btn.is-white{white-space:nowrap}
 :is(#root) .aq-bundle-sign{min-height:var(--aq-h-sm)!important;padding:0 14px!important;font-size:13px!important;border-radius:var(--aq-r-sm)!important;white-space:nowrap}
-.aq-bundle-sub{margin:18px 0 8px;font-size:14px;font-weight:800;color:var(--aq-e-ink)}
+.aq-bundle-sub,.ui-card>h3.aq-bundle-sub{margin:18px 0 8px;font-size:14px;font-weight:800;color:var(--aq-e-ink)}
 
 /* 배급 계약서 최종본 (/contracts/:id) — 신청서와 같은 서류 스타일에 계약서 조항만 더한다 */
 .aq-paper-lead{margin:0 0 24px;font-size:14px;line-height:1.75;color:var(--aq-text)}
@@ -1611,8 +1611,8 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-alert-pref .min-0>span{font-size:13px;line-height:1.55;color:var(--aq-text-3)}
 .aq-alert-pref .aq-switch input:disabled+span{opacity:.5}
 
-/* 발매 상세 '문서 관리' — 카드 아래 한 줄 전체 */
-.aq-doc-manage{display:flex;width:100%;margin-top:14px}
+/* 발매 상세 '문서 관리' — 카드 아래 한 줄 전체 (뒤에 오는 공통 .ui-btn이 덮지 않게 두 클래스로) */
+.ui-btn.aq-doc-manage{display:flex;width:100%;margin-top:14px}
 
 /* 아이콘 칸 색 — 할 일 종류·서류 상태에 맞춘 색조 */
 .aq-task.is-warn .ui-icon{--tone-bg:var(--aq-amber-100);--tone-fg:#C26A1E}
