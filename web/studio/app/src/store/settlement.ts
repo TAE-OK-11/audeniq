@@ -35,16 +35,17 @@ export const statementsStore = createStore<Statement[]>(MOCK ? INITIAL_STATEMENT
 export const payoutsStore = createStore<Payout[]>(MOCK ? INITIAL_PAYOUTS : [], { persist: MOCK ? 'payouts' : undefined, revive: validRows });
 
 /** 실서버 정산 요약 (원장 기준 확정액·진행 중 요청·요청 가능액) */
-export interface FinanceState { payable: number; pending: number; available: number; minimum: number; loaded: boolean }
-export const financeStore = createStore<FinanceState>({ payable: 0, pending: 0, available: 0, minimum: 10000, loaded: false });
+/** held: 분쟁·중단으로 보류된 곡의 정산금 — 보류가 풀릴 때까지 요청할 수 없다 */
+export interface FinanceState { payable: number; pending: number; available: number; held: number; minimum: number; loaded: boolean }
+export const financeStore = createStore<FinanceState>({ payable: 0, pending: 0, available: 0, held: 0, minimum: 10000, loaded: false });
 
 /** 화면용 잔액 — 체험 모드는 기록 합계, 실서버는 원장 요약 */
-export function useBalance(): { total: number; used: number; left: number; minimum: number } {
+export function useBalance(): { total: number; used: number; left: number; minimum: number; held: number } {
   const statements = statementsStore.use();
   const payouts = payoutsStore.use();
   const fin = financeStore.use();
-  if (MOCK) return { ...balance(statements, payouts), minimum: 1 };
-  return { total: fin.payable, used: fin.pending, left: fin.available, minimum: fin.minimum };
+  if (MOCK) return { ...balance(statements, payouts), minimum: 1, held: 0 };
+  return { total: fin.payable, used: fin.pending, left: fin.available, minimum: fin.minimum, held: fin.held };
 }
 
 export function balance(statements: Statement[], payouts: Payout[]) {

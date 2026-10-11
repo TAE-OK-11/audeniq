@@ -1330,6 +1330,99 @@ async fn staff_sheet_shows_the_signed_application_with_signature_and_contact(poo
     );
 }
 
+/// A disputed track's royalties are held: an active ISRC hold takes its
+/// ledger lines out of the withdrawable balance until the hold is released.
+#[sqlx::test]
+async fn held_track_royalties_are_not_withdrawable(pool: PgPool) {
+    key();
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    use audeniq_core::finance::{self, EntrySide, LedgerEntryInput, PostTransaction};
+    for (isrc, amount) in [("KRA402600001", "30000"), ("KRA402600002", "20000")] {
+        let entry = |account, side| LedgerEntryInput {
+            account,
+            side,
+            amount: amount.parse().unwrap(),
+            currency: None,
+            party_id: Some(u.party),
+            isrc: Some(isrc),
+            split_snapshot_id: None,
+        };
+        finance::post_transaction(
+            &pool,
+            u.org,
+            PostTransaction {
+                transaction_code: "ROYALTY_ACCRUAL",
+                currency: "KRW",
+                entries: vec![
+                    entry("ROYALTY_RECEIVABLE", EntrySide::Debit),
+                    entry("ROYALTY_PAYABLE", EntrySide::Credit),
+                ],
+                match_status: Some("AUTO"),
+                fx_rate: None,
+                fee_policy_version: None,
+                contract_version: None,
+                tax_rule_version: None,
+                source_ref: json!({"isrc": isrc}),
+                description: "accrual",
+                created_by: None,
+            },
+        )
+        .await
+        .unwrap();
+    }
+    let summary = |app: Router, u: User| async move {
+        call(
+            &app,
+            "GET",
+            &org_path(&u, "/finance/summary"),
+            Value::Null,
+            Some(&u),
+        )
+        .await
+        .2
+    };
+    let hold = finance::place_hold(
+        &pool,
+        u.org,
+        Some(u.user),
+        finance::HoldScope::Isrc,
+        "kra402600001",
+        "권리 분쟁 접수",
+        "RIGHTS_DISPUTE",
+    )
+    .await
+    .unwrap();
+    let v = summary(app.clone(), u.clone()).await;
+    assert_eq!(v["payable"], "50000");
+    assert_eq!(v["held"], "30000");
+    assert_eq!(v["available"], "20000");
+    call(
+        &app,
+        "PUT",
+        &org_path(&u, "/payout-account"),
+        json!({"payee_type":"INDIVIDUAL","holder_name":"서린","bank_name":"국민은행","account_number":"12345678901234"}),
+        Some(&u),
+    )
+    .await;
+    let (s, _, v) = call(
+        &app,
+        "POST",
+        &org_path(&u, "/finance/payouts"),
+        json!({"amount":"25000","idempotency_key":"held-payout-1"}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(v["error"]["code"], "PAYOUT_EXCEEDS_BALANCE");
+    finance::release_hold(&pool, u.org, u.user, hold)
+        .await
+        .unwrap();
+    let v = summary(app.clone(), u.clone()).await;
+    assert_eq!(v["held"], "0");
+    assert_eq!(v["available"], "50000");
+}
+
 #[sqlx::test]
 async fn settlement_balance_payout_requests_and_reports(pool: PgPool) {
     key();

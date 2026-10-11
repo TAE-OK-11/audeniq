@@ -70,7 +70,7 @@ export function clearPortal() {
   setDocs([]);
   statementsStore.set([]);
   payoutsStore.set([]);
-  financeStore.set({ payable: 0, pending: 0, available: 0, minimum: 10000, loaded: false });
+  financeStore.set({ payable: 0, pending: 0, available: 0, held: 0, minimum: 10000, loaded: false });
 }
 
 /** 알림을 새로 받고 처음 보는 읽지 않은 알림을 돌려준다.

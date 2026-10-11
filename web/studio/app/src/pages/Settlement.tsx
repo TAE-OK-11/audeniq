@@ -96,7 +96,7 @@ export function Settlement() {
 
   const paymentRegistered = isPaymentRegistered(payment);
 
-  const { total, used, left, minimum } = useBalance();
+  const { total, used, left, minimum, held } = useBalance();
   const [requesting, setRequesting] = useState(false);
 
   const openPayoutModal = () => {
@@ -201,7 +201,7 @@ export function Settlement() {
         <h2 id="settleHeroHeading">요청 전 잔액</h2>
         <strong className="settle-hero-amount"><Money value={left} animate /></strong>
         <p className="settle-hero-sub">
-          {MOCK ? `기록한 정산액 ${money(total)} · 지급 요청 합계 ${money(used)}` : `확정 정산액 ${money(total)} · 처리 중인 지급 ${money(used)}`}
+          {MOCK ? `기록한 정산액 ${money(total)} · 지급 요청 합계 ${money(used)}` : `확정 정산액 ${money(total)} · 처리 중인 지급 ${money(used)}${held > 0 ? ` · 권리 확인 중 보류 ${money(held)}` : ''}`}
         </p>
         <div className="settle-hero-account">
           {paymentRegistered && payment ? (
