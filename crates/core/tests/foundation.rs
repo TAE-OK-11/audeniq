@@ -184,7 +184,18 @@ async fn call(
 async fn user(app: &Router) -> User {
     let email = format!("{}@example.test", Uuid::new_v4());
     let credentials = json!({"email":email,"password":"Long-test-password-123!"});
-    let (s, _, r) = call(app, "POST", "/api/auth/register", credentials.clone(), None).await;
+    let (s, _, r) = call(
+        app,
+        "POST",
+        "/api/auth/register",
+        {
+            let mut b = credentials.clone();
+            b["consents"] = json!(["terms", "privacy"]);
+            b
+        },
+        None,
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "{r}");
     let (s, h, l) = call(app, "POST", "/api/auth/login", credentials, None).await;
     assert_eq!(s, StatusCode::OK, "{l}");
@@ -241,7 +252,7 @@ async fn auth_audit_uses_server_request_id(pool: PgPool) {
         &api,
         "POST",
         "/api/auth/register",
-        json!({"email":"request-id@example.test","password":"Long-test-password-123!"}),
+        json!({"email":"request-id@example.test","password":"Long-test-password-123!","consents":["terms","privacy"]}),
         None,
     )
     .await;

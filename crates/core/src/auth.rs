@@ -26,6 +26,16 @@ pub struct Credentials {
     pub email: String,
     pub password: String,
 }
+/// Sign-up: credentials plus the agreements the person accepted
+/// (consents::Context::Signup — every required item, recorded server-side).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RegisterInput {
+    pub email: String,
+    pub password: String,
+    #[serde(default)]
+    pub consents: Vec<String>,
+}
 pub fn hash_token(s: &str) -> Vec<u8> {
     token_digest(s).to_vec()
 }
@@ -245,8 +255,13 @@ async fn verify(password: String, hash: String) -> bool {
         .await
         .unwrap_or(false)
 }
-pub async fn register(s: &AppState, h: &HeaderMap, input: Credentials) -> Result<Json<Value>> {
+pub async fn register(s: &AppState, h: &HeaderMap, input: RegisterInput) -> Result<Json<Value>> {
     origin(h, &s.config)?;
+    let consent_items = crate::consents::check(crate::consents::Context::Signup, &input.consents)?;
+    let input = Credentials {
+        email: input.email,
+        password: input.password,
+    };
     let email = credentials(&input)?;
     rate_auth(
         &s.pool,
@@ -291,6 +306,16 @@ pub async fn register(s: &AppState, h: &HeaderMap, input: Credentials) -> Result
         .bind(user)
         .execute(&mut *tx)
         .await?;
+    crate::consents::record(
+        &mut tx,
+        user,
+        Some(org),
+        crate::consents::Context::Signup,
+        &consent_items,
+        None,
+        request_id(h),
+    )
+    .await?;
     operations::audit(
         &mut tx,
         Some(user),

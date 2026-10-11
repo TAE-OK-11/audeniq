@@ -324,7 +324,18 @@ async fn ok(app: &Router, method: &str, path: &str, body: Value, u: &User) -> Va
 async fn user(app: &Router) -> User {
     let email = format!("{}@example.test", Uuid::new_v4());
     let credentials = json!({"email":email,"password":"Long-test-password-123!"});
-    let (s, r, _) = call(app, "POST", "/api/auth/register", credentials.clone(), None).await;
+    let (s, r, _) = call(
+        app,
+        "POST",
+        "/api/auth/register",
+        {
+            let mut b = credentials.clone();
+            b["consents"] = json!(["terms", "privacy"]);
+            b
+        },
+        None,
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "{r}");
     let (s, l, cookie) = call(app, "POST", "/api/auth/login", credentials, None).await;
     assert_eq!(s, StatusCode::OK, "{l}");
@@ -1389,7 +1400,18 @@ async fn login_lockout_is_per_source_not_per_account(pool: PgPool) {
     let email = format!("{}@example.test", Uuid::new_v4());
     let good = json!({"email":email,"password":"Long-test-password-123!"});
     let bad = json!({"email":email,"password":"Wrong-password-123456"});
-    let (s, _, _) = call(&e.api, "POST", "/api/auth/register", good.clone(), None).await;
+    let (s, _, _) = call(
+        &e.api,
+        "POST",
+        "/api/auth/register",
+        {
+            let mut b = good.clone();
+            b["consents"] = json!(["terms", "privacy"]);
+            b
+        },
+        None,
+    )
+    .await;
     assert_eq!(s, StatusCode::OK);
     let attacker = [(
         audeniq_core::auth::CLIENT_IP_HEADER,

@@ -356,7 +356,7 @@ async fn available_dsps(
 async fn register(
     State(s): State<AppState>,
     h: HeaderMap,
-    Json(i): Json<auth::Credentials>,
+    Json(i): Json<auth::RegisterInput>,
 ) -> Result<Json<Value>> {
     auth::register(&s, &h, i).await
 }

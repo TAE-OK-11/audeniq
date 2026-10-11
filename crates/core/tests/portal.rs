@@ -161,7 +161,18 @@ async fn call(
 async fn user(app: &Router) -> User {
     let email = format!("{}@example.test", Uuid::new_v4());
     let credentials = json!({"email":email,"password":"Long-test-password-123!"});
-    let (s, _, r) = call(app, "POST", "/api/auth/register", credentials.clone(), None).await;
+    let (s, _, r) = call(
+        app,
+        "POST",
+        "/api/auth/register",
+        {
+            let mut b = credentials.clone();
+            b["consents"] = json!(["terms", "privacy"]);
+            b
+        },
+        None,
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "{r}");
     let (s, h, l) = call(app, "POST", "/api/auth/login", credentials, None).await;
     assert_eq!(s, StatusCode::OK, "{l}");
@@ -832,11 +843,11 @@ async fn payout_account_is_encrypted_masked_and_owner_only(pool: PgPool) {
     )
     .await;
     assert_eq!(v["registered"], false);
-    let bad = json!({"payee_type":"INDIVIDUAL","holder_name":"서린","bank_name":"국민은행","account_number":"12-34"});
+    let bad = json!({"payee_type":"INDIVIDUAL","holder_name":"서린","bank_name":"국민은행","account_number":"12-34","consents":["settlement_terms","privacy","financial_info","payee_accuracy"]});
     let (s, _, v) = call(&app, "PUT", &org_path(&u, "/payout-account"), bad, Some(&u)).await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "{v}");
     assert_eq!(v["error"]["code"], "ACCOUNT_NUMBER_INVALID");
-    let good = json!({"payee_type":"INDIVIDUAL","holder_name":"서린","bank_name":"국민은행","account_number":"123456-78-901234"});
+    let good = json!({"payee_type":"INDIVIDUAL","holder_name":"서린","bank_name":"국민은행","account_number":"123456-78-901234","consents":["settlement_terms","privacy","financial_info","payee_accuracy"]});
     let (s, _, v) = call(
         &app,
         "PUT",
@@ -1097,6 +1108,24 @@ async fn signed_application_creates_agreement_that_signs_after_review(pool: PgPo
     )
     .await;
     assert_eq!(s, StatusCode::OK, "{v}");
+    // 감사 4번: the server keeps its own original of what was signed, its hash,
+    // and who signed it; the browser's hash is kept for comparison only.
+    let (content, server_hash, client_hash, identity): (Value, String, String, Value) = sqlx::query_as(
+        "SELECT content, server_hash, content_hash, signer_identity FROM portal.release_applications WHERE application_no='AUD-20260926-ABCDEF'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(server_hash, audeniq_core::domain::sha256_json(&content));
+    assert_eq!(client_hash, hash);
+    assert_eq!(content["release"]["id"], release.to_string());
+    assert!(content["tracks"].is_array());
+    assert_eq!(
+        content["terms_version"],
+        audeniq_core::agreement::TERMS_VERSION
+    );
+    assert_eq!(identity["user_id"], u.user.to_string());
+    assert_eq!(identity["verified"], false);
     // Retry is idempotent; the same number with other content is a conflict.
     let (s, _, _) = call(
         &app,
@@ -1217,6 +1246,19 @@ async fn signed_application_creates_agreement_that_signs_after_review(pool: PgPo
     .await;
     assert_eq!(s, StatusCode::OK, "{v}");
     assert_eq!(v["status"], "SIGNED");
+    let (signed_hash, signer): (Option<String>, Value) = sqlx::query_as(
+        "SELECT signed_content_hash, signer_identity FROM portal.documents WHERE id::text=$1",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        signed_hash.map(|h| h.len()),
+        Some(64),
+        "the signed content is hashed"
+    );
+    assert_eq!(signer["user_id"], u.user.to_string());
     // Other orgs cannot see the application.
     let other = user(&app).await;
     let (s, _, _) = call(&app, "GET", &path, Value::Null, Some(&other)).await;
@@ -1401,7 +1443,7 @@ async fn held_track_royalties_are_not_withdrawable(pool: PgPool) {
         &app,
         "PUT",
         &org_path(&u, "/payout-account"),
-        json!({"payee_type":"INDIVIDUAL","holder_name":"서린","bank_name":"국민은행","account_number":"12345678901234"}),
+        json!({"payee_type":"INDIVIDUAL","holder_name":"서린","bank_name":"국민은행","account_number":"12345678901234","consents":["settlement_terms","privacy","financial_info","payee_accuracy"]}),
         Some(&u),
     )
     .await;
@@ -1502,7 +1544,7 @@ async fn settlement_balance_payout_requests_and_reports(pool: PgPool) {
     .await;
     assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(v["error"]["code"], "PAYOUT_ACCOUNT_REQUIRED");
-    let acct = json!({"payee_type":"INDIVIDUAL","holder_name":"서린","bank_name":"국민은행","account_number":"12345678901234"});
+    let acct = json!({"payee_type":"INDIVIDUAL","holder_name":"서린","bank_name":"국민은행","account_number":"12345678901234","consents":["settlement_terms","privacy","financial_info","payee_accuracy"]});
     call(
         &app,
         "PUT",
@@ -1673,7 +1715,7 @@ async fn payout_quote_snapshot_cancel_order_and_settle(pool: PgPool) {
     let q = get("/finance/payouts/quote?amount=500").await;
     assert_eq!(q["error"]["code"], "PAYOUT_NET_NOT_POSITIVE");
 
-    let acct = |n: &str| json!({"payee_type":"INDIVIDUAL","holder_name":"서린","bank_name":"국민은행","account_number":n});
+    let acct = |n: &str| json!({"payee_type":"INDIVIDUAL","holder_name":"서린","bank_name":"국민은행","account_number":n,"consents":["settlement_terms","privacy","financial_info","payee_accuracy"]});
     call(
         &app,
         "PUT",
@@ -2105,5 +2147,60 @@ async fn documents_of_deleted_releases_are_not_listed(pool: PgPool) {
         count(&listed),
         0,
         "a deleted release's agreement stays out of 계약서"
+    );
+}
+
+/// 감사 4번: signup and payout-account agreements are required by the server
+/// and kept as append-only consent records.
+#[sqlx::test]
+async fn signup_and_payout_consents_are_recorded(pool: PgPool) {
+    key();
+    let (app, _) = app(pool.clone()).await;
+    let email = format!("{}@example.test", Uuid::new_v4());
+    let (s, _, v) = call(
+        &app,
+        "POST",
+        "/api/auth/register",
+        json!({"email": email, "password": "Long-test-password-123!", "consents": ["terms"]}),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(v["error"]["code"], "CONSENT_REQUIRED");
+    let u = user(&app).await;
+    let items: Value = sqlx::query_scalar(
+        "SELECT items FROM portal.consent_records WHERE user_id=$1 AND context='SIGNUP'",
+    )
+    .bind(u.user)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(items[0]["id"], "terms");
+    assert_eq!(items[0]["version"], audeniq_core::agreement::TERMS_VERSION);
+    let (s, _, v) = call(&app, "PUT", &org_path(&u, "/payout-account"),
+        json!({"payee_type":"INDIVIDUAL","holder_name":"서린","bank_name":"국민은행","account_number":"12345678901234"}), Some(&u)).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(v["error"]["code"], "CONSENT_REQUIRED");
+    let (s, _, v) = call(&app, "PUT", &org_path(&u, "/payout-account"),
+        json!({"payee_type":"INDIVIDUAL","holder_name":"서린","bank_name":"국민은행","account_number":"12345678901234",
+               "consents":["settlement_terms","privacy","financial_info","payee_accuracy"]}), Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (items, subject): (Value, Option<String>) = sqlx::query_as(
+        "SELECT items, subject_hash FROM portal.consent_records WHERE user_id=$1 AND context='PAYOUT_ACCOUNT'")
+        .bind(u.user).fetch_one(&pool).await.unwrap();
+    assert_eq!(items.as_array().unwrap().len(), 4);
+    assert_eq!(
+        items[0]["version"],
+        audeniq_core::consents::SETTLEMENT_TERMS_VERSION
+    );
+    assert_eq!(subject.map(|h| h.len()), Some(64));
+    let err = sqlx::query("UPDATE portal.consent_records SET items='[]' WHERE user_id=$1")
+        .bind(u.user)
+        .execute(&pool)
+        .await
+        .unwrap_err();
+    assert!(
+        err.to_string().to_lowercase().contains("immutable") || err.as_database_error().is_some(),
+        "{err}"
     );
 }

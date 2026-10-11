@@ -524,7 +524,8 @@ export const remoteApi = {
     return { id: r.user_id, email: me.email };
   },
   async signup(email: string, password: string): Promise<User> {
-    await req('/api/auth/register', { method: 'POST', body: { email: email.trim(), password }, quiet401: true });
+    // 가입 화면에서 동의한 필수 약관 — 서버가 항목·판 번호를 동의 기록으로 남긴다
+    await req('/api/auth/register', { method: 'POST', body: { email: email.trim(), password, consents: ['terms', 'privacy'] }, quiet401: true });
     return remoteApi.login(email, password);
   },
   async logout(): Promise<void> {

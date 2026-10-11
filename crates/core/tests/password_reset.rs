@@ -84,7 +84,18 @@ async fn call(
 async fn user(app: &Router) -> User {
     let email = format!("{}@example.test", Uuid::new_v4());
     let credentials = json!({"email": email, "password": "Long-test-password-123!"});
-    let (s, r) = call(app, "POST", "/api/auth/register", credentials.clone(), None).await;
+    let (s, r) = call(
+        app,
+        "POST",
+        "/api/auth/register",
+        {
+            let mut b = credentials.clone();
+            b["consents"] = json!(["terms", "privacy"]);
+            b
+        },
+        None,
+    )
+    .await;
     assert_eq!(s, StatusCode::OK, "{r}");
     let r = app
         .clone()
