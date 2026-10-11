@@ -440,3 +440,148 @@ async fn finance_hold_scopes_payout_exclusion(pool: PgPool) {
         .unwrap();
     assert!(!active);
 }
+
+#[sqlx::test]
+async fn payout_partial_return_is_idempotent_and_restores_only_received_money(pool: PgPool) {
+    let org = org(&pool).await;
+    let creator = Uuid::new_v4();
+    let approver = Uuid::new_v4();
+    let (order, _) = finance::create_payout_order(
+        &pool,
+        org,
+        PayoutOrderInput {
+            idempotency_key: "return-test",
+            payee_party_id: Uuid::new_v4(),
+            amount: dec("2000"),
+            currency: "KRW",
+            created_by: Some(creator),
+        },
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE finance.payout_orders SET fee_amount=500,net_amount=1500 WHERE id=$1")
+        .bind(order)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let make =
+        |reference: &'static str, amount: &str, refund_fee: bool| finance::PayoutReturnInput {
+            bank_reference: reference,
+            returned_amount: dec(amount),
+            refund_fee,
+            evidence: json!({"statement":"synthetic-bank-return"}),
+        };
+    assert!(
+        finance::record_payout_return(&pool, org, approver, order, make("early", "100", false))
+            .await
+            .is_err()
+    );
+    finance::approve_payout_order(&pool, org, approver, order)
+        .await
+        .unwrap();
+    finance::mark_payout_submitted(&pool, org, approver, order, "original-bank-transfer")
+        .await
+        .unwrap();
+    assert!(
+        finance::record_bank_result(
+            &pool,
+            org,
+            approver,
+            order,
+            Some("wrong-transfer"),
+            BankOutcome::Settled,
+            json!({})
+        )
+        .await
+        .is_err()
+    );
+    finance::record_bank_result(
+        &pool,
+        org,
+        approver,
+        order,
+        Some("original-bank-transfer"),
+        BankOutcome::Settled,
+        json!({"confirmed":true}),
+    )
+    .await
+    .unwrap();
+    assert!(
+        finance::record_bank_result(
+            &pool,
+            org,
+            approver,
+            order,
+            None,
+            BankOutcome::Returned,
+            json!({})
+        )
+        .await
+        .is_err()
+    );
+    let first =
+        finance::record_payout_return(&pool, org, approver, order, make("partial", "500", false))
+            .await
+            .unwrap();
+    assert_eq!(
+        first,
+        finance::record_payout_return(&pool, org, approver, order, make("partial", "500", false))
+            .await
+            .unwrap()
+    );
+    assert!(
+        finance::record_payout_return(&pool, org, approver, order, make("partial", "501", false))
+            .await
+            .is_err()
+    );
+    assert!(
+        finance::record_payout_return(&pool, org, approver, order, make("too-much", "1001", false))
+            .await
+            .is_err()
+    );
+    assert!(
+        finance::record_payout_return(&pool, org, approver, order, make("early-fee", "1", true))
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        finance::get_payout_status(&pool, org, order).await.unwrap(),
+        "SETTLED"
+    );
+    let net:rust_decimal::Decimal=sqlx::query_scalar("SELECT SUM(CASE WHEN side='CREDIT' THEN amount ELSE -amount END) FROM finance.ledger_entries WHERE org_id=$1 AND account='ROYALTY_PAYABLE'")
+        .bind(org).fetch_one(&pool).await.unwrap();
+    assert_eq!(net, dec("-1500"));
+    finance::record_payout_return(&pool, org, approver, order, make("final", "1000", true))
+        .await
+        .unwrap();
+    assert_eq!(
+        finance::get_payout_status(&pool, org, order).await.unwrap(),
+        "RETURNED"
+    );
+    // Even after reaching RETURNED, duplicate evidence remains a no-op.
+    finance::record_payout_return(&pool, org, approver, order, make("final", "1000", true))
+        .await
+        .unwrap();
+    assert!(
+        finance::record_payout_return(&pool, org, approver, order, make("another", "1", false))
+            .await
+            .is_err()
+    );
+    let net:rust_decimal::Decimal=sqlx::query_scalar("SELECT SUM(CASE WHEN side='CREDIT' THEN amount ELSE -amount END) FROM finance.ledger_entries WHERE org_id=$1 AND account='ROYALTY_PAYABLE'")
+        .bind(org).fetch_one(&pool).await.unwrap();
+    assert_eq!(net, dec("0"));
+    let n: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM finance.payout_returns WHERE payout_order_id=$1")
+            .bind(order)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(n, 2);
+    assert!(
+        sqlx::query("DELETE FROM finance.payout_returns WHERE payout_order_id=$1")
+            .bind(order)
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+}

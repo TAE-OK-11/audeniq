@@ -548,6 +548,19 @@ pub async fn record_bank_result(
     .await?;
     let (status, amount, currency, payee, fee, net, policy, bank_tx) =
         row.ok_or(Error::NotFound)?;
+    if bank_transaction_id.is_some_and(|id| id.trim().is_empty()) {
+        return Err(Error::Invalid);
+    }
+    if bank_tx
+        .as_deref()
+        .zip(bank_transaction_id)
+        .is_some_and(|(old, new)| old != new)
+    {
+        return Err(Error::PolicyGate("BANK_TRANSACTION_MISMATCH"));
+    }
+    if status == "SETTLED" && outcome == BankOutcome::Returned {
+        return Err(Error::PolicyGate("RETURN_AMOUNT_AND_REFERENCE_REQUIRED"));
+    }
     if status == "SETTLED"
         && outcome == BankOutcome::Settled
         && (bank_transaction_id.is_none() || bank_transaction_id == bank_tx.as_deref())
@@ -635,6 +648,189 @@ pub async fn record_bank_result(
     .map_err(|e| map_unique_violation(e, "BANK_TRANSACTION_ALREADY_USED"))?;
     tx.commit().await?;
     Ok(())
+}
+
+/// Append-only evidence for actual money received back from a settled payout.
+/// Partial returns restore only that amount. Fee refund is explicit and only
+/// allowed with the final full return; the original settlement is preserved.
+pub struct PayoutReturnInput<'a> {
+    pub bank_reference: &'a str,
+    pub returned_amount: Decimal,
+    pub refund_fee: bool,
+    pub evidence: Value,
+}
+
+pub async fn record_payout_return(
+    pool: &PgPool,
+    org: Uuid,
+    actor: Uuid,
+    order_id: Uuid,
+    input: PayoutReturnInput<'_>,
+) -> Result<Uuid> {
+    use sqlx::Row;
+    if input.bank_reference.trim().is_empty()
+        || input.bank_reference != input.bank_reference.trim()
+        || input.bank_reference.len() > 200
+        || input.returned_amount <= Decimal::ZERO
+        || input.evidence.as_object().is_none_or(|e| e.is_empty())
+    {
+        return Err(Error::Invalid);
+    }
+    let mut tx = pool.begin().await?;
+    // Same lock as portal payout requests: restored payables cannot be raced
+    // with reservations. Serializes reused bank references across orders too.
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1::text, 7))")
+        .bind(org)
+        .execute(&mut *tx)
+        .await?;
+    let order = sqlx::query(
+        "SELECT status,amount,currency,payee_party_id,fee_amount,net_amount,
+                fee_policy_version,related_transaction_id
+         FROM finance.payout_orders WHERE org_id=$1 AND id=$2 FOR UPDATE",
+    )
+    .bind(org)
+    .bind(order_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(Error::NotFound)?;
+    let existing = sqlx::query(
+        "SELECT id,payout_order_id,returned_amount,refunded_fee,evidence
+         FROM finance.payout_returns WHERE org_id=$1 AND bank_reference=$2",
+    )
+    .bind(org)
+    .bind(input.bank_reference)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if let Some(r) = existing {
+        if r.get::<Uuid, _>("payout_order_id") != order_id
+            || r.get::<Decimal, _>("returned_amount") != input.returned_amount
+            || (r.get::<Decimal, _>("refunded_fee") > Decimal::ZERO) != input.refund_fee
+            || r.get::<Value, _>("evidence") != input.evidence
+        {
+            return Err(Error::Conflict);
+        }
+        return Ok(r.get("id"));
+    }
+    let status: String = order.get("status");
+    if status != "SETTLED"
+        || order
+            .get::<Option<Uuid>, _>("related_transaction_id")
+            .is_none()
+    {
+        return Err(Error::PolicyGate("PAYOUT_RETURN_REQUIRES_SETTLEMENT"));
+    }
+    let amount: Decimal = order.get("amount");
+    let fee = order
+        .get::<Option<Decimal>, _>("fee_amount")
+        .unwrap_or(Decimal::ZERO);
+    let net = order
+        .get::<Option<Decimal>, _>("net_amount")
+        .unwrap_or(amount - fee);
+    let returned: Decimal = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(returned_amount),0) FROM finance.payout_returns
+         WHERE org_id=$1 AND payout_order_id=$2",
+    )
+    .bind(org)
+    .bind(order_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    let total = returned
+        .checked_add(input.returned_amount)
+        .ok_or(Error::Invalid)?;
+    if total > net {
+        return Err(Error::PolicyGate("RETURN_EXCEEDS_TRANSFER"));
+    }
+    if input.refund_fee && (total != net || fee <= Decimal::ZERO) {
+        return Err(Error::PolicyGate("FEE_REFUND_REQUIRES_FULL_RETURN"));
+    }
+    let refunded_fee = if input.refund_fee { fee } else { Decimal::ZERO };
+    let restored = input
+        .returned_amount
+        .checked_add(refunded_fee)
+        .ok_or(Error::Invalid)?;
+    let payee: Uuid = order.get("payee_party_id");
+    let currency: String = order.get("currency");
+    let policy: Option<String> = order.get("fee_policy_version");
+    let mut entries = vec![
+        LedgerEntryInput {
+            account: "PAYOUT_CLEARING",
+            side: EntrySide::Debit,
+            amount: input.returned_amount,
+            currency: None,
+            party_id: Some(payee),
+            isrc: None,
+            split_snapshot_id: None,
+        },
+        LedgerEntryInput {
+            account: "ROYALTY_PAYABLE",
+            side: EntrySide::Credit,
+            amount: restored,
+            currency: None,
+            party_id: Some(payee),
+            isrc: None,
+            split_snapshot_id: None,
+        },
+    ];
+    if refunded_fee > Decimal::ZERO {
+        entries.push(LedgerEntryInput {
+            account: "PAYOUT_FEE_REVENUE",
+            side: EntrySide::Debit,
+            amount: refunded_fee,
+            currency: None,
+            party_id: None,
+            isrc: None,
+            split_snapshot_id: None,
+        });
+    }
+    let return_id = Uuid::new_v4();
+    let code = format!("PAYOUT_RETURN:{return_id}");
+    let related = post_transaction_in(
+        &mut tx,
+        org,
+        PostTransaction {
+            transaction_code: &code,
+            currency: &currency,
+            entries,
+            match_status: None,
+            fx_rate: None,
+            fee_policy_version: policy.as_deref(),
+            contract_version: None,
+            tax_rule_version: None,
+            source_ref: serde_json::json!({"payout_order_id":order_id,"return_id":return_id,
+            "settlement_transaction_id":order.get::<Option<Uuid>,_>("related_transaction_id"),
+            "bank_reference":input.bank_reference}),
+            description: "confirmed payout return",
+            created_by: Some(actor),
+        },
+    )
+    .await?;
+    sqlx::query(
+        "INSERT INTO finance.payout_returns
+         (id,org_id,payout_order_id,bank_reference,returned_amount,refunded_fee,currency,
+          related_transaction_id,evidence,recorded_by)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+    )
+    .bind(return_id)
+    .bind(org)
+    .bind(order_id)
+    .bind(input.bank_reference)
+    .bind(input.returned_amount)
+    .bind(refunded_fee)
+    .bind(currency)
+    .bind(related)
+    .bind(input.evidence)
+    .bind(actor)
+    .execute(&mut *tx)
+    .await?;
+    if total == net {
+        sqlx::query("UPDATE finance.payout_orders SET status='RETURNED' WHERE org_id=$1 AND id=$2")
+            .bind(org)
+            .bind(order_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
+    Ok(return_id)
 }
 
 /// Turn an artist's payout request into a payout order in one database
