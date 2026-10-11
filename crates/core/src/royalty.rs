@@ -78,7 +78,15 @@ pub fn parse_csv(content: &str) -> Result<Vec<ReportLine>> {
         }
         lines.push(ReportLine {
             line_no: n as i32,
-            isrc: get(&fields, "isrc"),
+            // Reports spell ISRCs as 'usabc2600001' or 'US-ABC-26-00001' too.
+            isrc: get(&fields, "isrc")
+                .map(|i| {
+                    i.chars()
+                        .filter(|c| c.is_ascii_alphanumeric())
+                        .collect::<String>()
+                        .to_ascii_uppercase()
+                })
+                .filter(|i| !i.is_empty()),
             dsp_track_id: get(&fields, "dsp_track_id"),
             quantity,
             gross_amount,
@@ -202,7 +210,38 @@ pub async fn match_report(pool: &PgPool, org_id: Uuid, report_id: Uuid) -> Resul
     .bind(org_id)
     .fetch_all(&mut *tx)
     .await?;
-    let updated = updated_rows.len() as i64;
+    // A recording on both a single and an album is ambiguous by ISRC alone,
+    // and splits are per release. DSP reports name the product too: a line
+    // carrying a UPC matches the one release with that UPC and that ISRC.
+    // The release's UPC is the one the artist entered or the one Stage 3
+    // issued (identifier ledger, RLS-scoped to this org). EAN-13 and UPC-A
+    // spell the same number with a leading zero, so compare without them.
+    sqlx::query("SELECT set_config('app.org_id',$1,true)")
+        .bind(org_id.to_string())
+        .execute(&mut *tx)
+        .await?;
+    let by_product: Vec<Uuid> = sqlx::query_scalar(
+        "UPDATE finance.report_lines rl SET
+           match_status='AUTO',
+           matched_release_id=p.release_id,
+           match_evidence=jsonb_build_object('isrc', rl.isrc, 'upc', rl.raw->>'upc', 'matched_at', now()::text)
+         FROM (SELECT DISTINCT r.id AS release_id, t.isrc, ltrim(COALESCE(r.upc, ia.identifier),'0') AS upc
+                 FROM catalog.releases r
+                 JOIN catalog.tracks t ON t.org_id=r.org_id AND t.release_id=r.id AND t.isrc IS NOT NULL
+                 LEFT JOIN distribution.identifier_assignments ia
+                   ON ia.org_id=r.org_id AND ia.release_id=r.id AND ia.kind='UPC' AND ia.status='ASSIGNED'
+                WHERE r.org_id=$2 AND COALESCE(r.upc, ia.identifier) IS NOT NULL) p
+         WHERE rl.report_id=$1 AND rl.org_id=$2
+           AND rl.match_status='UNMATCHED'
+           AND p.isrc=rl.isrc
+           AND p.upc=ltrim(btrim(rl.raw->>'upc'),'0')
+         RETURNING rl.id",
+    )
+    .bind(report_id)
+    .bind(org_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let updated = (updated_rows.len() + by_product.len()) as i64;
     let unmatched: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM finance.report_lines WHERE report_id=$1 AND match_status='UNMATCHED'",
     )
