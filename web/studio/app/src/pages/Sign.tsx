@@ -7,6 +7,7 @@ import { signingApi, type SigningConsents, type SigningView } from '../api/signi
 import { errorMessage } from '../api/errors';
 import { SignaturePad, type SignaturePadHandle } from '../components/SignaturePad';
 import { compactSignature } from '../lib/application';
+import { todayStr } from '../lib/date';
 import { SIGNING_CONSENTS, SIGNING_PRIVACY_NOTICE, type SigningConsentKey } from '../lib/rightsDocument';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
@@ -181,7 +182,7 @@ export function Sign() {
               <p className="small muted">체험·테스트 환경이에요. 실제 서비스에서는 휴대폰·간편인증(PASS·카카오·네이버·토스) 창이 열려요.</p>
               <div className="aq-sign-grid">
                 <div className="ui-field"><label htmlFor="aqSignName">이름</label><input id="aqSignName" autoComplete="name" value={name} onChange={e => setName(e.target.value)} placeholder={v.signer_name} /></div>
-                <div className="ui-field"><label htmlFor="aqSignBirth">생년월일</label><DateField id="aqSignBirth" value={birth} max={new Date().toISOString().slice(0, 10)} required onChange={setBirth} /></div>
+                <div className="ui-field"><label htmlFor="aqSignBirth">생년월일</label><DateField id="aqSignBirth" value={birth} max={todayStr()} required onChange={setBirth} /></div>
               </div>
               <button type="button" className="ui-btn is-primary studio-submit-wide" disabled={busy} onClick={() => void verify()}>{busy ? '확인 중…' : '본인확인하기'}</button>
             </>
