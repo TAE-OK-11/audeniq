@@ -554,9 +554,16 @@ async fn locked_doc(
 pub async fn check_document(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
     member(&mut tx, a, org, true).await?;
-    locked_doc(&mut tx, a, org, id).await?;
+    let (_, status, current, _) = locked_doc(&mut tx, a, org, id).await?;
+    // Only the first check changes the row. Studio calls this right before
+    // signing or sending a proof to learn the current version; bumping on
+    // every call made staff decisions on the same document fail as stale.
+    if status.ends_with("+CHECKED") {
+        tx.commit().await?;
+        return Ok(json!({"id":id,"row_version":current}));
+    }
     let rv: i64 = sqlx::query_scalar(
-        "UPDATE portal.documents SET checked_at=COALESCE(checked_at,now()),row_version=row_version+1,updated_at=now() WHERE id=$1 RETURNING row_version",
+        "UPDATE portal.documents SET checked_at=now(),row_version=row_version+1,updated_at=now() WHERE id=$1 RETURNING row_version",
     )
     .bind(id)
     .fetch_one(&mut *tx)

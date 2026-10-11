@@ -132,12 +132,16 @@ export function ReleaseDetail() {
 
   const d = rel.draft;
   const isDraft = rel.status === 'draft';
-  const editLabel = isDraft ? '계속 작성' : rel.status === 'needs' ? '보완하기' : rel.status === 'live' ? '수정 요청' : '수정하기';
+  const needsFix = rel.status === 'needs';
+  const rejected = rel.status === 'rejected';
+  // 실서버는 작성 중·보완 요청 상태만 고칠 수 있다 (그 밖은 마법사를 끝까지 채워도 NOT_EDITABLE).
+  // 접수된 뒤의 수정은 문의로 요청하고, 취소된 발매는 고칠 일이 없다.
+  const editInWizard = MOCK ? rel.status !== 'live' : isDraft;
+  const editLabel = isDraft ? '계속 작성' : rel.status === 'needs' ? '보완하기' : editInWizard ? '수정하기' : '수정 요청';
+  const showEdit = rel.status !== 'closed' && rel.status !== 'cancelled' && !rejected && !needsFix;
   const docs = docsForRelease(allDocs, rel.id, rel.title);
   const stage = pipelineIndex(rel.status);
   const genre = d?.genre ? genreLabel(d.genre) : '';
-  const needsFix = rel.status === 'needs';
-  const rejected = rel.status === 'rejected';
   // 발매 완료 후 3일이 지나면 진행 막대는 더 볼 필요가 없어 숨긴다
   const settledLive = rel.status === 'live' && !!rel.release_date
     && Date.now() - new Date(`${rel.release_date}T00:00:00`).getTime() >= 3 * 86_400_000;
@@ -223,10 +227,10 @@ export function ReleaseDetail() {
         </button>
       )}
       {/* 보완하기는 아래 보완 카드 안에 */}
-      {rel.status !== 'closed' && !rejected && !needsFix && (
+      {showEdit && (
         <button
           type="button" className={`ui-btn ${isDraft ? 'is-primary' : 'is-soft'}`}
-          onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}
+          onClick={() => nav(editInWizard ? `/upload?edit=${encodeURIComponent(rel.id)}` : `/inquiries?new=edit&release=${encodeURIComponent(rel.id)}`)}
         >
           {editLabel}
         </button>

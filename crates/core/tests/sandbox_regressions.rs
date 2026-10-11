@@ -1486,6 +1486,45 @@ async fn reused_master_under_new_isrc_goes_to_review(pool: PgPool) {
     );
 }
 
+/// A single's master on a later album keeps its ISRC. That is what the
+/// industry (and ASSET_REUSED's own message) asks for, but IDENTIFIER_IN_USE
+/// used to send the album back for correction because the code was "used".
+#[sqlx::test]
+async fn same_master_keeps_its_isrc_on_a_later_release(pool: PgPool) {
+    let e = env(pool).await;
+    let u = user(&e.api).await;
+    let dir = tmpdir();
+    let audio = upload(
+        &e,
+        &u,
+        "AUDIO",
+        "audio/wav",
+        &good_wav(&dir.0, "a.wav", 440),
+    )
+    .await;
+    let cover = upload(&e, &u, "IMAGE", "image/png", &cover_png(&dir.0)).await;
+    let (first, _, _) = build_release(&e, &u, audio, cover).await;
+    consent_and_submit(&e, &u, first, "sbx-keep-1").await;
+    assert_eq!(run_one(&e, "qc", "stage1").await, "SUCCEEDED");
+    // Same master and ISRC, new UPC for the album.
+    let (second, _, _) = build_release(&e, &u, audio, cover).await;
+    sqlx::query(
+        "UPDATE catalog.releases SET upc='042100005264', row_version=row_version+1 WHERE id=$1",
+    )
+    .bind(second)
+    .execute(&e.owner)
+    .await
+    .unwrap();
+    let revision = consent_and_submit(&e, &u, second, "sbx-keep-2").await;
+    assert_eq!(run_one(&e, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(
+        check_status(&e, revision, "IDENTIFIER_IN_USE").await,
+        "PASS"
+    );
+    assert_eq!(check_status(&e, revision, "ASSET_REUSED").await, "PASS");
+    assert_ne!(release_status(&e, second).await, "STAGE1_CORRECTION");
+}
+
 // ---------------------------------------------------------------------------
 // Round 2.5 (findings_round25.md): review overrides
 // ---------------------------------------------------------------------------

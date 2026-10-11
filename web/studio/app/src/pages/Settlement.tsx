@@ -347,7 +347,7 @@ export function Settlement() {
                     value={amount ? Number(amount).toLocaleString('ko-KR') : ''}
                     onChange={e => setAmount(e.target.value.replace(/\D/g, '').replace(/^0+/, '').slice(0, 15))}
                   />
-                  <button type="button" id="payoutAll" className="ui-btn is-white is-sm" onClick={() => setAmount(String(left))}>전액</button>
+                  <button type="button" id="payoutAll" className="ui-btn is-white is-sm" onClick={() => setAmount(String(Math.floor(left)))}>전액</button>
                 </div>
                 <p className="ui-field-help">
                   {!MOCK && Number(amount) > 0

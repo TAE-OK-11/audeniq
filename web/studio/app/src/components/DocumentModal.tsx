@@ -120,6 +120,8 @@ export function DocumentModal({
       // 실서버: 확인 기록 → (권리 서류) 원본 업로드 후 검토 요청. 계약서는 담당자 검토가 자동으로 시작된다.
       if (!doc.checkedAt && !confirmed) { toast('문서 내용을 확인했다고 체크해 주세요.'); return; }
       if (doc.kind === 'rights' && !pendingFile && !doc.fileName) { toast('요청된 증빙 서류를 첨부해 주세요.'); return; }
+      // 보완 요청을 받은 서류는 예전 파일이 남아 있어도 새 파일을 올려야 다시 검토된다
+      if (doc.kind === 'rights' && doc.reviewStatus === 'needs' && !pendingFile) { toast('보완한 서류를 새로 첨부해 주세요.', 'error'); return; }
       if (pendingFile && !/\.(pdf|jpe?g|png)$/i.test(pendingFile.name)) { toast('서류는 PDF, JPG, PNG 파일로 올려 주세요.'); return; }
       if (['review', 'prepared', 'approved'].includes(doc.reviewStatus) && !pendingFile) { toast('이미 검토 요청된 문서예요.', 'info'); return; }
       setSending(true);

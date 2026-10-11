@@ -1124,7 +1124,8 @@ function toPayload(form: WizardForm, step: number): ReleasePayload {
     notes: form.notes.trim(),
     coverName: form.coverName,
     coverData: form.coverData,
-    coverAssetId: form.coverAssetId || undefined,
+    // 비운 커버('')도 그대로 보낸다 — undefined면 서버의 이전 커버로 되돌아간다
+    coverAssetId: form.coverAssetId,
     originalDate: form.options.rerelease && form.options.rereleaseKind === 'new_version' ? form.releaseDate : form.originalDate,
     release_date: form.releaseDate || '',
     tracks: form.tracks.map(t => ({
@@ -1500,21 +1501,26 @@ export function Upload() {
   }, [adoptTrackIds]);
 
   // 자동 임시 저장 — 저장 요청을 직렬화해 draft가 두 개 생기지 않도록 한다
-  const autoSave = useCallback((): Promise<void> => {
-    if (!canAutoSave) return Promise.resolve();
+  // 저장에 성공했으면(또는 저장할 것이 없으면) true
+  const autoSave = useCallback((): Promise<boolean> => {
+    if (!canAutoSave) return Promise.resolve(true);
     const f = formRef.current;
-    if (!f.title.trim() && !f.artist.trim()) return Promise.resolve(); // 빈 폼은 저장하지 않음
-    const run = async () => {
+    if (!f.title.trim() && !f.artist.trim()) return Promise.resolve(true); // 빈 폼은 저장하지 않음
+    const run = async (): Promise<boolean> => {
       setSave({ kind: 'saving' });
+      // 저장 중에 더 입력한 내용은 아직 저장되지 않았으므로 그대로 '변경 있음'으로 둔다
+      const sent = formRef.current;
       try {
-        const r = await api.saveDraft(draftIdRef.current, toPayload(formRef.current, stepRef.current));
+        const r = await api.saveDraft(draftIdRef.current, toPayload(sent, stepRef.current));
         draftIdRef.current = r.id;
         adoptTrackIds(r.trackServerIds);
-        dirtyRef.current = false;
+        if (formRef.current === sent) dirtyRef.current = false;
         setSave({ kind: 'saved', at: stampNow().slice(11) });
+        return true;
       } catch (e) {
         adoptPartialSave(e);
         setSave({ kind: 'error', message: e instanceof PartialSaveError ? e.message : undefined });
+        return false;
       }
     };
     const p = saveChain.current.then(run, run);
@@ -1785,8 +1791,10 @@ export function Upload() {
       const ok = await confirm({ title: '수정을 그만둘까요?', message: '저장하지 않은 변경 내용은 사라져요.', confirmLabel: '나가기', danger: true });
       if (!ok) return;
     } else if (dirtyRef.current) {
-      await autoSave();
-      if (draftIdRef.current) toast('작성 중인 내용을 임시 저장했어요.', 'info');
+      if (!(await autoSave())) {
+        const ok = await confirm({ title: '임시 저장하지 못했어요', message: '지금 나가면 마지막 저장 이후 입력한 내용이 사라져요. 그래도 나갈까요?', confirmLabel: '나가기', danger: true });
+        if (!ok) return;
+      } else if (draftIdRef.current) toast('작성 중인 내용을 임시 저장했어요.', 'info');
     }
     dirtyRef.current = false;
     nav(editId ? `/releases/${editId}` : '/');

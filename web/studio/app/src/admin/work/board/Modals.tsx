@@ -10,7 +10,7 @@ import { when } from '../../labels';
 import { workApi } from '../api';
 import { AUTO_TRIGGER, BOARD_KIND, PRIORITIES, PRIORITY, PRIORITY_CODE, PRIORITY_NAME, ROLE_NAME, TASK_STATUS, WORK_TYPE, WORK_TYPES } from '../labels';
 import { PersonSelect, Switch, usePeople } from '../ui';
-import { boardError } from './logic';
+import { boardError, needsReload } from './logic';
 import type {
   AutoTrigger, Board, BoardColumn, BoardKind, BoardRule, BoardView, Priority, StaffRoleKey, TaskStatus, WorkTask, WorkType,
 } from '../types';
@@ -188,6 +188,10 @@ export function ColumnManager({ view, onView }: { view: BoardView; onView: (v: B
       return true;
     } catch (err) {
       toast(boardError(err, '바꾸지 못했어요.'), 'error');
+      // 낡은 보드 버전·열이면 최신 보드를 받아 와야 다시 눌렀을 때 같은 이유로 거절되지 않는다
+      if (needsReload(err)) {
+        try { onView(await workApi.board(view.board.id)); } catch { /* 다음 동작에서 다시 알린다 */ }
+      }
       return false;
     } finally {
       setBusy(false);
