@@ -1403,6 +1403,19 @@ fn field_checks(body: &Value) -> Vec<StagedCheck> {
         language,
         format!("language code valid={language_ok}"),
     );
+    // 배급 지역: WORLD or ISO 3166-1 alpha-2 codes. An empty or malformed
+    // list would only fail at preparation (the deal carries these codes).
+    let territories_ok = crate::preparation_model::application_territories(draft).is_ok();
+    push(
+        "FIELD_TERRITORY_INVALID",
+        if territories_ok {
+            CheckStatus::Pass
+        } else {
+            CheckStatus::CorrectionRequired
+        },
+        "territories",
+        format!("territories valid={territories_ok}"),
+    );
     // DDEX ERN requires P-line and C-line on every release. Preparation
     // rejects a missing line; catching it here keeps the fix in the
     // artist's hands at submit time instead of failing at prepare time.

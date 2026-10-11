@@ -1104,7 +1104,7 @@ function ensureReleaseDocuments(f: WizardForm, releaseId: string) {
     `마스터 권리자: ${f.ownership.trim() || '미입력'}`,
     `℗ 표기: ${f.phonogram.trim() || '미입력'}`,
     `© 표기: ${f.copyright.trim() || '미입력'}`,
-    `배급 지역: ${f.territories.includes('WORLD') ? '전 세계' : '지정 안 함'}`,
+    `배급 지역: ${f.territories.includes('WORLD') ? '전 세계' : f.territories.length ? f.territories.join(', ') : '지정 안 함'}`,
     `배급 플랫폼: ${f.platforms.map(dspLabel).join(', ')}`,
     `추가 확인 항목: ${selectedOptions(f.options).map(([, t]) => t).join(', ') || '일반 발매'}`,
     '',
@@ -1164,6 +1164,8 @@ export function Upload() {
   const [reached, setReached] = useState(0);
   // 보완 요청 — 수정 모드에서 불러온 발매의 요청 항목과 신청서 위치
   const [fixes, setFixes] = useState<ResolvedCorrection[]>([]);
+  // 배급 국가 입력칸의 글자 그대로 (쉼표·공백을 치는 중에도 지워지지 않게) — 저장은 territories 배열
+  const [territoryText, setTerritoryText] = useState<string | null>(null);
   // 담당자 전체 의견 — 고칠 항목과 따로 보여 준다
   const [reviewNote, setReviewNote] = useState('');
   const [focusField, setFocusField] = useState<{ id: string; n: number } | null>(null);
@@ -1539,6 +1541,9 @@ export function Upload() {
       }
       if (!dsps) return fail(dspError || '플랫폼 배급 가능 상태를 확인하는 중이에요.', '#aqPlatforms');
       if (!form.platforms.length) return fail('배급할 플랫폼을 하나 이상 선택해 주세요.', '#aqPlatforms');
+      // 권리를 가진 지역에만 배급한다 — 전 세계가 아니면 국가 코드(ISO 2자리)를 하나 이상
+      if (!form.territories.length) return fail('배급할 국가를 입력하거나 ‘전 세계 배급’을 선택해 주세요.', '#f-territories');
+      if (!form.territories.includes('WORLD') && form.territories.some(t => !/^[A-Z]{2}$/.test(t))) return fail('국가 코드는 KR, JP처럼 영문 2자리로 입력해 주세요.', '#f-territories');
       if (['coverLicenseFile', 'sampleLicenseFile', 'featuredConsentFile', 'sharedContractFile'].some(k => uploads[k]?.state === 'uploading')) return fail('첨부서류 업로드가 끝나면 계속할 수 있어요.', '#aqSpecialOptions');
       if (form.platforms.some(p => !dsps.some(d => d.slug === p && d.available))) return fail('현재 배급할 수 없는 플랫폼이 선택되어 있어요. 해당 선택을 해제해 주세요.', '#aqPlatforms');
       if (form.upc.trim() && !upcValid(form.upc.trim())) return fail('UPC/EAN 번호가 올바르지 않아요. 숫자 12~13자리와 마지막 확인 숫자를 확인해 주세요.', '#f-upc');
@@ -2186,6 +2191,21 @@ export function Upload() {
               />
               <span><strong>전 세계 배급</strong><small>권리를 보유한 지역에만 배급할 수 있어요.</small></span>
             </label>
+            {!form.territories.includes('WORLD') && (
+              <div className="ui-field">
+                <label htmlFor="f-territories">배급 국가 <span className="required">*</span></label>
+                <input
+                  id="f-territories" autoComplete="off" placeholder="예: KR, JP, US"
+                  value={territoryText ?? form.territories.join(', ')}
+                  onChange={e => {
+                    setTerritoryText(e.target.value);
+                    set('territories', e.target.value.toUpperCase().split(/[\s,]+/).filter(Boolean).slice(0, 250));
+                  }}
+                  onBlur={() => setTerritoryText(null)}
+                />
+                <p className="ui-field-help">권리를 보유한 국가만 영문 2자리 국가 코드(ISO)로 입력해 주세요. 이 국가에만 전송돼요.</p>
+              </div>
+            )}
             <h2 className="subhead">배급 플랫폼</h2>
             <div className="distribution-default">
               <div>

@@ -91,6 +91,165 @@ pub struct PreparedRelease {
     /// Drives DDEX ERN ParentalWarningType.
     #[serde(default)]
     pub explicit: bool,
+    /// Territories the release may be offered in (ISO 3166-1 alpha-2): the
+    /// application's 배급 지역, narrowed to the registered rights grants.
+    /// Empty means Worldwide. Skipped when empty so earlier snapshots keep
+    /// their hash.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub territories: Vec<String>,
+    /// The grants' licence end (exclusive): the deal's EndDate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rights_end: Option<NaiveDate>,
+    /// DDEX UseTypes the grants allow. Empty means not restricted; a DSP
+    /// whose deal needs another use is blocked at staging (RIGHTS_SCOPE_USE).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub permitted_uses: Vec<String>,
+}
+
+/// Contract scope for delivery (감사 3번: Worldwide 고정 제거).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RightsScope {
+    pub territories: Vec<String>,
+    pub rights_end: Option<NaiveDate>,
+    pub permitted_uses: Vec<String>,
+}
+
+const WORLD: &[&str] = &["WORLD", "WW", "WORLDWIDE"];
+
+fn territory_code(raw: &str) -> Result<Option<String>> {
+    let code = raw.trim().to_ascii_uppercase();
+    if WORLD.contains(&code.as_str()) {
+        return Ok(None);
+    }
+    if code.len() == 2 && code.bytes().all(|b| b.is_ascii_uppercase()) {
+        Ok(Some(code))
+    } else {
+        Err(Error::PolicyGate("PREPARATION_TERRITORY_INVALID"))
+    }
+}
+
+/// The application's 배급 지역 (`territories`): `None` = Worldwide. A legacy
+/// draft without the field is Worldwide (the wizard always sent `WORLD`);
+/// an explicitly empty list licenses nowhere and fails closed.
+pub fn application_territories(
+    draft: &Value,
+) -> Result<Option<std::collections::BTreeSet<String>>> {
+    let Some(list) = draft.get("territories") else {
+        return Ok(None);
+    };
+    let list = list
+        .as_array()
+        .ok_or(Error::PolicyGate("PREPARATION_TERRITORY_INVALID"))?;
+    if list.is_empty() {
+        return Err(Error::PolicyGate("PREPARATION_TERRITORY_MISSING"));
+    }
+    let mut codes = std::collections::BTreeSet::new();
+    for v in list {
+        match territory_code(
+            v.as_str()
+                .ok_or(Error::PolicyGate("PREPARATION_TERRITORY_INVALID"))?,
+        )? {
+            None => return Ok(None),
+            Some(c) => {
+                codes.insert(c);
+            }
+        }
+    }
+    Ok(Some(codes))
+}
+
+/// One registered rights grant, as far as delivery scope is concerned.
+#[derive(Debug, Clone)]
+pub struct ScopeGrant {
+    pub territories: Vec<String>,
+    pub uses: Vec<String>,
+    pub start: Option<NaiveDate>,
+    pub end_exclusive: Option<NaiveDate>,
+}
+
+/// Narrow the application's territories to what the release's rights grants
+/// allow on the release date. Without grants the application decides alone.
+/// A grant's empty territory/use set means "not restricted"; `WW`/`WORLD`
+/// is everywhere. Fails closed when nothing is licensed on the release date
+/// or in any requested territory.
+pub fn rights_scope(
+    requested: Option<std::collections::BTreeSet<String>>,
+    grants: &[ScopeGrant],
+    release_date: NaiveDate,
+) -> Result<RightsScope> {
+    use std::collections::BTreeSet;
+    if grants.is_empty() {
+        return Ok(RightsScope {
+            territories: requested
+                .map(|s| s.into_iter().collect())
+                .unwrap_or_default(),
+            ..RightsScope::default()
+        });
+    }
+    let live: Vec<&ScopeGrant> = grants
+        .iter()
+        .filter(|g| {
+            g.start.is_none_or(|s| s <= release_date)
+                && g.end_exclusive.is_none_or(|e| e > release_date)
+        })
+        .collect();
+    if live.is_empty() {
+        return Err(Error::PolicyGate("PREPARATION_RIGHTS_PERIOD"));
+    }
+    // Union of the licensed territories (None = everywhere).
+    let mut licensed: Option<BTreeSet<String>> = Some(BTreeSet::new());
+    for g in &live {
+        let mut world = g.territories.is_empty();
+        let mut set = BTreeSet::new();
+        for t in &g.territories {
+            match territory_code(t)? {
+                None => world = true,
+                Some(c) => {
+                    set.insert(c);
+                }
+            }
+        }
+        if world {
+            licensed = None;
+            break;
+        }
+        if let Some(l) = licensed.as_mut() {
+            l.extend(set);
+        }
+    }
+    let territories: Vec<String> = match (requested, licensed) {
+        (None, None) => vec![],
+        (Some(r), None) => r.into_iter().collect(),
+        (None, Some(l)) => l.into_iter().collect(),
+        (Some(r), Some(l)) => r.intersection(&l).cloned().collect(),
+    };
+    if territories.is_empty() && grants_restrict_territory(&live) {
+        return Err(Error::PolicyGate("PREPARATION_RIGHTS_TERRITORY"));
+    }
+    let rights_end = live.iter().filter_map(|g| g.end_exclusive).min();
+    let uses = if live.iter().any(|g| g.uses.is_empty()) {
+        vec![]
+    } else {
+        live.iter()
+            .flat_map(|g| g.uses.iter().cloned())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    };
+    Ok(RightsScope {
+        territories,
+        rights_end,
+        permitted_uses: uses,
+    })
+}
+
+fn grants_restrict_territory(live: &[&ScopeGrant]) -> bool {
+    !live.iter().any(|g| {
+        g.territories.is_empty()
+            || g.territories
+                .iter()
+                .any(|t| WORLD.contains(&t.trim().to_ascii_uppercase().as_str()))
+    })
 }
 
 /// Trusted DB row envelope plus the original F3 JSON bytes' semantic value.
@@ -281,6 +440,8 @@ impl PreparedRelease {
         let release_date = NaiveDate::parse_from_str(&release_date_raw, "%Y-%m-%d")
             .map_err(|_| Error::PolicyGate("PREPARATION_RELEASE_DATE_INVALID"))?;
         let original_release_date = original_release_date(&draft, release_date)?;
+        let grants = scope_grants(pool, c).await?;
+        let scope = rights_scope(application_territories(&draft)?, &grants, release_date)?;
 
         Ok(PreparedRelease {
             canonical: c.clone(),
@@ -309,8 +470,45 @@ impl PreparedRelease {
             tracks,
             artwork,
             explicit: c.explicit,
+            territories: scope.territories,
+            rights_end: scope.rights_end,
+            permitted_uses: scope.permitted_uses,
         })
     }
+}
+
+/// The release's active rights grants (release- or track-level).
+async fn scope_grants(pool: &PgPool, c: &CanonicalRelease) -> Result<Vec<ScopeGrant>> {
+    let tracks: Vec<Uuid> = c.tracks.iter().map(|t| t.track_id).collect();
+    type At = Option<chrono::DateTime<chrono::Utc>>;
+    let rows: Vec<(Vec<String>, Vec<String>, At, At)> =
+        sqlx::query_as(
+            "SELECT territory_set, use_set, start_at, end_exclusive FROM rights.grant_atoms
+             WHERE org_id=$1 AND revoked_at IS NULL
+               AND ((target_kind='RELEASE' AND target_id=$2) OR (target_kind='TRACK' AND target_id=ANY($3)))",
+        )
+        .bind(c.org_id)
+        .bind(c.release_id)
+        .bind(&tracks)
+        .fetch_all(pool)
+        .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(territories, uses, start, end)| ScopeGrant {
+            territories,
+            uses,
+            start: start.map(|d| d.date_naive()),
+            // An exclusive instant later than midnight still licenses that day.
+            end_exclusive: end.map(|d| {
+                let day = d.date_naive();
+                if d.time() == chrono::NaiveTime::MIN {
+                    day
+                } else {
+                    day.succ_opt().unwrap_or(day)
+                }
+            }),
+        })
+        .collect())
 }
 
 impl VerificationPackage {
@@ -331,5 +529,79 @@ impl VerificationPackage {
             package_hash: row.get("package_hash"),
             body: row.get("body"),
         })
+    }
+}
+
+#[cfg(test)]
+mod scope_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn day(y: i32, m: u32, d: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(y, m, d).unwrap()
+    }
+    fn grant(t: &[&str], u: &[&str], end: Option<NaiveDate>) -> ScopeGrant {
+        ScopeGrant {
+            territories: t.iter().map(|s| s.to_string()).collect(),
+            uses: u.iter().map(|s| s.to_string()).collect(),
+            start: None,
+            end_exclusive: end,
+        }
+    }
+
+    #[test]
+    fn application_territories_are_world_or_iso_codes() {
+        assert_eq!(application_territories(&json!({})).unwrap(), None);
+        assert_eq!(
+            application_territories(&json!({"territories":["WORLD"]})).unwrap(),
+            None
+        );
+        assert_eq!(
+            application_territories(&json!({"territories":["kr","JP","KR"]})).unwrap(),
+            Some(["JP".to_string(), "KR".to_string()].into())
+        );
+        assert!(matches!(
+            application_territories(&json!({"territories":[]})),
+            Err(Error::PolicyGate("PREPARATION_TERRITORY_MISSING"))
+        ));
+        assert!(application_territories(&json!({"territories":["Korea"]})).is_err());
+    }
+
+    #[test]
+    fn grants_narrow_territory_period_and_uses() {
+        let release = day(2027, 3, 1);
+        // No grants: the application alone decides.
+        let s = rights_scope(None, &[], release).unwrap();
+        assert!(s.territories.is_empty() && s.rights_end.is_none() && s.permitted_uses.is_empty());
+        // Worldwide application, grants for KR+JP streaming until 2028.
+        let g = [grant(
+            &["KR", "JP"],
+            &["OnDemandStream"],
+            Some(day(2028, 1, 1)),
+        )];
+        let s = rights_scope(None, &g, release).unwrap();
+        assert_eq!(s.territories, vec!["JP", "KR"]);
+        assert_eq!(s.rights_end, Some(day(2028, 1, 1)));
+        assert_eq!(s.permitted_uses, vec!["OnDemandStream"]);
+        // Requested KR+US with KR+JP licensed: only KR is sent.
+        let s = rights_scope(Some(["KR".into(), "US".into()].into()), &g, release).unwrap();
+        assert_eq!(s.territories, vec!["KR"]);
+        // Nothing licensed where requested, or on the release date: fail closed.
+        assert!(matches!(
+            rights_scope(Some(["US".into()].into()), &g, release),
+            Err(Error::PolicyGate("PREPARATION_RIGHTS_TERRITORY"))
+        ));
+        assert!(matches!(
+            rights_scope(None, &[grant(&["WW"], &[], Some(day(2027, 1, 1)))], release),
+            Err(Error::PolicyGate("PREPARATION_RIGHTS_PERIOD"))
+        ));
+        // A worldwide grant keeps the requested territories.
+        let s = rights_scope(
+            Some(["KR".into()].into()),
+            &[grant(&["WW"], &[], None)],
+            release,
+        )
+        .unwrap();
+        assert_eq!(s.territories, vec!["KR"]);
     }
 }

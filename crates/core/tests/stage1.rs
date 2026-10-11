@@ -452,11 +452,11 @@ async fn stage1_happy_path_passes(pool: PgPool) {
     .fetch_all(&pool)
     .await
     .unwrap();
-    // 26 metadata/policy checks plus the complete audio contract. This
+    // 27 metadata/policy checks plus the complete audio contract. This
     // fixture has no cover attached, so image outcomes are not expected.
     assert_eq!(
         codes.len(),
-        26 + audeniq_core::qc::AUDIO_CHECK_CODES.len(),
+        27 + audeniq_core::qc::AUDIO_CHECK_CODES.len(),
         "{codes:?}"
     );
     let bad: i64 = sqlx::query_scalar(

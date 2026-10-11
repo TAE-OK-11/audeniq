@@ -90,6 +90,7 @@ const TARGETS: Record<string, Target> = {
   // 배급 설정
   FIELD_RELEASE_DATE_MISSING: { step: WIZ_STEP.distribution, field: 'f-releaseDate', label: '발매일', hint: '발매 예정일을 입력해 주세요.' },
   FIELD_RELEASE_DATE_INVALID: { step: WIZ_STEP.distribution, field: 'f-releaseDate', label: '발매일', hint: '발매 예정일을 다시 확인해 주세요.' },
+  FIELD_TERRITORY_INVALID: { step: WIZ_STEP.distribution, field: 'f-territories', label: '배급 국가', hint: '배급할 국가를 영문 2자리 국가 코드로 입력하거나 전 세계 배급을 선택해 주세요.' },
   UPC_FORMAT_INVALID: { step: WIZ_STEP.distribution, field: 'f-upc', label: 'UPC', hint: 'UPC는 12~13자리 숫자예요. 없으면 비워 두세요.' },
   S2_RELEASE_DATE_FAR_PAST: { step: WIZ_STEP.distribution, field: 'f-releaseDate', label: '발매일', hint: '발매일이 너무 과거예요. 발매 예정일을 다시 확인해 주세요.' },
   S2_RELEASE_DATE_FAR_FUTURE: { step: WIZ_STEP.distribution, field: 'f-releaseDate', label: '발매일', hint: '발매일이 너무 먼 미래예요. 발매 예정일을 다시 확인해 주세요.' },

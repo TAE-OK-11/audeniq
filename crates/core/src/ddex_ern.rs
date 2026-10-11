@@ -692,7 +692,7 @@ fn release_list(out: &mut String, prepared: &PreparedRelease, tracks: &[&Prepare
     out.push_str("</Release></ReleaseList>");
 }
 
-fn deal_list(out: &mut String, c: &DdexErnConfig) {
+fn deal_list(out: &mut String, c: &DdexErnConfig, prepared: &PreparedRelease) {
     // XSD: ReleaseDeal = DealReleaseReference, Deal, EffectiveDate?.
     // Deal = DealReference?, DealTerms?, ... — there is no DealId element;
     // DealReference is optional and pattern-constrained, so it is omitted.
@@ -710,7 +710,15 @@ fn deal_list(out: &mut String, c: &DdexErnConfig) {
         element(out, "UseType", use_type);
     }
     out.push_str("</Usage>");
-    element(out, "TerritoryCode", "Worldwide");
+    // Only the licensed territories (application ∩ rights grants); Worldwide
+    // only when nothing narrows it (감사: Worldwide 고정 제거).
+    if prepared.territories.is_empty() {
+        element(out, "TerritoryCode", "Worldwide");
+    } else {
+        for code in &prepared.territories {
+            element(out, "TerritoryCode", code);
+        }
+    }
     // XSD order: ... TerritoryCode, PriceInformation*, ..., ValidityPeriod.
     if let Some(band) = c.deal.price_range {
         let namespace = c
@@ -726,10 +734,21 @@ fn deal_list(out: &mut String, c: &DdexErnConfig) {
     }
     out.push_str("<ValidityPeriod>");
     element(out, "StartDate", &c.deal_start_date);
-    if c.message_sub_type == MessageSubType::Takedown
-        && let Some(end) = &c.takedown_date
-    {
-        element(out, "EndDate", end);
+    // The licence end (exclusive) makes the last licensed day the deal's
+    // EndDate; a takedown ends it earlier.
+    let licence_end = prepared
+        .rights_end
+        .and_then(|d| d.pred_opt())
+        .map(|d| d.format("%Y-%m-%d").to_string());
+    let takedown = (c.message_sub_type == MessageSubType::Takedown)
+        .then(|| c.takedown_date.clone())
+        .flatten();
+    let end = match (takedown, licence_end) {
+        (Some(t), Some(l)) => Some(t.min(l)),
+        (t, l) => t.or(l),
+    };
+    if let Some(end) = end {
+        element(out, "EndDate", &end);
     }
     out.push_str("</ValidityPeriod>");
     out.push_str("</DealTerms></Deal></ReleaseDeal></DealList>");
@@ -798,7 +817,7 @@ pub fn generate_ddex_ern_382(prepared: &PreparedRelease, config: &DdexErnConfig)
         .ok_or(Error::PolicyGate("DDEX_SENDER_DPID_MISSING"))?;
     resource_list(&mut out, prepared, &tracks, sender_dpid)?;
     release_list(&mut out, prepared, &tracks);
-    deal_list(&mut out, config);
+    deal_list(&mut out, config, prepared);
     out.push_str("</ern:NewReleaseMessage>\n");
     Ok(out)
 }

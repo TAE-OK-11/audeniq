@@ -742,6 +742,26 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
                     )
                 }),
         );
+        // The grants list the uses they license; a DSP whose deal needs any
+        // other use (e.g. downloads when only streaming is licensed) is not sent.
+        let missing_uses: Vec<&str> = if prepared.permitted_uses.is_empty() {
+            vec![]
+        } else {
+            spec.deal
+                .use_types
+                .iter()
+                .copied()
+                .filter(|u| !prepared.permitted_uses.iter().any(|p| p == u))
+                .collect()
+        };
+        if !missing_uses.is_empty() {
+            checks.push(DspCheck::new(
+                "RIGHTS_SCOPE_USE",
+                Class::Content,
+                Severity::Blocker,
+                format!("rights grants do not license: {}", missing_uses.join(", ")),
+            ));
+        }
         if !approved.contains(&dsp.uuid()) {
             checks.push(DspCheck::new(
                 "DSP_NOT_IN_APPROVED_SCOPE",
@@ -1183,6 +1203,9 @@ mod tests {
             tracks,
             artwork: asset("image/jpeg", None, None),
             explicit,
+            territories: vec![],
+            rights_end: None,
+            permitted_uses: vec![],
         }
     }
 

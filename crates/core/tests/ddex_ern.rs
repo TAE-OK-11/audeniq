@@ -401,3 +401,24 @@ fn original_release_date_must_not_follow_the_new_date() {
         None
     );
 }
+
+/// 감사 3번: the deal lists only the licensed territories and ends with the
+/// licence, instead of a fixed Worldwide with no end date.
+#[test]
+fn deal_carries_licensed_territories_and_licence_end() {
+    let mut p = fixture(0);
+    let world = generate_ddex_ern_382(&p, &config(MessageSubType::Initial)).unwrap();
+    let deal = |xml: &str| xml[xml.find("<DealList>").unwrap()..].to_owned();
+    assert!(deal(&world).contains("<TerritoryCode>Worldwide</TerritoryCode>"));
+    assert!(!deal(&world).contains("<EndDate>"));
+    p.territories = vec!["JP".into(), "KR".into()];
+    p.rights_end = chrono::NaiveDate::from_ymd_opt(2028, 1, 1);
+    let xml = generate_ddex_ern_382(&p, &config(MessageSubType::Initial)).unwrap();
+    let d = deal(&xml);
+    assert!(!d.contains("Worldwide"), "{d}");
+    assert!(
+        d.contains("<TerritoryCode>JP</TerritoryCode><TerritoryCode>KR</TerritoryCode>"),
+        "{d}"
+    );
+    assert!(d.contains("<EndDate>2027-12-31</EndDate>"), "{d}");
+}
