@@ -406,8 +406,9 @@ pub async fn freeze_package(pool: &PgPool, canonical: &CanonicalRelease) -> Resu
     }
 }
 
-/// Freshness guard: if the rights epoch moved since Stage 2 pinned it, the/// release goes back to Stage 2 for re-verification (BLUEPRINT §6.1
-/// `return_to=S2`). Returns true when the caller must stop here.
+/// Freshness guard: if the rights epoch moved since Stage 2 pinned it, the
+/// release stops in STAGE3_CORRECTION and is re-verified on resubmission
+/// (BLUEPRINT §6.1 `return_to=S2`). Returns true when the caller must stop here.
 async fn return_to_s2_if_epoch_moved(
     tx: &mut PgConnection,
     org: Uuid,
@@ -434,13 +435,10 @@ async fn return_to_s2_if_epoch_moved(
         .bind(release_id)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("INSERT INTO operations.jobs(id, queue, kind, payload, pinned_revision_id, idempotency_key) VALUES($1,'rights','stage2',$2,$3,$4) ON CONFLICT(idempotency_key) DO NOTHING")
-        .bind(Uuid::new_v4())
-        .bind(json!({"revision_id": revision_id, "reason": "RIGHTS_EPOCH_CHANGED"}))
-        .bind(revision_id)
-        .bind(format!("stage2-rerun:{revision_id}"))
-        .execute(&mut *tx)
-        .await?;
+    // No automatic Stage 2 job here: the state contract has no
+    // STAGE3_CORRECTION -> STAGE2_* transition and the job carried no
+    // validation package, so it could only fail and dead-letter. The release
+    // is re-verified when it is resubmitted (STAGE3_CORRECTION -> SUBMITTED).
     operations::audit(
         &mut *tx,
         None,

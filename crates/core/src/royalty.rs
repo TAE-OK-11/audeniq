@@ -186,11 +186,16 @@ pub async fn match_report(pool: &PgPool, org_id: Uuid, report_id: Uuid) -> Resul
            match_status='AUTO',
            matched_release_id=t.release_id,
            match_evidence=jsonb_build_object('isrc', rl.isrc, 'matched_at', now()::text)
-         FROM catalog.tracks t
+         -- Only an ISRC that belongs to exactly one release matches
+         -- automatically (the same recording on a single and an album is
+         -- normal); the rest stay UNMATCHED for review (INV-09).
+         FROM (SELECT isrc, (array_agg(release_id))[1] AS release_id FROM catalog.tracks
+                WHERE org_id=$2 AND isrc IS NOT NULL
+                GROUP BY isrc HAVING count(DISTINCT release_id)=1) t
          WHERE rl.report_id=$1 AND rl.org_id=$2
            AND rl.match_status='UNMATCHED'
            AND rl.isrc IS NOT NULL
-           AND t.org_id=$2 AND t.isrc=rl.isrc
+           AND t.isrc=rl.isrc
          RETURNING rl.id",
     )
     .bind(report_id)

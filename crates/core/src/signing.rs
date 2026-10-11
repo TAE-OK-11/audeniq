@@ -428,23 +428,22 @@ pub async fn list(s: &AppState, a: &Actor, org: Uuid, q: ListQuery) -> Result<Va
     let rows = sqlx::query(concat!(
         "SELECT ",
         cols!(),
-        " FROM portal.signing_requests WHERE org_id=$1 AND ($2::uuid IS NULL OR release_id=$2)
-         ORDER BY created_at DESC LIMIT 200"
+        " FROM portal.signing_requests sr WHERE sr.org_id=$1 AND ($2::uuid IS NULL OR sr.release_id=$2)
+           -- Release read access in the same query (was one authorize()
+           -- round trip pair per row).
+           AND EXISTS(SELECT 1 FROM identity.resources res JOIN identity.resource_acl acl
+                        ON acl.org_id=res.org_id AND acl.resource_id=res.id
+                       WHERE res.org_id=sr.org_id AND res.id=sr.release_id AND res.kind='release'
+                         AND acl.principal_party_id=$3 AND acl.action='read' AND acl.revoked_at IS NULL
+                         AND acl.starts_at<=now() AND (acl.ends_at IS NULL OR acl.ends_at>now()))
+         ORDER BY sr.created_at DESC LIMIT 200"
     ))
     .bind(org)
     .bind(q.release_id)
+    .bind(a.party)
     .fetch_all(&mut *c)
     .await?;
-    let mut items = Vec::new();
-    for r in &rows {
-        let release: Uuid = r.get("release_id");
-        if auth::authorize(&mut c, a, org, release, "release", false)
-            .await
-            .is_ok()
-        {
-            items.push(summary(r));
-        }
-    }
+    let items: Vec<Value> = rows.iter().map(summary).collect();
     Ok(json!({"items": items}))
 }
 

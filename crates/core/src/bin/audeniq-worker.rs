@@ -92,13 +92,31 @@ async fn execute_with_heartbeat(
 
     let execution = operations::execute(pool, store, job);
     tokio::pin!(execution);
+    // The lease as last confirmed: a transient heartbeat error (pool wait,
+    // network blip, lock timeout) is retried on the next tick while the lease
+    // is still ours; only a refused renewal or an expired lease cancels.
+    let mut lease_until =
+        std::time::Instant::now() + Duration::from_secs(lease_seconds.max(1) as u64);
     loop {
         tokio::select! {
             result = &mut execution => return RunResult::Finished(result),
             _ = ticker.tick() => {
-                if let Err(error) = operations::heartbeat(pool, job, lease_seconds).await {
-                    tracing::warn!(job_id=%job.id, %error, "job lease lost; cancelling stale handler");
-                    return RunResult::LeaseLost;
+                match operations::heartbeat(pool, job, lease_seconds).await {
+                    Ok(()) => {
+                        lease_until = std::time::Instant::now()
+                            + Duration::from_secs(lease_seconds.max(1) as u64);
+                    }
+                    Err(audeniq_core::error::Error::Conflict) => {
+                        tracing::warn!(job_id=%job.id, "job lease lost; cancelling stale handler");
+                        return RunResult::LeaseLost;
+                    }
+                    Err(error) if std::time::Instant::now() + Duration::from_secs(heartbeat_seconds) >= lease_until => {
+                        tracing::warn!(job_id=%job.id, %error, "job lease cannot be renewed before it expires; cancelling");
+                        return RunResult::LeaseLost;
+                    }
+                    Err(error) => {
+                        tracing::warn!(job_id=%job.id, %error, "job heartbeat failed; retrying on the next tick");
+                    }
                 }
             }
         }

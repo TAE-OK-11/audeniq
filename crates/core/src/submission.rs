@@ -2657,7 +2657,9 @@ pub async fn precheck_asset(
     // and overwrites it after submission (adding catalog similarity).
     if !retry {
         let clean = out.iter().all(asset_check_allows_progress);
-        sqlx::query("UPDATE catalog.assets SET qc_status=$3 WHERE org_id=$1 AND id=$2")
+        // Only the first answer: a late (retried) analysis never overwrites
+        // what Stage 1 already decided for a submitted release.
+        sqlx::query("UPDATE catalog.assets SET qc_status=$3 WHERE org_id=$1 AND id=$2 AND qc_status='PENDING'")
             .bind(org)
             .bind(aid)
             .bind(if clean { "PASS" } else { "BLOCKED" })

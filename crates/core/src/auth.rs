@@ -220,7 +220,7 @@ fn credentials(c: &Credentials) -> Result<String> {
     }
     Ok(email)
 }
-fn hash_password(password: String) -> Result<String> {
+pub(crate) fn hash_password(password: String) -> Result<String> {
     Argon2::default()
         // Random 16-byte salt from the OS RNG (password-hash 0.6 default).
         .hash_password(password.as_bytes())

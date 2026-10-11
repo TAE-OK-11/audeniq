@@ -61,7 +61,12 @@ struct OrgVersion {
     inquiry: Option<DateTime<Utc>>,
 }
 
-async fn org_version(s: &AppState, org: Uuid, user: Uuid) -> Result<(OrgVersion, Value)> {
+async fn org_version(
+    s: &AppState,
+    org: Uuid,
+    user: Uuid,
+    party: Uuid,
+) -> Result<(OrgVersion, Value)> {
     let r = sqlx::query(
         "SELECT
            (SELECT max(n.created_at) FROM portal.notifications n WHERE n.org_id=$1 AND (n.user_id IS NULL OR n.user_id=$2)) AS notification,
@@ -70,10 +75,18 @@ async fn org_version(s: &AppState, org: Uuid, user: Uuid) -> Result<(OrgVersion,
            q.updated_at AS inquiry, q.id AS inquiry_id,
            (SELECT m.author_kind FROM portal.inquiry_messages m WHERE m.inquiry_id=q.id ORDER BY m.created_at DESC LIMIT 1) AS author
          FROM (SELECT 1) one
-         LEFT JOIN LATERAL (SELECT i.id, i.updated_at FROM portal.inquiries i WHERE i.org_id=$1 ORDER BY i.updated_at DESC LIMIT 1) q ON true",
+         LEFT JOIN LATERAL (SELECT i.id, i.updated_at FROM portal.inquiries i WHERE i.org_id=$1
+             -- Same visibility as list_inquiries: release-linked inquiries
+             -- only for members who can read that release.
+             AND (i.release_id IS NULL OR EXISTS(
+               SELECT 1 FROM identity.resource_acl acl WHERE acl.org_id=i.org_id AND acl.resource_id=i.release_id
+                 AND acl.principal_party_id=$3 AND acl.action='read' AND acl.revoked_at IS NULL
+                 AND acl.starts_at<=now() AND (acl.ends_at IS NULL OR acl.ends_at>now())))
+             ORDER BY i.updated_at DESC LIMIT 1) q ON true",
     )
     .bind(org)
     .bind(user)
+    .bind(party)
     .fetch_one(&s.pool)
     .await?;
     let v = OrgVersion {
@@ -95,10 +108,11 @@ pub async fn org_live(s: AppState, h: HeaderMap, org: Uuid) -> Result<LiveStream
     auth::rate(&s.pool, &format!("live:{}", a.user), OPENS_PER_WINDOW).await?;
     let (tx, rx) = mpsc::channel(8);
     let user = a.user;
+    let party = a.party;
     tokio::spawn(async move {
         let started = tokio::time::Instant::now();
         let mut checked = started;
-        let Ok((mut seen, _)) = org_version(&s, org, user).await else {
+        let Ok((mut seen, _)) = org_version(&s, org, user, party).await else {
             return;
         };
         if tx
@@ -128,7 +142,7 @@ pub async fn org_live(s: AppState, h: HeaderMap, org: Uuid) -> Result<LiveStream
                     return;
                 }
             }
-            let Ok((now, last)) = org_version(&s, org, user).await else {
+            let Ok((now, last)) = org_version(&s, org, user, party).await else {
                 continue;
             };
             let changed = now.notification != seen.notification || now.unread != seen.unread;

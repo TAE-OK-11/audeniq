@@ -526,9 +526,32 @@ async fn freshness_check(
 /// Verify one transfer file against its pinned asset record and storage:
 /// the object must exist with the pinned size and content type, and its
 /// bytes must hash to the pinned SHA-256. Fails closed on any drift.
+/// The bytes in storage must still be the pinned ones: size, content type
+/// and SHA-256 (streamed, constant memory). Runs with no DB transaction
+/// open — hashing a 512 MiB master outlasts the worker's
+/// idle-in-transaction timeout.
+async fn verify_storage(storage: &Arc<dyn ObjectStore>, f: &TransferFile) -> Result<()> {
+    let head = storage
+        .head(&f.object_key)
+        .await
+        .map_err(|_| Error::Storage)?
+        .ok_or(Error::Storage)?;
+    if head.size != f.size_bytes || head.content_type != f.content_type {
+        return Err(Error::PolicyGate("EXECUTION_FILE_DRIFT"));
+    }
+    let digest = match storage.digest(&f.object_key, f.size_bytes as u64).await {
+        Ok(d) => d,
+        Err(Error::PolicyGate(_)) => return Err(Error::PolicyGate("EXECUTION_FILE_DRIFT")),
+        Err(_) => return Err(Error::Storage),
+    };
+    if digest.size != f.size_bytes as u64 || digest.sha256 != f.sha256 {
+        return Err(Error::PolicyGate("EXECUTION_FILE_TAMPERED"));
+    }
+    Ok(())
+}
+
 async fn verify_file(
     tx: &mut PgConnection,
-    storage: &Arc<dyn ObjectStore>,
     org_id: Uuid,
     asset_id: Uuid,
     key: &str,
@@ -564,23 +587,6 @@ async fn verify_file(
     let content_type: String = pin.get("content_type");
     if size_bytes > crate::preflight::MAX_PREFLIGHT_ASSET_BYTES {
         return Err(Error::PolicyGate("EXECUTION_FILE_TOO_LARGE"));
-    }
-    let head = storage
-        .head(key)
-        .await
-        .map_err(|_| Error::Storage)?
-        .ok_or(Error::Storage)?;
-    if head.size != size_bytes || head.content_type != content_type {
-        return Err(Error::PolicyGate("EXECUTION_FILE_DRIFT"));
-    }
-    // Streamed hash: constant memory for masters up to the upload cap.
-    let digest = match storage.digest(key, size_bytes as u64).await {
-        Ok(d) => d,
-        Err(Error::PolicyGate(_)) => return Err(Error::PolicyGate("EXECUTION_FILE_DRIFT")),
-        Err(_) => return Err(Error::Storage),
-    };
-    if digest.size != size_bytes as u64 || digest.sha256 != sha256 {
-        return Err(Error::PolicyGate("EXECUTION_FILE_TAMPERED"));
     }
     let (mut delivery_name, role) = delivery;
     if delivery_name.is_empty() {
@@ -633,7 +639,6 @@ fn has_virtual_identifier(snapshot: &Value) -> bool {
 async fn materialize(
     pool: &PgPool,
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    storage: &Arc<dyn ObjectStore>,
     job: &DeliveryJob,
 ) -> Result<TransferPackage> {
     let row = sqlx::query(
@@ -690,15 +695,8 @@ async fn materialize(
                 .and_then(|s| Uuid::parse_str(s).ok())
                 .ok_or(Error::PolicyGate("EXECUTION_FILE_REF_MISSING"))?;
             let n = |k: &str| t.get(k).and_then(Value::as_u64).unwrap_or(1) as u32;
-            let mut f = verify_file(
-                tx,
-                storage,
-                org_id,
-                asset_id,
-                key,
-                (String::new(), FileRole::Audio),
-            )
-            .await?;
+            let mut f =
+                verify_file(tx, org_id, asset_id, key, (String::new(), FileRole::Audio)).await?;
             let name = delivery_name(
                 upc.as_deref(),
                 FileRole::Audio,
@@ -723,7 +721,6 @@ async fn materialize(
             .ok_or(Error::PolicyGate("EXECUTION_FILE_REF_MISSING"))?;
         let mut f = verify_file(
             tx,
-            storage,
             org_id,
             asset_id,
             key,
@@ -846,12 +843,24 @@ pub async fn run_delivery(
     if adapter.partner_id() != job.partner_id {
         return Err(Error::PolicyGate("EXECUTION_PARTNER_MISMATCH"));
     }
+    // Capability before the expensive checks: without it nothing can be sent,
+    // and the lease goes back instead of being re-taken (and every master
+    // re-hashed) on each retry until the attempts run out.
+    if let Err(e) = adapter.require(adapter.capabilities().send_or_publish, "send_or_publish") {
+        tx.rollback().await?;
+        release_delivery_lease(pool, job, "EXECUTION_CAPABILITY_MISSING").await?;
+        return Err(e);
+    }
     // E-1. A failed check poisons the Postgres transaction (any error aborts
     // it), so the failure bookkeeping below runs in a FRESH transaction via
     // fail_job — reusing `tx` would mask the real error with 25P02.
     if let Err(e) = freshness_check(&mut tx, job).await {
         let msg = format!("{e:?}");
         tx.rollback().await?;
+        if transient(&e) {
+            requeue_delivery_job(pool, job, "E-1 transient error").await?;
+            return Err(e);
+        }
         fail_job(
             pool,
             job,
@@ -864,16 +873,34 @@ pub async fn run_delivery(
         return Err(e);
     }
     // E-2. Same poisoned-transaction rule as E-1.
-    let package = match materialize(pool, &mut tx, storage, job).await {
+    let package = match materialize(pool, &mut tx, job).await {
         Ok(p) => p,
         Err(e) => {
             let msg = format!("{e:?}");
             tx.rollback().await?;
+            if transient(&e) {
+                requeue_delivery_job(pool, job, "E-2 transient error").await?;
+                return Err(e);
+            }
             fail_job(pool, job, "FAILED", &msg, None, None).await?;
             return Err(e);
         }
     };
-    adapter.require(adapter.capabilities().send_or_publish, "send_or_publish")?;
+    // Storage and partner checks take minutes for large masters: no DB
+    // transaction stays open across them (the worker role's
+    // idle_in_transaction_session_timeout is 30 s). The lease is renewed
+    // meanwhile; E-1 and the lease are checked again below.
+    tx.commit().await?;
+    for f in &package.files {
+        if let Err(e) = verify_storage(storage, f).await {
+            if transient(&e) {
+                requeue_delivery_job(pool, job, "E-2 storage unavailable").await?;
+            } else {
+                fail_job(pool, job, "FAILED", &format!("{e:?}"), None, None).await?;
+            }
+            return Err(e);
+        }
+    }
     // Adapter-side validation (partner rules, file names, metadata the feed
     // needs). A failure here is permanent for this package: record it on the
     // job instead of leaving the job LEASED for the reconciler to requeue
@@ -884,7 +911,6 @@ pub async fn run_delivery(
     };
     if let Err(e) = checked {
         let msg = format!("{e:?}");
-        tx.rollback().await?;
         fail_job(
             pool,
             job,
@@ -892,6 +918,30 @@ pub async fn run_delivery(
             &format!("ADAPTER_VALIDATION:{msg}"),
             Some("PARTNER_REJECTED"),
             Some(json!({"stage":"E-2","adapter_validation":msg})),
+        )
+        .await?;
+        return Err(e);
+    }
+    let mut tx = pool.begin().await?;
+    authorize_org(&mut tx, job.org_id).await?;
+    if !job_lease_ok(&mut tx, job).await? {
+        return Err(Error::Conflict);
+    }
+    // Rights or contract scope may have moved while the files were checked.
+    if let Err(e) = freshness_check(&mut tx, job).await {
+        let msg = format!("{e:?}");
+        tx.rollback().await?;
+        if transient(&e) {
+            requeue_delivery_job(pool, job, "E-1 transient error").await?;
+            return Err(e);
+        }
+        fail_job(
+            pool,
+            job,
+            "FAILED",
+            &msg,
+            Some("PARTNER_REJECTED"),
+            Some(json!({"stage":"E-1","error":msg})),
         )
         .await?;
         return Err(e);
@@ -1335,8 +1385,10 @@ pub async fn apply_ack_event(
                 .await?;
             } else {
                 sqlx::query(
+                    // Only a send still in flight (or unknown) can be refused:
+                    // a late/out-of-order REJECTED never undoes a delivery.
                     "UPDATE execution.delivery_jobs SET status='FAILED', last_error='PARTNER_WEBHOOK_REJECTED', updated_at=now()
-                     WHERE id=$1",
+                     WHERE id=$1 AND status IN ('SENDING','AWAITING_RECONCILIATION')",
                 )
                 .bind(job_id)
                 .execute(&mut *tx)
@@ -1521,15 +1573,35 @@ pub async fn poll_live(
             "REJECTED"
         }
         InquiryOutcome::Accepted { .. } | InquiryOutcome::StillUnknown => {
-            sqlx::query(
+            // Never move a binding back from LIVE or a takedown state: the
+            // poll chain runs independently of webhooks.
+            let n = sqlx::query(
                 "UPDATE execution.live_bindings SET live_status='INGESTING', last_checked_at=now(), updated_at=now()
-                 WHERE package_id=$1 AND partner_id=$2",
+                 WHERE package_id=$1 AND partner_id=$2 AND live_status IN ('UNKNOWN','INGESTING')",
             )
             .bind(package_id)
             .bind(partner_id)
             .execute(&mut *tx)
-            .await?;
-            "INGESTING"
+            .await?
+            .rows_affected();
+            if n == 0 {
+                // Already LIVE / taken down (webhook or staff evidence): the
+                // chain stops on that state instead of polling on.
+                let current: Option<String> = sqlx::query_scalar(
+                    "SELECT live_status FROM execution.live_bindings WHERE package_id=$1 AND partner_id=$2",
+                )
+                .bind(package_id)
+                .bind(partner_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+                match current.as_deref() {
+                    Some("LIVE") => "LIVE",
+                    Some("TAKEN_DOWN") | Some("TAKEDOWN_REQUESTED") => "TAKEN_DOWN",
+                    _ => "INGESTING",
+                }
+            } else {
+                "INGESTING"
+            }
         }
     };
     tx.commit().await?;
@@ -2103,6 +2175,51 @@ pub async fn lease_delivery_job(
 /// Hand a leased delivery job back (QUEUED, lease cleared, attempt not
 /// counted as a send) when the worker cannot even start: e.g. no adapter
 /// is configured for the partner yet. The reconciler requeues it later.
+/// A storage or database hiccup, not a verdict on the package: the send is
+/// retried (the attempt counts) instead of failing the delivery for good.
+fn transient(e: &Error) -> bool {
+    matches!(e, Error::Storage | Error::Database(_) | Error::UploadBusy)
+}
+
+/// Put a leased delivery job back in the queue after a transient error,
+/// keeping the attempt it used (max_attempts still bounds the retries).
+pub async fn requeue_delivery_job(pool: &PgPool, job: &DeliveryJob, reason: &str) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    authorize_org(&mut tx, job.org_id).await?;
+    sqlx::query(
+        "UPDATE execution.delivery_jobs SET status='QUEUED', locked_by=NULL, lock_token=NULL,
+         lease_until=NULL, last_error=$3, updated_at=now()
+         WHERE id=$1 AND lock_token=$2 AND status IN ('LEASED','SENDING')",
+    )
+    .bind(job.id)
+    .bind(job.token)
+    .bind(reason)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Extend a delivery job's lease while its send is still running (hashing
+/// every master and a long transfer can outlast one lease); the operations
+/// job heartbeat calls it. Returns false once the lease is no longer ours.
+pub async fn renew_delivery_lease(pool: &PgPool, job: &DeliveryJob, seconds: i32) -> Result<bool> {
+    let mut tx = pool.begin().await?;
+    authorize_org(&mut tx, job.org_id).await?;
+    let n = sqlx::query(
+        "UPDATE execution.delivery_jobs SET lease_until=now()+make_interval(secs=>$3)
+         WHERE id=$1 AND lock_token=$2 AND status IN ('LEASED','SENDING') AND lease_until>clock_timestamp()",
+    )
+    .bind(job.id)
+    .bind(job.token)
+    .bind(seconds as f64)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    tx.commit().await?;
+    Ok(n == 1)
+}
+
 pub async fn release_delivery_lease(pool: &PgPool, job: &DeliveryJob, reason: &str) -> Result<()> {
     let mut tx = pool.begin().await?;
     authorize_org(&mut tx, job.org_id).await?;
