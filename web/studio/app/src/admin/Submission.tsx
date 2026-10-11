@@ -17,6 +17,7 @@ import { Modal } from '../components/Modal';
 import { Glyph } from '../components/Glyph';
 import { CheckIcon } from '../components/Check';
 import { audioSpecs } from './audio';
+import { territorySummary } from '../lib/territories';
 
 const dash = (v?: string | null) => (v && String(v).trim() ? v : '—');
 const INTEGRITY_TONE: Record<Integrity, 'green' | 'red' | 'gray'> = { ok: 'green', changed: 'red', unsigned: 'gray', checking: 'gray' };
@@ -168,7 +169,7 @@ export function EnteredInfoSection({ sheet }: { sheet: ReleaseSheet }) {
               </dd>
             </div>
           )}
-          {d && <div style={{ gridColumn: '1 / -1' }}><dt>배급 지역</dt><dd>{territories.includes('WORLD') ? '전 세계' : dash(territories.join(', '))}</dd></div>}
+          {d && <div style={{ gridColumn: '1 / -1' }}><dt>배급 지역</dt><dd>{dash(territorySummary(territories, ''))}</dd></div>}
           <div style={{ gridColumn: '1 / -1' }}>
             <dt>신고 항목</dt>
             <dd className="adm-decl">

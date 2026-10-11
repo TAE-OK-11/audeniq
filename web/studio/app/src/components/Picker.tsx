@@ -246,6 +246,15 @@ export function SelectHost() {
     };
   }, []);
 
+  // 열려 있는 동안 칸에 표시를 달아 화살표가 위로 돌아가게 한다
+  useEffect(() => {
+    if (!open) return;
+    const el = open.el;
+    el.setAttribute('data-open', '');
+    el.setAttribute('aria-expanded', 'true');
+    return () => { el.removeAttribute('data-open'); el.removeAttribute('aria-expanded'); };
+  }, [open]);
+
   // 시트가 떠 있는 동안 select가 화면에서 사라지면(페이지 이동 등) 닫는다
   useEffect(() => {
     if (!open) return;

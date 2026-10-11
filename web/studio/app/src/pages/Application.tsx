@@ -15,6 +15,7 @@ import { PROFILE_LINKS } from '../lib/dsp';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
 import { rereleaseSummary } from '../lib/rerelease';
+import { territorySummary } from '../lib/territories';
 
 type Integrity = 'checking' | 'ok' | 'changed' | 'legacy';
 
@@ -191,7 +192,7 @@ export function Application() {
           <h2><span>4</span>배급 범위 및 권리</h2>
           <table className="aq-paper-kv">
             <tbody>
-              <tr><th>배급 지역</th><td colSpan={3}>{snap.territories.includes('WORLD') ? '전 세계' : dash(snap.territories.join(', '))}</td></tr>
+              <tr><th>배급 지역</th><td colSpan={3}>{dash(territorySummary(snap.territories, ''))}</td></tr>
               <tr><th>배급 플랫폼</th><td colSpan={3}>{snap.platforms.map(dspLabel).join(', ') || '—'}</td></tr>
               <tr><th>마스터 권리자</th><td colSpan={3}>{dash(snap.ownership)}</td></tr>
               <tr><th>℗ 표기</th><td>℗ {dash(snap.phonogram)}</td><th>© 표기</th><td>© {dash(snap.copyright)}</td></tr>
