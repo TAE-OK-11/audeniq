@@ -1,4 +1,5 @@
 import { dspLabel } from './catalog';
+import { territorySummary } from './territories';
 
 // 권리 서류 서식 AUD-RIGHTS 2.0 — 권리자 본인이 본인확인 후 직접 서명하는 전자 문서.
 // 문안은 일반적인 이용 허락·위임 계약의 필수 요소(당사자, 대상, 범위, 기간, 대가, 보증, 철회,
@@ -87,7 +88,7 @@ export function rightsDocumentBody(kind: RightsDocumentKind, context: RightsDocu
     `제1조 (${shared ? '위임' : '이용 허락'})`,
     d.grant,
     `${shared ? '위임하는 지분·범위' : '허락하는 권리·지분·사용 범위'}: ${input.scope.trim()}`,
-    `배급 지역: ${context.territories.includes('WORLD') ? '전 세계' : context.territories.join(', ') || '배급 신청서에 지정한 지역'}`,
+    `배급 지역: ${territorySummary(context.territories, '배급 신청서에 지정한 지역')}`,
     `배급 플랫폼: ${context.platforms.map(dspLabel).join(', ') || '배급 신청서에 지정한 플랫폼'}`,
     '',
     '제2조 (기간)',
