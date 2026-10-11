@@ -525,6 +525,30 @@ async fn dsp_01_accept_happy_path_goes_live(pool: PgPool) {
     assert_eq!(released, 1);
 }
 
+/// Finance holds stop payouts, not releases: an active payee or release hold
+/// used to block every delivery of the account (EXECUTION_HOLD_ACTIVE).
+#[sqlx::test]
+async fn finance_holds_do_not_block_delivery(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    for (scope, value) in [
+        ("PARTY", ctx.user.party.to_string()),
+        ("RELEASE", ctx.release.to_string()),
+    ] {
+        sqlx::query("INSERT INTO finance.finance_holds(id,org_id,scope_type,scope_value,reason,reason_class) VALUES($1,$2,$3,$4,'payee review','FRAUD_REVIEW')")
+            .bind(Uuid::new_v4())
+            .bind(ctx.org)
+            .bind(scope)
+            .bind(value)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    let mock = MockDsp::new(MockBehavior::Accept);
+    let (job_id, status) = run_send(&pool, &ctx, &mock).await;
+    assert_eq!(status, "DELIVERED");
+    assert_eq!(job_status(&pool, ctx.org, job_id).await, "DELIVERED");
+}
+
 #[sqlx::test]
 async fn dsp_02_reject_fails_job_and_opens_case(pool: PgPool) {
     let ctx = ready_package(&pool).await;

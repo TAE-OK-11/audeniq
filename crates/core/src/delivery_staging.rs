@@ -676,7 +676,7 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
     .fetch_all(pool)
     .await?;
     let facts = credit_facts(&canonical, &draft);
-    let today = chrono::Utc::now().date_naive();
+    let today = crate::domain::today_kst();
     let approved: HashSet<Uuid> = canonical.approved_dsp_ids.iter().copied().collect();
 
     let dsp_ids: Vec<Uuid> = requested.iter().map(|d| d.uuid()).collect();
