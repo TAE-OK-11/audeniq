@@ -21,6 +21,7 @@ const PAGE_LOADERS = {
   Documents: () => import('./pages/Documents'),
   Inquiries: () => import('./pages/Inquiries'),
   Deliveries: () => import('./pages/Deliveries'),
+  ReleaseActions: () => import('./pages/ReleaseActions'),
   Dsps: () => import('./pages/Dsps'),
   Payouts: () => import('./pages/Payouts'),
   ContentAdmin: () => import('./pages/ContentAdmin'),
@@ -33,6 +34,7 @@ const Approvals = page('Approvals');
 const Documents = page('Documents');
 const Inquiries = page('Inquiries');
 const Deliveries = page('Deliveries');
+const ReleaseActions = page('ReleaseActions');
 const Dsps = page('Dsps');
 const Payouts = page('Payouts');
 const ContentAdmin = page('ContentAdmin');
@@ -75,7 +77,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
     group: '배급',
     items: [
       // 배급은 최종 승인 + 아티스트 서명 후 자동 — 여기서는 현황과 문제만 본다 (플랫폼 조건은 탭)
-      { to: '/deliveries', label: '배급 현황', icon: 'delivery', count: o => o.deliveries_blocked, hot: true, also: ['/dsps'] },
+      { to: '/deliveries', label: '배급 현황', icon: 'delivery', count: o => o.deliveries_blocked, hot: true, also: ['/dsps', '/release-actions'] },
       { to: '/payouts', label: '지급 요청', icon: 'payout', count: o => o.payout_requests, adminOnly: true },
     ],
   },
@@ -217,6 +219,7 @@ export function AdminApp() {
               <Route path="/inquiries" element={<Inquiries />} />
               <Route path="/inquiries/:id" element={<Inquiries />} />
               <Route path="/deliveries" element={<Deliveries />} />
+              <Route path="/release-actions" element={<ReleaseActions />} />
               <Route path="/dsps" element={<Dsps />} />
               <Route path="/payouts" element={me.role === 'ADMIN' ? <Payouts /> : <Navigate to="/" replace />} />
               <Route path="/admin/content" element={me.role === 'ADMIN' ? <ContentAdmin /> : <Navigate to="/" replace />} />

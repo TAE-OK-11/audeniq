@@ -18,7 +18,7 @@ export function Dsps() {
         sub="플랫폼별 요구 조건과 연결 상태예요. 문제가 있으면 빨간색으로 표시돼요."
         actions={<button type="button" className="ui-btn is-soft is-sm" onClick={() => { reload(); blocked.reload(); }}>새로고침</button>}
       />
-      <SubTabs tabs={[{ to: '/deliveries', label: '배급 현황' }, { to: '/dsps', label: '플랫폼별 조건' }]} />
+      <SubTabs tabs={[{ to: '/deliveries', label: '배급 현황' }, { to: '/release-actions', label: '발매 후 요청' }, { to: '/dsps', label: '플랫폼별 조건' }]} />
       {error && <ErrorBox message={error} onRetry={reload} />}
       {loading && !data ? <SkeletonList rows={3} /> : items.length === 0 ? <EmptyState title="플랫폼 정보가 없어요" /> : (
         <div className="adm-dsp-grid">

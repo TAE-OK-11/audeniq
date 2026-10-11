@@ -48,6 +48,7 @@ pub mod protected_names;
 pub mod provenance;
 pub mod qc;
 pub mod qc_engine;
+pub mod release_actions;
 pub mod review;
 pub mod rights_grants;
 pub mod route_plan;

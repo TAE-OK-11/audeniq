@@ -76,6 +76,9 @@ pub async fn open_edit(pool: &PgPool, a: &Actor, org: Uuid, release: Uuid) -> Re
     if busy {
         return Err(Error::PolicyGate("RELEASE_DELIVERY_IN_PROGRESS"));
     }
+    // A takedown / termination / transfer in progress, or distribution
+    // already ended, leaves nothing to update (0098).
+    crate::release_actions::ensure_distribution_open(&mut tx, release).await?;
     let held: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM finance.finance_holds WHERE org_id=$1 AND active AND scope_type='RELEASE' AND scope_value=$2)",
     )

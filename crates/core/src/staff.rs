@@ -2926,6 +2926,72 @@ async fn h_payouts(
     Ok(Json(payout_requests(&s, &h, p).await?))
 }
 
+#[derive(Deserialize)]
+struct ActionListQuery {
+    #[serde(default)]
+    all: bool,
+}
+async fn h_release_actions(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<ActionListQuery>,
+) -> Result<Json<Value>> {
+    let st = staff(&s, &h, false).await?;
+    require(&st, Duty::Delivery)?;
+    let mut tx = s.pool.begin().await?;
+    staff_scope(&mut tx).await?;
+    let out = crate::release_actions::staff_list(&mut tx, !q.all).await?;
+    tx.commit().await?;
+    Ok(Json(out))
+}
+async fn h_release_action_intake(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    h: HeaderMap,
+    Json(i): Json<crate::release_actions::RequestInput>,
+) -> Result<Json<Value>> {
+    let st = staff(&s, &h, true).await?;
+    require(&st, Duty::Delivery)?;
+    Ok(Json(
+        crate::release_actions::staff_intake(&s.pool, &st, id, i).await?,
+    ))
+}
+async fn h_release_action_decide(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    h: HeaderMap,
+    Json(d): Json<crate::release_actions::Decision>,
+) -> Result<Json<Value>> {
+    let st = staff(&s, &h, true).await?;
+    require(&st, Duty::Delivery)?;
+    Ok(Json(
+        crate::release_actions::decide(&s.pool, &st, id, d).await?,
+    ))
+}
+async fn h_release_action_evidence(
+    State(s): State<AppState>,
+    Path((id, task)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+    Json(e): Json<crate::release_actions::Evidence>,
+) -> Result<Json<Value>> {
+    let st = staff(&s, &h, true).await?;
+    require(&st, Duty::Delivery)?;
+    Ok(Json(
+        crate::release_actions::record_evidence(&s.pool, &st, id, task, e).await?,
+    ))
+}
+async fn h_release_action_retry(
+    State(s): State<AppState>,
+    Path((id, task)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let st = staff(&s, &h, true).await?;
+    require(&st, Duty::Delivery)?;
+    Ok(Json(
+        crate::release_actions::retry_task(&s.pool, &st, id, task).await?,
+    ))
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/staff/me", get(h_me))
@@ -2981,6 +3047,23 @@ pub fn routes() -> Router<AppState> {
         .route("/api/staff/dsps", get(h_dsps))
         .route("/api/staff/dsps/{code}/route", post(h_dsp_route))
         .route("/api/staff/payouts", get(h_payouts))
+        .route("/api/staff/release-actions", get(h_release_actions))
+        .route(
+            "/api/staff/releases/{id}/actions",
+            post(h_release_action_intake),
+        )
+        .route(
+            "/api/staff/release-actions/{id}/decision",
+            post(h_release_action_decide),
+        )
+        .route(
+            "/api/staff/release-actions/{id}/tasks/{task}/evidence",
+            post(h_release_action_evidence),
+        )
+        .route(
+            "/api/staff/release-actions/{id}/tasks/{task}/retry",
+            post(h_release_action_retry),
+        )
 }
 
 #[cfg(test)]

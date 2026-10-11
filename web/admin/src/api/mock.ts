@@ -4,7 +4,7 @@ import { ApiError, messageForCode } from './errors';
 import { applicationPending, needsSecond } from '../labels';
 import type {
   ApprovalItem, DecisionInput, DecisionResult, DeliveryDecisionInput, DeliveryItem, DspItem, InquiryMessage, InquiryItem,
-  Overview, PayoutItem, QueueRelease, ReleaseSheet, ReleaseTimelineItem, StagingRow, StaffDocument, StaffMe, AgreementTerms, AgreementTermsInput
+  Overview, PayoutItem, QueueRelease, ReleaseSheet, ReleaseTimelineItem, StagingRow, StaffDocument, StaffMe, AgreementTerms, AgreementTermsInput, ReleaseActionItem
 } from './staff';
 import { applicationHash, type StudioDraft } from '../lib/application';
 
@@ -425,6 +425,10 @@ export const mockStaff = {
     return wait({ approval: d.approval });
   },
   restage: (_pkg: string) => wait({ job_id: uid() }),
+  releaseActions: (_all?: boolean) => wait({ actions: [] as ReleaseActionItem[] }),
+  decideReleaseAction: (aid: string, b: { approve: boolean }) => wait({ id: aid, status: b.approve ? 'IN_PROGRESS' : 'REJECTED' }),
+  releaseActionEvidence: (_aid: string, task: string, _note: string) => wait({ task_id: task }),
+  retryReleaseAction: (_aid: string, task: string) => wait({ task_id: task }),
   dsps: () => wait({ items: dsps }),
   payouts: (status: string) => wait({ items: payouts.filter(p => p.status === status) }),
 };

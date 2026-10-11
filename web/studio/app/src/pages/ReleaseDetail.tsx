@@ -17,6 +17,7 @@ import { fixCountWord, fixPath, splitCorrections } from '../lib/corrections';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
 import { ContractBundle } from '../components/ContractBundle';
+import { ReleaseActions } from '../components/ReleaseActions';
 
 /** 아직 없는 값 — 실제 값처럼 진하게 보이지 않도록 흐리게 */
 const Empty = ({ children }: { children: string }) => <span className="aq-empty-val">{children}</span>;
@@ -491,6 +492,8 @@ export function ReleaseDetail() {
                   </ul>
                 </>
               )}
+              {/* 공개된 발매만: 배급 중단·계약 종료·유통사 이전 요청 (체험 모드에는 실제 배급이 없다) */}
+              {rel.status === 'live' && !MOCK && <ReleaseActions releaseId={rel.id} />}
               <h2 className="subhead">권리 확인</h2>
               <dl className="ui-kv is-2">
                 <div><dt>마스터 권리자</dt><dd>{d?.ownership || '미입력'}</dd></div>

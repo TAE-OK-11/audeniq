@@ -2202,14 +2202,17 @@ pub async fn takedown_release(
     authorize_org(&mut tx, org).await?;
     match outcome {
         SendOutcome::Accepted { .. } => {
-            sqlx::query(
-                "UPDATE execution.live_bindings SET live_status='TAKEDOWN_REQUESTED', last_checked_at=now(), updated_at=now()
-                 WHERE package_id=$1 AND partner_id=$2",
-            )
-            .bind(package_id)
-            .bind(partner_id)
-            .execute(&mut *tx)
-            .await?;
+            // Upsert: a platform that never reported LIVE has no binding yet,
+            // and the takedown must still be tracked (0098 tasks follow it).
+            let job = DeliveryJob {
+                id: job_id,
+                token: Uuid::nil(),
+                org_id: org,
+                package_id,
+                partner_id: partner_id.to_string(),
+                attempts: 0,
+            };
+            upsert_live_binding(&mut tx, &job, "TAKEDOWN_REQUESTED", None).await?;
             tx.commit().await?;
             Ok("TAKEDOWN_REQUESTED".to_string())
         }
@@ -2345,6 +2348,54 @@ pub async fn record_manual_live(
     .await?;
     tx.commit().await?;
     Ok("LIVE".to_string())
+}
+
+/// Record that a platform removed the release, on staff evidence (the
+/// operator took it down in the platform's own channel, or the platform
+/// confirmed by mail). Release-action tasks for it complete (0098).
+pub async fn record_manual_takedown(
+    pool: &PgPool,
+    package_id: Uuid,
+    partner_id: &str,
+    staff_user: Option<Uuid>,
+) -> Result<String> {
+    let org: Uuid =
+        sqlx::query_scalar("SELECT org_id FROM distribution.distribution_packages WHERE id=$1")
+            .bind(package_id)
+            .fetch_optional(pool)
+            .await?
+            .ok_or(Error::NotFound)?;
+    let mut tx = pool.begin().await?;
+    authorize_org(&mut tx, org).await?;
+    let job_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM execution.delivery_jobs WHERE package_id=$1 AND partner_id=$2 AND status='DELIVERED'",
+    )
+    .bind(package_id)
+    .bind(partner_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(Error::PolicyGate("DELIVERY_NOT_DELIVERED"))?;
+    let job = DeliveryJob {
+        id: job_id,
+        token: Uuid::nil(),
+        org_id: org,
+        package_id,
+        partner_id: partner_id.to_string(),
+        attempts: 0,
+    };
+    upsert_live_binding(&mut tx, &job, "TAKEN_DOWN", None).await?;
+    crate::operations::audit(
+        &mut tx,
+        staff_user,
+        Some(org),
+        Some(job_id),
+        "delivery.takedown_recorded",
+        "STAFF_EVIDENCE",
+        Uuid::new_v4(),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok("TAKEN_DOWN".to_string())
 }
 
 /// Why a delivery job could not be leased (sandbox round 2: a worker killed

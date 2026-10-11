@@ -925,6 +925,26 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
             .get("partner_id")
             .and_then(Value::as_str)
             .ok_or(Error::Internal)?;
+        // A release-action task (0098) hears how its takedown went.
+        let task = j
+            .payload
+            .get("action_task_id")
+            .and_then(Value::as_str)
+            .and_then(|s| Uuid::parse_str(s).ok());
+        let report = |status: &'static str, error: String| {
+            let pool = pool.clone();
+            async move {
+                if let Some(task) = task {
+                    sqlx::query("SELECT execution.release_action_task_outcome($1,$2,$3)")
+                        .bind(task)
+                        .bind(status)
+                        .bind(error)
+                        .execute(&pool)
+                        .await?;
+                }
+                Ok::<_, Error>(())
+            }
+        };
         let org: Uuid =
             sqlx::query_scalar("SELECT org_id FROM distribution.distribution_packages WHERE id=$1")
                 .bind(package_id)
@@ -933,6 +953,7 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
                 .ok_or(Error::NotFound)?;
         let registry = crate::partners::registry(pool, storage, shared_mockdsp()).await?;
         let Some(adapter) = registry.get(partner_id) else {
+            report("MANUAL_REQUIRED", "EXECUTION_NO_ADAPTER".into()).await?;
             return fail(pool, j, true, "EXECUTION_NO_ADAPTER").await;
         };
         return match crate::execution::takedown_release(
@@ -944,15 +965,64 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
         )
         .await
         {
-            Ok(_) => succeed(pool, j).await,
+            Ok(_) => {
+                report("SENT", String::new()).await?;
+                succeed(pool, j).await
+            }
+            Err(Error::Gated) => {
+                // No takedown feed for this platform: the operator does it in
+                // the platform's own channel and records the evidence.
+                report("MANUAL_REQUIRED", "TAKEDOWN_NOT_SUPPORTED".into()).await?;
+                succeed(pool, j).await
+            }
             Err(e) => {
                 let short: String = format!("{e:?}").chars().take(500).collect();
                 let permanent = matches!(e, Error::PolicyGate(_));
+                if permanent {
+                    report("FAILED", short.clone()).await?;
+                }
                 fail(
                     pool,
                     j,
                     permanent,
                     &format!("DELIVERY_TAKEDOWN_ERROR:{short}"),
+                )
+                .await
+            }
+        };
+    }
+    if j.kind == "delivery.mark_taken_down" {
+        // Staff-recorded takedown evidence (0098).
+        let package_id = j
+            .payload
+            .get("package_id")
+            .and_then(Value::as_str)
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .ok_or(Error::Internal)?;
+        let partner_id = j
+            .payload
+            .get("partner_id")
+            .and_then(Value::as_str)
+            .ok_or(Error::Internal)?;
+        let staff = j
+            .payload
+            .get("staff_user_id")
+            .and_then(Value::as_str)
+            .and_then(|s| Uuid::parse_str(s).ok());
+        return match crate::execution::record_manual_takedown(pool, package_id, partner_id, staff)
+            .await
+        {
+            Ok(_) => succeed(pool, j).await,
+            Err(e @ (Error::NotFound | Error::PolicyGate(_))) => {
+                fail(pool, j, true, &format!("DELIVERY_MARK_TAKEN_DOWN:{e}")).await
+            }
+            Err(e) => {
+                let short: String = format!("{e:?}").chars().take(500).collect();
+                fail(
+                    pool,
+                    j,
+                    false,
+                    &format!("DELIVERY_MARK_TAKEN_DOWN_ERROR:{short}"),
                 )
                 .await
             }

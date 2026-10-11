@@ -4669,3 +4669,276 @@ async fn approved_rights_document_becomes_grants_and_rechecks(pool: PgPool) {
         "the track grant does not touch other tracks"
     );
 }
+
+/// Deliver the ready package and take it live on the MockDSP.
+async fn deliver_live(pool: &PgPool, ctx: &ReadyCtx) -> MockDsp {
+    let mock = MockDsp::new(MockBehavior::Accept);
+    let (job_id, status) = run_send(pool, ctx, &mock).await;
+    assert_eq!(status, "DELIVERED");
+    let pmid: String = {
+        let mut c = authed(pool, ctx.org).await;
+        sqlx::query_scalar(
+            "SELECT partner_message_id FROM execution.delivery_attempts WHERE job_id=$1",
+        )
+        .bind(job_id)
+        .fetch_one(&mut *c)
+        .await
+        .unwrap()
+    };
+    let payload = mock.emit_webhook(&pmid, "live");
+    execution::ingest_ack(pool, ctx.org, &mock, &payload)
+        .await
+        .unwrap();
+    assert_eq!(live_status(pool, ctx.org, ctx.package_id).await, "LIVE");
+    // The signing's own enqueue job is still queued: it finds the job done.
+    assert_eq!(
+        run_one(pool, &ctx.store, "delivery", "delivery.enqueue").await,
+        "SUCCEEDED"
+    );
+    mock
+}
+
+async fn action_task(pool: &PgPool, action: &str) -> (String, String, Option<String>) {
+    sqlx::query_as(
+        "SELECT t.status, a.status, t.confirmed_via FROM portal.release_action_tasks t
+           JOIN portal.release_actions a ON a.id=t.action_id WHERE a.id=$1::uuid",
+    )
+    .bind(action)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// 감사 P8: the owner asks for a takedown → authority check → a different
+/// staff member approves → one takedown task per platform → the platform
+/// takes the request → staff evidence confirms removal → action COMPLETED.
+#[sqlx::test]
+async fn release_takedown_request_runs_to_confirmed(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let actions = format!("/api/orgs/{}/releases/{}/actions", ctx.org, ctx.release);
+    let body = json!({"kind": "TAKEDOWN", "reason": "활동 중단"});
+    // Nothing delivered yet: nothing to take down.
+    let (s, v) = call(&ctx.app, "POST", &actions, body.clone(), Some(&ctx.user)).await;
+    assert_eq!(v["error"]["code"], "RELEASE_NOT_DELIVERED", "{s} {v}");
+    deliver_live(&pool, &ctx).await;
+    // The contract covers every platform: only a takedown names platforms.
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &actions,
+        json!({"kind": "TERMINATION", "reason": "x", "partners": ["mockdsp"]}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "RELEASE_ACTION_PARTNERS_TAKEDOWN_ONLY");
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &actions,
+        json!({"kind": "TAKEDOWN", "reason": "x", "partners": ["spotify"]}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "RELEASE_ACTION_PARTNER_NOT_LIVE");
+
+    let (s, v) = call(&ctx.app, "POST", &actions, body.clone(), Some(&ctx.user)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let action = v["id"].as_str().unwrap().to_owned();
+    assert_eq!(v["targets"][0]["partner_id"], "mockdsp");
+    let authority: Value =
+        sqlx::query_scalar("SELECT authority FROM portal.release_actions WHERE id=$1::uuid")
+            .bind(&action)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(authority["requester_role"], "OWNER");
+    assert!(
+        authority["agreement_document_id"].is_string(),
+        "{authority}"
+    );
+    // One open action per release; no post-release edit meanwhile.
+    let (_, v) = call(&ctx.app, "POST", &actions, body, Some(&ctx.user)).await;
+    assert_eq!(v["error"]["code"], "RELEASE_ACTION_OPEN");
+    let revise = format!("/api/orgs/{}/releases/{}/revise", ctx.org, ctx.release);
+    let (_, v) = call(&ctx.app, "POST", &revise, json!({}), Some(&ctx.user)).await;
+    assert_eq!(v["error"]["code"], "RELEASE_ACTION_OPEN");
+
+    let op = staff_user(&ctx.app, &pool, "OPERATOR").await;
+    let (s, v) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/release-actions",
+        Value::Null,
+        Some(&op),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert!(
+        v["actions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|a| a["id"] == action.as_str())
+    );
+    let decide = format!("/api/staff/release-actions/{action}/decision");
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &decide,
+        json!({"approve": true}),
+        Some(&op),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["status"], "IN_PROGRESS");
+    let task = v["tasks"][0]["id"].as_str().unwrap().to_owned();
+    assert_eq!(
+        action_task(&pool, &action).await,
+        ("QUEUED".into(), "IN_PROGRESS".into(), None)
+    );
+    // The worker sends the takedown; the platform takes it.
+    assert_eq!(
+        run_one(&pool, &ctx.store, "delivery", "delivery.takedown").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        live_status(&pool, ctx.org, ctx.package_id).await,
+        "TAKEDOWN_REQUESTED"
+    );
+    assert_eq!(action_task(&pool, &action).await.0, "SENT");
+    // The platform never confirmed: staff record the evidence.
+    let evidence = format!("/api/staff/release-actions/{action}/tasks/{task}/evidence");
+    let (_, v) = call(&ctx.app, "POST", &evidence, json!({"note": " "}), Some(&op)).await;
+    assert_eq!(v["error"]["code"], "REVIEW_NOTE_REQUIRED");
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &evidence,
+        json!({"note": "파트너 카탈로그에서 삭제 확인"}),
+        Some(&op),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(
+        run_one(&pool, &ctx.store, "delivery", "delivery.mark_taken_down").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        live_status(&pool, ctx.org, ctx.package_id).await,
+        "TAKEN_DOWN"
+    );
+    assert_eq!(
+        action_task(&pool, &action).await,
+        (
+            "CONFIRMED".into(),
+            "COMPLETED".into(),
+            Some("STAFF_EVIDENCE".into())
+        )
+    );
+    let notice: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM portal.notifications WHERE org_id=$1 AND title LIKE '%배급 중단이(가) 끝났어요.'",
+    )
+    .bind(ctx.org)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(notice, 1);
+    // The artist sees it, without staff identities.
+    let (s, v) = call(&ctx.app, "GET", &actions, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["actions"][0]["status"], "COMPLETED");
+    assert!(v["actions"][0].get("decided_by").is_none());
+    // Nothing is live any more.
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &actions,
+        json!({"kind": "TERMINATION", "reason": "계약 종료"}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "RELEASE_ACTION_NOTHING_LIVE");
+}
+
+/// Staff intake on a claim needs a second staff member; a transfer's
+/// takedowns wait for the switch date, and the artist gets the identifiers
+/// the new distributor needs.
+#[sqlx::test]
+async fn release_transfer_waits_for_its_date_and_needs_a_second_person(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    deliver_live(&pool, &ctx).await;
+    let a = staff_user(&ctx.app, &pool, "OPERATOR").await;
+    let b = staff_user(&ctx.app, &pool, "ADMIN").await;
+    let date = (chrono::Utc::now() + chrono::Duration::days(30)).date_naive();
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &format!("/api/staff/releases/{}/actions", ctx.release),
+        json!({"kind": "TRANSFER", "reason": "아티스트 요청(문의 접수)", "transfer_to": "다른 유통사", "effective_date": date}),
+        Some(&a),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let action = v["id"].as_str().unwrap().to_owned();
+    let decide = format!("/api/staff/release-actions/{action}/decision");
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &decide,
+        json!({"approve": true}),
+        Some(&a),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "SECOND_PERSON_REQUIRED");
+    // A staff-filed request is not the artist's to cancel.
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &format!(
+            "/api/orgs/{}/releases/{}/actions/{action}/cancel",
+            ctx.org, ctx.release
+        ),
+        json!({}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "RELEASE_ACTION_NOT_CANCELLABLE");
+    let packet = format!(
+        "/api/orgs/{}/releases/{}/actions/{action}/transfer-packet",
+        ctx.org, ctx.release
+    );
+    let (_, v) = call(&ctx.app, "GET", &packet, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(v["error"]["code"], "RELEASE_ACTION_NOT_APPROVED");
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &decide,
+        json!({"approve": true}),
+        Some(&b),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let job: String = v["tasks"][0]["job_id"].as_str().unwrap().to_owned();
+    let waits: bool = sqlx::query_scalar(
+        "SELECT run_at >= ($2::date)::timestamp AT TIME ZONE 'Asia/Seoul' FROM operations.jobs WHERE id=$1::uuid",
+    )
+    .bind(&job)
+    .bind(date)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(waits, "the takedown runs on the switch date");
+    // Not claimable before then.
+    assert!(
+        audeniq_core::operations::claim(&pool, "delivery", "test-worker", 60)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let (s, v) = call(&ctx.app, "GET", &packet, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["transfer_to"], "다른 유통사");
+    assert!(v["upc"].is_string(), "{v}");
+    assert!(v["tracks"][0]["isrc"].is_string(), "{v}");
+    assert_eq!(v["platforms"][0]["partner_id"], "mockdsp");
+}

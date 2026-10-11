@@ -44,6 +44,7 @@ export function NoDuty({ duty }: { duty: string }) {
 /** 배급 메뉴의 하위 화면 */
 export const DELIVERY_TABS = [
   { to: '/admin/deliveries', label: '배급 현황' },
+  { to: '/admin/release-actions', label: '발매 후 요청' },
   { to: '/admin/dsps', label: '플랫폼별 조건' },
   { to: '/admin/dsp-ops', label: 'DSP 운영' },
 ];

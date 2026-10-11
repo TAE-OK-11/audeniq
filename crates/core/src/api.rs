@@ -108,6 +108,18 @@ pub fn router(s: AppState) -> Router {
             post(withdraw_release),
         )
         .route("/api/orgs/{org}/releases/{id}/revise", post(revise_release))
+        .route(
+            "/api/orgs/{org}/releases/{id}/actions",
+            get(list_release_actions).post(request_release_action),
+        )
+        .route(
+            "/api/orgs/{org}/releases/{id}/actions/{action}/cancel",
+            post(cancel_release_action),
+        )
+        .route(
+            "/api/orgs/{org}/releases/{id}/actions/{action}/transfer-packet",
+            get(release_transfer_packet),
+        )
         .route("/api/orgs/{org}/withdrawals", get(withdraw_quota))
         .route(
             "/api/orgs/{org}/releases/{id}/submission",
@@ -669,6 +681,47 @@ async fn revise_release(
     let a = auth::actor(&s.pool, &h, &s.config, true).await?;
     Ok(Json(
         crate::post_release::open_edit(&s.pool, &a, org, id).await?,
+    ))
+}
+async fn request_release_action(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+    Json(i): Json<crate::release_actions::RequestInput>,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, true).await?;
+    Ok(Json(
+        crate::release_actions::request(&s.pool, &a, org, id, i).await?,
+    ))
+}
+async fn list_release_actions(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    Ok(Json(
+        crate::release_actions::list_for_release(&s.pool, &a, org, id).await?,
+    ))
+}
+async fn cancel_release_action(
+    State(s): State<AppState>,
+    Path((org, id, action)): Path<(Uuid, Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, true).await?;
+    Ok(Json(
+        crate::release_actions::cancel(&s.pool, &a, org, id, action).await?,
+    ))
+}
+async fn release_transfer_packet(
+    State(s): State<AppState>,
+    Path((org, id, action)): Path<(Uuid, Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    Ok(Json(
+        crate::release_actions::transfer_packet(&s.pool, &a, org, id, action).await?,
     ))
 }
 async fn withdraw_quota(

@@ -249,6 +249,21 @@ async function fetchText(path: string): Promise<string> {
   return text;
 }
 
+// 발매 후 배급 중단·계약 종료·유통사 이전 (0098)
+export interface ReleaseActionTask {
+  id: string; partner_id: string; package_id: string;
+  status: 'QUEUED' | 'SENT' | 'MANUAL_REQUIRED' | 'FAILED' | 'CONFIRMED' | string;
+  last_error: string | null; evidence_note: string | null; confirmed_via: string | null; confirmed_at: string | null;
+}
+export interface ReleaseActionItem {
+  id: string; org_id: string; release_id: string; release_title: string;
+  kind: 'TAKEDOWN' | 'TERMINATION' | 'TRANSFER'; source: 'ARTIST' | 'STAFF';
+  status: 'REQUESTED' | 'IN_PROGRESS' | 'COMPLETED' | 'REJECTED' | 'CANCELLED';
+  reason: string; partners: string[] | null; transfer_to: string | null; effective_date: string | null;
+  authority: Record<string, unknown>; requested_by: string; decided_by: string | null; decision_note: string | null;
+  created_at: string; completed_at: string | null; tasks: ReleaseActionTask[];
+}
+
 const remote = {
   me: () => req<StaffMe>('/api/staff/me', { quiet401: false }),
   overview: () => req<Overview>('/api/staff/overview'),
@@ -281,6 +296,13 @@ const remote = {
   ern: (pkg: string, dsp: string) => fetchText(`/api/staff/deliveries/${id(pkg)}/${id(dsp)}/ern`),
   decideDelivery: (pkg: string, dsp: string, body: DeliveryDecisionInput) =>
     req<{ approval: string }>(`/api/staff/deliveries/${id(pkg)}/${id(dsp)}/decision`, { method: 'POST', body }),
+  releaseActions: (all = false) => req<{ actions: ReleaseActionItem[] }>(`/api/staff/release-actions${qs({ all: all ? 'true' : undefined })}`),
+  decideReleaseAction: (aid: string, body: { approve: boolean; note: string }) =>
+    req<{ id: string; status: string }>(`/api/staff/release-actions/${id(aid)}/decision`, { method: 'POST', body }),
+  releaseActionEvidence: (aid: string, task: string, note: string) =>
+    req<{ task_id: string }>(`/api/staff/release-actions/${id(aid)}/tasks/${id(task)}/evidence`, { method: 'POST', body: { note } }),
+  retryReleaseAction: (aid: string, task: string) =>
+    req<{ task_id: string }>(`/api/staff/release-actions/${id(aid)}/tasks/${id(task)}/retry`, { method: 'POST' }),
   restage: (pkg: string) => req<{ job_id: string }>(`/api/staff/deliveries/${id(pkg)}/restage`, { method: 'POST' }),
   dsps: () => req<Page<DspItem>>('/api/staff/dsps'),
   payouts: (status: string) => req<Page<PayoutItem>>(`/api/staff/payouts${qs({ status, limit: 100 })}`),

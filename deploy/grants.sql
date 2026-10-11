@@ -215,6 +215,10 @@ BEGIN
  END LOOP;
 END $$;
 
+-- 발매 후 중단·계약 종료·이전 (0098): requests and tasks are written by the
+-- API; the worker reports a takedown job's outcome through one function.
+GRANT SELECT,INSERT,UPDATE ON portal.release_actions,portal.release_action_tasks TO audeniq_api;
+GRANT EXECUTE ON FUNCTION execution.release_action_task_outcome(uuid, text, text) TO audeniq_worker;
 -- No ambient CONNECT or temporary-table privileges for arbitrary login roles.
 -- Owner/migrator remains separate; the two runtime logins get CONNECT only.
 DO $$ BEGIN

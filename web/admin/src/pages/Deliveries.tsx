@@ -83,7 +83,7 @@ export function Deliveries() {
         sub="승인과 서명이 끝난 발매는 플랫폼마다 자동으로 전송돼요. 여기서는 문제만 확인하면 돼요."
         actions={<button type="button" className="ui-btn is-soft is-sm" onClick={reload}>새로고침</button>}
       />
-      <SubTabs tabs={[{ to: '/deliveries', label: '배급 현황' }, { to: '/dsps', label: '플랫폼별 조건' }]} />
+      <SubTabs tabs={[{ to: '/deliveries', label: '배급 현황' }, { to: '/release-actions', label: '발매 후 요청' }, { to: '/dsps', label: '플랫폼별 조건' }]} />
       {!can('DELIVERY') && <NoDuty duty="배급 관리" />}
       <ChipGroup label="보기" value={view} onChange={v => setParams({ approval: v }, { replace: true })} options={VIEWS.map(v => ({ value: v.value, label: v.label }))} />
       {error && <ErrorBox message={error} onRetry={reload} />}
