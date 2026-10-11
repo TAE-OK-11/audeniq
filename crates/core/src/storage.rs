@@ -200,6 +200,53 @@ fn hmac(key: &[u8], s: &str) -> Vec<u8> {
     h.update(s.as_bytes());
     h.finalize().into_bytes().to_vec()
 }
+/// Server-side copy into quarantine: R2/S3 answer CopyObject only when the
+/// copy is done, which for a 200–500 MiB master takes longer than the 10 s
+/// every metadata call gets (100-album test BE-012: completions failed at
+/// ~10.2 s with STORAGE_UNAVAILABLE). Only this call gets the longer limit.
+const COPY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// Log why a storage call failed — operation, error class, elapsed time —
+/// and never the (signed) URL or key, then map to [`Error::Storage`].
+fn transport_error(op: &'static str, started: std::time::Instant, e: &reqwest::Error) -> Error {
+    let kind = if e.is_timeout() {
+        "timeout"
+    } else if e.is_connect() {
+        "connect"
+    } else if e.is_body() || e.is_decode() {
+        "body"
+    } else {
+        "request"
+    };
+    tracing::warn!(
+        storage_op = op,
+        kind,
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "storage_call_failed"
+    );
+    Error::Storage
+}
+fn status_error(
+    op: &'static str,
+    started: std::time::Instant,
+    status: reqwest::StatusCode,
+) -> Error {
+    tracing::warn!(
+        storage_op = op,
+        kind = "status",
+        status = status.as_u16(),
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "storage_call_failed"
+    );
+    Error::Storage
+}
+/// Worth one more try: the request never reached the store, or the store
+/// said it is temporarily unable. A timeout is not retried (the copy may
+/// still be running; the caller's retry reuses the same session).
+fn transient_status(status: reqwest::StatusCode) -> bool {
+    matches!(status.as_u16(), 500 | 502 | 503 | 504)
+}
+
 impl S3Store {
     pub fn new(
         endpoint: &str,
@@ -372,18 +419,19 @@ impl ObjectStore for S3Store {
         })
     }
     async fn head(&self, key: &str) -> Result<Option<ObjectMeta>> {
+        let started = std::time::Instant::now();
         let url = self.signed("HEAD", key, &BTreeMap::new(), Utc::now(), 60)?;
         let r = self
             .client
             .head(url)
             .send()
             .await
-            .map_err(|_| Error::Storage)?;
+            .map_err(|e| transport_error("head", started, &e))?;
         if r.status() == reqwest::StatusCode::NOT_FOUND {
             return Ok(None);
         }
         if !r.status().is_success() {
-            return Err(Error::Storage);
+            return Err(status_error("head", started, r.status()));
         }
         let h = r.headers();
         let get = |k: &str| {
@@ -412,21 +460,59 @@ impl ObjectStore for S3Store {
             ("x-amz-copy-source-if-match".into(), etag.into()),
             ("x-amz-metadata-directive".into(), "COPY".into()),
         ]);
-        let url = self.signed("PUT", target, &headers, Utc::now(), 60)?;
-        let mut req = self.client.put(url);
-        for (k, v) in &headers {
-            req = req.header(k, v);
+        // Copying to the same target with the same source ETag condition is
+        // idempotent, so one retry after a transient failure is safe.
+        for attempt in 0..2 {
+            let started = std::time::Instant::now();
+            let url = self.signed("PUT", target, &headers, Utc::now(), 60)?;
+            let mut req = self.client.put(url).timeout(COPY_TIMEOUT);
+            for (k, v) in &headers {
+                req = req.header(k, v);
+            }
+            let r = match req.send().await {
+                Ok(r) => r,
+                Err(e) if attempt == 0 && e.is_connect() => {
+                    transport_error("copy", started, &e);
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    continue;
+                }
+                Err(e) => return Err(transport_error("copy", started, &e)),
+            };
+            let status = r.status();
+            if !status.is_success() {
+                let err = status_error("copy", started, status);
+                if attempt == 0 && transient_status(status) {
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    continue;
+                }
+                return Err(err);
+            }
+            // CopyObject can return HTTP 200 with an embedded XML error. Confirm object separately too.
+            let body = r
+                .text()
+                .await
+                .map_err(|e| transport_error("copy", started, &e))?;
+            if body.contains("<Error>") || !body.contains("CopyObjectResult") {
+                let retry = attempt == 0
+                    && (body.contains("<Code>InternalError</Code>")
+                        || body.contains("<Code>ServiceUnavailable</Code>")
+                        || body.contains("<Code>SlowDown</Code>"));
+                tracing::warn!(
+                    storage_op = "copy",
+                    kind = "embedded_error",
+                    retry,
+                    elapsed_ms = started.elapsed().as_millis() as u64,
+                    "storage_call_failed"
+                );
+                if retry {
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    continue;
+                }
+                return Err(Error::Storage);
+            }
+            return Ok(());
         }
-        let r = req.send().await.map_err(|_| Error::Storage)?;
-        if !r.status().is_success() {
-            return Err(Error::Storage);
-        }
-        // CopyObject can return HTTP 200 with an embedded XML error. Confirm object separately too.
-        let body = r.text().await.map_err(|_| Error::Storage)?;
-        if body.contains("<Error>") || !body.contains("CopyObjectResult") {
-            return Err(Error::Storage);
-        }
-        Ok(())
+        Err(Error::Storage)
     }
     async fn delete(&self, key: &str) -> Result<()> {
         let url = self.signed("DELETE", key, &BTreeMap::new(), Utc::now(), 60)?;
@@ -458,6 +544,7 @@ impl ObjectStore for S3Store {
             ("content-type".into(), mime.into()),
             ("x-amz-meta-upload-nonce".into(), nonce.into()),
         ]);
+        let started = std::time::Instant::now();
         let url = self.signed("PUT", key, &headers, Utc::now(), 900)?;
         let mut req = self.download_client.put(url);
         for (k, v) in &headers {
@@ -467,9 +554,9 @@ impl ObjectStore for S3Store {
             .body(reqwest::Body::from(file))
             .send()
             .await
-            .map_err(|_| Error::Storage)?;
+            .map_err(|e| transport_error("put", started, &e))?;
         if !r.status().is_success() {
-            return Err(Error::Storage);
+            return Err(status_error("put", started, r.status()));
         }
         Ok(())
     }
@@ -523,6 +610,7 @@ impl ObjectStore for S3Store {
         max_bytes: u64,
     ) -> Result<ObjectDigest> {
         use tokio::io::AsyncWriteExt;
+        let started = std::time::Instant::now();
         let mut r = self.open_download(key, max_bytes).await?;
         let file = tokio::fs::File::create(dest)
             .await
@@ -531,7 +619,11 @@ impl ObjectStore for S3Store {
         // filesystem write for every HTTP frame.
         let mut file = tokio::io::BufWriter::with_capacity(256 * 1024, file);
         let mut d = DigestBuilder::new(max_bytes);
-        while let Some(chunk) = r.chunk().await.map_err(|_| Error::Storage)? {
+        while let Some(chunk) = r
+            .chunk()
+            .await
+            .map_err(|e| transport_error("get_body", started, &e))?
+        {
             d.update(&chunk)?;
             file.write_all(&chunk).await.map_err(|_| Error::Internal)?;
         }
@@ -549,15 +641,16 @@ impl ObjectStore for S3Store {
 }
 impl S3Store {
     async fn open_download(&self, key: &str, max_bytes: u64) -> Result<reqwest::Response> {
+        let started = std::time::Instant::now();
         let url = self.signed("GET", key, &BTreeMap::new(), Utc::now(), 900)?;
         let r = self
             .download_client
             .get(url)
             .send()
             .await
-            .map_err(|_| Error::Storage)?;
+            .map_err(|e| transport_error("get", started, &e))?;
         if r.status() != reqwest::StatusCode::OK {
-            return Err(Error::Storage);
+            return Err(status_error("get", started, r.status()));
         }
         if r.content_length().is_some_and(|size| size > max_bytes) {
             return Err(Error::PolicyGate("OBJECT_TOO_LARGE"));
@@ -652,6 +745,69 @@ mod tests {
             let _ = stream.write_all(response.as_bytes()).await;
         });
         test_store(&endpoint)
+    }
+
+    /// Serve `responses` to successive connections, each after its delay;
+    /// returns the store and the number of requests that arrived.
+    async fn mock_sequence(
+        responses: Vec<(u64, &'static str)>,
+    ) -> (S3Store, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/", listener.local_addr().unwrap());
+        let seen = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let count = seen.clone();
+        tokio::spawn(async move {
+            for (delay, response) in responses {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let mut request = [0; 4096];
+                let _ = stream.read(&mut request).await;
+                tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+                let _ = stream.write_all(response.as_bytes()).await;
+            }
+        });
+        (test_store(&endpoint), seen)
+    }
+
+    const COPIED: &str = "HTTP/1.1 200 OK\r\nContent-Length: 39\r\nConnection: close\r\n\r\n<CopyObjectResult></CopyObjectResult>\n\n";
+    const UNAVAILABLE: &str =
+        "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+    const DENIED: &str = "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+
+    /// BE-012: a server-side copy of a large master answers after more than
+    /// the 10 s metadata timeout; it must still succeed.
+    #[tokio::test]
+    async fn quarantine_copy_outlasts_the_metadata_timeout() {
+        let (s, seen) = mock_sequence(vec![(11_000, COPIED)]).await;
+        s.freeze("quarantine/o/a/n", "quarantine/o/a/frozen", "\"e\"")
+            .await
+            .unwrap();
+        assert_eq!(seen.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn quarantine_copy_retries_once_on_transient_errors_only() {
+        let (s, seen) = mock_sequence(vec![(0, UNAVAILABLE), (0, COPIED)]).await;
+        s.freeze("quarantine/o/a/n", "quarantine/o/a/frozen", "\"e\"")
+            .await
+            .unwrap();
+        assert_eq!(seen.load(std::sync::atomic::Ordering::SeqCst), 2);
+        let (s, seen) = mock_sequence(vec![(0, UNAVAILABLE), (0, UNAVAILABLE)]).await;
+        assert!(matches!(
+            s.freeze("quarantine/o/a/n", "quarantine/o/a/frozen", "\"e\"")
+                .await,
+            Err(Error::Storage)
+        ));
+        assert_eq!(seen.load(std::sync::atomic::Ordering::SeqCst), 2);
+        // A refusal (a changed source ETag, bad credentials) is final.
+        let (s, seen) = mock_sequence(vec![(0, DENIED), (0, COPIED)]).await;
+        assert!(matches!(
+            s.freeze("quarantine/o/a/n", "quarantine/o/a/frozen", "\"e\"")
+                .await,
+            Err(Error::Storage)
+        ));
+        assert_eq!(seen.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 
     #[tokio::test]

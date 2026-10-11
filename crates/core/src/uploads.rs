@@ -78,6 +78,10 @@ pub async fn issue(s: &AppState, a: &Actor, org: Uuid, i: UploadInput) -> Result
     auth::create_resource(&mut tx, a, org, asset, "asset").await?;
     let key = format!("quarantine/{org}/{asset}/{nonce}");
     let stable = format!("registered/{org}/{asset}/{}", Uuid::new_v4());
+    // The signed PUT URL lives 10 minutes. Completion stays open 30 minutes
+    // longer (`expires_at + 30 minutes`, here and in `complete`): the object
+    // can only exist if it was PUT through this grant before the URL expired,
+    // and a client waiting out capacity (503) must not lose an uploaded file.
     let expires: DateTime<Utc> = sqlx::query_scalar("SELECT now()+interval '10 minutes'")
         .fetch_one(&mut *tx)
         .await?;
@@ -109,6 +113,28 @@ pub async fn issue(s: &AppState, a: &Actor, org: Uuid, i: UploadInput) -> Result
         json!({"upload_session_id":session,"asset_id":asset,"expected_key":key,"grant":grant,"qc_status":"PENDING"}),
     )
 }
+/// Time one completion step and, when it fails, log which step, how long it
+/// took and the error code under the request id (BE-012: the storage error
+/// could not be traced to a step). No keys or URLs are logged.
+async fn stage<T>(
+    request: Uuid,
+    name: &'static str,
+    f: impl std::future::Future<Output = Result<T>>,
+) -> Result<T> {
+    let started = std::time::Instant::now();
+    let out = f.await;
+    if let Err(e) = &out {
+        tracing::warn!(
+            request_id = %request,
+            upload_stage = name,
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            error = %e,
+            "upload_stage_failed"
+        );
+    }
+    out
+}
+
 pub async fn complete(
     s: &AppState,
     a: &Actor,
@@ -116,16 +142,25 @@ pub async fn complete(
     id: Uuid,
     i: CompleteInput,
 ) -> Result<Value> {
-    auth::rate(&s.pool, &format!("upload-complete:{}", a.user), 60).await?;
     // Shed excess completions before they occupy DB connections/row locks.
     // The client retries completion (503 + Retry-After), not the R2 upload.
+    // Both slots come before the rate limit: a completion refused for
+    // capacity was never processed and must not use up the account's quota
+    // (100-album test BE-011: busy retries exhausted it, the session expired).
     let _upload_slot = s
         .upload_slots
         .try_acquire()
         .map_err(|_| Error::UploadBusy)?;
+    // Scanning and normalization are bounded for every kind, including FLAC.
+    let slot = s
+        .transcode_slots
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| Error::UploadBusy)?;
+    auth::rate(&s.pool, &format!("upload-complete:{}", a.user), 60).await?;
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, i.asset_id, "asset", true).await?;
-    let r=sqlx::query("SELECT u.*,a.object_key,a.kind,s.antivirus_status,(u.expires_at>clock_timestamp()) AS valid FROM catalog.upload_sessions u JOIN catalog.assets a ON a.id=u.asset_id AND a.org_id=u.org_id LEFT JOIN catalog.asset_safety s ON s.asset_id=a.id AND s.org_id=a.org_id AND s.safe_key=a.object_key AND s.safe_sha256=a.sha256 WHERE u.id=$1 AND u.org_id=$2 FOR UPDATE OF u,a").bind(id).bind(org).fetch_optional(&mut *tx).await?.ok_or(Error::NotFound)?;
+    let r=sqlx::query("SELECT u.*,a.object_key,a.kind,s.antivirus_status,(u.expires_at+interval '30 minutes'>clock_timestamp()) AS valid FROM catalog.upload_sessions u JOIN catalog.assets a ON a.id=u.asset_id AND a.org_id=u.org_id LEFT JOIN catalog.asset_safety s ON s.asset_id=a.id AND s.org_id=a.org_id AND s.safe_key=a.object_key AND s.safe_sha256=a.sha256 WHERE u.id=$1 AND u.org_id=$2 FOR UPDATE OF u,a").bind(id).bind(org).fetch_optional(&mut *tx).await?.ok_or(Error::NotFound)?;
     let asset: Uuid = r.get("asset_id");
     let key: String = r.get("expected_key");
     if asset != i.asset_id || key != i.expected_key {
@@ -148,13 +183,9 @@ pub async fn complete(
     let kind: String = r.get("kind");
     let mime: String = r.get("content_type");
     let container = expected_container(&kind, &mime).ok_or(Error::Invalid)?;
-    // Scanning and normalization are bounded for every kind, including FLAC.
-    let slot = s
-        .transcode_slots
-        .clone()
-        .try_acquire_owned()
-        .map_err(|_| Error::UploadBusy)?;
-    let meta = s.storage.head(&key).await?.ok_or(Error::Conflict)?;
+    let meta = stage(a.request, "head", s.storage.head(&key))
+        .await?
+        .ok_or(Error::Conflict)?;
     let size: i64 = r.get("expected_bytes");
     let nonce: Uuid = r.get("nonce");
     if meta.size != size || meta.content_type != mime || meta.nonce != nonce.to_string() {
@@ -164,7 +195,7 @@ pub async fn complete(
     // failed completion leaves no object that any reader can serve or analyze.
     let frozen = format!("quarantine/{org}/{asset}/frozen-{}", Uuid::new_v4());
     let valid: bool = sqlx::query_scalar(
-        "SELECT expires_at>clock_timestamp() FROM catalog.upload_sessions WHERE id=$1",
+        "SELECT expires_at+interval '30 minutes'>clock_timestamp() FROM catalog.upload_sessions WHERE id=$1",
     )
     .bind(id)
     .fetch_one(&mut *tx)
@@ -175,8 +206,15 @@ pub async fn complete(
     // Never keep a DB transaction idle during scans or decoding. Cancellation
     // and concurrent completion are checked again under a fresh row lock.
     tx.commit().await?;
-    s.storage.freeze(&key, &frozen, &meta.etag).await?;
-    let copy = s.storage.head(&frozen).await?.ok_or(Error::Storage)?;
+    stage(
+        a.request,
+        "freeze",
+        s.storage.freeze(&key, &frozen, &meta.etag),
+    )
+    .await?;
+    let copy = stage(a.request, "head_frozen", s.storage.head(&frozen))
+        .await?
+        .ok_or(Error::Storage)?;
     if copy.size != size
         || copy.content_type != mime
         || copy.nonce != nonce.to_string()
@@ -184,17 +222,21 @@ pub async fn complete(
     {
         return Err(Error::Conflict);
     }
-    let prepared = prepare(
-        s,
-        org,
-        asset,
-        &frozen,
-        size,
-        &nonce.to_string(),
-        &kind,
-        &mime,
-        container,
-        slot,
+    let prepared = stage(
+        a.request,
+        "prepare",
+        prepare(
+            s,
+            org,
+            asset,
+            &frozen,
+            size,
+            &nonce.to_string(),
+            &kind,
+            &mime,
+            container,
+            slot,
+        ),
     )
     .await?;
     let mut tx = s.pool.begin().await?;
@@ -275,7 +317,7 @@ pub async fn complete(
 
 async fn finish_session(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, id: Uuid) -> Result<()> {
     // Check after ALL network IO and conversion, not before hashing/decoding.
-    let n = sqlx::query("UPDATE catalog.upload_sessions SET status='COMPLETED',completed_at=clock_timestamp() WHERE id=$1 AND status='ISSUED' AND expires_at>clock_timestamp()")
+    let n = sqlx::query("UPDATE catalog.upload_sessions SET status='COMPLETED',completed_at=clock_timestamp() WHERE id=$1 AND status='ISSUED' AND expires_at+interval '30 minutes'>clock_timestamp()")
         .bind(id).execute(&mut **tx).await?.rows_affected();
     if n != 1 {
         return Err(Error::Conflict);
@@ -425,7 +467,7 @@ pub async fn get(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> 
 pub async fn status(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
     auth::membership(&mut tx, a, org, false).await?;
-    let row = sqlx::query("SELECT id,asset_id,status,expires_at,completed_at,(expires_at<=now()) AS expired FROM catalog.upload_sessions WHERE org_id=$1 AND id=$2")
+    let row = sqlx::query("SELECT id,asset_id,status,expires_at,completed_at,(expires_at<=now()) AS expired,expires_at+interval '30 minutes' AS complete_by FROM catalog.upload_sessions WHERE org_id=$1 AND id=$2")
         .bind(org).bind(id).fetch_optional(&mut *tx).await?.ok_or(Error::NotFound)?;
     let asset: Uuid = row.get("asset_id");
     auth::authorize(&mut tx, a, org, asset, "asset", false).await?;
@@ -433,9 +475,10 @@ pub async fn status(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Valu
     let completed: Option<DateTime<Utc>> = row.get("completed_at");
     let status: String = row.get("status");
     let expired: bool = row.get("expired");
+    let complete_by: DateTime<Utc> = row.get("complete_by");
     tx.commit().await?;
     Ok(
-        json!({"upload_session_id":id,"asset_id":asset,"status":status,"expires_at":expires,"completed_at":completed,"expired":expired}),
+        json!({"upload_session_id":id,"asset_id":asset,"status":status,"expires_at":expires,"completed_at":completed,"expired":expired,"complete_by":complete_by}),
     )
 }
 pub async fn cancel(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> {
