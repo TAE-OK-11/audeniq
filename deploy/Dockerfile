@@ -4,7 +4,8 @@ FROM rust:1.98.1-slim-trixie AS chef
 RUN cargo install cargo-chef --version 0.1.78 --locked
 WORKDIR /build
 COPY deploy/build-target.sh /usr/local/bin/audeniq-build-target
-RUN chmod 0755 /usr/local/bin/audeniq-build-target
+COPY deploy/with-github-token.sh /usr/local/bin/audeniq-with-github-token
+RUN chmod 0755 /usr/local/bin/audeniq-build-target /usr/local/bin/audeniq-with-github-token
 
 FROM chef AS plan
 COPY Cargo.toml Cargo.lock ./
@@ -41,7 +42,11 @@ FROM chef AS engine
 ARG TARGETARCH
 ARG TARGET_CPU=
 COPY deploy/audeniq-qc.rev deploy/install-audeniq-qc.sh /engine/
-RUN audeniq-build-target "$TARGETARCH" "$TARGET_CPU" sh /engine/install-audeniq-qc.sh /engine/root
+# audeniq-qc and audeniq-photo are private: CI passes a read-only token as the
+# BuildKit secret `github_token` (never stored in a layer; see with-github-token.sh).
+RUN --mount=type=secret,id=github_token \
+    audeniq-build-target "$TARGETARCH" "$TARGET_CPU" \
+    audeniq-with-github-token sh /engine/install-audeniq-qc.sh /engine/root
 
 # The AUDENIQ image toolkit (cover metadata, QR, OCR, upload sanitization) at
 # the commit pinned in deploy/audeniq-photo.rev; it replaces ExifTool, ZBar,
@@ -50,7 +55,9 @@ FROM chef AS photo
 ARG TARGETARCH
 ARG TARGET_CPU=
 COPY deploy/audeniq-photo.rev deploy/install-audeniq-photo.sh /photo/
-RUN audeniq-build-target "$TARGETARCH" "$TARGET_CPU" sh /photo/install-audeniq-photo.sh /photo/root
+RUN --mount=type=secret,id=github_token \
+    audeniq-build-target "$TARGETARCH" "$TARGET_CPU" \
+    audeniq-with-github-token sh /photo/install-audeniq-photo.sh /photo/root
 FROM debian:13-slim
 # Audio probing, lossless FLAC conversion, Stage 1 QC and fingerprinting run
 # in audeniq-qc (built above); FFmpeg is no longer part of the runtime image.
