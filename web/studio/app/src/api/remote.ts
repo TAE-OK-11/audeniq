@@ -16,7 +16,7 @@ import type {
 import { ApiError, PartialSaveError } from './errors';
 import { bootstrapCsrf, hasCsrf, listAll, orgPath, putToGrant, req, setCsrf, setSessionUser, type UploadGrant } from './http';
 import { stampNow } from '../lib/date';
-import { normalizeIsrc } from '../lib/dsp';
+import { isrcValid, normalizeIsrc, upcValid } from '../lib/dsp';
 import { parseStaffFix } from '../lib/corrections';
 
 // ---------------------------------------------------------------------------
@@ -85,8 +85,9 @@ export function fixKind(server: string, status: string): Release['fixKind'] {
 /** 서버는 UPC-A(12자리)만 받는다: 0으로 시작하는 EAN-13은 같은 번호라 앞 0을 뗀다. 비우면 3단계에서 발급 */
 export function serverUpc(v: string): string | null {
   const d = v.trim();
-  if (/^\d{12}$/.test(d)) return d;
-  if (/^0\d{12}$/.test(d)) return d.slice(1);
+  // 검증 숫자가 틀린 코드는 보내지 않는다 (서버가 거절하면 자동 저장 전체가 실패한다)
+  if (/^\d{12}$/.test(d)) return upcValid(d) ? d : null;
+  if (/^0\d{12}$/.test(d)) return upcValid(d.slice(1)) ? d.slice(1) : null;
   return null;
 }
 const toReleaseType = (t: string): ServerRelease['release_type'] => (t === 'ep' ? 'EP' : t === 'album' || t === 'compilation' ? 'ALBUM' : 'SINGLE');
@@ -264,7 +265,7 @@ function toDetail(r: ServerRelease): ReleaseDetail {
       title: t.title,
       duration_ms: durationMs(local?.duration),
       isrc: t.isrc,
-      version: t.version ?? local?.version ?? null,
+      version: t.version || local?.version || null,
       composers: local?.composers ?? null,
       lyricists: local?.lyricists ?? null,
       audioName: local?.audioName || (t.asset_id ? '업로드한 음원' : null),
@@ -368,14 +369,15 @@ async function syncTracks(release: ServerRelease, tracks: DraftTrack[], artistId
       lyrics: t.lyrics ? cleanText(t.lyrics, true) : null,
       parental_advisory: t.explicit,
       version: cleanText(t.version) || null,
-      // 없으면 3단계에서 발급
-      isrc: normalizeIsrc(t.isrc ?? '') || null,
+      // 없으면 3단계에서 발급. 아직 다 입력하지 않은(형식이 안 맞는) 코드는 보내지 않는다 —
+      // 서버가 400으로 거절하면 자동 저장 전체가 실패한다 (입력값은 draftTracks에 남는다)
+      isrc: isrcValid(t.isrc ?? '') ? normalizeIsrc(t.isrc ?? '') : null,
     };
     const existing = t.serverId ? server.get(t.serverId) : undefined;
     let trackId: string;
     if (existing) {
       const same = existing.title === body.title && existing.track_number === no && existing.asset_id === body.asset_id
-        && (existing.version ?? null) === body.version && !!existing.parental_advisory === body.parental_advisory
+        && (existing.version || null) === body.version && !!existing.parental_advisory === body.parental_advisory
         && (existing.lyrics ?? null) === body.lyrics && existing.artist_id === artistId
         && (existing.isrc ?? null) === body.isrc;
       if (!same) {

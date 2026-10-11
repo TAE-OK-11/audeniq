@@ -107,7 +107,11 @@ export function upcValid(code: string): boolean {
 }
 
 export const normalizeIsrc = (v: string) => v.replace(/[-\s]/g, '').toUpperCase();
-export const isrcValid = (v: string) => /^[A-Z]{2}[A-Z0-9]{3}\d{2}\d{5}$/.test(normalizeIsrc(v));
+/** 서버와 같은 규칙: 형식 + 발급된 적 없는 자리표시 코드(등록자 000, 일련번호 00000) 거절 */
+export const isrcValid = (v: string) => {
+  const n = normalizeIsrc(v);
+  return /^[A-Z]{2}[A-Z0-9]{3}\d{2}\d{5}$/.test(n) && n.slice(2, 5) !== '000' && n.slice(7) !== '00000';
+};
 
 // ---------------------------------------------------------------------------
 // 권리 표기 — "2026 권리자명" (기호는 플랫폼이 붙인다)

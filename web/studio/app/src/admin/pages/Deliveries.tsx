@@ -53,6 +53,43 @@ function HoldForm({ item, onDone }: { item: DeliveryItem; onDone: () => void }) 
   );
 }
 
+/** 멈춘 플랫폼 다시 보내기 — 서버는 HELD에서 APPROVE를 받지만 화면에 길이 없어 멈춘 배급은 영영 나가지 않았다 */
+function ResumeForm({ item, notes, onDone }: { item: DeliveryItem; notes: string[]; onDone: () => void }) {
+  const close = useModalClose();
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const name = item.dsp_name ?? DSP_NAME[item.dsp] ?? '플랫폼';
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    try {
+      // 아래 주의 사항은 이 창에서 보여 준다
+      await staffApi.decideDelivery(item.package_id, item.dsp, {
+        action: 'APPROVE', note: '배급 재개', acknowledge_warnings: true,
+      });
+      toast(`${name} 배급을 다시 시작했어요.`, 'success');
+      onDone();
+      close();
+    } catch (err) {
+      toast(errorMessage(err, '다시 시작하지 못했어요.'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form onSubmit={submit}>
+      <p className="small muted">{item.title} · {name} 배급을 다시 시작해요. 서명이 끝났고 플랫폼이 연동돼 있으면 바로 전송돼요.</p>
+      {notes.length > 0 && <p className="small" style={{ marginTop: 10 }}>확인할 점: {notes.join(' · ')}</p>}
+      <div className="adm-form-actions">
+        <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
+        <button type="submit" className="ui-btn is-primary" disabled={busy}>{busy ? '처리 중…' : '배급 다시 시작'}</button>
+      </div>
+    </form>
+  );
+}
+
+
 export function Deliveries() {
   const toast = useToast();
   const [params, setParams] = useSearchParams();
@@ -60,6 +97,7 @@ export function Deliveries() {
   const { can, refreshCounts } = useStaff();
   const { data, loading, error, reload } = useAsync(() => staffApi.deliveries({ approval: view }), [view]);
   const [hold, setHold] = useState<DeliveryItem | null>(null);
+  const [resume, setResume] = useState<{ item: DeliveryItem; notes: string[] } | null>(null);
   const items = data?.items ?? [];
 
   // 발매(패키지)별로 묶는다 — 한 발매의 플랫폼들을 한 카드에서
@@ -121,6 +159,9 @@ export function Deliveries() {
                       {can('DELIVERY') && d.approval !== 'HELD' && (
                         <button type="button" className="ui-btn is-text is-muted" onClick={() => setHold(d)}>멈추기</button>
                       )}
+                      {can('DELIVERY') && d.approval === 'HELD' && d.readiness !== 'CONTENT_BLOCKED' && (
+                        <button type="button" className="ui-btn is-text" onClick={() => setResume({ item: d, notes: [...v.problems, ...v.notes] })}>다시 시작</button>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -132,6 +173,11 @@ export function Deliveries() {
       {hold && (
         <Modal title="배급 멈추기" onClose={() => setHold(null)} dismissible={false}>
           <HoldForm item={hold} onDone={() => { reload(); refreshCounts(); }} />
+        </Modal>
+      )}
+      {resume && (
+        <Modal title="배급 다시 시작" onClose={() => setResume(null)} dismissible={false}>
+          <ResumeForm item={resume.item} notes={resume.notes} onDone={() => { reload(); refreshCounts(); }} />
         </Modal>
       )}
     </div>

@@ -222,12 +222,12 @@ pub async fn overview(s: &AppState, h: &HeaderMap) -> Result<Value> {
            (SELECT count(*) FROM portal.documents WHERE kind='RIGHTS_PROOF' AND status='REVIEW') AS documents,
            (SELECT count(*) FROM portal.inquiries WHERE status='OPEN') AS inquiries,
            (SELECT count(*) FROM distribution.delivery_staging s JOIN catalog.releases r ON r.id=s.release_id AND r.current_revision_id=s.revision_id
-              WHERE s.approval='PENDING' AND s.readiness<>'CONTENT_BLOCKED' AND r.status<>'WITHDRAWN') AS deliveries_to_approve,
+              WHERE s.approval='PENDING' AND s.readiness<>'CONTENT_BLOCKED' AND r.status='READY_FOR_DELIVERY' AND r.archived_at IS NULL) AS deliveries_to_approve,
            (SELECT count(*) FROM distribution.delivery_staging s JOIN catalog.releases r ON r.id=s.release_id AND r.current_revision_id=s.revision_id
-              WHERE s.readiness='CONTENT_BLOCKED' AND r.status<>'WITHDRAWN') AS deliveries_blocked,
+              WHERE s.readiness='CONTENT_BLOCKED' AND r.status='READY_FOR_DELIVERY' AND r.archived_at IS NULL) AS deliveries_blocked,
            (SELECT count(DISTINCT s.release_id) FROM distribution.delivery_staging s
               JOIN catalog.releases r ON r.id=s.release_id AND r.current_revision_id=s.revision_id
-              WHERE s.approval='PENDING'
+              WHERE s.approval='PENDING' AND r.status='READY_FOR_DELIVERY' AND r.archived_at IS NULL
               AND EXISTS(SELECT 1 FROM jsonb_array_elements(s.checks) c WHERE c->>'code' IN ('DSP_LOUDNESS_ADVISORY','DSP_CLIPPING_ADVISORY'))) AS audio_advisories,
            (SELECT count(*) FROM portal.payout_requests WHERE status='REQUESTED') AS payout_requests"
     );
@@ -977,6 +977,22 @@ async fn pending_agreement(c: &mut PgConnection, org: Uuid, release: Uuid) -> Re
 /// Decide the release's agreement together with the release. `REJECTED`
 /// closes every unsigned agreement of the release so it can never be signed;
 /// the other outcomes only touch one still waiting on staff.
+/// The agreement awaiting approval must carry its commercial terms.
+async fn require_agreement_terms(c: &mut PgConnection, org: Uuid, release: Uuid) -> Result<()> {
+    let missing: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM portal.documents WHERE org_id=$1 AND release_id=$2 AND kind='AGREEMENT'
+           AND status IN ('REVIEW','PREPARED') AND agreement_terms IS NULL)",
+    )
+    .bind(org)
+    .bind(release)
+    .fetch_one(&mut *c)
+    .await?;
+    if missing {
+        return Err(Error::PolicyGate("AGREEMENT_TERMS_REQUIRED"));
+    }
+    Ok(())
+}
+
 async fn decide_agreement(
     c: &mut PgConnection,
     org: Uuid,
@@ -989,17 +1005,7 @@ async fn decide_agreement(
     // An approved agreement goes to the artist for signature, so its
     // commercial terms (fee, exclusivity …) must be entered first.
     if status == "APPROVED" {
-        let missing: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM portal.documents WHERE org_id=$1 AND release_id=$2 AND kind='AGREEMENT'
-               AND status IN ('REVIEW','PREPARED') AND agreement_terms IS NULL)",
-        )
-        .bind(org)
-        .bind(release)
-        .fetch_one(&mut *c)
-        .await?;
-        if missing {
-            return Err(Error::PolicyGate("AGREEMENT_TERMS_REQUIRED"));
-        }
+        require_agreement_terms(c, org, release).await?;
     }
     let ids: Vec<Uuid> = sqlx::query_scalar(
         "UPDATE portal.documents SET status=$3, review_note=$4, row_version=row_version+1, updated_at=now()
@@ -1309,6 +1315,10 @@ pub async fn decide(s: &AppState, h: &HeaderMap, release: Uuid, i: DecisionInput
     let out = match i.action.as_str() {
         "APPROVE" => {
             if open.iter().any(sensitive) {
+                // The second approver approves the agreement too and cannot
+                // edit its terms (only the claimer can): require them now,
+                // or the request could never be approved.
+                require_agreement_terms(&mut tx, org, release).await?;
                 // Rights/money classes and BLOCKED findings need a second
                 // staff reviewer: file one request per revision.
                 close_pending_approvals(&mut tx, org, release, i.revision_id, true, &st.actor)
@@ -2162,9 +2172,12 @@ pub async fn list_deliveries(s: &AppState, h: &HeaderMap, p: DeliveryPage) -> Re
          FROM distribution.delivery_staging s
          JOIN identity.orgs o ON o.id=s.org_id
          JOIN catalog.releases r ON r.org_id=s.org_id AND r.id=s.release_id
-         -- Only the release's current revision: a superseded package (e.g.
-         -- sent back for code re-issue) is history, not work.
+         -- Only the release's current revision of a release that is still
+         -- deliverable: a superseded package, a withdrawn release or one
+         -- sent back for code re-issue is history, not work (staff actions
+         -- on it fail as STAGING_SUPERSEDED).
          WHERE s.revision_id=r.current_revision_id
+           AND r.status='READY_FOR_DELIVERY' AND r.archived_at IS NULL
            AND s.approval=$1 AND ($2::text IS NULL OR s.readiness=$2) AND ($3::text IS NULL OR s.dsp_code=$3)
          ORDER BY s.staged_at, s.dsp_code LIMIT $4 OFFSET $5",
     )

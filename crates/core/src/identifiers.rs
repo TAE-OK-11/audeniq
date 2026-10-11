@@ -180,7 +180,7 @@ pub fn compose(kind: IdentifierKind, prefix: &str, scope: &str, n: i64) -> Resul
             let width = 11usize
                 .checked_sub(prefix.len())
                 .filter(|w| *w > 0)
-                .ok_or(Error::Invalid)?;
+                .ok_or(Error::PolicyGate("IDENTIFIER_ISSUER_MISCONFIGURED"))?;
             if n < 1 || n >= 10i64.pow(width as u32) {
                 return Err(exhausted);
             }
@@ -194,7 +194,10 @@ pub fn compose(kind: IdentifierKind, prefix: &str, scope: &str, n: i64) -> Resul
             format!("{prefix}{scope}{n:05}")
         }
     };
-    kind.validate(&value)?;
+    // A malformed issuer prefix is AUDENIQ's configuration, not the
+    // artist's metadata: keep it out of the "fix your titles" path.
+    kind.validate(&value)
+        .map_err(|_| Error::PolicyGate("IDENTIFIER_ISSUER_MISCONFIGURED"))?;
     Ok(value)
 }
 

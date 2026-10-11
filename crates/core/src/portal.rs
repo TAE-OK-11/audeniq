@@ -1082,7 +1082,20 @@ pub async fn record_application(
     .execute(&mut *tx)
     .await?.rows_affected();
     if updated != 1 {
-        return Err(Error::PolicyGate("APPLICATION_DOCUMENT_FINAL"));
+        // A signed agreement stays signed: a resubmission after a code
+        // re-issue or a Stage 3 retry (both keep the signed contract) still
+        // records its application; only a rejected or cancelled agreement
+        // refuses. This used to fail after the submit had gone through.
+        let signed: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM portal.documents WHERE org_id=$1 AND release_id=$2 AND kind='AGREEMENT' AND status='SIGNED')",
+        )
+        .bind(org)
+        .bind(release)
+        .fetch_one(&mut *tx)
+        .await?;
+        if !signed {
+            return Err(Error::PolicyGate("APPLICATION_DOCUMENT_FINAL"));
+        }
     }
     tx.commit().await?;
     Ok(json!({"application_no":i.application_no,"recorded":true}))

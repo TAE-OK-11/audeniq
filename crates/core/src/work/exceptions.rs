@@ -116,7 +116,8 @@ UNION ALL
    FROM execution.reconciliation_cases rc JOIN identity.orgs o ON o.id=rc.org_id
    LEFT JOIN execution.delivery_jobs j ON j.id=rc.job_id
    LEFT JOIN distribution.distribution_packages p ON p.id=j.package_id
-   LEFT JOIN catalog.releases r ON r.id=p.canonical_release_id
+   LEFT JOIN distribution.canonical_releases cr ON cr.id=p.canonical_release_id
+   LEFT JOIN catalog.releases r ON r.id=cr.release_id
   WHERE ($1::text IS NULL OR $1='reconciliation') AND ($2::text IS NULL OR rc.id::text=$2)
     AND rc.status='OPEN'
   ORDER BY rc.created_at DESC LIMIT 200)
@@ -126,7 +127,8 @@ UNION ALL
         j.org_id, o.name, j.partner_id, CASE WHEN r.id IS NULL THEN NULL ELSE 'release' END, r.id::text, j.package_id, j.updated_at
    FROM execution.delivery_jobs j JOIN identity.orgs o ON o.id=j.org_id
    LEFT JOIN distribution.distribution_packages p ON p.id=j.package_id
-   LEFT JOIN catalog.releases r ON r.id=p.canonical_release_id
+   LEFT JOIN distribution.canonical_releases cr ON cr.id=p.canonical_release_id
+   LEFT JOIN catalog.releases r ON r.id=cr.release_id
   WHERE ($1::text IS NULL OR $1='delivery_job') AND ($2::text IS NULL OR j.id::text=$2)
     AND j.status IN ('FAILED','DEAD_LETTER')
     AND NOT EXISTS(SELECT 1 FROM execution.delivery_jobs n WHERE n.package_id=j.package_id AND n.partner_id=j.partner_id AND n.created_at>j.created_at)
