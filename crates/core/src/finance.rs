@@ -881,6 +881,27 @@ pub async fn order_payout_request(
     if held {
         return Err(Error::PolicyGate("PAYEE_ON_HOLD"));
     }
+    // A track/release hold placed after the request still has to fit: the
+    // order may not pay out money now held for a dispute.
+    let amount: Decimal = r.get("amount");
+    let fits: bool = sqlx::query_scalar(
+        "SELECT (SELECT COALESCE(SUM(CASE WHEN e.side='CREDIT' THEN e.amount ELSE -e.amount END),0)
+                   FROM finance.ledger_entries e WHERE e.org_id=$1 AND e.account='ROYALTY_PAYABLE' AND e.currency='KRW')
+              - finance.held_payable($1)
+              - COALESCE((SELECT SUM(amount) FROM portal.payout_requests
+                           WHERE org_id=$1 AND status='REQUESTED' AND currency='KRW' AND id<>$2),0)
+              - COALESCE((SELECT SUM(amount) FROM finance.payout_orders WHERE org_id=$1 AND currency='KRW'
+                           AND status IN ('PENDING_APPROVAL','APPROVED','SUBMITTED','SUBMITTED_UNKNOWN')),0)
+              >= $3",
+    )
+    .bind(org)
+    .bind(request_id)
+    .bind(amount)
+    .fetch_one(&mut *tx)
+    .await?;
+    if !fits {
+        return Err(Error::PolicyGate("PAYOUT_EXCEEDS_UNHELD_BALANCE"));
+    }
     if r.get::<Option<Vec<u8>>, _>("account_cipher").is_none() {
         // Requests from before account freezing (0085) are re-requested by the artist.
         return Err(Error::PolicyGate("PAYOUT_ACCOUNT_SNAPSHOT_MISSING"));

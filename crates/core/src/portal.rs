@@ -1141,7 +1141,10 @@ pub async fn record_application(
 /// Credits minus debits on the organisation's royalty payable, less money
 /// already requested or in flight. Settled payouts are posted to the ledger
 /// by finance operations, so only unsettled orders are subtracted.
-async fn balances(c: &mut PgConnection, org: Uuid) -> Result<(Decimal, Decimal)> {
+/// (payable, pending, held): held is the part of payable under an active
+/// ISRC / release / payee hold (finance.held_payable, 0124). It is never
+/// withdrawable until the hold is released.
+async fn balances(c: &mut PgConnection, org: Uuid) -> Result<(Decimal, Decimal, Decimal)> {
     let payable: Decimal = sqlx::query_scalar(
         "SELECT COALESCE(SUM(CASE WHEN e.side='CREDIT' THEN e.amount ELSE -e.amount END),0)
          FROM finance.ledger_entries e WHERE e.org_id=$1 AND e.account='ROYALTY_PAYABLE' AND e.currency='KRW'",
@@ -1157,23 +1160,27 @@ async fn balances(c: &mut PgConnection, org: Uuid) -> Result<(Decimal, Decimal)>
     .bind(org)
     .fetch_one(&mut *c)
     .await?;
-    Ok((payable, pending))
+    let held: Decimal = sqlx::query_scalar("SELECT finance.held_payable($1)")
+        .bind(org)
+        .fetch_one(&mut *c)
+        .await?;
+    Ok((payable, pending, held.min(payable.max(Decimal::ZERO))))
 }
 
 pub async fn finance_summary(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
     member(&mut tx, a, org, false).await?;
-    let (payable, pending) = balances(&mut tx, org).await?;
+    let (payable, pending, held) = balances(&mut tx, org).await?;
     let account: bool =
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM portal.payout_accounts WHERE org_id=$1)")
             .bind(org)
             .fetch_one(&mut *tx)
             .await?;
     tx.rollback().await?;
-    let available = (payable - pending).max(Decimal::ZERO);
+    let available = (payable - pending - held).max(Decimal::ZERO);
     let now = chrono::Utc::now();
     Ok(json!({
-        "currency": "KRW", "payable": payable.to_string(), "pending": pending.to_string(),
+        "currency": "KRW", "payable": payable.to_string(), "pending": pending.to_string(), "held": held.to_string(),
         "available": available.to_string(), "account_registered": account,
         "minimum_payout": payout_policy::minimum_at(now).to_string(),
         "payout_policy": payout_policy::policy_json(now),
@@ -1186,9 +1193,9 @@ pub async fn quote_payout(s: &AppState, a: &Actor, org: Uuid, amount: &str) -> R
     let q = payout_policy::quote(amount, chrono::Utc::now())?;
     let mut tx = s.pool.begin().await?;
     member(&mut tx, a, org, false).await?;
-    let (payable, pending) = balances(&mut tx, org).await?;
+    let (payable, pending, held) = balances(&mut tx, org).await?;
     tx.rollback().await?;
-    let available = (payable - pending).max(Decimal::ZERO);
+    let available = (payable - pending - held).max(Decimal::ZERO);
     let mut v = q.json();
     v["available"] = json!(available.to_string());
     v["within_balance"] = json!(q.amount <= available);
@@ -1400,8 +1407,8 @@ pub async fn request_payout(
     if held {
         return Err(Error::PolicyGate("PAYEE_ON_HOLD"));
     }
-    let (payable, pending) = balances(&mut tx, org).await?;
-    if amount > payable - pending {
+    let (payable, pending, held) = balances(&mut tx, org).await?;
+    if amount > payable - pending - held {
         return Err(Error::PolicyGate("PAYOUT_EXCEEDS_BALANCE"));
     }
     let id = Uuid::new_v4();
