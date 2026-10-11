@@ -865,7 +865,7 @@ async fn submit_idempotency_key_dedups(pool: PgPool) {
 }
 
 #[sqlx::test]
-async fn submit_idempotency_key_reused_with_changed_body(pool: PgPool) {
+async fn submit_retry_with_fresh_consent_dedups(pool: PgPool) {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let dir = tmpdir();
@@ -875,19 +875,26 @@ async fn submit_idempotency_key_reused_with_changed_body(pool: PgPool) {
     let (s, v) = consent(&app, &u, release, false).await;
     assert_eq!(s, StatusCode::OK, "{v}");
     let consent_a = Uuid::parse_str(v["consent_id"].as_str().unwrap()).unwrap();
-    let (s, _) = submit(&app, &u, release, consent_a, false, "k-reuse").await;
-    assert_eq!(s, StatusCode::OK);
+    let (s, first) = submit(&app, &u, release, consent_a, false, "k-reuse").await;
+    assert_eq!(s, StatusCode::OK, "{first}");
 
-    // A second consent package over the same draft changes the revision body
-    // (consent_package_hash). Reusing the key must be rejected loudly, never
-    // silently fork the application history.
+    // Studio records a new consent on every attempt. A retry under the same
+    // key (lost response, double click) is the same submit: it converges on
+    // the first revision instead of failing as a reused key.
     let (s, v) = consent(&app, &u, release, false).await;
     assert_eq!(s, StatusCode::OK, "{v}");
     let consent_b = Uuid::parse_str(v["consent_id"].as_str().unwrap()).unwrap();
     assert_ne!(consent_a, consent_b);
     let (s, v) = submit(&app, &u, release, consent_b, false, "k-reuse").await;
-    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
-    assert_eq!(v["error"]["code"], "IDEMPOTENCY_KEY_REUSED");
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["deduped"], true);
+    assert_eq!(v["revision_id"], first["revision_id"]);
+    let n: i64 = sqlx::query_scalar("SELECT count(*) FROM catalog.application_revisions WHERE release_id=$1")
+        .bind(release)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(n, 1, "one revision for the retried submit");
 }
 
 #[sqlx::test]

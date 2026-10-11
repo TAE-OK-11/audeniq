@@ -390,16 +390,25 @@ async fn revision_body(
 /// Same key + same body returns the original revision (safe retry); same key +
 /// changed body is a client bug and is rejected instead of forking history.
 /// The caller commits the transaction.
+/// The revision body minus the consent it was submitted under.
+fn submitted_content_hash(body: &Value) -> String {
+    let mut body = body.clone();
+    if let Some(o) = body.as_object_mut() {
+        o.remove("consent_package_hash");
+    }
+    sha256_json(&body)
+}
+
 async fn keyed_revision_response(
     tx: &mut PgConnection,
     org: Uuid,
     release: Uuid,
     idem_key: &str,
-    body_hash: &str,
+    body: &Value,
     status: &str,
 ) -> Result<Value> {
     let row = sqlx::query(
-        "SELECT id, revision, body_hash FROM catalog.application_revisions WHERE org_id=$1 AND release_id=$2 AND idempotency_key=$3",
+        "SELECT id, revision, body FROM catalog.application_revisions WHERE org_id=$1 AND release_id=$2 AND idempotency_key=$3",
     )
     .bind(org)
     .bind(release)
@@ -407,7 +416,11 @@ async fn keyed_revision_response(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(Error::Internal)?;
-    if row.get::<String, _>("body_hash") != body_hash {
+    // A retry of the same submit carries a fresh consent (Studio records one
+    // per attempt), so compare what was submitted without the consent hash;
+    // otherwise a lost response or a double click came back as
+    // IDEMPOTENCY_KEY_REUSED although the first submit went through.
+    if submitted_content_hash(&row.get::<Value, _>("body")) != submitted_content_hash(body) {
         return Err(Error::PolicyGate("IDEMPOTENCY_KEY_REUSED"));
     }
     let rid: Uuid = row.get("id");
@@ -517,7 +530,7 @@ pub async fn submit(
     .await?
     .is_some()
     {
-        let v = keyed_revision_response(&mut tx, org, release, &idem_key, &body_hash, &status).await?;
+        let v = keyed_revision_response(&mut tx, org, release, &idem_key, &body, &status).await?;
         tx.commit().await?;
         return Ok(v);
     }
@@ -648,7 +661,7 @@ pub async fn submit(
     let rid = match inserted {
         Some(id) => id,
         None => {
-            let v = keyed_revision_response(&mut tx, org, release, &idem_key, &body_hash, &status)
+            let v = keyed_revision_response(&mut tx, org, release, &idem_key, &body, &status)
                 .await?;
             tx.commit().await?;
             return Ok(v);
@@ -1045,28 +1058,42 @@ async fn policy_checks(
             conflicts.push(format!("UPC {upc}"));
         }
     }
-    let (isrcs, tids): (Vec<&str>, Vec<Uuid>) = body["tracks"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|t| {
-            Some((
-                t["isrc"].as_str().filter(|i| !i.is_empty())?,
-                t["id"].as_str().and_then(|s| Uuid::parse_str(s).ok())?,
-            ))
-        })
-        .unzip();
+    let mut isrcs: Vec<&str> = Vec::new();
+    let mut tids: Vec<Uuid> = Vec::new();
+    let mut shas: Vec<Option<&str>> = Vec::new();
+    for t in body["tracks"].as_array().into_iter().flatten() {
+        let (Some(isrc), Some(tid)) = (
+            t["isrc"].as_str().filter(|i| !i.is_empty()),
+            t["id"].as_str().and_then(|s| Uuid::parse_str(s).ok()),
+        ) else {
+            continue;
+        };
+        isrcs.push(isrc);
+        tids.push(tid);
+        shas.push(t["asset_sha256"].as_str());
+    }
     if !isrcs.is_empty() {
+        // An ISRC names one recording: the same master on a single and then
+        // an album keeps its ISRC (and ASSET_REUSED below asks for exactly
+        // that). Only a code on a different (or unknown) recording, or one
+        // held by another account, is a conflict.
         let used: Vec<bool> = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM catalog.tracks t JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id
-                           WHERE t.org_id=$1 AND t.isrc=i.isrc AND t.release_id<>$3 AND t.archived_at IS NULL AND r.archived_at IS NULL)
-                 OR EXISTS(SELECT 1 FROM distribution.identifier_assignments WHERE kind='ISRC' AND identifier=i.isrc AND track_id<>i.tid)
-             FROM unnest($2::text[],$4::uuid[]) WITH ORDINALITY AS i(isrc,tid,n) ORDER BY i.n",
+                           LEFT JOIN catalog.assets a ON a.org_id=t.org_id AND a.id=t.asset_id
+                           WHERE t.org_id=$1 AND t.isrc=i.isrc AND t.release_id<>$3 AND t.archived_at IS NULL AND r.archived_at IS NULL
+                             AND (i.sha IS NULL OR a.sha256 IS DISTINCT FROM i.sha))
+                 OR EXISTS(SELECT 1 FROM distribution.identifier_assignments ia
+                           LEFT JOIN catalog.tracks t ON t.org_id=ia.org_id AND t.id=ia.track_id
+                           LEFT JOIN catalog.assets a ON a.org_id=t.org_id AND a.id=t.asset_id
+                           WHERE ia.kind='ISRC' AND ia.identifier=i.isrc AND ia.track_id<>i.tid
+                             AND (ia.org_id<>$1 OR i.sha IS NULL OR a.sha256 IS DISTINCT FROM i.sha))
+             FROM unnest($2::text[],$4::uuid[],$5::text[]) WITH ORDINALITY AS i(isrc,tid,sha,n) ORDER BY i.n",
         )
         .bind(org)
         .bind(&isrcs)
         .bind(release)
         .bind(&tids)
+        .bind(&shas)
         .fetch_all(&mut *tx)
         .await?;
         for (isrc, used) in isrcs.iter().zip(used) {

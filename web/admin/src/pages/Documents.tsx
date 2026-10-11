@@ -30,6 +30,14 @@ function ReviewForm({ doc, status, onDone }: { doc: StaffDocument; status: 'APPR
       onDone();
       close();
     } catch (err) {
+      // 그사이 아티스트가 서류를 다시 냈으면 목록을 새로 받아 최신 상태에서 다시 판단하게 한다
+      // (같은 화면에서 다시 눌러도 예전 버전이라 계속 거절된다)
+      if ((err as { code?: string }).code === 'CONFLICT') {
+        toast('그사이 서류가 바뀌었어요. 최신 내용을 불러왔으니 다시 확인해 주세요.', 'error');
+        onDone();
+        close();
+        return;
+      }
       toast(errorMessage(err, '서류 처리에 실패했어요.'), 'error');
     } finally {
       setBusy(false);

@@ -399,8 +399,11 @@ pub async fn archive(
 ) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, id, kind.resource(), true).await?;
+    // Only a draft can be deleted. A submitted release (including one sent back
+    // for correction) is cancelled through withdraw, which applies the monthly
+    // limit, refuses once delivery is under way and cancels the agreement.
     let extra = if matches!(kind, Kind::Release) {
-        " AND catalog.is_editable_status(status)"
+        " AND status='DRAFT'"
     } else {
         ""
     };
