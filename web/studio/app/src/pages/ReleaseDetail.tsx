@@ -21,6 +21,7 @@ import { ContractBundle } from '../components/ContractBundle';
 /** 아직 없는 값 — 실제 값처럼 진하게 보이지 않도록 흐리게 */
 const Empty = ({ children }: { children: string }) => <span className="aq-empty-val">{children}</span>;
 import { Badge, Tabs } from '../ui';
+import { territorySummary } from '../lib/territories';
 
 // 플랫폼별 배급 진행 단계 (서버 delivery_staging 기준)
 const DELIVERY_STAGE: Record<string, string> = {
@@ -445,7 +446,7 @@ export function ReleaseDetail() {
             <div>
               <h2 className="subhead">배급 설정</h2>
               <dl className="ui-kv is-2">
-                <div><dt>희망 배급 지역</dt><dd>{d?.territories?.includes('WORLD') ? '전 세계' : '지정 안 함'}</dd></div>
+                <div><dt>희망 배급 지역</dt><dd>{territorySummary(d?.territories)}</dd></div>
                 <div><dt>발매 예정일</dt><dd>{rel.release_date || <Empty>미정</Empty>}</dd></div>
                 {d?.originalDate && <div><dt>최초 발매일</dt><dd>{d.originalDate}</dd></div>}
               </dl>

@@ -218,11 +218,6 @@ img{max-width:100%}
 .track-editor{animation:aq-fade-up .4s var(--aq-e-ease) both}
 .track-detail-body{animation:aq-fade-up .3s var(--aq-e-ease) both}
 .toggle-arrow{transition:transform .25s var(--aq-e-ease)!important}
-.aq-autofill{display:inline-block;margin:-8px 0 14px;font-size:13px}
-.aq-review-card{position:relative}
-.aq-review-edit{position:absolute;top:14px;right:14px;font-size:12px!important;opacity:.8}
-.aq-review-edit:hover{opacity:1}
-.aq-review-card p{padding-right:34px}
 
 /* 커버 드롭존 */
 .aq-dropzone{position:relative;display:flex!important;align-items:center;gap:16px;padding:18px;border:0!important;border-radius:var(--aq-r-xl);background:var(--aq-blue-50);cursor:pointer;transition:border-color .2s,background-color .2s,transform .2s var(--aq-e-ease);font-weight:400!important;margin:0!important}
@@ -457,7 +452,9 @@ body:has(.aq-payout-setup-mode) .aq-toast-stack{bottom:calc(104px + env(safe-are
 :is(#root,#modal) input[type=file]:is(:focus,:focus-visible){background-color:var(--aq-blue-100)!important;box-shadow:none!important}
 .aq-dropzone:focus-within{outline:none!important;background:var(--aq-blue-100)}
 /* 오류 표시: 붉은 링 대신 붉은 면 */
-:is(#root,#modal) :is(input,select,textarea):is([aria-invalid=true],.aq-invalid){background-color:var(--aq-red-50)!important;box-shadow:none!important}
+:is(#root,#modal) :is(input:not([type=checkbox]):not([type=radio]),select,textarea):is([aria-invalid=true],.aq-invalid){background-color:var(--aq-red-50)!important;box-shadow:none!important}
+/* 체크박스는 체크 전까지만 붉은 테두리 — 체크하면 원래 파란 체크로 */
+:is(#root,#modal) input:is([type=checkbox],[type=radio]):is([aria-invalid=true],.aq-invalid):not(:checked){background-color:var(--aq-red-50)!important;box-shadow:inset 0 0 0 2px var(--aq-red-500)!important}
 
 /* ==========================================================================
    홍보 페이지(web/landing) 디자인 언어 반영
@@ -1064,7 +1061,7 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 :is(#root #view-new,#modal.aq-rights-document-mode) :is(.aq-chip-picker) :is(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]),select,textarea){
   border:0!important;outline:0!important;transform:none!important
 }
-:is(#root #view-new,#modal.aq-rights-document-mode) :is(input,select,textarea):is([aria-invalid=true],.aq-invalid){background-color:var(--aq-red-50)!important}
+:is(#root #view-new,#modal.aq-rights-document-mode) :is(input:not([type=checkbox]):not([type=radio]),select,textarea):is([aria-invalid=true],.aq-invalid){background-color:var(--aq-red-50)!important}
 @media(prefers-reduced-motion:reduce){:is(#root #view-new,#modal.aq-rights-document-mode) :is(input,select,textarea){transition:none!important}}
 
 /* ==========================================================================

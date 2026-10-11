@@ -715,7 +715,7 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 .dist-mock-meta strong{display:block;font-size:16px;font-weight:800;letter-spacing:-.01em;color:var(--aq-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dist-mock-meta span{display:block;color:var(--aq-text-3);font-size:13px;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cover-dist-preview .ui-field-help{margin-top:12px}
-.cover-dist-preview .ui-btn.is-white{margin-top:8px}
+.cover-dist-preview .aq-cover-remove{margin-top:14px}
 
 /* 커버곡 트랙별 입력 */
 .cover-track-item{background:var(--aq-gray-75);border:1px solid var(--aq-gray-150);border-radius:var(--aq-r-md);padding:14px 16px;margin-top:10px}

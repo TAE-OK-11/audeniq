@@ -304,3 +304,49 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .aq-dm-consent small{display:block;margin-top:2px;font-size:12px;color:var(--aq-text-4)}
 .aq-dm-sec.aq-sign-record{display:grid;gap:6px}
 .aq-dm-foot:has(>.ui-btn:only-child){grid-template-columns:1fr!important}
+
+/* ---------- 발매 신청 4단계 · 배급 지역 ---------- */
+.aq-territory{display:grid;gap:10px}
+.aq-territory-panel{display:grid;gap:16px;padding:18px;border-radius:var(--aq-r-2xl);background:var(--aq-blue-50)}
+.aq-territory-mode{margin:0}
+:is(#root) .aq-territory-search input{width:100%;min-height:48px;padding:0 16px;border:0;border-radius:var(--aq-r-md);background:#fff!important;font-size:16px}
+.aq-territory-picked{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:-4px 0;font-size:13px;color:var(--aq-text-3)}
+.aq-territory-picked b{color:var(--aq-blue-500);font-weight:800}
+.aq-territory-group{display:grid;gap:10px}
+.aq-territory-region{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:32px}
+.aq-territory-region p{margin:0;font-size:13px;font-weight:800;letter-spacing:-.01em;color:var(--aq-text-3)}
+.aq-territory .aq-chip{min-height:38px;padding:8px 12px;font-size:13px;display:inline-flex;align-items:center;gap:6px}
+/* 빼는 지역은 파랑(고름)이 아니라 진한 회색으로 — 배급하지 않는다는 뜻 */
+.aq-territory .aq-chip.is-excluded{background:var(--aq-gray-800);color:#fff}
+.aq-territory-empty{margin:0;padding:10px 0;text-align:center;font-size:14px;color:var(--aq-text-4)}
+.aq-territory-note{display:flex;align-items:flex-start;gap:8px;margin:2px 2px 0;font-size:13px;line-height:1.6;color:var(--aq-text-3)}
+.aq-territory-note>svg{flex:none;margin-top:2px;color:var(--aq-blue-500)}
+
+/* ---------- 커버아트 지우기 · 권리자 정보 채우기 ---------- */
+#view-new .aq-autofill{margin:2px 0 6px;min-height:52px;padding:10px 16px;white-space:normal}
+#view-new .aq-autofill-text{min-width:0;overflow-wrap:anywhere}
+
+/* ---------- 6단계 최종 확인 카드 ---------- */
+#view-new .aq-review-card{display:flex;align-items:center;gap:14px;padding:18px 16px 18px 20px}
+#view-new .aq-review-body{flex:1;min-width:0}
+#view-new .aq-review-card strong{margin-bottom:6px}
+#view-new .aq-review-card p{padding-right:0}
+#view-new .aq-review-card .ui-btn.aq-review-edit{flex:none;position:static;margin:0;min-width:52px;font-size:13px}
+
+/* ---------- 접수 실패 ---------- */
+.aq-submit-error{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px 12px;margin-top:20px;padding:18px;border-radius:var(--aq-r-2xl);background:var(--aq-red-50);animation:aq-fade-up .32s var(--aq-e-spring) both}
+.aq-submit-error-icon{display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:var(--aq-red-500);color:#fff}
+.aq-submit-error-text strong{display:block;margin:4px 0 4px;font-size:15px;letter-spacing:-.02em;color:var(--aq-red-700)}
+.aq-submit-error-text p{margin:0;font-size:14px;line-height:1.6;color:var(--portal-ink);overflow-wrap:anywhere}
+.aq-submit-error-text small{display:block;margin-top:6px;font-size:12px;line-height:1.6;color:var(--aq-text-3)}
+.aq-submit-error>.ui-btn{grid-column:1/-1;width:100%}
+@media(min-width:760px){.aq-submit-error{grid-template-columns:auto minmax(0,1fr) auto;align-items:center}.aq-submit-error>.ui-btn{grid-column:auto;width:auto}}
+@media(prefers-reduced-motion:reduce){.aq-submit-error{animation:none}}
+
+/* ---------- 5단계 권리 확인 ---------- */
+/* 권리자는 한 줄 전체(설명이 길어 옆 칸 높이를 밀어내지 않게), ℗·©는 그 아래 나란히 */
+#view-new .form-grid>.aq-field-wide{grid-column:1/-1}
+/* 옅은 파란 확인 상자 안의 서류 카드는 흰 면으로 — 같은 색이라 보이지 않던 문제 */
+#view-new .aq-option-detail .aq-dropzone{background:#fff}
+@media(hover:hover){#view-new .aq-option-detail .aq-dropzone:hover{background:var(--aq-blue-100)}}
+#view-new .aq-option-detail .aq-filecard.has-file{background:var(--aq-blue-100)}
