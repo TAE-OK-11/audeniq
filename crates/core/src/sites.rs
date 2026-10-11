@@ -63,7 +63,12 @@ pub fn admin_path(method: &Method, path: &str) -> Result<(), StatusCode> {
     if !allowed {
         return Err(StatusCode::NOT_FOUND);
     }
-    if matches!(*method, Method::GET | Method::HEAD | Method::POST) {
+    // Staff routes use PUT (agreement terms) and DELETE (release a review
+    // claim) too; refusing them broke those console actions in production.
+    let staff = path == "/api/staff" || path.starts_with("/api/staff/");
+    if matches!(*method, Method::GET | Method::HEAD | Method::POST)
+        || (staff && matches!(*method, Method::PUT | Method::DELETE))
+    {
         Ok(())
     } else {
         Err(StatusCode::METHOD_NOT_ALLOWED)
@@ -150,8 +155,18 @@ mod tests {
             admin_path(&Method::GET, "/api/staffx"),
             Err(StatusCode::NOT_FOUND)
         );
+        // The console saves agreement terms with PUT and releases a claim
+        // with DELETE; account endpoints stay out of reach either way.
         assert_eq!(
             admin_path(&Method::PUT, "/api/staff/releases/x/agreement-terms"),
+            Ok(())
+        );
+        assert_eq!(
+            admin_path(&Method::DELETE, "/api/staff/releases/x/claim"),
+            Ok(())
+        );
+        assert_eq!(
+            admin_path(&Method::DELETE, "/api/auth/logout"),
             Err(StatusCode::METHOD_NOT_ALLOWED)
         );
     }

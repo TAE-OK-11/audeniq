@@ -14,7 +14,7 @@ import type {
   ReleaseOptionsData, SaveResult, Track, UploadKind, UploadResult, User,
 } from './types';
 import { ApiError, PartialSaveError } from './errors';
-import { bootstrapCsrf, hasCsrf, listAll, orgPath, putToGrant, req, setCsrf, type UploadGrant } from './http';
+import { bootstrapCsrf, hasCsrf, listAll, orgPath, putToGrant, req, setCsrf, setSessionUser, type UploadGrant } from './http';
 import { stampNow } from '../lib/date';
 import { normalizeIsrc } from '../lib/dsp';
 import { parseStaffFix } from '../lib/corrections';
@@ -519,6 +519,7 @@ export const remoteApi = {
       method: 'POST', body: { email: email.trim(), password }, quiet401: true,
     });
     setCsrf(r.csrf_token);
+    setSessionUser(r.user_id);
     const me = await req<{ user_id: string; party_id: string; email: string }>('/api/me', { quiet401: true });
     partyId = me.party_id;
     return { id: r.user_id, email: me.email };
@@ -528,11 +529,12 @@ export const remoteApi = {
     return remoteApi.login(email, password);
   },
   async logout(): Promise<void> {
-    try { await req('/api/auth/logout', { method: 'POST', quiet401: true }); } finally { setCsrf(''); partyId = ''; artistCache.clear(); partyCache.clear(); }
+    try { await req('/api/auth/logout', { method: 'POST', quiet401: true }); } finally { setCsrf(''); setSessionUser(''); partyId = ''; artistCache.clear(); partyCache.clear(); }
   },
   async me(): Promise<User> {
     const me = await req<{ user_id: string; party_id: string; email: string }>('/api/me', { quiet401: true });
     partyId = me.party_id;
+    setSessionUser(me.user_id);
     if (!hasCsrf()) await bootstrapCsrf();
     return { id: me.user_id, email: me.email };
   },

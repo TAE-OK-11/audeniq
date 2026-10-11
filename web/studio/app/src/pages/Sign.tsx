@@ -39,6 +39,8 @@ export function Sign() {
   const [loadError, setLoadError] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // 서버는 본인확인 후 30분 안에만 서명을 받는다 (signing.rs IDENTITY_FRESH_MINUTES)
+  const [identityExpired, setIdentityExpired] = useState(false);
   const [name, setName] = useState('');
   const [birth, setBirth] = useState('');
   const [consents, setConsents] = useState<SigningConsents>({ document: false, electronic_signature: false, privacy: false });
@@ -68,12 +70,16 @@ export function Sign() {
   const run = async (fn: () => Promise<void>) => {
     if (busy) return;
     setBusy(true); setError('');
-    try { await fn(); } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
+    try { await fn(); } catch (e) {
+      if ((e as { code?: string }).code === 'IDENTITY_EXPIRED') setIdentityExpired(true);
+      setError(errorMessage(e));
+    } finally { setBusy(false); }
   };
 
   const verify = () => run(async () => {
     if (!name.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(birth)) { setError('이름과 생년월일을 입력해 주세요.'); return; }
     await signingApi.verify(token, `test:${name.trim()}:${birth}`);
+    setIdentityExpired(false);
     await load();
   });
 
@@ -113,7 +119,11 @@ export function Sign() {
 
   const v = view;
   const closed = v.status === 'DECLINED' || v.status === 'CANCELLED' || v.status === 'EXPIRED';
-  const verified = v.status === 'VERIFIED' || v.status === 'SIGNED';
+  // 본인확인한 지 30분이 지났으면(긴 문서를 읽거나 다음 날 다시 열면) 다시 확인하게 한다
+  const verifiedAt = v.identity?.verified_at ? Date.parse(v.identity.verified_at) : NaN;
+  const identityStale = v.status === 'VERIFIED'
+    && (identityExpired || (Number.isFinite(verifiedAt) && Date.now() - verifiedAt > 29 * 60_000));
+  const verified = (v.status === 'VERIFIED' && !identityStale) || v.status === 'SIGNED';
   const step = v.status === 'SIGNED' ? 3 : verified ? 2 : 1;
   const demoProvider = v.identity_provider.name === 'test' || v.identity_provider.name === 'demo';
 
@@ -179,6 +189,7 @@ export function Sign() {
             </div>
           ) : demoProvider ? (
             <>
+              {identityStale && <p className="ui-callout is-warn">본인확인한 지 30분이 지났어요. 다시 본인확인한 뒤 서명해 주세요.</p>}
               <p className="small muted">체험·테스트 환경이에요. 실제 서비스에서는 휴대폰·간편인증(PASS·카카오·네이버·토스) 창이 열려요.</p>
               <div className="aq-sign-grid">
                 <div className="ui-field"><label htmlFor="aqSignName">이름</label><input id="aqSignName" autoComplete="name" value={name} onChange={e => setName(e.target.value)} placeholder={v.signer_name} /></div>
@@ -222,7 +233,7 @@ export function Sign() {
         )}
       </section>
 
-      {v.status === 'VERIFIED' && (
+      {v.status === 'VERIFIED' && !identityStale && (
         <section className="aq-sign-card" aria-labelledby="aqSignStep3">
           <h2 id="aqSignStep3"><span className="aq-sign-no">3</span>직접 서명</h2>
           <p className="small muted">{v.signer_name}님이 손가락이나 마우스로 직접 서명해 주세요. 서명하면 문서 내용은 더 이상 바꿀 수 없어요.</p>
