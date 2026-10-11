@@ -933,7 +933,8 @@ async fn upload_binding_expiry_duplicate_and_freeze(pool: PgPool) {
     let expired = upload(&app, &a).await;
     let id = Uuid::parse_str(expired["upload_session_id"].as_str().unwrap()).unwrap();
     sqlx::query(
-        "UPDATE catalog.upload_sessions SET expires_at=now()-interval '1 second' WHERE id=$1",
+        // Past the PUT window and the 30-minute completion window after it.
+        "UPDATE catalog.upload_sessions SET expires_at=now()-interval '31 minutes' WHERE id=$1",
     )
     .bind(id)
     .execute(&pool)
@@ -992,6 +993,99 @@ async fn upload_binding_expiry_duplicate_and_freeze(pool: PgPool) {
     let release = create(&app, &b, "releases").await;
     let artist = create(&app, &b, "artists").await;
     assert_eq!(call(&app,"POST",&format!("/api/orgs/{}/releases/{release}/tracks",b.org),json!({"title":"Track","disc_number":1,"track_number":1,"artist_id":artist,"asset_id":up["asset_id"],"row_version":0}),Some(&b)).await.0,StatusCode::FORBIDDEN);
+}
+/// BE-011 (100-album test): completions refused for capacity (503) do not
+/// use up the account's completion quota, and an uploaded file can still be
+/// completed after its 10-minute PUT URL expired, once capacity frees up.
+#[sqlx::test]
+async fn upload_completion_survives_capacity_waits(pool: PgPool) {
+    database::MIGRATOR.run(&pool).await.unwrap();
+    let store = Arc::new(MockStore::default());
+    let mut st = AppState::new(
+        pool.clone(),
+        Config {
+            database_url: "unused".into(),
+            origin: ORIGIN.into(),
+            service_secret: SECRET.into(),
+            secure_cookie: false,
+            bind: "127.0.0.1:0".into(),
+            session_seconds: 3600,
+            test_only_bypass_dsp_gate: true,
+        },
+        store.clone(),
+    )
+    .await
+    .unwrap();
+    st.antivirus_enabled = audeniq_core::config::antivirus_enabled().unwrap();
+    let slots = Arc::new(tokio::sync::Semaphore::new(1));
+    st.transcode_slots = slots.clone();
+    let app = router(st);
+    let a = user(&app).await;
+    let bytes = m4a_bytes(&["-c:a", "alac"]);
+    let (_, _, up) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{}/uploads", a.org),
+        json!({"kind":"AUDIO","size_bytes":bytes.len(),"content_type":"audio/mp4"}),
+        Some(&a),
+    )
+    .await;
+    let key = up["expected_key"].as_str().unwrap();
+    store.objects.lock().await.insert(
+        key.into(),
+        ObjectMeta {
+            size: bytes.len() as i64,
+            content_type: "audio/mp4".into(),
+            nonce: up["grant"]["headers"]["x-amz-meta-upload-nonce"]
+                .as_str()
+                .unwrap()
+                .into(),
+            etag: "etag-busy".into(),
+        },
+    );
+    store.bodies.lock().await.insert(key.into(), bytes);
+    let id = up["upload_session_id"].as_str().unwrap();
+    let path = format!("/api/orgs/{}/uploads/{id}/complete", a.org);
+    let body = json!({"asset_id":up["asset_id"],"expected_key":up["expected_key"]});
+    // Another file holds the only processing slot: more retries than the
+    // 60/15-minute quota, all refused for capacity.
+    let held = slots.clone().acquire_owned().await.unwrap();
+    for _ in 0..70 {
+        let (s, _, v) = call(&app, "POST", &path, body.clone(), Some(&a)).await;
+        assert_eq!(s, StatusCode::SERVICE_UNAVAILABLE, "{v}");
+        assert_eq!(v["error"]["code"], "UPLOAD_BUSY");
+    }
+    // Meanwhile the signed PUT URL expired; the file was already uploaded.
+    sqlx::query(
+        "UPDATE catalog.upload_sessions SET expires_at=now()-interval '5 minutes' WHERE id=$1::uuid",
+    )
+    .bind(id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    drop(held);
+    let (s, _, v) = call(&app, "POST", &path, body, Some(&a)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["detected_container"], "FLAC");
+    let used: i32 =
+        sqlx::query_scalar("SELECT attempts FROM identity.auth_limits WHERE bucket_hash=$1")
+            .bind(audeniq_core::auth::hash_token(&format!(
+                "upload-complete:{}",
+                a.user
+            )))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(used, 1, "only the processed completion counts");
+    let (_, _, status) = call(
+        &app,
+        "GET",
+        &format!("/api/orgs/{}/uploads/{id}", a.org),
+        Value::Null,
+        Some(&a),
+    )
+    .await;
+    assert_eq!(status["status"], "COMPLETED", "{status}");
 }
 #[sqlx::test]
 async fn immutable_revisions_state_and_compare_and_swap(pool: PgPool) {

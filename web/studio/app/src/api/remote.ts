@@ -645,6 +645,8 @@ export const remoteApi = {
     if (!contentType) {
       throw new ApiError(kind === 'AUDIO' ? '음원은 WAV, FLAC, ALAC(.m4a), AIFF, WavPack, TTA 파일만 올릴 수 있어요.' : kind === 'DOCUMENT' ? '서류는 PDF, JPG, PNG 파일만 올릴 수 있어요.' : '커버는 JPG 또는 PNG 파일만 올릴 수 있어요.', 400, 'UPLOAD_TYPE_UNSUPPORTED');
     }
+    // 서버는 발급 후 10분(PUT 서명 유효) + 30분 동안 완료를 받는다 — 여유를 두고 그 안에서만 재시도
+    const completeBy = Date.now() + 38 * 60_000;
     const issued = await req<{ upload_session_id: string; asset_id: string; expected_key: string; grant: UploadGrant }>(orgPath('/uploads'), {
       method: 'POST', body: { kind, size_bytes: file.size, content_type: contentType },
     });
@@ -665,10 +667,14 @@ export const remoteApi = {
       } catch (error) {
         // Capacity retries reuse the uploaded object and session. Never PUT
         // the audio again or retry permanent validation failures.
-        if (!(error instanceof ApiError) || error.code !== 'UPLOAD_BUSY' || attempt >= 47) throw error;
+        // Wait out capacity until the server's completion window closes (BE-011).
+        // Spread the retries (jitter, growing to 20s) so many waiting files do
+        // not return in lockstep; a busy answer does not count against the quota.
+        const wait = Math.min(20_000, 4000 * 1.4 ** attempt) + Math.random() * 1000;
+        if (!(error instanceof ApiError) || error.code !== 'UPLOAD_BUSY' || Date.now() + wait > completeBy) throw error;
         await new Promise<void>((resolve, reject) => {
           const abort = () => { clearTimeout(timer); reject(new ApiError('업로드를 취소했어요.', 0, 'ABORTED')); };
-          const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, 5000);
+          const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, wait);
           signal?.addEventListener('abort', abort, { once: true });
           if (signal?.aborted) abort();
         });

@@ -50,6 +50,38 @@ describe('upload completion backpressure', () => {
     expect(completions).toBe(2);
   });
 
+  it('keeps waiting out capacity past the old retry cap, within the completion window', async () => {
+    vi.useFakeTimers();
+    setOrgId(ORG);
+    vi.spyOn(http, 'putToGrant').mockResolvedValue();
+    let completions = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/uploads')) return new Response(JSON.stringify({ upload_session_id: 's1', asset_id: 'a1', expected_key: 'quarantine/a1', grant: {} }));
+      completions++;
+      return completions <= 60
+        ? new Response(JSON.stringify({ error: { code: 'UPLOAD_BUSY' } }), { status: 503 })
+        : new Response(JSON.stringify({ asset_id: 'a1', detected_container: 'FLAC' }));
+    }));
+    const result = remoteApi.uploadFile(new File(['test'], 'a.flac'), 'AUDIO');
+    const checked = expect(result).resolves.toMatchObject({ assetId: 'a1' });
+    await vi.advanceTimersByTimeAsync(30 * 60_000);
+    await checked;
+    expect(completions).toBe(61);
+  });
+
+  it('stops retrying when the completion window closes', async () => {
+    vi.useFakeTimers();
+    setOrgId(ORG);
+    vi.spyOn(http, 'putToGrant').mockResolvedValue();
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).endsWith('/uploads')
+      ? new Response(JSON.stringify({ upload_session_id: 's1', asset_id: 'a1', expected_key: 'quarantine/a1', grant: {} }))
+      : new Response(JSON.stringify({ error: { code: 'UPLOAD_BUSY' } }), { status: 503 })));
+    const result = remoteApi.uploadFile(new File(['test'], 'a.flac'), 'AUDIO');
+    const checked = expect(result).rejects.toMatchObject({ code: 'UPLOAD_BUSY' });
+    await vi.advanceTimersByTimeAsync(40 * 60_000);
+    await checked;
+  });
+
   it('does not retry a lossy-file rejection', async () => {
     setOrgId(ORG);
     vi.spyOn(http, 'putToGrant').mockResolvedValue();
