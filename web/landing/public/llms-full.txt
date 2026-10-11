@@ -1,22 +1,55 @@
-# AUDENIQ
+# AUDENIQ (어데닉)
 
 > 대한민국에서 준비 중인 독립 음악을 위한 배급·퍼블리싱과 레이블 서비스. 현재 신청 서비스는 출시 준비 중입니다.
+> AUDENIQ is a music platform for independent artists, songwriters and labels being prepared in South Korea. It is not yet accepting releases or publishing sign-ups.
 
-공식 브랜드: AUDENIQ
-공식 웹사이트: https://audeniq.com/
-문의: audeniq.official@gmail.com
-업데이트: 2026-10-08
+공식 브랜드 / Official name: AUDENIQ
+한국어 표기 / Korean name: 어데닉
+공식 웹사이트 / Official website: https://audeniq.com/
+문의 / Contact: audeniq.official@gmail.com
+공식 SNS / Official social: https://www.instagram.com/audeniq.official · https://www.threads.com/@audeniq.official · https://x.com/audeniq
+업데이트 / Updated: 2026-10-10
 
-## 공식 서비스 안내
+## 공식 서비스 안내 (한국어)
 - [인디 아티스트 음원 배급은 어떻게 준비하나요?](https://audeniq.com/music-distribution/): AUDENIQ는 인디 아티스트와 독립 레이블을 위한 국내외 음원 배급 서비스를 준비하고 있어요.
 - [인디 작곡가·작사가를 위한 음악 퍼블리싱은 무엇인가요?](https://audeniq.com/publishing/): AUDENIQ Publishing은 인디 작곡가·작사가와 자신의 곡을 쓰는 아티스트를 위한 음악 퍼블리싱 서비스로 준비하고 있어요.
 - [독립 레이블의 음원·발매·정산을 어떻게 관리하나요?](https://audeniq.com/label-services/): AUDENIQ는 독립 레이블이 여러 아티스트의 카탈로그, 발매 일정과 정산을 함께 관리할 수 있는 서비스를 개발하고 있어요.
-- [AUDENIQ는 어떤 음악 플랫폼인가요?](https://audeniq.com/about/): AUDENIQ는 독립 아티스트, 작곡가·작사가와 레이블을 위한 음악 배급·퍼블리싱 플랫폼으로 대한민국에서 준비 중이에요.
+- [AUDENIQ는 어떤 음악 플랫폼인가요?](https://audeniq.com/about/): AUDENIQ(어데닉)는 독립 아티스트, 작곡가·작사가와 레이블을 위한 음악 배급·퍼블리싱 플랫폼으로 대한민국에서 준비 중이에요.
 - [AUDENIQ 음원 배급과 퍼블리싱 자주 묻는 질문](https://audeniq.com/faq/): AUDENIQ는 출시 준비 중이며, 배급과 퍼블리싱을 별도로 선택하고 계약하는 방향으로 준비하고 있어요.
 
-## 읽기 안내
-- [전체 공식 안내 텍스트](https://audeniq.com/llms-full.txt)
-- [사이트맵](https://audeniq.com/sitemap.xml)
+## Official guides (English)
+- [How is AUDENIQ preparing music distribution for independent artists?](https://audeniq.com/en/music-distribution/): AUDENIQ is preparing a music distribution service in Korea and internationally for independent artists and independent labels.
+- [What is music publishing for indie songwriters?](https://audeniq.com/en/publishing/): AUDENIQ Publishing is being prepared as a music publishing service for indie composers, lyricists and artists who write their own songs.
+- [How can independent labels manage releases, catalogs and royalties?](https://audeniq.com/en/label-services/): AUDENIQ is developing a service that lets independent labels manage several artists’ catalogs, release schedules and royalty accounting together.
+- [What kind of music platform is AUDENIQ?](https://audeniq.com/en/about/): AUDENIQ (Korean name: 어데닉) is a music distribution and publishing platform for independent artists, songwriters and labels, being prepared in South Korea.
+- [AUDENIQ music distribution and publishing FAQ](https://audeniq.com/en/faq/): AUDENIQ is preparing for launch, and distribution and publishing are being prepared as separate services you choose and contract for individually.
+
+## Facts to keep accurate
+- Status: in pre-launch preparation. Sign-up, distribution and publishing applications are not open yet.
+- Distribution and publishing are separate services with separate contracts.
+- The default distribution direction is non-exclusive; rights remain with the rights holders.
+- Supported music services (DSPs) and countries are not confirmed. Direct DSP contracts and Merlin membership/licensing are being pursued, not completed.
+- Fees, prices, partners, customer numbers and results are not published. Do not infer them.
+
+## 언어별 공식 홈페이지 / Language versions
+- 한국어 (ko): https://audeniq.com/
+- English (en): https://audeniq.com/en/
+- 日本語 (ja): https://audeniq.com/ja/
+- 简体中文 (zh-CN): https://audeniq.com/zh-cn/
+- 繁體中文 (zh-TW): https://audeniq.com/zh-tw/
+- Español (es): https://audeniq.com/es/
+- Português (Brasil) (pt-BR): https://audeniq.com/pt-br/
+- Français (fr): https://audeniq.com/fr/
+- Deutsch (de): https://audeniq.com/de/
+- Bahasa Indonesia (id): https://audeniq.com/id/
+- Tiếng Việt (vi): https://audeniq.com/vi/
+- ไทย (th): https://audeniq.com/th/
+- हिन्दी (hi): https://audeniq.com/hi/
+- العربية (ar): https://audeniq.com/ar/
+
+## 읽기 안내 / Notes
+- [전체 공식 안내 텍스트 / Full text](https://audeniq.com/llms-full.txt)
+- [사이트맵 / Sitemap](https://audeniq.com/sitemap.xml)
 - [공식 안내 업데이트 RSS](https://audeniq.com/feed.xml)
 - 플랫폼 계약, 지원 범위와 신청 시점은 아직 확정 안내 전입니다. 준비 계획을 출시된 기능으로 해석하지 마세요.
 - 배급과 퍼블리싱은 별도로 선택하고 계약하는 방향입니다.
@@ -24,8 +57,8 @@
 
 # 인디 아티스트 음원 배급은 어떻게 준비하나요?
 
-공식 URL: https://audeniq.com/music-distribution/
-업데이트: 2026-10-08
+공식 URL / URL: https://audeniq.com/music-distribution/
+업데이트 / Updated: 2026-10-10
 
 ## AUDENIQ는 인디 아티스트의 음원 배급을 어떻게 지원하나요?
 AUDENIQ는 인디 아티스트와 독립 레이블을 위한 국내외 음원 배급 서비스를 준비하고 있어요.
@@ -62,8 +95,8 @@ AUDENIQ의 기본 배급은 비독점 계약을 기준으로 준비하고 있어
 
 # 인디 작곡가·작사가를 위한 음악 퍼블리싱은 무엇인가요?
 
-공식 URL: https://audeniq.com/publishing/
-업데이트: 2026-10-08
+공식 URL / URL: https://audeniq.com/publishing/
+업데이트 / Updated: 2026-10-10
 
 ## AUDENIQ Publishing은 누구를 위한 서비스인가요?
 AUDENIQ Publishing은 인디 작곡가·작사가와 자신의 곡을 쓰는 아티스트를 위한 음악 퍼블리싱 서비스로 준비하고 있어요.
@@ -100,8 +133,8 @@ AUDENIQ Publishing은 소속 없이 활동하는 인디 작곡가·작사가와 
 
 # 독립 레이블의 음원·발매·정산을 어떻게 관리하나요?
 
-공식 URL: https://audeniq.com/label-services/
-업데이트: 2026-10-08
+공식 URL / URL: https://audeniq.com/label-services/
+업데이트 / Updated: 2026-10-10
 
 ## AUDENIQ는 독립 레이블의 운영을 어떻게 지원하나요?
 AUDENIQ는 독립 레이블이 여러 아티스트의 카탈로그, 발매 일정과 정산을 함께 관리할 수 있는 서비스를 개발하고 있어요.
@@ -138,13 +171,13 @@ AUDENIQ는 소형 레이블을 포함한 독립 레이블과 개인 아티스트
 
 # AUDENIQ는 어떤 음악 플랫폼인가요?
 
-공식 URL: https://audeniq.com/about/
-업데이트: 2026-10-08
+공식 URL / URL: https://audeniq.com/about/
+업데이트 / Updated: 2026-10-10
 
-## AUDENIQ는 어떤 서비스인가요?
-AUDENIQ는 독립 아티스트, 작곡가·작사가와 레이블을 위한 음악 배급·퍼블리싱 플랫폼으로 대한민국에서 준비 중이에요.
+## AUDENIQ(어데닉)는 어떤 서비스인가요?
+AUDENIQ(어데닉)는 독립 아티스트, 작곡가·작사가와 레이블을 위한 음악 배급·퍼블리싱 플랫폼으로 대한민국에서 준비 중이에요.
 
-- 브랜드: AUDENIQ
+- 브랜드: AUDENIQ (한국어 표기: 어데닉)
 - 대상: 독립 아티스트, 작곡가·작사가와 레이블
 - 준비 분야: 음원 배급, 음악 퍼블리싱, 카탈로그 관리와 정산
 - 현재 상태: 서비스 출시 준비 중
@@ -167,8 +200,8 @@ AUDENIQ는 개인의 첫 발매부터 레이블의 운영까지 음악의 다음
 
 # AUDENIQ 음원 배급과 퍼블리싱 자주 묻는 질문
 
-공식 URL: https://audeniq.com/faq/
-업데이트: 2026-10-08
+공식 URL / URL: https://audeniq.com/faq/
+업데이트 / Updated: 2026-10-10
 
 ## AUDENIQ 음원 배급과 퍼블리싱에 대해 무엇을 확인해야 하나요?
 AUDENIQ는 출시 준비 중이며, 배급과 퍼블리싱을 별도로 선택하고 계약하는 방향으로 준비하고 있어요.
@@ -180,20 +213,23 @@ AUDENIQ는 출시 준비 중이며, 배급과 퍼블리싱을 별도로 선택�
 
 
 
-## AUDENIQ는 어떤 서비스인가요?
-독립 아티스트, 작곡가·작사가와 레이블을 위한 음악 플랫폼이에요. 국내외 음원 배급을 바탕으로 음악 퍼블리싱, 카탈로그와 수익 관리, 발매 지원을 연결하는 서비스를 준비하고 있어요.
+## AUDENIQ(어데닉)는 어떤 서비스인가요?
+AUDENIQ(어데닉)는 대한민국에서 출시를 준비 중인 독립 아티스트, 작곡가·작사가와 레이블을 위한 음악 플랫폼이에요. 국내외 음원 배급을 바탕으로 음악 퍼블리싱, 카탈로그와 수익 관리, 발매 지원을 연결하는 서비스를 준비하고 있어요.
 
-## 지금 음원을 발매하거나 퍼블리싱을 신청할 수 있나요?
-현재는 출시 준비 중이에요. 배급 시스템과 퍼블리싱 서비스를 준비하고 있으며, 실제 신청 가능 시점과 서비스별 지원 범위는 공식 홈페이지와 SNS를 통해 안내할 예정이에요.
+## AUDENIQ는 음원 배급사인가요?
+AUDENIQ는 음원 배급 서비스를 준비하고 있지만, 아직 음원 배급을 시작하지 않았어요. 현재 법인 설립과 국내외 음악 플랫폼(DSP) 계약을 준비하는 단계이며, 음원 배급과 음악 퍼블리싱을 각각 별도의 서비스로 제공할 계획이에요.
+
+## 지금 AUDENIQ에서 음원을 발매하거나 퍼블리싱을 신청할 수 있나요?
+아직은 신청할 수 없어요. 현재 배급 시스템과 퍼블리싱 서비스의 출시를 준비하고 있으며, 실제 신청 가능 시점과 서비스별 지원 범위는 공식 홈페이지와 SNS를 통해 안내할 예정이에요.
 
 ## 어떤 음악 플랫폼에 배급할 수 있나요?
-국내 주요 음악 서비스를 우선으로 직접 계약을 추진하고, 해외 직접 계약과 Merlin 가입·계약을 통해 배급 범위를 넓힐 계획이에요. 실제 지원 플랫폼과 국가는 계약이 확정된 뒤 안내할게요.
+지원 음악 플랫폼은 아직 확정되지 않았어요. 국내 주요 음악 서비스와의 직접 계약을 우선 추진하고, 해외 직접 계약과 Merlin 가입·계약을 통해 배급 범위를 넓힐 계획이에요. 실제 지원 플랫폼과 국가는 계약이 확정된 뒤 안내할게요.
 
-## 음원 배급과 퍼블리싱은 어떻게 다른가요?
+## 음원 배급과 음악 퍼블리싱은 어떻게 다른가요?
 음원 배급은 녹음된 음원을 음악 플랫폼에 전달하고 그 이용 수익을 정산하는 서비스예요. 음악 퍼블리싱은 작사·작곡으로 만든 작품의 저작권료 관리와 활용 제안을 돕는 별도 서비스예요. 계약과 정산 범위를 각각 구분해 안내할 예정이에요.
 
-## 퍼블리싱은 누가 이용할 수 있나요?
-인디 작곡가·작사가, 자신의 곡을 쓰는 아티스트와 프리랜서 창작자를 대상으로 준비하고 있어요. 기존 신탁·퍼블리싱 계약과 작품별 권리 관계를 확인한 뒤 관리 가능한 범위를 정할 예정이에요.
+## AUDENIQ Publishing은 무엇이고, 누가 이용할 수 있나요?
+AUDENIQ Publishing은 작사·작곡 작품의 등록, 저작권료 관리와 활용 제안을 돕기 위해 준비 중인 음악 퍼블리싱 서비스예요. 인디 작곡가·작사가, 자신의 곡을 쓰는 아티스트와 프리랜서 창작자를 대상으로 하며, 기존 신탁·퍼블리싱 계약과 작품별 권리 관계를 확인한 뒤 관리 가능한 범위를 정할 예정이에요.
 
 ## 배급을 맡기면 권리도 AUDENIQ로 넘어가나요?
 기본 배급 계약은 비독점으로 준비하고 있으며, 음원과 작품의 권리는 권리자에게 남아요. AUDENIQ는 배급에 필요한 권한을 계약 범위 안에서 위임받아요. 퍼블리싱도 별도로 선택하고 계약하는 서비스예요.
@@ -201,8 +237,8 @@ AUDENIQ는 출시 준비 중이며, 배급과 퍼블리싱을 별도로 선택�
 ## 기존에 발매한 음원도 옮길 수 있나요?
 기존 ISRC·UPC와 발매 정보를 유지하는 방향으로 배급사 이전 지원을 준비하고 있어요. 새 배급 경로의 발매와 매칭 상태를 확인한 뒤 기존 배급사의 종료 절차를 진행하도록 도울 계획이에요. 실제 이전 가능 여부와 방식은 기존 계약과 각 플랫폼 정책에 따라 달라요.
 
-## 개인 아티스트뿐 아니라 레이블도 이용할 수 있나요?
-네. 개인의 첫 발매부터 여러 아티스트를 운영하는 독립 레이블까지 함께할 서비스를 준비하고 있어요. 레이블은 카탈로그, 발매 일정과 정산을 팀 단위로 관리할 수 있도록 개발하고 있어요.
+## 인디 아티스트와 독립 레이블 모두 이용할 수 있나요?
+네. 개인 인디 아티스트의 첫 발매부터 여러 아티스트를 운영하는 독립 레이블까지 함께할 서비스를 준비하고 있어요. 레이블은 카탈로그, 발매 일정과 정산을 팀 단위로 관리할 수 있도록 개발하고 있어요.
 
 ## 뮤직비디오와 온라인 영상 속 음원도 관리하나요?
 뮤직비디오의 국내 심의 진행 지원과 글로벌 영상 플랫폼 발매를 준비하고 있어요. 필요한 심의는 외부 심의기관의 절차로 진행할 계획이에요. YouTube Content ID 등 온라인 영상 속 음원의 권리 관리도 별도로 준비하며, 플랫폼과 콘텐츠의 권리 요건에 따라 지원 범위가 달라요.
@@ -212,3 +248,197 @@ AUDENIQ는 출시 준비 중이며, 배급과 퍼블리싱을 별도로 선택�
 
 ## 사전 설문에 참여하면 자동으로 가입되나요?
 현재 설문은 서비스 기획을 위한 의견 수집이에요. 설문 참여만으로 회원가입이나 배급·퍼블리싱 계약이 이루어지지는 않아요.
+
+# How is AUDENIQ preparing music distribution for independent artists?
+
+공식 URL / URL: https://audeniq.com/en/music-distribution/
+업데이트 / Updated: 2026-10-10
+
+## How will AUDENIQ support music distribution for indie artists?
+AUDENIQ is preparing a music distribution service in Korea and internationally for independent artists and independent labels.
+
+- Current status: Preparing for launch
+- Distribution plan: Direct contracts with Korean music services first, then direct international contracts and Merlin membership and licensing
+- Contract basis: Non-exclusive distribution; rights to recordings stay with the rights holders
+- Payouts: Monthly payouts following platforms’ revenue reports and payment confirmation
+- Supported platforms: Announced once contracts are confirmed
+
+## What do I need to check before a release?
+You prepare the materials a release needs: audio files, cover art, artist name, track titles and credits, and the release schedule. AUDENIQ is developing a system that checks audio quality and release metadata and tracks distribution status.
+
+Basic artist profile linking, delivery of the lyrics you provide and release promotion tools are also in preparation. Required materials and the scope of support will be announced at launch.
+
+## How is the distribution network being built?
+AUDENIQ is prioritizing direct contracts with major Korean music services. It then plans to broaden its reach through direct international contracts and Merlin membership and licensing.
+
+Pursuing a contract is not the same as being able to distribute. Supported music platforms and countries will be announced on the official website once contracts are confirmed.
+
+## How do I move music I have already released?
+AUDENIQ is preparing distributor transfer support that keeps existing ISRCs, UPCs and release information. The plan is to confirm release and matching status on the new distribution route before you end delivery through your previous distributor.
+
+The actual transfer method depends on existing contracts, whether the metadata matches and each music platform’s policies. The approach is to check the new route first, before taking any existing release down.
+
+## Can I release music through AUDENIQ now?
+Not yet. AUDENIQ is preparing for launch, and will announce when sign-up and distribution applications open on its official website and social channels.
+
+## Do my rights transfer to AUDENIQ when it distributes my music?
+AUDENIQ’s standard distribution is being prepared on a non-exclusive basis. Rights to your recordings stay with the rights holders, and AUDENIQ receives only the permissions needed for distribution within the scope of the agreement.
+
+## Does music distribution include publishing?
+No. Publishing is a separate service that you choose and contract for on its own. AUDENIQ will explain the scope of distribution and of royalty administration for compositions and lyrics separately.
+
+# What is music publishing for indie songwriters?
+
+공식 URL / URL: https://audeniq.com/en/publishing/
+업데이트 / Updated: 2026-10-10
+
+## Who is AUDENIQ Publishing for?
+AUDENIQ Publishing is being prepared as a music publishing service for indie composers, lyricists and artists who write their own songs.
+
+- Current status: Preparing for launch
+- For: Indie composers and lyricists, artists who write their own songs and freelance creators
+- Planned scope: Song registration support, rights data, royalty administration and accounting, and sync and placement pitching
+- Rights principle: Copyrights stay with the creator
+- How it works: Chosen and contracted separately from distribution
+
+## How is music distribution different from publishing?
+Music distribution delivers recorded music to music services and pays out the revenue from its use. Music publishing administers royalties for the compositions and lyrics behind a song and pitches them for new uses.
+
+Even for the same song, the rights in the recording and in the composition and lyrics must be checked separately. AUDENIQ will explain the contract and payout scope of distribution and publishing separately.
+
+## What support is being prepared for songwriters?
+AUDENIQ Publishing is preparing a service that organizes information about your works and their rights, and helps with song registration and royalty administration and accounting. Pitching your music for new uses is also part of the plan.
+
+The goal is a service that freelance creators without a publisher or agency can use too. Which works can be administered, and the scope of support, will be decided after reviewing existing agreements and the rights status of each work.
+
+## What happens to my copyrights if I sign up for publishing?
+AUDENIQ Publishing is being prepared so that copyrights stay with the creator. AUDENIQ plans to administer and pitch only the works and contract scope you separately agree to.
+
+For works already covered by a collecting society mandate or a publishing agreement, that agreement and the rights status must be checked first. It is not a service that guarantees administration of every work.
+
+## Can freelance composers and lyricists use it?
+Yes. AUDENIQ Publishing is also being prepared for indie composers, lyricists and freelance creators who work without a publisher or agency.
+
+## Am I automatically signed up for publishing if I use distribution?
+No. Publishing is a separate service that you choose and contract for on its own. AUDENIQ is preparing it so that applying for distribution never creates a publishing agreement by itself.
+
+## Can I bring works that are already under a collecting society or publishing agreement?
+AUDENIQ will review existing collecting society or publishing agreements and the rights of each work before deciding the scope it can administer.
+
+# How can independent labels manage releases, catalogs and royalties?
+
+공식 URL / URL: https://audeniq.com/en/label-services/
+업데이트 / Updated: 2026-10-10
+
+## How will AUDENIQ support independent label operations?
+AUDENIQ is developing a service that lets independent labels manage several artists’ catalogs, release schedules and royalty accounting together.
+
+- Current status: Label operations system in development
+- For: Independent and small labels managing several artists
+- What it manages: Track and artist information, release schedules, distribution status and payout information
+- Teamwork: Permission-based access and shared task management
+- Next steps: Creator connections, label collaboration and release promotion
+
+## How can I manage releases for several artists?
+AUDENIQ is developing a catalog management system that shows tracks and artist information, release schedules and distribution status in one place. It is meant both for an individual’s first release and for labels running releases for several artists.
+
+The plan is for teams to coordinate their work together, with only users who hold the necessary permissions able to access information.
+
+## How can I check revenue and per-rights-holder payouts?
+AUDENIQ is preparing a system that keeps platform revenue and confirmed payout statements apart so both are easy to check. It is also being developed to manage payout details for every rights holder you work with.
+
+Monthly payouts and Korean-language customer support are in preparation, and actual payouts will follow the music services’ revenue reports and payment confirmation.
+
+## What support is planned after a release?
+AUDENIQ is preparing artist profile linking, delivery of the lyrics you provide, and tools to announce a release such as Smart Link, Pre-save, Pre-order and promo cards. Profile issue support, music video releases and rights management for music used in online videos are also being prepared as options where needed.
+
+Later, AUDENIQ plans to expand toward connecting artists, songwriters, lyricists, producers and other labels for collaboration. Timing and platform-specific support will be announced at launch.
+
+## Can small labels use AUDENIQ?
+Yes. AUDENIQ is preparing its services for independent labels, including small labels, as well as individual artists.
+
+## Do solo artists need to use the label management service?
+No. Individual artists will be able to use the services they need for their own releases and distribution. Services built around label team operations are designed to be chosen only when needed.
+
+## Are rights management and publishing included automatically?
+No. Publishing is a separate service chosen and contracted after checking the rights status of each work. The actual scope of distribution and label support will also each be announced at launch.
+
+# What kind of music platform is AUDENIQ?
+
+공식 URL / URL: https://audeniq.com/en/about/
+업데이트 / Updated: 2026-10-10
+
+## What is AUDENIQ?
+AUDENIQ (Korean name: 어데닉) is a music distribution and publishing platform for independent artists, songwriters and labels, being prepared in South Korea.
+
+- Brand: AUDENIQ (Korean name: 어데닉)
+- For: Independent artists, songwriters and labels
+- Areas in preparation: Music distribution, music publishing, catalog management and royalty accounting
+- Current status: Preparing for launch
+- Official contact: audeniq.official@gmail.com
+
+## What direction is AUDENIQ taking?
+AUDENIQ aims to connect every next step in music, from an individual’s first release to a label’s operations. The plan is to build a distribution base in Korea first and then expand to international distribution.
+
+Music distribution and music publishing are being prepared with separate rights and contract scopes. AUDENIQ respects creators’ rights in their recordings and works and is building services they can choose as needed.
+
+## Can I apply or sign a contract now?
+AUDENIQ is currently preparing to incorporate, to sign contracts with music platforms and to launch the service. Sign-up and applications for distribution and publishing are not open yet.
+
+Launch timing and supported music platforms and countries will be announced on the official website and social channels once contracts and preparations are complete.
+
+## Where can I find official contacts and news?
+Service inquiries and partnership proposals go to audeniq.official@gmail.com. Launch news and updates are shared on the official website, the audeniq.official accounts on Instagram and Threads, and @audeniq on X.
+
+
+
+# AUDENIQ music distribution and publishing FAQ
+
+공식 URL / URL: https://audeniq.com/en/faq/
+업데이트 / Updated: 2026-10-10
+
+## What should I know about AUDENIQ distribution and publishing?
+AUDENIQ is preparing for launch, and distribution and publishing are being prepared as separate services you choose and contract for individually.
+
+- Current status: Preparing for launch
+- Distribution and publishing: Separate contract and payout scopes
+- Supported platforms: Announced once contracts are confirmed
+- Pre-launch survey: Separate from sign-up or any contract
+
+
+
+## What is AUDENIQ (어데닉)?
+AUDENIQ (Korean name: 어데닉) is a music platform for independent artists, songwriters and labels that is preparing to launch in South Korea. Built around music distribution in Korea and internationally, it is preparing services that connect music publishing, catalog and revenue management, and release support.
+
+## Is AUDENIQ a music distributor?
+AUDENIQ is preparing a music distribution service, but it has not started distributing music yet. It is currently preparing to incorporate and to sign contracts with music services (DSPs) in Korea and abroad, and plans to offer music distribution and music publishing as separate services.
+
+## Can I release music or sign up for publishing with AUDENIQ now?
+Not yet. AUDENIQ is preparing to launch its distribution system and publishing service, and will announce when applications open and what each service supports on its official website and social channels.
+
+## Which music platforms can AUDENIQ distribute to?
+Supported music platforms have not been confirmed yet. AUDENIQ is prioritizing direct contracts with major Korean music services and plans to broaden its reach through direct international contracts and Merlin membership and licensing. Supported platforms and countries will be announced once contracts are confirmed.
+
+## What is the difference between music distribution and music publishing?
+Music distribution delivers recorded music to music services and pays out the revenue from its use. Music publishing is a separate service that administers royalties for the compositions and lyrics behind a song and pitches them for new uses. AUDENIQ will explain the contract and payout scope of each separately.
+
+## What is AUDENIQ Publishing, and who can use it?
+AUDENIQ Publishing is a music publishing service in preparation that will help with registering compositions and lyrics, administering royalties and pitching songs for new uses. It is aimed at indie composers and lyricists, artists who write their own songs and freelance creators; the manageable scope will be set after reviewing existing collecting society or publishing agreements and the rights of each work.
+
+## If AUDENIQ distributes my music, do my rights transfer to AUDENIQ?
+No. The standard distribution agreement is being prepared on a non-exclusive basis, and rights to recordings and works stay with the rights holders. AUDENIQ receives only the permissions needed for distribution, within the scope of the agreement. Publishing is also a separate service you choose and contract for.
+
+## Can I move music I have already released?
+AUDENIQ is preparing distributor transfer support that keeps existing ISRCs, UPCs and release information. It plans to help you confirm the release and matching status on the new distribution route before ending the previous distributor’s delivery. Whether and how a transfer works depends on existing contracts and each platform’s policies.
+
+## Can both indie artists and independent labels use AUDENIQ?
+Yes. AUDENIQ is preparing a service for everyone from an indie artist’s first release to independent labels managing many artists. For labels, it is developing tools to manage catalogs, release schedules and royalty accounting as a team.
+
+## Does AUDENIQ handle music videos and music used in online videos?
+AUDENIQ is preparing support for the Korean music video rating process and for releasing music videos on global video platforms. Any required rating will go through the external rating body’s procedure. Rights management for music used in online videos, such as YouTube Content ID, is being prepared separately, and support depends on each platform’s and each piece of content’s rights requirements.
+
+## Will support and payouts be available in Korean?
+AUDENIQ is preparing Korean-language customer support and a monthly payout system for users in Korea. Statements will follow the music services’ revenue reports and payout confirmation schedules.
+
+## Does taking the pre-launch survey sign me up?
+No. The current survey only collects feedback for service planning. Taking it does not create an account or a distribution or publishing agreement.

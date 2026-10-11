@@ -1,0 +1,580 @@
+{
+  "updated": "2026-10-10",
+  "meta": {
+    "title": "AUDENIQ | Music Distribution & Publishing for Independent Artists",
+    "description": "AUDENIQ is a music platform being prepared in South Korea for independent artists, songwriters and indie labels: digital music distribution, music publishing, release management and royalty reporting. Not yet open for releases.",
+    "ogDescription": "Your music and your rights, further out into the world. AUDENIQ is preparing music distribution, publishing and label services for independent music.",
+    "ogImageAlt": "AUDENIQ — Your music. Your rights. Out into the wider world. Preparing for launch",
+    "orgDescription": "A music distribution, publishing and label services platform for independent music, being prepared in South Korea",
+    "websiteDescription": "AUDENIQ is preparing music distribution and publishing services for independent artists, songwriters and labels.",
+    "languageLabel": "Language",
+    "languageNav": "Choose a language"
+  },
+  "home": {
+    "본문으로 바로가기": "Skip to main content",
+    "AUDENIQ 홈": "AUDENIQ home",
+    "메뉴 열기": "Open menu",
+    "메뉴 닫기": "Close menu",
+    "주 메뉴": "Main menu",
+    "서비스 소개": "Services",
+    "퍼블리싱": "Publishing",
+    "AUDENIQ 소개": "About AUDENIQ",
+    "차별점": "Why AUDENIQ",
+    "문의": "Contact",
+    "사전 설문 안내": "Pre-launch survey",
+    "독립 음악을 위한 배급과 퍼블리싱": "Music distribution and publishing for independent music",
+    "당신의 음악.": "Your music.",
+    "당신의 권리.": "Your rights.",
+    "더 넓은 세상으로.": "Out into the wider world.",
+    "음원 발매부터 음악의 권리와 수익 관리까지.<br>독립 아티스트, 작곡가·작사가와 레이블을 위한<br class=\"mobile-break\"> 배급과 퍼블리싱, AUDENIQ를 준비하고 있어요.": "From releasing your music to managing its rights and revenue.<br>AUDENIQ is preparing music distribution and publishing<br class=\"mobile-break\"> for independent artists, songwriters and labels.",
+    "사전 설문 참여하기": "Take the pre-launch survey",
+    "AUDENIQ 사전 설문 페이지에서 의견을 들려주세요.": "Share your thoughts on the AUDENIQ survey page (in Korean).",
+    "서비스 출시 준비 중": "Preparing for launch",
+    "정식 회원가입과 배급·퍼블리싱 신청은 출시 후 안내할게요.": "Sign-up and applications for distribution and publishing will open after launch.",
+    "음악을 만드는 일부터,<br>세상에 알리는 일까지.": "From making music,<br>to sharing it with the world.",
+    "좋은 음악을 만들기 위해서는<br>많은 사람의 노력과 시간이 필요해요.": "Making good music takes<br>the time and effort of many people.",
+    "하지만 음악을 완성한 뒤에도 발매를 준비하고,<br class=\"desktop-break\"> 권리를 확인하고, 수익을 관리하는 일까지 신경 써야 하죠.": "Yet even after the music is finished, there is still the release to prepare,<br class=\"desktop-break\"> rights to check and revenue to manage.",
+    "AUDENIQ는 이런 과정을<br class=\"mobile-break\"> 하나의 플랫폼에서 연결하고 싶어요.": "AUDENIQ wants to connect all of this<br class=\"mobile-break\"> on a single platform.",
+    "음원 배급과 음악 퍼블리싱, 발매 관리와 정산까지.<br class=\"desktop-break\"> 개인의 첫 발매부터 레이블의 운영까지 함께할 서비스를 만들어가고 있어요.": "Music distribution and publishing, release management and royalty accounting.<br class=\"desktop-break\"> We are building a service for everyone from an artist’s first release to a label’s day-to-day operations.",
+    "AUDENIQ가 준비하는 음악의 여정": "The music journey AUDENIQ is preparing",
+    "발매 준비": "Release prep",
+    "음원과 정보 확인": "Audio and metadata checks",
+    "음원 배급": "Distribution",
+    "국내에서 세계로": "From Korea to the world",
+    "권리 관리": "Rights management",
+    "작품의 가치를 연결": "Connecting your songs’ value",
+    "수익 관리": "Revenue management",
+    "음악의 가치를 확인": "Seeing what your music earns",
+    "하나로 연결되는 음악의 여정": "One connected music journey",
+    "음악의 다음을 위한 서비스,<br>하나의 플랫폼에서.": "Services for your music’s next step,<br>on one platform.",
+    "발매와 배급을 기본으로, 권리 관리와 레이블 운영까지 연결해요.": "Release and distribution at the core, connected to rights management and label operations.",
+    "개발 중": "In development",
+    "음원 발매 및 배급": "Music release & distribution",
+    "음원과 앨범을 등록하고, 품질과 발매 정보를 확인해 국내외 음악 플랫폼에 전달하는 배급 시스템을 개발하고 있어요.": "We are developing a distribution system that registers your tracks and albums, checks audio quality and release metadata, and delivers them to music services in Korea and abroad.",
+    "발매 신청": "Release submission",
+    "음원 품질 확인": "Audio quality check",
+    "국내외 배급": "Korean & global distribution",
+    "음원 배급 자세히 보기": "More about music distribution",
+    "준비 중": "In preparation",
+    "음악 퍼블리싱": "Music publishing",
+    "인디 작곡가·작사가와 자신의 곡을 쓰는 아티스트를 위해 작품 등록, 저작권료 관리와 활용 제안을 돕는 서비스를 준비하고 있어요.": "We are preparing a service that helps indie songwriters and artists who write their own songs with song registration, royalty administration and sync and placement opportunities.",
+    "AUDENIQ Publishing 알아보기": "Discover AUDENIQ Publishing",
+    "카탈로그와 레이블 관리": "Catalog & label management",
+    "여러 아티스트의 음원, 발매 일정과 배급 현황을 한곳에서 관리하고, 팀과 함께 운영할 수 있는 시스템을 준비하고 있어요.": "We are preparing a system to manage several artists’ tracks, release schedules and distribution status in one place, and to run it together as a team.",
+    "카탈로그": "Catalog",
+    "발매 일정": "Release schedule",
+    "팀 관리": "Team management",
+    "레이블 서비스 자세히 보기": "More about label services",
+    "수익 리포트 및 정산": "Revenue reports & royalty accounting",
+    "플랫폼별 수익과 정산 내역을 확인하고, 함께한 권리자의 정산 정보를 관리할 수 있는 시스템을 준비하고 있어요.": "We are preparing a system to view revenue and statements by platform and to manage payout details for every rights holder you work with.",
+    "수익 리포트": "Revenue reports",
+    "정산 내역": "Statements",
+    "권리자별 관리": "Per-rights-holder management",
+    "발매 지원과 권리 관리": "Release support & rights management",
+    "아티스트 프로필, 가사 등록과 배급사 이전부터 뮤직비디오 발매, 온라인 영상 속 음원의 권리 관리까지 지원 범위를 넓혀가요.": "From artist profiles, lyrics delivery and distributor transfers to music video releases and rights management for music used in online videos, we will keep widening our support.",
+    "확장 예정": "Coming later",
+    "홍보와 창작자 협업": "Promotion & creator collaboration",
+    "발매 홍보 도구를 준비하고, 아티스트·작곡가·작사가·프로듀서와 레이블이 함께 음악을 만들 수 있는 연결을 넓혀갈 계획이에요.": "We plan to prepare release promotion tools and to widen the connections that let artists, songwriters, lyricists, producers and labels make music together.",
+    "창작자 연결": "Creator network",
+    "AUDENIQ PUBLISHING · 준비 중": "AUDENIQ PUBLISHING · In preparation",
+    "당신이 쓴 음악,<br>그 가치를 이어가도록.": "The songs you write,<br>and the value they carry on.",
+    "인디 작곡가와 작사가, 직접 곡을 쓰는 아티스트를 위한 음악 퍼블리싱을 준비하고 있어요. 소속 없이 활동하는 프리랜서 창작자도 함께할 수 있는 서비스예요.": "We are preparing music publishing for indie composers and lyricists and for artists who write their own songs. Freelance creators without a publisher or agency are welcome too.",
+    "작품 정보와 권리 관계를 정리하고, 저작권료 관리와 정산을 돕고, 음악이 쓰일 새로운 기회를 제안하는 것이 목표예요.": "Our goal is to organize your works and their rights information, help with royalty administration and accounting, and pitch your music for new uses.",
+    "저작권은 창작자에게 남아요. AUDENIQ는 별도로 합의한 작품과 계약 범위 안에서 관리와 활용 제안을 맡을 계획이에요.": "Your copyrights stay with you. AUDENIQ plans to administer and pitch only the works and contract scope you separately agree to.",
+    "작품의 다음을 함께 준비해요": "Preparing your songs’ next step together",
+    "작품 등록과 권리 정보 정리": "Song registration and rights data",
+    "저작권료 관리와 정산 지원": "Royalty administration and accounting",
+    "음악 활용 제안과 피칭": "Sync proposals and pitching",
+    "퍼블리싱은 별도로 선택하고 계약하는 서비스예요. 실제 관리 범위는 기존 저작권 신탁·퍼블리싱 계약과 작품별 권리 상태를 확인해 정할 예정이에요.": "Publishing is a separate service that you choose and sign up for on its own. The actual administration scope will be set after reviewing any existing collecting society or publishing agreements and the rights status of each work.",
+    "여기서 시작해, 더 멀리": "Start here, go further",
+    "당신의 음악이,<br>더 많은 곳에서<br>들리도록.": "So your music<br>is heard<br>in more places.",
+    "음악에는 국경이 없지만,<br>음악을 발매하는 과정에는<br class=\"mobile-break\"> 여전히 복잡한 절차가 많아요.": "Music knows no borders,<br>but releasing it still involves<br class=\"mobile-break\"> plenty of complicated steps.",
+    "국내 주요 음악 서비스와의 직접 계약을 우선 추진하고,<br class=\"desktop-break\"> 자체 전달 시스템으로 해외 배급까지 넓혀갈 준비를 하고 있어요.": "We are prioritizing direct contracts with major Korean music services,<br class=\"desktop-break\"> and preparing to expand to international distribution with our own delivery system.",
+    "음악이 닿는 곳을 넓혀가요": "Expanding where your music can reach",
+    "국내 주요 음악 서비스부터<br>글로벌 스트리밍 플랫폼까지.": "From major Korean music services<br>to global streaming platforms.",
+    "배급망 구축 준비 중": "Building our distribution network",
+    "하나의 플랫폼에서 더 많은 청취자에게 음악을 선보일 수 있도록<br class=\"desktop-break\"> 배급망을 구축해 나갈 계획이에요. 지원 플랫폼과 국가는 계약 확정 후 안내할게요.": "We plan to build a distribution network so you can present your music to more listeners from one platform.<br class=\"desktop-break\"> Supported platforms and countries will be announced once contracts are confirmed.",
+    "배급 파트너를 위한 사업 구조": "Business structure for distribution partners",
+    "AUDENIQ는 음원 품질 검사, 발매 정보 관리와 전달을 위한 자체 배급 시스템을 개발하고, 국내외 DSP(음악 서비스)와 직접 계약을 추진하고 있어요.": "AUDENIQ is developing its own distribution system for audio quality checks, release metadata management and delivery, and is pursuing direct contracts with music services (DSPs) in Korea and abroad.",
+    "국내 배급 기반을 먼저 구축하고 해외 직접 계약을 확대할 계획이에요. Merlin 가입과 라이선싱 계약도 추진해 해외 배급 범위를 넓히려 해요.": "We plan to establish our distribution base in Korea first and then expand direct international contracts. We are also pursuing Merlin membership and licensing to broaden international distribution.",
+    "현재 법인 설립과 계약을 준비 중이에요. 실제 지원 플랫폼과 국가는 DSP 계약 및 Merlin 가입·계약이 확정된 뒤 안내할 예정이에요.": "We are currently preparing to incorporate and to sign contracts. Supported platforms and countries will be announced after DSP contracts and Merlin membership and licensing are confirmed.",
+    "파트너십 문의하기 ↗": "Partnership inquiries ↗",
+    "창작자를 생각하는 선택": "A choice made with creators in mind",
+    "음악을 만드는 사람에게,<br>더 나은 선택지가 되도록.": "For the people who make music,<br>a better option.",
+    "음악에 더 집중하고.<br>복잡함은 덜어내고.": "More focus on the music.<br>Less complexity.",
+    "창작자의 다음을<br>함께 준비해요.": "Preparing creators’<br>next step together.",
+    "창작자의 권리를 존중해요": "We respect creators’ rights",
+    "기본 음원 배급은 비독점 계약을 기준으로 준비하고 있어요. 음원과 작품의 권리는 권리자에게 남고, 퍼블리싱은 원하는 작품에 한해 별도로 선택할 수 있어요.": "Our standard music distribution is being prepared on a non-exclusive basis. Rights to your recordings and works stay with the rights holders, and publishing is a separate option for only the works you choose.",
+    "기본 발매 지원을 함께해요": "Essential release support included",
+    "음원 품질 확인, 기본 아티스트 프로필 연결, 제공된 가사 등록과 배급사 이전 지원을 기본 서비스로 준비하고 있어요.": "We are preparing audio quality checks, basic artist profile linking, delivery of the lyrics you provide and distributor transfer support as part of the standard service.",
+    "플랫폼별 지원 범위와 필요한 자료는 출시 시 안내할게요.": "Platform-specific support and required materials will be announced at launch.",
+    "수익과 정산을 쉽게 확인해요": "Revenue and payouts that are easy to follow",
+    "한국어 고객지원과 월 단위 정산을 준비하고 있어요. 음악 플랫폼이 보고한 수익과 확정된 정산 내역을 구분해 확인할 수 있도록 설계하고 있어요.": "We are preparing Korean-language customer support and monthly payouts. We are designing it so you can tell revenue reported by music services apart from confirmed payout statements.",
+    "발매 이후에도 함께해요": "Support after the release, too",
+    "Smart Link, Pre-save, Pre-order와 홍보 카드 등 발매를 알리는 도구를 준비하고 있어요. 프로필 오류 대응, 뮤직비디오 발매와 권리 관리도 필요한 범위에서 선택할 수 있어요.": "We are preparing tools to announce your release, such as Smart Link, Pre-save, Pre-order and promo cards. Profile issue support, music video releases and rights management will also be available as optional add-ons where needed.",
+    "레이블의 운영을 연결해요": "Connecting label operations",
+    "여러 아티스트의 카탈로그, 발매와 정산을 함께 관리하고, 창작자 협업과 홍보까지 연결하는 레이블 서비스를 만들어가고 있어요.": "We are building label services that manage several artists’ catalogs, releases and royalty accounting together, connected to creator collaboration and promotion.",
+    "당신의 방식으로, 당신의 음악을": "Your music, your way",
+    "혼자 음악을 만들어도,<br>여러 아티스트와 함께해도.": "Whether you make music alone,<br>or with many artists.",
+    "아티스트를 위해": "For artists",
+    "첫 싱글부터<br>새로운 앨범까지.": "From your first single<br>to your next album.",
+    "자신의 음악을 발매하고, 프로필과 카탈로그를 관리하고, 수익을 확인하는 과정을 더 편리하게 만들고 싶어요.": "We want to make releasing your music, managing your profile and catalog, and checking your revenue easier.",
+    "필요한 배급 서비스를 이용하고, 직접 쓴 작품의 퍼블리싱도 따로 선택할 수 있도록요.": "Use the distribution services you need, and choose publishing separately for the songs you write.",
+    "나의 음악, 나의 다음 챕터.": "My music, my next chapter.",
+    "레이블을 위해": "For labels",
+    "여러 아티스트와<br>만들어가는 다음.": "Building what comes next<br>with many artists.",
+    "여러 아티스트의 음악을 관리하고, 발매 일정과 팀의 업무를 함께 조율하는 일.": "Managing several artists’ music while coordinating release schedules and your team’s work.",
+    "배급과 카탈로그, 권리와 정산을 함께 관리할 수 있도록 준비하고 있어요. 이후 창작자와 다른 레이블의 협업까지 연결해갈 계획이에요.": "We are preparing to let you manage distribution, catalog, rights and royalty accounting together, and later to connect collaboration with creators and other labels.",
+    "함께 만드는 음악, 함께 여는 가능성.": "Music made together, possibilities opened together.",
+    "신뢰를 기본으로": "Built on trust",
+    "당신의 음악과 정보,<br>소중하게 지킬게요.": "Your music and your data,<br>kept safe.",
+    "아직 공개하지 않은 음악도,<br>아티스트와 레이블의 정보도 모두 소중해요.": "Unreleased music and the information<br>of artists and labels all matter.",
+    "AUDENIQ는 개인정보와 음원, 권리 및 정산 정보를 안전하게 관리할 수 있도록 보안을 중요하게 생각해요.": "AUDENIQ takes security seriously so that personal data, audio files, rights and royalty information are managed safely.",
+    "필요한 정보만 수집하고, 정해진 목적에 맞게 사용하며, 허가받지 않은 접근과 유출을 막기 위한 보호 체계를 준비하고 있어요.": "We are preparing safeguards to collect only the information we need, use it only for its stated purpose, and prevent unauthorized access and leaks.",
+    "우리가 지키려는 네 가지 원칙": "Four principles we keep",
+    "개인정보를 광고 목적으로<br>판매하지 않아요.": "We do not sell personal data<br>for advertising.",
+    "미공개 음원과<br>권리 정보를 보호해요.": "We protect unreleased music<br>and rights information.",
+    "필요한 권한이 있는 사용자만<br>정보에 접근하도록 설계해요.": "We design access so only users<br>with the right permissions see data.",
+    "서비스 제공에 필요한 범위에서만<br>개인정보를 처리해요.": "We process personal data only<br>as far as the service requires.",
+    "배급·정산에 필요한 정보 제공과 개인정보 판매는 달라요. 실제 제공 대상과 처리 범위는 서비스 출시 시 개인정보 처리방침에서 안내할 예정이에요.": "Sharing the information needed for distribution and payouts is different from selling personal data. Actual recipients and processing scope will be set out in our privacy policy at launch.",
+    "음악을 만드는 당신의 이야기가 필요해요": "We want to hear your story as a music maker",
+    "새로운 음악 배급,<br>여러분과 함께 준비할게요.": "A new kind of music distribution,<br>prepared together with you.",
+    "AUDENIQ는 음원 배급과 음악 퍼블리싱,<br class=\"mobile-break\"> 아티스트와 레이블을 위한 서비스를 준비하고 있어요.": "AUDENIQ is preparing music distribution and publishing,<br class=\"mobile-break\"> and services for artists and labels.",
+    "음악을 발매하면서 어떤 점이 가장 어려웠나요?<br>발매 준비부터 권리 관리, 수익 확인까지.<br class=\"desktop-break\"> 여러분의 경험이 AUDENIQ의 다음을 만드는 데 도움이 돼요.": "What was the hardest part of releasing your music?<br>From release prep to rights management and checking revenue,<br class=\"desktop-break\"> your experience helps shape what AUDENIQ does next.",
+    "아직 발매 경험이 없어도 좋아요.<br class=\"mobile-break\"> 첫 발매에 필요한 것들을 들려주세요.": "No release experience yet? That’s fine too.<br class=\"mobile-break\"> Tell us what you need for your first release.",
+    "현재 정식 회원가입과 배급·퍼블리싱 신청은 진행하지 않고 있어요.": "Sign-up and applications for distribution and publishing are not open yet.",
+    "궁금한 점이 있나요?": "Have a question?",
+    "자주 묻는 질문": "Frequently asked questions",
+    "더 궁금한 점은<br>": "For anything else,<br>",
+    "이메일로 편하게 물어보세요 ↗": "just send us an email ↗",
+    "AUDENIQ(어데닉)는 어떤 서비스인가요?": "What is AUDENIQ (어데닉)?",
+    "AUDENIQ(어데닉)는 대한민국에서 출시를 준비 중인 독립 아티스트, 작곡가·작사가와 레이블을 위한 음악 플랫폼이에요. 국내외 음원 배급을 바탕으로 음악 퍼블리싱, 카탈로그와 수익 관리, 발매 지원을 연결하는 서비스를 준비하고 있어요.": "AUDENIQ (Korean name: 어데닉) is a music platform for independent artists, songwriters and labels that is preparing to launch in South Korea. Built around music distribution in Korea and internationally, it is preparing services that connect music publishing, catalog and revenue management, and release support.",
+    "AUDENIQ는 음원 배급사인가요?": "Is AUDENIQ a music distributor?",
+    "AUDENIQ는 음원 배급 서비스를 준비하고 있지만, 아직 음원 배급을 시작하지 않았어요. 현재 법인 설립과 국내외 음악 플랫폼(DSP) 계약을 준비하는 단계이며, 음원 배급과 음악 퍼블리싱을 각각 별도의 서비스로 제공할 계획이에요.": "AUDENIQ is preparing a music distribution service, but it has not started distributing music yet. It is currently preparing to incorporate and to sign contracts with music services (DSPs) in Korea and abroad, and plans to offer music distribution and music publishing as separate services.",
+    "지금 AUDENIQ에서 음원을 발매하거나 퍼블리싱을 신청할 수 있나요?": "Can I release music or sign up for publishing with AUDENIQ now?",
+    "아직은 신청할 수 없어요. 현재 배급 시스템과 퍼블리싱 서비스의 출시를 준비하고 있으며, 실제 신청 가능 시점과 서비스별 지원 범위는 공식 홈페이지와 SNS를 통해 안내할 예정이에요.": "Not yet. AUDENIQ is preparing to launch its distribution system and publishing service, and will announce when applications open and what each service supports on its official website and social channels.",
+    "어떤 음악 플랫폼에 배급할 수 있나요?": "Which music platforms can AUDENIQ distribute to?",
+    "지원 음악 플랫폼은 아직 확정되지 않았어요. 국내 주요 음악 서비스와의 직접 계약을 우선 추진하고, 해외 직접 계약과 Merlin 가입·계약을 통해 배급 범위를 넓힐 계획이에요. 실제 지원 플랫폼과 국가는 계약이 확정된 뒤 안내할게요.": "Supported music platforms have not been confirmed yet. AUDENIQ is prioritizing direct contracts with major Korean music services and plans to broaden its reach through direct international contracts and Merlin membership and licensing. Supported platforms and countries will be announced once contracts are confirmed.",
+    "음원 배급과 음악 퍼블리싱은 어떻게 다른가요?": "What is the difference between music distribution and music publishing?",
+    "음원 배급은 녹음된 음원을 음악 플랫폼에 전달하고 그 이용 수익을 정산하는 서비스예요. 음악 퍼블리싱은 작사·작곡으로 만든 작품의 저작권료 관리와 활용 제안을 돕는 별도 서비스예요. 계약과 정산 범위를 각각 구분해 안내할 예정이에요.": "Music distribution delivers recorded music to music services and pays out the revenue from its use. Music publishing is a separate service that administers royalties for the compositions and lyrics behind a song and pitches them for new uses. AUDENIQ will explain the contract and payout scope of each separately.",
+    "AUDENIQ Publishing은 무엇이고, 누가 이용할 수 있나요?": "What is AUDENIQ Publishing, and who can use it?",
+    "AUDENIQ Publishing은 작사·작곡 작품의 등록, 저작권료 관리와 활용 제안을 돕기 위해 준비 중인 음악 퍼블리싱 서비스예요. 인디 작곡가·작사가, 자신의 곡을 쓰는 아티스트와 프리랜서 창작자를 대상으로 하며, 기존 신탁·퍼블리싱 계약과 작품별 권리 관계를 확인한 뒤 관리 가능한 범위를 정할 예정이에요.": "AUDENIQ Publishing is a music publishing service in preparation that will help with registering compositions and lyrics, administering royalties and pitching songs for new uses. It is aimed at indie composers and lyricists, artists who write their own songs and freelance creators; the manageable scope will be set after reviewing existing collecting society or publishing agreements and the rights of each work.",
+    "배급을 맡기면 권리도 AUDENIQ로 넘어가나요?": "If AUDENIQ distributes my music, do my rights transfer to AUDENIQ?",
+    "기본 배급 계약은 비독점으로 준비하고 있으며, 음원과 작품의 권리는 권리자에게 남아요. AUDENIQ는 배급에 필요한 권한을 계약 범위 안에서 위임받아요. 퍼블리싱도 별도로 선택하고 계약하는 서비스예요.": "No. The standard distribution agreement is being prepared on a non-exclusive basis, and rights to recordings and works stay with the rights holders. AUDENIQ receives only the permissions needed for distribution, within the scope of the agreement. Publishing is also a separate service you choose and contract for.",
+    "기존에 발매한 음원도 옮길 수 있나요?": "Can I move music I have already released?",
+    "기존 ISRC·UPC와 발매 정보를 유지하는 방향으로 배급사 이전 지원을 준비하고 있어요. 새 배급 경로의 발매와 매칭 상태를 확인한 뒤 기존 배급사의 종료 절차를 진행하도록 도울 계획이에요. 실제 이전 가능 여부와 방식은 기존 계약과 각 플랫폼 정책에 따라 달라요.": "AUDENIQ is preparing distributor transfer support that keeps existing ISRCs, UPCs and release information. It plans to help you confirm the release and matching status on the new distribution route before ending the previous distributor’s delivery. Whether and how a transfer works depends on existing contracts and each platform’s policies.",
+    "인디 아티스트와 독립 레이블 모두 이용할 수 있나요?": "Can both indie artists and independent labels use AUDENIQ?",
+    "네. 개인 인디 아티스트의 첫 발매부터 여러 아티스트를 운영하는 독립 레이블까지 함께할 서비스를 준비하고 있어요. 레이블은 카탈로그, 발매 일정과 정산을 팀 단위로 관리할 수 있도록 개발하고 있어요.": "Yes. AUDENIQ is preparing a service for everyone from an indie artist’s first release to independent labels managing many artists. For labels, it is developing tools to manage catalogs, release schedules and royalty accounting as a team.",
+    "뮤직비디오와 온라인 영상 속 음원도 관리하나요?": "Does AUDENIQ handle music videos and music used in online videos?",
+    "뮤직비디오의 국내 심의 진행 지원과 글로벌 영상 플랫폼 발매를 준비하고 있어요. 필요한 심의는 외부 심의기관의 절차로 진행할 계획이에요. YouTube Content ID 등 온라인 영상 속 음원의 권리 관리도 별도로 준비하며, 플랫폼과 콘텐츠의 권리 요건에 따라 지원 범위가 달라요.": "AUDENIQ is preparing support for the Korean music video rating process and for releasing music videos on global video platforms. Any required rating will go through the external rating body’s procedure. Rights management for music used in online videos, such as YouTube Content ID, is being prepared separately, and support depends on each platform’s and each piece of content’s rights requirements.",
+    "한국어로 문의하고 정산받을 수 있나요?": "Will support and payouts be available in Korean?",
+    "한국어 고객지원과 국내 이용자를 위한 월 단위 정산 시스템을 준비하고 있어요. 음악 플랫폼의 수익 보고와 정산 확정 시점에 맞춰 내역을 안내할 예정이에요.": "AUDENIQ is preparing Korean-language customer support and a monthly payout system for users in Korea. Statements will follow the music services’ revenue reports and payout confirmation schedules.",
+    "사전 설문에 참여하면 자동으로 가입되나요?": "Does taking the pre-launch survey sign me up?",
+    "현재 설문은 서비스 기획을 위한 의견 수집이에요. 설문 참여만으로 회원가입이나 배급·퍼블리싱 계약이 이루어지지는 않아요.": "No. The current survey only collects feedback for service planning. Taking it does not create an account or a distribution or publishing agreement.",
+    "당신의 음악. 당신의 권리.<br>더 넓은 세상으로.": "Your music. Your rights.<br>Out into the wider world.",
+    "AUDENIQ(어데닉)는 대한민국에서 준비 중인 독립 음악을 위한<br class=\"desktop-break\"> 배급·퍼블리싱과 레이블 서비스예요.": "AUDENIQ (어데닉) is a distribution, publishing and label services platform<br class=\"desktop-break\"> for independent music, being prepared in South Korea.",
+    "문의 및 파트너십": "Contact & partnerships",
+    "음악 플랫폼과 레이블, 퍼블리싱 파트너의<br class=\"desktop-break\"> 협업 제안을 기다려요.": "We welcome collaboration proposals from music platforms,<br class=\"desktop-break\"> labels and publishing partners.",
+    "서비스에 대한 질문도 이메일로 편하게 보내주세요.": "Questions about the service are welcome by email, too.",
+    "공식 SNS": "Official social media",
+    "출시 소식과 준비 과정을 전할게요.": "Follow along for launch news and behind-the-scenes updates.",
+    "AUDENIQ Instagram 공식 계정 (새 창)": "AUDENIQ official Instagram account (opens in a new window)",
+    "AUDENIQ Threads 공식 계정 (새 창)": "AUDENIQ official Threads account (opens in a new window)",
+    "AUDENIQ X 공식 계정 (새 창)": "AUDENIQ official X account (opens in a new window)",
+    "맨 위로 ↑": "Back to top ↑"
+  },
+  "ui": {
+    "skip": "Skip to main content",
+    "home": "AUDENIQ home",
+    "menuToggle": "Open and close menu",
+    "mainMenu": "Main menu",
+    "mobileMenu": "Mobile menu",
+    "contact": "Contact",
+    "breadcrumb": "You are here",
+    "status": "Preparing for launch",
+    "official": "AUDENIQ official guide",
+    "overviewEyebrow": "AT A GLANCE",
+    "overviewTitle": "The service at a glance.",
+    "overviewText": "What we are preparing now<br>and what to keep in mind.",
+    "overviewCaption": "Overview of the service in preparation",
+    "detailsSuffix": "in detail",
+    "faqEyebrow": "Have a question?",
+    "faqTitle": "Frequently asked questions",
+    "faqText": "For anything else,<br><a href=\"mailto:audeniq.official@gmail.com\">just send us an email ↗</a>",
+    "relatedEyebrow": "Your music’s next step",
+    "relatedTitle": "Learn more.",
+    "preparing": "In preparation",
+    "more": "Read more",
+    "sources": "More on the official homepage",
+    "contactEyebrow": "YOUR MUSIC. YOUR NEXT.",
+    "contactTitle": "Your music,<br>let’s prepare its next step together.",
+    "contactText": "We welcome questions about the service<br>and collaboration proposals from music partners.",
+    "contactButton": "Service and partnership inquiries",
+    "contactNote": "When applications open and the confirmed scope of support<br>will be announced on our website and social channels.",
+    "ogImageAlt": "AUDENIQ — Music distribution and publishing for independent music · Preparing for launch",
+    "guides": {
+      "/music-distribution/": {
+        "name": "Distribution",
+        "eyebrow": "AUDENIQ DISTRIBUTION"
+      },
+      "/publishing/": {
+        "name": "Publishing",
+        "eyebrow": "AUDENIQ PUBLISHING"
+      },
+      "/label-services/": {
+        "name": "Label services",
+        "eyebrow": "FOR INDEPENDENT LABELS"
+      },
+      "/about/": {
+        "name": "About",
+        "eyebrow": "ABOUT AUDENIQ"
+      },
+      "/faq/": {
+        "name": "FAQ",
+        "eyebrow": "AUDENIQ FAQ"
+      }
+    }
+  },
+  "pages": [
+    {
+      "path": "/music-distribution/",
+      "title": "How is AUDENIQ preparing music distribution for independent artists?",
+      "description": "AUDENIQ is preparing digital music distribution in Korea and worldwide for independent artists and labels. See the release checks, direct-contract distribution plan, non-exclusive terms, catalog and payouts, and distributor transfers.",
+      "question": "How will AUDENIQ support music distribution for indie artists?",
+      "answer": "AUDENIQ is preparing a music distribution service in Korea and internationally for independent artists and independent labels.",
+      "kind": "service",
+      "serviceType": "Digital music distribution · in preparation",
+      "audience": "Independent artists and independent labels",
+      "facts": [
+        [
+          "Current status",
+          "Preparing for launch"
+        ],
+        [
+          "Distribution plan",
+          "Direct contracts with Korean music services first, then direct international contracts and Merlin membership and licensing"
+        ],
+        [
+          "Contract basis",
+          "Non-exclusive distribution; rights to recordings stay with the rights holders"
+        ],
+        [
+          "Payouts",
+          "Monthly payouts following platforms’ revenue reports and payment confirmation"
+        ],
+        [
+          "Supported platforms",
+          "Announced once contracts are confirmed"
+        ]
+      ],
+      "sections": [
+        {
+          "heading": "What do I need to check before a release?",
+          "paragraphs": [
+            "You prepare the materials a release needs: audio files, cover art, artist name, track titles and credits, and the release schedule. AUDENIQ is developing a system that checks audio quality and release metadata and tracks distribution status.",
+            "Basic artist profile linking, delivery of the lyrics you provide and release promotion tools are also in preparation. Required materials and the scope of support will be announced at launch."
+          ]
+        },
+        {
+          "heading": "How is the distribution network being built?",
+          "paragraphs": [
+            "AUDENIQ is prioritizing direct contracts with major Korean music services. It then plans to broaden its reach through direct international contracts and Merlin membership and licensing.",
+            "Pursuing a contract is not the same as being able to distribute. Supported music platforms and countries will be announced on the official website once contracts are confirmed."
+          ]
+        },
+        {
+          "heading": "How do I move music I have already released?",
+          "paragraphs": [
+            "AUDENIQ is preparing distributor transfer support that keeps existing ISRCs, UPCs and release information. The plan is to confirm release and matching status on the new distribution route before you end delivery through your previous distributor.",
+            "The actual transfer method depends on existing contracts, whether the metadata matches and each music platform’s policies. The approach is to check the new route first, before taking any existing release down."
+          ]
+        }
+      ],
+      "faq": [
+        {
+          "q": "Can I release music through AUDENIQ now?",
+          "a": "Not yet. AUDENIQ is preparing for launch, and will announce when sign-up and distribution applications open on its official website and social channels."
+        },
+        {
+          "q": "Do my rights transfer to AUDENIQ when it distributes my music?",
+          "a": "AUDENIQ’s standard distribution is being prepared on a non-exclusive basis. Rights to your recordings stay with the rights holders, and AUDENIQ receives only the permissions needed for distribution within the scope of the agreement."
+        },
+        {
+          "q": "Does music distribution include publishing?",
+          "a": "No. Publishing is a separate service that you choose and contract for on its own. AUDENIQ will explain the scope of distribution and of royalty administration for compositions and lyrics separately."
+        }
+      ],
+      "related": [
+        "/publishing/",
+        "/label-services/"
+      ],
+      "sources": [
+        {
+          "name": "AUDENIQ official service overview",
+          "url": "https://audeniq.com/en/#services"
+        }
+      ]
+    },
+    {
+      "path": "/publishing/",
+      "title": "What is music publishing for indie songwriters?",
+      "description": "AUDENIQ Publishing is a music publishing service in preparation for indie composers, lyricists and artists who write their own songs: song registration, rights data, royalty administration, pitching and a separate opt-in contract.",
+      "question": "Who is AUDENIQ Publishing for?",
+      "answer": "AUDENIQ Publishing is being prepared as a music publishing service for indie composers, lyricists and artists who write their own songs.",
+      "kind": "service",
+      "serviceType": "Music publishing · in preparation",
+      "audience": "Indie composers, lyricists, freelance creators and artists who write their own songs",
+      "facts": [
+        [
+          "Current status",
+          "Preparing for launch"
+        ],
+        [
+          "For",
+          "Indie composers and lyricists, artists who write their own songs and freelance creators"
+        ],
+        [
+          "Planned scope",
+          "Song registration support, rights data, royalty administration and accounting, and sync and placement pitching"
+        ],
+        [
+          "Rights principle",
+          "Copyrights stay with the creator"
+        ],
+        [
+          "How it works",
+          "Chosen and contracted separately from distribution"
+        ]
+      ],
+      "sections": [
+        {
+          "heading": "How is music distribution different from publishing?",
+          "paragraphs": [
+            "Music distribution delivers recorded music to music services and pays out the revenue from its use. Music publishing administers royalties for the compositions and lyrics behind a song and pitches them for new uses.",
+            "Even for the same song, the rights in the recording and in the composition and lyrics must be checked separately. AUDENIQ will explain the contract and payout scope of distribution and publishing separately."
+          ]
+        },
+        {
+          "heading": "What support is being prepared for songwriters?",
+          "paragraphs": [
+            "AUDENIQ Publishing is preparing a service that organizes information about your works and their rights, and helps with song registration and royalty administration and accounting. Pitching your music for new uses is also part of the plan.",
+            "The goal is a service that freelance creators without a publisher or agency can use too. Which works can be administered, and the scope of support, will be decided after reviewing existing agreements and the rights status of each work."
+          ]
+        },
+        {
+          "heading": "What happens to my copyrights if I sign up for publishing?",
+          "paragraphs": [
+            "AUDENIQ Publishing is being prepared so that copyrights stay with the creator. AUDENIQ plans to administer and pitch only the works and contract scope you separately agree to.",
+            "For works already covered by a collecting society mandate or a publishing agreement, that agreement and the rights status must be checked first. It is not a service that guarantees administration of every work."
+          ]
+        }
+      ],
+      "faq": [
+        {
+          "q": "Can freelance composers and lyricists use it?",
+          "a": "Yes. AUDENIQ Publishing is also being prepared for indie composers, lyricists and freelance creators who work without a publisher or agency."
+        },
+        {
+          "q": "Am I automatically signed up for publishing if I use distribution?",
+          "a": "No. Publishing is a separate service that you choose and contract for on its own. AUDENIQ is preparing it so that applying for distribution never creates a publishing agreement by itself."
+        },
+        {
+          "q": "Can I bring works that are already under a collecting society or publishing agreement?",
+          "a": "AUDENIQ will review existing collecting society or publishing agreements and the rights of each work before deciding the scope it can administer."
+        }
+      ],
+      "related": [
+        "/music-distribution/",
+        "/label-services/"
+      ],
+      "sources": [
+        {
+          "name": "AUDENIQ Publishing on the official homepage",
+          "url": "https://audeniq.com/en/#publishing"
+        }
+      ]
+    },
+    {
+      "path": "/label-services/",
+      "title": "How can independent labels manage releases, catalogs and royalties?",
+      "description": "AUDENIQ is preparing label services for independent and small labels: several artists’ catalogs and release schedules, team workflows, per-rights-holder royalty accounting, and profile, lyrics and promotion support.",
+      "question": "How will AUDENIQ support independent label operations?",
+      "answer": "AUDENIQ is developing a service that lets independent labels manage several artists’ catalogs, release schedules and royalty accounting together.",
+      "kind": "service",
+      "serviceType": "Independent label operations support · in preparation",
+      "audience": "Independent and small labels",
+      "facts": [
+        [
+          "Current status",
+          "Label operations system in development"
+        ],
+        [
+          "For",
+          "Independent and small labels managing several artists"
+        ],
+        [
+          "What it manages",
+          "Track and artist information, release schedules, distribution status and payout information"
+        ],
+        [
+          "Teamwork",
+          "Permission-based access and shared task management"
+        ],
+        [
+          "Next steps",
+          "Creator connections, label collaboration and release promotion"
+        ]
+      ],
+      "sections": [
+        {
+          "heading": "How can I manage releases for several artists?",
+          "paragraphs": [
+            "AUDENIQ is developing a catalog management system that shows tracks and artist information, release schedules and distribution status in one place. It is meant both for an individual’s first release and for labels running releases for several artists.",
+            "The plan is for teams to coordinate their work together, with only users who hold the necessary permissions able to access information."
+          ]
+        },
+        {
+          "heading": "How can I check revenue and per-rights-holder payouts?",
+          "paragraphs": [
+            "AUDENIQ is preparing a system that keeps platform revenue and confirmed payout statements apart so both are easy to check. It is also being developed to manage payout details for every rights holder you work with.",
+            "Monthly payouts and Korean-language customer support are in preparation, and actual payouts will follow the music services’ revenue reports and payment confirmation."
+          ]
+        },
+        {
+          "heading": "What support is planned after a release?",
+          "paragraphs": [
+            "AUDENIQ is preparing artist profile linking, delivery of the lyrics you provide, and tools to announce a release such as Smart Link, Pre-save, Pre-order and promo cards. Profile issue support, music video releases and rights management for music used in online videos are also being prepared as options where needed.",
+            "Later, AUDENIQ plans to expand toward connecting artists, songwriters, lyricists, producers and other labels for collaboration. Timing and platform-specific support will be announced at launch."
+          ]
+        }
+      ],
+      "faq": [
+        {
+          "q": "Can small labels use AUDENIQ?",
+          "a": "Yes. AUDENIQ is preparing its services for independent labels, including small labels, as well as individual artists."
+        },
+        {
+          "q": "Do solo artists need to use the label management service?",
+          "a": "No. Individual artists will be able to use the services they need for their own releases and distribution. Services built around label team operations are designed to be chosen only when needed."
+        },
+        {
+          "q": "Are rights management and publishing included automatically?",
+          "a": "No. Publishing is a separate service chosen and contracted after checking the rights status of each work. The actual scope of distribution and label support will also each be announced at launch."
+        }
+      ],
+      "related": [
+        "/music-distribution/",
+        "/publishing/"
+      ],
+      "sources": [
+        {
+          "name": "AUDENIQ labels overview on the official homepage",
+          "url": "https://audeniq.com/en/#creators"
+        }
+      ]
+    },
+    {
+      "path": "/about/",
+      "title": "What kind of music platform is AUDENIQ?",
+      "description": "AUDENIQ is a music platform being prepared in South Korea for independent artists, songwriters and labels, connecting music distribution, publishing, catalog management and royalty accounting. See its launch status and official contacts.",
+      "question": "What is AUDENIQ?",
+      "answer": "AUDENIQ (Korean name: 어데닉) is a music distribution and publishing platform for independent artists, songwriters and labels, being prepared in South Korea.",
+      "kind": "about",
+      "facts": [
+        [
+          "Brand",
+          "AUDENIQ (Korean name: 어데닉)"
+        ],
+        [
+          "For",
+          "Independent artists, songwriters and labels"
+        ],
+        [
+          "Areas in preparation",
+          "Music distribution, music publishing, catalog management and royalty accounting"
+        ],
+        [
+          "Current status",
+          "Preparing for launch"
+        ],
+        [
+          "Official contact",
+          "audeniq.official@gmail.com"
+        ]
+      ],
+      "sections": [
+        {
+          "heading": "What direction is AUDENIQ taking?",
+          "paragraphs": [
+            "AUDENIQ aims to connect every next step in music, from an individual’s first release to a label’s operations. The plan is to build a distribution base in Korea first and then expand to international distribution.",
+            "Music distribution and music publishing are being prepared with separate rights and contract scopes. AUDENIQ respects creators’ rights in their recordings and works and is building services they can choose as needed."
+          ]
+        },
+        {
+          "heading": "Can I apply or sign a contract now?",
+          "paragraphs": [
+            "AUDENIQ is currently preparing to incorporate, to sign contracts with music platforms and to launch the service. Sign-up and applications for distribution and publishing are not open yet.",
+            "Launch timing and supported music platforms and countries will be announced on the official website and social channels once contracts and preparations are complete."
+          ]
+        },
+        {
+          "heading": "Where can I find official contacts and news?",
+          "paragraphs": [
+            "Service inquiries and partnership proposals go to audeniq.official@gmail.com. Launch news and updates are shared on the official website, the audeniq.official accounts on Instagram and Threads, and @audeniq on X."
+          ]
+        }
+      ],
+      "faq": [],
+      "related": [
+        "/music-distribution/",
+        "/publishing/",
+        "/label-services/"
+      ],
+      "sources": [
+        {
+          "name": "About AUDENIQ and contact details",
+          "url": "https://audeniq.com/en/#contact"
+        }
+      ]
+    },
+    {
+      "path": "/faq/",
+      "title": "AUDENIQ music distribution and publishing FAQ",
+      "description": "Answers about AUDENIQ: whether it is a music distributor, the difference between music distribution and publishing, creators’ rights, transferring releases, label use, payouts and its current pre-launch status.",
+      "question": "What should I know about AUDENIQ distribution and publishing?",
+      "answer": "AUDENIQ is preparing for launch, and distribution and publishing are being prepared as separate services you choose and contract for individually.",
+      "kind": "faq",
+      "facts": [
+        [
+          "Current status",
+          "Preparing for launch"
+        ],
+        [
+          "Distribution and publishing",
+          "Separate contract and payout scopes"
+        ],
+        [
+          "Supported platforms",
+          "Announced once contracts are confirmed"
+        ],
+        [
+          "Pre-launch survey",
+          "Separate from sign-up or any contract"
+        ]
+      ],
+      "sections": [],
+      "faqFromHome": true,
+      "related": [
+        "/music-distribution/",
+        "/publishing/",
+        "/label-services/"
+      ],
+      "sources": [
+        {
+          "name": "AUDENIQ official FAQ",
+          "url": "https://audeniq.com/en/#faq"
+        }
+      ]
+    }
+  ]
+}

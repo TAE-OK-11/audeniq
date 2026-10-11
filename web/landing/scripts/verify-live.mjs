@@ -6,6 +6,8 @@ import { dirname, join } from 'node:path';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const manifest = JSON.parse(readFileSync(join(root,'content/generated-manifest.json'),'utf8'));
 const origin = 'https://audeniq.com';
+const locales = JSON.parse(readFileSync(join(root,'content/locales.json'),'utf8')).locales.filter(locale=>locale.status==='published');
+const localeOf = path => locales.filter(item=>item.prefix!=='/').find(item=>path.startsWith(item.prefix)) || locales.find(item=>item.prefix==='/');
 const get = async path => {
   const response = await fetch(origin+path,{redirect:'manual',signal:AbortSignal.timeout(15000)});
   return {response,text:await response.text()};
@@ -20,13 +22,16 @@ for (const path of manifest.pages) {
   assert.doesNotMatch(response.headers.get('x-robots-tag')||'',/noindex/);
   assert.ok(text.includes(`rel="canonical" href="${origin}${path}"`),`Canonical ${path}`);
   assert.equal((text.match(/<h1(?:\s|>)/g)||[]).length,1,`One H1 ${path}`);
-  assert.match(text,/준비 중|준비하고/);
+  const locale = localeOf(path);
+  assert.ok(text.includes(`<html lang="${locale.lang}"`),`html lang ${path}`);
+  assert.ok(text.includes(`hreflang="${locale.hreflang}" href="${origin}${path}"`),`hreflang ${path}`);
+  if (locale.prefix==='/') assert.match(text,/준비 중|준비하고/);
   const visible = text.replace(/<script\b[^>]*>[\s\S]*?<\/script>/g,'').replace(/<style\b[^>]*>[\s\S]*?<\/style>/g,'').replace(/<[^>]*>/g,'');
   assert.doesNotMatch(visible,/LIMBO|수수료|₩|\d+\s*%/i);
   const schema = text.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
   assert.ok(schema,`Schema ${path}`);
   JSON.parse(schema[1]);
-  console.log(`OK ${origin}${path} — readable without JavaScript`);
+  console.log(`OK ${origin}${path} (${locale.lang}) — readable without JavaScript`);
 }
 for (const path of ['/robots.txt','/sitemap.xml','/llms.txt','/llms-full.txt','/feed.xml']) {
   assert.equal((await get(path)).response.status,200,path);
