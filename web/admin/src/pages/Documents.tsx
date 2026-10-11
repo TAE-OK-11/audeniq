@@ -7,7 +7,7 @@ import { Modal, useModalClose } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { errorMessage } from '../api/errors';
 import { useAsync } from '../hooks/useAsync';
-import { staffApi, type StaffDocument } from '../api/staff';
+import { staffApi, type GrantInput, type StaffDocument } from '../api/staff';
 import { DOC_KIND, DOC_STATUS, ago, pick, when } from '../labels';
 import { EmptyState, ErrorBox, ChipGroup, Cover, NoDuty, PageHeader, SkeletonList, StatusBadge, useStaff } from '../staffUi';
 import { Glyph } from '../components/Glyph';
@@ -15,17 +15,73 @@ import { Glyph } from '../components/Glyph';
 const STATUSES = ['REVIEW', 'AWAITING_DOCUMENTS', 'NEEDS', 'APPROVED'];
 const decidable = (d: StaffDocument) => d.kind === 'RIGHTS_PROOF' && d.status === 'REVIEW';
 
+const RIGHT_TYPES: [GrantInput['right_type'], string][] = [
+  ['MASTER', '음원(마스터)'], ['COMPOSITION', '작곡'], ['LYRICS', '작사'], ['PERFORMANCE', '실연'], ['ARTWORK', '커버아트'], ['SAMPLE', '샘플'], ['OTHER', '기타'],
+];
+interface GrantRow { cls: GrantInput['grant_class']; type: GrantInput['right_type']; holder: string; share: string; territories: string; uses: string; start: string; end: string }
+const newGrant = (holder = ''): GrantRow => ({ cls: 'DISTRIBUTION', type: 'MASTER', holder, share: '', territories: '', uses: '', start: '', end: '' });
+const list = (s: string) => s.split(/[\s,]+/).filter(Boolean);
+const toGrant = (g: GrantRow): GrantInput => ({
+  grant_class: g.cls, right_type: g.type, rights_holder: g.holder.trim(),
+  share_bps: g.cls === 'ROYALTY' ? Math.round(Number(g.share) * 100) : undefined,
+  territories: list(g.territories.toUpperCase()), uses: list(g.uses), start_date: g.start || null, end_date: g.end || null,
+});
+const grantOk = (g: GrantRow) => !!g.holder.trim() && (g.cls !== 'ROYALTY' || (Number(g.share) > 0 && Number(g.share) <= 100));
+
+/** 승인할 때 이 서류가 증명하는 권한을 기록한다 — 배급 권한(지역·사용·기간)과 정산 수령권(지분)은 따로 */
+function GrantRows({ rows, onChange }: { rows: GrantRow[]; onChange: (r: GrantRow[]) => void }) {
+  const set = (i: number, p: Partial<GrantRow>) => onChange(rows.map((r, n) => (n === i ? { ...r, ...p } : r)));
+  return (
+    <div className="adm-grants">
+      <b>이 서류가 증명하는 권한</b>
+      <p className="small muted">배급 권한은 실제 전송 지역·사용·기간에, 정산 수령권은 지분대로 정산에 쓰여요. 발매 전체에 적용돼요.</p>
+      {rows.map((g, i) => (
+        <fieldset key={i} className="adm-grant">
+          <div className="ui-chips is-wrap" role="radiogroup" aria-label="권한 구분">
+            {(['DISTRIBUTION', 'ROYALTY'] as const).map(c => (
+              <button key={c} type="button" role="radio" aria-checked={g.cls === c} className={`ui-chip${g.cls === c ? ' is-on' : ''}`} onClick={() => set(i, { cls: c })}>
+                {c === 'DISTRIBUTION' ? '배급 권한' : '정산 수령권'}
+              </button>
+            ))}
+          </div>
+          <div className="ui-field"><label>권리 종류</label>
+            <select className="ui-input" value={g.type} onChange={e => set(i, { type: e.target.value as GrantRow['type'] })}>
+              {RIGHT_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select></div>
+          <div className="ui-field"><label>권리자 <span className="required">*</span></label>
+            <input className="ui-input" maxLength={120} value={g.holder} onChange={e => set(i, { holder: e.target.value })} placeholder="서류에 적힌 권리자 이름" /></div>
+          {g.cls === 'ROYALTY' && <div className="ui-field"><label>지분 (%) <span className="required">*</span></label>
+            <input className="ui-input" inputMode="decimal" value={g.share} onChange={e => set(i, { share: e.target.value.replace(/[^\d.]/g, '') })} placeholder="예: 25" /></div>}
+          {g.cls === 'DISTRIBUTION' && <>
+            <div className="ui-field"><label>허락 국가 (비우면 전 세계)</label>
+              <input className="ui-input" value={g.territories} onChange={e => set(i, { territories: e.target.value })} placeholder="예: KR, JP" /></div>
+            <div className="ui-field"><label>허락 사용 유형 (비우면 제한 없음)</label>
+              <input className="ui-input" value={g.uses} onChange={e => set(i, { uses: e.target.value })} placeholder="예: OnDemandStream, PermanentDownload" /></div>
+          </>}
+          <div className="ui-field"><label>시작일</label><input className="ui-input" type="date" value={g.start} onChange={e => set(i, { start: e.target.value })} /></div>
+          <div className="ui-field"><label>종료일 (마지막 날)</label><input className="ui-input" type="date" value={g.end} onChange={e => set(i, { end: e.target.value })} /></div>
+          {rows.length > 1 && <button type="button" className="ui-btn is-soft is-sm" onClick={() => onChange(rows.filter((_, n) => n !== i))}>삭제</button>}
+        </fieldset>
+      ))}
+      <button type="button" className="ui-btn is-soft is-sm" onClick={() => onChange([...rows, newGrant(rows[0]?.holder)])}>+ 권한 추가</button>
+    </div>
+  );
+}
+
 function ReviewForm({ doc, status, onDone }: { doc: StaffDocument; status: 'APPROVED' | 'NEEDS'; onDone: () => void }) {
   const close = useModalClose();
   const toast = useToast();
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const needsGrants = status === 'APPROVED' && !!doc.release_id;
+  const [grants, setGrants] = useState<GrantRow[]>([newGrant(doc.electronic_record?.rights_holder ?? '')]);
+  const grantsOk = !needsGrants || grants.every(grantOk);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (busy || (status === 'NEEDS' && !note.trim())) return;
+    if (busy || (status === 'NEEDS' && !note.trim()) || !grantsOk) return;
     setBusy(true);
     try {
-      await staffApi.reviewDocument(doc.id, { status, note: note.trim(), row_version: doc.row_version });
+      await staffApi.reviewDocument(doc.id, { status, note: note.trim(), row_version: doc.row_version, grants: needsGrants ? grants.map(toGrant) : undefined });
       toast(status === 'APPROVED' ? '서류를 승인했어요.' : '보완 요청을 보냈어요. 아티스트에게 알림이 갔어요.', 'success');
       onDone();
       close();
@@ -47,9 +103,10 @@ function ReviewForm({ doc, status, onDone }: { doc: StaffDocument; status: 'APPR
         />
         <small className="adm-counter">{note.length} / 1000</small>
       </div>
+      {needsGrants && <GrantRows rows={grants} onChange={setGrants} />}
       <div className="adm-form-actions">
         <button type="button" className="ui-btn is-soft" onClick={close}>취소</button>
-        <button type="submit" className={`ui-btn ${status === 'NEEDS' ? 'is-warn' : 'is-primary'}`} disabled={busy || (status === 'NEEDS' && !note.trim())}>
+        <button type="submit" className={`ui-btn ${status === 'NEEDS' ? 'is-warn' : 'is-primary'}`} disabled={busy || (status === 'NEEDS' && !note.trim()) || !grantsOk}>
           {busy ? '저장 중…' : status === 'NEEDS' ? '보완 요청' : '승인'}
         </button>
       </div>
