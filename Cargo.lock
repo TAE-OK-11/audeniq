@@ -177,6 +177,7 @@ dependencies = [
  "http-body-util",
  "jsonschema",
  "libc",
+ "md-5",
  "mimalloc",
  "quick-xml",
  "rand 0.10.3",

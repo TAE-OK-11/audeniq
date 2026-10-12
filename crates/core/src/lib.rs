@@ -1,6 +1,7 @@
 pub mod account;
 pub mod agreement;
 pub mod api;
+pub mod archive;
 pub mod artifacts;
 pub mod artwork_policy;
 pub mod auth;
@@ -88,3 +89,4 @@ pub mod payout_policy;
 pub mod pii;
 pub mod print_stamp;
 pub mod privacy_maintenance;
+pub mod seal;

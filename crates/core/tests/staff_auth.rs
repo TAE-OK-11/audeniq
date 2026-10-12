@@ -288,7 +288,7 @@ async fn weak_passwords_are_refused_on_every_path(pool: PgPool) {
             &app,
             "POST",
             "/api/auth/register",
-            json!({"email": email, "password": weak}),
+            json!({"email": email, "password": weak, "terms_version":"AUD-TERMS 2026.10.1"}),
             None,
         )
         .await;

@@ -25,6 +25,62 @@ pub struct Actor {
 pub struct Credentials {
     pub email: String,
     pub password: String,
+    /// Sign-up: the terms version the person agreed to (required).
+    #[serde(default)]
+    pub terms_version: Option<String>,
+    /// Sign-up: the privacy notice version shown on the form.
+    #[serde(default)]
+    pub privacy_notice_version: Option<String>,
+}
+fn legal_version(v: Option<&str>) -> Result<Option<String>> {
+    match v.map(str::trim) {
+        None | Some("") => Ok(None),
+        Some(v)
+            if v.len() <= 60
+                && v.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b" ._-".contains(&b)) =>
+        {
+            Ok(Some(v.to_owned()))
+        }
+        Some(_) => Err(Error::Invalid),
+    }
+}
+/// Records (and seals) which terms and privacy notice versions a new
+/// account agreed to: evidence of consent kept on the server.
+pub(crate) async fn record_acceptance(
+    s: &AppState,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user: Uuid,
+    terms_version: &str,
+    privacy_notice_version: Option<&str>,
+    channel: &str,
+) -> Result<()> {
+    let terms = legal_version(Some(terms_version))?
+        .ok_or(Error::InvalidCode("TERMS_ACCEPTANCE_REQUIRED"))?;
+    let privacy = legal_version(privacy_notice_version)?;
+    for (doc, version) in [("TERMS", Some(terms)), ("PRIVACY_NOTICE", privacy)] {
+        let Some(version) = version else { continue };
+        let id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO identity.terms_acceptances(id,user_id,doc,version,channel) VALUES($1,$2,$3,$4,$5)",
+        )
+        .bind(id)
+        .bind(user)
+        .bind(doc)
+        .bind(&version)
+        .bind(channel)
+        .execute(&mut **tx)
+        .await?;
+        crate::seal::seal(
+            tx,
+            &s.payout_keys,
+            crate::seal::Kind::TermsAcceptance,
+            id,
+            "ACCEPTED",
+        )
+        .await?;
+    }
+    Ok(())
 }
 pub fn hash_token(s: &str) -> Vec<u8> {
     token_digest(s).to_vec()
@@ -340,6 +396,10 @@ pub(crate) async fn create_account(
 pub async fn register(s: &AppState, h: &HeaderMap, input: Credentials) -> Result<Json<Value>> {
     origin(h, &s.config)?;
     let email = new_credentials(&input)?;
+    // No account without the terms agreed (recorded and sealed below).
+    let terms_version = legal_version(input.terms_version.as_deref())?
+        .ok_or(Error::InvalidCode("TERMS_ACCEPTANCE_REQUIRED"))?;
+    let privacy_notice_version = input.privacy_notice_version.clone();
     rate_auth(
         &s.pool,
         h,
@@ -362,6 +422,15 @@ pub async fn register(s: &AppState, h: &HeaderMap, input: Credentials) -> Result
     let hash = hash?;
     let mut tx = s.pool.begin().await?;
     let (user, org, party) = create_account(s, &mut tx, &email, &hash, "SELF_REGISTER", h).await?;
+    record_acceptance(
+        s,
+        &mut tx,
+        user,
+        &terms_version,
+        privacy_notice_version.as_deref(),
+        "SIGNUP",
+    )
+    .await?;
     tx.commit().await?;
     Ok(Json(
         json!({"user_id":user,"org_id":org,"party_id":party,"submission_enabled":false}),
