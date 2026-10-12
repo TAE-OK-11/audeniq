@@ -151,6 +151,8 @@ postgres 이미지를 17로, 볼륨을 `pg_prod:/var/lib/postgresql/data`로 되
    쓰는 동안 검사가 끝나고, 접수 후 Stage 1은 캐시를 써서 원본을 다시 받지 않는다(유사곡 비교만
    접수 시점 카탈로그로 다시 한다). 검사가 끝나기 전에 접수하면 `AUDIO_NOT_VERIFIED`로 잠시 뒤 다시.
 
+AWS S3나 Oracle Cloud를 쓸 때는 [저장소 사업자별 설정](../docs/STORAGE_PROVIDERS.md)을 따른다. 어느 쪽이든 설정한 뒤 `audeniq-admin storage probe --origin https://studio.audeniq.com`으로 확인한다.
+
 R2 설정 (Cloudflare 대시보드):
 
 - 버킷은 비공개. r2.dev 공개 접근과 커스텀 도메인 공개는 켜지 않는다.

@@ -56,6 +56,7 @@
 //! audeniq-admin --operator STAFF_EMAIL royalty receipt ORG REPORT BANK_REF AMOUNT CUR EVIDENCE_JSON
 //! audeniq-admin --operator STAFF_EMAIL royalty show ORG REPORT
 //! audeniq-admin --operator STAFF_EMAIL payout return ORDER BANK_REF AMOUNT EVIDENCE_JSON [--refund-fee]
+//! audeniq-admin storage probe [--origin URL] [--archive]   (bucket check: docs/STORAGE_PROVIDERS.md)
 use audeniq_core::protected_admin as admin;
 use audeniq_core::protected_names::{Action, Mode};
 
@@ -128,6 +129,30 @@ async fn main() -> anyhow::Result<()> {
             ),
         };
         println!("{}", serde_json::to_string(&result)?);
+        return Ok(());
+    }
+    // Checks a bucket really does what uploads / the archive rely on
+    // (AWS S3, Cloudflare R2, Oracle Cloud): docs/STORAGE_PROVIDERS.md.
+    if args.first().map(String::as_str) == Some("storage") {
+        let archive = take_flag(&mut args, "--archive");
+        let origin = take_opt(&mut args, "--origin")
+            .or_else(|| std::env::var("APP_ORIGIN").ok())
+            .filter(|o| !o.trim().is_empty());
+        anyhow::ensure!(
+            args.get(1).map(String::as_str) == Some("probe") && args.len() == 2,
+            "usage: audeniq-admin storage probe [--origin https://studio.example] [--archive]"
+        );
+        let allow_http = std::env::var("ALLOW_HTTP_STORAGE").as_deref() == Ok("true");
+        let store = audeniq_core::storage::s3_from_env(archive, allow_http)?;
+        let r = if archive {
+            store.probe_archive().await
+        } else {
+            store.probe(origin.as_deref()).await
+        };
+        println!("{}", serde_json::to_string_pretty(&r)?);
+        if r["ok"] != true {
+            std::process::exit(2);
+        }
         return Ok(());
     }
     // Document integrity and the original-document archive (docs/DOCUMENT_ARCHIVE.md).

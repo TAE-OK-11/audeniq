@@ -316,6 +316,9 @@ mod tests {
         assert!(csp.contains("script-src 'self';"));
         assert!(!csp.contains("unsafe-eval"));
         assert!(csp.contains("https://*.r2.cloudflarestorage.com"));
+        // AWS S3 and Oracle Cloud (S3 Compatibility API) upload endpoints too.
+        assert!(csp.contains("https://*.amazonaws.com"));
+        assert!(csp.contains("https://*.oraclecloud.com https://*.oci.customer-oci.com;"));
         assert!(csp.contains("frame-ancestors 'none'"));
     }
 }

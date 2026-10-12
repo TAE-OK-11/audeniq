@@ -161,3 +161,33 @@ async fn expired_grant_is_refused() {
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     assert_eq!(put(&grant.url, &grant, body, None).await, 403);
 }
+
+/// `audeniq-admin storage probe` against a store that enforces everything
+/// uploads rely on: signed single-use PUT, metadata, conditional copy.
+#[tokio::test]
+async fn probe_reports_a_store_fit_for_uploads() {
+    let Some(s) = store() else {
+        eprintln!("S3_TEST_ENDPOINT not set; skipped");
+        return;
+    };
+    let r = s.probe(None).await;
+    assert_eq!(r["ok"], true, "{r}");
+    assert_eq!(r["checks"]["second_put"], 412, "{r}");
+    assert_eq!(r["checks"]["metadata"], true, "{r}");
+    assert_eq!(r["checks"]["copy"], true, "{r}");
+    assert_eq!(r["checks"]["copy_keeps_etag"], true, "{r}");
+    assert_eq!(r["warnings"][0], "CORS_NOT_CHECKED", "{r}");
+}
+
+/// The archive probe notices a bucket that lets originals be deleted.
+#[tokio::test]
+async fn archive_probe_flags_a_bucket_without_retention() {
+    let Some(s) = store() else {
+        eprintln!("S3_TEST_ENDPOINT not set; skipped");
+        return;
+    };
+    let r = s.probe_archive().await;
+    assert_eq!(r["checks"]["read_back"], true, "{r}");
+    assert_eq!(r["ok"], false, "{r}");
+    assert_eq!(r["problems"][0], "ARCHIVE_NOT_WORM", "{r}");
+}
