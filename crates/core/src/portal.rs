@@ -83,20 +83,28 @@ pub struct ProfileInput {
 }
 
 pub async fn get_profile(s: &AppState, a: &Actor) -> Result<Value> {
-    let v: Option<Value> = sqlx::query_scalar(
-        "SELECT jsonb_build_object('display_name',p.display_name,'contact_email',p.contact_email,'bio',p.bio,'country',p.country,'row_version',p.row_version,'updated_at',p.updated_at)
-         FROM portal.artist_profiles p WHERE p.user_id=$1",
-    )
+    let v: Option<Value> = sqlx::query_scalar(concat!(
+        "SELECT jsonb_build_object('display_name',p.display_name,'contact_email',",
+        crate::pii_ref!(
+            "profile_contact_email",
+            "p.user_id",
+            "NULLIF(p.contact_email,'')",
+            "p.contact_email_cipher"
+        ),
+        ",'bio',p.bio,'country',p.country,'row_version',p.row_version,'updated_at',p.updated_at)
+         FROM portal.artist_profiles p WHERE p.user_id=$1"
+    ))
     .bind(a.user)
     .fetch_optional(&s.pool)
     .await?;
-    if let Some(v) = v {
+    if let Some(mut v) = v {
+        crate::pii::reveal(&s.payout_keys, &mut v)?;
+        if v["contact_email"].is_null() {
+            v["contact_email"] = json!("");
+        }
         return Ok(v);
     }
-    let email: String = sqlx::query_scalar("SELECT email FROM identity.users WHERE id=$1")
-        .bind(a.user)
-        .fetch_one(&s.pool)
-        .await?;
+    let email = crate::pii::user_email(&s.payout_keys, &s.pool, a.user).await?;
     Ok(
         json!({"display_name":"","contact_email":email,"bio":"","country":"KR","row_version":0,"updated_at":null}),
     )
@@ -108,6 +116,12 @@ pub async fn put_profile(s: &AppState, a: &Actor, i: ProfileInput) -> Result<Val
     if !email.is_empty() && (!email.contains('@') || email.contains(' ')) {
         return Err(Error::InvalidCode("EMAIL_INVALID"));
     }
+    let email = crate::pii::seal_opt(
+        &s.payout_keys,
+        crate::payout_keys::Field::ProfileContactEmail,
+        a.user,
+        Some(&email),
+    )?;
     let bio = multiline(&i.bio, 0, 1500)?;
     let country = i.country.trim().to_ascii_uppercase();
     if country.len() != 2 || !country.bytes().all(|b| b.is_ascii_uppercase()) {
@@ -119,8 +133,8 @@ pub async fn put_profile(s: &AppState, a: &Actor, i: ProfileInput) -> Result<Val
             // The first save starts the row at version 1. Rows the old insert
             // left at version 0 (the column default) are taken over here, or
             // every later save would retry this insert and conflict forever.
-            "INSERT INTO portal.artist_profiles(user_id,display_name,contact_email,bio,country,row_version) VALUES($1,$2,$3,$4,$5,1)
-             ON CONFLICT(user_id) DO UPDATE SET display_name=EXCLUDED.display_name,contact_email=EXCLUDED.contact_email,
+            "INSERT INTO portal.artist_profiles(user_id,display_name,contact_email,contact_email_cipher,bio,country,row_version) VALUES($1,$2,'',$3,$4,$5,1)
+             ON CONFLICT(user_id) DO UPDATE SET display_name=EXCLUDED.display_name,contact_email='',contact_email_cipher=EXCLUDED.contact_email_cipher,
                bio=EXCLUDED.bio,country=EXCLUDED.country,row_version=portal.artist_profiles.row_version+1,updated_at=now()
              WHERE portal.artist_profiles.row_version=0
              RETURNING row_version",
@@ -134,7 +148,7 @@ pub async fn put_profile(s: &AppState, a: &Actor, i: ProfileInput) -> Result<Val
         .await?
     } else {
         sqlx::query_scalar(
-            "UPDATE portal.artist_profiles SET display_name=$2,contact_email=$3,bio=$4,country=$5,row_version=row_version+1,updated_at=now()
+            "UPDATE portal.artist_profiles SET display_name=$2,contact_email='',contact_email_cipher=$3,bio=$4,country=$5,row_version=row_version+1,updated_at=now()
              WHERE user_id=$1 AND row_version=$6 RETURNING row_version",
         )
         .bind(a.user)
@@ -195,14 +209,19 @@ impl Drop for PayoutAccountInput {
 pub async fn get_payout_account(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
     member(&mut tx, a, org, false).await?;
-    let v: Option<Value> = sqlx::query_scalar(
-        "SELECT jsonb_build_object('registered',true,'payee_type',payee_type,'holder_name',holder_name,'bank_name',bank_name,'account_last4',account_last4,'registered_at',registered_at,'row_version',row_version)
-         FROM portal.payout_accounts WHERE org_id=$1",
-    )
+    let mut v: Option<Value> = sqlx::query_scalar(concat!(
+        "SELECT jsonb_build_object('registered',true,'payee_type',payee_type,'holder_name',",
+        crate::pii_ref!("holder_name", "org_id", "holder_name", "holder_cipher"),
+        ",'bank_name',bank_name,'account_last4',account_last4,'registered_at',registered_at,'row_version',row_version)
+         FROM portal.payout_accounts WHERE org_id=$1"
+    ))
     .bind(org)
     .fetch_optional(&mut *tx)
     .await?;
     tx.rollback().await?;
+    if let Some(v) = v.as_mut() {
+        crate::pii::reveal(&s.payout_keys, v)?;
+    }
     Ok(v.unwrap_or_else(|| json!({"registered":false})))
 }
 
@@ -233,18 +252,21 @@ pub async fn put_payout_account(
     let last4 = digits[digits.len() - 4..].to_string();
     let digits = zeroize::Zeroizing::new(digits);
     let sealed = s.payout_keys.seal(org, &digits)?;
+    let holder_sealed =
+        s.payout_keys
+            .seal_field(crate::payout_keys::Field::PayoutHolderName, org, &holder)?;
     let mut tx = s.pool.begin().await?;
     owner(&mut tx, a, org).await?;
     sqlx::query(
-        "INSERT INTO portal.payout_accounts(org_id,payee_type,holder_name,bank_name,account_last4,account_cipher,registered_by,key_version)
+        "INSERT INTO portal.payout_accounts(org_id,payee_type,holder_cipher,bank_name,account_last4,account_cipher,registered_by,key_version)
          VALUES($1,$2,$3,$4,$5,$6,$7,$8)
-         ON CONFLICT(org_id) DO UPDATE SET payee_type=EXCLUDED.payee_type,holder_name=EXCLUDED.holder_name,bank_name=EXCLUDED.bank_name,
+         ON CONFLICT(org_id) DO UPDATE SET payee_type=EXCLUDED.payee_type,holder_name=NULL,holder_cipher=EXCLUDED.holder_cipher,bank_name=EXCLUDED.bank_name,
            account_last4=EXCLUDED.account_last4,account_cipher=EXCLUDED.account_cipher,registered_by=EXCLUDED.registered_by,key_version=EXCLUDED.key_version,
            registered_at=now(),row_version=portal.payout_accounts.row_version+1",
     )
     .bind(org)
     .bind(&i.payee_type)
-    .bind(&holder)
+    .bind(&holder_sealed)
     .bind(&bank)
     .bind(&last4)
     .bind(&sealed)
@@ -266,7 +288,8 @@ pub async fn put_payout_account(
         "SELECT portal.notify($1,'ACCOUNT','수익을 받을 계좌가 등록됐어요.',$2,'/settlement')",
     )
     .bind(org)
-    .bind(format!("{bank} · •••• {last4} · {holder}"))
+    // The holder name is personal data: notifications carry bank and last digits only.
+    .bind(format!("{bank} · •••• {last4}"))
     .execute(&mut *tx)
     .await
     .ok();
@@ -1169,19 +1192,28 @@ pub async fn statements(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
 pub async fn list_payouts(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
     member(&mut tx, a, org, false).await?;
-    let items: Vec<Value> = sqlx::query_scalar(
+    let mut items: Value = Value::Array(sqlx::query_scalar(concat!(
         "SELECT jsonb_build_object('id',p.id,'amount',p.amount::text,'currency',p.currency,'status',p.status,'note',p.note,'created_at',p.created_at,
             'fee',p.fee_amount::text,'net',p.net_amount::text,'policy_version',p.policy_version,
-            'account',p.account_snapshot - 'key_version','cancelled_at',p.cancelled_at,
+            'account',p.account_snapshot - 'key_version' - 'holder_name'
+              || jsonb_build_object('holder_name',",
+        crate::pii_ref!(
+            "holder_name",
+            "p.org_id",
+            "p.account_snapshot->>'holder_name'",
+            "p.holder_cipher"
+        ),
+        "),'cancelled_at',p.cancelled_at,
             'cancellable',(p.status='REQUESTED' OR (p.status='ORDERED' AND o.status='PENDING_APPROVAL')),
             'order_status',o.status,'order_updated_at',COALESCE(o.approved_at,o.created_at))
          FROM portal.payout_requests p LEFT JOIN finance.payout_orders o ON o.id=p.payout_order_id
-         WHERE p.org_id=$1 ORDER BY p.created_at DESC LIMIT 200",
-    )
+         WHERE p.org_id=$1 ORDER BY p.created_at DESC LIMIT 200"
+    ))
     .bind(org)
     .fetch_all(&mut *tx)
-    .await?;
+    .await?);
     tx.rollback().await?;
+    crate::pii::reveal(&s.payout_keys, &mut items)?;
     Ok(json!({"items":items}))
 }
 
@@ -1233,16 +1265,26 @@ pub async fn request_payout(
     }
     // 신청 시점의 수령 계좌를 고정한다: 이후 계좌를 바꿔도 이 신청은 이 계좌로 간다.
     let account = sqlx::query(
-        "SELECT payee_type,holder_name,bank_name,account_last4,account_cipher,key_version,row_version
+        "SELECT payee_type,holder_name,holder_cipher,bank_name,account_last4,account_cipher,key_version,row_version
          FROM portal.payout_accounts WHERE org_id=$1 FOR SHARE",
     )
     .bind(org)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(Error::PolicyGate("PAYOUT_ACCOUNT_REQUIRED"))?;
+    // The holder name is frozen sealed next to the account number, not in the JSON.
+    let holder_cipher = match account.get::<Option<Vec<u8>>, _>("holder_cipher") {
+        Some(c) => c,
+        None => s.payout_keys.seal_field(
+            crate::payout_keys::Field::PayoutHolderName,
+            org,
+            &account
+                .get::<Option<String>, _>("holder_name")
+                .ok_or(Error::Internal)?,
+        )?,
+    };
     let snapshot = json!({
         "payee_type": account.get::<String, _>("payee_type"),
-        "holder_name": account.get::<String, _>("holder_name"),
         "bank_name": account.get::<String, _>("bank_name"),
         "account_last4": account.get::<String, _>("account_last4"),
         "account_row_version": account.get::<i64, _>("row_version"),
@@ -1264,8 +1306,8 @@ pub async fn request_payout(
     let id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO portal.payout_requests(id,org_id,requested_by,payee_party_id,amount,currency,idempotency_key,
-           fee_amount,net_amount,policy_version,account_snapshot,account_cipher,account_key_version)
-         VALUES($1,$2,$3,$4,$5,'KRW',$6,$7,$8,$9,$10,$11,$12)",
+           fee_amount,net_amount,policy_version,account_snapshot,account_cipher,account_key_version,holder_cipher)
+         VALUES($1,$2,$3,$4,$5,'KRW',$6,$7,$8,$9,$10,$11,$12,$13)",
     )
     .bind(id)
     .bind(org)
@@ -1279,6 +1321,7 @@ pub async fn request_payout(
     .bind(&snapshot)
     .bind(account.get::<Vec<u8>, _>("account_cipher"))
     .bind(account.get::<i16, _>("key_version"))
+    .bind(&holder_cipher)
     .execute(&mut *tx)
     .await?;
     operations::audit(

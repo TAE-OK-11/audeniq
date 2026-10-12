@@ -1,5 +1,11 @@
 //! Versioned AES-256-GCM keys, separated from the database and API environment.
 //! Optional KMS mode requires a read-only keyring materialized in tmpfs.
+//!
+//! The same keyring protects bank account numbers and the other personal data
+//! listed in [`Field`]. Each field has its own AAD prefix, so a ciphertext
+//! cannot be moved to another column or another subject. Columns that must be
+//! looked up by value also store a keyed blind index (HMAC-SHA256 under a key
+//! derived from each keyring version).
 use crate::error::{Error, Result};
 use aes_gcm::{
     Aes256Gcm, KeyInit, Nonce,
@@ -15,11 +21,45 @@ const HEADER_LEN: usize = TAG.len() + 2;
 const NONCE_LEN: usize = 12;
 const AUTH_TAG_LEN: usize = 16;
 const AAD_PREFIX: &[u8] = b"audeniq:portal.payout_accounts:account_number:";
+const INDEX_KEY_LABEL: &[u8] = b"audeniq:blind-index-key:v1";
+
+/// Personal data sealed with the keyring. The AAD names the column and binds
+/// the row's subject id (user, org or contact id).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Field {
+    UserEmail,
+    IdentityRealName,
+    IdentityBirthDate,
+    PayoutHolderName,
+    ProfileContactEmail,
+    ContactName,
+    ContactEmail,
+    ContactPhone,
+    TaxTin,
+}
+impl Field {
+    fn aad_prefix(self) -> &'static [u8] {
+        match self {
+            Self::UserEmail => b"audeniq:identity.users:email:",
+            Self::IdentityRealName => b"audeniq:portal.account_identities:real_name:",
+            Self::IdentityBirthDate => b"audeniq:portal.account_identities:birth_date:",
+            Self::PayoutHolderName => b"audeniq:portal.payout_accounts:holder_name:",
+            Self::ProfileContactEmail => b"audeniq:portal.artist_profiles:contact_email:",
+            Self::ContactName => b"audeniq:work.relationship_contacts:name:",
+            Self::ContactEmail => b"audeniq:work.relationship_contacts:email:",
+            Self::ContactPhone => b"audeniq:work.relationship_contacts:phone:",
+            Self::TaxTin => b"audeniq:portal.tax_residencies:tin:",
+        }
+    }
+}
+
 pub struct KeyRing {
     active: i16,
     // Expand each key once. The AES/GHASH states zeroize on drop; plaintext
     // input keys are wiped immediately after construction.
     keys: BTreeMap<i16, Aes256Gcm>,
+    // Blind-index keys, derived once per version (never the AES key itself).
+    index_keys: BTreeMap<i16, Zeroizing<[u8; 32]>>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -48,6 +88,7 @@ impl KeyRing {
             return Err(Error::PolicyGate("PAYOUT_KEYRING_INVALID"));
         }
         let mut keys = BTreeMap::new();
+        let mut index_keys = BTreeMap::new();
         for (version, value) in &file.keys {
             let version: i16 = version
                 .parse()
@@ -64,6 +105,7 @@ impl KeyRing {
             {
                 return Err(Error::PolicyGate("PAYOUT_KEYRING_INVALID"));
             }
+            index_keys.insert(version, Self::derive_index_key(&value));
         }
         if !keys.contains_key(&file.active_version) {
             return Err(Error::PolicyGate("PAYOUT_KEYRING_INVALID"));
@@ -71,6 +113,7 @@ impl KeyRing {
         Ok(Self {
             active: file.active_version,
             keys,
+            index_keys,
         })
     }
 
@@ -133,7 +176,7 @@ impl KeyRing {
     }
 
     fn development_key(key: Option<String>) -> Result<Self> {
-        let keys = match key {
+        let (keys, index_keys) = match key {
             Some(key) if !key.trim().is_empty() => {
                 let key = Zeroizing::new(key);
                 let decoded = Zeroizing::new(
@@ -143,15 +186,71 @@ impl KeyRing {
                 if decoded.len() != 32 {
                     return Err(Error::PolicyGate("PAYOUT_ACCOUNT_KEY_MISSING"));
                 }
-                BTreeMap::from([(1, Self::prepare_cipher(&decoded)?)])
+                (
+                    BTreeMap::from([(1, Self::prepare_cipher(&decoded)?)]),
+                    BTreeMap::from([(1, Self::derive_index_key(&decoded))]),
+                )
             }
-            _ => BTreeMap::new(),
+            _ => (BTreeMap::new(), BTreeMap::new()),
         };
-        Ok(Self { active: 1, keys })
+        Ok(Self {
+            active: 1,
+            keys,
+            index_keys,
+        })
     }
 
     pub fn active_version(&self) -> i16 {
         self.active
+    }
+    #[cfg(test)]
+    pub(crate) fn test_ring_active(active: i16) -> Self {
+        Self::parse(
+            format!(
+                r#"{{"version":1,"active_version":{active},"keys":{{"1":"{}","2":"{}"}}}}"#,
+                "11".repeat(32),
+                "22".repeat(32)
+            )
+            .as_bytes(),
+        )
+        .unwrap()
+    }
+    #[cfg(test)]
+    pub(crate) fn test_ring() -> Self {
+        Self::test_ring_active(2)
+    }
+    /// False when no key is configured: personal data cannot be stored.
+    pub fn ready(&self) -> bool {
+        self.keys.contains_key(&self.active)
+    }
+    fn derive_index_key(key: &[u8]) -> Zeroizing<[u8; 32]> {
+        use hmac::{Hmac, KeyInit, Mac};
+        let mut mac = <Hmac<sha2::Sha256> as KeyInit>::new_from_slice(key).expect("HMAC key");
+        mac.update(INDEX_KEY_LABEL);
+        Zeroizing::new(mac.finalize().into_bytes().into())
+    }
+    fn index_with(key: &[u8; 32], field: Field, value: &str) -> String {
+        use hmac::{Hmac, KeyInit, Mac};
+        let mut mac = <Hmac<sha2::Sha256> as KeyInit>::new_from_slice(key).expect("HMAC key");
+        mac.update(field.aad_prefix());
+        mac.update(value.as_bytes());
+        hex::encode(mac.finalize().into_bytes())
+    }
+    /// Blind index under the active key version (stored with new rows).
+    pub fn blind_index(&self, field: Field, value: &str) -> Result<String> {
+        let key = self
+            .index_keys
+            .get(&self.active)
+            .ok_or(Error::PolicyGate("PAYOUT_KEY_VERSION_MISSING"))?;
+        Ok(Self::index_with(key, field, value))
+    }
+    /// Blind indexes under every available version, for lookups that must also
+    /// find rows not yet re-encrypted after a rotation.
+    pub fn blind_indexes(&self, field: Field, value: &str) -> Vec<String> {
+        self.index_keys
+            .values()
+            .map(|key| Self::index_with(key, field, value))
+            .collect()
     }
     fn prepare_cipher(key: &[u8]) -> Result<Aes256Gcm> {
         // Enforce the sensitive-state Drop contract in production builds too.
@@ -167,14 +266,32 @@ impl KeyRing {
             .get(&version)
             .ok_or(Error::PolicyGate("PAYOUT_KEY_VERSION_MISSING"))
     }
-    fn aad(org: Uuid, header: &[u8; HEADER_LEN]) -> [u8; AAD_PREFIX.len() + 16 + HEADER_LEN] {
-        let mut aad = [0; AAD_PREFIX.len() + 16 + HEADER_LEN];
-        aad[..AAD_PREFIX.len()].copy_from_slice(AAD_PREFIX);
-        aad[AAD_PREFIX.len()..AAD_PREFIX.len() + 16].copy_from_slice(org.as_bytes());
-        aad[AAD_PREFIX.len() + 16..].copy_from_slice(header);
+    fn aad(prefix: &[u8], subject: Uuid, header: &[u8; HEADER_LEN]) -> Vec<u8> {
+        let mut aad = Vec::with_capacity(prefix.len() + 16 + HEADER_LEN);
+        aad.extend_from_slice(prefix);
+        aad.extend_from_slice(subject.as_bytes());
+        aad.extend_from_slice(header);
         aad
     }
     pub fn seal(&self, org: Uuid, number: &str) -> Result<Vec<u8>> {
+        self.seal_with(AAD_PREFIX, org, number)
+    }
+    pub fn open(&self, org: Uuid, sealed: &[u8]) -> Result<Zeroizing<String>> {
+        self.open_with(AAD_PREFIX, org, sealed, true)
+    }
+    /// Seals one personal-data value for `subject` (the row's owner id).
+    pub fn seal_field(&self, field: Field, subject: Uuid, value: &str) -> Result<Vec<u8>> {
+        self.seal_with(field.aad_prefix(), subject, value)
+    }
+    pub fn open_field(
+        &self,
+        field: Field,
+        subject: Uuid,
+        sealed: &[u8],
+    ) -> Result<Zeroizing<String>> {
+        self.open_with(field.aad_prefix(), subject, sealed, false)
+    }
+    fn seal_with(&self, prefix: &[u8], subject: Uuid, number: &str) -> Result<Vec<u8>> {
         let cipher = self.cipher(self.active)?;
         let mut header = [0; HEADER_LEN];
         header[..TAG.len()].copy_from_slice(TAG);
@@ -192,14 +309,20 @@ impl KeyRing {
         let tag = cipher
             .encrypt_inout_detached(
                 &nonce,
-                &Self::aad(org, &header),
+                &Self::aad(prefix, subject, &header),
                 (&mut out[HEADER_LEN + NONCE_LEN..]).into(),
             )
             .map_err(|_| Error::Internal)?;
         out.extend_from_slice(&tag);
         Ok(std::mem::take(&mut *out))
     }
-    pub fn open(&self, org: Uuid, sealed: &[u8]) -> Result<Zeroizing<String>> {
+    fn open_with(
+        &self,
+        prefix: &[u8],
+        subject: Uuid,
+        sealed: &[u8],
+        allow_legacy: bool,
+    ) -> Result<Zeroizing<String>> {
         let aad_storage;
         let (version, rest, aad) = if sealed.starts_with(TAG) {
             let header: &[u8; HEADER_LEN] = sealed
@@ -207,7 +330,7 @@ impl KeyRing {
                 .ok_or(Error::Internal)?
                 .try_into()
                 .map_err(|_| Error::Internal)?;
-            aad_storage = Self::aad(org, header);
+            aad_storage = Self::aad(prefix, subject, header);
             (
                 i16::from_be_bytes(
                     header[TAG.len()..]
@@ -217,8 +340,10 @@ impl KeyRing {
                 &sealed[header.len()..],
                 aad_storage.as_slice(),
             )
+        } else if allow_legacy {
+            (1, sealed, subject.as_bytes().as_slice())
         } else {
-            (1, sealed, org.as_bytes().as_slice())
+            return Err(Error::Internal);
         };
         if rest.len() < NONCE_LEN + AUTH_TAG_LEN {
             return Err(Error::Internal);
@@ -309,6 +434,60 @@ mod tests {
         assert_eq!(&*r.open(org, &legacy).unwrap(), "11012345678901");
         assert!(r.open(Uuid::new_v4(), &legacy).is_err());
     }
+    #[test]
+    fn fields_are_bound_to_column_and_subject() {
+        let r = ring(2);
+        let user = Uuid::new_v4();
+        let sealed = r
+            .seal_field(Field::IdentityRealName, user, "홍길동")
+            .unwrap();
+        assert_eq!(
+            &*r.open_field(Field::IdentityRealName, user, &sealed)
+                .unwrap(),
+            "홍길동"
+        );
+        assert!(
+            r.open_field(Field::IdentityBirthDate, user, &sealed)
+                .is_err()
+        );
+        assert!(
+            r.open_field(Field::IdentityRealName, Uuid::new_v4(), &sealed)
+                .is_err()
+        );
+        // An account-number ciphertext cannot be read as a field, nor the reverse.
+        assert!(r.open(user, &sealed).is_err());
+        let account = r.seal(user, "11012345678901").unwrap();
+        assert!(r.open_field(Field::TaxTin, user, &account).is_err());
+        // Header-less (legacy) ciphertexts are accepted only for account numbers.
+        assert!(
+            r.open_field(Field::IdentityRealName, user, &sealed[HEADER_LEN..])
+                .is_err()
+        );
+        // Old versions stay readable after rotation.
+        let old = ring(1)
+            .seal_field(Field::ContactPhone, user, "010")
+            .unwrap();
+        assert_eq!(
+            &*r.open_field(Field::ContactPhone, user, &old).unwrap(),
+            "010"
+        );
+    }
+
+    #[test]
+    fn blind_index_keys_are_not_the_cipher_keys() {
+        let r = ring(2);
+        assert!(r.ready());
+        assert_eq!(r.blind_indexes(Field::UserEmail, "a@b").len(), 2);
+        assert_ne!(*r.index_keys[&2], [0x22; 32]);
+        assert!(!KeyRing::development_key(None).unwrap().ready());
+        assert!(
+            KeyRing::development_key(None)
+                .unwrap()
+                .blind_index(Field::UserEmail, "a@b")
+                .is_err()
+        );
+    }
+
     #[test]
     fn invalid_ring_fails_closed() {
         assert!(KeyRing::parse(br#"{"version":1,"active_version":2,"keys":{"1":"00"}}"#).is_err());

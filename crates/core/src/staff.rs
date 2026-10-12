@@ -286,7 +286,9 @@ pub async fn list_releases(s: &AppState, h: &HeaderMap, p: Page) -> Result<Value
            'cover', NULLIF(r.draft->>'coverData', ''),
            'agreement', (SELECT d.status FROM portal.documents d
                           WHERE d.org_id=r.org_id AND d.release_id=r.id AND d.kind='AGREEMENT'),
-           'claim', (SELECT jsonb_build_object('user_id', c.claimed_by, 'email', u.email, 'at', c.claimed_at)
+           'claim', (SELECT jsonb_build_object('user_id', c.claimed_by, 'email', ",
+        crate::email_ref!("u"),
+        ", 'at', c.claimed_at)
                        FROM rights.review_claims c JOIN identity.users u ON u.id=c.claimed_by
                       WHERE c.release_id=r.id))
          FROM catalog.releases r
@@ -309,9 +311,10 @@ pub async fn list_releases(s: &AppState, h: &HeaderMap, p: Page) -> Result<Value
         .map(|mut v| {
             let codes = platform_codes(&v["platforms"]);
             v["platforms"] = json!(codes);
-            v
+            crate::pii::reveal(&s.payout_keys, &mut v)?;
+            Ok(v)
         })
-        .collect();
+        .collect::<Result<_>>()?;
     Ok(json!({"items": items, "limit": limit, "offset": offset}))
 }
 
@@ -629,20 +632,37 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
     .bind(release)
     .fetch_all(&mut *tx)
     .await?;
-    let application: Option<Value> = sqlx::query_scalar(
+    let mut application: Option<Value> = sqlx::query_scalar(concat!(
         "SELECT jsonb_build_object('application_no',ra.application_no,'form',ra.form,'content_hash',ra.content_hash,
                 'signer_name',ra.signer_name,'signer_role',ra.signer_role,'agreements',ra.agreements,'received_at',ra.received_at,
                 'signature',ra.signature,
-                'contact_email',COALESCE(NULLIF(ap.contact_email,''),u.email))
+                'contact_email',",
+        crate::pii_ref!(
+            "profile_contact_email",
+            "ap.user_id",
+            "NULLIF(ap.contact_email,'')",
+            "ap.contact_email_cipher"
+        ),
+        ",'account_email',",
+        crate::email_ref!("u"),
+        ")
          FROM portal.release_applications ra
          JOIN identity.users u ON u.id=ra.submitted_by
          LEFT JOIN portal.artist_profiles ap ON ap.user_id=ra.submitted_by
-         WHERE ra.org_id=$1 AND ra.release_id=$2 ORDER BY ra.received_at DESC LIMIT 1",
-    )
+         WHERE ra.org_id=$1 AND ra.release_id=$2 ORDER BY ra.received_at DESC LIMIT 1"
+    ))
     .bind(org)
     .bind(release)
     .fetch_optional(&mut *tx)
     .await?;
+    if let Some(app) = application.as_mut() {
+        crate::pii::reveal(&s.payout_keys, app)?;
+        // Profile contact email, else the account's login email.
+        let account = app.as_object_mut().and_then(|o| o.remove("account_email"));
+        if app["contact_email"].is_null() {
+            app["contact_email"] = account.unwrap_or(Value::Null);
+        }
+    }
     let staging: Vec<Value> = sqlx::query_scalar(
         "SELECT jsonb_build_object('package_id',package_id,'dsp',dsp_code,'readiness',readiness,'approval',approval,
                 'checks',checks,'route_status',route_status,'route_reason',route_reason,
@@ -679,7 +699,7 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
         "READY_FOR_DELIVERY" if revision.is_some() && agreement_pending => Some("APPLICATION"),
         _ => None,
     };
-    let claim = review_claim(&mut tx, release).await?;
+    let claim = review_claim(&s.payout_keys, &mut tx, release).await?;
     let mine = claim.as_ref().is_some_and(|c| c.user == st.actor.user);
     let mut allowed = Vec::new();
     // 담당자만 결정할 수 있다 — 아직 아무도 맡지 않았거나 다른 담당자가 맡은 건은 읽기 전용
@@ -781,17 +801,31 @@ struct ReviewClaim {
     at: chrono::DateTime<chrono::Utc>,
 }
 
-async fn review_claim(c: &mut PgConnection, release: Uuid) -> Result<Option<ReviewClaim>> {
+async fn review_claim(
+    keys: &crate::payout_keys::KeyRing,
+    c: &mut PgConnection,
+    release: Uuid,
+) -> Result<Option<ReviewClaim>> {
     let row = sqlx::query(
-        "SELECT c.claimed_by, u.email, c.claimed_at FROM rights.review_claims c
+        "SELECT c.claimed_by, u.email, u.email_cipher, c.claimed_at FROM rights.review_claims c
            JOIN identity.users u ON u.id=c.claimed_by WHERE c.release_id=$1",
     )
     .bind(release)
     .fetch_optional(&mut *c)
     .await?;
-    Ok(row.map(|r| ReviewClaim {
-        user: r.get("claimed_by"),
-        email: r.get("email"),
+    let Some(r) = row else { return Ok(None) };
+    let user: Uuid = r.get("claimed_by");
+    let email = crate::pii::open(
+        keys,
+        crate::payout_keys::Field::UserEmail,
+        user,
+        r.get("email"),
+        r.get::<Option<Vec<u8>>, _>("email_cipher").as_deref(),
+    )?
+    .unwrap_or_default();
+    Ok(Some(ReviewClaim {
+        user,
+        email,
         at: r.get("claimed_at"),
     }))
 }

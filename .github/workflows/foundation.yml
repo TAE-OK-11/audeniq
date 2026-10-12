@@ -255,7 +255,8 @@ jobs:
         run: curl --fail --retry 15 --retry-all-errors --retry-delay 2 -H "X-Audeniq-Service:$EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready
       - name: Production boots without cloud KMS or an antivirus engine
         run: |
-          docker compose run --no-deps -d --name audeniq-ci-optional-security -e APP_ENV=production -e APP_ORIGIN=https://studio.audeniq.test api
+          docker compose run --no-deps -d --name audeniq-ci-optional-security -e APP_ENV=production -e APP_ORIGIN=https://studio.audeniq.test \
+            -e PAYOUT_ACCOUNT_KEY=0000000000000000000000000000000000000000000000000000000000000000 api
           docker exec -i audeniq-ci-optional-security python3 - <<'PY'
           import os, time, urllib.request
           assert os.environ['PAYOUT_KMS_ENABLED'] == 'false'
@@ -278,6 +279,12 @@ jobs:
             exit 1
           fi
           grep -q PAYOUT_KEYRING_REQUIRED /tmp/kms-required.log
+          # Personal data is stored only sealed: production needs some key.
+          if docker compose run --rm --no-deps -e APP_ENV=production -e APP_ORIGIN=https://studio.audeniq.test -e PAYOUT_ACCOUNT_KEY= api > /tmp/pii-key.log 2>&1; then
+            echo 'Production started without a personal-data key'
+            exit 1
+          fi
+          grep -q PII_KEYRING_REQUIRED /tmp/pii-key.log
       - name: Verify parser isolation inside actual runtime containers
         run: |
           docker compose exec -T api audeniq-admin upload-sandbox-check

@@ -44,6 +44,7 @@ pub struct AppState {
 impl AppState {
     pub async fn new(pool: PgPool, config: Config, storage: Arc<dyn ObjectStore>) -> Result<Self> {
         let service_secret_digest = auth::token_digest(&config.service_secret);
+        auth::init_rate_key(&config.service_secret);
         Ok(Self {
             pool,
             config,
@@ -378,10 +379,7 @@ async fn csrf(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
 }
 async fn me(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
-    let email: String = sqlx::query_scalar("SELECT email FROM identity.users WHERE id=$1")
-        .bind(a.user)
-        .fetch_one(&s.pool)
-        .await?;
+    let email = crate::pii::user_email(&s.payout_keys, &s.pool, a.user).await?;
     Ok(Json(
         json!({"user_id":a.user,"party_id":a.party,"email":email}),
     ))

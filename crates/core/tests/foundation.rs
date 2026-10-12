@@ -958,7 +958,7 @@ async fn upload_binding_expiry_duplicate_and_freeze(pool: PgPool) {
         "expired sessions must perform no storage IO"
     );
     sqlx::query("UPDATE identity.auth_limits SET attempts=60 WHERE bucket_hash=$1")
-        .bind(audeniq_core::auth::hash_token(&format!(
+        .bind(audeniq_core::auth::bucket_hash(&format!(
             "upload-complete:{}",
             a.user
         )))
@@ -1069,7 +1069,7 @@ async fn upload_completion_survives_capacity_waits(pool: PgPool) {
     assert_eq!(v["detected_container"], "FLAC");
     let used: i32 =
         sqlx::query_scalar("SELECT attempts FROM identity.auth_limits WHERE bucket_hash=$1")
-            .bind(audeniq_core::auth::hash_token(&format!(
+            .bind(audeniq_core::auth::bucket_hash(&format!(
                 "upload-complete:{}",
                 a.user
             )))
@@ -1928,11 +1928,14 @@ async fn session_inventory_revoke_and_password_rotation(pool: PgPool) {
     let (api, _) = app(pool.clone()).await;
     let a = user(&api).await;
     let b = user(&api).await;
-    let email: String = sqlx::query_scalar("SELECT email FROM identity.users WHERE id=$1")
-        .bind(a.user)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    // Stored sealed (migration 0102): read it back with the test keyring.
+    let email = audeniq_core::pii::user_email(
+        &audeniq_core::payout_keys::KeyRing::from_env(false).unwrap(),
+        &pool,
+        a.user,
+    )
+    .await
+    .unwrap();
     let (_, _, inventory) = call(&api, "GET", "/api/auth/sessions", json!({}), Some(&a)).await;
     assert_eq!(inventory["items"].as_array().unwrap().len(), 1);
     assert_eq!(inventory["items"][0]["current"], true);

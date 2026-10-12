@@ -9,20 +9,25 @@ use uuid::Uuid;
 const ROLES: &[&str] = &["ADMIN", "REVIEWER", "OPERATOR", "SUPPORT"];
 
 pub async fn list(pool: &PgPool) -> Result<Value> {
-    let rows: Vec<Value> = sqlx::query_scalar(
-        "SELECT jsonb_build_object('email',u.email,'user_id',s.user_id,'role',s.role,'status',s.status,
+    let mut rows: Vec<Value> = sqlx::query_scalar(concat!(
+        "SELECT jsonb_build_object('email',",
+        crate::email_ref!("u"),
+        ",'user_id',s.user_id,'role',s.role,'status',s.status,
                 'granted_by',s.granted_by,'granted_at',s.granted_at,'revoked_at',s.revoked_at)
-         FROM identity.staff_members s JOIN identity.users u ON u.id=s.user_id ORDER BY u.email",
-    )
+         FROM identity.staff_members s JOIN identity.users u ON u.id=s.user_id"
+    ))
     .fetch_all(pool)
     .await?;
+    let keys = crate::pii::cli_keys()?;
+    for row in &mut rows {
+        crate::pii::reveal(&keys, row)?;
+    }
+    rows.sort_by(|a, b| a["email"].as_str().cmp(&b["email"].as_str()));
     Ok(Value::Array(rows))
 }
 
 async fn user_by_email(tx: &mut sqlx::PgConnection, email: &str) -> Result<Uuid> {
-    sqlx::query_scalar("SELECT id FROM identity.users WHERE email=lower($1)")
-        .bind(email.trim())
-        .fetch_optional(&mut *tx)
+    crate::pii::user_by_email(&crate::pii::cli_keys()?, &mut *tx, email)
         .await?
         .ok_or(Error::NotFound)
 }
