@@ -2676,6 +2676,20 @@ pub async fn payout_requests(s: &AppState, h: &HeaderMap, p: Page) -> Result<Val
 // Router
 // ---------------------------------------------------------------------------
 
+async fn h_print_stamp(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Json(i): Json<crate::print_stamp::StampInput>,
+) -> Result<Json<Value>> {
+    Ok(Json(crate::print_stamp::stamp_staff(&s, &h, i).await?))
+}
+async fn h_print_verify(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<crate::print_stamp::VerifyQuery>,
+) -> Result<Json<Value>> {
+    Ok(Json(crate::print_stamp::verify_staff(&s, &h, q).await?))
+}
 async fn h_mfa_status(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     Ok(Json(crate::staff_mfa::status(&s, &h).await?))
 }
@@ -2944,6 +2958,8 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/staff/me", get(h_me))
         .route("/api/staff/mfa", get(h_mfa_status))
+        .route("/api/staff/print-stamps", post(h_print_stamp))
+        .route("/api/staff/print-stamps/verify", get(h_print_verify))
         .route("/api/staff/mfa/enroll", post(h_mfa_enroll))
         .route("/api/staff/mfa/verify", post(h_mfa_verify))
         .route(

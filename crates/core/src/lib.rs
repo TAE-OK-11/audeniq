@@ -86,4 +86,5 @@ pub mod password_policy;
 pub mod payout_keys;
 pub mod payout_policy;
 pub mod pii;
+pub mod print_stamp;
 pub mod privacy_maintenance;

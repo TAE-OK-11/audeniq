@@ -1,5 +1,6 @@
 // 배급 신청서 — 신청인이 서명해 접수한 내용을 정식 서류 형태로 보여 주고 인쇄·PDF로 저장한다.
 import { useEffect, useState } from 'react';
+import { printWithStamp } from '../lib/printStamp';
 import { useNavigate, useParams, useSearchParams } from '../lib/router';
 import { api } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
@@ -105,7 +106,7 @@ export function Application() {
         <button type="button" className="ui-btn is-white is-sm aq-back-link" onClick={() => nav(`/releases/${rel.id}`)}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />발매 상세</button>
         <div className="row-actions">
           <button type="button" className="ui-btn is-soft" onClick={() => nav('/')}>홈으로</button>
-          <button type="button" className="ui-btn is-primary" onClick={() => window.print()}>인쇄 · PDF 저장</button>
+          <button type="button" className="ui-btn is-primary" onClick={() => void printWithStamp({ kind: 'APPLICATION', ref: id, root: document.querySelector('.aq-paper') })}>인쇄 · PDF 저장</button>
         </div>
       </div>
 

@@ -5,6 +5,7 @@
 //   · 트랙: 곡마다 펼쳐서 크레딧 이름·가사·음원 파일까지
 // 스튜디오 외 경로로 접수돼 입력 기록(draft)이 없으면 서버 신청 정보만 보여 준다.
 import { useEffect, useState, type ReactNode } from 'react';
+import { printWithStamp } from '../lib/printStamp';
 import type { ReleaseSheet, Track } from './api';
 import { day, dspLabel, when } from './labels';
 import { Badge, EmptyState, Section } from './ui';
@@ -81,7 +82,7 @@ export function ApplicationSection({ sheet }: { sheet: ReleaseSheet }) {
       {open && (
         <Modal title="배급 신청서" onClose={() => setOpen(false)} modalClass="adm-paper-modal">
           <div className="adm-paper-tools">
-            <button type="button" className="ui-btn is-soft is-sm" onClick={() => window.print()}>인쇄 · PDF 저장</button>
+            <button type="button" className="ui-btn is-soft is-sm" onClick={() => void printWithStamp({ kind: 'STAFF_SHEET', ref: sheet.release.id, staff: true, root: document.querySelector('.adm-paper-modal') })}>인쇄 · PDF 저장</button>
           </div>
           <ApplicationPaper sheet={sheet} draft={paperDraft} integrity={integrity} />
         </Modal>

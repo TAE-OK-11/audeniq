@@ -25,6 +25,7 @@ export const pageLoaders = {
   Profile: () => import('./pages/Profile'),
   Sign: () => import('./pages/Sign'),
   Terms: () => import('./pages/Terms'),
+  Verify: () => import('./pages/Verify'),
   Admin: () => import('./admin/AdminApp'),
 };
 
@@ -52,6 +53,7 @@ const ROUTE_PAGES: [RegExp, PageName[]][] = [
   [/^\/sign\//, ['Sign']],
   [/^\/terms/, ['Terms']],
   [/^\/privacy\/?$/, ['Terms']],
+  [/^\/verify\/?$/, ['Verify']],
 ];
 
 const requested = new Set<PageName>();
