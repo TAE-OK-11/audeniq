@@ -51,6 +51,7 @@ pub mod review;
 pub mod route_plan;
 pub mod routing;
 pub mod royalty;
+mod royalty_csv;
 pub mod signing;
 pub mod site_content;
 pub mod sites;
