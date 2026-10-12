@@ -37,7 +37,7 @@ impl Drop for KeyFile {
 }
 
 impl KeyRing {
-    fn parse(bytes: &[u8]) -> Result<Self> {
+    pub(crate) fn parse(bytes: &[u8]) -> Result<Self> {
         let file: KeyFile = serde_json::from_slice(bytes)
             .map_err(|_| Error::PolicyGate("PAYOUT_KEYRING_INVALID"))?;
         if file.version != 1
