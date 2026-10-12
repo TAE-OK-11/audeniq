@@ -84,6 +84,17 @@ pub fn router(s: AppState) -> Router {
             "/api/auth/passkeys/{id}",
             axum::routing::delete(passkey_remove),
         )
+        .route("/api/auth/oauth/providers", get(oauth_providers))
+        .route("/api/auth/oauth/identities", get(oauth_identities))
+        .route(
+            "/api/auth/oauth/identities/{id}",
+            axum::routing::delete(oauth_unlink),
+        )
+        .route("/api/auth/oauth/{provider}/start", post(oauth_start))
+        .route(
+            "/api/auth/oauth/{provider}/callback",
+            get(oauth_callback_get).post(oauth_callback_post),
+        )
         .route("/api/me", get(me))
         .route("/api/orgs", post(create_org).get(orgs))
         .route("/api/orgs/{org}/memberships", put(member))
@@ -241,8 +252,13 @@ async fn boundary(State(s): State<AppState>, mut req: Request, next: Next) -> Re
             .uri()
             .path()
             .starts_with(crate::partner_hooks::HOOK_PREFIX);
+    // Apple's sign-in returns with a cross-site form POST; the one-time state
+    // and the code exchange authenticate it (crate::oauth::callback).
+    let oauth_form_post =
+        *req.method() == Method::POST && req.uri().path() == "/api/auth/oauth/apple/callback";
     if !matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS)
         && !partner_hook
+        && !oauth_form_post
         && auth::origin(req.headers(), &s.config).is_err()
     {
         return Error::Forbidden.into_response();
@@ -379,6 +395,53 @@ async fn login(
     Json(i): Json<auth::Credentials>,
 ) -> Result<(HeaderMap, Json<Value>)> {
     auth::login(&s, &h, i).await
+}
+async fn oauth_providers() -> Json<Value> {
+    Json(crate::oauth::providers())
+}
+async fn oauth_identities(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
+    Ok(Json(crate::oauth::identities(&s, &h).await?))
+}
+async fn oauth_unlink(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>> {
+    Ok(Json(crate::oauth::unlink(&s, &h, id).await?))
+}
+async fn oauth_start(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(provider): Path<String>,
+    Json(i): Json<crate::oauth::StartInput>,
+) -> Result<Json<Value>> {
+    Ok(Json(crate::oauth::start(&s, &h, &provider, i).await?))
+}
+async fn oauth_callback_get(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(provider): Path<String>,
+    Query(p): Query<crate::oauth::CallbackParams>,
+) -> Response {
+    crate::oauth::callback(&s, &h, &provider, p).await
+}
+/// Apple returns with a form POST (response_mode=form_post).
+async fn oauth_callback_post(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(provider): Path<String>,
+    body: axum::body::Bytes,
+) -> Response {
+    let mut p = crate::oauth::CallbackParams::default();
+    for (k, v) in url::form_urlencoded::parse(&body) {
+        match &*k {
+            "code" => p.code = Some(v.into_owned()),
+            "state" => p.state = Some(v.into_owned()),
+            "error" => p.error = Some(v.into_owned()),
+            _ => {}
+        }
+    }
+    crate::oauth::callback(&s, &h, &provider, p).await
 }
 async fn passkey_login_options(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     Ok(Json(crate::passkey::login_options(&s, &h).await?))

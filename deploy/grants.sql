@@ -60,6 +60,8 @@ GRANT SELECT,INSERT,UPDATE ON portal.account_phones,identity.sms_challenges TO a
 GRANT SELECT,INSERT,UPDATE ON identity.staff_mfa TO audeniq_api;
 -- 패스키 (0104)
 GRANT SELECT,INSERT,UPDATE,DELETE ON identity.passkeys,identity.webauthn_challenges TO audeniq_api;
+-- Google·Apple 로그인 (0105)
+GRANT SELECT,INSERT,UPDATE,DELETE ON identity.oauth_identities,identity.oauth_states TO audeniq_api;
 -- 송금 실행 전 출금 취소 (0085): 상태 전이 하나만 하는 함수
 GRANT EXECUTE ON FUNCTION finance.cancel_unsent_payout(uuid, uuid) TO audeniq_api;
 GRANT USAGE ON SCHEMA finance TO audeniq_api;

@@ -37,6 +37,7 @@ pub enum Field {
     ContactPhone,
     TaxTin,
     StaffTotpSecret,
+    OAuthEmail,
 }
 impl Field {
     fn aad_prefix(self) -> &'static [u8] {
@@ -51,6 +52,7 @@ impl Field {
             Self::ContactPhone => b"audeniq:work.relationship_contacts:phone:",
             Self::TaxTin => b"audeniq:portal.tax_residencies:tin:",
             Self::StaffTotpSecret => b"audeniq:identity.staff_mfa:totp:",
+            Self::OAuthEmail => b"audeniq:identity.oauth_identities:email:",
         }
     }
 }
