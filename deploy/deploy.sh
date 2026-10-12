@@ -23,6 +23,15 @@ die() { echo "deploy: $*" >&2; exit 1; }
 current_image() { sed -n 's/^AUDENIQ_IMAGE=//p' "$ENV_FILE" | tail -n 1; }
 
 [ -f "$ENV_FILE" ] || die "$ENV_FILE 이 없어요 (production.env.example 참고, chmod 600)"
+# 시크릿 매니저(AWS/GCP/OCI)에서 tmpfs로 받은 비밀값: production.env 뒤에 읽어 같은 이름을 덮는다
+SECRETS_ENV_FILE=$(sed -n 's/^SECRETS_ENV_FILE=//p' "$ENV_FILE" | tail -n 1)
+if [ -n "$SECRETS_ENV_FILE" ]; then
+  [ -f "$SECRETS_ENV_FILE" ] && [ ! -L "$SECRETS_ENV_FILE" ] || die "시크릿을 먼저 tmpfs에 준비해 주세요 (audeniq-secrets secrets materialize): $SECRETS_ENV_FILE"
+  [ "$(stat -f -c %T "$SECRETS_ENV_FILE")" = tmpfs ] || die "SECRETS_ENV_FILE은 tmpfs에 있어야 해요"
+  [ "$(stat -c '%u %a' "$SECRETS_ENV_FILE")" = "$(id -u) 600" ] || die "SECRETS_ENV_FILE은 배포 사용자 소유 0600이어야 해요"
+  ! grep -q '^AUDENIQ_IMAGE=' "$SECRETS_ENV_FILE" || die "SECRETS_ENV_FILE에 AUDENIQ_IMAGE를 둘 수 없어요"
+  COMPOSE+=(--env-file "$SECRETS_ENV_FILE")
+fi
 [ -f compose.production.yaml ] || die "compose.production.yaml 이 없어요"
 [ -f pgbouncer/Dockerfile ] || die "pgbouncer/ 폴더가 없어요 (저장소의 deploy/pgbouncer를 함께 복사)"
 [ -f check-cpu.sh ] || die "check-cpu.sh 가 없어요 (저장소의 deploy/check-cpu.sh를 함께 복사)"
@@ -66,7 +75,7 @@ keydir=${keydir:-/dev/shm/audeniq-secrets}
 if [ "$kms_enabled" = true ]; then
   keyfile=$(sed -n 's/^PAYOUT_KEYRING_FILE=//p' "$ENV_FILE" | tail -n 1)
   [ "$keyfile" = /run/audeniq-keys/payout-keyring.json ] || die "PAYOUT_KEYRING_FILE=/run/audeniq-keys/payout-keyring.json 을 설정해 주세요"
-  [ -f "$keydir/payout-keyring.json" ] || die "KMS 키를 먼저 tmpfs에 준비해 주세요 (kms-keyring.py materialize)"
+  [ -f "$keydir/payout-keyring.json" ] || die "KMS 키를 먼저 tmpfs에 준비해 주세요 (audeniq-secrets kms materialize)"
   [ "$(stat -f -c %T "$keydir")" = tmpfs ] || die "키 폴더는 tmpfs여야 해요"
 else
   # 개인정보(이메일·실명·연락처·예금주)는 암호문으로만 저장한다(0102): 키 없이는 API가 기동하지 않는다.

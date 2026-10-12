@@ -157,7 +157,7 @@ jobs:
             test "$(docker image inspect --format '{{.Architecture}}' "$REF")" = << parameters.arch >>
             docker run --rm --entrypoint sh -e EXPECTED_ARCH=<< parameters.arch >> -e EXPECTED_CPU=<< parameters.cpu >> "$REF" -c '
               set -e
-              for b in audeniq-api audeniq-worker audeniq-migrate audeniq-admin audeniq-qc audeniq-photo sftp python3 xmllint clamd; do command -v "$b"; done
+              for b in audeniq-api audeniq-worker audeniq-migrate audeniq-admin audeniq-secrets audeniq-qc audeniq-photo sftp python3 xmllint clamd; do command -v "$b"; done
               for b in exiftool tesseract zbarimg pdftoppm; do if command -v "$b"; then echo "$b must not ship in the runtime image"; exit 1; fi; done
               if command -v ffmpeg; then echo "ffmpeg must not ship in the runtime image"; exit 1; fi
               test "$(cat /usr/local/share/audeniq/target-arch)" = "$EXPECTED_ARCH"
@@ -238,7 +238,7 @@ jobs:
           command: |
             path=${DEPLOY_PATH:-/opt/audeniq}
             ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$path'"
-            scp -i ~/.ssh/deploy_key deploy/compose.production.yaml deploy/bootstrap.sql deploy/grants.sql deploy/deploy.sh deploy/check-cpu.sh deploy/pg-upgrade.sh deploy/kms-keyring.py deploy/backup.sh deploy/restore-backup.sh \
+            scp -i ~/.ssh/deploy_key deploy/compose.production.yaml deploy/bootstrap.sql deploy/grants.sql deploy/deploy.sh deploy/check-cpu.sh deploy/pg-upgrade.sh deploy/backup.sh deploy/restore-backup.sh \
               "$DEPLOY_USER@$DEPLOY_HOST:$path/"
             scp -r -i ~/.ssh/deploy_key deploy/pgbouncer "$DEPLOY_USER@$DEPLOY_HOST:$path/"
       - run:
