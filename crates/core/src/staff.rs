@@ -96,17 +96,39 @@ pub struct Staff {
 /// endpoint set is not secret, the data is).
 pub async fn staff(s: &AppState, h: &HeaderMap, write: bool) -> Result<Staff> {
     let actor = auth::actor(&s.pool, h, &s.config, write).await?;
-    let role: Option<String> = sqlx::query_scalar(
-        "SELECT sm.role FROM identity.staff_members sm JOIN identity.users u ON u.id=sm.user_id
-         WHERE sm.user_id=$1 AND sm.status='ACTIVE' AND u.status='ACTIVE'",
+    // Role and session protection (idle timeout, second factor) in one read.
+    let row = sqlx::query(
+        "SELECT sm.role,
+                se.last_seen_at < now() - make_interval(mins => $3) AS idle,
+                extract(epoch FROM now() - se.last_seen_at)::float8 AS seen_seconds,
+                se.mfa_at IS NOT NULL AS mfa, m.enrolled_at IS NOT NULL AS enrolled
+           FROM identity.staff_members sm JOIN identity.users u ON u.id=sm.user_id
+           JOIN identity.sessions se ON se.token_hash=$2 AND se.user_id=sm.user_id
+           LEFT JOIN identity.staff_mfa m ON m.user_id=sm.user_id
+          WHERE sm.user_id=$1 AND sm.status='ACTIVE' AND u.status='ACTIVE'",
     )
     .bind(actor.user)
+    .bind(&actor.session_hash)
+    .bind(crate::staff_mfa::IDLE_MINUTES as i32)
     .fetch_optional(&s.pool)
-    .await?;
-    let role = role
+    .await?
+    .ok_or(Error::Forbidden)?;
+    let role = row
+        .get::<Option<String>, _>("role")
         .as_deref()
         .and_then(StaffRole::parse)
         .ok_or(Error::Forbidden)?;
+    crate::staff_mfa::check_session(
+        s,
+        &actor,
+        &crate::staff_mfa::Gate {
+            idle: row.get("idle"),
+            mfa: row.get("mfa"),
+            enrolled: row.get("enrolled"),
+            seen_seconds: row.get("seen_seconds"),
+        },
+    )
+    .await?;
     // Fail closed if the durable access record cannot be written. This includes
     // reads; the existing operations audit only records business mutations.
     let route = h
@@ -2645,6 +2667,19 @@ pub async fn payout_requests(s: &AppState, h: &HeaderMap, p: Page) -> Result<Val
 // Router
 // ---------------------------------------------------------------------------
 
+async fn h_mfa_status(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
+    Ok(Json(crate::staff_mfa::status(&s, &h).await?))
+}
+async fn h_mfa_enroll(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
+    Ok(Json(crate::staff_mfa::enroll(&s, &h).await?))
+}
+async fn h_mfa_verify(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Json(i): Json<crate::staff_mfa::VerifyInput>,
+) -> Result<Json<Value>> {
+    Ok(Json(crate::staff_mfa::verify(&s, &h, i).await?))
+}
 async fn h_me(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     Ok(Json(me(&s, &h).await?))
 }
@@ -2899,6 +2934,9 @@ async fn h_payouts(
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/staff/me", get(h_me))
+        .route("/api/staff/mfa", get(h_mfa_status))
+        .route("/api/staff/mfa/enroll", post(h_mfa_enroll))
+        .route("/api/staff/mfa/verify", post(h_mfa_verify))
         .route(
             "/api/staff/content-access",
             get(h_content_access).post(h_content_access),

@@ -7,6 +7,8 @@ import { ApiError } from './api/errors';
 import { MOCK } from './lib/mode';
 import { useConfirm } from './components/Confirm';
 import { useToast } from './components/Toast';
+import { MfaGate } from './components/MfaGate';
+import { MFA_CODES } from './api/mfa';
 import { staffApi, type Duty, type Overview, type StaffMe } from './api/staff';
 import { ROLE_LABEL } from './labels';
 import { SkeletonList, StaffContext } from './staffUi';
@@ -101,14 +103,16 @@ export function AdminApp() {
   const confirm = useConfirm();
   const { user, logout } = useAuth();
   const [me, setMe] = useState<StaffMe | null>(null);
-  const [gate, setGate] = useState<'loading' | 'ok' | 'forbidden' | 'error'>('loading');
+  const [gate, setGate] = useState<'loading' | 'ok' | 'forbidden' | 'mfa' | 'error'>('loading');
   const [counts, setCounts] = useState<Overview | null>(null);
 
   const loadMe = useCallback(() => {
     setGate('loading');
     staffApi.me()
       .then(m => { setMe(m); setGate('ok'); prefetchPages(); })
-      .catch(e => setGate(e instanceof ApiError && e.status === 403 ? 'forbidden' : 'error'));
+      .catch(e => setGate(
+        e instanceof ApiError && (MFA_CODES as readonly string[]).includes(e.code) ? 'mfa'
+          : e instanceof ApiError && e.status === 403 ? 'forbidden' : 'error'));
   }, []);
   useEffect(loadMe, [loadMe]);
 
@@ -144,6 +148,9 @@ export function AdminApp() {
 
   if (gate === 'loading') {
     return <div className="aq-boot" role="status" aria-label="관리자 화면을 불러오는 중"><img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="" /><span className="aq-boot-bar" /></div>;
+  }
+  if (gate === 'mfa') {
+    return <MfaGate email={user?.email} onDone={loadMe} onLogout={() => { void logout().then(() => nav('/login', { replace: true })); }} />;
   }
   if (gate === 'forbidden') {
     return (

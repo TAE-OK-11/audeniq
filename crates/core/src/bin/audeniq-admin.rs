@@ -39,6 +39,7 @@
 //!   (Merlin's own agreement: `partner contract merlin REF`)
 //! audeniq-admin staff list
 //! audeniq-admin staff grant EMAIL ADMIN|REVIEWER|OPERATOR|SUPPORT
+//! audeniq-admin staff reset-mfa EMAIL   (lost authenticator: re-enroll at next sign-in)
 //! audeniq-admin staff revoke EMAIL
 //!   (AUDENIQ employees for /api/staff; the API can only read this)
 //! audeniq-admin dsp list
@@ -53,7 +54,7 @@
 use audeniq_core::protected_admin as admin;
 use audeniq_core::protected_names::{Action, Mode};
 
-const USAGE: &str = "usage: audeniq-admin [--operator NAME] protected <list|add|remove|activate|alias|remove-alias|grant-exception|revoke-exception> ...\n       audeniq-admin [--operator NAME] identifier-issuer <list|register UPC|ISRC PREFIX>\n       audeniq-admin [--operator NAME] partner <list|config-check|status ID|set-dsp ID [DSP_UUID]|probe ID|dpid ID DPID|test-ern ID FILE|test-ack ID FILE|capabilities ID JSON|contract ID REF|go-live ID|suspend ID --reason TEXT|route D-n DIRECT|MERLIN|merlin-eligible D-n true|false>\n       audeniq-admin [--operator NAME] staff <list|grant EMAIL ROLE|revoke EMAIL>\n       audeniq-admin dsp list\n       audeniq-admin --operator STAFF_EMAIL payout <list [STATUS]|order REQUEST_ID|approve ORDER_ID|submit ORDER_ID BANK_TX|result ORDER_ID settled|failed|returned|unknown [BANK_TX]|cancel ORDER_ID>";
+const USAGE: &str = "usage: audeniq-admin [--operator NAME] protected <list|add|remove|activate|alias|remove-alias|grant-exception|revoke-exception> ...\n       audeniq-admin [--operator NAME] identifier-issuer <list|register UPC|ISRC PREFIX>\n       audeniq-admin [--operator NAME] partner <list|config-check|status ID|set-dsp ID [DSP_UUID]|probe ID|dpid ID DPID|test-ern ID FILE|test-ack ID FILE|capabilities ID JSON|contract ID REF|go-live ID|suspend ID --reason TEXT|route D-n DIRECT|MERLIN|merlin-eligible D-n true|false>\n       audeniq-admin [--operator NAME] staff <list|grant EMAIL ROLE|revoke EMAIL|reset-mfa EMAIL>\n       audeniq-admin dsp list\n       audeniq-admin --operator STAFF_EMAIL payout <list [STATUS]|order REQUEST_ID|approve ORDER_ID|submit ORDER_ID BANK_TX|result ORDER_ID settled|failed|returned|unknown [BANK_TX]|cancel ORDER_ID>";
 
 fn take_opt(args: &mut Vec<String>, key: &str) -> Option<String> {
     let i = args.iter().position(|a| a == key)?;
@@ -196,6 +197,18 @@ async fn main() -> anyhow::Result<()> {
                 } else {
                     staff_admin::revoke(&pool, &operator, email).await?;
                 }
+                println!("ok");
+            }
+            // Lost authenticator: the next sign-in enrolls a new one.
+            (Some("reset-mfa"), Some(email), None) => {
+                if operator.trim().is_empty() {
+                    anyhow::bail!("--operator NAME (or AUDENIQ_OPERATOR) is required for changes");
+                }
+                let keys = audeniq_core::pii::cli_keys()?;
+                let user = audeniq_core::pii::user_by_email(&keys, &pool, email)
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("no such account"))?;
+                audeniq_core::staff_mfa::reset(&pool, &operator, user).await?;
                 println!("ok");
             }
             _ => anyhow::bail!(USAGE),
