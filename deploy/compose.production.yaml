@@ -199,6 +199,7 @@ services:
       # 화면별 규칙·공지·점검 (crates/core/src/sites.rs, site_content.rs)
       ADMIN_ORIGIN: ${ADMIN_ORIGIN:-}
       PASSKEY_RP_ID: ${PASSKEY_RP_ID:-}
+      STAFF_MFA_REQUIRED: ${STAFF_MFA_REQUIRED:-false}
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
       APPLE_OAUTH_CLIENT_ID: ${APPLE_OAUTH_CLIENT_ID:-}
