@@ -36,6 +36,11 @@ pub trait ObjectStore: Send + Sync {
     ) -> Result<UploadGrant>;
     async fn head(&self, key: &str) -> Result<Option<ObjectMeta>>;
     async fn freeze(&self, source: &str, target: &str, etag: &str) -> Result<()>;
+    /// Whether [`ObjectStore::freeze`]'s copy carries the source ETag (false
+    /// on OCI, where the copy is matched on size, type and nonce instead).
+    fn copy_keeps_etag(&self) -> bool {
+        true
+    }
     /// Delete an object; a missing object is success. Used to drop the
     /// quarantine copy once an upload is completed or cancelled. The default
     /// is a no-op for stores without deletion (test doubles).
@@ -192,12 +197,127 @@ impl ObjectStore for DisabledStore {
     }
 }
 /// S3 SigV4 query signing uses HMAC-SHA256 from RustCrypto. No credentials are serialized.
+/// The S3-compatible service behind an endpoint. Uploads use the same S3
+/// calls everywhere (SigV4, path-style `/bucket/key`); these are the
+/// differences that matter (docs/STORAGE_PROVIDERS.md).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Provider {
+    /// Cloudflare R2: `<account>.r2.cloudflarestorage.com`, region `auto`.
+    R2,
+    /// AWS S3: `s3.<region>.amazonaws.com`.
+    Aws,
+    /// Oracle Cloud Object Storage (S3 Compatibility API):
+    /// `<namespace>.compat.objectstorage.<region>.oraclecloud.com` (or
+    /// `.oci.customer-oci.com`); signed with the OCI region id.
+    Oci,
+    /// MinIO and other S3-compatible stores.
+    Other,
+}
+
+impl Provider {
+    pub fn detect(host: &str) -> Self {
+        let host = host.to_ascii_lowercase();
+        if host.ends_with(".r2.cloudflarestorage.com") {
+            Self::R2
+        } else if host.ends_with(".amazonaws.com") {
+            Self::Aws
+        } else if host.contains(".compat.objectstorage.")
+            && (host.ends_with(".oraclecloud.com") || host.ends_with(".oci.customer-oci.com"))
+        {
+            Self::Oci
+        } else {
+            Self::Other
+        }
+    }
+
+    /// The signing region written in the endpoint host, if it has one.
+    fn host_region(self, host: &str) -> Option<String> {
+        let labels: Vec<&str> = host.split('.').collect();
+        let region = match self {
+            // <namespace>.compat.objectstorage.<region>.…
+            Self::Oci => labels
+                .iter()
+                .position(|l| *l == "objectstorage")
+                .and_then(|i| labels.get(i + 1)),
+            // s3.<region>.amazonaws.com, s3.dualstack.<region>.amazonaws.com
+            Self::Aws => {
+                let before = labels.len().checked_sub(2)?;
+                labels[..before]
+                    .iter()
+                    .rev()
+                    .find(|l| **l != "s3" && **l != "dualstack" && !l.starts_with("s3-"))
+            }
+            Self::R2 | Self::Other => None,
+        }?;
+        (!region.is_empty()
+            && region
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-'))
+        .then(|| region.to_string())
+    }
+
+    /// Whether a server-side copy keeps the source ETag. OCI gives every
+    /// object its own ETag, so a copy is matched on size, type and nonce
+    /// (and the content is checked in full afterwards anyway).
+    pub fn copy_keeps_etag(self) -> bool {
+        self != Self::Oci
+    }
+
+    /// Whether per-object S3 Object Lock headers are honoured. R2 and OCI
+    /// keep originals with bucket-level rules (R2 bucket lock, OCI
+    /// retention rules) instead; they would ignore the headers.
+    pub fn object_lock_headers(self) -> bool {
+        matches!(self, Self::Aws | Self::Other)
+    }
+}
+
+/// Signing region: an explicit `S3_REGION` (other than `auto`) wins and must
+/// match the host for OCI/AWS; otherwise taken from the host. R2 signs `auto`.
+fn resolve_region(provider: Provider, host: &str, region: &str) -> anyhow::Result<String> {
+    let region = region.trim();
+    let from_host = provider.host_region(host);
+    match provider {
+        Provider::R2 => Ok(if region.is_empty() {
+            "auto".into()
+        } else {
+            region.into()
+        }),
+        Provider::Oci | Provider::Aws => {
+            if region.is_empty() || region == "auto" {
+                if let Some(r) = from_host {
+                    return Ok(r);
+                }
+                // s3.amazonaws.com (no region in the host) signs us-east-1.
+                anyhow::ensure!(
+                    provider == Provider::Aws,
+                    "OCI endpoint must be https://<namespace>.compat.objectstorage.<region>.oraclecloud.com"
+                );
+                return Ok("us-east-1".into());
+            }
+            if let Some(r) = from_host {
+                anyhow::ensure!(
+                    r == region,
+                    "S3_REGION {region} does not match the endpoint region {r}"
+                );
+            }
+            Ok(region.into())
+        }
+        Provider::Other => Ok(if region.is_empty() {
+            "auto".into()
+        } else {
+            region.into()
+        }),
+    }
+}
+
 pub struct S3Store {
     endpoint: url::Url,
     bucket: String,
     access: String,
     secret: String,
     region: String,
+    provider: Provider,
     client: reqwest::Client,
     /// Object downloads can legitimately take minutes (512 MiB masters), so
     /// they use an idle (read) timeout instead of the 10 s total timeout.
@@ -297,12 +417,16 @@ impl S3Store {
                     .all(|b| b.is_ascii_alphanumeric() || b".-".contains(&b)),
             "invalid bucket"
         );
+        let host = endpoint.host_str().unwrap_or_default().to_string();
+        let provider = Provider::detect(&host);
+        let region = resolve_region(provider, &host, &region)?;
         Ok(Self {
             endpoint,
             bucket,
             access,
             secret,
             region,
+            provider,
             client: crate::external_http::client_builder(allow_http)
                 .no_gzip()
                 .no_brotli()
@@ -323,6 +447,197 @@ impl S3Store {
                 .build()?,
         })
     }
+    pub fn provider(&self) -> Provider {
+        self.provider
+    }
+    pub fn region(&self) -> &str {
+        &self.region
+    }
+
+    /// Tries the calls uploads depend on against the real bucket, the way a
+    /// browser and the API make them, and reports what the store enforces:
+    /// the signed PUT works and is single use (If-None-Match), metadata
+    /// comes back, the freeze copy works (and whether it is conditional and
+    /// keeps the ETag), and — with `origin` — the CORS preflight a browser
+    /// on that origin sends. Leaves nothing behind but `quarantine/` objects
+    /// the lifecycle rule removes.
+    pub async fn probe(&self, origin: Option<&str>) -> serde_json::Value {
+        use serde_json::json;
+        let id = uuid::Uuid::new_v4();
+        let key = format!("quarantine/probe/{id}");
+        let body = b"audeniq storage probe".to_vec();
+        let nonce = uuid::Uuid::new_v4().to_string();
+        let mime = "application/octet-stream";
+        let mut checks = serde_json::Map::new();
+        let mut problems: Vec<&str> = Vec::new();
+        let mut warnings: Vec<&str> = Vec::new();
+        let grant = match self
+            .presign_put(
+                &key,
+                body.len() as i64,
+                mime,
+                &nonce,
+                Utc::now() + chrono::Duration::minutes(5),
+            )
+            .await
+        {
+            Ok(g) => g,
+            Err(_) => {
+                return json!({"ok": false, "problems": ["PRESIGN_FAILED"]});
+            }
+        };
+        let put = |extra: Option<&str>| {
+            let mut req = self.client.put(&grant.url);
+            for (k, v) in &grant.headers {
+                // Browsers set Content-Length themselves; so does reqwest.
+                if k != "content-length" {
+                    req = req.header(k, v);
+                }
+            }
+            if let Some(o) = extra {
+                req = req.header("origin", o);
+            }
+            req.body(body.clone()).send()
+        };
+        let first = put(origin).await.map(|r| r.status().as_u16()).ok();
+        let put_ok = matches!(first, Some(200..=299));
+        checks.insert("signed_put".into(), json!(first));
+        if !put_ok {
+            problems.push("SIGNED_PUT_FAILED");
+        }
+        let second = put(None).await.map(|r| r.status().as_u16()).ok();
+        checks.insert("second_put".into(), json!(second));
+        if put_ok && second != Some(412) {
+            problems.push("SIGNED_PUT_NOT_SINGLE_USE");
+        }
+        let meta = self.head(&key).await.ok().flatten();
+        let meta_ok = meta.as_ref().is_some_and(|m| {
+            m.size == body.len() as i64 && m.content_type == mime && m.nonce == nonce
+        });
+        checks.insert("metadata".into(), json!(meta_ok));
+        if put_ok && !meta_ok {
+            problems.push("METADATA_NOT_RETURNED");
+        }
+        let mut cleanup = vec![key.clone()];
+        if let Some(meta) = meta.filter(|_| meta_ok) {
+            let wrong = format!("quarantine/probe/{id}-wrong-etag");
+            let conditional = self.freeze(&key, &wrong, "\"0000\"").await.is_err();
+            cleanup.push(wrong);
+            checks.insert("conditional_copy".into(), json!(conditional));
+            if !conditional {
+                warnings.push("COPY_IGNORES_IF_MATCH");
+            }
+            let frozen = format!("quarantine/probe/{id}-frozen");
+            let copied = self.freeze(&key, &frozen, &meta.etag).await.is_ok();
+            cleanup.push(frozen.clone());
+            checks.insert("copy".into(), json!(copied));
+            let copy = if copied {
+                self.head(&frozen).await.ok().flatten()
+            } else {
+                None
+            };
+            match copy {
+                None => problems.push("COPY_FAILED"),
+                Some(c) => {
+                    let keeps = c.etag == meta.etag;
+                    checks.insert("copy_keeps_etag".into(), json!(keeps));
+                    if c.size != meta.size || c.content_type != mime || c.nonce != nonce {
+                        problems.push("COPY_DROPS_METADATA");
+                    } else if self.provider.copy_keeps_etag() && !keeps {
+                        problems.push("COPY_CHANGES_ETAG");
+                    }
+                }
+            }
+        }
+        if let Some(origin) = origin {
+            let wanted = ["content-type", "if-none-match", "x-amz-meta-upload-nonce"];
+            let r = self
+                .client
+                .request(reqwest::Method::OPTIONS, &grant.url)
+                .header("origin", origin)
+                .header("access-control-request-method", "PUT")
+                .header("access-control-request-headers", wanted.join(","))
+                .send()
+                .await
+                .ok();
+            let header = |name: &str| {
+                r.as_ref()
+                    .and_then(|r| r.headers().get(name))
+                    .and_then(|v| v.to_str().ok())
+                    .map(|v| v.to_ascii_lowercase())
+                    .unwrap_or_default()
+            };
+            let allow_origin = header("access-control-allow-origin");
+            let methods = header("access-control-allow-methods");
+            let headers = header("access-control-allow-headers");
+            let ok = r.as_ref().is_some_and(|r| r.status().is_success())
+                && (allow_origin == origin.to_ascii_lowercase() || allow_origin == "*")
+                && (methods.is_empty() || methods.contains("put") || methods == "*")
+                && (headers == "*" || wanted.iter().all(|h| headers.contains(h)));
+            checks.insert(
+                "cors_preflight".into(),
+                json!({"ok": ok, "status": r.as_ref().map(|r| r.status().as_u16()),
+                       "allow_origin": allow_origin, "allow_methods": methods, "allow_headers": headers}),
+            );
+            if !ok {
+                problems.push("CORS_PREFLIGHT_REFUSED");
+            }
+        } else {
+            warnings.push("CORS_NOT_CHECKED");
+        }
+        for k in &cleanup {
+            let _ = self.delete(k).await;
+        }
+        json!({
+            "ok": problems.is_empty(),
+            "provider": self.provider, "region": self.region, "bucket": self.bucket,
+            "checks": checks, "problems": problems, "warnings": warnings,
+        })
+    }
+
+    /// The archive bucket: a checked write (Content-MD5, plus a one-day
+    /// Object Lock where the provider takes the headers) reads back intact,
+    /// and a delete is refused (bucket lock / retention rule / Object Lock).
+    /// The probe object stays for the rule's retention period: it is tiny.
+    pub async fn probe_archive(&self) -> serde_json::Value {
+        use serde_json::json;
+        let key = format!("probe/{}.txt", uuid::Uuid::new_v4());
+        let body = format!("audeniq archive probe {}", Utc::now().to_rfc3339());
+        let lock = (std::env::var("ARCHIVE_OBJECT_LOCK").as_deref() == Ok("true"))
+            .then(|| Utc::now() + chrono::Duration::days(1));
+        let mut problems: Vec<&str> = Vec::new();
+        let put = self
+            .put_archive(
+                &key,
+                ArchiveBody::Bytes(body.as_bytes()),
+                "text/plain",
+                lock,
+            )
+            .await
+            .is_ok();
+        if !put {
+            problems.push("ARCHIVE_PUT_FAILED");
+        }
+        let read_back = put && self.get(&key).await.is_ok_and(|b| b == body.as_bytes());
+        if put && !read_back {
+            problems.push("ARCHIVE_READ_BACK_FAILED");
+        }
+        // A WORM bucket refuses the delete, or keeps the object anyway.
+        let deleted = put && self.delete(&key).await.is_ok();
+        let still_there = put && self.get(&key).await.is_ok();
+        let worm = put && (!deleted || still_there);
+        if put && !worm {
+            problems.push("ARCHIVE_NOT_WORM");
+        }
+        json!({
+            "ok": problems.is_empty(),
+            "provider": self.provider, "region": self.region, "bucket": self.bucket,
+            "object_lock_headers": lock.is_some(),
+            "checks": {"put": put, "read_back": read_back, "delete_refused": put && !deleted, "kept_after_delete": still_there},
+            "problems": problems,
+        })
+    }
+
     fn signed(
         &self,
         method: &str,
@@ -398,6 +713,9 @@ impl S3Store {
 }
 #[async_trait]
 impl ObjectStore for S3Store {
+    fn copy_keeps_etag(&self) -> bool {
+        self.provider.copy_keeps_etag()
+    }
     async fn presign_put(
         &self,
         key: &str,
@@ -616,6 +934,10 @@ impl ObjectStore for S3Store {
             ("content-md5".into(), STANDARD.encode(&md5)),
         ]);
         if let Some(until) = retain_until {
+            // R2/OCI would silently ignore these: refuse instead of pretending.
+            if !self.provider.object_lock_headers() {
+                return Err(Error::PolicyGate("OBJECT_LOCK_UNSUPPORTED"));
+            }
             headers.insert("x-amz-object-lock-mode".into(), "COMPLIANCE".into());
             headers.insert(
                 "x-amz-object-lock-retain-until-date".into(),
@@ -756,14 +1078,43 @@ pub fn archive_store_from_env(
     else {
         return Ok(None);
     };
-    Ok(Some(std::sync::Arc::new(S3Store::new(
+    let store = archive_s3_from_env(bucket, allow_http)?;
+    anyhow::ensure!(
+        std::env::var("ARCHIVE_OBJECT_LOCK").as_deref() != Ok("true")
+            || store.provider().object_lock_headers(),
+        "ARCHIVE_OBJECT_LOCK=true needs AWS S3 Object Lock; {:?} keeps originals with bucket rules (R2 bucket lock, OCI retention rules) — set ARCHIVE_OBJECT_LOCK=false",
+        store.provider()
+    );
+    Ok(Some(std::sync::Arc::new(store)))
+}
+fn archive_s3_from_env(bucket: String, allow_http: bool) -> anyhow::Result<S3Store> {
+    S3Store::new(
         &std::env::var("ARCHIVE_S3_ENDPOINT")?,
         bucket,
         std::env::var("ARCHIVE_S3_ACCESS_KEY_ID")?,
         std::env::var("ARCHIVE_S3_SECRET_ACCESS_KEY")?,
         std::env::var("ARCHIVE_S3_REGION").unwrap_or_else(|_| "auto".into()),
         allow_http,
-    )?)))
+    )
+}
+/// The working bucket (`S3_*`) or, with `archive`, the archive bucket
+/// (`ARCHIVE_S3_*`), for `audeniq-admin storage probe`.
+pub fn s3_from_env(archive: bool, allow_http: bool) -> anyhow::Result<S3Store> {
+    if archive {
+        let bucket = std::env::var("ARCHIVE_S3_BUCKET")
+            .ok()
+            .filter(|b| !b.trim().is_empty())
+            .ok_or_else(|| anyhow::anyhow!("ARCHIVE_S3_BUCKET is not set"))?;
+        return archive_s3_from_env(bucket, allow_http);
+    }
+    S3Store::new(
+        &std::env::var("S3_ENDPOINT")?,
+        std::env::var("S3_BUCKET")?,
+        std::env::var("S3_ACCESS_KEY_ID")?,
+        std::env::var("S3_SECRET_ACCESS_KEY")?,
+        std::env::var("S3_REGION").unwrap_or_else(|_| "auto".into()),
+        allow_http,
+    )
 }
 /// Build the object store from the same env convention as the API binary.
 /// Returns an error when STORAGE_ENABLED=true but S3_* vars are missing/invalid.
@@ -940,6 +1291,77 @@ mod tests {
             s.digest("registered/a", 5).await,
             Err(Error::Storage)
         ));
+    }
+
+    #[test]
+    fn providers_sign_with_their_region() {
+        let store = |endpoint: &str, region: &str| {
+            S3Store::new(
+                endpoint,
+                "b".into(),
+                "a".into(),
+                "s".into(),
+                region.into(),
+                false,
+            )
+        };
+        let r2 = store("https://acct.r2.cloudflarestorage.com", "auto").unwrap();
+        assert_eq!((r2.provider(), r2.region()), (Provider::R2, "auto"));
+        let aws = store("https://s3.ap-northeast-2.amazonaws.com", "auto").unwrap();
+        assert_eq!(
+            (aws.provider(), aws.region()),
+            (Provider::Aws, "ap-northeast-2")
+        );
+        let global = store("https://s3.amazonaws.com", "").unwrap();
+        assert_eq!(global.region(), "us-east-1");
+        for host in [
+            "https://axaxnpcrorw5.compat.objectstorage.ap-chuncheon-1.oraclecloud.com",
+            "https://axaxnpcrorw5.compat.objectstorage.ap-chuncheon-1.oci.customer-oci.com",
+        ] {
+            let oci = store(host, "auto").unwrap();
+            assert_eq!(
+                (oci.provider(), oci.region()),
+                (Provider::Oci, "ap-chuncheon-1")
+            );
+            assert!(!oci.copy_keeps_etag());
+            assert!(!oci.provider().object_lock_headers());
+            // An explicit region must agree with the host (else every signature fails).
+            assert!(store(host, "ap-seoul-1").is_err());
+            assert_eq!(
+                store(host, "ap-chuncheon-1").unwrap().region(),
+                "ap-chuncheon-1"
+            );
+        }
+        // Signed URLs carry the OCI region in the credential scope.
+        let oci = store(
+            "https://ns.compat.objectstorage.ap-seoul-1.oraclecloud.com",
+            "",
+        )
+        .unwrap();
+        let url = oci
+            .signed("PUT", "quarantine/x", &BTreeMap::new(), Utc::now(), 60)
+            .unwrap();
+        assert!(url.starts_with(
+            "https://ns.compat.objectstorage.ap-seoul-1.oraclecloud.com/b/quarantine/x?"
+        ));
+        assert!(url.contains("%2Fap-seoul-1%2Fs3%2Faws4_request"));
+        assert!(Provider::detect("evil.oraclecloud.com.attacker.test") == Provider::Other);
+    }
+
+    #[tokio::test]
+    async fn object_lock_is_refused_where_it_would_be_ignored() {
+        for endpoint in [
+            "https://acct.r2.cloudflarestorage.com",
+            "https://ns.compat.objectstorage.ap-seoul-1.oraclecloud.com",
+        ] {
+            let s = test_store(endpoint);
+            let lock = Some(Utc::now() + chrono::Duration::days(1));
+            assert!(matches!(
+                s.put_archive("a/b", ArchiveBody::Bytes(b"x"), "text/plain", lock)
+                    .await,
+                Err(Error::PolicyGate("OBJECT_LOCK_UNSUPPORTED"))
+            ));
+        }
     }
 
     #[test]
