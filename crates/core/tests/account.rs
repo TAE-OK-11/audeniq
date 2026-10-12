@@ -189,6 +189,18 @@ async fn account_identity_and_tax(pool: PgPool) {
     assert_eq!(v["verified"]["adult"], true);
     let (_, a) = call(&app, "GET", "/api/me/account", Value::Null, Some(&u)).await;
     assert_eq!(a["real_name"], "홍길동");
+    let plain: (Option<String>, Option<chrono::NaiveDate>, bool) = sqlx::query_as(
+        "SELECT real_name, birth_date, real_name_cipher IS NOT NULL AND birth_date_cipher IS NOT NULL
+           FROM portal.account_identities LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        plain,
+        (None, None, true),
+        "real name and birth date stored sealed"
+    );
     assert_eq!(a["verified"]["provider"], "test");
     assert_eq!(
         a["identity_provider"],

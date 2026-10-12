@@ -459,10 +459,23 @@ pub fn maintenance_response(window: &Value) -> Result<Response> {
 /// manage content (and end the window); everything else is blocked.
 pub fn allowed_during_maintenance(method: &Method, path: &str) -> bool {
     match method {
-        Method::Get => matches!(path, "/api/me" | "/api/staff/me"),
+        Method::Get => matches!(
+            path,
+            "/api/me"
+                | "/api/staff/me"
+                | "/api/auth/oauth/providers"
+                | "/api/auth/oauth/google/callback"
+        ),
         Method::Post => matches!(
             path,
-            "/api/auth/login" | "/api/auth/logout" | "/api/auth/csrf"
+            "/api/auth/login"
+                | "/api/auth/logout"
+                | "/api/auth/csrf"
+                | "/api/auth/passkey/options"
+                | "/api/auth/passkey/login"
+                | "/api/auth/oauth/google/start"
+                | "/api/auth/oauth/apple/start"
+                | "/api/auth/oauth/apple/callback"
         ),
         _ => false,
     }

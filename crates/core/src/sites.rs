@@ -58,7 +58,13 @@ pub fn admin_path(method: &Method, path: &str) -> Result<(), StatusCode> {
     }
     let allowed = matches!(
         path,
-        "/api/auth/login" | "/api/auth/logout" | "/api/auth/csrf" | "/api/me" | "/api/staff"
+        "/api/auth/login"
+            | "/api/auth/passkey/options"
+            | "/api/auth/passkey/login"
+            | "/api/auth/logout"
+            | "/api/auth/csrf"
+            | "/api/me"
+            | "/api/staff"
     ) || path.starts_with("/api/staff/");
     if !allowed {
         return Err(StatusCode::NOT_FOUND);
@@ -134,6 +140,8 @@ mod tests {
     fn admin_console_paths_match_the_old_worker() {
         for (m, p) in [
             (Method::POST, "/api/auth/login"),
+            (Method::POST, "/api/auth/passkey/options"),
+            (Method::POST, "/api/auth/passkey/login"),
             (Method::GET, "/api/me"),
             (Method::GET, "/api/staff/releases"),
             (Method::POST, "/api/staff/releases/x/decision"),
@@ -149,6 +157,11 @@ mod tests {
         );
         assert_eq!(
             admin_path(&Method::POST, "/api/auth/register"),
+            Err(StatusCode::NOT_FOUND)
+        );
+        // Passkeys are added in the studio, not from the admin site.
+        assert_eq!(
+            admin_path(&Method::POST, "/api/auth/passkeys/register"),
             Err(StatusCode::NOT_FOUND)
         );
         assert_eq!(

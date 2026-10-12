@@ -30,6 +30,9 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
     // Partner webhooks (DSP ingestion ACKs) are server-to-server: no browser
     // Origin. The API authenticates them by the partner's HMAC signature.
     let partner_hook = is_partner_hook(&request.method(), &path);
+    // Apple sign-in returns with a cross-site form POST (no studio Origin);
+    // the API authenticates it by the one-time state and the code exchange.
+    let oauth_form_post = is_oauth_form_post(&request.method(), &path);
     // During maintenance the private API is not called (no writes while the
     // database is being worked on); session checks and sign-in stay open.
     if !content::allowed_during_maintenance(&request.method(), &path)
@@ -39,6 +42,7 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
     }
     if !matches!(request.method(), Method::Get | Method::Head)
         && !partner_hook
+        && !oauth_form_post
         && request.headers().get("origin")?.as_deref() != Some(&origin)
     {
         return Response::error("Forbidden origin", 403);
@@ -53,7 +57,11 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
                 .map(|q| format!("?{q}"))
                 .unwrap_or_default()
         ),
-        RequestInit::new().with_method(request.method()),
+        // Redirects (sign-in callbacks) go back to the browser with their
+        // Set-Cookie; the edge never follows them itself.
+        RequestInit::new()
+            .with_method(request.method())
+            .with_redirect(RequestRedirect::Manual),
     )?;
     // Allowlist, never propagate browser-provided service identity or user-id headers.
     // accept-encoding: the API compresses JSON (zstd > br > gzip) for what the
@@ -111,6 +119,7 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
             forwarded.url()?.as_ref(),
             RequestInit::new()
                 .with_method(request.method())
+                .with_redirect(RequestRedirect::Manual)
                 .with_headers(headers)
                 .with_body(Some(worker::wasm_bindgen::JsValue::from(
                     worker::js_sys::Uint8Array::from(body.as_slice()),
@@ -124,6 +133,10 @@ pub async fn main(mut request: Request, env: Env, _ctx: Context) -> Result<Respo
         }
         Err(_) => Response::error("Private API unavailable", 503),
     }
+}
+
+fn is_oauth_form_post(method: &Method, path: &str) -> bool {
+    *method == Method::Post && path == "/api/auth/oauth/apple/callback"
 }
 
 fn is_partner_hook(method: &Method, path: &str) -> bool {
@@ -278,6 +291,18 @@ mod tests {
         assert!(!is_partner_hook(&Method::Post, "/api/partner-hooks/"));
         assert!(!is_partner_hook(&Method::Post, "/api/partner-hooks/D-5/x"));
         assert!(!is_partner_hook(&Method::Post, "/api/orgs"));
+        assert!(is_oauth_form_post(
+            &Method::Post,
+            "/api/auth/oauth/apple/callback"
+        ));
+        assert!(!is_oauth_form_post(
+            &Method::Post,
+            "/api/auth/oauth/google/callback"
+        ));
+        assert!(!is_oauth_form_post(
+            &Method::Post,
+            "/api/auth/oauth/apple/start"
+        ));
         assert!(forward_partner_header("X-Signature"));
         assert!(forward_partner_header("x-hub-signature-256"));
         assert!(!forward_partner_header("x-audeniq-service"));

@@ -27,7 +27,9 @@ R2의 기본 서버 측 저장 암호화는 [공식 데이터 보안 문서](htt
 
 ## KMS 키 준비와 회전
 
-현재 기본값은 `PAYOUT_KMS_ENABLED=false`다. AWS/GCP/OCI 도구(`audeniq-secrets kms`)는 구현한 상태로 유지하며 배포가 클라우드 키 준비를 요구하거나 자동 호출하지 않는다. 로컬 AES 암호화는 유지한다. `PAYOUT_ACCOUNT_KEY`(64 hex) 또는 권한이 제한된 `PAYOUT_KEYRING_FILE`을 지정할 수 있고, 키가 없으면 API는 기동하되 계좌 저장/복호화를 거절한다. 계좌번호를 평문으로 저장하는 경로는 없다. 기존 계좌가 있으면 원래 키와 버전을 그대로 유지해야 한다.
+같은 키링으로 로그인 이메일, 실명, 연락처, 예금주도 봉인한다([개인정보 암호화](PII_ENCRYPTION.md)). 그래서 production API는 키 없이는 시작하지 않는다.
+
+현재 기본값은 `PAYOUT_KMS_ENABLED=false`다. AWS/GCP/OCI 도구(`audeniq-secrets kms`)는 구현한 상태로 유지하며 배포가 클라우드 키 준비를 요구하거나 자동 호출하지 않는다. 로컬 AES 암호화는 유지한다. `PAYOUT_ACCOUNT_KEY`(64 hex) 또는 권한이 제한된 `PAYOUT_KEYRING_FILE`을 지정할 수 있다. 개발 환경에서 키가 없으면 API는 기동하되 계좌·개인정보 저장/복호화를 거절한다. 계좌번호를 평문으로 저장하는 경로는 없다. 기존 계좌가 있으면 원래 키와 버전을 그대로 유지해야 한다.
 
 아래 KMS 준비를 완료한 뒤 `PAYOUT_KMS_ENABLED=true`, `PAYOUT_KEYRING_FILE=/run/audeniq-keys/payout-keyring.json`을 설정한다. 이 모드에서는 환경변수 단일 키로 대체하지 않으며 tmpfs·소유권·권한 검증을 다시 강제한다. 로컬 키를 환경변수로 운영할 경우 `production.env`와 호스트/컨테이너 관리 권한을 제한하고 키를 로그에 출력하지 않는다.
 
