@@ -97,6 +97,9 @@ pub fn parse_csv(content: &str) -> Result<Vec<ReportLine>> {
     Ok(lines)
 }
 
+/// Report lines written per INSERT statement during ingest.
+const LINE_BATCH: usize = 5_000;
+
 /// Ingest a royalty report. Returns the report id.
 ///
 /// Rejects duplicates by content hash (UNIQUE(org_id, source_hash)).
@@ -151,22 +154,40 @@ pub async fn ingest_report(
     .bind(currency)
     .execute(&mut *tx)
     .await?;
-    for l in &lines {
+    // Batched: a DSP report has tens of thousands of lines, and one INSERT
+    // per line was one database round trip each.
+    for chunk in lines.chunks(LINE_BATCH) {
+        let mut line_no = Vec::with_capacity(chunk.len());
+        let mut isrc = Vec::with_capacity(chunk.len());
+        let mut dsp_track_id = Vec::with_capacity(chunk.len());
+        let mut quantity = Vec::with_capacity(chunk.len());
+        let mut gross_amount = Vec::with_capacity(chunk.len());
+        let mut line_currency = Vec::with_capacity(chunk.len());
+        let mut raw = Vec::with_capacity(chunk.len());
+        for l in chunk {
+            line_no.push(l.line_no);
+            isrc.push(l.isrc.as_deref());
+            dsp_track_id.push(l.dsp_track_id.as_deref());
+            quantity.push(l.quantity);
+            gross_amount.push(l.gross_amount);
+            line_currency.push(l.currency.as_deref().unwrap_or(currency));
+            raw.push(&l.raw);
+        }
         sqlx::query(
             "INSERT INTO finance.report_lines
              (id, org_id, report_id, line_no, isrc, dsp_track_id, quantity, gross_amount, currency, raw)
-             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+             SELECT gen_random_uuid(), $1, $2, l.*
+               FROM unnest($3::int4[], $4::text[], $5::text[], $6::numeric[], $7::numeric[], $8::text[], $9::jsonb[]) AS l",
         )
-        .bind(Uuid::new_v4())
         .bind(org_id)
         .bind(report_id)
-        .bind(l.line_no)
-        .bind(&l.isrc)
-        .bind(&l.dsp_track_id)
-        .bind(l.quantity)
-        .bind(l.gross_amount)
-        .bind(l.currency.as_deref().unwrap_or(currency))
-        .bind(&l.raw)
+        .bind(&line_no)
+        .bind(&isrc)
+        .bind(&dsp_track_id)
+        .bind(&quantity)
+        .bind(&gross_amount)
+        .bind(&line_currency)
+        .bind(&raw)
         .execute(&mut *tx)
         .await?;
     }
@@ -189,7 +210,7 @@ pub async fn match_report(pool: &PgPool, org_id: Uuid, report_id: Uuid) -> Resul
     if exists.is_none() {
         return Err(Error::NotFound);
     }
-    let updated_rows: Vec<Uuid> = sqlx::query_scalar(
+    let by_isrc = sqlx::query(
         "UPDATE finance.report_lines rl SET
            match_status='AUTO',
            matched_release_id=t.release_id,
@@ -203,13 +224,13 @@ pub async fn match_report(pool: &PgPool, org_id: Uuid, report_id: Uuid) -> Resul
          WHERE rl.report_id=$1 AND rl.org_id=$2
            AND rl.match_status='UNMATCHED'
            AND rl.isrc IS NOT NULL
-           AND t.isrc=rl.isrc
-         RETURNING rl.id",
+           AND t.isrc=rl.isrc",
     )
     .bind(report_id)
     .bind(org_id)
-    .fetch_all(&mut *tx)
-    .await?;
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
     // A recording on both a single and an album is ambiguous by ISRC alone,
     // and splits are per release. DSP reports name the product too: a line
     // carrying a UPC matches the one release with that UPC and that ISRC.
@@ -220,7 +241,7 @@ pub async fn match_report(pool: &PgPool, org_id: Uuid, report_id: Uuid) -> Resul
         .bind(org_id.to_string())
         .execute(&mut *tx)
         .await?;
-    let by_product: Vec<Uuid> = sqlx::query_scalar(
+    let by_product = sqlx::query(
         "UPDATE finance.report_lines rl SET
            match_status='AUTO',
            matched_release_id=p.release_id,
@@ -234,14 +255,14 @@ pub async fn match_report(pool: &PgPool, org_id: Uuid, report_id: Uuid) -> Resul
          WHERE rl.report_id=$1 AND rl.org_id=$2
            AND rl.match_status='UNMATCHED'
            AND p.isrc=rl.isrc
-           AND p.upc=ltrim(btrim(rl.raw->>'upc'),'0')
-         RETURNING rl.id",
+           AND p.upc=ltrim(btrim(rl.raw->>'upc'),'0')",
     )
     .bind(report_id)
     .bind(org_id)
-    .fetch_all(&mut *tx)
-    .await?;
-    let updated = (updated_rows.len() + by_product.len()) as i64;
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    let updated = (by_isrc + by_product) as i64;
     let unmatched: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM finance.report_lines WHERE report_id=$1 AND match_status='UNMATCHED'",
     )
