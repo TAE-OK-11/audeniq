@@ -323,7 +323,7 @@ async fn ok(app: &Router, method: &str, path: &str, body: Value, u: &User) -> Va
 
 async fn user(app: &Router) -> User {
     let email = format!("{}@example.test", Uuid::new_v4());
-    let credentials = json!({"email":email,"password":"Long-test-password-123!"});
+    let credentials = json!({"email":email,"password":"Long-test-password-123!","terms_version":"AUD-TERMS 2026.10.1"});
     let (s, r, _) = call(app, "POST", "/api/auth/register", credentials.clone(), None).await;
     assert_eq!(s, StatusCode::OK, "{r}");
     let (s, l, cookie) = call(app, "POST", "/api/auth/login", credentials, None).await;
@@ -1387,7 +1387,7 @@ async fn stage3_correction_is_editable_and_resubmittable(pool: PgPool) {
 async fn login_lockout_is_per_source_not_per_account(pool: PgPool) {
     let e = env(pool).await;
     let email = format!("{}@example.test", Uuid::new_v4());
-    let good = json!({"email":email,"password":"Long-test-password-123!"});
+    let good = json!({"email":email,"password":"Long-test-password-123!","terms_version":"AUD-TERMS 2026.10.1"});
     let bad = json!({"email":email,"password":"Wrong-password-123456"});
     let (s, _, _) = call(&e.api, "POST", "/api/auth/register", good.clone(), None).await;
     assert_eq!(s, StatusCode::OK);

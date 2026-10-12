@@ -227,7 +227,7 @@ api·worker는 `pgbouncer:6432`(거래 단위 풀링)로 DB에 붙는다. 서버
 
 ### 서버 기본 설정 (한 번)
 
-- **키·DB 백업**: [백엔드 키 관리 절차](../docs/BACKEND_SECURITY_2026-10-03.md)의 KMS 준비·재암호화·age 공개키 설정을 먼저 완료한다. `backup.sh`는 공개 수신자 키가 없으면 거절하고, 평문 덤프를 파일에 쓰지 않는다. 암호화된 백업은 별도 저장소로 옮기고 복호화 개인키는 서버 밖에 둔다. `restore-backup.sh --verify`로 복원 검증한다. 기존 평문 덤프·환경변수의 계좌 키는 전환 검증 후 별도로 정리해야 한다.
+- **키·DB 백업**: [백엔드 키 관리 절차](../docs/BACKEND_SECURITY_2026-10-03.md)의 KMS 준비·재암호화·age 공개키 설정을 먼저 완료한다. `backup.sh`는 공개 수신자 키가 없으면 거절하고, 평문 덤프를 파일에 쓰지 않는다. 암호화된 백업은 별도 저장소로 옮기고 복호화 개인키는 서버 밖에 둔다. `restore-backup.sh --verify`로 복원 검증한다. 원본 문서 보관(WORM 버킷), 봉인 검증, 일일 앵커, PITR은 [원본 보관과 위·변조 방지](../docs/DOCUMENT_ARCHIVE.md)와 `archive.sh`로 설정한다. 기존 평문 덤프·환경변수의 계좌 키는 전환 검증 후 별도로 정리해야 한다.
 - **방화벽**: `ufw allow OpenSSH && ufw enable`. compose는 호스트 포트를 열지 않으므로 SSH만 열려 있으면 된다.
 - **SSH**: fail2ban으로 비밀번호 대입을 막고, 가능하면 키 로그인으로 바꾼 뒤 `PasswordAuthentication no`.
 - **서버 크기**: 기본값은 **1 vCPU / 1 GB**다. 이 서버에서는 스왑 파일 2 GB를 꼭 추가한다(큰 음원 QC 때 OOM 방지):

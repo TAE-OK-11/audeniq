@@ -224,7 +224,9 @@ async fn sign_in(
 ) -> Done {
     let body = match linking {
         Some(_) => json!({"mode": "link"}),
-        None => json!({"return_to": "/releases", "signup": signup}),
+        None => {
+            json!({"return_to": "/releases", "signup": signup, "terms_version": "AUD-TERMS 2026.10.1", "privacy_notice_version": "AUD-PRIVACY 1.0-draft"})
+        }
     };
     let (s, v) = send(
         app,

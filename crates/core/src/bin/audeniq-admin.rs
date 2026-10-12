@@ -130,6 +130,100 @@ async fn main() -> anyhow::Result<()> {
         println!("{}", serde_json::to_string(&result)?);
         return Ok(());
     }
+    // Document integrity and the original-document archive (docs/DOCUMENT_ARCHIVE.md).
+    if matches!(args.first().map(String::as_str), Some("seal" | "archive")) {
+        if operator.trim().is_empty() {
+            anyhow::bail!("--operator NAME is required");
+        }
+        let pool = audeniq_core::database::connect(&std::env::var("DATABASE_URL")?, 2).await?;
+        let keys = audeniq_core::pii::cli_keys()?;
+        let deep = take_flag(&mut args, "--deep");
+        let out = take_opt(&mut args, "--out");
+        let retain_days = take_opt(&mut args, "--retain-days")
+            .map(|v| v.parse::<i64>())
+            .transpose()?
+            .unwrap_or(0);
+        if args.first().map(String::as_str) == Some("seal") {
+            anyhow::ensure!(
+                args.get(1).map(String::as_str) == Some("verify"),
+                "usage: audeniq-admin --operator NAME seal verify"
+            );
+            let mut c = pool.acquire().await?;
+            let r = audeniq_core::seal::verify(&mut c, &keys).await?.json();
+            println!("{}", serde_json::to_string_pretty(&r)?);
+            if r["ok"] != true {
+                std::process::exit(2);
+            }
+            return Ok(());
+        }
+        let allow_http = std::env::var("ALLOW_HTTP_STORAGE").as_deref() == Ok("true");
+        let target =
+            audeniq_core::storage::archive_store_from_env(allow_http)?.ok_or_else(|| {
+                anyhow::anyhow!("ARCHIVE_S3_BUCKET is not set (docs/DOCUMENT_ARCHIVE.md)")
+            })?;
+        let result = match (args.get(1).map(String::as_str), args.get(2), args.get(3)) {
+            (Some("run"), period, None) => {
+                let source = audeniq_core::storage::store_from_env(allow_http)?;
+                let period = period.cloned().unwrap_or_else(|| {
+                    audeniq_core::archive::previous_month(chrono::Utc::now().date_naive())
+                });
+                audeniq_core::archive::run(
+                    &pool,
+                    source.as_ref(),
+                    target.as_ref(),
+                    &keys,
+                    &period,
+                    &operator,
+                )
+                .await?
+            }
+            (Some("anchor"), None, None) => {
+                audeniq_core::archive::anchor(&pool, target.as_ref(), &keys, &operator).await?
+            }
+            (Some("verify"), None, None) => {
+                let r = audeniq_core::archive::verify(&pool, target.as_ref(), &keys, deep).await?;
+                println!("{}", serde_json::to_string_pretty(&r)?);
+                if r["ok"] != true {
+                    std::process::exit(2);
+                }
+                return Ok(());
+            }
+            (Some("status"), None, None) => audeniq_core::archive::status(&pool).await?,
+            (Some("open"), Some(key), None) => {
+                let bytes =
+                    audeniq_core::archive::open(&pool, target.as_ref(), &keys, &operator, key)
+                        .await?;
+                match out {
+                    Some(path) => {
+                        std::fs::write(&path, &bytes)?;
+                        serde_json::json!({"written": path, "bytes": bytes.len()})
+                    }
+                    None => {
+                        use std::io::Write;
+                        std::io::stdout().write_all(&bytes)?;
+                        return Ok(());
+                    }
+                }
+            }
+            (Some("put-backup"), Some(file), Some(key)) => {
+                audeniq_core::archive::put_backup(
+                    target.as_ref(),
+                    std::path::Path::new(file),
+                    key,
+                    retain_days,
+                )
+                .await?
+            }
+            (Some("purge-expired"), None, None) => {
+                audeniq_core::archive::purge_expired(&pool, target.as_ref(), &operator).await?
+            }
+            _ => anyhow::bail!(
+                "usage: audeniq-admin --operator NAME archive <run [YYYY-MM]|anchor|verify [--deep]|status|open KEY [--out FILE]|put-backup FILE pitr/...|backups/... [--retain-days N]|purge-expired>\n       audeniq-admin --operator NAME seal verify"
+            ),
+        };
+        println!("{}", serde_json::to_string_pretty(&result)?);
+        return Ok(());
+    }
     if args.first().map(String::as_str) == Some("external-recording") {
         use audeniq_core::external_recordings;
         let pool = audeniq_core::database::connect(&std::env::var("DATABASE_URL")?, 2).await?;

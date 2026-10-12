@@ -19,6 +19,11 @@ pub struct UploadGrant {
     pub headers: BTreeMap<String, String>,
     pub expires_at: DateTime<Utc>,
 }
+/// What an archive write uploads: bytes in memory, or a file streamed from disk.
+pub enum ArchiveBody<'a> {
+    Bytes(&'a [u8]),
+    File(&'a std::path::Path),
+}
 #[async_trait]
 pub trait ObjectStore: Send + Sync {
     async fn presign_put(
@@ -46,6 +51,20 @@ pub trait ObjectStore: Send + Sync {
         _path: &std::path::Path,
         _mime: &str,
         _nonce: &str,
+    ) -> Result<()> {
+        Err(Error::Storage)
+    }
+    /// Write an archive object (original-document archive, integrity
+    /// anchors, database backups) with the server's credentials. With
+    /// `retain_until`, an S3 Object Lock bucket keeps it in COMPLIANCE mode
+    /// until then (nobody, the root account included, can delete or replace
+    /// it); R2 and other buckets enforce retention with bucket lock rules.
+    async fn put_archive(
+        &self,
+        _key: &str,
+        _body: ArchiveBody<'_>,
+        _mime: &str,
+        _retain_until: Option<DateTime<Utc>>,
     ) -> Result<()> {
         Err(Error::Storage)
     }
@@ -560,6 +579,73 @@ impl ObjectStore for S3Store {
         }
         Ok(())
     }
+    async fn put_archive(
+        &self,
+        key: &str,
+        body: ArchiveBody<'_>,
+        mime: &str,
+        retain_until: Option<DateTime<Utc>>,
+    ) -> Result<()> {
+        use base64::{Engine, engine::general_purpose::STANDARD};
+        use md5::Digest as _;
+        // Object Lock writes require Content-MD5; it also guards the transfer.
+        let (size, md5) = match &body {
+            ArchiveBody::Bytes(b) => (b.len() as u64, md5::Md5::digest(b).to_vec()),
+            ArchiveBody::File(path) => {
+                use tokio::io::AsyncReadExt;
+                let mut f = tokio::fs::File::open(path)
+                    .await
+                    .map_err(|_| Error::Internal)?;
+                let mut h = md5::Md5::new();
+                let mut buf = vec![0u8; 1 << 20];
+                let mut n = 0u64;
+                loop {
+                    let read = f.read(&mut buf).await.map_err(|_| Error::Internal)?;
+                    if read == 0 {
+                        break;
+                    }
+                    h.update(&buf[..read]);
+                    n += read as u64;
+                }
+                (n, h.finalize().to_vec())
+            }
+        };
+        let mut headers = BTreeMap::from([
+            ("content-length".into(), size.to_string()),
+            ("content-type".into(), mime.into()),
+            ("content-md5".into(), STANDARD.encode(&md5)),
+        ]);
+        if let Some(until) = retain_until {
+            headers.insert("x-amz-object-lock-mode".into(), "COMPLIANCE".into());
+            headers.insert(
+                "x-amz-object-lock-retain-until-date".into(),
+                until.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            );
+        }
+        let started = std::time::Instant::now();
+        let url = self.signed("PUT", key, &headers, Utc::now(), 3600)?;
+        let mut req = self.download_client.put(url);
+        for (k, v) in &headers {
+            req = req.header(k, v);
+        }
+        let body = match body {
+            ArchiveBody::Bytes(b) => reqwest::Body::from(b.to_vec()),
+            ArchiveBody::File(path) => reqwest::Body::from(
+                tokio::fs::File::open(path)
+                    .await
+                    .map_err(|_| Error::Internal)?,
+            ),
+        };
+        let r = req
+            .body(body)
+            .send()
+            .await
+            .map_err(|e| transport_error("put", started, &e))?;
+        if !r.status().is_success() {
+            return Err(status_error("put", started, r.status()));
+        }
+        Ok(())
+    }
     async fn get(&self, key: &str) -> Result<Vec<u8>> {
         let mut r = self.open_download(key, MAX_BUFFERED_BYTES).await?;
         let mut bytes = Vec::new();
@@ -657,6 +743,27 @@ impl S3Store {
         }
         Ok(r)
     }
+}
+/// The original-document archive bucket (S3 or R2): a separate bucket and
+/// separate credentials from the working store, ideally another provider or
+/// region, with object lock / bucket lock retention. `None` when not set up.
+pub fn archive_store_from_env(
+    allow_http: bool,
+) -> anyhow::Result<Option<std::sync::Arc<dyn ObjectStore>>> {
+    let Some(bucket) = std::env::var("ARCHIVE_S3_BUCKET")
+        .ok()
+        .filter(|b| !b.trim().is_empty())
+    else {
+        return Ok(None);
+    };
+    Ok(Some(std::sync::Arc::new(S3Store::new(
+        &std::env::var("ARCHIVE_S3_ENDPOINT")?,
+        bucket,
+        std::env::var("ARCHIVE_S3_ACCESS_KEY_ID")?,
+        std::env::var("ARCHIVE_S3_SECRET_ACCESS_KEY")?,
+        std::env::var("ARCHIVE_S3_REGION").unwrap_or_else(|_| "auto".into()),
+        allow_http,
+    )?)))
 }
 /// Build the object store from the same env convention as the API binary.
 /// Returns an error when STORAGE_ENABLED=true but S3_* vars are missing/invalid.

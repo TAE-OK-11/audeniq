@@ -197,7 +197,7 @@ pub async fn send(
 }
 pub async fn user(app: &Router) -> User {
     let email = format!("{}@example.test", Uuid::new_v4());
-    let credentials = json!({"email":email,"password":"Long-test-password-123!"});
+    let credentials = json!({"email":email,"password":"Long-test-password-123!","terms_version":"AUD-TERMS 2026.10.1"});
     let (s, r) = call(app, "POST", "/api/auth/register", credentials.clone(), None).await;
     assert_eq!(s, StatusCode::OK, "{r}");
     let req = Request::builder()
@@ -400,6 +400,29 @@ impl ObjectStore for MemStore {
     }
     async fn freeze(&self, _source: &str, _target: &str, _etag: &str) -> Result<()> {
         Err(Error::Storage)
+    }
+    async fn put_archive(
+        &self,
+        key: &str,
+        body: audeniq_core::storage::ArchiveBody<'_>,
+        mime: &str,
+        _retain_until: Option<DateTime<Utc>>,
+    ) -> Result<()> {
+        let bytes = match body {
+            audeniq_core::storage::ArchiveBody::Bytes(b) => b.to_vec(),
+            audeniq_core::storage::ArchiveBody::File(p) => {
+                std::fs::read(p).map_err(|_| Error::Internal)?
+            }
+        };
+        self.files
+            .lock()
+            .await
+            .insert(key.to_owned(), (bytes, mime.to_owned()));
+        Ok(())
+    }
+    async fn delete(&self, key: &str) -> Result<()> {
+        self.files.lock().await.remove(key);
+        Ok(())
     }
     async fn get(&self, key: &str) -> Result<Vec<u8>> {
         self.get_calls.fetch_add(1, Ordering::SeqCst);

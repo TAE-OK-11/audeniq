@@ -89,8 +89,13 @@ export function PrintStampHost() {
       </div>
     );
   }
+  // 유출 추적용 워터마크: 출력자와 원본 검증코드를 쪽 전체에 옅게 반복한다
+  const mark = s.unverified ? '검증되지 않은 출력물' : `${s.printed_by} · ${s.verification_code}`;
   return (
     <>
+      <div className="aq-print-watermark" aria-hidden="true">
+        {Array.from({ length: 24 }, (_, i) => <span key={i}>{mark}</span>)}
+      </div>
       <div className="aq-print-stamp is-head" aria-hidden="true">
         <span><b>AUDENIQ</b> · {s.title.replace(/^AUDENIQ\s*/, '')}</span>
         <span>문서 식별코드 <code>{s.document_code}</code></span>
