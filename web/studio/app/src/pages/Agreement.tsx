@@ -1,5 +1,6 @@
 // 배급 계약서 최종본 (/contracts/:id) — 서버가 만든 계약서 본문을 신청서와 같은 정식 서류로 보여 주고 인쇄·PDF로 저장한다.
 import { useEffect, useMemo, useState } from 'react';
+import { printWithStamp } from '../lib/printStamp';
 import { Link, useNavigate, useParams } from '../lib/router';
 import { useDocs, setDocs, docState } from '../store/docs';
 import { fetchDocuments } from '../api/portal';
@@ -98,7 +99,7 @@ export function Agreement() {
         <button type="button" className="ui-btn is-white is-sm aq-back-link" onClick={() => nav('/contracts')}><Glyph name="arrow-left" size={15} className="aq-glyph-lead" />계약서</button>
         <div className="row-actions">
           {doc.releaseId && <button type="button" className="ui-btn is-soft" onClick={() => nav(`/releases/${doc.releaseId}/application`)}>신청서 보기</button>}
-          <button type="button" className="ui-btn is-primary" onClick={() => window.print()}>인쇄 · PDF 저장</button>
+          <button type="button" className="ui-btn is-primary" onClick={() => void printWithStamp({ kind: 'DOCUMENT', ref: id, root: document.querySelector('.aq-paper') })}>인쇄 · PDF 저장</button>
         </div>
       </div>
 
