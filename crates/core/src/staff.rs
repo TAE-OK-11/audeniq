@@ -214,7 +214,7 @@ pub async fn overview(s: &AppState, h: &HeaderMap) -> Result<Value> {
            (SELECT count(*) FROM catalog.releases r WHERE r.archived_at IS NULL AND ",
         awaiting_decision!(),
         ") AS review,
-           (SELECT count(*) FROM catalog.releases WHERE status LIKE '%\\_CORRECTION' AND archived_at IS NULL) AS correction,
+           (SELECT count(*) FROM catalog.releases WHERE status IN ('STAGE1_CORRECTION','STAGE2_CORRECTION','STAGE3_CORRECTION') AND archived_at IS NULL) AS correction,
            (SELECT count(*) FROM catalog.releases WHERE status IN ('SUBMITTED','STAGE1_RUNNING','STAGE1_PASSED','STAGE2_RUNNING','STAGE2_PASSED','STAGE3_PREPARING')) AS in_pipeline,
            (SELECT count(*) FROM rights.staff_approvals a JOIN catalog.releases r ON r.id=a.release_id
               WHERE a.status='PENDING' AND a.expires_at>now() AND a.revision_id=r.current_revision_id
@@ -274,9 +274,13 @@ pub async fn list_releases(s: &AppState, h: &HeaderMap, p: Page) -> Result<Value
         return Err(Error::InvalidCode("STATUS_UNKNOWN"));
     }
     let (limit, offset) = p.bounds();
-    // `$1` is PENDING (awaiting a decision) or a release status.
-    const SQL: &str = concat!(
-        "SELECT jsonb_build_object(
+    // Two statements rather than `r.status=$1 OR ($1='PENDING' AND ...)`:
+    // a prepared statement's generic plan cannot use the status index
+    // through that OR and scanned every release (migration 0101).
+    macro_rules! list_sql {
+        ($filter:expr, $page:expr) => {
+            concat!(
+                "SELECT jsonb_build_object(
            'id', r.id, 'org_id', r.org_id, 'org_name', o.name, 'title', r.title,
            'release_type', r.release_type, 'status', r.status, 'revision_id', r.current_revision_id,
            'artist', ar.body #>> '{release,draft,artist}',
@@ -292,18 +296,23 @@ pub async fn list_releases(s: &AppState, h: &HeaderMap, p: Page) -> Result<Value
          FROM catalog.releases r
          JOIN identity.orgs o ON o.id=r.org_id
          LEFT JOIN catalog.application_revisions ar ON ar.org_id=r.org_id AND ar.id=r.current_revision_id
-         WHERE r.archived_at IS NULL AND (r.status=$1 OR ($1='PENDING' AND ",
-        awaiting_decision!(),
-        "))
+         WHERE r.archived_at IS NULL AND ",
+                $filter,
+                "
          ORDER BY ar.created_at NULLS LAST, r.id
-         LIMIT $2 OFFSET $3"
-    );
-    let items: Vec<Value> = sqlx::query_scalar(SQL)
-        .bind(status)
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(&s.pool)
-        .await?;
+         ",
+                $page
+            )
+        };
+    }
+    const PENDING_SQL: &str = list_sql!(awaiting_decision!(), "LIMIT $1 OFFSET $2");
+    const STATUS_SQL: &str = list_sql!("r.status=$1", "LIMIT $2 OFFSET $3");
+    let query = if status == PENDING_FILTER {
+        sqlx::query_scalar(PENDING_SQL)
+    } else {
+        sqlx::query_scalar(STATUS_SQL).bind(status)
+    };
+    let items: Vec<Value> = query.bind(limit).bind(offset).fetch_all(&s.pool).await?;
     let items: Vec<Value> = items
         .into_iter()
         .map(|mut v| {
