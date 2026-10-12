@@ -227,6 +227,12 @@ async fn rate_auth(
     }
     rate(pool, &format!("{action}:acct:{email}"), per_account).await
 }
+/// Register: a new password must also pass the weak-password rules.
+fn new_credentials(c: &Credentials) -> Result<String> {
+    let email = credentials(c)?;
+    crate::password_policy::check(&c.password, &email)?;
+    Ok(email)
+}
 fn credentials(c: &Credentials) -> Result<String> {
     let email = c.email.trim().to_lowercase();
     if email.len() > 254
@@ -239,8 +245,17 @@ fn credentials(c: &Credentials) -> Result<String> {
     }
     Ok(email)
 }
+/// Argon2id with the OWASP / RFC 9106 low-memory profile: 19 MiB, 2 passes,
+/// 1 lane (~20 ms on one core). Pinned here so a library default change
+/// cannot silently alter stored hashes; verification reads the parameters
+/// from each stored hash, so older hashes keep verifying. Concurrency is
+/// bounded by `password_slots` to keep memory and CPU predictable.
+fn argon2() -> Argon2<'static> {
+    let params = argon2::Params::new(19 * 1024, 2, 1, None).expect("valid Argon2 params");
+    Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params)
+}
 pub(crate) fn hash_password(password: String) -> Result<String> {
-    Argon2::default()
+    argon2()
         // Random 16-byte salt from the OS RNG (password-hash 0.6 default).
         .hash_password(password.as_bytes())
         .map(|h| h.to_string())
@@ -252,11 +267,7 @@ pub async fn password_hash(password: String) -> Result<String> {
         .map_err(|_| Error::Internal)?
 }
 fn verify_password(password: &str, hash: &str) -> bool {
-    PasswordHash::new(hash).is_ok_and(|h| {
-        Argon2::default()
-            .verify_password(password.as_bytes(), &h)
-            .is_ok()
-    })
+    PasswordHash::new(hash).is_ok_and(|h| argon2().verify_password(password.as_bytes(), &h).is_ok())
 }
 #[cfg(test)]
 async fn verify(password: String, hash: String) -> bool {
@@ -266,7 +277,7 @@ async fn verify(password: String, hash: String) -> bool {
 }
 pub async fn register(s: &AppState, h: &HeaderMap, input: Credentials) -> Result<Json<Value>> {
     origin(h, &s.config)?;
-    let email = credentials(&input)?;
+    let email = new_credentials(&input)?;
     rate_auth(
         &s.pool,
         h,
@@ -616,6 +627,8 @@ pub async fn change_password(
         return Err(Error::Invalid);
     }
     rate(&s.pool, &format!("password:{}", a.user), 5).await?;
+    let email = crate::pii::user_email(&s.payout_keys, &s.pool, a.user).await?;
+    crate::password_policy::check(&i.new_password, &email)?;
     let permit = s
         .password_slots
         .clone()

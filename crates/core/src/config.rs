@@ -20,6 +20,14 @@ pub fn kms_enabled() -> crate::error::Result<bool> {
 pub fn antivirus_enabled() -> crate::error::Result<bool> {
     read_feature("UPLOAD_AV_ENABLED")
 }
+/// Staff second factor (TOTP). On by default in production; `STAFF_MFA_REQUIRED`
+/// overrides (true/false).
+pub fn staff_mfa_required() -> crate::error::Result<bool> {
+    match env::var("STAFF_MFA_REQUIRED") {
+        Err(env::VarError::NotPresent) => Ok(env::var("APP_ENV").as_deref() == Ok("production")),
+        _ => read_feature("STAFF_MFA_REQUIRED"),
+    }
+}
 #[derive(Clone)]
 pub struct Config {
     pub database_url: String,
@@ -36,6 +44,7 @@ impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
         kms_enabled()?;
         antivirus_enabled()?;
+        staff_mfa_required()?;
         let mode = env::var("APP_ENV").unwrap_or_else(|_| "development".into());
         anyhow::ensure!(
             matches!(mode.as_str(), "development" | "test" | "production"),

@@ -341,14 +341,16 @@ pub async fn complete_reset(s: &AppState, h: &HeaderMap, i: ResetComplete) -> Re
     let token_hash = auth::hash_token(&i.reset_token);
     // 토큰을 먼저 확인해 없는 토큰에 비밀번호 해시(무거운 작업)를 쓰지 않는다.
     let live: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM identity.sms_challenges WHERE reset_token_hash=$1 AND consumed_at IS NULL AND reset_expires_at>now()",
+        "SELECT user_id FROM identity.sms_challenges WHERE reset_token_hash=$1 AND consumed_at IS NULL AND reset_expires_at>now()",
     )
     .bind(&token_hash)
     .fetch_optional(&s.pool)
     .await?;
-    if live.is_none() {
+    let Some(user) = live else {
         return Err(Error::InvalidCode("RESET_TOKEN_INVALID"));
-    }
+    };
+    let email = crate::pii::user_email(&s.payout_keys, &s.pool, user).await?;
+    crate::password_policy::check(&i.new_password, &email)?;
     let permit = s
         .password_slots
         .clone()

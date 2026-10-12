@@ -79,6 +79,7 @@ const CODE_MESSAGES: Record<string, string> = {
   NOTE_ANCHOR_INVALID: '댓글 위치 정보가 올바르지 않아요.',
   EMBED_VIEW_UNKNOWN: '지원하지 않는 블록 보기예요.',
   TOO_MANY_EMBEDS: '한 번에 불러올 블록이 너무 많아요.',
+  PASSWORD_TOO_WEAK: '너무 흔하거나 추측하기 쉬운 비밀번호예요. 흔한 단어·연속된 글자·반복·이메일 아이디가 들어가지 않게 다른 비밀번호를 정해 주세요.',
   INVARIANT_CONFLICT: '다른 곳에서 먼저 수정됐어요. 새로고침한 뒤 다시 시도해 주세요.',
   INVALID_INPUT: '입력값을 확인해 주세요. 빠진 항목이나 형식이 맞지 않는 값이 있어요.',
   RELEASE_BUSY: '지금 자동 검사가 진행 중이에요. 잠시 후 다시 취소해 주세요.',
