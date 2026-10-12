@@ -20,6 +20,7 @@ import './styles/desktop.css';
 import './styles/wizard-motion.css';
 import './styles/design-align.css';
 import { SelectHost } from './components/Picker';
+import { PrintStampHost } from './lib/printStamp';
 
 // 배포 직후 옛 청크가 사라져 동적 import가 실패하면 한 번만 새로고침해 새 버전을 받는다
 function lazyPage<M>(load: () => Promise<M>, pick: (m: M) => ComponentType) {
@@ -42,6 +43,7 @@ const Signup = lazyPage(pageLoaders.Signup, m => m.Signup);
 const FindAccount = lazyPage(pageLoaders.FindAccount, m => m.FindAccount);
 const Sign = lazyPage(pageLoaders.Sign, m => m.Sign);
 const Terms = lazyPage(pageLoaders.Terms, m => m.Terms);
+const Verify = lazyPage(pageLoaders.Verify, m => m.Verify);
 const SettlementTerms = lazyPage(pageLoaders.Terms, m => m.SettlementTerms);
 const PrivacyPolicy = lazyPage(pageLoaders.Terms, m => m.PrivacyPolicy);
 const Dashboard = lazyPage(pageLoaders.Dashboard, m => m.Dashboard);
@@ -140,6 +142,7 @@ export function App() {
         <ToastProvider>
           <ConfirmProvider>
             <SelectHost />
+            <PrintStampHost />
             <ErrorBoundary fullPage>
               <SystemStatus>
                 <Suspense fallback={<BootScreen />}>
@@ -152,6 +155,8 @@ export function App() {
                     <Route path="/terms" element={<Terms />} />
                     <Route path="/terms/settlement" element={<SettlementTerms />} />
                     <Route path="/privacy" element={<PrivacyPolicy />} />
+                    {/* 출력물 진위 확인 — 로그인 없이 원본 검증코드로 */}
+                    <Route path="/verify" element={<Verify />} />
                     <Route path="/terms/privacy" element={<Navigate to="/privacy" replace />} />
                     <Route path="/content-admin" element={<Navigate to="/admin/content" replace />} />
                     {/* 스태프 관리자 — 같은 로그인 세션 + 서버의 스태프 역할(/api/staff/me)로 접근 */}
