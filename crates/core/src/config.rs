@@ -20,13 +20,11 @@ pub fn kms_enabled() -> crate::error::Result<bool> {
 pub fn antivirus_enabled() -> crate::error::Result<bool> {
     read_feature("UPLOAD_AV_ENABLED")
 }
-/// Staff second factor (TOTP). On by default in production; `STAFF_MFA_REQUIRED`
-/// overrides (true/false).
+/// Staff second factor (TOTP). Off unless `STAFF_MFA_REQUIRED=true`: optional
+/// while in development; turn it on before going live (개인정보의 안전성
+/// 확보조치 기준 제6조). Passkey sign-ins count as a second factor either way.
 pub fn staff_mfa_required() -> crate::error::Result<bool> {
-    match env::var("STAFF_MFA_REQUIRED") {
-        Err(env::VarError::NotPresent) => Ok(env::var("APP_ENV").as_deref() == Ok("production")),
-        _ => read_feature("STAFF_MFA_REQUIRED"),
-    }
+    read_feature("STAFF_MFA_REQUIRED")
 }
 #[derive(Clone)]
 pub struct Config {
