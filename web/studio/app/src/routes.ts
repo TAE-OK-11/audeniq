@@ -51,6 +51,7 @@ const ROUTE_PAGES: [RegExp, PageName[]][] = [
   [/^\/admin/, ['Admin']],
   [/^\/sign\//, ['Sign']],
   [/^\/terms/, ['Terms']],
+  [/^\/privacy\/?$/, ['Terms']],
 ];
 
 const requested = new Set<PageName>();
@@ -86,3 +87,4 @@ export function prefetchInitialRoute() {
     prefetchRoute(path);
   }
 }
+
