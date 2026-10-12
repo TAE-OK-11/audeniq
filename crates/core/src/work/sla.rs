@@ -425,10 +425,17 @@ const RAISE: &[(&str, &str)] = &[("LOW", "NORMAL"), ("NORMAL", "HIGH"), ("HIGH",
 /// another full SLA window (escalated to the policy's role). Idempotent and
 /// cheap when nothing is late; runs from staff reads (inbox, summary, SLA
 /// board), so nothing depends on a scheduler.
+///
+/// The deadline is `LEAST(due_at, sla_due_at)`: LEAST skips NULLs, so it is
+/// the earlier of the two set deadlines (NULL when neither is), and it is the
+/// expression of the `tasks_sla_due` index, so these reads are index range
+/// scans instead of a pass over every open task.
 pub async fn sweep(pool: &sqlx::PgPool) -> Result<()> {
     let due: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM work.tasks WHERE archived_at IS NULL AND status NOT IN ('DONE','CANCELLED')
-           AND escalation_level < 2 AND LEAST(COALESCE(due_at,'infinity'), COALESCE(sla_due_at,'infinity')) <= now())",
+        // min() reads the low end of the index; an EXISTS here was planned
+        // as a sequential scan and read every task when nothing was late.
+        "SELECT COALESCE(min(LEAST(due_at, sla_due_at)) <= now(), false) FROM work.tasks
+          WHERE archived_at IS NULL AND status NOT IN ('DONE','CANCELLED') AND escalation_level < 2",
     )
     .fetch_one(pool)
     .await?;
@@ -439,10 +446,10 @@ pub async fn sweep(pool: &sqlx::PgPool) -> Result<()> {
     let book = Book::load(&mut tx).await?;
     let rows = sqlx::query(
         "SELECT id, work_type, priority, escalation_level, created_at,
-                LEAST(COALESCE(due_at,'infinity'), COALESCE(sla_due_at,'infinity')) AS deadline
+                LEAST(due_at, sla_due_at) AS deadline
            FROM work.tasks
           WHERE archived_at IS NULL AND status NOT IN ('DONE','CANCELLED') AND escalation_level < 2
-            AND LEAST(COALESCE(due_at,'infinity'), COALESCE(sla_due_at,'infinity')) <= now()
+            AND LEAST(due_at, sla_due_at) <= now()
           ORDER BY 6 LIMIT 500
           FOR UPDATE SKIP LOCKED",
     )
@@ -524,8 +531,8 @@ pub async fn overview(s: &AppState, h: &HeaderMap) -> Result<Value> {
         "SELECT t.id, t.seq, t.title, t.work_type, t.priority, t.assignee_id, t.due_at, t.sla_due_at, t.created_at,
                 t.escalation_level
            FROM work.tasks t
-          WHERE t.archived_at IS NULL AND t.status NOT IN ('DONE','CANCELLED') AND (t.due_at IS NOT NULL OR t.sla_due_at IS NOT NULL)
-          ORDER BY LEAST(COALESCE(t.due_at,'infinity'), COALESCE(t.sla_due_at,'infinity')) LIMIT 300",
+          WHERE t.archived_at IS NULL AND t.status NOT IN ('DONE','CANCELLED') AND LEAST(t.due_at, t.sla_due_at) IS NOT NULL
+          ORDER BY LEAST(t.due_at, t.sla_due_at) LIMIT 300",
     )
     .fetch_all(&mut *c)
     .await?;

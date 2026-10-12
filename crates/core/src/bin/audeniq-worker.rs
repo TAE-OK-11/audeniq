@@ -322,8 +322,12 @@ async fn main() -> anyhow::Result<()> {
                         continue;
                     }
                 };
+                // One EXISTS per status so each reads its partial queue index
+                // (jobs_ready_claim / jobs_expired_lease), not the whole
+                // job history.
                 let pending: bool = sqlx::query_scalar(
-                    "SELECT EXISTS(SELECT 1 FROM operations.jobs WHERE queue='delivery' AND kind='delivery.reconcile' AND status IN ('QUEUED','RUNNING'))",
+                    "SELECT EXISTS(SELECT 1 FROM operations.jobs WHERE queue='delivery' AND status='QUEUED' AND kind='delivery.reconcile')
+                         OR EXISTS(SELECT 1 FROM operations.jobs WHERE queue='delivery' AND status='RUNNING' AND kind='delivery.reconcile')",
                 )
                 .fetch_one(&mut *tx)
                 .await
