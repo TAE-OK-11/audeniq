@@ -297,6 +297,7 @@ export function Layout({ children }: { children: ReactNode }) {
             <div className="aq-nav-legal">
               <button type="button" onClick={() => go('/terms')}>이용약관</button>
               <button type="button" onClick={() => go('/terms/settlement')}>정산 약관</button>
+              <button type="button" onClick={() => go('/privacy')}>개인정보 처리방침</button>
             </div>
             <button type="button" className="aq-logout" onClick={doLogout}>로그아웃</button>
           </div>
@@ -311,3 +312,4 @@ export function Layout({ children }: { children: ReactNode }) {
     </>
   );
 }
+
