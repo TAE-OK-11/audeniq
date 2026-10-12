@@ -1017,8 +1017,12 @@ async fn upload_completion_survives_capacity_waits(pool: PgPool) {
     .await
     .unwrap();
     st.antivirus_enabled = audeniq_core::config::antivirus_enabled().unwrap();
+    // Every completion slot is taken (another file is downloading or
+    // storing): answered UPLOAD_BUSY at once, before the rate limit.
     let slots = Arc::new(tokio::sync::Semaphore::new(1));
-    st.transcode_slots = slots.clone();
+    st.upload_slots = slots.clone();
+    let convert = Arc::new(tokio::sync::Semaphore::new(1));
+    st.transcode_slots = convert.clone();
     let app = router(st);
     let a = user(&app).await;
     let bytes = m4a_bytes(&["-c:a", "alac"]);
@@ -1047,7 +1051,7 @@ async fn upload_completion_survives_capacity_waits(pool: PgPool) {
     let id = up["upload_session_id"].as_str().unwrap();
     let path = format!("/api/orgs/{}/uploads/{id}/complete", a.org);
     let body = json!({"asset_id":up["asset_id"],"expected_key":up["expected_key"]});
-    // Another file holds the only processing slot: more retries than the
+    // Another file holds the only completion slot: more retries than the
     // 60/15-minute quota, all refused for capacity.
     let held = slots.clone().acquire_owned().await.unwrap();
     for _ in 0..70 {
@@ -1064,7 +1068,15 @@ async fn upload_completion_survives_capacity_waits(pool: PgPool) {
     .await
     .unwrap();
     drop(held);
+    // Another file is converting: this completion waits in line for the
+    // conversion slot (no UPLOAD_BUSY round trip) and finishes once it frees.
+    let converting = convert.clone().acquire_owned().await.unwrap();
+    let release = tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        drop(converting);
+    });
     let (s, _, v) = call(&app, "POST", &path, body, Some(&a)).await;
+    release.await.unwrap();
     assert_eq!(s, StatusCode::OK, "{v}");
     assert_eq!(v["detected_container"], "FLAC");
     let used: i32 =
