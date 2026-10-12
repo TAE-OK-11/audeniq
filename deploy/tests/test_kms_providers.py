@@ -16,6 +16,8 @@ kms = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(kms)
 ARN = 'arn:aws:kms:ap-northeast-1:123456789012:key/12345678-1234-1234-1234-123456789abc'
 GCP = 'projects/audeniq-prod/locations/asia-northeast3/keyRings/backend/cryptoKeys/payout'
+OCI_OCID = 'ocid1.key.oc1.ap-seoul-1.bbqexamplevault.abuwcljrexamplekey0123456789'
+OCI = 'bbqexamplevault-crypto.kms.ap-seoul-1.oraclecloud.com/' + OCI_OCID
 
 
 class FakeCloud:
@@ -56,13 +58,29 @@ class FakeCloud:
                 'verifiedPlaintextCrc32c': True, 'verifiedAdditionalAuthenticatedDataCrc32c': True}
 
 
+    def oci(self, operation, key_id, request, scratch):
+        kms.oci_key(key_id)
+        self.calls.append(('oci', operation, dict(request)))
+        aad = request['associatedData']
+        if operation == 'decrypt':
+            data, original = self.records[('oci', key_id, request['ciphertext'])]
+            if aad != original:
+                raise ValueError('wrong associated data')
+            return {'key_id': OCI_OCID, 'plaintext': base64.b64encode(data).decode()}
+        data = b'O' * 32 if operation == 'generate-data-encryption-key' else base64.b64decode(request['plaintext'])
+        ciphertext = base64.b64encode(b'oci-' + bytes([len(self.records)])).decode()
+        self.records[('oci', key_id, ciphertext)] = data, aad
+        return {'key_id': OCI_OCID, 'ciphertext': ciphertext, 'plaintext': None}
+
+
 class ProviderTests(unittest.TestCase):
     def setUp(self):
         self.cloud = FakeCloud()
         self.aws = patch.object(kms, 'aws_kms', side_effect=self.cloud.aws)
         self.gcp = patch.object(kms, 'gcp_request', side_effect=self.cloud.gcp)
-        self.aws.start(); self.gcp.start()
-        self.addCleanup(self.aws.stop); self.addCleanup(self.gcp.stop)
+        self.oci = patch.object(kms, 'oci_kms', side_effect=self.cloud.oci)
+        self.aws.start(); self.gcp.start(); self.oci.start()
+        self.addCleanup(self.aws.stop); self.addCleanup(self.gcp.stop); self.addCleanup(self.oci.stop)
 
     def legacy(self):
         key = kms.wrap_key('aws', ARN, 1, b'L' * 32, '/dev/shm')
@@ -97,7 +115,7 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(json.dumps(source), original)
 
     def test_key_version_aad_mismatch_refuses_decryption(self):
-        for provider, key_id in [('aws', ARN), ('gcp', GCP)]:
+        for provider, key_id in [('aws', ARN), ('gcp', GCP), ('oci', OCI)]:
             with self.subTest(provider=provider):
                 key = kms.wrap_key(provider, key_id, 1, b'K' * 32, '/dev/shm')
                 with self.assertRaises(ValueError):
@@ -109,6 +127,26 @@ class ProviderTests(unittest.TestCase):
         provider, operation, request = self.cloud.calls[-1]
         self.assertEqual(operation, 'generate-data-key-without-plaintext')
         self.assertNotIn('Plaintext', request)
+
+    def test_oci_generation_never_requests_plaintext_and_rewraps_both_ways(self):
+        key = kms.generate_key('oci', OCI, 1, '/dev/shm')
+        self.assertEqual((key['provider'], key['key_id']), ('oci', OCI))
+        provider, operation, request = self.cloud.calls[-1]
+        self.assertEqual((provider, operation), ('oci', 'generate-data-encryption-key'))
+        self.assertIs(request['includePlaintextKey'], False)
+        self.assertEqual(request['keyShape'], {'algorithm': 'AES', 'length': 32})
+        self.assertEqual(request['associatedData'], kms.context(1))
+        bundle = {'version': 2, 'active_version': 1, 'keys': {'1': key}}
+        aws = kms.rewrap_bundle(bundle, 'aws', ARN, '/dev/shm')
+        self.assertEqual(kms.unwrap_key(aws['keys']['1'], 1, '/dev/shm'), b'O' * 32)
+        back = kms.rewrap_bundle(self.legacy(), 'oci', OCI, '/dev/shm')
+        self.assertEqual(back['keys']['1']['provider'], 'oci')
+        self.assertEqual(kms.unwrap_key(back['keys']['1'], 1, '/dev/shm'), b'L' * 32)
+
+    def test_oci_refuses_returned_plaintext(self):
+        with patch.object(kms, 'oci_kms', return_value={'key_id': OCI_OCID, 'ciphertext': 'YQ==', 'plaintext': 'S0tL'}):
+            with self.assertRaises(ValueError):
+                kms.generate_key('oci', OCI, 1, '/dev/shm')
 
     def cli(self, command, directory, *options):
         argv = ['kms-keyring.py', command, '--bundle', str(Path(directory) / 'wrapped.json'),
@@ -126,6 +164,19 @@ class ProviderTests(unittest.TestCase):
             plaintext = json.loads((Path(directory) / 'payout-keyring.json').read_text())
             self.assertEqual(len(bytes.fromhex(plaintext['keys']['1'])), 32)
             self.assertEqual((Path(directory) / 'wrapped.json').stat().st_mode & 0o777, 0o600)
+
+    def test_cli_oci_generate_and_legacy_import(self):
+        with tempfile.TemporaryDirectory(dir='/dev/shm') as directory:
+            self.cli('generate', directory, '--provider', 'oci', '--key-id', OCI)
+            wrapped = json.loads((Path(directory) / 'wrapped.json').read_text())
+            self.assertEqual((wrapped['keys']['1']['provider'], wrapped['keys']['1']['key_id']), ('oci', OCI))
+            self.cli('materialize', directory)
+            self.assertEqual(json.loads((Path(directory) / 'payout-keyring.json').read_text())['keys']['1'], ('O' * 32).encode().hex())
+        with tempfile.TemporaryDirectory(dir='/dev/shm') as directory:
+            path = Path(directory) / 'legacy'; path.write_text('cd' * 32); path.chmod(0o600)
+            self.cli('wrap-legacy', directory, '--provider', 'oci', '--key-id', OCI, '--legacy-key-file', str(path))
+            self.cli('materialize', directory)
+            self.assertEqual(json.loads((Path(directory) / 'payout-keyring.json').read_text())['keys']['1'], 'cd' * 32)
 
     def test_cli_default_aws_and_gcp_legacy_import(self):
         with tempfile.TemporaryDirectory(dir='/dev/shm') as directory:
@@ -159,6 +210,53 @@ class ProviderTests(unittest.TestCase):
                     kms.materialize(bundle, directory, destination, os.getegid())
             self.assertEqual(destination.read_bytes(), b'previous keyring')
             self.assertEqual(list(Path(directory).glob('.keyring-*')), [])
+
+
+class OciTransportTests(unittest.TestCase):
+    def run_cli(self, stdout, returncode=0):
+        seen = {}
+        def command(args, **options):
+            seen['args'] = args
+            seen['env'] = options['env']
+            path = Path(args[args.index('--from-json') + 1].removeprefix('file://'))
+            seen['path'] = path
+            seen['request'] = json.loads(path.read_text())
+            self.assertEqual(path.stat().st_mode & 0o077, 0)
+            self.assertTrue(options['capture_output'])
+            return subprocess.CompletedProcess(args, returncode, stdout)
+        with tempfile.TemporaryDirectory(dir='/dev/shm') as directory, patch.object(kms.subprocess, 'run', side_effect=command):
+            try:
+                return kms.oci_kms('encrypt', OCI, {'plaintext': 'S0tL', 'associatedData': kms.context(1)}, directory), seen
+            finally:
+                self.assertEqual(list(Path(directory).iterdir()), [])
+
+    def test_cli_pins_endpoint_passes_secret_by_file_and_parses_kebab_case(self):
+        out = json.dumps({'data': {'ciphertext': 'Y3Q=', 'key-id': OCI_OCID, 'key-version-id': 'v'}}).encode()
+        data, seen = self.run_cli(out)
+        self.assertEqual(data['ciphertext'], 'Y3Q=')
+        self.assertEqual(seen['args'][:6], ['oci', 'kms', 'crypto', 'encrypt', '--endpoint',
+                                            'https://bbqexamplevault-crypto.kms.ap-seoul-1.oraclecloud.com'])
+        self.assertNotIn('S0tL', ' '.join(seen['args']))
+        self.assertEqual(seen['request']['keyId'], OCI_OCID)
+        self.assertEqual(seen['request']['plaintext'], 'S0tL')
+        self.assertFalse(seen['path'].exists())
+
+    def test_cli_failures_wrong_key_and_oversized_output_refuse(self):
+        for stdout, code in [(b'{}', 1), (json.dumps({'data': {'key-id': OCI_OCID + 'x', 'ciphertext': 'YQ=='}}).encode(), 0),
+                             (b'{"data": []}', 0), (b'a' * 65537, 0)]:
+            with self.subTest(code=code, stdout=stdout[:40]), self.assertRaises(ValueError):
+                self.run_cli(stdout, code)
+
+    def test_key_id_must_pin_oraclecloud_endpoint_and_key_ocid(self):
+        self.assertEqual(kms.oci_key(OCI), ('https://bbqexamplevault-crypto.kms.ap-seoul-1.oraclecloud.com', OCI_OCID))
+        for key_id in [OCI_OCID, 'https://' + OCI, OCI.replace('oraclecloud.com', 'evil.test'),
+                       OCI.replace('ocid1.key', 'ocid1.vault'), OCI + '/x', OCI.replace('-crypto.kms', '-management.kms'),
+                       'evil.test#bbqexamplevault-crypto.kms.ap-seoul-1.oraclecloud.com/' + OCI_OCID]:
+            with self.subTest(key_id=key_id), patch.object(kms.subprocess, 'run') as run, self.assertRaises(ValueError):
+                kms.oci_kms('decrypt', key_id, {}, '/dev/shm')
+            run.assert_not_called()
+        with self.assertRaises(ValueError):
+            kms.oci_kms('delete', OCI, {}, '/dev/shm')
 
 
 class GcpTransportTests(unittest.TestCase):

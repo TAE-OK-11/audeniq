@@ -27,20 +27,20 @@ R2의 기본 서버 측 저장 암호화는 [공식 데이터 보안 문서](htt
 
 ## KMS 키 준비와 회전
 
-현재 기본값은 `PAYOUT_KMS_ENABLED=false`다. AWS/GCP 도구는 구현한 상태로 유지하며 배포가 클라우드 키 준비를 요구하거나 자동 호출하지 않는다. 로컬 AES 암호화는 유지한다. `PAYOUT_ACCOUNT_KEY`(64 hex) 또는 권한이 제한된 `PAYOUT_KEYRING_FILE`을 지정할 수 있고, 키가 없으면 API는 기동하되 계좌 저장/복호화를 거절한다. 계좌번호를 평문으로 저장하는 경로는 없다. 기존 계좌가 있으면 원래 키와 버전을 그대로 유지해야 한다.
+현재 기본값은 `PAYOUT_KMS_ENABLED=false`다. AWS/GCP/OCI 도구는 구현한 상태로 유지하며 배포가 클라우드 키 준비를 요구하거나 자동 호출하지 않는다. 로컬 AES 암호화는 유지한다. `PAYOUT_ACCOUNT_KEY`(64 hex) 또는 권한이 제한된 `PAYOUT_KEYRING_FILE`을 지정할 수 있고, 키가 없으면 API는 기동하되 계좌 저장/복호화를 거절한다. 계좌번호를 평문으로 저장하는 경로는 없다. 기존 계좌가 있으면 원래 키와 버전을 그대로 유지해야 한다.
 
 아래 KMS 준비를 완료한 뒤 `PAYOUT_KMS_ENABLED=true`, `PAYOUT_KEYRING_FILE=/run/audeniq-keys/payout-keyring.json`을 설정한다. 이 모드에서는 환경변수 단일 키로 대체하지 않으며 tmpfs·소유권·권한 검증을 다시 강제한다. 로컬 키를 환경변수로 운영할 경우 `production.env`와 호스트/컨테이너 관리 권한을 제한하고 키를 로그에 출력하지 않는다.
 
-운영자는 **AWS KMS 또는 GCP Cloud KMS**를 선택한다. AWS는 기존 대칭 키 ARN과 AWS CLI 자격, GCP는 기존 `ENCRYPT_DECRYPT` CryptoKey 전체 리소스 이름과 `gcloud` ADC 자격이 필요하다. 공급자·리전·IAM 설정은 운영자가 준비하며 이 도구가 클라우드 키·유료 자원·계정을 생성하지 않는다. Akamai 서버는 그대로 두고 선택한 KMS를 HTTPS로 호출한다.
+운영자는 **AWS KMS, GCP Cloud KMS 또는 OCI Vault(Oracle Cloud Key Management)**를 선택한다. AWS는 기존 대칭 키 ARN과 AWS CLI 자격, GCP는 기존 `ENCRYPT_DECRYPT` CryptoKey 전체 리소스 이름과 `gcloud` ADC 자격, OCI는 기존 Vault의 AES 마스터 키 OCID·Vault 암호화 엔드포인트와 `oci` CLI 자격이 필요하다. 공급자·리전·IAM 설정은 운영자가 준비하며 이 도구가 클라우드 키·유료 자원·계정을 생성하지 않는다. Akamai 서버는 그대로 두고 선택한 KMS를 HTTPS로 호출한다.
 
 `deploy/kms-keyring.py`의 AWS 경로는 공식 CLI로 TLS·인증서 검증·SigV4를 처리한다. GCP 경로는 `gcloud auth application-default print-access-token`의 출력을 내부에서 읽고 `https://cloudkms.googleapis.com` REST API에 TLS 1.2 이상과 인증서 검증을 적용한다. redirect는 거절한다. 디스크에는 KMS로 감싼 키만 두고, API용 평문 키 파일은 host tmpfs에 쓴다. API 컨테이너와 worker는 AWS/GCP 자격을 받지 않는다.
 
 AWS [KeyId](https://docs.aws.amazon.com/kms/latest/APIReference/API_Decrypt.html)와 GCP CryptoKey 이름을 고정한다. [GCP Encrypt 응답](https://cloud.google.com/kms/docs/reference/rest/v1/projects.locations.keyRings.cryptoKeys/encrypt)의 버전 리소스가 지정한 CryptoKey에 속하는지 확인하고, 요청 검증 플래그와 암복호화 응답 CRC32C를 확인한다. [무결성 지침](https://cloud.google.com/kms/docs/data-integrity-guidelines)에 따라 평문 checksum은 저장하지 않는다. AWS [EncryptionContext](https://docs.aws.amazon.com/kms/latest/developerguide/encrypt_context.html)와 GCP AAD에는 서비스·용도·계좌 키 버전만 넣는다.
 
-새 감싼 키 묶음은 `version: 2`이며 각 키에 `provider: aws|gcp`를 저장한다. 기존 `version: 1` AWS 묶음도 그대로 읽고, 다음 변경 때 공급자를 명시한 형식으로 전환한다. 한 묶음에 과거 AWS 버전과 새 GCP 버전이 함께 있을 수 있다. `materialize`는 각 키의 공급자를 읽으므로 양쪽 자격이 필요하며 장애 시 다른 공급자를 임의로 대신 호출하지 않는다. API가 읽는 복호화 키 파일의 형식은 기존과 동일하다.
+새 감싼 키 묶음은 `version: 2`이며 각 키에 `provider: aws|gcp|oci`를 저장한다. 기존 `version: 1` AWS 묶음도 그대로 읽고, 다음 변경 때 공급자를 명시한 형식으로 전환한다. 한 묶음에 과거 AWS 버전과 새 GCP 버전이 함께 있을 수 있다. `materialize`는 각 키의 공급자를 읽으므로 양쪽 자격이 필요하며 장애 시 다른 공급자를 임의로 대신 호출하지 않는다. API가 읽는 복호화 키 파일의 형식은 기존과 동일하다.
 
 1. 기존 계좌가 있으면 기존 `PAYOUT_ACCOUNT_KEY`를 정확히 버전 1로 보존한다. 안전한 관리 절차로 `/dev/shm/legacy-payout-key`에 64 hex 값을 작성하고 mode 0600을 설정한다. 값을 명령 인자·셸 기록·출력에 넣지 않는다.
-2. 선택한 공급자로 가져온다. `AUDENIQ_KMS_PROVIDER=aws|gcp`, `AUDENIQ_KMS_KEY_ID`는 AWS ARN 또는 GCP의 `projects/PROJECT/locations/LOCATION/keyRings/RING/cryptoKeys/KEY`이다. 두 변수는 host의 키 준비 작업에만 전달한다:
+2. 선택한 공급자로 가져온다. `AUDENIQ_KMS_PROVIDER=aws|gcp|oci`, `AUDENIQ_KMS_KEY_ID`는 AWS ARN, GCP의 `projects/PROJECT/locations/LOCATION/keyRings/RING/cryptoKeys/KEY`, 또는 OCI의 `<Vault 암호화 엔드포인트 호스트>/<키 OCID>`(예: `abcd1234-crypto.kms.ap-seoul-1.oraclecloud.com/ocid1.key.oc1.ap-seoul-1.abcd1234.aaaa…`)이다. 두 변수는 host의 키 준비 작업에만 전달한다:
 
    ```bash
    python3 deploy/kms-keyring.py wrap-legacy --provider "$AUDENIQ_KMS_PROVIDER" --bundle /opt/audeniq/payout-wrapped-keyring.json --key-id "$AUDENIQ_KMS_KEY_ID" --legacy-key-file /dev/shm/legacy-payout-key
@@ -62,7 +62,17 @@ AWS [KeyId](https://docs.aws.amazon.com/kms/latest/APIReference/API_Decrypt.html
 
 GCP ADC는 host에만 준비한다. 운영에서는 서비스 계정 또는 Workload Identity Federation 자격을 사용할 수 있다. [ADC 토큰 명령](https://cloud.google.com/sdk/gcloud/reference/auth/application-default/print-access-token)에 설명된 quota project가 필요한 자격은 host에 `GOOGLE_CLOUD_QUOTA_PROJECT`를 지정한다. 해당 프로젝트의 `serviceusage.services.use` 권한도 필요하다. 토큰을 직접 명령 인자·셸 기록·환경 파일에 복사하지 않는다.
 
-이미 사용 중인 계좌 AES 키를 **AWS ↔ GCP로 옮기는 경우**에는 다음을 실행한다:
+### Oracle Cloud (OCI Vault)
+
+OCI 경로는 공식 `oci` CLI가 요청 서명(API 키 또는 instance principal)과 TLS 인증서 검증을 처리한다. 키 ID에 Vault의 암호화 엔드포인트(`<vault>-crypto.kms.<region>.oraclecloud.com`)와 키 OCID를 함께 고정한다. 키 OCID만으로는 호출할 엔드포인트가 정해지지 않고, 임의 호스트로 키를 보내지 않도록 `oraclecloud.com` 암호화 엔드포인트와 `ocid1.key.oc1` 형식만 받는다. 요청(이전 키 포함)은 명령 인자가 아니라 tmpfs의 0600 파일(`--from-json file://`)로만 전달하고 호출 직후 지운다. 응답의 키 OCID가 고정한 키와 다르면 거절한다.
+
+- 암복호화는 `AES_256_GCM`이며 OCI `associatedData`에 AWS/GCP와 같은 서비스·용도·계좌 키 버전만 넣는다. 버전이 다르면 복호화가 실패한다.
+- `generate`는 `generate-data-encryption-key`를 `includePlaintextKey=false`로 호출해 Vault가 키를 만들고 평문을 돌려주지 않는다. 응답에 평문이 있으면 거절한다.
+- 자격: OCI host에서는 `OCI_CLI_AUTH=instance_principal`(동적 그룹)을 권장한다. 그 외에는 키 준비 host의 `~/.oci/config` API 키를 쓴다. API·worker 컨테이너에는 OCI 자격을 주지 않는다.
+- IAM: runtime(`materialize`) 주체에는 해당 키의 복호화(`KEY_DECRYPT`)만, 키 준비 주체에는 암호화·데이터 키 생성(`KEY_ENCRYPT`, `KEY_GENERATE`)만 허용한다. 예: `Allow dynamic-group audeniq-keyhost to use keys in compartment audeniq where all {target.key.id = '<키 OCID>', request.permission = 'KEY_DECRYPT'}`. 실제 적용 전 OCI 정책 문서로 권한 이름을 확인한다. Vault·키 관리(`manage`) 권한은 runtime에 주지 않는다.
+- 도구는 Vault·키·정책을 만들지 않는다. 키 삭제 예약과 Vault 백업·복제 절차는 OCI 콘솔/정책으로 운영자가 관리한다.
+
+이미 사용 중인 계좌 AES 키를 **AWS ↔ GCP ↔ OCI 사이에서 옮기는 경우**에는 다음을 실행한다:
 
 ```bash
 python3 deploy/kms-keyring.py rewrap --provider "$AUDENIQ_KMS_PROVIDER" --key-id "$AUDENIQ_KMS_KEY_ID" --bundle /opt/audeniq/payout-wrapped-keyring.json
@@ -97,7 +107,7 @@ Studio/관리자 정적 파일은 빌드할 때 Brotli sidecar를 만들고 요�
 
 - 로컬 Worker/전송 회귀 37개, Survey 25개, Studio 86개, Admin 14개 통과. Studio/Admin 타입 검사와 실제 빌드 통과.
 - [GitHub Actions Foundation](https://github.com/TAE-OK-11/audeniq/actions/runs/37110993569)에서 Rust 형식·Clippy·전체 바이너리 빌드, PostgreSQL 통합 테스트를 포함한 439개 테스트 통과(3개 skipped). Docker API/worker 기동·Workers 번들·Studio 브라우저 검사도 통과했다.
-- AWS/GCP 선택·기존 AWS 묶음 호환·혼합 공급자·양방향 rewrap·키 버전 AAD·GCP TLS/CRC32C/ADC·원자적 교체·파일 권한과 실제 age 암복호화 테스트 22개가 로컬에서 통과했다. Foundation의 독립 `kms-backup` 작업에서도 실행한다. KMS/인증 네트워크 호출은 테스트 대역을 사용하며 실제 IAM/KMS 연결 성공을 뜻하지 않는다.
+- AWS/GCP/OCI 선택·기존 AWS 묶음 호환·혼합 공급자·양방향 rewrap·키 버전 AAD·GCP TLS/CRC32C/ADC·원자적 교체·파일 권한과 실제 age 암복호화 테스트 22개가 로컬에서 통과했다. Foundation의 독립 `kms-backup` 작업에서도 실행한다. KMS/인증 네트워크 호출은 테스트 대역을 사용하며 실제 IAM/KMS 연결 성공을 뜻하지 않는다.
 - Studio/Admin Actions와 Rust 의존성 보안 검사도 통과했다. 로컬 Studio/Admin Wrangler 배포 dry-run을 확인했다.
 - 운영 서버·Cloudflare zone에는 아직 적용하지 않았다. KMS ARN/자격·기존 키 이전·재부팅 준비·age 수신자와 Cloudflare 규칙 권한이 실제로 준비돼야 운영 적용을 완료할 수 있다.
 - 일본 보관 및 기타 Cloudflare 처리 위치는 [개인정보 보호법 제28조의8](https://www.law.go.kr/LSW/lsSideInfoP.do?docCls=jo&joBrNo=08&joNo=0028&lsiSeq=283839&urlMode=lsScJoRltInfoR)의 국외 이전 검토 대상이다. 암호화 구현만으로 법적 근거·위탁 계약·실제 공급자 국가를 확인할 수 없다. 약관 작성 범위와 구분하되 이 운영 의무를 충족했다고 단정하지 않는다.

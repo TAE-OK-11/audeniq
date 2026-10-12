@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Protect payout AES keys with AWS KMS or GCP Cloud KMS; materialize into tmpfs.
+"""Protect payout AES keys with AWS KMS, GCP Cloud KMS or OCI Vault; materialize into tmpfs.
 
-AWS CLI handles SigV4; GCP uses ADC from gcloud and a pinned, verified HTTPS API.
+AWS CLI handles SigV4; GCP uses ADC from gcloud and a pinned, verified HTTPS API;
+the OCI CLI signs requests to the vault's pinned crypto endpoint.
 The API receives no cloud credentials. No cloud resources are created here.
 """
 import argparse
@@ -42,11 +43,31 @@ def gcp_key_name(name):
     return name
 
 
+OCI_KEY = re.compile(
+    r'(?P<endpoint>[a-z0-9]{1,64}-crypto\.kms\.(?P<region>[a-z]{2}-[a-z]+-\d)\.oraclecloud\.com)'
+    r'/(?P<ocid>ocid1\.key\.oc1\.[a-z0-9-]{1,32}\.[a-z0-9]{1,64}\.[a-z0-9]{1,128})'
+)
+
+
+def oci_key(key_id):
+    """Split an OCI key id `<vault crypto endpoint host>/<key OCID>`.
+
+    A key OCID alone does not name the endpoint its vault serves crypto
+    operations on, so both are pinned together in the bundle.
+    """
+    match = OCI_KEY.fullmatch(key_id) if isinstance(key_id, str) else None
+    if not match:
+        raise ValueError('an OCI key id <vault crypto endpoint host>/<key OCID> is required')
+    return 'https://' + match['endpoint'], match['ocid']
+
+
 def validate_key_id(provider, key_id):
     if provider == 'aws':
         key_region(key_id)
     elif provider == 'gcp':
         gcp_key_name(key_id)
+    elif provider == 'oci':
+        oci_key(key_id)
     else:
         raise ValueError('unsupported KMS provider')
 
@@ -206,6 +227,43 @@ def aws_kms(operation, arn, request, scratch):
         Path(name).unlink(missing_ok=True)
 
 
+OCI_OPERATIONS = ('encrypt', 'decrypt', 'generate-data-encryption-key')
+
+
+def oci_kms(operation, key_id, request, scratch):
+    endpoint, ocid = oci_key(key_id)
+    if operation not in OCI_OPERATIONS:
+        raise ValueError('unsupported OCI operation')
+    # Requests can include the legacy key. Never use shell arguments for it.
+    with tempfile.NamedTemporaryFile(dir=scratch, prefix='.kms-', mode='w', delete=False) as file:
+        name = file.name
+        json.dump(dict(request, keyId=ocid), file)
+    try:
+        env = os.environ.copy()
+        # Credentials: ~/.oci/config, or OCI_CLI_AUTH=instance_principal on an
+        # OCI host. Never write the request or response to a log.
+        env['OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING'] = 'True'
+        result = subprocess.run([
+            'oci', 'kms', 'crypto', operation, '--endpoint', endpoint,
+            '--from-json', 'file://' + name, '--output', 'json',
+        ], env=env, capture_output=True, timeout=90)
+        if result.returncode:
+            # Do not echo CLI output; it may contain request data under debug config.
+            raise ValueError(f'KMS {operation} failed; check IAM policy, key state and connectivity')
+        if len(result.stdout) > 65536:
+            raise ValueError('KMS response exceeds limit')
+        data = json.loads(result.stdout).get('data')
+        if not isinstance(data, dict):
+            raise ValueError('invalid OCI response')
+        # The CLI prints kebab-case field names.
+        data = {k.replace('-', '_'): v for k, v in data.items()}
+        if data.get('key_id') != ocid:
+            raise ValueError('KMS returned an unexpected key OCID')
+        return data
+    finally:
+        Path(name).unlink(missing_ok=True)
+
+
 def validate_bundle(bundle):
     if not isinstance(bundle, dict) or set(bundle) != {'version', 'active_version', 'keys'} or type(bundle['version']) is not int or bundle['version'] not in (1, 2):
         raise ValueError('invalid wrapped keyring format')
@@ -242,6 +300,11 @@ def wrap_key(provider, key_id, version, plaintext, scratch):
             'EncryptionAlgorithm': 'SYMMETRIC_DEFAULT', 'EncryptionContext': context(version),
         }, scratch)
         ciphertext = response['CiphertextBlob']
+    elif provider == 'oci':
+        ciphertext = oci_kms('encrypt', key_id, {
+            'plaintext': base64.b64encode(plaintext).decode(),
+            'associatedData': context(version), 'encryptionAlgorithm': 'AES_256_GCM',
+        }, scratch)['ciphertext']
     else:
         ciphertext = base64.b64encode(gcp_kms('encrypt', key_id, plaintext, version)).decode()
     return {'provider': provider, 'key_id': key_id, 'ciphertext': ciphertext}
@@ -251,6 +314,15 @@ def generate_key(provider, key_id, version, scratch):
     validate_key_id(provider, key_id)
     if provider == 'gcp':
         return wrap_key(provider, key_id, version, secrets.token_bytes(32), scratch)
+    if provider == 'oci':
+        # The vault generates the key; its plaintext never leaves OCI here.
+        response = oci_kms('generate-data-encryption-key', key_id, {
+            'includePlaintextKey': False, 'keyShape': {'algorithm': 'AES', 'length': 32},
+            'associatedData': context(version),
+        }, scratch)
+        if response.get('plaintext'):
+            raise ValueError('OCI returned plaintext key material')
+        return {'provider': provider, 'key_id': key_id, 'ciphertext': response['ciphertext']}
     response = aws_kms('generate-data-key-without-plaintext', key_id, {
         'KeyId': key_id, 'KeySpec': 'AES_256', 'EncryptionContext': context(version),
     }, scratch)
@@ -266,6 +338,12 @@ def unwrap_key(key, version, scratch):
             'EncryptionAlgorithm': 'SYMMETRIC_DEFAULT', 'EncryptionContext': context(version),
         }, scratch)
         plaintext = base64.b64decode(response['Plaintext'], validate=True)
+    elif provider == 'oci':
+        response = oci_kms('decrypt', key['key_id'], {
+            'ciphertext': key['ciphertext'], 'associatedData': context(version),
+            'encryptionAlgorithm': 'AES_256_GCM',
+        }, scratch)
+        plaintext = base64.b64decode(response['plaintext'], validate=True)
     else:
         plaintext = gcp_kms('decrypt', key['key_id'], base64.b64decode(key['ciphertext'], validate=True), version)
     if len(plaintext) != 32:
@@ -311,8 +389,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=['wrap-legacy', 'generate', 'materialize', 'rewrap'])
     parser.add_argument('--bundle', required=True, type=Path, help='private, KMS-wrapped JSON on persistent storage')
-    parser.add_argument('--provider', choices=['aws', 'gcp'], help='KMS provider for new wrapping (default: aws)')
-    parser.add_argument('--key-id', help='existing symmetric AWS key ARN or GCP CryptoKey resource name')
+    parser.add_argument('--provider', choices=['aws', 'gcp', 'oci'], help='KMS provider for new wrapping (default: aws)')
+    parser.add_argument('--key-id', help='existing symmetric AWS key ARN, GCP CryptoKey resource name, '
+                        'or OCI <vault crypto endpoint host>/<AES key OCID>')
     parser.add_argument('--legacy-key-file', type=Path, help='private 64-hex key file, supplied only for migration')
     parser.add_argument('--runtime-dir', type=Path, default=Path('/dev/shm/audeniq-secrets'))
     parser.add_argument('--gid', type=int, default=10001, help='API container group; directory owner remains root')
