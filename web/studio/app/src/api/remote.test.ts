@@ -43,7 +43,8 @@ describe('upload completion backpressure', () => {
     vi.stubGlobal('fetch', fetcher);
     const result = remoteApi.uploadFile(new File(['test'], 'a.tta'), 'AUDIO');
     const checked = expect(result).resolves.toMatchObject({ assetId: 'a1', container: 'FLAC' });
-    await vi.advanceTimersByTimeAsync(5100);
+    // First retry within 2–3 s (the server queues conversions; busy is short)
+    await vi.advanceTimersByTimeAsync(3100);
     await checked;
     expect(put).toHaveBeenCalledTimes(1);
     expect(fetcher).toHaveBeenCalledTimes(3);

@@ -151,12 +151,7 @@ pub async fn complete(
         .upload_slots
         .try_acquire()
         .map_err(|_| Error::UploadBusy)?;
-    // Scanning and normalization are bounded for every kind, including FLAC.
-    let slot = s
-        .transcode_slots
-        .clone()
-        .try_acquire_owned()
-        .map_err(|_| Error::UploadBusy)?;
+    let started = std::time::Instant::now();
     auth::rate(&s.pool, &format!("upload-complete:{}", a.user), 60).await?;
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, i.asset_id, "asset", true).await?;
@@ -187,7 +182,7 @@ pub async fn complete(
     let nonce: Uuid = r.get("nonce");
     // Never keep a DB transaction (and the session row lock) open across
     // storage calls, scans or decoding. Cancellation and concurrent
-    // completion are checked again under a fresh row lock; the freeze copy is
+    // completion are checked again under a fresh row lock; the download is
     // conditional on the ETag seen here.
     tx.commit().await?;
     let meta = stage(a.request, "head", s.storage.head(&key))
@@ -196,25 +191,12 @@ pub async fn complete(
     if meta.size != size || meta.content_type != mime || meta.nonce != nonce.to_string() {
         return Err(Error::Conflict);
     }
-    // Freeze into quarantine, never the registered namespace. A cancelled or
-    // failed completion leaves no object that any reader can serve or analyze.
-    let frozen = format!("quarantine/{org}/{asset}/frozen-{}", Uuid::new_v4());
-    stage(
-        a.request,
-        "freeze",
-        s.storage.freeze(&key, &frozen, &meta.etag),
-    )
-    .await?;
-    let copy = stage(a.request, "head_frozen", s.storage.head(&frozen))
-        .await?
-        .ok_or(Error::Storage)?;
-    if copy.size != size
-        || copy.content_type != mime
-        || copy.nonce != nonce.to_string()
-        || (s.storage.copy_keeps_etag() && copy.etag != meta.etag)
-    {
-        return Err(Error::Conflict);
-    }
+    // Read the quarantine object directly, pinned to the ETag seen above
+    // (If-Match). It used to be copied to a "frozen" key first; that copy
+    // took as long as the download itself for large masters. The signed PUT
+    // is single use (If-None-Match), so the object cannot change, and the
+    // source stays private in quarantine/ until the lifecycle rule removes it.
+    // Nothing is written outside quarantine/ before the checks pass.
     let prepared = stage(
         a.request,
         "prepare",
@@ -222,13 +204,13 @@ pub async fn complete(
             s,
             org,
             asset,
-            &frozen,
+            &key,
+            &meta.etag,
             size,
             &nonce.to_string(),
             &kind,
             &mime,
             container,
-            slot,
         )),
     )
     .await?;
@@ -266,7 +248,7 @@ pub async fn complete(
         finish_session(&mut tx, id).await?;
         let antivirus_status = crate::upload_safety::antivirus_status(s.antivirus_enabled);
         sqlx::query("INSERT INTO catalog.asset_safety(asset_id,org_id,source_key,source_sha256,safe_key,safe_sha256,rule_version,antivirus_status) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
-            .bind(asset).bind(org).bind(&frozen).bind(&prepared.source_sha256).bind(&prepared.key)
+            .bind(asset).bind(org).bind(&key).bind(&prepared.source_sha256).bind(&prepared.key)
             .bind(&prepared.sha256).bind(crate::upload_safety::RULE_VERSION).bind(antivirus_status).execute(&mut *tx).await?;
         sqlx::query("UPDATE catalog.assets SET state='REGISTERED',object_key=$2,content_type=$3,size_bytes=$4,etag=$5,sha256=$6 WHERE id=$1")
             .bind(asset).bind(&prepared.key).bind(&prepared.mime).bind(prepared.size)
@@ -302,8 +284,19 @@ pub async fn complete(
         )
         .await?;
         tx.commit().await?;
+        tracing::info!(
+            request_id = %a.request,
+            kind = %kind,
+            bytes = size,
+            download_ms = prepared.timing[0],
+            queue_ms = prepared.timing[1],
+            convert_ms = prepared.timing[2],
+            store_ms = prepared.timing[3],
+            total_ms = started.elapsed().as_millis() as u64,
+            "upload_completed"
+        );
         // The original signed PUT stays as a single-use lock until lifecycle
-        // expiry. The frozen evidence remains private and is never downloadable.
+        // expiry: private, never downloadable, removed by the lifecycle rule.
         Ok(
             json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":false,
             "sha256":prepared.sha256,"detected_container":if kind=="AUDIO" { "FLAC" } else { container },
@@ -335,6 +328,9 @@ struct Prepared {
     sha256: String,
     source_sha256: String,
     provenance: Option<serde_json::Value>,
+    /// Milliseconds: download, waiting for the conversion slot, conversion
+    /// (and checks), storing the result. Logged with `upload_completed`.
+    timing: [u64; 4],
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -342,14 +338,20 @@ async fn prepare(
     s: &AppState,
     org: Uuid,
     asset: Uuid,
-    frozen: &str,
+    source: &str,
+    etag: &str,
     size: i64,
     nonce: &str,
     kind: &str,
     mime: &str,
     container: &'static str,
-    slot: tokio::sync::OwnedSemaphorePermit,
 ) -> Result<Prepared> {
+    let mut clock = std::time::Instant::now();
+    let mut lap = || {
+        let ms = clock.elapsed().as_millis() as u64;
+        clock = std::time::Instant::now();
+        ms
+    };
     let workspace = crate::upload_safety::Workspace::new()?;
     let src = workspace.0.join("source");
     let dst = workspace.0.join(if kind == "AUDIO" {
@@ -359,7 +361,10 @@ async fn prepare(
     } else {
         "safe.image"
     });
-    let digest = s.storage.download_to(frozen, &src, size as u64).await?;
+    let digest = s
+        .storage
+        .download_version_to(source, &src, size as u64, etag)
+        .await?;
     if digest.size != size as u64 {
         return Err(Error::Conflict);
     }
@@ -368,6 +373,15 @@ async fn prepare(
     }
     // When enabled, scan the whole source before any decoder / metadata reader.
     crate::upload_safety::scan(&src, digest.size, s.antivirus_enabled).await?;
+    let download_ms = lap();
+    // One conversion at a time (CPU and temp disk), taken only now: the
+    // download above and the upload below run without it. Completions wait
+    // in line (FIFO) instead of bouncing to the client with UPLOAD_BUSY.
+    let slot = tokio::time::timeout(s.transcode_wait, s.transcode_slots.clone().acquire_owned())
+        .await
+        .map_err(|_| Error::UploadBusy)?
+        .map_err(|_| Error::UploadBusy)?;
+    let queue_ms = lap();
     let (kind, mime) = (kind.to_string(), mime.to_string());
     let (workspace, dst, provenance, sha256) = tokio::task::spawn_blocking(move || {
         // Guards outlive a cancelled HTTP future, including each decoder.
@@ -404,6 +418,7 @@ async fn prepare(
     })
     .await
     .map_err(|_| Error::Internal)??;
+    let convert_ms = lap();
     let safe_size = tokio::fs::metadata(&dst)
         .await
         .map_err(|_| Error::Storage)?
@@ -444,6 +459,7 @@ async fn prepare(
         sha256,
         source_sha256: digest.sha256,
         provenance,
+        timing: [download_ms, queue_ms, convert_ms, lap()],
     })
 }
 

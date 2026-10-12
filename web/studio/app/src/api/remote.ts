@@ -689,9 +689,11 @@ export const remoteApi = {
         // Capacity retries reuse the uploaded object and session. Never PUT
         // the audio again or retry permanent validation failures.
         // Wait out capacity until the server's completion window closes (BE-011).
-        // Spread the retries (jitter, growing to 20s) so many waiting files do
+        // The server already queues conversions, so a busy answer means every
+        // completion slot is downloading or storing — seconds, not minutes.
+        // Spread the retries (jitter, growing to 10s) so many waiting files do
         // not return in lockstep; a busy answer does not count against the quota.
-        const wait = Math.min(20_000, 4000 * 1.4 ** attempt) + Math.random() * 1000;
+        const wait = Math.min(10_000, 2000 * 1.4 ** attempt) + Math.random() * 1000;
         if (!(error instanceof ApiError) || error.code !== 'UPLOAD_BUSY' || Date.now() + wait > completeBy) throw error;
         await new Promise<void>((resolve, reject) => {
           const abort = () => { clearTimeout(timer); reject(new ApiError('업로드를 취소했어요.', 0, 'ABORTED')); };
