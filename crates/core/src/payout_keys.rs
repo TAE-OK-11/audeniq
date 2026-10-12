@@ -18,6 +18,8 @@ use zeroize::{Zeroize, Zeroizing};
 
 pub const TAG: &[u8] = b"AQAC\0\x02";
 const HEADER_LEN: usize = TAG.len() + 2;
+/// Derivation label of the document sealing (Ed25519) key per keyring version.
+const SIGN_KEY_LABEL: &[u8] = b"audeniq:document-signing-key:v1";
 const NONCE_LEN: usize = 12;
 const AUTH_TAG_LEN: usize = 16;
 const AAD_PREFIX: &[u8] = b"audeniq:portal.payout_accounts:account_number:";
@@ -39,6 +41,7 @@ pub enum Field {
     StaffTotpSecret,
     OAuthEmail,
     PrintSource,
+    ArchiveObject,
 }
 impl Field {
     fn aad_prefix(self) -> &'static [u8] {
@@ -55,6 +58,7 @@ impl Field {
             Self::StaffTotpSecret => b"audeniq:identity.staff_mfa:totp:",
             Self::OAuthEmail => b"audeniq:identity.oauth_identities:email:",
             Self::PrintSource => b"audeniq:operations.print_stamps:source:",
+            Self::ArchiveObject => b"audeniq:operations.archive_objects:object:",
         }
     }
 }
@@ -66,6 +70,8 @@ pub struct KeyRing {
     keys: BTreeMap<i16, Aes256Gcm>,
     // Blind-index keys, derived once per version (never the AES key itself).
     index_keys: BTreeMap<i16, Zeroizing<[u8; 32]>>,
+    // Ed25519 seeds for sealing documents, derived per version (never the AES key).
+    sign_seeds: BTreeMap<i16, Zeroizing<[u8; 32]>>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -95,6 +101,7 @@ impl KeyRing {
         }
         let mut keys = BTreeMap::new();
         let mut index_keys = BTreeMap::new();
+        let mut sign_seeds = BTreeMap::new();
         for (version, value) in &file.keys {
             let version: i16 = version
                 .parse()
@@ -112,6 +119,7 @@ impl KeyRing {
                 return Err(Error::PolicyGate("PAYOUT_KEYRING_INVALID"));
             }
             index_keys.insert(version, Self::derive_index_key(&value));
+            sign_seeds.insert(version, Self::derive_with(&value, SIGN_KEY_LABEL));
         }
         if !keys.contains_key(&file.active_version) {
             return Err(Error::PolicyGate("PAYOUT_KEYRING_INVALID"));
@@ -120,6 +128,7 @@ impl KeyRing {
             active: file.active_version,
             keys,
             index_keys,
+            sign_seeds,
         })
     }
 
@@ -182,7 +191,7 @@ impl KeyRing {
     }
 
     fn development_key(key: Option<String>) -> Result<Self> {
-        let (keys, index_keys) = match key {
+        let (keys, index_keys, sign_seeds) = match key {
             Some(key) if !key.trim().is_empty() => {
                 let key = Zeroizing::new(key);
                 let decoded = Zeroizing::new(
@@ -195,14 +204,16 @@ impl KeyRing {
                 (
                     BTreeMap::from([(1, Self::prepare_cipher(&decoded)?)]),
                     BTreeMap::from([(1, Self::derive_index_key(&decoded))]),
+                    BTreeMap::from([(1, Self::derive_with(&decoded, SIGN_KEY_LABEL))]),
                 )
             }
-            _ => (BTreeMap::new(), BTreeMap::new()),
+            _ => (BTreeMap::new(), BTreeMap::new(), BTreeMap::new()),
         };
         Ok(Self {
             active: 1,
             keys,
             index_keys,
+            sign_seeds,
         })
     }
 
@@ -228,6 +239,38 @@ impl KeyRing {
     /// False when no key is configured: personal data cannot be stored.
     pub fn ready(&self) -> bool {
         self.keys.contains_key(&self.active)
+    }
+    fn derive_with(key: &[u8], label: &[u8]) -> Zeroizing<[u8; 32]> {
+        use hmac::{Hmac, KeyInit, Mac};
+        let mut mac = <Hmac<sha2::Sha256> as KeyInit>::new_from_slice(key).expect("HMAC key");
+        mac.update(label);
+        Zeroizing::new(mac.finalize().into_bytes().into())
+    }
+    fn signer(&self, version: i16) -> Option<aws_lc_rs::signature::Ed25519KeyPair> {
+        let seed = self.sign_seeds.get(&version)?;
+        aws_lc_rs::signature::Ed25519KeyPair::from_seed_unchecked(&seed[..]).ok()
+    }
+    /// Ed25519 signature over `message` with the active version's document
+    /// key: `(version, signature)`, or `None` when no key is configured.
+    pub fn sign_document(&self, message: &[u8]) -> Option<(i16, Vec<u8>)> {
+        let kp = self.signer(self.active)?;
+        Some((self.active, kp.sign(message).as_ref().to_vec()))
+    }
+    /// Public document keys by version (published so anyone can verify).
+    pub fn document_public_keys(&self) -> Vec<(i16, Vec<u8>)> {
+        use aws_lc_rs::signature::KeyPair;
+        self.sign_seeds
+            .keys()
+            .filter_map(|v| Some((*v, self.signer(*v)?.public_key().as_ref().to_vec())))
+            .collect()
+    }
+    pub fn verify_document(&self, version: i16, message: &[u8], signature: &[u8]) -> bool {
+        use aws_lc_rs::signature::{ED25519, KeyPair, UnparsedPublicKey};
+        self.signer(version).is_some_and(|kp| {
+            UnparsedPublicKey::new(&ED25519, kp.public_key().as_ref())
+                .verify(message, signature)
+                .is_ok()
+        })
     }
     fn derive_index_key(key: &[u8]) -> Zeroizing<[u8; 32]> {
         use hmac::{Hmac, KeyInit, Mac};

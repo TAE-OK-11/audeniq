@@ -882,6 +882,24 @@ pub async fn sign(s: &AppState, h: &HeaderMap, token: &str, i: SignInput) -> Res
         auth::request_id(h),
     )
     .await?;
+    // Seal the signed document and the signing record (identity check,
+    // consents, every event) in the same transaction.
+    crate::seal::seal(
+        &mut tx,
+        &s.payout_keys,
+        crate::seal::Kind::RightsDocument,
+        doc,
+        "SIGNED",
+    )
+    .await?;
+    crate::seal::seal(
+        &mut tx,
+        &s.payout_keys,
+        crate::seal::Kind::SigningRequest,
+        id,
+        "SIGNED",
+    )
+    .await?;
     tx.commit().await?;
     Ok(
         json!({"status": "SIGNED", "document_id": doc, "signed_at": signed_at, "certificate_hash": certificate_hash}),
@@ -915,6 +933,14 @@ pub async fn decline(s: &AppState, h: &HeaderMap, token: &str, i: DeclineInput) 
         "DECLINED",
         None,
         json!({"reason": reason}),
+    )
+    .await?;
+    crate::seal::seal(
+        &mut tx,
+        &s.payout_keys,
+        crate::seal::Kind::SigningRequest,
+        id,
+        "DECLINED",
     )
     .await?;
     tx.commit().await?;

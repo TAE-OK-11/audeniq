@@ -84,6 +84,7 @@ pub fn router(s: AppState) -> Router {
             "/api/auth/passkeys/{id}",
             axum::routing::delete(passkey_remove),
         )
+        .route("/api/document-keys", get(document_keys))
         .route("/api/print-stamps", post(print_stamp))
         .route("/api/print-stamps/verify", get(print_verify))
         .route("/api/auth/oauth/providers", get(oauth_providers))
@@ -397,6 +398,10 @@ async fn login(
     Json(i): Json<auth::Credentials>,
 ) -> Result<(HeaderMap, Json<Value>)> {
     auth::login(&s, &h, i).await
+}
+/// Public keys of the document seals and archive manifests (verification).
+async fn document_keys(State(s): State<AppState>) -> Json<Value> {
+    Json(crate::seal::public_keys(&s.payout_keys))
 }
 async fn print_stamp(
     State(s): State<AppState>,

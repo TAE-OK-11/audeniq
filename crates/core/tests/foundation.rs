@@ -183,7 +183,7 @@ async fn call(
 }
 async fn user(app: &Router) -> User {
     let email = format!("{}@example.test", Uuid::new_v4());
-    let credentials = json!({"email":email,"password":"Long-test-password-123!"});
+    let credentials = json!({"email":email,"password":"Long-test-password-123!","terms_version":"AUD-TERMS 2026.10.1"});
     let (s, _, r) = call(app, "POST", "/api/auth/register", credentials.clone(), None).await;
     assert_eq!(s, StatusCode::OK, "{r}");
     let (s, h, l) = call(app, "POST", "/api/auth/login", credentials, None).await;
@@ -241,7 +241,7 @@ async fn auth_audit_uses_server_request_id(pool: PgPool) {
         &api,
         "POST",
         "/api/auth/register",
-        json!({"email":"request-id@example.test","password":"Long-test-password-123!"}),
+        json!({"email":"request-id@example.test","password":"Long-test-password-123!","terms_version":"AUD-TERMS 2026.10.1"}),
         None,
     )
     .await;
@@ -1946,7 +1946,7 @@ async fn session_inventory_revoke_and_password_rotation(pool: PgPool) {
         call(&api, "POST", &path, json!({}), Some(&b)).await.0,
         StatusCode::NOT_FOUND
     );
-    let credentials = json!({"email":email,"password":"Long-test-password-123!"});
+    let credentials = json!({"email":email,"password":"Long-test-password-123!","terms_version":"AUD-TERMS 2026.10.1"});
     let (status, h, login) = call(&api, "POST", "/api/auth/login", credentials.clone(), None).await;
     assert_eq!(status, StatusCode::OK);
     let mut second = a.clone();
