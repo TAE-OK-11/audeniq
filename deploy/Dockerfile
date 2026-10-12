@@ -33,7 +33,7 @@ RUN AUDENIQ_BUILD_METADATA_DIR=/meta audeniq-build-target "$TARGETARCH" "$TARGET
     && case "$TARGETARCH" in amd64) triple=x86_64-unknown-linux-gnu ;; arm64) triple=aarch64-unknown-linux-gnu ;; esac \
     && profile_dir=$([ "$CARGO_PROFILE" = dev ] && echo debug || echo "$CARGO_PROFILE") \
     && dir="$triple/$profile_dir" \
-    && cp "target/$dir/audeniq-api" "target/$dir/audeniq-worker" "target/$dir/audeniq-migrate" "target/$dir/audeniq-admin" /out/
+    && cp "target/$dir/audeniq-api" "target/$dir/audeniq-worker" "target/$dir/audeniq-migrate" "target/$dir/audeniq-admin" "target/$dir/audeniq-secrets" /out/
 
 # The AUDENIQ media engine (probe, lossless FLAC conversion, QC decode,
 # fingerprint windows) at the commit pinned in deploy/audeniq-qc.rev. It is a
