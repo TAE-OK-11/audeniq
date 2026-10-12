@@ -32,7 +32,13 @@ pub struct AppState {
     /// Bound R2 completion IO before opening database transactions.
     pub upload_slots: Arc<Semaphore>,
     /// Lossless → FLAC conversions at upload completion (CPU and temp disk).
+    /// Held for the conversion only, not for downloads or uploads.
     pub transcode_slots: Arc<Semaphore>,
+    /// How long a completion waits in line for `transcode_slots` before
+    /// answering UPLOAD_BUSY (the semaphore is FIFO). A conversion takes
+    /// seconds, so waiting beats the client's 2–10 s retry backoff; it stays
+    /// well under the edge's 100 s request limit.
+    pub transcode_wait: std::time::Duration,
     /// Inline images (electronic signatures, profile images): a few KB each,
     /// so they never wait behind an audio conversion in `transcode_slots`.
     pub inline_slots: Arc<Semaphore>,
@@ -50,8 +56,9 @@ impl AppState {
             config,
             storage,
             password_slots: Arc::new(Semaphore::new(2)),
-            upload_slots: Arc::new(Semaphore::new(4)),
+            upload_slots: Arc::new(Semaphore::new(6)),
             transcode_slots: Arc::new(Semaphore::new(1)),
+            transcode_wait: std::time::Duration::from_secs(45),
             inline_slots: Arc::new(Semaphore::new(2)),
             payout_keys: Arc::new(crate::payout_keys::KeyRing::from_env(false)?),
             antivirus_enabled: crate::config::antivirus_enabled()?,

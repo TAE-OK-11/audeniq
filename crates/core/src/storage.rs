@@ -105,6 +105,20 @@ pub trait ObjectStore: Send + Sync {
             .map_err(|_| Error::Internal)?;
         Ok(ObjectDigest::of(&bytes))
     }
+    /// [`ObjectStore::download_to`] of exactly the version a HEAD saw: the
+    /// GET carries `If-Match: etag`, so any other object answers 412
+    /// ([`Error::Conflict`]). Upload completion reads the quarantine object
+    /// this way instead of copying it first: the signed PUT is single use, so
+    /// the object cannot change, and If-Match proves it.
+    async fn download_version_to(
+        &self,
+        key: &str,
+        dest: &std::path::Path,
+        max_bytes: u64,
+        _etag: &str,
+    ) -> Result<ObjectDigest> {
+        self.download_to(key, dest, max_bytes).await
+    }
     /// SHA-256, size and leading bytes of an object without keeping it on
     /// disk or in memory (upload completion). Same size cap as `download_to`.
     async fn digest(&self, key: &str, max_bytes: u64) -> Result<ObjectDigest> {
@@ -969,7 +983,7 @@ impl ObjectStore for S3Store {
         Ok(())
     }
     async fn get(&self, key: &str) -> Result<Vec<u8>> {
-        let mut r = self.open_download(key, MAX_BUFFERED_BYTES).await?;
+        let mut r = self.open_download(key, MAX_BUFFERED_BYTES, None).await?;
         let mut bytes = Vec::new();
         while let Some(chunk) = r.chunk().await.map_err(|_| Error::Storage)? {
             if chunk.len() as u64 > MAX_BUFFERED_BYTES - bytes.len() as u64 {
@@ -1017,9 +1031,37 @@ impl ObjectStore for S3Store {
         dest: &std::path::Path,
         max_bytes: u64,
     ) -> Result<ObjectDigest> {
+        self.download_file(key, dest, max_bytes, None).await
+    }
+    async fn download_version_to(
+        &self,
+        key: &str,
+        dest: &std::path::Path,
+        max_bytes: u64,
+        etag: &str,
+    ) -> Result<ObjectDigest> {
+        self.download_file(key, dest, max_bytes, Some(etag)).await
+    }
+    async fn digest(&self, key: &str, max_bytes: u64) -> Result<ObjectDigest> {
+        let mut r = self.open_download(key, max_bytes, None).await?;
+        let mut d = DigestBuilder::new(max_bytes);
+        while let Some(chunk) = r.chunk().await.map_err(|_| Error::Storage)? {
+            d.update(&chunk)?;
+        }
+        Ok(d.finish())
+    }
+}
+impl S3Store {
+    async fn download_file(
+        &self,
+        key: &str,
+        dest: &std::path::Path,
+        max_bytes: u64,
+        if_match: Option<&str>,
+    ) -> Result<ObjectDigest> {
         use tokio::io::AsyncWriteExt;
         let started = std::time::Instant::now();
-        let mut r = self.open_download(key, max_bytes).await?;
+        let mut r = self.open_download(key, max_bytes, if_match).await?;
         let file = tokio::fs::File::create(dest)
             .await
             .map_err(|_| Error::Internal)?;
@@ -1038,25 +1080,29 @@ impl ObjectStore for S3Store {
         file.flush().await.map_err(|_| Error::Internal)?;
         Ok(d.finish())
     }
-    async fn digest(&self, key: &str, max_bytes: u64) -> Result<ObjectDigest> {
-        let mut r = self.open_download(key, max_bytes).await?;
-        let mut d = DigestBuilder::new(max_bytes);
-        while let Some(chunk) = r.chunk().await.map_err(|_| Error::Storage)? {
-            d.update(&chunk)?;
-        }
-        Ok(d.finish())
-    }
-}
-impl S3Store {
-    async fn open_download(&self, key: &str, max_bytes: u64) -> Result<reqwest::Response> {
+    async fn open_download(
+        &self,
+        key: &str,
+        max_bytes: u64,
+        if_match: Option<&str>,
+    ) -> Result<reqwest::Response> {
         let started = std::time::Instant::now();
-        let url = self.signed("GET", key, &BTreeMap::new(), Utc::now(), 900)?;
-        let r = self
-            .download_client
-            .get(url)
+        let headers = if_match
+            .map(|etag| BTreeMap::from([("if-match".to_string(), etag.to_string())]))
+            .unwrap_or_default();
+        let url = self.signed("GET", key, &headers, Utc::now(), 900)?;
+        let mut req = self.download_client.get(url);
+        for (k, v) in &headers {
+            req = req.header(k, v);
+        }
+        let r = req
             .send()
             .await
             .map_err(|e| transport_error("get", started, &e))?;
+        if r.status() == reqwest::StatusCode::PRECONDITION_FAILED {
+            status_error("get", started, r.status());
+            return Err(Error::Conflict);
+        }
         if r.status() != reqwest::StatusCode::OK {
             return Err(status_error("get", started, r.status()));
         }
