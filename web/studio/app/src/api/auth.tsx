@@ -7,6 +7,7 @@ interface AuthState {
   orgs: Org[];
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginPasskey: (email: string) => Promise<void>;
   signup: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   selectOrg: (org: Org) => void;
@@ -82,6 +83,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(u);
   }, [loadOrgs]);
 
+  const loginPasskey = useCallback(async (email: string) => {
+    const u = await api.loginPasskey(email);
+    await loadOrgs();
+    setUser(u);
+  }, [loadOrgs]);
+
   const signup = useCallback(async (email: string, password: string) => {
     const u = await api.signup(email, password);
     await loadOrgs();
@@ -99,8 +106,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [setOrg]);
 
   const value = useMemo(() => ({
-    user, org, orgs, loading, login, signup, logout, selectOrg: setOrg,
-  }), [user, org, orgs, loading, login, signup, logout, setOrg]);
+    user, org, orgs, loading, login, loginPasskey, signup, logout, selectOrg: setOrg,
+  }), [user, org, orgs, loading, login, loginPasskey, signup, logout, setOrg]);
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }

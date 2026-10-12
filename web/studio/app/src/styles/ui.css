@@ -890,3 +890,12 @@ summary::-webkit-details-marker{display:none}
 @media (max-width:600px){#modal.aq-legal-mode .modal-inner{width:100%;max-height:92dvh}.aq-legal-sheet{max-height:calc(92dvh - 90px);padding:16px 14px 22px}}
 #modal.aq-legal-mode{z-index:160!important}
 
+
+/* 패스키 */
+.aq-passkeys{display:grid;gap:14px}
+.aq-passkey-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.aq-passkey-list li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:var(--aq-r-lg);background:var(--aq-surface-2,var(--aq-surface))}
+.aq-passkey-list strong{display:block}
+.aq-passkey-list small{color:var(--aq-text-2)}
+.aq-passkeys .aq-row-actions{display:flex;justify-content:flex-end;gap:8px}
+.aq-passkey-btn{margin-top:8px}

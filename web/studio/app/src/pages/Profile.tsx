@@ -10,6 +10,7 @@ import { isPaymentRegistered, usePayment } from '../store/payment';
 import { patchAccount, taxCountryLabel, useAccount, verifyLabel, TAX_COUNTRIES, type TaxResidency } from '../store/account';
 import { refreshAccount } from '../store/portalSync';
 import { IdentityVerify } from '../components/IdentityVerify';
+import { PasskeySettings } from '../components/PasskeySettings';
 import { useAuth } from '../api/auth';
 import { MOCK } from '../api/client';
 import * as portal from '../api/portal';
@@ -168,6 +169,7 @@ export function Profile() {
   const [editing, setEditing] = useState<Field | null>(null);
   const [accountEdit, setAccountEdit] = useState<'verify' | 'tax' | null>(null);
   const [showPayment, setShowPayment] = useState(false);
+  const [showPasskeys, setShowPasskeys] = useState(false);
 
   const save = async (next: ProfileInfo): Promise<boolean> => {
     if (!MOCK) {
@@ -258,6 +260,13 @@ export function Profile() {
         <SetRow label="정산·지급 내역" onClick={() => nav('/settlement')} />
       </section>
 
+      {!MOCK && (
+        <section className="aq-set-card" aria-labelledby="setSignIn">
+          <h2 id="setSignIn">로그인</h2>
+          <SetRow id="accountRowPasskey" label="패스키" empty="비밀번호 대신 지문·얼굴로 로그인" onClick={() => setShowPasskeys(true)} />
+        </section>
+      )}
+
       <section className="aq-set-card" aria-labelledby="setLegal">
         <h2 id="setLegal">약관</h2>
         <SetRow label="서비스 이용약관" onClick={() => nav('/terms')} />
@@ -281,6 +290,11 @@ export function Profile() {
         </Modal>
       )}
       {showPayment && <PaymentSetupModal onClose={() => setShowPayment(false)} />}
+      {showPasskeys && (
+        <Modal title="패스키" onClose={() => setShowPasskeys(false)} modalClass="aq-set-modal">
+          <PasskeySettings />
+        </Modal>
+      )}
       {accountEdit === 'verify' && (
         <Modal title={account.verified ? '본인인증 다시 하기' : '본인인증'} onClose={() => setAccountEdit(null)} modalClass="aq-set-modal">
           <IdentityVerify onDone={() => toast('본인인증을 마쳤어요.')} />

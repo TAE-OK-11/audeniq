@@ -198,6 +198,7 @@ services:
       MOCKDSP_STUDIO: ${MOCKDSP_STUDIO:-}
       # 화면별 규칙·공지·점검 (crates/core/src/sites.rs, site_content.rs)
       ADMIN_ORIGIN: ${ADMIN_ORIGIN:-}
+      PASSKEY_RP_ID: ${PASSKEY_RP_ID:-}
       CONTENT_ADMIN_TOKEN: ${CONTENT_ADMIN_TOKEN:-}
       MAINTENANCE_MODE: ${MAINTENANCE_MODE:-}
       MAINTENANCE_TITLE: ${MAINTENANCE_TITLE:-}
