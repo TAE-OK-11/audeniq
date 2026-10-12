@@ -266,7 +266,7 @@ pub async fn password_hash(password: String) -> Result<String> {
         .await
         .map_err(|_| Error::Internal)?
 }
-fn verify_password(password: &str, hash: &str) -> bool {
+pub(crate) fn verify_password(password: &str, hash: &str) -> bool {
     PasswordHash::new(hash).is_ok_and(|h| argon2().verify_password(password.as_bytes(), &h).is_ok())
 }
 #[cfg(test)]
@@ -425,18 +425,31 @@ pub async fn login(
     if current.as_deref() != Some(hash.as_str()) {
         return Err(Error::Unauthorized);
     }
+    issue_session(s, tx, h, user, "PASSWORD", false).await
+}
+/// Creates a session for a user whose credential was just verified inside
+/// `tx`. `mfa`: the credential itself was multi-factor (a passkey with user
+/// verification), so the session counts as second-factor verified.
+pub(crate) async fn issue_session(
+    s: &AppState,
+    mut tx: sqlx::Transaction<'_, sqlx::Postgres>,
+    h: &HeaderMap,
+    user: Uuid,
+    method: &'static str,
+    mfa: bool,
+) -> Result<(HeaderMap, Json<Value>)> {
     let token = random_token();
     let token_hash = hash_token(&token);
     let csrf = session_csrf(&s.config.service_secret, &token_hash);
-    sqlx::query("INSERT INTO identity.sessions(token_hash,user_id,csrf_hash,expires_at) VALUES($1,$2,$3,now()+make_interval(secs=>$4))")
- .bind(&token_hash).bind(user).bind(hash_token(&csrf)).bind(s.config.session_seconds as f64).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO identity.sessions(token_hash,user_id,csrf_hash,expires_at,mfa_at) VALUES($1,$2,$3,now()+make_interval(secs=>$4),CASE WHEN $5 THEN now() END)")
+ .bind(&token_hash).bind(user).bind(hash_token(&csrf)).bind(s.config.session_seconds as f64).bind(mfa).execute(&mut *tx).await?;
     operations::audit(
         &mut tx,
         Some(user),
         None,
         Some(user),
         "auth.login",
-        "PASSWORD",
+        method,
         request_id(h),
     )
     .await?;

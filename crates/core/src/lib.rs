@@ -77,6 +77,7 @@ pub mod lossless;
 mod media_budget;
 mod password_work;
 
+pub mod passkey;
 pub mod password_policy;
 pub mod payout_keys;
 pub mod payout_policy;

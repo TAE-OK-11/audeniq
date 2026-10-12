@@ -4,9 +4,12 @@ import { Link, useLocation, useNavigate } from '../lib/router';
 import { useAuth } from '../api/auth';
 import { authErrorMessage } from '../api/errors';
 import { AuthLayout, PasswordInput } from '../components/AuthLayout';
+import { passkeySupported } from '../api/passkey';
+import { MOCK } from '../api/client';
+import { ApiError } from '../api/errors';
 
 export function Login() {
-  const { login } = useAuth();
+  const { login, loginPasskey } = useAuth();
   const nav = useNavigate();
   const loc = useLocation();
   const from = loginRedirect(loc.state);
@@ -26,6 +29,20 @@ export function Login() {
       nav(from ?? '/', { replace: true });
     } catch (err) {
       setError(authErrorMessage(err, 'login'));
+      setBusy(false);
+    }
+  }
+
+  // 이메일을 입력한 뒤 비밀번호 대신 패스키로
+  async function withPasskey() {
+    if (busy) return;
+    setError('');
+    setBusy(true);
+    try {
+      await loginPasskey(email.trim());
+      nav(from ?? '/', { replace: true });
+    } catch (err) {
+      setError(err instanceof ApiError && err.code.startsWith('PASSKEY') ? err.message : authErrorMessage(err, 'login'));
       setBusy(false);
     }
   }
@@ -54,6 +71,11 @@ export function Login() {
         <button className={`ui-btn is-primary auth-submit${busy ? ' is-busy' : ''}`} type="submit" disabled={busy} aria-busy={busy}>
           {busy ? '들어가는 중' : '로그인'}
         </button>
+        {!MOCK && passkeySupported() && (
+          <button type="button" className="ui-btn auth-submit aq-passkey-btn" onClick={() => void withPasskey()} disabled={busy}>
+            비밀번호 대신 패스키로 로그인
+          </button>
+        )}
       </form>
       <div className="auth-links">
         <Link to="/find-account">아이디 · 비밀번호 찾기</Link>

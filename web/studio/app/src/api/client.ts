@@ -27,6 +27,9 @@ const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 export const api = {
   login: (email: string, password: string): Promise<User> => (MOCK ? mockApi.login(email, password) : remoteApi.login(email, password)),
+  loginPasskey: (email: string): Promise<User> => (MOCK
+    ? Promise.reject(new ApiError('체험 모드에서는 패스키를 쓸 수 없어요.', 400, 'PASSKEY_UNSUPPORTED'))
+    : remoteApi.loginPasskey(email)),
   signup: (email: string, password: string): Promise<User> => (MOCK ? mockApi.signup(email, password) : remoteApi.signup(email, password)),
   logout: (): Promise<void> => (MOCK ? mockApi.logout() : remoteApi.logout()),
   me: (): Promise<User> => (MOCK ? mockApi.me() : remoteApi.me()),

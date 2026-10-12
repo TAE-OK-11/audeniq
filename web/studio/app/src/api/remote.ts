@@ -526,6 +526,15 @@ export const remoteApi = {
     partyId = me.party_id;
     return { id: r.user_id, email: me.email };
   },
+  async loginPasskey(email: string): Promise<User> {
+    const { passkeyLogin } = await import('./passkey');
+    const r = await passkeyLogin(email);
+    setCsrf(r.csrf_token);
+    setSessionUser(r.user_id);
+    const me = await req<{ user_id: string; party_id: string; email: string }>('/api/me', { quiet401: true });
+    partyId = me.party_id;
+    return { id: r.user_id, email: me.email };
+  },
   async signup(email: string, password: string): Promise<User> {
     await req('/api/auth/register', { method: 'POST', body: { email: email.trim(), password }, quiet401: true });
     return remoteApi.login(email, password);

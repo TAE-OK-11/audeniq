@@ -75,6 +75,15 @@ pub fn router(s: AppState) -> Router {
         .route("/api/auth/sessions", get(sessions))
         .route("/api/auth/sessions/{id}/revoke", post(revoke_session))
         .route("/api/auth/password", post(change_password))
+        .route("/api/auth/passkey/options", post(passkey_login_options))
+        .route("/api/auth/passkey/login", post(passkey_login))
+        .route("/api/auth/passkeys", get(passkey_list))
+        .route("/api/auth/passkeys/options", post(passkey_register_options))
+        .route("/api/auth/passkeys/register", post(passkey_register))
+        .route(
+            "/api/auth/passkeys/{id}",
+            axum::routing::delete(passkey_remove),
+        )
         .route("/api/me", get(me))
         .route("/api/orgs", post(create_org).get(orgs))
         .route("/api/orgs/{org}/memberships", put(member))
@@ -370,6 +379,36 @@ async fn login(
     Json(i): Json<auth::Credentials>,
 ) -> Result<(HeaderMap, Json<Value>)> {
     auth::login(&s, &h, i).await
+}
+async fn passkey_login_options(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
+    Ok(Json(crate::passkey::login_options(&s, &h).await?))
+}
+async fn passkey_login(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Json(i): Json<crate::passkey::LoginInput>,
+) -> Result<(HeaderMap, Json<Value>)> {
+    crate::passkey::login(&s, &h, i).await
+}
+async fn passkey_list(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
+    Ok(Json(crate::passkey::list(&s, &h).await?))
+}
+async fn passkey_register_options(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
+    Ok(Json(crate::passkey::register_options(&s, &h).await?))
+}
+async fn passkey_register(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Json(i): Json<crate::passkey::RegisterInput>,
+) -> Result<Json<Value>> {
+    Ok(Json(crate::passkey::register(&s, &h, i).await?))
+}
+async fn passkey_remove(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>> {
+    Ok(Json(crate::passkey::remove(&s, &h, id).await?))
 }
 async fn logout(State(s): State<AppState>, h: HeaderMap) -> Result<(HeaderMap, Json<Value>)> {
     auth::logout(&s, &h).await
