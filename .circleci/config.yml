@@ -238,7 +238,7 @@ jobs:
           command: |
             path=${DEPLOY_PATH:-/opt/audeniq}
             ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$path'"
-            scp -i ~/.ssh/deploy_key deploy/compose.production.yaml deploy/bootstrap.sql deploy/grants.sql deploy/deploy.sh deploy/check-cpu.sh deploy/pg-upgrade.sh deploy/kms-keyring.py deploy/backup.sh deploy/restore-backup.sh \
+            scp -i ~/.ssh/deploy_key deploy/compose.production.yaml deploy/bootstrap.sql deploy/grants.sql deploy/deploy.sh deploy/check-cpu.sh deploy/pg-upgrade.sh deploy/backup.sh deploy/restore-backup.sh \
               "$DEPLOY_USER@$DEPLOY_HOST:$path/"
             scp -r -i ~/.ssh/deploy_key deploy/pgbouncer "$DEPLOY_USER@$DEPLOY_HOST:$path/"
       - run:
