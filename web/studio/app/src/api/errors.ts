@@ -88,7 +88,7 @@ const CODE_MESSAGES: Record<string, string> = {
   OAUTH_STATE_INVALID: '로그인 시간이 지났어요. 다시 시도해 주세요.',
   OAUTH_EMAIL_REQUIRED: '확인된 이메일을 받지 못했어요. 이메일 공유를 허용하거나 이메일로 가입해 주세요.',
   OAUTH_EMAIL_IN_USE: '이 이메일로 가입한 계정이 이미 있어요. 이메일과 비밀번호로 로그인한 뒤 계정 정보 > 로그인에서 연결해 주세요.',
-  OAUTH_SIGNUP_REQUIRED: '처음 오셨네요. 아래 필수 약관에 동의한 뒤 다시 Google·Apple로 계속하기를 눌러 주세요.',
+  OAUTH_SIGNUP_REQUIRED: '처음 오셨네요. 아래 이용약관에 동의한 뒤 다시 Google·Apple로 계속하기를 눌러 주세요.',
   OAUTH_ALREADY_LINKED: '이 계정은 이미 다른 AUDENIQ 계정에 연결돼 있어요.',
   OAUTH_PROVIDER_LINKED: '이미 같은 서비스의 계정을 연결했어요. 먼저 연결을 해제해 주세요.',
   OAUTH_LAST_SIGN_IN_METHOD: '로그인할 다른 방법이 없어 연결을 해제할 수 없어요. 비밀번호를 정하거나 패스키를 먼저 등록해 주세요.',

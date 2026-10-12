@@ -116,8 +116,8 @@ export function Signup() {
       <SocialSignIn
         signup onError={setError}
         canSignup={() => {
-          if (agreeTerms && agreePrivacy) return true;
-          setError('필수 약관에 동의한 뒤 Google·Apple로 계속할 수 있어요.');
+          if (agreeTerms) return true;
+          setError('이용약관에 동의한 뒤 Google·Apple로 계속할 수 있어요.');
           return false;
         }}
       />
