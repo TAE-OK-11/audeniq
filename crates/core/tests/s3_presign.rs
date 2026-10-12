@@ -191,3 +191,42 @@ async fn archive_probe_flags_a_bucket_without_retention() {
     assert_eq!(r["ok"], false, "{r}");
     assert_eq!(r["problems"][0], "ARCHIVE_NOT_WORM", "{r}");
 }
+
+/// Upload completion reads the quarantine object pinned to the ETag its HEAD
+/// saw (no server-side copy first): any other version is refused.
+#[tokio::test]
+async fn completion_download_is_pinned_to_the_seen_etag() {
+    let Some(s) = store() else {
+        eprintln!("S3_TEST_ENDPOINT not set; skipped");
+        return;
+    };
+    let key = format!("quarantine/test/{}", uuid::Uuid::new_v4());
+    let body = vec![5u8; 2048];
+    let grant = s
+        .presign_put(
+            &key,
+            body.len() as i64,
+            "audio/flac",
+            "n",
+            Utc::now() + Duration::minutes(5),
+        )
+        .await
+        .unwrap();
+    assert_eq!(put(&grant.url, &grant, body.clone(), None).await, 200);
+    let meta = s.head(&key).await.unwrap().unwrap();
+    let dir = std::env::temp_dir().join(format!("aq-pin-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let dest = dir.join("src");
+    let d = s
+        .download_version_to(&key, &dest, body.len() as u64, &meta.etag)
+        .await
+        .unwrap();
+    assert_eq!(d.size, body.len() as u64);
+    assert_eq!(std::fs::read(&dest).unwrap(), body);
+    assert!(matches!(
+        s.download_version_to(&key, &dest, body.len() as u64, "\"0000\"")
+            .await,
+        Err(audeniq_core::error::Error::Conflict)
+    ));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
