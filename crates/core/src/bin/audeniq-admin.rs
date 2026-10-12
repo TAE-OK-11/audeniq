@@ -51,10 +51,15 @@
 //! audeniq-admin --operator STAFF_EMAIL payout result ORDER_ID settled|failed|returned|unknown [BANK_TX_ID]
 //! audeniq-admin --operator STAFF_EMAIL payout cancel ORDER_ID    (before submit only)
 //!   (ADMIN/OPERATOR staff; SETTLED posts the ledger debit, UNKNOWN is never resent)
+//! audeniq-admin --operator STAFF_EMAIL royalty import ORG DSP START END CUR FILE
+//! audeniq-admin --operator STAFF_EMAIL royalty match ORG REPORT
+//! audeniq-admin --operator STAFF_EMAIL royalty receipt ORG REPORT BANK_REF AMOUNT CUR EVIDENCE_JSON
+//! audeniq-admin --operator STAFF_EMAIL royalty show ORG REPORT
+//! audeniq-admin --operator STAFF_EMAIL payout return ORDER BANK_REF AMOUNT EVIDENCE_JSON [--refund-fee]
 use audeniq_core::protected_admin as admin;
 use audeniq_core::protected_names::{Action, Mode};
 
-const USAGE: &str = "usage: audeniq-admin [--operator NAME] protected <list|add|remove|activate|alias|remove-alias|grant-exception|revoke-exception> ...\n       audeniq-admin [--operator NAME] identifier-issuer <list|register UPC|ISRC PREFIX>\n       audeniq-admin [--operator NAME] partner <list|config-check|status ID|set-dsp ID [DSP_UUID]|probe ID|dpid ID DPID|test-ern ID FILE|test-ack ID FILE|capabilities ID JSON|contract ID REF|go-live ID|suspend ID --reason TEXT|route D-n DIRECT|MERLIN|merlin-eligible D-n true|false>\n       audeniq-admin [--operator NAME] staff <list|grant EMAIL ROLE|revoke EMAIL|reset-mfa EMAIL>\n       audeniq-admin dsp list\n       audeniq-admin --operator STAFF_EMAIL payout <list [STATUS]|order REQUEST_ID|approve ORDER_ID|submit ORDER_ID BANK_TX|result ORDER_ID settled|failed|returned|unknown [BANK_TX]|cancel ORDER_ID>";
+const USAGE: &str = "usage: audeniq-admin [--operator NAME] protected <list|add|remove|activate|alias|remove-alias|grant-exception|revoke-exception> ...\n       audeniq-admin [--operator NAME] identifier-issuer <list|register UPC|ISRC PREFIX>\n       audeniq-admin [--operator NAME] partner <list|config-check|status ID|set-dsp ID [DSP_UUID]|probe ID|dpid ID DPID|test-ern ID FILE|test-ack ID FILE|capabilities ID JSON|contract ID REF|go-live ID|suspend ID --reason TEXT|route D-n DIRECT|MERLIN|merlin-eligible D-n true|false>\n       audeniq-admin [--operator NAME] staff <list|grant EMAIL ROLE|revoke EMAIL|reset-mfa EMAIL>\n       audeniq-admin dsp list\n       audeniq-admin --operator STAFF_EMAIL payout <list [STATUS]|order REQUEST_ID|approve ORDER_ID|submit ORDER_ID BANK_TX|result ORDER_ID settled|failed|returned|unknown [BANK_TX]|cancel ORDER_ID>\n       audeniq-admin --operator STAFF_EMAIL payout return ORDER_ID BANK_REF AMOUNT EVIDENCE_JSON_FILE [--refund-fee]\n       audeniq-admin --operator STAFF_EMAIL royalty <import ORG DSP START END CUR FILE|match ORG REPORT|receipt ORG REPORT BANK_REF AMOUNT CUR EVIDENCE_JSON_FILE|show ORG REPORT>";
 
 fn take_opt(args: &mut Vec<String>, key: &str) -> Option<String> {
     let i = args.iter().position(|a| a == key)?;
@@ -215,8 +220,91 @@ async fn main() -> anyhow::Result<()> {
         }
         return Ok(());
     }
+    if args.first().map(String::as_str) == Some("royalty") {
+        use audeniq_core::royalty;
+        let pool = audeniq_core::database::connect(&std::env::var("DATABASE_URL")?, 1).await?;
+        let actor: Option<uuid::Uuid> = sqlx::query_scalar(
+            "SELECT u.id FROM identity.users u JOIN identity.staff_members s ON s.user_id=u.id
+             WHERE u.email=lower($1) AND u.status='ACTIVE' AND s.status='ACTIVE'
+               AND s.role IN ('ADMIN','OPERATOR')",
+        )
+        .bind(operator.trim())
+        .fetch_optional(&pool)
+        .await?;
+        let actor = actor.ok_or_else(|| anyhow::anyhow!("active ADMIN/OPERATOR email required"))?;
+        let arg = |i: usize| -> anyhow::Result<&str> {
+            args.get(i)
+                .map(String::as_str)
+                .ok_or_else(|| anyhow::anyhow!("royalty arguments missing"))
+        };
+        let org: uuid::Uuid = arg(2)?.parse()?;
+        let output = match arg(1)? {
+            "import" => {
+                let content = std::fs::read_to_string(arg(7)?)?;
+                let id = royalty::ingest_report(
+                    &pool,
+                    org,
+                    arg(3)?,
+                    arg(4)?.parse()?,
+                    arg(5)?.parse()?,
+                    arg(6)?,
+                    arg(7)?,
+                    &content,
+                )
+                .await?;
+                serde_json::json!({"report_id":id,"status":"NORMALIZED"})
+            }
+            "match" => {
+                let report: uuid::Uuid = arg(3)?.parse()?;
+                let (matched, unresolved) = royalty::match_report(&pool, org, report).await?;
+                serde_json::json!({"report_id":report,"newly_auto_matched":matched,"unresolved":unresolved})
+            }
+            "receipt" => {
+                let evidence = serde_json::from_str(&std::fs::read_to_string(arg(7)?)?)?;
+                let id = royalty::record_receipt(
+                    &pool,
+                    org,
+                    arg(3)?.parse()?,
+                    actor,
+                    arg(4)?,
+                    arg(5)?.parse()?,
+                    arg(6)?,
+                    evidence,
+                )
+                .await?;
+                serde_json::json!({"receipt_id":id,"payable_posted":false})
+            }
+            "show" => {
+                let value:Option<serde_json::Value>=sqlx::query_scalar(
+                    "SELECT jsonb_build_object('report_id',r.id,'dsp_id',r.dsp_id,'status',r.status,
+                       'currency',r.currency,'source_hash',r.source_hash,
+                       'source_amount',(SELECT COALESCE(SUM(gross_amount),0)::text FROM finance.report_lines WHERE org_id=$1 AND report_id=r.id),
+                       'received_amount',(SELECT COALESCE(SUM(amount),0)::text FROM finance.royalty_receipts WHERE org_id=$1 AND report_id=r.id),
+                       'unresolved',(SELECT COUNT(*) FROM finance.report_lines WHERE org_id=$1 AND report_id=r.id AND match_status NOT IN ('AUTO','MANUAL')))
+                     FROM finance.royalty_reports r WHERE r.org_id=$1 AND r.id=$2",
+                ).bind(org).bind(arg(3)?.parse::<uuid::Uuid>()?).fetch_optional(&pool).await?;
+                value.ok_or_else(|| anyhow::anyhow!("report not found"))?
+            }
+            _ => anyhow::bail!("royalty <import|match|receipt|show>"),
+        };
+        let mut tx = pool.begin().await?;
+        audeniq_core::operations::audit(
+            &mut tx,
+            Some(actor),
+            Some(org),
+            None,
+            &format!("royalty.{}", arg(1)?),
+            "OWNER_CLI",
+            uuid::Uuid::new_v4(),
+        )
+        .await?;
+        tx.commit().await?;
+        println!("{}", serde_json::to_string_pretty(&output)?);
+        return Ok(());
+    }
     if args.first().map(String::as_str) == Some("payout") {
         use audeniq_core::finance;
+        let refund_fee = take_flag(&mut args, "--refund-fee");
         let pool = audeniq_core::database::connect(&std::env::var("DATABASE_URL")?, 1).await?;
         let uuid = |i: usize| -> anyhow::Result<uuid::Uuid> {
             Ok(args.get(i).ok_or_else(|| anyhow::anyhow!(USAGE))?.parse()?)
@@ -274,6 +362,28 @@ async fn main() -> anyhow::Result<()> {
             }
         };
         let out = match args.get(1).map(String::as_str) {
+            Some("return") => {
+                let id = uuid(2)?;
+                let reference = args.get(3).ok_or_else(|| anyhow::anyhow!(USAGE))?;
+                let amount = args.get(4).ok_or_else(|| anyhow::anyhow!(USAGE))?.parse()?;
+                let evidence = serde_json::from_str(&std::fs::read_to_string(
+                    args.get(5).ok_or_else(|| anyhow::anyhow!(USAGE))?,
+                )?)?;
+                let return_id = finance::record_payout_return(
+                    &pool,
+                    org_of(id).await?,
+                    actor,
+                    id,
+                    finance::PayoutReturnInput {
+                        bank_reference: reference,
+                        returned_amount: amount,
+                        refund_fee,
+                        evidence,
+                    },
+                )
+                .await?;
+                serde_json::json!({"order_id":id,"return_id":return_id})
+            }
             Some("order") => {
                 let request = uuid(2)?;
                 let org: uuid::Uuid =
