@@ -264,10 +264,11 @@ pub async fn start_reset(s: &AppState, h: &HeaderMap, i: ResetStart) -> Result<V
     let hash = sms::phone_hash(&s.config.service_secret, &phone);
     let user: Option<Uuid> = sqlx::query_scalar(
         "SELECT u.id FROM identity.users u JOIN portal.account_phones p ON p.user_id=u.id
-         WHERE u.email=$1 AND u.status='ACTIVE' AND p.phone_hash=$2",
+         WHERE (u.email=$1 OR u.email_bidx=ANY($3)) AND u.status='ACTIVE' AND p.phone_hash=$2",
     )
     .bind(&email)
     .bind(&hash)
+    .bind(crate::pii::email_indexes(&s.payout_keys, &email))
     .fetch_optional(&s.pool)
     .await?;
     let Some(user) = user else {

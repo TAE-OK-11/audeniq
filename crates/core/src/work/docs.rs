@@ -231,7 +231,8 @@ pub async fn search(s: &AppState, h: &HeaderMap, q: SearchQuery) -> Result<Value
           WHERE d.deleted_at IS NULL AND d.archived_at IS NULL AND work.doc_level(d.id,$2,$3) > 0
             AND ($1::text IS NULL OR d.search @@ plainto_tsquery('simple', $1)
                  OR d.title ILIKE '%'||$1||'%' OR d.content_text ILIKE '%'||$1||'%'
-                 OR EXISTS(SELECT 1 FROM identity.users u WHERE u.id=d.created_by AND u.email ILIKE $1||'%'))
+                 OR EXISTS(SELECT 1 FROM identity.users u WHERE u.id=d.created_by
+                           AND (u.email=lower($1) OR u.email_bidx=ANY($9))))
             AND ($4::text IS NULL OR d.status=$4)
             AND ($5::uuid IS NULL OR d.created_by=$5)
             AND ($6::text IS NULL OR EXISTS(SELECT 1 FROM work.links l WHERE l.subject_kind='doc' AND l.subject_id=d.id
@@ -249,6 +250,12 @@ pub async fn search(s: &AppState, h: &HeaderMap, q: SearchQuery) -> Result<Value
     .bind(entity.as_ref().map(|e| e.kind.clone()))
     .bind(entity.as_ref().map(|e| e.id.clone()))
     .bind(limit)
+    // Authors match by their full email (stored sealed, so no prefix search).
+    .bind(
+        term.as_deref()
+            .map(|t| crate::pii::email_indexes(&s.payout_keys, &t.trim().to_lowercase()))
+            .unwrap_or_default(),
+    )
     .fetch_all(&s.pool)
     .await?;
     let items: Vec<Value> = rows
@@ -1205,15 +1212,20 @@ pub async fn permissions(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<Value>
     let st = staff::staff(s, h, false).await?;
     let mut c = s.pool.acquire().await?;
     let (r, _) = load(&mut c, &st, id, MANAGER, false).await?;
-    let grants: Vec<Value> = sqlx::query_scalar(
-        "SELECT jsonb_build_object('principal_kind',p.principal_kind,'principal_id',p.principal_id,'level',p.level,
-                'email',(SELECT u.email FROM identity.users u WHERE p.principal_kind='USER' AND u.id::text=p.principal_id),
+    let mut grants: Value = Value::Array(
+        sqlx::query_scalar(concat!(
+            "SELECT jsonb_build_object('principal_kind',p.principal_kind,'principal_id',p.principal_id,'level',p.level,
+                'email',(SELECT ",
+            crate::email_ref!("u"),
+            " FROM identity.users u WHERE p.principal_kind='USER' AND u.id::text=p.principal_id),
                 'granted_by',p.granted_by,'granted_at',p.granted_at)
-           FROM work.doc_permissions p WHERE p.doc_id=$1 ORDER BY p.principal_kind, p.granted_at",
-    )
-    .bind(id)
-    .fetch_all(&mut *c)
-    .await?;
+           FROM work.doc_permissions p WHERE p.doc_id=$1 ORDER BY p.principal_kind, p.granted_at"
+        ))
+        .bind(id)
+        .fetch_all(&mut *c)
+        .await?,
+    );
+    crate::pii::reveal(&s.payout_keys, &mut grants)?;
     Ok(
         json!({"owner_id": r.get::<Uuid,_>("created_by"), "staff_access": r.get::<Option<String>,_>("staff_access"), "grants": grants}),
     )

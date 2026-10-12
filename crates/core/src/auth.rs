@@ -138,9 +138,28 @@ pub async fn create_resource(
     sqlx::query("INSERT INTO identity.resource_acl(org_id,resource_id,principal_party_id,action) VALUES($1,$2,$3,'read'),($1,$2,$3,'write')").bind(org).bind(id).bind(a.party).execute(&mut *c).await?;
     Ok(())
 }
+/// Keys the rate-limit bucket hashes: bucket names carry emails, phone
+/// numbers and IPs, which an unkeyed hash would not protect. Set once by
+/// `AppState::new` from the service secret.
+static RATE_KEY: std::sync::OnceLock<[u8; 32]> = std::sync::OnceLock::new();
+pub(crate) fn init_rate_key(secret: &str) {
+    let _ = RATE_KEY.set(rate_mac(secret.as_bytes(), b"audeniq-rate-limit-key-v1"));
+}
+fn rate_mac(key: &[u8], msg: &[u8]) -> [u8; 32] {
+    use hmac::{Hmac, KeyInit, Mac};
+    let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(key).expect("HMAC key");
+    mac.update(msg);
+    mac.finalize().into_bytes().into()
+}
+pub fn bucket_hash(key: &str) -> Vec<u8> {
+    match RATE_KEY.get() {
+        Some(k) => rate_mac(k, key.as_bytes()).to_vec(),
+        None => hash_token(key),
+    }
+}
 pub async fn rate(pool: &PgPool, key: &str, limit: i32) -> Result<()> {
     let n:i32=sqlx::query_scalar("INSERT INTO identity.auth_limits(bucket_hash,attempts) VALUES($1,1) ON CONFLICT(bucket_hash) DO UPDATE SET attempts=CASE WHEN identity.auth_limits.window_start<now()-interval '15 minutes' THEN 1 ELSE identity.auth_limits.attempts+1 END,window_start=CASE WHEN identity.auth_limits.window_start<now()-interval '15 minutes' THEN now() ELSE identity.auth_limits.window_start END RETURNING attempts")
- .bind(hash_token(key)).fetch_one(pool).await?;
+ .bind(bucket_hash(key)).fetch_one(pool).await?;
     if n > limit {
         Err(Error::RateLimited)
     } else {
@@ -279,9 +298,27 @@ pub async fn register(s: &AppState, h: &HeaderMap, input: Credentials) -> Result
     .execute(&mut *tx)
     .await?;
     sqlx::query("INSERT INTO identity.parties(id,org_id,kind,display_name) VALUES($1,$2,'PERSON','Account holder')").bind(party).bind(org).execute(&mut *tx).await?;
-    sqlx::query("INSERT INTO identity.users(id,email,password_hash,party_id) VALUES($1,$2,$3,$4)")
+    // The email is stored sealed. Its blind index is unique per key version,
+    // so sign-ups for one address are serialized and checked across versions.
+    let (email_cipher, email_bidx) = crate::pii::seal_email(&s.payout_keys, user, &email)?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+        .bind(&email_bidx)
+        .execute(&mut *tx)
+        .await?;
+    let taken: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM identity.users WHERE email=$1 OR email_bidx=ANY($2))",
+    )
+    .bind(&email)
+    .bind(crate::pii::email_indexes(&s.payout_keys, &email))
+    .fetch_one(&mut *tx)
+    .await?;
+    if taken {
+        return Err(Error::Conflict);
+    }
+    sqlx::query("INSERT INTO identity.users(id,email_cipher,email_bidx,password_hash,party_id) VALUES($1,$2,$3,$4,$5)")
         .bind(user)
-        .bind(email)
+        .bind(email_cipher)
+        .bind(email_bidx)
         .bind(hash)
         .bind(party)
         .execute(&mut *tx)
@@ -329,10 +366,13 @@ pub async fn login(
         .acquire_owned()
         .await
         .map_err(|_| Error::Internal)?;
-    let row = sqlx::query("SELECT id,password_hash,status FROM identity.users WHERE email=$1")
-        .bind(email)
-        .fetch_optional(&s.pool)
-        .await?;
+    let row = sqlx::query(
+        "SELECT id,password_hash,status FROM identity.users WHERE email=$1 OR email_bidx=ANY($2)",
+    )
+    .bind(&email)
+    .bind(crate::pii::email_indexes(&s.payout_keys, &email))
+    .fetch_optional(&s.pool)
+    .await?;
     let hash = row
         .as_ref()
         .map(|r| r.get::<String, _>("password_hash"))

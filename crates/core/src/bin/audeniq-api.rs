@@ -19,6 +19,13 @@ async fn main() -> anyhow::Result<()> {
     if audeniq_core::config::kms_enabled()? {
         audeniq_core::payout_keys::KeyRing::from_env(true)?;
     }
+    // Emails, names and contact data are stored only sealed (migration 0102):
+    // production does not start without a key (KMS keyring or local key).
+    anyhow::ensure!(
+        std::env::var("APP_ENV").as_deref() != Ok("production")
+            || audeniq_core::payout_keys::KeyRing::from_env(false)?.ready(),
+        "PII_KEYRING_REQUIRED: set PAYOUT_KMS_ENABLED=true with the materialized keyring, or PAYOUT_ACCOUNT_KEY"
+    );
     let pool = database::connect(&config.database_url, database::max_connections(6)?).await?;
     let storage: Arc<dyn ObjectStore> = if std::env::var("STORAGE_ENABLED").as_deref() == Ok("true")
     {

@@ -224,7 +224,7 @@ async fn build(s: &AppState, st: &Staff) -> Result<Vec<Item>> {
 
     // Mentions in unresolved notes.
     let notes = sqlx::query(
-        "SELECT n.id, n.target_kind, n.target_id, left(n.body, 160) AS body, n.created_at, n.edited_at, u.email
+        "SELECT n.id, n.target_kind, n.target_id, left(n.body, 160) AS body, n.created_at, n.edited_at, u.id AS author_id, u.email, u.email_cipher
            FROM work.notes n JOIN identity.users u ON u.id=n.author_id
           WHERE $1 = ANY(n.mentions) AND n.author_id<>$1 AND n.archived_at IS NULL AND n.resolved_at IS NULL
             AND (n.target_kind<>'doc' OR work.doc_level(n.target_id::uuid,$1,$2) > 0)
@@ -240,7 +240,14 @@ async fn build(s: &AppState, st: &Staff) -> Result<Vec<Item>> {
         let target: String = n.get("target_id");
         let at: DateTime<Utc> = n.get("created_at");
         let edited: Option<DateTime<Utc>> = n.get("edited_at");
-        let email: String = n.get("email");
+        let email = crate::pii::open(
+            &s.payout_keys,
+            crate::payout_keys::Field::UserEmail,
+            n.get("author_id"),
+            n.get("email"),
+            n.get::<Option<Vec<u8>>, _>("email_cipher").as_deref(),
+        )?
+        .unwrap_or_default();
         let link = match kind.as_str() {
             "task" => format!("/admin/tasks/{target}"),
             "release" => format!("/admin/reviews/{target}"),

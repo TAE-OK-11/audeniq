@@ -93,6 +93,18 @@ async fn crm_and_dsp_operations(pool: PgPool) {
         json!({"name": "이서연", "role": "A&R", "email": "sy@example.test", "phone": "010-1234-5678"}), &op).await;
     let contact = d["contacts"][0]["id"].as_str().unwrap().to_string();
     assert_eq!(d["contacts"][0]["is_primary"], true);
+    assert_eq!(d["contacts"][0]["email"], "sy@example.test");
+    assert_eq!(d["contacts"][0]["phone"], "010-1234-5678");
+    let stored: String = sqlx::query_scalar(
+        "SELECT row_to_json(c)::text FROM work.relationship_contacts c WHERE id=$1::uuid",
+    )
+    .bind(&contact)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    for plain in ["이서연", "sy@example.test", "010-1234-5678"] {
+        assert!(!stored.contains(plain), "contact {plain} stored sealed");
+    }
     let (s, r) = send(
         &app,
         "POST",

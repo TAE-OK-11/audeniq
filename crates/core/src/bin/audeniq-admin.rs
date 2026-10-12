@@ -114,8 +114,11 @@ async fn main() -> anyhow::Result<()> {
             Some("reencrypt-accounts") if args.len() == 2 => {
                 audeniq_core::privacy_maintenance::reencrypt_accounts(&pool, &operator).await?
             }
+            Some("encrypt-pii") if args.len() == 2 => {
+                audeniq_core::privacy_maintenance::encrypt_pii(&pool, &operator).await?
+            }
             _ => anyhow::bail!(
-                "usage: audeniq-admin --operator NAME privacy <purge-transient|reencrypt-accounts>"
+                "usage: audeniq-admin --operator NAME privacy <purge-transient|reencrypt-accounts|encrypt-pii>"
             ),
         };
         println!("{}", serde_json::to_string(&result)?);
@@ -207,25 +210,37 @@ async fn main() -> anyhow::Result<()> {
         };
         if args.get(1).map(String::as_str) == Some("list") {
             let status = args.get(2).cloned().unwrap_or_else(|| "REQUESTED".into());
-            let rows: Vec<serde_json::Value> = sqlx::query_scalar(
+            let mut rows: serde_json::Value = serde_json::Value::Array(sqlx::query_scalar(concat!(
                 "SELECT jsonb_build_object('request_id',p.id,'org_id',p.org_id,'amount',p.amount::text,'fee',p.fee_amount::text,
-                   'net',p.net_amount::text,'status',p.status,'account',p.account_snapshot,'created_at',p.created_at,
+                   'net',p.net_amount::text,'status',p.status,
+                   'account',p.account_snapshot - 'holder_name' || jsonb_build_object('holder_name',",
+                audeniq_core::pii_ref!(
+                    "holder_name",
+                    "p.org_id",
+                    "p.account_snapshot->>'holder_name'",
+                    "p.holder_cipher"
+                ),
+                "),'created_at',p.created_at,
                    'order_id',o.id,'order_status',o.status)
                  FROM portal.payout_requests p LEFT JOIN finance.payout_orders o ON o.id=p.payout_order_id
-                 WHERE p.status=$1 ORDER BY p.created_at LIMIT 500",
-            )
+                 WHERE p.status=$1 ORDER BY p.created_at LIMIT 500"
+            ))
             .bind(status.to_ascii_uppercase())
             .fetch_all(&pool)
-            .await?;
+            .await?);
+            audeniq_core::pii::reveal(&audeniq_core::pii::cli_keys()?, &mut rows)?;
             println!("{}", serde_json::to_string_pretty(&rows)?);
             return Ok(());
         }
         // Every change is attributed to an active ADMIN/OPERATOR staff account.
+        let keys = audeniq_core::pii::cli_keys()?;
+        let operator_email = operator.trim().to_lowercase();
         let actor: Option<uuid::Uuid> = sqlx::query_scalar(
             "SELECT u.id FROM identity.users u JOIN identity.staff_members s ON s.user_id=u.id
-             WHERE u.email=lower($1) AND s.status='ACTIVE' AND s.role IN ('ADMIN','OPERATOR')",
+             WHERE (u.email=$1 OR u.email_bidx=ANY($2)) AND s.status='ACTIVE' AND s.role IN ('ADMIN','OPERATOR')",
         )
-        .bind(operator.trim())
+        .bind(&operator_email)
+        .bind(audeniq_core::pii::email_indexes(&keys, &operator_email))
         .fetch_optional(&pool)
         .await?;
         let actor = actor.ok_or_else(|| {

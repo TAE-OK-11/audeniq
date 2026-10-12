@@ -19,6 +19,7 @@ use crate::{
     domain::sha256_hex,
     error::{Error, Result},
     operations,
+    payout_keys::Field,
     signing::Provider,
 };
 use axum::{
@@ -48,6 +49,10 @@ pub fn age_on(birth: NaiveDate, today: NaiveDate) -> i32 {
     age
 }
 
+fn parse_birth(sealed: &str) -> Result<NaiveDate> {
+    NaiveDate::parse_from_str(sealed, "%Y-%m-%d").map_err(|_| Error::Internal)
+}
+
 fn ci_hash(s: &AppState, ci: &str) -> String {
     // signing.rs의 pepper_hash("ci")와 같은 값: 서명 기록과 대조할 수 있다.
     sha256_hex(format!("ci\0{}\0{ci}", s.config.service_secret))
@@ -59,7 +64,7 @@ fn ci_hash(s: &AppState, ci: &str) -> String {
 pub async fn get_account(s: &AppState, a: &Actor) -> Result<Value> {
     let provider = Provider::from_env();
     let identity = sqlx::query(
-        "SELECT real_name,birth_date,provider,method,verified_at,row_version FROM portal.account_identities WHERE user_id=$1",
+        "SELECT real_name,real_name_cipher,birth_date,birth_date_cipher,provider,method,verified_at,row_version FROM portal.account_identities WHERE user_id=$1",
     )
     .bind(a.user)
     .fetch_optional(&s.pool)
@@ -71,13 +76,33 @@ pub async fn get_account(s: &AppState, a: &Actor) -> Result<Value> {
     .fetch_optional(&s.pool)
     .await?;
     let today = crate::domain::today_kst();
+    // Sealed (or, before `privacy encrypt-pii`, plaintext) name and birth date.
+    let (real_name, birth) = match &identity {
+        Some(r) => (
+            crate::pii::open(
+                &s.payout_keys,
+                Field::IdentityRealName,
+                a.user,
+                r.get("real_name"),
+                r.get::<Option<Vec<u8>>, _>("real_name_cipher").as_deref(),
+            )?,
+            match r.get::<Option<Vec<u8>>, _>("birth_date_cipher") {
+                Some(c) => Some(parse_birth(&s.payout_keys.open_field(
+                    Field::IdentityBirthDate,
+                    a.user,
+                    &c,
+                )?)?),
+                None => r.get::<Option<NaiveDate>, _>("birth_date"),
+            },
+        ),
+        None => (None, None),
+    };
     let verified = identity.as_ref().map(|r| {
-        let birth: NaiveDate = r.get("birth_date");
         json!({
             "provider": r.get::<String, _>("provider"),
             "method": r.get::<String, _>("method"),
             "verified_at": r.get::<DateTime<Utc>, _>("verified_at"),
-            "adult": age_on(birth, today) >= ADULT_AGE,
+            "adult": birth.is_some_and(|b| age_on(b, today) >= ADULT_AGE),
         })
     });
     let tax = tax.map(|r| {
@@ -94,7 +119,7 @@ pub async fn get_account(s: &AppState, a: &Actor) -> Result<Value> {
     Ok(json!({
         "phone": phone,
         "sms_ready": crate::sms::SmsSender::from_env().ready(),
-        "real_name": identity.as_ref().map(|r| r.get::<String, _>("real_name")).unwrap_or_default(),
+        "real_name": real_name.unwrap_or_default(),
         "verified": verified,
         "tax": tax,
         "identity_provider": {"ready": provider.name().is_some(), "name": provider.name()},
@@ -122,10 +147,18 @@ pub async fn verify_identity(s: &AppState, a: &Actor, i: IdentityInput) -> Resul
     let verified = provider.verify(&i.transaction_id).await?;
     let birth = NaiveDate::parse_from_str(&verified.birth_date, "%Y-%m-%d")
         .map_err(|_| Error::InvalidCode("IDENTITY_NOT_VERIFIED"))?;
+    let birth_sealed = s.payout_keys.seal_field(
+        Field::IdentityBirthDate,
+        a.user,
+        &birth.format("%Y-%m-%d").to_string(),
+    )?;
     let name: String = verified.name.trim().chars().take(120).collect();
     if name.is_empty() {
         return Err(Error::InvalidCode("IDENTITY_NOT_VERIFIED"));
     }
+    let name_sealed = s
+        .payout_keys
+        .seal_field(Field::IdentityRealName, a.user, &name)?;
     let ci = ci_hash(s, &verified.ci);
     let mut tx = s.pool.begin().await?;
     // 같은 인증 거래로 다른 계정(또는 서명 요청)을 인증할 수 없다.
@@ -152,16 +185,17 @@ pub async fn verify_identity(s: &AppState, a: &Actor, i: IdentityInput) -> Resul
         return Err(Error::InvalidCode("IDENTITY_ACCOUNT_MISMATCH"));
     }
     let row = sqlx::query(
-        "INSERT INTO portal.account_identities(user_id,real_name,birth_date,provider,method,transaction_id,ci_hash)
+        "INSERT INTO portal.account_identities(user_id,real_name_cipher,birth_date_cipher,provider,method,transaction_id,ci_hash)
          VALUES($1,$2,$3,$4,$5,$6,$7)
-         ON CONFLICT(user_id) DO UPDATE SET real_name=EXCLUDED.real_name,birth_date=EXCLUDED.birth_date,provider=EXCLUDED.provider,
+         ON CONFLICT(user_id) DO UPDATE SET real_name=NULL,real_name_cipher=EXCLUDED.real_name_cipher,
+           birth_date=NULL,birth_date_cipher=EXCLUDED.birth_date_cipher,provider=EXCLUDED.provider,
            method=EXCLUDED.method,transaction_id=EXCLUDED.transaction_id,verified_at=now(),
            row_version=portal.account_identities.row_version+1
          RETURNING verified_at,row_version",
     )
     .bind(a.user)
-    .bind(&name)
-    .bind(birth)
+    .bind(&name_sealed)
+    .bind(&birth_sealed)
     .bind(verified.provider)
     .bind(&verified.method)
     .bind(&verified.transaction_id)
@@ -270,7 +304,7 @@ pub async fn put_tax(s: &AppState, a: &Actor, i: TaxInput) -> Result<Value> {
     let tin = tin.map(zeroize::Zeroizing::new);
     let sealed = match &tin {
         Some(t) => Some((
-            s.payout_keys.seal(a.user, t)?,
+            s.payout_keys.seal_field(Field::TaxTin, a.user, t)?,
             t[t.len() - 4..].to_string(),
             s.payout_keys.active_version(),
         )),
@@ -283,8 +317,8 @@ pub async fn put_tax(s: &AppState, a: &Actor, i: TaxInput) -> Result<Value> {
             return Err(Error::Invalid);
         }
         sqlx::query_scalar(
-            "INSERT INTO portal.tax_residencies(user_id,foreign_tax,country,tin_cipher,tin_last4,key_version,us_person,row_version)
-             VALUES($1,$2,$3,$4,$5,$6,$7,1) ON CONFLICT(user_id) DO NOTHING RETURNING row_version",
+            "INSERT INTO portal.tax_residencies(user_id,foreign_tax,country,tin_cipher,tin_last4,key_version,us_person,row_version,tin_field_aad)
+             VALUES($1,$2,$3,$4,$5,$6,$7,1,true) ON CONFLICT(user_id) DO NOTHING RETURNING row_version",
         )
         .bind(a.user)
         .bind(i.foreign)
@@ -301,6 +335,7 @@ pub async fn put_tax(s: &AppState, a: &Actor, i: TaxInput) -> Result<Value> {
                tin_cipher=CASE WHEN $8 THEN tin_cipher ELSE $4 END,
                tin_last4=CASE WHEN $8 THEN tin_last4 ELSE $5 END,
                key_version=CASE WHEN $8 THEN key_version ELSE $6 END,
+               tin_field_aad=CASE WHEN $8 THEN tin_field_aad ELSE true END,
                us_person=$7,row_version=row_version+1,updated_at=now()
              WHERE user_id=$1 AND row_version=$9 RETURNING row_version",
         )
