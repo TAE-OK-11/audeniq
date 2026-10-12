@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from '../lib/router';
 import { useAuth } from '../api/auth';
 import { PASSWORD_MIN } from '../api/client';
-import { authErrorMessage } from '../api/errors';
+import { authErrorMessage, messageForCode } from '../api/errors';
+import { SocialSignIn } from '../components/SocialSignIn';
+import { takeOAuthResult } from '../api/oauth';
 import { AuthLayout, PasswordInput } from '../components/AuthLayout';
 import { patchProfile } from '../store/profile';
 
@@ -28,6 +30,8 @@ export function Signup() {
   const [agreePrivacy, setAgreePrivacy] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // 로그인 화면에서 Google·Apple로 처음 온 경우: 약관에 동의한 뒤 다시 누르도록 안내
+  useEffect(() => { const r = takeOAuthResult(); if (r.error) setError(messageForCode(r.error)); }, []);
   const pw = strength(password);
   const mismatch = !!confirm && password !== confirm;
 
@@ -115,6 +119,14 @@ export function Signup() {
           {busy ? '가입하는 중' : '회원가입'}
         </button>
       </form>
+      <SocialSignIn
+        signup onError={setError}
+        canSignup={() => {
+          if (agreeTerms && agreePrivacy) return true;
+          setError('필수 약관에 동의한 뒤 Google·Apple로 계속할 수 있어요.');
+          return false;
+        }}
+      />
       <div className="auth-links">
         <span>이미 계정이 있으신가요?</span>
         <Link to="/login">로그인</Link>

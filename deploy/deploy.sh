@@ -77,6 +77,13 @@ if [ "$kms_enabled" = true ]; then
   [ "$keyfile" = /run/audeniq-keys/payout-keyring.json ] || die "PAYOUT_KEYRING_FILE=/run/audeniq-keys/payout-keyring.json 을 설정해 주세요"
   [ -f "$keydir/payout-keyring.json" ] || die "KMS 키를 먼저 tmpfs에 준비해 주세요 (audeniq-secrets kms materialize)"
   [ "$(stat -f -c %T "$keydir")" = tmpfs ] || die "키 폴더는 tmpfs여야 해요"
+else
+  # 개인정보(이메일·실명·연락처·예금주)는 암호문으로만 저장한다(0102): 키 없이는 API가 기동하지 않는다.
+  local_key=$(sed -n 's/^PAYOUT_ACCOUNT_KEY=//p' "$ENV_FILE" | tail -n 1)
+  local_ring=$(sed -n 's/^PAYOUT_KEYRING_FILE=//p' "$ENV_FILE" | tail -n 1)
+  if [ -z "$local_key" ] && [ -z "$local_ring" ] && ! grep -qs '^PAYOUT_ACCOUNT_KEY=.' "${SECRETS_ENV_FILE:-/nonexistent}"; then
+    die "개인정보 암호화 키가 없어요: PAYOUT_KMS_ENABLED=true(권장) 또는 PAYOUT_ACCOUNT_KEY를 설정해 주세요"
+  fi
 fi
 
 REF=$1

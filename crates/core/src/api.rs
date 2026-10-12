@@ -44,6 +44,7 @@ pub struct AppState {
 impl AppState {
     pub async fn new(pool: PgPool, config: Config, storage: Arc<dyn ObjectStore>) -> Result<Self> {
         let service_secret_digest = auth::token_digest(&config.service_secret);
+        auth::init_rate_key(&config.service_secret);
         Ok(Self {
             pool,
             config,
@@ -74,6 +75,26 @@ pub fn router(s: AppState) -> Router {
         .route("/api/auth/sessions", get(sessions))
         .route("/api/auth/sessions/{id}/revoke", post(revoke_session))
         .route("/api/auth/password", post(change_password))
+        .route("/api/auth/passkey/options", post(passkey_login_options))
+        .route("/api/auth/passkey/login", post(passkey_login))
+        .route("/api/auth/passkeys", get(passkey_list))
+        .route("/api/auth/passkeys/options", post(passkey_register_options))
+        .route("/api/auth/passkeys/register", post(passkey_register))
+        .route(
+            "/api/auth/passkeys/{id}",
+            axum::routing::delete(passkey_remove),
+        )
+        .route("/api/auth/oauth/providers", get(oauth_providers))
+        .route("/api/auth/oauth/identities", get(oauth_identities))
+        .route(
+            "/api/auth/oauth/identities/{id}",
+            axum::routing::delete(oauth_unlink),
+        )
+        .route("/api/auth/oauth/{provider}/start", post(oauth_start))
+        .route(
+            "/api/auth/oauth/{provider}/callback",
+            get(oauth_callback_get).post(oauth_callback_post),
+        )
         .route("/api/me", get(me))
         .route("/api/orgs", post(create_org).get(orgs))
         .route("/api/orgs/{org}/memberships", put(member))
@@ -231,8 +252,13 @@ async fn boundary(State(s): State<AppState>, mut req: Request, next: Next) -> Re
             .uri()
             .path()
             .starts_with(crate::partner_hooks::HOOK_PREFIX);
+    // Apple's sign-in returns with a cross-site form POST; the one-time state
+    // and the code exchange authenticate it (crate::oauth::callback).
+    let oauth_form_post =
+        *req.method() == Method::POST && req.uri().path() == "/api/auth/oauth/apple/callback";
     if !matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS)
         && !partner_hook
+        && !oauth_form_post
         && auth::origin(req.headers(), &s.config).is_err()
     {
         return Error::Forbidden.into_response();
@@ -370,6 +396,83 @@ async fn login(
 ) -> Result<(HeaderMap, Json<Value>)> {
     auth::login(&s, &h, i).await
 }
+async fn oauth_providers() -> Json<Value> {
+    Json(crate::oauth::providers())
+}
+async fn oauth_identities(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
+    Ok(Json(crate::oauth::identities(&s, &h).await?))
+}
+async fn oauth_unlink(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>> {
+    Ok(Json(crate::oauth::unlink(&s, &h, id).await?))
+}
+async fn oauth_start(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(provider): Path<String>,
+    Json(i): Json<crate::oauth::StartInput>,
+) -> Result<Json<Value>> {
+    Ok(Json(crate::oauth::start(&s, &h, &provider, i).await?))
+}
+async fn oauth_callback_get(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(provider): Path<String>,
+    Query(p): Query<crate::oauth::CallbackParams>,
+) -> Response {
+    crate::oauth::callback(&s, &h, &provider, p).await
+}
+/// Apple returns with a form POST (response_mode=form_post).
+async fn oauth_callback_post(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(provider): Path<String>,
+    body: axum::body::Bytes,
+) -> Response {
+    let mut p = crate::oauth::CallbackParams::default();
+    for (k, v) in url::form_urlencoded::parse(&body) {
+        match &*k {
+            "code" => p.code = Some(v.into_owned()),
+            "state" => p.state = Some(v.into_owned()),
+            "error" => p.error = Some(v.into_owned()),
+            _ => {}
+        }
+    }
+    crate::oauth::callback(&s, &h, &provider, p).await
+}
+async fn passkey_login_options(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
+    Ok(Json(crate::passkey::login_options(&s, &h).await?))
+}
+async fn passkey_login(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Json(i): Json<crate::passkey::LoginInput>,
+) -> Result<(HeaderMap, Json<Value>)> {
+    crate::passkey::login(&s, &h, i).await
+}
+async fn passkey_list(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
+    Ok(Json(crate::passkey::list(&s, &h).await?))
+}
+async fn passkey_register_options(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
+    Ok(Json(crate::passkey::register_options(&s, &h).await?))
+}
+async fn passkey_register(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Json(i): Json<crate::passkey::RegisterInput>,
+) -> Result<Json<Value>> {
+    Ok(Json(crate::passkey::register(&s, &h, i).await?))
+}
+async fn passkey_remove(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>> {
+    Ok(Json(crate::passkey::remove(&s, &h, id).await?))
+}
 async fn logout(State(s): State<AppState>, h: HeaderMap) -> Result<(HeaderMap, Json<Value>)> {
     auth::logout(&s, &h).await
 }
@@ -378,10 +481,7 @@ async fn csrf(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
 }
 async fn me(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
-    let email: String = sqlx::query_scalar("SELECT email FROM identity.users WHERE id=$1")
-        .bind(a.user)
-        .fetch_one(&s.pool)
-        .await?;
+    let email = crate::pii::user_email(&s.payout_keys, &s.pool, a.user).await?;
     Ok(Json(
         json!({"user_id":a.user,"party_id":a.party,"email":email}),
     ))

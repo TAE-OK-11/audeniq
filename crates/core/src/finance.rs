@@ -656,7 +656,7 @@ pub async fn order_payout_request(
         .await?;
     let r = sqlx::query(
         "SELECT status,payout_order_id,payee_party_id,amount,currency,fee_amount,net_amount,policy_version,
-                account_snapshot,account_cipher,account_key_version
+                account_snapshot,account_cipher,account_key_version,holder_cipher
          FROM portal.payout_requests WHERE org_id=$1 AND id=$2 FOR UPDATE",
     )
     .bind(org)
@@ -692,8 +692,8 @@ pub async fn order_payout_request(
     let id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO finance.payout_orders(id,org_id,idempotency_key,payee_party_id,amount,currency,created_by,
-           payout_request_id,fee_amount,net_amount,fee_policy_version,account_snapshot,account_cipher,account_key_version)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)",
+           payout_request_id,fee_amount,net_amount,fee_policy_version,account_snapshot,account_cipher,account_key_version,holder_cipher)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)",
     )
     .bind(id)
     .bind(org)
@@ -709,6 +709,8 @@ pub async fn order_payout_request(
     .bind(r.get::<Option<Value>, _>("account_snapshot"))
     .bind(r.get::<Option<Vec<u8>>, _>("account_cipher"))
     .bind(r.get::<Option<i16>, _>("account_key_version"))
+    // Sealed holder name (AAD: org), copied without decrypting.
+    .bind(r.get::<Option<Vec<u8>>, _>("holder_cipher"))
     .execute(&mut *tx)
     .await?;
     sqlx::query("UPDATE portal.payout_requests SET status='ORDERED',payout_order_id=$3 WHERE org_id=$1 AND id=$2")

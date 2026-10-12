@@ -1,5 +1,5 @@
 // 계정 정보 — 본인 확인·아티스트·수익 받기 설정. 토스 설정 화면처럼 '줄 + ›' 목록. 줄을 누르면 그 항목 하나만 고치는 창이 열린다.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
 import { Modal, useModalClose } from '../components/Modal';
@@ -10,6 +10,10 @@ import { isPaymentRegistered, usePayment } from '../store/payment';
 import { patchAccount, taxCountryLabel, useAccount, verifyLabel, TAX_COUNTRIES, type TaxResidency } from '../store/account';
 import { refreshAccount } from '../store/portalSync';
 import { IdentityVerify } from '../components/IdentityVerify';
+import { PasskeySettings } from '../components/PasskeySettings';
+import { ConnectedAccounts } from '../components/ConnectedAccounts';
+import { OAUTH_LABEL, takeOAuthResult } from '../api/oauth';
+import { messageForCode } from '../api/errors';
 import { useAuth } from '../api/auth';
 import { MOCK } from '../api/client';
 import * as portal from '../api/portal';
@@ -168,6 +172,14 @@ export function Profile() {
   const [editing, setEditing] = useState<Field | null>(null);
   const [accountEdit, setAccountEdit] = useState<'verify' | 'tax' | null>(null);
   const [showPayment, setShowPayment] = useState(false);
+  const [showPasskeys, setShowPasskeys] = useState(false);
+  const [showConnected, setShowConnected] = useState(false);
+  // Google·Apple 연결을 마치고 돌아온 경우
+  useEffect(() => {
+    const r = takeOAuthResult();
+    if (r.linked) { toast(`${OAUTH_LABEL[r.linked]} 계정을 연결했어요.`); setShowConnected(true); }
+    else if (r.error) toast(messageForCode(r.error), 'error');
+  }, [toast]);
 
   const save = async (next: ProfileInfo): Promise<boolean> => {
     if (!MOCK) {
@@ -258,6 +270,14 @@ export function Profile() {
         <SetRow label="정산·지급 내역" onClick={() => nav('/settlement')} />
       </section>
 
+      {!MOCK && (
+        <section className="aq-set-card" aria-labelledby="setSignIn">
+          <h2 id="setSignIn">로그인</h2>
+          <SetRow id="accountRowPasskey" label="패스키" empty="비밀번호 대신 지문·얼굴로 로그인" onClick={() => setShowPasskeys(true)} />
+          <SetRow id="accountRowConnected" label="연결된 계정" empty="Google · Apple" onClick={() => setShowConnected(true)} />
+        </section>
+      )}
+
       <section className="aq-set-card" aria-labelledby="setLegal">
         <h2 id="setLegal">약관</h2>
         <SetRow label="서비스 이용약관" onClick={() => nav('/terms')} />
@@ -281,6 +301,16 @@ export function Profile() {
         </Modal>
       )}
       {showPayment && <PaymentSetupModal onClose={() => setShowPayment(false)} />}
+      {showPasskeys && (
+        <Modal title="패스키" onClose={() => setShowPasskeys(false)} modalClass="aq-set-modal">
+          <PasskeySettings />
+        </Modal>
+      )}
+      {showConnected && (
+        <Modal title="연결된 계정" onClose={() => setShowConnected(false)} modalClass="aq-set-modal">
+          <ConnectedAccounts />
+        </Modal>
+      )}
       {accountEdit === 'verify' && (
         <Modal title={account.verified ? '본인인증 다시 하기' : '본인인증'} onClose={() => setAccountEdit(null)} modalClass="aq-set-modal">
           <IdentityVerify onDone={() => toast('본인인증을 마쳤어요.')} />

@@ -890,3 +890,22 @@ summary::-webkit-details-marker{display:none}
 @media (max-width:600px){#modal.aq-legal-mode .modal-inner{width:100%;max-height:92dvh}.aq-legal-sheet{max-height:calc(92dvh - 90px);padding:16px 14px 22px}}
 #modal.aq-legal-mode{z-index:160!important}
 
+
+/* 패스키 */
+.aq-passkeys{display:grid;gap:14px}
+.aq-passkey-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.aq-passkey-list li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:var(--aq-r-lg);background:var(--aq-surface-2,var(--aq-surface))}
+.aq-passkey-list strong{display:block}
+.aq-passkey-list small{color:var(--aq-text-2)}
+.aq-passkeys .aq-row-actions{display:flex;justify-content:flex-end;gap:8px}
+.aq-passkey-btn{margin-top:8px}
+
+/* Google·Apple 로그인 (각 사 버튼 가이드: 흰 바탕 G 로고 / 검은 바탕 Apple 로고) */
+.aq-social{display:grid;gap:8px;margin-top:16px}
+.aq-social-divider{display:flex;align-items:center;gap:12px;color:var(--aq-text-2);font-size:var(--aq-fs-sm)}
+.aq-social-divider::before,.aq-social-divider::after{content:"";flex:1;height:1px;background:var(--aq-border,rgba(127,127,127,.25))}
+.aq-social-btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:48px;padding:0 16px;border-radius:var(--aq-r-lg);font:inherit;font-weight:600;cursor:pointer;transition:filter var(--aq-dur) var(--aq-ease)}
+.aq-social-btn:disabled{opacity:.6;cursor:default}
+.aq-social-btn:hover:not(:disabled){filter:brightness(.97)}
+.aq-social-btn.is-google{background:#fff;color:#1f1f1f;border:1px solid #747775}
+.aq-social-btn.is-apple{background:#000;color:#fff;border:1px solid #000}

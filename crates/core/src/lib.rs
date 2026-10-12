@@ -57,6 +57,7 @@ pub mod sites;
 pub mod sms;
 pub mod staff;
 pub mod staff_admin;
+pub mod staff_mfa;
 pub mod storage;
 pub mod submission;
 pub mod text_policy;
@@ -78,6 +79,10 @@ pub mod lossless;
 mod media_budget;
 mod password_work;
 
+pub mod oauth;
+pub mod passkey;
+pub mod password_policy;
 pub mod payout_keys;
 pub mod payout_policy;
+pub mod pii;
 pub mod privacy_maintenance;

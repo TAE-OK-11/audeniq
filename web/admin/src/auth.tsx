@@ -11,6 +11,7 @@ interface AuthState {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginPasskey: (email: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -33,6 +34,16 @@ const remote = {
     remember(email);
     return { id: r.user_id, email };
   },
+  async loginPasskey(email: string): Promise<User> {
+    const { passkeyLogin } = await import('./api/passkey');
+    const r = await passkeyLogin(email);
+    setCsrf(r.csrf_token);
+    setSessionUser(r.user_id);
+    const me = await req<{ email?: string }>('/api/me', { quiet401: true });
+    const shown = me.email || email.trim();
+    remember(shown);
+    return { id: r.user_id, email: shown };
+  },
   async logout(): Promise<void> {
     try { await req('/api/auth/logout', { method: 'POST', quiet401: true }); } finally { setCsrf(''); setSessionUser(''); forget(); }
   },
@@ -49,6 +60,7 @@ const demo = {
     sessionStorage.setItem(ACCOUNT_KEY, email);
     return { id: 'staff-me-0001', email };
   },
+  async loginPasskey(): Promise<User> { throw new ApiError('체험 모드에서는 패스키를 쓸 수 없어요.', 400, 'PASSKEY_UNSUPPORTED'); },
   async logout(): Promise<void> { sessionStorage.removeItem(ACCOUNT_KEY); },
 };
 
@@ -72,11 +84,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(await api.login(email.trim(), password));
   }, []);
 
+  const loginPasskey = useCallback(async (email: string) => {
+    setUser(await api.loginPasskey(email));
+  }, []);
+
   const logout = useCallback(async () => {
     try { await api.logout(); } finally { setUser(null); }
   }, []);
 
-  const value = useMemo(() => ({ user, loading, login, logout }), [user, loading, login, logout]);
+  const value = useMemo(() => ({ user, loading, login, loginPasskey, logout }), [user, loading, login, loginPasskey, logout]);
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }
 

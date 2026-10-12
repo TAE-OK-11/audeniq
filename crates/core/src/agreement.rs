@@ -208,10 +208,14 @@ struct Context {
     delegations: Vec<String>,
 }
 
-async fn context(c: &mut PgConnection, release: Uuid) -> Result<Context> {
+async fn context(
+    keys: &crate::payout_keys::KeyRing,
+    c: &mut PgConnection,
+    release: Uuid,
+) -> Result<Context> {
     let r = sqlx::query(
-        "SELECT r.title, r.release_type, r.draft, o.name AS org_name, o.kind AS org_kind,
-                pa.payee_type, pa.holder_name, ra.application_no, ra.signer_name, ra.signer_role
+        "SELECT r.title, r.release_type, r.draft, r.org_id, o.name AS org_name, o.kind AS org_kind,
+                pa.payee_type, pa.holder_name, pa.holder_cipher, ra.application_no, ra.signer_name, ra.signer_role
          FROM catalog.releases r JOIN identity.orgs o ON o.id=r.org_id
          LEFT JOIN portal.payout_accounts pa ON pa.org_id=r.org_id
          LEFT JOIN LATERAL (SELECT application_no, signer_name, signer_role FROM portal.release_applications
@@ -250,7 +254,13 @@ async fn context(c: &mut PgConnection, release: Uuid) -> Result<Context> {
         org_name: r.get("org_name"),
         org_kind: r.get("org_kind"),
         payee_type: r.get("payee_type"),
-        holder: r.get("holder_name"),
+        holder: crate::pii::open(
+            keys,
+            crate::payout_keys::Field::PayoutHolderName,
+            r.get("org_id"),
+            r.get("holder_name"),
+            r.get::<Option<Vec<u8>>, _>("holder_cipher").as_deref(),
+        )?,
         application_no: r.get("application_no"),
         signer: r.get("signer_name"),
         signer_role: r.get("signer_role"),
@@ -555,7 +565,7 @@ pub async fn set_terms(s: &AppState, h: &HeaderMap, release: Uuid, i: TermsInput
     .fetch_optional(&mut *tx)
     .await?;
     let (id, org) = doc.ok_or(Error::PolicyGate("AGREEMENT_NOT_IN_REVIEW"))?;
-    let ctx = context(&mut tx, release).await?;
+    let ctx = context(&s.payout_keys, &mut tx, release).await?;
     let items = confirmations(&ctx.draft["options"]);
     let mut terms = json!({
         "form": FORM, "terms_version": TERMS_VERSION,

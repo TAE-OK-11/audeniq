@@ -812,6 +812,18 @@ async fn profile_is_per_user_with_optimistic_versions(pool: PgPool) {
     assert_eq!(v["display_name"], "서린");
     assert_eq!(v["country"], "KR");
     assert_eq!(v["row_version"], 1);
+    assert_eq!(v["contact_email"], "a@b.kr");
+    let stored: (String, Option<Vec<u8>>) = sqlx::query_as(
+        "SELECT contact_email, contact_email_cipher FROM portal.artist_profiles WHERE user_id=$1",
+    )
+    .bind(u.user)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(
+        stored.0.is_empty() && stored.1.is_some(),
+        "contact email stored sealed"
+    );
     // The saved version keeps saving (the first save used to leave the row
     // at version 0, so every later save conflicted).
     let rename = json!({"display_name":"새 활동명","contact_email":"a@b.kr","bio":"","country":"KR","row_version":1});
@@ -886,6 +898,25 @@ async fn payout_account_is_encrypted_masked_and_owner_only(pool: PgPool) {
     assert_eq!(
         audeniq_core::portal::open_account(u.org, &sealed).unwrap(),
         "12345678901234"
+    );
+    // The holder name is sealed too, and kept out of the notification text.
+    let plain: Option<String> =
+        sqlx::query_scalar("SELECT holder_name FROM portal.payout_accounts WHERE org_id=$1")
+            .bind(u.org)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(plain.is_none());
+    let notices: Vec<String> = sqlx::query_scalar(
+        "SELECT detail FROM portal.notifications WHERE org_id=$1 AND kind='ACCOUNT'",
+    )
+    .bind(u.org)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert!(
+        !notices.is_empty() && notices.iter().all(|d| !d.contains("서린")),
+        "{notices:?}"
     );
     // Another account cannot read or write this organisation.
     let (s, _, _) = call(
@@ -1331,11 +1362,14 @@ async fn staff_sheet_shows_the_signed_application_with_signature_and_contact(poo
         a["agreements"],
         json!(["truth", "terms", "privacy", "esign"])
     );
-    let account: String = sqlx::query_scalar("SELECT email FROM identity.users WHERE id=$1")
-        .bind(u.user)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    // Stored sealed (migration 0102): read it back with the test keyring.
+    let account = audeniq_core::pii::user_email(
+        &audeniq_core::payout_keys::KeyRing::from_env(false).unwrap(),
+        &pool,
+        u.user,
+    )
+    .await
+    .unwrap();
     assert_eq!(a["contact_email"], account);
     // With a profile contact email, that one is shown.
     sqlx::query("INSERT INTO portal.artist_profiles(user_id,display_name,contact_email) VALUES($1,'서린','contact@example.test')")
