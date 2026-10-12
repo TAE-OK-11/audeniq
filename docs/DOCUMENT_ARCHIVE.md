@@ -71,6 +71,8 @@ pitr/base/, pitr/wal/                                             PITR 기준 �
 2. WORM을 건다.
    - **AWS S3**: 버킷을 만들 때 Object Lock을 켠다. `ARCHIVE_OBJECT_LOCK=true`로 두면 객체마다 COMPLIANCE 모드 보존기한(10년/5년/35일)을 건다. 기본 보존 규칙을 따로 둘 필요는 없다.
    - **Cloudflare R2**: 버킷 잠금 규칙(Bucket Lock)을 접두어별로 둔다. 예: `documents/`·`files/`·`manifests/`·`anchors/` 10년, `backups/`·`pitr/` 35일. 그리고 `ARCHIVE_OBJECT_LOCK=false`.
+   - **Oracle Cloud**: 보존 규칙(Retention rule)을 걸고 잠근다. `ARCHIVE_OBJECT_LOCK=false`. OCI 규칙은 버킷 전체에 걸려 접두어별 기한(10년/5년/35일)을 나눌 수 없다. 자세한 내용은 [STORAGE_PROVIDERS.md](STORAGE_PROVIDERS.md)를 본다.
+   - 설정한 뒤 `audeniq-admin storage probe --archive`로 지워지지 않는지 확인한다.
 3. 보관 버킷 전용 자격증명을 만든다(쓰기·읽기). 파기를 돌릴 때만 삭제 권한이 필요하다.
 4. `production.env` 또는 `SECRETS_ENV_FILE`에 `ARCHIVE_S3_*`를 채운다. 이 값은 API 컨테이너 환경에 들어가지 않고, `archive.sh`가 명령을 실행할 때만 넘긴다.
 

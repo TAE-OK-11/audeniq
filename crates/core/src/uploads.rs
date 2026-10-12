@@ -211,7 +211,7 @@ pub async fn complete(
     if copy.size != size
         || copy.content_type != mime
         || copy.nonce != nonce.to_string()
-        || copy.etag != meta.etag
+        || (s.storage.copy_keeps_etag() && copy.etag != meta.etag)
     {
         return Err(Error::Conflict);
     }
