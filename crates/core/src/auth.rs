@@ -275,6 +275,68 @@ async fn verify(password: String, hash: String) -> bool {
         .await
         .unwrap_or(false)
 }
+/// Creates a user with a personal workspace inside `tx`. `Conflict` when the
+/// email already has an account (checked across key versions under a lock).
+pub(crate) async fn create_account(
+    s: &AppState,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    email: &str,
+    password_hash: &str,
+    reason: &str,
+    h: &HeaderMap,
+) -> Result<(Uuid, Uuid, Uuid)> {
+    let user = Uuid::new_v4();
+    let org = Uuid::new_v4();
+    let party = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO identity.orgs(id,name,kind) VALUES($1,'Personal workspace','PERSONAL')",
+    )
+    .bind(org)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query("INSERT INTO identity.parties(id,org_id,kind,display_name) VALUES($1,$2,'PERSON','Account holder')").bind(party).bind(org).execute(&mut **tx).await?;
+    // The email is stored sealed. Its blind index is unique per key version,
+    // so sign-ups for one address are serialized and checked across versions.
+    let (email_cipher, email_bidx) = crate::pii::seal_email(&s.payout_keys, user, email)?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+        .bind(&email_bidx)
+        .execute(&mut **tx)
+        .await?;
+    let taken: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM identity.users WHERE email=$1 OR email_bidx=ANY($2))",
+    )
+    .bind(email)
+    .bind(crate::pii::email_indexes(&s.payout_keys, email))
+    .fetch_one(&mut **tx)
+    .await?;
+    if taken {
+        return Err(Error::Conflict);
+    }
+    sqlx::query("INSERT INTO identity.users(id,email_cipher,email_bidx,password_hash,party_id) VALUES($1,$2,$3,$4,$5)")
+        .bind(user)
+        .bind(email_cipher)
+        .bind(email_bidx)
+        .bind(password_hash)
+        .bind(party)
+        .execute(&mut **tx)
+        .await?;
+    sqlx::query("INSERT INTO identity.memberships(org_id,user_id,role) VALUES($1,$2,'OWNER')")
+        .bind(org)
+        .bind(user)
+        .execute(&mut **tx)
+        .await?;
+    operations::audit(
+        tx,
+        Some(user),
+        Some(org),
+        Some(user),
+        "auth.register",
+        reason,
+        request_id(h),
+    )
+    .await?;
+    Ok((user, org, party))
+}
 pub async fn register(s: &AppState, h: &HeaderMap, input: Credentials) -> Result<Json<Value>> {
     origin(h, &s.config)?;
     let email = new_credentials(&input)?;
@@ -299,56 +361,7 @@ pub async fn register(s: &AppState, h: &HeaderMap, input: Credentials) -> Result
         .map_err(|_| Error::Internal)?;
     let hash = hash?;
     let mut tx = s.pool.begin().await?;
-    let user = Uuid::new_v4();
-    let org = Uuid::new_v4();
-    let party = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO identity.orgs(id,name,kind) VALUES($1,'Personal workspace','PERSONAL')",
-    )
-    .bind(org)
-    .execute(&mut *tx)
-    .await?;
-    sqlx::query("INSERT INTO identity.parties(id,org_id,kind,display_name) VALUES($1,$2,'PERSON','Account holder')").bind(party).bind(org).execute(&mut *tx).await?;
-    // The email is stored sealed. Its blind index is unique per key version,
-    // so sign-ups for one address are serialized and checked across versions.
-    let (email_cipher, email_bidx) = crate::pii::seal_email(&s.payout_keys, user, &email)?;
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
-        .bind(&email_bidx)
-        .execute(&mut *tx)
-        .await?;
-    let taken: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM identity.users WHERE email=$1 OR email_bidx=ANY($2))",
-    )
-    .bind(&email)
-    .bind(crate::pii::email_indexes(&s.payout_keys, &email))
-    .fetch_one(&mut *tx)
-    .await?;
-    if taken {
-        return Err(Error::Conflict);
-    }
-    sqlx::query("INSERT INTO identity.users(id,email_cipher,email_bidx,password_hash,party_id) VALUES($1,$2,$3,$4,$5)")
-        .bind(user)
-        .bind(email_cipher)
-        .bind(email_bidx)
-        .bind(hash)
-        .bind(party)
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query("INSERT INTO identity.memberships(org_id,user_id,role) VALUES($1,$2,'OWNER')")
-        .bind(org)
-        .bind(user)
-        .execute(&mut *tx)
-        .await?;
-    operations::audit(
-        &mut tx,
-        Some(user),
-        Some(org),
-        Some(user),
-        "auth.register",
-        "SELF_REGISTER",
-        request_id(h),
-    )
-    .await?;
+    let (user, org, party) = create_account(s, &mut tx, &email, &hash, "SELF_REGISTER", h).await?;
     tx.commit().await?;
     Ok(Json(
         json!({"user_id":user,"org_id":org,"party_id":party,"submission_enabled":false}),

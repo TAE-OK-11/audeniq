@@ -1,12 +1,14 @@
 import { loginRedirect } from '../lib/loginRedirect';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from '../lib/router';
 import { useAuth } from '../api/auth';
 import { authErrorMessage } from '../api/errors';
 import { AuthLayout, PasswordInput } from '../components/AuthLayout';
 import { passkeySupported } from '../api/passkey';
 import { MOCK } from '../api/client';
-import { ApiError } from '../api/errors';
+import { ApiError, messageForCode } from '../api/errors';
+import { SocialSignIn } from '../components/SocialSignIn';
+import { takeOAuthResult } from '../api/oauth';
 
 export function Login() {
   const { login, loginPasskey } = useAuth();
@@ -18,6 +20,8 @@ export function Login() {
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // Google·Apple에서 돌아왔는데 로그인하지 못한 경우
+  useEffect(() => { const r = takeOAuthResult(); if (r.error) setError(messageForCode(r.error)); }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -77,6 +81,7 @@ export function Login() {
           </button>
         )}
       </form>
+      <SocialSignIn onError={setError} returnTo={from ?? undefined} />
       <div className="auth-links">
         <Link to="/find-account">아이디 · 비밀번호 찾기</Link>
         <span aria-hidden="true">·</span>
