@@ -27,7 +27,6 @@ export function Signup() {
   const [confirm, setConfirm] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [agreeTerms, setAgreeTerms] = useState(false);
-  const [agreePrivacy, setAgreePrivacy] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   // 로그인 화면에서 Google·Apple로 처음 온 경우: 약관에 동의한 뒤 다시 누르도록 안내
@@ -42,7 +41,7 @@ export function Signup() {
     if (!name.trim()) { setError('이름을 입력해 주세요.'); return; }
     if (password.length < PASSWORD_MIN) { setError(`비밀번호는 ${PASSWORD_MIN}자 이상이어야 해요.`); return; }
     if (password !== confirm) { setError('비밀번호가 일치하지 않아요.'); return; }
-    if (!agreeTerms || !agreePrivacy) { setError('필수 약관에 동의해 주세요.'); return; }
+    if (!agreeTerms) { setError('필수 약관에 동의해 주세요.'); return; }
     setBusy(true);
     try {
       await signup(email.trim(), password);
@@ -100,20 +99,15 @@ export function Signup() {
         </div>
         <div className="auth-agree">
           <label className="check-row">
-            <input
-              type="checkbox" checked={agreeTerms && agreePrivacy}
-              onChange={e => { setAgreeTerms(e.target.checked); setAgreePrivacy(e.target.checked); }}
-            />
-            <span><strong>전체 동의</strong></span>
-          </label>
-          <label className="check-row">
             <input type="checkbox" checked={agreeTerms} onChange={e => setAgreeTerms(e.target.checked)} />
             <span><a href="/terms" target="_blank" rel="noopener" className="aq-inline-link">AUDENIQ 음원 배급 서비스 이용약관</a>에 동의합니다. (필수)</span>
           </label>
-          <label className="check-row">
-            <input type="checkbox" checked={agreePrivacy} onChange={e => setAgreePrivacy(e.target.checked)} />
-            <span>개인정보 처리방침에 동의합니다. (필수)</span>
-          </label>
+          <p className="small muted">
+            회원가입 정보(이메일·비밀번호·활동명)는 요청한 계정 생성과 서비스 제공을 위해 처리해요.
+            계정정보는 원칙적으로 탈퇴 또는 처리 목적 종료 시까지 보관하며, 법정 보존자료는 별도로 관리해요.
+            자세한 항목·보유기간과 권리 행사방법은 <a href="/privacy" target="_blank" rel="noopener" className="aq-inline-link">개인정보 처리방침</a>에서 확인해 주세요.
+            선택 기능에 필요한 별도 동의는 해당 기능을 이용할 때 안내해요.
+          </p>
         </div>
         <button className={`ui-btn is-primary auth-submit${busy ? ' is-busy' : ''}`} type="submit" disabled={busy} aria-busy={busy}>
           {busy ? '가입하는 중' : '회원가입'}
@@ -122,8 +116,8 @@ export function Signup() {
       <SocialSignIn
         signup onError={setError}
         canSignup={() => {
-          if (agreeTerms && agreePrivacy) return true;
-          setError('필수 약관에 동의한 뒤 Google·Apple로 계속할 수 있어요.');
+          if (agreeTerms) return true;
+          setError('이용약관에 동의한 뒤 Google·Apple로 계속할 수 있어요.');
           return false;
         }}
       />
@@ -134,3 +128,4 @@ export function Signup() {
     </AuthLayout>
   );
 }
+

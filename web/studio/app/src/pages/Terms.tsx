@@ -12,7 +12,7 @@ export function Terms({ doc = 'service' }: { doc?: LegalKey }) {
     <div className="aq-terms-page">
       <header className="aq-sign-top">
         <Link to="/" aria-label="AUDENIQ"><img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" /></Link>
-        <span>약관</span>
+        <span>{doc === 'privacy' ? '개인정보' : '약관'}</span>
       </header>
       <article className="aq-terms" aria-labelledby="aqTermsTitle">
         <nav className="aq-terms-tabs" aria-label="약관 종류">
@@ -24,6 +24,7 @@ export function Terms({ doc = 'service' }: { doc?: LegalKey }) {
         </nav>
         <p className="eyebrow">{d.version}</p>
         <h1 id="aqTermsTitle">{d.title}</h1>
+        {doc === 'privacy' && <p className="ui-callout" role="note">정식 시행 전 검토본이에요. 시행 정보와 실제 개인정보 처리현황을 확정한 뒤 정식 방침을 안내해요.</p>}
         <nav className="aq-terms-toc" aria-label="장 바로가기">
           <label htmlFor="aqTermsJump" className="sr-only">장 바로가기</label>
           <select id="aqTermsJump" key={doc} defaultValue="" onChange={e => { document.getElementById(e.target.value)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>
@@ -44,3 +45,8 @@ export function Terms({ doc = 'service' }: { doc?: LegalKey }) {
 export function SettlementTerms() {
   return <Terms doc="settlement" />;
 }
+
+export function PrivacyPolicy() {
+  return <Terms doc="privacy" />;
+}
+

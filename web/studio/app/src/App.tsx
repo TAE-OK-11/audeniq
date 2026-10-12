@@ -43,6 +43,7 @@ const FindAccount = lazyPage(pageLoaders.FindAccount, m => m.FindAccount);
 const Sign = lazyPage(pageLoaders.Sign, m => m.Sign);
 const Terms = lazyPage(pageLoaders.Terms, m => m.Terms);
 const SettlementTerms = lazyPage(pageLoaders.Terms, m => m.SettlementTerms);
+const PrivacyPolicy = lazyPage(pageLoaders.Terms, m => m.PrivacyPolicy);
 const Dashboard = lazyPage(pageLoaders.Dashboard, m => m.Dashboard);
 const Releases = lazyPage(pageLoaders.Releases, m => m.Releases);
 const ReleaseDetail = lazyPage(pageLoaders.ReleaseDetail, m => m.ReleaseDetail);
@@ -150,6 +151,8 @@ export function App() {
                     <Route path="/sign/:token" element={<Sign />} />
                     <Route path="/terms" element={<Terms />} />
                     <Route path="/terms/settlement" element={<SettlementTerms />} />
+                    <Route path="/privacy" element={<PrivacyPolicy />} />
+                    <Route path="/terms/privacy" element={<Navigate to="/privacy" replace />} />
                     <Route path="/content-admin" element={<Navigate to="/admin/content" replace />} />
                     {/* 스태프 관리자 — 같은 로그인 세션 + 서버의 스태프 역할(/api/staff/me)로 접근 */}
                     <Route path="/admin/*" element={<Protected><AdminApp /></Protected>} />
@@ -164,3 +167,4 @@ export function App() {
     </BrowserRouter>
   );
 }
+
