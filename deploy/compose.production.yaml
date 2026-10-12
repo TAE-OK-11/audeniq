@@ -70,6 +70,14 @@ services:
       - log_min_duration_statement=500ms
       - -c
       - log_lock_waits=on
+      # PITR(시점 복구)용 WAL 보관. 기본은 꺼짐; 켜면 deploy/archive.sh wal이 암호화해 WORM 버킷으로 옮긴다
+      # (docs/DOCUMENT_ARCHIVE.md). archive_mode를 바꾸면 postgres를 재시작해야 한다.
+      - -c
+      - archive_mode=${PG_ARCHIVE_MODE:-off}
+      - -c
+      - archive_command=mkdir -p /var/lib/postgresql/wal-archive && test ! -f /var/lib/postgresql/wal-archive/%f && cp %p /var/lib/postgresql/wal-archive/%f
+      - -c
+      - archive_timeout=${PG_ARCHIVE_TIMEOUT:-300}
     shm_size: 128m
     mem_limit: ${PG_MEM_LIMIT:-512m}
     cpus: ${PG_CPUS:-1.0}

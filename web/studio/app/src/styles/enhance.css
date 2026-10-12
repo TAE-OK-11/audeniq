@@ -1719,7 +1719,12 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 }
 
 /* 출력물 표식 — 화면에서는 숨기고, 인쇄할 때 모든 쪽 위·아래에 반복 (position:fixed는 쪽마다 반복된다) */
-.aq-print-stamp{display:none}
+.aq-print-stamp,.aq-print-watermark{display:none}
+@media print{
+  /* 워터마크: 쪽마다 반복(position:fixed), 본문을 가리지 않게 아주 옅게 */
+  .aq-print-watermark{display:grid;position:fixed;inset:0;grid-template-columns:repeat(3,1fr);align-content:space-around;justify-items:center;gap:22mm 0;padding:20mm 0;pointer-events:none;z-index:0;overflow:hidden}
+  .aq-print-watermark span{transform:rotate(-30deg);white-space:nowrap;font:600 9pt/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.04em;color:rgba(30,40,70,.075);-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
 @media print{
   html,body{margin:0!important}
   /* 쪽마다 위·아래 여백을 다시 둔다(box-decoration-break: clone) — 표식과 본문이 겹치지 않게 */

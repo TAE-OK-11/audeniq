@@ -463,6 +463,9 @@ pub struct StartInput {
     /// Started from the sign-up page after agreeing to the required terms:
     /// a first sign-in may create the account. Otherwise it is sent there.
     pub signup: Option<bool>,
+    /// With `signup`: the terms (required) and privacy notice versions agreed.
+    pub terms_version: Option<String>,
+    pub privacy_notice_version: Option<String>,
 }
 
 pub async fn start(s: &AppState, h: &HeaderMap, name: &str, i: StartInput) -> Result<Value> {
@@ -479,6 +482,19 @@ pub async fn start(s: &AppState, h: &HeaderMap, name: &str, i: StartInput) -> Re
         None => ("unknown".into(), auth::UNKNOWN_SOURCE_FACTOR),
     };
     auth::rate(&s.pool, &format!("oauth-start:src:{src}"), 60 * factor).await?;
+    // Sign-up needs the agreed terms version (recorded when the account is made).
+    let signup = user.is_none() && i.signup == Some(true);
+    if signup
+        && !i.terms_version.as_deref().is_some_and(|v| {
+            let v = v.trim();
+            !v.is_empty()
+                && v.len() <= 60
+                && v.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b" ._-".contains(&b))
+        })
+    {
+        return Err(Error::InvalidCode("TERMS_ACCEPTANCE_REQUIRED"));
+    }
     let (state, nonce, verifier) = (
         auth::random_token(),
         auth::random_token(),
@@ -488,8 +504,8 @@ pub async fn start(s: &AppState, h: &HeaderMap, name: &str, i: StartInput) -> Re
         .execute(&s.pool)
         .await?;
     sqlx::query(
-        "INSERT INTO identity.oauth_states(id,state_hash,provider,purpose,user_id,nonce_hash,code_verifier,return_to,allow_signup,expires_at)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,now()+make_interval(secs=>$10))",
+        "INSERT INTO identity.oauth_states(id,state_hash,provider,purpose,user_id,nonce_hash,code_verifier,return_to,allow_signup,expires_at,terms_version,privacy_notice_version)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,now()+make_interval(secs=>$10),$11,$12)",
     )
     .bind(Uuid::new_v4())
     .bind(auth::hash_token(&state))
@@ -499,8 +515,10 @@ pub async fn start(s: &AppState, h: &HeaderMap, name: &str, i: StartInput) -> Re
     .bind(Sha256::digest(nonce.as_bytes()).to_vec())
     .bind(&verifier)
     .bind(safe_return(i.return_to.as_deref()))
-    .bind(user.is_none() && i.signup == Some(true))
+    .bind(signup)
     .bind(f64::from(STATE_SECONDS))
+    .bind(i.terms_version.as_deref().map(str::trim))
+    .bind(i.privacy_notice_version.as_deref().map(str::trim))
     .execute(&s.pool)
     .await?;
     let challenge = B64.encode(Sha256::digest(verifier.as_bytes()));
@@ -538,6 +556,8 @@ struct Pending {
     verifier: String,
     return_to: String,
     allow_signup: bool,
+    terms_version: Option<String>,
+    privacy_notice_version: Option<String>,
 }
 
 fn redirect(s: &AppState, path: &str, cookies: Option<HeaderMap>) -> Response {
@@ -623,7 +643,7 @@ async fn consume(s: &AppState, kind: Kind, state: Option<&str>) -> Result<Option
     let row = sqlx::query(
         "UPDATE identity.oauth_states SET consumed_at=now()
           WHERE state_hash=$1 AND provider=$2 AND consumed_at IS NULL AND expires_at>now()
-          RETURNING purpose,user_id,nonce_hash,code_verifier,return_to,allow_signup",
+          RETURNING purpose,user_id,nonce_hash,code_verifier,return_to,allow_signup,terms_version,privacy_notice_version",
     )
     .bind(auth::hash_token(state))
     .bind(kind.name())
@@ -636,6 +656,8 @@ async fn consume(s: &AppState, kind: Kind, state: Option<&str>) -> Result<Option
         verifier: r.get("code_verifier"),
         return_to: r.get("return_to"),
         allow_signup: r.get("allow_signup"),
+        terms_version: r.get("terms_version"),
+        privacy_notice_version: r.get("privacy_notice_version"),
     }))
 }
 
@@ -740,6 +762,15 @@ async fn complete(
             .bind(user)
             .bind(seal(s, id, Some(&email))?)
             .execute(&mut *tx)
+            .await?;
+            auth::record_acceptance(
+                s,
+                &mut tx,
+                user,
+                pending.terms_version.as_deref().unwrap_or(""),
+                pending.privacy_notice_version.as_deref(),
+                kind.method(),
+            )
             .await?;
             user
         }

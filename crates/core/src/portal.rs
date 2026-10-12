@@ -702,6 +702,13 @@ pub async fn sign_document(
             .await?;
         }
     }
+    // Seal what was signed (content, signature, confirmations) in this transaction.
+    let seal_kind = if kind == "AGREEMENT" {
+        crate::seal::Kind::Agreement
+    } else {
+        crate::seal::Kind::RightsDocument
+    };
+    crate::seal::seal(&mut tx, &s.payout_keys, seal_kind, id, "SIGNED").await?;
     tx.commit().await?;
     Ok(json!({"id":id,"status":"SIGNED","row_version":rv}))
 }
@@ -826,6 +833,14 @@ pub async fn create_document(
             "portal.rights_document.signed",
             "RIGHTS_HOLDER_SIGNATURE",
             a.request,
+        )
+        .await?;
+        crate::seal::seal(
+            &mut tx,
+            &s.payout_keys,
+            crate::seal::Kind::RightsDocument,
+            id,
+            "SIGNED",
         )
         .await?;
         tx.commit().await?;
@@ -1053,11 +1068,12 @@ pub async fn record_application(
         if release_status == "WITHDRAWN" {
             return Err(Error::PolicyGate("APPLICATION_DOCUMENT_FINAL"));
         }
+        let application_id = Uuid::new_v4();
         sqlx::query(
             "INSERT INTO portal.release_applications(id,org_id,release_id,application_no,form,content_hash,signer_name,signer_role,agreements,signature,client_submitted_at,submitted_by)
              VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
         )
-        .bind(Uuid::new_v4())
+        .bind(application_id)
         .bind(org)
         .bind(release)
         .bind(&i.application_no)
@@ -1079,6 +1095,14 @@ pub async fn record_application(
             "portal.application.signed",
             "ARTIST_SIGNATURE",
             a.request,
+        )
+        .await?;
+        crate::seal::seal(
+            &mut tx,
+            &s.payout_keys,
+            crate::seal::Kind::Application,
+            application_id,
+            "SUBMITTED",
         )
         .await?;
     }

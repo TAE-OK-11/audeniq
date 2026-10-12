@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-async fn owner(pool: &PgPool, operator: &str) -> Result<()> {
+pub(crate) async fn owner(pool: &PgPool, operator: &str) -> Result<()> {
     if operator.trim().is_empty() || operator.chars().count() > 120 {
         return Err(Error::Invalid);
     }

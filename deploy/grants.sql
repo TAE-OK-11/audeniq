@@ -64,6 +64,9 @@ GRANT SELECT,INSERT,UPDATE,DELETE ON identity.passkeys,identity.webauthn_challen
 GRANT SELECT,INSERT,UPDATE,DELETE ON identity.oauth_identities,identity.oauth_states TO audeniq_api;
 -- 출력물 식별 기록 (0107): 추가·조회만
 GRANT SELECT,INSERT ON operations.print_stamps TO audeniq_api;
+-- 문서 봉인·약관 동의 (0108): API가 서명·접수 트랜잭션 안에서 추가한다. 원본 보관·고정은 owner CLI만.
+GRANT SELECT,INSERT ON operations.document_seals,identity.terms_acceptances TO audeniq_api;
+GRANT USAGE ON SEQUENCE operations.document_seals_seq_seq TO audeniq_api;
 -- 송금 실행 전 출금 취소 (0085): 상태 전이 하나만 하는 함수
 GRANT EXECUTE ON FUNCTION finance.cancel_unsent_payout(uuid, uuid) TO audeniq_api;
 GRANT USAGE ON SCHEMA finance TO audeniq_api;
