@@ -84,6 +84,8 @@ pub fn router(s: AppState) -> Router {
             "/api/auth/passkeys/{id}",
             axum::routing::delete(passkey_remove),
         )
+        .route("/api/print-stamps", post(print_stamp))
+        .route("/api/print-stamps/verify", get(print_verify))
         .route("/api/auth/oauth/providers", get(oauth_providers))
         .route("/api/auth/oauth/identities", get(oauth_identities))
         .route(
@@ -395,6 +397,20 @@ async fn login(
     Json(i): Json<auth::Credentials>,
 ) -> Result<(HeaderMap, Json<Value>)> {
     auth::login(&s, &h, i).await
+}
+async fn print_stamp(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Json(i): Json<crate::print_stamp::StampInput>,
+) -> Result<Json<Value>> {
+    Ok(Json(crate::print_stamp::stamp(&s, &h, i).await?))
+}
+async fn print_verify(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Query(q): Query<crate::print_stamp::VerifyQuery>,
+) -> Result<Json<Value>> {
+    Ok(Json(crate::print_stamp::verify(&s, &h, q).await?))
 }
 async fn oauth_providers() -> Json<Value> {
     Json(crate::oauth::providers())

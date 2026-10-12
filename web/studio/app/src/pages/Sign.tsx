@@ -1,6 +1,7 @@
 // 권리자 서명 화면 (/sign/:token) — 로그인 없이, 받은 링크로 들어와
 // 본인확인 → 문서 확인·동의 → 자필 서명 순서로 진행한다. 서명 후에는 서명본과 서명 기록을 보여 준다.
 import { useEffect, useRef, useState } from 'react';
+import { printWithStamp } from '../lib/printStamp';
 import { DocText } from '../components/DocText';
 import { useNavigate, useParams, useSearchParams } from '../lib/router';
 import { signingApi, type SigningConsents, type SigningView } from '../api/signing';
@@ -172,7 +173,7 @@ export function Sign() {
           <h2 id="aqSignDone">서명이 끝났어요</h2>
           <p>서명본과 서명 기록을 아래에서 확인할 수 있어요. 필요하면 저장하거나 인쇄해 두세요. 이 링크로 서명 후 90일 동안 다시 볼 수 있어요.</p>
           <div className="aq-sign-actions">
-            <button type="button" className="ui-btn is-soft" onClick={() => window.print()}><Glyph name="download" size={15} /> 저장·인쇄</button>
+            <button type="button" className="ui-btn is-soft" onClick={() => void printWithStamp({ kind: 'SIGNING', ref: token, root: docRef.current })}><Glyph name="download" size={15} /> 저장·인쇄</button>
             {back && <button type="button" className="ui-btn is-primary" onClick={() => nav(back)}>발매 신청인에게 기기 돌려주기</button>}
           </div>
         </section>
