@@ -80,48 +80,38 @@ pub async fn enqueue(
 /// by the new `lock_token`. Exponential backoff is reserved for explicit
 /// retryable failures reported through [`fail`].
 async fn reclaim_expired(c: &mut PgConnection, queue: &str) -> Result<()> {
-    let rows = sqlx::query(
-        "UPDATE operations.jobs
-         SET status = CASE WHEN attempts >= max_attempts THEN 'DEAD_LETTER' ELSE 'QUEUED' END,
-             locked_by = NULL,
-             lock_token = NULL,
-             lease_until = NULL,
-             dead_lettered_at = CASE WHEN attempts >= max_attempts THEN now() ELSE NULL END,
-             last_error = 'LEASE_EXPIRED',
-             run_at = CASE
-                 WHEN attempts >= max_attempts THEN run_at
-                 ELSE clock_timestamp()
-             END
-         WHERE queue = $1 AND status = 'RUNNING' AND lease_until <= clock_timestamp()
-         RETURNING id, status, kind, payload",
+    // One statement requeues (or dead-letters) every expired lease and writes
+    // their audit rows; only dead letters need a follow-up per row.
+    let dead: Vec<(String, Value)> = sqlx::query_as(
+        "WITH expired AS (
+           UPDATE operations.jobs
+           SET status = CASE WHEN attempts >= max_attempts THEN 'DEAD_LETTER' ELSE 'QUEUED' END,
+               locked_by = NULL,
+               lock_token = NULL,
+               lease_until = NULL,
+               dead_lettered_at = CASE WHEN attempts >= max_attempts THEN now() ELSE NULL END,
+               last_error = 'LEASE_EXPIRED',
+               run_at = CASE
+                   WHEN attempts >= max_attempts THEN run_at
+                   ELSE clock_timestamp()
+               END
+           WHERE queue = $1 AND status = 'RUNNING' AND lease_until <= clock_timestamp()
+           RETURNING id, status, kind, payload),
+         audited AS (
+           INSERT INTO operations.audit_events(id,actor_service,resource_id,action,reason_code,request_id)
+           SELECT gen_random_uuid(),'audeniq-system',id,
+                  CASE WHEN status='DEAD_LETTER' THEN 'job.dead_letter' ELSE 'job.retry' END,
+                  'LEASE_EXPIRED',gen_random_uuid()
+             FROM expired)
+         SELECT kind, payload FROM expired WHERE status = 'DEAD_LETTER'",
     )
     .bind(queue)
     .fetch_all(&mut *c)
     .await?;
-
-    for row in rows {
-        let status: String = row.get("status");
-        if status == "DEAD_LETTER" {
-            // The worker died on every attempt (e.g. OOM on one file): the
-            // release must not stay silently stuck in a running state.
-            let kind: String = row.get("kind");
-            let payload: Value = row.get("payload");
-            surface_dead_letter(c, &kind, &payload, "LEASE_EXPIRED").await?;
-        }
-        audit(
-            c,
-            None,
-            None,
-            Some(row.get("id")),
-            if status == "DEAD_LETTER" {
-                "job.dead_letter"
-            } else {
-                "job.retry"
-            },
-            "LEASE_EXPIRED",
-            Uuid::new_v4(),
-        )
-        .await?;
+    for (kind, payload) in dead {
+        // The worker died on every attempt (e.g. OOM on one file): the
+        // release must not stay silently stuck in a running state.
+        surface_dead_letter(c, &kind, &payload, "LEASE_EXPIRED").await?;
     }
     Ok(())
 }
@@ -317,10 +307,32 @@ pub async fn park(pool: &PgPool, j: &Job, code: &str, delay_secs: i64) -> Result
     Ok(())
 }
 pub async fn fail(pool: &PgPool, j: &Job, permanent: bool, code: &str) -> Result<()> {
+    // The update and its audit row are one statement; only a pipeline job
+    // that is dead-lettered here needs a transaction around it.
+    let q = sqlx::query_scalar::<_, String>(
+        "WITH failed AS (UPDATE operations.jobs SET status=CASE WHEN $3 OR attempts>=max_attempts THEN 'DEAD_LETTER' ELSE 'QUEUED' END,
+                           dead_lettered_at=CASE WHEN $3 OR attempts>=max_attempts THEN now() END,last_error=$4,
+                           run_at=now()+make_interval(secs=>least(3600,power(2,attempts)*5)::double precision),lock_token=NULL,lease_until=NULL
+                          WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp()
+                          RETURNING id,status),
+              audited AS (INSERT INTO operations.audit_events(id,actor_service,resource_id,action,reason_code,request_id)
+                          SELECT $5,'audeniq-system',id,CASE WHEN status='DEAD_LETTER' THEN 'job.dead_letter' ELSE 'job.retry' END,$4,$6
+                            FROM failed)
+         SELECT status FROM failed",
+    )
+    .bind(j.id)
+    .bind(j.token)
+    .bind(permanent)
+    .bind(code)
+    .bind(Uuid::new_v4())
+    .bind(Uuid::new_v4());
+    if !SURFACED_KINDS.contains(&j.kind.as_str()) {
+        q.fetch_optional(pool).await?.ok_or(Error::Conflict)?;
+        return Ok(());
+    }
     let mut tx = pool.begin().await?;
-    let r=sqlx::query("UPDATE operations.jobs SET status=CASE WHEN $3 OR attempts>=max_attempts THEN 'DEAD_LETTER' ELSE 'QUEUED' END,dead_lettered_at=CASE WHEN $3 OR attempts>=max_attempts THEN now() END,last_error=$4,run_at=now()+make_interval(secs=>least(3600,power(2,attempts)*5)::double precision),lock_token=NULL,lease_until=NULL WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp() RETURNING status")
- .bind(j.id).bind(j.token).bind(permanent).bind(code).fetch_optional(&mut *tx).await?.ok_or(Error::Conflict)?;
-    if r.get::<String, _>("status") == "DEAD_LETTER" && SURFACED_KINDS.contains(&j.kind.as_str()) {
+    let status = q.fetch_optional(&mut *tx).await?.ok_or(Error::Conflict)?;
+    if status == "DEAD_LETTER" {
         // A pipeline job dead-lettered here (the worker's fallback after the
         // handler's own surfacing failed) must still move its release out of
         // the running state. Best effort in a savepoint: the dead letter
@@ -334,20 +346,6 @@ pub async fn fail(pool: &PgPool, j: &Job, permanent: bool, code: &str) -> Result
             }
         }
     }
-    audit(
-        &mut tx,
-        None,
-        None,
-        Some(j.id),
-        if r.get::<String, _>("status") == "DEAD_LETTER" {
-            "job.dead_letter"
-        } else {
-            "job.retry"
-        },
-        code,
-        Uuid::new_v4(),
-    )
-    .await?;
     tx.commit().await?;
     Ok(())
 }
@@ -525,14 +523,14 @@ async fn retry_or_surface(pool: &PgPool, j: &Job, code: &str) -> Result<()> {
 
 /// As [`retry_or_surface`]; `permanent` failures skip the remaining retries.
 async fn retry_or_surface_with(pool: &PgPool, j: &Job, code: &str, permanent: bool) -> Result<()> {
+    if !SURFACED_KINDS.contains(&j.kind.as_str()) {
+        return fail(pool, j, permanent, code).await;
+    }
     let exhausted: bool =
         sqlx::query_scalar("SELECT attempts>=max_attempts FROM operations.jobs WHERE id=$1")
             .bind(j.id)
             .fetch_one(pool)
             .await?;
-    if !SURFACED_KINDS.contains(&j.kind.as_str()) {
-        return fail(pool, j, permanent, code).await;
-    }
     if !exhausted && !permanent {
         return fail(pool, j, false, code).await;
     }
@@ -563,24 +561,28 @@ async fn retry_or_surface_with(pool: &PgPool, j: &Job, code: &str, permanent: bo
 }
 /// Mark a claimed job SUCCEEDED. The lock_token/lease guard keeps a crashed
 /// worker's replacement from double-completing the same job.
+///
+/// The update and its audit row are one statement (one round trip instead of
+/// BEGIN/UPDATE/INSERT/COMMIT): every job pays this on completion.
 pub async fn succeed(pool: &PgPool, j: &Job) -> Result<()> {
-    let mut tx = pool.begin().await?;
-    let n=sqlx::query("UPDATE operations.jobs SET status='SUCCEEDED',lock_token=NULL,lease_until=NULL WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp()")
- .bind(j.id).bind(j.token).execute(&mut *tx).await?.rows_affected();
+    let n: i64 = sqlx::query_scalar(
+        "WITH done AS (UPDATE operations.jobs SET status='SUCCEEDED',lock_token=NULL,lease_until=NULL
+                        WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp()
+                        RETURNING id),
+              audited AS (INSERT INTO operations.audit_events(id,actor_service,resource_id,action,reason_code,request_id)
+                          SELECT $3,'audeniq-system',id,'job.succeeded',$4,$5 FROM done)
+         SELECT count(*) FROM done",
+    )
+    .bind(j.id)
+    .bind(j.token)
+    .bind(Uuid::new_v4())
+    .bind(&j.kind)
+    .bind(Uuid::new_v4())
+    .fetch_one(pool)
+    .await?;
     if n != 1 {
         return Err(Error::Conflict);
     }
-    audit(
-        &mut tx,
-        None,
-        None,
-        Some(j.id),
-        "job.succeeded",
-        &j.kind,
-        Uuid::new_v4(),
-    )
-    .await?;
-    tx.commit().await?;
     Ok(())
 }
 pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> Result<()> {
@@ -1018,49 +1020,42 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
     let Some(event) = event else {
         return fail(pool, j, true, "INVALID_JOB_PAYLOAD").await;
     };
-    let mut tx = pool.begin().await?;
-    let current:Option<Uuid>=sqlx::query_scalar("SELECT id FROM operations.jobs WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp() FOR UPDATE")
- .bind(j.id).bind(j.token).fetch_optional(&mut *tx).await?;
-    current.ok_or(Error::Conflict)?;
-    let row =
-        sqlx::query("SELECT org_id,aggregate_id FROM operations.outbox WHERE id=$1 FOR UPDATE")
-            .bind(event)
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or(Error::NotFound)?;
-    let n=sqlx::query("INSERT INTO operations.event_receipts(event_id,consumer) VALUES($1,'foundation.internal') ON CONFLICT DO NOTHING").bind(event).execute(&mut *tx).await?.rows_affected();
-    if n == 1 {
-        audit(
-            &mut tx,
-            None,
-            Some(row.get("org_id")),
-            Some(row.get("aggregate_id")),
-            "outbox.recorded",
-            "INTERNAL_RECEIPT_ONLY",
-            event,
-        )
-        .await?;
-        sqlx::query("UPDATE operations.outbox SET published_at=now() WHERE id=$1")
-            .bind(event)
-            .execute(&mut *tx)
-            .await?;
+    // Receipt, publish mark, job completion and both audit rows in one
+    // statement (one round trip instead of nine): every outbox event runs
+    // through here. The job only completes when its event exists, and the
+    // receipt is only written when the job's lease still fences this run.
+    let (found, done): (i64, i64) = sqlx::query_as(
+        "WITH ev AS (SELECT id, org_id, aggregate_id FROM operations.outbox WHERE id=$3 FOR UPDATE),
+              done AS (UPDATE operations.jobs SET status='SUCCEEDED',lock_token=NULL,lease_until=NULL
+                        WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp()
+                          AND EXISTS(SELECT 1 FROM ev)
+                        RETURNING id),
+              receipt AS (INSERT INTO operations.event_receipts(event_id,consumer)
+                          SELECT id,'foundation.internal' FROM ev WHERE EXISTS(SELECT 1 FROM done)
+                          ON CONFLICT DO NOTHING RETURNING event_id),
+              published AS (UPDATE operations.outbox SET published_at=now()
+                             WHERE id IN (SELECT event_id FROM receipt)),
+              audited AS (INSERT INTO operations.audit_events(id,actor_service,org_id,resource_id,action,reason_code,request_id)
+                          SELECT $4,'audeniq-system',ev.org_id,ev.aggregate_id,'outbox.recorded','INTERNAL_RECEIPT_ONLY',ev.id
+                            FROM ev JOIN receipt ON receipt.event_id=ev.id
+                          UNION ALL
+                          SELECT $5,'audeniq-system',NULL,id,'job.succeeded','INTERNAL_RECEIPT_ONLY',$6 FROM done)
+         SELECT (SELECT count(*) FROM ev), (SELECT count(*) FROM done)",
+    )
+    .bind(j.id)
+    .bind(j.token)
+    .bind(event)
+    .bind(Uuid::new_v4())
+    .bind(Uuid::new_v4())
+    .bind(Uuid::new_v4())
+    .fetch_one(pool)
+    .await?;
+    if found == 0 {
+        return Err(Error::NotFound);
     }
-    let n=sqlx::query("UPDATE operations.jobs SET status='SUCCEEDED',lock_token=NULL,lease_until=NULL WHERE id=$1 AND lock_token=$2 AND lease_until>clock_timestamp()")
- .bind(j.id).bind(j.token).execute(&mut *tx).await?.rows_affected();
-    if n != 1 {
+    if done != 1 {
         return Err(Error::Conflict);
     }
-    audit(
-        &mut tx,
-        None,
-        None,
-        Some(j.id),
-        "job.succeeded",
-        "INTERNAL_RECEIPT_ONLY",
-        Uuid::new_v4(),
-    )
-    .await?;
-    tx.commit().await?;
     Ok(())
 }
 /// Append a pinned check result without advancing the pipeline.
