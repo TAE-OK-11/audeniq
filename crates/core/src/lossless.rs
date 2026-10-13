@@ -164,6 +164,25 @@ impl Drop for Staging {
 /// report against the probe and the output's own STREAMINFO. Never
 /// resamples, changes bit depth or keeps source metadata.
 pub fn to_flac(src: &Path, dst: &Path, container: &str) -> ConversionResult<()> {
+    convert_to_flac(src, dst, container, false).map(drop)
+}
+
+/// [`to_flac`] that also returns the QC analysis of the audio, measured in
+/// the same decode (`None` if the engine's report could not be used).
+pub fn to_flac_analyzed(
+    src: &Path,
+    dst: &Path,
+    container: &str,
+) -> ConversionResult<Option<qc_engine::Analysis>> {
+    convert_to_flac(src, dst, container, true)
+}
+
+fn convert_to_flac(
+    src: &Path,
+    dst: &Path,
+    container: &str,
+    analyze: bool,
+) -> ConversionResult<Option<qc_engine::Analysis>> {
     if !matches!(
         container,
         "WAV" | "M4A" | "AIFF" | "WAVPACK" | "TTA" | "FLAC"
@@ -244,14 +263,16 @@ pub fn to_flac(src: &Path, dst: &Path, container: &str) -> ConversionResult<()> 
             .create(&staging.0)
             .map_err(|_| "UPLOAD_CONVERSION_UNAVAILABLE")?;
     }
-    let (staged, conversion) = qc_engine::convert(src, &staging.0, "master.flac", CONVERT_TIMEOUT)
-        .map_err(|e| match e {
-            EngineError::Rejected(Rejection::Unsupported, _) => source_rejection(container, e),
-            EngineError::Rejected(Rejection::Limit, _) => "UPLOAD_AUDIO_TOO_LARGE",
-            EngineError::Rejected(Rejection::Invalid, _) => "UPLOAD_CONVERSION_FAILED",
-            EngineError::Deadline => "UPLOAD_CONVERSION_TIMEOUT",
-            EngineError::Unavailable => "UPLOAD_CONVERSION_UNAVAILABLE",
-        })?;
+    let (staged, mut conversion) =
+        qc_engine::convert(src, &staging.0, "master.flac", CONVERT_TIMEOUT, analyze).map_err(
+            |e| match e {
+                EngineError::Rejected(Rejection::Unsupported, _) => source_rejection(container, e),
+                EngineError::Rejected(Rejection::Limit, _) => "UPLOAD_AUDIO_TOO_LARGE",
+                EngineError::Rejected(Rejection::Invalid, _) => "UPLOAD_CONVERSION_FAILED",
+                EngineError::Deadline => "UPLOAD_CONVERSION_TIMEOUT",
+                EngineError::Unavailable => "UPLOAD_CONVERSION_UNAVAILABLE",
+            },
+        )?;
     let size = std::fs::symlink_metadata(&staged)
         .ok()
         .filter(|meta| meta.is_file())
@@ -282,7 +303,7 @@ pub fn to_flac(src: &Path, dst: &Path, container: &str) -> ConversionResult<()> 
     }
     // No-clobber publication outside the engine's grant.
     std::fs::hard_link(&staged, dst).map_err(|_| "UPLOAD_CONVERSION_FAILED")?;
-    Ok(())
+    Ok(conversion.analysis.take())
 }
 
 #[cfg(test)]

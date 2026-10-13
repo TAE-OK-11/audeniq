@@ -376,6 +376,7 @@ pub fn check_audio(
         declared_content_type,
         None,
         TapMode::None,
+        None,
     )
     .0
 }
@@ -402,6 +403,7 @@ pub fn check_audio_with_fp_tap(
         declared_content_type,
         file_sha256,
         TapMode::Windows,
+        None,
     );
     let windows = match tap {
         Some(TapOutput::Windows(windows)) => Some(windows),
@@ -429,6 +431,7 @@ pub fn check_audio_with_fingerprint(
         declared_content_type,
         file_sha256,
         TapMode::Fingerprint,
+        None,
     );
     let fingerprint = match tap {
         Some(TapOutput::Fingerprint(fp)) => Some(fp),
@@ -437,12 +440,37 @@ pub fn check_audio_with_fingerprint(
     (checks, fingerprint, metrics)
 }
 
+/// The audio checks of [`check_audio`] from an engine analysis already in
+/// hand (measured during the upload's lossless conversion, which decodes
+/// the same PCM): the file is not decoded again. The analysis still has to
+/// describe this file (sample rate, channels, frame count), or the file is
+/// reported as undecodable exactly as a mismatching decode would be. No
+/// fingerprint: the worker's `asset.analyze` computes and stores that.
+pub fn check_audio_analyzed(
+    path: &Path,
+    registered_sha256: Option<&str>,
+    declared_content_type: Option<&str>,
+    file_sha256: Option<&str>,
+    analysis: crate::qc_engine::Analysis,
+) -> (Vec<CheckOutcome>, Option<AudioMetrics>) {
+    let (checks, _, metrics) = check_audio_inner(
+        path,
+        registered_sha256,
+        declared_content_type,
+        file_sha256,
+        TapMode::None,
+        Some(analysis),
+    );
+    (checks, metrics)
+}
+
 fn check_audio_inner(
     path: &Path,
     registered_sha256: Option<&str>,
     declared_content_type: Option<&str>,
     file_sha256: Option<&str>,
     tap_mode: TapMode,
+    precomputed: Option<crate::qc_engine::Analysis>,
 ) -> (Vec<CheckOutcome>, Option<TapOutput>, Option<AudioMetrics>) {
     /// Emit `AUDIO_CHECK_CODES[from..]` with a uniform status (short-circuit tail).
     fn tail(from: &str, status: CheckStatus, input_hash: &str, detail: &str) -> Vec<CheckOutcome> {
@@ -733,7 +761,7 @@ fn check_audio_inner(
         ));
         return (out, None, Some(metrics.clone()));
     }
-    let (analysis, fp_tap) = match decode_analysis(path, &metrics, tap_mode) {
+    let (analysis, fp_tap) = match decode_analysis(path, &metrics, tap_mode, precomputed) {
         Ok((a, t)) => (a, t),
         Err(e) => {
             let (status, detail) = match e {
@@ -1181,6 +1209,7 @@ fn decode_analysis(
     path: &Path,
     m: &AudioMetrics,
     tap_mode: TapMode,
+    precomputed: Option<crate::qc_engine::Analysis>,
 ) -> std::result::Result<(DecodeAnalysis, Option<TapOutput>), AnalyzerError> {
     use AnalyzerError::{Unavailable, Undecodable};
     if !m.duration_secs.is_finite()
@@ -1200,11 +1229,17 @@ fn decode_analysis(
         * f64::from(m.sample_rate))
     .ceil() as u64;
     let fingerprint = !matches!(tap_mode, TapMode::None);
-    let report = classify_engine(crate::qc_engine::analyze(
-        path,
-        fingerprint,
-        decode_timeout(m.duration_secs),
-    ))?;
+    // A precomputed analysis (from the conversion's decode) has no
+    // fingerprint windows: with a fingerprint tap, decode as usual. The
+    // checks below apply to it unchanged.
+    let report = match precomputed {
+        Some(a) if !fingerprint || !a.fingerprint_windows.is_empty() => a,
+        _ => classify_engine(crate::qc_engine::analyze(
+            path,
+            fingerprint,
+            decode_timeout(m.duration_secs),
+        ))?,
+    };
     if report.spec.sample_rate != m.sample_rate
         || report.spec.channels != m.channels
         || report.channel_peaks.len() != m.channels as usize
@@ -1427,7 +1462,13 @@ mod tests {
                 ..Default::default()
             };
             assert_eq!(
-                decode_analysis(Path::new("/nonexistent"), &metrics, TapMode::Fingerprint).err(),
+                decode_analysis(
+                    Path::new("/nonexistent"),
+                    &metrics,
+                    TapMode::Fingerprint,
+                    None
+                )
+                .err(),
                 Some(AnalyzerError::Undecodable)
             );
         }
@@ -1439,7 +1480,13 @@ mod tests {
                 ..Default::default()
             };
             assert_eq!(
-                decode_analysis(Path::new("/nonexistent"), &metrics, TapMode::Fingerprint).err(),
+                decode_analysis(
+                    Path::new("/nonexistent"),
+                    &metrics,
+                    TapMode::Fingerprint,
+                    None
+                )
+                .err(),
                 Some(AnalyzerError::Undecodable)
             );
         }
@@ -1547,7 +1594,8 @@ mod tests {
                 .expect("ffmpeg missing");
             assert!(status.success());
             let metrics = probe_audio_metrics(&path).unwrap();
-            let (analysis, segments) = decode_analysis(&path, &metrics, TapMode::Windows).unwrap();
+            let (analysis, segments) =
+                decode_analysis(&path, &metrics, TapMode::Windows, None).unwrap();
             let Some(TapOutput::Windows(segments)) = segments else {
                 panic!("missing PCM windows");
             };
@@ -1564,7 +1612,7 @@ mod tests {
             }
             // Retention stays bounded at 3 x 30 s whatever the track length.
             assert!(segments.iter().map(Vec::len).sum::<usize>() <= 90 * 11025 + 3);
-            let (_, fp) = decode_analysis(&path, &metrics, TapMode::Fingerprint).unwrap();
+            let (_, fp) = decode_analysis(&path, &metrics, TapMode::Fingerprint, None).unwrap();
             let Some(TapOutput::Fingerprint(fp)) = fp else {
                 panic!("missing fingerprint");
             };
