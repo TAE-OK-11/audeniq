@@ -1803,9 +1803,6 @@ async fn analyze_asset(
             qc_max_bytes()
         ));
     }
-    let capacity = crate::media_budget::acquire()
-        .await
-        .map_err(str::to_string)?;
     // RAII guard: the temp file is removed on drop, even if a QC analyzer
     // panics or the download fails half way. Prevents the QC scratch volume
     // from filling up under parallel load.
@@ -1824,6 +1821,12 @@ async fn analyze_asset(
         .download_to(key, &tmp.0, qc_max_bytes())
         .await
         .map_err(|e| format!("object download failed: {e}"))?;
+    // The media slot bounds decoding (CPU), taken only now: while one job
+    // decodes, the next can already download. The number of downloads in
+    // flight is bounded by the callers (queue loops, album parallelism).
+    let capacity = crate::media_budget::acquire()
+        .await
+        .map_err(str::to_string)?;
     // The analyzers are blocking (child processes + CPU-bound FFT). Running
     // them on the blocking pool keeps the worker's async runtime, and with it
     // the job-lease heartbeat, responsive during multi-minute analyses.
@@ -2484,9 +2487,6 @@ pub async fn refingerprint_asset(
     if size < 0 || size as u64 > qc_max_bytes() {
         return Ok(false);
     }
-    let capacity = crate::media_budget::acquire()
-        .await
-        .map_err(|_| Error::Internal)?;
     struct TempFile(std::path::PathBuf);
     impl Drop for TempFile {
         fn drop(&mut self) {
@@ -2502,6 +2502,10 @@ pub async fn refingerprint_asset(
     if downloaded.sha256 != recorded {
         return Err(Error::PolicyGate("ASSET_OBJECT_DRIFT"));
     }
+    // Decode capacity only for the decode, not for the download above.
+    let capacity = crate::media_budget::acquire()
+        .await
+        .map_err(|_| Error::Internal)?;
     let fp = tokio::task::spawn_blocking(move || {
         let _capacity = capacity;
         fingerprint::compute_fingerprint(&tmp.0)
