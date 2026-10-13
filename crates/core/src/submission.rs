@@ -1840,97 +1840,119 @@ async fn analyze_asset(
         // Cancellation of the async job must not free capacity while this
         // non-cancellable blocking decode is still running.
         let _capacity = capacity;
-        let path = tmp.0.as_path();
-        // QC and fingerprint share one decode. The tap computes FFT frames
-        // as it drains, retaining neither whole windows nor a second file.
-        let (mut outcomes, tapped_fp, metrics) = match kind.as_str() {
-            "AUDIO" => qc::check_audio_with_fingerprint(
-                path,
-                Some(&sha256),
-                Some(&content_type),
-                Some(&downloaded.sha256),
-            ),
-            "IMAGE" => (qc::check_image(path, Some(&sha256)), None, None),
-            _ => (Vec::new(), None, None),
-        };
-        // Perceptual fingerprint for similarity detection. Only for audio
-        // whose bytes were admitted: SHA-256 still guards integrity (exact
-        // bytes), the fingerprint adds similarity (same recording, different
-        // bytes). Skip when QC already rejected the bytes (Blocked on SHA
-        // mismatch, CorrectionRequired on a format/decode problem,
-        // TechnicalRetry on a transient decode failure): fingerprinting
-        // invalid audio is meaningless, and a decode failure there must not
-        // trigger a second TechnicalRetry.
-        let invalid = outcomes.iter().any(|o| {
-            matches!(
-                o.status,
-                CheckStatus::Blocked
-                    | CheckStatus::CorrectionRequired
-                    | CheckStatus::TechnicalRetry
-            )
-        });
-        let provenance_code = match kind.as_str() {
-            "AUDIO" => Some("AUDIO_AI_PROVENANCE"),
-            "IMAGE" => Some("IMAGE_AI_PROVENANCE"),
-            _ => None,
-        };
-        if let Some(code) = provenance_code
-            && !invalid
-            && !outcomes.iter().any(|o| o.check_code == code)
-        {
-            outcomes.push(crate::provenance::outcome(
-                code,
-                &if kind == "AUDIO" {
-                    crate::provenance::inspect_audio(path)
-                } else {
-                    crate::provenance::inspect(path)
-                },
-            ));
-        }
-        // Perceptual fingerprint over the head/middle/tail segment windows.
-        if kind == "IMAGE" {
-            if !invalid {
-                outcomes.extend(crate::artwork_policy::inspect(path));
-            }
-            // Invalid images still carry the complete named contract. Never
-            // pretend an omitted OCR/QR/provenance inspection was completed.
-            for code in qc::IMAGE_CHECK_CODES {
-                if !outcomes.iter().any(|o| o.check_code == *code) {
-                    outcomes.push(qc::CheckOutcome {
-                        check_code: code,
-                        status: if outcomes
-                            .iter()
-                            .any(|o| o.status == CheckStatus::TechnicalRetry)
-                        {
-                            CheckStatus::TechnicalRetry
-                        } else {
-                            CheckStatus::NotApplicable
-                        },
-                        input_hash: crate::domain::sha256_json(
-                            &json!({"sha256":sha256,"inspection":"image_not_admitted"}),
-                        ),
-                        detail: "image was not admitted for content inspection".into(),
-                    });
-                }
-            }
-        }
-
-        // The mono 11025 Hz tap uses the engine's continuous resampler and
-        // separate fingerprint histories for the head/middle/tail windows.
-        let duration_secs = metrics.as_ref().map(|m| m.duration_secs).unwrap_or(0.0);
-        let fp = match kind.as_str() {
-            "AUDIO" if !invalid && duration_secs > 0.0 => Some((|| {
-                tapped_fp
-                    .ok_or_else(|| "fingerprint tap missing".to_string())?
-                    .map_err(|e| format!("{e:?}"))
-            })()),
-            _ => None,
-        };
+        let (outcomes, metrics, fp) = asset_outcomes(
+            tmp.0.as_path(),
+            &kind,
+            &content_type,
+            &sha256,
+            &downloaded.sha256,
+        );
         drop(tmp);
         (outcomes, metrics, fp, downloaded_sha)
     })
     .await
     .map_err(|_| "analyzer task failed".to_string())
+}
+
+/// QC outcomes, probe metrics and fingerprint of one asset file (blocking).
+/// `sha256` is the registered hash, `file_sha256` the hash of the bytes at
+/// `path`. With `precomputed` (the engine analysis made during the upload's
+/// lossless conversion) the audio is not decoded again.
+fn asset_outcomes(
+    path: &std::path::Path,
+    kind: &str,
+    content_type: &str,
+    sha256: &str,
+    file_sha256: &str,
+) -> (
+    Vec<qc::CheckOutcome>,
+    Option<qc::AudioMetrics>,
+    Option<std::result::Result<fingerprint::Fingerprint, String>>,
+) {
+    // QC and fingerprint share one decode. The tap computes FFT frames
+    // as it drains, retaining neither whole windows nor a second file.
+    let (mut outcomes, tapped_fp, metrics) = match kind {
+        "AUDIO" => qc::check_audio_with_fingerprint(
+            path,
+            Some(sha256),
+            Some(content_type),
+            Some(file_sha256),
+        ),
+        "IMAGE" => (qc::check_image(path, Some(sha256)), None, None),
+        _ => (Vec::new(), None, None),
+    };
+    // Perceptual fingerprint for similarity detection. Only for audio
+    // whose bytes were admitted: SHA-256 still guards integrity (exact
+    // bytes), the fingerprint adds similarity (same recording, different
+    // bytes). Skip when QC already rejected the bytes (Blocked on SHA
+    // mismatch, CorrectionRequired on a format/decode problem,
+    // TechnicalRetry on a transient decode failure): fingerprinting
+    // invalid audio is meaningless, and a decode failure there must not
+    // trigger a second TechnicalRetry.
+    let invalid = outcomes.iter().any(|o| {
+        matches!(
+            o.status,
+            CheckStatus::Blocked | CheckStatus::CorrectionRequired | CheckStatus::TechnicalRetry
+        )
+    });
+    let provenance_code = match kind {
+        "AUDIO" => Some("AUDIO_AI_PROVENANCE"),
+        "IMAGE" => Some("IMAGE_AI_PROVENANCE"),
+        _ => None,
+    };
+    if let Some(code) = provenance_code
+        && !invalid
+        && !outcomes.iter().any(|o| o.check_code == code)
+    {
+        outcomes.push(crate::provenance::outcome(
+            code,
+            &if kind == "AUDIO" {
+                crate::provenance::inspect_audio(path)
+            } else {
+                crate::provenance::inspect(path)
+            },
+        ));
+    }
+    // Perceptual fingerprint over the head/middle/tail segment windows.
+    if kind == "IMAGE" {
+        if !invalid {
+            outcomes.extend(crate::artwork_policy::inspect(path));
+        }
+        // Invalid images still carry the complete named contract. Never
+        // pretend an omitted OCR/QR/provenance inspection was completed.
+        for code in qc::IMAGE_CHECK_CODES {
+            if !outcomes.iter().any(|o| o.check_code == *code) {
+                outcomes.push(qc::CheckOutcome {
+                    check_code: code,
+                    status: if outcomes
+                        .iter()
+                        .any(|o| o.status == CheckStatus::TechnicalRetry)
+                    {
+                        CheckStatus::TechnicalRetry
+                    } else {
+                        CheckStatus::NotApplicable
+                    },
+                    input_hash: crate::domain::sha256_json(
+                        &json!({"sha256":sha256,"inspection":"image_not_admitted"}),
+                    ),
+                    detail: "image was not admitted for content inspection".into(),
+                });
+            }
+        }
+    }
+
+    // The mono 11025 Hz tap uses the engine's continuous resampler and
+    // separate fingerprint histories for the head/middle/tail windows.
+    let duration_secs = metrics.as_ref().map(|m| m.duration_secs).unwrap_or(0.0);
+    let fp = match kind {
+        "AUDIO" if !invalid && duration_secs > 0.0 => Some((|| {
+            tapped_fp
+                .ok_or_else(|| "fingerprint tap missing".to_string())?
+                .map_err(|e| format!("{e:?}"))
+        })()),
+        _ => None,
+    };
+    (outcomes, metrics, fp)
 }
 
 /// Produce the two DB-backed fingerprint check outcomes for an analyzed
@@ -2563,6 +2585,7 @@ pub async fn precheck_asset(
     org: Uuid,
     aid: Uuid,
 ) -> Result<bool> {
+    let started = std::time::Instant::now();
     let Some(row) = sqlx::query(
         "SELECT object_key, state, kind, content_type, size_bytes, etag, sha256 FROM catalog.assets WHERE org_id=$1 AND id=$2",
     )
@@ -2591,7 +2614,8 @@ pub async fn precheck_asset(
         Err(_) => return Ok(true),
     }
     let tmp_name = format!("audeniq-precheck-{}", Uuid::new_v4());
-    let (mut outcomes, metrics, fp, downloaded_sha) = match analyze_asset(
+    let checked_ms = started.elapsed().as_millis() as u64;
+    let (outcomes, metrics, fp, downloaded_sha) = match analyze_asset(
         storage,
         &key,
         &kind,
@@ -2607,6 +2631,48 @@ pub async fn precheck_asset(
             return Ok(true);
         }
     };
+    let analyzed_ms = started.elapsed().as_millis() as u64;
+    let retry = store_precheck(
+        pool,
+        org,
+        aid,
+        recorded,
+        downloaded_sha,
+        outcomes,
+        metrics,
+        fp,
+    )
+    .await?;
+    // Where an analysis spends its time: lookups and HEAD, download + decode
+    // (analyze_asset), then storing the results.
+    tracing::info!(
+        %aid,
+        bytes = size,
+        lookup_ms = checked_ms,
+        analyze_ms = analyzed_ms - checked_ms,
+        store_ms = started.elapsed().as_millis() as u64 - analyzed_ms,
+        total_ms = started.elapsed().as_millis() as u64,
+        "asset_analyzed"
+    );
+    Ok(retry)
+}
+
+/// Store one asset's pre-submission analysis: hash, probe metrics,
+/// fingerprint, cached check results and the draft QC status. Shared by
+/// the worker's `asset.analyze` job and upload completion (which analyzes
+/// during the lossless conversion). Returns whether to retry (a transient
+/// analysis failure).
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn store_precheck(
+    pool: &PgPool,
+    org: Uuid,
+    aid: Uuid,
+    recorded: Option<String>,
+    downloaded_sha: String,
+    mut outcomes: Vec<qc::CheckOutcome>,
+    metrics: Option<qc::AudioMetrics>,
+    fp: Option<std::result::Result<fingerprint::Fingerprint, String>>,
+) -> Result<bool> {
     if recorded.is_none() {
         sqlx::query(
             "UPDATE catalog.assets SET sha256=$3 WHERE org_id=$1 AND id=$2 AND sha256 IS NULL",
@@ -2697,6 +2763,8 @@ pub async fn precheck_asset(
             .execute(pool)
             .await?;
     }
+    // Where an analysis spends its time: lookups and HEAD, download + decode
+    // (analyze_asset), then storing the results.
     Ok(retry)
 }
 
@@ -2844,10 +2912,59 @@ async fn update_asset_qc(
     Ok(())
 }
 
+/// The upload's immediate answer for `catalog.assets.qc_status` (the draft
+/// preflight's early answer, which the API may already write): the same
+/// rollup as [`store_precheck`], from the checks measured during the
+/// lossless conversion and the source's provenance report (the outcome
+/// [`preserve_audio_provenance`] keeps when it carries an AI signal; without
+/// one it never blocks). `None` when it cannot answer yet (a transient
+/// failure): the worker's `asset.analyze` answers. Writes nothing trusted:
+/// results and the fingerprint are stored by the worker alone.
+pub(crate) fn upload_qc_answer(
+    path: &std::path::Path,
+    sha256: &str,
+    analysis: crate::qc_engine::Analysis,
+    source_provenance: &Value,
+) -> Option<&'static str> {
+    let (mut outcomes, _) = qc::check_audio_analyzed(
+        path,
+        Some(sha256),
+        Some("audio/flac"),
+        Some(sha256),
+        analysis,
+    );
+    let invalid = outcomes.iter().any(|o| {
+        matches!(
+            o.status,
+            CheckStatus::Blocked | CheckStatus::CorrectionRequired | CheckStatus::TechnicalRetry
+        )
+    });
+    if !invalid {
+        outcomes.push(crate::provenance::outcome(
+            "AUDIO_AI_PROVENANCE",
+            source_provenance,
+        ));
+    }
+    if outcomes
+        .iter()
+        .any(|o| o.status == CheckStatus::TechnicalRetry)
+    {
+        return None;
+    }
+    let clean = outcomes
+        .iter()
+        .all(|o| allows_progress(o.check_code, o.status));
+    Some(if clean { "PASS" } else { "BLOCKED" })
+}
+
 fn asset_check_allows_progress(c: &StagedCheck) -> bool {
-    matches!(c.status, CheckStatus::Pass | CheckStatus::NotApplicable)
-        || (c.status == CheckStatus::ReviewRequired
-            && crate::review::stage1_review_severity(c.check_code) == "WARNING")
+    allows_progress(c.check_code, c.status)
+}
+
+fn allows_progress(code: &str, status: CheckStatus) -> bool {
+    matches!(status, CheckStatus::Pass | CheckStatus::NotApplicable)
+        || (status == CheckStatus::ReviewRequired
+            && crate::review::stage1_review_severity(code) == "WARNING")
 }
 
 fn validation_package(
