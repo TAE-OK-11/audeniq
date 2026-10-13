@@ -32,6 +32,8 @@ const validRows = <T extends { id: string; amount: number }>(raw: unknown, fb: T
     : fb);
 
 export const statementsStore = createStore<Statement[]>(MOCK ? INITIAL_STATEMENTS : [], { persist: MOCK ? 'statements' : undefined, revive: validRows });
+/** 실서버 정산 내역의 다음 쪽 위치 (null이면 전부 받음) */
+export const statementsNextStore = createStore<string | null>(null);
 export const payoutsStore = createStore<Payout[]>(MOCK ? INITIAL_PAYOUTS : [], { persist: MOCK ? 'payouts' : undefined, revive: validRows });
 
 /** 실서버 정산 요약 (원장 기준 확정액·진행 중 요청·요청 가능액) */
