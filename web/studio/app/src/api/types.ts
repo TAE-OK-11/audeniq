@@ -117,6 +117,18 @@ export interface CoverTrackData {
 /** 이번 달 직접 취소할 수 있는 횟수 (조직 단위, 매월 1일 초기화) */
 export interface WithdrawQuota { limit: number; used: number; remaining: number }
 
+/** 발매 중단(테이크다운) — 이미 플랫폼에 보낸 발매를 내리는 요청 */
+export interface TakedownPlatform { partner_id: string; slug: string; name: string; live_status: string | null }
+export interface TakedownRequest {
+  id: string;
+  status: 'PENDING' | 'APPROVED' | 'DECLINED' | 'CANCELLED';
+  reason: string;
+  decision_note: string;
+  created_at: string;
+  decided_at: string | null;
+}
+export interface TakedownState { request: TakedownRequest | null; platforms: TakedownPlatform[]; can_request: boolean }
+
 export interface ReleaseOptionsData extends RereleaseData {
   express: boolean; expressAck: boolean; expressReason: string;
   minor: boolean;
