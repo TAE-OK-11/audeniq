@@ -12,6 +12,7 @@ import { refreshAccount } from '../store/portalSync';
 import { IdentityVerify } from '../components/IdentityVerify';
 import { PasskeySettings } from '../components/PasskeySettings';
 import { ConnectedAccounts } from '../components/ConnectedAccounts';
+import { TeamSettings } from '../components/TeamSettings';
 import { OAUTH_LABEL, takeOAuthResult } from '../api/oauth';
 import { messageForCode } from '../api/errors';
 import { useAuth } from '../api/auth';
@@ -269,6 +270,8 @@ export function Profile() {
         />
         <SetRow label="정산·지급 내역" onClick={() => nav('/settlement')} />
       </section>
+
+      <TeamSettings />
 
       {!MOCK && (
         <section className="aq-set-card" aria-labelledby="setSignIn">

@@ -126,6 +126,11 @@ Every step is an append-only `portal.signing_events` row (`CREATED`, `LINK_REISS
 | Method | Path | Body / response |
 |---|---|---|
 | GET | `/api/orgs/{org}/releases/{id}/delivery` | Per-DSP status of the release's latest staged package (release read ACL). `items[]`: `{dsp:"D-5", slug:"spotify", name, stage, readiness, approval, delivery_status, issues[], staged_at}`. `stage` is `NEEDS_CORRECTION` · `IN_REVIEW` · `PREPARING` (content fine, partner onboarding pending) · `SCHEDULED` (staff approved) · `ON_HOLD` · `SENDING` · `DELIVERED`. `issues` lists only CONTENT findings the artist can fix. Empty before Stage 3 |
+| GET | `/api/orgs/{org}/assets/{id}/checks` | Asset read ACL. The pre-submission QC of an uploaded AUDIO asset, check by check (`operations.asset_qc_results` stored by `asset.analyze`): `{asset_id, qc_status, checks:[{code,status,detail}]}` in contract order. Empty while pending. Never includes `AUDIO_SIMILAR_TO_EXISTING` (it can name other organizations' assets); `AUDIO_AI_PROVENANCE` comes without its detail |
+| GET | `/api/orgs/{org}/members` | Any ACTIVE member. `{role, items:[{user_id,role,status,email,invited_at,accepted_at,me}]}`: an OWNER sees every row (INVITED and REVOKED too) with full emails; other members see ACTIVE members with masked emails |
+| POST | `/api/orgs/{org}/members/invite` | OWNER, `{email, role: EDITOR\|VIEWER}` → invites the existing account with that login email (case-insensitive) as INVITED, like `PUT /memberships`. 422 `MEMBER_ACCOUNT_NOT_FOUND`, `MEMBER_IS_SELF`; rate limited (20 per 15 minutes per owner) |
+| GET | `/api/me/invitations` | Invitations waiting for the signed-in user: `{items:[{org_id,org_name,role,invited_at}]}`. Accept with `POST /api/orgs/{org}/memberships/accept` |
+| POST | `/api/me/invitations/{org}/decline` | Closes the caller's pending invitation (REVOKED; the owner may invite again). 404 if none |
 
 `GET .../submission` also returns `effective_status` per check (a reviewer override replaces the recorded status; `severity` follows it) and `review_notes[]` (`{check_code|null, decision, note, at}`) written by staff.
 

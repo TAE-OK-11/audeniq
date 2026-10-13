@@ -540,6 +540,71 @@ pub async fn get(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> 
     Ok(v)
 }
 
+/// Checks never shown to the artist from the pre-submission analysis: the
+/// similarity result can name other organizations' assets, and the
+/// provenance detail is the raw metadata report (its status is enough).
+const PRIVATE_DETAIL: &[&str] = &["AUDIO_SIMILAR_TO_EXISTING", "AUDIO_AI_PROVENANCE"];
+
+/// `GET /api/orgs/{org}/assets/{id}/checks`: the pre-submission QC of an
+/// uploaded track, check by check (what the worker's asset.analyze stored),
+/// so the studio can say which track needs fixing and why before the
+/// release is submitted. Empty while the analysis is pending.
+pub async fn checks(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> {
+    let mut tx = s.pool.begin().await?;
+    auth::authorize(&mut tx, a, org, id, "asset", false).await?;
+    let (kind, qc_status, sha256): (String, String, Option<String>) = sqlx::query_as(
+        "SELECT kind, qc_status, sha256 FROM catalog.assets WHERE org_id=$1 AND id=$2",
+    )
+    .bind(org)
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+    let Some(sha) = sha256.filter(|_| kind == "AUDIO") else {
+        tx.commit().await?;
+        return Ok(json!({"asset_id": id, "qc_status": qc_status, "checks": []}));
+    };
+    let aid = id.to_string();
+    let codes: Vec<&str> = crate::qc::AUDIO_CHECK_CODES
+        .iter()
+        .copied()
+        .filter(|c| *c != "AUDIO_SIMILAR_TO_EXISTING")
+        .collect();
+    let hashes: Vec<String> = codes
+        .iter()
+        .map(|c| crate::submission::asset_check_cache_key(c, &aid, &sha))
+        .collect();
+    let rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
+        "SELECT r.check_code, r.status, r.detail
+           FROM unnest($1::text[], $2::text[]) AS k(check_code, result_hash)
+           JOIN operations.asset_qc_results r
+             ON r.check_code=k.check_code AND r.result_hash=k.result_hash AND r.rule_version=$3",
+    )
+    .bind(&codes)
+    .bind(&hashes)
+    .bind(crate::qc::QC_RULE_VERSION)
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    let mut checks: Vec<Value> = rows
+        .into_iter()
+        .map(|(code, status, detail)| {
+            let detail = if PRIVATE_DETAIL.contains(&code.as_str()) {
+                None
+            } else {
+                detail.map(|d| d.chars().take(300).collect::<String>())
+            };
+            json!({"code": code, "status": status, "detail": detail})
+        })
+        .collect();
+    // Contract order, so the studio lists problems the way QC finds them.
+    checks.sort_by_key(|c| {
+        crate::qc::AUDIO_CHECK_CODES
+            .iter()
+            .position(|k| Some(*k) == c["code"].as_str())
+    });
+    Ok(json!({"asset_id": id, "qc_status": qc_status, "checks": checks}))
+}
+
 pub async fn status(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
     auth::membership(&mut tx, a, org, false).await?;

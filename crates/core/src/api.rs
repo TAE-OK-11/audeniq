@@ -118,6 +118,7 @@ pub fn router(s: AppState) -> Router {
         .route("/api/orgs/{org}/uploads/{id}/cancel", post(cancel_upload))
         .route("/api/orgs/{org}/uploads/{id}/complete", post(complete))
         .route("/api/orgs/{org}/assets/{id}", get(asset))
+        .route("/api/orgs/{org}/assets/{id}/checks", get(asset_checks))
         .route("/api/orgs/{org}/releases/{id}/tracks", post(track))
         .route(
             "/api/orgs/{org}/releases/{id}/tracks/{track}",
@@ -173,6 +174,7 @@ pub fn router(s: AppState) -> Router {
         .merge(crate::staff::routes())
         .merge(crate::work::routes())
         .merge(crate::live::routes())
+        .merge(crate::members::routes())
         .merge(crate::partner_hooks::routes())
         .merge(crate::site_content::routes())
         .fallback(|| async { Error::NotFound.into_response() })
@@ -903,6 +905,14 @@ async fn asset(
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
     Ok(Json(uploads::get(&s, &a, org, id).await?))
+}
+async fn asset_checks(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    Ok(Json(uploads::checks(&s, &a, org, id).await?))
 }
 async fn member(
     State(s): State<AppState>,

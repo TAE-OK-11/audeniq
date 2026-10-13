@@ -8,7 +8,7 @@
 // - 트랙은 아티스트 ID·자산 ID로 연결, 파일은 서명 URL로 R2에 직접 업로드
 // - 접수 = 동의(consent) 생성 → submit(동의 ID, 자기 선언)
 import type {
-  Correction, WithdrawQuota,
+  AssetChecks, Correction, Invitation, OrgMember, WithdrawQuota,
   DeliveryItem, DspAvailability,
   DraftTrack, Org, PreflightIssue, Release, ReleaseDetail, ReleaseDraft, ReleasePayload,
   ReleaseOptionsData, SaveResult, Track, UploadKind, UploadResult, User,
@@ -557,7 +557,28 @@ export const remoteApi = {
     return r.items
       .slice()
       .sort((a, b) => Number(b.role !== 'VIEWER') - Number(a.role !== 'VIEWER'))
-      .map(o => ({ id: o.id, name: o.name }));
+      .map(o => ({ id: o.id, name: o.name, role: o.role as Org['role'] }));
+  },
+  async listMembers(): Promise<{ role: string; items: OrgMember[] }> {
+    return req<{ role: string; items: OrgMember[] }>(orgPath('/members'));
+  },
+  async inviteMember(email: string, role: 'EDITOR' | 'VIEWER'): Promise<void> {
+    await req(orgPath('/members/invite'), { method: 'POST', body: { email, role } });
+  },
+  async setMember(userId: string, role: 'EDITOR' | 'VIEWER', status: 'ACTIVE' | 'REVOKED'): Promise<void> {
+    await req(orgPath('/memberships'), { method: 'PUT', body: { user_id: userId, role, status } });
+  },
+  async listInvitations(): Promise<Invitation[]> {
+    return (await req<{ items: Invitation[] }>('/api/me/invitations', { quiet401: true })).items;
+  },
+  async acceptInvitation(orgId: string): Promise<void> {
+    await req(`/api/orgs/${encodeURIComponent(orgId)}/memberships/accept`, { method: 'POST', body: {} });
+  },
+  async declineInvitation(orgId: string): Promise<void> {
+    await req(`/api/me/invitations/${encodeURIComponent(orgId)}/decline`, { method: 'POST', body: {} });
+  },
+  async assetChecks(assetId: string): Promise<AssetChecks> {
+    return req<AssetChecks>(orgPath(`/assets/${encodeURIComponent(assetId)}/checks`), { quiet401: true });
   },
   async listReleases(): Promise<Release[]> {
     const items = await listAll<ServerRelease>(orgPath('/releases'));

@@ -30,6 +30,8 @@ GRANT SELECT ON operations.allowed_transitions TO audeniq_api;
 GRANT INSERT ON catalog.consent_packages,catalog.application_revisions TO audeniq_api;
 -- Pre-submit / submission status read stage results and package summaries.
 GRANT SELECT ON operations.check_results TO audeniq_api;
+-- 업로드한 곡의 사전 심사 결과를 곡별로 보여 준다 (GET /assets/{id}/checks, 읽기만)
+GRANT SELECT ON operations.asset_qc_results TO audeniq_api;
 GRANT USAGE ON SCHEMA distribution TO audeniq_api;
 GRANT SELECT ON distribution.validation_packages,distribution.verification_packages TO audeniq_api;
 -- Review overrides (POST /reviews/overrides and the two-person approval
