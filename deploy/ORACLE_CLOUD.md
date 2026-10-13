@@ -4,7 +4,7 @@ AWS로 하던 일을 Oracle Cloud로도 할 수 있다. 사업자를 섞어 써�
 
 | 하는 일 | AWS | Oracle Cloud | 설정 |
 |---|---|---|---|
-| 서버 | EC2 (Graviton4: `-graviton4` 이미지) | Compute: Ampere A1 → `-ampere-a1` 이미지, AMD E 시리즈 → `-x86-64-v3` 이미지, 그 밖 → 공용 이미지 | 아래 "서버 이미지" |
+| 서버 | EC2 (Graviton4: `-graviton4` 이미지) | Compute **A4(권장)** → `-ampere-a4` 이미지. A1 → `-ampere-a1`, AMD E 시리즈 → `-x86-64-v3`, 그 밖 → 공용 이미지 | 아래 "서버 이미지" |
 | 개인정보·계좌 키 보호(KMS) | AWS KMS | **OCI Vault** 키 | `audeniq-secrets kms --provider oci` ([KMS 문서](../docs/BACKEND_SECURITY_2026-10-03.md)) |
 | 비밀값(시크릿 매니저) | Secrets Manager | **OCI Vault Secrets** | 매니페스트 `"provider": "oci"` ([시크릿 매니저](../docs/SECRET_MANAGER.md)) |
 | 서버 자격(키 파일 없이) | EC2 인스턴스 역할(IMDSv2) | **instance principal** | 아래 "키 파일 없이 쓰기" |
@@ -16,16 +16,26 @@ AWS로 하던 일을 Oracle Cloud로도 할 수 있다. 사업자를 섞어 써�
 
 ## 서버 이미지
 
-| OCI 인스턴스 | 이미지 태그 | 비고 |
-|---|---|---|
-| Ampere A1 (VM.Standard.A1.Flex) | `sha-<commit>-ampere-a1` | Neoverse N1 최적화. 공용 태그도 동작한다. |
-| AmpereOne A2/A4 | `sha-<commit>-ampere-a1` 또는 공용 | N1 명령어 집합을 모두 지원한다 |
-| AMD E4/E5/E6 | `sha-<commit>-x86-64-v3` | AVX2 |
-| Intel X9 / 그 밖 | `sha-<commit>` (공용) | |
+| OCI 인스턴스 | 이미지 태그 | 컴파일 대상 | 비고 |
+|---|---|---|---|
+| **A4** (VM.Standard.A4.Flex, AmpereOne M) — 운영 기준 | `sha-<commit>-ampere-a4` | `ampere1a` (ARMv8.6) | Ampere 권장값(`-mcpu=ampere1a`, AmpereOne M = AC04_1) |
+| A2 (AmpereOne) | `sha-<commit>-ampere-a1` 또는 공용 | `neoverse-n1` | A4 이미지는 쓰지 않는다(Ampere: ampere1a 코드는 AC03에서 보장되지 않음) |
+| A1 (Ampere Altra) | `sha-<commit>-ampere-a1` | `neoverse-n1` | |
+| AMD E4/E5/E6 | `sha-<commit>-x86-64-v3` | `x86-64-v3` | AVX2 |
+| Intel X9 / 그 밖 | `sha-<commit>` (공용) | | |
+
+- **A4 최적화**:
+  - API, worker와 오디오 엔진(audeniq-qc), 이미지 도구(audeniq-photo)까지 Rust와 C/C++ 의존성을 모두 같은 대상(`ampere1a`)으로 빌드한다.
+  - 그래서 업로드 변환·QC 분석의 디코딩·FFT에서 ARMv8.6 명령(BF16·I8MM·SHA3·내적 등)을 쓴다.
+- **배포 전 확인**: `check-cpu.sh`는 모든 코어가 컴파일러가 스스로 쓸 수 있는 v8.6 기능(`bf16 i8mm sha3 sha512 frint ilrcpc asimddp atomics …`)을 가졌는지 확인한다. 하나라도 없으면 DB를 건드리기 전에 거절한다. Graviton3/4는 통과하고, Altra(A1)는 거절된다.
+- **CircleCI(운영 배포)**: `audeniq-production` 컨텍스트에 `BACKEND_CPU_VARIANT=ampere-a4`를 넣는다. 그러면 main마다 A4 이미지를 따로 빌드하고, 승인하면 그 이미지를 배포한다.
+  - CircleCI ARM 머신은 A4가 아니어서 새 명령이 없을 수 있다. 그래서 빌드한 바이너리는 QEMU(`-cpu max`)로 실행해 확인한다.
+  - 값을 비우면 지금처럼 공용 이미지를 배포한다.
+- **GitHub Actions**: 수동 실행에서 `cpu_variant=ampere-a4`를 고르거나 저장소 변수 `BACKEND_CPU_VARIANT=ampere-a4`를 둔다.
 
 - `deploy.sh`는 DB를 건드리기 전에 서버 CPU를 확인한다(`check-cpu.sh`). 맞지 않는 최적화 이미지는 거절한다.
 - 자동 배포에서 쓰려면 GitHub 저장소 변수 `BACKEND_CPU_VARIANT=ampere-a1`을 둔다.
-- 자원 값(`WORKER_CPUS` 등)은 OCPU 수에 맞춘다. Ampere A1은 1 OCPU가 1 vCPU다. AMD·Intel은 1 OCPU가 2 vCPU다.
+- 자원 값(`WORKER_CPUS` 등)은 실제 코어 수에 맞춘다. **A4는 1 OCPU = 2코어**(A1은 1 OCPU = 1코어, AMD·Intel은 1 OCPU = 2 vCPU). 예: A4 2 OCPU = 4코어 → `WORKER_CPUS=2.0`, `API_CPUS=1.0`, `PG_CPUS=1.0`. QC 자동 확장(`QUEUE_QC_MAX_CONCURRENCY` 기본 vCPU×2)과 미디어 슬롯은 컨테이너에 보이는 CPU 수로 맞춰진다.
 
 ## 키 파일 없이 쓰기 (instance principal)
 
