@@ -433,6 +433,27 @@ async fn upload(e: &Env, u: &User, kind: &str, content_type: &str, bytes: &[u8])
         // Answered from the conversion's own analysis, before the worker.
         assert_eq!(done["qc_status"], "PASS", "{done}");
         assert_eq!(run_one(e, "qc", "asset.analyze").await, "SUCCEEDED");
+        // The track's QC, check by check, for the studio (no similarity row).
+        let checks = ok(
+            &e.api,
+            "GET",
+            &format!(
+                "/api/orgs/{}/assets/{}/checks",
+                u.org,
+                v["asset_id"].as_str().unwrap()
+            ),
+            json!({}),
+            u,
+        )
+        .await;
+        let codes: Vec<&str> = checks["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|c| c["code"].as_str())
+            .collect();
+        assert!(codes.contains(&"AUDIO_LOUDNESS_OUT_OF_RANGE"), "{checks}");
+        assert!(!codes.contains(&"AUDIO_SIMILAR_TO_EXISTING"));
     }
     // The quarantine copy stays until the bucket lifecycle rule removes it:
     // while it exists, the grant's signed If-None-Match: * makes the URL

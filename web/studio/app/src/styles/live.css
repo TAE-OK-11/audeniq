@@ -797,3 +797,26 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 .ui-field>.aq-chips.aq-method{margin-bottom:0}
 /* 서류 카드 상태 면 (ui-row 상태 면과 같은 값) */
 .aq-notice-card.is-read{opacity:.62;transition:opacity .3s}
+
+/* 팀 · 작업 공간 (components/TeamSettings.tsx) */
+.aq-team-list{list-style:none;margin:0 0 4px;padding:0}
+.aq-team-list li+li{border-top:1px solid var(--aq-gray-100)}
+.aq-team-member{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0}
+.aq-team-member strong{display:block;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-team-member small,.aq-team-pick small{display:block;color:var(--aq-gray-500);font-size:13px;margin-top:2px}
+.aq-team-actions{display:flex;align-items:center;gap:8px;flex:none}
+.aq-team-actions select{min-height:36px;padding:0 28px 0 10px;font-size:13px}
+.aq-team-pick{display:block;width:100%;text-align:left;padding:12px 0;background:none;border:0;font:inherit;cursor:pointer}
+.aq-team-pick span{font-size:15px;font-weight:700}
+.aq-team-pick.is-on span{color:var(--aq-blue-500)}
+.aq-team-invite{margin-top:16px;padding-top:16px;border-top:1px solid var(--aq-gray-100)}
+.aq-team-invite .ui-btn{width:100%}
+
+/* 곡별 사전 품질 검사 결과 (components/TrackChecks.tsx) */
+.aq-track-qc.is-ok{color:var(--aq-green-600,#15803D)}
+.aq-track-qc-list{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.aq-track-qc-list li{border-radius:var(--aq-r-md);padding:10px 12px;font-size:13px;line-height:1.5}
+.aq-track-qc-list li.is-bad{background:var(--aq-red-50);color:var(--aq-red-600)}
+.aq-track-qc-list li.is-warn{background:#FFF7ED;color:#9A3412}
+.aq-track-qc-list strong{display:block;font-size:12px;margin-bottom:2px}
+.aq-track-qc-list small{display:block;opacity:.8;margin-top:2px;word-break:break-word}

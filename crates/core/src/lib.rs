@@ -79,6 +79,7 @@ pub mod live;
 mod local_analyzer;
 pub mod lossless;
 mod media_budget;
+pub mod members;
 mod password_work;
 
 pub mod oauth;
