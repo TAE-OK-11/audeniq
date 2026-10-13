@@ -48,6 +48,12 @@ Every API error now carries a stable `code` and a human-readable `message`.
 | `AUDIO_SIMILAR_TO_EXISTING` | REVIEW | The track is perceptually similar to other audio in the same account **or in another account** (rule 3). |
 | `ASSET_REUSED` | REVIEW | The same uploaded master is already on a track of another submitted release in this account under a different or missing ISRC. Reusing a recording (single → album) with its original ISRC passes. |
 
+`AUDIO_SIMILAR_TO_EXISTING` compares the track with every stored fingerprint
+(about 0.1 ms of CPU each, split across the worker's cores). The worker
+remembers the matches and how far it compared (`operations.fingerprint_scans`,
+migration 0109), so a resubmission or retry of the same audio compares only
+fingerprints added since; the answer is the same as a full scan.
+
 Stage 1 also runs account-policy checks on the frozen revision (not audio,
 listed here because they share the correction flow):
 `TEXT_INVALID_CHARACTERS` (control/invisible/bidi characters),
