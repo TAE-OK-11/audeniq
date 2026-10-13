@@ -10,6 +10,8 @@ use std::{
 use tokio::sync::{Notify, Semaphore};
 use tracing::Instrument;
 
+#[path = "worker/adaptive.rs"]
+mod adaptive;
 #[path = "worker/poll.rs"]
 mod poll;
 
@@ -32,7 +34,9 @@ const RECLAIM_EVERY: Duration = Duration::from_secs(5);
 
 fn env_usize(name: &str, default: usize, min: usize, max: usize) -> anyhow::Result<usize> {
     let value = match std::env::var(name) {
-        Ok(raw) => raw.parse::<usize>()?,
+        // Compose passes unset optional values as empty strings.
+        Ok(raw) if raw.trim().is_empty() => default,
+        Ok(raw) => raw.trim().parse::<usize>()?,
         Err(std::env::VarError::NotPresent) => default,
         Err(error) => return Err(error.into()),
     };
@@ -200,9 +204,32 @@ async fn main() -> anyhow::Result<()> {
     let mut configured_workers = 0usize;
     for queue in QUEUES {
         let key = format!("QUEUE_{}_CONCURRENCY", queue.to_uppercase());
-        let count = env_usize(&key, 1, 0, 32)?;
-        configured_workers += count;
+        let floor = env_usize(&key, 1, 0, 32)?;
+        // Adaptive ceiling (worker/adaptive.rs). QC analyses one track per
+        // job, so a burst of uploads is where extra loops pay off: by default
+        // it may grow to 2 per CPU (one track downloading while another
+        // decodes on a small server; side by side on a bigger one). Other
+        // queues stay fixed unless configured.
+        let default_max = if queue == "qc" && floor > 0 {
+            (cpu_count * 2).clamp(2, 8).max(floor)
+        } else {
+            floor
+        };
+        let max_key = format!("QUEUE_{}_MAX_CONCURRENCY", queue.to_uppercase());
+        let count = env_usize(&max_key, default_max, floor, 32)?;
+        configured_workers += floor;
+        let gate = (count > floor).then(|| Arc::new(adaptive::Gate::new(floor, count)));
+        if let Some(gate) = &gate {
+            tracing::info!(
+                queue,
+                min = floor,
+                max = count,
+                "adaptive queue concurrency"
+            );
+            tasks.spawn(adaptive::control(pool.clone(), queue, gate.clone()));
+        }
         for n in 0..count {
+            let gate = gate.clone();
             let pool = pool.clone();
             let store = store.clone();
             let limiter = limiter.clone();
@@ -216,6 +243,19 @@ async fn main() -> anyhow::Result<()> {
                 // idle poll is then a single round trip.
                 let mut last_reclaim: Option<std::time::Instant> = None;
                 loop {
+                    // Above the adaptive target: claim nothing until it grows.
+                    if let Some(gate) = gate.as_ref().filter(|g| n >= g.target()) {
+                        if shutdown.load(Ordering::SeqCst) {
+                            return;
+                        }
+                        let grown = gate.grow.notified();
+                        tokio::pin!(grown);
+                        grown.as_mut().enable();
+                        if n >= gate.target() {
+                            poll::wait_for_work(grown, adaptive::TICK).await;
+                        }
+                        continue;
+                    }
                     // notify_waiters reaches even an unpolled Notified future.
                     // Subscribe before awaiting capacity/SQL so an enqueue
                     // during an empty claim cannot be lost before sleeping.
@@ -239,6 +279,7 @@ async fn main() -> anyhow::Result<()> {
                     }
                     match claimed {
                         Ok(Some(job)) => {
+                            let _running = gate.as_ref().map(|g| g.running());
                             idle = Duration::from_millis(50);
                             in_flight
                                 .lock()

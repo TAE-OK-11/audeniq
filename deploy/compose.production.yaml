@@ -244,14 +244,19 @@ services:
       DATABASE_POOLER: pgbouncer
       # LISTEN needs a session: direct to postgres, not through the pooler.
       DATABASE_LISTEN_URL: postgres://audeniq_worker:${WORKER_DB_PASSWORD}@postgres/audeniq_prod
-      WORKER_MAX_IN_FLIGHT: '${WORKER_MAX_IN_FLIGHT:-2}'
-      DATABASE_MAX_CONNECTIONS: '${DATABASE_MAX_CONNECTIONS:-6}'
+      # 큐 전체 동시 작업 상한. QC는 그 안에서 서버 여유에 따라 늘었다 줄었다 한다.
+      WORKER_MAX_IN_FLIGHT: '${WORKER_MAX_IN_FLIGHT:-4}'
+      DATABASE_MAX_CONNECTIONS: '${DATABASE_MAX_CONNECTIONS:-8}'
       JOB_LEASE_SECONDS: '${JOB_LEASE_SECONDS:-300}'
       WORKER_DRAIN_SECONDS: '${WORKER_DRAIN_SECONDS:-30}'
       QUEUE_INTERACTIVE_CONCURRENCY: '1'
       # 곡마다 업로드 직후 사전 분석(audeniq-qc 디코드)이 이 큐로 돈다. CPU 작업이라 vCPU 수만큼이
       # 알맞다(1 vCPU: 1, 2 vCPU: 2). API는 cpu_shares로 CPU 우선권을 가진다.
       QUEUE_QC_CONCURRENCY: '${QUEUE_QC_CONCURRENCY:-1}'
+      # 곡이 몰리면 CPU·메모리 여유를 보며 이 값까지 늘린다(1초마다 판단, 비면 기본 = vCPU×2, 최소 2).
+      # 한 번에 디코딩하는 곡 수는 아래 미디어 슬롯이 따로 막으므로, 1 vCPU에서는 한 곡을 분석하는 동안
+      # 다음 곡을 미리 내려받는 정도로 늘어난다.
+      QUEUE_QC_MAX_CONCURRENCY: '${QUEUE_QC_MAX_CONCURRENCY:-}'
       # Process-wide media capacity (1–8). Empty uses available CPU capacity.
       AUDENIQ_QC_ASSET_PARALLELISM: '${AUDENIQ_QC_ASSET_PARALLELISM:-}'
       AUDENIQ_AUDIO_PARSER_MEMORY_MIB: '${AUDENIQ_AUDIO_PARSER_MEMORY_MIB:-768}'

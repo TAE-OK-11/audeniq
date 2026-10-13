@@ -198,13 +198,20 @@ API는 `cpu_shares`로 worker보다 CPU를 먼저 받으므로 무거운 QC 중�
 | `API_MEM_LIMIT` / `API_CPUS` | 384m / 1.0 | 512m / 1.0 | 768m / 2.0 |
 | `WORKER_MEM_LIMIT` / `WORKER_CPUS` | 768m / 1.0 | 1536m / 1.5 | 3g / 3.0 |
 | `QUEUE_QC_CONCURRENCY` | 1 | 2 | 3 |
+| `QUEUE_QC_MAX_CONCURRENCY` (자동 확장 상한, 빈 값 = vCPU×2) | (2) | (4) | (6) |
 | `QUEUE_DELIVERY_CONCURRENCY` | 2 | 2 | 4 |
-| `WORKER_MAX_IN_FLIGHT` | 2 | 3 | 6 |
-| `DATABASE_MAX_CONNECTIONS` (worker) | 6 | 8 | 12 |
+| `WORKER_MAX_IN_FLIGHT` | 4 | 6 | 8 |
+| `DATABASE_MAX_CONNECTIONS` (worker) | 8 | 10 | 12 |
 | `PGBOUNCER_POOL_SIZE` / `PGBOUNCER_MAX_DB_CONN` | 8 / 20 | 10 / 30 | 15 / 35 |
 | `AV_MEM_LIMIT` / `AV_CPUS` | 3g / 0.75 | 3g / 0.75 | 3g / 0.75 |
 | `AV_UPDATE_MEM_LIMIT` | 1536m | 1536m | 1536m |
 
+- **QC 자동 확장**: 곡이 몰리면(업로드 직후 곡마다 분석 작업이 하나씩 생긴다) worker가 1초마다 대기 작업과
+  자기 컨테이너의 CPU·메모리(cgroup)를 보고 QC 동시 처리 수를 `QUEUE_QC_CONCURRENCY`에서 `QUEUE_QC_MAX_CONCURRENCY`까지
+  늘린다(CPU 75%·메모리 70% 미만일 때, CPU가 40% 미만이면 두 단계씩). CPU 95%나 메모리 85%를 넘으면 바로 한 단계 줄이고,
+  30초 동안 대기 작업이 없으면 최소값으로 돌아간다. 줄일 때 실행 중인 작업은 끊지 않는다.
+  바뀔 때마다 `queue concurrency changed` 로그가 남는다. 디코딩(CPU) 자체는 미디어 슬롯(`AUDENIQ_QC_ASSET_PARALLELISM`,
+  비우면 vCPU 수)이 따로 막는다. 다운로드는 슬롯 밖에서 하므로 1 vCPU에서도 한 곡을 분석하는 동안 다음 곡을 내려받는다.
 - `*_CPUS`는 서버 vCPU 수를 넘을 수 없다. 넘으면 Docker가 컨테이너를 만들지 않는다("Range of CPUs is from 0.01 to …").
 - `PGBOUNCER_MAX_DB_CONN` + 직접 연결(worker LISTEN, migrate)은 PostgreSQL `max_connections`(40)보다 작아야 한다.
 - 메모리 값(`*_MEM_LIMIT`)은 상한이다. 백신 검사와 정의 갱신이 동시에 실행될 수 있으므로 OS·DB·API·worker와 tmpfs까지 함께 용량을 계산한다. 정의 갱신의 `TestDatabases yes` 검사를 유지하며 메모리 부족은 검사 생략으로 해결하지 않는다.
