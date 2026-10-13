@@ -91,6 +91,9 @@ pub struct TransferFile {
     /// Name the partner receives, exactly as the ERN references it.
     pub delivery_name: String,
     pub role: FileRole,
+    /// Storage ETag recorded when the object was registered (written once,
+    /// never rewritten by this service).
+    pub pinned_etag: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -527,6 +530,17 @@ async fn verify_storage(storage: &Arc<dyn ObjectStore>, f: &TransferFile) -> Res
     if head.size != f.size_bytes || head.content_type != f.content_type {
         return Err(Error::PolicyGate("EXECUTION_FILE_DRIFT"));
     }
+    // Unchanged since registration (same ETag): no full read here. A send
+    // re-reads every byte anyway and checks SHA-256 and size as it stages
+    // (partners::stage_files), so nothing unverified ever leaves; this check
+    // only fails a changed object early. Masters were read 2 + 2x(partners)
+    // times per release before.
+    if f.pinned_etag
+        .as_deref()
+        .is_some_and(|e| !e.is_empty() && e == head.etag)
+    {
+        return Ok(());
+    }
     let digest = match storage.digest(&f.object_key, f.size_bytes as u64).await {
         Ok(d) => d,
         Err(Error::PolicyGate(_)) => return Err(Error::PolicyGate("EXECUTION_FILE_DRIFT")),
@@ -546,7 +560,7 @@ async fn verify_file(
     delivery: (String, FileRole),
 ) -> Result<TransferFile> {
     let pin = sqlx::query(
-        "SELECT sha256, size_bytes, content_type FROM catalog.assets WHERE org_id=$1 AND id=$2",
+        "SELECT sha256, size_bytes, content_type, etag FROM catalog.assets WHERE org_id=$1 AND id=$2",
     )
     .bind(org_id)
     .bind(asset_id)
@@ -587,6 +601,7 @@ async fn verify_file(
         delivery_name,
         role,
         content_type,
+        pinned_etag: pin.get("etag"),
     })
 }
 
