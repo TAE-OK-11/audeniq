@@ -48,6 +48,9 @@ GRANT USAGE ON SCHEMA portal TO audeniq_api;
 GRANT SELECT,INSERT,UPDATE ON portal.artist_profiles,portal.payout_accounts,portal.inquiries,portal.documents TO audeniq_api;
 GRANT SELECT,INSERT ON portal.inquiry_messages,portal.notification_reads,portal.release_applications,portal.payout_requests TO audeniq_api;
 GRANT SELECT ON portal.notifications TO audeniq_api;
+-- 알림 메일 (0112): 사용자별 수신 설정, 보낼 메일 대기열 (넣기는 트리거가, 보내기·결과 기록은 API가)
+GRANT SELECT,INSERT,UPDATE ON portal.notification_settings TO audeniq_api;
+GRANT SELECT,UPDATE,DELETE ON portal.notification_emails TO audeniq_api;
 -- 권리 서류 서명 요청 (0071): 이벤트는 추가만
 GRANT SELECT,INSERT,UPDATE ON portal.signing_requests TO audeniq_api;
 GRANT SELECT,INSERT ON portal.signing_events TO audeniq_api;

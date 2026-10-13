@@ -330,3 +330,15 @@ export interface ServerReports {
   by_currency: { currency: string; streams: string; revenue: string }[];
 }
 export const fetchReports = () => req<ServerReports>(orgPath('/reports'));
+
+// ---------------------------------------------------------------------------
+// 알림 메일 수신 설정 (사용자별, 기본 켜짐)
+// ---------------------------------------------------------------------------
+export async function fetchNotificationSettings(): Promise<{ emailEnabled: boolean }> {
+  const v = await req<{ email_enabled: boolean }>('/api/me/notification-settings');
+  return { emailEnabled: v.email_enabled };
+}
+export async function saveNotificationSettings(emailEnabled: boolean): Promise<{ emailEnabled: boolean }> {
+  const v = await req<{ email_enabled: boolean }>('/api/me/notification-settings', { method: 'PUT', body: { email_enabled: emailEnabled } });
+  return { emailEnabled: v.email_enabled };
+}

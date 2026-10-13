@@ -219,6 +219,15 @@ services:
       MAINTENANCE_TITLE: ${MAINTENANCE_TITLE:-}
       MAINTENANCE_MESSAGE: ${MAINTENANCE_MESSAGE:-}
       MAINTENANCE_UNTIL: ${MAINTENANCE_UNTIL:-}
+      # 알림 메일 (crates/core/src/email.rs): 비우면 보내지 않는다. ses,oci = SES가 실패하면 OCI로.
+      EMAIL_PROVIDERS: ${EMAIL_PROVIDERS:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      EMAIL_SES_REGION: ${EMAIL_SES_REGION:-}
+      EMAIL_SES_USERNAME: ${EMAIL_SES_USERNAME:-}
+      EMAIL_SES_PASSWORD: ${EMAIL_SES_PASSWORD:-}
+      EMAIL_OCI_REGION: ${EMAIL_OCI_REGION:-}
+      EMAIL_OCI_USERNAME: ${EMAIL_OCI_USERNAME:-}
+      EMAIL_OCI_PASSWORD: ${EMAIL_OCI_PASSWORD:-}
     volumes:
       - av_socket:/run/audeniq-av:ro
       - ${PAYOUT_KEYRING_DIR:-/dev/shm/audeniq-secrets}:/run/audeniq-keys:ro
