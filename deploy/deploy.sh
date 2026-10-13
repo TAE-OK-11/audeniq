@@ -152,6 +152,7 @@ mv "$tmp" "$ENV_FILE"
 echo "deploy: $PREVIOUS"
 echo "     → $PINNED"
 # migrate → grants가 성공해야 api·worker가 새 이미지로 바뀐다 (compose depends_on)
+# DSP 전송 중이면 worker는 그 전송이 끝날 때까지(최대 WORKER_DELIVERY_DRAIN_SECONDS) 기다렸다가 내려간다
 # --build: pgbouncer 이미지는 서버에서 deploy/pgbouncer로 만든다 (바뀐 게 없으면 캐시)
 if ! "${COMPOSE[@]}" up -d --build --remove-orphans; then
   "${COMPOSE[@]}" logs --tail 80 migrate grants pgbouncer api worker || true
@@ -184,6 +185,22 @@ if [ -n "$bad" ]; then
   "${COMPOSE[@]}" logs --tail 80 api worker || true
   die "컨테이너가 안정적으로 뜨지 않았어요:$bad — 되돌리려면: ./deploy.sh --rollback"
 fi
+
+# 떠 있는 것만으로는 부족하다: api가 /ready(DB 포함)에 답할 때까지 기다린다 (compose healthcheck)
+api_id=$("${COMPOSE[@]}" ps -q api)
+health=none
+for _ in $(seq 1 30); do
+  health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$api_id")
+  case "$health" in healthy|none) break ;; esac
+  sleep 2
+done
+case "$health" in
+  healthy|none) ;;
+  *)
+    "${COMPOSE[@]}" logs --tail 80 api || true
+    die "api가 준비되지 않았어요 ($health) — 되돌리려면: ./deploy.sh --rollback"
+    ;;
+esac
 
 printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$PINNED" >> "$HISTORY"
 echo "deploy: 완료 $PINNED"

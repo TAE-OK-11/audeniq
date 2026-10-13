@@ -149,7 +149,16 @@ Stage 1/2 above (rule 2):
   worker waits for that lease without consuming attempts; if the delivery job
   has no attempts left it is marked `DEAD_LETTER` instead of staying `LEASED`.
 - **Worker shutdown**: SIGTERM/SIGINT stop claiming and wait up to
-  `WORKER_DRAIN_SECONDS` (default 30) for in-flight jobs before exiting.
+  `WORKER_DRAIN_SECONDS` (default 30) for in-flight jobs before exiting, or up
+  to `WORKER_DELIVERY_DRAIN_SECONDS` (default 600) while a DSP send runs
+  (compose `stop_grace_period: 11m`). Unfinished jobs are then released.
+- **Handler panics** fail only that job (`HANDLER_PANIC:…`, retried with
+  backoff, dead-lettered after `max_attempts`); the worker keeps running.
+- **Lost delivery lease**: the send stops at once (`DELIVERY_LEASE_LOST`)
+  instead of finishing a transfer whose result could not be recorded.
+- **Stale scratch files** (`audeniq-*` in `TMPDIR` and
+  `AUDENIQ_DELIVERY_TMP`, older than 6 hours) left by a killed process are
+  removed at API/worker startup and hourly.
 
 ## Not covered yet (follow-ups)
 
