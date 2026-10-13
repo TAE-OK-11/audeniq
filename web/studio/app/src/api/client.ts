@@ -2,7 +2,7 @@
 // `bun run build:edge`(또는 VITE_MOCK=false)로 빌드하면 실제 서버
 // (엣지 Worker → Workers VPC → Cloudflare Tunnel → 메인 서버)를 호출하고,
 // 기본값은 브라우저 저장소 기반 체험(목) 모드다.
-import type { DeliveryItem, DspAvailability, WithdrawQuota, Org, PreflightIssue, Release, ReleaseDetail, ReleasePayload, SaveResult, UploadKind, UploadResult, User } from './types';
+import type { DeliveryItem, DspAvailability, TakedownState, WithdrawQuota, Org, PreflightIssue, Release, ReleaseDetail, ReleasePayload, SaveResult, UploadKind, UploadResult, User } from './types';
 import { ApiError } from './errors';
 import { setOrgId } from './http';
 import { mockApi } from './mock';
@@ -46,6 +46,10 @@ export const api = {
   /** 접수한 발매 신청 취소 — 한 달에 3회까지 직접, 그 이상은 문의로 */
   withdrawRelease: (id: string): Promise<WithdrawQuota> => (MOCK ? mockApi.withdrawRelease(id) : remoteApi.withdrawRelease(id)),
   withdrawQuota: (): Promise<WithdrawQuota> => (MOCK ? mockApi.withdrawQuota() : remoteApi.withdrawQuota()),
+  /** 이미 플랫폼에 보낸 발매의 중단 요청 — 담당자가 확인한 뒤 플랫폼에 요청한다 */
+  takedownStatus: (id: string): Promise<TakedownState> => (MOCK ? mockApi.takedownStatus(id) : remoteApi.takedownStatus(id)),
+  requestTakedown: (id: string, reason: string): Promise<void> => (MOCK ? mockApi.requestTakedown(id, reason) : remoteApi.requestTakedown(id, reason)),
+  cancelTakedown: (id: string): Promise<void> => (MOCK ? mockApi.cancelTakedown(id) : remoteApi.cancelTakedown(id)),
   preflight: async (id: string): Promise<PreflightIssue[]> => (MOCK ? [] : remoteApi.preflight(id)),
   /** 플랫폼별 배급 진행 — 체험 모드에는 실제 배급이 없어 빈 목록 */
   getDelivery: async (id: string): Promise<DeliveryItem[]> => (MOCK ? [] : remoteApi.getDelivery(id)),
