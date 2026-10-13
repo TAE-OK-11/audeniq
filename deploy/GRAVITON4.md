@@ -16,6 +16,7 @@ x86 전용 digest를 복사해 사용하지 않는다.
 | 일반 ARM64, Graviton2/3 | `sha-<commit>` | `generic` / `-march=armv8-a` |
 | AMD/Intel AVX2 | `sha-<commit>-x86-64-v3` | `x86-64-v3` / `-march=x86-64-v3` |
 | AWS Graviton4 | `sha-<commit>-graviton4` | `neoverse-v2` / `-mcpu=neoverse-v2` |
+| Oracle Cloud A4 (AmpereOne M) | `sha-<commit>-ampere-a4` | `ampere1a` / `-mcpu=ampere1a` |
 | Oracle Cloud Ampere A1, AWS Graviton2 이상 | `sha-<commit>-ampere-a1` | `neoverse-n1` / `-mcpu=neoverse-n1` |
 
 공용 태그는 Docker가 아키텍처를 자동으로 선택한다. `main`, `latest`에도

@@ -35,6 +35,14 @@ case "$image_arch:$target_cpu" in
     # these features (Graviton3/4, AmpereOne), so only the features are checked.
     need="fp asimd atomics crc32 asimddp lrcpc"; field=Features
     ;;
+  arm64:ampere1a)
+    # Oracle Cloud A4 (AmpereOne M; Ampere's guide: -mcpu=ampere1a, ARMv8.6).
+    # Every feature the compiler can emit on its own for this target must be
+    # on every core: v8.6 BF16/I8MM, SHA3 (EOR3/BCAX), FRINT, RCpc2, FP16 ...
+    # SM4, MTE and RNG are left out: only intrinsics use them, and VMs may
+    # hide MTE. Graviton3/4 have the same set and pass; Altra (N1) does not.
+    need="fp asimd atomics crc32 aes pmull sha1 sha2 sha3 sha512 asimddp lrcpc ilrcpc fphp asimdhp asimdrdm jscvt fcma flagm frint i8mm bf16 dcpop dcpodp"; field=Features
+    ;;
   *) die "알 수 없는 CPU 기준선: $image_arch:$target_cpu" ;;
 esac
 

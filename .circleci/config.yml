@@ -14,6 +14,10 @@ version: 2.1
 #   DEPLOY_SSH_KEY       배포 전용 SSH 개인키를 base64 한 줄로 (base64 -w0 < key)
 #   DEPLOY_KNOWN_HOSTS   ssh-keyscan <서버> 결과를 base64 한 줄로 (호스트 키 고정)
 #   DEPLOY_PATH          (선택) 기본 /opt/audeniq
+#   BACKEND_CPU_VARIANT  (선택) 서버 CPU에 맞춘 ARM 최적화 이미지를 따로 빌드해 배포한다.
+#                        ampere-a4 = Oracle Cloud A4(AmpereOne M), ampere-a1 = Oracle Cloud A1·Graviton2,
+#                        graviton4 = AWS Graviton4. 비우면(portable) 공용 이미지. deploy.sh가 서버 CPU를
+#                        먼저 확인하므로 다른 서버에는 배포되지 않는다 (deploy/ORACLE_CLOUD.md)
 #   CLOUDFLARE_API_TOKEN   프론트엔드 배포 (Workers Scripts:Edit, D1:Edit — 설문)
 #   CLOUDFLARE_ACCOUNT_ID  Cloudflare 계정 ID
 #
@@ -175,6 +179,83 @@ jobs:
           paths:
             - audeniq-digests/<< parameters.arch >>
 
+  # BACKEND_CPU_VARIANT를 정한 경우에만: 서버 CPU 최적화 ARM 이미지. CircleCI ARM 머신은 그 CPU가
+  # 아니므로(새 명령어가 없을 수 있다) 바이너리는 QEMU의 max CPU로 실행해 확인한다.
+  build-tuned:
+    machine:
+      image: ubuntu-2404:current
+    resource_class: arm.large
+    steps:
+      - checkout
+      - skip-unless-backend-changed
+      - run:
+          name: Pick tuned CPU
+          command: |
+            case "${BACKEND_CPU_VARIANT:-portable}" in
+              portable|"") echo "BACKEND_CPU_VARIANT 없음: 공용 이미지만 배포한다"; circleci-agent step halt; exit 0 ;;
+              ampere-a4) cpu=ampere1a ;;
+              ampere-a1) cpu=neoverse-n1 ;;
+              graviton4) cpu=neoverse-v2 ;;
+              *) echo "알 수 없는 BACKEND_CPU_VARIANT: $BACKEND_CPU_VARIANT (ampere-a4|ampere-a1|graviton4)" >&2; exit 1 ;;
+            esac
+            echo "export TUNED_CPU=$cpu TUNED_VARIANT=$BACKEND_CPU_VARIANT" >> "$BASH_ENV"
+      - image-name
+      - ghcr-login
+      - run:
+          name: Build and push by digest
+          no_output_timeout: 60m
+          command: |
+            set -euo pipefail
+            docker buildx create --name audeniq --driver docker-container --use >/dev/null
+            secret=()
+            if [ -n "${AUDENIQ_GITHUB_TOKEN:-}" ]; then secret=(--secret id=github_token,env=AUDENIQ_GITHUB_TOKEN); fi
+            docker buildx build "${secret[@]}" \
+              --file deploy/Dockerfile \
+              --platform linux/arm64 \
+              --build-arg CARGO_PROFILE=release \
+              --build-arg TARGET_CPU="$TUNED_CPU" \
+              --label org.opencontainers.image.title=audeniq \
+              --label "org.opencontainers.image.revision=$CIRCLE_SHA1" \
+              --label "io.audeniq.target-cpu=$TUNED_CPU" \
+              --cache-from "type=registry,ref=$IMAGE:buildcache-arm64-$TUNED_VARIANT" \
+              --cache-to "type=registry,ref=$IMAGE:buildcache-arm64-$TUNED_VARIANT,mode=max" \
+              --output "type=image,name=$IMAGE,push-by-digest=true,name-canonical=true,push=true" \
+              --metadata-file /tmp/build-meta.json \
+              .
+            digest=$(jq -er '."containerimage.digest"' /tmp/build-meta.json)
+            mkdir -p /tmp/audeniq-digests
+            printf '%s\n' "$digest" > /tmp/audeniq-digests/tuned
+            printf '%s\n' "$TUNED_VARIANT" > /tmp/audeniq-digests/tuned-variant
+            echo "export REF=$IMAGE@$digest" >> "$BASH_ENV"
+      - run:
+          name: Verify metadata and that the tuned binaries execute (QEMU max CPU)
+          command: |
+            set -euo pipefail
+            docker pull "$REF"
+            test "$(docker image inspect --format '{{.Architecture}}' "$REF")" = arm64
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq qemu-user-static
+            docker run --rm --network none --read-only --tmpfs /tmp:size=1m,mode=1777 \
+              -e EXPECTED_CPU="$TUNED_CPU" \
+              -v /usr/bin/qemu-aarch64-static:/usr/local/bin/audeniq-qemu:ro --entrypoint sh "$REF" -c '
+                set -e
+                test "$(cat /usr/local/share/audeniq/target-cpu)" = "$EXPECTED_CPU"
+                test "$(cat /usr/local/share/audeniq/target-arch)" = arm64
+                for b in audeniq-admin audeniq-secrets; do
+                  set +e
+                  /usr/local/bin/audeniq-qemu -cpu max "/usr/local/bin/$b" --help > /tmp/out 2>&1
+                  rc=$?
+                  set -e
+                  # 잘못된 명령어면 SIGILL(132); 그 밖의 종료(사용법·설정 없음)는 실행된 것
+                  if [ "$rc" -ge 128 ]; then cat /tmp/out; echo "$b crashed ($rc)"; exit 1; fi
+                done
+                /usr/local/bin/audeniq-qemu -cpu max /usr/local/bin/audeniq-qc capabilities'
+      - persist_to_workspace:
+          root: /tmp
+          paths:
+            - audeniq-digests/tuned
+            - audeniq-digests/tuned-variant
+
   image:
     machine:
       image: ubuntu-2404:current
@@ -200,6 +281,13 @@ jobs:
             digest=$(docker buildx imagetools inspect "$IMAGE:sha-$CIRCLE_SHA1" --format '{{json .Manifest}}' | jq -er '.digest')
             printf '%s\n' "$digest" > /tmp/audeniq-digests/portable
             echo "Deploy: ./deploy.sh $IMAGE@$digest"
+            if [ -f /tmp/audeniq-digests/tuned ]; then
+              variant=$(cat /tmp/audeniq-digests/tuned-variant)
+              tuned_tags=(-t "$IMAGE:sha-$CIRCLE_SHA1-$variant")
+              if [ "$CIRCLE_BRANCH" = main ]; then tuned_tags+=(-t "$IMAGE:main-$variant" -t "$IMAGE:latest-$variant"); fi
+              docker buildx imagetools create "${tuned_tags[@]}" "$IMAGE@$(cat /tmp/audeniq-digests/tuned)"
+              echo "Tuned ($variant): ./deploy.sh $IMAGE@$(cat /tmp/audeniq-digests/tuned)"
+            fi
       - persist_to_workspace:
           root: /tmp
           paths:
@@ -245,7 +333,13 @@ jobs:
           name: Deploy
           command: |
             path=${DEPLOY_PATH:-/opt/audeniq}
-            ref="$IMAGE@$(cat /tmp/audeniq-digests/portable)"
+            # BACKEND_CPU_VARIANT로 최적화 이미지를 만들었으면 그것을, 아니면 공용 이미지를 배포한다.
+            # 서버 CPU가 맞지 않으면 deploy.sh(check-cpu.sh)가 DB를 건드리기 전에 거절한다.
+            if [ -f /tmp/audeniq-digests/tuned ]; then
+              ref="$IMAGE@$(cat /tmp/audeniq-digests/tuned)"
+            else
+              ref="$IMAGE@$(cat /tmp/audeniq-digests/portable)"
+            fi
             # deploy.sh가 표준입력의 토큰으로 GHCR에 로그인해 받고, 끝나면 로그아웃한다
             ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
               "cd '$path' && chmod +x deploy.sh pg-upgrade.sh && GHCR_USER='$GHCR_USER' GHCR_TOKEN_STDIN=1 ./deploy.sh '$ref'" \<<< "$GHCR_TOKEN"
@@ -408,9 +502,12 @@ workflows:
           cpu: generic
           resource_class: arm.large
           filters: *main-only
+      - build-tuned:
+          context: audeniq-production
+          filters: *main-only
       - image:
           context: audeniq-production
-          requires: [build-amd64, build-arm64]
+          requires: [build-amd64, build-arm64, build-tuned]
           filters: *main-only
       # CircleCI 화면에서 승인을 눌러야 production에 배포된다
       - approve-deploy:
