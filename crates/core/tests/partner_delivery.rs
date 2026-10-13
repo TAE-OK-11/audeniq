@@ -184,7 +184,7 @@ async fn register_asset(pool: &PgPool, store: &FileStore, u: &User, bytes: &[u8]
 async fn build_submittable(app: &Router, pool: &PgPool, u: &User, asset: Uuid) -> Uuid {
     let release = create_release(app, u).await;
     let artist = create_artist(app, u).await;
-    sqlx::query("UPDATE catalog.releases SET draft = draft || '{\"release_date\":\"2027-03-01\",\"genre\":\"K-Pop\"}'::jsonb, row_version = row_version + 1 WHERE id=$1")
+    sqlx::query("UPDATE catalog.releases SET draft = draft || '{\"release_date\":\"2027-03-01\",\"genre\":\"K-Pop\",\"territories\":[\"WORLD\",\"-JP\",\"-CN\"]}'::jsonb, row_version = row_version + 1 WHERE id=$1")
         .bind(release).execute(pool).await.unwrap();
     let rv = row_version(pool, release).await;
     let (s, v) = call(
@@ -389,7 +389,14 @@ async fn ready_opts(
         deal_start_date: "2027-03-01".into(),
         takedown_date: None,
     };
+    // The artist excluded Japan and China in the wizard: the deal says so.
+    assert_eq!(
+        prepared.territories,
+        audeniq_core::territory::Territories::WorldExcept(vec!["CN".into(), "JP".into()])
+    );
     let xml = audeniq_core::ddex_ern::generate_ddex_ern_382(&prepared, &config).unwrap();
+    assert!(xml.contains("<ExcludedTerritoryCode>CN</ExcludedTerritoryCode><ExcludedTerritoryCode>JP</ExcludedTerritoryCode>"));
+    audeniq_core::ddex_xsd::validate_ern_382_xml(&xml).unwrap();
     if !ddex {
         sqlx::query(
             "UPDATE execution.adapter_profiles SET transport='partner' WHERE partner_id='mockdsp'",
@@ -813,6 +820,10 @@ async fn partner_spec_feed_writes_manifest_csv_and_reads_result(pool: PgPool) {
     assert_eq!(manifest["upc"], r.upc);
     assert_eq!(manifest["genre"], "K-Pop");
     assert_eq!(manifest["adult_only"], false);
+    assert_eq!(
+        manifest["territories"],
+        json!({"mode":"world_except","codes":["CN","JP"]})
+    );
     assert!(
         manifest["tracks"][0]["ISRC"]
             .as_str()
@@ -826,6 +837,13 @@ async fn partner_spec_feed_writes_manifest_csv_and_reads_result(pool: PgPool) {
     let csv = std::fs::read_to_string(folder.join("metadata.csv")).unwrap();
     assert!(csv.starts_with('\u{feff}'));
     assert!(csv.lines().nth(1).unwrap().contains(&r.upc));
+    assert!(csv.lines().next().unwrap().ends_with(",territories"));
+    assert!(
+        csv.lines()
+            .nth(1)
+            .unwrap()
+            .ends_with(",Worldwide excluding CN JP")
+    );
     assert!(folder.join(format!("{}_01_001.wav", r.upc)).exists());
     assert!(folder.join(format!("{pmid}.complete")).exists());
     assert_eq!(
@@ -843,6 +861,36 @@ async fn partner_spec_feed_writes_manifest_csv_and_reads_result(pool: PgPool) {
             code: "COVER_TEXT".into()
         }
     );
+}
+
+#[sqlx::test]
+async fn malformed_territories_are_refused_at_submission(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    let asset = register_asset(&pool, &store, &u, wav_bytes()).await;
+    let release = build_submittable(&app, &pool, &u, asset).await;
+    add_supplements(&pool, &store, &u, release).await;
+    sqlx::query("UPDATE catalog.releases SET draft = draft || '{\"territories\":[\"WORLD\",\"KR\"]}'::jsonb, row_version = row_version + 1 WHERE id=$1")
+        .bind(release).execute(&pool).await.unwrap();
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{}/releases/{release}/consents", u.org),
+        json!({"parties":[{"party_id":u.party,"role":"ARTIST"}],"minority_declared":false}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let decl = json!({"rights_confirmed":true,"adult_confirmed":true,"is_cover":false,"is_remix":false,"contains_samples":false,"ai_involved":false,"explicit_content":false});
+    let (_, v) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{}/releases/{release}/submit", u.org),
+        json!({"consent_id":v["consent_id"],"minority_declared":false,"idempotency_key":"k-territories","declarations":decl}),
+        Some(&u),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "TERRITORIES_INVALID", "{v}");
 }
 
 #[derive(Default)]

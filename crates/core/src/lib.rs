@@ -62,6 +62,7 @@ pub mod staff_admin;
 pub mod staff_mfa;
 pub mod storage;
 pub mod submission;
+pub mod territory;
 pub mod text_policy;
 pub mod transport;
 pub mod upload_safety;

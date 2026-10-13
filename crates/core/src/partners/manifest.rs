@@ -122,6 +122,9 @@ pub fn release_json(
         "explicit": p.explicit,
         "adult_only": p.explicit,
         "track_count": p.tracks.len(),
+        // Where the release may be offered: {"mode":"worldwide"},
+        // {"mode":"world_except","codes":[..]} or {"mode":"only","codes":[..]}.
+        "territories": p.territories,
         "cover": file_for(&p.artwork.sha256, FileRole::Artwork),
         "tracks": tracks,
     });
@@ -170,6 +173,7 @@ pub const CSV_COLUMNS: &[&str] = &[
     "file",
     "sha256",
     "cover_file",
+    "territories",
 ];
 
 fn csv_cell(s: &str) -> String {
@@ -257,6 +261,7 @@ pub fn release_csv(
                 .unwrap_or("")
                 .into(),
             cover.clone(),
+            p.territories.summary(),
         ];
         let cells: Vec<String> = row.iter().map(|c| csv_cell(c)).collect();
         out.push_str(&cells.join(","));
