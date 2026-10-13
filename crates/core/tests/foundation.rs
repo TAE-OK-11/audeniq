@@ -894,7 +894,9 @@ async fn upload_binding_expiry_duplicate_and_freeze(pool: PgPool) {
     );
     let (s, _, v) = call(&app, "POST", &path, body.clone(), Some(&a)).await;
     assert_eq!(s, StatusCode::OK, "{v}");
-    assert_eq!(v["qc_status"], "PENDING");
+    // Answered from the analysis measured while converting to FLAC.
+    let answered = v["qc_status"].as_str().unwrap().to_string();
+    assert_ne!(answered, "PENDING", "{v}");
     let expected_sha = v["sha256"]
         .as_str()
         .expect("scanned and normalized FLAC hash")
@@ -906,8 +908,20 @@ async fn upload_binding_expiry_duplicate_and_freeze(pool: PgPool) {
         .unwrap()
         .expect("asset.analyze queued at completion");
     assert_eq!(job.kind, "asset.analyze");
+    // The worker's own analysis of the stored master gives the same answer.
+    sqlx::query("UPDATE catalog.assets SET qc_status='PENDING' WHERE id=$1")
+        .bind(Uuid::parse_str(up["asset_id"].as_str().unwrap()).unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
     let analyzer: Arc<dyn ObjectStore> = store.clone();
     operations::execute(&pool, &analyzer, &job).await.unwrap();
+    let analyzed: String = sqlx::query_scalar("SELECT qc_status FROM catalog.assets WHERE id=$1")
+        .bind(Uuid::parse_str(up["asset_id"].as_str().unwrap()).unwrap())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(analyzed, answered);
     let stored: Option<String> =
         sqlx::query_scalar("SELECT sha256 FROM catalog.assets WHERE id=$1")
             .bind(Uuid::parse_str(up["asset_id"].as_str().unwrap()).unwrap())

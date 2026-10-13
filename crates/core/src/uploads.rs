@@ -259,6 +259,17 @@ pub async fn complete(
                 .bind(crate::provenance::RULE_VERSION).bind(provenance).execute(&mut *tx).await?;
         }
         if kind == "AUDIO" {
+            // The early answer measured during the conversion. The worker's
+            // asset.analyze still stores the results and the fingerprint
+            // (and keeps this first answer).
+            if let Some(answer) = prepared.qc_answer {
+                sqlx::query("UPDATE catalog.assets SET qc_status=$3 WHERE org_id=$1 AND id=$2 AND qc_status='PENDING'")
+                    .bind(org)
+                    .bind(asset)
+                    .bind(answer)
+                    .execute(&mut *tx)
+                    .await?;
+            }
             queue_analysis(&mut tx, org, asset).await?;
         }
         operations::audit(
@@ -292,13 +303,14 @@ pub async fn complete(
             queue_ms = prepared.timing[1],
             convert_ms = prepared.timing[2],
             store_ms = prepared.timing[3],
+            qc_answer = prepared.qc_answer.unwrap_or("PENDING"),
             total_ms = started.elapsed().as_millis() as u64,
             "upload_completed"
         );
         // The original signed PUT stays as a single-use lock until lifecycle
         // expiry: private, never downloadable, removed by the lifecycle rule.
         Ok(
-            json!({"asset_id":asset,"state":"REGISTERED","qc_status":"PENDING","duplicate":false,
+            json!({"asset_id":asset,"state":"REGISTERED","qc_status":prepared.qc_answer.unwrap_or("PENDING"),"duplicate":false,
             "sha256":prepared.sha256,"detected_container":if kind=="AUDIO" { "FLAC" } else { container },
             "converted_from":if kind=="AUDIO" { Some(if container=="M4A" { "ALAC" } else { container }) } else { None },
             "safety_status":crate::upload_safety::safety_status(antivirus_status)}),
@@ -328,6 +340,10 @@ struct Prepared {
     sha256: String,
     source_sha256: String,
     provenance: Option<serde_json::Value>,
+    /// Audio: `qc_status` answered from the conversion's own analysis
+    /// (`PASS`/`BLOCKED`), so the review shows at once. `None`: pending
+    /// until the worker's `asset.analyze`.
+    qc_answer: Option<&'static str>,
     /// Milliseconds: download, waiting for the conversion slot, conversion
     /// (and checks), storing the result. Logged with `upload_completed`.
     timing: [u64; 4],
@@ -383,18 +399,21 @@ async fn prepare(
         .map_err(|_| Error::UploadBusy)?;
     let queue_ms = lap();
     let (kind, mime) = (kind.to_string(), mime.to_string());
-    let (workspace, dst, provenance, sha256) = tokio::task::spawn_blocking(move || {
+    let (workspace, dst, provenance, sha256, qc_answer) = tokio::task::spawn_blocking(move || {
         // Guards outlive a cancelled HTTP future, including each decoder.
         // Convert / sanitize first: a bad file gets its precise 4xx here
         // instead of a metadata-reader failure answered as "busy, retry".
-        if kind == "AUDIO" {
-            crate::lossless::to_flac(&src, &dst, container).map_err(|code| match code {
+        // Audio: the engine measures the audio for QC in the same decode
+        // that makes the FLAC master, for an immediate review answer.
+        let analysis = if kind == "AUDIO" {
+            crate::lossless::to_flac_analyzed(&src, &dst, container).map_err(|code| match code {
                 "UPLOAD_CONVERSION_UNAVAILABLE" | "UPLOAD_CONVERSION_TIMEOUT" => Error::UploadBusy,
                 _ => Error::PolicyGate(code),
-            })?;
+            })?
         } else {
             crate::upload_safety::sanitize(&src, &dst, &mime, &workspace.0)?;
-        }
+            None
+        };
         let provenance = if kind == "AUDIO" {
             Some(crate::provenance::inspect_audio(&src))
         } else if kind == "IMAGE" {
@@ -410,11 +429,17 @@ async fn prepare(
         }
         // Hash on the blocking pool, not a runtime thread (up to 512 MiB).
         let sha256 = crate::qc::sha256_file(&dst)?;
+        // The draft's QC answer from that analysis (the worker still stores
+        // the results and fingerprint after downloading the master).
+        let qc_answer = match (analysis, &provenance) {
+            (Some(a), Some(p)) => crate::submission::upload_qc_answer(&dst, &sha256, a, p),
+            _ => None,
+        };
         // The single transcode slot covers decoding only: the AV scan of the
         // result and the upload to storage below no longer hold it, so other
         // completions are not serialized on network time.
         drop(slot);
-        Ok::<_, Error>((workspace, dst, provenance, sha256))
+        Ok::<_, Error>((workspace, dst, provenance, sha256, qc_answer))
     })
     .await
     .map_err(|_| Error::Internal)??;
@@ -459,6 +484,7 @@ async fn prepare(
         sha256,
         source_sha256: digest.sha256,
         provenance,
+        qc_answer,
         timing: [download_ms, queue_ms, convert_ms, lap()],
     })
 }
