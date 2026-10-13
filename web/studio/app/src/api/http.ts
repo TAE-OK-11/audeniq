@@ -4,6 +4,12 @@ import { ApiError, messageForCode } from './errors';
 
 export const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
 
+/** 서버가 준 '/api/…' 주소(보관된 커버 이미지 등)를 API 주소로 */
+export function apiUrl(src: string | null | undefined): string {
+  if (!src) return '';
+  return src.startsWith('/api/') ? `${API_BASE}${src}` : src;
+}
+
 let csrfToken = '';
 
 // 엣지 Worker가 직접 돌려주는 오류(본문이 JSON이 아님)를 상태 코드로 분류
