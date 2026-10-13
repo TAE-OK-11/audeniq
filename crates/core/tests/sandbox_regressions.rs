@@ -430,6 +430,8 @@ async fn upload(e: &Env, u: &User, kind: &str, content_type: &str, bytes: &[u8])
     if kind == "AUDIO" {
         assert_eq!(done["detected_container"], "FLAC", "{done}");
         assert!(done["converted_from"].is_string(), "{done}");
+        // Answered from the conversion's own analysis, before the worker.
+        assert_eq!(done["qc_status"], "PASS", "{done}");
         assert_eq!(run_one(e, "qc", "asset.analyze").await, "SUCCEEDED");
     }
     // The quarantine copy stays until the bucket lifecycle rule removes it:
