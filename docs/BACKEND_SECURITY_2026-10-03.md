@@ -51,7 +51,12 @@ R2의 기본 서버 측 저장 암호화는 [공식 데이터 보안 문서](htt
 - **GCP:** OAuth2 접근 토큰을 다음 순서로 얻는다. 토큰 엔드포인트는 `https://oauth2.googleapis.com/token`만 받는다.
   1. `GOOGLE_APPLICATION_CREDENTIALS` 또는 gcloud ADC 파일의 서비스 계정 키(RS256 JWT) 또는 사용자 refresh token
   2. GCE 메타데이터 서버
-- **OCI:** `~/.oci/config`(`OCI_CLI_CONFIG_FILE`, `OCI_CLI_PROFILE`)의 API 키로 OCI 요청 서명(RSA-SHA256)을 직접 만든다. 키 파일은 암호 없는 0600 PEM이어야 한다. instance principal은 아직 지원하지 않는다.
+- **OCI:** OCI 요청 서명(RSA-SHA256)을 직접 만든다. 다음 순서로 고르며, `OCI_CLI_AUTH=api_key|instance_principal`로 하나를 강제할 수 있다.
+  1. `~/.oci/config`(`OCI_CLI_CONFIG_FILE`, `OCI_CLI_PROFILE`)의 API 키. 키 파일은 암호 없는 0600 PEM이어야 한다.
+  2. **instance principal**(설정 파일이 없을 때, AWS 인스턴스 역할에 해당). 서버에 키 파일을 두지 않는다.
+     - 동작: OCI 인스턴스 메타데이터(`169.254.169.254/opc/v2`, `Authorization: Bearer Oracle`)에서 인스턴스 인증서를 받아, 리전 Auth Service(`auth.<region>.oraclecloud.com/v1/x509`)에서 짧은 세션 토큰으로 바꾼다.
+     - 토큰은 메모리에만 있는 새 RSA 키에 묶이고, 만료 5분 전에 갱신한다.
+     - 준비: 그 인스턴스를 담는 동적 그룹(dynamic group)과 키·시크릿 정책을 둔다(deploy/ORACLE_CLOUD.md).
 - **파일 권한:** 자격·설정·키 파일은 그룹/기타 사용자가 읽을 수 있으면 거절한다.
 - **보관 위치:** 디스크에는 KMS로 감싼 키만 두고, API용 평문 키 파일은 host tmpfs에 쓴다. API 컨테이너와 worker는 클라우드 자격을 받지 않는다.
 
