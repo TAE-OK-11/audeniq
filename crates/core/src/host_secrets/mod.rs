@@ -98,7 +98,7 @@ impl Clouds {
     }
     async fn oci(&self) -> Result<&cloud::oci::Client> {
         self.oci
-            .get_or_try_init(|| async { cloud::oci::Client::from_environment() })
+            .get_or_try_init(cloud::oci::Client::from_environment)
             .await
     }
 }

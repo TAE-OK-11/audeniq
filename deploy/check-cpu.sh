@@ -29,6 +29,12 @@ case "$image_arch:$target_cpu" in
     ' "$cpuinfo" || die "neoverse-v2 이미지는 Graviton4/Neoverse V2 서버가 필요해요. 다른 ARM 서버에는 공용 이미지를 사용해 주세요"
     need="fp asimd atomics crc32 sve sve2 i8mm bf16"; field=Features
     ;;
+  arm64:neoverse-n1)
+    # Oracle Cloud Ampere A1 (Ampere Altra = Neoverse N1), also AWS Graviton2.
+    # N1 code (ARMv8.2 + dot product + RCpc) runs on any newer core that has
+    # these features (Graviton3/4, AmpereOne), so only the features are checked.
+    need="fp asimd atomics crc32 asimddp lrcpc"; field=Features
+    ;;
   *) die "알 수 없는 CPU 기준선: $image_arch:$target_cpu" ;;
 esac
 

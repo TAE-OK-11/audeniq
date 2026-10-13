@@ -17,7 +17,8 @@ FROM chef AS build
 ARG CARGO_PROFILE=release
 # BuildKit selects the matching Rust/Debian image for each target platform.
 # Empty TARGET_CPU is portable: x86-64 on amd64, generic ARMv8-A on arm64.
-# Opt in to x86-64-v3 or neoverse-v2 (AWS Graviton4) for tuned images.
+# Opt in to x86-64-v3, neoverse-v2 (AWS Graviton4) or neoverse-n1 (Oracle Cloud
+# Ampere A1, AWS Graviton2) for tuned images.
 ARG TARGETARCH
 ARG TARGET_CPU=
 COPY --from=plan /build/recipe.json recipe.json

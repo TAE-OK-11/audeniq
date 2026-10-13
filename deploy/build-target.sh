@@ -18,6 +18,7 @@ case "$arch:$cpu" in
   amd64:x86-64-v2|amd64:x86-64-v3) native_flags="-march=$cpu" ;;
   arm64:|arm64:generic) cpu=generic; native_flags=-march=armv8-a ;;
   arm64:neoverse-v2) native_flags=-mcpu=neoverse-v2 ;;
+  arm64:neoverse-n1) native_flags=-mcpu=neoverse-n1 ;;
   *) echo "unsupported architecture/CPU: $arch:$cpu" >&2; exit 1 ;;
 esac
 
