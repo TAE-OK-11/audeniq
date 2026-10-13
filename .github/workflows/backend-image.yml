@@ -30,9 +30,9 @@ on:
         type: boolean
         default: false
       cpu_variant:
-        description: 배포할 이미지 (공용 / AMD·Intel AVX2 / AWS Graviton4)
+        description: 배포할 이미지 (공용 / AMD·Intel AVX2 / AWS Graviton4 / Oracle Cloud Ampere A1)
         type: choice
-        options: [portable, x86-64-v3, graviton4]
+        options: [portable, x86-64-v3, graviton4, ampere-a1]
         default: portable
 permissions:
   contents: read
@@ -65,6 +65,11 @@ jobs:
             platform: linux/arm64
             arch: arm64
             cpu: neoverse-v2
+          - variant: ampere-a1
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            arch: arm64
+            cpu: neoverse-n1
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     permissions:
@@ -130,7 +135,7 @@ jobs:
       # Hosted ARM runners are not Graviton4. Execute tuned binaries under
       # QEMU's max CPU; test Landlock/seccomp natively on the portable image.
       - name: Verify tuned binary can execute with the required instruction set
-        if: matrix.variant == 'graviton4' || matrix.variant == 'x86-64-v3'
+        if: matrix.variant == 'graviton4' || matrix.variant == 'ampere-a1' || matrix.variant == 'x86-64-v3'
         env:
           REF: ${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}
           ARCH: ${{ matrix.arch }}
@@ -209,7 +214,7 @@ jobs:
           if [ "$BRANCH" = refs/heads/main ]; then task_portable_tags+=(-t "$IMAGE:main" -t "$IMAGE:latest"); fi
           docker buildx imagetools create "${task_portable_tags[@]}" \
             "$IMAGE@$(cat /tmp/audeniq-digests/amd64)" "$IMAGE@$(cat /tmp/audeniq-digests/arm64)"
-          for variant in x86-64-v3 graviton4; do
+          for variant in x86-64-v3 graviton4 ampere-a1; do
             task_tuned_tags=(-t "$IMAGE:sha-$SHA-$variant")
             if [ "$BRANCH" = refs/heads/main ]; then task_tuned_tags+=(-t "$IMAGE:main-$variant" -t "$IMAGE:latest-$variant"); fi
             docker buildx imagetools create "${task_tuned_tags[@]}" "$IMAGE@$(cat "/tmp/audeniq-digests/$variant")"
@@ -219,7 +224,7 @@ jobs:
           jq -e '[.manifests[].platform | select(.os == "linux") | .architecture] | sort == ["amd64", "arm64"]' /tmp/audeniq-manifest.json
           case "$DEPLOY_VARIANT" in
             portable) task_tag="$IMAGE:sha-$SHA" ;;
-            x86-64-v3|graviton4) task_tag="$IMAGE:sha-$SHA-$DEPLOY_VARIANT" ;;
+            x86-64-v3|graviton4|ampere-a1) task_tag="$IMAGE:sha-$SHA-$DEPLOY_VARIANT" ;;
             *) echo "Unsupported BACKEND_CPU_VARIANT: $DEPLOY_VARIANT" >&2; exit 1 ;;
           esac
           task_digest=$(docker buildx imagetools inspect "$task_tag" --format '{{json .Manifest}}' | jq -er '.digest')
@@ -230,6 +235,7 @@ jobs:
             echo "Portable amd64 + arm64: \`$IMAGE:sha-$SHA\`"
             echo "AMD/Intel AVX2: \`$IMAGE:sha-$SHA-x86-64-v3\`"
             echo "AWS Graviton4: \`$IMAGE:sha-$SHA-graviton4\`"
+            echo "Oracle Cloud Ampere A1 / AWS Graviton2: \`$IMAGE:sha-$SHA-ampere-a1\`"
             echo
             echo "Deploy ($DEPLOY_VARIANT): \`./deploy.sh $IMAGE@$task_digest\`"
           } >> "$GITHUB_STEP_SUMMARY"

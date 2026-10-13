@@ -153,6 +153,25 @@ impl RsaSigner {
         Ok(signature)
     }
 
+    /// A fresh RSA-2048 key held only in memory (OCI session tokens).
+    pub fn generate() -> Result<Self> {
+        aws_lc_rs::rsa::KeyPair::generate(aws_lc_rs::rsa::KeySize::Rsa2048)
+            .map(Self)
+            .map_err(|_| CloudError("RSA key generation failed".into()))
+    }
+
+    /// The public key as X.509 SubjectPublicKeyInfo DER.
+    pub fn public_key_spki(&self) -> Result<Vec<u8>> {
+        use aws_lc_rs::encoding::AsDer;
+        use aws_lc_rs::signature::KeyPair;
+        let der: aws_lc_rs::encoding::PublicKeyX509Der = self
+            .0
+            .public_key()
+            .as_der()
+            .map_err(|_| CloudError("RSA public key encoding failed".into()))?;
+        Ok(der.as_ref().to_vec())
+    }
+
     #[cfg(test)]
     pub fn public_key_der(&self) -> Vec<u8> {
         use aws_lc_rs::signature::KeyPair;
@@ -161,7 +180,7 @@ impl RsaSigner {
 }
 
 /// The label and joined base64 body of the first PEM block.
-fn pem_block(pem: &str) -> Option<(String, Zeroizing<String>)> {
+pub(crate) fn pem_block(pem: &str) -> Option<(String, Zeroizing<String>)> {
     let begin = pem.find("-----BEGIN ")?;
     let rest = &pem[begin + 11..];
     let label_end = rest.find("-----")?;

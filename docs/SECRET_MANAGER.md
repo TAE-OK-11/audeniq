@@ -8,7 +8,7 @@
 |---|---|---|---|
 | `aws` | AWS Secrets Manager | 전체 ARN `arn:aws:secretsmanager:<region>:<account>:secret:<name>-<6자>` | SigV4: 환경변수 → `~/.aws/credentials` → IMDSv2 역할 |
 | `gcp` | GCP Secret Manager | `projects/<project-id>/secrets/<secret>` | OAuth2: 서비스 계정 키/ADC 파일 → GCE 메타데이터 |
-| `oci` | OCI Vault Secrets | `ocid1.vaultsecret.oc1.<region>.<id>` | `~/.oci/config` API 키 요청 서명 (region은 config의 값) |
+| `oci` | OCI Vault Secrets | `ocid1.vaultsecret.oc1.<region>.<id>` | 요청 서명: `~/.oci/config` API 키 → (설정 파일이 없으면) OCI 인스턴스의 instance principal. region은 config 또는 인스턴스 메타데이터의 값 |
 
 이름이나 별칭이 아닌 정확한 ID만 받는다. 응답의 ARN, 시크릿 이름, OCID가 고정한 값과 다르면 거절한다. GCP는 응답 CRC32C를 검사하고, 쓰기 요청에도 CRC32C를 붙인다. TLS 1.2 이상, 인증서 검증, redirect 거절, 응답 256 KiB 제한을 적용한다. 이 도구는 시크릿, 볼트, IAM을 만들지 않으므로 시크릿은 운영자가 먼저 만든다.
 
@@ -79,7 +79,7 @@ audeniq-secrets secrets put         --manifest /opt/audeniq/secrets-manifest.jso
 |---|---|---|
 | AWS | 해당 ARN의 `secretsmanager:GetSecretValue` (KMS CMK로 암호화했다면 그 키의 `kms:Decrypt`) | `secretsmanager:PutSecretValue` |
 | GCP | 시크릿별 `roles/secretmanager.secretAccessor` | `roles/secretmanager.secretVersionAdder` |
-| OCI | 대상 시크릿·compartment로 제한한 `read secret-bundles` | 시크릿 내용 갱신 권한 (`use secrets` 수준) |
+| OCI | 대상 시크릿·compartment로 제한한 `read secret-bundles` (instance principal이면 동적 그룹에 부여) | 시크릿 내용 갱신 권한 (`use secrets` 수준) |
 
 API와 worker 컨테이너에는 클라우드 자격을 주지 않는다. 자격 파일은 host 관리자만 읽게 두고(0600), 정책 문법은 적용 전에 각 공급자 문서로 확인한다.
 
