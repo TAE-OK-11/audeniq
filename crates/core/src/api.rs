@@ -118,6 +118,7 @@ pub fn router(s: AppState) -> Router {
         .route("/api/orgs/{org}/uploads/{id}/cancel", post(cancel_upload))
         .route("/api/orgs/{org}/uploads/{id}/complete", post(complete))
         .route("/api/orgs/{org}/assets/{id}", get(asset))
+        .route("/api/orgs/{org}/assets/{id}/image", get(asset_image))
         .route("/api/orgs/{org}/releases/{id}/tracks", post(track))
         .route(
             "/api/orgs/{org}/releases/{id}/tracks/{track}",
@@ -324,7 +325,15 @@ async fn boundary(State(s): State<AppState>, mut req: Request, next: Next) -> Re
     let _entered = span.enter();
     let headers = response.headers_mut();
     headers.insert("x-request-id", request_id);
-    headers.insert("cache-control", HeaderValue::from_static("no-store"));
+    // no-store unless the handler chose a browser-only (private) policy for
+    // content-addressed bytes (a stored cover image keyed by its hash).
+    let private_cache = headers
+        .get("cache-control")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.starts_with("private,") && v.contains("immutable"));
+    if !private_cache {
+        headers.insert("cache-control", HeaderValue::from_static("no-store"));
+    }
     headers.insert(
         "x-content-type-options",
         HeaderValue::from_static("nosniff"),
@@ -903,6 +912,15 @@ async fn asset(
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
     Ok(Json(uploads::get(&s, &a, org, id).await?))
+}
+async fn asset_image(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Response> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    let img = uploads::image(&s, &a, org, id).await?;
+    Ok(uploads::image_response(img, &h))
 }
 async fn member(
     State(s): State<AppState>,

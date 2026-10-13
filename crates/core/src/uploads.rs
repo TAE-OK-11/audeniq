@@ -540,6 +540,103 @@ pub async fn get(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> 
     Ok(v)
 }
 
+/// A stored image (cover art and its small preview) for display, after the
+/// same checks as delivery: registered, sanitized at upload (and scanned when
+/// the scanner is on), and the bytes still matching their recorded hash.
+pub struct StoredImage {
+    pub bytes: Vec<u8>,
+    pub content_type: &'static str,
+    pub sha256: String,
+}
+
+/// Reads the registered image `id` of `org`; the caller authorizes.
+pub async fn stored_image(s: &AppState, org: Uuid, id: Uuid) -> Result<StoredImage> {
+    let row = sqlx::query(
+        "SELECT a.object_key, a.content_type, a.size_bytes, a.sha256
+           FROM catalog.assets a
+           JOIN catalog.asset_safety sf ON sf.asset_id=a.id AND sf.org_id=a.org_id AND sf.safe_key=a.object_key
+                AND sf.safe_sha256=a.sha256 AND sf.rule_version='1' AND (NOT $3 OR sf.antivirus_status='SCANNED')
+          WHERE a.org_id=$1 AND a.id=$2 AND a.kind='IMAGE' AND a.state='REGISTERED'
+            AND a.content_type IN ('image/jpeg','image/png')",
+    )
+    .bind(org)
+    .bind(id)
+    .bind(s.antivirus_enabled)
+    .fetch_optional(&s.pool)
+    .await?
+    .ok_or(Error::NotFound)?;
+    let size: i64 = row.get("size_bytes");
+    if size <= 0 || size > MAX_IMAGE_BYTES {
+        return Err(Error::NotFound);
+    }
+    let sha256: String = row
+        .get::<Option<String>, _>("sha256")
+        .ok_or(Error::NotFound)?;
+    let bytes = s.storage.get(&row.get::<String, _>("object_key")).await?;
+    if bytes.len() as i64 != size || crate::domain::sha256_hex(&bytes) != sha256 {
+        tracing::warn!(asset = %id, "stored image does not match its recorded hash");
+        return Err(Error::NotFound);
+    }
+    let content_type = if row.get::<String, _>("content_type") == "image/png" {
+        "image/png"
+    } else {
+        "image/jpeg"
+    };
+    Ok(StoredImage {
+        bytes,
+        content_type,
+        sha256,
+    })
+}
+
+/// `GET /api/orgs/{org}/assets/{id}/image`: a member with read access to the
+/// asset sees the image (cover art kept on the server, shown in the studio
+/// once the release is saved or submitted).
+pub async fn image(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<StoredImage> {
+    let mut tx = s.pool.begin().await?;
+    auth::authorize(&mut tx, a, org, id, "asset", false).await?;
+    tx.commit().await?;
+    stored_image(s, org, id).await
+}
+
+/// The HTTP response for a [`StoredImage`]: content-addressed, so cached
+/// privately for a year and answered 304 to a matching `If-None-Match`.
+pub fn image_response(img: StoredImage, h: &axum::http::HeaderMap) -> axum::response::Response {
+    use axum::http::{HeaderValue, StatusCode, header};
+    use axum::response::IntoResponse;
+    let etag = format!("\"{}\"", img.sha256);
+    let fresh = h
+        .get(header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.split(',').any(|t| t.trim() == etag));
+    let mut res = if fresh {
+        StatusCode::NOT_MODIFIED.into_response()
+    } else {
+        img.bytes.into_response()
+    };
+    let hd = res.headers_mut();
+    hd.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static(img.content_type),
+    );
+    if let Ok(v) = HeaderValue::from_str(&etag) {
+        hd.insert(header::ETAG, v);
+    }
+    hd.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("private, max-age=31536000, immutable"),
+    );
+    hd.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    hd.insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static("sandbox; default-src 'none'"),
+    );
+    res
+}
+
 pub async fn status(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
     auth::membership(&mut tx, a, org, false).await?;
