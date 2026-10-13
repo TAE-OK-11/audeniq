@@ -15,6 +15,32 @@ pub struct UploadInput {
     pub kind: String,
     pub size_bytes: i64,
     pub content_type: String,
+    /// Ask for a resumable (multipart) upload. Only audio larger than one
+    /// part uses it; everything else still gets a single signed PUT.
+    #[serde(default)]
+    pub resumable: bool,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PartsInput {
+    pub part_numbers: Vec<i32>,
+}
+/// Part size of a resumable upload (512 MiB = 32 parts). R2 needs equal
+/// parts except the last; S3 and OCI need at least 5 MiB.
+pub const PART_SIZE: i64 = 16 * 1024 * 1024;
+/// A resumable session stays open a day: long enough to resume after a
+/// dropped connection or a closed laptop, short enough for quarantine.
+const RESUMABLE_HOURS: i64 = 24;
+/// Part URLs live this long; the device asks for more as it goes.
+const PART_URL_MINUTES: i64 = 15;
+/// Part URLs per request.
+const PARTS_PER_REQUEST: usize = 8;
+
+fn part_count(size: i64, part_size: i64) -> i64 {
+    (size + part_size - 1) / part_size
+}
+fn part_len(size: i64, part_size: i64, part: i64) -> i64 {
+    (size - (part - 1) * part_size).min(part_size)
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -71,12 +97,15 @@ pub async fn issue(s: &AppState, a: &Actor, org: Uuid, i: UploadInput) -> Result
         return Err(Error::InvalidCode(too_large));
     }
     auth::rate(&s.pool, &format!("uploads:{}", a.user), 60).await?;
-    let mut tx = s.pool.begin().await?;
     let asset = Uuid::new_v4();
     let session = Uuid::new_v4();
     let nonce = Uuid::new_v4();
-    auth::create_resource(&mut tx, a, org, asset, "asset").await?;
     let key = format!("quarantine/{org}/{asset}/{nonce}");
+    if i.resumable && i.kind == "AUDIO" && i.size_bytes > PART_SIZE {
+        return issue_resumable(s, a, org, i, asset, session, nonce, key).await;
+    }
+    let mut tx = s.pool.begin().await?;
+    auth::create_resource(&mut tx, a, org, asset, "asset").await?;
     let stable = format!("registered/{org}/{asset}/{}", Uuid::new_v4());
     // The signed PUT URL lives 10 minutes. Completion stays open 30 minutes
     // longer (`expires_at + 30 minutes`, here and in `complete`): the object
@@ -113,6 +142,184 @@ pub async fn issue(s: &AppState, a: &Actor, org: Uuid, i: UploadInput) -> Result
         json!({"upload_session_id":session,"asset_id":asset,"expected_key":key,"grant":grant,"qc_status":"PENDING"}),
     )
 }
+/// Resumable upload: the store's multipart upload at the quarantine key.
+/// The device asks for part URLs as it goes ([`part_urls`]) and, after a
+/// reload, for the parts already stored ([`stored_parts`]).
+#[allow(clippy::too_many_arguments)]
+async fn issue_resumable(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    i: UploadInput,
+    asset: Uuid,
+    session: Uuid,
+    nonce: Uuid,
+    key: String,
+) -> Result<Value> {
+    // Membership is checked before anything is created in the store.
+    {
+        let mut tx = s.pool.begin().await?;
+        auth::membership(&mut tx, a, org, true).await?;
+        tx.rollback().await?;
+    }
+    // Network call outside any transaction. If the rows below fail, the
+    // bucket's abort-incomplete-multipart lifecycle rule drops the upload.
+    let upload_id = s
+        .storage
+        .create_multipart(&key, &i.content_type, &nonce.to_string())
+        .await?;
+    let mut tx = s.pool.begin().await?;
+    auth::create_resource(&mut tx, a, org, asset, "asset").await?;
+    let stable = format!("registered/{org}/{asset}/{}", Uuid::new_v4());
+    let expires: DateTime<Utc> = sqlx::query_scalar("SELECT now() + make_interval(hours => $1)")
+        .bind(RESUMABLE_HOURS as i32)
+        .fetch_one(&mut *tx)
+        .await?;
+    sqlx::query("INSERT INTO catalog.assets(id,org_id,kind,object_key,size_bytes,content_type) VALUES($1,$2,$3,$4,$5,$6)").bind(asset).bind(org).bind(&i.kind).bind(stable).bind(i.size_bytes).bind(&i.content_type).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO catalog.upload_sessions(id,org_id,asset_id,expected_key,nonce,expected_bytes,content_type,expires_at,multipart_upload_id,part_size) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
+        .bind(session).bind(org).bind(asset).bind(&key).bind(nonce).bind(i.size_bytes).bind(&i.content_type).bind(expires).bind(&upload_id).bind(PART_SIZE)
+        .execute(&mut *tx).await?;
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        Some(org),
+        Some(asset),
+        "upload.issued",
+        "PRIVATE_QUARANTINE_MULTIPART",
+        a.request,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({
+        "upload_session_id": session, "asset_id": asset, "expected_key": key,
+        "multipart": {"part_size": PART_SIZE, "part_count": part_count(i.size_bytes, PART_SIZE)},
+        "expires_at": expires, "qc_status": "PENDING",
+    }))
+}
+
+struct OpenMultipart {
+    key: String,
+    upload_id: String,
+    size: i64,
+    part_size: i64,
+    expires: DateTime<Utc>,
+}
+
+/// An open resumable session the caller may write to.
+async fn open_multipart(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    id: Uuid,
+    write: bool,
+) -> Result<OpenMultipart> {
+    let mut tx = s.pool.begin().await?;
+    auth::membership(&mut tx, a, org, write).await?;
+    let r = sqlx::query(
+        "SELECT asset_id, expected_key, multipart_upload_id, part_size, expected_bytes, expires_at, status,
+                (expires_at > now()) AS open
+           FROM catalog.upload_sessions WHERE org_id=$1 AND id=$2",
+    )
+    .bind(org)
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(Error::NotFound)?;
+    auth::authorize(&mut tx, a, org, r.get("asset_id"), "asset", write).await?;
+    tx.rollback().await?;
+    let (Some(upload_id), Some(part_size)) = (
+        r.get::<Option<String>, _>("multipart_upload_id"),
+        r.get::<Option<i64>, _>("part_size"),
+    ) else {
+        return Err(Error::PolicyGate("UPLOAD_NOT_RESUMABLE"));
+    };
+    if r.get::<String, _>("status") != "ISSUED" || !r.get::<bool, _>("open") {
+        return Err(Error::Conflict);
+    }
+    Ok(OpenMultipart {
+        key: r.get("expected_key"),
+        upload_id,
+        size: r.get("expected_bytes"),
+        part_size,
+        expires: r.get("expires_at"),
+    })
+}
+
+/// Signed PUT URLs for the next parts (each bound to its exact size).
+pub async fn part_urls(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    id: Uuid,
+    i: PartsInput,
+) -> Result<Value> {
+    if i.part_numbers.is_empty() || i.part_numbers.len() > PARTS_PER_REQUEST {
+        return Err(Error::InvalidCode("UPLOAD_PARTS_INVALID"));
+    }
+    auth::rate(&s.pool, &format!("upload-parts:{}", a.user), 2000).await?;
+    let m = open_multipart(s, a, org, id, true).await?;
+    let count = part_count(m.size, m.part_size);
+    let expires = (Utc::now() + chrono::Duration::minutes(PART_URL_MINUTES)).min(m.expires);
+    let mut parts = Vec::with_capacity(i.part_numbers.len());
+    for n in i.part_numbers {
+        if !(1..=count).contains(&i64::from(n)) {
+            return Err(Error::InvalidCode("UPLOAD_PARTS_INVALID"));
+        }
+        let size = part_len(m.size, m.part_size, i64::from(n));
+        let g = s
+            .storage
+            .presign_part(&m.key, &m.upload_id, n, size, expires)
+            .await?;
+        parts.push(json!({"part_number": n, "size_bytes": size, "grant": g}));
+    }
+    Ok(json!({"parts": parts}))
+}
+
+/// Parts already stored (where a resumed upload continues).
+pub async fn stored_parts(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> {
+    let m = open_multipart(s, a, org, id, false).await?;
+    let count = part_count(m.size, m.part_size);
+    let listed = s.storage.list_parts(&m.key, &m.upload_id).await?;
+    // Only parts of the expected size count as done; a wrong one is re-sent.
+    let done: Vec<Value> = listed
+        .iter()
+        .filter(|p| {
+            (1..=count).contains(&i64::from(p.number))
+                && p.size == part_len(m.size, m.part_size, i64::from(p.number))
+        })
+        .map(|p| json!({"part_number": p.number, "size_bytes": p.size}))
+        .collect();
+    Ok(
+        json!({"part_size": m.part_size, "part_count": count, "parts": done, "expires_at": m.expires}),
+    )
+}
+
+/// Finish a multipart upload before completion's checks: every part must be
+/// stored with its expected size. A retried completion whose upload already
+/// finished finds the object and skips this.
+async fn finish_multipart(
+    s: &AppState,
+    key: &str,
+    upload_id: &str,
+    size: i64,
+    part_size: i64,
+) -> Result<()> {
+    if s.storage.head(key).await?.is_some() {
+        return Ok(());
+    }
+    let count = part_count(size, part_size);
+    let mut parts = s.storage.list_parts(key, upload_id).await?;
+    parts.sort_by_key(|p| p.number);
+    let complete = parts.len() as i64 == count
+        && parts.iter().enumerate().all(|(i, p)| {
+            i64::from(p.number) == i as i64 + 1 && p.size == part_len(size, part_size, i as i64 + 1)
+        });
+    if !complete {
+        return Err(Error::PolicyGate("UPLOAD_PARTS_INCOMPLETE"));
+    }
+    s.storage.complete_multipart(key, upload_id, &parts).await
+}
+
 /// Time one completion step and, when it fails, log which step, how long it
 /// took and the error code under the request id (BE-012: the storage error
 /// could not be traced to a step). No keys or URLs are logged.
@@ -184,7 +391,18 @@ pub async fn complete(
     // storage calls, scans or decoding. Cancellation and concurrent
     // completion are checked again under a fresh row lock; the download is
     // conditional on the ETag seen here.
+    let multipart: Option<(String, i64)> = r
+        .get::<Option<String>, _>("multipart_upload_id")
+        .zip(r.get::<Option<i64>, _>("part_size"));
     tx.commit().await?;
+    if let Some((upload_id, part_size)) = &multipart {
+        stage(
+            a.request,
+            "multipart",
+            finish_multipart(s, &key, upload_id, size, *part_size),
+        )
+        .await?;
+    }
     let meta = stage(a.request, "head", s.storage.head(&key))
         .await?
         .ok_or(Error::Conflict)?;
@@ -570,8 +788,8 @@ pub async fn cancel(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Valu
     .await?
     .ok_or(Error::NotFound)?;
     auth::authorize(&mut tx, a, org, asset, "asset", true).await?;
-    let status: String = sqlx::query_scalar(
-        "SELECT status FROM catalog.upload_sessions WHERE org_id=$1 AND id=$2 FOR UPDATE",
+    let (status, key, upload_id): (String, String, Option<String>) = sqlx::query_as(
+        "SELECT status, expected_key, multipart_upload_id FROM catalog.upload_sessions WHERE org_id=$1 AND id=$2 FOR UPDATE",
     )
     .bind(org)
     .bind(id)
@@ -611,6 +829,13 @@ pub async fn cancel(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Valu
     tx.commit().await?;
     // The quarantine object is not deleted: it is the single-use lock for
     // the upload URL (signed If-None-Match: *). The bucket lifecycle rule
-    // removes quarantine/ objects after a day.
+    // removes quarantine/ objects after a day. An unfinished multipart
+    // upload is aborted (its part URLs stop working); the lifecycle rule
+    // also drops one this call could not reach.
+    if let Some(upload_id) = upload_id
+        && let Err(e) = s.storage.abort_multipart(&key, &upload_id).await
+    {
+        tracing::warn!(error = %e, "multipart abort failed; lifecycle rule will drop it");
+    }
     Ok(json!({"cancelled":true,"duplicate":false}))
 }

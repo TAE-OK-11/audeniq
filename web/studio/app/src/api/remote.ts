@@ -16,6 +16,10 @@ import type {
 import { ApiError, PartialSaveError } from './errors';
 import { LEGAL_DOCS, TERMS_VERSION } from '../lib/terms';
 import { bootstrapCsrf, hasCsrf, listAll, orgPath, putToGrant, req, setCsrf, setSessionUser, type UploadGrant } from './http';
+import * as multipart from './multipart';
+
+/** 이보다 큰 음원은 조각으로 이어 올린다 (서버 uploads::PART_SIZE와 같다) */
+const MULTIPART_MIN_BYTES = 16 * 1024 * 1024;
 import { stampNow } from '../lib/date';
 import { isrcValid, normalizeIsrc, upcValid } from '../lib/dsp';
 import { parseStaffFix } from '../lib/corrections';
@@ -667,16 +671,46 @@ export const remoteApi = {
       throw new ApiError(kind === 'AUDIO' ? '음원은 WAV, FLAC, ALAC(.m4a), AIFF, WavPack, TTA 파일만 올릴 수 있어요.' : kind === 'DOCUMENT' ? '서류는 PDF, JPG, PNG 파일만 올릴 수 있어요.' : '커버는 JPG 또는 PNG 파일만 올릴 수 있어요.', 400, 'UPLOAD_TYPE_UNSUPPORTED');
     }
     // 서버는 발급 후 10분(PUT 서명 유효) + 30분 동안 완료를 받는다 — 여유를 두고 그 안에서만 재시도
-    const completeBy = Date.now() + 38 * 60_000;
-    const issued = await req<{ upload_session_id: string; asset_id: string; expected_key: string; grant: UploadGrant }>(orgPath('/uploads'), {
-      method: 'POST', body: { kind, size_bytes: file.size, content_type: contentType },
-    });
-    try {
-      await putToGrant(issued.grant, file, onProgress, signal);
-    } catch (e) {
-      // 올리다 실패하면 업로드 세션을 취소해 둔다 (자산으로 등록되지 않도록)
-      void req(orgPath(`/uploads/${issued.upload_session_id}/cancel`), { method: 'POST' }).catch(() => {});
-      throw e;
+    let completeBy = Date.now() + 38 * 60_000;
+    // 16 MiB보다 큰 음원은 조각으로 이어 올린다 (연결이 끊겨도 그 조각만 다시, 새로고침 뒤에도 이어서)
+    const resumable = kind === 'AUDIO' && file.size > MULTIPART_MIN_BYTES;
+    let issued: { upload_session_id: string; asset_id: string; expected_key: string; grant?: UploadGrant; multipart?: multipart.MultipartIssued['multipart']; expires_at?: string };
+    const saved = resumable ? multipart.savedSession(file) : null;
+    if (saved) {
+      issued = { upload_session_id: saved.session, asset_id: saved.assetId, expected_key: saved.key, expires_at: saved.expiresAt, multipart: { part_size: 0, part_count: 0 } };
+    } else {
+      try {
+        issued = await req(orgPath('/uploads'), { method: 'POST', body: { kind, size_bytes: file.size, content_type: contentType, resumable } });
+      } catch (e) {
+        // 저장소가 조각 업로드를 지원하지 않으면 한 번에 올린다
+        if (!(resumable && e instanceof ApiError && e.code === 'UPLOAD_MULTIPART_UNSUPPORTED')) throw e;
+        issued = await req(orgPath('/uploads'), { method: 'POST', body: { kind, size_bytes: file.size, content_type: contentType } });
+      }
+    }
+    if (issued.multipart) {
+      if (!saved) multipart.rememberSession(file, issued as multipart.MultipartIssued);
+      if (issued.expires_at) completeBy = Date.parse(issued.expires_at) + 28 * 60_000;
+      try {
+        await multipart.uploadParts(file, issued.upload_session_id, onProgress, signal);
+      } catch (e) {
+        if (e instanceof ApiError && e.code === 'ABORTED') {
+          multipart.forgetSession(file);
+          void req(orgPath(`/uploads/${issued.upload_session_id}/cancel`), { method: 'POST' }).catch(() => {});
+        } else if (saved && e instanceof ApiError && (e.status === 404 || e.status === 409)) {
+          // 이어 올리려던 세션이 닫혔다 (만료·취소) — 처음부터 다시
+          multipart.forgetSession(file);
+          return remoteApi.uploadFile(file, kind, onProgress, signal);
+        }
+        throw e;
+      }
+    } else {
+      try {
+        await putToGrant(issued.grant!, file, onProgress, signal);
+      } catch (e) {
+        // 올리다 실패하면 업로드 세션을 취소해 둔다 (자산으로 등록되지 않도록)
+        void req(orgPath(`/uploads/${issued.upload_session_id}/cancel`), { method: 'POST' }).catch(() => {});
+        throw e;
+      }
     }
     for (let attempt = 0; ; attempt++) {
       if (signal?.aborted) throw new ApiError('업로드를 취소했어요.', 0, 'ABORTED');
@@ -684,6 +718,7 @@ export const remoteApi = {
         const done = await req<{ asset_id: string; sha256?: string; detected_container?: string }>(orgPath(`/uploads/${issued.upload_session_id}/complete`), {
           method: 'POST', body: { asset_id: issued.asset_id, expected_key: issued.expected_key }, timeoutMs: 240000, signal, quietServer: true,
         });
+        if (issued.multipart) multipart.forgetSession(file);
         return { assetId: done.asset_id, sha256: done.sha256, container: done.detected_container };
       } catch (error) {
         // Capacity retries reuse the uploaded object and session. Never PUT
