@@ -6597,3 +6597,102 @@ async fn approved_rights_document_becomes_grants_and_rechecks(pool: PgPool) {
     assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
     assert_eq!(v["error"]["code"], "GRANT_SHARE_EXCEEDS_100");
 }
+
+/// Moving a release to another distributor: a transfer names the new
+/// distributor and needs the contract-end notice; the owner gets the
+/// handover data (UPC, ISRCs, each platform's id); on the switch date every
+/// platform gets a takedown, like a contract end.
+#[sqlx::test]
+async fn transfer_names_the_distributor_hands_over_codes_and_takes_down(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let mock = MockDsp::new(MockBehavior::Accept);
+    let (_, status) = run_send(&pool, &ctx, &mock).await;
+    assert_eq!(status, "DELIVERED");
+    let path = format!("/api/orgs/{}/releases/{}/term", ctx.org, ctx.release);
+    let day = |n: i64| {
+        (chrono::Utc::now() + chrono::Duration::hours(9) + chrono::Duration::days(n))
+            .date_naive()
+            .to_string()
+    };
+    // No handover before a transfer is scheduled.
+    let (_, v) = call(
+        &ctx.app,
+        "GET",
+        &format!("{path}/handover"),
+        Value::Null,
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "TERM_NOT_TRANSFER", "{v}");
+    let (_, v) = call(
+        &ctx.app,
+        "PUT",
+        &path,
+        json!({"end_date": day(40), "reason": "TRANSFER"}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "TERM_TRANSFER_TO_REQUIRED", "{v}");
+    let (_, v) = call(
+        &ctx.app,
+        "PUT",
+        &path,
+        json!({"end_date": day(10), "reason": "TRANSFER", "transfer_to": "새 유통사"}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "TERM_NOTICE_TOO_SHORT", "{v}");
+    let (s, v) = call(
+        &ctx.app,
+        "PUT",
+        &path,
+        json!({"end_date": day(40), "reason": "TRANSFER", "transfer_to": "새 유통사"}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (_, t) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(t["term"]["transfer_to"], "새 유통사", "{t}");
+    let notice: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM portal.notifications WHERE org_id=$1 AND title LIKE '%유통사 이전이%'",
+    )
+    .bind(ctx.org)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(notice, 1);
+
+    // The handover data: the delivered codes and the platforms that have it.
+    let (s, h) = call(
+        &ctx.app,
+        "GET",
+        &format!("{path}/handover"),
+        Value::Null,
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{h}");
+    assert_eq!(h["transfer_to"], "새 유통사");
+    assert!(h["upc"].is_string(), "{h}");
+    assert!(
+        h["tracks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|t| t["isrc"].is_string()),
+        "{h}"
+    );
+    assert!(!h["platforms"].as_array().unwrap().is_empty(), "{h}");
+
+    // On the switch date: takedowns, like a contract end.
+    sqlx::query("UPDATE portal.release_terms SET end_date=$2::date WHERE release_id=$1")
+        .bind(ctx.release)
+        .bind(day(0))
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(audeniq_core::contract_terms::sweep(&pool).await.unwrap(), 1);
+    let takedowns: i64 = sqlx::query_scalar("SELECT count(*) FROM operations.jobs WHERE kind='delivery.takedown' AND payload->>'package_id'=$1")
+        .bind(ctx.package_id.to_string()).fetch_one(&pool).await.unwrap();
+    assert!(takedowns >= 1);
+}
