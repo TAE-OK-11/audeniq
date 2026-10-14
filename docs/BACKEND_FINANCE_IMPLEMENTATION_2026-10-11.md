@@ -36,6 +36,7 @@ MATCHED는 카탈로그 매칭 상태다. 입금 기록만으로 보고서를 PO
 audeniq-admin --operator STAFF_EMAIL royalty import ORG_UUID DSP_CODE 2026-08-01 2026-08-31 USD NORMALIZED_CSV
 audeniq-admin --operator STAFF_EMAIL royalty match ORG_UUID REPORT_UUID
 audeniq-admin --operator STAFF_EMAIL royalty receipt ORG_UUID REPORT_UUID BANK_REFERENCE 123.45 USD EVIDENCE_JSON_FILE
+audeniq-admin --operator STAFF_EMAIL royalty post ORG_UUID REPORT_UUID 1385.20   # 원화 환산율 (KRW 보고서는 1)
 audeniq-admin --operator STAFF_EMAIL royalty show ORG_UUID REPORT_UUID
 
 audeniq-admin --operator STAFF_EMAIL payout return ORDER_UUID BANK_RETURN_REFERENCE 1000 EVIDENCE_JSON_FILE
@@ -89,3 +90,19 @@ POSTED 장부와 과거 AUTO 매칭은 자동 변경하지 않는다. 이미 여
   실행하는 데 필요한 UID/GID 전환이 현재 환경에서 허용되지 않는다.
   SQL 문법 검사와 컴파일 통과가 DB 이행/동시성/잔액 검증의 대체는 아니다.
 - 실제 은행/DSP 호출·송금·배급·운영 DB 이행은 수행하지 않았다.
+
+## 정산 반영 (0119, `royalty post`)
+
+모든 줄이 AUTO 매칭(MATCHED)되고 입금이 기록된 보고서만, 한 번만 원장에 올린다.
+
+1. 실제 입금액(보고서 통화) × 환산율 → 원 단위(보고서마다 한 번 절사).
+2. 그 원화를 곡(발매×ISRC)별 gross 비율로 나눈다. 최대 잔여 방식이라 곡별로 원이 사라지지 않는다 (정산 약관 제36조 ⑤).
+3. 발매마다 서명된 배급계약서의 `agreement_terms.fee_bps`로 AUDENIQ 수수료(절사)를 뗀다. 없으면 `RELEASE_FEE_UNKNOWN`으로 멈춘다.
+4. 곡마다 공동작업자 비율(portal.split_shares, 초대·수락 상태)로 나머지를 나눈다. 각 몫은 절사, 남는 원은 신청자.
+5. 발매별 거래(신청자 조직): DEBIT ROYALTY_RECEIVED / CREDIT AUDENIQ_FEE, ROYALTY_PAYABLE(신청자), SPLIT_HELD(공동작업자).
+   몫마다 finance.split_allocations(HELD). 이미 수락한 공동작업자는 바로 finance.settle_split_share로
+   신청자 SPLIT_HELD → SPLIT_TRANSFER_OUT, 공동작업자 조직 SPLIT_TRANSFER_IN → ROYALTY_PAYABLE.
+6. 나중에 수락하면 같은 함수가 보관분을 옮기고, 거절·삭제되면 신청자 ROYALTY_PAYABLE로 돌린다.
+   API는 원장 쓰기 권한 없이 이 함수만 실행할 수 있다.
+
+음수(환불) 곡 합계는 `REPORT_NEGATIVE_TRACK_TOTAL`로 멈춘다 — 사후 조정(약관 제32조)은 별도 처리.

@@ -54,13 +54,15 @@
 //! audeniq-admin --operator STAFF_EMAIL royalty import ORG DSP START END CUR FILE
 //! audeniq-admin --operator STAFF_EMAIL royalty match ORG REPORT
 //! audeniq-admin --operator STAFF_EMAIL royalty receipt ORG REPORT BANK_REF AMOUNT CUR EVIDENCE_JSON
+//! audeniq-admin --operator STAFF_EMAIL royalty post ORG REPORT FX_RATE
+//!   (fully matched + paid report → ledger: fee, applicant, collaborator splits)
 //! audeniq-admin --operator STAFF_EMAIL royalty show ORG REPORT
 //! audeniq-admin --operator STAFF_EMAIL payout return ORDER BANK_REF AMOUNT EVIDENCE_JSON [--refund-fee]
 //! audeniq-admin storage probe [--origin URL] [--archive]   (bucket check: docs/STORAGE_PROVIDERS.md)
 use audeniq_core::protected_admin as admin;
 use audeniq_core::protected_names::{Action, Mode};
 
-const USAGE: &str = "usage: audeniq-admin [--operator NAME] protected <list|add|remove|activate|alias|remove-alias|grant-exception|revoke-exception> ...\n       audeniq-admin [--operator NAME] identifier-issuer <list|register UPC|ISRC PREFIX>\n       audeniq-admin [--operator NAME] partner <list|config-check|status ID|set-dsp ID [DSP_UUID]|probe ID|dpid ID DPID|test-ern ID FILE|test-ack ID FILE|capabilities ID JSON|contract ID REF|go-live ID|suspend ID --reason TEXT|route D-n DIRECT|MERLIN|merlin-eligible D-n true|false>\n       audeniq-admin [--operator NAME] staff <list|grant EMAIL ROLE|revoke EMAIL|reset-mfa EMAIL>\n       audeniq-admin dsp list\n       audeniq-admin --operator STAFF_EMAIL payout <list [STATUS]|order REQUEST_ID|approve ORDER_ID|submit ORDER_ID BANK_TX|result ORDER_ID settled|failed|returned|unknown [BANK_TX]|cancel ORDER_ID>\n       audeniq-admin --operator STAFF_EMAIL payout return ORDER_ID BANK_REF AMOUNT EVIDENCE_JSON_FILE [--refund-fee]\n       audeniq-admin --operator STAFF_EMAIL royalty <import ORG DSP START END CUR FILE|match ORG REPORT|receipt ORG REPORT BANK_REF AMOUNT CUR EVIDENCE_JSON_FILE|show ORG REPORT>";
+const USAGE: &str = "usage: audeniq-admin [--operator NAME] protected <list|add|remove|activate|alias|remove-alias|grant-exception|revoke-exception> ...\n       audeniq-admin [--operator NAME] identifier-issuer <list|register UPC|ISRC PREFIX>\n       audeniq-admin [--operator NAME] partner <list|config-check|status ID|set-dsp ID [DSP_UUID]|probe ID|dpid ID DPID|test-ern ID FILE|test-ack ID FILE|capabilities ID JSON|contract ID REF|go-live ID|suspend ID --reason TEXT|route D-n DIRECT|MERLIN|merlin-eligible D-n true|false>\n       audeniq-admin [--operator NAME] staff <list|grant EMAIL ROLE|revoke EMAIL|reset-mfa EMAIL>\n       audeniq-admin dsp list\n       audeniq-admin --operator STAFF_EMAIL payout <list [STATUS]|order REQUEST_ID|approve ORDER_ID|submit ORDER_ID BANK_TX|result ORDER_ID settled|failed|returned|unknown [BANK_TX]|cancel ORDER_ID>\n       audeniq-admin --operator STAFF_EMAIL payout return ORDER_ID BANK_REF AMOUNT EVIDENCE_JSON_FILE [--refund-fee]\n       audeniq-admin --operator STAFF_EMAIL royalty <import ORG DSP START END CUR FILE|match ORG REPORT|receipt ORG REPORT BANK_REF AMOUNT CUR EVIDENCE_JSON_FILE|post ORG REPORT FX_RATE|show ORG REPORT>";
 
 fn take_opt(args: &mut Vec<String>, key: &str) -> Option<String> {
     let i = args.iter().position(|a| a == key)?;
@@ -404,7 +406,13 @@ async fn main() -> anyhow::Result<()> {
                 ).bind(org).bind(arg(3)?.parse::<uuid::Uuid>()?).fetch_optional(&pool).await?;
                 value.ok_or_else(|| anyhow::anyhow!("report not found"))?
             }
-            _ => anyhow::bail!("royalty <import|match|receipt|show>"),
+            "post" => {
+                // KRW per unit of the report currency (1 for a KRW report).
+                let fx: rust_decimal::Decimal = arg(4)?.parse()?;
+                audeniq_core::royalty_posting::post_report(&pool, org, arg(3)?.parse()?, actor, fx)
+                    .await?
+            }
+            _ => anyhow::bail!("royalty <import|match|receipt|post|show>"),
         };
         let mut tx = pool.begin().await?;
         audeniq_core::operations::audit(

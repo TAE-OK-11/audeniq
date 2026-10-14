@@ -195,6 +195,14 @@ const TARGETS: &[Target] = &[
         subject: "id",
         columns: &[sealed_only(Field::ReleaseAlertEmail, "email_cipher")],
     },
+    // Split collaborators (0119): invite address, sealed until answered.
+    Target {
+        name: "portal.split_shares",
+        table: "portal.split_shares",
+        id: "id",
+        subject: "id",
+        columns: &[sealed_only(Field::SplitEmail, "email_cipher")],
+    },
     Target {
         name: "identity.users",
         table: "identity.users",

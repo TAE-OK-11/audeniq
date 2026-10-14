@@ -35,6 +35,7 @@ import { TrackChecks } from '../components/TrackChecks';
 import { Segmented } from '../components/Segmented';
 import { DateField } from '../components/Picker';
 import { BrandMark } from '../components/BrandMark';
+import { SplitsCard } from '../components/SplitsCard';
 import { TERRITORY_GROUPS, WORLD, parseTerritories, territoryName, territorySummary, worldExcept } from '../lib/territories';
 
 const STEPS = [
@@ -2443,6 +2444,10 @@ export function Upload() {
               허락서·동의서는 위의 AUDENIQ 전자 문서 도구에서 작성하고 권리자가 직접 서명할 수 있어요. 완성된 서류는 ‘권리·보완 서류’에도 보관돼요.
             </div>
             <OptionDocsBanner options={form.options} />
+            {/* 공동작업자 수익 분배: 임시 저장된 발매(서버의 곡 목록)를 기준으로 정한다 */}
+            {draftIdRef.current
+              ? <SplitsCard releaseId={draftIdRef.current} embedded />
+              : !MOCK && <p className="small muted">임시 저장이 끝나면 공동작업자 수익 분배를 정할 수 있어요.</p>}
           </section>
         )}
 

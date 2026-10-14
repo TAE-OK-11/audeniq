@@ -234,12 +234,41 @@ struct ReadyCtx {
 
 /// Full pipeline to READY_FOR_DELIVERY, then pin the mock profile to the
 async fn ready_package(pool: &PgPool) -> ReadyCtx {
+    let d = draft_package(pool).await;
+    finish_package(pool, d).await
+}
+
+/// A submittable draft (still editable), before [`finish_package`].
+struct DraftCtx {
+    app: Router,
+    store: Arc<FileStore>,
+    u: User,
+    release: Uuid,
+}
+
+async fn draft_package(pool: &PgPool) -> DraftCtx {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let wav = wav_bytes();
     let asset = register_asset(pool, &store, &u, "t.wav", wav).await;
     let release = build_submittable(&app, pool, &u, asset).await;
     add_preparation_supplements(pool, &store, &u, release).await;
+    DraftCtx {
+        app,
+        store,
+        u,
+        release,
+    }
+}
+
+/// Submit the draft and take it through Stages 1–3 to READY_FOR_DELIVERY.
+async fn finish_package(pool: &PgPool, d: DraftCtx) -> ReadyCtx {
+    let DraftCtx {
+        app,
+        store,
+        u,
+        release,
+    } = d;
     consent_and_submit(&app, &u, release, &format!("k-f5-{}", Uuid::new_v4())).await;
     // Pin the seeded MockDSP profile to a fixed DSP id BEFORE stage2 runs:
     // stage2's DSP-eligibility module reads activated adapter profiles, so
@@ -5586,4 +5615,314 @@ async fn release_alert_mails_fans_once_and_erases_addresses(pool: PgPool) {
     .await
     .unwrap();
     assert_eq!(expired, 1);
+}
+
+fn invite_token(to: &str) -> String {
+    let sent = audeniq_core::email::test_sent_to(to);
+    let text = &sent.last().expect("invite mail").text;
+    let at = text.find("/splits/").expect("invite link") + "/splits/".len();
+    text[at..at + 64].to_string()
+}
+
+/// Revenue splits: the applicant names collaborators per track while
+/// applying; each is invited by email and accepts into their own account.
+/// Posting a paid royalty report takes the AUDENIQ fee, credits accepted
+/// collaborators in their own books, holds the share of anyone who has not
+/// answered and returns it to the applicant when they decline.
+#[sqlx::test]
+async fn revenue_splits_from_application_to_collaborator_balances(pool: PgPool) {
+    use rust_decimal::Decimal;
+    let d = draft_package(&pool).await;
+    let (app, owner, release) = (d.app.clone(), d.u.clone(), d.release);
+    let path = format!("/api/orgs/{}/releases/{}/splits", owner.org, release);
+    let (_, sheet) = call(&app, "GET", &path, Value::Null, Some(&owner)).await;
+    assert_eq!(sheet["editable"], true, "{sheet}");
+    let track = sheet["tracks"][0]["track_id"].as_str().unwrap().to_string();
+    let a_mail = format!("a-{}@example.com", Uuid::new_v4().simple());
+    let b_mail = format!("b-{}@example.com", Uuid::new_v4().simple());
+    let body = |shares: Value| json!({"tracks": [{"track_id": track, "shares": shares}]});
+
+    let (_, v) = call(&app, "PUT", &path, body(json!([
+        {"name": "가", "email": a_mail, "share_bps": 6000}, {"name": "나", "email": b_mail, "share_bps": 5000}])), Some(&owner)).await;
+    assert_eq!(v["error"]["code"], "SPLIT_TOTAL_OVER_100", "{v}");
+    let (_, v) = call(&app, "PUT", &path, body(json!([
+        {"name": "가", "email": a_mail, "share_bps": 100}, {"name": "가2", "email": a_mail.to_uppercase(), "share_bps": 100}])), Some(&owner)).await;
+    assert_eq!(v["error"]["code"], "SPLIT_DUPLICATE_EMAIL", "{v}");
+    let (s, v) = call(&app, "PUT", &path, body(json!([
+        {"name": "작곡가 가", "email": a_mail, "share_bps": 3000}, {"name": "편곡가 나", "email": b_mail, "share_bps": 2000}])), Some(&owner)).await;
+    assert_eq!((s, v["invited"].as_i64()), (StatusCode::OK, Some(2)), "{v}");
+    let (_, sheet) = call(&app, "GET", &path, Value::Null, Some(&owner)).await;
+    assert_eq!(sheet["tracks"][0]["owner_bps"], 5000, "{sheet}");
+    assert!(
+        sheet["tracks"][0]["shares"][0]["email"]
+            .as_str()
+            .unwrap()
+            .contains("***@example.com")
+    );
+
+    // Editing on the screen names people by id (it only sees masked addresses):
+    // 나 goes 20% → 25% and back and is asked again at the address on file; a
+    // third person is added and dropped again.
+    let ids: Vec<String> = sheet["tracks"][0]["shares"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v["id"].as_str().unwrap().to_string())
+        .collect();
+    let (_, v) = call(&app, "PUT", &path, body(json!([
+        {"id": ids[0], "name": "작곡가 가", "share_bps": 3000},
+        {"id": ids[1], "name": "편곡가 나", "share_bps": 2500},
+        {"name": "다", "email": format!("c-{}@example.com", Uuid::new_v4().simple()), "share_bps": 500}])), Some(&owner)).await;
+    assert_eq!(v["invited"], 2, "{v}");
+    let (_, v) = call(
+        &app,
+        "PUT",
+        &path,
+        body(json!([
+        {"id": ids[0], "name": "작곡가 가", "share_bps": 3000},
+        {"id": ids[1], "name": "편곡가 나", "share_bps": 2000}])),
+        Some(&owner),
+    )
+    .await;
+    assert_eq!(v["invited"], 1, "{v}");
+    let (_, v) = call(
+        &app,
+        "PUT",
+        &path,
+        body(
+            json!([{"name": "가 again", "email": a_mail, "share_bps": 100},
+        {"id": ids[0], "name": "작곡가 가", "share_bps": 3000}]),
+        ),
+        Some(&owner),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "SPLIT_DUPLICATE_EMAIL", "{v}");
+    let (_, sheet) = call(&app, "GET", &path, Value::Null, Some(&owner)).await;
+    assert_eq!(
+        sheet["tracks"][0]["shares"].as_array().unwrap().len(),
+        2,
+        "{sheet}"
+    );
+    assert_eq!(sheet["tracks"][0]["owner_bps"], 5000, "{sheet}");
+
+    unsafe {
+        std::env::set_var("EMAIL_FROM", "AUDENIQ <no-reply@audeniq.test>");
+        std::env::set_var("EMAIL_PROVIDERS", "test");
+    }
+    let mailer = audeniq_core::email::Mailer::from_env(ORIGIN)
+        .unwrap()
+        .unwrap();
+    let keys = audeniq_core::payout_keys::KeyRing::from_env(false).unwrap();
+    assert_eq!(
+        audeniq_core::splits::dispatch_once(&pool, &keys, &mailer)
+            .await
+            .unwrap(),
+        2
+    );
+    let a_token = invite_token(&a_mail);
+    let b_token = invite_token(&b_mail);
+    let (_, inv) = call(
+        &app,
+        "GET",
+        &format!("/api/split-invites/{a_token}"),
+        Value::Null,
+        None,
+    )
+    .await;
+    assert_eq!(
+        (inv["share_bps"].as_i64(), inv["status"].as_str()),
+        (Some(3000), Some("INVITED")),
+        "{inv}"
+    );
+
+    // 가 accepts into their own account; the applicant cannot accept for them.
+    let collab = user(&app).await;
+    let (_, v) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{}/split-invites/{a_token}/accept", owner.org),
+        json!({}),
+        Some(&owner),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "SPLIT_SELF", "{v}");
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{}/split-invites/{a_token}/accept", collab.org),
+        json!({}),
+        Some(&collab),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (_, v) = call(
+        &app,
+        "POST",
+        &format!("/api/split-invites/{a_token}/decline"),
+        json!({}),
+        None,
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "NOT_FOUND", "a used link is spent: {v}");
+
+    // Submitted and delivered: the sheet is locked.
+    let ctx = finish_package(&pool, d).await;
+    let (_, v) = call(&app, "PUT", &path, body(json!([])), Some(&owner)).await;
+    assert_eq!(v["error"]["code"], "SPLIT_LOCKED", "{v}");
+
+    // A USD report for the track: 10.00 gross, 9.00 received, 1,300 KRW/USD, 8% fee.
+    sqlx::query("UPDATE portal.documents SET agreement_terms='{\"fee_bps\":800}'::jsonb, confirmations=jsonb_build_object('content_hash', repeat('a',64)) WHERE org_id=$1 AND release_id=$2 AND kind='AGREEMENT'")
+        .bind(ctx.org).bind(ctx.release).execute(&pool).await.unwrap();
+    let isrc: String =
+        sqlx::query_scalar("SELECT isrc FROM catalog.tracks WHERE release_id=$1 LIMIT 1")
+            .bind(ctx.release)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let csv =
+        format!("isrc,quantity,gross_amount,currency\n{isrc},1000,6.00,USD\n{isrc},500,4.00,USD\n");
+    let report = audeniq_core::royalty::ingest_report(
+        &pool,
+        ctx.org,
+        "spotify",
+        "2026-09-01".parse().unwrap(),
+        "2026-09-30".parse().unwrap(),
+        "USD",
+        "sep.csv",
+        &csv,
+    )
+    .await
+    .unwrap();
+    audeniq_core::royalty::match_report(&pool, ctx.org, report)
+        .await
+        .unwrap();
+    let actor = owner.user;
+    let r = audeniq_core::royalty_posting::post_report(
+        &pool,
+        ctx.org,
+        report,
+        actor,
+        Decimal::from(1300),
+    )
+    .await;
+    assert!(
+        matches!(
+            r,
+            Err(audeniq_core::error::Error::PolicyGate("REPORT_NOT_PAID"))
+        ),
+        "{r:?}"
+    );
+    audeniq_core::royalty::record_receipt(
+        &pool,
+        ctx.org,
+        report,
+        actor,
+        "BANK-1",
+        Decimal::new(900, 2),
+        "USD",
+        json!({"statement": "sep"}),
+    )
+    .await
+    .unwrap();
+    let posted = audeniq_core::royalty_posting::post_report(
+        &pool,
+        ctx.org,
+        report,
+        actor,
+        Decimal::from(1300),
+    )
+    .await
+    .unwrap();
+    // 9.00 × 1,300 = 11,700 won; fee 936; net 10,764; 가 30% = 3,229; 나 20% = 2,152; applicant 5,383.
+    assert_eq!(posted["gross_krw"], "11700", "{posted}");
+    let r = audeniq_core::royalty_posting::post_report(
+        &pool,
+        ctx.org,
+        report,
+        actor,
+        Decimal::from(1300),
+    )
+    .await;
+    assert!(
+        matches!(
+            r,
+            Err(audeniq_core::error::Error::PolicyGate(
+                "REPORT_ALREADY_POSTED"
+            ))
+        ),
+        "{r:?}"
+    );
+
+    let payable = |org: Uuid| {
+        let pool = pool.clone();
+        async move {
+            let v: Decimal = sqlx::query_scalar(
+                "SELECT COALESCE(SUM(CASE WHEN side='CREDIT' THEN amount ELSE -amount END),0) FROM finance.ledger_entries
+                  WHERE org_id=$1 AND account='ROYALTY_PAYABLE'",
+            ).bind(org).fetch_one(&pool).await.unwrap();
+            v
+        }
+    };
+    assert_eq!(payable(owner.org).await, Decimal::from(5383));
+    assert_eq!(
+        payable(collab.org).await,
+        Decimal::from(3229),
+        "accepted share lands in their own books"
+    );
+    let held: Decimal = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(amount),0) FROM finance.split_allocations WHERE status='HELD'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(held, Decimal::from(2152));
+    let (_, got) = call(
+        &app,
+        "GET",
+        &format!("/api/orgs/{}/splits/received", collab.org),
+        Value::Null,
+        Some(&collab),
+    )
+    .await;
+    assert_eq!(got["items"][0]["received"], "3229", "{got}");
+    let (_, sum) = call(
+        &app,
+        "GET",
+        &format!("/api/orgs/{}/finance/summary", collab.org),
+        Value::Null,
+        Some(&collab),
+    )
+    .await;
+    assert_eq!(sum["payable"], "3229", "{sum}");
+
+    // 나 declines: the held share returns to the applicant.
+    let (s, _) = call(
+        &app,
+        "POST",
+        &format!("/api/split-invites/{b_token}/decline"),
+        json!({}),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(payable(owner.org).await, Decimal::from(5383 + 2152));
+    let left: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM finance.split_allocations WHERE status='HELD'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(left, 0);
+    let erased: bool =
+        sqlx::query_scalar("SELECT bool_and(email_cipher IS NULL) FROM portal.split_shares")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(erased, "answered invites keep no address");
+    // Each org's books balance.
+    for org in [owner.org, collab.org] {
+        let net: Decimal = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(CASE WHEN side='DEBIT' THEN amount ELSE -amount END),0) FROM finance.ledger_entries WHERE org_id=$1",
+        ).bind(org).fetch_one(&pool).await.unwrap();
+        assert_eq!(net, Decimal::ZERO);
+    }
 }

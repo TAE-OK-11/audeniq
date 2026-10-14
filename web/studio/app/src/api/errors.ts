@@ -200,6 +200,18 @@ const CODE_MESSAGES: Record<string, string> = {
   ALERT_CONSENT_REQUIRED: '안내에 동의해 주세요.',
   ALERT_ALREADY_RELEASED: '이미 발매됐어요. 아래 링크에서 바로 들어 보세요.',
   SMART_LINK_RELEASE_NOT_SUBMITTED: '발매 신청을 마친 뒤에 만들 수 있어요.',
+  // 공동작업자 수익 분배
+  SPLIT_INVALID: '분배 정보를 다시 확인해 주세요. 새로고침한 뒤 다시 저장해 주세요.',
+  SPLIT_NAME_INVALID: '공동작업자 이름을 1–100자로 적어 주세요.',
+  SPLIT_EMAIL_INVALID: '공동작업자 이메일을 다시 확인해 주세요.',
+  SPLIT_EMAIL_REQUIRED: '이미 답한 분께 다시 요청하려면 이메일을 적어 주세요.',
+  SPLIT_SHARE_INVALID: '비율은 0.01–100% 사이로 적어 주세요.',
+  SPLIT_TOTAL_OVER_100: '한 곡의 분배 합계가 100%를 넘어요.',
+  SPLIT_DUPLICATE_EMAIL: '같은 곡에 같은 이메일을 두 번 넣을 수 없어요.',
+  SPLIT_LOCKED: '발매 신청을 마친 뒤에는 분배를 바꿀 수 없어요.',
+  SPLIT_SELF: '내 발매의 분배는 내 계정으로 받을 수 없어요. 공동작업자 본인 계정으로 수락해 주세요.',
+  SPLIT_OWNER_REQUIRED: '계정 소유자만 수락할 수 있어요.',
+  SPLIT_ALREADY_ANSWERED: '이미 처리된 요청이에요.',
   // 관리자(스태프) API
   STATUS_UNKNOWN: '알 수 없는 상태 필터예요.',
   NOTE_TOO_LONG: '메모가 너무 길어요. 줄여서 다시 입력해 주세요.',
