@@ -495,6 +495,10 @@ pub fn spawn(state: AppState, mailer: Option<Mailer>) {
                     Ok(n) => busy |= n as i64 >= crate::release_alerts::BATCH,
                     Err(error) => tracing::warn!(%error, "release alert dispatch failed"),
                 }
+                match crate::splits::dispatch_once(&state.pool, &state.payout_keys, m).await {
+                    Ok(n) => busy |= n as i64 >= crate::splits::BATCH,
+                    Err(error) => tracing::warn!(%error, "split invite dispatch failed"),
+                }
             }
             if !busy {
                 tokio::time::sleep(if mailer.is_some() {
