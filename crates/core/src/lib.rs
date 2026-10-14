@@ -10,6 +10,7 @@ pub mod cloud;
 pub mod codes;
 pub mod config;
 pub mod content_policy;
+pub mod contract_terms;
 pub mod contracts;
 pub mod corrections;
 pub mod database;

@@ -267,6 +267,27 @@ pub async fn enqueue_delivery_jobs(pool: &PgPool, package_id: Uuid) -> Result<(V
         tx.commit().await?;
         return Ok((Vec::new(), org_id));
     }
+    // A release whose distribution has ended (contract end, rights expiry,
+    // termination; migration 0121) gets no new delivery.
+    let ended: bool = sqlx::query_scalar("SELECT portal.release_term_ended($1,$2)")
+        .bind(org_id)
+        .bind(release_id)
+        .fetch_one(&mut *tx)
+        .await?;
+    if ended {
+        crate::operations::audit(
+            &mut tx,
+            None,
+            Some(org_id),
+            Some(package_id),
+            "delivery.held",
+            "RELEASE_TERM_ENDED",
+            Uuid::new_v4(),
+        )
+        .await?;
+        tx.commit().await?;
+        return Ok((Vec::new(), org_id));
+    }
     let route_plan: Value = row.get("route_plan");
     // Borrow the plan items; the old `.cloned()` copied the whole array.
     let dsp_ids: Vec<Uuid> = route_plan

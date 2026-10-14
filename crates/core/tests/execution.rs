@@ -6106,3 +6106,162 @@ async fn platform_requests_track_profile_and_content_id_work(pool: PgPool) {
         "kept: {st}"
     );
 }
+
+/// Contract end / rights expiry: the artist schedules the end (with notice),
+/// on the date every platform gets a takedown and no new delivery goes out,
+/// staff close the final settlement; an org-wide contract end stops new
+/// submissions and can be cancelled before the date.
+#[sqlx::test]
+async fn contract_end_takes_down_blocks_delivery_and_closes_final_settlement(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let mock = MockDsp::new(MockBehavior::Accept);
+    let (_, status) = run_send(&pool, &ctx, &mock).await;
+    assert_eq!(status, "DELIVERED");
+    let path = format!("/api/orgs/{}/releases/{}/term", ctx.org, ctx.release);
+    let day = |n: i64| {
+        (chrono::Utc::now() + chrono::Duration::hours(9) + chrono::Duration::days(n))
+            .date_naive()
+            .to_string()
+    };
+
+    let (_, v) = call(
+        &ctx.app,
+        "PUT",
+        &path,
+        json!({"end_date": day(10), "reason": "CONTRACT_END"}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "TERM_NOTICE_TOO_SHORT", "{v}");
+    let (s, v) = call(
+        &ctx.app,
+        "PUT",
+        &path,
+        json!({"end_date": day(5), "reason": "LICENSE_EXPIRY", "note": "샘플 라이선스 만료"}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (_, t) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(t["term"]["status"], "SCHEDULED", "{t}");
+
+    // Within the warning window: told once; not yet ended.
+    audeniq_core::contract_terms::sweep(&pool).await.unwrap();
+    audeniq_core::contract_terms::sweep(&pool).await.unwrap();
+    let warned: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM portal.notifications WHERE org_id=$1 AND title LIKE '%에 끝나요.'",
+    )
+    .bind(ctx.org)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(warned, 1);
+
+    // The date comes: takedowns for every platform, ended, final settlement due.
+    sqlx::query("UPDATE portal.release_terms SET end_date=$2::date WHERE release_id=$1")
+        .bind(ctx.release)
+        .bind(day(0))
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(audeniq_core::contract_terms::sweep(&pool).await.unwrap(), 1);
+    let takedowns: i64 = sqlx::query_scalar("SELECT count(*) FROM operations.jobs WHERE kind='delivery.takedown' AND payload->>'package_id'=$1")
+        .bind(ctx.package_id.to_string()).fetch_one(&pool).await.unwrap();
+    assert!(takedowns >= 1);
+    let (_, t) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(t["term"]["status"], "ENDED", "{t}");
+    assert!(t["term"]["final_settlement_due"].is_string());
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &format!("{path}/cancel"),
+        json!({}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(
+        v["error"]["code"], "TERM_NOT_CANCELLABLE",
+        "ended is final: {v}"
+    );
+    let (_, v) = call(
+        &ctx.app,
+        "PUT",
+        &path,
+        json!({"end_date": day(60), "reason": "CONTRACT_END"}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "TERM_ALREADY_ENDED", "{v}");
+
+    // No new delivery for an ended release.
+    let (jobs, _) = audeniq_core::execution::enqueue_delivery_jobs(&pool, ctx.package_id)
+        .await
+        .unwrap();
+    assert!(jobs.is_empty());
+    let held: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM operations.audit_events WHERE action='delivery.held' AND reason_code='RELEASE_TERM_ENDED')")
+        .fetch_one(&pool).await.unwrap();
+    assert!(held);
+
+    // Staff close the final settlement.
+    let op = staff_user(&ctx.app, &pool, "OPERATOR").await;
+    let (_, list) = call(&ctx.app, "GET", "/api/staff/terms", Value::Null, Some(&op)).await;
+    assert_eq!(list["items"][0]["status"], "ENDED", "{list}");
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &format!("/api/staff/releases/{}/term/final-settled", ctx.release),
+        json!({"note": "9월분까지 정산 완료"}),
+        Some(&op),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, t) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(t["term"]["status"], "FINAL_SETTLED");
+
+    // Org-wide: needs notice, stops new submissions, cancellable.
+    let org_path = format!("/api/orgs/{}/contract-end", ctx.org);
+    let (_, v) = call(
+        &ctx.app,
+        "PUT",
+        &org_path,
+        json!({"end_date": day(7)}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "TERM_NOTICE_TOO_SHORT", "{v}");
+    let (s, v) = call(
+        &ctx.app,
+        "PUT",
+        &org_path,
+        json!({"end_date": day(40)}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let wav = wav_bytes();
+    let asset = register_asset(&pool, &ctx.store, &ctx.user, "t2.wav", wav).await;
+    let draft = build_submittable(&ctx.app, &pool, &ctx.user, asset).await;
+    let (_, c) = call(
+        &ctx.app,
+        "POST",
+        &format!("/api/orgs/{}/releases/{draft}/consents", ctx.org),
+        json!({"parties":[{"party_id":ctx.user.party,"role":"ARTIST"}],"minority_declared":false}),
+        Some(&ctx.user),
+    )
+    .await;
+    let decl = json!({"rights_confirmed":true,"adult_confirmed":true,"is_cover":false,"is_remix":false,"contains_samples":false,"ai_involved":false,"explicit_content":false});
+    let (_, v) = call(&ctx.app, "POST", &format!("/api/orgs/{}/releases/{draft}/submit", ctx.org),
+        json!({"consent_id":c["consent_id"],"minority_declared":false,"idempotency_key":"k-org-end","declarations":decl}), Some(&ctx.user)).await;
+    assert_eq!(v["error"]["code"], "ORG_CONTRACT_ENDING", "{v}");
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &format!("{org_path}/cancel"),
+        json!({}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, ot) = call(&ctx.app, "GET", &org_path, Value::Null, Some(&ctx.user)).await;
+    assert!(ot["term"].is_null(), "{ot}");
+}

@@ -185,6 +185,13 @@ All roles can read every list below.
 | GET | `/api/staff/platform-requests?status=open\|all&group=` | DELIVERY duty |
 | POST | `/api/staff/platform-requests/{id}/status` | DELIVERY duty. `{status IN_PROGRESS/SENT_TO_PLATFORM (needs platform_ref)/RESOLVED/REJECTED (needs note), platform_ref?, note?}`. Resolving a CID_OPT_OUT/OPT_IN/ALLOWLIST updates the release's Content ID state. Every step notifies the org |
 | POST | `/api/staff/releases/{id}/content-id` | DELIVERY duty. `{monetization, note?}` as YouTube shows it |
+| GET/PUT | `/api/orgs/{org}/releases/{id}/term` | Distribution end (0121). PUT `{end_date, reason CONTRACT_END (≥30 days ahead, `TERM_NOTICE_TOO_SHORT`) / LICENSE_EXPIRY (≥1 day), note?}` on a submitted release; a staff-set end is not the artist's (`TERM_SET_BY_STAFF`); an ended term is final (`TERM_ALREADY_ENDED`). The hourly sweep tells the org 30 days before; on the date (KST) it queues a `delivery.takedown` per platform still carrying the release, marks it ENDED with final settlement due in 90 days; from then on deliveries are held (`RELEASE_TERM_ENDED`) |
+| POST | `/api/orgs/{org}/releases/{id}/term/cancel` | While SCHEDULED and set by the artist |
+| GET/PUT | `/api/orgs/{org}/contract-end` | Org-wide contract end (OWNER, ≥30 days ahead): schedules every submitted release (keeps an earlier own date) and refuses new submissions (`ORG_CONTRACT_ENDING`). GET also lists the org's release terms |
+| POST | `/api/orgs/{org}/contract-end/cancel` | OWNER, before the date (releases it scheduled are cancelled too) |
+| GET | `/api/staff/terms` | DELIVERY duty. Scheduled and ended (awaiting final settlement) |
+| POST | `/api/staff/releases/{id}/term` | DELIVERY duty. `{end_date (today allowed), reason TERMINATION (note required)/LICENSE_EXPIRY/CONTRACT_END, note}` |
+| POST | `/api/staff/releases/{id}/term/final-settled` | DELIVERY duty. `{note?}` closes an ENDED term |
 | GET | `/api/orgs/{org}/codes` | Submitted releases the member can read (up to 1000), each with `upc` and `tracks[{track_id,title,disc,number,isrc}]` — the active identifier assignment, else the catalog value — and `upc_virtual`/`isrc_virtual` for test-range codes |
 | GET | `/api/orgs/{org}/codes.csv` | Same as CSV (one row per track; formula-leading cells prefixed with `'`) |
 | GET/PUT | `/api/orgs/{org}/releases/{id}/smart-link` | Smart link (public page `/l/{slug}`). GET: `link {slug, enabled, links}`, `stats {views, clicks{platform:n}, days:30}`, `platforms`, `can_create`. PUT `{enabled?, links:{platform:url}}`: first save creates the page (submitted release only, `SMART_LINK_RELEASE_NOT_SUBMITTED`); links must be https on that platform's hosts (`SMART_LINK_URL_INVALID`, `SMART_LINK_PLATFORM_INVALID`); empty values are dropped |
