@@ -6,6 +6,8 @@ import { API_BASE, req } from '../api/http';
 import { errorMessage } from '../api/errors';
 import { MOCK } from '../lib/mode';
 import { PLATFORM_NAMES } from '../lib/platformNames';
+import { BrandMark } from '../components/BrandMark';
+import { Glyph } from '../components/Glyph';
 
 interface Page {
   title: string; artist: string | null; release_date: string | null; released: boolean; cover: boolean;
@@ -14,7 +16,7 @@ interface Page {
 
 const MOCK_PAGE: Page = {
   title: '여름의 끝', artist: '한결', release_date: '2026-08-01', released: true, cover: false,
-  links: [{ platform: 'melon', url: 'https://www.melon.com/' }, { platform: 'spotify', url: 'https://open.spotify.com/' }],
+  links: [{ platform: 'melon', url: 'https://www.melon.com/' }, { platform: 'spotify', url: 'https://open.spotify.com/' }, { platform: 'apple', url: 'https://music.apple.com/' }, { platform: 'youtube', url: 'https://music.youtube.com/' }],
 };
 
 export function SmartLink() {
@@ -100,15 +102,30 @@ export function SmartLink() {
           )
         )}
         {page.links.length > 0 ? (
-          <ul className="aq-smartlink-list">
-            {page.links.map(l => (
-              <li key={l.platform}>
-                <a href={l.url} rel="noopener noreferrer nofollow" onClick={() => open(l.platform)}>
-                  <span>{PLATFORM_NAMES[l.platform] ?? l.platform}</span><b>{page.released ? '듣기' : '보기'}</b>
-                </a>
-              </li>
-            ))}
-          </ul>
+          <section className="aq-smartlink-links" aria-labelledby="slListTitle">
+            <h2 id="slListTitle" className="aq-smartlink-list-title">{page.released ? '어디서 들을까요?' : '플랫폼에서 미리 보기'}</h2>
+            <ul className="aq-smartlink-list">
+              {page.links.map(l => {
+                const name = PLATFORM_NAMES[l.platform] ?? l.platform;
+                return (
+                  <li key={l.platform}>
+                    <a href={l.url} target="_blank" rel="noopener noreferrer nofollow" onClick={() => open(l.platform)}
+                      aria-label={`${name}에서 ${page.released ? '듣기' : '보기'}`}>
+                      <BrandMark id={l.platform} label={name} size={44} className="aq-smartlink-logo" />
+                      <span className="aq-smartlink-name">
+                        <strong>{name}</strong>
+                        <small>{page.released ? '지금 바로 들을 수 있어요' : '발매 예정 페이지'}</small>
+                      </span>
+                      <span className="aq-smartlink-go">
+                        {page.released ? '들으러 가기' : '보러 가기'}
+                        <Glyph name="chevron-right" size={14} />
+                      </span>
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
         ) : <p className="muted small">아직 등록된 플랫폼 링크가 없어요.</p>}
         <p className="aq-smartlink-foot">Distributed by AUDENIQ</p>
       </div>
