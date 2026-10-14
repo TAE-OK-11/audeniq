@@ -45,6 +45,7 @@ pub enum Field {
     ClaimantName,
     ClaimantEmail,
     ClaimantPhone,
+    ReleaseAlertEmail,
 }
 impl Field {
     fn aad_prefix(self) -> &'static [u8] {
@@ -65,6 +66,7 @@ impl Field {
             Self::ClaimantName => b"audeniq:portal.infringement_claims:claimant_name:",
             Self::ClaimantEmail => b"audeniq:portal.infringement_claims:claimant_email:",
             Self::ClaimantPhone => b"audeniq:portal.infringement_claims:claimant_phone:",
+            Self::ReleaseAlertEmail => b"audeniq:portal.release_alerts:email:",
         }
     }
 }

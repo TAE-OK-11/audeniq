@@ -86,7 +86,7 @@ pub struct Mailer {
     providers: Vec<Provider>,
     from: Mailbox,
     /// 메일 속 바로 가기 링크의 기준 (스튜디오 주소).
-    origin: String,
+    pub(crate) origin: String,
 }
 
 fn env(key: &str) -> Option<String> {
@@ -225,7 +225,7 @@ impl Mailer {
     }
 
     /// 앞의 발송 서비스부터 차례로 보내 보고, 처음 성공한 서비스 이름을 돌려준다.
-    async fn send(&self, id: Uuid, to: &str, mail: &Rendered) -> Result<&'static str> {
+    pub(crate) async fn send(&self, id: Uuid, to: &str, mail: &Rendered) -> Result<&'static str> {
         let to: Mailbox = to
             .parse()
             .map_err(|_| Error::PolicyGate("EMAIL_ADDRESS_INVALID"))?;
@@ -279,7 +279,7 @@ pub struct Rendered {
     pub html: String,
 }
 
-fn one_line(s: &str) -> String {
+pub(crate) fn one_line(s: &str) -> String {
     s.chars()
         .map(|c| if c.is_control() { ' ' } else { c })
         .collect::<String>()
@@ -287,7 +287,7 @@ fn one_line(s: &str) -> String {
         .to_string()
 }
 
-fn escape_html(s: &str) -> String {
+pub(crate) fn escape_html(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         match c {
@@ -479,6 +479,9 @@ pub fn spawn(state: AppState, mailer: Option<Mailer>) {
                 if let Err(error) = sweep(&state.pool).await {
                     tracing::warn!(%error, "notification email sweep failed");
                 }
+                if let Err(error) = crate::release_alerts::sweep(&state.pool).await {
+                    tracing::warn!(%error, "release alert sweep failed");
+                }
                 last_sweep = Some(tokio::time::Instant::now());
             }
             let mut busy = false;
@@ -486,6 +489,11 @@ pub fn spawn(state: AppState, mailer: Option<Mailer>) {
                 match dispatch_once(&state.pool, &state.payout_keys, m).await {
                     Ok(n) => busy = n as i64 >= BATCH,
                     Err(error) => tracing::warn!(%error, "notification email dispatch failed"),
+                }
+                match crate::release_alerts::dispatch_once(&state.pool, &state.payout_keys, m).await
+                {
+                    Ok(n) => busy |= n as i64 >= crate::release_alerts::BATCH,
+                    Err(error) => tracing::warn!(%error, "release alert dispatch failed"),
                 }
             }
             if !busy {
