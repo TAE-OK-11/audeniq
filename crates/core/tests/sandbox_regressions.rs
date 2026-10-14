@@ -321,6 +321,52 @@ async fn ok(app: &Router, method: &str, path: &str, body: Value, u: &User) -> Va
     v
 }
 
+/// The cover kept on the server is shown back to the studio: the stored
+/// (sanitized) bytes, cacheable and revalidated by hash, members only.
+async fn stored_cover_is_served_to_members_only(e: &Env, u: &User, cover: Uuid) {
+    let get = |who: &User, etag: Option<String>| {
+        let mut b = Request::builder()
+            .method("GET")
+            .uri(format!("/api/orgs/{}/assets/{cover}/image", u.org))
+            .header("x-audeniq-service", SECRET)
+            .header("cookie", &who.cookie);
+        if let Some(t) = etag {
+            b = b.header("if-none-match", t);
+        }
+        e.api.clone().oneshot(b.body(Body::empty()).unwrap())
+    };
+    let r = get(u, None).await.unwrap();
+    assert_eq!(r.status(), StatusCode::OK);
+    assert_eq!(r.headers()["content-type"], "image/png");
+    assert!(
+        r.headers()["cache-control"]
+            .to_str()
+            .unwrap()
+            .contains("immutable")
+    );
+    let etag = r.headers()["etag"].to_str().unwrap().to_string();
+    let body = axum::body::to_bytes(r.into_body(), 64 * 1024 * 1024)
+        .await
+        .unwrap();
+    assert!(body.starts_with(b"\x89PNG\r\n\x1a\n"));
+    assert_eq!(
+        etag,
+        format!("\"{}\"", audeniq_core::domain::sha256_hex(&body))
+    );
+    let again = get(u, Some(etag)).await.unwrap();
+    assert_eq!(again.status(), StatusCode::NOT_MODIFIED);
+    let stranger = user(&e.api).await;
+    let denied = get(&stranger, None).await.unwrap();
+    assert!(
+        matches!(
+            denied.status(),
+            StatusCode::FORBIDDEN | StatusCode::NOT_FOUND
+        ),
+        "{}",
+        denied.status()
+    );
+}
+
 async fn user(app: &Router) -> User {
     let email = format!("{}@example.test", Uuid::new_v4());
     let credentials = json!({"email":email,"password":"Long-test-password-123!","terms_version":"AUD-TERMS 2026.10.1"});
@@ -615,6 +661,7 @@ async fn real_upload_path_reaches_ready_for_delivery_under_split_roles(pool: PgP
     )
     .await;
     let cover = upload(&e, &u, "IMAGE", "image/png", &cover_png(&dir.0)).await;
+    stored_cover_is_served_to_members_only(&e, &u, cover).await;
     let (release, _, _) = build_release(&e, &u, audio, cover).await;
     let pre = ok(
         &e.api,
