@@ -18,6 +18,7 @@ export const pageLoaders = {
   RightsDocument: () => import('./pages/RightsDocument'),
   Inquiries: () => import('./pages/Inquiries'),
   PlatformRequests: () => import('./pages/PlatformRequests'),
+  BulkReleases: () => import('./pages/BulkReleases'),
   Notifications: () => import('./pages/Notifications'),
   Events: () => import('./pages/Events'),
   Notices: () => import('./pages/Notices'),
@@ -39,6 +40,7 @@ type PageName = keyof typeof pageLoaders;
 const ROUTE_PAGES: [RegExp, PageName[]][] = [
   [/^\/$/, ['Dashboard']],
   [/^\/releases\/?$/, ['Releases']],
+  [/^\/releases\/bulk/, ['BulkReleases']],
   [/^\/releases\/[^/]+\/application/, ['Application']],
   [/^\/releases\/.+/, ['ReleaseDetail']],
   [/^\/upload/, ['Upload']],
