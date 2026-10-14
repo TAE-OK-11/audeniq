@@ -88,6 +88,11 @@ GRANT SELECT,INSERT ON operations.document_seals,identity.terms_acceptances TO a
 GRANT USAGE ON SEQUENCE operations.document_seals_seq_seq TO audeniq_api;
 -- 송금 실행 전 출금 취소 (0085): 상태 전이 하나만 하는 함수
 GRANT EXECUTE ON FUNCTION finance.cancel_unsent_payout(uuid, uuid) TO audeniq_api;
+-- 공동작업 수익 분배 (0119): 아티스트가 분배 비율·초대를 관리하고, 공동작업자가 수락·거절한다.
+-- 보류 금액 이동은 원장 쓰기 권한 없이 이 함수 하나로만 한다. 정산 반영(posting)은 owner CLI.
+GRANT SELECT,INSERT,UPDATE ON portal.split_shares TO audeniq_api;
+GRANT SELECT ON finance.split_allocations, finance.royalty_postings TO audeniq_api;
+GRANT EXECUTE ON FUNCTION finance.settle_split_share(uuid) TO audeniq_api;
 GRANT USAGE ON SCHEMA finance TO audeniq_api;
 GRANT SELECT ON finance.ledger_transactions,finance.ledger_entries,finance.payout_orders,finance.royalty_reports,finance.report_lines,finance.finance_holds TO audeniq_api;
 -- DSP registry + delivery staging (0042/0043): artists read their release's

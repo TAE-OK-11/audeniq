@@ -897,3 +897,22 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 .aq-smartlink-consent input{margin-top:2px;flex:none}
 .aq-smartlink-alert-err{margin:0;font-size:13px;color:#d92d20}
 .aq-smartlink-alert-done{margin:18px 0 0;padding:10px 12px;border-radius:var(--aq-r-lg);background:var(--aq-blue-50);color:var(--aq-blue-500);font-weight:700;font-size:14px}
+/* 공동작업자 수익 분배 */
+.aq-splits{margin-top:16px;display:grid;gap:12px}
+.aq-splits.is-embedded{margin-top:20px;padding-top:16px;border-top:1px solid var(--aq-gray-100)}
+.aq-splits-track{border:0;padding:0;margin:0;display:grid;gap:8px}
+.aq-splits-track legend{font-weight:700;margin-bottom:6px}
+.aq-splits-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) 96px auto;gap:8px;align-items:center}
+.aq-splits-row:has(.aq-splits-name){grid-template-columns:minmax(0,1fr) auto auto minmax(0,1.2fr)}
+.aq-splits-row>small{grid-column:1/-1;margin-top:-4px}
+.aq-splits-pct{display:flex;align-items:center;gap:4px}
+.aq-splits-pct .ui-input{text-align:right}
+.aq-splits-share{font-weight:700}
+.aq-splits-status{font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--aq-gray-100);color:var(--aq-text-3);justify-self:start}
+.aq-splits-status.is-accepted{background:var(--aq-blue-50);color:var(--aq-blue-500)}
+.aq-splits-status.is-declined{background:#fef3f2;color:#b42318}
+.aq-splits-money{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:flex-end}
+.aq-splits-foot{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.aq-splits-over{color:#d92d20;font-weight:700;font-size:13px}
+@media(max-width:640px){.aq-splits-row{grid-template-columns:1fr 96px auto}.aq-splits-row input[type=email]{grid-column:1/-1;grid-row:2}.aq-splits-row:has(.aq-splits-name){grid-template-columns:1fr auto auto}.aq-splits-money{grid-column:1/-1;justify-content:flex-start}}
+.aq-splits-received{margin-top:16px}

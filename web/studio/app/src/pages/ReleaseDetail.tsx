@@ -7,6 +7,7 @@ import { TakedownCard } from '../components/TakedownCard';
 import { CorrectionCard } from '../components/CorrectionCard';
 import { PitchCard } from '../components/PitchCard';
 import { SmartLinkCard } from '../components/SmartLinkCard';
+import { SplitsCard } from '../components/SplitsCard';
 import { InfringementCard } from '../components/InfringementCard';
 import { SkeletonBlock, SkeletonRows } from '../components/Skeleton';
 import { ReleaseCover, useImageOk } from '../components/ReleaseCover';
@@ -495,6 +496,7 @@ export function ReleaseDetail() {
                 {rightsOk(d?.rightsChecks, d?.options) ? <><span className="aq-check-badge is-sm"><CheckIcon size={10} /></span>신청서 권리 확인 항목 작성 완료</> : '권리 확인 항목을 보완해 주세요.'}
               </p>
             </div>
+            <SplitsCard releaseId={rel.id} />
             {!isDraft && <SmartLinkCard releaseId={rel.id} />}
             {!isDraft && <PitchCard releaseId={rel.id} />}
             {!isDraft && <CorrectionCard releaseId={rel.id} />}
