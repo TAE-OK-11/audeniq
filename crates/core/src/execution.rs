@@ -1948,7 +1948,10 @@ async fn followup_package(
             sent_on_behalf_of: None,
             recipient_name: row.get("recipient_name"),
             recipient_party_id: Some(row.get("recipient_dpid")),
-            deal_start_date: first("StartDate"),
+            // A simultaneous release carries StartDateTime instead of StartDate.
+            deal_start_date: Some(first("StartDate"))
+                .filter(|d| !d.is_empty())
+                .unwrap_or_else(|| first("StartDateTime").chars().take(10).collect()),
             takedown_date: (sub_type == crate::ddex_ern::MessageSubType::Takedown)
                 .then(|| now.format("%Y-%m-%d").to_string()),
         };

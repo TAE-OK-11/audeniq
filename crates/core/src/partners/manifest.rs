@@ -128,6 +128,8 @@ pub fn release_json(
         // Where the release may be offered: {"mode":"worldwide"},
         // {"mode":"world_except","codes":[..]} or {"mode":"only","codes":[..]}.
         "territories": p.territories,
+        // Simultaneous release time (KST "HH:MM"), null = local midnight.
+        "release_time_kst": p.release_time,
         "cover": file_for(&p.artwork.sha256, FileRole::Artwork),
         "tracks": tracks,
     });
