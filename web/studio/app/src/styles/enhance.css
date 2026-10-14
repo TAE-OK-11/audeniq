@@ -1183,9 +1183,7 @@ svg.aq-glyph{flex:none;fill:none!important;stroke:currentColor!important;stroke-
 @media (hover:none),(pointer:coarse){
   /* 누를 때는 빠르게(80ms), 뗄 때는 각 요소의 기본 전환 시간으로 복귀 */
   :is(.service-item,.aq-event-card,.aq-task,.aq-action-card,.aq-bank,.aq-chip,.aq-dsp,.aq-row-link,.aq-header-bell,.menu-toggle,.aq-pay-type span,.aq-cert-method,.aq-sign-provider,.portal-nav button):active{transition-duration:.08s!important}
-  .dashboard-grid .service-item:active{transform:scale(.97)!important;background-color:var(--aq-gray-100)!important}
   .aq-row-link:active{background-color:var(--aq-blue-100)!important}
-  .menu-toggle:active{transform:scale(.92)}
   .aq-pay-type:active span{background:var(--aq-gray-100)!important}
   /* 길게 눌렀을 때 뜨는 시스템 메뉴·텍스트 선택이 버튼 조작을 방해하지 않게 */
   :is(.service-item,.aq-bank,.aq-chip,.menu-toggle,.aq-header-bell){-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}

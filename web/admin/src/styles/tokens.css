@@ -151,6 +151,12 @@
   --aq-dur-fast:.15s;
   --aq-dur:.2s;
   --aq-dur-slow:.36s;
+  /* 누름 — 누를 때는 거의 즉시, 뗄 때는 살짝 튀며 돌아온다. 크기: 버튼·칩은 더, 큰 줄·카드는 덜 줄어든다 */
+  --aq-press-in:.06s;
+  --aq-press-out:.34s;
+  --aq-press-spring:cubic-bezier(.3,1.6,.55,1);
+  --aq-press-btn:.96;
+  --aq-press-row:.985;
 
   /* ---------- 앱 상단 ---------- */
   --aq-header-h:72px; --aq-logo-w:144px;
