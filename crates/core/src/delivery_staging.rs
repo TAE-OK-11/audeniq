@@ -1189,6 +1189,8 @@ mod tests {
             explicit,
             territories: Default::default(),
             release_time: None,
+            preorder_start: None,
+            preview_starts: Default::default(),
         }
     }
 
