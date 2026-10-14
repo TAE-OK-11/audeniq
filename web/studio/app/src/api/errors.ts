@@ -171,6 +171,7 @@ const CODE_MESSAGES: Record<string, string> = {
   IDEMPOTENCY_KEY_REUSED: '이미 처리된 접수 요청이에요. 발매 상태를 확인해 주세요.',
   PREFLIGHT_FAILED: '접수 전 점검을 통과하지 못했어요. 표시된 항목을 보완해 주세요.',
   DSP_SELECTION_REQUIRED: '배급할 플랫폼을 하나 이상 선택해 주세요.',
+  TERRITORIES_INVALID: '배급 지역을 다시 골라 주세요. 전 세계 배급이 아니면 지역을 하나 이상 선택해야 해요.',
   DSP_SELECTION_INVALID: '플랫폼 선택을 다시 확인해 주세요.',
   DSP_UNAVAILABLE: '선택한 플랫폼 중 현재 배급할 수 없는 곳이 있어요. 플랫폼 선택을 다시 확인해 주세요.',
   SPECIAL_DECLARATION_MISMATCH: '커버곡·샘플링·AI 사용 신고를 다시 확인해 주세요.',
