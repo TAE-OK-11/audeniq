@@ -405,3 +405,6 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 #view-release .aq-relinfo-card .ui-section-head .subhead{margin:0}
 #view-release .aq-relinfo-card .tag-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
 .aq-linked-docs .ui-badge{flex:none}
+
+/* 검색칸만 있는 줄(전체 트랙 등) — 정렬 칸 자리를 비워 두지 않고 한 줄을 다 쓴다 */
+.toolbar>:only-child,#view-catalog .toolbar>:only-child{grid-column:1/-1;width:100%}
