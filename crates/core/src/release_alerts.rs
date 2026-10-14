@@ -31,12 +31,6 @@ const MAX_ATTEMPTS: i32 = 6;
 const EXPIRE_DAYS: i32 = 7;
 const LEASE_MINUTES: i32 = 10;
 
-fn kst_today() -> String {
-    (chrono::Utc::now() + chrono::Duration::hours(9))
-        .date_naive()
-        .to_string()
-}
-
 fn normalize_email(v: &str) -> Result<String> {
     let v = v.trim().to_lowercase();
     let ok = v.len() <= 254
@@ -66,7 +60,13 @@ pub async fn sign_up(s: &AppState, h: &HeaderMap, slug: &str, i: SignUp) -> Resu
     let mail = normalize_email(&i.email)?;
     let row = crate::smart_links::visible(s, slug).await?;
     let date: Option<String> = row.get("release_date");
-    if date.as_deref().is_none_or(|d| d <= kst_today().as_str()) {
+    // Open until the release is out (its simultaneous release time included).
+    if date.is_none()
+        || crate::smart_links::is_released(
+            date.as_deref(),
+            row.get::<Option<String>, _>("release_time").as_deref(),
+        )
+    {
         return Err(Error::PolicyGate("ALERT_ALREADY_RELEASED"));
     }
     let link: Uuid = row.get("id");
@@ -160,9 +160,11 @@ fn backoff_seconds(attempts: i32) -> f64 {
 
 /// Send the alerts that are due: release date reached (from 09:00 KST).
 pub async fn dispatch_once(pool: &PgPool, keys: &KeyRing, mailer: &Mailer) -> Result<usize> {
-    let now_kst = chrono::Utc::now() + chrono::Duration::hours(9);
-    let today = now_kst.date_naive().to_string();
-    let morning = now_kst.format("%H").to_string().as_str() >= "09";
+    // Due from the release instant (date + simultaneous release time), and
+    // never before 09:00 KST on the day.
+    let now_kst = (chrono::Utc::now() + chrono::Duration::hours(9))
+        .format("%Y-%m-%d %H:%M")
+        .to_string();
     let rows = sqlx::query(
         "UPDATE portal.release_alerts a
             SET attempts=a.attempts+1, next_attempt_at=now() + make_interval(mins => $2)
@@ -171,14 +173,14 @@ pub async fn dispatch_once(pool: &PgPool, keys: &KeyRing, mailer: &Mailer) -> Re
               JOIN portal.smart_links l ON l.id=a2.link_id
               JOIN catalog.releases r ON r.id=l.release_id
              WHERE a2.status='PENDING' AND a2.next_attempt_at <= now()
-               AND (r.draft->>'release_date' < $3 OR (r.draft->>'release_date' = $3 AND $4))
+               AND (r.draft->>'release_date') || ' ' ||
+                   greatest(COALESCE(NULLIF(r.draft->>'release_time', ''), '00:00'), '09:00') <= $3
              ORDER BY a2.next_attempt_at LIMIT $1 FOR UPDATE OF a2 SKIP LOCKED)
           RETURNING a.id, a.link_id, a.attempts, a.email_cipher",
     )
     .bind(BATCH)
     .bind(LEASE_MINUTES)
-    .bind(&today)
-    .bind(morning)
+    .bind(&now_kst)
     .fetch_all(pool)
     .await?;
     for row in &rows {

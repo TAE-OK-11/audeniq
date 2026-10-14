@@ -161,9 +161,11 @@ pub async fn set_release_term(
     ) {
         return Err(Error::PolicyGate("TERM_RELEASE_NOT_SUBMITTED"));
     }
-    // A staff termination is not the artist's to move.
+    // A staff termination or the org's contract end is not the artist's to
+    // move (an org-wide end also applies on its own, see `sweep`).
     let staff_set: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM portal.release_terms WHERE release_id=$1 AND set_by_staff AND status='SCHEDULED')",
+        "SELECT EXISTS(SELECT 1 FROM portal.release_terms WHERE release_id=$1 AND status='SCHEDULED'
+                        AND (set_by_staff OR reason='ORG_CONTRACT_END'))",
     )
     .bind(release)
     .fetch_one(&mut *tx)
@@ -271,7 +273,10 @@ async fn schedule_org(
     .bind(staff)
     .execute(&mut *c)
     .await?;
-    // Every submitted release ends with it (an earlier own end date stays).
+    // Every submitted release ends with it. A release that already has its
+    // own (or a staff) end keeps that row; the org end still applies to it on
+    // the org's date (`sweep`, `portal.release_term_ended`), and cancelling
+    // the org end leaves it untouched.
     let n = sqlx::query(
         "INSERT INTO portal.release_terms(release_id, org_id, end_date, reason, note, set_by, set_by_staff)
          SELECT r.id, r.org_id, $2, 'ORG_CONTRACT_END', $3, $4, $5 FROM catalog.releases r
@@ -279,7 +284,7 @@ async fn schedule_org(
          ON CONFLICT (release_id) DO UPDATE SET end_date=$2, reason='ORG_CONTRACT_END', note=$3, set_by=$4, set_by_staff=$5,
                 status='SCHEDULED', warned_at=NULL, updated_at=now()
           WHERE portal.release_terms.status='CANCELLED'
-             OR (portal.release_terms.status='SCHEDULED' AND portal.release_terms.end_date > $2)",
+             OR (portal.release_terms.status='SCHEDULED' AND portal.release_terms.reason='ORG_CONTRACT_END')",
     )
     .bind(org)
     .bind(end)
@@ -386,7 +391,9 @@ pub async fn sweep(pool: &PgPool) -> Result<usize> {
     .await?;
     let due = sqlx::query(
         "SELECT t.org_id, t.release_id FROM portal.release_terms t
-          WHERE t.status='SCHEDULED' AND t.end_date <= $1
+          WHERE t.status='SCHEDULED'
+            AND (t.end_date <= $1 OR EXISTS (SELECT 1 FROM portal.org_contract_terms o
+                   WHERE o.org_id=t.org_id AND o.status='SCHEDULED' AND o.end_date <= $1))
           ORDER BY t.end_date LIMIT 200 FOR UPDATE SKIP LOCKED",
     )
     .bind(today)

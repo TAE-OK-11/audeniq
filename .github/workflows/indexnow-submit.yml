@@ -2,6 +2,11 @@ name: IndexNow — submit AUDENIQ public URLs
 
 on:
   workflow_dispatch:
+    inputs:
+      since:
+        description: "Submit only pages changed since this git ref (e.g. the previously deployed commit). Empty = all published pages."
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -18,6 +23,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -34,4 +41,6 @@ jobs:
 
       - name: Submit public URLs directly to IndexNow
         working-directory: web/landing
+        env:
+          INDEXNOW_SINCE: ${{ inputs.since }}
         run: npm run indexnow

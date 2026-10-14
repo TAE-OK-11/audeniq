@@ -44,7 +44,9 @@ export function PitchCard({ releaseId }: { releaseId: string }) {
   useEffect(() => { void load(); }, [load]);
   if (!st) return null;
   const p = st.pitch;
-  const tooLate = !p && !st.can_pitch && st.days_until_release !== null && st.days_until_release < st.lead_days;
+  const active = p && p.status !== 'WITHDRAWN';
+  // 철회한 피칭은 없는 것과 같다 — 다시 피칭할 수 없는 이유(마감)를 보여 준다
+  const tooLate = !active && !st.can_pitch && st.days_until_release !== null && st.days_until_release < st.lead_days;
   if (!p && !st.can_pitch && !tooLate) return null;
 
   const start = () => { setTrack(st.tracks[0]?.id ?? ''); setF(EMPTY); setOpen(true); };
@@ -66,8 +68,6 @@ export function PitchCard({ releaseId }: { releaseId: string }) {
   const withdraw = async () => {
     try { await req(`${base()}/withdraw`, { method: 'POST', body: {} }); await load(); } catch (e) { toast(errorMessage(e), 'error'); }
   };
-  const active = p && p.status !== 'WITHDRAWN';
-
   return (
     <section className="ui-card aq-pitch-card" aria-labelledby="pitchHeading">
       <h2 id="pitchHeading">플레이리스트 피칭</h2>

@@ -6,7 +6,7 @@ AUDENIQ의 공식 공개 사이트 `https://audeniq.com`은 Cloudflare Crawler H
 
 - 키 원본: `web/landing/content/indexnow-key.txt`
 - 공개 키: `https://audeniq.com/3cbb8c797ee29db8d62ab89f9dfc17b8.txt`
-- 공개 페이지 목록: `web/landing/content/generated-manifest.json` (현재 6개)
+- 공개 페이지 목록: `web/landing/content/generated-manifest.json` (현재 24개, 페이지별 해시 포함)
 - 제출 스크립트: `web/landing/scripts/submit-indexnow.mjs`
 - 호출 엔드포인트: `https://api.indexnow.org/indexnow` (한 엔드포인트만 호출하면 참여 검색엔진에 공유)
 - 자동 배포 **없음**: 커밋, 빌드, 테스트로는 제출되지 않습니다.
@@ -18,7 +18,7 @@ IndexNow 소유권 키는 공개 파일에 들어가는 값이므로 GitHub Acti
 1. 먼저 실제 운영사이트에 해당 커밋의 사이트 빌드를 **별도로 배포**합니다. 이 워크플로는 배포하지 않습니다.
 2. GitHub 저장소 → **Actions** → **IndexNow — submit AUDENIQ public URLs** → **Run workflow** → `main` → **Run workflow**.
 3. 실행 로그의 `Verify live site matches this revision` 단계에서 배포 상태와 공개 경로를 확인합니다.
-4. 다음 단계에서 `IndexNow accepted 6 public URLs (HTTP 200 또는 202)` 로그가 나오면 검색엔진이 제출을 수신한 것입니다. 실제 색인은 검색엔진이 별도로 결정합니다.
+4. 다음 단계에서 `IndexNow accepted N URL(s) (HTTP 200 또는 202)` 로그가 나오면 검색엔진이 제출을 수신한 것입니다. 실제 색인은 검색엔진이 별도로 결정합니다.
 
 운영사이트가 아직 현재 커밋과 일치하지 않거나 키 파일/공개 페이지를 찾을 수 없으면 **API 제출 전에 실패**하도록 설계되어 있습니다. 실패했다면 배포 및 URL을 먼저 확인하고 다시 실행하세요. 429 오류는 과도한 요청일 수 있으므로 연속 반복 실행하지 마세요.
 
@@ -37,7 +37,7 @@ npm run indexnow
 2. `/<key>.txt` 파일을 200으로 읽고 내용이 키와 일치
 3. 공개 URL이 각각 200이고 `X-Robots-Tag: noindex`가 없음
 
-제출 대상은 `sitemap.xml`에 들어있는 **홈·배급·퍼블리싱·레이블·소개·FAQ** 공개 페이지뿐입니다. `studio.audeniq.com`, 관리자, 로그인, 정산, API URL은 제출하지 않습니다. 삭제된 페이지의 변경 알림은 현재 스크립트의 검사 조건(200 확인)과 별도로 처리해야 합니다.
+`since` 입력(또는 `--since <git-ref>`)을 주면 그 커밋 이후 추가·내용 변경·삭제된 페이지만 제출합니다. 삭제된 URL은 404·410·리디렉션인지 확인한 뒤 포함합니다. 비워 두면 제출 대상은 `sitemap.xml`에 들어있는 **홈·배급·퍼블리싱·레이블·소개·FAQ** 공개 페이지뿐입니다. `studio.audeniq.com`, 관리자, 로그인, 정산, API URL은 제출하지 않습니다. 삭제된 페이지의 변경 알림은 현재 스크립트의 검사 조건(200 확인)과 별도로 처리해야 합니다.
 
 ## 전송과 색인을 구분해서 확인
 

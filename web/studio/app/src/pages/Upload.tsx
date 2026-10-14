@@ -47,7 +47,7 @@ function previewSecs(v: string | undefined): string {
   const s = (v ?? '').trim();
   if (!s) return '';
   const m = /^(\d{1,2}):([0-5]\d)$/.exec(s);
-  if (m) return String(Number(m[1]) * 60 + Number(m[2]));
+  if (m) { const n = Number(m[1]) * 60 + Number(m[2]); return n <= 3600 ? String(n) : ''; }
   return /^\d{1,4}$/.test(s) && Number(s) <= 3600 ? String(Number(s)) : '';
 }
 /** 저장된 초 → 화면 'm:ss' */
@@ -1320,7 +1320,8 @@ export function Upload() {
       if (!alive) return;
       setDsps(items);
       setDspError('');
-      if (!editId) setForm(f => f.platforms.length ? f : ({ ...f, platforms: items.filter(d => d.available).map(d => d.slug) }));
+      // 플랫폼을 고르지 않은 발매(새 발매·대량 등록한 임시 저장)는 이용 가능한 플랫폼 전체가 기본값
+      setForm(f => f.platforms.length ? f : ({ ...f, platforms: items.filter(d => d.available).map(d => d.slug) }));
     }).catch(e => { if (alive) { setDsps(null); setDspError(errorMessage(e, '플랫폼 상태를 확인하지 못했어요.')); } });
     return () => { alive = false; };
   }, [editId]);
@@ -1466,7 +1467,7 @@ export function Upload() {
         originalDate: d?.options?.rerelease && d.options.previousReleaseDate ? d.options.previousReleaseDate : d?.originalDate || '',
         upc: d?.upc || '',
         territories: d?.territories ?? ['WORLD'],
-        platforms: d?.platforms ?? f.platforms,
+        platforms: d?.platforms?.length ? d.platforms : f.platforms,
         ownership: d?.ownership || '',
         phonogram: d?.phonogram || '',
         copyright: d?.copyright || '',
