@@ -179,6 +179,8 @@ export interface ReleaseDraft {
   /** 실서버: 목록·상세에 보여 줄 작은 커버 미리보기 이미지 자산 ID */
   coverThumbAssetId?: string;
   originalDate?: string;
+  /** 동시 발매 시각 (한국 시간 'HH:MM'); 비우면 나라별 자정 */
+  release_time?: string;
   territories: string[];
   platforms: string[];
   ownership: string;
@@ -225,6 +227,7 @@ export interface ReleasePayload {
   coverThumbAssetId?: string;
   originalDate: string;
   release_date: string;
+  release_time?: string;
   tracks: DraftTrack[];
   territories: string[];
   platforms: string[];

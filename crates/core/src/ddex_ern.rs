@@ -32,9 +32,10 @@
 //! - Credits are emitted as `ResourceContributor` with roles mapped onto
 //!   the DDEX `ContributorRole` allowed-value set (`contributor_role`);
 //!   unmapped roles fall back to the generic `Contributor` value.
-//! - `MessageControlType` is `LiveMessage` for Initial, `UpdateMessage` for
-//!   Update/Takedown. A Takedown closes the deal via
-//!   `ValidityPeriod/EndDate`.
+//! - `MessageControlType` is always `LiveMessage` (ERN 3.8.2 allows only
+//!   `LiveMessage`/`TestMessage`; `UpdateMessage` there failed the schema).
+//!   Updates and takedowns are marked by `UpdateIndicator` below. A Takedown
+//!   closes the deal via `ValidityPeriod/EndDate`.
 //! - `UpdateIndicator` is emitted (`OriginalMessage` for Initial,
 //!   `UpdateMessage` otherwise): deprecated in ERN 3.8.2 but still
 //!   schema-valid, and receivers (ddex-workbench's validator,
@@ -63,8 +64,11 @@ pub enum MessageSubType {
 impl MessageSubType {
     fn control_type(self) -> &'static str {
         match self {
-            MessageSubType::Initial => "LiveMessage",
-            MessageSubType::Update | MessageSubType::Takedown => "UpdateMessage",
+            // ERN 3.8.2 allows only LiveMessage/TestMessage here; an update
+            // or takedown says so with UpdateIndicator instead.
+            MessageSubType::Initial | MessageSubType::Update | MessageSubType::Takedown => {
+                "LiveMessage"
+            }
         }
     }
 }
@@ -692,7 +696,12 @@ fn release_list(out: &mut String, prepared: &PreparedRelease, tracks: &[&Prepare
     out.push_str("</Release></ReleaseList>");
 }
 
-fn deal_list(out: &mut String, c: &DdexErnConfig, territories: &crate::territory::Territories) {
+fn deal_list(
+    out: &mut String,
+    c: &DdexErnConfig,
+    territories: &crate::territory::Territories,
+    release_time: Option<&str>,
+) {
     // XSD: ReleaseDeal = DealReleaseReference, Deal, EffectiveDate?.
     // Deal = DealReference?, DealTerms?, ... — there is no DealId element;
     // DealReference is optional and pattern-constrained, so it is omitted.
@@ -739,11 +748,25 @@ fn deal_list(out: &mut String, c: &DdexErnConfig, territories: &crate::territory
         out.push_str("</PriceRangeType></PriceInformation>");
     }
     out.push_str("<ValidityPeriod>");
-    element(out, "StartDate", &c.deal_start_date);
-    if c.message_sub_type == MessageSubType::Takedown
-        && let Some(end) = &c.takedown_date
-    {
-        element(out, "EndDate", end);
+    // XSD Period: (StartDate, EndDate) or (StartDateTime, EndDateTime). A
+    // simultaneous release opens at one instant (KST); otherwise the date
+    // means each country's local midnight. Takedowns keep the date pair.
+    match release_time {
+        Some(t) if c.message_sub_type != MessageSubType::Takedown => {
+            element(
+                out,
+                "StartDateTime",
+                format!("{}T{t}:00+09:00", c.deal_start_date),
+            );
+        }
+        _ => {
+            element(out, "StartDate", &c.deal_start_date);
+            if c.message_sub_type == MessageSubType::Takedown
+                && let Some(end) = &c.takedown_date
+            {
+                element(out, "EndDate", end);
+            }
+        }
     }
     out.push_str("</ValidityPeriod>");
     out.push_str("</DealTerms></Deal></ReleaseDeal></DealList>");
@@ -812,7 +835,12 @@ pub fn generate_ddex_ern_382(prepared: &PreparedRelease, config: &DdexErnConfig)
         .ok_or(Error::PolicyGate("DDEX_SENDER_DPID_MISSING"))?;
     resource_list(&mut out, prepared, &tracks, sender_dpid)?;
     release_list(&mut out, prepared, &tracks);
-    deal_list(&mut out, config, &prepared.territories);
+    deal_list(
+        &mut out,
+        config,
+        &prepared.territories,
+        prepared.release_time.as_deref(),
+    );
     out.push_str("</ern:NewReleaseMessage>\n");
     Ok(out)
 }
