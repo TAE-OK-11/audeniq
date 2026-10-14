@@ -845,7 +845,9 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 .aq-list-tools .ui-btn{flex:none}
 .report-tools input.ui-input[type="month"]{flex:0 0 190px;min-width:190px}
 /* 발매 후 정보 수정 */
-.aq-correction-card{margin-top:16px}
+.aq-correction-card,.aq-pitch-card{margin-top:16px}
+.aq-pitch-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:560px){.aq-pitch-grid{grid-template-columns:1fr}}
 .aq-correction-form{display:grid;gap:14px;margin-top:12px}
 .aq-correction-track{border:0;padding:0;margin:0;display:grid;gap:8px}
 .aq-correction-track legend{font-weight:700;margin-bottom:6px}
