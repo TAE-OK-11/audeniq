@@ -63,7 +63,7 @@ impl Kind {
 fn render_sql(kind: Kind) -> &'static str {
     match kind {
         Kind::Application => {
-            "SELECT a.org_id, jsonb_build_object(
+            "SELECT a.org_id, (jsonb_build_object(
                'kind','APPLICATION','id',a.id,'org_id',a.org_id,'release_id',a.release_id,
                'application_no',a.application_no,'form',a.form,'content_hash',a.content_hash,
                'signer_name',a.signer_name,'signer_role',a.signer_role,'agreements',a.agreements,
@@ -73,7 +73,11 @@ fn render_sql(kind: Kind) -> &'static str {
                     'body_hash',r.body_hash,'consent_package_hash',r.consent_package_hash,'created_at',r.created_at)
                   FROM catalog.application_revisions r
                  WHERE r.org_id=a.org_id AND r.release_id=a.release_id AND r.created_at<=a.received_at
-                 ORDER BY r.revision DESC LIMIT 1))::text AS doc
+                 ORDER BY r.revision DESC LIMIT 1))
+             -- The server's original (0127) joins only when recorded, so
+             -- applications sealed before it keep their content hash.
+             || CASE WHEN a.server_hash IS NULL THEN '{}'::jsonb ELSE jsonb_build_object(
+                  'content',a.content,'server_hash',a.server_hash,'signer_identity',a.signer_identity) END)::text AS doc
              FROM portal.release_applications a WHERE a.id=$1"
         }
         Kind::Agreement | Kind::RightsDocument => {

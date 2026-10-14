@@ -116,6 +116,144 @@ pub struct PreparedRelease {
     /// "spotify" → "spotify:artist:…". Omitted when none is known.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub artist_platform_ids: std::collections::BTreeMap<String, String>,
+    /// Last licensed day (inclusive): the earliest end of the rights grants
+    /// and the agreement's scope. The ERN deal ends on it. Omitted when open.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rights_end: Option<NaiveDate>,
+    /// DDEX UseTypes the rights grants allow. Empty means not restricted; a
+    /// DSP whose deal needs another use is blocked at staging
+    /// (RIGHTS_SCOPE_USE). Omitted when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub permitted_uses: Vec<String>,
+}
+
+/// One registered rights grant, as far as delivery scope is concerned.
+#[derive(Debug, Clone)]
+pub struct ScopeGrant {
+    pub territories: Vec<String>,
+    pub uses: Vec<String>,
+    pub start: Option<NaiveDate>,
+    /// First unlicensed day.
+    pub end_exclusive: Option<NaiveDate>,
+}
+
+/// Where and until when the release may be delivered, and for which uses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RightsScope {
+    pub territories: crate::territory::Territories,
+    /// Last licensed day (inclusive).
+    pub rights_end: Option<NaiveDate>,
+    pub permitted_uses: Vec<String>,
+}
+
+/// Narrow the application's territories to what the release's rights grants
+/// license on the release date, then to the agreement's scope. Without grants
+/// or a scope the application decides alone. A grant's empty territory/use
+/// set means "not restricted"; `WW`/`WORLD` is everywhere. Fails closed when
+/// nothing is licensed on the release date or in any requested territory.
+pub fn rights_scope(
+    requested: crate::territory::Territories,
+    grants: &[ScopeGrant],
+    contract: Option<&crate::contract_scope::ContractScope>,
+    release_date: NaiveDate,
+) -> Result<RightsScope> {
+    use crate::territory::Territories;
+    let mut territories = requested;
+    let mut rights_end = None;
+    let mut permitted_uses = vec![];
+    if !grants.is_empty() {
+        let live: Vec<&ScopeGrant> = grants
+            .iter()
+            .filter(|g| {
+                g.start.is_none_or(|s| s <= release_date)
+                    && g.end_exclusive.is_none_or(|e| e > release_date)
+            })
+            .collect();
+        if live.is_empty() {
+            return Err(Error::PolicyGate("PREPARATION_RIGHTS_PERIOD"));
+        }
+        // Union of the licensed territories.
+        let mut licensed = std::collections::BTreeSet::new();
+        let mut world = false;
+        for g in &live {
+            match Territories::from_codes(&g.territories)
+                .map_err(|_| Error::PolicyGate("PREPARATION_RIGHTS_TERRITORY"))?
+            {
+                Territories::Only(x) => licensed.extend(x),
+                _ => world = true,
+            }
+        }
+        if !world {
+            territories = territories
+                .narrow(&Territories::Only(licensed.into_iter().collect()))
+                .ok_or(Error::PolicyGate("PREPARATION_RIGHTS_TERRITORY"))?;
+        }
+        rights_end = live
+            .iter()
+            .filter_map(|g| g.end_exclusive)
+            .min()
+            .map(|e| e.pred_opt().unwrap_or(e));
+        if !live.iter().any(|g| g.uses.is_empty()) {
+            permitted_uses = live
+                .iter()
+                .flat_map(|g| g.uses.iter().cloned())
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect();
+        }
+    }
+    if let Some(c) = contract {
+        territories = territories
+            .narrow(&c.territories)
+            .ok_or(Error::PolicyGate("PREPARATION_CONTRACT_TERRITORY"))?;
+        // A contract ending before the release date is a per-DSP blocker at
+        // staging (CONTRACT_ENDS_BEFORE_RELEASE); the deal never ends before
+        // it starts.
+        if let Some(last) = c.end.filter(|last| *last >= release_date) {
+            rights_end = Some(rights_end.map_or(last, |e: NaiveDate| e.min(last)));
+        }
+    }
+    Ok(RightsScope {
+        territories,
+        rights_end,
+        permitted_uses,
+    })
+}
+
+/// The release's active rights grants (release- or track-level).
+async fn scope_grants(pool: &PgPool, c: &CanonicalRelease) -> Result<Vec<ScopeGrant>> {
+    let tracks: Vec<Uuid> = c.tracks.iter().map(|t| t.track_id).collect();
+    type At = Option<chrono::DateTime<chrono::Utc>>;
+    let rows: Vec<(Vec<String>, Vec<String>, At, At)> = sqlx::query_as(
+        "SELECT territory_set, use_set, start_at, end_exclusive FROM rights.grant_atoms
+         WHERE org_id=$1 AND revoked_at IS NULL AND grant_class='DISTRIBUTION'
+           AND ((target_kind='RELEASE' AND target_id=$2) OR (target_kind='TRACK' AND target_id=ANY($3)))",
+    )
+    .bind(c.org_id)
+    .bind(c.release_id)
+    .bind(&tracks)
+    .fetch_all(pool)
+    .await?;
+    // Licence instants are compared as KST dates (release dates are KST).
+    let kst = |d: chrono::DateTime<chrono::Utc>| d + chrono::Duration::hours(9);
+    Ok(rows
+        .into_iter()
+        .map(|(territories, uses, start, end)| ScopeGrant {
+            territories,
+            uses,
+            start: start.map(|d| kst(d).date_naive()),
+            // An exclusive instant later than midnight still licenses that day.
+            end_exclusive: end.map(|d| {
+                let d = kst(d);
+                let day = d.date_naive();
+                if d.time() == chrono::NaiveTime::MIN {
+                    day
+                } else {
+                    day.succ_opt().unwrap_or(day)
+                }
+            }),
+        })
+        .collect())
 }
 
 /// Pre-release start in the draft: absent/empty, or a date 1–90 days before
@@ -382,6 +520,17 @@ impl PreparedRelease {
             crate::artist_pages::platform_ids(&mut conn, c.org_id, &artist_name).await?
         };
         let original_release_date = original_release_date(&draft, release_date)?;
+        let grants = scope_grants(pool, c).await?;
+        let contract = {
+            let mut conn = pool.acquire().await?;
+            crate::contract_scope::load(&mut conn, c.org_id, c.release_id).await?
+        };
+        let scope = rights_scope(
+            crate::territory::Territories::from_draft(&draft)?,
+            &grants,
+            contract.as_ref(),
+            release_date,
+        )?;
 
         Ok(PreparedRelease {
             canonical: c.clone(),
@@ -410,7 +559,9 @@ impl PreparedRelease {
             tracks,
             artwork,
             explicit: c.explicit,
-            territories: crate::territory::Territories::from_draft(&draft)?,
+            territories: scope.territories,
+            rights_end: scope.rights_end,
+            permitted_uses: scope.permitted_uses,
             release_time: release_time(&draft)?,
             preorder_start: preorder_start(&draft, release_date)?,
             artist_platform_ids,
@@ -512,5 +663,104 @@ mod prerelease_tests {
         assert_eq!(preview_starts(&d).unwrap().get(&id), Some(&45));
         let d = json!({"draftTracks": [{"serverId": id.to_string(), "previewStart": -3}]});
         assert!(preview_starts(&d).is_err());
+    }
+}
+
+#[cfg(test)]
+mod scope_tests {
+    use super::*;
+    use crate::{contract_scope::ContractScope, territory::Territories};
+
+    fn day(y: i32, m: u32, d: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(y, m, d).unwrap()
+    }
+    fn grant(t: &[&str], u: &[&str], end: Option<NaiveDate>) -> ScopeGrant {
+        ScopeGrant {
+            territories: t.iter().map(|s| s.to_string()).collect(),
+            uses: u.iter().map(|s| s.to_string()).collect(),
+            start: None,
+            end_exclusive: end,
+        }
+    }
+    fn only(c: &[&str]) -> Territories {
+        Territories::Only(c.iter().map(|s| s.to_string()).collect())
+    }
+
+    #[test]
+    fn grants_narrow_territory_period_and_uses() {
+        let release = day(2027, 3, 1);
+        let w = Territories::Worldwide;
+        // No grants, no contract: the application alone decides.
+        let s = rights_scope(w.clone(), &[], None, release).unwrap();
+        assert!(s.territories.is_worldwide() && s.rights_end.is_none());
+        assert!(s.permitted_uses.is_empty());
+        // Worldwide application, grants for KR+JP streaming until 2028.
+        let g = [grant(
+            &["KR", "JP"],
+            &["OnDemandStream"],
+            Some(day(2028, 1, 1)),
+        )];
+        let s = rights_scope(w.clone(), &g, None, release).unwrap();
+        assert_eq!(s.territories, only(&["JP", "KR"]));
+        assert_eq!(s.rights_end, Some(day(2027, 12, 31)));
+        assert_eq!(s.permitted_uses, vec!["OnDemandStream"]);
+        // Requested KR+US with KR+JP licensed: only KR is sent.
+        let s = rights_scope(only(&["KR", "US"]), &g, None, release).unwrap();
+        assert_eq!(s.territories, only(&["KR"]));
+        // Worldwide except KR with KR+JP licensed: JP.
+        let s = rights_scope(
+            Territories::WorldExcept(vec!["KR".into()]),
+            &g,
+            None,
+            release,
+        );
+        assert_eq!(s.unwrap().territories, only(&["JP"]));
+        // Nothing licensed where requested, or on the release date: fail closed.
+        assert!(matches!(
+            rights_scope(only(&["US"]), &g, None, release),
+            Err(Error::PolicyGate("PREPARATION_RIGHTS_TERRITORY"))
+        ));
+        assert!(matches!(
+            rights_scope(
+                w.clone(),
+                &[grant(&["WW"], &[], Some(day(2027, 1, 1)))],
+                None,
+                release
+            ),
+            Err(Error::PolicyGate("PREPARATION_RIGHTS_PERIOD"))
+        ));
+        // A worldwide grant keeps the requested territories.
+        let s = rights_scope(only(&["KR"]), &[grant(&["WW"], &[], None)], None, release).unwrap();
+        assert_eq!(s.territories, only(&["KR"]));
+    }
+
+    #[test]
+    fn the_contract_narrows_on_top_of_the_grants() {
+        let release = day(2027, 3, 1);
+        let contract = ContractScope {
+            territories: Territories::WorldExcept(vec!["CN".into()]),
+            end: Some(day(2027, 6, 30)),
+            dsps: None,
+            ugc: false,
+        };
+        let s = rights_scope(Territories::Worldwide, &[], Some(&contract), release).unwrap();
+        assert_eq!(s.territories, Territories::WorldExcept(vec!["CN".into()]));
+        assert_eq!(s.rights_end, Some(day(2027, 6, 30)));
+        // The earlier of the grant end and the contract end wins.
+        let g = [grant(&[], &[], Some(day(2027, 5, 1)))];
+        let s = rights_scope(Territories::Worldwide, &g, Some(&contract), release).unwrap();
+        assert_eq!(s.rights_end, Some(day(2027, 4, 30)));
+        assert!(matches!(
+            rights_scope(only(&["CN"]), &[], Some(&contract), release),
+            Err(Error::PolicyGate("PREPARATION_CONTRACT_TERRITORY"))
+        ));
+        // Ending before the release date: no deal end (staging blocks it).
+        let s = rights_scope(
+            Territories::Worldwide,
+            &[],
+            Some(&contract),
+            day(2027, 7, 1),
+        );
+        assert_eq!(s.unwrap().rights_end, None);
     }
 }

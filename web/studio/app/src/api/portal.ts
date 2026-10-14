@@ -123,10 +123,13 @@ export async function fetchPayoutAccount(): Promise<PaymentInfo | null> {
   };
 }
 
+const PAYOUT_CONSENTS = ['settlement_terms', 'privacy', 'financial_info', 'payee_accuracy'];
+
 export async function savePayoutAccount(p: PaymentInfo, accountNumber: string): Promise<void> {
   await req(orgPath('/payout-account'), {
     method: 'PUT',
-    body: { payee_type: PAYEE_TO[p.type], holder_name: p.recipient, bank_name: p.bank, account_number: accountNumber },
+    // 계좌 등록 화면의 필수 동의 4개 — 서버가 항목과 정산 약관 판을 기록한다
+    body: { payee_type: PAYEE_TO[p.type], holder_name: p.recipient, bank_name: p.bank, account_number: accountNumber, consents: PAYOUT_CONSENTS },
   });
 }
 
@@ -278,7 +281,7 @@ export async function submitProof(id: string, file: File, rowVersion: number, on
 // ---------------------------------------------------------------------------
 // 정산 — 서버 원장 기준 (읽기 전용) + 지급 요청
 // ---------------------------------------------------------------------------
-export interface FinanceSummary { payable: number; pending: number; available: number; minimum: number; accountRegistered: boolean }
+export interface FinanceSummary { payable: number; pending: number; available: number; minimum: number; accountRegistered: boolean; held: number }
 
 type ServerStatement = { id: string; description: string; source: Record<string, unknown>; created_at: string; amount: string };
 const toStatement = (t: ServerStatement): Statement => ({
@@ -300,13 +303,13 @@ export const downloadStatementsCsv = () => downloadFile(orgPath('/finance/statem
 
 export async function fetchFinance(): Promise<{ summary: FinanceSummary; statements: Statement[]; statementsNext: string | null; payouts: Payout[] }> {
   const [s, st, po] = await Promise.all([
-    req<{ payable: string; pending: string; available: string; minimum_payout: string; account_registered: boolean }>(orgPath('/finance/summary')),
+    req<{ payable: string; pending: string; available: string; held?: string; minimum_payout: string; account_registered: boolean }>(orgPath('/finance/summary')),
     fetchStatementsPage(),
     req<{ items: { id: string; amount: string; note: string; status: string; order_status: string | null; created_at: string; fee: string | null; net: string | null; cancellable: boolean }[] }>(orgPath('/finance/payouts')),
   ]);
   return {
     summary: {
-      payable: Number(s.payable), pending: Number(s.pending), available: Number(s.available),
+      payable: Number(s.payable), pending: Number(s.pending), available: Number(s.available), held: Number(s.held ?? 0),
       minimum: Number(s.minimum_payout), accountRegistered: s.account_registered,
     },
     statements: st.items,

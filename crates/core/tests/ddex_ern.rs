@@ -554,3 +554,42 @@ fn ddex_ern_display_artist_party_id() {
     let plain = generate_ddex_ern_382(&f, &config(MessageSubType::Initial)).unwrap();
     assert!(!plain.contains("<PartyId Namespace="));
 }
+
+/// The licence end (rights grants / agreement scope) closes every deal form
+/// — dates, a simultaneous release instant and a pre-order — and a takedown
+/// date earlier than it wins. Every form stays valid against the XSD.
+#[test]
+fn deal_ends_on_the_last_licensed_day() {
+    use audeniq_core::ddex_xsd::validate_ern_382_xml;
+    use audeniq_core::territory::Territories;
+    let mut f = fixture(0);
+    f.territories = Territories::WorldExcept(vec!["CN".into(), "KP".into()]);
+    f.rights_end = chrono::NaiveDate::from_ymd_opt(2027, 12, 31);
+    let xml = generate_ddex_ern_382(&f, &config(MessageSubType::Initial)).unwrap();
+    let d = &xml[xml.find("<DealList>").unwrap()..];
+    assert!(d.contains("<EndDate>2027-12-31</EndDate>"), "{d}");
+    assert!(
+        d.contains("<ExcludedTerritoryCode>CN</ExcludedTerritoryCode><ExcludedTerritoryCode>KP</ExcludedTerritoryCode>")
+            && !d.contains("<TerritoryCode>"),
+        "{d}"
+    );
+    validate_ern_382_xml(&xml).unwrap();
+
+    f.release_time = Some("18:00".into());
+    let timed = generate_ddex_ern_382(&f, &config(MessageSubType::Initial)).unwrap();
+    assert!(
+        timed.contains("<EndDateTime>2027-12-31T23:59:59+09:00</EndDateTime>"),
+        "{timed}"
+    );
+    validate_ern_382_xml(&timed).unwrap();
+
+    let mut t = config(MessageSubType::Takedown);
+    t.takedown_date = Some("2027-06-30".into());
+    let td = generate_ddex_ern_382(&f, &t).unwrap();
+    assert!(td.contains("<EndDate>2027-06-30</EndDate>"), "{td}");
+    validate_ern_382_xml(&td).unwrap();
+
+    // Snapshots without a licence end keep their serialized form (hash).
+    let v = serde_json::to_value(fixture(0)).unwrap();
+    assert!(v.get("rights_end").is_none() && v.get("permitted_uses").is_none());
+}

@@ -683,6 +683,12 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
     let facts = credit_facts(&canonical, &draft);
     let today = crate::domain::today_kst();
     let approved: HashSet<Uuid> = canonical.approved_dsp_ids.iter().copied().collect();
+    // The agreement's scope (0125), once staff approved it: a DSP it does not
+    // cover never gets an approvable row.
+    let contract = {
+        let mut c = pool.acquire().await?;
+        crate::contract_scope::load(&mut c, org, release_id).await?
+    };
 
     let dsp_ids: Vec<Uuid> = requested.iter().map(|d| d.uuid()).collect();
     let routes: HashMap<Uuid, crate::routing::RouteDecision> =
@@ -747,6 +753,45 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
                     )
                 }),
         );
+        // The rights grants list the uses they license; a DSP whose deal needs
+        // any other use (e.g. downloads when only streaming is licensed) is
+        // not sent.
+        let missing_uses: Vec<&str> = spec
+            .deal
+            .use_types
+            .iter()
+            .copied()
+            .filter(|u| {
+                !prepared.permitted_uses.is_empty()
+                    && !prepared.permitted_uses.iter().any(|p| p == u)
+            })
+            .collect();
+        if !missing_uses.is_empty() {
+            checks.push(DspCheck::new(
+                "RIGHTS_SCOPE_USE",
+                Class::Content,
+                Severity::Blocker,
+                format!("rights grants do not license: {}", missing_uses.join(", ")),
+            ));
+        }
+        if let Some(scope) = &contract {
+            for (code, detail) in scope.dsp_findings(dsp, today) {
+                checks.push(DspCheck::new(
+                    code,
+                    Class::Content,
+                    Severity::Blocker,
+                    detail,
+                ));
+            }
+            if let Some(end) = scope.end.filter(|end| *end < prepared.release_date) {
+                checks.push(DspCheck::new(
+                    "CONTRACT_ENDS_BEFORE_RELEASE",
+                    Class::Content,
+                    Severity::Blocker,
+                    format!("the agreement ends {end}, before the release date"),
+                ));
+            }
+        }
         if !approved.contains(&dsp.uuid()) {
             checks.push(DspCheck::new(
                 "DSP_NOT_IN_APPROVED_SCOPE",
@@ -1193,6 +1238,8 @@ mod tests {
             preorder_start: None,
             preview_starts: Default::default(),
             artist_platform_ids: Default::default(),
+            rights_end: None,
+            permitted_uses: vec![],
         }
     }
 
