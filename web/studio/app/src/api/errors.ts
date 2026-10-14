@@ -223,6 +223,8 @@ const CODE_MESSAGES: Record<string, string> = {
   TERM_SET_BY_STAFF: '담당자가 정한 종료일이라 바꿀 수 없어요. 문의로 요청해 주세요.',
   TERM_RELEASE_NOT_SUBMITTED: '발매 신청을 마친 발매만 종료일을 정할 수 있어요.',
   ORG_CONTRACT_ENDING: '배급 계약 종료가 예약돼 있어 새 발매를 신청할 수 없어요. 계약서 화면에서 종료를 취소할 수 있어요.',
+  ARTIST_PAGE_URL_INVALID: '그 플랫폼의 아티스트 페이지 https 링크를 넣어 주세요.',
+  ARTIST_PAGE_PLATFORM_INVALID: '지원하지 않는 플랫폼이에요.',
   // 스마트링크
   SMART_LINK_URL_INVALID: '그 플랫폼의 https 주소만 넣을 수 있어요. 앱에서 공유한 앨범 링크를 붙여 넣어 주세요.',
   SMART_LINK_PLATFORM_INVALID: '지원하지 않는 플랫폼이에요.',

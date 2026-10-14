@@ -36,6 +36,7 @@ import { Segmented } from '../components/Segmented';
 import { DateField } from '../components/Picker';
 import { BrandMark } from '../components/BrandMark';
 import { SplitsCard } from '../components/SplitsCard';
+import { fetchArtistPages, type ArtistPages } from '../lib/artistPages';
 import { TERRITORY_GROUPS, WORLD, parseTerritories, territoryName, territorySummary, worldExcept } from '../lib/territories';
 
 /** 동시 발매로 고를 수 있는 한국 시간 (서버는 정각·30분만 받는다) */
@@ -1522,6 +1523,31 @@ export function Upload() {
     setForm(f => ({ ...f, [key]: value }));
   }, []);
 
+  // 같은 아티스트로 이전에 기록한 플랫폼 페이지를 불러와 채운다 (0122)
+  const [knownPages, setKnownPages] = useState<ArtistPages | null>(null);
+  const loadKnownPages = useCallback(async (name: string) => {
+    const known = await fetchArtistPages(name);
+    setKnownPages(known);
+    const linked = Object.entries(known.pages).filter(([, p]) => p.status === 'LINKED' && p.url);
+    const pending = Object.values(known.pages).some(p => p.status === 'PENDING');
+    if (!linked.length && !pending) return;
+    setForm(f => {
+      const ap = f.artistProfile;
+      const empty = !ap.spotify.trim() && !ap.apple.trim() && !ap.melon.trim();
+      if (!empty) return f;
+      const next = { ...ap, isNew: false };
+      for (const [k, p] of linked) if (k === 'spotify' || k === 'apple' || k === 'melon') next[k] = p.url ?? '';
+      return { ...f, artistProfile: next };
+    });
+  }, []);
+  // 이어서 작성하는 임시 저장 발매도 한 번 불러온다
+  const knownLoaded = useRef(false);
+  useEffect(() => {
+    if (knownLoaded.current || !form.artist.trim() || !draftIdRef.current) return;
+    knownLoaded.current = true;
+    void loadKnownPages(form.artist);
+  }, [form.artist, loadKnownPages]);
+
   const setTrack = useCallback((id: string, key: keyof Track, value: string | boolean | number) => {
     dirtyRef.current = true;
     setForm(f => ({ ...f, tracks: f.tracks.map(t => (t.id === id ? { ...t, [key]: value } : t)) }));
@@ -1643,7 +1669,9 @@ export function Upload() {
           const err = profileLinkIssue(l.key, ap[l.key]);
           if (err) return fail(err, `#f-link-${l.key}`);
         }
-        if (!PROFILE_LINKS.some(l => ap[l.key].trim())) {
+        // 첫 발매로 새 페이지가 만들어지는 중이면(PENDING) 링크 없이도 같은 아티스트로 묶인다
+        const pendingFirst = !!knownPages && Object.values(knownPages.pages).some(p => p.status === 'PENDING');
+        if (!pendingFirst && !PROFILE_LINKS.some(l => ap[l.key].trim())) {
           return fail('이미 발매한 적이 있다면 기존 아티스트 페이지 주소를 하나 이상 입력해 주세요. 다른 동명 아티스트 페이지로 잘못 올라가는 것을 막아요.', '#f-link-spotify');
         }
       }
@@ -2150,7 +2178,7 @@ export function Upload() {
             <div className="form-grid">
               <div className="ui-field">
                 <label htmlFor="f-artist">아티스트명 <span className="required">*</span></label>
-                <input id="f-artist" value={form.artist} onChange={e => set('artist', e.target.value)} maxLength={120} placeholder="예: AUDENIQ" autoComplete="off" />
+                <input id="f-artist" value={form.artist} onChange={e => set('artist', e.target.value)} onBlur={e => void loadKnownPages(e.target.value)} maxLength={120} placeholder="예: AUDENIQ" autoComplete="off" />
               </div>
               <div className="ui-field">
                 <label htmlFor="f-title">발매 제목 <span className="required">*</span></label>
@@ -2219,6 +2247,12 @@ export function Upload() {
                 </label>
               ))}
             </div>
+            {knownPages && Object.values(knownPages.pages).some(p => p.status === 'LINKED') && (
+              <p className="ui-callout is-info small">이전에 등록한 {form.artist} 아티스트 페이지를 불러왔어요. 이번 발매도 같은 페이지에 올라가요.</p>
+            )}
+            {knownPages && !Object.values(knownPages.pages).some(p => p.status === 'LINKED') && Object.values(knownPages.pages).some(p => p.status === 'PENDING') && (
+              <p className="ui-callout is-info small">첫 발매로 {form.artist}의 새 아티스트 페이지가 만들어지고 있어요. 이번 발매도 같은 아티스트로 묶여요. 페이지가 생기면 ‘플랫폼 요청 → 아티스트 프로필’에서 링크를 등록해 주세요.</p>
+            )}
             {!form.artistProfile.isNew && (
               <div className="aq-profile-links ui-on-soft aq-reveal">
                 <p className="aq-profile-links-help">

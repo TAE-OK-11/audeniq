@@ -192,6 +192,9 @@ All roles can read every list below.
 | GET | `/api/staff/terms` | DELIVERY duty. Scheduled and ended (awaiting final settlement) |
 | POST | `/api/staff/releases/{id}/term` | DELIVERY duty. `{end_date (today allowed), reason TERMINATION (note required)/LICENSE_EXPIRY/CONTRACT_END, note}` |
 | POST | `/api/staff/releases/{id}/term/final-settled` | DELIVERY duty. `{note?}` closes an ENDED term |
+| GET | `/api/orgs/{org}/artist-pages?name=` | Artist platform pages (0122) for an artist name: `{artist_id, pages:{platform:{url,status PENDING/LINKED,first_release_id}}}`. Submissions record them (existing links → LINKED; a first release → PENDING for spotify/apple/melon); the studio prefills the next application; deliveries to that DSP carry the id as DisplayArtist/PartyId (Spotify artist URI, Apple/Melon artist id) |
+| GET | `/api/orgs/{org}/artist-pages/all` | Every artist with pages and release count |
+| PUT | `/api/orgs/{org}/artists/{id}/pages` | `{links:{platform:url}}` (https on that platform; empty = unchanged) → LINKED. Staff: `PUT /api/staff/artists/{id}/pages` (DELIVERY) |
 | GET | `/api/orgs/{org}/codes` | Submitted releases the member can read (up to 1000), each with `upc` and `tracks[{track_id,title,disc,number,isrc}]` — the active identifier assignment, else the catalog value — and `upc_virtual`/`isrc_virtual` for test-range codes |
 | GET | `/api/orgs/{org}/codes.csv` | Same as CSV (one row per track; formula-leading cells prefixed with `'`) |
 | GET/PUT | `/api/orgs/{org}/releases/{id}/smart-link` | Smart link (public page `/l/{slug}`). GET: `link {slug, enabled, links}`, `stats {views, clicks{platform:n}, days:30}`, `platforms`, `can_create`. PUT `{enabled?, links:{platform:url}}`: first save creates the page (submitted release only, `SMART_LINK_RELEASE_NOT_SUBMITTED`); links must be https on that platform's hosts (`SMART_LINK_URL_INVALID`, `SMART_LINK_PLATFORM_INVALID`); empty values are dropped |

@@ -69,6 +69,9 @@ GRANT SELECT,INSERT,UPDATE ON portal.platform_requests, portal.content_id_status
 GRANT SELECT,INSERT ON portal.platform_request_events TO audeniq_api;
 -- 계약 종료·권리 만료 (0121): 예약·취소·최종 정산 기록. 배송 작업자는 종료 여부만 함수로 본다
 GRANT SELECT,INSERT,UPDATE ON portal.release_terms, portal.org_contract_terms TO audeniq_api;
+-- 아티스트 플랫폼 페이지 (0122): 신청·아티스트·스태프가 기록하고 다음 신청·배송이 재사용
+GRANT SELECT,INSERT,UPDATE ON catalog.artist_platform_pages TO audeniq_api;
+GRANT SELECT ON catalog.artist_platform_pages TO audeniq_worker;
 -- 발매 알림 (0118): 팬 이메일은 봉인해 두고 보내면 바로 지운다. 끝난 줄은 정리
 GRANT SELECT,INSERT,UPDATE,DELETE ON portal.release_alerts TO audeniq_api;
 -- 발매 후 정보 수정 (0115): 크레딧·장르만. 승인되면 수정 메시지 작업을 넣는다

@@ -11,6 +11,7 @@ import { niceDate } from '../lib/format';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
 import { Badge } from '../ui';
+import { ArtistPagesCard } from '../components/ArtistPagesCard';
 import { PLATFORM_NAMES } from '../lib/platformNames';
 import { KINDS, STATUS_LABEL, STATUS_TONE, kindSpec, type PlatformRequest, type RequestGroup } from '../lib/platformRequests';
 
@@ -173,6 +174,7 @@ export function PlatformRequests() {
             onClick={() => { const n = new URLSearchParams(params); n.set('tab', v); n.delete('id'); setParams(n); }}>{l}</button>
         ))}
       </div>
+      {group === 'profile' && <ArtistPagesCard />}
       <RequestForm key={group} group={group} releases={releases} artist={artist} onDone={() => void load()} />
       <h2 className="subhead">요청 내역</h2>
       {error ? <p className="aq-smartlink-alert-err">{error}</p> : !items ? <p className="muted">불러오는 중…</p> : shown.length === 0 ? (

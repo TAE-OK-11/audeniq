@@ -3,6 +3,7 @@ pub mod agreement;
 pub mod api;
 pub mod archive;
 pub mod artifacts;
+pub mod artist_pages;
 pub mod artwork_policy;
 pub mod auth;
 pub mod catalog;

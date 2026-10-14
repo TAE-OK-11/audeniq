@@ -1975,6 +1975,8 @@ async fn followup_package(
                 .unwrap_or_else(|| first("StartDateTime").chars().take(10).collect()),
             takedown_date: (sub_type == crate::ddex_ern::MessageSubType::Takedown)
                 .then(|| now.format("%Y-%m-%d").to_string()),
+            artist_party_id: crate::dsp_registry::Dsp::from_code(partner_id)
+                .and_then(|d| p.artist_platform_ids.get(d.spec().slug).cloned()),
         };
         let xml = crate::ddex_ern::generate_ddex_ern_382(p, &config)?;
         ern_xml = xml.into_bytes();
