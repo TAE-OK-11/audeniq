@@ -309,6 +309,7 @@ mod tests {
             prepared: None,
             genre: None,
             label: None,
+            lyrics: Default::default(),
         }
     }
 

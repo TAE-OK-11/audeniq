@@ -100,6 +100,7 @@ impl HttpApiAdapter {
         let extras = Extras {
             genre: package.genre.clone(),
             label: package.label.clone(),
+            lyrics: package.lyrics.clone(),
         };
         let m = manifest::with_platform(
             manifest::release_json(
