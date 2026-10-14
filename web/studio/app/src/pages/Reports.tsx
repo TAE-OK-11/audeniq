@@ -8,6 +8,30 @@ import { periodLabel as monthLabel, periods, type ReportRow } from '../data/repo
 import { useReportRows } from '../hooks/useReportRows';
 import { Glyph } from '../components/Glyph';
 import { Money } from '../components/Money';
+import { MOCK } from '../lib/mode';
+import { downloadReportsCsv, type ReportRange } from '../api/portal';
+import { errorMessage } from '../api/errors';
+
+// 서버에서 받아 올 기간 (월 단위, 한국 시간). 그 안에서 아래 PERIODS로 다시 좁힌다.
+type RangeKey = 'last12' | 'thisYear' | 'lastYear' | 'custom';
+const RANGES: { value: RangeKey; label: string }[] = [
+  { value: 'last12', label: '최근 12개월' },
+  { value: 'thisYear', label: '올해' },
+  { value: 'lastYear', label: '작년' },
+  { value: 'custom', label: '직접 선택' },
+];
+const kstMonth = (offsetMonths = 0) => {
+  const d = new Date(Date.now() + 9 * 3600_000);
+  const m = d.getUTCFullYear() * 12 + d.getUTCMonth() + offsetMonths;
+  return `${Math.floor(m / 12)}-${String((m % 12) + 1).padStart(2, '0')}`;
+};
+function rangeFor(key: RangeKey, from: string, to: string): ReportRange {
+  const year = kstMonth().slice(0, 4);
+  if (key === 'thisYear') return { from: `${year}-01`, to: kstMonth() };
+  if (key === 'lastYear') return { from: `${Number(year) - 1}-01`, to: `${Number(year) - 1}-12` };
+  if (key === 'custom' && from && to && from <= to) return { from, to };
+  return {};
+}
 
 const PERIODS = [
   { value: 'all', label: '전체 기간' },
@@ -61,11 +85,16 @@ const changeTone = (v: number | null) => (v == null ? '' : v >= 0 ? 'is-up' : 'i
 
 export function Reports() {
   const toast = useToast();
+  const [rangeKey, setRangeKey] = useState<RangeKey>('last12');
+  const [customFrom, setCustomFrom] = useState(() => kstMonth(-11));
+  const [customTo, setCustomTo] = useState(() => kstMonth());
+  const range = useMemo(() => rangeFor(rangeKey, customFrom, customTo), [rangeKey, customFrom, customTo]);
+  const customInvalid = rangeKey === 'custom' && (!customFrom || !customTo || customFrom > customTo);
   const [period, setPeriod] = useState('all');
   const [release, setRelease] = useState('all');
   const [showAll, setShowAll] = useState(false);
 
-  const { rows: MOCK_ROWS } = useReportRows(); // 체험 모드는 예시 행, 실서버는 플랫폼 리포트
+  const { rows: MOCK_ROWS, loading } = useReportRows(range); // 체험 모드는 예시 행, 실서버는 플랫폼 리포트
   const [thisMonth = '', lastMonth = ''] = periods(MOCK_ROWS);
 
   const filtered = useMemo(() => MOCK_ROWS.filter(r => {
@@ -93,7 +122,9 @@ export function Reports() {
 
   const releases = [...new Set(MOCK_ROWS.map(r => r.release))];
 
-  const periodLabel = period === 'month' ? monthLabel(thisMonth) : period === 'prev' ? monthLabel(lastMonth) : '전체 기간';
+  const rangeLabel = RANGES.find(r => r.value === rangeKey)?.label ?? '';
+  const periodLabel = period === 'month' ? monthLabel(thisMonth) : period === 'prev' ? monthLabel(lastMonth)
+    : rangeKey === 'custom' && !customInvalid ? `${customFrom} ~ ${customTo}` : rangeLabel;
 
   // 전월 대비 인사이트 (발매 필터는 반영, 기간 필터와 무관하게 두 달 비교)
   const insight = useMemo(() => {
@@ -142,9 +173,27 @@ export function Reports() {
     };
   }, [MOCK_ROWS, period, release, lastMonth, thisMonth]);
 
-  const exportCsv = () => {
+  const [exporting, setExporting] = useState(false);
+  const exportCsv = async () => {
+    // 실서버: 선택한 기간 전체를 서버가 만든다 (화면 미리보기 제한 없이 모든 행). 발매·달 필터는 화면에서만 적용된다.
+    if (!MOCK && period === 'all' && release === 'all') {
+      setExporting(true);
+      try {
+        await downloadReportsCsv(range);
+        toast('리포트를 CSV로 내보냈어요.');
+      } catch (e) {
+        toast(errorMessage(e));
+      } finally {
+        setExporting(false);
+      }
+      return;
+    }
     if (!filtered.length) { toast('내보낼 리포트가 없어요.'); return; }
-    const cell = (v: string | number) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const cell = (v: string | number) => {
+      const t = String(v ?? '');
+      const safe = typeof v === 'string' && /^[=+\-@]/.test(t) ? `'${t}` : t;
+      return `"${safe.replace(/"/g, '""')}"`;
+    };
     const header = 'period,platform,releaseTitle,track,plays,revenue';
     const lines = filtered.map(r =>
       [r.period, r.platform, r.release, r.track, r.plays, r.revenue].map(cell).join(','));
@@ -153,7 +202,7 @@ export function Reports() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `AUDENIQ_report_${period === 'all' ? 'all' : period === 'month' ? thisMonth : lastMonth}.csv`;
+    a.download = `AUDENIQ_report_${period === 'all' ? (range.from ? `${range.from}_${range.to}` : 'last12') : period === 'month' ? thisMonth : lastMonth}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -169,18 +218,28 @@ export function Reports() {
           <h1 id="reportsTitle">음악 리포트</h1>
           <p>플랫폼별 실적을 기간과 곡별로 확인해 보세요.</p>
         </div>
-        <button type="button" className="ui-btn is-soft" onClick={exportCsv}><Glyph name="download" size={15} className="aq-glyph-lead" />CSV 내보내기</button>
+        <button type="button" className="ui-btn is-soft" onClick={exportCsv} disabled={exporting}><Glyph name="download" size={15} className="aq-glyph-lead" />{exporting ? '내보내는 중…' : 'CSV 내보내기'}</button>
       </div>
 
       <div className="report-tools">
+        <select id="reportRange" className="ui-select" aria-label="불러올 기간" value={rangeKey} onChange={e => { setRangeKey(e.target.value as RangeKey); setPeriod('all'); }}>
+          {RANGES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+        </select>
+        {rangeKey === 'custom' && (<>
+          <input type="month" id="reportFrom" className="ui-input" aria-label="시작 월" value={customFrom} max={customTo || undefined} onChange={e => setCustomFrom(e.target.value)} />
+          <input type="month" id="reportTo" className="ui-input" aria-label="끝 월" value={customTo} min={customFrom || undefined} max={kstMonth()} onChange={e => setCustomTo(e.target.value)} />
+        </>)}
         <select id="reportPeriod" className="ui-select" aria-label="리포트 기간" value={period} onChange={e => setPeriod(e.target.value)}>
-          {PERIODS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+          {PERIODS.map(p => <option key={p.value} value={p.value}>{p.value === 'all' ? '선택 기간 전체' : p.label}</option>)}
         </select>
         <select id="reportRelease" className="ui-select" aria-label="발매별 필터" value={release} onChange={e => setRelease(e.target.value)}>
           <option value="all">전체 발매</option>
           {releases.map(r => <option key={r} value={r}>{r}</option>)}
         </select>
       </div>
+
+      {customInvalid && <p className="ui-field-help aq-help-error" role="alert">시작 월이 끝 월보다 늦어요. 기간을 다시 골라 주세요.</p>}
+      {loading && <p className="ui-field-help" aria-live="polite">리포트를 불러오고 있어요…</p>}
 
       <div className="aq-report">
         <section className="aq-report-hero" aria-labelledby="reportHeroHeading">
