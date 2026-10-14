@@ -224,7 +224,9 @@ export function Profile() {
     <div id="view-profile" className="view aq-settings">
       <div className="ui-page-head">
         <div>
+          <p className="eyebrow">계정·지원</p>
           <h1>계정 정보</h1>
+          <p>본인 확인, 아티스트 프로필, 수익 받을 계좌를 관리해요.</p>
         </div>
       </div>
 

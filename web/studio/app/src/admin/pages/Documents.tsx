@@ -35,7 +35,7 @@ function GrantRows({ rows, onChange }: { rows: GrantRow[]; onChange: (r: GrantRo
   return (
     <div className="adm-grants">
       <h3 className="ui-group-title">이 서류가 증명하는 권한</h3>
-      <p className="ui-field-help">배급 권한은 전송 지역·사용·기간에, 정산 수령권은 지분대로 정산에 쓰여요.</p>
+      <p className="ui-field-help">배급 권한은 실제 전송 지역·사용·기간에, 정산 수령권은 지분대로 정산에 쓰여요. 발매 전체에 적용돼요.</p>
       {rows.map((g, i) => (
         <fieldset key={i} className="ui-group adm-grant">
           <legend>권한 {rows.length > 1 ? i + 1 : ''}</legend>
@@ -53,13 +53,13 @@ function GrantRows({ rows, onChange }: { rows: GrantRow[]; onChange: (r: GrantRo
           <div className="ui-field"><label htmlFor={`gHolder${i}`}>권리자 <span className="required">*</span></label>
             <input id={`gHolder${i}`} className="ui-input" maxLength={120} value={g.holder} onChange={e => set(i, { holder: e.target.value })} placeholder="서류에 적힌 권리자 이름" /></div>
           {g.cls === 'ROYALTY' && <div className="ui-field"><label htmlFor={`gShare${i}`}>지분 (%) <span className="required">*</span></label>
-            <input id={`gShare${i}`} className="ui-input" inputMode="decimal" value={g.share} onChange={e => set(i, { share: e.target.value.replace(/[^\d.]/g, '') })} placeholder="25" /></div>}
+            <input id={`gShare${i}`} className="ui-input" inputMode="decimal" value={g.share} onChange={e => set(i, { share: e.target.value.replace(/[^\d.]/g, '') })} placeholder="예: 25" /></div>}
           {g.cls === 'DISTRIBUTION' && <>
             <div className="ui-field"><label htmlFor={`gTerr${i}`}>허락 국가</label>
-              <input id={`gTerr${i}`} className="ui-input" value={g.territories} onChange={e => set(i, { territories: e.target.value })} placeholder="KR, JP" />
+              <input id={`gTerr${i}`} className="ui-input" value={g.territories} onChange={e => set(i, { territories: e.target.value })} placeholder="예: KR, JP" />
               <small>비우면 전 세계</small></div>
             <div className="ui-field"><label htmlFor={`gUses${i}`}>허락 사용 유형</label>
-              <input id={`gUses${i}`} className="ui-input" value={g.uses} onChange={e => set(i, { uses: e.target.value })} placeholder="OnDemandStream, PermanentDownload" />
+              <input id={`gUses${i}`} className="ui-input" value={g.uses} onChange={e => set(i, { uses: e.target.value })} placeholder="예: OnDemandStream, PermanentDownload" />
               <small>비우면 제한 없음</small></div>
           </>}
           <div className="form-grid">
