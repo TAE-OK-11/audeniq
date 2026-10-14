@@ -864,11 +864,23 @@ async fn payout_account_is_encrypted_masked_and_owner_only(pool: PgPool) {
     )
     .await;
     assert_eq!(v["registered"], false);
-    let bad = json!({"payee_type":"INDIVIDUAL","holder_name":"서린","bank_name":"국민은행","account_number":"12-34"});
+    let bad = json!({"payee_type":"INDIVIDUAL","holder_name":"서린","bank_name":"국민은행","account_number":"12-34","consents":["settlement_terms","privacy","financial_info","payee_accuracy"]});
     let (s, _, v) = call(&app, "PUT", &org_path(&u, "/payout-account"), bad, Some(&u)).await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "{v}");
     assert_eq!(v["error"]["code"], "ACCOUNT_NUMBER_INVALID");
-    let good = json!({"payee_type":"INDIVIDUAL","holder_name":"서린","bank_name":"국민은행","account_number":"123456-78-901234"});
+    // The payout-account agreements are required by the server, not just the screen.
+    let unagreed = json!({"payee_type":"INDIVIDUAL","holder_name":"서린","bank_name":"국민은행","account_number":"123456-78-901234"});
+    let (s, _, v) = call(
+        &app,
+        "PUT",
+        &org_path(&u, "/payout-account"),
+        unagreed,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(v["error"]["code"], "CONSENT_REQUIRED");
+    let good = json!({"payee_type":"INDIVIDUAL","holder_name":"서린","bank_name":"국민은행","account_number":"123456-78-901234","consents":["settlement_terms","privacy","financial_info","payee_accuracy"]});
     let (s, _, v) = call(
         &app,
         "PUT",
@@ -888,6 +900,21 @@ async fn payout_account_is_encrypted_masked_and_owner_only(pool: PgPool) {
     .await;
     assert_eq!(v["account_last4"], "1234");
     assert!(v.get("account_number").is_none() && v.get("account_cipher").is_none());
+    // The consent is kept, with the settlement terms version, and names the
+    // account version without any account data.
+    let (items, subject): (Value, String) = sqlx::query_as(
+        "SELECT items, subject_hash FROM portal.consent_records WHERE org_id=$1 AND context='PAYOUT_ACCOUNT'",
+    )
+    .bind(u.org)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(items.as_array().unwrap().len(), 4);
+    assert_eq!(
+        items[0]["version"],
+        audeniq_core::consents::SETTLEMENT_TERMS_VERSION
+    );
+    assert_eq!(subject.len(), 64);
     let sealed: Vec<u8> =
         sqlx::query_scalar("SELECT account_cipher FROM portal.payout_accounts WHERE org_id=$1")
             .bind(u.org)
@@ -1170,6 +1197,38 @@ async fn signed_application_creates_agreement_that_signs_after_review(pool: PgPo
     let (_, _, v) = call(&app, "GET", &path, Value::Null, Some(&u)).await;
     assert_eq!(v["application_no"], "AUD-20260926-ABCDEF");
     assert_eq!(v["content_hash"], hash);
+    // The server keeps its own original of what was signed and hashes it;
+    // the agreement's confirmation code is that hash, and the seal holds it.
+    let (content, server_hash, identity): (Value, String, Value) = sqlx::query_as(
+        "SELECT content, server_hash, signer_identity FROM portal.release_applications WHERE application_no='AUD-20260926-ABCDEF'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(server_hash, audeniq_core::domain::sha256_json(&content));
+    assert_ne!(server_hash, hash);
+    assert_eq!(content["release"]["id"], json!(release));
+    assert_eq!(content["client_content_hash"], hash);
+    assert_eq!(identity["user_id"], json!(u.user));
+    assert!(identity.get("real_name").is_none() && identity.get("email").is_none());
+    let body: String = sqlx::query_scalar(
+        "SELECT body FROM portal.documents WHERE release_id=$1 AND kind='AGREEMENT'",
+    )
+    .bind(release)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(body.contains(&server_hash), "{body}");
+    let report = {
+        let mut c = pool.acquire().await.unwrap();
+        audeniq_core::seal::verify(
+            &mut c,
+            &audeniq_core::payout_keys::KeyRing::from_env(false).unwrap(),
+        )
+        .await
+        .unwrap()
+    };
+    assert_eq!(report.json()["ok"], true, "{}", report.json());
 
     let (_, _, v) = call(
         &app,
@@ -1455,7 +1514,7 @@ async fn held_track_royalties_are_not_withdrawable(pool: PgPool) {
         &app,
         "PUT",
         &org_path(&u, "/payout-account"),
-        json!({"payee_type":"INDIVIDUAL","holder_name":"서린","bank_name":"국민은행","account_number":"12345678901234"}),
+        json!({"payee_type":"INDIVIDUAL","holder_name":"서린","bank_name":"국민은행","account_number":"12345678901234","consents":["settlement_terms","privacy","financial_info","payee_accuracy"]}),
         Some(&u),
     )
     .await;
@@ -1556,7 +1615,7 @@ async fn settlement_balance_payout_requests_and_reports(pool: PgPool) {
     .await;
     assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(v["error"]["code"], "PAYOUT_ACCOUNT_REQUIRED");
-    let acct = json!({"payee_type":"INDIVIDUAL","holder_name":"서린","bank_name":"국민은행","account_number":"12345678901234"});
+    let acct = json!({"payee_type":"INDIVIDUAL","holder_name":"서린","bank_name":"국민은행","account_number":"12345678901234","consents":["settlement_terms","privacy","financial_info","payee_accuracy"]});
     call(
         &app,
         "PUT",
@@ -1923,7 +1982,7 @@ async fn payout_quote_snapshot_cancel_order_and_settle(pool: PgPool) {
     let q = get("/finance/payouts/quote?amount=500").await;
     assert_eq!(q["error"]["code"], "PAYOUT_NET_NOT_POSITIVE");
 
-    let acct = |n: &str| json!({"payee_type":"INDIVIDUAL","holder_name":"서린","bank_name":"국민은행","account_number":n});
+    let acct = |n: &str| json!({"payee_type":"INDIVIDUAL","holder_name":"서린","bank_name":"국민은행","account_number":n,"consents":["settlement_terms","privacy","financial_info","payee_accuracy"]});
     call(
         &app,
         "PUT",

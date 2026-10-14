@@ -10,6 +10,7 @@ pub mod catalog;
 pub mod cloud;
 pub mod codes;
 pub mod config;
+pub mod consents;
 pub mod content_policy;
 pub mod contract_scope;
 pub mod contract_terms;

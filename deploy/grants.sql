@@ -49,6 +49,8 @@ GRANT SELECT,INSERT,UPDATE ON rights.override_requests TO audeniq_api;
 GRANT USAGE ON SCHEMA portal TO audeniq_api;
 GRANT SELECT,INSERT,UPDATE ON portal.artist_profiles,portal.payout_accounts,portal.inquiries,portal.documents TO audeniq_api;
 GRANT SELECT,INSERT ON portal.inquiry_messages,portal.notification_reads,portal.release_applications,portal.payout_requests TO audeniq_api;
+-- Payout-account consents, append-only (0127).
+GRANT SELECT,INSERT ON portal.consent_records TO audeniq_api;
 GRANT SELECT ON portal.notifications TO audeniq_api;
 -- 알림 메일 (0112): 사용자별 수신 설정, 보낼 메일 대기열 (넣기는 트리거가, 보내기·결과 기록은 API가)
 GRANT SELECT,INSERT,UPDATE ON portal.notification_settings TO audeniq_api;

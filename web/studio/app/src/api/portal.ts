@@ -123,10 +123,13 @@ export async function fetchPayoutAccount(): Promise<PaymentInfo | null> {
   };
 }
 
+const PAYOUT_CONSENTS = ['settlement_terms', 'privacy', 'financial_info', 'payee_accuracy'];
+
 export async function savePayoutAccount(p: PaymentInfo, accountNumber: string): Promise<void> {
   await req(orgPath('/payout-account'), {
     method: 'PUT',
-    body: { payee_type: PAYEE_TO[p.type], holder_name: p.recipient, bank_name: p.bank, account_number: accountNumber },
+    // 계좌 등록 화면의 필수 동의 4개 — 서버가 항목과 정산 약관 판을 기록한다
+    body: { payee_type: PAYEE_TO[p.type], holder_name: p.recipient, bank_name: p.bank, account_number: accountNumber, consents: PAYOUT_CONSENTS },
   });
 }
 
