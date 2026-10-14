@@ -20,6 +20,7 @@ pub mod distribution;
 pub mod domain;
 pub mod drafts;
 pub mod dsp_registry;
+pub mod email;
 pub mod ern;
 pub mod error;
 pub mod execution;

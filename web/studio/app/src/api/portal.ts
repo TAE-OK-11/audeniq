@@ -355,3 +355,15 @@ const rangeQuery = (r: ReportRange) => {
 export const fetchReports = (r: ReportRange = {}) => req<ServerReports>(orgPath(`/reports${rangeQuery(r)}`));
 /** 기간의 리포트 행 전부를 CSV로 받는다 (화면 미리보기 500행 제한 없음) */
 export const downloadReportsCsv = (r: ReportRange = {}) => downloadFile(orgPath(`/reports.csv${rangeQuery(r)}`), 'reports.csv');
+
+// ---------------------------------------------------------------------------
+// 알림 메일 수신 설정 (사용자별, 기본 켜짐)
+// ---------------------------------------------------------------------------
+export async function fetchNotificationSettings(): Promise<{ emailEnabled: boolean }> {
+  const v = await req<{ email_enabled: boolean }>('/api/me/notification-settings');
+  return { emailEnabled: v.email_enabled };
+}
+export async function saveNotificationSettings(emailEnabled: boolean): Promise<{ emailEnabled: boolean }> {
+  const v = await req<{ email_enabled: boolean }>('/api/me/notification-settings', { method: 'PUT', body: { email_enabled: emailEnabled } });
+  return { emailEnabled: v.email_enabled };
+}
