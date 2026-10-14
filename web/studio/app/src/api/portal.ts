@@ -1,7 +1,7 @@
 // 포털 API — 프로필·수령 계좌·문의·알림·서류·신청서·정산·리포트 (메인 서버)
 // 공지·이벤트는 엣지 Worker가 D1에서 바로 서빙한다 (/api/notices, /api/events).
 // 서버 응답을 화면에서 쓰는 모양(스토어 타입)으로 바꿔서 돌려준다.
-import { orgPath, req } from './http';
+import { downloadFile, orgPath, req } from './http';
 import { cleanText, remoteApi } from './remote';
 import { dspLabel } from '../lib/catalog';
 import type { ProfileInfo } from '../store/profile';
@@ -280,10 +280,28 @@ export async function submitProof(id: string, file: File, rowVersion: number, on
 // ---------------------------------------------------------------------------
 export interface FinanceSummary { payable: number; pending: number; available: number; minimum: number; accountRegistered: boolean }
 
-export async function fetchFinance(): Promise<{ summary: FinanceSummary; statements: Statement[]; payouts: Payout[] }> {
+type ServerStatement = { id: string; description: string; source: Record<string, unknown>; created_at: string; amount: string };
+const toStatement = (t: ServerStatement): Statement => ({
+  id: t.id,
+  period: typeof t.source?.period === 'string' ? t.source.period : stamp(t.created_at).slice(0, 7),
+  platform: typeof t.source?.dsp === 'string' ? dspLabel(t.source.dsp) : '정산',
+  amount: Number(t.amount), note: t.description, created: stamp(t.created_at).slice(0, 10),
+});
+
+/** 정산 내역 다음 쪽 (전체 기간을 차례로) — next가 없으면 마지막 쪽 */
+export async function fetchStatementsPage(before?: string): Promise<{ items: Statement[]; next: string | null }> {
+  const q = before ? `?before=${encodeURIComponent(before)}` : '';
+  const r = await req<{ items: ServerStatement[]; next_before: string | null }>(orgPath(`/finance/statements${q}`));
+  return { items: r.items.map(toStatement), next: r.next_before ?? null };
+}
+
+/** 정산 내역 전체를 CSV로 받는다 */
+export const downloadStatementsCsv = () => downloadFile(orgPath('/finance/statements.csv'), 'statements.csv');
+
+export async function fetchFinance(): Promise<{ summary: FinanceSummary; statements: Statement[]; statementsNext: string | null; payouts: Payout[] }> {
   const [s, st, po] = await Promise.all([
     req<{ payable: string; pending: string; available: string; minimum_payout: string; account_registered: boolean }>(orgPath('/finance/summary')),
-    req<{ items: { id: string; description: string; source: Record<string, unknown>; created_at: string; amount: string }[] }>(orgPath('/finance/statements')),
+    fetchStatementsPage(),
     req<{ items: { id: string; amount: string; note: string; status: string; order_status: string | null; created_at: string; fee: string | null; net: string | null; cancellable: boolean }[] }>(orgPath('/finance/payouts')),
   ]);
   return {
@@ -291,12 +309,8 @@ export async function fetchFinance(): Promise<{ summary: FinanceSummary; stateme
       payable: Number(s.payable), pending: Number(s.pending), available: Number(s.available),
       minimum: Number(s.minimum_payout), accountRegistered: s.account_registered,
     },
-    statements: st.items.map(t => ({
-      id: t.id,
-      period: typeof t.source?.period === 'string' ? t.source.period : stamp(t.created_at).slice(0, 7),
-      platform: typeof t.source?.dsp === 'string' ? dspLabel(t.source.dsp) : '정산',
-      amount: Number(t.amount), note: t.description, created: stamp(t.created_at).slice(0, 10),
-    })),
+    statements: st.items,
+    statementsNext: st.next,
     payouts: po.items.map(p => ({
       id: p.id, amount: Number(p.amount), note: p.note, created: stamp(p.created_at).slice(0, 10),
       fee: p.fee == null ? undefined : Number(p.fee), net: p.net == null ? undefined : Number(p.net), cancellable: !!p.cancellable,
@@ -329,4 +343,27 @@ export interface ServerReports {
   rows: { month: string; dsp: string; release_id: string | null; release: string; currency: string; streams: string; revenue: string }[];
   by_currency: { currency: string; streams: string; revenue: string }[];
 }
-export const fetchReports = () => req<ServerReports>(orgPath('/reports'));
+/** 리포트 기간 (월 단위, YYYY-MM). 비우면 최근 12개월 */
+export interface ReportRange { from?: string; to?: string }
+const rangeQuery = (r: ReportRange) => {
+  const q = new URLSearchParams();
+  if (r.from) q.set('from', r.from);
+  if (r.to) q.set('to', r.to);
+  const s = q.toString();
+  return s ? `?${s}` : '';
+};
+export const fetchReports = (r: ReportRange = {}) => req<ServerReports>(orgPath(`/reports${rangeQuery(r)}`));
+/** 기간의 리포트 행 전부를 CSV로 받는다 (화면 미리보기 500행 제한 없음) */
+export const downloadReportsCsv = (r: ReportRange = {}) => downloadFile(orgPath(`/reports.csv${rangeQuery(r)}`), 'reports.csv');
+
+// ---------------------------------------------------------------------------
+// 알림 메일 수신 설정 (사용자별, 기본 켜짐)
+// ---------------------------------------------------------------------------
+export async function fetchNotificationSettings(): Promise<{ emailEnabled: boolean }> {
+  const v = await req<{ email_enabled: boolean }>('/api/me/notification-settings');
+  return { emailEnabled: v.email_enabled };
+}
+export async function saveNotificationSettings(emailEnabled: boolean): Promise<{ emailEnabled: boolean }> {
+  const v = await req<{ email_enabled: boolean }>('/api/me/notification-settings', { method: 'PUT', body: { email_enabled: emailEnabled } });
+  return { emailEnabled: v.email_enabled };
+}

@@ -219,6 +219,15 @@ services:
       MAINTENANCE_TITLE: ${MAINTENANCE_TITLE:-}
       MAINTENANCE_MESSAGE: ${MAINTENANCE_MESSAGE:-}
       MAINTENANCE_UNTIL: ${MAINTENANCE_UNTIL:-}
+      # 알림 메일 (crates/core/src/email.rs): 비우면 보내지 않는다. ses,oci = SES가 실패하면 OCI로.
+      EMAIL_PROVIDERS: ${EMAIL_PROVIDERS:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      EMAIL_SES_REGION: ${EMAIL_SES_REGION:-}
+      EMAIL_SES_USERNAME: ${EMAIL_SES_USERNAME:-}
+      EMAIL_SES_PASSWORD: ${EMAIL_SES_PASSWORD:-}
+      EMAIL_OCI_REGION: ${EMAIL_OCI_REGION:-}
+      EMAIL_OCI_USERNAME: ${EMAIL_OCI_USERNAME:-}
+      EMAIL_OCI_PASSWORD: ${EMAIL_OCI_PASSWORD:-}
     volumes:
       - av_socket:/run/audeniq-av:ro
       - ${PAYOUT_KEYRING_DIR:-/dev/shm/audeniq-secrets}:/run/audeniq-keys:ro
@@ -226,6 +235,13 @@ services:
       - ./partners:/etc/audeniq/partners:ro
     depends_on:
       pgbouncer: {condition: service_healthy}
+    # /ready (database included), through the binary itself: no curl in the image.
+    healthcheck:
+      test: [CMD, audeniq-api, healthcheck]
+      interval: 10s
+      timeout: 6s
+      retries: 3
+      start_period: 30s
     mem_limit: ${API_MEM_LIMIT:-384m}
     cpus: ${API_CPUS:-1.0}
     # CPU가 붐빌 때 API(1024)가 worker(512)의 두 배 몫을 받는다: 무거운 QC 중에도 응답이 밀리지 않는다.
@@ -234,9 +250,10 @@ services:
     restart: unless-stopped
     <<: *runtime
     command: [audeniq-worker]
-    # SIGTERM drains in-flight jobs for WORKER_DRAIN_SECONDS, then releases
+    # SIGTERM drains in-flight jobs for WORKER_DRAIN_SECONDS (up to
+    # WORKER_DELIVERY_DRAIN_SECONDS while a DSP send runs), then releases
     # unfinished leases; the grace period must exceed the drain window.
-    stop_grace_period: 45s
+    stop_grace_period: 11m
     environment:
       UPLOAD_AV_ENABLED: '${UPLOAD_AV_ENABLED:-false}'
       APP_ENV: production
@@ -249,6 +266,7 @@ services:
       DATABASE_MAX_CONNECTIONS: '${DATABASE_MAX_CONNECTIONS:-8}'
       JOB_LEASE_SECONDS: '${JOB_LEASE_SECONDS:-300}'
       WORKER_DRAIN_SECONDS: '${WORKER_DRAIN_SECONDS:-30}'
+      WORKER_DELIVERY_DRAIN_SECONDS: '${WORKER_DELIVERY_DRAIN_SECONDS:-600}'
       QUEUE_INTERACTIVE_CONCURRENCY: '1'
       # 곡마다 업로드 직후 사전 분석(audeniq-qc 디코드)이 이 큐로 돈다. CPU 작업이라 vCPU 수만큼이
       # 알맞다(1 vCPU: 1, 2 vCPU: 2). API는 cpu_shares로 CPU 우선권을 가진다.
@@ -309,7 +327,8 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     networks: [backend, egress]
-    depends_on: [api]
+    depends_on:
+      api: {condition: service_healthy}
     mem_limit: 256m
     cpus: 0.5
     logging:

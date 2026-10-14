@@ -692,7 +692,7 @@ fn release_list(out: &mut String, prepared: &PreparedRelease, tracks: &[&Prepare
     out.push_str("</Release></ReleaseList>");
 }
 
-fn deal_list(out: &mut String, c: &DdexErnConfig) {
+fn deal_list(out: &mut String, c: &DdexErnConfig, territories: &crate::territory::Territories) {
     // XSD: ReleaseDeal = DealReleaseReference, Deal, EffectiveDate?.
     // Deal = DealReference?, DealTerms?, ... — there is no DealId element;
     // DealReference is optional and pattern-constrained, so it is omitted.
@@ -710,7 +710,21 @@ fn deal_list(out: &mut String, c: &DdexErnConfig) {
         element(out, "UseType", use_type);
     }
     out.push_str("</Usage>");
-    element(out, "TerritoryCode", "Worldwide");
+    // XSD: TerritoryCode+ or ExcludedTerritoryCode+ (exclusions are taken
+    // from Worldwide), never both.
+    match territories {
+        crate::territory::Territories::Worldwide => element(out, "TerritoryCode", "Worldwide"),
+        crate::territory::Territories::WorldExcept(codes) => {
+            for code in codes {
+                element(out, "ExcludedTerritoryCode", code);
+            }
+        }
+        crate::territory::Territories::Only(codes) => {
+            for code in codes {
+                element(out, "TerritoryCode", code);
+            }
+        }
+    }
     // XSD order: ... TerritoryCode, PriceInformation*, ..., ValidityPeriod.
     if let Some(band) = c.deal.price_range {
         let namespace = c
@@ -798,7 +812,7 @@ pub fn generate_ddex_ern_382(prepared: &PreparedRelease, config: &DdexErnConfig)
         .ok_or(Error::PolicyGate("DDEX_SENDER_DPID_MISSING"))?;
     resource_list(&mut out, prepared, &tracks, sender_dpid)?;
     release_list(&mut out, prepared, &tracks);
-    deal_list(&mut out, config);
+    deal_list(&mut out, config, &prepared.territories);
     out.push_str("</ern:NewReleaseMessage>\n");
     Ok(out)
 }

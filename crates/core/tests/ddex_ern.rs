@@ -401,3 +401,47 @@ fn original_release_date_must_not_follow_the_new_date() {
         None
     );
 }
+
+/// The artist's territory choice becomes the deal territory: excluded
+/// territories as ExcludedTerritoryCode (taken from Worldwide), a chosen
+/// list as TerritoryCode — each form schema-valid. Worldwide fixtures keep
+/// the old output byte for byte.
+#[test]
+fn ddex_ern_deal_territories_follow_the_application() {
+    use audeniq_core::{ddex_xsd::validate_ern_382_xml, territory::Territories};
+    let worldwide = generate_ddex_ern_382(&fixture(0), &config(MessageSubType::Initial)).unwrap();
+    let deal = |xml: &str| {
+        let start = xml.find("<DealTerms>").unwrap();
+        let end = xml.find("</DealTerms>").unwrap();
+        xml[start..end].to_string()
+    };
+    assert!(deal(&worldwide).contains("<TerritoryCode>Worldwide</TerritoryCode>"));
+
+    let mut f = fixture(0);
+    f.territories = Territories::WorldExcept(vec!["CN".into(), "JP".into()]);
+    let xml = generate_ddex_ern_382(&f, &config(MessageSubType::Initial)).unwrap();
+    let d = deal(&xml);
+    assert!(
+        d.contains("<ExcludedTerritoryCode>CN</ExcludedTerritoryCode><ExcludedTerritoryCode>JP</ExcludedTerritoryCode>"),
+        "{d}"
+    );
+    assert!(
+        !d.contains("<TerritoryCode>"),
+        "TerritoryCode and ExcludedTerritoryCode are exclusive: {d}"
+    );
+    validate_ern_382_xml(&xml).unwrap();
+
+    f.territories = Territories::Only(vec!["JP".into(), "KR".into()]);
+    let xml = generate_ddex_ern_382(&f, &config(MessageSubType::Initial)).unwrap();
+    let d = deal(&xml);
+    assert!(
+        d.contains("<TerritoryCode>JP</TerritoryCode><TerritoryCode>KR</TerritoryCode>"),
+        "{d}"
+    );
+    assert!(!d.contains("Worldwide") && !d.contains("Excluded"), "{d}");
+    validate_ern_382_xml(&xml).unwrap();
+
+    // The prepared snapshot of a worldwide release serializes as before.
+    let v = serde_json::to_value(fixture(0)).unwrap();
+    assert!(v.get("territories").is_none());
+}

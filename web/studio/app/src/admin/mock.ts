@@ -4,7 +4,7 @@ import { ApiError, messageForCode } from '../api/errors';
 import { applicationPending, needsSecond } from './labels';
 import type {
   ApprovalItem, DecisionInput, DecisionResult, DeliveryDecisionInput, DeliveryItem, DspItem, InquiryMessage, InquiryItem,
-  Overview, PayoutItem, QueueRelease, ReleaseSheet, ReleaseTimelineItem, StagingRow, StaffDocument, StaffMe, AgreementTerms, AgreementTermsInput
+  Overview, PayoutItem, QueueRelease, ReleaseSheet, ReleaseTimelineItem, StagingRow, StaffDocument, StaffMe, AgreementTerms, AgreementTermsInput, TakedownItem
 } from './api';
 import { applicationHash, type StudioDraft } from './application';
 
@@ -115,6 +115,16 @@ const releases: MockRelease[] = [
   sheetFor(q({ id: 'r4d5e6f7', title: 'Paper Moon', artist: 'Lumi', org_name: 'Lumi Records', status: 'READY_FOR_DELIVERY', agreement: 'REVIEW', submitted_at: iso(70) }), []),
   sheetFor(q({ id: 'r5e6f7a8', title: '고요한 밤의 노래', artist: '이안', org_name: '이안', status: 'STAGE2_CORRECTION', submitted_at: iso(50) }), []),
 ];
+
+const takedowns: TakedownItem[] = [{
+  id: 'td-1', org_id: 'org-2', org_name: '한결 뮤직', release_id: 'rel-live-1', title: '여름의 끝', package_id: 'pkg-1',
+  reason: '이전 레이블과의 계약이 끝나 서비스를 내려야 해요.', status: 'PENDING', decision_note: '',
+  created_at: new Date(Date.now() - 3 * 3600_000).toISOString(), decided_at: null,
+  platforms: [
+    { partner_id: 'D-1', slug: 'melon', name: '멜론', live_status: 'LIVE' },
+    { partner_id: 'D-5', slug: 'spotify', name: 'Spotify', live_status: 'LIVE' },
+  ],
+}];
 
 const approvals: (ApprovalItem & { status: string })[] = [{
   id: 'ap-7e21', org_id: 'org-r6', release_id: 'r6f7a8b9', revision_id: 'rev-r6', title: 'Midnight Drive',
@@ -360,6 +370,23 @@ export const mockStaff = {
     return fail('NO_VIRTUAL_IDENTIFIERS');
   },
   approvals: () => wait({ items: approvals.filter(a => a.status === 'PENDING') }),
+  takedowns: () => wait({ items: takedowns }),
+  approveTakedown: async (tid: string, note: string) => {
+    const t = takedowns.find(x => x.id === tid && x.status === 'PENDING') ?? fail('CONFLICT');
+    Object.assign(t, { status: 'APPROVED', decision_note: note, decided_at: new Date().toISOString() });
+    t.platforms.forEach(p => { p.live_status = 'TAKEDOWN_REQUESTED'; });
+    return wait({ status: 'APPROVED' });
+  },
+  declineTakedown: async (tid: string, note: string) => {
+    if (!note.trim()) fail('REVIEW_NOTE_REQUIRED');
+    const t = takedowns.find(x => x.id === tid && x.status === 'PENDING') ?? fail('CONFLICT');
+    Object.assign(t, { status: 'DECLINED', decision_note: note, decided_at: new Date().toISOString() });
+    return wait({ status: 'DECLINED' });
+  },
+  markTakenDown: async (pkg: string, partner: string) => {
+    takedowns.filter(t => t.package_id === pkg).forEach(t => t.platforms.forEach(p => { if (p.partner_id === partner) p.live_status = 'TAKEN_DOWN'; }));
+    return wait({ job_id: 'job-mock' });
+  },
   approve: async (aid: string) => {
     const a = approvals.find(x => x.id === aid && x.status === 'PENDING') ?? fail('APPROVAL_NOT_PENDING');
     if (a.requested_by === ME) fail('SECOND_APPROVER_MUST_DIFFER');
