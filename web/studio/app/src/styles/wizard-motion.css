@@ -4,19 +4,17 @@
    동작 줄이기 설정에선 모두 끈다. */
 @keyframes aq-wiz-invalid{0%,100%{background-color:var(--aq-field)}25%,55%{background-color:var(--aq-red-50)}}
 
+@keyframes aq-wiz-step-in{from{opacity:0;transform:translate3d(0,8px,0)}}
 @media(prefers-reduced-motion:no-preference){
-  /* 단계 내용: 제목 → 본문 순으로 살짝 떠오른다 (정산 정보 등록과 같은 박자) */
-  #view-new .wizard-header>*{animation:aq-fade-up .42s var(--aq-e-ease) both}
-  #view-new .wizard-header>:nth-child(2){animation-delay:.04s}
-  #view-new .wizard-header>:nth-child(3){animation-delay:.08s}
-  #view-new #wizardBody>.step-section>*{animation:aq-fade-up .45s var(--aq-e-ease) .1s both}
-  #view-new #wizardBody>.step-section>:nth-child(2){animation-delay:.14s}
-  #view-new #wizardBody>.step-section>:nth-child(3){animation-delay:.18s}
-  #view-new #wizardBody>.step-section>:nth-child(n+4){animation-delay:.22s}
+  /* 단계가 바뀌면 제목과 본문이 한 덩어리로 짧게 나타난다. 칸마다 따로 늦게 떠오르던 연출은
+     스크롤과 겹쳐 버벅이고 늘어져 보여서 없앴다. backwards라 끝나면 transform이 남지 않는다. */
+  #view-new .wizard-header,#view-new #wizardBody>.step-section{animation:aq-wiz-step-in .24s cubic-bezier(.2,.8,.2,1) backwards}
+  #view-new #wizardBody>.step-section{animation-delay:.03s}
+  #view-new .wizard-header>*,#view-new #wizardBody>.step-section>*{animation:none}
   /* 보완 요청 패널은 제목과 함께 한 덩어리로 */
-  #view-new .aq-fix-panel{animation:aq-fade-up .45s var(--aq-e-ease) .06s both}
-  /* 오류 안내는 살짝 떠오르고, 빠진 칸은 옅은 빨강으로 한 번 물든다 */
-  #view-new #wizardError.aq-shake{animation:aq-fade-up .22s var(--aq-e-ease) both}
+  #view-new .aq-fix-panel{animation:aq-wiz-step-in .24s cubic-bezier(.2,.8,.2,1) backwards}
+  /* 오류 안내는 살짝 나타나고, 빠진 칸은 옅은 빨강으로 한 번 물든다 */
+  #view-new #wizardError.aq-shake{animation:aq-wiz-step-in .18s ease-out backwards}
   #view-new .aq-invalid:is(input,select,textarea){animation:aq-wiz-invalid 1.2s ease 1}
   #view-new .aq-invalid:not(input,select,textarea){animation:none}
 }

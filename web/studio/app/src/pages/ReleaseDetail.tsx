@@ -115,6 +115,8 @@ export function ReleaseDetail() {
     () => (tab === 'delivery' ? api.getDelivery(id).catch(() => []) : Promise.resolve([])),
     [id, tab],
   );
+  // 훅은 아래 조기 반환보다 먼저 — 불러오기 전후로 호출 순서가 바뀌면 화면 오류가 난다
+  const [coverOk, coverFailed] = useImageOk(rel?.draft?.coverData || rel?.coverData);
 
   if (loading && !rel) {
     return (
@@ -156,7 +158,6 @@ export function ReleaseDetail() {
   const stageTone = rejected ? 'is-error' : needsFix ? 'is-warn' : '';
   const stageLabel = (i: number) => (i === 1 && rejected ? '거절' : i === 1 && needsFix ? '보완 필요' : PIPELINE[i].label);
   const coverSrc = d?.coverData || rel.coverData;
-  const [coverOk, coverFailed] = useImageOk(coverSrc);
   const allFixes = rel.corrections ?? [];
   // 담당자 전체 의견은 고칠 항목이 아니라 따로 보여 준다
   const { items: requested, note: reviewNote } = splitCorrections(allFixes);

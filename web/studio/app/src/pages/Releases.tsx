@@ -1,4 +1,3 @@
-import { CodesPanel } from '../components/CodesPanel';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from '../lib/router';
 import { api, type Release, type Track } from '../api/client';
@@ -52,7 +51,7 @@ export function Releases() {
   const docs = useDocs();
   const [params, setParams] = useSearchParams();
   const tabParam = params.get('tab');
-  const tab = tabParam === 'tracks' || tabParam === 'codes' ? tabParam : 'releases';
+  const tab = tabParam === 'tracks' ? tabParam : 'releases';
   const filter = params.get('status') || 'all';
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('updated');
@@ -122,14 +121,9 @@ export function Releases() {
     <div id="view-catalog" className="view">
       <div className="ui-page-head">
         <div>
-          <p className="eyebrow">내 작업실</p>
-          <h1 id="catalogTitle">내 음악</h1>
-          <p>발매한 음악과 심사 진행 상황을 한눈에 확인해 보세요.</p>
+          <h1 id="catalogTitle">발매·곡 관리</h1>
         </div>
-        <div className="aq-confirm-actions">
-          <button type="button" className="ui-btn is-soft" onClick={() => nav('/releases/bulk')}>대량 작업</button>
-          <button type="button" className="ui-btn is-primary" onClick={() => nav('/upload')}><Glyph name="plus" size={14} />새 발매</button>
-        </div>
+        <button type="button" className="ui-btn is-primary" onClick={() => nav('/upload')}><Glyph name="plus" size={14} />새 발매</button>
       </div>
 
       <Tabs
@@ -137,14 +131,11 @@ export function Releases() {
         items={[
           { value: 'releases', label: '발매 목록', count: listLoading ? null : list.length },
           { value: 'tracks', label: '전체 트랙', count: listLoading ? null : trackCount },
-          { value: 'codes', label: '코드 (UPC·ISRC)' },
         ]}
         onChange={v => setParam('tab', v, 'releases')}
       />
 
-      {tab === 'codes' ? (
-        <CodesPanel />
-      ) : loading ? (
+      {loading ? (
         <SkeletonRows count={4} />
       ) : error ? (
         <div className="ui-empty">

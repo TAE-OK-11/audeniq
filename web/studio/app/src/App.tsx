@@ -61,8 +61,6 @@ const Agreement = lazyPage(pageLoaders.Agreement, m => m.Agreement);
 const Rights = lazyPage(pageLoaders.Rights, m => m.Rights);
 const RightsDocument = lazyPage(pageLoaders.RightsDocument, m => m.RightsDocument);
 const Inquiries = lazyPage(pageLoaders.Inquiries, m => m.Inquiries);
-const PlatformRequests = lazyPage(pageLoaders.PlatformRequests, m => m.PlatformRequests);
-const BulkReleases = lazyPage(pageLoaders.BulkReleases, m => m.BulkReleases);
 const Notifications = lazyPage(pageLoaders.Notifications, m => m.Notifications);
 const Events = lazyPage(pageLoaders.Events, m => m.Events);
 const Notices = lazyPage(pageLoaders.Notices, m => m.Notices);
@@ -107,6 +105,15 @@ function UploadRoute() {
   return <Upload key={loc.search} />;
 }
 
+/** 예전 플랫폼 요청 주소 — 요청은 이제 문의 티켓이다 (?id= → 그 티켓 열기, ?tab= → 그 유형으로 새로 쓰기) */
+function PlatformRequestsMoved() {
+  const loc = useLocation();
+  const p = new URLSearchParams(loc.search);
+  const id = p.get('id');
+  const to = id ? `/inquiries?open=${encodeURIComponent(id)}` : '/inquiries';
+  return <Navigate to={to} replace />;
+}
+
 function PortalRoutes() {
   const loc = useLocation();
   return (
@@ -116,7 +123,7 @@ function PortalRoutes() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/releases" element={<Releases />} />
-            <Route path="/releases/bulk" element={<BulkReleases />} />
+            <Route path="/releases/bulk" element={<Navigate to="/releases" replace />} />
             <Route path="/releases/:id" element={<ReleaseDetail />} />
             <Route path="/releases/:id/application" element={<Application />} />
             <Route path="/upload" element={<UploadRoute />} />
@@ -127,7 +134,7 @@ function PortalRoutes() {
             <Route path="/rights" element={<Rights />} />
             <Route path="/rights/:id" element={<RightsDocument />} />
             <Route path="/inquiries" element={<Inquiries />} />
-            <Route path="/platform-requests" element={<PlatformRequests />} />
+            <Route path="/platform-requests" element={<PlatformRequestsMoved />} />
             <Route path="/notifications" element={<Notifications />} />
             <Route path="/events" element={<Events />} />
             <Route path="/notices" element={<Notices />} />

@@ -1810,7 +1810,8 @@ export function Upload() {
     setReached(r => Math.max(r, to));
     setError('');
     setSubmitError('');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    // 부드러운 스크롤은 새 단계가 나타나는 동안 화면을 끌고 다녀 버벅여 보이므로 바로 맨 위로
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
   };
 
   const submit = async () => {
