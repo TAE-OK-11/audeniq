@@ -242,8 +242,9 @@ export function Settlement() {
     <div id="view-settlement" className="view">
       <div className="ui-page-head">
         <div>
+          <p className="eyebrow">내 작업실</p>
           <h1>정산·지급</h1>
-          <p><Link to="/terms/settlement" className="aq-inline-link">정산 약관 보기</Link></p>
+          <p>확정된 정산 금액과 지급 요청 내역을 확인해 보세요. <Link to="/terms/settlement" className="aq-inline-link">정산 약관 보기</Link></p>
         </div>
       </div>
 

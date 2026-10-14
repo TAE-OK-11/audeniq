@@ -27,7 +27,7 @@ function PagesEditor({ artist, onSaved }: { artist: ArtistRow; onSaved: () => vo
     setBusy(true);
     try {
       await req(orgPath(`/artists/${encodeURIComponent(artist.artist_id)}/pages`), { method: 'PUT', body: { links } });
-      toast('저장했어요.', 'success');
+      toast('아티스트 페이지를 저장했어요. 다음 발매부터 자동으로 이 페이지에 올라가요.', 'success');
       onSaved();
       close();
     } catch (err) { toast(errorMessage(err), 'error'); } finally { setBusy(false); }
@@ -64,6 +64,7 @@ export function ArtistPagesCard() {
   return (
     <section className="aq-set-card" aria-labelledby="setArtistPages">
       <h2 id="setArtistPages">아티스트 페이지</h2>
+      <p className="ui-field-help aq-set-help">한 번 등록하면 다음 발매 신청에 자동으로 채워지고, 플랫폼에 아티스트 ID로 전달돼 동명이인 페이지로 잘못 올라가지 않아요.</p>
       {items.map(a => {
         const linked = Object.entries(a.pages).filter(([, p]) => p.status === 'LINKED').map(([k]) => label(k));
         const waiting = Object.values(a.pages).some(p => p.status === 'PENDING');

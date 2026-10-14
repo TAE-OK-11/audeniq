@@ -9,7 +9,7 @@ import { useAsync } from '../../hooks/useAsync';
 import { req } from '../../api/http';
 import { MOCK } from '../../lib/mode';
 import { PLATFORM_NAMES } from '../../lib/platformNames';
-import { MONETIZATION_LABEL, STATUS_LABEL, STATUS_TONE, kindSpec, type PlatformRequest } from '../../lib/platformRequests';
+import { KINDS, MONETIZATION_LABEL, STATUS_LABEL, STATUS_TONE, kindSpec, type PlatformRequest } from '../../lib/platformRequests';
 import { ago } from '../labels';
 import { Badge, EmptyState, ErrorBox, NoDuty, PageHeader, SkeletonList, DELIVERY_TABS, SubTabs, useStaff } from '../ui';
 
@@ -127,6 +127,7 @@ export function PlatformRequests() {
           })}
         </div>
       )}
+      <p className="small muted" style={{ marginTop: 16 }}>요청 종류: {KINDS.map(k => k.label).join(' · ')}</p>
     </div>
   );
 }
