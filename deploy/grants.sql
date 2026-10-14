@@ -67,6 +67,8 @@ GRANT SELECT,INSERT,UPDATE ON portal.smart_links, portal.smart_link_stats TO aud
 -- 플랫폼 요청 (0120): 아티스트 프로필·Content ID 요청과 처리 기록, 발매별 Content ID 상태
 GRANT SELECT,INSERT,UPDATE ON portal.platform_requests, portal.content_id_status TO audeniq_api;
 GRANT SELECT,INSERT ON portal.platform_request_events TO audeniq_api;
+-- 계약 종료·권리 만료 (0121): 예약·취소·최종 정산 기록. 배송 작업자는 종료 여부만 함수로 본다
+GRANT SELECT,INSERT,UPDATE ON portal.release_terms, portal.org_contract_terms TO audeniq_api;
 -- 발매 알림 (0118): 팬 이메일은 봉인해 두고 보내면 바로 지운다. 끝난 줄은 정리
 GRANT SELECT,INSERT,UPDATE,DELETE ON portal.release_alerts TO audeniq_api;
 -- 발매 후 정보 수정 (0115): 크레딧·장르만. 승인되면 수정 메시지 작업을 넣는다
@@ -155,6 +157,7 @@ GRANT SELECT,INSERT,UPDATE ON operations.fingerprint_scans TO audeniq_worker;
 GRANT EXECUTE ON FUNCTION catalog.fingerprints_still_present(smallint, uuid[]) TO audeniq_worker;
 -- E-0 holds delivery until the release's agreement is signed (portal stays ungranted).
 GRANT EXECUTE ON FUNCTION execution.agreement_signed(uuid, uuid) TO audeniq_worker;
+GRANT EXECUTE ON FUNCTION portal.release_term_ended(uuid, uuid) TO audeniq_worker;
 -- 0063: a delivery job is only leased while staff approval of its route holds.
 GRANT EXECUTE ON FUNCTION execution.delivery_gate_open(uuid, text) TO audeniq_worker;
 GRANT INSERT ON catalog.application_revisions,catalog.consent_packages TO audeniq_worker;
