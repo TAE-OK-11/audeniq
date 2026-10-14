@@ -94,6 +94,8 @@ export interface DraftTrack {
   assetId?: string;
   /** 실서버: 트랙 ID (임시 저장 간 매칭용) */
   serverId?: string;
+  /** 미리듣기 시작점 (초) */
+  previewStart?: string;
   /** 피처링 아티스트 (제목에 쓰지 않고 따로 전달) */
   featuring?: string;
   /** 가사 없는 연주곡 — 작사·가사 불필요 */
@@ -181,6 +183,8 @@ export interface ReleaseDraft {
   originalDate?: string;
   /** 동시 발매 시각 (한국 시간 'HH:MM'); 비우면 나라별 자정 */
   release_time?: string;
+  /** 사전 공개·예약 판매 시작일 (발매일 1–90일 전) */
+  preorder_start?: string;
   territories: string[];
   platforms: string[];
   ownership: string;
@@ -228,6 +232,7 @@ export interface ReleasePayload {
   originalDate: string;
   release_date: string;
   release_time?: string;
+  preorder_start?: string;
   tracks: DraftTrack[];
   territories: string[];
   platforms: string[];

@@ -554,6 +554,19 @@ fn resource_list(
             element(out, "SamplingRate", sample_rate);
             element(out, "BitsPerSample", bits_per_sample);
         }
+        // XSD order: ..., BitsPerSample, Duration?, ..., PreviewDetails?, File.
+        // The clip platforms (short-form, store previews) start from here.
+        if let Some(start) = prepared.preview_starts.get(&track.id)
+            && track
+                .audio
+                .duration_secs
+                .is_none_or(|d| f64::from(*start) < d)
+        {
+            out.push_str("<PreviewDetails>");
+            element(out, "StartPoint", start);
+            element(out, "ExpressionType", "Instructive");
+            out.push_str("</PreviewDetails>");
+        }
         file_block(out, &file_name, &track.audio.sha256);
         out.push_str("</TechnicalSoundRecordingDetails>");
         out.push_str("</SoundRecordingDetailsByTerritory>");
@@ -696,13 +709,25 @@ fn release_list(out: &mut String, prepared: &PreparedRelease, tracks: &[&Prepare
     out.push_str("</Release></ReleaseList>");
 }
 
+/// Release-level timing of the deal: the release instant and, for a
+/// pre-release period, when the release page, track list, cover and clips
+/// may show and when download stores may take pre-orders.
+#[derive(Clone, Copy, Default)]
+pub struct DealTiming<'a> {
+    /// Simultaneous release time (KST "HH:MM"); None = local midnight.
+    pub release_time: Option<&'a str>,
+    /// Pre-release start (pre-save page, previews, pre-order); before the
+    /// release date.
+    pub preorder_start: Option<chrono::NaiveDate>,
+}
+
 fn deal_list(
     out: &mut String,
     c: &DdexErnConfig,
     territories: &crate::territory::Territories,
-    release_time: Option<&str>,
+    timing: DealTiming<'_>,
 ) {
-    // XSD: ReleaseDeal = DealReleaseReference, Deal, EffectiveDate?.
+    // XSD: ReleaseDeal = DealReleaseReference, Deal+, EffectiveDate?.
     // Deal = DealReference?, DealTerms?, ... — there is no DealId element;
     // DealReference is optional and pattern-constrained, so it is omitted.
     // DealTerms minimal valid set: CommercialModelType*, Usage+,
@@ -710,7 +735,41 @@ fn deal_list(
     // DSP's own deal (`DdexErnConfig::deal`, from the DSP registry).
     out.push_str("<DealList><ReleaseDeal>");
     element(out, "DealReleaseReference", "R001");
+    let takedown = c.message_sub_type == MessageSubType::Takedown;
+    let pre = timing
+        .preorder_start
+        .map(|d| d.format("%Y-%m-%d").to_string())
+        .filter(|d| !takedown && d.as_str() < c.deal_start_date.as_str());
+    deal_terms(
+        out,
+        c,
+        territories,
+        timing.release_time,
+        false,
+        pre.as_deref(),
+    );
+    // Download stores also sell it ahead: a pre-order deal from the
+    // pre-release start, fulfilled on the release date.
+    if let Some(p) = &pre
+        && c.deal.commercial_models.contains(&"PayAsYouGoModel")
+    {
+        deal_terms(out, c, territories, None, true, Some(p));
+    }
+    out.push_str("</ReleaseDeal></DealList>");
+}
+
+fn deal_terms(
+    out: &mut String,
+    c: &DdexErnConfig,
+    territories: &crate::territory::Territories,
+    release_time: Option<&str>,
+    preorder: bool,
+    pre_start: Option<&str>,
+) {
     out.push_str("<Deal><DealTerms>");
+    if preorder {
+        element(out, "IsPreOrderDeal", "true");
+    }
     for model in c.deal.commercial_models {
         element(out, "CommercialModelType", model);
     }
@@ -751,8 +810,10 @@ fn deal_list(
     // XSD Period: (StartDate, EndDate) or (StartDateTime, EndDateTime). A
     // simultaneous release opens at one instant (KST); otherwise the date
     // means each country's local midnight. Takedowns keep the date pair.
-    match release_time {
-        Some(t) if c.message_sub_type != MessageSubType::Takedown => {
+    // A pre-order deal opens on the pre-release start.
+    match (preorder, release_time) {
+        (true, _) => element(out, "StartDate", pre_start.unwrap_or(&c.deal_start_date)),
+        (false, Some(t)) if c.message_sub_type != MessageSubType::Takedown => {
             element(
                 out,
                 "StartDateTime",
@@ -769,7 +830,17 @@ fn deal_list(
         }
     }
     out.push_str("</ValidityPeriod>");
-    out.push_str("</DealTerms></Deal></ReleaseDeal></DealList>");
+    if let Some(p) = pre_start {
+        // XSD order: PreOrderReleaseDate?, then one of the preview groups.
+        if preorder {
+            element(out, "PreOrderReleaseDate", &c.deal_start_date);
+        }
+        element(out, "ReleaseDisplayStartDate", p);
+        element(out, "TrackListingPreviewStartDate", p);
+        element(out, "CoverArtPreviewStartDate", p);
+        element(out, "ClipPreviewStartDate", p);
+    }
+    out.push_str("</DealTerms></Deal>");
 }
 
 /// Build a DDEX ERN 3.8.2 `NewReleaseMessage` for a prepared release.
@@ -839,7 +910,10 @@ pub fn generate_ddex_ern_382(prepared: &PreparedRelease, config: &DdexErnConfig)
         &mut out,
         config,
         &prepared.territories,
-        prepared.release_time.as_deref(),
+        DealTiming {
+            release_time: prepared.release_time.as_deref(),
+            preorder_start: prepared.preorder_start,
+        },
     );
     out.push_str("</ern:NewReleaseMessage>\n");
     Ok(out)

@@ -916,3 +916,8 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 .aq-splits-over{color:#d92d20;font-weight:700;font-size:13px}
 @media(max-width:640px){.aq-splits-row{grid-template-columns:1fr 96px auto}.aq-splits-row input[type=email]{grid-column:1/-1;grid-row:2}.aq-splits-row:has(.aq-splits-name){grid-template-columns:1fr auto auto}.aq-splits-money{grid-column:1/-1;justify-content:flex-start}}
 .aq-splits-received{margin-top:16px}
+/* 배급 설정 > 곡별 미리듣기 시작점 */
+.aq-preview-starts{display:grid;gap:6px;margin:4px 0 8px}
+.aq-preview-row{display:grid;grid-template-columns:minmax(0,1fr) 96px;gap:8px;align-items:center}
+.aq-preview-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-preview-row .ui-input[aria-invalid=true]{border-color:#d92d20}
