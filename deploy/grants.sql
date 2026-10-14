@@ -53,6 +53,8 @@ GRANT SELECT,INSERT,UPDATE ON portal.signing_requests TO audeniq_api;
 GRANT SELECT,INSERT ON portal.signing_events TO audeniq_api;
 -- 발매 중단 요청 (0111): 아티스트가 접수·취소하고, 배급 담당 스태프가 승인·반려한다
 GRANT SELECT,INSERT,UPDATE ON portal.takedown_requests TO audeniq_api;
+-- 권리침해 신고 (0114): 누구나 접수, 스태프 처리, 아티스트 소명
+GRANT SELECT,INSERT,UPDATE ON portal.infringement_claims TO audeniq_api;
 GRANT USAGE ON SEQUENCE portal.signing_events_id_seq TO audeniq_api;
 -- 계정 정보 (0083): 본인인증 결과와 해외 납세 의무 (사용자 본인만)
 GRANT SELECT,INSERT,UPDATE ON portal.account_identities,portal.tax_residencies TO audeniq_api;

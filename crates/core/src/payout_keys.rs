@@ -42,6 +42,9 @@ pub enum Field {
     OAuthEmail,
     PrintSource,
     ArchiveObject,
+    ClaimantName,
+    ClaimantEmail,
+    ClaimantPhone,
 }
 impl Field {
     fn aad_prefix(self) -> &'static [u8] {
@@ -59,6 +62,9 @@ impl Field {
             Self::OAuthEmail => b"audeniq:identity.oauth_identities:email:",
             Self::PrintSource => b"audeniq:operations.print_stamps:source:",
             Self::ArchiveObject => b"audeniq:operations.archive_objects:object:",
+            Self::ClaimantName => b"audeniq:portal.infringement_claims:claimant_name:",
+            Self::ClaimantEmail => b"audeniq:portal.infringement_claims:claimant_email:",
+            Self::ClaimantPhone => b"audeniq:portal.infringement_claims:claimant_phone:",
         }
     }
 }
