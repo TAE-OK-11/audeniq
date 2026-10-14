@@ -503,6 +503,7 @@ pub async fn verify(
     .fetch_all(pool)
     .await?;
     let mut checked_anchors = 0;
+    let mut claims: Vec<(&String, i64, String)> = Vec::new();
     for key in &anchors {
         let Ok(bytes) = target.get(key).await else {
             problems.push(json!({"anchor": key, "problem": "ANCHOR_MISSING"}));
@@ -514,15 +515,22 @@ pub async fn verify(
             continue;
         };
         checked_anchors += 1;
-        if seq == 0 {
-            continue;
+        if seq != 0 {
+            claims.push((key, seq, hash.to_string()));
         }
-        let stored: Option<String> =
-            sqlx::query_scalar("SELECT hash FROM operations.document_seals WHERE seq=$1")
-                .bind(seq)
-                .fetch_optional(pool)
-                .await?;
-        if stored.as_deref() != Some(hash) {
+    }
+    // One read for every anchored seal, not one per anchor.
+    let seqs: Vec<i64> = claims.iter().map(|c| c.1).collect();
+    let stored: std::collections::HashMap<i64, String> = sqlx::query_as::<_, (i64, String)>(
+        "SELECT seq, hash FROM operations.document_seals WHERE seq = ANY($1)",
+    )
+    .bind(&seqs)
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .collect();
+    for (key, seq, hash) in claims {
+        if stored.get(&seq) != Some(&hash) {
             problems
                 .push(json!({"anchor": key, "seq": seq, "problem": "CHAIN_DIFFERS_FROM_ANCHOR"}));
         }
@@ -533,9 +541,13 @@ pub async fn verify(
     for o in &objects {
         let key: String = o.get("object_key");
         if deep {
-            match target.get(&key).await {
-                Ok(b) if sha256_hex(&b) == o.get::<String, _>("object_sha256") => {}
-                Ok(_) => problems.push(json!({"object": key, "problem": "ARCHIVE_OBJECT_CHANGED"})),
+            // Streamed hash: constant memory whatever the object size.
+            let size = o.get::<i64, _>("size_bytes").max(0) as u64;
+            match target.digest(&key, size).await {
+                Ok(d) if d.sha256 == o.get::<String, _>("object_sha256") && d.size == size => {}
+                Ok(_) | Err(Error::PolicyGate(_)) => {
+                    problems.push(json!({"object": key, "problem": "ARCHIVE_OBJECT_CHANGED"}))
+                }
                 Err(_) => {
                     problems.push(json!({"object": key, "problem": "ARCHIVE_OBJECT_MISSING"}))
                 }

@@ -3018,37 +3018,59 @@ async fn update_asset_qc(
             }
         }
     }
+    // Each asset check's key, computed once per (code, asset): a 30-track
+    // album has ~25 codes x 30 assets keys, instead of a hash per check per
+    // asset (~22k).
+    let codes: BTreeSet<&str> = checks
+        .iter()
+        .filter(|ch| ch.rule_version == qc::QC_RULE_VERSION)
+        .map(|ch| ch.check_code)
+        .collect();
+    let mut owner: std::collections::HashMap<String, Vec<&str>> = std::collections::HashMap::new();
+    for code in &codes {
+        for (aid, sha) in &sha_of {
+            owner
+                .entry(asset_check_cache_key(code, aid, sha))
+                .or_default()
+                .push(aid);
+        }
+    }
     for ch in checks {
         if ch.rule_version != qc::QC_RULE_VERSION {
             continue;
         }
-        for (aid, sha) in &sha_of {
-            if ch.result_hash == asset_check_cache_key(ch.check_code, aid, sha) {
-                let e = worst.entry(aid.clone()).or_insert(CheckStatus::Pass);
-                let check_rank = if asset_check_allows_progress(ch) {
-                    0
-                } else {
-                    rank(ch.status)
-                };
-                if check_rank > rank(*e) {
-                    *e = ch.status;
-                }
+        for aid in owner.get(&ch.result_hash).into_iter().flatten() {
+            let e = worst.entry(aid.to_string()).or_insert(CheckStatus::Pass);
+            let check_rank = if asset_check_allows_progress(ch) {
+                0
+            } else {
+                rank(ch.status)
+            };
+            if check_rank > rank(*e) {
+                *e = ch.status;
             }
         }
     }
+    let mut ids = Vec::with_capacity(worst.len());
+    let mut statuses = Vec::with_capacity(worst.len());
     for (aid, st) in worst {
-        let qc_status = match st {
+        ids.push(Uuid::parse_str(&aid).map_err(|_| Error::Internal)?);
+        statuses.push(match st {
             CheckStatus::Pass | CheckStatus::NotApplicable => "PASS",
             _ => "BLOCKED",
-        };
-        let aid = Uuid::parse_str(&aid).map_err(|_| Error::Internal)?;
-        sqlx::query("UPDATE catalog.assets SET qc_status=$3 WHERE org_id=$1 AND id=$2")
-            .bind(org)
-            .bind(aid)
-            .bind(qc_status)
-            .execute(&mut *c)
-            .await?;
+        });
     }
+    // One statement for the whole release.
+    sqlx::query(
+        "UPDATE catalog.assets a SET qc_status=u.status
+           FROM unnest($2::uuid[], $3::text[]) AS u(id, status)
+          WHERE a.org_id=$1 AND a.id=u.id",
+    )
+    .bind(org)
+    .bind(&ids)
+    .bind(&statuses)
+    .execute(&mut *c)
+    .await?;
     Ok(())
 }
 
