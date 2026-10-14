@@ -173,6 +173,8 @@ All roles can read every list below.
 | POST | `/api/orgs/{org}/releases/{id}/pitch/withdraw` | While SUBMITTED/IN_REVIEW (`PITCH_NOT_WITHDRAWABLE`) |
 | GET | `/api/staff/pitches` | DELIVERY duty. Active pitches, open first by release date |
 | POST | `/api/staff/pitches/{id}/status` | DELIVERY duty. `{status, platforms?, result?, note?}`: IN_REVIEW ← SUBMITTED; PITCHED ← SUBMITTED/IN_REVIEW (needs `platforms`); SELECTED (needs `result`) / NOT_SELECTED ← PITCHED; other moves → 409. Each step notifies the org |
+| GET | `/api/orgs/{org}/codes` | Submitted releases the member can read (up to 1000), each with `upc` and `tracks[{track_id,title,disc,number,isrc}]` — the active identifier assignment, else the catalog value — and `upc_virtual`/`isrc_virtual` for test-range codes |
+| GET | `/api/orgs/{org}/codes.csv` | Same as CSV (one row per track; formula-leading cells prefixed with `'`) |
 | GET/PUT | `/api/orgs/{org}/releases/{id}/smart-link` | Smart link (public page `/l/{slug}`). GET: `link {slug, enabled, links}`, `stats {views, clicks{platform:n}, days:30}`, `platforms`, `can_create`. PUT `{enabled?, links:{platform:url}}`: first save creates the page (submitted release only, `SMART_LINK_RELEASE_NOT_SUBMITTED`); links must be https on that platform's hosts (`SMART_LINK_URL_INVALID`, `SMART_LINK_PLATFORM_INVALID`); empty values are dropped |
 | GET | `/api/smart-links/{slug}` | Public. `{title, artist, release_date, released, cover, links:[{platform,url}]}`; 404 when off, or the release is withdrawn, on hold, taken down or suspended over a rights claim. Counts a view (once per address per 15 min) |
 | GET | `/api/smart-links/{slug}/cover` | Public. The release cover |
