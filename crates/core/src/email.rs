@@ -4,7 +4,7 @@
 //!   넣는다 (알림 대상 사용자, 또는 조직 전체 알림이면 활성 멤버 전원. 메일을 끈 사람 제외).
 //! - API 프로세스가 대기열을 꺼내 SMTP(STARTTLS, 587)로 보낸다. 로그인 이메일은 봉인돼
 //!   있어(0102) 키를 가진 API만 주소를 알 수 있다. 주소·본문은 보낼 때 읽는다.
-//! - 발송 서비스는 `EMAIL_PROVIDERS` 순서대로 쓴다 (`ses,oci`: SES가 실패하면 OCI로).
+//! - 발송 서비스는 `EMAIL_PROVIDERS` 순서대로 쓴다 (`oci,ses`: 더 저렴한 OCI로 먼저 보내고, 실패하면 SES로).
 //!   클라우드 IAM 자격 증명이 아니라 발송 전용 SMTP 자격 증명만 쓴다.
 //!   - `ses`: Amazon SES `email-smtp.<EMAIL_SES_REGION>.amazonaws.com`
 //!   - `oci`: OCI Email Delivery `smtp.email.<EMAIL_OCI_REGION>.oci.oraclecloud.com`
