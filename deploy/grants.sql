@@ -124,6 +124,10 @@ GRANT SELECT,INSERT ON catalog.asset_fingerprints TO audeniq_worker;
 -- narrow SECURITY DEFINER function; the table itself stays org-scoped.
 GRANT EXECUTE ON FUNCTION catalog.fingerprints_outside_org(uuid, smallint) TO audeniq_worker;
 GRANT EXECUTE ON FUNCTION catalog.fingerprints_outside_org_page(uuid, smallint, uuid, integer) TO audeniq_worker;
+GRANT EXECUTE ON FUNCTION catalog.fingerprints_outside_org_since(uuid, smallint, timestamptz, timestamptz, uuid, integer) TO audeniq_worker;
+-- 0109: incremental similarity scan state (other orgs' asset ids among the matches: worker only).
+GRANT SELECT,INSERT,UPDATE ON operations.fingerprint_scans TO audeniq_worker;
+GRANT EXECUTE ON FUNCTION catalog.fingerprints_still_present(smallint, uuid[]) TO audeniq_worker;
 -- E-0 holds delivery until the release's agreement is signed (portal stays ungranted).
 GRANT EXECUTE ON FUNCTION execution.agreement_signed(uuid, uuid) TO audeniq_worker;
 -- 0063: a delivery job is only leased while staff approval of its route holds.

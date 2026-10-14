@@ -302,6 +302,7 @@ mod tests {
                     content_type: "audio/flac".into(),
                     delivery_name: n.to_string(),
                     role: FileRole::Audio,
+                    pinned_etag: None,
                 })
                 .collect(),
             upc: Some("036000291452".into()),

@@ -63,6 +63,7 @@ pub mod staff_mfa;
 pub mod storage;
 pub mod submission;
 pub mod takedown;
+pub mod temp_sweep;
 pub mod text_policy;
 pub mod transport;
 pub mod upload_safety;
