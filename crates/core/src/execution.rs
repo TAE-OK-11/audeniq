@@ -74,6 +74,10 @@ pub struct TransferPackage {
     /// Genre and label from the frozen application (partner feeds).
     pub genre: Option<String>,
     pub label: Option<String>,
+    /// Track lyrics from the frozen application, by track id (partner feeds;
+    /// Korean services show them). Instrumentals and tracks without lyrics
+    /// are absent.
+    pub lyrics: std::collections::BTreeMap<Uuid, String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -823,7 +827,7 @@ async fn materialize(
         }
         Err(_) => None,
     };
-    let (genre, label) = release_extras(tx, &prepared).await;
+    let (genre, label, lyrics) = release_extras(tx, &prepared).await;
     let genre = genre_correction.or(genre);
     Ok(TransferPackage {
         package_id: job.package_id,
@@ -836,6 +840,7 @@ async fn materialize(
         prepared,
         genre,
         label,
+        lyrics,
     })
 }
 
@@ -1951,7 +1956,7 @@ async fn followup_package(
         ern_xml = xml.into_bytes();
     }
     let mut c = pool.acquire().await?;
-    let (genre, label) = release_extras(&mut c, &prepared).await;
+    let (genre, label, lyrics) = release_extras(&mut c, &prepared).await;
     let genre = genre_correction.or(genre);
     Ok(TransferPackage {
         package_id,
@@ -1964,6 +1969,7 @@ async fn followup_package(
         prepared,
         genre,
         label,
+        lyrics,
     })
 }
 
@@ -1972,12 +1978,17 @@ async fn followup_package(
 async fn release_extras(
     c: &mut PgConnection,
     prepared: &Option<Arc<crate::preparation_model::PreparedRelease>>,
-) -> (Option<String>, Option<String>) {
+) -> (
+    Option<String>,
+    Option<String>,
+    std::collections::BTreeMap<Uuid, String>,
+) {
     let Some(p) = prepared else {
-        return (None, None);
+        return (None, None, Default::default());
     };
-    let draft: Option<Value> = sqlx::query_scalar(
-        "SELECT COALESCE(NULLIF(ar.body -> 'release' -> 'draft', 'null'::jsonb), r.draft)
+    let row: Option<(Value, Value)> = sqlx::query_as(
+        "SELECT COALESCE(NULLIF(ar.body -> 'release' -> 'draft', 'null'::jsonb), r.draft),
+                COALESCE(ar.body -> 'tracks', '[]'::jsonb)
          FROM catalog.application_revisions ar
          JOIN catalog.releases r ON r.org_id=ar.org_id AND r.id=ar.release_id
          WHERE ar.org_id=$1 AND ar.id=$2",
@@ -1988,9 +1999,20 @@ async fn release_extras(
     .await
     .ok()
     .flatten();
-    let Some(d) = draft else {
-        return (None, None);
+    let Some((d, tracks)) = row else {
+        return (None, None, Default::default());
     };
+    // Lyrics as submitted (the frozen revision), never the live draft.
+    let lyrics = tracks
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|t| {
+            let id: Uuid = t.get("id")?.as_str()?.parse().ok()?;
+            let text = t.get("lyrics")?.as_str()?.trim();
+            (!text.is_empty()).then(|| (id, text.to_string()))
+        })
+        .collect();
     let text = |k: &str| {
         d.get(k)
             .and_then(Value::as_str)
@@ -2003,7 +2025,7 @@ async fn release_extras(
         _ => text("genre"),
     };
     let label = text("label").or_else(|| text("label_name"));
-    (genre, label)
+    (genre, label, lyrics)
 }
 
 /// The partner's id for the accepted submission of a job (API partners

@@ -20,6 +20,8 @@ use std::collections::BTreeMap;
 pub struct Extras {
     pub genre: Option<String>,
     pub label: Option<String>,
+    /// Track lyrics by track id (absent: instrumental or none given).
+    pub lyrics: std::collections::BTreeMap<uuid::Uuid, String>,
 }
 
 fn role_bucket(role: &str) -> Option<&'static str> {
@@ -101,6 +103,7 @@ pub fn release_json(
                 "explicit": explicit,
                 "adult_only": explicit,
                 "credits": credits,
+                "lyrics": extras.lyrics.get(&t.id),
                 "file": file_for(&t.audio.sha256, FileRole::Audio),
             })
         })
@@ -174,6 +177,7 @@ pub const CSV_COLUMNS: &[&str] = &[
     "sha256",
     "cover_file",
     "territories",
+    "lyrics",
 ];
 
 pub(crate) fn csv_cell(s: &str) -> String {
@@ -262,6 +266,7 @@ pub fn release_csv(
                 .into(),
             cover.clone(),
             p.territories.summary(),
+            s(&t["lyrics"]),
         ];
         let cells: Vec<String> = row.iter().map(|c| csv_cell(c)).collect();
         out.push_str(&cells.join(","));

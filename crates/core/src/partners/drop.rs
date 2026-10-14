@@ -165,6 +165,7 @@ impl FileDropAdapter {
         Extras {
             genre: package.genre.clone(),
             label: package.label.clone(),
+            lyrics: package.lyrics.clone(),
         }
     }
 
@@ -642,6 +643,7 @@ mod tests {
             prepared: None,
             genre: None,
             label: None,
+            lyrics: Default::default(),
         };
         SendContext {
             job_id: uuid::Uuid::nil(),
