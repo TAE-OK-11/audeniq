@@ -1188,6 +1188,7 @@ mod tests {
             artwork: asset("image/jpeg", None, None),
             explicit,
             territories: Default::default(),
+            release_time: None,
         }
     }
 

@@ -99,6 +99,29 @@ pub struct PreparedRelease {
         skip_serializing_if = "crate::territory::Territories::is_worldwide"
     )]
     pub territories: crate::territory::Territories,
+    /// Simultaneous worldwide release time (KST, "HH:MM") from the submitted
+    /// draft; `None` = each country's local midnight on the release date.
+    /// Omitted when unset so earlier snapshots keep their hash.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub release_time: Option<String>,
+}
+
+/// The draft's `release_time`: absent/empty, or "HH:MM" KST on the hour or
+/// half hour (what the studio offers).
+pub fn release_time(draft: &Value) -> Result<Option<String>> {
+    let bad = || Error::InvalidCode("RELEASE_TIME_INVALID");
+    match draft.get("release_time") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(s)) if s.is_empty() => Ok(None),
+        Some(Value::String(s)) => {
+            let t = chrono::NaiveTime::parse_from_str(s, "%H:%M").map_err(|_| bad())?;
+            if s.len() != 5 || !matches!(chrono::Timelike::minute(&t), 0 | 30) {
+                return Err(bad());
+            }
+            Ok(Some(s.clone()))
+        }
+        _ => Err(bad()),
+    }
 }
 
 /// Trusted DB row envelope plus the original F3 JSON bytes' semantic value.
@@ -318,6 +341,7 @@ impl PreparedRelease {
             artwork,
             explicit: c.explicit,
             territories: crate::territory::Territories::from_draft(&draft)?,
+            release_time: release_time(&draft)?,
         })
     }
 }
@@ -340,5 +364,41 @@ impl VerificationPackage {
             package_hash: row.get("package_hash"),
             body: row.get("body"),
         })
+    }
+}
+
+#[cfg(test)]
+mod release_time_tests {
+    use super::release_time;
+    use serde_json::json;
+
+    #[test]
+    fn hour_or_half_hour_or_nothing() {
+        assert_eq!(release_time(&json!({})).unwrap(), None);
+        assert_eq!(release_time(&json!({"release_time": ""})).unwrap(), None);
+        assert_eq!(
+            release_time(&json!({"release_time": "18:00"}))
+                .unwrap()
+                .as_deref(),
+            Some("18:00")
+        );
+        assert_eq!(
+            release_time(&json!({"release_time": "00:30"}))
+                .unwrap()
+                .as_deref(),
+            Some("00:30")
+        );
+        for bad in [
+            json!("18:15"),
+            json!("24:00"),
+            json!("8:00"),
+            json!("18:00:00"),
+            json!(18),
+        ] {
+            assert!(
+                release_time(&json!({"release_time": bad})).is_err(),
+                "{bad}"
+            );
+        }
     }
 }

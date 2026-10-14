@@ -38,6 +38,9 @@ import { BrandMark } from '../components/BrandMark';
 import { SplitsCard } from '../components/SplitsCard';
 import { TERRITORY_GROUPS, WORLD, parseTerritories, territoryName, territorySummary, worldExcept } from '../lib/territories';
 
+/** 동시 발매로 고를 수 있는 한국 시간 (서버는 정각·30분만 받는다) */
+const RELEASE_TIMES = ['00:00', '09:00', '12:00', '13:00', '18:00', '19:00', '20:00'];
+
 const STEPS = [
   { short: '발매 정보', kicker: '01 / 06 · 발매 정보', title: '어떤 음악을\n발매할까요?', sub: '발매 정보와 아티스트명을 입력해 주세요.' },
   { short: '트랙 등록', kicker: '02 / 06 · 트랙 등록', title: '발매할 곡을\n등록해 주세요.', sub: '곡별 음원 파일과 크레딧을 입력해 주세요.' },
@@ -112,7 +115,7 @@ interface WizardForm {
   genreCustom: string; label: string; notes: string;
   tracks: Track[];
   coverName: string; coverData: string; coverAssetId: string; coverThumbAssetId: string;
-  releaseDate: string; originalDate: string; upc: string;
+  releaseDate: string; releaseTime: string; originalDate: string; upc: string;
   territories: string[]; platforms: string[];
   ownership: string; phonogram: string; copyright: string;
   rightsChecks: Record<string, boolean>;
@@ -148,7 +151,7 @@ const EMPTY: WizardForm = {
   label: '', notes: '',
   tracks: [newTrack()],
   coverName: '', coverData: '', coverAssetId: '', coverThumbAssetId: '',
-  releaseDate: '', originalDate: '', upc: '',
+  releaseDate: '', releaseTime: '', originalDate: '', upc: '',
   territories: ['WORLD'], platforms: MOCK ? DSP.map(d => d[0]) : [],
   ownership: '', phonogram: '', copyright: '',
   rightsChecks: {},
@@ -1132,6 +1135,7 @@ function toPayload(form: WizardForm, step: number): ReleasePayload {
     coverThumbAssetId: form.coverThumbAssetId || undefined,
     originalDate: form.options.rerelease && form.options.rereleaseKind === 'new_version' ? form.releaseDate : form.originalDate,
     release_date: form.releaseDate || '',
+    release_time: form.releaseTime || '',
     tracks: form.tracks.map(t => ({
       id: t.id, title: t.title.trim(), isrc: t.isrc.trim(), duration: t.duration,
       version: t.version.trim(), composers: t.composers.trim(),
@@ -1206,7 +1210,7 @@ function ensureReleaseDocuments(f: WizardForm, releaseId: string) {
     `발매명: ${title}`,
     `발매 유형: ${kindLabel(f.type)}`,
     `장르: ${genreVal || '미입력'}`,
-    `발매 희망일: ${f.releaseDate || '미정'}`,
+    `발매 희망일: ${f.releaseDate || '미정'}${f.releaseTime ? ` (한국 시간 ${f.releaseTime} 동시 발매)` : ''}`,
     `레이블 표기: ${f.label.trim() || '미입력'}`,
     `수록곡: ${f.tracks.map((t, i) => `${i + 1}. ${t.title.trim() || '제목 없음'} (${t.duration || '길이 확인 전'})`).join(' / ')}`,
     '',
@@ -1431,6 +1435,7 @@ export function Upload() {
         coverAssetId: d?.coverAssetId || '',
         coverThumbAssetId: d?.coverThumbAssetId || '',
         releaseDate: rel.release_date || '',
+        releaseTime: d?.release_time || '',
         originalDate: d?.options?.rerelease && d.options.previousReleaseDate ? d.options.previousReleaseDate : d?.originalDate || '',
         upc: d?.upc || '',
         territories: d?.territories ?? ['WORLD'],
@@ -1960,7 +1965,7 @@ export function Upload() {
     ['발매 정보', `${form.title || '제목 없음'} · ${form.artist || '아티스트 없음'} · ${kindLabel(form.type)}`, 0],
     ['트랙', form.tracks.map(t => t.title || '곡명 없음').join(' / '), 1],
     ['커버아트', form.coverName || '등록되지 않음', 2],
-    ['발매일', form.releaseDate ? formatKoreanDate(form.releaseDate) : '지정하지 않음', 3],
+    ['발매일', form.releaseDate ? `${formatKoreanDate(form.releaseDate)}${form.releaseTime ? ` · 한국 시간 ${form.releaseTime} 동시 발매` : ' · 나라별 자정'}` : '지정하지 않음', 3],
     ['배급 지역', territorySummary(form.territories, '선택하지 않음'), 3],
     ['배급 플랫폼', form.platforms.map(dspLabel).join(', ') || '선택하지 않음', 3],
     ['권리자', form.ownership || '미입력', 4],
@@ -2308,6 +2313,14 @@ export function Upload() {
                 value={form.releaseDate} min={origDate && origDate < minReleaseDate(form.options.express) ? origDate : minReleaseDate(form.options.express)}
                 onChange={v => set('releaseDate', v)}
               />
+              <div className="ui-field">
+                <label htmlFor="f-releaseTime">발매 시각</label>
+                <select id="f-releaseTime" className="ui-select" value={form.releaseTime} onChange={e => set('releaseTime', e.target.value)}>
+                  <option value="">나라별 자정 (현지 0시)</option>
+                  {RELEASE_TIMES.map(t => <option key={t} value={t}>한국 시간 {t} 전 세계 동시{t === '18:00' ? ' (국내 표준)' : ''}</option>)}
+                </select>
+                <small className="ui-field-help">국내 음원은 보통 오후 6시에 공개돼요. 동시 발매를 고르면 해외도 같은 순간에 열려요(플랫폼 사정으로 조금 늦을 수 있어요).</small>
+              </div>
               <div className="ui-field">
                 <label htmlFor="f-upc">음반 코드 UPC (있을 때만)</label>
                 <input id="f-upc" inputMode="numeric" value={form.upc} onChange={e => set('upc', e.target.value.replace(/\D/g, '').slice(0, 13))} maxLength={13} placeholder="없으면 자동 발급돼요" />

@@ -564,6 +564,7 @@ pub async fn submit(
     // The delivered deal territory comes from this frozen value; refuse a
     // malformed one now rather than at packaging.
     crate::territory::Territories::from_draft(draft)?;
+    crate::preparation_model::release_time(draft)?;
     if let Some(options) = draft.get("options") {
         let enabled = |key: &str| options.get(key).and_then(Value::as_bool).unwrap_or(false);
         let declared = &body["declarations"];
