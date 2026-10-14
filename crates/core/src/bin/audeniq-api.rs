@@ -82,7 +82,15 @@ async fn main() -> anyhow::Result<()> {
                 tracing::debug!(%error, "TCP_NODELAY not set");
             }
         });
+    // Notification emails (SES / OCI Email Delivery over SMTP); a bad
+    // configuration stops startup instead of silently dropping mail.
+    let mailer = audeniq_core::email::Mailer::from_env(&config.origin)?;
+    match &mailer {
+        Some(m) => tracing::info!(providers = ?m.provider_names(), "notification email enabled"),
+        None => tracing::info!("notification email disabled (EMAIL_PROVIDERS empty)"),
+    }
     let state = api::AppState::new(pool, config, storage).await?;
+    audeniq_core::email::spawn(state.clone(), mailer);
     audeniq_core::temp_sweep::spawn(vec![std::env::temp_dir()]);
     // docker stop / deploys send SIGTERM: stop accepting, finish in-flight
     // requests (compose stop_grace_period: 30 s) instead of dropping them.
