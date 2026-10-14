@@ -226,7 +226,7 @@ async fn scope_grants(pool: &PgPool, c: &CanonicalRelease) -> Result<Vec<ScopeGr
     type At = Option<chrono::DateTime<chrono::Utc>>;
     let rows: Vec<(Vec<String>, Vec<String>, At, At)> = sqlx::query_as(
         "SELECT territory_set, use_set, start_at, end_exclusive FROM rights.grant_atoms
-         WHERE org_id=$1 AND revoked_at IS NULL
+         WHERE org_id=$1 AND revoked_at IS NULL AND grant_class='DISTRIBUTION'
            AND ((target_kind='RELEASE' AND target_id=$2) OR (target_kind='TRACK' AND target_id=ANY($3)))",
     )
     .bind(c.org_id)
