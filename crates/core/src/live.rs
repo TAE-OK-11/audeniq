@@ -44,6 +44,20 @@ const OPENS_PER_WINDOW: i32 = 120;
 
 type LiveStream = Response;
 
+/// Set on SIGTERM: open streams end at their next tick so the API's graceful
+/// shutdown is not held open (up to [`MAX_LIFETIME`]) by idle tabs, and the
+/// requests still in flight finish before the container is killed.
+/// EventSource reconnects to the new instance on its own.
+static SHUTTING_DOWN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn begin_shutdown() {
+    SHUTTING_DOWN.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+fn shutting_down() -> bool {
+    SHUTTING_DOWN.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 fn event(name: &str, data: Value) -> Event {
     Event::default().event(name).data(data.to_string())
 }
@@ -124,7 +138,7 @@ pub async fn org_live(s: AppState, h: HeaderMap, org: Uuid) -> Result<LiveStream
         }
         loop {
             tokio::time::sleep(TICK).await;
-            if tx.is_closed() || started.elapsed() > MAX_LIFETIME {
+            if tx.is_closed() || started.elapsed() > MAX_LIFETIME || shutting_down() {
                 return;
             }
             if checked.elapsed() > RECHECK {
@@ -221,7 +235,7 @@ pub async fn staff_live(s: AppState, h: HeaderMap) -> Result<LiveStream> {
         }
         loop {
             tokio::time::sleep(TICK).await;
-            if tx.is_closed() || started.elapsed() > MAX_LIFETIME {
+            if tx.is_closed() || started.elapsed() > MAX_LIFETIME || shutting_down() {
                 return;
             }
             if checked.elapsed() > RECHECK {
