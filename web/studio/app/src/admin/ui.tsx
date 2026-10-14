@@ -47,6 +47,7 @@ export const DELIVERY_TABS = [
   { to: '/admin/dsps', label: '플랫폼별 조건' },
   { to: '/admin/dsp-ops', label: 'DSP 운영' },
   { to: '/admin/takedowns', label: '발매 중단 요청' },
+  { to: '/admin/claims', label: '권리침해 신고' },
 ];
 
 /** 업무 허브 — 업무함 · 업무 · 예외 처리 · 관계 관리 · SLA를 한 메뉴 안의 탭으로 */
