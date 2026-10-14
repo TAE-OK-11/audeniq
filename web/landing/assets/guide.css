@@ -195,6 +195,9 @@ main{overflow-x:clip}
 @media(prefers-reduced-motion:reduce){.motion-waiting{opacity:1;transform:none}}
 @media print{.motion-waiting{opacity:1!important;transform:none!important}}
 
+/* With JS the compact menu is closed from the first paint; without JS it stays open. */
+@media(max-width:900px){.js .site-header .menu-toggle[aria-expanded=false]~nav{display:none}}
+
 /* Keep the survey card's rounded bottom separate from the FAQ background. */
 .survey-section + .faq{margin-top:clamp(32px,5vw,64px)}
 
@@ -207,7 +210,7 @@ main{overflow-x:clip}
 .footer-social .social-links a:hover{color:var(--blue)}
 .survey-inner .survey-first-release{font-size:15px;line-height:1.8}
 
-.hero h1 .hero-service{display:block;font-size:15px;line-height:1.7;letter-spacing:.03em;font-weight:700;color:var(--blue);margin-bottom:22px}@media(max-width:680px){.hero h1 .hero-service{font-size:12px}}
+.hero h1 .hero-service{display:block;font-size:15px;line-height:1.7;letter-spacing:.03em;font-weight:700;color:var(--blue);margin-bottom:22px}@media(max-width:680px){.hero h1 .hero-service{font-size:12px}}.footer-languages{display:flex;flex-wrap:wrap;align-items:center;gap:0 16px;margin-top:14px;font-size:12px;color:var(--muted)}.footer-languages span{font-weight:650}.footer-languages a{padding:8px 0}.footer-languages a:hover,.footer-languages a[aria-current]{color:var(--blue)}
 /* Guide layouts extend the live homepage's font, color and component styles. */
 .guide-page{--section-space:96px}
 .guide-page main{overflow:visible}
@@ -321,3 +324,6 @@ main{overflow-x:clip}
 @media(max-width:359px){.guide-page .guide-hero{padding-inline:20px}.guide-page .guide-hero h1{font-size:29px}.guide-table{padding-inline:18px}.guide-table th{width:34%;padding-right:12px}}
 @media(prefers-reduced-motion:reduce){.guide-page *, .guide-page *::before, .guide-page *::after{scroll-behavior:auto;transition:none!important;animation:none!important}}
 @media print{.guide-page .mobile-menu{display:none}.guide-page .guide-hero{padding:24px}.guide-page .guide-contact{display:none}.guide-page .faq-list details>p{display:block}.guide-facts-layout,.guide-story-row{grid-template-columns:1fr;gap:24px}}
+.guide-related .service-no{color:#5C6A85}
+/* Text on the soft FAQ background keeps a 4.5:1 contrast ratio. */
+.guide-faq .eyebrow,.guide-faq p a{color:#3456C4}

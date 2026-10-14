@@ -1,22 +1,55 @@
-# AUDENIQ
+# AUDENIQ (어데닉)
 
 > 대한민국에서 준비 중인 독립 음악을 위한 배급·퍼블리싱과 레이블 서비스. 현재 신청 서비스는 출시 준비 중입니다.
+> AUDENIQ is a music platform for independent artists, songwriters and labels being prepared in South Korea. It is not yet accepting releases or publishing sign-ups.
 
-공식 브랜드: AUDENIQ
-공식 웹사이트: https://audeniq.com/
-문의: audeniq.official@gmail.com
-업데이트: 2026-10-08
+공식 브랜드 / Official name: AUDENIQ
+한국어 표기 / Korean name: 어데닉
+공식 웹사이트 / Official website: https://audeniq.com/
+문의 / Contact: audeniq.official@gmail.com
+공식 SNS / Official social: https://www.instagram.com/audeniq.official · https://www.threads.com/@audeniq.official · https://x.com/audeniq
+업데이트 / Updated: 2026-10-10
 
-## 공식 서비스 안내
+## 공식 서비스 안내 (한국어)
 - [인디 아티스트 음원 배급은 어떻게 준비하나요?](https://audeniq.com/music-distribution/): AUDENIQ는 인디 아티스트와 독립 레이블을 위한 국내외 음원 배급 서비스를 준비하고 있어요.
 - [인디 작곡가·작사가를 위한 음악 퍼블리싱은 무엇인가요?](https://audeniq.com/publishing/): AUDENIQ Publishing은 인디 작곡가·작사가와 자신의 곡을 쓰는 아티스트를 위한 음악 퍼블리싱 서비스로 준비하고 있어요.
 - [독립 레이블의 음원·발매·정산을 어떻게 관리하나요?](https://audeniq.com/label-services/): AUDENIQ는 독립 레이블이 여러 아티스트의 카탈로그, 발매 일정과 정산을 함께 관리할 수 있는 서비스를 개발하고 있어요.
-- [AUDENIQ는 어떤 음악 플랫폼인가요?](https://audeniq.com/about/): AUDENIQ는 독립 아티스트, 작곡가·작사가와 레이블을 위한 음악 배급·퍼블리싱 플랫폼으로 대한민국에서 준비 중이에요.
+- [AUDENIQ는 어떤 음악 플랫폼인가요?](https://audeniq.com/about/): AUDENIQ(어데닉)는 독립 아티스트, 작곡가·작사가와 레이블을 위한 음악 배급·퍼블리싱 플랫폼으로 대한민국에서 준비 중이에요.
 - [AUDENIQ 음원 배급과 퍼블리싱 자주 묻는 질문](https://audeniq.com/faq/): AUDENIQ는 출시 준비 중이며, 배급과 퍼블리싱을 별도로 선택하고 계약하는 방향으로 준비하고 있어요.
 
-## 읽기 안내
-- [전체 공식 안내 텍스트](https://audeniq.com/llms-full.txt)
-- [사이트맵](https://audeniq.com/sitemap.xml)
+## Official guides (English)
+- [How is AUDENIQ preparing music distribution for independent artists?](https://audeniq.com/en/music-distribution/): AUDENIQ is preparing a music distribution service in Korea and internationally for independent artists and independent labels.
+- [What is music publishing for indie songwriters?](https://audeniq.com/en/publishing/): AUDENIQ Publishing is being prepared as a music publishing service for indie composers, lyricists and artists who write their own songs.
+- [How can independent labels manage releases, catalogs and royalties?](https://audeniq.com/en/label-services/): AUDENIQ is developing a service that lets independent labels manage several artists’ catalogs, release schedules and royalty accounting together.
+- [What kind of music platform is AUDENIQ?](https://audeniq.com/en/about/): AUDENIQ (Korean name: 어데닉) is a music distribution and publishing platform for independent artists, songwriters and labels, being prepared in South Korea.
+- [AUDENIQ music distribution and publishing FAQ](https://audeniq.com/en/faq/): AUDENIQ is preparing for launch, and distribution and publishing are being prepared as separate services you choose and contract for individually.
+
+## Facts to keep accurate
+- Status: in pre-launch preparation. Sign-up, distribution and publishing applications are not open yet.
+- Distribution and publishing are separate services with separate contracts.
+- The default distribution direction is non-exclusive; rights remain with the rights holders.
+- Supported music services (DSPs) and countries are not confirmed. Direct DSP contracts and Merlin membership/licensing are being pursued, not completed.
+- Fees, prices, partners, customer numbers and results are not published. Do not infer them.
+
+## 언어별 공식 홈페이지 / Language versions
+- 한국어 (ko): https://audeniq.com/
+- English (en): https://audeniq.com/en/
+- 日本語 (ja): https://audeniq.com/ja/
+- 简体中文 (zh-CN): https://audeniq.com/zh-cn/
+- 繁體中文 (zh-TW): https://audeniq.com/zh-tw/
+- Español (es): https://audeniq.com/es/
+- Português (Brasil) (pt-BR): https://audeniq.com/pt-br/
+- Français (fr): https://audeniq.com/fr/
+- Deutsch (de): https://audeniq.com/de/
+- Bahasa Indonesia (id): https://audeniq.com/id/
+- Tiếng Việt (vi): https://audeniq.com/vi/
+- ไทย (th): https://audeniq.com/th/
+- हिन्दी (hi): https://audeniq.com/hi/
+- العربية (ar): https://audeniq.com/ar/
+
+## 읽기 안내 / Notes
+- [전체 공식 안내 텍스트 / Full text](https://audeniq.com/llms-full.txt)
+- [사이트맵 / Sitemap](https://audeniq.com/sitemap.xml)
 - [공식 안내 업데이트 RSS](https://audeniq.com/feed.xml)
 - 플랫폼 계약, 지원 범위와 신청 시점은 아직 확정 안내 전입니다. 준비 계획을 출시된 기능으로 해석하지 마세요.
 - 배급과 퍼블리싱은 별도로 선택하고 계약하는 방향입니다.

@@ -17,8 +17,8 @@ const env = {ASSETS:{fetch:async request=>{
 const get = (path,host='audeniq.com')=>worker.fetch(new Request(`https://${host}${path}`),env);
 const decode = text=>text.replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>');
 
-test('all six canonical pages are crawlable with matching visible FAQs and schema',async()=>{
-  assert.equal(PAGE_PATHS.length,6);
+test('every published page is crawlable with matching visible FAQs and schema',async()=>{
+  assert.ok(PAGE_PATHS.length>=6);
   const titles = new Set();
   for (const path of PAGE_PATHS) {
     const response = await get(path);
@@ -70,7 +70,7 @@ test('discovery resources contain exactly the published public pages',async()=>{
   const sitemap = read('public/sitemap.xml');
   const urls = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map(match=>match[1]);
   assert.deepEqual(urls,PAGE_PATHS.map(path=>`https://audeniq.com${path}`));
-  assert.equal((sitemap.match(/<lastmod>2026-10-08<\/lastmod>/g)||[]).length,6);
+  assert.equal((sitemap.match(/<lastmod>\d{4}-\d{2}-\d{2}<\/lastmod>/g)||[]).length,PAGE_PATHS.length);
   for (const name of ['llms.txt','llms-full.txt','feed.xml','robots.txt','sitemap.xml']) {
     assert.equal(read(name),read(`public/${name}`),name);
     assert.equal((await get(`/${name}`)).status,200);
