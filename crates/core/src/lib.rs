@@ -64,6 +64,7 @@ pub mod storage;
 pub mod submission;
 pub mod takedown;
 pub mod temp_sweep;
+pub mod territory;
 pub mod text_policy;
 pub mod transport;
 pub mod upload_safety;
