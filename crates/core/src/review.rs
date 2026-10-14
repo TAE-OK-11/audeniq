@@ -1695,8 +1695,12 @@ pub(crate) const RIGHTS_MONEY_CLASSES: &[&str] =
     &["S2_RIGHTS_SCOPE", "S2_DOCS_ORIGIN", "S2_SPECIAL_FLAGS"];
 
 /// True when forcing `proposed_status` on `check_code` needs a second person.
+/// Always false while two-person approval is switched off
+/// (`DUAL_APPROVAL_ENABLED`, see [`crate::config::dual_approval_enabled`]).
 pub fn needs_second_approver(check_code: &str, proposed_status: &str) -> bool {
-    proposed_status == "PASS" && !LOW_RISK_SELF_APPROVABLE.contains(&check_code)
+    crate::config::dual_approval_enabled()
+        && proposed_status == "PASS"
+        && !LOW_RISK_SELF_APPROVABLE.contains(&check_code)
 }
 
 #[derive(Deserialize)]

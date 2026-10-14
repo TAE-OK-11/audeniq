@@ -117,7 +117,7 @@ export function Takedowns() {
               </ul>
               {(t.status === 'PENDING' || t.status === 'APPROVED') && (
                 <div className="ui-field" style={{ marginTop: 12 }}>
-                  <label htmlFor={`td-note-${t.id}`}>{t.status === 'PENDING' ? '처리 메모 (반려하면 아티스트에게 보여요)' : '확인 메모 (내려감 기록 근거)'}</label>
+                  <label htmlFor={`td-note-${t.id}`}>{t.status === 'PENDING' ? <>처리 메모<span className="aq-optional">반려하면 아티스트에게 보여요</span></> : <>확인 메모<span className="aq-optional">내려감 기록 근거</span></>}</label>
                   <textarea id={`td-note-${t.id}`} rows={2} maxLength={1000} value={notes[t.id] ?? ''} onChange={e => setNotes(n => ({ ...n, [t.id]: e.target.value }))} />
                 </div>
               )}

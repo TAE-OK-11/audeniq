@@ -108,7 +108,7 @@ export function PitchCard({ releaseId }: { releaseId: string }) {
               <input id="pitchSimilar" className="ui-input" maxLength={200} value={f.similar_artists} onChange={set('similar_artists')} /></div>
           </div>
           <div className="ui-field">
-            <label htmlFor="pitchMkt">홍보 계획 <span className="muted">(선택)</span></label>
+            <label htmlFor="pitchMkt">홍보 계획<span className="aq-optional">선택</span></label>
             <textarea id="pitchMkt" rows={2} maxLength={1000} value={f.marketing} onChange={set('marketing')} placeholder="예: 뮤직비디오 공개, 라디오 출연" />
           </div>
           <div className="aq-confirm-actions">

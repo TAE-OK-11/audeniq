@@ -344,8 +344,11 @@ button.ui-row-title{width:100%;padding:0;border:0;background:none;font-family:in
 button.ui-row-title:hover{color:var(--aq-primary)}
 .ui-row-title{display:block;margin:0;font-size:15px;font-weight:var(--aq-fw-bold);line-height:1.4;letter-spacing:-.03em;color:inherit;overflow-wrap:anywhere}
 .ui-row-meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin-top:4px;font-size:12px;line-height:1.5;color:var(--aq-text-4)}
-/* 구분 점은 앞 항목 끝에 붙인다 — 줄이 바뀌어도 새 줄이 "·"로 시작하지 않게 */
-.ui-row-meta>span:not(:last-child)::after{content:"·";margin-left:10px;color:var(--aq-gray-300)}
+/* 구분 점은 항목 사이 틈에 둔다. 줄이 바뀌면 새 줄 맨 앞의 점은 왼쪽 여백 밖이라 잘려 보이지 않고,
+   앞 줄 끝에 점이 홀로 남지도 않는다 */
+.ui-row-meta{margin-left:-12px;padding-left:12px;clip-path:inset(-4px -4px -4px 12px)}
+.ui-row-meta>span{position:relative}
+.ui-row-meta>span+span::before{content:"";position:absolute;left:-6.5px;top:50%;width:3px;height:3px;margin-top:-1.5px;border-radius:50%;background:var(--aq-gray-300)}
 .ui-row-end{display:flex;flex-direction:column;align-items:flex-end;gap:6px;min-width:0}
 .ui-row-end small{font-size:var(--aq-fs-xs);font-weight:600;color:var(--aq-text-4);white-space:nowrap}
 /* 카드 안 목록 — 한 면 안에서 구분선으로 나눈다 (홈 '내 발매') */
@@ -766,3 +769,16 @@ summary::-webkit-details-marker{display:none}
 .aq-legal-sheet{padding:18px 18px 24px;max-height:calc(min(86dvh,900px) - 96px);overflow-y:auto;overscroll-behavior:contain}
 @media (max-width:600px){#modal.aq-legal-mode .modal-inner{width:100%;max-height:92dvh}.aq-legal-sheet{max-height:calc(92dvh - 90px);padding:16px 14px 22px}}
 #modal.aq-legal-mode{z-index:160!important}
+
+/* ---------- 묶음 입력 (fieldset · .ui-group) ----------
+   브라우저 기본 테두리와 테두리를 끊는 제목(legend)은 쓰지 않는다. 여러 칸을 한 묶음으로 보여 줄 때는
+   .ui-group(옅은 면 + 제목 + 한 줄 설명)을 쓴다. */
+fieldset{margin:0;padding:0;border:0;min-width:0}
+legend{padding:0}
+.ui-group{display:grid;margin:4px 0 18px;padding:18px 18px 2px;border-radius:var(--aq-r-xl);background:var(--aq-surface)}
+.ui-group>legend,.ui-group-title{float:left;width:100%;margin:0;font-size:var(--aq-fs-md);font-weight:700;color:var(--aq-text)}
+.ui-group-title+.ui-field-help,.ui-group>legend+.ui-field-help{clear:both;margin:4px 0 14px}
+.ui-group .ui-field:last-child{margin-bottom:16px}
+.ui-group :is(.ui-input,.ui-select,.ui-textarea,.aq-date-input,select,textarea,input:not([type=checkbox]):not([type=radio])){background:#fff}
+.ui-group :is(.ui-input,.ui-select,.ui-textarea,select,textarea,input:not([type=checkbox]):not([type=radio])):focus,.ui-group .aq-date-input[aria-expanded=true]{background:var(--aq-field-focus-bg,var(--aq-gray-100))}
+.aq-optional{margin-left:4px;color:var(--aq-text-4);font-weight:400}

@@ -7,6 +7,7 @@ import { errorMessage } from '../api/errors';
 import { MOCK } from '../lib/mode';
 import { useToast } from './Toast';
 import { useConfirm } from './Confirm';
+import { DateField } from './Picker';
 
 interface Term {
   end_date: string; reason: string; note: string; status: string; set_by_staff: boolean; transfer_to?: string | null;
@@ -113,7 +114,7 @@ export function TermCard({ releaseId }: { releaseId: string }) {
             </div>
             <div className="ui-field">
               <label htmlFor="termDate">종료일</label>
-              <input id="termDate" type="date" className="ui-input" min={min} value={date} onChange={e => setDate(e.target.value)} />
+              <DateField id="termDate" min={min} value={date} onChange={setDate} />
             </div>
           </div>
           {transfer && (
@@ -124,7 +125,7 @@ export function TermCard({ releaseId }: { releaseId: string }) {
             </div>
           )}
           <div className="ui-field">
-            <label htmlFor="termNote">메모 (선택)</label>
+            <label htmlFor="termNote">메모<span className="aq-optional">선택</span></label>
             <input id="termNote" className="ui-input" maxLength={1000} value={note} onChange={e => setNote(e.target.value)} placeholder="예: 샘플 사용 허락 기간 만료" />
           </div>
           <div className="aq-confirm-actions">

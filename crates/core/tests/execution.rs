@@ -32,6 +32,7 @@ async fn app(pool: PgPool) -> (Router, Arc<FileStore>) {
 }
 
 async fn app_with_dsp_gate(pool: PgPool, bypass: bool) -> (Router, Arc<FileStore>) {
+    audeniq_core::config::set_dual_approval(true);
     database::MIGRATOR.run(&pool).await.unwrap();
     let store = Arc::new(FileStore::default());
     let s = AppState::new(

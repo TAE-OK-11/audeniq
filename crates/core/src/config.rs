@@ -1,4 +1,5 @@
 use std::env;
+use std::sync::atomic::{AtomicU8, Ordering};
 
 fn optional_feature(value: Option<&str>) -> crate::error::Result<bool> {
     match value {
@@ -26,6 +27,27 @@ pub fn antivirus_enabled() -> crate::error::Result<bool> {
 pub fn staff_mfa_required() -> crate::error::Result<bool> {
     read_feature("STAFF_MFA_REQUIRED")
 }
+/// Two-person (maker-checker) approval: review overrides and staff review
+/// PASS on sensitive checks needing a second person, payout approver/executor
+/// separation, and work-doc self-approval. Off unless
+/// `DUAL_APPROVAL_ENABLED=true` — one authorised person decides alone and the
+/// decision is still audited. Read once; tests flip it with
+/// [`set_dual_approval`].
+static DUAL_APPROVAL: AtomicU8 = AtomicU8::new(0); // 0 = unread, 1 = off, 2 = on
+pub fn dual_approval_enabled() -> bool {
+    match DUAL_APPROVAL.load(Ordering::Relaxed) {
+        0 => {
+            let on = read_feature("DUAL_APPROVAL_ENABLED").unwrap_or(false);
+            DUAL_APPROVAL.store(if on { 2 } else { 1 }, Ordering::Relaxed);
+            on
+        }
+        v => v == 2,
+    }
+}
+/// Override the `DUAL_APPROVAL_ENABLED` switch for this process (tests, tools).
+pub fn set_dual_approval(on: bool) {
+    DUAL_APPROVAL.store(if on { 2 } else { 1 }, Ordering::Relaxed);
+}
 #[derive(Clone)]
 pub struct Config {
     pub database_url: String,
@@ -43,6 +65,7 @@ impl Config {
         kms_enabled()?;
         antivirus_enabled()?;
         staff_mfa_required()?;
+        read_feature("DUAL_APPROVAL_ENABLED")?;
         let mode = env::var("APP_ENV").unwrap_or_else(|_| "development".into());
         anyhow::ensure!(
             matches!(mode.as_str(), "development" | "test" | "production"),

@@ -97,6 +97,7 @@ async fn app(pool: PgPool) -> (Router, Arc<MockStore>) {
     app_with_parser_slots(pool, 1).await
 }
 async fn app_with_parser_slots(pool: PgPool, parser_slots: usize) -> (Router, Arc<MockStore>) {
+    audeniq_core::config::set_dual_approval(true);
     database::MIGRATOR.run(&pool).await.unwrap();
     let store = Arc::new(MockStore::default());
     let mut s = AppState::new(

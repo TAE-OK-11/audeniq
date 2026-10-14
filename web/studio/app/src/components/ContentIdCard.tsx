@@ -25,7 +25,7 @@ export function ContentIdCard({ releaseId }: { releaseId: string }) {
         <p className="small">소유권 주장 제외 채널: {st.allowlisted_channels.map(c => c.replace(/^https:\/\/(www\.)?/, '')).join(', ')}</p>
       )}
       {st.note && <p className="small muted">{st.note}</p>}
-      <p className="small"><Link to="/platform-requests?tab=content_id">채널 제외·소유권 주장 해제·이의제기 요청하기</Link></p>
+      <p className="small"><Link to={`/inquiries?new=request&group=content_id&release=${encodeURIComponent(releaseId)}`}>Content ID 요청하기</Link></p>
     </section>
   );
 }

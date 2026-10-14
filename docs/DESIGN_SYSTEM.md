@@ -23,7 +23,8 @@
 9. 글자 단계: 크기는 11 · 12 · 13 · 14 · 15 · 16 · 18 · 22px와 큰 제목(`--aq-fs-h1` 28–36, `--aq-fs-display` 30–40)만 씁니다(`--aq-fs-2xs`~`--aq-fs-title-lg`). 굵기는 400(본문) · 600(보조) · 700(제목·버튼) · 800(숫자·큰 제목) 네 가지뿐입니다. 글자 회색은 `--aq-text` · `--aq-text-2` · `--aq-text-3` · `--aq-text-4` · `--aq-text-disabled` 다섯 단계만 쓰고, 회색 hex나 `--aq-gray-*`를 글자색으로 직접 쓰지 않아요. 카드 제목(h2)은 18px/700, 페이지 제목(h1)은 `--aq-fs-h1`입니다.
 10. 라벨은 한글로 씁니다. 페이지 위 작은 분류 글자(eyebrow), 관리자 메뉴 묶음 이름, 단계 이름 모두 한글이고 영어 대문자 라벨(MONTHLY REPORT 등)은 쓰지 않아요. 고유명사(Spotify, UPC/EAN, ISRC)만 예외입니다.
 11. 선택 상자와 날짜는 기기 기본 팝업(iOS 휠·안드로이드 목록·기본 달력)을 쓰지 않습니다. 앱 루트의 `<SelectHost/>`가 모든 `<select>`를 AUDENIQ 선택 시트로 열고(휴대폰은 아래에서 올라오는 시트, 넓은 화면은 칸 아래 작은 창), 날짜·시간은 `components/Picker.tsx`의 `<DateField>`(날짜) · `<DateTimeField>`(날짜+시간) · `<TimeField>`(시간) · `<MonthField>`(달)을 씁니다. `<input type="date|datetime-local|time|month">`는 새로 쓰지 않아요. 기본 팝업이 꼭 필요한 곳만 조상에 `data-native-select`를 붙입니다.
-12. 새 역할이 생기면 화면 CSS에 만들지 말고 `ui.css` + `src/ui`에 더하고 견본 화면에 올립니다.
+12. 여러 입력칸을 한 묶음으로 보일 때는 `fieldset.ui-group`을 씁니다. 브라우저 기본 fieldset 테두리·legend 선은 쓰지 않아요(전역 초기화). 선택 칸은 라벨에 `(선택)`을 붙이지 않고 `<span className="aq-optional">선택</span>`, '비우면 …' 같은 규칙은 라벨 괄호가 아니라 칸 아래 도움말(`<small>`)로 씁니다.
+13. 새 역할이 생기면 화면 CSS에 만들지 말고 `ui.css` + `src/ui`에 더하고 견본 화면에 올립니다.
 
 ## 컴포넌트
 | 역할 | React | 클래스 |
@@ -41,6 +42,7 @@
 | 아바타 · 커버 · 아이콘 칸 | `Avatar`, `Cover`, `IconTile` | `ui-avatar`, `ui-cover`, `ui-icon` |
 | 입력칸 | `Field` | `ui-input`, `ui-select`, `ui-textarea`, `ui-field` (`.ui-form-lg` 안은 56px) |
 | 선택 줄 · 체크 줄 | — | `ui-choice`, `ui-check(is-plain)` |
+| 입력 묶음 | — | `fieldset.ui-group` + `legend` + `.ui-field-help` (옅은 면 · 안쪽 칸은 흰색) |
 | 알림 상자 · 빈 상태 · 로딩 | `Callout`, `EmptyState`, `SkeletonList` | `ui-callout`, `ui-empty`, `ui-skel-rows` |
 | 타임라인 · 항목/값 | `KeyValue` | `ui-timeline`, `ui-kv` |
 

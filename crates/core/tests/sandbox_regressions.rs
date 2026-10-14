@@ -202,6 +202,7 @@ async fn env(owner: PgPool) -> Env {
     let api_pool = role_pool(&owner, "audeniq_api").await;
     let worker = role_pool(&owner, "audeniq_worker").await;
     let store = Arc::new(MemStore::default());
+    audeniq_core::config::set_dual_approval(true);
     let state = AppState::new(
         api_pool,
         Config {

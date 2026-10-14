@@ -44,7 +44,7 @@ function Resolve({ item, ignore, onDone }: { item: ExceptionItem; ignore: boolea
   return (
     <form onSubmit={submit}>
       <div className="ui-field">
-        <label htmlFor="exNote">{ignore ? '무시하는 이유' : '처리 내용 (선택)'} {ignore && <span className="required">*</span>}</label>
+        <label htmlFor="exNote">{ignore ? '무시하는 이유' : <>처리 내용<span className="aq-optional">선택</span></>} {ignore && <span className="required">*</span>}</label>
         <textarea id="exNote" data-autofocus className="ui-textarea" rows={4} maxLength={1000} value={note} onChange={e => setNote(e.target.value)}
           placeholder={ignore ? '예: 테스트 패키지라 전송하지 않아요.' : '예: 메타데이터를 고친 뒤 재검사해서 통과했어요.'} />
       </div>
@@ -106,7 +106,7 @@ function Report({ onDone }: { onDone: () => void }) {
         <textarea id="rpDetail" className="ui-textarea" rows={4} maxLength={4000} value={detail} onChange={e => setDetail(e.target.value)} />
       </div>
       <div className="ui-field">
-        <span className="ui-field-label">연결 대상 (선택)</span>
+        <span className="ui-field-label">연결 대상<span className="aq-optional">선택</span></span>
         {entity ? (
           <div className="adm-w-related">
             <span className="adm-w-ref"><span><span className="adm-w-related-kind">{ENTITY_KIND[entity.kind].label}</span>{entity.label ?? entity.id}</span>

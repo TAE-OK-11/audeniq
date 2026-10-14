@@ -14,6 +14,7 @@ import { AGREEMENTS, OPTION_LABELS, displayCode, hashLabel, legacyApplication, s
 import { docsForRelease, useDocs } from '../store/docs';
 import { PROFILE_LINKS } from '../lib/dsp';
 import { CheckIcon } from '../components/Check';
+import { Badge } from '../ui';
 import { Glyph } from '../components/Glyph';
 import { rereleaseSummary } from '../lib/rerelease';
 import { territorySummary } from '../lib/territories';
@@ -243,9 +244,9 @@ export function Application() {
             <span>문서 확인 코드 (SHA-256)</span>
             <code>{hashLabel(app.hash)}</code>
           </div>
-          <span className={`aq-paper-integrity is-${integrity}`}>
-            {integrity === 'ok' ? '접수 원본과 일치' : integrity === 'changed' ? '접수 후 내용이 바뀌었어요' : integrity === 'legacy' ? '기존 접수 건 · 현재 내용 기준' : '원본 확인 중'}
-          </span>
+          <Badge tone={integrity === 'ok' ? 'green' : integrity === 'changed' ? 'red' : 'gray'} className="aq-paper-integrity">
+            {integrity === 'ok' ? '접수 원본과 일치' : integrity === 'changed' ? '접수 후 내용이 바뀌었어요' : integrity === 'legacy' ? '기존 접수 건' : '원본 확인 중'}
+          </Badge>
           <p>{issued
             ? '이 신청서는 AUDENIQ STUDIO에서 전자서명으로 작성됐어요. 문서 확인 코드는 신청 내용과 서명으로 계산돼, 내용이 바뀌면 달라져요.'
             : '이 신청서는 기존 접수 기록으로 다시 발급됐어요. 문서 확인 코드는 현재 발매 정보 기준이에요.'}</p>

@@ -1,6 +1,5 @@
 // 정산·지급 — hero + 탭 구조의 단순화된 레이아웃
 import { SplitsReceived } from '../components/SplitsReceived';
-import { Link } from '../lib/router';
 import { useState } from 'react';
 import { Modal, useModalClose } from '../components/Modal';
 import { useToast } from '../components/Toast';
@@ -72,7 +71,7 @@ function StatementForm({ onSave }: { onSave: (s: { period: string; platform: str
         {amount && <p className="ui-field-help">{money(Number(amount))}</p>}
       </div>
       <div className="ui-field">
-        <label htmlFor="stNote">메모 (선택)</label>
+        <label htmlFor="stNote">메모<span className="aq-optional">선택</span></label>
         <input id="stNote" maxLength={200} value={note} onChange={e => setNote(e.target.value)} placeholder="정산서 번호 등" />
       </div>
       <div className="aq-sticky-foot">
@@ -242,9 +241,7 @@ export function Settlement() {
     <div id="view-settlement" className="view">
       <div className="ui-page-head">
         <div>
-          <p className="eyebrow">내 작업실</p>
           <h1>정산·지급</h1>
-          <p>확정된 정산 금액과 지급 요청 내역을 확인해 보세요. <Link to="/terms/settlement" className="aq-inline-link">정산 약관 보기</Link></p>
         </div>
       </div>
 
@@ -432,7 +429,7 @@ export function Settlement() {
                 <span className="studio-account-check" aria-label="선택된 수령 계좌"><CheckIcon size={12} /></span>
               </div>
               {MOCK && <div className="ui-field">
-                <label htmlFor="pNote">메모 (선택)</label>
+                <label htmlFor="pNote">메모<span className="aq-optional">선택</span></label>
                 <input
                   id="pNote" maxLength={200} placeholder="필요한 내용을 남겨 주세요"
                   value={payoutNote} onChange={e => setPayoutNote(e.target.value)}

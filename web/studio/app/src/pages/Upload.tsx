@@ -578,7 +578,7 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
         <h3>신속 발매 요청</h3>
         <p className="aq-option-intro">신속 발매는 가능 여부와 조건을 확인한 뒤 진행해요. 특정 발매일이나 플랫폼 송출을 보장하지 않아요.</p>
         <div className="ui-field">
-          <label htmlFor="aqExpressReason">신속 발매가 필요한 이유 (선택)</label>
+          <label htmlFor="aqExpressReason">신속 발매가 필요한 이유<span className="aq-optional">선택</span></label>
           <ChipPicker
             id="aqExpressReason" single list options={EXPRESS_REASONS} value={expressPick}
             onChange={v => { setExpressOther(v[0] === OTHER); setOpt('expressReason', v[0] && v[0] !== OTHER ? v[0] : ''); }}
@@ -874,7 +874,7 @@ function OptionsSection({ form, set, group, onDocument, uploads, onElectronic, o
           />
         </div>
         <div className="ui-field">
-          <label htmlFor="aqAiTools">사용한 도구 <small className="muted">(선택)</small></label>
+          <label htmlFor="aqAiTools">사용한 도구<span className="aq-optional">선택</span></label>
           <ChipPicker
             id="aqAiTools" options={AI_TOOLS} value={o.aiTools ?? []} onChange={v => setAi({ aiTools: v })}
             other={o.aiToolOther ?? ''} onOther={v => setAi({ aiToolOther: v })} otherPlaceholder="도구 이름"
@@ -1810,7 +1810,8 @@ export function Upload() {
     setReached(r => Math.max(r, to));
     setError('');
     setSubmitError('');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    // 부드러운 스크롤은 새 단계가 나타나는 동안 화면을 끌고 다녀 버벅여 보이므로 바로 맨 위로
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
   };
 
   const submit = async () => {
@@ -2393,20 +2394,20 @@ export function Upload() {
                 <input id="f-upc" inputMode="numeric" value={form.upc} onChange={e => set('upc', e.target.value.replace(/\D/g, '').slice(0, 13))} maxLength={13} placeholder="없으면 자동 발급돼요" />
               </div>
             </div>
-            <h2 className="subhead">사전 공개·예약 판매 <span className="muted small">(선택)</span></h2>
+            <h2 className="subhead">사전 공개·예약 판매<span className="aq-optional">선택</span></h2>
             <div className="form-grid">
               <div className="ui-field">
                 <label htmlFor="f-preorder">사전 공개 시작일</label>
-                <input id="f-preorder" type="date" className="ui-input" value={form.preorderStart}
+                <DateField id="f-preorder" value={form.preorderStart}
                   min={form.releaseDate ? shiftDate(form.releaseDate, -90) : undefined}
                   max={form.releaseDate ? shiftDate(form.releaseDate, -1) : undefined}
-                  onChange={e => set('preorderStart', e.target.value)} />
+                  onChange={v => set('preorderStart', v)} />
                 <small className="ui-field-help">이 날부터 플랫폼에 발매 예정 페이지·트랙 목록·커버·미리듣기가 열리고(사전 저장), 다운로드 스토어는 예약 판매를 받아요. 발매일 1–90일 전으로 골라 주세요.</small>
               </div>
             </div>
             {form.tracks.some(t => t.title.trim()) && (
               <div className="aq-preview-starts">
-                <p className="ui-field-help">곡별 미리듣기·숏폼 클립 시작 지점 (비우면 플랫폼이 정해요). 예: 1:05</p>
+                <p className="ui-field-help">곡별 미리듣기·숏폼 클립 시작 지점. 비우면 플랫폼이 정해요.</p>
                 {form.tracks.filter(t => t.title.trim()).map((t, i) => (
                   <label key={t.id} className="aq-preview-row">
                     <span>{i + 1}. {t.title}</span>
