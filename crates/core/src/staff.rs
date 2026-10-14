@@ -211,7 +211,10 @@ pub async fn me(s: &AppState, h: &HeaderMap) -> Result<Value> {
     .filter(|(d, _)| st.role.may(*d))
     .map(|(_, n)| n)
     .collect();
-    Ok(json!({"user_id": st.actor.user, "role": st.role.as_str(), "duties": duties}))
+    Ok(json!({
+        "user_id": st.actor.user, "role": st.role.as_str(), "duties": duties,
+        "dual_approval": crate::config::dual_approval_enabled(),
+    }))
 }
 
 /// `r` (catalog.releases) waits on a staff decision in 발매 심사: parked by
@@ -819,9 +822,11 @@ pub struct DecisionInput {
 /// Needs a second staff reviewer to PASS: the same rule as member overrides
 /// (docs/REVIEW_OVERRIDES.md) — every PASS except the low-risk codes, so a
 /// duplicate master, fingerprint match, protected name or rights class is
-/// never cleared by one person — plus anything BLOCKED.
+/// never cleared by one person — plus anything BLOCKED. Nothing is, while
+/// two-person approval is switched off (`DUAL_APPROVAL_ENABLED`).
 fn sensitive(c: &OpenCheck) -> bool {
-    c.status == "BLOCKED" || review::needs_second_approver(&c.code, "PASS")
+    crate::config::dual_approval_enabled()
+        && (c.status == "BLOCKED" || review::needs_second_approver(&c.code, "PASS"))
 }
 
 /// Lock the release on the revision the reviewer looked at: (org, status).
@@ -1694,7 +1699,8 @@ pub async fn decide_second_approval(
         tx.commit().await?;
         return Ok(json!({"result": "DECLINED"}));
     }
-    if requester == user {
+    // A request filed before the switch went off may be closed by anyone.
+    if requester == user && crate::config::dual_approval_enabled() {
         return Err(Error::PolicyGate("SECOND_APPROVER_MUST_DIFFER"));
     }
     let reason: String = a.get("reason");
@@ -3175,6 +3181,12 @@ mod tests {
             status: status.into(),
             detail: String::new(),
         };
+        // Switched off (the default): one reviewer decides everything.
+        crate::config::set_dual_approval(false);
+        assert!(!sensitive(&c("S2_RIGHTS_SCOPE", "REVIEW_REQUIRED")));
+        assert!(!sensitive(&c("S2_META_CREDITS", "BLOCKED")));
+        assert!(!review::needs_second_approver("S2_RIGHTS_SCOPE", "PASS"));
+        crate::config::set_dual_approval(true);
         assert!(sensitive(&c("S2_RIGHTS_SCOPE", "REVIEW_REQUIRED")));
         assert!(sensitive(&c("S2_INTEGRITY_DUP", "REVIEW_REQUIRED")));
         assert!(sensitive(&c(

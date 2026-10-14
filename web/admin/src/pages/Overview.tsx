@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useNavigate } from '../lib/router';
 import { Icon } from '../AdminApp';
 import { DUTY_LABEL, ROLE_LABEL } from '../labels';
-import { CountUp, PageHeader, useStaff } from '../staffUi';
+import { CountUp, PageHeader, useDualApproval, useStaff } from '../staffUi';
 import type { Overview } from '../api/staff';
 import { IconTile, StatGrid, StatTile } from '../ui';
 
@@ -21,6 +21,7 @@ const TILES: Tile[] = [
 export function OverviewPage() {
   const nav = useNavigate();
   const { me, counts, refreshCounts } = useStaff();
+  const dual = useDualApproval();
   useEffect(refreshCounts, [refreshCounts]);
 
   const urgent = counts ? counts.review + counts.second_approvals + counts.inquiries + counts.documents : 0;
@@ -44,7 +45,7 @@ export function OverviewPage() {
       </div>
 
       <StatGrid>
-        {TILES.map(t => {
+        {TILES.filter(t => dual || t.key !== 'second_approvals').map(t => {
           const n = counts ? Number(counts[t.key] ?? 0) : null;
           return (
             <StatTile

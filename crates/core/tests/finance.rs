@@ -22,6 +22,7 @@ fn dec(s: &str) -> Decimal {
 }
 
 async fn org(pool: &PgPool) -> Uuid {
+    audeniq_core::config::set_dual_approval(true);
     database::MIGRATOR.run(pool).await.unwrap();
     let id = Uuid::new_v4();
     sqlx::query("INSERT INTO identity.orgs(id,name,kind) VALUES($1,'fin-test','LABEL')")

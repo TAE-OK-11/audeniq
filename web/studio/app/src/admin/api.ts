@@ -9,7 +9,7 @@ import { MOCK } from '../lib/mode';
 export type StaffRole = 'ADMIN' | 'REVIEWER' | 'OPERATOR' | 'SUPPORT';
 export type Duty = 'REVIEW' | 'DOCUMENTS' | 'INQUIRIES' | 'DELIVERY';
 
-export interface StaffMe { user_id: string; role: StaffRole; duties: Duty[] }
+export interface StaffMe { user_id: string; role: StaffRole; duties: Duty[]; /** 서버 DUAL_APPROVAL_ENABLED — 꺼져 있으면 2차 승인 없이 한 사람이 처리 */ dual_approval?: boolean }
 
 export interface Overview {
   review: number; correction: number; in_pipeline: number; second_approvals: number;

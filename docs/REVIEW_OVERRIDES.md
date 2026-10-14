@@ -8,6 +8,24 @@ account as a member without its consent and pass that account's id as
 could also self-PASS ordinary review codes, and overrides never re-ran Stage 2,
 so releases stayed in `STAGE2_REVIEW` anyway.
 
+## Switch: `DUAL_APPROVAL_ENABLED` (default off)
+
+Two-person approval is **off** unless the API/worker run with
+`DUAL_APPROVAL_ENABLED=true` (`crates/core/src/config.rs`). While it is off:
+
+- `needs_second_approver` is always false: an OWNER applies any PASS override
+  alone (EDITORs still can't PASS; rights/money classes still need an OWNER).
+  Every override is still audited.
+- Staff 발매 심사 APPROVE applies directly — no `rights.staff_approvals`
+  request — and a request left over from before can be closed by anyone.
+- Payouts: the creator may approve, and the approver may record the transfer.
+- Work docs: the requester may approve their own review request.
+- `GET /api/staff/me` returns `"dual_approval": false`, and the admin hides
+  the 2차 승인 menu.
+
+The rest of this document describes the rules with the switch **on**; the
+test suites run with it on (`config::set_dual_approval(true)`).
+
 ## Rules
 
 Overrides never change `operations.check_results`; they are append-only rows
