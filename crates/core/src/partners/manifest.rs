@@ -130,6 +130,8 @@ pub fn release_json(
         "territories": p.territories,
         // Simultaneous release time (KST "HH:MM"), null = local midnight.
         "release_time_kst": p.release_time,
+        // Pre-release start (pre-save, previews, pre-orders), null = none.
+        "preorder_start": p.preorder_start,
         "cover": file_for(&p.artwork.sha256, FileRole::Artwork),
         "tracks": tracks,
     });

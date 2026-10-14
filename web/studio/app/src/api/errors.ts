@@ -193,6 +193,8 @@ const CODE_MESSAGES: Record<string, string> = {
   PITCH_STATUS_INVALID: '바꿀 수 없는 상태예요.',
   PITCH_PLATFORMS_REQUIRED: '전달한 플랫폼을 하나 이상 골라 주세요.',
   PITCH_RESULT_REQUIRED: '선정된 플레이리스트를 적어 주세요.',
+  PREORDER_START_INVALID: '사전 공개 시작일은 발매일 1–90일 전으로 골라 주세요.',
+  PREVIEW_START_INVALID: '미리듣기 시작점을 다시 확인해 주세요. (예: 1:05)',
   RELEASE_TIME_INVALID: '발매 시각을 다시 골라 주세요.',
   // 스마트링크
   SMART_LINK_URL_INVALID: '그 플랫폼의 https 주소만 넣을 수 있어요. 앱에서 공유한 앨범 링크를 붙여 넣어 주세요.',
