@@ -125,7 +125,8 @@ pub async fn status(s: &AppState, a: &Actor, org: Uuid, release: Uuid) -> Result
     .bind(release)
     .fetch_optional(&mut *tx)
     .await?;
-    let mut stats = json!({"views": 0, "clicks": {}, "days": STATS_DAYS});
+    let mut stats =
+        json!({"views": 0, "clicks": {}, "days": STATS_DAYS, "alerts": 0, "alerts_waiting": 0});
     if let Some(l) = &link {
         let rows = sqlx::query(
             "SELECT platform, sum(count)::bigint AS n FROM portal.smart_link_stats
@@ -146,6 +147,15 @@ pub async fn status(s: &AppState, a: &Actor, org: Uuid, release: Uuid) -> Result
             }
         }
         stats["clicks"] = Value::Object(clicks);
+        // Release alert sign-ups (all time) and how many still wait.
+        let (alerts, waiting): (i64, i64) = sqlx::query_as(
+            "SELECT count(*), count(*) FILTER (WHERE status='PENDING') FROM portal.release_alerts WHERE link_id=$1",
+        )
+        .bind(l.get::<Uuid, _>("id"))
+        .fetch_one(&mut *tx)
+        .await?;
+        stats["alerts"] = json!(alerts);
+        stats["alerts_waiting"] = json!(waiting);
     }
     tx.commit().await?;
     Ok(json!({
@@ -258,23 +268,39 @@ pub async fn save(
 // ---------------------------------------------------------------------------
 
 /// The visible link behind `slug`: (link id, org, release, artwork, links).
-async fn visible(s: &AppState, slug: &str) -> Result<sqlx::postgres::PgRow> {
+pub(crate) async fn visible(s: &AppState, slug: &str) -> Result<sqlx::postgres::PgRow> {
     if !valid_slug(slug) {
         return Err(Error::NotFound);
     }
-    sqlx::query(
-        "SELECT l.id, l.org_id, l.links, r.title, r.draft->>'artist' AS artist, r.draft->>'release_date' AS release_date,
+    visible_where(&s.pool, "l.slug=$1", slug).await
+}
+
+/// The visible link with id `link` (release alerts check it before sending).
+pub(crate) async fn visible_by_id(
+    pool: &sqlx::PgPool,
+    link: Uuid,
+) -> Result<sqlx::postgres::PgRow> {
+    visible_where(pool, "l.id=$1::uuid", &link.to_string()).await
+}
+
+async fn visible_where(
+    pool: &sqlx::PgPool,
+    key: &'static str,
+    value: &str,
+) -> Result<sqlx::postgres::PgRow> {
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "SELECT l.id, l.slug, l.org_id, l.links, r.title, r.draft->>'artist' AS artist, r.draft->>'release_date' AS release_date,
                 r.artwork_asset_id
            FROM portal.smart_links l
            JOIN catalog.releases r ON r.id=l.release_id AND r.org_id=l.org_id
-          WHERE l.slug=$1 AND l.enabled AND r.archived_at IS NULL AND NOT (r.status = ANY($2))
+          WHERE {key} AND l.enabled AND r.archived_at IS NULL AND NOT (r.status = ANY($2))
             AND NOT EXISTS (SELECT 1 FROM portal.takedown_requests t WHERE t.release_id=r.id AND t.status='APPROVED')
             AND NOT EXISTS (SELECT 1 FROM portal.infringement_claims c WHERE c.release_id=r.id
-                             AND c.status IN ('SUSPENDED','COUNTER_NOTICED','UPHELD'))",
-    )
-    .bind(slug)
+                             AND c.status IN ('SUSPENDED','COUNTER_NOTICED','UPHELD'))"
+    )))
+    .bind(value)
     .bind(HIDDEN_STATES.iter().map(|v| v.to_string()).collect::<Vec<_>>())
-    .fetch_optional(&s.pool)
+    .fetch_optional(pool)
     .await?
     .ok_or(Error::NotFound)
 }

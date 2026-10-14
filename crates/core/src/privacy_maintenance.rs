@@ -187,6 +187,14 @@ const TARGETS: &[Target] = &[
             sealed_only(Field::ClaimantPhone, "claimant_phone_cipher"),
         ],
     },
+    // Release alerts (0118): fan addresses, sealed until sent then erased.
+    Target {
+        name: "portal.release_alerts",
+        table: "portal.release_alerts",
+        id: "id",
+        subject: "id",
+        columns: &[sealed_only(Field::ReleaseAlertEmail, "email_cipher")],
+    },
     Target {
         name: "identity.users",
         table: "identity.users",
