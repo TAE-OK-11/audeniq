@@ -117,6 +117,10 @@ pub fn router(s: AppState) -> Router {
         .route("/api/orgs/{org}/uploads/{id}", get(upload_status))
         .route("/api/orgs/{org}/uploads/{id}/cancel", post(cancel_upload))
         .route("/api/orgs/{org}/uploads/{id}/complete", post(complete))
+        .route(
+            "/api/orgs/{org}/uploads/{id}/parts",
+            get(upload_parts).post(upload_part_urls),
+        )
         .route("/api/orgs/{org}/assets/{id}", get(asset))
         .route("/api/orgs/{org}/assets/{id}/checks", get(asset_checks))
         .route("/api/orgs/{org}/assets/{id}/image", get(asset_image))
@@ -918,6 +922,23 @@ async fn upload_status(
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
     Ok(Json(uploads::status(&s, &a, org, id).await?))
+}
+async fn upload_parts(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    Ok(Json(uploads::stored_parts(&s, &a, org, id).await?))
+}
+async fn upload_part_urls(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+    Json(i): Json<uploads::PartsInput>,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, true).await?;
+    Ok(Json(uploads::part_urls(&s, &a, org, id, i).await?))
 }
 async fn cancel_upload(
     State(s): State<AppState>,
