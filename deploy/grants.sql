@@ -60,6 +60,8 @@ GRANT SELECT,INSERT ON portal.signing_events TO audeniq_api;
 GRANT SELECT,INSERT,UPDATE ON portal.takedown_requests TO audeniq_api;
 -- 권리침해 신고 (0114): 누구나 접수, 스태프 처리, 아티스트 소명
 GRANT SELECT,INSERT,UPDATE ON portal.infringement_claims TO audeniq_api;
+-- 플레이리스트 피칭 (0116): 아티스트 접수·철회, 스태프 진행 기록
+GRANT SELECT,INSERT,UPDATE ON portal.playlist_pitches TO audeniq_api;
 -- 발매 후 정보 수정 (0115): 크레딧·장르만. 승인되면 수정 메시지 작업을 넣는다
 GRANT SELECT,INSERT,UPDATE ON portal.metadata_corrections TO audeniq_api;
 GRANT USAGE ON SCHEMA portal TO audeniq_worker;

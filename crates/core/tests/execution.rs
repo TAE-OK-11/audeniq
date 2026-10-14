@@ -4997,3 +4997,180 @@ async fn metadata_correction_after_delivery_updates_platforms(pool: PgPool) {
     assert_eq!(st["request"]["status"], "DECLINED");
     assert_eq!(st["can_request"], true);
 }
+
+/// Playlist pitching: the artist pitches one track of a submitted release at
+/// least a week ahead, staff forward it to platform editors and record the
+/// outcome, and each step notifies the org.
+#[sqlx::test]
+async fn playlist_pitch_goes_from_artist_to_editors(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let path = format!("/api/orgs/{}/releases/{}/pitch", ctx.org, ctx.release);
+    let track: Uuid =
+        sqlx::query_scalar("SELECT id FROM catalog.tracks WHERE release_id=$1 LIMIT 1")
+            .bind(ctx.release)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let set_date = |days: i64| {
+        let pool = pool.clone();
+        let release = ctx.release;
+        async move {
+            let d =
+                (chrono::Utc::now() + chrono::Duration::hours(9) + chrono::Duration::days(days))
+                    .date_naive()
+                    .to_string();
+            sqlx::query("UPDATE catalog.releases SET draft = jsonb_set(draft, '{release_date}', to_jsonb($2::text)), row_version = row_version + 1 WHERE id=$1")
+                .bind(release)
+                .bind(d)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+    };
+    let body = json!({"track_id": track, "description": "새벽 감성의 로파이 힙합, 잔잔한 피아노와 빗소리가 어우러진 곡이에요.",
+                      "genres": "Lo-fi, Hip-hop", "moods": "차분함", "similar_artists": "Nujabes"});
+
+    set_date(3).await;
+    let (_, st) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(st["can_pitch"], false, "{st}");
+    let (_, v) = call(&ctx.app, "POST", &path, body.clone(), Some(&ctx.user)).await;
+    assert_eq!(v["error"]["code"], "PITCH_TOO_LATE", "{v}");
+
+    set_date(21).await;
+    let (_, st) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(st["can_pitch"], true, "{st}");
+    assert_eq!(st["tracks"][0]["id"], track.to_string().as_str(), "{st}");
+    let mut short = body.clone();
+    short["description"] = json!("짧아요");
+    let (_, v) = call(&ctx.app, "POST", &path, short, Some(&ctx.user)).await;
+    assert_eq!(v["error"]["code"], "PITCH_INVALID", "{v}");
+    let mut foreign = body.clone();
+    foreign["track_id"] = json!(Uuid::new_v4());
+    let (_, v) = call(&ctx.app, "POST", &path, foreign, Some(&ctx.user)).await;
+    assert_eq!(v["error"]["code"], "PITCH_INVALID", "{v}");
+
+    // Submit, withdraw, submit again; a second open pitch is refused.
+    let (s, v) = call(&ctx.app, "POST", &path, body.clone(), Some(&ctx.user)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (_, v) = call(&ctx.app, "POST", &path, body.clone(), Some(&ctx.user)).await;
+    assert_eq!(v["error"]["code"], "PITCH_ALREADY_SUBMITTED", "{v}");
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &format!("{path}/withdraw"),
+        json!({}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (s, v) = call(&ctx.app, "POST", &path, body.clone(), Some(&ctx.user)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let id = v["id"].as_str().unwrap().to_string();
+    let (_, st) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(st["pitch"]["status"], "SUBMITTED");
+    assert_eq!(st["can_pitch"], false);
+
+    // Only staff with the delivery duty work the queue.
+    let reviewer = staff_user(&ctx.app, &pool, "REVIEWER").await;
+    let (s, _) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/pitches",
+        Value::Null,
+        Some(&reviewer),
+    )
+    .await;
+    assert_ne!(s, StatusCode::OK);
+    let op = staff_user(&ctx.app, &pool, "OPERATOR").await;
+    let (_, list) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/pitches",
+        Value::Null,
+        Some(&op),
+    )
+    .await;
+    assert_eq!(list["items"].as_array().unwrap().len(), 1, "{list}");
+    assert_eq!(list["items"][0]["id"], id.as_str());
+    let to = |status: &str, extra: Value| {
+        let mut b = json!({"status": status});
+        b.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        b
+    };
+    let st_path = format!("/api/staff/pitches/{id}/status");
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &st_path,
+        to("PITCHED", json!({})),
+        Some(&op),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "PITCH_PLATFORMS_REQUIRED", "{v}");
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &st_path,
+        to("SELECTED", json!({"result": "x"})),
+        Some(&op),
+    )
+    .await;
+    assert_eq!(
+        s,
+        StatusCode::CONFLICT,
+        "only a pitched one can be selected"
+    );
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &st_path,
+        to("PITCHED", json!({"platforms": ["spotify", "melon"]})),
+        Some(&op),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &format!("{path}/withdraw"),
+        json!({}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "PITCH_NOT_WITHDRAWABLE", "{v}");
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &st_path,
+        to("SELECTED", json!({})),
+        Some(&op),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "PITCH_RESULT_REQUIRED", "{v}");
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &st_path,
+        to(
+            "SELECTED",
+            json!({"result": "Spotify 'Lo-fi Beats' 플레이리스트"}),
+        ),
+        Some(&op),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+
+    let (_, st) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(st["pitch"]["status"], "SELECTED");
+    assert_eq!(st["pitch"]["platforms"], json!(["spotify", "melon"]));
+    let selected: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM portal.notifications WHERE org_id=$1 AND title LIKE '%선정됐어요!' AND detail LIKE '%Lo-fi Beats%')",
+    )
+    .bind(ctx.org)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(selected);
+}

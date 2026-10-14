@@ -179,6 +179,15 @@ export interface CorrectionItem {
   tracks: { track_id: string; title: string }[];
 }
 
+/** 플레이리스트 피칭 */
+export interface PitchItem {
+  id: string; org_id: string; org_name: string; release_id: string; title: string; artist: string | null;
+  release_date: string | null; track_id: string; track_title: string;
+  description: string; genres: string; moods: string; instruments: string; similar_artists: string; marketing: string;
+  status: 'SUBMITTED' | 'IN_REVIEW' | 'PITCHED' | 'SELECTED' | 'NOT_SELECTED' | 'WITHDRAWN';
+  platforms: string[]; platforms_requested: string[] | null; result: string; staff_note: string; created_at: string; updated_at: string;
+}
+
 /** 권리침해 신고 (누구나 접수, 신고자 연락처는 스태프에게만) */
 export interface InfringementClaim {
   id: string; receipt: string;
@@ -291,6 +300,9 @@ const remote = {
   restage: (pkg: string) => req<{ job_id: string }>(`/api/staff/deliveries/${id(pkg)}/restage`, { method: 'POST' }),
   dsps: () => req<Page<DspItem>>('/api/staff/dsps'),
   takedowns: () => req<Page<TakedownItem>>('/api/staff/takedowns'),
+  pitches: () => req<Page<PitchItem>>('/api/staff/pitches'),
+  updatePitch: (pid: string, body: { status: string; platforms?: string[]; result?: string; note?: string }) =>
+    req<{ status: string }>(`/api/staff/pitches/${id(pid)}/status`, { method: 'POST', body }),
   corrections: () => req<Page<CorrectionItem>>('/api/staff/corrections'),
   approveCorrection: (cid: string, note: string) => req<{ status: string; jobs: string[] }>(`/api/staff/corrections/${id(cid)}/approve`, { method: 'POST', body: { note } }),
   declineCorrection: (cid: string, note: string) => req<{ status: string }>(`/api/staff/corrections/${id(cid)}/decline`, { method: 'POST', body: { note } }),

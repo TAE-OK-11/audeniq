@@ -4,7 +4,7 @@ import { ApiError, messageForCode } from '../api/errors';
 import { applicationPending, needsSecond } from './labels';
 import type {
   ApprovalItem, DecisionInput, DecisionResult, DeliveryDecisionInput, DeliveryItem, DspItem, InquiryMessage, InquiryItem,
-  Overview, PayoutItem, QueueRelease, ReleaseSheet, ReleaseTimelineItem, StagingRow, StaffDocument, StaffMe, AgreementTerms, AgreementTermsInput, TakedownItem, CorrectionItem, InfringementClaim
+  Overview, PayoutItem, QueueRelease, ReleaseSheet, ReleaseTimelineItem, StagingRow, StaffDocument, StaffMe, AgreementTerms, AgreementTermsInput, TakedownItem, CorrectionItem, InfringementClaim, PitchItem
 } from './api';
 import { applicationHash, type StudioDraft } from './application';
 
@@ -131,6 +131,15 @@ const corrections: CorrectionItem[] = [{
   changes: { genre: '인디 팝', tracks: [{ track_id: 'trk-1', credits: [{ name: '김한결', role: 'Composer' }, { name: '이편곡', role: 'Arranger' }] }] },
   reason: '작곡가 이름 철자가 틀렸어요.', decision_note: '', created_at: new Date(Date.now() - 2 * 3600_000).toISOString(), decided_at: null,
   tracks: [{ track_id: 'trk-1', title: '여름의 끝' }],
+}];
+
+const pitches: PitchItem[] = [{
+  id: 'pp-1', org_id: 'org-2', org_name: '한결 뮤직', release_id: 'rel-live-1', title: '여름의 끝', artist: '한결',
+  release_date: new Date(Date.now() + 14 * 86400_000).toISOString().slice(0, 10), track_id: 'trk-1', track_title: '여름의 끝',
+  description: '여름이 끝나갈 무렵의 아쉬움을 담은 어쿠스틱 팝이에요. 기타와 현악이 천천히 쌓여요.',
+  genres: '어쿠스틱 팝', moods: '아련함, 저녁', instruments: '어쿠스틱 기타, 현악', similar_artists: '', marketing: '뮤직비디오 공개 예정',
+  status: 'SUBMITTED', platforms: [], platforms_requested: ['melon', 'spotify'], result: '', staff_note: '',
+  created_at: new Date(Date.now() - 3 * 3600_000).toISOString(), updated_at: new Date(Date.now() - 3 * 3600_000).toISOString(),
 }];
 
 const infringementClaims: InfringementClaim[] = [{
@@ -387,6 +396,17 @@ export const mockStaff = {
   },
   approvals: () => wait({ items: approvals.filter(a => a.status === 'PENDING') }),
   takedowns: () => wait({ items: takedowns }),
+  pitches: () => wait({ items: pitches }),
+  updatePitch: async (pid: string, body: { status: string; platforms?: string[]; result?: string; note?: string }) => {
+    const p = pitches.find(x => x.id === pid) ?? fail('NOT_FOUND');
+    if (body.status === 'PITCHED' && !body.platforms?.length) fail('PITCH_PLATFORMS_REQUIRED');
+    if (body.status === 'SELECTED' && !body.result?.trim()) fail('PITCH_RESULT_REQUIRED');
+    Object.assign(p, {
+      status: body.status, platforms: body.platforms?.length ? body.platforms : p.platforms,
+      result: body.result?.trim() || p.result, staff_note: body.note?.trim() || p.staff_note, updated_at: new Date().toISOString(),
+    });
+    return wait({ status: body.status });
+  },
   corrections: () => wait({ items: corrections }),
   approveCorrection: async (cid: string, note: string) => {
     const c = corrections.find(x => x.id === cid && x.status === 'PENDING') ?? fail('CONFLICT');
