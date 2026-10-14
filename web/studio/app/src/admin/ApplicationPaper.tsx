@@ -86,7 +86,7 @@ export function ApplicationPaper({ sheet, draft, integrity }: { sheet: ReleaseSh
       <section className="aq-paper-sec">
         <h2><span>2</span>발매 정보</h2>
         <div className="aq-paper-release">
-          {(draft.coverData || sheet.release.cover) && <img className="aq-paper-cover" src={apiUrl(draft.coverData || sheet.release.cover)} alt="커버아트" />}
+          {(draft.coverData || sheet.release.cover) && <img className="aq-paper-cover" src={apiUrl(draft.coverData || sheet.release.cover)} alt="커버아트" onError={e => { e.currentTarget.hidden = true; }} />}
           <table className="aq-paper-kv">
             <tbody>
               <tr><th>발매 제목</th><td colSpan={3}><strong>{sheet.release.title}</strong></td></tr>
