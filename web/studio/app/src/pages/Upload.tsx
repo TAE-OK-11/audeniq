@@ -110,7 +110,7 @@ interface WizardForm {
   artist: string; title: string; type: string; language: string; genre: string;
   genreCustom: string; label: string; notes: string;
   tracks: Track[];
-  coverName: string; coverData: string; coverAssetId: string;
+  coverName: string; coverData: string; coverAssetId: string; coverThumbAssetId: string;
   releaseDate: string; originalDate: string; upc: string;
   territories: string[]; platforms: string[];
   ownership: string; phonogram: string; copyright: string;
@@ -146,7 +146,7 @@ const EMPTY: WizardForm = {
   artist: '', title: '', type: 'single', language: 'ko', genre: '', genreCustom: '',
   label: '', notes: '',
   tracks: [newTrack()],
-  coverName: '', coverData: '', coverAssetId: '',
+  coverName: '', coverData: '', coverAssetId: '', coverThumbAssetId: '',
   releaseDate: '', originalDate: '', upc: '',
   territories: ['WORLD'], platforms: MOCK ? DSP.map(d => d[0]) : [],
   ownership: '', phonogram: '', copyright: '',
@@ -415,7 +415,7 @@ function TerritoryPicker({ value, onChange }: { value: string[]; onChange: (v: s
                     const on = picked.includes(c);
                     return (
                       <button key={c} type="button" className={`aq-chip${on ? ' is-on' : ''}${on && mode === 'exclude' ? ' is-excluded' : ''}`} aria-pressed={on} onClick={() => toggle(c)}>
-                        {on && (mode === 'exclude' ? <Glyph name="minus" size={12} className="aq-chip-check" /> : <CheckIcon size={12} className="aq-chip-check" />)}{territoryName(c)}
+                        {territoryName(c)}
                       </button>
                     );
                   })}
@@ -504,7 +504,7 @@ function ChipPicker({ id, options, value, onChange, other, onOther, otherPlaceho
       <div className="aq-chips" role="group">
         {all.map(opt => (
           <button key={opt} type="button" className={`aq-chip${value.includes(opt) ? ' is-on' : ''}`} aria-pressed={value.includes(opt)} onClick={() => toggle(opt)}>
-            {value.includes(opt) && <CheckIcon size={12} className="aq-chip-check" />}{opt === OTHER ? '기타 (직접 입력)' : opt}
+            {opt === OTHER ? '기타 (직접 입력)' : opt}
           </button>
         ))}
       </div>
@@ -1128,6 +1128,7 @@ function toPayload(form: WizardForm, step: number): ReleasePayload {
     coverData: form.coverData,
     // 비운 커버('')도 그대로 보낸다 — undefined면 서버의 이전 커버로 되돌아간다
     coverAssetId: form.coverAssetId,
+    coverThumbAssetId: form.coverThumbAssetId || undefined,
     originalDate: form.options.rerelease && form.options.rereleaseKind === 'new_version' ? form.releaseDate : form.originalDate,
     release_date: form.releaseDate || '',
     tracks: form.tracks.map(t => ({
@@ -1174,6 +1175,17 @@ function makeCoverThumbnail(file: File): Promise<{ data: string; width: number; 
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('이미지를 읽을 수 없어요.')); };
     img.src = url;
   });
+}
+
+/** 커버 미리보기(240px JPEG)를 이미지 파일로 올리고 자산 ID를 돌려준다 */
+async function uploadCoverPreview(dataUrl: string): Promise<string> {
+  // fetch(data:)는 CSP connect-src에 막힐 수 있어 직접 바꾼다
+  const bin = atob(dataUrl.slice(dataUrl.indexOf(',') + 1));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const file = new File([bytes], 'cover-preview.jpg', { type: 'image/jpeg' });
+  const r = await api.uploadFile(file, 'IMAGE', () => {});
+  return r.assetId;
 }
 
 const AUDIO_RE = /\.(wav|flac|m4a|aif|aiff|aifc|wv|tta)$/i;
@@ -1416,6 +1428,7 @@ export function Upload() {
         coverName: d?.coverName || '',
         coverData: d?.coverData || '',
         coverAssetId: d?.coverAssetId || '',
+        coverThumbAssetId: d?.coverThumbAssetId || '',
         releaseDate: rel.release_date || '',
         originalDate: d?.options?.rerelease && d.options.previousReleaseDate ? d.options.previousReleaseDate : d?.originalDate || '',
         upc: d?.upc || '',
@@ -1832,10 +1845,12 @@ export function Upload() {
       }
       setCoverWarn('');
       set('coverName', file.name);
-      setForm(f => ({ ...f, coverData: thumb.data, coverAssetId: '' }));
+      setForm(f => ({ ...f, coverData: thumb.data, coverAssetId: '', coverThumbAssetId: '' }));
       const assetId = await startUpload('cover', file, 'IMAGE');
       if (assetId) {
-        setForm(f => (f.coverName === file.name ? { ...f, coverAssetId: assetId } : f));
+        // 목록·상세에 보여 줄 작은 미리보기도 서버에 보관한다 (실패해도 원본 커버로 보여 준다)
+        const thumbId = MOCK ? '' : await uploadCoverPreview(thumb.data).catch(() => '');
+        setForm(f => (f.coverName === file.name ? { ...f, coverAssetId: assetId, coverThumbAssetId: thumbId } : f));
         dirtyRef.current = true;
         toast('커버 이미지가 등록됐어요.');
       }
@@ -2274,7 +2289,7 @@ export function Upload() {
                     uploadAborts.current.delete('cover');
                     setUpload('cover', null);
                     set('coverName', '');
-                    setForm(f => ({ ...f, coverData: '', coverAssetId: '' }));
+                    setForm(f => ({ ...f, coverData: '', coverAssetId: '', coverThumbAssetId: '' }));
                     setCoverWarn('');
                     if (coverInputRef.current) coverInputRef.current.value = '';
                   }}

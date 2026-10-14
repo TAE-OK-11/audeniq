@@ -820,3 +820,17 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 .aq-track-qc-list li.is-warn{background:#FFF7ED;color:#9A3412}
 .aq-track-qc-list strong{display:block;font-size:12px;margin-bottom:2px}
 .aq-track-qc-list small{display:block;opacity:.8;margin-top:2px;word-break:break-word}
+/* 발매 상세 — 플랫폼 서비스 상태와 발매 중단 요청 (components/TakedownCard.tsx) */
+.aq-takedown-list{list-style:none;margin:0;padding:0}
+.aq-takedown-list li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;font-size:15px}
+.aq-takedown-list li+li{border-top:1px solid var(--aq-gray-100)}
+.aq-takedown-list em{flex:none;font-style:normal;font-size:13px;font-weight:700;color:var(--aq-blue-500)}
+.aq-takedown-list em.is-pending{color:var(--aq-orange-600,#C2410C)}
+.aq-takedown-list em.is-down{color:var(--aq-gray-500)}
+.aq-takedown-state{margin:12px 0 0}
+.aq-takedown .row-actions{margin-top:12px}
+.aq-takedown .row-actions:empty{display:none}
+/* 목록 위 도구 줄 (건수 + 내려받기) */
+.aq-list-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;color:var(--aq-text-2,#6b7280);font-size:13px}
+.aq-list-tools .ui-btn{flex:none}
+.report-tools input.ui-input[type="month"]{flex:0 0 190px;min-width:190px}

@@ -1,5 +1,5 @@
 // 목 API — 실제 서버 없이도 전체 흐름을 쓸 수 있도록 브라우저 저장소(localStorage)에 영속화한다.
-import type { AssetChecks, Correction, Invitation, OrgMember, User, Org, Release, ReleaseDetail, ReleasePayload, Track } from './types';
+import type { AssetChecks, Correction, Invitation, OrgMember, User, Org, Release, ReleaseDetail, ReleasePayload, Track, TakedownRequest, TakedownState } from './types';
 import { ApiError } from './errors';
 import { createStore, uid } from '../lib/store';
 import { readJSON, removeKey, writeJSON } from '../lib/storage';
@@ -191,6 +191,7 @@ function sessionUser(s: Session): User {
 
 /** 체험 모드에서 이번 달 취소한 발매 */
 const mockMembers: OrgMember[] = [{ user_id: 'me', role: 'OWNER', status: 'ACTIVE', email: 'artist@example.com', invited_at: null, accepted_at: null, me: true }];
+const mockTakedowns = new Map<string, TakedownRequest>();
 const mockWithdrawn = /* @__PURE__ */ new Set<string>();
 
 export const mockApi = {
@@ -285,6 +286,25 @@ export const mockApi = {
     return { limit: 3, used: used + 1, remaining: Math.max(0, 2 - used) };
   },
   withdrawQuota: async () => ({ limit: 3, used: mockWithdrawn.size, remaining: Math.max(0, 3 - mockWithdrawn.size) }),
+  // 체험 모드: 발매 완료(live)된 발매만 중단 요청을 받고, 담당자 처리는 흉내 내지 않는다
+  takedownStatus: async (id: string): Promise<TakedownState> => {
+    await delay(60);
+    const rel = db.get().find(r => r.id === id);
+    const live = rel?.status === 'live';
+    const request = mockTakedowns.get(id) ?? null;
+    const platforms = live ? (rel?.draft?.platforms?.length ? rel.draft.platforms : ['melon', 'spotify']).map(slug => ({ partner_id: slug, slug, name: '', live_status: 'LIVE' })) : [];
+    return { request, platforms, can_request: live && request?.status !== 'PENDING' };
+  },
+  requestTakedown: async (id: string, reason: string) => {
+    await delay(120);
+    if (!reason.trim()) throw new ApiError('중단 사유를 적어 주세요.', 400, 'TAKEDOWN_REASON_REQUIRED');
+    mockTakedowns.set(id, { id: uid(), status: 'PENDING', reason: reason.trim(), decision_note: '', created_at: new Date().toISOString(), decided_at: null });
+  },
+  cancelTakedown: async (id: string) => {
+    await delay(80);
+    const r = mockTakedowns.get(id);
+    if (r?.status === 'PENDING') mockTakedowns.set(id, { ...r, status: 'CANCELLED', decided_at: new Date().toISOString() });
+  },
   deleteRelease: async (id: string): Promise<void> => {
     await delay(80);
     db.set(list => list.filter(r => r.id !== id));

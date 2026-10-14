@@ -53,6 +53,8 @@ GRANT SELECT ON portal.notifications TO audeniq_api;
 -- 권리 서류 서명 요청 (0071): 이벤트는 추가만
 GRANT SELECT,INSERT,UPDATE ON portal.signing_requests TO audeniq_api;
 GRANT SELECT,INSERT ON portal.signing_events TO audeniq_api;
+-- 발매 중단 요청 (0111): 아티스트가 접수·취소하고, 배급 담당 스태프가 승인·반려한다
+GRANT SELECT,INSERT,UPDATE ON portal.takedown_requests TO audeniq_api;
 GRANT USAGE ON SEQUENCE portal.signing_events_id_seq TO audeniq_api;
 -- 계정 정보 (0083): 본인인증 결과와 해외 납세 의무 (사용자 본인만)
 GRANT SELECT,INSERT,UPDATE ON portal.account_identities,portal.tax_residencies TO audeniq_api;
@@ -124,6 +126,10 @@ GRANT SELECT,INSERT ON catalog.asset_fingerprints TO audeniq_worker;
 -- narrow SECURITY DEFINER function; the table itself stays org-scoped.
 GRANT EXECUTE ON FUNCTION catalog.fingerprints_outside_org(uuid, smallint) TO audeniq_worker;
 GRANT EXECUTE ON FUNCTION catalog.fingerprints_outside_org_page(uuid, smallint, uuid, integer) TO audeniq_worker;
+GRANT EXECUTE ON FUNCTION catalog.fingerprints_outside_org_since(uuid, smallint, timestamptz, timestamptz, uuid, integer) TO audeniq_worker;
+-- 0109: incremental similarity scan state (other orgs' asset ids among the matches: worker only).
+GRANT SELECT,INSERT,UPDATE ON operations.fingerprint_scans TO audeniq_worker;
+GRANT EXECUTE ON FUNCTION catalog.fingerprints_still_present(smallint, uuid[]) TO audeniq_worker;
 -- E-0 holds delivery until the release's agreement is signed (portal stays ungranted).
 GRANT EXECUTE ON FUNCTION execution.agreement_signed(uuid, uuid) TO audeniq_worker;
 -- 0063: a delivery job is only leased while staff approval of its route holds.

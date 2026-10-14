@@ -17,6 +17,7 @@
     "preview:api": "vite preview --mode edge --port 5173 --strictPort",
     "e2e": "bun e2e/smoke.ts",
     "e2e:application": "bun e2e/application-rights.ts",
+    "audit:ui": "bun e2e/ui-audit.ts",
     "build:demo": "tsc --noEmit && vite build --outDir ../demo-dist"
   },
   "dependencies": {
