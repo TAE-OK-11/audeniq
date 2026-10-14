@@ -4563,3 +4563,228 @@ async fn takedown_request_is_decided_by_staff_and_reaches_the_platform(pool: PgP
     assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(v["error"]["code"], "TAKEDOWN_ALREADY_DONE");
 }
+
+/// A rights-infringement claim from someone without an account: staff tie it
+/// to the release and take it down everywhere it went, the artist sees the
+/// claim (never the claimant's details) and answers within the deadline,
+/// and staff close it.
+#[sqlx::test]
+async fn infringement_claim_suspends_release_and_takes_counter_notice(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let mock = MockDsp::new(MockBehavior::Accept);
+    let (_, status) = run_send(&pool, &ctx, &mock).await;
+    assert_eq!(status, "DELIVERED");
+
+    let claim = json!({
+        "claimant_name": "권리자 주식회사", "claimant_email": "Legal@Rights.example",
+        "claimant_phone": "02-123-4567", "claimant_role": "RIGHTS_HOLDER", "right_type": "COPYRIGHT",
+        "work": "우리 회사가 작곡한 '봄비' (2024)", "target": "AUDENIQ로 배급된 같은 멜로디의 곡",
+        "evidence_urls": ["https://rights.example/proof"], "statement_accepted": true
+    });
+    let mut no_statement = claim.clone();
+    no_statement["statement_accepted"] = json!(false);
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        "/api/infringement-claims",
+        no_statement,
+        None,
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "CLAIM_STATEMENT_REQUIRED");
+    let mut bad = claim.clone();
+    bad["evidence_urls"] = json!(["javascript:alert(1)"]);
+    let (_, v) = call(&ctx.app, "POST", "/api/infringement-claims", bad, None).await;
+    assert_eq!(v["error"]["code"], "CLAIM_INVALID");
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        "/api/infringement-claims",
+        claim.clone(),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let id = v["id"].as_str().unwrap().to_string();
+    assert!(v["receipt"].as_str().unwrap().starts_with("IC-"));
+    // Claimant details are only stored sealed.
+    let leaked: bool = sqlx::query_scalar(
+        "SELECT position('rights.example' in encode(claimant_email_cipher,'escape'))>0 FROM portal.infringement_claims WHERE id=$1::uuid",
+    )
+    .bind(&id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(!leaked);
+
+    // Artists cannot see the staff queue; staff see the claimant to contact them.
+    let (s, _) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/infringement-claims",
+        Value::Null,
+        Some(&ctx.user),
+    )
+    .await;
+    assert_ne!(s, StatusCode::OK);
+    let staff = staff_user(&ctx.app, &pool, "OPERATOR").await;
+    let (s, list) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/infringement-claims",
+        Value::Null,
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{list}");
+    assert_eq!(
+        list["items"][0]["claimant"]["email"],
+        "legal@rights.example"
+    );
+    assert_eq!(list["items"][0]["status"], "RECEIVED");
+    let act = |what: &str| format!("/api/staff/infringement-claims/{id}/{what}");
+    let (s, _) = call(&ctx.app, "POST", &act("reject"), json!({}), Some(&staff)).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST, "rejecting needs a note");
+
+    // Suspend: tied to the release, one takedown per platform still carrying it.
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &act("suspend"),
+        json!({"release_id": ctx.release, "note": "권리자 증빙 확인. 소명을 받습니다."}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["jobs"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        run_until(&pool, &ctx.store, "delivery", "delivery.takedown").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        live_status(&pool, ctx.org, ctx.package_id).await,
+        "TAKEDOWN_REQUESTED"
+    );
+    let notified: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM portal.notifications WHERE org_id=$1 AND title LIKE '%권리침해 신고로 배급을 중단%')",
+    )
+    .bind(ctx.org)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(notified);
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &act("suspend"),
+        json!({"release_id": ctx.release}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CONFLICT, "a decided claim stays decided");
+
+    // The artist sees the claim without the claimant and answers it.
+    let release_path = format!(
+        "/api/orgs/{}/releases/{}/infringement-claims",
+        ctx.org, ctx.release
+    );
+    let (s, v) = call(&ctx.app, "GET", &release_path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["items"][0]["status"], "SUSPENDED");
+    assert_eq!(v["items"][0]["can_answer"], true);
+    assert!(v["items"][0].get("claimant").is_none());
+    assert!(!v.to_string().contains("legal@rights.example"));
+    let counter_path = format!("/api/orgs/{}/infringement-claims/{id}/counter", ctx.org);
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &counter_path,
+        json!({"statement": " "}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    let other = user(&ctx.app).await;
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &format!("/api/orgs/{}/infringement-claims/{id}/counter", other.org),
+        json!({"statement": "제 곡이 아닙니다"}),
+        Some(&other),
+    )
+    .await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &counter_path,
+        json!({"statement": "2023년에 직접 작곡했고 작업 파일 기록이 있어요."}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &counter_path,
+        json!({"statement": "다시"}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "CLAIM_COUNTER_CLOSED");
+
+    // Staff close it: restored, and the artist is told.
+    let (s, _) = call(&ctx.app, "POST", &act("uphold"), json!({}), Some(&staff)).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST, "upholding needs a note");
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &act("restore"),
+        json!({"note": "소명 자료로 독자 창작이 확인됐어요."}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (_, v) = call(&ctx.app, "GET", &release_path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(v["items"][0]["status"], "RESTORED");
+    assert_eq!(v["items"][0]["can_answer"], false);
+    let restored: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM portal.notifications WHERE org_id=$1 AND title LIKE '%신고가 받아들여지지 않았어요%')",
+    )
+    .bind(ctx.org)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(restored);
+    // The open queue no longer lists it.
+    let (_, list) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/infringement-claims",
+        Value::Null,
+        Some(&staff),
+    )
+    .await;
+    assert!(
+        list["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["id"] != id.as_str())
+    );
+    let (_, list) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/infringement-claims?status=all",
+        Value::Null,
+        Some(&staff),
+    )
+    .await;
+    assert!(
+        list["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["id"] == id.as_str())
+    );
+}

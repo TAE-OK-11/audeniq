@@ -830,6 +830,16 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 .aq-takedown-state{margin:12px 0 0}
 .aq-takedown .row-actions{margin-top:12px}
 .aq-takedown .row-actions:empty{display:none}
+
+/* 권리침해 신고 (공개 화면, 발매 상세 카드) */
+.aq-report-form fieldset{border:0;margin:20px 0 0;padding:0;display:grid;gap:12px}
+.aq-report-form legend{font-weight:700;margin-bottom:8px}
+.aq-report-form .ui-input,.aq-report-form .ui-select{width:100%}
+.aq-report-form .aq-check-line{display:flex;gap:10px;align-items:flex-start;margin:20px 0 14px;line-height:1.6}
+.aq-report-form .aq-check-line input{margin-top:4px;flex:none}
+.aq-claim-card{margin-top:16px}
+.aq-claim + .aq-claim{margin-top:18px;padding-top:18px;border-top:1px solid var(--aq-gray-200,#e5e7eb)}
+.aq-claim-status{margin:8px 0 10px}
 /* 목록 위 도구 줄 (건수 + 내려받기) */
 .aq-list-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;color:var(--aq-text-2,#6b7280);font-size:13px}
 .aq-list-tools .ui-btn{flex:none}
