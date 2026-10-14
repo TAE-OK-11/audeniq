@@ -381,3 +381,27 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 
 /* 휴대폰 전체 메뉴가 열려 있는 동안 뒤 화면이 같이 스크롤되지 않게 */
 @media (max-width:760px){html.aq-menu-open,html.aq-menu-open body{overflow:hidden}}
+
+/* 발매 목록 보완 줄 — 휴대폰에서는 요청 내용을 한 줄 다 쓰고, 버튼은 그 아래에 나란히 */
+@media (max-width:560px){
+  .aq-release-fix{flex-wrap:wrap;gap:8px;padding:12px 12px 12px 14px}
+  .aq-release-fix>span{flex:1 1 100%}
+  .aq-release-fix-btn{flex:1 1 0;justify-content:center}
+}
+
+/* 홈 새 발매 띠 — 설명 줄을 뺐으니 높이도 한 줄 + 버튼에 맞춘다 */
+#view-home .aq-home-hero{min-height:0}
+@media (min-width:761px){#view-home .aq-home-hero{padding:24px 28px}}
+
+/* 메뉴 아래 약관 링크 — 좁은 판에서 글자가 두 줄로 쪼개지지 않고 줄 단위로 넘어간다 */
+#portalNav .aq-nav-foot{flex-wrap:wrap;row-gap:6px}
+#portalNav .aq-nav-legal{flex-wrap:wrap;column-gap:12px;row-gap:2px}
+#portalNav .aq-nav-legal button{white-space:nowrap}
+
+/* 발매 상세 탭 — 어느 탭이든 같은 면(카드)에 담는다. 카드가 여러 장이면 같은 간격으로 쌓는다 */
+#view-release .aq-detail-stack{display:grid;gap:14px}
+#view-release .aq-detail-stack>.ui-card{margin:0}
+#view-release .aq-relinfo-card .ui-section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+#view-release .aq-relinfo-card .ui-section-head .subhead{margin:0}
+#view-release .aq-relinfo-card .tag-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
+.aq-linked-docs .ui-badge{flex:none}

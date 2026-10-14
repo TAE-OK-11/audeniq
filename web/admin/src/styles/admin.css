@@ -761,3 +761,9 @@ svg.aq-glyph{flex:none;fill:none!important;stroke:currentColor!important;stroke-
 .ui-timeline .adm-more{display:block;margin-top:2px}
 .ui-timeline .adm-more summary{min-height:26px;font-size:12px;color:var(--aq-primary)}
 .ui-timeline .adm-detail-list{background:var(--aq-surface)}
+
+/* 서류 검토 > 이 서류가 증명하는 권한 — 권한마다 같은 묶음(.ui-group) */
+.adm-grants{display:grid;gap:0;margin-top:12px}
+.adm-grants>.ui-field-help{margin:4px 0 12px}
+.adm-grant .ui-chips{margin:10px 0 6px}
+.adm-grant-remove{justify-self:start;margin:0 0 14px}

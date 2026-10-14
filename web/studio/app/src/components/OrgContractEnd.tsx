@@ -7,6 +7,7 @@ import { useAuth } from '../api/auth';
 import { MOCK } from '../lib/mode';
 import { useToast } from './Toast';
 import { useConfirm } from './Confirm';
+import { DateField } from './Picker';
 
 interface OrgTerm { end_date: string; note: string; status: string; set_by_staff: boolean }
 interface ReleaseTerm { release_id: string; title: string; end_date: string; reason: string; status: string; final_settlement_due: string | null }
@@ -49,7 +50,7 @@ export function OrgContractEnd() {
           {t.status === 'SCHEDULED' && owner && !t.set_by_staff && <button type="button" className="ui-btn is-text is-sm" onClick={() => void cancel()}>종료 취소</button>}</p>
       ) : owner && (open ? (
         <div className="aq-confirm-actions" style={{ justifyContent: 'flex-start' }}>
-          <input type="date" className="ui-input" aria-label="계약 종료일" min={plus(30)} value={date} onChange={e => setDate(e.target.value)} style={{ maxWidth: 200 }} />
+          <DateField aria-label="계약 종료일" min={plus(30)} value={date} onChange={setDate} />
           <button type="button" className="ui-btn is-soft" onClick={() => setOpen(false)}>닫기</button>
           <button type="button" className="ui-btn is-primary" onClick={() => void save()}>종료 예약</button>
         </div>

@@ -909,3 +909,16 @@ summary::-webkit-details-marker{display:none}
 .aq-social-btn:hover:not(:disabled){filter:brightness(.97)}
 .aq-social-btn.is-google{background:#fff;color:#1f1f1f;border:1px solid #747775}
 .aq-social-btn.is-apple{background:#000;color:#fff;border:1px solid #000}
+
+/* ---------- 묶음 입력 (fieldset · .ui-group) ----------
+   브라우저 기본 테두리와 테두리를 끊는 제목(legend)은 쓰지 않는다. 여러 칸을 한 묶음으로 보여 줄 때는
+   .ui-group(옅은 면 + 제목 + 한 줄 설명)을 쓴다. */
+fieldset{margin:0;padding:0;border:0;min-width:0}
+legend{padding:0}
+.ui-group{display:grid;margin:4px 0 18px;padding:18px 18px 2px;border-radius:var(--aq-r-xl);background:var(--aq-surface)}
+.ui-group>legend,.ui-group-title{float:left;width:100%;margin:0;font-size:var(--aq-fs-md);font-weight:700;color:var(--aq-text)}
+.ui-group-title+.ui-field-help,.ui-group>legend+.ui-field-help{clear:both;margin:4px 0 14px}
+.ui-group .ui-field:last-child{margin-bottom:16px}
+.ui-group :is(.ui-input,.ui-select,.ui-textarea,.aq-date-input,select,textarea,input:not([type=checkbox]):not([type=radio])){background:#fff}
+.ui-group :is(.ui-input,.ui-select,.ui-textarea,select,textarea,input:not([type=checkbox]):not([type=radio])):focus,.ui-group .aq-date-input[aria-expanded=true]{background:var(--aq-field-focus-bg,var(--aq-gray-100))}
+.aq-optional{margin-left:4px;color:var(--aq-text-4);font-weight:400}

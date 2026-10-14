@@ -146,7 +146,7 @@ function ColumnRow({ col, index, total, others, busy, run, onMove }: {
         </select>
         <label className="adm-kb-wip-input">
           <span>WIP</span>
-          <input className="ui-input" inputMode="numeric" placeholder="없음" aria-label={`${col.name} WIP 한도 (비우면 없음)`} value={wip}
+          <input className="ui-input" inputMode="numeric" placeholder="없음" aria-label={`${col.name} WIP 한도`} value={wip}
             onChange={e => setWip(e.target.value.replace(/\D/g, '').slice(0, 3))} onBlur={saveWip}
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveWip(); } }} />
         </label>
