@@ -45,6 +45,7 @@ const Sign = lazyPage(pageLoaders.Sign, m => m.Sign);
 const Terms = lazyPage(pageLoaders.Terms, m => m.Terms);
 const Verify = lazyPage(pageLoaders.Verify, m => m.Verify);
 const RightsReport = lazyPage(pageLoaders.RightsReport, m => m.RightsReport);
+const SmartLink = lazyPage(pageLoaders.SmartLink, m => m.SmartLink);
 const SettlementTerms = lazyPage(pageLoaders.Terms, m => m.SettlementTerms);
 const PrivacyPolicy = lazyPage(pageLoaders.Terms, m => m.PrivacyPolicy);
 const Dashboard = lazyPage(pageLoaders.Dashboard, m => m.Dashboard);
@@ -160,6 +161,8 @@ export function App() {
                     <Route path="/verify" element={<Verify />} />
                     {/* 권리침해 신고 — 계정 없이 누구나 */}
                     <Route path="/rights-report" element={<RightsReport />} />
+                    {/* 스마트링크 — 발매 공유 페이지, 로그인 없이 */}
+                    <Route path="/l/:slug" element={<SmartLink />} />
                     <Route path="/terms/privacy" element={<Navigate to="/privacy" replace />} />
                     <Route path="/content-admin" element={<Navigate to="/admin/content" replace />} />
                     {/* 스태프 관리자 — 같은 로그인 세션 + 서버의 스태프 역할(/api/staff/me)로 접근 */}
