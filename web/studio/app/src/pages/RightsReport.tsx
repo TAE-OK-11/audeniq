@@ -76,7 +76,7 @@ export function RightsReport() {
                 <input id="rrName" className="ui-input" maxLength={100} value={f.name} onChange={e => set('name', e.target.value)} autoComplete="name" /></div>
               <div className="ui-field"><label htmlFor="rrEmail">이메일</label>
                 <input id="rrEmail" className="ui-input" type="email" maxLength={254} value={f.email} onChange={e => set('email', e.target.value)} autoComplete="email" /></div>
-              <div className="ui-field"><label htmlFor="rrPhone">전화번호 (선택)</label>
+              <div className="ui-field"><label htmlFor="rrPhone">전화번호<span className="aq-optional">선택</span></label>
                 <input id="rrPhone" className="ui-input" type="tel" maxLength={20} value={f.phone} onChange={e => set('phone', e.target.value)} autoComplete="tel" /></div>
               <div className="ui-field"><label htmlFor="rrRole">신고하는 분은</label>
                 <select id="rrRole" className="ui-select" value={f.role} onChange={e => set('role', e.target.value)}>

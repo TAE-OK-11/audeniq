@@ -81,7 +81,7 @@ function ApproveForm({ sheet, application, onDone }: { sheet: ReleaseSheet; appl
         </div>
       )}
       <div className="ui-field" style={{ marginTop: 16 }}>
-        <label htmlFor="aMemo">승인 메모 <span className="muted">(선택)</span></label>
+        <label htmlFor="aMemo">승인 메모<span className="aq-optional">선택</span></label>
         <textarea id="aMemo" data-autofocus className="ui-textarea" rows={3} maxLength={MAX_REASON} value={memo} placeholder="남길 내용이 있으면 적어 주세요. 비워 두면 ‘담당자 승인’으로 기록돼요." onChange={e => setMemo(e.target.value)} />
       </div>
       <div className="adm-form-actions">
@@ -275,7 +275,7 @@ function CorrectionForm({ sheet, onDone }: { sheet: ReleaseSheet; onDone: (msg: 
       </div>
       <button type="button" className="ui-btn is-soft is-sm" style={{ marginTop: 10 }} onClick={() => setItems(list => [...list, newFix()])}>+ 항목 추가</button>
       <div className="ui-field" style={{ marginTop: 16 }}>
-        <label htmlFor="cSummary">전체 안내 <span className="muted">(선택)</span></label>
+        <label htmlFor="cSummary">전체 안내<span className="aq-optional">선택</span></label>
         <textarea id="cSummary" className="ui-textarea" rows={2} maxLength={MAX_REASON} value={summary} placeholder="비워 두면 ‘표시된 항목을 고친 뒤 다시 접수해 주세요.’로 보내요." onChange={e => setSummary(e.target.value)} />
       </div>
       <div className="adm-form-actions">

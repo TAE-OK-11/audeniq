@@ -11,6 +11,7 @@ import { Money } from '../components/Money';
 import { MOCK } from '../lib/mode';
 import { downloadReportsCsv, type ReportRange } from '../api/portal';
 import { errorMessage } from '../api/errors';
+import { MonthField } from '../components/Picker';
 
 // 서버에서 받아 올 기간 (월 단위, 한국 시간). 그 안에서 아래 PERIODS로 다시 좁힌다.
 type RangeKey = 'last12' | 'thisYear' | 'lastYear' | 'custom';
@@ -224,8 +225,8 @@ export function Reports() {
           {RANGES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
         </select>
         {rangeKey === 'custom' && (<>
-          <input type="month" id="reportFrom" className="ui-input" aria-label="시작 월" value={customFrom} max={customTo || undefined} onChange={e => setCustomFrom(e.target.value)} />
-          <input type="month" id="reportTo" className="ui-input" aria-label="끝 월" value={customTo} min={customFrom || undefined} max={kstMonth()} onChange={e => setCustomTo(e.target.value)} />
+          <MonthField id="reportFrom" aria-label="시작 월" value={customFrom} max={customTo || undefined} onChange={setCustomFrom} />
+          <MonthField id="reportTo" aria-label="끝 월" value={customTo} min={customFrom || undefined} max={kstMonth()} onChange={setCustomTo} />
         </>)}
         <select id="reportPeriod" className="ui-select" aria-label="리포트 기간" value={period} onChange={e => setPeriod(e.target.value)}>
           {PERIODS.map(p => <option key={p.value} value={p.value}>{p.value === 'all' ? '선택 기간 전체' : p.label}</option>)}

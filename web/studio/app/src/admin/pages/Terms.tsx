@@ -8,6 +8,7 @@ import { useAsync } from '../../hooks/useAsync';
 import { req } from '../../api/http';
 import { MOCK } from '../../lib/mode';
 import { Badge, EmptyState, ErrorBox, NoDuty, PageHeader, SkeletonList, DELIVERY_TABS, SubTabs, useStaff } from '../ui';
+import { DateField } from '../../components/Picker';
 
 interface TermItem {
   release_id: string; title: string; org_name: string; end_date: string; reason: string; note: string; status: string;
@@ -53,7 +54,7 @@ export function Terms() {
           <div className="ui-field"><label htmlFor="tmRelease">발매 ID</label>
             <input id="tmRelease" className="ui-input" value={form.release} onChange={e => setForm(f => ({ ...f, release: e.target.value }))} placeholder="심사 화면 주소의 발매 ID" /></div>
           <div className="ui-field"><label htmlFor="tmDate">종료일</label>
-            <input id="tmDate" type="date" className="ui-input" min={today} value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} /></div>
+            <DateField id="tmDate" min={today} value={form.date} onChange={v => setForm(f => ({ ...f, date: v }))} /></div>
           <div className="ui-field"><label htmlFor="tmReason">사유</label>
             <select id="tmReason" className="ui-select" value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}>
               <option value="TERMINATION">해지 (계약 위반 등)</option><option value="LICENSE_EXPIRY">권리 만료</option><option value="CONTRACT_END">계약 종료</option>

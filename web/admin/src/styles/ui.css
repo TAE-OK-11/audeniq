@@ -766,3 +766,16 @@ summary::-webkit-details-marker{display:none}
 .aq-legal-sheet{padding:18px 18px 24px;max-height:calc(min(86dvh,900px) - 96px);overflow-y:auto;overscroll-behavior:contain}
 @media (max-width:600px){#modal.aq-legal-mode .modal-inner{width:100%;max-height:92dvh}.aq-legal-sheet{max-height:calc(92dvh - 90px);padding:16px 14px 22px}}
 #modal.aq-legal-mode{z-index:160!important}
+
+/* ---------- 묶음 입력 (fieldset · .ui-group) ----------
+   브라우저 기본 테두리와 테두리를 끊는 제목(legend)은 쓰지 않는다. 여러 칸을 한 묶음으로 보여 줄 때는
+   .ui-group(옅은 면 + 제목 + 한 줄 설명)을 쓴다. */
+fieldset{margin:0;padding:0;border:0;min-width:0}
+legend{padding:0}
+.ui-group{display:grid;margin:4px 0 18px;padding:18px 18px 2px;border-radius:var(--aq-r-xl);background:var(--aq-surface)}
+.ui-group>legend,.ui-group-title{float:left;width:100%;margin:0;font-size:var(--aq-fs-md);font-weight:700;color:var(--aq-text)}
+.ui-group-title+.ui-field-help,.ui-group>legend+.ui-field-help{clear:both;margin:4px 0 14px}
+.ui-group .ui-field:last-child{margin-bottom:16px}
+.ui-group :is(.ui-input,.ui-select,.ui-textarea,.aq-date-input,select,textarea,input:not([type=checkbox]):not([type=radio])){background:#fff}
+.ui-group :is(.ui-input,.ui-select,.ui-textarea,select,textarea,input:not([type=checkbox]):not([type=radio])):focus,.ui-group .aq-date-input[aria-expanded=true]{background:var(--aq-field-focus-bg,var(--aq-gray-100))}
+.aq-optional{margin-left:4px;color:var(--aq-text-4);font-weight:400}

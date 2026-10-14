@@ -71,7 +71,7 @@ function StatementForm({ onSave }: { onSave: (s: { period: string; platform: str
         {amount && <p className="ui-field-help">{money(Number(amount))}</p>}
       </div>
       <div className="ui-field">
-        <label htmlFor="stNote">메모 (선택)</label>
+        <label htmlFor="stNote">메모<span className="aq-optional">선택</span></label>
         <input id="stNote" maxLength={200} value={note} onChange={e => setNote(e.target.value)} placeholder="정산서 번호 등" />
       </div>
       <div className="aq-sticky-foot">
@@ -429,7 +429,7 @@ export function Settlement() {
                 <span className="studio-account-check" aria-label="선택된 수령 계좌"><CheckIcon size={12} /></span>
               </div>
               {MOCK && <div className="ui-field">
-                <label htmlFor="pNote">메모 (선택)</label>
+                <label htmlFor="pNote">메모<span className="aq-optional">선택</span></label>
                 <input
                   id="pNote" maxLength={200} placeholder="필요한 내용을 남겨 주세요"
                   value={payoutNote} onChange={e => setPayoutNote(e.target.value)}

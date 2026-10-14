@@ -40,7 +40,7 @@ function ReviewForm({ task, approve, onDone }: { task: WorkTask; approve: boolea
   return (
     <form onSubmit={submit}>
       <div className="ui-field">
-        <label htmlFor="rvNote">{approve ? '남길 말 (선택)' : '보완할 내용'} {!approve && <span className="required">*</span>}</label>
+        <label htmlFor="rvNote">{approve ? <>남길 말<span className="aq-optional">선택</span></> : '보완할 내용'} {!approve && <span className="required">*</span>}</label>
         <textarea id="rvNote" data-autofocus className="ui-textarea" rows={4} maxLength={2000} value={note} onChange={e => setNote(e.target.value)} placeholder={approve ? '예: 조건 확인했어요.' : '예: 수수료 비교표에 지난 분기 조건도 넣어 주세요.'} />
       </div>
       <div className="adm-form-actions">
