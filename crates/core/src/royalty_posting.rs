@@ -205,7 +205,7 @@ pub async fn post_report(
                 "SELECT sh.id, sh.share_bps::bigint AS bps, sh.status FROM portal.split_shares sh
                    JOIN catalog.tracks t ON t.id=sh.track_id
                   WHERE sh.org_id=$1 AND sh.release_id=$2 AND t.isrc=$3 AND sh.status IN ('INVITED','ACCEPTED')
-                  ORDER BY sh.created_at",
+                  ORDER BY sh.created_at FOR SHARE OF sh",
             )
             .bind(org)
             .bind(release)
