@@ -9,8 +9,41 @@ use std::sync::Arc;
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+/// Below compose's 30 s stop_grace_period.
+const SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_secs(25);
+
+/// `audeniq-api healthcheck`: the container healthcheck (the image has no
+/// curl). Exit 0 only when this instance answers `/ready`, which also reads
+/// the database. Deploys wait on it before the tunnel sends traffic.
+fn healthcheck() -> anyhow::Result<()> {
+    use std::io::{Read, Write};
+    let bind = std::env::var("API_BIND").unwrap_or_else(|_| "0.0.0.0:8080".into());
+    let port = bind.rsplit(':').next().unwrap_or("8080");
+    let secret = std::env::var("EDGE_SERVICE_SECRET").unwrap_or_default();
+    let timeout = std::time::Duration::from_secs(4);
+    let addr: std::net::SocketAddr = format!("127.0.0.1:{port}").parse()?;
+    let mut tcp = std::net::TcpStream::connect_timeout(&addr, timeout)?;
+    tcp.set_read_timeout(Some(timeout))?;
+    tcp.set_write_timeout(Some(timeout))?;
+    write!(
+        tcp,
+        "GET /ready HTTP/1.1\r\nHost: localhost\r\nx-audeniq-service: {secret}\r\nConnection: close\r\n\r\n"
+    )?;
+    let mut head = [0u8; 12];
+    tcp.read_exact(&mut head)?;
+    anyhow::ensure!(
+        &head[9..12] == b"200",
+        "not ready: {}",
+        String::from_utf8_lossy(&head)
+    );
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    if std::env::args().nth(1).as_deref() == Some("healthcheck") {
+        return healthcheck();
+    }
     tracing_subscriber::fmt()
         .json()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -50,17 +83,32 @@ async fn main() -> anyhow::Result<()> {
             }
         });
     let state = api::AppState::new(pool, config, storage).await?;
+    audeniq_core::temp_sweep::spawn(vec![std::env::temp_dir()]);
     // docker stop / deploys send SIGTERM: stop accepting, finish in-flight
     // requests (compose stop_grace_period: 30 s) instead of dropping them.
+    // Live streams close on the signal; anything still running after
+    // SHUTDOWN_GRACE is abandoned with a log line before Docker kills it.
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
-    axum::serve(listener, api::router(state))
-        .with_graceful_shutdown(async move {
-            tokio::select! {
-                _ = tokio::signal::ctrl_c() => {},
-                _ = sigterm.recv() => {},
-            }
-            tracing::info!("shutdown signal: draining in-flight requests");
-        })
-        .await?;
+    let (signalled, mut on_signal) = tokio::sync::watch::channel(false);
+    let server = axum::serve(listener, api::router(state)).with_graceful_shutdown(async move {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {},
+            _ = sigterm.recv() => {},
+        }
+        tracing::info!("shutdown signal: draining in-flight requests");
+        audeniq_core::live::begin_shutdown();
+        let _ = signalled.send(true);
+    });
+    let deadline = async move {
+        let _ = on_signal.wait_for(|s| *s).await;
+        tokio::time::sleep(SHUTDOWN_GRACE).await;
+    };
+    tokio::select! {
+        served = server => served?,
+        () = deadline => tracing::warn!(
+            grace_seconds = SHUTDOWN_GRACE.as_secs(),
+            "requests still running at the shutdown deadline; exiting"
+        ),
+    }
     Ok(())
 }

@@ -35,6 +35,9 @@ pub enum Error {
     /// Request headers exceed the API limit (HTTP 431).
     #[error("request headers too large")]
     HeadersTooLarge,
+    /// The request ran past the API's deadline (HTTP 504).
+    #[error("request timed out")]
+    Timeout,
 }
 pub type Result<T> = std::result::Result<T, Error>;
 /// The stable API error code of a failed response, carried as a response
@@ -56,6 +59,7 @@ impl IntoResponse for Error {
             Self::PolicyGate(code) => (StatusCode::UNPROCESSABLE_ENTITY, *code),
             Self::Storage => (StatusCode::SERVICE_UNAVAILABLE, "STORAGE_UNAVAILABLE"),
             Self::UploadBusy => (StatusCode::SERVICE_UNAVAILABLE, "UPLOAD_BUSY"),
+            Self::Timeout => (StatusCode::GATEWAY_TIMEOUT, "REQUEST_TIMEOUT"),
             Self::HeadersTooLarge => (
                 StatusCode::REQUEST_HEADER_FIELDS_TOO_LARGE,
                 "REQUEST_HEADERS_TOO_LARGE",

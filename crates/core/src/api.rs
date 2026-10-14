@@ -182,6 +182,7 @@ pub fn router(s: AppState) -> Router {
             panic_response,
         ))
         .layer(DefaultBodyLimit::max(64 * 1024))
+        .layer(middleware::from_fn(request_deadline))
         // 서비스 비밀 확인 뒤: 점검 중 API 차단 (crate::site_content)
         .layer(middleware::from_fn_with_state(
             s.clone(),
@@ -197,6 +198,32 @@ pub fn router(s: AppState) -> Router {
         .layer(compression())
         .with_state(s)
 }
+/// Past this a request is abandoned: the tunnel in front gave up on it
+/// already (about 100 s), and it would otherwise keep holding a database
+/// connection (pool of 6) or a storage call for up to 15 minutes. Covers the
+/// handler up to its response headers; a streamed body is not cut.
+const REQUEST_DEADLINE: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// Not bounded: live streams (they end on their own) and upload completion
+/// (cancel-safe, and retried by the client while the conversion runs).
+fn unbounded(path: &str) -> bool {
+    path.ends_with("/live") || (path.starts_with("/api/orgs/") && path.ends_with("/complete"))
+}
+
+async fn request_deadline(req: Request, next: middleware::Next) -> Response {
+    if unbounded(req.uri().path()) {
+        return next.run(req).await;
+    }
+    let route = req.uri().path().to_owned();
+    match tokio::time::timeout(REQUEST_DEADLINE, next.run(req)).await {
+        Ok(response) => response,
+        Err(_) => {
+            tracing::warn!(%route, "request abandoned at the deadline");
+            Error::Timeout.into_response()
+        }
+    }
+}
+
 /// A handler bug that panics answers like any other server error (500 with
 /// the standard error body) and is logged, instead of dropping the
 /// connection, which the edge reports as "Private API unavailable".
