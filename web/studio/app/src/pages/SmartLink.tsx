@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from '../lib/router';
 import { API_BASE, req } from '../api/http';
+import { errorMessage } from '../api/errors';
 import { MOCK } from '../lib/mode';
 import { PLATFORM_NAMES } from '../lib/platformNames';
 
@@ -21,12 +22,17 @@ export function SmartLink() {
   const [page, setPage] = useState<Page | null>(null);
   const [missing, setMissing] = useState(false);
   const [coverOk, setCoverOk] = useState(true);
+  const [email, setEmail] = useState('');
+  const [agree, setAgree] = useState(false);
+  const [alertState, setAlertState] = useState<'idle' | 'busy' | 'done'>('idle');
+  const [alertError, setAlertError] = useState('');
   const base = `/api/smart-links/${encodeURIComponent(slug)}`;
 
   useEffect(() => {
-    if (MOCK) { setPage(MOCK_PAGE); return; }
+    // 체험 모드: 'soon'으로 시작하는 코드는 발매 전 화면
+    if (MOCK) { setPage(slug.startsWith('soon') ? { ...MOCK_PAGE, released: false, release_date: '2099-01-01' } : MOCK_PAGE); return; }
     req<Page>(base, { quiet401: true }).then(setPage, () => setMissing(true));
-  }, [base]);
+  }, [base, slug]);
   useEffect(() => {
     if (page) document.title = `${page.title}${page.artist ? ` · ${page.artist}` : ''}`;
   }, [page]);
@@ -38,6 +44,21 @@ export function SmartLink() {
       method: 'POST', keepalive: true, credentials: 'omit',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ platform }),
     }).catch(() => undefined);
+  };
+
+  const signUp = async () => {
+    setAlertError('');
+    if (!email.trim()) { setAlertError('이메일을 적어 주세요.'); return; }
+    if (!agree) { setAlertError('안내에 동의해 주세요.'); return; }
+    if (MOCK) { setAlertState('done'); return; }
+    setAlertState('busy');
+    try {
+      await req(`${base}/alerts`, { method: 'POST', body: { email: email.trim(), consent: true } });
+      setAlertState('done');
+    } catch (e) {
+      setAlertError(errorMessage(e));
+      setAlertState('idle');
+    }
   };
 
   if (missing) {
@@ -59,6 +80,25 @@ export function SmartLink() {
         <h1>{page.title}</h1>
         {page.artist && <p className="aq-smartlink-artist">{page.artist}</p>}
         {!page.released && page.release_date && <p className="aq-smartlink-soon">{page.release_date} 발매 예정</p>}
+        {!page.released && page.release_date && (
+          alertState === 'done' ? (
+            <p className="aq-smartlink-alert-done" role="status">발매되면 메일로 한 번 알려 드릴게요.</p>
+          ) : (
+            <form className="aq-smartlink-alert" onSubmit={e => { e.preventDefault(); void signUp(); }}>
+              <label htmlFor="slAlertEmail">발매되면 알림 받기</label>
+              <div className="aq-smartlink-alert-row">
+                <input id="slAlertEmail" className="ui-input" type="email" inputMode="email" autoComplete="email" maxLength={254}
+                  placeholder="이메일 주소" value={email} onChange={e => setEmail(e.target.value)} />
+                <button type="submit" className="ui-btn is-primary" disabled={alertState === 'busy'}>{alertState === 'busy' ? '신청 중' : '신청'}</button>
+              </div>
+              <label className="aq-smartlink-consent">
+                <input type="checkbox" checked={agree} onChange={e => setAgree(e.target.checked)} />
+                <span>발매 알림 메일 1회 발송을 위해 이메일을 받는 데 동의해요. 메일을 보내면 주소는 바로 지워요. (발매일 1주 뒤까지 못 보내면 그때 지워요)</span>
+              </label>
+              {alertError && <p className="aq-smartlink-alert-err" role="alert">{alertError}</p>}
+            </form>
+          )
+        )}
         {page.links.length > 0 ? (
           <ul className="aq-smartlink-list">
             {page.links.map(l => (

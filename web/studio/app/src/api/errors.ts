@@ -196,6 +196,9 @@ const CODE_MESSAGES: Record<string, string> = {
   // 스마트링크
   SMART_LINK_URL_INVALID: '그 플랫폼의 https 주소만 넣을 수 있어요. 앱에서 공유한 앨범 링크를 붙여 넣어 주세요.',
   SMART_LINK_PLATFORM_INVALID: '지원하지 않는 플랫폼이에요.',
+  ALERT_EMAIL_INVALID: '이메일 주소를 다시 확인해 주세요.',
+  ALERT_CONSENT_REQUIRED: '안내에 동의해 주세요.',
+  ALERT_ALREADY_RELEASED: '이미 발매됐어요. 아래 링크에서 바로 들어 보세요.',
   SMART_LINK_RELEASE_NOT_SUBMITTED: '발매 신청을 마친 뒤에 만들 수 있어요.',
   // 관리자(스태프) API
   STATUS_UNKNOWN: '알 수 없는 상태 필터예요.',

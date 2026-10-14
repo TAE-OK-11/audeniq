@@ -889,3 +889,11 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 .aq-code code{font-size:13px;letter-spacing:.02em}
 .aq-code-tag{font-size:11px;font-weight:700;padding:2px 6px;border-radius:999px;background:var(--aq-gray-100);color:var(--aq-text-3)}
 @media(max-width:560px){.aq-codes-tracks li{grid-template-columns:24px minmax(0,1fr) auto}.aq-codes-tracks li .aq-code{grid-column:2}.aq-codes-tracks li .ui-btn{grid-column:3;grid-row:2}}
+.aq-smartlink-alert{margin:18px 0 0;text-align:left;display:grid;gap:8px}
+.aq-smartlink-alert>label:first-child{font-weight:700;font-size:14px}
+.aq-smartlink-alert-row{display:flex;gap:8px}
+.aq-smartlink-alert-row .ui-input{flex:1;min-width:0}
+.aq-smartlink-consent{display:flex;gap:8px;align-items:flex-start;font-size:12px;line-height:1.5;color:var(--aq-text-3)}
+.aq-smartlink-consent input{margin-top:2px;flex:none}
+.aq-smartlink-alert-err{margin:0;font-size:13px;color:#d92d20}
+.aq-smartlink-alert-done{margin:18px 0 0;padding:10px 12px;border-radius:var(--aq-r-lg);background:var(--aq-blue-50);color:var(--aq-blue-500);font-weight:700;font-size:14px}
