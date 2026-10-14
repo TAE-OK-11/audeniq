@@ -1,3 +1,4 @@
+import { CodesPanel } from '../components/CodesPanel';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from '../lib/router';
 import { api, type Release, type Track } from '../api/client';
@@ -50,7 +51,8 @@ export function Releases() {
   const nav = useNavigate();
   const docs = useDocs();
   const [params, setParams] = useSearchParams();
-  const tab = params.get('tab') === 'tracks' ? 'tracks' : 'releases';
+  const tabParam = params.get('tab');
+  const tab = tabParam === 'tracks' || tabParam === 'codes' ? tabParam : 'releases';
   const filter = params.get('status') || 'all';
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('updated');
@@ -132,11 +134,14 @@ export function Releases() {
         items={[
           { value: 'releases', label: '발매 목록', count: listLoading ? null : list.length },
           { value: 'tracks', label: '전체 트랙', count: listLoading ? null : trackCount },
+          { value: 'codes', label: '코드 (UPC·ISRC)' },
         ]}
         onChange={v => setParam('tab', v, 'releases')}
       />
 
-      {loading ? (
+      {tab === 'codes' ? (
+        <CodesPanel />
+      ) : loading ? (
         <SkeletonRows count={4} />
       ) : error ? (
         <div className="ui-empty">

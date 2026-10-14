@@ -877,3 +877,15 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 .aq-smartlink-row{display:grid;grid-template-columns:110px minmax(0,1fr) 64px;gap:8px;align-items:center}
 .aq-smartlink-row small{text-align:right;color:var(--aq-text-3)}
 @media(max-width:560px){.aq-smartlink-row{grid-template-columns:1fr auto}.aq-smartlink-row input{grid-column:1/-1;grid-row:2}}
+/* 코드 관리 (발매·곡 관리 > 코드) */
+.aq-codes{display:grid;gap:12px}
+.aq-codes-release header{display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid var(--aq-gray-100)}
+.aq-codes-upc{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--aq-text-3)}
+.aq-codes-tracks{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:2px}
+.aq-codes-tracks li{display:grid;grid-template-columns:28px minmax(0,1fr) auto auto;gap:8px;align-items:center;min-height:36px}
+.aq-codes-no{color:var(--aq-text-4);font-size:12px;text-align:right}
+.aq-codes-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-code{display:inline-flex;align-items:center;gap:6px}
+.aq-code code{font-size:13px;letter-spacing:.02em}
+.aq-code-tag{font-size:11px;font-weight:700;padding:2px 6px;border-radius:999px;background:var(--aq-gray-100);color:var(--aq-text-3)}
+@media(max-width:560px){.aq-codes-tracks li{grid-template-columns:24px minmax(0,1fr) auto}.aq-codes-tracks li .aq-code{grid-column:2}.aq-codes-tracks li .ui-btn{grid-column:3;grid-row:2}}

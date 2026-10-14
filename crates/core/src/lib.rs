@@ -7,6 +7,7 @@ pub mod artwork_policy;
 pub mod auth;
 pub mod catalog;
 pub mod cloud;
+pub mod codes;
 pub mod config;
 pub mod content_policy;
 pub mod contracts;
