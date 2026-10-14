@@ -179,3 +179,27 @@ export function putToGrant(grant: UploadGrant, file: Blob, onProgress?: (ratio: 
     xhr.send(file);
   });
 }
+
+/** 서버가 만든 파일(CSV 등)을 받아 저장한다. 오류는 JSON 요청과 같은 문구로 알린다. */
+export async function downloadFile(path: string, fallbackName: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { credentials: 'include', cache: 'no-store' });
+  } catch {
+    throw new ApiError('네트워크 연결을 확인해 주세요.', 0, 'NETWORK');
+  }
+  if (!res.ok) {
+    let code = STATUS_CODES[res.status] ?? '';
+    try { code = (await res.json())?.error?.code ?? code; } catch { /* 본문 없음 */ }
+    throw new ApiError(messageForCode(code, res.status), res.status, code);
+  }
+  const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? fallbackName;
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
