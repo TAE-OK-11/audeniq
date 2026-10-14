@@ -190,7 +190,7 @@ async fn build_submittable(app: &Router, pool: &PgPool, u: &User, asset: Uuid) -
     let (s, v) = call(
         app, "POST",
         &format!("/api/orgs/{}/releases/{release}/tracks", u.org),
-        json!({"title":"T1","disc_number":1,"track_number":1,"artist_id":artist,"asset_id":asset,"row_version":rv}),
+        json!({"title":"T1","disc_number":1,"track_number":1,"artist_id":artist,"asset_id":asset,"lyrics":"첫 줄\n둘째 줄","row_version":rv}),
         Some(u),
     )
     .await;
@@ -201,7 +201,7 @@ async fn build_submittable(app: &Router, pool: &PgPool, u: &User, asset: Uuid) -
         app,
         "PUT",
         &format!("/api/orgs/{}/releases/{release}/tracks/{track}/credits", u.org),
-        json!({"row_version":rv,"credits":[{"party_id":u.party,"role":"ARTIST"},{"party_id":u.party,"role":"COMPOSER"}]}),
+        json!({"row_version":rv,"credits":[{"party_id":u.party,"role":"ARTIST"},{"party_id":u.party,"role":"COMPOSER"},{"party_id":u.party,"role":"LYRICIST"}]}),
         Some(u),
     )
     .await;
@@ -820,6 +820,8 @@ async fn partner_spec_feed_writes_manifest_csv_and_reads_result(pool: PgPool) {
     assert_eq!(manifest["upc"], r.upc);
     assert_eq!(manifest["genre"], "K-Pop");
     assert_eq!(manifest["adult_only"], false);
+    // Lyrics go out as submitted (Korean services show them).
+    assert_eq!(manifest["tracks"][0]["lyrics"], "첫 줄\n둘째 줄");
     assert_eq!(
         manifest["territories"],
         json!({"mode":"world_except","codes":["CN","JP"]})
@@ -837,12 +839,11 @@ async fn partner_spec_feed_writes_manifest_csv_and_reads_result(pool: PgPool) {
     let csv = std::fs::read_to_string(folder.join("metadata.csv")).unwrap();
     assert!(csv.starts_with('\u{feff}'));
     assert!(csv.lines().nth(1).unwrap().contains(&r.upc));
-    assert!(csv.lines().next().unwrap().ends_with(",territories"));
+    assert!(csv.lines().next().unwrap().ends_with(",territories,lyrics"));
+    // Multi-line lyrics stay one quoted cell.
     assert!(
-        csv.lines()
-            .nth(1)
-            .unwrap()
-            .ends_with(",Worldwide excluding CN JP")
+        csv.contains(",Worldwide excluding CN JP,\"첫 줄\n둘째 줄\"\r\n"),
+        "{csv}"
     );
     assert!(folder.join(format!("{}_01_001.wav", r.upc)).exists());
     assert!(folder.join(format!("{pmid}.complete")).exists());
