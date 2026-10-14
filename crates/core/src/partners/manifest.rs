@@ -176,7 +176,7 @@ pub const CSV_COLUMNS: &[&str] = &[
     "territories",
 ];
 
-fn csv_cell(s: &str) -> String {
+pub(crate) fn csv_cell(s: &str) -> String {
     // Spreadsheet formula injection: a leading = + - @ is neutralized.
     let s = if s.starts_with(['=', '+', '-', '@']) {
         format!("'{s}")

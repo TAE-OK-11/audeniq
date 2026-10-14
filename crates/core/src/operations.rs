@@ -830,24 +830,39 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
             return fail(pool, j, true, "EXECUTION_NO_ADAPTER").await;
         };
         // Keep the delivery job's lease alive for as long as the send runs.
+        // Once it is lost (refused, or unconfirmed past its expiry) another
+        // worker may hold it: stop sending instead of finishing a transfer
+        // whose result can no longer be recorded (the fenced status update
+        // would refuse it and leave it to reconciliation anyway).
         let lease = job_lease_seconds();
         let renew = async {
             let mut tick =
                 tokio::time::interval(std::time::Duration::from_secs((lease / 3).max(1) as u64));
             tick.tick().await;
+            let mut until =
+                std::time::Instant::now() + std::time::Duration::from_secs(lease.max(1) as u64);
             loop {
                 tick.tick().await;
                 match crate::execution::renew_delivery_lease(pool, &djob, lease).await {
-                    Ok(true) => {}
-                    Ok(false) => break,
+                    Ok(true) => {
+                        until = std::time::Instant::now()
+                            + std::time::Duration::from_secs(lease.max(1) as u64);
+                    }
+                    Ok(false) => return,
+                    Err(e) if std::time::Instant::now() >= until => {
+                        tracing::warn!(error = %e, "delivery lease expired while renewal failed");
+                        return;
+                    }
                     Err(e) => tracing::warn!(error = %e, "delivery lease renewal failed"),
                 }
             }
-            std::future::pending::<()>().await
         };
         let delivered = tokio::select! {
             r = Box::pin(crate::execution::run_delivery(pool, storage, adapter.as_ref(), &djob)) => r,
-            _ = renew => unreachable!(),
+            () = renew => {
+                tracing::warn!(delivery_job = %djob.id, "delivery lease lost; send cancelled");
+                return fail(pool, j, false, "DELIVERY_LEASE_LOST").await;
+            }
         };
         return match delivered {
             Ok(status) => match status.as_str() {
@@ -951,6 +966,45 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
             Err(e) => {
                 let short: String = format!("{e:?}").chars().take(500).collect();
                 fail(pool, j, false, &format!("DELIVERY_MARK_LIVE_ERROR:{short}")).await
+            }
+        };
+    }
+    if j.kind == "delivery.mark_taken_down" {
+        // Staff-confirmed takedown for partners that take no takedown message.
+        let package = j
+            .payload
+            .get("package_id")
+            .and_then(Value::as_str)
+            .and_then(|s| Uuid::parse_str(s).ok());
+        let partner = j
+            .payload
+            .get("partner_id")
+            .and_then(Value::as_str)
+            .filter(|p| crate::partner_config::valid_partner_id(p));
+        let staff_user = j
+            .payload
+            .get("staff_user_id")
+            .and_then(Value::as_str)
+            .and_then(|s| Uuid::parse_str(s).ok());
+        let (Some(package), Some(partner)) = (package, partner) else {
+            return fail(pool, j, true, "DELIVERY_MARK_TAKEN_DOWN:invalid payload").await;
+        };
+        return match crate::execution::record_manual_taken_down(pool, package, partner, staff_user)
+            .await
+        {
+            Ok(_) => succeed(pool, j).await,
+            Err(e @ (Error::NotFound | Error::Invalid | Error::PolicyGate(_))) => {
+                fail(pool, j, true, &format!("DELIVERY_MARK_TAKEN_DOWN:{e}")).await
+            }
+            Err(e) => {
+                let short: String = format!("{e:?}").chars().take(500).collect();
+                fail(
+                    pool,
+                    j,
+                    false,
+                    &format!("DELIVERY_MARK_TAKEN_DOWN_ERROR:{short}"),
+                )
+                .await
             }
         };
     }

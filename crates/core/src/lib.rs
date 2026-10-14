@@ -62,6 +62,8 @@ pub mod staff_admin;
 pub mod staff_mfa;
 pub mod storage;
 pub mod submission;
+pub mod takedown;
+pub mod temp_sweep;
 pub mod territory;
 pub mod text_policy;
 pub mod transport;
@@ -80,6 +82,7 @@ pub mod live;
 mod local_analyzer;
 pub mod lossless;
 mod media_budget;
+pub mod members;
 mod password_work;
 
 pub mod oauth;

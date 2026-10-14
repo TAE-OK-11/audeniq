@@ -1562,6 +1562,202 @@ async fn settlement_balance_payout_requests_and_reports(pool: PgPool) {
     assert_eq!(s, StatusCode::FORBIDDEN);
 }
 
+async fn raw_get(app: &Router, path: &str, u: &User) -> (StatusCode, HeaderMap, String) {
+    let r = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(path)
+                .header("x-audeniq-service", SECRET)
+                .header("origin", ORIGIN)
+                .header("cookie", &u.cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let (status, headers) = (r.status(), r.headers().clone());
+    let bytes = axum::body::to_bytes(r.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
+    (status, headers, String::from_utf8(bytes.to_vec()).unwrap())
+}
+
+#[sqlx::test]
+async fn statements_page_through_the_whole_history_and_export_as_csv(pool: PgPool) {
+    key();
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    use audeniq_core::finance::{self, EntrySide, LedgerEntryInput, PostTransaction};
+    let entry = |account, side, amount: &str| LedgerEntryInput {
+        account,
+        side,
+        amount: amount.parse().unwrap(),
+        currency: None,
+        party_id: Some(u.party),
+        isrc: None,
+        split_snapshot_id: None,
+    };
+    for (i, description) in ["2026-06 Melon", "=HYPERLINK(\"x\")", "2026-08 Spotify, Inc"]
+        .into_iter()
+        .enumerate()
+    {
+        finance::post_transaction(
+            &pool,
+            u.org,
+            PostTransaction {
+                transaction_code: "ROYALTY_ACCRUAL",
+                currency: "KRW",
+                entries: vec![
+                    entry(
+                        "ROYALTY_RECEIVABLE",
+                        EntrySide::Debit,
+                        &format!("{}000", i + 1),
+                    ),
+                    entry(
+                        "ROYALTY_PAYABLE",
+                        EntrySide::Credit,
+                        &format!("{}000", i + 1),
+                    ),
+                ],
+                match_status: Some("AUTO"),
+                fx_rate: None,
+                fee_policy_version: Some("fee-1"),
+                contract_version: Some("ctr-1"),
+                tax_rule_version: Some("tax-1"),
+                source_ref: json!({"dsp":"melon","period":format!("2026-0{}", i + 6)}),
+                description,
+                created_by: None,
+            },
+        )
+        .await
+        .unwrap();
+    }
+    // Two pages of two, newest first, no line twice and none skipped.
+    let (s, _, first) = call(
+        &app,
+        "GET",
+        &org_path(&u, "/finance/statements?limit=2"),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{first}");
+    assert_eq!(first["items"].as_array().unwrap().len(), 2);
+    assert_eq!(first["items"][0]["amount"], "3000");
+    let next = first["next_before"]
+        .as_str()
+        .expect("a next page")
+        .to_string();
+    let (s, _, second) = call(
+        &app,
+        "GET",
+        &org_path(
+            &u,
+            &format!("/finance/statements?limit=2&before={}", urlencoding(&next)),
+        ),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{second}");
+    assert_eq!(second["items"].as_array().unwrap().len(), 1);
+    assert_eq!(second["items"][0]["amount"], "1000");
+    assert!(second["next_before"].is_null());
+    let (s, _, v) = call(
+        &app,
+        "GET",
+        &org_path(&u, "/finance/statements?before=yesterday"),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    assert_eq!(v["error"]["code"], "STATEMENT_CURSOR_INVALID");
+
+    let (s, h, csv) = raw_get(&app, &org_path(&u, "/finance/statements.csv"), &u).await;
+    assert_eq!(s, StatusCode::OK, "{csv}");
+    assert!(h["content-type"].to_str().unwrap().starts_with("text/csv"));
+    assert!(
+        h["content-disposition"]
+            .to_str()
+            .unwrap()
+            .contains("statements.csv")
+    );
+    assert!(csv.starts_with('\u{feff}'), "BOM for Korean Excel");
+    let lines: Vec<&str> = csv.trim_end().split("\r\n").collect();
+    assert_eq!(lines.len(), 4, "{csv}");
+    assert!(
+        lines[1].contains("\"2026-08 Spotify, Inc\"") && lines[1].ends_with(",3000"),
+        "{csv}"
+    );
+    // A leading = never reaches a spreadsheet as a formula.
+    assert!(lines[2].contains("\"'=HYPERLINK(\"\"x\"\")\""), "{csv}");
+
+    // Report periods: any whole-month span up to ten years.
+    for (q, ok) in [
+        ("", true),
+        ("?from=2025-01&to=2025-12", true),
+        ("?from=2016-01&to=2025-12", true),
+        ("?from=2015-12&to=2025-12", false),
+        ("?from=2025-12&to=2025-01", false),
+        ("?from=2025-13", false),
+    ] {
+        let (s, _, v) = call(
+            &app,
+            "GET",
+            &org_path(&u, &format!("/reports{q}")),
+            Value::Null,
+            Some(&u),
+        )
+        .await;
+        if ok {
+            assert_eq!(s, StatusCode::OK, "{q}: {v}");
+        } else {
+            assert_eq!(v["error"]["code"], "REPORT_PERIOD_INVALID", "{q}: {v}");
+        }
+    }
+    let (_, _, v) = call(
+        &app,
+        "GET",
+        &org_path(&u, "/reports?from=2025-01&to=2025-12"),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (v["from"].as_str(), v["to"].as_str()),
+        (Some("2025-01"), Some("2025-12"))
+    );
+    let (s, h, csv) = raw_get(
+        &app,
+        &org_path(&u, "/reports.csv?from=2025-01&to=2025-12"),
+        &u,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{csv}");
+    assert!(
+        h["content-disposition"]
+            .to_str()
+            .unwrap()
+            .contains("reports-202501-202512.csv")
+    );
+    assert_eq!(
+        csv,
+        "\u{feff}month,platform,release_id,release,currency,streams,revenue\r\n"
+    );
+    // Another account's workspace stays closed.
+    let other = user(&app).await;
+    let (s, _, _) = raw_get(&app, &org_path(&u, "/finance/statements.csv"), &other).await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+}
+
+fn urlencoding(v: &str) -> String {
+    v.replace('+', "%2B")
+        .replace(':', "%3A")
+        .replace('|', "%7C")
+}
+
 #[sqlx::test]
 async fn payout_quote_snapshot_cancel_order_and_settle(pool: PgPool) {
     // Legal/operations audit 2026-10-10: C01 (minimum waiver), C02 (fee/net),

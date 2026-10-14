@@ -164,14 +164,14 @@ pub(crate) fn require(st: &Staff, duty: Duty) -> Result<()> {
 
 /// Cross-org visibility for RLS tables whose policy honours `app.staff`
 /// (delivery staging). Only called after `staff()` succeeded.
-async fn staff_scope(c: &mut PgConnection) -> Result<()> {
+pub(crate) async fn staff_scope(c: &mut PgConnection) -> Result<()> {
     sqlx::query("SELECT set_config('app.staff','on',true)")
         .execute(&mut *c)
         .await?;
     Ok(())
 }
 
-fn note_ok(s: &str, max: usize) -> Result<()> {
+pub(crate) fn note_ok(s: &str, max: usize) -> Result<()> {
     if s.chars().count() > max {
         return Err(Error::InvalidCode("NOTE_TOO_LONG"));
     }
@@ -309,7 +309,7 @@ pub async fn list_releases(s: &AppState, h: &HeaderMap, p: Page) -> Result<Value
            'release_date', ar.body #>> '{release,draft,release_date}',
            'submitted_at', ar.created_at,
            'platforms', COALESCE(ar.body #> '{release,draft,platforms}', '[]'::jsonb),
-           'cover', NULLIF(r.draft->>'coverData', ''),
+           'cover', COALESCE(NULLIF(r.draft->>'coverData', ''), '/api/staff/assets/' || COALESCE(NULLIF(r.draft->>'coverThumbAssetId', ''), NULLIF(r.draft->>'coverAssetId', ''), r.artwork_asset_id::text) || '/image'),
            'agreement', (SELECT d.status FROM portal.documents d
                           WHERE d.org_id=r.org_id AND d.release_id=r.id AND d.kind='AGREEMENT'),
            'claim', (SELECT jsonb_build_object('user_id', c.claimed_by, 'email', ",
@@ -578,7 +578,7 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
     let r = sqlx::query(
         "SELECT r.id, r.org_id, o.name AS org_name, r.title, r.release_type, r.status, r.upc,
                 r.current_revision_id, ar.body AS revision, ar.created_at AS submitted_at,
-                NULLIF(r.draft->>'coverData', '') AS cover,
+                COALESCE(NULLIF(r.draft->>'coverData', ''), '/api/staff/assets/' || COALESCE(NULLIF(r.draft->>'coverThumbAssetId', ''), NULLIF(r.draft->>'coverAssetId', ''), r.artwork_asset_id::text) || '/image') AS cover,
                 (SELECT coalesce(jsonb_object_agg(t->>'id', jsonb_build_object(
                     'duration_secs',a.duration_secs,'sample_rate',a.sample_rate,
                     'channels',a.channels,'bits_per_sample',a.bits_per_sample)), '{}'::jsonb)
@@ -2853,6 +2853,29 @@ async fn h_document_file(
     );
     Ok(res)
 }
+/// Cover art (and its preview) of a release under review: staff with the
+/// review or documents duty, any org.
+async fn h_asset_image(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    h: HeaderMap,
+) -> Result<axum::response::Response> {
+    let st = staff(&s, &h, false).await?;
+    if require(&st, Duty::Documents).is_err() {
+        require(&st, Duty::Review)?;
+    }
+    let mut tx = s.pool.begin().await?;
+    staff_scope(&mut tx).await?;
+    let org: Uuid =
+        sqlx::query_scalar("SELECT org_id FROM catalog.assets WHERE id=$1 AND kind='IMAGE'")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(Error::NotFound)?;
+    tx.commit().await?;
+    let img = crate::uploads::stored_image(&s, org, id).await?;
+    Ok(crate::uploads::image_response(img, &h))
+}
 async fn h_request_proof(
     State(s): State<AppState>,
     Path(org): Path<Uuid>,
@@ -2996,6 +3019,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/staff/documents", get(h_documents))
         .route("/api/staff/documents/{id}/review", post(h_document_review))
         .route("/api/staff/documents/{id}/file", get(h_document_file))
+        .route("/api/staff/assets/{id}/image", get(h_asset_image))
         .route("/api/staff/orgs/{org}/documents", post(h_request_proof))
         .route("/api/staff/inquiries", get(h_inquiries))
         .route("/api/staff/inquiries/{id}", get(h_inquiry))
