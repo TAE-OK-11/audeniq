@@ -219,7 +219,7 @@ services:
       MAINTENANCE_TITLE: ${MAINTENANCE_TITLE:-}
       MAINTENANCE_MESSAGE: ${MAINTENANCE_MESSAGE:-}
       MAINTENANCE_UNTIL: ${MAINTENANCE_UNTIL:-}
-      # 알림 메일 (crates/core/src/email.rs): 비우면 보내지 않는다. ses,oci = SES가 실패하면 OCI로.
+      # 알림 메일 (crates/core/src/email.rs): 비우면 보내지 않는다. oci,ses = OCI(저렴)로 먼저, 실패하면 SES로.
       EMAIL_PROVIDERS: ${EMAIL_PROVIDERS:-}
       EMAIL_FROM: ${EMAIL_FROM:-}
       EMAIL_SES_REGION: ${EMAIL_SES_REGION:-}
