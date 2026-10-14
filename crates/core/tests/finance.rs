@@ -284,6 +284,9 @@ async fn split_snapshot_is_append_only(pool: PgPool) {
 #[sqlx::test]
 async fn payout_order_idempotency(pool: PgPool) {
     let org = org(&pool).await;
+    finance::post_transaction(&pool, org, balanced())
+        .await
+        .unwrap();
     let payee = Uuid::new_v4();
     let p = PayoutOrderInput {
         idempotency_key: "pay-001",
@@ -315,6 +318,9 @@ async fn payout_order_idempotency(pool: PgPool) {
 #[sqlx::test]
 async fn payout_unknown_bank_response_is_not_retried(pool: PgPool) {
     let org = org(&pool).await;
+    finance::post_transaction(&pool, org, balanced())
+        .await
+        .unwrap();
     let (id, _) = finance::create_payout_order(
         &pool,
         org,
@@ -446,6 +452,13 @@ async fn payout_partial_return_is_idempotent_and_restores_only_received_money(po
     let org = org(&pool).await;
     let creator = Uuid::new_v4();
     let approver = Uuid::new_v4();
+    // The order pays out money actually earned (finance.withdrawable).
+    let mut earned = balanced();
+    earned.entries = vec![
+        entry("ROYALTY_RECEIVABLE", EntrySide::Debit, "2000"),
+        entry("ROYALTY_PAYABLE", EntrySide::Credit, "2000"),
+    ];
+    finance::post_transaction(&pool, org, earned).await.unwrap();
     let (order, _) = finance::create_payout_order(
         &pool,
         org,
@@ -550,7 +563,7 @@ async fn payout_partial_return_is_idempotent_and_restores_only_received_money(po
     );
     let net:rust_decimal::Decimal=sqlx::query_scalar("SELECT SUM(CASE WHEN side='CREDIT' THEN amount ELSE -amount END) FROM finance.ledger_entries WHERE org_id=$1 AND account='ROYALTY_PAYABLE'")
         .bind(org).fetch_one(&pool).await.unwrap();
-    assert_eq!(net, dec("-1500"));
+    assert_eq!(net, dec("500"));
     finance::record_payout_return(&pool, org, approver, order, make("final", "1000", true))
         .await
         .unwrap();
@@ -569,7 +582,7 @@ async fn payout_partial_return_is_idempotent_and_restores_only_received_money(po
     );
     let net:rust_decimal::Decimal=sqlx::query_scalar("SELECT SUM(CASE WHEN side='CREDIT' THEN amount ELSE -amount END) FROM finance.ledger_entries WHERE org_id=$1 AND account='ROYALTY_PAYABLE'")
         .bind(org).fetch_one(&pool).await.unwrap();
-    assert_eq!(net, dec("0"));
+    assert_eq!(net, dec("2000"));
     let n: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM finance.payout_returns WHERE payout_order_id=$1")
             .bind(order)
@@ -583,5 +596,236 @@ async fn payout_partial_return_is_idempotent_and_restores_only_received_money(po
             .execute(&pool)
             .await
             .is_err()
+    );
+}
+
+/// One withdrawable balance (payable − held − other open payouts)
+/// gates the order, the approval and the bank submission alike.
+#[sqlx::test]
+async fn withdrawable_balance_gates_every_payout_step(pool: PgPool) {
+    let org = org(&pool).await;
+    let order = |key: &'static str, amount: &str| PayoutOrderInput {
+        idempotency_key: key,
+        payee_party_id: Uuid::nil(),
+        amount: dec(amount),
+        currency: "KRW",
+        created_by: None,
+    };
+    // Nothing earned: nothing can be ordered.
+    let e = finance::create_payout_order(&pool, org, order("w-0", "1000"))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(e, Error::PolicyGate("PAYOUT_EXCEEDS_UNHELD_BALANCE")),
+        "{e:?}"
+    );
+    finance::post_transaction(&pool, org, balanced())
+        .await
+        .unwrap(); // 100000 payable
+    let (a, _) = finance::create_payout_order(&pool, org, order("w-1", "60000"))
+        .await
+        .unwrap();
+    // The open order reserves its amount: a second one cannot overdraw.
+    let e = finance::create_payout_order(&pool, org, order("w-2", "50000"))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(e, Error::PolicyGate("PAYOUT_EXCEEDS_UNHELD_BALANCE")),
+        "{e:?}"
+    );
+    // A dispute hold after the order stops its approval.
+    let hold = finance::place_hold(
+        &pool,
+        org,
+        None,
+        HoldScope::Isrc,
+        "KRA402600009",
+        "dispute",
+        "RIGHTS_DISPUTE",
+    )
+    .await
+    .unwrap();
+    // Re-label 50000 of the payable as the held track's: reverse-free way is a
+    // new balanced pair that debits unlabelled payable and credits labelled.
+    let mut move_to_track = balanced();
+    move_to_track.transaction_code = "ROYALTY_RECLASS";
+    move_to_track.entries = vec![
+        entry("ROYALTY_PAYABLE", EntrySide::Debit, "50000"),
+        LedgerEntryInput {
+            isrc: Some("KRA402600009"),
+            ..entry("ROYALTY_PAYABLE", EntrySide::Credit, "50000")
+        },
+    ];
+    finance::post_transaction(&pool, org, move_to_track)
+        .await
+        .unwrap();
+    let approver = Uuid::new_v4();
+    let e = finance::approve_payout_order(&pool, org, approver, a)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(e, Error::PolicyGate("PAYOUT_EXCEEDS_UNHELD_BALANCE")),
+        "{e:?}"
+    );
+    // Released: it approves, and a hold placed after approval stops the submission.
+    finance::release_hold(&pool, org, approver, hold)
+        .await
+        .unwrap();
+    finance::approve_payout_order(&pool, org, approver, a)
+        .await
+        .unwrap();
+    finance::place_hold(
+        &pool,
+        org,
+        None,
+        HoldScope::Isrc,
+        "KRA402600009",
+        "dispute again",
+        "RIGHTS_DISPUTE",
+    )
+    .await
+    .unwrap();
+    let e = finance::mark_payout_submitted(&pool, org, approver, a, "bank-w-1")
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(e, Error::PolicyGate("PAYOUT_EXCEEDS_UNHELD_BALANCE")),
+        "{e:?}"
+    );
+}
+
+async fn withdrawable_now(pool: &PgPool, org: Uuid) -> rust_decimal::Decimal {
+    let mut c = pool.acquire().await.unwrap();
+    finance::withdrawable(&mut c, org, None).await.unwrap()
+}
+
+/// A manual transfer settles only with transfer evidence and by someone
+/// other than the approver; a returned order is reissued through approval
+/// again, once, to the account registered now.
+#[sqlx::test]
+async fn manual_payout_needs_evidence_and_reissue_goes_through_approval(pool: PgPool) {
+    let org = org(&pool).await;
+    finance::post_transaction(&pool, org, balanced())
+        .await
+        .unwrap(); // 100000 payable
+    let (id, _) = finance::create_payout_order(
+        &pool,
+        org,
+        PayoutOrderInput {
+            idempotency_key: "man-0001",
+            payee_party_id: Uuid::nil(),
+            amount: dec("30000"),
+            currency: "KRW",
+            created_by: None,
+        },
+    )
+    .await
+    .unwrap();
+    let approver = Uuid::new_v4();
+    let executor = Uuid::new_v4();
+    finance::approve_payout_order(&pool, org, approver, id)
+        .await
+        .unwrap();
+    let e = finance::record_manual_payout(&pool, org, executor, id, "IBK-20261011-1", json!({}))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(e, Error::PolicyGate("PAYOUT_EVIDENCE_REQUIRED")),
+        "{e:?}"
+    );
+    let receipt = json!({"transfer_receipt":"IBK 이체확인증 2026-10-11"});
+    let e =
+        finance::record_manual_payout(&pool, org, approver, id, "IBK-20261011-1", receipt.clone())
+            .await
+            .unwrap_err();
+    assert!(
+        matches!(e, Error::PolicyGate("PAYOUT_EXECUTOR_MUST_DIFFER")),
+        "{e:?}"
+    );
+    finance::record_manual_payout(&pool, org, executor, id, "IBK-20261011-1", receipt.clone())
+        .await
+        .unwrap();
+    let (status, evidence): (String, Option<serde_json::Value>) =
+        sqlx::query_as("SELECT status, manual_evidence FROM finance.payout_orders WHERE id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!((status.as_str(), evidence), ("SETTLED", Some(receipt)));
+    assert_eq!(withdrawable_now(&pool, org).await, dec("70000"));
+
+    // Only a returned or failed order is reissued, and it needs an account.
+    let e = finance::reissue_payout(&pool, org, executor, id)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(e, Error::PolicyGate("INVALID_PAYOUT_STATUS_TRANSITION")),
+        "{e:?}"
+    );
+    finance::record_payout_return(
+        &pool,
+        org,
+        executor,
+        id,
+        finance::PayoutReturnInput {
+            bank_reference: "IBK-RET-1",
+            returned_amount: dec("30000"),
+            refund_fee: false,
+            evidence: json!({"statement":"bank returned the transfer"}),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        finance::get_payout_status(&pool, org, id).await.unwrap(),
+        "RETURNED"
+    );
+    assert_eq!(withdrawable_now(&pool, org).await, dec("100000"));
+    let e = finance::reissue_payout(&pool, org, executor, id)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(e, Error::PolicyGate("PAYOUT_ACCOUNT_REQUIRED")),
+        "{e:?}"
+    );
+    let (party, user) = (Uuid::new_v4(), Uuid::new_v4());
+    sqlx::query(
+        "INSERT INTO identity.parties(id,org_id,kind,display_name) VALUES($1,$2,'PERSON','p')",
+    )
+    .bind(party)
+    .bind(org)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO identity.users(id,email,password_hash,party_id) VALUES($1,'pay@x.y','x',$2)",
+    )
+    .bind(user)
+    .bind(party)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO portal.payout_accounts(org_id,payee_type,holder_name,bank_name,account_last4,account_cipher,registered_by) VALUES($1,'INDIVIDUAL','홍길동','하나은행','1234',$2,$3)")
+        .bind(org)
+        .bind(vec![0u8; 40])
+        .bind(user)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let new = finance::reissue_payout(&pool, org, executor, id)
+        .await
+        .unwrap();
+    assert_eq!(
+        finance::get_payout_status(&pool, org, new).await.unwrap(),
+        "PENDING_APPROVAL"
+    );
+    // The reissued order reserves the amount again, and only once.
+    assert_eq!(withdrawable_now(&pool, org).await, dec("70000"));
+    let e = finance::reissue_payout(&pool, org, executor, id)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(e, Error::PolicyGate("PAYOUT_ALREADY_REISSUED")),
+        "{e:?}"
     );
 }

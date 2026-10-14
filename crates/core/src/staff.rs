@@ -1084,6 +1084,7 @@ async fn decide_agreement(
     .bind(&note)
     .fetch_all(&mut *c)
     .await?;
+    let approved = status == "APPROVED" && !ids.is_empty();
     for id in ids {
         operations::audit(
             c,
@@ -1093,6 +1094,70 @@ async fn decide_agreement(
             "staff.document_reviewed",
             status,
             actor.request,
+        )
+        .await?;
+    }
+    if approved {
+        apply_contract_scope(c, org, release).await?;
+    }
+    Ok(())
+}
+
+/// Staff approval fixes the agreement's scope (contract_scope, 0125). Refuse
+/// a scope that leaves none of the requested DSPs, and restage the prepared
+/// package so every DSP row and ERN is rebuilt inside it before the artist
+/// signs (the send re-checks it).
+async fn apply_contract_scope(c: &mut PgConnection, org: Uuid, release: Uuid) -> Result<()> {
+    let Some(scope) = crate::contract_scope::load(c, org, release).await? else {
+        return Ok(());
+    };
+    let draft: Option<Value> = sqlx::query_scalar(
+        "SELECT COALESCE(NULLIF(ar.body -> 'release' -> 'draft', 'null'::jsonb), r.draft)
+           FROM catalog.releases r
+           LEFT JOIN catalog.application_revisions ar ON ar.org_id=r.org_id AND ar.id=r.current_revision_id
+          WHERE r.org_id=$1 AND r.id=$2",
+    )
+    .bind(org)
+    .bind(release)
+    .fetch_optional(&mut *c)
+    .await?
+    .flatten();
+    let requested = draft
+        .as_ref()
+        .and_then(crate::dsp_registry::requested)
+        .unwrap_or_default();
+    let today = crate::domain::today_kst();
+    if !requested.is_empty()
+        && requested
+            .iter()
+            .all(|d| !scope.dsp_findings(*d, today).is_empty())
+    {
+        return Err(Error::PolicyGate("CONTRACT_SCOPE_EXCLUDES_ALL"));
+    }
+    if let Some(Ok(t)) = draft
+        .as_ref()
+        .map(crate::territory::Territories::from_draft)
+        && t.narrow(&scope.territories).is_none()
+    {
+        return Err(Error::PolicyGate("CONTRACT_SCOPE_TERRITORY_EMPTY"));
+    }
+    let package: Option<Uuid> = sqlx::query_scalar(
+        "SELECT dp.id FROM distribution.canonical_releases cr
+           JOIN distribution.distribution_packages dp ON dp.canonical_release_id=cr.id
+          WHERE cr.org_id=$1 AND cr.release_id=$2 ORDER BY dp.created_at DESC LIMIT 1",
+    )
+    .bind(org)
+    .bind(release)
+    .fetch_optional(&mut *c)
+    .await?;
+    if let Some(package) = package {
+        operations::enqueue(
+            c,
+            "distribution",
+            "delivery.stage",
+            &json!({"package_id": package}),
+            &format!("delivery.stage:{package}:contract-scope:{}", Uuid::new_v4()),
+            None,
         )
         .await?;
     }
@@ -1880,6 +1945,10 @@ pub struct DocumentReview {
     #[serde(default)]
     pub note: String,
     pub row_version: i64,
+    /// APPROVED: what the document proves (rights_grants, 0126). Required
+    /// for a document tied to a release.
+    #[serde(default)]
+    pub grants: Vec<crate::rights_grants::GrantInput>,
 }
 
 pub async fn review_document(
@@ -1896,6 +1965,9 @@ pub async fn review_document(
     if i.status == "NEEDS" && i.note.trim().is_empty() {
         return Err(Error::PolicyGate("REVIEW_NOTE_REQUIRED"));
     }
+    if i.status == "NEEDS" && !i.grants.is_empty() {
+        return Err(Error::Invalid);
+    }
     note_ok(&i.note, 1000)?;
     let mut tx = s.pool.begin().await?;
     // Only submitted rights proofs are decided here; agreements go with the
@@ -1903,7 +1975,7 @@ pub async fn review_document(
     let row = sqlx::query(
         "UPDATE portal.documents SET status=$2, review_note=$3, row_version=row_version+1, updated_at=now()
          WHERE id=$1 AND row_version=$4 AND kind='RIGHTS_PROOF' AND status='REVIEW'
-         RETURNING org_id, row_version",
+         RETURNING org_id, row_version, release_id",
     )
     .bind(id)
     .bind(&i.status)
@@ -1913,6 +1985,15 @@ pub async fn review_document(
     .await?
     .ok_or(Error::Conflict)?;
     let org: Uuid = row.get("org_id");
+    let release: Option<Uuid> = row.get("release_id");
+    let mut grants = Vec::new();
+    let mut recheck = None;
+    if i.status == "APPROVED"
+        && let Some(release) = release
+    {
+        grants = crate::rights_grants::record(&mut tx, org, release, id, &i.grants).await?;
+        recheck = crate::rights_grants::recheck(&mut tx, org, release, st.actor.request).await?;
+    }
     operations::audit(
         &mut tx,
         Some(st.actor.user),
@@ -1924,7 +2005,10 @@ pub async fn review_document(
     )
     .await?;
     tx.commit().await?;
-    Ok(json!({"id": id, "status": i.status, "row_version": row.get::<i64,_>("row_version")}))
+    Ok(json!({
+        "id": id, "status": i.status, "row_version": row.get::<i64,_>("row_version"),
+        "grants": grants, "recheck": recheck,
+    }))
 }
 
 /// A document's original file as submitted by the artist (rights proof or

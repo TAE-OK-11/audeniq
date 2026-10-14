@@ -49,6 +49,8 @@ GRANT SELECT,INSERT,UPDATE ON rights.override_requests TO audeniq_api;
 GRANT USAGE ON SCHEMA portal TO audeniq_api;
 GRANT SELECT,INSERT,UPDATE ON portal.artist_profiles,portal.payout_accounts,portal.inquiries,portal.documents TO audeniq_api;
 GRANT SELECT,INSERT ON portal.inquiry_messages,portal.notification_reads,portal.release_applications,portal.payout_requests TO audeniq_api;
+-- Payout-account consents, append-only (0127).
+GRANT SELECT,INSERT ON portal.consent_records TO audeniq_api;
 GRANT SELECT ON portal.notifications TO audeniq_api;
 -- 알림 메일 (0112): 사용자별 수신 설정, 보낼 메일 대기열 (넣기는 트리거가, 보내기·결과 기록은 API가)
 GRANT SELECT,INSERT,UPDATE ON portal.notification_settings TO audeniq_api;
@@ -105,6 +107,10 @@ GRANT SELECT ON finance.split_allocations, finance.royalty_postings TO audeniq_a
 GRANT EXECUTE ON FUNCTION finance.settle_split_share(uuid) TO audeniq_api;
 GRANT USAGE ON SCHEMA finance TO audeniq_api;
 GRANT SELECT ON finance.ledger_transactions,finance.ledger_entries,finance.payout_orders,finance.royalty_reports,finance.report_lines,finance.finance_holds TO audeniq_api;
+-- Held (disputed) royalties are not withdrawable (0124).
+GRANT EXECUTE ON FUNCTION finance.held_payable(uuid) TO audeniq_api,audeniq_worker;
+-- One withdrawable balance for request, order, approval and submission (0128).
+GRANT EXECUTE ON FUNCTION finance.withdrawable(uuid, uuid) TO audeniq_api,audeniq_worker;
 -- DSP registry + delivery staging (0042/0043): artists read their release's
 -- per-DSP status; staff (/api/staff, identity.staff_members) approve or hold
 -- staged rows and read the DSP overview. Staging rows are written only by
@@ -127,6 +133,8 @@ GRANT INSERT ON execution.partner_inbox TO audeniq_api;
 GRANT EXECUTE ON FUNCTION execution.platform_contract_live(text) TO audeniq_api;
 -- Staff ADMIN chooses each DSP's contract route (direct / Merlin, 0056).
 GRANT SELECT, UPDATE (route, updated_by, updated_at) ON distribution.dsp_contract_routes TO audeniq_api;
+-- Approved rights documents become grants (0126).
+GRANT SELECT,INSERT ON rights.grant_atoms TO audeniq_api;
 -- Staff review (0044): second-person approvals and reviewer notes. The
 -- staff role table itself is read-only for the API (granted by the CLI).
 GRANT SELECT,INSERT,UPDATE ON rights.staff_approvals TO audeniq_api;
@@ -162,6 +170,8 @@ GRANT SELECT,INSERT,UPDATE ON operations.fingerprint_scans TO audeniq_worker;
 GRANT EXECUTE ON FUNCTION catalog.fingerprints_still_present(smallint, uuid[]) TO audeniq_worker;
 -- E-0 holds delivery until the release's agreement is signed (portal stays ungranted).
 GRANT EXECUTE ON FUNCTION execution.agreement_signed(uuid, uuid) TO audeniq_worker;
+-- Contract scope of an approved/signed agreement (0125).
+GRANT EXECUTE ON FUNCTION execution.agreement_scope(uuid, uuid) TO audeniq_worker,audeniq_api;
 GRANT EXECUTE ON FUNCTION portal.release_term_ended(uuid, uuid) TO audeniq_worker;
 -- 0063: a delivery job is only leased while staff approval of its route holds.
 GRANT EXECUTE ON FUNCTION execution.delivery_gate_open(uuid, text) TO audeniq_worker;

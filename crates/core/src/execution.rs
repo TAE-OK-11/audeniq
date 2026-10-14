@@ -522,6 +522,20 @@ async fn freshness_check(
     if live_epoch != Some(pinned_epoch) {
         return Err(Error::PolicyGate("EXECUTION_RIGHTS_EPOCH_DRIFT"));
     }
+    // Contract scope (0125), checked again right before the send: an expired
+    // agreement or a DSP it does not cover never receives the release.
+    // Takedowns go through `takedown_release` and are never held here.
+    if let Some(scope) = crate::contract_scope::load(tx, org_id, release_id).await? {
+        let today = crate::domain::today_kst();
+        if scope.end.is_some_and(|end| today > end) {
+            return Err(Error::PolicyGate("EXECUTION_CONTRACT_EXPIRED"));
+        }
+        if let Some(dsp) = crate::dsp_registry::Dsp::from_code(&job.partner_id)
+            && !scope.dsp_findings(dsp, today).is_empty()
+        {
+            return Err(Error::PolicyGate("EXECUTION_CONTRACT_SCOPE"));
+        }
+    }
     // Finance holds (finance.finance_holds) stop money, not releases: a held
     // payee or release still goes out, and only its payouts wait for the hold
     // to clear (portal::request_payout, PAYEE_ON_HOLD).
@@ -983,6 +997,29 @@ pub async fn run_delivery(
         )
         .await?;
         return Err(e);
+    }
+    // The territories that actually go out must sit inside the contract (a
+    // package staged before staff fixed the scope is restaged first).
+    if let Some(scope) =
+        crate::contract_scope::load(&mut tx, job.org_id, package.release_id).await?
+    {
+        let ern_ok = scope.ern_within(&String::from_utf8_lossy(&package.ern_xml));
+        let feed_ok = package.prepared.as_ref().is_none_or(|p| {
+            p.territories.narrow(&scope.territories).as_ref() == Some(&p.territories)
+        });
+        if !(ern_ok && feed_ok) {
+            tx.rollback().await?;
+            fail_job(
+                pool,
+                job,
+                "FAILED",
+                "EXECUTION_CONTRACT_TERRITORY",
+                Some("PARTNER_REJECTED"),
+                Some(json!({"stage":"E-2","contract_scope":"territories outside the agreement; restage the package"})),
+            )
+            .await?;
+            return Err(Error::PolicyGate("EXECUTION_CONTRACT_TERRITORY"));
+        }
     }
 
     // E-3. The attempt row (with its idempotency key) commits before the

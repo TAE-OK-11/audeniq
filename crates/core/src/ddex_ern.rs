@@ -745,6 +745,9 @@ pub struct DealTiming<'a> {
     /// Pre-release start (pre-save page, previews, pre-order); before the
     /// release date.
     pub preorder_start: Option<chrono::NaiveDate>,
+    /// Last licensed day (rights grants / agreement scope); the deal ends
+    /// on it. None = open-ended.
+    pub rights_end: Option<chrono::NaiveDate>,
 }
 
 fn deal_list(
@@ -766,6 +769,15 @@ fn deal_list(
         .preorder_start
         .map(|d| d.format("%Y-%m-%d").to_string())
         .filter(|d| !takedown && d.as_str() < c.deal_start_date.as_str());
+    // The licence's last day; a takedown ends the deal earlier.
+    let licence_end = timing.rights_end.map(|d| d.format("%Y-%m-%d").to_string());
+    let end = match (
+        takedown.then_some(c.takedown_date.as_deref()).flatten(),
+        licence_end.as_deref(),
+    ) {
+        (Some(t), Some(l)) => Some(t.min(l)),
+        (t, l) => t.or(l),
+    };
     deal_terms(
         out,
         c,
@@ -773,13 +785,14 @@ fn deal_list(
         timing.release_time,
         false,
         pre.as_deref(),
+        end,
     );
     // Download stores also sell it ahead: a pre-order deal from the
     // pre-release start, fulfilled on the release date.
     if let Some(p) = &pre
         && c.deal.commercial_models.contains(&"PayAsYouGoModel")
     {
-        deal_terms(out, c, territories, None, true, Some(p));
+        deal_terms(out, c, territories, None, true, Some(p), end);
     }
     out.push_str("</ReleaseDeal></DealList>");
 }
@@ -791,6 +804,7 @@ fn deal_terms(
     release_time: Option<&str>,
     preorder: bool,
     pre_start: Option<&str>,
+    end: Option<&str>,
 ) {
     out.push_str("<Deal><DealTerms>");
     if preorder {
@@ -838,19 +852,26 @@ fn deal_terms(
     // means each country's local midnight. Takedowns keep the date pair.
     // A pre-order deal opens on the pre-release start.
     match (preorder, release_time) {
-        (true, _) => element(out, "StartDate", pre_start.unwrap_or(&c.deal_start_date)),
+        (true, _) => {
+            element(out, "StartDate", pre_start.unwrap_or(&c.deal_start_date));
+            if let Some(end) = end {
+                element(out, "EndDate", end);
+            }
+        }
         (false, Some(t)) if c.message_sub_type != MessageSubType::Takedown => {
             element(
                 out,
                 "StartDateTime",
                 format!("{}T{t}:00+09:00", c.deal_start_date),
             );
+            // The last licensed day ends at KST midnight, like it started.
+            if let Some(end) = end {
+                element(out, "EndDateTime", format!("{end}T23:59:59+09:00"));
+            }
         }
         _ => {
             element(out, "StartDate", &c.deal_start_date);
-            if c.message_sub_type == MessageSubType::Takedown
-                && let Some(end) = &c.takedown_date
-            {
+            if let Some(end) = end {
                 element(out, "EndDate", end);
             }
         }
@@ -944,6 +965,7 @@ pub fn generate_ddex_ern_382(prepared: &PreparedRelease, config: &DdexErnConfig)
         DealTiming {
             release_time: prepared.release_time.as_deref(),
             preorder_start: prepared.preorder_start,
+            rights_end: prepared.rights_end,
         },
     );
     out.push_str("</ern:NewReleaseMessage>\n");

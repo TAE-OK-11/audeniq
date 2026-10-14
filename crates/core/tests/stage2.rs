@@ -1674,3 +1674,144 @@ async fn stage2_contracted_profile_not_eligible_without_contract(pool: PgPool) {
         "contract bypass is explicitly refused in the audit trail: {detail}"
     );
 }
+
+/// The agreement's scope reaches the DSP rows and their ERNs: the deal
+/// carries only the territories the application and the contract both
+/// reach, ends on the contract's last day, and a DSP outside the contract
+/// (or after its last day) is blocked per DSP.
+#[sqlx::test]
+async fn agreement_scope_limits_staged_dsps_and_deal_territories(pool: PgPool) {
+    let (app, store) = app(pool.clone()).await;
+    let u = user(&app).await;
+    sqlx::query("UPDATE distribution.dsp_contract_routes SET route='DIRECT' WHERE code='D-5'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE execution.partner_onboarding SET dpid_registered=true,endpoint_url='https://d5.example.test',credential_kind='api_key',credential_status='STORED',test_ern_validated_at=now(),test_ack_parsed_at=now(),contract_signed_at=now(),contract_ref='TEST' WHERE partner_id='D-5'")
+        .execute(&pool).await.unwrap();
+    sqlx::query("UPDATE execution.adapter_profiles SET activation_kind='MOCK',delivery_enabled=true,ddex_recipient_dpid='PADPIDA2007040501G',capabilities=capabilities||'{\"send_or_publish\":true}'::jsonb WHERE partner_id='D-5'")
+        .execute(&pool).await.unwrap();
+    sqlx::query("UPDATE identity.orgs SET ddex_sender_dpid='PADPIDA2007061301Q' WHERE id=$1")
+        .bind(u.org)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let dir = tmpdir();
+    let asset = register_asset(&pool, &store, &u, "scope.wav", &make_good_wav(&dir)).await;
+    let release = build_submittable(&app, &pool, &store, &u, asset).await;
+    sqlx::query("UPDATE catalog.releases SET draft=draft||'{\"genre\":\"Pop\",\"platforms\":[\"spotify\"]}'::jsonb,row_version=row_version+1 WHERE id=$1")
+        .bind(release).execute(&pool).await.unwrap();
+    let revision = consent_and_submit(&app, &u, release, "contract-scope").await;
+    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        run_one(&pool, &store, "distribution", "prepare_release").await,
+        "SUCCEEDED"
+    );
+    let package:Uuid=sqlx::query_scalar("SELECT dp.id FROM distribution.distribution_packages dp JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id WHERE cr.revision_id=$1")
+        .bind(revision).fetch_one(&pool).await.unwrap();
+    set_agreement(&pool, u.org, release, false).await;
+    let scope = |v: Value| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query("UPDATE portal.documents SET status='APPROVED', agreement_terms=jsonb_build_object('scope',$2::jsonb) WHERE release_id=$1 AND kind='AGREEMENT'")
+                .bind(release)
+                .bind(v)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+    };
+    let row = || {
+        let pool = pool.clone();
+        async move {
+            audeniq_core::delivery_staging::stage_package(&pool, package)
+                .await
+                .unwrap();
+            sqlx::query_as::<_, (String, Value, Option<String>)>(
+                "SELECT readiness, checks, ern_xml FROM distribution.delivery_staging WHERE package_id=$1 AND dsp_code='D-5'",
+            )
+            .bind(package)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        }
+    };
+    let release_date: String =
+        sqlx::query_scalar("SELECT draft->>'release_date' FROM catalog.releases WHERE id=$1")
+            .bind(release)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let release_date = chrono::NaiveDate::parse_from_str(&release_date, "%Y-%m-%d").unwrap();
+    let last = (release_date + chrono::Duration::days(400))
+        .format("%Y-%m-%d")
+        .to_string();
+    let base = json!({"territories":["KR"],"worldwide":false,"excluded_territories":[],"end_date":last,"dsps":[],"all_dsps":true,"ugc":false});
+    scope(base.clone()).await;
+    let (readiness, checks, ern) = row().await;
+    assert_eq!(readiness, "READY", "{checks}");
+    let ern = ern.expect("D-5 ERN");
+    let deal = &ern[ern.find("<DealList>").unwrap()..];
+    assert!(
+        deal.contains("<TerritoryCode>KR</TerritoryCode>") && !deal.contains("Worldwide"),
+        "{deal}"
+    );
+    assert!(
+        deal.contains(&format!("<EndDate>{last}</EndDate>")),
+        "{deal}"
+    );
+
+    // Worldwide minus an exclusion goes out as ExcludedTerritoryCode.
+    let mut world = base.clone();
+    world["territories"] = json!([]);
+    world["worldwide"] = json!(true);
+    world["excluded_territories"] = json!(["CN"]);
+    scope(world).await;
+    let (readiness, checks, ern) = row().await;
+    assert_eq!(readiness, "READY", "{checks}");
+    let ern = ern.unwrap();
+    assert!(
+        ern.contains("<ExcludedTerritoryCode>CN</ExcludedTerritoryCode>"),
+        "{ern}"
+    );
+
+    let mut other = base.clone();
+    other["dsps"] = json!(["D-1"]);
+    other["all_dsps"] = json!(false);
+    scope(other).await;
+    let (readiness, checks, _) = row().await;
+    assert_eq!(readiness, "CONTENT_BLOCKED");
+    assert!(
+        checks.to_string().contains("CONTRACT_SCOPE_DSP"),
+        "{checks}"
+    );
+
+    let mut ended = base.clone();
+    ended["end_date"] = json!("2020-01-01");
+    scope(ended).await;
+    let (_, checks, _) = row().await;
+    assert!(checks.to_string().contains("CONTRACT_EXPIRED"), "{checks}");
+
+    // Ending after today but before the release date: blocked, never a deal
+    // that ends before it starts.
+    if release_date > audeniq_core::domain::today_kst() + chrono::Duration::days(1) {
+        let mut early = base;
+        early["end_date"] = json!(
+            (release_date - chrono::Duration::days(1))
+                .format("%Y-%m-%d")
+                .to_string()
+        );
+        scope(early).await;
+        let (readiness, checks, _) = row().await;
+        assert_eq!(readiness, "CONTENT_BLOCKED");
+        assert!(
+            checks.to_string().contains("CONTRACT_ENDS_BEFORE_RELEASE"),
+            "{checks}"
+        );
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}

@@ -58,13 +58,33 @@ export interface StaffDocument {
     identity?: { provider: string; method: string; name: string; verified_at: string };
   } | null;
 }
+/** 승인한 권리 서류가 증명하는 권한 — 배급 권한(DISTRIBUTION)과 정산 수령권(ROYALTY, 지분)은 따로 */
+export interface GrantInput {
+  grant_class: 'DISTRIBUTION' | 'ROYALTY';
+  right_type: 'MASTER' | 'COMPOSITION' | 'LYRICS' | 'PERFORMANCE' | 'ARTWORK' | 'SAMPLE' | 'OTHER';
+  rights_holder: string;
+  track_ids?: string[];
+  share_bps?: number;
+  territories?: string[];
+  uses?: string[];
+  start_date?: string | null;
+  end_date?: string | null;
+}
 export interface AgreementTermsInput {
   exclusivity: 'NON_EXCLUSIVE' | 'EXCLUSIVE';
   /** AUDENIQ 몫 (bp, 800 = 8%) */
   fee_bps: number;
   rate_note: string; territory_note: string; min_payout_note: string; special_terms: string;
+  /** 배급 권한 범위 — 승인부터 전송 직전까지 서버가 같은 기준으로 검사 (비우면 신청서 지역·플랫폼, 기한 없음, UGC 제외) */
+  scope?: { territories: string[]; excluded_territories: string[]; end_date: string | null; dsps: string[]; ugc: boolean };
 }
-export interface AgreementTerms extends AgreementTermsInput {
+/** 저장된 배급 권한 범위 */
+export interface AgreementScope {
+  territories: string[]; worldwide: boolean; excluded_territories: string[]; end_date: string | null;
+  dsps: string[]; all_dsps: boolean; ugc: boolean;
+}
+export interface AgreementTerms extends Omit<AgreementTermsInput, 'scope'> {
+  scope?: AgreementScope;
   form: string; terms_version: string; user_bps: number; currency: string;
   confirmations: { id: string; text: string; required: boolean }[];
   required: string[]; set_by?: string; set_at?: string;
@@ -247,7 +267,7 @@ const remote = {
   approve: (aid: string) => req<{ result: string }>(`/api/staff/approvals/${id(aid)}/approve`, { method: 'POST' }),
   decline: (aid: string) => req<{ result: string }>(`/api/staff/approvals/${id(aid)}/decline`, { method: 'POST' }),
   documents: (status: string) => req<Page<StaffDocument>>(`/api/staff/documents${qs({ status, limit: 100 })}`),
-  reviewDocument: (did: string, body: { status: 'APPROVED' | 'NEEDS'; note: string; row_version: number }) =>
+  reviewDocument: (did: string, body: { status: 'APPROVED' | 'NEEDS'; note: string; row_version: number; grants?: GrantInput[] }) =>
     req<{ status: string; row_version: number }>(`/api/staff/documents/${id(did)}/review`, { method: 'POST', body }),
   requestProof: (org: string, body: { release_id: string; title: string; body: string }) =>
     req<{ id: string }>(`/api/staff/orgs/${id(org)}/documents`, { method: 'POST', body }),

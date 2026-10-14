@@ -24,6 +24,14 @@ export function AgreementTermsSection({ releaseId, doc, editable, onSaved }: {
   const [territoryNote, setTerritoryNote] = useState(t?.territory_note ?? '');
   const [minPayout, setMinPayout] = useState(t?.min_payout_note ?? '');
   const [special, setSpecial] = useState(t?.special_terms ?? '');
+  // 배급 권한 범위 — 계약서 본문과 실제 전송(ERN·플랫폼)이 같은 범위를 따른다
+  const sc = t?.scope;
+  const [scopeTerritories, setScopeTerritories] = useState(sc && !sc.worldwide ? sc.territories.join(', ') : '');
+  const [scopeExcluded, setScopeExcluded] = useState(sc?.excluded_territories.join(', ') ?? '');
+  const [scopeEnd, setScopeEnd] = useState(sc?.end_date ?? '');
+  const [scopeDsps, setScopeDsps] = useState(sc && !sc.all_dsps ? sc.dsps.join(', ') : '');
+  const [scopeUgc, setScopeUgc] = useState(sc?.ugc ?? false);
+  const split = (s: string) => s.toUpperCase().split(/[\s,]+/).filter(Boolean);
   const [busy, setBusy] = useState(false);
   const feeBps = Math.round(Number(fee) * 100);
   const feeOk = fee.trim() !== '' && Number.isFinite(feeBps) && feeBps >= 0 && feeBps <= 10000;
@@ -32,7 +40,10 @@ export function AgreementTermsSection({ releaseId, doc, editable, onSaved }: {
     if (!feeOk || busy) return;
     setBusy(true);
     try {
-      await staffApi.agreementTerms(releaseId, { exclusivity, fee_bps: feeBps, rate_note: rateNote, territory_note: territoryNote, min_payout_note: minPayout, special_terms: special });
+      await staffApi.agreementTerms(releaseId, {
+        exclusivity, fee_bps: feeBps, rate_note: rateNote, territory_note: territoryNote, min_payout_note: minPayout, special_terms: special,
+        scope: { territories: split(scopeTerritories), excluded_territories: split(scopeExcluded), end_date: scopeEnd || null, dsps: split(scopeDsps), ugc: scopeUgc },
+      });
       toast('계약 조건을 저장했어요. 계약서 본문이 새로 만들어졌어요.', 'success');
       onSaved();
     } catch (e) { toast(errorMessage(e), 'error'); }
@@ -49,6 +60,9 @@ export function AgreementTermsSection({ releaseId, doc, editable, onSaved }: {
             <div><dt>배급수수료</dt><dd>회사 {pct(t.fee_bps)} / 이용자 {pct(t.user_bps)}</dd></div>
             {t.rate_note && <div><dt>특별 요율</dt><dd>{t.rate_note}</dd></div>}
             {t.territory_note && <div><dt>지역 조건</dt><dd>{t.territory_note}</dd></div>}
+            {t.scope && <div><dt>배급 지역</dt><dd>{t.scope.worldwide ? '전 세계' : t.scope.territories.join(', ')}{t.scope.excluded_territories.length ? ` (제외 ${t.scope.excluded_territories.join(', ')})` : ''}</dd></div>}
+            {t.scope && <div><dt>계약 기간</dt><dd>{t.scope.end_date ? `${t.scope.end_date}까지` : '해지 요청 때까지'}</dd></div>}
+            {t.scope && <div><dt>대상 DSP</dt><dd>{t.scope.all_dsps ? '신청서의 플랫폼 전체' : t.scope.dsps.join(', ')} · UGC {t.scope.ugc ? '포함' : '제외'}</dd></div>}
             {t.min_payout_note && <div><dt>최소지급액</dt><dd>{t.min_payout_note}</dd></div>}
             <div><dt>개별 특약</dt><dd>{t.special_terms || '없음'}</dd></div>
           </dl>
@@ -68,6 +82,19 @@ export function AgreementTermsSection({ releaseId, doc, editable, onSaved }: {
             <textarea id="atRate" className="ui-textarea" rows={2} maxLength={500} value={rateNote} onChange={e => setRateNote(e.target.value)} placeholder="레이블 특별요율, 프로모션 요율(기간), Merlin·직계약 등 경로별 요율" /></div>
           <div className="ui-field"><label htmlFor="atTerritory">배급 지역 제외·조건 (선택)</label>
             <input id="atTerritory" className="ui-input" maxLength={300} value={territoryNote} onChange={e => setTerritoryNote(e.target.value)} placeholder="예: 일본 제외" /></div>
+          <fieldset className="adm-terms-scope">
+            <legend>배급 권한 범위 — 승인·배급 준비·전송 직전에 서버가 같은 기준으로 검사해요</legend>
+            <div className="ui-field"><label htmlFor="atScopeT">배급 국가 (비우면 신청서 지역)</label>
+              <input id="atScopeT" className="ui-input" value={scopeTerritories} onChange={e => setScopeTerritories(e.target.value)} placeholder="예: KR, JP (전 세계는 비우거나 WORLD)" /></div>
+            <div className="ui-field"><label htmlFor="atScopeX">제외 국가</label>
+              <input id="atScopeX" className="ui-input" value={scopeExcluded} onChange={e => setScopeExcluded(e.target.value)} placeholder="예: CN" /></div>
+            <div className="ui-field"><label htmlFor="atScopeEnd">계약 종료일 (비우면 해지 요청 때까지)</label>
+              <input id="atScopeEnd" className="ui-input" type="date" value={scopeEnd} onChange={e => setScopeEnd(e.target.value)} /></div>
+            <div className="ui-field"><label htmlFor="atScopeD">대상 DSP 코드 (비우면 신청서의 플랫폼 전체)</label>
+              <input id="atScopeD" className="ui-input" value={scopeDsps} onChange={e => setScopeDsps(e.target.value)} placeholder="예: D-1, D-5" /></div>
+            <label className="ui-check is-plain"><input type="checkbox" checked={scopeUgc} onChange={e => setScopeUgc(e.target.checked)} />
+              <span>UGC 권리관리 포함 (YouTube Content ID, TikTok·Meta 등)</span></label>
+          </fieldset>
           <div className="ui-field"><label htmlFor="atMin">최소지급액 특약 (선택)</label>
             <input id="atMin" className="ui-input" maxLength={300} value={minPayout} onChange={e => setMinPayout(e.target.value)} placeholder="비우면 약관의 기본 기준" /></div>
           <div className="ui-field"><label htmlFor="atSpecial">개별 특약 (선택)</label>

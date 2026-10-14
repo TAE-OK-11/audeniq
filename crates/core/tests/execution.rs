@@ -6481,3 +6481,218 @@ fn urlencoding_lite(s: &str) -> String {
 async fn user_of(app: &Router) -> User {
     user(app).await
 }
+
+/// Approving a rights document records what it proves as grants —
+/// distribution permission and royalty entitlement kept apart — and a release
+/// waiting for delivery re-runs Stage 2 for the new rights epoch without a
+/// "보완 요청" to the artist.
+#[sqlx::test]
+async fn approved_rights_document_becomes_grants_and_rechecks(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let staff = staff_user(&ctx.app, &pool, "REVIEWER").await;
+    let track: Uuid = sqlx::query_scalar(
+        "SELECT id FROM catalog.tracks WHERE release_id=$1 AND archived_at IS NULL LIMIT 1",
+    )
+    .bind(ctx.release)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let proof = |title: &'static str| {
+        let pool = pool.clone();
+        let (org, release) = (ctx.org, ctx.release);
+        async move {
+            sqlx::query_scalar::<_, Uuid>(
+                "INSERT INTO portal.documents(id,org_id,release_id,kind,title,status) VALUES($1,$2,$3,'RIGHTS_PROOF',$4,'REVIEW') RETURNING id",
+            )
+            .bind(Uuid::new_v4())
+            .bind(org)
+            .bind(release)
+            .bind(title)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        }
+    };
+    let doc = proof("작곡 이용 허락서").await;
+    let review = format!("/api/staff/documents/{doc}/review");
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &review,
+        json!({"status":"APPROVED","row_version":0}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(v["error"]["code"], "GRANTS_REQUIRED");
+    let notices_before: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM portal.notifications WHERE org_id=$1 AND kind='RELEASE'",
+    )
+    .bind(ctx.org)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let (s, v) = call(&ctx.app, "POST", &review, json!({"status":"APPROVED","row_version":0,"grants":[
+        {"grant_class":"DISTRIBUTION","right_type":"COMPOSITION","rights_holder":"김작곡","territories":["KR","JP"],
+         "uses":["OnDemandStream"],"start_date":"2026-01-01","end_date":"2030-12-31"},
+        {"grant_class":"ROYALTY","right_type":"COMPOSITION","rights_holder":"김작곡","track_ids":[track],"share_bps":3000}
+    ]}), Some(&staff)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["grants"].as_array().unwrap().len(), 2);
+    assert_eq!(v["recheck"]["status"], "STAGE3_CORRECTION");
+    type GrantRow = (String, String, Option<i32>, Vec<String>, String);
+    let rows: Vec<GrantRow> = sqlx::query_as(
+        "SELECT g.grant_class, g.target_kind, g.share_bps, g.territory_set, p.display_name
+           FROM rights.grant_atoms g JOIN identity.parties p ON p.id = CASE g.grant_class WHEN 'ROYALTY' THEN g.party_id ELSE g.grantor_party_id END
+          WHERE g.source_document_id=$1 ORDER BY g.grant_class",
+    )
+    .bind(doc)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        rows[0],
+        (
+            "DISTRIBUTION".into(),
+            "RELEASE".into(),
+            None,
+            vec!["JP".into(), "KR".into()],
+            "김작곡".into()
+        )
+    );
+    assert_eq!(
+        rows[1],
+        (
+            "ROYALTY".into(),
+            "TRACK".into(),
+            Some(3000),
+            vec![],
+            "김작곡".into()
+        )
+    );
+    // The release goes back through Stage 2 quietly.
+    assert_eq!(
+        release_status(&pool, ctx.release).await,
+        "STAGE3_CORRECTION"
+    );
+    let queued: i64 = sqlx::query_scalar("SELECT count(*) FROM operations.jobs WHERE kind='stage2' AND status='QUEUED' AND release_id=$1")
+        .bind(ctx.release).fetch_one(&pool).await.unwrap();
+    assert_eq!(queued, 1);
+    let notices_after: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM portal.notifications WHERE org_id=$1 AND kind='RELEASE'",
+    )
+    .bind(ctx.org)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        notices_after, notices_before,
+        "no correction notice for a rights re-check"
+    );
+    // Royalty shares of one right on one work never exceed 100%.
+    let doc2 = proof("추가 지분 계약서").await;
+    let (s, v) = call(&ctx.app, "POST", &format!("/api/staff/documents/{doc2}/review"), json!({"status":"APPROVED","row_version":0,"grants":[
+        {"grant_class":"ROYALTY","right_type":"COMPOSITION","rights_holder":"박공동","track_ids":[track],"share_bps":8000}
+    ]}), Some(&staff)).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(v["error"]["code"], "GRANT_SHARE_EXCEEDS_100");
+}
+
+/// Moving a release to another distributor: a transfer names the new
+/// distributor and needs the contract-end notice; the owner gets the
+/// handover data (UPC, ISRCs, each platform's id); on the switch date every
+/// platform gets a takedown, like a contract end.
+#[sqlx::test]
+async fn transfer_names_the_distributor_hands_over_codes_and_takes_down(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let mock = MockDsp::new(MockBehavior::Accept);
+    let (_, status) = run_send(&pool, &ctx, &mock).await;
+    assert_eq!(status, "DELIVERED");
+    let path = format!("/api/orgs/{}/releases/{}/term", ctx.org, ctx.release);
+    let day = |n: i64| {
+        (chrono::Utc::now() + chrono::Duration::hours(9) + chrono::Duration::days(n))
+            .date_naive()
+            .to_string()
+    };
+    // No handover before a transfer is scheduled.
+    let (_, v) = call(
+        &ctx.app,
+        "GET",
+        &format!("{path}/handover"),
+        Value::Null,
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "TERM_NOT_TRANSFER", "{v}");
+    let (_, v) = call(
+        &ctx.app,
+        "PUT",
+        &path,
+        json!({"end_date": day(40), "reason": "TRANSFER"}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "TERM_TRANSFER_TO_REQUIRED", "{v}");
+    let (_, v) = call(
+        &ctx.app,
+        "PUT",
+        &path,
+        json!({"end_date": day(10), "reason": "TRANSFER", "transfer_to": "새 유통사"}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "TERM_NOTICE_TOO_SHORT", "{v}");
+    let (s, v) = call(
+        &ctx.app,
+        "PUT",
+        &path,
+        json!({"end_date": day(40), "reason": "TRANSFER", "transfer_to": "새 유통사"}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (_, t) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(t["term"]["transfer_to"], "새 유통사", "{t}");
+    let notice: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM portal.notifications WHERE org_id=$1 AND title LIKE '%유통사 이전이%'",
+    )
+    .bind(ctx.org)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(notice, 1);
+
+    // The handover data: the delivered codes and the platforms that have it.
+    let (s, h) = call(
+        &ctx.app,
+        "GET",
+        &format!("{path}/handover"),
+        Value::Null,
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{h}");
+    assert_eq!(h["transfer_to"], "새 유통사");
+    assert!(h["upc"].is_string(), "{h}");
+    assert!(
+        h["tracks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|t| t["isrc"].is_string()),
+        "{h}"
+    );
+    assert!(!h["platforms"].as_array().unwrap().is_empty(), "{h}");
+
+    // On the switch date: takedowns, like a contract end.
+    sqlx::query("UPDATE portal.release_terms SET end_date=$2::date WHERE release_id=$1")
+        .bind(ctx.release)
+        .bind(day(0))
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(audeniq_core::contract_terms::sweep(&pool).await.unwrap(), 1);
+    let takedowns: i64 = sqlx::query_scalar("SELECT count(*) FROM operations.jobs WHERE kind='delivery.takedown' AND payload->>'package_id'=$1")
+        .bind(ctx.package_id.to_string()).fetch_one(&pool).await.unwrap();
+    assert!(takedowns >= 1);
+}
