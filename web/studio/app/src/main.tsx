@@ -3,6 +3,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { prefetchInitialRoute } from './routes';
+import { initPressFeedback } from './lib/press';
 import { MOCK } from './api/client';
 
 const root = document.getElementById('root');
@@ -28,6 +29,8 @@ if (isIOS) {
 
 // iOS Safari는 터치 리스너가 없으면 :active를 적용하지 않는다 — 누르는 순간의 피드백을 켠다
 document.addEventListener('touchstart', () => {}, { passive: true });
+// 짧게 톡 눌러도 눌린 모습이 보이게 (.is-pressed)
+initPressFeedback();
 
 prefetchInitialRoute();
 
