@@ -472,7 +472,7 @@ export function ReleaseDetail() {
               </dl>
               <div className="tag-row">
                 {d?.platforms?.length ? (
-                  d.platforms.map(p => <span key={p} className="ui-tag">{dspLabel(p)}</span>)
+                  d.platforms.map(p => <span key={p} className="ui-tag is-white">{dspLabel(p)}</span>)
                 ) : (
                   <span className="muted small">플랫폼 미선택</span>
                 )}

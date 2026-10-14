@@ -812,3 +812,9 @@
 .adm-grants>.ui-field-help{margin:4px 0 12px}
 .adm-grant .ui-chips{margin:10px 0 6px}
 .adm-grant-remove{justify-self:start;margin:0 0 14px}
+/* 배급 현황 — 플랫폼별 상태·권고는 상태 배지로 */
+.adm-deliv-badges{display:flex;flex-wrap:wrap;gap:6px}
+/* 메모 상자 안의 '항목 이름 + 값' — 이름은 작은 회색 굵은 글자, 값은 본문색 (ui-kv와 같은 위계) */
+.adm-note>small{display:block;margin-top:14px;font-size:var(--aq-fs-xs);font-weight:700;color:var(--aq-text-3)}
+.adm-note>small:first-child{margin-top:0}
+.adm-note>small+p{margin-top:3px;font-size:14px;line-height:1.6;color:var(--aq-text)}

@@ -9,7 +9,7 @@ import { useAsync } from '../../hooks/useAsync';
 import { req } from '../../api/http';
 import { MOCK } from '../../lib/mode';
 import { PLATFORM_NAMES } from '../../lib/platformNames';
-import { KINDS, MONETIZATION_LABEL, STATUS_LABEL, STATUS_TONE, kindSpec, type PlatformRequest } from '../../lib/platformRequests';
+import { MONETIZATION_LABEL, STATUS_LABEL, STATUS_TONE, kindSpec, type PlatformRequest } from '../../lib/platformRequests';
 import { ago } from '../labels';
 import { Badge, EmptyState, ErrorBox, NoDuty, PageHeader, SkeletonList, DELIVERY_TABS, SubTabs, useStaff } from '../ui';
 
@@ -65,7 +65,7 @@ export function PlatformRequests() {
       </div>
       {error && <ErrorBox message={error} onRetry={reload} />}
       {loading && !data ? <SkeletonList rows={3} /> : items.length === 0 ? (
-        <EmptyState title="처리할 요청이 없어요">아티스트가 ‘플랫폼 요청’에서 보내면 이곳에 올라와요.</EmptyState>
+        <EmptyState title="처리할 요청이 없어요">아티스트가 문의에서 아티스트 페이지·Content ID 요청을 보내면 이곳에 올라와요.</EmptyState>
       ) : (
         <div className="ui-list">
           {items.map(r => {
@@ -127,7 +127,6 @@ export function PlatformRequests() {
           })}
         </div>
       )}
-      <p className="small muted" style={{ marginTop: 16 }}>요청 종류: {KINDS.map(k => k.label).join(' · ')}</p>
     </div>
   );
 }

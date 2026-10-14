@@ -152,9 +152,11 @@ export function Deliveries() {
                     <li key={d.dsp} className={`is-${v.tone}`}>
                       <b className="adm-deliv-name">{d.dsp_name ?? DSP_NAME[d.dsp] ?? '플랫폼'}</b>
                       <span className="adm-min">
-                        <span className="adm-deliv-head">{d.approval === 'HELD' ? '멈춤' : d.approval === 'APPROVED' && v.tone !== 'red' ? (v.tone === 'gray' ? '플랫폼 연동 대기 · 연동되면 자동 전송' : '서명 후 자동 전송') : v.headline}</span>
+                        <span className="adm-deliv-badges">
+                          <Badge tone={d.approval === 'HELD' ? 'amber' : v.tone}>{d.approval === 'HELD' ? '멈춤' : d.approval === 'APPROVED' && v.tone !== 'red' ? (v.tone === 'gray' ? '연동되면 자동 전송' : '서명 후 자동 전송') : v.headline}</Badge>
+                          {v.notes.map(n => <Badge key={n} tone="amber">{n}</Badge>)}
+                        </span>
                         {v.problems.map(p => <small key={p} className="adm-deliv-problem">{p}</small>)}
-                        {v.notes.length > 0 && <small className="adm-deliv-note">{v.notes.join(' · ')}</small>}
                       </span>
                       {can('DELIVERY') && d.approval !== 'HELD' && (
                         <button type="button" className="ui-btn is-text is-muted" onClick={() => setHold(d)}>멈추기</button>
