@@ -104,6 +104,67 @@ pub struct PreparedRelease {
     /// Omitted when unset so earlier snapshots keep their hash.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub release_time: Option<String>,
+    /// Pre-release start (pre-save page, previews, store pre-orders), before
+    /// the release date. Omitted when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preorder_start: Option<NaiveDate>,
+    /// Per track (by id): where previews and short-form clips start, in
+    /// seconds. Omitted when empty.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub preview_starts: std::collections::BTreeMap<Uuid, u32>,
+}
+
+/// Pre-release start in the draft: absent/empty, or a date 1–90 days before
+/// the release date.
+pub fn preorder_start(draft: &Value, release_date: NaiveDate) -> Result<Option<NaiveDate>> {
+    let bad = || Error::InvalidCode("PREORDER_START_INVALID");
+    match draft.get("preorder_start") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(s)) if s.is_empty() => Ok(None),
+        Some(Value::String(s)) => {
+            let d = NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|_| bad())?;
+            let lead = (release_date - d).num_days();
+            if !(1..=90).contains(&lead) {
+                return Err(bad());
+            }
+            Ok(Some(d))
+        }
+        _ => Err(bad()),
+    }
+}
+
+/// Preview start points the studio keeps on each draft track (`serverId`,
+/// `previewStart` seconds, 0–3600). Unknown or empty entries are skipped.
+pub fn preview_starts(draft: &Value) -> Result<std::collections::BTreeMap<Uuid, u32>> {
+    let mut out = std::collections::BTreeMap::new();
+    for t in draft
+        .get("draftTracks")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let Some(id) = t
+            .get("serverId")
+            .and_then(Value::as_str)
+            .and_then(|v| v.parse::<Uuid>().ok())
+        else {
+            continue;
+        };
+        let secs = match t.get("previewStart") {
+            None | Some(Value::Null) => continue,
+            Some(Value::String(s)) if s.trim().is_empty() => continue,
+            Some(Value::Number(n)) => n.as_u64(),
+            Some(Value::String(s)) => s.trim().parse::<u64>().ok(),
+            _ => None,
+        };
+        match secs {
+            Some(v) if v <= 3600 => {
+                out.insert(id, v as u32);
+            }
+            _ => return Err(Error::InvalidCode("PREVIEW_START_INVALID")),
+        }
+    }
+    Ok(out)
 }
 
 /// The draft's `release_time`: absent/empty, or "HH:MM" KST on the hour or
@@ -342,6 +403,15 @@ impl PreparedRelease {
             explicit: c.explicit,
             territories: crate::territory::Territories::from_draft(&draft)?,
             release_time: release_time(&draft)?,
+            preorder_start: preorder_start(&draft, release_date)?,
+            preview_starts: {
+                let ids: std::collections::BTreeSet<Uuid> =
+                    c.tracks.iter().map(|t| t.track_id).collect();
+                preview_starts(&draft)?
+                    .into_iter()
+                    .filter(|(id, _)| ids.contains(id))
+                    .collect()
+            },
         })
     }
 }
@@ -400,5 +470,37 @@ mod release_time_tests {
                 "{bad}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod prerelease_tests {
+    use super::{preorder_start, preview_starts};
+    use chrono::NaiveDate;
+    use serde_json::json;
+
+    #[test]
+    fn preorder_within_ninety_days_before_release() {
+        let rd = NaiveDate::from_ymd_opt(2027, 3, 1).unwrap();
+        assert_eq!(preorder_start(&json!({}), rd).unwrap(), None);
+        assert_eq!(
+            preorder_start(&json!({"preorder_start": "2027-02-15"}), rd).unwrap(),
+            NaiveDate::from_ymd_opt(2027, 2, 15)
+        );
+        for bad in ["2027-03-01", "2027-03-02", "2026-11-01", "soon"] {
+            assert!(
+                preorder_start(&json!({"preorder_start": bad}), rd).is_err(),
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn preview_starts_by_server_track() {
+        let id = uuid::Uuid::new_v4();
+        let d = json!({"draftTracks": [{"serverId": id.to_string(), "previewStart": "45"}, {"previewStart": 10}, {"serverId": "x"}]});
+        assert_eq!(preview_starts(&d).unwrap().get(&id), Some(&45));
+        let d = json!({"draftTracks": [{"serverId": id.to_string(), "previewStart": -3}]});
+        assert!(preview_starts(&d).is_err());
     }
 }

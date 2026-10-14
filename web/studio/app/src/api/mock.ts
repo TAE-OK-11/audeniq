@@ -100,7 +100,7 @@ export function normalizeRelease(raw: unknown): ReleaseDetail | null {
     draft: d && {
       ...d,
       type: str(d.type, 'single'), genre: str(d.genre), label: str(d.label), upc: str(d.upc), notes: str(d.notes),
-      coverName: str(d.coverName), release_time: str(d.release_time), territories: arr<string>(d.territories), platforms: arr<string>(d.platforms),
+      coverName: str(d.coverName), release_time: str(d.release_time), preorder_start: str(d.preorder_start), territories: arr<string>(d.territories), platforms: arr<string>(d.platforms),
       ownership: str(d.ownership), phonogram: str(d.phonogram), copyright: str(d.copyright),
       rightsChecks: d.rightsChecks && typeof d.rightsChecks === 'object' ? d.rightsChecks : {},
       draftTracks: d.draftTracks ? arr(d.draftTracks) : undefined,
@@ -162,7 +162,7 @@ function apply(existing: ReleaseDetail | undefined, data: ReleasePayload, status
       artist: data.artist, type: data.type, language: data.language, genre: data.genre,
       genreCustom: data.genreCustom, label: data.label, upc: data.upc, notes: data.notes,
       coverName: data.coverName, coverData: data.coverData, originalDate: data.originalDate,
-      release_time: data.release_time, territories: data.territories, platforms: data.platforms, ownership: data.ownership,
+      release_time: data.release_time, preorder_start: data.preorder_start, territories: data.territories, platforms: data.platforms, ownership: data.ownership,
       phonogram: data.phonogram, copyright: data.copyright, rightsChecks: data.rightsChecks,
       options: data.options, draftTracks: data.tracks.map(t => ({ ...t })), lastStep: data.lastStep,
       artistProfile: data.artistProfile,

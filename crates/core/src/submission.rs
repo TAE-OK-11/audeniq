@@ -565,6 +565,14 @@ pub async fn submit(
     // malformed one now rather than at packaging.
     crate::territory::Territories::from_draft(draft)?;
     crate::preparation_model::release_time(draft)?;
+    crate::preparation_model::preview_starts(draft)?;
+    if let Some(d) = draft
+        .get("release_date")
+        .and_then(Value::as_str)
+        .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+    {
+        crate::preparation_model::preorder_start(draft, d)?;
+    }
     if let Some(options) = draft.get("options") {
         let enabled = |key: &str| options.get(key).and_then(Value::as_bool).unwrap_or(false);
         let declared = &body["declarations"];

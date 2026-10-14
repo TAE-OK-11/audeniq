@@ -488,3 +488,52 @@ fn ddex_ern_release_time_is_deal_start_date_time() {
     let v = serde_json::to_value(fixture(0)).unwrap();
     assert!(v.get("release_time").is_none());
 }
+
+/// A pre-release start opens the release page, track list, cover and clips
+/// from that date on every DSP; download stores also get a pre-order deal
+/// fulfilled on the release date. Preview start points go on each sound
+/// recording. All schema-valid; takedowns carry none of it.
+#[test]
+fn ddex_ern_preorder_and_preview_start() {
+    use audeniq_core::ddex_xsd::validate_ern_382_xml;
+    let mut f = fixture(0);
+    f.preorder_start = Some(chrono::NaiveDate::from_ymd_opt(2026, 9, 17).unwrap());
+    let track = f.tracks[0].id;
+    f.preview_starts.insert(track, 42);
+    let streaming = generate_ddex_ern_382(&f, &config(MessageSubType::Initial)).unwrap();
+    assert_eq!(
+        count(&streaming, "<Deal>"),
+        1,
+        "no pre-order deal for streaming"
+    );
+    assert!(streaming.contains("<ReleaseDisplayStartDate>2026-09-17</ReleaseDisplayStartDate>"));
+    assert!(streaming.contains("<ClipPreviewStartDate>2026-09-17</ClipPreviewStartDate>"));
+    assert!(streaming.contains("<PreviewDetails><StartPoint>42</StartPoint><ExpressionType>Instructive</ExpressionType></PreviewDetails>"));
+    validate_ern_382_xml(&streaming).unwrap();
+
+    let mut c = config(MessageSubType::Initial);
+    c.deal = &audeniq_core::ddex_ern::DEAL_DOWNLOAD;
+    let store = generate_ddex_ern_382(&f, &c).unwrap();
+    assert_eq!(count(&store, "<Deal>"), 2, "{store}");
+    assert!(store.contains("<IsPreOrderDeal>true</IsPreOrderDeal>"));
+    assert!(store.contains("<PreOrderReleaseDate>2026-10-01</PreOrderReleaseDate>"));
+    validate_ern_382_xml(&store).unwrap();
+
+    // With a release time too, and on takedown (no pre-release, dates only).
+    f.release_time = Some("18:00".into());
+    validate_ern_382_xml(&generate_ddex_ern_382(&f, &c).unwrap()).unwrap();
+    let mut t = config(MessageSubType::Takedown);
+    t.takedown_date = Some("2026-12-31".into());
+    let td = generate_ddex_ern_382(&f, &t).unwrap();
+    assert!(
+        !td.contains("PreviewStartDate") && !td.contains("IsPreOrderDeal"),
+        "{td}"
+    );
+    validate_ern_382_xml(&td).unwrap();
+    // A start past the end of the track is not sent.
+    f.preview_starts.insert(track, 3600);
+    let long = generate_ddex_ern_382(&f, &config(MessageSubType::Initial)).unwrap();
+    assert!(!long.contains("<PreviewDetails>") || f.tracks[0].audio.duration_secs.is_none());
+    let v = serde_json::to_value(fixture(0)).unwrap();
+    assert!(v.get("preorder_start").is_none() && v.get("preview_starts").is_none());
+}

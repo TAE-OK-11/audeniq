@@ -41,6 +41,26 @@ import { TERRITORY_GROUPS, WORLD, parseTerritories, territoryName, territorySumm
 /** 동시 발매로 고를 수 있는 한국 시간 (서버는 정각·30분만 받는다) */
 const RELEASE_TIMES = ['00:00', '09:00', '12:00', '13:00', '18:00', '19:00', '20:00'];
 
+/** 'm:ss' 또는 초 → 서버에 보낼 초 (비었거나 형식이 틀리면 '') */
+function previewSecs(v: string | undefined): string {
+  const s = (v ?? '').trim();
+  if (!s) return '';
+  const m = /^(\d{1,2}):([0-5]\d)$/.exec(s);
+  if (m) return String(Number(m[1]) * 60 + Number(m[2]));
+  return /^\d{1,4}$/.test(s) && Number(s) <= 3600 ? String(Number(s)) : '';
+}
+/** 저장된 초 → 화면 'm:ss' */
+function previewLabel(v: string | number | undefined): string {
+  const n = typeof v === 'number' ? v : /^\d+$/.test(String(v ?? '')) ? Number(v) : NaN;
+  return Number.isFinite(n) ? `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}` : '';
+}
+/** 'YYYY-MM-DD'에 일수를 더한다 */
+function shiftDate(d: string, days: number): string {
+  const t = new Date(`${d}T00:00:00Z`);
+  t.setUTCDate(t.getUTCDate() + days);
+  return t.toISOString().slice(0, 10);
+}
+
 const STEPS = [
   { short: '발매 정보', kicker: '01 / 06 · 발매 정보', title: '어떤 음악을\n발매할까요?', sub: '발매 정보와 아티스트명을 입력해 주세요.' },
   { short: '트랙 등록', kicker: '02 / 06 · 트랙 등록', title: '발매할 곡을\n등록해 주세요.', sub: '곡별 음원 파일과 크레딧을 입력해 주세요.' },
@@ -77,6 +97,8 @@ interface Track {
   assetId: string;
   /** 서버 트랙 ID (실서버, 임시 저장 간 매칭) */
   serverId: string;
+  /** 미리듣기·숏폼 클립 시작점 (입력 그대로 'm:ss' 또는 초) */
+  previewStart: string;
   featuring: string;
   instrumental: boolean;
   /** 음원 규격 표기 */
@@ -115,7 +137,7 @@ interface WizardForm {
   genreCustom: string; label: string; notes: string;
   tracks: Track[];
   coverName: string; coverData: string; coverAssetId: string; coverThumbAssetId: string;
-  releaseDate: string; releaseTime: string; originalDate: string; upc: string;
+  releaseDate: string; releaseTime: string; preorderStart: string; originalDate: string; upc: string;
   territories: string[]; platforms: string[];
   ownership: string; phonogram: string; copyright: string;
   rightsChecks: Record<string, boolean>;
@@ -129,7 +151,7 @@ const newTrack = (): Track => ({
   producer: '',
   lyrics: '',
   audioName: '', audioSize: 0, explicit: false, duration: '',
-  assetId: '', serverId: '', featuring: '', instrumental: false, audioSpec: '',
+  assetId: '', serverId: '', previewStart: '', featuring: '', instrumental: false, audioSpec: '',
 });
 
 const EMPTY_OPTIONS: ReleaseOptions = {
@@ -151,7 +173,7 @@ const EMPTY: WizardForm = {
   label: '', notes: '',
   tracks: [newTrack()],
   coverName: '', coverData: '', coverAssetId: '', coverThumbAssetId: '',
-  releaseDate: '', releaseTime: '', originalDate: '', upc: '',
+  releaseDate: '', releaseTime: '', preorderStart: '', originalDate: '', upc: '',
   territories: ['WORLD'], platforms: MOCK ? DSP.map(d => d[0]) : [],
   ownership: '', phonogram: '', copyright: '',
   rightsChecks: {},
@@ -1136,6 +1158,7 @@ function toPayload(form: WizardForm, step: number): ReleasePayload {
     originalDate: form.options.rerelease && form.options.rereleaseKind === 'new_version' ? form.releaseDate : form.originalDate,
     release_date: form.releaseDate || '',
     release_time: form.releaseTime || '',
+    preorder_start: form.preorderStart || '',
     tracks: form.tracks.map(t => ({
       id: t.id, title: t.title.trim(), isrc: t.isrc.trim(), duration: t.duration,
       version: t.version.trim(), composers: t.composers.trim(),
@@ -1144,6 +1167,7 @@ function toPayload(form: WizardForm, step: number): ReleasePayload {
       audioSize: t.audioSize, explicit: t.explicit,
       producer: t.producer.trim(), lyrics: t.lyrics.trim(),
       assetId: t.assetId || undefined, serverId: t.serverId || undefined,
+      previewStart: previewSecs(t.previewStart),
       featuring: t.featuring.trim(), instrumental: t.instrumental, audioSpec: t.audioSpec || undefined,
     })),
     territories: form.territories,
@@ -1408,6 +1432,7 @@ export function Upload() {
       const tracks: Track[] = d?.draftTracks?.length
         ? d.draftTracks.map(t => ({
             ...newTrack(), ...t, id: t.id || uid('t'), assetId: t.assetId || '', serverId: t.serverId || '',
+            previewStart: previewLabel(t.previewStart),
             featuring: t.featuring || '', instrumental: !!t.instrumental, audioSpec: t.audioSpec || '',
           }))
         : rel.tracks.length
@@ -1436,6 +1461,7 @@ export function Upload() {
         coverThumbAssetId: d?.coverThumbAssetId || '',
         releaseDate: rel.release_date || '',
         releaseTime: d?.release_time || '',
+        preorderStart: d?.preorder_start || '',
         originalDate: d?.options?.rerelease && d.options.previousReleaseDate ? d.options.previousReleaseDate : d?.originalDate || '',
         upc: d?.upc || '',
         territories: d?.territories ?? ['WORLD'],
@@ -1664,6 +1690,11 @@ export function Upload() {
           ? '신속 발매도 플랫폼 납품에 최소 3일이 필요해요. 3일 뒤 이후 날짜를 선택해 주세요.'
           : '플랫폼 납품·검수에 2주가 필요해요. 오늘부터 14일 뒤 이후로 선택하거나, 급하면 아래 ‘신속 발매 요청’을 선택해 주세요.', '#f-releaseDate');
       }
+      if (form.preorderStart && (form.preorderStart >= form.releaseDate || form.preorderStart < shiftDate(form.releaseDate, -90))) {
+        return fail('사전 공개 시작일은 발매일 1–90일 전으로 골라 주세요.', '#f-preorder');
+      }
+      const badPreview = form.tracks.find(t => t.previewStart.trim() && !previewSecs(t.previewStart));
+      if (badPreview) return fail(`'${badPreview.title}' 미리듣기 시작점을 m:ss 형식으로 적어 주세요. (예: 1:05)`, '.aq-preview-starts');
       const tp = parseTerritories(form.territories);
       if (!tp.world && !tp.included.length) return fail('배급할 지역을 하나 이상 골라 주세요. 모든 지역에 배급하려면 ‘전 세계 배급’을 켜 주세요.', '#aqTerritories');
       if (!dsps) return fail(dspError || '플랫폼 배급 가능 상태를 확인하는 중이에요.', '#aqPlatforms');
@@ -1966,6 +1997,7 @@ export function Upload() {
     ['트랙', form.tracks.map(t => t.title || '곡명 없음').join(' / '), 1],
     ['커버아트', form.coverName || '등록되지 않음', 2],
     ['발매일', form.releaseDate ? `${formatKoreanDate(form.releaseDate)}${form.releaseTime ? ` · 한국 시간 ${form.releaseTime} 동시 발매` : ' · 나라별 자정'}` : '지정하지 않음', 3],
+    ['사전 공개', form.preorderStart ? `${formatKoreanDate(form.preorderStart)}부터 (예약 판매·미리듣기)` : '없음', 3],
     ['배급 지역', territorySummary(form.territories, '선택하지 않음'), 3],
     ['배급 플랫폼', form.platforms.map(dspLabel).join(', ') || '선택하지 않음', 3],
     ['권리자', form.ownership || '미입력', 4],
@@ -2326,6 +2358,30 @@ export function Upload() {
                 <input id="f-upc" inputMode="numeric" value={form.upc} onChange={e => set('upc', e.target.value.replace(/\D/g, '').slice(0, 13))} maxLength={13} placeholder="없으면 자동 발급돼요" />
               </div>
             </div>
+            <h2 className="subhead">사전 공개·예약 판매 <span className="muted small">(선택)</span></h2>
+            <div className="form-grid">
+              <div className="ui-field">
+                <label htmlFor="f-preorder">사전 공개 시작일</label>
+                <input id="f-preorder" type="date" className="ui-input" value={form.preorderStart}
+                  min={form.releaseDate ? shiftDate(form.releaseDate, -90) : undefined}
+                  max={form.releaseDate ? shiftDate(form.releaseDate, -1) : undefined}
+                  onChange={e => set('preorderStart', e.target.value)} />
+                <small className="ui-field-help">이 날부터 플랫폼에 발매 예정 페이지·트랙 목록·커버·미리듣기가 열리고(사전 저장), 다운로드 스토어는 예약 판매를 받아요. 발매일 1–90일 전으로 골라 주세요.</small>
+              </div>
+            </div>
+            {form.tracks.some(t => t.title.trim()) && (
+              <div className="aq-preview-starts">
+                <p className="ui-field-help">곡별 미리듣기·숏폼 클립 시작 지점 (비우면 플랫폼이 정해요). 예: 1:05</p>
+                {form.tracks.filter(t => t.title.trim()).map((t, i) => (
+                  <label key={t.id} className="aq-preview-row">
+                    <span>{i + 1}. {t.title}</span>
+                    <input className="ui-input" inputMode="numeric" placeholder="m:ss" maxLength={5} value={t.previewStart}
+                      aria-invalid={!!t.previewStart.trim() && !previewSecs(t.previewStart)}
+                      onChange={e => setTrack(t.id, 'previewStart', e.target.value.replace(/[^0-9:]/g, ''))} />
+                  </label>
+                ))}
+              </div>
+            )}
             <h2 className="subhead">배급 지역</h2>
             <TerritoryPicker value={form.territories} onChange={v => set('territories', v)} />
             <h2 className="subhead">배급 플랫폼</h2>
