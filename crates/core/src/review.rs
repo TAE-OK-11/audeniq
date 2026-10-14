@@ -911,7 +911,7 @@ async fn module_applicant_rights(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec
         .collect();
     let grants = sqlx::query(
         "SELECT id, target_kind, target_id, right_type, territory_set, use_set, start_at, end_exclusive, exclusive, sublicensable, parent_grant_id, revoked_at FROM rights.grant_atoms
-         WHERE org_id=$1 AND revoked_at IS NULL
+         WHERE org_id=$1 AND revoked_at IS NULL AND grant_class='DISTRIBUTION'
            AND ((target_kind='RELEASE' AND target_id=$2) OR (target_kind='TRACK' AND target_id=ANY($3)))",
     )
     .bind(ctx.org).bind(ctx.release).bind(&track_ids)

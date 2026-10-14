@@ -59,6 +59,7 @@ pub mod qc;
 pub mod qc_engine;
 pub mod release_alerts;
 pub mod review;
+pub mod rights_grants;
 pub mod route_plan;
 pub mod routing;
 pub mod royalty;

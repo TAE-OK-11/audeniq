@@ -1945,6 +1945,10 @@ pub struct DocumentReview {
     #[serde(default)]
     pub note: String,
     pub row_version: i64,
+    /// APPROVED: what the document proves (rights_grants, 0126). Required
+    /// for a document tied to a release.
+    #[serde(default)]
+    pub grants: Vec<crate::rights_grants::GrantInput>,
 }
 
 pub async fn review_document(
@@ -1961,6 +1965,9 @@ pub async fn review_document(
     if i.status == "NEEDS" && i.note.trim().is_empty() {
         return Err(Error::PolicyGate("REVIEW_NOTE_REQUIRED"));
     }
+    if i.status == "NEEDS" && !i.grants.is_empty() {
+        return Err(Error::Invalid);
+    }
     note_ok(&i.note, 1000)?;
     let mut tx = s.pool.begin().await?;
     // Only submitted rights proofs are decided here; agreements go with the
@@ -1968,7 +1975,7 @@ pub async fn review_document(
     let row = sqlx::query(
         "UPDATE portal.documents SET status=$2, review_note=$3, row_version=row_version+1, updated_at=now()
          WHERE id=$1 AND row_version=$4 AND kind='RIGHTS_PROOF' AND status='REVIEW'
-         RETURNING org_id, row_version",
+         RETURNING org_id, row_version, release_id",
     )
     .bind(id)
     .bind(&i.status)
@@ -1978,6 +1985,15 @@ pub async fn review_document(
     .await?
     .ok_or(Error::Conflict)?;
     let org: Uuid = row.get("org_id");
+    let release: Option<Uuid> = row.get("release_id");
+    let mut grants = Vec::new();
+    let mut recheck = None;
+    if i.status == "APPROVED"
+        && let Some(release) = release
+    {
+        grants = crate::rights_grants::record(&mut tx, org, release, id, &i.grants).await?;
+        recheck = crate::rights_grants::recheck(&mut tx, org, release, st.actor.request).await?;
+    }
     operations::audit(
         &mut tx,
         Some(st.actor.user),
@@ -1989,7 +2005,10 @@ pub async fn review_document(
     )
     .await?;
     tx.commit().await?;
-    Ok(json!({"id": id, "status": i.status, "row_version": row.get::<i64,_>("row_version")}))
+    Ok(json!({
+        "id": id, "status": i.status, "row_version": row.get::<i64,_>("row_version"),
+        "grants": grants, "recheck": recheck,
+    }))
 }
 
 /// A document's original file as submitted by the artist (rights proof or

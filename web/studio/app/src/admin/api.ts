@@ -58,6 +58,18 @@ export interface StaffDocument {
     identity?: { provider: string; method: string; name: string; verified_at: string };
   } | null;
 }
+/** 승인한 권리 서류가 증명하는 권한 — 배급 권한(DISTRIBUTION)과 정산 수령권(ROYALTY, 지분)은 따로 */
+export interface GrantInput {
+  grant_class: 'DISTRIBUTION' | 'ROYALTY';
+  right_type: 'MASTER' | 'COMPOSITION' | 'LYRICS' | 'PERFORMANCE' | 'ARTWORK' | 'SAMPLE' | 'OTHER';
+  rights_holder: string;
+  track_ids?: string[];
+  share_bps?: number;
+  territories?: string[];
+  uses?: string[];
+  start_date?: string | null;
+  end_date?: string | null;
+}
 export interface AgreementTermsInput {
   exclusivity: 'NON_EXCLUSIVE' | 'EXCLUSIVE';
   /** AUDENIQ 몫 (bp, 800 = 8%) */
@@ -293,7 +305,7 @@ const remote = {
   approve: (aid: string) => req<{ result: string }>(`/api/staff/approvals/${id(aid)}/approve`, { method: 'POST' }),
   decline: (aid: string) => req<{ result: string }>(`/api/staff/approvals/${id(aid)}/decline`, { method: 'POST' }),
   documents: (status: string) => req<Page<StaffDocument>>(`/api/staff/documents${qs({ status, limit: 100 })}`),
-  reviewDocument: (did: string, body: { status: 'APPROVED' | 'NEEDS'; note: string; row_version: number }) =>
+  reviewDocument: (did: string, body: { status: 'APPROVED' | 'NEEDS'; note: string; row_version: number; grants?: GrantInput[] }) =>
     req<{ status: string; row_version: number }>(`/api/staff/documents/${id(did)}/review`, { method: 'POST', body }),
   requestProof: (org: string, body: { release_id: string; title: string; body: string }) =>
     req<{ id: string }>(`/api/staff/orgs/${id(org)}/documents`, { method: 'POST', body }),
