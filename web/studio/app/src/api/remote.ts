@@ -8,14 +8,14 @@
 // - 트랙은 아티스트 ID·자산 ID로 연결, 파일은 서명 URL로 R2에 직접 업로드
 // - 접수 = 동의(consent) 생성 → submit(동의 ID, 자기 선언)
 import type {
-  Correction, WithdrawQuota,
+  AssetChecks, Correction, Invitation, OrgMember, WithdrawQuota, TakedownState,
   DeliveryItem, DspAvailability,
   DraftTrack, Org, PreflightIssue, Release, ReleaseDetail, ReleaseDraft, ReleasePayload,
   ReleaseOptionsData, SaveResult, Track, UploadKind, UploadResult, User,
 } from './types';
 import { ApiError, PartialSaveError } from './errors';
 import { LEGAL_DOCS, TERMS_VERSION } from '../lib/terms';
-import { bootstrapCsrf, hasCsrf, listAll, orgPath, putToGrant, req, setCsrf, setSessionUser, type UploadGrant } from './http';
+import { API_BASE, bootstrapCsrf, hasCsrf, listAll, orgPath, putToGrant, req, setCsrf, setSessionUser, type UploadGrant } from './http';
 import { stampNow } from '../lib/date';
 import { isrcValid, normalizeIsrc, upcValid } from '../lib/dsp';
 import { parseStaffFix } from '../lib/corrections';
@@ -128,8 +128,19 @@ const PROFILE_LIMIT = 48 * 1024; // 요청 본문 64KB 한도 안에서 여유�
  *  PNG가 아닌 인라인 미리보기는 비워 보낸다 (2026-10-10 중계 Worker 긴급 패치와 같은 규칙). */
 export function storedCoverData(coverData: string | undefined, coverAssetId: string | undefined): string | undefined {
   if (!coverData || !coverAssetId) return coverData;
-  const inline = coverData.startsWith('data:') || coverData.startsWith('blob:');
-  return inline && !coverData.startsWith('data:image/png;base64,') ? '' : coverData;
+  // 서버 이미지 주소(coverImageUrl)도 저장하지 않는다: 자산 ID로 다시 만든다
+  return coverData.startsWith('data:image/png;base64,') ? coverData : '';
+}
+
+/** 서버에 보관된 커버 이미지 주소 (작은 미리보기가 있으면 그것). 업로드한 원본은 발매까지 서버에 남는다. */
+export function coverImageUrl(thumbAssetId: string | undefined, coverAssetId: string | undefined): string {
+  const id = thumbAssetId || coverAssetId;
+  if (!id) return '';
+  try {
+    return `${API_BASE}${orgPath(`/assets/${encodeURIComponent(id)}/image`)}`;
+  } catch {
+    return ''; // 작업 공간을 아직 모를 때는 그라데이션 커버로
+  }
 }
 
 function buildProfile(data: ReleasePayload, prev: Record<string, unknown> | null, history: ReleaseDraft['history']) {
@@ -149,6 +160,9 @@ function buildProfile(data: ReleasePayload, prev: Record<string, unknown> | null
     coverName: data.coverName,
     coverData: storedCoverData(data.coverData, coverAssetId),
     coverAssetId,
+    coverThumbAssetId: data.coverAssetId && data.coverAssetId !== prev?.coverAssetId
+      ? data.coverThumbAssetId
+      : data.coverThumbAssetId ?? (prev?.coverThumbAssetId as string | undefined),
     originalDate: data.originalDate,
     release_date: data.release_date,
     territories: data.territories,
@@ -212,8 +226,10 @@ function readDraft(r: ServerRelease): ReleaseDraft {
     upc: s('upc'),
     notes: a<string>('notes_lines').join('\n') || s('notes'),
     coverName: s('coverName'),
-    coverData: s('coverData'),
+    // 저장된 미리보기가 없으면(JPEG 커버) 서버에 보관된 커버를 보여 준다
+    coverData: s('coverData') || coverImageUrl(s('coverThumbAssetId'), s('coverAssetId')),
     coverAssetId: s('coverAssetId') || undefined,
+    coverThumbAssetId: s('coverThumbAssetId') || undefined,
     originalDate: s('originalDate'),
     territories: a<string>('territories'),
     platforms: a<string>('platforms'),
@@ -557,7 +573,28 @@ export const remoteApi = {
     return r.items
       .slice()
       .sort((a, b) => Number(b.role !== 'VIEWER') - Number(a.role !== 'VIEWER'))
-      .map(o => ({ id: o.id, name: o.name }));
+      .map(o => ({ id: o.id, name: o.name, role: o.role as Org['role'] }));
+  },
+  async listMembers(): Promise<{ role: string; items: OrgMember[] }> {
+    return req<{ role: string; items: OrgMember[] }>(orgPath('/members'));
+  },
+  async inviteMember(email: string, role: 'EDITOR' | 'VIEWER'): Promise<void> {
+    await req(orgPath('/members/invite'), { method: 'POST', body: { email, role } });
+  },
+  async setMember(userId: string, role: 'EDITOR' | 'VIEWER', status: 'ACTIVE' | 'REVOKED'): Promise<void> {
+    await req(orgPath('/memberships'), { method: 'PUT', body: { user_id: userId, role, status } });
+  },
+  async listInvitations(): Promise<Invitation[]> {
+    return (await req<{ items: Invitation[] }>('/api/me/invitations', { quiet401: true })).items;
+  },
+  async acceptInvitation(orgId: string): Promise<void> {
+    await req(`/api/orgs/${encodeURIComponent(orgId)}/memberships/accept`, { method: 'POST', body: {} });
+  },
+  async declineInvitation(orgId: string): Promise<void> {
+    await req(`/api/me/invitations/${encodeURIComponent(orgId)}/decline`, { method: 'POST', body: {} });
+  },
+  async assetChecks(assetId: string): Promise<AssetChecks> {
+    return req<AssetChecks>(orgPath(`/assets/${encodeURIComponent(assetId)}/checks`), { quiet401: true });
   },
   async listReleases(): Promise<Release[]> {
     const items = await listAll<ServerRelease>(orgPath('/releases'));
@@ -654,6 +691,15 @@ export const remoteApi = {
   },
   async withdrawQuota(): Promise<WithdrawQuota> {
     return req<WithdrawQuota>(orgPath('/withdrawals'));
+  },
+  async takedownStatus(id: string): Promise<TakedownState> {
+    return req<TakedownState>(`${detailPath(id)}/takedown`, { quiet401: true });
+  },
+  async requestTakedown(id: string, reason: string): Promise<void> {
+    await req(`${detailPath(id)}/takedown`, { method: 'POST', body: { reason } });
+  },
+  async cancelTakedown(id: string): Promise<void> {
+    await req(`${detailPath(id)}/takedown/cancel`, { method: 'POST', body: {} });
   },
   async deleteRelease(id: string): Promise<void> {
     const rel = await fetchRelease(id);

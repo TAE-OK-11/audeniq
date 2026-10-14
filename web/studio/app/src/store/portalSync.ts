@@ -12,7 +12,7 @@ import { EMPTY_ACCOUNT, setAccount } from './account';
 import { noticesStore } from './support';
 import { ticketsStore } from './tickets';
 import { setDocs } from './docs';
-import { financeStore, payoutsStore, statementsStore } from './settlement';
+import { financeStore, payoutsStore, statementsNextStore, statementsStore } from './settlement';
 
 export const PORTAL_REFRESH_EVENT = 'aq:portal-refresh';
 
@@ -34,7 +34,15 @@ export async function refreshDocs() {
 export async function refreshFinance() {
   const f = await quiet(portal.fetchFinance());
   if (!f) return;
-  statementsStore.set(f.statements);
+  // '더 보기'로 받아 둔 이전 쪽은 주기적 새로고침에도 남긴다 (첫 쪽만 새로 받는다)
+  const loadedMore = statementsNextStore.get() !== f.statementsNext && statementsStore.get().length > f.statements.length;
+  if (loadedMore) {
+    const fresh = new Set(f.statements.map(x => x.id));
+    statementsStore.set(old => [...f.statements, ...old.filter(x => !fresh.has(x.id))]);
+  } else {
+    statementsStore.set(f.statements);
+    statementsNextStore.set(f.statementsNext);
+  }
   payoutsStore.set(f.payouts);
   financeStore.set({ ...f.summary, loaded: true });
 }
@@ -69,6 +77,7 @@ export function clearPortal() {
   ticketsStore.set([]);
   setDocs([]);
   statementsStore.set([]);
+  statementsNextStore.set(null);
   payoutsStore.set([]);
   financeStore.set({ payable: 0, pending: 0, available: 0, minimum: 10000, loaded: false });
 }

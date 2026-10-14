@@ -1,5 +1,5 @@
 // 목 API — 실제 서버 없이도 전체 흐름을 쓸 수 있도록 브라우저 저장소(localStorage)에 영속화한다.
-import type { Correction, User, Org, Release, ReleaseDetail, ReleasePayload, Track } from './types';
+import type { AssetChecks, Correction, Invitation, OrgMember, User, Org, Release, ReleaseDetail, ReleasePayload, Track, TakedownRequest, TakedownState } from './types';
 import { ApiError } from './errors';
 import { createStore, uid } from '../lib/store';
 import { readJSON, removeKey, writeJSON } from '../lib/storage';
@@ -8,7 +8,7 @@ import { stampNow, todayStr } from '../lib/date';
 // 네트워크 흉내 지연 — 읽기는 거의 즉시, 인증·접수만 짧게 (버튼 진행 상태가 보이도록)
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-const mockOrgs: Org[] = [{ id: 'org_1', name: '내 작업 공간' }];
+const mockOrgs: Org[] = [{ id: 'org_1', name: '내 작업 공간', role: 'OWNER' }];
 
 // 데모: 담당자 보완 요청 (코드 → 신청서 위치는 lib/corrections.ts)
 const SEED_CORRECTIONS: Record<string, Correction[]> = {
@@ -190,6 +190,8 @@ function sessionUser(s: Session): User {
 }
 
 /** 체험 모드에서 이번 달 취소한 발매 */
+const mockMembers: OrgMember[] = [{ user_id: 'me', role: 'OWNER', status: 'ACTIVE', email: 'artist@example.com', invited_at: null, accepted_at: null, me: true }];
+const mockTakedowns = new Map<string, TakedownRequest>();
 const mockWithdrawn = /* @__PURE__ */ new Set<string>();
 
 export const mockApi = {
@@ -223,6 +225,21 @@ export const mockApi = {
     await delay(0);
     return mockOrgs;
   },
+  // 체험 모드: 나 혼자인 작업 공간. 초대는 목록에만 더한다
+  listMembers: async () => ({ role: 'OWNER', items: mockMembers }),
+  inviteMember: async (email: string, role: 'EDITOR' | 'VIEWER') => {
+    await delay(120);
+    if (!email.includes('@')) throw new ApiError('이메일을 확인해 주세요.', 400, 'MEMBER_EMAIL_INVALID');
+    mockMembers.push({ user_id: uid(), role, status: 'INVITED', email, invited_at: new Date().toISOString(), accepted_at: null, me: false });
+  },
+  setMember: async (userId: string, role: 'EDITOR' | 'VIEWER', status: 'ACTIVE' | 'REVOKED') => {
+    const m = mockMembers.find(x => x.user_id === userId);
+    if (m) Object.assign(m, { role, status: status === 'REVOKED' ? 'REVOKED' : m.status });
+  },
+  listInvitations: async (): Promise<Invitation[]> => [],
+  acceptInvitation: async (_orgId: string) => { /* 체험 모드에는 받은 초대가 없다 */ },
+  declineInvitation: async (_orgId: string) => { /* 체험 모드에는 받은 초대가 없다 */ },
+  assetChecks: async (assetId: string): Promise<AssetChecks> => ({ asset_id: assetId, qc_status: 'PASS', checks: [] }),
   listReleases: async (): Promise<Release[]> => {
     await delay(60);
     return db.get()
@@ -269,6 +286,25 @@ export const mockApi = {
     return { limit: 3, used: used + 1, remaining: Math.max(0, 2 - used) };
   },
   withdrawQuota: async () => ({ limit: 3, used: mockWithdrawn.size, remaining: Math.max(0, 3 - mockWithdrawn.size) }),
+  // 체험 모드: 발매 완료(live)된 발매만 중단 요청을 받고, 담당자 처리는 흉내 내지 않는다
+  takedownStatus: async (id: string): Promise<TakedownState> => {
+    await delay(60);
+    const rel = db.get().find(r => r.id === id);
+    const live = rel?.status === 'live';
+    const request = mockTakedowns.get(id) ?? null;
+    const platforms = live ? (rel?.draft?.platforms?.length ? rel.draft.platforms : ['melon', 'spotify']).map(slug => ({ partner_id: slug, slug, name: '', live_status: 'LIVE' })) : [];
+    return { request, platforms, can_request: live && request?.status !== 'PENDING' };
+  },
+  requestTakedown: async (id: string, reason: string) => {
+    await delay(120);
+    if (!reason.trim()) throw new ApiError('중단 사유를 적어 주세요.', 400, 'TAKEDOWN_REASON_REQUIRED');
+    mockTakedowns.set(id, { id: uid(), status: 'PENDING', reason: reason.trim(), decision_note: '', created_at: new Date().toISOString(), decided_at: null });
+  },
+  cancelTakedown: async (id: string) => {
+    await delay(80);
+    const r = mockTakedowns.get(id);
+    if (r?.status === 'PENDING') mockTakedowns.set(id, { ...r, status: 'CANCELLED', decided_at: new Date().toISOString() });
+  },
   deleteRelease: async (id: string): Promise<void> => {
     await delay(80);
     db.set(list => list.filter(r => r.id !== id));

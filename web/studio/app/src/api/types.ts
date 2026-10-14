@@ -9,7 +9,25 @@ export interface User {
 export interface Org {
   id: string;
   name: string;
+  /** 이 작업 공간에서 내 역할 — OWNER(소유자) · EDITOR(편집) · VIEWER(보기) */
+  role?: 'OWNER' | 'EDITOR' | 'VIEWER';
 }
+
+/** 작업 공간 멤버 — 소유자는 초대·해제된 사람까지, 다른 멤버는 활성 멤버만(이메일 일부 가림) */
+export interface OrgMember {
+  user_id: string;
+  role: 'OWNER' | 'EDITOR' | 'VIEWER';
+  status: 'ACTIVE' | 'INVITED' | 'REVOKED';
+  email: string | null;
+  invited_at: string | null;
+  accepted_at: string | null;
+  me: boolean;
+}
+export interface Invitation { org_id: string; org_name: string; role: 'EDITOR' | 'VIEWER'; invited_at: string | null }
+
+/** 올린 곡의 사전 품질 검사 결과 (검사 항목별) */
+export interface AssetCheck { code: string; status: 'PASS' | 'NOT_APPLICABLE' | 'REVIEW_REQUIRED' | 'CORRECTION_REQUIRED' | 'BLOCKED' | 'TECHNICAL_RETRY'; detail: string | null }
+export interface AssetChecks { asset_id: string; qc_status: 'PENDING' | 'PASS' | 'BLOCKED'; checks: AssetCheck[] }
 
 export interface Release {
   id: string;
@@ -117,6 +135,18 @@ export interface CoverTrackData {
 /** 이번 달 직접 취소할 수 있는 횟수 (조직 단위, 매월 1일 초기화) */
 export interface WithdrawQuota { limit: number; used: number; remaining: number }
 
+/** 발매 중단(테이크다운) — 이미 플랫폼에 보낸 발매를 내리는 요청 */
+export interface TakedownPlatform { partner_id: string; slug: string; name: string; live_status: string | null }
+export interface TakedownRequest {
+  id: string;
+  status: 'PENDING' | 'APPROVED' | 'DECLINED' | 'CANCELLED';
+  reason: string;
+  decision_note: string;
+  created_at: string;
+  decided_at: string | null;
+}
+export interface TakedownState { request: TakedownRequest | null; platforms: TakedownPlatform[]; can_request: boolean }
+
 export interface ReleaseOptionsData extends RereleaseData {
   express: boolean; expressAck: boolean; expressReason: string;
   minor: boolean;
@@ -146,6 +176,8 @@ export interface ReleaseDraft {
   coverData?: string;
   /** 실서버: 업로드 완료된 커버 이미지 자산 ID */
   coverAssetId?: string;
+  /** 실서버: 목록·상세에 보여 줄 작은 커버 미리보기 이미지 자산 ID */
+  coverThumbAssetId?: string;
   originalDate?: string;
   territories: string[];
   platforms: string[];
@@ -190,6 +222,7 @@ export interface ReleasePayload {
   coverName: string;
   coverData: string;
   coverAssetId?: string;
+  coverThumbAssetId?: string;
   originalDate: string;
   release_date: string;
   tracks: DraftTrack[];
