@@ -416,3 +416,32 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
   #view-reports .report-tools>*{width:100%}
 }
 .aq-set-card .aq-set-help{margin:0;padding:2px 14px 8px}
+
+/* ==========================================================================
+   상호작용 다듬기 — 모양은 그대로, 손에 닿는 느낌만
+   ========================================================================== */
+/* 휴대폰 아래 시트: 위쪽에 손잡이를 보여 주고, 머리를 잡고 끌어내려 닫는다 (Modal.tsx) */
+@media (max-width:760px){
+  #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode)>.modal-inner{position:relative}
+  #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode):not(.aq-confirm-mode):not(.aq-sysdialog-mode)>.modal-inner::before{
+    content:"";position:absolute;top:8px;left:50%;width:36px;height:4px;margin-left:-18px;border-radius:2px;background:var(--aq-gray-200);pointer-events:none
+  }
+  #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode):not(.aq-confirm-mode):not(.aq-sysdialog-mode) .modal-top{touch-action:none}
+}
+/* 닫을 수 없는 창의 바깥을 누르면 창이 살짝 튀어 반응한다 */
+@keyframes aq-modal-nudge{0%,100%{transform:none}35%{transform:scale(1.015)}70%{transform:scale(.995)}}
+#modal.is-nudge>.modal-inner{animation:aq-modal-nudge .3s cubic-bezier(.3,1.4,.55,1)!important}
+
+/* 알림(토스트): 옆으로 밀어 닫을 수 있게 가로 끌기는 앱이 받는다 */
+.aq-toast{touch-action:pan-y;transition:transform .2s cubic-bezier(.3,1.4,.55,1),opacity .2s ease;-webkit-user-select:none;user-select:none}
+
+/* 길게 누를 때 버튼·칩·탭 글자가 선택되거나 시스템 메뉴가 뜨지 않게 */
+:is(.ui-btn,.ui-chip,.ui-tab,.ui-seg>button,.aq-set-row,.service-item,#portalNav button){-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+
+/* 입력칸으로 이동하거나 키보드가 올라올 때 고정 머리·아래 버튼에 가리지 않게 */
+:is(input,select,textarea,.aq-date-input){scroll-margin-top:calc(var(--aq-header-h) + 16px);scroll-margin-bottom:110px}
+#modal .modal-inner{scroll-padding-bottom:96px}
+
+/* 줄에서 고른 탭·칩으로 밀어 줄 때 부드럽게 (lib/rowNav.ts) */
+:is(.ui-tabs,.ui-chips){scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){:is(.ui-tabs,.ui-chips){scroll-behavior:auto}#modal.is-nudge>.modal-inner{animation:none!important}}
