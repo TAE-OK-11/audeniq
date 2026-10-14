@@ -184,6 +184,15 @@ const CODE_MESSAGES: Record<string, string> = {
   NOT_IMPLEMENTED: '아직 준비 중인 기능이에요.',
   BACKEND_UNAVAILABLE: '서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.',
   MAINTENANCE: '지금은 서버 점검 중이에요. 점검이 끝나면 다시 이용할 수 있어요.',
+  // 플레이리스트 피칭
+  PITCH_INVALID: '곡 소개는 20–1000자로, 다른 항목은 200자 안으로 적어 주세요.',
+  PITCH_TOO_LATE: '피칭은 발매일 7일 전까지만 할 수 있어요. 에디터가 미리 플레이리스트를 준비하거든요.',
+  PITCH_ALREADY_SUBMITTED: '이 발매는 이미 피칭했어요. 결과를 기다려 주세요.',
+  PITCH_RELEASE_NOT_SUBMITTED: '발매 신청을 마친 뒤에 피칭할 수 있어요.',
+  PITCH_NOT_WITHDRAWABLE: '이미 플랫폼에 전달돼 취소할 수 없어요.',
+  PITCH_STATUS_INVALID: '바꿀 수 없는 상태예요.',
+  PITCH_PLATFORMS_REQUIRED: '전달한 플랫폼을 하나 이상 골라 주세요.',
+  PITCH_RESULT_REQUIRED: '선정된 플레이리스트를 적어 주세요.',
   // 관리자(스태프) API
   STATUS_UNKNOWN: '알 수 없는 상태 필터예요.',
   NOTE_TOO_LONG: '메모가 너무 길어요. 줄여서 다시 입력해 주세요.',
