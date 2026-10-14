@@ -15,7 +15,12 @@ export function useToast() {
 interface Item { id: number; message: string; tone: ToastTone; leaving: boolean }
 
 const DURATION = 3200;
+/** 오류는 읽고 대처할 시간이 더 필요하다. 긴 문구는 글자 수만큼 조금 더 둔다 */
+const durationFor = (message: string, tone: ToastTone) =>
+  Math.min(9000, (tone === 'error' ? 5200 : DURATION) + Math.max(0, message.length - 30) * 45);
 const MAX = 3;
+/** 옆으로 이만큼 밀면 닫는다 */
+const SWIPE_PX = 64;
 
 /** 문구로 톤 추정 — 기존 호출부(toast('...'))를 바꾸지 않아도 성공/오류 색이 붙도록 */
 function guessTone(msg: string): ToastTone {
@@ -43,8 +48,22 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       const filtered = list.filter(t => t.message !== message);
       return [...filtered, { id, message, tone: tone ?? guessTone(message), leaving: false }].slice(-MAX);
     });
-    timers.current.set(id, window.setTimeout(() => dismiss(id), DURATION));
+    const t = tone ?? guessTone(message);
+    timers.current.set(id, window.setTimeout(() => dismiss(id), durationFor(message, t)));
   }, [dismiss]);
+
+  // 누르고 있거나 마우스를 올려 두면 멈추고, 떼면 다시 센다 (읽는 중에 사라지지 않게)
+  const hold = useCallback((id: number) => {
+    const tm = timers.current.get(id);
+    if (tm) { window.clearTimeout(tm); timers.current.delete(id); }
+  }, []);
+  const resume = useCallback((id: number, message: string, tone: ToastTone) => {
+    if (timers.current.has(id)) return;
+    timers.current.set(id, window.setTimeout(() => dismiss(id), Math.max(1800, durationFor(message, tone) / 2)));
+  }, [dismiss]);
+  const drag = useRef<{ id: number; x: number; el: HTMLElement } | null>(null);
+  /** 방금 손가락으로 민 경우 뒤따르는 클릭(닫기)을 무시한다 */
+  const swiped = useRef(false);
 
   // 브라우저 저장 공간 부족 등으로 저장이 실패하면 알림
   useEffect(() => {
@@ -72,7 +91,40 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div className="aq-toast-stack" role="status" aria-live="polite">
         {items.map(t => (
-          <div key={t.id} className={`aq-toast is-${t.tone}${t.leaving ? ' is-leaving' : ''}`} onClick={() => dismiss(t.id)}>
+          <div
+            key={t.id} className={`aq-toast is-${t.tone}${t.leaving ? ' is-leaving' : ''}`}
+            onClick={() => { if (swiped.current) { swiped.current = false; return; } dismiss(t.id); }}
+            onPointerEnter={() => hold(t.id)}
+            onPointerLeave={() => { if (!drag.current) resume(t.id, t.message, t.tone); }}
+            onPointerDown={e => { hold(t.id); drag.current = { id: t.id, x: e.clientX, el: e.currentTarget }; e.currentTarget.setPointerCapture?.(e.pointerId); }}
+            onPointerMove={e => {
+              const d = drag.current;
+              if (!d || d.id !== t.id) return;
+              const dx = e.clientX - d.x;
+              d.el.style.transition = 'none';
+              d.el.style.transform = `translateX(${dx}px)`;
+              d.el.style.opacity = String(Math.max(0.2, 1 - Math.abs(dx) / 200));
+            }}
+            onPointerUp={e => {
+              const d = drag.current;
+              if (!d || d.id !== t.id) return;
+              const dx = e.clientX - d.x;
+              d.el.style.transition = '';
+              if (Math.abs(dx) > SWIPE_PX) {
+                d.el.style.transform = `translateX(${dx > 0 ? 120 : -120}%)`;
+                d.el.style.opacity = '0';
+                window.setTimeout(() => setItems(list => list.filter(x => x.id !== t.id)), 180);
+              } else {
+                d.el.style.transform = '';
+                d.el.style.opacity = '';
+                resume(t.id, t.message, t.tone);
+              }
+              // 살짝이라도 민 것은 클릭(닫기)으로 치지 않는다
+              swiped.current = Math.abs(dx) > 6;
+              drag.current = null;
+            }}
+            onPointerCancel={() => { const d = drag.current; if (d) { d.el.style.transform = ''; d.el.style.opacity = ''; drag.current = null; resume(t.id, t.message, t.tone); } }}
+          >
             <span className="aq-toast-icon" aria-hidden="true">{t.tone === 'success' ? <CheckIcon size={12} /> : <Glyph name={t.tone === 'error' ? 'alert' : 'info'} size={14} />}</span>
             <span>{t.message}</span>
           </div>
