@@ -27,12 +27,32 @@ pub(crate) fn signature_bytes(value: &str) -> Result<Vec<u8>> {
 /// accepting only CRC-checked, metadata-free PNGs with a complete bounded
 /// pixel stream. Neither arbitrary data URLs nor appended bytes can be saved.
 pub async fn signature(state: &crate::api::AppState, value: &str) -> Result<String> {
+    // These exact bytes already passed (same rule version, and the AV scan
+    // when it is on): a draft re-saved (every autosave) or a signature
+    // re-sent is not decoded or re-sanitized.
+    let source_sha256 = crate::domain::sha256_hex(value);
+    let admitted: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM catalog.inline_file_safety WHERE source_sha256=$1 AND rule_version=$2 AND (NOT $3 OR antivirus_status='SCANNED'))",
+    )
+    .bind(&source_sha256)
+    .bind(RULE_VERSION)
+    .bind(state.antivirus_enabled)
+    .fetch_one(&state.pool)
+    .await?;
+    if admitted {
+        return Ok(value.to_string());
+    }
     let bytes = signature_bytes(value)?;
-    let slot = state
-        .transcode_slots
-        .clone()
-        .try_acquire_owned()
-        .map_err(|_| Error::UploadBusy)?;
+    // A small image of its own slot pool, waited for briefly: signing a
+    // contract used to fail at once whenever an audio upload was converting
+    // (it shared the single transcode slot through try_acquire).
+    let slot = tokio::time::timeout(
+        Duration::from_secs(20),
+        state.inline_slots.clone().acquire_owned(),
+    )
+    .await
+    .map_err(|_| Error::UploadBusy)?
+    .map_err(|_| Error::Internal)?;
     let workspace = Workspace::new()?;
     let source = workspace.0.join("signature.png");
     let target = workspace.0.join("validated.png");
@@ -40,6 +60,7 @@ pub async fn signature(state: &crate::api::AppState, value: &str) -> Result<Stri
         .await
         .map_err(|_| Error::Storage)?;
     scan(&source, bytes.len() as u64, state.antivirus_enabled).await?;
+    let len = bytes.len();
     tokio::task::spawn_blocking(move || {
         let _slot = slot;
         let _workspace = workspace;
@@ -49,12 +70,16 @@ pub async fn signature(state: &crate::api::AppState, value: &str) -> Result<Stri
             "application/x-audeniq-signature",
             &_workspace.0,
         )
-        .map_err(|_| Error::InvalidCode("SIGNATURE_INVALID"))
+        .map_err(|e| {
+            // 기기·브라우저별 PNG 차이로 거절된 서명을 운영 로그에서 찾을 수 있게
+            tracing::warn!(error = ?e, bytes = len, "inline signature rejected by sanitizer");
+            Error::InvalidCode("SIGNATURE_INVALID")
+        })
     })
     .await
     .map_err(|_| Error::Internal)??;
     sqlx::query("INSERT INTO catalog.inline_file_safety(source_sha256,rule_version,antivirus_status) VALUES($1,$2,$3) ON CONFLICT DO NOTHING")
-        .bind(crate::domain::sha256_hex(value)).bind(RULE_VERSION)
+        .bind(&source_sha256).bind(RULE_VERSION)
         .bind(antivirus_status(state.antivirus_enabled)).execute(&state.pool).await?;
     Ok(value.to_string())
 }
@@ -110,47 +135,56 @@ pub async fn visible_inline_files(
     if images.is_empty() {
         return Ok(value);
     }
-    // One SHA-256 per occurrence, reused by the hiding pass below: inline
-    // images are base64 data URLs that can be hundreds of KiB each, so
-    // hashing them a second time doubled the CPU of a catalog list.
-    let hashes: Vec<String> = images.into_iter().map(crate::domain::sha256_hex).collect();
-    let unique: Vec<&str> = hashes
+    // Each embedded file is hashed once (a release list carries up to 100
+    // covers of ~48 KB); the rewrite below matches the strings themselves.
+    images.sort_unstable();
+    images.dedup();
+    let hashed: Vec<(&str, String)> = images
+        .into_iter()
+        .map(|s| (s, crate::domain::sha256_hex(s)))
+        .collect();
+    let hashes: Vec<String> = hashed
         .iter()
-        .map(String::as_str)
+        .map(|(_, h)| h.clone())
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .take(512)
         .collect();
     let admitted: Vec<String> = sqlx::query_scalar("SELECT source_sha256 FROM catalog.inline_file_safety WHERE source_sha256=ANY($1) AND rule_version=$2 AND (NOT $3 OR antivirus_status='SCANNED')")
-        .bind(unique).bind(RULE_VERSION).bind(crate::config::antivirus_enabled()?).fetch_all(pool).await?;
+        .bind(hashes).bind(RULE_VERSION).bind(crate::config::antivirus_enabled()?).fetch_all(pool).await?;
     let admitted: std::collections::BTreeSet<_> = admitted.into_iter().collect();
-    // Same traversal and predicate as `visit_inline`, so the n-th match here
-    // is the n-th hash above.
-    fn hide(value: &mut serde_json::Value, key: &str, visible: &mut impl Iterator<Item = bool>) {
+    let hidden: std::collections::HashSet<String> = hashed
+        .into_iter()
+        .filter(|(_, h)| !admitted.contains(h))
+        .map(|(s, _)| s.to_owned())
+        .collect();
+    if hidden.is_empty() {
+        return Ok(value);
+    }
+    fn hide(value: &mut serde_json::Value, key: &str, hidden: &std::collections::HashSet<String>) {
         match value {
             serde_json::Value::String(s)
                 if !s.is_empty()
                     && (key == "signature" || s.starts_with("data:") || s.starts_with("blob:")) =>
             {
-                if !visible.next().unwrap_or(false) {
+                if hidden.contains(s.as_str()) {
                     s.clear();
                 }
             }
             serde_json::Value::Array(a) => {
                 for v in a {
-                    hide(v, key, visible);
+                    hide(v, key, hidden);
                 }
             }
             serde_json::Value::Object(o) => {
                 for (k, v) in o {
-                    hide(v, k, visible);
+                    hide(v, k, hidden);
                 }
             }
             _ => (),
         }
     }
-    let mut visible = hashes.iter().map(|h| admitted.contains(h));
-    hide(&mut value, "", &mut visible);
+    hide(&mut value, "", &hidden);
     Ok(value)
 }
 

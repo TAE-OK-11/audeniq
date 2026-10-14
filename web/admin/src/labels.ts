@@ -26,6 +26,8 @@ const DSP_NAMES: [string, string][] = [
 ];
 
 export function dspLabel(value: string): string {
+  // 공식 오픈 전 테스트용 플랫폼 (서버의 MockDSP)
+  if (value === 'mockdsp-studio') return 'MockDSP (테스트)';
   const bySlug = DSP_NAMES.find(([slug]) => slug === value);
   if (bySlug) return bySlug[1];
   const code = /^D-(\d+)$/.exec(value);

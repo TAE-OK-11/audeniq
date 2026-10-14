@@ -39,6 +39,7 @@
 //!   (Merlin's own agreement: `partner contract merlin REF`)
 //! audeniq-admin staff list
 //! audeniq-admin staff grant EMAIL ADMIN|REVIEWER|OPERATOR|SUPPORT
+//! audeniq-admin staff reset-mfa EMAIL   (lost authenticator: re-enroll at next sign-in)
 //! audeniq-admin staff revoke EMAIL
 //!   (AUDENIQ employees for /api/staff; the API can only read this)
 //! audeniq-admin dsp list
@@ -50,10 +51,18 @@
 //! audeniq-admin --operator STAFF_EMAIL payout result ORDER_ID settled|failed|returned|unknown [BANK_TX_ID]
 //! audeniq-admin --operator STAFF_EMAIL payout cancel ORDER_ID    (before submit only)
 //!   (ADMIN/OPERATOR staff; SETTLED posts the ledger debit, UNKNOWN is never resent)
+//! audeniq-admin --operator STAFF_EMAIL royalty import ORG DSP START END CUR FILE
+//! audeniq-admin --operator STAFF_EMAIL royalty match ORG REPORT
+//! audeniq-admin --operator STAFF_EMAIL royalty receipt ORG REPORT BANK_REF AMOUNT CUR EVIDENCE_JSON
+//! audeniq-admin --operator STAFF_EMAIL royalty post ORG REPORT FX_RATE
+//!   (fully matched + paid report → ledger: fee, applicant, collaborator splits)
+//! audeniq-admin --operator STAFF_EMAIL royalty show ORG REPORT
+//! audeniq-admin --operator STAFF_EMAIL payout return ORDER BANK_REF AMOUNT EVIDENCE_JSON [--refund-fee]
+//! audeniq-admin storage probe [--origin URL] [--archive]   (bucket check: docs/STORAGE_PROVIDERS.md)
 use audeniq_core::protected_admin as admin;
 use audeniq_core::protected_names::{Action, Mode};
 
-const USAGE: &str = "usage: audeniq-admin [--operator NAME] protected <list|add|remove|activate|alias|remove-alias|grant-exception|revoke-exception> ...\n       audeniq-admin [--operator NAME] identifier-issuer <list|register UPC|ISRC PREFIX>\n       audeniq-admin [--operator NAME] partner <list|config-check|status ID|set-dsp ID [DSP_UUID]|probe ID|dpid ID DPID|test-ern ID FILE|test-ack ID FILE|capabilities ID JSON|contract ID REF|go-live ID|suspend ID --reason TEXT|route D-n DIRECT|MERLIN|merlin-eligible D-n true|false>\n       audeniq-admin [--operator NAME] staff <list|grant EMAIL ROLE|revoke EMAIL>\n       audeniq-admin dsp list\n       audeniq-admin --operator STAFF_EMAIL payout <list [STATUS]|order REQUEST_ID|approve ORDER_ID|submit ORDER_ID BANK_TX|result ORDER_ID settled|failed|returned|unknown [BANK_TX]|cancel ORDER_ID>";
+const USAGE: &str = "usage: audeniq-admin [--operator NAME] protected <list|add|remove|activate|alias|remove-alias|grant-exception|revoke-exception> ...\n       audeniq-admin [--operator NAME] identifier-issuer <list|register UPC|ISRC PREFIX>\n       audeniq-admin [--operator NAME] partner <list|config-check|status ID|set-dsp ID [DSP_UUID]|probe ID|dpid ID DPID|test-ern ID FILE|test-ack ID FILE|capabilities ID JSON|contract ID REF|go-live ID|suspend ID --reason TEXT|route D-n DIRECT|MERLIN|merlin-eligible D-n true|false>\n       audeniq-admin [--operator NAME] staff <list|grant EMAIL ROLE|revoke EMAIL|reset-mfa EMAIL>\n       audeniq-admin dsp list\n       audeniq-admin --operator STAFF_EMAIL payout <list [STATUS]|order REQUEST_ID|approve ORDER_ID|submit ORDER_ID BANK_TX|result ORDER_ID settled|failed|returned|unknown [BANK_TX]|cancel ORDER_ID>\n       audeniq-admin --operator STAFF_EMAIL payout return ORDER_ID BANK_REF AMOUNT EVIDENCE_JSON_FILE [--refund-fee]\n       audeniq-admin --operator STAFF_EMAIL royalty <import ORG DSP START END CUR FILE|match ORG REPORT|receipt ORG REPORT BANK_REF AMOUNT CUR EVIDENCE_JSON_FILE|post ORG REPORT FX_RATE|show ORG REPORT>";
 
 fn take_opt(args: &mut Vec<String>, key: &str) -> Option<String> {
     let i = args.iter().position(|a| a == key)?;
@@ -114,11 +123,132 @@ async fn main() -> anyhow::Result<()> {
             Some("reencrypt-accounts") if args.len() == 2 => {
                 audeniq_core::privacy_maintenance::reencrypt_accounts(&pool, &operator).await?
             }
+            Some("encrypt-pii") if args.len() == 2 => {
+                audeniq_core::privacy_maintenance::encrypt_pii(&pool, &operator).await?
+            }
             _ => anyhow::bail!(
-                "usage: audeniq-admin --operator NAME privacy <purge-transient|reencrypt-accounts>"
+                "usage: audeniq-admin --operator NAME privacy <purge-transient|reencrypt-accounts|encrypt-pii>"
             ),
         };
         println!("{}", serde_json::to_string(&result)?);
+        return Ok(());
+    }
+    // Checks a bucket really does what uploads / the archive rely on
+    // (AWS S3, Cloudflare R2, Oracle Cloud): docs/STORAGE_PROVIDERS.md.
+    if args.first().map(String::as_str) == Some("storage") {
+        let archive = take_flag(&mut args, "--archive");
+        let origin = take_opt(&mut args, "--origin")
+            .or_else(|| std::env::var("APP_ORIGIN").ok())
+            .filter(|o| !o.trim().is_empty());
+        anyhow::ensure!(
+            args.get(1).map(String::as_str) == Some("probe") && args.len() == 2,
+            "usage: audeniq-admin storage probe [--origin https://studio.example] [--archive]"
+        );
+        let allow_http = std::env::var("ALLOW_HTTP_STORAGE").as_deref() == Ok("true");
+        let store = audeniq_core::storage::s3_from_env(archive, allow_http)?;
+        let r = if archive {
+            store.probe_archive().await
+        } else {
+            store.probe(origin.as_deref()).await
+        };
+        println!("{}", serde_json::to_string_pretty(&r)?);
+        if r["ok"] != true {
+            std::process::exit(2);
+        }
+        return Ok(());
+    }
+    // Document integrity and the original-document archive (docs/DOCUMENT_ARCHIVE.md).
+    if matches!(args.first().map(String::as_str), Some("seal" | "archive")) {
+        if operator.trim().is_empty() {
+            anyhow::bail!("--operator NAME is required");
+        }
+        let pool = audeniq_core::database::connect(&std::env::var("DATABASE_URL")?, 2).await?;
+        let keys = audeniq_core::pii::cli_keys()?;
+        let deep = take_flag(&mut args, "--deep");
+        let out = take_opt(&mut args, "--out");
+        let retain_days = take_opt(&mut args, "--retain-days")
+            .map(|v| v.parse::<i64>())
+            .transpose()?
+            .unwrap_or(0);
+        if args.first().map(String::as_str) == Some("seal") {
+            anyhow::ensure!(
+                args.get(1).map(String::as_str) == Some("verify"),
+                "usage: audeniq-admin --operator NAME seal verify"
+            );
+            let mut c = pool.acquire().await?;
+            let r = audeniq_core::seal::verify(&mut c, &keys).await?.json();
+            println!("{}", serde_json::to_string_pretty(&r)?);
+            if r["ok"] != true {
+                std::process::exit(2);
+            }
+            return Ok(());
+        }
+        let allow_http = std::env::var("ALLOW_HTTP_STORAGE").as_deref() == Ok("true");
+        let target =
+            audeniq_core::storage::archive_store_from_env(allow_http)?.ok_or_else(|| {
+                anyhow::anyhow!("ARCHIVE_S3_BUCKET is not set (docs/DOCUMENT_ARCHIVE.md)")
+            })?;
+        let result = match (args.get(1).map(String::as_str), args.get(2), args.get(3)) {
+            (Some("run"), period, None) => {
+                let source = audeniq_core::storage::store_from_env(allow_http)?;
+                let period = period.cloned().unwrap_or_else(|| {
+                    audeniq_core::archive::previous_month(chrono::Utc::now().date_naive())
+                });
+                audeniq_core::archive::run(
+                    &pool,
+                    source.as_ref(),
+                    target.as_ref(),
+                    &keys,
+                    &period,
+                    &operator,
+                )
+                .await?
+            }
+            (Some("anchor"), None, None) => {
+                audeniq_core::archive::anchor(&pool, target.as_ref(), &keys, &operator).await?
+            }
+            (Some("verify"), None, None) => {
+                let r = audeniq_core::archive::verify(&pool, target.as_ref(), &keys, deep).await?;
+                println!("{}", serde_json::to_string_pretty(&r)?);
+                if r["ok"] != true {
+                    std::process::exit(2);
+                }
+                return Ok(());
+            }
+            (Some("status"), None, None) => audeniq_core::archive::status(&pool).await?,
+            (Some("open"), Some(key), None) => {
+                let bytes =
+                    audeniq_core::archive::open(&pool, target.as_ref(), &keys, &operator, key)
+                        .await?;
+                match out {
+                    Some(path) => {
+                        std::fs::write(&path, &bytes)?;
+                        serde_json::json!({"written": path, "bytes": bytes.len()})
+                    }
+                    None => {
+                        use std::io::Write;
+                        std::io::stdout().write_all(&bytes)?;
+                        return Ok(());
+                    }
+                }
+            }
+            (Some("put-backup"), Some(file), Some(key)) => {
+                audeniq_core::archive::put_backup(
+                    target.as_ref(),
+                    std::path::Path::new(file),
+                    key,
+                    retain_days,
+                )
+                .await?
+            }
+            (Some("purge-expired"), None, None) => {
+                audeniq_core::archive::purge_expired(&pool, target.as_ref(), &operator).await?
+            }
+            _ => anyhow::bail!(
+                "usage: audeniq-admin --operator NAME archive <run [YYYY-MM]|anchor|verify [--deep]|status|open KEY [--out FILE]|put-backup FILE pitr/...|backups/... [--retain-days N]|purge-expired>\n       audeniq-admin --operator NAME seal verify"
+            ),
+        };
+        println!("{}", serde_json::to_string_pretty(&result)?);
         return Ok(());
     }
     if args.first().map(String::as_str) == Some("external-recording") {
@@ -195,37 +325,150 @@ async fn main() -> anyhow::Result<()> {
                 }
                 println!("ok");
             }
+            // Lost authenticator: the next sign-in enrolls a new one.
+            (Some("reset-mfa"), Some(email), None) => {
+                if operator.trim().is_empty() {
+                    anyhow::bail!("--operator NAME (or AUDENIQ_OPERATOR) is required for changes");
+                }
+                let keys = audeniq_core::pii::cli_keys()?;
+                let user = audeniq_core::pii::user_by_email(&keys, &pool, email)
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("no such account"))?;
+                audeniq_core::staff_mfa::reset(&pool, &operator, user).await?;
+                println!("ok");
+            }
             _ => anyhow::bail!(USAGE),
         }
         return Ok(());
     }
+    if args.first().map(String::as_str) == Some("royalty") {
+        use audeniq_core::royalty;
+        let pool = audeniq_core::database::connect(&std::env::var("DATABASE_URL")?, 1).await?;
+        let actor: Option<uuid::Uuid> = sqlx::query_scalar(
+            "SELECT u.id FROM identity.users u JOIN identity.staff_members s ON s.user_id=u.id
+             WHERE u.email=lower($1) AND u.status='ACTIVE' AND s.status='ACTIVE'
+               AND s.role IN ('ADMIN','OPERATOR')",
+        )
+        .bind(operator.trim())
+        .fetch_optional(&pool)
+        .await?;
+        let actor = actor.ok_or_else(|| anyhow::anyhow!("active ADMIN/OPERATOR email required"))?;
+        let arg = |i: usize| -> anyhow::Result<&str> {
+            args.get(i)
+                .map(String::as_str)
+                .ok_or_else(|| anyhow::anyhow!("royalty arguments missing"))
+        };
+        let org: uuid::Uuid = arg(2)?.parse()?;
+        let output = match arg(1)? {
+            "import" => {
+                let content = std::fs::read_to_string(arg(7)?)?;
+                let id = royalty::ingest_report(
+                    &pool,
+                    org,
+                    arg(3)?,
+                    arg(4)?.parse()?,
+                    arg(5)?.parse()?,
+                    arg(6)?,
+                    arg(7)?,
+                    &content,
+                )
+                .await?;
+                serde_json::json!({"report_id":id,"status":"NORMALIZED"})
+            }
+            "match" => {
+                let report: uuid::Uuid = arg(3)?.parse()?;
+                let (matched, unresolved) = royalty::match_report(&pool, org, report).await?;
+                serde_json::json!({"report_id":report,"newly_auto_matched":matched,"unresolved":unresolved})
+            }
+            "receipt" => {
+                let evidence = serde_json::from_str(&std::fs::read_to_string(arg(7)?)?)?;
+                let id = royalty::record_receipt(
+                    &pool,
+                    org,
+                    arg(3)?.parse()?,
+                    actor,
+                    arg(4)?,
+                    arg(5)?.parse()?,
+                    arg(6)?,
+                    evidence,
+                )
+                .await?;
+                serde_json::json!({"receipt_id":id,"payable_posted":false})
+            }
+            "show" => {
+                let value:Option<serde_json::Value>=sqlx::query_scalar(
+                    "SELECT jsonb_build_object('report_id',r.id,'dsp_id',r.dsp_id,'status',r.status,
+                       'currency',r.currency,'source_hash',r.source_hash,
+                       'source_amount',(SELECT COALESCE(SUM(gross_amount),0)::text FROM finance.report_lines WHERE org_id=$1 AND report_id=r.id),
+                       'received_amount',(SELECT COALESCE(SUM(amount),0)::text FROM finance.royalty_receipts WHERE org_id=$1 AND report_id=r.id),
+                       'unresolved',(SELECT COUNT(*) FROM finance.report_lines WHERE org_id=$1 AND report_id=r.id AND match_status NOT IN ('AUTO','MANUAL')))
+                     FROM finance.royalty_reports r WHERE r.org_id=$1 AND r.id=$2",
+                ).bind(org).bind(arg(3)?.parse::<uuid::Uuid>()?).fetch_optional(&pool).await?;
+                value.ok_or_else(|| anyhow::anyhow!("report not found"))?
+            }
+            "post" => {
+                // KRW per unit of the report currency (1 for a KRW report).
+                let fx: rust_decimal::Decimal = arg(4)?.parse()?;
+                audeniq_core::royalty_posting::post_report(&pool, org, arg(3)?.parse()?, actor, fx)
+                    .await?
+            }
+            _ => anyhow::bail!("royalty <import|match|receipt|post|show>"),
+        };
+        let mut tx = pool.begin().await?;
+        audeniq_core::operations::audit(
+            &mut tx,
+            Some(actor),
+            Some(org),
+            None,
+            &format!("royalty.{}", arg(1)?),
+            "OWNER_CLI",
+            uuid::Uuid::new_v4(),
+        )
+        .await?;
+        tx.commit().await?;
+        println!("{}", serde_json::to_string_pretty(&output)?);
+        return Ok(());
+    }
     if args.first().map(String::as_str) == Some("payout") {
         use audeniq_core::finance;
+        let refund_fee = take_flag(&mut args, "--refund-fee");
         let pool = audeniq_core::database::connect(&std::env::var("DATABASE_URL")?, 1).await?;
         let uuid = |i: usize| -> anyhow::Result<uuid::Uuid> {
             Ok(args.get(i).ok_or_else(|| anyhow::anyhow!(USAGE))?.parse()?)
         };
         if args.get(1).map(String::as_str) == Some("list") {
             let status = args.get(2).cloned().unwrap_or_else(|| "REQUESTED".into());
-            let rows: Vec<serde_json::Value> = sqlx::query_scalar(
+            let mut rows: serde_json::Value = serde_json::Value::Array(sqlx::query_scalar(concat!(
                 "SELECT jsonb_build_object('request_id',p.id,'org_id',p.org_id,'amount',p.amount::text,'fee',p.fee_amount::text,
-                   'net',p.net_amount::text,'status',p.status,'account',p.account_snapshot,'created_at',p.created_at,
+                   'net',p.net_amount::text,'status',p.status,
+                   'account',p.account_snapshot - 'holder_name' || jsonb_build_object('holder_name',",
+                audeniq_core::pii_ref!(
+                    "holder_name",
+                    "p.org_id",
+                    "p.account_snapshot->>'holder_name'",
+                    "p.holder_cipher"
+                ),
+                "),'created_at',p.created_at,
                    'order_id',o.id,'order_status',o.status)
                  FROM portal.payout_requests p LEFT JOIN finance.payout_orders o ON o.id=p.payout_order_id
-                 WHERE p.status=$1 ORDER BY p.created_at LIMIT 500",
-            )
+                 WHERE p.status=$1 ORDER BY p.created_at LIMIT 500"
+            ))
             .bind(status.to_ascii_uppercase())
             .fetch_all(&pool)
-            .await?;
+            .await?);
+            audeniq_core::pii::reveal(&audeniq_core::pii::cli_keys()?, &mut rows)?;
             println!("{}", serde_json::to_string_pretty(&rows)?);
             return Ok(());
         }
         // Every change is attributed to an active ADMIN/OPERATOR staff account.
+        let keys = audeniq_core::pii::cli_keys()?;
+        let operator_email = operator.trim().to_lowercase();
         let actor: Option<uuid::Uuid> = sqlx::query_scalar(
             "SELECT u.id FROM identity.users u JOIN identity.staff_members s ON s.user_id=u.id
-             WHERE u.email=lower($1) AND s.status='ACTIVE' AND s.role IN ('ADMIN','OPERATOR')",
+             WHERE (u.email=$1 OR u.email_bidx=ANY($2)) AND s.status='ACTIVE' AND s.role IN ('ADMIN','OPERATOR')",
         )
-        .bind(operator.trim())
+        .bind(&operator_email)
+        .bind(audeniq_core::pii::email_indexes(&keys, &operator_email))
         .fetch_optional(&pool)
         .await?;
         let actor = actor.ok_or_else(|| {
@@ -246,6 +489,28 @@ async fn main() -> anyhow::Result<()> {
             }
         };
         let out = match args.get(1).map(String::as_str) {
+            Some("return") => {
+                let id = uuid(2)?;
+                let reference = args.get(3).ok_or_else(|| anyhow::anyhow!(USAGE))?;
+                let amount = args.get(4).ok_or_else(|| anyhow::anyhow!(USAGE))?.parse()?;
+                let evidence = serde_json::from_str(&std::fs::read_to_string(
+                    args.get(5).ok_or_else(|| anyhow::anyhow!(USAGE))?,
+                )?)?;
+                let return_id = finance::record_payout_return(
+                    &pool,
+                    org_of(id).await?,
+                    actor,
+                    id,
+                    finance::PayoutReturnInput {
+                        bank_reference: reference,
+                        returned_amount: amount,
+                        refund_fee,
+                        evidence,
+                    },
+                )
+                .await?;
+                serde_json::json!({"order_id":id,"return_id":return_id})
+            }
             Some("order") => {
                 let request = uuid(2)?;
                 let org: uuid::Uuid =

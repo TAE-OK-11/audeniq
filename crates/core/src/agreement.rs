@@ -31,7 +31,7 @@ use uuid::Uuid;
 
 pub const FORM: &str = "AUD-DIST 2.0";
 pub const TERMS_TITLE: &str = "AUDENIQ 음원 배급 서비스 이용약관";
-pub const TERMS_VERSION: &str = "AUD-TERMS 2026.10";
+pub const TERMS_VERSION: &str = "AUD-TERMS 2026.10.1";
 
 /// One box the artist ticks before signing. `required` boxes must all be
 /// ticked; optional ones are recorded as given (e.g. settlement authority).
@@ -208,10 +208,14 @@ struct Context {
     delegations: Vec<String>,
 }
 
-async fn context(c: &mut PgConnection, release: Uuid) -> Result<Context> {
+async fn context(
+    keys: &crate::payout_keys::KeyRing,
+    c: &mut PgConnection,
+    release: Uuid,
+) -> Result<Context> {
     let r = sqlx::query(
-        "SELECT r.title, r.release_type, r.draft, o.name AS org_name, o.kind AS org_kind,
-                pa.payee_type, pa.holder_name, ra.application_no, ra.signer_name, ra.signer_role
+        "SELECT r.title, r.release_type, r.draft, r.org_id, o.name AS org_name, o.kind AS org_kind,
+                pa.payee_type, pa.holder_name, pa.holder_cipher, ra.application_no, ra.signer_name, ra.signer_role
          FROM catalog.releases r JOIN identity.orgs o ON o.id=r.org_id
          LEFT JOIN portal.payout_accounts pa ON pa.org_id=r.org_id
          LEFT JOIN LATERAL (SELECT application_no, signer_name, signer_role FROM portal.release_applications
@@ -250,7 +254,13 @@ async fn context(c: &mut PgConnection, release: Uuid) -> Result<Context> {
         org_name: r.get("org_name"),
         org_kind: r.get("org_kind"),
         payee_type: r.get("payee_type"),
-        holder: r.get("holder_name"),
+        holder: crate::pii::open(
+            keys,
+            crate::payout_keys::Field::PayoutHolderName,
+            r.get("org_id"),
+            r.get("holder_name"),
+            r.get::<Option<Vec<u8>>, _>("holder_cipher").as_deref(),
+        )?,
         application_no: r.get("application_no"),
         signer: r.get("signer_name"),
         signer_role: r.get("signer_role"),
@@ -290,20 +300,25 @@ fn render(ctx: &Context, t: &Value, items: &[&Confirmation]) -> String {
         "EP" => "EP",
         _ => "앨범",
     };
-    let platforms: Vec<&str> = dsp_registry::requested(&json!({"platforms": d["platforms"]}))
+    let mut platforms: Vec<&str> = dsp_registry::requested(&json!({"platforms": d["platforms"]}))
         .unwrap_or_default()
         .into_iter()
         .map(|p| p.display_name())
         .collect();
+    if crate::mockdsp::studio_selected(d) {
+        platforms.push(crate::mockdsp::STUDIO_NAME);
+    }
     let world = d["territories"]
         .as_array()
         .is_none_or(|a| a.is_empty() || a.iter().any(|x| x == "WORLD"));
     let note = |k: &str| t[k].as_str().unwrap_or("").trim().to_string();
     let fee = t["fee_bps"].as_u64().unwrap_or(0) as u32;
+    // Re-rendering an existing agreement keeps the version recorded with its terms.
+    let terms_version = t["terms_version"].as_str().unwrap_or(TERMS_VERSION);
     let mut out: Vec<String> = vec![
         "AUDENIQ 음원 배급 계약서".into(),
         String::new(),
-        format!("서식 {FORM} · 적용 약관 {TERMS_TITLE} ({TERMS_VERSION})"),
+        format!("서식 {FORM} · 적용 약관 {TERMS_TITLE} ({terms_version})"),
         format!(
             "신청서 번호 {}",
             ctx.application_no.as_deref().unwrap_or("미접수")
@@ -432,7 +447,7 @@ fn render(ctx: &Context, t: &Value, items: &[&Confirmation]) -> String {
     if !note("min_payout_note").is_empty() {
         settle.push(format!("최소지급액 특약: {}", note("min_payout_note")));
     }
-    settle.push("정산 주기, 공제·조정, 환수, 지급 보류와 최소지급액의 일반 기준은 약관 제15장(정산)에 따릅니다.".into());
+    settle.push("정산 주기, 출금 신청, 계좌 확인, 공제·조정, 환수, 지급 보류와 최소지급액의 일반 기준은 AUDENIQ 정산금 지급 및 계좌 확인 약관에 따릅니다. 정산 관련 사항은 해당 약관을 우선 적용하고, 그 밖의 사항은 서비스 이용약관에 따릅니다.".into());
     art(&mut out, "정산", settle);
     art(
         &mut out,
@@ -491,7 +506,7 @@ fn render(ctx: &Context, t: &Value, items: &[&Confirmation]) -> String {
         &mut out,
         "약관의 적용",
         vec![format!(
-            "이 계약에서 정하지 않은 사항은 {TERMS_TITLE}({TERMS_VERSION})에 따릅니다. 이 계약과 약관의 내용이 서로 다르면 이 계약을 우선합니다."
+            "이 계약에서 정하지 않은 사항은 {TERMS_TITLE}({terms_version})에 따릅니다. 이 계약과 약관의 내용이 서로 다르면 이 계약을 우선합니다."
         )],
     );
     art(
@@ -552,7 +567,7 @@ pub async fn set_terms(s: &AppState, h: &HeaderMap, release: Uuid, i: TermsInput
     .fetch_optional(&mut *tx)
     .await?;
     let (id, org) = doc.ok_or(Error::PolicyGate("AGREEMENT_NOT_IN_REVIEW"))?;
-    let ctx = context(&mut tx, release).await?;
+    let ctx = context(&s.payout_keys, &mut tx, release).await?;
     let items = confirmations(&ctx.draft["options"]);
     let mut terms = json!({
         "form": FORM, "terms_version": TERMS_VERSION,
@@ -662,6 +677,16 @@ mod tests {
             .filter_map(|l| l.strip_prefix('제')?.split('조').next()?.parse().ok())
             .collect();
         assert_eq!(numbers, (1..=numbers.len()).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn rendering_keeps_the_recorded_terms_version() {
+        let ctx = sample(json!({}));
+        let items = confirmations(&ctx.draft["options"]);
+        let terms = json!({"terms_version": "AUD-TERMS 2026.10", "fee_bps": 800});
+        let body = render(&ctx, &terms, &items);
+        assert!(body.contains("적용 약관 AUDENIQ 음원 배급 서비스 이용약관 (AUD-TERMS 2026.10)"));
+        assert!(!body.contains(TERMS_VERSION));
     }
 
     #[test]

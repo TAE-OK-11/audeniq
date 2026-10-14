@@ -1,7 +1,7 @@
 // 로그인 상태 — 스튜디오와 같은 계정·세션 API(/api/auth/*, /api/me)를 쓴다.
 // 스태프 여부는 로그인 후 AdminApp이 /api/staff/me로 확인한다.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { bootstrapCsrf, hasCsrf, req, setCsrf } from './api/http';
+import { bootstrapCsrf, hasCsrf, req, setCsrf, setSessionUser } from './api/http';
 import { ApiError } from './api/errors';
 import { MOCK } from './lib/mode';
 
@@ -11,6 +11,7 @@ interface AuthState {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginPasskey: (email: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -22,17 +23,29 @@ const forget = () => { try { localStorage.removeItem(ACCOUNT_KEY); } catch { /* 
 const remote = {
   async me(): Promise<User> {
     const me = await req<{ user_id: string }>('/api/me', { quiet401: true });
+    setSessionUser(me.user_id);
     if (!hasCsrf()) await bootstrapCsrf();
     return { id: me.user_id, email: recall() };
   },
   async login(email: string, password: string): Promise<User> {
     const r = await req<{ user_id: string; csrf_token: string }>('/api/auth/login', { method: 'POST', body: { email, password }, quiet401: true });
     setCsrf(r.csrf_token);
+    setSessionUser(r.user_id);
     remember(email);
     return { id: r.user_id, email };
   },
+  async loginPasskey(email: string): Promise<User> {
+    const { passkeyLogin } = await import('./api/passkey');
+    const r = await passkeyLogin(email);
+    setCsrf(r.csrf_token);
+    setSessionUser(r.user_id);
+    const me = await req<{ email?: string }>('/api/me', { quiet401: true });
+    const shown = me.email || email.trim();
+    remember(shown);
+    return { id: r.user_id, email: shown };
+  },
   async logout(): Promise<void> {
-    try { await req('/api/auth/logout', { method: 'POST', quiet401: true }); } finally { setCsrf(''); forget(); }
+    try { await req('/api/auth/logout', { method: 'POST', quiet401: true }); } finally { setCsrf(''); setSessionUser(''); forget(); }
   },
 };
 
@@ -47,6 +60,7 @@ const demo = {
     sessionStorage.setItem(ACCOUNT_KEY, email);
     return { id: 'staff-me-0001', email };
   },
+  async loginPasskey(): Promise<User> { throw new ApiError('체험 모드에서는 패스키를 쓸 수 없어요.', 400, 'PASSKEY_UNSUPPORTED'); },
   async logout(): Promise<void> { sessionStorage.removeItem(ACCOUNT_KEY); },
 };
 
@@ -70,11 +84,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(await api.login(email.trim(), password));
   }, []);
 
+  const loginPasskey = useCallback(async (email: string) => {
+    setUser(await api.loginPasskey(email));
+  }, []);
+
   const logout = useCallback(async () => {
     try { await api.logout(); } finally { setUser(null); }
   }, []);
 
-  const value = useMemo(() => ({ user, loading, login, logout }), [user, loading, login, logout]);
+  const value = useMemo(() => ({ user, loading, login, loginPasskey, logout }), [user, loading, login, loginPasskey, logout]);
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }
 

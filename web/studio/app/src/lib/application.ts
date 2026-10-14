@@ -2,6 +2,7 @@
 import type { ApplicationRecord, DraftTrack, ReleaseDetail, ReleasePayload } from '../api/types';
 import { cleanText } from '../api/remote';
 import { stampNow } from './date';
+import { cleanPngDataUrl, encodePng, pngDataUrl } from './png';
 import type { RereleaseData } from './rerelease';
 
 export const APPLICATION_FORM = 'AUD-DIST-APP 1.0';
@@ -29,6 +30,16 @@ export const AGREEMENTS: { id: string; text: string }[] = [
 // ---------------------------------------------------------------------------
 // 서명 이미지 — 그린 부분만 잘라 작게 저장 (발매 정보 64KB 한도 안)
 // ---------------------------------------------------------------------------
+/** 서버가 받는 최소 PNG로 저장 (브라우저마다 붙이는 부가 청크 때문에 SIGNATURE_INVALID가 나지 않게) */
+async function minimalPng(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D | null): Promise<string> {
+  try {
+    const png = ctx && await encodePng(canvas.width, canvas.height, ctx.getImageData(0, 0, canvas.width, canvas.height).data);
+    // 직접 만든 PNG가 서버 한도(45,000바이트) 안이면 그것을 쓴다
+    if (png && png.length <= 45_000) return pngDataUrl(png);
+  } catch { /* 브라우저 PNG에서 부가 청크만 뗀 것을 쓴다 */ }
+  return cleanPngDataUrl(canvas.toDataURL('image/png'));
+}
+
 export function compactSignature(dataUrl: string, maxW = 420, maxH = 140): Promise<string> {
   return new Promise(resolve => {
     const img = new Image();
@@ -36,7 +47,7 @@ export function compactSignature(dataUrl: string, maxW = 420, maxH = 140): Promi
       const src = document.createElement('canvas');
       src.width = img.width; src.height = img.height;
       const sctx = src.getContext('2d');
-      if (!sctx) { resolve(dataUrl); return; }
+      if (!sctx) { resolve(cleanPngDataUrl(dataUrl)); return; }
       sctx.drawImage(img, 0, 0);
       const { data, width, height } = sctx.getImageData(0, 0, src.width, src.height);
       let x0 = width, y0 = height, x1 = -1, y1 = -1;
@@ -57,10 +68,11 @@ export function compactSignature(dataUrl: string, maxW = 420, maxH = 140): Promi
       const out = document.createElement('canvas');
       out.width = Math.max(1, Math.round(w * scale));
       out.height = Math.max(1, Math.round(h * scale));
-      out.getContext('2d')?.drawImage(src, x0, y0, w, h, 0, 0, out.width, out.height);
-      resolve(out.toDataURL('image/png'));
+      const octx = out.getContext('2d');
+      octx?.drawImage(src, x0, y0, w, h, 0, 0, out.width, out.height);
+      resolve(minimalPng(out, octx));
     };
-    img.onerror = () => resolve(dataUrl);
+    img.onerror = () => resolve(cleanPngDataUrl(dataUrl));
     img.src = dataUrl;
   });
 }

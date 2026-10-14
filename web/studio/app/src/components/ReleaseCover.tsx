@@ -1,7 +1,16 @@
+import { useEffect, useState } from 'react';
 import { gradientFor } from '../lib/catalog';
 import { Glyph } from './Glyph';
 
-/** 발매 커버 — 등록한 커버 이미지가 있으면 이미지, 없으면 ID 기반 그라디언트 */
+/** 이미지를 못 불러오면(서버가 아직 주소를 모르거나, 지워졌거나, 연결이 끊김) false가 된다.
+ *  깨진 이미지 아이콘 대신 기본 커버를 보여 주는 데 쓴다. 주소가 바뀌면 다시 시도한다. */
+export function useImageOk(src?: string): [boolean, () => void] {
+  const [failed, setFailed] = useState<string | undefined>();
+  useEffect(() => { setFailed(undefined); }, [src]);
+  return [!!src && failed !== src, () => setFailed(src)];
+}
+
+/** 발매 커버 — 등록한 커버 이미지가 있으면 이미지, 없거나 못 불러오면 ID 기반 그라디언트 */
 export function ReleaseCover({ id, src, className = 'cover aq-cover', size }: {
   id: string;
   src?: string;
@@ -9,10 +18,11 @@ export function ReleaseCover({ id, src, className = 'cover aq-cover', size }: {
   size?: number;
 }) {
   const style = size ? { width: size, height: size, flexBasis: size } : undefined;
-  if (src) {
+  const [ok, onError] = useImageOk(src);
+  if (ok) {
     return (
       <span className={`${className} has-image`} aria-hidden="true" style={style}>
-        <img src={src} alt="" loading="lazy" decoding="async" />
+        <img src={src} alt="" loading="lazy" decoding="async" onError={onError} />
       </span>
     );
   }

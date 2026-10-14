@@ -58,12 +58,23 @@ pub fn admin_path(method: &Method, path: &str) -> Result<(), StatusCode> {
     }
     let allowed = matches!(
         path,
-        "/api/auth/login" | "/api/auth/logout" | "/api/auth/csrf" | "/api/me" | "/api/staff"
+        "/api/auth/login"
+            | "/api/auth/passkey/options"
+            | "/api/auth/passkey/login"
+            | "/api/auth/logout"
+            | "/api/auth/csrf"
+            | "/api/me"
+            | "/api/staff"
     ) || path.starts_with("/api/staff/");
     if !allowed {
         return Err(StatusCode::NOT_FOUND);
     }
-    if matches!(*method, Method::GET | Method::HEAD | Method::POST) {
+    // Staff routes use PUT (agreement terms) and DELETE (release a review
+    // claim) too; refusing them broke those console actions in production.
+    let staff = path == "/api/staff" || path.starts_with("/api/staff/");
+    if matches!(*method, Method::GET | Method::HEAD | Method::POST)
+        || (staff && matches!(*method, Method::PUT | Method::DELETE))
+    {
         Ok(())
     } else {
         Err(StatusCode::METHOD_NOT_ALLOWED)
@@ -129,6 +140,8 @@ mod tests {
     fn admin_console_paths_match_the_old_worker() {
         for (m, p) in [
             (Method::POST, "/api/auth/login"),
+            (Method::POST, "/api/auth/passkey/options"),
+            (Method::POST, "/api/auth/passkey/login"),
             (Method::GET, "/api/me"),
             (Method::GET, "/api/staff/releases"),
             (Method::POST, "/api/staff/releases/x/decision"),
@@ -146,12 +159,27 @@ mod tests {
             admin_path(&Method::POST, "/api/auth/register"),
             Err(StatusCode::NOT_FOUND)
         );
+        // Passkeys are added in the studio, not from the admin site.
+        assert_eq!(
+            admin_path(&Method::POST, "/api/auth/passkeys/register"),
+            Err(StatusCode::NOT_FOUND)
+        );
         assert_eq!(
             admin_path(&Method::GET, "/api/staffx"),
             Err(StatusCode::NOT_FOUND)
         );
+        // The console saves agreement terms with PUT and releases a claim
+        // with DELETE; account endpoints stay out of reach either way.
         assert_eq!(
             admin_path(&Method::PUT, "/api/staff/releases/x/agreement-terms"),
+            Ok(())
+        );
+        assert_eq!(
+            admin_path(&Method::DELETE, "/api/staff/releases/x/claim"),
+            Ok(())
+        );
+        assert_eq!(
+            admin_path(&Method::DELETE, "/api/auth/logout"),
             Err(StatusCode::METHOD_NOT_ALLOWED)
         );
     }

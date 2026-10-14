@@ -35,8 +35,16 @@ pub enum Error {
     /// Request headers exceed the API limit (HTTP 431).
     #[error("request headers too large")]
     HeadersTooLarge,
+    /// The request ran past the API's deadline (HTTP 504).
+    #[error("request timed out")]
+    Timeout,
 }
 pub type Result<T> = std::result::Result<T, Error>;
+/// The stable API error code of a failed response, carried as a response
+/// extension so the request log line (api::boundary) records it for 4xx too.
+/// Only the static code: never the request body, bind values or user input.
+#[derive(Clone, Copy, Debug)]
+pub struct ErrorCode(pub &'static str);
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         let (status, code) = match &self {
@@ -51,6 +59,7 @@ impl IntoResponse for Error {
             Self::PolicyGate(code) => (StatusCode::UNPROCESSABLE_ENTITY, *code),
             Self::Storage => (StatusCode::SERVICE_UNAVAILABLE, "STORAGE_UNAVAILABLE"),
             Self::UploadBusy => (StatusCode::SERVICE_UNAVAILABLE, "UPLOAD_BUSY"),
+            Self::Timeout => (StatusCode::GATEWAY_TIMEOUT, "REQUEST_TIMEOUT"),
             Self::HeadersTooLarge => (
                 StatusCode::REQUEST_HEADER_FIELDS_TOO_LARGE,
                 "REQUEST_HEADERS_TOO_LARGE",
@@ -77,6 +86,7 @@ impl IntoResponse for Error {
             None => serde_json::json!({"error":{"code":code}}),
         };
         let mut response = (status, Json(body)).into_response();
+        response.extensions_mut().insert(ErrorCode(code));
         if status == StatusCode::SERVICE_UNAVAILABLE {
             response
                 .headers_mut()
@@ -210,6 +220,21 @@ pub fn message(code: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod unavailable_tests {
     use super::*;
+
+    #[test]
+    fn client_errors_carry_their_code_for_the_request_log() {
+        let response = Error::InvalidCode("COVER_SIGNATURE_INVALID").into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response.extensions().get::<ErrorCode>().map(|c| c.0),
+            Some("COVER_SIGNATURE_INVALID")
+        );
+        let response = Error::Invalid.into_response();
+        assert_eq!(
+            response.extensions().get::<ErrorCode>().map(|c| c.0),
+            Some("INVALID_INPUT")
+        );
+    }
 
     #[test]
     fn upload_capacity_is_retryable() {

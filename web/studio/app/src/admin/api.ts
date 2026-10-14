@@ -162,6 +162,44 @@ export interface InquiryItem {
 export interface InquiryMessage { id: string; author_kind: 'MEMBER' | 'STAFF' | string; author_user: string | null; body: string; created_at: string }
 export interface InquiryThread { inquiry: InquiryItem; messages: InquiryMessage[] }
 
+/** 아티스트의 발매 중단(테이크다운) 요청 */
+export interface TakedownItem {
+  id: string; org_id: string; org_name: string; release_id: string; title: string; package_id: string;
+  reason: string; status: 'PENDING' | 'APPROVED' | 'DECLINED' | 'CANCELLED'; decision_note: string;
+  created_at: string; decided_at: string | null;
+  platforms: { partner_id: string; slug: string; name: string; live_status: string | null }[];
+}
+
+/** 발매 후 정보 수정 요청 (크레딧·장르만) */
+export interface CorrectionItem {
+  id: string; org_id: string; org_name: string; release_id: string; title: string;
+  status: 'PENDING' | 'APPROVED' | 'DECLINED' | 'CANCELLED';
+  changes: { genre?: string; tracks?: { track_id: string; credits: { name: string; role: string }[] }[] };
+  reason: string; decision_note: string; created_at: string; decided_at: string | null;
+  tracks: { track_id: string; title: string }[];
+}
+
+/** 플레이리스트 피칭 */
+export interface PitchItem {
+  id: string; org_id: string; org_name: string; release_id: string; title: string; artist: string | null;
+  release_date: string | null; track_id: string; track_title: string;
+  description: string; genres: string; moods: string; instruments: string; similar_artists: string; marketing: string;
+  status: 'SUBMITTED' | 'IN_REVIEW' | 'PITCHED' | 'SELECTED' | 'NOT_SELECTED' | 'WITHDRAWN';
+  platforms: string[]; platforms_requested: string[] | null; result: string; staff_note: string; created_at: string; updated_at: string;
+}
+
+/** 권리침해 신고 (누구나 접수, 신고자 연락처는 스태프에게만) */
+export interface InfringementClaim {
+  id: string; receipt: string;
+  status: 'RECEIVED' | 'REJECTED' | 'SUSPENDED' | 'COUNTER_NOTICED' | 'RESTORED' | 'UPHELD';
+  right_type: string; work: string; target: string; evidence_urls: string[];
+  org_id: string | null; org_name?: string | null; release_id: string | null; release_title: string | null;
+  staff_note: string; decided_at: string | null; counter_deadline: string | null;
+  counter_notice: string | null; counter_at: string | null; created_at: string;
+  claimant: { role: 'RIGHTS_HOLDER' | 'AGENT'; name: string | null; email: string | null; phone: string | null };
+  platforms?: { partner_id: string; slug: string; name: string; live_status: string | null }[];
+}
+
 export interface DeliveryItem {
   package_id: string; dsp: string; org_id: string; org_name: string; release_id: string; title: string;
   readiness: string; approval: string; route_status: string | null; route_reason: string | null;
@@ -261,6 +299,24 @@ const remote = {
     req<{ approval: string }>(`/api/staff/deliveries/${id(pkg)}/${id(dsp)}/decision`, { method: 'POST', body }),
   restage: (pkg: string) => req<{ job_id: string }>(`/api/staff/deliveries/${id(pkg)}/restage`, { method: 'POST' }),
   dsps: () => req<Page<DspItem>>('/api/staff/dsps'),
+  takedowns: () => req<Page<TakedownItem>>('/api/staff/takedowns'),
+  pitches: () => req<Page<PitchItem>>('/api/staff/pitches'),
+  updatePitch: (pid: string, body: { status: string; platforms?: string[]; result?: string; note?: string }) =>
+    req<{ status: string }>(`/api/staff/pitches/${id(pid)}/status`, { method: 'POST', body }),
+  corrections: () => req<Page<CorrectionItem>>('/api/staff/corrections'),
+  approveCorrection: (cid: string, note: string) => req<{ status: string; jobs: string[] }>(`/api/staff/corrections/${id(cid)}/approve`, { method: 'POST', body: { note } }),
+  declineCorrection: (cid: string, note: string) => req<{ status: string }>(`/api/staff/corrections/${id(cid)}/decline`, { method: 'POST', body: { note } }),
+  approveTakedown: (tid: string, note: string) => req<{ status: string }>(`/api/staff/takedowns/${id(tid)}/approve`, { method: 'POST', body: { note } }),
+  declineTakedown: (tid: string, note: string) => req<{ status: string }>(`/api/staff/takedowns/${id(tid)}/decline`, { method: 'POST', body: { note } }),
+  claims: (all: boolean) => req<Page<InfringementClaim>>(`/api/staff/infringement-claims${all ? '?status=all' : ''}`),
+  rejectClaim: (cid: string, note: string) => req<{ status: string }>(`/api/staff/infringement-claims/${id(cid)}/reject`, { method: 'POST', body: { note } }),
+  suspendClaim: (cid: string, releaseId: string, note: string) =>
+    req<{ status: string; jobs: string[] }>(`/api/staff/infringement-claims/${id(cid)}/suspend`, { method: 'POST', body: { release_id: releaseId, note } }),
+  restoreClaim: (cid: string, note: string) => req<{ status: string }>(`/api/staff/infringement-claims/${id(cid)}/restore`, { method: 'POST', body: { note } }),
+  upholdClaim: (cid: string, note: string) => req<{ status: string }>(`/api/staff/infringement-claims/${id(cid)}/uphold`, { method: 'POST', body: { note } }),
+  /** 중단 메시지를 받지 않는 플랫폼: 내려간 것을 직접 확인하고 기록한다 */
+  markTakenDown: (pkg: string, partner: string, note: string) =>
+    req<{ job_id: string }>(`/api/staff/deliveries/${id(pkg)}/${id(partner)}/taken-down`, { method: 'POST', body: { note } }),
   payouts: (status: string) => req<Page<PayoutItem>>(`/api/staff/payouts${qs({ status, limit: 100 })}`),
 };
 

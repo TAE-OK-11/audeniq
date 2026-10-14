@@ -17,6 +17,8 @@ export const pageLoaders = {
   Rights: () => import('./pages/Rights'),
   RightsDocument: () => import('./pages/RightsDocument'),
   Inquiries: () => import('./pages/Inquiries'),
+  PlatformRequests: () => import('./pages/PlatformRequests'),
+  BulkReleases: () => import('./pages/BulkReleases'),
   Notifications: () => import('./pages/Notifications'),
   Events: () => import('./pages/Events'),
   Notices: () => import('./pages/Notices'),
@@ -25,6 +27,10 @@ export const pageLoaders = {
   Profile: () => import('./pages/Profile'),
   Sign: () => import('./pages/Sign'),
   Terms: () => import('./pages/Terms'),
+  Verify: () => import('./pages/Verify'),
+  RightsReport: () => import('./pages/RightsReport'),
+  SmartLink: () => import('./pages/SmartLink'),
+  SplitInvite: () => import('./pages/SplitInvite'),
   Admin: () => import('./admin/AdminApp'),
 };
 
@@ -34,6 +40,7 @@ type PageName = keyof typeof pageLoaders;
 const ROUTE_PAGES: [RegExp, PageName[]][] = [
   [/^\/$/, ['Dashboard']],
   [/^\/releases\/?$/, ['Releases']],
+  [/^\/releases\/bulk/, ['BulkReleases']],
   [/^\/releases\/[^/]+\/application/, ['Application']],
   [/^\/releases\/.+/, ['ReleaseDetail']],
   [/^\/upload/, ['Upload']],
@@ -44,6 +51,7 @@ const ROUTE_PAGES: [RegExp, PageName[]][] = [
   [/^\/rights\/[^/]+/, ['RightsDocument']],
   [/^\/rights/, ['Rights']],
   [/^\/inquiries/, ['Inquiries']],
+  [/^\/platform-requests/, ['PlatformRequests']],
   [/^\/notifications/, ['Notifications']],
   [/^\/events/, ['Events']],
   [/^\/notices/, ['Notices']],
@@ -51,6 +59,8 @@ const ROUTE_PAGES: [RegExp, PageName[]][] = [
   [/^\/admin/, ['Admin']],
   [/^\/sign\//, ['Sign']],
   [/^\/terms/, ['Terms']],
+  [/^\/privacy\/?$/, ['Terms']],
+  [/^\/verify\/?$/, ['Verify']],
 ];
 
 const requested = new Set<PageName>();
@@ -86,3 +96,4 @@ export function prefetchInitialRoute() {
     prefetchRoute(path);
   }
 }
+

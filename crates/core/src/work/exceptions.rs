@@ -1,7 +1,7 @@
 //! Exception queue. Read-only adapters over the places failures already live
 //! (current Stage checks, blocked delivery staging, overdue rights proofs,
 //! rights holds, open reconciliation cases, failed delivery jobs, unmatched
-//! royalty report lines, dead-lettered automation jobs) plus problems people
+//! royalty report lines, failing or dead-lettered automation jobs) plus problems people
 //! report by hand. An item disappears by itself once its source recovers.
 //!
 //! `work.exception_triage` keeps only what people add, keyed by the source
@@ -116,7 +116,8 @@ UNION ALL
    FROM execution.reconciliation_cases rc JOIN identity.orgs o ON o.id=rc.org_id
    LEFT JOIN execution.delivery_jobs j ON j.id=rc.job_id
    LEFT JOIN distribution.distribution_packages p ON p.id=j.package_id
-   LEFT JOIN catalog.releases r ON r.id=p.canonical_release_id
+   LEFT JOIN distribution.canonical_releases cr ON cr.id=p.canonical_release_id
+   LEFT JOIN catalog.releases r ON r.id=cr.release_id
   WHERE ($1::text IS NULL OR $1='reconciliation') AND ($2::text IS NULL OR rc.id::text=$2)
     AND rc.status='OPEN'
   ORDER BY rc.created_at DESC LIMIT 200)
@@ -126,7 +127,8 @@ UNION ALL
         j.org_id, o.name, j.partner_id, CASE WHEN r.id IS NULL THEN NULL ELSE 'release' END, r.id::text, j.package_id, j.updated_at
    FROM execution.delivery_jobs j JOIN identity.orgs o ON o.id=j.org_id
    LEFT JOIN distribution.distribution_packages p ON p.id=j.package_id
-   LEFT JOIN catalog.releases r ON r.id=p.canonical_release_id
+   LEFT JOIN distribution.canonical_releases cr ON cr.id=p.canonical_release_id
+   LEFT JOIN catalog.releases r ON r.id=cr.release_id
   WHERE ($1::text IS NULL OR $1='delivery_job') AND ($2::text IS NULL OR j.id::text=$2)
     AND j.status IN ('FAILED','DEAD_LETTER')
     AND NOT EXISTS(SELECT 1 FROM execution.delivery_jobs n WHERE n.package_id=j.package_id AND n.partner_id=j.partner_id AND n.created_at>j.created_at)
@@ -140,13 +142,17 @@ UNION ALL
   WHERE ($1::text IS NULL OR $1='report') AND ($2::text IS NULL OR rr.id::text=$2)
   ORDER BY rr.received_at DESC LIMIT 200)
 UNION ALL
-(SELECT 'job', j.id::text, 'AUTOMATION_FAILURE', 'HIGH', j.kind, j.queue || COALESCE(' · ' || left(j.last_error, 300), ''),
+(SELECT 'job', j.id::text, 'AUTOMATION_FAILURE', CASE j.status WHEN 'DEAD_LETTER' THEN 'HIGH' ELSE 'MEDIUM' END, j.kind,
+        CASE j.status WHEN 'DEAD_LETTER' THEN '중단' ELSE '재시도 중 ' || j.attempts || '/' || j.max_attempts END
+          || ' · ' || j.queue || COALESCE(' · ' || left(j.last_error, 300), ''),
         r.org_id, o.name, NULL, CASE WHEN r.id IS NULL THEN NULL ELSE 'release' END, r.id::text, NULL,
         COALESCE(j.dead_lettered_at, j.created_at)
    FROM operations.jobs j LEFT JOIN catalog.releases r ON r.id=j.release_id LEFT JOIN identity.orgs o ON o.id=r.org_id
   WHERE ($1::text IS NULL OR $1='job') AND ($2::text IS NULL OR j.id::text=$2)
-    AND j.status='DEAD_LETTER'
-  ORDER BY j.dead_lettered_at DESC NULLS LAST LIMIT 200)
+    -- A job that already failed and is waiting to retry shows too: a release
+    -- can read READY_FOR_DELIVERY while its delivery.stage keeps failing (BE-006).
+    AND (j.status='DEAD_LETTER' OR (j.status IN ('QUEUED','RUNNING') AND j.attempts>0 AND j.last_error IS NOT NULL))
+  ORDER BY j.dead_lettered_at DESC NULLS LAST, j.created_at DESC LIMIT 200)
 UNION ALL
 (SELECT 'manual', m.id::text, m.kind, m.severity, m.title, m.detail, NULL, NULL,
         CASE m.entity_kind WHEN 'dsp' THEN m.entity_id END, m.entity_kind, m.entity_id, NULL, m.created_at

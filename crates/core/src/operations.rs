@@ -15,22 +15,10 @@ fn shared_mockdsp() -> Arc<crate::mockdsp::MockDsp> {
     static INSTANCE: OnceLock<Arc<crate::mockdsp::MockDsp>> = OnceLock::new();
     INSTANCE
         .get_or_init(|| {
-            // MOCKDSP_BEHAVIOR injects partner failures for sandbox testing
-            // (see MockBehavior::from_spec). Default: accept, then report
-            // LIVE on the second status check. Plain `accept` never goes
-            // live through polling (only via a webhook the sandbox never
-            // sends), which left sandbox releases INGESTING forever.
-            let sandbox = crate::mockdsp::MockBehavior::DelayedLive {
-                polls_before_live: 2,
-            };
-            let behavior = match std::env::var("MOCKDSP_BEHAVIOR") {
-                Ok(spec) => crate::mockdsp::MockBehavior::from_spec(&spec).unwrap_or_else(|| {
-                    tracing::warn!(spec, "invalid MOCKDSP_BEHAVIOR; using delayed_live:2");
-                    sandbox.clone()
-                }),
-                Err(_) => sandbox,
-            };
-            Arc::new(crate::mockdsp::MockDsp::sandbox(behavior))
+            // MOCKDSP_BEHAVIOR injects partner failures for sandbox testing.
+            Arc::new(crate::mockdsp::MockDsp::sandbox(
+                crate::mockdsp::sandbox_behavior(),
+            ))
         })
         .clone()
 }
@@ -92,48 +80,38 @@ pub async fn enqueue(
 /// by the new `lock_token`. Exponential backoff is reserved for explicit
 /// retryable failures reported through [`fail`].
 async fn reclaim_expired(c: &mut PgConnection, queue: &str) -> Result<()> {
-    let rows = sqlx::query(
-        "UPDATE operations.jobs
-         SET status = CASE WHEN attempts >= max_attempts THEN 'DEAD_LETTER' ELSE 'QUEUED' END,
-             locked_by = NULL,
-             lock_token = NULL,
-             lease_until = NULL,
-             dead_lettered_at = CASE WHEN attempts >= max_attempts THEN now() ELSE NULL END,
-             last_error = 'LEASE_EXPIRED',
-             run_at = CASE
-                 WHEN attempts >= max_attempts THEN run_at
-                 ELSE clock_timestamp()
-             END
-         WHERE queue = $1 AND status = 'RUNNING' AND lease_until <= clock_timestamp()
-         RETURNING id, status, kind, payload",
+    // One statement requeues (or dead-letters) every expired lease and writes
+    // their audit rows; only dead letters need a follow-up per row.
+    let dead: Vec<(String, Value)> = sqlx::query_as(
+        "WITH expired AS (
+           UPDATE operations.jobs
+           SET status = CASE WHEN attempts >= max_attempts THEN 'DEAD_LETTER' ELSE 'QUEUED' END,
+               locked_by = NULL,
+               lock_token = NULL,
+               lease_until = NULL,
+               dead_lettered_at = CASE WHEN attempts >= max_attempts THEN now() ELSE NULL END,
+               last_error = 'LEASE_EXPIRED',
+               run_at = CASE
+                   WHEN attempts >= max_attempts THEN run_at
+                   ELSE clock_timestamp()
+               END
+           WHERE queue = $1 AND status = 'RUNNING' AND lease_until <= clock_timestamp()
+           RETURNING id, status, kind, payload),
+         audited AS (
+           INSERT INTO operations.audit_events(id,actor_service,resource_id,action,reason_code,request_id)
+           SELECT gen_random_uuid(),'audeniq-system',id,
+                  CASE WHEN status='DEAD_LETTER' THEN 'job.dead_letter' ELSE 'job.retry' END,
+                  'LEASE_EXPIRED',gen_random_uuid()
+             FROM expired)
+         SELECT kind, payload FROM expired WHERE status = 'DEAD_LETTER'",
     )
     .bind(queue)
     .fetch_all(&mut *c)
     .await?;
-
-    for row in rows {
-        let status: String = row.get("status");
-        if status == "DEAD_LETTER" {
-            // The worker died on every attempt (e.g. OOM on one file): the
-            // release must not stay silently stuck in a running state.
-            let kind: String = row.get("kind");
-            let payload: Value = row.get("payload");
-            surface_dead_letter(c, &kind, &payload, "LEASE_EXPIRED").await?;
-        }
-        audit(
-            c,
-            None,
-            None,
-            Some(row.get("id")),
-            if status == "DEAD_LETTER" {
-                "job.dead_letter"
-            } else {
-                "job.retry"
-            },
-            "LEASE_EXPIRED",
-            Uuid::new_v4(),
-        )
-        .await?;
+    for (kind, payload) in dead {
+        // The worker died on every attempt (e.g. OOM on one file): the
+        // release must not stay silently stuck in a running state.
+        surface_dead_letter(c, &kind, &payload, "LEASE_EXPIRED").await?;
     }
     Ok(())
 }
@@ -339,23 +317,45 @@ pub async fn park(pool: &PgPool, j: &Job, code: &str, delay_secs: i64) -> Result
     Ok(())
 }
 pub async fn fail(pool: &PgPool, j: &Job, permanent: bool, code: &str) -> Result<()> {
-    let mut tx = pool.begin().await?;
-    let r=sqlx::query("UPDATE operations.jobs SET status=CASE WHEN $3 OR attempts>=max_attempts THEN 'DEAD_LETTER' ELSE 'QUEUED' END,dead_lettered_at=CASE WHEN $3 OR attempts>=max_attempts THEN now() END,last_error=$4,run_at=now()+make_interval(secs=>least(3600,power(2,attempts)*5)::double precision),lock_token=NULL,lease_until=NULL WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp() RETURNING status")
- .bind(j.id).bind(j.token).bind(permanent).bind(code).fetch_optional(&mut *tx).await?.ok_or(Error::Conflict)?;
-    audit(
-        &mut tx,
-        None,
-        None,
-        Some(j.id),
-        if r.get::<String, _>("status") == "DEAD_LETTER" {
-            "job.dead_letter"
-        } else {
-            "job.retry"
-        },
-        code,
-        Uuid::new_v4(),
+    // The update and its audit row are one statement; only a pipeline job
+    // that is dead-lettered here needs a transaction around it.
+    let q = sqlx::query_scalar::<_, String>(
+        "WITH failed AS (UPDATE operations.jobs SET status=CASE WHEN $3 OR attempts>=max_attempts THEN 'DEAD_LETTER' ELSE 'QUEUED' END,
+                           dead_lettered_at=CASE WHEN $3 OR attempts>=max_attempts THEN now() END,last_error=$4,
+                           run_at=now()+make_interval(secs=>least(3600,power(2,attempts)*5)::double precision),lock_token=NULL,lease_until=NULL
+                          WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp()
+                          RETURNING id,status),
+              audited AS (INSERT INTO operations.audit_events(id,actor_service,resource_id,action,reason_code,request_id)
+                          SELECT $5,'audeniq-system',id,CASE WHEN status='DEAD_LETTER' THEN 'job.dead_letter' ELSE 'job.retry' END,$4,$6
+                            FROM failed)
+         SELECT status FROM failed",
     )
-    .await?;
+    .bind(j.id)
+    .bind(j.token)
+    .bind(permanent)
+    .bind(code)
+    .bind(Uuid::new_v4())
+    .bind(Uuid::new_v4());
+    if !SURFACED_KINDS.contains(&j.kind.as_str()) {
+        q.fetch_optional(pool).await?.ok_or(Error::Conflict)?;
+        return Ok(());
+    }
+    let mut tx = pool.begin().await?;
+    let status = q.fetch_optional(&mut *tx).await?.ok_or(Error::Conflict)?;
+    if status == "DEAD_LETTER" {
+        // A pipeline job dead-lettered here (the worker's fallback after the
+        // handler's own surfacing failed) must still move its release out of
+        // the running state. Best effort in a savepoint: the dead letter
+        // itself is recorded either way.
+        let mut sp = sqlx::Acquire::begin(&mut *tx).await?;
+        match surface_dead_letter(&mut sp, &j.kind, &j.payload, code).await {
+            Ok(()) => sp.commit().await?,
+            Err(e) => {
+                tracing::warn!(job_id = %j.id, error = %e, "dead letter not surfaced on the release");
+                sp.rollback().await?;
+            }
+        }
+    }
     tx.commit().await?;
     Ok(())
 }
@@ -440,7 +440,12 @@ pub const STAGE3_PREPARATION_FAILED: &str = "STAGE3_PREPARATION_FAILED";
 
 /// Plain-language explanation of a Stage 3 failure for the artist.
 fn stage3_failure_message(reason: &str) -> &'static str {
-    if reason.contains("IDENTIFIER_CONFLICT") {
+    if reason.contains("IDENTIFIER_RANGE_EXHAUSTED")
+        || reason.contains("IDENTIFIER_ISSUER_MISCONFIGURED")
+        || reason.contains("IDENTIFIER_ISSUANCE_OFF")
+    {
+        "AUDENIQ could not issue a UPC or ISRC for this release right now. Nothing on your release needs to change: we are fixing it and will let you know when you can resubmit."
+    } else if reason.contains("IDENTIFIER_CONFLICT") {
         "The UPC or an ISRC on this release is already used by another release or track in your account. Assign unique codes and resubmit."
     } else if reason.contains("PREFLIGHT_FAILED") {
         "The final delivery check could not verify this release's files or metadata. Re-upload the audio/artwork if you changed them, then resubmit; contact support if it happens again."
@@ -528,14 +533,14 @@ async fn retry_or_surface(pool: &PgPool, j: &Job, code: &str) -> Result<()> {
 
 /// As [`retry_or_surface`]; `permanent` failures skip the remaining retries.
 async fn retry_or_surface_with(pool: &PgPool, j: &Job, code: &str, permanent: bool) -> Result<()> {
+    if !SURFACED_KINDS.contains(&j.kind.as_str()) {
+        return fail(pool, j, permanent, code).await;
+    }
     let exhausted: bool =
         sqlx::query_scalar("SELECT attempts>=max_attempts FROM operations.jobs WHERE id=$1")
             .bind(j.id)
             .fetch_one(pool)
             .await?;
-    if !SURFACED_KINDS.contains(&j.kind.as_str()) {
-        return fail(pool, j, permanent, code).await;
-    }
     if !exhausted && !permanent {
         return fail(pool, j, false, code).await;
     }
@@ -566,24 +571,28 @@ async fn retry_or_surface_with(pool: &PgPool, j: &Job, code: &str, permanent: bo
 }
 /// Mark a claimed job SUCCEEDED. The lock_token/lease guard keeps a crashed
 /// worker's replacement from double-completing the same job.
+///
+/// The update and its audit row are one statement (one round trip instead of
+/// BEGIN/UPDATE/INSERT/COMMIT): every job pays this on completion.
 pub async fn succeed(pool: &PgPool, j: &Job) -> Result<()> {
-    let mut tx = pool.begin().await?;
-    let n=sqlx::query("UPDATE operations.jobs SET status='SUCCEEDED',lock_token=NULL,lease_until=NULL WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp()")
- .bind(j.id).bind(j.token).execute(&mut *tx).await?.rows_affected();
+    let n: i64 = sqlx::query_scalar(
+        "WITH done AS (UPDATE operations.jobs SET status='SUCCEEDED',lock_token=NULL,lease_until=NULL
+                        WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp()
+                        RETURNING id),
+              audited AS (INSERT INTO operations.audit_events(id,actor_service,resource_id,action,reason_code,request_id)
+                          SELECT $3,'audeniq-system',id,'job.succeeded',$4,$5 FROM done)
+         SELECT count(*) FROM done",
+    )
+    .bind(j.id)
+    .bind(j.token)
+    .bind(Uuid::new_v4())
+    .bind(&j.kind)
+    .bind(Uuid::new_v4())
+    .fetch_one(pool)
+    .await?;
     if n != 1 {
         return Err(Error::Conflict);
     }
-    audit(
-        &mut tx,
-        None,
-        None,
-        Some(j.id),
-        "job.succeeded",
-        &j.kind,
-        Uuid::new_v4(),
-    )
-    .await?;
-    tx.commit().await?;
     Ok(())
 }
 pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> Result<()> {
@@ -684,8 +693,18 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
                 // equally permanent. Either way the release is surfaced as
                 // STAGE3_CORRECTION with a readable reason, never left in
                 // STAGE3_PREPARING behind a silent dead letter.
-                let permanent =
-                    matches!(e, Error::PolicyGate("IDENTIFIER_CONFLICT") | Error::Invalid);
+                // Range exhaustion and issuer misconfiguration are equally
+                // permanent until staff register a range, so do not burn
+                // attempts on them either.
+                let permanent = matches!(
+                    e,
+                    Error::PolicyGate(
+                        "IDENTIFIER_CONFLICT"
+                            | "IDENTIFIER_RANGE_EXHAUSTED"
+                            | "IDENTIFIER_ISSUER_MISCONFIGURED"
+                            | "IDENTIFIER_ISSUANCE_OFF"
+                    ) | Error::Invalid
+                );
                 return retry_or_surface_with(
                     pool,
                     j,
@@ -820,7 +839,42 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
             crate::execution::release_delivery_lease(pool, &djob, "EXECUTION_NO_ADAPTER").await?;
             return fail(pool, j, true, "EXECUTION_NO_ADAPTER").await;
         };
-        return match crate::execution::run_delivery(pool, storage, adapter.as_ref(), &djob).await {
+        // Keep the delivery job's lease alive for as long as the send runs.
+        // Once it is lost (refused, or unconfirmed past its expiry) another
+        // worker may hold it: stop sending instead of finishing a transfer
+        // whose result can no longer be recorded (the fenced status update
+        // would refuse it and leave it to reconciliation anyway).
+        let lease = job_lease_seconds();
+        let renew = async {
+            let mut tick =
+                tokio::time::interval(std::time::Duration::from_secs((lease / 3).max(1) as u64));
+            tick.tick().await;
+            let mut until =
+                std::time::Instant::now() + std::time::Duration::from_secs(lease.max(1) as u64);
+            loop {
+                tick.tick().await;
+                match crate::execution::renew_delivery_lease(pool, &djob, lease).await {
+                    Ok(true) => {
+                        until = std::time::Instant::now()
+                            + std::time::Duration::from_secs(lease.max(1) as u64);
+                    }
+                    Ok(false) => return,
+                    Err(e) if std::time::Instant::now() >= until => {
+                        tracing::warn!(error = %e, "delivery lease expired while renewal failed");
+                        return;
+                    }
+                    Err(e) => tracing::warn!(error = %e, "delivery lease renewal failed"),
+                }
+            }
+        };
+        let delivered = tokio::select! {
+            r = Box::pin(crate::execution::run_delivery(pool, storage, adapter.as_ref(), &djob)) => r,
+            () = renew => {
+                tracing::warn!(delivery_job = %djob.id, "delivery lease lost; send cancelled");
+                return fail(pool, j, false, "DELIVERY_LEASE_LOST").await;
+            }
+        };
+        return match delivered {
             Ok(status) => match status.as_str() {
                 "DELIVERED" => {
                     // E-4: ingestion takes hours; schedule the first live-state
@@ -925,6 +979,45 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
             }
         };
     }
+    if j.kind == "delivery.mark_taken_down" {
+        // Staff-confirmed takedown for partners that take no takedown message.
+        let package = j
+            .payload
+            .get("package_id")
+            .and_then(Value::as_str)
+            .and_then(|s| Uuid::parse_str(s).ok());
+        let partner = j
+            .payload
+            .get("partner_id")
+            .and_then(Value::as_str)
+            .filter(|p| crate::partner_config::valid_partner_id(p));
+        let staff_user = j
+            .payload
+            .get("staff_user_id")
+            .and_then(Value::as_str)
+            .and_then(|s| Uuid::parse_str(s).ok());
+        let (Some(package), Some(partner)) = (package, partner) else {
+            return fail(pool, j, true, "DELIVERY_MARK_TAKEN_DOWN:invalid payload").await;
+        };
+        return match crate::execution::record_manual_taken_down(pool, package, partner, staff_user)
+            .await
+        {
+            Ok(_) => succeed(pool, j).await,
+            Err(e @ (Error::NotFound | Error::Invalid | Error::PolicyGate(_))) => {
+                fail(pool, j, true, &format!("DELIVERY_MARK_TAKEN_DOWN:{e}")).await
+            }
+            Err(e) => {
+                let short: String = format!("{e:?}").chars().take(500).collect();
+                fail(
+                    pool,
+                    j,
+                    false,
+                    &format!("DELIVERY_MARK_TAKEN_DOWN_ERROR:{short}"),
+                )
+                .await
+            }
+        };
+    }
     if j.kind == "delivery.reconcile" {
         // F5: E-5 reconciliation sweep.
         return match crate::execution::reconcile(pool, 3600).await {
@@ -932,6 +1025,67 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
             Err(e) => {
                 let short: String = format!("{e:?}").chars().take(500).collect();
                 fail(pool, j, false, &format!("DELIVERY_RECONCILE_ERROR:{short}")).await
+            }
+        };
+    }
+    if j.kind == "delivery.update" {
+        // Approved metadata correction (crates/core/src/corrections.rs): an
+        // update message regenerated with every approved correction applied.
+        let package_id = j
+            .payload
+            .get("package_id")
+            .and_then(Value::as_str)
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .ok_or(Error::Internal)?;
+        let partner_id = j
+            .payload
+            .get("partner_id")
+            .and_then(Value::as_str)
+            .ok_or(Error::Internal)?;
+        let correction = j
+            .payload
+            .get("correction_id")
+            .and_then(Value::as_str)
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .ok_or(Error::Internal)?;
+        let org: Uuid =
+            sqlx::query_scalar("SELECT org_id FROM distribution.distribution_packages WHERE id=$1")
+                .bind(package_id)
+                .fetch_optional(pool)
+                .await?
+                .ok_or(Error::NotFound)?;
+        let changes: Value = sqlx::query_scalar(
+            "SELECT applied FROM portal.metadata_corrections WHERE id=$1 AND status='APPROVED'",
+        )
+        .bind(correction)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(Error::NotFound)?;
+        let registry = crate::partners::registry(pool, storage, shared_mockdsp()).await?;
+        let Some(adapter) = registry.get(partner_id) else {
+            return fail(pool, j, true, "EXECUTION_NO_ADAPTER").await;
+        };
+        return match crate::execution::update_release(
+            pool,
+            org,
+            adapter.as_ref(),
+            package_id,
+            partner_id,
+            &changes,
+        )
+        .await
+        {
+            Ok(_) => succeed(pool, j).await,
+            Err(e) => {
+                let short: String = format!("{e:?}").chars().take(500).collect();
+                let permanent = matches!(e, Error::PolicyGate(_));
+                fail(
+                    pool,
+                    j,
+                    permanent,
+                    &format!("DELIVERY_UPDATE_ERROR:{short}"),
+                )
+                .await
             }
         };
     }
@@ -991,49 +1145,42 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
     let Some(event) = event else {
         return fail(pool, j, true, "INVALID_JOB_PAYLOAD").await;
     };
-    let mut tx = pool.begin().await?;
-    let current:Option<Uuid>=sqlx::query_scalar("SELECT id FROM operations.jobs WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp() FOR UPDATE")
- .bind(j.id).bind(j.token).fetch_optional(&mut *tx).await?;
-    current.ok_or(Error::Conflict)?;
-    let row =
-        sqlx::query("SELECT org_id,aggregate_id FROM operations.outbox WHERE id=$1 FOR UPDATE")
-            .bind(event)
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or(Error::NotFound)?;
-    let n=sqlx::query("INSERT INTO operations.event_receipts(event_id,consumer) VALUES($1,'foundation.internal') ON CONFLICT DO NOTHING").bind(event).execute(&mut *tx).await?.rows_affected();
-    if n == 1 {
-        audit(
-            &mut tx,
-            None,
-            Some(row.get("org_id")),
-            Some(row.get("aggregate_id")),
-            "outbox.recorded",
-            "INTERNAL_RECEIPT_ONLY",
-            event,
-        )
-        .await?;
-        sqlx::query("UPDATE operations.outbox SET published_at=now() WHERE id=$1")
-            .bind(event)
-            .execute(&mut *tx)
-            .await?;
+    // Receipt, publish mark, job completion and both audit rows in one
+    // statement (one round trip instead of nine): every outbox event runs
+    // through here. The job only completes when its event exists, and the
+    // receipt is only written when the job's lease still fences this run.
+    let (found, done): (i64, i64) = sqlx::query_as(
+        "WITH ev AS (SELECT id, org_id, aggregate_id FROM operations.outbox WHERE id=$3 FOR UPDATE),
+              done AS (UPDATE operations.jobs SET status='SUCCEEDED',lock_token=NULL,lease_until=NULL
+                        WHERE id=$1 AND lock_token=$2 AND status='RUNNING' AND lease_until>clock_timestamp()
+                          AND EXISTS(SELECT 1 FROM ev)
+                        RETURNING id),
+              receipt AS (INSERT INTO operations.event_receipts(event_id,consumer)
+                          SELECT id,'foundation.internal' FROM ev WHERE EXISTS(SELECT 1 FROM done)
+                          ON CONFLICT DO NOTHING RETURNING event_id),
+              published AS (UPDATE operations.outbox SET published_at=now()
+                             WHERE id IN (SELECT event_id FROM receipt)),
+              audited AS (INSERT INTO operations.audit_events(id,actor_service,org_id,resource_id,action,reason_code,request_id)
+                          SELECT $4,'audeniq-system',ev.org_id,ev.aggregate_id,'outbox.recorded','INTERNAL_RECEIPT_ONLY',ev.id
+                            FROM ev JOIN receipt ON receipt.event_id=ev.id
+                          UNION ALL
+                          SELECT $5,'audeniq-system',NULL,id,'job.succeeded','INTERNAL_RECEIPT_ONLY',$6 FROM done)
+         SELECT (SELECT count(*) FROM ev), (SELECT count(*) FROM done)",
+    )
+    .bind(j.id)
+    .bind(j.token)
+    .bind(event)
+    .bind(Uuid::new_v4())
+    .bind(Uuid::new_v4())
+    .bind(Uuid::new_v4())
+    .fetch_one(pool)
+    .await?;
+    if found == 0 {
+        return Err(Error::NotFound);
     }
-    let n=sqlx::query("UPDATE operations.jobs SET status='SUCCEEDED',lock_token=NULL,lease_until=NULL WHERE id=$1 AND lock_token=$2 AND lease_until>clock_timestamp()")
- .bind(j.id).bind(j.token).execute(&mut *tx).await?.rows_affected();
-    if n != 1 {
+    if done != 1 {
         return Err(Error::Conflict);
     }
-    audit(
-        &mut tx,
-        None,
-        None,
-        Some(j.id),
-        "job.succeeded",
-        "INTERNAL_RECEIPT_ONLY",
-        Uuid::new_v4(),
-    )
-    .await?;
-    tx.commit().await?;
     Ok(())
 }
 /// Append a pinned check result without advancing the pipeline.

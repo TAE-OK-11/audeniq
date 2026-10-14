@@ -9,7 +9,7 @@ import { SignaturePad, type SignaturePadHandle } from '../components/SignaturePa
 import { useConfirm } from '../components/Confirm';
 import { useProgressFill } from '../hooks/useAnimations';
 import { ApiError, MOCK, api, type ArtistProfileLinks, type DspAvailability, type ReleasePayload } from '../api/client';
-import { errorMessage } from '../api/errors';
+import { PartialSaveError, errorMessage } from '../api/errors';
 import { addDoc, docsForRelease, getDocsSnapshot, useDocs, type DocRecord } from '../store/docs';
 import { RightsDocumentModal } from '../components/RightsDocumentModal';
 import { DocumentModal } from '../components/DocumentModal';
@@ -20,7 +20,7 @@ import { useProfile } from '../store/profile';
 import { fileSize, localStamp } from '../lib/format';
 import { DSP, GENRES, KINDS, LANGUAGES, dspLabel, genreLabel, kindLabel } from '../lib/catalog';
 import { formatKoreanDate, stampNow, todayStr } from '../lib/date';
-import { fixCountWord, resolveCorrection, splitCorrections, type ResolvedCorrection } from '../lib/corrections';
+import { fixCountWord, fixPath, isDocumentFix, resolveCorrection, splitCorrections, type ResolvedCorrection } from '../lib/corrections';
 import { checkAudioFile, formatDuration, specLabel } from '../lib/audioSpec';
 import { AGREEMENTS, SIGNER_ROLES, compactSignature, createApplication } from '../lib/application';
 import {
@@ -31,9 +31,36 @@ import { uid } from '../lib/store';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
 import { Badge } from '../ui';
+import { TrackChecks } from '../components/TrackChecks';
 import { Segmented } from '../components/Segmented';
 import { DateField } from '../components/Picker';
 import { BrandMark } from '../components/BrandMark';
+import { SplitsCard } from '../components/SplitsCard';
+import { fetchArtistPages, type ArtistPages } from '../lib/artistPages';
+import { TERRITORY_GROUPS, WORLD, parseTerritories, territoryName, territorySummary, worldExcept } from '../lib/territories';
+
+/** 동시 발매로 고를 수 있는 한국 시간 (서버는 정각·30분만 받는다) */
+const RELEASE_TIMES = ['00:00', '09:00', '12:00', '13:00', '18:00', '19:00', '20:00'];
+
+/** 'm:ss' 또는 초 → 서버에 보낼 초 (비었거나 형식이 틀리면 '') */
+function previewSecs(v: string | undefined): string {
+  const s = (v ?? '').trim();
+  if (!s) return '';
+  const m = /^(\d{1,2}):([0-5]\d)$/.exec(s);
+  if (m) return String(Number(m[1]) * 60 + Number(m[2]));
+  return /^\d{1,4}$/.test(s) && Number(s) <= 3600 ? String(Number(s)) : '';
+}
+/** 저장된 초 → 화면 'm:ss' */
+function previewLabel(v: string | number | undefined): string {
+  const n = typeof v === 'number' ? v : /^\d+$/.test(String(v ?? '')) ? Number(v) : NaN;
+  return Number.isFinite(n) ? `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}` : '';
+}
+/** 'YYYY-MM-DD'에 일수를 더한다 */
+function shiftDate(d: string, days: number): string {
+  const t = new Date(`${d}T00:00:00Z`);
+  t.setUTCDate(t.getUTCDate() + days);
+  return t.toISOString().slice(0, 10);
+}
 
 const STEPS = [
   { short: '발매 정보', kicker: '01 / 06 · 발매 정보', title: '어떤 음악을\n발매할까요?', sub: '발매 정보와 아티스트명을 입력해 주세요.' },
@@ -71,6 +98,8 @@ interface Track {
   assetId: string;
   /** 서버 트랙 ID (실서버, 임시 저장 간 매칭) */
   serverId: string;
+  /** 미리듣기·숏폼 클립 시작점 (입력 그대로 'm:ss' 또는 초) */
+  previewStart: string;
   featuring: string;
   instrumental: boolean;
   /** 음원 규격 표기 */
@@ -108,8 +137,8 @@ interface WizardForm {
   artist: string; title: string; type: string; language: string; genre: string;
   genreCustom: string; label: string; notes: string;
   tracks: Track[];
-  coverName: string; coverData: string; coverAssetId: string;
-  releaseDate: string; originalDate: string; upc: string;
+  coverName: string; coverData: string; coverAssetId: string; coverThumbAssetId: string;
+  releaseDate: string; releaseTime: string; preorderStart: string; originalDate: string; upc: string;
   territories: string[]; platforms: string[];
   ownership: string; phonogram: string; copyright: string;
   rightsChecks: Record<string, boolean>;
@@ -123,7 +152,7 @@ const newTrack = (): Track => ({
   producer: '',
   lyrics: '',
   audioName: '', audioSize: 0, explicit: false, duration: '',
-  assetId: '', serverId: '', featuring: '', instrumental: false, audioSpec: '',
+  assetId: '', serverId: '', previewStart: '', featuring: '', instrumental: false, audioSpec: '',
 });
 
 const EMPTY_OPTIONS: ReleaseOptions = {
@@ -144,8 +173,8 @@ const EMPTY: WizardForm = {
   artist: '', title: '', type: 'single', language: 'ko', genre: '', genreCustom: '',
   label: '', notes: '',
   tracks: [newTrack()],
-  coverName: '', coverData: '', coverAssetId: '',
-  releaseDate: '', originalDate: '', upc: '',
+  coverName: '', coverData: '', coverAssetId: '', coverThumbAssetId: '',
+  releaseDate: '', releaseTime: '', preorderStart: '', originalDate: '', upc: '',
   territories: ['WORLD'], platforms: MOCK ? DSP.map(d => d[0]) : [],
   ownership: '', phonogram: '', copyright: '',
   rightsChecks: {},
@@ -338,6 +367,99 @@ function GuardianConsentModal({ guardianName, onClose, onComplete }: {
   );
 }
 
+/** 배급 지역 — 기본은 ‘전 세계’ 스위치만. 끄면 배급할 지역 또는 뺄 지역을 고른다 */
+function TerritoryPicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  const plan = parseTerritories(value);
+  const plainWorld = plan.world && !plan.excluded.length;
+  const [open, setOpen] = useState(!plainWorld);
+  const [mode, setMode] = useState<'exclude' | 'include'>(plan.world ? 'exclude' : 'include');
+  const [query, setQuery] = useState('');
+  const picked = mode === 'exclude' ? plan.excluded : plan.included;
+  const write = (codes: string[]) => onChange(mode === 'exclude' ? worldExcept(codes) : codes);
+  const toggle = (code: string) => write(picked.includes(code) ? picked.filter(c => c !== code) : [...picked, code]);
+  const q = query.trim().toLowerCase();
+  const groups = TERRITORY_GROUPS
+    .map(([region, codes]) => [region, codes.filter(c => !q || territoryName(c).toLowerCase().includes(q) || c.toLowerCase() === q)] as const)
+    .filter(([, codes]) => codes.length > 0);
+  const n = picked.length;
+  const headline = !open || (mode === 'exclude' && !n) ? '전 세계에 배급해요.'
+    : mode === 'exclude' ? `전 세계에서 ${n}곳을 빼고 배급해요.`
+      : n ? `${n}개 국가·지역에만 배급해요.` : '배급할 지역을 골라 주세요.';
+  const help = !open ? '특정 지역만 고르거나 빼려면 스위치를 꺼 주세요.'
+    : mode === 'exclude' ? (n ? territorySummary(value) : '아래에서 배급하지 않을 지역을 골라 주세요.')
+      : n ? picked.map(territoryName).join(', ') : '아래에서 배급할 지역을 하나 이상 골라 주세요.';
+
+  return (
+    <div id="aqTerritories" className="aq-territory">
+      <div className="distribution-default">
+        <div className="min-0">
+          <strong>{headline}</strong>
+          <p className="ui-field-help break">{help}</p>
+        </div>
+        <label className="aq-switch">
+          <input
+            type="checkbox" aria-label="전 세계 배급"
+            checked={!open}
+            onChange={e => {
+              if (e.target.checked) { onChange([WORLD]); setOpen(false); setQuery(''); } else setOpen(true);
+            }}
+          />
+          <span />
+        </label>
+      </div>
+      {open && (
+        <div className="aq-territory-panel aq-reveal">
+          <Segmented
+            className="aq-territory-mode" label="지역 선택 방식" value={mode}
+            onChange={m => { setMode(m); onChange(m === 'exclude' ? [WORLD] : []); }}
+            options={[{ value: 'exclude', label: '뺄 지역 고르기' }, { value: 'include', label: '배급할 지역 고르기' }] as const}
+          />
+          <div className="aq-territory-search">
+            <label className="sr-only" htmlFor="aqTerritorySearch">국가·지역 검색</label>
+            <input id="aqTerritorySearch" type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="국가·지역 이름으로 찾기" autoComplete="off" />
+          </div>
+          {n > 0 && (
+            <div className="aq-territory-picked">
+              <span>{mode === 'exclude' ? '빼는 지역' : '배급할 지역'} <b>{n}</b>곳</span>
+              <button type="button" className="ui-btn is-ghost is-xs" onClick={() => write([])}>모두 해제</button>
+            </div>
+          )}
+          {groups.length === 0 && <p className="aq-territory-empty">‘{query.trim()}’에 맞는 국가·지역이 없어요.</p>}
+          {groups.map(([region, codes]) => {
+            const all = codes.every(c => picked.includes(c));
+            return (
+              <div key={region} className="aq-territory-group">
+                <div className="aq-territory-region">
+                  <p>{region}</p>
+                  {!q && (
+                    <button type="button" className="ui-btn is-ghost is-xs" onClick={() => write(all ? picked.filter(c => !codes.includes(c)) : [...new Set([...picked, ...codes])])}>
+                      {all ? '모두 해제' : '모두 선택'}
+                    </button>
+                  )}
+                </div>
+                <div className="aq-chips" role="group" aria-label={`${region} 국가·지역`}>
+                  {codes.map(c => {
+                    const on = picked.includes(c);
+                    return (
+                      <button key={c} type="button" className={`aq-chip${on ? ' is-on' : ''}${on && mode === 'exclude' ? ' is-excluded' : ''}`} aria-pressed={on} onClick={() => toggle(c)}>
+                        {territoryName(c)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <p className="aq-territory-note">
+        <Glyph name="info" size={16} />
+        <span>AUDENIQ 이용약관과 관련 법령에 따라 배급이 제한된 국가·지역은 전 세계 배급을 선택해도 자동으로 제외돼요. <a href="/terms" target="_blank" rel="noopener" className="aq-inline-link">약관 보기</a></span>
+      </p>
+    </div>
+  );
+}
+
 /** 플랫폼 구분용 색 (로고 대신 첫 글자 배지) */
 const DSP_COLOR: Record<string, string> = {
   melon: '#00c73c', genie: '#1d6bf3', flo: '#3f3fff', bugs: '#ff3a3a', spotify: '#1db954', apple: '#fa2d48',
@@ -409,7 +531,7 @@ function ChipPicker({ id, options, value, onChange, other, onOther, otherPlaceho
       <div className="aq-chips" role="group">
         {all.map(opt => (
           <button key={opt} type="button" className={`aq-chip${value.includes(opt) ? ' is-on' : ''}`} aria-pressed={value.includes(opt)} onClick={() => toggle(opt)}>
-            {value.includes(opt) && <CheckIcon size={12} className="aq-chip-check" />}{opt === OTHER ? '기타 (직접 입력)' : opt}
+            {opt === OTHER ? '기타 (직접 입력)' : opt}
           </button>
         ))}
       </div>
@@ -959,6 +1081,7 @@ const TrackEditor = memo(function TrackEditor({
         <UploadStatus upload={upload} idle={t.audioName
           ? `${t.audioName}${t.audioSpec ? ` · ${t.audioSpec}` : t.audioSize ? ` · ${fileSize(t.audioSize)}` : ''}${t.assetId ? ' · 업로드 완료' : MOCK ? '' : ' · 업로드되지 않았어요. 파일을 다시 선택해 주세요.'}`
           : '무손실 원본 WAV·FLAC·ALAC(.m4a)·AIFF·WavPack(.wv)·TTA · 44.1kHz 이상, 16bit 이상, 스테레오'} />
+        {!MOCK && t.assetId && upload?.state !== 'uploading' && <TrackChecks assetId={t.assetId} />}
       </div>
       <div className="track-duration-label" aria-live="polite">
         {t.duration ? `곡 길이 · ${t.duration}` : '음원을 선택하면 곡 길이를 자동으로 확인해요.'}
@@ -1030,9 +1153,13 @@ function toPayload(form: WizardForm, step: number): ReleasePayload {
     notes: form.notes.trim(),
     coverName: form.coverName,
     coverData: form.coverData,
-    coverAssetId: form.coverAssetId || undefined,
+    // 비운 커버('')도 그대로 보낸다 — undefined면 서버의 이전 커버로 되돌아간다
+    coverAssetId: form.coverAssetId,
+    coverThumbAssetId: form.coverThumbAssetId || undefined,
     originalDate: form.options.rerelease && form.options.rereleaseKind === 'new_version' ? form.releaseDate : form.originalDate,
     release_date: form.releaseDate || '',
+    release_time: form.releaseTime || '',
+    preorder_start: form.preorderStart || '',
     tracks: form.tracks.map(t => ({
       id: t.id, title: t.title.trim(), isrc: t.isrc.trim(), duration: t.duration,
       version: t.version.trim(), composers: t.composers.trim(),
@@ -1041,6 +1168,7 @@ function toPayload(form: WizardForm, step: number): ReleasePayload {
       audioSize: t.audioSize, explicit: t.explicit,
       producer: t.producer.trim(), lyrics: t.lyrics.trim(),
       assetId: t.assetId || undefined, serverId: t.serverId || undefined,
+      previewStart: previewSecs(t.previewStart),
       featuring: t.featuring.trim(), instrumental: t.instrumental, audioSpec: t.audioSpec || undefined,
     })),
     territories: form.territories,
@@ -1079,6 +1207,17 @@ function makeCoverThumbnail(file: File): Promise<{ data: string; width: number; 
   });
 }
 
+/** 커버 미리보기(240px JPEG)를 이미지 파일로 올리고 자산 ID를 돌려준다 */
+async function uploadCoverPreview(dataUrl: string): Promise<string> {
+  // fetch(data:)는 CSP connect-src에 막힐 수 있어 직접 바꾼다
+  const bin = atob(dataUrl.slice(dataUrl.indexOf(',') + 1));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const file = new File([bytes], 'cover-preview.jpg', { type: 'image/jpeg' });
+  const r = await api.uploadFile(file, 'IMAGE', () => {});
+  return r.assetId;
+}
+
 const AUDIO_RE = /\.(wav|flac|m4a|aif|aiff|aifc|wv|tta)$/i;
 
 /** 발매 신청 시 계약서·권리 서류를 준비 (같은 발매에 이미 있으면 다시 만들지 않음) */
@@ -1096,7 +1235,7 @@ function ensureReleaseDocuments(f: WizardForm, releaseId: string) {
     `발매명: ${title}`,
     `발매 유형: ${kindLabel(f.type)}`,
     `장르: ${genreVal || '미입력'}`,
-    `발매 희망일: ${f.releaseDate || '미정'}`,
+    `발매 희망일: ${f.releaseDate || '미정'}${f.releaseTime ? ` (한국 시간 ${f.releaseTime} 동시 발매)` : ''}`,
     `레이블 표기: ${f.label.trim() || '미입력'}`,
     `수록곡: ${f.tracks.map((t, i) => `${i + 1}. ${t.title.trim() || '제목 없음'} (${t.duration || '길이 확인 전'})`).join(' / ')}`,
     '',
@@ -1104,7 +1243,7 @@ function ensureReleaseDocuments(f: WizardForm, releaseId: string) {
     `마스터 권리자: ${f.ownership.trim() || '미입력'}`,
     `℗ 표기: ${f.phonogram.trim() || '미입력'}`,
     `© 표기: ${f.copyright.trim() || '미입력'}`,
-    `배급 지역: ${f.territories.includes('WORLD') ? '전 세계' : '지정 안 함'}`,
+    `배급 지역: ${territorySummary(f.territories)}`,
     `배급 플랫폼: ${f.platforms.map(dspLabel).join(', ')}`,
     `추가 확인 항목: ${selectedOptions(f.options).map(([, t]) => t).join(', ') || '일반 발매'}`,
     '',
@@ -1136,7 +1275,7 @@ function ensureReleaseDocuments(f: WizardForm, releaseId: string) {
   addDoc(agreement);
 }
 
-type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'saved'; at: string } | { kind: 'error' };
+type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'saved'; at: string } | { kind: 'error'; message?: string };
 
 export function Upload() {
   const nav = useNavigate();
@@ -1186,6 +1325,8 @@ export function Upload() {
     return () => { alive = false; };
   }, [editId]);
   const [error, setError] = useState('');
+  // 접수 요청 자체가 실패했을 때 (입력 오류와 따로, 다시 시도 버튼과 함께 보여 준다)
+  const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   // 중복 제출 방지용 ref (비동기 경계에서도 동작)
   const submittingRef = useRef(false);
@@ -1292,6 +1433,7 @@ export function Upload() {
       const tracks: Track[] = d?.draftTracks?.length
         ? d.draftTracks.map(t => ({
             ...newTrack(), ...t, id: t.id || uid('t'), assetId: t.assetId || '', serverId: t.serverId || '',
+            previewStart: previewLabel(t.previewStart),
             featuring: t.featuring || '', instrumental: !!t.instrumental, audioSpec: t.audioSpec || '',
           }))
         : rel.tracks.length
@@ -1317,7 +1459,10 @@ export function Upload() {
         coverName: d?.coverName || '',
         coverData: d?.coverData || '',
         coverAssetId: d?.coverAssetId || '',
+        coverThumbAssetId: d?.coverThumbAssetId || '',
         releaseDate: rel.release_date || '',
+        releaseTime: d?.release_time || '',
+        preorderStart: d?.preorder_start || '',
         originalDate: d?.options?.rerelease && d.options.previousReleaseDate ? d.options.previousReleaseDate : d?.originalDate || '',
         upc: d?.upc || '',
         territories: d?.territories ?? ['WORLD'],
@@ -1351,7 +1496,7 @@ export function Upload() {
     }).catch(e => {
       if (cancelled) return;
       setLoadingEdit(false);
-      toast(errorMessage(e, '발매 정보를 불러오지 못했어요.'));
+      toast(errorMessage(e, '발매 정보를 불러오지 못했어요.'), 'error');
       nav('/releases', { replace: true });
     });
     return () => { cancelled = true; };
@@ -1378,44 +1523,83 @@ export function Upload() {
     setForm(f => ({ ...f, [key]: value }));
   }, []);
 
+  // 같은 아티스트로 이전에 기록한 플랫폼 페이지를 불러와 채운다 (0122)
+  const [knownPages, setKnownPages] = useState<ArtistPages | null>(null);
+  const loadKnownPages = useCallback(async (name: string) => {
+    const known = await fetchArtistPages(name);
+    setKnownPages(known);
+    const linked = Object.entries(known.pages).filter(([, p]) => p.status === 'LINKED' && p.url);
+    const pending = Object.values(known.pages).some(p => p.status === 'PENDING');
+    if (!linked.length && !pending) return;
+    setForm(f => {
+      const ap = f.artistProfile;
+      const empty = !ap.spotify.trim() && !ap.apple.trim() && !ap.melon.trim();
+      if (!empty) return f;
+      const next = { ...ap, isNew: false };
+      for (const [k, p] of linked) if (k === 'spotify' || k === 'apple' || k === 'melon') next[k] = p.url ?? '';
+      return { ...f, artistProfile: next };
+    });
+  }, []);
+  // 이어서 작성하는 임시 저장 발매도 한 번 불러온다
+  const knownLoaded = useRef(false);
+  useEffect(() => {
+    if (knownLoaded.current || !form.artist.trim() || !draftIdRef.current) return;
+    knownLoaded.current = true;
+    void loadKnownPages(form.artist);
+  }, [form.artist, loadKnownPages]);
+
   const setTrack = useCallback((id: string, key: keyof Track, value: string | boolean | number) => {
     dirtyRef.current = true;
     setForm(f => ({ ...f, tracks: f.tracks.map(t => (t.id === id ? { ...t, [key]: value } : t)) }));
   }, []);
 
+  // 서버가 새로 만든 트랙 ID를 반영해야 다음 저장 때 트랙이 중복 생성되지 않는다
+  const adoptTrackIds = useCallback((ids: Record<string, string> | undefined) => {
+    if (!ids || !Object.keys(ids).length) return;
+    setForm(f => {
+      let changed = false;
+      const tracks = f.tracks.map(t => {
+        const sid = ids[t.id];
+        if (sid && sid !== t.serverId) { changed = true; return { ...t, serverId: sid }; }
+        return t;
+      });
+      return changed ? { ...f, tracks } : f;
+    });
+  }, []);
+  // 저장이 중간에 실패해도 이미 반영된 발매·트랙은 다음 저장이 이어서 쓴다 (새 발매를 또 만들지 않음)
+  const adoptPartialSave = useCallback((e: unknown) => {
+    if (!(e instanceof PartialSaveError)) return;
+    draftIdRef.current = e.releaseId;
+    adoptTrackIds(e.trackServerIds);
+  }, [adoptTrackIds]);
+
   // 자동 임시 저장 — 저장 요청을 직렬화해 draft가 두 개 생기지 않도록 한다
-  const autoSave = useCallback((): Promise<void> => {
-    if (!canAutoSave) return Promise.resolve();
+  // 저장에 성공했으면(또는 저장할 것이 없으면) true
+  const autoSave = useCallback((): Promise<boolean> => {
+    if (!canAutoSave) return Promise.resolve(true);
     const f = formRef.current;
-    if (!f.title.trim() && !f.artist.trim()) return Promise.resolve(); // 빈 폼은 저장하지 않음
-    const run = async () => {
+    if (!f.title.trim() && !f.artist.trim()) return Promise.resolve(true); // 빈 폼은 저장하지 않음
+    const run = async (): Promise<boolean> => {
       setSave({ kind: 'saving' });
+      // 저장 중에 더 입력한 내용은 아직 저장되지 않았으므로 그대로 '변경 있음'으로 둔다
+      const sent = formRef.current;
       try {
-        const r = await api.saveDraft(draftIdRef.current, toPayload(formRef.current, stepRef.current));
+        const r = await api.saveDraft(draftIdRef.current, toPayload(sent, stepRef.current));
         draftIdRef.current = r.id;
-        // 서버가 새로 만든 트랙 ID를 반영해야 다음 저장 때 트랙이 중복 생성되지 않는다
-        const ids = r.trackServerIds;
-        if (ids && Object.keys(ids).length) {
-          setForm(f => {
-            let changed = false;
-            const tracks = f.tracks.map(t => {
-              const sid = ids[t.id];
-              if (sid && sid !== t.serverId) { changed = true; return { ...t, serverId: sid }; }
-              return t;
-            });
-            return changed ? { ...f, tracks } : f;
-          });
-        }
-        dirtyRef.current = false;
+        adoptTrackIds(r.trackServerIds);
+        if (formRef.current === sent) dirtyRef.current = false;
         setSave({ kind: 'saved', at: stampNow().slice(11) });
-      } catch {
-        setSave({ kind: 'error' });
+        return true;
+      } catch (e) {
+        adoptPartialSave(e);
+        setSave({ kind: 'error', message: e instanceof PartialSaveError ? e.message : undefined });
+        return false;
       }
     };
     const p = saveChain.current.then(run, run);
     saveChain.current = p;
     return p;
-  }, [canAutoSave]);
+  }, [canAutoSave, adoptTrackIds, adoptPartialSave]);
 
   const openElectronic = async (kind: RightsDocumentKind) => {
     await autoSave();
@@ -1457,6 +1641,10 @@ export function Upload() {
           el.classList.remove('aq-invalid');
           void el.offsetWidth;
           el.classList.add('aq-invalid');
+          // 고치면 바로 표시를 지운다 (체크한 뒤에도 붉게 남아 있지 않도록)
+          const clear = () => el.classList.remove('aq-invalid');
+          el.addEventListener('change', clear, { once: true });
+          el.addEventListener('input', clear, { once: true });
           return;
         }
       }
@@ -1481,7 +1669,9 @@ export function Upload() {
           const err = profileLinkIssue(l.key, ap[l.key]);
           if (err) return fail(err, `#f-link-${l.key}`);
         }
-        if (!PROFILE_LINKS.some(l => ap[l.key].trim())) {
+        // 첫 발매로 새 페이지가 만들어지는 중이면(PENDING) 링크 없이도 같은 아티스트로 묶인다
+        const pendingFirst = !!knownPages && Object.values(knownPages.pages).some(p => p.status === 'PENDING');
+        if (!pendingFirst && !PROFILE_LINKS.some(l => ap[l.key].trim())) {
           return fail('이미 발매한 적이 있다면 기존 아티스트 페이지 주소를 하나 이상 입력해 주세요. 다른 동명 아티스트 페이지로 잘못 올라가는 것을 막아요.', '#f-link-spotify');
         }
       }
@@ -1528,6 +1718,13 @@ export function Upload() {
           ? '신속 발매도 플랫폼 납품에 최소 3일이 필요해요. 3일 뒤 이후 날짜를 선택해 주세요.'
           : '플랫폼 납품·검수에 2주가 필요해요. 오늘부터 14일 뒤 이후로 선택하거나, 급하면 아래 ‘신속 발매 요청’을 선택해 주세요.', '#f-releaseDate');
       }
+      if (form.preorderStart && (form.preorderStart >= form.releaseDate || form.preorderStart < shiftDate(form.releaseDate, -90))) {
+        return fail('사전 공개 시작일은 발매일 1–90일 전으로 골라 주세요.', '#f-preorder');
+      }
+      const badPreview = form.tracks.find(t => t.previewStart.trim() && !previewSecs(t.previewStart));
+      if (badPreview) return fail(`'${badPreview.title}' 미리듣기 시작점을 m:ss 형식으로 적어 주세요. (예: 1:05)`, '.aq-preview-starts');
+      const tp = parseTerritories(form.territories);
+      if (!tp.world && !tp.included.length) return fail('배급할 지역을 하나 이상 골라 주세요. 모든 지역에 배급하려면 ‘전 세계 배급’을 켜 주세요.', '#aqTerritories');
       if (!dsps) return fail(dspError || '플랫폼 배급 가능 상태를 확인하는 중이에요.', '#aqPlatforms');
       if (!form.platforms.length) return fail('배급할 플랫폼을 하나 이상 선택해 주세요.', '#aqPlatforms');
       if (['coverLicenseFile', 'sampleLicenseFile', 'featuredConsentFile', 'sharedContractFile'].some(k => uploads[k]?.state === 'uploading')) return fail('첨부서류 업로드가 끝나면 계속할 수 있어요.', '#aqSpecialOptions');
@@ -1592,6 +1789,7 @@ export function Upload() {
       if (missing) return fail('신청 확인 항목에 모두 동의해 주세요.', `#agree-${missing.id}`);
     }
     setError('');
+    document.querySelectorAll('#view-new .aq-invalid').forEach(el => el.classList.remove('aq-invalid'));
     return true;
   };
 
@@ -1610,6 +1808,7 @@ export function Upload() {
     setStep(to);
     setReached(r => Math.max(r, to));
     setError('');
+    setSubmitError('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -1621,6 +1820,7 @@ export function Upload() {
     if (submittingRef.current) return;
     submittingRef.current = true;
     setSubmitting(true);
+    setSubmitError('');
     try {
       await saveChain.current.catch(() => {});
       const payload = toPayload(form, step);
@@ -1642,12 +1842,17 @@ export function Upload() {
       // 서명한 신청서를 정식 서류로 바로 보여 준다 (보완 재접수는 발매 상세로)
       nav(resubmit ? `/releases/${r.id}` : `/releases/${r.id}/application?done=1`, { replace: true });
     } catch (e) {
+      adoptPartialSave(e);
+      const message = errorMessage(e, '서버와 연결이 원활하지 않아요.');
       if (e instanceof ApiError && e.code === 'DSP_UNAVAILABLE') {
         goStep(3);
         api.listDsps().then(setDsps).catch(err => { setDsps(null); setDspError(errorMessage(err)); });
+        setError(message);
+      } else {
+        // 버튼 위를 가리는 알림 대신, 이유와 다시 시도 버튼을 서명 아래에 펼쳐 보여 준다
+        setSubmitError(message);
+        requestAnimationFrame(() => document.getElementById('wizardSubmitError')?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
       }
-      setError(errorMessage(e, '제출에 실패했어요. 잠시 후 다시 시도해 주세요.'));
-      toast('제출에 실패했어요. 다시 시도해 주세요.');
     } finally {
       submittingRef.current = false;
       setSubmitting(false);
@@ -1666,8 +1871,10 @@ export function Upload() {
       const ok = await confirm({ title: '수정을 그만둘까요?', message: '저장하지 않은 변경 내용은 사라져요.', confirmLabel: '나가기', danger: true });
       if (!ok) return;
     } else if (dirtyRef.current) {
-      await autoSave();
-      if (draftIdRef.current) toast('작성 중인 내용을 임시 저장했어요.', 'info');
+      if (!(await autoSave())) {
+        const ok = await confirm({ title: '임시 저장하지 못했어요', message: '지금 나가면 마지막 저장 이후 입력한 내용이 사라져요. 그래도 나갈까요?', confirmLabel: '나가기', danger: true });
+        if (!ok) return;
+      } else if (draftIdRef.current) toast('작성 중인 내용을 임시 저장했어요.', 'info');
     }
     dirtyRef.current = false;
     nav(editId ? `/releases/${editId}` : '/');
@@ -1703,10 +1910,12 @@ export function Upload() {
       }
       setCoverWarn('');
       set('coverName', file.name);
-      setForm(f => ({ ...f, coverData: thumb.data, coverAssetId: '' }));
+      setForm(f => ({ ...f, coverData: thumb.data, coverAssetId: '', coverThumbAssetId: '' }));
       const assetId = await startUpload('cover', file, 'IMAGE');
       if (assetId) {
-        setForm(f => (f.coverName === file.name ? { ...f, coverAssetId: assetId } : f));
+        // 목록·상세에 보여 줄 작은 미리보기도 서버에 보관한다 (실패해도 원본 커버로 보여 준다)
+        const thumbId = MOCK ? '' : await uploadCoverPreview(thumb.data).catch(() => '');
+        setForm(f => (f.coverName === file.name ? { ...f, coverAssetId: assetId, coverThumbAssetId: thumbId } : f));
         dirtyRef.current = true;
         toast('커버 이미지가 등록됐어요.');
       }
@@ -1815,8 +2024,10 @@ export function Upload() {
     ['발매 정보', `${form.title || '제목 없음'} · ${form.artist || '아티스트 없음'} · ${kindLabel(form.type)}`, 0],
     ['트랙', form.tracks.map(t => t.title || '곡명 없음').join(' / '), 1],
     ['커버아트', form.coverName || '등록되지 않음', 2],
-    ['발매일', form.releaseDate ? formatKoreanDate(form.releaseDate) : '지정하지 않음', 3],
-    ['배급 대상', form.platforms.map(dspLabel).join(', ') || '선택하지 않음', 3],
+    ['발매일', form.releaseDate ? `${formatKoreanDate(form.releaseDate)}${form.releaseTime ? ` · 한국 시간 ${form.releaseTime} 동시 발매` : ' · 나라별 자정'}` : '지정하지 않음', 3],
+    ['사전 공개', form.preorderStart ? `${formatKoreanDate(form.preorderStart)}부터 (예약 판매·미리듣기)` : '없음', 3],
+    ['배급 지역', territorySummary(form.territories, '선택하지 않음'), 3],
+    ['배급 플랫폼', form.platforms.map(dspLabel).join(', ') || '선택하지 않음', 3],
     ['권리자', form.ownership || '미입력', 4],
     ['권리 확인', rightsOk(form) ? '필수 확인 완료' : '필수 확인 항목 누락', 4],
   ];
@@ -1828,7 +2039,7 @@ export function Upload() {
     : save.kind === 'error' ? '저장 실패' : '';
   const saveTitle = !canAutoSave ? '수정 내용은 마지막 단계에서 ‘수정 완료’를 눌러야 반영돼요.'
     : save.kind === 'saved' ? `${save.at}에 자동 저장됐어요.`
-    : save.kind === 'error' ? '자동 저장에 실패했어요. 네트워크를 확인해 주세요.' : '';
+    : save.kind === 'error' ? (save.message || '자동 저장에 실패했어요. 네트워크를 확인해 주세요.') : '';
 
   return (
     <section id="view-new" className="view">
@@ -1943,9 +2154,15 @@ export function Upload() {
                     <li key={`${c.code}-${c.trackId ?? ''}-${i}`} className={here ? 'is-here' : ''}>
                       <span className="aq-fix-step">{c.step + 1}단계 · {STEPS[c.step]?.short}</span>
                       <p><strong>{c.label}</strong>{c.message}</p>
-                      <button type="button" className={`ui-btn is-sm ${here ? 'is-primary' : 'is-soft'}`} onClick={() => jumpToFix(c)}>
-                        {here ? '입력칸 보기' : '고치러 가기'}
-                      </button>
+                      {isDocumentFix(c) ? (
+                        <button type="button" className={`ui-btn is-sm ${here ? 'is-primary' : 'is-soft'}`} onClick={() => nav(fixPath(editId ?? '', c))}>
+                          서류 첨부하기
+                        </button>
+                      ) : (
+                        <button type="button" className={`ui-btn is-sm ${here ? 'is-primary' : 'is-soft'}`} onClick={() => jumpToFix(c)}>
+                          {here ? '입력칸 보기' : '고치러 가기'}
+                        </button>
+                      )}
                     </li>
                   );
                 })}
@@ -1961,7 +2178,7 @@ export function Upload() {
             <div className="form-grid">
               <div className="ui-field">
                 <label htmlFor="f-artist">아티스트명 <span className="required">*</span></label>
-                <input id="f-artist" value={form.artist} onChange={e => set('artist', e.target.value)} maxLength={120} placeholder="예: AUDENIQ" autoComplete="off" />
+                <input id="f-artist" value={form.artist} onChange={e => set('artist', e.target.value)} onBlur={e => void loadKnownPages(e.target.value)} maxLength={120} placeholder="예: AUDENIQ" autoComplete="off" />
               </div>
               <div className="ui-field">
                 <label htmlFor="f-title">발매 제목 <span className="required">*</span></label>
@@ -2030,6 +2247,12 @@ export function Upload() {
                 </label>
               ))}
             </div>
+            {knownPages && Object.values(knownPages.pages).some(p => p.status === 'LINKED') && (
+              <p className="ui-callout is-info small">이전에 등록한 {form.artist} 아티스트 페이지를 불러왔어요. 이번 발매도 같은 페이지에 올라가요.</p>
+            )}
+            {knownPages && !Object.values(knownPages.pages).some(p => p.status === 'LINKED') && Object.values(knownPages.pages).some(p => p.status === 'PENDING') && (
+              <p className="ui-callout is-info small">첫 발매로 {form.artist}의 새 아티스트 페이지가 만들어지고 있어요. 이번 발매도 같은 아티스트로 묶여요. 페이지가 생기면 ‘플랫폼 요청 → 아티스트 프로필’에서 링크를 등록해 주세요.</p>
+            )}
             {!form.artistProfile.isNew && (
               <div className="aq-profile-links ui-on-soft aq-reveal">
                 <p className="aq-profile-links-help">
@@ -2132,17 +2355,17 @@ export function Upload() {
                 </div>
                 <p className="ui-field-help">실제 배급되면 각 플랫폼에 이 커버아트로 표시돼요.</p>
                 <button
-                  type="button" className="ui-btn is-white is-sm"
+                  type="button" className="ui-btn is-danger is-sm aq-cover-remove"
                   onClick={() => {
                     uploadAborts.current.get('cover')?.abort();
                     uploadAborts.current.delete('cover');
                     setUpload('cover', null);
                     set('coverName', '');
-                    setForm(f => ({ ...f, coverData: '', coverAssetId: '' }));
+                    setForm(f => ({ ...f, coverData: '', coverAssetId: '', coverThumbAssetId: '' }));
                     setCoverWarn('');
                     if (coverInputRef.current) coverInputRef.current.value = '';
                   }}
-                >커버 삭제</button>
+                >커버아트 지우기</button>
               </div>
             )}
           </section>
@@ -2157,19 +2380,44 @@ export function Upload() {
                 onChange={v => set('releaseDate', v)}
               />
               <div className="ui-field">
+                <label htmlFor="f-releaseTime">발매 시각</label>
+                <select id="f-releaseTime" className="ui-select" value={form.releaseTime} onChange={e => set('releaseTime', e.target.value)}>
+                  <option value="">나라별 자정 (현지 0시)</option>
+                  {RELEASE_TIMES.map(t => <option key={t} value={t}>한국 시간 {t} 전 세계 동시{t === '18:00' ? ' (국내 표준)' : ''}</option>)}
+                </select>
+                <small className="ui-field-help">국내 음원은 보통 오후 6시에 공개돼요. 동시 발매를 고르면 해외도 같은 순간에 열려요(플랫폼 사정으로 조금 늦을 수 있어요).</small>
+              </div>
+              <div className="ui-field">
                 <label htmlFor="f-upc">음반 코드 UPC (있을 때만)</label>
                 <input id="f-upc" inputMode="numeric" value={form.upc} onChange={e => set('upc', e.target.value.replace(/\D/g, '').slice(0, 13))} maxLength={13} placeholder="없으면 자동 발급돼요" />
               </div>
             </div>
-            <h2 className="subhead">배급 대상</h2>
-            <label className="ui-check is-plain">
-              <input
-                type="checkbox"
-                checked={form.territories.includes('WORLD')}
-                onChange={e => set('territories', e.target.checked ? ['WORLD'] : [])}
-              />
-              <span><strong>전 세계 배급</strong><small>권리를 보유한 지역에만 배급할 수 있어요.</small></span>
-            </label>
+            <h2 className="subhead">사전 공개·예약 판매 <span className="muted small">(선택)</span></h2>
+            <div className="form-grid">
+              <div className="ui-field">
+                <label htmlFor="f-preorder">사전 공개 시작일</label>
+                <input id="f-preorder" type="date" className="ui-input" value={form.preorderStart}
+                  min={form.releaseDate ? shiftDate(form.releaseDate, -90) : undefined}
+                  max={form.releaseDate ? shiftDate(form.releaseDate, -1) : undefined}
+                  onChange={e => set('preorderStart', e.target.value)} />
+                <small className="ui-field-help">이 날부터 플랫폼에 발매 예정 페이지·트랙 목록·커버·미리듣기가 열리고(사전 저장), 다운로드 스토어는 예약 판매를 받아요. 발매일 1–90일 전으로 골라 주세요.</small>
+              </div>
+            </div>
+            {form.tracks.some(t => t.title.trim()) && (
+              <div className="aq-preview-starts">
+                <p className="ui-field-help">곡별 미리듣기·숏폼 클립 시작 지점 (비우면 플랫폼이 정해요). 예: 1:05</p>
+                {form.tracks.filter(t => t.title.trim()).map((t, i) => (
+                  <label key={t.id} className="aq-preview-row">
+                    <span>{i + 1}. {t.title}</span>
+                    <input className="ui-input" inputMode="numeric" placeholder="m:ss" maxLength={5} value={t.previewStart}
+                      aria-invalid={!!t.previewStart.trim() && !previewSecs(t.previewStart)}
+                      onChange={e => setTrack(t.id, 'previewStart', e.target.value.replace(/[^0-9:]/g, ''))} />
+                  </label>
+                ))}
+              </div>
+            )}
+            <h2 className="subhead">배급 지역</h2>
+            <TerritoryPicker value={form.territories} onChange={v => set('territories', v)} />
             <h2 className="subhead">배급 플랫폼</h2>
             <div className="distribution-default">
               <div>
@@ -2221,7 +2469,7 @@ export function Upload() {
         {step === 4 && (
           <section className="step-section">
             <div className="form-grid">
-              <div className="ui-field">
+              <div className="ui-field aq-field-wide">
                 <label htmlFor="f-ownership">음원(마스터) 권리자 <span className="required">*</span></label>
                 <input
                   id="f-ownership" value={form.ownership} maxLength={160} placeholder="개인명 또는 법인명"
@@ -2252,7 +2500,7 @@ export function Upload() {
             </div>
             {!form.ownership && !form.phonogram && !form.copyright && form.artist.trim() && (
               <button
-                type="button" className="ui-btn is-white is-sm aq-autofill"
+                type="button" className="ui-btn is-soft is-block aq-autofill"
                 onClick={() => {
                   const y = (form.releaseDate || todayStr()).slice(0, 4);
                   const who = form.label.trim() || form.artist.trim();
@@ -2260,7 +2508,8 @@ export function Upload() {
                   dirtyRef.current = true;
                 }}
               >
-                ‘{form.label.trim() || form.artist.trim()}’(으)로 권리자 정보 채우기
+                <Glyph name="pencil" size={15} className="aq-glyph-lead" />
+                <span className="aq-autofill-text">‘{form.label.trim() || form.artist.trim()}’(으)로 권리자 정보 채우기</span>
               </button>
             )}
             <div id="aqSpecialOptions" className="aq-fix-zone"><OptionsSection form={form} set={set} group="rights" onDocument={attachOptionDocument} uploads={uploads} onElectronic={kind => void openElectronic(kind)} onOpenDoc={setOpenDocId} releaseId={draftIdRef.current ?? undefined} /></div>
@@ -2298,6 +2547,10 @@ export function Upload() {
               허락서·동의서는 위의 AUDENIQ 전자 문서 도구에서 작성하고 권리자가 직접 서명할 수 있어요. 완성된 서류는 ‘권리·보완 서류’에도 보관돼요.
             </div>
             <OptionDocsBanner options={form.options} />
+            {/* 공동작업자 수익 분배: 임시 저장된 발매(서버의 곡 목록)를 기준으로 정한다 */}
+            {draftIdRef.current
+              ? <SplitsCard releaseId={draftIdRef.current} embedded />
+              : !MOCK && <p className="small muted">임시 저장이 끝나면 공동작업자 수익 분배를 정할 수 있어요.</p>}
           </section>
         )}
 
@@ -2306,9 +2559,11 @@ export function Upload() {
             <div className="aq-catalog-cards aq-stagger">
               {reviewSections.map(([h, t, target]) => (
                 <div key={h} className="aq-review-card">
-                  <strong>{h}</strong>
-                  <p className="break">{t}</p>
-                  <button type="button" className="ui-btn is-white is-sm aq-review-edit" onClick={() => goStep(target)} aria-label={`${h} 수정`}>수정</button>
+                  <div className="aq-review-body">
+                    <strong>{h}</strong>
+                    <p className="break">{t}</p>
+                  </div>
+                  <button type="button" className="ui-btn is-white is-xs aq-review-edit" onClick={() => goStep(target)} aria-label={`${h} 수정`}>수정</button>
                 </div>
               ))}
             </div>
@@ -2367,6 +2622,19 @@ export function Upload() {
       </div>
 
       {error && <div id="wizardError" className="ui-callout is-danger aq-shake" role="alert" key={error}>{error}</div>}
+      {submitError && step === STEPS.length - 1 && (
+        <div id="wizardSubmitError" className="aq-submit-error ui-tone-danger" role="alert">
+          <span className="aq-submit-error-icon" aria-hidden="true"><Glyph name="alert" size={18} /></span>
+          <div className="aq-submit-error-text">
+            <strong>{resubmit ? '다시 접수하지 못했어요' : '접수하지 못했어요'}</strong>
+            <p>{submitError}</p>
+            <small>입력한 내용{resubmit ? '' : '과 서명'}은 그대로 남아 있어요. 잠시 후 다시 시도해 주세요.</small>
+          </div>
+          <button type="button" className="ui-btn is-primary is-sm" onClick={() => void submit()} disabled={submitting}>
+            {submitting ? '접수하는 중' : '다시 시도'}
+          </button>
+        </div>
+      )}
       </div>
       </div>
 

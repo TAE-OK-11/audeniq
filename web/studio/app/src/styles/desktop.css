@@ -189,10 +189,9 @@
   #view-new .aq-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   #view-new .aq-options > .aq-option { margin: 0 !important; height: 100%; }
   #view-new .aq-options > :not(.aq-option) { grid-column: 1 / -1; margin: 0 !important; }
-  /* 6단계 최종 확인 — 항목 카드 2칸, 수정 버튼은 오른쪽 위 */
+  /* 6단계 최종 확인 — 항목 카드 2칸, 수정 버튼은 오른쪽 */
   #view-new .step-section > .aq-catalog-cards:has(.aq-review-card) {
     display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: stretch;
   }
-  #view-new .aq-review-card { margin: 0 !important; padding-right: 76px; }
-  #view-new .aq-review-card .aq-review-edit { position: absolute; top: 14px; right: 14px; margin: 0; }
+  #view-new .aq-review-card { margin: 0 !important; }
 }

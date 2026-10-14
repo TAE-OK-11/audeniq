@@ -16,6 +16,8 @@ x86 전용 digest를 복사해 사용하지 않는다.
 | 일반 ARM64, Graviton2/3 | `sha-<commit>` | `generic` / `-march=armv8-a` |
 | AMD/Intel AVX2 | `sha-<commit>-x86-64-v3` | `x86-64-v3` / `-march=x86-64-v3` |
 | AWS Graviton4 | `sha-<commit>-graviton4` | `neoverse-v2` / `-mcpu=neoverse-v2` |
+| Oracle Cloud A4 (AmpereOne M) | `sha-<commit>-ampere-a4` | `ampere1a` / `-mcpu=ampere1a` |
+| Oracle Cloud Ampere A1, AWS Graviton2 이상 | `sha-<commit>-ampere-a1` | `neoverse-n1` / `-mcpu=neoverse-n1` |
 
 공용 태그는 Docker가 아키텍처를 자동으로 선택한다. `main`, `latest`에도
 같은 CPU 접미사를 사용할 수 있다. 운영에서는 커밋 태그를 받아 digest로
@@ -26,6 +28,8 @@ CPU 기준선 확인은 샌드박스 검사와 DB 마이그레이션보다 먼�
 Graviton4 최적화 이미지는 모든 노출된 코어가 Arm Neoverse V2
 (implementer `0x41`, part `0xd4f`)인지와 커널의 LSE/SVE/SVE2 등 지원을
 확인한다. CPU 정보가 감춰져 있거나 다른 ARM CPU라면 공용 이미지를 사용한다.
+Ampere A1 이미지(`neoverse-n1`)는 모든 코어가 ARMv8.2 원자 연산·내적·RCpc
+(`atomics asimddp lrcpc`)를 지원하는지만 본다. 그래서 Ampere Altra, AmpereOne, Graviton2/3/4에서 모두 실행된다.
 
 ## Graviton4 최적화
 

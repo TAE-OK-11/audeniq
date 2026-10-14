@@ -96,17 +96,39 @@ pub struct Staff {
 /// endpoint set is not secret, the data is).
 pub async fn staff(s: &AppState, h: &HeaderMap, write: bool) -> Result<Staff> {
     let actor = auth::actor(&s.pool, h, &s.config, write).await?;
-    let role: Option<String> = sqlx::query_scalar(
-        "SELECT sm.role FROM identity.staff_members sm JOIN identity.users u ON u.id=sm.user_id
-         WHERE sm.user_id=$1 AND sm.status='ACTIVE' AND u.status='ACTIVE'",
+    // Role and session protection (idle timeout, second factor) in one read.
+    let row = sqlx::query(
+        "SELECT sm.role,
+                se.last_seen_at < now() - make_interval(mins => $3) AS idle,
+                extract(epoch FROM now() - se.last_seen_at)::float8 AS seen_seconds,
+                se.mfa_at IS NOT NULL AS mfa, m.enrolled_at IS NOT NULL AS enrolled
+           FROM identity.staff_members sm JOIN identity.users u ON u.id=sm.user_id
+           JOIN identity.sessions se ON se.token_hash=$2 AND se.user_id=sm.user_id
+           LEFT JOIN identity.staff_mfa m ON m.user_id=sm.user_id
+          WHERE sm.user_id=$1 AND sm.status='ACTIVE' AND u.status='ACTIVE'",
     )
     .bind(actor.user)
+    .bind(&actor.session_hash)
+    .bind(crate::staff_mfa::IDLE_MINUTES as i32)
     .fetch_optional(&s.pool)
-    .await?;
-    let role = role
+    .await?
+    .ok_or(Error::Forbidden)?;
+    let role = row
+        .get::<Option<String>, _>("role")
         .as_deref()
         .and_then(StaffRole::parse)
         .ok_or(Error::Forbidden)?;
+    crate::staff_mfa::check_session(
+        s,
+        &actor,
+        &crate::staff_mfa::Gate {
+            idle: row.get("idle"),
+            mfa: row.get("mfa"),
+            enrolled: row.get("enrolled"),
+            seen_seconds: row.get("seen_seconds"),
+        },
+    )
+    .await?;
     // Fail closed if the durable access record cannot be written. This includes
     // reads; the existing operations audit only records business mutations.
     let route = h
@@ -142,14 +164,14 @@ pub(crate) fn require(st: &Staff, duty: Duty) -> Result<()> {
 
 /// Cross-org visibility for RLS tables whose policy honours `app.staff`
 /// (delivery staging). Only called after `staff()` succeeded.
-async fn staff_scope(c: &mut PgConnection) -> Result<()> {
+pub(crate) async fn staff_scope(c: &mut PgConnection) -> Result<()> {
     sqlx::query("SELECT set_config('app.staff','on',true)")
         .execute(&mut *c)
         .await?;
     Ok(())
 }
 
-fn note_ok(s: &str, max: usize) -> Result<()> {
+pub(crate) fn note_ok(s: &str, max: usize) -> Result<()> {
     if s.chars().count() > max {
         return Err(Error::InvalidCode("NOTE_TOO_LONG"));
     }
@@ -214,7 +236,7 @@ pub async fn overview(s: &AppState, h: &HeaderMap) -> Result<Value> {
            (SELECT count(*) FROM catalog.releases r WHERE r.archived_at IS NULL AND ",
         awaiting_decision!(),
         ") AS review,
-           (SELECT count(*) FROM catalog.releases WHERE status LIKE '%\\_CORRECTION' AND archived_at IS NULL) AS correction,
+           (SELECT count(*) FROM catalog.releases WHERE status IN ('STAGE1_CORRECTION','STAGE2_CORRECTION','STAGE3_CORRECTION') AND archived_at IS NULL) AS correction,
            (SELECT count(*) FROM catalog.releases WHERE status IN ('SUBMITTED','STAGE1_RUNNING','STAGE1_PASSED','STAGE2_RUNNING','STAGE2_PASSED','STAGE3_PREPARING')) AS in_pipeline,
            (SELECT count(*) FROM rights.staff_approvals a JOIN catalog.releases r ON r.id=a.release_id
               WHERE a.status='PENDING' AND a.expires_at>now() AND a.revision_id=r.current_revision_id
@@ -222,12 +244,12 @@ pub async fn overview(s: &AppState, h: &HeaderMap) -> Result<Value> {
            (SELECT count(*) FROM portal.documents WHERE kind='RIGHTS_PROOF' AND status='REVIEW') AS documents,
            (SELECT count(*) FROM portal.inquiries WHERE status='OPEN') AS inquiries,
            (SELECT count(*) FROM distribution.delivery_staging s JOIN catalog.releases r ON r.id=s.release_id AND r.current_revision_id=s.revision_id
-              WHERE s.approval='PENDING' AND s.readiness<>'CONTENT_BLOCKED' AND r.status<>'WITHDRAWN') AS deliveries_to_approve,
+              WHERE s.approval='PENDING' AND s.readiness<>'CONTENT_BLOCKED' AND r.status='READY_FOR_DELIVERY' AND r.archived_at IS NULL) AS deliveries_to_approve,
            (SELECT count(*) FROM distribution.delivery_staging s JOIN catalog.releases r ON r.id=s.release_id AND r.current_revision_id=s.revision_id
-              WHERE s.readiness='CONTENT_BLOCKED' AND r.status<>'WITHDRAWN') AS deliveries_blocked,
+              WHERE s.readiness='CONTENT_BLOCKED' AND r.status='READY_FOR_DELIVERY' AND r.archived_at IS NULL) AS deliveries_blocked,
            (SELECT count(DISTINCT s.release_id) FROM distribution.delivery_staging s
               JOIN catalog.releases r ON r.id=s.release_id AND r.current_revision_id=s.revision_id
-              WHERE s.approval='PENDING'
+              WHERE s.approval='PENDING' AND r.status='READY_FOR_DELIVERY' AND r.archived_at IS NULL
               AND EXISTS(SELECT 1 FROM jsonb_array_elements(s.checks) c WHERE c->>'code' IN ('DSP_LOUDNESS_ADVISORY','DSP_CLIPPING_ADVISORY'))) AS audio_advisories,
            (SELECT count(*) FROM portal.payout_requests WHERE status='REQUESTED') AS payout_requests"
     );
@@ -274,54 +296,71 @@ pub async fn list_releases(s: &AppState, h: &HeaderMap, p: Page) -> Result<Value
         return Err(Error::InvalidCode("STATUS_UNKNOWN"));
     }
     let (limit, offset) = p.bounds();
-    // `$1` is PENDING (awaiting a decision) or a release status.
-    const SQL: &str = concat!(
-        "SELECT jsonb_build_object(
+    // Two statements rather than `r.status=$1 OR ($1='PENDING' AND ...)`:
+    // a prepared statement's generic plan cannot use the status index
+    // through that OR and scanned every release (migration 0101).
+    macro_rules! list_sql {
+        ($filter:expr, $page:expr) => {
+            concat!(
+                "SELECT jsonb_build_object(
            'id', r.id, 'org_id', r.org_id, 'org_name', o.name, 'title', r.title,
            'release_type', r.release_type, 'status', r.status, 'revision_id', r.current_revision_id,
            'artist', ar.body #>> '{release,draft,artist}',
            'release_date', ar.body #>> '{release,draft,release_date}',
            'submitted_at', ar.created_at,
            'platforms', COALESCE(ar.body #> '{release,draft,platforms}', '[]'::jsonb),
-           'cover', NULLIF(r.draft->>'coverData', ''),
+           'cover', COALESCE(NULLIF(r.draft->>'coverData', ''), '/api/staff/assets/' || COALESCE(NULLIF(r.draft->>'coverThumbAssetId', ''), NULLIF(r.draft->>'coverAssetId', ''), r.artwork_asset_id::text) || '/image'),
            'agreement', (SELECT d.status FROM portal.documents d
                           WHERE d.org_id=r.org_id AND d.release_id=r.id AND d.kind='AGREEMENT'),
-           'claim', (SELECT jsonb_build_object('user_id', c.claimed_by, 'email', u.email, 'at', c.claimed_at)
+           'claim', (SELECT jsonb_build_object('user_id', c.claimed_by, 'email', ",
+        crate::email_ref!("u"),
+        ", 'at', c.claimed_at)
                        FROM rights.review_claims c JOIN identity.users u ON u.id=c.claimed_by
                       WHERE c.release_id=r.id))
          FROM catalog.releases r
          JOIN identity.orgs o ON o.id=r.org_id
          LEFT JOIN catalog.application_revisions ar ON ar.org_id=r.org_id AND ar.id=r.current_revision_id
-         WHERE r.archived_at IS NULL AND (r.status=$1 OR ($1='PENDING' AND ",
-        awaiting_decision!(),
-        "))
+         WHERE r.archived_at IS NULL AND ",
+                $filter,
+                "
          ORDER BY ar.created_at NULLS LAST, r.id
-         LIMIT $2 OFFSET $3"
-    );
-    let items: Vec<Value> = sqlx::query_scalar(SQL)
-        .bind(status)
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(&s.pool)
-        .await?;
+         ",
+                $page
+            )
+        };
+    }
+    const PENDING_SQL: &str = list_sql!(awaiting_decision!(), "LIMIT $1 OFFSET $2");
+    const STATUS_SQL: &str = list_sql!("r.status=$1", "LIMIT $2 OFFSET $3");
+    let query = if status == PENDING_FILTER {
+        sqlx::query_scalar(PENDING_SQL)
+    } else {
+        sqlx::query_scalar(STATUS_SQL).bind(status)
+    };
+    let items: Vec<Value> = query.bind(limit).bind(offset).fetch_all(&s.pool).await?;
     let items: Vec<Value> = items
         .into_iter()
         .map(|mut v| {
             let codes = platform_codes(&v["platforms"]);
             v["platforms"] = json!(codes);
-            v
+            crate::pii::reveal(&s.payout_keys, &mut v)?;
+            Ok(v)
         })
-        .collect();
+        .collect::<Result<_>>()?;
     Ok(json!({"items": items, "limit": limit, "offset": offset}))
 }
 
 /// Studio slugs -> D-codes for staff screens (unknown values dropped).
 fn platform_codes(v: &Value) -> Vec<&'static str> {
-    dsp_registry::requested(&json!({"platforms": v}))
+    let platforms = json!({"platforms": v});
+    let mut codes: Vec<&'static str> = dsp_registry::requested(&platforms)
         .unwrap_or_default()
         .into_iter()
         .map(Dsp::code)
-        .collect()
+        .collect();
+    if crate::mockdsp::studio_selected(&platforms) {
+        codes.push(crate::mockdsp::STUDIO_PARTNER);
+    }
+    codes
 }
 
 struct OpenCheck {
@@ -539,7 +578,7 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
     let r = sqlx::query(
         "SELECT r.id, r.org_id, o.name AS org_name, r.title, r.release_type, r.status, r.upc,
                 r.current_revision_id, ar.body AS revision, ar.created_at AS submitted_at,
-                NULLIF(r.draft->>'coverData', '') AS cover,
+                COALESCE(NULLIF(r.draft->>'coverData', ''), '/api/staff/assets/' || COALESCE(NULLIF(r.draft->>'coverThumbAssetId', ''), NULLIF(r.draft->>'coverAssetId', ''), r.artwork_asset_id::text) || '/image') AS cover,
                 (SELECT coalesce(jsonb_object_agg(t->>'id', jsonb_build_object(
                     'duration_secs',a.duration_secs,'sample_rate',a.sample_rate,
                     'channels',a.channels,'bits_per_sample',a.bits_per_sample)), '{}'::jsonb)
@@ -624,20 +663,37 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
     .bind(release)
     .fetch_all(&mut *tx)
     .await?;
-    let application: Option<Value> = sqlx::query_scalar(
+    let mut application: Option<Value> = sqlx::query_scalar(concat!(
         "SELECT jsonb_build_object('application_no',ra.application_no,'form',ra.form,'content_hash',ra.content_hash,
                 'signer_name',ra.signer_name,'signer_role',ra.signer_role,'agreements',ra.agreements,'received_at',ra.received_at,
                 'signature',ra.signature,
-                'contact_email',COALESCE(NULLIF(ap.contact_email,''),u.email))
+                'contact_email',",
+        crate::pii_ref!(
+            "profile_contact_email",
+            "ap.user_id",
+            "NULLIF(ap.contact_email,'')",
+            "ap.contact_email_cipher"
+        ),
+        ",'account_email',",
+        crate::email_ref!("u"),
+        ")
          FROM portal.release_applications ra
          JOIN identity.users u ON u.id=ra.submitted_by
          LEFT JOIN portal.artist_profiles ap ON ap.user_id=ra.submitted_by
-         WHERE ra.org_id=$1 AND ra.release_id=$2 ORDER BY ra.received_at DESC LIMIT 1",
-    )
+         WHERE ra.org_id=$1 AND ra.release_id=$2 ORDER BY ra.received_at DESC LIMIT 1"
+    ))
     .bind(org)
     .bind(release)
     .fetch_optional(&mut *tx)
     .await?;
+    if let Some(app) = application.as_mut() {
+        crate::pii::reveal(&s.payout_keys, app)?;
+        // Profile contact email, else the account's login email.
+        let account = app.as_object_mut().and_then(|o| o.remove("account_email"));
+        if app["contact_email"].is_null() {
+            app["contact_email"] = account.unwrap_or(Value::Null);
+        }
+    }
     let staging: Vec<Value> = sqlx::query_scalar(
         "SELECT jsonb_build_object('package_id',package_id,'dsp',dsp_code,'readiness',readiness,'approval',approval,
                 'checks',checks,'route_status',route_status,'route_reason',route_reason,
@@ -674,7 +730,7 @@ pub async fn release_detail(s: &AppState, h: &HeaderMap, release: Uuid) -> Resul
         "READY_FOR_DELIVERY" if revision.is_some() && agreement_pending => Some("APPLICATION"),
         _ => None,
     };
-    let claim = review_claim(&mut tx, release).await?;
+    let claim = review_claim(&s.payout_keys, &mut tx, release).await?;
     let mine = claim.as_ref().is_some_and(|c| c.user == st.actor.user);
     let mut allowed = Vec::new();
     // 담당자만 결정할 수 있다 — 아직 아무도 맡지 않았거나 다른 담당자가 맡은 건은 읽기 전용
@@ -776,17 +832,31 @@ struct ReviewClaim {
     at: chrono::DateTime<chrono::Utc>,
 }
 
-async fn review_claim(c: &mut PgConnection, release: Uuid) -> Result<Option<ReviewClaim>> {
+async fn review_claim(
+    keys: &crate::payout_keys::KeyRing,
+    c: &mut PgConnection,
+    release: Uuid,
+) -> Result<Option<ReviewClaim>> {
     let row = sqlx::query(
-        "SELECT c.claimed_by, u.email, c.claimed_at FROM rights.review_claims c
+        "SELECT c.claimed_by, u.email, u.email_cipher, c.claimed_at FROM rights.review_claims c
            JOIN identity.users u ON u.id=c.claimed_by WHERE c.release_id=$1",
     )
     .bind(release)
     .fetch_optional(&mut *c)
     .await?;
-    Ok(row.map(|r| ReviewClaim {
-        user: r.get("claimed_by"),
-        email: r.get("email"),
+    let Some(r) = row else { return Ok(None) };
+    let user: Uuid = r.get("claimed_by");
+    let email = crate::pii::open(
+        keys,
+        crate::payout_keys::Field::UserEmail,
+        user,
+        r.get("email"),
+        r.get::<Option<Vec<u8>>, _>("email_cipher").as_deref(),
+    )?
+    .unwrap_or_default();
+    Ok(Some(ReviewClaim {
+        user,
+        email,
         at: r.get("claimed_at"),
     }))
 }
@@ -972,6 +1042,22 @@ async fn pending_agreement(c: &mut PgConnection, org: Uuid, release: Uuid) -> Re
 /// Decide the release's agreement together with the release. `REJECTED`
 /// closes every unsigned agreement of the release so it can never be signed;
 /// the other outcomes only touch one still waiting on staff.
+/// The agreement awaiting approval must carry its commercial terms.
+async fn require_agreement_terms(c: &mut PgConnection, org: Uuid, release: Uuid) -> Result<()> {
+    let missing: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM portal.documents WHERE org_id=$1 AND release_id=$2 AND kind='AGREEMENT'
+           AND status IN ('REVIEW','PREPARED') AND agreement_terms IS NULL)",
+    )
+    .bind(org)
+    .bind(release)
+    .fetch_one(&mut *c)
+    .await?;
+    if missing {
+        return Err(Error::PolicyGate("AGREEMENT_TERMS_REQUIRED"));
+    }
+    Ok(())
+}
+
 async fn decide_agreement(
     c: &mut PgConnection,
     org: Uuid,
@@ -984,17 +1070,7 @@ async fn decide_agreement(
     // An approved agreement goes to the artist for signature, so its
     // commercial terms (fee, exclusivity …) must be entered first.
     if status == "APPROVED" {
-        let missing: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM portal.documents WHERE org_id=$1 AND release_id=$2 AND kind='AGREEMENT'
-               AND status IN ('REVIEW','PREPARED') AND agreement_terms IS NULL)",
-        )
-        .bind(org)
-        .bind(release)
-        .fetch_one(&mut *c)
-        .await?;
-        if missing {
-            return Err(Error::PolicyGate("AGREEMENT_TERMS_REQUIRED"));
-        }
+        require_agreement_terms(c, org, release).await?;
     }
     let ids: Vec<Uuid> = sqlx::query_scalar(
         "UPDATE portal.documents SET status=$3, review_note=$4, row_version=row_version+1, updated_at=now()
@@ -1058,15 +1134,23 @@ async fn decide_application(
     )
     .await?;
     if next.is_some() {
-        for n in &i.notes {
+        let notes = if i.action == "REQUEST_CORRECTION" {
+            correction_notes(c, org, release, &i.notes).await?
+        } else {
+            i.notes
+                .iter()
+                .map(|n| (n.check_code.clone(), n.note.clone()))
+                .collect()
+        };
+        for (code, note) in &notes {
             write_note(
                 c,
                 org,
                 release,
                 i.revision_id,
-                Some(n.check_code.as_str()),
+                Some(code.as_str()),
                 &i.action,
-                &n.note,
+                note,
                 actor.user,
             )
             .await?;
@@ -1110,6 +1194,55 @@ async fn decide_application(
     .await?;
     Ok(result)
 }
+
+/// A correction item can ask for a file instead of an application field:
+/// 「추가 서류」(`FIX_DOCUMENT`). The application editor has nowhere to attach
+/// it, so each such item also files a rights-proof request (AWAITING_DOCUMENTS,
+/// the insert trigger notifies the org) and its note is stored as
+/// `FIX_DOCUMENT@<document id>`, letting Studio open that request's attach
+/// window from 보완하기. Other items pass through unchanged.
+async fn correction_notes(
+    c: &mut PgConnection,
+    org: Uuid,
+    release: Uuid,
+    notes: &[CheckNote],
+) -> Result<Vec<(String, String)>> {
+    let mut out = Vec::with_capacity(notes.len());
+    for n in notes {
+        if n.check_code != FIX_DOCUMENT {
+            out.push((n.check_code.clone(), n.note.clone()));
+            continue;
+        }
+        let first = n
+            .note
+            .lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty())
+            .unwrap_or("");
+        let title: String = if first.is_empty() {
+            "추가 서류".to_owned()
+        } else {
+            first.chars().take(200).collect()
+        };
+        crate::text_policy::check(&title)?;
+        let id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO portal.documents(id,org_id,release_id,kind,title,body,status) VALUES($1,$2,$3,'RIGHTS_PROOF',$4,$5,'AWAITING_DOCUMENTS')",
+        )
+        .bind(id)
+        .bind(org)
+        .bind(release)
+        .bind(&title)
+        .bind(&n.note)
+        .execute(&mut *c)
+        .await?;
+        out.push((format!("{FIX_DOCUMENT}@{id}"), n.note.clone()));
+    }
+    Ok(out)
+}
+
+/// Correction item code for "attach this document" (see [`correction_notes`]).
+const FIX_DOCUMENT: &str = "FIX_DOCUMENT";
 
 #[allow(clippy::too_many_arguments)]
 async fn write_note(
@@ -1247,6 +1380,10 @@ pub async fn decide(s: &AppState, h: &HeaderMap, release: Uuid, i: DecisionInput
     let out = match i.action.as_str() {
         "APPROVE" => {
             if open.iter().any(sensitive) {
+                // The second approver approves the agreement too and cannot
+                // edit its terms (only the claimer can): require them now,
+                // or the request could never be approved.
+                require_agreement_terms(&mut tx, org, release).await?;
                 // Rights/money classes and BLOCKED findings need a second
                 // staff reviewer: file one request per revision.
                 close_pending_approvals(&mut tx, org, release, i.revision_id, true, &st.actor)
@@ -1352,15 +1489,15 @@ pub async fn decide(s: &AppState, h: &HeaderMap, release: Uuid, i: DecisionInput
                 user,
             )
             .await?;
-            for n in &i.notes {
+            for (code, note) in correction_notes(&mut tx, org, release, &i.notes).await? {
                 write_note(
                     &mut tx,
                     org,
                     release,
                     i.revision_id,
-                    Some(n.check_code.as_str()),
+                    Some(code.as_str()),
                     "REQUEST_CORRECTION",
-                    &n.note,
+                    &note,
                     user,
                 )
                 .await?;
@@ -2100,9 +2237,12 @@ pub async fn list_deliveries(s: &AppState, h: &HeaderMap, p: DeliveryPage) -> Re
          FROM distribution.delivery_staging s
          JOIN identity.orgs o ON o.id=s.org_id
          JOIN catalog.releases r ON r.org_id=s.org_id AND r.id=s.release_id
-         -- Only the release's current revision: a superseded package (e.g.
-         -- sent back for code re-issue) is history, not work.
+         -- Only the release's current revision of a release that is still
+         -- deliverable: a superseded package, a withdrawn release or one
+         -- sent back for code re-issue is history, not work (staff actions
+         -- on it fail as STAGING_SUPERSEDED).
          WHERE s.revision_id=r.current_revision_id
+           AND r.status='READY_FOR_DELIVERY' AND r.archived_at IS NULL
            AND s.approval=$1 AND ($2::text IS NULL OR s.readiness=$2) AND ($3::text IS NULL OR s.dsp_code=$3)
          ORDER BY s.staged_at, s.dsp_code LIMIT $4 OFFSET $5",
     )
@@ -2536,6 +2676,33 @@ pub async fn payout_requests(s: &AppState, h: &HeaderMap, p: Page) -> Result<Val
 // Router
 // ---------------------------------------------------------------------------
 
+async fn h_print_stamp(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Json(i): Json<crate::print_stamp::StampInput>,
+) -> Result<Json<Value>> {
+    Ok(Json(crate::print_stamp::stamp_staff(&s, &h, i).await?))
+}
+async fn h_print_verify(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<crate::print_stamp::VerifyQuery>,
+) -> Result<Json<Value>> {
+    Ok(Json(crate::print_stamp::verify_staff(&s, &h, q).await?))
+}
+async fn h_mfa_status(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
+    Ok(Json(crate::staff_mfa::status(&s, &h).await?))
+}
+async fn h_mfa_enroll(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
+    Ok(Json(crate::staff_mfa::enroll(&s, &h).await?))
+}
+async fn h_mfa_verify(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Json(i): Json<crate::staff_mfa::VerifyInput>,
+) -> Result<Json<Value>> {
+    Ok(Json(crate::staff_mfa::verify(&s, &h, i).await?))
+}
 async fn h_me(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     Ok(Json(me(&s, &h).await?))
 }
@@ -2686,6 +2853,29 @@ async fn h_document_file(
     );
     Ok(res)
 }
+/// Cover art (and its preview) of a release under review: staff with the
+/// review or documents duty, any org.
+async fn h_asset_image(
+    State(s): State<AppState>,
+    Path(id): Path<Uuid>,
+    h: HeaderMap,
+) -> Result<axum::response::Response> {
+    let st = staff(&s, &h, false).await?;
+    if require(&st, Duty::Documents).is_err() {
+        require(&st, Duty::Review)?;
+    }
+    let mut tx = s.pool.begin().await?;
+    staff_scope(&mut tx).await?;
+    let org: Uuid =
+        sqlx::query_scalar("SELECT org_id FROM catalog.assets WHERE id=$1 AND kind='IMAGE'")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(Error::NotFound)?;
+    tx.commit().await?;
+    let img = crate::uploads::stored_image(&s, org, id).await?;
+    Ok(crate::uploads::image_response(img, &h))
+}
 async fn h_request_proof(
     State(s): State<AppState>,
     Path(org): Path<Uuid>,
@@ -2790,6 +2980,11 @@ async fn h_payouts(
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/staff/me", get(h_me))
+        .route("/api/staff/mfa", get(h_mfa_status))
+        .route("/api/staff/print-stamps", post(h_print_stamp))
+        .route("/api/staff/print-stamps/verify", get(h_print_verify))
+        .route("/api/staff/mfa/enroll", post(h_mfa_enroll))
+        .route("/api/staff/mfa/verify", post(h_mfa_verify))
         .route(
             "/api/staff/content-access",
             get(h_content_access).post(h_content_access),
@@ -2824,6 +3019,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/staff/documents", get(h_documents))
         .route("/api/staff/documents/{id}/review", post(h_document_review))
         .route("/api/staff/documents/{id}/file", get(h_document_file))
+        .route("/api/staff/assets/{id}/image", get(h_asset_image))
         .route("/api/staff/orgs/{org}/documents", post(h_request_proof))
         .route("/api/staff/inquiries", get(h_inquiries))
         .route("/api/staff/inquiries/{id}", get(h_inquiry))

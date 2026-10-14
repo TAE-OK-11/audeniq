@@ -20,6 +20,8 @@ use std::collections::BTreeMap;
 pub struct Extras {
     pub genre: Option<String>,
     pub label: Option<String>,
+    /// Track lyrics by track id (absent: instrumental or none given).
+    pub lyrics: std::collections::BTreeMap<uuid::Uuid, String>,
 }
 
 fn role_bucket(role: &str) -> Option<&'static str> {
@@ -101,6 +103,7 @@ pub fn release_json(
                 "explicit": explicit,
                 "adult_only": explicit,
                 "credits": credits,
+                "lyrics": extras.lyrics.get(&t.id),
                 "file": file_for(&t.audio.sha256, FileRole::Audio),
             })
         })
@@ -122,6 +125,13 @@ pub fn release_json(
         "explicit": p.explicit,
         "adult_only": p.explicit,
         "track_count": p.tracks.len(),
+        // Where the release may be offered: {"mode":"worldwide"},
+        // {"mode":"world_except","codes":[..]} or {"mode":"only","codes":[..]}.
+        "territories": p.territories,
+        // Simultaneous release time (KST "HH:MM"), null = local midnight.
+        "release_time_kst": p.release_time,
+        // Pre-release start (pre-save, previews, pre-orders), null = none.
+        "preorder_start": p.preorder_start,
         "cover": file_for(&p.artwork.sha256, FileRole::Artwork),
         "tracks": tracks,
     });
@@ -170,9 +180,11 @@ pub const CSV_COLUMNS: &[&str] = &[
     "file",
     "sha256",
     "cover_file",
+    "territories",
+    "lyrics",
 ];
 
-fn csv_cell(s: &str) -> String {
+pub(crate) fn csv_cell(s: &str) -> String {
     // Spreadsheet formula injection: a leading = + - @ is neutralized.
     let s = if s.starts_with(['=', '+', '-', '@']) {
         format!("'{s}")
@@ -257,6 +269,8 @@ pub fn release_csv(
                 .unwrap_or("")
                 .into(),
             cover.clone(),
+            p.territories.summary(),
+            s(&t["lyrics"]),
         ];
         let cells: Vec<String> = row.iter().map(|c| csv_cell(c)).collect();
         out.push_str(&cells.join(","));

@@ -32,7 +32,16 @@ pub struct AppState {
     /// Bound R2 completion IO before opening database transactions.
     pub upload_slots: Arc<Semaphore>,
     /// Lossless → FLAC conversions at upload completion (CPU and temp disk).
+    /// Held for the conversion only, not for downloads or uploads.
     pub transcode_slots: Arc<Semaphore>,
+    /// How long a completion waits in line for `transcode_slots` before
+    /// answering UPLOAD_BUSY (the semaphore is FIFO). A conversion takes
+    /// seconds, so waiting beats the client's 2–10 s retry backoff; it stays
+    /// well under the edge's 100 s request limit.
+    pub transcode_wait: std::time::Duration,
+    /// Inline images (electronic signatures, profile images): a few KB each,
+    /// so they never wait behind an audio conversion in `transcode_slots`.
+    pub inline_slots: Arc<Semaphore>,
     pub dummy_hash: String,
     pub payout_keys: Arc<crate::payout_keys::KeyRing>,
     pub antivirus_enabled: bool,
@@ -41,13 +50,16 @@ pub struct AppState {
 impl AppState {
     pub async fn new(pool: PgPool, config: Config, storage: Arc<dyn ObjectStore>) -> Result<Self> {
         let service_secret_digest = auth::token_digest(&config.service_secret);
+        auth::init_rate_key(&config.service_secret);
         Ok(Self {
             pool,
             config,
             storage,
             password_slots: Arc::new(Semaphore::new(2)),
-            upload_slots: Arc::new(Semaphore::new(4)),
+            upload_slots: Arc::new(Semaphore::new(6)),
             transcode_slots: Arc::new(Semaphore::new(1)),
+            transcode_wait: std::time::Duration::from_secs(45),
+            inline_slots: Arc::new(Semaphore::new(2)),
             payout_keys: Arc::new(crate::payout_keys::KeyRing::from_env(false)?),
             antivirus_enabled: crate::config::antivirus_enabled()?,
             dummy_hash: auth::password_hash(auth::random_token()).await?,
@@ -70,6 +82,29 @@ pub fn router(s: AppState) -> Router {
         .route("/api/auth/sessions", get(sessions))
         .route("/api/auth/sessions/{id}/revoke", post(revoke_session))
         .route("/api/auth/password", post(change_password))
+        .route("/api/auth/passkey/options", post(passkey_login_options))
+        .route("/api/auth/passkey/login", post(passkey_login))
+        .route("/api/auth/passkeys", get(passkey_list))
+        .route("/api/auth/passkeys/options", post(passkey_register_options))
+        .route("/api/auth/passkeys/register", post(passkey_register))
+        .route(
+            "/api/auth/passkeys/{id}",
+            axum::routing::delete(passkey_remove),
+        )
+        .route("/api/document-keys", get(document_keys))
+        .route("/api/print-stamps", post(print_stamp))
+        .route("/api/print-stamps/verify", get(print_verify))
+        .route("/api/auth/oauth/providers", get(oauth_providers))
+        .route("/api/auth/oauth/identities", get(oauth_identities))
+        .route(
+            "/api/auth/oauth/identities/{id}",
+            axum::routing::delete(oauth_unlink),
+        )
+        .route("/api/auth/oauth/{provider}/start", post(oauth_start))
+        .route(
+            "/api/auth/oauth/{provider}/callback",
+            get(oauth_callback_get).post(oauth_callback_post),
+        )
         .route("/api/me", get(me))
         .route("/api/orgs", post(create_org).get(orgs))
         .route("/api/orgs/{org}/memberships", put(member))
@@ -82,7 +117,13 @@ pub fn router(s: AppState) -> Router {
         .route("/api/orgs/{org}/uploads/{id}", get(upload_status))
         .route("/api/orgs/{org}/uploads/{id}/cancel", post(cancel_upload))
         .route("/api/orgs/{org}/uploads/{id}/complete", post(complete))
+        .route(
+            "/api/orgs/{org}/uploads/{id}/parts",
+            get(upload_parts).post(upload_part_urls),
+        )
         .route("/api/orgs/{org}/assets/{id}", get(asset))
+        .route("/api/orgs/{org}/assets/{id}/checks", get(asset_checks))
+        .route("/api/orgs/{org}/assets/{id}/image", get(asset_image))
         .route("/api/orgs/{org}/releases/{id}/tracks", post(track))
         .route(
             "/api/orgs/{org}/releases/{id}/tracks/{track}",
@@ -134,10 +175,23 @@ pub fn router(s: AppState) -> Router {
         .merge(crate::portal::routes())
         .merge(crate::account::routes())
         .merge(crate::password_reset::routes())
+        .merge(crate::email::routes())
         .merge(crate::signing::routes())
         .merge(crate::staff::routes())
         .merge(crate::work::routes())
         .merge(crate::live::routes())
+        .merge(crate::members::routes())
+        .merge(crate::takedown::routes())
+        .merge(crate::corrections::routes())
+        .merge(crate::infringement::routes())
+        .merge(crate::pitching::routes())
+        .merge(crate::smart_links::routes())
+        .merge(crate::codes::routes())
+        .merge(crate::release_alerts::routes())
+        .merge(crate::splits::routes())
+        .merge(crate::platform_requests::routes())
+        .merge(crate::contract_terms::routes())
+        .merge(crate::artist_pages::routes())
         .merge(crate::partner_hooks::routes())
         .merge(crate::site_content::routes())
         .fallback(|| async { Error::NotFound.into_response() })
@@ -147,6 +201,7 @@ pub fn router(s: AppState) -> Router {
             panic_response,
         ))
         .layer(DefaultBodyLimit::max(64 * 1024))
+        .layer(middleware::from_fn(request_deadline))
         // 서비스 비밀 확인 뒤: 점검 중 API 차단 (crate::site_content)
         .layer(middleware::from_fn_with_state(
             s.clone(),
@@ -162,6 +217,32 @@ pub fn router(s: AppState) -> Router {
         .layer(compression())
         .with_state(s)
 }
+/// Past this a request is abandoned: the tunnel in front gave up on it
+/// already (about 100 s), and it would otherwise keep holding a database
+/// connection (pool of 6) or a storage call for up to 15 minutes. Covers the
+/// handler up to its response headers; a streamed body is not cut.
+const REQUEST_DEADLINE: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// Not bounded: live streams (they end on their own) and upload completion
+/// (cancel-safe, and retried by the client while the conversion runs).
+fn unbounded(path: &str) -> bool {
+    path.ends_with("/live") || (path.starts_with("/api/orgs/") && path.ends_with("/complete"))
+}
+
+async fn request_deadline(req: Request, next: middleware::Next) -> Response {
+    if unbounded(req.uri().path()) {
+        return next.run(req).await;
+    }
+    let route = req.uri().path().to_owned();
+    match tokio::time::timeout(REQUEST_DEADLINE, next.run(req)).await {
+        Ok(response) => response,
+        Err(_) => {
+            tracing::warn!(%route, "request abandoned at the deadline");
+            Error::Timeout.into_response()
+        }
+    }
+}
+
 /// A handler bug that panics answers like any other server error (500 with
 /// the standard error body) and is logged, instead of dropping the
 /// connection, which the edge reports as "Private API unavailable".
@@ -227,8 +308,13 @@ async fn boundary(State(s): State<AppState>, mut req: Request, next: Next) -> Re
             .uri()
             .path()
             .starts_with(crate::partner_hooks::HOOK_PREFIX);
+    // Apple's sign-in returns with a cross-site form POST; the one-time state
+    // and the code exchange authenticate it (crate::oauth::callback).
+    let oauth_form_post =
+        *req.method() == Method::POST && req.uri().path() == "/api/auth/oauth/apple/callback";
     if !matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS)
         && !partner_hook
+        && !oauth_form_post
         && auth::origin(req.headers(), &s.config).is_err()
     {
         return Error::Forbidden.into_response();
@@ -284,12 +370,29 @@ async fn boundary(State(s): State<AppState>, mut req: Request, next: Next) -> Re
     let _entered = span.enter();
     let headers = response.headers_mut();
     headers.insert("x-request-id", request_id);
-    headers.insert("cache-control", HeaderValue::from_static("no-store"));
+    // no-store unless the handler chose a browser-only (private) policy for
+    // content-addressed bytes (a stored cover image keyed by its hash).
+    let private_cache = headers
+        .get("cache-control")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.starts_with("private,") && v.contains("immutable"));
+    if !private_cache {
+        headers.insert("cache-control", HeaderValue::from_static("no-store"));
+    }
     headers.insert(
         "x-content-type-options",
         HeaderValue::from_static("nosniff"),
     );
-    tracing::info!(request_id=%id,status=response.status().as_u16(),elapsed_ms=started.elapsed().as_millis(),"http_request");
+    // Validation failures (4xx) log their stable error code with the request
+    // id so a 400 can be traced to the check that rejected it (BE-005).
+    match response.extensions().get::<crate::error::ErrorCode>() {
+        Some(code) => {
+            tracing::info!(request_id=%id,status=response.status().as_u16(),error_code=code.0,elapsed_ms=started.elapsed().as_millis(),"http_request")
+        }
+        None => {
+            tracing::info!(request_id=%id,status=response.status().as_u16(),elapsed_ms=started.elapsed().as_millis(),"http_request")
+        }
+    }
     response
 }
 /// The release a request path is about: `/api/orgs/{org}/releases/{id}/...`
@@ -326,7 +429,7 @@ async fn available_dsps(
     tx.commit().await?;
     let ids: Vec<Uuid> = dsp_registry::Dsp::ALL.iter().map(|d| d.uuid()).collect();
     let decisions = routing::public_routes(&s.pool, org, &ids).await?;
-    let items: Vec<Value> = dsp_registry::REGISTRY
+    let mut items: Vec<Value> = dsp_registry::REGISTRY
         .iter()
         .zip(decisions.iter())
         .map(|(spec, route)| {
@@ -334,6 +437,13 @@ async fn available_dsps(
                                     "category":spec.category,"available":route.routable})
         })
         .collect();
+    // Pre-launch test platform: the in-process MockDSP (migration 0087).
+    if crate::mockdsp::studio_route(&s.pool, org).await?.is_some() {
+        items.push(
+            json!({"slug":crate::mockdsp::STUDIO_PARTNER,"name":crate::mockdsp::STUDIO_NAME,
+                          "region":"GLOBAL","category":"STREAMING","available":true}),
+        );
+    }
     Ok(Json(json!({"items":items})))
 }
 async fn register(
@@ -350,6 +460,101 @@ async fn login(
 ) -> Result<(HeaderMap, Json<Value>)> {
     auth::login(&s, &h, i).await
 }
+/// Public keys of the document seals and archive manifests (verification).
+async fn document_keys(State(s): State<AppState>) -> Json<Value> {
+    Json(crate::seal::public_keys(&s.payout_keys))
+}
+async fn print_stamp(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Json(i): Json<crate::print_stamp::StampInput>,
+) -> Result<Json<Value>> {
+    Ok(Json(crate::print_stamp::stamp(&s, &h, i).await?))
+}
+async fn print_verify(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Query(q): Query<crate::print_stamp::VerifyQuery>,
+) -> Result<Json<Value>> {
+    Ok(Json(crate::print_stamp::verify(&s, &h, q).await?))
+}
+async fn oauth_providers() -> Json<Value> {
+    Json(crate::oauth::providers())
+}
+async fn oauth_identities(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
+    Ok(Json(crate::oauth::identities(&s, &h).await?))
+}
+async fn oauth_unlink(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>> {
+    Ok(Json(crate::oauth::unlink(&s, &h, id).await?))
+}
+async fn oauth_start(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(provider): Path<String>,
+    Json(i): Json<crate::oauth::StartInput>,
+) -> Result<Json<Value>> {
+    Ok(Json(crate::oauth::start(&s, &h, &provider, i).await?))
+}
+async fn oauth_callback_get(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(provider): Path<String>,
+    Query(p): Query<crate::oauth::CallbackParams>,
+) -> Response {
+    crate::oauth::callback(&s, &h, &provider, p).await
+}
+/// Apple returns with a form POST (response_mode=form_post).
+async fn oauth_callback_post(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(provider): Path<String>,
+    body: axum::body::Bytes,
+) -> Response {
+    let mut p = crate::oauth::CallbackParams::default();
+    for (k, v) in url::form_urlencoded::parse(&body) {
+        match &*k {
+            "code" => p.code = Some(v.into_owned()),
+            "state" => p.state = Some(v.into_owned()),
+            "error" => p.error = Some(v.into_owned()),
+            _ => {}
+        }
+    }
+    crate::oauth::callback(&s, &h, &provider, p).await
+}
+async fn passkey_login_options(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
+    Ok(Json(crate::passkey::login_options(&s, &h).await?))
+}
+async fn passkey_login(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Json(i): Json<crate::passkey::LoginInput>,
+) -> Result<(HeaderMap, Json<Value>)> {
+    crate::passkey::login(&s, &h, i).await
+}
+async fn passkey_list(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
+    Ok(Json(crate::passkey::list(&s, &h).await?))
+}
+async fn passkey_register_options(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
+    Ok(Json(crate::passkey::register_options(&s, &h).await?))
+}
+async fn passkey_register(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Json(i): Json<crate::passkey::RegisterInput>,
+) -> Result<Json<Value>> {
+    Ok(Json(crate::passkey::register(&s, &h, i).await?))
+}
+async fn passkey_remove(
+    State(s): State<AppState>,
+    h: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>> {
+    Ok(Json(crate::passkey::remove(&s, &h, id).await?))
+}
 async fn logout(State(s): State<AppState>, h: HeaderMap) -> Result<(HeaderMap, Json<Value>)> {
     auth::logout(&s, &h).await
 }
@@ -358,10 +563,7 @@ async fn csrf(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
 }
 async fn me(State(s): State<AppState>, h: HeaderMap) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
-    let email: String = sqlx::query_scalar("SELECT email FROM identity.users WHERE id=$1")
-        .bind(a.user)
-        .fetch_one(&s.pool)
-        .await?;
+    let email = crate::pii::user_email(&s.payout_keys, &s.pool, a.user).await?;
     Ok(Json(
         json!({"user_id":a.user,"party_id":a.party,"email":email}),
     ))
@@ -731,6 +933,23 @@ async fn upload_status(
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
     Ok(Json(uploads::status(&s, &a, org, id).await?))
 }
+async fn upload_parts(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    Ok(Json(uploads::stored_parts(&s, &a, org, id).await?))
+}
+async fn upload_part_urls(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+    Json(i): Json<uploads::PartsInput>,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, true).await?;
+    Ok(Json(uploads::part_urls(&s, &a, org, id, i).await?))
+}
 async fn cancel_upload(
     State(s): State<AppState>,
     Path((org, id)): Path<(Uuid, Uuid)>,
@@ -755,6 +974,23 @@ async fn asset(
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
     Ok(Json(uploads::get(&s, &a, org, id).await?))
+}
+async fn asset_checks(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    Ok(Json(uploads::checks(&s, &a, org, id).await?))
+}
+async fn asset_image(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Response> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    let img = uploads::image(&s, &a, org, id).await?;
+    Ok(uploads::image_response(img, &h))
 }
 async fn member(
     State(s): State<AppState>,

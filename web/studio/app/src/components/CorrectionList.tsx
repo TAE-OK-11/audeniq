@@ -1,7 +1,7 @@
 import { useNavigate } from '../lib/router';
 import type { Correction } from '../api/types';
 import { Glyph } from './Glyph';
-import { WIZ_STEP_NAMES, fixPath, resolveCorrection } from '../lib/corrections';
+import { WIZ_STEP_NAMES, fixPath, isDocumentFix, resolveCorrection } from '../lib/corrections';
 
 /** 담당자의 전체 의견 — 고칠 항목이 아니라 참고할 말이라 버튼 없이 검토팀 말풍선으로 보여 준다 (신청서 보완 패널과 같은 모양) */
 export function ReviewNote({ text }: { text: string }) {
@@ -34,7 +34,7 @@ export function CorrectionList({ releaseId, corrections, trackIds = [], trackTit
             <span className="aq-fix-step">{r.step + 1}단계 · {WIZ_STEP_NAMES[r.step]}</span>
             <p><strong>{r.label}{track ? ` · ${track}` : ''}</strong>{r.message}</p>
             <button type="button" className="ui-btn is-sm is-soft" onClick={() => nav(fixPath(releaseId, c))}>
-              고치러 가기<Glyph name="chevron-right" size={13} />
+              {isDocumentFix(c) ? '서류 첨부하기' : '고치러 가기'}<Glyph name="chevron-right" size={13} />
             </button>
           </li>
         );

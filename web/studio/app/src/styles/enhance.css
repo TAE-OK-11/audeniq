@@ -218,11 +218,6 @@ img{max-width:100%}
 .track-editor{animation:aq-fade-up .4s var(--aq-e-ease) both}
 .track-detail-body{animation:aq-fade-up .3s var(--aq-e-ease) both}
 .toggle-arrow{transition:transform .25s var(--aq-e-ease)!important}
-.aq-autofill{display:inline-block;margin:-8px 0 14px;font-size:13px}
-.aq-review-card{position:relative}
-.aq-review-edit{position:absolute;top:14px;right:14px;font-size:12px!important;opacity:.8}
-.aq-review-edit:hover{opacity:1}
-.aq-review-card p{padding-right:34px}
 
 /* 커버 드롭존 */
 .aq-dropzone{position:relative;display:flex!important;align-items:center;gap:16px;padding:18px;border:0!important;border-radius:var(--aq-r-xl);background:var(--aq-blue-50);cursor:pointer;transition:border-color .2s,background-color .2s,transform .2s var(--aq-e-ease);font-weight:400!important;margin:0!important}
@@ -415,6 +410,8 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
 .dist-mock,.cover-track-item,.track-detail-toggle{border:0!important;box-shadow:none!important}
 .dist-mock{background:var(--aq-blue-50)!important}
 .cover-track-item{background:#fff!important;border-radius:var(--aq-r-lg)!important}
+/* 흰 카드 안의 입력칸은 회색 면 (흰 칸이면 카드에 묻힌다) */
+.cover-track-item{--aq-field-bg:var(--aq-field);--aq-field-hover-bg:var(--aq-field-hover);--aq-field-focus-bg:var(--aq-gray-150)}
 .track-detail-toggle{background:#fff!important;transition:background-color .2s!important}
 .track-detail-toggle:hover{background:var(--aq-blue-100)!important}
 
@@ -457,7 +454,9 @@ body:has(.aq-payout-setup-mode) .aq-toast-stack{bottom:calc(104px + env(safe-are
 :is(#root,#modal) input[type=file]:is(:focus,:focus-visible){background-color:var(--aq-blue-100)!important;box-shadow:none!important}
 .aq-dropzone:focus-within{outline:none!important;background:var(--aq-blue-100)}
 /* 오류 표시: 붉은 링 대신 붉은 면 */
-:is(#root,#modal) :is(input,select,textarea):is([aria-invalid=true],.aq-invalid){background-color:var(--aq-red-50)!important;box-shadow:none!important}
+:is(#root,#modal) :is(input:not([type=checkbox]):not([type=radio]),select,textarea):is([aria-invalid=true],.aq-invalid){background-color:var(--aq-red-50)!important;box-shadow:none!important}
+/* 체크박스는 체크 전까지만 붉은 테두리 — 체크하면 원래 파란 체크로 */
+:is(#root,#modal) input:is([type=checkbox],[type=radio]):is([aria-invalid=true],.aq-invalid):not(:checked){background-color:var(--aq-red-50)!important;box-shadow:inset 0 0 0 2px var(--aq-red-500)!important}
 
 /* ==========================================================================
    홍보 페이지(web/landing) 디자인 언어 반영
@@ -811,7 +810,8 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 
 /* 인쇄·PDF: 서류만 A4에 */
 @media print{
-  @page{size:A4;margin:14mm}
+  /* 여백 0: 브라우저 자체 머리말·꼬리말(시각·URL)이 빠진다. 대신 출력물 표식(printStamp.tsx)을 쪽마다 찍는다. */
+  @page{size:A4;margin:0}
   html,body{background:#fff!important}
   .portal-header,.aq-skip-link,.aq-doc-toolbar,.aq-doc-done,.aq-toast-stack{display:none!important}
   .portal-layout,#main,.view-enter,.aq-doc-view{padding:0!important;margin:0!important;max-width:none!important;width:auto!important;animation:none!important}
@@ -1064,7 +1064,7 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 :is(#root #view-new,#modal.aq-rights-document-mode) :is(.aq-chip-picker) :is(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]),select,textarea){
   border:0!important;outline:0!important;transform:none!important
 }
-:is(#root #view-new,#modal.aq-rights-document-mode) :is(input,select,textarea):is([aria-invalid=true],.aq-invalid){background-color:var(--aq-red-50)!important}
+:is(#root #view-new,#modal.aq-rights-document-mode) :is(input:not([type=checkbox]):not([type=radio]),select,textarea):is([aria-invalid=true],.aq-invalid){background-color:var(--aq-red-50)!important}
 @media(prefers-reduced-motion:reduce){:is(#root #view-new,#modal.aq-rights-document-mode) :is(input,select,textarea){transition:none!important}}
 
 /* ==========================================================================
@@ -1110,7 +1110,9 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 .aq-chip:active{transform:scale(.98)}
 .aq-chip.is-on{background:var(--aq-blue-500);color:#fff}
 .aq-chip:focus-visible{outline:3px solid var(--aq-blue-450);outline-offset:2px}
-.aq-chip-other{margin-top:10px;width:100%;box-sizing:border-box;border:0;border-radius:var(--aq-r-md);background:#fff;padding:12px 14px;font:inherit;font-size:14px;box-shadow:none}
+.aq-chip-picker{display:flex;flex-direction:column;gap:10px}
+/* 입력칸 여백 규칙에 덮이지 않게 간격은 부모 gap으로 (기타 입력칸이 선택지에 붙던 문제) */
+.aq-chip-other{margin:0!important;width:100%;box-sizing:border-box;border:0;border-radius:var(--aq-r-md);background:#fff;padding:12px 14px;font:inherit;font-size:14px;box-shadow:none}
 .aq-chip-other:focus{outline:0}
 
 /* ---------- 배급 플랫폼 타일 ---------- */
@@ -1176,7 +1178,6 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 .aq-paper-agree li.is-on .aq-paper-check{background:var(--aq-blue-500);color:#fff}
 .aq-sign-wait-steps li.is-done>span{background:var(--aq-blue-500)!important;color:#fff!important;display:inline-grid;place-items:center}
 .aq-all-done>span{margin-right:8px}
-.aq-chip .aq-chip-check{display:inline-block;margin-right:5px;vertical-align:-1px}
 .aq-guardian-no .aq-check-icon{margin:auto}
 
 /* ---------- AUDENIQ 아이콘(Glyph) — 어디서나 같은 선 두께·모양 ---------- */
@@ -1582,7 +1583,7 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-bundle-docs li.is-current .aq-bundle-no{background:var(--aq-e-blue-soft);color:var(--aq-e-blue)}
 .aq-bundle-docs .ui-btn.is-white{white-space:nowrap}
 :is(#root) .aq-bundle-sign{min-height:var(--aq-h-sm)!important;padding:0 14px!important;font-size:13px!important;border-radius:var(--aq-r-sm)!important;white-space:nowrap}
-.aq-bundle-sub{margin:18px 0 8px;font-size:14px;font-weight:800;color:var(--aq-e-ink)}
+.aq-bundle-sub,.ui-card>h3.aq-bundle-sub{margin:18px 0 8px;font-size:14px;font-weight:800;color:var(--aq-e-ink)}
 
 /* 배급 계약서 최종본 (/contracts/:id) — 신청서와 같은 서류 스타일에 계약서 조항만 더한다 */
 .aq-paper-lead{margin:0 0 24px;font-size:14px;line-height:1.75;color:var(--aq-text)}
@@ -1614,8 +1615,8 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-alert-pref .min-0>span{font-size:13px;line-height:1.55;color:var(--aq-text-3)}
 .aq-alert-pref .aq-switch input:disabled+span{opacity:.5}
 
-/* 발매 상세 '문서 관리' — 카드 아래 한 줄 전체 */
-.aq-doc-manage{display:flex;width:100%;margin-top:14px}
+/* 발매 상세 '문서 관리' — 카드 아래 한 줄 전체 (뒤에 오는 공통 .ui-btn이 덮지 않게 두 클래스로) */
+.ui-btn.aq-doc-manage{display:flex;width:100%;margin-top:14px}
 
 /* 아이콘 칸 색 — 할 일 종류·서류 상태에 맞춘 색조 */
 .aq-task.is-warn .ui-icon{--tone-bg:var(--aq-amber-100);--tone-fg:#C26A1E}
@@ -1719,3 +1720,40 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
   .aq-fix-list li{grid-template-columns:minmax(0,1fr);grid-template-areas:"step" "text" "btn";padding:14px}
   .aq-fix-list .ui-btn{justify-self:stretch;margin-top:4px}
 }
+
+/* 출력물 표식 — 화면에서는 숨긴다. 인쇄 방식은 printStamp.tsx 머리 주석:
+   Chrome·Edge·Firefox는 position:fixed를 쪽마다 반복 → 모든 쪽 위·아래에 찍는다.
+   WebKit(Safari·iPhone)은 fixed를 화면 기준으로 한 번만 찍으므로(.is-flow) 문서 맨 앞·맨 끝에 흐름대로 둔다. */
+.aq-print-stamp,.aq-print-watermark{display:none}
+@media print{
+  html,body{margin:0!important}
+  body{position:relative!important}
+  /* 워터마크: 문서 전체를 덮는 반복 배경(SVG 타일) — 어느 엔진이든 모든 쪽에 찍힌다. 아주 옅게 본문 위에 */
+  .aq-print-watermark{display:block;position:absolute;inset:0;background-repeat:repeat;background-position:0 0;pointer-events:none;z-index:2147483000;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .aq-print-stamp{display:flex;justify-content:space-between;align-items:flex-end;gap:8mm;font:500 7.5pt/1.35 "Pretendard",system-ui,sans-serif;color:#3b4254;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .aq-print-stamp>span:last-child{text-align:right}
+  .aq-print-stamp code{font:600 8pt/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.03em;color:#111;white-space:nowrap}
+  .aq-print-stamp b{font-weight:800;letter-spacing:.04em}
+  .aq-print-stamp .is-warn,.aq-print-stamp.is-missing{color:#b42318;font-weight:700}
+  .aq-print-stamp.is-missing{justify-content:center}
+  .aq-print-stamp.is-head{padding-bottom:1.6mm;border-bottom:.3pt solid #9aa3b5}
+  .aq-print-stamp.is-foot{padding-top:1.6mm;border-top:.3pt solid #9aa3b5}
+  /* 쪽마다 반복: 여백 0인 쪽의 위·아래 6mm에 고정, 본문은 body 안쪽 여백(쪽마다 다시: box-decoration-break) */
+  html:not(.aq-print-flow) body{padding:17mm 14mm 17mm!important;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+  .aq-print-stamp:not(.is-flow){position:fixed;left:14mm;right:14mm}
+  .aq-print-stamp.is-head:not(.is-flow){top:6mm}
+  .aq-print-stamp.is-foot:not(.is-flow){bottom:6mm}
+  /* WebKit: 흐름대로. 쪽 여백은 아래 @page(.aq-print-flow일 때 printStamp.tsx가 넣는다) */
+  html.aq-print-flow body{padding:0 14mm!important}
+  .aq-print-stamp.is-flow{position:static;margin:0 0 5mm}
+  .aq-print-stamp.is-foot.is-flow{margin:6mm 0 0;break-inside:avoid}
+}
+
+/* 출력물 진위 확인 (/verify) */
+.aq-verify-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin:18px 0}
+.aq-verify-form input{width:100%;height:48px;padding:0 14px;border:0;border-radius:var(--aq-r-lg);background:#fff;box-shadow:inset 0 0 0 1px var(--aq-gray-200,#dde2ec);color:var(--aq-text);font:600 16px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.06em;text-transform:uppercase}
+.aq-verify-form input:focus{outline:2px solid var(--aq-blue-500);outline-offset:1px}
+.aq-verify-form .ui-btn{width:auto;min-width:88px;height:48px}
+.aq-verify-dl{display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;margin:10px 0 0}
+.aq-verify-dl dt{color:var(--aq-text-3);font-weight:600}
+.aq-verify-dl dd{margin:0;word-break:break-all}

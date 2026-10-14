@@ -1,13 +1,15 @@
+import { CodesPanel } from '../components/CodesPanel';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from '../lib/router';
 import { api, type Release, type Track } from '../api/client';
-import { fixPath, resolveCorrection, splitCorrections } from '../lib/corrections';
+import { fixPath, isDocumentFix, resolveCorrection, splitCorrections } from '../lib/corrections';
 import { STATUS_LABEL, statusTone } from '../lib/format';
 import { useAsync } from '../hooks/useAsync';
 import { SkeletonRows } from '../components/Skeleton';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { Glyph } from '../components/Glyph';
 import { Badge, Tabs } from '../ui';
+import { openFixes, pendingProofs, proofPath, useDocs, type DocRecord } from '../store/docs';
 
 const FILTERS = [
   { value: 'all', label: '전체' },
@@ -31,7 +33,11 @@ const SORTS = [
 type TrackWithRelease = Track & { releaseTitle: string; releaseId: string; artist?: string; coverData?: string };
 
 /** 첫 보완 요청 한 줄 요약 */
-function firstFixText(r: Release): string {
+function firstFixText(r: Release, proofs: DocRecord[] = []): string {
+  if (r.fixKind === 'documents') {
+    if (!proofs.length) return '권리·보완 서류에서 담당자가 요청한 서류를 확인해 주세요.';
+    return `요청 서류: ${proofs[0].title}${proofs.length > 1 ? ` 외 ${proofs.length - 1}건` : ''}`;
+  }
   const { items: list, note } = splitCorrections(r.corrections);
   if (!list.length) return note ? `담당자 의견: ${note}` : '요청 내용을 확인하고 고쳐 주세요.';
   const first = resolveCorrection(list[0]);
@@ -43,8 +49,10 @@ const norm = (s: string | null | undefined) => (s ?? '').toLowerCase().replace(/
 
 export function Releases() {
   const nav = useNavigate();
+  const docs = useDocs();
   const [params, setParams] = useSearchParams();
-  const tab = params.get('tab') === 'tracks' ? 'tracks' : 'releases';
+  const tabParam = params.get('tab');
+  const tab = tabParam === 'tracks' || tabParam === 'codes' ? tabParam : 'releases';
   const filter = params.get('status') || 'all';
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('updated');
@@ -118,7 +126,10 @@ export function Releases() {
           <h1 id="catalogTitle">내 음악</h1>
           <p>발매한 음악과 심사 진행 상황을 한눈에 확인해 보세요.</p>
         </div>
-        <button type="button" className="ui-btn is-primary" onClick={() => nav('/upload')}><Glyph name="plus" size={14} />새 발매</button>
+        <div className="aq-confirm-actions">
+          <button type="button" className="ui-btn is-soft" onClick={() => nav('/releases/bulk')}>대량 작업</button>
+          <button type="button" className="ui-btn is-primary" onClick={() => nav('/upload')}><Glyph name="plus" size={14} />새 발매</button>
+        </div>
       </div>
 
       <Tabs
@@ -126,11 +137,14 @@ export function Releases() {
         items={[
           { value: 'releases', label: '발매 목록', count: listLoading ? null : list.length },
           { value: 'tracks', label: '전체 트랙', count: listLoading ? null : trackCount },
+          { value: 'codes', label: '코드 (UPC·ISRC)' },
         ]}
         onChange={v => setParam('tab', v, 'releases')}
       />
 
-      {loading ? (
+      {tab === 'codes' ? (
+        <CodesPanel />
+      ) : loading ? (
         <SkeletonRows count={4} />
       ) : error ? (
         <div className="ui-empty">
@@ -185,19 +199,37 @@ export function Releases() {
                   <div className="aq-release-end">
                     <Badge tone={statusTone(r.status)} className={`aq-status is-${r.status}`}>{STATUS_LABEL[r.status] || r.status}</Badge>
                   </div>
-                  {r.status === 'needs' && (
-                    <div className="aq-release-fix">
-                      <span className="min-0">
-                        <b>보완 요청{splitCorrections(r.corrections).items.length ? ` ${splitCorrections(r.corrections).items.length}건` : ''}</b>
-                        {firstFixText(r)}
-                      </span>
-                      <button
-                        type="button" className="aq-release-fix-btn"
-                        onClick={e => { e.stopPropagation(); nav(fixPath(r.id, splitCorrections(r.corrections).items[0])); }}
-                        onKeyDown={e => e.stopPropagation()}
-                      >보완하기 <Glyph name="chevron-right" size={14} /></button>
-                    </div>
-                  )}
+                  {r.status === 'needs' && (() => {
+                    // 서류 요청은 신청서가 아니라 그 요청의 첨부·제출 화면으로 간다
+                    const all = splitCorrections(r.corrections).items;
+                    // 보완 항목으로 요청한 서류는 항목 쪽에서 안내하므로 따로 세지 않는다. 낸 서류 항목은 끝난 것으로
+                    const linked = new Set(all.map(c => c.documentId).filter(Boolean));
+                    const items = openFixes(all, docs);
+                    const proofs = pendingProofs(docs, r.id, r.title).filter(d => !linked.has(d.id));
+                    const docsOnly = r.fixKind === 'documents';
+                    const count = docsOnly ? proofs.length : items.length;
+                    const first = items[0];
+                    return (
+                      <div className="aq-release-fix">
+                        <span className="min-0">
+                          <b>{docsOnly ? '서류 제출 요청' : '보완 요청'}{count ? ` ${count}건` : ''}</b>
+                          {!docsOnly && all.length > 0 && !items.length ? '요청한 서류를 냈어요. 신청서를 다시 접수해 주세요.' : firstFixText({ ...r, corrections: items }, proofs)}
+                        </span>
+                        <button
+                          type="button" className="aq-release-fix-btn"
+                          onClick={e => { e.stopPropagation(); nav(docsOnly ? proofPath(proofs[0]) : fixPath(r.id, first)); }}
+                          onKeyDown={e => e.stopPropagation()}
+                        >{docsOnly ? '서류 제출하기' : isDocumentFix(first) ? '서류 첨부하기' : '보완하기'} <Glyph name="chevron-right" size={14} /></button>
+                        {!docsOnly && proofs.length > 0 && (
+                          <button
+                            type="button" className="aq-release-fix-btn"
+                            onClick={e => { e.stopPropagation(); nav(proofPath(proofs[0])); }}
+                            onKeyDown={e => e.stopPropagation()}
+                          >서류 제출 {proofs.length}건 <Glyph name="chevron-right" size={14} /></button>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </article>
               ))}
             </div>

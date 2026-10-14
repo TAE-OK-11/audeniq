@@ -195,6 +195,27 @@ export function docsForRelease(list: DocRecord[], releaseId: string, releaseTitl
   return list.filter(d => (d.releaseId ? d.releaseId === releaseId : !!releaseTitle && d.releaseTitle === releaseTitle));
 }
 
+/** 담당자가 요청해 아티스트가 아직 내야 하는 권리 서류 (제출 대기 · 보완 필요) — 오래된 요청부터 */
+export function pendingProofs(list: DocRecord[], releaseId: string, releaseTitle?: string): DocRecord[] {
+  return docsForRelease(list, releaseId, releaseTitle)
+    .filter(d => d.kind === 'rights' && (d.reviewStatus === 'awaiting_documents' || d.reviewStatus === 'needs'))
+    .sort((a, b) => String(a.created || '').localeCompare(String(b.created || '')));
+}
+
+/** 아직 할 일이 남은 보완 항목 — 서류 첨부 요청(documentId)은 그 서류를 냈으면(검토 중·승인) 끝난 것으로 본다 */
+export function openFixes<T extends { documentId?: string }>(items: T[], list: DocRecord[]): T[] {
+  return items.filter(c => {
+    if (!c.documentId) return true;
+    const doc = list.find(d => d.id === c.documentId);
+    return !doc || doc.reviewStatus === 'awaiting_documents' || doc.reviewStatus === 'needs';
+  });
+}
+
+/** 요청받은 서류를 첨부·제출하는 화면 — 서류가 있으면 그 요청을 바로 연다 */
+export function proofPath(doc?: DocRecord): string {
+  return doc ? `/rights?doc=${encodeURIComponent(doc.id)}` : '/rights';
+}
+
 /** 라이브 aqDocumentState */
 export function docState(c: DocRecord): string {
   if (c.electronic) return c.reviewStatus === 'needs' ? '보완 필요' : c.reviewStatus === 'approved' ? '서명 완료 · 검토 승인' : '서명 완료 · 검토 중';

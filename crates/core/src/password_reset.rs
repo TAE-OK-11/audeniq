@@ -264,10 +264,11 @@ pub async fn start_reset(s: &AppState, h: &HeaderMap, i: ResetStart) -> Result<V
     let hash = sms::phone_hash(&s.config.service_secret, &phone);
     let user: Option<Uuid> = sqlx::query_scalar(
         "SELECT u.id FROM identity.users u JOIN portal.account_phones p ON p.user_id=u.id
-         WHERE u.email=$1 AND u.status='ACTIVE' AND p.phone_hash=$2",
+         WHERE (u.email=$1 OR u.email_bidx=ANY($3)) AND u.status='ACTIVE' AND p.phone_hash=$2",
     )
     .bind(&email)
     .bind(&hash)
+    .bind(crate::pii::email_indexes(&s.payout_keys, &email))
     .fetch_optional(&s.pool)
     .await?;
     let Some(user) = user else {
@@ -340,22 +341,29 @@ pub async fn complete_reset(s: &AppState, h: &HeaderMap, i: ResetComplete) -> Re
     let token_hash = auth::hash_token(&i.reset_token);
     // 토큰을 먼저 확인해 없는 토큰에 비밀번호 해시(무거운 작업)를 쓰지 않는다.
     let live: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM identity.sms_challenges WHERE reset_token_hash=$1 AND consumed_at IS NULL AND reset_expires_at>now()",
+        "SELECT user_id FROM identity.sms_challenges WHERE reset_token_hash=$1 AND consumed_at IS NULL AND reset_expires_at>now()",
     )
     .bind(&token_hash)
     .fetch_optional(&s.pool)
     .await?;
-    if live.is_none() {
+    let Some(user) = live else {
         return Err(Error::InvalidCode("RESET_TOKEN_INVALID"));
-    }
+    };
+    let email = crate::pii::user_email(&s.payout_keys, &s.pool, user).await?;
+    crate::password_policy::check(&i.new_password, &email)?;
     let permit = s
         .password_slots
         .clone()
         .acquire_owned()
         .await
         .map_err(|_| Error::Internal)?;
-    let hash = auth::password_hash(i.new_password.clone()).await?;
+    // The slot stays with the Argon2 work even if the client disconnects.
+    let password = i.new_password.clone();
+    let (permit, hash) = crate::password_work::run(permit, move || auth::hash_password(password))
+        .await
+        .map_err(|_| Error::Internal)?;
     drop(permit);
+    let hash = hash?;
     let mut tx = s.pool.begin().await?;
     // 같은 토큰으로 두 번 바꿀 수 없다 (동시 요청 포함).
     let user: Option<Uuid> = sqlx::query_scalar(

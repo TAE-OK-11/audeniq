@@ -66,7 +66,13 @@ macro_rules! rel_cols {
              (SELECT count(*) FROM work.notes n WHERE n.archived_at IS NULL
                 AND ((n.target_kind='relationship' AND n.target_id=r.id::text)
                   OR (n.target_kind=r.entity_kind AND n.target_id=r.entity_id))) AS note_count,
-             (SELECT jsonb_build_object('id',c.id,'name',c.name,'role',c.role,'email',c.email,'phone',c.phone)
+             (SELECT jsonb_build_object('id',c.id,'name',",
+            crate::pii_ref!("contact_name", "c.id", "c.name", "c.name_cipher"),
+            ",'role',c.role,'email',",
+            crate::pii_ref!("contact_email", "c.id", "c.email", "c.email_cipher"),
+            ",'phone',",
+            crate::pii_ref!("contact_phone", "c.id", "c.phone", "c.phone_cipher"),
+            ")
                 FROM work.relationship_contacts c WHERE c.relationship_id=r.id AND c.archived_at IS NULL
                ORDER BY c.is_primary DESC, c.created_at LIMIT 1) AS primary_contact"
         )
@@ -317,10 +323,12 @@ pub async fn list(s: &AppState, h: &HeaderMap, q: ListQuery) -> Result<Value> {
     .iter()
     .map(|r| (r.get("kind"), r.get("n")))
     .collect();
-    Ok(json!({
+    let mut out = json!({
         "items": rels.iter().map(|r| r.json(contract.get(&r.id).cloned().unwrap_or(Value::Null))).collect::<Vec<_>>(),
         "counts": counts,
-    }))
+    });
+    crate::pii::reveal(&s.payout_keys, &mut out)?;
+    Ok(out)
 }
 
 pub async fn detail(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<Value> {
@@ -328,19 +336,26 @@ pub async fn detail(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<Value> {
     let mut c = s.pool.acquire().await?;
     let r = load(&mut c, id, false).await?;
     let contract = contracts(&mut c, std::slice::from_ref(&r)).await?;
-    let contacts: Vec<Value> = sqlx::query_scalar(
-        "SELECT jsonb_build_object('id',id,'name',name,'role',role,'email',email,'phone',phone,'is_primary',is_primary,
-                'created_at',created_at,'updated_at',updated_at)
-           FROM work.relationship_contacts WHERE relationship_id=$1 AND archived_at IS NULL ORDER BY is_primary DESC, created_at",
-    )
+    let contacts: Vec<Value> = sqlx::query_scalar(concat!(
+        "SELECT jsonb_build_object('id',c.id,'name',",
+            crate::pii_ref!("contact_name", "c.id", "c.name", "c.name_cipher"),
+            ",'role',c.role,'email',",
+            crate::pii_ref!("contact_email", "c.id", "c.email", "c.email_cipher"),
+            ",'phone',",
+            crate::pii_ref!("contact_phone", "c.id", "c.phone", "c.phone_cipher"),
+        ",'is_primary',c.is_primary,'created_at',c.created_at,'updated_at',c.updated_at)
+           FROM work.relationship_contacts c WHERE c.relationship_id=$1 AND c.archived_at IS NULL ORDER BY c.is_primary DESC, c.created_at"
+    ))
     .bind(id)
     .fetch_all(&mut *c)
     .await?;
-    let activities: Vec<Value> = sqlx::query_scalar(
+    let activities: Vec<Value> = sqlx::query_scalar(concat!(
         "SELECT jsonb_build_object('id',a.id,'kind',a.kind,'summary',a.summary,'at',a.at,'by_user',a.by_user,
-                'contact', (SELECT c.name FROM work.relationship_contacts c WHERE c.id=a.contact_id))
-           FROM work.relationship_activities a WHERE a.relationship_id=$1 ORDER BY a.at DESC, a.created_at DESC LIMIT 200",
-    )
+                'contact', (SELECT ",
+        crate::pii_ref!("contact_name", "c.id", "c.name", "c.name_cipher"),
+        " FROM work.relationship_contacts c WHERE c.id=a.contact_id))
+           FROM work.relationship_activities a WHERE a.relationship_id=$1 ORDER BY a.at DESC, a.created_at DESC LIMIT 200"
+    ))
     .bind(id)
     .fetch_all(&mut *c)
     .await?;
@@ -390,14 +405,16 @@ pub async fn detail(s: &AppState, h: &HeaderMap, id: Uuid) -> Result<Value> {
         ),
         None => (Vec::new(), Vec::new()),
     };
-    Ok(json!({
+    let mut out = json!({
         "relationship": r.json(contract.get(&r.id).cloned().unwrap_or(Value::Null)),
         "contacts": contacts,
         "activities": activities,
         "links": linked,
         "releases": releases,
         "agreements": agreements,
-    }))
+    });
+    crate::pii::reveal(&s.payout_keys, &mut out)?;
+    Ok(out)
 }
 
 // ---------------------------------------------------------------------------
@@ -640,6 +657,21 @@ struct Contact {
     phone: Option<String>,
 }
 
+/// Name, email and phone sealed for contact `id` (AAD binds the contact).
+type SealedContact = (Vec<u8>, Option<Vec<u8>>, Option<Vec<u8>>);
+fn seal_contact(
+    keys: &crate::payout_keys::KeyRing,
+    id: Uuid,
+    v: &Contact,
+) -> Result<SealedContact> {
+    use crate::payout_keys::Field;
+    Ok((
+        keys.seal_field(Field::ContactName, id, &v.name)?,
+        crate::pii::seal_opt(keys, Field::ContactEmail, id, v.email.as_deref())?,
+        crate::pii::seal_opt(keys, Field::ContactPhone, id, v.phone.as_deref())?,
+    ))
+}
+
 fn contact(i: &ContactInput) -> Result<Contact> {
     let name = line(&i.name, 80)?;
     if name.is_empty() {
@@ -729,16 +761,17 @@ pub async fn add_contact(s: &AppState, h: &HeaderMap, id: Uuid, i: ContactInput)
             .await?;
     }
     let cid = Uuid::new_v4();
+    let (name, email, phone) = seal_contact(&s.payout_keys, cid, &v)?;
     sqlx::query(
-        "INSERT INTO work.relationship_contacts(id,relationship_id,name,role,email,phone,is_primary,created_by)
+        "INSERT INTO work.relationship_contacts(id,relationship_id,name_cipher,role,email_cipher,phone_cipher,is_primary,created_by)
          VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
     )
     .bind(cid)
     .bind(id)
-    .bind(&v.name)
+    .bind(&name)
     .bind(&v.role)
-    .bind(&v.email)
-    .bind(&v.phone)
+    .bind(&email)
+    .bind(&phone)
     .bind(i.is_primary || n == 0)
     .bind(st.actor.user)
     .execute(&mut *tx)
@@ -781,14 +814,16 @@ pub async fn edit_contact(
                 .execute(&mut *tx)
                 .await?;
         }
+        let (name, email, phone) = seal_contact(&s.payout_keys, cid, &v)?;
         sqlx::query(
-            "UPDATE work.relationship_contacts SET name=$2, role=$3, email=$4, phone=$5, is_primary=$6, updated_at=now() WHERE id=$1",
+            "UPDATE work.relationship_contacts SET name=NULL, name_cipher=$2, role=$3, email=NULL, email_cipher=$4,
+               phone=NULL, phone_cipher=$5, is_primary=$6, updated_at=now() WHERE id=$1",
         )
         .bind(cid)
-        .bind(&v.name)
+        .bind(&name)
         .bind(&v.role)
-        .bind(&v.email)
-        .bind(&v.phone)
+        .bind(&email)
+        .bind(&phone)
         .bind(i.is_primary)
         .execute(&mut *tx)
         .await?;
@@ -932,6 +967,7 @@ pub async fn unlink(s: &AppState, h: &HeaderMap, id: Uuid, link: Uuid) -> Result
 
 /// The relationship of a source record, for screens that show one (DSP ops).
 pub(crate) async fn by_entities(
+    keys: &crate::payout_keys::KeyRing,
     c: &mut PgConnection,
     kind: &str,
     ids: &[String],
@@ -947,17 +983,14 @@ pub(crate) async fn by_entities(
     .await?;
     let rels: Vec<Rel> = rows.iter().map(Rel::from_row).collect();
     let contract = contracts(c, &rels).await?;
-    Ok(rels
-        .iter()
+    rels.iter()
         .filter_map(|r| {
             r.entity_id.clone().map(|e| {
-                (
-                    e,
-                    r.json(contract.get(&r.id).cloned().unwrap_or(Value::Null)),
-                )
+                let mut v = r.json(contract.get(&r.id).cloned().unwrap_or(Value::Null));
+                crate::pii::reveal(keys, &mut v).map(|()| (e, v))
             })
         })
-        .collect())
+        .collect()
 }
 
 async fn h_list(

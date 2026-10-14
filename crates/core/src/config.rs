@@ -20,6 +20,12 @@ pub fn kms_enabled() -> crate::error::Result<bool> {
 pub fn antivirus_enabled() -> crate::error::Result<bool> {
     read_feature("UPLOAD_AV_ENABLED")
 }
+/// Staff second factor (TOTP). Off unless `STAFF_MFA_REQUIRED=true`: optional
+/// while in development; turn it on before going live (개인정보의 안전성
+/// 확보조치 기준 제6조). Passkey sign-ins count as a second factor either way.
+pub fn staff_mfa_required() -> crate::error::Result<bool> {
+    read_feature("STAFF_MFA_REQUIRED")
+}
 #[derive(Clone)]
 pub struct Config {
     pub database_url: String,
@@ -36,6 +42,7 @@ impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
         kms_enabled()?;
         antivirus_enabled()?;
+        staff_mfa_required()?;
         let mode = env::var("APP_ENV").unwrap_or_else(|_| "development".into());
         anyhow::ensure!(
             matches!(mode.as_str(), "development" | "test" | "production"),

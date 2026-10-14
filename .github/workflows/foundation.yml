@@ -24,6 +24,8 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       DATABASE_URL: postgres://postgres:ephemeral-ci-only@localhost:5432/postgres
+      # 개인정보는 암호문으로만 저장한다(0102): 키가 없으면 가입·연락처 저장이 거절된다. 테스트 전용 값.
+      PAYOUT_ACCOUNT_KEY: '0000000000000000000000000000000000000000000000000000000000000000'
       # CI는 매번 새로 빌드하므로 증분 빌드 파일이 쓸모없고, 디버그 정보는 줄 번호만 남겨
       # target/ 캐시를 작게 (복원·저장 시간 단축)
       CARGO_INCREMENTAL: '0'
@@ -255,7 +257,8 @@ jobs:
         run: curl --fail --retry 15 --retry-all-errors --retry-delay 2 -H "X-Audeniq-Service:$EDGE_SERVICE_SECRET" http://127.0.0.1:8080/ready
       - name: Production boots without cloud KMS or an antivirus engine
         run: |
-          docker compose run --no-deps -d --name audeniq-ci-optional-security -e APP_ENV=production -e APP_ORIGIN=https://studio.audeniq.test api
+          docker compose run --no-deps -d --name audeniq-ci-optional-security -e APP_ENV=production -e APP_ORIGIN=https://studio.audeniq.test \
+            -e PAYOUT_ACCOUNT_KEY=0000000000000000000000000000000000000000000000000000000000000000 api
           docker exec -i audeniq-ci-optional-security python3 - <<'PY'
           import os, time, urllib.request
           assert os.environ['PAYOUT_KMS_ENABLED'] == 'false'
@@ -278,6 +281,12 @@ jobs:
             exit 1
           fi
           grep -q PAYOUT_KEYRING_REQUIRED /tmp/kms-required.log
+          # Personal data is stored only sealed: production needs some key.
+          if docker compose run --rm --no-deps -e APP_ENV=production -e APP_ORIGIN=https://studio.audeniq.test -e PAYOUT_ACCOUNT_KEY= api > /tmp/pii-key.log 2>&1; then
+            echo 'Production started without a personal-data key'
+            exit 1
+          fi
+          grep -q PII_KEYRING_REQUIRED /tmp/pii-key.log
       - name: Verify parser isolation inside actual runtime containers
         run: |
           docker compose exec -T api audeniq-admin upload-sandbox-check

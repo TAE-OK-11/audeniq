@@ -20,6 +20,7 @@ import './styles/desktop.css';
 import './styles/wizard-motion.css';
 import './styles/design-align.css';
 import { SelectHost } from './components/Picker';
+import { PrintStampHost } from './lib/printStamp';
 
 // 배포 직후 옛 청크가 사라져 동적 import가 실패하면 한 번만 새로고침해 새 버전을 받는다
 function lazyPage<M>(load: () => Promise<M>, pick: (m: M) => ComponentType) {
@@ -42,7 +43,12 @@ const Signup = lazyPage(pageLoaders.Signup, m => m.Signup);
 const FindAccount = lazyPage(pageLoaders.FindAccount, m => m.FindAccount);
 const Sign = lazyPage(pageLoaders.Sign, m => m.Sign);
 const Terms = lazyPage(pageLoaders.Terms, m => m.Terms);
+const Verify = lazyPage(pageLoaders.Verify, m => m.Verify);
+const RightsReport = lazyPage(pageLoaders.RightsReport, m => m.RightsReport);
+const SmartLink = lazyPage(pageLoaders.SmartLink, m => m.SmartLink);
+const SplitInvite = lazyPage(pageLoaders.SplitInvite, m => m.SplitInvite);
 const SettlementTerms = lazyPage(pageLoaders.Terms, m => m.SettlementTerms);
+const PrivacyPolicy = lazyPage(pageLoaders.Terms, m => m.PrivacyPolicy);
 const Dashboard = lazyPage(pageLoaders.Dashboard, m => m.Dashboard);
 const Releases = lazyPage(pageLoaders.Releases, m => m.Releases);
 const ReleaseDetail = lazyPage(pageLoaders.ReleaseDetail, m => m.ReleaseDetail);
@@ -55,6 +61,8 @@ const Agreement = lazyPage(pageLoaders.Agreement, m => m.Agreement);
 const Rights = lazyPage(pageLoaders.Rights, m => m.Rights);
 const RightsDocument = lazyPage(pageLoaders.RightsDocument, m => m.RightsDocument);
 const Inquiries = lazyPage(pageLoaders.Inquiries, m => m.Inquiries);
+const PlatformRequests = lazyPage(pageLoaders.PlatformRequests, m => m.PlatformRequests);
+const BulkReleases = lazyPage(pageLoaders.BulkReleases, m => m.BulkReleases);
 const Notifications = lazyPage(pageLoaders.Notifications, m => m.Notifications);
 const Events = lazyPage(pageLoaders.Events, m => m.Events);
 const Notices = lazyPage(pageLoaders.Notices, m => m.Notices);
@@ -108,6 +116,7 @@ function PortalRoutes() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/releases" element={<Releases />} />
+            <Route path="/releases/bulk" element={<BulkReleases />} />
             <Route path="/releases/:id" element={<ReleaseDetail />} />
             <Route path="/releases/:id/application" element={<Application />} />
             <Route path="/upload" element={<UploadRoute />} />
@@ -118,6 +127,7 @@ function PortalRoutes() {
             <Route path="/rights" element={<Rights />} />
             <Route path="/rights/:id" element={<RightsDocument />} />
             <Route path="/inquiries" element={<Inquiries />} />
+            <Route path="/platform-requests" element={<PlatformRequests />} />
             <Route path="/notifications" element={<Notifications />} />
             <Route path="/events" element={<Events />} />
             <Route path="/notices" element={<Notices />} />
@@ -139,6 +149,7 @@ export function App() {
         <ToastProvider>
           <ConfirmProvider>
             <SelectHost />
+            <PrintStampHost />
             <ErrorBoundary fullPage>
               <SystemStatus>
                 <Suspense fallback={<BootScreen />}>
@@ -150,6 +161,16 @@ export function App() {
                     <Route path="/sign/:token" element={<Sign />} />
                     <Route path="/terms" element={<Terms />} />
                     <Route path="/terms/settlement" element={<SettlementTerms />} />
+                    <Route path="/privacy" element={<PrivacyPolicy />} />
+                    {/* 출력물 진위 확인 — 로그인 없이 원본 검증코드로 */}
+                    <Route path="/verify" element={<Verify />} />
+                    {/* 권리침해 신고 — 계정 없이 누구나 */}
+                    <Route path="/rights-report" element={<RightsReport />} />
+                    {/* 스마트링크 — 발매 공유 페이지, 로그인 없이 */}
+                    <Route path="/l/:slug" element={<SmartLink />} />
+                    {/* 공동작업 수익 분배 요청 — 메일 링크, 수락은 로그인 후 */}
+                    <Route path="/splits/:token" element={<SplitInvite />} />
+                    <Route path="/terms/privacy" element={<Navigate to="/privacy" replace />} />
                     <Route path="/content-admin" element={<Navigate to="/admin/content" replace />} />
                     {/* 스태프 관리자 — 같은 로그인 세션 + 서버의 스태프 역할(/api/staff/me)로 접근 */}
                     <Route path="/admin/*" element={<Protected><AdminApp /></Protected>} />
@@ -164,3 +185,4 @@ export function App() {
     </BrowserRouter>
   );
 }
+

@@ -127,7 +127,127 @@ async fn royalty_01_ingest_parse_match(pool: PgPool) {
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(report_status, "MATCHED");
+    assert_eq!(report_status, "PARTIALLY_MATCHED");
+    assert_eq!(
+        royalty::match_report(&pool, org, report_id).await.unwrap(),
+        (0, 1)
+    );
+
+    // Original bytes, including quotes/newlines, can be reproduced.
+    let original: String = sqlx::query_scalar(
+        "SELECT raw_ref->>'source_content' FROM finance.royalty_reports WHERE id=$1",
+    )
+    .bind(report_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(original, csv);
+
+    // Reconciliation evidence does not create payable entries or POSTED status.
+    let evidence = serde_json::json!({"statement":"bank-statement-2026-08"});
+    let actor = Uuid::new_v4();
+    let amount = "72.50".parse().unwrap();
+    let receipt = royalty::record_receipt(
+        &pool,
+        org,
+        report_id,
+        actor,
+        "receipt-1",
+        amount,
+        "USD",
+        evidence.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        receipt,
+        royalty::record_receipt(
+            &pool,
+            org,
+            report_id,
+            actor,
+            "receipt-1",
+            amount,
+            "USD",
+            evidence.clone()
+        )
+        .await
+        .unwrap()
+    );
+    assert!(
+        royalty::record_receipt(
+            &pool,
+            org,
+            report_id,
+            actor,
+            "receipt-1",
+            "73".parse().unwrap(),
+            "USD",
+            evidence.clone()
+        )
+        .await
+        .is_err()
+    );
+    assert!(
+        royalty::record_receipt(
+            &pool,
+            org,
+            report_id,
+            actor,
+            "receipt-2",
+            amount,
+            "KRW",
+            evidence
+        )
+        .await
+        .is_err()
+    );
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM finance.ledger_entries WHERE org_id=$1")
+            .bind(org)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(count, 0);
+
+    // Two tracks with the same ISRC must stay unresolved, even in one release.
+    sqlx::query("INSERT INTO catalog.tracks(id,org_id,release_id,title,disc_number,track_number,artist_id,isrc) VALUES($1,$2,$3,'duplicate',1,2,$4,'USABC2600001')")
+        .bind(Uuid::new_v4()).bind(org).bind(release).bind(artist).execute(&pool).await.unwrap();
+    let ambiguous = royalty::ingest_report(
+        &pool,
+        org,
+        "mockdsp",
+        period_start,
+        period_end,
+        "USD",
+        "ambiguous.csv",
+        "isrc,quantity,gross_amount,currency\nUSABC2600001,1,1,USD\n",
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        royalty::match_report(&pool, org, ambiguous).await.unwrap(),
+        (0, 1)
+    );
+    assert_eq!(
+        royalty::match_report(&pool, org, ambiguous).await.unwrap(),
+        (0, 1)
+    );
+    let status: String =
+        sqlx::query_scalar("SELECT match_status FROM finance.report_lines WHERE report_id=$1")
+            .bind(ambiguous)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(status, "AMBIGUOUS");
+    let candidates:i64=sqlx::query_scalar("SELECT COUNT(*) FROM finance.royalty_match_candidates c JOIN finance.report_lines l ON l.id=c.report_line_id WHERE l.report_id=$1")
+        .bind(ambiguous).fetch_one(&pool).await.unwrap();
+    assert_eq!(candidates, 2);
+    assert!(
+        royalty::match_report(&pool, Uuid::new_v4(), ambiguous)
+            .await
+            .is_err()
+    );
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -162,7 +282,7 @@ async fn royalty_02_rejects_bad_input(pool: PgPool) {
         .await
         .is_err()
     );
-    // Negative amount.
+    // Negative source adjustments are preserved; ledger entries remain nonnegative.
     assert!(
         royalty::ingest_report(
             &pool,
@@ -175,7 +295,7 @@ async fn royalty_02_rejects_bad_input(pool: PgPool) {
             "isrc,dsp_track_id,quantity,gross_amount,currency\nUSX,D1,10,-5.00,USD\n"
         )
         .await
-        .is_err()
+        .is_ok()
     );
     // Bad period.
     assert!(
@@ -207,4 +327,94 @@ async fn royalty_02_rejects_bad_input(pool: PgPool) {
         .await
         .is_err()
     );
+}
+
+/// The same recording on a single and an album: ISRC alone is ambiguous
+/// (splits are per release), so a report line names its product by UPC.
+#[sqlx::test(migrations = "../../migrations")]
+async fn royalty_03_shared_isrc_matches_by_upc(pool: PgPool) {
+    let org = Uuid::new_v4();
+    sqlx::query("INSERT INTO identity.orgs(id, name, kind) VALUES($1,'Test','LABEL')")
+        .bind(org)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let artist = Uuid::new_v4();
+    sqlx::query("INSERT INTO identity.resources(org_id, id, kind) VALUES($1,$2,'artist')")
+        .bind(org)
+        .bind(artist)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO identity.parties(id, org_id, kind, display_name) VALUES($1,$2,'PERSON','T')",
+    )
+    .bind(artist)
+    .bind(org)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO catalog.artists(id, org_id, name) VALUES($1,$2,'Test Artist')")
+        .bind(artist)
+        .bind(org)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut releases = Vec::new();
+    for (kind, upc) in [("SINGLE", "042100005264"), ("ALBUM", "123456789012")] {
+        let release = Uuid::new_v4();
+        sqlx::query("INSERT INTO identity.resources(org_id, id, kind) VALUES($1,$2,'release')")
+            .bind(org)
+            .bind(release)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO catalog.releases(id, org_id, title, release_type, status, upc) VALUES($1,$2,'T',$3,'DRAFT',$4)")
+            .bind(release)
+            .bind(org)
+            .bind(kind)
+            .bind(upc)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO catalog.tracks(id, org_id, release_id, title, disc_number, track_number, artist_id, isrc) VALUES($1,$2,$3,'T',1,1,$4,'USABC2600001')")
+            .bind(Uuid::new_v4())
+            .bind(org)
+            .bind(release)
+            .bind(artist)
+            .execute(&pool)
+            .await
+            .unwrap();
+        releases.push(release);
+    }
+    // EAN-13 spelling of the single's UPC, a hyphenated lowercase ISRC for
+    // the album, and one line with no product (stays for review).
+    let csv = "isrc,upc,dsp_track_id,quantity,gross_amount,currency\n\
+               USABC2600001,0042100005264,D1,10,1.00,USD\n\
+               us-abc-26-00001,123456789012,D2,20,2.00,USD\n\
+               USABC2600001,,D3,30,3.00,USD\n";
+    let report_id = royalty::ingest_report(
+        &pool,
+        org,
+        "mockdsp",
+        NaiveDate::from_ymd_opt(2026, 8, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2026, 8, 31).unwrap(),
+        "USD",
+        "shared.csv",
+        csv,
+    )
+    .await
+    .unwrap();
+    let (auto, unmatched) = royalty::match_report(&pool, org, report_id).await.unwrap();
+    assert_eq!((auto, unmatched), (2, 1));
+    let matched: Vec<(String, Option<Uuid>)> = sqlx::query_as(
+        "SELECT dsp_track_id, matched_release_id FROM finance.report_lines WHERE report_id=$1 ORDER BY line_no",
+    )
+    .bind(report_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(matched[0], ("D1".into(), Some(releases[0])));
+    assert_eq!(matched[1], ("D2".into(), Some(releases[1])));
+    assert_eq!(matched[2], ("D3".into(), None));
 }

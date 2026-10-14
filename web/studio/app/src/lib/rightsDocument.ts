@@ -1,4 +1,5 @@
 import { dspLabel } from './catalog';
+import { territorySummary } from './territories';
 
 // 권리 서류 서식 AUD-RIGHTS 2.0 — 권리자 본인이 본인확인 후 직접 서명하는 전자 문서.
 // 문안은 일반적인 이용 허락·위임 계약의 필수 요소(당사자, 대상, 범위, 기간, 대가, 보증, 철회,
@@ -49,7 +50,7 @@ export type SigningConsentKey = keyof typeof SIGNING_CONSENTS;
 
 /** 개인정보 수집·이용 안내 (개인정보 보호법 제15조 제2항의 고지 사항) */
 export const SIGNING_PRIVACY_NOTICE = [
-  '수집 항목: 이름, 생년월일, 본인확인 결과(인증기관 거래번호, 연계정보(CI)의 암호화된 값), 서명 이미지, 서명 시각, 접속 정보(IP 주소의 암호화된 값, 브라우저 정보)',
+  '수집 항목: 이름, 생년월일, 본인확인 결과(인증기관 거래번호, 연계정보(CI)의 해시값), 서명 이미지, 서명 시각, 접속 정보(IP 주소의 해시값, 브라우저 정보)',
   '이용 목적: 서명자 본인 확인, 전자서명과 문서 체결 사실의 증빙, 권리 검토와 분쟁 대응',
   '제공: 문서를 요청한 발매 신청인에게 서명자 이름·본인확인 완료 시각·서명본이 제공돼요. 생년월일과 연계정보는 제공하지 않아요.',
   '보유 기간: 해당 발매의 배급 계약이 끝난 날부터 5년(관계 법령에서 더 길게 정한 경우 그 기간)',
@@ -87,7 +88,7 @@ export function rightsDocumentBody(kind: RightsDocumentKind, context: RightsDocu
     `제1조 (${shared ? '위임' : '이용 허락'})`,
     d.grant,
     `${shared ? '위임하는 지분·범위' : '허락하는 권리·지분·사용 범위'}: ${input.scope.trim()}`,
-    `배급 지역: ${context.territories.includes('WORLD') ? '전 세계' : context.territories.join(', ') || '배급 신청서에 지정한 지역'}`,
+    `배급 지역: ${territorySummary(context.territories, '배급 신청서에 지정한 지역')}`,
     `배급 플랫폼: ${context.platforms.map(dspLabel).join(', ') || '배급 신청서에 지정한 플랫폼'}`,
     '',
     '제2조 (기간)',
@@ -128,3 +129,4 @@ export function rightsHashInput(title: string, body: string, e: {
     form: e.form, rights_holder: e.rights_holder.trim(), signature: e.signature,
     signer_name: e.signer_name.trim(), signer_role: e.signer_role, title: title.trim() });
 }
+

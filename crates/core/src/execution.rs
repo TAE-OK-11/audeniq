@@ -74,6 +74,10 @@ pub struct TransferPackage {
     /// Genre and label from the frozen application (partner feeds).
     pub genre: Option<String>,
     pub label: Option<String>,
+    /// Track lyrics from the frozen application, by track id (partner feeds;
+    /// Korean services show them). Instrumentals and tracks without lyrics
+    /// are absent.
+    pub lyrics: std::collections::BTreeMap<Uuid, String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,6 +95,9 @@ pub struct TransferFile {
     /// Name the partner receives, exactly as the ERN references it.
     pub delivery_name: String,
     pub role: FileRole,
+    /// Storage ETag recorded when the object was registered (written once,
+    /// never rewritten by this service).
+    pub pinned_etag: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -254,6 +261,27 @@ pub async fn enqueue_delivery_jobs(pool: &PgPool, package_id: Uuid) -> Result<(V
             Some(package_id),
             "delivery.held",
             "AGREEMENT_NOT_SIGNED",
+            Uuid::new_v4(),
+        )
+        .await?;
+        tx.commit().await?;
+        return Ok((Vec::new(), org_id));
+    }
+    // A release whose distribution has ended (contract end, rights expiry,
+    // termination; migration 0121) gets no new delivery.
+    let ended: bool = sqlx::query_scalar("SELECT portal.release_term_ended($1,$2)")
+        .bind(org_id)
+        .bind(release_id)
+        .fetch_one(&mut *tx)
+        .await?;
+    if ended {
+        crate::operations::audit(
+            &mut tx,
+            None,
+            Some(org_id),
+            Some(package_id),
+            "delivery.held",
+            "RELEASE_TERM_ENDED",
             Uuid::new_v4(),
         )
         .await?;
@@ -494,21 +522,9 @@ async fn freshness_check(
     if live_epoch != Some(pinned_epoch) {
         return Err(Error::PolicyGate("EXECUTION_RIGHTS_EPOCH_DRIFT"));
     }
-    // A hold placed after preparation blocks the send. Holds are scoped;
-    // a RELEASE hold on this release or any active PARTY hold blocks.
-    let held: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM finance.finance_holds
-         WHERE org_id=$1 AND active
-           AND ((scope_type='RELEASE' AND scope_value=$2) OR scope_type='PARTY'))",
-    )
-    .bind(org_id)
-    .bind(release_id.to_string())
-    .fetch_one(&mut **tx)
-    .await
-    .unwrap_or(false);
-    if held {
-        return Err(Error::PolicyGate("EXECUTION_HOLD_ACTIVE"));
-    }
+    // Finance holds (finance.finance_holds) stop money, not releases: a held
+    // payee or release still goes out, and only its payouts wait for the hold
+    // to clear (portal::request_payout, PAYEE_ON_HOLD).
     let profile: Option<(bool,)> = sqlx::query_as(
         "SELECT delivery_enabled FROM execution.adapter_profiles WHERE partner_id=$1",
     )
@@ -526,16 +542,50 @@ async fn freshness_check(
 /// Verify one transfer file against its pinned asset record and storage:
 /// the object must exist with the pinned size and content type, and its
 /// bytes must hash to the pinned SHA-256. Fails closed on any drift.
+/// The bytes in storage must still be the pinned ones: size, content type
+/// and SHA-256 (streamed, constant memory). Runs with no DB transaction
+/// open — hashing a 512 MiB master outlasts the worker's
+/// idle-in-transaction timeout.
+async fn verify_storage(storage: &Arc<dyn ObjectStore>, f: &TransferFile) -> Result<()> {
+    let head = storage
+        .head(&f.object_key)
+        .await
+        .map_err(|_| Error::Storage)?
+        .ok_or(Error::Storage)?;
+    if head.size != f.size_bytes || head.content_type != f.content_type {
+        return Err(Error::PolicyGate("EXECUTION_FILE_DRIFT"));
+    }
+    // Unchanged since registration (same ETag): no full read here. A send
+    // re-reads every byte anyway and checks SHA-256 and size as it stages
+    // (partners::stage_files), so nothing unverified ever leaves; this check
+    // only fails a changed object early. Masters were read 2 + 2x(partners)
+    // times per release before.
+    if f.pinned_etag
+        .as_deref()
+        .is_some_and(|e| !e.is_empty() && e == head.etag)
+    {
+        return Ok(());
+    }
+    let digest = match storage.digest(&f.object_key, f.size_bytes as u64).await {
+        Ok(d) => d,
+        Err(Error::PolicyGate(_)) => return Err(Error::PolicyGate("EXECUTION_FILE_DRIFT")),
+        Err(_) => return Err(Error::Storage),
+    };
+    if digest.size != f.size_bytes as u64 || digest.sha256 != f.sha256 {
+        return Err(Error::PolicyGate("EXECUTION_FILE_TAMPERED"));
+    }
+    Ok(())
+}
+
 async fn verify_file(
     tx: &mut PgConnection,
-    storage: &Arc<dyn ObjectStore>,
     org_id: Uuid,
     asset_id: Uuid,
     key: &str,
     delivery: (String, FileRole),
 ) -> Result<TransferFile> {
     let pin = sqlx::query(
-        "SELECT sha256, size_bytes, content_type FROM catalog.assets WHERE org_id=$1 AND id=$2",
+        "SELECT sha256, size_bytes, content_type, etag FROM catalog.assets WHERE org_id=$1 AND id=$2",
     )
     .bind(org_id)
     .bind(asset_id)
@@ -565,23 +615,6 @@ async fn verify_file(
     if size_bytes > crate::preflight::MAX_PREFLIGHT_ASSET_BYTES {
         return Err(Error::PolicyGate("EXECUTION_FILE_TOO_LARGE"));
     }
-    let head = storage
-        .head(key)
-        .await
-        .map_err(|_| Error::Storage)?
-        .ok_or(Error::Storage)?;
-    if head.size != size_bytes || head.content_type != content_type {
-        return Err(Error::PolicyGate("EXECUTION_FILE_DRIFT"));
-    }
-    // Streamed hash: constant memory for masters up to the upload cap.
-    let digest = match storage.digest(key, size_bytes as u64).await {
-        Ok(d) => d,
-        Err(Error::PolicyGate(_)) => return Err(Error::PolicyGate("EXECUTION_FILE_DRIFT")),
-        Err(_) => return Err(Error::Storage),
-    };
-    if digest.size != size_bytes as u64 || digest.sha256 != sha256 {
-        return Err(Error::PolicyGate("EXECUTION_FILE_TAMPERED"));
-    }
     let (mut delivery_name, role) = delivery;
     if delivery_name.is_empty() {
         delivery_name = key.rsplit('/').next().unwrap_or(key).to_string();
@@ -593,6 +626,7 @@ async fn verify_file(
         delivery_name,
         role,
         content_type,
+        pinned_etag: pin.get("etag"),
     })
 }
 
@@ -633,7 +667,6 @@ fn has_virtual_identifier(snapshot: &Value) -> bool {
 async fn materialize(
     pool: &PgPool,
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    storage: &Arc<dyn ObjectStore>,
     job: &DeliveryJob,
 ) -> Result<TransferPackage> {
     let row = sqlx::query(
@@ -690,15 +723,8 @@ async fn materialize(
                 .and_then(|s| Uuid::parse_str(s).ok())
                 .ok_or(Error::PolicyGate("EXECUTION_FILE_REF_MISSING"))?;
             let n = |k: &str| t.get(k).and_then(Value::as_u64).unwrap_or(1) as u32;
-            let mut f = verify_file(
-                tx,
-                storage,
-                org_id,
-                asset_id,
-                key,
-                (String::new(), FileRole::Audio),
-            )
-            .await?;
+            let mut f =
+                verify_file(tx, org_id, asset_id, key, (String::new(), FileRole::Audio)).await?;
             let name = delivery_name(
                 upc.as_deref(),
                 FileRole::Audio,
@@ -723,7 +749,6 @@ async fn materialize(
             .ok_or(Error::PolicyGate("EXECUTION_FILE_REF_MISSING"))?;
         let mut f = verify_file(
             tx,
-            storage,
             org_id,
             asset_id,
             key,
@@ -808,14 +833,23 @@ async fn materialize(
     // (legacy fixtures without complete metadata simply have none, and the
     // adapters that need it fail closed).
     let canonical_id: Uuid = row.get("canonical_id");
+    let mut genre_correction = None;
     let prepared = match serde_json::from_value::<crate::distribution::CanonicalRelease>(snapshot) {
-        Ok(c) => crate::preparation_model::PreparedRelease::from_canonical(pool, canonical_id, &c)
-            .await
-            .ok()
-            .map(Arc::new),
+        Ok(c) => {
+            match crate::preparation_model::PreparedRelease::from_canonical(pool, canonical_id, &c)
+                .await
+            {
+                Ok(mut p) => {
+                    genre_correction = crate::corrections::overlay(pool, &mut p).await?;
+                    Some(Arc::new(p))
+                }
+                Err(_) => None,
+            }
+        }
         Err(_) => None,
     };
-    let (genre, label) = release_extras(tx, &prepared).await;
+    let (genre, label, lyrics) = release_extras(tx, &prepared).await;
+    let genre = genre_correction.or(genre);
     Ok(TransferPackage {
         package_id: job.package_id,
         package_hash,
@@ -827,6 +861,7 @@ async fn materialize(
         prepared,
         genre,
         label,
+        lyrics,
     })
 }
 
@@ -846,12 +881,24 @@ pub async fn run_delivery(
     if adapter.partner_id() != job.partner_id {
         return Err(Error::PolicyGate("EXECUTION_PARTNER_MISMATCH"));
     }
+    // Capability before the expensive checks: without it nothing can be sent,
+    // and the lease goes back instead of being re-taken (and every master
+    // re-hashed) on each retry until the attempts run out.
+    if let Err(e) = adapter.require(adapter.capabilities().send_or_publish, "send_or_publish") {
+        tx.rollback().await?;
+        release_delivery_lease(pool, job, "EXECUTION_CAPABILITY_MISSING").await?;
+        return Err(e);
+    }
     // E-1. A failed check poisons the Postgres transaction (any error aborts
     // it), so the failure bookkeeping below runs in a FRESH transaction via
     // fail_job — reusing `tx` would mask the real error with 25P02.
     if let Err(e) = freshness_check(&mut tx, job).await {
         let msg = format!("{e:?}");
         tx.rollback().await?;
+        if transient(&e) {
+            requeue_delivery_job(pool, job, "E-1 transient error").await?;
+            return Err(e);
+        }
         fail_job(
             pool,
             job,
@@ -864,16 +911,34 @@ pub async fn run_delivery(
         return Err(e);
     }
     // E-2. Same poisoned-transaction rule as E-1.
-    let package = match materialize(pool, &mut tx, storage, job).await {
+    let package = match materialize(pool, &mut tx, job).await {
         Ok(p) => p,
         Err(e) => {
             let msg = format!("{e:?}");
             tx.rollback().await?;
+            if transient(&e) {
+                requeue_delivery_job(pool, job, "E-2 transient error").await?;
+                return Err(e);
+            }
             fail_job(pool, job, "FAILED", &msg, None, None).await?;
             return Err(e);
         }
     };
-    adapter.require(adapter.capabilities().send_or_publish, "send_or_publish")?;
+    // Storage and partner checks take minutes for large masters: no DB
+    // transaction stays open across them (the worker role's
+    // idle_in_transaction_session_timeout is 30 s). The lease is renewed
+    // meanwhile; E-1 and the lease are checked again below.
+    tx.commit().await?;
+    for f in &package.files {
+        if let Err(e) = verify_storage(storage, f).await {
+            if transient(&e) {
+                requeue_delivery_job(pool, job, "E-2 storage unavailable").await?;
+            } else {
+                fail_job(pool, job, "FAILED", &format!("{e:?}"), None, None).await?;
+            }
+            return Err(e);
+        }
+    }
     // Adapter-side validation (partner rules, file names, metadata the feed
     // needs). A failure here is permanent for this package: record it on the
     // job instead of leaving the job LEASED for the reconciler to requeue
@@ -884,7 +949,6 @@ pub async fn run_delivery(
     };
     if let Err(e) = checked {
         let msg = format!("{e:?}");
-        tx.rollback().await?;
         fail_job(
             pool,
             job,
@@ -892,6 +956,30 @@ pub async fn run_delivery(
             &format!("ADAPTER_VALIDATION:{msg}"),
             Some("PARTNER_REJECTED"),
             Some(json!({"stage":"E-2","adapter_validation":msg})),
+        )
+        .await?;
+        return Err(e);
+    }
+    let mut tx = pool.begin().await?;
+    authorize_org(&mut tx, job.org_id).await?;
+    if !job_lease_ok(&mut tx, job).await? {
+        return Err(Error::Conflict);
+    }
+    // Rights or contract scope may have moved while the files were checked.
+    if let Err(e) = freshness_check(&mut tx, job).await {
+        let msg = format!("{e:?}");
+        tx.rollback().await?;
+        if transient(&e) {
+            requeue_delivery_job(pool, job, "E-1 transient error").await?;
+            return Err(e);
+        }
+        fail_job(
+            pool,
+            job,
+            "FAILED",
+            &msg,
+            Some("PARTNER_REJECTED"),
+            Some(json!({"stage":"E-1","error":msg})),
         )
         .await?;
         return Err(e);
@@ -1335,8 +1423,10 @@ pub async fn apply_ack_event(
                 .await?;
             } else {
                 sqlx::query(
+                    // Only a send still in flight (or unknown) can be refused:
+                    // a late/out-of-order REJECTED never undoes a delivery.
                     "UPDATE execution.delivery_jobs SET status='FAILED', last_error='PARTNER_WEBHOOK_REJECTED', updated_at=now()
-                     WHERE id=$1",
+                     WHERE id=$1 AND status IN ('SENDING','AWAITING_RECONCILIATION')",
                 )
                 .bind(job_id)
                 .execute(&mut *tx)
@@ -1521,15 +1611,35 @@ pub async fn poll_live(
             "REJECTED"
         }
         InquiryOutcome::Accepted { .. } | InquiryOutcome::StillUnknown => {
-            sqlx::query(
+            // Never move a binding back from LIVE or a takedown state: the
+            // poll chain runs independently of webhooks.
+            let n = sqlx::query(
                 "UPDATE execution.live_bindings SET live_status='INGESTING', last_checked_at=now(), updated_at=now()
-                 WHERE package_id=$1 AND partner_id=$2",
+                 WHERE package_id=$1 AND partner_id=$2 AND live_status IN ('UNKNOWN','INGESTING')",
             )
             .bind(package_id)
             .bind(partner_id)
             .execute(&mut *tx)
-            .await?;
-            "INGESTING"
+            .await?
+            .rows_affected();
+            if n == 0 {
+                // Already LIVE / taken down (webhook or staff evidence): the
+                // chain stops on that state instead of polling on.
+                let current: Option<String> = sqlx::query_scalar(
+                    "SELECT live_status FROM execution.live_bindings WHERE package_id=$1 AND partner_id=$2",
+                )
+                .bind(package_id)
+                .bind(partner_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+                match current.as_deref() {
+                    Some("LIVE") => "LIVE",
+                    Some("TAKEN_DOWN") | Some("TAKEDOWN_REQUESTED") => "TAKEN_DOWN",
+                    _ => "INGESTING",
+                }
+            } else {
+                "INGESTING"
+            }
         }
     };
     tx.commit().await?;
@@ -1813,15 +1923,23 @@ async fn followup_package(
         .map(str::to_owned);
     let canonical: Option<crate::distribution::CanonicalRelease> =
         serde_json::from_value(snapshot).ok();
+    let mut genre_correction = None;
     let prepared = match &canonical {
-        Some(c) => crate::preparation_model::PreparedRelease::from_canonical(
+        Some(c) => match crate::preparation_model::PreparedRelease::from_canonical(
             pool,
             row.get("canonical_id"),
             c,
         )
         .await
-        .ok()
-        .map(Arc::new),
+        {
+            Ok(mut p) => {
+                // Approved metadata corrections (credits, genre) go out with
+                // every follow-up message.
+                genre_correction = crate::corrections::overlay(pool, &mut p).await?;
+                Some(Arc::new(p))
+            }
+            Err(_) => None,
+        },
         None => None,
     };
     let mut ern_xml = Vec::new();
@@ -1851,15 +1969,21 @@ async fn followup_package(
             sent_on_behalf_of: None,
             recipient_name: row.get("recipient_name"),
             recipient_party_id: Some(row.get("recipient_dpid")),
-            deal_start_date: first("StartDate"),
+            // A simultaneous release carries StartDateTime instead of StartDate.
+            deal_start_date: Some(first("StartDate"))
+                .filter(|d| !d.is_empty())
+                .unwrap_or_else(|| first("StartDateTime").chars().take(10).collect()),
             takedown_date: (sub_type == crate::ddex_ern::MessageSubType::Takedown)
                 .then(|| now.format("%Y-%m-%d").to_string()),
+            artist_party_id: crate::dsp_registry::Dsp::from_code(partner_id)
+                .and_then(|d| p.artist_platform_ids.get(d.spec().slug).cloned()),
         };
         let xml = crate::ddex_ern::generate_ddex_ern_382(p, &config)?;
         ern_xml = xml.into_bytes();
     }
     let mut c = pool.acquire().await?;
-    let (genre, label) = release_extras(&mut c, &prepared).await;
+    let (genre, label, lyrics) = release_extras(&mut c, &prepared).await;
+    let genre = genre_correction.or(genre);
     Ok(TransferPackage {
         package_id,
         package_hash: row.get("package_hash"),
@@ -1871,6 +1995,7 @@ async fn followup_package(
         prepared,
         genre,
         label,
+        lyrics,
     })
 }
 
@@ -1879,12 +2004,17 @@ async fn followup_package(
 async fn release_extras(
     c: &mut PgConnection,
     prepared: &Option<Arc<crate::preparation_model::PreparedRelease>>,
-) -> (Option<String>, Option<String>) {
+) -> (
+    Option<String>,
+    Option<String>,
+    std::collections::BTreeMap<Uuid, String>,
+) {
     let Some(p) = prepared else {
-        return (None, None);
+        return (None, None, Default::default());
     };
-    let draft: Option<Value> = sqlx::query_scalar(
-        "SELECT COALESCE(NULLIF(ar.body -> 'release' -> 'draft', 'null'::jsonb), r.draft)
+    let row: Option<(Value, Value)> = sqlx::query_as(
+        "SELECT COALESCE(NULLIF(ar.body -> 'release' -> 'draft', 'null'::jsonb), r.draft),
+                COALESCE(ar.body -> 'tracks', '[]'::jsonb)
          FROM catalog.application_revisions ar
          JOIN catalog.releases r ON r.org_id=ar.org_id AND r.id=ar.release_id
          WHERE ar.org_id=$1 AND ar.id=$2",
@@ -1895,9 +2025,20 @@ async fn release_extras(
     .await
     .ok()
     .flatten();
-    let Some(d) = draft else {
-        return (None, None);
+    let Some((d, tracks)) = row else {
+        return (None, None, Default::default());
     };
+    // Lyrics as submitted (the frozen revision), never the live draft.
+    let lyrics = tracks
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|t| {
+            let id: Uuid = t.get("id")?.as_str()?.parse().ok()?;
+            let text = t.get("lyrics")?.as_str()?.trim();
+            (!text.is_empty()).then(|| (id, text.to_string()))
+        })
+        .collect();
     let text = |k: &str| {
         d.get(k)
             .and_then(Value::as_str)
@@ -1910,7 +2051,7 @@ async fn release_extras(
         _ => text("genre"),
     };
     let label = text("label").or_else(|| text("label_name"));
-    (genre, label)
+    (genre, label, lyrics)
 }
 
 /// The partner's id for the accepted submission of a job (API partners
@@ -2030,10 +2171,18 @@ pub async fn takedown_release(
     authorize_org(&mut tx, org).await?;
     match outcome {
         SendOutcome::Accepted { .. } => {
+            // A platform that never reported LIVE has no binding yet: the
+            // request is recorded either way (never over a confirmed
+            // TAKEN_DOWN).
             sqlx::query(
-                "UPDATE execution.live_bindings SET live_status='TAKEDOWN_REQUESTED', last_checked_at=now(), updated_at=now()
-                 WHERE package_id=$1 AND partner_id=$2",
+                "INSERT INTO execution.live_bindings(id,org_id,package_id,partner_id,live_status,last_checked_at)
+                 VALUES($1,$2,$3,$4,'TAKEDOWN_REQUESTED',now())
+                 ON CONFLICT(org_id,package_id,partner_id) DO UPDATE
+                 SET live_status='TAKEDOWN_REQUESTED', last_checked_at=now(), updated_at=now()
+                 WHERE execution.live_bindings.live_status <> 'TAKEN_DOWN'",
             )
+            .bind(Uuid::new_v4())
+            .bind(org)
             .bind(package_id)
             .bind(partner_id)
             .execute(&mut *tx)
@@ -2103,6 +2252,51 @@ pub async fn lease_delivery_job(
 /// Hand a leased delivery job back (QUEUED, lease cleared, attempt not
 /// counted as a send) when the worker cannot even start: e.g. no adapter
 /// is configured for the partner yet. The reconciler requeues it later.
+/// A storage or database hiccup, not a verdict on the package: the send is
+/// retried (the attempt counts) instead of failing the delivery for good.
+fn transient(e: &Error) -> bool {
+    matches!(e, Error::Storage | Error::Database(_) | Error::UploadBusy)
+}
+
+/// Put a leased delivery job back in the queue after a transient error,
+/// keeping the attempt it used (max_attempts still bounds the retries).
+pub async fn requeue_delivery_job(pool: &PgPool, job: &DeliveryJob, reason: &str) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    authorize_org(&mut tx, job.org_id).await?;
+    sqlx::query(
+        "UPDATE execution.delivery_jobs SET status='QUEUED', locked_by=NULL, lock_token=NULL,
+         lease_until=NULL, last_error=$3, updated_at=now()
+         WHERE id=$1 AND lock_token=$2 AND status IN ('LEASED','SENDING')",
+    )
+    .bind(job.id)
+    .bind(job.token)
+    .bind(reason)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Extend a delivery job's lease while its send is still running (hashing
+/// every master and a long transfer can outlast one lease); the operations
+/// job heartbeat calls it. Returns false once the lease is no longer ours.
+pub async fn renew_delivery_lease(pool: &PgPool, job: &DeliveryJob, seconds: i32) -> Result<bool> {
+    let mut tx = pool.begin().await?;
+    authorize_org(&mut tx, job.org_id).await?;
+    let n = sqlx::query(
+        "UPDATE execution.delivery_jobs SET lease_until=now()+make_interval(secs=>$3)
+         WHERE id=$1 AND lock_token=$2 AND status IN ('LEASED','SENDING') AND lease_until>clock_timestamp()",
+    )
+    .bind(job.id)
+    .bind(job.token)
+    .bind(seconds as f64)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    tx.commit().await?;
+    Ok(n == 1)
+}
+
 pub async fn release_delivery_lease(pool: &PgPool, job: &DeliveryJob, reason: &str) -> Result<()> {
     let mut tx = pool.begin().await?;
     authorize_org(&mut tx, job.org_id).await?;
@@ -2130,6 +2324,37 @@ pub async fn record_manual_live(
     partner_id: &str,
     partner_release_id: Option<&str>,
     staff_user: Option<Uuid>,
+) -> Result<String> {
+    record_manual(
+        pool,
+        package_id,
+        partner_id,
+        partner_release_id,
+        staff_user,
+        "LIVE",
+    )
+    .await
+}
+
+/// Staff-confirmed takedown for a platform that takes no takedown message
+/// (or whose takedown job failed): same evidence rules as
+/// [`record_manual_live`].
+pub async fn record_manual_taken_down(
+    pool: &PgPool,
+    package_id: Uuid,
+    partner_id: &str,
+    staff_user: Option<Uuid>,
+) -> Result<String> {
+    record_manual(pool, package_id, partner_id, None, staff_user, "TAKEN_DOWN").await
+}
+
+async fn record_manual(
+    pool: &PgPool,
+    package_id: Uuid,
+    partner_id: &str,
+    partner_release_id: Option<&str>,
+    staff_user: Option<Uuid>,
+    live_status: &str,
 ) -> Result<String> {
     let org: Uuid =
         sqlx::query_scalar("SELECT org_id FROM distribution.distribution_packages WHERE id=$1")
@@ -2160,19 +2385,23 @@ pub async fn record_manual_live(
         partner_id: partner_id.to_string(),
         attempts: 0,
     };
-    upsert_live_binding(&mut tx, &job, "LIVE", partner_release_id).await?;
+    upsert_live_binding(&mut tx, &job, live_status, partner_release_id).await?;
     crate::operations::audit(
         &mut tx,
         staff_user,
         Some(org),
         Some(job_id),
-        "delivery.live_recorded",
+        if live_status == "LIVE" {
+            "delivery.live_recorded"
+        } else {
+            "delivery.taken_down_recorded"
+        },
         "STAFF_EVIDENCE",
         Uuid::new_v4(),
     )
     .await?;
     tx.commit().await?;
-    Ok("LIVE".to_string())
+    Ok(live_status.to_string())
 }
 
 /// Why a delivery job could not be leased (sandbox round 2: a worker killed

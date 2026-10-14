@@ -9,6 +9,25 @@ export class ApiError extends Error {
   }
 }
 
+/** 발매 저장이 중간에 실패했다 — 발매·트랙 일부는 이미 서버에 반영됐다.
+ *  화면은 releaseId·trackServerIds를 받아 다음 저장이 같은 발매·트랙을 이어서 쓰게 한다
+ *  (새 발매를 또 만들거나, 방금 만든 트랙을 보관했다가 다시 만들지 않도록). */
+export class PartialSaveError extends ApiError {
+  releaseId: string;
+  trackServerIds: Record<string, string>;
+  constructor(cause: unknown, releaseId: string, trackServerIds: Record<string, string>, tracksSaved: boolean) {
+    const reason = cause instanceof Error && cause.message ? cause.message : '잠시 후 다시 시도해 주세요.';
+    super(
+      tracksSaved ? `트랙 정보는 저장됐지만 발매 정보는 저장되지 않았어요. ${reason}` : `발매 정보를 저장하지 못했어요. ${reason}`,
+      cause instanceof ApiError ? cause.status : 0,
+      cause instanceof ApiError ? cause.code : '',
+    );
+    this.name = 'PartialSaveError';
+    this.releaseId = releaseId;
+    this.trackServerIds = trackServerIds;
+  }
+}
+
 /** 백엔드 오류 코드(`{ error: { code } }`) → 사용자에게 보여줄 한국어 문구 */
 const CODE_MESSAGES: Record<string, string> = {
   UNAUTHENTICATED: '로그인이 필요해요.',
@@ -60,9 +79,46 @@ const CODE_MESSAGES: Record<string, string> = {
   NOTE_ANCHOR_INVALID: '댓글 위치 정보가 올바르지 않아요.',
   EMBED_VIEW_UNKNOWN: '지원하지 않는 블록 보기예요.',
   TOO_MANY_EMBEDS: '한 번에 불러올 블록이 너무 많아요.',
+  CURRENT_PASSWORD_INVALID: '지금 비밀번호가 맞지 않아요.',
+  PASSKEY_INVALID: '패스키를 확인하지 못했어요. 다시 시도해 주세요.',
+  PASSKEY_CHALLENGE_INVALID: '시간이 지났어요. 다시 시도해 주세요.',
+  PASSKEY_ALREADY_REGISTERED: '이미 등록한 패스키예요.',
+  PASSKEY_LIMIT: '패스키는 10개까지 등록할 수 있어요. 쓰지 않는 패스키를 먼저 삭제해 주세요.',
+  OAUTH_CANCELLED: '로그인을 취소했어요.',
+  OAUTH_STATE_INVALID: '로그인 시간이 지났어요. 다시 시도해 주세요.',
+  OAUTH_EMAIL_REQUIRED: '확인된 이메일을 받지 못했어요. 이메일 공유를 허용하거나 이메일로 가입해 주세요.',
+  OAUTH_EMAIL_IN_USE: '이 이메일로 가입한 계정이 이미 있어요. 이메일과 비밀번호로 로그인한 뒤 계정 정보 > 로그인에서 연결해 주세요.',
+  OAUTH_SIGNUP_REQUIRED: '처음 오셨네요. 아래 이용약관에 동의한 뒤 다시 Google·Apple로 계속하기를 눌러 주세요.',
+  OAUTH_ALREADY_LINKED: '이 계정은 이미 다른 AUDENIQ 계정에 연결돼 있어요.',
+  OAUTH_PROVIDER_LINKED: '이미 같은 서비스의 계정을 연결했어요. 먼저 연결을 해제해 주세요.',
+  OAUTH_LAST_SIGN_IN_METHOD: '로그인할 다른 방법이 없어 연결을 해제할 수 없어요. 비밀번호를 정하거나 패스키를 먼저 등록해 주세요.',
+  OAUTH_PROVIDER_NOT_CONFIGURED: '지금은 이 로그인 방법을 쓸 수 없어요.',
+  OAUTH_PROVIDER_UNAVAILABLE: '로그인 서비스에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.',
+  OAUTH_CODE_REJECTED: '로그인을 확인하지 못했어요. 다시 시도해 주세요.',
+  OAUTH_TOKEN_INVALID: '로그인을 확인하지 못했어요. 다시 시도해 주세요.',
+  OAUTH_FAILED: '로그인하지 못했어요. 다시 시도해 주세요.',
+  ACCOUNT_NOT_ACTIVE: '이용이 제한된 계정이에요. 고객센터로 문의해 주세요.',
+  PASSWORD_TOO_WEAK: '너무 흔하거나 추측하기 쉬운 비밀번호예요. 흔한 단어·연속된 글자·반복·이메일 아이디가 들어가지 않게 다른 비밀번호를 정해 주세요.',
   INVARIANT_CONFLICT: '다른 곳에서 먼저 수정됐어요. 새로고침한 뒤 다시 시도해 주세요.',
   INVALID_INPUT: '입력값을 확인해 주세요. 빠진 항목이나 형식이 맞지 않는 값이 있어요.',
   RELEASE_BUSY: '지금 자동 검사가 진행 중이에요. 잠시 후 다시 취소해 주세요.',
+  // 서버가 보내지만 문구가 없어 '요청을 처리하지 못했어요. (코드)'로만 보이던 것들
+  SIGNATURE_INVALID: '서명 이미지를 확인하지 못했어요. 서명을 지우고 다시 그린 뒤 시도해 주세요.',
+  EMAIL_INVALID: '이메일 형식을 확인해 주세요.',
+  ACCOUNT_NUMBER_INVALID: '계좌번호를 확인해 주세요. 숫자만 입력해 주세요.',
+  PAYOUT_ACCOUNT_REQUIRED: '정산 계좌를 먼저 등록해 주세요.',
+  PAYOUT_EXCEEDS_BALANCE: '요청 가능 금액 안에서 입력해 주세요.',
+  PAYEE_ON_HOLD: '지급이 잠시 보류된 계정이에요. 문의로 알려 주시면 확인해 드릴게요.',
+  APPLICATION_DOCUMENT_FINAL: '이미 확정된 신청서라 다시 기록할 수 없어요.',
+  APPLICATION_HASH_INVALID: '신청서 내용을 확인하지 못했어요. 새로고침한 뒤 다시 접수해 주세요.',
+  APPLICATION_NO_INVALID: '신청서 번호를 확인하지 못했어요. 새로고침한 뒤 다시 접수해 주세요.',
+  DOCUMENT_ASSET_INVALID: '첨부한 서류 파일을 확인하지 못했어요. PDF·JPG·PNG 파일로 다시 올려 주세요.',
+  DOCUMENT_NOT_EDITABLE: '지금은 이 서류를 바꿀 수 없어요. 검토가 끝난 뒤 다시 시도해 주세요.',
+  ASSET_OBJECT_DRIFT: '올린 파일을 다시 확인해야 해요. 해당 파일을 다시 올린 뒤 접수해 주세요.',
+  UPLOAD_REINSPECTION_REQUIRED: '파일 안전 검사를 다시 해야 해요. 해당 파일을 다시 올려 주세요.',
+  UPLOAD_SANITIZATION_FAILED: '파일을 안전하게 처리하지 못했어요. 다른 파일로 다시 올려 주세요.',
+  UPLOAD_UNSAFE_FILE: '안전하지 않은 파일로 확인돼 올릴 수 없어요.',
+  PAYOUT_NOT_CANCELLABLE: '담당자가 승인한 출금은 취소할 수 없어요. 문의로 알려 주세요.',
   RELEASE_NOT_WITHDRAWABLE: '이 상태에서는 발매 신청을 취소할 수 없어요.',
   RELEASE_ALREADY_DELIVERING: '계약서에 서명해 배급이 시작된 발매예요. 취소(테이크다운)는 문의로 요청해 주세요.',
   WITHDRAW_LIMIT_REACHED: '이번 달 직접 취소할 수 있는 3회를 모두 썼어요. 문의로 취소를 요청해 주세요.',
@@ -101,6 +157,9 @@ const CODE_MESSAGES: Record<string, string> = {
   UPLOAD_CONVERSION_TIMEOUT: '음원 변환이 너무 오래 걸렸어요. 잠시 후 다시 시도하거나 WAV·FLAC으로 올려 주세요.',
   UPLOAD_CONVERSION_UNAVAILABLE: '지금은 음원 변환을 할 수 없어요. 잠시 후 다시 시도해 주세요.',
   UPLOAD_BUSY: '다른 음원을 처리 중이에요. 잠시 후 등록을 다시 시도해 주세요.',
+  UPLOAD_PARTS_INCOMPLETE: '음원 일부가 아직 올라가지 않았어요. 같은 파일을 다시 선택하면 이어서 올려요.',
+  UPLOAD_PARTS_INVALID: '업로드 조각 요청이 올바르지 않아요. 파일을 다시 선택해 주세요.',
+  UPLOAD_NOT_RESUMABLE: '이어 올릴 수 없는 업로드예요. 파일을 다시 선택해 주세요.',
   UPLOAD_AUDIO_TRUNCATED: 'WAV 파일이 끝까지 저장되지 않았어요. 마스터를 다시 내보내 전체 파일을 올려 주세요.',
   UPLOAD_AUDIO_FORMAT_UNSUPPORTED: '16·24bit, 44.1~192kHz, 모노·스테레오 무손실 음원으로 올려 주세요.',
   AUDIO_NOT_VERIFIED: '음원 품질 검사가 아직 끝나지 않았어요. 잠시 후 다시 접수해 주세요.',
@@ -115,6 +174,7 @@ const CODE_MESSAGES: Record<string, string> = {
   IDEMPOTENCY_KEY_REUSED: '이미 처리된 접수 요청이에요. 발매 상태를 확인해 주세요.',
   PREFLIGHT_FAILED: '접수 전 점검을 통과하지 못했어요. 표시된 항목을 보완해 주세요.',
   DSP_SELECTION_REQUIRED: '배급할 플랫폼을 하나 이상 선택해 주세요.',
+  TERRITORIES_INVALID: '배급 지역을 다시 골라 주세요. 전 세계 배급이 아니면 지역을 하나 이상 선택해야 해요.',
   DSP_SELECTION_INVALID: '플랫폼 선택을 다시 확인해 주세요.',
   DSP_UNAVAILABLE: '선택한 플랫폼 중 현재 배급할 수 없는 곳이 있어요. 플랫폼 선택을 다시 확인해 주세요.',
   SPECIAL_DECLARATION_MISMATCH: '커버곡·샘플링·AI 사용 신고를 다시 확인해 주세요.',
@@ -124,6 +184,66 @@ const CODE_MESSAGES: Record<string, string> = {
   NOT_IMPLEMENTED: '아직 준비 중인 기능이에요.',
   BACKEND_UNAVAILABLE: '서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.',
   MAINTENANCE: '지금은 서버 점검 중이에요. 점검이 끝나면 다시 이용할 수 있어요.',
+  // 플레이리스트 피칭
+  PITCH_INVALID: '곡 소개는 20–1000자로, 다른 항목은 200자 안으로 적어 주세요.',
+  PITCH_TOO_LATE: '피칭은 발매일 7일 전까지만 할 수 있어요. 에디터가 미리 플레이리스트를 준비하거든요.',
+  PITCH_ALREADY_SUBMITTED: '이 발매는 이미 피칭했어요. 결과를 기다려 주세요.',
+  PITCH_RELEASE_NOT_SUBMITTED: '발매 신청을 마친 뒤에 피칭할 수 있어요.',
+  PITCH_NOT_WITHDRAWABLE: '이미 플랫폼에 전달돼 취소할 수 없어요.',
+  PITCH_STATUS_INVALID: '바꿀 수 없는 상태예요.',
+  PITCH_PLATFORMS_REQUIRED: '전달한 플랫폼을 하나 이상 골라 주세요.',
+  PITCH_RESULT_REQUIRED: '선정된 플레이리스트를 적어 주세요.',
+  PREORDER_START_INVALID: '사전 공개 시작일은 발매일 1–90일 전으로 골라 주세요.',
+  PREVIEW_START_INVALID: '미리듣기 시작점을 다시 확인해 주세요. (예: 1:05)',
+  RELEASE_TIME_INVALID: '발매 시각을 다시 골라 주세요.',
+  // 플랫폼 요청
+  PLATFORM_REQUEST_INVALID: '요청 내용을 다시 확인해 주세요.',
+  PLATFORM_REQUEST_URL_INVALID: '그 플랫폼의 https 링크만 넣을 수 있어요. 앱의 공유 버튼으로 복사한 링크를 붙여 넣어 주세요.',
+  PLATFORM_REQUEST_URL_REQUIRED: '필요한 링크를 모두 적어 주세요.',
+  PLATFORM_REQUEST_RELEASE_REQUIRED: '어느 발매에 대한 요청인지 골라 주세요.',
+  PLATFORM_REQUEST_RELEASE_NOT_SUBMITTED: '발매 신청을 마친 발매만 고를 수 있어요.',
+  PLATFORM_REQUEST_DESCRIPTION_REQUIRED: '상황을 10자 이상 적어 주세요.',
+  PLATFORM_REQUEST_PLATFORM_INVALID: '지원하지 않는 플랫폼이에요.',
+  PLATFORM_REQUEST_KIND_INVALID: '요청 종류를 다시 골라 주세요.',
+  PLATFORM_REQUEST_ALREADY_OPEN: '같은 요청이 이미 진행 중이에요.',
+  PLATFORM_REQUEST_NOT_CANCELLABLE: '이미 플랫폼에 전달돼 취소할 수 없어요.',
+  PLATFORM_REQUEST_STATUS_INVALID: '바꿀 수 없는 상태예요.',
+  PLATFORM_REQUEST_REF_REQUIRED: '플랫폼 접수 번호를 적어 주세요.',
+  PLATFORM_REQUEST_NOTE_REQUIRED: '처리하지 못한 이유를 적어 주세요. 아티스트에게 보여요.',
+  CONTENT_ID_STATUS_INVALID: 'Content ID 상태를 다시 골라 주세요.',
+  // 배급 종료·권리 만료
+  TERM_DATE_INVALID: '종료일을 다시 골라 주세요.',
+  TERM_DATE_PAST: '내일 이후 날짜를 골라 주세요.',
+  TERM_NOTICE_TOO_SHORT: '계약 종료는 30일 전에 알려 주셔야 해요. 30일 뒤 이후 날짜를 골라 주세요.',
+  TERM_REASON_INVALID: '종료 사유를 다시 골라 주세요.',
+  TERM_NOTE_INVALID: '메모는 1000자까지 적을 수 있어요.',
+  TERM_NOTE_REQUIRED: '해지 사유를 적어 주세요. 아티스트에게 보여요.',
+  TERM_ALREADY_ENDED: '이미 배급이 끝난 발매예요.',
+  TERM_NOT_CANCELLABLE: '취소할 수 있는 종료 예약이 없어요. 담당자가 정한 종료는 문의로 요청해 주세요.',
+  TERM_SET_BY_STAFF: '담당자가 정한 종료일이라 바꿀 수 없어요. 문의로 요청해 주세요.',
+  TERM_RELEASE_NOT_SUBMITTED: '발매 신청을 마친 발매만 종료일을 정할 수 있어요.',
+  ORG_CONTRACT_ENDING: '배급 계약 종료가 예약돼 있어 새 발매를 신청할 수 없어요. 계약서 화면에서 종료를 취소할 수 있어요.',
+  ARTIST_PAGE_URL_INVALID: '그 플랫폼의 아티스트 페이지 https 링크를 넣어 주세요.',
+  ARTIST_PAGE_PLATFORM_INVALID: '지원하지 않는 플랫폼이에요.',
+  // 스마트링크
+  SMART_LINK_URL_INVALID: '그 플랫폼의 https 주소만 넣을 수 있어요. 앱에서 공유한 앨범 링크를 붙여 넣어 주세요.',
+  SMART_LINK_PLATFORM_INVALID: '지원하지 않는 플랫폼이에요.',
+  ALERT_EMAIL_INVALID: '이메일 주소를 다시 확인해 주세요.',
+  ALERT_CONSENT_REQUIRED: '안내에 동의해 주세요.',
+  ALERT_ALREADY_RELEASED: '이미 발매됐어요. 아래 링크에서 바로 들어 보세요.',
+  SMART_LINK_RELEASE_NOT_SUBMITTED: '발매 신청을 마친 뒤에 만들 수 있어요.',
+  // 공동작업자 수익 분배
+  SPLIT_INVALID: '분배 정보를 다시 확인해 주세요. 새로고침한 뒤 다시 저장해 주세요.',
+  SPLIT_NAME_INVALID: '공동작업자 이름을 1–100자로 적어 주세요.',
+  SPLIT_EMAIL_INVALID: '공동작업자 이메일을 다시 확인해 주세요.',
+  SPLIT_EMAIL_REQUIRED: '이미 답한 분께 다시 요청하려면 이메일을 적어 주세요.',
+  SPLIT_SHARE_INVALID: '비율은 0.01–100% 사이로 적어 주세요.',
+  SPLIT_TOTAL_OVER_100: '한 곡의 분배 합계가 100%를 넘어요.',
+  SPLIT_DUPLICATE_EMAIL: '같은 곡에 같은 이메일을 두 번 넣을 수 없어요.',
+  SPLIT_LOCKED: '발매 신청을 마친 뒤에는 분배를 바꿀 수 없어요.',
+  SPLIT_SELF: '내 발매의 분배는 내 계정으로 받을 수 없어요. 공동작업자 본인 계정으로 수락해 주세요.',
+  SPLIT_OWNER_REQUIRED: '계정 소유자만 수락할 수 있어요.',
+  SPLIT_ALREADY_ANSWERED: '이미 처리된 요청이에요.',
   // 관리자(스태프) API
   STATUS_UNKNOWN: '알 수 없는 상태 필터예요.',
   NOTE_TOO_LONG: '메모가 너무 길어요. 줄여서 다시 입력해 주세요.',

@@ -1499,12 +1499,21 @@ async fn module_policy_integrity(tx: &mut PgConnection, ctx: &Ctx) -> Result<Vec
         .bind(ctx.org.to_string())
         .execute(&mut *tx)
         .await?;
-    let activated: Vec<String> = sqlx::query_scalar(
-        "SELECT dsp_id::text FROM execution.adapter_profiles WHERE delivery_enabled AND dsp_id IS NOT NULL AND activation_kind='MOCK'",
+    let activated: Vec<(String, String)> = sqlx::query_as(
+        "SELECT dsp_id::text, partner_id FROM execution.adapter_profiles WHERE delivery_enabled AND dsp_id IS NOT NULL AND activation_kind='MOCK'",
     )
     .fetch_all(&mut *tx)
     .await?;
-    for dsp in activated {
+    // The Studio MockDSP (migration 0087) is always seeded and enabled: it
+    // joins only an application that picked it in Studio.
+    let studio_mock = ctx
+        .body
+        .pointer("/release/draft")
+        .is_some_and(crate::mockdsp::studio_selected);
+    for (dsp, partner) in activated {
+        if partner == crate::mockdsp::STUDIO_PARTNER && !studio_mock {
+            continue;
+        }
         if !eligible.contains(&dsp) {
             eligible.push(dsp);
         }

@@ -1,14 +1,24 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from '../lib/router';
 import { api, type DeliveryItem } from '../api/client';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
+import { TakedownCard } from '../components/TakedownCard';
+import { CorrectionCard } from '../components/CorrectionCard';
+import { PitchCard } from '../components/PitchCard';
+import { SmartLinkCard } from '../components/SmartLinkCard';
+import { SplitsCard } from '../components/SplitsCard';
+import { ContentIdCard } from '../components/ContentIdCard';
+import { TermCard } from '../components/TermCard';
+import { InfringementCard } from '../components/InfringementCard';
 import { SkeletonBlock, SkeletonRows } from '../components/Skeleton';
-import { ReleaseCover } from '../components/ReleaseCover';
+import { ReleaseCover, useImageOk } from '../components/ReleaseCover';
 import { useAsync } from '../hooks/useAsync';
 import { STATUS_LABEL, localStamp, statusTone } from '../lib/format';
 import { dspLabel, durationLabel, genreLabel, kindLabel, languageLabel } from '../lib/catalog';
-import { docState, docsForRelease, useDocs } from '../store/docs';
+import { docState, docsForRelease, openFixes, pendingProofs, proofPath, useDocs } from '../store/docs';
+import { refreshDocs } from '../store/portalSync';
+import { MOCK } from '../lib/mode';
 import { errorMessage } from '../api/errors';
 import { CorrectionList, ReviewNote } from '../components/CorrectionList';
 import { fixCountWord, fixPath, splitCorrections } from '../lib/corrections';
@@ -19,6 +29,7 @@ import { ContractBundle } from '../components/ContractBundle';
 /** 아직 없는 값 — 실제 값처럼 진하게 보이지 않도록 흐리게 */
 const Empty = ({ children }: { children: string }) => <span className="aq-empty-val">{children}</span>;
 import { Badge, Tabs } from '../ui';
+import { territorySummary } from '../lib/territories';
 
 // 플랫폼별 배급 진행 단계 (서버 delivery_staging 기준)
 const DELIVERY_STAGE: Record<string, string> = {
@@ -93,6 +104,8 @@ export function ReleaseDetail() {
   const toast = useToast();
   const confirm = useConfirm();
   const allDocs = useDocs();
+  // 계약서·서류 상태는 담당자 처리로 바뀐다 — 발매를 열 때 새로 받는다
+  useEffect(() => { if (!MOCK) void refreshDocs(); }, [id]);
   const [tab, setTab] = useState('overview');
   const [deleting, setDeleting] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
@@ -127,21 +140,33 @@ export function ReleaseDetail() {
 
   const d = rel.draft;
   const isDraft = rel.status === 'draft';
-  const editLabel = isDraft ? '계속 작성' : rel.status === 'needs' ? '보완하기' : rel.status === 'live' ? '수정 요청' : '수정하기';
+  const needsFix = rel.status === 'needs';
+  const rejected = rel.status === 'rejected';
+  // 실서버는 작성 중·보완 요청 상태만 고칠 수 있다 (그 밖은 마법사를 끝까지 채워도 NOT_EDITABLE).
+  // 접수된 뒤의 수정은 문의로 요청하고, 취소된 발매는 고칠 일이 없다.
+  const editInWizard = MOCK ? rel.status !== 'live' : isDraft;
+  const editLabel = isDraft ? '계속 작성' : rel.status === 'needs' ? '보완하기' : editInWizard ? '수정하기' : '수정 요청';
+  const showEdit = rel.status !== 'closed' && rel.status !== 'cancelled' && !rejected && !needsFix;
   const docs = docsForRelease(allDocs, rel.id, rel.title);
   const stage = pipelineIndex(rel.status);
   const genre = d?.genre ? genreLabel(d.genre) : '';
-  const needsFix = rel.status === 'needs';
-  const rejected = rel.status === 'rejected';
   // 발매 완료 후 3일이 지나면 진행 막대는 더 볼 필요가 없어 숨긴다
   const settledLive = rel.status === 'live' && !!rel.release_date
     && Date.now() - new Date(`${rel.release_date}T00:00:00`).getTime() >= 3 * 86_400_000;
   const stageTone = rejected ? 'is-error' : needsFix ? 'is-warn' : '';
   const stageLabel = (i: number) => (i === 1 && rejected ? '거절' : i === 1 && needsFix ? '보완 필요' : PIPELINE[i].label);
   const coverSrc = d?.coverData || rel.coverData;
+  const [coverOk, coverFailed] = useImageOk(coverSrc);
   const allFixes = rel.corrections ?? [];
   // 담당자 전체 의견은 고칠 항목이 아니라 따로 보여 준다
-  const { items: fixes, note: reviewNote } = splitCorrections(allFixes);
+  const { items: requested, note: reviewNote } = splitCorrections(allFixes);
+  // 요청 서류를 이미 낸 ‘추가 서류 첨부’ 항목은 끝난 것으로 본다 (남은 일은 다시 접수)
+  const fixes = openFixes(requested, allDocs);
+  // 담당자가 요청한 서류 — 신청서 보완과 따로, 그 요청의 첨부·제출 화면으로 보낸다
+  // 보완 항목(추가 서류 첨부)으로 요청한 서류는 항목 목록에서 안내하므로 빼고 보여 준다
+  const linkedDocs = new Set(requested.map(c => c.documentId).filter(Boolean));
+  const proofs = pendingProofs(allDocs, rel.id, rel.title).filter(doc => !linkedDocs.has(doc.id));
+  const docsOnly = needsFix && rel.fixKind === 'documents';
 
   // 접수한 신청 취소 — 한 달 3회까지 직접, 그 이상·배급 시작 후는 문의로
   const canWithdraw = ['review', 'needs', 'scheduled'].includes(rel.status);
@@ -176,7 +201,7 @@ export function ReleaseDetail() {
         const go = await confirm({ title: '문의로 취소를 요청해 주세요', message: errorMessage(e), confirmLabel: '문의로 취소 요청' });
         if (go) askByInquiry();
       } else {
-        toast(errorMessage(e, '취소하지 못했어요. 잠시 후 다시 시도해 주세요.'));
+        toast(errorMessage(e, '취소하지 못했어요. 잠시 후 다시 시도해 주세요.'), 'error');
       }
     } finally {
       setWithdrawing(false);
@@ -197,7 +222,7 @@ export function ReleaseDetail() {
       toast('발매를 삭제했어요.');
       nav('/releases', { replace: true });
     } catch (e) {
-      toast(errorMessage(e, '삭제에 실패했어요. 다시 시도해 주세요.'));
+      toast(errorMessage(e, '삭제에 실패했어요. 다시 시도해 주세요.'), 'error');
       setDeleting(false);
     }
   };
@@ -211,10 +236,10 @@ export function ReleaseDetail() {
         </button>
       )}
       {/* 보완하기는 아래 보완 카드 안에 */}
-      {rel.status !== 'closed' && !rejected && !needsFix && (
+      {showEdit && (
         <button
           type="button" className={`ui-btn ${isDraft ? 'is-primary' : 'is-soft'}`}
-          onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}
+          onClick={() => nav(editInWizard ? `/upload?edit=${encodeURIComponent(rel.id)}` : `/inquiries?new=edit&release=${encodeURIComponent(rel.id)}`)}
         >
           {editLabel}
         </button>
@@ -306,15 +331,33 @@ export function ReleaseDetail() {
       {needsFix && (
         <section className="aq-fix-panel" aria-labelledby="aqFixCardHead">
           <div className="aq-fix-top">
-            <Badge tone="amber">{fixes.length ? `보완 요청 ${fixes.length}건` : '보완 필요'}</Badge>
+            <Badge tone="amber">{docsOnly ? (proofs.length ? `서류 제출 요청 ${proofs.length}건` : '서류 확인 필요') : fixes.length ? `보완 요청 ${fixes.length}건` : '보완 필요'}</Badge>
           </div>
           <h2 id="aqFixCardHead" className="aq-fix-title">
-            {fixes.length ? `${fixCountWord(fixes.length)} 고치면 바로 다시 검토해요`
-              : reviewNote ? '검토팀 의견을 확인하고 신청서를 고쳐 주세요' : '알림과 권리 서류에서 요청 내용을 확인해 주세요'}
+            {docsOnly ? '담당자가 요청한 서류를 제출해 주세요'
+              : fixes.length ? `${fixCountWord(fixes.length)} 고치면 바로 다시 검토해요`
+                : requested.length ? '요청한 서류를 냈어요. 신청서를 다시 접수해 주세요'
+                : reviewNote ? '검토팀 의견을 확인하고 신청서를 고쳐 주세요' : '알림과 권리 서류에서 요청 내용을 확인해 주세요'}
           </h2>
           <div className="aq-fix-body">
             {reviewNote && <ReviewNote text={reviewNote} />}
-            {fixes.length > 0 ? (
+            {proofs.length > 0 && (
+              <ul className="aq-linked-docs" aria-label="요청받은 서류">
+                {proofs.map(doc => (
+                  <li key={doc.id}>
+                    <Link to={proofPath(doc)}>
+                      <span className="min-0">{doc.title.replace(`${rel.title} · `, '')}{doc.reviewNote ? ` — ${doc.reviewNote}` : ''}</span>
+                      <em>{docState(doc)}</em>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {docsOnly ? (
+              <button type="button" className="ui-btn is-primary aq-fix-cta" onClick={() => nav(proofPath(proofs[0]))}>
+                {proofs.length ? '서류 첨부하러 가기' : '권리·보완 서류 확인하기'}
+              </button>
+            ) : fixes.length > 0 ? (
               <CorrectionList
                 releaseId={rel.id} corrections={fixes}
                 trackIds={(d?.draftTracks ?? rel.tracks).map(t => t.id)}
@@ -348,12 +391,12 @@ export function ReleaseDetail() {
             </div>
             <div className="studio-album-aside aq-cover-card">
               <h2 className="subhead">커버아트</h2>
-              <div className={`aq-cover-stage${coverSrc ? '' : ' is-empty'}`}>
-                {coverSrc ? (
+              <div className={`aq-cover-stage${coverOk ? '' : ' is-empty'}`}>
+                {coverOk ? (
                   <>
                     {/* 커버 색이 카드 바탕으로 번지게 — 같은 이미지를 흐리게 깐다 */}
                     <img className="aq-cover-glow" src={coverSrc} alt="" aria-hidden="true" decoding="async" />
-                    <img className="aq-detail-cover-large" src={coverSrc} alt={`${rel.title} 커버아트`} decoding="async" />
+                    <img className="aq-detail-cover-large" src={coverSrc} alt={`${rel.title} 커버아트`} decoding="async" onError={coverFailed} />
                   </>
                 ) : (
                   <div className="aq-detail-cover-empty">
@@ -416,7 +459,7 @@ export function ReleaseDetail() {
             <div>
               <h2 className="subhead">배급 설정</h2>
               <dl className="ui-kv is-2">
-                <div><dt>희망 배급 지역</dt><dd>{d?.territories?.includes('WORLD') ? '전 세계' : '지정 안 함'}</dd></div>
+                <div><dt>희망 배급 지역</dt><dd>{territorySummary(d?.territories)}</dd></div>
                 <div><dt>발매 예정일</dt><dd>{rel.release_date || <Empty>미정</Empty>}</dd></div>
                 {d?.originalDate && <div><dt>최초 발매일</dt><dd>{d.originalDate}</dd></div>}
               </dl>
@@ -455,6 +498,14 @@ export function ReleaseDetail() {
                 {rightsOk(d?.rightsChecks, d?.options) ? <><span className="aq-check-badge is-sm"><CheckIcon size={10} /></span>신청서 권리 확인 항목 작성 완료</> : '권리 확인 항목을 보완해 주세요.'}
               </p>
             </div>
+            <SplitsCard releaseId={rel.id} />
+            {!isDraft && <SmartLinkCard releaseId={rel.id} />}
+            {!isDraft && <ContentIdCard releaseId={rel.id} />}
+            {!isDraft && <TermCard releaseId={rel.id} />}
+            {!isDraft && <PitchCard releaseId={rel.id} />}
+            {!isDraft && <CorrectionCard releaseId={rel.id} />}
+            {!isDraft && <InfringementCard releaseId={rel.id} />}
+            {!isDraft && <TakedownCard releaseId={rel.id} />}
             <div className="ui-card">
               <h2 className="subhead">계약·증빙</h2>
               <ContractBundle

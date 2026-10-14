@@ -3,6 +3,7 @@
 // 대기 중인 서류, 2차 승인, 막힌 플랫폼, Content ID 권리 확인, 발매일까지 남은 기간, 음원·크레딧·가사가 빠진 트랙을 한 목록으로 모은다.
 // 보완 요청 창에서는 문제마다 ‘항목으로 추가’를 눌러 바로 보완 항목으로 만든다.
 import type { ReactNode } from 'react';
+import { apiUrl } from '../api/http';
 import type { ReleaseSheet } from './api';
 import { checkLabel, checkSummary, dspLabel } from './labels';
 import { CONTENT_ID_ACKS, OPTION_LABELS, draftNotes, genreLabel, kindLabel, languageLabel, rightsChecksFor, wantsContentId, type Integrity, type StudioDraft, type StudioOptions } from './application';
@@ -217,7 +218,7 @@ export function CurrentValue({ sheet, code, trackId }: { sheet: ReleaseSheet; co
     case 'FIX_NOTES': body = d ? <pre>{txt(draftNotes(d))}</pre> : null; break;
     case 'FIX_COVER': {
       const src = d?.coverData || sheet.release.cover;
-      body = src ? <img className="adm-now-cover" src={src} alt="현재 커버" /> : '(커버 미리보기 없음)';
+      body = src ? <img className="adm-now-cover" src={apiUrl(src)} alt="현재 커버" onError={e => { e.currentTarget.hidden = true; }} /> : '(커버 미리보기 없음)';
       break;
     }
     case 'FIX_RELEASE_DATE': body = txt(d?.release_date ?? app.release_date); break;

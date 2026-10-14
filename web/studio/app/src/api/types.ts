@@ -9,7 +9,25 @@ export interface User {
 export interface Org {
   id: string;
   name: string;
+  /** 이 작업 공간에서 내 역할 — OWNER(소유자) · EDITOR(편집) · VIEWER(보기) */
+  role?: 'OWNER' | 'EDITOR' | 'VIEWER';
 }
+
+/** 작업 공간 멤버 — 소유자는 초대·해제된 사람까지, 다른 멤버는 활성 멤버만(이메일 일부 가림) */
+export interface OrgMember {
+  user_id: string;
+  role: 'OWNER' | 'EDITOR' | 'VIEWER';
+  status: 'ACTIVE' | 'INVITED' | 'REVOKED';
+  email: string | null;
+  invited_at: string | null;
+  accepted_at: string | null;
+  me: boolean;
+}
+export interface Invitation { org_id: string; org_name: string; role: 'EDITOR' | 'VIEWER'; invited_at: string | null }
+
+/** 올린 곡의 사전 품질 검사 결과 (검사 항목별) */
+export interface AssetCheck { code: string; status: 'PASS' | 'NOT_APPLICABLE' | 'REVIEW_REQUIRED' | 'CORRECTION_REQUIRED' | 'BLOCKED' | 'TECHNICAL_RETRY'; detail: string | null }
+export interface AssetChecks { asset_id: string; qc_status: 'PENDING' | 'PASS' | 'BLOCKED'; checks: AssetCheck[] }
 
 export interface Release {
   id: string;
@@ -25,6 +43,9 @@ export interface Release {
   livePlatforms?: string[];
   /** 검토 결과 보완이 필요한 항목 (status === 'needs'일 때) */
   corrections?: Correction[];
+  /** 보완이 무엇인지 (status === 'needs'일 때) — 신청서를 고칠지(application),
+   *  신청서는 잠긴 채 담당자가 요청한 서류만 내면 되는지(documents, 권리 보류 등) */
+  fixKind?: 'application' | 'documents';
 }
 
 /** 보완 요청 한 건 — code로 신청서의 어느 단계·입력칸을 고쳐야 하는지 찾는다 (lib/corrections.ts) */
@@ -34,6 +55,8 @@ export interface Correction {
   message: string;
   /** 특정 곡에 대한 요청이면 해당 트랙 ID */
   trackId?: string;
+  /** 서류 첨부 요청(FIX_DOCUMENT)이면 서버가 만든 서류 요청 ID */
+  documentId?: string;
 }
 
 /** 플랫폼(DSP)별 배급 진행 — 서버 DSP 코드(D-1…D-11) 기준 */
@@ -71,6 +94,8 @@ export interface DraftTrack {
   assetId?: string;
   /** 실서버: 트랙 ID (임시 저장 간 매칭용) */
   serverId?: string;
+  /** 미리듣기 시작점 (초) */
+  previewStart?: string;
   /** 피처링 아티스트 (제목에 쓰지 않고 따로 전달) */
   featuring?: string;
   /** 가사 없는 연주곡 — 작사·가사 불필요 */
@@ -112,6 +137,18 @@ export interface CoverTrackData {
 /** 이번 달 직접 취소할 수 있는 횟수 (조직 단위, 매월 1일 초기화) */
 export interface WithdrawQuota { limit: number; used: number; remaining: number }
 
+/** 발매 중단(테이크다운) — 이미 플랫폼에 보낸 발매를 내리는 요청 */
+export interface TakedownPlatform { partner_id: string; slug: string; name: string; live_status: string | null }
+export interface TakedownRequest {
+  id: string;
+  status: 'PENDING' | 'APPROVED' | 'DECLINED' | 'CANCELLED';
+  reason: string;
+  decision_note: string;
+  created_at: string;
+  decided_at: string | null;
+}
+export interface TakedownState { request: TakedownRequest | null; platforms: TakedownPlatform[]; can_request: boolean }
+
 export interface ReleaseOptionsData extends RereleaseData {
   express: boolean; expressAck: boolean; expressReason: string;
   minor: boolean;
@@ -141,7 +178,13 @@ export interface ReleaseDraft {
   coverData?: string;
   /** 실서버: 업로드 완료된 커버 이미지 자산 ID */
   coverAssetId?: string;
+  /** 실서버: 목록·상세에 보여 줄 작은 커버 미리보기 이미지 자산 ID */
+  coverThumbAssetId?: string;
   originalDate?: string;
+  /** 동시 발매 시각 (한국 시간 'HH:MM'); 비우면 나라별 자정 */
+  release_time?: string;
+  /** 사전 공개·예약 판매 시작일 (발매일 1–90일 전) */
+  preorder_start?: string;
   territories: string[];
   platforms: string[];
   ownership: string;
@@ -185,8 +228,11 @@ export interface ReleasePayload {
   coverName: string;
   coverData: string;
   coverAssetId?: string;
+  coverThumbAssetId?: string;
   originalDate: string;
   release_date: string;
+  release_time?: string;
+  preorder_start?: string;
   tracks: DraftTrack[];
   territories: string[];
   platforms: string[];

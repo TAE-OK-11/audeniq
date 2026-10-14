@@ -123,6 +123,11 @@ pub struct Conversion {
     pub frames: u64,
     pub pcm_sha256: String,
     pub output_bytes: u64,
+    /// With `--analyze`: the same report `analyze` gives (without
+    /// fingerprint windows), measured on the source PCM during the
+    /// conversion's own decode.
+    #[serde(default)]
+    pub analysis: Option<Analysis>,
 }
 
 #[derive(Deserialize)]
@@ -345,21 +350,42 @@ fn check_versions(
 /// directory: it is the engine's only writable grant. The engine writes a
 /// temporary sibling, re-decodes and hashes it against the source PCM, and
 /// publishes `staging/<name>` with a no-clobber link only after that check.
+///
+/// With `analyze`, the engine also measures the source PCM in the same
+/// decode (`--analyze`, the `analyze` report under `analysis`), for the
+/// upload's immediate QC answer. The analysis is dropped (`None`) when its
+/// metric version does not match the QC rules or its PCM hash does not
+/// match the conversion's.
 pub fn convert(
     src: &Path,
     staging: &Path,
     name: &str,
     timeout: Duration,
+    analyze: bool,
 ) -> Result<(std::path::PathBuf, Conversion), EngineError> {
     let dst = staging.join(name);
+    let mut args: Vec<&std::ffi::OsStr> =
+        vec!["convert".as_ref(), src.as_os_str(), dst.as_os_str()];
+    if analyze {
+        args.push("--analyze".as_ref());
+    }
     let out = run(
-        &["convert".as_ref(), src.as_os_str(), dst.as_os_str()],
+        &args,
         &[src],
         &[staging],
         timeout,
-        SMALL_REPORT_MAX,
+        if analyze {
+            ANALYSIS_REPORT_MAX
+        } else {
+            SMALL_REPORT_MAX
+        },
     )?;
-    Ok((dst, parse(&out)?))
+    let mut conversion: Conversion = parse(&out)?;
+    conversion.analysis = conversion.analysis.take().filter(|a| {
+        a.pcm_sha256 == conversion.pcm_sha256
+            && check_versions(&a.metric_version, a.resampler_version.as_deref(), false).is_ok()
+    });
+    Ok((dst, conversion))
 }
 
 /// Mono 11025 Hz fingerprint windows as the f32 segments the backend's

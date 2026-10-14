@@ -231,7 +231,8 @@ pub fn invalidate() {
     }
 }
 
-/// The worker's adapter registry: the sandbox MockDSP plus one adapter per
+/// The worker's adapter registry: the sandbox MockDSP (and its Studio
+/// test platform, `mockdsp-studio`) plus one adapter per
 /// configured partner profile. Built once and reused (it used to be rebuilt
 /// for every send/poll/takedown job). A partner whose config fails to load
 /// is logged and left out: its jobs fail closed with EXECUTION_NO_ADAPTER.
@@ -248,6 +249,7 @@ pub async fn registry(
     }
     let mut reg = AdapterRegistry::new();
     reg.register(mock);
+    reg.register(crate::mockdsp::studio_adapter());
     if crate::partner_config::config_dir().is_some() {
         let profiles: Vec<(String, serde_json::Value)> = sqlx::query_as(
             "SELECT partner_id, capabilities FROM execution.adapter_profiles WHERE transport <> 'mock'",
@@ -300,12 +302,14 @@ mod tests {
                     content_type: "audio/flac".into(),
                     delivery_name: n.to_string(),
                     role: FileRole::Audio,
+                    pinned_etag: None,
                 })
                 .collect(),
             upc: Some("036000291452".into()),
             prepared: None,
             genre: None,
             label: None,
+            lyrics: Default::default(),
         }
     }
 

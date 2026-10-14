@@ -49,7 +49,11 @@ async fn changed(
     Ok(())
 }
 pub async fn track_refs(c: &mut PgConnection, a: &Actor, org: Uuid, i: &TrackInput) -> Result<()> {
-    if i.title.trim().is_empty() || i.title.len() > 300 || i.disc_number < 1 || i.track_number < 1 {
+    if i.title.trim().is_empty()
+        || i.title.chars().count() > 300
+        || i.disc_number < 1
+        || i.track_number < 1
+    {
         return Err(Error::Invalid);
     }
     if i.lyrics.as_ref().map(|s| s.chars().count()).unwrap_or(0) > 20_000 {
