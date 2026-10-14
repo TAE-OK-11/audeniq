@@ -45,6 +45,7 @@ pub mod partners;
 pub mod password_reset;
 pub mod photo;
 pub mod pitching;
+pub mod platform_requests;
 pub mod portal;
 pub mod preflight;
 pub mod preparation_model;
