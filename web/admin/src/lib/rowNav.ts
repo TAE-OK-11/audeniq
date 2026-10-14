@@ -1,0 +1,79 @@
+// 탭·칩 줄 상호작용 — 화면마다 따로 만든 줄까지 한 번에.
+// 1) 가로로 넘치는 탭·칩 줄에서 고른 칸이 가장자리에 걸리거나 화면 밖에 있으면 보이는 자리로 부드럽게 민다
+//    (휴대폰에서 발매 상세 탭 6개, 발매 상태 칩처럼 오른쪽이 잘린 줄).
+// 2) 탭 목록·고르기 토글에서 ← → Home End로 옮겨 고른다 (WAI-ARIA tablist·radiogroup 키보드 규칙).
+
+const ITEM = '.ui-tab,.ui-chip,.ui-seg>button,[role=tab],[role=radio]';
+const SELECTED = '[aria-selected="true"],[aria-pressed="true"],[aria-checked="true"],.is-on,.active';
+const EDGE = 24;
+
+/** 가로로 넘치는 가장 가까운 조상 (줄 자체이거나 그 바로 위) */
+function scroller(el: HTMLElement): HTMLElement | null {
+  let p = el.parentElement;
+  for (let i = 0; p && i < 3; i++, p = p.parentElement) {
+    const ox = getComputedStyle(p).overflowX;
+    if ((ox === 'auto' || ox === 'scroll') && p.scrollWidth > p.clientWidth + 1) return p;
+  }
+  return null;
+}
+
+/** el이 줄 안에서 다 보이도록 가로로만 민다 (세로 스크롤은 건드리지 않는다) */
+export function revealInRow(el: HTMLElement, smooth = true) {
+  const box = scroller(el);
+  if (!box) return;
+  const b = box.getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  let dx = 0;
+  if (r.left < b.left + EDGE) dx = r.left - b.left - EDGE;
+  else if (r.right > b.right - EDGE) dx = r.right - b.right + EDGE;
+  if (Math.abs(dx) < 1) return;
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  box.scrollTo({ left: box.scrollLeft + dx, behavior: smooth && !reduce ? 'smooth' : 'auto' });
+}
+
+/** 새로 그려진 줄에서 이미 골라져 있는 칸이 줄 밖이면 한 번만 보이게 (주소로 바로 들어온 탭 등).
+ *  사용자가 줄을 직접 민 뒤에는 다시 끌어오지 않도록 줄마다 한 번만 한다. */
+const seen = new WeakSet<Element>();
+function revealSelected(root: ParentNode) {
+  root.querySelectorAll<HTMLElement>('.ui-tabs,.ui-chips,.ui-seg,[role=tablist]').forEach(row => {
+    if (seen.has(row)) return;
+    const on = row.querySelector<HTMLElement>(SELECTED);
+    if (!on) return; // 아직 불러오는 중인 줄은 고른 칸이 생긴 뒤에
+    seen.add(row);
+    revealInRow(on, false);
+  });
+}
+
+export function initRowNav() {
+  document.addEventListener('click', e => {
+    const t = e.target instanceof Element ? e.target.closest<HTMLElement>(ITEM) : null;
+    // 클릭으로 화면이 다시 그려진 뒤에 잰다
+    if (t) requestAnimationFrame(() => { if (t.isConnected) revealInRow(t); });
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    const t = e.target instanceof HTMLElement ? e.target : null;
+    if (!t?.matches('[role=tab],[role=radio]')) return;
+    const group = t.closest('[role=tablist],[role=radiogroup]');
+    if (!group) return;
+    const items = [...group.querySelectorAll<HTMLElement>(t.matches('[role=tab]') ? '[role=tab]' : '[role=radio]')]
+      .filter(x => !x.matches(':disabled,[aria-disabled=true]') && x.offsetParent !== null);
+    const i = items.indexOf(t);
+    if (i < 0) return;
+    const next = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? items[(i + 1) % items.length]
+      : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? items[(i - 1 + items.length) % items.length]
+        : e.key === 'Home' ? items[0] : e.key === 'End' ? items[items.length - 1] : null;
+    if (!next || next === t) return;
+    e.preventDefault();
+    next.focus();
+    next.click();
+  });
+
+  // 화면이 바뀌어 새 탭·칩 줄이 그려지면 고른 칸을 보이게 한다
+  let pending = 0;
+  new MutationObserver(() => {
+    if (pending) return;
+    pending = requestAnimationFrame(() => { pending = 0; revealSelected(document); });
+  }).observe(document.getElementById('root') ?? document.body, { childList: true, subtree: true });
+}

@@ -7,6 +7,8 @@ import { orgPath, req } from '../api/http';
 import { errorMessage } from '../api/errors';
 import { MOCK } from '../lib/mode';
 import { useToast } from './Toast';
+import { ManageHead } from './ManageHead';
+import { Badge } from '../ui';
 
 interface Share {
   id: string; name: string; email: string | null; share_bps: number;
@@ -18,6 +20,7 @@ interface Sheet { editable: boolean; tracks: TrackSheet[] }
 interface Row { id?: string; name: string; email: string; pct: string; status?: Share['status']; masked?: string | null }
 
 const STATUS: Record<Share['status'], string> = { INVITED: '수락 대기', ACCEPTED: '수락', DECLINED: '거절' };
+const TONE: Record<Share['status'], 'violet' | 'green' | 'red'> = { INVITED: 'violet', ACCEPTED: 'green', DECLINED: 'red' };
 const won = (v: string) => `${Number(v).toLocaleString()}원`;
 const toBps = (pct: string) => Math.round(Number(pct.replace(',', '.')) * 100);
 const fromBps = (bps: number) => String(bps / 100);
@@ -84,8 +87,8 @@ export function SplitsCard({ releaseId, embedded = false }: { releaseId: string;
   };
 
   return (
-    <section className={embedded ? 'aq-splits is-embedded' : 'ui-card aq-splits'} aria-labelledby="splitsHeading">
-      <h2 id="splitsHeading" className={embedded ? 'subhead' : undefined}>공동작업자 수익 분배</h2>
+    <section className={embedded ? 'aq-splits is-embedded' : 'ui-card aq-manage-card aq-splits'} aria-labelledby="splitsHeading">
+      {embedded ? <h2 id="splitsHeading" className="subhead">공동작업자 수익 분배</h2> : <ManageHead id="splitsHeading" icon="users" title="공동작업자 수익 분배" />}
       <p className="ui-field-help">
         곡을 함께 만든 분과 정산 수익(AUDENIQ 수수료 공제 후)을 비율로 나눌 수 있어요. 받는 분에게 이메일로 수락 요청이 가고,
         수락하면 그분 계정 잔액으로 바로 정산돼요(출금·세금도 각자). 수락 전 몫은 보관했다가 수락하면 옮기고, 거절하면 내 정산으로 돌아와요.
@@ -121,7 +124,7 @@ export function SplitsCard({ releaseId, embedded = false }: { releaseId: string;
                     <>
                       <span className="aq-splits-name">{r.name}{sv?.recipient_name && <span className="muted"> · {sv.recipient_name}</span>}</span>
                       <span className="aq-splits-share">{pctLabel(toBps(r.pct))}</span>
-                      <span className={`aq-splits-status is-${(r.status ?? 'INVITED').toLowerCase()}`}>{STATUS[r.status ?? 'INVITED']}</span>
+                      <Badge tone={TONE[r.status ?? 'INVITED']} className="aq-splits-status">{STATUS[r.status ?? 'INVITED']}</Badge>
                       <span className="aq-splits-money small muted">
                         {sv && Number(sv.transferred) > 0 && <>전달 {won(sv.transferred)} </>}
                         {sv && Number(sv.held) > 0 && <>보관 {won(sv.held)}</>}
@@ -129,7 +132,7 @@ export function SplitsCard({ releaseId, embedded = false }: { releaseId: string;
                       </span>
                     </>
                   )}
-                  {sheet.editable && r.id && r.status && <small className={`aq-splits-status is-${r.status.toLowerCase()}`}>{STATUS[r.status]}</small>}
+                  {sheet.editable && r.id && r.status && <Badge tone={TONE[r.status]} className="aq-splits-status">{STATUS[r.status]}</Badge>}
                 </div>
               );
             })}
@@ -147,7 +150,7 @@ export function SplitsCard({ releaseId, embedded = false }: { releaseId: string;
         );
       })}
       {sheet.editable && (
-        <div className="aq-confirm-actions">
+        <div className="ui-actions">
           <button type="button" className="ui-btn is-primary" disabled={busy || !dirty} onClick={() => void save()}>{busy ? '저장 중' : '분배 저장'}</button>
         </div>
       )}

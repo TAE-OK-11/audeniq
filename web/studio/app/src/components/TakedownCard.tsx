@@ -8,6 +8,8 @@ import { dspLabel } from '../lib/catalog';
 import { useConfirm } from './Confirm';
 import { Modal, useModalClose } from './Modal';
 import { useToast } from './Toast';
+import { ManageHead } from './ManageHead';
+import { Badge } from '../ui';
 
 const PLATFORM_STATE: Record<string, string> = {
   LIVE: '서비스 중',
@@ -96,14 +98,14 @@ export function TakedownCard({ releaseId }: { releaseId: string }) {
   };
 
   return (
-    <div className="ui-card aq-takedown">
-      <h2 className="subhead">플랫폼 서비스</h2>
+    <section className="ui-card aq-manage-card aq-takedown" aria-labelledby="takedownHeading">
+      <ManageHead id="takedownHeading" icon="truck" title="플랫폼 서비스" />
       {!!state.platforms.length && (
         <ul className="aq-takedown-list">
           {state.platforms.map(p => (
             <li key={p.partner_id}>
               <span>{p.name || dspLabel(p.slug)}</span>
-              <em className={p.live_status === 'TAKEN_DOWN' ? 'is-down' : p.live_status === 'TAKEDOWN_REQUESTED' ? 'is-pending' : ''}>{PLATFORM_STATE[p.live_status ?? 'UNKNOWN'] ?? '전송 완료'}</em>
+              <Badge tone={p.live_status === 'TAKEN_DOWN' ? 'gray' : p.live_status === 'TAKEDOWN_REQUESTED' ? 'amber' : p.live_status === 'LIVE' ? 'green' : 'blue'}>{PLATFORM_STATE[p.live_status ?? 'UNKNOWN'] ?? '전송 완료'}</Badge>
             </li>
           ))}
         </ul>
@@ -114,7 +116,7 @@ export function TakedownCard({ releaseId }: { releaseId: string }) {
           {req.status === 'DECLINED' && req.decision_note ? ` ${req.decision_note}` : ''}
         </p>
       )}
-      <div className="row-actions">
+      <div className="ui-actions">
         {req?.status === 'PENDING' && (
           <button type="button" className="ui-btn is-soft" onClick={cancel}>중단 요청 취소</button>
         )}
@@ -127,6 +129,6 @@ export function TakedownCard({ releaseId }: { releaseId: string }) {
           <ReasonForm onSubmit={submit} />
         </Modal>
       )}
-    </div>
+    </section>
   );
 }

@@ -863,10 +863,6 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 .aq-smartlink-cover.is-empty{background:linear-gradient(135deg,var(--aq-blue-50),var(--aq-gray-150))}
 .aq-smartlink-artist{margin:0;color:var(--aq-text-2);font-weight:600}
 .aq-smartlink-soon{display:inline-block;margin:10px 0 0;padding:4px 10px;border-radius:999px;background:var(--aq-blue-50);color:var(--aq-blue-500);font-size:13px;font-weight:700}
-.aq-smartlink-list{list-style:none;margin:20px 0 0;padding:0;display:grid;gap:8px;text-align:left}
-.aq-smartlink-list a{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:52px;padding:0 16px;border:1px solid var(--aq-gray-150);border-radius:var(--aq-r-lg);color:var(--portal-ink);font-weight:700;text-decoration:none}
-.aq-smartlink-list a:hover,.aq-smartlink-list a:focus-visible{border-color:var(--aq-blue-500);background:var(--aq-blue-50)}
-.aq-smartlink-list b{font-size:13px;color:var(--aq-blue-500);padding:5px 12px;border-radius:999px;background:var(--aq-blue-50)}
 .aq-smartlink-foot{margin:20px 0 0;font-size:11px;letter-spacing:.04em;color:var(--aq-text-4)}
 .aq-smartlink.is-missing h1{margin-top:0}
 /* 발매 상세 스마트링크 카드 */
@@ -896,9 +892,7 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 .aq-splits-pct{display:flex;align-items:center;gap:4px}
 .aq-splits-pct .ui-input{text-align:right}
 .aq-splits-share{font-weight:700}
-.aq-splits-status{font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--aq-gray-100);color:var(--aq-text-3);justify-self:start}
-.aq-splits-status.is-accepted{background:var(--aq-blue-50);color:var(--aq-blue-500)}
-.aq-splits-status.is-declined{background:#fef3f2;color:#b42318}
+.aq-splits-status{justify-self:start}
 .aq-splits-money{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:flex-end}
 .aq-splits-foot{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .aq-splits-over{color:#d92d20;font-weight:700;font-size:13px}
