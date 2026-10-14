@@ -10,6 +10,7 @@ pub mod cloud;
 pub mod config;
 pub mod content_policy;
 pub mod contracts;
+pub mod corrections;
 pub mod database;
 pub mod ddex_ern;
 pub mod ddex_preset;

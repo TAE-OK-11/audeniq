@@ -4563,3 +4563,212 @@ async fn takedown_request_is_decided_by_staff_and_reaches_the_platform(pool: PgP
     assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(v["error"]["code"], "TAKEDOWN_ALREADY_DONE");
 }
+
+/// After delivery only credits and the genre can be corrected: the artist
+/// asks, staff approve, the live catalog changes, an update message goes to
+/// every platform still carrying the release, and later messages are built
+/// from the frozen snapshot with the correction applied.
+#[sqlx::test]
+async fn metadata_correction_after_delivery_updates_platforms(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let path = format!("/api/orgs/{}/releases/{}/corrections", ctx.org, ctx.release);
+    let (_, st) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(st["can_request"], false, "{st}");
+    let track = st["tracks"][0]["track_id"].as_str().unwrap().to_string();
+    let body = |credits: Value| {
+        json!({"changes": {"genre": "Lo-fi", "tracks": [{"track_id": track, "credits": credits}]},
+               "reason": "작곡가 이름 철자가 틀렸어요."})
+    };
+    let fixed =
+        json!([{"name": "새 작곡가", "role": "Composer"}, {"name": "편곡가", "role": "Arranger"}]);
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &path,
+        body(fixed.clone()),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "CORRECTION_NOTHING_SENT", "{v}");
+
+    let mock = MockDsp::new(MockBehavior::Accept);
+    let (_, status) = run_send(&pool, &ctx, &mock).await;
+    assert_eq!(status, "DELIVERED");
+    // Locked fields and empty requests are refused.
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &path,
+        body(json!([{"name": "누구", "role": "Featured Artist"}])),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "CORRECTION_ARTIST_LOCKED", "{v}");
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &path,
+        json!({"changes": {"title": "새 제목"}, "reason": "x"}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(
+        s,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "unknown fields such as the title are rejected"
+    );
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &path,
+        json!({"changes": {}, "reason": "x"}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "CORRECTION_EMPTY");
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &path,
+        body(fixed.clone()),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &path,
+        body(fixed.clone()),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "CORRECTION_ALREADY_REQUESTED");
+
+    // Staff with the review duty approve: one update per platform.
+    let (s, _) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/corrections",
+        Value::Null,
+        Some(&ctx.user),
+    )
+    .await;
+    assert_ne!(s, StatusCode::OK);
+    let staff = staff_user(&ctx.app, &pool, "REVIEWER").await;
+    let (_, list) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/corrections",
+        Value::Null,
+        Some(&staff),
+    )
+    .await;
+    let id = list["items"][0]["id"].as_str().unwrap().to_string();
+    assert_eq!(list["items"][0]["changes"]["genre"], "Lo-fi");
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &format!("/api/staff/corrections/{id}/approve"),
+        json!({}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["jobs"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        run_until(&pool, &ctx.store, "delivery", "delivery.update").await,
+        "SUCCEEDED"
+    );
+
+    // What the studio shows carries the correction.
+    let (_, st) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(st["request"]["status"], "APPROVED");
+    assert_eq!(st["genre"], "Lo-fi");
+    let names: Vec<&str> = st["tracks"][0]["credits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|c| c["name"].as_str())
+        .collect();
+    assert!(
+        names.contains(&"새 작곡가") && names.contains(&"편곡가"),
+        "{st}"
+    );
+
+    // Outgoing metadata is the frozen snapshot plus the correction.
+    let (canonical_id, snapshot): (uuid::Uuid, Value) =
+        sqlx::query_as("SELECT id, body FROM distribution.canonical_releases WHERE release_id=$1")
+            .bind(ctx.release)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let canonical: audeniq_core::distribution::CanonicalRelease =
+        serde_json::from_value(snapshot.clone()).unwrap();
+    let mut prepared = audeniq_core::preparation_model::PreparedRelease::from_canonical(
+        &pool,
+        canonical_id,
+        &canonical,
+    )
+    .await
+    .unwrap();
+    let genre = audeniq_core::corrections::overlay(&pool, &mut prepared)
+        .await
+        .unwrap();
+    assert_eq!(genre.as_deref(), Some("Lo-fi"));
+    let credited: Vec<&str> = prepared
+        .canonical
+        .tracks
+        .iter()
+        .flat_map(|t| t.credits.iter().map(|c| c.party_name.as_str()))
+        .collect();
+    assert!(credited.contains(&"새 작곡가"), "{credited:?}");
+    let unchanged: Value =
+        sqlx::query_scalar("SELECT body FROM distribution.canonical_releases WHERE id=$1")
+            .bind(canonical_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(unchanged, snapshot, "the frozen snapshot never changes");
+
+    // Declining needs a note the artist sees.
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &path,
+        body(json!([{"name": "다른 작곡가", "role": "Composer"}])),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, list) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/corrections",
+        Value::Null,
+        Some(&staff),
+    )
+    .await;
+    let id = list["items"][0]["id"].as_str().unwrap().to_string();
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &format!("/api/staff/corrections/{id}/decline"),
+        json!({}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &format!("/api/staff/corrections/{id}/decline"),
+        json!({"note": "증빙이 필요해요."}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, st) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(st["request"]["status"], "DECLINED");
+    assert_eq!(st["can_request"], true);
+}

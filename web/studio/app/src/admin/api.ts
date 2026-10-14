@@ -170,6 +170,15 @@ export interface TakedownItem {
   platforms: { partner_id: string; slug: string; name: string; live_status: string | null }[];
 }
 
+/** 발매 후 정보 수정 요청 (크레딧·장르만) */
+export interface CorrectionItem {
+  id: string; org_id: string; org_name: string; release_id: string; title: string;
+  status: 'PENDING' | 'APPROVED' | 'DECLINED' | 'CANCELLED';
+  changes: { genre?: string; tracks?: { track_id: string; credits: { name: string; role: string }[] }[] };
+  reason: string; decision_note: string; created_at: string; decided_at: string | null;
+  tracks: { track_id: string; title: string }[];
+}
+
 export interface DeliveryItem {
   package_id: string; dsp: string; org_id: string; org_name: string; release_id: string; title: string;
   readiness: string; approval: string; route_status: string | null; route_reason: string | null;
@@ -270,6 +279,9 @@ const remote = {
   restage: (pkg: string) => req<{ job_id: string }>(`/api/staff/deliveries/${id(pkg)}/restage`, { method: 'POST' }),
   dsps: () => req<Page<DspItem>>('/api/staff/dsps'),
   takedowns: () => req<Page<TakedownItem>>('/api/staff/takedowns'),
+  corrections: () => req<Page<CorrectionItem>>('/api/staff/corrections'),
+  approveCorrection: (cid: string, note: string) => req<{ status: string; jobs: string[] }>(`/api/staff/corrections/${id(cid)}/approve`, { method: 'POST', body: { note } }),
+  declineCorrection: (cid: string, note: string) => req<{ status: string }>(`/api/staff/corrections/${id(cid)}/decline`, { method: 'POST', body: { note } }),
   approveTakedown: (tid: string, note: string) => req<{ status: string }>(`/api/staff/takedowns/${id(tid)}/approve`, { method: 'POST', body: { note } }),
   declineTakedown: (tid: string, note: string) => req<{ status: string }>(`/api/staff/takedowns/${id(tid)}/decline`, { method: 'POST', body: { note } }),
   /** 중단 메시지를 받지 않는 플랫폼: 내려간 것을 직접 확인하고 기록한다 */

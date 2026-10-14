@@ -82,6 +82,21 @@ async fn delivered(
     )))
 }
 
+/// The latest package of `release` and the platforms still carrying it
+/// (delivered and not taken down). `None` when no package was ever made.
+pub(crate) async fn live_partners(
+    c: &mut PgConnection,
+    org: Uuid,
+    release: Uuid,
+) -> Result<Option<(Uuid, Vec<String>)>> {
+    Ok(delivered(c, org, release).await?.map(|(package, sent)| {
+        (
+            package,
+            still_up(&sent).map(|p| p.partner_id.clone()).collect(),
+        )
+    }))
+}
+
 fn platforms(sent: &[Sent]) -> Value {
     Value::Array(
         sent.iter()
