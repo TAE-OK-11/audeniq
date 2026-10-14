@@ -15,6 +15,32 @@ pub struct UploadInput {
     pub kind: String,
     pub size_bytes: i64,
     pub content_type: String,
+    /// Ask for a resumable (multipart) upload. Only audio larger than one
+    /// part uses it; everything else still gets a single signed PUT.
+    #[serde(default)]
+    pub resumable: bool,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PartsInput {
+    pub part_numbers: Vec<i32>,
+}
+/// Part size of a resumable upload (512 MiB = 32 parts). R2 needs equal
+/// parts except the last; S3 and OCI need at least 5 MiB.
+pub const PART_SIZE: i64 = 16 * 1024 * 1024;
+/// A resumable session stays open a day: long enough to resume after a
+/// dropped connection or a closed laptop, short enough for quarantine.
+const RESUMABLE_HOURS: i64 = 24;
+/// Part URLs live this long; the device asks for more as it goes.
+const PART_URL_MINUTES: i64 = 15;
+/// Part URLs per request.
+const PARTS_PER_REQUEST: usize = 8;
+
+fn part_count(size: i64, part_size: i64) -> i64 {
+    (size + part_size - 1) / part_size
+}
+fn part_len(size: i64, part_size: i64, part: i64) -> i64 {
+    (size - (part - 1) * part_size).min(part_size)
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -71,12 +97,15 @@ pub async fn issue(s: &AppState, a: &Actor, org: Uuid, i: UploadInput) -> Result
         return Err(Error::InvalidCode(too_large));
     }
     auth::rate(&s.pool, &format!("uploads:{}", a.user), 60).await?;
-    let mut tx = s.pool.begin().await?;
     let asset = Uuid::new_v4();
     let session = Uuid::new_v4();
     let nonce = Uuid::new_v4();
-    auth::create_resource(&mut tx, a, org, asset, "asset").await?;
     let key = format!("quarantine/{org}/{asset}/{nonce}");
+    if i.resumable && i.kind == "AUDIO" && i.size_bytes > PART_SIZE {
+        return issue_resumable(s, a, org, i, asset, session, nonce, key).await;
+    }
+    let mut tx = s.pool.begin().await?;
+    auth::create_resource(&mut tx, a, org, asset, "asset").await?;
     let stable = format!("registered/{org}/{asset}/{}", Uuid::new_v4());
     // The signed PUT URL lives 10 minutes. Completion stays open 30 minutes
     // longer (`expires_at + 30 minutes`, here and in `complete`): the object
@@ -113,6 +142,184 @@ pub async fn issue(s: &AppState, a: &Actor, org: Uuid, i: UploadInput) -> Result
         json!({"upload_session_id":session,"asset_id":asset,"expected_key":key,"grant":grant,"qc_status":"PENDING"}),
     )
 }
+/// Resumable upload: the store's multipart upload at the quarantine key.
+/// The device asks for part URLs as it goes ([`part_urls`]) and, after a
+/// reload, for the parts already stored ([`stored_parts`]).
+#[allow(clippy::too_many_arguments)]
+async fn issue_resumable(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    i: UploadInput,
+    asset: Uuid,
+    session: Uuid,
+    nonce: Uuid,
+    key: String,
+) -> Result<Value> {
+    // Membership is checked before anything is created in the store.
+    {
+        let mut tx = s.pool.begin().await?;
+        auth::membership(&mut tx, a, org, true).await?;
+        tx.rollback().await?;
+    }
+    // Network call outside any transaction. If the rows below fail, the
+    // bucket's abort-incomplete-multipart lifecycle rule drops the upload.
+    let upload_id = s
+        .storage
+        .create_multipart(&key, &i.content_type, &nonce.to_string())
+        .await?;
+    let mut tx = s.pool.begin().await?;
+    auth::create_resource(&mut tx, a, org, asset, "asset").await?;
+    let stable = format!("registered/{org}/{asset}/{}", Uuid::new_v4());
+    let expires: DateTime<Utc> = sqlx::query_scalar("SELECT now() + make_interval(hours => $1)")
+        .bind(RESUMABLE_HOURS as i32)
+        .fetch_one(&mut *tx)
+        .await?;
+    sqlx::query("INSERT INTO catalog.assets(id,org_id,kind,object_key,size_bytes,content_type) VALUES($1,$2,$3,$4,$5,$6)").bind(asset).bind(org).bind(&i.kind).bind(stable).bind(i.size_bytes).bind(&i.content_type).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO catalog.upload_sessions(id,org_id,asset_id,expected_key,nonce,expected_bytes,content_type,expires_at,multipart_upload_id,part_size) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)")
+        .bind(session).bind(org).bind(asset).bind(&key).bind(nonce).bind(i.size_bytes).bind(&i.content_type).bind(expires).bind(&upload_id).bind(PART_SIZE)
+        .execute(&mut *tx).await?;
+    operations::audit(
+        &mut tx,
+        Some(a.user),
+        Some(org),
+        Some(asset),
+        "upload.issued",
+        "PRIVATE_QUARANTINE_MULTIPART",
+        a.request,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({
+        "upload_session_id": session, "asset_id": asset, "expected_key": key,
+        "multipart": {"part_size": PART_SIZE, "part_count": part_count(i.size_bytes, PART_SIZE)},
+        "expires_at": expires, "qc_status": "PENDING",
+    }))
+}
+
+struct OpenMultipart {
+    key: String,
+    upload_id: String,
+    size: i64,
+    part_size: i64,
+    expires: DateTime<Utc>,
+}
+
+/// An open resumable session the caller may write to.
+async fn open_multipart(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    id: Uuid,
+    write: bool,
+) -> Result<OpenMultipart> {
+    let mut tx = s.pool.begin().await?;
+    auth::membership(&mut tx, a, org, write).await?;
+    let r = sqlx::query(
+        "SELECT asset_id, expected_key, multipart_upload_id, part_size, expected_bytes, expires_at, status,
+                (expires_at > now()) AS open
+           FROM catalog.upload_sessions WHERE org_id=$1 AND id=$2",
+    )
+    .bind(org)
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(Error::NotFound)?;
+    auth::authorize(&mut tx, a, org, r.get("asset_id"), "asset", write).await?;
+    tx.rollback().await?;
+    let (Some(upload_id), Some(part_size)) = (
+        r.get::<Option<String>, _>("multipart_upload_id"),
+        r.get::<Option<i64>, _>("part_size"),
+    ) else {
+        return Err(Error::PolicyGate("UPLOAD_NOT_RESUMABLE"));
+    };
+    if r.get::<String, _>("status") != "ISSUED" || !r.get::<bool, _>("open") {
+        return Err(Error::Conflict);
+    }
+    Ok(OpenMultipart {
+        key: r.get("expected_key"),
+        upload_id,
+        size: r.get("expected_bytes"),
+        part_size,
+        expires: r.get("expires_at"),
+    })
+}
+
+/// Signed PUT URLs for the next parts (each bound to its exact size).
+pub async fn part_urls(
+    s: &AppState,
+    a: &Actor,
+    org: Uuid,
+    id: Uuid,
+    i: PartsInput,
+) -> Result<Value> {
+    if i.part_numbers.is_empty() || i.part_numbers.len() > PARTS_PER_REQUEST {
+        return Err(Error::InvalidCode("UPLOAD_PARTS_INVALID"));
+    }
+    auth::rate(&s.pool, &format!("upload-parts:{}", a.user), 2000).await?;
+    let m = open_multipart(s, a, org, id, true).await?;
+    let count = part_count(m.size, m.part_size);
+    let expires = (Utc::now() + chrono::Duration::minutes(PART_URL_MINUTES)).min(m.expires);
+    let mut parts = Vec::with_capacity(i.part_numbers.len());
+    for n in i.part_numbers {
+        if !(1..=count).contains(&i64::from(n)) {
+            return Err(Error::InvalidCode("UPLOAD_PARTS_INVALID"));
+        }
+        let size = part_len(m.size, m.part_size, i64::from(n));
+        let g = s
+            .storage
+            .presign_part(&m.key, &m.upload_id, n, size, expires)
+            .await?;
+        parts.push(json!({"part_number": n, "size_bytes": size, "grant": g}));
+    }
+    Ok(json!({"parts": parts}))
+}
+
+/// Parts already stored (where a resumed upload continues).
+pub async fn stored_parts(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> {
+    let m = open_multipart(s, a, org, id, false).await?;
+    let count = part_count(m.size, m.part_size);
+    let listed = s.storage.list_parts(&m.key, &m.upload_id).await?;
+    // Only parts of the expected size count as done; a wrong one is re-sent.
+    let done: Vec<Value> = listed
+        .iter()
+        .filter(|p| {
+            (1..=count).contains(&i64::from(p.number))
+                && p.size == part_len(m.size, m.part_size, i64::from(p.number))
+        })
+        .map(|p| json!({"part_number": p.number, "size_bytes": p.size}))
+        .collect();
+    Ok(
+        json!({"part_size": m.part_size, "part_count": count, "parts": done, "expires_at": m.expires}),
+    )
+}
+
+/// Finish a multipart upload before completion's checks: every part must be
+/// stored with its expected size. A retried completion whose upload already
+/// finished finds the object and skips this.
+async fn finish_multipart(
+    s: &AppState,
+    key: &str,
+    upload_id: &str,
+    size: i64,
+    part_size: i64,
+) -> Result<()> {
+    if s.storage.head(key).await?.is_some() {
+        return Ok(());
+    }
+    let count = part_count(size, part_size);
+    let mut parts = s.storage.list_parts(key, upload_id).await?;
+    parts.sort_by_key(|p| p.number);
+    let complete = parts.len() as i64 == count
+        && parts.iter().enumerate().all(|(i, p)| {
+            i64::from(p.number) == i as i64 + 1 && p.size == part_len(size, part_size, i as i64 + 1)
+        });
+    if !complete {
+        return Err(Error::PolicyGate("UPLOAD_PARTS_INCOMPLETE"));
+    }
+    s.storage.complete_multipart(key, upload_id, &parts).await
+}
+
 /// Time one completion step and, when it fails, log which step, how long it
 /// took and the error code under the request id (BE-012: the storage error
 /// could not be traced to a step). No keys or URLs are logged.
@@ -184,7 +391,18 @@ pub async fn complete(
     // storage calls, scans or decoding. Cancellation and concurrent
     // completion are checked again under a fresh row lock; the download is
     // conditional on the ETag seen here.
+    let multipart: Option<(String, i64)> = r
+        .get::<Option<String>, _>("multipart_upload_id")
+        .zip(r.get::<Option<i64>, _>("part_size"));
     tx.commit().await?;
+    if let Some((upload_id, part_size)) = &multipart {
+        stage(
+            a.request,
+            "multipart",
+            finish_multipart(s, &key, upload_id, size, *part_size),
+        )
+        .await?;
+    }
     let meta = stage(a.request, "head", s.storage.head(&key))
         .await?
         .ok_or(Error::Conflict)?;
@@ -540,6 +758,168 @@ pub async fn get(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> 
     Ok(v)
 }
 
+/// Checks never shown to the artist from the pre-submission analysis: the
+/// similarity result can name other organizations' assets, and the
+/// provenance detail is the raw metadata report (its status is enough).
+const PRIVATE_DETAIL: &[&str] = &["AUDIO_SIMILAR_TO_EXISTING", "AUDIO_AI_PROVENANCE"];
+
+/// `GET /api/orgs/{org}/assets/{id}/checks`: the pre-submission QC of an
+/// uploaded track, check by check (what the worker's asset.analyze stored),
+/// so the studio can say which track needs fixing and why before the
+/// release is submitted. Empty while the analysis is pending.
+pub async fn checks(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> {
+    let mut tx = s.pool.begin().await?;
+    auth::authorize(&mut tx, a, org, id, "asset", false).await?;
+    let (kind, qc_status, sha256): (String, String, Option<String>) = sqlx::query_as(
+        "SELECT kind, qc_status, sha256 FROM catalog.assets WHERE org_id=$1 AND id=$2",
+    )
+    .bind(org)
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+    let Some(sha) = sha256.filter(|_| kind == "AUDIO") else {
+        tx.commit().await?;
+        return Ok(json!({"asset_id": id, "qc_status": qc_status, "checks": []}));
+    };
+    let aid = id.to_string();
+    let codes: Vec<&str> = crate::qc::AUDIO_CHECK_CODES
+        .iter()
+        .copied()
+        .filter(|c| *c != "AUDIO_SIMILAR_TO_EXISTING")
+        .collect();
+    let hashes: Vec<String> = codes
+        .iter()
+        .map(|c| crate::submission::asset_check_cache_key(c, &aid, &sha))
+        .collect();
+    let rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
+        "SELECT r.check_code, r.status, r.detail
+           FROM unnest($1::text[], $2::text[]) AS k(check_code, result_hash)
+           JOIN operations.asset_qc_results r
+             ON r.check_code=k.check_code AND r.result_hash=k.result_hash AND r.rule_version=$3",
+    )
+    .bind(&codes)
+    .bind(&hashes)
+    .bind(crate::qc::QC_RULE_VERSION)
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    let mut checks: Vec<Value> = rows
+        .into_iter()
+        .map(|(code, status, detail)| {
+            let detail = if PRIVATE_DETAIL.contains(&code.as_str()) {
+                None
+            } else {
+                detail.map(|d| d.chars().take(300).collect::<String>())
+            };
+            json!({"code": code, "status": status, "detail": detail})
+        })
+        .collect();
+    // Contract order, so the studio lists problems the way QC finds them.
+    checks.sort_by_key(|c| {
+        crate::qc::AUDIO_CHECK_CODES
+            .iter()
+            .position(|k| Some(*k) == c["code"].as_str())
+    });
+    Ok(json!({"asset_id": id, "qc_status": qc_status, "checks": checks}))
+}
+
+/// A stored image (cover art and its small preview) for display, after the
+/// same checks as delivery: registered, sanitized at upload (and scanned when
+/// the scanner is on), and the bytes still matching their recorded hash.
+pub struct StoredImage {
+    pub bytes: Vec<u8>,
+    pub content_type: &'static str,
+    pub sha256: String,
+}
+
+/// Reads the registered image `id` of `org`; the caller authorizes.
+pub async fn stored_image(s: &AppState, org: Uuid, id: Uuid) -> Result<StoredImage> {
+    let row = sqlx::query(
+        "SELECT a.object_key, a.content_type, a.size_bytes, a.sha256
+           FROM catalog.assets a
+           JOIN catalog.asset_safety sf ON sf.asset_id=a.id AND sf.org_id=a.org_id AND sf.safe_key=a.object_key
+                AND sf.safe_sha256=a.sha256 AND sf.rule_version='1' AND (NOT $3 OR sf.antivirus_status='SCANNED')
+          WHERE a.org_id=$1 AND a.id=$2 AND a.kind='IMAGE' AND a.state='REGISTERED'
+            AND a.content_type IN ('image/jpeg','image/png')",
+    )
+    .bind(org)
+    .bind(id)
+    .bind(s.antivirus_enabled)
+    .fetch_optional(&s.pool)
+    .await?
+    .ok_or(Error::NotFound)?;
+    let size: i64 = row.get("size_bytes");
+    if size <= 0 || size > MAX_IMAGE_BYTES {
+        return Err(Error::NotFound);
+    }
+    let sha256: String = row
+        .get::<Option<String>, _>("sha256")
+        .ok_or(Error::NotFound)?;
+    let bytes = s.storage.get(&row.get::<String, _>("object_key")).await?;
+    if bytes.len() as i64 != size || crate::domain::sha256_hex(&bytes) != sha256 {
+        tracing::warn!(asset = %id, "stored image does not match its recorded hash");
+        return Err(Error::NotFound);
+    }
+    let content_type = if row.get::<String, _>("content_type") == "image/png" {
+        "image/png"
+    } else {
+        "image/jpeg"
+    };
+    Ok(StoredImage {
+        bytes,
+        content_type,
+        sha256,
+    })
+}
+
+/// `GET /api/orgs/{org}/assets/{id}/image`: a member with read access to the
+/// asset sees the image (cover art kept on the server, shown in the studio
+/// once the release is saved or submitted).
+pub async fn image(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<StoredImage> {
+    let mut tx = s.pool.begin().await?;
+    auth::authorize(&mut tx, a, org, id, "asset", false).await?;
+    tx.commit().await?;
+    stored_image(s, org, id).await
+}
+
+/// The HTTP response for a [`StoredImage`]: content-addressed, so cached
+/// privately for a year and answered 304 to a matching `If-None-Match`.
+pub fn image_response(img: StoredImage, h: &axum::http::HeaderMap) -> axum::response::Response {
+    use axum::http::{HeaderValue, StatusCode, header};
+    use axum::response::IntoResponse;
+    let etag = format!("\"{}\"", img.sha256);
+    let fresh = h
+        .get(header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.split(',').any(|t| t.trim() == etag));
+    let mut res = if fresh {
+        StatusCode::NOT_MODIFIED.into_response()
+    } else {
+        img.bytes.into_response()
+    };
+    let hd = res.headers_mut();
+    hd.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static(img.content_type),
+    );
+    if let Ok(v) = HeaderValue::from_str(&etag) {
+        hd.insert(header::ETAG, v);
+    }
+    hd.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("private, max-age=31536000, immutable"),
+    );
+    hd.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    hd.insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static("sandbox; default-src 'none'"),
+    );
+    res
+}
+
 pub async fn status(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
     auth::membership(&mut tx, a, org, false).await?;
@@ -570,8 +950,8 @@ pub async fn cancel(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Valu
     .await?
     .ok_or(Error::NotFound)?;
     auth::authorize(&mut tx, a, org, asset, "asset", true).await?;
-    let status: String = sqlx::query_scalar(
-        "SELECT status FROM catalog.upload_sessions WHERE org_id=$1 AND id=$2 FOR UPDATE",
+    let (status, key, upload_id): (String, String, Option<String>) = sqlx::query_as(
+        "SELECT status, expected_key, multipart_upload_id FROM catalog.upload_sessions WHERE org_id=$1 AND id=$2 FOR UPDATE",
     )
     .bind(org)
     .bind(id)
@@ -611,6 +991,13 @@ pub async fn cancel(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Valu
     tx.commit().await?;
     // The quarantine object is not deleted: it is the single-use lock for
     // the upload URL (signed If-None-Match: *). The bucket lifecycle rule
-    // removes quarantine/ objects after a day.
+    // removes quarantine/ objects after a day. An unfinished multipart
+    // upload is aborted (its part URLs stop working); the lifecycle rule
+    // also drops one this call could not reach.
+    if let Some(upload_id) = upload_id
+        && let Err(e) = s.storage.abort_multipart(&key, &upload_id).await
+    {
+        tracing::warn!(error = %e, "multipart abort failed; lifecycle rule will drop it");
+    }
     Ok(json!({"cancelled":true,"duplicate":false}))
 }

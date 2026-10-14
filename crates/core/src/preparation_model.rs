@@ -91,6 +91,14 @@ pub struct PreparedRelease {
     /// Drives DDEX ERN ParentalWarningType.
     #[serde(default)]
     pub explicit: bool,
+    /// Deal territories from the submitted draft. Worldwide is omitted from
+    /// the serialized form so snapshots prepared before this field keep
+    /// their hash.
+    #[serde(
+        default,
+        skip_serializing_if = "crate::territory::Territories::is_worldwide"
+    )]
+    pub territories: crate::territory::Territories,
 }
 
 /// Trusted DB row envelope plus the original F3 JSON bytes' semantic value.
@@ -309,6 +317,7 @@ impl PreparedRelease {
             tracks,
             artwork,
             explicit: c.explicit,
+            territories: crate::territory::Territories::from_draft(&draft)?,
         })
     }
 }

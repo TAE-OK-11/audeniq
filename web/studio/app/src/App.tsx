@@ -44,6 +44,7 @@ const FindAccount = lazyPage(pageLoaders.FindAccount, m => m.FindAccount);
 const Sign = lazyPage(pageLoaders.Sign, m => m.Sign);
 const Terms = lazyPage(pageLoaders.Terms, m => m.Terms);
 const Verify = lazyPage(pageLoaders.Verify, m => m.Verify);
+const RightsReport = lazyPage(pageLoaders.RightsReport, m => m.RightsReport);
 const SettlementTerms = lazyPage(pageLoaders.Terms, m => m.SettlementTerms);
 const PrivacyPolicy = lazyPage(pageLoaders.Terms, m => m.PrivacyPolicy);
 const Dashboard = lazyPage(pageLoaders.Dashboard, m => m.Dashboard);
@@ -157,6 +158,8 @@ export function App() {
                     <Route path="/privacy" element={<PrivacyPolicy />} />
                     {/* 출력물 진위 확인 — 로그인 없이 원본 검증코드로 */}
                     <Route path="/verify" element={<Verify />} />
+                    {/* 권리침해 신고 — 계정 없이 누구나 */}
+                    <Route path="/rights-report" element={<RightsReport />} />
                     <Route path="/terms/privacy" element={<Navigate to="/privacy" replace />} />
                     <Route path="/content-admin" element={<Navigate to="/admin/content" replace />} />
                     {/* 스태프 관리자 — 같은 로그인 세션 + 서버의 스태프 역할(/api/staff/me)로 접근 */}

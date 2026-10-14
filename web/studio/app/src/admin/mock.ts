@@ -4,7 +4,7 @@ import { ApiError, messageForCode } from '../api/errors';
 import { applicationPending, needsSecond } from './labels';
 import type {
   ApprovalItem, DecisionInput, DecisionResult, DeliveryDecisionInput, DeliveryItem, DspItem, InquiryMessage, InquiryItem,
-  Overview, PayoutItem, QueueRelease, ReleaseSheet, ReleaseTimelineItem, StagingRow, StaffDocument, StaffMe, AgreementTerms, AgreementTermsInput, TakedownItem, CorrectionItem
+  Overview, PayoutItem, QueueRelease, ReleaseSheet, ReleaseTimelineItem, StagingRow, StaffDocument, StaffMe, AgreementTerms, AgreementTermsInput, TakedownItem, CorrectionItem, InfringementClaim
 } from './api';
 import { applicationHash, type StudioDraft } from './application';
 
@@ -131,6 +131,15 @@ const corrections: CorrectionItem[] = [{
   changes: { genre: '인디 팝', tracks: [{ track_id: 'trk-1', credits: [{ name: '김한결', role: 'Composer' }, { name: '이편곡', role: 'Arranger' }] }] },
   reason: '작곡가 이름 철자가 틀렸어요.', decision_note: '', created_at: new Date(Date.now() - 2 * 3600_000).toISOString(), decided_at: null,
   tracks: [{ track_id: 'trk-1', title: '여름의 끝' }],
+}];
+
+const infringementClaims: InfringementClaim[] = [{
+  id: 'ic-1', receipt: 'IC-1A2B3C4D', status: 'RECEIVED', right_type: 'COPYRIGHT',
+  work: '저희 회사가 2024년에 발표한 ‘봄비’ (작곡 김하늘)', target: '‘여름의 끝’ 2번 트랙이 같은 멜로디를 씁니다. 멜론 앨범 페이지',
+  evidence_urls: ['https://example.com/evidence'], org_id: null, org_name: null, release_id: null, release_title: null,
+  staff_note: '', decided_at: null, counter_deadline: null, counter_notice: null, counter_at: null,
+  created_at: new Date(Date.now() - 5 * 3600_000).toISOString(),
+  claimant: { role: 'RIGHTS_HOLDER', name: '하늘음악 주식회사', email: 'legal@haneul.example', phone: '02-000-0000' },
 }];
 
 const approvals: (ApprovalItem & { status: string })[] = [{
@@ -389,6 +398,33 @@ export const mockStaff = {
     const c = corrections.find(x => x.id === cid && x.status === 'PENDING') ?? fail('CONFLICT');
     Object.assign(c, { status: 'DECLINED', decision_note: note, decided_at: new Date().toISOString() });
     return wait({ status: 'DECLINED' });
+  },
+  claims: (all: boolean) => wait({ items: infringementClaims.filter(c => all || ['RECEIVED', 'SUSPENDED', 'COUNTER_NOTICED'].includes(c.status)) }),
+  rejectClaim: async (cid: string, note: string) => {
+    if (!note.trim()) fail('CLAIM_NOTE_REQUIRED');
+    const c = infringementClaims.find(x => x.id === cid && x.status === 'RECEIVED') ?? fail('CONFLICT');
+    Object.assign(c, { status: 'REJECTED', staff_note: note, decided_at: new Date().toISOString() });
+    return wait({ status: 'REJECTED' });
+  },
+  suspendClaim: async (cid: string, releaseId: string, note: string) => {
+    const c = infringementClaims.find(x => x.id === cid && x.status === 'RECEIVED') ?? fail('CONFLICT');
+    Object.assign(c, {
+      status: 'SUSPENDED', release_id: releaseId, release_title: '여름의 끝', org_id: 'org-2', org_name: '한결 뮤직', staff_note: note,
+      decided_at: new Date().toISOString(), counter_deadline: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+      platforms: [{ partner_id: 'D-1', slug: 'melon', name: '멜론', live_status: 'TAKEDOWN_REQUESTED' }],
+    });
+    return wait({ status: 'SUSPENDED', jobs: ['job-mock'] });
+  },
+  restoreClaim: async (cid: string, note: string) => {
+    const c = infringementClaims.find(x => x.id === cid && ['SUSPENDED', 'COUNTER_NOTICED'].includes(x.status)) ?? fail('CONFLICT');
+    Object.assign(c, { status: 'RESTORED', staff_note: note || c.staff_note });
+    return wait({ status: 'RESTORED' });
+  },
+  upholdClaim: async (cid: string, note: string) => {
+    if (!note.trim()) fail('CLAIM_NOTE_REQUIRED');
+    const c = infringementClaims.find(x => x.id === cid && ['SUSPENDED', 'COUNTER_NOTICED'].includes(x.status)) ?? fail('CONFLICT');
+    Object.assign(c, { status: 'UPHELD', staff_note: note });
+    return wait({ status: 'UPHELD' });
   },
   approveTakedown: async (tid: string, note: string) => {
     const t = takedowns.find(x => x.id === tid && x.status === 'PENDING') ?? fail('CONFLICT');

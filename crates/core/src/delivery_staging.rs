@@ -1187,6 +1187,7 @@ mod tests {
             tracks,
             artwork: asset("image/jpeg", None, None),
             explicit,
+            territories: Default::default(),
         }
     }
 
