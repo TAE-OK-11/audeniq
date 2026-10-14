@@ -4380,3 +4380,186 @@ async fn studio_mockdsp_is_selectable_and_delivers(pool: PgPool) {
     .unwrap();
     assert!(!detail.contains(&studio_dsp.to_string()), "{detail}");
 }
+
+/// Runs queued `queue` jobs in order until one of `kind` ran; its status.
+async fn run_until(pool: &PgPool, store: &Arc<FileStore>, queue: &str, kind: &str) -> String {
+    let dyn_store: Arc<dyn ObjectStore> = store.clone();
+    loop {
+        let job = operations::claim(pool, queue, "test-worker", 60)
+            .await
+            .unwrap()
+            .unwrap_or_else(|| panic!("{kind} job queued"));
+        operations::execute(pool, &dyn_store, &job).await.unwrap();
+        if job.kind == kind {
+            return sqlx::query_scalar("SELECT status FROM operations.jobs WHERE id=$1")
+                .bind(job.id)
+                .fetch_one(pool)
+                .await
+                .unwrap();
+        }
+    }
+}
+
+#[sqlx::test]
+async fn takedown_request_is_decided_by_staff_and_reaches_the_platform(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let path = format!("/api/orgs/{}/releases/{}/takedown", ctx.org, ctx.release);
+    let reason = json!({"reason": "계약이 끝나 서비스를 내려야 해요."});
+    // Nothing sent yet: the application is withdrawn instead.
+    let (s, v) = call(&ctx.app, "POST", &path, reason.clone(), Some(&ctx.user)).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(v["error"]["code"], "TAKEDOWN_NOTHING_SENT");
+
+    let mock = MockDsp::new(MockBehavior::Accept);
+    let (_, status) = run_send(&pool, &ctx, &mock).await;
+    assert_eq!(status, "DELIVERED");
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &path,
+        json!({"reason": " "}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    let (s, v) = call(&ctx.app, "POST", &path, reason.clone(), Some(&ctx.user)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["status"], "PENDING");
+    let (s, v) = call(&ctx.app, "POST", &path, reason.clone(), Some(&ctx.user)).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(v["error"]["code"], "TAKEDOWN_ALREADY_REQUESTED");
+    let (_, v) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(v["request"]["status"], "PENDING", "{v}");
+    assert_eq!(v["platforms"][0]["partner_id"], "mockdsp");
+    assert_eq!(v["can_request"], false);
+    let notified: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM portal.notifications WHERE org_id=$1 AND title LIKE '%발매 중단 요청이 접수%')",
+    )
+    .bind(ctx.org)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(notified);
+
+    // The artist cannot decide; staff decline needs a note.
+    let (_, list) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/takedowns",
+        Value::Null,
+        Some(&ctx.user),
+    )
+    .await;
+    assert!(list["items"].is_null(), "{list}");
+    let staff = staff_user(&ctx.app, &pool, "OPERATOR").await;
+    let (_, list) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/takedowns",
+        Value::Null,
+        Some(&staff),
+    )
+    .await;
+    let id = list["items"][0]["id"].as_str().unwrap().to_string();
+    assert_eq!(list["items"][0]["platforms"][0]["partner_id"], "mockdsp");
+    let decide = |what: &str| format!("/api/staff/takedowns/{id}/{what}");
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &decide("approve"),
+        json!({}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &decide("decline"),
+        json!({}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &decide("decline"),
+        json!({"note": "권리자 확인 서류를 먼저 보내 주세요."}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &decide("approve"),
+        json!({}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CONFLICT, "a decided request stays decided");
+
+    // Asked again, approved: one takedown job per platform still carrying it.
+    let (s, _) = call(&ctx.app, "POST", &path, reason.clone(), Some(&ctx.user)).await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, list) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/takedowns",
+        Value::Null,
+        Some(&staff),
+    )
+    .await;
+    let id = list["items"][0]["id"].as_str().unwrap().to_string();
+    assert_eq!(list["items"][0]["status"], "PENDING");
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &format!("/api/staff/takedowns/{id}/approve"),
+        json!({}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["jobs"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        run_until(&pool, &ctx.store, "delivery", "delivery.takedown").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        live_status(&pool, ctx.org, ctx.package_id).await,
+        "TAKEDOWN_REQUESTED"
+    );
+
+    // A platform that never confirms is recorded by hand.
+    let mark = format!(
+        "/api/staff/deliveries/{}/mockdsp/taken-down",
+        ctx.package_id
+    );
+    let (s, _) = call(&ctx.app, "POST", &mark, json!({"note": ""}), Some(&staff)).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &mark,
+        json!({"note": "플랫폼 관리 화면에서 내려간 것을 확인"}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(
+        run_until(&pool, &ctx.store, "delivery", "delivery.mark_taken_down").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        live_status(&pool, ctx.org, ctx.package_id).await,
+        "TAKEN_DOWN"
+    );
+    let (_, v) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(v["request"]["status"], "APPROVED");
+    assert_eq!(v["platforms"][0]["live_status"], "TAKEN_DOWN");
+    let (s, v) = call(&ctx.app, "POST", &path, reason, Some(&ctx.user)).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(v["error"]["code"], "TAKEDOWN_ALREADY_DONE");
+}

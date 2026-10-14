@@ -162,6 +162,14 @@ export interface InquiryItem {
 export interface InquiryMessage { id: string; author_kind: 'MEMBER' | 'STAFF' | string; author_user: string | null; body: string; created_at: string }
 export interface InquiryThread { inquiry: InquiryItem; messages: InquiryMessage[] }
 
+/** 아티스트의 발매 중단(테이크다운) 요청 */
+export interface TakedownItem {
+  id: string; org_id: string; org_name: string; release_id: string; title: string; package_id: string;
+  reason: string; status: 'PENDING' | 'APPROVED' | 'DECLINED' | 'CANCELLED'; decision_note: string;
+  created_at: string; decided_at: string | null;
+  platforms: { partner_id: string; slug: string; name: string; live_status: string | null }[];
+}
+
 export interface DeliveryItem {
   package_id: string; dsp: string; org_id: string; org_name: string; release_id: string; title: string;
   readiness: string; approval: string; route_status: string | null; route_reason: string | null;
@@ -261,6 +269,12 @@ const remote = {
     req<{ approval: string }>(`/api/staff/deliveries/${id(pkg)}/${id(dsp)}/decision`, { method: 'POST', body }),
   restage: (pkg: string) => req<{ job_id: string }>(`/api/staff/deliveries/${id(pkg)}/restage`, { method: 'POST' }),
   dsps: () => req<Page<DspItem>>('/api/staff/dsps'),
+  takedowns: () => req<Page<TakedownItem>>('/api/staff/takedowns'),
+  approveTakedown: (tid: string, note: string) => req<{ status: string }>(`/api/staff/takedowns/${id(tid)}/approve`, { method: 'POST', body: { note } }),
+  declineTakedown: (tid: string, note: string) => req<{ status: string }>(`/api/staff/takedowns/${id(tid)}/decline`, { method: 'POST', body: { note } }),
+  /** 중단 메시지를 받지 않는 플랫폼: 내려간 것을 직접 확인하고 기록한다 */
+  markTakenDown: (pkg: string, partner: string, note: string) =>
+    req<{ job_id: string }>(`/api/staff/deliveries/${id(pkg)}/${id(partner)}/taken-down`, { method: 'POST', body: { note } }),
   payouts: (status: string) => req<Page<PayoutItem>>(`/api/staff/payouts${qs({ status, limit: 100 })}`),
 };
 

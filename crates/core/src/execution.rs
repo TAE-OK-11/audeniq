@@ -91,6 +91,9 @@ pub struct TransferFile {
     /// Name the partner receives, exactly as the ERN references it.
     pub delivery_name: String,
     pub role: FileRole,
+    /// Storage ETag recorded when the object was registered (written once,
+    /// never rewritten by this service).
+    pub pinned_etag: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -527,6 +530,17 @@ async fn verify_storage(storage: &Arc<dyn ObjectStore>, f: &TransferFile) -> Res
     if head.size != f.size_bytes || head.content_type != f.content_type {
         return Err(Error::PolicyGate("EXECUTION_FILE_DRIFT"));
     }
+    // Unchanged since registration (same ETag): no full read here. A send
+    // re-reads every byte anyway and checks SHA-256 and size as it stages
+    // (partners::stage_files), so nothing unverified ever leaves; this check
+    // only fails a changed object early. Masters were read 2 + 2x(partners)
+    // times per release before.
+    if f.pinned_etag
+        .as_deref()
+        .is_some_and(|e| !e.is_empty() && e == head.etag)
+    {
+        return Ok(());
+    }
     let digest = match storage.digest(&f.object_key, f.size_bytes as u64).await {
         Ok(d) => d,
         Err(Error::PolicyGate(_)) => return Err(Error::PolicyGate("EXECUTION_FILE_DRIFT")),
@@ -546,7 +560,7 @@ async fn verify_file(
     delivery: (String, FileRole),
 ) -> Result<TransferFile> {
     let pin = sqlx::query(
-        "SELECT sha256, size_bytes, content_type FROM catalog.assets WHERE org_id=$1 AND id=$2",
+        "SELECT sha256, size_bytes, content_type, etag FROM catalog.assets WHERE org_id=$1 AND id=$2",
     )
     .bind(org_id)
     .bind(asset_id)
@@ -587,6 +601,7 @@ async fn verify_file(
         delivery_name,
         role,
         content_type,
+        pinned_etag: pin.get("etag"),
     })
 }
 
@@ -2090,10 +2105,18 @@ pub async fn takedown_release(
     authorize_org(&mut tx, org).await?;
     match outcome {
         SendOutcome::Accepted { .. } => {
+            // A platform that never reported LIVE has no binding yet: the
+            // request is recorded either way (never over a confirmed
+            // TAKEN_DOWN).
             sqlx::query(
-                "UPDATE execution.live_bindings SET live_status='TAKEDOWN_REQUESTED', last_checked_at=now(), updated_at=now()
-                 WHERE package_id=$1 AND partner_id=$2",
+                "INSERT INTO execution.live_bindings(id,org_id,package_id,partner_id,live_status,last_checked_at)
+                 VALUES($1,$2,$3,$4,'TAKEDOWN_REQUESTED',now())
+                 ON CONFLICT(org_id,package_id,partner_id) DO UPDATE
+                 SET live_status='TAKEDOWN_REQUESTED', last_checked_at=now(), updated_at=now()
+                 WHERE execution.live_bindings.live_status <> 'TAKEN_DOWN'",
             )
+            .bind(Uuid::new_v4())
+            .bind(org)
             .bind(package_id)
             .bind(partner_id)
             .execute(&mut *tx)
@@ -2236,6 +2259,37 @@ pub async fn record_manual_live(
     partner_release_id: Option<&str>,
     staff_user: Option<Uuid>,
 ) -> Result<String> {
+    record_manual(
+        pool,
+        package_id,
+        partner_id,
+        partner_release_id,
+        staff_user,
+        "LIVE",
+    )
+    .await
+}
+
+/// Staff-confirmed takedown for a platform that takes no takedown message
+/// (or whose takedown job failed): same evidence rules as
+/// [`record_manual_live`].
+pub async fn record_manual_taken_down(
+    pool: &PgPool,
+    package_id: Uuid,
+    partner_id: &str,
+    staff_user: Option<Uuid>,
+) -> Result<String> {
+    record_manual(pool, package_id, partner_id, None, staff_user, "TAKEN_DOWN").await
+}
+
+async fn record_manual(
+    pool: &PgPool,
+    package_id: Uuid,
+    partner_id: &str,
+    partner_release_id: Option<&str>,
+    staff_user: Option<Uuid>,
+    live_status: &str,
+) -> Result<String> {
     let org: Uuid =
         sqlx::query_scalar("SELECT org_id FROM distribution.distribution_packages WHERE id=$1")
             .bind(package_id)
@@ -2265,19 +2319,23 @@ pub async fn record_manual_live(
         partner_id: partner_id.to_string(),
         attempts: 0,
     };
-    upsert_live_binding(&mut tx, &job, "LIVE", partner_release_id).await?;
+    upsert_live_binding(&mut tx, &job, live_status, partner_release_id).await?;
     crate::operations::audit(
         &mut tx,
         staff_user,
         Some(org),
         Some(job_id),
-        "delivery.live_recorded",
+        if live_status == "LIVE" {
+            "delivery.live_recorded"
+        } else {
+            "delivery.taken_down_recorded"
+        },
         "STAFF_EVIDENCE",
         Uuid::new_v4(),
     )
     .await?;
     tx.commit().await?;
-    Ok("LIVE".to_string())
+    Ok(live_status.to_string())
 }
 
 /// Why a delivery job could not be leased (sandbox round 2: a worker killed

@@ -79,6 +79,8 @@ const TARGETS: Record<string, Target> = {
   AUDIO_TOO_SHORT: { ...AUDIO, hint: '음원이 너무 짧아요. 30초 이상인 음원을 올려 주세요.' },
   AUDIO_TRUNCATED: { ...AUDIO, hint: '음원 파일이 중간에 잘려 있어요. 원본 파일을 다시 내보내 올려 주세요.' },
   AUDIO_SILENT: { ...AUDIO, hint: '음원에 소리가 없어요. 올바른 마스터 파일인지 확인해 주세요.' },
+  AUDIO_LOUDNESS_OUT_OF_RANGE: { ...AUDIO, hint: '음량이 플랫폼 권장(-14 LUFS 안팎, 피크 -1 dBTP 이하)과 달라요. 그대로 배급할 수 있지만 플랫폼이 음량을 맞추면서 소리가 달라질 수 있어요.' },
+  AUDIO_CONTENT_SUSPECT: { ...AUDIO, hint: '무음 구간·반복·잡음처럼 담당자 확인이 필요한 부분이 있어요. 의도한 소리라면 그대로 두셔도 돼요.' },
   AUDIO_CLIPPING: { ...AUDIO, hint: '음원에 클리핑(소리 깨짐)이 감지됐어요. 마스터 파일을 다시 올려 주세요.' },
   AUDIO_PROBE_FAILED: { ...AUDIO, hint: '음원 파일을 읽을 수 없어요. 원본 WAV·FLAC 파일을 다시 올려 주세요.' },
   AUDIO_FINGERPRINT_FAILED: { ...AUDIO, hint: '음원 분석을 마치지 못했어요. 파일을 다시 올려 주세요.' },

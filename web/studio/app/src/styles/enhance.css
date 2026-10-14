@@ -410,6 +410,8 @@ body.wizard-mode .aq-toast-stack{bottom:calc(92px + env(safe-area-inset-bottom))
 .dist-mock,.cover-track-item,.track-detail-toggle{border:0!important;box-shadow:none!important}
 .dist-mock{background:var(--aq-blue-50)!important}
 .cover-track-item{background:#fff!important;border-radius:var(--aq-r-lg)!important}
+/* 흰 카드 안의 입력칸은 회색 면 (흰 칸이면 카드에 묻힌다) */
+.cover-track-item{--aq-field-bg:var(--aq-field);--aq-field-hover-bg:var(--aq-field-hover);--aq-field-focus-bg:var(--aq-gray-150)}
 .track-detail-toggle{background:#fff!important;transition:background-color .2s!important}
 .track-detail-toggle:hover{background:var(--aq-blue-100)!important}
 
@@ -1108,7 +1110,9 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 .aq-chip:active{transform:scale(.98)}
 .aq-chip.is-on{background:var(--aq-blue-500);color:#fff}
 .aq-chip:focus-visible{outline:3px solid var(--aq-blue-450);outline-offset:2px}
-.aq-chip-other{margin-top:10px;width:100%;box-sizing:border-box;border:0;border-radius:var(--aq-r-md);background:#fff;padding:12px 14px;font:inherit;font-size:14px;box-shadow:none}
+.aq-chip-picker{display:flex;flex-direction:column;gap:10px}
+/* 입력칸 여백 규칙에 덮이지 않게 간격은 부모 gap으로 (기타 입력칸이 선택지에 붙던 문제) */
+.aq-chip-other{margin:0!important;width:100%;box-sizing:border-box;border:0;border-radius:var(--aq-r-md);background:#fff;padding:12px 14px;font:inherit;font-size:14px;box-shadow:none}
 .aq-chip-other:focus{outline:0}
 
 /* ---------- 배급 플랫폼 타일 ---------- */
@@ -1174,7 +1178,6 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 .aq-paper-agree li.is-on .aq-paper-check{background:var(--aq-blue-500);color:#fff}
 .aq-sign-wait-steps li.is-done>span{background:var(--aq-blue-500)!important;color:#fff!important;display:inline-grid;place-items:center}
 .aq-all-done>span{margin-right:8px}
-.aq-chip .aq-chip-check{display:inline-block;margin-right:5px;vertical-align:-1px}
 .aq-guardian-no .aq-check-icon{margin:auto}
 
 /* ---------- AUDENIQ 아이콘(Glyph) — 어디서나 같은 선 두께·모양 ---------- */
