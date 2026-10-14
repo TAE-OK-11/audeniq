@@ -64,6 +64,9 @@ GRANT SELECT,INSERT,UPDATE ON portal.infringement_claims TO audeniq_api;
 GRANT SELECT,INSERT,UPDATE ON portal.playlist_pitches TO audeniq_api;
 -- 스마트링크 (0117): 공개 발매 페이지와 일별 조회·클릭 수
 GRANT SELECT,INSERT,UPDATE ON portal.smart_links, portal.smart_link_stats TO audeniq_api;
+-- 플랫폼 요청 (0120): 아티스트 프로필·Content ID 요청과 처리 기록, 발매별 Content ID 상태
+GRANT SELECT,INSERT,UPDATE ON portal.platform_requests, portal.content_id_status TO audeniq_api;
+GRANT SELECT,INSERT ON portal.platform_request_events TO audeniq_api;
 -- 발매 알림 (0118): 팬 이메일은 봉인해 두고 보내면 바로 지운다. 끝난 줄은 정리
 GRANT SELECT,INSERT,UPDATE,DELETE ON portal.release_alerts TO audeniq_api;
 -- 발매 후 정보 수정 (0115): 크레딧·장르만. 승인되면 수정 메시지 작업을 넣는다

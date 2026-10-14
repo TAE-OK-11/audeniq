@@ -47,7 +47,7 @@ const STATS_DAYS: i32 = 30;
 /// Release states without a page.
 const HIDDEN_STATES: &[&str] = &["DRAFT", "WITHDRAWN", "SUPERSEDED", "ON_HOLD_RIGHTS"];
 
-fn hosts(platform: &str) -> Option<&'static [&'static str]> {
+pub(crate) fn hosts(platform: &str) -> Option<&'static [&'static str]> {
     PLATFORMS
         .iter()
         .find(|(p, _)| *p == platform)

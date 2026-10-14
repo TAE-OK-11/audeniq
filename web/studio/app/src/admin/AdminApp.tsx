@@ -25,6 +25,7 @@ const PAGE_LOADERS = {
   Takedowns: () => import('./pages/Takedowns'),
   Corrections: () => import('./pages/Corrections'),
   Pitches: () => import('./pages/Pitches'),
+  PlatformRequests: () => import('./pages/PlatformRequests'),
   Claims: () => import('./pages/Claims'),
   Payouts: () => import('./pages/Payouts'),
   ContentAdmin: () => import('../pages/ContentAdmin'),
@@ -52,6 +53,7 @@ const Dsps = page('Dsps');
 const Takedowns = page('Takedowns');
 const Corrections = page('Corrections');
 const Pitches = page('Pitches');
+const PlatformRequests = page('PlatformRequests');
 const Claims = page('Claims');
 const Payouts = page('Payouts');
 const ContentAdmin = page('ContentAdmin');
@@ -121,7 +123,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
     group: '배급',
     items: [
       // 배급은 최종 승인 + 아티스트 서명 후 자동 — 여기서는 현황과 문제만 본다 (DSP 사양은 탭)
-      { to: '/admin/deliveries', label: '배급 현황', icon: 'delivery', count: o => (o ? o.deliveries_blocked : 0), hot: true, also: ['/admin/dsps', '/admin/dsp-ops', '/admin/takedowns', '/admin/claims', '/admin/corrections', '/admin/pitches'] },
+      { to: '/admin/deliveries', label: '배급 현황', icon: 'delivery', count: o => (o ? o.deliveries_blocked : 0), hot: true, also: ['/admin/dsps', '/admin/dsp-ops', '/admin/takedowns', '/admin/claims', '/admin/corrections', '/admin/pitches', '/admin/platform-requests'] },
       { to: '/admin/payouts', label: '지급 요청', icon: 'payout', count: o => (o ? o.payout_requests : 0), adminOnly: true },
     ],
   },
@@ -306,6 +308,7 @@ export function AdminApp() {
               <Route path="/admin/takedowns" element={<Takedowns />} />
               <Route path="/admin/corrections" element={<Corrections />} />
               <Route path="/admin/pitches" element={<Pitches />} />
+              <Route path="/admin/platform-requests" element={<PlatformRequests />} />
               <Route path="/admin/claims" element={<Claims />} />
               <Route path="/admin/work" element={<Navigate to="/admin/inbox" replace />} />
               <Route path="/admin/inbox" element={<Inbox />} />
