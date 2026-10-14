@@ -126,6 +126,7 @@ const CODE_MESSAGES: Record<string, string> = {
   SIGNING_REQUEST_REQUIRED: '권리 서류는 권리자가 본인확인 후 직접 서명해야 해요. 서명 요청을 보내 주세요.',
   SIGNING_REQUEST_CLOSED: '이미 서명됐거나 거절·취소된 요청이에요.',
   SIGNING_LINK_EXPIRED: '서명 링크의 유효 기간이 지났어요. 요청한 분께 새 링크를 받아 주세요.',
+  CONSENT_REQUIRED: '필수 약관에 모두 동의해야 계좌를 등록할 수 있어요.',
   SIGNING_CONSENT_REQUIRED: '문서 확인, 전자서명, 개인정보 수집·이용에 모두 동의해야 서명할 수 있어요.',
   IDENTITY_PROVIDER_NOT_CONFIGURED: '본인확인 서비스를 준비하고 있어요. 준비되기 전에는 전자 서명을 할 수 없어요.',
   IDENTITY_NOT_VERIFIED: '본인확인이 끝나지 않았어요. 다시 시도해 주세요.',

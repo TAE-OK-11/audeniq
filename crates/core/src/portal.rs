@@ -198,6 +198,9 @@ pub struct PayoutAccountInput {
     pub holder_name: String,
     pub bank_name: String,
     pub account_number: String,
+    /// The payout-account agreements accepted (consents::Context::PayoutAccount).
+    #[serde(default)]
+    pub consents: Vec<String>,
 }
 
 impl Drop for PayoutAccountInput {
@@ -234,6 +237,8 @@ pub async fn put_payout_account(
     if !PAYEE_TYPES.contains(&i.payee_type.as_str()) {
         return Err(Error::Invalid);
     }
+    let consent_items =
+        crate::consents::check(crate::consents::Context::PayoutAccount, &i.consents)?;
     let holder = text(&i.holder_name, 1, 120)?;
     let bank = text(&i.bank_name, 1, 80)?;
     let digits: String = i
@@ -257,12 +262,13 @@ pub async fn put_payout_account(
             .seal_field(crate::payout_keys::Field::PayoutHolderName, org, &holder)?;
     let mut tx = s.pool.begin().await?;
     owner(&mut tx, a, org).await?;
-    sqlx::query(
+    let rv: i64 = sqlx::query_scalar(
         "INSERT INTO portal.payout_accounts(org_id,payee_type,holder_cipher,bank_name,account_last4,account_cipher,registered_by,key_version)
          VALUES($1,$2,$3,$4,$5,$6,$7,$8)
          ON CONFLICT(org_id) DO UPDATE SET payee_type=EXCLUDED.payee_type,holder_name=NULL,holder_cipher=EXCLUDED.holder_cipher,bank_name=EXCLUDED.bank_name,
            account_last4=EXCLUDED.account_last4,account_cipher=EXCLUDED.account_cipher,registered_by=EXCLUDED.registered_by,key_version=EXCLUDED.key_version,
-           registered_at=now(),row_version=portal.payout_accounts.row_version+1",
+           registered_at=now(),row_version=portal.payout_accounts.row_version+1
+         RETURNING row_version",
     )
     .bind(org)
     .bind(&i.payee_type)
@@ -272,7 +278,20 @@ pub async fn put_payout_account(
     .bind(&sealed)
     .bind(a.user)
     .bind(s.payout_keys.active_version())
-    .execute(&mut *tx)
+    .fetch_one(&mut *tx)
+    .await?;
+    // The consent names the account version it was given for (no account
+    // data: names and numbers are low-entropy and stay sealed).
+    let subject = crate::domain::sha256_hex(format!("payout_account|{org}|{rv}"));
+    crate::consents::record(
+        &mut tx,
+        a.user,
+        Some(org),
+        crate::consents::Context::PayoutAccount,
+        &consent_items,
+        Some(&subject),
+        a.request,
+    )
     .await?;
     operations::audit(
         &mut tx,
@@ -999,6 +1018,83 @@ pub async fn get_application(s: &AppState, a: &Actor, org: Uuid, release: Uuid) 
     crate::upload_safety::visible_inline_files(&s.pool, v.ok_or(Error::NotFound)?).await
 }
 
+/// The signed application as the server holds it at signing time: release
+/// metadata, tracks with their audio SHA-256, attached proofs, signer and
+/// terms version. The browser's hash alone proved nothing about the content.
+#[allow(clippy::too_many_arguments)]
+async fn application_original(
+    c: &mut PgConnection,
+    org: Uuid,
+    release: Uuid,
+    i: &ApplicationInput,
+    form: &str,
+    signer: &str,
+    role: &str,
+    submitted: &str,
+    sig: &str,
+) -> Result<Value> {
+    let (title, release_type, upc, draft): (String, String, Option<String>, Value) =
+        sqlx::query_as(
+            "SELECT title, release_type, upc, draft FROM catalog.releases WHERE org_id=$1 AND id=$2",
+        )
+        .bind(org)
+        .bind(release)
+        .fetch_one(&mut *c)
+        .await?;
+    let tracks: Vec<Value> = sqlx::query_scalar(
+        "SELECT jsonb_build_object('id',t.id,'track_number',t.track_number,'disc_number',t.disc_number,'title',t.title,
+                  'version',t.version,'isrc',t.isrc,'parental_advisory',t.parental_advisory,
+                  'lyrics_sha256',CASE WHEN t.lyrics IS NULL THEN NULL ELSE encode(sha256(convert_to(t.lyrics,'UTF8')),'hex') END,
+                  'asset_id',t.asset_id,'audio_sha256',a.sha256)
+           FROM catalog.tracks t LEFT JOIN catalog.assets a ON a.org_id=t.org_id AND a.id=t.asset_id
+          WHERE t.org_id=$1 AND t.release_id=$2 AND t.archived_at IS NULL
+          ORDER BY t.disc_number, t.track_number",
+    )
+    .bind(org)
+    .bind(release)
+    .fetch_all(&mut *c)
+    .await?;
+    // Proof files attached in the wizard (options.*AssetId) and the cover.
+    let mut attached: Vec<Uuid> = draft["options"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter(|(k, _)| k.ends_with("AssetId"))
+        .filter_map(|(_, v)| v.as_str().and_then(|s| Uuid::parse_str(s).ok()))
+        .collect();
+    if let Some(cover) = draft["coverAssetId"]
+        .as_str()
+        .and_then(|s| Uuid::parse_str(s).ok())
+    {
+        attached.push(cover);
+    }
+    let attachments: Vec<Value> = sqlx::query_scalar(
+        "SELECT jsonb_build_object('asset_id',id,'kind',kind,'content_type',content_type,'size_bytes',size_bytes,'sha256',sha256)
+           FROM catalog.assets WHERE org_id=$1 AND id=ANY($2) ORDER BY id",
+    )
+    .bind(org)
+    .bind(&attached)
+    .fetch_all(&mut *c)
+    .await?;
+    // The draft minus inline images (the cover preview is not the delivered
+    // file) and editor bookkeeping.
+    let mut fields = draft;
+    if let Some(o) = fields.as_object_mut() {
+        o.remove("coverData");
+        o.remove("history");
+        o.remove("saved_at");
+    }
+    Ok(json!({
+        "application_no": i.application_no, "form": form,
+        "terms_version": crate::agreement::TERMS_VERSION,
+        "release": {"id": release, "title": title, "release_type": release_type, "upc": upc, "fields": fields},
+        "tracks": tracks, "attachments": attachments,
+        "signer": {"name": signer, "role": role, "agreements": i.agreements, "client_submitted_at": submitted,
+                   "signature_sha256": crate::domain::sha256_hex(sig)},
+        "client_content_hash": i.content_hash,
+    }))
+}
+
 pub async fn record_application(
     s: &AppState,
     a: &Actor,
@@ -1069,9 +1165,16 @@ pub async fn record_application(
             return Err(Error::PolicyGate("APPLICATION_DOCUMENT_FINAL"));
         }
         let application_id = Uuid::new_v4();
+        // The server keeps its own copy of what was signed and hashes it.
+        let content = application_original(
+            &mut tx, org, release, &i, &form, &signer, &role, &submitted, &sig,
+        )
+        .await?;
+        let server_hash = crate::domain::sha256_json(&content);
+        let identity = crate::consents::signer_identity(&mut tx, a.user).await?;
         sqlx::query(
-            "INSERT INTO portal.release_applications(id,org_id,release_id,application_no,form,content_hash,signer_name,signer_role,agreements,signature,client_submitted_at,submitted_by)
-             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
+            "INSERT INTO portal.release_applications(id,org_id,release_id,application_no,form,content_hash,signer_name,signer_role,agreements,signature,client_submitted_at,submitted_by,content,server_hash,signer_identity)
+             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)",
         )
         .bind(application_id)
         .bind(org)
@@ -1085,6 +1188,9 @@ pub async fn record_application(
         .bind(&sig)
         .bind(&submitted)
         .bind(a.user)
+        .bind(&content)
+        .bind(&server_hash)
+        .bind(&identity)
         .execute(&mut *tx)
         .await?;
         operations::audit(
@@ -1106,11 +1212,18 @@ pub async fn record_application(
         )
         .await?;
     }
-    // The distribution agreement for this release enters staff review.
+    // The distribution agreement for this release enters staff review. Its
+    // confirmation code is the server's hash of the stored original.
+    let code: String = sqlx::query_scalar(
+        "SELECT COALESCE(server_hash, content_hash) FROM portal.release_applications WHERE application_no=$1",
+    )
+    .bind(&i.application_no)
+    .fetch_one(&mut *tx)
+    .await?;
     let body = format!(
         "AUDENIQ 디지털 음원 배급 신청·계약서\n\n발매: {title}\n신청서 번호: {no}\n신청인: {signer} ({role})\n문서 확인 코드: {hash}\n\n신청인은 위 발매 정보를 기준으로 AUDENIQ에 디지털 음원 배급을 신청하고, 배급 범위·정산·수정·테이크다운 및 권리 보증 조항에 동의합니다. AUDENIQ 검토가 끝나면 이 계약서에 서명해 계약이 체결됩니다.",
         no = i.application_no,
-        hash = i.content_hash
+        hash = code
     );
     let updated = sqlx::query(
         "INSERT INTO portal.documents(id,org_id,release_id,kind,title,body,status) VALUES($1,$2,$3,'AGREEMENT',$4,$5,'REVIEW')
