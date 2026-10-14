@@ -31,6 +31,7 @@ import { uid } from '../lib/store';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
 import { Badge } from '../ui';
+import { TrackChecks } from '../components/TrackChecks';
 import { Segmented } from '../components/Segmented';
 import { DateField } from '../components/Picker';
 import { BrandMark } from '../components/BrandMark';
@@ -1053,6 +1054,7 @@ const TrackEditor = memo(function TrackEditor({
         <UploadStatus upload={upload} idle={t.audioName
           ? `${t.audioName}${t.audioSpec ? ` · ${t.audioSpec}` : t.audioSize ? ` · ${fileSize(t.audioSize)}` : ''}${t.assetId ? ' · 업로드 완료' : MOCK ? '' : ' · 업로드되지 않았어요. 파일을 다시 선택해 주세요.'}`
           : '무손실 원본 WAV·FLAC·ALAC(.m4a)·AIFF·WavPack(.wv)·TTA · 44.1kHz 이상, 16bit 이상, 스테레오'} />
+        {!MOCK && t.assetId && upload?.state !== 'uploading' && <TrackChecks assetId={t.assetId} />}
       </div>
       <div className="track-duration-label" aria-live="polite">
         {t.duration ? `곡 길이 · ${t.duration}` : '음원을 선택하면 곡 길이를 자동으로 확인해요.'}
