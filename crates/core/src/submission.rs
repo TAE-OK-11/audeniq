@@ -448,6 +448,19 @@ pub async fn submit(
     }
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, release, "release", true).await?;
+    // An org whose contract is ending takes no new releases (0121);
+    // corrections of releases already in review still go through.
+    let ending: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM portal.org_contract_terms WHERE org_id=$1 AND status <> 'CANCELLED')
+            AND EXISTS(SELECT 1 FROM catalog.releases WHERE org_id=$1 AND id=$2 AND status='DRAFT')",
+    )
+    .bind(org)
+    .bind(release)
+    .fetch_one(&mut *tx)
+    .await?;
+    if ending {
+        return Err(Error::PolicyGate("ORG_CONTRACT_ENDING"));
+    }
     let rel = sqlx::query("SELECT status, current_revision_id FROM catalog.releases WHERE org_id=$1 AND id=$2 AND archived_at IS NULL FOR UPDATE")
         .bind(org).bind(release).fetch_optional(&mut *tx).await?.ok_or(Error::NotFound)?;
     let status: String = rel.get("status");

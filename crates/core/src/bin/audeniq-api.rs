@@ -91,6 +91,7 @@ async fn main() -> anyhow::Result<()> {
     }
     let state = api::AppState::new(pool, config, storage).await?;
     audeniq_core::email::spawn(state.clone(), mailer);
+    audeniq_core::contract_terms::spawn(state.pool.clone());
     audeniq_core::temp_sweep::spawn(vec![std::env::temp_dir()]);
     // docker stop / deploys send SIGTERM: stop accepting, finish in-flight
     // requests (compose stop_grace_period: 30 s) instead of dropping them.
