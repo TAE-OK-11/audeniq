@@ -218,7 +218,7 @@ export function CurrentValue({ sheet, code, trackId }: { sheet: ReleaseSheet; co
     case 'FIX_NOTES': body = d ? <pre>{txt(draftNotes(d))}</pre> : null; break;
     case 'FIX_COVER': {
       const src = d?.coverData || sheet.release.cover;
-      body = src ? <img className="adm-now-cover" src={apiUrl(src)} alt="현재 커버" /> : '(커버 미리보기 없음)';
+      body = src ? <img className="adm-now-cover" src={apiUrl(src)} alt="현재 커버" onError={e => { e.currentTarget.hidden = true; }} /> : '(커버 미리보기 없음)';
       break;
     }
     case 'FIX_RELEASE_DATE': body = txt(d?.release_date ?? app.release_date); break;
