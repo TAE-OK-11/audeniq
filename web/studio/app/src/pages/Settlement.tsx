@@ -1,4 +1,5 @@
 // 정산·지급 — hero + 탭 구조의 단순화된 레이아웃
+import { SplitsReceived } from '../components/SplitsReceived';
 import { Link } from '../lib/router';
 import { useState } from 'react';
 import { Modal, useModalClose } from '../components/Modal';
@@ -279,6 +280,7 @@ export function Settlement() {
           <button type="button" className="ui-btn is-primary is-lg" onClick={openPayoutModal}>수익 받기</button>
         </div>
       </section>
+      <SplitsReceived />
 
       <Segmented
         tabs className="aq-seg-tabs" label="정산 내역 구분" value={tab} onChange={setTab}
