@@ -1770,7 +1770,7 @@ async fn h_reports(
     Ok(Json(reports(&s, &a, org, p).await?))
 }
 
-fn csv_response(body: String, name: &str) -> Result<axum::response::Response> {
+pub(crate) fn csv_response(body: String, name: &str) -> Result<axum::response::Response> {
     use axum::http::{HeaderValue, header};
     use axum::response::IntoResponse;
     let mut res = body.into_response();

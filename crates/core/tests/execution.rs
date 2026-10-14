@@ -5358,3 +5358,47 @@ async fn smart_link_public_page_counts_views_and_clicks(pool: PgPool) {
         assert_eq!(s, StatusCode::OK);
     }
 }
+
+/// The org's codes: each submitted release with its UPC and track ISRCs,
+/// virtual (test-range) codes flagged, also as CSV; other orgs see nothing.
+#[sqlx::test]
+async fn codes_list_and_csv(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let path = format!("/api/orgs/{}/codes", ctx.org);
+    let (s, v) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let items = v["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "{v}");
+    let r = &items[0];
+    assert_eq!(r["release_id"], ctx.release.to_string().as_str());
+    let upc = r["upc"].as_str().expect("UPC");
+    assert_eq!(r["upc_virtual"], upc.starts_with('2'));
+    let isrc = r["tracks"][0]["isrc"].as_str().expect("ISRC");
+    assert_eq!(r["tracks"][0]["isrc_virtual"], isrc.starts_with("XX"));
+
+    let res = ctx
+        .app
+        .clone()
+        .oneshot(
+            axum::http::Request::builder()
+                .uri(format!("{path}.csv"))
+                .header("x-audeniq-service", SECRET)
+                .header("origin", ORIGIN)
+                .header("cookie", &ctx.user.cookie)
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(res.into_body(), 1 << 20)
+        .await
+        .unwrap();
+    let text = String::from_utf8(body.to_vec()).unwrap();
+    assert!(text.starts_with("\u{feff}release_id,release,"), "{text}");
+    assert!(text.contains(upc) && text.contains(isrc), "{text}");
+
+    let other = user(&ctx.app).await;
+    let (s, _) = call(&ctx.app, "GET", &path, Value::Null, Some(&other)).await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+}
