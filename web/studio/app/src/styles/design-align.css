@@ -415,3 +415,4 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
   #view-reports .report-tools>#reportRelease{grid-column:1/-1}
   #view-reports .report-tools>*{width:100%}
 }
+.aq-set-card .aq-set-help{margin:0;padding:2px 14px 8px}

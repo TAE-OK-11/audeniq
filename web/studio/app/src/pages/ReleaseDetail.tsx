@@ -458,6 +458,9 @@ export function ReleaseDetail() {
                 <button type="button" className="ui-btn is-white is-sm" onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}>트랙 등록하기 <Glyph name="chevron-right" size={13} /></button>
               </div>
             )}
+            <div className="ui-callout" style={{ marginTop: 22 }}>
+              음원 원본의 재첨부가 필요한 경우가 있어요. 제출 전 파일을 다시 확인해 주세요.
+            </div>
           </div>
         )}
 

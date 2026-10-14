@@ -80,7 +80,9 @@ export function Events() {
     <div id="view-events" className="view">
       <div className="ui-page-head">
         <div>
+          <p className="eyebrow">계정·지원</p>
           <h1>이벤트</h1>
+          <p>진행 중인 이벤트와 지난 소식을 확인해 보세요.</p>
         </div>
       </div>
 
