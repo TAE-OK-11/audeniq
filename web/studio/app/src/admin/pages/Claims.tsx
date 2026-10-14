@@ -134,14 +134,14 @@ export function Claims() {
               )}
               {c.status === 'RECEIVED' && (
                 <div className="ui-field" style={{ marginTop: 12 }}>
-                  <label htmlFor={`claim-rel-${c.id}`}>중단할 발매 ID (검토 화면 주소를 붙여 넣어도 돼요)</label>
-                  <input id={`claim-rel-${c.id}`} className="ui-input" value={releases[c.id] ?? ''} onChange={e => setReleases(r => ({ ...r, [c.id]: e.target.value }))} placeholder="/admin/reviews/…" />
+                  <label htmlFor={`claim-rel-${c.id}`}>중단할 발매</label>
+                  <input id={`claim-rel-${c.id}`} className="ui-input" value={releases[c.id] ?? ''} onChange={e => setReleases(r => ({ ...r, [c.id]: e.target.value }))} placeholder="심사 화면 주소 또는 발매 ID" />
                 </div>
               )}
               {['RECEIVED', 'SUSPENDED', 'COUNTER_NOTICED'].includes(c.status) && (
                 <>
                   <div className="ui-field" style={{ marginTop: 12 }}>
-                    <label htmlFor={`claim-note-${c.id}`}>처리 메모 {c.status === 'RECEIVED' ? '(반려 사유는 필수)' : '(아티스트에게 보여요)'}</label>
+                    <label htmlFor={`claim-note-${c.id}`}>처리 메모{c.status === 'RECEIVED' ? <span className="aq-optional">반려하면 필수</span> : <span className="aq-optional">아티스트에게 보여요</span>}</label>
                     <textarea id={`claim-note-${c.id}`} rows={2} maxLength={1000} value={notes[c.id] ?? ''} onChange={e => setNotes(n => ({ ...n, [c.id]: e.target.value }))} />
                   </div>
                   <div className="adm-form-actions">

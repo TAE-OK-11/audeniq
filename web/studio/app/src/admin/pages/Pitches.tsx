@@ -117,7 +117,7 @@ export function Pitches() {
                 {p.status === 'PITCHED' && (
                   <>
                     <div className="ui-field" style={{ marginTop: 12 }}>
-                      <label htmlFor={`pp-res-${p.id}`}>선정된 플레이리스트 (선정일 때)</label>
+                      <label htmlFor={`pp-res-${p.id}`}>선정된 플레이리스트</label>
                       <input id={`pp-res-${p.id}`} className="ui-input" maxLength={300} value={results[p.id] ?? ''} onChange={e => setResults(r => ({ ...r, [p.id]: e.target.value }))} placeholder="예: 멜론 '오늘의 발견'" />
                     </div>
                     <div className="ui-field">
