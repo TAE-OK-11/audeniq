@@ -1014,6 +1014,139 @@ pub async fn cancel_payout_order(pool: &PgPool, org: Uuid, order_id: Uuid) -> Re
     Ok(())
 }
 
+/// Settle an approved order that staff transferred by hand (no bank API
+/// yet): only with the transfer reference and evidence of the transfer
+/// (이체확인증), kept on the order. The person who approved it does not
+/// record the transfer. Posts the payout like a bank-confirmed one.
+pub async fn record_manual_payout(
+    pool: &PgPool,
+    org: Uuid,
+    executor: Uuid,
+    order_id: Uuid,
+    bank_reference: &str,
+    evidence: Value,
+) -> Result<()> {
+    let reference = bank_reference.trim();
+    if reference.is_empty() || reference.len() > 120 {
+        return Err(Error::PolicyGate("BANK_REFERENCE_REQUIRED"));
+    }
+    if evidence.as_object().is_none_or(|o| o.is_empty()) {
+        return Err(Error::PolicyGate("PAYOUT_EVIDENCE_REQUIRED"));
+    }
+    let approved_by: Option<Option<Uuid>> = sqlx::query_scalar(
+        "SELECT approved_by FROM finance.payout_orders WHERE org_id=$1 AND id=$2 AND status='APPROVED'",
+    )
+    .bind(org)
+    .bind(order_id)
+    .fetch_optional(pool)
+    .await?;
+    match approved_by {
+        None => return Err(Error::PolicyGate("INVALID_PAYOUT_STATUS_TRANSITION")),
+        Some(a) if a == Some(executor) => {
+            return Err(Error::PolicyGate("PAYOUT_EXECUTOR_MUST_DIFFER"));
+        }
+        _ => {}
+    }
+    sqlx::query(
+        "UPDATE finance.payout_orders SET manual_evidence=$3 WHERE org_id=$1 AND id=$2 AND status='APPROVED'",
+    )
+    .bind(org)
+    .bind(order_id)
+    .bind(&evidence)
+    .execute(pool)
+    .await?;
+    mark_payout_submitted(pool, org, executor, order_id, reference).await?;
+    record_bank_result(
+        pool,
+        org,
+        executor,
+        order_id,
+        Some(reference),
+        BankOutcome::Settled,
+        serde_json::json!({"manual": true}),
+    )
+    .await
+}
+
+/// Reissue a returned or failed order to the payout account registered now
+/// (the artist may have fixed it), for the same amount and request. The new
+/// order starts at PENDING_APPROVAL and passes every payout check again.
+pub async fn reissue_payout(pool: &PgPool, org: Uuid, actor: Uuid, order_id: Uuid) -> Result<Uuid> {
+    use sqlx::Row;
+    let mut tx = pool.begin().await?;
+    let old = sqlx::query(
+        "SELECT status, payee_party_id, amount, currency, payout_request_id, fee_amount, net_amount, fee_policy_version
+           FROM finance.payout_orders WHERE org_id=$1 AND id=$2 FOR UPDATE",
+    )
+    .bind(org)
+    .bind(order_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(Error::NotFound)?;
+    if !matches!(
+        old.get::<String, _>("status").as_str(),
+        "RETURNED" | "FAILED"
+    ) {
+        return Err(Error::PolicyGate("INVALID_PAYOUT_STATUS_TRANSITION"));
+    }
+    let payee: Uuid = old.get("payee_party_id");
+    let amount: Decimal = old.get("amount");
+    ensure_payable(&mut tx, org, payee, None, amount).await?;
+    let account = sqlx::query(
+        "SELECT payee_type,bank_name,account_last4,account_cipher,key_version,holder_cipher,row_version
+           FROM portal.payout_accounts WHERE org_id=$1",
+    )
+    .bind(org)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(Error::PolicyGate("PAYOUT_ACCOUNT_REQUIRED"))?;
+    // Same snapshot as a portal request (portal::request_payout).
+    let snapshot = serde_json::json!({
+        "payee_type": account.get::<String, _>("payee_type"),
+        "bank_name": account.get::<String, _>("bank_name"),
+        "account_last4": account.get::<String, _>("account_last4"),
+        "account_row_version": account.get::<i64, _>("row_version"),
+    });
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO finance.payout_orders(id,org_id,idempotency_key,payee_party_id,amount,currency,created_by,
+           payout_request_id,fee_amount,net_amount,fee_policy_version,account_snapshot,account_cipher,account_key_version,
+           holder_cipher,reissue_of)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)",
+    )
+    .bind(id)
+    .bind(org)
+    .bind(format!("reissue:{order_id}"))
+    .bind(payee)
+    .bind(amount)
+    .bind(old.get::<String, _>("currency"))
+    .bind(actor)
+    .bind(old.get::<Option<Uuid>, _>("payout_request_id"))
+    .bind(old.get::<Option<Decimal>, _>("fee_amount"))
+    .bind(old.get::<Option<Decimal>, _>("net_amount"))
+    .bind(old.get::<Option<String>, _>("fee_policy_version"))
+    .bind(&snapshot)
+    .bind(account.get::<Vec<u8>, _>("account_cipher"))
+    .bind(account.get::<i16, _>("key_version"))
+    // Sealed holder name (AAD: org), copied without decrypting.
+    .bind(account.get::<Option<Vec<u8>>, _>("holder_cipher"))
+    .bind(order_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| map_unique_violation(e, "PAYOUT_ALREADY_REISSUED"))?;
+    // The artist's request follows the order now in flight.
+    sqlx::query(
+        "UPDATE portal.payout_requests SET payout_order_id=$3 WHERE org_id=$1 AND payout_order_id=$2",
+    )
+    .bind(org)
+    .bind(order_id)
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(id)
+}
+
 /// Mark an approved order as handed to the bank (still awaiting result).
 pub async fn mark_payout_submitted(
     pool: &PgPool,
