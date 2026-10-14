@@ -808,3 +808,12 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 .aq-takedown-state{margin:12px 0 0}
 .aq-takedown .row-actions{margin-top:12px}
 .aq-takedown .row-actions:empty{display:none}
+
+/* 발매 후 정보 수정 */
+.aq-correction-card{margin-top:16px}
+.aq-correction-form{display:grid;gap:14px;margin-top:12px}
+.aq-correction-track{border:0;padding:0;margin:0;display:grid;gap:8px}
+.aq-correction-track legend{font-weight:700;margin-bottom:6px}
+.aq-correction-row{display:grid;grid-template-columns:minmax(0,1fr) 150px auto;gap:8px;align-items:center}
+@media(max-width:560px){.aq-correction-row{grid-template-columns:1fr 1fr}.aq-correction-row .ui-btn{grid-column:1/-1;justify-self:end}}
+.aq-claim-status{margin:8px 0 10px}
