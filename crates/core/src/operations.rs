@@ -254,6 +254,16 @@ pub async fn claim_with(
     .bind(lease_seconds as f64)
     .bind(Uuid::new_v4())
     .bind(Uuid::new_v4());
+    // The sweep is a transaction (BEGIN, UPDATE, claim, COMMIT). Expired
+    // leases are rare, so check first with an index-only probe
+    // (jobs_expired_lease): an idle sweep is then two round trips, not four.
+    let reclaim = reclaim
+        && sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM operations.jobs WHERE queue=$1 AND status='RUNNING' AND lease_until<=clock_timestamp())",
+        )
+        .bind(queue)
+        .fetch_one(pool)
+        .await?;
     let r = if reclaim {
         let mut tx = pool.begin().await?;
         reclaim_expired(&mut tx, queue).await?;

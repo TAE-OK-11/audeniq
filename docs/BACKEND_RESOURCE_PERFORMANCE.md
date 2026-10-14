@@ -94,3 +94,26 @@ Graviton4에서는 같은 입력·같은 자원 제한으로 공용 ARM 빌드�
 `neoverse-v2` 빌드를 각각 측정한다. CPU 옵션과 서버 설정은
 [GRAVITON4.md](../deploy/GRAVITON4.md)를 따른다. 이 벤치마크는 패키지 경로의
 비용을 분리하며 API 처리량·DB 부하·전체 RSS는 운영 부하 시험으로 확인한다.
+
+# 2026-10-10 추가 — async 런타임 블로킹 제거·유휴 DB 왕복 감소
+
+- 업로드 완료(`uploads::prepare`): 변환된 파일(최대 512 MiB)의 SHA-256을
+  async 스레드가 아니라 이미 있던 `spawn_blocking` 안에서 계산한다. 1 vCPU
+  API에서 큰 마스터 하나가 해시되는 동안 다른 요청이 모두 멈추던 문제를 없앤다.
+- 배급 준비(`distribution::persist_ddex_messages`)와 `partner test-ern`: DSP마다
+  도는 xmllint XSD 검증을 블로킹 풀에서 실행한다
+  (`ddex_xsd::validate_ern_382_xml_blocking`). 열린 트랜잭션을 잡은 채 런타임
+  스레드를 막지 않는다. xmllint 종료 대기는 50 ms 고정 대신 2 ms부터 두 배씩
+  (최대 50 ms) 늘려, 검증마다 평균 ~25 ms의 불필요한 대기를 줄인다.
+- 목록 응답의 인라인 이미지(`upload_safety::visible_inline_files`): data: URL마다
+  SHA-256을 두 번 계산하던 것을 한 번으로 줄였다. 순회 순서·판정은 동일하다.
+- worker 만료 lease 회수: 큐마다 5초마다 BEGIN·UPDATE·claim·COMMIT(4왕복)을
+  돌던 것을, 먼저 `jobs_expired_lease` 인덱스로 존재만 확인해 없으면 일반
+  claim(총 2왕복)으로 끝낸다. 만료 건이 있을 때의 동작은 같다.
+- 점검 게이트(`site_content::gate`): 요청마다 캐시된 점검 행을 깊은 복사하던
+  것을 `Arc` 공유로 바꾸고, 예정된 점검이 없으면 상태 JSON을 만들지 않는다.
+
+검증: `cargo clippy -p audeniq-core --all-targets -D warnings`, lib 테스트 238개,
+`foundation`·`distribution`·`portal`·`partner_onboarding`·`stage2`·
+`sandbox_regressions` 통합 테스트(PostgreSQL, audeniq-qc/photo 포함)를 변경 전후로
+돌려 실패 목록이 동일함(ClamAV가 필요한 업로드 VERIFIED 테스트만 이 환경에서 실패)을 확인했다.

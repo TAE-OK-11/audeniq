@@ -47,6 +47,16 @@ pub fn validate_ern_382_xml(xml: &str) -> Result<()> {
     run_xmllint(&schema, &doc.path)
 }
 
+/// [`validate_ern_382_xml`] on the blocking pool. xmllint parses the whole
+/// ERN schema set per call; run inline, that would stall an async runtime
+/// thread (and any open transaction's progress) for the child's lifetime.
+/// The document is handed back so the caller can persist it without a copy.
+pub async fn validate_ern_382_xml_blocking(xml: String) -> Result<String> {
+    tokio::task::spawn_blocking(move || validate_ern_382_xml(&xml).map(|()| xml))
+        .await
+        .map_err(|_| Error::Internal)?
+}
+
 /// A temp XML document that always cleans itself up, even if validation
 /// panics or returns early. The name is pid + UUID v4 and the file is
 /// created with `create_new`, so a concurrent validator (or a hostile
@@ -158,6 +168,9 @@ fn wait_status_with_timeout(
     timeout: Duration,
 ) -> Option<std::process::ExitStatus> {
     let start = std::time::Instant::now();
+    // xmllint usually exits within tens of milliseconds: poll quickly first,
+    // then back off to the old 50 ms so a slow run costs no extra wakeups.
+    let mut pause = Duration::from_millis(2);
     loop {
         match child.try_wait() {
             Ok(Some(status)) => return Some(status),
@@ -169,7 +182,8 @@ fn wait_status_with_timeout(
                     let _ = child.wait();
                     return None;
                 }
-                std::thread::sleep(Duration::from_millis(50));
+                std::thread::sleep(pause);
+                pause = (pause * 2).min(Duration::from_millis(50));
             }
             Err(_) => return None,
         }

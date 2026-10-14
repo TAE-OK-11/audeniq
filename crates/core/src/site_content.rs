@@ -24,7 +24,7 @@ use axum::{
 };
 use chrono::{DateTime, Duration, FixedOffset, NaiveDate, SecondsFormat, Utc};
 use serde_json::{Map, Value, json};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 const PUBLIC_CACHE: &str = "public, max-age=30";
@@ -474,12 +474,14 @@ pub fn pick_status(rows: &[Value], now: DateTime<Utc>) -> Value {
     }})
 }
 
-static ROWS: Mutex<Option<(Instant, Vec<Value>)>> = Mutex::new(None);
+// Arc: every gated API request reads this; a hit is a refcount bump, not a
+// deep copy of the rows.
+static ROWS: Mutex<Option<(Instant, Arc<[Value]>)>> = Mutex::new(None);
 pub fn reset_maintenance_cache() {
     *ROWS.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
-async fn maintenance_rows(s: &AppState, now: DateTime<Utc>) -> Vec<Value> {
+async fn maintenance_rows(s: &AppState, now: DateTime<Utc>) -> Arc<[Value]> {
     if let Some((at, rows)) = ROWS.lock().unwrap_or_else(|e| e.into_inner()).as_ref()
         && at.elapsed() < STATUS_TTL
     {
@@ -499,9 +501,10 @@ async fn maintenance_rows(s: &AppState, now: DateTime<Utc>) -> Vec<Value> {
         Ok(rows) => rows,
         Err(e) => {
             tracing::warn!(error = %e, "maintenance status unavailable");
-            return Vec::new();
+            return Arc::from([]);
         }
     };
+    let rows: Arc<[Value]> = rows.into();
     *ROWS.lock().unwrap_or_else(|e| e.into_inner()) = Some((Instant::now(), rows.clone()));
     rows
 }
@@ -519,8 +522,13 @@ async fn active_maintenance(s: &AppState) -> Option<Value> {
     if let Some(forced) = forced_maintenance(now) {
         return Some(forced);
     }
-    let status = service_status(s, now).await;
-    let active = status["maintenance"]["active"].clone();
+    let rows = maintenance_rows(s, now).await;
+    // Usual case: nothing scheduled, so skip building the status document.
+    if rows.is_empty() {
+        return None;
+    }
+    let mut status = pick_status(&rows, now);
+    let active = status["maintenance"]["active"].take();
     (!active.is_null()).then_some(active)
 }
 
