@@ -408,3 +408,10 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 
 /* 검색칸만 있는 줄(전체 트랙 등) — 정렬 칸 자리를 비워 두지 않고 한 줄을 다 쓴다 */
 .toolbar>:only-child,#view-catalog .toolbar>:only-child{grid-column:1/-1;width:100%}
+
+/* 음악 리포트 — 휴대폰에서 고르기 칸 셋을 한 줄에 우겨 넣어 글자가 잘리던 것: 기간 둘은 한 줄, 발매는 다음 줄 전체 */
+@media (max-width:760px){
+  #view-reports .report-tools{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
+  #view-reports .report-tools>#reportRelease{grid-column:1/-1}
+  #view-reports .report-tools>*{width:100%}
+}

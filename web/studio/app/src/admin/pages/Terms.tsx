@@ -52,9 +52,9 @@ export function Terms() {
       {!ok && <NoDuty duty="배급" />}
       <section className="ui-card" style={{ marginBottom: 16 }}>
         <h2 className="subhead">해지·종료일 정하기</h2>
+        <div className="ui-field"><label htmlFor="tmRelease">발매</label>
+          <input id="tmRelease" className="ui-input" value={form.release} onChange={e => setForm(f => ({ ...f, release: e.target.value }))} placeholder="심사 화면 주소 또는 발매 ID" /></div>
         <div className="form-grid">
-          <div className="ui-field"><label htmlFor="tmRelease">발매</label>
-            <input id="tmRelease" className="ui-input" value={form.release} onChange={e => setForm(f => ({ ...f, release: e.target.value }))} placeholder="심사 화면 주소 또는 발매 ID" /></div>
           <div className="ui-field"><label htmlFor="tmDate">종료일</label>
             <DateField id="tmDate" min={today} value={form.date} onChange={v => setForm(f => ({ ...f, date: v }))} /></div>
           <div className="ui-field"><label htmlFor="tmReason">사유</label>

@@ -469,3 +469,9 @@
 @media (max-width:760px),(pointer:coarse){
   .adm-w-ref button{width:32px;height:32px}
 }
+/* 휴대폰 보드 머리 — 보드 고르기와 새로고침을 한 줄에 (새로고침만 따로 한 줄을 차지하지 않게) */
+@media (max-width:760px){
+  .adm-kb-bar{flex-wrap:nowrap}
+  .adm-kb-bar .ui-select.adm-kb-picker-select{flex:1 1 auto}
+  .adm-kb-bar>.ui-btn{flex:none}
+}
