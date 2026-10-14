@@ -435,6 +435,8 @@ impl ObjectStore for MemStore {
     }
 }
 pub async fn app(pool: PgPool) -> (Router, Arc<MemStore>) {
+    // These suites were written for two-person approval; keep testing it.
+    audeniq_core::config::set_dual_approval(true);
     database::MIGRATOR.run(&pool).await.unwrap();
     let store = Arc::new(MemStore::default());
     let s = AppState::new(

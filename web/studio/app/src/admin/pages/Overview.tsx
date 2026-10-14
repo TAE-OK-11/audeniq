@@ -10,7 +10,7 @@ import { ADMIN_INQUIRIES_EVENT, ADMIN_WORK_EVENT } from '../liveEvents';
 import { useNavigate } from '../../lib/router';
 import { Icon } from '../AdminApp';
 import { DUTY_LABEL, ROLE_LABEL } from '../labels';
-import { CountUp, PageHeader, Section, useStaff } from '../ui';
+import { CountUp, PageHeader, Section, useDualApproval, useStaff } from '../ui';
 import { IconTile, StatGrid, StatTile } from '../../ui';
 import type { Overview } from '../api';
 
@@ -29,6 +29,7 @@ const TILES: Tile[] = [
 export function OverviewPage() {
   const nav = useNavigate();
   const { me, counts, refreshCounts } = useStaff();
+  const dual = useDualApproval();
   useEffect(refreshCounts, [refreshCounts]);
 
   const urgent = counts ? counts.review + counts.second_approvals + counts.inquiries + counts.documents : 0;
@@ -54,7 +55,7 @@ export function OverviewPage() {
       <InboxPeek />
 
       <StatGrid>
-        {TILES.map(t => {
+        {TILES.filter(t => dual || t.key !== 'second_approvals').map(t => {
           const n = counts ? Number(counts[t.key] ?? 0) : null;
           return (
             <StatTile
