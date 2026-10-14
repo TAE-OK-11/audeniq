@@ -63,8 +63,16 @@ export interface AgreementTermsInput {
   /** AUDENIQ 몫 (bp, 800 = 8%) */
   fee_bps: number;
   rate_note: string; territory_note: string; min_payout_note: string; special_terms: string;
+  /** 배급 권한 범위 — 승인부터 전송 직전까지 서버가 같은 기준으로 검사 (비우면 신청서 지역·플랫폼, 기한 없음, UGC 제외) */
+  scope?: { territories: string[]; excluded_territories: string[]; end_date: string | null; dsps: string[]; ugc: boolean };
 }
-export interface AgreementTerms extends AgreementTermsInput {
+/** 저장된 배급 권한 범위 */
+export interface AgreementScope {
+  territories: string[]; worldwide: boolean; excluded_territories: string[]; end_date: string | null;
+  dsps: string[]; all_dsps: boolean; ugc: boolean;
+}
+export interface AgreementTerms extends Omit<AgreementTermsInput, 'scope'> {
+  scope?: AgreementScope;
   form: string; terms_version: string; user_bps: number; currency: string;
   confirmations: { id: string; text: string; required: boolean }[];
   required: string[]; set_by?: string; set_at?: string;

@@ -173,6 +173,11 @@ pub struct TermsInput {
     pub min_payout_note: String,
     #[serde(default)]
     pub special_terms: String,
+    /// Structured distribution scope (territories, exclusions, last day,
+    /// DSPs, UGC). Absent = the application's territories and DSPs, no end,
+    /// no UGC. Enforced by `contract_scope` from approval to the send.
+    #[serde(default)]
+    pub scope: Option<crate::contract_scope::ScopeInput>,
 }
 
 fn line(s: &str, max: usize) -> Result<String> {
@@ -308,9 +313,40 @@ fn render(ctx: &Context, t: &Value, items: &[&Confirmation]) -> String {
     if crate::mockdsp::studio_selected(d) {
         platforms.push(crate::mockdsp::STUDIO_NAME);
     }
-    let world = d["territories"]
-        .as_array()
-        .is_none_or(|a| a.is_empty() || a.iter().any(|x| x == "WORLD"));
+    let scope = t
+        .get("scope")
+        .filter(|v| v.is_object())
+        .and_then(|v| crate::contract_scope::ContractScope::from_json(v).ok());
+    // Where the release goes: the application's territories, narrowed by the
+    // agreement's scope when staff set one.
+    let territories = crate::territory::Territories::from_draft(d)
+        .ok()
+        .map(|a| match &scope {
+            Some(sc) => a.narrow(&sc.territories),
+            None => Some(a),
+        });
+    let territory_text = match territories {
+        Some(Some(t)) => crate::contract_scope::ContractScope {
+            territories: t,
+            end: None,
+            dsps: None,
+            ugc: false,
+        }
+        .territory_text(),
+        _ => "신청서에 지정한 지역".into(),
+    };
+    if let Some(codes) = scope.as_ref().and_then(|s| s.dsps.as_ref()) {
+        platforms = codes
+            .iter()
+            .map(|c| {
+                dsp_registry::Dsp::from_code(c)
+                    .map(|d| d.display_name())
+                    .unwrap_or(c.as_str())
+            })
+            .collect();
+    }
+    let ugc = scope.as_ref().is_some_and(|s| s.ugc);
+    let end = scope.as_ref().and_then(|s| s.end);
     let note = |k: &str| t[k].as_str().unwrap_or("").trim().to_string();
     let fee = t["fee_bps"].as_u64().unwrap_or(0) as u32;
     // Re-rendering an existing agreement keeps the version recorded with its terms.
@@ -399,11 +435,7 @@ fn render(ctx: &Context, t: &Value, items: &[&Confirmation]) -> String {
             },
             format!(
                 "배급 지역: {}{}",
-                if world {
-                    "전 세계"
-                } else {
-                    "신청서에 지정한 지역"
-                },
+                territory_text,
                 match note("territory_note") {
                     x if x.is_empty() => String::new(),
                     x => format!(" (제외·조건: {x})"),
@@ -417,15 +449,29 @@ fn render(ctx: &Context, t: &Value, items: &[&Confirmation]) -> String {
         vec![
             format!(
                 "대상 DSP: {}",
-                if platforms.is_empty() { "신청서에 지정한 DSP".into() } else { platforms.join(", ") }
+                if platforms.is_empty() {
+                    "신청서에 지정한 DSP".into()
+                } else {
+                    platforms.join(", ")
+                }
             ),
-            "서비스 범위: 기본 음원 배급. UGC 권리관리(YouTube Content ID, TikTok·Meta 등)와 그 밖의 부가서비스는 이 계약에 포함하지 않으며, 신청하는 경우 별도로 정합니다.".into(),
+            if ugc {
+                "서비스 범위: 기본 음원 배급과 UGC 권리관리(YouTube Content ID, TikTok·Meta 등). 그 밖의 부가서비스는 이 계약에 포함하지 않으며, 신청하는 경우 별도로 정합니다.".into()
+            } else {
+                "서비스 범위: 기본 음원 배급. UGC 권리관리(YouTube Content ID, TikTok·Meta 등)와 그 밖의 부가서비스는 이 계약에 포함하지 않으며, 신청하는 경우 별도로 정합니다.".into()
+            },
         ],
     );
     art(
         &mut out,
         "계약기간",
-        vec!["이용자가 서명한 날부터 이용자가 해지를 요청할 때까지로 합니다. 해지 요청과 그 후의 처리는 약관 제18장(계약 종료)에 따릅니다.".into()],
+        vec![match end {
+            Some(end) => format!(
+                "이용자가 서명한 날부터 {}까지로 합니다. 그 전이라도 이용자는 해지를 요청할 수 있고, 해지 요청과 그 후의 처리는 약관 제18장(계약 종료)에 따릅니다.",
+                end.format("%Y년 %-m월 %-d일")
+            ),
+            None => "이용자가 서명한 날부터 이용자가 해지를 요청할 때까지로 합니다. 해지 요청과 그 후의 처리는 약관 제18장(계약 종료)에 따릅니다.".into(),
+        }],
     );
     let mut fee_body = vec![format!(
         "배급수수료: 회사가 DSP와 배급 파트너로부터 실제로 받은 대상 콘텐츠의 수익 중 회사 {} / 이용자 {}",
@@ -568,6 +614,15 @@ pub async fn set_terms(s: &AppState, h: &HeaderMap, release: Uuid, i: TermsInput
     .await?;
     let (id, org) = doc.ok_or(Error::PolicyGate("AGREEMENT_NOT_IN_REVIEW"))?;
     let ctx = context(&s.payout_keys, &mut tx, release).await?;
+    let scope = crate::contract_scope::ContractScope::from_input(
+        &i.scope.unwrap_or_default(),
+        crate::domain::today_kst(),
+    )?;
+    if let Ok(applied) = crate::territory::Territories::from_draft(&ctx.draft)
+        && applied.narrow(&scope.territories).is_none()
+    {
+        return Err(Error::InvalidCode("CONTRACT_SCOPE_TERRITORY_EMPTY"));
+    }
     let items = confirmations(&ctx.draft["options"]);
     let mut terms = json!({
         "form": FORM, "terms_version": TERMS_VERSION,
@@ -580,6 +635,7 @@ pub async fn set_terms(s: &AppState, h: &HeaderMap, release: Uuid, i: TermsInput
     for (k, v) in terms_in.as_object().unwrap() {
         terms[k] = v.clone();
     }
+    terms["scope"] = scope.to_json();
     let body = render(&ctx, &terms, &items);
     let title = format!(
         "{} · AUDENIQ 음원 배급 계약서",
