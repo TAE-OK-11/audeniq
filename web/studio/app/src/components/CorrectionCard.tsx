@@ -6,6 +6,7 @@ import { orgPath, req } from '../api/http';
 import { errorMessage } from '../api/errors';
 import { MOCK } from '../lib/mode';
 import { useToast } from './Toast';
+import { ManageHead } from './ManageHead';
 
 interface Credit { name: string; role: string }
 interface TrackRow { track_id: string; title: string; credits: Credit[] }
@@ -79,11 +80,12 @@ export function CorrectionCard({ releaseId }: { releaseId: string }) {
   };
 
   return (
-    <section className="ui-card aq-correction-card" aria-labelledby="correctionHeading">
-      <h2 id="correctionHeading">발매 후 정보 수정</h2>
+    <section className="ui-card aq-manage-card aq-correction-card" aria-labelledby="correctionHeading">
+      <ManageHead id="correctionHeading" icon="pencil" title="발매 후 정보 수정"
+        status={st.request ? ({ PENDING: { tone: 'violet', label: '확인 중' }, APPROVED: { tone: 'green', label: '반영 중' }, DECLINED: { tone: 'red', label: '반려' }, CANCELLED: { tone: 'gray', label: '취소' } } as const)[st.request.status as 'PENDING'] ?? null : null} />
       <p className="ui-field-help">크레딧(작곡·작사·편곡 등)과 장르만 고칠 수 있어요. 제목·아티스트·음원을 바꾸려면 새로 발매해 주세요.</p>
       {st.request && (
-        <p className="aq-claim-status"><b>{STATUS[st.request.status] ?? st.request.status}</b>
+        <p className="aq-claim-status">{STATUS[st.request.status] ?? st.request.status}
           {st.request.decision_note && <span className="muted"> · {st.request.decision_note}</span>}
           {st.request.status === 'PENDING' && <button type="button" className="ui-btn is-text is-sm" onClick={() => void cancel()}>요청 취소</button>}
         </p>

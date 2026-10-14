@@ -8,6 +8,7 @@ import { MOCK } from '../lib/mode';
 import { useToast } from './Toast';
 import { useConfirm } from './Confirm';
 import { DateField } from './Picker';
+import { ManageHead } from './ManageHead';
 
 interface Term {
   end_date: string; reason: string; note: string; status: string; set_by_staff: boolean; transfer_to?: string | null;
@@ -76,15 +77,15 @@ export function TermCard({ releaseId }: { releaseId: string }) {
   };
 
   return (
-    <section className="ui-card aq-term-card" aria-labelledby="termHeading">
-      <h2 id="termHeading">배급 종료·권리 만료</h2>
+    <section className="ui-card aq-manage-card aq-term-card" aria-labelledby="termHeading">
+      <ManageHead id="termHeading" icon="calendar" title="배급 종료·권리 만료"
+        status={term ? (term.status === 'SCHEDULED' ? { tone: 'amber', label: `${term.end_date} 종료 예정` } : term.status === 'ENDED' ? { tone: 'violet', label: '최종 정산 대기' } : { tone: 'gray', label: '종료' }) : null} />
       {term ? (
         <>
           <dl className="ui-kv is-2">
             <div><dt>종료일</dt><dd>{term.end_date}</dd></div>
             <div><dt>사유</dt><dd>{REASON[term.reason] ?? term.reason}</dd></div>
             {term.transfer_to && <div><dt>옮겨 갈 유통사</dt><dd>{term.transfer_to}</dd></div>}
-            <div><dt>상태</dt><dd>{term.status === 'SCHEDULED' ? '예약됨' : term.status === 'ENDED' ? '종료 · 최종 정산 대기' : '최종 정산 완료'}</dd></div>
             {term.final_settlement_due && <div><dt>최종 정산 기한</dt><dd>{term.final_settlement_due}</dd></div>}
           </dl>
           {term.note && <p className="small muted">{term.note}</p>}

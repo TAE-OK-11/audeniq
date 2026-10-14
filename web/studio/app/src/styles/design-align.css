@@ -445,3 +445,26 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 /* 줄에서 고른 탭·칩으로 밀어 줄 때 부드럽게 (lib/rowNav.ts) */
 :is(.ui-tabs,.ui-chips){scroll-behavior:smooth}
 @media (prefers-reduced-motion:reduce){:is(.ui-tabs,.ui-chips){scroll-behavior:auto}#modal.is-nudge>.modal-inner{animation:none!important}}
+
+/* ---------- 발매 상세 '관리' 탭 카드 — 한 틀 ----------
+   머리(아이콘 칸 · 제목 · 상태 배지) → 설명 → 내용 → 버튼. 모든 칸 사이 간격은 같고, 버튼이 설명에 붙지 않는다. */
+#view-release .aq-manage-card{display:grid;gap:14px;align-content:start;padding:22px 22px 24px;margin:0}
+#view-release .aq-manage-card>*{margin:0}
+#view-release .aq-manage-card>.ui-btn,#view-release .aq-manage-card>.ui-actions{justify-self:start}
+.aq-manage-head{display:flex;align-items:center;gap:12px;min-width:0}
+.aq-manage-head h2{flex:1;min-width:0;margin:0;font-size:var(--aq-fs-title-sm,18px);font-weight:700;letter-spacing:-.02em;line-height:1.35}
+.aq-manage-head .ui-badge{flex:none}
+.aq-manage-head+.ui-field-help{margin-top:-4px}
+#view-release .aq-manage-card .ui-kv{padding:14px 16px;border-radius:var(--aq-r-lg);background:#fff}
+#view-release .aq-manage-card .aq-confirm-actions{margin-top:2px}
+
+/* 스마트링크 — 주소 칸은 한 줄 전체, 복사·열기는 그 아래 나란히 */
+#view-release .aq-smartlink-url{display:grid;gap:10px;margin:0}
+#view-release .aq-smartlink-url code{display:block;padding:12px 14px;border-radius:var(--aq-r-md);background:#fff;font:600 14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--aq-text);overflow-wrap:anywhere}
+.aq-manage-stat{color:var(--aq-text-3)}
+.aq-manage-stat b{color:var(--aq-text);font-weight:800}
+
+/* 플랫폼 서비스 목록 — 이름 · 상태 배지 */
+#view-release .aq-takedown-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+#view-release .aq-takedown-list li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border-radius:var(--aq-r-md);background:#fff;font-size:14px;font-weight:600}
+#view-release .aq-claim-status{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px}

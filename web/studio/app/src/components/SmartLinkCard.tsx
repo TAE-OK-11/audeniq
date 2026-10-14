@@ -6,6 +6,8 @@ import { errorMessage } from '../api/errors';
 import { MOCK } from '../lib/mode';
 import { PLATFORM_NAMES } from '../lib/platformNames';
 import { useToast } from './Toast';
+import { ManageHead } from './ManageHead';
+import { Glyph } from './Glyph';
 
 interface State {
   link: { slug: string; enabled: boolean; links: Record<string, string> } | null;
@@ -50,19 +52,21 @@ export function SmartLinkCard({ releaseId }: { releaseId: string }) {
   const clicks = Object.values(st.stats.clicks).reduce((a, b) => a + b, 0);
 
   return (
-    <section className="ui-card aq-smartlink-edit" aria-labelledby="smartlinkHeading">
-      <h2 id="smartlinkHeading">스마트링크</h2>
+    <section className="ui-card aq-manage-card aq-smartlink-edit" aria-labelledby="smartlinkHeading">
+      <ManageHead id="smartlinkHeading" icon="link" title="스마트링크" status={l ? (l.enabled ? { tone: 'green', label: '공개 중' } : { tone: 'gray', label: '꺼짐' }) : null} />
       <p className="ui-field-help">플랫폼별 앨범 링크를 한 주소로 모아 SNS·프로필에 공유할 수 있어요.</p>
       {l && (
         <>
           {l.enabled ? (
             <div className="aq-smartlink-url">
               <code>{pageUrl(l.slug)}</code>
-              <button type="button" className="ui-btn is-soft is-sm" onClick={() => copy(l.slug)}>복사</button>
-              <a className="ui-btn is-text is-sm" href={`/l/${l.slug}`} target="_blank" rel="noopener noreferrer">열기</a>
+              <span className="ui-actions">
+                <button type="button" className="ui-btn is-sm" onClick={() => copy(l.slug)}>복사</button>
+                <a className="ui-btn is-sm" href={`/l/${l.slug}`} target="_blank" rel="noopener noreferrer"><Glyph name="arrow-up-right" size={14} />열기</a>
+              </span>
             </div>
           ) : <p className="small muted">꺼져 있어요. 켜면 같은 주소로 다시 열려요.</p>}
-          <p className="small">최근 {st.stats.days}일 · 조회 <b>{st.stats.views.toLocaleString()}</b> · 클릭 <b>{clicks.toLocaleString()}</b>
+          <p className="small aq-manage-stat">최근 {st.stats.days}일 · 조회 <b>{st.stats.views.toLocaleString()}</b> · 클릭 <b>{clicks.toLocaleString()}</b>
             {clicks > 0 && <span className="muted"> ({Object.entries(st.stats.clicks).sort((a, b) => b[1] - a[1]).map(([p, n]) => `${PLATFORM_NAMES[p] ?? p} ${n}`).join(', ')})</span>}
           </p>
           {(st.stats.alerts ?? 0) > 0 && (
@@ -72,9 +76,9 @@ export function SmartLinkCard({ releaseId }: { releaseId: string }) {
         </>
       )}
       {!edit && (
-        <div className="aq-confirm-actions" style={{ justifyContent: 'flex-start' }}>
-          <button type="button" className="ui-btn is-soft" onClick={start}>{l ? '링크 수정' : '스마트링크 만들기'}</button>
-          {l && <button type="button" className="ui-btn is-text" disabled={busy} onClick={() => void save(!l.enabled, l.links)}>{l.enabled ? '끄기' : '켜기'}</button>}
+        <div className="ui-actions">
+          <button type="button" className={`ui-btn${l ? '' : ' is-primary'}`} onClick={start}>{l ? '링크 수정' : '스마트링크 만들기'}</button>
+          {l && <button type="button" className="ui-btn is-text is-muted" disabled={busy} onClick={() => void save(!l.enabled, l.links)}>{l.enabled ? '공개 끄기' : '다시 공개'}</button>}
         </div>
       )}
       {edit && (
