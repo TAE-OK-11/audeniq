@@ -758,6 +758,168 @@ pub async fn get(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> 
     Ok(v)
 }
 
+/// Checks never shown to the artist from the pre-submission analysis: the
+/// similarity result can name other organizations' assets, and the
+/// provenance detail is the raw metadata report (its status is enough).
+const PRIVATE_DETAIL: &[&str] = &["AUDIO_SIMILAR_TO_EXISTING", "AUDIO_AI_PROVENANCE"];
+
+/// `GET /api/orgs/{org}/assets/{id}/checks`: the pre-submission QC of an
+/// uploaded track, check by check (what the worker's asset.analyze stored),
+/// so the studio can say which track needs fixing and why before the
+/// release is submitted. Empty while the analysis is pending.
+pub async fn checks(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> {
+    let mut tx = s.pool.begin().await?;
+    auth::authorize(&mut tx, a, org, id, "asset", false).await?;
+    let (kind, qc_status, sha256): (String, String, Option<String>) = sqlx::query_as(
+        "SELECT kind, qc_status, sha256 FROM catalog.assets WHERE org_id=$1 AND id=$2",
+    )
+    .bind(org)
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+    let Some(sha) = sha256.filter(|_| kind == "AUDIO") else {
+        tx.commit().await?;
+        return Ok(json!({"asset_id": id, "qc_status": qc_status, "checks": []}));
+    };
+    let aid = id.to_string();
+    let codes: Vec<&str> = crate::qc::AUDIO_CHECK_CODES
+        .iter()
+        .copied()
+        .filter(|c| *c != "AUDIO_SIMILAR_TO_EXISTING")
+        .collect();
+    let hashes: Vec<String> = codes
+        .iter()
+        .map(|c| crate::submission::asset_check_cache_key(c, &aid, &sha))
+        .collect();
+    let rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
+        "SELECT r.check_code, r.status, r.detail
+           FROM unnest($1::text[], $2::text[]) AS k(check_code, result_hash)
+           JOIN operations.asset_qc_results r
+             ON r.check_code=k.check_code AND r.result_hash=k.result_hash AND r.rule_version=$3",
+    )
+    .bind(&codes)
+    .bind(&hashes)
+    .bind(crate::qc::QC_RULE_VERSION)
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    let mut checks: Vec<Value> = rows
+        .into_iter()
+        .map(|(code, status, detail)| {
+            let detail = if PRIVATE_DETAIL.contains(&code.as_str()) {
+                None
+            } else {
+                detail.map(|d| d.chars().take(300).collect::<String>())
+            };
+            json!({"code": code, "status": status, "detail": detail})
+        })
+        .collect();
+    // Contract order, so the studio lists problems the way QC finds them.
+    checks.sort_by_key(|c| {
+        crate::qc::AUDIO_CHECK_CODES
+            .iter()
+            .position(|k| Some(*k) == c["code"].as_str())
+    });
+    Ok(json!({"asset_id": id, "qc_status": qc_status, "checks": checks}))
+}
+
+/// A stored image (cover art and its small preview) for display, after the
+/// same checks as delivery: registered, sanitized at upload (and scanned when
+/// the scanner is on), and the bytes still matching their recorded hash.
+pub struct StoredImage {
+    pub bytes: Vec<u8>,
+    pub content_type: &'static str,
+    pub sha256: String,
+}
+
+/// Reads the registered image `id` of `org`; the caller authorizes.
+pub async fn stored_image(s: &AppState, org: Uuid, id: Uuid) -> Result<StoredImage> {
+    let row = sqlx::query(
+        "SELECT a.object_key, a.content_type, a.size_bytes, a.sha256
+           FROM catalog.assets a
+           JOIN catalog.asset_safety sf ON sf.asset_id=a.id AND sf.org_id=a.org_id AND sf.safe_key=a.object_key
+                AND sf.safe_sha256=a.sha256 AND sf.rule_version='1' AND (NOT $3 OR sf.antivirus_status='SCANNED')
+          WHERE a.org_id=$1 AND a.id=$2 AND a.kind='IMAGE' AND a.state='REGISTERED'
+            AND a.content_type IN ('image/jpeg','image/png')",
+    )
+    .bind(org)
+    .bind(id)
+    .bind(s.antivirus_enabled)
+    .fetch_optional(&s.pool)
+    .await?
+    .ok_or(Error::NotFound)?;
+    let size: i64 = row.get("size_bytes");
+    if size <= 0 || size > MAX_IMAGE_BYTES {
+        return Err(Error::NotFound);
+    }
+    let sha256: String = row
+        .get::<Option<String>, _>("sha256")
+        .ok_or(Error::NotFound)?;
+    let bytes = s.storage.get(&row.get::<String, _>("object_key")).await?;
+    if bytes.len() as i64 != size || crate::domain::sha256_hex(&bytes) != sha256 {
+        tracing::warn!(asset = %id, "stored image does not match its recorded hash");
+        return Err(Error::NotFound);
+    }
+    let content_type = if row.get::<String, _>("content_type") == "image/png" {
+        "image/png"
+    } else {
+        "image/jpeg"
+    };
+    Ok(StoredImage {
+        bytes,
+        content_type,
+        sha256,
+    })
+}
+
+/// `GET /api/orgs/{org}/assets/{id}/image`: a member with read access to the
+/// asset sees the image (cover art kept on the server, shown in the studio
+/// once the release is saved or submitted).
+pub async fn image(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<StoredImage> {
+    let mut tx = s.pool.begin().await?;
+    auth::authorize(&mut tx, a, org, id, "asset", false).await?;
+    tx.commit().await?;
+    stored_image(s, org, id).await
+}
+
+/// The HTTP response for a [`StoredImage`]: content-addressed, so cached
+/// privately for a year and answered 304 to a matching `If-None-Match`.
+pub fn image_response(img: StoredImage, h: &axum::http::HeaderMap) -> axum::response::Response {
+    use axum::http::{HeaderValue, StatusCode, header};
+    use axum::response::IntoResponse;
+    let etag = format!("\"{}\"", img.sha256);
+    let fresh = h
+        .get(header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.split(',').any(|t| t.trim() == etag));
+    let mut res = if fresh {
+        StatusCode::NOT_MODIFIED.into_response()
+    } else {
+        img.bytes.into_response()
+    };
+    let hd = res.headers_mut();
+    hd.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static(img.content_type),
+    );
+    if let Ok(v) = HeaderValue::from_str(&etag) {
+        hd.insert(header::ETAG, v);
+    }
+    hd.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("private, max-age=31536000, immutable"),
+    );
+    hd.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    hd.insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static("sandbox; default-src 'none'"),
+    );
+    res
+}
+
 pub async fn status(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
     auth::membership(&mut tx, a, org, false).await?;
