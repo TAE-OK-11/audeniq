@@ -106,6 +106,54 @@ impl Territories {
         }
     }
 
+    /// Where both reach: the application's territories narrowed by a rights
+    /// grant or the agreement's scope. `None` when nothing is left.
+    pub fn narrow(&self, allowed: &Territories) -> Option<Territories> {
+        use Territories::*;
+        let minus = |a: &[String], b: &[String]| -> Vec<String> {
+            a.iter().filter(|c| !b.contains(c)).cloned().collect()
+        };
+        let out = match (self, allowed) {
+            (t, Worldwide) => t.clone(),
+            (Worldwide, t) => t.clone(),
+            (WorldExcept(a), WorldExcept(b)) => {
+                let mut x: Vec<String> = a.iter().chain(b).cloned().collect();
+                x.sort();
+                x.dedup();
+                if x.len() >= ISO_CODES.len() {
+                    return None;
+                }
+                WorldExcept(x)
+            }
+            (WorldExcept(x), Only(s)) | (Only(s), WorldExcept(x)) => Only(minus(s, x)),
+            (Only(a), Only(b)) => Only(a.iter().filter(|c| b.contains(c)).cloned().collect()),
+        };
+        match &out {
+            Only(x) if x.is_empty() => None,
+            _ => Some(out),
+        }
+    }
+
+    /// Codes in the form staff and grants use: `WORLD`/`WW`/`WORLDWIDE` or
+    /// ISO alpha-2 (any case). Empty or a world marker means Worldwide.
+    pub fn from_codes(list: &[String]) -> Result<Territories> {
+        let mut codes = Vec::new();
+        for raw in list {
+            let c = raw.trim().to_ascii_uppercase();
+            if matches!(c.as_str(), "WORLD" | "WW" | "WORLDWIDE") {
+                return Ok(Territories::Worldwide);
+            }
+            codes.push(iso(&c)?);
+        }
+        codes.sort();
+        codes.dedup();
+        Ok(if codes.is_empty() {
+            Territories::Worldwide
+        } else {
+            Territories::Only(codes)
+        })
+    }
+
     /// One line for manifests and staff screens: `Worldwide`,
     /// `Worldwide excluding JP CN` or `KR JP`.
     pub fn summary(&self) -> String {
@@ -175,6 +223,42 @@ mod tests {
         ] {
             assert!(parse(v.clone()).is_err(), "{v}");
         }
+    }
+
+    #[test]
+    fn narrowing_keeps_only_what_both_reach() {
+        let only = |c: &[&str]| Territories::Only(c.iter().map(|s| s.to_string()).collect());
+        let except =
+            |c: &[&str]| Territories::WorldExcept(c.iter().map(|s| s.to_string()).collect());
+        let w = Territories::Worldwide;
+        assert_eq!(w.narrow(&w), Some(w.clone()));
+        assert_eq!(w.narrow(&only(&["KR"])), Some(only(&["KR"])));
+        assert_eq!(
+            only(&["JP", "KR", "US"]).narrow(&only(&["JP", "KR"])),
+            Some(only(&["JP", "KR"]))
+        );
+        assert_eq!(only(&["US"]).narrow(&only(&["KR"])), None);
+        assert_eq!(
+            except(&["CN"]).narrow(&only(&["CN", "KR"])),
+            Some(only(&["KR"]))
+        );
+        assert_eq!(
+            only(&["CN", "KR"]).narrow(&except(&["CN"])),
+            Some(only(&["KR"]))
+        );
+        assert_eq!(
+            except(&["JP"]).narrow(&except(&["CN"])),
+            Some(except(&["CN", "JP"]))
+        );
+        assert_eq!(
+            Territories::from_codes(&["kr".into(), "JP".into(), "KR".into()]).unwrap(),
+            only(&["JP", "KR"])
+        );
+        assert_eq!(
+            Territories::from_codes(&["WW".into()]).unwrap(),
+            Territories::Worldwide
+        );
+        assert!(Territories::from_codes(&["Korea".into()]).is_err());
     }
 
     #[test]

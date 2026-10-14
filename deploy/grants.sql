@@ -164,6 +164,8 @@ GRANT SELECT,INSERT,UPDATE ON operations.fingerprint_scans TO audeniq_worker;
 GRANT EXECUTE ON FUNCTION catalog.fingerprints_still_present(smallint, uuid[]) TO audeniq_worker;
 -- E-0 holds delivery until the release's agreement is signed (portal stays ungranted).
 GRANT EXECUTE ON FUNCTION execution.agreement_signed(uuid, uuid) TO audeniq_worker;
+-- Contract scope of an approved/signed agreement (0125).
+GRANT EXECUTE ON FUNCTION execution.agreement_scope(uuid, uuid) TO audeniq_worker,audeniq_api;
 GRANT EXECUTE ON FUNCTION portal.release_term_ended(uuid, uuid) TO audeniq_worker;
 -- 0063: a delivery job is only leased while staff approval of its route holds.
 GRANT EXECUTE ON FUNCTION execution.delivery_gate_open(uuid, text) TO audeniq_worker;
