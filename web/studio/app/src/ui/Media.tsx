@@ -1,6 +1,7 @@
 // 아바타 · 앨범 커버 · 아이콘 칸
 import type { ReactNode } from 'react';
 import { Glyph } from '../components/Glyph';
+import { apiUrl } from '../api/http';
 import { gradientFor } from './cover';
 import { cx, type Tone } from './tone';
 
@@ -19,7 +20,7 @@ export function Avatar({ name, size = 'md', me, empty, title }: { name?: string 
  *  plain: 서류처럼 발매가 아닌 항목 — 연파랑 면 위 첫 글자 */
 export function Cover({ id, text, src, size = 'md', plain }: { id?: string; text: string; src?: string | null; size?: 'md' | 'lg' | 'xl'; plain?: boolean }) {
   const cls = cx('ui-cover', size !== 'md' && `is-${size}`, src && 'has-image', plain && 'is-plain');
-  if (src) return <span className={cls} aria-hidden="true"><img src={src} alt="" loading="lazy" decoding="async" /></span>;
+  if (src) return <span className={cls} aria-hidden="true"><img src={apiUrl(src)} alt="" loading="lazy" decoding="async" /></span>;
   if (plain) return <span className={cls} aria-hidden="true">{initial(text)}</span>;
   return <span className={cls} aria-hidden="true" style={{ background: gradientFor(id || text) }}><Glyph name="music" className="ui-cover-glyph" /></span>;
 }

@@ -44,6 +44,20 @@ const OPENS_PER_WINDOW: i32 = 120;
 
 type LiveStream = Response;
 
+/// Set on SIGTERM: open streams end at their next tick so the API's graceful
+/// shutdown is not held open (up to [`MAX_LIFETIME`]) by idle tabs, and the
+/// requests still in flight finish before the container is killed.
+/// EventSource reconnects to the new instance on its own.
+static SHUTTING_DOWN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn begin_shutdown() {
+    SHUTTING_DOWN.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+fn shutting_down() -> bool {
+    SHUTTING_DOWN.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 fn event(name: &str, data: Value) -> Event {
     Event::default().event(name).data(data.to_string())
 }
@@ -98,6 +112,24 @@ async fn org_version(
     Ok((v, last))
 }
 
+/// What can move [`org_version`] for this member, from three index lookups
+/// (migration 0110): the org's newest notification and inquiry change, and
+/// the member's newest read. The full version (an unread count over the
+/// org's notification history) is read only when this changes, or once
+/// per [`RECHECK`] (inquiry visibility follows release access).
+async fn org_marker(s: &AppState, org: Uuid, user: Uuid) -> Result<[Option<DateTime<Utc>>; 3]> {
+    let r = sqlx::query(
+        "SELECT (SELECT max(created_at) FROM portal.notifications WHERE org_id=$1) AS n,
+                (SELECT max(updated_at) FROM portal.inquiries WHERE org_id=$1) AS i,
+                (SELECT max(read_at) FROM portal.notification_reads WHERE user_id=$2) AS r",
+    )
+    .bind(org)
+    .bind(user)
+    .fetch_one(&s.pool)
+    .await?;
+    Ok([r.get("n"), r.get("i"), r.get("r")])
+}
+
 /// Studio member stream for one workspace.
 pub async fn org_live(s: AppState, h: HeaderMap, org: Uuid) -> Result<LiveStream> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
@@ -112,6 +144,9 @@ pub async fn org_live(s: AppState, h: HeaderMap, org: Uuid) -> Result<LiveStream
     tokio::spawn(async move {
         let started = tokio::time::Instant::now();
         let mut checked = started;
+        let Ok(mut marker) = org_marker(&s, org, user).await else {
+            return;
+        };
         let Ok((mut seen, _)) = org_version(&s, org, user, party).await else {
             return;
         };
@@ -124,11 +159,13 @@ pub async fn org_live(s: AppState, h: HeaderMap, org: Uuid) -> Result<LiveStream
         }
         loop {
             tokio::time::sleep(TICK).await;
-            if tx.is_closed() || started.elapsed() > MAX_LIFETIME {
+            if tx.is_closed() || started.elapsed() > MAX_LIFETIME || shutting_down() {
                 return;
             }
+            let mut due = false;
             if checked.elapsed() > RECHECK {
                 checked = tokio::time::Instant::now();
+                due = true;
                 let still = async {
                     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
                     let mut c = s.pool.acquire().await?;
@@ -142,9 +179,16 @@ pub async fn org_live(s: AppState, h: HeaderMap, org: Uuid) -> Result<LiveStream
                     return;
                 }
             }
+            let Ok(moved) = org_marker(&s, org, user).await else {
+                continue;
+            };
+            if moved == marker && !due {
+                continue;
+            }
             let Ok((now, last)) = org_version(&s, org, user, party).await else {
                 continue;
             };
+            marker = moved;
             let changed = now.notification != seen.notification || now.unread != seen.unread;
             let fresh = json!({"unread": now.unread, "new": now.notification > seen.notification});
             if changed && tx.send(Ok(event("notifications", fresh))).await.is_err() {
@@ -196,6 +240,22 @@ async fn staff_version(s: &AppState) -> Result<(StaffVersion, Value)> {
     Ok((v, last))
 }
 
+/// [`staff_version`] is the same for every staff stream: one read per tick
+/// for the whole process, shared, instead of one per open admin tab.
+async fn staff_version_shared(s: &AppState) -> Result<(StaffVersion, Value)> {
+    type Cached = Option<(tokio::time::Instant, StaffVersion, Value)>;
+    static LAST: std::sync::OnceLock<tokio::sync::Mutex<Cached>> = std::sync::OnceLock::new();
+    let mut last = LAST.get_or_init(Default::default).lock().await;
+    if let Some((at, v, l)) = last.as_ref()
+        && at.elapsed() < TICK - Duration::from_millis(500)
+    {
+        return Ok((v.clone(), l.clone()));
+    }
+    let (v, l) = staff_version(s).await?;
+    *last = Some((tokio::time::Instant::now(), v.clone(), l.clone()));
+    Ok((v, l))
+}
+
 /// Staff stream: customer inquiries and internal work changes.
 pub async fn staff_live(s: AppState, h: HeaderMap) -> Result<LiveStream> {
     let st = staff::staff(&s, &h, false).await?;
@@ -221,7 +281,7 @@ pub async fn staff_live(s: AppState, h: HeaderMap) -> Result<LiveStream> {
         }
         loop {
             tokio::time::sleep(TICK).await;
-            if tx.is_closed() || started.elapsed() > MAX_LIFETIME {
+            if tx.is_closed() || started.elapsed() > MAX_LIFETIME || shutting_down() {
                 return;
             }
             if checked.elapsed() > RECHECK {
@@ -233,7 +293,7 @@ pub async fn staff_live(s: AppState, h: HeaderMap) -> Result<LiveStream> {
                     return;
                 }
             }
-            let Ok((now, last)) = staff_version(&s).await else {
+            let Ok((now, last)) = staff_version_shared(&s).await else {
                 continue;
             };
             if (now.inquiry != seen.inquiry || now.open != seen.open)

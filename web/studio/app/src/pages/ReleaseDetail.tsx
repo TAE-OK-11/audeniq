@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from '../lib/router';
 import { api, type DeliveryItem } from '../api/client';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
+import { TakedownCard } from '../components/TakedownCard';
 import { SkeletonBlock, SkeletonRows } from '../components/Skeleton';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { useAsync } from '../hooks/useAsync';
@@ -489,6 +490,7 @@ export function ReleaseDetail() {
                 {rightsOk(d?.rightsChecks, d?.options) ? <><span className="aq-check-badge is-sm"><CheckIcon size={10} /></span>신청서 권리 확인 항목 작성 완료</> : '권리 확인 항목을 보완해 주세요.'}
               </p>
             </div>
+            {!isDraft && <TakedownCard releaseId={rel.id} />}
             <div className="ui-card">
               <h2 className="subhead">계약·증빙</h2>
               <ContractBundle

@@ -7,7 +7,7 @@ import { useConfirm } from '../components/Confirm';
 import { BankLogo } from '../components/BankLogo';
 import { PaymentSetupModal } from '../components/PaymentSetupModal';
 import { isPaymentRegistered, usePayment } from '../store/payment';
-import { balance, payoutFee, payoutsStore, statementsStore, useBalance, type Payout } from '../store/settlement';
+import { balance, payoutFee, payoutsStore, statementsNextStore, statementsStore, useBalance, type Payout, type Statement } from '../store/settlement';
 import { MOCK } from '../lib/mode';
 import * as portal from '../api/portal';
 import { errorMessage } from '../api/errors';
@@ -81,12 +81,62 @@ function StatementForm({ onSave }: { onSave: (s: { period: string; platform: str
   );
 }
 
+/** 체험 모드: 기록한 정산 내역을 그대로 CSV로 (실서버는 서버가 전체 기간을 만든다) */
+function saveStatementsCsv(rows: Statement[]) {
+  const cell = (v: string | number) => {
+    const t = String(v ?? '');
+    const safe = /^[=+\-@]/.test(t) && typeof v === 'string' ? `'${t}` : t;
+    return `"${safe.replace(/"/g, '""')}"`;
+  };
+  const csv = '\uFEFF' + ['period,platform,amount,note,created', ...rows.map(r => [r.period, r.platform, r.amount, r.note, r.created].map(cell).join(','))].join('\r\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'statements.csv';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export function Settlement() {
   const toast = useToast();
   const confirm = useConfirm();
   const payment = usePayment();
   const statements = statementsStore.use();
   const payouts = payoutsStore.use();
+  const statementsNext = statementsNextStore.use();
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const loadMoreStatements = async () => {
+    if (!statementsNext || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await portal.fetchStatementsPage(statementsNext);
+      const seen = new Set(statementsStore.get().map(x => x.id));
+      statementsStore.set(old => [...old, ...page.items.filter(x => !seen.has(x.id))]);
+      statementsNextStore.set(page.next);
+    } catch (e) {
+      toast(errorMessage(e));
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+  const exportStatements = async () => {
+    if (MOCK) {
+      if (!statements.length) { toast('내보낼 정산 내역이 없어요.'); return; }
+      saveStatementsCsv(statements);
+      return;
+    }
+    setExporting(true);
+    try {
+      await portal.downloadStatementsCsv();
+    } catch (e) {
+      toast(errorMessage(e));
+    } finally {
+      setExporting(false);
+    }
+  };
   const [tab, setTab] = useState<'statements' | 'payouts'>('statements');
   const [showPayout, setShowPayout] = useState(false);
   const [showStatement, setShowStatement] = useState(false);
@@ -237,6 +287,14 @@ export function Settlement() {
 
       {tab === 'statements' ? (
         <div id="statementList" className="ui-tab-panel" key="st">
+          {orderedStatements.length > 0 && (
+            <div className="aq-list-tools">
+              <span>{statementsNext ? `최근 ${orderedStatements.length}건` : `전체 ${orderedStatements.length}건`}</span>
+              <button type="button" className="ui-btn is-soft is-sm" onClick={exportStatements} disabled={exporting}>
+                <Glyph name="download" size={14} className="aq-glyph-lead" />{exporting ? '내려받는 중…' : '전체 기간 CSV'}
+              </button>
+            </div>
+          )}
           {orderedStatements.length ? (
             <div className="aq-catalog-cards aq-stagger">
               {orderedStatements.map(s => (
@@ -252,6 +310,12 @@ export function Settlement() {
                   </div>
                 </button>
               ))}
+              {statementsNext && (
+                <button type="button" className="ui-btn is-white aq-report-more" onClick={loadMoreStatements} disabled={loadingMore}>
+                  {loadingMore ? '불러오는 중…' : '이전 정산 내역 더 보기'}
+                  <Glyph name="chevron-down" size={15} />
+                </button>
+              )}
             </div>
           ) : (
             <div className="ui-empty">
