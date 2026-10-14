@@ -48,6 +48,7 @@ export function Contracts() {
       <div className="ui-page-head">
         <div>
           <h1>계약서</h1>
+          <p>발매를 접수할 때 배급 신청서에 서명하고, 담당자 검토가 끝나면 배급 계약서에 서명해요.</p>
         </div>
       </div>
 

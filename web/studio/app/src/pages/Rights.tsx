@@ -152,6 +152,7 @@ export function Rights() {
       <div className="ui-page-head">
         <div>
           <h1>권리·보완 서류</h1>
+          <p>담당자가 요청한 권리 증빙과 보완 서류를 내는 곳이에요.</p>
         </div>
         <button type="button" className="ui-btn is-soft" onClick={() => setFormOpen(true)}>
           <Glyph name="plus" size={14} />권리 서류 작성·제출
