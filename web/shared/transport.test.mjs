@@ -84,3 +84,22 @@ test('missing Brotli sidecars fall back to the original asset without a false en
   assert.equal(response.headers.get('content-encoding'), null);
   assert.equal(await response.text(), 'original');
 });
+
+test('a missing asset answered with the SPA shell is a 404, never HTML as a script', async () => {
+  const shell = () => new Response('<html>shell</html>', { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+  const env = { ASSETS: { fetch: async () => shell() } };
+  for (const path of ['/assets/Releases-OLDHASH.js', '/assets/index-OLD.css', '/assets/missing.js.map']) {
+    const r = await serveAssets(new Request(`https://studio.audeniq.com${path}`, { headers: { 'Accept-Encoding': 'br' } }), env);
+    assert.equal(r.status, 404, path);
+    assert.equal(r.headers.get('cache-control'), 'no-store');
+  }
+  // Screens (no extension) and the shell itself still get the HTML.
+  for (const path of ['/', '/releases', '/index.html']) {
+    const r = await serveAssets(new Request(`https://studio.audeniq.com${path}`), env);
+    assert.equal(r.status, 200, path);
+  }
+  // The studio Worker passes the 404 through instead of serving the shell.
+  const r = await studio.fetch(new Request('https://studio.audeniq.com/assets/Releases-OLDHASH.js'), env);
+  assert.equal(r.status, 404);
+  assert.equal((await studio.fetch(new Request('https://studio.audeniq.com/releases'), env)).status, 200);
+});

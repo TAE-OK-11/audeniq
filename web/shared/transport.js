@@ -82,7 +82,16 @@ export async function serveAssets(request, env) {
       return new Response(br.body, { status: br.status, headers, encodeBody: 'manual' });
     }
   }
-  return env.ASSETS.fetch(request);
+  const response = await env.ASSETS.fetch(request);
+  // With SPA fallback the asset layer answers a missing file with the app's
+  // HTML and 200. A script or stylesheet from an earlier deploy then "loads"
+  // as HTML: Safari reports a MIME error instead of a failed import, and the
+  // app cannot tell the user to reload. Missing files are a 404.
+  const ext = /\.([a-z0-9]+)$/i.exec(url.pathname)?.[1]?.toLowerCase();
+  if (ext && ext !== 'html' && response.headers.get('content-type')?.startsWith('text/html')) {
+    return new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
+  }
+  return response;
 }
 
 export async function readLimitedBody(request, maxBytes) {

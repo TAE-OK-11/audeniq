@@ -5,7 +5,7 @@ afterEach(() => { vi.restoreAllMocks(); sessionStorage.clear(); });
 
 describe('Safari module load recovery', () => {
   it('recognizes Safari and Chromium module errors without masking a render error', () => {
-    for (const message of ['Load failed', 'Importing a module script failed.', 'Failed to fetch dynamically imported module: /assets/old.js']) {
+    for (const message of ['Load failed', 'Importing a module script failed.', 'Failed to fetch dynamically imported module: /assets/old.js', "'text/html' is not a valid JavaScript MIME type.", 'Unable to preload CSS for /assets/old.css']) {
       expect(isChunkError(new TypeError(message))).toBe(true);
     }
     expect(isChunkError(new TypeError('loginFrom.startsWith is not a function'))).toBe(false);
