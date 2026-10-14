@@ -27,6 +27,7 @@ export const pageLoaders = {
   Terms: () => import('./pages/Terms'),
   Verify: () => import('./pages/Verify'),
   RightsReport: () => import('./pages/RightsReport'),
+  SmartLink: () => import('./pages/SmartLink'),
   Admin: () => import('./admin/AdminApp'),
 };
 

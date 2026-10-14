@@ -60,6 +60,7 @@ mod royalty_csv;
 pub mod signing;
 pub mod site_content;
 pub mod sites;
+pub mod smart_links;
 pub mod sms;
 pub mod staff;
 pub mod staff_admin;

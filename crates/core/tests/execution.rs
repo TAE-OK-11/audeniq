@@ -5174,3 +5174,187 @@ async fn playlist_pitch_goes_from_artist_to_editors(pool: PgPool) {
     .unwrap();
     assert!(selected);
 }
+
+/// Smart link: the artist pastes platform links (hosts checked), anyone
+/// opens the public page, views and clicks are counted for the org, and the
+/// page disappears when switched off.
+#[sqlx::test]
+async fn smart_link_public_page_counts_views_and_clicks(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let path = format!("/api/orgs/{}/releases/{}/smart-link", ctx.org, ctx.release);
+    let (_, st) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(st["can_create"], true, "{st}");
+    assert!(st["link"].is_null());
+
+    for (platform, url, code) in [
+        (
+            "melon",
+            "http://www.melon.com/album/detail.htm?albumId=1",
+            "SMART_LINK_URL_INVALID",
+        ),
+        (
+            "melon",
+            "https://evil.example/melon.com",
+            "SMART_LINK_URL_INVALID",
+        ),
+        (
+            "melon",
+            "https://melon.com.evil.example/",
+            "SMART_LINK_URL_INVALID",
+        ),
+        (
+            "myspace",
+            "https://myspace.com/x",
+            "SMART_LINK_PLATFORM_INVALID",
+        ),
+    ] {
+        let (_, v) = call(
+            &ctx.app,
+            "PUT",
+            &path,
+            json!({"links": {platform: url}}),
+            Some(&ctx.user),
+        )
+        .await;
+        assert_eq!(v["error"]["code"], code, "{platform} {url}: {v}");
+    }
+    let links = json!({"melon": "https://www.melon.com/album/detail.htm?albumId=1",
+                       "spotify": "https://open.spotify.com/album/abc", "genie": " "});
+    let (s, v) = call(
+        &ctx.app,
+        "PUT",
+        &path,
+        json!({"links": links}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let slug = v["slug"].as_str().unwrap().to_string();
+    assert_eq!(slug.len(), 8);
+
+    // Public, without an account; platforms in page order, empty ones left out.
+    let public = format!("/api/smart-links/{slug}");
+    let (s, page) = call(&ctx.app, "GET", &public, Value::Null, None).await;
+    assert_eq!(s, StatusCode::OK, "{page}");
+    let order: Vec<&str> = page["links"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l["platform"].as_str().unwrap())
+        .collect();
+    assert_eq!(order, ["melon", "spotify"]);
+    if page["cover"] == true {
+        // The fixture cover skips the upload safety pass; record it as passed.
+        sqlx::query(
+            "INSERT INTO catalog.asset_safety(asset_id,org_id,source_key,source_sha256,safe_key,safe_sha256,rule_version)
+             SELECT id, org_id, 'quarantine/' || org_id || '/' || id || '/source', sha256, object_key, sha256, '1' FROM catalog.assets
+              WHERE id=(SELECT artwork_asset_id FROM catalog.releases WHERE id=$1)",
+        )
+        .bind(ctx.release)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let (s, _) = call(
+            &ctx.app,
+            "GET",
+            &format!("{public}/cover"),
+            Value::Null,
+            None,
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+    }
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &format!("{public}/click"),
+        json!({"platform": "spotify"}),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &format!("{public}/click"),
+        json!({"platform": "genie"}),
+        None,
+    )
+    .await;
+    assert_eq!(
+        v["error"]["code"], "SMART_LINK_PLATFORM_INVALID",
+        "only links on the page count"
+    );
+    let (s, _) = call(
+        &ctx.app,
+        "GET",
+        "/api/smart-links/zzzzzzzz",
+        Value::Null,
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+    let (s, _) = call(
+        &ctx.app,
+        "GET",
+        "/api/smart-links/..%2Fx",
+        Value::Null,
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+
+    let (_, st) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(st["stats"]["views"], 1, "{st}");
+    assert_eq!(st["stats"]["clicks"]["spotify"], 1, "{st}");
+    assert_eq!(st["link"]["slug"], slug.as_str());
+
+    // Another org cannot see or change it.
+    let other = user(&ctx.app).await;
+    let foreign = format!(
+        "/api/orgs/{}/releases/{}/smart-link",
+        other.org, ctx.release
+    );
+    let (s, _) = call(&ctx.app, "GET", &foreign, Value::Null, Some(&other)).await;
+    assert_ne!(s, StatusCode::OK);
+    let (s, _) = call(&ctx.app, "GET", &path, Value::Null, Some(&other)).await;
+    assert_ne!(s, StatusCode::OK);
+
+    // Switched off: gone, same slug when switched back on.
+    let (_, v) = call(
+        &ctx.app,
+        "PUT",
+        &path,
+        json!({"enabled": false, "links": links}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["slug"], slug.as_str());
+    let (s, _) = call(&ctx.app, "GET", &public, Value::Null, None).await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+    call(
+        &ctx.app,
+        "PUT",
+        &path,
+        json!({"links": links}),
+        Some(&ctx.user),
+    )
+    .await;
+    // A release suspended over a rights claim has no page.
+    sqlx::query("UPDATE catalog.releases SET status='ON_HOLD_RIGHTS', row_version=row_version+1 WHERE id=$1")
+        .bind(ctx.release)
+        .execute(&pool)
+        .await
+        .ok();
+    let held: String = sqlx::query_scalar("SELECT status FROM catalog.releases WHERE id=$1")
+        .bind(ctx.release)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let (s, _) = call(&ctx.app, "GET", &public, Value::Null, None).await;
+    if held == "ON_HOLD_RIGHTS" {
+        assert_eq!(s, StatusCode::NOT_FOUND);
+    } else {
+        assert_eq!(s, StatusCode::OK);
+    }
+}
