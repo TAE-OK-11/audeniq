@@ -388,6 +388,7 @@ async fn ready_opts(
         recipient_party_id: Some("TESTDPID-MOCKDSP-0001".into()),
         deal_start_date: "2027-03-01".into(),
         takedown_date: None,
+        artist_party_id: None,
     };
     // The artist excluded Japan and China in the wizard: the deal says so.
     assert_eq!(

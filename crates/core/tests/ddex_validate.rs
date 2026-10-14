@@ -37,6 +37,7 @@ fn config() -> DdexErnConfig {
         // preflight rejects a deal that starts before the release date.
         deal_start_date: "2027-03-01".into(),
         takedown_date: None,
+        artist_party_id: None,
     }
 }
 

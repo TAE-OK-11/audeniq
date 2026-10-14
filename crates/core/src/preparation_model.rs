@@ -112,6 +112,10 @@ pub struct PreparedRelease {
     /// seconds. Omitted when empty.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub preview_starts: std::collections::BTreeMap<Uuid, u32>,
+    /// The main artist's own page id per platform slug (0122), e.g.
+    /// "spotify" → "spotify:artist:…". Omitted when none is known.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub artist_platform_ids: std::collections::BTreeMap<String, String>,
 }
 
 /// Pre-release start in the draft: absent/empty, or a date 1–90 days before
@@ -372,6 +376,11 @@ impl PreparedRelease {
             draft_field(&draft, "release_date", "PREPARATION_RELEASE_DATE_MISSING")?;
         let release_date = NaiveDate::parse_from_str(&release_date_raw, "%Y-%m-%d")
             .map_err(|_| Error::PolicyGate("PREPARATION_RELEASE_DATE_INVALID"))?;
+        let artist_name = draft_field(&draft, "artist", "PREPARATION_ARTIST_MISSING")?;
+        let artist_platform_ids = {
+            let mut conn = pool.acquire().await?;
+            crate::artist_pages::platform_ids(&mut conn, c.org_id, &artist_name).await?
+        };
         let original_release_date = original_release_date(&draft, release_date)?;
 
         Ok(PreparedRelease {
@@ -390,7 +399,7 @@ impl PreparedRelease {
                 .map(|dsp_id| DspScope { dsp_id: *dsp_id })
                 .collect(),
             title: c.release_title.clone(),
-            artist: draft_field(&draft, "artist", "PREPARATION_ARTIST_MISSING")?,
+            artist: artist_name,
             release_type: c.release_type.clone(),
             release_date,
             original_release_date,
@@ -404,6 +413,7 @@ impl PreparedRelease {
             territories: crate::territory::Territories::from_draft(&draft)?,
             release_time: release_time(&draft)?,
             preorder_start: preorder_start(&draft, release_date)?,
+            artist_platform_ids,
             preview_starts: {
                 let ids: std::collections::BTreeSet<Uuid> =
                     c.tracks.iter().map(|t| t.track_id).collect();

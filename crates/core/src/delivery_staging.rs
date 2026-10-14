@@ -511,6 +511,7 @@ fn build_ern(
         recipient_party_id: Some(recipient_dpid.to_owned()),
         deal_start_date: deal_start.format("%Y-%m-%d").to_string(),
         takedown_date: None,
+        artist_party_id: prepared.artist_platform_ids.get(spec.slug).cloned(),
     };
     let pf = ddex_validate::preflight_release(prepared, &config);
     let errors: Vec<String> = pf
@@ -1191,6 +1192,7 @@ mod tests {
             release_time: None,
             preorder_start: None,
             preview_starts: Default::default(),
+            artist_platform_ids: Default::default(),
         }
     }
 

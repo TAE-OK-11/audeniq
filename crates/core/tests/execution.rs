@@ -6265,3 +6265,154 @@ async fn contract_end_takes_down_blocks_delivery_and_closes_final_settlement(poo
     let (_, ot) = call(&ctx.app, "GET", &org_path, Value::Null, Some(&ctx.user)).await;
     assert!(ot["term"].is_null(), "{ot}");
 }
+
+/// Artist platform pages: a first release leaves the new pages pending, the
+/// artist registers them once, the next application is prefilled and the
+/// prepared delivery names the page per platform.
+#[sqlx::test]
+async fn artist_pages_are_recorded_reused_and_delivered(pool: PgPool) {
+    let d = draft_package(&pool).await;
+    sqlx::query("UPDATE catalog.releases SET draft = draft || '{\"artistProfile\":{\"isNew\":true,\"spotify\":\"\",\"apple\":\"\",\"melon\":\"\"}}'::jsonb, row_version=row_version+1 WHERE id=$1")
+        .bind(d.release).execute(&pool).await.unwrap();
+    let (app, user) = (d.app.clone(), d.u.clone());
+    let ctx = finish_package(&pool, d).await;
+    // ready_package's draft names the artist "Test Artist"; the catalog artist is "Artist".
+    let artist: Uuid =
+        sqlx::query_scalar("SELECT artist_id FROM catalog.tracks WHERE release_id=$1 LIMIT 1")
+            .bind(ctx.release)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let name: String =
+        sqlx::query_scalar("SELECT draft->>'artist' FROM catalog.releases WHERE id=$1")
+            .bind(ctx.release)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    sqlx::query("UPDATE catalog.artists SET name=$2 WHERE id=$1")
+        .bind(artist)
+        .bind(&name)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // Record again as at submission (the fixture renamed the artist after it).
+    let mut c = pool.acquire().await.unwrap();
+    let draft: Value = sqlx::query_scalar("SELECT draft FROM catalog.releases WHERE id=$1")
+        .bind(ctx.release)
+        .fetch_one(&mut *c)
+        .await
+        .unwrap();
+    audeniq_core::artist_pages::record_from_application(
+        &mut c,
+        ctx.org,
+        ctx.release,
+        &draft,
+        user.user,
+    )
+    .await
+    .unwrap();
+    drop(c);
+
+    let q = format!(
+        "/api/orgs/{}/artist-pages?name={}",
+        ctx.org,
+        urlencoding_lite(&name)
+    );
+    let (_, v) = call(&app, "GET", &q, Value::Null, Some(&user)).await;
+    assert_eq!(v["pages"]["spotify"]["status"], "PENDING", "{v}");
+    assert_eq!(
+        v["pages"]["spotify"]["first_release_id"],
+        ctx.release.to_string().as_str()
+    );
+
+    let put = format!("/api/orgs/{}/artists/{artist}/pages", ctx.org);
+    let (_, e) = call(
+        &app,
+        "PUT",
+        &put,
+        json!({"links": {"spotify": "https://evil.example/artist/x"}}),
+        Some(&user),
+    )
+    .await;
+    assert_eq!(e["error"]["code"], "ARTIST_PAGE_URL_INVALID", "{e}");
+    let (s, e) = call(&app, "PUT", &put, json!({"links": {"spotify": "https://open.spotify.com/artist/4Z8W4fKeB5YxbusRsdQVPb", "apple": ""}}), Some(&user)).await;
+    assert_eq!(s, StatusCode::OK, "{e}");
+    let other = user_of(&app).await;
+    let (s, _) = call(
+        &app,
+        "PUT",
+        &format!("/api/orgs/{}/artists/{artist}/pages", other.org),
+        json!({"links": {"spotify": "https://open.spotify.com/artist/4Z8W4fKeB5YxbusRsdQVPb"}}),
+        Some(&other),
+    )
+    .await;
+    assert_ne!(s, StatusCode::OK);
+
+    let (_, v) = call(&app, "GET", &q, Value::Null, Some(&user)).await;
+    assert_eq!(v["pages"]["spotify"]["status"], "LINKED", "{v}");
+    assert_eq!(
+        v["pages"]["apple"]["status"], "PENDING",
+        "an empty link leaves it as it is"
+    );
+    // A later application that names an existing page records it too.
+    let mut c = pool.acquire().await.unwrap();
+    let later = json!({"artist": name, "artistProfile": {"isNew": false, "melon": "https://www.melon.com/artist/detail.htm?artistId=261143"}});
+    audeniq_core::artist_pages::record_from_application(
+        &mut c,
+        ctx.org,
+        ctx.release,
+        &later,
+        user.user,
+    )
+    .await
+    .unwrap();
+    let ids = audeniq_core::artist_pages::platform_ids(&mut c, ctx.org, &name)
+        .await
+        .unwrap();
+    assert_eq!(
+        ids.get("spotify").map(String::as_str),
+        Some("spotify:artist:4Z8W4fKeB5YxbusRsdQVPb")
+    );
+    assert_eq!(ids.get("melon").map(String::as_str), Some("261143"));
+    drop(c);
+
+    // The prepared delivery carries them.
+    let (canonical_id, snapshot): (Uuid, Value) =
+        sqlx::query_as("SELECT id, body FROM distribution.canonical_releases WHERE release_id=$1")
+            .bind(ctx.release)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let canonical: audeniq_core::distribution::CanonicalRelease =
+        serde_json::from_value(snapshot).unwrap();
+    let prepared = audeniq_core::preparation_model::PreparedRelease::from_canonical(
+        &pool,
+        canonical_id,
+        &canonical,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        prepared
+            .artist_platform_ids
+            .get("melon")
+            .map(String::as_str),
+        Some("261143")
+    );
+}
+
+fn urlencoding_lite(s: &str) -> String {
+    s.bytes()
+        .map(|b| {
+            if b.is_ascii_alphanumeric() {
+                (b as char).to_string()
+            } else {
+                format!("%{b:02X}")
+            }
+        })
+        .collect()
+}
+
+async fn user_of(app: &Router) -> User {
+    user(app).await
+}
