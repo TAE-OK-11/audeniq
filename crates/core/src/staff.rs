@@ -164,14 +164,14 @@ pub(crate) fn require(st: &Staff, duty: Duty) -> Result<()> {
 
 /// Cross-org visibility for RLS tables whose policy honours `app.staff`
 /// (delivery staging). Only called after `staff()` succeeded.
-async fn staff_scope(c: &mut PgConnection) -> Result<()> {
+pub(crate) async fn staff_scope(c: &mut PgConnection) -> Result<()> {
     sqlx::query("SELECT set_config('app.staff','on',true)")
         .execute(&mut *c)
         .await?;
     Ok(())
 }
 
-fn note_ok(s: &str, max: usize) -> Result<()> {
+pub(crate) fn note_ok(s: &str, max: usize) -> Result<()> {
     if s.chars().count() > max {
         return Err(Error::InvalidCode("NOTE_TOO_LONG"));
     }

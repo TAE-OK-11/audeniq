@@ -2105,10 +2105,18 @@ pub async fn takedown_release(
     authorize_org(&mut tx, org).await?;
     match outcome {
         SendOutcome::Accepted { .. } => {
+            // A platform that never reported LIVE has no binding yet: the
+            // request is recorded either way (never over a confirmed
+            // TAKEN_DOWN).
             sqlx::query(
-                "UPDATE execution.live_bindings SET live_status='TAKEDOWN_REQUESTED', last_checked_at=now(), updated_at=now()
-                 WHERE package_id=$1 AND partner_id=$2",
+                "INSERT INTO execution.live_bindings(id,org_id,package_id,partner_id,live_status,last_checked_at)
+                 VALUES($1,$2,$3,$4,'TAKEDOWN_REQUESTED',now())
+                 ON CONFLICT(org_id,package_id,partner_id) DO UPDATE
+                 SET live_status='TAKEDOWN_REQUESTED', last_checked_at=now(), updated_at=now()
+                 WHERE execution.live_bindings.live_status <> 'TAKEN_DOWN'",
             )
+            .bind(Uuid::new_v4())
+            .bind(org)
             .bind(package_id)
             .bind(partner_id)
             .execute(&mut *tx)
@@ -2251,6 +2259,37 @@ pub async fn record_manual_live(
     partner_release_id: Option<&str>,
     staff_user: Option<Uuid>,
 ) -> Result<String> {
+    record_manual(
+        pool,
+        package_id,
+        partner_id,
+        partner_release_id,
+        staff_user,
+        "LIVE",
+    )
+    .await
+}
+
+/// Staff-confirmed takedown for a platform that takes no takedown message
+/// (or whose takedown job failed): same evidence rules as
+/// [`record_manual_live`].
+pub async fn record_manual_taken_down(
+    pool: &PgPool,
+    package_id: Uuid,
+    partner_id: &str,
+    staff_user: Option<Uuid>,
+) -> Result<String> {
+    record_manual(pool, package_id, partner_id, None, staff_user, "TAKEN_DOWN").await
+}
+
+async fn record_manual(
+    pool: &PgPool,
+    package_id: Uuid,
+    partner_id: &str,
+    partner_release_id: Option<&str>,
+    staff_user: Option<Uuid>,
+    live_status: &str,
+) -> Result<String> {
     let org: Uuid =
         sqlx::query_scalar("SELECT org_id FROM distribution.distribution_packages WHERE id=$1")
             .bind(package_id)
@@ -2280,19 +2319,23 @@ pub async fn record_manual_live(
         partner_id: partner_id.to_string(),
         attempts: 0,
     };
-    upsert_live_binding(&mut tx, &job, "LIVE", partner_release_id).await?;
+    upsert_live_binding(&mut tx, &job, live_status, partner_release_id).await?;
     crate::operations::audit(
         &mut tx,
         staff_user,
         Some(org),
         Some(job_id),
-        "delivery.live_recorded",
+        if live_status == "LIVE" {
+            "delivery.live_recorded"
+        } else {
+            "delivery.taken_down_recorded"
+        },
         "STAFF_EVIDENCE",
         Uuid::new_v4(),
     )
     .await?;
     tx.commit().await?;
-    Ok("LIVE".to_string())
+    Ok(live_status.to_string())
 }
 
 /// Why a delivery job could not be leased (sandbox round 2: a worker killed

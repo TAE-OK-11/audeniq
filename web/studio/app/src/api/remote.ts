@@ -8,7 +8,7 @@
 // - 트랙은 아티스트 ID·자산 ID로 연결, 파일은 서명 URL로 R2에 직접 업로드
 // - 접수 = 동의(consent) 생성 → submit(동의 ID, 자기 선언)
 import type {
-  Correction, WithdrawQuota,
+  Correction, TakedownState, WithdrawQuota,
   DeliveryItem, DspAvailability,
   DraftTrack, Org, PreflightIssue, Release, ReleaseDetail, ReleaseDraft, ReleasePayload,
   ReleaseOptionsData, SaveResult, Track, UploadKind, UploadResult, User,
@@ -670,6 +670,15 @@ export const remoteApi = {
   },
   async withdrawQuota(): Promise<WithdrawQuota> {
     return req<WithdrawQuota>(orgPath('/withdrawals'));
+  },
+  async takedownStatus(id: string): Promise<TakedownState> {
+    return req<TakedownState>(`${detailPath(id)}/takedown`, { quiet401: true });
+  },
+  async requestTakedown(id: string, reason: string): Promise<void> {
+    await req(`${detailPath(id)}/takedown`, { method: 'POST', body: { reason } });
+  },
+  async cancelTakedown(id: string): Promise<void> {
+    await req(`${detailPath(id)}/takedown/cancel`, { method: 'POST', body: {} });
   },
   async deleteRelease(id: string): Promise<void> {
     const rel = await fetchRelease(id);
