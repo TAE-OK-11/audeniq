@@ -124,6 +124,7 @@ export function Dashboard() {
       <Link className="ui-hero aq-home-hero" to="/upload" onPointerEnter={() => prefetchRoute('/upload')}>
         <div>
           <h2>새로운 발매를 <span className="aq-accent">시작해 보세요.</span></h2>
+          <p>음원과 커버아트, 크레딧을 등록하고 발매를 준비해요.</p>
         </div>
         <span className="ui-btn is-primary aq-hero-cta">
           발매 등록하기

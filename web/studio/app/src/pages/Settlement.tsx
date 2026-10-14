@@ -1,4 +1,5 @@
 // 정산·지급 — hero + 탭 구조의 단순화된 레이아웃
+import { Link } from '../lib/router';
 import { SplitsReceived } from '../components/SplitsReceived';
 import { useState } from 'react';
 import { Modal, useModalClose } from '../components/Modal';
@@ -242,6 +243,7 @@ export function Settlement() {
       <div className="ui-page-head">
         <div>
           <h1>정산·지급</h1>
+          <p><Link to="/terms/settlement" className="aq-inline-link">정산 약관 보기</Link></p>
         </div>
       </div>
 
