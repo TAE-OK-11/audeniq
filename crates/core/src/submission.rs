@@ -2145,52 +2145,131 @@ async fn load_stored_fingerprint(
 
 /// Fingerprints read per page by the similarity scan (~4 KB each).
 const SIMILARITY_PAGE: i64 = 1000;
+/// Matches remembered per asset between scans (the check reports 3). More
+/// than reported, so a match that disappears (its asset deleted) rarely
+/// forces a full rescan.
+const SIMILARITY_KEEP: usize = 32;
+/// An incremental scan re-reads fingerprints created this long before the
+/// previous scan started: `created_at` is its transaction's start, so a
+/// fingerprint committed after that scan read its pages can carry an
+/// earlier timestamp.
+const SIMILARITY_LATE_COMMIT_MARGIN_SECS: i64 = 3600;
 
 /// Best-similarity matches for `frames` among stored fingerprints at the
 /// current algorithm version, in the org and in other orgs, excluding `aid`
 /// itself. Sorted by BER ascending, capped at 3 for the check detail.
 ///
 /// Read in keyset pages (bounded memory, short statements, no transaction
-/// held across the scan); each page is compared on the blocking pool so a
-/// large catalog never stalls the worker runtime and its lease heartbeats.
+/// held across the scan); each page is compared on the blocking pool, split
+/// across the available cores, so a large catalog never stalls the worker
+/// runtime and its lease heartbeats.
+///
+/// Incremental (migration 0109): a rerun for the same fingerprint (a
+/// resubmission, a Stage 1 retry) compares only the fingerprints added
+/// since the previous scan, plus the matches it remembered that still
+/// exist. The result equals a full scan's: when a remembered list that was
+/// capped loses a member, the scan starts over.
 async fn find_similar_assets(
     pool: &PgPool,
     org: Uuid,
     aid: Uuid,
     frames: &[u32],
 ) -> Result<Vec<SimilarHit>> {
+    let version = fingerprint::FINGERPRINT_VERSION;
+    let digest = sha256_hex(
+        frames
+            .iter()
+            .flat_map(|f| f.to_be_bytes())
+            .collect::<Vec<u8>>(),
+    );
+    let started: chrono::DateTime<chrono::Utc> = sqlx::query_scalar("SELECT clock_timestamp()")
+        .fetch_one(pool)
+        .await?;
+    let previous: Option<(String, chrono::DateTime<chrono::Utc>, Value, bool)> = sqlx::query_as(
+        "SELECT fingerprint_sha256, scanned_through, hits, truncated
+           FROM operations.fingerprint_scans WHERE asset_id=$1 AND version=$2",
+    )
+    .bind(aid)
+    .bind(version)
+    .fetch_optional(pool)
+    .await?;
+    let (since, mut hits, mut truncated) = match previous {
+        Some((sha, through, stored, was_truncated)) if sha == digest => {
+            let remembered: Vec<SimilarHit> = stored
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|h| {
+                    Some(SimilarHit {
+                        asset_id: Uuid::parse_str(h["asset_id"].as_str()?).ok()?,
+                        other_org: h["other_org"].as_bool()?,
+                        ber: h["ber"].as_f64()?,
+                    })
+                })
+                .collect();
+            let ids: Vec<Uuid> = remembered.iter().map(|h| h.asset_id).collect();
+            let present: BTreeSet<Uuid> = sqlx::query_scalar(
+                "SELECT asset_id FROM catalog.fingerprints_still_present($1,$2)",
+            )
+            .bind(version)
+            .bind(&ids)
+            .fetch_all(pool)
+            .await?
+            .into_iter()
+            .collect();
+            let kept: Vec<SimilarHit> = remembered
+                .into_iter()
+                .filter(|h| present.contains(&h.asset_id))
+                .collect();
+            if was_truncated && kept.len() < ids.len() {
+                (None, Vec::new(), false)
+            } else {
+                (Some(through), kept, was_truncated)
+            }
+        }
+        _ => (None, Vec::new(), false),
+    };
     let frames: Arc<[u32]> = frames.into();
-    let mut hits = Vec::new();
-    let mut after = Uuid::nil();
+    // Before any fingerprint (PostgreSQL rejects chrono's MIN_UTC).
+    let floor = chrono::DateTime::<chrono::Utc>::UNIX_EPOCH;
+    let since_at = since.unwrap_or(floor);
+    let mut after = (floor, Uuid::nil());
     loop {
         let mut tx = pool.begin().await?;
         sqlx::query("SELECT set_config('app.org_id',$1,true)")
             .bind(org.to_string())
             .execute(&mut *tx)
             .await?;
-        let rows: Vec<(Uuid, Vec<u8>)> = sqlx::query_as(
-            "SELECT asset_id, hash FROM catalog.asset_fingerprints
-              WHERE org_id=$1 AND version=$2 AND asset_id>$3
-              ORDER BY asset_id LIMIT $4",
+        let rows: Vec<(Uuid, chrono::DateTime<chrono::Utc>, Vec<u8>)> = sqlx::query_as(
+            "SELECT asset_id, created_at, hash FROM catalog.asset_fingerprints
+              WHERE org_id=$1 AND version=$2 AND created_at>$3 AND (created_at, asset_id)>($4,$5)
+              ORDER BY created_at, asset_id LIMIT $6",
         )
         .bind(org)
-        .bind(fingerprint::FINGERPRINT_VERSION)
-        .bind(after)
+        .bind(version)
+        .bind(since_at)
+        .bind(after.0)
+        .bind(after.1)
         .bind(SIMILARITY_PAGE)
         .fetch_all(&mut *tx)
         .await?;
         tx.rollback().await?;
-        let Some(last) = rows.last().map(|r| r.0) else {
+        let Some(last) = rows.last().map(|r| (r.1, r.0)) else {
             break;
         };
         after = last;
         let full = rows.len() as i64 == SIMILARITY_PAGE;
         let page = rows
             .into_iter()
-            .filter(|(id, _)| *id != aid)
-            .map(|(id, hash)| (id, false, hash))
+            .filter(|(id, _, _)| *id != aid)
+            .map(|(id, _, hash)| (id, false, hash))
             .collect();
-        merge_similar_hits(&mut hits, compare_page(frames.clone(), page).await?);
+        let bound = similarity_bound(&hits);
+        truncated |= merge_similar_hits(
+            &mut hits,
+            compare_page(frames.clone(), page, bound).await?,
+            SIMILARITY_KEEP,
+        );
         if !full {
             break;
         }
@@ -2198,67 +2277,122 @@ async fn find_similar_assets(
     // Sandbox round 2: re-encoded copies of another account's audio were
     // delivered because only the own org was compared. Other orgs'
     // fingerprints come through a narrow SECURITY DEFINER read (migrations
-    // 0034, 0061); matches are REVIEW only, exactly like same-org matches.
-    let mut after = Uuid::nil();
+    // 0034, 0061, 0109); matches are REVIEW only, exactly like same-org
+    // matches.
+    let mut after = (floor, Uuid::nil());
     loop {
-        let rows: Vec<(Uuid, Uuid, Vec<u8>)> = sqlx::query_as(
-            "SELECT asset_id, org_id, hash FROM catalog.fingerprints_outside_org_page($1,$2,$3,$4)",
+        let rows: Vec<(Uuid, Uuid, chrono::DateTime<chrono::Utc>, Vec<u8>)> = sqlx::query_as(
+            "SELECT asset_id, org_id, created_at, hash
+               FROM catalog.fingerprints_outside_org_since($1,$2,$3,$4,$5,$6)",
         )
         .bind(org)
-        .bind(fingerprint::FINGERPRINT_VERSION)
-        .bind(after)
+        .bind(version)
+        .bind(since_at)
+        .bind(after.0)
+        .bind(after.1)
         .bind(SIMILARITY_PAGE as i32)
         .fetch_all(pool)
         .await?;
-        let Some(last) = rows.last().map(|r| r.0) else {
+        let Some(last) = rows.last().map(|r| (r.2, r.0)) else {
             break;
         };
         after = last;
         let full = rows.len() as i64 == SIMILARITY_PAGE;
         let page = rows
             .into_iter()
-            .map(|(id, _, hash)| (id, true, hash))
+            .map(|(id, _, _, hash)| (id, true, hash))
             .collect();
-        merge_similar_hits(&mut hits, compare_page(frames.clone(), page).await?);
+        let bound = similarity_bound(&hits);
+        truncated |= merge_similar_hits(
+            &mut hits,
+            compare_page(frames.clone(), page, bound).await?,
+            SIMILARITY_KEEP,
+        );
         if !full {
             break;
         }
     }
+    let stored: Vec<Value> = hits
+        .iter()
+        .map(|h| json!({"asset_id":h.asset_id,"other_org":h.other_org,"ber":h.ber}))
+        .collect();
+    sqlx::query(
+        "INSERT INTO operations.fingerprint_scans(asset_id, version, fingerprint_sha256, scanned_through, hits, truncated)
+         VALUES($1,$2,$3,$4,$5,$6)
+         ON CONFLICT(asset_id, version) DO UPDATE SET fingerprint_sha256=EXCLUDED.fingerprint_sha256,
+           scanned_through=EXCLUDED.scanned_through, hits=EXCLUDED.hits, truncated=EXCLUDED.truncated, updated_at=now()",
+    )
+    .bind(aid)
+    .bind(version)
+    .bind(&digest)
+    .bind(started - chrono::Duration::seconds(SIMILARITY_LATE_COMMIT_MARGIN_SECS))
+    .bind(Value::Array(stored))
+    .bind(truncated)
+    .execute(pool)
+    .await?;
+    hits.truncate(3);
     Ok(hits)
 }
 
+/// The BER a new match must reach to enter the remembered list.
+fn similarity_bound(hits: &[SimilarHit]) -> f64 {
+    if hits.len() >= SIMILARITY_KEEP {
+        hits[SIMILARITY_KEEP - 1].ber
+    } else {
+        fingerprint::SIMILAR_BER
+    }
+}
+
 /// Compare one page of stored fingerprints `(asset_id, other_org, hash)`
-/// against `frames` on the blocking pool; returns the matches at or below
-/// [`fingerprint::SIMILAR_BER`].
+/// against `frames` on the blocking pool, split across the available
+/// cores; returns the matches at or below `bound`.
 async fn compare_page(
     frames: Arc<[u32]>,
     page: Vec<(Uuid, bool, Vec<u8>)>,
+    bound: f64,
 ) -> Result<Vec<SimilarHit>> {
     tokio::task::spawn_blocking(move || {
-        let mut hits: Vec<SimilarHit> = Vec::new();
-        for (asset_id, other_org, hash) in page {
-            let Ok(other) = fingerprint::Fingerprint::from_bytes(&hash) else {
-                continue;
-            };
-            let limit = if hits.len() == 3 {
-                hits[2].ber
-            } else {
-                fingerprint::SIMILAR_BER
-            };
-            let Some(ber) = fingerprint::bit_error_rate_within(&frames, &other.frames, limit)
-            else {
-                continue;
-            };
-            merge_similar_hits(
-                &mut hits,
-                vec![SimilarHit {
-                    asset_id,
-                    other_org,
-                    ber,
-                }],
-            );
-        }
-        hits
+        let threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+            .clamp(1, 8);
+        let chunk = page.len().div_ceil(threads).max(64);
+        std::thread::scope(|scope| {
+            let workers: Vec<_> = page
+                .chunks(chunk)
+                .map(|part| {
+                    let frames = &frames;
+                    scope.spawn(move || {
+                        let mut hits: Vec<SimilarHit> = Vec::new();
+                        for (asset_id, other_org, hash) in part {
+                            let Ok(other) = fingerprint::Fingerprint::from_bytes(hash) else {
+                                continue;
+                            };
+                            let limit = similarity_bound(&hits).min(bound);
+                            let Some(ber) =
+                                fingerprint::bit_error_rate_within(frames, &other.frames, limit)
+                            else {
+                                continue;
+                            };
+                            merge_similar_hits(
+                                &mut hits,
+                                vec![SimilarHit {
+                                    asset_id: *asset_id,
+                                    other_org: *other_org,
+                                    ber,
+                                }],
+                                SIMILARITY_KEEP,
+                            );
+                        }
+                        hits
+                    })
+                })
+                .collect();
+            workers
+                .into_iter()
+                .flat_map(|w| w.join().unwrap_or_default())
+                .collect()
+        })
     })
     .await
     .map_err(|_| Error::Internal)
@@ -2270,10 +2404,16 @@ struct SimilarHit {
     ber: f64,
 }
 
-fn merge_similar_hits(hits: &mut Vec<SimilarHit>, page: Vec<SimilarHit>) {
+/// Adds `page` to `hits`, keeping the best `keep` (by BER, then asset id;
+/// one entry per asset). Returns whether a match was dropped by the cap.
+fn merge_similar_hits(hits: &mut Vec<SimilarHit>, page: Vec<SimilarHit>, keep: usize) -> bool {
     hits.extend(page);
     hits.sort_by(|a, b| a.ber.total_cmp(&b.ber).then(a.asset_id.cmp(&b.asset_id)));
-    hits.truncate(3);
+    let mut seen = BTreeSet::new();
+    hits.retain(|h| seen.insert(h.asset_id));
+    let dropped = hits.len() > keep;
+    hits.truncate(keep);
+    dropped
 }
 
 /// Run the Stage 1 check contract for a single asset: cache lookup, then
@@ -2878,37 +3018,59 @@ async fn update_asset_qc(
             }
         }
     }
+    // Each asset check's key, computed once per (code, asset): a 30-track
+    // album has ~25 codes x 30 assets keys, instead of a hash per check per
+    // asset (~22k).
+    let codes: BTreeSet<&str> = checks
+        .iter()
+        .filter(|ch| ch.rule_version == qc::QC_RULE_VERSION)
+        .map(|ch| ch.check_code)
+        .collect();
+    let mut owner: std::collections::HashMap<String, Vec<&str>> = std::collections::HashMap::new();
+    for code in &codes {
+        for (aid, sha) in &sha_of {
+            owner
+                .entry(asset_check_cache_key(code, aid, sha))
+                .or_default()
+                .push(aid);
+        }
+    }
     for ch in checks {
         if ch.rule_version != qc::QC_RULE_VERSION {
             continue;
         }
-        for (aid, sha) in &sha_of {
-            if ch.result_hash == asset_check_cache_key(ch.check_code, aid, sha) {
-                let e = worst.entry(aid.clone()).or_insert(CheckStatus::Pass);
-                let check_rank = if asset_check_allows_progress(ch) {
-                    0
-                } else {
-                    rank(ch.status)
-                };
-                if check_rank > rank(*e) {
-                    *e = ch.status;
-                }
+        for aid in owner.get(&ch.result_hash).into_iter().flatten() {
+            let e = worst.entry(aid.to_string()).or_insert(CheckStatus::Pass);
+            let check_rank = if asset_check_allows_progress(ch) {
+                0
+            } else {
+                rank(ch.status)
+            };
+            if check_rank > rank(*e) {
+                *e = ch.status;
             }
         }
     }
+    let mut ids = Vec::with_capacity(worst.len());
+    let mut statuses = Vec::with_capacity(worst.len());
     for (aid, st) in worst {
-        let qc_status = match st {
+        ids.push(Uuid::parse_str(&aid).map_err(|_| Error::Internal)?);
+        statuses.push(match st {
             CheckStatus::Pass | CheckStatus::NotApplicable => "PASS",
             _ => "BLOCKED",
-        };
-        let aid = Uuid::parse_str(&aid).map_err(|_| Error::Internal)?;
-        sqlx::query("UPDATE catalog.assets SET qc_status=$3 WHERE org_id=$1 AND id=$2")
-            .bind(org)
-            .bind(aid)
-            .bind(qc_status)
-            .execute(&mut *c)
-            .await?;
+        });
     }
+    // One statement for the whole release.
+    sqlx::query(
+        "UPDATE catalog.assets a SET qc_status=u.status
+           FROM unnest($2::uuid[], $3::text[]) AS u(id, status)
+          WHERE a.org_id=$1 AND a.id=u.id",
+    )
+    .bind(org)
+    .bind(&ids)
+    .bind(&statuses)
+    .execute(&mut *c)
+    .await?;
     Ok(())
 }
 
@@ -3282,6 +3444,94 @@ mod title_tests {
         }
     }
 
+    #[sqlx::test]
+    async fn similarity_rescans_only_new_fingerprints_and_forgets_deleted_matches(
+        pool: sqlx::PgPool,
+    ) {
+        crate::database::MIGRATOR.run(&pool).await.unwrap();
+        let (own, other) = (Uuid::new_v4(), Uuid::new_v4());
+        for org in [own, other] {
+            sqlx::query("INSERT INTO identity.orgs(id, name, kind) VALUES($1,'t','LABEL')")
+                .bind(org)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed as u32
+        };
+        let base: Vec<u32> = (0..400).map(|_| next()).collect();
+        let random: Vec<u32> = (0..400).map(|_| next()).collect();
+        // `bits` low bits flipped per frame: BER bits/32.
+        let flipped =
+            |bits: u32| -> Vec<u32> { base.iter().map(|f| f ^ ((1u32 << bits) - 1)).collect() };
+        async fn add(pool: &sqlx::PgPool, org: Uuid, frames: &[u32]) -> Uuid {
+            let id = Uuid::new_v4();
+            sqlx::query("INSERT INTO identity.resources(org_id,id,kind) VALUES($1,$2,'asset')")
+                .bind(org)
+                .bind(id)
+                .execute(pool)
+                .await
+                .unwrap();
+            sqlx::query("INSERT INTO catalog.assets(id,org_id,kind,object_key,size_bytes,content_type,state) VALUES($1,$2,'AUDIO',$3,1,'audio/flac','REGISTERED')")
+                .bind(id).bind(org).bind(format!("k/{id}"))
+                .execute(pool).await.unwrap();
+            let fp = fingerprint::Fingerprint {
+                frames: frames.to_vec(),
+                duration_secs: 30.0,
+            };
+            sqlx::query("INSERT INTO catalog.asset_fingerprints(asset_id, org_id, version, frames, duration_secs, hash) VALUES($1,$2,$3,$4,30,$5)")
+                .bind(id).bind(org).bind(fingerprint::FINGERPRINT_VERSION)
+                .bind(frames.len() as i32).bind(fp.to_bytes())
+                .execute(pool).await.unwrap();
+            id
+        }
+        let ids = |hits: &[SimilarHit]| hits.iter().map(|h| h.asset_id).collect::<Vec<_>>();
+        let query = add(&pool, own, &base).await;
+        let near = add(&pool, own, &flipped(1)).await;
+        let similar = add(&pool, other, &flipped(4)).await;
+        let unrelated = add(&pool, other, &random).await;
+
+        let full = find_similar_assets(&pool, own, query, &base).await.unwrap();
+        assert_eq!(ids(&full), vec![near, similar]);
+        assert!(full[1].other_org);
+
+        // Rewritten in place with an old timestamp: a full scan would now
+        // match it, an incremental one does not read it again.
+        let copy = fingerprint::Fingerprint {
+            frames: base.clone(),
+            duration_secs: 30.0,
+        };
+        sqlx::query("UPDATE catalog.asset_fingerprints SET hash=$2, created_at='2001-01-01' WHERE asset_id=$1")
+            .bind(unrelated).bind(copy.to_bytes()).execute(&pool).await.unwrap();
+        // Added after the scan: found by the incremental run.
+        let added = add(&pool, other, &base).await;
+        let rerun = find_similar_assets(&pool, own, query, &base).await.unwrap();
+        assert_eq!(ids(&rerun), vec![added, near, similar]);
+
+        // A remembered match whose fingerprint is gone is dropped.
+        sqlx::query("DELETE FROM catalog.asset_fingerprints WHERE asset_id=$1")
+            .bind(near)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let after_delete = find_similar_assets(&pool, own, query, &base).await.unwrap();
+        assert_eq!(ids(&after_delete), vec![added, similar]);
+
+        // A changed fingerprint (new digest) scans everything again.
+        let mut changed = base.clone();
+        changed[0] ^= 1;
+        let fresh = find_similar_assets(&pool, own, query, &changed)
+            .await
+            .unwrap();
+        assert_eq!(fresh.len(), 3);
+        assert!(ids(&fresh).contains(&unrelated), "full scan reads old rows");
+    }
+
     #[test]
     fn similarity_pages_keep_exact_best_three_with_stable_ties() {
         let mut hits = Vec::new();
@@ -3298,6 +3548,7 @@ mod title_tests {
                         ber,
                     })
                     .collect(),
+                3,
             );
             assert!(hits.len() <= 3);
         }

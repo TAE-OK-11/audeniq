@@ -808,3 +808,7 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 .aq-takedown-state{margin:12px 0 0}
 .aq-takedown .row-actions{margin-top:12px}
 .aq-takedown .row-actions:empty{display:none}
+/* 목록 위 도구 줄 (건수 + 내려받기) */
+.aq-list-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;color:var(--aq-text-2,#6b7280);font-size:13px}
+.aq-list-tools .ui-btn{flex:none}
+.report-tools input.ui-input[type="month"]{flex:0 0 190px;min-width:190px}

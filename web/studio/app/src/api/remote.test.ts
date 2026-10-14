@@ -204,6 +204,8 @@ describe('서버 값 정리', () => {
     // 업로드 전에는 그대로 둔다 (서버가 커버를 아직 참조하지 못함)
     expect(storedCoverData(jpeg, undefined)).toBe(jpeg);
     expect(storedCoverData('data:image/png;base64,iVBOR', 'asset-1')).toBe('data:image/png;base64,iVBOR');
+    // 서버 보관 커버의 표시 주소는 저장하지 않는다 (자산 ID로 다시 만든다)
+    expect(storedCoverData('/api/orgs/o/assets/a/image', 'asset-1')).toBe('');
     expect(storedCoverData('', 'asset-1')).toBe('');
   });
 
