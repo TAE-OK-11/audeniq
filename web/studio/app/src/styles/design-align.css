@@ -468,3 +468,21 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 #view-release .aq-takedown-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}
 #view-release .aq-takedown-list li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border-radius:var(--aq-r-md);background:#fff;font-size:14px;font-weight:600}
 #view-release .aq-claim-status{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px}
+
+/* ---------- 스마트링크 공개 페이지 — 플랫폼 줄 ----------
+   공식 로고 · 플랫폼 이름(+ 한 줄) · '들으러 가기' 알약. 윤곽선 없이 옅은 면, 누르면 살짝 눌린다. */
+.aq-smartlink-links{margin:22px 0 0;text-align:left}
+.aq-smartlink-list-title{margin:0 0 10px;font-size:var(--aq-fs-md);font-weight:700;color:var(--aq-text-2)}
+.aq-smartlink-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.aq-smartlink-list a{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:14px;min-height:68px;padding:12px 12px 12px 12px;border-radius:var(--aq-r-xl);background:var(--aq-surface);color:var(--aq-text);text-decoration:none;
+  transition:background-color var(--aq-dur) var(--aq-ease),transform var(--aq-press-out,.34s) var(--aq-press-spring,ease)}
+.aq-smartlink-list a:hover{background:var(--aq-surface-hover)}
+.aq-smartlink-list a:is(:active,.is-pressed){transform:scale(var(--aq-press-row,.985));transition-duration:var(--aq-press-in,.06s)}
+.aq-smartlink-list a:focus-visible{outline:var(--aq-focus);outline-offset:2px}
+.aq-smartlink-logo{border-radius:12px!important}
+.aq-smartlink-name{display:grid;gap:2px;min-width:0}
+.aq-smartlink-name strong{font-size:var(--aq-fs-lg);font-weight:700;letter-spacing:-.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-smartlink-name small{font-size:var(--aq-fs-xs);color:var(--aq-text-4);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-smartlink-go{display:inline-flex;align-items:center;gap:2px;height:var(--aq-h-xs,32px);padding:0 10px 0 14px;border-radius:var(--aq-r-pill);background:var(--aq-primary);color:#fff;font-size:13px;font-weight:700;white-space:nowrap}
+.aq-smartlink-list a:hover .aq-smartlink-go{background:var(--aq-primary-hover)}
+@media (prefers-reduced-motion:reduce){.aq-smartlink-list a:is(:active,.is-pressed){transform:none}}
