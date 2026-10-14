@@ -132,13 +132,16 @@ fn ddex_ern_escapes_xml_specials() {
 fn ddex_ern_update_and_takedown() {
     let c = fixture(0);
     let update = generate_ddex_ern_382(&c, &config(MessageSubType::Update)).unwrap();
-    assert!(update.contains("<MessageControlType>UpdateMessage</MessageControlType>"));
+    assert!(update.contains("<MessageControlType>LiveMessage</MessageControlType>"));
+    assert!(update.contains("<UpdateIndicator>UpdateMessage</UpdateIndicator>"));
+    audeniq_core::ddex_xsd::validate_ern_382_xml(&update).unwrap();
     assert!(!update.contains("<EndDate>"));
 
     let mut cfg = config(MessageSubType::Takedown);
     cfg.takedown_date = Some("2026-12-31".into());
     let takedown = generate_ddex_ern_382(&c, &cfg).unwrap();
-    assert!(takedown.contains("<MessageControlType>UpdateMessage</MessageControlType>"));
+    assert!(takedown.contains("<UpdateIndicator>UpdateMessage</UpdateIndicator>"));
+    audeniq_core::ddex_xsd::validate_ern_382_xml(&takedown).unwrap();
     assert!(takedown.contains("<EndDate>2026-12-31</EndDate>"));
 
     // Takedown without a date is rejected.
@@ -444,4 +447,44 @@ fn ddex_ern_deal_territories_follow_the_application() {
     // The prepared snapshot of a worldwide release serializes as before.
     let v = serde_json::to_value(fixture(0)).unwrap();
     assert!(v.get("territories").is_none());
+}
+
+/// A simultaneous release time (KST) becomes the deal's StartDateTime;
+/// without one the date (local midnight) stays as before. Takedowns keep the
+/// date pair. Each form is schema-valid.
+#[test]
+fn ddex_ern_release_time_is_deal_start_date_time() {
+    use audeniq_core::ddex_xsd::validate_ern_382_xml;
+    let mut f = fixture(0);
+    let plain = generate_ddex_ern_382(&f, &config(MessageSubType::Initial)).unwrap();
+    assert!(plain.contains("<StartDate>") && !plain.contains("<StartDateTime>"));
+    f.release_time = Some("18:00".into());
+    let c = config(MessageSubType::Initial);
+    let xml = generate_ddex_ern_382(&f, &c).unwrap();
+    let want = format!(
+        "<StartDateTime>{}T18:00:00+09:00</StartDateTime>",
+        c.deal_start_date
+    );
+    assert!(xml.contains(&want), "{xml}");
+    assert!(
+        !xml.contains("<StartDate>"),
+        "Period is either dates or date-times"
+    );
+    validate_ern_382_xml(&xml).unwrap();
+    let mut tcfg = config(MessageSubType::Takedown);
+    tcfg.takedown_date = Some("2026-12-31".into());
+    let td = generate_ddex_ern_382(&f, &tcfg).unwrap();
+    assert!(
+        td.contains("<StartDate>") && !td.contains("<StartDateTime>"),
+        "{td}"
+    );
+    // Same schema result as a takedown without a release time.
+    let plain_td = generate_ddex_ern_382(&fixture(0), &tcfg).unwrap();
+    assert_eq!(
+        validate_ern_382_xml(&td).is_ok(),
+        validate_ern_382_xml(&plain_td).is_ok()
+    );
+    // Unset is not serialized (earlier snapshots keep their hash).
+    let v = serde_json::to_value(fixture(0)).unwrap();
+    assert!(v.get("release_time").is_none());
 }
