@@ -2,7 +2,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { printWithStamp } from '../lib/printStamp';
 import { Link, useNavigate, useParams } from '../lib/router';
-import { useDocs, setDocs, docState } from '../store/docs';
+import { useDocs, setDocs, docState, docBadgeTone } from '../store/docs';
+import { Badge } from '../ui';
 import { fetchDocuments } from '../api/portal';
 import { MOCK } from '../lib/mode';
 import { errorMessage } from '../api/errors';
@@ -155,7 +156,7 @@ export function Agreement() {
             <span>문서 확인 코드 (SHA-256)</span>
             <code>{doc.confirmations?.content_hash ? hashLabel(doc.confirmations.content_hash) : '서명하면 발급돼요'}</code>
           </div>
-          <span className={`aq-paper-integrity is-${signed ? 'ok' : 'checking'}`}>{docState(doc)}</span>
+          <Badge tone={docBadgeTone(doc)} className="aq-paper-integrity">{docState(doc)}</Badge>
           <p>
             이 계약서는 AUDENIQ STUDIO에서 전자문서로 작성되고 전자서명으로 체결돼요.
             {terms && <> 배급수수료 회사 {terms.fee_bps / 100}% · 이용자 {terms.user_bps / 100}%, {terms.exclusivity === 'EXCLUSIVE' ? '독점' : '비독점'} 배급. </>}

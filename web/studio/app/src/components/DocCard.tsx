@@ -3,6 +3,7 @@ import { docBadgeTone, docState, docTone, type DocRecord } from '../store/docs';
 import { niceDate, stripSampleSuffix } from '../lib/format';
 import { CheckIcon } from './Check';
 import { Glyph } from './Glyph';
+import { Badge } from '../ui';
 
 /** 서류 한 줄 — 줄 전체를 눌러 연다. 상태는 배지 대신 오른쪽 색 글자, 보완 사유는 제목 아래 */
 export function DocRow({ c, onOpen }: { c: DocRecord; onOpen: (id: string) => void }) {
@@ -20,7 +21,7 @@ export function DocRow({ c, onOpen }: { c: DocRecord; onOpen: (id: string) => vo
         <small>{c.releaseTitle || '공통 문서'} · {niceDate(c.created)}{c.fileName ? ` · ${c.fileName}` : ''}</small>
         {needs && c.reviewNote && <em>{c.reviewNote}</em>}
       </span>
-      <span className={`aq-doc-state is-${docBadgeTone(c)}`}>{docState(c)}</span>
+      <Badge tone={docBadgeTone(c)} className="aq-doc-state">{docState(c)}</Badge>
       <Glyph name="chevron-right" size={16} className="aq-doc-chev" />
     </button>
   );

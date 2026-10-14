@@ -13,6 +13,7 @@ import { IdentityVerify } from '../components/IdentityVerify';
 import { PasskeySettings } from '../components/PasskeySettings';
 import { ConnectedAccounts } from '../components/ConnectedAccounts';
 import { TeamSettings } from '../components/TeamSettings';
+import { ArtistPagesCard } from '../components/ArtistPagesCard';
 import { OAUTH_LABEL, takeOAuthResult } from '../api/oauth';
 import { messageForCode } from '../api/errors';
 import { useAuth } from '../api/auth';
@@ -223,9 +224,7 @@ export function Profile() {
     <div id="view-profile" className="view aq-settings">
       <div className="ui-page-head">
         <div>
-          <p className="eyebrow">계정·지원</p>
           <h1>계정 정보</h1>
-          <p>본인 확인, 아티스트 프로필, 수익 받을 계좌를 관리해요.</p>
         </div>
       </div>
 
@@ -255,6 +254,8 @@ export function Profile() {
         <SetRow id="profileRowBio" label="아티스트 소개" value={bioLine} empty="입력하기" onClick={() => setEditing('bio')} />
         <SetRow id="profileRowCountry" label="활동 국가" value={country} onClick={() => setEditing('country')} />
       </section>
+
+      <ArtistPagesCard />
 
       <section className="aq-set-card" aria-labelledby="setPayout">
         <h2 id="setPayout">수익 받기</h2>

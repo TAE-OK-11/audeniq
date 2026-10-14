@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { printWithStamp } from '../lib/printStamp';
 import { useNavigate, useParams } from '../lib/router';
-import { useDocs, setDocs, docState } from '../store/docs';
+import { useDocs, setDocs, docState, docBadgeTone } from '../store/docs';
+import { Badge } from '../ui';
 import { fetchDocuments } from '../api/portal';
 import { MOCK } from '../lib/mode';
 import { errorMessage } from '../api/errors';
@@ -41,7 +42,7 @@ export function RightsDocument() {
       <header className="aq-paper-head"><div className="aq-paper-brand"><img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="AUDENIQ" /><dl className="aq-paper-meta"><div><dt>문서 번호</dt><dd>AUD-RIGHTS-{e.document_no}</dd></div><div><dt>서식</dt><dd>{e.form}</dd></div><div><dt>서명 일시</dt><dd>{localStamp(doc.localSignatureAt)}</dd></div></dl></div><h1>{doc.title}</h1></header>
       <div className="aq-rights-paper-body">{doc.content}</div>
       <section className="aq-paper-signoff"><p>위 내용을 확인하고 기재한 범위에서 이용을 허락합니다.</p><div className="aq-paper-signer"><span>{e.signer_role}</span><strong>{doc.signerName}</strong><span className="aq-paper-sig"><img src={doc.localSignatureData} alt={`${doc.signerName} 서명`} /></span></div><p>{localStamp(doc.localSignatureAt)}</p>{e.identity && <dl className="aq-paper-meta aq-paper-identity"><div><dt>본인확인</dt><dd>{e.identity.name} · {localStamp(e.identity.verified_at)}</dd></div><div><dt>서명 방법</dt><dd>{e.channel === 'IN_PERSON' ? '대면(같은 기기)' : '서명 링크'} · 권리자 직접 서명</dd></div>{e.certificate_hash && <div><dt>서명 증명 해시</dt><dd><code>{e.certificate_hash}</code></dd></div>}</dl>}</section>
-      <footer className="aq-paper-foot"><span>{docState(doc)}</span><span className={`aq-paper-integrity is-${integrity}`}>{integrity === 'ok' ? '문서 확인 일치' : integrity === 'changed' ? '문서 내용 불일치' : '문서 확인 중'}</span><code>{e.content_hash}</code><p>작성 내용·권리자·서명자·서명 이미지로 문서 확인 코드를 계산해 보관합니다. {e.identity ? '권리자는 본인확인 후 직접 서명했고, 서명 기록(본인확인 결과·시각·접속 기록)은 서명 증명 해시로 묶여 보관됩니다. ' : ''}권리자 서명과 AUDENIQ 검토 상태는 별도로 관리합니다.</p>{doc.reviewNote && <p>검토 메모: {doc.reviewNote}</p>}</footer>
+      <footer className="aq-paper-foot"><Badge tone={docBadgeTone(doc)}>{docState(doc)}</Badge><Badge tone={integrity === 'ok' ? 'green' : integrity === 'changed' ? 'red' : 'gray'}>{integrity === 'ok' ? '문서 확인 일치' : integrity === 'changed' ? '문서 내용 불일치' : '문서 확인 중'}</Badge><code>{e.content_hash}</code><p>작성 내용·권리자·서명자·서명 이미지로 문서 확인 코드를 계산해 보관합니다. {e.identity ? '권리자는 본인확인 후 직접 서명했고, 서명 기록(본인확인 결과·시각·접속 기록)은 서명 증명 해시로 묶여 보관됩니다. ' : ''}권리자 서명과 AUDENIQ 검토 상태는 별도로 관리합니다.</p>{doc.reviewNote && <p>검토 메모: {doc.reviewNote}</p>}</footer>
     </article>
   </div>;
 }

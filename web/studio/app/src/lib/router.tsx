@@ -3,7 +3,7 @@
 // react-router 전체(약 48KB min / 15KB gzip) 대신 2KB 남짓으로 같은 동작을 제공한다.
 // 필요해지면 import 경로를 'react-router'로 바꾸는 것만으로 되돌릴 수 있다.
 import {
-  Children, createContext, isValidElement, startTransition, useCallback, useContext, useEffect, useMemo, useState,
+  Children, createContext, isValidElement, startTransition, useCallback, useContext, useEffect, useMemo, useRef, useState,
   type AnchorHTMLAttributes, type MouseEvent, type ReactElement, type ReactNode,
 } from 'react';
 
@@ -13,7 +13,15 @@ export interface Location {
   hash: string;
   state: unknown;
   key: string;
+  /** 어떻게 왔는지 — PUSH(새 화면) · REPLACE(같은 화면 주소만) · POP(뒤로/앞으로) */
+  action?: 'PUSH' | 'REPLACE' | 'POP';
 }
+
+// 화면별 스크롤 위치 — 뒤로 가기에는 보던 자리로, 새 화면은 맨 위에서 연다.
+// 브라우저 자동 복원은 화면 청크를 받기 전에 스크롤해 중간에 멈추므로 끄고 직접 다룬다.
+const scrollPositions = new Map<string, number>();
+/** 그 기록 항목에서 마지막으로 보던 세로 위치 */
+export const savedScroll = (key: string) => scrollPositions.get(key) ?? 0;
 
 export interface NavigateOptions {
   replace?: boolean;
@@ -62,9 +70,10 @@ export function currentPath(): string {
   return stripBase(window.location.pathname);
 }
 
-function readLocation(): Location {
+function readLocation(action?: Location['action']): Location {
   const st = window.history.state as { usr?: unknown; key?: string } | null;
   return {
+    action,
     pathname: stripBase(window.location.pathname),
     search: window.location.search,
     hash: window.location.hash,
@@ -79,9 +88,15 @@ export function BrowserRouter({ children }: { children: ReactNode }) {
     return readLocation();
   });
 
+  const keyRef = useRef(location.key);
+  keyRef.current = location.key;
   useEffect(() => {
-    // 뒤로/앞으로 가기
-    const sync = () => startTransition(() => setLocation(readLocation()));
+    try { window.history.scrollRestoration = 'manual'; } catch { /* 지원하지 않는 브라우저 */ }
+    // 뒤로/앞으로 가기 — 떠나는 화면의 위치를 기억해 둔다 (수동 복원이라 아직 스크롤이 그대로다)
+    const sync = () => {
+      scrollPositions.set(keyRef.current, window.scrollY);
+      startTransition(() => setLocation(readLocation('POP')));
+    };
     window.addEventListener('popstate', sync);
     return () => window.removeEventListener('popstate', sync);
   }, []);
@@ -92,10 +107,12 @@ export function BrowserRouter({ children }: { children: ReactNode }) {
     const entry = { usr: opts.state ?? null, key: nextKey() };
     // 같은 주소로의 이동은 기록을 쌓지 않는다
     const here = window.location.pathname + window.location.search + window.location.hash;
-    if (opts.replace || here === target) window.history.replaceState(entry, '', target);
+    const replace = opts.replace || here === target;
+    if (!replace) scrollPositions.set(keyRef.current, window.scrollY);
+    if (replace) window.history.replaceState(entry, '', target);
     else window.history.pushState(entry, '', target);
     // 전환으로 처리해 다음 화면 청크를 받는 동안 현재 화면을 유지한다 (스켈레톤 깜빡임 방지)
-    const next = readLocation();
+    const next = readLocation(replace ? 'REPLACE' : 'PUSH');
     startTransition(() => setLocation(next));
   }, []);
 

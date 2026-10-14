@@ -47,29 +47,10 @@ export function Contracts() {
     <div id="view-contracts" className="view">
       <div className="ui-page-head">
         <div>
-          <p className="eyebrow">계약·권리</p>
           <h1>계약서</h1>
-          <p>발매마다 배급 신청서와 배급 계약서를 한곳에서 확인하고 서명하세요.</p>
         </div>
       </div>
 
-      <div className="studio-doc-path">
-        <div>
-          <span className="studio-path-n">1단계</span>
-          <strong>배급 신청서 서명</strong>
-          <small>발매를 접수할 때</small>
-        </div>
-        <div>
-          <span className="studio-path-n">2단계</span>
-          <strong>담당자 검토</strong>
-          <small>수수료·배급 조건 확정</small>
-        </div>
-        <div>
-          <span className="studio-path-n">3단계</span>
-          <strong>배급 계약서 서명</strong>
-          <small>권리 확인 체크 후 배급 시작</small>
-        </div>
-      </div>
 
       <div id="contractList">
         {agreements.length ? (

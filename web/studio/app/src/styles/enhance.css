@@ -54,17 +54,6 @@ img{max-width:100%}
 .aq-nav-count{display:inline-grid;place-items:center;min-width:19px;height:19px;padding:0 5px;border-radius:var(--aq-r-sm);background:var(--aq-red-500);color:#fff;font-size:10px;font-weight:800;font-style:normal}
 .portal-nav button{position:relative}
 .portal-nav button:not(.active):hover{background:var(--aq-gray-75)}
-.portal-nav button>span{transition:transform .2s var(--aq-e-ease)}
-.portal-nav button:hover>span{transform:translateX(3px)}
-.portal-header .portal-nav.is-closing{animation:aq-nav-out .16s ease forwards!important;pointer-events:none}
-.portal-nav > div:not(.nav-foot) button{animation:aq-fade-up .32s var(--aq-e-ease) both}
-.portal-nav > div:nth-of-type(1) button:nth-of-type(1){animation-delay:.02s}
-.portal-nav > div:nth-of-type(1) button:nth-of-type(2){animation-delay:.04s}
-.portal-nav > div:nth-of-type(1) button:nth-of-type(3){animation-delay:.06s}
-.portal-nav > div:nth-of-type(1) button:nth-of-type(4){animation-delay:.08s}
-.portal-nav > div:nth-of-type(1) button:nth-of-type(5){animation-delay:.1s}
-.portal-nav > div:nth-of-type(2) button{animation-delay:.12s}
-.portal-nav > div:nth-of-type(3) button{animation-delay:.15s}
 .aq-nav-foot{display:flex!important;align-items:center;justify-content:space-between;gap:10px}
 .aq-nav-account{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;letter-spacing:.02em}
 .portal-nav .aq-logout{width:auto!important;min-height:32px!important;padding:6px 11px!important;font-size:12px!important;font-weight:700!important;color:var(--aq-text-3)!important;background:var(--aq-gray-50)!important;border-radius:var(--aq-r-sm)!important;flex-shrink:0}
@@ -734,9 +723,9 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 
 /* ── 배급 신청서 (정식 서류) ─────────────────────────────────────────── */
 .aq-doc-view{max-width:880px;margin:0 auto}
-.aq-doc-done{display:flex;align-items:center;gap:14px;background:var(--aq-e-green-soft);border-radius:var(--aq-r-xl);padding:16px 18px;margin:0 0 18px;animation:aq-fade-up .45s var(--aq-e-ease) both}
-.aq-doc-done-mark{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;flex:none;background:var(--aq-e-green);color:#fff;animation:aq-doc-pop .5s var(--aq-e-spring) .15s both}
-.aq-doc-done-mark path{stroke-dasharray:24;stroke-dashoffset:24;animation:aq-doc-draw .45s ease .45s forwards}
+.aq-doc-done{display:flex;align-items:center;gap:14px;background:var(--aq-e-green-soft);border-radius:var(--aq-r-xl);padding:16px 18px;margin:0 0 18px;animation:aq-fade-up .3s cubic-bezier(.2,.8,.2,1) backwards}
+.aq-doc-done-mark{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;flex:none;background:var(--aq-e-green);color:#fff}
+.aq-doc-done-mark path{stroke-dasharray:24;stroke-dashoffset:24;animation:aq-doc-draw .3s ease-out .12s forwards}
 .aq-doc-done strong{display:block;font-size:15px;font-weight:800;color:#155c40}
 .aq-doc-done .min-0 span{display:block;font-size:13px;line-height:1.55;color:var(--aq-green-600);margin-top:2px}
 @keyframes aq-doc-pop{from{transform:scale(.4);opacity:0}to{transform:none;opacity:1}}
@@ -790,7 +779,7 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
 .aq-paper-foot>div span{display:block;margin-bottom:3px}
 .aq-paper-foot code{font:600 12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--aq-text);letter-spacing:.04em;word-break:break-all}
 .aq-paper-foot p{grid-column:1/-1;margin:0!important;font-size:12px!important;line-height:1.6!important;color:var(--aq-text-3)!important;max-width:none!important}
-.aq-paper-integrity{font-weight:800;font-size:12px;padding:6px 10px;border-radius:var(--aq-r-3xl);white-space:nowrap}
+.aq-paper-foot>.ui-badge{justify-self:end}
 @media(max-width:640px){
   .aq-paper{padding:28px 18px 24px;border-radius:var(--aq-r-md)}
   .aq-paper-brand{flex-direction:column;gap:14px;margin-bottom:22px}
@@ -806,6 +795,7 @@ body:has(#modal) #view-new .step-actions{visibility:hidden}
   .aq-paper-kv td[colspan]{grid-column:2}
   .aq-paper-signer{justify-content:center;flex-wrap:wrap}
   .aq-paper-foot{grid-template-columns:1fr}
+  .aq-paper-foot>.ui-badge{justify-self:start}
 }
 
 /* 인쇄·PDF: 서류만 A4에 */

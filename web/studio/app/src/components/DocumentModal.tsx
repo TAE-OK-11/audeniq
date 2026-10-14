@@ -13,6 +13,7 @@ import { fileSize, localStamp } from '../lib/format';
 import { stampNow } from '../lib/date';
 import { docState } from '../store/docs';
 import { Glyph } from './Glyph';
+import { Badge } from '../ui';
 
 const statusPill = docState;
 
@@ -211,7 +212,7 @@ export function DocumentModal({
   return (
     <Modal title={doc.title} onClose={onClose}>
       <p className="aq-meta-line">
-        <b className={`aq-doc-state is-${tone}`}>{statusPill(doc)}</b>
+        <Badge tone={tone} className="aq-doc-state">{statusPill(doc)}</Badge>
         {doc.kind === 'agreements' ? '계약·신청서' : '권리 증빙'} · v{doc.version || '1.0'}
       </p>
 
