@@ -8,6 +8,7 @@ import { useAsync } from '../../hooks/useAsync';
 import { req } from '../../api/http';
 import { MOCK } from '../../lib/mode';
 import { Badge, EmptyState, ErrorBox, NoDuty, PageHeader, SkeletonList, DELIVERY_TABS, SubTabs, useStaff } from '../ui';
+import { DateField } from '../../components/Picker';
 
 interface TermItem {
   release_id: string; title: string; org_name: string; end_date: string; reason: string; note: string; status: string;
@@ -26,9 +27,11 @@ export function Terms() {
   const items = data?.items ?? [];
   const today = new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
 
+  // 심사·배급 화면 주소를 그대로 붙여 넣어도 발매 ID만 골라 쓴다
+  const releaseId = (form.release.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0] ?? form.release.trim().split('/').filter(Boolean).pop() ?? '').trim();
   const terminate = async () => {
     try {
-      await req(`/api/staff/releases/${encodeURIComponent(form.release.trim())}/term`, { method: 'POST',
+      await req(`/api/staff/releases/${encodeURIComponent(releaseId)}/term`, { method: 'POST',
         body: { end_date: form.date, reason: form.reason, note: form.note.trim() } });
       toast('종료일을 정했어요. 그날 모든 플랫폼에 발매 중단을 보내요.', 'success');
       setForm({ release: '', date: '', reason: 'TERMINATION', note: '' }); reload();
@@ -49,20 +52,20 @@ export function Terms() {
       {!ok && <NoDuty duty="배급" />}
       <section className="ui-card" style={{ marginBottom: 16 }}>
         <h2 className="subhead">해지·종료일 정하기</h2>
+        <div className="ui-field"><label htmlFor="tmRelease">발매</label>
+          <input id="tmRelease" className="ui-input" value={form.release} onChange={e => setForm(f => ({ ...f, release: e.target.value }))} placeholder="심사 화면 주소 또는 발매 ID" /></div>
         <div className="form-grid">
-          <div className="ui-field"><label htmlFor="tmRelease">발매 ID</label>
-            <input id="tmRelease" className="ui-input" value={form.release} onChange={e => setForm(f => ({ ...f, release: e.target.value }))} placeholder="심사 화면 주소의 발매 ID" /></div>
           <div className="ui-field"><label htmlFor="tmDate">종료일</label>
-            <input id="tmDate" type="date" className="ui-input" min={today} value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} /></div>
+            <DateField id="tmDate" min={today} value={form.date} onChange={v => setForm(f => ({ ...f, date: v }))} /></div>
           <div className="ui-field"><label htmlFor="tmReason">사유</label>
             <select id="tmReason" className="ui-select" value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}>
               <option value="TERMINATION">해지 (계약 위반 등)</option><option value="LICENSE_EXPIRY">권리 만료</option><option value="CONTRACT_END">계약 종료</option>
             </select></div>
         </div>
-        <div className="ui-field"><label htmlFor="tmNote">아티스트에게 보일 사유 (해지면 필수)</label>
+        <div className="ui-field"><label htmlFor="tmNote">아티스트에게 보일 사유{form.reason === 'TERMINATION' ? <span className="required"> *</span> : <span className="aq-optional">선택</span>}</label>
           <input id="tmNote" className="ui-input" maxLength={1000} value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} /></div>
         <div className="adm-form-actions">
-          <button type="button" className="ui-btn is-danger" disabled={!ok || !form.release.trim() || !form.date} onClick={() => void terminate()}>종료일 정하기</button>
+          <button type="button" className="ui-btn is-danger" disabled={!ok || !releaseId || !form.date || (form.reason === 'TERMINATION' && !form.note.trim())} onClick={() => void terminate()}>종료일 정하기</button>
         </div>
       </section>
       {error && <ErrorBox message={error} onRetry={reload} />}

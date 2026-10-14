@@ -117,11 +117,11 @@ export function Pitches() {
                 {p.status === 'PITCHED' && (
                   <>
                     <div className="ui-field" style={{ marginTop: 12 }}>
-                      <label htmlFor={`pp-res-${p.id}`}>선정된 플레이리스트 (선정일 때)</label>
+                      <label htmlFor={`pp-res-${p.id}`}>선정된 플레이리스트</label>
                       <input id={`pp-res-${p.id}`} className="ui-input" maxLength={300} value={results[p.id] ?? ''} onChange={e => setResults(r => ({ ...r, [p.id]: e.target.value }))} placeholder="예: 멜론 '오늘의 발견'" />
                     </div>
                     <div className="ui-field">
-                      <label htmlFor={`pp-note-${p.id}`}>아티스트에게 남길 말 (선택)</label>
+                      <label htmlFor={`pp-note-${p.id}`}>아티스트에게 남길 말<span className="aq-optional">선택</span></label>
                       <textarea id={`pp-note-${p.id}`} rows={2} maxLength={1000} value={notes[p.id] ?? ''} onChange={e => setNotes(n => ({ ...n, [p.id]: e.target.value }))} />
                     </div>
                     <div className="adm-form-actions">

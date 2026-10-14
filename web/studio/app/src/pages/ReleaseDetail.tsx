@@ -16,7 +16,7 @@ import { ReleaseCover, useImageOk } from '../components/ReleaseCover';
 import { useAsync } from '../hooks/useAsync';
 import { STATUS_LABEL, localStamp, statusTone } from '../lib/format';
 import { dspLabel, durationLabel, genreLabel, kindLabel, languageLabel } from '../lib/catalog';
-import { docState, docsForRelease, openFixes, pendingProofs, proofPath, useDocs } from '../store/docs';
+import { docBadgeTone, docState, docsForRelease, openFixes, pendingProofs, proofPath, useDocs } from '../store/docs';
 import { refreshDocs } from '../store/portalSync';
 import { MOCK } from '../lib/mode';
 import { errorMessage } from '../api/errors';
@@ -29,6 +29,7 @@ import { ContractBundle } from '../components/ContractBundle';
 /** 아직 없는 값 — 실제 값처럼 진하게 보이지 않도록 흐리게 */
 const Empty = ({ children }: { children: string }) => <span className="aq-empty-val">{children}</span>;
 import { Badge, Tabs } from '../ui';
+import type { Tone } from '../ui/tone';
 import { territorySummary } from '../lib/territories';
 
 // 플랫폼별 배급 진행 단계 (서버 delivery_staging 기준)
@@ -62,12 +63,20 @@ const DELIVERY_ISSUE: Record<string, string> = {
 
 const RIGHTS_KEYS = ['rightsMaster', 'rightsComposition', 'rightsArtwork', 'rightsConsent'];
 
+/** 상세 탭 — 한 탭에 성격이 다른 카드를 쌓지 않는다. '관리'는 수익 분배와 발매 뒤에 하는 일(링크·피칭·정정·권리) */
 const DETAIL_TABS = [
   { value: 'overview', label: '기본 정보' },
   { value: 'tracks', label: '트랙·파일' },
-  { value: 'delivery', label: '배급·권리' },
+  { value: 'delivery', label: '배급' },
+  { value: 'docs', label: '계약·서류' },
+  { value: 'manage', label: '관리' },
   { value: 'history', label: '변경 기록' },
 ];
+
+const DELIVERY_TONE: Record<string, Tone> = {
+  NEEDS_CORRECTION: 'amber', ON_HOLD: 'amber', IN_REVIEW: 'violet', PREPARING: 'blue', SCHEDULED: 'blue', SENDING: 'blue',
+  DELIVERED: 'green', LIVE: 'green', TAKEN_DOWN: 'gray',
+};
 
 // 진행 단계 표시 — 상태별로 어디까지 왔는지 보여준다
 const PIPELINE = [
@@ -115,6 +124,8 @@ export function ReleaseDetail() {
     () => (tab === 'delivery' ? api.getDelivery(id).catch(() => []) : Promise.resolve([])),
     [id, tab],
   );
+  // 훅은 아래 조기 반환보다 먼저 — 불러오기 전후로 호출 순서가 바뀌면 화면 오류가 난다
+  const [coverOk, coverFailed] = useImageOk(rel?.draft?.coverData || rel?.coverData);
 
   if (loading && !rel) {
     return (
@@ -156,7 +167,6 @@ export function ReleaseDetail() {
   const stageTone = rejected ? 'is-error' : needsFix ? 'is-warn' : '';
   const stageLabel = (i: number) => (i === 1 && rejected ? '거절' : i === 1 && needsFix ? '보완 필요' : PIPELINE[i].label);
   const coverSrc = d?.coverData || rel.coverData;
-  const [coverOk, coverFailed] = useImageOk(coverSrc);
   const allFixes = rel.corrections ?? [];
   // 담당자 전체 의견은 고칠 항목이 아니라 따로 보여 준다
   const { items: requested, note: reviewNote } = splitCorrections(allFixes);
@@ -347,7 +357,7 @@ export function ReleaseDetail() {
                   <li key={doc.id}>
                     <Link to={proofPath(doc)}>
                       <span className="min-0">{doc.title.replace(`${rel.title} · `, '')}{doc.reviewNote ? ` — ${doc.reviewNote}` : ''}</span>
-                      <em>{docState(doc)}</em>
+                      <Badge tone={docBadgeTone(doc)}>{docState(doc)}</Badge>
                     </Link>
                   </li>
                 ))}
@@ -415,8 +425,8 @@ export function ReleaseDetail() {
         )}
 
         {tab === 'tracks' && (
-          <>
-            <h2 className="subhead">트랙 목록 · {rel.tracks.length}곡</h2>
+          <div className="aq-relinfo-card">
+            <h2 className="subhead">트랙 {rel.tracks.length}곡</h2>
             {rel.tracks.length ? (
               <div className="aq-catalog-cards aq-stagger">
                 {rel.tracks.map((t, i) => (
@@ -448,92 +458,104 @@ export function ReleaseDetail() {
                 <button type="button" className="ui-btn is-white is-sm" onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}>트랙 등록하기 <Glyph name="chevron-right" size={13} /></button>
               </div>
             )}
-            <div className="ui-callout" style={{ marginTop: 22 }}>
-              음원 원본의 재첨부가 필요한 경우가 있어요. 제출 전 파일을 다시 확인해 주세요.
-            </div>
-          </>
+          </div>
         )}
 
         {tab === 'delivery' && (
-          <div className="split">
-            <div>
+          <div className="aq-detail-stack">
+            <section className="aq-relinfo-card">
               <h2 className="subhead">배급 설정</h2>
               <dl className="ui-kv is-2">
-                <div><dt>희망 배급 지역</dt><dd>{territorySummary(d?.territories)}</dd></div>
+                <div><dt>배급 지역</dt><dd>{territorySummary(d?.territories)}</dd></div>
                 <div><dt>발매 예정일</dt><dd>{rel.release_date || <Empty>미정</Empty>}</dd></div>
                 {d?.originalDate && <div><dt>최초 발매일</dt><dd>{d.originalDate}</dd></div>}
               </dl>
               <div className="tag-row">
                 {d?.platforms?.length ? (
-                  d.platforms.map(p => <span key={p} className="tag">{dspLabel(p)}</span>)
+                  d.platforms.map(p => <span key={p} className="ui-tag is-white">{dspLabel(p)}</span>)
                 ) : (
                   <span className="muted small">플랫폼 미선택</span>
                 )}
               </div>
-              {!!delivery.data?.length && (
-                <>
-                  <h2 className="subhead">플랫폼별 배급 진행</h2>
-                  <ul className="aq-linked-docs">
-                    {delivery.data.map(item => (
-                      <li key={item.dsp}>
-                        <div className="min-0">
-                          <span>{dspLabel(item.slug)}</span>
-                          {item.issues.filter(i => i.severity === 'BLOCKER').map(i => (
-                            <p key={i.code} className="small muted">{DELIVERY_ISSUE[i.code] ?? '이 플랫폼 기준에 맞게 확인이 필요해요.'}</p>
-                          ))}
-                        </div>
-                        <em>{DELIVERY_STAGE[item.stage] ?? item.stage}</em>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-              <h2 className="subhead">권리 확인</h2>
+            </section>
+            {!!delivery.data?.length && (
+              <section className="aq-relinfo-card">
+                <h2 className="subhead">플랫폼별 진행</h2>
+                <ul className="aq-linked-docs">
+                  {delivery.data.map(item => (
+                    <li key={item.dsp}>
+                      <div className="min-0">
+                        <span>{dspLabel(item.slug)}</span>
+                        {item.issues.filter(i => i.severity === 'BLOCKER').map(i => (
+                          <p key={i.code} className="small muted">{DELIVERY_ISSUE[i.code] ?? '이 플랫폼 기준에 맞게 확인이 필요해요.'}</p>
+                        ))}
+                      </div>
+                      <Badge tone={DELIVERY_TONE[item.stage] ?? 'gray'}>{DELIVERY_STAGE[item.stage] ?? item.stage}</Badge>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            <section className="aq-relinfo-card">
+              <div className="ui-section-head">
+                <h2 className="subhead">권리</h2>
+                {rightsOk(d?.rightsChecks, d?.options)
+                  ? <Badge tone="green">권리 확인 완료</Badge>
+                  : <Badge tone="amber">권리 확인 보완 필요</Badge>}
+              </div>
               <dl className="ui-kv is-2">
-                <div><dt>마스터 권리자</dt><dd>{d?.ownership || '미입력'}</dd></div>
-                <div><dt>℗ 표기</dt><dd>{d?.phonogram || '미입력'}</dd></div>
-                <div><dt>© 표기</dt><dd>{d?.copyright || '미입력'}</dd></div>
+                <div><dt>마스터 권리자</dt><dd>{d?.ownership || <Empty>미입력</Empty>}</dd></div>
+                <div><dt>℗ 표기</dt><dd>{d?.phonogram || <Empty>미입력</Empty>}</dd></div>
+                <div><dt>© 표기</dt><dd>{d?.copyright || <Empty>미입력</Empty>}</dd></div>
               </dl>
-              <p className={`small aq-rights-status ${rightsOk(d?.rightsChecks, d?.options) ? 'aq-ok-text' : 'muted'}`}>
-                {rightsOk(d?.rightsChecks, d?.options) ? <><span className="aq-check-badge is-sm"><CheckIcon size={10} /></span>신청서 권리 확인 항목 작성 완료</> : '권리 확인 항목을 보완해 주세요.'}
-              </p>
-            </div>
-            <SplitsCard releaseId={rel.id} />
-            {!isDraft && <SmartLinkCard releaseId={rel.id} />}
-            {!isDraft && <ContentIdCard releaseId={rel.id} />}
-            {!isDraft && !rejected && rel.status !== 'cancelled' && rel.status !== 'closed' && <TermCard releaseId={rel.id} />}
-            {!isDraft && <PitchCard releaseId={rel.id} />}
-            {!isDraft && <CorrectionCard releaseId={rel.id} />}
-            {!isDraft && <InfringementCard releaseId={rel.id} />}
-            {!isDraft && <TakedownCard releaseId={rel.id} />}
-            <div className="ui-card">
-              <h2 className="subhead">계약·증빙</h2>
+            </section>
+          </div>
+        )}
+
+        {tab === 'docs' && (
+          <div className="aq-detail-stack">
+            <section className="aq-relinfo-card">
+              <h2 className="subhead">계약</h2>
               <ContractBundle
                 compact releaseId={rel.id} releaseTitle={rel.title}
                 agreement={docs.find(x => x.kind === 'agreements')}
                 hasApplication={!!d?.application || !isDraft}
                 onOpenAgreement={docId => nav(`/contracts?doc=${encodeURIComponent(docId)}`)}
               />
-              {docs.some(x => x.kind === 'rights') && <>
-                <h3 className="aq-bundle-sub">권리 서류</h3>
+            </section>
+            {docs.some(x => x.kind === 'rights') && (
+              <section className="aq-relinfo-card">
+                <h2 className="subhead">권리 서류</h2>
                 <ul className="aq-linked-docs">
                   {docs.filter(x => x.kind === 'rights').map(doc => (
                     <li key={doc.id}>
-                      <Link to="/rights">
+                      <Link to={proofPath(doc)}>
                         <span className="min-0">{doc.title.replace(`${rel.title} · `, '')}</span>
-                        <em>{docState(doc)}</em>
+                        <Badge tone={docBadgeTone(doc)}>{docState(doc)}</Badge>
                       </Link>
                     </li>
                   ))}
                 </ul>
-              </>}
-              <button className="ui-btn is-primary aq-doc-manage" type="button" onClick={() => nav('/contracts')}>문서 관리 <Glyph name="chevron-right" size={14} /></button>
-            </div>
+              </section>
+            )}
+          </div>
+        )}
+
+        {tab === 'manage' && (
+          <div className="aq-detail-stack">
+            <SplitsCard releaseId={rel.id} />
+            {!isDraft && <SmartLinkCard releaseId={rel.id} />}
+            {!isDraft && <PitchCard releaseId={rel.id} />}
+            {!isDraft && <ContentIdCard releaseId={rel.id} />}
+            {!isDraft && <CorrectionCard releaseId={rel.id} />}
+            {!isDraft && !rejected && rel.status !== 'cancelled' && rel.status !== 'closed' && <TermCard releaseId={rel.id} />}
+            {!isDraft && <InfringementCard releaseId={rel.id} />}
+            {!isDraft && <TakedownCard releaseId={rel.id} />}
           </div>
         )}
 
         {tab === 'history' && (
-          <>
+          <div className="aq-relinfo-card">
             <h2 className="subhead">변경 기록</h2>
             {d?.history?.length ? (
               <ol className="ui-timeline is-latest-first">
@@ -547,7 +569,7 @@ export function ReleaseDetail() {
             ) : (
               <div className="empty-note">등록된 변경 기록이 없어요.</div>
             )}
-          </>
+          </div>
         )}
       </div>
     </div>

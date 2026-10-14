@@ -414,7 +414,7 @@ export function ContentAdmin() {
             <EmergencyPanel rows={rows as AdminMaintenance[]} now={now} onChanged={load} />
           )}
           <div className="aq-cadmin-bar">
-            <p>{rows ? `${rows.filter(r => ['live', 'active'].includes(stateOf(r, now))).length}개 ${kind === 'maintenance' ? '예고·진행 중' : '게시 중'} · 전체 ${rows.length}개` : '불러오는 중'}</p>
+            <p>{rows ? `${rows.filter(r => ['live', 'active'].includes(stateOf(r, now))).length}개 ${kind === 'maintenance' ? '예고·진행 중' : '게시 중'} · 전체 ${rows.length}개` : loadError ? '' : '불러오는 중'}</p>
             <button type="button" className="ui-btn is-soft" onClick={() => void load()}>새로고침</button>
             <button type="button" className="ui-btn is-primary" onClick={() => setDraft(emptyDraft())}>{kind === 'notices' ? '새 공지 쓰기' : kind === 'events' ? '새 이벤트 쓰기' : '점검 일정 추가'}</button>
           </div>

@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Link, useLocation, useNavigate } from '../lib/router';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { Link, savedScroll, useLocation, useNavigate } from '../lib/router';
 import { useAuth } from '../api/auth';
 import { useProfile } from '../store/profile';
 import { useUnreadCount } from '../store/support';
@@ -41,7 +41,6 @@ const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
       { to: '/releases', label: '발매·곡 관리', icon: 'disc' },
       { to: '/reports', label: '음악 리포트', icon: 'chart' },
       { to: '/settlement', label: '정산·지급', icon: 'won' },
-      { to: '/platform-requests', label: '플랫폼 요청', icon: 'globe' },
     ],
   },
   {
@@ -158,11 +157,40 @@ export function Layout({ children }: { children: ReactNode }) {
     };
   }, [menuOpen]);
 
-  // 페이지 전환 시 메뉴 닫고 맨 위로 스크롤
-  useEffect(() => {
+  // 화면이 바뀌면 메뉴를 닫고, 새 화면은 맨 위에서 · 뒤로 가기는 보던 자리에서 연다.
+  // html의 부드러운 스크롤을 타면 새 화면이 그려지는 도중에 멈춰 중간에서 열리므로 즉시 이동한다.
+  const lastPath = useRef(loc.pathname);
+  useLayoutEffect(() => {
     setMenuOpen(false);
-    window.scrollTo(0, 0);
-  }, [loc.pathname]);
+    // 같은 화면에서 탭·필터만 바꾼 주소(REPLACE)는 보던 자리를 지킨다
+    const samePage = lastPath.current === loc.pathname;
+    lastPath.current = loc.pathname;
+    if (samePage && loc.action !== 'PUSH' && loc.action !== 'POP') return;
+    const target = loc.action === 'POP' ? savedScroll(loc.key) : 0;
+    const jump = (y: number) => window.scrollTo({ top: y, left: 0, behavior: 'instant' as ScrollBehavior });
+    jump(target);
+    if (!target) return;
+    // 돌아간 화면의 목록이 아직 불러와지는 중이면 높이가 생길 때까지 몇 번 더 맞춘다
+    let tries = 0;
+    let raf = 0;
+    const again = () => {
+      if (Math.abs(window.scrollY - target) < 2 || ++tries > 30) return;
+      jump(target);
+      raf = requestAnimationFrame(again);
+    };
+    raf = requestAnimationFrame(again);
+    const stop = () => cancelAnimationFrame(raf);
+    window.addEventListener('wheel', stop, { once: true, passive: true });
+    window.addEventListener('touchstart', stop, { once: true, passive: true });
+    return () => { stop(); window.removeEventListener('wheel', stop); window.removeEventListener('touchstart', stop); };
+  }, [loc.pathname, loc.key]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 메뉴는 열 때마다 맨 위부터 (지난번에 내려 둔 자리에서 열리지 않게), 열려 있는 동안 뒤 화면은 멈춘다
+  useLayoutEffect(() => {
+    if (menuOpen) document.getElementById('portalNav')?.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+    document.documentElement.classList.toggle('aq-menu-open', menuOpen);
+    return () => document.documentElement.classList.remove('aq-menu-open');
+  }, [menuOpen]);
 
   const go = (to: string) => {
     closeMenu();

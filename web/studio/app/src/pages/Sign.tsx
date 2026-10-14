@@ -271,7 +271,7 @@ export function Sign() {
           {declining ? (
             <div className="aq-sign-card">
               <h2>서명하지 않을래요</h2>
-              <div className="ui-field"><label htmlFor="aqSignReason">이유 (선택)</label><textarea id="aqSignReason" rows={3} maxLength={500} value={reason} onChange={e => setReason(e.target.value)} placeholder="예: 지분 비율이 실제와 달라요" /></div>
+              <div className="ui-field"><label htmlFor="aqSignReason">이유<span className="aq-optional">선택</span></label><textarea id="aqSignReason" rows={3} maxLength={500} value={reason} onChange={e => setReason(e.target.value)} placeholder="예: 지분 비율이 실제와 달라요" /></div>
               <div className="aq-sign-actions">
                 <button type="button" className="ui-btn is-soft" disabled={busy} onClick={() => setDeclining(false)}>돌아가기</button>
                 <button type="button" className="ui-btn is-danger" disabled={busy} onClick={() => void decline()}>서명 거절하기</button>

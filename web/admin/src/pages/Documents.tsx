@@ -11,6 +11,7 @@ import { staffApi, type GrantInput, type StaffDocument } from '../api/staff';
 import { DOC_KIND, DOC_STATUS, ago, pick, when } from '../labels';
 import { EmptyState, ErrorBox, ChipGroup, Cover, NoDuty, PageHeader, SkeletonList, StatusBadge, useStaff } from '../staffUi';
 import { Glyph } from '../components/Glyph';
+import { DateField } from '../components/Picker';
 
 const STATUSES = ['REVIEW', 'AWAITING_DOCUMENTS', 'NEEDS', 'APPROVED'];
 const decidable = (d: StaffDocument) => d.kind === 'RIGHTS_PROOF' && d.status === 'REVIEW';
@@ -33,10 +34,11 @@ function GrantRows({ rows, onChange }: { rows: GrantRow[]; onChange: (r: GrantRo
   const set = (i: number, p: Partial<GrantRow>) => onChange(rows.map((r, n) => (n === i ? { ...r, ...p } : r)));
   return (
     <div className="adm-grants">
-      <b>이 서류가 증명하는 권한</b>
-      <p className="small muted">배급 권한은 실제 전송 지역·사용·기간에, 정산 수령권은 지분대로 정산에 쓰여요. 발매 전체에 적용돼요.</p>
+      <h3 className="ui-group-title">이 서류가 증명하는 권한</h3>
+      <p className="ui-field-help">배급 권한은 전송 지역·사용·기간에, 정산 수령권은 지분대로 정산에 쓰여요.</p>
       {rows.map((g, i) => (
-        <fieldset key={i} className="adm-grant">
+        <fieldset key={i} className="ui-group adm-grant">
+          <legend>권한 {rows.length > 1 ? i + 1 : ''}</legend>
           <div className="ui-chips is-wrap" role="radiogroup" aria-label="권한 구분">
             {(['DISTRIBUTION', 'ROYALTY'] as const).map(c => (
               <button key={c} type="button" role="radio" aria-checked={g.cls === c} className={`ui-chip${g.cls === c ? ' is-on' : ''}`} onClick={() => set(i, { cls: c })}>
@@ -44,23 +46,27 @@ function GrantRows({ rows, onChange }: { rows: GrantRow[]; onChange: (r: GrantRo
               </button>
             ))}
           </div>
-          <div className="ui-field"><label>권리 종류</label>
-            <select className="ui-input" value={g.type} onChange={e => set(i, { type: e.target.value as GrantRow['type'] })}>
+          <div className="ui-field"><label htmlFor={`gType${i}`}>권리 종류</label>
+            <select id={`gType${i}`} className="ui-select" value={g.type} onChange={e => set(i, { type: e.target.value as GrantRow['type'] })}>
               {RIGHT_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select></div>
-          <div className="ui-field"><label>권리자 <span className="required">*</span></label>
-            <input className="ui-input" maxLength={120} value={g.holder} onChange={e => set(i, { holder: e.target.value })} placeholder="서류에 적힌 권리자 이름" /></div>
-          {g.cls === 'ROYALTY' && <div className="ui-field"><label>지분 (%) <span className="required">*</span></label>
-            <input className="ui-input" inputMode="decimal" value={g.share} onChange={e => set(i, { share: e.target.value.replace(/[^\d.]/g, '') })} placeholder="예: 25" /></div>}
+          <div className="ui-field"><label htmlFor={`gHolder${i}`}>권리자 <span className="required">*</span></label>
+            <input id={`gHolder${i}`} className="ui-input" maxLength={120} value={g.holder} onChange={e => set(i, { holder: e.target.value })} placeholder="서류에 적힌 권리자 이름" /></div>
+          {g.cls === 'ROYALTY' && <div className="ui-field"><label htmlFor={`gShare${i}`}>지분 (%) <span className="required">*</span></label>
+            <input id={`gShare${i}`} className="ui-input" inputMode="decimal" value={g.share} onChange={e => set(i, { share: e.target.value.replace(/[^\d.]/g, '') })} placeholder="25" /></div>}
           {g.cls === 'DISTRIBUTION' && <>
-            <div className="ui-field"><label>허락 국가 (비우면 전 세계)</label>
-              <input className="ui-input" value={g.territories} onChange={e => set(i, { territories: e.target.value })} placeholder="예: KR, JP" /></div>
-            <div className="ui-field"><label>허락 사용 유형 (비우면 제한 없음)</label>
-              <input className="ui-input" value={g.uses} onChange={e => set(i, { uses: e.target.value })} placeholder="예: OnDemandStream, PermanentDownload" /></div>
+            <div className="ui-field"><label htmlFor={`gTerr${i}`}>허락 국가</label>
+              <input id={`gTerr${i}`} className="ui-input" value={g.territories} onChange={e => set(i, { territories: e.target.value })} placeholder="KR, JP" />
+              <small>비우면 전 세계</small></div>
+            <div className="ui-field"><label htmlFor={`gUses${i}`}>허락 사용 유형</label>
+              <input id={`gUses${i}`} className="ui-input" value={g.uses} onChange={e => set(i, { uses: e.target.value })} placeholder="OnDemandStream, PermanentDownload" />
+              <small>비우면 제한 없음</small></div>
           </>}
-          <div className="ui-field"><label>시작일</label><input className="ui-input" type="date" value={g.start} onChange={e => set(i, { start: e.target.value })} /></div>
-          <div className="ui-field"><label>종료일 (마지막 날)</label><input className="ui-input" type="date" value={g.end} onChange={e => set(i, { end: e.target.value })} /></div>
-          {rows.length > 1 && <button type="button" className="ui-btn is-soft is-sm" onClick={() => onChange(rows.filter((_, n) => n !== i))}>삭제</button>}
+          <div className="form-grid">
+            <div className="ui-field"><label htmlFor={`gStart${i}`}>시작일</label><DateField id={`gStart${i}`} value={g.start} onChange={v => set(i, { start: v })} /></div>
+            <div className="ui-field"><label htmlFor={`gEnd${i}`}>종료일</label><DateField id={`gEnd${i}`} value={g.end} min={g.start || undefined} onChange={v => set(i, { end: v })} /></div>
+          </div>
+          {rows.length > 1 && <button type="button" className="ui-btn is-text is-sm aq-danger-text adm-grant-remove" onClick={() => onChange(rows.filter((_, n) => n !== i))}>이 권한 삭제</button>}
         </fieldset>
       ))}
       <button type="button" className="ui-btn is-soft is-sm" onClick={() => onChange([...rows, newGrant(rows[0]?.holder)])}>+ 권한 추가</button>
@@ -103,7 +109,7 @@ function ReviewForm({ doc, status, onDone }: { doc: StaffDocument; status: 'APPR
     <form onSubmit={submit}>
       <p className="small muted">{doc.org_name} · {DOC_KIND[doc.kind] ?? doc.kind}{doc.release_title ? ` · ${doc.release_title}` : ''}</p>
       <div className="ui-field" style={{ marginTop: 16 }}>
-        <label htmlFor="docNote">{status === 'NEEDS' ? '보완 요청 내용' : '메모 (선택)'}{status === 'NEEDS' && <span className="required"> *</span>}</label>
+        <label htmlFor="docNote">{status === 'NEEDS' ? '보완 요청 내용' : <>메모<span className="aq-optional">선택</span></>}{status === 'NEEDS' && <span className="required"> *</span>}</label>
         <textarea
           id="docNote" data-autofocus className="ui-textarea" rows={4} maxLength={1000} required={status === 'NEEDS'} value={note}
           placeholder={status === 'NEEDS' ? '무엇이 부족한지, 어떻게 다시 내면 되는지 적어 주세요. 아티스트 화면에 그대로 보여요.' : '내부 확인용 메모'}

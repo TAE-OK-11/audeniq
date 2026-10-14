@@ -6,6 +6,7 @@ import { niceDate, stripSampleSuffix } from '../lib/format';
 import { CheckIcon } from './Check';
 import { Glyph } from './Glyph';
 import type { Tone } from '../ui/tone';
+import { Badge } from '../ui';
 
 export type BundleStage = 'to-sign' | 'review' | 'needs' | 'signed' | 'waiting';
 
@@ -26,7 +27,7 @@ const STAGE_LABEL: Record<BundleStage, string> = {
   waiting: '계약서 준비 전',
 };
 
-/** 상태 글자 색 — 다른 화면의 상태 표시와 같은 규칙 (서명 필요 = 파랑, 검토 중 = 보라, 보완 = 주황, 완료 = 초록) */
+/** 상태 배지 색 — 다른 화면의 상태 표시와 같은 규칙 (서명 필요 = 파랑, 검토 중 = 보라, 보완 = 주황, 완료 = 초록) */
 const STAGE_TONE: Record<BundleStage, Tone> = {
   'to-sign': 'blue', review: 'violet', needs: 'amber', signed: 'green', waiting: 'gray',
 };
@@ -52,7 +53,7 @@ export function ContractBundle({ releaseId, releaseTitle, agreement, hasApplicat
             <strong>{stripSampleSuffix(releaseTitle) || '제목 없는 발매'}</strong>
             {agreement?.created && <span>{niceDate(agreement.created)} 접수</span>}
           </div>
-          <span className={`aq-bundle-state is-${STAGE_TONE[stage]}`}>{STAGE_LABEL[stage]}</span>
+          <Badge tone={STAGE_TONE[stage]} className="aq-bundle-state">{STAGE_LABEL[stage]}</Badge>
         </header>
       )}
       <ol className="aq-bundle-docs">

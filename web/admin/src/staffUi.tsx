@@ -33,6 +33,12 @@ export function useStaff(): StaffCtx {
   return v;
 }
 
+/** 2차 승인 화면을 보여 줄지 — 서버에서 2인 승인을 껐으면 숨긴다(꺼지기 전 남은 요청이 있으면 처리할 수 있게 보인다) */
+export function useDualApproval(): boolean {
+  const { me, counts } = useStaff();
+  return me.dual_approval !== false || (counts?.second_approvals ?? 0) > 0;
+}
+
 /** 권한이 없는 작업 버튼 옆에 붙이는 안내 */
 export function NoDuty({ duty }: { duty: string }) {
   return <div className="ui-callout">현재 역할로는 <b>{duty}</b> 작업을 할 수 없어요. 조회만 가능해요.</div>;

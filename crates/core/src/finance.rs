@@ -509,7 +509,8 @@ pub async fn approve_payout_order(
     approver: Uuid,
     order_id: Uuid,
 ) -> Result<()> {
-    // Separation of duties: whoever created the order does not approve it.
+    // Separation of duties (two-person approval only): whoever created the
+    // order does not approve it.
     let creator: Option<Option<Uuid>> = sqlx::query_scalar(
         "SELECT created_by FROM finance.payout_orders WHERE org_id=$1 AND id=$2",
     )
@@ -517,7 +518,7 @@ pub async fn approve_payout_order(
     .bind(order_id)
     .fetch_optional(pool)
     .await?;
-    if creator.flatten() == Some(approver) {
+    if crate::config::dual_approval_enabled() && creator.flatten() == Some(approver) {
         return Err(Error::PolicyGate("PAYOUT_APPROVER_MUST_DIFFER"));
     }
     let mut tx = pool.begin().await?;
@@ -1042,7 +1043,7 @@ pub async fn record_manual_payout(
     .await?;
     match approved_by {
         None => return Err(Error::PolicyGate("INVALID_PAYOUT_STATUS_TRANSITION")),
-        Some(a) if a == Some(executor) => {
+        Some(a) if a == Some(executor) && crate::config::dual_approval_enabled() => {
             return Err(Error::PolicyGate("PAYOUT_EXECUTOR_MUST_DIFFER"));
         }
         _ => {}

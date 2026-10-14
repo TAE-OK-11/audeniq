@@ -9,6 +9,7 @@ import {
   type Integrity, type StudioDraft,
 } from './application';
 import { CheckIcon } from '../components/Check';
+import { Badge } from '../ui';
 import { territorySummary } from '../lib/territories';
 
 const dash = (v?: string | null) => (v && v.trim() ? v : '—');
@@ -183,7 +184,7 @@ export function ApplicationPaper({ sheet, draft, integrity }: { sheet: ReleaseSh
           <span>문서 확인 코드 (SHA-256)</span>
           <code>{hashLabel(app?.hash ?? signed?.content_hash ?? '')}</code>
         </div>
-        <span className={`aq-paper-integrity is-${integrity === 'unsigned' ? 'legacy' : integrity}`}>{INTEGRITY_LABEL[integrity]}</span>
+        <Badge tone={integrity === 'ok' ? 'green' : integrity === 'changed' ? 'red' : 'gray'}>{INTEGRITY_LABEL[integrity]}</Badge>
         <p>{issued
           ? '이 신청서는 AUDENIQ STUDIO에서 전자서명으로 작성됐어요. 문서 확인 코드는 신청 내용과 서명으로 계산돼, 내용이 바뀌면 달라져요.'
           : '이 신청서는 기존 접수 기록으로 다시 발급됐어요. 문서 확인 코드는 현재 발매 정보 기준이에요.'}</p>

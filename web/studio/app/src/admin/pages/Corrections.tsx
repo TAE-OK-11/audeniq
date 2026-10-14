@@ -88,7 +88,7 @@ export function Corrections() {
                 {c.status === 'PENDING' && (
                   <>
                     <div className="ui-field" style={{ marginTop: 12 }}>
-                      <label htmlFor={`mc-note-${c.id}`}>처리 메모 (반려하면 아티스트에게 보여요)</label>
+                      <label htmlFor={`mc-note-${c.id}`}>처리 메모<span className="aq-optional">반려하면 아티스트에게 보여요</span></label>
                       <textarea id={`mc-note-${c.id}`} rows={2} maxLength={1000} value={notes[c.id] ?? ''} onChange={e => setNotes(n => ({ ...n, [c.id]: e.target.value }))} />
                     </div>
                     <div className="adm-form-actions">

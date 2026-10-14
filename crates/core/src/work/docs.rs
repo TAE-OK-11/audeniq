@@ -1031,8 +1031,12 @@ pub async fn set_status(s: &AppState, h: &HeaderMap, id: Uuid, i: StatusInput) -
             if lv < MANAGER {
                 return Err(Error::Forbidden);
             }
-            // the requester does not approve their own request (ADMIN may)
-            if r.get::<Option<Uuid>, _>("review_requested_by") == Some(me) && st.role != StaffRole::Admin {
+            // the requester does not approve their own request (ADMIN may;
+            // anyone may while two-person approval is off)
+            if crate::config::dual_approval_enabled()
+                && r.get::<Option<Uuid>, _>("review_requested_by") == Some(me)
+                && st.role != StaffRole::Admin
+            {
                 return Err(Error::PolicyGate("DOC_SELF_APPROVAL"));
             }
             "UPDATE work.docs SET status='APPROVED', approved_by=$2, approved_at=now() WHERE id=$1"

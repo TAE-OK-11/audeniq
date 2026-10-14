@@ -149,12 +149,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 /* 계약서 발매 묶음 — 계정 정보 화면 같은 옅은 파랑 카드 + 줄(흰 칸 없음), 상태는 색 글자 */
 .aq-bundle:not(.is-compact){padding:6px 6px 8px;border-radius:var(--aq-r-2xl);background:var(--aq-surface)}
 .aq-bundle:not(.is-compact) .aq-bundle-head{margin:0;padding:14px 14px 6px}
-.aq-bundle-state{flex:none;font-size:13px;font-weight:700;white-space:nowrap}
-.aq-bundle-state.is-blue{color:var(--aq-blue-500)}
-.aq-bundle-state.is-violet{color:var(--aq-violet-600)}
-.aq-bundle-state.is-amber{color:var(--aq-amber-700)}
-.aq-bundle-state.is-green{color:var(--aq-green-600)}
-.aq-bundle-state.is-gray{color:var(--aq-text-4)}
+.aq-bundle-state{flex:none}
 .aq-bundle:not(.is-compact) .aq-bundle-docs{gap:0}
 .aq-bundle:not(.is-compact) .aq-bundle-docs li{padding:12px 10px 12px 14px;background:none}
 .aq-bundle:not(.is-compact) .aq-bundle-docs li:not(.is-done) .aq-bundle-no{background:var(--aq-blue-150);color:var(--aq-blue-500)}
@@ -179,16 +174,12 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .aq-doc-copy strong{font-size:15px;font-weight:600;line-height:1.4}
 .aq-doc-copy small{font-size:12px;color:var(--aq-text-4)}
 .aq-doc-copy em{font-style:normal;font-size:12px;line-height:1.5;color:var(--aq-amber-700)}
-.aq-doc-state{font-size:13px;font-weight:700;white-space:nowrap}
-.aq-doc-state.is-blue{color:var(--aq-blue-500)}
-.aq-doc-state.is-amber{color:var(--aq-amber-700)}
-.aq-doc-state.is-violet{color:var(--aq-violet-600,#6D4FD8)}
-.aq-doc-state.is-green{color:var(--aq-green-600)}
+.aq-doc-state{flex:none}
 .aq-doc-chev{color:var(--aq-text-disabled)}
 @media(max-width:560px){
   .aq-doc-row{grid-template-columns:40px minmax(0,1fr) auto;align-items:start}
   .aq-doc-row>.aq-doc-ico{grid-row:1/3}
-  .aq-doc-row .aq-doc-state{grid-column:2;grid-row:2;justify-self:start;margin-top:-4px;font-size:12px}
+  .aq-doc-row .aq-doc-state{grid-column:2;grid-row:2;justify-self:start;margin-top:-4px}
   .aq-doc-row .aq-doc-chev{grid-column:3;grid-row:1/3;align-self:center}
 }
 
@@ -350,3 +341,77 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 #view-new .aq-option-detail .aq-dropzone{background:#fff}
 @media(hover:hover){#view-new .aq-option-detail .aq-dropzone:hover{background:var(--aq-blue-100)}}
 #view-new .aq-option-detail .aq-filecard.has-file{background:var(--aq-blue-100)}
+
+/* ---------- 전체 메뉴 모션 — 판 하나가 오른쪽 위에서 부드럽게 내려오고, 묶음이 차례로 살짝 따라온다 ----------
+   버튼마다 따로 튀어나오던 애니메이션은 없앴다. 닫을 때는 짧게 거꾸로. */
+@keyframes aq-menu-in{from{opacity:0;transform:translate3d(0,-8px,0) scale(.98)}to{opacity:1;transform:none}}
+@keyframes aq-menu-out{to{opacity:0;transform:translate3d(0,-6px,0) scale(.98)}}
+@keyframes aq-menu-group{from{opacity:0;transform:translate3d(0,6px,0)}to{opacity:1;transform:none}}
+.portal-header #portalNav{transform-origin:calc(100% - 28px) 0;animation:aq-menu-in .24s cubic-bezier(.2,.8,.2,1) both!important}
+.portal-header #portalNav.is-closing{animation:aq-menu-out .15s cubic-bezier(.4,0,1,1) forwards!important;pointer-events:none}
+#portalNav>.aq-nav-me,#portalNav>.aq-nav-card,#portalNav>.aq-nav-foot{animation:aq-menu-group .26s cubic-bezier(.2,.8,.2,1) both}
+#portalNav>.aq-nav-card:nth-of-type(2){animation-delay:.03s}
+#portalNav>.aq-nav-card:nth-of-type(3){animation-delay:.06s}
+#portalNav>.aq-nav-card:nth-of-type(4){animation-delay:.09s}
+#portalNav>.aq-nav-foot{animation-delay:.11s}
+#portalNav.is-closing>*{animation:none}
+#portalNav .aq-nav-card button,#portalNav .aq-nav-me button{animation:none!important}
+@media (max-width:760px){
+  /* 휴대폰은 화면 전체를 덮으므로 크기 변화 없이 살짝 내려오며 나타난다 */
+  .portal-header #portalNav{transform-origin:50% 0;animation-name:aq-menu-in-full!important}
+  .portal-header #portalNav.is-closing{animation-name:aq-menu-out-full!important}
+}
+@keyframes aq-menu-in-full{from{opacity:0;transform:translate3d(0,-12px,0)}to{opacity:1;transform:none}}
+@keyframes aq-menu-out-full{to{opacity:0;transform:translate3d(0,-8px,0)}}
+@media (prefers-reduced-motion:reduce){.portal-header #portalNav,#portalNav>*{animation:none!important}}
+
+/* ---------- 화면 들어올 때 — 화면 전체는 살짝 나타나고, 머리·섹션이 위에서부터 차례로 올라온다 ----------
+   목록(.aq-stagger)은 줄마다 따로 올라오므로 여기서 다시 움직이지 않는다. 발매 신청 위자드는 자체 단계 모션을 쓴다.
+   backwards라 끝난 뒤에는 transform이 남지 않는다(안쪽 sticky·fixed 요소 영향 없음). */
+@keyframes aq-view-fade{from{opacity:0}}
+@keyframes aq-section-in{from{opacity:0;transform:translate3d(0,10px,0)}}
+.view-enter{animation:aq-view-fade .22s ease-out backwards}
+.view-enter>.view:not(#view-new)>:not(.aq-stagger):nth-child(-n+10){animation:aq-section-in .42s cubic-bezier(.2,.8,.2,1) backwards}
+.view-enter>.view:not(#view-new)>:nth-child(2){animation-delay:.04s}
+.view-enter>.view:not(#view-new)>:nth-child(3){animation-delay:.08s}
+.view-enter>.view:not(#view-new)>:nth-child(4){animation-delay:.12s}
+.view-enter>.view:not(#view-new)>:nth-child(5){animation-delay:.16s}
+.view-enter>.view:not(#view-new)>:nth-child(n+6){animation-delay:.2s}
+@media (prefers-reduced-motion:reduce){.view-enter,.view-enter>.view>*{animation:none!important}}
+
+/* 휴대폰 전체 메뉴가 열려 있는 동안 뒤 화면이 같이 스크롤되지 않게 */
+@media (max-width:760px){html.aq-menu-open,html.aq-menu-open body{overflow:hidden}}
+
+/* 발매 목록 보완 줄 — 휴대폰에서는 요청 내용을 한 줄 다 쓰고, 버튼은 그 아래에 나란히 */
+@media (max-width:560px){
+  .aq-release-fix{flex-wrap:wrap;gap:8px;padding:12px 12px 12px 14px}
+  .aq-release-fix>span{flex:1 1 100%}
+  .aq-release-fix-btn{flex:1 1 0;justify-content:center}
+}
+
+/* 홈 새 발매 띠 — 설명 줄을 뺐으니 높이도 한 줄 + 버튼에 맞춘다 */
+#view-home .aq-home-hero{min-height:0}
+@media (min-width:761px){#view-home .aq-home-hero{padding:24px 28px}}
+
+/* 메뉴 아래 약관 링크 — 좁은 판에서 글자가 두 줄로 쪼개지지 않고 줄 단위로 넘어간다 */
+#portalNav .aq-nav-foot{flex-wrap:wrap;row-gap:6px}
+#portalNav .aq-nav-legal{flex-wrap:wrap;column-gap:12px;row-gap:2px}
+#portalNav .aq-nav-legal button{white-space:nowrap}
+
+/* 발매 상세 탭 — 어느 탭이든 같은 면(카드)에 담는다. 카드가 여러 장이면 같은 간격으로 쌓는다 */
+#view-release .aq-detail-stack{display:grid;gap:14px}
+#view-release .aq-detail-stack>.ui-card{margin:0}
+#view-release .aq-relinfo-card .ui-section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+#view-release .aq-relinfo-card .ui-section-head .subhead{margin:0}
+#view-release .aq-relinfo-card .tag-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
+.aq-linked-docs .ui-badge{flex:none}
+
+/* 검색칸만 있는 줄(전체 트랙 등) — 정렬 칸 자리를 비워 두지 않고 한 줄을 다 쓴다 */
+.toolbar>:only-child,#view-catalog .toolbar>:only-child{grid-column:1/-1;width:100%}
+
+/* 음악 리포트 — 휴대폰에서 고르기 칸 셋을 한 줄에 우겨 넣어 글자가 잘리던 것: 기간 둘은 한 줄, 발매는 다음 줄 전체 */
+@media (max-width:760px){
+  #view-reports .report-tools{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
+  #view-reports .report-tools>#reportRelease{grid-column:1/-1}
+  #view-reports .report-tools>*{width:100%}
+}

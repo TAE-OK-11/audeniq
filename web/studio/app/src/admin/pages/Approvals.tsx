@@ -7,13 +7,16 @@ import { errorMessage } from '../../api/errors';
 import { useAsync } from '../../hooks/useAsync';
 import { staffApi, type ApprovalItem } from '../api';
 import { ago, checkLabel, shortId, when } from '../labels';
-import { Badge, EmptyState, ErrorBox, NoDuty, PageHeader, SkeletonList, SubTabs, useStaff } from '../ui';
+import { Badge, EmptyState, ErrorBox, NoDuty, PageHeader, SkeletonList, SubTabs, useDualApproval, useStaff } from '../ui';
 import { Glyph } from '../../components/Glyph';
 
 export function Approvals() {
   const toast = useToast();
   const confirm = useConfirm();
   const { me, can, refreshCounts, counts } = useStaff();
+  const dual = useDualApproval();
+  // 2인 승인이 꺼져 있으면 남은 요청을 올린 사람도 직접 닫을 수 있다
+  const selfBlocked = me.dual_approval !== false;
   const { data, loading, error, reload } = useAsync(() => staffApi.approvals(), []);
   const [busy, setBusy] = useState('');
   const items = data?.items ?? [];
@@ -45,7 +48,7 @@ export function Approvals() {
         sub="중복 음원·권리 같은 민감 항목은 두 사람이 확인해요. 내가 올린 요청은 다른 담당자가 처리해요."
         actions={<button type="button" className="ui-btn is-soft is-sm" onClick={reload}>새로고침</button>}
       />
-      <SubTabs tabs={[{ to: '/admin/reviews', label: '심사 목록', count: counts?.review }, { to: '/admin/approvals', label: '2차 승인', count: counts?.second_approvals }]} />
+      {dual && <SubTabs tabs={[{ to: '/admin/reviews', label: '심사 목록', count: counts?.review }, { to: '/admin/approvals', label: '2차 승인', count: counts?.second_approvals }]} />}
       {!can('REVIEW') && <NoDuty duty="발매 심사" />}
       {error && <ErrorBox message={error} onRetry={reload} />}
       {loading && !data ? <SkeletonList rows={3} /> : items.length === 0 ? (
@@ -53,13 +56,13 @@ export function Approvals() {
       ) : (
         <div className="ui-list">
           {items.map(a => {
-            const mine = a.requested_by === me.user_id;
+            const mine = a.requested_by === me.user_id && selfBlocked;
             return (
               <div key={a.id} className="ui-card">
                 <div className="adm-check-top">
                   <span>
                     <Link to={`/admin/reviews/${a.release_id}`} className="ui-row-title">{a.title} <Glyph name="arrow-right" size={13} className="aq-inline-glyph" /></Link>
-                    <span className="ui-row-meta"><span>요청 {ago(a.at)}</span><span>만료 {when(a.expires_at)}</span><span>요청자 {mine ? '나' : shortId(a.requested_by)}</span></span>
+                    <span className="ui-row-meta"><span>요청 {ago(a.at)}</span><span>만료 {when(a.expires_at)}</span><span>요청자 {a.requested_by === me.user_id ? '나' : shortId(a.requested_by)}</span></span>
                   </span>
                   <span className="adm-codes">{a.check_codes.map(c => <Badge key={c} tone="red">{checkLabel(c)}</Badge>)}</span>
                 </div>
