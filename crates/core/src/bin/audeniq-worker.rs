@@ -14,6 +14,8 @@ use tracing::Instrument;
 mod adaptive;
 #[path = "worker/poll.rs"]
 mod poll;
+#[path = "worker/unwind.rs"]
+mod unwind;
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -81,6 +83,8 @@ async fn listen_for_jobs(database_url: String, wakeups: Wakeups) {
 enum RunResult {
     Finished(audeniq_core::error::Result<()>),
     LeaseLost,
+    /// The handler panicked: this job fails, the worker keeps running.
+    Panicked(String),
 }
 
 async fn execute_with_heartbeat(
@@ -180,9 +184,18 @@ async fn main() -> anyhow::Result<()> {
     operations::set_job_lease_seconds(lease_seconds);
     let database_url = std::env::var("DATABASE_URL")?;
     let pool = database::connect(&database_url, database_max as u32).await?;
+    let mut scratch = vec![std::env::temp_dir()];
+    scratch.extend(std::env::var_os("AUDENIQ_DELIVERY_TMP").map(std::path::PathBuf::from));
+    scratch.dedup();
+    audeniq_core::temp_sweep::spawn(scratch);
     let store: Arc<dyn storage::ObjectStore> =
         storage::store_from_env(std::env::var("ALLOW_HTTP_STORAGE").as_deref() == Ok("true"))?;
     let drain_seconds = env_usize("WORKER_DRAIN_SECONDS", 30, 0, 3600)? as u64;
+    // A DSP send cut off by a deploy leaves an IN_FLIGHT attempt that only
+    // reconciliation (often manual) can settle: while one is running, the
+    // drain waits this long instead (compose stop_grace_period must exceed it).
+    let delivery_drain_seconds = env_usize("WORKER_DELIVERY_DRAIN_SECONDS", 600, 0, 3600)? as u64;
+    let sending = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let limiter = Arc::new(Semaphore::new(max_in_flight));
     // Set on SIGTERM/SIGINT: stop claiming, let in-flight jobs finish.
     let shutdown = Arc::new(AtomicBool::new(false));
@@ -236,6 +249,7 @@ async fn main() -> anyhow::Result<()> {
             let wakeup = wakeups[queue].clone();
             let shutdown = shutdown.clone();
             let in_flight = in_flight.clone();
+            let sending = sending.clone();
             let name = format!("{}:{queue}:{n}", uuid::Uuid::new_v4());
             tasks.spawn(async move {
                 let mut idle = Duration::from_millis(50);
@@ -285,15 +299,24 @@ async fn main() -> anyhow::Result<()> {
                                 .lock()
                                 .expect("in-flight registry")
                                 .insert(job.id, job.token);
+                            if queue == "delivery" {
+                                sending.fetch_add(1, Ordering::SeqCst);
+                            }
                             // Every log line of this job (handlers, DSP calls,
                             // analyzers) carries these fields: one release_id
                             // search finds the whole run (migration 0064).
                             let span = job_span(&job, queue);
                             let started = std::time::Instant::now();
-                            let outcome = execute_with_heartbeat(&pool, &store, &job, lease_seconds)
-                                .instrument(span.clone())
-                                .await;
+                            let outcome = unwind::catch(
+                                execute_with_heartbeat(&pool, &store, &job, lease_seconds)
+                                    .instrument(span.clone()),
+                            )
+                            .await
+                            .unwrap_or_else(RunResult::Panicked);
                             in_flight.lock().expect("in-flight registry").remove(&job.id);
+                            if queue == "delivery" {
+                                sending.fetch_sub(1, Ordering::SeqCst);
+                            }
                             let _entered = span.enter();
                             let elapsed_ms = started.elapsed().as_millis() as u64;
                             match &outcome {
@@ -306,22 +329,31 @@ async fn main() -> anyhow::Result<()> {
                                 RunResult::Finished(Err(error)) => {
                                     tracing::warn!(elapsed_ms, %error, "job handler error")
                                 }
+                                RunResult::Panicked(message) => {
+                                    tracing::error!(elapsed_ms, %message, "job handler panicked")
+                                }
                             }
                             drop(_entered);
-                            match outcome {
-                                RunResult::Finished(Ok(())) | RunResult::LeaseLost => {}
-                                RunResult::Finished(Err(error)) => {
-                                    let short: String =
-                                        format!("{error:?}").chars().take(500).collect();
-                                    if let Err(fail_error) = operations::fail(
-                                        &pool,
-                                        &job,
-                                        false,
-                                        &format!("INTERNAL_HANDLER_ERROR:{short}"),
-                                    )
-                                    .await
+                            let failure = match outcome {
+                                RunResult::Finished(Ok(())) | RunResult::LeaseLost => None,
+                                RunResult::Finished(Err(error)) => Some(format!(
+                                    "INTERNAL_HANDLER_ERROR:{}",
+                                    format!("{error:?}").chars().take(500).collect::<String>()
+                                )),
+                                // Retried with backoff like any handler error,
+                                // and dead-lettered after max_attempts.
+                                RunResult::Panicked(message) => Some(format!(
+                                    "HANDLER_PANIC:{}",
+                                    message.chars().take(500).collect::<String>()
+                                )),
+                            };
+                            match failure {
+                                None => {}
+                                Some(code) => {
+                                    if let Err(fail_error) =
+                                        operations::fail(&pool, &job, false, &code).await
                                     {
-                                        tracing::warn!(job_id=%job.id, queue, %error, %fail_error, "job handler failed");
+                                        tracing::warn!(job_id=%job.id, queue, %code, %fail_error, "job handler failed");
                                     }
                                 }
                             }
@@ -396,10 +428,15 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
-    tokio::select! {
-        _ = tokio::signal::ctrl_c() => {},
-        _ = sigterm.recv() => {},
-        _ = tasks.join_next() => anyhow::bail!("worker task unexpectedly exited"),
+    // A loop that ends on its own still drains and hands back the other
+    // in-flight jobs below before the process exits with an error.
+    let unexpected = tokio::select! {
+        _ = tokio::signal::ctrl_c() => false,
+        _ = sigterm.recv() => false,
+        _ = tasks.join_next() => true,
+    };
+    if unexpected {
+        tracing::error!("worker task unexpectedly exited; draining before exit");
     }
     // Graceful drain (sandbox round 2: SIGTERM killed in-flight jobs, which
     // then sat until their lease expired, up to JOB_LEASE_SECONDS per deploy).
@@ -408,11 +445,23 @@ async fn main() -> anyhow::Result<()> {
     // cancelled and released below (no attempt consumed).
     shutdown.store(true, Ordering::SeqCst);
     tracing::info!(drain_seconds, "shutdown requested: draining in-flight jobs");
-    let drained = tokio::time::timeout(
+    let mut drained = tokio::time::timeout(
         Duration::from_secs(drain_seconds),
         limiter.acquire_many(max_in_flight as u32),
     )
     .await;
+    let extra = delivery_drain_seconds.saturating_sub(drain_seconds);
+    if drained.is_err() && extra > 0 && sending.load(Ordering::SeqCst) > 0 {
+        tracing::info!(
+            extra_seconds = extra,
+            "DSP send in flight: extending the drain"
+        );
+        drained = tokio::time::timeout(
+            Duration::from_secs(extra),
+            limiter.acquire_many(max_in_flight as u32),
+        )
+        .await;
+    }
     tasks.abort_all();
     while tasks.join_next().await.is_some() {}
     if drained.is_err() {
@@ -432,5 +481,6 @@ async fn main() -> anyhow::Result<()> {
             }
         }
     }
+    anyhow::ensure!(!unexpected, "worker task unexpectedly exited");
     Ok(())
 }
