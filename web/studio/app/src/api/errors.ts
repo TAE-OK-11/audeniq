@@ -193,6 +193,10 @@ const CODE_MESSAGES: Record<string, string> = {
   PITCH_STATUS_INVALID: '바꿀 수 없는 상태예요.',
   PITCH_PLATFORMS_REQUIRED: '전달한 플랫폼을 하나 이상 골라 주세요.',
   PITCH_RESULT_REQUIRED: '선정된 플레이리스트를 적어 주세요.',
+  // 스마트링크
+  SMART_LINK_URL_INVALID: '그 플랫폼의 https 주소만 넣을 수 있어요. 앱에서 공유한 앨범 링크를 붙여 넣어 주세요.',
+  SMART_LINK_PLATFORM_INVALID: '지원하지 않는 플랫폼이에요.',
+  SMART_LINK_RELEASE_NOT_SUBMITTED: '발매 신청을 마친 뒤에 만들 수 있어요.',
   // 관리자(스태프) API
   STATUS_UNKNOWN: '알 수 없는 상태 필터예요.',
   NOTE_TOO_LONG: '메모가 너무 길어요. 줄여서 다시 입력해 주세요.',

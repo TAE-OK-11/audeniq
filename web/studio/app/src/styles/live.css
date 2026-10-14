@@ -853,3 +853,27 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 .aq-correction-track legend{font-weight:700;margin-bottom:6px}
 .aq-correction-row{display:grid;grid-template-columns:minmax(0,1fr) 150px auto;gap:8px;align-items:center}
 @media(max-width:560px){.aq-correction-row{grid-template-columns:1fr 1fr}.aq-correction-row .ui-btn{grid-column:1/-1;justify-self:end}}
+
+/* 스마트링크 공개 페이지 (/l/:slug) */
+.aq-smartlink{position:relative;min-height:100vh;min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:32px 16px;background:var(--aq-gray-50);overflow:hidden}
+.aq-smartlink-bg{position:absolute;inset:-40px;background-size:cover;background-position:center;filter:blur(40px) saturate(1.2);opacity:.45;transform:scale(1.1)}
+.aq-smartlink-card{position:relative;width:100%;max-width:400px;background:#fff;border-radius:var(--aq-r-2xl);padding:24px;box-shadow:0 20px 60px rgba(15,23,42,.18);text-align:center}
+.aq-smartlink-card h1{font-size:22px;margin:16px 0 4px;word-break:keep-all;overflow-wrap:anywhere}
+.aq-smartlink-cover{display:block;width:100%;aspect-ratio:1;object-fit:cover;border-radius:var(--aq-r-xl);background:var(--aq-gray-100)}
+.aq-smartlink-cover.is-empty{background:linear-gradient(135deg,var(--aq-blue-50),var(--aq-gray-150))}
+.aq-smartlink-artist{margin:0;color:var(--aq-text-2);font-weight:600}
+.aq-smartlink-soon{display:inline-block;margin:10px 0 0;padding:4px 10px;border-radius:999px;background:var(--aq-blue-50);color:var(--aq-blue-500);font-size:13px;font-weight:700}
+.aq-smartlink-list{list-style:none;margin:20px 0 0;padding:0;display:grid;gap:8px;text-align:left}
+.aq-smartlink-list a{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:52px;padding:0 16px;border:1px solid var(--aq-gray-150);border-radius:var(--aq-r-lg);color:var(--portal-ink);font-weight:700;text-decoration:none}
+.aq-smartlink-list a:hover,.aq-smartlink-list a:focus-visible{border-color:var(--aq-blue-500);background:var(--aq-blue-50)}
+.aq-smartlink-list b{font-size:13px;color:var(--aq-blue-500);padding:5px 12px;border-radius:999px;background:var(--aq-blue-50)}
+.aq-smartlink-foot{margin:20px 0 0;font-size:11px;letter-spacing:.04em;color:var(--aq-text-4)}
+.aq-smartlink.is-missing h1{margin-top:0}
+/* 발매 상세 스마트링크 카드 */
+.aq-smartlink-edit{margin-top:16px}
+.aq-smartlink-url{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0 12px}
+.aq-smartlink-url code{flex:1 1 220px;min-width:0;overflow-wrap:anywhere;padding:8px 10px;border-radius:var(--aq-r-md);background:var(--aq-gray-50)}
+.aq-smartlink-rows{display:grid;gap:8px}
+.aq-smartlink-row{display:grid;grid-template-columns:110px minmax(0,1fr) 64px;gap:8px;align-items:center}
+.aq-smartlink-row small{text-align:right;color:var(--aq-text-3)}
+@media(max-width:560px){.aq-smartlink-row{grid-template-columns:1fr auto}.aq-smartlink-row input{grid-column:1/-1;grid-row:2}}

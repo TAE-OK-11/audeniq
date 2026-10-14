@@ -1,0 +1,97 @@
+// 스마트링크 — 발매 하나의 공유 페이지(/l/코드). 플랫폼별 링크를 붙여 넣으면 한 주소로 모아 보여 주고,
+// 최근 30일 조회·클릭 수를 보여 준다. 링크는 각 플랫폼 주소(https)만 받는다.
+import { useCallback, useEffect, useState } from 'react';
+import { orgPath, req } from '../api/http';
+import { errorMessage } from '../api/errors';
+import { MOCK } from '../lib/mode';
+import { PLATFORM_NAMES } from '../lib/platformNames';
+import { useToast } from './Toast';
+
+interface State {
+  link: { slug: string; enabled: boolean; links: Record<string, string> } | null;
+  stats: { views: number; clicks: Record<string, number>; days: number };
+  platforms: string[]; can_create: boolean;
+}
+
+const pageUrl = (slug: string) => `${window.location.origin}/l/${slug}`;
+
+export function SmartLinkCard({ releaseId }: { releaseId: string }) {
+  const toast = useToast();
+  const [st, setSt] = useState<State | null>(null);
+  const [edit, setEdit] = useState(false);
+  const [links, setLinks] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const base = useCallback(() => orgPath(`/releases/${encodeURIComponent(releaseId)}/smart-link`), [releaseId]);
+  const load = useCallback(async () => {
+    if (MOCK) return;
+    try { setSt(await req<State>(base(), { quiet401: true })); } catch { /* 볼 수 없으면 숨긴다 */ }
+  }, [base]);
+  useEffect(() => { void load(); }, [load]);
+  if (!st || (!st.link && !st.can_create)) return null;
+  const l = st.link;
+
+  const save = async (enabled: boolean, next: Record<string, string>) => {
+    setBusy(true);
+    try {
+      await req(base(), { method: 'PUT', body: { enabled, links: next } });
+      toast(enabled ? '스마트링크를 저장했어요.' : '스마트링크를 껐어요.', 'success');
+      setEdit(false);
+      await load();
+    } catch (e) {
+      toast(errorMessage(e), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const start = () => { setLinks({ ...(l?.links ?? {}) }); setEdit(true); };
+  const copy = (slug: string) => {
+    void navigator.clipboard?.writeText(pageUrl(slug)).then(() => toast('링크를 복사했어요.', 'success'), () => toast('복사하지 못했어요.', 'error'));
+  };
+  const clicks = Object.values(st.stats.clicks).reduce((a, b) => a + b, 0);
+
+  return (
+    <section className="ui-card aq-smartlink-edit" aria-labelledby="smartlinkHeading">
+      <h2 id="smartlinkHeading">스마트링크</h2>
+      <p className="ui-field-help">플랫폼별 앨범 링크를 한 주소로 모아 SNS·프로필에 공유할 수 있어요.</p>
+      {l && (
+        <>
+          {l.enabled ? (
+            <div className="aq-smartlink-url">
+              <code>{pageUrl(l.slug)}</code>
+              <button type="button" className="ui-btn is-soft is-sm" onClick={() => copy(l.slug)}>복사</button>
+              <a className="ui-btn is-text is-sm" href={`/l/${l.slug}`} target="_blank" rel="noopener noreferrer">열기</a>
+            </div>
+          ) : <p className="small muted">꺼져 있어요. 켜면 같은 주소로 다시 열려요.</p>}
+          <p className="small">최근 {st.stats.days}일 · 조회 <b>{st.stats.views.toLocaleString()}</b> · 클릭 <b>{clicks.toLocaleString()}</b>
+            {clicks > 0 && <span className="muted"> ({Object.entries(st.stats.clicks).sort((a, b) => b[1] - a[1]).map(([p, n]) => `${PLATFORM_NAMES[p] ?? p} ${n}`).join(', ')})</span>}
+          </p>
+        </>
+      )}
+      {!edit && (
+        <div className="aq-confirm-actions" style={{ justifyContent: 'flex-start' }}>
+          <button type="button" className="ui-btn is-soft" onClick={start}>{l ? '링크 수정' : '스마트링크 만들기'}</button>
+          {l && <button type="button" className="ui-btn is-text" disabled={busy} onClick={() => void save(!l.enabled, l.links)}>{l.enabled ? '끄기' : '켜기'}</button>}
+        </div>
+      )}
+      {edit && (
+        <div className="aq-correction-form">
+          <div className="aq-smartlink-rows">
+            {st.platforms.map(p => (
+              <div key={p} className="aq-smartlink-row">
+                <label htmlFor={`sl-${p}`}>{PLATFORM_NAMES[p] ?? p}</label>
+                <input id={`sl-${p}`} className="ui-input" type="url" inputMode="url" maxLength={500} placeholder="https://"
+                  value={links[p] ?? ''} onChange={e => setLinks(x => ({ ...x, [p]: e.target.value }))} />
+                <small>{st.stats.clicks[p] ? `${st.stats.clicks[p]}회` : ''}</small>
+              </div>
+            ))}
+          </div>
+          <p className="small muted">발매 전이면 링크 없이 먼저 만들어 두고, 플랫폼에 올라오면 링크를 채워 주세요.</p>
+          <div className="aq-confirm-actions">
+            <button type="button" className="ui-btn is-soft" onClick={() => setEdit(false)} disabled={busy}>닫기</button>
+            <button type="button" className="ui-btn is-primary" onClick={() => void save(l?.enabled ?? true, links)} disabled={busy}>{busy ? '저장 중' : '저장'}</button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
