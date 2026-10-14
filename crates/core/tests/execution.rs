@@ -5926,3 +5926,183 @@ async fn revenue_splits_from_application_to_collaborator_balances(pool: PgPool) 
         assert_eq!(net, Decimal::ZERO);
     }
 }
+
+/// Platform requests: profile and Content ID requests are filed with checked
+/// links, tracked through staff steps (each an event the artist sees), and a
+/// resolved Content ID request becomes the release's Content ID state.
+#[sqlx::test]
+async fn platform_requests_track_profile_and_content_id_work(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let base = format!("/api/orgs/{}/platform-requests", ctx.org);
+    let release = ctx.release.to_string();
+    let file = |body: Value| {
+        let (app, user, base) = (ctx.app.clone(), ctx.user.clone(), base.clone());
+        async move { call(&app, "POST", &base, body, Some(&user)).await }
+    };
+    // Wrong page on Melon: the link must be Melon's.
+    let (_, v) = file(json!({"kind": "PROFILE_MISMATCH", "platform": "melon", "release_id": release, "artist_name": "Test Artist",
+                            "urls": ["https://evil.example/artist/1"]})).await;
+    assert_eq!(v["error"]["code"], "PLATFORM_REQUEST_URL_INVALID", "{v}");
+    let (_, v) = file(
+        json!({"kind": "PROFILE_MISMATCH", "platform": "melon", "artist_name": "Test Artist",
+                            "urls": ["https://www.melon.com/artist/detail.htm?artistId=1"]}),
+    )
+    .await;
+    assert_eq!(
+        v["error"]["code"], "PLATFORM_REQUEST_RELEASE_REQUIRED",
+        "{v}"
+    );
+    let (_, v) = file(
+        json!({"kind": "PROFILE_MERGE", "platform": "spotify", "artist_name": "Test Artist",
+                            "urls": ["https://open.spotify.com/artist/a"]}),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "PLATFORM_REQUEST_URL_REQUIRED", "{v}");
+    let (s, v) = file(json!({"kind": "PROFILE_MISMATCH", "platform": "melon", "release_id": release, "artist_name": "Test Artist",
+                            "urls": ["https://www.melon.com/artist/detail.htm?artistId=1"], "description": "동명이인 페이지에 올라갔어요"})).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let profile = v["id"].as_str().unwrap().to_string();
+    let (_, v) = file(json!({"kind": "PROFILE_MISMATCH", "platform": "melon", "release_id": release, "artist_name": "Test Artist",
+                            "urls": ["https://www.melon.com/artist/detail.htm?artistId=1"]})).await;
+    assert_eq!(v["error"]["code"], "PLATFORM_REQUEST_ALREADY_OPEN", "{v}");
+    // Content ID: allowlist the artist's own channel; the platform is YouTube whatever was sent.
+    let (_, v) = file(json!({"kind": "CID_ALLOWLIST", "platform": "melon", "release_id": release, "artist_name": "Test Artist",
+                            "urls": ["https://www.youtube.com/@testartist"]})).await;
+    let allow = v["id"].as_str().expect("allowlist id").to_string();
+    let (_, v) = file(json!({"kind": "CID_DISPUTE", "artist_name": "Test Artist", "urls": ["https://youtu.be/abc"], "description": "짧음"})).await;
+    assert_eq!(
+        v["error"]["code"], "PLATFORM_REQUEST_DESCRIPTION_REQUIRED",
+        "{v}"
+    );
+
+    let (_, list) = call(
+        &ctx.app,
+        "GET",
+        &format!("{base}?group=content_id"),
+        Value::Null,
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(list["items"].as_array().unwrap().len(), 1, "{list}");
+    assert_eq!(list["items"][0]["platform"], "youtube");
+
+    // Staff work them; a reviewer without the delivery duty cannot.
+    let reviewer = staff_user(&ctx.app, &pool, "REVIEWER").await;
+    let (s, _) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/platform-requests",
+        Value::Null,
+        Some(&reviewer),
+    )
+    .await;
+    assert_ne!(s, StatusCode::OK);
+    let op = staff_user(&ctx.app, &pool, "OPERATOR").await;
+    let (_, q) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/platform-requests",
+        Value::Null,
+        Some(&op),
+    )
+    .await;
+    assert_eq!(q["items"].as_array().unwrap().len(), 2, "{q}");
+    let step = |id: &str, body: Value| {
+        let (app, op, path) = (
+            ctx.app.clone(),
+            op.clone(),
+            format!("/api/staff/platform-requests/{id}/status"),
+        );
+        async move { call(&app, "POST", &path, body, Some(&op)).await }
+    };
+    let (_, v) = step(&profile, json!({"status": "SENT_TO_PLATFORM"})).await;
+    assert_eq!(v["error"]["code"], "PLATFORM_REQUEST_REF_REQUIRED", "{v}");
+    let (s, _) = step(
+        &profile,
+        json!({"status": "SENT_TO_PLATFORM", "platform_ref": "MELON-CS-123"}),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &format!("{base}/{profile}/cancel"),
+        json!({}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(
+        v["error"]["code"], "PLATFORM_REQUEST_NOT_CANCELLABLE",
+        "sent requests stay: {v}"
+    );
+    let (s, _) = step(
+        &profile,
+        json!({"status": "RESOLVED", "note": "올바른 아티스트 페이지로 옮겨졌어요."}),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (s, _) = step(&profile, json!({"status": "IN_PROGRESS"})).await;
+    assert_eq!(s, StatusCode::CONFLICT, "finished requests do not move");
+    let (_, list) = call(
+        &ctx.app,
+        "GET",
+        &format!("{base}?group=profile"),
+        Value::Null,
+        Some(&ctx.user),
+    )
+    .await;
+    let item = &list["items"][0];
+    assert_eq!(
+        (item["status"].as_str(), item["platform_ref"].as_str()),
+        (Some("RESOLVED"), Some("MELON-CS-123"))
+    );
+    let steps: Vec<&str> = item["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["status"].as_str().unwrap())
+        .collect();
+    assert_eq!(steps, ["SUBMITTED", "SENT_TO_PLATFORM", "RESOLVED"]);
+    let told: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM portal.notifications WHERE org_id=$1 AND title LIKE '%오매칭 수정 요청이 처리됐어요.')")
+        .bind(ctx.org).fetch_one(&pool).await.unwrap();
+    assert!(told);
+
+    // Resolving the allowlist adds the channel to the release's Content ID state.
+    let cid = format!("/api/orgs/{}/releases/{}/content-id", ctx.org, ctx.release);
+    let (_, st) = call(&ctx.app, "GET", &cid, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(
+        (st["enabled"].as_bool(), st["monetization"].as_str()),
+        (Some(true), Some("UNKNOWN"))
+    );
+    let (s, _) = step(&allow, json!({"status": "RESOLVED"})).await;
+    assert_eq!(s, StatusCode::OK);
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &format!("/api/staff/releases/{}/content-id", ctx.release),
+        json!({"monetization": "MONETIZING"}),
+        Some(&op),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, st) = call(&ctx.app, "GET", &cid, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(
+        st["allowlisted_channels"],
+        json!(["https://www.youtube.com/@testartist"]),
+        "{st}"
+    );
+    assert_eq!(st["monetization"], "MONETIZING");
+    // Opting out is a request too; resolved, Content ID is off.
+    let (_, v) =
+        file(json!({"kind": "CID_OPT_OUT", "release_id": release, "artist_name": "Test Artist"}))
+            .await;
+    let out = v["id"].as_str().unwrap().to_string();
+    step(&out, json!({"status": "RESOLVED"})).await;
+    let (_, st) = call(&ctx.app, "GET", &cid, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(st["enabled"], false, "{st}");
+    assert_eq!(
+        st["allowlisted_channels"].as_array().unwrap().len(),
+        1,
+        "kept: {st}"
+    );
+}

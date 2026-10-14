@@ -61,6 +61,7 @@ const Agreement = lazyPage(pageLoaders.Agreement, m => m.Agreement);
 const Rights = lazyPage(pageLoaders.Rights, m => m.Rights);
 const RightsDocument = lazyPage(pageLoaders.RightsDocument, m => m.RightsDocument);
 const Inquiries = lazyPage(pageLoaders.Inquiries, m => m.Inquiries);
+const PlatformRequests = lazyPage(pageLoaders.PlatformRequests, m => m.PlatformRequests);
 const Notifications = lazyPage(pageLoaders.Notifications, m => m.Notifications);
 const Events = lazyPage(pageLoaders.Events, m => m.Events);
 const Notices = lazyPage(pageLoaders.Notices, m => m.Notices);
@@ -124,6 +125,7 @@ function PortalRoutes() {
             <Route path="/rights" element={<Rights />} />
             <Route path="/rights/:id" element={<RightsDocument />} />
             <Route path="/inquiries" element={<Inquiries />} />
+            <Route path="/platform-requests" element={<PlatformRequests />} />
             <Route path="/notifications" element={<Notifications />} />
             <Route path="/events" element={<Events />} />
             <Route path="/notices" element={<Notices />} />

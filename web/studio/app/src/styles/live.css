@@ -921,3 +921,12 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 .aq-preview-row{display:grid;grid-template-columns:minmax(0,1fr) 96px;gap:8px;align-items:center}
 .aq-preview-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .aq-preview-row .ui-input[aria-invalid=true]{border-color:#d92d20}
+/* 플랫폼 요청 */
+.aq-preq-form{display:grid;gap:12px;margin:12px 0 20px}
+.aq-preq-list{display:grid;gap:10px}
+.aq-preq-item summary{display:flex;justify-content:space-between;gap:12px;align-items:center;cursor:pointer;list-style:none}
+.aq-preq-item summary::-webkit-details-marker{display:none}
+.aq-preq-steps{margin:12px 0 0;padding-left:18px;display:grid;gap:4px}
+.aq-preq-steps p{margin:2px 0 0}
+.aq-preq-urls{margin:8px 0;padding-left:18px;font-size:13px;overflow-wrap:anywhere}
+.aq-cid-card{margin-top:16px}
