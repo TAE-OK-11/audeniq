@@ -501,7 +501,7 @@ export function ReleaseDetail() {
             <SplitsCard releaseId={rel.id} />
             {!isDraft && <SmartLinkCard releaseId={rel.id} />}
             {!isDraft && <ContentIdCard releaseId={rel.id} />}
-            {!isDraft && <TermCard releaseId={rel.id} />}
+            {!isDraft && !rejected && rel.status !== 'cancelled' && rel.status !== 'closed' && <TermCard releaseId={rel.id} />}
             {!isDraft && <PitchCard releaseId={rel.id} />}
             {!isDraft && <CorrectionCard releaseId={rel.id} />}
             {!isDraft && <InfringementCard releaseId={rel.id} />}

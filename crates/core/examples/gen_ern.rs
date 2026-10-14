@@ -18,6 +18,7 @@ fn main() {
         recipient_party_id: Some("PADPIDA2026092501M".into()),
         deal_start_date: "2026-10-01".into(),
         takedown_date: None,
+        artist_party_id: None,
     };
     print!("{}", generate_ddex_ern_382(&p, &c).unwrap());
 }

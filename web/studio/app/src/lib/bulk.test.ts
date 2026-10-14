@@ -78,4 +78,31 @@ describe('bulk payloads', () => {
     expect(p.tracks[0]).toMatchObject({ serverId: 's1', assetId: 'as1', lyrics: '가사', title: '첫눈 (겨울)' });
     expect(p.tracks[1].title).toBe('둘째 곡');
   });
+
+  it('uses saved tracks when the draft has no wizard tracks, and exports release-only rows', () => {
+    const base = { id: 'r2', title: '봄', status: 'draft', release_date: '2027-03-01', created_at: '', track_count: 1 };
+    const d = { ...base, tracks: [{ id: 's9', title: '봄', duration_ms: null, isrc: 'KRA012600009', assetId: 'a9' }], draft: { artist: '한결' } } as unknown as ReleaseDetail;
+    expect(payloadFromDetail(d).tracks[0]).toMatchObject({ serverId: 's9', assetId: 'a9', isrc: 'KRA012600009' });
+    const empty = { ...base, tracks: [], draft: { artist: '한결', genre: 'Ballad', label: 'L' } } as unknown as ReleaseDetail;
+    const rows = rowsFromDetail(empty);
+    expect(rows).toHaveLength(1);
+    expect(validate(rows, 'edit').filter(i => i.column === 'track_no' || i.column === 'track_title')).toEqual([]);
+    expect(applyEdit(payloadFromDetail(empty), groups(rows)[0]).tracks).toEqual([]);
+  });
+
+  it('keeps track numbers when an untitled track is skipped, and drops a pre-order that no longer fits', () => {
+    const t = (id: string, title: string) => ({ id, serverId: id, title, version: '', isrc: '', composers: '', lyricists: '', arrangers: '',
+      performers: '', producer: '', lyrics: '', audioName: '', audioSize: 0, explicit: false, duration: '' });
+    const d = {
+      id: 'r3', title: 'EP', status: 'draft', release_date: '2027-02-01', created_at: '', track_count: 2, tracks: [],
+      draft: { artist: '서린', preorder_start: '2027-01-20', draftTracks: [t('a', ''), t('b', '둘')] },
+    } as unknown as ReleaseDetail;
+    const rows = rowsFromDetail(d);
+    expect(rows.map(r => r.track_no)).toEqual(['2']);
+    const p = applyEdit(payloadFromDetail(d), groups(rows)[0]);
+    expect(p.tracks[1]).toMatchObject({ serverId: 'b', title: '둘' });
+    expect(p.preorder_start).toBe('2027-01-20');
+    const moved = applyEdit(payloadFromDetail(d), groups(rows.map(r => ({ ...r, release_date: '2027-06-01' })))[0]);
+    expect(moved.preorder_start).toBeUndefined();
+  });
 });
