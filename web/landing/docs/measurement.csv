@@ -7,3 +7,16 @@ observed_at,phase,deployed_at,source,metric,value,unit,query,page_url,notes
 2026-10-08,predeploy,,search_console,indexed_pages,,count,,,Unavailable; not assumed zero
 2026-10-08,predeploy,,naver_search_advisor,indexed_pages,,count,,,Unavailable; not assumed zero
 2026-10-08,predeploy,,ai_search,cited_urls,,count,,,Not measured
+2026-10-10,predeploy,,public_http,homepage_status,200,http_status,,https://audeniq.com/,Live build hash 34eff2c9 (before this change)
+2026-10-10,predeploy,,public_http,sitemap_url_count,6,urls,,https://audeniq.com/sitemap.xml,Korean only; no hreflang
+2026-10-10,predeploy,,public_http,language_versions,1,count,,https://audeniq.com/en/,/en/ returned 404
+2026-10-10,predeploy,,public_http,www_status,,http_status,,https://www.audeniq.com/,No DNS record; not reachable
+2026-10-10,predeploy,,crawler_ua,googlebot_bingbot_yeti_oai_perplexity_claude_status,200,http_status,,https://audeniq.com/,UA-string requests only; verified-bot handling not observable
+2026-10-10,predeploy,,lighthouse_lab_live,performance_score_home,88,score,,https://audeniq.com/,Mobile lab; includes Cloudflare challenge script; TBT 390 ms; not field data
+2026-10-10,predeploy,,lighthouse_lab_local,cls_slow_mobile_home,0.388,cls,,https://audeniq.com/,CPU 6x + 150 ms latency; mobile menu collapse
+2026-10-10,postbuild,,lighthouse_lab_local,cls_slow_mobile_home,0,cls,,https://audeniq.com/,Same conditions after fix; not deployed
+2026-10-10,postbuild,,local_build,public_url_count,24,urls,,https://audeniq.com/sitemap.xml,14 languages; ko/en guides
+2026-10-10,predeploy,,search_console,impressions_by_language,,count,,,Unavailable; not assumed zero
+2026-10-10,predeploy,,search_console,brand_vs_nonbrand_clicks,,count,,,Unavailable; not assumed zero
+2026-10-10,predeploy,,bing_webmaster,indexed_pages,,count,,,Unavailable; not assumed zero
+2026-10-10,predeploy,,ai_search,cited_answers,,count,,,Not measured; use the question set in docs/SEARCH.md

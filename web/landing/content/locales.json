@@ -1,0 +1,21 @@
+{
+  "_comment": "Language registry for audeniq.com. Add a language by creating content/i18n/<code>.json and an entry here. Only status \"published\" is built, routed, linked with hreflang and listed in the sitemap; use \"draft\" while a translation is under review.",
+  "default": "ko",
+  "xDefault": "en",
+  "locales": [
+    {"code": "ko", "lang": "ko", "hreflang": "ko", "prefix": "/", "ogLocale": "ko_KR", "name": "한국어", "dir": "ltr", "status": "published"},
+    {"code": "en", "lang": "en", "hreflang": "en", "prefix": "/en/", "ogLocale": "en_US", "name": "English", "dir": "ltr", "status": "published"},
+    {"code": "ja", "lang": "ja", "hreflang": "ja", "prefix": "/ja/", "ogLocale": "ja_JP", "name": "日本語", "dir": "ltr", "status": "published", "fonts": "system"},
+    {"code": "zh-CN", "lang": "zh-CN", "hreflang": "zh-CN", "prefix": "/zh-cn/", "ogLocale": "zh_CN", "name": "简体中文", "dir": "ltr", "status": "published", "fonts": "system"},
+    {"code": "zh-TW", "lang": "zh-TW", "hreflang": "zh-TW", "prefix": "/zh-tw/", "ogLocale": "zh_TW", "name": "繁體中文", "dir": "ltr", "status": "published", "fonts": "system"},
+    {"code": "es", "lang": "es", "hreflang": "es", "prefix": "/es/", "ogLocale": "es_ES", "name": "Español", "dir": "ltr", "status": "published"},
+    {"code": "pt-BR", "lang": "pt-BR", "hreflang": "pt-BR", "prefix": "/pt-br/", "ogLocale": "pt_BR", "name": "Português (Brasil)", "dir": "ltr", "status": "published"},
+    {"code": "fr", "lang": "fr", "hreflang": "fr", "prefix": "/fr/", "ogLocale": "fr_FR", "name": "Français", "dir": "ltr", "status": "published"},
+    {"code": "de", "lang": "de", "hreflang": "de", "prefix": "/de/", "ogLocale": "de_DE", "name": "Deutsch", "dir": "ltr", "status": "published"},
+    {"code": "id", "lang": "id", "hreflang": "id", "prefix": "/id/", "ogLocale": "id_ID", "name": "Bahasa Indonesia", "dir": "ltr", "status": "published"},
+    {"code": "vi", "lang": "vi", "hreflang": "vi", "prefix": "/vi/", "ogLocale": "vi_VN", "name": "Tiếng Việt", "dir": "ltr", "status": "published", "fonts": "system"},
+    {"code": "th", "lang": "th", "hreflang": "th", "prefix": "/th/", "ogLocale": "th_TH", "name": "ไทย", "dir": "ltr", "status": "published"},
+    {"code": "hi", "lang": "hi", "hreflang": "hi", "prefix": "/hi/", "ogLocale": "hi_IN", "name": "हिन्दी", "dir": "ltr", "status": "published"},
+    {"code": "ar", "lang": "ar", "hreflang": "ar", "prefix": "/ar/", "ogLocale": "ar_AR", "name": "العربية", "dir": "rtl", "status": "published"}
+  ]
+}

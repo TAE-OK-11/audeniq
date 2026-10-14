@@ -22,6 +22,8 @@ const PLATFORMS: [string, string][] = [
   ['spotify', 'Spotify'], ['apple', 'Apple Music'], ['youtube', 'YouTube Music'],
 ];
 const platformName = (slug: string) => PLATFORMS.find(([s]) => s === slug)?.[1] ?? slug;
+const initialPick = (p: PitchItem) =>
+  (p.platforms.length ? p.platforms : p.platforms_requested ?? []).filter(s => PLATFORMS.some(([k]) => k === s));
 
 export function Pitches() {
   const toast = useToast();
@@ -47,7 +49,7 @@ export function Pitches() {
     }
   };
   const toggle = (p: PitchItem, slug: string) => setPicked(m => {
-    const cur = m[p.id] ?? p.platforms_requested ?? [];
+    const cur = m[p.id] ?? initialPick(p);
     return { ...m, [p.id]: cur.includes(slug) ? cur.filter(x => x !== slug) : [...cur, slug] };
   });
 
@@ -67,7 +69,7 @@ export function Pitches() {
       ) : (
         <div className="ui-list">
           {items.map(p => {
-            const sel = picked[p.id] ?? (p.platforms.length ? p.platforms : p.platforms_requested ?? []);
+            const sel = picked[p.id] ?? initialPick(p);
             const open = p.status === 'SUBMITTED' || p.status === 'IN_REVIEW';
             return (
               <div key={p.id} className="ui-card">

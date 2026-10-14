@@ -68,9 +68,8 @@ fn pct(bps: i32) -> String {
     if bps % 100 == 0 {
         format!("{}%", bps / 100)
     } else {
-        format!("{}.{:02}%", bps / 100, bps % 100)
-            .trim_end_matches('0')
-            .to_string()
+        let frac = format!("{:02}", bps % 100);
+        format!("{}.{}%", bps / 100, frac.trim_end_matches('0'))
     }
 }
 
@@ -259,6 +258,13 @@ pub async fn save(
     if !editable(&mut tx, org, release).await? {
         return Err(Error::PolicyGate("SPLIT_LOCKED"));
     }
+    // One save of a release's sheet at a time: two tabs adding different
+    // people must not together pass 100% on a track.
+    sqlx::query("SELECT 1 FROM catalog.releases WHERE org_id=$1 AND id=$2 FOR UPDATE")
+        .bind(org)
+        .bind(release)
+        .execute(&mut *tx)
+        .await?;
     let mut invited = 0;
     for (track, rows) in plan {
         let ok: bool = sqlx::query_scalar(
@@ -633,10 +639,13 @@ pub async fn dispatch_once(pool: &PgPool, keys: &KeyRing, mailer: &Mailer) -> Re
     for row in &rows {
         let id: Uuid = row.get("id");
         let attempts: i32 = row.get("invite_attempts");
+        // Every write below is conditional on the row still being the one we
+        // leased: a re-invite in between (new share, attempts reset) wins.
         let done = |status: &'static str| async move {
-            sqlx::query("UPDATE portal.split_shares SET invite_status=$2 WHERE id=$1")
+            sqlx::query("UPDATE portal.split_shares SET invite_status=$2 WHERE id=$1 AND invite_attempts=$3 AND invite_status='PENDING'")
                 .bind(id)
                 .bind(status)
+                .bind(attempts)
                 .execute(pool)
                 .await
                 .map(|_| ())
@@ -652,13 +661,21 @@ pub async fn dispatch_once(pool: &PgPool, keys: &KeyRing, mailer: &Mailer) -> Re
         };
         let token = auth::random_token();
         // The link in this mail is the only valid one from now on.
-        sqlx::query(
-            "UPDATE portal.split_shares SET invite_token_hash=$2 WHERE id=$1 AND status='INVITED'",
+        let current = sqlx::query(
+            "UPDATE portal.split_shares SET invite_token_hash=$2
+              WHERE id=$1 AND status='INVITED' AND invite_attempts=$3 AND invite_status='PENDING' AND share_bps=$4",
         )
         .bind(id)
         .bind(crate::domain::sha256_hex(&token))
+        .bind(attempts)
+        .bind(row.get::<i32, _>("share_bps"))
         .execute(pool)
-        .await?;
+        .await?
+        .rows_affected();
+        if current != 1 {
+            // Changed since we leased it; the new version is sent on its own.
+            continue;
+        }
         let mail = render(
             &mailer.origin,
             &token,
@@ -672,9 +689,10 @@ pub async fn dispatch_once(pool: &PgPool, keys: &KeyRing, mailer: &Mailer) -> Re
             Err(Error::PolicyGate("EMAIL_ADDRESS_INVALID")) => done("FAILED").await?,
             Err(_) if attempts >= MAX_ATTEMPTS => done("FAILED").await?,
             Err(_) => {
-                sqlx::query("UPDATE portal.split_shares SET invite_next_at=now() + make_interval(secs => $2) WHERE id=$1")
+                sqlx::query("UPDATE portal.split_shares SET invite_next_at=now() + make_interval(secs => $2) WHERE id=$1 AND invite_attempts=$3")
                     .bind(id)
                     .bind(backoff_seconds(attempts))
+                    .bind(attempts)
                     .execute(pool)
                     .await?;
             }

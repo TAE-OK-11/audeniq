@@ -1,0 +1,28 @@
+/* Added only to non-Korean pages. The Korean design tokens stay unchanged; these
+   rules give each script a suitable font, line breaking and direction. */
+:root{--font-fallback:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans",Arial,sans-serif}
+/* CJK: platform fonts (Pretendard would draw Korean-style Hanja) and normal CJK line breaking. */
+html[lang=ja]{--font-body:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Yu Gothic",Meiryo,sans-serif}
+html[lang=zh-CN]{--font-body:-apple-system,BlinkMacSystemFont,"PingFang SC","Noto Sans SC","Microsoft YaHei","Source Han Sans SC",sans-serif}
+html[lang=zh-TW]{--font-body:-apple-system,BlinkMacSystemFont,"PingFang TC","Noto Sans TC","Microsoft JhengHei","Source Han Sans TC",sans-serif}
+html[lang=ja],html[lang^=zh]{--tracking-heading:-.02em;--tracking-hero:-.03em}
+html[lang=ja] body,html[lang^=zh] body{word-break:normal;line-break:strict}
+/* Vietnamese tone marks are outside Pretendard's subsets. */
+html[lang=vi]{--font-body:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans",Arial,sans-serif}
+/* Thai, Devanagari and Arabic: Pretendard for Latin, a native font for the script, no letter-spacing. */
+html[lang=th]{--font-fallback:"Noto Sans Thai","Leelawadee UI",Thonburi,Tahoma,sans-serif}
+html[lang=hi]{--font-fallback:"Noto Sans Devanagari","Nirmala UI","Kohinoor Devanagari",Mangal,sans-serif}
+html[lang=ar]{--font-fallback:"Noto Sans Arabic","Segoe UI","Geeza Pro",Tahoma,Arial,sans-serif}
+html[lang=th] *,html[lang=hi] *,html[lang=ar] *{letter-spacing:0!important}
+html[lang=th] :is(h1,h2,h3),html[lang=hi] :is(h1,h2,h3),html[lang=ar] :is(h1,h2,h3){line-height:1.5}
+/* Right-to-left mirroring for Arabic. */
+html[dir=rtl] .skip-link{left:auto;right:20px}
+html[dir=rtl] .journey{text-align:right}
+html[dir=rtl] .journey li+li:before{content:'←';left:auto;right:-10px}
+html[dir=rtl] .footer-brand{margin-left:0;margin-right:-10px}
+html[dir=rtl] .footer-bottom a{margin-left:0;margin-right:auto}
+html[dir=rtl] .email>span{margin-left:0;margin-right:12px}
+html[dir=rtl] .reach-word>.reach-local>span{margin-left:0;margin-right:24px}
+html[dir=rtl] :is(.button>span,.service-caption>span,.email>span,.social-links a span,.reach-local>span){display:inline-block;transform:scaleX(-1)}
+@media(max-width:760px){html[dir=rtl] .about{text-align:right}html[dir=rtl] .brand{margin-left:0;margin-right:-8px}html[dir=rtl] .site-header .menu-toggle:not([hidden]){margin-right:0;margin-left:-10px}html[dir=rtl] .reach-word span{margin-left:0;margin-right:14px}}
+@media(max-width:359px){html[dir=rtl] .footer-bottom a{margin-right:0}}

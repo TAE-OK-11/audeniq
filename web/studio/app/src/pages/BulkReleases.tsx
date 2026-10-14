@@ -4,7 +4,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from '../lib/router';
 import { api } from '../api/client';
-import { errorMessage } from '../api/errors';
+import { PartialSaveError, errorMessage } from '../api/errors';
 import { useToast } from '../components/Toast';
 import {
   COLUMNS, TEMPLATE_ROWS, applyEdit, createPayload, groups, payloadFromDetail, readRows, rowsFromDetail, toCsv, validate,
@@ -31,6 +31,8 @@ export function BulkReleases() {
   const [busy, setBusy] = useState('');
   const [results, setResults] = useState<Result[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
+  // 대량 등록 중 저장이 중간에 끊긴 발매 — 다시 저장할 때 새로 만들지 않고 이어서 쓴다 (발매묶음 → 발매 ID)
+  const partial = useRef(new Map<string, string>());
 
   const issues = useMemo(() => validate(rows, mode), [rows, mode]);
   const byCell = useMemo(() => {
@@ -43,7 +45,7 @@ export function BulkReleases() {
   const ready = all.filter(g => g.rows.every(r => !badRows.has(r.line)));
   const shownCols = COLUMNS.filter(c => mode === 'edit' ? c.key !== 'release_key' : c.key !== 'release_id');
 
-  const switchMode = (m: Mode) => { setRows([]); setResults([]); setHeadIssues([]); const n = new URLSearchParams(params); n.set('tab', m); setParams(n); };
+  const switchMode = (m: Mode) => { partial.current.clear(); setRows([]); setResults([]); setHeadIssues([]); const n = new URLSearchParams(params); n.set('tab', m); setParams(n); };
   const load = async (file: File) => {
     if (file.size > 2 * 1024 * 1024) { toast('2MB까지 올릴 수 있어요.', 'error'); return; }
     const { rows: r, issues: h } = readRows(await file.text());
@@ -69,7 +71,13 @@ export function BulkReleases() {
       const first = g.rows[0].row;
       setBusy(`${n + 1} / ${ready.length} 저장 중`);
       try {
-        if (mode === 'create') {
+        const resumeId = mode === 'create' ? partial.current.get(g.key) : undefined;
+        if (resumeId) {
+          const d = await api.getRelease(resumeId);
+          const r = await api.saveDraft(d.id, applyEdit(payloadFromDetail(d), g));
+          partial.current.delete(g.key);
+          done.push({ key: g.key, title: first.release_title, ok: true, id: r.id });
+        } else if (mode === 'create') {
           const r = await api.saveDraft(null, createPayload(g));
           done.push({ key: g.key, title: first.release_title, ok: true, id: r.id });
         } else {
@@ -79,6 +87,7 @@ export function BulkReleases() {
           done.push({ key: g.key, title: first.release_title, ok: true, id: r.id });
         }
       } catch (e) {
+        if (mode === 'create' && e instanceof PartialSaveError && e.releaseId) partial.current.set(g.key, e.releaseId);
         done.push({ key: g.key, title: first.release_title, ok: false, message: errorMessage(e) });
       }
       setResults([...done]);

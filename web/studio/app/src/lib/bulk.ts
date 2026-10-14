@@ -100,6 +100,8 @@ export function readRows(text: string): { rows: Row[]; issues: RowIssue[] } {
 // ---------------------------------------------------------------------------
 // 검사
 // ---------------------------------------------------------------------------
+/** 곡 칸이 모두 빈 줄 (발매 정보만) */
+export const isReleaseOnly = (r: Row) => !r.track_no && !r.track_title;
 export const groupKey = (r: Row) => r.release_id || r.release_key || `${r.release_title}\u0000${r.artist}`;
 
 /** 줄마다 위자드와 같은 규칙으로 검사한다. row는 머리글 다음 줄이 1. */
@@ -109,11 +111,16 @@ export function validate(rows: Row[], mode: 'create' | 'edit', today?: string): 
   const minDate = minReleaseDate(false, today);
   const groups = new Map<string, number[]>();
   rows.forEach((r, i) => {
-    for (const c of COLUMNS.filter(c => c.required)) if (!r[c.key]) add(i, c.key, `${c.label}을(를) 입력해 주세요.`);
+    // 일괄 수정: 곡이 없는 발매는 발매 정보만 담긴 줄로 내보낸다 — 곡 칸을 비워 두면 발매 정보만 고친다
+    const releaseOnly = mode === 'edit' && isReleaseOnly(r);
+    for (const c of COLUMNS.filter(c => c.required)) {
+      if (releaseOnly && (c.key === 'track_no' || c.key === 'track_title')) continue;
+      if (!r[c.key]) add(i, c.key, `${c.label}을(를) 입력해 주세요.`);
+    }
     if (mode === 'edit' && !r.release_id) add(i, 'release_id', '일괄 수정은 내보낸 파일의 발매ID가 필요해요.');
     if (mode === 'create' && r.release_id) add(i, 'release_id', '새로 만들 때는 발매ID를 비워 주세요. 고치려면 ‘일괄 수정’을 써 주세요.');
     const t = titleIssue(r.release_title ?? '', 'release'); if (t) add(i, 'release_title', t);
-    const tt = titleIssue(r.track_title ?? '', 'track'); if (tt) add(i, 'track_title', tt);
+    const tt = releaseOnly ? '' : titleIssue(r.track_title ?? '', 'track'); if (tt) add(i, 'track_title', tt);
     const a = artistIssue(r.artist ?? ''); if (a) add(i, 'artist', a);
     if (r.type && !KINDS.some(k => k[0] === r.type)) add(i, 'type', 'single · ep · album · compilation 중에서 적어 주세요.');
     if (r.language && !LANGUAGES.some(l => l[0] === r.language)) add(i, 'language', 'ko · en · ja · other 중에서 적어 주세요.');
@@ -200,6 +207,24 @@ export function createPayload(g: Group): ReleasePayload {
   };
 }
 
+/** 위자드 초안이 없는 발매는 저장된 곡 목록으로 곡 정보를 만든다 */
+function tracksFromDetail(d: ReleaseDetail): DraftTrack[] {
+  const saved = d.draft?.draftTracks ?? [];
+  if (saved.length) return saved.map(t => ({ ...t }));
+  return (d.tracks ?? []).map(t => ({
+    id: uid('t'), serverId: t.id, assetId: t.assetId ?? undefined, title: t.title, version: t.version ?? '',
+    isrc: t.isrc ?? '', composers: t.composers ?? '', lyricists: t.lyricists ?? '', arrangers: '', performers: '',
+    producer: '', lyrics: '', audioName: t.audioName ?? '', audioSize: 0, explicit: !!t.explicit, duration: '', featuring: '',
+  }));
+}
+
+/** 예약 판매 시작일은 발매일 1~90일 전이어야 한다 — 발매일을 바꿔 벗어나면 지운다 */
+export function preorderFits(preorder: string | undefined, releaseDate: string): boolean {
+  if (!preorder || !releaseDate) return false;
+  const days = (Date.parse(`${releaseDate}T00:00:00Z`) - Date.parse(`${preorder}T00:00:00Z`)) / 86_400_000;
+  return Number.isFinite(days) && days >= 1 && days <= 90;
+}
+
 /** 저장된 임시 발매를 다시 보낼 정보로 (일괄 수정의 바탕) */
 export function payloadFromDetail(d: ReleaseDetail): ReleasePayload {
   const x = d.draft;
@@ -208,7 +233,7 @@ export function payloadFromDetail(d: ReleaseDetail): ReleasePayload {
     genre: x?.genre ?? '', genreCustom: x?.genreCustom ?? '', label: x?.label ?? '', upc: x?.upc ?? '', notes: x?.notes ?? '',
     coverName: x?.coverName ?? '', coverData: x?.coverData ?? '', coverAssetId: x?.coverAssetId, coverThumbAssetId: x?.coverThumbAssetId,
     originalDate: x?.originalDate ?? '', release_date: d.release_date ?? '', release_time: x?.release_time, preorder_start: x?.preorder_start,
-    tracks: (x?.draftTracks ?? []).map(t => ({ ...t })), territories: x?.territories ?? ['WORLD'], platforms: x?.platforms ?? [],
+    tracks: tracksFromDetail(d), territories: x?.territories ?? ['WORLD'], platforms: x?.platforms ?? [],
     ownership: x?.ownership ?? '', phonogram: x?.phonogram ?? '', copyright: x?.copyright ?? '', rightsChecks: x?.rightsChecks ?? {},
     options: (x?.options ?? {}) as ReleaseOptionsData, lastStep: x?.lastStep, artistProfile: x?.artistProfile, application: x?.application,
   };
@@ -219,6 +244,7 @@ export function applyEdit(p: ReleasePayload, g: Group): ReleasePayload {
   const r = g.rows[0].row;
   const tracks = [...p.tracks];
   for (const { row } of g.rows) {
+    if (isReleaseOnly(row)) continue;
     const i = Number(row.track_no) - 1;
     const base = tracks[i];
     const next: DraftTrack = base ? {
@@ -232,6 +258,7 @@ export function applyEdit(p: ReleasePayload, g: Group): ReleasePayload {
     ...p, title: r.release_title, artist: r.artist, type: r.type || p.type, language: r.language || p.language,
     ...genreFields(r.genre ?? ''), label: r.label ?? '', upc: (r.upc ?? '').replace(/\D/g, ''),
     release_date: r.release_date ?? '', ownership: r.rights_holder || p.ownership,
+    preorder_start: preorderFits(p.preorder_start, r.release_date ?? '') ? p.preorder_start : undefined,
     tracks: tracks.filter(Boolean),
   };
 }
@@ -240,11 +267,12 @@ export function applyEdit(p: ReleasePayload, g: Group): ReleasePayload {
 export function rowsFromDetail(d: ReleaseDetail): Row[] {
   const p = payloadFromDetail(d);
   const genre = p.genre === '__other__' ? p.genreCustom : p.genre;
-  const tracks = p.tracks.length ? p.tracks : [undefined];
-  return tracks.map((t, i) => ({
+  const tracks = p.tracks.map((t, i) => ({ t, no: i + 1 })).filter(x => x.t.title.trim());
+  const list: { t?: DraftTrack; no: number }[] = tracks.length ? tracks : [{ no: 0 }];
+  return list.map(({ t, no }) => ({
     release_id: d.id, release_key: '', release_title: p.title, artist: p.artist, type: p.type, release_date: p.release_date,
     genre, language: p.language, label: p.label, upc: p.upc, rights_holder: p.ownership,
-    track_no: t ? String(i + 1) : '', track_title: t?.title ?? '', version: t?.version ?? '', featuring: t?.featuring ?? '',
+    track_no: t ? String(no) : '', track_title: t?.title ?? '', version: t?.version ?? '', featuring: t?.featuring ?? '',
     isrc: t?.isrc ?? '', composers: t?.composers ?? '', lyricists: t?.lyricists ?? '', arrangers: t?.arrangers ?? '',
     explicit: t?.explicit ? 'Y' : '',
   }));
