@@ -11,9 +11,9 @@ import { Badge, EmptyState, ErrorBox, NoDuty, PageHeader, SkeletonList, DELIVERY
 
 interface TermItem {
   release_id: string; title: string; org_name: string; end_date: string; reason: string; note: string; status: string;
-  final_settlement_due: string | null; set_by_staff: boolean;
+  final_settlement_due: string | null; set_by_staff: boolean; transfer_to?: string | null;
 }
-const REASON: Record<string, string> = { CONTRACT_END: '계약 종료', LICENSE_EXPIRY: '권리 만료', TERMINATION: '해지', ORG_CONTRACT_END: '계정 계약 종료' };
+const REASON: Record<string, string> = { CONTRACT_END: '계약 종료', LICENSE_EXPIRY: '권리 만료', TERMINATION: '해지', ORG_CONTRACT_END: '계정 계약 종료', TRANSFER: '유통사 이전' };
 
 export function Terms() {
   const toast = useToast();
@@ -80,6 +80,7 @@ export function Terms() {
                 </span>
                 <Badge tone={t.status === 'ENDED' ? 'amber' : 'blue'}>{t.status === 'ENDED' ? '최종 정산 대기' : '예정'}</Badge>
               </div>
+              {t.transfer_to && <p className="small">옮겨 갈 유통사: {t.transfer_to}</p>}
               {t.note && <p className="small muted">{t.note}</p>}
               {t.status === 'ENDED' && (
                 <div className="adm-form-actions">

@@ -57,7 +57,7 @@ fn note(v: &str) -> Result<String> {
     Ok(v.to_string())
 }
 
-const TERM_JSON: &str = "jsonb_build_object('release_id',t.release_id,'end_date',t.end_date,'reason',t.reason,'note',t.note,
+const TERM_JSON: &str = "jsonb_build_object('release_id',t.release_id,'end_date',t.end_date,'reason',t.reason,'note',t.note,'transfer_to',t.transfer_to,
     'status',t.status,'set_by_staff',t.set_by_staff,'ended_at',t.ended_at,'final_settlement_due',t.final_settlement_due,
     'final_settled_at',t.final_settled_at,'final_note',t.final_note,'created_at',t.created_at)";
 
@@ -93,10 +93,30 @@ pub async fn release_term(s: &AppState, a: &Actor, org: Uuid, release: Uuid) -> 
 #[serde(deny_unknown_fields)]
 pub struct TermInput {
     pub end_date: String,
-    /// CONTRACT_END or LICENSE_EXPIRY (artist); staff may also TERMINATION.
+    /// CONTRACT_END, LICENSE_EXPIRY or TRANSFER (artist); staff may also
+    /// TERMINATION.
     pub reason: String,
     #[serde(default)]
     pub note: String,
+    /// TRANSFER: the distributor taking the release over.
+    #[serde(default)]
+    pub transfer_to: Option<String>,
+}
+
+/// The new distributor's name, required for (and only for) a transfer.
+fn transfer_to(reason: &str, v: &Option<String>) -> Result<Option<String>> {
+    match (
+        reason,
+        v.as_deref().map(str::trim).filter(|s| !s.is_empty()),
+    ) {
+        ("TRANSFER", Some(name)) if name.chars().count() <= 200 => {
+            crate::text_policy::check(name)?;
+            Ok(Some(name.to_string()))
+        }
+        ("TRANSFER", _) => Err(Error::InvalidCode("TERM_TRANSFER_TO_REQUIRED")),
+        (_, None) => Ok(None),
+        (_, Some(_)) => Err(Error::Invalid),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -107,15 +127,16 @@ async fn upsert(
     end: NaiveDate,
     reason: &str,
     note: &str,
+    transfer_to: Option<&str>,
     user: Uuid,
     staff: bool,
 ) -> Result<()> {
     // An ended term stays: distribution cannot be revived by moving the date.
     let n = sqlx::query(
-        "INSERT INTO portal.release_terms(release_id, org_id, end_date, reason, note, set_by, set_by_staff)
-         VALUES($1,$2,$3,$4,$5,$6,$7)
+        "INSERT INTO portal.release_terms(release_id, org_id, end_date, reason, note, set_by, set_by_staff, transfer_to)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8)
          ON CONFLICT (release_id) DO UPDATE SET end_date=$3, reason=$4, note=$5, set_by=$6, set_by_staff=$7,
-                status='SCHEDULED', warned_at=NULL, updated_at=now()
+                transfer_to=$8, status='SCHEDULED', warned_at=NULL, updated_at=now()
           WHERE portal.release_terms.status IN ('SCHEDULED','CANCELLED')",
     )
     .bind(release)
@@ -125,6 +146,7 @@ async fn upsert(
     .bind(note)
     .bind(user)
     .bind(staff)
+    .bind(transfer_to)
     .execute(&mut *c)
     .await?
     .rows_affected();
@@ -144,14 +166,16 @@ pub async fn set_release_term(
 ) -> Result<Value> {
     let end = date(&i.end_date)?;
     let lead = (end - kst_today()).num_days();
+    // A transfer is a contract end on the switch date: same notice.
     match i.reason.as_str() {
-        "CONTRACT_END" if lead < NOTICE_DAYS => {
+        "CONTRACT_END" | "TRANSFER" if lead < NOTICE_DAYS => {
             return Err(Error::PolicyGate("TERM_NOTICE_TOO_SHORT"));
         }
         "LICENSE_EXPIRY" if lead < 1 => return Err(Error::PolicyGate("TERM_DATE_PAST")),
-        "CONTRACT_END" | "LICENSE_EXPIRY" => {}
+        "CONTRACT_END" | "LICENSE_EXPIRY" | "TRANSFER" => {}
         _ => return Err(Error::InvalidCode("TERM_REASON_INVALID")),
     }
+    let to = transfer_to(&i.reason, &i.transfer_to)?;
     let note = note(&i.note)?;
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, release, "release", true).await?;
@@ -173,7 +197,18 @@ pub async fn set_release_term(
     if staff_set {
         return Err(Error::PolicyGate("TERM_SET_BY_STAFF"));
     }
-    upsert(&mut tx, org, release, end, &i.reason, &note, a.user, false).await?;
+    upsert(
+        &mut tx,
+        org,
+        release,
+        end,
+        &i.reason,
+        &note,
+        to.as_deref(),
+        a.user,
+        false,
+    )
+    .await?;
     operations::audit(
         &mut tx,
         Some(a.user),
@@ -186,6 +221,72 @@ pub async fn set_release_term(
     .await?;
     tx.commit().await?;
     Ok(json!({"release_id": release, "end_date": end, "status": "SCHEDULED"}))
+}
+
+/// Handover data for a release moving to another distributor: what the new
+/// distributor needs to deliver the same release under the same codes — the
+/// UPC and ISRCs as delivered, and each platform's own id for the release.
+/// Only for a transfer term (scheduled or done).
+pub async fn handover(s: &AppState, a: &Actor, org: Uuid, release: Uuid) -> Result<Value> {
+    let mut tx = s.pool.begin().await?;
+    auth::authorize(&mut tx, a, org, release, "release", false).await?;
+    let term: Option<(Option<String>, NaiveDate, String)> = sqlx::query_as(
+        "SELECT transfer_to, end_date, status FROM portal.release_terms
+          WHERE org_id=$1 AND release_id=$2 AND reason='TRANSFER' AND status <> 'CANCELLED'",
+    )
+    .bind(org)
+    .bind(release)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let (to, end, status) = term.ok_or(Error::PolicyGate("TERM_NOT_TRANSFER"))?;
+    sqlx::query("SELECT set_config('app.org_id',$1,true)")
+        .bind(org.to_string())
+        .execute(&mut *tx)
+        .await?;
+    // The release as last delivered (codes issued at Stage 3 included).
+    let body: Option<Value> = sqlx::query_scalar(
+        "SELECT cr.body FROM execution.delivery_jobs j
+           JOIN distribution.distribution_packages dp ON dp.id=j.package_id
+           JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id
+          WHERE j.org_id=$1 AND cr.release_id=$2 AND j.status='DELIVERED'
+          ORDER BY j.updated_at DESC LIMIT 1",
+    )
+    .bind(org)
+    .bind(release)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let body = body.ok_or(Error::PolicyGate("RELEASE_NOT_DELIVERED"))?;
+    let platforms: Vec<Value> = sqlx::query_scalar(
+        "SELECT jsonb_build_object('partner_id',j.partner_id,'first_delivered_at',min(j.updated_at),
+                 'partner_release_id',max(b.partner_release_id),
+                 'live_status',(array_agg(b.live_status ORDER BY j.updated_at DESC))[1])
+           FROM execution.delivery_jobs j
+           JOIN distribution.distribution_packages dp ON dp.id=j.package_id
+           JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id
+           LEFT JOIN execution.live_bindings b ON b.package_id=j.package_id AND b.partner_id=j.partner_id
+          WHERE j.org_id=$1 AND cr.release_id=$2 AND j.status='DELIVERED'
+          GROUP BY j.partner_id ORDER BY j.partner_id",
+    )
+    .bind(org)
+    .bind(release)
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.rollback().await?;
+    let tracks: Vec<Value> = body["tracks"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|t| {
+            json!({"disc_number": t["disc_number"], "track_number": t["track_number"],
+                   "title": t["title"], "version": t["version"],
+                   "artist": t["artist_name"], "isrc": t["isrc"]})
+        })
+        .collect();
+    Ok(json!({
+        "release_id": release, "title": body["release_title"], "release_type": body["release_type"],
+        "upc": body["upc"], "tracks": tracks, "platforms": platforms,
+        "transfer_to": to, "effective_date": end, "status": status,
+    }))
 }
 
 /// Cancel a scheduled end the artist set (not a staff termination).
@@ -282,7 +383,7 @@ async fn schedule_org(
          SELECT r.id, r.org_id, $2, 'ORG_CONTRACT_END', $3, $4, $5 FROM catalog.releases r
           WHERE r.org_id=$1 AND r.archived_at IS NULL AND r.status NOT IN ('DRAFT','WITHDRAWN','SUPERSEDED')
          ON CONFLICT (release_id) DO UPDATE SET end_date=$2, reason='ORG_CONTRACT_END', note=$3, set_by=$4, set_by_staff=$5,
-                status='SCHEDULED', warned_at=NULL, updated_at=now()
+                transfer_to=NULL, status='SCHEDULED', warned_at=NULL, updated_at=now()
           WHERE portal.release_terms.status='CANCELLED'
              OR (portal.release_terms.status='SCHEDULED' AND portal.release_terms.reason='ORG_CONTRACT_END')",
     )
@@ -480,6 +581,7 @@ pub async fn staff_terminate(
         return Err(Error::InvalidCode("TERM_REASON_INVALID"));
     }
     let note = note(&i.note)?;
+    let to = transfer_to(&i.reason, &i.transfer_to)?;
     if i.reason == "TERMINATION" && note.is_empty() {
         return Err(Error::InvalidCode("TERM_NOTE_REQUIRED"));
     }
@@ -499,6 +601,7 @@ pub async fn staff_terminate(
         end,
         &i.reason,
         &note,
+        to.as_deref(),
         st.actor.user,
         true,
     )
@@ -569,6 +672,14 @@ async fn h_term(
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
     Ok(Json(release_term(&s, &a, org, id).await?))
+}
+async fn h_handover(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    Ok(Json(handover(&s, &a, org, id).await?))
 }
 async fn h_set_term(
     State(s): State<AppState>,
@@ -641,6 +752,10 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/api/orgs/{org}/releases/{id}/term/cancel",
             post(h_cancel_term),
+        )
+        .route(
+            "/api/orgs/{org}/releases/{id}/term/handover",
+            get(h_handover),
         )
         .route(
             "/api/orgs/{org}/contract-end",
