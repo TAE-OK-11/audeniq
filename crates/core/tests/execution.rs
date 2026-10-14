@@ -6266,6 +6266,71 @@ async fn contract_end_takes_down_blocks_delivery_and_closes_final_settlement(poo
     assert!(ot["term"].is_null(), "{ot}");
 }
 
+/// An org-wide contract end is not the artist's to undo per release: the
+/// release term it schedules cannot be moved or cancelled from the release,
+/// and once the org date passes, delivery stops even before the sweep runs.
+#[sqlx::test]
+async fn org_contract_end_cannot_be_overridden_per_release(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let mock = MockDsp::new(MockBehavior::Accept);
+    let (_, status) = run_send(&pool, &ctx, &mock).await;
+    assert_eq!(status, "DELIVERED");
+    let day = |n: i64| {
+        (chrono::Utc::now() + chrono::Duration::hours(9) + chrono::Duration::days(n))
+            .date_naive()
+            .to_string()
+    };
+    let org_path = format!("/api/orgs/{}/contract-end", ctx.org);
+    let path = format!("/api/orgs/{}/releases/{}/term", ctx.org, ctx.release);
+    let (s, v) = call(
+        &ctx.app,
+        "PUT",
+        &org_path,
+        json!({"end_date": day(40)}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (_, t) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(t["term"]["reason"], "ORG_CONTRACT_END", "{t}");
+
+    let (_, v) = call(
+        &ctx.app,
+        "PUT",
+        &path,
+        json!({"end_date": day(90), "reason": "CONTRACT_END"}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "TERM_SET_BY_STAFF", "{v}");
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &format!("{path}/cancel"),
+        json!({}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_ne!(s, StatusCode::OK);
+    let (_, t) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(t["term"]["end_date"], day(40), "{t}");
+
+    // The org date passes before the sweep has ended the release: no new delivery.
+    sqlx::query("UPDATE portal.org_contract_terms SET end_date=$2::date WHERE org_id=$1")
+        .bind(ctx.org)
+        .bind(day(-1))
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (jobs, _) = audeniq_core::execution::enqueue_delivery_jobs(&pool, ctx.package_id)
+        .await
+        .unwrap();
+    assert!(jobs.is_empty());
+    assert_eq!(audeniq_core::contract_terms::sweep(&pool).await.unwrap(), 1);
+    let (_, t) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(t["term"]["status"], "ENDED", "{t}");
+}
+
 /// Artist platform pages: a first release leaves the new pages pending, the
 /// artist registers them once, the next application is prefilled and the
 /// prepared delivery names the page per platform.

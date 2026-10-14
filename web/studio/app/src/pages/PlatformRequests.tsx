@@ -1,6 +1,6 @@
 // 플랫폼 요청 (/platform-requests) — 발매 뒤 플랫폼에서 처리할 일: 아티스트 페이지 오매칭·분리·통합·유튜브 OAC,
 // 유튜브 Content ID(채널 제외·소유권 주장 해제·이의제기·켜고 끄기). 접수부터 플랫폼 전달·결과까지 단계별로 보여 준다.
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from '../lib/router';
 import { orgPath, req } from '../api/http';
 import { errorMessage } from '../api/errors';
@@ -29,10 +29,13 @@ function RequestForm({ group, releases, artist, onDone }: { group: RequestGroup;
   const [desc, setDesc] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => { setUrls([]); }, [kind]);
-  useEffect(() => { if (!name && artist) setName(artist); }, [artist, name]);
+  // 아티스트 이름은 처음 한 번만 채운다 (사용자가 지운 칸을 다시 채우지 않도록)
+  const seeded = useRef(!!artist);
+  useEffect(() => { if (!seeded.current && artist) { seeded.current = true; setName(artist); } }, [artist]);
   const submitted = releases.filter(r => r.status !== 'draft');
 
   const send = async () => {
+    if (!name.trim()) { toast('아티스트 이름을 적어 주세요.', 'error'); return; }
     if (spec.release === 'required' && !releaseId) { toast('발매를 골라 주세요.', 'error'); return; }
     if (urls.filter(u => u.trim()).length < spec.minUrls) { toast(`${spec.urls[0]}를 적어 주세요.`, 'error'); return; }
     if (spec.description === 'required' && desc.trim().length < 10) { toast('상황을 10자 이상 적어 주세요.', 'error'); return; }
