@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { prefetchInitialRoute } from './routes';
 import { initPressFeedback } from './lib/press';
+import { initRowNav } from './lib/rowNav';
 import { MOCK } from './api/client';
 
 const root = document.getElementById('root');
@@ -31,6 +32,8 @@ if (isIOS) {
 document.addEventListener('touchstart', () => {}, { passive: true });
 // 짧게 톡 눌러도 눌린 모습이 보이게 (.is-pressed)
 initPressFeedback();
+// 탭·칩 줄: 고른 칸이 줄 밖이면 보이게, 화살표 키로 옮기기
+initRowNav();
 
 prefetchInitialRoute();
 

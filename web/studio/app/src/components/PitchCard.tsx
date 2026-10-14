@@ -5,6 +5,7 @@ import { orgPath, req } from '../api/http';
 import { errorMessage } from '../api/errors';
 import { MOCK } from '../lib/mode';
 import { useToast } from './Toast';
+import { ManageHead } from './ManageHead';
 
 interface Pitch {
   id: string; track_id: string; track_title: string; description: string; status: string;
@@ -22,6 +23,12 @@ const STATUS: Record<string, string> = {
   SELECTED: '플레이리스트에 선정됐어요!',
   NOT_SELECTED: '이번에는 선정되지 않았어요.',
   WITHDRAWN: '피칭을 취소했어요.',
+};
+/** 머리 상태 배지 — 짧게 */
+const BADGE: Record<string, { tone: 'blue' | 'violet' | 'green' | 'gray'; label: string }> = {
+  SUBMITTED: { tone: 'violet', label: '접수' }, IN_REVIEW: { tone: 'violet', label: '검토 중' },
+  PITCHED: { tone: 'blue', label: '플랫폼 전달' }, SELECTED: { tone: 'green', label: '선정' },
+  NOT_SELECTED: { tone: 'gray', label: '미선정' },
 };
 const PLATFORM_KO: Record<string, string> = {
   spotify: 'Spotify', apple: 'Apple Music', melon: '멜론', genie: '지니', bugs: '벅스', flo: 'FLO', vibe: 'VIBE', youtube: 'YouTube Music',
@@ -69,12 +76,12 @@ export function PitchCard({ releaseId }: { releaseId: string }) {
     try { await req(`${base()}/withdraw`, { method: 'POST', body: {} }); await load(); } catch (e) { toast(errorMessage(e), 'error'); }
   };
   return (
-    <section className="ui-card aq-pitch-card" aria-labelledby="pitchHeading">
-      <h2 id="pitchHeading">플레이리스트 피칭</h2>
+    <section className="ui-card aq-manage-card aq-pitch-card" aria-labelledby="pitchHeading">
+      <ManageHead id="pitchHeading" icon="star" title="플레이리스트 피칭" status={active ? BADGE[p.status] ?? null : null} />
       <p className="ui-field-help">대표곡 하나를 플랫폼 에디터에게 소개해요. 발매일 {st.lead_days}일 전까지 보내야 하고, 선정 여부는 플랫폼이 정해요.</p>
       {active && (
         <div className="aq-claim-status">
-          <p><b>{STATUS[p.status] ?? p.status}</b> <span className="muted">· {p.track_title}</span>
+          <p><b>{p.track_title}</b> <span className="muted">· {STATUS[p.status] ?? p.status}</span>
             {(p.status === 'SUBMITTED' || p.status === 'IN_REVIEW') && <button type="button" className="ui-btn is-text is-sm" onClick={() => void withdraw()}>피칭 취소</button>}
           </p>
           {p.platforms.length > 0 && <p className="small muted">전달한 플랫폼: {p.platforms.map(x => PLATFORM_KO[x] ?? x).join(', ')}</p>}
@@ -83,7 +90,7 @@ export function PitchCard({ releaseId }: { releaseId: string }) {
         </div>
       )}
       {tooLate && <p className="small muted">발매일까지 {Math.max(st.days_until_release ?? 0, 0)}일 남아 이번 발매는 피칭할 수 없어요. 다음 발매는 일찍 신청해 주세요.</p>}
-      {st.can_pitch && !open && <button type="button" className="ui-btn is-soft" onClick={start}>피칭하기</button>}
+      {st.can_pitch && !open && <button type="button" className="ui-btn is-primary" onClick={start}>피칭하기</button>}
       {open && (
         <div className="aq-correction-form">
           <div className="ui-field">

@@ -5,6 +5,8 @@ import { orgPath, req } from '../api/http';
 import { errorMessage } from '../api/errors';
 import { MOCK } from '../lib/mode';
 import { useToast } from './Toast';
+import { ManageHead } from './ManageHead';
+import { Badge } from '../ui';
 
 interface Claim {
   id: string; receipt: string; status: string; right_type: string; work: string; target: string;
@@ -53,11 +55,11 @@ export function InfringementCard({ releaseId }: { releaseId: string }) {
   };
 
   return (
-    <section className="ui-card aq-claim-card" aria-labelledby="claimHeading">
-      <h2 id="claimHeading">권리침해 신고</h2>
+    <section className="ui-card aq-manage-card aq-claim-card" aria-labelledby="claimHeading">
+      <ManageHead id="claimHeading" icon="siren" title="권리침해 신고" />
       {items.map(c => (
         <div key={c.id} className="aq-claim">
-          <p className="aq-claim-status"><b>{STATUS[c.status] ?? c.status}</b> <span className="muted">· 접수 {c.receipt} · {day(c.created_at)}</span></p>
+          <p className="aq-claim-status"><Badge tone={c.status === 'SUSPENDED' ? 'red' : c.status === 'COUNTER_NOTICED' ? 'violet' : c.status === 'RESTORED' ? 'green' : 'gray'}>{STATUS[c.status] ?? c.status}</Badge> <span className="muted">접수 {c.receipt} · {day(c.created_at)}</span></p>
           <dl className="ui-kv">
             <div><dt>침해 주장 권리</dt><dd>{RIGHT[c.right_type] ?? c.right_type}</dd></div>
             <div><dt>권리 대상 저작물</dt><dd>{c.work}</dd></div>

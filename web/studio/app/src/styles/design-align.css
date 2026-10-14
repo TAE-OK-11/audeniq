@@ -416,3 +416,73 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
   #view-reports .report-tools>*{width:100%}
 }
 .aq-set-card .aq-set-help{margin:0;padding:2px 14px 8px}
+
+/* ==========================================================================
+   상호작용 다듬기 — 모양은 그대로, 손에 닿는 느낌만
+   ========================================================================== */
+/* 휴대폰 아래 시트: 위쪽에 손잡이를 보여 주고, 머리를 잡고 끌어내려 닫는다 (Modal.tsx) */
+@media (max-width:760px){
+  #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode)>.modal-inner{position:relative}
+  #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode):not(.aq-confirm-mode):not(.aq-sysdialog-mode)>.modal-inner::before{
+    content:"";position:absolute;top:8px;left:50%;width:36px;height:4px;margin-left:-18px;border-radius:2px;background:var(--aq-gray-200);pointer-events:none
+  }
+  #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode):not(.aq-confirm-mode):not(.aq-sysdialog-mode) .modal-top{touch-action:none}
+}
+/* 닫을 수 없는 창의 바깥을 누르면 창이 살짝 튀어 반응한다 */
+@keyframes aq-modal-nudge{0%,100%{transform:none}35%{transform:scale(1.015)}70%{transform:scale(.995)}}
+#modal.is-nudge>.modal-inner{animation:aq-modal-nudge .3s cubic-bezier(.3,1.4,.55,1)!important}
+
+/* 알림(토스트): 옆으로 밀어 닫을 수 있게 가로 끌기는 앱이 받는다 */
+.aq-toast{touch-action:pan-y;transition:transform .2s cubic-bezier(.3,1.4,.55,1),opacity .2s ease;-webkit-user-select:none;user-select:none}
+
+/* 길게 누를 때 버튼·칩·탭 글자가 선택되거나 시스템 메뉴가 뜨지 않게 */
+:is(.ui-btn,.ui-chip,.ui-tab,.ui-seg>button,.aq-set-row,.service-item,#portalNav button){-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+
+/* 입력칸으로 이동하거나 키보드가 올라올 때 고정 머리·아래 버튼에 가리지 않게 */
+:is(input,select,textarea,.aq-date-input){scroll-margin-top:calc(var(--aq-header-h) + 16px);scroll-margin-bottom:110px}
+#modal .modal-inner{scroll-padding-bottom:96px}
+
+/* 줄에서 고른 탭·칩으로 밀어 줄 때 부드럽게 (lib/rowNav.ts) */
+:is(.ui-tabs,.ui-chips){scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){:is(.ui-tabs,.ui-chips){scroll-behavior:auto}#modal.is-nudge>.modal-inner{animation:none!important}}
+
+/* ---------- 발매 상세 '관리' 탭 카드 — 한 틀 ----------
+   머리(아이콘 칸 · 제목 · 상태 배지) → 설명 → 내용 → 버튼. 모든 칸 사이 간격은 같고, 버튼이 설명에 붙지 않는다. */
+#view-release .aq-manage-card{display:grid;gap:14px;align-content:start;padding:22px 22px 24px;margin:0}
+#view-release .aq-manage-card>*{margin:0}
+#view-release .aq-manage-card>.ui-btn,#view-release .aq-manage-card>.ui-actions{justify-self:start}
+.aq-manage-head{display:flex;align-items:center;gap:12px;min-width:0}
+.aq-manage-head h2{flex:1;min-width:0;margin:0;font-size:var(--aq-fs-title-sm,18px);font-weight:700;letter-spacing:-.02em;line-height:1.35}
+.aq-manage-head .ui-badge{flex:none}
+.aq-manage-head+.ui-field-help{margin-top:-4px}
+#view-release .aq-manage-card .ui-kv{padding:14px 16px;border-radius:var(--aq-r-lg);background:#fff}
+#view-release .aq-manage-card .aq-confirm-actions{margin-top:2px}
+
+/* 스마트링크 — 주소 칸은 한 줄 전체, 복사·열기는 그 아래 나란히 */
+#view-release .aq-smartlink-url{display:grid;gap:10px;margin:0}
+#view-release .aq-smartlink-url code{display:block;padding:12px 14px;border-radius:var(--aq-r-md);background:#fff;font:600 14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--aq-text);overflow-wrap:anywhere}
+.aq-manage-stat{color:var(--aq-text-3)}
+.aq-manage-stat b{color:var(--aq-text);font-weight:800}
+
+/* 플랫폼 서비스 목록 — 이름 · 상태 배지 */
+#view-release .aq-takedown-list{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+#view-release .aq-takedown-list li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border-radius:var(--aq-r-md);background:#fff;font-size:14px;font-weight:600}
+#view-release .aq-claim-status{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px}
+
+/* ---------- 스마트링크 공개 페이지 — 플랫폼 줄 ----------
+   공식 로고 · 플랫폼 이름(+ 한 줄) · '들으러 가기' 알약. 윤곽선 없이 옅은 면, 누르면 살짝 눌린다. */
+.aq-smartlink-links{margin:22px 0 0;text-align:left}
+.aq-smartlink-list-title{margin:0 0 10px;font-size:var(--aq-fs-md);font-weight:700;color:var(--aq-text-2)}
+.aq-smartlink-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.aq-smartlink-list a{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:14px;min-height:68px;padding:12px 12px 12px 12px;border-radius:var(--aq-r-xl);background:var(--aq-surface);color:var(--aq-text);text-decoration:none;
+  transition:background-color var(--aq-dur) var(--aq-ease),transform var(--aq-press-out,.34s) var(--aq-press-spring,ease)}
+.aq-smartlink-list a:hover{background:var(--aq-surface-hover)}
+.aq-smartlink-list a:is(:active,.is-pressed){transform:scale(var(--aq-press-row,.985));transition-duration:var(--aq-press-in,.06s)}
+.aq-smartlink-list a:focus-visible{outline:var(--aq-focus);outline-offset:2px}
+.aq-smartlink-logo{border-radius:12px!important}
+.aq-smartlink-name{display:grid;gap:2px;min-width:0}
+.aq-smartlink-name strong{font-size:var(--aq-fs-lg);font-weight:700;letter-spacing:-.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-smartlink-name small{font-size:var(--aq-fs-xs);color:var(--aq-text-4);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-smartlink-go{display:inline-flex;align-items:center;gap:2px;height:var(--aq-h-xs,32px);padding:0 10px 0 14px;border-radius:var(--aq-r-pill);background:var(--aq-primary);color:#fff;font-size:13px;font-weight:700;white-space:nowrap}
+.aq-smartlink-list a:hover .aq-smartlink-go{background:var(--aq-primary-hover)}
+@media (prefers-reduced-motion:reduce){.aq-smartlink-list a:is(:active,.is-pressed){transform:none}}
