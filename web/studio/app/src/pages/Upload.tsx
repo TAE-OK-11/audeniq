@@ -2407,7 +2407,7 @@ export function Upload() {
             </div>
             {form.tracks.some(t => t.title.trim()) && (
               <div className="aq-preview-starts">
-                <p className="ui-field-help">곡별 미리듣기·숏폼 클립 시작 지점. 비우면 플랫폼이 정해요.</p>
+                <p className="ui-field-help">곡별 미리듣기·숏폼 클립 시작 지점이에요. 비우면 플랫폼이 정해요. 예: 1:05</p>
                 {form.tracks.filter(t => t.title.trim()).map((t, i) => (
                   <label key={t.id} className="aq-preview-row">
                     <span>{i + 1}. {t.title}</span>

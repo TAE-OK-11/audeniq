@@ -98,14 +98,14 @@ function TicketThread({ ticket, onClosed }: { ticket: Ticket; onClosed: () => vo
       {status !== '종료' ? (
         <form onSubmit={send} className="aq-thread-reply aq-sticky-foot">
           <label htmlFor="tReply" className="sr-only">추가 메시지</label>
-          <textarea id="tReply" rows={3} maxLength={4000} value={reply} onChange={e => setReply(e.target.value)} placeholder="추가로 전할 내용" />
+          <textarea id="tReply" rows={3} maxLength={4000} value={reply} onChange={e => setReply(e.target.value)} placeholder="추가로 전할 내용을 입력해 주세요" />
           <div className="row-actions">
             <button type="button" className="ui-btn is-soft" onClick={close} disabled={busy}>문의 종료</button>
             <button type="submit" className="ui-btn is-primary" disabled={busy || !reply.trim()}>보내기</button>
           </div>
         </form>
       ) : (
-        <div className="ui-callout aq-ticket-closed">종료된 문의예요.</div>
+        <div className="ui-callout aq-ticket-closed">종료된 문의예요. 더 궁금한 점은 새 문의로 남겨 주세요.</div>
       )}
     </>
   );
@@ -208,6 +208,7 @@ function TicketForm({ onSave, preset, releases, artist }: {
 
   return (
     <form id="ticketForm" onSubmit={submit}>
+      <p className="small muted">{spec ? '플랫폼에 전달할 요청이에요. 담당자가 확인해 플랫폼에 접수하고 결과까지 알려 드려요.' : '문의 내용을 작성하고 필요한 발매를 연결해 주세요.'}</p>
       <div className="form-grid">
         <div className="ui-field">
           <label htmlFor="tCategory">유형</label>
@@ -266,11 +267,11 @@ function TicketForm({ onSave, preset, releases, artist }: {
         <>
           <div className="ui-field">
             <label htmlFor="tSubject">제목</label>
-            <input id="tSubject" maxLength={180} required value={subject} onChange={e => setSubject(e.target.value)} />
+            <input id="tSubject" maxLength={180} required placeholder="문의 제목" value={subject} onChange={e => setSubject(e.target.value)} />
           </div>
           <div className="ui-field">
             <label htmlFor="tBody">내용</label>
-            <textarea id="tBody" maxLength={4000} rows={6} required value={body} onChange={e => setBody(e.target.value)} />
+            <textarea id="tBody" maxLength={4000} rows={6} required placeholder="상황과 확인이 필요한 내용을 자세히 입력해 주세요." value={body} onChange={e => setBody(e.target.value)} />
             <p className="ui-field-help aq-counter">{body.length} / 4000</p>
           </div>
         </>
@@ -307,8 +308,8 @@ export function Inquiries() {
   const presetRelease = params.get('release') ?? '';
   const [showForm, setShowForm] = useState(!!newKind);
   const [preset] = useState<TicketPreset | null>(() => {
-    if (newKind === 'edit') return { category: INQUIRY_CATEGORIES[1], releaseId: presetRelease, subject: '[발매 정보 수정 요청]', body: '수정할 내용: ' };
-    if (newKind === 'cancel') return { category: INQUIRY_CATEGORIES[0], releaseId: presetRelease, subject: '[발매 취소 요청]', body: '취소 사유: ' };
+    if (newKind === 'edit') return { category: INQUIRY_CATEGORIES[1], releaseId: presetRelease, subject: '[발매 정보 수정 요청]', body: '접수한 발매 정보를 아래와 같이 수정해 주세요.\n\n수정할 내용: ' };
+    if (newKind === 'cancel') return { category: INQUIRY_CATEGORIES[0], releaseId: presetRelease, subject: '[발매 취소 요청]', body: '이 발매 신청을 취소해 주세요.\n\n취소 사유: ' };
     if (newKind === 'request') {
       const g: RequestGroup = params.get('group') === 'content_id' ? 'content_id' : 'profile';
       return { category: GROUP_CATEGORY[g], releaseId: presetRelease, subject: '', body: '', kind: params.get('kind') ?? '' };
@@ -375,7 +376,7 @@ export function Inquiries() {
             events: [{ status: 'SUBMITTED', note: '', by_staff: false, at: now }],
           }, ...(rs ?? [])]);
         }
-        toast('요청을 보냈어요.', 'success');
+        toast('요청을 접수했어요. 진행 상황은 문의 목록과 알림으로 알려 드려요.', 'success');
         return true;
       } catch (err) {
         toast(errorMessage(err), 'error');
@@ -386,7 +387,7 @@ export function Inquiries() {
       try {
         await portal.createInquiry(s.ticket);
         await refreshTickets();
-        toast('문의를 보냈어요.', 'success');
+        toast('문의를 보냈어요. 답변이 오면 알림으로 알려 드릴게요.', 'success');
         return true;
       } catch (err) {
         toast(errorMessage(err, '문의를 보내지 못했어요. 잠시 후 다시 시도해 주세요.'), 'error');
@@ -394,14 +395,16 @@ export function Inquiries() {
       }
     }
     ticketsStore.set(ts => [...ts, { ...s.ticket, id: uid('q'), created: todayStr(), status: '답변 대기' }]);
-    toast('문의를 보냈어요.', 'success');
+    toast('문의 내용을 저장했어요.');
     return true;
   };
 
   return (
     <div id="view-inquiries" className="view">
       <PageHeader
+        eyebrow="계정·지원"
         title="문의"
+        sub="발매 보완 요청과 정산·계약 관련 문의를 확인해 보세요."
         actions={<button type="button" className="ui-btn is-primary" onClick={() => setShowForm(true)}><Glyph name="plus" size={14} />새 문의</button>}
       />
 
@@ -422,9 +425,9 @@ export function Inquiries() {
         </div>
       ) : (
         <EmptyState
-          icon={<Glyph name="inquiry" size={22} />} title="보낸 문의가 없어요" as="h2"
-          actions={<button type="button" className="ui-btn is-primary" onClick={() => setShowForm(true)}>문의하기</button>}
-        />
+          icon={<Glyph name="inquiry" size={22} />} title="작성한 문의가 없어요" as="h2"
+          actions={<button type="button" className="ui-btn is-primary" onClick={() => setShowForm(true)}>문의 작성하기</button>}
+        >발매·정산·권리 관련 문의와 아티스트 페이지·Content ID 요청을 보내고 진행 상황을 볼 수 있어요.</EmptyState>
       )}
 
       {showForm && (
@@ -451,7 +454,7 @@ export function Inquiries() {
             <li><span className="aq-thread-who">나 · {niceDate(openTicket.created)}</span><p>{openTicket.body}</p></li>
             <li className="is-staff">
               <span className="aq-thread-who">AUDENIQ 담당자</span>
-              <p>{openTicket.status === '답변 완료' ? '답변을 가입한 이메일로 보내 드렸어요.' : '확인 후 답변을 드릴게요.'}</p>
+              <p>{openTicket.status === '답변 완료' ? '답변을 등록했어요. 자세한 내용은 가입한 이메일로 안내해 드렸어요.' : '문의를 받았어요. 확인 후 가입한 이메일로 답변을 드릴게요.'}</p>
             </li>
           </ol>
           <div className="row-actions aq-ticket-closed">

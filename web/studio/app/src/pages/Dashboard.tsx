@@ -21,19 +21,19 @@ import { josa } from '../lib/josa';
 
 const GRID_ITEMS = [
   {
-    to: '/releases', title: '발매·곡 관리',
+    to: '/releases', title: '발매·곡 관리', desc: '발매 목록과 곡별 정보',
     icon: <Glyph name="release" size={22} />,
   },
   {
-    to: '/reports', title: '음악 리포트',
+    to: '/reports', title: '음악 리포트', desc: '플랫폼별 재생과 수익 내역',
     icon: <Glyph name="chart" size={22} />,
   },
   {
-    to: '/settlement', title: '정산·지급',
+    to: '/settlement', title: '정산·지급', desc: '정산 내역과 지급 요청',
     icon: <Glyph name="won" size={22} />,
   },
   {
-    to: '/contracts', title: '계약서·권리',
+    to: '/contracts', title: '계약서·권리', desc: '계약 상태와 증빙 서류',
     icon: <Glyph name="doc" size={22} />,
   },
 ];
@@ -46,6 +46,14 @@ const TASK_ICONS = {
   user: <Glyph name="user" size={20} />,
   bell: <Glyph name="bell" size={20} />,
 };
+
+function greeting(): string {
+  const h = new Date().getHours();
+  if (h < 6) return '늦은 밤에도 반가워요.';
+  if (h < 12) return '좋은 아침이에요.';
+  if (h < 18) return '좋은 오후예요.';
+  return '오늘도 수고했어요.';
+}
 
 /** 9월 26일 토요일 */
 function todayLabel(): string {
@@ -118,11 +126,13 @@ export function Dashboard() {
         <div>
           <p className="aq-home-date">{todayLabel()}</p>
           <h1>{profileName ? <>{profileName}<span className="aq-home-suffix">님의 작업실</span></> : '내 작업실'}</h1>
+          <p>{greeting()} 오늘 확인할 작업을 모아 두었어요.</p>
         </div>
       </div>
 
       <Link className="ui-hero aq-home-hero" to="/upload" onPointerEnter={() => prefetchRoute('/upload')}>
         <div>
+          <p className="eyebrow">새 발매</p>
           <h2>새로운 발매를 <span className="aq-accent">시작해 보세요.</span></h2>
           <p>음원과 커버아트, 크레딧을 등록하고 발매를 준비해요.</p>
         </div>
@@ -140,6 +150,7 @@ export function Dashboard() {
             <span className="ui-icon">{item.icon}</span>
             <div>
               <h3>{item.title}</h3>
+              <p>{item.desc}</p>
             </div>
           </Link>
         ))}
