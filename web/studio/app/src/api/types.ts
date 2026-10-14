@@ -146,6 +146,8 @@ export interface ReleaseDraft {
   coverData?: string;
   /** 실서버: 업로드 완료된 커버 이미지 자산 ID */
   coverAssetId?: string;
+  /** 실서버: 목록·상세에 보여 줄 작은 커버 미리보기 이미지 자산 ID */
+  coverThumbAssetId?: string;
   originalDate?: string;
   territories: string[];
   platforms: string[];
@@ -190,6 +192,7 @@ export interface ReleasePayload {
   coverName: string;
   coverData: string;
   coverAssetId?: string;
+  coverThumbAssetId?: string;
   originalDate: string;
   release_date: string;
   tracks: DraftTrack[];
