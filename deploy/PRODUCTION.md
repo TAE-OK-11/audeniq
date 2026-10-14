@@ -165,6 +165,7 @@ R2 설정 (Cloudflare 대시보드):
     (audeniq-qc로 사용자 파일을 여는 쪽이라 쓰기·삭제 권한을 주지 않는다. 비우면 api 토큰을 쓴다)
 - CORS: `r2-cors.json` (Studio 도메인에서 `PUT`만).
 - 수명 주기 규칙: `quarantine/` 접두사 1일 후 삭제 (격리본·완료되지 않은 업로드 정리). **필수**: 이 규칙이 없으면 격리본이 쌓인다.
+- 수명 주기 규칙: 완료되지 않은 멀티파트 업로드 2일 후 중단 (R2: *Abort incomplete multipart uploads*, S3: `AbortIncompleteMultipartUpload`). 16 MiB보다 큰 음원은 조각으로 이어 올리고(24시간 동안 이어 올리기 가능), 끝내지 않은 조각은 이 규칙이 지운다.
 - CORS에 `If-None-Match` 헤더가 허용돼 있어야 한다(`r2-cors.json`).
 - 키가 새면 Cloudflare에서 그 토큰만 폐기하고 새 토큰을 `production.env`에 넣은 뒤 `./deploy.sh`로 다시 올린다.
   이미 발급된 서명 URL도 폐기된 토큰으로 서명됐으니 함께 무효가 된다.

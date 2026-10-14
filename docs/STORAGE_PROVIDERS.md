@@ -55,7 +55,7 @@ docker exec -e ARCHIVE_S3_ENDPOINT=… -e ARCHIVE_S3_BUCKET=… -e ARCHIVE_S3_AC
    aws s3api put-bucket-cors --bucket 버킷 \
      --cors-configuration "{\"CORSRules\": $(cat deploy/r2-cors.json)}"
    ```
-4. 수명 주기: `quarantine/` 접두사 1일 후 만료.
+4. 수명 주기: `quarantine/` 접두사 1일 후 만료, 완료되지 않은 멀티파트 업로드 2일 후 중단(`AbortIncompleteMultipartUpload`).
 5. `S3_ENDPOINT=https://s3.ap-northeast-2.amazonaws.com`, `S3_REGION=auto`로 둔다.
 
 ## Oracle Cloud (OCI Object Storage)
@@ -69,7 +69,7 @@ docker exec -e ARCHIVE_S3_ENDPOINT=… -e ARCHIVE_S3_BUCKET=… -e ARCHIVE_S3_AC
    Allow group audeniq-uploads to read buckets in compartment audeniq where target.bucket.name='audeniq-uploads'
    ```
    worker용 사용자는 `read objects`만 준다.
-5. **수명 주기**: 객체 수명 주기 정책 규칙을 둔다. 동작은 삭제, 기간 1일, 접두어 `quarantine/`이다. OCI는 서비스 권한이 따로 있어야 규칙이 동작한다.
+5. **수명 주기**: 객체 수명 주기 정책 규칙을 둔다. 동작은 삭제, 기간 1일, 접두어 `quarantine/`이다. 완료되지 않은 멀티파트 업로드 규칙(동작 `ABORT`, 2일)도 둔다. OCI는 서비스 권한이 따로 있어야 규칙이 동작한다.
    ```
    Allow service objectstorage-ap-seoul-1 to manage object-family in compartment audeniq
    ```

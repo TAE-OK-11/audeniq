@@ -5,6 +5,7 @@ import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
 import { TakedownCard } from '../components/TakedownCard';
 import { CorrectionCard } from '../components/CorrectionCard';
+import { InfringementCard } from '../components/InfringementCard';
 import { SkeletonBlock, SkeletonRows } from '../components/Skeleton';
 import { ReleaseCover } from '../components/ReleaseCover';
 import { useAsync } from '../hooks/useAsync';
@@ -492,6 +493,7 @@ export function ReleaseDetail() {
               </p>
             </div>
             {!isDraft && <CorrectionCard releaseId={rel.id} />}
+            {!isDraft && <InfringementCard releaseId={rel.id} />}
             {!isDraft && <TakedownCard releaseId={rel.id} />}
             <div className="ui-card">
               <h2 className="subhead">계약·증빙</h2>

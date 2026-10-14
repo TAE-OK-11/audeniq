@@ -8,14 +8,18 @@
 // - 트랙은 아티스트 ID·자산 ID로 연결, 파일은 서명 URL로 R2에 직접 업로드
 // - 접수 = 동의(consent) 생성 → submit(동의 ID, 자기 선언)
 import type {
-  Correction, TakedownState, WithdrawQuota,
+  AssetChecks, Correction, Invitation, OrgMember, WithdrawQuota, TakedownState,
   DeliveryItem, DspAvailability,
   DraftTrack, Org, PreflightIssue, Release, ReleaseDetail, ReleaseDraft, ReleasePayload,
   ReleaseOptionsData, SaveResult, Track, UploadKind, UploadResult, User,
 } from './types';
 import { ApiError, PartialSaveError } from './errors';
 import { LEGAL_DOCS, TERMS_VERSION } from '../lib/terms';
-import { bootstrapCsrf, hasCsrf, listAll, orgPath, putToGrant, req, setCsrf, setSessionUser, type UploadGrant } from './http';
+import { API_BASE, bootstrapCsrf, hasCsrf, listAll, orgPath, putToGrant, req, setCsrf, setSessionUser, type UploadGrant } from './http';
+import * as multipart from './multipart';
+
+/** 이보다 큰 음원은 조각으로 이어 올린다 (서버 uploads::PART_SIZE와 같다) */
+const MULTIPART_MIN_BYTES = 16 * 1024 * 1024;
 import { stampNow } from '../lib/date';
 import { isrcValid, normalizeIsrc, upcValid } from '../lib/dsp';
 import { parseStaffFix } from '../lib/corrections';
@@ -128,8 +132,19 @@ const PROFILE_LIMIT = 48 * 1024; // 요청 본문 64KB 한도 안에서 여유�
  *  PNG가 아닌 인라인 미리보기는 비워 보낸다 (2026-10-10 중계 Worker 긴급 패치와 같은 규칙). */
 export function storedCoverData(coverData: string | undefined, coverAssetId: string | undefined): string | undefined {
   if (!coverData || !coverAssetId) return coverData;
-  const inline = coverData.startsWith('data:') || coverData.startsWith('blob:');
-  return inline && !coverData.startsWith('data:image/png;base64,') ? '' : coverData;
+  // 서버 이미지 주소(coverImageUrl)도 저장하지 않는다: 자산 ID로 다시 만든다
+  return coverData.startsWith('data:image/png;base64,') ? coverData : '';
+}
+
+/** 서버에 보관된 커버 이미지 주소 (작은 미리보기가 있으면 그것). 업로드한 원본은 발매까지 서버에 남는다. */
+export function coverImageUrl(thumbAssetId: string | undefined, coverAssetId: string | undefined): string {
+  const id = thumbAssetId || coverAssetId;
+  if (!id) return '';
+  try {
+    return `${API_BASE}${orgPath(`/assets/${encodeURIComponent(id)}/image`)}`;
+  } catch {
+    return ''; // 작업 공간을 아직 모를 때는 그라데이션 커버로
+  }
 }
 
 function buildProfile(data: ReleasePayload, prev: Record<string, unknown> | null, history: ReleaseDraft['history']) {
@@ -149,6 +164,9 @@ function buildProfile(data: ReleasePayload, prev: Record<string, unknown> | null
     coverName: data.coverName,
     coverData: storedCoverData(data.coverData, coverAssetId),
     coverAssetId,
+    coverThumbAssetId: data.coverAssetId && data.coverAssetId !== prev?.coverAssetId
+      ? data.coverThumbAssetId
+      : data.coverThumbAssetId ?? (prev?.coverThumbAssetId as string | undefined),
     originalDate: data.originalDate,
     release_date: data.release_date,
     territories: data.territories,
@@ -212,8 +230,10 @@ function readDraft(r: ServerRelease): ReleaseDraft {
     upc: s('upc'),
     notes: a<string>('notes_lines').join('\n') || s('notes'),
     coverName: s('coverName'),
-    coverData: s('coverData'),
+    // 저장된 미리보기가 없으면(JPEG 커버) 서버에 보관된 커버를 보여 준다
+    coverData: s('coverData') || coverImageUrl(s('coverThumbAssetId'), s('coverAssetId')),
     coverAssetId: s('coverAssetId') || undefined,
+    coverThumbAssetId: s('coverThumbAssetId') || undefined,
     originalDate: s('originalDate'),
     territories: a<string>('territories'),
     platforms: a<string>('platforms'),
@@ -557,7 +577,28 @@ export const remoteApi = {
     return r.items
       .slice()
       .sort((a, b) => Number(b.role !== 'VIEWER') - Number(a.role !== 'VIEWER'))
-      .map(o => ({ id: o.id, name: o.name }));
+      .map(o => ({ id: o.id, name: o.name, role: o.role as Org['role'] }));
+  },
+  async listMembers(): Promise<{ role: string; items: OrgMember[] }> {
+    return req<{ role: string; items: OrgMember[] }>(orgPath('/members'));
+  },
+  async inviteMember(email: string, role: 'EDITOR' | 'VIEWER'): Promise<void> {
+    await req(orgPath('/members/invite'), { method: 'POST', body: { email, role } });
+  },
+  async setMember(userId: string, role: 'EDITOR' | 'VIEWER', status: 'ACTIVE' | 'REVOKED'): Promise<void> {
+    await req(orgPath('/memberships'), { method: 'PUT', body: { user_id: userId, role, status } });
+  },
+  async listInvitations(): Promise<Invitation[]> {
+    return (await req<{ items: Invitation[] }>('/api/me/invitations', { quiet401: true })).items;
+  },
+  async acceptInvitation(orgId: string): Promise<void> {
+    await req(`/api/orgs/${encodeURIComponent(orgId)}/memberships/accept`, { method: 'POST', body: {} });
+  },
+  async declineInvitation(orgId: string): Promise<void> {
+    await req(`/api/me/invitations/${encodeURIComponent(orgId)}/decline`, { method: 'POST', body: {} });
+  },
+  async assetChecks(assetId: string): Promise<AssetChecks> {
+    return req<AssetChecks>(orgPath(`/assets/${encodeURIComponent(assetId)}/checks`), { quiet401: true });
   },
   async listReleases(): Promise<Release[]> {
     const items = await listAll<ServerRelease>(orgPath('/releases'));
@@ -676,16 +717,46 @@ export const remoteApi = {
       throw new ApiError(kind === 'AUDIO' ? '음원은 WAV, FLAC, ALAC(.m4a), AIFF, WavPack, TTA 파일만 올릴 수 있어요.' : kind === 'DOCUMENT' ? '서류는 PDF, JPG, PNG 파일만 올릴 수 있어요.' : '커버는 JPG 또는 PNG 파일만 올릴 수 있어요.', 400, 'UPLOAD_TYPE_UNSUPPORTED');
     }
     // 서버는 발급 후 10분(PUT 서명 유효) + 30분 동안 완료를 받는다 — 여유를 두고 그 안에서만 재시도
-    const completeBy = Date.now() + 38 * 60_000;
-    const issued = await req<{ upload_session_id: string; asset_id: string; expected_key: string; grant: UploadGrant }>(orgPath('/uploads'), {
-      method: 'POST', body: { kind, size_bytes: file.size, content_type: contentType },
-    });
-    try {
-      await putToGrant(issued.grant, file, onProgress, signal);
-    } catch (e) {
-      // 올리다 실패하면 업로드 세션을 취소해 둔다 (자산으로 등록되지 않도록)
-      void req(orgPath(`/uploads/${issued.upload_session_id}/cancel`), { method: 'POST' }).catch(() => {});
-      throw e;
+    let completeBy = Date.now() + 38 * 60_000;
+    // 16 MiB보다 큰 음원은 조각으로 이어 올린다 (연결이 끊겨도 그 조각만 다시, 새로고침 뒤에도 이어서)
+    const resumable = kind === 'AUDIO' && file.size > MULTIPART_MIN_BYTES;
+    let issued: { upload_session_id: string; asset_id: string; expected_key: string; grant?: UploadGrant; multipart?: multipart.MultipartIssued['multipart']; expires_at?: string };
+    const saved = resumable ? multipart.savedSession(file) : null;
+    if (saved) {
+      issued = { upload_session_id: saved.session, asset_id: saved.assetId, expected_key: saved.key, expires_at: saved.expiresAt, multipart: { part_size: 0, part_count: 0 } };
+    } else {
+      try {
+        issued = await req(orgPath('/uploads'), { method: 'POST', body: { kind, size_bytes: file.size, content_type: contentType, resumable } });
+      } catch (e) {
+        // 저장소가 조각 업로드를 지원하지 않으면 한 번에 올린다
+        if (!(resumable && e instanceof ApiError && e.code === 'UPLOAD_MULTIPART_UNSUPPORTED')) throw e;
+        issued = await req(orgPath('/uploads'), { method: 'POST', body: { kind, size_bytes: file.size, content_type: contentType } });
+      }
+    }
+    if (issued.multipart) {
+      if (!saved) multipart.rememberSession(file, issued as multipart.MultipartIssued);
+      if (issued.expires_at) completeBy = Date.parse(issued.expires_at) + 28 * 60_000;
+      try {
+        await multipart.uploadParts(file, issued.upload_session_id, onProgress, signal);
+      } catch (e) {
+        if (e instanceof ApiError && e.code === 'ABORTED') {
+          multipart.forgetSession(file);
+          void req(orgPath(`/uploads/${issued.upload_session_id}/cancel`), { method: 'POST' }).catch(() => {});
+        } else if (saved && e instanceof ApiError && (e.status === 404 || e.status === 409)) {
+          // 이어 올리려던 세션이 닫혔다 (만료·취소) — 처음부터 다시
+          multipart.forgetSession(file);
+          return remoteApi.uploadFile(file, kind, onProgress, signal);
+        }
+        throw e;
+      }
+    } else {
+      try {
+        await putToGrant(issued.grant!, file, onProgress, signal);
+      } catch (e) {
+        // 올리다 실패하면 업로드 세션을 취소해 둔다 (자산으로 등록되지 않도록)
+        void req(orgPath(`/uploads/${issued.upload_session_id}/cancel`), { method: 'POST' }).catch(() => {});
+        throw e;
+      }
     }
     for (let attempt = 0; ; attempt++) {
       if (signal?.aborted) throw new ApiError('업로드를 취소했어요.', 0, 'ABORTED');
@@ -693,6 +764,7 @@ export const remoteApi = {
         const done = await req<{ asset_id: string; sha256?: string; detected_container?: string }>(orgPath(`/uploads/${issued.upload_session_id}/complete`), {
           method: 'POST', body: { asset_id: issued.asset_id, expected_key: issued.expected_key }, timeoutMs: 240000, signal, quietServer: true,
         });
+        if (issued.multipart) multipart.forgetSession(file);
         return { assetId: done.asset_id, sha256: done.sha256, container: done.detected_container };
       } catch (error) {
         // Capacity retries reuse the uploaded object and session. Never PUT

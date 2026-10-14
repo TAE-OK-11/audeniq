@@ -117,7 +117,13 @@ pub fn router(s: AppState) -> Router {
         .route("/api/orgs/{org}/uploads/{id}", get(upload_status))
         .route("/api/orgs/{org}/uploads/{id}/cancel", post(cancel_upload))
         .route("/api/orgs/{org}/uploads/{id}/complete", post(complete))
+        .route(
+            "/api/orgs/{org}/uploads/{id}/parts",
+            get(upload_parts).post(upload_part_urls),
+        )
         .route("/api/orgs/{org}/assets/{id}", get(asset))
+        .route("/api/orgs/{org}/assets/{id}/checks", get(asset_checks))
+        .route("/api/orgs/{org}/assets/{id}/image", get(asset_image))
         .route("/api/orgs/{org}/releases/{id}/tracks", post(track))
         .route(
             "/api/orgs/{org}/releases/{id}/tracks/{track}",
@@ -169,12 +175,15 @@ pub fn router(s: AppState) -> Router {
         .merge(crate::portal::routes())
         .merge(crate::account::routes())
         .merge(crate::password_reset::routes())
+        .merge(crate::email::routes())
         .merge(crate::signing::routes())
         .merge(crate::staff::routes())
         .merge(crate::work::routes())
         .merge(crate::live::routes())
+        .merge(crate::members::routes())
         .merge(crate::takedown::routes())
         .merge(crate::corrections::routes())
+        .merge(crate::infringement::routes())
         .merge(crate::partner_hooks::routes())
         .merge(crate::site_content::routes())
         .fallback(|| async { Error::NotFound.into_response() })
@@ -184,6 +193,7 @@ pub fn router(s: AppState) -> Router {
             panic_response,
         ))
         .layer(DefaultBodyLimit::max(64 * 1024))
+        .layer(middleware::from_fn(request_deadline))
         // 서비스 비밀 확인 뒤: 점검 중 API 차단 (crate::site_content)
         .layer(middleware::from_fn_with_state(
             s.clone(),
@@ -199,6 +209,32 @@ pub fn router(s: AppState) -> Router {
         .layer(compression())
         .with_state(s)
 }
+/// Past this a request is abandoned: the tunnel in front gave up on it
+/// already (about 100 s), and it would otherwise keep holding a database
+/// connection (pool of 6) or a storage call for up to 15 minutes. Covers the
+/// handler up to its response headers; a streamed body is not cut.
+const REQUEST_DEADLINE: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// Not bounded: live streams (they end on their own) and upload completion
+/// (cancel-safe, and retried by the client while the conversion runs).
+fn unbounded(path: &str) -> bool {
+    path.ends_with("/live") || (path.starts_with("/api/orgs/") && path.ends_with("/complete"))
+}
+
+async fn request_deadline(req: Request, next: middleware::Next) -> Response {
+    if unbounded(req.uri().path()) {
+        return next.run(req).await;
+    }
+    let route = req.uri().path().to_owned();
+    match tokio::time::timeout(REQUEST_DEADLINE, next.run(req)).await {
+        Ok(response) => response,
+        Err(_) => {
+            tracing::warn!(%route, "request abandoned at the deadline");
+            Error::Timeout.into_response()
+        }
+    }
+}
+
 /// A handler bug that panics answers like any other server error (500 with
 /// the standard error body) and is logged, instead of dropping the
 /// connection, which the edge reports as "Private API unavailable".
@@ -326,7 +362,15 @@ async fn boundary(State(s): State<AppState>, mut req: Request, next: Next) -> Re
     let _entered = span.enter();
     let headers = response.headers_mut();
     headers.insert("x-request-id", request_id);
-    headers.insert("cache-control", HeaderValue::from_static("no-store"));
+    // no-store unless the handler chose a browser-only (private) policy for
+    // content-addressed bytes (a stored cover image keyed by its hash).
+    let private_cache = headers
+        .get("cache-control")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.starts_with("private,") && v.contains("immutable"));
+    if !private_cache {
+        headers.insert("cache-control", HeaderValue::from_static("no-store"));
+    }
     headers.insert(
         "x-content-type-options",
         HeaderValue::from_static("nosniff"),
@@ -881,6 +925,23 @@ async fn upload_status(
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
     Ok(Json(uploads::status(&s, &a, org, id).await?))
 }
+async fn upload_parts(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    Ok(Json(uploads::stored_parts(&s, &a, org, id).await?))
+}
+async fn upload_part_urls(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+    Json(i): Json<uploads::PartsInput>,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, true).await?;
+    Ok(Json(uploads::part_urls(&s, &a, org, id, i).await?))
+}
 async fn cancel_upload(
     State(s): State<AppState>,
     Path((org, id)): Path<(Uuid, Uuid)>,
@@ -905,6 +966,23 @@ async fn asset(
 ) -> Result<Json<Value>> {
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
     Ok(Json(uploads::get(&s, &a, org, id).await?))
+}
+async fn asset_checks(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    Ok(Json(uploads::checks(&s, &a, org, id).await?))
+}
+async fn asset_image(
+    State(s): State<AppState>,
+    Path((org, id)): Path<(Uuid, Uuid)>,
+    h: HeaderMap,
+) -> Result<Response> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    let img = uploads::image(&s, &a, org, id).await?;
+    Ok(uploads::image_response(img, &h))
 }
 async fn member(
     State(s): State<AppState>,

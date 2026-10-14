@@ -12,6 +12,13 @@ pub struct ObjectMeta {
     pub nonce: String,
     pub etag: String,
 }
+/// One stored part of a multipart upload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UploadedPart {
+    pub number: i32,
+    pub size: i64,
+    pub etag: String,
+}
 #[derive(Serialize)]
 pub struct UploadGrant {
     pub url: String,
@@ -34,6 +41,39 @@ pub trait ObjectStore: Send + Sync {
         nonce: &str,
         expires: DateTime<Utc>,
     ) -> Result<UploadGrant>;
+    /// Start a multipart upload (resumable large masters) at a quarantine
+    /// key, with the content type and nonce `head` checks at completion.
+    /// Stores without multipart refuse, and Studio falls back to one PUT.
+    async fn create_multipart(&self, _key: &str, _mime: &str, _nonce: &str) -> Result<String> {
+        Err(Error::PolicyGate("UPLOAD_MULTIPART_UNSUPPORTED"))
+    }
+    /// A signed PUT for one part of exactly `size` bytes.
+    async fn presign_part(
+        &self,
+        _key: &str,
+        _upload_id: &str,
+        _part: i32,
+        _size: i64,
+        _expires: DateTime<Utc>,
+    ) -> Result<UploadGrant> {
+        Err(Error::PolicyGate("UPLOAD_MULTIPART_UNSUPPORTED"))
+    }
+    /// Parts the store holds for an open multipart upload (the resume point).
+    async fn list_parts(&self, _key: &str, _upload_id: &str) -> Result<Vec<UploadedPart>> {
+        Err(Error::PolicyGate("UPLOAD_MULTIPART_UNSUPPORTED"))
+    }
+    async fn complete_multipart(
+        &self,
+        _key: &str,
+        _upload_id: &str,
+        _parts: &[UploadedPart],
+    ) -> Result<()> {
+        Err(Error::PolicyGate("UPLOAD_MULTIPART_UNSUPPORTED"))
+    }
+    /// Drop an unfinished multipart upload; an unknown one is success.
+    async fn abort_multipart(&self, _key: &str, _upload_id: &str) -> Result<()> {
+        Ok(())
+    }
     async fn head(&self, key: &str) -> Result<Option<ObjectMeta>>;
     async fn freeze(&self, source: &str, target: &str, etag: &str) -> Result<()>;
     /// Whether [`ObjectStore::freeze`]'s copy carries the source ETag (false
@@ -400,6 +440,28 @@ fn transient_status(status: reqwest::StatusCode) -> bool {
     matches!(status.as_u16(), 500 | 502 | 503 | 504)
 }
 
+/// Parts of a `ListPartsResult` (PartNumber, ETag, Size in document order).
+fn parse_parts(xml: &str) -> Result<Vec<UploadedPart>> {
+    let numbers = crate::transport::xml_values(xml, "PartNumber");
+    let etags = crate::transport::xml_values(xml, "ETag");
+    let sizes = crate::transport::xml_values(xml, "Size");
+    if numbers.len() != etags.len() || numbers.len() != sizes.len() {
+        return Err(Error::Storage);
+    }
+    numbers
+        .into_iter()
+        .zip(etags)
+        .zip(sizes)
+        .map(|((n, etag), size)| {
+            Ok(UploadedPart {
+                number: n.parse().map_err(|_| Error::Storage)?,
+                size: size.parse().map_err(|_| Error::Storage)?,
+                etag,
+            })
+        })
+        .collect()
+}
+
 impl S3Store {
     pub fn new(
         endpoint: &str,
@@ -660,6 +722,20 @@ impl S3Store {
         at: DateTime<Utc>,
         ttl: i64,
     ) -> Result<String> {
+        self.signed_query(method, key, &[], headers, at, ttl)
+    }
+
+    /// [`S3Store::signed`] with extra query parameters that are part of the
+    /// signature (multipart: `uploads`, `uploadId`, `partNumber`).
+    fn signed_query(
+        &self,
+        method: &str,
+        key: &str,
+        extra: &[(&str, &str)],
+        headers: &BTreeMap<String, String>,
+        at: DateTime<Utc>,
+        ttl: i64,
+    ) -> Result<String> {
         if !(1..=3600).contains(&ttl)
             || key.is_empty()
             || key.len() > 1024
@@ -696,13 +772,18 @@ impl S3Store {
         let date = at.format("%Y%m%d").to_string();
         let datetime = at.format("%Y%m%dT%H%M%SZ").to_string();
         let scope = format!("{date}/{}/s3/aws4_request", self.region);
-        let query = BTreeMap::from([
+        let mut query = BTreeMap::from([
             ("X-Amz-Algorithm", "AWS4-HMAC-SHA256".to_string()),
             ("X-Amz-Credential", format!("{}/{}", self.access, scope)),
             ("X-Amz-Date", datetime.clone()),
             ("X-Amz-Expires", ttl.to_string()),
             ("X-Amz-SignedHeaders", names.clone()),
         ]);
+        for (k, v) in extra {
+            if query.insert(k, (*v).to_string()).is_some() {
+                return Err(Error::Invalid);
+            }
+        }
         let query = query
             .iter()
             .map(|(k, v)| format!("{}={}", enc(k), enc(v)))
@@ -768,6 +849,166 @@ impl ObjectStore for S3Store {
             headers,
             expires_at: expires,
         })
+    }
+    async fn create_multipart(&self, key: &str, mime: &str, nonce: &str) -> Result<String> {
+        if !key.starts_with("quarantine/") {
+            return Err(Error::Invalid);
+        }
+        let headers = BTreeMap::from([
+            ("content-type".into(), mime.into()),
+            ("x-amz-meta-upload-nonce".into(), nonce.into()),
+        ]);
+        let started = std::time::Instant::now();
+        let url = self.signed_query("POST", key, &[("uploads", "")], &headers, Utc::now(), 60)?;
+        let mut req = self.client.post(url);
+        for (k, v) in &headers {
+            req = req.header(k, v);
+        }
+        let r = req
+            .send()
+            .await
+            .map_err(|e| transport_error("multipart_create", started, &e))?;
+        if !r.status().is_success() {
+            return Err(status_error("multipart_create", started, r.status()));
+        }
+        let body = r.text().await.map_err(|_| Error::Storage)?;
+        crate::transport::xml_values(&body, "UploadId")
+            .into_iter()
+            .next()
+            .filter(|id| !id.is_empty() && id.len() <= 1024)
+            .ok_or(Error::Storage)
+    }
+    async fn presign_part(
+        &self,
+        key: &str,
+        upload_id: &str,
+        part: i32,
+        size: i64,
+        expires: DateTime<Utc>,
+    ) -> Result<UploadGrant> {
+        // Content-Length is signed: the store refuses a part of any other
+        // size, so the parts can only add up to the declared master size.
+        if !(1..=10_000).contains(&part)
+            || !(1..=crate::uploads::MAX_AUDIO_BYTES).contains(&size)
+            || !key.starts_with("quarantine/")
+            || upload_id.is_empty()
+        {
+            return Err(Error::Invalid);
+        }
+        let headers = BTreeMap::from([("content-length".into(), size.to_string())]);
+        let now = Utc::now();
+        let part = part.to_string();
+        let url = self.signed_query(
+            "PUT",
+            key,
+            &[("partNumber", &part), ("uploadId", upload_id)],
+            &headers,
+            now,
+            (expires - now).num_seconds(),
+        )?;
+        Ok(UploadGrant {
+            url,
+            method: "PUT",
+            headers,
+            expires_at: expires,
+        })
+    }
+    async fn list_parts(&self, key: &str, upload_id: &str) -> Result<Vec<UploadedPart>> {
+        let started = std::time::Instant::now();
+        let url = self.signed_query(
+            "GET",
+            key,
+            &[("uploadId", upload_id)],
+            &BTreeMap::new(),
+            Utc::now(),
+            60,
+        )?;
+        let r = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| transport_error("multipart_list", started, &e))?;
+        if r.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(Error::PolicyGate("UPLOAD_MULTIPART_GONE"));
+        }
+        if !r.status().is_success() {
+            return Err(status_error("multipart_list", started, r.status()));
+        }
+        let body = r.text().await.map_err(|_| Error::Storage)?;
+        parse_parts(&body)
+    }
+    async fn complete_multipart(
+        &self,
+        key: &str,
+        upload_id: &str,
+        parts: &[UploadedPart],
+    ) -> Result<()> {
+        let mut xml = String::from("<CompleteMultipartUpload>");
+        for p in parts {
+            xml.push_str(&format!(
+                "<Part><PartNumber>{}</PartNumber><ETag>{}</ETag></Part>",
+                p.number,
+                quick_xml::escape::escape(&p.etag)
+            ));
+        }
+        xml.push_str("</CompleteMultipartUpload>");
+        let headers = BTreeMap::from([("content-type".into(), "application/xml".into())]);
+        let started = std::time::Instant::now();
+        let url = self.signed_query(
+            "POST",
+            key,
+            &[("uploadId", upload_id)],
+            &headers,
+            Utc::now(),
+            300,
+        )?;
+        let r = self
+            .client
+            .post(url)
+            .timeout(COPY_TIMEOUT)
+            .header("content-type", "application/xml")
+            .body(xml)
+            .send()
+            .await
+            .map_err(|e| transport_error("multipart_complete", started, &e))?;
+        if r.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(Error::PolicyGate("UPLOAD_MULTIPART_GONE"));
+        }
+        if !r.status().is_success() {
+            return Err(status_error("multipart_complete", started, r.status()));
+        }
+        // S3 can answer 200 and still report a failure in the body.
+        let body = r.text().await.map_err(|_| Error::Storage)?;
+        if body.contains("<Error>") {
+            return Err(status_error(
+                "multipart_complete",
+                started,
+                reqwest::StatusCode::BAD_GATEWAY,
+            ));
+        }
+        Ok(())
+    }
+    async fn abort_multipart(&self, key: &str, upload_id: &str) -> Result<()> {
+        let url = self.signed_query(
+            "DELETE",
+            key,
+            &[("uploadId", upload_id)],
+            &BTreeMap::new(),
+            Utc::now(),
+            60,
+        )?;
+        let r = self
+            .client
+            .delete(url)
+            .send()
+            .await
+            .map_err(|_| Error::Storage)?;
+        if r.status().is_success() || r.status() == reqwest::StatusCode::NOT_FOUND {
+            Ok(())
+        } else {
+            Err(Error::Storage)
+        }
     }
     async fn head(&self, key: &str) -> Result<Option<ObjectMeta>> {
         let started = std::time::Instant::now();

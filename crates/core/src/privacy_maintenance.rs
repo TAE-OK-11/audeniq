@@ -160,7 +160,33 @@ const ACCOUNT_COPY: Column = Column {
     stale: None,
 };
 
+/// A value that is only ever stored sealed (no plaintext column).
+const fn sealed_only(f: Field, cipher: &'static str) -> Column {
+    Column {
+        seal: Seal::Field(f),
+        plain: None,
+        cipher,
+        clear: None,
+        version: None,
+        index: None,
+        stale: None,
+    }
+}
+
 const TARGETS: &[Target] = &[
+    // Infringement claimants (0114): contact details are sealed from the start;
+    // listed so key rotation re-seals them.
+    Target {
+        name: "portal.infringement_claims",
+        table: "portal.infringement_claims",
+        id: "id",
+        subject: "id",
+        columns: &[
+            sealed_only(Field::ClaimantName, "claimant_name_cipher"),
+            sealed_only(Field::ClaimantEmail, "claimant_email_cipher"),
+            sealed_only(Field::ClaimantPhone, "claimant_phone_cipher"),
+        ],
+    },
     Target {
         name: "identity.users",
         table: "identity.users",

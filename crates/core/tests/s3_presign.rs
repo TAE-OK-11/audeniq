@@ -230,3 +230,80 @@ async fn completion_download_is_pinned_to_the_seen_etag() {
     ));
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// Resumable masters: the server starts a multipart upload, the device PUTs
+/// each part through its own signed URL (exact size), the server lists what
+/// arrived and completes it. The finished object carries the session's
+/// content type and nonce, so completion's checks are the same as for a
+/// single PUT. A part of the wrong size is refused by the store.
+#[tokio::test]
+async fn multipart_upload_resumes_from_the_listed_parts() {
+    let Some(s) = store() else {
+        eprintln!("S3_TEST_ENDPOINT not set; skipped");
+        return;
+    };
+    let id = uuid::Uuid::new_v4();
+    let key = format!("quarantine/test/{id}");
+    let nonce = id.to_string();
+    let part_size = 5 * 1024 * 1024;
+    let body: Vec<u8> = (0..(part_size + 1234)).map(|i| (i % 251) as u8).collect();
+    let upload = s.create_multipart(&key, "audio/wav", &nonce).await.unwrap();
+    let expires = Utc::now() + Duration::minutes(15);
+    // Part 1, then "the browser reloads": the list says what is already there.
+    let g1 = s
+        .presign_part(&key, &upload, 1, part_size as i64, expires)
+        .await
+        .unwrap();
+    assert_eq!(
+        put(&g1.url, &g1, body[..part_size].to_vec(), None).await,
+        200
+    );
+    let listed = s.list_parts(&key, &upload).await.unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!((listed[0].number, listed[0].size), (1, part_size as i64));
+    // A part URL is bound to its size.
+    let g2 = s
+        .presign_part(&key, &upload, 2, 1234, expires)
+        .await
+        .unwrap();
+    let mut tampered = g2.url.clone();
+    tampered.push('x');
+    assert_ne!(
+        put(&tampered, &g2, body[part_size..].to_vec(), None).await,
+        200
+    );
+    let too_big = reqwest::Client::new()
+        .put(&g2.url)
+        .body(vec![0u8; 2000])
+        .send()
+        .await
+        .unwrap()
+        .status()
+        .as_u16();
+    assert_ne!(too_big, 200, "a part of another size is refused");
+    assert_eq!(
+        put(&g2.url, &g2, body[part_size..].to_vec(), None).await,
+        200
+    );
+    let parts = s.list_parts(&key, &upload).await.unwrap();
+    assert_eq!(
+        parts.iter().map(|p| p.number).collect::<Vec<_>>(),
+        vec![1, 2]
+    );
+    s.complete_multipart(&key, &upload, &parts).await.unwrap();
+    let meta = s.head(&key).await.unwrap().expect("completed object");
+    assert_eq!(meta.size, body.len() as i64);
+    assert_eq!(meta.content_type, "audio/wav");
+    assert_eq!(meta.nonce, nonce);
+    assert_eq!(s.get(&key).await.unwrap(), body);
+    // Once completed, the upload id takes no more parts.
+    let late = s.presign_part(&key, &upload, 3, 10, expires).await.unwrap();
+    assert_ne!(put(&late.url, &late, vec![1u8; 10], None).await, 200);
+
+    // An abandoned upload is aborted and then unknown.
+    let key2 = format!("quarantine/test/{}", uuid::Uuid::new_v4());
+    let upload2 = s.create_multipart(&key2, "audio/flac", "n").await.unwrap();
+    s.abort_multipart(&key2, &upload2).await.unwrap();
+    assert!(s.list_parts(&key2, &upload2).await.is_err());
+    s.abort_multipart(&key2, &upload2).await.unwrap();
+}

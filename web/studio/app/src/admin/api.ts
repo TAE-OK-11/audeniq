@@ -179,6 +179,18 @@ export interface CorrectionItem {
   tracks: { track_id: string; title: string }[];
 }
 
+/** 권리침해 신고 (누구나 접수, 신고자 연락처는 스태프에게만) */
+export interface InfringementClaim {
+  id: string; receipt: string;
+  status: 'RECEIVED' | 'REJECTED' | 'SUSPENDED' | 'COUNTER_NOTICED' | 'RESTORED' | 'UPHELD';
+  right_type: string; work: string; target: string; evidence_urls: string[];
+  org_id: string | null; org_name?: string | null; release_id: string | null; release_title: string | null;
+  staff_note: string; decided_at: string | null; counter_deadline: string | null;
+  counter_notice: string | null; counter_at: string | null; created_at: string;
+  claimant: { role: 'RIGHTS_HOLDER' | 'AGENT'; name: string | null; email: string | null; phone: string | null };
+  platforms?: { partner_id: string; slug: string; name: string; live_status: string | null }[];
+}
+
 export interface DeliveryItem {
   package_id: string; dsp: string; org_id: string; org_name: string; release_id: string; title: string;
   readiness: string; approval: string; route_status: string | null; route_reason: string | null;
@@ -284,6 +296,12 @@ const remote = {
   declineCorrection: (cid: string, note: string) => req<{ status: string }>(`/api/staff/corrections/${id(cid)}/decline`, { method: 'POST', body: { note } }),
   approveTakedown: (tid: string, note: string) => req<{ status: string }>(`/api/staff/takedowns/${id(tid)}/approve`, { method: 'POST', body: { note } }),
   declineTakedown: (tid: string, note: string) => req<{ status: string }>(`/api/staff/takedowns/${id(tid)}/decline`, { method: 'POST', body: { note } }),
+  claims: (all: boolean) => req<Page<InfringementClaim>>(`/api/staff/infringement-claims${all ? '?status=all' : ''}`),
+  rejectClaim: (cid: string, note: string) => req<{ status: string }>(`/api/staff/infringement-claims/${id(cid)}/reject`, { method: 'POST', body: { note } }),
+  suspendClaim: (cid: string, releaseId: string, note: string) =>
+    req<{ status: string; jobs: string[] }>(`/api/staff/infringement-claims/${id(cid)}/suspend`, { method: 'POST', body: { release_id: releaseId, note } }),
+  restoreClaim: (cid: string, note: string) => req<{ status: string }>(`/api/staff/infringement-claims/${id(cid)}/restore`, { method: 'POST', body: { note } }),
+  upholdClaim: (cid: string, note: string) => req<{ status: string }>(`/api/staff/infringement-claims/${id(cid)}/uphold`, { method: 'POST', body: { note } }),
   /** 중단 메시지를 받지 않는 플랫폼: 내려간 것을 직접 확인하고 기록한다 */
   markTakenDown: (pkg: string, partner: string, note: string) =>
     req<{ job_id: string }>(`/api/staff/deliveries/${id(pkg)}/${id(partner)}/taken-down`, { method: 'POST', body: { note } }),
