@@ -191,6 +191,7 @@ pub fn router(s: AppState) -> Router {
         .merge(crate::splits::routes())
         .merge(crate::platform_requests::routes())
         .merge(crate::contract_terms::routes())
+        .merge(crate::artist_pages::routes())
         .merge(crate::partner_hooks::routes())
         .merge(crate::site_content::routes())
         .fallback(|| async { Error::NotFound.into_response() })

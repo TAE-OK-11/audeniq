@@ -572,6 +572,8 @@ async fn persist_ddex_messages(
             recipient_party_id: Some(recipient_dpid.clone()),
             deal_start_date: deal_start.format("%Y-%m-%d").to_string(),
             takedown_date: None,
+            artist_party_id: crate::dsp_registry::Dsp::from_uuid(*dsp_id)
+                .and_then(|d| prepared.artist_platform_ids.get(d.spec().slug).cloned()),
         };
         // Pre-generation preflight (ddex-suite preflight categories,
         // adapted): the model and message config are validated before any

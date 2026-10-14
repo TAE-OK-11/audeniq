@@ -100,6 +100,10 @@ pub struct DdexErnConfig {
     pub deal_start_date: String,
     /// Deal end, `YYYY-MM-DD`. Required for `MessageSubType::Takedown`.
     pub takedown_date: Option<String>,
+    /// The main artist's page id at this recipient (Spotify artist URI,
+    /// Apple/Melon artist id; 0122), sent as DisplayArtist/PartyId so the
+    /// release lands on that page.
+    pub artist_party_id: Option<String>,
 }
 
 /// The deal a DSP takes: ERN `CommercialModelType`s and `UseType`s (AVS
@@ -435,6 +439,7 @@ fn resource_list(
     prepared: &PreparedRelease,
     tracks: &[&PreparedTrack],
     sender_dpid: &str,
+    artist_id: Option<(&str, &str)>,
 ) -> Result<()> {
     out.push_str("<ResourceList>");
     // The resource refs (A001…), the credit index and the image ref below
@@ -499,6 +504,9 @@ fn resource_list(
         out.push_str("<DisplayArtist><PartyName>");
         element(out, "FullName", &track.artist);
         out.push_str("</PartyName>");
+        if track.artist == prepared.artist {
+            artist_party_id(out, artist_id);
+        }
         element(out, "ArtistRole", "MainArtist");
         out.push_str("</DisplayArtist>");
         if let Some(list) = credits.get(&track.id) {
@@ -634,7 +642,24 @@ fn release_type_ddex(release_type: &str) -> &'static str {
     }
 }
 
-fn release_list(out: &mut String, prepared: &PreparedRelease, tracks: &[&PreparedTrack]) {
+/// XSD Artist: PartyName+, PartyId* — the artist's id at the recipient
+/// (proprietary, in the recipient's DPID namespace).
+fn artist_party_id(out: &mut String, artist_id: Option<(&str, &str)>) {
+    if let Some((id, dpid)) = artist_id {
+        out.push_str("<PartyId");
+        out.push_str(&attr("Namespace", &format!("DPID:{dpid}")));
+        out.push('>');
+        push_escaped(out, id);
+        out.push_str("</PartyId>");
+    }
+}
+
+fn release_list(
+    out: &mut String,
+    prepared: &PreparedRelease,
+    tracks: &[&PreparedTrack],
+    artist_id: Option<(&str, &str)>,
+) {
     let year = prepared.release_date.format("%Y").to_string();
     // XSD order: ReleaseId+, ReleaseReference*,
     // ReferenceTitle, ReleaseResourceReferenceList,
@@ -677,6 +702,7 @@ fn release_list(out: &mut String, prepared: &PreparedRelease, tracks: &[&Prepare
     out.push_str("<DisplayArtist><PartyName>");
     element(out, "FullName", &prepared.artist);
     out.push_str("</PartyName>");
+    artist_party_id(out, artist_id);
     element(out, "ArtistRole", "MainArtist");
     out.push_str("</DisplayArtist>");
     if prepared.explicit {
@@ -904,8 +930,13 @@ pub fn generate_ddex_ern_382(prepared: &PreparedRelease, config: &DdexErnConfig)
         .as_deref()
         .filter(|s| required(s))
         .ok_or(Error::PolicyGate("DDEX_SENDER_DPID_MISSING"))?;
-    resource_list(&mut out, prepared, &tracks, sender_dpid)?;
-    release_list(&mut out, prepared, &tracks);
+    // The main artist's page at this recipient, in the recipient's namespace.
+    let artist_id = config
+        .artist_party_id
+        .as_deref()
+        .zip(config.recipient_party_id.as_deref());
+    resource_list(&mut out, prepared, &tracks, sender_dpid, artist_id)?;
+    release_list(&mut out, prepared, &tracks, artist_id);
     deal_list(
         &mut out,
         config,

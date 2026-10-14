@@ -696,6 +696,15 @@ pub async fn submit(
     sqlx::query("UPDATE catalog.releases SET status='SUBMITTED', current_revision_id=$3, row_version=row_version+1 WHERE org_id=$1 AND id=$2")
         .bind(org).bind(release).bind(rid).execute(&mut *tx).await?;
     enqueue_stage1(&mut tx, rid).await?;
+    // The artist's platform pages as this application states them (0122).
+    crate::artist_pages::record_from_application(
+        &mut tx,
+        org,
+        release,
+        &body["release"]["draft"],
+        a.user,
+    )
+    .await?;
     operations::audit(
         &mut tx,
         Some(a.user),

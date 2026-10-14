@@ -29,6 +29,7 @@ fn config(sub: MessageSubType) -> DdexErnConfig {
         recipient_party_id: Some("PADPIDA2026092501M".into()),
         deal_start_date: "2026-10-01".into(),
         takedown_date: None,
+        artist_party_id: None,
     }
 }
 
@@ -536,4 +537,20 @@ fn ddex_ern_preorder_and_preview_start() {
     assert!(!long.contains("<PreviewDetails>") || f.tracks[0].audio.duration_secs.is_none());
     let v = serde_json::to_value(fixture(0)).unwrap();
     assert!(v.get("preorder_start").is_none() && v.get("preview_starts").is_none());
+}
+
+/// The main artist's page id at the recipient goes in DisplayArtist/PartyId
+/// (release and its own tracks), in the recipient's DPID namespace.
+#[test]
+fn ddex_ern_display_artist_party_id() {
+    use audeniq_core::ddex_xsd::validate_ern_382_xml;
+    let f = fixture(0);
+    let mut c = config(MessageSubType::Initial);
+    c.artist_party_id = Some("spotify:artist:4Z8W4fKeB5YxbusRsdQVPb".into());
+    let xml = generate_ddex_ern_382(&f, &c).unwrap();
+    let want = "</PartyName><PartyId Namespace=\"DPID:PADPIDA2026092501M\">spotify:artist:4Z8W4fKeB5YxbusRsdQVPb</PartyId><ArtistRole>MainArtist</ArtistRole>";
+    assert!(count(&xml, want) >= 2, "{xml}");
+    validate_ern_382_xml(&xml).unwrap();
+    let plain = generate_ddex_ern_382(&f, &config(MessageSubType::Initial)).unwrap();
+    assert!(!plain.contains("<PartyId Namespace="));
 }
