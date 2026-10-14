@@ -30,6 +30,7 @@ pub mod finance;
 pub mod fingerprint;
 pub mod host_secrets;
 pub mod identifiers;
+pub mod infringement;
 pub mod mockdsp;
 pub mod operations;
 pub mod packages;

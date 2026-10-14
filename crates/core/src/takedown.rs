@@ -111,6 +111,48 @@ fn still_up(sent: &[Sent]) -> impl Iterator<Item = &Sent> {
         .filter(|p| p.live_status.as_deref() != Some("TAKEN_DOWN"))
 }
 
+/// One `delivery.takedown` job per platform of the latest package that still
+/// carries `release`: the package, the jobs and the platform list. `None`
+/// when no package was ever made. `key` keeps jobs of different decisions
+/// apart (an infringement claim after an earlier takedown and restore).
+pub(crate) async fn queue_takedowns(
+    c: &mut PgConnection,
+    org: Uuid,
+    release: Uuid,
+    key: &str,
+) -> Result<Option<(Uuid, Vec<Uuid>, Value)>> {
+    let Some((package, sent)) = delivered(&mut *c, org, release).await? else {
+        return Ok(None);
+    };
+    let mut jobs = Vec::new();
+    for p in still_up(&sent) {
+        jobs.push(
+            operations::enqueue(
+                &mut *c,
+                "delivery",
+                "delivery.takedown",
+                &json!({"package_id": package, "partner_id": p.partner_id}),
+                &format!("delivery.takedown:{package}:{}{key}", p.partner_id),
+                None,
+            )
+            .await?,
+        );
+    }
+    Ok(Some((package, jobs, platforms(&sent))))
+}
+
+/// Platforms of the latest package of `release` and their live state.
+pub(crate) async fn platform_states(
+    c: &mut PgConnection,
+    org: Uuid,
+    release: Uuid,
+) -> Result<Value> {
+    Ok(delivered(c, org, release)
+        .await?
+        .map(|(_, p)| platforms(&p))
+        .unwrap_or_else(|| json!([])))
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RequestInput {
@@ -285,23 +327,9 @@ pub async fn approve(s: &AppState, h: &HeaderMap, id: Uuid, i: DecisionInput) ->
     .await?
     .ok_or(Error::Conflict)?;
     let (org, release): (Uuid, Uuid) = (row.get("org_id"), row.get("release_id"));
-    let (package, sent) = delivered(&mut tx, org, release)
+    let (package, jobs, list) = queue_takedowns(&mut tx, org, release, "")
         .await?
         .ok_or(Error::PolicyGate("TAKEDOWN_NOTHING_SENT"))?;
-    let mut jobs = Vec::new();
-    for p in still_up(&sent) {
-        jobs.push(
-            operations::enqueue(
-                &mut tx,
-                "delivery",
-                "delivery.takedown",
-                &json!({"package_id": package, "partner_id": p.partner_id}),
-                &format!("delivery.takedown:{package}:{}", p.partner_id),
-                None,
-            )
-            .await?,
-        );
-    }
     sqlx::query(
         "UPDATE portal.takedown_requests SET status='APPROVED', decided_by=$2, decided_at=now(), decision_note=$3 WHERE id=$1",
     )
@@ -322,7 +350,7 @@ pub async fn approve(s: &AppState, h: &HeaderMap, id: Uuid, i: DecisionInput) ->
     .await?;
     tx.commit().await?;
     Ok(
-        json!({"id": id, "status": "APPROVED", "package_id": package, "jobs": jobs, "platforms": platforms(&sent)}),
+        json!({"id": id, "status": "APPROVED", "package_id": package, "jobs": jobs, "platforms": list}),
     )
 }
 

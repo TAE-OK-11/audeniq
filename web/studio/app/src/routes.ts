@@ -26,6 +26,7 @@ export const pageLoaders = {
   Sign: () => import('./pages/Sign'),
   Terms: () => import('./pages/Terms'),
   Verify: () => import('./pages/Verify'),
+  RightsReport: () => import('./pages/RightsReport'),
   Admin: () => import('./admin/AdminApp'),
 };
 
