@@ -1,4 +1,5 @@
 // 계약서 — 라이브 view-contracts / renderContracts(오버라이드) 대응
+import { OrgContractEnd } from '../components/OrgContractEnd';
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from '../lib/router';
 import { useDocs } from '../store/docs';
@@ -84,6 +85,8 @@ export function Contracts() {
           />
         )}
       </div>
+
+      <OrgContractEnd />
 
       {openDoc && !signing && (
         <DocumentModal

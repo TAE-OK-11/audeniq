@@ -211,6 +211,18 @@ const CODE_MESSAGES: Record<string, string> = {
   PLATFORM_REQUEST_REF_REQUIRED: '플랫폼 접수 번호를 적어 주세요.',
   PLATFORM_REQUEST_NOTE_REQUIRED: '처리하지 못한 이유를 적어 주세요. 아티스트에게 보여요.',
   CONTENT_ID_STATUS_INVALID: 'Content ID 상태를 다시 골라 주세요.',
+  // 배급 종료·권리 만료
+  TERM_DATE_INVALID: '종료일을 다시 골라 주세요.',
+  TERM_DATE_PAST: '내일 이후 날짜를 골라 주세요.',
+  TERM_NOTICE_TOO_SHORT: '계약 종료는 30일 전에 알려 주셔야 해요. 30일 뒤 이후 날짜를 골라 주세요.',
+  TERM_REASON_INVALID: '종료 사유를 다시 골라 주세요.',
+  TERM_NOTE_INVALID: '메모는 1000자까지 적을 수 있어요.',
+  TERM_NOTE_REQUIRED: '해지 사유를 적어 주세요. 아티스트에게 보여요.',
+  TERM_ALREADY_ENDED: '이미 배급이 끝난 발매예요.',
+  TERM_NOT_CANCELLABLE: '취소할 수 있는 종료 예약이 없어요. 담당자가 정한 종료는 문의로 요청해 주세요.',
+  TERM_SET_BY_STAFF: '담당자가 정한 종료일이라 바꿀 수 없어요. 문의로 요청해 주세요.',
+  TERM_RELEASE_NOT_SUBMITTED: '발매 신청을 마친 발매만 종료일을 정할 수 있어요.',
+  ORG_CONTRACT_ENDING: '배급 계약 종료가 예약돼 있어 새 발매를 신청할 수 없어요. 계약서 화면에서 종료를 취소할 수 있어요.',
   // 스마트링크
   SMART_LINK_URL_INVALID: '그 플랫폼의 https 주소만 넣을 수 있어요. 앱에서 공유한 앨범 링크를 붙여 넣어 주세요.',
   SMART_LINK_PLATFORM_INVALID: '지원하지 않는 플랫폼이에요.',

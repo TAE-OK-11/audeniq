@@ -9,6 +9,7 @@ import { PitchCard } from '../components/PitchCard';
 import { SmartLinkCard } from '../components/SmartLinkCard';
 import { SplitsCard } from '../components/SplitsCard';
 import { ContentIdCard } from '../components/ContentIdCard';
+import { TermCard } from '../components/TermCard';
 import { InfringementCard } from '../components/InfringementCard';
 import { SkeletonBlock, SkeletonRows } from '../components/Skeleton';
 import { ReleaseCover, useImageOk } from '../components/ReleaseCover';
@@ -500,6 +501,7 @@ export function ReleaseDetail() {
             <SplitsCard releaseId={rel.id} />
             {!isDraft && <SmartLinkCard releaseId={rel.id} />}
             {!isDraft && <ContentIdCard releaseId={rel.id} />}
+            {!isDraft && <TermCard releaseId={rel.id} />}
             {!isDraft && <PitchCard releaseId={rel.id} />}
             {!isDraft && <CorrectionCard releaseId={rel.id} />}
             {!isDraft && <InfringementCard releaseId={rel.id} />}
