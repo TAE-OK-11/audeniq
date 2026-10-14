@@ -137,7 +137,7 @@ export function Application() {
         <section className="aq-paper-sec">
           <h2><span>2</span>발매 정보</h2>
           <div className="aq-paper-release">
-            {cover && <img className="aq-paper-cover" src={cover} alt="커버아트" />}
+            {cover && <img className="aq-paper-cover" src={cover} alt="커버아트" onError={e => { e.currentTarget.hidden = true; }} />}
             <table className="aq-paper-kv">
               <tbody>
                 <tr><th>발매 제목</th><td colSpan={3}><strong>{snap.title}</strong></td></tr>

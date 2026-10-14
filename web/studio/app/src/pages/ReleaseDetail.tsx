@@ -7,7 +7,7 @@ import { TakedownCard } from '../components/TakedownCard';
 import { CorrectionCard } from '../components/CorrectionCard';
 import { InfringementCard } from '../components/InfringementCard';
 import { SkeletonBlock, SkeletonRows } from '../components/Skeleton';
-import { ReleaseCover } from '../components/ReleaseCover';
+import { ReleaseCover, useImageOk } from '../components/ReleaseCover';
 import { useAsync } from '../hooks/useAsync';
 import { STATUS_LABEL, localStamp, statusTone } from '../lib/format';
 import { dspLabel, durationLabel, genreLabel, kindLabel, languageLabel } from '../lib/catalog';
@@ -151,6 +151,7 @@ export function ReleaseDetail() {
   const stageTone = rejected ? 'is-error' : needsFix ? 'is-warn' : '';
   const stageLabel = (i: number) => (i === 1 && rejected ? '거절' : i === 1 && needsFix ? '보완 필요' : PIPELINE[i].label);
   const coverSrc = d?.coverData || rel.coverData;
+  const [coverOk, coverFailed] = useImageOk(coverSrc);
   const allFixes = rel.corrections ?? [];
   // 담당자 전체 의견은 고칠 항목이 아니라 따로 보여 준다
   const { items: requested, note: reviewNote } = splitCorrections(allFixes);
@@ -385,12 +386,12 @@ export function ReleaseDetail() {
             </div>
             <div className="studio-album-aside aq-cover-card">
               <h2 className="subhead">커버아트</h2>
-              <div className={`aq-cover-stage${coverSrc ? '' : ' is-empty'}`}>
-                {coverSrc ? (
+              <div className={`aq-cover-stage${coverOk ? '' : ' is-empty'}`}>
+                {coverOk ? (
                   <>
                     {/* 커버 색이 카드 바탕으로 번지게 — 같은 이미지를 흐리게 깐다 */}
                     <img className="aq-cover-glow" src={coverSrc} alt="" aria-hidden="true" decoding="async" />
-                    <img className="aq-detail-cover-large" src={coverSrc} alt={`${rel.title} 커버아트`} decoding="async" />
+                    <img className="aq-detail-cover-large" src={coverSrc} alt={`${rel.title} 커버아트`} decoding="async" onError={coverFailed} />
                   </>
                 ) : (
                   <div className="aq-detail-cover-empty">
