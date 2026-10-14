@@ -931,3 +931,21 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 .aq-preq-urls{margin:8px 0;padding-left:18px;font-size:13px;overflow-wrap:anywhere}
 .aq-cid-card{margin-top:16px}
 .aq-term-card{margin-top:16px}
+/* 레이블 대량 작업 */
+.aq-bulk-start{display:grid;gap:10px;margin:12px 0 16px}
+.aq-bulk-start p{margin:0;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.aq-bulk-start ul{margin:6px 0 0;padding-left:18px}
+.aq-bulk-summary{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:8px}
+.aq-bulk-bad{color:#d92d20}
+.aq-bulk-scroll{overflow:auto;max-height:60vh;border:1px solid var(--aq-gray-150);border-radius:var(--aq-r-lg);background:#fff}
+.aq-bulk-table{border-collapse:collapse;font-size:13px;min-width:100%}
+.aq-bulk-table th{position:sticky;top:0;background:var(--aq-gray-50);text-align:left;padding:6px 8px;white-space:nowrap;font-weight:700;z-index:1}
+.aq-bulk-table td{border-top:1px solid var(--aq-gray-100);padding:2px}
+.aq-bulk-table td:first-child{padding:0 8px;color:var(--aq-text-4);text-align:right}
+.aq-bulk-table input{width:100%;min-width:90px;border:1px solid transparent;border-radius:6px;padding:4px 6px;font:inherit;background:transparent}
+.aq-bulk-table input:focus{border-color:var(--aq-blue-500);outline:none;background:#fff}
+.aq-bulk-table tr.is-bad td:first-child{color:#d92d20;font-weight:700}
+.aq-bulk-table td.is-bad input{border-color:#f04438;background:#fef3f2}
+.aq-bulk-issues{margin:10px 0 0;padding-left:18px;font-size:13px;display:grid;gap:2px;max-height:240px;overflow:auto}
+.aq-bulk-results{margin-top:16px}
+.aq-bulk-results .ui-row{display:flex;justify-content:space-between;align-items:center;gap:12px}.aq-bulk-results .ui-row>.ui-btn{flex:none;width:auto}
