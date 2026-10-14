@@ -9,7 +9,25 @@ export interface User {
 export interface Org {
   id: string;
   name: string;
+  /** 이 작업 공간에서 내 역할 — OWNER(소유자) · EDITOR(편집) · VIEWER(보기) */
+  role?: 'OWNER' | 'EDITOR' | 'VIEWER';
 }
+
+/** 작업 공간 멤버 — 소유자는 초대·해제된 사람까지, 다른 멤버는 활성 멤버만(이메일 일부 가림) */
+export interface OrgMember {
+  user_id: string;
+  role: 'OWNER' | 'EDITOR' | 'VIEWER';
+  status: 'ACTIVE' | 'INVITED' | 'REVOKED';
+  email: string | null;
+  invited_at: string | null;
+  accepted_at: string | null;
+  me: boolean;
+}
+export interface Invitation { org_id: string; org_name: string; role: 'EDITOR' | 'VIEWER'; invited_at: string | null }
+
+/** 올린 곡의 사전 품질 검사 결과 (검사 항목별) */
+export interface AssetCheck { code: string; status: 'PASS' | 'NOT_APPLICABLE' | 'REVIEW_REQUIRED' | 'CORRECTION_REQUIRED' | 'BLOCKED' | 'TECHNICAL_RETRY'; detail: string | null }
+export interface AssetChecks { asset_id: string; qc_status: 'PENDING' | 'PASS' | 'BLOCKED'; checks: AssetCheck[] }
 
 export interface Release {
   id: string;

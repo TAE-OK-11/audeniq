@@ -864,7 +864,7 @@ fn field_cache_key(check_code: &str, inputs: &str) -> String {
 fn asset_cache_key(check_code: &str, asset_sha256: &str) -> String {
     qc::result_hash(check_code, qc::QC_RULE_VERSION, asset_sha256, asset_sha256)
 }
-fn asset_check_cache_key(check_code: &str, asset_id: &str, sha256: &str) -> String {
+pub(crate) fn asset_check_cache_key(check_code: &str, asset_id: &str, sha256: &str) -> String {
     if check_code == "AUDIO_AI_PROVENANCE" {
         // Normalization can produce identical masters from sources with
         // different metadata. Original provenance belongs to this asset.
