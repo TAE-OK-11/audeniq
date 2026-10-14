@@ -267,6 +267,19 @@ pub async fn save(
 // Public
 // ---------------------------------------------------------------------------
 
+/// Whether the release is out now (KST): its date at its simultaneous
+/// release time, or at midnight when it has none.
+pub(crate) fn is_released(date: Option<&str>, time: Option<&str>) -> bool {
+    let Some(date) = date.filter(|d| !d.is_empty()) else {
+        return true;
+    };
+    let time = time.filter(|t| t.len() == 5).unwrap_or("00:00");
+    let now = (chrono::Utc::now() + chrono::Duration::hours(9))
+        .format("%Y-%m-%d %H:%M")
+        .to_string();
+    format!("{date} {time}") <= now
+}
+
 /// The visible link behind `slug`: (link id, org, release, artwork, links).
 pub(crate) async fn visible(s: &AppState, slug: &str) -> Result<sqlx::postgres::PgRow> {
     if !valid_slug(slug) {
@@ -290,13 +303,14 @@ async fn visible_where(
 ) -> Result<sqlx::postgres::PgRow> {
     sqlx::query(sqlx::AssertSqlSafe(format!(
         "SELECT l.id, l.slug, l.org_id, l.links, r.title, r.draft->>'artist' AS artist, r.draft->>'release_date' AS release_date,
-                r.artwork_asset_id
+                r.draft->>'release_time' AS release_time, r.artwork_asset_id
            FROM portal.smart_links l
            JOIN catalog.releases r ON r.id=l.release_id AND r.org_id=l.org_id
           WHERE {key} AND l.enabled AND r.archived_at IS NULL AND NOT (r.status = ANY($2))
             AND NOT EXISTS (SELECT 1 FROM portal.takedown_requests t WHERE t.release_id=r.id AND t.status='APPROVED')
             AND NOT EXISTS (SELECT 1 FROM portal.infringement_claims c WHERE c.release_id=r.id
-                             AND c.status IN ('SUSPENDED','COUNTER_NOTICED','UPHELD'))"
+                             AND c.status IN ('SUSPENDED','COUNTER_NOTICED','UPHELD'))
+            AND NOT EXISTS (SELECT 1 FROM portal.release_terms tm WHERE tm.release_id=r.id AND tm.status IN ('ENDED','FINAL_SETTLED'))"
     )))
     .bind(value)
     .bind(HIDDEN_STATES.iter().map(|v| v.to_string()).collect::<Vec<_>>())
@@ -341,10 +355,10 @@ pub async fn public_page(s: &AppState, h: &HeaderMap, slug: &str) -> Result<Valu
         })
         .collect();
     let release_date: Option<String> = row.get("release_date");
-    let today = (chrono::Utc::now() + chrono::Duration::hours(9))
-        .date_naive()
-        .to_string();
-    let released = release_date.as_deref().is_none_or(|d| d <= today.as_str());
+    let released = is_released(
+        release_date.as_deref(),
+        row.get::<Option<String>, _>("release_time").as_deref(),
+    );
     count(s, h, row.get("id"), slug, VIEW).await;
     Ok(json!({
         "title": row.get::<String, _>("title"),
