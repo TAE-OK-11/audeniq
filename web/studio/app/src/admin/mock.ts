@@ -4,7 +4,7 @@ import { ApiError, messageForCode } from '../api/errors';
 import { applicationPending, needsSecond } from './labels';
 import type {
   ApprovalItem, DecisionInput, DecisionResult, DeliveryDecisionInput, DeliveryItem, DspItem, InquiryMessage, InquiryItem,
-  Overview, PayoutItem, QueueRelease, ReleaseSheet, ReleaseTimelineItem, StagingRow, StaffDocument, StaffMe, AgreementTerms, AgreementTermsInput, TakedownItem, InfringementClaim
+  Overview, PayoutItem, QueueRelease, ReleaseSheet, ReleaseTimelineItem, StagingRow, StaffDocument, StaffMe, AgreementTerms, AgreementTermsInput, TakedownItem, CorrectionItem, InfringementClaim
 } from './api';
 import { applicationHash, type StudioDraft } from './application';
 
@@ -124,6 +124,13 @@ const takedowns: TakedownItem[] = [{
     { partner_id: 'D-1', slug: 'melon', name: '멜론', live_status: 'LIVE' },
     { partner_id: 'D-5', slug: 'spotify', name: 'Spotify', live_status: 'LIVE' },
   ],
+}];
+
+const corrections: CorrectionItem[] = [{
+  id: 'mc-1', org_id: 'org-2', org_name: '한결 뮤직', release_id: 'rel-live-1', title: '여름의 끝', status: 'PENDING',
+  changes: { genre: '인디 팝', tracks: [{ track_id: 'trk-1', credits: [{ name: '김한결', role: 'Composer' }, { name: '이편곡', role: 'Arranger' }] }] },
+  reason: '작곡가 이름 철자가 틀렸어요.', decision_note: '', created_at: new Date(Date.now() - 2 * 3600_000).toISOString(), decided_at: null,
+  tracks: [{ track_id: 'trk-1', title: '여름의 끝' }],
 }];
 
 const infringementClaims: InfringementClaim[] = [{
@@ -380,6 +387,18 @@ export const mockStaff = {
   },
   approvals: () => wait({ items: approvals.filter(a => a.status === 'PENDING') }),
   takedowns: () => wait({ items: takedowns }),
+  corrections: () => wait({ items: corrections }),
+  approveCorrection: async (cid: string, note: string) => {
+    const c = corrections.find(x => x.id === cid && x.status === 'PENDING') ?? fail('CONFLICT');
+    Object.assign(c, { status: 'APPROVED', decision_note: note, decided_at: new Date().toISOString() });
+    return wait({ status: 'APPROVED', jobs: ['job-mock'] });
+  },
+  declineCorrection: async (cid: string, note: string) => {
+    if (!note.trim()) fail('CORRECTION_NOTE_REQUIRED');
+    const c = corrections.find(x => x.id === cid && x.status === 'PENDING') ?? fail('CONFLICT');
+    Object.assign(c, { status: 'DECLINED', decision_note: note, decided_at: new Date().toISOString() });
+    return wait({ status: 'DECLINED' });
+  },
   claims: (all: boolean) => wait({ items: infringementClaims.filter(c => all || ['RECEIVED', 'SUSPENDED', 'COUNTER_NOTICED'].includes(c.status)) }),
   rejectClaim: async (cid: string, note: string) => {
     if (!note.trim()) fail('CLAIM_NOTE_REQUIRED');

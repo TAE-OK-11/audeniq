@@ -808,14 +808,23 @@ async fn materialize(
     // (legacy fixtures without complete metadata simply have none, and the
     // adapters that need it fail closed).
     let canonical_id: Uuid = row.get("canonical_id");
+    let mut genre_correction = None;
     let prepared = match serde_json::from_value::<crate::distribution::CanonicalRelease>(snapshot) {
-        Ok(c) => crate::preparation_model::PreparedRelease::from_canonical(pool, canonical_id, &c)
-            .await
-            .ok()
-            .map(Arc::new),
+        Ok(c) => {
+            match crate::preparation_model::PreparedRelease::from_canonical(pool, canonical_id, &c)
+                .await
+            {
+                Ok(mut p) => {
+                    genre_correction = crate::corrections::overlay(pool, &mut p).await?;
+                    Some(Arc::new(p))
+                }
+                Err(_) => None,
+            }
+        }
         Err(_) => None,
     };
     let (genre, label) = release_extras(tx, &prepared).await;
+    let genre = genre_correction.or(genre);
     Ok(TransferPackage {
         package_id: job.package_id,
         package_hash,
@@ -1888,15 +1897,23 @@ async fn followup_package(
         .map(str::to_owned);
     let canonical: Option<crate::distribution::CanonicalRelease> =
         serde_json::from_value(snapshot).ok();
+    let mut genre_correction = None;
     let prepared = match &canonical {
-        Some(c) => crate::preparation_model::PreparedRelease::from_canonical(
+        Some(c) => match crate::preparation_model::PreparedRelease::from_canonical(
             pool,
             row.get("canonical_id"),
             c,
         )
         .await
-        .ok()
-        .map(Arc::new),
+        {
+            Ok(mut p) => {
+                // Approved metadata corrections (credits, genre) go out with
+                // every follow-up message.
+                genre_correction = crate::corrections::overlay(pool, &mut p).await?;
+                Some(Arc::new(p))
+            }
+            Err(_) => None,
+        },
         None => None,
     };
     let mut ern_xml = Vec::new();
@@ -1935,6 +1952,7 @@ async fn followup_package(
     }
     let mut c = pool.acquire().await?;
     let (genre, label) = release_extras(&mut c, &prepared).await;
+    let genre = genre_correction.or(genre);
     Ok(TransferPackage {
         package_id,
         package_hash: row.get("package_hash"),

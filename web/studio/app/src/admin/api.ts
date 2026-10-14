@@ -170,6 +170,15 @@ export interface TakedownItem {
   platforms: { partner_id: string; slug: string; name: string; live_status: string | null }[];
 }
 
+/** 발매 후 정보 수정 요청 (크레딧·장르만) */
+export interface CorrectionItem {
+  id: string; org_id: string; org_name: string; release_id: string; title: string;
+  status: 'PENDING' | 'APPROVED' | 'DECLINED' | 'CANCELLED';
+  changes: { genre?: string; tracks?: { track_id: string; credits: { name: string; role: string }[] }[] };
+  reason: string; decision_note: string; created_at: string; decided_at: string | null;
+  tracks: { track_id: string; title: string }[];
+}
+
 /** 권리침해 신고 (누구나 접수, 신고자 연락처는 스태프에게만) */
 export interface InfringementClaim {
   id: string; receipt: string;
@@ -282,6 +291,9 @@ const remote = {
   restage: (pkg: string) => req<{ job_id: string }>(`/api/staff/deliveries/${id(pkg)}/restage`, { method: 'POST' }),
   dsps: () => req<Page<DspItem>>('/api/staff/dsps'),
   takedowns: () => req<Page<TakedownItem>>('/api/staff/takedowns'),
+  corrections: () => req<Page<CorrectionItem>>('/api/staff/corrections'),
+  approveCorrection: (cid: string, note: string) => req<{ status: string; jobs: string[] }>(`/api/staff/corrections/${id(cid)}/approve`, { method: 'POST', body: { note } }),
+  declineCorrection: (cid: string, note: string) => req<{ status: string }>(`/api/staff/corrections/${id(cid)}/decline`, { method: 'POST', body: { note } }),
   approveTakedown: (tid: string, note: string) => req<{ status: string }>(`/api/staff/takedowns/${id(tid)}/approve`, { method: 'POST', body: { note } }),
   declineTakedown: (tid: string, note: string) => req<{ status: string }>(`/api/staff/takedowns/${id(tid)}/decline`, { method: 'POST', body: { note } }),
   claims: (all: boolean) => req<Page<InfringementClaim>>(`/api/staff/infringement-claims${all ? '?status=all' : ''}`),

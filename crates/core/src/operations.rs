@@ -1018,6 +1018,67 @@ pub async fn execute(pool: &PgPool, storage: &Arc<dyn ObjectStore>, j: &Job) -> 
             }
         };
     }
+    if j.kind == "delivery.update" {
+        // Approved metadata correction (crates/core/src/corrections.rs): an
+        // update message regenerated with every approved correction applied.
+        let package_id = j
+            .payload
+            .get("package_id")
+            .and_then(Value::as_str)
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .ok_or(Error::Internal)?;
+        let partner_id = j
+            .payload
+            .get("partner_id")
+            .and_then(Value::as_str)
+            .ok_or(Error::Internal)?;
+        let correction = j
+            .payload
+            .get("correction_id")
+            .and_then(Value::as_str)
+            .and_then(|s| Uuid::parse_str(s).ok())
+            .ok_or(Error::Internal)?;
+        let org: Uuid =
+            sqlx::query_scalar("SELECT org_id FROM distribution.distribution_packages WHERE id=$1")
+                .bind(package_id)
+                .fetch_optional(pool)
+                .await?
+                .ok_or(Error::NotFound)?;
+        let changes: Value = sqlx::query_scalar(
+            "SELECT applied FROM portal.metadata_corrections WHERE id=$1 AND status='APPROVED'",
+        )
+        .bind(correction)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(Error::NotFound)?;
+        let registry = crate::partners::registry(pool, storage, shared_mockdsp()).await?;
+        let Some(adapter) = registry.get(partner_id) else {
+            return fail(pool, j, true, "EXECUTION_NO_ADAPTER").await;
+        };
+        return match crate::execution::update_release(
+            pool,
+            org,
+            adapter.as_ref(),
+            package_id,
+            partner_id,
+            &changes,
+        )
+        .await
+        {
+            Ok(_) => succeed(pool, j).await,
+            Err(e) => {
+                let short: String = format!("{e:?}").chars().take(500).collect();
+                let permanent = matches!(e, Error::PolicyGate(_));
+                fail(
+                    pool,
+                    j,
+                    permanent,
+                    &format!("DELIVERY_UPDATE_ERROR:{short}"),
+                )
+                .await
+            }
+        };
+    }
     if j.kind == "delivery.takedown" {
         let package_id = j
             .payload
