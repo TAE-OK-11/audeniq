@@ -896,9 +896,7 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 .aq-splits-pct{display:flex;align-items:center;gap:4px}
 .aq-splits-pct .ui-input{text-align:right}
 .aq-splits-share{font-weight:700}
-.aq-splits-status{font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--aq-gray-100);color:var(--aq-text-3);justify-self:start}
-.aq-splits-status.is-accepted{background:var(--aq-blue-50);color:var(--aq-blue-500)}
-.aq-splits-status.is-declined{background:#fef3f2;color:#b42318}
+.aq-splits-status{justify-self:start}
 .aq-splits-money{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:flex-end}
 .aq-splits-foot{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .aq-splits-over{color:#d92d20;font-weight:700;font-size:13px}
