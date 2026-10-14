@@ -5402,3 +5402,188 @@ async fn codes_list_and_csv(pool: PgPool) {
     let (s, _) = call(&ctx.app, "GET", &path, Value::Null, Some(&other)).await;
     assert_eq!(s, StatusCode::FORBIDDEN);
 }
+
+/// Release alerts: a fan leaves an email on the smart link before release,
+/// gets one mail once the release date comes, and the address is erased;
+/// alerts for a page that is gone are cancelled, stale ones expire.
+#[sqlx::test]
+async fn release_alert_mails_fans_once_and_erases_addresses(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let link_path = format!("/api/orgs/{}/releases/{}/smart-link", ctx.org, ctx.release);
+    let (_, v) = call(
+        &ctx.app,
+        "PUT",
+        &link_path,
+        json!({"links": {}}),
+        Some(&ctx.user),
+    )
+    .await;
+    let slug = v["slug"].as_str().unwrap().to_string();
+    let set_date = |days: i64| {
+        let pool = pool.clone();
+        let release = ctx.release;
+        async move {
+            let d =
+                (chrono::Utc::now() + chrono::Duration::hours(9) + chrono::Duration::days(days))
+                    .date_naive()
+                    .to_string();
+            sqlx::query("UPDATE catalog.releases SET draft = jsonb_set(draft, '{release_date}', to_jsonb($2::text)), row_version = row_version + 1 WHERE id=$1")
+                .bind(release)
+                .bind(d)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+    };
+    let alerts = format!("/api/smart-links/{slug}/alerts");
+    let fan = format!("fan-{}@example.com", Uuid::new_v4().simple());
+    set_date(3).await;
+
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &alerts,
+        json!({"email": fan, "consent": false}),
+        None,
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "ALERT_CONSENT_REQUIRED", "{v}");
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &alerts,
+        json!({"email": "not-an-email", "consent": true}),
+        None,
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "ALERT_EMAIL_INVALID", "{v}");
+    for _ in 0..2 {
+        let (s, v) = call(
+            &ctx.app,
+            "POST",
+            &alerts,
+            json!({"email": fan.to_uppercase(), "consent": true}),
+            None,
+        )
+        .await;
+        assert_eq!(
+            (s, v["ok"].as_bool()),
+            (StatusCode::OK, Some(true)),
+            "same answer for a repeat"
+        );
+    }
+    let (n, plain): (i64, bool) = sqlx::query_as(
+        "SELECT count(*), bool_or(position('example.com' in encode(email_cipher,'escape'))>0) FROM portal.release_alerts",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!((n, plain), (1, false), "one sealed row");
+    let (_, st) = call(&ctx.app, "GET", &link_path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(st["stats"]["alerts"], 1, "{st}");
+
+    unsafe {
+        std::env::set_var("EMAIL_FROM", "AUDENIQ <no-reply@audeniq.test>");
+        std::env::set_var("EMAIL_PROVIDERS", "test");
+    }
+    let mailer = audeniq_core::email::Mailer::from_env(ORIGIN)
+        .unwrap()
+        .unwrap();
+    let keys = audeniq_core::payout_keys::KeyRing::from_env(false).unwrap();
+    use audeniq_core::release_alerts::{dispatch_once, sweep};
+    assert_eq!(
+        dispatch_once(&pool, &keys, &mailer).await.unwrap(),
+        0,
+        "not yet"
+    );
+
+    // Release day has passed: one mail, address gone.
+    set_date(-1).await;
+    assert_eq!(dispatch_once(&pool, &keys, &mailer).await.unwrap(), 1);
+    let sent = audeniq_core::email::test_sent_to(&fan);
+    assert_eq!(sent.len(), 1);
+    assert!(
+        sent[0].subject.contains("발매됐어요"),
+        "{}",
+        sent[0].subject
+    );
+    let (status, erased): (String, bool) =
+        sqlx::query_as("SELECT status, email_cipher IS NULL FROM portal.release_alerts")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!((status.as_str(), erased), ("SENT", true));
+    assert_eq!(
+        dispatch_once(&pool, &keys, &mailer).await.unwrap(),
+        0,
+        "only once"
+    );
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &alerts,
+        json!({"email": fan, "consent": true}),
+        None,
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "ALERT_ALREADY_RELEASED", "{v}");
+
+    // The page is switched off before release: cancelled, address erased.
+    set_date(3).await;
+    let other = format!("other-{}@example.com", Uuid::new_v4().simple());
+    call(
+        &ctx.app,
+        "POST",
+        &alerts,
+        json!({"email": other, "consent": true}),
+        None,
+    )
+    .await;
+    call(
+        &ctx.app,
+        "PUT",
+        &link_path,
+        json!({"enabled": false, "links": {}}),
+        Some(&ctx.user),
+    )
+    .await;
+    set_date(-1).await;
+    assert_eq!(dispatch_once(&pool, &keys, &mailer).await.unwrap(), 1);
+    assert!(audeniq_core::email::test_sent_to(&other).is_empty());
+    let cancelled: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM portal.release_alerts WHERE status='CANCELLED' AND email_cipher IS NULL",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(cancelled, 1);
+
+    // A waiting alert more than a week past the release date expires.
+    call(
+        &ctx.app,
+        "PUT",
+        &link_path,
+        json!({"links": {}}),
+        Some(&ctx.user),
+    )
+    .await;
+    set_date(3).await;
+    let late = format!("late-{}@example.com", Uuid::new_v4().simple());
+    call(
+        &ctx.app,
+        "POST",
+        &alerts,
+        json!({"email": late, "consent": true}),
+        None,
+    )
+    .await;
+    set_date(-10).await;
+    sweep(&pool).await.unwrap();
+    let expired: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM portal.release_alerts WHERE status='EXPIRED' AND email_cipher IS NULL",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(expired, 1);
+}

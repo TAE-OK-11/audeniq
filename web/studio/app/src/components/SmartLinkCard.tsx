@@ -9,7 +9,7 @@ import { useToast } from './Toast';
 
 interface State {
   link: { slug: string; enabled: boolean; links: Record<string, string> } | null;
-  stats: { views: number; clicks: Record<string, number>; days: number };
+  stats: { views: number; clicks: Record<string, number>; days: number; alerts?: number; alerts_waiting?: number };
   platforms: string[]; can_create: boolean;
 }
 
@@ -65,6 +65,10 @@ export function SmartLinkCard({ releaseId }: { releaseId: string }) {
           <p className="small">최근 {st.stats.days}일 · 조회 <b>{st.stats.views.toLocaleString()}</b> · 클릭 <b>{clicks.toLocaleString()}</b>
             {clicks > 0 && <span className="muted"> ({Object.entries(st.stats.clicks).sort((a, b) => b[1] - a[1]).map(([p, n]) => `${PLATFORM_NAMES[p] ?? p} ${n}`).join(', ')})</span>}
           </p>
+          {(st.stats.alerts ?? 0) > 0 && (
+            <p className="small">발매 알림 신청 <b>{(st.stats.alerts ?? 0).toLocaleString()}</b>명
+              {(st.stats.alerts_waiting ?? 0) > 0 && <span className="muted"> · 발매일에 {st.stats.alerts_waiting}명에게 메일을 보내요</span>}</p>
+          )}
         </>
       )}
       {!edit && (
