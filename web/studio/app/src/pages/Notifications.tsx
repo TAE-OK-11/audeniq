@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from '../lib/router';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
@@ -8,6 +8,8 @@ import { markAllNoticesRead, markNoticeRead, useNotices, useUnreadCount, type No
 import { Glyph } from '../components/Glyph';
 import { alertsBlocked, alertsEnabled, alertsSupported, disableAlerts, enableAlerts } from '../lib/alerts';
 import { MOCK } from '../lib/mode';
+import * as portal from '../api/portal';
+import { errorMessage } from '../api/errors';
 
 /** 브라우저 알림 켜기 — 다른 탭·창에 있어도 답변·검토 결과를 바로 알려 준다 */
 function BrowserAlerts() {
@@ -30,6 +32,45 @@ function BrowserAlerts() {
       </span>
       <label className="aq-switch">
         <input type="checkbox" role="switch" aria-label="브라우저 알림" checked={on} disabled={blocked} onChange={e => void toggle(e.target.checked)} />
+        <span aria-hidden="true" />
+      </label>
+    </div>
+  );
+}
+
+/** 알림 메일 — 같은 알림을 로그인 이메일로도 받는다 (서버 설정, 기본 켜짐) */
+function EmailAlerts() {
+  const toast = useToast();
+  const [on, setOn] = useState<boolean | null>(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    if (MOCK) return;
+    let alive = true;
+    portal.fetchNotificationSettings().then(v => { if (alive) setOn(v.emailEnabled); }).catch(() => { if (alive) setOn(null); });
+    return () => { alive = false; };
+  }, []);
+  if (MOCK || on === null) return null;
+  const toggle = async (next: boolean) => {
+    setSaving(true);
+    try {
+      const v = await portal.saveNotificationSettings(next);
+      setOn(v.emailEnabled);
+      toast(v.emailEnabled ? '알림 메일을 켰어요. 로그인 이메일로 함께 보내 드릴게요.' : '알림 메일을 껐어요.', v.emailEnabled ? 'success' : 'info');
+    } catch (e) {
+      toast(errorMessage(e), 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="aq-alert-pref">
+      <span className="aq-alert-pref-icon" aria-hidden="true"><Glyph name="mail" size={18} /></span>
+      <span className="min-0">
+        <strong>알림 메일</strong>
+        <span>검토 결과·서류 요청·정산·문의 답변 알림을 로그인 이메일로도 보내 드려요.</span>
+      </span>
+      <label className="aq-switch">
+        <input type="checkbox" role="switch" aria-label="알림 메일" checked={on} disabled={saving} onChange={e => void toggle(e.target.checked)} />
         <span aria-hidden="true" />
       </label>
     </div>
@@ -73,6 +114,7 @@ export function Notifications() {
       </div>
 
       <BrowserAlerts />
+      <EmailAlerts />
 
       <div className="ui-chips is-wrap" id="notificationTools">
         <button

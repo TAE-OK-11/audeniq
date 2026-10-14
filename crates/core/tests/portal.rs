@@ -160,7 +160,7 @@ async fn call(
 }
 async fn user(app: &Router) -> User {
     let email = format!("{}@example.test", Uuid::new_v4());
-    let credentials = json!({"email":email,"password":"Long-test-password-123!"});
+    let credentials = json!({"email":email,"password":"Long-test-password-123!","terms_version":"AUD-TERMS 2026.10.1"});
     let (s, _, r) = call(app, "POST", "/api/auth/register", credentials.clone(), None).await;
     assert_eq!(s, StatusCode::OK, "{r}");
     let (s, h, l) = call(app, "POST", "/api/auth/login", credentials, None).await;
@@ -787,7 +787,7 @@ async fn concurrent_signing_and_replacement_never_bind_an_old_signature_to_new_c
 
 #[sqlx::test]
 async fn profile_is_per_user_with_optimistic_versions(pool: PgPool) {
-    let (app, _) = app(pool).await;
+    let (app, _) = app(pool.clone()).await;
     let u = user(&app).await;
     let (s, _, v) = call(&app, "GET", "/api/me/profile", Value::Null, Some(&u)).await;
     assert_eq!(s, StatusCode::OK);
@@ -801,6 +801,7 @@ async fn profile_is_per_user_with_optimistic_versions(pool: PgPool) {
     let body = json!({"display_name":"서린","contact_email":"a@b.kr","bio":"첫 줄\n둘째 줄","country":"kr","row_version":0});
     let (s, _, v) = call(&app, "PUT", "/api/me/profile", body.clone(), Some(&u)).await;
     assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["row_version"], 1);
     // Stale version and bidi control characters are refused.
     let (s, _, _) = call(&app, "PUT", "/api/me/profile", body, Some(&u)).await;
     assert_eq!(s, StatusCode::CONFLICT);
@@ -810,7 +811,38 @@ async fn profile_is_per_user_with_optimistic_versions(pool: PgPool) {
     let (_, _, v) = call(&app, "GET", "/api/me/profile", Value::Null, Some(&u)).await;
     assert_eq!(v["display_name"], "서린");
     assert_eq!(v["country"], "KR");
-    assert_eq!(v["row_version"], 0);
+    assert_eq!(v["row_version"], 1);
+    assert_eq!(v["contact_email"], "a@b.kr");
+    let stored: (String, Option<Vec<u8>>) = sqlx::query_as(
+        "SELECT contact_email, contact_email_cipher FROM portal.artist_profiles WHERE user_id=$1",
+    )
+    .bind(u.user)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(
+        stored.0.is_empty() && stored.1.is_some(),
+        "contact email stored sealed"
+    );
+    // The saved version keeps saving (the first save used to leave the row
+    // at version 0, so every later save conflicted).
+    let rename = json!({"display_name":"새 활동명","contact_email":"a@b.kr","bio":"","country":"KR","row_version":1});
+    let (s, _, v) = call(&app, "PUT", "/api/me/profile", rename, Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["row_version"], 2);
+    // A row the old insert left at version 0 is still editable.
+    sqlx::query("UPDATE portal.artist_profiles SET row_version=0")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let legacy = json!({"display_name":"a","contact_email":"a@b.kr","bio":"","country":"KR","row_version":0});
+    let (s, _, v) = call(&app, "PUT", "/api/me/profile", legacy.clone(), Some(&u)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["row_version"], 1);
+    let (s, _, _) = call(&app, "PUT", "/api/me/profile", legacy, Some(&u)).await;
+    assert_eq!(s, StatusCode::CONFLICT);
+    let (_, _, v) = call(&app, "GET", "/api/me/profile", Value::Null, Some(&u)).await;
+    assert_eq!(v["display_name"], "a");
     // Another user sees only their own profile.
     let other = user(&app).await;
     let (_, _, v) = call(&app, "GET", "/api/me/profile", Value::Null, Some(&other)).await;
@@ -866,6 +898,25 @@ async fn payout_account_is_encrypted_masked_and_owner_only(pool: PgPool) {
     assert_eq!(
         audeniq_core::portal::open_account(u.org, &sealed).unwrap(),
         "12345678901234"
+    );
+    // The holder name is sealed too, and kept out of the notification text.
+    let plain: Option<String> =
+        sqlx::query_scalar("SELECT holder_name FROM portal.payout_accounts WHERE org_id=$1")
+            .bind(u.org)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(plain.is_none());
+    let notices: Vec<String> = sqlx::query_scalar(
+        "SELECT detail FROM portal.notifications WHERE org_id=$1 AND kind='ACCOUNT'",
+    )
+    .bind(u.org)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert!(
+        !notices.is_empty() && notices.iter().all(|d| !d.contains("서린")),
+        "{notices:?}"
     );
     // Another account cannot read or write this organisation.
     let (s, _, _) = call(
@@ -1311,11 +1362,14 @@ async fn staff_sheet_shows_the_signed_application_with_signature_and_contact(poo
         a["agreements"],
         json!(["truth", "terms", "privacy", "esign"])
     );
-    let account: String = sqlx::query_scalar("SELECT email FROM identity.users WHERE id=$1")
-        .bind(u.user)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    // Stored sealed (migration 0102): read it back with the test keyring.
+    let account = audeniq_core::pii::user_email(
+        &audeniq_core::payout_keys::KeyRing::from_env(false).unwrap(),
+        &pool,
+        u.user,
+    )
+    .await
+    .unwrap();
     assert_eq!(a["contact_email"], account);
     // With a profile contact email, that one is shown.
     sqlx::query("INSERT INTO portal.artist_profiles(user_id,display_name,contact_email) VALUES($1,'서린','contact@example.test')")
@@ -1506,6 +1560,202 @@ async fn settlement_balance_payout_requests_and_reports(pool: PgPool) {
     )
     .await;
     assert_eq!(s, StatusCode::FORBIDDEN);
+}
+
+async fn raw_get(app: &Router, path: &str, u: &User) -> (StatusCode, HeaderMap, String) {
+    let r = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(path)
+                .header("x-audeniq-service", SECRET)
+                .header("origin", ORIGIN)
+                .header("cookie", &u.cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let (status, headers) = (r.status(), r.headers().clone());
+    let bytes = axum::body::to_bytes(r.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
+    (status, headers, String::from_utf8(bytes.to_vec()).unwrap())
+}
+
+#[sqlx::test]
+async fn statements_page_through_the_whole_history_and_export_as_csv(pool: PgPool) {
+    key();
+    let (app, _) = app(pool.clone()).await;
+    let u = user(&app).await;
+    use audeniq_core::finance::{self, EntrySide, LedgerEntryInput, PostTransaction};
+    let entry = |account, side, amount: &str| LedgerEntryInput {
+        account,
+        side,
+        amount: amount.parse().unwrap(),
+        currency: None,
+        party_id: Some(u.party),
+        isrc: None,
+        split_snapshot_id: None,
+    };
+    for (i, description) in ["2026-06 Melon", "=HYPERLINK(\"x\")", "2026-08 Spotify, Inc"]
+        .into_iter()
+        .enumerate()
+    {
+        finance::post_transaction(
+            &pool,
+            u.org,
+            PostTransaction {
+                transaction_code: "ROYALTY_ACCRUAL",
+                currency: "KRW",
+                entries: vec![
+                    entry(
+                        "ROYALTY_RECEIVABLE",
+                        EntrySide::Debit,
+                        &format!("{}000", i + 1),
+                    ),
+                    entry(
+                        "ROYALTY_PAYABLE",
+                        EntrySide::Credit,
+                        &format!("{}000", i + 1),
+                    ),
+                ],
+                match_status: Some("AUTO"),
+                fx_rate: None,
+                fee_policy_version: Some("fee-1"),
+                contract_version: Some("ctr-1"),
+                tax_rule_version: Some("tax-1"),
+                source_ref: json!({"dsp":"melon","period":format!("2026-0{}", i + 6)}),
+                description,
+                created_by: None,
+            },
+        )
+        .await
+        .unwrap();
+    }
+    // Two pages of two, newest first, no line twice and none skipped.
+    let (s, _, first) = call(
+        &app,
+        "GET",
+        &org_path(&u, "/finance/statements?limit=2"),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{first}");
+    assert_eq!(first["items"].as_array().unwrap().len(), 2);
+    assert_eq!(first["items"][0]["amount"], "3000");
+    let next = first["next_before"]
+        .as_str()
+        .expect("a next page")
+        .to_string();
+    let (s, _, second) = call(
+        &app,
+        "GET",
+        &org_path(
+            &u,
+            &format!("/finance/statements?limit=2&before={}", urlencoding(&next)),
+        ),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{second}");
+    assert_eq!(second["items"].as_array().unwrap().len(), 1);
+    assert_eq!(second["items"][0]["amount"], "1000");
+    assert!(second["next_before"].is_null());
+    let (s, _, v) = call(
+        &app,
+        "GET",
+        &org_path(&u, "/finance/statements?before=yesterday"),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    assert_eq!(v["error"]["code"], "STATEMENT_CURSOR_INVALID");
+
+    let (s, h, csv) = raw_get(&app, &org_path(&u, "/finance/statements.csv"), &u).await;
+    assert_eq!(s, StatusCode::OK, "{csv}");
+    assert!(h["content-type"].to_str().unwrap().starts_with("text/csv"));
+    assert!(
+        h["content-disposition"]
+            .to_str()
+            .unwrap()
+            .contains("statements.csv")
+    );
+    assert!(csv.starts_with('\u{feff}'), "BOM for Korean Excel");
+    let lines: Vec<&str> = csv.trim_end().split("\r\n").collect();
+    assert_eq!(lines.len(), 4, "{csv}");
+    assert!(
+        lines[1].contains("\"2026-08 Spotify, Inc\"") && lines[1].ends_with(",3000"),
+        "{csv}"
+    );
+    // A leading = never reaches a spreadsheet as a formula.
+    assert!(lines[2].contains("\"'=HYPERLINK(\"\"x\"\")\""), "{csv}");
+
+    // Report periods: any whole-month span up to ten years.
+    for (q, ok) in [
+        ("", true),
+        ("?from=2025-01&to=2025-12", true),
+        ("?from=2016-01&to=2025-12", true),
+        ("?from=2015-12&to=2025-12", false),
+        ("?from=2025-12&to=2025-01", false),
+        ("?from=2025-13", false),
+    ] {
+        let (s, _, v) = call(
+            &app,
+            "GET",
+            &org_path(&u, &format!("/reports{q}")),
+            Value::Null,
+            Some(&u),
+        )
+        .await;
+        if ok {
+            assert_eq!(s, StatusCode::OK, "{q}: {v}");
+        } else {
+            assert_eq!(v["error"]["code"], "REPORT_PERIOD_INVALID", "{q}: {v}");
+        }
+    }
+    let (_, _, v) = call(
+        &app,
+        "GET",
+        &org_path(&u, "/reports?from=2025-01&to=2025-12"),
+        Value::Null,
+        Some(&u),
+    )
+    .await;
+    assert_eq!(
+        (v["from"].as_str(), v["to"].as_str()),
+        (Some("2025-01"), Some("2025-12"))
+    );
+    let (s, h, csv) = raw_get(
+        &app,
+        &org_path(&u, "/reports.csv?from=2025-01&to=2025-12"),
+        &u,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{csv}");
+    assert!(
+        h["content-disposition"]
+            .to_str()
+            .unwrap()
+            .contains("reports-202501-202512.csv")
+    );
+    assert_eq!(
+        csv,
+        "\u{feff}month,platform,release_id,release,currency,streams,revenue\r\n"
+    );
+    // Another account's workspace stays closed.
+    let other = user(&app).await;
+    let (s, _, _) = raw_get(&app, &org_path(&u, "/finance/statements.csv"), &other).await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+}
+
+fn urlencoding(v: &str) -> String {
+    v.replace('+', "%2B")
+        .replace(':', "%3A")
+        .replace('|', "%7C")
 }
 
 #[sqlx::test]
@@ -1749,13 +1999,18 @@ async fn payout_quote_snapshot_cancel_order_and_settle(pool: PgPool) {
         ),
         "{e:?}"
     );
-    // Approved but not sent: the artist can still cancel it.
+    // Approved: the transfer may already be under way, so the artist can no
+    // longer cancel (that freed the amount for a second withdrawal); staff can.
     let (s, v) = post(
         &format!("/finance/payouts/{}/cancel", r["id"].as_str().unwrap()),
         json!({}),
     )
     .await;
-    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(v["error"]["code"], "PAYOUT_NOT_CANCELLABLE");
+    finance::cancel_payout_order(&pool, u.org, second)
+        .await
+        .unwrap();
     assert_eq!(
         finance::get_payout_status(&pool, u.org, second)
             .await
@@ -1801,7 +2056,10 @@ async fn portal_writes_need_csrf_and_document_uploads_accept_pdf(pool: PgPool) {
 
 #[sqlx::test]
 async fn distribution_agreement_needs_staff_terms_and_artist_confirmations(pool: PgPool) {
-    let (app, _) = app(pool.clone()).await;
+    // No free audio conversion slot (an upload is converting): signing must
+    // still work — signatures were refused with UPLOAD_BUSY whenever that
+    // single slot was taken.
+    let (app, _) = app_with_parser_slots(pool.clone(), 0).await;
     let u = user(&app).await;
     let release = create(&app, &u, "releases").await;
     sqlx::query("UPDATE catalog.releases SET draft = draft || $2, row_version = row_version + 1 WHERE id=$1")

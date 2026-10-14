@@ -4,6 +4,12 @@ import { ApiError, messageForCode } from './errors';
 
 export const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
 
+/** 서버가 준 '/api/…' 주소(보관된 커버 이미지 등)를 API 주소로 */
+export function apiUrl(src: string | null | undefined): string {
+  if (!src) return '';
+  return src.startsWith('/api/') ? `${API_BASE}${src}` : src;
+}
+
 let csrfToken = '';
 
 // 엣지 Worker가 직접 돌려주는 오류(본문이 JSON이 아님)를 상태 코드로 분류
@@ -14,6 +20,9 @@ const STATUS_CODES: Record<number, string> = {
 let currentOrgId = '';
 
 export function setCsrf(token: string) { csrfToken = token; }
+/** 이 탭이 로그인한 사용자 (다른 탭에서 다른 계정으로 로그인했는지 알아보는 데 쓴다) */
+let sessionUser = '';
+export function setSessionUser(id: string) { sessionUser = id; }
 export function hasCsrf() { return !!csrfToken; }
 export function setOrgId(id: string) { currentOrgId = id; }
 import { currentPath, toHref } from '../lib/router';
@@ -33,6 +42,8 @@ interface ReqOptions {
   quiet401?: boolean;
   /** 서버 장애여도 전역 오류 창을 띄우지 않음 (화면에서 직접 안내하는 요청용) */
   quietServer?: boolean;
+  /** 내부용: CSRF 토큰을 새로 받아 한 번 다시 보낸 요청 */
+  csrfRetried?: boolean;
   signal?: AbortSignal;
 }
 
@@ -76,6 +87,12 @@ export async function req<T>(path: string, opts: ReqOptions = {}): Promise<T> {
   if (!res.ok) {
     const code = (data as { error?: { code?: string } } | null)?.error?.code
       ?? STATUS_CODES[res.status] ?? '';
+    // 다른 탭에서 다시 로그인하면 세션(과 CSRF 토큰)이 바뀌어 이 탭의 쓰기가 모두 403이 된다.
+    // 토큰을 새로 받아 한 번만 다시 보낸다. 다른 계정으로 바뀌었으면 데이터가 섞이지 않게 새로 연다.
+    if (res.status === 403 && method !== 'GET' && !opts.csrfRetried && path !== '/api/auth/csrf') {
+      const refreshed = await refreshSession();
+      if (refreshed) return req<T>(path, { ...opts, csrfRetried: true });
+    }
     if (res.status === 401 && !opts.quiet401) {
       csrfToken = '';
       const onAuthPage = /^\/(login|signup|find-account)/.test(currentPath());
@@ -89,6 +106,22 @@ export async function req<T>(path: string, opts: ReqOptions = {}): Promise<T> {
     throw new ApiError(msg, res.status, code);
   }
   return (data ?? {}) as T;
+}
+
+/** 세션이 바뀌었는지 확인하고 CSRF 토큰을 새로 받는다. 다시 보내도 되면 true */
+async function refreshSession(): Promise<boolean> {
+  const before = csrfToken;
+  try {
+    const me = await req<{ user_id: string }>('/api/me', { quiet401: true, quietServer: true });
+    if (sessionUser && me.user_id !== sessionUser) {
+      window.location.reload();
+      return false;
+    }
+    await bootstrapCsrf();
+  } catch {
+    return false;
+  }
+  return csrfToken !== '' && csrfToken !== before;
 }
 
 /** 새로고침 후 세션 쿠키로 CSRF 토큰을 다시 받는다 */
@@ -145,4 +178,28 @@ export function putToGrant(grant: UploadGrant, file: Blob, onProgress?: (ratio: 
     signal?.addEventListener('abort', () => xhr.abort());
     xhr.send(file);
   });
+}
+
+/** 서버가 만든 파일(CSV 등)을 받아 저장한다. 오류는 JSON 요청과 같은 문구로 알린다. */
+export async function downloadFile(path: string, fallbackName: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { credentials: 'include', cache: 'no-store' });
+  } catch {
+    throw new ApiError('네트워크 연결을 확인해 주세요.', 0, 'NETWORK');
+  }
+  if (!res.ok) {
+    let code = STATUS_CODES[res.status] ?? '';
+    try { code = (await res.json())?.error?.code ?? code; } catch { /* 본문 없음 */ }
+    throw new ApiError(messageForCode(code, res.status), res.status, code);
+  }
+  const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? fallbackName;
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

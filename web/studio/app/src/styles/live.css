@@ -715,7 +715,7 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 .dist-mock-meta strong{display:block;font-size:16px;font-weight:800;letter-spacing:-.01em;color:var(--aq-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dist-mock-meta span{display:block;color:var(--aq-text-3);font-size:13px;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cover-dist-preview .ui-field-help{margin-top:12px}
-.cover-dist-preview .ui-btn.is-white{margin-top:8px}
+.cover-dist-preview .aq-cover-remove{margin-top:14px}
 
 /* 커버곡 트랙별 입력 */
 .cover-track-item{background:var(--aq-gray-75);border:1px solid var(--aq-gray-150);border-radius:var(--aq-r-md);padding:14px 16px;margin-top:10px}
@@ -797,3 +797,164 @@ button:focus-visible,a:focus-visible,input:is([type=checkbox],[type=radio],[type
 .ui-field>.aq-chips.aq-method{margin-bottom:0}
 /* 서류 카드 상태 면 (ui-row 상태 면과 같은 값) */
 .aq-notice-card.is-read{opacity:.62;transition:opacity .3s}
+
+/* 팀 · 작업 공간 (components/TeamSettings.tsx) */
+.aq-team-list{list-style:none;margin:0 0 4px;padding:0}
+.aq-team-list li+li{border-top:1px solid var(--aq-gray-100)}
+.aq-team-member{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0}
+.aq-team-member strong{display:block;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-team-member small,.aq-team-pick small{display:block;color:var(--aq-gray-500);font-size:13px;margin-top:2px}
+.aq-team-actions{display:flex;align-items:center;gap:8px;flex:none}
+.aq-team-actions select{min-height:36px;padding:0 28px 0 10px;font-size:13px}
+.aq-team-pick{display:block;width:100%;text-align:left;padding:12px 0;background:none;border:0;font:inherit;cursor:pointer}
+.aq-team-pick span{font-size:15px;font-weight:700}
+.aq-team-pick.is-on span{color:var(--aq-blue-500)}
+.aq-team-invite{margin-top:16px;padding-top:16px;border-top:1px solid var(--aq-gray-100)}
+.aq-team-invite .ui-btn{width:100%}
+
+/* 곡별 사전 품질 검사 결과 (components/TrackChecks.tsx) */
+.aq-track-qc.is-ok{color:var(--aq-green-600,#15803D)}
+.aq-track-qc-list{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.aq-track-qc-list li{border-radius:var(--aq-r-md);padding:10px 12px;font-size:13px;line-height:1.5}
+.aq-track-qc-list li.is-bad{background:var(--aq-red-50);color:var(--aq-red-600)}
+.aq-track-qc-list li.is-warn{background:#FFF7ED;color:#9A3412}
+.aq-track-qc-list strong{display:block;font-size:12px;margin-bottom:2px}
+.aq-track-qc-list small{display:block;opacity:.8;margin-top:2px;word-break:break-word}
+/* 발매 상세 — 플랫폼 서비스 상태와 발매 중단 요청 (components/TakedownCard.tsx) */
+.aq-takedown-list{list-style:none;margin:0;padding:0}
+.aq-takedown-list li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;font-size:15px}
+.aq-takedown-list li+li{border-top:1px solid var(--aq-gray-100)}
+.aq-takedown-list em{flex:none;font-style:normal;font-size:13px;font-weight:700;color:var(--aq-blue-500)}
+.aq-takedown-list em.is-pending{color:var(--aq-orange-600,#C2410C)}
+.aq-takedown-list em.is-down{color:var(--aq-gray-500)}
+.aq-takedown-state{margin:12px 0 0}
+.aq-takedown .row-actions{margin-top:12px}
+.aq-takedown .row-actions:empty{display:none}
+
+/* 권리침해 신고 (공개 화면, 발매 상세 카드) */
+.aq-report-form fieldset{border:0;margin:20px 0 0;padding:0;display:grid;gap:12px}
+.aq-report-form legend{font-weight:700;margin-bottom:8px}
+.aq-report-form .ui-input,.aq-report-form .ui-select{width:100%}
+.aq-report-form .aq-check-line{display:flex;gap:10px;align-items:flex-start;margin:20px 0 14px;line-height:1.6}
+.aq-report-form .aq-check-line input{margin-top:4px;flex:none}
+.aq-claim-card{margin-top:16px}
+.aq-claim + .aq-claim{margin-top:18px;padding-top:18px;border-top:1px solid var(--aq-gray-200,#e5e7eb)}
+.aq-claim-status{margin:8px 0 10px}
+/* 목록 위 도구 줄 (건수 + 내려받기) */
+.aq-list-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;color:var(--aq-text-2,#6b7280);font-size:13px}
+.aq-list-tools .ui-btn{flex:none}
+.report-tools input.ui-input[type="month"]{flex:0 0 190px;min-width:190px}
+/* 발매 후 정보 수정 */
+.aq-correction-card,.aq-pitch-card{margin-top:16px}
+.aq-pitch-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:560px){.aq-pitch-grid{grid-template-columns:1fr}}
+.aq-correction-form{display:grid;gap:14px;margin-top:12px}
+.aq-correction-track{border:0;padding:0;margin:0;display:grid;gap:8px}
+.aq-correction-track legend{font-weight:700;margin-bottom:6px}
+.aq-correction-row{display:grid;grid-template-columns:minmax(0,1fr) 150px auto;gap:8px;align-items:center}
+@media(max-width:560px){.aq-correction-row{grid-template-columns:1fr 1fr}.aq-correction-row .ui-btn{grid-column:1/-1;justify-self:end}}
+
+/* 스마트링크 공개 페이지 (/l/:slug) */
+.aq-smartlink{position:relative;min-height:100vh;min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:32px 16px;background:var(--aq-gray-50);overflow:hidden}
+.aq-smartlink-bg{position:absolute;inset:-40px;background-size:cover;background-position:center;filter:blur(40px) saturate(1.2);opacity:.45;transform:scale(1.1)}
+.aq-smartlink-card{position:relative;width:100%;max-width:400px;background:#fff;border-radius:var(--aq-r-2xl);padding:24px;box-shadow:0 20px 60px rgba(15,23,42,.18);text-align:center}
+.aq-smartlink-card h1{font-size:22px;margin:16px 0 4px;word-break:keep-all;overflow-wrap:anywhere}
+.aq-smartlink-cover{display:block;width:100%;aspect-ratio:1;object-fit:cover;border-radius:var(--aq-r-xl);background:var(--aq-gray-100)}
+.aq-smartlink-cover.is-empty{background:linear-gradient(135deg,var(--aq-blue-50),var(--aq-gray-150))}
+.aq-smartlink-artist{margin:0;color:var(--aq-text-2);font-weight:600}
+.aq-smartlink-soon{display:inline-block;margin:10px 0 0;padding:4px 10px;border-radius:999px;background:var(--aq-blue-50);color:var(--aq-blue-500);font-size:13px;font-weight:700}
+.aq-smartlink-list{list-style:none;margin:20px 0 0;padding:0;display:grid;gap:8px;text-align:left}
+.aq-smartlink-list a{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:52px;padding:0 16px;border:1px solid var(--aq-gray-150);border-radius:var(--aq-r-lg);color:var(--portal-ink);font-weight:700;text-decoration:none}
+.aq-smartlink-list a:hover,.aq-smartlink-list a:focus-visible{border-color:var(--aq-blue-500);background:var(--aq-blue-50)}
+.aq-smartlink-list b{font-size:13px;color:var(--aq-blue-500);padding:5px 12px;border-radius:999px;background:var(--aq-blue-50)}
+.aq-smartlink-foot{margin:20px 0 0;font-size:11px;letter-spacing:.04em;color:var(--aq-text-4)}
+.aq-smartlink.is-missing h1{margin-top:0}
+/* 발매 상세 스마트링크 카드 */
+.aq-smartlink-edit{margin-top:16px}
+.aq-smartlink-url{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0 12px}
+.aq-smartlink-url code{flex:1 1 220px;min-width:0;overflow-wrap:anywhere;padding:8px 10px;border-radius:var(--aq-r-md);background:var(--aq-gray-50)}
+.aq-smartlink-rows{display:grid;gap:8px}
+.aq-smartlink-row{display:grid;grid-template-columns:110px minmax(0,1fr) 64px;gap:8px;align-items:center}
+.aq-smartlink-row small{text-align:right;color:var(--aq-text-3)}
+@media(max-width:560px){.aq-smartlink-row{grid-template-columns:1fr auto}.aq-smartlink-row input{grid-column:1/-1;grid-row:2}}
+/* 코드 관리 (발매·곡 관리 > 코드) */
+.aq-codes{display:grid;gap:12px}
+.aq-codes-release header{display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:center;padding-bottom:10px;border-bottom:1px solid var(--aq-gray-100)}
+.aq-codes-upc{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--aq-text-3)}
+.aq-codes-tracks{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:2px}
+.aq-codes-tracks li{display:grid;grid-template-columns:28px minmax(0,1fr) auto auto;gap:8px;align-items:center;min-height:36px}
+.aq-codes-no{color:var(--aq-text-4);font-size:12px;text-align:right}
+.aq-codes-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-code{display:inline-flex;align-items:center;gap:6px}
+.aq-code code{font-size:13px;letter-spacing:.02em}
+.aq-code-tag{font-size:11px;font-weight:700;padding:2px 6px;border-radius:999px;background:var(--aq-gray-100);color:var(--aq-text-3)}
+@media(max-width:560px){.aq-codes-tracks li{grid-template-columns:24px minmax(0,1fr) auto}.aq-codes-tracks li .aq-code{grid-column:2}.aq-codes-tracks li .ui-btn{grid-column:3;grid-row:2}}
+.aq-smartlink-alert{margin:18px 0 0;text-align:left;display:grid;gap:8px}
+.aq-smartlink-alert>label:first-child{font-weight:700;font-size:14px}
+.aq-smartlink-alert-row{display:flex;gap:8px}
+.aq-smartlink-alert-row .ui-input{flex:1;min-width:0}
+.aq-smartlink-consent{display:flex;gap:8px;align-items:flex-start;font-size:12px;line-height:1.5;color:var(--aq-text-3)}
+.aq-smartlink-consent input{margin-top:2px;flex:none}
+.aq-smartlink-alert-err{margin:0;font-size:13px;color:#d92d20}
+.aq-smartlink-alert-done{margin:18px 0 0;padding:10px 12px;border-radius:var(--aq-r-lg);background:var(--aq-blue-50);color:var(--aq-blue-500);font-weight:700;font-size:14px}
+/* 공동작업자 수익 분배 */
+.aq-splits{margin-top:16px;display:grid;gap:12px}
+.aq-splits.is-embedded{margin-top:20px;padding-top:16px;border-top:1px solid var(--aq-gray-100)}
+.aq-splits-track{border:0;padding:0;margin:0;display:grid;gap:8px}
+.aq-splits-track legend{font-weight:700;margin-bottom:6px}
+.aq-splits-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) 96px auto;gap:8px;align-items:center}
+.aq-splits-row:has(.aq-splits-name){grid-template-columns:minmax(0,1fr) auto auto minmax(0,1.2fr)}
+.aq-splits-row>small{grid-column:1/-1;margin-top:-4px}
+.aq-splits-pct{display:flex;align-items:center;gap:4px}
+.aq-splits-pct .ui-input{text-align:right}
+.aq-splits-share{font-weight:700}
+.aq-splits-status{font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--aq-gray-100);color:var(--aq-text-3);justify-self:start}
+.aq-splits-status.is-accepted{background:var(--aq-blue-50);color:var(--aq-blue-500)}
+.aq-splits-status.is-declined{background:#fef3f2;color:#b42318}
+.aq-splits-money{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:flex-end}
+.aq-splits-foot{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.aq-splits-over{color:#d92d20;font-weight:700;font-size:13px}
+@media(max-width:640px){.aq-splits-row{grid-template-columns:1fr 96px auto}.aq-splits-row input[type=email]{grid-column:1/-1;grid-row:2}.aq-splits-row:has(.aq-splits-name){grid-template-columns:1fr auto auto}.aq-splits-money{grid-column:1/-1;justify-content:flex-start}}
+.aq-splits-received{margin-top:16px}
+/* 배급 설정 > 곡별 미리듣기 시작점 */
+.aq-preview-starts{display:grid;gap:6px;margin:4px 0 8px}
+.aq-preview-row{display:grid;grid-template-columns:minmax(0,1fr) 96px;gap:8px;align-items:center}
+.aq-preview-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aq-preview-row .ui-input[aria-invalid=true]{border-color:#d92d20}
+/* 플랫폼 요청 */
+.aq-preq-form{display:grid;gap:12px;margin:12px 0 20px}
+.aq-preq-list{display:grid;gap:10px}
+.aq-preq-item summary{display:flex;justify-content:space-between;gap:12px;align-items:center;cursor:pointer;list-style:none}
+.aq-preq-item summary::-webkit-details-marker{display:none}
+.aq-preq-steps{margin:12px 0 0;padding-left:18px;display:grid;gap:4px}
+.aq-preq-steps p{margin:2px 0 0}
+.aq-preq-urls{margin:8px 0;padding-left:18px;font-size:13px;overflow-wrap:anywhere}
+.aq-cid-card{margin-top:16px}
+.aq-term-card{margin-top:16px}
+/* 레이블 대량 작업 */
+.aq-bulk-start{display:grid;gap:10px;margin:12px 0 16px}
+.aq-bulk-start p{margin:0;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.aq-bulk-start ul{margin:6px 0 0;padding-left:18px}
+.aq-bulk-summary{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:8px}
+.aq-bulk-bad{color:#d92d20}
+.aq-bulk-scroll{overflow:auto;max-height:60vh;border:1px solid var(--aq-gray-150);border-radius:var(--aq-r-lg);background:#fff}
+.aq-bulk-table{border-collapse:collapse;font-size:13px;min-width:100%}
+.aq-bulk-table th{position:sticky;top:0;background:var(--aq-gray-50);text-align:left;padding:6px 8px;white-space:nowrap;font-weight:700;z-index:1}
+.aq-bulk-table td{border-top:1px solid var(--aq-gray-100);padding:2px}
+.aq-bulk-table td:first-child{padding:0 8px;color:var(--aq-text-4);text-align:right}
+.aq-bulk-table input{width:100%;min-width:90px;border:1px solid transparent;border-radius:6px;padding:4px 6px;font:inherit;background:transparent}
+.aq-bulk-table input:focus{border-color:var(--aq-blue-500);outline:none;background:#fff}
+.aq-bulk-table tr.is-bad td:first-child{color:#d92d20;font-weight:700}
+.aq-bulk-table td.is-bad input{border-color:#f04438;background:#fef3f2}
+.aq-bulk-issues{margin:10px 0 0;padding-left:18px;font-size:13px;display:grid;gap:2px;max-height:240px;overflow:auto}
+.aq-bulk-results{margin-top:16px}
+.aq-bulk-results .ui-row{display:flex;justify-content:space-between;align-items:center;gap:12px}.aq-bulk-results .ui-row>.ui-btn{flex:none;width:auto}
+/* 내 아티스트 페이지 */
+.aq-artist-pages{margin:12px 0}
+.aq-artist-pages-list{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:10px}
+.aq-artist-pages-head{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.aq-artist-pages-head .ui-btn{margin-left:auto}
+.aq-artist-pages-pending{margin:6px 0 0;color:var(--aq-blue-500)}
+.aq-artist-pages-form{display:grid;gap:6px;margin-top:8px}
+.aq-artist-pages-row{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px;align-items:center}
+@media(max-width:560px){.aq-artist-pages-row{grid-template-columns:1fr}}

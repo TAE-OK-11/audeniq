@@ -216,7 +216,7 @@ export function PaymentSetupModal({ onClose }: { onClose: () => void }) {
       try {
         await portal.savePayoutAccount(info, draft.account);
       } catch (err) {
-        toast(errorMessage(err, '계좌를 등록하지 못했어요. 잠시 후 다시 시도해 주세요.'));
+        toast(errorMessage(err, '계좌를 등록하지 못했어요. 잠시 후 다시 시도해 주세요.'), 'error');
         return;
       } finally {
         setSaving(false);

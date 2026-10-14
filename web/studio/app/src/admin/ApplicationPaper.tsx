@@ -3,11 +3,13 @@
 // 한쪽을 바꾸면 다른 쪽도 같이 맞춰 주세요.
 import type { ReleaseSheet } from './api';
 import { dspLabel } from './labels';
+import { apiUrl } from '../api/http';
 import {
   AGREEMENTS, OPTION_LABELS, PROFILE_LINKS, displayCode, genreLabel, hashLabel, kindLabel, languageLabel,
   type Integrity, type StudioDraft,
 } from './application';
 import { CheckIcon } from '../components/Check';
+import { territorySummary } from '../lib/territories';
 
 const dash = (v?: string | null) => (v && v.trim() ? v : '—');
 
@@ -84,7 +86,7 @@ export function ApplicationPaper({ sheet, draft, integrity }: { sheet: ReleaseSh
       <section className="aq-paper-sec">
         <h2><span>2</span>발매 정보</h2>
         <div className="aq-paper-release">
-          {(draft.coverData || sheet.release.cover) && <img className="aq-paper-cover" src={draft.coverData || sheet.release.cover || ''} alt="커버아트" />}
+          {(draft.coverData || sheet.release.cover) && <img className="aq-paper-cover" src={apiUrl(draft.coverData || sheet.release.cover)} alt="커버아트" onError={e => { e.currentTarget.hidden = true; }} />}
           <table className="aq-paper-kv">
             <tbody>
               <tr><th>발매 제목</th><td colSpan={3}><strong>{sheet.release.title}</strong></td></tr>
@@ -138,7 +140,7 @@ export function ApplicationPaper({ sheet, draft, integrity }: { sheet: ReleaseSh
         <h2><span>4</span>배급 범위 및 권리</h2>
         <table className="aq-paper-kv">
           <tbody>
-            <tr><th>배급 지역</th><td colSpan={3}>{territories.includes('WORLD') ? '전 세계' : dash(territories.join(', '))}</td></tr>
+            <tr><th>배급 지역</th><td colSpan={3}>{dash(territorySummary(territories, ''))}</td></tr>
             <tr><th>배급 플랫폼</th><td colSpan={3}>{(draft.platforms ?? []).map(dspLabel).join(', ') || '—'}</td></tr>
             <tr><th>마스터 권리자</th><td colSpan={3}>{dash(draft.ownership)}</td></tr>
             <tr><th>℗ 표기</th><td>℗ {dash(draft.phonogram)}</td><th>© 표기</th><td>© {dash(draft.copyright)}</td></tr>

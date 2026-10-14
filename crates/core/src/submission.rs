@@ -390,16 +390,25 @@ async fn revision_body(
 /// Same key + same body returns the original revision (safe retry); same key +
 /// changed body is a client bug and is rejected instead of forking history.
 /// The caller commits the transaction.
+/// The revision body minus the consent it was submitted under.
+fn submitted_content_hash(body: &Value) -> String {
+    let mut body = body.clone();
+    if let Some(o) = body.as_object_mut() {
+        o.remove("consent_package_hash");
+    }
+    sha256_json(&body)
+}
+
 async fn keyed_revision_response(
     tx: &mut PgConnection,
     org: Uuid,
     release: Uuid,
     idem_key: &str,
-    body_hash: &str,
+    body: &Value,
     status: &str,
 ) -> Result<Value> {
     let row = sqlx::query(
-        "SELECT id, revision, body_hash FROM catalog.application_revisions WHERE org_id=$1 AND release_id=$2 AND idempotency_key=$3",
+        "SELECT id, revision, body FROM catalog.application_revisions WHERE org_id=$1 AND release_id=$2 AND idempotency_key=$3",
     )
     .bind(org)
     .bind(release)
@@ -407,7 +416,11 @@ async fn keyed_revision_response(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(Error::Internal)?;
-    if row.get::<String, _>("body_hash") != body_hash {
+    // A retry of the same submit carries a fresh consent (Studio records one
+    // per attempt), so compare what was submitted without the consent hash;
+    // otherwise a lost response or a double click came back as
+    // IDEMPOTENCY_KEY_REUSED although the first submit went through.
+    if submitted_content_hash(&row.get::<Value, _>("body")) != submitted_content_hash(body) {
         return Err(Error::PolicyGate("IDEMPOTENCY_KEY_REUSED"));
     }
     let rid: Uuid = row.get("id");
@@ -435,6 +448,19 @@ pub async fn submit(
     }
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, release, "release", true).await?;
+    // An org whose contract is ending takes no new releases (0121);
+    // corrections of releases already in review still go through.
+    let ending: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM portal.org_contract_terms WHERE org_id=$1 AND status <> 'CANCELLED')
+            AND EXISTS(SELECT 1 FROM catalog.releases WHERE org_id=$1 AND id=$2 AND status='DRAFT')",
+    )
+    .bind(org)
+    .bind(release)
+    .fetch_one(&mut *tx)
+    .await?;
+    if ending {
+        return Err(Error::PolicyGate("ORG_CONTRACT_ENDING"));
+    }
     let rel = sqlx::query("SELECT status, current_revision_id FROM catalog.releases WHERE org_id=$1 AND id=$2 AND archived_at IS NULL FOR UPDATE")
         .bind(org).bind(release).fetch_optional(&mut *tx).await?.ok_or(Error::NotFound)?;
     let status: String = rel.get("status");
@@ -517,7 +543,7 @@ pub async fn submit(
     .await?
     .is_some()
     {
-        let v = keyed_revision_response(&mut tx, org, release, &idem_key, &body_hash, &status).await?;
+        let v = keyed_revision_response(&mut tx, org, release, &idem_key, &body, &status).await?;
         tx.commit().await?;
         return Ok(v);
     }
@@ -548,6 +574,18 @@ pub async fn submit(
         return Err(Error::PolicyGate("RELEASE_NOT_SUBMITTABLE"));
     }
     let draft = &body["release"]["draft"];
+    // The delivered deal territory comes from this frozen value; refuse a
+    // malformed one now rather than at packaging.
+    crate::territory::Territories::from_draft(draft)?;
+    crate::preparation_model::release_time(draft)?;
+    crate::preparation_model::preview_starts(draft)?;
+    if let Some(d) = draft
+        .get("release_date")
+        .and_then(Value::as_str)
+        .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+    {
+        crate::preparation_model::preorder_start(draft, d)?;
+    }
     if let Some(options) = draft.get("options") {
         let enabled = |key: &str| options.get(key).and_then(Value::as_bool).unwrap_or(false);
         let declared = &body["declarations"];
@@ -593,13 +631,22 @@ pub async fn submit(
             .get("platforms")
             .and_then(Value::as_array)
             .ok_or(Error::PolicyGate("DSP_SELECTION_REQUIRED"))?;
-        if selected.is_empty() || selected.len() > crate::dsp_registry::REGISTRY.len() {
+        if selected.is_empty() || selected.len() > crate::dsp_registry::REGISTRY.len() + 1 {
             return Err(Error::PolicyGate("DSP_SELECTION_REQUIRED"));
         }
         let dsps = crate::dsp_registry::requested(draft)
             .ok_or(Error::PolicyGate("DSP_SELECTION_REQUIRED"))?;
-        if dsps.len() != selected.len() {
+        // The Studio MockDSP (pre-launch test platform) is the one pick
+        // outside the registry.
+        let mock = selected
+            .iter()
+            .filter(|v| v.as_str() == Some(crate::mockdsp::STUDIO_PARTNER))
+            .count();
+        if mock > 1 || dsps.len() + mock != selected.len() {
             return Err(Error::PolicyGate("DSP_SELECTION_INVALID"));
+        }
+        if mock == 1 && crate::mockdsp::studio_route(&s.pool, org).await?.is_none() {
+            return Err(Error::PolicyGate("DSP_UNAVAILABLE"));
         }
         let ids: Vec<Uuid> = dsps.iter().map(|d| d.uuid()).collect();
         if crate::routing::public_routes(&s.pool, org, &ids)
@@ -639,8 +686,8 @@ pub async fn submit(
     let rid = match inserted {
         Some(id) => id,
         None => {
-            let v = keyed_revision_response(&mut tx, org, release, &idem_key, &body_hash, &status)
-                .await?;
+            let v =
+                keyed_revision_response(&mut tx, org, release, &idem_key, &body, &status).await?;
             tx.commit().await?;
             return Ok(v);
         }
@@ -649,6 +696,15 @@ pub async fn submit(
     sqlx::query("UPDATE catalog.releases SET status='SUBMITTED', current_revision_id=$3, row_version=row_version+1 WHERE org_id=$1 AND id=$2")
         .bind(org).bind(release).bind(rid).execute(&mut *tx).await?;
     enqueue_stage1(&mut tx, rid).await?;
+    // The artist's platform pages as this application states them (0122).
+    crate::artist_pages::record_from_application(
+        &mut tx,
+        org,
+        release,
+        &body["release"]["draft"],
+        a.user,
+    )
+    .await?;
     operations::audit(
         &mut tx,
         Some(a.user),
@@ -842,7 +898,7 @@ fn field_cache_key(check_code: &str, inputs: &str) -> String {
 fn asset_cache_key(check_code: &str, asset_sha256: &str) -> String {
     qc::result_hash(check_code, qc::QC_RULE_VERSION, asset_sha256, asset_sha256)
 }
-fn asset_check_cache_key(check_code: &str, asset_id: &str, sha256: &str) -> String {
+pub(crate) fn asset_check_cache_key(check_code: &str, asset_id: &str, sha256: &str) -> String {
     if check_code == "AUDIO_AI_PROVENANCE" {
         // Normalization can produce identical masters from sources with
         // different metadata. Original provenance belongs to this asset.
@@ -1036,28 +1092,42 @@ async fn policy_checks(
             conflicts.push(format!("UPC {upc}"));
         }
     }
-    let (isrcs, tids): (Vec<&str>, Vec<Uuid>) = body["tracks"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|t| {
-            Some((
-                t["isrc"].as_str().filter(|i| !i.is_empty())?,
-                t["id"].as_str().and_then(|s| Uuid::parse_str(s).ok())?,
-            ))
-        })
-        .unzip();
+    let mut isrcs: Vec<&str> = Vec::new();
+    let mut tids: Vec<Uuid> = Vec::new();
+    let mut shas: Vec<Option<&str>> = Vec::new();
+    for t in body["tracks"].as_array().into_iter().flatten() {
+        let (Some(isrc), Some(tid)) = (
+            t["isrc"].as_str().filter(|i| !i.is_empty()),
+            t["id"].as_str().and_then(|s| Uuid::parse_str(s).ok()),
+        ) else {
+            continue;
+        };
+        isrcs.push(isrc);
+        tids.push(tid);
+        shas.push(t["asset_sha256"].as_str());
+    }
     if !isrcs.is_empty() {
+        // An ISRC names one recording: the same master on a single and then
+        // an album keeps its ISRC (and ASSET_REUSED below asks for exactly
+        // that). Only a code on a different (or unknown) recording, or one
+        // held by another account, is a conflict.
         let used: Vec<bool> = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM catalog.tracks t JOIN catalog.releases r ON r.org_id=t.org_id AND r.id=t.release_id
-                           WHERE t.org_id=$1 AND t.isrc=i.isrc AND t.release_id<>$3 AND t.archived_at IS NULL AND r.archived_at IS NULL)
-                 OR EXISTS(SELECT 1 FROM distribution.identifier_assignments WHERE kind='ISRC' AND identifier=i.isrc AND track_id<>i.tid)
-             FROM unnest($2::text[],$4::uuid[]) WITH ORDINALITY AS i(isrc,tid,n) ORDER BY i.n",
+                           LEFT JOIN catalog.assets a ON a.org_id=t.org_id AND a.id=t.asset_id
+                           WHERE t.org_id=$1 AND t.isrc=i.isrc AND t.release_id<>$3 AND t.archived_at IS NULL AND r.archived_at IS NULL
+                             AND (i.sha IS NULL OR a.sha256 IS DISTINCT FROM i.sha))
+                 OR EXISTS(SELECT 1 FROM distribution.identifier_assignments ia
+                           LEFT JOIN catalog.tracks t ON t.org_id=ia.org_id AND t.id=ia.track_id
+                           LEFT JOIN catalog.assets a ON a.org_id=t.org_id AND a.id=t.asset_id
+                           WHERE ia.kind='ISRC' AND ia.identifier=i.isrc AND ia.track_id<>i.tid
+                             AND (ia.org_id<>$1 OR i.sha IS NULL OR a.sha256 IS DISTINCT FROM i.sha))
+             FROM unnest($2::text[],$4::uuid[],$5::text[]) WITH ORDINALITY AS i(isrc,tid,sha,n) ORDER BY i.n",
         )
         .bind(org)
         .bind(&isrcs)
         .bind(release)
         .bind(&tids)
+        .bind(&shas)
         .fetch_all(&mut *tx)
         .await?;
         for (isrc, used) in isrcs.iter().zip(used) {
@@ -1767,9 +1837,6 @@ async fn analyze_asset(
             qc_max_bytes()
         ));
     }
-    let capacity = crate::media_budget::acquire()
-        .await
-        .map_err(str::to_string)?;
     // RAII guard: the temp file is removed on drop, even if a QC analyzer
     // panics or the download fails half way. Prevents the QC scratch volume
     // from filling up under parallel load.
@@ -1788,6 +1855,12 @@ async fn analyze_asset(
         .download_to(key, &tmp.0, qc_max_bytes())
         .await
         .map_err(|e| format!("object download failed: {e}"))?;
+    // The media slot bounds decoding (CPU), taken only now: while one job
+    // decodes, the next can already download. The number of downloads in
+    // flight is bounded by the callers (queue loops, album parallelism).
+    let capacity = crate::media_budget::acquire()
+        .await
+        .map_err(str::to_string)?;
     // The analyzers are blocking (child processes + CPU-bound FFT). Running
     // them on the blocking pool keeps the worker's async runtime, and with it
     // the job-lease heartbeat, responsive during multi-minute analyses.
@@ -1801,97 +1874,119 @@ async fn analyze_asset(
         // Cancellation of the async job must not free capacity while this
         // non-cancellable blocking decode is still running.
         let _capacity = capacity;
-        let path = tmp.0.as_path();
-        // QC and fingerprint share one decode. The tap computes FFT frames
-        // as it drains, retaining neither whole windows nor a second file.
-        let (mut outcomes, tapped_fp, metrics) = match kind.as_str() {
-            "AUDIO" => qc::check_audio_with_fingerprint(
-                path,
-                Some(&sha256),
-                Some(&content_type),
-                Some(&downloaded.sha256),
-            ),
-            "IMAGE" => (qc::check_image(path, Some(&sha256)), None, None),
-            _ => (Vec::new(), None, None),
-        };
-        // Perceptual fingerprint for similarity detection. Only for audio
-        // whose bytes were admitted: SHA-256 still guards integrity (exact
-        // bytes), the fingerprint adds similarity (same recording, different
-        // bytes). Skip when QC already rejected the bytes (Blocked on SHA
-        // mismatch, CorrectionRequired on a format/decode problem,
-        // TechnicalRetry on a transient decode failure): fingerprinting
-        // invalid audio is meaningless, and a decode failure there must not
-        // trigger a second TechnicalRetry.
-        let invalid = outcomes.iter().any(|o| {
-            matches!(
-                o.status,
-                CheckStatus::Blocked
-                    | CheckStatus::CorrectionRequired
-                    | CheckStatus::TechnicalRetry
-            )
-        });
-        let provenance_code = match kind.as_str() {
-            "AUDIO" => Some("AUDIO_AI_PROVENANCE"),
-            "IMAGE" => Some("IMAGE_AI_PROVENANCE"),
-            _ => None,
-        };
-        if let Some(code) = provenance_code
-            && !invalid
-            && !outcomes.iter().any(|o| o.check_code == code)
-        {
-            outcomes.push(crate::provenance::outcome(
-                code,
-                &if kind == "AUDIO" {
-                    crate::provenance::inspect_audio(path)
-                } else {
-                    crate::provenance::inspect(path)
-                },
-            ));
-        }
-        // Perceptual fingerprint over the head/middle/tail segment windows.
-        if kind == "IMAGE" {
-            if !invalid {
-                outcomes.extend(crate::artwork_policy::inspect(path));
-            }
-            // Invalid images still carry the complete named contract. Never
-            // pretend an omitted OCR/QR/provenance inspection was completed.
-            for code in qc::IMAGE_CHECK_CODES {
-                if !outcomes.iter().any(|o| o.check_code == *code) {
-                    outcomes.push(qc::CheckOutcome {
-                        check_code: code,
-                        status: if outcomes
-                            .iter()
-                            .any(|o| o.status == CheckStatus::TechnicalRetry)
-                        {
-                            CheckStatus::TechnicalRetry
-                        } else {
-                            CheckStatus::NotApplicable
-                        },
-                        input_hash: crate::domain::sha256_json(
-                            &json!({"sha256":sha256,"inspection":"image_not_admitted"}),
-                        ),
-                        detail: "image was not admitted for content inspection".into(),
-                    });
-                }
-            }
-        }
-
-        // The mono 11025 Hz tap uses the engine's continuous resampler and
-        // separate fingerprint histories for the head/middle/tail windows.
-        let duration_secs = metrics.as_ref().map(|m| m.duration_secs).unwrap_or(0.0);
-        let fp = match kind.as_str() {
-            "AUDIO" if !invalid && duration_secs > 0.0 => Some((|| {
-                tapped_fp
-                    .ok_or_else(|| "fingerprint tap missing".to_string())?
-                    .map_err(|e| format!("{e:?}"))
-            })()),
-            _ => None,
-        };
+        let (outcomes, metrics, fp) = asset_outcomes(
+            tmp.0.as_path(),
+            &kind,
+            &content_type,
+            &sha256,
+            &downloaded.sha256,
+        );
         drop(tmp);
         (outcomes, metrics, fp, downloaded_sha)
     })
     .await
     .map_err(|_| "analyzer task failed".to_string())
+}
+
+/// QC outcomes, probe metrics and fingerprint of one asset file (blocking).
+/// `sha256` is the registered hash, `file_sha256` the hash of the bytes at
+/// `path`. With `precomputed` (the engine analysis made during the upload's
+/// lossless conversion) the audio is not decoded again.
+fn asset_outcomes(
+    path: &std::path::Path,
+    kind: &str,
+    content_type: &str,
+    sha256: &str,
+    file_sha256: &str,
+) -> (
+    Vec<qc::CheckOutcome>,
+    Option<qc::AudioMetrics>,
+    Option<std::result::Result<fingerprint::Fingerprint, String>>,
+) {
+    // QC and fingerprint share one decode. The tap computes FFT frames
+    // as it drains, retaining neither whole windows nor a second file.
+    let (mut outcomes, tapped_fp, metrics) = match kind {
+        "AUDIO" => qc::check_audio_with_fingerprint(
+            path,
+            Some(sha256),
+            Some(content_type),
+            Some(file_sha256),
+        ),
+        "IMAGE" => (qc::check_image(path, Some(sha256)), None, None),
+        _ => (Vec::new(), None, None),
+    };
+    // Perceptual fingerprint for similarity detection. Only for audio
+    // whose bytes were admitted: SHA-256 still guards integrity (exact
+    // bytes), the fingerprint adds similarity (same recording, different
+    // bytes). Skip when QC already rejected the bytes (Blocked on SHA
+    // mismatch, CorrectionRequired on a format/decode problem,
+    // TechnicalRetry on a transient decode failure): fingerprinting
+    // invalid audio is meaningless, and a decode failure there must not
+    // trigger a second TechnicalRetry.
+    let invalid = outcomes.iter().any(|o| {
+        matches!(
+            o.status,
+            CheckStatus::Blocked | CheckStatus::CorrectionRequired | CheckStatus::TechnicalRetry
+        )
+    });
+    let provenance_code = match kind {
+        "AUDIO" => Some("AUDIO_AI_PROVENANCE"),
+        "IMAGE" => Some("IMAGE_AI_PROVENANCE"),
+        _ => None,
+    };
+    if let Some(code) = provenance_code
+        && !invalid
+        && !outcomes.iter().any(|o| o.check_code == code)
+    {
+        outcomes.push(crate::provenance::outcome(
+            code,
+            &if kind == "AUDIO" {
+                crate::provenance::inspect_audio(path)
+            } else {
+                crate::provenance::inspect(path)
+            },
+        ));
+    }
+    // Perceptual fingerprint over the head/middle/tail segment windows.
+    if kind == "IMAGE" {
+        if !invalid {
+            outcomes.extend(crate::artwork_policy::inspect(path));
+        }
+        // Invalid images still carry the complete named contract. Never
+        // pretend an omitted OCR/QR/provenance inspection was completed.
+        for code in qc::IMAGE_CHECK_CODES {
+            if !outcomes.iter().any(|o| o.check_code == *code) {
+                outcomes.push(qc::CheckOutcome {
+                    check_code: code,
+                    status: if outcomes
+                        .iter()
+                        .any(|o| o.status == CheckStatus::TechnicalRetry)
+                    {
+                        CheckStatus::TechnicalRetry
+                    } else {
+                        CheckStatus::NotApplicable
+                    },
+                    input_hash: crate::domain::sha256_json(
+                        &json!({"sha256":sha256,"inspection":"image_not_admitted"}),
+                    ),
+                    detail: "image was not admitted for content inspection".into(),
+                });
+            }
+        }
+    }
+
+    // The mono 11025 Hz tap uses the engine's continuous resampler and
+    // separate fingerprint histories for the head/middle/tail windows.
+    let duration_secs = metrics.as_ref().map(|m| m.duration_secs).unwrap_or(0.0);
+    let fp = match kind {
+        "AUDIO" if !invalid && duration_secs > 0.0 => Some((|| {
+            tapped_fp
+                .ok_or_else(|| "fingerprint tap missing".to_string())?
+                .map_err(|e| format!("{e:?}"))
+        })()),
+        _ => None,
+    };
+    (outcomes, metrics, fp)
 }
 
 /// Produce the two DB-backed fingerprint check outcomes for an analyzed
@@ -2084,52 +2179,131 @@ async fn load_stored_fingerprint(
 
 /// Fingerprints read per page by the similarity scan (~4 KB each).
 const SIMILARITY_PAGE: i64 = 1000;
+/// Matches remembered per asset between scans (the check reports 3). More
+/// than reported, so a match that disappears (its asset deleted) rarely
+/// forces a full rescan.
+const SIMILARITY_KEEP: usize = 32;
+/// An incremental scan re-reads fingerprints created this long before the
+/// previous scan started: `created_at` is its transaction's start, so a
+/// fingerprint committed after that scan read its pages can carry an
+/// earlier timestamp.
+const SIMILARITY_LATE_COMMIT_MARGIN_SECS: i64 = 3600;
 
 /// Best-similarity matches for `frames` among stored fingerprints at the
 /// current algorithm version, in the org and in other orgs, excluding `aid`
 /// itself. Sorted by BER ascending, capped at 3 for the check detail.
 ///
 /// Read in keyset pages (bounded memory, short statements, no transaction
-/// held across the scan); each page is compared on the blocking pool so a
-/// large catalog never stalls the worker runtime and its lease heartbeats.
+/// held across the scan); each page is compared on the blocking pool, split
+/// across the available cores, so a large catalog never stalls the worker
+/// runtime and its lease heartbeats.
+///
+/// Incremental (migration 0109): a rerun for the same fingerprint (a
+/// resubmission, a Stage 1 retry) compares only the fingerprints added
+/// since the previous scan, plus the matches it remembered that still
+/// exist. The result equals a full scan's: when a remembered list that was
+/// capped loses a member, the scan starts over.
 async fn find_similar_assets(
     pool: &PgPool,
     org: Uuid,
     aid: Uuid,
     frames: &[u32],
 ) -> Result<Vec<SimilarHit>> {
+    let version = fingerprint::FINGERPRINT_VERSION;
+    let digest = sha256_hex(
+        frames
+            .iter()
+            .flat_map(|f| f.to_be_bytes())
+            .collect::<Vec<u8>>(),
+    );
+    let started: chrono::DateTime<chrono::Utc> = sqlx::query_scalar("SELECT clock_timestamp()")
+        .fetch_one(pool)
+        .await?;
+    let previous: Option<(String, chrono::DateTime<chrono::Utc>, Value, bool)> = sqlx::query_as(
+        "SELECT fingerprint_sha256, scanned_through, hits, truncated
+           FROM operations.fingerprint_scans WHERE asset_id=$1 AND version=$2",
+    )
+    .bind(aid)
+    .bind(version)
+    .fetch_optional(pool)
+    .await?;
+    let (since, mut hits, mut truncated) = match previous {
+        Some((sha, through, stored, was_truncated)) if sha == digest => {
+            let remembered: Vec<SimilarHit> = stored
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|h| {
+                    Some(SimilarHit {
+                        asset_id: Uuid::parse_str(h["asset_id"].as_str()?).ok()?,
+                        other_org: h["other_org"].as_bool()?,
+                        ber: h["ber"].as_f64()?,
+                    })
+                })
+                .collect();
+            let ids: Vec<Uuid> = remembered.iter().map(|h| h.asset_id).collect();
+            let present: BTreeSet<Uuid> = sqlx::query_scalar(
+                "SELECT asset_id FROM catalog.fingerprints_still_present($1,$2)",
+            )
+            .bind(version)
+            .bind(&ids)
+            .fetch_all(pool)
+            .await?
+            .into_iter()
+            .collect();
+            let kept: Vec<SimilarHit> = remembered
+                .into_iter()
+                .filter(|h| present.contains(&h.asset_id))
+                .collect();
+            if was_truncated && kept.len() < ids.len() {
+                (None, Vec::new(), false)
+            } else {
+                (Some(through), kept, was_truncated)
+            }
+        }
+        _ => (None, Vec::new(), false),
+    };
     let frames: Arc<[u32]> = frames.into();
-    let mut hits = Vec::new();
-    let mut after = Uuid::nil();
+    // Before any fingerprint (PostgreSQL rejects chrono's MIN_UTC).
+    let floor = chrono::DateTime::<chrono::Utc>::UNIX_EPOCH;
+    let since_at = since.unwrap_or(floor);
+    let mut after = (floor, Uuid::nil());
     loop {
         let mut tx = pool.begin().await?;
         sqlx::query("SELECT set_config('app.org_id',$1,true)")
             .bind(org.to_string())
             .execute(&mut *tx)
             .await?;
-        let rows: Vec<(Uuid, Vec<u8>)> = sqlx::query_as(
-            "SELECT asset_id, hash FROM catalog.asset_fingerprints
-              WHERE org_id=$1 AND version=$2 AND asset_id>$3
-              ORDER BY asset_id LIMIT $4",
+        let rows: Vec<(Uuid, chrono::DateTime<chrono::Utc>, Vec<u8>)> = sqlx::query_as(
+            "SELECT asset_id, created_at, hash FROM catalog.asset_fingerprints
+              WHERE org_id=$1 AND version=$2 AND created_at>$3 AND (created_at, asset_id)>($4,$5)
+              ORDER BY created_at, asset_id LIMIT $6",
         )
         .bind(org)
-        .bind(fingerprint::FINGERPRINT_VERSION)
-        .bind(after)
+        .bind(version)
+        .bind(since_at)
+        .bind(after.0)
+        .bind(after.1)
         .bind(SIMILARITY_PAGE)
         .fetch_all(&mut *tx)
         .await?;
         tx.rollback().await?;
-        let Some(last) = rows.last().map(|r| r.0) else {
+        let Some(last) = rows.last().map(|r| (r.1, r.0)) else {
             break;
         };
         after = last;
         let full = rows.len() as i64 == SIMILARITY_PAGE;
         let page = rows
             .into_iter()
-            .filter(|(id, _)| *id != aid)
-            .map(|(id, hash)| (id, false, hash))
+            .filter(|(id, _, _)| *id != aid)
+            .map(|(id, _, hash)| (id, false, hash))
             .collect();
-        merge_similar_hits(&mut hits, compare_page(frames.clone(), page).await?);
+        let bound = similarity_bound(&hits);
+        truncated |= merge_similar_hits(
+            &mut hits,
+            compare_page(frames.clone(), page, bound).await?,
+            SIMILARITY_KEEP,
+        );
         if !full {
             break;
         }
@@ -2137,67 +2311,122 @@ async fn find_similar_assets(
     // Sandbox round 2: re-encoded copies of another account's audio were
     // delivered because only the own org was compared. Other orgs'
     // fingerprints come through a narrow SECURITY DEFINER read (migrations
-    // 0034, 0061); matches are REVIEW only, exactly like same-org matches.
-    let mut after = Uuid::nil();
+    // 0034, 0061, 0109); matches are REVIEW only, exactly like same-org
+    // matches.
+    let mut after = (floor, Uuid::nil());
     loop {
-        let rows: Vec<(Uuid, Uuid, Vec<u8>)> = sqlx::query_as(
-            "SELECT asset_id, org_id, hash FROM catalog.fingerprints_outside_org_page($1,$2,$3,$4)",
+        let rows: Vec<(Uuid, Uuid, chrono::DateTime<chrono::Utc>, Vec<u8>)> = sqlx::query_as(
+            "SELECT asset_id, org_id, created_at, hash
+               FROM catalog.fingerprints_outside_org_since($1,$2,$3,$4,$5,$6)",
         )
         .bind(org)
-        .bind(fingerprint::FINGERPRINT_VERSION)
-        .bind(after)
+        .bind(version)
+        .bind(since_at)
+        .bind(after.0)
+        .bind(after.1)
         .bind(SIMILARITY_PAGE as i32)
         .fetch_all(pool)
         .await?;
-        let Some(last) = rows.last().map(|r| r.0) else {
+        let Some(last) = rows.last().map(|r| (r.2, r.0)) else {
             break;
         };
         after = last;
         let full = rows.len() as i64 == SIMILARITY_PAGE;
         let page = rows
             .into_iter()
-            .map(|(id, _, hash)| (id, true, hash))
+            .map(|(id, _, _, hash)| (id, true, hash))
             .collect();
-        merge_similar_hits(&mut hits, compare_page(frames.clone(), page).await?);
+        let bound = similarity_bound(&hits);
+        truncated |= merge_similar_hits(
+            &mut hits,
+            compare_page(frames.clone(), page, bound).await?,
+            SIMILARITY_KEEP,
+        );
         if !full {
             break;
         }
     }
+    let stored: Vec<Value> = hits
+        .iter()
+        .map(|h| json!({"asset_id":h.asset_id,"other_org":h.other_org,"ber":h.ber}))
+        .collect();
+    sqlx::query(
+        "INSERT INTO operations.fingerprint_scans(asset_id, version, fingerprint_sha256, scanned_through, hits, truncated)
+         VALUES($1,$2,$3,$4,$5,$6)
+         ON CONFLICT(asset_id, version) DO UPDATE SET fingerprint_sha256=EXCLUDED.fingerprint_sha256,
+           scanned_through=EXCLUDED.scanned_through, hits=EXCLUDED.hits, truncated=EXCLUDED.truncated, updated_at=now()",
+    )
+    .bind(aid)
+    .bind(version)
+    .bind(&digest)
+    .bind(started - chrono::Duration::seconds(SIMILARITY_LATE_COMMIT_MARGIN_SECS))
+    .bind(Value::Array(stored))
+    .bind(truncated)
+    .execute(pool)
+    .await?;
+    hits.truncate(3);
     Ok(hits)
 }
 
+/// The BER a new match must reach to enter the remembered list.
+fn similarity_bound(hits: &[SimilarHit]) -> f64 {
+    if hits.len() >= SIMILARITY_KEEP {
+        hits[SIMILARITY_KEEP - 1].ber
+    } else {
+        fingerprint::SIMILAR_BER
+    }
+}
+
 /// Compare one page of stored fingerprints `(asset_id, other_org, hash)`
-/// against `frames` on the blocking pool; returns the matches at or below
-/// [`fingerprint::SIMILAR_BER`].
+/// against `frames` on the blocking pool, split across the available
+/// cores; returns the matches at or below `bound`.
 async fn compare_page(
     frames: Arc<[u32]>,
     page: Vec<(Uuid, bool, Vec<u8>)>,
+    bound: f64,
 ) -> Result<Vec<SimilarHit>> {
     tokio::task::spawn_blocking(move || {
-        let mut hits: Vec<SimilarHit> = Vec::new();
-        for (asset_id, other_org, hash) in page {
-            let Ok(other) = fingerprint::Fingerprint::from_bytes(&hash) else {
-                continue;
-            };
-            let limit = if hits.len() == 3 {
-                hits[2].ber
-            } else {
-                fingerprint::SIMILAR_BER
-            };
-            let Some(ber) = fingerprint::bit_error_rate_within(&frames, &other.frames, limit)
-            else {
-                continue;
-            };
-            merge_similar_hits(
-                &mut hits,
-                vec![SimilarHit {
-                    asset_id,
-                    other_org,
-                    ber,
-                }],
-            );
-        }
-        hits
+        let threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+            .clamp(1, 8);
+        let chunk = page.len().div_ceil(threads).max(64);
+        std::thread::scope(|scope| {
+            let workers: Vec<_> = page
+                .chunks(chunk)
+                .map(|part| {
+                    let frames = &frames;
+                    scope.spawn(move || {
+                        let mut hits: Vec<SimilarHit> = Vec::new();
+                        for (asset_id, other_org, hash) in part {
+                            let Ok(other) = fingerprint::Fingerprint::from_bytes(hash) else {
+                                continue;
+                            };
+                            let limit = similarity_bound(&hits).min(bound);
+                            let Some(ber) =
+                                fingerprint::bit_error_rate_within(frames, &other.frames, limit)
+                            else {
+                                continue;
+                            };
+                            merge_similar_hits(
+                                &mut hits,
+                                vec![SimilarHit {
+                                    asset_id: *asset_id,
+                                    other_org: *other_org,
+                                    ber,
+                                }],
+                                SIMILARITY_KEEP,
+                            );
+                        }
+                        hits
+                    })
+                })
+                .collect();
+            workers
+                .into_iter()
+                .flat_map(|w| w.join().unwrap_or_default())
+                .collect()
+        })
     })
     .await
     .map_err(|_| Error::Internal)
@@ -2209,10 +2438,16 @@ struct SimilarHit {
     ber: f64,
 }
 
-fn merge_similar_hits(hits: &mut Vec<SimilarHit>, page: Vec<SimilarHit>) {
+/// Adds `page` to `hits`, keeping the best `keep` (by BER, then asset id;
+/// one entry per asset). Returns whether a match was dropped by the cap.
+fn merge_similar_hits(hits: &mut Vec<SimilarHit>, page: Vec<SimilarHit>, keep: usize) -> bool {
     hits.extend(page);
     hits.sort_by(|a, b| a.ber.total_cmp(&b.ber).then(a.asset_id.cmp(&b.asset_id)));
-    hits.truncate(3);
+    let mut seen = BTreeSet::new();
+    hits.retain(|h| seen.insert(h.asset_id));
+    let dropped = hits.len() > keep;
+    hits.truncate(keep);
+    dropped
 }
 
 /// Run the Stage 1 check contract for a single asset: cache lookup, then
@@ -2448,9 +2683,6 @@ pub async fn refingerprint_asset(
     if size < 0 || size as u64 > qc_max_bytes() {
         return Ok(false);
     }
-    let capacity = crate::media_budget::acquire()
-        .await
-        .map_err(|_| Error::Internal)?;
     struct TempFile(std::path::PathBuf);
     impl Drop for TempFile {
         fn drop(&mut self) {
@@ -2466,6 +2698,10 @@ pub async fn refingerprint_asset(
     if downloaded.sha256 != recorded {
         return Err(Error::PolicyGate("ASSET_OBJECT_DRIFT"));
     }
+    // Decode capacity only for the decode, not for the download above.
+    let capacity = crate::media_budget::acquire()
+        .await
+        .map_err(|_| Error::Internal)?;
     let fp = tokio::task::spawn_blocking(move || {
         let _capacity = capacity;
         fingerprint::compute_fingerprint(&tmp.0)
@@ -2523,6 +2759,7 @@ pub async fn precheck_asset(
     org: Uuid,
     aid: Uuid,
 ) -> Result<bool> {
+    let started = std::time::Instant::now();
     let Some(row) = sqlx::query(
         "SELECT object_key, state, kind, content_type, size_bytes, etag, sha256 FROM catalog.assets WHERE org_id=$1 AND id=$2",
     )
@@ -2551,7 +2788,8 @@ pub async fn precheck_asset(
         Err(_) => return Ok(true),
     }
     let tmp_name = format!("audeniq-precheck-{}", Uuid::new_v4());
-    let (mut outcomes, metrics, fp, downloaded_sha) = match analyze_asset(
+    let checked_ms = started.elapsed().as_millis() as u64;
+    let (outcomes, metrics, fp, downloaded_sha) = match analyze_asset(
         storage,
         &key,
         &kind,
@@ -2567,6 +2805,48 @@ pub async fn precheck_asset(
             return Ok(true);
         }
     };
+    let analyzed_ms = started.elapsed().as_millis() as u64;
+    let retry = store_precheck(
+        pool,
+        org,
+        aid,
+        recorded,
+        downloaded_sha,
+        outcomes,
+        metrics,
+        fp,
+    )
+    .await?;
+    // Where an analysis spends its time: lookups and HEAD, download + decode
+    // (analyze_asset), then storing the results.
+    tracing::info!(
+        %aid,
+        bytes = size,
+        lookup_ms = checked_ms,
+        analyze_ms = analyzed_ms - checked_ms,
+        store_ms = started.elapsed().as_millis() as u64 - analyzed_ms,
+        total_ms = started.elapsed().as_millis() as u64,
+        "asset_analyzed"
+    );
+    Ok(retry)
+}
+
+/// Store one asset's pre-submission analysis: hash, probe metrics,
+/// fingerprint, cached check results and the draft QC status. Shared by
+/// the worker's `asset.analyze` job and upload completion (which analyzes
+/// during the lossless conversion). Returns whether to retry (a transient
+/// analysis failure).
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn store_precheck(
+    pool: &PgPool,
+    org: Uuid,
+    aid: Uuid,
+    recorded: Option<String>,
+    downloaded_sha: String,
+    mut outcomes: Vec<qc::CheckOutcome>,
+    metrics: Option<qc::AudioMetrics>,
+    fp: Option<std::result::Result<fingerprint::Fingerprint, String>>,
+) -> Result<bool> {
     if recorded.is_none() {
         sqlx::query(
             "UPDATE catalog.assets SET sha256=$3 WHERE org_id=$1 AND id=$2 AND sha256 IS NULL",
@@ -2648,13 +2928,17 @@ pub async fn precheck_asset(
     // and overwrites it after submission (adding catalog similarity).
     if !retry {
         let clean = out.iter().all(asset_check_allows_progress);
-        sqlx::query("UPDATE catalog.assets SET qc_status=$3 WHERE org_id=$1 AND id=$2")
+        // Only the first answer: a late (retried) analysis never overwrites
+        // what Stage 1 already decided for a submitted release.
+        sqlx::query("UPDATE catalog.assets SET qc_status=$3 WHERE org_id=$1 AND id=$2 AND qc_status='PENDING'")
             .bind(org)
             .bind(aid)
             .bind(if clean { "PASS" } else { "BLOCKED" })
             .execute(pool)
             .await?;
     }
+    // Where an analysis spends its time: lookups and HEAD, download + decode
+    // (analyze_asset), then storing the results.
     Ok(retry)
 }
 
@@ -2768,44 +3052,115 @@ async fn update_asset_qc(
             }
         }
     }
+    // Each asset check's key, computed once per (code, asset): a 30-track
+    // album has ~25 codes x 30 assets keys, instead of a hash per check per
+    // asset (~22k).
+    let codes: BTreeSet<&str> = checks
+        .iter()
+        .filter(|ch| ch.rule_version == qc::QC_RULE_VERSION)
+        .map(|ch| ch.check_code)
+        .collect();
+    let mut owner: std::collections::HashMap<String, Vec<&str>> = std::collections::HashMap::new();
+    for code in &codes {
+        for (aid, sha) in &sha_of {
+            owner
+                .entry(asset_check_cache_key(code, aid, sha))
+                .or_default()
+                .push(aid);
+        }
+    }
     for ch in checks {
         if ch.rule_version != qc::QC_RULE_VERSION {
             continue;
         }
-        for (aid, sha) in &sha_of {
-            if ch.result_hash == asset_check_cache_key(ch.check_code, aid, sha) {
-                let e = worst.entry(aid.clone()).or_insert(CheckStatus::Pass);
-                let check_rank = if asset_check_allows_progress(ch) {
-                    0
-                } else {
-                    rank(ch.status)
-                };
-                if check_rank > rank(*e) {
-                    *e = ch.status;
-                }
+        for aid in owner.get(&ch.result_hash).into_iter().flatten() {
+            let e = worst.entry(aid.to_string()).or_insert(CheckStatus::Pass);
+            let check_rank = if asset_check_allows_progress(ch) {
+                0
+            } else {
+                rank(ch.status)
+            };
+            if check_rank > rank(*e) {
+                *e = ch.status;
             }
         }
     }
+    let mut ids = Vec::with_capacity(worst.len());
+    let mut statuses = Vec::with_capacity(worst.len());
     for (aid, st) in worst {
-        let qc_status = match st {
+        ids.push(Uuid::parse_str(&aid).map_err(|_| Error::Internal)?);
+        statuses.push(match st {
             CheckStatus::Pass | CheckStatus::NotApplicable => "PASS",
             _ => "BLOCKED",
-        };
-        let aid = Uuid::parse_str(&aid).map_err(|_| Error::Internal)?;
-        sqlx::query("UPDATE catalog.assets SET qc_status=$3 WHERE org_id=$1 AND id=$2")
-            .bind(org)
-            .bind(aid)
-            .bind(qc_status)
-            .execute(&mut *c)
-            .await?;
+        });
     }
+    // One statement for the whole release.
+    sqlx::query(
+        "UPDATE catalog.assets a SET qc_status=u.status
+           FROM unnest($2::uuid[], $3::text[]) AS u(id, status)
+          WHERE a.org_id=$1 AND a.id=u.id",
+    )
+    .bind(org)
+    .bind(&ids)
+    .bind(&statuses)
+    .execute(&mut *c)
+    .await?;
     Ok(())
 }
 
+/// The upload's immediate answer for `catalog.assets.qc_status` (the draft
+/// preflight's early answer, which the API may already write): the same
+/// rollup as [`store_precheck`], from the checks measured during the
+/// lossless conversion and the source's provenance report (the outcome
+/// [`preserve_audio_provenance`] keeps when it carries an AI signal; without
+/// one it never blocks). `None` when it cannot answer yet (a transient
+/// failure): the worker's `asset.analyze` answers. Writes nothing trusted:
+/// results and the fingerprint are stored by the worker alone.
+pub(crate) fn upload_qc_answer(
+    path: &std::path::Path,
+    sha256: &str,
+    analysis: crate::qc_engine::Analysis,
+    source_provenance: &Value,
+) -> Option<&'static str> {
+    let (mut outcomes, _) = qc::check_audio_analyzed(
+        path,
+        Some(sha256),
+        Some("audio/flac"),
+        Some(sha256),
+        analysis,
+    );
+    let invalid = outcomes.iter().any(|o| {
+        matches!(
+            o.status,
+            CheckStatus::Blocked | CheckStatus::CorrectionRequired | CheckStatus::TechnicalRetry
+        )
+    });
+    if !invalid {
+        outcomes.push(crate::provenance::outcome(
+            "AUDIO_AI_PROVENANCE",
+            source_provenance,
+        ));
+    }
+    if outcomes
+        .iter()
+        .any(|o| o.status == CheckStatus::TechnicalRetry)
+    {
+        return None;
+    }
+    let clean = outcomes
+        .iter()
+        .all(|o| allows_progress(o.check_code, o.status));
+    Some(if clean { "PASS" } else { "BLOCKED" })
+}
+
 fn asset_check_allows_progress(c: &StagedCheck) -> bool {
-    matches!(c.status, CheckStatus::Pass | CheckStatus::NotApplicable)
-        || (c.status == CheckStatus::ReviewRequired
-            && crate::review::stage1_review_severity(c.check_code) == "WARNING")
+    allows_progress(c.check_code, c.status)
+}
+
+fn allows_progress(code: &str, status: CheckStatus) -> bool {
+    matches!(status, CheckStatus::Pass | CheckStatus::NotApplicable)
+        || (status == CheckStatus::ReviewRequired
+            && crate::review::stage1_review_severity(code) == "WARNING")
 }
 
 fn validation_package(
@@ -3123,6 +3478,94 @@ mod title_tests {
         }
     }
 
+    #[sqlx::test]
+    async fn similarity_rescans_only_new_fingerprints_and_forgets_deleted_matches(
+        pool: sqlx::PgPool,
+    ) {
+        crate::database::MIGRATOR.run(&pool).await.unwrap();
+        let (own, other) = (Uuid::new_v4(), Uuid::new_v4());
+        for org in [own, other] {
+            sqlx::query("INSERT INTO identity.orgs(id, name, kind) VALUES($1,'t','LABEL')")
+                .bind(org)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed as u32
+        };
+        let base: Vec<u32> = (0..400).map(|_| next()).collect();
+        let random: Vec<u32> = (0..400).map(|_| next()).collect();
+        // `bits` low bits flipped per frame: BER bits/32.
+        let flipped =
+            |bits: u32| -> Vec<u32> { base.iter().map(|f| f ^ ((1u32 << bits) - 1)).collect() };
+        async fn add(pool: &sqlx::PgPool, org: Uuid, frames: &[u32]) -> Uuid {
+            let id = Uuid::new_v4();
+            sqlx::query("INSERT INTO identity.resources(org_id,id,kind) VALUES($1,$2,'asset')")
+                .bind(org)
+                .bind(id)
+                .execute(pool)
+                .await
+                .unwrap();
+            sqlx::query("INSERT INTO catalog.assets(id,org_id,kind,object_key,size_bytes,content_type,state) VALUES($1,$2,'AUDIO',$3,1,'audio/flac','REGISTERED')")
+                .bind(id).bind(org).bind(format!("k/{id}"))
+                .execute(pool).await.unwrap();
+            let fp = fingerprint::Fingerprint {
+                frames: frames.to_vec(),
+                duration_secs: 30.0,
+            };
+            sqlx::query("INSERT INTO catalog.asset_fingerprints(asset_id, org_id, version, frames, duration_secs, hash) VALUES($1,$2,$3,$4,30,$5)")
+                .bind(id).bind(org).bind(fingerprint::FINGERPRINT_VERSION)
+                .bind(frames.len() as i32).bind(fp.to_bytes())
+                .execute(pool).await.unwrap();
+            id
+        }
+        let ids = |hits: &[SimilarHit]| hits.iter().map(|h| h.asset_id).collect::<Vec<_>>();
+        let query = add(&pool, own, &base).await;
+        let near = add(&pool, own, &flipped(1)).await;
+        let similar = add(&pool, other, &flipped(4)).await;
+        let unrelated = add(&pool, other, &random).await;
+
+        let full = find_similar_assets(&pool, own, query, &base).await.unwrap();
+        assert_eq!(ids(&full), vec![near, similar]);
+        assert!(full[1].other_org);
+
+        // Rewritten in place with an old timestamp: a full scan would now
+        // match it, an incremental one does not read it again.
+        let copy = fingerprint::Fingerprint {
+            frames: base.clone(),
+            duration_secs: 30.0,
+        };
+        sqlx::query("UPDATE catalog.asset_fingerprints SET hash=$2, created_at='2001-01-01' WHERE asset_id=$1")
+            .bind(unrelated).bind(copy.to_bytes()).execute(&pool).await.unwrap();
+        // Added after the scan: found by the incremental run.
+        let added = add(&pool, other, &base).await;
+        let rerun = find_similar_assets(&pool, own, query, &base).await.unwrap();
+        assert_eq!(ids(&rerun), vec![added, near, similar]);
+
+        // A remembered match whose fingerprint is gone is dropped.
+        sqlx::query("DELETE FROM catalog.asset_fingerprints WHERE asset_id=$1")
+            .bind(near)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let after_delete = find_similar_assets(&pool, own, query, &base).await.unwrap();
+        assert_eq!(ids(&after_delete), vec![added, similar]);
+
+        // A changed fingerprint (new digest) scans everything again.
+        let mut changed = base.clone();
+        changed[0] ^= 1;
+        let fresh = find_similar_assets(&pool, own, query, &changed)
+            .await
+            .unwrap();
+        assert_eq!(fresh.len(), 3);
+        assert!(ids(&fresh).contains(&unrelated), "full scan reads old rows");
+    }
+
     #[test]
     fn similarity_pages_keep_exact_best_three_with_stable_ties() {
         let mut hits = Vec::new();
@@ -3139,6 +3582,7 @@ mod title_tests {
                         ber,
                     })
                     .collect(),
+                3,
             );
             assert!(hits.len() <= 3);
         }

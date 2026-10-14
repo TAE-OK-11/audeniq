@@ -1,12 +1,14 @@
 // 권리자 서명 화면 (/sign/:token) — 로그인 없이, 받은 링크로 들어와
 // 본인확인 → 문서 확인·동의 → 자필 서명 순서로 진행한다. 서명 후에는 서명본과 서명 기록을 보여 준다.
 import { useEffect, useRef, useState } from 'react';
+import { printWithStamp } from '../lib/printStamp';
 import { DocText } from '../components/DocText';
 import { useNavigate, useParams, useSearchParams } from '../lib/router';
 import { signingApi, type SigningConsents, type SigningView } from '../api/signing';
 import { errorMessage } from '../api/errors';
 import { SignaturePad, type SignaturePadHandle } from '../components/SignaturePad';
 import { compactSignature } from '../lib/application';
+import { todayStr } from '../lib/date';
 import { SIGNING_CONSENTS, SIGNING_PRIVACY_NOTICE, type SigningConsentKey } from '../lib/rightsDocument';
 import { CheckIcon } from '../components/Check';
 import { Glyph } from '../components/Glyph';
@@ -38,6 +40,8 @@ export function Sign() {
   const [loadError, setLoadError] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // 서버는 본인확인 후 30분 안에만 서명을 받는다 (signing.rs IDENTITY_FRESH_MINUTES)
+  const [identityExpired, setIdentityExpired] = useState(false);
   const [name, setName] = useState('');
   const [birth, setBirth] = useState('');
   const [consents, setConsents] = useState<SigningConsents>({ document: false, electronic_signature: false, privacy: false });
@@ -67,12 +71,16 @@ export function Sign() {
   const run = async (fn: () => Promise<void>) => {
     if (busy) return;
     setBusy(true); setError('');
-    try { await fn(); } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
+    try { await fn(); } catch (e) {
+      if ((e as { code?: string }).code === 'IDENTITY_EXPIRED') setIdentityExpired(true);
+      setError(errorMessage(e));
+    } finally { setBusy(false); }
   };
 
   const verify = () => run(async () => {
     if (!name.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(birth)) { setError('이름과 생년월일을 입력해 주세요.'); return; }
     await signingApi.verify(token, `test:${name.trim()}:${birth}`);
+    setIdentityExpired(false);
     await load();
   });
 
@@ -112,7 +120,11 @@ export function Sign() {
 
   const v = view;
   const closed = v.status === 'DECLINED' || v.status === 'CANCELLED' || v.status === 'EXPIRED';
-  const verified = v.status === 'VERIFIED' || v.status === 'SIGNED';
+  // 본인확인한 지 30분이 지났으면(긴 문서를 읽거나 다음 날 다시 열면) 다시 확인하게 한다
+  const verifiedAt = v.identity?.verified_at ? Date.parse(v.identity.verified_at) : NaN;
+  const identityStale = v.status === 'VERIFIED'
+    && (identityExpired || (Number.isFinite(verifiedAt) && Date.now() - verifiedAt > 29 * 60_000));
+  const verified = (v.status === 'VERIFIED' && !identityStale) || v.status === 'SIGNED';
   const step = v.status === 'SIGNED' ? 3 : verified ? 2 : 1;
   const demoProvider = v.identity_provider.name === 'test' || v.identity_provider.name === 'demo';
 
@@ -161,7 +173,7 @@ export function Sign() {
           <h2 id="aqSignDone">서명이 끝났어요</h2>
           <p>서명본과 서명 기록을 아래에서 확인할 수 있어요. 필요하면 저장하거나 인쇄해 두세요. 이 링크로 서명 후 90일 동안 다시 볼 수 있어요.</p>
           <div className="aq-sign-actions">
-            <button type="button" className="ui-btn is-soft" onClick={() => window.print()}><Glyph name="download" size={15} /> 저장·인쇄</button>
+            <button type="button" className="ui-btn is-soft" onClick={() => void printWithStamp({ kind: 'SIGNING', ref: token, root: docRef.current })}><Glyph name="download" size={15} /> 저장·인쇄</button>
             {back && <button type="button" className="ui-btn is-primary" onClick={() => nav(back)}>발매 신청인에게 기기 돌려주기</button>}
           </div>
         </section>
@@ -178,10 +190,11 @@ export function Sign() {
             </div>
           ) : demoProvider ? (
             <>
+              {identityStale && <p className="ui-callout is-warn">본인확인한 지 30분이 지났어요. 다시 본인확인한 뒤 서명해 주세요.</p>}
               <p className="small muted">체험·테스트 환경이에요. 실제 서비스에서는 휴대폰·간편인증(PASS·카카오·네이버·토스) 창이 열려요.</p>
               <div className="aq-sign-grid">
                 <div className="ui-field"><label htmlFor="aqSignName">이름</label><input id="aqSignName" autoComplete="name" value={name} onChange={e => setName(e.target.value)} placeholder={v.signer_name} /></div>
-                <div className="ui-field"><label htmlFor="aqSignBirth">생년월일</label><DateField id="aqSignBirth" value={birth} max={new Date().toISOString().slice(0, 10)} required onChange={setBirth} /></div>
+                <div className="ui-field"><label htmlFor="aqSignBirth">생년월일</label><DateField id="aqSignBirth" value={birth} max={todayStr()} required onChange={setBirth} /></div>
               </div>
               <button type="button" className="ui-btn is-primary studio-submit-wide" disabled={busy} onClick={() => void verify()}>{busy ? '확인 중…' : '본인확인하기'}</button>
             </>
@@ -216,12 +229,13 @@ export function Sign() {
             <details className="aq-sign-privacy">
               <summary>개인정보 수집·이용 안내 보기</summary>
               <ul>{SIGNING_PRIVACY_NOTICE.map(line => <li key={line}>{line}</li>)}</ul>
+              <p><a href="/privacy" target="_blank" rel="noopener" className="aq-inline-link">개인정보 처리방침 전체 보기</a></p>
             </details>
           </div>
         )}
       </section>
 
-      {v.status === 'VERIFIED' && (
+      {v.status === 'VERIFIED' && !identityStale && (
         <section className="aq-sign-card" aria-labelledby="aqSignStep3">
           <h2 id="aqSignStep3"><span className="aq-sign-no">3</span>직접 서명</h2>
           <p className="small muted">{v.signer_name}님이 손가락이나 마우스로 직접 서명해 주세요. 서명하면 문서 내용은 더 이상 바꿀 수 없어요.</p>
@@ -271,3 +285,4 @@ export function Sign() {
     </div>
   );
 }
+

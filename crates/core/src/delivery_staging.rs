@@ -511,6 +511,7 @@ fn build_ern(
         recipient_party_id: Some(recipient_dpid.to_owned()),
         deal_start_date: deal_start.format("%Y-%m-%d").to_string(),
         takedown_date: None,
+        artist_party_id: prepared.artist_platform_ids.get(spec.slug).cloned(),
     };
     let pf = ddex_validate::preflight_release(prepared, &config);
     let errors: Vec<String> = pf
@@ -632,8 +633,11 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
     };
     let canonical: CanonicalRelease =
         serde_json::from_value(row.get("canonical")).map_err(|_| Error::Internal)?;
-    let prepared =
-        std::sync::Arc::new(PreparedRelease::from_canonical(pool, canonical_id, &canonical).await?);
+    let mut prepared = PreparedRelease::from_canonical(pool, canonical_id, &canonical).await?;
+    // A platform staged after an approved metadata correction gets the
+    // corrected credits and genre from the start.
+    let genre_correction = crate::corrections::overlay(pool, &mut prepared).await?;
+    let prepared = std::sync::Arc::new(prepared);
 
     let requested = crate::dsp_registry::requested(&draft).unwrap_or_else(|| Dsp::ALL.to_vec());
     let genre = draft
@@ -645,6 +649,7 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
         .or_else(|| draft.get("genre").and_then(Value::as_str))
         .filter(|g| *g != "__other__")
         .map(str::to_owned);
+    let genre = genre_correction.or(genre);
     let stage1_refs: Value = sqlx::query_scalar(
         "SELECT v.body->'stage1_check_refs' FROM distribution.verification_packages vp
          JOIN distribution.validation_packages v ON v.id=(vp.body->>'stage1_validation_package_id')::uuid
@@ -676,7 +681,7 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
     .fetch_all(pool)
     .await?;
     let facts = credit_facts(&canonical, &draft);
-    let today = chrono::Utc::now().date_naive();
+    let today = crate::domain::today_kst();
     let approved: HashSet<Uuid> = canonical.approved_dsp_ids.iter().copied().collect();
 
     let dsp_ids: Vec<Uuid> = requested.iter().map(|d| d.uuid()).collect();
@@ -982,9 +987,17 @@ async fn auto_approve(
     sqlx::query("SELECT pg_advisory_xact_lock_shared(64481168068)")
         .execute(&mut *tx)
         .await?;
+    // The worker has no UPDATE on rights_epochs, which a row lock needs: the
+    // epoch is share-locked through a SECURITY DEFINER function (0088) and
+    // held until commit, so a rights write cannot slip past this check.
+    let epoch: Option<i64> = sqlx::query_scalar("SELECT rights.share_lock_epoch($1,$2)")
+        .bind(org)
+        .bind(release)
+        .fetch_one(&mut *tx)
+        .await?;
     let suitable: bool = sqlx::query_scalar(
         "SELECT COALESCE(r.status='READY_FOR_DELIVERY' AND r.current_revision_id=$3
-          AND vp.rights_epoch=e.epoch AND vp.body->>'rule_version'=$5
+          AND vp.rights_epoch=$8 AND vp.body->>'rule_version'=$5
           AND vp.body->>'decision'='PASS' AND vp.body->'overrides_applied'='[]'::jsonb
           AND vp.body->'special_flags'='[]'::jsonb
           AND v.body->>'rule_version'=$6 AND vp.body->>'content_policy_rule_version'=$7
@@ -999,12 +1012,12 @@ async fn auto_approve(
          JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id AND cr.release_id=r.id AND cr.revision_id=$3
          JOIN distribution.verification_packages vp ON vp.id=cr.verification_package_id AND vp.org_id=r.org_id
          JOIN distribution.validation_packages v ON v.id=(vp.body->>'stage1_validation_package_id')::uuid AND v.org_id=r.org_id
-         JOIN rights.rights_epochs e ON e.org_id=r.org_id AND e.release_id=r.id
          JOIN catalog.application_revisions ar ON ar.id=$3 AND ar.org_id=r.org_id
          JOIN catalog.consent_packages cp ON cp.package_hash=ar.consent_package_hash AND cp.org_id=r.org_id
-         WHERE r.org_id=$1 AND r.id=$2 FOR SHARE OF r,e",
+         WHERE r.org_id=$1 AND r.id=$2 FOR SHARE OF r",
     ).bind(org).bind(release).bind(revision).bind(package)
       .bind(crate::review::REVIEW_RULE_VERSION).bind(crate::qc::QC_RULE_VERSION).bind(crate::content_policy::RULE_VERSION)
+      .bind(epoch)
       .fetch_optional(&mut *tx).await?.unwrap_or(false);
     if !suitable {
         sqlx::query("UPDATE distribution.delivery_staging SET approval='PENDING',approval_rule_version=NULL,approval_at=NULL,approval_note='' WHERE package_id=$1 AND org_id=$2 AND approval_rule_version IN ('1','2')")
@@ -1175,6 +1188,11 @@ mod tests {
             tracks,
             artwork: asset("image/jpeg", None, None),
             explicit,
+            territories: Default::default(),
+            release_time: None,
+            preorder_start: None,
+            preview_starts: Default::default(),
+            artist_platform_ids: Default::default(),
         }
     }
 

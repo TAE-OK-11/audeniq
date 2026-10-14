@@ -477,7 +477,8 @@ fn tempdir() -> TResult<PathBuf> {
 // S3-compatible bucket
 // ---------------------------------------------------------------------------
 
-/// A partner-owned S3-compatible bucket (AWS S3, GCS interop, R2, MinIO),
+/// A partner-owned S3-compatible bucket (AWS S3, GCS interop, R2, MinIO,
+/// Oracle Cloud Object Storage with its region given explicitly),
 /// SigV4 presigned requests.
 pub struct S3Transport {
     endpoint: url::Url,

@@ -428,23 +428,22 @@ pub async fn list(s: &AppState, a: &Actor, org: Uuid, q: ListQuery) -> Result<Va
     let rows = sqlx::query(concat!(
         "SELECT ",
         cols!(),
-        " FROM portal.signing_requests WHERE org_id=$1 AND ($2::uuid IS NULL OR release_id=$2)
-         ORDER BY created_at DESC LIMIT 200"
+        " FROM portal.signing_requests sr WHERE sr.org_id=$1 AND ($2::uuid IS NULL OR sr.release_id=$2)
+           -- Release read access in the same query (was one authorize()
+           -- round trip pair per row).
+           AND EXISTS(SELECT 1 FROM identity.resources res JOIN identity.resource_acl acl
+                        ON acl.org_id=res.org_id AND acl.resource_id=res.id
+                       WHERE res.org_id=sr.org_id AND res.id=sr.release_id AND res.kind='release'
+                         AND acl.principal_party_id=$3 AND acl.action='read' AND acl.revoked_at IS NULL
+                         AND acl.starts_at<=now() AND (acl.ends_at IS NULL OR acl.ends_at>now()))
+         ORDER BY sr.created_at DESC LIMIT 200"
     ))
     .bind(org)
     .bind(q.release_id)
+    .bind(a.party)
     .fetch_all(&mut *c)
     .await?;
-    let mut items = Vec::new();
-    for r in &rows {
-        let release: Uuid = r.get("release_id");
-        if auth::authorize(&mut c, a, org, release, "release", false)
-            .await
-            .is_ok()
-        {
-            items.push(summary(r));
-        }
-    }
+    let items: Vec<Value> = rows.iter().map(summary).collect();
     Ok(json!({"items": items}))
 }
 
@@ -699,9 +698,11 @@ pub async fn verify_identity(
             return Err(e);
         }
     };
-    // The same provider transaction cannot verify two requests.
+    // The same provider transaction cannot verify two requests, nor a
+    // request and an account (account.rs checks both tables too).
     let reused: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM portal.signing_requests WHERE id<>$1 AND identity->>'transaction_id'=$2 AND identity->>'provider'=$3)",
+        "SELECT EXISTS(SELECT 1 FROM portal.signing_requests WHERE id<>$1 AND identity->>'transaction_id'=$2 AND identity->>'provider'=$3)
+             OR EXISTS(SELECT 1 FROM portal.account_identities WHERE transaction_id=$2 AND provider=$3)",
     )
     .bind(id)
     .bind(&verified.transaction_id)
@@ -881,6 +882,24 @@ pub async fn sign(s: &AppState, h: &HeaderMap, token: &str, i: SignInput) -> Res
         auth::request_id(h),
     )
     .await?;
+    // Seal the signed document and the signing record (identity check,
+    // consents, every event) in the same transaction.
+    crate::seal::seal(
+        &mut tx,
+        &s.payout_keys,
+        crate::seal::Kind::RightsDocument,
+        doc,
+        "SIGNED",
+    )
+    .await?;
+    crate::seal::seal(
+        &mut tx,
+        &s.payout_keys,
+        crate::seal::Kind::SigningRequest,
+        id,
+        "SIGNED",
+    )
+    .await?;
     tx.commit().await?;
     Ok(
         json!({"status": "SIGNED", "document_id": doc, "signed_at": signed_at, "certificate_hash": certificate_hash}),
@@ -914,6 +933,14 @@ pub async fn decline(s: &AppState, h: &HeaderMap, token: &str, i: DeclineInput) 
         "DECLINED",
         None,
         json!({"reason": reason}),
+    )
+    .await?;
+    crate::seal::seal(
+        &mut tx,
+        &s.payout_keys,
+        crate::seal::Kind::SigningRequest,
+        id,
+        "DECLINED",
     )
     .await?;
     tx.commit().await?;

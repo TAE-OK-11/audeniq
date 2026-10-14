@@ -11,6 +11,11 @@ import unittest
 DEPLOY = Path(__file__).resolve().parents[1]
 X86_V3 = "cx16 lahf_lm popcnt pni sse4_1 sse4_2 ssse3 avx avx2 bmi1 bmi2 f16c fma abm movbe xsave"
 ARM_V2 = "fp asimd atomics crc32 sve sve2 i8mm bf16"
+# Ampere Altra (Oracle Cloud A1) as the kernel reports it
+ARM_N1 = "fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm lrcpc dcpop asimddp ssbs"
+# AmpereOne M (Oracle Cloud A4) as an ARMv8.6 kernel reports it (no MTE exposed in the VM)
+ARM_A4 = ("fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma lrcpc dcpop "
+          "sha3 sm3 sm4 asimddp sha512 asimdfhm dit uscat ilrcpc flagm ssbs sb paca pacg dcpodp flagm2 frint i8mm bf16 rng bti ecv")
 
 
 def arm_record(part="0xd4f", features=ARM_V2):
@@ -68,6 +73,33 @@ class CpuCompatibilityTests(unittest.TestCase):
         for feature in ["sve", "sve2", "atomics", "i8mm", "bf16"]:
             self.check_cpu("arm64", "neoverse-v2", "aarch64", arm_record(features=" ".join(f for f in ARM_V2.split() if f != feature)), succeeds=False)
 
+    def test_ampere_a1_accepts_neoverse_n1_and_newer_cores(self):
+        # Ampere Altra / Graviton2 (N1), Graviton3/4 and AmpereOne all have the N1 feature set.
+        self.check_cpu("arm64", "neoverse-n1", "aarch64", arm_record("0xd0c", ARM_N1) * 4)
+        self.check_cpu("arm64", "neoverse-n1", "aarch64", arm_record("0xd4f", ARM_N1 + " sve sve2"))
+        self.check_cpu("arm64", "neoverse-n1", "aarch64", arm_record("0xac3", ARM_N1).replace("0x41", "0xc0"))
+
+    def test_ampere_a1_rejects_cores_without_dot_product_or_lse(self):
+        # Graviton1 / Cortex-A72 class (ARMv8.0): no atomics, no asimddp.
+        self.check_cpu("arm64", "neoverse-n1", "aarch64", arm_record("0xd08", "fp asimd evtstrm aes pmull sha1 sha2 crc32 cpuid"), succeeds=False)
+        for feature in ["atomics", "asimddp", "lrcpc"]:
+            self.check_cpu("arm64", "neoverse-n1", "aarch64", arm_record("0xd0c", " ".join(f for f in ARM_N1.split() if f != feature)), succeeds=False)
+        # One weaker core is enough to refuse.
+        self.check_cpu("arm64", "neoverse-n1", "aarch64", arm_record("0xd0c", ARM_N1) + arm_record("0xd08", "fp asimd crc32"), succeeds=False)
+        self.check_cpu("amd64", "neoverse-n1", "x86_64", succeeds=False)
+
+    def test_oracle_a4_accepts_ampereone_and_graviton3_class_cores(self):
+        self.check_cpu("arm64", "ampere1a", "aarch64", arm_record("0xac4", ARM_A4).replace("0x41", "0xc0") * 4)
+        # Graviton4 (V2) reports the same v8.6 set plus SVE.
+        self.check_cpu("arm64", "ampere1a", "aarch64", arm_record("0xd4f", ARM_A4 + " sve sve2"))
+
+    def test_oracle_a4_rejects_altra_and_cores_missing_v86_features(self):
+        # Ampere Altra / Oracle A1 (N1): no BF16, I8MM, FRINT, SHA3 ...
+        self.check_cpu("arm64", "ampere1a", "aarch64", arm_record("0xd0c", ARM_N1), succeeds=False)
+        for feature in ["bf16", "i8mm", "frint", "sha3", "ilrcpc", "atomics", "asimddp"]:
+            self.check_cpu("arm64", "ampere1a", "aarch64", arm_record("0xac4", " ".join(f for f in ARM_A4.split() if f != feature)), succeeds=False)
+        self.check_cpu("amd64", "ampere1a", "x86_64", succeeds=False)
+
     def test_arm_checks_all_cores_and_requires_cpu_identity(self):
         for records in ["", "Features : " + ARM_V2, arm_record() + arm_record("0xd40"), arm_record().replace("CPU implementer : 0x41", "CPU implementer : 0x42")]:
             self.check_cpu("arm64", "neoverse-v2", "aarch64", records, succeeds=False)
@@ -78,6 +110,8 @@ class CpuCompatibilityTests(unittest.TestCase):
             ("amd64", "x86-64-v3", "x86-64-v3", "-march=x86-64-v3"),
             ("arm64", "", "generic", "-march=armv8-a"),
             ("arm64", "neoverse-v2", "neoverse-v2", "-mcpu=neoverse-v2"),
+            ("arm64", "neoverse-n1", "neoverse-n1", "-mcpu=neoverse-n1"),
+            ("arm64", "ampere1a", "ampere1a", "-mcpu=ampere1a"),
         ]:
             with self.subTest(arch=arch, cpu=cpu), tempfile.TemporaryDirectory() as directory:
                 environment = dict(os.environ, RUSTFLAGS="-C debuginfo=0", CFLAGS="-fPIC", CXXFLAGS="-fPIC", AUDENIQ_BUILD_METADATA_DIR=directory)
@@ -94,7 +128,7 @@ class CpuCompatibilityTests(unittest.TestCase):
                 self.assertEqual((Path(directory) / "target-arch").read_text().strip(), arch)
 
     def test_invalid_build_cpu_fails_before_running_command(self):
-        for arch, cpu in [("arm64", "x86-64-v3"), ("amd64", "neoverse-v2"), ("amd64", "native"), ("arm64", "native"), ("arm", "generic")]:
+        for arch, cpu in [("arm64", "x86-64-v3"), ("amd64", "neoverse-v2"), ("amd64", "neoverse-n1"), ("amd64", "ampere1a"), ("amd64", "native"), ("arm64", "native"), ("arm", "generic")]:
             result = subprocess.run(["sh", str(DEPLOY / "build-target.sh"), arch, cpu, "echo", "command ran"], capture_output=True, text=True, check=False)
             self.assertNotEqual(result.returncode, 0)
             self.assertNotIn("command ran", result.stdout)
@@ -111,7 +145,8 @@ class CpuCompatibilityTests(unittest.TestCase):
             (task_dir / "pgbouncer").mkdir()
             (task_dir / "pgbouncer/Dockerfile").touch()
             (task_dir / "compose.production.yaml").touch()
-            previous = "AUDENIQ_IMAGE=ghcr.io/test/audeniq@sha256:previous\n"
+            # A local PII key (dummy) satisfies deploy.sh's key check, so the probe reaches the CPU gate.
+            previous = "AUDENIQ_IMAGE=ghcr.io/test/audeniq@sha256:previous\nPAYOUT_ACCOUNT_KEY=" + "0" * 64 + "\n"
             (task_dir / "production.env").write_text(previous)
             (task_dir / "uname").write_text(f"#!/bin/sh\necho {host_arch}\n")
             (task_dir / "uname").chmod(0o755)

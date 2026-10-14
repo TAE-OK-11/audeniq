@@ -234,12 +234,41 @@ struct ReadyCtx {
 
 /// Full pipeline to READY_FOR_DELIVERY, then pin the mock profile to the
 async fn ready_package(pool: &PgPool) -> ReadyCtx {
+    let d = draft_package(pool).await;
+    finish_package(pool, d).await
+}
+
+/// A submittable draft (still editable), before [`finish_package`].
+struct DraftCtx {
+    app: Router,
+    store: Arc<FileStore>,
+    u: User,
+    release: Uuid,
+}
+
+async fn draft_package(pool: &PgPool) -> DraftCtx {
     let (app, store) = app(pool.clone()).await;
     let u = user(&app).await;
     let wav = wav_bytes();
     let asset = register_asset(pool, &store, &u, "t.wav", wav).await;
     let release = build_submittable(&app, pool, &u, asset).await;
     add_preparation_supplements(pool, &store, &u, release).await;
+    DraftCtx {
+        app,
+        store,
+        u,
+        release,
+    }
+}
+
+/// Submit the draft and take it through Stages 1–3 to READY_FOR_DELIVERY.
+async fn finish_package(pool: &PgPool, d: DraftCtx) -> ReadyCtx {
+    let DraftCtx {
+        app,
+        store,
+        u,
+        release,
+    } = d;
     consent_and_submit(&app, &u, release, &format!("k-f5-{}", Uuid::new_v4())).await;
     // Pin the seeded MockDSP profile to a fixed DSP id BEFORE stage2 runs:
     // stage2's DSP-eligibility module reads activated adapter profiles, so
@@ -523,6 +552,30 @@ async fn dsp_01_accept_happy_path_goes_live(pool: PgPool) {
     .await
     .unwrap();
     assert_eq!(released, 1);
+}
+
+/// Finance holds stop payouts, not releases: an active payee or release hold
+/// used to block every delivery of the account (EXECUTION_HOLD_ACTIVE).
+#[sqlx::test]
+async fn finance_holds_do_not_block_delivery(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    for (scope, value) in [
+        ("PARTY", ctx.user.party.to_string()),
+        ("RELEASE", ctx.release.to_string()),
+    ] {
+        sqlx::query("INSERT INTO finance.finance_holds(id,org_id,scope_type,scope_value,reason,reason_class) VALUES($1,$2,$3,$4,'payee review','FRAUD_REVIEW')")
+            .bind(Uuid::new_v4())
+            .bind(ctx.org)
+            .bind(scope)
+            .bind(value)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    let mock = MockDsp::new(MockBehavior::Accept);
+    let (job_id, status) = run_send(&pool, &ctx, &mock).await;
+    assert_eq!(status, "DELIVERED");
+    assert_eq!(job_status(&pool, ctx.org, job_id).await, "DELIVERED");
 }
 
 #[sqlx::test]
@@ -3272,7 +3325,8 @@ async fn staff_correction_and_rejection_reach_the_artist(pool: PgPool) {
         "POST",
         &format!("/api/staff/releases/{r1}/decision"),
         json!({"action":"REQUEST_CORRECTION","revision_id":rev,"reason":"mark the explicit track",
-               "notes":[{"check_code":"S2_SPECIAL_FLAGS","note":"19금 표시와 가사 확인이 필요해요."}]}),
+               "notes":[{"check_code":"S2_SPECIAL_FLAGS","note":"19금 표시와 가사 확인이 필요해요."},
+                        {"check_code":"FIX_DOCUMENT","note":"샘플 사용 허락서\nPDF로 첨부해 주세요."}]}),
         Some(&reviewer),
     )
     .await;
@@ -3307,6 +3361,34 @@ async fn staff_correction_and_rejection_reach_the_artist(pool: PgPool) {
             .any(|n| n["check_code"] == "S2_SPECIAL_FLAGS"),
         "{v}"
     );
+    // 「추가 서류」 items become a document request the artist attaches to,
+    // and the note names that request so 보완하기 opens it (UI-001).
+    let doc_code = v["review_notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find_map(|n| {
+            n["check_code"]
+                .as_str()
+                .filter(|c| c.starts_with("FIX_DOCUMENT@"))
+        })
+        .unwrap_or_else(|| panic!("document correction note: {v}"))
+        .to_owned();
+    let doc: Uuid = doc_code["FIX_DOCUMENT@".len()..].parse().unwrap();
+    let (kind, status, title, body): (String, String, String, String) = sqlx::query_as(
+        "SELECT kind,status,title,body FROM portal.documents WHERE id=$1 AND release_id=$2",
+    )
+    .bind(doc)
+    .bind(r1)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        (kind.as_str(), status.as_str()),
+        ("RIGHTS_PROOF", "AWAITING_DOCUMENTS")
+    );
+    assert_eq!(title, "샘플 사용 허락서");
+    assert!(body.contains("PDF로 첨부해 주세요."));
 
     // A stale revision id is refused; rejection closes the application.
     let r2 = explicit_release_in_review(&app, &pool, &store, &artist).await;
@@ -4148,4 +4230,2189 @@ async fn staff_uses_run_refs_and_renews_expired_second_approval(pool: PgPool) {
     let items = timeline["items"].as_array().unwrap();
     assert!(items.iter().any(|e| e["kind"] == "stage2.decision"));
     assert!(!items.iter().any(|e| e["kind"] == "stage2.checks_recorded"));
+}
+
+/// Pre-launch Studio test platform (migration 0087): with every real DSP
+/// locked, Studio lists the MockDSP, a release that picks it passes the
+/// public DSP gate and goes all the way to a mock delivery. A release that
+/// did not pick it never routes there.
+#[sqlx::test]
+async fn studio_mockdsp_is_selectable_and_delivers(pool: PgPool) {
+    let studio_dsp = Uuid::parse_str("357a6db5-5f95-59b9-86a2-c7e90daf3926").unwrap();
+    assert_eq!(
+        studio_dsp,
+        Uuid::new_v5(&Uuid::NAMESPACE_URL, b"audeniq:dsp:mockdsp-studio")
+    );
+    let (app, store) = app_with_dsp_gate(pool.clone(), false).await;
+    let artist = user(&app).await;
+    let (s, v) = call(
+        &app,
+        "GET",
+        &format!("/api/orgs/{}/dsps", artist.org),
+        Value::Null,
+        Some(&artist),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let items = v["items"].as_array().unwrap();
+    assert!(
+        items
+            .iter()
+            .filter(|d| d["slug"] != "mockdsp-studio")
+            .all(|d| d["available"] == false),
+        "real DSPs stay locked before launch: {v}"
+    );
+    let mock = items
+        .iter()
+        .find(|d| d["slug"] == "mockdsp-studio")
+        .expect("Studio lists the MockDSP");
+    assert_eq!(mock["available"], true);
+    assert_eq!(mock["name"], "MockDSP (테스트)");
+
+    let mut audio = wav_bytes().to_vec();
+    audio.extend_from_slice(&Uuid::new_v4().as_u128().to_le_bytes());
+    let asset = register_asset(&pool, &store, &artist, "t.wav", &audio).await;
+    let release = build_submittable(&app, &pool, &artist, asset).await;
+    add_preparation_supplements(&pool, &store, &artist, release).await;
+    // A real DSP next to the mock is still refused, and so is a repeat pick.
+    for (platforms, code) in [
+        (json!(["mockdsp-studio", "spotify"]), "DSP_UNAVAILABLE"),
+        (
+            json!(["mockdsp-studio", "mockdsp-studio"]),
+            "DSP_SELECTION_INVALID",
+        ),
+    ] {
+        sqlx::query("UPDATE catalog.releases SET draft = draft || jsonb_build_object('platforms',$2::jsonb), row_version = row_version + 1 WHERE id=$1")
+            .bind(release)
+            .bind(&platforms)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let (_, consent) = call(
+            &app,
+            "POST",
+            &format!("/api/orgs/{}/releases/{release}/consents", artist.org),
+            json!({"parties":[{"party_id":artist.party,"role":"ARTIST"}],"minority_declared":false}),
+            Some(&artist),
+        )
+        .await;
+        let (s, v) = call(
+            &app,
+            "POST",
+            &format!("/api/orgs/{}/releases/{release}/submit", artist.org),
+            json!({"consent_id":consent["consent_id"],"minority_declared":false,
+                "idempotency_key":format!("mock-gate-{}", Uuid::new_v4()),
+                "declarations":{"rights_confirmed":true,"adult_confirmed":true,"is_cover":false,
+                    "is_remix":false,"contains_samples":false,"ai_involved":false,"explicit_content":false}}),
+            Some(&artist),
+        )
+        .await;
+        assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+        assert_eq!(v["error"]["code"], code, "{platforms}");
+    }
+    sqlx::query("UPDATE catalog.releases SET draft = draft || '{\"genre\":\"Pop\",\"platforms\":[\"mockdsp-studio\"]}'::jsonb, row_version = row_version + 1 WHERE id=$1")
+        .bind(release)
+        .execute(&pool)
+        .await
+        .unwrap();
+    consent_and_submit(
+        &app,
+        &artist,
+        release,
+        &format!("k-studio-{}", Uuid::new_v4()),
+    )
+    .await;
+    assert_eq!(run_one(&pool, &store, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(
+        run_one(&pool, &store, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        run_one(&pool, &store, "distribution", "prepare_release").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(release_status(&pool, release).await, "READY_FOR_DELIVERY");
+    let package: Uuid = sqlx::query_scalar(
+        "SELECT dp.id FROM distribution.distribution_packages dp JOIN distribution.canonical_releases cr ON cr.id=dp.canonical_release_id WHERE cr.release_id=$1",
+    )
+    .bind(release)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let plan: Value = sqlx::query_scalar(
+        "SELECT route_plan FROM distribution.preparation_artifacts WHERE package_id=$1",
+    )
+    .bind(package)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let plan_dsps: Vec<&str> = plan
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|i| i["scope"]["dsp_id"].as_str())
+        .collect();
+    assert_eq!(plan_dsps, vec![studio_dsp.to_string()], "{plan}");
+    set_agreement(&pool, artist.org, release, true).await;
+    assert_eq!(
+        run_one(&pool, &store, "delivery", "delivery.enqueue").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        run_one(&pool, &store, "delivery", "delivery.send").await,
+        "SUCCEEDED"
+    );
+    let mut c = authed(&pool, artist.org).await;
+    let jobs: Vec<(String, String)> = sqlx::query_as(
+        "SELECT partner_id, status FROM execution.delivery_jobs WHERE package_id=$1",
+    )
+    .bind(package)
+    .fetch_all(&mut *c)
+    .await
+    .unwrap();
+    assert_eq!(
+        jobs,
+        vec![("mockdsp-studio".to_string(), "DELIVERED".to_string())]
+    );
+
+    // A release that did not pick the MockDSP never routes to it.
+    let (app2, store2) = app_with_dsp_gate(pool.clone(), true).await;
+    let other = user(&app2).await;
+    let mut audio = wav_bytes().to_vec();
+    audio.extend_from_slice(&Uuid::new_v4().as_u128().to_le_bytes());
+    let asset = register_asset(&pool, &store2, &other, "t.wav", &audio).await;
+    let release = build_submittable(&app2, &pool, &other, asset).await;
+    add_preparation_supplements(&pool, &store2, &other, release).await;
+    sqlx::query("UPDATE catalog.releases SET draft = draft || '{\"genre\":\"Pop\",\"platforms\":[\"spotify\"]}'::jsonb, row_version = row_version + 1 WHERE id=$1")
+        .bind(release)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let revision = consent_and_submit(
+        &app2,
+        &other,
+        release,
+        &format!("k-nomock-{}", Uuid::new_v4()),
+    )
+    .await;
+    assert_eq!(run_one(&pool, &store2, "qc", "stage1").await, "SUCCEEDED");
+    assert_eq!(
+        run_one(&pool, &store2, "rights", "stage2").await,
+        "SUCCEEDED"
+    );
+    let detail: String = sqlx::query_scalar(
+        "SELECT detail FROM operations.check_results WHERE revision_id=$1 AND check_code='S2_DSP_ELIGIBILITY' ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(revision)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(!detail.contains(&studio_dsp.to_string()), "{detail}");
+}
+
+/// Runs queued `queue` jobs in order until one of `kind` ran; its status.
+async fn run_until(pool: &PgPool, store: &Arc<FileStore>, queue: &str, kind: &str) -> String {
+    let dyn_store: Arc<dyn ObjectStore> = store.clone();
+    loop {
+        let job = operations::claim(pool, queue, "test-worker", 60)
+            .await
+            .unwrap()
+            .unwrap_or_else(|| panic!("{kind} job queued"));
+        operations::execute(pool, &dyn_store, &job).await.unwrap();
+        if job.kind == kind {
+            return sqlx::query_scalar("SELECT status FROM operations.jobs WHERE id=$1")
+                .bind(job.id)
+                .fetch_one(pool)
+                .await
+                .unwrap();
+        }
+    }
+}
+
+#[sqlx::test]
+async fn takedown_request_is_decided_by_staff_and_reaches_the_platform(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let path = format!("/api/orgs/{}/releases/{}/takedown", ctx.org, ctx.release);
+    let reason = json!({"reason": "계약이 끝나 서비스를 내려야 해요."});
+    // Nothing sent yet: the application is withdrawn instead.
+    let (s, v) = call(&ctx.app, "POST", &path, reason.clone(), Some(&ctx.user)).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{v}");
+    assert_eq!(v["error"]["code"], "TAKEDOWN_NOTHING_SENT");
+
+    let mock = MockDsp::new(MockBehavior::Accept);
+    let (_, status) = run_send(&pool, &ctx, &mock).await;
+    assert_eq!(status, "DELIVERED");
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &path,
+        json!({"reason": " "}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    let (s, v) = call(&ctx.app, "POST", &path, reason.clone(), Some(&ctx.user)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["status"], "PENDING");
+    let (s, v) = call(&ctx.app, "POST", &path, reason.clone(), Some(&ctx.user)).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(v["error"]["code"], "TAKEDOWN_ALREADY_REQUESTED");
+    let (_, v) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(v["request"]["status"], "PENDING", "{v}");
+    assert_eq!(v["platforms"][0]["partner_id"], "mockdsp");
+    assert_eq!(v["can_request"], false);
+    let notified: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM portal.notifications WHERE org_id=$1 AND title LIKE '%발매 중단 요청이 접수%')",
+    )
+    .bind(ctx.org)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(notified);
+
+    // The artist cannot decide; staff decline needs a note.
+    let (_, list) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/takedowns",
+        Value::Null,
+        Some(&ctx.user),
+    )
+    .await;
+    assert!(list["items"].is_null(), "{list}");
+    let staff = staff_user(&ctx.app, &pool, "OPERATOR").await;
+    let (_, list) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/takedowns",
+        Value::Null,
+        Some(&staff),
+    )
+    .await;
+    let id = list["items"][0]["id"].as_str().unwrap().to_string();
+    assert_eq!(list["items"][0]["platforms"][0]["partner_id"], "mockdsp");
+    let decide = |what: &str| format!("/api/staff/takedowns/{id}/{what}");
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &decide("approve"),
+        json!({}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &decide("decline"),
+        json!({}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &decide("decline"),
+        json!({"note": "권리자 확인 서류를 먼저 보내 주세요."}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &decide("approve"),
+        json!({}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CONFLICT, "a decided request stays decided");
+
+    // Asked again, approved: one takedown job per platform still carrying it.
+    let (s, _) = call(&ctx.app, "POST", &path, reason.clone(), Some(&ctx.user)).await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, list) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/takedowns",
+        Value::Null,
+        Some(&staff),
+    )
+    .await;
+    let id = list["items"][0]["id"].as_str().unwrap().to_string();
+    assert_eq!(list["items"][0]["status"], "PENDING");
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &format!("/api/staff/takedowns/{id}/approve"),
+        json!({}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["jobs"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        run_until(&pool, &ctx.store, "delivery", "delivery.takedown").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        live_status(&pool, ctx.org, ctx.package_id).await,
+        "TAKEDOWN_REQUESTED"
+    );
+
+    // A platform that never confirms is recorded by hand.
+    let mark = format!(
+        "/api/staff/deliveries/{}/mockdsp/taken-down",
+        ctx.package_id
+    );
+    let (s, _) = call(&ctx.app, "POST", &mark, json!({"note": ""}), Some(&staff)).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &mark,
+        json!({"note": "플랫폼 관리 화면에서 내려간 것을 확인"}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(
+        run_until(&pool, &ctx.store, "delivery", "delivery.mark_taken_down").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        live_status(&pool, ctx.org, ctx.package_id).await,
+        "TAKEN_DOWN"
+    );
+    let (_, v) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(v["request"]["status"], "APPROVED");
+    assert_eq!(v["platforms"][0]["live_status"], "TAKEN_DOWN");
+    let (s, v) = call(&ctx.app, "POST", &path, reason, Some(&ctx.user)).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(v["error"]["code"], "TAKEDOWN_ALREADY_DONE");
+}
+
+/// A rights-infringement claim from someone without an account: staff tie it
+/// to the release and take it down everywhere it went, the artist sees the
+/// claim (never the claimant's details) and answers within the deadline,
+/// and staff close it.
+#[sqlx::test]
+async fn infringement_claim_suspends_release_and_takes_counter_notice(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let mock = MockDsp::new(MockBehavior::Accept);
+    let (_, status) = run_send(&pool, &ctx, &mock).await;
+    assert_eq!(status, "DELIVERED");
+
+    let claim = json!({
+        "claimant_name": "권리자 주식회사", "claimant_email": "Legal@Rights.example",
+        "claimant_phone": "02-123-4567", "claimant_role": "RIGHTS_HOLDER", "right_type": "COPYRIGHT",
+        "work": "우리 회사가 작곡한 '봄비' (2024)", "target": "AUDENIQ로 배급된 같은 멜로디의 곡",
+        "evidence_urls": ["https://rights.example/proof"], "statement_accepted": true
+    });
+    let mut no_statement = claim.clone();
+    no_statement["statement_accepted"] = json!(false);
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        "/api/infringement-claims",
+        no_statement,
+        None,
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "CLAIM_STATEMENT_REQUIRED");
+    let mut bad = claim.clone();
+    bad["evidence_urls"] = json!(["javascript:alert(1)"]);
+    let (_, v) = call(&ctx.app, "POST", "/api/infringement-claims", bad, None).await;
+    assert_eq!(v["error"]["code"], "CLAIM_INVALID");
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        "/api/infringement-claims",
+        claim.clone(),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let id = v["id"].as_str().unwrap().to_string();
+    assert!(v["receipt"].as_str().unwrap().starts_with("IC-"));
+    // Claimant details are only stored sealed.
+    let leaked: bool = sqlx::query_scalar(
+        "SELECT position('rights.example' in encode(claimant_email_cipher,'escape'))>0 FROM portal.infringement_claims WHERE id=$1::uuid",
+    )
+    .bind(&id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(!leaked);
+
+    // Artists cannot see the staff queue; staff see the claimant to contact them.
+    let (s, _) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/infringement-claims",
+        Value::Null,
+        Some(&ctx.user),
+    )
+    .await;
+    assert_ne!(s, StatusCode::OK);
+    let staff = staff_user(&ctx.app, &pool, "OPERATOR").await;
+    let (s, list) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/infringement-claims",
+        Value::Null,
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{list}");
+    assert_eq!(
+        list["items"][0]["claimant"]["email"],
+        "legal@rights.example"
+    );
+    assert_eq!(list["items"][0]["status"], "RECEIVED");
+    let act = |what: &str| format!("/api/staff/infringement-claims/{id}/{what}");
+    let (s, _) = call(&ctx.app, "POST", &act("reject"), json!({}), Some(&staff)).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST, "rejecting needs a note");
+
+    // Suspend: tied to the release, one takedown per platform still carrying it.
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &act("suspend"),
+        json!({"release_id": ctx.release, "note": "권리자 증빙 확인. 소명을 받습니다."}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["jobs"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        run_until(&pool, &ctx.store, "delivery", "delivery.takedown").await,
+        "SUCCEEDED"
+    );
+    assert_eq!(
+        live_status(&pool, ctx.org, ctx.package_id).await,
+        "TAKEDOWN_REQUESTED"
+    );
+    let notified: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM portal.notifications WHERE org_id=$1 AND title LIKE '%권리침해 신고로 배급을 중단%')",
+    )
+    .bind(ctx.org)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(notified);
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &act("suspend"),
+        json!({"release_id": ctx.release}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CONFLICT, "a decided claim stays decided");
+
+    // The artist sees the claim without the claimant and answers it.
+    let release_path = format!(
+        "/api/orgs/{}/releases/{}/infringement-claims",
+        ctx.org, ctx.release
+    );
+    let (s, v) = call(&ctx.app, "GET", &release_path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["items"][0]["status"], "SUSPENDED");
+    assert_eq!(v["items"][0]["can_answer"], true);
+    assert!(v["items"][0].get("claimant").is_none());
+    assert!(!v.to_string().contains("legal@rights.example"));
+    let counter_path = format!("/api/orgs/{}/infringement-claims/{id}/counter", ctx.org);
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &counter_path,
+        json!({"statement": " "}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    let other = user(&ctx.app).await;
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &format!("/api/orgs/{}/infringement-claims/{id}/counter", other.org),
+        json!({"statement": "제 곡이 아닙니다"}),
+        Some(&other),
+    )
+    .await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &counter_path,
+        json!({"statement": "2023년에 직접 작곡했고 작업 파일 기록이 있어요."}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &counter_path,
+        json!({"statement": "다시"}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "CLAIM_COUNTER_CLOSED");
+
+    // Staff close it: restored, and the artist is told.
+    let (s, _) = call(&ctx.app, "POST", &act("uphold"), json!({}), Some(&staff)).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST, "upholding needs a note");
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &act("restore"),
+        json!({"note": "소명 자료로 독자 창작이 확인됐어요."}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (_, v) = call(&ctx.app, "GET", &release_path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(v["items"][0]["status"], "RESTORED");
+    assert_eq!(v["items"][0]["can_answer"], false);
+    let restored: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM portal.notifications WHERE org_id=$1 AND title LIKE '%신고가 받아들여지지 않았어요%')",
+    )
+    .bind(ctx.org)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(restored);
+    // The open queue no longer lists it.
+    let (_, list) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/infringement-claims",
+        Value::Null,
+        Some(&staff),
+    )
+    .await;
+    assert!(
+        list["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["id"] != id.as_str())
+    );
+    let (_, list) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/infringement-claims?status=all",
+        Value::Null,
+        Some(&staff),
+    )
+    .await;
+    assert!(
+        list["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["id"] == id.as_str())
+    );
+}
+
+/// After delivery only credits and the genre can be corrected: the artist
+/// asks, staff approve, an update message goes to
+/// every platform still carrying the release, and later messages are built
+/// from the frozen snapshot with the correction applied.
+#[sqlx::test]
+async fn metadata_correction_after_delivery_updates_platforms(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let path = format!("/api/orgs/{}/releases/{}/corrections", ctx.org, ctx.release);
+    let (_, st) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(st["can_request"], false, "{st}");
+    let track = st["tracks"][0]["track_id"].as_str().unwrap().to_string();
+    let body = |credits: Value| {
+        json!({"changes": {"genre": "Lo-fi", "tracks": [{"track_id": track, "credits": credits}]},
+               "reason": "작곡가 이름 철자가 틀렸어요."})
+    };
+    let fixed =
+        json!([{"name": "새 작곡가", "role": "Composer"}, {"name": "편곡가", "role": "Arranger"}]);
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &path,
+        body(fixed.clone()),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "CORRECTION_NOTHING_SENT", "{v}");
+
+    let mock = MockDsp::new(MockBehavior::Accept);
+    let (_, status) = run_send(&pool, &ctx, &mock).await;
+    assert_eq!(status, "DELIVERED");
+    // Locked fields and empty requests are refused.
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &path,
+        body(json!([{"name": "누구", "role": "Featured Artist"}])),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "CORRECTION_ARTIST_LOCKED", "{v}");
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &path,
+        json!({"changes": {"title": "새 제목"}, "reason": "x"}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(
+        s,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "unknown fields such as the title are rejected"
+    );
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &path,
+        json!({"changes": {}, "reason": "x"}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "CORRECTION_EMPTY");
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &path,
+        body(fixed.clone()),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &path,
+        body(fixed.clone()),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "CORRECTION_ALREADY_REQUESTED");
+
+    // Staff with the review duty approve: one update per platform.
+    let (s, _) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/corrections",
+        Value::Null,
+        Some(&ctx.user),
+    )
+    .await;
+    assert_ne!(s, StatusCode::OK);
+    let staff = staff_user(&ctx.app, &pool, "REVIEWER").await;
+    let (_, list) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/corrections",
+        Value::Null,
+        Some(&staff),
+    )
+    .await;
+    let id = list["items"][0]["id"].as_str().unwrap().to_string();
+    assert_eq!(list["items"][0]["changes"]["genre"], "Lo-fi");
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &format!("/api/staff/corrections/{id}/approve"),
+        json!({}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["jobs"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        run_until(&pool, &ctx.store, "delivery", "delivery.update").await,
+        "SUCCEEDED"
+    );
+
+    // What the studio shows carries the correction.
+    let (_, st) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(st["request"]["status"], "APPROVED");
+    assert_eq!(st["genre"], "Lo-fi");
+    let names: Vec<&str> = st["tracks"][0]["credits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|c| c["name"].as_str())
+        .collect();
+    assert!(
+        names.contains(&"새 작곡가") && names.contains(&"편곡가"),
+        "{st}"
+    );
+
+    // Outgoing metadata is the frozen snapshot plus the correction.
+    let (canonical_id, snapshot): (uuid::Uuid, Value) =
+        sqlx::query_as("SELECT id, body FROM distribution.canonical_releases WHERE release_id=$1")
+            .bind(ctx.release)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let canonical: audeniq_core::distribution::CanonicalRelease =
+        serde_json::from_value(snapshot.clone()).unwrap();
+    let mut prepared = audeniq_core::preparation_model::PreparedRelease::from_canonical(
+        &pool,
+        canonical_id,
+        &canonical,
+    )
+    .await
+    .unwrap();
+    let genre = audeniq_core::corrections::overlay(&pool, &mut prepared)
+        .await
+        .unwrap();
+    assert_eq!(genre.as_deref(), Some("Lo-fi"));
+    let credited: Vec<&str> = prepared
+        .canonical
+        .tracks
+        .iter()
+        .flat_map(|t| t.credits.iter().map(|c| c.party_name.as_str()))
+        .collect();
+    assert!(credited.contains(&"새 작곡가"), "{credited:?}");
+    let unchanged: Value =
+        sqlx::query_scalar("SELECT body FROM distribution.canonical_releases WHERE id=$1")
+            .bind(canonical_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(unchanged, snapshot, "the frozen snapshot never changes");
+
+    // Declining needs a note the artist sees.
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &path,
+        body(json!([{"name": "다른 작곡가", "role": "Composer"}])),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, list) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/corrections",
+        Value::Null,
+        Some(&staff),
+    )
+    .await;
+    let id = list["items"][0]["id"].as_str().unwrap().to_string();
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &format!("/api/staff/corrections/{id}/decline"),
+        json!({}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &format!("/api/staff/corrections/{id}/decline"),
+        json!({"note": "증빙이 필요해요."}),
+        Some(&staff),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, st) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(st["request"]["status"], "DECLINED");
+    assert_eq!(st["can_request"], true);
+}
+
+/// Playlist pitching: the artist pitches one track of a submitted release at
+/// least a week ahead, staff forward it to platform editors and record the
+/// outcome, and each step notifies the org.
+#[sqlx::test]
+async fn playlist_pitch_goes_from_artist_to_editors(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let path = format!("/api/orgs/{}/releases/{}/pitch", ctx.org, ctx.release);
+    let track: Uuid =
+        sqlx::query_scalar("SELECT id FROM catalog.tracks WHERE release_id=$1 LIMIT 1")
+            .bind(ctx.release)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let set_date = |days: i64| {
+        let pool = pool.clone();
+        let release = ctx.release;
+        async move {
+            let d =
+                (chrono::Utc::now() + chrono::Duration::hours(9) + chrono::Duration::days(days))
+                    .date_naive()
+                    .to_string();
+            sqlx::query("UPDATE catalog.releases SET draft = jsonb_set(draft, '{release_date}', to_jsonb($2::text)), row_version = row_version + 1 WHERE id=$1")
+                .bind(release)
+                .bind(d)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+    };
+    let body = json!({"track_id": track, "description": "새벽 감성의 로파이 힙합, 잔잔한 피아노와 빗소리가 어우러진 곡이에요.",
+                      "genres": "Lo-fi, Hip-hop", "moods": "차분함", "similar_artists": "Nujabes"});
+
+    set_date(3).await;
+    let (_, st) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(st["can_pitch"], false, "{st}");
+    let (_, v) = call(&ctx.app, "POST", &path, body.clone(), Some(&ctx.user)).await;
+    assert_eq!(v["error"]["code"], "PITCH_TOO_LATE", "{v}");
+
+    set_date(21).await;
+    let (_, st) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(st["can_pitch"], true, "{st}");
+    assert_eq!(st["tracks"][0]["id"], track.to_string().as_str(), "{st}");
+    let mut short = body.clone();
+    short["description"] = json!("짧아요");
+    let (_, v) = call(&ctx.app, "POST", &path, short, Some(&ctx.user)).await;
+    assert_eq!(v["error"]["code"], "PITCH_INVALID", "{v}");
+    let mut foreign = body.clone();
+    foreign["track_id"] = json!(Uuid::new_v4());
+    let (_, v) = call(&ctx.app, "POST", &path, foreign, Some(&ctx.user)).await;
+    assert_eq!(v["error"]["code"], "PITCH_INVALID", "{v}");
+
+    // Submit, withdraw, submit again; a second open pitch is refused.
+    let (s, v) = call(&ctx.app, "POST", &path, body.clone(), Some(&ctx.user)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (_, v) = call(&ctx.app, "POST", &path, body.clone(), Some(&ctx.user)).await;
+    assert_eq!(v["error"]["code"], "PITCH_ALREADY_SUBMITTED", "{v}");
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &format!("{path}/withdraw"),
+        json!({}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (s, v) = call(&ctx.app, "POST", &path, body.clone(), Some(&ctx.user)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let id = v["id"].as_str().unwrap().to_string();
+    let (_, st) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(st["pitch"]["status"], "SUBMITTED");
+    assert_eq!(st["can_pitch"], false);
+
+    // Only staff with the delivery duty work the queue.
+    let reviewer = staff_user(&ctx.app, &pool, "REVIEWER").await;
+    let (s, _) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/pitches",
+        Value::Null,
+        Some(&reviewer),
+    )
+    .await;
+    assert_ne!(s, StatusCode::OK);
+    let op = staff_user(&ctx.app, &pool, "OPERATOR").await;
+    let (_, list) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/pitches",
+        Value::Null,
+        Some(&op),
+    )
+    .await;
+    assert_eq!(list["items"].as_array().unwrap().len(), 1, "{list}");
+    assert_eq!(list["items"][0]["id"], id.as_str());
+    let to = |status: &str, extra: Value| {
+        let mut b = json!({"status": status});
+        b.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        b
+    };
+    let st_path = format!("/api/staff/pitches/{id}/status");
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &st_path,
+        to("PITCHED", json!({})),
+        Some(&op),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "PITCH_PLATFORMS_REQUIRED", "{v}");
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &st_path,
+        to("SELECTED", json!({"result": "x"})),
+        Some(&op),
+    )
+    .await;
+    assert_eq!(
+        s,
+        StatusCode::CONFLICT,
+        "only a pitched one can be selected"
+    );
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &st_path,
+        to("PITCHED", json!({"platforms": ["spotify", "melon"]})),
+        Some(&op),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &format!("{path}/withdraw"),
+        json!({}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "PITCH_NOT_WITHDRAWABLE", "{v}");
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &st_path,
+        to("SELECTED", json!({})),
+        Some(&op),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "PITCH_RESULT_REQUIRED", "{v}");
+    let (s, v) = call(
+        &ctx.app,
+        "POST",
+        &st_path,
+        to(
+            "SELECTED",
+            json!({"result": "Spotify 'Lo-fi Beats' 플레이리스트"}),
+        ),
+        Some(&op),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+
+    let (_, st) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(st["pitch"]["status"], "SELECTED");
+    assert_eq!(st["pitch"]["platforms"], json!(["spotify", "melon"]));
+    let selected: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM portal.notifications WHERE org_id=$1 AND title LIKE '%선정됐어요!' AND detail LIKE '%Lo-fi Beats%')",
+    )
+    .bind(ctx.org)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(selected);
+}
+
+/// Smart link: the artist pastes platform links (hosts checked), anyone
+/// opens the public page, views and clicks are counted for the org, and the
+/// page disappears when switched off.
+#[sqlx::test]
+async fn smart_link_public_page_counts_views_and_clicks(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let path = format!("/api/orgs/{}/releases/{}/smart-link", ctx.org, ctx.release);
+    let (_, st) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(st["can_create"], true, "{st}");
+    assert!(st["link"].is_null());
+
+    for (platform, url, code) in [
+        (
+            "melon",
+            "http://www.melon.com/album/detail.htm?albumId=1",
+            "SMART_LINK_URL_INVALID",
+        ),
+        (
+            "melon",
+            "https://evil.example/melon.com",
+            "SMART_LINK_URL_INVALID",
+        ),
+        (
+            "melon",
+            "https://melon.com.evil.example/",
+            "SMART_LINK_URL_INVALID",
+        ),
+        (
+            "myspace",
+            "https://myspace.com/x",
+            "SMART_LINK_PLATFORM_INVALID",
+        ),
+    ] {
+        let (_, v) = call(
+            &ctx.app,
+            "PUT",
+            &path,
+            json!({"links": {platform: url}}),
+            Some(&ctx.user),
+        )
+        .await;
+        assert_eq!(v["error"]["code"], code, "{platform} {url}: {v}");
+    }
+    let links = json!({"melon": "https://www.melon.com/album/detail.htm?albumId=1",
+                       "spotify": "https://open.spotify.com/album/abc", "genie": " "});
+    let (s, v) = call(
+        &ctx.app,
+        "PUT",
+        &path,
+        json!({"links": links}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let slug = v["slug"].as_str().unwrap().to_string();
+    assert_eq!(slug.len(), 8);
+
+    // Public, without an account; platforms in page order, empty ones left out.
+    let public = format!("/api/smart-links/{slug}");
+    let (s, page) = call(&ctx.app, "GET", &public, Value::Null, None).await;
+    assert_eq!(s, StatusCode::OK, "{page}");
+    let order: Vec<&str> = page["links"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l["platform"].as_str().unwrap())
+        .collect();
+    assert_eq!(order, ["melon", "spotify"]);
+    if page["cover"] == true {
+        // The fixture cover skips the upload safety pass; record it as passed.
+        sqlx::query(
+            "INSERT INTO catalog.asset_safety(asset_id,org_id,source_key,source_sha256,safe_key,safe_sha256,rule_version)
+             SELECT id, org_id, 'quarantine/' || org_id || '/' || id || '/source', sha256, object_key, sha256, '1' FROM catalog.assets
+              WHERE id=(SELECT artwork_asset_id FROM catalog.releases WHERE id=$1)",
+        )
+        .bind(ctx.release)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let (s, _) = call(
+            &ctx.app,
+            "GET",
+            &format!("{public}/cover"),
+            Value::Null,
+            None,
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+    }
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &format!("{public}/click"),
+        json!({"platform": "spotify"}),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &format!("{public}/click"),
+        json!({"platform": "genie"}),
+        None,
+    )
+    .await;
+    assert_eq!(
+        v["error"]["code"], "SMART_LINK_PLATFORM_INVALID",
+        "only links on the page count"
+    );
+    let (s, _) = call(
+        &ctx.app,
+        "GET",
+        "/api/smart-links/zzzzzzzz",
+        Value::Null,
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+    let (s, _) = call(
+        &ctx.app,
+        "GET",
+        "/api/smart-links/..%2Fx",
+        Value::Null,
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+
+    let (_, st) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(st["stats"]["views"], 1, "{st}");
+    assert_eq!(st["stats"]["clicks"]["spotify"], 1, "{st}");
+    assert_eq!(st["link"]["slug"], slug.as_str());
+
+    // Another org cannot see or change it.
+    let other = user(&ctx.app).await;
+    let foreign = format!(
+        "/api/orgs/{}/releases/{}/smart-link",
+        other.org, ctx.release
+    );
+    let (s, _) = call(&ctx.app, "GET", &foreign, Value::Null, Some(&other)).await;
+    assert_ne!(s, StatusCode::OK);
+    let (s, _) = call(&ctx.app, "GET", &path, Value::Null, Some(&other)).await;
+    assert_ne!(s, StatusCode::OK);
+
+    // Switched off: gone, same slug when switched back on.
+    let (_, v) = call(
+        &ctx.app,
+        "PUT",
+        &path,
+        json!({"enabled": false, "links": links}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["slug"], slug.as_str());
+    let (s, _) = call(&ctx.app, "GET", &public, Value::Null, None).await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+    call(
+        &ctx.app,
+        "PUT",
+        &path,
+        json!({"links": links}),
+        Some(&ctx.user),
+    )
+    .await;
+    // A release suspended over a rights claim has no page.
+    sqlx::query("UPDATE catalog.releases SET status='ON_HOLD_RIGHTS', row_version=row_version+1 WHERE id=$1")
+        .bind(ctx.release)
+        .execute(&pool)
+        .await
+        .ok();
+    let held: String = sqlx::query_scalar("SELECT status FROM catalog.releases WHERE id=$1")
+        .bind(ctx.release)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let (s, _) = call(&ctx.app, "GET", &public, Value::Null, None).await;
+    if held == "ON_HOLD_RIGHTS" {
+        assert_eq!(s, StatusCode::NOT_FOUND);
+    } else {
+        assert_eq!(s, StatusCode::OK);
+    }
+}
+
+/// The org's codes: each submitted release with its UPC and track ISRCs,
+/// virtual (test-range) codes flagged, also as CSV; other orgs see nothing.
+#[sqlx::test]
+async fn codes_list_and_csv(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let path = format!("/api/orgs/{}/codes", ctx.org);
+    let (s, v) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let items = v["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "{v}");
+    let r = &items[0];
+    assert_eq!(r["release_id"], ctx.release.to_string().as_str());
+    let upc = r["upc"].as_str().expect("UPC");
+    assert_eq!(r["upc_virtual"], upc.starts_with('2'));
+    let isrc = r["tracks"][0]["isrc"].as_str().expect("ISRC");
+    assert_eq!(r["tracks"][0]["isrc_virtual"], isrc.starts_with("XX"));
+
+    let res = ctx
+        .app
+        .clone()
+        .oneshot(
+            axum::http::Request::builder()
+                .uri(format!("{path}.csv"))
+                .header("x-audeniq-service", SECRET)
+                .header("origin", ORIGIN)
+                .header("cookie", &ctx.user.cookie)
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(res.into_body(), 1 << 20)
+        .await
+        .unwrap();
+    let text = String::from_utf8(body.to_vec()).unwrap();
+    assert!(text.starts_with("\u{feff}release_id,release,"), "{text}");
+    assert!(text.contains(upc) && text.contains(isrc), "{text}");
+
+    let other = user(&ctx.app).await;
+    let (s, _) = call(&ctx.app, "GET", &path, Value::Null, Some(&other)).await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+}
+
+/// Release alerts: a fan leaves an email on the smart link before release,
+/// gets one mail once the release date comes, and the address is erased;
+/// alerts for a page that is gone are cancelled, stale ones expire.
+#[sqlx::test]
+async fn release_alert_mails_fans_once_and_erases_addresses(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let link_path = format!("/api/orgs/{}/releases/{}/smart-link", ctx.org, ctx.release);
+    let (_, v) = call(
+        &ctx.app,
+        "PUT",
+        &link_path,
+        json!({"links": {}}),
+        Some(&ctx.user),
+    )
+    .await;
+    let slug = v["slug"].as_str().unwrap().to_string();
+    let set_date = |days: i64| {
+        let pool = pool.clone();
+        let release = ctx.release;
+        async move {
+            let d =
+                (chrono::Utc::now() + chrono::Duration::hours(9) + chrono::Duration::days(days))
+                    .date_naive()
+                    .to_string();
+            sqlx::query("UPDATE catalog.releases SET draft = jsonb_set(draft, '{release_date}', to_jsonb($2::text)), row_version = row_version + 1 WHERE id=$1")
+                .bind(release)
+                .bind(d)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+    };
+    let alerts = format!("/api/smart-links/{slug}/alerts");
+    let fan = format!("fan-{}@example.com", Uuid::new_v4().simple());
+    set_date(3).await;
+
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &alerts,
+        json!({"email": fan, "consent": false}),
+        None,
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "ALERT_CONSENT_REQUIRED", "{v}");
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &alerts,
+        json!({"email": "not-an-email", "consent": true}),
+        None,
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "ALERT_EMAIL_INVALID", "{v}");
+    for _ in 0..2 {
+        let (s, v) = call(
+            &ctx.app,
+            "POST",
+            &alerts,
+            json!({"email": fan.to_uppercase(), "consent": true}),
+            None,
+        )
+        .await;
+        assert_eq!(
+            (s, v["ok"].as_bool()),
+            (StatusCode::OK, Some(true)),
+            "same answer for a repeat"
+        );
+    }
+    let (n, plain): (i64, bool) = sqlx::query_as(
+        "SELECT count(*), bool_or(position('example.com' in encode(email_cipher,'escape'))>0) FROM portal.release_alerts",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!((n, plain), (1, false), "one sealed row");
+    let (_, st) = call(&ctx.app, "GET", &link_path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(st["stats"]["alerts"], 1, "{st}");
+
+    unsafe {
+        std::env::set_var("EMAIL_FROM", "AUDENIQ <no-reply@audeniq.test>");
+        std::env::set_var("EMAIL_PROVIDERS", "test");
+    }
+    let mailer = audeniq_core::email::Mailer::from_env(ORIGIN)
+        .unwrap()
+        .unwrap();
+    let keys = audeniq_core::payout_keys::KeyRing::from_env(false).unwrap();
+    use audeniq_core::release_alerts::{dispatch_once, sweep};
+    assert_eq!(
+        dispatch_once(&pool, &keys, &mailer).await.unwrap(),
+        0,
+        "not yet"
+    );
+
+    // Release day has passed: one mail, address gone.
+    set_date(-1).await;
+    assert_eq!(dispatch_once(&pool, &keys, &mailer).await.unwrap(), 1);
+    let sent = audeniq_core::email::test_sent_to(&fan);
+    assert_eq!(sent.len(), 1);
+    assert!(
+        sent[0].subject.contains("발매됐어요"),
+        "{}",
+        sent[0].subject
+    );
+    let (status, erased): (String, bool) =
+        sqlx::query_as("SELECT status, email_cipher IS NULL FROM portal.release_alerts")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!((status.as_str(), erased), ("SENT", true));
+    assert_eq!(
+        dispatch_once(&pool, &keys, &mailer).await.unwrap(),
+        0,
+        "only once"
+    );
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &alerts,
+        json!({"email": fan, "consent": true}),
+        None,
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "ALERT_ALREADY_RELEASED", "{v}");
+
+    // The page is switched off before release: cancelled, address erased.
+    set_date(3).await;
+    let other = format!("other-{}@example.com", Uuid::new_v4().simple());
+    call(
+        &ctx.app,
+        "POST",
+        &alerts,
+        json!({"email": other, "consent": true}),
+        None,
+    )
+    .await;
+    call(
+        &ctx.app,
+        "PUT",
+        &link_path,
+        json!({"enabled": false, "links": {}}),
+        Some(&ctx.user),
+    )
+    .await;
+    set_date(-1).await;
+    assert_eq!(dispatch_once(&pool, &keys, &mailer).await.unwrap(), 1);
+    assert!(audeniq_core::email::test_sent_to(&other).is_empty());
+    let cancelled: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM portal.release_alerts WHERE status='CANCELLED' AND email_cipher IS NULL",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(cancelled, 1);
+
+    // A waiting alert more than a week past the release date expires.
+    call(
+        &ctx.app,
+        "PUT",
+        &link_path,
+        json!({"links": {}}),
+        Some(&ctx.user),
+    )
+    .await;
+    set_date(3).await;
+    let late = format!("late-{}@example.com", Uuid::new_v4().simple());
+    call(
+        &ctx.app,
+        "POST",
+        &alerts,
+        json!({"email": late, "consent": true}),
+        None,
+    )
+    .await;
+    set_date(-10).await;
+    sweep(&pool).await.unwrap();
+    let expired: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM portal.release_alerts WHERE status='EXPIRED' AND email_cipher IS NULL",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(expired, 1);
+}
+
+fn invite_token(to: &str) -> String {
+    let sent = audeniq_core::email::test_sent_to(to);
+    let text = &sent.last().expect("invite mail").text;
+    let at = text.find("/splits/").expect("invite link") + "/splits/".len();
+    text[at..at + 64].to_string()
+}
+
+/// Revenue splits: the applicant names collaborators per track while
+/// applying; each is invited by email and accepts into their own account.
+/// Posting a paid royalty report takes the AUDENIQ fee, credits accepted
+/// collaborators in their own books, holds the share of anyone who has not
+/// answered and returns it to the applicant when they decline.
+#[sqlx::test]
+async fn revenue_splits_from_application_to_collaborator_balances(pool: PgPool) {
+    use rust_decimal::Decimal;
+    let d = draft_package(&pool).await;
+    let (app, owner, release) = (d.app.clone(), d.u.clone(), d.release);
+    let path = format!("/api/orgs/{}/releases/{}/splits", owner.org, release);
+    let (_, sheet) = call(&app, "GET", &path, Value::Null, Some(&owner)).await;
+    assert_eq!(sheet["editable"], true, "{sheet}");
+    let track = sheet["tracks"][0]["track_id"].as_str().unwrap().to_string();
+    let a_mail = format!("a-{}@example.com", Uuid::new_v4().simple());
+    let b_mail = format!("b-{}@example.com", Uuid::new_v4().simple());
+    let body = |shares: Value| json!({"tracks": [{"track_id": track, "shares": shares}]});
+
+    let (_, v) = call(&app, "PUT", &path, body(json!([
+        {"name": "가", "email": a_mail, "share_bps": 6000}, {"name": "나", "email": b_mail, "share_bps": 5000}])), Some(&owner)).await;
+    assert_eq!(v["error"]["code"], "SPLIT_TOTAL_OVER_100", "{v}");
+    let (_, v) = call(&app, "PUT", &path, body(json!([
+        {"name": "가", "email": a_mail, "share_bps": 100}, {"name": "가2", "email": a_mail.to_uppercase(), "share_bps": 100}])), Some(&owner)).await;
+    assert_eq!(v["error"]["code"], "SPLIT_DUPLICATE_EMAIL", "{v}");
+    let (s, v) = call(&app, "PUT", &path, body(json!([
+        {"name": "작곡가 가", "email": a_mail, "share_bps": 3000}, {"name": "편곡가 나", "email": b_mail, "share_bps": 2000}])), Some(&owner)).await;
+    assert_eq!((s, v["invited"].as_i64()), (StatusCode::OK, Some(2)), "{v}");
+    let (_, sheet) = call(&app, "GET", &path, Value::Null, Some(&owner)).await;
+    assert_eq!(sheet["tracks"][0]["owner_bps"], 5000, "{sheet}");
+    assert!(
+        sheet["tracks"][0]["shares"][0]["email"]
+            .as_str()
+            .unwrap()
+            .contains("***@example.com")
+    );
+
+    // Editing on the screen names people by id (it only sees masked addresses):
+    // 나 goes 20% → 25% and back and is asked again at the address on file; a
+    // third person is added and dropped again.
+    let ids: Vec<String> = sheet["tracks"][0]["shares"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v["id"].as_str().unwrap().to_string())
+        .collect();
+    let (_, v) = call(&app, "PUT", &path, body(json!([
+        {"id": ids[0], "name": "작곡가 가", "share_bps": 3000},
+        {"id": ids[1], "name": "편곡가 나", "share_bps": 2500},
+        {"name": "다", "email": format!("c-{}@example.com", Uuid::new_v4().simple()), "share_bps": 500}])), Some(&owner)).await;
+    assert_eq!(v["invited"], 2, "{v}");
+    let (_, v) = call(
+        &app,
+        "PUT",
+        &path,
+        body(json!([
+        {"id": ids[0], "name": "작곡가 가", "share_bps": 3000},
+        {"id": ids[1], "name": "편곡가 나", "share_bps": 2000}])),
+        Some(&owner),
+    )
+    .await;
+    assert_eq!(v["invited"], 1, "{v}");
+    let (_, v) = call(
+        &app,
+        "PUT",
+        &path,
+        body(
+            json!([{"name": "가 again", "email": a_mail, "share_bps": 100},
+        {"id": ids[0], "name": "작곡가 가", "share_bps": 3000}]),
+        ),
+        Some(&owner),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "SPLIT_DUPLICATE_EMAIL", "{v}");
+    let (_, sheet) = call(&app, "GET", &path, Value::Null, Some(&owner)).await;
+    assert_eq!(
+        sheet["tracks"][0]["shares"].as_array().unwrap().len(),
+        2,
+        "{sheet}"
+    );
+    assert_eq!(sheet["tracks"][0]["owner_bps"], 5000, "{sheet}");
+
+    unsafe {
+        std::env::set_var("EMAIL_FROM", "AUDENIQ <no-reply@audeniq.test>");
+        std::env::set_var("EMAIL_PROVIDERS", "test");
+    }
+    let mailer = audeniq_core::email::Mailer::from_env(ORIGIN)
+        .unwrap()
+        .unwrap();
+    let keys = audeniq_core::payout_keys::KeyRing::from_env(false).unwrap();
+    assert_eq!(
+        audeniq_core::splits::dispatch_once(&pool, &keys, &mailer)
+            .await
+            .unwrap(),
+        2
+    );
+    let a_token = invite_token(&a_mail);
+    let b_token = invite_token(&b_mail);
+    let (_, inv) = call(
+        &app,
+        "GET",
+        &format!("/api/split-invites/{a_token}"),
+        Value::Null,
+        None,
+    )
+    .await;
+    assert_eq!(
+        (inv["share_bps"].as_i64(), inv["status"].as_str()),
+        (Some(3000), Some("INVITED")),
+        "{inv}"
+    );
+
+    // 가 accepts into their own account; the applicant cannot accept for them.
+    let collab = user(&app).await;
+    let (_, v) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{}/split-invites/{a_token}/accept", owner.org),
+        json!({}),
+        Some(&owner),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "SPLIT_SELF", "{v}");
+    let (s, v) = call(
+        &app,
+        "POST",
+        &format!("/api/orgs/{}/split-invites/{a_token}/accept", collab.org),
+        json!({}),
+        Some(&collab),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (_, v) = call(
+        &app,
+        "POST",
+        &format!("/api/split-invites/{a_token}/decline"),
+        json!({}),
+        None,
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "NOT_FOUND", "a used link is spent: {v}");
+
+    // Submitted and delivered: the sheet is locked.
+    let ctx = finish_package(&pool, d).await;
+    let (_, v) = call(&app, "PUT", &path, body(json!([])), Some(&owner)).await;
+    assert_eq!(v["error"]["code"], "SPLIT_LOCKED", "{v}");
+
+    // A USD report for the track: 10.00 gross, 9.00 received, 1,300 KRW/USD, 8% fee.
+    sqlx::query("UPDATE portal.documents SET agreement_terms='{\"fee_bps\":800}'::jsonb, confirmations=jsonb_build_object('content_hash', repeat('a',64)) WHERE org_id=$1 AND release_id=$2 AND kind='AGREEMENT'")
+        .bind(ctx.org).bind(ctx.release).execute(&pool).await.unwrap();
+    let isrc: String =
+        sqlx::query_scalar("SELECT isrc FROM catalog.tracks WHERE release_id=$1 LIMIT 1")
+            .bind(ctx.release)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let csv =
+        format!("isrc,quantity,gross_amount,currency\n{isrc},1000,6.00,USD\n{isrc},500,4.00,USD\n");
+    let report = audeniq_core::royalty::ingest_report(
+        &pool,
+        ctx.org,
+        "spotify",
+        "2026-09-01".parse().unwrap(),
+        "2026-09-30".parse().unwrap(),
+        "USD",
+        "sep.csv",
+        &csv,
+    )
+    .await
+    .unwrap();
+    audeniq_core::royalty::match_report(&pool, ctx.org, report)
+        .await
+        .unwrap();
+    let actor = owner.user;
+    let r = audeniq_core::royalty_posting::post_report(
+        &pool,
+        ctx.org,
+        report,
+        actor,
+        Decimal::from(1300),
+    )
+    .await;
+    assert!(
+        matches!(
+            r,
+            Err(audeniq_core::error::Error::PolicyGate("REPORT_NOT_PAID"))
+        ),
+        "{r:?}"
+    );
+    audeniq_core::royalty::record_receipt(
+        &pool,
+        ctx.org,
+        report,
+        actor,
+        "BANK-1",
+        Decimal::new(900, 2),
+        "USD",
+        json!({"statement": "sep"}),
+    )
+    .await
+    .unwrap();
+    let posted = audeniq_core::royalty_posting::post_report(
+        &pool,
+        ctx.org,
+        report,
+        actor,
+        Decimal::from(1300),
+    )
+    .await
+    .unwrap();
+    // 9.00 × 1,300 = 11,700 won; fee 936; net 10,764; 가 30% = 3,229; 나 20% = 2,152; applicant 5,383.
+    assert_eq!(posted["gross_krw"], "11700", "{posted}");
+    let r = audeniq_core::royalty_posting::post_report(
+        &pool,
+        ctx.org,
+        report,
+        actor,
+        Decimal::from(1300),
+    )
+    .await;
+    assert!(
+        matches!(
+            r,
+            Err(audeniq_core::error::Error::PolicyGate(
+                "REPORT_ALREADY_POSTED"
+            ))
+        ),
+        "{r:?}"
+    );
+
+    let payable = |org: Uuid| {
+        let pool = pool.clone();
+        async move {
+            let v: Decimal = sqlx::query_scalar(
+                "SELECT COALESCE(SUM(CASE WHEN side='CREDIT' THEN amount ELSE -amount END),0) FROM finance.ledger_entries
+                  WHERE org_id=$1 AND account='ROYALTY_PAYABLE'",
+            ).bind(org).fetch_one(&pool).await.unwrap();
+            v
+        }
+    };
+    assert_eq!(payable(owner.org).await, Decimal::from(5383));
+    assert_eq!(
+        payable(collab.org).await,
+        Decimal::from(3229),
+        "accepted share lands in their own books"
+    );
+    let held: Decimal = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(amount),0) FROM finance.split_allocations WHERE status='HELD'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(held, Decimal::from(2152));
+    let (_, got) = call(
+        &app,
+        "GET",
+        &format!("/api/orgs/{}/splits/received", collab.org),
+        Value::Null,
+        Some(&collab),
+    )
+    .await;
+    assert_eq!(got["items"][0]["received"], "3229", "{got}");
+    let (_, sum) = call(
+        &app,
+        "GET",
+        &format!("/api/orgs/{}/finance/summary", collab.org),
+        Value::Null,
+        Some(&collab),
+    )
+    .await;
+    assert_eq!(sum["payable"], "3229", "{sum}");
+
+    // 나 declines: the held share returns to the applicant.
+    let (s, _) = call(
+        &app,
+        "POST",
+        &format!("/api/split-invites/{b_token}/decline"),
+        json!({}),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(payable(owner.org).await, Decimal::from(5383 + 2152));
+    let left: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM finance.split_allocations WHERE status='HELD'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(left, 0);
+    let erased: bool =
+        sqlx::query_scalar("SELECT bool_and(email_cipher IS NULL) FROM portal.split_shares")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(erased, "answered invites keep no address");
+    // Each org's books balance.
+    for org in [owner.org, collab.org] {
+        let net: Decimal = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(CASE WHEN side='DEBIT' THEN amount ELSE -amount END),0) FROM finance.ledger_entries WHERE org_id=$1",
+        ).bind(org).fetch_one(&pool).await.unwrap();
+        assert_eq!(net, Decimal::ZERO);
+    }
+}
+
+/// Platform requests: profile and Content ID requests are filed with checked
+/// links, tracked through staff steps (each an event the artist sees), and a
+/// resolved Content ID request becomes the release's Content ID state.
+#[sqlx::test]
+async fn platform_requests_track_profile_and_content_id_work(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let base = format!("/api/orgs/{}/platform-requests", ctx.org);
+    let release = ctx.release.to_string();
+    let file = |body: Value| {
+        let (app, user, base) = (ctx.app.clone(), ctx.user.clone(), base.clone());
+        async move { call(&app, "POST", &base, body, Some(&user)).await }
+    };
+    // Wrong page on Melon: the link must be Melon's.
+    let (_, v) = file(json!({"kind": "PROFILE_MISMATCH", "platform": "melon", "release_id": release, "artist_name": "Test Artist",
+                            "urls": ["https://evil.example/artist/1"]})).await;
+    assert_eq!(v["error"]["code"], "PLATFORM_REQUEST_URL_INVALID", "{v}");
+    let (_, v) = file(
+        json!({"kind": "PROFILE_MISMATCH", "platform": "melon", "artist_name": "Test Artist",
+                            "urls": ["https://www.melon.com/artist/detail.htm?artistId=1"]}),
+    )
+    .await;
+    assert_eq!(
+        v["error"]["code"], "PLATFORM_REQUEST_RELEASE_REQUIRED",
+        "{v}"
+    );
+    let (_, v) = file(
+        json!({"kind": "PROFILE_MERGE", "platform": "spotify", "artist_name": "Test Artist",
+                            "urls": ["https://open.spotify.com/artist/a"]}),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "PLATFORM_REQUEST_URL_REQUIRED", "{v}");
+    let (s, v) = file(json!({"kind": "PROFILE_MISMATCH", "platform": "melon", "release_id": release, "artist_name": "Test Artist",
+                            "urls": ["https://www.melon.com/artist/detail.htm?artistId=1"], "description": "동명이인 페이지에 올라갔어요"})).await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let profile = v["id"].as_str().unwrap().to_string();
+    let (_, v) = file(json!({"kind": "PROFILE_MISMATCH", "platform": "melon", "release_id": release, "artist_name": "Test Artist",
+                            "urls": ["https://www.melon.com/artist/detail.htm?artistId=1"]})).await;
+    assert_eq!(v["error"]["code"], "PLATFORM_REQUEST_ALREADY_OPEN", "{v}");
+    // Content ID: allowlist the artist's own channel; the platform is YouTube whatever was sent.
+    let (_, v) = file(json!({"kind": "CID_ALLOWLIST", "platform": "melon", "release_id": release, "artist_name": "Test Artist",
+                            "urls": ["https://www.youtube.com/@testartist"]})).await;
+    let allow = v["id"].as_str().expect("allowlist id").to_string();
+    let (_, v) = file(json!({"kind": "CID_DISPUTE", "artist_name": "Test Artist", "urls": ["https://youtu.be/abc"], "description": "짧음"})).await;
+    assert_eq!(
+        v["error"]["code"], "PLATFORM_REQUEST_DESCRIPTION_REQUIRED",
+        "{v}"
+    );
+
+    let (_, list) = call(
+        &ctx.app,
+        "GET",
+        &format!("{base}?group=content_id"),
+        Value::Null,
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(list["items"].as_array().unwrap().len(), 1, "{list}");
+    assert_eq!(list["items"][0]["platform"], "youtube");
+
+    // Staff work them; a reviewer without the delivery duty cannot.
+    let reviewer = staff_user(&ctx.app, &pool, "REVIEWER").await;
+    let (s, _) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/platform-requests",
+        Value::Null,
+        Some(&reviewer),
+    )
+    .await;
+    assert_ne!(s, StatusCode::OK);
+    let op = staff_user(&ctx.app, &pool, "OPERATOR").await;
+    let (_, q) = call(
+        &ctx.app,
+        "GET",
+        "/api/staff/platform-requests",
+        Value::Null,
+        Some(&op),
+    )
+    .await;
+    assert_eq!(q["items"].as_array().unwrap().len(), 2, "{q}");
+    let step = |id: &str, body: Value| {
+        let (app, op, path) = (
+            ctx.app.clone(),
+            op.clone(),
+            format!("/api/staff/platform-requests/{id}/status"),
+        );
+        async move { call(&app, "POST", &path, body, Some(&op)).await }
+    };
+    let (_, v) = step(&profile, json!({"status": "SENT_TO_PLATFORM"})).await;
+    assert_eq!(v["error"]["code"], "PLATFORM_REQUEST_REF_REQUIRED", "{v}");
+    let (s, _) = step(
+        &profile,
+        json!({"status": "SENT_TO_PLATFORM", "platform_ref": "MELON-CS-123"}),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &format!("{base}/{profile}/cancel"),
+        json!({}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(
+        v["error"]["code"], "PLATFORM_REQUEST_NOT_CANCELLABLE",
+        "sent requests stay: {v}"
+    );
+    let (s, _) = step(
+        &profile,
+        json!({"status": "RESOLVED", "note": "올바른 아티스트 페이지로 옮겨졌어요."}),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (s, _) = step(&profile, json!({"status": "IN_PROGRESS"})).await;
+    assert_eq!(s, StatusCode::CONFLICT, "finished requests do not move");
+    let (_, list) = call(
+        &ctx.app,
+        "GET",
+        &format!("{base}?group=profile"),
+        Value::Null,
+        Some(&ctx.user),
+    )
+    .await;
+    let item = &list["items"][0];
+    assert_eq!(
+        (item["status"].as_str(), item["platform_ref"].as_str()),
+        (Some("RESOLVED"), Some("MELON-CS-123"))
+    );
+    let steps: Vec<&str> = item["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["status"].as_str().unwrap())
+        .collect();
+    assert_eq!(steps, ["SUBMITTED", "SENT_TO_PLATFORM", "RESOLVED"]);
+    let told: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM portal.notifications WHERE org_id=$1 AND title LIKE '%오매칭 수정 요청이 처리됐어요.')")
+        .bind(ctx.org).fetch_one(&pool).await.unwrap();
+    assert!(told);
+
+    // Resolving the allowlist adds the channel to the release's Content ID state.
+    let cid = format!("/api/orgs/{}/releases/{}/content-id", ctx.org, ctx.release);
+    let (_, st) = call(&ctx.app, "GET", &cid, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(
+        (st["enabled"].as_bool(), st["monetization"].as_str()),
+        (Some(true), Some("UNKNOWN"))
+    );
+    let (s, _) = step(&allow, json!({"status": "RESOLVED"})).await;
+    assert_eq!(s, StatusCode::OK);
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &format!("/api/staff/releases/{}/content-id", ctx.release),
+        json!({"monetization": "MONETIZING"}),
+        Some(&op),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, st) = call(&ctx.app, "GET", &cid, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(
+        st["allowlisted_channels"],
+        json!(["https://www.youtube.com/@testartist"]),
+        "{st}"
+    );
+    assert_eq!(st["monetization"], "MONETIZING");
+    // Opting out is a request too; resolved, Content ID is off.
+    let (_, v) =
+        file(json!({"kind": "CID_OPT_OUT", "release_id": release, "artist_name": "Test Artist"}))
+            .await;
+    let out = v["id"].as_str().unwrap().to_string();
+    step(&out, json!({"status": "RESOLVED"})).await;
+    let (_, st) = call(&ctx.app, "GET", &cid, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(st["enabled"], false, "{st}");
+    assert_eq!(
+        st["allowlisted_channels"].as_array().unwrap().len(),
+        1,
+        "kept: {st}"
+    );
+}
+
+/// Contract end / rights expiry: the artist schedules the end (with notice),
+/// on the date every platform gets a takedown and no new delivery goes out,
+/// staff close the final settlement; an org-wide contract end stops new
+/// submissions and can be cancelled before the date.
+#[sqlx::test]
+async fn contract_end_takes_down_blocks_delivery_and_closes_final_settlement(pool: PgPool) {
+    let ctx = ready_package(&pool).await;
+    let mock = MockDsp::new(MockBehavior::Accept);
+    let (_, status) = run_send(&pool, &ctx, &mock).await;
+    assert_eq!(status, "DELIVERED");
+    let path = format!("/api/orgs/{}/releases/{}/term", ctx.org, ctx.release);
+    let day = |n: i64| {
+        (chrono::Utc::now() + chrono::Duration::hours(9) + chrono::Duration::days(n))
+            .date_naive()
+            .to_string()
+    };
+
+    let (_, v) = call(
+        &ctx.app,
+        "PUT",
+        &path,
+        json!({"end_date": day(10), "reason": "CONTRACT_END"}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "TERM_NOTICE_TOO_SHORT", "{v}");
+    let (s, v) = call(
+        &ctx.app,
+        "PUT",
+        &path,
+        json!({"end_date": day(5), "reason": "LICENSE_EXPIRY", "note": "샘플 라이선스 만료"}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let (_, t) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(t["term"]["status"], "SCHEDULED", "{t}");
+
+    // Within the warning window: told once; not yet ended.
+    audeniq_core::contract_terms::sweep(&pool).await.unwrap();
+    audeniq_core::contract_terms::sweep(&pool).await.unwrap();
+    let warned: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM portal.notifications WHERE org_id=$1 AND title LIKE '%에 끝나요.'",
+    )
+    .bind(ctx.org)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(warned, 1);
+
+    // The date comes: takedowns for every platform, ended, final settlement due.
+    sqlx::query("UPDATE portal.release_terms SET end_date=$2::date WHERE release_id=$1")
+        .bind(ctx.release)
+        .bind(day(0))
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(audeniq_core::contract_terms::sweep(&pool).await.unwrap(), 1);
+    let takedowns: i64 = sqlx::query_scalar("SELECT count(*) FROM operations.jobs WHERE kind='delivery.takedown' AND payload->>'package_id'=$1")
+        .bind(ctx.package_id.to_string()).fetch_one(&pool).await.unwrap();
+    assert!(takedowns >= 1);
+    let (_, t) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(t["term"]["status"], "ENDED", "{t}");
+    assert!(t["term"]["final_settlement_due"].is_string());
+    let (_, v) = call(
+        &ctx.app,
+        "POST",
+        &format!("{path}/cancel"),
+        json!({}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(
+        v["error"]["code"], "TERM_NOT_CANCELLABLE",
+        "ended is final: {v}"
+    );
+    let (_, v) = call(
+        &ctx.app,
+        "PUT",
+        &path,
+        json!({"end_date": day(60), "reason": "CONTRACT_END"}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "TERM_ALREADY_ENDED", "{v}");
+
+    // No new delivery for an ended release.
+    let (jobs, _) = audeniq_core::execution::enqueue_delivery_jobs(&pool, ctx.package_id)
+        .await
+        .unwrap();
+    assert!(jobs.is_empty());
+    let held: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM operations.audit_events WHERE action='delivery.held' AND reason_code='RELEASE_TERM_ENDED')")
+        .fetch_one(&pool).await.unwrap();
+    assert!(held);
+
+    // Staff close the final settlement.
+    let op = staff_user(&ctx.app, &pool, "OPERATOR").await;
+    let (_, list) = call(&ctx.app, "GET", "/api/staff/terms", Value::Null, Some(&op)).await;
+    assert_eq!(list["items"][0]["status"], "ENDED", "{list}");
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &format!("/api/staff/releases/{}/term/final-settled", ctx.release),
+        json!({"note": "9월분까지 정산 완료"}),
+        Some(&op),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, t) = call(&ctx.app, "GET", &path, Value::Null, Some(&ctx.user)).await;
+    assert_eq!(t["term"]["status"], "FINAL_SETTLED");
+
+    // Org-wide: needs notice, stops new submissions, cancellable.
+    let org_path = format!("/api/orgs/{}/contract-end", ctx.org);
+    let (_, v) = call(
+        &ctx.app,
+        "PUT",
+        &org_path,
+        json!({"end_date": day(7)}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(v["error"]["code"], "TERM_NOTICE_TOO_SHORT", "{v}");
+    let (s, v) = call(
+        &ctx.app,
+        "PUT",
+        &org_path,
+        json!({"end_date": day(40)}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let wav = wav_bytes();
+    let asset = register_asset(&pool, &ctx.store, &ctx.user, "t2.wav", wav).await;
+    let draft = build_submittable(&ctx.app, &pool, &ctx.user, asset).await;
+    let (_, c) = call(
+        &ctx.app,
+        "POST",
+        &format!("/api/orgs/{}/releases/{draft}/consents", ctx.org),
+        json!({"parties":[{"party_id":ctx.user.party,"role":"ARTIST"}],"minority_declared":false}),
+        Some(&ctx.user),
+    )
+    .await;
+    let decl = json!({"rights_confirmed":true,"adult_confirmed":true,"is_cover":false,"is_remix":false,"contains_samples":false,"ai_involved":false,"explicit_content":false});
+    let (_, v) = call(&ctx.app, "POST", &format!("/api/orgs/{}/releases/{draft}/submit", ctx.org),
+        json!({"consent_id":c["consent_id"],"minority_declared":false,"idempotency_key":"k-org-end","declarations":decl}), Some(&ctx.user)).await;
+    assert_eq!(v["error"]["code"], "ORG_CONTRACT_ENDING", "{v}");
+    let (s, _) = call(
+        &ctx.app,
+        "POST",
+        &format!("{org_path}/cancel"),
+        json!({}),
+        Some(&ctx.user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    let (_, ot) = call(&ctx.app, "GET", &org_path, Value::Null, Some(&ctx.user)).await;
+    assert!(ot["term"].is_null(), "{ot}");
+}
+
+/// Artist platform pages: a first release leaves the new pages pending, the
+/// artist registers them once, the next application is prefilled and the
+/// prepared delivery names the page per platform.
+#[sqlx::test]
+async fn artist_pages_are_recorded_reused_and_delivered(pool: PgPool) {
+    let d = draft_package(&pool).await;
+    sqlx::query("UPDATE catalog.releases SET draft = draft || '{\"artistProfile\":{\"isNew\":true,\"spotify\":\"\",\"apple\":\"\",\"melon\":\"\"}}'::jsonb, row_version=row_version+1 WHERE id=$1")
+        .bind(d.release).execute(&pool).await.unwrap();
+    let (app, user) = (d.app.clone(), d.u.clone());
+    let ctx = finish_package(&pool, d).await;
+    // ready_package's draft names the artist "Test Artist"; the catalog artist is "Artist".
+    let artist: Uuid =
+        sqlx::query_scalar("SELECT artist_id FROM catalog.tracks WHERE release_id=$1 LIMIT 1")
+            .bind(ctx.release)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let name: String =
+        sqlx::query_scalar("SELECT draft->>'artist' FROM catalog.releases WHERE id=$1")
+            .bind(ctx.release)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    sqlx::query("UPDATE catalog.artists SET name=$2 WHERE id=$1")
+        .bind(artist)
+        .bind(&name)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // Record again as at submission (the fixture renamed the artist after it).
+    let mut c = pool.acquire().await.unwrap();
+    let draft: Value = sqlx::query_scalar("SELECT draft FROM catalog.releases WHERE id=$1")
+        .bind(ctx.release)
+        .fetch_one(&mut *c)
+        .await
+        .unwrap();
+    audeniq_core::artist_pages::record_from_application(
+        &mut c,
+        ctx.org,
+        ctx.release,
+        &draft,
+        user.user,
+    )
+    .await
+    .unwrap();
+    drop(c);
+
+    let q = format!(
+        "/api/orgs/{}/artist-pages?name={}",
+        ctx.org,
+        urlencoding_lite(&name)
+    );
+    let (_, v) = call(&app, "GET", &q, Value::Null, Some(&user)).await;
+    assert_eq!(v["pages"]["spotify"]["status"], "PENDING", "{v}");
+    assert_eq!(
+        v["pages"]["spotify"]["first_release_id"],
+        ctx.release.to_string().as_str()
+    );
+
+    let put = format!("/api/orgs/{}/artists/{artist}/pages", ctx.org);
+    let (_, e) = call(
+        &app,
+        "PUT",
+        &put,
+        json!({"links": {"spotify": "https://evil.example/artist/x"}}),
+        Some(&user),
+    )
+    .await;
+    assert_eq!(e["error"]["code"], "ARTIST_PAGE_URL_INVALID", "{e}");
+    let (s, e) = call(&app, "PUT", &put, json!({"links": {"spotify": "https://open.spotify.com/artist/4Z8W4fKeB5YxbusRsdQVPb", "apple": ""}}), Some(&user)).await;
+    assert_eq!(s, StatusCode::OK, "{e}");
+    let other = user_of(&app).await;
+    let (s, _) = call(
+        &app,
+        "PUT",
+        &format!("/api/orgs/{}/artists/{artist}/pages", other.org),
+        json!({"links": {"spotify": "https://open.spotify.com/artist/4Z8W4fKeB5YxbusRsdQVPb"}}),
+        Some(&other),
+    )
+    .await;
+    assert_ne!(s, StatusCode::OK);
+
+    let (_, v) = call(&app, "GET", &q, Value::Null, Some(&user)).await;
+    assert_eq!(v["pages"]["spotify"]["status"], "LINKED", "{v}");
+    assert_eq!(
+        v["pages"]["apple"]["status"], "PENDING",
+        "an empty link leaves it as it is"
+    );
+    // A later application that names an existing page records it too.
+    let mut c = pool.acquire().await.unwrap();
+    let later = json!({"artist": name, "artistProfile": {"isNew": false, "melon": "https://www.melon.com/artist/detail.htm?artistId=261143"}});
+    audeniq_core::artist_pages::record_from_application(
+        &mut c,
+        ctx.org,
+        ctx.release,
+        &later,
+        user.user,
+    )
+    .await
+    .unwrap();
+    let ids = audeniq_core::artist_pages::platform_ids(&mut c, ctx.org, &name)
+        .await
+        .unwrap();
+    assert_eq!(
+        ids.get("spotify").map(String::as_str),
+        Some("spotify:artist:4Z8W4fKeB5YxbusRsdQVPb")
+    );
+    assert_eq!(ids.get("melon").map(String::as_str), Some("261143"));
+    drop(c);
+
+    // The prepared delivery carries them.
+    let (canonical_id, snapshot): (Uuid, Value) =
+        sqlx::query_as("SELECT id, body FROM distribution.canonical_releases WHERE release_id=$1")
+            .bind(ctx.release)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let canonical: audeniq_core::distribution::CanonicalRelease =
+        serde_json::from_value(snapshot).unwrap();
+    let prepared = audeniq_core::preparation_model::PreparedRelease::from_canonical(
+        &pool,
+        canonical_id,
+        &canonical,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        prepared
+            .artist_platform_ids
+            .get("melon")
+            .map(String::as_str),
+        Some("261143")
+    );
+}
+
+fn urlencoding_lite(s: &str) -> String {
+    s.bytes()
+        .map(|b| {
+            if b.is_ascii_alphanumeric() {
+                (b as char).to_string()
+            } else {
+                format!("%{b:02X}")
+            }
+        })
+        .collect()
+}
+
+async fn user_of(app: &Router) -> User {
+    user(app).await
 }

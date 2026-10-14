@@ -23,6 +23,15 @@ die() { echo "deploy: $*" >&2; exit 1; }
 current_image() { sed -n 's/^AUDENIQ_IMAGE=//p' "$ENV_FILE" | tail -n 1; }
 
 [ -f "$ENV_FILE" ] || die "$ENV_FILE 이 없어요 (production.env.example 참고, chmod 600)"
+# 시크릿 매니저(AWS/GCP/OCI)에서 tmpfs로 받은 비밀값: production.env 뒤에 읽어 같은 이름을 덮는다
+SECRETS_ENV_FILE=$(sed -n 's/^SECRETS_ENV_FILE=//p' "$ENV_FILE" | tail -n 1)
+if [ -n "$SECRETS_ENV_FILE" ]; then
+  [ -f "$SECRETS_ENV_FILE" ] && [ ! -L "$SECRETS_ENV_FILE" ] || die "시크릿을 먼저 tmpfs에 준비해 주세요 (audeniq-secrets secrets materialize): $SECRETS_ENV_FILE"
+  [ "$(stat -f -c %T "$SECRETS_ENV_FILE")" = tmpfs ] || die "SECRETS_ENV_FILE은 tmpfs에 있어야 해요"
+  [ "$(stat -c '%u %a' "$SECRETS_ENV_FILE")" = "$(id -u) 600" ] || die "SECRETS_ENV_FILE은 배포 사용자 소유 0600이어야 해요"
+  ! grep -q '^AUDENIQ_IMAGE=' "$SECRETS_ENV_FILE" || die "SECRETS_ENV_FILE에 AUDENIQ_IMAGE를 둘 수 없어요"
+  COMPOSE+=(--env-file "$SECRETS_ENV_FILE")
+fi
 [ -f compose.production.yaml ] || die "compose.production.yaml 이 없어요"
 [ -f pgbouncer/Dockerfile ] || die "pgbouncer/ 폴더가 없어요 (저장소의 deploy/pgbouncer를 함께 복사)"
 [ -f check-cpu.sh ] || die "check-cpu.sh 가 없어요 (저장소의 deploy/check-cpu.sh를 함께 복사)"
@@ -66,8 +75,15 @@ keydir=${keydir:-/dev/shm/audeniq-secrets}
 if [ "$kms_enabled" = true ]; then
   keyfile=$(sed -n 's/^PAYOUT_KEYRING_FILE=//p' "$ENV_FILE" | tail -n 1)
   [ "$keyfile" = /run/audeniq-keys/payout-keyring.json ] || die "PAYOUT_KEYRING_FILE=/run/audeniq-keys/payout-keyring.json 을 설정해 주세요"
-  [ -f "$keydir/payout-keyring.json" ] || die "KMS 키를 먼저 tmpfs에 준비해 주세요 (kms-keyring.py materialize)"
+  [ -f "$keydir/payout-keyring.json" ] || die "KMS 키를 먼저 tmpfs에 준비해 주세요 (audeniq-secrets kms materialize)"
   [ "$(stat -f -c %T "$keydir")" = tmpfs ] || die "키 폴더는 tmpfs여야 해요"
+else
+  # 개인정보(이메일·실명·연락처·예금주)는 암호문으로만 저장한다(0102): 키 없이는 API가 기동하지 않는다.
+  local_key=$(sed -n 's/^PAYOUT_ACCOUNT_KEY=//p' "$ENV_FILE" | tail -n 1)
+  local_ring=$(sed -n 's/^PAYOUT_KEYRING_FILE=//p' "$ENV_FILE" | tail -n 1)
+  if [ -z "$local_key" ] && [ -z "$local_ring" ] && ! grep -qs '^PAYOUT_ACCOUNT_KEY=.' "${SECRETS_ENV_FILE:-/nonexistent}"; then
+    die "개인정보 암호화 키가 없어요: PAYOUT_KMS_ENABLED=true(권장) 또는 PAYOUT_ACCOUNT_KEY를 설정해 주세요"
+  fi
 fi
 
 REF=$1
@@ -136,6 +152,7 @@ mv "$tmp" "$ENV_FILE"
 echo "deploy: $PREVIOUS"
 echo "     → $PINNED"
 # migrate → grants가 성공해야 api·worker가 새 이미지로 바뀐다 (compose depends_on)
+# DSP 전송 중이면 worker는 그 전송이 끝날 때까지(최대 WORKER_DELIVERY_DRAIN_SECONDS) 기다렸다가 내려간다
 # --build: pgbouncer 이미지는 서버에서 deploy/pgbouncer로 만든다 (바뀐 게 없으면 캐시)
 if ! "${COMPOSE[@]}" up -d --build --remove-orphans; then
   "${COMPOSE[@]}" logs --tail 80 migrate grants pgbouncer api worker || true
@@ -168,6 +185,22 @@ if [ -n "$bad" ]; then
   "${COMPOSE[@]}" logs --tail 80 api worker || true
   die "컨테이너가 안정적으로 뜨지 않았어요:$bad — 되돌리려면: ./deploy.sh --rollback"
 fi
+
+# 떠 있는 것만으로는 부족하다: api가 /ready(DB 포함)에 답할 때까지 기다린다 (compose healthcheck)
+api_id=$("${COMPOSE[@]}" ps -q api)
+health=none
+for _ in $(seq 1 30); do
+  health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$api_id")
+  case "$health" in healthy|none) break ;; esac
+  sleep 2
+done
+case "$health" in
+  healthy|none) ;;
+  *)
+    "${COMPOSE[@]}" logs --tail 80 api || true
+    die "api가 준비되지 않았어요 ($health) — 되돌리려면: ./deploy.sh --rollback"
+    ;;
+esac
 
 printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$PINNED" >> "$HISTORY"
 echo "deploy: 완료 $PINNED"

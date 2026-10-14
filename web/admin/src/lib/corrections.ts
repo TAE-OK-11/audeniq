@@ -137,6 +137,8 @@ const STAFF_FIX: Record<string, Target & { track?: boolean }> = {
   FIX_OWNERSHIP: { step: WIZ_STEP.rights, field: 'f-ownership', label: '음원 권리자', hint: '음원 권리자를 확인해 주세요.' },
   FIX_PLINE: { step: WIZ_STEP.rights, field: 'f-phonogram', label: '℗ 표기', hint: '℗ 표기를 확인해 주세요.' },
   FIX_CLINE: { step: WIZ_STEP.rights, field: 'f-copyright', label: '© 표기', hint: '© 표기를 확인해 주세요.' },
+  // 서류는 신청서 입력칸이 아니라 서류 요청으로 만들어져 아티스트가 그 요청에 파일을 첨부한다 (첫 줄 = 서류 이름)
+  FIX_DOCUMENT: { step: WIZ_STEP.rights, label: '추가 서류 첨부', hint: '필요한 서류와 형식을 적어 주세요. 첫 줄이 서류 이름이 돼요. 예: 샘플 사용 허락서' },
   FIX_OTHER: { step: WIZ_STEP.review, label: '기타', hint: '담당자 요청 내용을 확인해 주세요.' },
 };
 Object.assign(TARGETS, STAFF_FIX);

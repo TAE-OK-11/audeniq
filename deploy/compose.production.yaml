@@ -70,6 +70,14 @@ services:
       - log_min_duration_statement=500ms
       - -c
       - log_lock_waits=on
+      # PITR(시점 복구)용 WAL 보관. 기본은 꺼짐; 켜면 deploy/archive.sh wal이 암호화해 WORM 버킷으로 옮긴다
+      # (docs/DOCUMENT_ARCHIVE.md). archive_mode를 바꾸면 postgres를 재시작해야 한다.
+      - -c
+      - archive_mode=${PG_ARCHIVE_MODE:-off}
+      - -c
+      - archive_command=mkdir -p /var/lib/postgresql/wal-archive && test ! -f /var/lib/postgresql/wal-archive/%f && cp %p /var/lib/postgresql/wal-archive/%f
+      - -c
+      - archive_timeout=${PG_ARCHIVE_TIMEOUT:-300}
     shm_size: 128m
     mem_limit: ${PG_MEM_LIMIT:-512m}
     cpus: ${PG_CPUS:-1.0}
@@ -193,13 +201,33 @@ services:
       PARTNER_CONFIG_DIR: /etc/audeniq/partners
       # Pre-launch lock: empty = no request ever reaches a real DSP.
       DSP_LIVE_TRANSMISSION: ${DSP_LIVE_TRANSMISSION:-}
+      # Studio test platform "MockDSP (테스트)": empty = offered while the lock
+      # above is closed; enabled / disabled overrides (migration 0087).
+      MOCKDSP_STUDIO: ${MOCKDSP_STUDIO:-}
       # 화면별 규칙·공지·점검 (crates/core/src/sites.rs, site_content.rs)
       ADMIN_ORIGIN: ${ADMIN_ORIGIN:-}
+      PASSKEY_RP_ID: ${PASSKEY_RP_ID:-}
+      STAFF_MFA_REQUIRED: ${STAFF_MFA_REQUIRED:-false}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      APPLE_OAUTH_CLIENT_ID: ${APPLE_OAUTH_CLIENT_ID:-}
+      APPLE_OAUTH_TEAM_ID: ${APPLE_OAUTH_TEAM_ID:-}
+      APPLE_OAUTH_KEY_ID: ${APPLE_OAUTH_KEY_ID:-}
+      APPLE_OAUTH_PRIVATE_KEY: ${APPLE_OAUTH_PRIVATE_KEY:-}
       CONTENT_ADMIN_TOKEN: ${CONTENT_ADMIN_TOKEN:-}
       MAINTENANCE_MODE: ${MAINTENANCE_MODE:-}
       MAINTENANCE_TITLE: ${MAINTENANCE_TITLE:-}
       MAINTENANCE_MESSAGE: ${MAINTENANCE_MESSAGE:-}
       MAINTENANCE_UNTIL: ${MAINTENANCE_UNTIL:-}
+      # 알림 메일 (crates/core/src/email.rs): 비우면 보내지 않는다. oci,ses = OCI(저렴)로 먼저, 실패하면 SES로.
+      EMAIL_PROVIDERS: ${EMAIL_PROVIDERS:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      EMAIL_SES_REGION: ${EMAIL_SES_REGION:-}
+      EMAIL_SES_USERNAME: ${EMAIL_SES_USERNAME:-}
+      EMAIL_SES_PASSWORD: ${EMAIL_SES_PASSWORD:-}
+      EMAIL_OCI_REGION: ${EMAIL_OCI_REGION:-}
+      EMAIL_OCI_USERNAME: ${EMAIL_OCI_USERNAME:-}
+      EMAIL_OCI_PASSWORD: ${EMAIL_OCI_PASSWORD:-}
     volumes:
       - av_socket:/run/audeniq-av:ro
       - ${PAYOUT_KEYRING_DIR:-/dev/shm/audeniq-secrets}:/run/audeniq-keys:ro
@@ -207,6 +235,13 @@ services:
       - ./partners:/etc/audeniq/partners:ro
     depends_on:
       pgbouncer: {condition: service_healthy}
+    # /ready (database included), through the binary itself: no curl in the image.
+    healthcheck:
+      test: [CMD, audeniq-api, healthcheck]
+      interval: 10s
+      timeout: 6s
+      retries: 3
+      start_period: 30s
     mem_limit: ${API_MEM_LIMIT:-384m}
     cpus: ${API_CPUS:-1.0}
     # CPU가 붐빌 때 API(1024)가 worker(512)의 두 배 몫을 받는다: 무거운 QC 중에도 응답이 밀리지 않는다.
@@ -215,9 +250,10 @@ services:
     restart: unless-stopped
     <<: *runtime
     command: [audeniq-worker]
-    # SIGTERM drains in-flight jobs for WORKER_DRAIN_SECONDS, then releases
+    # SIGTERM drains in-flight jobs for WORKER_DRAIN_SECONDS (up to
+    # WORKER_DELIVERY_DRAIN_SECONDS while a DSP send runs), then releases
     # unfinished leases; the grace period must exceed the drain window.
-    stop_grace_period: 45s
+    stop_grace_period: 11m
     environment:
       UPLOAD_AV_ENABLED: '${UPLOAD_AV_ENABLED:-false}'
       APP_ENV: production
@@ -225,14 +261,20 @@ services:
       DATABASE_POOLER: pgbouncer
       # LISTEN needs a session: direct to postgres, not through the pooler.
       DATABASE_LISTEN_URL: postgres://audeniq_worker:${WORKER_DB_PASSWORD}@postgres/audeniq_prod
-      WORKER_MAX_IN_FLIGHT: '${WORKER_MAX_IN_FLIGHT:-2}'
-      DATABASE_MAX_CONNECTIONS: '${DATABASE_MAX_CONNECTIONS:-6}'
+      # 큐 전체 동시 작업 상한. QC는 그 안에서 서버 여유에 따라 늘었다 줄었다 한다.
+      WORKER_MAX_IN_FLIGHT: '${WORKER_MAX_IN_FLIGHT:-4}'
+      DATABASE_MAX_CONNECTIONS: '${DATABASE_MAX_CONNECTIONS:-8}'
       JOB_LEASE_SECONDS: '${JOB_LEASE_SECONDS:-300}'
       WORKER_DRAIN_SECONDS: '${WORKER_DRAIN_SECONDS:-30}'
+      WORKER_DELIVERY_DRAIN_SECONDS: '${WORKER_DELIVERY_DRAIN_SECONDS:-600}'
       QUEUE_INTERACTIVE_CONCURRENCY: '1'
       # 곡마다 업로드 직후 사전 분석(audeniq-qc 디코드)이 이 큐로 돈다. CPU 작업이라 vCPU 수만큼이
       # 알맞다(1 vCPU: 1, 2 vCPU: 2). API는 cpu_shares로 CPU 우선권을 가진다.
       QUEUE_QC_CONCURRENCY: '${QUEUE_QC_CONCURRENCY:-1}'
+      # 곡이 몰리면 CPU·메모리 여유를 보며 이 값까지 늘린다(1초마다 판단, 비면 기본 = vCPU×2, 최소 2).
+      # 한 번에 디코딩하는 곡 수는 아래 미디어 슬롯이 따로 막으므로, 1 vCPU에서는 한 곡을 분석하는 동안
+      # 다음 곡을 미리 내려받는 정도로 늘어난다.
+      QUEUE_QC_MAX_CONCURRENCY: '${QUEUE_QC_MAX_CONCURRENCY:-}'
       # Process-wide media capacity (1–8). Empty uses available CPU capacity.
       AUDENIQ_QC_ASSET_PARALLELISM: '${AUDENIQ_QC_ASSET_PARALLELISM:-}'
       AUDENIQ_AUDIO_PARSER_MEMORY_MIB: '${AUDENIQ_AUDIO_PARSER_MEMORY_MIB:-768}'
@@ -285,7 +327,8 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     networks: [backend, egress]
-    depends_on: [api]
+    depends_on:
+      api: {condition: service_healthy}
     mem_limit: 256m
     cpus: 0.5
     logging:

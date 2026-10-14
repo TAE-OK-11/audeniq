@@ -1,6 +1,7 @@
 // 아바타 · 앨범 커버 · 아이콘 칸
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Glyph } from '../components/Glyph';
+import { apiUrl } from '../api/http';
 import { gradientFor } from './cover';
 import { cx, type Tone } from './tone';
 
@@ -18,8 +19,12 @@ export function Avatar({ name, size = 'md', me, empty, title }: { name?: string 
 /** 발매 커버 — 이미지가 있으면 이미지, 없으면 발매마다 다른 그라데이션 위 음표 (스튜디오와 같은 모양).
  *  plain: 서류처럼 발매가 아닌 항목 — 연파랑 면 위 첫 글자 */
 export function Cover({ id, text, src, size = 'md', plain }: { id?: string; text: string; src?: string | null; size?: 'md' | 'lg' | 'xl'; plain?: boolean }) {
-  const cls = cx('ui-cover', size !== 'md' && `is-${size}`, src && 'has-image', plain && 'is-plain');
-  if (src) return <span className={cls} aria-hidden="true"><img src={src} alt="" loading="lazy" decoding="async" /></span>;
+  // 이미지를 못 불러오면 깨진 아이콘 대신 기본 커버로
+  const [failed, setFailed] = useState<string | null | undefined>();
+  useEffect(() => { setFailed(undefined); }, [src]);
+  const image = src && failed !== src ? src : null;
+  const cls = cx('ui-cover', size !== 'md' && `is-${size}`, image && 'has-image', plain && 'is-plain');
+  if (image) return <span className={cls} aria-hidden="true"><img src={apiUrl(image)} alt="" loading="lazy" decoding="async" onError={() => setFailed(image)} /></span>;
   if (plain) return <span className={cls} aria-hidden="true">{initial(text)}</span>;
   return <span className={cls} aria-hidden="true" style={{ background: gradientFor(id || text) }}><Glyph name="music" className="ui-cover-glyph" /></span>;
 }

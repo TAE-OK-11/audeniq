@@ -8,15 +8,20 @@
 // - 트랙은 아티스트 ID·자산 ID로 연결, 파일은 서명 URL로 R2에 직접 업로드
 // - 접수 = 동의(consent) 생성 → submit(동의 ID, 자기 선언)
 import type {
-  Correction, WithdrawQuota,
+  AssetChecks, Correction, Invitation, OrgMember, WithdrawQuota, TakedownState,
   DeliveryItem, DspAvailability,
   DraftTrack, Org, PreflightIssue, Release, ReleaseDetail, ReleaseDraft, ReleasePayload,
   ReleaseOptionsData, SaveResult, Track, UploadKind, UploadResult, User,
 } from './types';
-import { ApiError } from './errors';
-import { bootstrapCsrf, hasCsrf, listAll, orgPath, putToGrant, req, setCsrf, type UploadGrant } from './http';
+import { ApiError, PartialSaveError } from './errors';
+import { LEGAL_DOCS, TERMS_VERSION } from '../lib/terms';
+import { API_BASE, bootstrapCsrf, hasCsrf, listAll, orgPath, putToGrant, req, setCsrf, setSessionUser, type UploadGrant } from './http';
+import * as multipart from './multipart';
+
+/** 이보다 큰 음원은 조각으로 이어 올린다 (서버 uploads::PART_SIZE와 같다) */
+const MULTIPART_MIN_BYTES = 16 * 1024 * 1024;
 import { stampNow } from '../lib/date';
-import { normalizeIsrc } from '../lib/dsp';
+import { isrcValid, normalizeIsrc, upcValid } from '../lib/dsp';
 import { parseStaffFix } from '../lib/corrections';
 
 // ---------------------------------------------------------------------------
@@ -75,11 +80,19 @@ export function uiStatus(server: string, live = false, agreement: string | null 
 }
 const EDITABLE = new Set(['DRAFT', 'STAGE1_CORRECTION', 'STAGE2_CORRECTION', 'STAGE3_CORRECTION']);
 
+/** 보완 필요(needs)의 종류 — 신청서를 고칠 수 있는 보완 단계면 신청서, 아니면(권리 보류 등
+ *  신청서가 잠긴 상태) 담당자가 요청한 서류를 내는 것이 보완이다 */
+export function fixKind(server: string, status: string): Release['fixKind'] {
+  if (status !== 'needs') return undefined;
+  return EDITABLE.has(server) ? 'application' : 'documents';
+}
+
 /** 서버는 UPC-A(12자리)만 받는다: 0으로 시작하는 EAN-13은 같은 번호라 앞 0을 뗀다. 비우면 3단계에서 발급 */
 export function serverUpc(v: string): string | null {
   const d = v.trim();
-  if (/^\d{12}$/.test(d)) return d;
-  if (/^0\d{12}$/.test(d)) return d.slice(1);
+  // 검증 숫자가 틀린 코드는 보내지 않는다 (서버가 거절하면 자동 저장 전체가 실패한다)
+  if (/^\d{12}$/.test(d)) return upcValid(d) ? d : null;
+  if (/^0\d{12}$/.test(d)) return upcValid(d.slice(1)) ? d.slice(1) : null;
   return null;
 }
 const toReleaseType = (t: string): ServerRelease['release_type'] => (t === 'ep' ? 'EP' : t === 'album' || t === 'compilation' ? 'ALBUM' : 'SINGLE');
@@ -113,7 +126,29 @@ export function sanitizeProfile(v: unknown, key = ''): unknown {
 
 const PROFILE_LIMIT = 48 * 1024; // 요청 본문 64KB 한도 안에서 여유를 둔다
 
+/** 저장할 커버 미리보기. 서버는 profile 안의 data:·blob: 값을 전자서명 PNG로 검사하므로
+ *  (upload_safety::check_inline_files) JPEG 미리보기를 보내면 발매 저장 전체가 400이 된다.
+ *  커버는 업로드한 파일(artwork_asset_id = coverAssetId)로 참조·검사되므로, 그 참조가 있으면
+ *  PNG가 아닌 인라인 미리보기는 비워 보낸다 (2026-10-10 중계 Worker 긴급 패치와 같은 규칙). */
+export function storedCoverData(coverData: string | undefined, coverAssetId: string | undefined): string | undefined {
+  if (!coverData || !coverAssetId) return coverData;
+  // 서버 이미지 주소(coverImageUrl)도 저장하지 않는다: 자산 ID로 다시 만든다
+  return coverData.startsWith('data:image/png;base64,') ? coverData : '';
+}
+
+/** 서버에 보관된 커버 이미지 주소 (작은 미리보기가 있으면 그것). 업로드한 원본은 발매까지 서버에 남는다. */
+export function coverImageUrl(thumbAssetId: string | undefined, coverAssetId: string | undefined): string {
+  const id = thumbAssetId || coverAssetId;
+  if (!id) return '';
+  try {
+    return `${API_BASE}${orgPath(`/assets/${encodeURIComponent(id)}/image`)}`;
+  } catch {
+    return ''; // 작업 공간을 아직 모를 때는 그라데이션 커버로
+  }
+}
+
 function buildProfile(data: ReleasePayload, prev: Record<string, unknown> | null, history: ReleaseDraft['history']) {
+  const coverAssetId = data.coverAssetId ?? (prev?.coverAssetId as string | undefined);
   const profile = {
     app: 'studio-react',
     schema: 1,
@@ -127,10 +162,15 @@ function buildProfile(data: ReleasePayload, prev: Record<string, unknown> | null
     // 앨범 소개는 여러 줄이라 줄 단위 배열로 보관 (서버는 lyrics 외 줄바꿈을 받지 않음)
     notes_lines: data.notes.split(/\r?\n/),
     coverName: data.coverName,
-    coverData: data.coverData,
-    coverAssetId: data.coverAssetId ?? (prev?.coverAssetId as string | undefined),
+    coverData: storedCoverData(data.coverData, coverAssetId),
+    coverAssetId,
+    coverThumbAssetId: data.coverAssetId && data.coverAssetId !== prev?.coverAssetId
+      ? data.coverThumbAssetId
+      : data.coverThumbAssetId ?? (prev?.coverThumbAssetId as string | undefined),
     originalDate: data.originalDate,
     release_date: data.release_date,
+    release_time: data.release_time || '',
+    preorder_start: data.preorder_start || '',
     territories: data.territories,
     platforms: data.platforms,
     ownership: data.ownership,
@@ -192,9 +232,13 @@ function readDraft(r: ServerRelease): ReleaseDraft {
     upc: s('upc'),
     notes: a<string>('notes_lines').join('\n') || s('notes'),
     coverName: s('coverName'),
-    coverData: s('coverData'),
+    // 저장된 미리보기가 없으면(JPEG 커버) 서버에 보관된 커버를 보여 준다
+    coverData: s('coverData') || coverImageUrl(s('coverThumbAssetId'), s('coverAssetId')),
     coverAssetId: s('coverAssetId') || undefined,
+    coverThumbAssetId: s('coverThumbAssetId') || undefined,
     originalDate: s('originalDate'),
+    release_time: s('release_time'),
+    preorder_start: s('preorder_start'),
     territories: a<string>('territories'),
     platforms: a<string>('platforms'),
     ownership: s('ownership'),
@@ -220,10 +264,12 @@ const realLive = (r: ServerRelease) => (r.live_status_by_dsp ?? []).filter(l => 
 
 function toSummary(r: ServerRelease): Release {
   const d = readDraft(r);
+  const status = uiStatus(r.status, realLive(r).length > 0, r.agreement_status ?? null);
   return {
     id: r.id,
     title: r.title,
-    status: uiStatus(r.status, realLive(r).length > 0, r.agreement_status ?? null),
+    status,
+    fixKind: fixKind(r.status, status),
     livePlatforms: realLive(r).map(l => l.dsp ?? l.partner_id),
     release_date: (typeof r.draft?.release_date === 'string' && r.draft.release_date) || null,
     created_at: (r.created_at ?? '').slice(0, 10),
@@ -244,7 +290,7 @@ function toDetail(r: ServerRelease): ReleaseDetail {
       title: t.title,
       duration_ms: durationMs(local?.duration),
       isrc: t.isrc,
-      version: t.version ?? local?.version ?? null,
+      version: t.version || local?.version || null,
       composers: local?.composers ?? null,
       lyricists: local?.lyricists ?? null,
       audioName: local?.audioName || (t.asset_id ? '업로드한 음원' : null),
@@ -317,7 +363,8 @@ const creditKey = (cs: ServerCredit[]) => cs.map(c => `${c.party_id}|${c.role}`)
 // ---------------------------------------------------------------------------
 // 트랙 동기화 — 제목이 있는 트랙만 서버에 반영 (작성 중인 빈 트랙은 profile에만)
 // ---------------------------------------------------------------------------
-async function syncTracks(release: ServerRelease, tracks: DraftTrack[], artistId: string): Promise<{ rowVersion: number; tracks: DraftTrack[] }> {
+/** created: 이번 저장에서 서버가 새로 만든 트랙 (화면 트랙 id → 서버 id) — 중간에 실패해도 남는다 */
+async function syncTracks(release: ServerRelease, tracks: DraftTrack[], artistId: string, created: Record<string, string> = {}): Promise<{ rowVersion: number; tracks: DraftTrack[] }> {
   const base = orgPath(`/releases/${release.id}/tracks`);
   let rv = release.row_version;
   const server = new Map((release.tracks ?? []).map(t => [t.id, t]));
@@ -347,14 +394,15 @@ async function syncTracks(release: ServerRelease, tracks: DraftTrack[], artistId
       lyrics: t.lyrics ? cleanText(t.lyrics, true) : null,
       parental_advisory: t.explicit,
       version: cleanText(t.version) || null,
-      // 없으면 3단계에서 발급
-      isrc: normalizeIsrc(t.isrc ?? '') || null,
+      // 없으면 3단계에서 발급. 아직 다 입력하지 않은(형식이 안 맞는) 코드는 보내지 않는다 —
+      // 서버가 400으로 거절하면 자동 저장 전체가 실패한다 (입력값은 draftTracks에 남는다)
+      isrc: isrcValid(t.isrc ?? '') ? normalizeIsrc(t.isrc ?? '') : null,
     };
     const existing = t.serverId ? server.get(t.serverId) : undefined;
     let trackId: string;
     if (existing) {
       const same = existing.title === body.title && existing.track_number === no && existing.asset_id === body.asset_id
-        && (existing.version ?? null) === body.version && !!existing.parental_advisory === body.parental_advisory
+        && (existing.version || null) === body.version && !!existing.parental_advisory === body.parental_advisory
         && (existing.lyrics ?? null) === body.lyrics && existing.artist_id === artistId
         && (existing.isrc ?? null) === body.isrc;
       if (!same) {
@@ -367,6 +415,7 @@ async function syncTracks(release: ServerRelease, tracks: DraftTrack[], artistId
       const r = await req<{ id: string; row_version: number }>(base, { method: 'POST', body });
       rv = r.row_version;
       trackId = r.id;
+      created[t.id] = r.id;
       out.push({ ...t, serverId: r.id });
     }
     const credits = await wantedCredits(t);
@@ -450,16 +499,27 @@ async function persist(id: string | null, data: ReleasePayload, historyText: str
     }
   }
 
-  // 트랙 → 서버 트랙 ID를 받은 뒤 profile에 함께 저장
-  const artistId = await ensureArtist(data.artist);
-  const synced = await syncTracks(rel, data.tracks, artistId);
-  const prevHistory = readDraft(rel).history;
-  const history = historyText && id ? [...prevHistory, { text: historyText, time: stampNow() }] : prevHistory;
-  const profile = buildProfile({ ...data, tracks: synced.tracks }, rel.draft, history);
-  const r = await req<{ row_version: number }>(detailPath(rel.id), {
-    method: 'PUT',
-    body: { name, release_type: toReleaseType(data.type), profile, row_version: synced.rowVersion, ...releaseRefs(data, rel.draft) },
-  });
+  // 트랙 → 서버 트랙 ID를 받은 뒤 profile에 함께 저장. 트랙과 발매 정보는 따로 저장되므로
+  // 중간에 실패하면 무엇이 반영됐는지(발매 id, 새 트랙 id)를 화면에 돌려준다
+  const created: Record<string, string> = {};
+  let tracksSaved = false;
+  let r: { row_version: number };
+  let synced: { rowVersion: number; tracks: DraftTrack[] };
+  let profile: Record<string, unknown>;
+  try {
+    const artistId = await ensureArtist(data.artist);
+    synced = await syncTracks(rel, data.tracks, artistId, created);
+    tracksSaved = true;
+    const prevHistory = readDraft(rel).history;
+    const history = historyText && id ? [...prevHistory, { text: historyText, time: stampNow() }] : prevHistory;
+    profile = buildProfile({ ...data, tracks: synced.tracks }, rel.draft, history);
+    r = await req<{ row_version: number }>(detailPath(rel.id), {
+      method: 'PUT',
+      body: { name, release_type: toReleaseType(data.type), profile, row_version: synced.rowVersion, ...releaseRefs(data, rel.draft) },
+    });
+  } catch (err) {
+    throw new PartialSaveError(err, rel.id, created, tracksSaved);
+  }
   const trackServerIds: Record<string, string> = {};
   for (const t of synced.tracks) if (t.serverId) trackServerIds[t.id] = t.serverId;
   return { ...rel, title: name, draft: profile, row_version: r.row_version, trackServerIds };
@@ -486,20 +546,32 @@ export const remoteApi = {
       method: 'POST', body: { email: email.trim(), password }, quiet401: true,
     });
     setCsrf(r.csrf_token);
+    setSessionUser(r.user_id);
+    const me = await req<{ user_id: string; party_id: string; email: string }>('/api/me', { quiet401: true });
+    partyId = me.party_id;
+    return { id: r.user_id, email: me.email };
+  },
+  async loginPasskey(email: string): Promise<User> {
+    const { passkeyLogin } = await import('./passkey');
+    const r = await passkeyLogin(email);
+    setCsrf(r.csrf_token);
+    setSessionUser(r.user_id);
     const me = await req<{ user_id: string; party_id: string; email: string }>('/api/me', { quiet401: true });
     partyId = me.party_id;
     return { id: r.user_id, email: me.email };
   },
   async signup(email: string, password: string): Promise<User> {
-    await req('/api/auth/register', { method: 'POST', body: { email: email.trim(), password }, quiet401: true });
+    // 동의한 약관·고지한 개인정보 처리방침의 판을 서버가 기록·봉인한다
+    await req('/api/auth/register', { method: 'POST', body: { email: email.trim(), password, terms_version: TERMS_VERSION, privacy_notice_version: LEGAL_DOCS.privacy.version }, quiet401: true });
     return remoteApi.login(email, password);
   },
   async logout(): Promise<void> {
-    try { await req('/api/auth/logout', { method: 'POST', quiet401: true }); } finally { setCsrf(''); partyId = ''; artistCache.clear(); partyCache.clear(); }
+    try { await req('/api/auth/logout', { method: 'POST', quiet401: true }); } finally { setCsrf(''); setSessionUser(''); partyId = ''; artistCache.clear(); partyCache.clear(); }
   },
   async me(): Promise<User> {
     const me = await req<{ user_id: string; party_id: string; email: string }>('/api/me', { quiet401: true });
     partyId = me.party_id;
+    setSessionUser(me.user_id);
     if (!hasCsrf()) await bootstrapCsrf();
     return { id: me.user_id, email: me.email };
   },
@@ -509,7 +581,28 @@ export const remoteApi = {
     return r.items
       .slice()
       .sort((a, b) => Number(b.role !== 'VIEWER') - Number(a.role !== 'VIEWER'))
-      .map(o => ({ id: o.id, name: o.name }));
+      .map(o => ({ id: o.id, name: o.name, role: o.role as Org['role'] }));
+  },
+  async listMembers(): Promise<{ role: string; items: OrgMember[] }> {
+    return req<{ role: string; items: OrgMember[] }>(orgPath('/members'));
+  },
+  async inviteMember(email: string, role: 'EDITOR' | 'VIEWER'): Promise<void> {
+    await req(orgPath('/members/invite'), { method: 'POST', body: { email, role } });
+  },
+  async setMember(userId: string, role: 'EDITOR' | 'VIEWER', status: 'ACTIVE' | 'REVOKED'): Promise<void> {
+    await req(orgPath('/memberships'), { method: 'PUT', body: { user_id: userId, role, status } });
+  },
+  async listInvitations(): Promise<Invitation[]> {
+    return (await req<{ items: Invitation[] }>('/api/me/invitations', { quiet401: true })).items;
+  },
+  async acceptInvitation(orgId: string): Promise<void> {
+    await req(`/api/orgs/${encodeURIComponent(orgId)}/memberships/accept`, { method: 'POST', body: {} });
+  },
+  async declineInvitation(orgId: string): Promise<void> {
+    await req(`/api/me/invitations/${encodeURIComponent(orgId)}/decline`, { method: 'POST', body: {} });
+  },
+  async assetChecks(assetId: string): Promise<AssetChecks> {
+    return req<AssetChecks>(orgPath(`/assets/${encodeURIComponent(assetId)}/checks`), { quiet401: true });
   },
   async listReleases(): Promise<Release[]> {
     const items = await listAll<ServerRelease>(orgPath('/releases'));
@@ -583,13 +676,19 @@ export const remoteApi = {
     // 4) 서명한 신청서를 서버에도 기록 — 신청서 번호·문서 확인 코드가 남고 배급 계약서 검토가 시작된다
     const app = data.application;
     if (app) {
-      await req(orgPath(`/releases/${rel.id}/application`), {
-        method: 'POST',
-        body: {
-          application_no: app.no, form: app.form, content_hash: app.hash, signer_name: app.signerName,
-          signer_role: app.signerRole, agreements: app.agreements, signature: app.signature, submitted_at: app.submittedAt,
-        },
-      });
+      try {
+        await req(orgPath(`/releases/${rel.id}/application`), {
+          method: 'POST',
+          body: {
+            application_no: app.no, form: app.form, content_hash: app.hash, signer_name: app.signerName,
+            signer_role: app.signerRole, agreements: app.agreements, signature: app.signature, submitted_at: app.submittedAt,
+          },
+        });
+      } catch (e) {
+        // 이미 서명(또는 종료)된 계약은 새 신청서로 바뀌지 않는다. 코드 재발급·3단계 재시도 뒤
+        // 다시 접수하면 이렇게 되는데, 접수 자체(3)는 이미 끝났으므로 오류로 보이지 않는다.
+        if (!(e instanceof ApiError && e.code === 'APPLICATION_DOCUMENT_FINAL')) throw e;
+      }
     }
     const fresh = await fetchRelease(rel.id);
     return { ...toSummary(fresh), updated_at: stampNow() };
@@ -600,6 +699,15 @@ export const remoteApi = {
   },
   async withdrawQuota(): Promise<WithdrawQuota> {
     return req<WithdrawQuota>(orgPath('/withdrawals'));
+  },
+  async takedownStatus(id: string): Promise<TakedownState> {
+    return req<TakedownState>(`${detailPath(id)}/takedown`, { quiet401: true });
+  },
+  async requestTakedown(id: string, reason: string): Promise<void> {
+    await req(`${detailPath(id)}/takedown`, { method: 'POST', body: { reason } });
+  },
+  async cancelTakedown(id: string): Promise<void> {
+    await req(`${detailPath(id)}/takedown/cancel`, { method: 'POST', body: {} });
   },
   async deleteRelease(id: string): Promise<void> {
     const rel = await fetchRelease(id);
@@ -612,15 +720,47 @@ export const remoteApi = {
     if (!contentType) {
       throw new ApiError(kind === 'AUDIO' ? '음원은 WAV, FLAC, ALAC(.m4a), AIFF, WavPack, TTA 파일만 올릴 수 있어요.' : kind === 'DOCUMENT' ? '서류는 PDF, JPG, PNG 파일만 올릴 수 있어요.' : '커버는 JPG 또는 PNG 파일만 올릴 수 있어요.', 400, 'UPLOAD_TYPE_UNSUPPORTED');
     }
-    const issued = await req<{ upload_session_id: string; asset_id: string; expected_key: string; grant: UploadGrant }>(orgPath('/uploads'), {
-      method: 'POST', body: { kind, size_bytes: file.size, content_type: contentType },
-    });
-    try {
-      await putToGrant(issued.grant, file, onProgress, signal);
-    } catch (e) {
-      // 올리다 실패하면 업로드 세션을 취소해 둔다 (자산으로 등록되지 않도록)
-      void req(orgPath(`/uploads/${issued.upload_session_id}/cancel`), { method: 'POST' }).catch(() => {});
-      throw e;
+    // 서버는 발급 후 10분(PUT 서명 유효) + 30분 동안 완료를 받는다 — 여유를 두고 그 안에서만 재시도
+    let completeBy = Date.now() + 38 * 60_000;
+    // 16 MiB보다 큰 음원은 조각으로 이어 올린다 (연결이 끊겨도 그 조각만 다시, 새로고침 뒤에도 이어서)
+    const resumable = kind === 'AUDIO' && file.size > MULTIPART_MIN_BYTES;
+    let issued: { upload_session_id: string; asset_id: string; expected_key: string; grant?: UploadGrant; multipart?: multipart.MultipartIssued['multipart']; expires_at?: string };
+    const saved = resumable ? multipart.savedSession(file) : null;
+    if (saved) {
+      issued = { upload_session_id: saved.session, asset_id: saved.assetId, expected_key: saved.key, expires_at: saved.expiresAt, multipart: { part_size: 0, part_count: 0 } };
+    } else {
+      try {
+        issued = await req(orgPath('/uploads'), { method: 'POST', body: { kind, size_bytes: file.size, content_type: contentType, resumable } });
+      } catch (e) {
+        // 저장소가 조각 업로드를 지원하지 않으면 한 번에 올린다
+        if (!(resumable && e instanceof ApiError && e.code === 'UPLOAD_MULTIPART_UNSUPPORTED')) throw e;
+        issued = await req(orgPath('/uploads'), { method: 'POST', body: { kind, size_bytes: file.size, content_type: contentType } });
+      }
+    }
+    if (issued.multipart) {
+      if (!saved) multipart.rememberSession(file, issued as multipart.MultipartIssued);
+      if (issued.expires_at) completeBy = Date.parse(issued.expires_at) + 28 * 60_000;
+      try {
+        await multipart.uploadParts(file, issued.upload_session_id, onProgress, signal);
+      } catch (e) {
+        if (e instanceof ApiError && e.code === 'ABORTED') {
+          multipart.forgetSession(file);
+          void req(orgPath(`/uploads/${issued.upload_session_id}/cancel`), { method: 'POST' }).catch(() => {});
+        } else if (saved && e instanceof ApiError && (e.status === 404 || e.status === 409)) {
+          // 이어 올리려던 세션이 닫혔다 (만료·취소) — 처음부터 다시
+          multipart.forgetSession(file);
+          return remoteApi.uploadFile(file, kind, onProgress, signal);
+        }
+        throw e;
+      }
+    } else {
+      try {
+        await putToGrant(issued.grant!, file, onProgress, signal);
+      } catch (e) {
+        // 올리다 실패하면 업로드 세션을 취소해 둔다 (자산으로 등록되지 않도록)
+        void req(orgPath(`/uploads/${issued.upload_session_id}/cancel`), { method: 'POST' }).catch(() => {});
+        throw e;
+      }
     }
     for (let attempt = 0; ; attempt++) {
       if (signal?.aborted) throw new ApiError('업로드를 취소했어요.', 0, 'ABORTED');
@@ -628,14 +768,21 @@ export const remoteApi = {
         const done = await req<{ asset_id: string; sha256?: string; detected_container?: string }>(orgPath(`/uploads/${issued.upload_session_id}/complete`), {
           method: 'POST', body: { asset_id: issued.asset_id, expected_key: issued.expected_key }, timeoutMs: 240000, signal, quietServer: true,
         });
+        if (issued.multipart) multipart.forgetSession(file);
         return { assetId: done.asset_id, sha256: done.sha256, container: done.detected_container };
       } catch (error) {
         // Capacity retries reuse the uploaded object and session. Never PUT
         // the audio again or retry permanent validation failures.
-        if (!(error instanceof ApiError) || error.code !== 'UPLOAD_BUSY' || attempt >= 47) throw error;
+        // Wait out capacity until the server's completion window closes (BE-011).
+        // The server already queues conversions, so a busy answer means every
+        // completion slot is downloading or storing — seconds, not minutes.
+        // Spread the retries (jitter, growing to 10s) so many waiting files do
+        // not return in lockstep; a busy answer does not count against the quota.
+        const wait = Math.min(10_000, 2000 * 1.4 ** attempt) + Math.random() * 1000;
+        if (!(error instanceof ApiError) || error.code !== 'UPLOAD_BUSY' || Date.now() + wait > completeBy) throw error;
         await new Promise<void>((resolve, reject) => {
           const abort = () => { clearTimeout(timer); reject(new ApiError('업로드를 취소했어요.', 0, 'ABORTED')); };
-          const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, 5000);
+          const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, wait);
           signal?.addEventListener('abort', abort, { once: true });
           if (signal?.aborted) abort();
         });

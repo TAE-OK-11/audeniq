@@ -30,6 +30,8 @@ GRANT SELECT ON operations.allowed_transitions TO audeniq_api;
 GRANT INSERT ON catalog.consent_packages,catalog.application_revisions TO audeniq_api;
 -- Pre-submit / submission status read stage results and package summaries.
 GRANT SELECT ON operations.check_results TO audeniq_api;
+-- 업로드한 곡의 사전 심사 결과를 곡별로 보여 준다 (GET /assets/{id}/checks, 읽기만)
+GRANT SELECT ON operations.asset_qc_results TO audeniq_api;
 GRANT USAGE ON SCHEMA distribution TO audeniq_api;
 GRANT SELECT ON distribution.validation_packages,distribution.verification_packages TO audeniq_api;
 -- Review overrides (POST /reviews/overrides and the two-person approval
@@ -48,16 +50,57 @@ GRANT USAGE ON SCHEMA portal TO audeniq_api;
 GRANT SELECT,INSERT,UPDATE ON portal.artist_profiles,portal.payout_accounts,portal.inquiries,portal.documents TO audeniq_api;
 GRANT SELECT,INSERT ON portal.inquiry_messages,portal.notification_reads,portal.release_applications,portal.payout_requests TO audeniq_api;
 GRANT SELECT ON portal.notifications TO audeniq_api;
+-- 알림 메일 (0112): 사용자별 수신 설정, 보낼 메일 대기열 (넣기는 트리거가, 보내기·결과 기록은 API가)
+GRANT SELECT,INSERT,UPDATE ON portal.notification_settings TO audeniq_api;
+GRANT SELECT,UPDATE,DELETE ON portal.notification_emails TO audeniq_api;
 -- 권리 서류 서명 요청 (0071): 이벤트는 추가만
 GRANT SELECT,INSERT,UPDATE ON portal.signing_requests TO audeniq_api;
 GRANT SELECT,INSERT ON portal.signing_events TO audeniq_api;
+-- 발매 중단 요청 (0111): 아티스트가 접수·취소하고, 배급 담당 스태프가 승인·반려한다
+GRANT SELECT,INSERT,UPDATE ON portal.takedown_requests TO audeniq_api;
+-- 권리침해 신고 (0114): 누구나 접수, 스태프 처리, 아티스트 소명
+GRANT SELECT,INSERT,UPDATE ON portal.infringement_claims TO audeniq_api;
+-- 플레이리스트 피칭 (0116): 아티스트 접수·철회, 스태프 진행 기록
+GRANT SELECT,INSERT,UPDATE ON portal.playlist_pitches TO audeniq_api;
+-- 스마트링크 (0117): 공개 발매 페이지와 일별 조회·클릭 수
+GRANT SELECT,INSERT,UPDATE ON portal.smart_links, portal.smart_link_stats TO audeniq_api;
+-- 플랫폼 요청 (0120): 아티스트 프로필·Content ID 요청과 처리 기록, 발매별 Content ID 상태
+GRANT SELECT,INSERT,UPDATE ON portal.platform_requests, portal.content_id_status TO audeniq_api;
+GRANT SELECT,INSERT ON portal.platform_request_events TO audeniq_api;
+-- 계약 종료·권리 만료 (0121): 예약·취소·최종 정산 기록. 배송 작업자는 종료 여부만 함수로 본다
+GRANT SELECT,INSERT,UPDATE ON portal.release_terms, portal.org_contract_terms TO audeniq_api;
+-- 아티스트 플랫폼 페이지 (0122): 신청·아티스트·스태프가 기록하고 다음 신청·배송이 재사용
+GRANT SELECT,INSERT,UPDATE ON catalog.artist_platform_pages TO audeniq_api;
+GRANT SELECT ON catalog.artist_platform_pages TO audeniq_worker;
+-- 발매 알림 (0118): 팬 이메일은 봉인해 두고 보내면 바로 지운다. 끝난 줄은 정리
+GRANT SELECT,INSERT,UPDATE,DELETE ON portal.release_alerts TO audeniq_api;
+-- 발매 후 정보 수정 (0115): 크레딧·장르만. 승인되면 수정 메시지 작업을 넣는다
+GRANT SELECT,INSERT,UPDATE ON portal.metadata_corrections TO audeniq_api;
+GRANT USAGE ON SCHEMA portal TO audeniq_worker;
+GRANT SELECT ON portal.metadata_corrections TO audeniq_worker;
 GRANT USAGE ON SEQUENCE portal.signing_events_id_seq TO audeniq_api;
 -- 계정 정보 (0083): 본인인증 결과와 해외 납세 의무 (사용자 본인만)
 GRANT SELECT,INSERT,UPDATE ON portal.account_identities,portal.tax_residencies TO audeniq_api;
 -- 휴대폰 번호 등록·비밀번호 재설정 문자 인증 (0084)
 GRANT SELECT,INSERT,UPDATE ON portal.account_phones,identity.sms_challenges TO audeniq_api;
+-- 스태프 TOTP (0103): API가 등록·확인한다. 초기화는 owner CLI(audeniq-admin staff reset-mfa)만.
+GRANT SELECT,INSERT,UPDATE ON identity.staff_mfa TO audeniq_api;
+-- 패스키 (0104)
+GRANT SELECT,INSERT,UPDATE,DELETE ON identity.passkeys,identity.webauthn_challenges TO audeniq_api;
+-- Google·Apple 로그인 (0105)
+GRANT SELECT,INSERT,UPDATE,DELETE ON identity.oauth_identities,identity.oauth_states TO audeniq_api;
+-- 출력물 식별 기록 (0107): 추가·조회만
+GRANT SELECT,INSERT ON operations.print_stamps TO audeniq_api;
+-- 문서 봉인·약관 동의 (0108): API가 서명·접수 트랜잭션 안에서 추가한다. 원본 보관·고정은 owner CLI만.
+GRANT SELECT,INSERT ON operations.document_seals,identity.terms_acceptances TO audeniq_api;
+GRANT USAGE ON SEQUENCE operations.document_seals_seq_seq TO audeniq_api;
 -- 송금 실행 전 출금 취소 (0085): 상태 전이 하나만 하는 함수
 GRANT EXECUTE ON FUNCTION finance.cancel_unsent_payout(uuid, uuid) TO audeniq_api;
+-- 공동작업 수익 분배 (0119): 아티스트가 분배 비율·초대를 관리하고, 공동작업자가 수락·거절한다.
+-- 보류 금액 이동은 원장 쓰기 권한 없이 이 함수 하나로만 한다. 정산 반영(posting)은 owner CLI.
+GRANT SELECT,INSERT,UPDATE ON portal.split_shares TO audeniq_api;
+GRANT SELECT ON finance.split_allocations, finance.royalty_postings TO audeniq_api;
+GRANT EXECUTE ON FUNCTION finance.settle_split_share(uuid) TO audeniq_api;
 GRANT USAGE ON SCHEMA finance TO audeniq_api;
 GRANT SELECT ON finance.ledger_transactions,finance.ledger_entries,finance.payout_orders,finance.royalty_reports,finance.report_lines,finance.finance_holds TO audeniq_api;
 -- DSP registry + delivery staging (0042/0043): artists read their release's
@@ -111,8 +154,13 @@ GRANT SELECT,INSERT ON catalog.asset_fingerprints TO audeniq_worker;
 -- narrow SECURITY DEFINER function; the table itself stays org-scoped.
 GRANT EXECUTE ON FUNCTION catalog.fingerprints_outside_org(uuid, smallint) TO audeniq_worker;
 GRANT EXECUTE ON FUNCTION catalog.fingerprints_outside_org_page(uuid, smallint, uuid, integer) TO audeniq_worker;
+GRANT EXECUTE ON FUNCTION catalog.fingerprints_outside_org_since(uuid, smallint, timestamptz, timestamptz, uuid, integer) TO audeniq_worker;
+-- 0109: incremental similarity scan state (other orgs' asset ids among the matches: worker only).
+GRANT SELECT,INSERT,UPDATE ON operations.fingerprint_scans TO audeniq_worker;
+GRANT EXECUTE ON FUNCTION catalog.fingerprints_still_present(smallint, uuid[]) TO audeniq_worker;
 -- E-0 holds delivery until the release's agreement is signed (portal stays ungranted).
 GRANT EXECUTE ON FUNCTION execution.agreement_signed(uuid, uuid) TO audeniq_worker;
+GRANT EXECUTE ON FUNCTION portal.release_term_ended(uuid, uuid) TO audeniq_worker;
 -- 0063: a delivery job is only leased while staff approval of its route holds.
 GRANT EXECUTE ON FUNCTION execution.delivery_gate_open(uuid, text) TO audeniq_worker;
 GRANT INSERT ON catalog.application_revisions,catalog.consent_packages TO audeniq_worker;
@@ -138,6 +186,8 @@ GRANT SELECT,INSERT ON operations.check_results TO audeniq_worker;
 GRANT SELECT,INSERT ON operations.asset_qc_results TO audeniq_worker;
 GRANT SELECT ON operations.allowed_transitions TO audeniq_worker;
 GRANT INSERT ON rights.review_overrides,rights.rights_epochs TO audeniq_worker;
+-- Row locks need UPDATE; the worker share-locks the epoch only through 0088.
+GRANT EXECUTE ON FUNCTION rights.share_lock_epoch(uuid, uuid) TO audeniq_worker;
 GRANT INSERT ON finance.ledger_transactions,finance.ledger_entries,finance.commercial_split_snapshots TO audeniq_worker;
 GRANT SELECT,INSERT,UPDATE ON finance.payout_orders,finance.finance_holds TO audeniq_worker;
 -- Stage packages, canonical releases and delivery evidence cannot be written by the Foundation API.

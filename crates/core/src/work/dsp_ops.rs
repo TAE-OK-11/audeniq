@@ -100,7 +100,7 @@ pub async fn overview(s: &AppState, h: &HeaderMap, q: OpsQuery) -> Result<Value>
                 .collect()
         })
         .unwrap_or_default();
-    let rels = crm::by_entities(&mut tx, "dsp", &codes).await?;
+    let rels = crm::by_entities(&s.payout_keys, &mut tx, "dsp", &codes).await?;
     let focus = q.dsp.as_deref().filter(|d| codes.iter().any(|c| c == d));
     let failures: Vec<Value> = match focus {
         Some(d) => sqlx::query_scalar(

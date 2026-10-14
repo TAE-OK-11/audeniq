@@ -100,6 +100,7 @@ impl HttpApiAdapter {
         let extras = Extras {
             genre: package.genre.clone(),
             label: package.label.clone(),
+            lyrics: package.lyrics.clone(),
         };
         let m = manifest::with_platform(
             manifest::release_json(
@@ -244,6 +245,12 @@ impl DspAdapter for HttpApiAdapter {
                 Ok(_) => SendOutcome::Accepted {
                     partner_message_id: id,
                 },
+                // A gateway 502/504 on the commit may follow a commit the
+                // partner already processed: unknown (reconcile), never a
+                // resend under a new key.
+                Err(HttpFailure::NotReceived(d)) if d == "HTTP 502" || d == "HTTP 504" => {
+                    SendOutcome::Unknown { detail: d }
+                }
                 Err(HttpFailure::NotReceived(d)) => Self::not_received(d),
                 Err(HttpFailure::Rejected { code, status }) => SendOutcome::Rejected {
                     code,

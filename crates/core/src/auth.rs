@@ -25,6 +25,62 @@ pub struct Actor {
 pub struct Credentials {
     pub email: String,
     pub password: String,
+    /// Sign-up: the terms version the person agreed to (required).
+    #[serde(default)]
+    pub terms_version: Option<String>,
+    /// Sign-up: the privacy notice version shown on the form.
+    #[serde(default)]
+    pub privacy_notice_version: Option<String>,
+}
+fn legal_version(v: Option<&str>) -> Result<Option<String>> {
+    match v.map(str::trim) {
+        None | Some("") => Ok(None),
+        Some(v)
+            if v.len() <= 60
+                && v.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b" ._-".contains(&b)) =>
+        {
+            Ok(Some(v.to_owned()))
+        }
+        Some(_) => Err(Error::Invalid),
+    }
+}
+/// Records (and seals) which terms and privacy notice versions a new
+/// account agreed to: evidence of consent kept on the server.
+pub(crate) async fn record_acceptance(
+    s: &AppState,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user: Uuid,
+    terms_version: &str,
+    privacy_notice_version: Option<&str>,
+    channel: &str,
+) -> Result<()> {
+    let terms = legal_version(Some(terms_version))?
+        .ok_or(Error::InvalidCode("TERMS_ACCEPTANCE_REQUIRED"))?;
+    let privacy = legal_version(privacy_notice_version)?;
+    for (doc, version) in [("TERMS", Some(terms)), ("PRIVACY_NOTICE", privacy)] {
+        let Some(version) = version else { continue };
+        let id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO identity.terms_acceptances(id,user_id,doc,version,channel) VALUES($1,$2,$3,$4,$5)",
+        )
+        .bind(id)
+        .bind(user)
+        .bind(doc)
+        .bind(&version)
+        .bind(channel)
+        .execute(&mut **tx)
+        .await?;
+        crate::seal::seal(
+            tx,
+            &s.payout_keys,
+            crate::seal::Kind::TermsAcceptance,
+            id,
+            "ACCEPTED",
+        )
+        .await?;
+    }
+    Ok(())
 }
 pub fn hash_token(s: &str) -> Vec<u8> {
     token_digest(s).to_vec()
@@ -138,9 +194,28 @@ pub async fn create_resource(
     sqlx::query("INSERT INTO identity.resource_acl(org_id,resource_id,principal_party_id,action) VALUES($1,$2,$3,'read'),($1,$2,$3,'write')").bind(org).bind(id).bind(a.party).execute(&mut *c).await?;
     Ok(())
 }
+/// Keys the rate-limit bucket hashes: bucket names carry emails, phone
+/// numbers and IPs, which an unkeyed hash would not protect. Set once by
+/// `AppState::new` from the service secret.
+static RATE_KEY: std::sync::OnceLock<[u8; 32]> = std::sync::OnceLock::new();
+pub(crate) fn init_rate_key(secret: &str) {
+    let _ = RATE_KEY.set(rate_mac(secret.as_bytes(), b"audeniq-rate-limit-key-v1"));
+}
+fn rate_mac(key: &[u8], msg: &[u8]) -> [u8; 32] {
+    use hmac::{Hmac, KeyInit, Mac};
+    let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(key).expect("HMAC key");
+    mac.update(msg);
+    mac.finalize().into_bytes().into()
+}
+pub fn bucket_hash(key: &str) -> Vec<u8> {
+    match RATE_KEY.get() {
+        Some(k) => rate_mac(k, key.as_bytes()).to_vec(),
+        None => hash_token(key),
+    }
+}
 pub async fn rate(pool: &PgPool, key: &str, limit: i32) -> Result<()> {
     let n:i32=sqlx::query_scalar("INSERT INTO identity.auth_limits(bucket_hash,attempts) VALUES($1,1) ON CONFLICT(bucket_hash) DO UPDATE SET attempts=CASE WHEN identity.auth_limits.window_start<now()-interval '15 minutes' THEN 1 ELSE identity.auth_limits.attempts+1 END,window_start=CASE WHEN identity.auth_limits.window_start<now()-interval '15 minutes' THEN now() ELSE identity.auth_limits.window_start END RETURNING attempts")
- .bind(hash_token(key)).fetch_one(pool).await?;
+ .bind(bucket_hash(key)).fetch_one(pool).await?;
     if n > limit {
         Err(Error::RateLimited)
     } else {
@@ -208,6 +283,12 @@ async fn rate_auth(
     }
     rate(pool, &format!("{action}:acct:{email}"), per_account).await
 }
+/// Register: a new password must also pass the weak-password rules.
+fn new_credentials(c: &Credentials) -> Result<String> {
+    let email = credentials(c)?;
+    crate::password_policy::check(&c.password, &email)?;
+    Ok(email)
+}
 fn credentials(c: &Credentials) -> Result<String> {
     let email = c.email.trim().to_lowercase();
     if email.len() > 254
@@ -220,8 +301,17 @@ fn credentials(c: &Credentials) -> Result<String> {
     }
     Ok(email)
 }
-fn hash_password(password: String) -> Result<String> {
-    Argon2::default()
+/// Argon2id with the OWASP / RFC 9106 low-memory profile: 19 MiB, 2 passes,
+/// 1 lane (~20 ms on one core). Pinned here so a library default change
+/// cannot silently alter stored hashes; verification reads the parameters
+/// from each stored hash, so older hashes keep verifying. Concurrency is
+/// bounded by `password_slots` to keep memory and CPU predictable.
+fn argon2() -> Argon2<'static> {
+    let params = argon2::Params::new(19 * 1024, 2, 1, None).expect("valid Argon2 params");
+    Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params)
+}
+pub(crate) fn hash_password(password: String) -> Result<String> {
+    argon2()
         // Random 16-byte salt from the OS RNG (password-hash 0.6 default).
         .hash_password(password.as_bytes())
         .map(|h| h.to_string())
@@ -232,12 +322,8 @@ pub async fn password_hash(password: String) -> Result<String> {
         .await
         .map_err(|_| Error::Internal)?
 }
-fn verify_password(password: &str, hash: &str) -> bool {
-    PasswordHash::new(hash).is_ok_and(|h| {
-        Argon2::default()
-            .verify_password(password.as_bytes(), &h)
-            .is_ok()
-    })
+pub(crate) fn verify_password(password: &str, hash: &str) -> bool {
+    PasswordHash::new(hash).is_ok_and(|h| argon2().verify_password(password.as_bytes(), &h).is_ok())
 }
 #[cfg(test)]
 async fn verify(password: String, hash: String) -> bool {
@@ -245,9 +331,75 @@ async fn verify(password: String, hash: String) -> bool {
         .await
         .unwrap_or(false)
 }
+/// Creates a user with a personal workspace inside `tx`. `Conflict` when the
+/// email already has an account (checked across key versions under a lock).
+pub(crate) async fn create_account(
+    s: &AppState,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    email: &str,
+    password_hash: &str,
+    reason: &str,
+    h: &HeaderMap,
+) -> Result<(Uuid, Uuid, Uuid)> {
+    let user = Uuid::new_v4();
+    let org = Uuid::new_v4();
+    let party = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO identity.orgs(id,name,kind) VALUES($1,'Personal workspace','PERSONAL')",
+    )
+    .bind(org)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query("INSERT INTO identity.parties(id,org_id,kind,display_name) VALUES($1,$2,'PERSON','Account holder')").bind(party).bind(org).execute(&mut **tx).await?;
+    // The email is stored sealed. Its blind index is unique per key version,
+    // so sign-ups for one address are serialized and checked across versions.
+    let (email_cipher, email_bidx) = crate::pii::seal_email(&s.payout_keys, user, email)?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+        .bind(&email_bidx)
+        .execute(&mut **tx)
+        .await?;
+    let taken: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM identity.users WHERE email=$1 OR email_bidx=ANY($2))",
+    )
+    .bind(email)
+    .bind(crate::pii::email_indexes(&s.payout_keys, email))
+    .fetch_one(&mut **tx)
+    .await?;
+    if taken {
+        return Err(Error::Conflict);
+    }
+    sqlx::query("INSERT INTO identity.users(id,email_cipher,email_bidx,password_hash,party_id) VALUES($1,$2,$3,$4,$5)")
+        .bind(user)
+        .bind(email_cipher)
+        .bind(email_bidx)
+        .bind(password_hash)
+        .bind(party)
+        .execute(&mut **tx)
+        .await?;
+    sqlx::query("INSERT INTO identity.memberships(org_id,user_id,role) VALUES($1,$2,'OWNER')")
+        .bind(org)
+        .bind(user)
+        .execute(&mut **tx)
+        .await?;
+    operations::audit(
+        tx,
+        Some(user),
+        Some(org),
+        Some(user),
+        "auth.register",
+        reason,
+        request_id(h),
+    )
+    .await?;
+    Ok((user, org, party))
+}
 pub async fn register(s: &AppState, h: &HeaderMap, input: Credentials) -> Result<Json<Value>> {
     origin(h, &s.config)?;
-    let email = credentials(&input)?;
+    let email = new_credentials(&input)?;
+    // No account without the terms agreed (recorded and sealed below).
+    let terms_version = legal_version(input.terms_version.as_deref())?
+        .ok_or(Error::InvalidCode("TERMS_ACCEPTANCE_REQUIRED"))?;
+    let privacy_notice_version = input.privacy_notice_version.clone();
     rate_auth(
         &s.pool,
         h,
@@ -269,36 +421,14 @@ pub async fn register(s: &AppState, h: &HeaderMap, input: Credentials) -> Result
         .map_err(|_| Error::Internal)?;
     let hash = hash?;
     let mut tx = s.pool.begin().await?;
-    let user = Uuid::new_v4();
-    let org = Uuid::new_v4();
-    let party = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO identity.orgs(id,name,kind) VALUES($1,'Personal workspace','PERSONAL')",
-    )
-    .bind(org)
-    .execute(&mut *tx)
-    .await?;
-    sqlx::query("INSERT INTO identity.parties(id,org_id,kind,display_name) VALUES($1,$2,'PERSON','Account holder')").bind(party).bind(org).execute(&mut *tx).await?;
-    sqlx::query("INSERT INTO identity.users(id,email,password_hash,party_id) VALUES($1,$2,$3,$4)")
-        .bind(user)
-        .bind(email)
-        .bind(hash)
-        .bind(party)
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query("INSERT INTO identity.memberships(org_id,user_id,role) VALUES($1,$2,'OWNER')")
-        .bind(org)
-        .bind(user)
-        .execute(&mut *tx)
-        .await?;
-    operations::audit(
+    let (user, org, party) = create_account(s, &mut tx, &email, &hash, "SELF_REGISTER", h).await?;
+    record_acceptance(
+        s,
         &mut tx,
-        Some(user),
-        Some(org),
-        Some(user),
-        "auth.register",
-        "SELF_REGISTER",
-        request_id(h),
+        user,
+        &terms_version,
+        privacy_notice_version.as_deref(),
+        "SIGNUP",
     )
     .await?;
     tx.commit().await?;
@@ -329,10 +459,13 @@ pub async fn login(
         .acquire_owned()
         .await
         .map_err(|_| Error::Internal)?;
-    let row = sqlx::query("SELECT id,password_hash,status FROM identity.users WHERE email=$1")
-        .bind(email)
-        .fetch_optional(&s.pool)
-        .await?;
+    let row = sqlx::query(
+        "SELECT id,password_hash,status FROM identity.users WHERE email=$1 OR email_bidx=ANY($2)",
+    )
+    .bind(&email)
+    .bind(crate::pii::email_indexes(&s.payout_keys, &email))
+    .fetch_optional(&s.pool)
+    .await?;
     let hash = row
         .as_ref()
         .map(|r| r.get::<String, _>("password_hash"))
@@ -374,18 +507,31 @@ pub async fn login(
     if current.as_deref() != Some(hash.as_str()) {
         return Err(Error::Unauthorized);
     }
+    issue_session(s, tx, h, user, "PASSWORD", false).await
+}
+/// Creates a session for a user whose credential was just verified inside
+/// `tx`. `mfa`: the credential itself was multi-factor (a passkey with user
+/// verification), so the session counts as second-factor verified.
+pub(crate) async fn issue_session(
+    s: &AppState,
+    mut tx: sqlx::Transaction<'_, sqlx::Postgres>,
+    h: &HeaderMap,
+    user: Uuid,
+    method: &'static str,
+    mfa: bool,
+) -> Result<(HeaderMap, Json<Value>)> {
     let token = random_token();
     let token_hash = hash_token(&token);
     let csrf = session_csrf(&s.config.service_secret, &token_hash);
-    sqlx::query("INSERT INTO identity.sessions(token_hash,user_id,csrf_hash,expires_at) VALUES($1,$2,$3,now()+make_interval(secs=>$4))")
- .bind(&token_hash).bind(user).bind(hash_token(&csrf)).bind(s.config.session_seconds as f64).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO identity.sessions(token_hash,user_id,csrf_hash,expires_at,mfa_at) VALUES($1,$2,$3,now()+make_interval(secs=>$4),CASE WHEN $5 THEN now() END)")
+ .bind(&token_hash).bind(user).bind(hash_token(&csrf)).bind(s.config.session_seconds as f64).bind(mfa).execute(&mut *tx).await?;
     operations::audit(
         &mut tx,
         Some(user),
         None,
         Some(user),
         "auth.login",
-        "PASSWORD",
+        method,
         request_id(h),
     )
     .await?;
@@ -576,6 +722,8 @@ pub async fn change_password(
         return Err(Error::Invalid);
     }
     rate(&s.pool, &format!("password:{}", a.user), 5).await?;
+    let email = crate::pii::user_email(&s.payout_keys, &s.pool, a.user).await?;
+    crate::password_policy::check(&i.new_password, &email)?;
     let permit = s
         .password_slots
         .clone()

@@ -12,7 +12,7 @@ import { EMPTY_ACCOUNT, setAccount } from './account';
 import { noticesStore } from './support';
 import { ticketsStore } from './tickets';
 import { setDocs } from './docs';
-import { financeStore, payoutsStore, statementsStore } from './settlement';
+import { financeStore, payoutsStore, statementsNextStore, statementsStore } from './settlement';
 
 export const PORTAL_REFRESH_EVENT = 'aq:portal-refresh';
 
@@ -34,7 +34,15 @@ export async function refreshDocs() {
 export async function refreshFinance() {
   const f = await quiet(portal.fetchFinance());
   if (!f) return;
-  statementsStore.set(f.statements);
+  // '더 보기'로 받아 둔 이전 쪽은 주기적 새로고침에도 남긴다 (첫 쪽만 새로 받는다)
+  const loadedMore = statementsNextStore.get() !== f.statementsNext && statementsStore.get().length > f.statements.length;
+  if (loadedMore) {
+    const fresh = new Set(f.statements.map(x => x.id));
+    statementsStore.set(old => [...f.statements, ...old.filter(x => !fresh.has(x.id))]);
+  } else {
+    statementsStore.set(f.statements);
+    statementsNextStore.set(f.statementsNext);
+  }
   payoutsStore.set(f.payouts);
   financeStore.set({ ...f.summary, loaded: true });
 }
@@ -69,15 +77,25 @@ export function clearPortal() {
   ticketsStore.set([]);
   setDocs([]);
   statementsStore.set([]);
+  statementsNextStore.set(null);
   payoutsStore.set([]);
   financeStore.set({ payable: 0, pending: 0, available: 0, minimum: 10000, loaded: false });
 }
 
-/** 새로 받은 알림 중 처음 보는 읽지 않은 것을 알린다 — 다른 탭이면 운영체제 알림, 보고 있으면 토스트 */
-async function refreshNotificationsAndAlert() {
+/** 알림을 새로 받고 처음 보는 읽지 않은 알림을 돌려준다.
+ *  새 알림은 대개 담당자 처리(심사 승인 → 계약서 서명 가능, 서류 요청·승인)라서 서류 목록도 새로 받는다.
+ *  서류를 로그인할 때만 받으면 승인 뒤에도 계약서가 ‘검토 중’으로 남아 서명할 수 없다. */
+async function refreshNotificationsAndDocs() {
   const before = new Set(noticesStore.get().map(n => n.id));
   await refreshNotifications();
   const fresh = noticesStore.get().filter(n => !n.read && !before.has(n.id));
+  if (fresh.length) void refreshDocs();
+  return fresh;
+}
+
+/** 새로 받은 알림 중 처음 보는 읽지 않은 것을 알린다 — 다른 탭이면 운영체제 알림, 보고 있으면 토스트 */
+async function refreshNotificationsAndAlert() {
+  const fresh = await refreshNotificationsAndDocs();
   for (const n of fresh.slice(0, 3)) {
     if (!systemAlert(n.title, n.detail, n.link, `notice-${n.id}`)) {
       window.dispatchEvent(new CustomEvent(LIVE_NOTICE_EVENT, { detail: n }));
@@ -97,14 +115,15 @@ export function startPortalSync(): () => void {
         window.dispatchEvent(new CustomEvent(INQUIRY_CHANGED_EVENT, { detail: { inquiryId: d.inquiry_id ?? null } }));
       },
     },
-    resync: () => { void refreshNotifications(); void refreshTickets(); },
+    // 다시 연결되면 놓친 담당자 처리가 있을 수 있어 서류도 새로 받는다
+    resync: () => { void refreshNotifications(); void refreshTickets(); void refreshDocs(); },
   }) : () => {};
   // 탭·앱을 자주 오가도 알림 요청은 15초에 한 번만 (Worker·API 호출 절약)
   let last = Date.now();
   const refresh = () => {
     if (Date.now() - last < 15_000) return;
     last = Date.now();
-    void refreshNotifications();
+    void refreshNotificationsAndDocs();
   };
   const timer = window.setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, 60_000);
   const onFocus = refresh;

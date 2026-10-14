@@ -161,3 +161,149 @@ async fn expired_grant_is_refused() {
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     assert_eq!(put(&grant.url, &grant, body, None).await, 403);
 }
+
+/// `audeniq-admin storage probe` against a store that enforces everything
+/// uploads rely on: signed single-use PUT, metadata, conditional copy.
+#[tokio::test]
+async fn probe_reports_a_store_fit_for_uploads() {
+    let Some(s) = store() else {
+        eprintln!("S3_TEST_ENDPOINT not set; skipped");
+        return;
+    };
+    let r = s.probe(None).await;
+    assert_eq!(r["ok"], true, "{r}");
+    assert_eq!(r["checks"]["second_put"], 412, "{r}");
+    assert_eq!(r["checks"]["metadata"], true, "{r}");
+    assert_eq!(r["checks"]["copy"], true, "{r}");
+    assert_eq!(r["checks"]["copy_keeps_etag"], true, "{r}");
+    assert_eq!(r["warnings"][0], "CORS_NOT_CHECKED", "{r}");
+}
+
+/// The archive probe notices a bucket that lets originals be deleted.
+#[tokio::test]
+async fn archive_probe_flags_a_bucket_without_retention() {
+    let Some(s) = store() else {
+        eprintln!("S3_TEST_ENDPOINT not set; skipped");
+        return;
+    };
+    let r = s.probe_archive().await;
+    assert_eq!(r["checks"]["read_back"], true, "{r}");
+    assert_eq!(r["ok"], false, "{r}");
+    assert_eq!(r["problems"][0], "ARCHIVE_NOT_WORM", "{r}");
+}
+
+/// Upload completion reads the quarantine object pinned to the ETag its HEAD
+/// saw (no server-side copy first): any other version is refused.
+#[tokio::test]
+async fn completion_download_is_pinned_to_the_seen_etag() {
+    let Some(s) = store() else {
+        eprintln!("S3_TEST_ENDPOINT not set; skipped");
+        return;
+    };
+    let key = format!("quarantine/test/{}", uuid::Uuid::new_v4());
+    let body = vec![5u8; 2048];
+    let grant = s
+        .presign_put(
+            &key,
+            body.len() as i64,
+            "audio/flac",
+            "n",
+            Utc::now() + Duration::minutes(5),
+        )
+        .await
+        .unwrap();
+    assert_eq!(put(&grant.url, &grant, body.clone(), None).await, 200);
+    let meta = s.head(&key).await.unwrap().unwrap();
+    let dir = std::env::temp_dir().join(format!("aq-pin-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let dest = dir.join("src");
+    let d = s
+        .download_version_to(&key, &dest, body.len() as u64, &meta.etag)
+        .await
+        .unwrap();
+    assert_eq!(d.size, body.len() as u64);
+    assert_eq!(std::fs::read(&dest).unwrap(), body);
+    assert!(matches!(
+        s.download_version_to(&key, &dest, body.len() as u64, "\"0000\"")
+            .await,
+        Err(audeniq_core::error::Error::Conflict)
+    ));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// Resumable masters: the server starts a multipart upload, the device PUTs
+/// each part through its own signed URL (exact size), the server lists what
+/// arrived and completes it. The finished object carries the session's
+/// content type and nonce, so completion's checks are the same as for a
+/// single PUT. A part of the wrong size is refused by the store.
+#[tokio::test]
+async fn multipart_upload_resumes_from_the_listed_parts() {
+    let Some(s) = store() else {
+        eprintln!("S3_TEST_ENDPOINT not set; skipped");
+        return;
+    };
+    let id = uuid::Uuid::new_v4();
+    let key = format!("quarantine/test/{id}");
+    let nonce = id.to_string();
+    let part_size = 5 * 1024 * 1024;
+    let body: Vec<u8> = (0..(part_size + 1234)).map(|i| (i % 251) as u8).collect();
+    let upload = s.create_multipart(&key, "audio/wav", &nonce).await.unwrap();
+    let expires = Utc::now() + Duration::minutes(15);
+    // Part 1, then "the browser reloads": the list says what is already there.
+    let g1 = s
+        .presign_part(&key, &upload, 1, part_size as i64, expires)
+        .await
+        .unwrap();
+    assert_eq!(
+        put(&g1.url, &g1, body[..part_size].to_vec(), None).await,
+        200
+    );
+    let listed = s.list_parts(&key, &upload).await.unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!((listed[0].number, listed[0].size), (1, part_size as i64));
+    // A part URL is bound to its size.
+    let g2 = s
+        .presign_part(&key, &upload, 2, 1234, expires)
+        .await
+        .unwrap();
+    let mut tampered = g2.url.clone();
+    tampered.push('x');
+    assert_ne!(
+        put(&tampered, &g2, body[part_size..].to_vec(), None).await,
+        200
+    );
+    let too_big = reqwest::Client::new()
+        .put(&g2.url)
+        .body(vec![0u8; 2000])
+        .send()
+        .await
+        .unwrap()
+        .status()
+        .as_u16();
+    assert_ne!(too_big, 200, "a part of another size is refused");
+    assert_eq!(
+        put(&g2.url, &g2, body[part_size..].to_vec(), None).await,
+        200
+    );
+    let parts = s.list_parts(&key, &upload).await.unwrap();
+    assert_eq!(
+        parts.iter().map(|p| p.number).collect::<Vec<_>>(),
+        vec![1, 2]
+    );
+    s.complete_multipart(&key, &upload, &parts).await.unwrap();
+    let meta = s.head(&key).await.unwrap().expect("completed object");
+    assert_eq!(meta.size, body.len() as i64);
+    assert_eq!(meta.content_type, "audio/wav");
+    assert_eq!(meta.nonce, nonce);
+    assert_eq!(s.get(&key).await.unwrap(), body);
+    // Once completed, the upload id takes no more parts.
+    let late = s.presign_part(&key, &upload, 3, 10, expires).await.unwrap();
+    assert_ne!(put(&late.url, &late, vec![1u8; 10], None).await, 200);
+
+    // An abandoned upload is aborted and then unknown.
+    let key2 = format!("quarantine/test/{}", uuid::Uuid::new_v4());
+    let upload2 = s.create_multipart(&key2, "audio/flac", "n").await.unwrap();
+    s.abort_multipart(&key2, &upload2).await.unwrap();
+    assert!(s.list_parts(&key2, &upload2).await.is_err());
+    s.abort_multipart(&key2, &upload2).await.unwrap();
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { correctionWhere, fixPath, resolveCorrection, splitCorrections, WIZ_STEP } from './corrections';
+import { correctionWhere, fixPath, parseStaffFix, resolveCorrection, splitCorrections, WIZ_STEP } from './corrections';
 
 describe('보완 요청 → 신청서 위치', () => {
   it('커버·크레딧·발매일 요청을 해당 단계와 입력칸으로 연결한다', () => {
@@ -34,5 +34,16 @@ describe('splitCorrections', () => {
     expect(items.map(c => c.code)).toEqual(['IMAGE_TOO_SMALL', 'S2_META_CREDITS']);
     expect(note).toBe('두 항목만 고쳐 주세요.');
     expect(splitCorrections(undefined)).toEqual({ items: [], note: '' });
+  });
+});
+
+describe('추가 서류 첨부 요청', () => {
+  it('서버가 만든 서류 요청을 읽고, 보완하기는 신청서가 아니라 그 서류의 첨부 창으로 간다', () => {
+    const fix = parseStaffFix('FIX_DOCUMENT@doc-1');
+    expect(fix).toEqual({ code: 'FIX_DOCUMENT', documentId: 'doc-1' });
+    expect(fixPath('rel-1', { ...fix!, message: '샘플 사용 허락서' })).toBe('/rights?doc=doc-1');
+    expect(fixPath('rel-1', { code: 'FIX_DOCUMENT', message: '' })).toBe('/rights');
+    // 일반 보완은 그대로 신청서 수정으로
+    expect(fixPath('rel-1', { code: 'FIX_TITLE', message: '' })).toBe('/upload?edit=rel-1&fix=FIX_TITLE');
   });
 });

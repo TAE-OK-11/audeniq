@@ -47,7 +47,7 @@ function TicketThread({ ticket, onClosed }: { ticket: Ticket; onClosed: () => vo
       reload();
       void refreshTickets();
     } catch (err) {
-      toast(errorMessage(err, '메시지를 보내지 못했어요.'));
+      toast(errorMessage(err, '메시지를 보내지 못했어요.'), 'error');
     } finally {
       setBusy(false);
     }
@@ -61,7 +61,7 @@ function TicketThread({ ticket, onClosed }: { ticket: Ticket; onClosed: () => vo
       toast('문의를 종료했어요.');
       onClosed();
     } catch (err) {
-      toast(errorMessage(err, '문의를 종료하지 못했어요.'));
+      toast(errorMessage(err, '문의를 종료하지 못했어요.'), 'error');
     } finally {
       setBusy(false);
     }
@@ -100,7 +100,7 @@ const CATEGORIES = ['발매·심사', '수정·테이크다운', '정산·지급
 /** 발매 상세의 ‘문의로 취소 요청’ — 내용을 미리 채워 두어 누르기만 하면 되게 */
 interface TicketPreset { category: string; releaseId: string; subject: string; body: string }
 
-function TicketForm({ onSave, preset }: { onSave: (t: Omit<Ticket, 'id' | 'created' | 'status'>) => void; preset?: TicketPreset | null }) {
+function TicketForm({ onSave, preset }: { onSave: (t: Omit<Ticket, 'id' | 'created' | 'status'>) => Promise<boolean>; preset?: TicketPreset | null }) {
   const close = useModalClose();
   const toast = useToast();
   const { data: releases = [] } = useAsync(() => api.listReleases(), []);
@@ -112,15 +112,20 @@ function TicketForm({ onSave, preset }: { onSave: (t: Omit<Ticket, 'id' | 'creat
   useEffect(() => {
     if (!preset?.releaseId || subject !== preset.subject) return;
     const title = releases.find(r => r.id === preset.releaseId)?.title;
-    if (title) setSubject(`[발매 취소 요청] ${title}`);
+    if (title) setSubject(`${preset.subject} ${title}`);
   }, [releases]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const submit = (e: React.FormEvent) => {
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (busy) return;
     if (!subject.trim() || !body.trim()) { toast('제목과 내용을 입력해 주세요.'); return; }
     const rel = releases.find(r => r.id === releaseId);
-    onSave({ category, releaseId, releaseTitle: rel?.title ?? '', subject: subject.trim(), body: body.trim() });
-    close();
+    // 보내지 못했으면 작성한 내용이 남도록 창을 닫지 않는다
+    setBusy(true);
+    const ok = await onSave({ category, releaseId, releaseTitle: rel?.title ?? '', subject: subject.trim(), body: body.trim() });
+    setBusy(false);
+    if (ok) close();
   };
 
   return (
@@ -151,7 +156,7 @@ function TicketForm({ onSave, preset }: { onSave: (t: Omit<Ticket, 'id' | 'creat
         <p className="ui-field-help aq-counter">{body.length} / 4000</p>
       </div>
       <div className="aq-sticky-foot">
-        <button className="ui-btn is-primary studio-submit-wide" type="submit">문의 저장</button>
+        <button className="ui-btn is-primary studio-submit-wide" type="submit" disabled={busy}>{busy ? '보내는 중' : '문의 저장'}</button>
       </div>
     </form>
   );
@@ -162,13 +167,18 @@ export function Inquiries() {
   const confirm = useConfirm();
   const tickets = ticketsStore.use();
   const [params, setParams] = useSearchParams();
-  const cancelFor = params.get('new') === 'cancel' ? params.get('release') ?? '' : '';
-  const [showForm, setShowForm] = useState(!!cancelFor);
-  const [preset] = useState<TicketPreset | null>(() => (cancelFor ? {
-    category: CATEGORIES[0], releaseId: cancelFor, subject: '[발매 취소 요청]',
+  // 발매 상세에서 넘어온 요청: 신청 취소(new=cancel) 또는 접수 후 정보 수정(new=edit)
+  const newKind = params.get('new');
+  const presetFor = newKind === 'cancel' || newKind === 'edit' ? params.get('release') ?? '' : '';
+  const [showForm, setShowForm] = useState(!!presetFor);
+  const [preset] = useState<TicketPreset | null>(() => (!presetFor ? null : newKind === 'edit' ? {
+    category: CATEGORIES[1], releaseId: presetFor, subject: '[발매 정보 수정 요청]',
+    body: '접수한 발매 정보를 아래와 같이 수정해 주세요.\n\n수정할 내용: ',
+  } : {
+    category: CATEGORIES[0], releaseId: presetFor, subject: '[발매 취소 요청]',
     body: '이 발매 신청을 취소해 주세요.\n\n취소 사유: ',
-  } : null));
-  useEffect(() => { if (cancelFor) setParams({}, { replace: true }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }));
+  useEffect(() => { if (presetFor) setParams({}, { replace: true }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // 알림의 ‘문의 열기’ 링크 (/inquiries?open=<id>)로 오면 그 대화를 바로 연다
   const [openId, setOpenId] = useState<string | null>(() => params.get('open'));
   useEffect(() => {
@@ -234,14 +244,16 @@ export function Inquiries() {
                 try {
                   await portal.createInquiry(t);
                   await refreshTickets();
-                  toast('문의를 보냈어요. 답변이 오면 알림으로 알려 드릴게요.');
+                  toast('문의를 보냈어요. 답변이 오면 알림으로 알려 드릴게요.', 'success');
+                  return true;
                 } catch (err) {
-                  toast(errorMessage(err, '문의를 보내지 못했어요. 잠시 후 다시 시도해 주세요.'));
+                  toast(errorMessage(err, '문의를 보내지 못했어요. 잠시 후 다시 시도해 주세요.'), 'error');
+                  return false;
                 }
-                return;
               }
               ticketsStore.set(ts => [...ts, { ...t, id: uid('q'), created: todayStr(), status: '답변 대기' }]);
               toast('문의 내용을 저장했어요.');
+              return true;
             }}
           />
         </Modal>

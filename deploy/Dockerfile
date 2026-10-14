@@ -4,7 +4,8 @@ FROM rust:1.98.1-slim-trixie AS chef
 RUN cargo install cargo-chef --version 0.1.78 --locked
 WORKDIR /build
 COPY deploy/build-target.sh /usr/local/bin/audeniq-build-target
-RUN chmod 0755 /usr/local/bin/audeniq-build-target
+COPY deploy/with-github-token.sh /usr/local/bin/audeniq-with-github-token
+RUN chmod 0755 /usr/local/bin/audeniq-build-target /usr/local/bin/audeniq-with-github-token
 
 FROM chef AS plan
 COPY Cargo.toml Cargo.lock ./
@@ -16,7 +17,8 @@ FROM chef AS build
 ARG CARGO_PROFILE=release
 # BuildKit selects the matching Rust/Debian image for each target platform.
 # Empty TARGET_CPU is portable: x86-64 on amd64, generic ARMv8-A on arm64.
-# Opt in to x86-64-v3 or neoverse-v2 (AWS Graviton4) for tuned images.
+# Opt in to x86-64-v3, neoverse-v2 (AWS Graviton4), ampere1a (Oracle Cloud A4,
+# AmpereOne M) or neoverse-n1 (Oracle Cloud Ampere A1, AWS Graviton2) for tuned images.
 ARG TARGETARCH
 ARG TARGET_CPU=
 COPY --from=plan /build/recipe.json recipe.json
@@ -32,7 +34,7 @@ RUN AUDENIQ_BUILD_METADATA_DIR=/meta audeniq-build-target "$TARGETARCH" "$TARGET
     && case "$TARGETARCH" in amd64) triple=x86_64-unknown-linux-gnu ;; arm64) triple=aarch64-unknown-linux-gnu ;; esac \
     && profile_dir=$([ "$CARGO_PROFILE" = dev ] && echo debug || echo "$CARGO_PROFILE") \
     && dir="$triple/$profile_dir" \
-    && cp "target/$dir/audeniq-api" "target/$dir/audeniq-worker" "target/$dir/audeniq-migrate" "target/$dir/audeniq-admin" /out/
+    && cp "target/$dir/audeniq-api" "target/$dir/audeniq-worker" "target/$dir/audeniq-migrate" "target/$dir/audeniq-admin" "target/$dir/audeniq-secrets" /out/
 
 # The AUDENIQ media engine (probe, lossless FLAC conversion, QC decode,
 # fingerprint windows) at the commit pinned in deploy/audeniq-qc.rev. It is a
@@ -41,7 +43,11 @@ FROM chef AS engine
 ARG TARGETARCH
 ARG TARGET_CPU=
 COPY deploy/audeniq-qc.rev deploy/install-audeniq-qc.sh /engine/
-RUN audeniq-build-target "$TARGETARCH" "$TARGET_CPU" sh /engine/install-audeniq-qc.sh /engine/root
+# audeniq-qc and audeniq-photo are private: CI passes a read-only token as the
+# BuildKit secret `github_token` (never stored in a layer; see with-github-token.sh).
+RUN --mount=type=secret,id=github_token \
+    audeniq-build-target "$TARGETARCH" "$TARGET_CPU" \
+    audeniq-with-github-token sh /engine/install-audeniq-qc.sh /engine/root
 
 # The AUDENIQ image toolkit (cover metadata, QR, OCR, upload sanitization) at
 # the commit pinned in deploy/audeniq-photo.rev; it replaces ExifTool, ZBar,
@@ -50,7 +56,9 @@ FROM chef AS photo
 ARG TARGETARCH
 ARG TARGET_CPU=
 COPY deploy/audeniq-photo.rev deploy/install-audeniq-photo.sh /photo/
-RUN audeniq-build-target "$TARGETARCH" "$TARGET_CPU" sh /photo/install-audeniq-photo.sh /photo/root
+RUN --mount=type=secret,id=github_token \
+    audeniq-build-target "$TARGETARCH" "$TARGET_CPU" \
+    audeniq-with-github-token sh /photo/install-audeniq-photo.sh /photo/root
 FROM debian:13-slim
 # Audio probing, lossless FLAC conversion, Stage 1 QC and fingerprinting run
 # in audeniq-qc (built above); FFmpeg is no longer part of the runtime image.

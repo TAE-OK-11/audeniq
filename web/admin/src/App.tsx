@@ -1,4 +1,5 @@
 import { loginRedirect } from './lib/loginRedirect';
+import { PrintStampHost } from './lib/printStamp';
 import type { ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from './lib/router';
 import { AuthProvider, useAuth } from './auth';
@@ -49,6 +50,7 @@ export function App() {
       <AuthProvider>
         <ToastProvider>
           <SelectHost />
+          <PrintStampHost />
           <ConfirmProvider>
             <Routes>
               <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />

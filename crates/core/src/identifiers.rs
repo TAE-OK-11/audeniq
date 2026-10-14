@@ -180,7 +180,7 @@ pub fn compose(kind: IdentifierKind, prefix: &str, scope: &str, n: i64) -> Resul
             let width = 11usize
                 .checked_sub(prefix.len())
                 .filter(|w| *w > 0)
-                .ok_or(Error::Invalid)?;
+                .ok_or(Error::PolicyGate("IDENTIFIER_ISSUER_MISCONFIGURED"))?;
             if n < 1 || n >= 10i64.pow(width as u32) {
                 return Err(exhausted);
             }
@@ -194,7 +194,10 @@ pub fn compose(kind: IdentifierKind, prefix: &str, scope: &str, n: i64) -> Resul
             format!("{prefix}{scope}{n:05}")
         }
     };
-    kind.validate(&value)?;
+    // A malformed issuer prefix is AUDENIQ's configuration, not the
+    // artist's metadata: keep it out of the "fix your titles" path.
+    kind.validate(&value)
+        .map_err(|_| Error::PolicyGate("IDENTIFIER_ISSUER_MISCONFIGURED"))?;
     Ok(value)
 }
 
@@ -410,10 +413,38 @@ pub async fn record_existing_batch(
         .await?;
         match existing {
             Some(existing_id) => out.push(existing_id),
-            None => return Err(Error::Conflict),
+            None => match same_recording(&mut *c, a).await? {
+                Some(existing_id) => out.push(existing_id),
+                None => return Err(Error::Conflict),
+            },
         }
     }
     Ok(out)
+}
+
+/// The ledger row for this ISRC when it belongs to the same recording in the
+/// same account (the master of a single re-released on an album keeps its
+/// ISRC). The ledger keeps one row per code, so the later track shares it
+/// instead of recording a second one.
+async fn same_recording(c: &mut PgConnection, a: &ExistingAssignment<'_>) -> Result<Option<Uuid>> {
+    let Some(track) = a.track_id else {
+        return Ok(None);
+    };
+    Ok(sqlx::query_scalar(
+        "SELECT ia.id FROM distribution.identifier_assignments ia
+           JOIN catalog.tracks held ON held.org_id=ia.org_id AND held.id=ia.track_id
+           JOIN catalog.assets held_audio ON held_audio.org_id=held.org_id AND held_audio.id=held.asset_id
+           JOIN catalog.tracks t ON t.org_id=$3 AND t.id=$4
+           JOIN catalog.assets audio ON audio.org_id=t.org_id AND audio.id=t.asset_id
+          WHERE ia.kind='ISRC' AND ia.identifier=$1 AND ia.org_id=$3 AND ia.status='ASSIGNED'
+            AND t.isrc=$1 AND held_audio.sha256=audio.sha256 AND $2='ISRC'",
+    )
+    .bind(a.value)
+    .bind(a.kind.label())
+    .bind(a.org_id)
+    .bind(track)
+    .fetch_optional(&mut *c)
+    .await?)
 }
 pub async fn record_existing(c: &mut PgConnection, a: &ExistingAssignment<'_>) -> Result<Uuid> {
     a.kind.validate(a.value)?;
@@ -435,10 +466,14 @@ pub async fn record_existing(c: &mut PgConnection, a: &ExistingAssignment<'_>) -
         return Ok(id);
     }
     // Separate statement sees the committed winner after a concurrent INSERT wait.
-    sqlx::query_scalar(
+    let existing: Option<Uuid> = sqlx::query_scalar(
         "SELECT id FROM distribution.identifier_assignments WHERE kind=$1 AND identifier=$2 AND org_id=$3 AND release_id=$4 AND track_id IS NOT DISTINCT FROM $5"
     ).bind(a.kind.label()).bind(a.value).bind(a.org_id).bind(a.release_id).bind(a.track_id)
-        .fetch_optional(c).await?.ok_or(Error::Conflict)
+        .fetch_optional(&mut *c).await?;
+    match existing {
+        Some(id) => Ok(id),
+        None => same_recording(c, a).await?.ok_or(Error::Conflict),
+    }
 }
 
 #[cfg(test)]

@@ -14,7 +14,7 @@
    운영자의 `partner probe`도 막힌다. 루프백(127.0.0.1 등 테스트 서버)만 허용.
 
 잠긴 동안에도 되는 것: 설정 파일 점검(`config-check`), DPID/테스트 ERN·ACK/계약 기록, 스테이징(ERN 생성·검증),
-로컬 MockDSP 샌드박스, 파트너 웹훅 **수신**(외부로 나가는 요청이 아님). `/ready`에 `"live_transmission": false`로 표시된다.
+로컬 MockDSP 샌드박스(스튜디오에서 고를 수 있는 테스트 플랫폼, 0-3절), 파트너 웹훅 **수신**(외부로 나가는 요청이 아님). `/ready`에 `"live_transmission": false`로 표시된다.
 공식 오픈 때 `deploy/production.env`에 `DSP_LIVE_TRANSMISSION=enabled`를 넣고 worker·api를 재시작한다.
 
 ## 0-1. DSP별 전송 프로파일 (`crates/core/src/dsp_registry.rs`)
@@ -86,6 +86,18 @@ DSP마다 계약 경로를 고른다. 전송 자체는 같은 DSP 수신 서버�
 변경: `audeniq-admin --operator 이름 partner route D-5 MERLIN` 또는 스태프 ADMIN `POST /api/staff/dsps/{code}/route`
 `{"route":"MERLIN","note":"사유"}`. Merlin 딜 목록이 바뀌면 `partner merlin-eligible D-11 true`.
 어느 경로든 공식 오픈 전에는 잠금(0절) 때문에 실제로 라우팅되지 않는다.
+
+## 0-3. 스튜디오 테스트 플랫폼: MockDSP (migration 0087)
+
+잠금이 닫혀 있으면 실DSP가 하나도 라우팅되지 않아 스튜디오에서 고를 플랫폼이 없고 발매 신청도 할 수 없다.
+그래서 프로덕션 스튜디오 플랫폼 목록에 **"MockDSP (테스트)"**(`mockdsp-studio`)가 나온다.
+기존 `mockdsp`와 같은 서버 안 가짜 DSP라 외부로는 아무것도 나가지 않는다(가상 UPC/ISRC도 허용).
+
+- 신청서에서 MockDSP를 고른 발매만 2단계 배급 대상에 들어간다. 고르지 않은 발매는 절대 MockDSP로 가지 않는다.
+- 흐름은 실제와 같다: 1·2·3단계 → 계약서 서명 → 전송(DELIVERED) → 상태 조회 2번째에 LIVE (`MOCKDSP_BEHAVIOR`로 실패 상황 재현 가능).
+- 실DSP와 함께 고르면 실DSP가 잠겨 있어 `DSP_UNAVAILABLE`로 막힌다.
+- 표시 조건: `MOCKDSP_STUDIO` 비움 = 잠금이 닫혀 있는 동안만(공식 오픈하면 자동으로 사라짐), `enabled` = 항상, `disabled` = 숨김(api 재시작).
+- 설치는 마이그레이션이 하므로 배포 후 따로 명령할 것이 없다.
 
 ## 1. 무엇이 구현됐나
 

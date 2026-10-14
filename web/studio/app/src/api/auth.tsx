@@ -1,5 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { MOCK, api, setCurrentOrg, type User, type Org } from './client';
+import { readJSON, writeJSON } from '../lib/storage';
+
+/** 마지막으로 고른 작업 공간 (다른 팀에 초대받아 들어간 경우) */
+const ORG_KEY = 'org';
 
 interface AuthState {
   user: User | null;
@@ -7,6 +11,7 @@ interface AuthState {
   orgs: Org[];
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginPasskey: (email: string) => Promise<void>;
   signup: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   selectOrg: (org: Org) => void;
@@ -26,10 +31,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loadOrgs = useCallback(async () => {
-    const o = await api.listOrgs().catch(() => [] as Org[]);
+    // 목록을 한 번 못 받았다고 '작업 공간 없음'으로 굳지 않게 잠시 뒤 다시 받는다
+    // (그대로 두면 모든 요청이 NO_ORG로 실패하고 다시 로그인하는 수밖에 없었다)
+    let o: Org[] = [];
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try { o = await api.listOrgs(); break; } catch {
+        if (attempt < 2) await new Promise(r => window.setTimeout(r, 800 * (attempt + 1)));
+      }
+    }
     setOrgs(o);
-    setOrg(o[0] ?? null);
+    const saved = readJSON<string | null>(ORG_KEY, null);
+    setOrg(o.find(x => x.id === saved) ?? o[0] ?? null);
   }, [setOrg]);
+  // 작업 공간을 바꾸면 화면의 모든 데이터(발매·정산·알림)를 그 공간 기준으로 다시 받는다
+  const selectOrg = useCallback((o: Org) => {
+    writeJSON(ORG_KEY, o.id);
+    window.location.reload();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,6 +93,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(u);
   }, [loadOrgs]);
 
+  const loginPasskey = useCallback(async (email: string) => {
+    const u = await api.loginPasskey(email);
+    await loadOrgs();
+    setUser(u);
+  }, [loadOrgs]);
+
   const signup = useCallback(async (email: string, password: string) => {
     const u = await api.signup(email, password);
     await loadOrgs();
@@ -92,8 +116,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [setOrg]);
 
   const value = useMemo(() => ({
-    user, org, orgs, loading, login, signup, logout, selectOrg: setOrg,
-  }), [user, org, orgs, loading, login, signup, logout, setOrg]);
+    user, org, orgs, loading, login, loginPasskey, signup, logout, selectOrg,
+  }), [user, org, orgs, loading, login, loginPasskey, signup, logout, selectOrg]);
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }

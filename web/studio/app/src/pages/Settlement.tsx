@@ -1,4 +1,5 @@
 // 정산·지급 — hero + 탭 구조의 단순화된 레이아웃
+import { SplitsReceived } from '../components/SplitsReceived';
 import { Link } from '../lib/router';
 import { useState } from 'react';
 import { Modal, useModalClose } from '../components/Modal';
@@ -7,7 +8,7 @@ import { useConfirm } from '../components/Confirm';
 import { BankLogo } from '../components/BankLogo';
 import { PaymentSetupModal } from '../components/PaymentSetupModal';
 import { isPaymentRegistered, usePayment } from '../store/payment';
-import { balance, payoutFee, payoutsStore, statementsStore, useBalance, type Payout } from '../store/settlement';
+import { balance, payoutFee, payoutsStore, statementsNextStore, statementsStore, useBalance, type Payout, type Statement } from '../store/settlement';
 import { MOCK } from '../lib/mode';
 import * as portal from '../api/portal';
 import { errorMessage } from '../api/errors';
@@ -81,12 +82,62 @@ function StatementForm({ onSave }: { onSave: (s: { period: string; platform: str
   );
 }
 
+/** 체험 모드: 기록한 정산 내역을 그대로 CSV로 (실서버는 서버가 전체 기간을 만든다) */
+function saveStatementsCsv(rows: Statement[]) {
+  const cell = (v: string | number) => {
+    const t = String(v ?? '');
+    const safe = /^[=+\-@]/.test(t) && typeof v === 'string' ? `'${t}` : t;
+    return `"${safe.replace(/"/g, '""')}"`;
+  };
+  const csv = '\uFEFF' + ['period,platform,amount,note,created', ...rows.map(r => [r.period, r.platform, r.amount, r.note, r.created].map(cell).join(','))].join('\r\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'statements.csv';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export function Settlement() {
   const toast = useToast();
   const confirm = useConfirm();
   const payment = usePayment();
   const statements = statementsStore.use();
   const payouts = payoutsStore.use();
+  const statementsNext = statementsNextStore.use();
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const loadMoreStatements = async () => {
+    if (!statementsNext || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await portal.fetchStatementsPage(statementsNext);
+      const seen = new Set(statementsStore.get().map(x => x.id));
+      statementsStore.set(old => [...old, ...page.items.filter(x => !seen.has(x.id))]);
+      statementsNextStore.set(page.next);
+    } catch (e) {
+      toast(errorMessage(e));
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+  const exportStatements = async () => {
+    if (MOCK) {
+      if (!statements.length) { toast('내보낼 정산 내역이 없어요.'); return; }
+      saveStatementsCsv(statements);
+      return;
+    }
+    setExporting(true);
+    try {
+      await portal.downloadStatementsCsv();
+    } catch (e) {
+      toast(errorMessage(e));
+    } finally {
+      setExporting(false);
+    }
+  };
   const [tab, setTab] = useState<'statements' | 'payouts'>('statements');
   const [showPayout, setShowPayout] = useState(false);
   const [showStatement, setShowStatement] = useState(false);
@@ -140,7 +191,7 @@ export function Settlement() {
       setDetail(null);
       toast('지급 요청을 취소했어요.');
     } catch (err) {
-      toast(errorMessage(err, '지급 요청을 취소하지 못했어요. 잠시 후 다시 시도해 주세요.'));
+      toast(errorMessage(err, '지급 요청을 취소하지 못했어요. 잠시 후 다시 시도해 주세요.'), 'error');
     } finally {
       setCancelling(false);
     }
@@ -173,7 +224,7 @@ export function Settlement() {
         setTab('payouts');
         toast('지급을 요청했어요. 담당자 확인 후 등록한 계좌로 보내 드려요.');
       } catch (err) {
-        toast(errorMessage(err, '지급을 요청하지 못했어요. 잠시 후 다시 시도해 주세요.'));
+        toast(errorMessage(err, '지급을 요청하지 못했어요. 잠시 후 다시 시도해 주세요.'), 'error');
       } finally {
         setRequesting(false);
       }
@@ -229,6 +280,7 @@ export function Settlement() {
           <button type="button" className="ui-btn is-primary is-lg" onClick={openPayoutModal}>수익 받기</button>
         </div>
       </section>
+      <SplitsReceived />
 
       <Segmented
         tabs className="aq-seg-tabs" label="정산 내역 구분" value={tab} onChange={setTab}
@@ -237,6 +289,14 @@ export function Settlement() {
 
       {tab === 'statements' ? (
         <div id="statementList" className="ui-tab-panel" key="st">
+          {orderedStatements.length > 0 && (
+            <div className="aq-list-tools">
+              <span>{statementsNext ? `최근 ${orderedStatements.length}건` : `전체 ${orderedStatements.length}건`}</span>
+              <button type="button" className="ui-btn is-soft is-sm" onClick={exportStatements} disabled={exporting}>
+                <Glyph name="download" size={14} className="aq-glyph-lead" />{exporting ? '내려받는 중…' : '전체 기간 CSV'}
+              </button>
+            </div>
+          )}
           {orderedStatements.length ? (
             <div className="aq-catalog-cards aq-stagger">
               {orderedStatements.map(s => (
@@ -252,6 +312,12 @@ export function Settlement() {
                   </div>
                 </button>
               ))}
+              {statementsNext && (
+                <button type="button" className="ui-btn is-white aq-report-more" onClick={loadMoreStatements} disabled={loadingMore}>
+                  {loadingMore ? '불러오는 중…' : '이전 정산 내역 더 보기'}
+                  <Glyph name="chevron-down" size={15} />
+                </button>
+              )}
             </div>
           ) : (
             <div className="ui-empty">
@@ -347,7 +413,7 @@ export function Settlement() {
                     value={amount ? Number(amount).toLocaleString('ko-KR') : ''}
                     onChange={e => setAmount(e.target.value.replace(/\D/g, '').replace(/^0+/, '').slice(0, 15))}
                   />
-                  <button type="button" id="payoutAll" className="ui-btn is-white is-sm" onClick={() => setAmount(String(left))}>전액</button>
+                  <button type="button" id="payoutAll" className="ui-btn is-white is-sm" onClick={() => setAmount(String(Math.floor(left)))}>전액</button>
                 </div>
                 <p className="ui-field-help">
                   {!MOCK && Number(amount) > 0
@@ -375,7 +441,7 @@ export function Settlement() {
               <div className="doc-connection">
                 {MOCK
                   ? '신청 내용은 현재 작업 공간에 저장돼요. 지급 서비스가 연결되기 전에는 실제 송금이 진행되지 않아요.'
-                  : `담당자가 확인한 뒤 등록한 계좌로 보내 드려요. 30,000원 이하는 수수료 500원(부가가치세 포함), 초과는 무료예요.${minimum > 0 ? ` ${money(minimum)} 이상부터 요청할 수 있어요.` : ' 2027년 12월 31일까지는 최소 출금금액 없이 요청할 수 있어요.'} 은행에 보내기 전까지는 취소할 수 있어요.`}
+                  : `담당자가 확인한 뒤 등록한 계좌로 보내 드려요. 30,000원 이하는 수수료 500원(부가가치세 포함), 초과는 무료예요.${minimum > 0 ? ` ${money(minimum)} 이상부터 요청할 수 있어요.` : ' 2027년 12월 31일까지는 최소 출금금액 없이 요청할 수 있어요.'} 담당자가 승인하기 전까지는 취소할 수 있어요.`}
               </div>
               <div className="aq-sticky-foot">
                 <button className={`ui-btn is-primary studio-submit-wide${requesting ? ' is-busy' : ''}`} type="submit" disabled={requesting}>

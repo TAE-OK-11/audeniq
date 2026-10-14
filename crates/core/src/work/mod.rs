@@ -137,19 +137,28 @@ pub(crate) async fn audit(
 pub async fn people(s: &AppState, h: &HeaderMap) -> Result<Value> {
     staff::staff(s, h, false).await?;
     let rows = sqlx::query(
-        "SELECT sm.user_id, u.email, sm.role FROM identity.staff_members sm JOIN identity.users u ON u.id=sm.user_id
-          WHERE sm.status='ACTIVE' AND u.status='ACTIVE' ORDER BY u.email",
+        "SELECT sm.user_id, u.email, u.email_cipher, sm.role FROM identity.staff_members sm JOIN identity.users u ON u.id=sm.user_id
+          WHERE sm.status='ACTIVE' AND u.status='ACTIVE'",
     )
     .fetch_all(&s.pool)
     .await?;
-    let items: Vec<Value> = rows
+    let mut items: Vec<Value> = rows
         .iter()
         .map(|r| {
-            let email: String = r.get("email");
+            let user: Uuid = r.get("user_id");
+            let email = crate::pii::open(
+                &s.payout_keys,
+                crate::payout_keys::Field::UserEmail,
+                user,
+                r.get("email"),
+                r.get::<Option<Vec<u8>>, _>("email_cipher").as_deref(),
+            )?
+            .unwrap_or_default();
             let name = email.split('@').next().unwrap_or("").to_string();
-            json!({"user_id": r.get::<Uuid,_>("user_id"), "email": email, "name": name, "role": r.get::<String,_>("role")})
+            Ok(json!({"user_id": user, "email": email, "name": name, "role": r.get::<String,_>("role")}))
         })
-        .collect();
+        .collect::<Result<_>>()?;
+    items.sort_by(|a, b| a["email"].as_str().cmp(&b["email"].as_str()));
     Ok(json!({ "items": items }))
 }
 

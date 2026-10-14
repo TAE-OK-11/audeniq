@@ -470,3 +470,10 @@ mod tests {
         );
     }
 }
+
+/// Today's calendar date in Korea (KST, UTC+9). Ages and street-date lead
+/// times are Korean dates; the UTC date is a day behind until 09:00 KST.
+pub fn today_kst() -> chrono::NaiveDate {
+    let kst = chrono::FixedOffset::east_opt(9 * 3600).expect("valid offset");
+    chrono::Utc::now().with_timezone(&kst).date_naive()
+}

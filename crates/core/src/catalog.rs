@@ -98,7 +98,7 @@ async fn artwork_ref(
 }
 fn validate(i: &Input) -> Result<()> {
     if i.name.trim().is_empty()
-        || i.name.len() > 200
+        || i.name.chars().count() > 200
         || (!i.profile.is_null() && !i.profile.is_object())
     {
         return Err(Error::Invalid);
@@ -344,8 +344,13 @@ pub async fn update(
     org: Uuid,
     kind: Kind,
     id: Uuid,
-    i: Input,
+    mut i: Input,
 ) -> Result<Value> {
+    // Same as create: a missing profile is an empty object, never JSON null
+    // (a null draft silently failed every later check of the release).
+    if i.profile.is_null() {
+        i.profile = json!({});
+    }
     validate(&i)?;
     crate::upload_safety::check_inline_files(s, &i.profile).await?;
     let (upc, artwork) = release_fields(kind, &i)?;
@@ -394,8 +399,11 @@ pub async fn archive(
 ) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
     auth::authorize(&mut tx, a, org, id, kind.resource(), true).await?;
+    // Only a draft can be deleted. A submitted release (including one sent back
+    // for correction) is cancelled through withdraw, which applies the monthly
+    // limit, refuses once delivery is under way and cancels the agreement.
     let extra = if matches!(kind, Kind::Release) {
-        " AND catalog.is_editable_status(status)"
+        " AND status='DRAFT'"
     } else {
         ""
     };

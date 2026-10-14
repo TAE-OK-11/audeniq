@@ -5,6 +5,8 @@ import { useLocation, useNavigate } from './lib/router';
 import { useAuth } from './auth';
 import { authErrorMessage } from './api/errors';
 import { MOCK } from './lib/mode';
+import { passkeySupported } from './api/passkey';
+import { ApiError } from './api/errors';
 
 function PasswordInput(props: React.InputHTMLAttributes<HTMLInputElement> & { show: boolean; onToggle: () => void }) {
   const { show, onToggle, ...rest } = props;
@@ -19,7 +21,7 @@ function PasswordInput(props: React.InputHTMLAttributes<HTMLInputElement> & { sh
 }
 
 export function Login() {
-  const { login } = useAuth();
+  const { login, loginPasskey } = useAuth();
   const nav = useNavigate();
   const loc = useLocation();
   const from = loginRedirect(loc.state);
@@ -39,6 +41,20 @@ export function Login() {
       nav(from ?? '/', { replace: true });
     } catch (err) {
       setError(authErrorMessage(err, 'login'));
+      setBusy(false);
+    }
+  }
+
+  // 패스키(지문·얼굴·PIN)는 그 자체로 2단계 인증이라 인증 앱 코드를 따로 묻지 않는다.
+  async function withPasskey() {
+    if (busy) return;
+    setError('');
+    setBusy(true);
+    try {
+      await loginPasskey(email);
+      nav(from ?? '/', { replace: true });
+    } catch (err) {
+      setError(err instanceof ApiError && err.code.startsWith('PASSKEY') ? err.message : authErrorMessage(err, 'login'));
       setBusy(false);
     }
   }
@@ -78,7 +94,13 @@ export function Login() {
             <button className={`ui-btn is-primary auth-submit${busy ? ' is-busy' : ''}`} type="submit" disabled={busy} aria-busy={busy}>
               {busy ? '들어가는 중' : '로그인'}
             </button>
+            {!MOCK && passkeySupported() && (
+              <button type="button" className="ui-btn auth-submit" style={{ marginTop: 8 }} onClick={() => void withPasskey()} disabled={busy}>
+                비밀번호 대신 패스키로 로그인
+              </button>
+            )}
           </form>
+          {!MOCK && <p className="auth-sub" style={{ marginTop: 12 }}>패스키는 스튜디오 계정 정보 &gt; 로그인에서 등록해요. 패스키로 들어오면 인증 앱 코드를 따로 입력하지 않아요.</p>}
         </div>
       </div>
       <p className="auth-foot">

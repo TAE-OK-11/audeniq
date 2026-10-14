@@ -41,6 +41,7 @@ const NAV_GROUPS: { group: string; items: NavItem[] }[] = [
       { to: '/releases', label: '발매·곡 관리', icon: 'disc' },
       { to: '/reports', label: '음악 리포트', icon: 'chart' },
       { to: '/settlement', label: '정산·지급', icon: 'won' },
+      { to: '/platform-requests', label: '플랫폼 요청', icon: 'globe' },
     ],
   },
   {
@@ -297,6 +298,8 @@ export function Layout({ children }: { children: ReactNode }) {
             <div className="aq-nav-legal">
               <button type="button" onClick={() => go('/terms')}>이용약관</button>
               <button type="button" onClick={() => go('/terms/settlement')}>정산 약관</button>
+              <button type="button" onClick={() => go('/privacy')}>개인정보 처리방침</button>
+              <button type="button" onClick={() => go('/rights-report')}>권리침해 신고</button>
             </div>
             <button type="button" className="aq-logout" onClick={doLogout}>로그아웃</button>
           </div>
@@ -311,3 +314,4 @@ export function Layout({ children }: { children: ReactNode }) {
     </>
   );
 }
+

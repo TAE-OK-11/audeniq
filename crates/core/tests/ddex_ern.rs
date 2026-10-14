@@ -29,6 +29,7 @@ fn config(sub: MessageSubType) -> DdexErnConfig {
         recipient_party_id: Some("PADPIDA2026092501M".into()),
         deal_start_date: "2026-10-01".into(),
         takedown_date: None,
+        artist_party_id: None,
     }
 }
 
@@ -132,13 +133,16 @@ fn ddex_ern_escapes_xml_specials() {
 fn ddex_ern_update_and_takedown() {
     let c = fixture(0);
     let update = generate_ddex_ern_382(&c, &config(MessageSubType::Update)).unwrap();
-    assert!(update.contains("<MessageControlType>UpdateMessage</MessageControlType>"));
+    assert!(update.contains("<MessageControlType>LiveMessage</MessageControlType>"));
+    assert!(update.contains("<UpdateIndicator>UpdateMessage</UpdateIndicator>"));
+    audeniq_core::ddex_xsd::validate_ern_382_xml(&update).unwrap();
     assert!(!update.contains("<EndDate>"));
 
     let mut cfg = config(MessageSubType::Takedown);
     cfg.takedown_date = Some("2026-12-31".into());
     let takedown = generate_ddex_ern_382(&c, &cfg).unwrap();
-    assert!(takedown.contains("<MessageControlType>UpdateMessage</MessageControlType>"));
+    assert!(takedown.contains("<UpdateIndicator>UpdateMessage</UpdateIndicator>"));
+    audeniq_core::ddex_xsd::validate_ern_382_xml(&takedown).unwrap();
     assert!(takedown.contains("<EndDate>2026-12-31</EndDate>"));
 
     // Takedown without a date is rejected.
@@ -400,4 +404,153 @@ fn original_release_date_must_not_follow_the_new_date() {
         original_release_date(&serde_json::json!({}), new).unwrap(),
         None
     );
+}
+
+/// The artist's territory choice becomes the deal territory: excluded
+/// territories as ExcludedTerritoryCode (taken from Worldwide), a chosen
+/// list as TerritoryCode — each form schema-valid. Worldwide fixtures keep
+/// the old output byte for byte.
+#[test]
+fn ddex_ern_deal_territories_follow_the_application() {
+    use audeniq_core::{ddex_xsd::validate_ern_382_xml, territory::Territories};
+    let worldwide = generate_ddex_ern_382(&fixture(0), &config(MessageSubType::Initial)).unwrap();
+    let deal = |xml: &str| {
+        let start = xml.find("<DealTerms>").unwrap();
+        let end = xml.find("</DealTerms>").unwrap();
+        xml[start..end].to_string()
+    };
+    assert!(deal(&worldwide).contains("<TerritoryCode>Worldwide</TerritoryCode>"));
+
+    let mut f = fixture(0);
+    f.territories = Territories::WorldExcept(vec!["CN".into(), "JP".into()]);
+    let xml = generate_ddex_ern_382(&f, &config(MessageSubType::Initial)).unwrap();
+    let d = deal(&xml);
+    assert!(
+        d.contains("<ExcludedTerritoryCode>CN</ExcludedTerritoryCode><ExcludedTerritoryCode>JP</ExcludedTerritoryCode>"),
+        "{d}"
+    );
+    assert!(
+        !d.contains("<TerritoryCode>"),
+        "TerritoryCode and ExcludedTerritoryCode are exclusive: {d}"
+    );
+    validate_ern_382_xml(&xml).unwrap();
+
+    f.territories = Territories::Only(vec!["JP".into(), "KR".into()]);
+    let xml = generate_ddex_ern_382(&f, &config(MessageSubType::Initial)).unwrap();
+    let d = deal(&xml);
+    assert!(
+        d.contains("<TerritoryCode>JP</TerritoryCode><TerritoryCode>KR</TerritoryCode>"),
+        "{d}"
+    );
+    assert!(!d.contains("Worldwide") && !d.contains("Excluded"), "{d}");
+    validate_ern_382_xml(&xml).unwrap();
+
+    // The prepared snapshot of a worldwide release serializes as before.
+    let v = serde_json::to_value(fixture(0)).unwrap();
+    assert!(v.get("territories").is_none());
+}
+
+/// A simultaneous release time (KST) becomes the deal's StartDateTime;
+/// without one the date (local midnight) stays as before. Takedowns keep the
+/// date pair. Each form is schema-valid.
+#[test]
+fn ddex_ern_release_time_is_deal_start_date_time() {
+    use audeniq_core::ddex_xsd::validate_ern_382_xml;
+    let mut f = fixture(0);
+    let plain = generate_ddex_ern_382(&f, &config(MessageSubType::Initial)).unwrap();
+    assert!(plain.contains("<StartDate>") && !plain.contains("<StartDateTime>"));
+    f.release_time = Some("18:00".into());
+    let c = config(MessageSubType::Initial);
+    let xml = generate_ddex_ern_382(&f, &c).unwrap();
+    let want = format!(
+        "<StartDateTime>{}T18:00:00+09:00</StartDateTime>",
+        c.deal_start_date
+    );
+    assert!(xml.contains(&want), "{xml}");
+    assert!(
+        !xml.contains("<StartDate>"),
+        "Period is either dates or date-times"
+    );
+    validate_ern_382_xml(&xml).unwrap();
+    let mut tcfg = config(MessageSubType::Takedown);
+    tcfg.takedown_date = Some("2026-12-31".into());
+    let td = generate_ddex_ern_382(&f, &tcfg).unwrap();
+    assert!(
+        td.contains("<StartDate>") && !td.contains("<StartDateTime>"),
+        "{td}"
+    );
+    // Same schema result as a takedown without a release time.
+    let plain_td = generate_ddex_ern_382(&fixture(0), &tcfg).unwrap();
+    assert_eq!(
+        validate_ern_382_xml(&td).is_ok(),
+        validate_ern_382_xml(&plain_td).is_ok()
+    );
+    // Unset is not serialized (earlier snapshots keep their hash).
+    let v = serde_json::to_value(fixture(0)).unwrap();
+    assert!(v.get("release_time").is_none());
+}
+
+/// A pre-release start opens the release page, track list, cover and clips
+/// from that date on every DSP; download stores also get a pre-order deal
+/// fulfilled on the release date. Preview start points go on each sound
+/// recording. All schema-valid; takedowns carry none of it.
+#[test]
+fn ddex_ern_preorder_and_preview_start() {
+    use audeniq_core::ddex_xsd::validate_ern_382_xml;
+    let mut f = fixture(0);
+    f.preorder_start = Some(chrono::NaiveDate::from_ymd_opt(2026, 9, 17).unwrap());
+    let track = f.tracks[0].id;
+    f.preview_starts.insert(track, 42);
+    let streaming = generate_ddex_ern_382(&f, &config(MessageSubType::Initial)).unwrap();
+    assert_eq!(
+        count(&streaming, "<Deal>"),
+        1,
+        "no pre-order deal for streaming"
+    );
+    assert!(streaming.contains("<ReleaseDisplayStartDate>2026-09-17</ReleaseDisplayStartDate>"));
+    assert!(streaming.contains("<ClipPreviewStartDate>2026-09-17</ClipPreviewStartDate>"));
+    assert!(streaming.contains("<PreviewDetails><StartPoint>42</StartPoint><ExpressionType>Instructive</ExpressionType></PreviewDetails>"));
+    validate_ern_382_xml(&streaming).unwrap();
+
+    let mut c = config(MessageSubType::Initial);
+    c.deal = &audeniq_core::ddex_ern::DEAL_DOWNLOAD;
+    let store = generate_ddex_ern_382(&f, &c).unwrap();
+    assert_eq!(count(&store, "<Deal>"), 2, "{store}");
+    assert!(store.contains("<IsPreOrderDeal>true</IsPreOrderDeal>"));
+    assert!(store.contains("<PreOrderReleaseDate>2026-10-01</PreOrderReleaseDate>"));
+    validate_ern_382_xml(&store).unwrap();
+
+    // With a release time too, and on takedown (no pre-release, dates only).
+    f.release_time = Some("18:00".into());
+    validate_ern_382_xml(&generate_ddex_ern_382(&f, &c).unwrap()).unwrap();
+    let mut t = config(MessageSubType::Takedown);
+    t.takedown_date = Some("2026-12-31".into());
+    let td = generate_ddex_ern_382(&f, &t).unwrap();
+    assert!(
+        !td.contains("PreviewStartDate") && !td.contains("IsPreOrderDeal"),
+        "{td}"
+    );
+    validate_ern_382_xml(&td).unwrap();
+    // A start past the end of the track is not sent.
+    f.preview_starts.insert(track, 3600);
+    let long = generate_ddex_ern_382(&f, &config(MessageSubType::Initial)).unwrap();
+    assert!(!long.contains("<PreviewDetails>") || f.tracks[0].audio.duration_secs.is_none());
+    let v = serde_json::to_value(fixture(0)).unwrap();
+    assert!(v.get("preorder_start").is_none() && v.get("preview_starts").is_none());
+}
+
+/// The main artist's page id at the recipient goes in DisplayArtist/PartyId
+/// (release and its own tracks), in the recipient's DPID namespace.
+#[test]
+fn ddex_ern_display_artist_party_id() {
+    use audeniq_core::ddex_xsd::validate_ern_382_xml;
+    let f = fixture(0);
+    let mut c = config(MessageSubType::Initial);
+    c.artist_party_id = Some("spotify:artist:4Z8W4fKeB5YxbusRsdQVPb".into());
+    let xml = generate_ddex_ern_382(&f, &c).unwrap();
+    let want = "</PartyName><PartyId Namespace=\"DPID:PADPIDA2026092501M\">spotify:artist:4Z8W4fKeB5YxbusRsdQVPb</PartyId><ArtistRole>MainArtist</ArtistRole>";
+    assert!(count(&xml, want) >= 2, "{xml}");
+    validate_ern_382_xml(&xml).unwrap();
+    let plain = generate_ddex_ern_382(&f, &config(MessageSubType::Initial)).unwrap();
+    assert!(!plain.contains("<PartyId Namespace="));
 }

@@ -19,7 +19,7 @@ use crate::{
 };
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::HeaderMap,
     routing::{get, post},
 };
@@ -83,20 +83,28 @@ pub struct ProfileInput {
 }
 
 pub async fn get_profile(s: &AppState, a: &Actor) -> Result<Value> {
-    let v: Option<Value> = sqlx::query_scalar(
-        "SELECT jsonb_build_object('display_name',p.display_name,'contact_email',p.contact_email,'bio',p.bio,'country',p.country,'row_version',p.row_version,'updated_at',p.updated_at)
-         FROM portal.artist_profiles p WHERE p.user_id=$1",
-    )
+    let v: Option<Value> = sqlx::query_scalar(concat!(
+        "SELECT jsonb_build_object('display_name',p.display_name,'contact_email',",
+        crate::pii_ref!(
+            "profile_contact_email",
+            "p.user_id",
+            "NULLIF(p.contact_email,'')",
+            "p.contact_email_cipher"
+        ),
+        ",'bio',p.bio,'country',p.country,'row_version',p.row_version,'updated_at',p.updated_at)
+         FROM portal.artist_profiles p WHERE p.user_id=$1"
+    ))
     .bind(a.user)
     .fetch_optional(&s.pool)
     .await?;
-    if let Some(v) = v {
+    if let Some(mut v) = v {
+        crate::pii::reveal(&s.payout_keys, &mut v)?;
+        if v["contact_email"].is_null() {
+            v["contact_email"] = json!("");
+        }
         return Ok(v);
     }
-    let email: String = sqlx::query_scalar("SELECT email FROM identity.users WHERE id=$1")
-        .bind(a.user)
-        .fetch_one(&s.pool)
-        .await?;
+    let email = crate::pii::user_email(&s.payout_keys, &s.pool, a.user).await?;
     Ok(
         json!({"display_name":"","contact_email":email,"bio":"","country":"KR","row_version":0,"updated_at":null}),
     )
@@ -108,6 +116,12 @@ pub async fn put_profile(s: &AppState, a: &Actor, i: ProfileInput) -> Result<Val
     if !email.is_empty() && (!email.contains('@') || email.contains(' ')) {
         return Err(Error::InvalidCode("EMAIL_INVALID"));
     }
+    let email = crate::pii::seal_opt(
+        &s.payout_keys,
+        crate::payout_keys::Field::ProfileContactEmail,
+        a.user,
+        Some(&email),
+    )?;
     let bio = multiline(&i.bio, 0, 1500)?;
     let country = i.country.trim().to_ascii_uppercase();
     if country.len() != 2 || !country.bytes().all(|b| b.is_ascii_uppercase()) {
@@ -116,8 +130,14 @@ pub async fn put_profile(s: &AppState, a: &Actor, i: ProfileInput) -> Result<Val
     let mut tx = s.pool.begin().await?;
     let rv: Option<i64> = if i.row_version == 0 {
         sqlx::query_scalar(
-            "INSERT INTO portal.artist_profiles(user_id,display_name,contact_email,bio,country) VALUES($1,$2,$3,$4,$5)
-             ON CONFLICT(user_id) DO NOTHING RETURNING row_version",
+            // The first save starts the row at version 1. Rows the old insert
+            // left at version 0 (the column default) are taken over here, or
+            // every later save would retry this insert and conflict forever.
+            "INSERT INTO portal.artist_profiles(user_id,display_name,contact_email,contact_email_cipher,bio,country,row_version) VALUES($1,$2,'',$3,$4,$5,1)
+             ON CONFLICT(user_id) DO UPDATE SET display_name=EXCLUDED.display_name,contact_email='',contact_email_cipher=EXCLUDED.contact_email_cipher,
+               bio=EXCLUDED.bio,country=EXCLUDED.country,row_version=portal.artist_profiles.row_version+1,updated_at=now()
+             WHERE portal.artist_profiles.row_version=0
+             RETURNING row_version",
         )
         .bind(a.user)
         .bind(&name)
@@ -128,7 +148,7 @@ pub async fn put_profile(s: &AppState, a: &Actor, i: ProfileInput) -> Result<Val
         .await?
     } else {
         sqlx::query_scalar(
-            "UPDATE portal.artist_profiles SET display_name=$2,contact_email=$3,bio=$4,country=$5,row_version=row_version+1,updated_at=now()
+            "UPDATE portal.artist_profiles SET display_name=$2,contact_email='',contact_email_cipher=$3,bio=$4,country=$5,row_version=row_version+1,updated_at=now()
              WHERE user_id=$1 AND row_version=$6 RETURNING row_version",
         )
         .bind(a.user)
@@ -189,14 +209,19 @@ impl Drop for PayoutAccountInput {
 pub async fn get_payout_account(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
     member(&mut tx, a, org, false).await?;
-    let v: Option<Value> = sqlx::query_scalar(
-        "SELECT jsonb_build_object('registered',true,'payee_type',payee_type,'holder_name',holder_name,'bank_name',bank_name,'account_last4',account_last4,'registered_at',registered_at,'row_version',row_version)
-         FROM portal.payout_accounts WHERE org_id=$1",
-    )
+    let mut v: Option<Value> = sqlx::query_scalar(concat!(
+        "SELECT jsonb_build_object('registered',true,'payee_type',payee_type,'holder_name',",
+        crate::pii_ref!("holder_name", "org_id", "holder_name", "holder_cipher"),
+        ",'bank_name',bank_name,'account_last4',account_last4,'registered_at',registered_at,'row_version',row_version)
+         FROM portal.payout_accounts WHERE org_id=$1"
+    ))
     .bind(org)
     .fetch_optional(&mut *tx)
     .await?;
     tx.rollback().await?;
+    if let Some(v) = v.as_mut() {
+        crate::pii::reveal(&s.payout_keys, v)?;
+    }
     Ok(v.unwrap_or_else(|| json!({"registered":false})))
 }
 
@@ -227,18 +252,21 @@ pub async fn put_payout_account(
     let last4 = digits[digits.len() - 4..].to_string();
     let digits = zeroize::Zeroizing::new(digits);
     let sealed = s.payout_keys.seal(org, &digits)?;
+    let holder_sealed =
+        s.payout_keys
+            .seal_field(crate::payout_keys::Field::PayoutHolderName, org, &holder)?;
     let mut tx = s.pool.begin().await?;
     owner(&mut tx, a, org).await?;
     sqlx::query(
-        "INSERT INTO portal.payout_accounts(org_id,payee_type,holder_name,bank_name,account_last4,account_cipher,registered_by,key_version)
+        "INSERT INTO portal.payout_accounts(org_id,payee_type,holder_cipher,bank_name,account_last4,account_cipher,registered_by,key_version)
          VALUES($1,$2,$3,$4,$5,$6,$7,$8)
-         ON CONFLICT(org_id) DO UPDATE SET payee_type=EXCLUDED.payee_type,holder_name=EXCLUDED.holder_name,bank_name=EXCLUDED.bank_name,
+         ON CONFLICT(org_id) DO UPDATE SET payee_type=EXCLUDED.payee_type,holder_name=NULL,holder_cipher=EXCLUDED.holder_cipher,bank_name=EXCLUDED.bank_name,
            account_last4=EXCLUDED.account_last4,account_cipher=EXCLUDED.account_cipher,registered_by=EXCLUDED.registered_by,key_version=EXCLUDED.key_version,
            registered_at=now(),row_version=portal.payout_accounts.row_version+1",
     )
     .bind(org)
     .bind(&i.payee_type)
-    .bind(&holder)
+    .bind(&holder_sealed)
     .bind(&bank)
     .bind(&last4)
     .bind(&sealed)
@@ -260,7 +288,8 @@ pub async fn put_payout_account(
         "SELECT portal.notify($1,'ACCOUNT','수익을 받을 계좌가 등록됐어요.',$2,'/settlement')",
     )
     .bind(org)
-    .bind(format!("{bank} · •••• {last4} · {holder}"))
+    // The holder name is personal data: notifications carry bank and last digits only.
+    .bind(format!("{bank} · •••• {last4}"))
     .execute(&mut *tx)
     .await
     .ok();
@@ -548,9 +577,16 @@ async fn locked_doc(
 pub async fn check_document(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
     member(&mut tx, a, org, true).await?;
-    locked_doc(&mut tx, a, org, id).await?;
+    let (_, status, current, _) = locked_doc(&mut tx, a, org, id).await?;
+    // Only the first check changes the row. Studio calls this right before
+    // signing or sending a proof to learn the current version; bumping on
+    // every call made staff decisions on the same document fail as stale.
+    if status.ends_with("+CHECKED") {
+        tx.commit().await?;
+        return Ok(json!({"id":id,"row_version":current}));
+    }
     let rv: i64 = sqlx::query_scalar(
-        "UPDATE portal.documents SET checked_at=COALESCE(checked_at,now()),row_version=row_version+1,updated_at=now() WHERE id=$1 RETURNING row_version",
+        "UPDATE portal.documents SET checked_at=now(),row_version=row_version+1,updated_at=now() WHERE id=$1 RETURNING row_version",
     )
     .bind(id)
     .fetch_one(&mut *tx)
@@ -666,6 +702,13 @@ pub async fn sign_document(
             .await?;
         }
     }
+    // Seal what was signed (content, signature, confirmations) in this transaction.
+    let seal_kind = if kind == "AGREEMENT" {
+        crate::seal::Kind::Agreement
+    } else {
+        crate::seal::Kind::RightsDocument
+    };
+    crate::seal::seal(&mut tx, &s.payout_keys, seal_kind, id, "SIGNED").await?;
     tx.commit().await?;
     Ok(json!({"id":id,"status":"SIGNED","row_version":rv}))
 }
@@ -790,6 +833,14 @@ pub async fn create_document(
             "portal.rights_document.signed",
             "RIGHTS_HOLDER_SIGNATURE",
             a.request,
+        )
+        .await?;
+        crate::seal::seal(
+            &mut tx,
+            &s.payout_keys,
+            crate::seal::Kind::RightsDocument,
+            id,
+            "SIGNED",
         )
         .await?;
         tx.commit().await?;
@@ -1017,11 +1068,12 @@ pub async fn record_application(
         if release_status == "WITHDRAWN" {
             return Err(Error::PolicyGate("APPLICATION_DOCUMENT_FINAL"));
         }
+        let application_id = Uuid::new_v4();
         sqlx::query(
             "INSERT INTO portal.release_applications(id,org_id,release_id,application_no,form,content_hash,signer_name,signer_role,agreements,signature,client_submitted_at,submitted_by)
              VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
         )
-        .bind(Uuid::new_v4())
+        .bind(application_id)
         .bind(org)
         .bind(release)
         .bind(&i.application_no)
@@ -1043,6 +1095,14 @@ pub async fn record_application(
             "portal.application.signed",
             "ARTIST_SIGNATURE",
             a.request,
+        )
+        .await?;
+        crate::seal::seal(
+            &mut tx,
+            &s.payout_keys,
+            crate::seal::Kind::Application,
+            application_id,
+            "SUBMITTED",
         )
         .await?;
     }
@@ -1135,40 +1195,126 @@ pub async fn quote_payout(s: &AppState, a: &Actor, org: Uuid, amount: &str) -> R
     Ok(v)
 }
 
-pub async fn statements(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
-    let mut tx = s.pool.begin().await?;
-    member(&mut tx, a, org, false).await?;
-    let items: Vec<Value> = sqlx::query_scalar(
-        "SELECT jsonb_build_object('id',t.id,'code',t.transaction_code,'description',t.description,'source',t.source_ref,
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct StatementPage {
+    /// The previous page's `next_before`: `<created_at>|<id>` of its last line.
+    pub before: Option<String>,
+    pub limit: Option<i64>,
+}
+
+fn statement_cursor(
+    v: Option<&str>,
+) -> Result<(Option<chrono::DateTime<chrono::Utc>>, Option<Uuid>)> {
+    let Some(v) = v.filter(|v| !v.is_empty()) else {
+        return Ok((None, None));
+    };
+    let bad = || Error::InvalidCode("STATEMENT_CURSOR_INVALID");
+    let (at, id) = v.split_once('|').ok_or_else(bad)?;
+    let at = chrono::DateTime::parse_from_rfc3339(at)
+        .map_err(|_| bad())?
+        .to_utc();
+    Ok((Some(at), Some(Uuid::parse_str(id).map_err(|_| bad())?)))
+}
+
+const STATEMENT_SELECT: &str = "SELECT jsonb_build_object('id',t.id,'code',t.transaction_code,'description',t.description,'source',t.source_ref,
             'status',t.status,'created_at',t.created_at,'currency',t.currency,
             'amount',(SUM(CASE WHEN e.side='CREDIT' THEN e.amount ELSE -e.amount END))::text)
          FROM finance.ledger_transactions t JOIN finance.ledger_entries e ON e.transaction_id=t.id AND e.org_id=t.org_id
-         WHERE t.org_id=$1 AND e.account='ROYALTY_PAYABLE'
-         GROUP BY t.id ORDER BY t.created_at DESC LIMIT 200",
-    )
+         WHERE t.org_id=$1 AND e.account='ROYALTY_PAYABLE'";
+
+/// Settlement statement lines, newest first, the whole history in pages.
+pub async fn statements(s: &AppState, a: &Actor, org: Uuid, p: StatementPage) -> Result<Value> {
+    let limit = p.limit.unwrap_or(200).clamp(1, 500);
+    let mut tx = s.pool.begin().await?;
+    member(&mut tx, a, org, false).await?;
+    let (at, id) = statement_cursor(p.before.as_deref())?;
+    let items: Vec<Value> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+        "{STATEMENT_SELECT} AND ($2::timestamptz IS NULL OR (t.created_at, t.id) < ($2, $3))
+         GROUP BY t.id ORDER BY t.created_at DESC, t.id DESC LIMIT $4"
+    )))
+    .bind(org)
+    .bind(at)
+    .bind(id)
+    .bind(limit + 1)
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.rollback().await?;
+    let more = items.len() as i64 > limit;
+    let items: Vec<Value> = items.into_iter().take(limit as usize).collect();
+    let next = if more {
+        items.last().and_then(|v| {
+            let at = chrono::DateTime::parse_from_rfc3339(v["created_at"].as_str()?).ok()?;
+            Some(format!(
+                "{}|{}",
+                at.to_utc()
+                    .to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
+                v["id"].as_str()?
+            ))
+        })
+    } else {
+        None
+    };
+    Ok(json!({"items":items,"next_before":next}))
+}
+
+/// Every statement line as CSV (UTF-8 with BOM for Korean Excel), newest first.
+pub async fn statements_csv(s: &AppState, a: &Actor, org: Uuid) -> Result<String> {
+    let mut tx = s.pool.begin().await?;
+    member(&mut tx, a, org, false).await?;
+    let items: Vec<Value> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+        "{STATEMENT_SELECT} GROUP BY t.id ORDER BY t.created_at DESC, t.id DESC LIMIT {CSV_MAX_ROWS}"
+    )))
     .bind(org)
     .fetch_all(&mut *tx)
     .await?;
     tx.rollback().await?;
-    Ok(json!({"items":items}))
+    let mut out =
+        String::from("\u{feff}created_at,code,description,source,status,currency,amount\r\n");
+    for v in &items {
+        let t = |k: &str| crate::partners::manifest::csv_cell(v[k].as_str().unwrap_or(""));
+        out.push_str(&format!(
+            "{},{},{},{},{},{},{}\r\n",
+            t("created_at"),
+            t("code"),
+            t("description"),
+            t("source"),
+            t("status"),
+            t("currency"),
+            v["amount"].as_str().unwrap_or("0")
+        ));
+    }
+    Ok(out)
 }
+
+/// An export never holds more rows than this (a decade of a large catalog fits).
+const CSV_MAX_ROWS: i64 = 200_000;
 
 pub async fn list_payouts(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
     let mut tx = s.pool.begin().await?;
     member(&mut tx, a, org, false).await?;
-    let items: Vec<Value> = sqlx::query_scalar(
+    let mut items: Value = Value::Array(sqlx::query_scalar(concat!(
         "SELECT jsonb_build_object('id',p.id,'amount',p.amount::text,'currency',p.currency,'status',p.status,'note',p.note,'created_at',p.created_at,
             'fee',p.fee_amount::text,'net',p.net_amount::text,'policy_version',p.policy_version,
-            'account',p.account_snapshot - 'key_version','cancelled_at',p.cancelled_at,
-            'cancellable',(p.status='REQUESTED' OR (p.status='ORDERED' AND o.status IN ('PENDING_APPROVAL','APPROVED'))),
+            'account',p.account_snapshot - 'key_version' - 'holder_name'
+              || jsonb_build_object('holder_name',",
+        crate::pii_ref!(
+            "holder_name",
+            "p.org_id",
+            "p.account_snapshot->>'holder_name'",
+            "p.holder_cipher"
+        ),
+        "),'cancelled_at',p.cancelled_at,
+            'cancellable',(p.status='REQUESTED' OR (p.status='ORDERED' AND o.status='PENDING_APPROVAL')),
             'order_status',o.status,'order_updated_at',COALESCE(o.approved_at,o.created_at))
          FROM portal.payout_requests p LEFT JOIN finance.payout_orders o ON o.id=p.payout_order_id
-         WHERE p.org_id=$1 ORDER BY p.created_at DESC LIMIT 200",
-    )
+         WHERE p.org_id=$1 ORDER BY p.created_at DESC LIMIT 200"
+    ))
     .bind(org)
     .fetch_all(&mut *tx)
-    .await?;
+    .await?);
     tx.rollback().await?;
+    crate::pii::reveal(&s.payout_keys, &mut items)?;
     Ok(json!({"items":items}))
 }
 
@@ -1220,16 +1366,26 @@ pub async fn request_payout(
     }
     // 신청 시점의 수령 계좌를 고정한다: 이후 계좌를 바꿔도 이 신청은 이 계좌로 간다.
     let account = sqlx::query(
-        "SELECT payee_type,holder_name,bank_name,account_last4,account_cipher,key_version,row_version
+        "SELECT payee_type,holder_name,holder_cipher,bank_name,account_last4,account_cipher,key_version,row_version
          FROM portal.payout_accounts WHERE org_id=$1 FOR SHARE",
     )
     .bind(org)
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(Error::PolicyGate("PAYOUT_ACCOUNT_REQUIRED"))?;
+    // The holder name is frozen sealed next to the account number, not in the JSON.
+    let holder_cipher = match account.get::<Option<Vec<u8>>, _>("holder_cipher") {
+        Some(c) => c,
+        None => s.payout_keys.seal_field(
+            crate::payout_keys::Field::PayoutHolderName,
+            org,
+            &account
+                .get::<Option<String>, _>("holder_name")
+                .ok_or(Error::Internal)?,
+        )?,
+    };
     let snapshot = json!({
         "payee_type": account.get::<String, _>("payee_type"),
-        "holder_name": account.get::<String, _>("holder_name"),
         "bank_name": account.get::<String, _>("bank_name"),
         "account_last4": account.get::<String, _>("account_last4"),
         "account_row_version": account.get::<i64, _>("row_version"),
@@ -1251,8 +1407,8 @@ pub async fn request_payout(
     let id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO portal.payout_requests(id,org_id,requested_by,payee_party_id,amount,currency,idempotency_key,
-           fee_amount,net_amount,policy_version,account_snapshot,account_cipher,account_key_version)
-         VALUES($1,$2,$3,$4,$5,'KRW',$6,$7,$8,$9,$10,$11,$12)",
+           fee_amount,net_amount,policy_version,account_snapshot,account_cipher,account_key_version,holder_cipher)
+         VALUES($1,$2,$3,$4,$5,'KRW',$6,$7,$8,$9,$10,$11,$12,$13)",
     )
     .bind(id)
     .bind(org)
@@ -1266,6 +1422,7 @@ pub async fn request_payout(
     .bind(&snapshot)
     .bind(account.get::<Vec<u8>, _>("account_cipher"))
     .bind(account.get::<i16, _>("key_version"))
+    .bind(&holder_cipher)
     .execute(&mut *tx)
     .await?;
     operations::audit(
@@ -1337,16 +1494,53 @@ pub async fn cancel_payout(s: &AppState, a: &Actor, org: Uuid, id: Uuid) -> Resu
 // ---------------------------------------------------------------------------
 // Reports (matched royalty report lines)
 // ---------------------------------------------------------------------------
-pub async fn reports(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
+/// A report period in whole months, `from`..=`to` as `YYYY-MM` (KST). Both
+/// empty: the last 12 months. At most 10 years at once.
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct Period {
+    pub from: Option<String>,
+    pub to: Option<String>,
+}
+
+/// `[start, end)` dates of a [`Period`].
+pub fn period_bounds(p: &Period) -> Result<(chrono::NaiveDate, chrono::NaiveDate)> {
+    use chrono::{Datelike, Months, NaiveDate};
+    let month = |v: &str| {
+        NaiveDate::parse_from_str(&format!("{v}-01"), "%Y-%m-%d")
+            .map_err(|_| Error::InvalidCode("REPORT_PERIOD_INVALID"))
+    };
+    let today = (chrono::Utc::now() + chrono::Duration::hours(9)).date_naive();
+    let this_month =
+        NaiveDate::from_ymd_opt(today.year(), today.month(), 1).ok_or(Error::Internal)?;
+    let to = match p.to.as_deref().filter(|v| !v.is_empty()) {
+        Some(v) => month(v)?,
+        None => this_month,
+    };
+    let from = match p.from.as_deref().filter(|v| !v.is_empty()) {
+        Some(v) => month(v)?,
+        None => to - Months::new(11),
+    };
+    let end = to + Months::new(1);
+    if from > to || from < end - Months::new(120) {
+        return Err(Error::InvalidCode("REPORT_PERIOD_INVALID"));
+    }
+    Ok((from, end))
+}
+
+pub async fn reports(s: &AppState, a: &Actor, org: Uuid, p: Period) -> Result<Value> {
+    let (start, end) = period_bounds(&p)?;
     let mut tx = s.pool.begin().await?;
     member(&mut tx, a, org, false).await?;
     let base = "FROM finance.report_lines l JOIN finance.royalty_reports rr ON rr.id=l.report_id
-                WHERE l.org_id=$1 AND l.match_status='AUTO' AND rr.period_start >= (date_trunc('month', now()) - interval '11 months')";
+                WHERE l.org_id=$1 AND l.match_status='AUTO' AND rr.period_start >= $2 AND rr.period_start < $3";
     let by_month: Vec<Value> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT jsonb_build_object('month',to_char(rr.period_start,'YYYY-MM'),'currency',COALESCE(l.currency, rr.currency),'streams',COALESCE(SUM(l.quantity),0)::text,'revenue',COALESCE(SUM(l.gross_amount),0)::text)
          {base} GROUP BY to_char(rr.period_start,'YYYY-MM'), COALESCE(l.currency, rr.currency) ORDER BY to_char(rr.period_start,'YYYY-MM'), COALESCE(l.currency, rr.currency)"
     )))
     .bind(org)
+    .bind(start)
+    .bind(end)
     .fetch_all(&mut *tx)
     .await?;
     let by_dsp: Vec<Value> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
@@ -1354,16 +1548,20 @@ pub async fn reports(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
          {base} GROUP BY rr.dsp_id, COALESCE(l.currency, rr.currency) ORDER BY SUM(l.quantity) DESC NULLS LAST"
     )))
     .bind(org)
+    .bind(start)
+    .bind(end)
     .fetch_all(&mut *tx)
     .await?;
     let by_release: Vec<Value> = sqlx::query_scalar(
         "SELECT jsonb_build_object('release_id',r.id,'title',r.title,'currency',COALESCE(l.currency, rr.currency),'streams',COALESCE(SUM(l.quantity),0)::text,'revenue',COALESCE(SUM(l.gross_amount),0)::text)
          FROM finance.report_lines l JOIN finance.royalty_reports rr ON rr.id=l.report_id
            JOIN catalog.releases r ON r.id=l.matched_release_id AND r.org_id=l.org_id
-         WHERE l.org_id=$1 AND l.match_status='AUTO' AND rr.period_start >= (date_trunc('month', now()) - interval '11 months')
+         WHERE l.org_id=$1 AND l.match_status='AUTO' AND rr.period_start >= $2 AND rr.period_start < $3
          GROUP BY r.id, COALESCE(l.currency, rr.currency) ORDER BY SUM(l.quantity) DESC NULLS LAST LIMIT 20",
     )
     .bind(org)
+    .bind(start)
+    .bind(end)
     .fetch_all(&mut *tx)
     .await?;
     // Month × platform × release rows for the studio report table and chart.
@@ -1372,11 +1570,13 @@ pub async fn reports(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
             'streams',COALESCE(SUM(l.quantity),0)::text,'revenue',COALESCE(SUM(l.gross_amount),0)::text)
          FROM finance.report_lines l JOIN finance.royalty_reports rr ON rr.id=l.report_id
            LEFT JOIN catalog.releases r ON r.id=l.matched_release_id AND r.org_id=l.org_id
-         WHERE l.org_id=$1 AND l.match_status='AUTO' AND rr.period_start >= (date_trunc('month', now()) - interval '11 months')
+         WHERE l.org_id=$1 AND l.match_status='AUTO' AND rr.period_start >= $2 AND rr.period_start < $3
          GROUP BY to_char(rr.period_start,'YYYY-MM'), rr.dsp_id, r.id, r.title, COALESCE(l.currency, rr.currency)
          ORDER BY 1 DESC, SUM(l.gross_amount) DESC NULLS LAST LIMIT 500",
     )
     .bind(org)
+    .bind(start)
+    .bind(end)
     .fetch_all(&mut *tx)
     .await?;
     // 통화가 다른 금액은 더하지 않는다: 원통화별 합계 (원화 환산은 정산 확정 때 환율과 함께 기록).
@@ -1385,12 +1585,53 @@ pub async fn reports(s: &AppState, a: &Actor, org: Uuid) -> Result<Value> {
          {base} GROUP BY COALESCE(l.currency, rr.currency) ORDER BY 1"
     )))
     .bind(org)
+    .bind(start)
+    .bind(end)
     .fetch_all(&mut *tx)
     .await?;
     tx.rollback().await?;
     Ok(
-        json!({"by_month":by_month,"by_dsp":by_dsp,"by_release":by_release,"rows":rows,"by_currency":by_currency}),
+        json!({"by_month":by_month,"by_dsp":by_dsp,"by_release":by_release,"rows":rows,"by_currency":by_currency,
+               "from":start.format("%Y-%m").to_string(),"to":(end - chrono::Months::new(1)).format("%Y-%m").to_string()}),
     )
+}
+
+/// Month × platform × release × currency lines of a period as CSV, all of them.
+pub async fn reports_csv(s: &AppState, a: &Actor, org: Uuid, p: Period) -> Result<String> {
+    let (start, end) = period_bounds(&p)?;
+    let mut tx = s.pool.begin().await?;
+    member(&mut tx, a, org, false).await?;
+    let rows: Vec<Value> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+        "SELECT jsonb_build_object('month',to_char(rr.period_start,'YYYY-MM'),'dsp',rr.dsp_id,'release_id',r.id,'release',COALESCE(r.title,''),'currency',COALESCE(l.currency, rr.currency),
+            'streams',COALESCE(SUM(l.quantity),0)::text,'revenue',COALESCE(SUM(l.gross_amount),0)::text)
+         FROM finance.report_lines l JOIN finance.royalty_reports rr ON rr.id=l.report_id
+           LEFT JOIN catalog.releases r ON r.id=l.matched_release_id AND r.org_id=l.org_id
+         WHERE l.org_id=$1 AND l.match_status='AUTO' AND rr.period_start >= $2 AND rr.period_start < $3
+         GROUP BY to_char(rr.period_start,'YYYY-MM'), rr.dsp_id, r.id, r.title, COALESCE(l.currency, rr.currency)
+         ORDER BY to_char(rr.period_start,'YYYY-MM') DESC, rr.dsp_id, SUM(l.gross_amount) DESC NULLS LAST LIMIT {CSV_MAX_ROWS}"
+    )))
+    .bind(org)
+    .bind(start)
+    .bind(end)
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.rollback().await?;
+    let mut out =
+        String::from("\u{feff}month,platform,release_id,release,currency,streams,revenue\r\n");
+    for v in &rows {
+        let t = |k: &str| crate::partners::manifest::csv_cell(v[k].as_str().unwrap_or(""));
+        out.push_str(&format!(
+            "{},{},{},{},{},{},{}\r\n",
+            t("month"),
+            t("dsp"),
+            t("release_id"),
+            t("release"),
+            t("currency"),
+            v["streams"].as_str().unwrap_or("0"),
+            v["revenue"].as_str().unwrap_or("0")
+        ));
+    }
+    Ok(out)
 }
 
 // ---------------------------------------------------------------------------
@@ -1493,7 +1734,15 @@ id_body!(h_document_proof, attach_proof, ProofInput);
 id_get!(h_application, get_application);
 id_body!(h_record_application, record_application, ApplicationInput);
 org_get!(h_finance_summary, finance_summary);
-org_get!(h_statements, statements);
+async fn h_statements(
+    State(s): State<AppState>,
+    Path(org): Path<Uuid>,
+    Query(p): Query<StatementPage>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    Ok(Json(statements(&s, &a, org, p).await?))
+}
 org_get!(h_payouts, list_payouts);
 org_body!(h_request_payout, request_payout, PayoutRequestInput);
 id_post!(h_cancel_payout, cancel_payout);
@@ -1511,7 +1760,63 @@ async fn h_quote_payout(
     let a = auth::actor(&s.pool, &h, &s.config, false).await?;
     Ok(Json(quote_payout(&s, &a, org, &q.amount).await?))
 }
-org_get!(h_reports, reports);
+async fn h_reports(
+    State(s): State<AppState>,
+    Path(org): Path<Uuid>,
+    Query(p): Query<Period>,
+    h: HeaderMap,
+) -> Result<Json<Value>> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    Ok(Json(reports(&s, &a, org, p).await?))
+}
+
+pub(crate) fn csv_response(body: String, name: &str) -> Result<axum::response::Response> {
+    use axum::http::{HeaderValue, header};
+    use axum::response::IntoResponse;
+    let mut res = body.into_response();
+    let hd = res.headers_mut();
+    hd.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/csv; charset=utf-8"),
+    );
+    hd.insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_str(&format!("attachment; filename=\"{name}\""))
+            .map_err(|_| Error::Invalid)?,
+    );
+    hd.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("private, no-store"),
+    );
+    hd.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    Ok(res)
+}
+async fn h_statements_csv(
+    State(s): State<AppState>,
+    Path(org): Path<Uuid>,
+    h: HeaderMap,
+) -> Result<axum::response::Response> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    csv_response(statements_csv(&s, &a, org).await?, "statements.csv")
+}
+async fn h_reports_csv(
+    State(s): State<AppState>,
+    Path(org): Path<Uuid>,
+    Query(p): Query<Period>,
+    h: HeaderMap,
+) -> Result<axum::response::Response> {
+    let a = auth::actor(&s.pool, &h, &s.config, false).await?;
+    let (start, end) = period_bounds(&p)?;
+    let name = format!(
+        "reports-{}-{}.csv",
+        start.format("%Y%m"),
+        (end - chrono::Months::new(1)).format("%Y%m")
+    );
+    csv_response(reports_csv(&s, &a, org, p).await?, &name)
+}
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -1558,6 +1863,10 @@ pub fn routes() -> Router<AppState> {
         .route("/api/orgs/{org}/finance/summary", get(h_finance_summary))
         .route("/api/orgs/{org}/finance/statements", get(h_statements))
         .route(
+            "/api/orgs/{org}/finance/statements.csv",
+            get(h_statements_csv),
+        )
+        .route(
             "/api/orgs/{org}/finance/payouts",
             get(h_payouts).post(h_request_payout),
         )
@@ -1567,6 +1876,7 @@ pub fn routes() -> Router<AppState> {
             post(h_cancel_payout),
         )
         .route("/api/orgs/{org}/reports", get(h_reports))
+        .route("/api/orgs/{org}/reports.csv", get(h_reports_csv))
 }
 
 #[cfg(test)]

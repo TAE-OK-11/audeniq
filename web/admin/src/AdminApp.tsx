@@ -7,6 +7,8 @@ import { ApiError } from './api/errors';
 import { MOCK } from './lib/mode';
 import { useConfirm } from './components/Confirm';
 import { useToast } from './components/Toast';
+import { MfaGate } from './components/MfaGate';
+import { MFA_CODES } from './api/mfa';
 import { staffApi, type Duty, type Overview, type StaffMe } from './api/staff';
 import { ROLE_LABEL } from './labels';
 import { SkeletonList, StaffContext } from './staffUi';
@@ -19,6 +21,7 @@ const PAGE_LOADERS = {
   ReviewDetail: () => import('./pages/ReviewDetail'),
   Approvals: () => import('./pages/Approvals'),
   Documents: () => import('./pages/Documents'),
+  PrintCheck: () => import('./pages/PrintCheck'),
   Inquiries: () => import('./pages/Inquiries'),
   Deliveries: () => import('./pages/Deliveries'),
   Dsps: () => import('./pages/Dsps'),
@@ -31,6 +34,7 @@ const ReviewQueue = page('ReviewQueue');
 const ReviewDetail = page('ReviewDetail');
 const Approvals = page('Approvals');
 const Documents = page('Documents');
+const PrintCheck = page('PrintCheck');
 const Inquiries = page('Inquiries');
 const Deliveries = page('Deliveries');
 const Dsps = page('Dsps');
@@ -67,6 +71,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
       // 2차 승인은 발매 심사 안의 탭
       { to: '/reviews', label: '발매 심사', icon: 'review', count: o => o.review + o.second_approvals, hot: true, also: ['/approvals'] },
       { to: '/documents', label: '서류 검토', icon: 'doc', count: o => o.documents },
+      { to: '/print-check', label: '출력물 확인', icon: 'doc' },
     ],
   },
   { group: '콘텐츠', items: [{ to: '/admin/content', label: '공지·이벤트 관리', icon: 'doc', adminOnly: true }] },
@@ -101,14 +106,16 @@ export function AdminApp() {
   const confirm = useConfirm();
   const { user, logout } = useAuth();
   const [me, setMe] = useState<StaffMe | null>(null);
-  const [gate, setGate] = useState<'loading' | 'ok' | 'forbidden' | 'error'>('loading');
+  const [gate, setGate] = useState<'loading' | 'ok' | 'forbidden' | 'mfa' | 'error'>('loading');
   const [counts, setCounts] = useState<Overview | null>(null);
 
   const loadMe = useCallback(() => {
     setGate('loading');
     staffApi.me()
       .then(m => { setMe(m); setGate('ok'); prefetchPages(); })
-      .catch(e => setGate(e instanceof ApiError && e.status === 403 ? 'forbidden' : 'error'));
+      .catch(e => setGate(
+        e instanceof ApiError && (MFA_CODES as readonly string[]).includes(e.code) ? 'mfa'
+          : e instanceof ApiError && e.status === 403 ? 'forbidden' : 'error'));
   }, []);
   useEffect(loadMe, [loadMe]);
 
@@ -144,6 +151,9 @@ export function AdminApp() {
 
   if (gate === 'loading') {
     return <div className="aq-boot" role="status" aria-label="관리자 화면을 불러오는 중"><img src={`${import.meta.env.BASE_URL}static/AUDENIQ_Logo_Light.svg`} alt="" /><span className="aq-boot-bar" /></div>;
+  }
+  if (gate === 'mfa') {
+    return <MfaGate email={user?.email} onDone={loadMe} onLogout={() => { void logout().then(() => nav('/login', { replace: true })); }} />;
   }
   if (gate === 'forbidden') {
     return (
@@ -214,6 +224,7 @@ export function AdminApp() {
               <Route path="/reviews/:id" element={<ReviewDetail />} />
               <Route path="/approvals" element={<Approvals />} />
               <Route path="/documents" element={<Documents />} />
+              <Route path="/print-check" element={<PrintCheck />} />
               <Route path="/inquiries" element={<Inquiries />} />
               <Route path="/inquiries/:id" element={<Inquiries />} />
               <Route path="/deliveries" element={<Deliveries />} />

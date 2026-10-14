@@ -3,7 +3,7 @@
 ## 개선한 경로
 
 DB에서 현재 암호화되는 계좌번호 필드(`portal.payout_accounts.account_cipher`),
-AWS/GCP KMS 키 준비, 비밀번호와 서비스/세션 토큰 인증 경로를 다룬다.
+AWS/GCP/OCI KMS 키 준비, 비밀번호와 서비스/세션 토큰 인증 경로를 다룬다.
 계좌 암호문 형식·키 버전·조직/필드/header AAD, AES-256-GCM의 랜덤 nonce와
 인증 tag, Argon2id의 메모리·반복 비용을 유지한다.
 
@@ -43,12 +43,12 @@ DB CPU나 실제 처리 시간의 감소율 측정이 아니다. 암호화된 �
   AWS retry 설정은 유지한다. 모든 병렬 작업이 완료되고 모든 키 버전이
   성공해야 파일을 원자적으로 교체한다. 실패 시 기존 파일을 유지한다.
 
-KMS 동시 실행을 늘리면 네트워크 대기 시간이 겹치지만 AWS CLI 프로세스의
-순간 RAM 사용량도 늘 수 있다. 메모리가 작은 서버에서는 다음처럼 직렬
+KMS 동시 실행을 늘리면 네트워크 대기 시간이 겹친다. 키 준비 도구는 이제
+Rust 바이너리 한 프로세스라서 CLI 프로세스별 RAM이 늘지 않는다. 메모리가 작은 서버에서는 다음처럼 직렬
 모드를 사용한다. 전체 KMS 호출 수는 버전 수에 따라 동일하다.
 
 ```sh
-python3 deploy/kms-keyring.py materialize \
+audeniq-secrets kms materialize \
   --bundle /opt/audeniq/payout-wrapped-keyring.json --kms-concurrency 1
 ```
 

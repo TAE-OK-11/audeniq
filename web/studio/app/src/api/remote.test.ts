@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReleasePayload } from './types';
-import { ApiError } from './errors';
+import { ApiError, PartialSaveError } from './errors';
 import { setCsrf, setOrgId } from './http';
 import * as http from './http';
-import { cleanText, remoteApi, sanitizeProfile, serverUpc, uiStatus, uploadContentType } from './remote';
+import { cleanText, fixKind, remoteApi, sanitizeProfile, serverUpc, storedCoverData, uiStatus, uploadContentType } from './remote';
 
 const ORG = 'org-1';
 
@@ -43,11 +43,44 @@ describe('upload completion backpressure', () => {
     vi.stubGlobal('fetch', fetcher);
     const result = remoteApi.uploadFile(new File(['test'], 'a.tta'), 'AUDIO');
     const checked = expect(result).resolves.toMatchObject({ assetId: 'a1', container: 'FLAC' });
-    await vi.advanceTimersByTimeAsync(5100);
+    // First retry within 2–3 s (the server queues conversions; busy is short)
+    await vi.advanceTimersByTimeAsync(3100);
     await checked;
     expect(put).toHaveBeenCalledTimes(1);
     expect(fetcher).toHaveBeenCalledTimes(3);
     expect(completions).toBe(2);
+  });
+
+  it('keeps waiting out capacity past the old retry cap, within the completion window', async () => {
+    vi.useFakeTimers();
+    setOrgId(ORG);
+    vi.spyOn(http, 'putToGrant').mockResolvedValue();
+    let completions = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/uploads')) return new Response(JSON.stringify({ upload_session_id: 's1', asset_id: 'a1', expected_key: 'quarantine/a1', grant: {} }));
+      completions++;
+      return completions <= 60
+        ? new Response(JSON.stringify({ error: { code: 'UPLOAD_BUSY' } }), { status: 503 })
+        : new Response(JSON.stringify({ asset_id: 'a1', detected_container: 'FLAC' }));
+    }));
+    const result = remoteApi.uploadFile(new File(['test'], 'a.flac'), 'AUDIO');
+    const checked = expect(result).resolves.toMatchObject({ assetId: 'a1' });
+    await vi.advanceTimersByTimeAsync(30 * 60_000);
+    await checked;
+    expect(completions).toBe(61);
+  });
+
+  it('stops retrying when the completion window closes', async () => {
+    vi.useFakeTimers();
+    setOrgId(ORG);
+    vi.spyOn(http, 'putToGrant').mockResolvedValue();
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).endsWith('/uploads')
+      ? new Response(JSON.stringify({ upload_session_id: 's1', asset_id: 'a1', expected_key: 'quarantine/a1', grant: {} }))
+      : new Response(JSON.stringify({ error: { code: 'UPLOAD_BUSY' } }), { status: 503 })));
+    const result = remoteApi.uploadFile(new File(['test'], 'a.flac'), 'AUDIO');
+    const checked = expect(result).rejects.toMatchObject({ code: 'UPLOAD_BUSY' });
+    await vi.advanceTimersByTimeAsync(40 * 60_000);
+    await checked;
   });
 
   it('does not retry a lossy-file rejection', async () => {
@@ -164,6 +197,26 @@ function fakeServer() {
 }
 
 describe('서버 값 정리', () => {
+  it('업로드한 커버 파일이 있으면 JPEG 미리보기는 서명 검사로 보내지 않는다', () => {
+    const jpeg = 'data:image/jpeg;base64,/9j/4AAQ';
+    expect(storedCoverData(jpeg, 'asset-1')).toBe('');
+    expect(storedCoverData('blob:https://studio/x', 'asset-1')).toBe('');
+    // 업로드 전에는 그대로 둔다 (서버가 커버를 아직 참조하지 못함)
+    expect(storedCoverData(jpeg, undefined)).toBe(jpeg);
+    expect(storedCoverData('data:image/png;base64,iVBOR', 'asset-1')).toBe('data:image/png;base64,iVBOR');
+    // 서버 보관 커버의 표시 주소는 저장하지 않는다 (자산 ID로 다시 만든다)
+    expect(storedCoverData('/api/orgs/o/assets/a/image', 'asset-1')).toBe('');
+    expect(storedCoverData('', 'asset-1')).toBe('');
+  });
+
+  it('권리 보류는 신청서가 아니라 요청 서류 제출로 보완한다', () => {
+    expect(fixKind('STAGE2_CORRECTION', uiStatus('STAGE2_CORRECTION'))).toBe('application');
+    expect(fixKind('ON_HOLD_RIGHTS', uiStatus('ON_HOLD_RIGHTS'))).toBe('documents');
+    // 접수된 발매의 서류 보완(계약서 NEEDS)도 신청서는 잠겨 있다
+    expect(fixKind('READY_FOR_DELIVERY', uiStatus('READY_FOR_DELIVERY', false, 'NEEDS'))).toBe('documents');
+    expect(fixKind('READY_FOR_DELIVERY', uiStatus('READY_FOR_DELIVERY', false, 'APPROVED'))).toBeUndefined();
+  });
+
   it('처리 단계를 화면 상태로 바꾼다', () => {
     expect(uiStatus('DRAFT')).toBe('draft');
     expect(uiStatus('STAGE2_CORRECTION')).toBe('needs');
@@ -334,6 +387,31 @@ describe('remoteApi (가짜 서버)', () => {
     const removed = payload({ tracks: [{ ...edited.tracks[1], serverId: r2.trackServerIds!.t2 }] });
     await remoteApi.saveDraft(first.id, removed);
     expect(rel.tracks.map(t => t.title)).toEqual(['둘째 곡']);
+  });
+
+  it('발매 정보 저장이 실패하면 이미 반영된 발매·새 트랙을 알려 다음 저장이 이어서 쓴다', async () => {
+    const first = await remoteApi.saveDraft(null, payload());
+    const kept = { ...payload().tracks[0], serverId: first.trackServerIds!.t1 };
+    const added = payload({ tracks: [kept, { ...payload().tracks[0], id: 't3', title: '새 곡', assetId: 'asset-3' }] });
+    // 트랙 저장 뒤 발매 PUT만 거절 (예: 커버 검사 400)
+    const failing = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'PUT' && new URL(String(input), 'http://studio.test').pathname.endsWith(`/releases/${first.id}`)) {
+        return new Response(JSON.stringify({ error: { code: 'SIGNATURE_INVALID' } }), { status: 400, headers: { 'content-type': 'application/json' } });
+      }
+      return server.handler(input, init);
+    });
+    vi.stubGlobal('fetch', failing);
+    const err = await remoteApi.saveDraft(first.id, added).catch(e => e);
+    expect(err).toBeInstanceOf(PartialSaveError);
+    expect(err).toMatchObject({ releaseId: first.id, code: 'SIGNATURE_INVALID', trackServerIds: { t3: expect.stringMatching(/^track-/) } });
+    expect(err.message).toMatch(/트랙 정보는 저장됐지만 발매 정보는 저장되지 않았어요/);
+    // 다음 저장은 받은 서버 id로 같은 트랙을 쓴다 — 보관했다가 다시 만들지 않는다
+    vi.stubGlobal('fetch', vi.fn(server.handler));
+    const before = server.releases.get(first.id)!.tracks.map(t => t.id);
+    expect(Object.keys(err.trackServerIds)).toEqual(['t3']);
+    const retried = payload({ tracks: added.tracks.map(t => (t.id === 't3' ? { ...t, serverId: err.trackServerIds.t3 } : t)) });
+    await remoteApi.saveDraft(first.id, retried);
+    expect(server.releases.get(first.id)!.tracks.map(t => t.id)).toEqual(before);
   });
 
   it('접수된 발매는 저장하지 않는다', async () => {

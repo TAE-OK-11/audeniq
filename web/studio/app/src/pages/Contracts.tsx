@@ -1,4 +1,5 @@
 // 계약서 — 라이브 view-contracts / renderContracts(오버라이드) 대응
+import { OrgContractEnd } from '../components/OrgContractEnd';
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from '../lib/router';
 import { useDocs } from '../store/docs';
@@ -8,6 +9,8 @@ import { api } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { DocumentModal } from '../components/DocumentModal';
 import { SignatureModal } from '../components/SignatureModal';
+import { refreshDocs } from '../store/portalSync';
+import { MOCK } from '../lib/mode';
 
 export function Contracts() {
   const docs = useDocs();
@@ -16,6 +19,8 @@ export function Contracts() {
 
   const [params, setParams] = useSearchParams();
   const nav = useNavigate();
+  // 담당자 승인으로 계약서가 ‘서명 필요’로 바뀌었을 수 있다 — 화면을 열 때 새로 받는다
+  useEffect(() => { if (!MOCK) void refreshDocs(); }, []);
   const openDoc = openId ? docs.find(d => d.id === openId) ?? null : null;
   // 발매마다 신청서 + 계약서를 한 묶음으로 — 서명할 것, 검토·보완 중, 체결 완료 순, 같은 묶음 안에서는 최신순
   const ORDER: Record<BundleStage, number> = { 'to-sign': 0, needs: 1, review: 2, waiting: 3, signed: 4 };
@@ -80,6 +85,8 @@ export function Contracts() {
           />
         )}
       </div>
+
+      <OrgContractEnd />
 
       {openDoc && !signing && (
         <DocumentModal

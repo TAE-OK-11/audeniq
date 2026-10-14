@@ -4,7 +4,7 @@ import { ApiError, messageForCode } from '../api/errors';
 import { applicationPending, needsSecond } from './labels';
 import type {
   ApprovalItem, DecisionInput, DecisionResult, DeliveryDecisionInput, DeliveryItem, DspItem, InquiryMessage, InquiryItem,
-  Overview, PayoutItem, QueueRelease, ReleaseSheet, ReleaseTimelineItem, StagingRow, StaffDocument, StaffMe, AgreementTerms, AgreementTermsInput
+  Overview, PayoutItem, QueueRelease, ReleaseSheet, ReleaseTimelineItem, StagingRow, StaffDocument, StaffMe, AgreementTerms, AgreementTermsInput, TakedownItem, CorrectionItem, InfringementClaim, PitchItem
 } from './api';
 import { applicationHash, type StudioDraft } from './application';
 
@@ -115,6 +115,41 @@ const releases: MockRelease[] = [
   sheetFor(q({ id: 'r4d5e6f7', title: 'Paper Moon', artist: 'Lumi', org_name: 'Lumi Records', status: 'READY_FOR_DELIVERY', agreement: 'REVIEW', submitted_at: iso(70) }), []),
   sheetFor(q({ id: 'r5e6f7a8', title: '고요한 밤의 노래', artist: '이안', org_name: '이안', status: 'STAGE2_CORRECTION', submitted_at: iso(50) }), []),
 ];
+
+const takedowns: TakedownItem[] = [{
+  id: 'td-1', org_id: 'org-2', org_name: '한결 뮤직', release_id: 'rel-live-1', title: '여름의 끝', package_id: 'pkg-1',
+  reason: '이전 레이블과의 계약이 끝나 서비스를 내려야 해요.', status: 'PENDING', decision_note: '',
+  created_at: new Date(Date.now() - 3 * 3600_000).toISOString(), decided_at: null,
+  platforms: [
+    { partner_id: 'D-1', slug: 'melon', name: '멜론', live_status: 'LIVE' },
+    { partner_id: 'D-5', slug: 'spotify', name: 'Spotify', live_status: 'LIVE' },
+  ],
+}];
+
+const corrections: CorrectionItem[] = [{
+  id: 'mc-1', org_id: 'org-2', org_name: '한결 뮤직', release_id: 'rel-live-1', title: '여름의 끝', status: 'PENDING',
+  changes: { genre: '인디 팝', tracks: [{ track_id: 'trk-1', credits: [{ name: '김한결', role: 'Composer' }, { name: '이편곡', role: 'Arranger' }] }] },
+  reason: '작곡가 이름 철자가 틀렸어요.', decision_note: '', created_at: new Date(Date.now() - 2 * 3600_000).toISOString(), decided_at: null,
+  tracks: [{ track_id: 'trk-1', title: '여름의 끝' }],
+}];
+
+const pitches: PitchItem[] = [{
+  id: 'pp-1', org_id: 'org-2', org_name: '한결 뮤직', release_id: 'rel-live-1', title: '여름의 끝', artist: '한결',
+  release_date: new Date(Date.now() + 14 * 86400_000).toISOString().slice(0, 10), track_id: 'trk-1', track_title: '여름의 끝',
+  description: '여름이 끝나갈 무렵의 아쉬움을 담은 어쿠스틱 팝이에요. 기타와 현악이 천천히 쌓여요.',
+  genres: '어쿠스틱 팝', moods: '아련함, 저녁', instruments: '어쿠스틱 기타, 현악', similar_artists: '', marketing: '뮤직비디오 공개 예정',
+  status: 'SUBMITTED', platforms: [], platforms_requested: ['melon', 'spotify'], result: '', staff_note: '',
+  created_at: new Date(Date.now() - 3 * 3600_000).toISOString(), updated_at: new Date(Date.now() - 3 * 3600_000).toISOString(),
+}];
+
+const infringementClaims: InfringementClaim[] = [{
+  id: 'ic-1', receipt: 'IC-1A2B3C4D', status: 'RECEIVED', right_type: 'COPYRIGHT',
+  work: '저희 회사가 2024년에 발표한 ‘봄비’ (작곡 김하늘)', target: '‘여름의 끝’ 2번 트랙이 같은 멜로디를 씁니다. 멜론 앨범 페이지',
+  evidence_urls: ['https://example.com/evidence'], org_id: null, org_name: null, release_id: null, release_title: null,
+  staff_note: '', decided_at: null, counter_deadline: null, counter_notice: null, counter_at: null,
+  created_at: new Date(Date.now() - 5 * 3600_000).toISOString(),
+  claimant: { role: 'RIGHTS_HOLDER', name: '하늘음악 주식회사', email: 'legal@haneul.example', phone: '02-000-0000' },
+}];
 
 const approvals: (ApprovalItem & { status: string })[] = [{
   id: 'ap-7e21', org_id: 'org-r6', release_id: 'r6f7a8b9', revision_id: 'rev-r6', title: 'Midnight Drive',
@@ -360,6 +395,73 @@ export const mockStaff = {
     return fail('NO_VIRTUAL_IDENTIFIERS');
   },
   approvals: () => wait({ items: approvals.filter(a => a.status === 'PENDING') }),
+  takedowns: () => wait({ items: takedowns }),
+  pitches: () => wait({ items: pitches }),
+  updatePitch: async (pid: string, body: { status: string; platforms?: string[]; result?: string; note?: string }) => {
+    const p = pitches.find(x => x.id === pid) ?? fail('NOT_FOUND');
+    if (body.status === 'PITCHED' && !body.platforms?.length) fail('PITCH_PLATFORMS_REQUIRED');
+    if (body.status === 'SELECTED' && !body.result?.trim()) fail('PITCH_RESULT_REQUIRED');
+    Object.assign(p, {
+      status: body.status, platforms: body.platforms?.length ? body.platforms : p.platforms,
+      result: body.result?.trim() || p.result, staff_note: body.note?.trim() || p.staff_note, updated_at: new Date().toISOString(),
+    });
+    return wait({ status: body.status });
+  },
+  corrections: () => wait({ items: corrections }),
+  approveCorrection: async (cid: string, note: string) => {
+    const c = corrections.find(x => x.id === cid && x.status === 'PENDING') ?? fail('CONFLICT');
+    Object.assign(c, { status: 'APPROVED', decision_note: note, decided_at: new Date().toISOString() });
+    return wait({ status: 'APPROVED', jobs: ['job-mock'] });
+  },
+  declineCorrection: async (cid: string, note: string) => {
+    if (!note.trim()) fail('CORRECTION_NOTE_REQUIRED');
+    const c = corrections.find(x => x.id === cid && x.status === 'PENDING') ?? fail('CONFLICT');
+    Object.assign(c, { status: 'DECLINED', decision_note: note, decided_at: new Date().toISOString() });
+    return wait({ status: 'DECLINED' });
+  },
+  claims: (all: boolean) => wait({ items: infringementClaims.filter(c => all || ['RECEIVED', 'SUSPENDED', 'COUNTER_NOTICED'].includes(c.status)) }),
+  rejectClaim: async (cid: string, note: string) => {
+    if (!note.trim()) fail('CLAIM_NOTE_REQUIRED');
+    const c = infringementClaims.find(x => x.id === cid && x.status === 'RECEIVED') ?? fail('CONFLICT');
+    Object.assign(c, { status: 'REJECTED', staff_note: note, decided_at: new Date().toISOString() });
+    return wait({ status: 'REJECTED' });
+  },
+  suspendClaim: async (cid: string, releaseId: string, note: string) => {
+    const c = infringementClaims.find(x => x.id === cid && x.status === 'RECEIVED') ?? fail('CONFLICT');
+    Object.assign(c, {
+      status: 'SUSPENDED', release_id: releaseId, release_title: '여름의 끝', org_id: 'org-2', org_name: '한결 뮤직', staff_note: note,
+      decided_at: new Date().toISOString(), counter_deadline: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+      platforms: [{ partner_id: 'D-1', slug: 'melon', name: '멜론', live_status: 'TAKEDOWN_REQUESTED' }],
+    });
+    return wait({ status: 'SUSPENDED', jobs: ['job-mock'] });
+  },
+  restoreClaim: async (cid: string, note: string) => {
+    const c = infringementClaims.find(x => x.id === cid && ['SUSPENDED', 'COUNTER_NOTICED'].includes(x.status)) ?? fail('CONFLICT');
+    Object.assign(c, { status: 'RESTORED', staff_note: note || c.staff_note });
+    return wait({ status: 'RESTORED' });
+  },
+  upholdClaim: async (cid: string, note: string) => {
+    if (!note.trim()) fail('CLAIM_NOTE_REQUIRED');
+    const c = infringementClaims.find(x => x.id === cid && ['SUSPENDED', 'COUNTER_NOTICED'].includes(x.status)) ?? fail('CONFLICT');
+    Object.assign(c, { status: 'UPHELD', staff_note: note });
+    return wait({ status: 'UPHELD' });
+  },
+  approveTakedown: async (tid: string, note: string) => {
+    const t = takedowns.find(x => x.id === tid && x.status === 'PENDING') ?? fail('CONFLICT');
+    Object.assign(t, { status: 'APPROVED', decision_note: note, decided_at: new Date().toISOString() });
+    t.platforms.forEach(p => { p.live_status = 'TAKEDOWN_REQUESTED'; });
+    return wait({ status: 'APPROVED' });
+  },
+  declineTakedown: async (tid: string, note: string) => {
+    if (!note.trim()) fail('REVIEW_NOTE_REQUIRED');
+    const t = takedowns.find(x => x.id === tid && x.status === 'PENDING') ?? fail('CONFLICT');
+    Object.assign(t, { status: 'DECLINED', decision_note: note, decided_at: new Date().toISOString() });
+    return wait({ status: 'DECLINED' });
+  },
+  markTakenDown: async (pkg: string, partner: string) => {
+    takedowns.filter(t => t.package_id === pkg).forEach(t => t.platforms.forEach(p => { if (p.partner_id === partner) p.live_status = 'TAKEN_DOWN'; }));
+    return wait({ job_id: 'job-mock' });
+  },
   approve: async (aid: string) => {
     const a = approvals.find(x => x.id === aid && x.status === 'PENDING') ?? fail('APPROVAL_NOT_PENDING');
     if (a.requested_by === ME) fail('SECOND_APPROVER_MUST_DIFFER');
