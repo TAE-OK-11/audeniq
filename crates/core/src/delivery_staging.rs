@@ -632,8 +632,11 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
     };
     let canonical: CanonicalRelease =
         serde_json::from_value(row.get("canonical")).map_err(|_| Error::Internal)?;
-    let prepared =
-        std::sync::Arc::new(PreparedRelease::from_canonical(pool, canonical_id, &canonical).await?);
+    let mut prepared = PreparedRelease::from_canonical(pool, canonical_id, &canonical).await?;
+    // A platform staged after an approved metadata correction gets the
+    // corrected credits and genre from the start.
+    let genre_correction = crate::corrections::overlay(pool, &mut prepared).await?;
+    let prepared = std::sync::Arc::new(prepared);
 
     let requested = crate::dsp_registry::requested(&draft).unwrap_or_else(|| Dsp::ALL.to_vec());
     let genre = draft
@@ -645,6 +648,7 @@ pub async fn stage_package(pool: &PgPool, package_id: Uuid) -> Result<StageSumma
         .or_else(|| draft.get("genre").and_then(Value::as_str))
         .filter(|g| *g != "__other__")
         .map(str::to_owned);
+    let genre = genre_correction.or(genre);
     let stage1_refs: Value = sqlx::query_scalar(
         "SELECT v.body->'stage1_check_refs' FROM distribution.verification_packages vp
          JOIN distribution.validation_packages v ON v.id=(vp.body->>'stage1_validation_package_id')::uuid

@@ -383,7 +383,7 @@ fn file_block(out: &mut String, file_name: &str, sha256: &str) {
 /// generic `Contributor`. The credit's display name is always preserved in
 /// `PartyName`; only the role code is generalized — never an invented
 /// enum value, or the message fails XSD validation.
-fn contributor_role(role: &str) -> &'static str {
+pub(crate) fn contributor_role(role: &str) -> &'static str {
     match role.trim().to_ascii_lowercase().as_str() {
         "producer" | "music producer" | "executive producer" | "co-producer" => "Producer",
         "featured artist" | "featuring" | "feat." | "feat" => "FeaturedArtist",
