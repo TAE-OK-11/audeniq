@@ -2095,16 +2095,32 @@ export function Upload() {
   return (
     <section id="view-new" className="view">
     <div className="wizard">
-      <div className="wizard-topbar" aria-label="발매 신청 탐색">
-        <button type="button" id="wizardTopBack" className="wizard-topback" aria-label="이전으로 돌아가기" onClick={back}>
-          <BackIcon />
-        </button>
-        <span className="wizard-top-title">{editId ? (origStatus === 'draft' ? '발매 이어서 작성' : '발매 정보 수정') : '새로운 발매'}</span>
-        <span className="aq-save-slot" aria-live="polite">
-          {saveLabel && (
-            <span className={`aq-save-state is-${canAutoSave ? save.kind : 'edit'}`} title={saveTitle}>{saveLabel}</span>
-          )}
-        </span>
+      {/* 뒤로 가기 · 제목 · 진행 막대는 한 덩어리로 화면 위에 고정 — 스크롤해도, 단계가 바뀌어도 움직이지 않는다
+          (움직이면 누르려던 자리에 다른 칸이 와서 엉뚱하게 이전 단계로 돌아가는 일이 있었다) */}
+      <div className="aq-wiz-top">
+        <div className="wizard-topbar" aria-label="발매 신청 탐색">
+          <button type="button" id="wizardTopBack" className="wizard-topback" aria-label="이전으로 돌아가기" onClick={back}>
+            <BackIcon />
+          </button>
+          <span className="wizard-top-title">{editId ? (origStatus === 'draft' ? '발매 이어서 작성' : '발매 정보 수정') : '새로운 발매'}</span>
+          <span className="aq-save-slot" aria-live="polite">
+            {saveLabel && (
+              <span className={`aq-save-state is-${canAutoSave ? save.kind : 'edit'}`} title={saveTitle}>{saveLabel}</span>
+            )}
+          </span>
+        </div>
+        <div className="wizard-progress" id="wizardProgress" ref={progressRef} aria-label={`발매 신청 진행 단계 ${step + 1} / ${STEPS.length}`}>
+          {STEPS.map((st, i) => (
+            <span
+              key={i}
+              className={`wizard-progress-seg${i <= step ? ' current' : ''}${i <= reached && i !== step ? ' aq-seg-link' : ''}`}
+              onClick={i <= reached && i !== step ? () => goStep(i) : undefined}
+              title={i <= reached && i !== step ? `${st.short}(으)로 이동` : st.short}
+            >
+              {i === step && <em>{st.short}</em>}
+            </span>
+          ))}
+        </div>
       </div>
 
       {loadingEdit && (
@@ -2113,18 +2129,6 @@ export function Upload() {
         </div>
       )}
 
-      <div className="wizard-progress" id="wizardProgress" ref={progressRef} aria-label={`발매 신청 진행 단계 ${step + 1} / ${STEPS.length}`}>
-        {STEPS.map((st, i) => (
-          <span
-            key={i}
-            className={`wizard-progress-seg${i <= step ? ' current' : ''}${i <= reached && i !== step ? ' aq-seg-link' : ''}`}
-            onClick={i <= reached && i !== step ? () => goStep(i) : undefined}
-            title={i <= reached && i !== step ? `${st.short}(으)로 이동` : st.short}
-          >
-            {i === step && <em>{st.short}</em>}
-          </span>
-        ))}
-      </div>
 
       <div className="aq-wiz-layout">
       <aside className="aq-wiz-rail" aria-label="발매 신청 단계">
