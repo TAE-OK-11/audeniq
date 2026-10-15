@@ -16,6 +16,7 @@
 잠긴 동안에도 되는 것: 설정 파일 점검(`config-check`), DPID/테스트 ERN·ACK/계약 기록, 스테이징(ERN 생성·검증),
 로컬 MockDSP 샌드박스(스튜디오에서 고를 수 있는 테스트 플랫폼, 0-3절), 파트너 웹훅 **수신**(외부로 나가는 요청이 아님). `/ready`에 `"live_transmission": false`로 표시된다.
 공식 오픈 때 `deploy/production.env`에 `DSP_LIVE_TRANSMISSION=enabled`를 넣고 worker·api를 재시작한다.
+같은 스위치로 스마트링크 링크 검증도 켜진다: 오픈 전에는 테스트용으로 다른 곡 링크도 저장되고(안내만), 오픈 뒤에는 앨범·곡 페이지가 아니거나 플랫폼이 알려 준 앨범과 다른 링크를 거절한다. 따로 정하려면 `SMART_LINK_VERIFY=strict`(먼저 켜기) 또는 `SMART_LINK_VERIFY=test`(계속 끄기).
 
 ## 0-1. DSP별 전송 프로파일 (`crates/core/src/dsp_registry.rs`)
 
