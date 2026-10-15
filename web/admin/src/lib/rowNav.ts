@@ -44,6 +44,30 @@ function revealSelected(root: ParentNode) {
   });
 }
 
+/** 옆으로 넘치는 줄 — 더 밀 수 있는 쪽 끝을 흐리게 (aq-more-left / aq-more-right). 끝까지 밀면 그쪽 흐림이 사라진다 */
+const ROWS = '.ui-tabs,.ui-chips,.ui-seg,[role=tablist]';
+function fadeTarget(row: HTMLElement): HTMLElement | null {
+  const ox = getComputedStyle(row).overflowX;
+  if (ox === 'auto' || ox === 'scroll') return row;
+  const first = row.firstElementChild;
+  return first instanceof HTMLElement ? scroller(first) : null;
+}
+function updateFade(box: HTMLElement) {
+  const max = box.scrollWidth - box.clientWidth;
+  box.classList.toggle('aq-more-left', max > 1 && box.scrollLeft > 4);
+  box.classList.toggle('aq-more-right', max > 1 && box.scrollLeft < max - 4);
+}
+/** 끝 흐림을 다는 줄 — 밀 때(scroll) 이 줄만 다시 잰다 */
+const fadeBoxes = new WeakSet<Element>();
+function updateFades(root: ParentNode) {
+  root.querySelectorAll<HTMLElement>(ROWS).forEach(row => {
+    const box = fadeTarget(row);
+    if (!box) return;
+    fadeBoxes.add(box);
+    updateFade(box);
+  });
+}
+
 export function initRowNav() {
   document.addEventListener('click', e => {
     const t = e.target instanceof Element ? e.target.closest<HTMLElement>(ITEM) : null;
@@ -74,6 +98,13 @@ export function initRowNav() {
   let pending = 0;
   new MutationObserver(() => {
     if (pending) return;
-    pending = requestAnimationFrame(() => { pending = 0; revealSelected(document); });
+    pending = requestAnimationFrame(() => { pending = 0; revealSelected(document); updateFades(document); });
   }).observe(document.getElementById('root') ?? document.body, { childList: true, subtree: true });
+
+  // 줄을 밀거나 창 크기가 바뀌면 끝 흐림을 다시 잰다
+  document.addEventListener('scroll', e => {
+    const t = e.target;
+    if (t instanceof HTMLElement && fadeBoxes.has(t)) updateFade(t);
+  }, { capture: true, passive: true });
+  window.addEventListener('resize', () => updateFades(document), { passive: true });
 }

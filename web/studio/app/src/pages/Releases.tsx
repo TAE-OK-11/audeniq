@@ -149,7 +149,7 @@ export function Releases() {
         <div className="ui-tab-panel" key="releases">
           <div className="toolbar">
             <input
-              id="catalogSearch" className="ui-input" type="search" aria-label="발매 검색" placeholder="발매명·아티스트 검색"
+              id="catalogSearch" className="ui-input" type="search" aria-label="발매 검색" placeholder="발매·아티스트 검색"
               value={query} onChange={e => setQuery(e.target.value)}
             />
             <select id="catalogSort" className="ui-select" aria-label="정렬" value={sort} onChange={e => setSort(e.target.value)}>

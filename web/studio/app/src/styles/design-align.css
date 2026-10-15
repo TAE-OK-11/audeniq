@@ -184,7 +184,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 }
 
 /* 내 음악 — 휴대폰에서도 검색과 정렬을 한 줄로 (정렬은 좁게) */
-@media(max-width:759px){#view-catalog .toolbar{display:grid;grid-template-columns:minmax(0,1fr) 124px}#view-catalog .toolbar select{min-width:0}}
+@media(max-width:759px){#view-catalog .toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto}#view-catalog .toolbar select{min-width:0}}
 
 /* PC 머리 버튼(새 발매·CSV 내보내기·새 문의…) — 설명 줄 아래에 떠 보이지 않게 제목 묶음 가운데에 */
 @media(min-width:761px){.ui-page-head{align-items:center}}
@@ -548,3 +548,18 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 .auth-agree>.aq-help-error{margin:0;padding:0 4px}
 /* 계정 찾기 안내 — 옅은 카드 위 흰 면 (같은 색 면이라 안 보이던 것) */
 .auth-card .auth-done p{background:#fff}
+
+/* ==========================================================================
+   공통 요소 2차
+   ========================================================================== */
+/* 옆으로 넘치는 칩·탭 줄: 더 밀 수 있는 쪽 끝을 흐리게 (lib/rowNav.ts가 aq-more-left/right를 단다) */
+.aq-more-right{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 36px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 36px),transparent)}
+.aq-more-left{-webkit-mask-image:linear-gradient(90deg,transparent,#000 36px);mask-image:linear-gradient(90deg,transparent,#000 36px)}
+.aq-more-left.aq-more-right{-webkit-mask-image:linear-gradient(90deg,transparent,#000 36px,#000 calc(100% - 36px),transparent);mask-image:linear-gradient(90deg,transparent,#000 36px,#000 calc(100% - 36px),transparent)}
+/* 선택 칸·입력칸: 칸보다 긴 글자(고른 값·안내 문구)는 뚝 잘리지 않고 '…'로 끝나게 */
+.ui-select,.ui-field select{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}
+.ui-input,.ui-field input{text-overflow:ellipsis}
+/* 알림: 읽은 알림은 제목·아이콘 칸·바탕을 한 단계 낮춰 안 읽은 알림이 눈에 띄게 */
+.aq-notice-card.is-read{background:var(--aq-gray-50)}
+.aq-notice-card.is-read .aq-notice-copy>strong{font-weight:600;color:var(--aq-text-3)}
+.aq-notice-card.is-read .aq-notice-symbol{background:var(--aq-gray-100);color:var(--aq-text-4)}
