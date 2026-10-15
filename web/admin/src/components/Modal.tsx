@@ -58,11 +58,13 @@ export function fitToVisualViewport(el: HTMLElement, vv: VisualViewport, layoutH
     el.style.setProperty('bottom', 'auto', 'important');
     el.style.setProperty('height', `${vv.height}px`, 'important');
     el.style.setProperty('--aq-vv-h', `${vv.height}px`);
+    el.style.setProperty('--aq-kb', `${Math.max(0, layoutHeight - vv.offsetTop - vv.height)}px`);
   } else {
     el.style.removeProperty('top');
     el.style.removeProperty('bottom');
     el.style.removeProperty('height');
     el.style.removeProperty('--aq-vv-h');
+    el.style.removeProperty('--aq-kb');
   }
 }
 

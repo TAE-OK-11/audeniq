@@ -13,6 +13,7 @@ describe('fitToVisualViewport', () => {
     expect(el.style.getPropertyValue('bottom')).toBe('auto');
     expect(el.style.getPropertyPriority('top')).toBe('important');
     expect(el.style.getPropertyValue('--aq-vv-h')).toBe('420px');
+    expect(el.style.getPropertyValue('--aq-kb')).toBe('244px');
   });
 
   it('goes back to the full screen when the keyboard closes', () => {
@@ -23,5 +24,6 @@ describe('fitToVisualViewport', () => {
     expect(el.style.getPropertyValue('height')).toBe('');
     expect(el.style.getPropertyValue('bottom')).toBe('');
     expect(el.style.getPropertyValue('--aq-vv-h')).toBe('');
+    expect(el.style.getPropertyValue('--aq-kb')).toBe('');
   });
 });

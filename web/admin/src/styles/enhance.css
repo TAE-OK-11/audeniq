@@ -494,6 +494,13 @@ input[aria-invalid=true]{box-shadow:0 0 0 3px rgba(228,109,109,.3)!important}
 #modal .modal-inner{scroll-padding-bottom:96px}
 /* iOS 키보드가 떠 있는 동안(Modal이 --aq-vv-h를 단다) 아래 시트도 보이는 높이 안에 — 위가 화면 밖으로 잘리지 않게 */
 #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode)[style*="--aq-vv-h"]>.modal-inner{max-height:calc(var(--aq-vv-h) - 12px)!important}
+/* 휴대폰 아래 시트는 화면 바닥에 직접 붙인다 — 배경(grid)의 바닥 정렬에 맡겼더니 아이폰 Safari에서 시트가 화면 중간에 떠 있었다.
+   키보드가 떠 있는 동안은 Modal이 단 --aq-kb(키보드에 가린 높이)만큼 올려 키보드 바로 위에 둔다 */
+@media (max-width:760px){
+  #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode):not(.aq-confirm-mode):not(.aq-sysdialog-mode)>.modal-inner{
+    position:fixed!important;left:0!important;right:0!important;top:auto!important;bottom:var(--aq-kb,0px)!important;margin:0 auto!important
+  }
+}
 
 /* 줄에서 고른 탭·칩으로 밀어 줄 때 부드럽게 (lib/rowNav.ts) */
 :is(.ui-tabs,.ui-chips){scroll-behavior:smooth}
