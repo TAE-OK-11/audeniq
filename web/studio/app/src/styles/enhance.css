@@ -444,6 +444,12 @@ body:has(.aq-payout-setup-mode) .aq-toast-stack{bottom:calc(104px + env(safe-are
 .aq-dropzone:focus-within{outline:none!important;background:var(--aq-blue-100)}
 /* 오류 표시: 붉은 링 대신 붉은 면 */
 :is(#root,#modal) :is(input:not([type=checkbox]):not([type=radio]),select,textarea):is([aria-invalid=true],.aq-invalid){background-color:var(--aq-red-50)!important;box-shadow:none!important}
+/* 오류 칸은 입력 중(포커스)에도 붉은 면 유지 — 포커스의 회색 면이 덮어써 고치는 동안 어느 칸이 문제인지 안 보이던 것 */
+:is(#root,#modal) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea):is([aria-invalid=true],.aq-invalid):is(:focus,:focus-visible){background-color:var(--aq-red-50)!important}
+/* 막힌(비활성) 칸은 회색 면 + 흐리게 — 글자색만 흐려 쓸 수 있는 칸과 구분되지 않던 것 */
+:is(#root,#modal) :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),select,textarea):disabled{
+  background-color:var(--aq-gray-100)!important;opacity:.55;color:var(--aq-text-3);-webkit-text-fill-color:var(--aq-text-3);cursor:not-allowed
+}
 /* 체크박스는 체크 전까지만 붉은 테두리 — 체크하면 원래 파란 체크로 */
 :is(#root,#modal) input:is([type=checkbox],[type=radio]):is([aria-invalid=true],.aq-invalid):not(:checked){background-color:var(--aq-red-50)!important;box-shadow:inset 0 0 0 2px var(--aq-red-500)!important}
 
@@ -1060,23 +1066,29 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 /* ==========================================================================
    AUDENIQ 체크박스·라디오 — OS마다 다르게 그려지던 기본 모양 대신 한 가지 디자인
    (스위치·선택 카드처럼 입력을 숨겨 쓰는 곳은 제외)
+   모양 값(면·호버·체크 색·테두리·포커스)은 공통 파일 controls.css의 --aqc-* 변수 하나로만 정한다.
+   여기서는 화면별 크기 규칙(.check-row input 등)보다 이기도록 그 값을 그대로 적용만 한다.
+   예전에는 이 블록이 값을 따로 들고 있어 controls.css를 고쳐도 화면에 반영되지 않았다.
    ========================================================================== */
+:root:root{--aqc-box:var(--aq-gray-150);--aqc-box-hover:var(--aq-gray-200);--aqc-blue:var(--aq-blue-500);--aqc-focus:var(--aq-blue-450)}
+/* 옅은 면(카드·목록 줄·체크 줄) 위에서는 흰 칸 + 옅은 테두리 — 입력칸과 같은 규칙 (면과 같은 색이라 안 보이던 것) */
+:is(.ui-card,.ui-row,.ui-box,.ui-stat,.ui-callout,.ui-on-soft,.ui-check,.aq-profile-card,.aq-sign-page){--aqc-box:#fff;--aqc-box-hover:var(--aq-gray-50);--aqc-ring:var(--aq-gray-200)}
 :is(#root,#modal) input:is([type=checkbox],[type=radio]):not(:is(.aq-switch,.aq-choice,.aq-pay-type) input){
   -webkit-appearance:none;appearance:none;flex:none;width:22px;height:22px;margin:0;padding:0;
-  border:0;border-radius:var(--aq-r-xs);background:var(--aq-gray-150) center/14px 14px no-repeat;cursor:pointer;vertical-align:middle;
-  box-shadow:none;transition:background-color .18s ease
+  border:0;border-radius:var(--aq-r-xs);background:var(--aqc-box) center/14px 14px no-repeat;cursor:pointer;vertical-align:middle;
+  box-shadow:inset 0 0 0 1.5px var(--aqc-ring);transition:background-color .18s ease,box-shadow .18s ease
 }
 :is(#root,#modal) input[type=radio]:not(:is(.aq-switch,.aq-choice,.aq-pay-type) input){border-radius:50%}
-:is(#root,#modal) input:is([type=checkbox],[type=radio]):not(:is(.aq-switch,.aq-choice,.aq-pay-type) input):hover{background-color:var(--aq-gray-200)}
+:is(#root,#modal) input:is([type=checkbox],[type=radio]):not(:is(.aq-switch,.aq-choice,.aq-pay-type) input):hover{background-color:var(--aqc-box-hover)}
 :is(#root,#modal) input[type=checkbox]:not(:is(.aq-switch,.aq-choice,.aq-pay-type) input):checked{
-  background-color:var(--aq-blue-500);box-shadow:none;
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.4 6.6 11.5 12.6 4.8' fill='none' stroke='%23fff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+  background-color:var(--aqc-blue);box-shadow:none;background-image:var(--aqc-check)
 }
+:is(#root,#modal) input[type=checkbox]:not(:is(.aq-switch,.aq-choice,.aq-pay-type) input):indeterminate{background-color:var(--aqc-blue);box-shadow:none;background-image:var(--aqc-dash)}
 :is(#root,#modal) input[type=radio]:not(:is(.aq-switch,.aq-choice,.aq-pay-type) input):checked{
-  background-color:var(--aq-blue-500);box-shadow:none;background-size:22px 22px;
+  background-color:var(--aqc-blue);box-shadow:none;background-size:22px 22px;
   background-image:radial-gradient(circle,#fff 0 4px,transparent 4.5px)
 }
-:is(#root,#modal) input:is([type=checkbox],[type=radio]):not(:is(.aq-switch,.aq-choice,.aq-pay-type) input):focus-visible{outline:3px solid var(--aq-blue-450);outline-offset:2px}
+:is(#root,#modal) input:is([type=checkbox],[type=radio]):not(:is(.aq-switch,.aq-choice,.aq-pay-type) input):focus-visible{outline:3px solid var(--aqc-focus);outline-offset:2px}
 :is(#root,#modal) input:is([type=checkbox],[type=radio]):not(:is(.aq-switch,.aq-choice,.aq-pay-type) input):disabled{opacity:.45;cursor:not-allowed}
 
 /* ---------- 선택한 옵션 카드 ---------- */
