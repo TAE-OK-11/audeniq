@@ -208,7 +208,7 @@ function Components() {
           ))}
         </div>
         <label className="ui-check"><input type="checkbox" defaultChecked /> <span>권리 확인 항목을 모두 확인했어요.<small>담당자 결정과 함께 감사 기록에 남아요.</small></span></label>
-        <label className="ui-check"><input type="checkbox" /> <span>정산 알림을 메일로도 받을게요.<small>옅은 면 위 체크 전 칸은 흰 칸 + 옅은 테두리</small></span></label>
+        <label className="ui-check"><input type="checkbox" /> <span>정산 알림을 메일로도 받을게요.<small>옅은 면 위 체크 전 칸은 회색 칸 + 옅은 테두리</small></span></label>
       </Demo>
       <Demo title="Callout" note="안내 · 완료 · 주의 · 오류 · 중립">
         <Callout>지급 요청 <b>2건</b>이 운영 처리를 기다리고 있어요.</Callout>
