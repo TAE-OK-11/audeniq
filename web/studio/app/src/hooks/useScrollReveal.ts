@@ -31,26 +31,33 @@ export function useScrollReveal(key: string) {
       }
     }, { rootMargin: '0px 0px 120px 0px', threshold: 0.01 });
 
+    // 읽기(위치 재기)를 모두 끝낸 뒤 쓰기(클래스 달기)를 한다 — 섞으면 요소마다 레이아웃을 다시 계산해 화면 진입이 멈칫했다
     const scan = () => {
       const vh = window.innerHeight;
+      const fresh: HTMLElement[] = [];
       root.querySelectorAll<HTMLElement>(TARGETS).forEach(el => {
         if (seen.has(el)) return;
         seen.add(el);
-        // 이미 화면 안에 있는 요소는 건드리지 않는다
-        if (el.getBoundingClientRect().top < vh * 0.92) return;
+        fresh.push(el);
+      });
+      // 이미 화면 안에 있는 요소는 건드리지 않는다
+      const below = fresh.filter(el => el.getBoundingClientRect().top >= vh * 0.92);
+      for (const el of below) {
         // 부모가 이미 등장 대상이면 중복 모션을 피한다
-        if (el.parentElement?.closest('.aq-reveal-wait')) return;
+        if (el.parentElement?.closest('.aq-reveal-wait')) continue;
         el.classList.add('aq-reveal-wait');
         io.observe(el);
-      });
+      }
     };
-    // 비동기로 그려지는 목록도 잡기 위해 잠시 동안 DOM 변화를 지켜본다
-    const t = window.setTimeout(scan, 60);
-    const mo = new MutationObserver(() => scan());
+    // 비동기로 그려지는 목록도 잡기 위해 잠시 동안 DOM 변화를 지켜본다 — 변화가 몰려도 한 프레임에 한 번만 훑는다
+    let raf = 0;
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; scan(); }); };
+    const t = window.setTimeout(schedule, 60);
+    const mo = new MutationObserver(schedule);
     mo.observe(root, { childList: true, subtree: true });
     const stop = window.setTimeout(() => mo.disconnect(), 4000);
     return () => {
-      window.clearTimeout(t); window.clearTimeout(stop);
+      window.clearTimeout(t); window.clearTimeout(stop); cancelAnimationFrame(raf);
       mo.disconnect(); io.disconnect();
       root.querySelectorAll('.aq-reveal-wait').forEach(el => el.classList.remove('aq-reveal-wait'));
     };

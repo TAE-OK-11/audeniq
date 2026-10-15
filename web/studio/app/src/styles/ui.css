@@ -191,6 +191,7 @@
   border-radius:var(--aq-r-pill);background:var(--aq-gray-100);color:var(--aq-text-3);
   font-size:12px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums
 }
+.ui-count.is-pending{visibility:hidden}
 .ui-count.is-hot{background:var(--aq-primary);color:#fff}
 .ui-count.is-soft{background:var(--aq-primary-soft);color:var(--aq-primary)}
 .ui-count.is-alert{background:var(--aq-alert);color:#fff}
@@ -252,8 +253,8 @@
 .ui-tab[aria-selected=true]{color:var(--aq-primary)}
 .ui-tab[aria-selected=true] .ui-count{background:var(--aq-primary-soft);color:var(--aq-primary)}
 .ui-tab:focus-visible{outline:var(--aq-focus);outline-offset:-3px;border-radius:8px}
-.ui-tabs-bar{position:absolute;left:0;bottom:0;z-index:1;width:var(--pill-w);height:3px;transform:translate3d(var(--pill-x),0,0);border-radius:3px;background:var(--aq-primary);pointer-events:none}
-.ui-tabs.is-live .ui-tabs-bar{transition:transform var(--aq-dur-slow) var(--aq-glide),width var(--aq-dur-slow) var(--aq-glide),opacity var(--aq-dur)}
+.ui-tabs-bar{position:absolute;left:0;bottom:0;z-index:1;width:100px;height:3px;transform:translate3d(var(--pill-x),0,0) scaleX(var(--pill-sx,0));transform-origin:0 50%;border-radius:2px;background:var(--aq-primary);pointer-events:none}
+.ui-tabs.is-live .ui-tabs-bar{transition:transform var(--aq-dur-slow) var(--aq-glide),opacity var(--aq-dur)}
 .ui-tab-panel{animation:aq-fade-up var(--aq-motion-long) var(--aq-enter) both}
 
 /* ---------- 화면 머리 (PageHeader) ---------- */
