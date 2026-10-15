@@ -231,6 +231,8 @@ const CODE_MESSAGES: Record<string, string> = {
   // 스마트링크
   SMART_LINK_URL_INVALID: '그 플랫폼의 https 주소만 넣을 수 있어요. 앱에서 공유한 앨범 링크를 붙여 넣어 주세요.',
   SMART_LINK_PLATFORM_INVALID: '지원하지 않는 플랫폼이에요.',
+  SMART_LINK_URL_NOT_RELEASE: '앨범이나 곡 페이지 주소를 넣어 주세요. 아티스트·플레이리스트 주소나 단축 주소는 받을 수 없어요.',
+  SMART_LINK_URL_MISMATCH: '이 발매가 아닌 다른 앨범 링크예요. 플랫폼에서 이 발매의 앨범 링크를 복사해 주세요.',
   ALERT_EMAIL_INVALID: '이메일 주소를 다시 확인해 주세요.',
   ALERT_CONSENT_REQUIRED: '안내에 동의해 주세요.',
   ALERT_ALREADY_RELEASED: '이미 발매됐어요. 아래 링크에서 바로 들어 보세요.',
