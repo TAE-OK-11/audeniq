@@ -500,6 +500,8 @@ input[aria-invalid=true]{box-shadow:0 0 0 3px rgba(228,109,109,.3)!important}
   #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode):not(.aq-confirm-mode):not(.aq-sysdialog-mode)>.modal-inner{
     position:fixed!important;left:0!important;right:0!important;top:auto!important;bottom:var(--aq-kb,0px)!important;margin:0 auto!important
   }
+  /* 배경 자체는 스크롤되지 않게 — 아이폰에서 배경이 스크롤되며 시트를 위로 끌고 올라갔다(긴 내용은 시트 안에서 스크롤) */
+  #modal:not(.aq-payout-setup-mode):not(.aq-signature-mode):not(.aq-confirm-mode):not(.aq-sysdialog-mode){overflow:hidden!important}
 }
 
 /* 줄에서 고른 탭·칩으로 밀어 줄 때 부드럽게 (lib/rowNav.ts) */
