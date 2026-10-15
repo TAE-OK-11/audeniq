@@ -167,6 +167,9 @@ function buildProfile(data: ReleasePayload, prev: Record<string, unknown> | null
     coverThumbAssetId: data.coverAssetId && data.coverAssetId !== prev?.coverAssetId
       ? data.coverThumbAssetId
       : data.coverThumbAssetId ?? (prev?.coverThumbAssetId as string | undefined),
+    coverPreviewAssetId: data.coverAssetId && data.coverAssetId !== prev?.coverAssetId
+      ? data.coverPreviewAssetId
+      : data.coverPreviewAssetId ?? (prev?.coverPreviewAssetId as string | undefined),
     originalDate: data.originalDate,
     release_date: data.release_date,
     release_time: data.release_time || '',
@@ -236,6 +239,7 @@ function readDraft(r: ServerRelease): ReleaseDraft {
     coverData: s('coverData') || coverImageUrl(s('coverThumbAssetId'), s('coverAssetId')),
     coverAssetId: s('coverAssetId') || undefined,
     coverThumbAssetId: s('coverThumbAssetId') || undefined,
+    coverPreviewAssetId: s('coverPreviewAssetId') || undefined,
     originalDate: s('originalDate'),
     release_time: s('release_time'),
     preorder_start: s('preorder_start'),

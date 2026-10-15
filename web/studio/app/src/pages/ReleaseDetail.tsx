@@ -12,7 +12,8 @@ import { ContentIdCard } from '../components/ContentIdCard';
 import { TermCard } from '../components/TermCard';
 import { InfringementCard } from '../components/InfringementCard';
 import { SkeletonBlock, SkeletonRows } from '../components/Skeleton';
-import { ReleaseCover, useImageOk } from '../components/ReleaseCover';
+import { ReleaseCover, useImageOk, useSharpImage } from '../components/ReleaseCover';
+import { coverImageUrl } from '../api/remote';
 import { useAsync } from '../hooks/useAsync';
 import { STATUS_LABEL, localStamp, statusTone } from '../lib/format';
 import { dspLabel, durationLabel, genreLabel, kindLabel, languageLabel } from '../lib/catalog';
@@ -124,7 +125,13 @@ export function ReleaseDetail() {
     [id, tab],
   );
   // 훅은 아래 조기 반환보다 먼저 — 불러오기 전후로 호출 순서가 바뀌면 화면 오류가 난다
-  const [coverOk, coverFailed] = useImageOk(rel?.draft?.coverData || rel?.coverData);
+  // 큰 커버는 상세용 미리보기(1080px)로 — 목록용(240px)을 크게 키우면 뭉개진다. 원본은 서버에만 두고 받지 않는다.
+  // 상세용 미리보기가 없는 예전 발매는 목록용 그대로 (커버를 다시 올리면 생긴다)
+  const coverSrc = useSharpImage(
+    rel?.draft?.coverData || rel?.coverData,
+    !MOCK && rel?.draft?.coverPreviewAssetId ? coverImageUrl(rel.draft.coverPreviewAssetId, undefined) : undefined,
+  );
+  const [coverOk, coverFailed] = useImageOk(coverSrc);
 
   if (loading && !rel) {
     return (
@@ -165,7 +172,6 @@ export function ReleaseDetail() {
     && Date.now() - new Date(`${rel.release_date}T00:00:00`).getTime() >= 3 * 86_400_000;
   const stageTone = rejected ? 'is-error' : needsFix ? 'is-warn' : '';
   const stageLabel = (i: number) => (i === 1 && rejected ? '거절' : i === 1 && needsFix ? '보완 필요' : PIPELINE[i].label);
-  const coverSrc = d?.coverData || rel.coverData;
   const allFixes = rel.corrections ?? [];
   // 담당자 전체 의견은 고칠 항목이 아니라 따로 보여 준다
   const { items: requested, note: reviewNote } = splitCorrections(allFixes);

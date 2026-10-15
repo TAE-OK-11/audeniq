@@ -137,7 +137,7 @@ interface WizardForm {
   artist: string; title: string; type: string; language: string; genre: string;
   genreCustom: string; label: string; notes: string;
   tracks: Track[];
-  coverName: string; coverData: string; coverAssetId: string; coverThumbAssetId: string;
+  coverName: string; coverData: string; coverAssetId: string; coverThumbAssetId: string; coverPreviewAssetId: string;
   releaseDate: string; releaseTime: string; preorderStart: string; originalDate: string; upc: string;
   territories: string[]; platforms: string[];
   ownership: string; phonogram: string; copyright: string;
@@ -173,7 +173,7 @@ const EMPTY: WizardForm = {
   artist: '', title: '', type: 'single', language: 'ko', genre: '', genreCustom: '',
   label: '', notes: '',
   tracks: [newTrack()],
-  coverName: '', coverData: '', coverAssetId: '', coverThumbAssetId: '',
+  coverName: '', coverData: '', coverAssetId: '', coverThumbAssetId: '', coverPreviewAssetId: '',
   releaseDate: '', releaseTime: '', preorderStart: '', originalDate: '', upc: '',
   territories: ['WORLD'], platforms: MOCK ? DSP.map(d => d[0]) : [],
   ownership: '', phonogram: '', copyright: '',
@@ -1177,6 +1177,7 @@ function toPayload(form: WizardForm, step: number): ReleasePayload {
     // 비운 커버('')도 그대로 보낸다 — undefined면 서버의 이전 커버로 되돌아간다
     coverAssetId: form.coverAssetId,
     coverThumbAssetId: form.coverThumbAssetId || undefined,
+    coverPreviewAssetId: form.coverPreviewAssetId || undefined,
     originalDate: form.options.rerelease && form.options.rereleaseKind === 'new_version' ? form.releaseDate : form.originalDate,
     release_date: form.releaseDate || '',
     release_time: form.releaseTime || '',
@@ -1208,27 +1209,34 @@ function toPayload(form: WizardForm, step: number): ReleasePayload {
 
 // 미리보기용 썸네일 생성 (최대 480px JPEG, 보통 20~40KB) — 브라우저 저장소 용량을 넘지 않도록 원본 대신 저장
 function makeCoverThumbnail(file: File): Promise<{ data: string; width: number; height: number }> {
+  // 실서버는 발매 정보(최대 64KB)에 함께 저장하므로 더 작게
+  return MOCK ? scaleCover(file, 480, 0.8) : scaleCover(file, 240, 0.72);
+}
+
+/** 커버를 긴 변 max px JPEG로 줄인다 (width·height는 원본 크기).
+ *  서버의 이미지 자산은 JPEG·PNG만 받고(WebP 미지원) 브라우저마다 WebP 저장 지원도 달라 JPEG로 한다.
+ *  화면에 쓸 크기로만 줄이고 화질은 높게(0.86) 둬서 눈으로는 원본과 구분되지 않으면서 용량은 수십 분의 일이 된다. */
+function scaleCover(file: File, max: number, quality: number): Promise<{ data: string; width: number; height: number }> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
       URL.revokeObjectURL(url);
-      // 실서버는 발매 정보(최대 64KB)에 함께 저장하므로 더 작게
-      const max = MOCK ? 480 : 240;
       const scale = Math.min(1, max / Math.max(img.width, img.height));
       const w = Math.max(1, Math.round(img.width * scale));
       const h = Math.max(1, Math.round(img.height * scale));
       const canvas = document.createElement('canvas');
       canvas.width = w; canvas.height = h;
-      canvas.getContext('2d')?.drawImage(img, 0, 0, w, h);
-      resolve({ data: canvas.toDataURL('image/jpeg', MOCK ? 0.8 : 0.72), width: img.width, height: img.height });
+      const ctx = canvas.getContext('2d');
+      if (ctx) { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; ctx.drawImage(img, 0, 0, w, h); }
+      resolve({ data: canvas.toDataURL('image/jpeg', quality), width: img.width, height: img.height });
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('이미지를 읽을 수 없어요.')); };
     img.src = url;
   });
 }
 
-/** 커버 미리보기(240px JPEG)를 이미지 파일로 올리고 자산 ID를 돌려준다 */
+/** 커버 미리보기(JPEG)를 이미지 파일로 올리고 자산 ID를 돌려준다 */
 async function uploadCoverPreview(dataUrl: string): Promise<string> {
   // fetch(data:)는 CSP connect-src에 막힐 수 있어 직접 바꾼다
   const bin = atob(dataUrl.slice(dataUrl.indexOf(',') + 1));
@@ -1484,6 +1492,7 @@ export function Upload() {
         coverData: d?.coverData || '',
         coverAssetId: d?.coverAssetId || '',
         coverThumbAssetId: d?.coverThumbAssetId || '',
+        coverPreviewAssetId: d?.coverPreviewAssetId || '',
         releaseDate: rel.release_date || '',
         releaseTime: d?.release_time || '',
         preorderStart: d?.preorder_start || '',
@@ -1939,12 +1948,16 @@ export function Upload() {
       }
       setCoverWarn('');
       set('coverName', file.name);
-      setForm(f => ({ ...f, coverData: thumb.data, coverAssetId: '', coverThumbAssetId: '' }));
+      setForm(f => ({ ...f, coverData: thumb.data, coverAssetId: '', coverThumbAssetId: '', coverPreviewAssetId: '' }));
       const assetId = await startUpload('cover', file, 'IMAGE');
       if (assetId) {
-        // 목록·상세에 보여 줄 작은 미리보기도 서버에 보관한다 (실패해도 원본 커버로 보여 준다)
-        const thumbId = MOCK ? '' : await uploadCoverPreview(thumb.data).catch(() => '');
-        setForm(f => (f.coverName === file.name ? { ...f, coverAssetId: assetId, coverThumbAssetId: thumbId } : f));
+        // 화면에 보여 줄 미리보기도 서버에 보관한다 — 원본(3000px 이상, 수 MB)은 배급용으로 서버에만 두고 화면엔 쓰지 않는다.
+        // 목록용 240px와 상세의 큰 커버용 1080px 두 가지 (실패하면 작은 미리보기로 보여 준다)
+        const [thumbId, previewId] = MOCK ? ['', ''] : await Promise.all([
+          uploadCoverPreview(thumb.data).catch(() => ''),
+          scaleCover(file, 1080, 0.86).then(p => uploadCoverPreview(p.data)).catch(() => ''),
+        ]);
+        setForm(f => (f.coverName === file.name ? { ...f, coverAssetId: assetId, coverThumbAssetId: thumbId, coverPreviewAssetId: previewId } : f));
         dirtyRef.current = true;
         toast('커버 이미지가 등록됐어요.');
       }
@@ -2403,7 +2416,7 @@ export function Upload() {
                     uploadAborts.current.delete('cover');
                     setUpload('cover', null);
                     set('coverName', '');
-                    setForm(f => ({ ...f, coverData: '', coverAssetId: '', coverThumbAssetId: '' }));
+                    setForm(f => ({ ...f, coverData: '', coverAssetId: '', coverThumbAssetId: '', coverPreviewAssetId: '' }));
                     setCoverWarn('');
                     if (coverInputRef.current) coverInputRef.current.value = '';
                   }}
