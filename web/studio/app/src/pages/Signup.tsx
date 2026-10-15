@@ -98,11 +98,11 @@ export function Signup() {
           {mismatch && <p className="ui-field-help aq-help-error">비밀번호가 일치하지 않아요.</p>}
         </div>
         <div className="auth-agree">
-          <label className="check-row">
+          <label className="ui-check auth-terms">
             <input type="checkbox" checked={agreeTerms} onChange={e => setAgreeTerms(e.target.checked)} />
-            <span><a href="/terms" target="_blank" rel="noopener" className="aq-inline-link">AUDENIQ 음원 배급 서비스 이용약관</a>에 동의합니다. (필수)</span>
+            <span><a href="/terms" target="_blank" rel="noopener" className="aq-inline-link">AUDENIQ 음원 배급 서비스 이용약관</a>에 동의합니다. <em className="ui-required">(필수)</em></span>
           </label>
-          <p className="small muted">
+          <p className="auth-privacy">
             회원가입 정보(이메일·비밀번호·활동명)는 요청한 계정 생성과 서비스 제공을 위해 처리해요.
             계정정보는 원칙적으로 탈퇴 또는 처리 목적 종료 시까지 보관하며, 법정 보존자료는 별도로 관리해요.
             자세한 항목·보유기간과 권리 행사방법은 <a href="/privacy" target="_blank" rel="noopener" className="aq-inline-link">개인정보 처리방침</a>에서 확인해 주세요.
