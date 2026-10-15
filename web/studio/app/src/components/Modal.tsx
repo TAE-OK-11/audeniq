@@ -48,23 +48,15 @@ function unlockScroll() {
   }
 }
 
-/** iOS Safari: 키보드가 올라오면 '보이는 영역'(visual viewport)만 줄어들고 그 안에서 화면이 밀린다.
- *  고정된 배경·아래 시트는 원래 화면 기준이라 시트가 중간에 뜨고, 그 아래로 어둡게 덮이지 않은 뒤 화면이 비쳤다.
- *  키보드가 떠 있는 동안 배경을 지금 보이는 영역에 맞춰 시트가 키보드 바로 위에 붙게 한다. 키보드가 내려가면 원래대로. */
+/** iOS Safari: 키보드가 올라오면 '보이는 영역'(visual viewport)만 줄고 그 안에서 화면이 밀리는 경우가 있다.
+ *  그때 키보드에 가린 높이(--aq-kb)와 보이는 높이(--aq-vv-h)를 달아, 바닥에 붙은 아래 시트를 키보드 바로 위로 올리고
+ *  보이는 높이 안에 들게 한다. 어두운 배경은 CSS에서 화면 위아래로 넉넉히 덮으므로 여기서 크기를 바꾸지 않는다. */
 export function fitToVisualViewport(el: HTMLElement, vv: VisualViewport, layoutHeight: number) {
   const shifted = vv.offsetTop > 0.5 || vv.height < layoutHeight - 0.5;
   if (shifted) {
-    el.style.setProperty('top', `${vv.offsetTop}px`, 'important');
-    el.style.setProperty('bottom', 'auto', 'important');
-    // 배경은 보이는 영역 위에서부터 키보드 아래까지 넉넉히 덮는다 — 키보드 위 Safari 주소창·자동완성 막대는 반투명이라,
-    // 보이는 영역에 딱 맞추면 그 막대 뒤로 어둡게 덮이지 않은 화면이 비쳤다. 시트는 --aq-kb로 따로 키보드 위에 붙는다
-    el.style.setProperty('height', `${vv.height + layoutHeight}px`, 'important');
     el.style.setProperty('--aq-vv-h', `${vv.height}px`);
     el.style.setProperty('--aq-kb', `${Math.max(0, layoutHeight - vv.offsetTop - vv.height)}px`);
   } else {
-    el.style.removeProperty('top');
-    el.style.removeProperty('bottom');
-    el.style.removeProperty('height');
     el.style.removeProperty('--aq-vv-h');
     el.style.removeProperty('--aq-kb');
   }
