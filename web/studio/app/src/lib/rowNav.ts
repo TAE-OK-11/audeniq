@@ -101,6 +101,32 @@ export function initRowNav() {
     pending = requestAnimationFrame(() => { pending = 0; revealSelected(document); updateFades(document); });
   }).observe(document.getElementById('root') ?? document.body, { childList: true, subtree: true });
 
+  // 탭을 바꾸면 누른 탭이 있는 쪽에서 내용이 들어온다 (오른쪽 탭 → 오른쪽에서, 왼쪽 탭 → 왼쪽에서).
+  // 누르기 직전(capture)에 지금 고른 칸과 누른 칸의 순서를 재 두고, 새로 붙는 탭 내용(.ui-tab-panel)에 방향을 단다.
+  // 새 내용이 그려지기 전(같은 작업 안의 microtask)에 달기 때문에 애니메이션이 처음부터 그 방향으로 시작한다.
+  const TAB = '[role=tab],.ui-tab,.ui-seg>button';
+  let tabDir: { dir: 1 | -1; at: number } | null = null;
+  document.addEventListener('click', e => {
+    const t = e.target instanceof Element ? e.target.closest<HTMLElement>(TAB) : null;
+    const items = t?.parentElement ? [...t.parentElement.children].filter(x => x.matches(TAB)) : [];
+    const from = items.findIndex(x => x.matches(SELECTED));
+    const to = t ? items.indexOf(t) : -1;
+    tabDir = from >= 0 && to >= 0 && from !== to ? { dir: to > from ? 1 : -1, at: performance.now() } : null;
+  }, { capture: true });
+  new MutationObserver(records => {
+    if (!tabDir || performance.now() - tabDir.at > 600) return;
+    for (const r of records) {
+      for (const n of r.addedNodes) {
+        if (!(n instanceof HTMLElement)) continue;
+        const panel = n.matches('.ui-tab-panel') ? n : n.querySelector<HTMLElement>(':scope > .ui-tab-panel');
+        if (!panel) continue;
+        panel.classList.add(tabDir.dir > 0 ? 'is-from-right' : 'is-from-left');
+        tabDir = null;
+        return;
+      }
+    }
+  }).observe(document.getElementById('root') ?? document.body, { childList: true, subtree: true });
+
   // 줄을 밀거나 창 크기가 바뀌면 끝 흐림을 다시 잰다
   document.addEventListener('scroll', e => {
     const t = e.target;

@@ -22,6 +22,28 @@ function Surface({ anchor, title, onClose, className, children, labelledBy, pop 
 }) {
   const sheet = !pop && isSheet();
   const boxRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // 닫힐 때 툭 사라지지 않게 — 사라지기 직전 모습을 그대로 복사해 두고 그 복사본이 내려가며(작은 창은 줄어들며) 사라진다.
+  // 고르는 곳마다 닫기를 기다리게 바꾸지 않아도 되고, 원래 창은 바로 닫혀 값·포커스는 지금처럼 바로 돌아간다.
+  useLayoutEffect(() => () => {
+    const node = rootRef.current;
+    if (!node || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const ghost = node.cloneNode(true) as HTMLElement;
+    ghost.classList.add('is-leaving');
+    ghost.setAttribute('aria-hidden', 'true');
+    ghost.inert = true;
+    ghost.querySelectorAll('[id]').forEach(x => x.removeAttribute('id'));
+    const scrollTop = boxRef.current?.scrollTop ?? 0;
+    // 정말 닫힐 때만 — 개발 모드(StrictMode)가 열자마자 한 번 닫았다 다시 여는 경우엔 원래 창이 그대로 남아 있다
+    queueMicrotask(() => {
+      if (node.isConnected) return;
+      document.body.appendChild(ghost);
+      const box = ghost.querySelector<HTMLElement>('.aq-picker-box');
+      if (box) box.scrollTop = scrollTop;
+      window.setTimeout(() => ghost.remove(), 260);
+    });
+  }, []);
   const [pos, setPos] = useState<{ left: number; top: number; width: number; maxHeight: number } | null>(null);
 
   useLayoutEffect(() => {
@@ -61,7 +83,7 @@ function Surface({ anchor, title, onClose, className, children, labelledBy, pop 
   }, [sheet, onClose]);
 
   return createPortal(
-    <div className={`aq-picker${sheet ? ' is-sheet' : ' is-pop'}`} onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div ref={rootRef} className={`aq-picker${sheet ? ' is-sheet' : ' is-pop'}`} onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div
         ref={boxRef}
         className={`aq-picker-box${className ? ` ${className}` : ''}`}
