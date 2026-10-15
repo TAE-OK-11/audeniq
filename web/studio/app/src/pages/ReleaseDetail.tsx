@@ -63,14 +63,13 @@ const DELIVERY_ISSUE: Record<string, string> = {
 
 const RIGHTS_KEYS = ['rightsMaster', 'rightsComposition', 'rightsArtwork', 'rightsConsent'];
 
-/** 상세 탭 — 한 탭에 성격이 다른 카드를 쌓지 않는다. '관리'는 수익 분배와 발매 뒤에 하는 일(링크·피칭·정정·권리) */
+/** 상세 탭 — 휴대폰 한 줄에 다 보이게 넷으로 묶는다.
+ *  정보(발매 정보·커버·트랙) · 배급·계약(플랫폼·권리·계약서) · 관리(발매 뒤에 하는 일) · 기록 */
 const DETAIL_TABS = [
-  { value: 'overview', label: '기본 정보' },
-  { value: 'tracks', label: '트랙·파일' },
-  { value: 'delivery', label: '배급' },
-  { value: 'docs', label: '계약·서류' },
+  { value: 'overview', label: '정보' },
+  { value: 'delivery', label: '배급·계약' },
   { value: 'manage', label: '관리' },
-  { value: 'history', label: '변경 기록' },
+  { value: 'history', label: '기록' },
 ];
 
 const DELIVERY_TONE: Record<string, Tone> = {
@@ -384,82 +383,81 @@ export function ReleaseDetail() {
 
       <div id="releaseDetailBody" className="ui-tab-panel" key={tab}>
         {tab === 'overview' && (
-          <div className="split">
-            <div className="aq-relinfo-card">
-              <h2 className="subhead">발매 정보</h2>
-              <dl className="ui-kv is-2">
-                <div><dt>아티스트</dt><dd>{rel.artist || <Empty>미입력</Empty>}</dd></div>
-                <div><dt>발매 유형</dt><dd>{kindLabel(d?.type) || <Empty>미입력</Empty>}</dd></div>
-                <div><dt>주요 언어</dt><dd>{languageLabel(d?.language) || <Empty>미입력</Empty>}</dd></div>
-                <div><dt>발매 예정일</dt><dd>{rel.release_date || <Empty>미정</Empty>}</dd></div>
-                <div><dt>UPC / EAN</dt><dd>{d?.upc || <Empty>등록 전</Empty>}</dd></div>
-                <div><dt>장르</dt><dd>{genre || <Empty>미입력</Empty>}</dd></div>
-                <div><dt>레이블</dt><dd>{d?.label || <Empty>미입력</Empty>}</dd></div>
-              </dl>
-              <h2 className="subhead">앨범 소개</h2>
-              <p className="muted small break">{d?.notes || '등록된 소개가 없어요.'}</p>
-            </div>
-            <div className="studio-album-aside aq-cover-card">
-              <h2 className="subhead">커버아트</h2>
-              <div className={`aq-cover-stage${coverOk ? '' : ' is-empty'}`}>
-                {coverOk ? (
-                  <>
-                    {/* 커버 색이 카드 바탕으로 번지게 — 같은 이미지를 흐리게 깐다 */}
-                    <img className="aq-cover-glow" src={coverSrc} alt="" aria-hidden="true" decoding="async" />
-                    <img className="aq-detail-cover-large" src={coverSrc} alt={`${rel.title} 커버아트`} decoding="async" onError={coverFailed} />
-                  </>
-                ) : (
-                  <div className="aq-detail-cover-empty">
-                    {/* 이미지가 없을 땐 위 머리 카드와 같은 발매별 색 커버 */}
-                    <ReleaseCover id={rel.id} className="cover aq-detail-cover-fallback" />
-                    <span>{d?.coverName ? '미리보기 없음' : '커버아트 등록 전'}</span>
-                  </div>
-                )}
+          <div className="aq-detail-stack">
+            <div className="split">
+              <div className="aq-relinfo-card">
+                <h2 className="subhead">발매 정보</h2>
+                <dl className="ui-kv is-2">
+                  <div><dt>아티스트</dt><dd>{rel.artist || <Empty>미입력</Empty>}</dd></div>
+                  <div><dt>발매 유형</dt><dd>{kindLabel(d?.type) || <Empty>미입력</Empty>}</dd></div>
+                  <div><dt>주요 언어</dt><dd>{languageLabel(d?.language) || <Empty>미입력</Empty>}</dd></div>
+                  <div><dt>발매 예정일</dt><dd>{rel.release_date || <Empty>미정</Empty>}</dd></div>
+                  <div><dt>UPC / EAN</dt><dd>{d?.upc || <Empty>등록 전</Empty>}</dd></div>
+                  <div><dt>장르</dt><dd>{genre || <Empty>미입력</Empty>}</dd></div>
+                  <div><dt>레이블</dt><dd>{d?.label || <Empty>미입력</Empty>}</dd></div>
+                </dl>
+                <h2 className="subhead">앨범 소개</h2>
+                <p className="muted small break">{d?.notes || '등록된 소개가 없어요.'}</p>
               </div>
-              <dl className="aq-cover-meta">
-                {d?.coverName && <div><dt>파일</dt><dd className="break">{d.coverName}</dd></div>}
-                <div><dt>최근 수정</dt><dd>{rel.updated_at ? localStamp(rel.updated_at) : localStamp(rel.created_at)}</dd></div>
-              </dl>
-            </div>
-          </div>
-        )}
-
-        {tab === 'tracks' && (
-          <div className="aq-relinfo-card">
-            <h2 className="subhead">트랙 {rel.tracks.length}곡</h2>
-            {rel.tracks.length ? (
-              <div className="aq-catalog-cards aq-stagger">
-                {rel.tracks.map((t, i) => (
-                  <div key={t.id} className="aq-track-card">
-                    <span className="aq-track-num" aria-hidden="true">{i + 1}</span>
-                    <div className="min-0">
-                      <span className="ui-row-title">
-                        {t.title || '곡명 없음'}{t.version ? ` (${t.version})` : ''}
-                        {t.explicit && <em className="aq-explicit" title="Explicit">E</em>}
-                      </span>
-                      {/* 크레딧 · 길이 / 식별자 · 파일 — 잘리지 않게 두 줄로 나눈다 */}
-                      <span className="ui-row-meta aq-track-credit">
-                        작곡 {t.composers || '미입력'} · 작사 {t.lyricists || '없음'}
-                        {t.duration_ms ? ` · ${durationLabel(t.duration_ms)}` : ''}
-                      </span>
-                      <span className="aq-track-facts">
-                        <span className="ui-tag">ISRC {t.isrc || '등록 전'}</span>
-                        <span className={`ui-tag aq-track-file${t.audioName ? '' : ' is-missing'}`}>
-                          {t.audioName ? <><Glyph name="check" size={12} />{t.audioName}</> : '음원 파일 없음'}
-                        </span>
-                      </span>
+              <div className="studio-album-aside aq-cover-card">
+                <h2 className="subhead">커버아트</h2>
+                <div className={`aq-cover-stage${coverOk ? '' : ' is-empty'}`}>
+                  {coverOk ? (
+                    <>
+                      {/* 커버 색이 카드 바탕으로 번지게 — 같은 이미지를 흐리게 깐다 */}
+                      <img className="aq-cover-glow" src={coverSrc} alt="" aria-hidden="true" decoding="async" />
+                      <img className="aq-detail-cover-large" src={coverSrc} alt={`${rel.title} 커버아트`} decoding="async" onError={coverFailed} />
+                    </>
+                  ) : (
+                    <div className="aq-detail-cover-empty">
+                      {/* 이미지가 없을 땐 위 머리 카드와 같은 발매별 색 커버 */}
+                      <ReleaseCover id={rel.id} className="cover aq-detail-cover-fallback" />
+                      <span>{d?.coverName ? '미리보기 없음' : '커버아트 등록 전'}</span>
                     </div>
-                  </div>
-                ))}
+                  )}
+                </div>
+                <dl className="aq-cover-meta">
+                  {d?.coverName && <div><dt>파일</dt><dd className="break">{d.coverName}</dd></div>}
+                  <div><dt>최근 수정</dt><dd>{rel.updated_at ? localStamp(rel.updated_at) : localStamp(rel.created_at)}</dd></div>
+                </dl>
               </div>
-            ) : (
-              <div className="empty-note">
-                등록된 트랙이 없어요.<br />
-                <button type="button" className="ui-btn is-white is-sm" onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}>트랙 등록하기 <Glyph name="chevron-right" size={13} /></button>
+            </div>
+            <div className="aq-relinfo-card">
+              <h2 className="subhead">트랙 {rel.tracks.length}곡</h2>
+              {rel.tracks.length ? (
+                <div className="aq-catalog-cards aq-stagger">
+                  {rel.tracks.map((t, i) => (
+                    <div key={t.id} className="aq-track-card">
+                      <span className="aq-track-num" aria-hidden="true">{i + 1}</span>
+                      <div className="min-0">
+                        <span className="ui-row-title">
+                          {t.title || '곡명 없음'}{t.version ? ` (${t.version})` : ''}
+                          {t.explicit && <em className="aq-explicit" title="Explicit">E</em>}
+                        </span>
+                        {/* 크레딧 · 길이 / 식별자 · 파일 — 잘리지 않게 두 줄로 나눈다 */}
+                        <span className="ui-row-meta aq-track-credit">
+                          작곡 {t.composers || '미입력'} · 작사 {t.lyricists || '없음'}
+                          {t.duration_ms ? ` · ${durationLabel(t.duration_ms)}` : ''}
+                        </span>
+                        <span className="aq-track-facts">
+                          <span className="ui-tag">ISRC {t.isrc || '등록 전'}</span>
+                          <span className={`ui-tag aq-track-file${t.audioName ? '' : ' is-missing'}`}>
+                            {t.audioName ? <><Glyph name="check" size={12} />{t.audioName}</> : '음원 파일 없음'}
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-note">
+                  등록된 트랙이 없어요.<br />
+                  <button type="button" className="ui-btn is-white is-sm" onClick={() => nav(`/upload?edit=${encodeURIComponent(rel.id)}`)}>트랙 등록하기 <Glyph name="chevron-right" size={13} /></button>
+                </div>
+              )}
+              <div className="ui-callout" style={{ marginTop: 22 }}>
+                음원 원본의 재첨부가 필요한 경우가 있어요. 제출 전 파일을 다시 확인해 주세요.
               </div>
-            )}
-            <div className="ui-callout" style={{ marginTop: 22 }}>
-              음원 원본의 재첨부가 필요한 경우가 있어요. 제출 전 파일을 다시 확인해 주세요.
             </div>
           </div>
         )}
@@ -512,11 +510,6 @@ export function ReleaseDetail() {
                 <div><dt>© 표기</dt><dd>{d?.copyright || <Empty>미입력</Empty>}</dd></div>
               </dl>
             </section>
-          </div>
-        )}
-
-        {tab === 'docs' && (
-          <div className="aq-detail-stack">
             <section className="aq-relinfo-card">
               <h2 className="subhead">계약</h2>
               <ContractBundle
@@ -545,15 +538,29 @@ export function ReleaseDetail() {
         )}
 
         {tab === 'manage' && (
+          // 발매 뒤에 하는 일을 성격별로 묶는다 — 카드 8장이 한 줄로 쌓이면 무엇이 어디 있는지 안 보인다
           <div className="aq-detail-stack">
-            <SplitsCard releaseId={rel.id} />
-            {!isDraft && <SmartLinkCard releaseId={rel.id} />}
-            {!isDraft && <PitchCard releaseId={rel.id} />}
-            {!isDraft && <ContentIdCard releaseId={rel.id} />}
-            {!isDraft && <CorrectionCard releaseId={rel.id} />}
-            {!isDraft && !rejected && rel.status !== 'cancelled' && rel.status !== 'closed' && <TermCard releaseId={rel.id} />}
-            {!isDraft && <InfringementCard releaseId={rel.id} />}
-            {!isDraft && <TakedownCard releaseId={rel.id} />}
+            {isDraft ? <SplitsCard releaseId={rel.id} /> : (
+              <>
+                <section className="aq-manage-group" aria-label="수익·홍보">
+                  <h3 className="aq-manage-group-title">수익·홍보</h3>
+                  <SplitsCard releaseId={rel.id} />
+                  <SmartLinkCard releaseId={rel.id} />
+                  <PitchCard releaseId={rel.id} />
+                </section>
+                <section className="aq-manage-group" aria-label="권리 보호">
+                  <h3 className="aq-manage-group-title">권리 보호</h3>
+                  <ContentIdCard releaseId={rel.id} />
+                  <InfringementCard releaseId={rel.id} />
+                </section>
+                <section className="aq-manage-group" aria-label="서비스·계약">
+                  <h3 className="aq-manage-group-title">서비스·계약</h3>
+                  <CorrectionCard releaseId={rel.id} />
+                  <TakedownCard releaseId={rel.id} />
+                  {!rejected && rel.status !== 'cancelled' && rel.status !== 'closed' && <TermCard releaseId={rel.id} />}
+                </section>
+              </>
+            )}
           </div>
         )}
 
