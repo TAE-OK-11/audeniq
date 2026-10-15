@@ -5433,6 +5433,167 @@ async fn codes_list_and_csv(pool: PgPool) {
     assert_eq!(s, StatusCode::FORBIDDEN);
 }
 
+/// Smart link auto-fill and checks: a platform that went live with its own
+/// album id fills its link; pasted links are checked against that id (only
+/// reported before launch, so a tester may still save another album).
+///
+/// The delivery rows are a fixture written past their constraints
+/// (`session_replication_role = replica`): what is under test is how the
+/// smart link reads a LIVE binding, not the Stage 1–3 pipeline (covered by
+/// the package tests), so this runs without the native QC tools.
+#[sqlx::test]
+async fn smart_link_fills_and_checks_links_from_live_platforms(pool: PgPool) {
+    let d = draft_package(&pool).await;
+    let (org, release) = (d.u.org, d.release);
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query("SET LOCAL session_replication_role = replica")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE catalog.releases SET status='READY_FOR_DELIVERY' WHERE id=$1")
+        .bind(release)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    let (canonical, package, hash) = (Uuid::new_v4(), Uuid::new_v4(), "0".repeat(64));
+    sqlx::query(
+        "INSERT INTO distribution.canonical_releases(id,org_id,release_id,revision_id,verification_package_id,canonical_hash,body)
+         VALUES($1,$2,$3,$4,$5,$6,'{}')",
+    )
+    .bind(canonical)
+    .bind(org)
+    .bind(release)
+    .bind(Uuid::new_v4())
+    .bind(Uuid::new_v4())
+    .bind(&hash)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO distribution.distribution_packages(id,org_id,canonical_release_id,package_hash,body)
+         VALUES($1,$2,$3,$4,'{}')",
+    )
+    .bind(package)
+    .bind(org)
+    .bind(canonical)
+    .bind(&hash)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    for (partner, id) in [
+        ("D-1", "11205713"),
+        ("D-5", "spotify:album:4aawyAB9vmqN3uQ7FjRGTy"),
+        ("D-6", "not an id"),
+    ] {
+        sqlx::query(
+            "INSERT INTO execution.live_bindings(id,org_id,package_id,partner_id,live_status,partner_release_id)
+             VALUES($1,$2,$3,$4,'LIVE',$5)",
+        )
+        .bind(Uuid::new_v4())
+        .bind(org)
+        .bind(package)
+        .bind(partner)
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    }
+    tx.commit().await.unwrap();
+    let (app, user) = (&d.app, &d.u);
+    let path = format!("/api/orgs/{org}/releases/{release}/smart-link");
+    let (_, st) = call(app, "GET", &path, Value::Null, Some(user)).await;
+    assert_eq!(
+        st["auto"]["melon"], "https://www.melon.com/album/detail.htm?albumId=11205713",
+        "{st}"
+    );
+    assert_eq!(
+        st["auto"]["spotify"], "https://open.spotify.com/album/4aawyAB9vmqN3uQ7FjRGTy",
+        "{st}"
+    );
+    assert!(
+        st["auto"].get("apple").is_none(),
+        "malformed ids are not linked: {st}"
+    );
+    assert_eq!(st["verify"], "test");
+
+    let (s, v) = call(
+        app,
+        "POST",
+        &format!("{path}/check"),
+        json!({"links": {
+            "melon": "https://www.melon.com/album/detail.htm?albumId=11205713",
+            "spotify": "https://open.spotify.com/album/1111111111111111111111",
+            "apple": "https://music.apple.com/kr/album/x/1440857781",
+            "bugs": "https://music.bugs.co.kr/artist/1",
+            "genie": "http://www.genie.co.kr/detail/albumInfo?axnm=1",
+            "flo": " ",
+        }}),
+        Some(user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    assert_eq!(v["checks"]["melon"], "verified", "{v}");
+    assert_eq!(v["checks"]["spotify"], "mismatch", "{v}");
+    assert_eq!(v["checks"]["apple"], "unverified", "{v}");
+    assert_eq!(v["checks"]["bugs"], "not_release", "{v}");
+    assert_eq!(v["checks"]["genie"], "invalid", "{v}");
+    assert!(v["checks"].get("flo").is_none(), "{v}");
+
+    // Before launch another album still saves (testers), and is reported.
+    let (s, v) = call(
+        app,
+        "PUT",
+        &path,
+        json!({"links": {"spotify": "https://open.spotify.com/album/1111111111111111111111"}}),
+        Some(user),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+    let slug = v["slug"].as_str().unwrap().to_string();
+    let (_, st) = call(app, "GET", &path, Value::Null, Some(user)).await;
+    assert_eq!(st["checks"]["spotify"], "mismatch", "{st}");
+
+    // The public page: the pasted link wins, the server's fills the rest.
+    let public = format!("/api/smart-links/{slug}");
+    let (s, page) = call(app, "GET", &public, Value::Null, None).await;
+    assert_eq!(s, StatusCode::OK, "{page}");
+    let links: Vec<(String, String)> = page["links"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| {
+            (
+                l["platform"].as_str().unwrap().into(),
+                l["url"].as_str().unwrap().into(),
+            )
+        })
+        .collect();
+    assert!(
+        links.contains(&(
+            "melon".into(),
+            "https://www.melon.com/album/detail.htm?albumId=11205713".into()
+        )),
+        "{page}"
+    );
+    assert!(
+        links.contains(&(
+            "spotify".into(),
+            "https://open.spotify.com/album/1111111111111111111111".into()
+        )),
+        "{page}"
+    );
+    // A click on an auto-filled platform is counted like a pasted one.
+    let (s, v) = call(
+        app,
+        "POST",
+        &format!("{public}/click"),
+        json!({"platform": "melon"}),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{v}");
+}
+
 /// Release alerts: a fan leaves an email on the smart link before release,
 /// gets one mail once the release date comes, and the address is erased;
 /// alerts for a page that is gone are cancelled, stale ones expire.

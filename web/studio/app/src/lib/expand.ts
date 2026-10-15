@@ -125,6 +125,28 @@ function holdPlace(from: Node, y: number) {
   if (window.scrollY !== y) window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior });
 }
 
+/** 펼칠 때 카드가 화면 위에서 얼마나 내려와 있었는지 — 펼친 폼을 끝까지 내려가 아래 '닫기'로 닫으면
+ *  끝까지 스크롤된 자리에 남지 않고, 처음 카드를 연 그 자리(카드가 같은 높이에 보이는 곳)로 돌아간다 */
+const openedAt = new WeakMap<Node, number>();
+
+function rememberOpen(parent: Node) {
+  if (parent instanceof Element) openedAt.set(parent, parent.getBoundingClientRect().top);
+}
+
+/** 연 자리보다 아래로 내려가 있으면 그 자리로 돌아간다. 돌아갔으면 true */
+function returnToOpen(parent: Node, y: number) {
+  const top = openedAt.get(parent);
+  openedAt.delete(parent);
+  if (top === undefined || !(parent instanceof Element) || !parent.isConnected) return false;
+  // 지금 문서에서의 카드 위치 — 닫는 사이 브라우저가 스크롤을 끌어올렸어도 y(누를 때 위치) 기준으로 잰다
+  const cardTop = window.scrollY + parent.getBoundingClientRect().top;
+  const target = Math.max(0, cardTop - top);
+  if (target >= y - 1) return false; // 연 자리보다 위에 있거나 그대로면 보던 자리를 지킨다
+  if (window.scrollY !== y) window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior });
+  window.scrollTo({ top: target, behavior: reduced() ? 'instant' as ScrollBehavior : 'smooth' });
+  return true;
+}
+
 /** 누른 버튼이 폼과 함께 사라지면 커서(포커스)가 페이지 맨 처음으로 날아간다 — 같은 카드의 첫 버튼으로 돌려놓는다 */
 let lastFocused: Element | null = null;
 function restoreFocus(removed: Element, parent: Node) {
@@ -152,29 +174,29 @@ export function initExpand(root: HTMLElement = document.body) {
       && (since <= AFTER_INPUT_MS || (!!lastTarget && n.contains(lastTarget)));
     if (since > AFTER_INPUT_MS && !records.some(r => [...r.removedNodes].some(userRemoved))) return;
     const y = lastY;
-    // 누른 직후 빠진 펼침 블록: 보던 자리를 지키고 커서를 돌려놓는다 (동작 줄이기 설정이어도)
+    const userAdded = (n: Node): n is HTMLElement => since <= AFTER_INPUT_MS && n instanceof HTMLElement && n.matches(EXPAND) && !n.hasAttribute('data-aq-ghost');
+    // 누른 직후 붙은 펼침 블록: 카드를 연 자리를 기억한다 / 빠진 블록: 커서를 돌려놓는다 (동작 줄이기 설정이어도)
     for (const r of records) {
+      if ([...r.addedNodes].some(userAdded)) rememberOpen(r.target);
       for (const n of r.removedNodes) if (userRemoved(n)) restoreFocus(n, r.target);
     }
     if (reduced()) {
       const r0 = records.find(r => [...r.removedNodes].some(userRemoved));
-      if (r0) holdPlace(r0.target, y);
+      if (r0 && !returnToOpen(r0.target, y)) holdPlace(r0.target, y);
       return;
     }
     let held = false;
     for (const r of records) {
       // 새로 붙은(빠진) 덩어리의 맨 위가 펼침 블록일 때만 — 카드나 탭 전체가 새로 그려질 땐 그 안을 따로 움직이지 않는다
       // 닫힘 복사본(data-aq-ghost)이 붙고 빠지는 것은 건너뛴다
-      if (since <= AFTER_INPUT_MS) {
-        for (const n of r.addedNodes) {
-          if (n instanceof HTMLElement && n.matches(EXPAND) && !n.hasAttribute('data-aq-ghost') && typeof n.animate === 'function') expand(n);
-        }
+      for (const n of r.addedNodes) {
+        if (userAdded(n) && typeof n.animate === 'function') expand(n);
       }
       for (const n of r.removedNodes) {
         if (userRemoved(n) && typeof n.animate === 'function') {
           collapse(n, r.target, r.nextSibling);
-          // 접히는 복사본이 줄어드는 동안에도 페이지가 짧아지지 않게 — 복사본까지 붙은 지금 높이를 붙잡는다
-          if (!held) { holdPlace(r.target, y); held = true; }
+          // 연 자리보다 내려와 있으면 그 자리로 돌아가고, 아니면 접히는 동안에도 페이지가 짧아지지 않게 지금 높이를 붙잡는다
+          if (!held) { if (!returnToOpen(r.target, y)) holdPlace(r.target, y); held = true; }
         }
       }
     }
