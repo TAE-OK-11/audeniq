@@ -146,7 +146,9 @@ export function Notifications() {
                 <strong>{n.title}</strong>
                 <span className="aq-notice-detail">{n.detail}</span>
               </span>
-              {n.read ? null : <i className="aq-unread" aria-label="읽지 않음" />}
+              {n.read
+                ? <Glyph name="chevron-right" size={18} className="aq-notice-reopen" />
+                : <i className="aq-unread" aria-label="읽지 않음" />}
             </button>
           ))}
         </div>
