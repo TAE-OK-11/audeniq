@@ -62,6 +62,32 @@ export function fitToVisualViewport(el: HTMLElement, vv: VisualViewport, layoutH
   }
 }
 
+/** 휴대폰에서 시트 안의 칸을 눌러 키보드가 뜨면, 입력 중인 칸이 키보드·아래 고정 버튼(.aq-sticky-foot)에 가리지 않게
+ *  시트 안 스크롤을 그만큼 옮긴다. iOS는 고정된 시트 안의 칸까지는 알아서 끌어올려 주지 않는다.
+ *  칸이 화면보다 크면(긴 내용 칸) 칸의 윗부분이 보이는 쪽을 우선한다. */
+export function revealFocused(sheet: HTMLElement) {
+  const el = document.activeElement;
+  if (!(el instanceof HTMLElement) || !sheet.contains(el) || !el.matches('input,textarea,select,[contenteditable="true"]')) return;
+  const vv = window.visualViewport;
+  const sr = sheet.getBoundingClientRect();
+  const top = Math.max(sr.top, vv ? vv.offsetTop : 0) + 12;
+  let bottom = Math.min(sr.bottom, vv ? vv.offsetTop + vv.height : window.innerHeight);
+  const foot = sheet.querySelector('.aq-sticky-foot');
+  if (foot && !foot.contains(el)) {
+    const fr = foot.getBoundingClientRect();
+    if (fr.height && fr.top < bottom) bottom = fr.top;
+  }
+  bottom -= 12;
+  // 칸 바로 위의 이름표까지 함께 보이게
+  const label = el.closest('.ui-field')?.querySelector('label');
+  const r = el.getBoundingClientRect();
+  const want = label ? Math.min(r.top, label.getBoundingClientRect().top) : r.top;
+  let d = 0;
+  if (r.bottom > bottom) d = Math.min(r.bottom - bottom, want - top);
+  else if (want < top) d = want - top;
+  if (Math.abs(d) > 1) sheet.scrollTop += d;
+}
+
 /** iOS 26 Safari(파이어폭스 등 iOS 브라우저 모두): 키보드가 뜨면 고정 레이어(어두운 배경·아래 시트)는 줄어든 화면 안에만 그리고,
  *  그 바깥(아래 주소창·자동완성 띠 뒤, 위 상태 표시줄 쪽)에는 페이지 자체만 그린다. 그래서 고정 레이어로는 그 띠를 덮을 수 없었다.
  *  창이 열려 있는 동안 페이지 안에 덮개를 깐다: 시트가 끝나는 자리부터 아래로 흰 바탕, 화면 위쪽 바깥은 어두운 배경 색.
@@ -151,6 +177,25 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
     if (NOT_SHEET_MODES.some(m => modalClass?.includes(m))) return;
     return coverOutsideFixedLayer(overlay, sheetEl);
   }, [modalClass]);
+  // 입력 중인 칸이 키보드 뒤로 숨지 않게 — 키보드가 올라오는 동안 몇 번 다시 맞춘다
+  useEffect(() => {
+    const sheetEl = innerRef.current;
+    if (!sheetEl || !window.matchMedia?.('(pointer: coarse)').matches) return;
+    let timers: number[] = [];
+    const run = () => {
+      timers.forEach(t => window.clearTimeout(t));
+      timers = [0, 150, 350, 700].map(t => window.setTimeout(() => revealFocused(sheetEl), t));
+    };
+    const onViewport = () => { if (sheetEl.contains(document.activeElement)) run(); };
+    const vv = window.visualViewport;
+    sheetEl.addEventListener('focusin', run);
+    vv?.addEventListener('resize', onViewport);
+    return () => {
+      timers.forEach(t => window.clearTimeout(t));
+      sheetEl.removeEventListener('focusin', run);
+      vv?.removeEventListener('resize', onViewport);
+    };
+  }, []);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const closeDisabledRef = useRef(closeDisabled);

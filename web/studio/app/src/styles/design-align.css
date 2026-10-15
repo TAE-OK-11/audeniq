@@ -591,7 +591,10 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 
 /* 발매 신청 머리 고정 — 뒤로 가기·제목·진행 막대를 한 덩어리(.aq-wiz-top)로 화면 위에 붙여 둔다.
    예전에는 enhance.css의 .wizard-topbar{position:relative}가 고정을 덮어써서 스크롤하면 같이 올라가 버렸다.
-   경계선은 덩어리 맨 아래 한 줄만. */
-#view-new .aq-wiz-top{position:sticky;top:env(safe-area-inset-top,0px);z-index:35;margin:0 0 19px;background:#fff;border-bottom:1px solid var(--aq-gray-100)}
+   경계선은 덩어리 맨 아래 한 줄만. 위 상태 표시줄 자리(safe-area)까지 흰 바탕으로 채워, 스크롤한 내용이 머리 위로 비치지 않게 한다.
+   (예전에는 top을 safe-area만큼 띄워서 그 띠로 뒤 내용이 보였다) */
+#view-new .aq-wiz-top{position:sticky;top:0;padding-top:env(safe-area-inset-top,0px);box-shadow:0 -100px 0 0 #fff;z-index:35;margin:0 0 19px;background:#fff;border-bottom:1px solid var(--aq-gray-100)}
+/* 휴대폰: 머리 양옆 여백으로도 뒤 내용이 비치지 않게 흰 바탕과 경계선을 화면 끝까지 넓힌다(그림자라 가로 스크롤은 생기지 않는다) */
+@media (max-width:760px){#view-new .aq-wiz-top{border-bottom:0;box-shadow:0 0 0 100vmax #fff,0 1px 0 100vmax var(--aq-gray-100);clip-path:inset(-100vmax -100vmax -1px -100vmax)}}
 #view-new .aq-wiz-top>.wizard-topbar{position:relative;top:auto;margin:0!important;border-bottom:0!important;-webkit-backdrop-filter:none;backdrop-filter:none}
 #view-new .aq-wiz-top>.wizard-progress{margin:0!important;padding-bottom:12px}
