@@ -49,8 +49,8 @@ function unlockScroll() {
 }
 
 /** iOS Safari: 키보드가 올라오면 '보이는 영역'(visual viewport)만 줄고 그 안에서 화면이 밀리는 경우가 있다.
- *  그때 키보드에 가린 높이(--aq-kb)와 보이는 높이(--aq-vv-h)를 달아, 바닥에 붙은 아래 시트를 키보드 바로 위로 올리고
- *  보이는 높이 안에 들게 한다. 어두운 배경은 CSS에서 화면 위아래로 넉넉히 덮으므로 여기서 크기를 바꾸지 않는다. */
+ *  그때 키보드에 가린 높이(--aq-kb)와 보이는 높이(--aq-vv-h)를 단다. 아래 시트는 바닥에 둔 채(키보드 뒤로 이어지게)
+ *  내용만 그만큼 올리고, 보이는 높이 안에 들게 한다. 어두운 배경은 CSS에서 화면 위아래로 넉넉히 덮으므로 여기서 크기를 바꾸지 않는다. */
 export function fitToVisualViewport(el: HTMLElement, vv: VisualViewport, layoutHeight: number) {
   const shifted = vv.offsetTop > 0.5 || vv.height < layoutHeight - 0.5;
   if (shifted) {
