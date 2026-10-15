@@ -9,7 +9,7 @@ export function FindAccount() {
   const [tab, setTab] = useState<'id' | 'password'>('id');
 
   return (
-    <AuthLayout title="계정 이용에 도움이 필요하신가요?" sub="계정 찾기와 비밀번호 재설정은 고객지원에서 안내해 드려요.">
+    <AuthLayout icon="info" title="계정 이용에 도움이 필요하신가요?" sub="계정 찾기와 비밀번호 재설정은 고객지원에서 안내해 드려요.">
       <Segmented
         tabs className="aq-seg-tabs" label="계정 찾기 구분" value={tab} onChange={setTab}
         options={[{ value: 'id', label: '아이디 찾기' }, { value: 'password', label: '비밀번호 찾기' }] as const}
