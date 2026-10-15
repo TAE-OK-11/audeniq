@@ -60,16 +60,14 @@ img{max-width:100%}
 .portal-nav .aq-logout:hover{background:var(--aq-red-50)!important;color:var(--aq-red-600)!important}
 
 /* ---------- 스태거 진입 ---------- */
-.aq-stagger>*{animation:aq-fade-up .45s var(--aq-e-ease) both}
-.aq-stagger>*:nth-child(1){animation-delay:.03s}
-.aq-stagger>*:nth-child(2){animation-delay:.07s}
-.aq-stagger>*:nth-child(3){animation-delay:.11s}
-.aq-stagger>*:nth-child(4){animation-delay:.15s}
-.aq-stagger>*:nth-child(5){animation-delay:.19s}
-.aq-stagger>*:nth-child(6){animation-delay:.23s}
-.aq-stagger>*:nth-child(7){animation-delay:.27s}
-.aq-stagger>*:nth-child(8){animation-delay:.31s}
-.aq-stagger>*:nth-child(n+9){animation-delay:.34s}
+/* 목록 줄: 0.28초씩 0.025초 간격, 앞 6줄까지만 차례로 (나머지는 6번째와 함께) */
+@keyframes aq-row-in{from{opacity:0;transform:translate3d(0,6px,0)}}
+.aq-stagger>*{animation:aq-row-in .28s var(--aq-enter) both}
+.aq-stagger>*:nth-child(2){animation-delay:.025s}
+.aq-stagger>*:nth-child(3){animation-delay:.05s}
+.aq-stagger>*:nth-child(4){animation-delay:.075s}
+.aq-stagger>*:nth-child(5){animation-delay:.1s}
+.aq-stagger>*:nth-child(n+6){animation-delay:.125s}
 
 /* ---------- 카드 호버 ---------- */
 .aq-track-card{transition:transform .25s var(--aq-e-ease),box-shadow .25s var(--aq-e-ease),background-color .2s ease!important}
@@ -149,8 +147,8 @@ img{max-width:100%}
 
 /* ---------- 토스트 ---------- */
 .aq-toast-stack{position:fixed;left:50%;bottom:calc(22px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:400;display:flex;flex-direction:column;align-items:center;gap:8px;width:max-content;max-width:calc(100vw - 32px);pointer-events:none}
-.aq-toast{pointer-events:auto;cursor:pointer;display:flex;align-items:center;gap:10px;background:#1f2b47;color:#fff;padding:12px 16px 12px 12px;border-radius:var(--aq-r-md);box-shadow:0 14px 34px -10px rgba(21,35,76,.45);font-size:13px;font-weight:600;line-height:1.5;animation:aq-fade-up .32s var(--aq-e-spring) both}
-.aq-toast.is-leaving{animation:aq-modal-out .2s ease forwards}
+.aq-toast{pointer-events:auto;cursor:pointer;display:flex;align-items:center;gap:10px;background:#1f2b47;color:#fff;padding:12px 16px 12px 12px;border-radius:var(--aq-r-md);box-shadow:0 14px 34px -10px rgba(21,35,76,.45);font-size:13px;font-weight:600;line-height:1.5;animation:aq-fade-up var(--aq-motion-base) var(--aq-enter) both}
+.aq-toast.is-leaving{animation:aq-modal-out var(--aq-motion-short) var(--aq-exit) forwards}
 .aq-toast-icon{flex-shrink:0;display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:rgba(255,255,255,.14);font-size:12px;font-weight:800}
 .aq-toast.is-success .aq-toast-icon{background:var(--aq-green-500)}
 .aq-toast.is-error .aq-toast-icon{background:var(--aq-red-500)}
@@ -247,7 +245,7 @@ img{max-width:100%}
 .aq-ticket-body{background:var(--aq-gray-75);border-radius:var(--aq-r-md);padding:16px 18px;margin-top:12px}
 
 /* ---------- 차트/리포트 ---------- */
-.aq-platform-track span{transform-origin:left;animation:aq-grow-x .8s var(--aq-e-ease) both}
+.aq-platform-track span{transform-origin:left;animation:aq-grow-x .5s var(--aq-enter) both}
 .aq-platform-bars li:nth-child(2) .aq-platform-track span{animation-delay:.08s}
 .aq-platform-bars li:nth-child(3) .aq-platform-track span{animation-delay:.16s}
 .aq-platform-bars li:nth-child(n+4) .aq-platform-track span{animation-delay:.24s}
@@ -513,12 +511,14 @@ body:has(.aq-payout-setup-mode) .aq-toast-stack{bottom:calc(104px + env(safe-are
     min-height:0!important;max-height:calc(100dvh - 24px)!important;width:100%!important;
     border-radius:26px 26px 0 0!important;margin:0!important;
     padding-bottom:calc(24px + env(safe-area-inset-bottom))!important;
-    animation:aq-sheet-up .38s var(--aq-e-ease) both
+    animation:aq-sheet-up var(--aq-motion-long) var(--aq-enter) both
   }
-  #modal.is-leaving:not(.aq-payout-setup-mode):not(.aq-signature-mode)>.modal-inner{animation:aq-sheet-down .2s ease forwards!important}
+  #modal.is-leaving:not(.aq-payout-setup-mode):not(.aq-signature-mode)>.modal-inner{animation:aq-sheet-down .22s var(--aq-exit) forwards!important}
 }
-@keyframes aq-sheet-up{from{transform:translate3d(0,40px,0);opacity:.6}to{transform:none;opacity:1}}
-@keyframes aq-sheet-down{to{transform:translate3d(0,40px,0);opacity:0}}
+/* 휴대폰 아래 창: 선택 시트와 같이 화면 바닥에서 끝까지 올라오고 끝까지 내려간다 (예전엔 40px만 살짝).
+   내려갈 때는 'from'을 두지 않아, 끌어내리다 놓은 자리에서 그대로 이어 내려간다 */
+@keyframes aq-sheet-up{from{transform:translate3d(0,100%,0)}to{transform:none}}
+@keyframes aq-sheet-down{to{transform:translate3d(0,100%,0)}}
 
 /* ---------- 홈 '확인할 작업': 전체가 눌리는 한 줄 카드 ---------- */
 .aq-task-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
@@ -1159,7 +1159,7 @@ a.aq-home-hero{text-decoration:none;color:inherit}
 
 /* ---------- 펼쳐질 때 부드럽게 ---------- */
 @keyframes aq-reveal{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
-.aq-reveal{animation:aq-reveal .32s var(--aq-e-ease,cubic-bezier(.22,1,.36,1)) both;transform-origin:top}
+.aq-reveal{animation:aq-reveal var(--aq-motion-long) var(--aq-enter) both;transform-origin:top}
 .aq-reveal .aq-dsp{animation:aq-reveal .32s var(--aq-e-ease,cubic-bezier(.22,1,.36,1)) both}
 .aq-reveal .aq-dsp:nth-child(2){animation-delay:.03s}.aq-reveal .aq-dsp:nth-child(3){animation-delay:.06s}.aq-reveal .aq-dsp:nth-child(4){animation-delay:.09s}
 .aq-reveal .aq-dsp:nth-child(5){animation-delay:.12s}.aq-reveal .aq-dsp:nth-child(6){animation-delay:.15s}.aq-reveal .aq-dsp:nth-child(7){animation-delay:.18s}
@@ -1412,9 +1412,9 @@ button.aq-filecard{width:100%;text-align:left;font:inherit;color:inherit}
 .aq-stage-track li{display:flex;flex-direction:column;gap:9px;min-width:0}
 .aq-stage-bar{position:relative;display:block;height:6px;border-radius:var(--aq-r-3xl);background:var(--aq-gray-200);overflow:hidden}
 .aq-stage-bar::after{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--aq-e-blue);transform:scaleX(0);transform-origin:left}
-.aq-stage-track li.is-done .aq-stage-bar::after{transform:none;animation:aq-grow-x .45s var(--aq-e-ease) both}
+.aq-stage-track li.is-done .aq-stage-bar::after{transform:none;animation:aq-grow-x .5s var(--aq-enter) both}
 .aq-stage-track li.is-current .aq-stage-bar{background:var(--stage-soft)}
-.aq-stage-track li.is-current .aq-stage-bar::after{background:var(--stage-c);transform:scaleX(.55);animation:aq-stage-fill .7s var(--aq-e-ease) .2s both}
+.aq-stage-track li.is-current .aq-stage-bar::after{background:var(--stage-c);transform:scaleX(.55);animation:aq-stage-fill .5s var(--aq-enter) both}
 .aq-stage-track li:nth-child(2) .aq-stage-bar::after{animation-delay:.08s}
 .aq-stage-track li:nth-child(3) .aq-stage-bar::after{animation-delay:.16s}
 .aq-stage-track li:nth-child(4) .aq-stage-bar::after{animation-delay:.24s}
