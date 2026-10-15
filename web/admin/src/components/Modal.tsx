@@ -62,6 +62,67 @@ export function fitToVisualViewport(el: HTMLElement, vv: VisualViewport, layoutH
   }
 }
 
+/** iOS 26 Safari(파이어폭스 등 iOS 브라우저 모두): 키보드가 뜨면 고정 레이어(어두운 배경·아래 시트)는 줄어든 화면 안에만 그리고,
+ *  그 바깥(아래 주소창·자동완성 띠 뒤, 위 상태 표시줄 쪽)에는 페이지 자체만 그린다. 그래서 고정 레이어로는 그 띠를 덮을 수 없었다.
+ *  창이 열려 있는 동안 페이지 안에 덮개를 깐다: 시트가 끝나는 자리부터 아래로 흰 바탕, 화면 위쪽 바깥은 어두운 배경 색.
+ *  시트의 실제 위치와 페이지 스크롤을 따라가므로 iOS가 화면 크기를 어떻게 알려 주든 맞는다. 평소에는 화면 밖에 있어 보이지 않는다. */
+export function coverOutsideFixedLayer(overlay: HTMLElement, sheet: HTMLElement) {
+  const make = (bg: string) => {
+    const d = document.createElement('div');
+    d.setAttribute('aria-hidden', 'true');
+    d.dataset.aqSheetCover = '';
+    d.style.cssText = `position:absolute;left:0;right:0;z-index:105;pointer-events:none;background:${bg}`;
+    document.body.appendChild(d);
+    return d;
+  };
+  // 위쪽 덮개는 어두운 배경이 흰 페이지 위에 겹친 색과 같게 — 배경이 서서히 나타나는 중에도 맞도록 맞출 때마다 다시 읽는다
+  const dim = () => {
+    const m = getComputedStyle(overlay).backgroundColor.match(/[\d.]+/g)?.map(Number) ?? [];
+    const a = m.length > 3 ? m[3] : 1;
+    return m.length < 3 ? '' : `rgb(${m.slice(0, 3).map(c => Math.round(255 * (1 - a) + c * a)).join(',')})`;
+  };
+  const floor = make('#fff');
+  const ceiling = make('');
+  let raf = 0;
+  const place = () => {
+    raf = 0;
+    const h = Math.max(window.innerHeight, window.screen?.height ?? 0);
+    const y = window.scrollY;
+    const r = sheet.getBoundingClientRect();
+    floor.style.top = `${Math.round(y + r.bottom - 40)}px`;
+    floor.style.height = `${h}px`;
+    ceiling.style.top = `${Math.round(y - h)}px`;
+    ceiling.style.background = dim();
+    ceiling.style.height = `${h}px`;
+  };
+  const schedule = () => { if (!raf) raf = requestAnimationFrame(place); };
+  place();
+  // 시트가 올라오는 움직임·키보드가 뜨는 동안에도 따라가도록 처음 잠깐은 매 프레임 맞춘다
+  let until = performance.now() + 900;
+  const follow = () => { place(); if (performance.now() < until) raf = requestAnimationFrame(follow); else raf = 0; };
+  const burst = () => { until = performance.now() + 600; if (!raf) raf = requestAnimationFrame(follow); };
+  raf = requestAnimationFrame(follow);
+  const vv = window.visualViewport;
+  window.addEventListener('scroll', schedule, { passive: true });
+  window.addEventListener('resize', burst);
+  vv?.addEventListener('resize', burst);
+  vv?.addEventListener('scroll', schedule);
+  sheet.addEventListener('focusin', burst);
+  const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule);
+  ro?.observe(sheet);
+  return () => {
+    cancelAnimationFrame(raf);
+    window.removeEventListener('scroll', schedule);
+    window.removeEventListener('resize', burst);
+    vv?.removeEventListener('resize', burst);
+    vv?.removeEventListener('scroll', schedule);
+    sheet.removeEventListener('focusin', burst);
+    ro?.disconnect();
+    floor.remove();
+    ceiling.remove();
+  };
+}
+
 /** 모달 안의 자식이 닫힘 애니메이션과 함께 모달을 닫을 수 있게 한다 */
 const ModalCloseContext = createContext<() => void>(() => {});
 export const useModalClose = () => useContext(ModalCloseContext);
@@ -82,6 +143,14 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
     vv.addEventListener('scroll', sync);
     return () => { vv.removeEventListener('resize', sync); vv.removeEventListener('scroll', sync); };
   }, []);
+  // 휴대폰 아래 시트: 고정 레이어가 그려지지 않는 화면 바깥 띠를 페이지 안 덮개로 메운다 (iOS 26)
+  useEffect(() => {
+    const overlay = overlayRef.current;
+    const sheetEl = innerRef.current;
+    if (!overlay || !sheetEl || !window.matchMedia?.('(max-width: 760px)').matches) return;
+    if (NOT_SHEET_MODES.some(m => modalClass?.includes(m))) return;
+    return coverOutsideFixedLayer(overlay, sheetEl);
+  }, [modalClass]);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const closeDisabledRef = useRef(closeDisabled);
