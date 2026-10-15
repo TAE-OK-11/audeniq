@@ -133,7 +133,7 @@ function Components() {
           <Button variant="warn">보완 요청</Button><Button variant="warn-solid">보완하기</Button><Button variant="danger">거절</Button><Button variant="danger-solid">긴급 점검</Button>
         </div>
         <div className="ds-row">
-          <Button variant="primary" busy>저장 중</Button><Button disabled>비활성</Button><Button variant="text">글자 링크 <Glyph name="chevron-right" size={13} /></Button>
+          <Button variant="primary" busy>저장 중</Button><Button disabled>비활성</Button><Button variant="primary" disabled>주 실행 비활성</Button><Button variant="text">글자 링크 <Glyph name="chevron-right" size={13} /></Button>
           <Button variant="primary">발매 등록하기<ButtonArrow /></Button>
         </div>
       </Demo>
@@ -196,6 +196,10 @@ function Components() {
           <Field label="찾기" htmlFor="dsSearch" error="두 글자 이상 입력해 주세요."><input id="dsSearch" type="search" className="ui-input" aria-invalid="true" placeholder="이름으로 찾기" /></Field>
         </div>
         <div className="ds-row"><input className="ui-input is-sm" aria-label="작은 입력칸" placeholder="도구줄 40px" style={{ maxWidth: 220 }} /><input className="ui-input is-lg" aria-label="큰 입력칸" placeholder="아티스트용 56px" style={{ maxWidth: 260 }} /></div>
+        <div className="ui-form-grid">
+          <Field label="검색어 지우기" htmlFor="dsSearchFilled" help="검색어가 있으면 오른쪽에 지우기 버튼"><input id="dsSearchFilled" type="search" className="ui-input" defaultValue="첫 번째 싱글" /></Field>
+          <Field label="막힌 칸" htmlFor="dsDisabled" help="회색 면 + 흐리게 — 지금은 바꿀 수 없어요"><input id="dsDisabled" className="ui-input" disabled defaultValue="KRA262600001" /></Field>
+        </div>
       </Demo>
       <Demo title="선택 줄 · 체크 줄">
         <div className="ui-choices" role="radiogroup" aria-label="안내 문구">
@@ -204,6 +208,7 @@ function Components() {
           ))}
         </div>
         <label className="ui-check"><input type="checkbox" defaultChecked /> <span>권리 확인 항목을 모두 확인했어요.<small>담당자 결정과 함께 감사 기록에 남아요.</small></span></label>
+        <label className="ui-check"><input type="checkbox" /> <span>정산 알림을 메일로도 받을게요.<small>옅은 면 위 체크 전 칸은 흰 칸 + 옅은 테두리</small></span></label>
       </Demo>
       <Demo title="Callout" note="안내 · 완료 · 주의 · 오류 · 중립">
         <Callout>지급 요청 <b>2건</b>이 운영 처리를 기다리고 있어요.</Callout>

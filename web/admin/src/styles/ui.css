@@ -796,3 +796,29 @@ legend{padding:0}
 @media (prefers-reduced-motion:reduce){
   :is(.ui-btn,.ui-chip,.ui-seg>button,.ui-tab,.ui-row,.ui-stat,.aq-set-row,.aq-set-profile,.service-item,.ui-choice,.aq-choice,#portalNav button):is(:active,.is-pressed){transform:none!important}
 }
+
+/* ---------- 공통 요소 사용감 ---------- */
+/* 휴대폰: 16px보다 작은 입력칸은 아이폰 사파리가 누르는 순간 화면을 확대한다 → 휴대폰에서만 16px */
+@media (max-width:760px){
+  .ui-input,.ui-select,.ui-textarea,:is(.ui-input,.ui-select).is-sm,
+  .ui-field :where(input:not([type=checkbox],[type=radio],[type=file],[type=range],[type=color],[type=hidden]),select,textarea){font-size:16px}
+}
+/* 누르는 영역 — 보이는 크기는 그대로 두고 손가락이 닿는 영역만 44px로 (터치 기기) */
+@media (pointer:coarse){
+  .ui-tab::before{content:"";position:absolute;inset:0 -10px}
+  .aq-head-link,.aq-release-fix-btn{position:relative}
+  :is(.ui-btn.is-text,.ui-btn.is-xs,.ui-btn.is-sm,.aq-head-link,.aq-release-fix-btn)::before{
+    content:"";position:absolute;left:-4px;right:-4px;top:50%;height:44px;transform:translateY(-50%)
+  }
+}
+/* 검색칸 지우기 — 검색어가 있으면 칸 오른쪽에 지우기 버튼 (Chrome·Safari 기본 버튼을 AUDENIQ 모양으로) */
+:is(#root,#modal) input[type=search]::-webkit-search-cancel-button{
+  -webkit-appearance:none;appearance:none;display:block;flex:none;width:26px;height:26px;margin:0 -6px 0 8px;border-radius:50%;cursor:pointer;
+  background:var(--aq-gray-200) center/10px 10px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 3l6 6M9 3l-6 6' stroke='%235d6880' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E")
+}
+:is(#root,#modal) input[type=search]::-webkit-search-cancel-button:hover{background-color:var(--aq-gray-300,#cfd6e2)}
+/* 비활성 버튼 — 주 실행(파란) 버튼과 '저장 중' 표시를 뺀 나머지는 회색 면·회색 글자 (흐린 파랑이라 보조 버튼과 헷갈리던 것) */
+.ui-btn:disabled:not(.is-primary):not(.is-busy){opacity:1;--btn-bg:var(--aq-gray-100);--btn-fg:var(--aq-text-disabled);--btn-bg-hover:var(--btn-bg);--btn-fg-hover:var(--btn-fg)}
+.ui-btn:is(.is-text,.is-ghost):disabled:not(.is-busy){--btn-bg:transparent}
+/* 옅은 면 위 체크박스·라디오 — 흰 칸 + 옅은 테두리 (controls.css 변수) */
+:is(.ui-card,.ui-row,.ui-box,.ui-stat,.ui-callout,.ui-on-soft,.ui-check){--aqc-box:#fff;--aqc-box-hover:var(--aq-gray-50);--aqc-ring:var(--aq-gray-200)}
