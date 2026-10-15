@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Link } from '../lib/router';
 import { Glyph, type GlyphName } from './Glyph';
 import { IconTile } from '../ui';
+import { revealField } from '../lib/motion';
 
 /** 로그인·회원가입·계정 찾기 틀 — 스튜디오 머리와 같은 로고 줄 + 스튜디오 카드(ui-card)와 같은 면.
  *  카드 머리는 발매 상세 '관리' 카드처럼 아이콘 칸 + 제목 + 설명. */
@@ -51,10 +52,10 @@ export function FieldError({ id, children }: { id: string; children?: ReactNode 
   return <p className="ui-field-help aq-help-error" id={id} role="alert">{children}</p>;
 }
 
-/** 검사에서 걸린 첫 칸으로 커서를 옮긴다 */
+/** 검사에서 걸린 첫 칸으로 부드럽게 옮겨 커서를 두고 한 번 흔든다 */
 export function focusFirst(ids: (string | false | undefined)[]) {
   const id = ids.find(Boolean);
-  if (id) document.getElementById(id)?.focus();
+  if (id) revealField(document.getElementById(id));
 }
 
 /** 비밀번호 보기/숨기기 입력 — Caps Lock이 켜져 있으면 칸 아래에 알려 준다 */

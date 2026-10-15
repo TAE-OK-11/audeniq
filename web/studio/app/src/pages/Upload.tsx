@@ -38,6 +38,7 @@ import { BrandMark } from '../components/BrandMark';
 import { SplitsCard } from '../components/SplitsCard';
 import { fetchArtistPages, type ArtistPages } from '../lib/artistPages';
 import { TERRITORY_GROUPS, WORLD, parseTerritories, territoryName, territorySummary, worldExcept } from '../lib/territories';
+import { revealField } from '../lib/motion';
 
 /** 동시 발매로 고를 수 있는 한국 시간 (서버는 정각·30분만 받는다) */
 const RELEASE_TIMES = ['00:00', '09:00', '12:00', '13:00', '18:00', '19:00', '20:00'];
@@ -1673,8 +1674,8 @@ export function Upload() {
       if (sel) {
         const el = document.querySelector<HTMLElement>(sel);
         if (el) {
-          el.focus();
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // 먼저 focus()하면 화면이 그 칸으로 순간이동해 부드러운 스크롤이 묻힌다 — 굴러간 뒤 커서를 두고 흔든다
+          revealField(el);
           el.classList.remove('aq-invalid');
           void el.offsetWidth;
           el.classList.add('aq-invalid');
