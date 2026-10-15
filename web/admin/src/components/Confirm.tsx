@@ -23,11 +23,12 @@ function ConfirmBody({ opts, onAnswer }: { opts: ConfirmOptions; onAnswer: (v: b
     <>
       {opts.message && <div className="aq-confirm-message">{opts.message}</div>}
       <div className="aq-confirm-actions">
-        <button type="button" className="ui-btn is-soft" onClick={() => answer(false)}>
+        {/* 지우기처럼 되돌릴 수 없는 확인은 Enter를 습관적으로 눌러도 실행되지 않게 '취소'에 먼저 포커스 */}
+        <button type="button" className="ui-btn is-soft" onClick={() => answer(false)} {...(opts.danger ? { 'data-autofocus': true } : {})}>
           {opts.cancelLabel ?? '취소'}
         </button>
         <button
-          type="button" data-autofocus
+          type="button" {...(opts.danger ? {} : { 'data-autofocus': true })}
           className={`ui-btn ${opts.danger ? 'is-danger' : 'is-primary'}`}
           onClick={() => answer(true)}
         >
