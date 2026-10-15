@@ -67,10 +67,11 @@ function Surface({ anchor, title, onClose, className, children, labelledBy, pop 
   // 휴대폰 시트가 열려 있는 동안 뒤 화면이 끌려 스크롤되지 않게
   useEffect(() => {
     if (!sheet) return;
-    const html = document.documentElement, body = document.body;
-    const prev = [html.style.overflow, body.style.overflow];
-    html.style.overflow = 'hidden'; body.style.overflow = 'hidden';
-    return () => { html.style.overflow = prev[0]; body.style.overflow = prev[1]; };
+    // html만 잠근다: body까지 잠그면 스크롤해 둔 화면에서 고정 머리글이 위로 밀려 사라진다
+    const html = document.documentElement;
+    const prev = html.style.overflow;
+    html.style.overflow = 'hidden';
+    return () => { html.style.overflow = prev; };
   }, [sheet]);
 
   // 넓은 화면: 바깥 스크롤·창 크기 변경이면 닫는다(칸에서 떨어져 떠 있지 않도록)

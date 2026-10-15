@@ -337,7 +337,7 @@ a.ui-hero:hover{background:var(--aq-surface-hover)}
 .ui-row.is-warn{background:var(--aq-row-warn)}
 .ui-row.is-success{background:var(--aq-row-success)}
 .ui-row.is-danger{background:var(--aq-row-danger)}
-.ui-row.is-read{opacity:.62}
+.ui-row.is-read .ui-row-title{font-weight:600}
 .ui-row.is-muted .ui-row-title{color:var(--aq-text-4)}
 .ui-row-body{display:block;min-width:0}
 button.ui-row-title{width:100%;padding:0;border:0;background:none;font-family:inherit;text-align:left;cursor:pointer}

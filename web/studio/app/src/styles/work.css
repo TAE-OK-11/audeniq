@@ -395,6 +395,8 @@
 .adm-kb-drawer-body .ui-callout{margin:0}
 .adm-kb-form .ui-field{margin-bottom:12px}
 .adm-kb-form #kbdTitle{font-size:16px;font-weight:700}
+/* 보기만 할 수 있는 카드: 칸은 막혀 있어도 내용은 읽는 글이다 — 흐리게·회색 글자로 죽어 보이지 않게 */
+:is(#root,#modal) .adm-kb-form.is-readonly :is(input,select,textarea):disabled{opacity:1;color:var(--aq-text);-webkit-text-fill-color:var(--aq-text);cursor:default}
 .adm-kb-form-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px}
 .adm-kb-form-actions small{margin-right:auto}
 .adm-kb-facts{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 18px;padding:14px 16px;border-radius:var(--aq-r-lg);background:var(--adm-soft)}
