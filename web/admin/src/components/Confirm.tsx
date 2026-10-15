@@ -29,7 +29,7 @@ function ConfirmBody({ opts, onAnswer }: { opts: ConfirmOptions; onAnswer: (v: b
         </button>
         <button
           type="button" {...(opts.danger ? {} : { 'data-autofocus': true })}
-          className={`ui-btn ${opts.danger ? 'is-danger' : 'is-primary'}`}
+          className={`ui-btn ${opts.danger ? 'is-danger-solid' : 'is-primary'}`}
           onClick={() => answer(true)}
         >
           {opts.confirmLabel ?? '확인'}
