@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { useToast } from './Toast';
 
 interface ModalProps {
   title: string;
@@ -59,6 +60,9 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
   closeDisabledRef.current = closeDisabled;
   const [leaving, setLeaving] = useState(false);
   const leavingRef = useRef(false);
+  // 작성 중인 창 — 안의 칸에 무엇이든 입력하면 켜진다. 이때는 바깥 누름·Esc·끌어내리기로 닫지 않고 창이 튀어
+  // '닫기 버튼으로 닫아 주세요'를 알린다(실수로 스치거나 끌어 입력이 날아가지 않게). 닫기·취소 버튼은 그대로 닫힌다.
+  const dirtyRef = useRef(false);
   const titleId = useId();
 
   const requestClose = useCallback(() => {
@@ -80,7 +84,8 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
       if (stack[stack.length - 1] !== token) return;
       if (e.key === 'Escape') {
         e.stopPropagation();
-        requestClose();
+        if (dirtyRef.current) bumpRef.current();
+        else requestClose();
         return;
       }
       // 포커스 트랩: Tab이 모달 안에서만 순환
@@ -127,6 +132,18 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
     setNudge(true);
     window.setTimeout(() => setNudge(false), 320);
   };
+  // 작성 중이라 닫지 않았을 때는 왜 안 닫히는지 한 번만 알려 준다
+  const toast = useToast();
+  const hinted = useRef(false);
+  const guard = () => {
+    bump();
+    if (dirtyRef.current && !hinted.current) {
+      hinted.current = true;
+      toast('작성 중인 내용이 있어요. 닫으려면 닫기 버튼을 눌러 주세요.', 'info');
+    }
+  };
+  const bumpRef = useRef(guard);
+  bumpRef.current = guard;
 
   // 휴대폰 아래 시트: 위쪽 머리(손잡이)를 잡고 끌어내려 닫는다. 덜 끌면 제자리로 튀어 돌아간다.
   const sheet = useRef<{ y: number; t: number; dy: number } | null>(null);
@@ -154,7 +171,11 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
     if (!d || !el) return;
     const speed = d.dy / Math.max(1, performance.now() - d.t); // px/ms
     el.style.transition = 'transform .28s cubic-bezier(.3,1.4,.55,1)';
-    if (d.dy > DRAG_CLOSE_PX || (d.dy > 24 && speed > 0.6)) {
+    if ((d.dy > DRAG_CLOSE_PX || (d.dy > 24 && speed > 0.6)) && dirtyRef.current) {
+      // 작성 중이면 끌어내려도 닫지 않고 제자리로 튀어 돌아간 뒤 한 번 튄다
+      el.style.transform = '';
+      window.setTimeout(guard, 200);
+    } else if (d.dy > DRAG_CLOSE_PX || (d.dy > 24 && speed > 0.6)) {
       el.style.transition = 'transform .2s ease-in';
       el.style.transform = 'translate3d(0,100%,0)';
       leavingRef.current = true;
@@ -174,7 +195,7 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
       className={cls}
       onMouseDown={e => {
         if (e.target !== e.currentTarget) return;
-        if (dismissible) requestClose(); else bump();
+        if (dismissible && !dirtyRef.current) requestClose(); else guard();
       }}
     >
       <section
@@ -187,7 +208,7 @@ export function Modal({ title, onClose, children, modalClass, dismissible = true
             <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M6 6l12 12M18 6 6 18" /></svg>
           </button>
         </div>
-        <div id="modalBody">
+        <div id="modalBody" onInput={e => { if ((e.target as Element).matches('input,textarea,select,[contenteditable]')) dirtyRef.current = true; }}>
           <ModalCloseContext.Provider value={requestClose}>{children}</ModalCloseContext.Provider>
         </div>
       </section>

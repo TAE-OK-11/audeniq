@@ -8,6 +8,7 @@ import { PLATFORM_NAMES } from '../lib/platformNames';
 import { useToast } from './Toast';
 import { ManageHead } from './ManageHead';
 import { Glyph } from './Glyph';
+import { CopyButton } from './CopyButton';
 
 interface State {
   link: { slug: string; enabled: boolean; links: Record<string, string> } | null;
@@ -46,9 +47,6 @@ export function SmartLinkCard({ releaseId }: { releaseId: string }) {
     }
   };
   const start = () => { setLinks({ ...(l?.links ?? {}) }); setEdit(true); };
-  const copy = (slug: string) => {
-    void navigator.clipboard?.writeText(pageUrl(slug)).then(() => toast('링크를 복사했어요.', 'success'), () => toast('복사하지 못했어요.', 'error'));
-  };
   const clicks = Object.values(st.stats.clicks).reduce((a, b) => a + b, 0);
 
   return (
@@ -61,7 +59,7 @@ export function SmartLinkCard({ releaseId }: { releaseId: string }) {
             <div className="aq-smartlink-url">
               <code>{pageUrl(l.slug)}</code>
               <span className="ui-actions">
-                <button type="button" className="ui-btn is-sm" onClick={() => copy(l.slug)}>복사</button>
+                <CopyButton text={pageUrl(l.slug)} />
                 <a className="ui-btn is-sm" href={`/l/${l.slug}`} target="_blank" rel="noopener noreferrer"><Glyph name="arrow-up-right" size={14} />열기</a>
               </span>
             </div>
