@@ -178,8 +178,10 @@ export interface ReleaseDraft {
   coverData?: string;
   /** 실서버: 업로드 완료된 커버 이미지 자산 ID */
   coverAssetId?: string;
-  /** 실서버: 목록·상세에 보여 줄 작은 커버 미리보기 이미지 자산 ID */
+  /** 실서버: 목록에 보여 줄 작은 커버 미리보기(240px) 이미지 자산 ID */
   coverThumbAssetId?: string;
+  /** 실서버: 발매 상세의 큰 커버용 미리보기(1080px) 이미지 자산 ID — 원본은 서버에만 두고 화면엔 이것 */
+  coverPreviewAssetId?: string;
   originalDate?: string;
   /** 동시 발매 시각 (한국 시간 'HH:MM'); 비우면 나라별 자정 */
   release_time?: string;
@@ -229,6 +231,7 @@ export interface ReleasePayload {
   coverData: string;
   coverAssetId?: string;
   coverThumbAssetId?: string;
+  coverPreviewAssetId?: string;
   originalDate: string;
   release_date: string;
   release_time?: string;
