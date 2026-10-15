@@ -431,7 +431,7 @@ function PickerInput({ id, display, placeholder, className, disabled, required, 
     <>
       <input
         ref={ref} id={id} type="text" readOnly inputMode="none" autoComplete="off"
-        className={`aq-date-input${icon === 'clock' ? ' is-time' : ''}${className ? ` ${className}` : ''}`}
+        className={`ui-input aq-date-input${icon === 'clock' ? ' is-time' : ''}${className ? ` ${className}` : ''}`}
         value={display} placeholder={placeholder} required={required} disabled={disabled}
         aria-haspopup="dialog" aria-expanded={!!open} {...aria}
         onTouchStart={() => { touched.current = true; }}
