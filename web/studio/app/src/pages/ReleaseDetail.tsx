@@ -125,10 +125,11 @@ export function ReleaseDetail() {
     [id, tab],
   );
   // 훅은 아래 조기 반환보다 먼저 — 불러오기 전후로 호출 순서가 바뀌면 화면 오류가 난다
-  // 큰 커버는 업로드한 원본으로 (저장된 미리보기는 240px라 크게 키우면 뭉개진다)
+  // 큰 커버는 상세용 미리보기(1080px)로 — 목록용(240px)을 크게 키우면 뭉개진다. 원본은 서버에만 두고 받지 않는다.
+  // 상세용 미리보기가 없는 예전 발매는 목록용 그대로 (커버를 다시 올리면 생긴다)
   const coverSrc = useSharpImage(
     rel?.draft?.coverData || rel?.coverData,
-    !MOCK && rel?.draft?.coverAssetId ? coverImageUrl(undefined, rel.draft.coverAssetId) : undefined,
+    !MOCK && rel?.draft?.coverPreviewAssetId ? coverImageUrl(rel.draft.coverPreviewAssetId, undefined) : undefined,
   );
   const [coverOk, coverFailed] = useImageOk(coverSrc);
 

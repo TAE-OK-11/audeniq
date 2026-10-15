@@ -5,6 +5,7 @@ import { App } from './App';
 import { prefetchInitialRoute } from './routes';
 import { initPressFeedback } from './lib/press';
 import { initRowNav } from './lib/rowNav';
+import { initExpand } from './lib/expand';
 import { MOCK } from './api/client';
 
 const root = document.getElementById('root');
@@ -34,6 +35,8 @@ document.addEventListener('touchstart', () => {}, { passive: true });
 initPressFeedback();
 // 탭·칩 줄: 고른 칸이 줄 밖이면 보이게, 화살표 키로 옮기기
 initRowNav();
+// 누르면 나타나는 입력 폼·패널은 높이가 자라며 펼쳐지게
+initExpand();
 
 prefetchInitialRoute();
 
