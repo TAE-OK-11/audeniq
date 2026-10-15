@@ -214,12 +214,12 @@ input[aria-invalid=true]{box-shadow:0 0 0 3px rgba(228,109,109,.3)!important}
     min-height:0!important;max-height:calc(100dvh - 24px)!important;width:100%!important;
     border-radius:26px 26px 0 0!important;margin:0!important;
     padding-bottom:calc(24px + env(safe-area-inset-bottom))!important;
-    animation:aq-sheet-up .38s var(--aq-e-ease) both
+    animation:aq-sheet-up var(--aq-motion-long) var(--aq-enter) both
   }
-  #modal.is-leaving:not(.aq-payout-setup-mode):not(.aq-signature-mode)>.modal-inner{animation:aq-sheet-down .2s ease forwards!important}
+  #modal.is-leaving:not(.aq-payout-setup-mode):not(.aq-signature-mode)>.modal-inner{animation:aq-sheet-down .22s var(--aq-exit) forwards!important}
 }
-@keyframes aq-sheet-up{from{transform:translate3d(0,40px,0);opacity:.6}to{transform:none;opacity:1}}
-@keyframes aq-sheet-down{to{transform:translate3d(0,40px,0);opacity:0}}
+@keyframes aq-sheet-up{from{transform:translate3d(0,100%,0)}to{transform:none}}
+@keyframes aq-sheet-down{to{transform:translate3d(0,100%,0)}}
 
 /* ---------- 홈 '확인할 작업': 전체가 눌리는 한 줄 카드 ---------- */
 

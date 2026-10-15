@@ -347,7 +347,7 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
 @keyframes aq-menu-in{from{opacity:0;transform:translate3d(0,-8px,0) scale(.98)}to{opacity:1;transform:none}}
 @keyframes aq-menu-out{to{opacity:0;transform:translate3d(0,-6px,0) scale(.98)}}
 @keyframes aq-menu-group{from{opacity:0;transform:translate3d(0,6px,0)}to{opacity:1;transform:none}}
-.portal-header #portalNav{transform-origin:calc(100% - 28px) 0;animation:aq-menu-in .24s cubic-bezier(.2,.8,.2,1) both!important}
+.portal-header #portalNav{transform-origin:calc(100% - 28px) 0;animation:aq-menu-in var(--aq-motion-base) var(--aq-enter) both!important}
 .portal-header #portalNav.is-closing{animation:aq-menu-out .15s cubic-bezier(.4,0,1,1) forwards!important;pointer-events:none}
 #portalNav>.aq-nav-me,#portalNav>.aq-nav-card,#portalNav>.aq-nav-foot{animation:aq-menu-group .26s cubic-bezier(.2,.8,.2,1) both}
 #portalNav>.aq-nav-card:nth-of-type(2){animation-delay:.03s}
@@ -369,14 +369,15 @@ button.aq-statement-card{width:100%;border:0;font:inherit;color:inherit;text-ali
    목록(.aq-stagger)은 줄마다 따로 올라오므로 여기서 다시 움직이지 않는다. 발매 신청 위자드는 자체 단계 모션을 쓴다.
    backwards라 끝난 뒤에는 transform이 남지 않는다(안쪽 sticky·fixed 요소 영향 없음). */
 @keyframes aq-view-fade{from{opacity:0}}
-@keyframes aq-section-in{from{opacity:0;transform:translate3d(0,10px,0)}}
-.view-enter{animation:aq-view-fade .22s ease-out backwards}
-.view-enter>.view:not(#view-new)>:not(.aq-stagger):nth-child(-n+10){animation:aq-section-in .42s cubic-bezier(.2,.8,.2,1) backwards}
-.view-enter>.view:not(#view-new)>:nth-child(2){animation-delay:.04s}
-.view-enter>.view:not(#view-new)>:nth-child(3){animation-delay:.08s}
-.view-enter>.view:not(#view-new)>:nth-child(4){animation-delay:.12s}
-.view-enter>.view:not(#view-new)>:nth-child(5){animation-delay:.16s}
-.view-enter>.view:not(#view-new)>:nth-child(n+6){animation-delay:.2s}
+@keyframes aq-section-in{from{opacity:0;transform:translate3d(0,6px,0)}}
+/* 덩어리마다 0.28초, 0.025초 간격으로 앞 6개까지만 차례로 — 다 나타나기까지 약 0.4초 (예전 0.5~0.7초) */
+.view-enter{animation:aq-view-fade var(--aq-motion-short) ease-out backwards}
+.view-enter>.view:not(#view-new)>:not(.aq-stagger):nth-child(-n+10){animation:aq-section-in .28s var(--aq-enter) backwards}
+.view-enter>.view:not(#view-new)>:nth-child(2){animation-delay:.025s}
+.view-enter>.view:not(#view-new)>:nth-child(3){animation-delay:.05s}
+.view-enter>.view:not(#view-new)>:nth-child(4){animation-delay:.075s}
+.view-enter>.view:not(#view-new)>:nth-child(5){animation-delay:.1s}
+.view-enter>.view:not(#view-new)>:nth-child(n+6){animation-delay:.125s}
 @media (prefers-reduced-motion:reduce){.view-enter,.view-enter>.view>*{animation:none!important}}
 
 /* 휴대폰 전체 메뉴가 열려 있는 동안 뒤 화면이 같이 스크롤되지 않게 */

@@ -485,8 +485,8 @@ body.wizard-mode .portal-layout{min-height:100dvh;padding-top:0!important;paddin
 #view-new .step-section details>summary{transition:color var(--aq-motion-fast) var(--aq-motion-ease)}
 /* Small success feedback does not move layout and is distinct from page reveals. */
 .aq-switch span,.aq-option input{transition:background-color .22s var(--aq-motion-ease),border-color .22s var(--aq-motion-ease)}
-#modal:not([hidden]){animation:aq-overlay-enter .18s ease-out both}
-#modal:not([hidden])>.modal-inner{animation:aq-dialog-enter .35s var(--aq-motion-ease) both}
+#modal:not([hidden]){animation:aq-overlay-enter var(--aq-motion-base) ease-out both}
+#modal:not([hidden])>.modal-inner{animation:aq-dialog-enter var(--aq-motion-long) var(--aq-enter) both}
 @keyframes aq-overlay-enter{from{background-color:#13244200}to{background-color:#13244288}}
 @keyframes aq-dialog-enter{from{transform:translate3d(0,12px,0)}to{transform:translate3d(0,0,0)}}
 /* Remove the old chart animation at creation; it will grow once when scrolled into view. */
